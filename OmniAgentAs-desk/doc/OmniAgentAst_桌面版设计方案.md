@@ -80,7 +80,7 @@ OmniAgentAst. 桌面版是一款**本地运行的AI智能助手**，专为Window
 |------|---------|---------|
 | **桌面UI** | Tauri (Rust) + React | 体积小(几MB)、性能好、现代Web技术 |
 | **后端核心** | Python 3.11+ | AI生态完善、现有代码可复用 |
-| **AI接口** | Claude API (默认) | 支持多模态、工具调用友好 |
+| **AI接口** | 智谱GLM (默认) + Claude (备选) | 智谱免费稳定 + Claude作为国外备选 |
 | **数据存储** | SQLite + Local Vector DB | 零配置、单文件、易备份 |
 | **配置管理** | YAML | 人类可读、易编辑、支持注释 |
 
@@ -750,7 +750,85 @@ Phase 3: 生态完善 (4周)
 
 ---
 
-## 10. 参考资源
+## 10. AI模型策略
+
+### 10.1 主模型选择
+
+**默认：智谱AI (BigModel) - 免费**
+- 优点：国内访问稳定、免费、中文优化好
+- 缺点：工具调用能力稍弱于Claude
+
+**备选：Claude 3.5 Sonnet**
+- 优点：工具调用能力强、上下文长(200K)、理解准确
+- 缺点：国内访问需代理、价格较高
+
+### 10.2 智谱AI免费模型
+
+**智谱AI免费模型列表**（2026-02-15实测）：
+
+| 模型 | 类型 | 状态 | 说明 |
+|------|------|------|------|
+| **glm-4.7-flash** | 文本对话 | ✅ 可用 | 主力对话模型，200K上下文 |
+| **glm-4.5-flash** | 文本对话 | ✅ 可用 | 默认开启思考模式 |
+| **glm-4v-flash** | 视觉理解 | ✅ 可用 | 图像理解 |
+| **cogview-3-flash** | 图像生成 | ✅ 可用 | 文本生成图像 |
+
+### 10.3 智能切换策略
+
+**自动切换逻辑**：
+```python
+def call_ai_with_fallback(prompt, prefer_model="auto"):
+    """
+    智能模型切换
+    - auto: 自动选择（国内用户默认智谱）
+    - force_zhipuai: 强制使用智谱
+    - force_claude: 强制使用Claude
+    """
+    if prefer_model == "auto":
+        # 自动模式：国内用户默认智谱，网络好时可用Claude
+        return call_zhipuai(prompt)
+    elif prefer_model == "force_zhipuai":
+        return call_zhipuai(prompt)
+    elif prefer_model == "force_claude":
+        return call_claude(prompt)
+    
+    # 异常处理：自动降级
+    try:
+        return call_claude(prompt)
+    except NetworkError:
+        logger.warning("Claude failed, switching to ZhipuAI")
+        return call_zhipuai(prompt)
+```
+
+**配置示例**：
+```yaml
+ai:
+  # 智能切换配置
+  strategy: "smart"  # smart | force_zhipuai | force_claude
+  
+  # 智谱模型（默认）
+  zhipuai:
+    model: "glm-4.7-flash"
+    api_key: "glm-xxx"
+  
+  # Claude备选
+  claude:
+    model: "claude-3-5-sonnet-20241022"
+    api_key: "sk-ant-xxx"
+```
+
+### 10.4 模型选择建议
+
+| 使用场景 | 推荐模型 | 理由 |
+|---------|---------|------|
+| 国内用户、日常对话 | glm-4.7-flash | 免费、稳定、国内访问快 |
+| 需要强工具调用 | Claude 3.5 Sonnet | 工具调用能力最强 |
+| 图像理解 | glm-4v-flash | 免费、支持多模态 |
+| 图像生成 | cogview-3-flash | 免费、效果良好 |
+
+---
+
+## 11. 参考资源
 
 ### 10.1 相关文档
 
