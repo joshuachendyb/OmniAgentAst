@@ -90,15 +90,22 @@ async def validate_ai_service():
     用于测试API密钥是否有效
     """
     try:
-        # 获取当前服务
+        # 获取当前服务（同时会加载当前配置）
         ai_service = AIServiceFactory.get_service()
+        
+        # 获取当前提供商（从工厂的内部状态）
+        provider = AIServiceFactory.get_current_provider()
+        
+        # 检查API Key是否为空
+        if not ai_service.api_key or ai_service.api_key.strip() == "":
+            return ValidateResponse(
+                success=False,
+                provider=provider,
+                message=f"AI服务未配置：{provider} 的API Key为空。请在 backend/config/config.yaml 中配置。"
+            )
         
         # 验证服务
         is_valid = await ai_service.validate()
-        
-        # 获取当前提供商
-        config = AIServiceFactory.load_config()
-        provider = config.get("ai", {}).get("provider", "unknown")
         
         if is_valid:
             return ValidateResponse(
@@ -107,11 +114,52 @@ async def validate_ai_service():
                 message=f"AI服务验证成功，当前使用 {provider} 提供商"
             )
         else:
-            return ValidateResponse(
-                success=False,
-                provider=provider,
-                message=f"AI服务验证失败，请检查 {provider} 的API密钥配置"
-            )
+            # 验证失败，尝试获取详细错误信息
+            # 通过发送一个实际请求来获取错误详情
+            test_response = None
+            try:
+                import httpx
+                async with httpx.AsyncClient(timeout=10) as client:
+                    test_response = await client.post(
+                        f"{ai_service.api_base}/chat/completions",
+                        headers={
+                            "Authorization": f"Bearer {ai_service.api_key}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "model": ai_service.model,
+                            "messages": [{"role": "user", "content": "test"}]
+                        }
+                    )
+            except:
+                pass
+            
+            # 根据状态码返回不同的错误信息
+            if test_response:
+                if test_response.status_code == 401:
+                    return ValidateResponse(
+                        success=False,
+                        provider=provider,
+                        message=f"API Key无效：{provider} 的API Key认证失败，请检查Key是否正确"
+                    )
+                elif test_response.status_code == 429:
+                    return ValidateResponse(
+                        success=False,
+                        provider=provider,
+                        message=f"速率限制：{provider} API请求太频繁，请等待几分钟后重试"
+                    )
+                else:
+                    return ValidateResponse(
+                        success=False,
+                        provider=provider,
+                        message=f"API错误：{provider} 返回HTTP {test_response.status_code}，请检查配置"
+                    )
+            else:
+                return ValidateResponse(
+                    success=False,
+                    provider=provider,
+                    message=f"连接失败：无法连接到 {provider} API，请检查网络或API地址配置"
+                )
             
     except Exception as e:
         return ValidateResponse(

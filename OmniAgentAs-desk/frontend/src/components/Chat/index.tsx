@@ -56,25 +56,42 @@ const Chat: React.FC = () => {
     try {
       const result = await chatApi.switchProvider(provider);
       setServiceStatus(result);
+      
+      // 无论成功还是失败，都更新当前显示的提供商
+      // 让用户知道当前选择的模型状态
+      setCurrentProvider(provider);
+      
       if (result.success) {
-        setCurrentProvider(provider);
         setMessages((prev) => [
           ...prev,
           {
             id: Date.now().toString(),
             role: 'system',
-            content: `已切换到 ${provider === 'zhipuai' ? '智谱GLM' : 'OpenCode'} 提供商`,
+            content: `✅ 已切换到 ${provider === 'zhipuai' ? '智谱GLM' : 'OpenCode'} 提供商`,
+            timestamp: new Date(),
+          },
+        ]);
+      } else {
+        // 切换失败，显示具体错误信息，但不回退
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now().toString(),
+            role: 'system',
+            content: `⚠️ 切换到 ${provider === 'zhipuai' ? '智谱GLM' : 'OpenCode'} 失败: ${result.message}`,
             timestamp: new Date(),
           },
         ]);
       }
     } catch (error) {
+      // 请求异常，更新提供商但不回退
+      setCurrentProvider(provider);
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now().toString(),
           role: 'system',
-          content: '切换提供商失败: ' + (error as Error).message,
+          content: `❌ 切换提供商请求失败: ${(error as Error).message}`,
           timestamp: new Date(),
         },
       ]);
@@ -153,15 +170,13 @@ const Chat: React.FC = () => {
         <Space>
           <RobotOutlined />
           <span>AI 对话助手</span>
-          {serviceStatus && (
-            <Tag color={serviceStatus.success ? 'success' : 'error'}>
-              {serviceStatus.success ? (
-                <><CheckCircleOutlined /> {getProviderName(currentProvider)}</>
-              ) : (
-                '服务异常'
-              )}
-            </Tag>
-          )}
+          <Tag color={serviceStatus?.success ? 'success' : 'warning'}>
+            {serviceStatus?.success ? (
+              <><CheckCircleOutlined /> {getProviderName(currentProvider)}</>
+            ) : (
+              <>{getProviderName(currentProvider)} - 未就绪</>
+            )}
+          </Tag>
         </Space>
       }
       extra={
@@ -190,17 +205,23 @@ const Chat: React.FC = () => {
       }
     >
       {/* 服务状态提示 */}
-      {serviceStatus && !serviceStatus.success && (
+      {serviceStatus && (
         <Alert
-          message="AI服务未配置"
+          message={serviceStatus.success ? 'AI服务正常' : 'AI服务异常'}
           description={
             <>
-              <p>{serviceStatus.message}</p>
-              <p>请在 backend/config/config.yaml 中配置API Key。</p>
-              <p>如需使用OpenCode作为备选，请选择OpenCode提供商。</p>
+              <p><strong>当前提供商:</strong> {getProviderName(currentProvider)}</p>
+              <p><strong>状态:</strong> {serviceStatus.message}</p>
+              {!serviceStatus.success && (
+                <>
+                  <p style={{ marginTop: 8, color: '#666' }}>
+                    💡 提示: 您可以尝试切换到另一个提供商，或检查API配置
+                  </p>
+                </>
+              )}
             </>
           }
-          type="warning"
+          type={serviceStatus.success ? 'success' : 'warning'}
           showIcon
           style={{ marginBottom: 16 }}
         />

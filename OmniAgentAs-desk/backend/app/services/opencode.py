@@ -44,11 +44,18 @@ class OpenCodeService(BaseAIService):
             )
             
             if response.status_code == 200:
-                data = response.json()
-                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                return ChatResponse(content=content, model=self.model)
+                try:
+                    data = response.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    return ChatResponse(content=content, model=self.model)
+                except Exception as e:
+                    # 打印调试信息
+                    print(f"OpenCode响应解析错误: {e}")
+                    print(f"响应内容: {response.text[:500]}")
+                    return ChatResponse(content="", model=self.model, error=f"响应解析失败: {str(e)}")
             else:
                 error_msg = f"API错误: HTTP {response.status_code}"
+                print(f"OpenCode错误响应: {response.text[:500]}")
                 return ChatResponse(content="", model=self.model, error=error_msg)
                 
         except httpx.TimeoutException:
