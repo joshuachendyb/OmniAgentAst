@@ -58,6 +58,7 @@ export interface ChatResponse {
 export interface ValidateResponse {
   success: boolean;
   provider: string;
+  model: string;
   message: string;
 }
 

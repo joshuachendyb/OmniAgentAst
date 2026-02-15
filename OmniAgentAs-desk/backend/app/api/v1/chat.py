@@ -32,6 +32,7 @@ class ValidateResponse(BaseModel):
     """验证响应"""
     success: bool = Field(..., description="验证是否通过")
     provider: str = Field(..., description="当前使用的提供商")
+    model: str = Field(default="", description="当前使用的模型")
     message: str = Field(default="", description="验证消息")
 
 
@@ -96,12 +97,16 @@ async def validate_ai_service():
         # 获取当前提供商（从工厂的内部状态）
         provider = AIServiceFactory.get_current_provider()
         
+        # 获取当前模型名称
+        current_model = ai_service.model
+        
         # 检查API Key是否为空
         if not ai_service.api_key or ai_service.api_key.strip() == "":
             return ValidateResponse(
                 success=False,
                 provider=provider,
-                message=f"AI服务未配置：{provider} 的API Key为空。请在 backend/config/config.yaml 中配置。"
+                model=current_model,
+                message=f"AI服务未配置：{provider} ({current_model}) 的API Key为空。请在 backend/config/config.yaml 中配置。"
             )
         
         # 验证服务
@@ -111,7 +116,8 @@ async def validate_ai_service():
             return ValidateResponse(
                 success=True,
                 provider=provider,
-                message=f"AI服务验证成功，当前使用 {provider} 提供商"
+                model=current_model,
+                message=f"AI服务验证成功，当前使用 {provider} ({current_model})"
             )
         else:
             # 验证失败，尝试获取详细错误信息
@@ -140,25 +146,29 @@ async def validate_ai_service():
                     return ValidateResponse(
                         success=False,
                         provider=provider,
-                        message=f"API Key无效：{provider} 的API Key认证失败，请检查Key是否正确"
+                        model=current_model,
+                        message=f"API Key无效：{provider} ({current_model}) 的API Key认证失败，请检查Key是否正确"
                     )
                 elif test_response.status_code == 429:
                     return ValidateResponse(
                         success=False,
                         provider=provider,
-                        message=f"速率限制：{provider} API请求太频繁，请等待几分钟后重试"
+                        model=current_model,
+                        message=f"速率限制：{provider} ({current_model}) API请求太频繁，请等待几分钟后重试"
                     )
                 else:
                     return ValidateResponse(
                         success=False,
                         provider=provider,
-                        message=f"API错误：{provider} 返回HTTP {test_response.status_code}，请检查配置"
+                        model=current_model,
+                        message=f"API错误：{provider} ({current_model}) 返回HTTP {test_response.status_code}，请检查配置"
                     )
             else:
                 return ValidateResponse(
                     success=False,
                     provider=provider,
-                    message=f"连接失败：无法连接到 {provider} API，请检查网络或API地址配置"
+                    model=current_model,
+                    message=f"连接失败：无法连接到 {provider} ({current_model}) API，请检查网络或API地址配置"
                 )
             
     except Exception as e:
@@ -189,6 +199,9 @@ async def switch_ai_provider(provider: str):
         # 切换提供商
         ai_service = AIServiceFactory.switch_provider(provider)
         
+        # 获取新模型名称
+        new_model = ai_service.model
+        
         # 验证新服务
         is_valid = await ai_service.validate()
         
@@ -196,13 +209,15 @@ async def switch_ai_provider(provider: str):
             return ValidateResponse(
                 success=True,
                 provider=provider,
-                message=f"成功切换到 {provider} 提供商"
+                model=new_model,
+                message=f"成功切换到 {provider} ({new_model})"
             )
         else:
             return ValidateResponse(
                 success=False,
                 provider=provider,
-                message=f"已切换到 {provider}，但验证失败，请检查API密钥"
+                model=new_model,
+                message=f"已切换到 {provider} ({new_model})，但验证失败，请检查API密钥"
             )
             
     except HTTPException:

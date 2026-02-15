@@ -19,6 +19,7 @@ const Chat: React.FC = () => {
   const [serviceStatus, setServiceStatus] = useState<ValidateResponse | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [currentProvider, setCurrentProvider] = useState<'zhipuai' | 'opencode'>('zhipuai');
+  const [currentModel, setCurrentModel] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 自动滚动到底部
@@ -39,10 +40,15 @@ const Chat: React.FC = () => {
       if (status.success && (status.provider === 'zhipuai' || status.provider === 'opencode')) {
         setCurrentProvider(status.provider);
       }
+      // 更新模型名称
+      if (status.model) {
+        setCurrentModel(status.model);
+      }
     } catch (error) {
       setServiceStatus({
         success: false,
         provider: 'unknown',
+        model: '',
         message: '服务检查失败: ' + (error as Error).message,
       });
     } finally {
@@ -61,13 +67,21 @@ const Chat: React.FC = () => {
       // 让用户知道当前选择的模型状态
       setCurrentProvider(provider);
       
+      // 更新模型名称
+      if (result.model) {
+        setCurrentModel(result.model);
+      }
+      
+      const providerName = getProviderName(provider);
+      const modelName = result.model || '未知模型';
+      
       if (result.success) {
         setMessages((prev) => [
           ...prev,
           {
             id: Date.now().toString(),
             role: 'system',
-            content: `✅ 已切换到 ${provider === 'zhipuai' ? '智谱GLM' : 'OpenCode'} 提供商`,
+            content: `✅ 已切换到 ${providerName} (${modelName})`,
             timestamp: new Date(),
           },
         ]);
@@ -78,7 +92,7 @@ const Chat: React.FC = () => {
           {
             id: Date.now().toString(),
             role: 'system',
-            content: `⚠️ 切换到 ${provider === 'zhipuai' ? '智谱GLM' : 'OpenCode'} 失败: ${result.message}`,
+            content: `⚠️ 切换到 ${providerName} (${modelName}) 失败: ${result.message}`,
             timestamp: new Date(),
           },
         ]);
@@ -86,12 +100,13 @@ const Chat: React.FC = () => {
     } catch (error) {
       // 请求异常，更新提供商但不回退
       setCurrentProvider(provider);
+      const providerName = getProviderName(provider);
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now().toString(),
           role: 'system',
-          content: `❌ 切换提供商请求失败: ${(error as Error).message}`,
+          content: `❌ 切换到 ${providerName} 请求失败: ${(error as Error).message}`,
           timestamp: new Date(),
         },
       ]);
@@ -172,9 +187,9 @@ const Chat: React.FC = () => {
           <span>AI 对话助手</span>
           <Tag color={serviceStatus?.success ? 'success' : 'warning'}>
             {serviceStatus?.success ? (
-              <><CheckCircleOutlined /> {getProviderName(currentProvider)}</>
+              <><CheckCircleOutlined /> {getProviderName(currentProvider)} {currentModel && `(${currentModel})`}</>
             ) : (
-              <>{getProviderName(currentProvider)} - 未就绪</>
+              <>{getProviderName(currentProvider)} {currentModel && `(${currentModel})`} - 未就绪</>
             )}
           </Tag>
         </Space>
@@ -183,12 +198,12 @@ const Chat: React.FC = () => {
         <Space>
           <Select
             value={currentProvider}
-            style={{ width: 120 }}
+            style={{ width: 200 }}
             onChange={handleSwitchProvider}
             disabled={loading}
           >
-            <Option value="zhipuai">智谱GLM</Option>
-            <Option value="opencode">OpenCode</Option>
+            <Option value="zhipuai">智谱GLM (glm-4.7-flash)</Option>
+            <Option value="opencode">OpenCode (MiniMax M2.5 Free)</Option>
           </Select>
           <Button
             icon={<ReloadOutlined />}
@@ -210,7 +225,7 @@ const Chat: React.FC = () => {
           message={serviceStatus.success ? 'AI服务正常' : 'AI服务异常'}
           description={
             <>
-              <p><strong>当前提供商:</strong> {getProviderName(currentProvider)}</p>
+              <p><strong>当前提供商:</strong> {getProviderName(currentProvider)} {currentModel && `(${currentModel})`}</p>
               <p><strong>状态:</strong> {serviceStatus.message}</p>
               {!serviceStatus.success && (
                 <>
