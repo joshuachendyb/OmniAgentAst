@@ -4,7 +4,7 @@
 # AI模型配置
 ai:
   # 主模型提供商: zhipuai | opencode
-  provider: "opencode"
+  provider: "zhipuai"
 
   # 智谱AI配置
   zhipuai:
@@ -16,7 +16,7 @@ ai:
 
   # OpenCode Zen 备选配置
   opencode:
-    model: "minimax-m2.1-free" # 或其他免费模型
+    model: "minimax-m2.5-free" # 或其他免费模型
     api_key: "sk-6rMee9Ez89iRCEvDayPq2hdTrMGKyPesy5K88uZKVAqOrc7tg6sVqRI5T1pP2LXb" # 请填写您的OpenCode API Key
     api_base: "https://opencode.ai/zen/v1" # OpenCode Zen API地址
     timeout: 30

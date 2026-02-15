@@ -12,15 +12,21 @@ class ZhipuAIService(BaseAIService):
     
     def __init__(self, api_key: str, model: str = "glm-4.7-flash", 
                  api_base: str = "https://open.bigmodel.cn/api/paas/v4", 
-                 timeout: int = 30):
+                 timeout: int = 60):
         super().__init__(api_key, model, api_base, timeout)
-        self.client = httpx.AsyncClient(timeout=timeout)
+        # 增加超时时间到60秒，连接超时10秒，读取超时60秒
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+        )
     
     async def chat(self, message: str, history: Optional[List[Message]] = None) -> ChatResponse:
         """
         调用智谱GLM API进行对话
         """
         try:
+            print(f"[ZhipuAI] 开始请求: model={self.model}, message_len={len(message)}")
+            
             # 构建消息列表
             messages = []
             
@@ -38,20 +44,25 @@ class ZhipuAIService(BaseAIService):
                 "messages": messages
             }
             
+            print(f"[ZhipuAI] 发送请求到: {self.api_base}/chat/completions")
+            
             # 发送请求
             response = await self.client.post(
                 f"{self.api_base}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {self.api_key}",
+                    "Authorization": f"Bearer {self.api_key[:10]}...",
                     "Content-Type": "application/json"
                 },
                 json=request_data
             )
             
+            print(f"[ZhipuAI] 收到响应: status={response.status_code}")
+            
             # 检查响应
             if response.status_code == 200:
                 data = response.json()
                 content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                print(f"[ZhipuAI] 请求成功: content_len={len(content)}")
                 return ChatResponse(
                     content=content,
                     model=self.model
@@ -61,19 +72,21 @@ class ZhipuAIService(BaseAIService):
                 try:
                     error_data = response.json()
                     error_msg = error_data.get("error", {}).get("message", error_msg)
-                except:
-                    pass
+                    print(f"[ZhipuAI] API错误: {error_msg}")
+                except Exception as e:
+                    print(f"[ZhipuAI] 解析错误响应失败: {e}")
                 return ChatResponse(
                     content="",
                     model=self.model,
                     error=error_msg
                 )
                 
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as e:
+            print(f"[ZhipuAI] 请求超时: {e}")
             return ChatResponse(
                 content="",
                 model=self.model,
-                error="请求超时，请稍后重试"
+                error="请求超时：智谱API在60秒内未响应。可能原因：1) 网络延迟 2) 智谱服务器繁忙 3) 账户被限速。请稍后重试或切换到OpenCode"
             )
         except Exception as e:
             return ChatResponse(
