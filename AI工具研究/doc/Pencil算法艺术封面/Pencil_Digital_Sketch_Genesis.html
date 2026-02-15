@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pencil - Digital Sketch Genesis</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 20px 40px;
+            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            font-family: 'Lora', serif;
+            font-size: 28px;
+            font-weight: 600;
+            color: #2c3e50;
+            letter-spacing: 2px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: #7f8c8d;
+            font-weight: 300;
+        }
+
+        /* Main Layout */
+        .main-container {
+            display: flex;
+            flex: 1;
+            padding: 30px;
+            gap: 30px;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 320px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            height: fit-content;
+            position: sticky;
+            top: 30px;
+        }
+
+        .section {
+            margin-bottom: 30px;
+        }
+
+        .section-title {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #95a5a6;
+            margin-bottom: 15px;
+        }
+
+        /* Seed Controls */
+        .seed-display {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            font-size: 24px;
+            font-weight: 600;
+            text-align: center;
+            margin-bottom: 15px;
+            font-family: 'Lora', serif;
+        }
+
+        .seed-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-secondary {
+            background: #ecf0f1;
+            color: #2c3e50;
+        }
+
+        .btn-secondary:hover {
+            background: #d5dbdb;
+            transform: translateY(-2px);
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .seed-jump {
+            display: flex;
+            gap: 10px;
+        }
+
+        .seed-input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 2px solid #ecf0f1;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+
+        .seed-input:focus {
+            border-color: #667eea;
+        }
+
+        /* Parameter Controls */
+        .control-group {
+            margin-bottom: 20px;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 13px;
+            color: #2c3e50;
+            font-weight: 500;
+        }
+
+        .value-display {
+            color: #667eea;
+            font-weight: 600;
+            font-family: 'Lora', serif;
+        }
+
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: #ecf0f1;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        /* Canvas Container */
+        .canvas-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+        }
+
+        #canvas-wrapper {
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        /* Info Panel */
+        .info-panel {
+            background: rgba(255, 255, 255, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 20px;
+            font-size: 12px;
+            color: #7f8c8d;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <div class="logo">PENCIL</div>
+            <div class="subtitle">Digital Sketch Genesis - Algorithmic Art</div>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="sidebar">
+            <!-- Seed Section (FIXED) -->
+            <div class="section">
+                <div class="section-title">Seed</div>
+                <div class="seed-display" id="seed-display">12345</div>
+                <div class="seed-controls">
+                    <button class="btn btn-secondary" onclick="changeSeed(-1)">← Prev</button>
+                    <button class="btn btn-secondary" onclick="changeSeed(1)">Next →</button>
+                </div>
+                <button class="btn btn-primary" style="width: 100%; margin-bottom: 15px;" onclick="randomSeed()">🎲 Random Seed</button>
+                <div class="seed-jump">
+                    <input type="number" class="seed-input" id="seed-input" placeholder="Enter seed...">
+                    <button class="btn btn-primary" onclick="jumpToSeed()">Go</button>
+                </div>
+            </div>
+
+            <!-- Parameters Section (VARIABLE) -->
+            <div class="section">
+                <div class="section-title">Parameters</div>
+                
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Agent Count</span>
+                        <span class="value-display" id="agent-count-value">80</span>
+                    </div>
+                    <input type="range" class="slider" id="agent-count" min="20" max="200" value="80" oninput="updateParam('agentCount', this.value)">
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Noise Scale</span>
+                        <span class="value-display" id="noise-scale-value">0.008</span>
+                    </div>
+                    <input type="range" class="slider" id="noise-scale" min="0.001" max="0.02" step="0.001" value="0.008" oninput="updateParam('noiseScale', this.value)">
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Stroke Weight</span>
+                        <span class="value-display" id="stroke-weight-value">1.5</span>
+                    </div>
+                    <input type="range" class="slider" id="stroke-weight" min="0.5" max="4" step="0.1" value="1.5" oninput="updateParam('strokeWeight', this.value)">
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Movement Speed</span>
+                        <span class="value-display" id="speed-value">2</span>
+                    </div>
+                    <input type="range" class="slider" id="speed" min="0.5" max="5" step="0.1" value="2" oninput="updateParam('speed', this.value)">
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Turbulence</span>
+                        <span class="value-display" id="turbulence-value">0.5</span>
+                    </div>
+                    <input type="range" class="slider" id="turbulence" min="0" max="1" step="0.05" value="0.5" oninput="updateParam('turbulence', this.value)">
+                </div>
+            </div>
+
+            <!-- Actions Section (FIXED) -->
+            <div class="section">
+                <div class="section-title">Actions</div>
+                <button class="btn btn-primary" style="width: 100%; margin-bottom: 10px;" onclick="regenerate()">🔄 Regenerate</button>
+                <button class="btn btn-secondary" style="width: 100%; margin-bottom: 10px;" onclick="resetParams()">↺ Reset</button>
+                <button class="btn btn-secondary" style="width: 100%;" onclick="downloadImage()">💾 Download PNG</button>
+            </div>
+
+            <div class="info-panel">
+                <strong>Digital Sketch Genesis</strong><br>
+                Watch as generative agents sketch across the canvas, leaving traces of their algorithmic journey. Each seed produces a unique genesis moment.
+            </div>
+        </div>
+
+        <div class="canvas-container">
+            <div id="canvas-wrapper"></div>
+        </div>
+    </div>
+
+    <script>
+        // Parameters
+        let params = {
+            seed: 12345,
+            agentCount: 80,
+            noiseScale: 0.008,
+            strokeWeight: 1.5,
+            speed: 2,
+            turbulence: 0.5
+        };
+
+        // Default parameters for reset
+        const defaultParams = { ...params };
+
+        // Agents array
+        let agents = [];
+        let canvas;
+        let isRunning = true;
+
+        // p5.js setup
+        function setup() {
+            canvas = createCanvas(800, 600);
+            canvas.parent('canvas-wrapper');
+            
+            // Initialize with seed
+            randomSeed(params.seed);
+            noiseSeed(params.seed);
+            
+            // Initialize agents
+            initAgents();
+            
+            // Set background
+            background(250);
+            
+            // Start drawing
+            loop();
+        }
+
+        // Initialize sketching agents
+        function initAgents() {
+            agents = [];
+            for (let i = 0; i < params.agentCount; i++) {
+                agents.push({
+                    x: random(width),
+                    y: random(height),
+                    vx: 0,
+                    vy: 0,
+                    life: random(100, 400),
+                    maxLife: random(100, 400),
+                    weight: random(0.5, params.strokeWeight * 2),
+                    opacity: random(100, 200),
+                    color: getAgentColor(i)
+                });
+            }
+        }
+
+        // Get agent color
+        function getAgentColor(index) {
+            let colors = [
+                color(44, 62, 80, 150),    // Graphite Gray
+                color(52, 73, 94, 120),    // Dark Gray
+                color(44, 62, 80, 80),     // Light Gray
+                color(52, 152, 219, 100)   // Highlight Blue
+            ];
+            return colors[index % colors.length];
+        }
+
+        // p5.js draw loop
+        function draw() {
+            if (!isRunning) return;
+
+            // Draw agents
+            for (let i = agents.length - 1; i >= 0; i--) {
+                let agent = agents[i];
+                
+                // Calculate noise-based direction
+                let noiseVal = noise(agent.x * params.noiseScale, agent.y * params.noiseScale, frameCount * 0.01);
+                let angle = noiseVal * TWO_PI * 4 * params.turbulence;
+                
+                // Update velocity
+                agent.vx += cos(angle) * 0.1 * params.speed;
+                agent.vy += sin(angle) * 0.1 * params.speed;
+                
+                // Dampen velocity
+                agent.vx *= 0.95;
+                agent.vy *= 0.95;
+                
+                // Store previous position
+                let prevX = agent.x;
+                let prevY = agent.y;
+                
+                // Update position
+                agent.x += agent.vx;
+                agent.y += agent.vy;
+                
+                // Boundary check - bounce or wrap
+                if (agent.x < 0 || agent.x > width) {
+                    agent.vx *= -1;
+                    agent.x = constrain(agent.x, 0, width);
+                }
+                if (agent.y < 0 || agent.y > height) {
+                    agent.vy *= -1;
+                    agent.y = constrain(agent.y, 0, height);
+                }
+                
+                // Draw line
+                stroke(agent.color);
+                strokeWeight(agent.weight * (agent.life / agent.maxLife));
+                line(prevX, prevY, agent.x, agent.y);
+                
+                // Decrease life
+                agent.life--;
+                
+                // Remove dead agents
+                if (agent.life <= 0) {
+                    agents.splice(i, 1);
+                }
+            }
+            
+            // Stop if all agents are dead
+            if (agents.length === 0) {
+                noLoop();
+            }
+        }
+
+        // Parameter update
+        function updateParam(key, value) {
+            params[key] = parseFloat(value);
+            document.getElementById(key.replace(/([A-Z])/g, '-$1').toLowerCase() + '-value').textContent = value;
+        }
+
+        // Seed controls
+        function changeSeed(delta) {
+            params.seed += delta;
+            updateSeedDisplay();
+            regenerate();
+        }
+
+        function randomSeed() {
+            params.seed = Math.floor(Math.random() * 1000000);
+            updateSeedDisplay();
+            regenerate();
+        }
+
+        function jumpToSeed() {
+            let input = document.getElementById('seed-input').value;
+            if (input) {
+                params.seed = parseInt(input);
+                updateSeedDisplay();
+                regenerate();
+            }
+        }
+
+        function updateSeedDisplay() {
+            document.getElementById('seed-display').textContent = params.seed;
+        }
+
+        // Regenerate
+        function regenerate() {
+            randomSeed(params.seed);
+            noiseSeed(params.seed);
+            background(250);
+            initAgents();
+            loop();
+        }
+
+        // Reset parameters
+        function resetParams() {
+            params = { ...defaultParams };
+            
+            // Update UI
+            document.getElementById('agent-count').value = params.agentCount;
+            document.getElementById('agent-count-value').textContent = params.agentCount;
+            
+            document.getElementById('noise-scale').value = params.noiseScale;
+            document.getElementById('noise-scale-value').textContent = params.noiseScale;
+            
+            document.getElementById('stroke-weight').value = params.strokeWeight;
+            document.getElementById('stroke-weight-value').textContent = params.strokeWeight;
+            
+            document.getElementById('speed').value = params.speed;
+            document.getElementById('speed-value').textContent = params.speed;
+            
+            document.getElementById('turbulence').value = params.turbulence;
+            document.getElementById('turbulence-value').textContent = params.turbulence;
+            
+            regenerate();
+        }
+
+        // Download image
+        function downloadImage() {
+            saveCanvas(canvas, 'pencil_sketch_genesis_' + params.seed, 'png');
+        }
+    </script>
+</body>
+</html>

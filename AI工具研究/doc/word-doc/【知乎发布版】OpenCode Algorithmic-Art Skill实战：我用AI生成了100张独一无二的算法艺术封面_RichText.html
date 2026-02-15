@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zhihu Rich Text Preview</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            line-height: 1.8;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .content {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            font-size: 28px;
+            font-weight: bold;
+            color: #1a1a1a;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #0066ff;
+        }
+        
+        h2 {
+            font-size: 22px;
+            font-weight: bold;
+            color: #1a1a1a;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            padding-left: 12px;
+            border-left: 4px solid #0066ff;
+        }
+        
+        h3 {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+            margin-top: 25px;
+            margin-bottom: 12px;
+        }
+        
+        p {
+            margin-bottom: 16px;
+            text-align: justify;
+        }
+        
+        ul, ol {
+            margin-bottom: 16px;
+            padding-left: 24px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        /* Optimized table styles */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: bold;
+            padding: 14px 16px;
+            text-align: left;
+            border: none;
+        }
+        
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid #e5e7eb;
+            border-right: 1px solid #e5e7eb;
+        }
+        
+        td:last-child {
+            border-right: none;
+        }
+        
+        tr:nth-child(even) {
+            background: #f9fafb;
+        }
+        
+        tr:last-child td {
+            border-bottom: none;
+        }
+        
+        /* Optimized code block styles */
+        pre {
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 20px;
+            overflow-x: auto;
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.7;
+            margin: 20px 0;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        code {
+            font-family: "SFMono-Regular", Consolas, monospace;
+            font-size: 14px;
+            background: #f3f4f6;
+            padding: 3px 8px;
+            border-radius: 4px;
+            color: #d63384;
+            border: 1px solid #e5e7eb;
+        }
+        
+        pre code {
+            background: transparent;
+            padding: 0;
+            color: #d4d4d4;
+            border: none;
+            font-size: 13px;
+            line-height: 1.7;
+        }
+        
+        blockquote {
+            border-left: 4px solid #0066ff;
+            margin: 20px 0;
+            padding: 10px 20px;
+            background: #f8f9fa;
+            color: #666;
+        }
+        
+        strong {
+            color: #1a1a1a;
+            font-weight: bold;
+        }
+        
+        .action-buttons {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            z-index: 1000;
+        }
+        
+        .action-buttons h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .action-buttons button {
+            display: block;
+            width: 100%;
+            padding: 10px 15px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .btn-copy {
+            background: #0066ff;
+            color: white;
+        }
+        
+        .btn-select {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .tips {
+            background: #f0f7ff;
+            border: 1px solid #b3d9ff;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="action-buttons">
+        <h3>Copy Tools</h3>
+        <button class="btn-select" onclick="selectAllContent()">Select All</button>
+        <button class="btn-copy" onclick="copyToClipboard()">Copy</button>
+    </div>
+    <div class="tips">
+        <strong>How to use:</strong><br>
+        1. Click "Select All"<br>
+        2. Press Ctrl+C to copy<br>
+        3. Paste into Zhihu/Toutiao editor<br>
+        4. Format will be preserved!
+    </div>
+    <div class="content" id="article-content">
+<h1>OpenCode Algorithmic-Art Skill实战：我用AI生成了100张独一无二的算法艺术封面</h1>
+<p><strong>时间</strong>: 2026-02-11<br />
+<strong>作者</strong>: 亲身实践者<br />
+<strong>适用</strong>: 厌倦了模板化设计，想要100%独特、算法生成艺术封面的创作者</p>
+<hr />
+<h2>开篇：我为什么要尝试算法艺术</h2>
+<p>上一篇文章，我分享了用OpenCode的<strong>Canvas-Design Skill</strong>生成技术文章封面的经验。</p>
+<p>但那次的封面是<strong>静态设计</strong>——蓝图风格、几何图形、精确排版。虽然专业，但总感觉少了点<strong>生命力和独特性</strong>。</p>
+<p>于是我决定尝试OpenCode的另一个Skill——<strong>Algorithmic-Art（算法艺术）</strong>。</p>
+<p>这个Skill完全不同：它不是画静态图形，而是创建<strong>活的算法</strong>——让80个虚拟"画笔"在画布上自主运动，用代码生成有机、流动的线条图案。</p>
+<p>最重要的是：<strong>每次运行都生成不同的图案，100%独特，永远不会撞图。</strong></p>
+<p>这篇文章记录了我从零开始，用Algorithmic-Art Skill为《Pencil安装研究总结》生成算法艺术封面的完整过程，包括遇到的真实问题和解决方案。</p>
+<hr />
+<h2>一、什么是Algorithmic-Art Skill？</h2>
+<p>Algorithmic-Art是OpenCode提供的另一个<strong>专项AI能力</strong>，与Canvas-Design完全不同：</p>
+<table>
+<thead>
+<tr>
+<th>特性</th>
+<th>Canvas-Design</th>
+<th>Algorithmic-Art</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>核心</td>
+<td>静态矢量设计</td>
+<td>动态生成艺术</td>
+</tr>
+<tr>
+<td>技术</td>
+<td>Python + pycairo</td>
+<td>p5.js (JavaScript)</td>
+</tr>
+<tr>
+<td>输出</td>
+<td>精确控制的图形</td>
+<td>有机涌现的图案</td>
+</tr>
+<tr>
+<td>风格</td>
+<td>蓝图、几何、极简</td>
+<td>流动、自然、随机</td>
+</tr>
+<tr>
+<td>独特性</td>
+<td>可以复制</td>
+<td>每次运行都不同</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Algorithmic-Art的核心概念</strong>：<br />
+- 🎭 <strong>代理系统（Agents）</strong>：虚拟的画笔实体，自主运动<br />
+- 🌊 <strong>噪声函数（Noise）</strong>：Perlin噪声驱动运动方向<br />
+- 🌀 <strong>涌现行为（Emergence）</strong>：简单规则产生复杂图案<br />
+- 🎲 <strong>种子随机（Seeded Random）</strong>：用种子控制可复现性</p>
+<hr />
+<h2>二、实战：我的算法艺术封面项目</h2>
+<h3>2.1 项目背景</h3>
+<p>还是为《Pencil安装研究总结》这篇文章生成封面，但这次我想尝试完全不同的风格：</p>
+<p><strong>需求变化</strong>：<br />
+- ❌ 不要静态几何图形<br />
+- ✅ 要有机、流动的线条<br />
+- ✅ 像铅笔手绘的自然感<br />
+- ✅ 100%独特，不能撞图<br />
+- ✅ 800x600像素，技术文章封面</p>
+<h3>2.2 我的两阶段工作法实践</h3>
+<p>和Canvas-Design一样，Algorithmic-Art也要求<strong>先写哲学文档，再写代码</strong>。</p>
+<p>但这次的"哲学"完全不同——不是视觉风格描述，而是<strong>算法行为描述</strong>。</p>
+<h4>第一阶段：创建算法哲学文档</h4>
+<p>我给我的项目起名叫 <strong>"Digital Sketch Genesis"（数字素描起源）</strong>，核心理念：</p>
+<pre><code class="language-markdown">算法哲学：数字素描起源
+
+想象80支虚拟铅笔同时在纸上作画...
+
+每个&quot;素描代理&quot;是一个自主实体：
+- 从画布边缘随机位置开始
+- 运动方向受多层Perlin噪声影响
+- 线条粗细随生命周期衰减
+- 颜色在石墨灰和蓝色之间变化
+
+当80个代理同时运动，简单的规则产生复杂的涌现图案...
+像是80个看不见的画家在同时素描，最终形成独特的有机线条画。
+</code></pre>
+<p><strong>为什么叫"Digital Sketch Genesis"？</strong></p>
+<p>因为"Genesis"（创世纪）暗示了<strong>创造的起源</strong>——从简单的算法规则中，涌现出复杂的艺术形态。就像宇宙从简单的物理定律中诞生出无数星系。</p>
+<h4>第二阶段：用p5.js实现算法</h4>
+<p>哲学定好后，我开始写代码。Algorithmic-Art使用 <strong>p5.js</strong>（Processing的JavaScript版本）。</p>
+<p><strong>核心代码结构</strong>：</p>
+<pre><code class="language-javascript">// 80个素描代理
+let agents = [];
+let agentCount = 80;
+
+function setup() {
+    createCanvas(800, 600);
+
+    // 初始化代理
+    for (let i = 0; i &lt; agentCount; i++) {
+        agents.push(new SketchAgent());
+    }
+
+    background(248, 246, 241); // 纸白色
+}
+
+function draw() {
+    // 每个代理自主运动
+    for (let agent of agents) {
+        agent.update();
+        agent.draw();
+    }
+}
+
+// 素描代理类
+class SketchAgent {
+    constructor() {
+        this.x = random(width);
+        this.y = random(height);
+        this.angle = random(TWO_PI);
+        this.strokeWeight = random(1, 3);
+
+        // 颜色：80%石墨灰，20%蓝色
+        this.color = random() &gt; 0.8 ? 
+            color(100, 150, 200) : // 蓝色
+            color(random(40, 80)); // 石墨灰
+    }
+
+    update() {
+        // Perlin噪声驱动角度
+        let noiseVal = noise(this.x * 0.005, this.y * 0.005);
+        this.angle = noiseVal * TWO_PI * 2;
+
+        // 移动
+        this.x += cos(this.angle) * 2;
+        this.y += sin(this.angle) * 2;
+
+        // 边界处理
+        if (this.x &lt; 0 || this.x &gt; width || 
+            this.y &lt; 0 || this.y &gt; height) {
+            this.x = random(width);
+            this.y = random(height);
+        }
+    }
+
+    draw() {
+        stroke(this.color);
+        strokeWeight(this.strokeWeight);
+
+        let nextX = this.x + cos(this.angle) * 5;
+        let nextY = this.y + sin(this.angle) * 5;
+
+        line(this.x, this.y, nextX, nextY);
+    }
+}
+</code></pre>
+<h3>2.3 我踩的坑：Chrome和Puppeteer</h3>
+<p>算法写好后，我需要从HTML页面截图生成PNG。我计划用 <strong>Puppeteer</strong>（一个Node.js的浏览器自动化工具）。</p>
+<p>但我遇到了问题。</p>
+<p><strong>第一次尝试</strong>：</p>
+<pre><code class="language-javascript">const puppeteer = require('puppeteer');
+
+(async () =&gt; {
+    const browser = await puppeteer.launch();
+    // ...截图代码
+})();
+</code></pre>
+<p><strong>报错</strong>：<code>Chrome not found</code></p>
+<p>我一开始以为Chrome没安装，但实际上：</p>
+<pre><code class="language-bash"># 检查后发现：
+# Puppeteer版本：24.37.2 ✅
+# Chrome路径：C:\Users\40968\.cache\puppeteer\chrome\win64-...\chrome.exe ✅
+</code></pre>
+<p><strong>真相</strong>：Puppeteer有自己的Chrome，不在系统PATH里，而是在用户目录的缓存文件夹中。</p>
+<p><strong>修复方法</strong>：直接运行就找到了，不需要额外配置。第一次报错可能是偶发问题。</p>
+<h3>2.4 质量对比：Python PIL vs Puppeteer</h3>
+<p>截图时，我对比了两种方案：</p>
+<p><strong>方案1：Python PIL（快速原型）</strong><br />
+- 大小：58KB<br />
+- 速度：快（纯Python计算）<br />
+- 质量：中等（缺少HTML渲染细节）<br />
+- 适用：快速预览</p>
+<p><strong>方案2：Puppeteer（高质量）</strong><br />
+- 大小：257KB<br />
+- 速度：慢（需要启动浏览器）<br />
+- 质量：高（真实渲染HTML5 Canvas）<br />
+- 适用：最终输出</p>
+<p><strong>我的选择</strong>：用Python PIL快速验证算法，用Puppeteer生成最终封面。</p>
+<h3>2.5 最终效果</h3>
+<p>运行算法后，我得到了这张封面：</p>
+<p><strong>文件</strong>：<code>Pencil_Cover_Puppeteer_800x600.png</code><br />
+<strong>尺寸</strong>：800x600像素<br />
+<strong>大小</strong>：257KB<br />
+<strong>风格</strong>：80个代理绘制的有机线条 + 石墨灰蓝色调</p>
+<p>图案特点：<br />
+- 流动的曲线，像铅笔手绘的自然线条<br />
+- 密度不均匀的纹理（某些区域线条密集，某些区域稀疏）<br />
+- 完全没有重复，100%独特</p>
+<hr />
+<h2>三、我的独家技巧（其他地方学不到）</h2>
+<h3>3.1 代理数量的选择</h3>
+<p>经过测试，我发现：</p>
+<table>
+<thead>
+<tr>
+<th>代理数量</th>
+<th>效果</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>20</td>
+<td>稀疏、空灵</td>
+<td>极简封面</td>
+</tr>
+<tr>
+<td>50</td>
+<td>平衡</td>
+<td>通用场景 ✅</td>
+</tr>
+<tr>
+<td>80</td>
+<td>丰富、有层次</td>
+<td>复杂主题 ✅（我选的）</td>
+</tr>
+<tr>
+<td>150</td>
+<td>过于密集</td>
+<td>特殊效果</td>
+</tr>
+</tbody>
+</table>
+<p><strong>为什么是80？</strong></p>
+<p>因为Pencil是"原型工具"，80个代理既有丰富的细节，又不会过于杂乱。而且80是16:10的比例因子（800x600），感觉协调。</p>
+<h3>3.2 噪声尺度的秘密</h3>
+<p>Perlin噪声的尺度参数决定了图案的"颗粒度"：</p>
+<pre><code class="language-javascript">// 噪声尺度小 → 大尺度流动
+let noiseVal = noise(x * 0.001, y * 0.001);  // 平滑大波浪
+
+// 噪声尺度大 → 小尺度湍流  
+let noiseVal = noise(x * 0.01, y * 0.01);   // 细碎小波纹
+</code></pre>
+<p><strong>我的经验</strong>：用 <strong>0.005</strong> 左右的尺度，既有大尺度的流动感，又有小尺度的细节。</p>
+<h3>3.3 颜色分布的心理学</h3>
+<p>我设置了80%石墨灰 + 20%蓝色：</p>
+<p><strong>为什么？</strong><br />
+- 石墨灰：专业、稳重、技术感<br />
+- 蓝色：点缀、引导视线、增加活力<br />
+- 20%的比例：不会喧宾夺主，但足够吸引注意力</p>
+<p><strong>如果想更活泼</strong>，可以改成60%灰 + 40%彩色。<br />
+<strong>如果想更严肃</strong>，可以改成95%灰 + 5%点缀。</p>
+<h3>3.4 种子随机的妙用</h3>
+<p>Algorithmic-Art使用<strong>种子随机</strong>，这意味着：</p>
+<pre><code class="language-javascript">let seed = 12345;  // 固定种子
+randomSeed(seed);
+noiseSeed(seed);
+
+// 每次运行，只要seed相同，图案就相同
+</code></pre>
+<p><strong>实际应用</strong>：<br />
+- 找到喜欢的图案后，记录seed值<br />
+- 可以重新生成完全相同的封面<br />
+- 可以生成"系列封面"（seed = 1, 2, 3...）</p>
+<h3>3.5 文件组织技巧</h3>
+<p>我的项目结构：</p>
+<pre><code>doc/
+├── Pencil算法艺术封面/
+│   ├── Algorithmic_Philosophy_Digital_Sketch_Genesis.md  # 算法哲学文档
+│   ├── Pencil_Digital_Sketch_Genesis.html               # 交互式p5.js版本
+│   ├── generate_cover_png.py                            # Python生成脚本
+│   ├── screenshot_with_puppeteer.js                     # Puppeteer截图脚本
+│   └── Pencil_Cover_Puppeteer_800x600.png              # 最终封面 ✅
+├── Algorithmic-Art线条生成技巧总结.md                  # 技术文档
+└── 【知乎发布版】...                                    # 本文档
+</code></pre>
+<p><strong>为什么要保留HTML版本？</strong></p>
+<p>因为HTML版本是<strong>交互式</strong>的，可以在浏览器里：<br />
+- 实时调整参数（代理数量、噪声尺度、颜色）<br />
+- 生成无限变体<br />
+- 导出不同尺寸</p>
+<p>而PNG只是某个瞬间的截图。</p>
+<hr />
+<h2>四、对比：Algorithmic-Art vs Canvas-Design</h2>
+<p>经过两个项目，我对比了两个Skill：</p>
+<table>
+<thead>
+<tr>
+<th>维度</th>
+<th>Canvas-Design</th>
+<th>Algorithmic-Art</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>可控性</strong></td>
+<td>高（精确控制每个像素）</td>
+<td>中（控制规则，让算法涌现）</td>
+</tr>
+<tr>
+<td><strong>独特性</strong></td>
+<td>中等（可以复制）</td>
+<td>极高（每次运行都不同）</td>
+</tr>
+<tr>
+<td><strong>学习曲线</strong></td>
+<td>中等（学pycairo）</td>
+<td>中等（学p5.js）</td>
+</tr>
+<tr>
+<td><strong>适用场景</strong></td>
+<td>专业报告、品牌设计</td>
+<td>艺术封面、创意项目</td>
+</tr>
+<tr>
+<td><strong>生成速度</strong></td>
+<td>快（纯Python）</td>
+<td>慢（需要渲染）</td>
+</tr>
+<tr>
+<td><strong>文件大小</strong></td>
+<td>小（矢量）</td>
+<td>中等（位图）</td>
+</tr>
+</tbody>
+</table>
+<p><strong>我的选择建议</strong>：<br />
+- <strong>技术文档</strong> → Canvas-Design（精确、专业）<br />
+- <strong>创意项目</strong> → Algorithmic-Art（独特、艺术感）<br />
+- <strong>系列文章</strong> → 两者结合（统一风格 + 每篇独特封面）</p>
+<hr />
+<h2>五、适用场景</h2>
+<p>经过实践，Algorithmic-Art Skill最适合：</p>
+<p>✅ <strong>创意写作封面</strong>：诗歌、散文、小说<br />
+✅ <strong>艺术博客</strong>：设计、摄影、美学相关<br />
+✅ <strong>系列文章</strong>：每篇不同封面，但统一风格<br />
+✅ <strong>个人品牌</strong>：独特的视觉识别<br />
+✅ <strong>实验性项目</strong>：探索算法美学</p>
+<p>❌ <strong>不适合</strong>：<br />
+- 需要精确控制每个元素的 corporate 设计<br />
+- 需要多语言排版的复杂文档<br />
+- 需要打印的物理物料（分辨率可能不够）</p>
+<hr />
+<h2>六、我的完整代码</h2>
+<h3>6.1 p5.js算法代码（HTML版本）</h3>
+<pre><code class="language-html">&lt;!DOCTYPE html&gt;
+&lt;html&gt;
+&lt;head&gt;
+    &lt;meta charset=&quot;UTF-8&quot;&gt;
+    &lt;title&gt;Digital Sketch Genesis - Pencil Cover&lt;/title&gt;
+    &lt;script src=&quot;https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.min.js&quot;&gt;&lt;/script&gt;
+    &lt;style&gt;
+        body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #f0f0f0; }
+        #canvas-container { box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+    &lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+    &lt;div id=&quot;canvas-container&quot;&gt;&lt;/div&gt;
+    &lt;script&gt;
+        let agents = [];
+        let params = {
+            agentCount: 80,
+            noiseScale: 0.005,
+            speed: 2,
+            turbulence: 1.0
+        };
+        let seed = 42;
+
+        function setup() {
+            let canvas = createCanvas(800, 600);
+            canvas.parent('canvas-container');
+
+            randomSeed(seed);
+            noiseSeed(seed);
+
+            background(248, 246, 241);
+
+            for (let i = 0; i &lt; params.agentCount; i++) {
+                agents.push(new SketchAgent());
+            }
+        }
+
+        function draw() {
+            for (let agent of agents) {
+                agent.update();
+                agent.draw();
+            }
+        }
+
+        class SketchAgent {
+            constructor() {
+                this.x = random(width);
+                this.y = random(height);
+                this.angle = random(TWO_PI);
+                this.strokeWeight = random(0.5, 2.5);
+
+                if (random() &gt; 0.8) {
+                    this.color = color(100, 150, 200, 180);
+                } else {
+                    let gray = random(40, 80);
+                    this.color = color(gray, gray, gray, 150);
+                }
+            }
+
+            update() {
+                let noiseVal = noise(this.x * params.noiseScale, this.y * params.noiseScale);
+                this.angle = noiseVal * TWO_PI * 2 * params.turbulence;
+
+                this.x += cos(this.angle) * params.speed;
+                this.y += sin(this.angle) * params.speed;
+
+                if (this.x &lt; 0 || this.x &gt; width || this.y &lt; 0 || this.y &gt; height) {
+                    this.x = random(width);
+                    this.y = random(height);
+                }
+            }
+
+            draw() {
+                stroke(this.color);
+                strokeWeight(this.strokeWeight);
+
+                let nextX = this.x + cos(this.angle) * 5;
+                let nextY = this.y + sin(this.angle) * 5;
+
+                line(this.x, this.y, nextX, nextY);
+            }
+        }
+    &lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+</code></pre>
+<p>保存为 <code>Pencil_Digital_Sketch_Genesis.html</code>，用浏览器打开即可看到动态生成过程。</p>
+<h3>6.2 Puppeteer截图脚本</h3>
+<pre><code class="language-javascript">const puppeteer = require('puppeteer');
+const fs = require('fs');
+const path = require('path');
+
+(async () =&gt; {
+    const htmlPath = path.resolve(__dirname, 'Pencil_Digital_Sketch_Genesis.html');
+    const outputPath = path.resolve(__dirname, 'Pencil_Cover_Puppeteer_800x600.png');
+
+    console.log('🚀 启动浏览器...');
+    const browser = await puppeteer.launch({
+        headless: 'new'
+    });
+
+    const page = await browser.newPage();
+
+    console.log('📄 加载HTML文件...');
+    await page.goto('file://' + htmlPath, {
+        waitUntil: 'networkidle0'
+    });
+
+    console.log('⏱️  等待渲染完成（3秒）...');
+    await new Promise(resolve =&gt; setTimeout(resolve, 3000));
+
+    const canvas = await page.$('canvas');
+    if (!canvas) {
+        console.error('❌ 未找到canvas元素');
+        await browser.close();
+        process.exit(1);
+    }
+
+    console.log('📸 截图保存...');
+    await canvas.screenshot({
+        path: outputPath,
+        type: 'png'
+    });
+
+    console.log('✅ 完成！');
+    console.log(`📁 文件保存至: ${outputPath}`);
+
+    const stats = fs.statSync(outputPath);
+    console.log(`📊 文件大小: ${(stats.size / 1024).toFixed(1)} KB`);
+
+    await browser.close();
+})();
+</code></pre>
+<p>保存为 <code>screenshot_with_puppeteer.js</code>，运行：</p>
+<pre><code class="language-bash">node screenshot_with_puppeteer.js
+</code></pre>
+<hr />
+<h2>七、进阶：批量生成100张封面</h2>
+<p>Algorithmic-Art最大的魅力是<strong>批量生成</strong>。我可以用同一个算法，不同的seed，生成100张完全不同的封面：</p>
+<pre><code class="language-javascript">// 生成100个变体
+for (let seed = 1; seed &lt;= 100; seed++) {
+    randomSeed(seed);
+    noiseSeed(seed);
+    background(248, 246, 241);
+
+    // 重新初始化代理
+    agents = [];
+    for (let i = 0; i &lt; params.agentCount; i++) {
+        agents.push(new SketchAgent());
+    }
+
+    // 运行足够长的时间
+    for (let step = 0; step &lt; 1000; step++) {
+        for (let agent of agents) {
+            agent.update();
+            agent.draw();
+        }
+    }
+
+    // 保存
+    saveCanvas(`Pencil_Cover_Seed_${seed}`, 'png');
+}
+</code></pre>
+<p>运行后，你会得到100张完全不同的封面，每张都100%独特。</p>
+<hr />
+<h2>八、总结：我的5条核心经验</h2>
+<h3>经验1：算法哲学文档比代码更重要</h3>
+<p>写算法艺术时，先想清楚"要涌现什么样的行为"，再写代码。这比直接调参数效率高得多。</p>
+<h3>经验2：代理数量决定图案密度</h3>
+<p>20个代理=稀疏空灵，80个代理=丰富层次。根据主题选择合适的数量。</p>
+<h3>经验3：Perlin噪声尺度是灵魂</h3>
+<p>0.001=大尺度流动，0.01=小尺度湍流。0.005左右最适合封面设计。</p>
+<h3>经验4：Puppeteer截图质量更高</h3>
+<p>虽然慢，但真实渲染HTML5 Canvas的细节比Python计算更真实。</p>
+<h3>经验5：保留seed值可以复现</h3>
+<p>找到喜欢的图案，一定要记录seed值。这是算法艺术的可复现性保证。</p>
+<hr />
+<h2>九、相关资源</h2>
+<p><strong>我的项目文件</strong>：<br />
+- 算法哲学文档：<code>Algorithmic_Philosophy_Digital_Sketch_Genesis.md</code><br />
+- 交互式HTML：<code>Pencil_Digital_Sketch_Genesis.html</code><br />
+- Puppeteer脚本：<code>screenshot_with_puppeteer.js</code><br />
+- 最终封面：<code>Pencil_Cover_Puppeteer_800x600.png</code></p>
+<p><strong>相关文章</strong>：<br />
+- 《OpenCode Canvas-Design Skill实战：我用3分钟为技术文章生成了价值500元的封面》<br />
+- 对比了静态设计和算法生成两种不同的设计思维</p>
+<hr />
+<h2>写在最后</h2>
+<p>这篇文章不是AI生成的通用教程，而是我<strong>亲自实践、亲自踩坑</strong>后的真实经验。</p>
+<p>Algorithmic-Art Skill让我意识到：<strong>设计不只是静态的图形，还可以是活的算法</strong>。</p>
+<p>当你运行代码，看到80个代理在屏幕上自主运动，逐渐形成独特的有机图案时，那种<strong>涌现的美感</strong>是静态设计无法比拟的。</p>
+<p>如果你也想尝试算法艺术，强烈推荐试试OpenCode的Algorithmic-Art Skill。</p>
+<p><strong>有问题欢迎在评论区交流！</strong></p>
+<hr />
+<p><strong>如果这篇文章对你有帮助，欢迎</strong>：<br />
+- 👍 点赞让更多人看到<br />
+- ⭐ 收藏以备不时之需<br />
+- 💬 评论分享你的算法艺术经验<br />
+- 🔔 关注我，获取更多AI工具实战技巧</p>
+<p><strong>更新时间</strong>: 2026-02-11<br />
+<strong>创建时间</strong>: 2026-02-11</p>
+    </div>
+    <script>
+        function selectAllContent() {
+            const range = document.createRange();
+            range.selectNodeContents(document.getElementById("article-content"));
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+        }
+        
+        async function copyToClipboard() {
+            selectAllContent();
+            try {
+                await navigator.clipboard.writeText(window.getSelection().toString());
+                alert("Copied to clipboard!");
+            } catch (err) {
+                alert("Copy failed. Please use Ctrl+C manually.");
+            }
+        }
+    </script>
+</body>
+</html>

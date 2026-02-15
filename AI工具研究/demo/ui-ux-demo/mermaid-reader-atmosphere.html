@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MermaidReader - 大气简洁版</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #FAFBFC;
+            color: #1F2937;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: #FFFFFF;
+        }
+
+        /* Header - 大气简洁 */
+        .header {
+            height: 56px;
+            background: #FFFFFF;
+            border-bottom: 1px solid #E5E7EB;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 32px;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .logo-text {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1F2937;
+            letter-spacing: -0.5px;
+        }
+
+        .nav {
+            display: flex;
+            gap: 8px;
+        }
+
+        .nav-item {
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            color: #6B7280;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .nav-item:hover {
+            color: #1F2937;
+            background: #F3F4F6;
+        }
+
+        .nav-item.active {
+            color: #6366F1;
+            background: rgba(99, 102, 241, 0.1);
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .search-box {
+            width: 280px;
+            position: relative;
+        }
+
+        .search-input {
+            width: 100%;
+            height: 40px;
+            padding: 0 16px 0 44px;
+            border: 1px solid #E5E7EB;
+            border-radius: 10px;
+            font-size: 14px;
+            background: #F9FAFB;
+            transition: all 0.2s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #6366F1;
+            background: #FFFFFF;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9CA3AF;
+        }
+
+        /* Toolbar */
+        .toolbar {
+            height: 52px;
+            background: #FFFFFF;
+            border-bottom: 1px solid #E5E7EB;
+            display: flex;
+            align-items: center;
+            padding: 0 32px;
+            gap: 12px;
+        }
+
+        .toolbar-btn {
+            height: 36px;
+            padding: 0 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s;
+        }
+
+        .toolbar-btn.primary {
+            background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 100%);
+            color: white;
+        }
+
+        .toolbar-btn.primary:hover {
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .toolbar-btn.secondary {
+            background: #FFFFFF;
+            color: #4B5563;
+            border: 1px solid #E5E7EB;
+        }
+
+        .toolbar-btn.secondary:hover {
+            background: #F9FAFB;
+            border-color: #D1D5DB;
+        }
+
+        .toolbar-divider {
+            width: 1px;
+            height: 24px;
+            background: #E5E7EB;
+            margin: 0 8px;
+        }
+
+        /* Main */
+        .main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: #FAFAFA;
+            border-right: 1px solid #E5E7EB;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 20px 24px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #9CA3AF;
+        }
+
+        .sidebar-tabs {
+            display: flex;
+            padding: 0 16px;
+            gap: 4px;
+        }
+
+        .sidebar-tab {
+            padding: 10px 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #6B7280;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .sidebar-tab:hover {
+            color: #1F2937;
+        }
+
+        .sidebar-tab.active {
+            color: #6366F1;
+            border-bottom-color: #6366F1;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .file-tree {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .tree-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            gap: 12px;
+            transition: all 0.2s;
+        }
+
+        .tree-item:hover {
+            background: #FFFFFF;
+        }
+
+        .tree-item.active {
+            background: #FFFFFF;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        .tree-item.active .tree-name {
+            font-weight: 600;
+            color: #1F2937;
+        }
+
+        .tree-icon {
+            font-size: 18px;
+            width: 24px;
+            text-align: center;
+        }
+
+        .tree-name {
+            font-size: 14px;
+            color: #4B5563;
+        }
+
+        .tree-children {
+            margin-left: 36px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        /* Editor Area */
+        .editor-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #FFFFFF;
+        }
+
+        .editor-tabs {
+            display: flex;
+            height: 44px;
+            background: #FAFAFA;
+            border-bottom: 1px solid #E5E7EB;
+            padding-left: 16px;
+            align-items: flex-end;
+        }
+
+        .editor-tab {
+            padding: 12px 24px;
+            font-size: 13px;
+            color: #6B7280;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s;
+            margin-right: 4px;
+        }
+
+        .editor-tab.active {
+            background: #FFFFFF;
+            color: #1F2937;
+            border-bottom-color: #6366F1;
+            font-weight: 500;
+        }
+
+        .editor-tab .close {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            opacity: 0;
+            transition: all 0.15s;
+        }
+
+        .editor-tab:hover .close {
+            opacity: 1;
+        }
+
+        .editor-tab .close:hover {
+            background: #E5E7EB;
+        }
+
+        /* View Toggle */
+        .view-toggle {
+            display: flex;
+            padding: 8px 16px;
+            background: #FAFAFA;
+            border-bottom: 1px solid #E5E7EB;
+        }
+
+        .view-btn {
+            padding: 8px 20px;
+            border: none;
+            background: transparent;
+            font-size: 13px;
+            font-weight: 500;
+            color: #6B7280;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .view-btn.active {
+            background: #FFFFFF;
+            color: #6366F1;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+
+        /* Editor Content */
+        .editor-content {
+            flex: 1;
+            padding: 32px 48px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', 'Consolas', monospace;
+            font-size: 14px;
+            line-height: 1.8;
+            color: #374151;
+            background: #FFFFFF;
+        }
+
+        /* Status Bar */
+        .statusbar {
+            height: 28px;
+            background: linear-gradient(90deg, #6366F1 0%, #8B5CF6 100%);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            font-size: 12px;
+            color: white;
+            font-weight: 500;
+        }
+
+        .statusbar-left, .statusbar-right {
+            display: flex;
+            gap: 24px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        /* 大气简洁的设计特点：
+           - 更多留白
+           - 更细的边框
+           - 更柔和的颜色
+           - 清晰的层次
+           - 简洁的图标
+        */
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <div class="logo-icon">📖</div>
+                    <span class="logo-text">MermaidReader</span>
+                </div>
+                <nav class="nav">
+                    <span class="nav-item active">文档</span>
+                    <span class="nav-item">图表</span>
+                    <span class="nav-item">项目</span>
+                    <span class="nav-item">设置</span>
+                </nav>
+            </div>
+            <div class="header-right">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" class="search-input" placeholder="搜索文档、文件...">
+                </div>
+            </div>
+        </header>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <button class="toolbar-btn primary">
+                <span>📂</span> 打开文件
+            </button>
+            <button class="toolbar-btn secondary">
+                <span>📁</span> 打开文件夹
+            </button>
+            <button class="toolbar-btn secondary">
+                <span>💾</span> 保存
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="toolbar-btn secondary">
+                <span>🔄</span> 刷新
+            </button>
+            <button class="toolbar-btn secondary">
+                <span>🗑️</span> 清除缓存
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="toolbar-btn secondary">
+                <span>📊</span> 导出图表
+            </button>
+            <button class="toolbar-btn secondary">
+                <span>⚙️</span> 设置
+            </button>
+        </div>
+
+        <!-- Main Content -->
+        <main class="main">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <div class="sidebar-tabs">
+                    <div class="sidebar-tab active">文件</div>
+                    <div class="sidebar-tab">目录</div>
+                </div>
+                <div class="sidebar-content">
+                    <div class="file-tree">
+                        <div class="tree-item">
+                            <span class="tree-icon">📁</span>
+                            <span class="tree-name">项目文档</span>
+                        </div>
+                        <div class="tree-children">
+                            <div class="tree-item active">
+                                <span class="tree-icon">📄</span>
+                                <span class="tree-name">项目文档.md</span>
+                            </div>
+                            <div class="tree-item">
+                                <span class="tree-icon">📄</span>
+                                <span class="tree-name">用户手册.md</span>
+                            </div>
+                            <div class="tree-item">
+                                <span class="tree-icon">📄</span>
+                                <span class="tree-name">API文档.md</span>
+                            </div>
+                        </div>
+                        <div class="tree-item" style="margin-top: 8px;">
+                            <span class="tree-icon">📊</span>
+                            <span class="tree-name">图表库</span>
+                        </div>
+                        <div class="tree-children">
+                            <div class="tree-item">
+                                <span class="tree-icon">📊</span>
+                                <span class="tree-name">流程图.md</span>
+                            </div>
+                            <div class="tree-item">
+                                <span class="tree-icon">📊</span>
+                                <span class="tree-name">架构图.md</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Editor Area -->
+            <div class="editor-area">
+                <div class="editor-tabs">
+                    <div class="editor-tab active">
+                        📄 项目文档.md
+                        <span class="close">✕</span>
+                    </div>
+                    <div class="editor-tab">
+                        📄 用户手册.md
+                        <span class="close">✕</span>
+                    </div>
+                </div>
+                <div class="view-toggle">
+                    <button class="view-btn active">源码</button>
+                    <button class="view-btn">预览</button>
+                </div>
+                <div class="editor-content"># 项目概述
+
+这是一个使用 MermaidReader 的示例项目。
+
+## 功能特性
+
+- Markdown 文档查看
+- Mermaid 图表渲染
+- 实时预览
+- 文件管理
+
+## 使用说明
+
+1. 打开 Markdown 文件
+2. 编辑文档内容
+3. 查看预览效果
+
+```mermaid
+graph TD
+    A[开始] --> B[处理]
+    B --> C[结束]
+```
+
+> 注意：请确保文件格式正确。</div>
+            </div>
+        </main>
+
+        <!-- Status Bar -->
+        <div class="statusbar">
+            <div class="statusbar-left">
+                <span class="status-item">📄 1:1</span>
+                <span class="status-item">UTF-8</span>
+                <span class="status-item">Markdown</span>
+            </div>
+            <div class="statusbar-right">
+                <span class="status-item">✨ Mermaid v10.6.1</span>
+                <span class="status-item">就绪</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        console.log('🎉 MermaidReader - 大气简洁版');
+        console.log('设计特点：');
+        console.log('- 更多留白空间');
+        console.log('- 更细的边框线');
+        console.log('- 柔和的颜色');
+        console.log('- 清晰的层次结构');
+    </script>
+</body>
+</html>

@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MermaidReader</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', 'Inter', sans-serif;
+            background: linear-gradient(135deg, #F0FDF4 0%, #ECFDF5 50%, #F0FDF4 100%);
+            min-height: 100vh;
+            color: #064E3B;
+            font-size: 13px;
+        }
+
+        .app {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(30px);
+        }
+
+        /* Title Bar */
+        .titlebar {
+            height: 44px;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(30px);
+            border-bottom: 1px solid #A7F3D0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-shadow: 0 2px 12px rgba(16, 185, 129, 0.06);
+        }
+
+        .titlebar-left {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .app-logo {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #10B981 0%, #34D399 100%);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.35);
+        }
+
+        .app-title {
+            font-size: 15px;
+            font-weight: 700;
+            color: #047857;
+            letter-spacing: 0.5px;
+        }
+
+        .menu-items {
+            display: flex;
+            gap: 6px;
+        }
+
+        .menu-item {
+            padding: 8px 16px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 13px;
+            color: #059669;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .menu-item:hover {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.12) 0%, rgba(16, 185, 129, 0.06) 100%);
+            transform: translateY(-1px);
+        }
+
+        .titlebar-right {
+            display: flex;
+            gap: 8px;
+        }
+
+        .titlebar-btn {
+            width: 36px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            color: #10B981;
+            font-size: 16px;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .titlebar-btn:hover {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0.08) 100%);
+            transform: translateY(-2px);
+        }
+
+        .titlebar-btn.close:hover {
+            background: linear-gradient(135deg, #FEE2E2 0%, #FECACA 100%);
+            color: #DC2626;
+        }
+
+        /* Toolbar */
+        .toolbar {
+            height: 52px;
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(30px);
+            border-bottom: 1px solid #A7F3D0;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            gap: 12px;
+        }
+
+        .toolbar-btn {
+            height: 38px;
+            padding: 0 18px;
+            border: none;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
+            color: #047857;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.25s;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.08);
+        }
+
+        .toolbar-btn:hover {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(16, 185, 129, 0.1) 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.15);
+        }
+
+        .toolbar-btn.primary {
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+            color: white;
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.35);
+        }
+
+        .toolbar-btn.primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 24px rgba(16, 185, 129, 0.45);
+        }
+
+        .toolbar-divider {
+            width: 1px;
+            height: 24px;
+            background: linear-gradient(180deg, transparent 0%, #A7F3D0 50%, transparent 100%);
+            margin: 0 8px;
+        }
+
+        .search-box {
+            flex: 1;
+            max-width: 320px;
+            margin-left: auto;
+        }
+
+        .search-input {
+            width: 100%;
+            height: 40px;
+            padding: 0 20px 0 48px;
+            border: 2px solid transparent;
+            border-radius: 14px;
+            font-size: 13px;
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(16, 185, 129, 0.03) 100%);
+            color: #064E3B;
+            transition: all 0.25s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #10B981;
+            background: white;
+            box-shadow: 0 4px 20px rgba(16, 185, 129, 0.15);
+        }
+
+        .search-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 18px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #10B981;
+            font-size: 15px;
+        }
+
+        /* Main Content */
+        .main {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+            background: linear-gradient(180deg, rgba(240, 253, 244, 0.5) 0%, rgba(255, 255, 255, 0.3) 100%);
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(30px);
+            border-right: 1px solid #A7F3D0;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 4px 0 30px rgba(16, 185, 129, 0.04);
+        }
+
+        .sidebar-tabs {
+            height: 48px;
+            background: linear-gradient(180deg, rgba(16, 185, 129, 0.06) 0%, rgba(16, 185, 129, 0.02) 100%);
+            display: flex;
+            border-bottom: 1px solid #A7F3D0;
+        }
+
+        .sidebar-tab {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 600;
+            color: #10B981;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+            gap: 8px;
+        }
+
+        .sidebar-tab:hover {
+            background: rgba(16, 185, 129, 0.05);
+        }
+
+        .sidebar-tab.active {
+            background: rgba(255, 255, 255, 0.8);
+            color: #059669;
+            border-bottom-color: #10B981;
+            box-shadow: 0 -4px 20px rgba(16, 185, 129, 0.08);
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        .file-tree {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .tree-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            border-radius: 14px;
+            cursor: pointer;
+            gap: 12px;
+            transition: all 0.2s;
+            background: transparent;
+        }
+
+        .tree-item:hover {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.04) 100%);
+        }
+
+        .tree-item.active {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.18) 0%, rgba(16, 185, 129, 0.08) 100%);
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.12);
+        }
+
+        .tree-icon {
+            font-size: 20px;
+            width: 28px;
+            text-align: center;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+        }
+
+        .tree-label {
+            flex: 1;
+            font-size: 14px;
+            color: #064E3B;
+            font-weight: 500;
+        }
+
+        .tree-item.active .tree-label {
+            color: #047857;
+            font-weight: 600;
+        }
+
+        .tree-children {
+            margin-left: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            padding-left: 16px;
+            border-left: 2px dashed #A7F3D0;
+            margin-top: 4px;
+        }
+
+        .tree-children .tree-item {
+            padding: 10px 14px;
+        }
+
+        /* Editor Area */
+        .editor-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .editor-tabs {
+            height: 44px;
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.6) 100%);
+            display: flex;
+            border-bottom: 1px solid #A7F3D0;
+            padding-left: 16px;
+            box-shadow: 0 2px 12px rgba(16, 185, 129, 0.04);
+        }
+
+        .editor-tab {
+            padding: 0 24px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+            color: #10B981;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.2s;
+            margin-right: 6px;
+            border-radius: 12px 12px 0 0;
+        }
+
+        .editor-tab:hover {
+            background: rgba(16, 185, 129, 0.06);
+        }
+
+        .editor-tab.active {
+            background: #F0FDF4;
+            color: #059669;
+            border-bottom-color: #10B981;
+            font-weight: 600;
+            box-shadow: 0 -4px 20px rgba(16, 185, 129, 0.06);
+        }
+
+        .tab-icon {
+            font-size: 14px;
+        }
+
+        .tab-close {
+            width: 20px;
+            height: 20px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            opacity: 0;
+            transition: all 0.15s;
+            color: #10B981;
+        }
+
+        .editor-tab:hover .tab-close {
+            opacity: 1;
+        }
+
+        .tab-close:hover {
+            background: rgba(16, 185, 129, 0.2);
+        }
+
+        /* View Tabs Container */
+        .view-tabs-container {
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.7) 100%);
+            padding: 12px 20px 0;
+            border-bottom: 1px solid #A7F3D0;
+        }
+
+        .view-tabs {
+            display: inline-flex;
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.04) 100%);
+            padding: 6px;
+            border-radius: 14px;
+            box-shadow: inset 0 2px 8px rgba(16, 185, 129, 0.06);
+        }
+
+        .view-tab {
+            padding: 10px 24px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #059669;
+            cursor: pointer;
+            transition: all 0.25s;
+        }
+
+        .view-tab:hover {
+            color: #047857;
+        }
+
+        .view-tab.active {
+            background: white;
+            color: #059669;
+            box-shadow: 0 4px 16px rgba(16, 185, 129, 0.15);
+        }
+
+        /* Editor Content */
+        .editor-content {
+            flex: 1;
+            padding: 24px 32px;
+            overflow-y: auto;
+            font-family: 'Consolas', 'Monaco', 'Fira Code', monospace;
+            font-size: 14px;
+            line-height: 1.9;
+            color: #047857;
+            white-space: pre-wrap;
+            background: linear-gradient(180deg, #F0FDF4 0%, rgba(255, 255, 255, 0.5) 100%);
+        }
+
+        .editor-content:focus {
+            outline: none;
+        }
+
+        /* Status Bar */
+        .statusbar {
+            height: 32px;
+            background: linear-gradient(90deg, #10B981 0%, #059669 100%);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            font-size: 12px;
+            color: white;
+            font-weight: 500;
+            box-shadow: 0 -4px 20px rgba(16, 185, 129, 0.2);
+        }
+
+        .statusbar-left, .statusbar-right {
+            display: flex;
+            gap: 24px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 6px 12px;
+            border-radius: 8px;
+            transition: all 0.15s;
+        }
+
+        .status-item:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-1px);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, #A7F3D0 0%, #6EE7B7 100%);
+            border-radius: 5px;
+            border: 2px solid transparent;
+            background-clip: padding-box;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(180deg, #6EE7B7 0%, #34D399 100%);
+            border: 2px solid transparent;
+            background-clip: padding-box;
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <!-- Title Bar -->
+        <div class="titlebar">
+            <div class="titlebar-left">
+                <div class="app-logo">📖</div>
+                <span class="app-title">MermaidReader</span>
+                <div class="menu-items">
+                    <span class="menu-item">文件</span>
+                    <span class="menu-item">编辑</span>
+                    <span class="menu-item">视图</span>
+                    <span class="menu-item">帮助</span>
+                </div>
+            </div>
+            <div class="titlebar-right">
+                <button class="titlebar-btn">─</button>
+                <button class="titlebar-btn">☐</button>
+                <button class="titlebar-btn close">✕</button>
+            </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <button class="toolbar-btn primary">
+                <span>📂</span> 打开文件
+            </button>
+            <button class="toolbar-btn">
+                <span>📁</span> 打开文件夹
+            </button>
+            <button class="toolbar-btn">
+                <span>💾</span> 保存
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="toolbar-btn">
+                <span>🔄</span> 刷新
+            </button>
+            <button class="toolbar-btn">
+                <span>🗑️</span> 清除缓存
+            </button>
+            <div class="toolbar-divider"></div>
+            <button class="toolbar-btn">
+                <span>📊</span> 导出图表
+            </button>
+            <button class="toolbar-btn">
+                <span>⚙️</span> 设置
+            </button>
+            <div class="search-box">
+                <div class="search-wrapper">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" class="search-input" placeholder="搜索文件...">
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="sidebar-tabs">
+                    <div class="sidebar-tab active">📁 文件列表</div>
+                    <div class="sidebar-tab">📋 目录列表</div>
+                </div>
+                <div class="sidebar-content">
+                    <div class="file-tree">
+                        <div class="tree-item">
+                            <span class="tree-icon">📁</span>
+                            <span class="tree-label">项目文档</span>
+                        </div>
+                        <div class="tree-children">
+                            <div class="tree-item active">
+                                <span class="tree-icon">📄</span>
+                                <span class="tree-label">项目文档.md</span>
+                            </div>
+                            <div class="tree-item">
+                                <span class="tree-icon">📄</span>
+                                <span class="tree-label">用户手册.md</span>
+                            </div>
+                            <div class="tree-item">
+                                <span class="tree-icon">📄</span>
+                                <span class="tree-label">API文档.md</span>
+                            </div>
+                            <div class="tree-item">
+                                <span class="tree-icon">📄</span>
+                                <span class="tree-label">部署指南.md</span>
+                            </div>
+                        </div>
+                        <div class="tree-item" style="margin-top: 12px;">
+                            <span class="tree-icon">📊</span>
+                            <span class="tree-label">图表库</span>
+                        </div>
+                        <div class="tree-children">
+                            <div class="tree-item">
+                                <span class="tree-icon">📊</span>
+                                <span class="tree-label">流程图.md</span>
+                            </div>
+                            <div class="tree-item">
+                                <span class="tree-icon">📊</span>
+                                <span class="tree-label">架构图.md</span>
+                            </div>
+                            <div class="tree-item">
+                                <span class="tree-icon">📊</span>
+                                <span class="tree-label">时序图.md</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Editor Area -->
+            <div class="editor-area">
+                <div class="editor-tabs">
+                    <div class="editor-tab active">
+                        <span class="tab-icon">📄</span>
+                        <span class="tab-name">项目文档.md</span>
+                        <span class="tab-close">✕</span>
+                    </div>
+                    <div class="editor-tab">
+                        <span class="tab-icon">📄</span>
+                        <span class="tab-name">用户手册.md</span>
+                        <span class="tab-close">✕</span>
+                    </div>
+                </div>
+
+                <div class="view-tabs-container">
+                    <div class="view-tabs">
+                        <div class="view-tab active">📝 源码</div>
+                        <div class="view-tab">👁️ 预览</div>
+                    </div>
+                </div>
+
+                <div class="editor-content"># 项目概述
+
+这是一个使用 MermaidReader 的示例项目。
+
+## 功能特性
+
+- Markdown 文档查看
+- Mermaid 图表渲染
+- 实时预览
+- 文件管理
+
+## 使用说明
+
+1. 打开 Markdown 文件
+2. 编辑文档内容
+3. 查看右侧预览效果
+
+```mermaid
+graph TD
+    A[开始] --> B[处理]
+    B --> C[结束]
+```
+
+> 注意：请确保文件格式正确。</div>
+            </div>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="statusbar">
+            <div class="statusbar-left">
+                <span class="status-item">📄 1:1</span>
+                <span class="status-item">UTF-8</span>
+                <span class="status-item">Markdown</span>
+            </div>
+            <div class="statusbar-right">
+                <span class="status-item">✨ Mermaid v10.6.1</span>
+                <span class="status-item">✓ 就绪</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.querySelectorAll('.sidebar-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.sidebar-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+
+        document.querySelectorAll('.view-tab').forEach(tab => {
+            tab.addEventListener('click', function() {
+                document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+
+        console.log('🎉 MermaidReader - Soft UI 风格');
+        console.log('✨ 绿色主题 - 现代化设计');
+    </script>
+</body>
+</html>
