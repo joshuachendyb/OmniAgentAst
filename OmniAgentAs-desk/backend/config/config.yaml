@@ -1,0 +1,28 @@
+# OmniAgentAst 配置文件
+# 注意: 此文件包含敏感信息，请勿提交到Git
+
+# AI模型配置
+ai:
+  # 主模型提供商: zhipuai | opencode
+  provider: "zhipuai"
+  
+  # 智谱AI配置
+  zhipuai:
+    model: "glm-4.7-flash"
+    api_key: ""  # 请填写您的智谱API Key
+    api_base: "https://open.bigmodel.cn/api/paas/v4"
+    timeout: 30
+    max_retries: 3
+  
+  # OpenCode Zen 备选配置
+  opencode:
+    model: "kimi-k2.5-free"  # 或其他免费模型
+    api_key: ""  # 请填写您的OpenCode API Key
+    api_base: "https://api.opencode.ai/v1"  # 假设的API地址
+    timeout: 30
+    max_retries: 3
+
+# 应用配置
+app:
+  debug: false
+  max_history_length: 10  # 最大历史消息数
