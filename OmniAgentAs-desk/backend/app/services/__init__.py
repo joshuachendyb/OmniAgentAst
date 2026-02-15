@@ -15,6 +15,7 @@ class AIServiceFactory:
     
     _instance: Optional[BaseAIService] = None
     _current_provider: str = "zhipuai"  # 显式跟踪当前提供商
+    _config: Optional[dict] = None  # 配置缓存（用于测试）
     
     @classmethod
     def get_config_path(cls, config_path: Optional[str] = None) -> str:
@@ -26,7 +27,11 @@ class AIServiceFactory:
     
     @classmethod
     def load_config(cls, config_path: Optional[str] = None) -> dict:
-        """加载配置文件 - 每次重新读取（不使用缓存）"""
+        """加载配置文件 - 优先使用缓存（用于测试），否则从文件读取"""
+        # 如果已设置缓存配置（用于测试），直接返回
+        if cls._config is not None:
+            return cls._config
+            
         actual_path = cls.get_config_path(config_path)
         
         try:

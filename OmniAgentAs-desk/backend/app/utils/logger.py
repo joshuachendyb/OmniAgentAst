@@ -67,9 +67,16 @@ class LogConfig:
         config = cls.load_config()
         return config.get("backup_count", 5)
 
+# 全局配置锁，确保只配置一次
+_logging_configured = False
+# 存储共享的处理器
+_file_handler: Optional[logging.handlers.RotatingFileHandler] = None
+_console_handler: Optional[logging.StreamHandler] = None
+
 def setup_logger(name: str) -> logging.Logger:
     """
     设置并返回logger实例
+    每个logger有自己的处理器，不依赖根logger，避免重复日志
     
     Args:
         name: logger名称
@@ -77,6 +84,8 @@ def setup_logger(name: str) -> logging.Logger:
     Returns:
         logging.Logger: 配置好的logger
     """
+    global _logging_configured, _file_handler, _console_handler
+    
     logger = logging.getLogger(name)
     
     # 如果已经配置过，直接返回
@@ -86,9 +95,6 @@ def setup_logger(name: str) -> logging.Logger:
     # 获取配置
     log_level = getattr(logging, LogConfig.get_log_level().upper())
     is_debug = LogConfig.is_debug_mode()
-    
-    # 设置日志级别
-    logger.setLevel(log_level)
     
     # 日志格式
     if is_debug:
@@ -102,24 +108,51 @@ def setup_logger(name: str) -> logging.Logger:
             '%(asctime)s - %(levelname)s - %(message)s'
         )
     
-    # 文件处理器 - 带轮转
-    log_file = LOG_DIR / f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_file,
-        maxBytes=LogConfig.get_max_bytes(),
-        backupCount=LogConfig.get_backup_count(),
-        encoding='utf-8'
-    )
-    file_handler.setFormatter(formatter)
-    file_handler.setLevel(log_level)
-    logger.addHandler(file_handler)
+    # 全局只创建一次处理器
+    if not _logging_configured:
+        # 文件处理器 - 带轮转
+        log_file = LOG_DIR / f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
+        _file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=LogConfig.get_max_bytes(),
+            backupCount=LogConfig.get_backup_count(),
+            encoding='utf-8'
+        )
+        _file_handler.setFormatter(formatter)
+        _file_handler.setLevel(log_level)
+        
+        # 控制台处理器
+        _console_handler = logging.StreamHandler()
+        _console_handler.setFormatter(formatter)
+        # 生产模式下控制台只显示WARNING及以上
+        _console_handler.setLevel(logging.DEBUG if is_debug else logging.WARNING)
+        
+        _logging_configured = True
     
-    # 控制台处理器
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    # 生产模式下控制台只显示WARNING及以上
-    console_handler.setLevel(logging.DEBUG if is_debug else logging.WARNING)
-    logger.addHandler(console_handler)
+    # 为每个logger添加处理器（创建新的实例以避免共享问题）
+    if _file_handler and _console_handler:
+        # 为每个logger创建处理器副本
+        log_file = LOG_DIR / f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            maxBytes=LogConfig.get_max_bytes(),
+            backupCount=LogConfig.get_backup_count(),
+            encoding='utf-8'
+        )
+        file_handler.setFormatter(formatter)
+        file_handler.setLevel(log_level)
+        
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+        console_handler.setLevel(logging.DEBUG if is_debug else logging.WARNING)
+        
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
+    
+    # 设置logger级别
+    logger.setLevel(log_level)
+    # 禁止日志向上传播到父logger（防止重复）
+    logger.propagate = False
     
     return logger
 
@@ -129,14 +162,18 @@ logger = setup_logger("OmniAgentAst")
 class APILogger:
     """API请求日志记录器"""
     
-    _instance = None
+    _instance: Optional['APILogger'] = None
+    
+    def __init__(self):
+        """初始化logger和状态"""
+        self.logger: logging.Logger = setup_logger("OmniAgentAst.API")
+        self.debug_mode: bool = LogConfig.is_debug_mode()
+        self._request_times: dict = {}  # 用于跟踪请求开始时间
     
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            cls._instance.logger = setup_logger("OmniAgentAst.API")
-            cls._instance.debug_mode = LogConfig.is_debug_mode()
-            cls._instance._request_times = {}  # 用于跟踪请求开始时间
+            cls._instance.__init__()
         return cls._instance
     
     def _should_log(self, level: int) -> bool:
@@ -173,7 +210,7 @@ class APILogger:
         return self.log_request_start(provider, model, message_len, history_count)
     
     def log_response_with_time(self, request_id: str, provider: str, status_code: int, 
-                               content_len: int = 0, error: str = None):
+                               content_len: int = 0, error: Optional[str] = None):
         """记录响应并计算耗时"""
         import time
         
@@ -200,7 +237,7 @@ class APILogger:
         
         return elapsed_time
     
-    def log_response(self, provider: str, status_code: int, content_len: int = 0, error: str = None):
+    def log_response(self, provider: str, status_code: int, content_len: int = 0, error: Optional[str] = None):
         """记录响应（兼容旧接口，不计算耗时）"""
         if error:
             self.logger.error(
@@ -217,7 +254,7 @@ class APILogger:
             f"[{provider}] 请求超时 | 超时时间: {timeout_seconds}秒"
         )
     
-    def log_switch(self, from_provider: str, to_provider: str, success: bool, reason: str = None):
+    def log_switch(self, from_provider: str, to_provider: str, success: bool, reason: Optional[str] = None):
         """记录提供商切换"""
         if success:
             self.logger.info(f"[切换] {from_provider} -> {to_provider} | 成功")
@@ -235,7 +272,7 @@ class APILogger:
                 f"[{provider}] 验证失败 | 模型: {model} | 原因: {message}"
             )
     
-    def log_error(self, provider: str, error: str, exc_info: Exception = None):
+    def log_error(self, provider: str, error: str, exc_info: Optional[Exception] = None):
         """记录详细错误信息"""
         if exc_info and self.debug_mode:
             self.logger.exception(f"[{provider}] 异常: {error}")

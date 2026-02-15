@@ -268,8 +268,9 @@ def test_provider_invalid_switch():
     
     # 测试工厂直接调用无效提供商
     with pytest.raises(ValueError) as exc_info:
-        # 重置实例以便测试
+        # 重置实例和配置缓存以便测试
         AIServiceFactory._instance = None
+        AIServiceFactory._current_provider = None  # 重置当前提供商，让配置文件的provider生效
         AIServiceFactory._config = {"ai": {"provider": "invalid_provider"}}
         # 尝试获取服务应该抛出ValueError
         AIServiceFactory.get_service()
