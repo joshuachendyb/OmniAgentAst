@@ -6,6 +6,7 @@ import httpx
 import json
 from typing import List, Optional
 from .base import BaseAIService, Message, ChatResponse
+from app.utils.logger import api_logger
 
 class ZhipuAIService(BaseAIService):
     """智谱AI服务"""
@@ -25,7 +26,8 @@ class ZhipuAIService(BaseAIService):
         调用智谱GLM API进行对话
         """
         try:
-            print(f"[ZhipuAI] 开始请求: model={self.model}, message_len={len(message)}")
+            history_count = len(history) if history else 0
+            api_logger.log_request("zhipuai", self.model, len(message), history_count)
             
             # 构建消息列表
             messages = []
@@ -44,25 +46,21 @@ class ZhipuAIService(BaseAIService):
                 "messages": messages
             }
             
-            print(f"[ZhipuAI] 发送请求到: {self.api_base}/chat/completions")
-            
             # 发送请求
             response = await self.client.post(
                 f"{self.api_base}/chat/completions",
                 headers={
-                    "Authorization": f"Bearer {self.api_key[:10]}...",
+                    "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
                 },
                 json=request_data
             )
             
-            print(f"[ZhipuAI] 收到响应: status={response.status_code}")
-            
             # 检查响应
             if response.status_code == 200:
                 data = response.json()
                 content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                print(f"[ZhipuAI] 请求成功: content_len={len(content)}")
+                api_logger.log_response("zhipuai", response.status_code, len(content))
                 return ChatResponse(
                     content=content,
                     model=self.model
@@ -72,9 +70,9 @@ class ZhipuAIService(BaseAIService):
                 try:
                     error_data = response.json()
                     error_msg = error_data.get("error", {}).get("message", error_msg)
-                    print(f"[ZhipuAI] API错误: {error_msg}")
                 except Exception as e:
-                    print(f"[ZhipuAI] 解析错误响应失败: {e}")
+                    api_logger.log_error("zhipuai", f"解析错误响应失败: {e}")
+                api_logger.log_response("zhipuai", response.status_code, error=error_msg)
                 return ChatResponse(
                     content="",
                     model=self.model,
@@ -82,17 +80,19 @@ class ZhipuAIService(BaseAIService):
                 )
                 
         except httpx.TimeoutException as e:
-            print(f"[ZhipuAI] 请求超时: {e}")
+            api_logger.log_timeout("zhipuai", 60)
             return ChatResponse(
                 content="",
                 model=self.model,
                 error="请求超时：智谱API在60秒内未响应。可能原因：1) 网络延迟 2) 智谱服务器繁忙 3) 账户被限速。请稍后重试或切换到OpenCode"
             )
         except Exception as e:
+            error_msg = f"调用失败: {str(e)}"
+            api_logger.log_error("zhipuai", error_msg, e)
             return ChatResponse(
                 content="",
                 model=self.model,
-                error=f"调用失败: {str(e)}"
+                error=error_msg
             )
     
     async def validate(self) -> bool:
