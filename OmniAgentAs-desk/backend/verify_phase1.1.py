@@ -31,7 +31,7 @@ def main():
     print()
     
     # 测试1: 导入测试
-    print("📦 测试1: 模块导入...")
+    print("[测试1] 模块导入...")
     try:
         from app.main import app
         test("FastAPI应用导入", True)
@@ -39,7 +39,7 @@ def main():
         test("FastAPI应用导入", False, str(e))
     
     # 测试2: FastAPI实例检查
-    print("\n🔍 测试2: FastAPI配置...")
+    print("\n[测试2] FastAPI配置...")
     try:
         from app.main import app
         test("FastAPI实例存在", app is not None)
@@ -49,7 +49,7 @@ def main():
         test("FastAPI配置", False, str(e))
     
     # 测试3: 路由检查
-    print("\n🛣️ 测试3: API路由...")
+    print("\n[测试3] API路由...")
     try:
         from app.main import app
         routes = [route.path for route in app.routes]
@@ -60,7 +60,7 @@ def main():
         test("路由检查", False, str(e))
     
     # 测试4: CORS中间件
-    print("\n🔒 测试4: CORS配置...")
+    print("\n[测试4] CORS配置...")
     try:
         from app.main import app
         middleware_types = [type(m).__name__ for m in app.user_middleware]
@@ -69,7 +69,7 @@ def main():
         test("CORS配置", False, str(e))
     
     # 测试5: 健康检查逻辑
-    print("\n🏥 测试5: 健康检查逻辑...")
+    print("\n[测试5] 健康检查逻辑...")
     try:
         from app.api.v1.health import router
         test("健康检查路由模块导入", True)
@@ -77,7 +77,7 @@ def main():
         test("健康检查逻辑", False, str(e))
     
     # 测试6: 项目结构
-    print("\n📁 测试6: 项目结构...")
+    print("\n[测试6] 项目结构...")
     import os
     base_path = os.path.dirname(os.path.abspath(__file__))
     
