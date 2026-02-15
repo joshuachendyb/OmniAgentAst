@@ -56,3 +56,19 @@ Thumbs.db
 LAW初版/
 LAW初版/
 NMermaidReader/
+
+# 研究资料和记录（与核心项目无关）
+AI工具研究/
+AI编程之路故事/
+opencode系统研究文档/
+历程记录/
+自研Skill/
+解析错MD/
+
+# 会话记录文件
+会话记录-*.md
+
+# 其他文档和记录
+软件迭代问题.txt
+经验-文件改写diff展示.md
+变更摘要-*.md
