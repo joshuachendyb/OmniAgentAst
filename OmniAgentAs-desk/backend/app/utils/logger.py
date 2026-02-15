@@ -136,22 +136,72 @@ class APILogger:
             cls._instance = super().__new__(cls)
             cls._instance.logger = setup_logger("OmniAgentAst.API")
             cls._instance.debug_mode = LogConfig.is_debug_mode()
+            cls._instance._request_times = {}  # 用于跟踪请求开始时间
         return cls._instance
     
     def _should_log(self, level: int) -> bool:
         """检查是否应该记录该级别日志"""
         return self.logger.isEnabledFor(level)
     
-    def log_request(self, provider: str, model: str, message_len: int, history_count: int = 0):
-        """记录请求开始"""
+    def log_request_start(self, provider: str, model: str, message_len: int, history_count: int = 0) -> str:
+        """
+        记录请求开始，返回请求ID用于后续关联
+        
+        Returns:
+            str: 请求ID
+        """
+        import time
+        import uuid
+        request_id = str(uuid.uuid4())[:8]  # 生成短ID
+        self._request_times[request_id] = {
+            'start_time': time.time(),
+            'provider': provider,
+            'model': model
+        }
+        
         self.logger.info(
-            f"[{provider}] 请求开始 | 模型: {model} | 消息长度: {message_len} | 历史消息数: {history_count}"
+            f"[{provider}] 请求开始 | ID: {request_id} | 模型: {model} | "
+            f"消息长度: {message_len} | 历史消息数: {history_count}"
         )
         if self.debug_mode:
             self.logger.debug(f"[{provider}] 调试模式: 消息内容长度={message_len}")
+        
+        return request_id
+    
+    def log_request(self, provider: str, model: str, message_len: int, history_count: int = 0):
+        """记录请求开始（兼容旧接口，自动生成request_id）"""
+        return self.log_request_start(provider, model, message_len, history_count)
+    
+    def log_response_with_time(self, request_id: str, provider: str, status_code: int, 
+                               content_len: int = 0, error: str = None):
+        """记录响应并计算耗时"""
+        import time
+        
+        # 计算耗时
+        elapsed_time = 0.0
+        model_info = ""
+        if request_id in self._request_times:
+            request_info = self._request_times[request_id]
+            elapsed_time = time.time() - request_info['start_time']
+            model_info = f"模型: {request_info['model']} | "
+            # 清理已完成的请求记录
+            del self._request_times[request_id]
+        
+        if error:
+            self.logger.error(
+                f"[{provider}] 响应错误 | ID: {request_id} | {model_info}"
+                f"状态码: {status_code} | 耗时: {elapsed_time:.2f}s | 错误: {error}"
+            )
+        else:
+            self.logger.info(
+                f"[{provider}] 响应成功 | ID: {request_id} | {model_info}"
+                f"状态码: {status_code} | 内容长度: {content_len} | 耗时: {elapsed_time:.2f}s"
+            )
+        
+        return elapsed_time
     
     def log_response(self, provider: str, status_code: int, content_len: int = 0, error: str = None):
-        """记录响应"""
+        """记录响应（兼容旧接口，不计算耗时）"""
         if error:
             self.logger.error(
                 f"[{provider}] 响应错误 | 状态码: {status_code} | 错误: {error}"

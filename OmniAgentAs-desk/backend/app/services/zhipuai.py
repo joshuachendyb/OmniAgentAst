@@ -25,10 +25,11 @@ class ZhipuAIService(BaseAIService):
         """
         调用智谱GLM API进行对话
         """
+        # 记录请求开始时间，获取request_id
+        history_count = len(history) if history else 0
+        request_id = api_logger.log_request_start("zhipuai", self.model, len(message), history_count)
+        
         try:
-            history_count = len(history) if history else 0
-            api_logger.log_request("zhipuai", self.model, len(message), history_count)
-            
             # 构建消息列表
             messages = []
             
@@ -60,7 +61,9 @@ class ZhipuAIService(BaseAIService):
             if response.status_code == 200:
                 data = response.json()
                 content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-                api_logger.log_response("zhipuai", response.status_code, len(content))
+                elapsed_time = api_logger.log_response_with_time(
+                    request_id, "zhipuai", response.status_code, len(content)
+                )
                 return ChatResponse(
                     content=content,
                     model=self.model
@@ -72,7 +75,9 @@ class ZhipuAIService(BaseAIService):
                     error_msg = error_data.get("error", {}).get("message", error_msg)
                 except Exception as e:
                     api_logger.log_error("zhipuai", f"解析错误响应失败: {e}")
-                api_logger.log_response("zhipuai", response.status_code, error=error_msg)
+                api_logger.log_response_with_time(
+                    request_id, "zhipuai", response.status_code, error=error_msg
+                )
                 return ChatResponse(
                     content="",
                     model=self.model,
@@ -80,7 +85,9 @@ class ZhipuAIService(BaseAIService):
                 )
                 
         except httpx.TimeoutException as e:
-            api_logger.log_timeout("zhipuai", 60)
+            api_logger.log_response_with_time(
+                request_id, "zhipuai", 0, error="请求超时(60s)"
+            )
             return ChatResponse(
                 content="",
                 model=self.model,
@@ -88,7 +95,9 @@ class ZhipuAIService(BaseAIService):
             )
         except Exception as e:
             error_msg = f"调用失败: {str(e)}"
-            api_logger.log_error("zhipuai", error_msg, e)
+            api_logger.log_response_with_time(
+                request_id, "zhipuai", 0, error=error_msg
+            )
             return ChatResponse(
                 content="",
                 model=self.model,
