@@ -54,7 +54,17 @@ class FileOperationSafety:
         self.config = FileSafetyConfig()
         self.config.ensure_directories()
         self._init_database()
-        self._connection: Optional[sqlite3.Connection] = None
+        # 【修复-波次1】移除未使用的_connection属性
+        # 所有方法都使用_get_connection()创建新连接，不需要保存连接引用
+    
+    def close(self):
+        """
+        关闭安全服务，清理资源
+        
+        【修复-波次1】添加资源清理方法，确保可以正确释放资源
+        虽然当前实现每次操作都创建新连接，但为了未来扩展和完整性保留此方法
+        """
+        logger.info("FileOperationSafety resources cleaned up")
         
     def _init_database(self):
         """初始化SQLite数据库"""

@@ -281,19 +281,22 @@ class FileOperationAgent:
     def __init__(
         self,
         llm_client: Callable[..., Any],
+        session_id: str,
         file_tools: Optional[FileTools] = None,
-        max_steps: int = 20,
-        session_id: Optional[str] = None
+        max_steps: int = 20
     ):
         """
         初始化Agent
         
         Args:
             llm_client: LLM客户端函数，接收message和history，返回response
+            session_id: 会话ID（必需）- 用于文件操作安全追踪和审计
             file_tools: 文件工具实例（可选，默认创建新实例）
             max_steps: 最大执行步数
-            session_id: 会话ID（可选）
         """
+        # 【修复-波次1】强制要求session_id，避免写操作失败
+        if not session_id:
+            raise ValueError("session_id is required for file operation tracking and safety")
         self.llm_client = llm_client
         self.max_steps = max_steps
         self.session_id = session_id
