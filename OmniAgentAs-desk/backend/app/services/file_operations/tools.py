@@ -453,6 +453,7 @@ class FileTools:
                 }
             
             # 编译正则表达式
+            regex = None
             if use_regex:
                 try:
                     regex = re.compile(pattern)
@@ -479,7 +480,7 @@ class FileTools:
                 
                 matches = []
                 
-                if use_regex:
+                if use_regex and regex is not None:
                     for match in regex.finditer(content):
                         # 获取上下文
                         start = max(0, match.start() - 50)

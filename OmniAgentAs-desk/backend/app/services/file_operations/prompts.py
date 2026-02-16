@@ -3,7 +3,7 @@
 为ReAct Agent提供文件操作任务的Prompt模板
 """
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 
 class FileOperationPrompts:
@@ -49,7 +49,7 @@ Safety guidelines:
 All operations are tracked and can be rolled back if needed."""
 
     @staticmethod
-    def get_task_prompt(task_description: str, context: Dict[str, Any] = None) -> str:
+    def get_task_prompt(task_description: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
         获取任务Prompt
         

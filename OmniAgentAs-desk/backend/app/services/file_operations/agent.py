@@ -278,7 +278,7 @@ class FileOperationAgent:
     
     def __init__(
         self,
-        llm_client: Callable[[str, List[Dict]], Any],
+        llm_client: Callable[..., Any],
         file_tools: Optional[FileTools] = None,
         max_steps: int = 20,
         session_id: Optional[str] = None
@@ -287,7 +287,7 @@ class FileOperationAgent:
         初始化Agent
         
         Args:
-            llm_client: LLM客户端函数，接收prompt和messages，返回response
+            llm_client: LLM客户端函数，接收message和history，返回response
             file_tools: 文件工具实例（可选，默认创建新实例）
             max_steps: 最大执行步数
             session_id: 会话ID（可选）
@@ -427,9 +427,14 @@ class FileOperationAgent:
     async def _get_llm_response(self) -> str:
         """获取LLM响应"""
         try:
+            # 最后一条消息作为当前消息
+            last_message = self.conversation_history[-1]["content"]
+            # 前面的消息作为历史
+            history = self.conversation_history[:-1]
+            
             response = await self.llm_client(
-                prompt=self.conversation_history[-1]["content"],
-                messages=self.conversation_history
+                message=last_message,
+                history=history
             )
             
             # 添加到历史
@@ -477,24 +482,32 @@ class FileOperationAgent:
             是否成功
         """
         try:
+            if not self.session_id:
+                raise ValueError("Session ID is required for rollback")
+            
             if step_number is None:
                 # 回滚整个会话
-                result = await self.file_tools.safety.rollback_session(self.session_id)
+                result = self.file_tools.safety.rollback_session(self.session_id)
+                success = result.get("success", 0) > 0
             else:
                 # 找到对应步骤的操作ID
                 for step in self.steps:
                     if step.step_number == step_number:
                         # 这里需要从observation中提取operation_id
                         # 实际实现需要调整FileTools返回operation_id
-                        operation_id = step.observation.get("result", {}).get("operation_id")
+                        observation = step.observation or {}
+                        result_data = observation.get("result", {}) if isinstance(observation, dict) else {}
+                        operation_id = result_data.get("operation_id")
                         if operation_id:
-                            result = await self.file_tools.safety.rollback_operation(operation_id)
-                            break
+                            success = self.file_tools.safety.rollback_operation(operation_id)
+                        else:
+                            raise ValueError(f"No operation_id found for step {step_number}")
+                        break
                 else:
                     raise ValueError(f"Step {step_number} not found")
             
             self.status = AgentStatus.ROLLED_BACK
-            return result
+            return success
             
         except Exception as e:
             logger.error(f"Rollback failed: {e}")
