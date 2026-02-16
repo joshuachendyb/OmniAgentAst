@@ -6,6 +6,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from datetime import datetime
 import traceback
 import logging
+from pathlib import Path
 
 from app.api.v1 import health, chat, file_operations
 from app.utils.logger import logger
@@ -16,10 +17,24 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
+# 【修复-波次5】从version.txt读取版本号，确保所有地方版本一致
+def get_version() -> str:
+    """从version.txt读取版本号"""
+    try:
+        # 从backend目录向上两级找到项目根目录
+        version_file = Path(__file__).parent.parent.parent / "version.txt"
+        if version_file.exists():
+            version = version_file.read_text().strip()
+            # 去掉v前缀（如果有）
+            return version.lstrip('v')
+    except Exception as e:
+        logger.warning(f"Failed to read version.txt: {e}")
+    return "0.2.3"  # 默认版本
+
 app = FastAPI(
     title="OmniAgentAst API",
     description="OmniAgentAst 桌面版后端API",
-    version="0.2.2"
+    version=get_version()
 )
 
 # CORS配置

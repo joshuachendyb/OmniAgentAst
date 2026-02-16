@@ -8,7 +8,6 @@ from typing import Optional, Dict, Any
 from uuid import uuid4
 
 from app.models.file_operations import SessionRecord, OperationStatus
-from app.services.file_operations.safety import FileSafetyConfig
 from app.utils.logger import logger
 
 
@@ -23,6 +22,9 @@ class FileOperationSessionService:
     """
     
     def __init__(self):
+        # 【修复-波次4】使用延迟导入避免循环导入风险
+        # FileSafetyConfig 只在方法内部使用，不在模块级别导入
+        from app.services.file_operations.safety import FileSafetyConfig
         self.config = FileSafetyConfig()
     
     def _get_connection(self) -> sqlite3.Connection:
