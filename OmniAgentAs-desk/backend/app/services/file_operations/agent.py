@@ -11,6 +11,7 @@ from enum import Enum
 
 from app.services.file_operations.tools import FileTools
 from app.services.file_operations.prompts import FileOperationPrompts
+from app.services.file_operations.session import get_session_service
 from app.utils.logger import logger
 
 
@@ -293,9 +294,14 @@ class FileOperationAgent:
             session_id: 会话ID（可选）
         """
         self.llm_client = llm_client
-        self.file_tools = file_tools or FileTools(session_id=session_id)
         self.max_steps = max_steps
         self.session_id = session_id
+        
+        # 初始化session服务（用于统一管理会话生命周期）
+        self.session_service = get_session_service()
+        
+        # 初始化文件工具，确保session_id正确传递
+        self.file_tools = file_tools or FileTools(session_id=session_id)
         
         self.parser = ToolParser()
         self.executor = ToolExecutor(self.file_tools)
@@ -326,6 +332,17 @@ class FileOperationAgent:
         """
         self.status = AgentStatus.THINKING
         
+        # 【修复问题6：Session管理混乱】
+        # 确保session已创建（统一管理会话生命周期）
+        if not self.session_id:
+            self.session_id = self.session_service.create_session(
+                agent_id="file-operation-agent",
+                task_description=task
+            )
+            # 更新FileTools的session_id
+            self.file_tools.set_session(self.session_id)
+            logger.info(f"Session created in run(): {self.session_id}")
+        
         # 构建初始prompt
         sys_prompt = system_prompt or self.prompts.get_system_prompt()
         task_prompt = self.prompts.get_task_prompt(task, context)
@@ -335,6 +352,8 @@ class FileOperationAgent:
         self.conversation_history.append({"role": "user", "content": task_prompt})
         
         current_step = 0
+        
+        result = None
         
         try:
             while current_step < self.max_steps:
@@ -376,7 +395,7 @@ class FileOperationAgent:
                     self.steps.append(step)
                     self.status = AgentStatus.COMPLETED
                     
-                    return AgentResult(
+                    result = AgentResult(
                         success=True,
                         message="Task completed successfully",
                         steps=self.steps,
@@ -384,6 +403,7 @@ class FileOperationAgent:
                         session_id=self.session_id,
                         final_result=parsed["action_input"]
                     )
+                    return result
                 
                 # 4. Observation - 执行动作
                 self.status = AgentStatus.EXECUTING
@@ -403,7 +423,7 @@ class FileOperationAgent:
             
             # 超过最大步数
             self.status = AgentStatus.FAILED
-            return AgentResult(
+            result = AgentResult(
                 success=False,
                 message=f"Exceeded maximum steps ({self.max_steps})",
                 steps=self.steps,
@@ -411,11 +431,12 @@ class FileOperationAgent:
                 session_id=self.session_id,
                 error="Maximum steps exceeded"
             )
+            return result
             
         except Exception as e:
             logger.error(f"Agent execution error: {e}", exc_info=True)
             self.status = AgentStatus.FAILED
-            return AgentResult(
+            result = AgentResult(
                 success=False,
                 message=f"Execution failed: {str(e)}",
                 steps=self.steps,
@@ -423,6 +444,18 @@ class FileOperationAgent:
                 session_id=self.session_id,
                 error=str(e)
             )
+            return result
+            
+        finally:
+            # 【修复问题6：Session管理混乱】
+            # 确保session总是被正确关闭（无论成功或失败）
+            if self.session_id and self.session_service:
+                try:
+                    success = result.success if result else False
+                    self.session_service.complete_session(self.session_id, success=success)
+                    logger.info(f"Session completed: {self.session_id} (success={success})")
+                except Exception as e:
+                    logger.error(f"Failed to complete session {self.session_id}: {e}")
     
     async def _get_llm_response(self) -> str:
         """获取LLM响应"""

@@ -58,6 +58,7 @@ class FileOperationSafety:
         
     def _init_database(self):
         """初始化SQLite数据库"""
+        conn = None
         try:
             conn = sqlite3.connect(str(self.config.DB_PATH))
             cursor = conn.cursor()
@@ -119,11 +120,15 @@ class FileOperationSafety:
             ''')
             
             conn.commit()
-            conn.close()
             logger.info("File operation database initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
             raise
+        finally:
+            # 【修复问题8：数据库连接未关闭】
+            # 确保连接总是被关闭，即使在异常情况下
+            if conn:
+                conn.close()
     
     def _get_connection(self) -> sqlite3.Connection:
         """获取数据库连接（线程安全）"""
