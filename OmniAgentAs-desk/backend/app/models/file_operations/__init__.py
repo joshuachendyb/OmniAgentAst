@@ -53,6 +53,11 @@ class OperationRecord(BaseModel):
     file_size: Optional[int] = Field(default=None, description="文件大小（字节）")
     file_hash: Optional[str] = Field(default=None, description="文件哈希（用于验证完整性）")
     is_directory: bool = Field(default=False, description="是否为目录")
+    file_extension: Optional[str] = Field(default=None, description="文件扩展名（如.py, .txt）")
+    
+    # 可视化支持字段
+    duration_ms: Optional[int] = Field(default=None, description="操作耗时（毫秒）")
+    space_impact_bytes: Optional[int] = Field(default=None, description="空间影响（字节）：删除=+size, 创建=-size, 移动/复制=0")
     
     # 操作详情
     metadata: dict = Field(default_factory=dict, description="操作元数据（JSON格式）")
@@ -150,6 +155,11 @@ class OperationRecordORM(Base):
     file_size = Column(Integer, nullable=True)
     file_hash = Column(String(64), nullable=True)
     is_directory = Column(Boolean, default=False)
+    file_extension = Column(String(20), nullable=True)
+    
+    # 可视化支持字段
+    duration_ms = Column(Integer, nullable=True)
+    space_impact_bytes = Column(Integer, nullable=True)
     
     metadata = Column(Text, default='{}')  # JSON字符串
     error_message = Column(Text, nullable=True)
@@ -176,6 +186,9 @@ class OperationRecordORM(Base):
             file_size=self.file_size,
             file_hash=self.file_hash,
             is_directory=self.is_directory,
+            file_extension=self.file_extension,
+            duration_ms=self.duration_ms,
+            space_impact_bytes=self.space_impact_bytes,
             metadata=json.loads(self.metadata) if self.metadata else {},
             error_message=self.error_message,
             created_at=self.created_at,

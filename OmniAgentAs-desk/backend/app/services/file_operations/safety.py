@@ -77,6 +77,9 @@ class FileOperationSafety:
                     file_size INTEGER,
                     file_hash TEXT,
                     is_directory BOOLEAN DEFAULT 0,
+                    file_extension TEXT,
+                    duration_ms INTEGER,
+                    space_impact_bytes INTEGER,
                     metadata TEXT DEFAULT '{}',
                     error_message TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -275,21 +278,44 @@ class FileOperationSafety:
                 # 收集文件信息
                 file_size = None
                 file_hash = None
+                file_extension = None
                 
                 if dest_path and dest_path.exists():
                     file_size = dest_path.stat().st_size
                     if dest_path.is_file():
                         file_hash = self._compute_file_hash(dest_path)
+                        file_extension = dest_path.suffix.lower() if dest_path.suffix else None
                 elif source_path and source_path.exists():
                     file_size = source_path.stat().st_size
                     if source_path.is_file():
                         file_hash = self._compute_file_hash(source_path)
+                        file_extension = source_path.suffix.lower() if source_path.suffix else None
+                
+                # 计算操作耗时（毫秒）
+                executed_at = datetime.now()
+                cursor.execute('SELECT created_at FROM file_operations WHERE operation_id = ?', (operation_id,))
+                created_at_row = cursor.fetchone()
+                duration_ms = None
+                if created_at_row and created_at_row[0]:
+                    created_at = datetime.fromisoformat(created_at_row[0]) if isinstance(created_at_row[0], str) else created_at_row[0]
+                    duration_ms = int((executed_at - created_at).total_seconds() * 1000)
+                
+                # 计算空间影响（字节）
+                # DELETE: +size (frees space), CREATE: -size (uses space), MOVE/COPY: 0
+                space_impact = 0
+                if op_type == OperationType.DELETE.value and file_size:
+                    space_impact = file_size  # Positive = freed space
+                elif op_type == OperationType.CREATE.value and file_size:
+                    space_impact = -file_size  # Negative = used space
+                # MOVE and COPY have 0 net impact
                 
                 # 更新成功状态
                 cursor.execute('''
                     UPDATE file_operations 
                     SET status = ?, backup_path = ?, backup_expires_at = ?,
-                        file_size = ?, file_hash = ?, is_directory = ?
+                        file_size = ?, file_hash = ?, is_directory = ?,
+                        file_extension = ?, duration_ms = ?, space_impact_bytes = ?,
+                        executed_at = ?
                     WHERE operation_id = ?
                 ''', (
                     OperationStatus.SUCCESS.value,
@@ -298,6 +324,10 @@ class FileOperationSafety:
                     file_size,
                     file_hash,
                     1 if (source_path and source_path.is_dir()) or (dest_path and dest_path.is_dir()) else 0,
+                    file_extension,
+                    duration_ms,
+                    space_impact,
+                    executed_at,
                     operation_id
                 ))
                 
@@ -508,12 +538,15 @@ class FileOperationSafety:
                     file_size=row[9],
                     file_hash=row[10],
                     is_directory=bool(row[11]),
-                    metadata=json.loads(row[12]) if row[12] else {},
-                    error_message=row[13],
-                    created_at=row[14],
-                    executed_at=row[15],
-                    rolled_back_at=row[16],
-                    sequence_number=row[17]
+                    file_extension=row[12],
+                    duration_ms=row[13],
+                    space_impact_bytes=row[14],
+                    metadata=json.loads(row[15]) if row[15] else {},
+                    error_message=row[16],
+                    created_at=row[17],
+                    executed_at=row[18],
+                    rolled_back_at=row[19],
+                    sequence_number=row[20]
                 )
                 operations.append(op)
             
