@@ -35,6 +35,7 @@ wheels/
 .env.*.local
 *.key
 *.pem
+OmniAgentAs-desk/backend/config/config.yaml
 
 # IDE
 .vscode/
