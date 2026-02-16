@@ -11,6 +11,10 @@ from app.services.file_operations.session import (
     FileOperationSessionService,
     get_session_service
 )
+from app.services.file_operations.tools import (
+    FileTools,
+    get_file_tools
+)
 
 __all__ = [
     'FileOperationSafety',
@@ -18,4 +22,6 @@ __all__ = [
     'get_file_safety_service',
     'FileOperationSessionService',
     'get_session_service',
+    'FileTools',
+    'get_file_tools',
 ]

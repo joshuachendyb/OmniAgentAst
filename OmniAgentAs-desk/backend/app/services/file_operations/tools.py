@@ -2,6 +2,7 @@
 MCP文件操作工具集 (MCP File Operation Tools)
 实现ReAct执行器所需的文件操作工具，包含完整的安全机制
 """
+import asyncio
 import os
 import re
 import shutil
@@ -81,9 +82,12 @@ class FileTools:
                     "content": None
                 }
             
-            # 读取文件内容
-            with open(path, 'r', encoding=encoding, errors='ignore') as f:
-                lines = f.readlines()
+            # 读取文件内容（异步执行）
+            def _read_sync():
+                with open(path, 'r', encoding=encoding, errors='ignore') as f:
+                    return f.readlines()
+            
+            lines = await asyncio.to_thread(_read_sync)
             
             total_lines = len(lines)
             
@@ -157,19 +161,18 @@ class FileTools:
                 sequence_number=self._get_next_sequence()
             )
             
-            # 确保目录存在
-            path.parent.mkdir(parents=True, exist_ok=True)
-            
-            # 定义实际写入操作
-            def do_write():
+            # 定义实际写入操作（包含目录创建）
+            def _write_sync():
+                path.parent.mkdir(parents=True, exist_ok=True)
                 with open(path, 'w', encoding=encoding) as f:
                     f.write(content)
                 return True
             
-            # 安全执行
-            success = self.safety.execute_with_safety(
+            # 安全执行（异步）
+            success = await asyncio.to_thread(
+                self.safety.execute_with_safety,
                 operation_id=operation_id,
-                operation_func=do_write
+                operation_func=_write_sync
             )
             
             if success:
@@ -226,25 +229,29 @@ class FileTools:
                     "entries": []
                 }
             
-            entries = []
+            # 异步执行目录遍历
+            def _list_sync():
+                entries = []
+                if recursive:
+                    for item in path.rglob("*"):
+                        relative_path = item.relative_to(path)
+                        entries.append({
+                            "name": item.name,
+                            "path": str(relative_path),
+                            "type": "directory" if item.is_dir() else "file",
+                            "size": item.stat().st_size if item.is_file() else None
+                        })
+                else:
+                    for item in path.iterdir():
+                        entries.append({
+                            "name": item.name,
+                            "path": str(item),
+                            "type": "directory" if item.is_dir() else "file",
+                            "size": item.stat().st_size if item.is_file() else None
+                        })
+                return entries
             
-            if recursive:
-                for item in path.rglob("*"):
-                    relative_path = item.relative_to(path)
-                    entries.append({
-                        "name": item.name,
-                        "path": str(relative_path),
-                        "type": "directory" if item.is_dir() else "file",
-                        "size": item.stat().st_size if item.is_file() else None
-                    })
-            else:
-                for item in path.iterdir():
-                    entries.append({
-                        "name": item.name,
-                        "path": str(item),
-                        "type": "directory" if item.is_dir() else "file",
-                        "size": item.stat().st_size if item.is_file() else None
-                    })
+            entries = await asyncio.to_thread(_list_sync)
             
             # 排序：目录在前，文件在后，按名称排序
             entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"]))
@@ -305,7 +312,7 @@ class FileTools:
             )
             
             # 定义删除操作
-            def do_delete():
+            def _delete_sync():
                 if path.is_dir():
                     if recursive:
                         shutil.rmtree(path)
@@ -315,10 +322,11 @@ class FileTools:
                     path.unlink()
                 return True
             
-            # 安全执行（会自动备份到回收站）
-            success = self.safety.execute_with_safety(
+            # 安全执行（会自动备份到回收站，异步）
+            success = await asyncio.to_thread(
+                self.safety.execute_with_safety,
                 operation_id=operation_id,
-                operation_func=do_delete
+                operation_func=_delete_sync
             )
             
             if success:
@@ -385,18 +393,17 @@ class FileTools:
                 sequence_number=self._get_next_sequence()
             )
             
-            # 确保目标目录存在
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            
-            # 定义移动操作
-            def do_move():
+            # 定义移动操作（包含目录创建）
+            def _move_sync():
+                dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(src), str(dst))
                 return True
             
-            # 安全执行
-            success = self.safety.execute_with_safety(
+            # 安全执行（异步）
+            success = await asyncio.to_thread(
+                self.safety.execute_with_safety,
                 operation_id=operation_id,
-                operation_func=do_move
+                operation_func=_move_sync
             )
             
             if success:
@@ -464,70 +471,78 @@ class FileTools:
                         "matches": []
                     }
             
-            # 搜索文件
-            files_to_search = list(search_path.rglob(file_pattern))
-            
-            for file_path in files_to_search:
-                if not file_path.is_file():
-                    continue
+            # 搜索文件（异步执行）
+            def _search_sync():
+                files_to_search = list(search_path.rglob(file_pattern))
+                search_results = []
                 
-                # 跳过二进制文件
-                try:
-                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                        content = f.read()
-                except:
-                    continue
-                
-                matches = []
-                
-                if use_regex and regex is not None:
-                    for match in regex.finditer(content):
-                        # 获取上下文
-                        start = max(0, match.start() - 50)
-                        end = min(len(content), match.end() + 50)
-                        context = content[start:end]
-                        
-                        matches.append({
-                            "start": match.start(),
-                            "end": match.end(),
-                            "matched": match.group(),
-                            "context": context
+                for file_path in files_to_search:
+                    if not file_path.is_file():
+                        continue
+                    
+                    # 跳过二进制文件
+                    try:
+                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                            content = f.read()
+                    except:
+                        continue
+                    
+                    matches = []
+                    
+                    if use_regex and regex is not None:
+                        for match in regex.finditer(content):
+                            # 获取上下文
+                            start = max(0, match.start() - 50)
+                            end = min(len(content), match.end() + 50)
+                            context = content[start:end]
+                            
+                            matches.append({
+                                "start": match.start(),
+                                "end": match.end(),
+                                "matched": match.group(),
+                                "context": context
+                            })
+                    else:
+                        # 简单字符串搜索
+                        idx = content.find(pattern)
+                        while idx != -1:
+                            start = max(0, idx - 50)
+                            end = min(len(content), idx + len(pattern) + 50)
+                            context = content[start:end]
+                            
+                            matches.append({
+                                "start": idx,
+                                "end": idx + len(pattern),
+                                "matched": pattern,
+                                "context": context
+                            })
+                            
+                            idx = content.find(pattern, idx + 1)
+                    
+                    if matches:
+                        search_results.append({
+                            "file": str(file_path.relative_to(search_path)),
+                            "matches": matches,
+                            "match_count": len(matches)
                         })
-                else:
-                    # 简单字符串搜索
-                    idx = content.find(pattern)
-                    while idx != -1:
-                        start = max(0, idx - 50)
-                        end = min(len(content), idx + len(pattern) + 50)
-                        context = content[start:end]
-                        
-                        matches.append({
-                            "start": idx,
-                            "end": idx + len(pattern),
-                            "matched": pattern,
-                            "context": context
-                        })
-                        
-                        idx = content.find(pattern, idx + 1)
                 
-                if matches:
-                    results.append({
-                        "file": str(file_path.relative_to(search_path)),
-                        "matches": matches,
-                        "match_count": len(matches)
-                    })
+                # 按匹配数排序
+                search_results.sort(key=lambda x: x["match_count"], reverse=True)
+                
+                return {
+                    "files_searched": len(files_to_search),
+                    "files_matched": len(search_results),
+                    "total_matches": sum(r["match_count"] for r in search_results),
+                    "matches": search_results[:50]  # 限制结果数量
+                }
             
-            # 按匹配数排序
-            results.sort(key=lambda x: x["match_count"], reverse=True)
+            search_result = await asyncio.to_thread(_search_sync)
             
             return {
                 "success": True,
                 "pattern": pattern,
                 "path": str(search_path),
-                "files_searched": len(files_to_search),
-                "files_matched": len(results),
-                "total_matches": sum(r["match_count"] for r in results),
-                "matches": results[:50]  # 限制结果数量
+                **search_result
             }
             
         except Exception as e:
@@ -557,7 +572,12 @@ class FileTools:
         
         try:
             output_path = Path(output_dir) if output_dir else None
-            reports = self.visualizer.generate_all_reports(self.session_id, output_path)
+            
+            # 异步执行报告生成
+            def _generate_sync():
+                return self.visualizer.generate_all_reports(self.session_id, output_path)
+            
+            reports = await asyncio.to_thread(_generate_sync)
             
             # 转换为字符串路径
             report_paths = {k: str(v) for k, v in reports.items()}

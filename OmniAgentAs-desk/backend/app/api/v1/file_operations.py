@@ -36,7 +36,7 @@ class TreeNode(BaseModel):
     children: List['TreeNode'] = Field(default_factory=list, description="子节点")
     timestamp: Optional[str] = Field(None, description="操作时间戳")
 
-TreeNode.model_rebuild()
+TreeNode.update_forward_refs()
 
 
 class FlowData(BaseModel):
