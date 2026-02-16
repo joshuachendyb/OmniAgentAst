@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 from app.services import AIServiceFactory
 from app.services.file_operations.tools import get_file_tools
+from app.services.file_operations.agent import FileOperationAgent
 
 router = APIRouter()
 
@@ -247,8 +248,8 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
     """
     处理文件操作请求
     
-    【修复】将文件操作从AI服务中分离，直接调用FileTools
-    避免通过AI服务中转，提高效率和可靠性
+    【修复-Wave2-完整版】使用 FileOperationAgent 执行文件操作
+    实现真正的 ReAct 循环，让 AI 自主决策如何完成任务
     
     Args:
         message: 用户原始消息
@@ -258,148 +259,65 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
         ChatResponse 格式的响应
     """
     try:
-        # 初始化文件工具
-        file_tools = get_file_tools()
-        
-        # 创建会话
+        # 创建会话ID
         import uuid
         session_id = str(uuid.uuid4())
-        file_tools.set_session(session_id)
         
-        # 提取文件路径
-        file_path = extract_file_path(message)
+        # 获取AI服务
+        ai_service = AIServiceFactory.get_service()
         
-        if not file_path and op_type in ["read", "write", "delete", "move"]:
+        # 【修复-Wave2】创建LLM客户端适配器
+        # Agent需要的llm_client: Callable[[str, List[Message]], Any]
+        # ai_service.chat: Callable[[str, Optional[List[Message]]], ChatResponse]
+        async def llm_client_adapter(message: str, history: Optional[List] = None):
+            """适配器：将 ai_service.chat 包装为 Agent 可用的格式"""
+            response = await ai_service.chat(message=message, history=history)
+            return response
+        
+        # 【修复-Wave2】创建 FileOperationAgent
+        agent = FileOperationAgent(
+            llm_client=llm_client_adapter,
+            session_id=session_id,
+            max_steps=20
+        )
+        
+        # 【修复-Wave2】使用 Agent 执行任务
+        # Agent 会自主决定如何完成文件操作任务
+        result = await agent.run(task=message)
+        
+        # 将 AgentResult 转换为 ChatResponse
+        if result.success:
+            # 构建详细响应
+            content = result.message
+            
+            # 如果有执行步骤，添加详细信息
+            if result.steps:
+                content += f"\n\n[执行详情：共 {result.total_steps} 步]"
+                for step in result.steps[:5]:  # 最多显示5步
+                    content += f"\n- {step.action}: {step.thought[:50]}..."
+                if len(result.steps) > 5:
+                    content += f"\n... 还有 {len(result.steps) - 5} 步"
+            
             return ChatResponse(
-                success=False,
-                content="",
-                model="file_operation",
-                error="未能从消息中提取到文件路径，请明确指定文件路径"
+                success=True,
+                content=content,
+                model="file_operation_agent",
+                error=None
             )
-        
-        # 根据操作类型执行相应操作
-        if op_type == "read" and file_path:
-            result = await file_tools.read_file(file_path)
-            if result["success"]:
-                content = f"文件内容 ({result.get('total_lines', 0)} 行):\n```\n{result['content']}\n```"
-                if result.get('has_more'):
-                    content += f"\n(仅显示 {result.get('start_line', 0)}-{result.get('end_line', 0)} 行，文件还有更多内容)"
-                return ChatResponse(
-                    success=True,
-                    content=content,
-                    model="file_operation",
-                    error=None
-                )
-            else:
-                return ChatResponse(
-                    success=False,
-                    content="",
-                    model="file_operation",
-                    error=f"读取文件失败: {result.get('error', '未知错误')}"
-                )
-        
-        elif op_type == "list":
-            # 提取目录路径，默认为当前目录
-            dir_path = file_path if file_path else "."
-            result = await file_tools.list_directory(dir_path)
-            if result["success"]:
-                entries = result.get('entries', [])
-                if not entries:
-                    content = f"目录 '{dir_path}' 为空"
-                else:
-                    content = f"目录 '{dir_path}' 内容 ({len(entries)} 项):\n"
-                    for entry in entries[:20]:  # 最多显示20项
-                        type_icon = "📁" if entry["type"] == "directory" else "📄"
-                        size_info = f" ({entry['size']} bytes)" if entry.get("size") else ""
-                        content += f"{type_icon} {entry['name']}{size_info}\n"
-                    if len(entries) > 20:
-                        content += f"... 还有 {len(entries) - 20} 项\n"
-                return ChatResponse(
-                    success=True,
-                    content=content,
-                    model="file_operation",
-                    error=None
-                )
-            else:
-                return ChatResponse(
-                    success=False,
-                    content="",
-                    model="file_operation",
-                    error=f"列出目录失败: {result.get('error', '未知错误')}"
-                )
-        
-        elif op_type == "search":
-            # 提取搜索模式（简化处理，使用消息中的第一个单词作为模式）
-            import re
-            words = message.split()
-            search_pattern = None
-            for word in words:
-                if len(word) > 2 and not any(kw in word.lower() for kw in ['搜索', '查找', 'search', 'find']):
-                    search_pattern = word.strip('"\'，,.;:')
-                    break
-            
-            if not search_pattern:
-                return ChatResponse(
-                    success=False,
-                    content="",
-                    model="file_operation",
-                    error="请指定要搜索的内容"
-                )
-            
-            search_path = file_path if file_path else "."
-            result = await file_tools.search_files(
-                pattern=search_pattern,
-                path=search_path
-            )
-            
-            if result["success"]:
-                matches = result.get('matches', [])
-                if not matches:
-                    content = f"在 '{search_path}' 中未找到包含 '{search_pattern}' 的文件"
-                else:
-                    content = f"搜索 '{search_pattern}' 结果 ({result.get('files_matched', 0)} 个文件，{result.get('total_matches', 0)} 处匹配):\n"
-                    for match in matches[:5]:  # 最多显示5个文件
-                        content += f"\n📄 {match['file']} ({match['match_count']} 处匹配)\n"
-                        for m in match['matches'][:2]:  # 每个文件最多显示2处
-                            context = m.get('context', '').replace('\n', ' ')
-                            content += f"  ...{context}...\n"
-                return ChatResponse(
-                    success=True,
-                    content=content,
-                    model="file_operation",
-                    error=None
-                )
-            else:
-                return ChatResponse(
-                    success=False,
-                    content="",
-                    model="file_operation",
-                    error=f"搜索失败: {result.get('error', '未知错误')}"
-                )
-        
-        elif op_type in ["write", "delete", "move"]:
-            # 这些操作需要更复杂的参数解析，暂时返回提示信息
-            return ChatResponse(
-                success=False,
-                content="",
-                model="file_operation",
-                error=f"{op_type} 操作需要通过专门的API端点执行，当前仅支持查询类操作（read/list/search）"
-            )
-        
         else:
             return ChatResponse(
                 success=False,
                 content="",
-                model="file_operation",
-                error=f"不支持的操作类型: {op_type}"
+                model="file_operation_agent",
+                error=result.error or "任务执行失败"
             )
             
     except Exception as e:
         return ChatResponse(
             success=False,
             content="",
-            model="file_operation",
-            error=f"文件操作执行失败: {str(e)}"
+            model="file_operation_agent",
+            error=f"文件操作Agent执行失败: {str(e)}"
         )
 
 
