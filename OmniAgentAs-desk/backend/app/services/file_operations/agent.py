@@ -2,6 +2,7 @@
 ReAct Agent实现 (ReAct Agent Implementation)
 实现Thought-Action-Observation循环的文件操作智能体
 """
+import asyncio
 import json
 import re
 from typing import Dict, Any, List, Optional, Callable
@@ -300,6 +301,12 @@ class FileOperationAgent:
         # 初始化session服务（用于统一管理会话生命周期）
         self.session_service = get_session_service()
         
+        # 【修复】标记session是否由本Agent创建（用于正确关闭）
+        self._session_created_by_agent = False
+        
+        # 【修复】添加异步锁，确保并发安全
+        self._lock = asyncio.Lock()
+        
         # 初始化文件工具，确保session_id正确传递
         self.file_tools = file_tools or FileTools(session_id=session_id)
         
@@ -322,6 +329,9 @@ class FileOperationAgent:
         """
         运行Agent完成任务
         
+        【修复】使用锁保护确保并发安全
+        【修复】每次run独立管理状态和session
+        
         Args:
             task: 任务描述
             context: 额外上下文
@@ -330,18 +340,41 @@ class FileOperationAgent:
         Returns:
             Agent执行结果
         """
+        # 【修复】使用锁确保同一时间只有一个run执行（并发安全）
+        async with self._lock:
+            return await self._run_internal(task, context, system_prompt)
+    
+    async def _run_internal(
+        self,
+        task: str,
+        context: Optional[Dict[str, Any]] = None,
+        system_prompt: Optional[str] = None
+    ) -> AgentResult:
+        """
+        内部运行方法（已被锁保护）
+        """
+        # 【修复】重置状态，避免多次调用导致的状态污染
+        self.steps = []
+        self.conversation_history = []
         self.status = AgentStatus.THINKING
         
-        # 【修复问题6：Session管理混乱】
-        # 确保session已创建（统一管理会话生命周期）
-        if not self.session_id:
-            self.session_id = self.session_service.create_session(
+        # 【修复】使用局部变量管理session，避免并发问题
+        session_id = self.session_id
+        session_created_by_this_run = False
+        
+        # 【修复】确保session已创建（统一管理会话生命周期）
+        if not session_id:
+            session_id = self.session_service.create_session(
                 agent_id="file-operation-agent",
                 task_description=task
             )
-            # 更新FileTools的session_id
-            self.file_tools.set_session(self.session_id)
-            logger.info(f"Session created in run(): {self.session_id}")
+            session_created_by_this_run = True
+            self._session_created_by_agent = True
+            
+            # 【修复】安全地更新FileTools的session_id
+            if hasattr(self.file_tools, 'set_session'):
+                self.file_tools.set_session(session_id)
+            logger.info(f"Session created in run(): {session_id}")
         
         # 构建初始prompt
         sys_prompt = system_prompt or self.prompts.get_system_prompt()
@@ -352,7 +385,6 @@ class FileOperationAgent:
         self.conversation_history.append({"role": "user", "content": task_prompt})
         
         current_step = 0
-        
         result = None
         
         try:
@@ -400,7 +432,7 @@ class FileOperationAgent:
                         message="Task completed successfully",
                         steps=self.steps,
                         total_steps=current_step,
-                        session_id=self.session_id,
+                        session_id=session_id,
                         final_result=parsed["action_input"]
                     )
                     return result
@@ -428,7 +460,7 @@ class FileOperationAgent:
                 message=f"Exceeded maximum steps ({self.max_steps})",
                 steps=self.steps,
                 total_steps=current_step,
-                session_id=self.session_id,
+                session_id=session_id,
                 error="Maximum steps exceeded"
             )
             return result
@@ -441,21 +473,23 @@ class FileOperationAgent:
                 message=f"Execution failed: {str(e)}",
                 steps=self.steps,
                 total_steps=current_step,
-                session_id=self.session_id,
+                session_id=session_id,
                 error=str(e)
             )
             return result
             
         finally:
-            # 【修复问题6：Session管理混乱】
-            # 确保session总是被正确关闭（无论成功或失败）
-            if self.session_id and self.session_service:
+            # 【修复】只关闭由本次run创建的session
+            if session_created_by_this_run and session_id and self.session_service:
                 try:
                     success = result.success if result else False
-                    self.session_service.complete_session(self.session_id, success=success)
-                    logger.info(f"Session completed: {self.session_id} (success={success})")
+                    self.session_service.complete_session(session_id, success=success)
+                    logger.info(f"Session completed: {session_id} (success={success})")
+                    # 重置标记
+                    self._session_created_by_agent = False
+                    self.session_id = None
                 except Exception as e:
-                    logger.error(f"Failed to complete session {self.session_id}: {e}")
+                    logger.error(f"Failed to complete session {session_id}: {e}")
     
     async def _get_llm_response(self) -> str:
         """获取LLM响应"""
@@ -463,11 +497,15 @@ class FileOperationAgent:
             # 最后一条消息作为当前消息
             last_message = self.conversation_history[-1]["content"]
             # 前面的消息作为历史
-            history = self.conversation_history[:-1]
+            history_dicts = self.conversation_history[:-1]
+            
+            # 【修复】使用adapter将Dict列表转换为Message列表
+            from app.services.file_operations.adapter import dict_list_to_messages
+            history_messages = dict_list_to_messages(history_dicts)
             
             response = await self.llm_client(
                 message=last_message,
-                history=history
+                history=history_messages
             )
             
             # 添加到历史
