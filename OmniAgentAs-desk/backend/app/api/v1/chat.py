@@ -38,61 +38,117 @@ class ValidateResponse(BaseModel):
     message: str = Field(default="", description="验证消息")
 
 
-def detect_file_operation_intent(message: str) -> tuple[bool, str]:
+def detect_file_operation_intent(message: str) -> tuple[bool, str, float]:
     """
-    检测用户消息是否包含文件操作意图
+    检测用户消息是否包含文件操作意图（增强版）
+    
+    【修复】添加置信度评分，支持更多关键词和模糊匹配
     
     Args:
         message: 用户输入消息
         
     Returns:
-        (是否文件操作, 操作类型)
+        (是否文件操作, 操作类型, 置信度0-1)
     """
-    message_lower = message.lower()
+    message_lower = message.lower().strip()
     
-    # 文件读取意图
-    read_keywords = ['读取文件', '查看文件', '打开文件', '读文件', '看文件内容', 
-                     'read file', 'view file', 'open file', 'show file']
-    for keyword in read_keywords:
-        if keyword in message_lower:
-            return True, "read"
+    # 【修复】扩展关键词库，添加更多变体和同义词
+    intent_patterns = {
+        "read": {
+            "keywords": [
+                '读取文件', '查看文件', '打开文件', '读文件', '看文件内容', '显示文件内容',
+                'read file', 'view file', 'open file', 'show file', 'display file',
+                '查看', '打开', '读一下', '看一下', '显示', '展示',
+                'view', 'open', 'read', 'show', 'display', 'cat'
+            ],
+            "weight": 1.0
+        },
+        "write": {
+            "keywords": [
+                '写入文件', '创建文件', '保存文件', '写文件', '修改文件', '更新文件',
+                'write file', 'create file', 'save file', 'update file', 'edit file',
+                '写入', '创建', '保存', '写', '修改', '更新', '编辑',
+                'write', 'create', 'save', 'edit', 'update', 'modify'
+            ],
+            "weight": 1.0
+        },
+        "list": {
+            "keywords": [
+                '列出目录', '查看目录', '显示文件', '有哪些文件', '文件列表', '目录内容',
+                'list directory', 'show files', 'list files', 'ls', 'dir', 'll',
+                '列出', '目录', '文件夹', '有什么', '文件有哪些',
+                'list', 'ls', 'dir', 'directory', 'folders'
+            ],
+            "weight": 0.9
+        },
+        "delete": {
+            "keywords": [
+                '删除文件', '移除文件', '删掉文件', '删除目录', '清空文件',
+                'delete file', 'remove file', 'del file', 'rm file', 'erase file',
+                '删除', '移除', '删掉', '清空', '销毁',
+                'delete', 'remove', 'del', 'rm', 'erase', 'trash'
+            ],
+            "weight": 1.0
+        },
+        "move": {
+            "keywords": [
+                '移动文件', '重命名文件', '改名', '转移文件', '复制文件',
+                'move file', 'rename file', 'mv file', 'cp file', 'copy file',
+                '移动', '重命名', '改名', '转移', '复制', '拷贝',
+                'move', 'rename', 'mv', 'cp', 'copy'
+            ],
+            "weight": 1.0
+        },
+        "search": {
+            "keywords": [
+                '搜索文件', '查找文件', '找文件', '搜索内容', '查找内容', '全文搜索',
+                'search file', 'find file', 'grep', 'search content', 'locate',
+                '搜索', '查找', '找一下', '搜一下', '查询',
+                'search', 'find', 'grep', 'locate', 'lookup'
+            ],
+            "weight": 0.9
+        }
+    }
     
-    # 文件写入意图
-    write_keywords = ['写入文件', '创建文件', '保存文件', '写文件', '修改文件',
-                      'write file', 'create file', 'save file', 'update file']
-    for keyword in write_keywords:
-        if keyword in message_lower:
-            return True, "write"
+    # 【修复】计算每个意图的匹配得分
+    best_intent = None
+    best_score = 0.0
     
-    # 目录列表意图
-    list_keywords = ['列出目录', '查看目录', '显示文件', '有哪些文件', '文件列表',
-                     'list directory', 'show files', 'list files', 'dir']
-    for keyword in list_keywords:
-        if keyword in message_lower:
-            return True, "list"
+    for intent, config in intent_patterns.items():
+        score = 0.0
+        matched_keywords = []
+        
+        for keyword in config["keywords"]:
+            if keyword in message_lower:
+                # 完整词匹配得分更高
+                if keyword in message_lower.split() or len(keyword) >= 6:
+                    score += 0.3
+                else:
+                    score += 0.2
+                matched_keywords.append(keyword)
+        
+        # 应用权重
+        score *= config["weight"]
+        
+        # 如果有多个关键词匹配，增加置信度
+        if len(matched_keywords) >= 2:
+            score += 0.2
+        
+        # 如果包含文件路径特征，增加置信度
+        if any(char in message for char in ['/', '\\', '.txt', '.md', '.py', '.json']):
+            score += 0.1
+        
+        if score > best_score:
+            best_score = score
+            best_intent = intent
     
-    # 文件删除意图
-    delete_keywords = ['删除文件', '移除文件', '删掉文件', '删除目录',
-                       'delete file', 'remove file', 'del file']
-    for keyword in delete_keywords:
-        if keyword in message_lower:
-            return True, "delete"
+    # 【修复】设置置信度阈值
+    CONFIDENCE_THRESHOLD = 0.2
     
-    # 文件移动/重命名意图
-    move_keywords = ['移动文件', '重命名文件', '改名', '转移文件',
-                     'move file', 'rename file', 'mv file']
-    for keyword in move_keywords:
-        if keyword in message_lower:
-            return True, "move"
+    if best_score >= CONFIDENCE_THRESHOLD and best_intent is not None:
+        return True, best_intent, min(best_score, 1.0)
     
-    # 文件搜索意图
-    search_keywords = ['搜索文件', '查找文件', '找文件', '搜索内容',
-                       'search file', 'find file', 'grep', 'search content']
-    for keyword in search_keywords:
-        if keyword in message_lower:
-            return True, "search"
-    
-    return False, ""
+    return False, "", 0.0
 
 
 def extract_file_path(message: str) -> Optional[str]:
@@ -146,10 +202,11 @@ async def chat(request: ChatRequest):
         # 获取最后一条用户消息
         last_message = request.messages[-1].content if request.messages else ""
         
-        # 【修复】检测文件操作意图
-        is_file_op, op_type = detect_file_operation_intent(last_message)
+        # 【修复】检测文件操作意图（返回3个值：是否文件操作、操作类型、置信度）
+        is_file_op, op_type, confidence = detect_file_operation_intent(last_message)
         
-        if is_file_op:
+        # 【修复】只有在置信度足够高时才执行文件操作
+        if is_file_op and confidence >= 0.3:
             # 【修复】文件操作路由到 FileTools
             return await handle_file_operation(last_message, op_type)
         
