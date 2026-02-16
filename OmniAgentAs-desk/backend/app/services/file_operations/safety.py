@@ -191,7 +191,8 @@ class FileOperationSafety:
         operation_type: OperationType,
         source_path: Optional[Path] = None,
         destination_path: Optional[Path] = None,
-        sequence_number: int = 0
+        sequence_number: int = 0,
+        file_size: Optional[int] = None
     ) -> str:
         """
         记录文件操作（执行前）
@@ -202,11 +203,20 @@ class FileOperationSafety:
             source_path: 源路径
             destination_path: 目标路径
             sequence_number: 操作顺序号
+            file_size: 文件大小（字节）
             
         Returns:
             operation_id: 操作唯一标识符
         """
         operation_id = f"op-{uuid4().hex}"
+        
+        # 【修复】计算空间影响
+        space_impact_bytes = None
+        if file_size is not None:
+            if operation_type == OperationType.CREATE:
+                space_impact_bytes = -file_size  # 创建文件占用空间（负值）
+            elif operation_type == OperationType.DELETE:
+                space_impact_bytes = file_size   # 删除文件释放空间（正值）
         
         try:
             conn = self._get_connection()
@@ -215,14 +225,16 @@ class FileOperationSafety:
             cursor.execute('''
                 INSERT INTO file_operations 
                 (operation_id, session_id, operation_type, status, source_path, 
-                 destination_path, sequence_number, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 destination_path, sequence_number, file_size, space_impact_bytes, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 operation_id, session_id, operation_type.value, 
                 OperationStatus.PENDING.value,
                 str(source_path) if source_path else None,
                 str(destination_path) if destination_path else None,
                 sequence_number,
+                file_size,
+                space_impact_bytes,
                 datetime.now()
             ))
             

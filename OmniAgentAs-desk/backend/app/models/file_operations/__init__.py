@@ -131,7 +131,7 @@ class SessionRecord(BaseModel):
 
 # SQLAlchemy ORM模型（用于数据库操作）
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base  # 【修复】SQLAlchemy 2.0: 从 sqlalchemy.orm 导入
 from sqlalchemy.sql import func
 
 Base = declarative_base()

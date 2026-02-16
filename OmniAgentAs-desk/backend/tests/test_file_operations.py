@@ -8,11 +8,19 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-# 跳过这些测试如果没有FastAPI测试客户端
-pytestmark = pytest.mark.skipif(
-    False,  # 设置为True可以跳过所有测试
-    reason="Integration tests require full backend setup"
-)
+# 【修复】添加TestClient导入
+from fastapi.testclient import TestClient
+from app.main import app
+
+@pytest.fixture
+def client():
+    """创建测试客户端"""
+    return TestClient(app)
+
+@pytest.fixture
+def session_id():
+    """创建测试会话ID"""
+    return "test-session-123"
 
 
 class TestFileOperationsAPI:

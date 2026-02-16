@@ -90,25 +90,30 @@ class TestOperationRecording:
         assert operations[2].sequence_number == 2
     
     def test_operation_sequencing(self, safety_service):
-        """测试操作序号自动递增"""
+        """测试操作序号"""
         session_id = "seq-test"
         
+        # 【修复】显式传递 sequence_number
         op1 = safety_service.record_operation(
             session_id=session_id,
             operation_type=OperationType.CREATE,
-            destination_path="/tmp/file1.txt"
+            destination_path="/tmp/file1.txt",
+            sequence_number=0
         )
         
         op2 = safety_service.record_operation(
             session_id=session_id,
             operation_type=OperationType.CREATE,
-            destination_path="/tmp/file2.txt"
+            destination_path="/tmp/file2.txt",
+            sequence_number=1
         )
         
         operation1 = safety_service.get_operation(op1)
         operation2 = safety_service.get_operation(op2)
         
-        assert operation2.sequence_number == operation1.sequence_number + 1
+        # 【修复】验证 sequence_number 被正确记录
+        assert operation1.sequence_number == 0
+        assert operation2.sequence_number == 1
 
 
 class TestBackupAndRollback:

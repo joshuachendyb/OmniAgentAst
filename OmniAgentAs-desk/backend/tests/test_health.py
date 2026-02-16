@@ -27,7 +27,8 @@ def test_fastapi_config():
     from app.main import app
     
     assert app.title == "OmniAgentAst API"
-    assert app.version == "0.1.0"
+    # 【修复】版本号应该从version.txt读取，当前是0.2.3
+    assert app.version == "0.2.3"
 
 def test_routes_exist():
     """TC003: 测试路由存在"""
