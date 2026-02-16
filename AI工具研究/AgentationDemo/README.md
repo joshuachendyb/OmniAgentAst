@@ -1,8 +1,10 @@
-# React 项目模板 - Agentation 集成
+# AgentationDemo - Agentation 集成演示
 
 ## 简介
 
-本模板集成了 [Agentation](https://agentation.dev/) 可视化反馈工具。
+本项目是 [Agentation](https://agentation.dev/) 可视化反馈工具的演示项目，集成 React + Vite。
+
+用于测试和展示 Agentation 的 UI 标注功能，可与 OpenCode/Claude Code 等 AI Agent 配合使用。
 
 ## Agentation 功能
 
@@ -16,7 +18,7 @@
 ### 1. 安装依赖
 
 ```bash
-cd react-template
+cd AgentationDemo
 npm install
 ```
 
@@ -48,7 +50,7 @@ npm run dev
 ## 目录结构
 
 ```
-react-template/
+AgentationDemo/
 ├── index.html          # HTML 入口
 ├── package.json        # 项目配置
 ├── vite.config.js      # Vite 配置
@@ -63,9 +65,13 @@ react-template/
 用户反馈 → Agentation 标注 → 复制标注 → OpenCode → AI 修改代码
 ```
 
-## 后续项目使用
+## 技术栈
 
-1. 复制 `react-template` 目录
-2. 重命名为项目名称
-3. 修改 `package.json` 中的项目名
-4. 安装依赖并启动开发
+- React 18 + Vite 5
+- Agentation 1.0（可视化反馈工具）
+- 开发端口：3000
+
+## 常见问题
+
+1. **favicon.ico 404** - 这是正常现象，项目未提供网站图标
+2. **React DevTools 提示** - 建议安装浏览器扩展获得更好调试体验
