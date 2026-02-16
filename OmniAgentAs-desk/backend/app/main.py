@@ -6,7 +6,7 @@ from app.api.v1 import health, chat, file_operations
 app = FastAPI(
     title="OmniAgentAst API",
     description="OmniAgentAst 桌面版后端API",
-    version="0.1.0"
+    version="0.2.2"
 )
 
 # CORS配置
@@ -27,7 +27,7 @@ app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operati
 async def root():
     return {
         "message": "OmniAgentAst API",
-        "version": "0.1.0",
+        "version": "0.2.2",
         "docs": "/docs"
     }
 

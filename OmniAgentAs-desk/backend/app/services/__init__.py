@@ -5,17 +5,19 @@ AI服务工厂
 
 import yaml
 import os
+import threading
 from typing import Optional
 from .base import BaseAIService
 from .zhipuai import ZhipuAIService
 from .opencode import OpenCodeService
 
 class AIServiceFactory:
-    """AI服务工厂"""
+    """AI服务工厂（线程安全版）"""
     
     _instance: Optional[BaseAIService] = None
     _current_provider: str = "zhipuai"  # 显式跟踪当前提供商
     _config: Optional[dict] = None  # 配置缓存（用于测试）
+    _lock: threading.Lock = threading.Lock()  # 【修复】线程锁，确保线程安全
     
     @classmethod
     def get_config_path(cls, config_path: Optional[str] = None) -> str:

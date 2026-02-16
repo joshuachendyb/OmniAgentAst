@@ -24,7 +24,7 @@ async def health_check():
     return HealthResponse(
         status="ok",
         timestamp=datetime.utcnow().isoformat(),
-        version="0.1.0"
+        version="0.2.2"
     )
 
 @router.post("/echo", response_model=EchoResponse)
