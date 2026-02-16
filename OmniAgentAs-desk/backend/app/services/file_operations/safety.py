@@ -558,6 +558,58 @@ class FileOperationSafety:
         finally:
             conn.close()
     
+    def get_operation(self, operation_id: str) -> Optional[OperationRecord]:
+        """
+        获取单个操作记录
+        
+        Args:
+            operation_id: 操作ID
+            
+        Returns:
+            操作记录，不存在返回None
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            cursor.execute('''
+                SELECT * FROM file_operations 
+                WHERE operation_id = ?
+            ''', (operation_id,))
+            
+            row = cursor.fetchone()
+            if not row:
+                return None
+            
+            return OperationRecord(
+                operation_id=row[1],
+                session_id=row[2],
+                operation_type=OperationType(row[3]),
+                status=OperationStatus(row[4]),
+                source_path=row[5],
+                destination_path=row[6],
+                backup_path=row[7],
+                backup_expires_at=row[8],
+                file_size=row[9],
+                file_hash=row[10],
+                is_directory=bool(row[11]),
+                file_extension=row[12],
+                duration_ms=row[13],
+                space_impact_bytes=row[14],
+                metadata=json.loads(row[15]) if row[15] else {},
+                error_message=row[16],
+                created_at=row[17],
+                executed_at=row[18],
+                rolled_back_at=row[19],
+                sequence_number=row[20]
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to get operation {operation_id}: {e}")
+            return None
+        finally:
+            conn.close()
+    
     def cleanup_expired_backups(self) -> int:
         """
         清理过期的备份文件

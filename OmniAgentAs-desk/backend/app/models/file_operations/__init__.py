@@ -161,7 +161,7 @@ class OperationRecordORM(Base):
     duration_ms = Column(Integer, nullable=True)
     space_impact_bytes = Column(Integer, nullable=True)
     
-    metadata = Column(Text, default='{}')  # JSON字符串
+    operation_metadata = Column(Text, default='{}')  # JSON字符串
     error_message = Column(Text, nullable=True)
     
     created_at = Column(DateTime, default=func.now())
@@ -189,7 +189,7 @@ class OperationRecordORM(Base):
             file_extension=self.file_extension,
             duration_ms=self.duration_ms,
             space_impact_bytes=self.space_impact_bytes,
-            metadata=json.loads(self.metadata) if self.metadata else {},
+            metadata=json.loads(self.operation_metadata) if self.operation_metadata else {},
             error_message=self.error_message,
             created_at=self.created_at,
             executed_at=self.executed_at,
