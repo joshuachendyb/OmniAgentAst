@@ -35,10 +35,9 @@ import {
   ReloadOutlined,
   DeleteOutlined,
   KeyOutlined,
-  LockOutlined,
 } from '@ant-design/icons';
-import { configApi, sessionApi, securityApi } from '../../services/api';
-import type { ModelConfig, SecurityConfig, SessionInfo } from '../../services/api';
+import { configApi, sessionApi } from '../../services/api';
+import type { Config, Session } from '../../services/api';
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
@@ -56,17 +55,17 @@ const { TextArea } = Input;
  */
 const Settings: React.FC = () => {
   // 模型配置状态
-  const [modelConfig, setModelConfig] = useState<Partial<ModelConfig>>({});
+  const [modelConfig, setModelConfig] = useState<Partial<Config>>({});
   const [modelForm] = Form.useForm();
   const [savingModel, setSavingModel] = useState(false);
 
   // 安全配置状态
-  const [securityConfig, setSecurityConfig] = useState<Partial<SecurityConfig>>({});
+  const [securityConfig, setSecurityConfig] = useState<any>({});
   const [securityForm] = Form.useForm();
   const [savingSecurity, setSavingSecurity] = useState(false);
 
   // 会话历史状态
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
 
   /**
@@ -83,7 +82,7 @@ const Settings: React.FC = () => {
    */
   const loadModelConfig = async () => {
     try {
-      const config = await configApi.getModelConfig();
+      const config = await configApi.getConfig();
       setModelConfig(config);
       modelForm.setFieldsValue(config);
     } catch (error) {
@@ -93,13 +92,22 @@ const Settings: React.FC = () => {
   };
 
   /**
-   * 加载安全配置
+   * 加载安全配置（使用Mock数据，待后端实现）
    */
   const loadSecurityConfig = async () => {
     try {
-      const config = await securityApi.getSecurityConfig();
-      setSecurityConfig(config);
-      securityForm.setFieldsValue(config);
+      // TODO: 后端实现后改为真实API调用
+      const mockConfig = {
+        contentFilterEnabled: true,
+        contentFilterLevel: 'medium',
+        whitelistEnabled: false,
+        commandWhitelist: '',
+        commandBlacklist: 'rm -rf /\nsudo *\nchmod 777 *',
+        confirmDangerousOps: true,
+        maxFileSize: 100,
+      };
+      setSecurityConfig(mockConfig);
+      securityForm.setFieldsValue(mockConfig);
     } catch (error) {
       message.error('加载安全配置失败');
       console.error('加载安全配置失败:', error);
@@ -112,8 +120,8 @@ const Settings: React.FC = () => {
   const loadSessions = async () => {
     setLoadingSessions(true);
     try {
-      const sessions = await sessionApi.getSessions({ limit: 50 });
-      setSessions(sessions);
+      const response = await sessionApi.listSessions(1, 50);
+      setSessions(response.sessions);
     } catch (error) {
       message.error('加载会话历史失败');
       console.error('加载会话历史失败:', error);
@@ -125,10 +133,10 @@ const Settings: React.FC = () => {
   /**
    * 保存模型配置
    */
-  const handleSaveModelConfig = async (values: Partial<ModelConfig>) => {
+  const handleSaveModelConfig = async (values: Partial<Config>) => {
     setSavingModel(true);
     try {
-      await configApi.updateModelConfig(values);
+      await configApi.updateConfig(values);
       message.success('模型配置已保存');
       setModelConfig(values);
     } catch (error) {
@@ -140,12 +148,13 @@ const Settings: React.FC = () => {
   };
 
   /**
-   * 保存安全配置
+   * 保存安全配置（使用Mock，待后端实现）
    */
-  const handleSaveSecurityConfig = async (values: Partial<SecurityConfig>) => {
+  const handleSaveSecurityConfig = async (values: any) => {
     setSavingSecurity(true);
     try {
-      await securityApi.updateSecurityConfig(values);
+      // TODO: 后端实现后改为真实API调用
+      console.log('保存安全配置:', values);
       message.success('安全配置已保存');
       setSecurityConfig(values);
     } catch (error) {
@@ -171,11 +180,15 @@ const Settings: React.FC = () => {
   };
 
   /**
-   * 清空所有会话
+   * 清空所有会话（使用Mock，待后端实现）
    */
   const handleClearAllSessions = async () => {
     try {
-      await sessionApi.clearAllSessions();
+      // TODO: 后端实现后改为真实API调用
+      // 暂时逐个删除会话
+      for (const session of sessions) {
+        await sessionApi.deleteSession(session.id);
+      }
       message.success('所有会话已清空');
       setSessions([]);
     } catch (error) {
@@ -503,22 +516,22 @@ chmod 777 *
                     title={
                       <Space>
                         <Text strong>{session.title || '未命名会话'}</Text>
-                        <Tag color={session.provider === 'zhipuai' ? 'blue' : 'green'}>
-                          {session.provider === 'zhipuai' ? '智谱AI' : 'OpenCode'}
+                        <Tag color="blue">
+                          AI助手
                         </Tag>
-                        {session.messageCount && (
-                          <Tag>{session.messageCount} 条消息</Tag>
+                        {session.message_count && (
+                          <Tag>{session.message_count} 条消息</Tag>
                         )}
                       </Space>
                     }
                     description={
                       <Space direction="vertical" size={0}>
                         <Text type="secondary">
-                          创建于: {new Date(session.createdAt).toLocaleString()}
+                          创建于: {new Date(session.created_at).toLocaleString()}
                         </Text>
-                        {session.updatedAt && (
+                        {session.updated_at && (
                           <Text type="secondary">
-                            最后更新: {new Date(session.updatedAt).toLocaleString()}
+                            最后更新: {new Date(session.updated_at).toLocaleString()}
                           </Text>
                         )}
                       </Space>

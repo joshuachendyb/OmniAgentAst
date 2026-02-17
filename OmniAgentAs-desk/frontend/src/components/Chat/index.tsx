@@ -10,7 +10,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Input, Button, Card, List, Typography, Tag, Space, Alert, Select, message } from 'antd';
+import { Input, Button, Card, List, Tag, Space, Alert, Select, message } from 'antd';
 import { SendOutlined, RobotOutlined, CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { chatApi, securityApi, ChatMessage, ValidateResponse } from '../../services/api';
 import MessageItem from './MessageItem';

@@ -18,14 +18,13 @@ import {
   CodeOutlined,
   EyeOutlined,
   ThunderboltOutlined,
-  CopyOutlined,
   DownloadOutlined,
 } from '@ant-design/icons';
 import type { ExecutionStep } from '../../services/api';
 
 interface ExecutionPanelProps {
   steps: ExecutionStep[];
-  isRunning?: boolean;
+  isActive?: boolean;
   totalTime?: number; // 毫秒
   onViewRaw?: () => void;
   onExport?: () => void;
@@ -41,12 +40,12 @@ interface ExecutionPanelProps {
  * - 支持查看原始数据和导出
  * 
  * @param steps - 执行步骤数组
- * @param isRunning - 是否正在执行
+ * @param isActive - 是否正在执行
  * @param totalTime - 总耗时（毫秒）
  */
 const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
   steps,
-  isRunning = false,
+  isActive = false,
   totalTime,
   onViewRaw,
   onExport,
@@ -262,7 +261,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
           key: '1',
           label: (
             <Space>
-              {isRunning ? (
+              {isActive ? (
                 <Spin indicator={<LoadingOutlined style={{ fontSize: 16 }} spin />} />
               ) : hasError ? (
                 <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
@@ -270,7 +269,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
                 <CheckCircleOutlined style={{ color: '#52c41a' }} />
               )}
               <span>
-                {isRunning ? '正在执行' : '执行详情'}
+                {isActive ? '正在执行' : '执行详情'}
                 {stepCount > 0 && ` (${stepCount}步${totalTime ? `，耗时${formatDuration(totalTime)}` : ''})`}
               </span>
               {hasError && <Tag color="error">有错误</Tag>}
@@ -322,7 +321,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
                   {renderStepContent(step, index)}
                 </Timeline.Item>
               ))}
-              {isRunning && (
+              {isActive && (
                 <Timeline.Item
                   dot={<LoadingOutlined spin />}
                   color="#1890ff"

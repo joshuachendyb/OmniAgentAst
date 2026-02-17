@@ -9,7 +9,7 @@
  * @update 2026-02-18 添加移动端响应式支持
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layout, Menu, Typography, Avatar, Badge, Tooltip, Drawer, Button, Grid } from 'antd';
 import {

@@ -9,7 +9,7 @@
  */
 
 import React, { useState } from 'react';
-import { Avatar, Typography, Tooltip, Button, message } from 'antd';
+import { Avatar, Typography, Tooltip, Button, message as antMessage } from 'antd';
 import { 
   UserOutlined, 
   RobotOutlined, 
@@ -17,7 +17,7 @@ import {
   CopyOutlined,
   CheckOutlined
 } from '@ant-design/icons';
-import type { ChatMessage } from '../../services/api';
+import type { ChatMessage, ExecutionStep } from '../../services/api';
 
 const { Text } = Typography;
 
@@ -30,14 +30,7 @@ interface MessageItemProps {
   showExecution?: boolean;
 }
 
-interface ExecutionStep {
-  type: 'thought' | 'action' | 'observation' | 'final';
-  content?: string;
-  tool?: string;
-  params?: Record<string, any>;
-  result?: any;
-  timestamp: number;
-}
+
 
 /**
  * 消息项组件
@@ -64,10 +57,10 @@ const MessageItem: React.FC<MessageItemProps> = ({
     try {
       await navigator.clipboard.writeText(message.content);
       setCopied(true);
-      message.success('已复制到剪贴板');
+      antMessage.success('已复制到剪贴板');
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      message.error('复制失败');
+      antMessage.error('复制失败');
     }
   };
 
