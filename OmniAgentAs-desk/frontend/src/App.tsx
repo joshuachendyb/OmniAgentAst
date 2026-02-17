@@ -1,34 +1,30 @@
+/**
+ * 应用入口组件 - App.tsx
+ * 
+ * 功能：应用根组件，整合Layout布局和路由
+ * 
+ * @author 小新
+ * @version 2.0.0
+ * @since 2026-02-17
+ * @update 重构为左右分栏布局，新增导航功能 - by 小新
+ */
+
 import React from 'react';
-import { Layout, Typography, Space } from 'antd';
-import HealthCheck from './components/HealthCheck';
+import AppLayout from './components/Layout';
 import Chat from './components/Chat';
 
-const { Header, Content } = Layout;
-const { Title } = Typography;
-
+/**
+ * 应用主组件
+ * 
+ * 变更记录：
+ * - v2.0.0 (2026-02-17 by 小新): 重构为左右分栏布局，使用AppLayout组件
+ * - v1.0.0: 初始版本，单栏布局
+ */
 const App: React.FC = () => {
   return (
-    <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ background: '#001529', padding: '0 24px' }}>
-        <Title level={3} style={{ color: 'white', margin: '16px 0' }}>
-          OmniAgentAst. 桌面版
-        </Title>
-      </Header>
-      
-      <Content style={{ padding: 24, maxWidth: 1000, margin: '0 auto', width: '100%' }}>
-        <Space direction="vertical" style={{ width: '100%' }} size="large">
-          <HealthCheck />
-          <Chat />
-          
-          <div style={{ padding: 16, background: '#f0f2f5', borderRadius: 8 }}>
-            <h3>欢迎使用 OmniAgentAst</h3>
-            <p>这是一个AI智能助手桌面应用。</p>
-            <p>当前阶段: 1.2 AI模型接入 (已完成)</p>
-            <p>支持的AI提供商: 智谱GLM, OpenCode Zen</p>
-          </div>
-        </Space>
-      </Content>
-    </Layout>
+    <AppLayout activeKey="/">
+      <Chat />
+    </AppLayout>
   );
 };
 
