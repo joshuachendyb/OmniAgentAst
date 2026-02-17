@@ -1,7 +1,18 @@
+/**
+ * Chat组件 - 对话主界面
+ * 
+ * 功能：消息列表展示、消息发送、服务状态检查、模型切换
+ * 
+ * @author 小新
+ * @version 2.0.0
+ * @since 2026-02-17
+ */
+
 import React, { useState, useRef, useEffect } from 'react';
 import { Input, Button, Card, List, Typography, Tag, Space, Alert, Select } from 'antd';
 import { SendOutlined, RobotOutlined, UserOutlined, CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { chatApi, ChatMessage, ValidateResponse } from '../../services/api';
+import MessageItem from './MessageItem';
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -268,62 +279,11 @@ const Chat: React.FC = () => {
               <List.Item
                 style={{
                   justifyContent: item.role === 'user' ? 'flex-end' : 'flex-start',
+                  border: 'none',
+                  padding: '8px 0',
                 }}
               >
-                <div
-                  style={{
-                    maxWidth: '70%',
-                    padding: '8px 12px',
-                    borderRadius: 12,
-                    backgroundColor:
-                      item.role === 'user'
-                        ? '#1890ff'
-                        : item.role === 'system'
-                        ? '#fff2f0'
-                        : '#f6ffed',
-                    color: item.role === 'user' ? '#fff' : 'inherit',
-                    border:
-                      item.role === 'system'
-                        ? '1px solid #ffccc7'
-                        : item.role === 'assistant'
-                        ? '1px solid #b7eb8f'
-                        : 'none',
-                  }}
-                >
-                  <Space direction="vertical" style={{ width: '100%' }}>
-                    <Space>
-                      {item.role === 'user' ? (
-                        <UserOutlined />
-                      ) : item.role === 'system' ? (
-                        <ReloadOutlined style={{ color: '#ff4d4f' }} />
-                      ) : (
-                        <RobotOutlined style={{ color: '#52c41a' }} />
-                      )}
-                      <Text
-                        strong
-                        style={{
-                          color: item.role === 'user' ? '#fff' : 'inherit',
-                        }}
-                      >
-                        {item.role === 'user'
-                          ? '用户'
-                          : item.role === 'system'
-                          ? '系统'
-                          : 'AI助手'}
-                      </Text>
-                    </Space>
-                    <div style={{ whiteSpace: 'pre-wrap' }}>{item.content}</div>
-                    <Text
-                      type="secondary"
-                      style={{
-                        fontSize: 12,
-                        color: item.role === 'user' ? 'rgba(255,255,255,0.7)' : undefined,
-                      }}
-                    >
-                      {item.timestamp.toLocaleTimeString()}
-                    </Text>
-                  </Space>
-                </div>
+                <MessageItem message={item} />
               </List.Item>
             )}
           />
