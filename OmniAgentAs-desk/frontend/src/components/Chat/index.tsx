@@ -1,21 +1,22 @@
 /**
  * Chat组件 - 对话主界面
  * 
- * 功能：消息列表展示、消息发送、服务状态检查、模型切换
+ * 功能：消息列表展示、消息发送、服务状态检查、模型切换、危险命令检测
  * 
  * @author 小新
- * @version 2.0.0
+ * @version 2.1.0
  * @since 2026-02-17
+ * @update 2026-02-18 集成DangerConfirmModal危险命令检测 - by 小新
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Input, Button, Card, List, Typography, Tag, Space, Alert, Select } from 'antd';
-import { SendOutlined, RobotOutlined, UserOutlined, CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons';
-import { chatApi, ChatMessage, ValidateResponse } from '../../services/api';
+import { Input, Button, Card, List, Typography, Tag, Space, Alert, Select, message } from 'antd';
+import { SendOutlined, RobotOutlined, CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons';
+import { chatApi, securityApi, ChatMessage, ValidateResponse } from '../../services/api';
 import MessageItem from './MessageItem';
+import DangerConfirmModal from '../DangerConfirmModal';
 
 const { TextArea } = Input;
-const { Text } = Typography;
 const { Option } = Select;
 
 interface Message extends ChatMessage {
@@ -23,6 +24,12 @@ interface Message extends ChatMessage {
   timestamp: Date;
 }
 
+/**
+ * Chat组件 - 对话主界面
+ * 
+ * @author 小新
+ * @version 2.1.0
+ */
 const Chat: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -32,6 +39,13 @@ const Chat: React.FC = () => {
   const [currentProvider, setCurrentProvider] = useState<'zhipuai' | 'opencode'>('zhipuai');
   const [currentModel, setCurrentModel] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 危险命令检测状态
+  const [dangerModalVisible, setDangerModalVisible] = useState(false);
+  const [dangerCommand, setDangerCommand] = useState('');
+  const [dangerRisk, setDangerRisk] = useState('');
+  const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
+  const [checkingDanger, setCheckingDanger] = useState(false);
 
   // 自动滚动到底部
   const scrollToBottom = () => {
@@ -126,19 +140,12 @@ const Chat: React.FC = () => {
     }
   };
 
-  // 发送消息
-  const handleSend = async () => {
-    if (!inputValue.trim() || loading) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: inputValue.trim(),
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInputValue('');
+  /**
+   * 执行实际的消息发送（在危险命令检测通过后调用）n   * 
+   * @param userMessage - 用户消息
+   * @author 小新
+   */
+  const executeSendMessage = async (userMessage: Message) => {
     setLoading(true);
 
     try {
@@ -170,7 +177,80 @@ const Chat: React.FC = () => {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
+      setPendingMessage(null);
     }
+  };
+
+  /**
+   * 发送消息（带危险命令检测）
+   * 
+   * @author 小新
+   */
+  const handleSend = async () => {
+    if (!inputValue.trim() || loading) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: inputValue.trim(),
+      timestamp: new Date(),
+    };
+
+    // 先显示用户消息
+    setMessages((prev) => [...prev, userMessage]);
+    setInputValue('');
+
+    // 检测危险命令
+    setCheckingDanger(true);
+    try {
+      const checkResult = await securityApi.checkCommand(userMessage.content);
+      
+      if (checkResult.isDangerous) {
+        // 危险命令，显示确认弹窗
+        setDangerCommand(userMessage.content);
+        setDangerRisk(checkResult.risk || '该命令可能包含危险操作');
+        setPendingMessage(userMessage);
+        setDangerModalVisible(true);
+        setCheckingDanger(false);
+        return;
+      }
+      
+      // 安全命令，直接发送
+      setCheckingDanger(false);
+      await executeSendMessage(userMessage);
+    } catch (error) {
+      // 检测失败，允许发送（容错）
+      console.warn('危险命令检测失败:', error);
+      setCheckingDanger(false);
+      await executeSendMessage(userMessage);
+    }
+  };
+
+  /**
+   * 危险命令确认执行
+   * 
+   * @author 小新
+   */
+  const handleDangerConfirm = async () => {
+    if (pendingMessage) {
+      setDangerModalVisible(false);
+      await executeSendMessage(pendingMessage);
+    }
+  };
+
+  /**
+   * 危险命令取消执行
+   * 
+   * @author 小新
+   */
+  const handleDangerCancel = () => {
+    setDangerModalVisible(false);
+    // 从消息列表中移除待发送的消息
+    if (pendingMessage) {
+      setMessages((prev) => prev.filter((msg) => msg.id !== pendingMessage.id));
+      message.info('已取消危险命令的执行');
+    }
+    setPendingMessage(null);
   };
 
   // 清空对话
@@ -310,13 +390,23 @@ const Chat: React.FC = () => {
           type="primary"
           icon={<SendOutlined />}
           onClick={handleSend}
-          loading={loading}
+          loading={loading || checkingDanger}
           disabled={!inputValue.trim()}
           block
         >
-          发送消息
+          {checkingDanger ? '安全检查中...' : '发送消息'}
         </Button>
       </Space>
+
+      {/* 危险命令确认弹窗 */}
+      <DangerConfirmModal
+        visible={dangerModalVisible}
+        command={dangerCommand}
+        risk={dangerRisk}
+        onConfirm={handleDangerConfirm}
+        onCancel={handleDangerCancel}
+        loading={loading}
+      />
     </Card>
   );
 };

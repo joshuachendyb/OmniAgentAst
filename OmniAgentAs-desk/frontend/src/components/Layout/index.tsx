@@ -10,6 +10,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Layout, Menu, Typography, Avatar, Badge, Tooltip, Drawer, Button, Grid } from 'antd';
 import {
   MessageOutlined,
@@ -43,11 +44,19 @@ interface LayoutProps {
  * - 右侧自适应内容区
  * - 响应式：移动端变为抽屉
  * - 导航项带图标和徽标
+ * - 集成React Router导航
  * 
  * @param children - 子组件（页面内容）
  * @param activeKey - 当前激活的菜单项
+ * 
+ * @author 小新
+ * @version 1.2.0
+ * @since 2026-02-17
+ * @update 2026-02-18 集成React Router导航 - by 小新
  */
 const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
+  // 路由导航
+  const navigate = useNavigate();
   // 未读消息数（实际应从全局状态获取）
   const [unreadCount] = useState(0);
   // 会话数量
@@ -118,11 +127,14 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   /**
    * 菜单点击处理
    * 
-   * TODO: 接入react-router进行页面跳转
+   * 功能：使用React Router进行页面导航
+   * 
+   * @author 小新
    */
   const handleMenuClick: MenuProps['onClick'] = (e) => {
-    console.log('导航到:', e.key);
-    // 实际项目中使用: navigate(e.key)
+    const key = e.key;
+    // 使用React Router导航到对应页面
+    navigate(key);
     // 移动端点击后关闭抽屉
     if (isMobile) {
       setDrawerVisible(false);

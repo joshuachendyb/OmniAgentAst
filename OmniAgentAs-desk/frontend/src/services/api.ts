@@ -309,7 +309,7 @@ export const sessionApi = {
 // @author 小新
 // ============================================
 export interface SecurityCheckResponse {
-  safe: boolean;
+  isDangerous: boolean;
   risk: string;
   suggestion: string;
 }
