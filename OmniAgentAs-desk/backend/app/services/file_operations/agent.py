@@ -4,6 +4,7 @@ ReAct Agent实现 (ReAct Agent Implementation)
 """
 import asyncio
 import json
+import logging
 import re
 from typing import Dict, Any, List, Optional, Callable
 from datetime import datetime
@@ -14,6 +15,11 @@ from app.services.file_operations.tools import FileTools
 from app.services.file_operations.prompts import FileOperationPrompts
 from app.services.file_operations.session import get_session_service
 from app.utils.logger import logger
+
+# 日志分层：创建不同级别的logger
+logger_agent = logging.getLogger("omniagent.agent")   # ReAct级别日志
+logger_tool = logging.getLogger("omniagent.tool")     # 工具级别日志
+logger_api = logging.getLogger("omniagent.api")       # API级别日志
 
 
 class AgentStatus(Enum):
@@ -440,9 +446,9 @@ class FileOperationAgent:
                     )
                     return result
                 
-                # 4. Observation - 执行动作
+                # 4. Observation - 执行动作（使用重试机制）
                 self.status = AgentStatus.EXECUTING
-                observation = await self.executor.execute(
+                observation = await self._execute_with_retry(
                     parsed["action"],
                     parsed["action_input"]
                 )
@@ -529,6 +535,71 @@ class FileOperationAgent:
     def _add_observation_to_history(self, observation: str):
         """添加观察结果到对话历史"""
         self.conversation_history.append({"role": "user", "content": observation})
+    
+    async def _execute_with_retry(
+        self,
+        action: str,
+        action_input: Dict[str, Any],
+        max_retries: int = 3
+    ) -> Dict[str, Any]:
+        """
+        执行动作并重试（指数退避策略）
+        
+        【新增功能】实现Agent级别重试机制
+        
+        Args:
+            action: 动作名称
+            action_input: 动作参数
+            max_retries: 最大重试次数（默认3次）
+        
+        Returns:
+            执行结果
+        """
+        last_error = None
+        
+        for attempt in range(max_retries):
+            try:
+                # 执行工具
+                observation = await self.executor.execute(action, action_input)
+                
+                # 检查是否执行成功
+                if observation.get("success") or observation.get("error") is None:
+                    if attempt > 0:
+                        # 重试成功后记录日志
+                        logger_agent.info(
+                            f"Action '{action}' succeeded after {attempt + 1} attempt(s)"
+                        )
+                    return observation
+                
+                # 执行失败，记录错误
+                last_error = observation.get("error", "Unknown error")
+                logger_tool.warning(
+                    f"Action '{action}' failed (attempt {attempt + 1}/{max_retries}): {last_error}"
+                )
+                
+            except Exception as e:
+                last_error = str(e)
+                logger_tool.error(
+                    f"Action '{action}' raised exception (attempt {attempt + 1}/{max_retries}): {e}"
+                )
+            
+            # 如果还有重试次数，等待后重试（指数退避）
+            if attempt < max_retries - 1:
+                wait_time = 2 ** attempt  # 1s, 2s, 4s
+                logger_agent.info(
+                    f"Retrying '{action}' in {wait_time}s... (attempt {attempt + 2}/{max_retries})"
+                )
+                await asyncio.sleep(wait_time)
+        
+        # 所有重试都失败
+        error_msg = f"Action '{action}' failed after {max_retries} attempts: {last_error}"
+        logger_agent.error(error_msg)
+        return {
+            "success": False,
+            "error": error_msg,
+            "result": None,
+            "retry_count": max_retries
+        }
     
     def _format_observation(self, observation: Dict[str, Any]) -> str:
         """格式化观察结果为文本"""

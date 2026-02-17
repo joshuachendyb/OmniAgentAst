@@ -18,6 +18,79 @@ from app.services.file_operations import (
 from app.services.file_operations.safety import OperationType
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
+import logging
+
+# 日志分层：工具级别日志
+logger_tool = logging.getLogger("omniagent.tool")
+
+
+# ============================================================
+# 工具注册装饰器
+# ============================================================
+
+# 全局工具注册表
+_TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {}
+
+
+def register_tool(name: str = None, description: str = "", category: str = "file"):
+    """
+    工具注册装饰器
+    
+    【新增功能】实现工具注册装饰器
+    
+    使用方式:
+        @register_tool(name="read_file", description="读取文件内容")
+        async def read_file(self, file_path: str, ...):
+            ...
+    
+    Args:
+        name: 工具名称（默认使用函数名）
+        description: 工具描述
+        category: 工具分类 (file, search, system)
+    
+    Returns:
+        装饰器函数
+    """
+    def decorator(func):
+        tool_name = name or func.__name__
+        tool_info = {
+            "name": tool_name,
+            "description": description or func.__doc__ or "",
+            "category": category,
+            "function": func,
+            "registered_at": datetime.now().isoformat()
+        }
+        _TOOL_REGISTRY[tool_name] = tool_info
+        
+        # 使用logger_tool记录注册信息
+        logger_tool.info(f"Tool registered: {tool_name} (category: {category})")
+        
+        return func
+    
+    return decorator
+
+
+def get_registered_tools(category: str = None) -> Dict[str, Dict[str, Any]]:
+    """
+    获取已注册的工具列表
+    
+    Args:
+        category: 按分类过滤（可选）
+    
+    Returns:
+        工具注册表
+    """
+    if category:
+        return {
+            name: info for name, info in _TOOL_REGISTRY.items()
+            if info.get("category") == category
+        }
+    return _TOOL_REGISTRY.copy()
+
+
+def get_tool(name: str) -> Optional[Dict[str, Any]]:
+    """获取指定工具的信息"""
+    return _TOOL_REGISTRY.get(name)
 
 
 class FileTools:
@@ -49,6 +122,7 @@ class FileTools:
         self.session_id = session_id
         self._sequence = 0
     
+    @register_tool(name="read_file", description="读取文件内容，支持指定偏移量和行数限制", category="file")
     async def read_file(
         self,
         file_path: str,
@@ -129,6 +203,7 @@ class FileTools:
                 "content": None
             }
     
+    @register_tool(name="write_file", description="写入文件内容，自动创建目录", category="file")
     async def write_file(
         self,
         file_path: str,
@@ -200,6 +275,7 @@ class FileTools:
                 "operation_id": None
             }
     
+    @register_tool(name="list_directory", description="列出目录内容，支持过滤和排序", category="file")
     async def list_directory(
         self,
         dir_path: str,
@@ -291,6 +367,7 @@ class FileTools:
                 "entries": []
             }
     
+    @register_tool(name="delete_file", description="删除文件或目录，自动备份到回收站", category="file")
     async def delete_file(
         self,
         file_path: str,
@@ -371,6 +448,7 @@ class FileTools:
                 "operation_id": None
             }
     
+    @register_tool(name="move_file", description="移动或重命名文件", category="file")
     async def move_file(
         self,
         source_path: str,
@@ -449,6 +527,7 @@ class FileTools:
                 "operation_id": None
             }
     
+    @register_tool(name="search_files", description="搜索文件内容，支持正则表达式", category="search")
     async def search_files(
         self,
         pattern: str,
@@ -576,6 +655,7 @@ class FileTools:
                 "matches": []
             }
     
+    @register_tool(name="generate_report", description="生成操作报告", category="system")
     async def generate_report(self, output_dir: Optional[str] = None) -> Dict[str, Any]:
         """
         生成操作报告
