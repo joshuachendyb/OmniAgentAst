@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-from app.config import get_config
+from app.config import get_config as get_config_instance
 from app.services import AIServiceFactory
 from app.utils.logger import logger
 
@@ -57,7 +57,7 @@ def _get_config_path() -> Path:
 
 
 @router.get("/config", response_model=ConfigResponse)
-async def get_config():
+async def get_system_config():
     """
     获取当前系统配置
     
@@ -67,7 +67,7 @@ async def get_config():
         ConfigResponse: 当前配置
     """
     try:
-        config = get_config()
+        config = get_config_instance()
         
         # 获取当前AI配置
         provider = config.get('ai.provider', 'zhipuai')
@@ -160,7 +160,7 @@ async def update_config(config_update: ConfigUpdate):
             yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
         
         # 重新加载配置
-        config = get_config()
+        config = get_config_instance()
         config.reload()
         
         logger.info(f"配置更新成功: {config_update.dict(exclude_none=True)}")
