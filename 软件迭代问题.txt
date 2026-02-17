@@ -1,3 +1,5 @@
+LSP server 'basedpyright' is configured but NOT INSTALLED.
+Command not found: basedpyright-langserver To install: pip install basedpyright Supported extensions: .py, .pyi After installation, the server will be available automatically. Run 'LspServers' tool to verify installation status.
 
 先备份代码，然后按照代码迭代的规则 处理
 对这些问题要先分析， 分析每一个问题如何处理， 在哪里修改代码 是否合理， 是否会影响 其他功能？ 每一个修改都考虑全面后才修改每一个 功能都代码

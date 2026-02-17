@@ -24,7 +24,9 @@ class AIServiceFactory:
         """获取配置文件路径"""
         if config_path is not None:
             return config_path
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        # 【修复】项目根目录是backend的父目录，需要多退一级
+        # backend/app/services/__init__.py -> 退到项目根目录
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         return os.path.join(base_dir, "config", "config.yaml")
     
     @classmethod

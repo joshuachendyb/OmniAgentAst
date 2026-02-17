@@ -1,0 +1,39 @@
+# OmniAgentAs-desk 配置文件模板
+# 使用说明：
+# 1. 复制此文件为 config.yaml
+# 2. 填入您的API密钥
+# 3.  config.yaml 已被Git忽略，不会提交到仓库
+
+ai:
+  # 默认AI提供商: zhipuai 或 opencode
+  provider: zhipuai
+  
+  # 智谱AI配置
+  zhipuai:
+    model: glm-4.7-flash
+    api_key: ""  # 请填入您的智谱API Key (https://open.bigmodel.cn/)
+    api_base: https://open.bigmodel.cn/api/paas/v4
+    timeout: 60
+  
+  # OpenCode配置
+  opencode:
+    model: kimi-k2.5-free
+    api_key: ""  # 请填入您的OpenCode API Key (https://opencode.ai)
+    api_base: https://opencode.ai/zen/v1
+    timeout: 60
+
+# 文件操作配置
+file_operations:
+  # 工作目录（文件操作的根目录）
+  workspace_dir: "./workspace"
+  # 是否启用安全模式（禁止删除操作）
+  safe_mode: true
+  # 最大文件大小（MB）
+  max_file_size: 10
+
+# 日志配置
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+  file: logs/app.log
+  max_size: 10MB
+  backup_count: 5

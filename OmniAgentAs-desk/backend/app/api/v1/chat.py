@@ -344,7 +344,7 @@ async def validate_ai_service():
                 success=False,
                 provider=provider,
                 model=current_model,
-                message=f"AI服务未配置：{provider} ({current_model}) 的API Key为空。请在 backend/config/config.yaml 中配置。"
+                message=f"AI服务未配置：{provider} ({current_model}) 的API Key为空。请在 config/config.yaml 中配置。"
             )
         
         # 验证服务

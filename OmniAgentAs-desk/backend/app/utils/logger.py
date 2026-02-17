@@ -27,7 +27,8 @@ class LogConfig:
         if cls._config is not None:
             return cls._config
         
-        config_path = Path(__file__).parent.parent.parent / "config" / "config.yaml"
+        # 【修复】项目根目录是backend的父目录，需要再退一级
+        config_path = Path(__file__).parent.parent.parent.parent / "config" / "config.yaml"
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f) or {}

@@ -1,0 +1,94 @@
+# ============================
+# 配置文件（包含敏感信息，必须忽略！）
+# ============================
+config/config.yaml
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+
+# ============================
+# Python
+# ============================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+env/
+ENV/
+.venv
+
+# ============================
+# Node.js
+# ============================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ============================
+# IDE
+# ============================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ============================
+# 日志和数据
+# ============================
+logs/
+*.log
+ai_os_data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================
+# 测试和覆盖率
+# ============================
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ============================
+# 构建输出
+# ============================
+frontend/dist/
+frontend/build/
+
+# ============================
+# 操作系统
+# ============================
+.DS_Store
+Thumbs.db
+
+# ============================
+# 临时文件
+# ============================
+.tmp/
+temp/
+tmp/
+*.tmp
+*.temp
+*.bak
+nul

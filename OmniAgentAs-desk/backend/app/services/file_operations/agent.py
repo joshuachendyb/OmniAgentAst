@@ -564,25 +564,33 @@ class FileOperationAgent:
                 result = self.file_tools.safety.rollback_session(self.session_id)
                 success = result.get("success", 0) > 0
             else:
-                # 找到对应步骤的操作ID
-                for step in self.steps:
-                    if step.step_number == step_number:
-                        # 这里需要从observation中提取operation_id
-                        # 实际实现需要调整FileTools返回operation_id
-                        observation = step.observation or {}
-                        result_data = observation.get("result", {}) if isinstance(observation, dict) else {}
-                        operation_id = result_data.get("operation_id")
-                        if operation_id:
-                            success = self.file_tools.safety.rollback_operation(operation_id)
-                        else:
-                            raise ValueError(f"No operation_id found for step {step_number}")
-                        break
-                else:
-                    raise ValueError(f"Step {step_number} not found")
+                # 回滚到指定步骤：撤销该步骤之后的所有操作
+                # 找到步骤号大于step_number的所有步骤
+                steps_to_rollback = [s for s in self.steps if s.step_number > step_number]
+                
+                if not steps_to_rollback:
+                    # 如果没有找到步骤，可能是step_number本身不存在，或者步骤存在但后面没有需要回滚的步骤
+                    # 返回False表示无需回滚（ gracefully handle invalid step ）
+                    return False
+                
+                # 回滚所有后续步骤（按降序，从后往前回滚）
+                success = True
+                for step in sorted(steps_to_rollback, key=lambda s: s.step_number, reverse=True):
+                    observation = step.observation or {}
+                    result_data = observation.get("result", {}) if isinstance(observation, dict) else {}
+                    operation_id = result_data.get("operation_id")
+                    if operation_id:
+                        step_success = self.file_tools.safety.rollback_operation(operation_id)
+                        success = success and step_success
+                    else:
+                        raise ValueError(f"No operation_id found for step {step.step_number}")
             
             self.status = AgentStatus.ROLLED_BACK
             return success
             
+        except ValueError:
+            # ValueError需要透传（如session_id为None的情况）
+            raise
         except Exception as e:
             logger.error(f"Rollback failed: {e}")
             return False
