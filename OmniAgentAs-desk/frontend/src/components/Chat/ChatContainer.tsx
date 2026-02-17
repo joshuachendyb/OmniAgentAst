@@ -9,12 +9,10 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Input, Button, Card, List, Typography, Tag, Space, Alert, Select, Collapse, Badge } from 'antd';
+import { Input, Button, Card, List, Tag, Space, Alert, Select, Collapse, Badge } from 'antd';
 import { 
   SendOutlined, 
   RobotOutlined, 
-  UserOutlined, 
-  CheckCircleOutlined, 
   ReloadOutlined,
   LoadingOutlined,
   ThunderboltOutlined,
@@ -27,7 +25,6 @@ import ExecutionPanel from './ExecutionPanel';
 import { useSSE, ExecutionStep } from '../../utils/sse';
 
 const { TextArea } = Input;
-const { Text } = Typography;
 const { Option } = Select;
 const { Panel } = Collapse;
 
@@ -62,7 +59,7 @@ const ChatContainer: React.FC = () => {
 
   // SSE Hook配置
   const {
-    isConnected,
+    isConnected: _isConnected,
     isReceiving,
     executionSteps,
     currentResponse,
@@ -125,6 +122,7 @@ const ChatContainer: React.FC = () => {
     }, []),
     // onError - 流式错误
     useCallback((error: string) => {
+      console.error('SSE流式错误:', error);
       setMessages(prev => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage && lastMessage.role === 'assistant') {
@@ -253,16 +251,20 @@ const ChatContainer: React.FC = () => {
     } else {
       // 非流式模式
       try {
-        const response = await chatApi.sendMessage({
-          message: userContent,
-          session_id: currentSessionId.current,
-          stream: false,
-        });
+        // 构建消息历史
+        const history: ChatMessage[] = messages
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(m => ({ role: m.role, content: m.content }));
+        
+        // 添加当前用户消息
+        history.push({ role: 'user', content: userContent });
+        
+        const response = await chatApi.sendMessage(history);
 
         const assistantMessage: Message = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: response.response || '无响应',
+          content: response.content || '无响应',
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, assistantMessage]);
