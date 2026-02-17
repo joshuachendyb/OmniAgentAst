@@ -473,6 +473,33 @@ class FileOperationSafety:
             if conn:
                 conn.close()
     
+    def get_operation_session_id(self, operation_id: str) -> Optional[str]:
+        """
+        获取操作对应的session_id
+        
+        Args:
+            operation_id: 操作ID
+            
+        Returns:
+            session_id，如果操作不存在返回None
+        """
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                'SELECT session_id FROM file_operations WHERE operation_id = ?',
+                (operation_id,)
+            )
+            row = cursor.fetchone()
+            return row[0] if row else None
+        except Exception as e:
+            logger.error(f"Failed to get session_id for operation {operation_id}: {e}")
+            return None
+        finally:
+            if conn:
+                conn.close()
+    
     def rollback_session(self, session_id: str) -> Dict[str, Any]:
         """
         回滚整个会话的所有操作（按逆序）

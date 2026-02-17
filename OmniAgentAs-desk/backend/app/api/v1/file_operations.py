@@ -545,6 +545,8 @@ async def rollback_operations(request: RollbackRequest):
             
             # 获取操作信息用于响应
             operations = []
+            session_id = safety.get_operation_session_id(request.operation_id) or "unknown"
+            
             if success:
                 operations.append({
                     "operation_id": request.operation_id,
@@ -553,7 +555,7 @@ async def rollback_operations(request: RollbackRequest):
             
             return RollbackResponse(
                 success=success,
-                session_id="unknown",  # 实际应从操作记录查询
+                session_id=session_id,
                 total_operations=1,
                 success_count=1 if success else 0,
                 failed_count=0 if success else 1,

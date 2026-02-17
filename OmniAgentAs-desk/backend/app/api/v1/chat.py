@@ -4,12 +4,14 @@
 集成文件操作Agent
 """
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 from app.services import AIServiceFactory
 from app.services.file_operations.tools import get_file_tools
 from app.services.file_operations.agent import FileOperationAgent
+from app.utils.logger import logger
 
 router = APIRouter()
 
@@ -362,7 +364,6 @@ async def validate_ai_service():
             # 通过发送一个实际请求来获取错误详情
             test_response = None
             try:
-                import httpx
                 async with httpx.AsyncClient(timeout=10) as client:
                     test_response = await client.post(
                         f"{ai_service.api_base}/chat/completions",
@@ -375,8 +376,13 @@ async def validate_ai_service():
                             "messages": [{"role": "user", "content": "test"}]
                         }
                     )
-            except:
-                pass
+            except httpx.TimeoutException:
+                # 超时也返回通用错误
+                logger.warning(f"API validation timeout for {provider}")
+            except httpx.RequestError as e:
+                logger.warning(f"API validation request error: {e}")
+            except Exception as e:
+                logger.warning(f"API validation error: {e}")
             
             # 根据状态码返回不同的错误信息
             if test_response:
