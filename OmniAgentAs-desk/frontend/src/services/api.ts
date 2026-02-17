@@ -187,52 +187,35 @@ export interface ConfigValidateResponse {
 /**
  * 配置管理API
  * 
- * TODO: 后端实现后移除Mock
+ * @author 小新
+ * @update 2026-02-18 对接小沈后端API
  */
 export const configApi = {
   /**
-   * 获取当前配置 - 待实现
+   * 获取当前配置
+   * @author 小新
    */
   getConfig: async (): Promise<Config> => {
-    // TODO: 后端实现后改为真实API
-    // const response = await api.get<Config>('/config');
-    // return response.data;
-    
-    // Mock数据
-    return {
-      ai_provider: 'zhipuai',
-      ai_model: 'glm-4.7-flash',
-      api_key_configured: true,
-      theme: 'light',
-      language: 'zh-CN',
-    };
+    const response = await api.get<Config>('/config');
+    return response.data;
   },
 
   /**
-   * 更新配置 - 待实现
+   * 更新配置
+   * @author 小新
    */
   updateConfig: async (config: ConfigUpdate): Promise<{ success: boolean; message: string }> => {
-    // TODO: 后端实现后改为真实API
-    // const response = await api.put('/config', config);
-    // return response.data;
-    
-    // Mock成功
-    return { success: true, message: '配置已更新' };
+    const response = await api.put('/config', config);
+    return response.data;
   },
 
   /**
-   * 验证配置 - 待实现
+   * 验证配置
+   * @author 小新
    */
   validateConfig: async (data: ConfigValidateRequest): Promise<ConfigValidateResponse> => {
-    // TODO: 后端实现后改为真实API
-    // const response = await api.post<ConfigValidateResponse>('/config/validate', data);
-    // return response.data;
-    
-    // Mock：模拟验证
-    if (data.api_key && data.api_key.length > 10) {
-      return { valid: true, message: 'API Key有效', model: 'glm-4.7-flash' };
-    }
-    return { valid: false, message: 'API Key格式不正确' };
+    const response = await api.post<ConfigValidateResponse>('/config/validate', data);
+    return response.data;
   },
 };
 
@@ -292,71 +275,32 @@ export const sessionApi = {
   },
 
   /**
-   * 获取会话列表 - 待实现
+   * 获取会话列表
+   * @author 小新
    */
   listSessions: async (page: number = 1, pageSize: number = 20, keyword?: string): Promise<SessionListResponse> => {
-    // TODO: 后端实现后改为真实API
-    return {
-      total: 2,
-      page,
-      page_size: pageSize,
-      sessions: [
-        {
-          id: 'mock-session-1',
-          title: '整理下载文件夹',
-          created_at: '2026-02-17T10:00:00Z',
-          updated_at: '2026-02-17T11:30:00Z',
-          message_count: 15,
-        },
-        {
-          id: 'mock-session-2',
-          title: '截图当前窗口',
-          created_at: '2026-02-16T15:00:00Z',
-          updated_at: '2026-02-16T15:05:00Z',
-          message_count: 8,
-        },
-      ],
-    };
+    const params: any = { page, page_size: pageSize };
+    if (keyword) params.keyword = keyword;
+    const response = await api.get<SessionListResponse>('/sessions', { params });
+    return response.data;
   },
 
   /**
-   * 获取会话消息 - 待实现
+   * 获取会话消息
+   * @author 小新
    */
   getSessionMessages: async (sessionId: string): Promise<{ session_id: string; messages: Message[] }> => {
-    // TODO: 后端实现后改为真实API
-    return {
-      session_id: sessionId,
-      messages: [
-        {
-          id: 1,
-          session_id: sessionId,
-          role: 'user',
-          content: '帮我整理下载文件夹',
-          timestamp: '2026-02-17T10:00:00Z',
-        },
-        {
-          id: 2,
-          session_id: sessionId,
-          role: 'assistant',
-          content: '好的，我发现下载文件夹有15个文件...',
-          timestamp: '2026-02-17T10:00:05Z',
-          execution_steps: [
-            { type: 'thought', content: '我需要先查看下载文件夹的内容', timestamp: Date.now() },
-            { type: 'action', tool: 'list_directory', params: { path: '/Users/xxx/Downloads' }, timestamp: Date.now() + 1000 },
-            { type: 'observation', result: '15个文件', timestamp: Date.now() + 2000 },
-          ],
-        },
-      ],
-    };
+    const response = await api.get<{ session_id: string; messages: Message[] }>(`/sessions/${sessionId}/messages`);
+    return response.data;
   },
 
   /**
-   * 删除会话 - 待实现
+   * 删除会话
+   * @author 小新
    */
   deleteSession: async (sessionId: string): Promise<{ success: boolean }> => {
-    // TODO: 后端实现后改为真实API
-    console.log('删除会话:', sessionId);
-    return { success: true };
+    const response = await api.delete<{ success: boolean }>(`/sessions/${sessionId}`);
+    return response.data;
   },
 };
 
@@ -373,30 +317,17 @@ export interface SecurityCheckResponse {
 /**
  * 安全API
  * 
- * TODO: 后端实现后移除Mock
+ * @author 小新
+ * @update 2026-02-18 对接小沈后端API
  */
 export const securityApi = {
   /**
-   * 检查命令安全性 - 待实现
+   * 检查命令安全性
+   * @author 小新
    */
   checkCommand: async (command: string): Promise<SecurityCheckResponse> => {
-    // TODO: 后端实现后改为真实API
-    // const response = await api.post<SecurityCheckResponse>('/security/check', { command });
-    // return response.data;
-    
-    // Mock：检测危险命令
-    const dangerousCommands = ['rm -rf /', 'mkfs', 'dd if=/dev/zero'];
-    const isDangerous = dangerousCommands.some(cmd => command.includes(cmd));
-    
-    if (isDangerous) {
-      return {
-        safe: false,
-        risk: '检测到危险命令',
-        suggestion: '该操作可能对系统造成不可逆损害',
-      };
-    }
-    
-    return { safe: true, risk: '', suggestion: '' };
+    const response = await api.post<SecurityCheckResponse>('/security/check', { command });
+    return response.data;
   },
 };
 
