@@ -1,15 +1,16 @@
 /**
- * Layout组件 - 应用主布局
+ * Layout组件 - 应用主布局（响应式版）
  * 
- * 功能：左右分栏布局，左侧导航栏，右侧内容区
+ * 功能：左右分栏布局，左侧导航栏，右侧内容区，支持移动端响应式
  * 
  * @author 小新
- * @version 1.0.0
+ * @version 1.1.0
  * @since 2026-02-17
+ * @update 2026-02-18 添加移动端响应式支持
  */
 
-import React, { useState } from 'react';
-import { Layout, Menu, Typography, Avatar, Badge, Tooltip } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Layout, Menu, Typography, Avatar, Badge, Tooltip, Drawer, Button, Grid } from 'antd';
 import {
   MessageOutlined,
   FolderOutlined,
@@ -18,8 +19,11 @@ import {
   HistoryOutlined,
   ThunderboltOutlined,
   DesktopOutlined,
+  MenuOutlined,
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
+
+const { useBreakpoint } = Grid;
 
 const { Sider, Content, Header } = Layout;
 const { Title } = Typography;
@@ -50,6 +54,11 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   const [sessionCount] = useState(5);
   // 导航折叠状态
   const [collapsed, setCollapsed] = useState(false);
+  // 移动端抽屉显示状态
+  const [drawerVisible, setDrawerVisible] = useState(false);
+  // 响应式断点
+  const screens = useBreakpoint();
+  const isMobile = !screens.md; // md以下认为是移动端
 
   /**
    * 导航菜单配置
@@ -114,85 +123,112 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   const handleMenuClick: MenuProps['onClick'] = (e) => {
     console.log('导航到:', e.key);
     // 实际项目中使用: navigate(e.key)
+    // 移动端点击后关闭抽屉
+    if (isMobile) {
+      setDrawerVisible(false);
+    }
   };
+
+  /**
+   * 渲染导航内容
+   */
+  const renderNavContent = () => (
+    <>
+      {/* Logo区域 */}
+      <div
+        style={{
+          height: 64,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: isMobile || collapsed ? 'center' : 'flex-start',
+          padding: isMobile || collapsed ? 0 : '0 16px',
+          borderBottom: '1px solid #f0f0f0',
+        }}
+      >
+        <Avatar
+          size={40}
+          icon={<DesktopOutlined />}
+          style={{ background: '#1890ff', flexShrink: 0 }}
+        />
+        {!isMobile && !collapsed && (
+          <Title
+            level={5}
+            style={{
+              margin: '0 0 0 12px',
+              fontSize: 16,
+              fontWeight: 600,
+              color: '#1890ff',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            OmniAgentAst.
+          </Title>
+        )}
+      </div>
+
+      {/* 导航菜单 */}
+      <Menu
+        mode="inline"
+        selectedKeys={[activeKey]}
+        items={menuItems}
+        onClick={handleMenuClick}
+        style={{
+          borderRight: 0,
+          paddingTop: 8,
+        }}
+      />
+
+      {/* 底部信息 */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          padding: '12px 16px',
+          borderTop: '1px solid #f0f0f0',
+          fontSize: 12,
+          color: '#999',
+          textAlign: isMobile || collapsed ? 'center' : 'left',
+        }}
+      >
+        {isMobile || collapsed ? 'v2.1' : '版本 v2.1.0'}
+      </div>
+    </>
+  );
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      {/* 左侧导航栏 */}
-      <Sider
-        width={220}
-        theme="light"
-        collapsible
-        collapsed={collapsed}
-        onCollapse={setCollapsed}
-        style={{
-          boxShadow: '2px 0 8px rgba(0,0,0,0.05)',
-          zIndex: 100,
-        }}
-      >
-        {/* Logo区域 */}
-        <div
+      {/* 移动端：抽屉式导航 */}
+      {isMobile ? (
+        <Drawer
+          placement="left"
+          closable={false}
+          onClose={() => setDrawerVisible(false)}
+          open={drawerVisible}
+          width={220}
+          bodyStyle={{ padding: 0 }}
+        >
+          {renderNavContent()}
+        </Drawer>
+      ) : (
+        /* 桌面端：左侧导航栏 */
+        <Sider
+          width={220}
+          theme="light"
+          collapsible
+          collapsed={collapsed}
+          onCollapse={setCollapsed}
           style={{
-            height: 64,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: collapsed ? 'center' : 'flex-start',
-            padding: collapsed ? 0 : '0 16px',
-            borderBottom: '1px solid #f0f0f0',
+            boxShadow: '2px 0 8px rgba(0,0,0,0.05)',
+            zIndex: 100,
           }}
         >
-          <Avatar
-            size={40}
-            icon={<DesktopOutlined />}
-            style={{ background: '#1890ff', flexShrink: 0 }}
-          />
-          {!collapsed && (
-            <Title
-              level={5}
-              style={{
-                margin: '0 0 0 12px',
-                fontSize: 16,
-                fontWeight: 600,
-                color: '#1890ff',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
-              OmniAgentAst.
-            </Title>
-          )}
-        </div>
-
-        {/* 导航菜单 */}
-        <Menu
-          mode="inline"
-          selectedKeys={[activeKey]}
-          items={menuItems}
-          onClick={handleMenuClick}
-          style={{
-            borderRight: 0,
-            paddingTop: 8,
-          }}
-        />
-
-        {/* 底部信息 */}
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            padding: '12px 16px',
-            borderTop: '1px solid #f0f0f0',
-            fontSize: 12,
-            color: '#999',
-            textAlign: collapsed ? 'center' : 'left',
-          }}
-        >
-          {collapsed ? 'v2.1' : '版本 v2.1.0'}
-        </div>
-      </Sider>
+          {renderNavContent()}
+        </Sider>
+      )}
 
       {/* 右侧内容区 */}
       <Layout>
@@ -201,16 +237,27 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           style={{
             background: '#fff',
             boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-            padding: '0 24px',
+            padding: isMobile ? '0 16px' : '0 24px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             zIndex: 99,
           }}
         >
-          <Title level={4} style={{ margin: 0, fontWeight: 500 }}>
-            AI 对话助手
-          </Title>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            {/* 移动端菜单按钮 */}
+            {isMobile && (
+              <Button
+                type="text"
+                icon={<MenuOutlined />}
+                onClick={() => setDrawerVisible(true)}
+                style={{ fontSize: 18 }}
+              />
+            )}
+            <Title level={4} style={{ margin: 0, fontWeight: 500, fontSize: isMobile ? 16 : 18 }}>
+              AI 对话助手
+            </Title>
+          </div>
           
           {/* 右侧操作区 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -222,8 +269,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         {/* 主内容区 */}
         <Content
           style={{
-            margin: 24,
-            padding: 24,
+            margin: isMobile ? 12 : 24,
+            padding: isMobile ? 16 : 24,
             background: '#f5f5f5',
             borderRadius: 8,
             minHeight: 280,
