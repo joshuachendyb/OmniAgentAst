@@ -8,7 +8,7 @@ import traceback
 import logging
 from pathlib import Path
 
-from app.api.v1 import health, chat, file_operations, config
+from app.api.v1 import health, chat, file_operations, config, sessions
 from app.utils.logger import logger
 
 # 配置日志
@@ -100,6 +100,7 @@ app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operations"])
 app.include_router(config.router, prefix="/api/v1", tags=["config"])
+app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 
 @app.get("/")
 async def root():

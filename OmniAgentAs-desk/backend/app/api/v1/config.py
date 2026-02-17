@@ -200,7 +200,7 @@ async def validate_config(request: ConfigValidateRequest):
             )
         
         # 获取配置
-        config = get_config()
+        config = get_config_instance()
         
         # 创建临时服务实例进行验证
         if request.provider == "zhipuai":
