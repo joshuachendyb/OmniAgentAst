@@ -561,7 +561,9 @@ class FileOperationAgent:
             
             if step_number is None:
                 # 回滚整个会话
-                result = self.file_tools.safety.rollback_session(self.session_id)
+                result = await asyncio.to_thread(
+                    self.file_tools.safety.rollback_session, self.session_id
+                )
                 success = result.get("success", 0) > 0
             else:
                 # 回滚到指定步骤：撤销该步骤之后的所有操作
@@ -580,7 +582,9 @@ class FileOperationAgent:
                     result_data = observation.get("result", {}) if isinstance(observation, dict) else {}
                     operation_id = result_data.get("operation_id")
                     if operation_id:
-                        step_success = self.file_tools.safety.rollback_operation(operation_id)
+                        step_success = await asyncio.to_thread(
+                            self.file_tools.safety.rollback_operation, operation_id
+                        )
                         success = success and step_success
                     else:
                         raise ValueError(f"No operation_id found for step {step.step_number}")

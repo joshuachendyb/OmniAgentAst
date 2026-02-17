@@ -6,6 +6,7 @@ import asyncio
 import os
 import re
 import shutil
+import threading
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
@@ -35,11 +36,13 @@ class FileTools:
         self.visualizer = get_visualizer()
         self.session_id = session_id
         self._sequence = 0
+        self._sequence_lock = threading.Lock()
     
     def _get_next_sequence(self) -> int:
-        """获取下一个操作序号"""
-        self._sequence += 1
-        return self._sequence
+        """获取下一个操作序号（线程安全）"""
+        with self._sequence_lock:
+            self._sequence += 1
+            return self._sequence
     
     def set_session(self, session_id: str):
         """设置当前会话ID"""
@@ -200,7 +203,8 @@ class FileTools:
     async def list_directory(
         self,
         dir_path: str,
-        recursive: bool = False
+        recursive: bool = False,
+        max_depth: int = 10
     ) -> Dict[str, Any]:
         """
         列出目录内容
@@ -208,6 +212,7 @@ class FileTools:
         Args:
             dir_path: 目录路径
             recursive: 是否递归列出
+            max_depth: 最大递归深度（仅recursive=True时有效）
             
         Returns:
             目录内容列表
@@ -233,14 +238,29 @@ class FileTools:
             def _list_sync():
                 entries = []
                 if recursive:
-                    for item in path.rglob("*"):
-                        relative_path = item.relative_to(path)
-                        entries.append({
-                            "name": item.name,
-                            "path": str(relative_path),
-                            "type": "directory" if item.is_dir() else "file",
-                            "size": item.stat().st_size if item.is_file() else None
-                        })
+                    def _scan_recursive(current_path: Path, current_depth: int):
+                        if current_depth > max_depth:
+                            return
+                        try:
+                            for item in current_path.iterdir():
+                                try:
+                                    relative_path = item.relative_to(path)
+                                    entries.append({
+                                        "name": item.name,
+                                        "path": str(relative_path),
+                                        "type": "directory" if item.is_dir() else "file",
+                                        "size": item.stat().st_size if item.is_file() else None
+                                    })
+                                    if item.is_dir():
+                                        _scan_recursive(item, current_depth + 1)
+                                except (PermissionError, OSError):
+                                    # 跳过无权限访问的文件/目录
+                                    continue
+                        except (PermissionError, OSError):
+                            # 跳过无权限访问的目录
+                            return
+                    
+                    _scan_recursive(path, 1)
                 else:
                     for item in path.iterdir():
                         entries.append({
@@ -434,7 +454,8 @@ class FileTools:
         pattern: str,
         path: str = ".",
         file_pattern: str = "*",
-        use_regex: bool = False
+        use_regex: bool = False,
+        max_results: int = 1000
     ) -> Dict[str, Any]:
         """
         搜索文件内容
@@ -444,6 +465,7 @@ class FileTools:
             path: 搜索路径
             file_pattern: 文件匹配模式
             use_regex: 是否使用正则表达式
+            max_results: 最大结果数量限制
             
         Returns:
             搜索结果
@@ -473,7 +495,8 @@ class FileTools:
             
             # 搜索文件（异步执行）
             def _search_sync():
-                files_to_search = list(search_path.rglob(file_pattern))
+                # 限制文件扫描数量，避免内存溢出
+                files_to_search = list(search_path.rglob(file_pattern))[:max_results]
                 search_results = []
                 
                 for file_path in files_to_search:

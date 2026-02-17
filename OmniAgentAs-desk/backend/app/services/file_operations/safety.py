@@ -218,6 +218,8 @@ class FileOperationSafety:
             elif operation_type == OperationType.DELETE:
                 space_impact_bytes = file_size   # 删除文件释放空间（正值）
         
+        # 【修复-添加finally块确保资源释放】
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -239,7 +241,6 @@ class FileOperationSafety:
             ))
             
             conn.commit()
-            conn.close()
             
             logger.debug(f"Operation recorded: {operation_id} - {operation_type.value}")
             return operation_id
@@ -247,6 +248,10 @@ class FileOperationSafety:
         except Exception as e:
             logger.error(f"Failed to record operation: {e}")
             raise
+            
+        finally:
+            if conn:
+                conn.close()
     
     def execute_with_safety(
         self,
@@ -388,15 +393,16 @@ class FileOperationSafety:
         回滚单个操作
         
         Args:
-            operation_id: 操作ID
+            operation_id: operation_id
             
         Returns:
             是否回滚成功
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        
+        conn = None
         try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+        
             cursor.execute('''
                 SELECT operation_type, source_path, destination_path, backup_path, status
                 FROM file_operations WHERE operation_id = ?
@@ -464,7 +470,8 @@ class FileOperationSafety:
             logger.error(f"Failed to rollback operation {operation_id}: {e}")
             return False
         finally:
-            conn.close()
+            if conn:
+                conn.close()
     
     def rollback_session(self, session_id: str) -> Dict[str, Any]:
         """
@@ -476,18 +483,19 @@ class FileOperationSafety:
         Returns:
             回滚结果统计
         """
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        
-        result = {
-            "session_id": session_id,
-            "total": 0,
-            "success": 0,
-            "failed": 0,
-            "operations": []
-        }
-        
+        conn = None
         try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            result = {
+                "session_id": session_id,
+                "total": 0,
+                "success": 0,
+                "failed": 0,
+                "operations": []
+            }
+        
             # 获取会话的所有成功操作（按逆序）
             cursor.execute('''
                 SELECT operation_id, operation_type, source_path, destination_path

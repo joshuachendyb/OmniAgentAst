@@ -44,6 +44,8 @@ class FileOperationSessionService:
         """
         session_id = f"sess-{uuid4().hex}"
         
+        # 【修复-添加finally块确保资源释放】
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -58,7 +60,6 @@ class FileOperationSessionService:
             ))
             
             conn.commit()
-            conn.close()
             
             logger.info(f"Session created: {session_id} - {task_description}")
             return session_id
@@ -66,6 +67,10 @@ class FileOperationSessionService:
         except Exception as e:
             logger.error(f"Failed to create session: {e}")
             raise
+            
+        finally:
+            if conn:
+                conn.close()
     
     def complete_session(self, session_id: str, success: bool = True):
         """
@@ -75,6 +80,8 @@ class FileOperationSessionService:
             session_id: 会话ID
             success: 是否成功完成
         """
+        # 【修复-添加finally块确保资源释放】
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -105,12 +112,15 @@ class FileOperationSessionService:
             ''', (status, total, success_count, failed_count, datetime.now(), session_id))
             
             conn.commit()
-            conn.close()
             
             logger.info(f"Session completed: {session_id} - {success_count}/{total} succeeded")
             
         except Exception as e:
             logger.error(f"Failed to complete session: {e}")
+            
+        finally:
+            if conn:
+                conn.close()
     
     def get_session(self, session_id: str) -> Optional[SessionRecord]:
         """
@@ -122,6 +132,8 @@ class FileOperationSessionService:
         Returns:
             SessionRecord或None
         """
+        # 【修复-添加finally块确保资源释放】
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -131,7 +143,6 @@ class FileOperationSessionService:
             ''', (session_id,))
             
             row = cursor.fetchone()
-            conn.close()
             
             if row:
                 return SessionRecord(
@@ -154,6 +165,10 @@ class FileOperationSessionService:
         except Exception as e:
             logger.error(f"Failed to get session: {e}")
             return None
+            
+        finally:
+            if conn:
+                conn.close()
     
     def get_recent_sessions(self, limit: int = 10) -> list:
         """
@@ -165,6 +180,8 @@ class FileOperationSessionService:
         Returns:
             会话记录列表
         """
+        # 【修复-添加finally块确保资源释放】
+        conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
@@ -175,7 +192,6 @@ class FileOperationSessionService:
             ''', (limit,))
             
             rows = cursor.fetchall()
-            conn.close()
             
             sessions = []
             for row in rows:
@@ -200,6 +216,10 @@ class FileOperationSessionService:
         except Exception as e:
             logger.error(f"Failed to get recent sessions: {e}")
             return []
+            
+        finally:
+            if conn:
+                conn.close()
 
 
 # 单例模式

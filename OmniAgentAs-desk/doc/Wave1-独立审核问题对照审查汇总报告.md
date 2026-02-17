@@ -335,7 +335,230 @@ for item in path.rglob("*"):  # 无限深度遍历
 
 ---
 
+## 六、源代码验证结果（第二轮验证）
+
+**验证时间**: 2026-02-17 14:27:25
+**验证方式**: 逐行读取源代码文件，核对实际代码状态
+
+### 6.1 验证方法说明
+
+本次验证采用**诚实验证**原则：
+- 不依赖之前的报告结论
+- 直接读取源代码文件
+- 逐行核对实际代码状态
+- 不猜测、不假设
+
+### 6.2 验证详情
+
+#### 【复-001】adapter.py别名指向
+
+**文件**: `backend/app/services/file_operations/adapter.py`
+**行号**: 第156行
+
+**实际代码**:
+```python
+dict_history_to_messages = dict_list_to_messages
+```
+
+**验证结果**: ✅ **已修复**
+
+---
+
+#### 【复-002】测试用例验证错误行为
+
+**文件**: `backend/tests/test_adapter.py`
+**行号**: 第170-182行
+
+**实际代码**:
+```python
+def test_dict_history_to_messages_alias(self):
+    """【修复后】测试dict_history_to_messages别名（现在指向dict_list_to_messages）"""
+    dict_list = [{"role": "user", "content": "测试"}]
+    
+    # 使用别名函数（现在执行 dict -> message 转换）
+    result = dict_history_to_messages(dict_list)
+    
+    # 应该与dict_list_to_messages结果相同
+    expected = dict_list_to_messages(dict_list)
+```
+
+**验证结果**: ✅ **已修复**
+
+---
+
+#### 【复-003】safety.py record_operation()资源泄漏
+
+**文件**: `backend/app/services/file_operations/safety.py`
+**行号**: 第221-249行
+
+**实际代码**:
+```python
+try:
+    conn = self._get_connection()
+    cursor = conn.cursor()
+    # ... SQL操作 ...
+    conn.commit()
+    conn.close()  # ← 正常路径关闭
+    return operation_id
+except Exception as e:
+    logger.error(f"Failed to record operation: {e}")
+    raise  # ← 异常路径：conn未关闭！
+```
+
+**验证结果**: ❌ **未修复** - conn.close()在第242行try块内，无finally块
+
+---
+
+#### 【复-004】session.py create_session()资源泄漏
+
+**文件**: `backend/app/services/file_operations/session.py`
+**行号**: 第47-68行
+
+**实际代码**:
+```python
+try:
+    conn = self._get_connection()
+    cursor = conn.cursor()
+    # ... SQL操作 ...
+    conn.commit()
+    conn.close()  # ← 正常路径关闭
+    return session_id
+except Exception as e:
+    logger.error(f"Failed to create session: {e}")
+    raise  # ← 异常路径：conn未关闭！
+```
+
+**验证结果**: ❌ **未修复** - conn.close()在第61行try块内，无finally块
+
+---
+
+#### 【复-005】agent.py状态污染
+
+**文件**: `backend/app/services/file_operations/agent.py`
+**行号**: 第359-362行
+
+**实际代码**:
+```python
+async def _run_internal(self, task, context, system_prompt):
+    """内部运行方法（已被锁保护）"""
+    # 【修复】重置状态，避免多次调用导致的状态污染
+    self.steps = []
+    self.conversation_history = []
+    self.status = AgentStatus.THINKING
+```
+
+**验证结果**: ✅ **已修复**
+
+---
+
+#### 【复-006】Async/Sync混用
+
+**文件**: `backend/app/services/file_operations/agent.py`
+**行号**: 第564行、第583行
+
+**实际代码**:
+```python
+async def rollback(self, step_number: Optional[int] = None) -> bool:
+    # ...
+    if step_number is None:
+        # 第564行 - 同步调用！会阻塞事件循环
+        result = self.file_tools.safety.rollback_session(self.session_id)
+    else:
+        # 第583行 - 同步调用
+        step_success = self.file_tools.safety.rollback_operation(operation_id)
+```
+
+**验证结果**: ❌ **未修复** - 在async函数中直接调用同步方法，会阻塞事件循环
+
+---
+
+#### 【复-007】_sequence计数器竞态条件
+
+**文件**: `backend/app/services/file_operations/tools.py`
+**行号**: 第39-42行
+
+**实际代码**:
+```python
+def _get_next_sequence(self) -> int:
+    """获取下一个操作序号"""
+    self._sequence += 1  # ← 非原子操作！竞态条件！
+    return self._sequence
+```
+
+**验证结果**: ❌ **未修复** - 多协程下+=1不是原子操作，会产生竞态条件
+
+---
+
+#### 【复-008】safety.py额外泄漏点
+
+**文件**: `backend/app/services/file_operations/safety.py`
+**验证范围**: 所有数据库连接方法
+
+**验证结果**:
+
+| 方法 | 行号范围 | conn.close()位置 | 是否有finally |
+|------|----------|-----------------|---------------|
+| _init_database | 137-141 | finally块 | ✅ 有 |
+| **record_operation** | **221-249** | **try块内（第242行）** | **❌ 无** |
+| rollback_operation | 386-467 | finally块（第466-467行） | ✅ 有 |
+| rollback_session | 469-530 | finally块（第529-530行） | ✅ 有 |
+| get_session_operations | 532-586 | finally块（第585-586行） | ✅ 有 |
+| get_operation | 588-638 | finally块（第637-638行） | ✅ 有 |
+| cleanup_expired_backups | 640-678 | finally块（第677-678行） | ✅ 有 |
+
+**修正结论**: 
+- 原审核报告【复-008】提到"4个额外泄漏点"
+- 实际验证发现：**只有record_operation一个方法没有finally块**
+- 其他5个方法都已有finally块
+
+**验证结果**: ❌ **仅1个未修复**（record_operation）
+
+---
+
+#### 【复-009】文件遍历无深度限制
+
+**文件**: `backend/app/services/file_operations/tools.py`
+**行号**: 第236行
+
+**实际代码**:
+```python
+def _list_sync():
+    entries = []
+    if recursive:
+        for item in path.rglob("*"):  # 无限深度遍历
+            relative_path = item.relative_to(path)
+            entries.append({...})
+```
+
+**验证结果**: ❌ **未修复** - `path.rglob("*")` 无深度限制，可能遍历到系统敏感目录
+
+---
+
+### 6.3 最终验证结论
+
+| 编号 | 问题描述 | 验证结果 |
+|------|---------|---------|
+| 【复-001】 | adapter.py别名指向错误 | ✅ 已修复 |
+| 【复-002】 | 测试用例验证错误行为 | ✅ 已修复 |
+| 【复-003】 | safety.py record_operation()资源泄漏 | ❌ 未修复 |
+| 【复-004】 | session.py create_session()资源泄漏 | ❌ 未修复 |
+| 【复-005】 | agent.py状态污染 | ✅ 已修复 |
+| 【复-006】 | Async/Sync混用 | ❌ 未修复 |
+| 【复-007】 | _sequence计数器竞态条件 | ❌ 未修复 |
+| 【复-008】 | safety.py额外泄漏点 | ❌ 仅1个未修复 |
+| 【复-009】 | 文件遍历无深度限制 | ❌ 未修复 |
+
+**统计**: 
+- ✅ 已修复: 3个 (33.3%)
+- ❌ 未修复: 6个 (66.7%)
+
+**验证人**: AI审核助手（诚实验证）
+**验证方法**: 源代码逐行读取核对
+
+---
+
 ## 版本记录
 
+【版本】: v1.2 : 2026-02-17 14:27:25 : 追加第二轮源代码验证，采用诚实验证原则，逐行核对实际代码状态
 【版本】: v1.1 : 2026-02-17 11:29:05 : 追加代码验证详情，修正【复-008】状态（从"4个泄漏"修正为"仅1个未修复"）
 【版本】: v1.0 : 2026-02-17 11:27:18 : 初始对照审查报告
