@@ -5,9 +5,8 @@
  * @description Test utilities and helpers for frontend tests
  */
 
-import { vi } from 'vitest';
-import type { ChatMessage, ModelConfig, SecurityConfig, SessionInfo } from '../services/api';
-import type { ExecutionStep } from '../utils/sse';
+import { vi, expect, beforeAll, afterAll } from 'vitest';
+import type { ChatMessage, Config, Session, ExecutionStep } from '../../services/api';
 
 /**
  * Create a mock chat message
@@ -35,64 +34,57 @@ export const createMockExecutionStep = (
 });
 
 /**
- * Create a mock model config
+ * Create a mock config
+ * @author 小新
  */
-export const createMockModelConfig = (
-  overrides: Partial<ModelConfig> = {}
-): ModelConfig => ({
-  provider: 'zhipuai',
-  model: 'glm-4-flash',
-  apiKey: 'test-api-key',
-  temperature: 0.7,
-  maxTokens: 2048,
+export const createMockConfig = (
+  overrides: Partial<Config> = {}
+): Config => ({
+  ai_provider: 'zhipuai',
+  ai_model: 'glm-4-flash',
+  api_key_configured: true,
+  theme: 'light',
+  language: 'zh-CN',
   ...overrides,
 });
 
 /**
- * Create a mock security config
- */
-export const createMockSecurityConfig = (
-  overrides: Partial<SecurityConfig> = {}
-): SecurityConfig => ({
-  contentFilterEnabled: true,
-  contentFilterLevel: 'medium',
-  whitelistEnabled: false,
-  commandWhitelist: ['ls', 'cat', 'pwd'],
-  commandBlacklist: ['rm -rf /'],
-  confirmDangerousOps: true,
-  maxFileSize: 100,
-  ...overrides,
-});
-
-/**
- * Create a mock session info
+ * Create a mock session
+ * @author 小新
  */
 export const createMockSession = (
-  overrides: Partial<SessionInfo> = {}
-): SessionInfo => ({
+  overrides: Partial<Session> = {}
+): Session => ({
   id: `session-${Date.now()}`,
   title: 'Test Session',
-  provider: 'zhipuai',
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  messageCount: 10,
+  created_at: new Date().toISOString(),
+  updated_at: new Date().toISOString(),
+  message_count: 10,
   ...overrides,
 });
 
 /**
  * Mock EventSource for testing
  */
+/**
+ * Mock EventSource for testing
+ * @author 小新
+ */
 export class MockEventSource {
-  onopen: ((this: EventSource, ev: Event) => any) | null = null;
-  onmessage: ((this: EventSource, ev: MessageEvent) => any) | null = null;
-  onerror: ((this: EventSource, ev: Event) => any) | null = null;
+  onopen: ((ev: Event) => any) | null = null;
+  onmessage: ((ev: MessageEvent) => any) | null = null;
+  onerror: ((ev: Event) => any) | null = null;
   readyState: number = 0;
   url: string;
+  withCredentials: boolean = false;
+  CONNECTING: number = 0;
+  OPEN: number = 1;
+  CLOSED: number = 2;
 
   constructor(url: string | URL) {
     this.url = url.toString();
     this.readyState = 0;
-    
+
     // Simulate connection opening
     setTimeout(() => {
       this.readyState = 1;
@@ -133,9 +125,13 @@ export class MockEventSource {
 
 /**
  * Setup mock for EventSource
+ * @author 小新
  */
 export const setupEventSourceMock = () => {
-  global.EventSource = MockEventSource as unknown as typeof EventSource;
+  Object.defineProperty(window, 'EventSource', {
+    value: MockEventSource,
+    writable: true,
+  });
 };
 
 /**
@@ -219,14 +215,18 @@ export const mockLocalStorage = () => {
 
 /**
  * Mock fetch API
+ * @author 小新
  */
 export const mockFetch = (response: unknown, status = 200) => {
-  global.fetch = vi.fn().mockResolvedValue({
-    ok: status >= 200 && status < 300,
-    status,
-    json: vi.fn().mockResolvedValue(response),
-    text: vi.fn().mockResolvedValue(JSON.stringify(response)),
-  } as unknown as Response);
+  Object.defineProperty(window, 'fetch', {
+    value: vi.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      json: vi.fn().mockResolvedValue(response),
+      text: vi.fn().mockResolvedValue(JSON.stringify(response)),
+    } as unknown as Response),
+    writable: true,
+  });
 };
 
 /**

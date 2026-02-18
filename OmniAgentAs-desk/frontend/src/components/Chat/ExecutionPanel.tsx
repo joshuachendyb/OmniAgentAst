@@ -124,7 +124,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
   /**
    * 渲染步骤内容
    */
-  const renderStepContent = (step: ExecutionStep, index: number) => {
+  const renderStepContent = (step: ExecutionStep, _index: number) => {
     switch (step.type) {
       case 'thought':
         return (

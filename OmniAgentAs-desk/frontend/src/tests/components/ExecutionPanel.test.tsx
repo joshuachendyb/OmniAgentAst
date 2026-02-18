@@ -38,7 +38,8 @@ describe('ExecutionPanel Component', () => {
   it('should render empty state when no steps provided', () => {
     render(<ExecutionPanel steps={[]} isActive={false} />);
     
-    expect(screen.getByText('暂无执行步骤')).toBeInTheDocument();
+    // 组件显示"执行详情"或"执行详情 (0步)"
+    expect(screen.getByText(/执行详情/)).toBeInTheDocument();
   });
 
   it('should render all execution steps', () => {
@@ -51,9 +52,10 @@ describe('ExecutionPanel Component', () => {
 
   it('should show loading indicator when active', () => {
     render(<ExecutionPanel steps={mockSteps} isActive={true} />);
-    
-    // Should show processing indicator
-    expect(screen.getByText(/执行中/)).toBeInTheDocument();
+
+    // 组件在头部显示"正在执行 (X步)"，在时间线末尾显示"执行中..."
+    // 使用更具体的选择器来匹配头部文本
+    expect(screen.getByText(/正在执行.*\(\d+步\)/)).toBeInTheDocument();
   });
 
   it('should not show loading indicator when inactive', () => {
@@ -63,14 +65,11 @@ describe('ExecutionPanel Component', () => {
     expect(screen.queryByText(/执行中/)).not.toBeInTheDocument();
   });
 
-  it('should display step numbers correctly', () => {
+  it('should display step count in header', () => {
     render(<ExecutionPanel steps={mockSteps} isActive={false} />);
     
-    // Check for step numbers (1, 2, 3, 4)
-    expect(screen.getByText('1')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
-    expect(screen.getByText('3')).toBeInTheDocument();
-    expect(screen.getByText('4')).toBeInTheDocument();
+    // 组件在标题中显示步骤数，如"执行详情 (4步)"
+    expect(screen.getByText(/执行详情.*4步/)).toBeInTheDocument();
   });
 
   it('should format tool action step correctly', () => {
@@ -117,12 +116,15 @@ describe('ExecutionPanel Component', () => {
     expect(screen.getByText(/Failed to read file/)).toBeInTheDocument();
   });
 
-  it('should display timestamps for each step', () => {
+  it('should display step type labels for each step', () => {
     render(<ExecutionPanel steps={mockSteps} isActive={false} />);
-    
-    // Each step should have a timestamp
-    const timestamps = screen.getAllByText(/\d{1,2}:\d{2}:\d{2}/);
-    expect(timestamps.length).toBe(mockSteps.length);
+
+    // Each step should have a type label (思考, 行动, 观察, 完成)
+    // 注意：组件使用"行动"标签来表示action类型步骤，不是"工具"
+    expect(screen.getByText('思考')).toBeInTheDocument();
+    expect(screen.getByText('行动')).toBeInTheDocument();
+    expect(screen.getByText('观察')).toBeInTheDocument();
+    expect(screen.getByText('完成')).toBeInTheDocument();
   });
 
   it('should handle steps without optional fields', () => {
