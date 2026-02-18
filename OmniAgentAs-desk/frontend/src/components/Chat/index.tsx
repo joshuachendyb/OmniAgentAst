@@ -10,7 +10,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Input, Button, Card, List, Tag, Space, Alert, Select, message } from 'antd';
+import { Input, Button, Card, List, Tag, Space, Select, message } from 'antd';
 import { SendOutlined, RobotOutlined, CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons';
 import { chatApi, securityApi, configApi, ChatMessage, ValidateResponse } from '../../services/api';
 import MessageItem from './MessageItem';
@@ -298,11 +298,7 @@ const Chat: React.FC = () => {
           <RobotOutlined />
           <span>AI 对话助手</span>
           <Tag color={serviceStatus?.success ? 'success' : 'warning'}>
-            {serviceStatus?.success ? (
-              <><CheckCircleOutlined /> {getProviderName(currentProvider)} {currentModel && `(${currentModel})`}</>
-            ) : (
-              <>{getProviderName(currentProvider)} {currentModel && `(${currentModel})`} - 未就绪</>
-            )}
+            {getProviderName(currentProvider)} {currentModel && `(${currentModel})`}
           </Tag>
         </Space>
       }
@@ -331,28 +327,7 @@ const Chat: React.FC = () => {
         </Space>
       }
     >
-      {/* 服务状态提示 */}
-      {serviceStatus && (
-        <Alert
-          message={serviceStatus.success ? 'AI服务正常' : 'AI服务异常'}
-          description={
-            <>
-              <p><strong>当前提供商:</strong> {getProviderName(currentProvider)} {currentModel && `(${currentModel})`}</p>
-              <p><strong>状态:</strong> {serviceStatus.message}</p>
-              {!serviceStatus.success && (
-                <>
-                  <p style={{ marginTop: 8, color: '#666' }}>
-                    💡 提示: 您可以尝试切换到另一个提供商，或检查API配置
-                  </p>
-                </>
-              )}
-            </>
-          }
-          type={serviceStatus.success ? 'success' : 'warning'}
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      {/* 服务状态已显示在标题行Tag中 */}
 
       {/* 消息列表 */}
       <div

@@ -9,9 +9,9 @@
  * @update 2026-02-18 添加移动端响应式支持
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Layout, Menu, Typography, Avatar, Badge, Tooltip, Drawer, Button, Grid } from 'antd';
+import { Layout, Menu, Typography, Avatar, Badge, Tooltip, Drawer, Button, Grid, Tag } from 'antd';
 import {
   MessageOutlined,
   FolderOutlined,
@@ -21,7 +21,9 @@ import {
   ThunderboltOutlined,
   DesktopOutlined,
   MenuOutlined,
+  CheckCircleOutlined,
 } from '@ant-design/icons';
+import { configApi, chatApi } from '../../services/api';
 import type { MenuProps } from 'antd';
 
 const { useBreakpoint } = Grid;
@@ -68,6 +70,33 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   // 响应式断点
   const screens = useBreakpoint();
   const isMobile = !screens.md; // md以下认为是移动端
+  
+  // 【新增】服务状态
+  const [serviceStatus, setServiceStatus] = useState<{success: boolean; message: string; provider: string; model: string} | null>(null);
+  const [checkingStatus, setCheckingStatus] = useState(false);
+  const [currentProvider, setCurrentProvider] = useState('opencode');
+  
+  // 【新增】检查服务状态
+  useEffect(() => {
+    const checkService = async () => {
+      setCheckingStatus(true);
+      try {
+        // 先获取配置
+        const config = await configApi.getConfig();
+        if (config.ai_provider) {
+          setCurrentProvider(config.ai_provider);
+        }
+        // 再检查服务
+        const status = await chatApi.validateService();
+        setServiceStatus(status);
+      } catch (error) {
+        console.warn('服务检查失败:', error);
+      } finally {
+        setCheckingStatus(false);
+      }
+    };
+    checkService();
+  }, []);
 
   /**
    * 导航菜单配置
@@ -80,7 +109,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       icon: <MessageOutlined />,
       label: (
         <Badge count={unreadCount} size="small" offset={[10, 0]}>
-          <span>对话</span>
+          <span>对话与下任务</span>
         </Badge>
       ),
     },
@@ -267,8 +296,18 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
               />
             )}
             <Title level={4} style={{ margin: 0, fontWeight: 500, fontSize: isMobile ? 16 : 18 }}>
-              AI 对话助手
+              对话与任务
             </Title>
+            {/* 【新增】服务状态显示 */}
+            <Tag color={serviceStatus?.success ? 'success' : checkingStatus ? 'processing' : 'warning'}>
+              {checkingStatus ? (
+                '检查中...'
+              ) : serviceStatus?.success ? (
+                <><CheckCircleOutlined /> {serviceStatus.message}</>
+              ) : (
+                serviceStatus?.message || '未就绪'
+              )}
+            </Tag>
           </div>
           
           {/* 右侧操作区 */}

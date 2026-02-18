@@ -120,7 +120,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const getMessageStyle = () => {
     const baseStyle: React.CSSProperties = {
       maxWidth: '100%',
-      padding: '12px 16px',
+      width: 'fit-content',
+      padding: '12px 32px 12px 16px',
       borderRadius: '12px',
       position: 'relative',
       transition: 'all 0.3s ease',
@@ -202,8 +203,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
         </div>
       )}
 
-      {/* 消息内容区 */}
-      <div style={{ width: '100%', maxWidth: 'calc(100% - 60px)' }}>
+      {/* 消息内容区 - 最大宽度为两头像之间的间距 */}
+      <div style={{ width: '100%', maxWidth: 'calc(100% - 96px)' }}>
         {/* 角色名称 */}
         {!isSystem && (
           <div
@@ -242,7 +243,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
             </Tooltip>
 
             {/* 消息内容 */}
-            <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'normal', overflowWrap: 'break-word' }}>
+            <div style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
               {message.content}
             </div>
 
