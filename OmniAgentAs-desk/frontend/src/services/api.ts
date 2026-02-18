@@ -263,15 +263,13 @@ export interface ExecutionStep {
  */
 export const sessionApi = {
   /**
-   * 创建新会话 - 待实现
+   * 创建新会话
+   * @author 小新
+   * @update 2026-02-18 对接小沈后端API，替换Mock实现
    */
-  createSession: async (): Promise<{ session_id: string; title: string; created_at: string }> => {
-    // TODO: 后端实现后改为真实API
-    return {
-      session_id: 'mock-' + Date.now(),
-      title: '新会话',
-      created_at: new Date().toISOString(),
-    };
+  createSession: async (title?: string): Promise<{ session_id: string; title: string; created_at: string; updated_at: string; message_count: number }> => {
+    const response = await api.post<{ session_id: string; title: string; created_at: string; updated_at: string; message_count: number }>('/sessions', { title });
+    return response.data;
   },
 
   /**

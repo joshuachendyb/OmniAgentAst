@@ -5,7 +5,7 @@
 
 import json
 import asyncio
-from typing import Optional
+from typing import Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from datetime import datetime
@@ -29,7 +29,7 @@ def _get_db_connection():
 class ExecutionStep:
     """执行步骤数据模型"""
     def __init__(self, step_type: str, content: str = "", tool: str = "", 
-                 params: dict = None, result: any = None, timestamp: int = 0):
+                 params: Optional[Dict] = None, result: Any = None, timestamp: int = 0):
         self.type = step_type
         self.content = content
         self.tool = tool

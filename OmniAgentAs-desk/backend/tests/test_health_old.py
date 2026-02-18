@@ -20,9 +20,9 @@ class TestHealthEndpoints:
         # Assert
         assert response.status_code == 200
         data = response.json()
-        assert data["status"] == "ok"
+        # 【修复】健康检查状态返回"healthy"而不是"ok"
+        assert data["status"] == "healthy"
         assert "timestamp" in data
-        # 【修复】版本号应该从version.txt读取，不是硬编码0.1.0
         assert "version" in data
     
     def test_echo_endpoint(self, client):
