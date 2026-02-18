@@ -21,6 +21,20 @@ from app.utils.logger import logger
 router = APIRouter()
 
 
+# ============================================
+# 安全配置模型
+# ============================================
+class SecurityConfig(BaseModel):
+    """安全配置"""
+    contentFilterEnabled: bool = Field(True, description="是否启用内容安全过滤")
+    contentFilterLevel: str = Field("medium", description="敏感词过滤级别: low | medium | high")
+    whitelistEnabled: bool = Field(False, description="是否启用命令白名单")
+    commandWhitelist: str = Field("", description="命令白名单，每行一个命令")
+    commandBlacklist: str = Field("", description="命令黑名单，每行一个命令")
+    confirmDangerousOps: bool = Field(True, description="危险操作是否需要二次确认")
+    maxFileSize: int = Field(100, description="最大文件操作大小(MB)")
+
+
 class ConfigUpdate(BaseModel):
     """配置更新请求"""
     ai_provider: Optional[str] = Field(None, description="AI提供商: zhipuai | opencode")
@@ -28,6 +42,7 @@ class ConfigUpdate(BaseModel):
     opencode_api_key: Optional[str] = Field(None, description="OpenCode API密钥")
     theme: Optional[str] = Field("light", description="主题: light | dark")
     language: Optional[str] = Field("zh-CN", description="语言: zh-CN | en-US")
+    security: Optional[SecurityConfig] = Field(None, description="安全配置")
 
 
 class ConfigResponse(BaseModel):
@@ -37,6 +52,7 @@ class ConfigResponse(BaseModel):
     api_key_configured: bool = Field(..., description="API Key是否已配置")
     theme: str = Field(..., description="当前主题")
     language: str = Field(..., description="当前语言")
+    security: Optional[SecurityConfig] = Field(None, description="安全配置")
 
 
 class ConfigValidateRequest(BaseModel):
@@ -83,6 +99,14 @@ async def get_system_config():
         theme = config.get('app.theme', 'light')
         language = config.get('app.language', 'zh-CN')
         
+        # 获取安全配置（如果没有则使用默认值）
+        security_config = config.get('security', {})
+        if not security_config:
+            # 使用默认值
+            security_config = SecurityConfig()
+        else:
+            security_config = SecurityConfig(**security_config)
+        
         logger.info(f"获取配置成功: provider={provider}")
         
         return ConfigResponse(
@@ -90,7 +114,8 @@ async def get_system_config():
             ai_model=ai_config.get('model', ''),
             api_key_configured=api_key_configured,
             theme=theme,
-            language=language
+            language=language,
+            security=security_config
         )
         
     except Exception as e:
@@ -159,6 +184,11 @@ async def update_config(config_update: ConfigUpdate):
         # 更新语言
         if config_update.language:
             config_data['app']['language'] = config_update.language
+        
+        # 更新安全配置
+        if config_update.security:
+            config_data['security'] = config_update.security.model_dump()
+            logger.info(f"更新安全配置成功")
         
         # 写回配置文件
         with open(config_path, 'w', encoding='utf-8') as f:
