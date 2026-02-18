@@ -38,7 +38,7 @@ async def health_check():
     健康检查接口
     """
     return HealthResponse(
-        status="ok",
+        status="healthy",
         timestamp=datetime.utcnow().isoformat(),
         version=get_version()  # 【修复-波次5】使用统一版本号
     )

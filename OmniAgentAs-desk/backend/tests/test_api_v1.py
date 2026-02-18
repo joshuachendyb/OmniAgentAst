@@ -30,7 +30,7 @@ class TestSessionsAPI:
         response = client.post("/api/v1/sessions", json={})
         assert response.status_code == 200
         data = response.json()
-        assert "id" in data
+        assert "session_id" in data
         assert "title" in data
         assert "created_at" in data
     
@@ -49,21 +49,32 @@ class TestSessionsAPI:
         response = client.get("/api/v1/sessions")
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
+        # 契约要求返回对象格式: {total, page, page_size, sessions}
+        assert "total" in data
+        assert "page" in data
+        assert "page_size" in data
+        assert "sessions" in data
+        assert isinstance(data["sessions"], list)
     
     def test_list_sessions_with_pagination(self):
         """测试分页参数"""
         response = client.get("/api/v1/sessions?page=1&page_size=10")
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
+        assert "total" in data
+        assert "page" in data
+        assert "page_size" in data
+        assert "sessions" in data
+        assert isinstance(data["sessions"], list)
     
     def test_list_sessions_with_keyword(self):
         """测试关键词搜索"""
         response = client.get("/api/v1/sessions?keyword=test")
         assert response.status_code == 200
         data = response.json()
-        assert isinstance(data, list)
+        assert "total" in data
+        assert "sessions" in data
+        assert isinstance(data["sessions"], list)
     
     def test_get_session_messages_not_found(self):
         """测试获取不存在的会话消息"""
@@ -133,6 +144,41 @@ class TestChatAPI:
         )
         # 可能返回200或500（取决于API Key配置）
         assert response.status_code in [200, 500]
+
+
+class TestSecurityAPI:
+    """安全检查API测试"""
+    
+    def test_security_check_safe_command(self):
+        """测试安全命令检查 - 安全命令"""
+        response = client.post(
+            "/api/v1/security/check",
+            json={"command": "ls -la"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "safe" in data
+        assert data["safe"] is True
+    
+    def test_security_check_dangerous_command(self):
+        """测试安全命令检查 - 危险命令"""
+        response = client.post(
+            "/api/v1/security/check",
+            json={"command": "rm -rf /"}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "safe" in data
+        assert data["safe"] is False
+
+
+class TestExecutionAPI:
+    """执行流API测试"""
+    
+    def test_execution_stream_not_found(self):
+        """测试获取不存在的执行流"""
+        response = client.get("/api/v1/chat/execution/invalid-id/stream")
+        assert response.status_code == 404
 
 
 if __name__ == "__main__":

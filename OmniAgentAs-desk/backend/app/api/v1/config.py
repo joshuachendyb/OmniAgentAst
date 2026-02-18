@@ -24,7 +24,8 @@ router = APIRouter()
 class ConfigUpdate(BaseModel):
     """配置更新请求"""
     ai_provider: Optional[str] = Field(None, description="AI提供商: zhipuai | opencode")
-    api_key: Optional[str] = Field(None, description="API密钥")
+    zhipu_api_key: Optional[str] = Field(None, description="智谱AI API密钥")
+    opencode_api_key: Optional[str] = Field(None, description="OpenCode API密钥")
     theme: Optional[str] = Field("light", description="主题: light | dark")
     language: Optional[str] = Field("zh-CN", description="语言: zh-CN | en-US")
 
@@ -48,6 +49,7 @@ class ConfigValidateResponse(BaseModel):
     """配置验证响应"""
     valid: bool = Field(..., description="配置是否有效")
     message: str = Field(..., description="验证消息")
+    model: Optional[str] = Field(None, description="模型名称")
 
 
 def _get_config_path() -> Path:
@@ -137,11 +139,14 @@ async def update_config(config_update: ConfigUpdate):
                     detail=f"切换AI提供商失败: {str(e)}"
                 )
         
-        # 更新API Key
-        if config_update.api_key:
-            provider = config_update.ai_provider or config_data['ai']['provider']
-            config_data['ai'][provider]['api_key'] = config_update.api_key
-            logger.info(f"更新API Key成功: provider={provider}")
+        # 更新API Key - 根据provider更新对应的API Key
+        if config_update.zhipu_api_key:
+            config_data['ai']['zhipuai']['api_key'] = config_update.zhipu_api_key
+            logger.info(f"更新智谱AI API Key成功")
+        
+        if config_update.opencode_api_key:
+            config_data['ai']['opencode']['api_key'] = config_update.opencode_api_key
+            logger.info(f"更新OpenCode API Key成功")
         
         # 确保app配置节存在
         if 'app' not in config_data:
@@ -196,26 +201,29 @@ async def validate_config(request: ConfigValidateRequest):
         if request.provider not in ["zhipuai", "opencode"]:
             return ConfigValidateResponse(
                 valid=False,
-                message=f"不支持的提供商: {request.provider}"
+                message=f"不支持的提供商: {request.provider}",
+                model=None
             )
         
         # 获取配置
         config = get_config_instance()
         
-        # 创建临时服务实例进行验证
+        # 根据provider获取模型名称
         if request.provider == "zhipuai":
+            model_name = config.get('ai.zhipuai.model', 'glm-4.7-flash')
             from app.services.zhipuai import ZhipuAIService
             temp_service = ZhipuAIService(
                 api_key=request.api_key,
-                model=config.get('ai.zhipuai.model', 'glm-4.7-flash'),
+                model=model_name,
                 api_base=config.get('ai.zhipuai.api_base', 'https://open.bigmodel.cn/api/paas/v4'),
                 timeout=30
             )
         else:
+            model_name = config.get('ai.opencode.model', 'minimax-m2.5-free')
             from app.services.opencode import OpenCodeService
             temp_service = OpenCodeService(
                 api_key=request.api_key,
-                model=config.get('ai.opencode.model', 'minimax-m2.5-free'),
+                model=model_name,
                 api_base=config.get('ai.opencode.api_base', 'https://opencode.ai/zen/v1'),
                 timeout=30
             )
@@ -227,18 +235,21 @@ async def validate_config(request: ConfigValidateRequest):
             logger.info(f"配置验证成功: provider={request.provider}")
             return ConfigValidateResponse(
                 valid=True,
-                message=f"API Key验证成功，当前使用 {request.provider}"
+                message=f"API Key验证成功，当前使用 {request.provider}",
+                model=model_name
             )
         else:
             logger.warning(f"配置验证失败: provider={request.provider}")
             return ConfigValidateResponse(
                 valid=False,
-                message=f"API Key无效，请检查是否正确"
+                message=f"API Key无效，请检查是否正确",
+                model=None
             )
             
     except Exception as e:
         logger.error(f"配置验证异常: {e}")
         return ConfigValidateResponse(
             valid=False,
-            message=f"验证过程出错: {str(e)}"
+            message=f"验证过程出错: {str(e)}",
+            model=None
         )
