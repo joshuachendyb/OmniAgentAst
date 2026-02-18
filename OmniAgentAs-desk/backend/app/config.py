@@ -48,9 +48,9 @@ class Config:
         if env_path:
             return Path(env_path)
         
-        # 【修复】项目根目录是backend的父目录，需要再退一级
-        # backend/app/config.py -> .parent=app -> .parent=backend -> .parent.parent=项目根目录
-        base_dir = Path(__file__).parent.parent.parent.parent
+        # 【修复】项目根目录是backend的父目录
+        # backend/app/config.py -> .parent=app -> .parent=backend -> .parent=项目根目录
+        base_dir = Path(__file__).parent.parent.parent
         return base_dir / "config" / "config.yaml"
     
     def _get_default_config(self) -> Dict[str, Any]:

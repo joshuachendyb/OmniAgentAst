@@ -119,7 +119,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
    */
   const getMessageStyle = () => {
     const baseStyle: React.CSSProperties = {
-      maxWidth: '75%',
+      maxWidth: '100%',
       padding: '12px 16px',
       borderRadius: '12px',
       position: 'relative',
@@ -203,7 +203,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       )}
 
       {/* 消息内容区 */}
-      <div style={{ maxWidth: '80%' }}>
+      <div style={{ width: '100%', maxWidth: 'calc(100% - 60px)' }}>
         {/* 角色名称 */}
         {!isSystem && (
           <div
@@ -242,7 +242,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
             </Tooltip>
 
             {/* 消息内容 */}
-            <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+            <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'normal', overflowWrap: 'break-word' }}>
               {message.content}
             </div>
 

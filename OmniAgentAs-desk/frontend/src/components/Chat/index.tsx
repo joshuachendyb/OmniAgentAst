@@ -12,7 +12,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Input, Button, Card, List, Tag, Space, Alert, Select, message } from 'antd';
 import { SendOutlined, RobotOutlined, CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons';
-import { chatApi, securityApi, ChatMessage, ValidateResponse } from '../../services/api';
+import { chatApi, securityApi, configApi, ChatMessage, ValidateResponse } from '../../services/api';
 import MessageItem from './MessageItem';
 import DangerConfirmModal from '../DangerConfirmModal';
 
@@ -55,6 +55,27 @@ const Chat: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // 【修复】组件加载时先获取配置，再检查服务状态
+  useEffect(() => {
+    const initProvider = async () => {
+      try {
+        const config = await configApi.getConfig();
+        if (config.ai_provider === 'zhipuai' || config.ai_provider === 'opencode') {
+          setCurrentProvider(config.ai_provider);
+        }
+        if (config.ai_model) {
+          setCurrentModel(config.ai_model);
+        }
+      } catch (error) {
+        console.warn('获取配置失败:', error);
+      } finally {
+        // 无论是否获取到配置，都检查服务状态
+        checkServiceStatus();
+      }
+    };
+    initProvider();
+  }, []);
 
   // 检查服务状态
   const checkServiceStatus = async () => {
@@ -361,6 +382,7 @@ const Chat: React.FC = () => {
                   justifyContent: item.role === 'user' ? 'flex-end' : 'flex-start',
                   border: 'none',
                   padding: '8px 0',
+                  width: '100%',
                 }}
               >
                 <MessageItem message={item} />
