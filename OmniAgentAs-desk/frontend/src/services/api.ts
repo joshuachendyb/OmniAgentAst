@@ -155,8 +155,9 @@ export const chatApi = {
 };
 
 // ============================================
-// 配置管理接口（预留，待后端实现）
+// 配置管理接口
 // @author 小新
+// @update 2026-02-18 已对接真实API
 // ============================================
 export interface Config {
   ai_provider: 'zhipuai' | 'opencode';
@@ -164,6 +165,18 @@ export interface Config {
   api_key_configured: boolean;
   theme: 'light' | 'dark';
   language: string;
+  // 安全配置
+  security?: SecurityConfig;
+}
+
+export interface SecurityConfig {
+  contentFilterEnabled: boolean;
+  contentFilterLevel: 'low' | 'medium' | 'high';
+  whitelistEnabled: boolean;
+  commandWhitelist: string;
+  commandBlacklist: string;
+  confirmDangerousOps: boolean;
+  maxFileSize: number;
 }
 
 export interface ConfigUpdate {
@@ -171,6 +184,8 @@ export interface ConfigUpdate {
   zhipu_api_key?: string;
   opencode_api_key?: string;
   theme?: 'light' | 'dark';
+  // 安全配置
+  security?: SecurityConfig;
 }
 
 export interface ConfigValidateRequest {
@@ -220,8 +235,9 @@ export const configApi = {
 };
 
 // ============================================
-// 会话管理接口（预留，待后端实现）
+// 会话管理接口
 // @author 小新
+// @update 2026-02-18 已对接真实API
 // ============================================
 export interface Session {
   id: string;
@@ -259,13 +275,14 @@ export interface ExecutionStep {
 /**
  * 会话管理API
  * 
- * TODO: 后端实现后移除Mock
+ * @author 小新
+ * @update 2026-02-18 已对接真实API
  */
 export const sessionApi = {
   /**
    * 创建新会话
    * @author 小新
-   * @update 2026-02-18 对接小沈后端API，替换Mock实现
+   * @update 2026-02-18 已对接真实API
    */
   createSession: async (title?: string): Promise<{ session_id: string; title: string; created_at: string; updated_at: string; message_count: number }> => {
     const response = await api.post<{ session_id: string; title: string; created_at: string; updated_at: string; message_count: number }>('/sessions', { title });

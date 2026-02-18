@@ -92,12 +92,15 @@ const Settings: React.FC = () => {
   };
 
   /**
-   * 加载安全配置（使用Mock数据，待后端实现）
+   * 加载安全配置
+   * @author 小新
+   * @update 2026-02-18 对接真实API，移除Mock
    */
   const loadSecurityConfig = async () => {
     try {
-      // TODO: 后端实现后改为真实API调用
-      const mockConfig = {
+      const config = await configApi.getConfig();
+      // 使用后端返回的安全配置，如果没有则使用默认值
+      const securityConfig = config.security || {
         contentFilterEnabled: true,
         contentFilterLevel: 'medium',
         whitelistEnabled: false,
@@ -106,8 +109,8 @@ const Settings: React.FC = () => {
         confirmDangerousOps: true,
         maxFileSize: 100,
       };
-      setSecurityConfig(mockConfig);
-      securityForm.setFieldsValue(mockConfig);
+      setSecurityConfig(securityConfig);
+      securityForm.setFieldsValue(securityConfig);
     } catch (error) {
       message.error('加载安全配置失败');
       console.error('加载安全配置失败:', error);
@@ -148,13 +151,21 @@ const Settings: React.FC = () => {
   };
 
   /**
-   * 保存安全配置（使用Mock，待后端实现）
+   * 保存安全配置
+   * @author 小新
+   * @update 2026-02-18 对接真实API，移除Mock
    */
   const handleSaveSecurityConfig = async (values: any) => {
     setSavingSecurity(true);
     try {
-      // TODO: 后端实现后改为真实API调用
-      console.log('保存安全配置:', values);
+      // 获取当前完整配置
+      const currentConfig = await configApi.getConfig();
+      // 更新安全配置
+      const updateData = {
+        ...currentConfig,
+        security: values,
+      };
+      await configApi.updateConfig(updateData);
       message.success('安全配置已保存');
       setSecurityConfig(values);
     } catch (error) {
@@ -180,12 +191,13 @@ const Settings: React.FC = () => {
   };
 
   /**
-   * 清空所有会话（使用Mock，待后端实现）
+   * 清空所有会话
+   * @author 小新
+   * @update 2026-02-18 已对接真实API
    */
   const handleClearAllSessions = async () => {
     try {
-      // TODO: 后端实现后改为真实API调用
-      // 暂时逐个删除会话
+      // 逐个删除会话
       for (const session of sessions) {
         await sessionApi.deleteSession(session.id);
       }
