@@ -74,7 +74,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   // 【新增】服务状态
   const [serviceStatus, setServiceStatus] = useState<{success: boolean; message: string; provider: string; model: string} | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
-  const [currentProvider, setCurrentProvider] = useState('opencode');
+  const [_currentProvider, setCurrentProvider] = useState('opencode');
   
   // 【新增】检查服务状态
   useEffect(() => {
@@ -317,11 +317,11 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           </div>
         </Header>
 
-        {/* 主内容区 */}
+        {/* 主内容区 - 只有这层有留白 */}
         <Content
           style={{
-            margin: isMobile ? 12 : 24,
-            padding: isMobile ? 16 : 24,
+            margin: 8,
+            padding: 8,
             background: '#f5f5f5',
             borderRadius: 8,
             minHeight: 280,

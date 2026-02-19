@@ -1,40 +1,33 @@
 /**
- * DangerConfirmModal组件 - 危险操作确认弹窗
+ * 危险操作确认弹窗 - DangerConfirmModal
  * 
- * 功能：检测危险命令时显示确认弹窗，防止误操作
+ * 功能：7-8分高风险操作的确认弹窗（基于设计文档第3.2.2节）
+ * 样式：橙色边框、警告图标、确认/取消按钮
  * 
  * @author 小新
- * @version 1.0.0
- * @since 2026-02-18
+ * @version 2.0.0
+ * @since 2026-02-19
+ * @update 升级到v2.0 API（score+message）
  */
 
 import React from 'react';
-import {
-  Modal,
-  Card,
-  Alert,
-  Space,
-  Typography,
-  Tag,
-} from 'antd';
-import {
-  ExclamationCircleOutlined,
-  WarningOutlined,
-  SafetyOutlined,
-  CodeOutlined,
-} from '@ant-design/icons';
+import { Modal, Button, Space, Typography, Tag } from 'antd';
+import { WarningOutlined } from '@ant-design/icons';
 
-const { Title, Text, Paragraph } = Typography;
+const { Text, Title } = Typography;
 
+/**
+ * 组件属性
+ */
 interface DangerConfirmModalProps {
-  /** 是否显示 */
+  /** 是否可见 */
   visible: boolean;
-  /** 命令内容 */
+  /** 操作命令 */
   command: string;
-  /** 风险描述 */
-  risk: string;
-  /** 建议 */
-  suggestion?: string;
+  /** 风险分数（7-8分） */
+  score: number;
+  /** 提示信息 */
+  message: string;
   /** 确认回调 */
   onConfirm: () => void;
   /** 取消回调 */
@@ -44,194 +37,128 @@ interface DangerConfirmModalProps {
 }
 
 /**
- * 危险操作确认弹窗
+ * 危险操作确认弹窗组件
  * 
- * 设计要点：
- * - 醒目的红色警告图标
- * - 清晰的命令展示
- * - 明确的风险说明
- * - 需要用户明确确认
+ * 设计规范（来自设计文档第3.2.2节）：
+ * - 宽度: 480px
+ * - 边框: 2px solid #faad14 (橙色)
+ * - 图标: WarningOutlined (橙色)
+ * - 按钮: "确认执行"（橙色）、"取消"（灰色）
  * 
- * @param visible - 是否显示弹窗
- * @param command - 检测到的命令
- * @param risk - 风险描述
- * @param suggestion - 安全建议
- * @param onConfirm - 确认执行回调
- * @param onCancel - 取消回调
- * @param loading - 加载状态
+ * @param props 组件属性
+ * @returns React组件
+ * @author 小新
  */
-const DangerConfirmModal: React.FC<DangerConfirmModalProps> = ({
+export const DangerConfirmModal: React.FC<DangerConfirmModalProps> = ({
   visible,
   command,
-  risk,
-  suggestion = '该操作可能对系统造成不可逆损害，请确认您知道自己在做什么。',
+  score,
+  message,
   onConfirm,
   onCancel,
-  loading = false,
+  loading = false
 }) => {
-  /**
-   * 高亮显示危险命令中的关键词
-   */
-  const highlightDangerousParts = (cmd: string): React.ReactNode => {
-    const dangerousPatterns = [
-      { pattern: /rm\s+-[rf]+/gi, label: '强制删除' },
-      { pattern: /mkfs/gi, label: '格式化' },
-      { pattern: /dd\s+if=/gi, label: '磁盘写入' },
-      { pattern: />\s*\/dev\/null/gi, label: '重定向到空设备' },
-      { pattern: /sudo/gi, label: '提权操作' },
-      { pattern: /chmod\s+777/gi, label: '全开权限' },
-    ];
-
-    let highlighted = cmd;
-    dangerousPatterns.forEach(({ pattern, label }) => {
-      highlighted = highlighted.replace(pattern, (match) => 
-        `{{DANGER:${match}:${label}}}`
-      );
-    });
-
-    // 解析并渲染
-    const parts = highlighted.split(/\{\{DANGER:([^:]+):([^\}]+)\}\}/);
-    return (
-      <>
-        {parts.map((part, index) => {
-          if (index % 3 === 1) {
-            // 这是危险命令部分
-            const command = parts[index];
-            const label = parts[index + 1];
-            return (
-              <span key={index}>
-                <Tag color="red" style={{ fontFamily: 'monospace', fontSize: 14 }}>
-                  {command}
-                </Tag>
-                <Text type="danger" style={{ fontSize: 12, marginLeft: 4 }}>
-                  ({label})
-                </Text>
-              </span>
-            );
-          } else if (index % 3 === 0) {
-            // 普通文本
-            return <span key={index} style={{ fontFamily: 'monospace', fontSize: 14 }}>{part}</span>;
-          }
-          return null;
-        })}
-      </>
-    );
-  };
-
   return (
     <Modal
       open={visible}
-      title={
-        <Space>
-          <ExclamationCircleOutlined style={{ color: '#ff4d4f', fontSize: 24 }} />
-          <Title level={4} style={{ margin: 0, color: '#ff4d4f' }}>
-            危险操作确认
-          </Title>
-        </Space>
-      }
-      onOk={onConfirm}
-      onCancel={onCancel}
-      okText={
-        <Space>
-          <WarningOutlined />
-          确认执行
-        </Space>
-      }
-      cancelText="取消操作"
-      okButtonProps={{ 
-        danger: true, 
-        loading,
-        size: 'large',
+      title={null}
+      footer={null}
+      closable={false}
+      width={480}
+      style={{
+        border: '2px solid #faad14',
+        borderRadius: '8px',
+        overflow: 'hidden'
       }}
-      cancelButtonProps={{
-        size: 'large',
+      bodyStyle={{
+        padding: '24px'
       }}
-      width={600}
-      centered
-      maskClosable={false}
     >
-      <Space direction="vertical" style={{ width: '100%' }} size="large">
-        {/* 风险警告 */}
-        <Alert
-          type="error"
-          message={
-            <Space>
-              <WarningOutlined />
-              <Text strong>系统检测到危险命令</Text>
-            </Space>
-          }
-          description={risk}
-          showIcon={false}
+      <div style={{ textAlign: 'center' }}>
+        {/* 警告图标 */}
+        <WarningOutlined 
           style={{ 
-            background: '#fff1f0', 
-            border: '1px solid #ffccc7',
-            borderRadius: 8,
-          }}
+            fontSize: 48, 
+            color: '#faad14',
+            marginBottom: 16 
+          }} 
         />
-
-        {/* 命令展示 */}
-        <Card
-          size="small"
-          title={
-            <Space>
-              <CodeOutlined />
-              <Text strong>命令内容</Text>
-            </Space>
-          }
-          style={{ 
-            background: '#fff',
-            border: '1px solid #ffccc7',
-          }}
-          headStyle={{ 
-            background: '#fff1f0',
-            borderBottom: '1px solid #ffccc7',
-          }}
-        >
-          <div style={{ 
-            padding: 12, 
-            background: '#fff1f0', 
-            borderRadius: 4,
-            overflowX: 'auto',
+        
+        {/* 标题 */}
+        <Title level={4} style={{ marginBottom: 8 }}>
+          危险操作确认
+        </Title>
+        
+        {/* 风险等级标签 */}
+        <Tag color="orange" style={{ marginBottom: 16, fontSize: 14 }}>
+          风险等级: {score}分 (7-8分)
+        </Tag>
+        
+        {/* 提示信息 */}
+        <Text style={{ 
+          display: 'block', 
+          marginBottom: 12,
+          fontSize: 16 
+        }}>
+          {message}
+        </Text>
+        
+        {/* 显示具体操作 */}
+        <div style={{
+          backgroundColor: '#fff7e6',
+          border: '1px solid #ffd591',
+          borderRadius: 4,
+          padding: 12,
+          marginBottom: 24,
+          textAlign: 'left'
+        }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            操作命令：
+          </Text>
+          <br />
+          <Text code style={{ 
+            display: 'block',
+            marginTop: 4,
+            fontSize: 14,
+            wordBreak: 'break-all'
           }}>
-            <Text code style={{ fontSize: 14, whiteSpace: 'pre-wrap' }}>
-              {highlightDangerousParts(command)}
-            </Text>
-          </div>
-        </Card>
-
-        {/* 风险说明 */}
-        <Alert
-          type="warning"
-          message={
-            <Space>
-              <SafetyOutlined />
-              <Text strong>风险提示</Text>
-            </Space>
-          }
-          description={
-            <Paragraph>
-              {suggestion}
-              <br /><br />
-              <Text type="warning">
-                ⚠️ 如果这不是您期望的操作，请点击"取消操作"。
-              </Text>
-            </Paragraph>
-          }
-          showIcon={false}
-          style={{ 
-            background: '#fffbe6', 
-            border: '1px solid #ffe58f',
-            borderRadius: 8,
-          }}
-        />
-
-        {/* 确认提示 */}
-        <div style={{ textAlign: 'center', padding: '12px 0' }}>
-          <Text type="danger" strong style={{ fontSize: 16 }}>
-            您确定要执行这个危险操作吗？
+            {command}
           </Text>
         </div>
-      </Space>
+        
+        {/* 风险等级提示 */}
+        <Text type="warning" style={{ 
+          display: 'block', 
+          marginBottom: 24,
+          fontSize: 14 
+        }}>
+          ⚠️ 此操作可能对项目文件造成影响，请确认是否继续？
+        </Text>
+        
+        {/* 按钮组 */}
+        <Space size="middle">
+          <Button 
+            onClick={onCancel}
+            size="large"
+            disabled={loading}
+          >
+            取消
+          </Button>
+          <Button 
+            type="primary"
+            onClick={onConfirm}
+            size="large"
+            loading={loading}
+            style={{
+              backgroundColor: '#faad14',
+              borderColor: '#faad14',
+              color: '#fff'
+            }}
+          >
+            确认执行
+          </Button>
+        </Space>
+      </div>
     </Modal>
   );
 };

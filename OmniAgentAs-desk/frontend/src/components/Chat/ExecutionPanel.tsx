@@ -9,7 +9,7 @@
  */
 
 import React, { useState } from 'react';
-import { Collapse, Timeline, Card, Tag, Spin, Button, Space, Tooltip } from 'antd';
+import { Collapse, Timeline, Card, Tag, Spin, Button, Space, Tooltip, Typography } from 'antd';
 import {
   CaretRightOutlined,
   CheckCircleOutlined,
@@ -21,6 +21,8 @@ import {
   DownloadOutlined,
 } from '@ant-design/icons';
 import type { ExecutionStep } from '../../services/api';
+
+const { Text } = Typography;
 
 interface ExecutionPanelProps {
   steps: ExecutionStep[];
@@ -336,9 +338,5 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
     />
   );
 };
-
-// 导入Text组件
-import { Typography } from 'antd';
-const { Text } = Typography;
 
 export default ExecutionPanel;

@@ -174,6 +174,7 @@ export interface SecurityConfig {
   contentFilterLevel: 'low' | 'medium' | 'high';
   whitelistEnabled: boolean;
   commandWhitelist: string;
+  blacklistEnabled: boolean;
   commandBlacklist: string;
   confirmDangerousOps: boolean;
   maxFileSize: number;
@@ -240,7 +241,7 @@ export const configApi = {
 // @update 2026-02-18 已对接真实API
 // ============================================
 export interface Session {
-  id: string;
+  session_id: string;
   title: string;
   created_at: string;
   updated_at: string;
@@ -310,6 +311,15 @@ export const sessionApi = {
   },
 
   /**
+   * 保存消息到会话
+   * @author 小新
+   */
+  saveMessage: async (sessionId: string, message: { role: string; content: string }): Promise<{ success: boolean }> => {
+    const response = await api.post<{ success: boolean }>(`/sessions/${sessionId}/messages`, message);
+    return response.data;
+  },
+
+  /**
    * 删除会话
    * @author 小新
    */
@@ -317,38 +327,71 @@ export const sessionApi = {
     const response = await api.delete<{ success: boolean }>(`/sessions/${sessionId}`);
     return response.data;
   },
+
+  /**
+   * 更新会话标题
+   * @author 小新
+   */
+  updateSession: async (sessionId: string, title: string): Promise<{ success: boolean; title: string }> => {
+    const response = await api.put<{ success: boolean; title: string }>(`/sessions/${sessionId}`, { title });
+    return response.data;
+  },
 };
 
 // ============================================
-// 安全接口（预留，待后端实现）
+// 安全接口
 // @author 小新
+// @update 2026-02-19 升级到v2.0 API契约（score+message精简版）
 // ============================================
-export interface SecurityCheckResponse {
-  isDangerous: boolean;
-  risk: string;
-  suggestion: string;
-}
+import type { SecurityCheckResponse, SecurityCheckRequest, UseSecurityCheckReturn } from '../types/security';
+import { getRiskLevel } from '../types/security';
 
 /**
- * 安全API
+ * 安全API v2.0
+ * 基于阶段2.1危险等级设计文档第4章契约接口
  *
  * @author 小新
- * @update 2026-02-18 对接小沈后端API
- * @update 2026-02-19 修复字段名不匹配 - 后端返回 safe，前端转为 isDangerous
+ * @version 2.0.0
+ * @update 2026-02-19 升级到精简版API（score+message）
  */
 export const securityApi = {
   /**
    * 检查命令安全性
+   * 调用后端 /api/v1/security/check 接口
+   * 
+   * @param command 要检查的命令
+   * @returns 安全检测结果（包含score和message）
    * @author 小新
    */
   checkCommand: async (command: string): Promise<SecurityCheckResponse> => {
-    // 后端返回 { safe: boolean, risk: string, suggestion: string }
-    // 需要转换为 { isDangerous: boolean, risk: string, suggestion: string }
-    const response = await api.post<{ safe: boolean; risk: string; suggestion: string }>('/security/check', { command });
+    const response = await api.post<SecurityCheckResponse>('/security/check', { command } as SecurityCheckRequest);
+    return response.data;
+  },
+
+  /**
+   * 检查命令并解析风险等级
+   * 封装checkCommand，返回更详细的解析结果
+   * 
+   * @param command 要检查的命令
+   * @returns 解析后的风险等级信息
+   * @author 小新
+   */
+  checkWithLevel: async (command: string): Promise<UseSecurityCheckReturn> => {
+    const response = await securityApi.checkCommand(command);
+    
+    if (!response.success || !response.data) {
+      throw new Error(response.error || '安全检查失败');
+    }
+
+    const { score, message } = response.data;
+    const riskLevel = getRiskLevel(score);
+
     return {
-      isDangerous: !response.data.safe,  // safe=false 表示危险
-      risk: response.data.risk,
-      suggestion: response.data.suggestion,
+      score,
+      message,
+      level: riskLevel.level,
+      canProceed: riskLevel.canProceed,
+      ui: riskLevel.ui
     };
   },
 };

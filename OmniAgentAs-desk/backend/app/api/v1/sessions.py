@@ -328,6 +328,118 @@ async def get_session_messages(session_id: str):
         raise HTTPException(status_code=500, detail=f"获取会话消息失败: {str(e)}")
 
 
+class MessageCreate(BaseModel):
+    """消息创建请求"""
+    role: str = Field(..., description="角色: user/assistant/system")
+    content: str = Field(..., description="消息内容")
+
+
+class SessionUpdate(BaseModel):
+    """会话更新请求"""
+    title: str = Field(..., description="会话标题")
+
+
+@router.post("/sessions/{session_id}/messages")
+async def save_message(session_id: str, message: MessageCreate):
+    """
+    保存消息到会话
+    
+    Args:
+        session_id: 会话ID
+        message: 消息内容
+        
+    Returns:
+        dict: 保存结果
+    """
+    try:
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        
+        # 验证会话存在
+        cursor.execute(
+            'SELECT id, title FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
+            (session_id,)
+        )
+        session = cursor.fetchone()
+        
+        if not session:
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+        
+        # 插入消息
+        cursor.execute(
+            'INSERT INTO chat_messages (session_id, role, content) VALUES (?, ?, ?)',
+            (session_id, message.role, message.content)
+        )
+        message_id = cursor.lastrowid
+        
+        # 更新会话的 message_count 和 updated_at
+        cursor.execute(
+            'UPDATE chat_sessions SET message_count = message_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            (session_id,)
+        )
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"保存消息成功: session_id={session_id}, message_id={message_id}, role={message.role}")
+        
+        return {"success": True, "message_id": message_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"保存消息失败: {e}")
+        raise HTTPException(status_code=500, detail=f"保存消息失败: {str(e)}")
+
+
+@router.put("/sessions/{session_id}")
+async def update_session(session_id: str, update_data: SessionUpdate):
+    """
+    更新会话信息
+    
+    Args:
+        session_id: 会话ID
+        update_data: 更新的数据
+        
+    Returns:
+        dict: 更新结果
+    """
+    try:
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        
+        # 验证会话存在
+        cursor.execute(
+            'SELECT id, title FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
+            (session_id,)
+        )
+        session = cursor.fetchone()
+        
+        if not session:
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+        
+        # 更新标题
+        cursor.execute(
+            'UPDATE chat_sessions SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            (update_data.title, session_id)
+        )
+        
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"更新会话成功: id={session_id}, title={update_data.title}")
+        
+        return {"success": True, "title": update_data.title}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新会话失败: {e}")
+        raise HTTPException(status_code=500, detail=f"更新会话失败: {str(e)}")
+
+
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):
     """
