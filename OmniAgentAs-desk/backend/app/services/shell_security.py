@@ -72,6 +72,11 @@ DANGEROUS_COMMANDS = [
     'powershell Get-Content C:\\',
     'reg query HKLM\\',
     
+    # 中文危险命令
+    '读取密码', '读取shadow', '查看密码', '查看shadow',
+    '获取密码', '获取shadow', '格式化硬盘', '格式化磁盘',
+    '删除所有', '删除全部', '清除硬盘', '清除磁盘',
+    
     # ====== 6. 进程终止类 ======
     'kill -9 -1', 'taskkill /f /im',
     'pkill -9', 'killall -9', 'killall',
@@ -109,11 +114,11 @@ SYSTEM_CRITICAL_DIRS = {
 
 # 操作类型权重表（维度1）
 OPERATION_WEIGHTS = {
-    'READ': {'min': 0, 'max': 2, 'default': 1, 'keywords': ['cat', 'ls', 'grep', '查看', '读取', 'type', 'dir']},
+    'READ': {'min': 0, 'max': 2, 'default': 1, 'keywords': ['cat', 'ls', 'grep', '查看', '读取', 'type', 'dir', '运行']},
     'CREATE': {'min': 2, 'max': 4, 'default': 3, 'keywords': ['mkdir', 'touch', '创建', '新建', 'md']},
     'UPDATE': {'min': 4, 'max': 7, 'default': 5, 'keywords': ['edit', 'sed', '修改', '编辑', '更新', 'echo', 'write']},
     'DELETE': {'min': 6, 'max': 10, 'default': 8, 'keywords': ['rm', 'del', '删除', 'remove', '清除', 'rmdir', 'rd']},
-    'EXEC': {'min': 5, 'max': 10, 'default': 7, 'keywords': ['sudo', 'run', 'exec', '执行', '运行', 'start']},
+    'EXEC': {'min': 5, 'max': 10, 'default': 7, 'keywords': ['sudo', 'run', 'exec', '执行', 'start']},
 }
 
 # 操作对象权重表（维度2）
@@ -121,7 +126,7 @@ TARGET_WEIGHTS = {
     'TEMP': {'min': 0, 'max': 2, 'default': 1, 'patterns': [r'\.tmp', r'\.cache', r'temp[/\\]', r'\.log$', r'log[/\\]']},
     'USER': {'min': 3, 'max': 5, 'default': 4, 'patterns': [r'~/', r'/home/', r'文档[/\\]', r'用户', r'documents', r'users?[/\\]']},
     'PROJECT': {'min': 6, 'max': 8, 'default': 7, 'patterns': [r'src[/\\]', r'app[/\\]', r'backend[/\\]', r'frontend[/\\]', r'\.py', r'\.js', r'\.ts', r'tests[/\\]', r'config[/\\]', r'\.git']},
-    'SYSTEM': {'min': 8, 'max': 10, 'default': 9, 'patterns': [r'C:\\Windows', r'/bin', r'/etc', r'/sbin', r'/usr', r'系统', r'windows[/\\]system32', r'registry']},
+    'SYSTEM': {'min': 8, 'max': 10, 'default': 9, 'patterns': [r'C:\\Windows', r'/bin', r'/etc', r'/sbin', r'/usr', r'系统', r'windows[/\\]system32', r'registry', r'密码', r'shadow', r'passwd', r'SAM', r'配置', r'注册表']},
 }
 
 # 本项目(OmniAgentAs-desk)保护目录列表
