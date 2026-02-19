@@ -12,7 +12,7 @@
 
 import React from 'react';
 import { notification, Typography, Tag } from 'antd';
-import { WarningOutlined, InfoCircleOutlined } from '@ant-design/icons';
+import { WarningOutlined } from '@ant-design/icons';
 
 const { Text } = Typography;
 

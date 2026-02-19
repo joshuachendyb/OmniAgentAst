@@ -86,8 +86,18 @@ export interface SecurityCheckState {
  * 根据分数获取风险等级
  * @param score 风险分数（0-10）
  * @returns 风险等级配置
+ * @throws 如果分数不在0-10范围内，按最高风险处理
  */
 export function getRiskLevel(score: number): RiskLevelConfig {
+  // 边界值检查：异常值按最高风险处理
+  if (typeof score !== 'number' || isNaN(score)) {
+    console.warn(`[Security] Invalid score type: ${typeof score}, defaulting to CRITICAL`);
+    return RISK_LEVELS.CRITICAL;
+  }
+  if (score < 0 || score > 10) {
+    console.warn(`[Security] Score out of range: ${score}, defaulting to CRITICAL`);
+    return RISK_LEVELS.CRITICAL;
+  }
   if (score <= 3) return RISK_LEVELS.SAFE;
   if (score <= 6) return RISK_LEVELS.MEDIUM;
   if (score <= 8) return RISK_LEVELS.HIGH;

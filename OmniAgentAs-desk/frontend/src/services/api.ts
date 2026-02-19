@@ -324,7 +324,7 @@ export const sessionApi = {
 // @author 小新
 // @update 2026-02-19 升级到v2.0 API契约（score+message精简版）
 // ============================================
-import type { SecurityCheckResponse, SecurityCheckRequest, UseSecurityCheckReturn, RiskLevelType } from '../types/security';
+import type { SecurityCheckResponse, SecurityCheckRequest, UseSecurityCheckReturn } from '../types/security';
 import { getRiskLevel } from '../types/security';
 
 /**

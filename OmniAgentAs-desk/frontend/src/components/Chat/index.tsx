@@ -248,7 +248,7 @@ const Chat: React.FC = () => {
         return;
       }
 
-      const { score, message } = checkResult.data;
+      const { score, message: riskMessage } = checkResult.data;
       const riskLevel = getRiskLevel(score);
 
       // 根据风险等级处理
@@ -260,7 +260,7 @@ const Chat: React.FC = () => {
 
         case 'MEDIUM':
           // 4-6分：执行并显示顶部通知
-          showSecurityNotification(userMessage.content, score, message);
+          showSecurityNotification(userMessage.content, score, riskMessage);
           await executeSendMessage(userMessage);
           break;
 
@@ -268,7 +268,7 @@ const Chat: React.FC = () => {
           // 7-8分：显示确认弹窗，等待用户确认
           setDangerCommand(userMessage.content);
           setDangerScore(score);
-          setDangerMessage(message);
+          setDangerMessage(riskMessage);
           setPendingMessage(userMessage);
           setDangerModalVisible(true);
           break;
@@ -278,7 +278,7 @@ const Chat: React.FC = () => {
           setBlockedCommand({
             command: userMessage.content,
             score,
-            message
+            message: riskMessage
           });
           // 从消息列表中移除被拦截的消息
           setMessages((prev) => prev.filter((msg) => msg.id !== userMessage.id));

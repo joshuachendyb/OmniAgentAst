@@ -74,7 +74,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   // 【新增】服务状态
   const [serviceStatus, setServiceStatus] = useState<{success: boolean; message: string; provider: string; model: string} | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
-  const [currentProvider, setCurrentProvider] = useState('opencode');
+  const [_currentProvider, setCurrentProvider] = useState('opencode');
   
   // 【新增】检查服务状态
   useEffect(() => {
