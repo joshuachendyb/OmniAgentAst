@@ -1,20 +1,24 @@
 /**
  * Chat组件 - 对话主界面
  * 
- * 功能：消息列表展示、消息发送、服务状态检查、模型切换、危险命令检测
+ * 功能：消息列表展示、消息发送、服务状态检查、模型切换、安全检测(v2.0)
  * 
  * @author 小新
- * @version 2.1.0
+ * @version 2.2.0
  * @since 2026-02-17
- * @update 2026-02-18 集成DangerConfirmModal危险命令检测 - by 小新
+ * @update 2026-02-19 升级到安全检测v2.0（基于score的4级响应） - by 小新
  */
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Input, Button, Card, List, Tag, Space, Select, message } from 'antd';
-import { SendOutlined, RobotOutlined, CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons';
-import { chatApi, securityApi, configApi, ChatMessage, ValidateResponse } from '../../services/api';
+import { SendOutlined, RobotOutlined, ReloadOutlined } from '@ant-design/icons';
+import { chatApi, configApi, ChatMessage, ValidateResponse } from '../../services/api';
+import { securityApi } from '../../services/api';
 import MessageItem from './MessageItem';
 import DangerConfirmModal from '../DangerConfirmModal';
+import SecurityAlert from '../SecurityAlert';
+import { showSecurityNotification } from '../SecurityNotification';
+import { getRiskLevel } from '../../types/security';
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -40,12 +44,14 @@ const Chat: React.FC = () => {
   const [currentModel, setCurrentModel] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 危险命令检测状态
+  // 安全检测v2.0状态（基于score的4级响应）
   const [dangerModalVisible, setDangerModalVisible] = useState(false);
   const [dangerCommand, setDangerCommand] = useState('');
-  const [dangerRisk, setDangerRisk] = useState('');
+  const [dangerScore, setDangerScore] = useState(0);
+  const [dangerMessage, setDangerMessage] = useState('');
   const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
   const [checkingDanger, setCheckingDanger] = useState(false);
+  const [blockedCommand, setBlockedCommand] = useState<{ command: string; score: number; message: string } | null>(null);
 
   // 自动滚动到底部
   const scrollToBottom = () => {
@@ -203,9 +209,16 @@ const Chat: React.FC = () => {
   };
 
   /**
-   * 发送消息（带危险命令检测）
+   * 发送消息（带安全检测v2.0 - 基于score的4级响应）
+   * 
+   * 安全等级处理：
+   * - 0-3分 (SAFE): 直接执行，无UI反馈
+   * - 4-6分 (MEDIUM): 执行并显示顶部通知
+   * - 7-8分 (HIGH): 显示弹窗，需用户确认
+   * - 9-10分 (CRITICAL): 直接拒绝，显示红色警告
    * 
    * @author 小新
+   * @update 2026-02-19 升级到v2.0安全检测
    */
   const handleSend = async () => {
     if (!inputValue.trim() || loading) return;
@@ -220,28 +233,61 @@ const Chat: React.FC = () => {
     // 先显示用户消息
     setMessages((prev) => [...prev, userMessage]);
     setInputValue('');
+    setBlockedCommand(null);
 
-    // 检测危险命令
+    // 安全检测v2.0
     setCheckingDanger(true);
     try {
       const checkResult = await securityApi.checkCommand(userMessage.content);
+      setCheckingDanger(false);
       
-      if (checkResult.isDangerous) {
-        // 危险命令，显示确认弹窗
-        setDangerCommand(userMessage.content);
-        setDangerRisk(checkResult.risk || '该命令可能包含危险操作');
-        setPendingMessage(userMessage);
-        setDangerModalVisible(true);
-        setCheckingDanger(false);
+      if (!checkResult.success || !checkResult.data) {
+        // 检测失败，允许发送（容错）
+        console.warn('安全检测失败:', checkResult.error);
+        await executeSendMessage(userMessage);
         return;
       }
-      
-      // 安全命令，直接发送
-      setCheckingDanger(false);
-      await executeSendMessage(userMessage);
+
+      const { score, message } = checkResult.data;
+      const riskLevel = getRiskLevel(score);
+
+      // 根据风险等级处理
+      switch (riskLevel.level) {
+        case 'SAFE':
+          // 0-3分：直接执行，无UI反馈
+          await executeSendMessage(userMessage);
+          break;
+
+        case 'MEDIUM':
+          // 4-6分：执行并显示顶部通知
+          showSecurityNotification(userMessage.content, score, message);
+          await executeSendMessage(userMessage);
+          break;
+
+        case 'HIGH':
+          // 7-8分：显示确认弹窗，等待用户确认
+          setDangerCommand(userMessage.content);
+          setDangerScore(score);
+          setDangerMessage(message);
+          setPendingMessage(userMessage);
+          setDangerModalVisible(true);
+          break;
+
+        case 'CRITICAL':
+          // 9-10分：直接拒绝，显示红色警告
+          setBlockedCommand({
+            command: userMessage.content,
+            score,
+            message
+          });
+          // 从消息列表中移除被拦截的消息
+          setMessages((prev) => prev.filter((msg) => msg.id !== userMessage.id));
+          message.error('危险操作已被系统拦截');
+          break;
+      }
     } catch (error) {
-      // 检测失败，允许发送（容错）
-      console.warn('危险命令检测失败:', error);
+      // 检测异常，允许发送（容错）
+      console.warn('安全检测异常:', error);
       setCheckingDanger(false);
       await executeSendMessage(userMessage);
     }
@@ -395,11 +441,21 @@ const Chat: React.FC = () => {
         </Button>
       </Space>
 
-      {/* 危险命令确认弹窗 */}
+      {/* 被拦截的命令警告（9-10分） */}
+      {blockedCommand && (
+        <SecurityAlert
+          command={blockedCommand.command}
+          score={blockedCommand.score}
+          message={blockedCommand.message}
+        />
+      )}
+
+      {/* 危险命令确认弹窗（7-8分） */}
       <DangerConfirmModal
         visible={dangerModalVisible}
         command={dangerCommand}
-        risk={dangerRisk}
+        score={dangerScore}
+        message={dangerMessage}
         onConfirm={handleDangerConfirm}
         onCancel={handleDangerCancel}
         loading={loading}
