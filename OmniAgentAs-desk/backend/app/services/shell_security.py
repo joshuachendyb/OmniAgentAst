@@ -72,6 +72,11 @@ DANGEROUS_COMMANDS = [
     'powershell Get-Content C:\\',
     'reg query HKLM\\',
     
+    # 中文危险命令
+    '读取密码', '读取shadow', '查看密码', '查看shadow',
+    '获取密码', '获取shadow', '格式化硬盘', '格式化磁盘',
+    '删除所有', '删除全部', '清除硬盘', '清除磁盘',
+    
     # ====== 6. 进程终止类 ======
     'kill -9 -1', 'taskkill /f /im',
     'pkill -9', 'killall -9', 'killall',
