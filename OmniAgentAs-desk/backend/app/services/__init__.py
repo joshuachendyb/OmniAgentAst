@@ -87,8 +87,11 @@ class AIServiceFactory:
             config = cls.load_config(config_path)
             ai_config = config.get("ai", {})
             
-            # 优先使用显式跟踪的提供商，其次使用配置文件的
-            provider = cls._current_provider or ai_config.get("provider", "zhipuai")
+            # 【修复】优先使用配置文件的提供商（支持热更新配置），其次使用显式跟踪的
+            provider = ai_config.get("provider", "zhipuai")
+            
+            # 【修复】同步更新 _current_provider，确保 get_current_provider() 返回正确值
+            cls._current_provider = provider
             
             print(f"[AIServiceFactory] 创建服务实例: provider={provider}")
             

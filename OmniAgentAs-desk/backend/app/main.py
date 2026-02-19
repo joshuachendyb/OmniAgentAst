@@ -8,7 +8,7 @@ import traceback
 import logging
 from pathlib import Path
 
-from app.api.v1 import health, chat, file_operations
+from app.api.v1 import health, chat, file_operations, config, sessions, security, execution
 from app.utils.logger import logger
 
 # 配置日志
@@ -18,18 +18,28 @@ logging.basicConfig(
 )
 
 # 【修复-波次5】从version.txt读取版本号，确保所有地方版本一致
+# 【修复-2026-02-18】使用绝对路径，确保在任何工作目录下都能正确读取
 def get_version() -> str:
     """从version.txt读取版本号"""
     try:
-        # 从backend目录向上两级找到项目根目录
-        version_file = Path(__file__).parent.parent.parent / "version.txt"
+        # 使用绝对路径：从当前文件(backend/app/main.py)向上两级到项目根目录
+        current_file = Path(__file__).resolve()
+        backend_dir = current_file.parent.parent
+        project_root = backend_dir.parent
+        version_file = project_root / "version.txt"
+        
+        logger.info(f"Looking for version.txt at: {version_file}")
+        
         if version_file.exists():
             version = version_file.read_text().strip()
+            logger.info(f"Read version: {version}")
             # 去掉v前缀（如果有）
             return version.lstrip('v')
+        else:
+            logger.warning(f"version.txt not found at {version_file}")
     except Exception as e:
         logger.warning(f"Failed to read version.txt: {e}")
-    return "0.2.3"  # 默认版本
+    return "0.3.5"  # 默认版本（更新为最新版本）
 
 app = FastAPI(
     title="OmniAgentAst API",
@@ -99,6 +109,10 @@ async def general_exception_handler(request: Request, exc: Exception):
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operations"])
+app.include_router(config.router, prefix="/api/v1", tags=["config"])
+app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
+app.include_router(security.router, prefix="/api/v1", tags=["security"])
+app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
 
 @app.get("/")
 async def root():

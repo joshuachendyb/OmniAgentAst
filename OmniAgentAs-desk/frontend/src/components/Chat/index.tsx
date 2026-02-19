@@ -1,10 +1,22 @@
+/**
+ * Chat组件 - 对话主界面
+ * 
+ * 功能：消息列表展示、消息发送、服务状态检查、模型切换、危险命令检测
+ * 
+ * @author 小新
+ * @version 2.1.0
+ * @since 2026-02-17
+ * @update 2026-02-18 集成DangerConfirmModal危险命令检测 - by 小新
+ */
+
 import React, { useState, useRef, useEffect } from 'react';
-import { Input, Button, Card, List, Typography, Tag, Space, Alert, Select } from 'antd';
-import { SendOutlined, RobotOutlined, UserOutlined, CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons';
-import { chatApi, ChatMessage, ValidateResponse } from '../../services/api';
+import { Input, Button, Card, List, Tag, Space, Select, message } from 'antd';
+import { SendOutlined, RobotOutlined, CheckCircleOutlined, ReloadOutlined } from '@ant-design/icons';
+import { chatApi, securityApi, configApi, ChatMessage, ValidateResponse } from '../../services/api';
+import MessageItem from './MessageItem';
+import DangerConfirmModal from '../DangerConfirmModal';
 
 const { TextArea } = Input;
-const { Text } = Typography;
 const { Option } = Select;
 
 interface Message extends ChatMessage {
@@ -12,6 +24,12 @@ interface Message extends ChatMessage {
   timestamp: Date;
 }
 
+/**
+ * Chat组件 - 对话主界面
+ * 
+ * @author 小新
+ * @version 2.1.0
+ */
 const Chat: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -22,6 +40,13 @@ const Chat: React.FC = () => {
   const [currentModel, setCurrentModel] = useState<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // 危险命令检测状态
+  const [dangerModalVisible, setDangerModalVisible] = useState(false);
+  const [dangerCommand, setDangerCommand] = useState('');
+  const [dangerRisk, setDangerRisk] = useState('');
+  const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
+  const [checkingDanger, setCheckingDanger] = useState(false);
+
   // 自动滚动到底部
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -30,6 +55,27 @@ const Chat: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // 【修复】组件加载时先获取配置，再检查服务状态
+  useEffect(() => {
+    const initProvider = async () => {
+      try {
+        const config = await configApi.getConfig();
+        if (config.ai_provider === 'zhipuai' || config.ai_provider === 'opencode') {
+          setCurrentProvider(config.ai_provider);
+        }
+        if (config.ai_model) {
+          setCurrentModel(config.ai_model);
+        }
+      } catch (error) {
+        console.warn('获取配置失败:', error);
+      } finally {
+        // 无论是否获取到配置，都检查服务状态
+        checkServiceStatus();
+      }
+    };
+    initProvider();
+  }, []);
 
   // 检查服务状态
   const checkServiceStatus = async () => {
@@ -115,19 +161,12 @@ const Chat: React.FC = () => {
     }
   };
 
-  // 发送消息
-  const handleSend = async () => {
-    if (!inputValue.trim() || loading) return;
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: inputValue.trim(),
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-    setInputValue('');
+  /**
+   * 执行实际的消息发送（在危险命令检测通过后调用）n   * 
+   * @param userMessage - 用户消息
+   * @author 小新
+   */
+  const executeSendMessage = async (userMessage: Message) => {
     setLoading(true);
 
     try {
@@ -159,7 +198,80 @@ const Chat: React.FC = () => {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
+      setPendingMessage(null);
     }
+  };
+
+  /**
+   * 发送消息（带危险命令检测）
+   * 
+   * @author 小新
+   */
+  const handleSend = async () => {
+    if (!inputValue.trim() || loading) return;
+
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: inputValue.trim(),
+      timestamp: new Date(),
+    };
+
+    // 先显示用户消息
+    setMessages((prev) => [...prev, userMessage]);
+    setInputValue('');
+
+    // 检测危险命令
+    setCheckingDanger(true);
+    try {
+      const checkResult = await securityApi.checkCommand(userMessage.content);
+      
+      if (checkResult.isDangerous) {
+        // 危险命令，显示确认弹窗
+        setDangerCommand(userMessage.content);
+        setDangerRisk(checkResult.risk || '该命令可能包含危险操作');
+        setPendingMessage(userMessage);
+        setDangerModalVisible(true);
+        setCheckingDanger(false);
+        return;
+      }
+      
+      // 安全命令，直接发送
+      setCheckingDanger(false);
+      await executeSendMessage(userMessage);
+    } catch (error) {
+      // 检测失败，允许发送（容错）
+      console.warn('危险命令检测失败:', error);
+      setCheckingDanger(false);
+      await executeSendMessage(userMessage);
+    }
+  };
+
+  /**
+   * 危险命令确认执行
+   * 
+   * @author 小新
+   */
+  const handleDangerConfirm = async () => {
+    if (pendingMessage) {
+      setDangerModalVisible(false);
+      await executeSendMessage(pendingMessage);
+    }
+  };
+
+  /**
+   * 危险命令取消执行
+   * 
+   * @author 小新
+   */
+  const handleDangerCancel = () => {
+    setDangerModalVisible(false);
+    // 从消息列表中移除待发送的消息
+    if (pendingMessage) {
+      setMessages((prev) => prev.filter((msg) => msg.id !== pendingMessage.id));
+      message.info('已取消危险命令的执行');
+    }
+    setPendingMessage(null);
   };
 
   // 清空对话
@@ -186,11 +298,7 @@ const Chat: React.FC = () => {
           <RobotOutlined />
           <span>AI 对话助手</span>
           <Tag color={serviceStatus?.success ? 'success' : 'warning'}>
-            {serviceStatus?.success ? (
-              <><CheckCircleOutlined /> {getProviderName(currentProvider)} {currentModel && `(${currentModel})`}</>
-            ) : (
-              <>{getProviderName(currentProvider)} {currentModel && `(${currentModel})`} - 未就绪</>
-            )}
+            {getProviderName(currentProvider)} {currentModel && `(${currentModel})`}
           </Tag>
         </Space>
       }
@@ -219,28 +327,7 @@ const Chat: React.FC = () => {
         </Space>
       }
     >
-      {/* 服务状态提示 */}
-      {serviceStatus && (
-        <Alert
-          message={serviceStatus.success ? 'AI服务正常' : 'AI服务异常'}
-          description={
-            <>
-              <p><strong>当前提供商:</strong> {getProviderName(currentProvider)} {currentModel && `(${currentModel})`}</p>
-              <p><strong>状态:</strong> {serviceStatus.message}</p>
-              {!serviceStatus.success && (
-                <>
-                  <p style={{ marginTop: 8, color: '#666' }}>
-                    💡 提示: 您可以尝试切换到另一个提供商，或检查API配置
-                  </p>
-                </>
-              )}
-            </>
-          }
-          type={serviceStatus.success ? 'success' : 'warning'}
-          showIcon
-          style={{ marginBottom: 16 }}
-        />
-      )}
+      {/* 服务状态已显示在标题行Tag中 */}
 
       {/* 消息列表 */}
       <div
@@ -268,62 +355,12 @@ const Chat: React.FC = () => {
               <List.Item
                 style={{
                   justifyContent: item.role === 'user' ? 'flex-end' : 'flex-start',
+                  border: 'none',
+                  padding: '8px 0',
+                  width: '100%',
                 }}
               >
-                <div
-                  style={{
-                    maxWidth: '70%',
-                    padding: '8px 12px',
-                    borderRadius: 12,
-                    backgroundColor:
-                      item.role === 'user'
-                        ? '#1890ff'
-                        : item.role === 'system'
-                        ? '#fff2f0'
-                        : '#f6ffed',
-                    color: item.role === 'user' ? '#fff' : 'inherit',
-                    border:
-                      item.role === 'system'
-                        ? '1px solid #ffccc7'
-                        : item.role === 'assistant'
-                        ? '1px solid #b7eb8f'
-                        : 'none',
-                  }}
-                >
-                  <Space direction="vertical" style={{ width: '100%' }}>
-                    <Space>
-                      {item.role === 'user' ? (
-                        <UserOutlined />
-                      ) : item.role === 'system' ? (
-                        <ReloadOutlined style={{ color: '#ff4d4f' }} />
-                      ) : (
-                        <RobotOutlined style={{ color: '#52c41a' }} />
-                      )}
-                      <Text
-                        strong
-                        style={{
-                          color: item.role === 'user' ? '#fff' : 'inherit',
-                        }}
-                      >
-                        {item.role === 'user'
-                          ? '用户'
-                          : item.role === 'system'
-                          ? '系统'
-                          : 'AI助手'}
-                      </Text>
-                    </Space>
-                    <div style={{ whiteSpace: 'pre-wrap' }}>{item.content}</div>
-                    <Text
-                      type="secondary"
-                      style={{
-                        fontSize: 12,
-                        color: item.role === 'user' ? 'rgba(255,255,255,0.7)' : undefined,
-                      }}
-                    >
-                      {item.timestamp.toLocaleTimeString()}
-                    </Text>
-                  </Space>
-                </div>
+                <MessageItem message={item} />
               </List.Item>
             )}
           />
@@ -350,13 +387,23 @@ const Chat: React.FC = () => {
           type="primary"
           icon={<SendOutlined />}
           onClick={handleSend}
-          loading={loading}
+          loading={loading || checkingDanger}
           disabled={!inputValue.trim()}
           block
         >
-          发送消息
+          {checkingDanger ? '安全检查中...' : '发送消息'}
         </Button>
       </Space>
+
+      {/* 危险命令确认弹窗 */}
+      <DangerConfirmModal
+        visible={dangerModalVisible}
+        command={dangerCommand}
+        risk={dangerRisk}
+        onConfirm={handleDangerConfirm}
+        onCancel={handleDangerCancel}
+        loading={loading}
+      />
     </Card>
   );
 };

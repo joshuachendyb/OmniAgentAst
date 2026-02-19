@@ -11,9 +11,13 @@ class OpenCodeService(BaseAIService):
     
     def __init__(self, api_key: str, model: str = "kimi-k2.5-free", 
                  api_base: str = "https://api.opencode.ai/v1", 
-                 timeout: int = 30):
+                 timeout: int = 60):
         super().__init__(api_key, model, api_base, timeout)
-        self.client = httpx.AsyncClient(timeout=timeout)
+        # 增加超时时间到60秒，与智谱GLM保持一致
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(60.0, connect=10.0),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+        )
     
     async def chat(self, message: str, history: Optional[List[Message]] = None) -> ChatResponse:
         """

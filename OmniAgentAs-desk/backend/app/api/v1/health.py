@@ -12,18 +12,24 @@ class HealthResponse(BaseModel):
 
 
 # 【修复-波次5】从version.txt读取版本号，确保与main.py一致
+# 【修复-2026-02-18】使用绝对路径，确保在任何工作目录下都能正确读取
 def get_version() -> str:
     """从version.txt读取版本号"""
     try:
-        # 从api/v1目录向上三级找到项目根目录
-        version_file = Path(__file__).parent.parent.parent.parent / "version.txt"
+        # 使用绝对路径：从当前文件(backend/app/api/v1/health.py)向上三级到项目根目录
+        current_file = Path(__file__).resolve()
+        api_dir = current_file.parent.parent.parent
+        backend_dir = api_dir.parent
+        project_root = backend_dir.parent
+        version_file = project_root / "version.txt"
+        
         if version_file.exists():
             version = version_file.read_text().strip()
             # 去掉v前缀（如果有）
             return version.lstrip('v')
     except Exception:
         pass
-    return "0.2.3"  # 默认版本
+    return "0.3.5"  # 默认版本（更新为最新版本）
 
 class EchoRequest(BaseModel):
     message: str
@@ -38,7 +44,7 @@ async def health_check():
     健康检查接口
     """
     return HealthResponse(
-        status="ok",
+        status="healthy",
         timestamp=datetime.utcnow().isoformat(),
         version=get_version()  # 【修复-波次5】使用统一版本号
     )
