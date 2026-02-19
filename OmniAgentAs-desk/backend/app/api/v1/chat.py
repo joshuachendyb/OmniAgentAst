@@ -11,6 +11,7 @@ from typing import List, Dict, Optional
 from app.services import AIServiceFactory
 from app.services.file_operations.tools import get_file_tools
 from app.services.file_operations.agent import FileOperationAgent
+from app.services.shell_security import check_command_safety
 from app.utils.logger import logger
 
 router = APIRouter()
@@ -251,6 +252,7 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
     处理文件操作请求
     
     【修复-Wave2-完整版】使用 FileOperationAgent 执行文件操作
+    【新增】添加安全检测，危险操作需确认
     实现真正的 ReAct 循环，让 AI 自主决策如何完成任务
     
     Args:
@@ -261,6 +263,16 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
         ChatResponse 格式的响应
     """
     try:
+        # 【新增】安全检测 - 检查是否为危险操作
+        is_safe, risk = check_command_safety(message)
+        if not is_safe:
+            return ChatResponse(
+                success=False,
+                content="",
+                model="file_operation_agent",
+                error=f"危险操作需确认: {risk}"
+            )
+        
         # 创建会话ID
         import uuid
         session_id = str(uuid.uuid4())

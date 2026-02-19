@@ -331,9 +331,10 @@ export interface SecurityCheckResponse {
 
 /**
  * 安全API
- * 
+ *
  * @author 小新
  * @update 2026-02-18 对接小沈后端API
+ * @update 2026-02-19 修复字段名不匹配 - 后端返回 safe，前端转为 isDangerous
  */
 export const securityApi = {
   /**
@@ -341,8 +342,14 @@ export const securityApi = {
    * @author 小新
    */
   checkCommand: async (command: string): Promise<SecurityCheckResponse> => {
-    const response = await api.post<SecurityCheckResponse>('/security/check', { command });
-    return response.data;
+    // 后端返回 { safe: boolean, risk: string, suggestion: string }
+    // 需要转换为 { isDangerous: boolean, risk: string, suggestion: string }
+    const response = await api.post<{ safe: boolean; risk: string; suggestion: string }>('/security/check', { command });
+    return {
+      isDangerous: !response.data.safe,  // safe=false 表示危险
+      risk: response.data.risk,
+      suggestion: response.data.suggestion,
+    };
   },
 };
 
