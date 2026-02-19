@@ -58,6 +58,9 @@ yarn-error.log*
 # ============================
 logs/
 *.log
+*.log.*
+工作日志-*.md
+开发日志-*.md
 ai_os_data/
 *.db
 *.sqlite
