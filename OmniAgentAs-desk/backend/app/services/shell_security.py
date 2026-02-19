@@ -104,6 +104,51 @@ SYSTEM_CRITICAL_DIRS = {
 
 
 # ============================================================
+# CRSS评分系统常量定义 (设计文档v1.1)
+# ============================================================
+
+# 操作类型权重表（维度1）
+OPERATION_WEIGHTS = {
+    'READ': {'min': 0, 'max': 2, 'default': 1, 'keywords': ['cat', 'ls', 'grep', '查看', '读取', 'type', 'dir']},
+    'CREATE': {'min': 2, 'max': 4, 'default': 3, 'keywords': ['mkdir', 'touch', '创建', '新建', 'md']},
+    'UPDATE': {'min': 4, 'max': 7, 'default': 5, 'keywords': ['edit', 'sed', '修改', '编辑', '更新', 'echo', 'write']},
+    'DELETE': {'min': 6, 'max': 10, 'default': 8, 'keywords': ['rm', 'del', '删除', 'remove', '清除', 'rmdir', 'rd']},
+    'EXEC': {'min': 5, 'max': 10, 'default': 7, 'keywords': ['sudo', 'run', 'exec', '执行', '运行', 'start']},
+}
+
+# 操作对象权重表（维度2）
+TARGET_WEIGHTS = {
+    'TEMP': {'min': 0, 'max': 2, 'default': 1, 'patterns': [r'\.tmp', r'\.cache', r'temp[/\\]', r'\.log$', r'log[/\\]']},
+    'USER': {'min': 3, 'max': 5, 'default': 4, 'patterns': [r'~/', r'/home/', r'文档[/\\]', r'用户', r'documents', r'users?[/\\]']},
+    'PROJECT': {'min': 6, 'max': 8, 'default': 7, 'patterns': [r'src[/\\]', r'app[/\\]', r'backend[/\\]', r'frontend[/\\]', r'\.py', r'\.js', r'\.ts', r'tests[/\\]', r'config[/\\]', r'\.git']},
+    'SYSTEM': {'min': 8, 'max': 10, 'default': 9, 'patterns': [r'C:\\Windows', r'/bin', r'/etc', r'/sbin', r'/usr', r'系统', r'windows[/\\]system32', r'registry']},
+}
+
+# 本项目(OmniAgentAs-desk)保护目录列表
+PROJECT_PROTECTED_DIRS = [
+    'backend/', 'frontend/', 'config/', 'tests/', 
+    'doc-阶段2.1/', 'notes/', 'src/', '.git/',
+    'package.json', 'requirements.txt', 'version.txt'
+]
+
+# 影响范围系数（维度3）
+SCOPE_MULTIPLIERS = {
+    'SINGLE_FILE': 1.0,      # 单文件：具体文件名，如 tests/11.txt
+    'DIRECTORY': 1.5,        # 目录：目录名/结尾，如 tests/
+    'CROSS_DIR': 2.0,        # 跨目录：包含通配符，如 tests/*.txt
+    'SYSTEM': 3.0,           # 系统级：-rf, /s /q, /
+}
+
+# 范围识别关键词
+SCOPE_PATTERNS = {
+    'SINGLE_FILE': [r'^[^*?]+\.[a-zA-Z0-9]+$', r'^[^*?/]+$'],  # 具体文件名
+    'DIRECTORY': [r'[/\\]$', r'\$'],                          # 以/或\结尾
+    'CROSS_DIR': [r'\*', r'\?', r'所有', r'批量', r'全部', r'\*\.'],  # 通配符或中文
+    'SYSTEM': [r'-rf', r'/s\s+/q', r'^[/\\]$', r'根目录', r'全盘', r'-r\s+-f'],  # 系统级
+}
+
+
+# ============================================================
 # 危险命令模式（正则表达式）- 用于更灵活的匹配
 # ============================================================
 DANGEROUS_PATTERNS = [
@@ -347,3 +392,158 @@ def get_command_risk_level(command: str) -> str:
     """
     checker = get_safety_checker()
     return checker.get_risk_level(command)
+
+
+# ============================================================
+# CRSS评分系统解析函数 (设计文档v1.1)
+# ============================================================
+
+def parse_operation_type(command: str) -> str:
+    """
+    解析操作类型
+    
+    按优先级检查：DELETE > EXEC > UPDATE > CREATE > READ
+    避免 READ 的通用关键词（如dir）误匹配其他操作
+    
+    Args:
+        command: 待解析的命令
+        
+    Returns:
+        str: 操作类型 (READ/CREATE/UPDATE/DELETE/EXEC)
+    """
+    command_lower = command.lower().strip()
+    
+    # 按优先级检查（先检查具体的操作，避免子串误匹配）
+    priority_order = ['DELETE', 'EXEC', 'UPDATE', 'CREATE']
+    
+    for op_type in priority_order:
+        for keyword in OPERATION_WEIGHTS[op_type]['keywords']:
+            if keyword.lower() in command_lower:
+                return op_type
+    
+    # 最后检查 READ（因为 READ 包含 dir 等通用子串）
+    for keyword in OPERATION_WEIGHTS['READ']['keywords']:
+        if keyword.lower() in command_lower:
+            return 'READ'
+    
+    # 默认为读取操作
+    return 'READ'
+
+
+def parse_operation_target(command: str) -> str:
+    """
+    解析操作对象类型
+    
+    Args:
+        command: 待解析的命令
+        
+    Returns:
+        str: 对象类型 (TEMP/USER/PROJECT/SYSTEM)
+    """
+    command_lower = command.lower().strip()
+    
+    # 按优先级检查（从高到低）
+    # 系统级最危险，优先检查
+    for target_type, config in TARGET_WEIGHTS.items():
+        for pattern in config['patterns']:
+            if re.search(pattern, command_lower, re.IGNORECASE):
+                return target_type
+    
+    # 默认为用户数据
+    return 'USER'
+
+
+def parse_impact_scope(command: str) -> str:
+    """
+    解析影响范围
+    
+    Args:
+        command: 待解析的命令
+        
+    Returns:
+        str: 范围类型 (SINGLE_FILE/DIRECTORY/CROSS_DIR/SYSTEM)
+    """
+    command_lower = command.lower().strip()
+    
+    # 检查系统级（最危险）
+    for pattern in SCOPE_PATTERNS['SYSTEM']:
+        if re.search(pattern, command_lower):
+            return 'SYSTEM'
+    
+    # 检查跨目录
+    for pattern in SCOPE_PATTERNS['CROSS_DIR']:
+        if re.search(pattern, command_lower):
+            return 'CROSS_DIR'
+    
+    # 检查目录
+    for pattern in SCOPE_PATTERNS['DIRECTORY']:
+        if re.search(pattern, command_lower):
+            return 'DIRECTORY'
+    
+    # 默认为单文件
+    return 'SINGLE_FILE'
+
+
+def calculate_risk_score(command: str) -> int:
+    """
+    计算命令风险分数 (CRSS评分系统)
+    
+    计算公式: (操作类型权重 + 操作对象权重) / 2 × 影响范围系数
+    分数范围: 0-10
+    
+    Args:
+        command: 待检查的命令
+        
+    Returns:
+        int: 风险分数 (0=安全, 10=极度危险)
+    """
+    if not command or not command.strip():
+        return 0
+    
+    command_lower = command.lower().strip()
+    
+    # 1. 黑名单命令直接10分（致命危险）
+    checker = get_safety_checker()
+    if not checker.is_safe(command):
+        return 10
+    
+    # 2. 解析三个维度
+    op_type = parse_operation_type(command)
+    op_target = parse_operation_target(command)
+    scope = parse_impact_scope(command)
+    
+    # 3. 获取各维度权重
+    type_score = OPERATION_WEIGHTS[op_type]['default']
+    target_score = TARGET_WEIGHTS[op_target]['default']
+    scope_multiplier = SCOPE_MULTIPLIERS[scope]
+    
+    # 4. 计算总分（按设计文档公式）
+    raw_score = (type_score + target_score) / 2 * scope_multiplier
+    final_score = min(10, int(raw_score))
+    
+    logger.info(f"CRSS评分: command='{command}', type={op_type}({type_score}), target={op_target}({target_score}), scope={scope}(×{scope_multiplier}), score={final_score}")
+    
+    return final_score
+
+
+def get_risk_message(score: int, command: str = "") -> str:
+    """
+    根据风险分数获取提示信息
+    
+    按设计文档v1.1返回标准化提示信息
+    
+    Args:
+        score: 风险分数 (0-10)
+        command: 命令（可选）
+        
+    Returns:
+        str: 用户可见的提示信息
+    """
+    if score <= 3:
+        return "操作安全"
+    elif score <= 6:
+        return "操作存在风险，请注意"
+    elif score <= 8:
+        return "检测到风险操作，是否确认？"
+    else:
+        return "危险操作已被系统拦截"

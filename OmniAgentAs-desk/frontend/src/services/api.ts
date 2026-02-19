@@ -174,6 +174,7 @@ export interface SecurityConfig {
   contentFilterLevel: 'low' | 'medium' | 'high';
   whitelistEnabled: boolean;
   commandWhitelist: string;
+  blacklistEnabled: boolean;
   commandBlacklist: string;
   confirmDangerousOps: boolean;
   maxFileSize: number;
@@ -240,7 +241,7 @@ export const configApi = {
 // @update 2026-02-18 已对接真实API
 // ============================================
 export interface Session {
-  id: string;
+  session_id: string;
   title: string;
   created_at: string;
   updated_at: string;
@@ -310,11 +311,29 @@ export const sessionApi = {
   },
 
   /**
+   * 保存消息到会话
+   * @author 小新
+   */
+  saveMessage: async (sessionId: string, message: { role: string; content: string }): Promise<{ success: boolean }> => {
+    const response = await api.post<{ success: boolean }>(`/sessions/${sessionId}/messages`, message);
+    return response.data;
+  },
+
+  /**
    * 删除会话
    * @author 小新
    */
   deleteSession: async (sessionId: string): Promise<{ success: boolean }> => {
     const response = await api.delete<{ success: boolean }>(`/sessions/${sessionId}`);
+    return response.data;
+  },
+
+  /**
+   * 更新会话标题
+   * @author 小新
+   */
+  updateSession: async (sessionId: string, title: string): Promise<{ success: boolean; title: string }> => {
+    const response = await api.put<{ success: boolean; title: string }>(`/sessions/${sessionId}`, { title });
     return response.data;
   },
 };

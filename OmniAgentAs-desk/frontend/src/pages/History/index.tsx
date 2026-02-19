@@ -144,8 +144,8 @@ const HistoryPage: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }}>
-      <Card>
+    <div style={{ padding: 0, margin: 0 }}>
+      <Card bordered={false}>
         <Space direction="vertical" style={{ width: '100%' }} size="large">
           {/* 标题栏 */}
           <Space style={{ justifyContent: 'space-between', width: '100%' }}>
@@ -217,7 +217,7 @@ const HistoryPage: React.FC = () => {
                         <Button
                           type="link"
                           icon={<MessageOutlined />}
-                          onClick={() => handleResume(session.id)}
+                          onClick={() => handleResume(session.session_id)}
                         >
                           继续
                         </Button>
@@ -225,7 +225,7 @@ const HistoryPage: React.FC = () => {
                       <Popconfirm
                         title="删除会话"
                         description={`确定要删除"${session.title}"吗？此操作不可恢复。`}
-                        onConfirm={() => handleDelete(session.id)}
+                        onConfirm={() => handleDelete(session.session_id)}
                         okText="删除"
                         cancelText="取消"
                         okButtonProps={{ danger: true }}

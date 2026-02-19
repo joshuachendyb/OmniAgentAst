@@ -10,9 +10,10 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Input, Button, Card, List, Tag, Space, Select, message } from 'antd';
-import { SendOutlined, RobotOutlined, ReloadOutlined } from '@ant-design/icons';
-import { chatApi, configApi, ChatMessage, ValidateResponse } from '../../services/api';
+import { Input, Button, Card, List, Tag, Space, Select, message, Popconfirm } from 'antd';
+import { SendOutlined, RobotOutlined, ReloadOutlined, PlusOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { useSearchParams } from 'react-router-dom';
+import { chatApi, configApi, sessionApi, ChatMessage, ValidateResponse } from '../../services/api';
 import { securityApi } from '../../services/api';
 import MessageItem from './MessageItem';
 import DangerConfirmModal from '../DangerConfirmModal';
@@ -35,6 +36,7 @@ interface Message extends ChatMessage {
  * @version 2.1.0
  */
 const Chat: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -42,6 +44,10 @@ const Chat: React.FC = () => {
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [currentProvider, setCurrentProvider] = useState<'zhipuai' | 'opencode'>('zhipuai');
   const [currentModel, setCurrentModel] = useState<string>('');
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionTitle, setSessionTitle] = useState<string>('新会话');
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 安全检测v2.0状态（基于score的4级响应）
@@ -61,6 +67,57 @@ const Chat: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // 加载会话（从URL参数或最近会话）
+  useEffect(() => {
+    const loadSession = async () => {
+      // 1. 首先检查URL是否有session_id参数
+      const urlSessionId = searchParams.get('session_id');
+      if (urlSessionId) {
+        try {
+          const sessionData = await sessionApi.getSessionMessages(urlSessionId);
+          if (sessionData.messages && sessionData.messages.length > 0) {
+            setSessionId(urlSessionId);
+            setMessages(sessionData.messages.map((m: any) => ({
+              id: m.id?.toString() || Date.now().toString(),
+              role: m.role,
+              content: m.content,
+              timestamp: new Date(m.timestamp),
+            })));
+            setSessionTitle(sessionData.messages[0]?.content?.substring(0, 30) || '会话');
+            console.log('从URL加载会话:', urlSessionId);
+            return;
+          }
+        } catch (error) {
+          console.warn('加载URL会话失败:', error);
+        }
+      }
+
+      // 2. 如果没有URL参数，加载最近的会话
+      try {
+        const response = await sessionApi.listSessions(1, 1);
+        if (response.sessions && response.sessions.length > 0) {
+          const latestSession = response.sessions[0];
+          const sessionData = await sessionApi.getSessionMessages(latestSession.session_id);
+          setSessionId(latestSession.session_id);
+          setSessionTitle(latestSession.title);
+          if (sessionData.messages && sessionData.messages.length > 0) {
+            setMessages(sessionData.messages.map((m: any) => ({
+              id: m.id?.toString() || Date.now().toString(),
+              role: m.role,
+              content: m.content,
+              timestamp: new Date(m.timestamp),
+            })));
+          }
+          console.log('加载最近会话:', latestSession.session_id);
+        }
+      } catch (error) {
+        console.warn('加载最近会话失败:', error);
+      }
+    };
+
+    loadSession();
+  }, []);
 
   // 【修复】组件加载时先获取配置，再检查服务状态
   useEffect(() => {
@@ -194,6 +251,25 @@ const Chat: React.FC = () => {
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // 保存消息到会话
+      if (sessionId) {
+        try {
+          // 保存用户消息
+          await sessionApi.saveMessage(sessionId, {
+            role: 'user',
+            content: userMessage.content,
+          });
+          // 保存助手回复
+          await sessionApi.saveMessage(sessionId, {
+            role: 'assistant',
+            content: assistantMessage.content,
+          });
+          console.log('消息已保存到会话:', sessionId);
+        } catch (saveError) {
+          console.error('保存消息失败:', saveError);
+        }
+      }
     } catch (error) {
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -222,6 +298,20 @@ const Chat: React.FC = () => {
    */
   const handleSend = async () => {
     if (!inputValue.trim() || loading) return;
+
+    // 如果没有会话，创建新会话
+    let currentSessionId = sessionId;
+    if (!currentSessionId) {
+      try {
+        const newSession = await sessionApi.createSession(inputValue.trim().substring(0, 50));
+        currentSessionId = newSession.session_id;
+        setSessionId(currentSessionId);
+        console.log('创建新会话:', currentSessionId);
+      } catch (error) {
+        console.error('创建会话失败:', error);
+        // 继续发送消息，不阻塞
+      }
+    }
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -343,6 +433,45 @@ const Chat: React.FC = () => {
         <Space>
           <RobotOutlined />
           <span>AI 对话助手</span>
+          {sessionId && (
+            <Tag 
+              color="blue"
+              icon={editingTitle ? null : <EditOutlined />}
+              onClick={() => {
+                if (!editingTitle) {
+                  setTitleInput(sessionTitle);
+                  setEditingTitle(true);
+                }
+              }}
+              style={{ cursor: 'pointer' }}
+            >
+              {sessionTitle}
+            </Tag>
+          )}
+          {editingTitle && (
+            <Input
+              size="small"
+              value={titleInput}
+              onChange={(e) => setTitleInput(e.target.value)}
+              onPressEnter={async () => {
+                if (titleInput.trim() && sessionId) {
+                  try {
+                    await sessionApi.updateSession(sessionId, titleInput.trim());
+                    setSessionTitle(titleInput.trim());
+                    message.success('会话标题已更新');
+                  } catch (error) {
+                    message.error('更新标题失败');
+                  }
+                }
+                setEditingTitle(false);
+              }}
+              onBlur={() => {
+                setEditingTitle(false);
+              }}
+              style={{ width: 150 }}
+              autoFocus
+            />
+          )}
           <Tag color={serviceStatus?.success ? 'success' : 'warning'}>
             {getProviderName(currentProvider)} {currentModel && `(${currentModel})`}
           </Tag>
@@ -359,6 +488,27 @@ const Chat: React.FC = () => {
             <Option value="zhipuai">智谱GLM (glm-4.7-flash)</Option>
             <Option value="opencode">OpenCode (MiniMax M2.5 Free)</Option>
           </Select>
+          <Button
+            icon={<PlusOutlined />}
+            onClick={async () => {
+              try {
+                const newSession = await sessionApi.createSession('新会话');
+                setSessionId(newSession.session_id);
+                setSessionTitle('新会话');
+                setMessages([]);
+                // 更新URL
+                window.history.pushState({}, '', `/?session_id=${newSession.session_id}`);
+                message.success('已创建新会话');
+              } catch (error) {
+                message.error('创建会话失败');
+                console.error('创建会话失败:', error);
+              }
+            }}
+            size="small"
+            type="primary"
+          >
+            新建会话
+          </Button>
           <Button
             icon={<ReloadOutlined />}
             onClick={checkServiceStatus}

@@ -105,6 +105,7 @@ const Settings: React.FC = () => {
         contentFilterLevel: 'medium',
         whitelistEnabled: false,
         commandWhitelist: '',
+        blacklistEnabled: false,
         commandBlacklist: 'rm -rf /\nsudo *\nchmod 777 *',
         confirmDangerousOps: true,
         maxFileSize: 100,
@@ -199,7 +200,7 @@ const Settings: React.FC = () => {
     try {
       // 逐个删除会话
       for (const session of sessions) {
-        await sessionApi.deleteSession(session.id);
+        await sessionApi.deleteSession(session.session_id);
       }
       message.success('所有会话已清空');
       setSessions([]);
@@ -210,13 +211,13 @@ const Settings: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }}>
-      <Title level={3}>
+    <div style={{ padding: 0, margin: 0 }}>
+      <Title level={4} style={{ margin: '0 0 8px 0' }}>
         <SettingOutlined /> 系统设置
       </Title>
-      <Text type="secondary">配置模型参数、安全策略和会话管理</Text>
+      <Text type="secondary" style={{ fontSize: 12 }}>配置模型参数，安全策略和会话管理</Text>
 
-      <Card style={{ marginTop: 24 }}>
+      <Card style={{ marginTop: 8 }}>
         <Tabs defaultActiveKey="model" type="card">
           {/* 模型配置Tab */}
           <TabPane
@@ -398,6 +399,17 @@ git log --oneline -10
                 />
               </Form.Item>
 
+              <Divider />
+
+              <Form.Item
+                label="启用命令黑名单"
+                name="blacklistEnabled"
+                valuePropName="checked"
+                extra="开启后将阻止执行黑名单中的命令（优先级高于白名单）"
+              >
+                <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+              </Form.Item>
+
               <Form.Item
                 label="命令黑名单"
                 name="commandBlacklist"
@@ -514,7 +526,7 @@ chmod 777 *
                   actions={[
                     <Popconfirm
                       title="确定删除此会话吗？"
-                      onConfirm={() => handleDeleteSession(session.id)}
+                      onConfirm={() => handleDeleteSession(session.session_id)}
                       okText="删除"
                       cancelText="取消"
                     >
