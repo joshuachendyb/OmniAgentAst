@@ -11,7 +11,7 @@
 import sqlite3
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Union
 from fastapi import APIRouter, HTTPException, Query
@@ -22,6 +22,30 @@ router = APIRouter()
 
 # 数据库路径
 DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
+
+
+def get_utc_timestamp() -> str:
+    """获取UTC时间戳，ISO格式"""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _convert_to_utc(time_value) -> str:
+    """将时间转换为UTC ISO格式"""
+    if not time_value:
+        return get_utc_timestamp()
+    # 如果已经是ISO格式，直接返回
+    if 'Z' in str(time_value) or '+' in str(time_value):
+        return str(time_value)
+    # 否则尝试解析并转换为UTC
+    try:
+        # 尝试解析为datetime
+        dt = datetime.fromisoformat(str(time_value).replace(' ', 'T'))
+        # 转换为UTC
+        dt_utc = dt.astimezone(timezone.utc)
+        return dt_utc.isoformat().replace("+00:00", "Z")
+    except:
+        # 如果解析失败，返回当前UTC时间
+        return get_utc_timestamp()
 
 
 def _get_db_connection():
@@ -161,11 +185,13 @@ async def create_session(session_create: Optional[SessionCreate] = None):
         
         logger.info(f"创建会话成功: id={session_id}, title={title}")
         
+        utc_time = get_utc_timestamp()
+        
         return SessionResponse(
             session_id=session_id,
             title=title,
-            created_at=datetime.now().isoformat(),
-            updated_at=datetime.now().isoformat(),
+            created_at=utc_time,
+            updated_at=utc_time,
             message_count=0
         )
         
@@ -239,8 +265,8 @@ async def list_sessions(
             SessionResponse(
                 session_id=row['id'],
                 title=row['title'],
-                created_at=row['created_at'],
-                updated_at=row['updated_at'],
+                created_at=_convert_to_utc(row['created_at']),
+                updated_at=_convert_to_utc(row['updated_at']),
                 message_count=row['message_count']
             )
             for row in rows
@@ -260,7 +286,7 @@ async def list_sessions(
         raise HTTPException(status_code=500, detail=f"获取会话列表失败: {str(e)}")
 
 
-@router.get("/sessions/{session_id}/messages", response_model=List[MessageResponse])
+@router.get("/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str):
     """
     获取会话消息历史
@@ -269,7 +295,7 @@ async def get_session_messages(session_id: str):
         session_id: 会话ID
         
     Returns:
-        List[MessageResponse]: 消息列表
+        dict: 包含session_id和messages的对象
     """
     try:
         conn = _get_db_connection()
@@ -313,13 +339,17 @@ async def get_session_messages(session_id: str):
                 session_id=row['session_id'],
                 role=row['role'],
                 content=row['content'],
-                timestamp=row['timestamp'],
+                timestamp=_convert_to_utc(row['timestamp']),
                 execution_steps=execution_steps_data
             ))
         
         logger.info(f"获取会话消息: session_id={session_id}, count={len(messages)}")
         
-        return messages
+        # 返回对象格式，包含session_id和messages
+        return {
+            "session_id": session_id,
+            "messages": messages
+        }
         
     except HTTPException:
         raise
@@ -367,16 +397,17 @@ async def save_message(session_id: str, message: MessageCreate):
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
         # 插入消息
+        utc_time = get_utc_timestamp()
         cursor.execute(
-            'INSERT INTO chat_messages (session_id, role, content) VALUES (?, ?, ?)',
-            (session_id, message.role, message.content)
+            'INSERT INTO chat_messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)',
+            (session_id, message.role, message.content, utc_time)
         )
         message_id = cursor.lastrowid
         
         # 更新会话的 message_count 和 updated_at
         cursor.execute(
-            'UPDATE chat_sessions SET message_count = message_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-            (session_id,)
+            'UPDATE chat_sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?',
+            (utc_time, session_id)
         )
         
         conn.commit()
@@ -421,9 +452,10 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
         # 更新标题
+        utc_time = get_utc_timestamp()
         cursor.execute(
-            'UPDATE chat_sessions SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-            (update_data.title, session_id)
+            'UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?',
+            (update_data.title, utc_time, session_id)
         )
         
         conn.commit()
@@ -467,9 +499,10 @@ async def delete_session(session_id: str):
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
         # 软删除
+        utc_time = get_utc_timestamp()
         cursor.execute(
-            'UPDATE chat_sessions SET is_deleted = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-            (session_id,)
+            'UPDATE chat_sessions SET is_deleted = TRUE, updated_at = ? WHERE id = ?',
+            (utc_time, session_id)
         )
         
         conn.commit()
