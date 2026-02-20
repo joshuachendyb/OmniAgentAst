@@ -1,0 +1,190 @@
+# 危险命令配置文件
+# 文件说明：
+# 1. 按命令类型分类：bash/cmd/powershell/chinese
+# 2. 支持从配置文件加载，也支持代码内置默认配置
+# 3. 版本：1.0
+
+dangerous_commands:
+  # 版本信息
+  version: "1.0"
+  last_updated: "2026-02-20"
+  description: "危险命令黑名单，按命令类型分类"
+
+  # Bash/Linux危险命令
+  bash:
+    - rm -rf /
+    - rm -rf /*
+    - rm -rf .
+    - rm -rf *
+    - rm -rf /bin
+    - rm -rf /usr
+    - rm -rf /etc
+    - rm -rf /home
+    - rm -rf /root
+    - rm -rf /var
+    - rm -rf /tmp
+    - rm -rf $HOME
+    - rm -rf ~
+    - rmdir /
+    - rmdir /*
+    - rmdir .
+    - rmdir /etc
+    - sudo
+    - sudo -i
+    - sudo -s
+    - sudo su
+    - su -
+    - su root
+    - su -root
+    - chmod 777 /
+    - chmod -R 777
+    - chmod 000
+    - chown -R
+    - chown root:root
+    - setfacl -R
+    - nc -e
+    - ncat -e
+    - netcat -e
+    - bash -i
+    - sh -i
+    - /bin/sh -i
+    - /dev/tcp/
+    - /dev/udp/
+    - curl -X
+    - wget -O-
+    - lynx
+    - nmap
+    - nikto
+    - sqlmap
+    - nc -l -p
+    - nc -lvnp
+    - cat /etc/passwd
+    - cat /etc/shadow
+    - cat /etc/hosts
+    - cat /etc/sudoers
+    - cat /etc/group
+    - cat ~/.ssh/id_rsa
+    - cat ~/.ssh/authorized_keys
+    - cat /var/log/
+    - tail /etc/passwd
+    - kill -9 -1
+    - pkill -9
+    - killall -9
+    - killall
+    - shutdown -r now
+    - shutdown -h now
+    - reboot
+    - init 6
+    - init 0
+    - mkfs
+    - mkfs.ext4
+    - mkfs.ext3
+    - mkfs.ntfs
+    - mkfs.vfat
+    - mkfs.fat
+    - newfs
+    - dd if=/dev/zero
+    - dd if=/dev/urandom
+    - dd of=/dev/sda
+    - shred -n
+    - shred -z
+
+  # CMD/Windows危险命令
+  cmd:
+    - del /f /s /q
+    - deltree /
+    - rd /s /q
+    - format
+    - format c:
+    - format d:
+    - format e:
+    - type C:\Windows\System32\drivers\etc\hosts
+    - type C:\Windows\System32\config\SAM
+    - type C:\Windows\System32\config\SYSTEM
+    - reg query HKLM\
+    - reg add
+    - reg delete
+    - taskkill /f /im
+    - taskkill /im explorer.exe
+    - cmd /c
+    - cipher /w:
+    - diskpart
+    - netsh advfirewall set allprofiles state off
+    - netsh advfirewall firewall delete rule
+    - sc create
+    - sc delete
+    - sc stop
+    - takeown /f
+    - icacls C:\Windows
+    - attrib -a -s -h
+    - bcdedit
+    - wmic process
+    - schtasks /create
+    - del C:\Windows\System32
+    - rd /s /q C:\Windows
+
+  # PowerShell危险命令
+  powershell:
+    - Remove-Item -Recurse -Force
+    - Remove-Item -Path C:\ -Recurse -Force
+    - Set-ExecutionPolicy Unrestricted
+    - Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Unrestricted
+    - Invoke-Expression
+    - Invoke-Expression (Get-Content)
+    - Invoke-WebRequest
+    - Invoke-WebRequest -OutFile
+    - Invoke-RestMethod
+    - Stop-Computer
+    - Restart-Computer
+    - Disable-NetFirewallRule
+    - Disable-NetFirewallRule -AllProfile
+    - Set-MpPreference -Disable*
+    - Set-MpPreference -DisableRealtimeMonitoring
+    - Set-MpPreference -DisableBehaviorMonitoring
+    - Stop-Service -Name
+    - Stop-Service -Force
+    - Remove-Service
+    - sc delete
+    - Remove-ItemProperty
+    - Remove-ItemProperty -Path
+    - Register-ScheduledTask
+    - Unregister-ScheduledTask
+    - New-ScheduledTaskPrincipal
+    - Set-ItemProperty -Path
+    - New-Service
+    - Set-Service
+    - Clear-Disk
+    - Clear-Disk -Number
+    - Format-Volume
+    - Get-WmiObject -Class
+    - Get-Process | Stop-Process
+    - Stop-Process -Name
+
+  # 中文危险命令（通用）
+  chinese:
+    - 读取密码
+    - 读取shadow
+    - 读取/etc/shadow
+    - 查看密码
+    - 查看shadow
+    - 获取密码
+    - 获取shadow
+    - 格式化硬盘
+    - 格式化磁盘
+    - 格式化C盘
+    - 删除所有
+    - 删除全部
+    - 删除系统
+    - 清除硬盘
+    - 清除磁盘
+    - 关闭防火墙
+    - 禁用杀软
+    - 禁用杀毒
+    - 停止服务
+    - 修改注册表
+    - 重启电脑
+    - 关机
+    - 获取管理员权限
+    - 提权
+    - 清除日志
+    - 删除日志
