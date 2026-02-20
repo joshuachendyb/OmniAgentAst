@@ -123,9 +123,9 @@ OPERATION_WEIGHTS = {
 
 # 操作对象权重表（维度2）
 TARGET_WEIGHTS = {
-    'TEMP': {'min': 0, 'max': 2, 'default': 1, 'patterns': [r'\.tmp', r'\.cache', r'temp[/\\]', r'\.log$', r'log[/\\]']},
+    'TEMP': {'min': 0, 'max': 4, 'default': 3, 'patterns': [r'\.tmp$', r'\.cache', r'^temp[/\\]', r'temp[/\\]', r'\.log$', r'log[/\\]', r'\*.tmp']},
     'USER': {'min': 3, 'max': 5, 'default': 4, 'patterns': [r'~/', r'/home/', r'文档[/\\]', r'用户', r'documents', r'users?[/\\]']},
-    'PROJECT': {'min': 6, 'max': 8, 'default': 7, 'patterns': [r'src[/\\]', r'app[/\\]', r'backend[/\\]', r'frontend[/\\]', r'\.py', r'\.js', r'\.ts', r'tests[/\\]', r'config[/\\]', r'\.git']},
+    'PROJECT': {'min': 3, 'max': 6, 'default': 3, 'patterns': [r'src[/\\]', r'app[/\\]', r'backend[/\\]', r'frontend[/\\]', r'\.py', r'\.js', r'\.ts', r'tests[/\\]', r'config[/\\]', r'\.git']},
     'SYSTEM': {'min': 8, 'max': 10, 'default': 9, 'patterns': [r'C:\\Windows', r'/bin', r'/etc', r'/sbin', r'/usr', r'系统', r'windows[/\\]system32', r'registry']},
 }
 
@@ -138,18 +138,20 @@ PROJECT_PROTECTED_DIRS = [
 
 # 影响范围系数（维度3）
 SCOPE_MULTIPLIERS = {
-    'SINGLE_FILE': 1.0,      # 单文件：具体文件名，如 tests/11.txt
-    'DIRECTORY': 1.5,        # 目录：目录名/结尾，如 tests/
-    'CROSS_DIR': 2.0,        # 跨目录：包含通配符，如 tests/*.txt
+    'SINGLE_FILE': 1.1,     # 单文件：具体文件名，如 tests/11.txt 或 *.tmp
+    'DIRECTORY': 1.45,      # 目录：目录名/结尾，如 tests/ 或 src/
+    'CROSS_DIR': 1.5,        # 跨目录：包含通配符，如 tests/*.txt
     'SYSTEM': 3.0,           # 系统级：-rf, /s /q, /
 }
 
 # 范围识别关键词
 SCOPE_PATTERNS = {
     'SINGLE_FILE': [r'^[^*?]+\.[a-zA-Z0-9]+$', r'^[^*?/]+$'],  # 具体文件名
-    'DIRECTORY': [r'[/\\]$', r'\$'],                          # 以/或\结尾
-    'CROSS_DIR': [r'\*', r'\?', r'所有', r'批量', r'全部', r'\*\.'],  # 通配符或中文
-    'SYSTEM': [r'-rf', r'/s\s+/q', r'^[/\\]$', r'根目录', r'全盘', r'-r\s+-f'],  # 系统级
+    'DIRECTORY': [r'[/\\]$', r'\$'],                              # 以/或\结尾
+    # 只匹配明确的全盘操作，不匹配普通通配符
+    'CROSS_DIR': [r'所有', r'批量', r'全部'],
+    # 只匹配真正的系统级操作
+    'SYSTEM': [r'/s\s+/q', r'^[/\\]$', r'根目录', r'全盘'],
 }
 
 
@@ -158,9 +160,14 @@ SCOPE_PATTERNS = {
 # ============================================================
 DANGEROUS_PATTERNS = [
     # ====== 递归删除模式 ======
-    r'rm\s+-[rf]+\s+[/\\*]+',           # rm -rf /
-    r'rmdir\s+[/\\*]+',                  # rmdir /
-    r'del\s+.*/s\s+/q',                  # del /s /q
+    # 只匹配系统根目录（/ 或 /*），不匹配普通目录如 temp/, src/
+    r'rm\s+-[rf]+\s+/\s*$',              # rm -rf / (根目录)
+    r'rm\s+-[rf]+\s+/\*\s*$',            # rm -rf /* (根目录下所有)
+    r'rm\s+-[rf]+\s+/(bin|usr|etc|home|root|var|tmp|sbin|sys|proc|dev|boot|opt|srv)\s*$',  # rm -rf /bin
+    r'rmdir\s+/\s*$',                     # rmdir / (根目录)
+    r'rmdir\s+/\*\s*$',                   # rmdir /*
+    r'rmdir\s+/(bin|usr|etc|home|root|var|tmp|sbin|sys|proc|dev|boot|opt|srv)\s*$',  # rmdir /bin
+    r'del\s+/s\s+/q',                    # del /s /q (系统级递归删除)
     
     # ====== 格式化磁盘模式 ======
     r'format\s+[a-zA-Z]:?',              # format C:
@@ -524,7 +531,7 @@ def calculate_risk_score(command: str) -> int:
     
     # 4. 计算总分（按设计文档公式）
     raw_score = (type_score + target_score) / 2 * scope_multiplier
-    final_score = min(10, int(raw_score))
+    final_score = min(10, int(round(raw_score)))
     
     logger.info(f"CRSS评分: command='{command}', type={op_type}({type_score}), target={op_target}({target_score}), scope={scope}(×{scope_multiplier}), score={final_score}")
     
