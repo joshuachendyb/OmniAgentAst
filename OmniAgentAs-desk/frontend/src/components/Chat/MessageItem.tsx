@@ -120,11 +120,15 @@ const MessageItem: React.FC<MessageItemProps> = ({
   const getMessageStyle = () => {
     const baseStyle: React.CSSProperties = {
       maxWidth: '100%',
-      width: 'fit-content',
-      padding: '12px 32px 12px 16px',
+      minWidth: '60px',
+      width: 'auto',
+      padding: '12px 16px',
       borderRadius: '12px',
       position: 'relative',
       transition: 'all 0.3s ease',
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'normal',
+      overflowWrap: 'break-word',
     };
 
     switch (message.role) {
@@ -194,17 +198,27 @@ const MessageItem: React.FC<MessageItemProps> = ({
         justifyContent: isSystem ? 'center' : isUser ? 'flex-end' : 'flex-start',
         marginBottom: 16,
         padding: '0 8px',
+        width: '100%',
+        boxSizing: 'border-box' as const,
       }}
     >
       {/* 左侧头像（AI消息） */}
       {!isUser && !isSystem && (
-        <div style={{ marginRight: 12, marginTop: 4 }}>
+        <div style={{ marginRight: 12, marginTop: 4, flexShrink: 0 }}>
           {getAvatar()}
         </div>
       )}
 
-      {/* 消息内容区 - 最大宽度为两头像之间的间距 */}
-      <div style={{ width: '100%', maxWidth: 'calc(100% - 96px)' }}>
+      {/* 消息内容区 - 自适应宽度，从头像旁开始 */}
+      <div style={{ 
+        flexGrow: 1,
+        flexShrink: 1,
+        minWidth: 0,
+        maxWidth: 'calc(100% - 60px)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: isUser ? 'flex-end' : 'flex-start',
+      }}>
         {/* 角色名称 */}
         {!isSystem && (
           <div
@@ -243,7 +257,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
             </Tooltip>
 
             {/* 消息内容 */}
-            <div style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}>
+            <div style={{ wordBreak: 'break-word', overflowWrap: 'break-word', paddingRight: 32 }}>
               {message.content}
             </div>
 

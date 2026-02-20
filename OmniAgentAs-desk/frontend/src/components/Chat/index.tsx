@@ -117,7 +117,7 @@ const Chat: React.FC = () => {
     };
 
     loadSession();
-  }, []);
+  }, [searchParams]);
 
   // 【修复】组件加载时先获取配置，再检查服务状态
   useEffect(() => {

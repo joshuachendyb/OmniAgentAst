@@ -34,6 +34,7 @@ import {
   CommentOutlined,
 } from '@ant-design/icons';
 import { sessionApi, Session } from '../../services/api';
+import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
@@ -64,6 +65,7 @@ const HistoryPage: React.FC = () => {
     pageSize: 20,
     total: 0,
   });
+  const navigate = useNavigate();
 
   /**
    * 加载会话列表
@@ -132,8 +134,8 @@ const HistoryPage: React.FC = () => {
    * 恢复对话
    */
   const handleResume = (sessionId: string) => {
-    // 跳转到聊天页面，带上session_id参数
-    window.location.href = `/?session_id=${sessionId}`;
+    // 跳转到聊天页面，带上session_id参数（使用React Router，不刷新页面）
+    navigate(`/?session_id=${sessionId}`);
   };
 
   /**
