@@ -146,7 +146,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
               </Space>
             }
             style={{ marginTop: 8, background: '#f6ffed' }}
-            bodyStyle={{ padding: 12 }}
+            styles={{ body: { padding: 12 } }}
           >
             <div style={{ marginBottom: 8 }}>
               <Text type="secondary" style={{ fontSize: 12 }}>参数：</Text>
@@ -305,33 +305,28 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
             <Timeline
               mode="left"
               style={{ padding: '16px 8px' }}
-            >
-              {steps.map((step, index) => (
-                <Timeline.Item
-                  key={index}
-                  dot={getStepIcon(step.type)}
-                  color={getStepColor(step.type)}
-                  label={
+              items={[
+                ...steps.map((step, index) => ({
+                  key: index,
+                  dot: getStepIcon(step.type),
+                  color: getStepColor(step.type),
+                  label: (
                     <Tag 
                       color={getStepColor(step.type)}
                       style={{ fontSize: 11 }}
                     >
                       {getStepLabel(step.type)}
                     </Tag>
-                  }
-                >
-                  {renderStepContent(step, index)}
-                </Timeline.Item>
-              ))}
-              {isActive && (
-                <Timeline.Item
-                  dot={<LoadingOutlined spin />}
-                  color="#1890ff"
-                >
-                  <span style={{ color: '#1890ff' }}>执行中...</span>
-                </Timeline.Item>
-              )}
-            </Timeline>
+                  ),
+                  children: renderStepContent(step, index)
+                })),
+                ...(isActive ? [{
+                  dot: <LoadingOutlined spin />,
+                  color: '#1890ff',
+                  children: <span style={{ color: '#1890ff' }}>执行中...</span>
+                }] : [])
+              ]}
+            />
           ),
         },
       ]}
