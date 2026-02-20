@@ -5,11 +5,86 @@
 """
 Shell命令黑名单安全检查服务
 提供命令安全性检查，识别危险操作
+
+配置文件支持：
+- 从YAML配置文件加载（security_config.yaml）
+- 使用内置默认配置（当前版本）
+
+配置加载顺序：
+1. 内置默认配置
+2. 配置文件覆盖（如果存在）
 """
 
 import re
-from typing import Tuple, List, Optional
+import os
+from typing import Tuple, List, Optional, Set
 from app.utils.logger import logger
+
+try:
+    import yaml
+    YAML_AVAILABLE = True
+except ImportError:
+    YAML_AVAILABLE = False
+    logger.warning("PyYAML未安装，将使用内置默认配置")
+
+
+# ============================================================
+# 配置加载函数
+# ============================================================
+
+def get_config_path() -> str:
+    """获取配置文件路径"""
+    # 优先使用环境变量
+    config_path = os.environ.get('SECURITY_CONFIG_PATH')
+    if config_path and os.path.exists(config_path):
+        return config_path
+    
+    # 默认路径：项目根目录/config/security_config.yaml
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    default_path = os.path.join(base_dir, 'config', 'security_config.yaml')
+    
+    if os.path.exists(default_path):
+        return default_path
+    
+    return None
+
+
+def load_security_config() -> dict:
+    """
+    加载安全配置文件
+    
+    Returns:
+        dict: 配置字典，包含:
+            - system_critical_dirs: 系统关键目录列表
+            - project_protected_dirs: 项目保护目录列表
+            - dangerous_commands: 危险命令列表（可选）
+    """
+    config_path = get_config_path()
+    
+    if not config_path or not YAML_AVAILABLE:
+        logger.info("使用内置默认安全配置")
+        return {}
+    
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+            logger.info(f"已加载安全配置文件: {config_path}")
+            return config or {}
+    except Exception as e:
+        logger.warning(f"加载配置文件失败: {e}，使用内置默认配置")
+        return {}
+
+
+# 缓存加载的配置
+_cached_config: Optional[dict] = None
+
+
+def get_security_config() -> dict:
+    """获取安全配置（带缓存）"""
+    global _cached_config
+    if _cached_config is None:
+        _cached_config = load_security_config()
+    return _cached_config
 
 
 # ============================================================
@@ -95,7 +170,8 @@ DANGEROUS_COMMANDS = [
 ]
 
 # 系统关键目录列表（用于模式匹配）
-SYSTEM_CRITICAL_DIRS = {
+# 支持从配置文件加载，默认使用内置配置
+DEFAULT_SYSTEM_CRITICAL_DIRS = {
     # Windows
     'C:\\Windows', 'C:\\Windows\\System32', 'C:\\Windows\\SysWOW64',
     'C:\\Program Files', 'C:\\Program Files (x86)',
@@ -106,6 +182,29 @@ SYSTEM_CRITICAL_DIRS = {
     '/proc', '/dev', '/boot', '/root',
     '/var', '/opt', '/srv',
 }
+
+
+def get_system_critical_dirs() -> Set[str]:
+    """获取系统关键目录列表（支持配置文件加载）"""
+    config = get_security_config()
+    if 'system_critical_dirs' in config:
+        dirs = config['system_critical_dirs']
+        if dirs:
+            logger.info(f"从配置文件加载系统关键目录: {len(dirs)}个")
+            return set(dirs)
+    return DEFAULT_SYSTEM_CRITICAL_DIRS
+
+
+# 缓存的配置结果（用于向后兼容）
+_cached_system_dirs: Optional[Set[str]] = None
+
+
+def _ensure_system_dirs_loaded():
+    """确保系统目录已加载"""
+    global _cached_system_dirs
+    if _cached_system_dirs is None:
+        _cached_system_dirs = get_system_critical_dirs()
+    return _cached_system_dirs
 
 
 # ============================================================
@@ -129,12 +228,24 @@ TARGET_WEIGHTS = {
     'SYSTEM': {'min': 8, 'max': 10, 'default': 9, 'patterns': [r'C:\\Windows', r'/bin', r'/etc', r'/sbin', r'/usr', r'系统', r'windows[/\\]system32', r'registry']},
 }
 
-# 本项目(OmniAgentAs-desk)保护目录列表
-PROJECT_PROTECTED_DIRS = [
-    'backend/', 'frontend/', 'config/', 'tests/', 
+# 项目保护目录列表（支持从配置文件加载）
+DEFAULT_PROJECT_PROTECTED_DIRS = [
+    'backend/', 'frontend/', 'config/', 'tests/',
     'doc-阶段2.1/', 'notes/', 'src/', '.git/',
     'package.json', 'requirements.txt', 'version.txt'
 ]
+
+
+def get_project_protected_dirs() -> List[str]:
+    """获取项目保护目录列表（支持配置文件加载）"""
+    config = get_security_config()
+    if 'project_protected_dirs' in config:
+        dirs = config['project_protected_dirs']
+        if dirs:
+            logger.info(f"从配置文件加载项目保护目录: {len(dirs)}个")
+            return dirs
+    return DEFAULT_PROJECT_PROTECTED_DIRS
+
 
 # 影响范围系数（维度3）
 SCOPE_MULTIPLIERS = {
@@ -337,7 +448,7 @@ class CommandSafetyChecker:
         command_lower = command.lower()
         
         # 检查是否操作了系统关键目录
-        for critical_dir in SYSTEM_CRITICAL_DIRS:
+        for critical_dir in _ensure_system_dirs_loaded():
             # 检查目录路径是否在命令中
             if critical_dir.lower() in command_lower:
                 # 进一步检查是否是危险操作
