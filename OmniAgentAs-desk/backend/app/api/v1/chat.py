@@ -33,6 +33,7 @@ class ChatResponse(BaseModel):
     content: str = Field(default="", description="回复内容")
     model: str = Field(default="", description="使用的模型")
     error: Optional[str] = Field(default=None, description="错误信息")
+    execution_steps: Optional[List[Dict]] = Field(default=None, description="执行步骤详情列表")
 
 class ValidateResponse(BaseModel):
     """验证响应"""
@@ -304,19 +305,29 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
             # 构建详细响应
             content = result.message
             
-            # 如果有执行步骤，添加详细信息
+            # 【修复】将执行步骤作为独立字段返回，而不是拼接到content中
+            execution_steps_list = None
+            if result.steps:
+                execution_steps_list = []
+                for step in result.steps:
+                    execution_steps_list.append({
+                        "step": step.step_number,
+                        "thought": step.thought,
+                        "action": step.action,
+                        "action_input": step.action_input,
+                        "observation": step.observation
+                    })
+            
+            # 添加简短的执行摘要到content（兼容性保留）
             if result.steps:
                 content += f"\n\n[执行详情：共 {result.total_steps} 步]"
-                for step in result.steps[:5]:  # 最多显示5步
-                    content += f"\n- {step.action}: {step.thought[:50]}..."
-                if len(result.steps) > 5:
-                    content += f"\n... 还有 {len(result.steps) - 5} 步"
             
             return ChatResponse(
                 success=True,
                 content=content,
                 model="file_operation_agent",
-                error=None
+                error=None,
+                execution_steps=execution_steps_list
             )
         else:
             return ChatResponse(
