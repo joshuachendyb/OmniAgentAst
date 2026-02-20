@@ -48,6 +48,7 @@ OmniAgentAs-desk/backend/config/config.yaml
 ai_os_data/
 *.log
 server.log
+笔记目录/
 nul
 
 # 操作系统
