@@ -55,7 +55,7 @@ export const createMockConfig = (
 export const createMockSession = (
   overrides: Partial<Session> = {}
 ): Session => ({
-  id: `session-${Date.now()}`,
+  session_id: `session-${Date.now()}`,
   title: 'Test Session',
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),

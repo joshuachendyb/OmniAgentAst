@@ -30,7 +30,6 @@ import {
   Col,
 } from 'antd';
 import {
-  SettingOutlined,
   SafetyOutlined,
   HistoryOutlined,
   SaveOutlined,
@@ -41,7 +40,7 @@ import {
 import { configApi, sessionApi } from '../../services/api';
 import type { Config, Session } from '../../services/api';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { TabPane } = Tabs;
 const { Option } = Select;
 
@@ -213,11 +212,7 @@ const Settings: React.FC = () => {
 
   return (
     <div style={{ padding: 0, margin: 0 }}>
-      <Title level={4} style={{ margin: '0 0 8px 0' }}>
-        <SettingOutlined /> 系统设置
-      </Title>
-
-      <Card style={{ marginTop: 8 }}>
+      <Card style={{ marginTop: 0 }}>
         <Tabs defaultActiveKey="model" type="card">
           {/* 模型配置Tab */}
           <TabPane
