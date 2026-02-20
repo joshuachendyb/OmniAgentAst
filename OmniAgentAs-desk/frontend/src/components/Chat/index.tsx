@@ -10,8 +10,8 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Input, Button, Card, List, Tag, Space, Select, message, Popconfirm } from 'antd';
-import { SendOutlined, RobotOutlined, ReloadOutlined, PlusOutlined, EditOutlined, CheckOutlined, CloseOutlined } from '@ant-design/icons';
+import { Input, Button, Card, List, Tag, Space, Select, message } from 'antd';
+import { SendOutlined, RobotOutlined, ReloadOutlined, PlusOutlined, EditOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { chatApi, configApi, sessionApi, ChatMessage, ValidateResponse } from '../../services/api';
 import { securityApi } from '../../services/api';
@@ -68,11 +68,80 @@ const Chat: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
+  // 保存消息和滚动位置的key
+  const STORAGE_KEY = 'chat_session_state';
+
+  // 保存状态到sessionStorage
+  const saveState = () => {
+    if (messages.length > 0) {
+      const state = {
+        messages,
+        sessionId,
+        sessionTitle,
+        scrollPosition: messagesEndRef.current?.parentElement?.scrollTop || 0,
+      };
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+  };
+
+  // 从sessionStorage恢复状态
+  const restoreState = () => {
+    const saved = sessionStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const state = JSON.parse(saved);
+        if (state.messages && state.messages.length > 0) {
+          setMessages(state.messages);
+          setSessionId(state.sessionId);
+          setSessionTitle(state.sessionTitle);
+          // 恢复滚动位置（在渲染后）
+          setTimeout(() => {
+            if (messagesEndRef.current?.parentElement) {
+              messagesEndRef.current.parentElement.scrollTop = state.scrollPosition || 0;
+            }
+          }, 100);
+          return true;
+        }
+      } catch (e) {
+        console.warn('恢复会话状态失败:', e);
+      }
+    }
+    return false;
+  };
+
+  // 页面可见性变化时保存/恢复状态
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        saveState();
+      } else {
+        // 页面重新可见时，尝试恢复状态
+        // 但不强制恢复，让用户看到之前的状态
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [messages, sessionId, sessionTitle]);
+
   // 加载会话（从URL参数或最近会话）
   useEffect(() => {
     const loadSession = async () => {
-      // 1. 首先检查URL是否有session_id参数
+      // 首先尝试从sessionStorage恢复状态（如果URL没有session_id）
       const urlSessionId = searchParams.get('session_id');
+      
+      // 如果URL没有session_id，尝试恢复之前的状态
+      if (!urlSessionId) {
+        const restored = restoreState();
+        if (restored) {
+          console.log('从缓存恢复会话状态');
+          return;
+        }
+      }
+
+      // 1. 检查URL是否有session_id参数
       if (urlSessionId) {
         try {
           const sessionData = await sessionApi.getSessionMessages(urlSessionId);
@@ -84,7 +153,9 @@ const Chat: React.FC = () => {
               content: m.content,
               timestamp: new Date(m.timestamp),
             })));
-            setSessionTitle(sessionData.messages[0]?.content?.substring(0, 30) || '会话');
+            // 从会话信息获取标题
+            const titleFromApi = sessionData.messages[0]?.content?.substring(0, 30) || '会话';
+            setSessionTitle(titleFromApi);
             console.log('从URL加载会话:', urlSessionId);
             return;
           }
