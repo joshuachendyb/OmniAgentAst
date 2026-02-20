@@ -1,6 +1,7 @@
 # Shell命令黑名单安全检查服务
 # 编程人：小沈
 # 创建时间：2026-02-17
+# 最后更新：2026-02-20
 
 """
 Shell命令黑名单安全检查服务
@@ -13,11 +14,18 @@ Shell命令黑名单安全检查服务
 配置加载顺序：
 1. 内置默认配置
 2. 配置文件覆盖（如果存在）
+
+命令类型分类：
+- bash: Linux/Bash命令
+- cmd: Windows CMD命令
+- powershell: PowerShell命令
+- chinese: 中文危险命令（通用）
 """
 
 import re
 import os
-from typing import Tuple, List, Optional, Set
+import json
+from typing import Tuple, List, Optional, Set, Dict
 from app.utils.logger import logger
 
 try:
@@ -88,86 +96,241 @@ def get_security_config() -> dict:
 
 
 # ============================================================
-# Shell命令黑名单安全规则定义
-# 编程人：小沈
-# 创建时间：2026-02-17
-# 最后更新：2026-02-18
-#
-# 安全规则分类：
-# 1. 系统破坏类 - 递归删除、格式化磁盘
-# 2. 权限提升类 - sudo、su、chmod
-# 3. 网络攻击类 - 反向shell、端口扫描
-# 4. 数据泄露类 - 读取敏感文件
-# 5. 进程终止类 - 强制终止进程
-# 6. 系统关键目录类 - Windows/Linux系统目录
+# 配置加载函数（支持YAML配置文件）
 # ============================================================
 
-# 危险命令黑名单
-DANGEROUS_COMMANDS = [
-    # ====== 1. 系统破坏类 - 递归删除 ======
-    'rm -rf /', 'rm -rf /*', 'rm -rf .', 'rm -rf *',
-    'rm -rf /bin', 'rm -rf /usr', 'rm -rf /etc', 'rm -rf /home',
-    'rm -rf /root', 'rm -rf /var', 'rm -rf /tmp',
-    'rmdir /', 'rmdir /*', 'rmdir .', 'rmdir /etc',
-    'del /f /s /q', 'deltree /', 'rd /s /q',
-    'rm -rf $HOME', 'rm -rf ~',
+def load_dangerous_commands_from_config(config_path: Optional[str] = None) -> Dict[str, List[str]]:
+    """
+    从配置文件加载危险命令
     
-    # ====== 2. 磁盘格式化类 ======
-    'format', 'format c:', 'format d:', 'format e:',
-    'mkfs', 'mkfs.ext4', 'mkfs.ext3', 'mkfs.ntfs',
-    'mkfs.vfat', 'mkfs.fat', 'newfs',
-    'dd if=/dev/zero', 'dd if=/dev/urandom', 'dd of=/dev/sda',
-    'shred -n', 'shred -z',
+    未来版本支持从YAML/JSON配置文件加载
     
-    # ====== 3. 权限提升类 ======
-    'sudo', 'sudo -i', 'sudo -s', 'sudo su',
-    'su -', 'su root', 'su -root',
-    'chmod 777 /', 'chmod -R 777', 'chmod 000',
-    'chown -R', 'chown root:root',
-    'setfacl -R', 'acl -R',
+    Args:
+        config_path: 配置文件路径
+        
+    Returns:
+        Dict[str, List[str]]: 按类型分类的危险命令
+    """
+    # 尝试加载配置文件（未来版本启用）
+    # if config_path and os.path.exists(config_path):
+    #     with open(config_path, 'r', encoding='utf-8') as f:
+    #         config = yaml.safe_load(f)
+    #         return config.get('dangerous_commands', {})
     
-    # ====== 4. 网络攻击类 ======
-    'nc -e', 'ncat -e', 'netcat -e',
-    'bash -i', 'sh -i', '/bin/sh -i',
-    '/dev/tcp/', '/dev/udp/',
-    'curl -X', 'wget -O-', 'lynx',
-    'nmap', 'nikto', 'sqlmap',
-    'nc -l -p', 'nc -lvnp',
+    # 使用内置默认配置
+    return DEFAULT_DANGEROUS_COMMANDS
+
+
+# ============================================================
+# Shell命令黑名单安全规则定义（按类型分类）
+# 编程人：小沈
+# 创建时间：2026-02-17
+# 最后更新：2026-02-20
+#
+# 安全规则分类（按命令类型）：
+# 1. bash - Linux/Bash命令
+# 2. cmd - Windows CMD命令
+# 3. powershell - PowerShell命令
+# 4. chinese - 中文危险命令（通用）
+#
+# 支持从配置文件加载（未来版本）
+# ============================================================
+
+# 默认危险命令（按类型分类）
+DEFAULT_DANGEROUS_COMMANDS: Dict[str, List[str]] = {
+    # ====== 1. Bash/Linux危险命令 ======
+    'bash': [
+        # 递归删除
+        'rm -rf /', 'rm -rf /*', 'rm -rf .', 'rm -rf *',
+        'rm -rf /bin', 'rm -rf /usr', 'rm -rf /etc', 'rm -rf /home',
+        'rm -rf /root', 'rm -rf /var', 'rm -rf /tmp',
+        'rm -rf $HOME', 'rm -rf ~',
+        'rmdir /', 'rmdir /*', 'rmdir .', 'rmdir /etc',
+        
+        # 磁盘格式化
+        'mkfs', 'mkfs.ext4', 'mkfs.ext3', 'mkfs.ntfs',
+        'mkfs.vfat', 'mkfs.fat', 'newfs',
+        'dd if=/dev/zero', 'dd if=/dev/urandom', 'dd of=/dev/sda',
+        'shred -n', 'shred -z',
+        
+        # 权限提升
+        'sudo', 'sudo -i', 'sudo -s', 'sudo su',
+        'su -', 'su root', 'su -root',
+        'chmod 777 /', 'chmod -R 777', 'chmod 000',
+        'chown -R', 'chown root:root', 'setfacl -R', 'acl -R',
+        
+        # 网络攻击
+        'nc -e', 'ncat -e', 'netcat -e',
+        'bash -i', 'sh -i', '/bin/sh -i',
+        '/dev/tcp/', '/dev/udp/',
+        'curl -X', 'wget -O-', 'lynx',
+        'nmap', 'nikto', 'sqlmap',
+        'nc -l -p', 'nc -lvnp',
+        
+        # 数据泄露
+        'cat /etc/passwd', 'cat /etc/shadow', 'cat /etc/hosts',
+        'cat /etc/sudoers', 'cat /etc/group',
+        'cat ~/.ssh/id_rsa', 'cat ~/.ssh/authorized_keys',
+        'cat /var/log/', 'tail /etc/passwd',
+        
+        # 进程终止
+        'kill -9 -1', 'pkill -9', 'killall -9', 'killall',
+        'shutdown -r now', 'shutdown -h now',
+        'reboot', 'init 6', 'init 0',
+        
+        # 系统目录危险操作
+        'chmod -R /bin', 'chmod -R /sbin', 'chown -R /etc',
+    ],
     
-    # ====== 5. 数据泄露类 - 读取敏感文件 ======
-    # Linux敏感文件
-    'cat /etc/passwd', 'cat /etc/shadow', 'cat /etc/hosts',
-    'cat /etc/sudoers', 'cat /etc/group',
-    'cat ~/.ssh/id_rsa', 'cat ~/.ssh/authorized_keys',
-    'cat /var/log/', 'tail /etc/passwd',
-    # Windows敏感文件
-    'type C:\\Windows\\System32\\drivers\\etc\\hosts',
-    'type C:\\Windows\\System32\\config\\SAM',
-    'type C:\\Windows\\System32\\config\\SYSTEM',
-    'powershell Get-Content C:\\',
-    'reg query HKLM\\',
+    # ====== 2. CMD/Windows危险命令 ======
+    'cmd': [
+        # 递归删除
+        'del /f /s /q', 'deltree /', 'rd /s /q',
+        
+        # 磁盘格式化
+        'format', 'format c:', 'format d:', 'format e:',
+        'cipher /w:',
+        
+        # 注册表操作
+        'reg query HKLM\\', 'reg add', 'reg delete',
+        
+        # 进程终止
+        'taskkill /f /im', 'taskkill /im explorer.exe',
+        
+        # 执行命令
+        'cmd /c',
+        
+        # 磁盘管理
+        'diskpart',
+        
+        # 防火墙
+        'netsh advfirewall set allprofiles state off',
+        'netsh advfirewall firewall delete rule',
+        
+        # 服务操作
+        'sc create', 'sc delete', 'sc stop',
+        
+        # 权限
+        'takeown /f', 'icacls C:\\Windows',
+        
+        # 文件属性
+        'attrib -a -s -h',
+        
+        # 启动管理
+        'bcdedit',
+        
+        # WMI
+        'wmic process',
+        
+        # 计划任务
+        'schtasks /create',
+        
+        # 系统目录危险操作
+        'del C:\\Windows\\System32', 'rd /s /q C:\\Windows',
+    ],
     
-    # 中文危险命令
-    '读取密码', '读取shadow', '查看密码', '查看shadow',
-    '获取密码', '获取shadow', '格式化硬盘', '格式化磁盘',
-    '删除所有', '删除全部', '清除硬盘', '清除磁盘',
+    # ====== 3. PowerShell危险命令 ======
+    'powershell': [
+        # 递归删除
+        'Remove-Item -Recurse -Force',
+        'Remove-Item -Path C:\\ -Recurse -Force',
+        
+        # 执行策略
+        'Set-ExecutionPolicy Unrestricted',
+        'Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Unrestricted',
+        
+        # 动态执行
+        'Invoke-Expression',
+        'Invoke-Expression (Get-Content)',
+        
+        # 下载执行
+        'Invoke-WebRequest',
+        'Invoke-WebRequest -OutFile',
+        'Invoke-RestMethod',
+        
+        # 关机重启
+        'Stop-Computer',
+        'Restart-Computer',
+        
+        # 防火墙
+        'Disable-NetFirewallRule',
+        'Disable-NetFirewallRule -AllProfile',
+        
+        # 杀软禁用
+        'Set-MpPreference -Disable*',
+        'Set-MpPreference -DisableRealtimeMonitoring',
+        'Set-MpPreference -DisableBehaviorMonitoring',
+        
+        # 服务操作
+        'Stop-Service -Name',
+        'Stop-Service -Force',
+        'Remove-Service',
+        'sc delete',
+        
+        # 注册表操作
+        'Remove-ItemProperty',
+        'Remove-ItemProperty -Path',
+        
+        # 计划任务
+        'Register-ScheduledTask',
+        'Unregister-ScheduledTask',
+        'New-ScheduledTaskPrincipal',
+        
+        # 文件操作
+        'Set-ItemProperty -Path',
+        'New-Service',
+        'Set-Service',
+        
+        # 磁盘操作
+        'Clear-Disk',
+        'Clear-Disk -Number',
+        'Format-Volume',
+        
+        # WMI
+        'Get-WmiObject -Class',
+        'Get-Process | Stop-Process',
+        'Stop-Process -Name',
+    ],
     
-    # ====== 6. 进程终止类 ======
-    'kill -9 -1', 'taskkill /f /im',
-    'pkill -9', 'killall -9', 'killall',
-    'taskkill /im explorer.exe',
-    'shutdown -r now', 'shutdown -h now',
-    'reboot', 'init 6', 'init 0',
-    
-    # ====== 7. 系统关键目录危险操作 ======
-    # 注意：仅禁止在系统目录上执行危险操作，不是禁止访问
-    # Windows危险操作
-    'del C:\\Windows\\System32', 'rd /s /q C:\\Windows',
-    'icacls C:\\Windows',
-    # Linux危险操作
-    'chmod -R /bin', 'chmod -R /sbin',
-    'chown -R /etc',
-]
+    # ====== 4. 中文危险命令（通用） ======
+    'chinese': [
+        # 密码相关
+        '读取密码', '读取shadow', '读取/etc/shadow',
+        '查看密码', '查看shadow',
+        '获取密码', '获取shadow',
+        
+        # 格式化/删除
+        '格式化硬盘', '格式化磁盘', '格式化C盘',
+        '删除所有', '删除全部', '删除系统',
+        '清除硬盘', '清除磁盘',
+        
+        # 防火墙/杀软
+        '关闭防火墙', '禁用杀软', '禁用杀毒',
+        
+        # 服务/进程
+        '停止服务',
+        
+        # 注册表
+        '修改注册表',
+        
+        # 关机重启
+        '重启电脑', '关机',
+        
+        # 权限
+        '获取管理员权限', '提权',
+        
+        # 日志
+        '清除日志', '删除日志',
+    ],
+}
+
+# 兼容旧版本：合并所有类型到一个列表
+DANGEROUS_COMMANDS: List[str] = (
+    DEFAULT_DANGEROUS_COMMANDS['bash'] +
+    DEFAULT_DANGEROUS_COMMANDS['cmd'] +
+    DEFAULT_DANGEROUS_COMMANDS['powershell'] +
+    DEFAULT_DANGEROUS_COMMANDS['chinese']
+)
 
 # 系统关键目录列表（用于模式匹配）
 # 支持从配置文件加载，默认使用内置配置
@@ -213,11 +376,11 @@ def _ensure_system_dirs_loaded():
 
 # 操作类型权重表（维度1）
 OPERATION_WEIGHTS = {
-    'READ': {'min': 0, 'max': 2, 'default': 1, 'keywords': ['cat', 'ls', 'grep', '查看', '读取', 'type', 'dir']},
+    'READ': {'min': 0, 'max': 2, 'default': 1, 'keywords': ['cat', 'ls', 'grep', '查看', '读取', 'type', 'dir', '运行']},
     'CREATE': {'min': 2, 'max': 4, 'default': 3, 'keywords': ['mkdir', 'touch', '创建', '新建', 'md']},
     'UPDATE': {'min': 4, 'max': 7, 'default': 5, 'keywords': ['edit', 'sed', '修改', '编辑', '更新', 'echo', 'write']},
     'DELETE': {'min': 6, 'max': 10, 'default': 8, 'keywords': ['rm', 'del', '删除', 'remove', '清除', 'rmdir', 'rd']},
-    'EXEC': {'min': 5, 'max': 10, 'default': 7, 'keywords': ['sudo', 'run', 'exec', '执行', '运行', 'start']},
+    'EXEC': {'min': 5, 'max': 10, 'default': 7, 'keywords': ['sudo', 'run', 'exec', '执行', 'start']},
 }
 
 # 操作对象权重表（维度2）
@@ -225,7 +388,7 @@ TARGET_WEIGHTS = {
     'TEMP': {'min': 0, 'max': 4, 'default': 3, 'patterns': [r'\.tmp$', r'\.cache', r'^temp[/\\]', r'temp[/\\]', r'\.log$', r'log[/\\]', r'\*.tmp']},
     'USER': {'min': 3, 'max': 5, 'default': 4, 'patterns': [r'~/', r'/home/', r'文档[/\\]', r'用户', r'documents', r'users?[/\\]']},
     'PROJECT': {'min': 3, 'max': 6, 'default': 3, 'patterns': [r'src[/\\]', r'app[/\\]', r'backend[/\\]', r'frontend[/\\]', r'\.py', r'\.js', r'\.ts', r'tests[/\\]', r'config[/\\]', r'\.git']},
-    'SYSTEM': {'min': 8, 'max': 10, 'default': 9, 'patterns': [r'C:\\Windows', r'/bin', r'/etc', r'/sbin', r'/usr', r'系统', r'windows[/\\]system32', r'registry']},
+    'SYSTEM': {'min': 8, 'max': 10, 'default': 9, 'patterns': [r'C:\\Windows', r'/bin', r'/etc', r'/sbin', r'/usr', r'系统', r'windows[/\\]system32', r'registry', r'密码', r'shadow', r'passwd', r'SAM', r'配置', r'注册表']},
 }
 
 # 项目保护目录列表（支持从配置文件加载）
@@ -266,7 +429,6 @@ SCOPE_PATTERNS = {
 }
 
 
-# ============================================================
 # 危险命令模式（正则表达式）- 用于更灵活的匹配
 # ============================================================
 DANGEROUS_PATTERNS = [
@@ -377,9 +539,9 @@ class CommandSafetyChecker:
         
         command_lower = command.lower().strip()
         
-        # 检查黑名单命令
+        # 检查黑名单命令（需要将黑名单命令也转为小写比较）
         for dangerous in DANGEROUS_COMMANDS:
-            if dangerous in command_lower:
+            if dangerous.lower() in command_lower:
                 logger.warning(f"检测到危险命令: {dangerous}")
                 return False, f"检测到危险命令: {dangerous}"
         
