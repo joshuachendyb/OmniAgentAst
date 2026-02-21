@@ -11,7 +11,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Input, Button, Card, List, Tag, Space, Select, message } from 'antd';
-import { SendOutlined, RobotOutlined, ReloadOutlined, PlusOutlined, EditOutlined, CloseCircleOutlined, PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons';
+import { SendOutlined, RobotOutlined, PlusOutlined, EditOutlined, CloseCircleOutlined, PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { chatApi, configApi, sessionApi, ChatMessage, API_BASE_URL } from '../../services/api';
 import { securityApi } from '../../services/api';
