@@ -341,14 +341,14 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
             <Title level={4} style={{ margin: 0, fontWeight: 500, fontSize: isMobile ? 16 : 18 }}>
               对话与任务
             </Title>
-            {/* 【新增】服务状态显示 */}
+            {/* 【新增】服务状态显示 - 优化版 */}
             <Tag color={serviceStatus?.success ? 'success' : checkingStatus ? 'processing' : 'warning'}>
               {checkingStatus ? (
                 '检查中...'
               ) : serviceStatus?.success ? (
-                <><CheckCircleOutlined /> {serviceStatus.message}</>
+                <><CheckCircleOutlined /> {serviceStatus.provider} {serviceStatus.model && `(${serviceStatus.model})`}</>
               ) : (
-                serviceStatus?.message || '未就绪'
+                <>{serviceStatus?.provider || 'unknown'} {serviceStatus?.model && `(${serviceStatus.model})`} - {serviceStatus?.message || '未就绪'}</>
               )}
             </Tag>
           </div>

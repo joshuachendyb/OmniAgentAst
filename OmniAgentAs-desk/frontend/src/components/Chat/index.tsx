@@ -13,7 +13,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Input, Button, Card, List, Tag, Space, Select, message } from 'antd';
 import { SendOutlined, RobotOutlined, ReloadOutlined, PlusOutlined, EditOutlined, CloseCircleOutlined, PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
-import { chatApi, configApi, sessionApi, ChatMessage, ValidateResponse, API_BASE_URL } from '../../services/api';
+import { chatApi, configApi, sessionApi, ChatMessage, API_BASE_URL } from '../../services/api';
 import { securityApi } from '../../services/api';
 import MessageItem from './MessageItem';
 import DangerConfirmModal from '../DangerConfirmModal';
@@ -42,10 +42,7 @@ const Chat: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
-  const [serviceStatus, setServiceStatus] = useState<ValidateResponse | null>(null);
-  const [checkingStatus, setCheckingStatus] = useState(false);
   const [currentProvider, setCurrentProvider] = useState<'zhipuai' | 'opencode'>('zhipuai');
-  const [currentModel, setCurrentModel] = useState<string>('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string>('新会话');
   const [editingTitle, setEditingTitle] = useState(false);
@@ -192,7 +189,7 @@ const Chat: React.FC = () => {
     loadSession();
   }, [searchParams]);
 
-  // 【修复】组件加载时先获取配置，再检查服务状态
+  // 【修复】组件加载时先获取配置
   useEffect(() => {
     const initProvider = async () => {
       try {
@@ -200,59 +197,26 @@ const Chat: React.FC = () => {
         if (config.ai_provider === 'zhipuai' || config.ai_provider === 'opencode') {
           setCurrentProvider(config.ai_provider);
         }
-        if (config.ai_model) {
-          setCurrentModel(config.ai_model);
-        }
+        // ai_model配置已在Layout组件中显示
       } catch (error) {
         console.warn('获取配置失败:', error);
-      } finally {
-        // 无论是否获取到配置，都检查服务状态
-        checkServiceStatus();
       }
     };
     initProvider();
   }, []);
-
-  // 检查服务状态
-  const checkServiceStatus = async () => {
-    setCheckingStatus(true);
-    try {
-      const status = await chatApi.validateService();
-      setServiceStatus(status);
-      if (status.success && (status.provider === 'zhipuai' || status.provider === 'opencode')) {
-        setCurrentProvider(status.provider);
-      }
-      // 更新模型名称
-      if (status.model) {
-        setCurrentModel(status.model);
-      }
-    } catch (error) {
-      setServiceStatus({
-        success: false,
-        provider: 'unknown',
-        model: '',
-        message: '服务检查失败: ' + (error as Error).message,
-      });
-    } finally {
-      setCheckingStatus(false);
-    }
-  };
 
   // 切换提供商
   const handleSwitchProvider = async (provider: 'zhipuai' | 'opencode') => {
     setLoading(true);
     try {
       const result = await chatApi.switchProvider(provider);
-      setServiceStatus(result);
+      // 服务状态现在由Layout组件统一显示
       
       // 无论成功还是失败，都更新当前显示的提供商
       // 让用户知道当前选择的模型状态
       setCurrentProvider(provider);
       
-      // 更新模型名称
-      if (result.model) {
-        setCurrentModel(result.model);
-      }
+      // 模型名称由Layout组件统一显示
       
       const providerName = getProviderName(provider);
       const modelName = result.model || '未知模型';
@@ -613,9 +577,6 @@ const Chat: React.FC = () => {
               autoFocus
             />
           )}
-          <Tag color={serviceStatus?.success ? 'success' : 'warning'}>
-            {getProviderName(currentProvider)} {currentModel && `(${currentModel})`}
-          </Tag>
         </Space>
       }
       extra={
@@ -650,14 +611,7 @@ const Chat: React.FC = () => {
           >
             新建会话
           </Button>
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={checkServiceStatus}
-            loading={checkingStatus}
-            size="small"
-          >
-            检查服务
-          </Button>
+          {/* 服务状态检查已移至Layout组件 */}
           <Button onClick={handleClear} size="small">
             清空对话
           </Button>
