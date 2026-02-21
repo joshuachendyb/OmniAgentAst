@@ -13,7 +13,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Input, Button, Card, List, Tag, Space, Select, message } from 'antd';
 import { SendOutlined, RobotOutlined, ReloadOutlined, PlusOutlined, EditOutlined, CloseCircleOutlined, PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
-import { chatApi, configApi, sessionApi, ChatMessage, ValidateResponse } from '../../services/api';
+import { chatApi, configApi, sessionApi, ChatMessage, ValidateResponse, API_BASE_URL } from '../../services/api';
 import { securityApi } from '../../services/api';
 import MessageItem from './MessageItem';
 import DangerConfirmModal from '../DangerConfirmModal';
@@ -41,7 +41,7 @@ const Chat: React.FC = () => {
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [serviceStatus, setServiceStatus] = useState<ValidateResponse | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [currentProvider, setCurrentProvider] = useState<'zhipuai' | 'opencode'>('zhipuai');
@@ -298,17 +298,19 @@ const Chat: React.FC = () => {
   };
 
   /**
-   * 执行实际的消息发送（在危险命令检测通过后调用）n   * 
+   * 执行实际的消息发送（在危险命令检测通过后调用）
+   * 
    * @param userMessage - 用户消息
    * @author 小新
+   * @update 2026-02-21 改为流式API + task_id方式（符合后端推荐方案一）
    */
   const executeSendMessage = async (userMessage: Message) => {
     setLoading(true);
     setIsPaused(false);
     
-    // 创建AbortController
-    const controller = new AbortController();
-    setAbortController(controller);
+    // 生成task_id（使用UUID或时间戳）
+    const taskId = crypto.randomUUID();
+    setCurrentTaskId(taskId);
 
     try {
       // 构建消息历史（最多保留最近10条）
@@ -316,43 +318,63 @@ const Chat: React.FC = () => {
         .slice(-10)
         .map((msg) => ({ role: msg.role, content: msg.content }));
 
-      const response = await chatApi.sendMessage([
-        ...history,
-        { role: 'user', content: userMessage.content },
-      ], 0.7);
-
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+      // 创建临时的assistant消息，用于流式更新
+      let assistantMessageId = (Date.now() + 1).toString();
+      setMessages((prev) => [...prev, {
+        id: assistantMessageId,
         role: 'assistant',
-        content: response.success ? response.content : `错误: ${response.error || '未知错误'}`,
+        content: '',
         timestamp: new Date(),
-      };
+      }]);
 
-      setMessages((prev) => [...prev, assistantMessage]);
-
-      // 保存消息到会话
-      if (sessionId) {
-        try {
-          // 保存用户消息
-          await sessionApi.saveMessage(sessionId, {
-            role: 'user',
-            content: userMessage.content,
-          });
-          // 保存助手回复
-          await sessionApi.saveMessage(sessionId, {
-            role: 'assistant',
-            content: assistantMessage.content,
-          });
-          console.log('消息已保存到会话:', sessionId);
-        } catch (saveError) {
-          console.error('保存消息失败:', saveError);
+      // 调用流式API
+      await chatApi.sendMessageStream(
+        [...history, { role: 'user', content: userMessage.content }],
+        {
+          onStep: (step) => {
+            // 更新临时的assistant消息内容
+            if (step.content) {
+              setMessages((prev) => prev.map(msg => 
+                msg.id === assistantMessageId 
+                  ? { ...msg, content: msg.content + step.content }
+                  : msg
+              ));
+            }
+          },
+          onComplete: (finalContent) => {
+            // 更新最终内容
+            setMessages((prev) => prev.map(msg => 
+              msg.id === assistantMessageId 
+                ? { ...msg, content: finalContent }
+                : msg
+            ));
+            
+            // 保存消息到会话
+            if (sessionId) {
+              try {
+                sessionApi.saveMessage(sessionId, {
+                  role: 'user',
+                  content: userMessage.content,
+                });
+                sessionApi.saveMessage(sessionId, {
+                  role: 'assistant',
+                  content: finalContent,
+                });
+              } catch (saveError) {
+                console.error('保存消息失败:', saveError);
+              }
+            }
+          },
+          onError: (error) => {
+            setMessages((prev) => prev.map(msg => 
+              msg.id === assistantMessageId 
+                ? { ...msg, content: `错误: ${error}` }
+                : msg
+            ));
+          }
         }
-      }
+      );
     } catch (error) {
-      if ((error as any).name === 'AbortError') {
-        message.info('任务已中断');
-        return;
-      }
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -362,26 +384,45 @@ const Chat: React.FC = () => {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
-      setAbortController(null);
+      setCurrentTaskId(null);
       setPendingMessage(null);
     }
   };
 
   /**
-   * 任务中断处理
+   * 任务中断处理（调用后端取消接口）
+   * 
+   * @author 小新
+   * @update 2026-02-21 改为使用后端推荐的取消接口方案一
    */
-  const handleInterrupt = () => {
-    if (abortController) {
-      abortController.abort();
-      message.info('正在中断...');
+  const handleInterrupt = async () => {
+    if (currentTaskId) {
+      try {
+        message.info('正在中断任务...');
+        await fetch(`${API_BASE_URL}/chat/stream/cancel/${currentTaskId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+        message.success('任务中断请求已发送');
+      } catch (error) {
+        message.error('发送中断请求失败: ' + (error as Error).message);
+      }
     }
   };
 
   /**
    * 任务暂停/继续处理
+   * 
+   * 说明：后端暂未实现暂停功能（只实现了中断）
+   * 当前仅保留UI交互，实际逻辑待后端实现后补充
+   * 
+   * @author 小新
+   * @update 2026-02-21 添加说明，后端暂未实现暂停
    */
   const handleTogglePause = () => {
+    // 后端暂未实现暂停功能，仅切换UI状态
     setIsPaused(!isPaused);
+    message.info('暂停功能后端暂未实现，仅显示UI状态');
   };
 
   /**

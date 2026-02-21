@@ -122,7 +122,7 @@ export interface ChatResponse {
 // 流式API（SSE）接口
 // ============================================
 export interface StreamStep {
-  type: 'thought' | 'action' | 'observation' | 'final';
+  type: 'thought' | 'action' | 'observation' | 'error' | 'interrupted' | 'final';
   step?: number;
   thought?: string;
   action?: string;
@@ -191,6 +191,11 @@ export const chatApi = {
                 callbacks.onStep(data);
               } else if (data.type === 'final') {
                 callbacks.onComplete(data.content);
+              } else if (data.type === 'interrupted') {
+                message.warning('任务已被中断');
+              } else if (data.type === 'error') {
+                message.error(data.content);
+                callbacks.onError(data.content);
               }
             } catch (e) {
               // 忽略解析错误
@@ -463,5 +468,7 @@ export const securityApi = {
     };
   },
 };
+
+export { API_BASE_URL };
 
 export default api;
