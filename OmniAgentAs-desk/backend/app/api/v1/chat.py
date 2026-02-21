@@ -258,7 +258,7 @@ async def chat(request: ChatRequest):
 # ============================================================
 
 # 任务管理字典（存储运行中的任务，用于中断）
-running_tasks: dict = {}
+running_tasks: dict[str, dict] = {}
 
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
@@ -273,7 +273,6 @@ async def chat_stream(request: ChatRequest):
     - **temperature**: 创造性参数
     """
     import uuid
-    from fastapi import Request
     
     # 生成任务ID
     task_id = str(uuid.uuid4())
@@ -297,7 +296,7 @@ async def chat_stream(request: ChatRequest):
                 return
             
             # 检测文件操作意图
-            is_file_op, op_type, confidence = detect_file_operation_intent(last_message)
+            is_file_op, _, confidence = detect_file_operation_intent(last_message)
             
             if is_file_op and confidence >= 0.3:
                 # 文件操作：逐步推送执行步骤
@@ -320,8 +319,18 @@ async def chat_stream(request: ChatRequest):
                 
                 # 创建Agent执行
                 session_id = str(uuid.uuid4())
-                tools = get_file_tools()
-                agent = FileOperationAgent(session_id=session_id)
+                ai_service = AIServiceFactory.get_service()
+                
+                # 定义llm_client函数（适配FileOperationAgent）
+                async def llm_client(message, history=None):
+                    response = await ai_service.chat(message, history)
+                    # 转换为Agent需要的格式
+                    return type('obj', (object,), {'content': response.content})()
+                
+                agent = FileOperationAgent(
+                    llm_client=llm_client,
+                    session_id=session_id
+                )
                 
                 yield f"data: {json.dumps({'type': 'action', 'step': 2, 'content': '执行文件操作...'})}\n\n"
                 
@@ -337,12 +346,17 @@ async def chat_stream(request: ChatRequest):
                                 yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
                                 break
                             
+                            # Step是对象，使用属性访问
+                            step_thought = getattr(step, 'thought', '')
+                            step_action = getattr(step, 'action', '')
+                            step_observation = getattr(step, 'observation', '')
+                            
                             yield f"data: {json.dumps({
                                 'type': 'observation',
                                 'step': i + 2,
-                                'thought': step.get('thought', ''),
-                                'action': step.get('action', ''),
-                                'observation': step.get('observation', '')
+                                'thought': step_thought,
+                                'action': step_action,
+                                'observation': step_observation
                             })}\n\n"
                             await asyncio.sleep(0.5)
                     
@@ -352,9 +366,11 @@ async def chat_stream(request: ChatRequest):
                     else:
                         # 发送最终结果
                         if result.success:
-                            yield f"data: {json.dumps({'type': 'final', 'content': result.content})}\n\n"
+                            result_content = getattr(result, 'content', '')
+                            yield f"data: {json.dumps({'type': 'final', 'content': result_content})}\n\n"
                         else:
-                            yield f"data: {json.dumps({'type': 'error', 'content': result.error or '执行失败'})}\n\n"
+                            result_error = getattr(result, 'error', '执行失败')
+                            yield f"data: {json.dumps({'type': 'error', 'content': result_error})}\n\n"
                             
                 except Exception as e:
                     yield f"data: {json.dumps({'type': 'error', 'content': f'执行出错: {str(e)}'})}\n\n"
