@@ -166,11 +166,23 @@ const MessageItem: React.FC<MessageItemProps> = ({
   /**
    * 格式化时间戳
    */
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('zh-CN', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
+  const formatTime = (date: Date | string) => {
+    try {
+      // 确保转换为Date对象
+      const dateObj = date instanceof Date ? date : new Date(date);
+      
+      // 检查是否有效日期
+      if (isNaN(dateObj.getTime())) {
+        return '刚刚';
+      }
+      
+      return dateObj.toLocaleTimeString('zh-CN', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+    } catch (error) {
+      return '刚刚';
+    }
   };
 
   /**
