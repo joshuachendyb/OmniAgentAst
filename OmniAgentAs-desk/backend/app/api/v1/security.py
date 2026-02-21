@@ -64,11 +64,13 @@ async def check_security(request: SecurityCheckRequest):
             data=SecurityCheckData(
                 score=score,
                 message=message
-            )
+            ),
+            error=None
         )
         
     except Exception as e:
         return SecurityCheckResponse(
             success=False,
+            data=None,
             error=f"安全检查失败: {str(e)}"
         )

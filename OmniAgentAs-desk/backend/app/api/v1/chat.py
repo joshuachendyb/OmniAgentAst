@@ -2,10 +2,14 @@
 对话API路由
 支持智谱GLM和OpenCode模型
 集成文件操作Agent
+支持SSE流式响应
 """
 
 import httpx
+import json
+import asyncio
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 from app.services import AIServiceFactory
@@ -246,6 +250,117 @@ async def chat(request: ChatRequest):
             status_code=500,
             detail=f"对话请求失败: {str(e)}"
         )
+
+
+# ============================================================
+# SSE流式API - 实时展示ReAct执行步骤
+# ============================================================
+
+@router.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """
+    流式API - SSE (Server-Sent Events)
+    
+    实时推送ReAct执行步骤：思考→行动→观察
+    
+    - **messages**: 消息列表
+    - **stream**: 是否流式返回（此路由强制为True）
+    - **temperature**: 创造性参数
+    """
+    
+    async def generate():
+        """生成SSE流"""
+        try:
+            # 获取最后一条用户消息
+            last_message = request.messages[-1].content if request.messages else ""
+            
+            # 1. 发送思考 - 正在分析任务
+            yield f"data: {json.dumps({'type': 'thought', 'content': '正在分析任务...'})}\n\n"
+            await asyncio.sleep(0.3)
+            
+            # 检测文件操作意图
+            is_file_op, op_type, confidence = detect_file_operation_intent(last_message)
+            
+            if is_file_op and confidence >= 0.3:
+                # 文件操作：逐步推送执行步骤
+                yield f"data: {json.dumps({'type': 'action', 'step': 1, 'content': '检测到文件操作意图，开始执行...'})}\n\n"
+                await asyncio.sleep(0.3)
+                
+                # 安全检测
+                is_safe, risk = check_command_safety(last_message)
+                if not is_safe:
+                    yield f"data: {json.dumps({'type': 'error', 'content': f'危险操作需确认: {risk}'})}\n\n"
+                    return
+                
+                yield f"data: {json.dumps({'type': 'observation', 'step': 1, 'content': '安全检测通过'})}\n\n"
+                await asyncio.sleep(0.3)
+                
+                # 创建Agent执行
+                import uuid
+                session_id = str(uuid.uuid4())
+                tools = get_file_tools()
+                agent = FileOperationAgent(tools=tools, session_id=session_id)
+                
+                yield f"data: {json.dumps({'type': 'action', 'step': 2, 'content': '执行文件操作...'})}\n\n"
+                
+                # 流式执行（模拟每步延迟）
+                try:
+                    result = await agent.run(last_message)
+                    
+                    # 推送执行步骤详情
+                    if hasattr(result, 'steps') and result.steps:
+                        for i, step in enumerate(result.steps, 1):
+                            yield f"data: {json.dumps({
+                                'type': 'observation',
+                                'step': i + 2,
+                                'thought': step.get('thought', ''),
+                                'action': step.get('action', ''),
+                                'observation': step.get('observation', '')
+                            })}\n\n"
+                            await asyncio.sleep(0.5)
+                    
+                    # 发送最终结果
+                    if result.success:
+                        yield f"data: {json.dumps({'type': 'final', 'content': result.content})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'type': 'error', 'content': result.error or '执行失败'})}\n\n"
+                        
+                except Exception as e:
+                    yield f"data: {json.dumps({'type': 'error', 'content': f'执行出错: {str(e)}'})}\n\n"
+            else:
+                # 普通对话：调用AI服务
+                yield f"data: {json.dumps({'type': 'action', 'step': 1, 'content': '正在调用AI服务...'})}\n\n"
+                await asyncio.sleep(0.3)
+                
+                ai_service = AIServiceFactory.get_service()
+                
+                from app.services.base import Message
+                history = []
+                if len(request.messages) > 1:
+                    for msg in request.messages[:-1]:
+                        history.append(Message(role=msg.role, content=msg.content))
+                
+                response = await ai_service.chat(
+                    message=last_message,
+                    history=history
+                )
+                
+                yield f"data: {json.dumps({'type': 'observation', 'step': 1, 'content': 'AI响应已生成'})}\n\n"
+                await asyncio.sleep(0.3)
+                
+                # 发送最终结果
+                if response.success:
+                    yield f"data: {json.dumps({'type': 'final', 'content': response.content})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'error', 'content': response.error or 'AI响应失败'})}\n\n"
+                    
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'content': f'流式响应出错: {str(e)}'})}\n\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream"
+    )
 
 
 async def handle_file_operation(message: str, op_type: str) -> ChatResponse:

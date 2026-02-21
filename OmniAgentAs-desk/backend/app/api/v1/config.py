@@ -102,8 +102,16 @@ async def get_system_config():
         # 获取安全配置（如果没有则使用默认值）
         security_config = config.get('security', {})
         if not security_config:
-            # 使用默认值
-            security_config = SecurityConfig()
+            # 使用默认值 - 所有字段都有默认值
+            security_config = SecurityConfig(
+                contentFilterEnabled=True,
+                contentFilterLevel="medium",
+                whitelistEnabled=False,
+                commandWhitelist="",
+                commandBlacklist="",
+                confirmDangerousOps=True,
+                maxFileSize=100
+            )
         else:
             security_config = SecurityConfig(**security_config)
         
@@ -187,7 +195,17 @@ async def update_config(config_update: ConfigUpdate):
         
         # 更新安全配置
         if config_update.security:
-            config_data['security'] = config_update.security.model_dump()
+            # 手动转换为字典 - 避免Pydantic版本兼容问题
+            security_dict = {
+                "contentFilterEnabled": config_update.security.contentFilterEnabled,
+                "contentFilterLevel": config_update.security.contentFilterLevel,
+                "whitelistEnabled": config_update.security.whitelistEnabled,
+                "commandWhitelist": config_update.security.commandWhitelist,
+                "commandBlacklist": config_update.security.commandBlacklist,
+                "confirmDangerousOps": config_update.security.confirmDangerousOps,
+                "maxFileSize": config_update.security.maxFileSize
+            }
+            config_data['security'] = security_dict
             logger.info(f"更新安全配置成功")
         
         # 写回配置文件
