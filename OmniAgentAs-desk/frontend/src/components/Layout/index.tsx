@@ -25,6 +25,7 @@ import {
 } from '@ant-design/icons';
 import { configApi, chatApi } from '../../services/api';
 import type { MenuProps } from 'antd';
+import ShortcutPanel from '../ShortcutPanel';
 
 const { useBreakpoint } = Grid;
 
@@ -67,6 +68,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   const [collapsed, setCollapsed] = useState(false);
   // 移动端抽屉显示状态
   const [drawerVisible, setDrawerVisible] = useState(false);
+  // 快捷指令面板显示状态
+  const [shortcutPanelVisible, setShortcutPanelVisible] = useState(false);
   // 响应式断点
   const screens = useBreakpoint();
   const isMobile = !screens.md; // md以下认为是移动端
@@ -143,7 +146,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       key: '/shortcuts',
       icon: <ThunderboltOutlined />,
       label: '快捷指令',
-      disabled: true,
     },
     { type: 'divider' },
     {
@@ -162,11 +164,46 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
    */
   const handleMenuClick: MenuProps['onClick'] = (e) => {
     const key = e.key;
+    // 快捷指令特殊处理
+    if (key === '/shortcuts') {
+      setShortcutPanelVisible(true);
+      if (isMobile) {
+        setDrawerVisible(false);
+      }
+      return;
+    }
     // 使用React Router导航到对应页面
     navigate(key);
     // 移动端点击后关闭抽屉
     if (isMobile) {
       setDrawerVisible(false);
+    }
+  };
+
+  /**
+   * 快捷指令执行处理
+   */
+  const handleShortcutExecute = (command: string) => {
+    // 根据快捷指令执行不同操作
+    switch (command) {
+      case '/clear':
+        // 清空当前对话
+        console.log('清空对话');
+        break;
+      case '/help':
+        // 显示帮助
+        console.log('显示帮助');
+        break;
+      case '/history':
+        // 跳转到历史记录
+        navigate('/history');
+        break;
+      case '/settings':
+        // 跳转到设置
+        navigate('/settings');
+        break;
+      default:
+        console.log('执行快捷指令:', command);
     }
   };
 
@@ -242,6 +279,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
+      {/* 快捷指令弹窗 */}
+      <ShortcutPanel
+        visible={shortcutPanelVisible}
+        onClose={() => setShortcutPanelVisible(false)}
+        onExecute={handleShortcutExecute}
+      />
       {/* 移动端：抽屉式导航 */}
       {isMobile ? (
         <Drawer

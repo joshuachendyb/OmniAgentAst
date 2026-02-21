@@ -11,7 +11,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Input, Button, Card, List, Tag, Space, Select, message } from 'antd';
-import { SendOutlined, RobotOutlined, ReloadOutlined, PlusOutlined, EditOutlined } from '@ant-design/icons';
+import { SendOutlined, RobotOutlined, ReloadOutlined, PlusOutlined, EditOutlined, CloseCircleOutlined, PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { chatApi, configApi, sessionApi, ChatMessage, ValidateResponse } from '../../services/api';
 import { securityApi } from '../../services/api';
@@ -40,6 +40,8 @@ const Chat: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [serviceStatus, setServiceStatus] = useState<ValidateResponse | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
   const [currentProvider, setCurrentProvider] = useState<'zhipuai' | 'opencode'>('zhipuai');
@@ -302,6 +304,11 @@ const Chat: React.FC = () => {
    */
   const executeSendMessage = async (userMessage: Message) => {
     setLoading(true);
+    setIsPaused(false);
+    
+    // 创建AbortController
+    const controller = new AbortController();
+    setAbortController(controller);
 
     try {
       // 构建消息历史（最多保留最近10条）
@@ -312,7 +319,7 @@ const Chat: React.FC = () => {
       const response = await chatApi.sendMessage([
         ...history,
         { role: 'user', content: userMessage.content },
-      ]);
+      ], 0.7);
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -342,6 +349,10 @@ const Chat: React.FC = () => {
         }
       }
     } catch (error) {
+      if ((error as any).name === 'AbortError') {
+        message.info('任务已中断');
+        return;
+      }
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -351,8 +362,26 @@ const Chat: React.FC = () => {
       setMessages((prev) => [...prev, errorMessage]);
     } finally {
       setLoading(false);
+      setAbortController(null);
       setPendingMessage(null);
     }
+  };
+
+  /**
+   * 任务中断处理
+   */
+  const handleInterrupt = () => {
+    if (abortController) {
+      abortController.abort();
+      message.info('正在中断...');
+    }
+  };
+
+  /**
+   * 任务暂停/继续处理
+   */
+  const handleTogglePause = () => {
+    setIsPaused(!isPaused);
   };
 
   /**
@@ -637,6 +666,24 @@ const Chat: React.FC = () => {
 
       {/* 输入区域 */}
       <Space direction="vertical" style={{ width: '100%' }}>
+        {/* 新增：中断和暂停按钮 */}
+        {loading && (
+          <Space style={{ marginTop: 8, marginBottom: 8 }}>
+            <Button
+              danger
+              icon={<CloseCircleOutlined />}
+              onClick={handleInterrupt}
+            >
+              中断
+            </Button>
+            <Button
+              icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
+              onClick={handleTogglePause}
+            >
+              {isPaused ? '继续' : '暂停'}
+            </Button>
+          </Space>
+        )}
         <TextArea
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}

@@ -118,6 +118,25 @@ export interface ChatResponse {
   error?: string;
 }
 
+// ============================================
+// 流式API（SSE）接口
+// ============================================
+export interface StreamStep {
+  type: 'thought' | 'action' | 'observation' | 'final';
+  step?: number;
+  thought?: string;
+  action?: string;
+  action_input?: any;
+  observation?: any;
+  content?: string;
+}
+
+export interface StreamCallbacks {
+  onStep: (step: StreamStep) => void;
+  onComplete: (result: string) => void;
+  onError: (error: string) => void;
+}
+
 export interface ValidateResponse {
   success: boolean;
   provider: string;
@@ -133,6 +152,55 @@ export const chatApi = {
       temperature,
     });
     return response.data;
+  },
+
+  /**
+   * 流式API - SSE (Server-Sent Events)
+   * 用于实时展示执行过程
+   * @author 小新
+   */
+  sendMessageStream: async (
+    messages: ChatMessage[],
+    callbacks: StreamCallbacks
+  ): Promise<void> => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages, stream: true })
+      });
+      
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.type === 'thought' || 
+                  data.type === 'action' || 
+                  data.type === 'observation') {
+                callbacks.onStep(data);
+              } else if (data.type === 'final') {
+                callbacks.onComplete(data.content);
+              }
+            } catch (e) {
+              // 忽略解析错误
+            }
+          }
+        }
+      }
+    } catch (error) {
+      callbacks.onError((error as Error).message);
+    }
   },
 
   /**
