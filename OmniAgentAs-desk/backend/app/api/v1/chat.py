@@ -254,7 +254,11 @@ async def chat(request: ChatRequest):
 
 # ============================================================
 # SSE流式API - 实时展示ReAct执行步骤
+# 支持任务中断/暂停
 # ============================================================
+
+# 任务管理字典（存储运行中的任务，用于中断）
+running_tasks: dict = {}
 
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
@@ -262,14 +266,23 @@ async def chat_stream(request: ChatRequest):
     流式API - SSE (Server-Sent Events)
     
     实时推送ReAct执行步骤：思考→行动→观察
+    支持任务中断（前端使用AbortController）
     
     - **messages**: 消息列表
     - **stream**: 是否流式返回（此路由强制为True）
     - **temperature**: 创造性参数
     """
+    import uuid
+    from fastapi import Request
+    
+    # 生成任务ID
+    task_id = str(uuid.uuid4())
     
     async def generate():
-        """生成SSE流"""
+        """生成SSE流，支持中断"""
+        # 注册任务
+        running_tasks[task_id] = {"status": "running", "cancelled": False}
+        
         try:
             # 获取最后一条用户消息
             last_message = request.messages[-1].content if request.messages else ""
@@ -278,6 +291,11 @@ async def chat_stream(request: ChatRequest):
             yield f"data: {json.dumps({'type': 'thought', 'content': '正在分析任务...'})}\n\n"
             await asyncio.sleep(0.3)
             
+            # 检查是否被中断
+            if running_tasks.get(task_id, {}).get("cancelled", False):
+                yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                return
+            
             # 检测文件操作意图
             is_file_op, op_type, confidence = detect_file_operation_intent(last_message)
             
@@ -285,6 +303,11 @@ async def chat_stream(request: ChatRequest):
                 # 文件操作：逐步推送执行步骤
                 yield f"data: {json.dumps({'type': 'action', 'step': 1, 'content': '检测到文件操作意图，开始执行...'})}\n\n"
                 await asyncio.sleep(0.3)
+                
+                # 检查是否被中断
+                if running_tasks.get(task_id, {}).get("cancelled", False):
+                    yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                    return
                 
                 # 安全检测
                 is_safe, risk = check_command_safety(last_message)
@@ -296,20 +319,24 @@ async def chat_stream(request: ChatRequest):
                 await asyncio.sleep(0.3)
                 
                 # 创建Agent执行
-                import uuid
                 session_id = str(uuid.uuid4())
                 tools = get_file_tools()
-                agent = FileOperationAgent(tools=tools, session_id=session_id)
+                agent = FileOperationAgent(session_id=session_id)
                 
                 yield f"data: {json.dumps({'type': 'action', 'step': 2, 'content': '执行文件操作...'})}\n\n"
                 
-                # 流式执行（模拟每步延迟）
+                # 流式执行（每步检查中断）
                 try:
                     result = await agent.run(last_message)
                     
                     # 推送执行步骤详情
                     if hasattr(result, 'steps') and result.steps:
                         for i, step in enumerate(result.steps, 1):
+                            # 每步检查是否被中断
+                            if running_tasks.get(task_id, {}).get("cancelled", False):
+                                yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                                break
+                            
                             yield f"data: {json.dumps({
                                 'type': 'observation',
                                 'step': i + 2,
@@ -319,18 +346,27 @@ async def chat_stream(request: ChatRequest):
                             })}\n\n"
                             await asyncio.sleep(0.5)
                     
-                    # 发送最终结果
-                    if result.success:
-                        yield f"data: {json.dumps({'type': 'final', 'content': result.content})}\n\n"
+                    # 检查是否被中断
+                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                        yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
                     else:
-                        yield f"data: {json.dumps({'type': 'error', 'content': result.error or '执行失败'})}\n\n"
-                        
+                        # 发送最终结果
+                        if result.success:
+                            yield f"data: {json.dumps({'type': 'final', 'content': result.content})}\n\n"
+                        else:
+                            yield f"data: {json.dumps({'type': 'error', 'content': result.error or '执行失败'})}\n\n"
+                            
                 except Exception as e:
                     yield f"data: {json.dumps({'type': 'error', 'content': f'执行出错: {str(e)}'})}\n\n"
             else:
                 # 普通对话：调用AI服务
                 yield f"data: {json.dumps({'type': 'action', 'step': 1, 'content': '正在调用AI服务...'})}\n\n"
                 await asyncio.sleep(0.3)
+                
+                # 检查是否被中断
+                if running_tasks.get(task_id, {}).get("cancelled", False):
+                    yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                    return
                 
                 ai_service = AIServiceFactory.get_service()
                 
@@ -348,19 +384,51 @@ async def chat_stream(request: ChatRequest):
                 yield f"data: {json.dumps({'type': 'observation', 'step': 1, 'content': 'AI响应已生成'})}\n\n"
                 await asyncio.sleep(0.3)
                 
-                # 发送最终结果
-                if response.success:
-                    yield f"data: {json.dumps({'type': 'final', 'content': response.content})}\n\n"
+                # 检查是否被中断
+                if running_tasks.get(task_id, {}).get("cancelled", False):
+                    yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
                 else:
-                    yield f"data: {json.dumps({'type': 'error', 'content': response.error or 'AI响应失败'})}\n\n"
-                    
+                    # 发送最终结果
+                    if response.success:
+                        yield f"data: {json.dumps({'type': 'final', 'content': response.content})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'type': 'error', 'content': response.error or 'AI响应失败'})}\n\n"
+                        
+        except asyncio.CancelledError:
+            # 客户端断开连接，任务被中断
+            running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
+            yield f"data: {json.dumps({'type': 'interrupted', 'content': '客户端断开连接，任务中断'})}\n\n"
+            
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': f'流式响应出错: {str(e)}'})}\n\n"
+        
+        finally:
+            # 清理任务
+            if task_id in running_tasks:
+                del running_tasks[task_id]
     
     return StreamingResponse(
         generate(),
         media_type="text/event-stream"
     )
+
+
+# ============================================================
+# 任务中断接口
+# ============================================================
+
+@router.post("/chat/stream/cancel/{task_id}")
+async def cancel_stream_task(task_id: str):
+    """
+    中断指定的流式任务
+    
+    - **task_id**: 任务ID
+    """
+    if task_id in running_tasks:
+        running_tasks[task_id]["cancelled"] = True
+        running_tasks[task_id]["status"] = "cancelled"
+        return {"success": True, "message": f"任务 {task_id} 已标记为中断"}
+    return {"success": False, "message": f"任务 {task_id} 不存在"}
 
 
 async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
