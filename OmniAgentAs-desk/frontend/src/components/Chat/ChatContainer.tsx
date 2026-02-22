@@ -242,6 +242,7 @@ const ChatContainer: React.FC = () => {
         timestamp: new Date(),
         executionSteps: [],
         isStreaming: true,
+        model: serviceStatus?.model || currentModel || 'unknown', // 【修复】创建消息时直接设置model
       };
       setMessages(prev => [...prev, assistantMessage]);
       

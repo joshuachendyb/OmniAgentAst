@@ -130,6 +130,7 @@ export const useSSE = (
    * 改用fetch + ReadableStream，支持POST请求和流式数据解析
    */
   const sendMessage = useCallback(async (content: string) => {
+    console.log('[SSE sendMessage] 函数被调用, content:', content);
     // 断开已有连接
     disconnect();
     clearSteps();
@@ -335,10 +336,16 @@ const processSSEData = (
         console.log('[SSE] 当前模型:', model);
         
         // 完成后清理
+        console.log('[SSE] 准备调用onComplete, model:', model);
         setIsReceiving(false);
         setIsConnected(false);
         disconnect();
-        onComplete?.(responseBufferRef.current, model);
+        if (onComplete) {
+          console.log('[SSE] onComplete存在，调用它');
+          onComplete(responseBufferRef.current, model);
+        } else {
+          console.log('[SSE] onComplete不存在！');
+        }
         break;
         
       case 'interrupted':
