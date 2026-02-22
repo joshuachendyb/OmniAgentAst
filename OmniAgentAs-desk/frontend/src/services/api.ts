@@ -133,7 +133,7 @@ export interface StreamStep {
 
 export interface StreamCallbacks {
   onStep: (step: StreamStep) => void;
-  onComplete: (result: string) => void;
+  onComplete: (result: string, model?: string) => void;
   onError: (error: string) => void;
 }
 
@@ -170,7 +170,22 @@ export const chatApi = {
         body: JSON.stringify({ messages, stream: true })
       });
       
-      const reader = response.body!.getReader();
+      // 【诊断】检查响应状态
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('流式请求失败:', response.status, response.statusText, errorText);
+        callbacks.onError(`请求失败: ${response.status} ${response.statusText}`);
+        return;
+      }
+      
+      // 检查是否为流式响应
+      if (!response.body) {
+        console.error('响应体为空');
+        callbacks.onError('响应体为空，无法读取流数据');
+        return;
+      }
+      
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
       
       while (true) {
@@ -190,7 +205,7 @@ export const chatApi = {
                   data.type === 'observation') {
                 callbacks.onStep(data);
               } else if (data.type === 'final') {
-                callbacks.onComplete(data.content);
+                callbacks.onComplete(data.content, data.model);  // 传递model
               } else if (data.type === 'interrupted') {
                 message.warning('任务已被中断');
               } else if (data.type === 'error') {
