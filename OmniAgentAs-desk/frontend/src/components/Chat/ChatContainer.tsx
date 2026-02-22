@@ -401,7 +401,7 @@ const ChatContainer: React.FC = () => {
               >
                 <MessageItem 
                   message={item} 
-                  showExecution={false} // 在面板中统一显示，不在消息中显示
+                  showExecution={showExecution}
                 />
               </List.Item>
             )}
