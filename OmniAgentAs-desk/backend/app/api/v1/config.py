@@ -348,7 +348,9 @@ async def get_model_list():
         ModelListResponse: 可用模型列表
     """
     try:
+        # 每次请求时重新加载配置文件，确保获取最新配置
         config = get_config_instance()
+        config.reload()
         
         # 从配置中读取模型信息
         zhipuai_config = config.get('ai.zhipuai', {})
@@ -466,7 +468,9 @@ async def get_full_config():
         FullConfigResponse: 包含所有provider和model的完整配置
     """
     try:
+        # 每次请求时重新加载配置文件，确保获取最新配置
         config = get_config_instance()
+        config.reload()
         ai_config = config.get('ai', {})
         current_provider = ai_config.get('provider', 'zhipuai')
         current_model = ai_config.get(current_provider, {}).get('model', '')

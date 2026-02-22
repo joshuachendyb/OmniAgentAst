@@ -86,6 +86,19 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   // 【新增】默认提供商
   const [defaultProvider, setDefaultProvider] = useState<string>('zhipuai');
   
+  // 【新增】刷新模型列表 - 点击下拉框时调用，获取最新配置
+  const refreshModelList = async () => {
+    try {
+      const modelData = await configApi.getModelList();
+      if (modelData.models) {
+        setModelList(modelData.models);
+        setDefaultProvider(modelData.default_provider || 'zhipuai');
+      }
+    } catch (error) {
+      console.warn('刷新模型列表失败:', error);
+    }
+  };
+  
   // 手动检查服务
   const handleCheckService = async () => {
     setCheckingStatus(true);
@@ -427,6 +440,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                 value={_currentProvider}
                 style={{ width: 240 }}
                 size="small"
+                // 【新增】打开下拉框时刷新模型列表，获取最新配置
+                onDropdownVisibleChange={async (open: boolean) => {
+                  if (open) {
+                    await refreshModelList();
+                  }
+                }}
                 onChange={async (value: string) => {
                   try {
                     // 从modelList中找到对应的模型，获取完整的provider和model
