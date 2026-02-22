@@ -324,18 +324,25 @@ const processSSEData = (
         onStep?.(step);
         break;
         
+      case 'chunk':
+        // 流式内容片段 - 逐token返回
+        console.log('[SSE] 内容片段:', rawData.content);
+        responseBufferRef.current += rawData.content || '';
+        setCurrentResponse(responseBufferRef.current);
+        onChunk?.(rawData.content || '');
+        break;
       case 'final':
         // 最终结果
         console.log('[SSE] 最终结果:', step.content);
-        responseBufferRef.current = step.content || '';
-        setCurrentResponse(responseBufferRef.current);
-        onChunk?.(step.content || '');
-        
+        // 不要覆盖已经累积的内容
+        if (step.content && !responseBufferRef.current) {
+          responseBufferRef.current = step.content;
+          setCurrentResponse(responseBufferRef.current);
+          onChunk?.(step.content);
+        }
         // 获取model字段
         const model = rawData.model;
         console.log('[SSE] 当前模型:', model);
-        
-        // 完成后清理
         console.log('[SSE] 准备调用onComplete, model:', model);
         setIsReceiving(false);
         setIsConnected(false);
@@ -347,7 +354,6 @@ const processSSEData = (
           console.log('[SSE] onComplete不存在！');
         }
         break;
-        
       case 'interrupted':
         // 中断
         setIsReceiving(false);
@@ -358,7 +364,6 @@ const processSSEData = (
         onError?.(interruptMsg);
         console.log('[SSE] 中断:', interruptMsg);
         break;
-        
       case 'error':
         // 错误
         setIsReceiving(false);

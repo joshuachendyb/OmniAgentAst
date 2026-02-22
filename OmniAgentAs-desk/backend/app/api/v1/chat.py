@@ -376,7 +376,7 @@ async def chat_stream(request: ChatRequest):
                 except Exception as e:
                     yield f"data: {json.dumps({'type': 'error', 'content': f'执行出错: {str(e)}'})}\n\n"
             else:
-                # 普通对话：调用AI服务
+                # 普通对话：调用AI服务（流式）
                 yield f"data: {json.dumps({'type': 'action', 'step': 1, 'content': '正在调用AI服务...'})}\n\n"
                 await asyncio.sleep(0.3)
                 
@@ -386,31 +386,31 @@ async def chat_stream(request: ChatRequest):
                     return
                 
                 ai_service = AIServiceFactory.get_service()
-                
                 from app.services.base import Message
                 history = []
                 if len(request.messages) > 1:
                     for msg in request.messages[:-1]:
                         history.append(Message(role=msg.role, content=msg.content))
-                
-                response = await ai_service.chat(
+                # 【修复-小沈】使用流式API，逐token返回
+                full_content = ""
+                async for chunk in ai_service.chat_stream(
                     message=last_message,
                     history=history
-                )
-                
-                yield f"data: {json.dumps({'type': 'observation', 'step': 1, 'content': 'AI响应已生成'})}\n\n"
-                await asyncio.sleep(0.3)
-                
-                # 检查是否被中断
-                if running_tasks.get(task_id, {}).get("cancelled", False):
-                    yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
-                else:
+                ):
+                    # 检查是否被中断
+                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                        yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                        return
+                    
+                    if chunk.content:
+                        full_content += chunk.content
+                        # 逐token发送到前端
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk.content, 'model': chunk.model})}\n\n"
+                    
+                    if chunk.is_done:
+                        break
                     # 发送最终结果
-                    # 【修复-小沈】在SSE响应中添加model字段，让前端显示当前使用的模型
-                    if response.success:
-                        yield f"data: {json.dumps({'type': 'final', 'content': response.content, 'model': response.model})}\n\n"
-                    else:
-                        yield f"data: {json.dumps({'type': 'error', 'content': response.error or 'AI响应失败'})}\n\n"
+                yield f"data: {json.dumps({'type': 'final', 'content': full_content, 'model': ai_service.model})}\n\n"
                         
         except asyncio.CancelledError:
             # 客户端断开连接，任务被中断
