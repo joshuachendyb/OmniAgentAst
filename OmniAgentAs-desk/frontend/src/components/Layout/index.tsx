@@ -11,7 +11,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Layout, Menu, Typography, Avatar, Badge, Tooltip, Drawer, Button, Grid, Tag } from 'antd';
+import { Layout, Menu, Typography, Avatar, Badge, Tooltip, Drawer, Button, Grid, Tag, Select, message } from 'antd';
 import {
   MessageOutlined,
   FolderOutlined,
@@ -22,9 +22,11 @@ import {
   DesktopOutlined,
   MenuOutlined,
   CheckCircleOutlined,
+  ReloadOutlined,
 } from '@ant-design/icons';
 import { configApi, chatApi } from '../../services/api';
 import type { MenuProps } from 'antd';
+const { Option } = Select;
 import ShortcutPanel from '../ShortcutPanel';
 
 const { useBreakpoint } = Grid;
@@ -74,31 +76,89 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   const screens = useBreakpoint();
   const isMobile = !screens.md; // md以下认为是移动端
   
-  // 【新增】服务状态
+  // 【新增】检查服务状态
   const [serviceStatus, setServiceStatus] = useState<{success: boolean; message: string; provider: string; model: string} | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
-  const [_currentProvider, setCurrentProvider] = useState('opencode');
+  // 【修改】当前选中的模型ID（格式: provider-modelname）
+  const [_currentProvider, setCurrentProvider] = useState<string>('opencode-minimax-m2.5-free');
+  // 【新增】模型列表
+  const [modelList, setModelList] = useState<{id: string; name: string; provider: string}[]>([]);
+  // 【新增】默认提供商
+  const [defaultProvider, setDefaultProvider] = useState<string>('zhipuai');
+  
+  // 手动检查服务
+  const handleCheckService = async () => {
+    setCheckingStatus(true);
+    try {
+      const [config, modelData] = await Promise.all([
+        configApi.getConfig(),
+        configApi.getModelList()
+      ]);
+      
+      // 更新模型列表
+      if (modelData.models) {
+        setModelList(modelData.models);
+      }
+      
+      // 更新当前选中的模型 - 使用config中的ai_model来匹配正确的模型
+      if (config.ai_provider && config.ai_model && modelData.models) {
+        const currentModel = modelData.models.find(
+          m => m.provider === config.ai_provider && m.id.includes(config.ai_model)
+        );
+        if (currentModel) {
+          setCurrentProvider(currentModel.id);
+        }
+      }
+      
+      const status = await chatApi.validateService();
+      setServiceStatus(status);
+    } catch (error) {
+      console.warn('服务检查失败:', error);
+    } finally {
+      setCheckingStatus(false);
+    }
+  };
+  
+  // 页面加载时检查服务
   
   // 【新增】检查服务状态
   useEffect(() => {
-    const checkService = async () => {
+    const initApp = async () => {
       setCheckingStatus(true);
       try {
-        // 先获取配置
-        const config = await configApi.getConfig();
-        if (config.ai_provider) {
-          setCurrentProvider(config.ai_provider);
+        // 并行获取模型列表和配置
+        const [modelData, config] = await Promise.all([
+          configApi.getModelList(),
+          configApi.getConfig()
+        ]);
+        
+        // 设置模型列表
+        if (modelData.models && modelData.models.length > 0) {
+          setModelList(modelData.models);
+          // 设置默认提供商
+          setDefaultProvider(modelData.default_provider || 'zhipuai');
+          
+          // 设置当前选中的模型 - 使用ai_model匹配正确的模型
+          if (config.ai_provider && config.ai_model) {
+            const currentModel = modelData.models.find(
+              m => m.provider === config.ai_provider && m.id.includes(config.ai_model)
+            );
+            if (currentModel) {
+              setCurrentProvider(currentModel.id);
+            }
+          }
         }
-        // 再检查服务
+        
+        // 检查服务状态
         const status = await chatApi.validateService();
         setServiceStatus(status);
       } catch (error) {
-        console.warn('服务检查失败:', error);
+        console.warn('初始化失败:', error);
       } finally {
         setCheckingStatus(false);
       }
     };
-    checkService();
+    initApp();
   }, []);
 
   /**
@@ -341,20 +401,79 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
             <Title level={4} style={{ margin: 0, fontWeight: 500, fontSize: isMobile ? 16 : 18 }}>
               对话与任务
             </Title>
-            {/* 【新增】服务状态显示 - 优化版 */}
-            <Tag color={serviceStatus?.success ? 'success' : checkingStatus ? 'processing' : 'warning'}>
-              {checkingStatus ? (
-                '检查中...'
-              ) : serviceStatus?.success ? (
-                <><CheckCircleOutlined /> {serviceStatus.provider} {serviceStatus.model && `(${serviceStatus.model})`}</>
-              ) : (
-                <>{serviceStatus?.provider || 'unknown'} {serviceStatus?.model && `(${serviceStatus.model})`} - {serviceStatus?.message || '未就绪'}</>
-              )}
-            </Tag>
+            {/* 服务状态显示 - 根据检查结果显示不同颜色 */}
+            {checkingStatus ? (
+              <span style={{ color: '#999' }}>检查中...</span>
+            ) : serviceStatus?.success ? (
+              <Tag color="success">
+                <CheckCircleOutlined /> {serviceStatus.provider} {serviceStatus.model && `(${serviceStatus.model})`}
+              </Tag>
+            ) : serviceStatus?.message ? (
+              // 有错误信息显示红色/黄色（根据错误类型）
+              <Tag color={serviceStatus.message.includes('限速') || serviceStatus.message.includes('欠费') || serviceStatus.message.includes('额度') ? 'warning' : 'error'}>
+                {serviceStatus.provider} {serviceStatus.model && `(${serviceStatus.model})`} - {serviceStatus.message}
+              </Tag>
+            ) : (
+              // 未配置或初始状态
+              <Tag color="error">未配置</Tag>
+            )}
           </div>
           
           {/* 右侧操作区 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {/* 模型选择下拉框 */}
+            {modelList.length > 0 ? (
+              <Select
+                value={_currentProvider}
+                style={{ width: 240 }}
+                size="small"
+                onChange={async (value: string) => {
+                  try {
+                    // 从modelList中找到对应的模型，获取完整的provider和model
+                    const selectedModel = modelList.find(m => m.id === value);
+                    if (!selectedModel) {
+                      message.error('未找到对应的模型');
+                      return;
+                    }
+                    
+                    // 从model id中提取model名称 (格式: "provider-modelname")
+                    const modelName = value.replace(`${selectedModel.provider}-`, '');
+                    
+                    // 调用API切换provider和model
+                    await configApi.updateConfig({ 
+                      ai_provider: selectedModel.provider as 'zhipuai' | 'opencode' | 'longcat',
+                      ai_model: modelName
+                    });
+                    message.success(`已切换到 ${selectedModel.name}`);
+                    
+                    // 切换后更新当前选中的模型ID
+                    setCurrentProvider(value);
+                    
+                    // 切换后自动检查服务
+                    handleCheckService();
+                  } catch (error) {
+                    message.error('切换失败');
+                  }
+                }}
+              >
+                {modelList.map((model) => (
+                  <Option key={model.id} value={model.id}>
+                    {model.provider === defaultProvider ? '★ ' : ''}{model.name}
+                  </Option>
+                ))}
+              </Select>
+            ) : (
+              <Tag color="warning">暂无模型</Tag>
+            )}
+            {/* 检查服务按钮 */}
+            <Button
+              icon={<ReloadOutlined />}
+              onClick={handleCheckService}
+              loading={checkingStatus}
+              size="small"
+            >
+              检查服务
+            </Button>
             <Avatar size="small" icon={<DesktopOutlined />} />
             <span style={{ color: '#666', fontSize: 14 }}>用户</span>
           </div>

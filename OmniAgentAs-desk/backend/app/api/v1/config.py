@@ -357,13 +357,25 @@ async def get_model_list():
         
         default_provider = config.get('ai.provider', 'zhipuai')
         
-        # 构建模型列表 - 按照配置文件中provider定义的顺序
-        # 配置文件中顺序: opencode -> zhipuai -> longcat
+        # 构建模型列表 - 按照配置文件中provider的实际顺序
+        # 配置文件顺序: longcat -> opencode -> zhipuai
         models = []
         
-        # OpenCode模型
+        # LongCat模型（配置文件中第一个provider）
+        longcat_config = config.get('ai.longcat', {})
+        longcat_models = longcat_config.get('models', [])
+        if isinstance(longcat_models, list) and longcat_models:
+            for model_name in longcat_models:
+                models.append(ModelInfo(
+                    id=f"longcat-{model_name}",
+                    name=f"LongCat ({model_name})",
+                    provider="longcat"
+                ))
+        
+        # OpenCode模型（配置文件中第二个provider）
+        opencode_config = config.get('ai.opencode', {})
         opencode_models = opencode_config.get('models', [])
-        if isinstance(opencode_models, list):
+        if isinstance(opencode_models, list) and opencode_models:
             for model_name in opencode_models:
                 models.append(ModelInfo(
                     id=f"opencode-{model_name}",
@@ -371,24 +383,15 @@ async def get_model_list():
                     provider="opencode"
                 ))
         
-        # 智谱模型
+        # 智谱模型（配置文件中第三个provider）
+        zhipuai_config = config.get('ai.zhipuai', {})
         zhipuai_models = zhipuai_config.get('models', [])
-        if isinstance(zhipuai_models, list):
+        if isinstance(zhipuai_models, list) and zhipuai_models:
             for model_name in zhipuai_models:
                 models.append(ModelInfo(
                     id=f"zhipuai-{model_name}",
                     name=f"智谱GLM ({model_name})",
                     provider="zhipuai"
-                ))
-        
-        # LongCat模型
-        longcat_models = longcat_config.get('models', [])
-        if isinstance(longcat_models, list):
-            for model_name in longcat_models:
-                models.append(ModelInfo(
-                    id=f"longcat-{model_name}",
-                    name=f"LongCat ({model_name})",
-                    provider="longcat"
                 ))
         
         logger.info(f"获取模型列表成功: {len(models)}个模型")
@@ -400,12 +403,9 @@ async def get_model_list():
         
     except Exception as e:
         logger.error(f"获取模型列表失败: {e}")
-        # 返回默认值
+        # 返回空列表，不返回硬编码默认值
         return ModelListResponse(
-            models=[
-                ModelInfo(id="zhipuai-glm-4.7-flash", name="智谱GLM (glm-4.7-flash)", provider="zhipuai"),
-                ModelInfo(id="opencode-minimax-m2.5-free", name="OpenCode (minimax-m2.5-free)", provider="opencode")
-            ],
+            models=[],
             default_provider="zhipuai"
         )
 
@@ -475,18 +475,13 @@ async def get_full_config():
         for provider_name in ['opencode', 'zhipuai', 'longcat']:
             provider_data = ai_config.get(provider_name, {})
             if provider_data:
-                # 脱敏处理API Key
+                # 个人系统，返回明文API Key
                 api_key = provider_data.get('api_key', '')
-                masked_key = ''
-                if api_key and len(api_key) > 4:
-                    masked_key = '****' + api_key[-4:]
-                elif api_key:
-                    masked_key = '****'
                 
                 providers[provider_name] = ProviderInfo(
                     name=provider_name,
                     api_base=provider_data.get('api_base', ''),
-                    api_key=masked_key,  # 返回脱敏后的Key
+                    api_key=api_key,  # 返回明文Key
                     model=provider_data.get('model', ''),
                     models=provider_data.get('models', []),
                     timeout=provider_data.get('timeout', 60),
