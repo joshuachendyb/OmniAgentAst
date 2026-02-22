@@ -233,7 +233,7 @@ export const chatApi = {
 // @update 2026-02-18 已对接真实API
 // ============================================
 export interface Config {
-  ai_provider: 'zhipuai' | 'opencode';
+  ai_provider: 'zhipuai' | 'opencode' | 'longcat';
   ai_model: string;
   api_key_configured: boolean;
   theme: 'light' | 'dark';
@@ -254,9 +254,11 @@ export interface SecurityConfig {
 }
 
 export interface ConfigUpdate {
-  ai_provider?: 'zhipuai' | 'opencode';
+  ai_provider?: 'zhipuai' | 'opencode' | 'longcat';
+  ai_model?: string;
   zhipu_api_key?: string;
   opencode_api_key?: string;
+  longcat_api_key?: string;
   theme?: 'light' | 'dark';
   // 安全配置
   security?: SecurityConfig;
@@ -271,6 +273,45 @@ export interface ConfigValidateResponse {
   valid: boolean;
   message: string;
   model?: string;
+}
+
+// Provider和Model管理的接口
+export interface ProviderInfo {
+  name: string;
+  api_base: string;
+  api_key: string;
+  model: string;
+  models: string[];
+  timeout: number;
+  max_retries: number;
+}
+
+export interface FullConfigResponse {
+  providers: Record<string, ProviderInfo>;
+  current_provider: string;
+  current_model: string;
+}
+
+export interface ProviderUpdate {
+  api_base?: string;
+  api_key?: string;
+  model?: string;
+  timeout?: number;
+  max_retries?: number;
+}
+
+export interface ModelAddRequest {
+  model: string;
+}
+
+export interface ProviderAddRequest {
+  name: string;
+  api_base: string;
+  api_key: string;
+  model: string;
+  models: string[];
+  timeout: number;
+  max_retries: number;
 }
 
 /**
@@ -304,6 +345,69 @@ export const configApi = {
    */
   validateConfig: async (data: ConfigValidateRequest): Promise<ConfigValidateResponse> => {
     const response = await api.post<ConfigValidateResponse>('/config/validate', data);
+    return response.data;
+  },
+
+  /**
+   * 获取可用模型列表
+   * @author 小新
+   */
+  getModelList: async (): Promise<{ models: { id: string; name: string; provider: string }[]; default_provider: string }> => {
+    const response = await api.get<{ models: { id: string; name: string; provider: string }[]; default_provider: string }>('/config/models');
+    return response.data;
+  },
+
+  /**
+   * 获取完整配置（包含所有provider和model）
+   * @author 小欧
+   */
+  getFullConfig: async (): Promise<FullConfigResponse> => {
+    const response = await api.get<FullConfigResponse>('/config/full');
+    return response.data;
+  },
+
+  /**
+   * 删除Provider
+   * @author 小欧
+   */
+  deleteProvider: async (providerName: string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.delete(`/config/provider/${providerName}`);
+    return response.data;
+  },
+
+  /**
+   * 删除Provider下的模型
+   * @author 小欧
+   */
+  deleteModel: async (providerName: string, modelName: string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.delete(`/config/provider/${providerName}/model/${modelName}`);
+    return response.data;
+  },
+
+  /**
+   * 更新Provider配置
+   * @author 小欧
+   */
+  updateProvider: async (providerName: string, data: ProviderUpdate): Promise<{ success: boolean; message: string }> => {
+    const response = await api.put(`/config/provider/${providerName}`, data);
+    return response.data;
+  },
+
+  /**
+   * 添加模型到Provider
+   * @author 小欧
+   */
+  addModel: async (providerName: string, data: ModelAddRequest): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post(`/config/provider/${providerName}/model`, data);
+    return response.data;
+  },
+
+  /**
+   * 添加新Provider
+   * @author 小欧
+   */
+  addProvider: async (data: ProviderAddRequest): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post('/config/provider', data);
     return response.data;
   },
 };

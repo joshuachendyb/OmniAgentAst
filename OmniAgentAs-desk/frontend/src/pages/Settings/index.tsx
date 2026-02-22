@@ -1,20 +1,16 @@
 /**
  * Settings组件 - 系统设置页面
  * 
- * 功能：模型配置、安全配置、会话历史管理
+ * 功能：模型配置管理（Provider和Model）
  * 
- * @author 小新
- * @version 1.0.0
- * @since 2026-02-17
+ * @author 小欧
+ * @version 2.0.0
+ * @since 2026-02-22
  */
 
 import React, { useState, useEffect } from 'react';
 import {
   Card,
-  Form,
-  Input,
-  Select,
-  Switch,
   Button,
   Tabs,
   List,
@@ -23,84 +19,506 @@ import {
   Typography,
   message,
   Divider,
-  Alert,
   Popconfirm,
-  Empty,
+  Modal,
+  Form,
+  Input,
+  Select,
   Row,
   Col,
+  Switch,
 } from 'antd';
 import {
+  PlusOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  KeyOutlined,
+  ApiOutlined,
   SafetyOutlined,
   HistoryOutlined,
-  SaveOutlined,
   ReloadOutlined,
-  DeleteOutlined,
-  KeyOutlined,
+  CheckCircleOutlined,
+  EyeOutlined,
+  EyeInvisibleOutlined,
 } from '@ant-design/icons';
 import { configApi, sessionApi } from '../../services/api';
-import type { Config, Session } from '../../services/api';
+import type { ProviderInfo, Session } from '../../services/api';
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
-const { Option } = Select;
 
 /**
- * 设置页面组件
- * 
- * 设计要点：
- * - 三栏Tab布局：模型配置、安全配置、会话历史
- * - 表单验证：必填项校验、格式校验
- * - 实时保存：配置变更自动保存
- * - 权限控制：敏感操作需要确认
+ * Provider管理页面组件
  */
-const Settings: React.FC = () => {
-  // 模型配置状态
-  const [modelConfig, setModelConfig] = useState<Partial<Config>>({});
+const ProviderSettings: React.FC = () => {
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [currentProvider, setCurrentProvider] = useState<string>('');
+  const [loading, setLoading] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [addModelModalVisible, setAddModelModalVisible] = useState(false);
+  const [addProviderModalVisible, setAddProviderModalVisible] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<ProviderInfo | null>(null);
+  const [selectedProviderForModel, setSelectedProviderForModel] = useState<string>('');
+  const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({}); // 控制每个Provider的API Key显示
+  
+  const [form] = Form.useForm();
   const [modelForm] = Form.useForm();
-  const [savingModel, setSavingModel] = useState(false);
+  const [providerForm] = Form.useForm();
 
-  // 安全配置状态
+  // 切换API Key显示/隐藏
+  const toggleShowApiKey = (providerName: string) => {
+    setShowApiKey(prev => ({ ...prev, [providerName]: !prev[providerName] }));
+  };
+
+  // 加载配置
+  const loadConfig = async () => {
+    setLoading(true);
+    try {
+      const data = await configApi.getFullConfig();
+      const providerList = Object.values(data.providers);
+      setProviders(providerList);
+      setCurrentProvider(data.current_provider);
+    } catch (error) {
+      message.error('加载配置失败');
+      console.error('加载配置失败:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadConfig();
+  }, []);
+
+  // 编辑Provider
+  const handleEditProvider = (provider: ProviderInfo) => {
+    setEditingProvider(provider);
+    form.setFieldsValue({
+      api_base: provider.api_base,
+      api_key: provider.api_key,
+      model: provider.model,
+      timeout: provider.timeout,
+      max_retries: provider.max_retries,
+    });
+    setEditModalVisible(true);
+  };
+
+  // 保存Provider编辑
+  const handleSaveProvider = async (values: any) => {
+    try {
+      await configApi.updateProvider(editingProvider!.name, values);
+      message.success('Provider配置已更新');
+      setEditModalVisible(false);
+      loadConfig();
+    } catch (error) {
+      message.error('更新失败');
+    }
+  };
+
+  // 删除Provider
+  const handleDeleteProvider = async (providerName: string) => {
+    try {
+      await configApi.deleteProvider(providerName);
+      message.success('Provider已删除');
+      loadConfig();
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '删除失败');
+    }
+  };
+
+  // 删除模型
+  const handleDeleteModel = async (providerName: string, modelName: string) => {
+    try {
+      await configApi.deleteModel(providerName, modelName);
+      message.success('模型已删除');
+      loadConfig();
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '删除失败');
+    }
+  };
+
+  // 添加模型
+  const handleAddModel = async (values: { model: string }) => {
+    try {
+      await configApi.addModel(selectedProviderForModel, values);
+      message.success('模型已添加');
+      setAddModelModalVisible(false);
+      modelForm.resetFields();
+      loadConfig();
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '添加失败');
+    }
+  };
+
+  // 添加Provider
+  const handleAddProvider = async (values: any) => {
+    try {
+      await configApi.addProvider({
+        name: values.name,
+        api_base: values.api_base,
+        api_key: values.api_key || '',
+        model: values.model || '',
+        models: values.model ? [values.model] : [],
+        timeout: values.timeout || 60,
+        max_retries: values.max_retries || 3,
+      });
+      message.success('Provider已添加');
+      setAddProviderModalVisible(false);
+      providerForm.resetFields();
+      loadConfig();
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || '添加失败');
+    }
+  };
+
+  // 切换当前Provider
+  const handleSwitchProvider = async (providerName: string, modelName: string) => {
+    try {
+      await configApi.updateConfig({
+        ai_provider: providerName as 'zhipuai' | 'opencode' | 'longcat',
+        ai_model: modelName,
+      });
+      message.success(`已切换到 ${providerName} (${modelName})`);
+      loadConfig();
+    } catch (error) {
+      message.error('切换失败');
+    }
+  };
+
+  // 获取Provider显示名称
+  const getProviderDisplayName = (name: string) => {
+    const nameMap: Record<string, string> = {
+      zhipuai: '智谱GLM',
+      opencode: 'OpenCode',
+      longcat: 'LongCat',
+    };
+    return nameMap[name] || name;
+  };
+
+  return (
+    <div>
+      {/* 右上角添加按钮 */}
+      <div style={{ marginBottom: 16, textAlign: 'right' }}>
+        <Button 
+          type="primary" 
+          icon={<PlusOutlined />}
+          onClick={() => setAddProviderModalVisible(true)}
+        >
+          新增Provider
+        </Button>
+      </div>
+
+      {/* Provider列表 */}
+      <List
+        loading={loading}
+        dataSource={providers}
+        renderItem={(provider) => (
+          <Card 
+            size="small" 
+            style={{ marginBottom: 16 }}
+            title={
+              <Space>
+                <ApiOutlined />
+                <span style={{ fontWeight: 'bold' }}>{getProviderDisplayName(provider.name)}</span>
+                <Tag color="blue">{provider.name}</Tag>
+                {provider.name === currentProvider && (
+                  <Tag icon={<CheckCircleOutlined />} color="success">当前使用</Tag>
+                )}
+              </Space>
+            }
+            extra={
+              <Space>
+                <Button 
+                  type="link" 
+                  icon={<EditOutlined />} 
+                  onClick={() => handleEditProvider(provider)}
+                >
+                  编辑
+                </Button>
+                <Popconfirm
+                  title={`确定删除 ${getProviderDisplayName(provider.name)} 吗？`}
+                  description="删除后无法恢复"
+                  onConfirm={() => handleDeleteProvider(provider.name)}
+                  okText="确定"
+                  cancelText="取消"
+                >
+                  <Button type="link" danger icon={<DeleteOutlined />}>
+                    删除
+                  </Button>
+                </Popconfirm>
+              </Space>
+            }
+          >
+            {/* Provider基本信息 */}
+            <Row gutter={[16, 8]} style={{ marginBottom: 16 }}>
+              <Col span={24}>
+                <Text type="secondary">API地址：</Text>
+                <Text code>{provider.api_base}</Text>
+              </Col>
+              <Col span={24}>
+                <Space>
+                  <Text type="secondary">API密钥：</Text>
+                  <Text>
+                    {provider.api_key 
+                      ? (showApiKey[provider.name] ? provider.api_key : '******' + provider.api_key.slice(-4)) 
+                      : '未设置'}
+                  </Text>
+                  {provider.api_key && (
+                    <Button 
+                      type="text" 
+                      size="small" 
+                      icon={showApiKey[provider.name] ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+                      onClick={() => toggleShowApiKey(provider.name)}
+                    />
+                  )}
+                </Space>
+              </Col>
+              <Col span={24}>
+                <Text type="secondary">当前模型：</Text>
+                <Text strong>{provider.model}</Text>
+              </Col>
+            </Row>
+
+            <Divider style={{ margin: '12px 0' }} />
+
+            {/* 模型列表 */}
+            <div style={{ marginBottom: 8 }}>
+              <Space style={{ marginBottom: 8 }}>
+                <Text strong>模型列表：</Text>
+                <Button 
+                  type="link" 
+                  size="small" 
+                  icon={<PlusOutlined />}
+                  onClick={() => {
+                    setSelectedProviderForModel(provider.name);
+                    setAddModelModalVisible(true);
+                  }}
+                >
+                  添加模型
+                </Button>
+              </Space>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {provider.models.map((model) => (
+                  <Tag
+                    key={model}
+                    color={model === provider.model ? 'geekblue' : 'default'}
+                    closable
+                    onClose={(e) => {
+                      e.preventDefault();
+                      handleDeleteModel(provider.name, model);
+                    }}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => handleSwitchProvider(provider.name, model)}
+                  >
+                    {model === provider.model && <CheckCircleOutlined style={{ marginRight: 4 }} />}
+                    {model}
+                  </Tag>
+                ))}
+              </div>
+            </div>
+          </Card>
+        )}
+      />
+
+      {/* 编辑Provider弹框 */}
+      <Modal
+        title={`编辑 ${getProviderDisplayName(editingProvider?.name || '')} 配置`}
+        open={editModalVisible}
+        onCancel={() => setEditModalVisible(false)}
+        footer={null}
+        width={600}
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={handleSaveProvider}
+        >
+          <Form.Item
+            label="API地址"
+            name="api_base"
+            rules={[{ required: true, message: '请输入API地址' }]}
+          >
+            <Input placeholder="https://api.example.com/v1" />
+          </Form.Item>
+
+          <Form.Item
+            label="API密钥"
+            name="api_key"
+          >
+            <Input.Password placeholder="留空保持原密钥不变" />
+          </Form.Item>
+
+          <Form.Item
+            label="当前使用模型"
+            name="model"
+            rules={[{ required: true, message: '请输入模型名称' }]}
+          >
+            <Input placeholder="glm-4-flash" />
+          </Form.Item>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="超时时间(秒)"
+                name="timeout"
+              >
+                <Input type="number" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="最大重试次数"
+                name="max_retries"
+              >
+                <Input type="number" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                保存
+              </Button>
+              <Button onClick={() => setEditModalVisible(false)}>
+                取消
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 添加模型弹框 */}
+      <Modal
+        title="添加模型"
+        open={addModelModalVisible}
+        onCancel={() => {
+          setAddModelModalVisible(false);
+          modelForm.resetFields();
+        }}
+        footer={null}
+      >
+        <Form
+          form={modelForm}
+          layout="vertical"
+          onFinish={handleAddModel}
+        >
+          <Form.Item
+            label="模型名称"
+            name="model"
+            rules={[{ required: true, message: '请输入模型名称' }]}
+          >
+            <Input placeholder="glm-4-flash" />
+          </Form.Item>
+
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                添加
+              </Button>
+              <Button onClick={() => setAddModelModalVisible(false)}>
+                取消
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 添加Provider弹框 */}
+      <Modal
+        title="添加新Provider"
+        open={addProviderModalVisible}
+        onCancel={() => {
+          setAddProviderModalVisible(false);
+          providerForm.resetFields();
+        }}
+        footer={null}
+        width={600}
+      >
+        <Form
+          form={providerForm}
+          layout="vertical"
+          onFinish={handleAddProvider}
+        >
+          <Form.Item
+            label="Provider名称"
+            name="name"
+            rules={[{ required: true, message: '请输入Provider名称' }]}
+          >
+            <Input placeholder="例如: zhipuai, opencode, longcat" />
+          </Form.Item>
+
+          <Form.Item
+            label="API地址"
+            name="api_base"
+            rules={[{ required: true, message: '请输入API地址' }]}
+          >
+            <Input placeholder="https://api.example.com/v1" />
+          </Form.Item>
+
+          <Form.Item
+            label="API密钥"
+            name="api_key"
+          >
+            <Input.Password placeholder="可选" />
+          </Form.Item>
+
+          <Form.Item
+            label="默认模型"
+            name="model"
+          >
+            <Input placeholder="glm-4-flash" />
+          </Form.Item>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                label="超时时间(秒)"
+                name="timeout"
+                initialValue={60}
+              >
+                <Input type="number" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                label="最大重试次数"
+                name="max_retries"
+                initialValue={3}
+              >
+                <Input type="number" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                添加
+              </Button>
+              <Button onClick={() => setAddProviderModalVisible(false)}>
+                取消
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  );
+};
+
+/**
+ * 安全设置页面组件
+ */
+const SecuritySettings: React.FC = () => {
   const [securityConfig, setSecurityConfig] = useState<any>({});
   const [securityForm] = Form.useForm();
   const [savingSecurity, setSavingSecurity] = useState(false);
 
-  // 会话历史状态
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [loadingSessions, setLoadingSessions] = useState(false);
-
-  /**
-   * 初始化加载所有配置
-   */
-  useEffect(() => {
-    loadModelConfig();
-    loadSecurityConfig();
-    loadSessions();
-  }, []);
-
-  /**
-   * 加载模型配置
-   */
-  const loadModelConfig = async () => {
-    try {
-      const config = await configApi.getConfig();
-      setModelConfig(config);
-      modelForm.setFieldsValue(config);
-    } catch (error) {
-      message.error('加载模型配置失败');
-      console.error('加载模型配置失败:', error);
-    }
-  };
-
-  /**
-   * 加载安全配置
-   * @author 小新
-   * @update 2026-02-18 对接真实API，移除Mock
-   */
   const loadSecurityConfig = async () => {
     try {
       const config = await configApi.getConfig();
-      // 使用后端返回的安全配置，如果没有则使用默认值
-      const securityConfig = config.security || {
+      const security = config.security || {
         contentFilterEnabled: true,
         contentFilterLevel: 'medium',
         whitelistEnabled: false,
@@ -110,58 +528,21 @@ const Settings: React.FC = () => {
         confirmDangerousOps: true,
         maxFileSize: 100,
       };
-      setSecurityConfig(securityConfig);
-      securityForm.setFieldsValue(securityConfig);
+      setSecurityConfig(security);
+      securityForm.setFieldsValue(security);
     } catch (error) {
       message.error('加载安全配置失败');
-      console.error('加载安全配置失败:', error);
     }
   };
 
-  /**
-   * 加载会话历史
-   */
-  const loadSessions = async () => {
-    setLoadingSessions(true);
-    try {
-      const response = await sessionApi.listSessions(1, 50);
-      setSessions(response.sessions);
-    } catch (error) {
-      message.error('加载会话历史失败');
-      console.error('加载会话历史失败:', error);
-    } finally {
-      setLoadingSessions(false);
-    }
-  };
+  useEffect(() => {
+    loadSecurityConfig();
+  }, []);
 
-  /**
-   * 保存模型配置
-   */
-  const handleSaveModelConfig = async (values: Partial<Config>) => {
-    setSavingModel(true);
-    try {
-      await configApi.updateConfig(values);
-      message.success('模型配置已保存');
-      setModelConfig(values);
-    } catch (error) {
-      message.error('保存模型配置失败');
-      console.error('保存模型配置失败:', error);
-    } finally {
-      setSavingModel(false);
-    }
-  };
-
-  /**
-   * 保存安全配置
-   * @author 小新
-   * @update 2026-02-18 对接真实API，移除Mock
-   */
   const handleSaveSecurityConfig = async (values: any) => {
     setSavingSecurity(true);
     try {
-      // 获取当前完整配置
       const currentConfig = await configApi.getConfig();
-      // 更新安全配置
       const updateData = {
         ...currentConfig,
         security: values,
@@ -171,34 +552,143 @@ const Settings: React.FC = () => {
       setSecurityConfig(values);
     } catch (error) {
       message.error('保存安全配置失败');
-      console.error('保存安全配置失败:', error);
     } finally {
       setSavingSecurity(false);
     }
   };
 
-  /**
-   * 删除会话
-   */
+  return (
+    <Form
+      form={securityForm}
+      layout="vertical"
+      onFinish={handleSaveSecurityConfig}
+      initialValues={securityConfig}
+    >
+      <Row gutter={[16, 8]}>
+        <Col xs={24} sm={12}>
+          <Form.Item
+            label="启用内容安全"
+            name="contentFilterEnabled"
+            valuePropName="checked"
+          >
+            <Switch checkedChildren="开" unCheckedChildren="关" />
+          </Form.Item>
+        </Col>
+
+        <Col xs={24} sm={12}>
+          <Form.Item
+            label="敏感词过滤级别"
+            name="contentFilterLevel"
+          >
+            <Select>
+              <Select.Option value="low">低</Select.Option>
+              <Select.Option value="medium">中</Select.Option>
+              <Select.Option value="high">高</Select.Option>
+            </Select>
+          </Form.Item>
+        </Col>
+
+        <Col xs={24} sm={12}>
+          <Form.Item
+            label="启用命令白名单"
+            name="whitelistEnabled"
+            valuePropName="checked"
+          >
+            <Switch checkedChildren="开" unCheckedChildren="关" />
+          </Form.Item>
+        </Col>
+
+        <Col xs={24} sm={12}>
+          <Form.Item
+            label="启用命令黑名单"
+            name="blacklistEnabled"
+            valuePropName="checked"
+          >
+            <Switch checkedChildren="开" unCheckedChildren="关" />
+          </Form.Item>
+        </Col>
+
+        <Col xs={24} sm={12}>
+          <Form.Item
+            label="危险操作二次确认"
+            name="confirmDangerousOps"
+            valuePropName="checked"
+          >
+            <Switch checkedChildren="开" unCheckedChildren="关" />
+          </Form.Item>
+        </Col>
+
+        <Col xs={24} sm={12}>
+          <Form.Item
+            label="最大文件操作大小(MB)"
+            name="maxFileSize"
+          >
+            <Select>
+              <Select.Option value={10}>10</Select.Option>
+              <Select.Option value={50}>50</Select.Option>
+              <Select.Option value={100}>100</Select.Option>
+              <Select.Option value={500}>500</Select.Option>
+            </Select>
+          </Form.Item>
+        </Col>
+      </Row>
+
+      <Form.Item>
+        <Button
+          type="primary"
+          htmlType="submit"
+          icon={<SafetyOutlined />}
+          loading={savingSecurity}
+        >
+          保存安全配置
+        </Button>
+        <Button
+          style={{ marginLeft: 8 }}
+          icon={<ReloadOutlined />}
+          onClick={loadSecurityConfig}
+        >
+          重置
+        </Button>
+      </Form.Item>
+    </Form>
+  );
+};
+
+/**
+ * 会话历史页面组件
+ */
+const SessionHistory: React.FC = () => {
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+
+  const loadSessions = async () => {
+    setLoadingSessions(true);
+    try {
+      const response = await sessionApi.listSessions(1, 50);
+      setSessions(response.sessions);
+    } catch (error) {
+      message.error('加载会话历史失败');
+    } finally {
+      setLoadingSessions(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSessions();
+  }, []);
+
   const handleDeleteSession = async (sessionId: string) => {
     try {
       await sessionApi.deleteSession(sessionId);
       message.success('会话已删除');
-      loadSessions(); // 刷新列表
+      loadSessions();
     } catch (error) {
       message.error('删除会话失败');
-      console.error('删除会话失败:', error);
     }
   };
 
-  /**
-   * 清空所有会话
-   * @author 小新
-   * @update 2026-02-18 已对接真实API
-   */
   const handleClearAllSessions = async () => {
     try {
-      // 逐个删除会话
       for (const session of sessions) {
         await sessionApi.deleteSession(session.session_id);
       }
@@ -206,15 +696,84 @@ const Settings: React.FC = () => {
       setSessions([]);
     } catch (error) {
       message.error('清空会话失败');
-      console.error('清空会话失败:', error);
     }
   };
 
   return (
+    <div>
+      <div style={{ marginBottom: 16 }}>
+        <Popconfirm
+          title="确定要清空所有会话吗？"
+          description="此操作不可恢复"
+          onConfirm={handleClearAllSessions}
+          okText="确定"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+        >
+          <Button danger icon={<DeleteOutlined />}>
+            清空所有会话
+          </Button>
+        </Popconfirm>
+        <Button
+          style={{ marginLeft: 8 }}
+          icon={<ReloadOutlined />}
+          onClick={loadSessions}
+          loading={loadingSessions}
+        >
+          刷新列表
+        </Button>
+      </div>
+
+      <List
+        loading={loadingSessions}
+        dataSource={sessions}
+        locale={{ emptyText: '暂无会话记录' }}
+        renderItem={(session) => (
+          <List.Item
+            actions={[
+              <Popconfirm
+                title="确定删除此会话吗？"
+                onConfirm={() => handleDeleteSession(session.session_id)}
+                okText="删除"
+                cancelText="取消"
+              >
+                <Button type="link" danger icon={<DeleteOutlined />}>
+                  删除
+                </Button>
+              </Popconfirm>,
+            ]}
+          >
+            <List.Item.Meta
+              title={session.title || '未命名会话'}
+              description={
+                <Space direction="vertical" size={0}>
+                  <Text type="secondary">
+                    创建于: {new Date(session.created_at).toLocaleString()}
+                  </Text>
+                  {session.updated_at && (
+                    <Text type="secondary">
+                      最后更新: {new Date(session.updated_at).toLocaleString()}
+                    </Text>
+                  )}
+                </Space>
+              }
+            />
+            <Tag>{session.message_count} 条消息</Tag>
+          </List.Item>
+        )}
+      />
+    </div>
+  );
+};
+
+/**
+ * 设置页面主组件
+ */
+const Settings: React.FC = () => {
+  return (
     <div style={{ padding: 0, margin: 0 }}>
       <Card style={{ marginTop: 0 }}>
         <Tabs defaultActiveKey="model" type="card">
-          {/* 模型配置Tab */}
           <TabPane
             tab={
               <span>
@@ -223,122 +782,9 @@ const Settings: React.FC = () => {
             }
             key="model"
           >
-            <Form
-              form={modelForm}
-              layout="vertical"
-              onFinish={handleSaveModelConfig}
-              initialValues={modelConfig}
-            >
-              <Alert
-                message="模型配置说明：配置AI模型提供商和参数，切换提供商时需提供相应API密钥"
-                type="info"
-                showIcon
-                style={{ marginBottom: 16 }}
-              />
-
-              <Row gutter={[16, 8]}>
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="模型提供商"
-                    name="provider"
-                    rules={[{ required: true, message: '请选择模型提供商' }]}
-                  >
-                    <Select placeholder="选择模型提供商">
-                      <Option value="zhipuai">智谱AI (GLM)</Option>
-                      <Option value="opencode">OpenCode (MiniMax)</Option>
-                      <Option value="openai">OpenAI (GPT)</Option>
-                      <Option value="anthropic">Anthropic (Claude)</Option>
-                    </Select>
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="模型名称"
-                    name="model"
-                    rules={[{ required: true, message: '请输入模型名称' }]}
-                    extra="例如：glm-4-flash, gpt-4"
-                  >
-                    <Input placeholder="输入模型名称" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="API密钥"
-                    name="apiKey"
-                    rules={[{ required: true, message: '请输入API密钥' }]}
-                    extra="密钥将被安全存储"
-                  >
-                    <Input.Password placeholder="输入API密钥" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="API地址"
-                    name="apiUrl"
-                    extra="可选，留空使用默认地址"
-                  >
-                    <Input placeholder="https://api.example.com/v1" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="温度参数"
-                    name="temperature"
-                    extra="范围0-2，值越大越随机"
-                  >
-                    <Select defaultValue={0.7}>
-                      <Option value={0}>0 - 最确定</Option>
-                      <Option value={0.3}>0.3 - 较确定</Option>
-                      <Option value={0.7}>0.7 - 平衡</Option>
-                      <Option value={1}>1 - 较随机</Option>
-                      <Option value={1.5}>1.5 - 很随机</Option>
-                      <Option value={2}>2 - 最随机</Option>
-                    </Select>
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="最大Token数"
-                    name="maxTokens"
-                    extra="单次请求返回的最大token数"
-                  >
-                    <Select defaultValue={2048}>
-                      <Option value={512}>512</Option>
-                      <Option value={1024}>1024</Option>
-                      <Option value={2048}>2048</Option>
-                      <Option value={4096}>4096</Option>
-                      <Option value={8192}>8192</Option>
-                    </Select>
-                  </Form.Item>
-                </Col>
-              </Row>
-
-              <Form.Item>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  icon={<SaveOutlined />}
-                  loading={savingModel}
-                >
-                  保存模型配置
-                </Button>
-                <Button
-                  style={{ marginLeft: 8 }}
-                  icon={<ReloadOutlined />}
-                  onClick={loadModelConfig}
-                >
-                  重置
-                </Button>
-              </Form.Item>
-            </Form>
+            <ProviderSettings />
           </TabPane>
 
-          {/* 安全配置Tab */}
           <TabPane
             tab={
               <span>
@@ -347,115 +793,9 @@ const Settings: React.FC = () => {
             }
             key="security"
           >
-            <Form
-              form={securityForm}
-              layout="vertical"
-              onFinish={handleSaveSecurityConfig}
-              initialValues={securityConfig}
-            >
-              <Alert
-                message="安全配置说明：配置内容安全策略和访问控制，启用安全检查将过滤敏感内容和危险操作"
-                type="warning"
-                showIcon
-                style={{ marginBottom: 16 }}
-              />
-
-              <Row gutter={[16, 8]}>
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="启用内容安全"
-                    name="contentFilterEnabled"
-                    valuePropName="checked"
-                  >
-                    <Switch checkedChildren="开启" unCheckedChildren="关闭" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="敏感词过滤级别"
-                    name="contentFilterLevel"
-                    extra="级别越高过滤越严格"
-                  >
-                    <Select defaultValue="medium">
-                      <Option value="low">低 - 仅过滤明显违规</Option>
-                      <Option value="medium">中 - 平衡安全与体验</Option>
-                      <Option value="high">高 - 严格过滤</Option>
-                    </Select>
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="启用命令白名单"
-                    name="whitelistEnabled"
-                    valuePropName="checked"
-                    extra="开启后只允许白名单命令"
-                  >
-                    <Switch checkedChildren="开启" unCheckedChildren="关闭" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="启用命令黑名单"
-                    name="blacklistEnabled"
-                    valuePropName="checked"
-                    extra="开启后阻止黑名单命令"
-                  >
-                    <Switch checkedChildren="开启" unCheckedChildren="关闭" />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="危险操作二次确认"
-                    name="confirmDangerousOps"
-                    valuePropName="checked"
-                    extra="删除等操作需二次确认"
-                  >
-                    <Switch checkedChildren="开启" unCheckedChildren="关闭" defaultChecked />
-                  </Form.Item>
-                </Col>
-
-                <Col xs={24} sm={12}>
-                  <Form.Item
-                    label="最大文件操作大小"
-                    name="maxFileSize"
-                    extra="超过此大小将被阻止"
-                  >
-                    <Select defaultValue={100}>
-                      <Option value={10}>10 MB</Option>
-                      <Option value={50}>50 MB</Option>
-                      <Option value={100}>100 MB</Option>
-                      <Option value={500}>500 MB</Option>
-                      <Option value={1000}>1 GB</Option>
-                    </Select>
-                  </Form.Item>
-                </Col>
-              </Row>
-
-              <Form.Item>
-                <Button
-                  type="primary"
-                  htmlType="submit"
-                  icon={<SafetyOutlined />}
-                  loading={savingSecurity}
-                >
-                  保存安全配置
-                </Button>
-                <Button
-                  style={{ marginLeft: 8 }}
-                  icon={<ReloadOutlined />}
-                  onClick={loadSecurityConfig}
-                >
-                  重置
-                </Button>
-              </Form.Item>
-            </Form>
+            <SecuritySettings />
           </TabPane>
 
-          {/* 会话历史Tab */}
           <TabPane
             tab={
               <span>
@@ -464,92 +804,7 @@ const Settings: React.FC = () => {
             }
             key="sessions"
           >
-            <Alert
-              message="会话管理说明：查看和管理历史对话会话，删除会话将永久清除所有消息记录"
-              type="info"
-              showIcon
-              style={{ marginBottom: 16 }}
-            />
-
-            <div style={{ marginBottom: 16 }}>
-              <Popconfirm
-                title="确定要清空所有会话吗？"
-                description="此操作不可恢复，将删除所有历史对话记录。"
-                onConfirm={handleClearAllSessions}
-                okText="确定"
-                cancelText="取消"
-                okButtonProps={{ danger: true }}
-              >
-                <Button danger icon={<DeleteOutlined />}>
-                  清空所有会话
-                </Button>
-              </Popconfirm>
-              <Button
-                style={{ marginLeft: 8 }}
-                icon={<ReloadOutlined />}
-                onClick={loadSessions}
-                loading={loadingSessions}
-              >
-                刷新列表
-              </Button>
-            </div>
-
-            <Divider />
-
-            <List
-              loading={loadingSessions}
-              dataSource={sessions}
-              locale={{
-                emptyText: (
-                  <Empty
-                    description="暂无会话记录"
-                    image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  />
-                ),
-              }}
-              renderItem={(session) => (
-                <List.Item
-                  actions={[
-                    <Popconfirm
-                      title="确定删除此会话吗？"
-                      onConfirm={() => handleDeleteSession(session.session_id)}
-                      okText="删除"
-                      cancelText="取消"
-                    >
-                      <Button type="link" danger icon={<DeleteOutlined />}>
-                        删除
-                      </Button>
-                    </Popconfirm>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    title={
-                      <Space>
-                        <Text strong>{session.title || '未命名会话'}</Text>
-                        <Tag color="blue">
-                          AI助手
-                        </Tag>
-                        {session.message_count && (
-                          <Tag>{session.message_count} 条消息</Tag>
-                        )}
-                      </Space>
-                    }
-                    description={
-                      <Space direction="vertical" size={0}>
-                        <Text type="secondary">
-                          创建于: {new Date(session.created_at).toLocaleString()}
-                        </Text>
-                        {session.updated_at && (
-                          <Text type="secondary">
-                            最后更新: {new Date(session.updated_at).toLocaleString()}
-                          </Text>
-                        )}
-                      </Space>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
+            <SessionHistory />
           </TabPane>
         </Tabs>
       </Card>

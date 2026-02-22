@@ -37,9 +37,11 @@ class SecurityConfig(BaseModel):
 
 class ConfigUpdate(BaseModel):
     """配置更新请求"""
-    ai_provider: Optional[str] = Field(None, description="AI提供商: zhipuai | opencode")
+    ai_provider: Optional[str] = Field(None, description="AI提供商: zhipuai | opencode | longcat")
+    ai_model: Optional[str] = Field(None, description="AI模型名称")
     zhipu_api_key: Optional[str] = Field(None, description="智谱AI API密钥")
     opencode_api_key: Optional[str] = Field(None, description="OpenCode API密钥")
+    longcat_api_key: Optional[str] = Field(None, description="LongCat API密钥")
     theme: Optional[str] = Field("light", description="主题: light | dark")
     language: Optional[str] = Field("zh-CN", description="语言: zh-CN | en-US")
     security: Optional[SecurityConfig] = Field(None, description="安全配置")
@@ -154,7 +156,7 @@ async def update_config(config_update: ConfigUpdate):
         # 更新AI配置
         if config_update.ai_provider:
             # 验证提供商
-            if config_update.ai_provider not in ["zhipuai", "opencode"]:
+            if config_update.ai_provider not in ["zhipuai", "opencode", "longcat"]:
                 raise HTTPException(
                     status_code=400,
                     detail=f"不支持的提供商: {config_update.ai_provider}"
@@ -172,6 +174,17 @@ async def update_config(config_update: ConfigUpdate):
                     detail=f"切换AI提供商失败: {str(e)}"
                 )
         
+        # 更新AI模型 - 更新对应provider下的model字段
+        # 如果只传了ai_model没传ai_provider，使用当前配置的provider
+        if config_update.ai_model:
+            provider = config_update.ai_provider or config_data.get('ai', {}).get('provider', 'zhipuai')
+            if provider in config_data['ai']:
+                config_data['ai'][provider]['model'] = config_update.ai_model
+                logger.info(f"切换AI模型成功: provider={provider}, model={config_update.ai_model}")
+                # 【修复】清空AIServiceFactory缓存，强制重新读取配置
+                AIServiceFactory._instance = None
+                logger.info(f"已清空AIServiceFactory缓存")
+        
         # 更新API Key - 根据provider更新对应的API Key
         if config_update.zhipu_api_key:
             config_data['ai']['zhipuai']['api_key'] = config_update.zhipu_api_key
@@ -180,6 +193,10 @@ async def update_config(config_update: ConfigUpdate):
         if config_update.opencode_api_key:
             config_data['ai']['opencode']['api_key'] = config_update.opencode_api_key
             logger.info(f"更新OpenCode API Key成功")
+        
+        if config_update.longcat_api_key:
+            config_data['ai']['longcat']['api_key'] = config_update.longcat_api_key
+            logger.info(f"更新LongCat API Key成功")
         
         # 确保app配置节存在
         if 'app' not in config_data:
@@ -301,3 +318,429 @@ async def validate_config(request: ConfigValidateRequest):
             message=f"验证过程出错: {str(e)}",
             model=None
         )
+
+
+# ============================================
+# 模型列表相关
+# ============================================
+
+class ModelInfo(BaseModel):
+    """模型信息"""
+    id: str = Field(..., description="模型ID")
+    name: str = Field(..., description="模型显示名称")
+    provider: str = Field(..., description="所属提供商")
+
+
+class ModelListResponse(BaseModel):
+    """模型列表响应"""
+    models: list[ModelInfo] = Field(..., description="可用模型列表")
+    default_provider: str = Field(..., description="默认提供商")
+
+
+@router.get("/config/models", response_model=ModelListResponse)
+async def get_model_list():
+    """
+    获取可用的AI模型列表
+    
+    支持新的models列表格式，每个provider可以有多个模型
+    
+    Returns:
+        ModelListResponse: 可用模型列表
+    """
+    try:
+        config = get_config_instance()
+        
+        # 从配置中读取模型信息
+        zhipuai_config = config.get('ai.zhipuai', {})
+        opencode_config = config.get('ai.opencode', {})
+        longcat_config = config.get('ai.longcat', {})
+        
+        default_provider = config.get('ai.provider', 'zhipuai')
+        
+        # 构建模型列表 - 按照配置文件中provider定义的顺序
+        # 配置文件中顺序: opencode -> zhipuai -> longcat
+        models = []
+        
+        # OpenCode模型
+        opencode_models = opencode_config.get('models', [])
+        if isinstance(opencode_models, list):
+            for model_name in opencode_models:
+                models.append(ModelInfo(
+                    id=f"opencode-{model_name}",
+                    name=f"OpenCode ({model_name})",
+                    provider="opencode"
+                ))
+        
+        # 智谱模型
+        zhipuai_models = zhipuai_config.get('models', [])
+        if isinstance(zhipuai_models, list):
+            for model_name in zhipuai_models:
+                models.append(ModelInfo(
+                    id=f"zhipuai-{model_name}",
+                    name=f"智谱GLM ({model_name})",
+                    provider="zhipuai"
+                ))
+        
+        # LongCat模型
+        longcat_models = longcat_config.get('models', [])
+        if isinstance(longcat_models, list):
+            for model_name in longcat_models:
+                models.append(ModelInfo(
+                    id=f"longcat-{model_name}",
+                    name=f"LongCat ({model_name})",
+                    provider="longcat"
+                ))
+        
+        logger.info(f"获取模型列表成功: {len(models)}个模型")
+        
+        return ModelListResponse(
+            models=models,
+            default_provider=default_provider
+        )
+        
+    except Exception as e:
+        logger.error(f"获取模型列表失败: {e}")
+        # 返回默认值
+        return ModelListResponse(
+            models=[
+                ModelInfo(id="zhipuai-glm-4.7-flash", name="智谱GLM (glm-4.7-flash)", provider="zhipuai"),
+                ModelInfo(id="opencode-minimax-m2.5-free", name="OpenCode (minimax-m2.5-free)", provider="opencode")
+            ],
+            default_provider="zhipuai"
+        )
+
+
+# ============================================
+# 完整配置管理API（新增）
+# ============================================
+
+class ProviderInfo(BaseModel):
+    """Provider信息"""
+    name: str = Field(..., description="Provider名称")
+    api_base: str = Field(..., description="API地址")
+    api_key: str = Field("", description="API密钥")
+    model: str = Field("", description="当前使用的模型")
+    models: list[str] = Field(default_factory=list, description="模型列表")
+    timeout: int = Field(60, description="超时时间")
+    max_retries: int = Field(3, description="最大重试次数")
+
+
+class FullConfigResponse(BaseModel):
+    """完整配置响应"""
+    providers: dict[str, ProviderInfo] = Field(..., description="所有Provider配置")
+    current_provider: str = Field(..., description="当前使用的Provider")
+    current_model: str = Field(..., description="当前使用的模型")
+
+
+class ProviderUpdate(BaseModel):
+    """Provider更新请求"""
+    api_base: Optional[str] = Field(None, description="API地址")
+    api_key: Optional[str] = Field(None, description="API密钥")
+    model: Optional[str] = Field(None, description="当前使用的模型")
+    timeout: Optional[int] = Field(None, description="超时时间")
+    max_retries: Optional[int] = Field(None, description="最大重试次数")
+
+
+class ModelAddRequest(BaseModel):
+    """添加模型请求"""
+    model: str = Field(..., description="模型名称")
+
+
+class ProviderAddRequest(BaseModel):
+    """添加Provider请求"""
+    name: str = Field(..., description="Provider名称")
+    api_base: str = Field(..., description="API地址")
+    api_key: str = Field("", description="API密钥")
+    model: str = Field("", description="默认模型")
+    models: list[str] = Field(default_factory=list, description="模型列表")
+    timeout: int = Field(60, description="超时时间")
+    max_retries: int = Field(3, description="最大重试次数")
+
+
+@router.get("/config/full", response_model=FullConfigResponse)
+async def get_full_config():
+    """
+    获取完整配置信息
+    
+    Returns:
+        FullConfigResponse: 包含所有provider和model的完整配置
+    """
+    try:
+        config = get_config_instance()
+        ai_config = config.get('ai', {})
+        current_provider = ai_config.get('provider', 'zhipuai')
+        current_model = ai_config.get(current_provider, {}).get('model', '')
+        
+        providers = {}
+        for provider_name in ['opencode', 'zhipuai', 'longcat']:
+            provider_data = ai_config.get(provider_name, {})
+            if provider_data:
+                # 脱敏处理API Key
+                api_key = provider_data.get('api_key', '')
+                masked_key = ''
+                if api_key and len(api_key) > 4:
+                    masked_key = '****' + api_key[-4:]
+                elif api_key:
+                    masked_key = '****'
+                
+                providers[provider_name] = ProviderInfo(
+                    name=provider_name,
+                    api_base=provider_data.get('api_base', ''),
+                    api_key=masked_key,  # 返回脱敏后的Key
+                    model=provider_data.get('model', ''),
+                    models=provider_data.get('models', []),
+                    timeout=provider_data.get('timeout', 60),
+                    max_retries=provider_data.get('max_retries', 3)
+                )
+        
+        return FullConfigResponse(
+            providers=providers,
+            current_provider=current_provider,
+            current_model=current_model
+        )
+    except Exception as e:
+        logger.error(f"获取完整配置失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/config/provider/{provider_name}")
+async def delete_provider(provider_name: str):
+    """
+    删除Provider
+    
+    Args:
+        provider_name: Provider名称
+    """
+    try:
+        config_path = _get_config_path()
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        if provider_name not in config.get('ai', {}):
+            raise HTTPException(status_code=404, detail=f"Provider {provider_name} 不存在")
+        
+        # 统计实际的provider数量（排除provider字段）
+        provider_keys = [k for k in config.get('ai', {}).keys() if k != 'provider']
+        if len(provider_keys) <= 1:
+            raise HTTPException(status_code=400, detail="至少保留一个Provider")
+        
+        # 删除provider
+        del config['ai'][provider_name]
+        
+        # 如果删除的是当前provider，切换到第一个
+        if config['ai'].get('provider') == provider_name:
+            remaining = [k for k in config['ai'].keys() if k != 'provider']
+            if remaining:
+                config['ai']['provider'] = remaining[0]
+        
+        with open(config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        
+        # 重新加载配置
+        config_obj = get_config_instance()
+        config_obj._load_config()
+        
+        # 清空AIServiceFactory缓存
+        AIServiceFactory.reset()
+        
+        return {"success": True, "message": f"Provider {provider_name} 已删除"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除Provider失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/config/provider/{provider_name}/model/{model_name}")
+async def delete_model(provider_name: str, model_name: str):
+    """
+    删除Provider下的模型
+    
+    Args:
+        provider_name: Provider名称
+        model_name: 模型名称
+    """
+    try:
+        config_path = _get_config_path()
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        provider_config = config.get('ai', {}).get(provider_name, {})
+        if not provider_config:
+            raise HTTPException(status_code=404, detail=f"Provider {provider_name} 不存在")
+        
+        models = provider_config.get('models', [])
+        if model_name not in models:
+            raise HTTPException(status_code=404, detail=f"模型 {model_name} 不存在")
+        
+        # 不能删除最后一个模型
+        if len(models) <= 1:
+            raise HTTPException(status_code=400, detail="至少保留一个模型")
+        
+        # 删除模型
+        models.remove(model_name)
+        config['ai'][provider_name]['models'] = models
+        
+        # 如果删除的是当前模型，更新为第一个
+        if provider_config.get('model') == model_name and models:
+            config['ai'][provider_name]['model'] = models[0]
+        
+        with open(config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        
+        # 重新加载配置
+        config_obj = get_config_instance()
+        config_obj._load_config()
+        
+        # 清空AIServiceFactory缓存
+        AIServiceFactory.reset()
+        
+        return {"success": True, "message": f"模型 {model_name} 已删除"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除模型失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/config/provider/{provider_name}")
+async def update_provider(provider_name: str, data: ProviderUpdate):
+    """
+    更新Provider配置
+    
+    Args:
+        provider_name: Provider名称
+        data: 更新数据
+    """
+    try:
+        config_path = _get_config_path()
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        if provider_name not in config.get('ai', {}):
+            raise HTTPException(status_code=404, detail=f"Provider {provider_name} 不存在")
+        
+        # 更新配置
+        if data.api_base is not None:
+            config['ai'][provider_name]['api_base'] = data.api_base
+        if data.api_key is not None:
+            config['ai'][provider_name]['api_key'] = data.api_key
+        if data.model is not None:
+            config['ai'][provider_name]['model'] = data.model
+        if data.timeout is not None:
+            config['ai'][provider_name]['timeout'] = data.timeout
+        if data.max_retries is not None:
+            config['ai'][provider_name]['max_retries'] = data.max_retries
+        
+        with open(config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        
+        # 重新加载配置
+        config_obj = get_config_instance()
+        config_obj._load_config()
+        
+        # 清空AIServiceFactory缓存
+        AIServiceFactory.reset()
+        
+        return {"success": True, "message": f"Provider {provider_name} 已更新"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新Provider失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/config/provider/{provider_name}/model")
+async def add_model(provider_name: str, data: ModelAddRequest):
+    """
+    添加模型到Provider
+    
+    Args:
+        provider_name: Provider名称
+        data: 模型名称
+    """
+    try:
+        config_path = _get_config_path()
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        if provider_name not in config.get('ai', {}):
+            raise HTTPException(status_code=404, detail=f"Provider {provider_name} 不存在")
+        
+        models = config['ai'][provider_name].get('models', [])
+        if data.model in models:
+            raise HTTPException(status_code=400, detail=f"模型 {data.model} 已存在")
+        
+        # 添加模型
+        models.append(data.model)
+        config['ai'][provider_name]['models'] = models
+        
+        # 如果没有当前模型，设为新增的模型
+        if not config['ai'][provider_name].get('model'):
+            config['ai'][provider_name]['model'] = data.model
+        
+        with open(config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        
+        # 重新加载配置
+        config_obj = get_config_instance()
+        config_obj._load_config()
+        
+        # 清空AIServiceFactory缓存
+        AIServiceFactory.reset()
+        
+        return {"success": True, "message": f"模型 {data.model} 已添加"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"添加模型失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/config/provider")
+async def add_provider(data: ProviderAddRequest):
+    """
+    添加新Provider
+    
+    Args:
+        data: Provider配置
+    """
+    try:
+        config_path = _get_config_path()
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        if data.name in config.get('ai', {}):
+            raise HTTPException(status_code=400, detail=f"Provider {data.name} 已存在")
+        
+        # 添加Provider
+        config['ai'][data.name] = {
+            'api_base': data.api_base,
+            'api_key': data.api_key,
+            'model': data.model,
+            'models': data.models if data.models else [data.model],
+            'timeout': data.timeout,
+            'max_retries': data.max_retries
+        }
+        
+        with open(config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        
+        # 重新加载配置
+        config_obj = get_config_instance()
+        config_obj._load_config()
+        
+        # 清空AIServiceFactory缓存
+        AIServiceFactory.reset()
+        
+        return {"success": True, "message": f"Provider {data.name} 已添加"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"添加Provider失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
