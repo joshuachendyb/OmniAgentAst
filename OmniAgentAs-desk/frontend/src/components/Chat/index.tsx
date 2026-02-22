@@ -10,10 +10,10 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Input, Button, Card, List, Tag, Space, Select, message } from 'antd';
+import { Input, Button, Card, List, Tag, Space, message } from 'antd';
 import { SendOutlined, RobotOutlined, PlusOutlined, EditOutlined, CloseCircleOutlined, PauseCircleOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
-import { chatApi, configApi, sessionApi, ChatMessage, API_BASE_URL } from '../../services/api';
+import { chatApi, sessionApi, ChatMessage, API_BASE_URL } from '../../services/api';
 import { securityApi } from '../../services/api';
 import MessageItem from './MessageItem';
 import DangerConfirmModal from '../DangerConfirmModal';
@@ -22,7 +22,6 @@ import { showSecurityNotification } from '../SecurityNotification';
 import { getRiskLevel } from '../../types/security';
 
 const { TextArea } = Input;
-const { Option } = Select;
 
 interface Message extends ChatMessage {
   id: string;
@@ -42,7 +41,6 @@ const Chat: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
-  const [currentProvider, setCurrentProvider] = useState<'zhipuai' | 'opencode'>('zhipuai');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string>('新会话');
   const [editingTitle, setEditingTitle] = useState(false);
@@ -188,78 +186,6 @@ const Chat: React.FC = () => {
 
     loadSession();
   }, [searchParams]);
-
-  // 【修复】组件加载时先获取配置
-  useEffect(() => {
-    const initProvider = async () => {
-      try {
-        const config = await configApi.getConfig();
-        if (config.ai_provider === 'zhipuai' || config.ai_provider === 'opencode') {
-          setCurrentProvider(config.ai_provider);
-        }
-        // ai_model配置已在Layout组件中显示
-      } catch (error) {
-        console.warn('获取配置失败:', error);
-      }
-    };
-    initProvider();
-  }, []);
-
-  // 切换提供商
-  const handleSwitchProvider = async (provider: 'zhipuai' | 'opencode') => {
-    setLoading(true);
-    try {
-      const result = await chatApi.switchProvider(provider);
-      // 服务状态现在由Layout组件统一显示
-      
-      // 无论成功还是失败，都更新当前显示的提供商
-      // 让用户知道当前选择的模型状态
-      setCurrentProvider(provider);
-      
-      // 模型名称由Layout组件统一显示
-      
-      const providerName = getProviderName(provider);
-      const modelName = result.model || '未知模型';
-      
-      if (result.success) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: 'system',
-            content: `✅ 已切换到 ${providerName} (${modelName})`,
-            timestamp: new Date(),
-          },
-        ]);
-      } else {
-        // 切换失败，显示具体错误信息，但不回退
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now().toString(),
-            role: 'system',
-            content: `⚠️ 切换到 ${providerName} (${modelName}) 失败: ${result.message}`,
-            timestamp: new Date(),
-          },
-        ]);
-      }
-    } catch (error) {
-      // 请求异常，更新提供商但不回退
-      setCurrentProvider(provider);
-      const providerName = getProviderName(provider);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now().toString(),
-          role: 'system',
-          content: `❌ 切换到 ${providerName} 请求失败: ${(error as Error).message}`,
-          timestamp: new Date(),
-        },
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   /**
    * 执行实际的消息发送（在危险命令检测通过后调用）
@@ -520,18 +446,6 @@ const Chat: React.FC = () => {
     setMessages([]);
   };
 
-  // 获取提供商显示名称
-  const getProviderName = (provider: string) => {
-    switch (provider) {
-      case 'zhipuai':
-        return '智谱GLM';
-      case 'opencode':
-        return 'OpenCode';
-      default:
-        return provider;
-    }
-  };
-
   return (
     <Card
       title={
@@ -581,15 +495,6 @@ const Chat: React.FC = () => {
       }
       extra={
         <Space>
-          <Select
-            value={currentProvider}
-            style={{ width: 200 }}
-            onChange={handleSwitchProvider}
-            disabled={loading}
-          >
-            <Option value="zhipuai">智谱GLM (glm-4.7-flash)</Option>
-            <Option value="opencode">OpenCode (MiniMax M2.5 Free)</Option>
-          </Select>
           <Button
             icon={<PlusOutlined />}
             onClick={async () => {

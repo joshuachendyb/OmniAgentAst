@@ -365,9 +365,10 @@ async def chat_stream(request: ChatRequest):
                         yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
                     else:
                         # 发送最终结果
+                        # 【修复-小沈】在SSE响应中添加model字段，让前端显示当前使用的模型
                         if result.success:
                             result_content = getattr(result, 'content', '')
-                            yield f"data: {json.dumps({'type': 'final', 'content': result_content})}\n\n"
+                            yield f"data: {json.dumps({'type': 'final', 'content': result_content, 'model': ai_service.model})}\n\n"
                         else:
                             result_error = getattr(result, 'error', '执行失败')
                             yield f"data: {json.dumps({'type': 'error', 'content': result_error})}\n\n"
@@ -405,8 +406,9 @@ async def chat_stream(request: ChatRequest):
                     yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
                 else:
                     # 发送最终结果
+                    # 【修复-小沈】在SSE响应中添加model字段，让前端显示当前使用的模型
                     if response.success:
-                        yield f"data: {json.dumps({'type': 'final', 'content': response.content})}\n\n"
+                        yield f"data: {json.dumps({'type': 'final', 'content': response.content, 'model': response.model})}\n\n"
                     else:
                         yield f"data: {json.dumps({'type': 'error', 'content': response.error or 'AI响应失败'})}\n\n"
                         

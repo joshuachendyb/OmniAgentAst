@@ -442,7 +442,7 @@ export interface Message {
 }
 
 export interface ExecutionStep {
-  type: 'thought' | 'action' | 'observation' | 'error' | 'final';
+  type: 'thought' | 'action' | 'observation' | 'error' | 'final' | 'interrupted';
   content?: string;
   tool?: string;
   params?: Record<string, any>;

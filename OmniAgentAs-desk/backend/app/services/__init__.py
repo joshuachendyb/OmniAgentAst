@@ -69,20 +69,17 @@ class AIServiceFactory:
     def get_service(cls, config_path: Optional[str] = None) -> BaseAIService:
         """
         获取AI服务实例（线程安全）
+        【修复-小沈】每次都重新加载配置，忽略缓存，确保切换provider后立即生效
+        【修复-小健】清理冗余代码，优化实现
         
         Returns:
             BaseAIService: AI服务实例
         """
-        # 【修复】第一次检查（无锁，快速路径）
-        if cls._instance is not None:
-            return cls._instance
+        # 【修复-小沈】每次都清空缓存实例，强制重新读取配置文件（解决切换provider后模型不生效问题）
+        cls._instance = None
         
         # 【修复】获取锁，确保线程安全
         with cls._lock:
-            # 【修复】第二次检查（有锁，防止重复创建）
-            if cls._instance is not None:
-                return cls._instance
-            
             # 强制重新加载配置（不使用缓存）
             config = cls.load_config(config_path)
             ai_config = config.get("ai", {})
@@ -111,6 +108,15 @@ class AIServiceFactory:
                     api_base=opencode_config.get("api_base", "https://opencode.ai/zen/v1"),
                     timeout=opencode_config.get("timeout", 30)
                 )
+            elif provider == "longcat":
+                longcat_config = ai_config.get("longcat", {})
+                # LongCat使用OpenAI兼容格式，用OpenCodeService作为兼容方案
+                cls._instance = OpenCodeService(
+                    api_key=longcat_config.get("api_key", ""),
+                    model=longcat_config.get("model", "LongCat-Flash-Thinking"),
+                    api_base=longcat_config.get("api_base", "https://api.longcat.chat/openai/v1"),
+                    timeout=longcat_config.get("timeout", 30)
+                )
             else:
                 raise ValueError(f"不支持的AI提供商: {provider}")
         
@@ -129,7 +135,7 @@ class AIServiceFactory:
         print(f"[AIServiceFactory] 切换提供商: {provider}")
         
         # 验证提供商名称
-        if provider not in ["zhipuai", "opencode"]:
+        if provider not in ["zhipuai", "opencode", "longcat"]:
             raise ValueError(f"不支持的AI提供商: {provider}")
         
         # 【修复】获取锁，确保线程安全

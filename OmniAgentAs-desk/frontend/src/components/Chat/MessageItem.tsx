@@ -26,6 +26,7 @@ interface MessageItemProps {
     id: string; 
     timestamp: Date;
     executionSteps?: ExecutionStep[];
+    model?: string;  // 模型名称
   };
   showExecution?: boolean;
 }
@@ -106,7 +107,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       case 'user':
         return '我';
       case 'assistant':
-        return 'AI助手';
+        return message.model ? `AI助手 (${message.model})` : 'AI助手';
       case 'system':
         return '系统';
       default:

@@ -1,7 +1,7 @@
 /**
  * ChatContainer组件 - 带流式支持的对话容器
  * 
- * 功能：集成SSE流式通信、执行过程可视化、消息美化
+ * 功能：集成SSE流式通信，执行过程可视化、消息美化
  * 
  * @author 小新
  * @version 2.0.0
@@ -33,6 +33,7 @@ interface Message extends ChatMessage {
   timestamp: Date;
   executionSteps?: ExecutionStep[];
   isStreaming?: boolean;
+  model?: string;  // 【新增】当前使用的模型
 }
 
 /**
@@ -104,7 +105,7 @@ const ChatContainer: React.FC = () => {
       });
     }, []),
     // onComplete - 流式完成
-    useCallback((fullResponse: string) => {
+    useCallback((fullResponse: string, model?: string) => {
       setMessages(prev => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage && lastMessage.role === 'assistant') {
@@ -113,6 +114,7 @@ const ChatContainer: React.FC = () => {
             ...lastMessage,
             content: fullResponse,
             isStreaming: false,
+            model: model || lastMessage.model, // 保存当前使用的模型
           };
           return updated;
         }
@@ -248,31 +250,6 @@ const ChatContainer: React.FC = () => {
       
       // 发送流式请求
       sendStreamMessage(userContent);
-    } else {
-      // 非流式模式
-      try {
-        // 构建消息历史
-        const history: ChatMessage[] = messages
-          .filter(m => m.role === 'user' || m.role === 'assistant')
-          .map(m => ({ role: m.role, content: m.content }));
-        
-        // 添加当前用户消息
-        history.push({ role: 'user', content: userContent });
-        
-        const response = await chatApi.sendMessage(history);
-
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: response.content || '无响应',
-          timestamp: new Date(),
-        };
-        setMessages(prev => [...prev, assistantMessage]);
-      } catch (error) {
-        addSystemMessage('❌ 发送消息失败: ' + (error as Error).message);
-      } finally {
-        setLoading(false);
-      }
     }
   };
 
@@ -289,6 +266,7 @@ const ChatContainer: React.FC = () => {
       opencode: 'OpenCode',
       openai: 'OpenAI',
       anthropic: 'Anthropic',
+      longcat: 'LongCat',
     };
     return names[provider] || provider;
   };
