@@ -427,7 +427,12 @@ async def chat_stream(request: ChatRequest):
     
     return StreamingResponse(
         generate(),
-        media_type="text/event-stream"
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # 禁用Nginx缓冲，确保流式输出
+        }
     )
 
 
