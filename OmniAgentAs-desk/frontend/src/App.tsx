@@ -12,7 +12,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import AppLayout from './components/Layout';
-import ChatContainer from './components/Chat/ChatContainer';
+import NewChatContainer from './components/Chat/NewChatContainer';
 import HistoryPage from './pages/History';
 import Settings from './pages/Settings';
 
@@ -29,11 +29,11 @@ const RouterContent: React.FC = () => {
   return (
     <AppLayout activeKey={location.pathname}>
       <Routes>
-        <Route path="/" element={<ChatContainer />} />
+        <Route path="/" element={<NewChatContainer />} />
         <Route path="/history" element={<HistoryPage />} />
         <Route path="/settings" element={<Settings />} />
         {/* 默认重定向到首页 */}
-        <Route path="*" element={<ChatContainer />} />
+        <Route path="*" element={<NewChatContainer />} />
       </Routes>
     </AppLayout>
   );
