@@ -59,9 +59,16 @@ class BaseAIService:
         self.api_key = api_key
         self.model = model
         self.api_base = api_base
-        self.timeout = timeout
+        
+        # 安全转换 timeout，处理非法字符串、None、空值等情况
+        try:
+            timeout_value = float(timeout) if timeout else 60.0
+        except (ValueError, TypeError):
+            timeout_value = 60.0
+        self.timeout = int(timeout_value)
+        
         self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(float(timeout) if timeout else 60.0, connect=10.0),
+            timeout=httpx.Timeout(timeout_value, connect=10.0),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
         )
     
@@ -75,9 +82,7 @@ class BaseAIService:
         return messages
     
     async def chat(self, message: str, history: Optional[List[Message]] = None) -> ChatResponse:
-        """
-        发送对话请求（一次性返回）
-        """
+        """发送对话请求（一次性返回）"""
         try:
             full_content = ""
             async for chunk in self.chat_stream(message, history):
@@ -90,12 +95,7 @@ class BaseAIService:
             return ChatResponse(content="", model=self.model, error=str(e))
     
     async def chat_stream(self, message: str, history: Optional[List[Message]] = None) -> AsyncGenerator[StreamChunk, None]:
-        """
-        发送对话请求（流式返回）- OpenAI兼容API通用实现
-        
-        Yields:
-            StreamChunk: 流式响应片段，逐token返回
-        """
+        """发送对话请求（流式返回）"""
         messages = self._build_messages(message, history)
         
         try:
@@ -116,16 +116,13 @@ class BaseAIService:
                     yield StreamChunk(content="", model=self.model, is_done=True)
                     return
                 
-                # 逐行读取SSE响应
                 async for line in response.aiter_lines():
                     if not line or line.strip() == "":
                         continue
                     
-                    # SSE格式：data: {...}
                     if line.startswith("data: "):
                         data_str = line[6:]
                         
-                        # 检查是否结束
                         if data_str.strip() == "[DONE]":
                             yield StreamChunk(content="", model=self.model, is_done=True)
                             return
@@ -141,7 +138,6 @@ class BaseAIService:
                         except json.JSONDecodeError:
                             continue
                 
-                # 流结束
                 yield StreamChunk(content="", model=self.model, is_done=True)
                 
         except httpx.TimeoutException:

@@ -253,7 +253,7 @@ async def validate_config(request: ConfigValidateRequest):
     """
     验证配置是否有效
     
-    测试API Key是否可用
+    使用通用BaseAIService测试API Key是否可用
     
     Args:
         request: 验证请求，包含provider和api_key
@@ -262,54 +262,52 @@ async def validate_config(request: ConfigValidateRequest):
         ConfigValidateResponse: 验证结果
     """
     try:
-        # 验证提供商
-        if request.provider not in ["zhipuai", "opencode"]:
-            return ConfigValidateResponse(
-                valid=False,
-                message=f"不支持的提供商: {request.provider}",
-                model=None
-            )
-        
         # 获取配置
         config = get_config_instance()
         
-        # 根据provider获取模型名称
-        if request.provider == "zhipuai":
-            model_name = config.get('ai.zhipuai.model', 'glm-4.7-flash')
-            from app.services.zhipuai import ZhipuAIService
-            temp_service = ZhipuAIService(
-                api_key=request.api_key,
-                model=model_name,
-                api_base=config.get('ai.zhipuai.api_base', 'https://open.bigmodel.cn/api/paas/v4'),
-                timeout=30
-            )
-        else:
-            model_name = config.get('ai.opencode.model', 'minimax-m2.5-free')
-            from app.services.opencode import OpenCodeService
-            temp_service = OpenCodeService(
-                api_key=request.api_key,
-                model=model_name,
-                api_base=config.get('ai.opencode.api_base', 'https://opencode.ai/zen/v1'),
-                timeout=30
-            )
-        
-        # 验证服务
-        is_valid = await temp_service.validate()
-        
-        if is_valid:
-            logger.info(f"配置验证成功: provider={request.provider}")
-            return ConfigValidateResponse(
-                valid=True,
-                message=f"API Key验证成功，当前使用 {request.provider}",
-                model=model_name
-            )
-        else:
-            logger.warning(f"配置验证失败: provider={request.provider}")
+        # 获取provider配置
+        provider_config = config.get(f'ai.{request.provider}', {})
+        if not provider_config:
             return ConfigValidateResponse(
                 valid=False,
-                message=f"API Key无效，请检查是否正确",
+                message=f"Provider '{request.provider}' 配置不存在",
                 model=None
             )
+        
+        # 使用通用BaseAIService验证
+        from app.services.base import BaseAIService
+        
+        model_name = provider_config.get('model', '')
+        api_base = provider_config.get('api_base', 'https://api.openai.com/v1')
+        
+        temp_service = BaseAIService(
+            api_key=request.api_key,
+            model=model_name,
+            api_base=api_base,
+            timeout=30
+        )
+        
+        try:
+            # 验证服务
+            is_valid = await temp_service.validate()
+            
+            if is_valid:
+                logger.info(f"配置验证成功: provider={request.provider}")
+                return ConfigValidateResponse(
+                    valid=True,
+                    message=f"API Key验证成功，当前使用 {request.provider}",
+                    model=model_name
+                )
+            else:
+                logger.warning(f"配置验证失败: provider={request.provider}")
+                return ConfigValidateResponse(
+                    valid=False,
+                    message=f"API Key无效，请检查是否正确",
+                    model=None
+                )
+        finally:
+            # 确保客户端关闭（异常时也会执行）
+            await temp_service.close()
             
     except Exception as e:
         logger.error(f"配置验证异常: {e}")
@@ -743,3 +741,62 @@ async def add_provider(data: ProviderAddRequest):
     except Exception as e:
         logger.error(f"添加Provider失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+# ============================================
+# 完整配置验证API
+# ============================================
+
+class FullConfigValidationResponse(BaseModel):
+    """完整配置验证响应"""
+    success: bool = Field(..., description="验证是否成功")
+    provider: str = Field(..., description="当前Provider")
+    model: str = Field(..., description="当前Model")
+    message: str = Field(..., description="验证消息")
+    errors: list[str] = Field(default_factory=list, description="错误列表")
+    warnings: list[str] = Field(default_factory=list, description="警告列表")
+
+
+@router.get("/config/validate-full", response_model=FullConfigValidationResponse)
+async def validate_full_config():
+    """
+    完整配置验证
+    
+    验证项：
+    1. 配置文件是否存在
+    2. ai 配置块是否存在
+    3. provider 字段是否存在
+    4. provider 配置是否存在
+    5. api_key 是否存在
+    6. model 是否存在
+    7. api_base 是否存在
+    
+    Returns:
+        FullConfigValidationResponse: 包含错误列表和警告列表的完整验证结果
+    """
+    try:
+        # 使用AIServiceFactory的验证方法
+        validation_result = AIServiceFactory.validate_config()
+        
+        logger.info(f"完整配置验证: success={validation_result.success}, errors={len(validation_result.errors)}, warnings={len(validation_result.warnings)}")
+        
+        return FullConfigValidationResponse(
+            success=validation_result.success,
+            provider=validation_result.provider,
+            model=validation_result.model,
+            message=validation_result.message,
+            errors=validation_result.errors,
+            warnings=validation_result.warnings
+        )
+        
+    except Exception as e:
+        logger.error(f"完整配置验证异常: {e}")
+        return FullConfigValidationResponse(
+            success=False,
+            provider="unknown",
+            model="",
+            message=f"验证过程出错: {str(e)}",
+            errors=[str(e)],
+            warnings=[]
+        )

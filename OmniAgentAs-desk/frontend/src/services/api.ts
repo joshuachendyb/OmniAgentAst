@@ -11,6 +11,7 @@
 
 import axios from 'axios';
 import { message } from 'antd';
+import type { ExecutionStep } from '../utils/sse';
 
 const API_BASE_URL = 'http://localhost:8000/api/v1';
 
@@ -454,15 +455,6 @@ export interface Message {
   content: string;
   timestamp: string;
   execution_steps?: ExecutionStep[];
-}
-
-export interface ExecutionStep {
-  type: 'thought' | 'action' | 'observation' | 'error' | 'final' | 'interrupted';
-  content?: string;
-  tool?: string;
-  params?: Record<string, any>;
-  result?: any;
-  timestamp: number;
 }
 
 /**
