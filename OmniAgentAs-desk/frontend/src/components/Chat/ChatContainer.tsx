@@ -285,16 +285,6 @@ const ChatContainer: React.FC = () => {
       }
       extra={
         <Space>
-          <Select
-            value={currentProvider}
-            style={{ width: 200 }}
-            onChange={handleSwitchProvider}
-            disabled={loading || isReceiving}
-          >
-            <Option value="zhipuai">智谱GLM (glm-4.7-flash)</Option>
-            <Option value="opencode">OpenCode (MiniMax M2.5 Free)</Option>
-          </Select>
-          
           {/* 流式开关 */}
           <Tag.CheckableTag
             checked={useStream}
@@ -312,14 +302,6 @@ const ChatContainer: React.FC = () => {
             {showExecution ? '隐藏过程' : '显示过程'}
           </Button>
           
-          <Button
-            icon={<ReloadOutlined />}
-            onClick={checkServiceStatus}
-            loading={checkingStatus}
-            size="small"
-          >
-            检查服务
-          </Button>
           <Button onClick={handleClear} size="small">
             清空对话
           </Button>
