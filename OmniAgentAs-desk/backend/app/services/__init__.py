@@ -3,14 +3,18 @@ AI服务工厂
 根据配置创建通用AI服务实例 - 支持无限provider
 """
 
-import yaml
 import os
+import re
+import asyncio
 import threading
 from typing import Optional
+
+import yaml
+
 from .base import BaseAIService
 
 
-# 支持的provider列表（用于配置验证）
+# 支持的provider列表（用于配置验证和提示）
 SUPPORTED_PROVIDERS = [
     "zhipuai",      # 智谱GLM
     "opencode",     # OpenCode
@@ -19,7 +23,7 @@ SUPPORTED_PROVIDERS = [
     "qwen",         # 通义千问
     "baidu",        # 百度文心
     "ali",          # 阿里
-    # 无限扩展...
+    # 无限扩展... 配置即插即用
 ]
 
 
@@ -87,19 +91,28 @@ class AIServiceFactory:
             # 获取对应配置（provider名称作为配置key）
             provider_config = ai_config.get(provider, {})
             
-            # 如果没有配置，尝试使用第一个可用的
-            if not provider_config.get("api_key"):
-                # 查找第一个有api_key的配置
+            # 【修复】只有当provider配置完全不存在时才fallback
+            if not provider_config:
+                # provider配置不存在，尝试使用第一个有配置的
                 for key, val in ai_config.items():
                     if key != "provider" and isinstance(val, dict) and val.get("api_key"):
+                        print(f"[AIServiceFactory] 警告: provider={provider} 配置不存在，使用 {key}")
                         provider = key
                         provider_config = val
                         break
             
-            # 创建通用服务实例
+            # 检查必要配置是否存在
+            if not provider_config:
+                print(f"[AIServiceFactory] 错误: 未找到任何有效的provider配置")
+                provider_config = {}
+            
+            if not provider_config.get("api_key"):
+                print(f"[AIServiceFactory] 警告: provider={provider} 的 api_key 未配置")
+            
+            # 【修复】不设置默认model，强制要求配置
             cls._instance = BaseAIService(
                 api_key=provider_config.get("api_key", ""),
-                model=provider_config.get("model", "gpt-3.5-turbo"),
+                model=provider_config.get("model", ""),
                 api_base=provider_config.get("api_base", "https://api.openai.com/v1"),
                 timeout=provider_config.get("timeout", 30)
             )
@@ -120,7 +133,6 @@ class AIServiceFactory:
             
             # 关闭当前实例
             if cls._instance is not None:
-                import asyncio
                 try:
                     asyncio.create_task(cls._instance.close())
                 except Exception as e:
@@ -135,10 +147,14 @@ class AIServiceFactory:
                 with open(actual_path, 'r', encoding='utf-8') as f:
                     content = f.read()
                 
-                import re
-                pattern = r'(provider:\s*["\']?)(\w+)(["\']?)'
-                replacement = rf'\g<1>{provider}\g<3>'
-                new_content = re.sub(pattern, replacement, content, count=1)
+                # 【修复】更精确的正则：只匹配 ai: 块内的 provider 行
+                pattern = r'(ai:\s*\n[^#]*provider:\s*["\']?)(\w+)(["\']?)'
+                match = re.search(pattern, content)
+                if match:
+                    new_content = content[:match.start(2)] + provider + content[match.end(2):]
+                else:
+                    # fallback：简单替换第一个 provider
+                    new_content = re.sub(r'(provider:\s*["\']?)(\w+)(["\']?)', rf'\g<1>{provider}\g<3>', content, count=1)
                 
                 with open(actual_path, 'w', encoding='utf-8') as f:
                     f.write(new_content)

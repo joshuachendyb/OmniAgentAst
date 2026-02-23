@@ -61,7 +61,7 @@ class BaseAIService:
         self.api_base = api_base
         self.timeout = timeout
         self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(float(timeout), connect=10.0),
+            timeout=httpx.Timeout(float(timeout) if timeout else 60.0, connect=10.0),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
         )
     
@@ -78,14 +78,16 @@ class BaseAIService:
         """
         发送对话请求（一次性返回）
         """
-        full_content = ""
-        async for chunk in self.chat_stream(message, history):
-            if chunk.content:
-                full_content += chunk.content
-            if chunk.is_done:
-                break
-        
-        return ChatResponse(content=full_content, model=self.model)
+        try:
+            full_content = ""
+            async for chunk in self.chat_stream(message, history):
+                if chunk.content:
+                    full_content += chunk.content
+                if chunk.is_done:
+                    break
+            return ChatResponse(content=full_content, model=self.model)
+        except Exception as e:
+            return ChatResponse(content="", model=self.model, error=str(e))
     
     async def chat_stream(self, message: str, history: Optional[List[Message]] = None) -> AsyncGenerator[StreamChunk, None]:
         """
