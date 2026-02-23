@@ -107,7 +107,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       case 'user':
         return '我';
       case 'assistant':
-        return message.model ? `AI助手 (${message.model})` : 'AI助手';
+        return message.model ? `AI助手【${message.model}】` : 'AI助手';
       case 'system':
         return '系统';
       default:
