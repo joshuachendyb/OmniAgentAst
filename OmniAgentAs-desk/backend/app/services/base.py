@@ -1,13 +1,15 @@
 """
-AI服务接口抽象基类
-支持多模型切换、流式输出
-OpenAI兼容API统一实现
+AI服务通用实现
+支持所有OpenAI兼容API - 一个类，无限provider支持
+
+使用方式：
+1. 只需在 config.yaml 配置 api_base、model、api_key
+2. 新增provider无需修改任何代码
 """
 
 import json
 import httpx
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, AsyncGenerator
+from typing import List, Dict, Optional, AsyncGenerator
 
 
 class Message:
@@ -37,14 +39,20 @@ class StreamChunk:
         self.is_done = is_done
 
 
-class BaseAIService(ABC):
+class BaseAIService:
     """
-    AI服务抽象基类
+    通用AI服务 - 一个类支持所有OpenAI兼容API
     
-    实现了OpenAI兼容API的通用逻辑，子类只需：
-    1. 调用 super().__init__(api_key, model, api_base, timeout)
-    2. 初始化 self.client (httpx.AsyncClient)
-    3. 实现 validate() 和 close()
+    适用于所有遵循OpenAI API格式的服务提供商：
+    - 智谱GLM (zhipuai)
+    - OpenCode
+    - DeepSeek
+    - Kimi
+    - 月之暗面 (moonshot)
+    - 通义千问 (qwen)
+    - 无限可能...
+    
+    新增provider只需在配置文件中添加配置，零代码修改！
     """
     
     def __init__(self, api_key: str, model: str, api_base: str, timeout: int = 60):
@@ -52,7 +60,10 @@ class BaseAIService(ABC):
         self.model = model
         self.api_base = api_base
         self.timeout = timeout
-        self.client: Optional[httpx.AsyncClient] = None
+        self.client = httpx.AsyncClient(
+            timeout=httpx.Timeout(float(timeout), connect=10.0),
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
+        )
     
     def _build_messages(self, message: str, history: Optional[List[Message]] = None) -> List[Dict]:
         """构建消息列表"""
@@ -66,8 +77,6 @@ class BaseAIService(ABC):
     async def chat(self, message: str, history: Optional[List[Message]] = None) -> ChatResponse:
         """
         发送对话请求（一次性返回）
-        
-        使用流式API实现，收集所有chunk后返回完整响应
         """
         full_content = ""
         async for chunk in self.chat_stream(message, history):
@@ -82,20 +91,9 @@ class BaseAIService(ABC):
         """
         发送对话请求（流式返回）- OpenAI兼容API通用实现
         
-        适用于所有遵循OpenAI API格式的服务提供商：
-        - 智谱GLM (zhipuai)
-        - OpenCode
-        - DeepSeek
-        - Kimi
-        - 其他OpenAI兼容服务
-        
         Yields:
             StreamChunk: 流式响应片段，逐token返回
         """
-        if not self.client:
-            yield StreamChunk(content="", model=self.model, is_done=True)
-            return
-        
         messages = self._build_messages(message, history)
         
         try:
@@ -147,22 +145,27 @@ class BaseAIService(ABC):
         except httpx.TimeoutException:
             yield StreamChunk(content="", model=self.model, is_done=True)
         except Exception as e:
-            print(f"[{self.__class__.__name__}] 流式调用失败: {str(e)}")
+            print(f"[BaseAIService] 流式调用失败: {str(e)}")
             yield StreamChunk(content="", model=self.model, is_done=True)
     
-    @abstractmethod
     async def validate(self) -> bool:
-        """
-        验证服务配置是否正确
-        
-        Returns:
-            bool: 验证是否通过
-        """
-        pass
+        """验证API Key是否有效"""
+        try:
+            response = await self.client.post(
+                f"{self.api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": self.model,
+                    "messages": [{"role": "user", "content": "test"}]
+                }
+            )
+            return response.status_code == 200
+        except Exception:
+            return False
     
-    @abstractmethod
     async def close(self):
-        """
-        关闭服务，释放资源
-        """
-        pass
+        """关闭HTTP客户端"""
+        await self.client.aclose()
