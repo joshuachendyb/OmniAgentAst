@@ -462,7 +462,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
             <Title level={4} style={{ margin: 0, fontWeight: 500, fontSize: isMobile ? 16 : 18 }}>
               对话与任务
             </Title>
-            {/* 服务状态显示 - 根据检查结果显示不同颜色 */}
+            {/* 服务状态显示 - 根据检查结果显示不同颜色 - 前端小新代修改 UX-L03: 可点击重试 */}
             {checkingStatus ? (
               <span style={{ color: '#999' }}>检查中...</span>
             ) : serviceStatus?.success ? (
@@ -470,13 +470,19 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                 <CheckCircleOutlined /> {serviceStatus.provider} {serviceStatus.model && `(${serviceStatus.model})`}
               </Tag>
             ) : serviceStatus?.message ? (
-              // 有错误信息显示红色/黄色（根据错误类型）
-              <Tag color={serviceStatus.message.includes('限速') || serviceStatus.message.includes('欠费') || serviceStatus.message.includes('额度') ? 'warning' : 'error'}>
-                {serviceStatus.provider} {serviceStatus.model && `(${serviceStatus.model})`} - {serviceStatus.message}
+              // 有错误信息显示红色/黄色（根据错误类型），可点击重试
+              <Tag 
+                color={serviceStatus.message.includes('限速') || serviceStatus.message.includes('欠费') || serviceStatus.message.includes('额度') ? 'warning' : 'error'}
+                onClick={handleCheckService}
+                style={{ cursor: 'pointer' }}
+              >
+                {serviceStatus.provider} {serviceStatus.model && `(${serviceStatus.model})`} - {serviceStatus.message} (点击重试)
               </Tag>
              ) : (
-               // 未配置或初始状态
-               <Tag color="error">未配置</Tag>
+               // 未配置或初始状态，可点击检查
+               <Tag color="error" onClick={handleCheckService} style={{ cursor: 'pointer' }}>
+                 未配置 (点击检查)
+               </Tag>
              )}
              {/* 【新增】配置验证警告 - 当validationResult有错误或警告时显示 */}
              {validationResult && (!validationResult.success || (validationResult.warnings && validationResult.warnings.length > 0)) && (
