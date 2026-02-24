@@ -23,6 +23,7 @@ import {
   Spin,
   Badge,
   Tooltip,
+  Pagination,
 } from 'antd';
 import {
   HistoryOutlined,
@@ -274,28 +275,20 @@ const HistoryPage: React.FC = () => {
             />
           </Spin>
 
-          {/* 分页 */}
-          {pagination.total > pagination.pageSize && (
-            <div style={{ textAlign: 'center', marginTop: 24 }}>
-              <Space>
-                <Button
-                  disabled={pagination.current === 1}
-                  onClick={() => loadSessions(pagination.current - 1, keyword)}
-                >
-                  上一页
-                </Button>
-                <Text>
-                  第 {pagination.current} 页，共 {Math.ceil(pagination.total / pagination.pageSize)} 页
-                </Text>
-                <Button
-                  disabled={pagination.current >= Math.ceil(pagination.total / pagination.pageSize)}
-                  onClick={() => loadSessions(pagination.current + 1, keyword)}
-                >
-                  下一页
-                </Button>
-              </Space>
-            </div>
-          )}
+           {/* 分页 - 前端小新代修改 VIS-H03: 改用Antd Pagination组件 */}
+           {pagination.total > 0 && (
+             <div style={{ textAlign: 'center', marginTop: 24 }}>
+               <Pagination
+                 current={pagination.current}
+                 total={pagination.total}
+                 pageSize={pagination.pageSize}
+                 onChange={(page) => loadSessions(page, keyword)}
+                 showSizeChanger={false}
+                 showQuickJumper
+                 showTotal={(total) => `共 ${total} 条`}
+               />
+             </div>
+           )}
          </Space>
        </Card>
        
