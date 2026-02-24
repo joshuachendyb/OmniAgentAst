@@ -70,17 +70,8 @@ import yaml
 from .base import BaseAIService
 
 
-# 支持的provider列表（用于配置验证和提示）
-SUPPORTED_PROVIDERS = [
-    "zhipuai",      # 智谱GLM
-    "opencode",     # OpenCode
-    "deepseek",     # DeepSeek
-    "moonshot",     # 月之暗面
-    "qwen",         # 通义千问
-    "baidu",        # 百度文心
-    "ali",          # 阿里
-    # 无限扩展... 配置即插即用
-]
+# 支持的provider列表（动态从配置文件读取，不硬编码）
+# 不再硬编码provider列表，配置文件里有什么就支持什么
 
 
 @dataclass
@@ -126,13 +117,7 @@ class AIServiceFactory:
             print(f"[AIServiceFactory] 警告: 无法加载配置文件 {actual_path}: {e}")
             config = {
                 "ai": {
-                    "provider": cls._current_provider,
-                    "zhipuai": {
-                        "model": "glm-4-flash",
-                        "api_key": "",
-                        "api_base": "https://open.bigmodel.cn/api/paas/v4",
-                        "timeout": 30
-                    }
+                    "provider": cls._current_provider
                 }
             }
         
@@ -223,10 +208,6 @@ class AIServiceFactory:
                 errors=errors,
                 warnings=warnings
             )
-        
-        # 5. 检查 provider 是否在支持列表中
-        if provider not in SUPPORTED_PROVIDERS:
-            warnings.append(f"provider '{provider}' 不在已知列表中，但仍会尝试使用")
         
         # 6. 检查 provider 配置是否存在
         provider_config = ai_config.get(provider)
@@ -426,9 +407,6 @@ class AIServiceFactory:
     def switch_provider(cls, provider: str, config_path: Optional[str] = None):
         """切换AI提供商"""
         print(f"[AIServiceFactory] 切换提供商: {provider}")
-        
-        if provider not in SUPPORTED_PROVIDERS:
-            print(f"[AIServiceFactory] 警告: 未知的provider={provider}，但仍会尝试创建")
         
         with cls._lock:
             old_provider = cls._current_provider

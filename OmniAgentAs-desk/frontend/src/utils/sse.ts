@@ -77,8 +77,12 @@ export interface UseSSEReturn {
   disconnect: () => void;
   /** 清空步骤 */
   clearSteps: () => void;
-  /** 设置任务ID */
+  /** 设置任务ID - 前端小新代修改 */
   setTaskId: (taskId: string) => void;
+  /** 后端返回的任务ID - 前端小新代修改 */
+  serverTaskId?: string | null;
+  /** 设置后端返回的任务ID - 前端小新代修改 */
+  setServerTaskId?: (taskId: string) => void;
 }
 
 /**
@@ -107,6 +111,7 @@ export const useSSE = (
   const responseBufferRef = useRef('');
   const isProcessingRef = useRef(false);
   const [taskId, setTaskId] = useState<string | null>(null);
+  const [serverTaskId, setServerTaskId] = useState<string | null>(null);
 
   /**
    * 断开连接
@@ -201,7 +206,8 @@ export const useSSE = (
               responseBufferRef,
               setIsReceiving,
               setIsConnected,
-              disconnect
+              disconnect,
+              setServerTaskId
             }, isProcessingRef);
           }
           console.log('[SSE] 流式接收完成');
@@ -226,7 +232,8 @@ export const useSSE = (
             responseBufferRef,
             setIsReceiving,
             setIsConnected,
-            disconnect
+            disconnect,
+            setServerTaskId
           }, isProcessingRef);
         }
       }
@@ -254,7 +261,7 @@ export const useSSE = (
     };
   }, [disconnect]);
 
-  return {
+    return {
     isConnected,
     isReceiving,
     executionSteps,
@@ -263,6 +270,8 @@ export const useSSE = (
     disconnect,
     clearSteps,
     setTaskId,
+    serverTaskId,
+    setServerTaskId,
   };
 };
 /**
@@ -284,10 +293,11 @@ const processSSEData = (
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
     setIsConnected: React.Dispatch<React.SetStateAction<boolean>>;
     disconnect: () => void;
+    setServerTaskId?: (taskId: string) => void;
   },
   isProcessingRef: React.MutableRefObject<boolean>
 ) => {
-  const { setExecutionSteps, onStep, onChunk, onComplete, onError, setCurrentResponse, responseBufferRef, setIsReceiving, setIsConnected, disconnect } = handlers;
+  const { setExecutionSteps, onStep, onChunk, onComplete, onError, setCurrentResponse, responseBufferRef, setIsReceiving, setIsConnected, disconnect, setServerTaskId } = handlers;
 
   if (isProcessingRef.current) {
     console.warn('[SSE] 递归调用被阻止');
@@ -318,6 +328,14 @@ const processSSEData = (
     };
     
     switch (rawData.type) {
+      case 'start':
+        // 【前端小新代修改】收到start事件，保存后端返回的task_id
+        console.log('[SSE] 收到start事件:', rawData);
+        if (rawData.task_id && setServerTaskId) {
+          setServerTaskId(rawData.task_id);
+        }
+        break;
+        
       case 'thought':
         // 思考步骤
         console.log('[SSE] 思考:', step.content);

@@ -108,11 +108,9 @@ class SecurityConfig(BaseModel):
 
 class ConfigUpdate(BaseModel):
     """配置更新请求"""
-    ai_provider: Optional[str] = Field(None, description="AI提供商: zhipuai | opencode | longcat")
+    ai_provider: Optional[str] = Field(None, description="AI提供商")
     ai_model: Optional[str] = Field(None, description="AI模型名称")
-    zhipu_api_key: Optional[str] = Field(None, description="智谱AI API密钥")
-    opencode_api_key: Optional[str] = Field(None, description="OpenCode API密钥")
-    longcat_api_key: Optional[str] = Field(None, description="LongCat API密钥")
+    provider_api_keys: Optional[Dict[str, str]] = Field(None, description="Provider API Key字典: {provider_name: api_key}")
     theme: Optional[str] = Field("light", description="主题: light | dark")
     language: Optional[str] = Field("zh-CN", description="语言: zh-CN | en-US")
     security: Optional[SecurityConfig] = Field(None, description="安全配置")
@@ -175,9 +173,10 @@ async def get_system_config():
                 fallback_model = provider_data['models'][0]
                 break
         
-        # 如果没有找到任何provider，用默认值
+        # 如果没有找到任何provider，用空值
+        # 注意：配置文件应该至少有一个provider配置
         if not fallback_provider:
-            fallback_provider = 'zhipuai'
+            fallback_provider = ''
             fallback_model = ''
         
         # 2. 检查 ai.provider 和 ai.model 是否有效
@@ -264,8 +263,9 @@ async def update_config(config_update: ConfigUpdate):
         
         # 更新AI配置
         if config_update.ai_provider:
-            # 验证提供商
-            if config_update.ai_provider not in ["zhipuai", "opencode", "longcat"]:
+            # 验证提供商 - 检查是否在配置文件中（通用方式，不硬编码）
+            ai_config = config_data.get('ai', {})
+            if config_update.ai_provider not in ai_config:
                 raise HTTPException(
                     status_code=400,
                     detail=f"不支持的提供商: {config_update.ai_provider}"
@@ -295,18 +295,12 @@ async def update_config(config_update: ConfigUpdate):
                 AIServiceFactory._instance = None
                 logger.info(f"已清空AIServiceFactory缓存")
         
-        # 更新API Key - 根据provider更新对应的API Key
-        if config_update.zhipu_api_key:
-            config_data['ai']['zhipuai']['api_key'] = config_update.zhipu_api_key
-            logger.info(f"更新智谱AI API Key成功")
-        
-        if config_update.opencode_api_key:
-            config_data['ai']['opencode']['api_key'] = config_update.opencode_api_key
-            logger.info(f"更新OpenCode API Key成功")
-        
-        if config_update.longcat_api_key:
-            config_data['ai']['longcat']['api_key'] = config_update.longcat_api_key
-            logger.info(f"更新LongCat API Key成功")
+        # 更新API Key - 通用方式（不硬编码）
+        if config_update.provider_api_keys:
+            for provider_name, api_key in config_update.provider_api_keys.items():
+                if provider_name in config_data.get('ai', {}):
+                    config_data['ai'][provider_name]['api_key'] = api_key
+                    logger.info(f"更新Provider API Key成功: {provider_name}")
         
         # 确保app配置节存在
         if 'app' not in config_data:
@@ -507,9 +501,10 @@ async def get_model_list():
                 fallback_model = provider_data['models'][0]
                 break
         
-        # 如果没有找到任何provider，用默认值
+        # 如果没有找到任何provider，用空值
+        # 注意：配置文件应该至少有一个provider配置
         if not fallback_provider:
-            fallback_provider = 'zhipuai'
+            fallback_provider = ''
             fallback_model = ''
         
         # 2. 检查 ai.provider 和 ai.model 是否有效
@@ -648,9 +643,10 @@ async def get_full_config():
                 fallback_model = provider_data['models'][0]
                 break
         
-        # 如果没有找到任何provider，用默认值
+        # 如果没有找到任何provider，用空值
+        # 注意：配置文件应该至少有一个provider配置
         if not fallback_provider:
-            fallback_provider = 'zhipuai'
+            fallback_provider = ''
             fallback_model = ''
         
         # 2. 检查 ai.provider 和 ai.model 是否有效

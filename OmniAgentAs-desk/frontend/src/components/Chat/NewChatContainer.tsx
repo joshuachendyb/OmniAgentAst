@@ -95,6 +95,7 @@ const NewChatContainer: React.FC = () => {
     disconnect,
     clearSteps,
     setTaskId,
+    serverTaskId,
   } = useSSE(
     {
       baseURL: 'http://localhost:8000/api/v1',
@@ -348,13 +349,14 @@ const NewChatContainer: React.FC = () => {
   };
 
   /**
-   * 任务中断处理
+   * 任务中断处理 - 前端小新代修改
    */
   const handleInterrupt = async () => {
-    if (currentTaskId) {
+    const taskIdToCancel = serverTaskId || currentTaskId;
+    if (taskIdToCancel) {
       try {
         message.info('正在中断任务...');
-        await fetch(`${API_BASE_URL}/chat/stream/cancel/${currentTaskId}`, {
+        await fetch(`${API_BASE_URL}/chat/stream/cancel/${taskIdToCancel}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
         });

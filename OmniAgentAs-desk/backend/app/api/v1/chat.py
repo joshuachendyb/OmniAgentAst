@@ -39,6 +39,7 @@ class ChatRequest(BaseModel):
     temperature: Optional[float] = Field(default=0.7, ge=0, le=2, description="温度参数")
     provider: Optional[str] = Field(default=None, description="前端指定的提供商")
     model: Optional[str] = Field(default=None, description="前端指定的模型")
+    task_id: Optional[str] = Field(default=None, description="前端指定的任务ID - 前端小新代修改")
 
 class ChatResponse(BaseModel):
     """聊天响应"""
@@ -285,8 +286,8 @@ async def chat_stream(request: ChatRequest):
     """
     import uuid
     
-    # 生成任务ID
-    task_id = str(uuid.uuid4())
+    # 【前端小新代修改】优先使用前端传递的task_id，没有才自己生成
+    task_id = request.task_id if request.task_id else str(uuid.uuid4())
     
     async def generate():
         """生成SSE流，支持中断"""
@@ -304,13 +305,14 @@ async def chat_stream(request: ChatRequest):
             # 前端没传，使用配置文件默认值
             ai_service = AIServiceFactory.get_service()
         
-        # 【修改】在流式响应开始时发送start事件，返回display_name、provider、model
+        # 【前端小新代修改】在流式响应开始时发送start事件，返回display_name、provider、model、task_id
         display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
         yield f"data: {json.dumps({
             'type': 'start',
             'display_name': display_name,
             'provider': ai_service.provider,
-            'model': ai_service.model
+            'model': ai_service.model,
+            'task_id': task_id
         })}\n\n"
         
         try:
