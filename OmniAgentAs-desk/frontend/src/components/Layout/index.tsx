@@ -81,8 +81,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   const [checkingStatus, setCheckingStatus] = useState(false);
   // 【修改】当前选中的模型ID（格式: provider-modelname）
   const [_currentProvider, setCurrentProvider] = useState<string>('opencode-minimax-m2.5-free');
-  // 【新增】模型列表
-  const [modelList, setModelList] = useState<{id: string; name: string; provider: string}[]>([]);
+  // 【修改】模型列表 - 类型匹配后端返回（id, provider, model, display_name, current_model）
+  const [modelList, setModelList] = useState<{id: number; provider: string; model: string; display_name: string; current_model: boolean}[]>([]);
   // 【新增】默认提供商
   const [defaultProvider, setDefaultProvider] = useState<string>('zhipuai');
   // 【新增】完整配置验证结果
@@ -97,9 +97,17 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   // 【新增】验证详情弹框
   const [validationModalVisible, setValidationModalVisible] = useState(false);
   
-  // 【新增】刷新模型列表 - 点击下拉框时调用，获取最新配置
+  // 【修复】刷新模型列表 - 同时刷新验证状态
   const refreshModelList = async () => {
     try {
+      // 同时刷新验证状态
+      try {
+        const validation = await configApi.validateFullConfig();
+        setValidationResult(validation);
+      } catch (err) {
+        console.warn('刷新验证状态失败:', err);
+      }
+      
       const modelData = await configApi.getModelList();
       if (modelData.models) {
         setModelList(modelData.models);
@@ -114,10 +122,15 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   const handleCheckService = async () => {
     setCheckingStatus(true);
     try {
-      const [config, modelData] = await Promise.all([
-        configApi.getConfig(),
-        configApi.getModelList()
-      ]);
+      // 【修复】同时刷新验证状态和模型列表
+      try {
+        const validation = await configApi.validateFullConfig();
+        setValidationResult(validation);
+      } catch (err) {
+        console.warn('刷新验证状态失败:', err);
+      }
+      
+      const modelData = await configApi.getModelList();
       
       // 更新模型列表
       if (modelData.models) {
@@ -128,11 +141,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       if (modelData.models && modelData.models.length > 0) {
         const currentModel = modelData.models.find(m => m.current_model === true);
         if (currentModel) {
-          // 格式: "provider-modelname"
-          setCurrentProvider(`${currentModel.provider}-${currentModel.model}`);
+          // 使用id（数字类型），转为字符串保持一致
+          setCurrentProvider(String(currentModel.id));
         }
       }
       
+      // 检查服务状态
       const status = await chatApi.validateService();
       setServiceStatus(status);
     } catch (error) {
@@ -149,19 +163,36 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     const initApp = async () => {
       setCheckingStatus(true);
       try {
-        // 【新增】先调用完整配置验证，获取所有配置项的验证结果（不破坏原来的逻辑）
+        // 【修复】先调用完整配置验证，获取所有配置项的验证结果
+        let validation = null;
         try {
-          const validation = await configApi.validateFullConfig();
+          validation = await configApi.validateFullConfig();
           setValidationResult(validation);
         } catch (err) {
           console.warn('配置验证失败:', err);
+          // 验证失败时设置空结果，补全所有字段
+          const errorResult = { 
+            success: false, 
+            provider: '', 
+            model: '', 
+            message: '配置验证接口调用失败', 
+            errors: ['配置验证接口调用失败'], 
+            warnings: [] as string[] 
+          };
+          setValidationResult(errorResult);
+          validation = errorResult;
         }
         
-        // 并行获取模型列表和配置（原来的逻辑完全不变！）
-        const [modelData, config] = await Promise.all([
-          configApi.getModelList(),
-          configApi.getConfig()
-        ]);
+        // 【修复】根据验证结果决定是否获取模型列表
+        // 设计文档要求：验证失败时不获取列表或显示空列表
+        if (!validation || !validation.success) {
+          setModelList([]);
+          setCheckingStatus(false);
+          return;
+        }
+        
+        // 验证成功才获取模型列表
+        const modelData = await configApi.getModelList();
         
         // 设置模型列表
         if (modelData.models && modelData.models.length > 0) {
@@ -169,14 +200,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           // 设置默认提供商
           setDefaultProvider(modelData.default_provider || 'zhipuai');
           
-          // 设置当前选中的模型 - 使用ai_model匹配正确的模型
-          if (config.ai_provider && config.ai_model) {
-            const currentModel = modelData.models.find(
-              m => m.provider === config.ai_provider && m.id.includes(config.ai_model)
-            );
-            if (currentModel) {
-              setCurrentProvider(currentModel.id);
-            }
+          // 设置当前选中的模型 - 直接使用后端返回的 current_model 字段
+          const currentModel = modelData.models.find(m => m.current_model === true);
+          if (currentModel) {
+            setCurrentProvider(String(currentModel.id));
           }
         }
         
@@ -477,7 +504,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                 onChange={async (value: string) => {
                   try {
                     // 从modelList中找到对应的模型，获取完整的provider和model
-                    const selectedModel = modelList.find(m => m.id === value);
+                    const selectedModel = modelList.find(m => String(m.id) === value);
                     if (!selectedModel) {
                       message.error('未找到对应的模型');
                       return;
@@ -491,7 +518,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                       ai_provider: selectedModel.provider as 'zhipuai' | 'opencode' | 'longcat',
                       ai_model: modelName
                     });
-                    message.success(`已切换到 ${selectedModel.name}`);
+                    message.success(`已切换到 ${selectedModel.display_name}`);
                     
                     // 切换后更新当前选中的模型ID
                     setCurrentProvider(value);
@@ -504,8 +531,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                 }}
               >
                 {modelList.map((model) => (
-                  <Option key={model.id} value={model.id}>
-                    {model.provider === defaultProvider ? '★ ' : ''}{model.name}
+                  <Option key={model.id} value={String(model.id)}>
+                    {model.provider === defaultProvider ? '★ ' : ''}{model.display_name}
                   </Option>
                 ))}
               </Select>

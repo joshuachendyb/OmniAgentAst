@@ -9,23 +9,21 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Input, Button, Card, List, Tag, Space, Alert, Select, Collapse, Badge } from 'antd';
+import { Input, Button, Card, List, Tag, Space, Alert, Collapse, Badge } from 'antd';
 import { 
   SendOutlined, 
   RobotOutlined, 
-  ReloadOutlined,
   LoadingOutlined,
   ThunderboltOutlined,
   EyeOutlined,
   EyeInvisibleOutlined
 } from '@ant-design/icons';
-import { chatApi, ChatMessage, ValidateResponse } from '../../services/api';
+import { ChatMessage, ValidateResponse, chatApi } from '../../services/api';
 import MessageItem from './MessageItem';
 import ExecutionPanel from './ExecutionPanel';
 import { useSSE, ExecutionStep } from '../../utils/sse';
 
 const { TextArea } = Input;
-const { Option } = Select;
 const { Panel } = Collapse;
 
 interface Message extends ChatMessage {
@@ -48,15 +46,33 @@ const ChatContainer: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
-  const [serviceStatus, setServiceStatus] = useState<ValidateResponse | null>(null);
-  const [checkingStatus, setCheckingStatus] = useState(false);
-  const [currentProvider, setCurrentProvider] = useState<'zhipuai' | 'opencode'>('zhipuai');
-  const [currentModel, setCurrentModel] = useState<string>('');
+  const [serviceStatus, _setServiceStatus] = useState<ValidateResponse | null>(null);
+  const [currentProvider, _setCurrentProvider] = useState<'zhipuai' | 'opencode'>('zhipuai');
+  const [currentModel, _setCurrentModel] = useState<string>('');
   const [showExecution, setShowExecution] = useState(true);
   const [useStream, setUseStream] = useState(true); // 默认使用流式
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentSessionId = useRef<string>('default-session');
+
+  // 加载服务状态
+  useEffect(() => {
+    const loadServiceStatus = async () => {
+      try {
+        const status = await chatApi.validateService();
+        _setServiceStatus(status);
+        if (status.success && (status.provider === 'zhipuai' || status.provider === 'opencode')) {
+          _setCurrentProvider(status.provider);
+        }
+        if (status.model) {
+          _setCurrentModel(status.model);
+        }
+      } catch (e) {
+        console.warn('加载服务状态失败:', e);
+      }
+    };
+    loadServiceStatus();
+  }, []);
 
   // SSE Hook配置
   const {
@@ -67,6 +83,7 @@ const ChatContainer: React.FC = () => {
     sendMessage: sendStreamMessage,
     disconnect,
     clearSteps,
+    setTaskId: _setTaskId,
   } = useSSE(
     {
       baseURL: 'http://localhost:8000/api/v1',
@@ -150,70 +167,6 @@ const ChatContainer: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages, currentResponse, executionSteps]);
-
-  // 检查服务状态
-  const checkServiceStatus = async () => {
-    setCheckingStatus(true);
-    try {
-      const status = await chatApi.validateService();
-      setServiceStatus(status);
-      if (status.success && (status.provider === 'zhipuai' || status.provider === 'opencode')) {
-        setCurrentProvider(status.provider);
-      }
-      if (status.model) {
-        setCurrentModel(status.model);
-      }
-    } catch (error) {
-      setServiceStatus({
-        success: false,
-        provider: 'unknown',
-        model: '',
-        message: '服务检查失败: ' + (error as Error).message,
-      });
-    } finally {
-      setCheckingStatus(false);
-    }
-  };
-
-  // 切换提供商
-  const handleSwitchProvider = async (provider: 'zhipuai' | 'opencode') => {
-    setLoading(true);
-    try {
-      const result = await chatApi.switchProvider(provider);
-      setServiceStatus(result);
-      setCurrentProvider(provider);
-      
-      if (result.model) {
-        setCurrentModel(result.model);
-      }
-      
-      const providerName = getProviderName(provider);
-      const modelName = result.model || '未知模型';
-      
-      addSystemMessage(
-        result.success 
-          ? `✅ 已切换到 ${providerName} (${modelName})`
-          : `⚠️ 切换到 ${providerName} (${modelName}) 失败: ${result.message}`
-      );
-    } catch (error) {
-      addSystemMessage('❌ 切换提供商时发生错误');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 添加系统消息
-  const addSystemMessage = (content: string) => {
-    setMessages(prev => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        role: 'system',
-        content,
-        timestamp: new Date(),
-      },
-    ]);
-  };
 
   // 发送消息（支持流式和非流式）
   const handleSend = async () => {

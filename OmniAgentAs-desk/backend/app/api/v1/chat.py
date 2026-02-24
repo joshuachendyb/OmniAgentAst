@@ -304,11 +304,13 @@ async def chat_stream(request: ChatRequest):
             # 前端没传，使用配置文件默认值
             ai_service = AIServiceFactory.get_service()
         
-        # 【修改】在流式响应开始时发送start事件，返回display_name
+        # 【修改】在流式响应开始时发送start事件，返回display_name、provider、model
         display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
         yield f"data: {json.dumps({
             'type': 'start',
-            'display_name': display_name
+            'display_name': display_name,
+            'provider': ai_service.provider,
+            'model': ai_service.model
         })}\n\n"
         
         try:
@@ -397,14 +399,14 @@ async def chat_stream(request: ChatRequest):
                          # 【修复】小沈】在SSE响应中添加model字段，让前端显示当前使用的模型
                          if result.success:
                              result_content = getattr(result, 'content', '')
-                             # 【新增】返回display_name
+                             # 【新增】返回display_name和provider
                              display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
-                             yield f"data: {json.dumps({'type': 'final', 'content': result_content, 'model': ai_service.model, 'display_name': display_name})}\n\n"
+                             yield f"data: {json.dumps({'type': 'final', 'content': result_content, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
                          else:
                              result_error = getattr(result, 'error', '执行失败')
-                             # 【新增】返回display_name
+                             # 【新增】返回display_name和provider
                              display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
-                             yield f"data: {json.dumps({'type': 'error', 'content': result_error, 'model': ai_service.model, 'display_name': display_name})}\n\n"
+                             yield f"data: {json.dumps({'type': 'error', 'content': result_error, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
                             
                 except Exception as e:
                     yield f"data: {json.dumps({'type': 'error', 'content': f'执行出错: {str(e)}'})}\n\n"

@@ -214,7 +214,7 @@ export const chatApi = {
                 callbacks.onError(data.content);
               }
             } catch (e) {
-              // 忽略解析错误
+              console.warn('[API SSE] 解析数据失败:', e, '原始行:', line);
             }
           }
         }

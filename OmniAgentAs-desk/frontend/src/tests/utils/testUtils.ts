@@ -6,7 +6,8 @@
  */
 
 import { vi, expect, beforeAll, afterAll } from 'vitest';
-import type { ChatMessage, Config, Session, ExecutionStep } from '../../services/api';
+import type { ChatMessage, Config, Session } from '../../services/api';
+import type { ExecutionStep } from '../../utils/sse';
 
 /**
  * Create a mock chat message

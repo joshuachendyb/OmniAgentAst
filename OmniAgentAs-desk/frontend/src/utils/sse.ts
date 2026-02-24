@@ -16,7 +16,7 @@ import { message } from 'antd';
  */
 export interface ExecutionStep {
   /** 步骤类型 */
-  type: 'thought' | 'action' | 'observation' | 'final' | 'error' | 'interrupted';
+  type: 'thought' | 'action' | 'observation' | 'final' | 'error' | 'interrupted' | 'chunk';
   /** 步骤内容 */
   content?: string;
   /** 工具名称 */
@@ -55,6 +55,8 @@ export interface SSEConfig {
   sessionId: string;
   /** 认证Token */
   token?: string;
+  /** 任务ID（用于中断） */
+  taskId?: string;
 }
 
 /**
@@ -75,6 +77,8 @@ export interface UseSSEReturn {
   disconnect: () => void;
   /** 清空步骤 */
   clearSteps: () => void;
+  /** 设置任务ID */
+  setTaskId: (taskId: string) => void;
 }
 
 /**
@@ -101,6 +105,8 @@ export const useSSE = (
   
   const eventSourceRef = useRef<EventSource | null>(null);
   const responseBufferRef = useRef('');
+  const isProcessingRef = useRef(false);
+  const [taskId, setTaskId] = useState<string | null>(null);
 
   /**
    * 断开连接
@@ -146,7 +152,7 @@ export const useSSE = (
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
       
-      const response = await fetch(url, {
+       const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -156,7 +162,8 @@ export const useSSE = (
           messages: [
             { role: 'user', content: content }
           ],
-          stream: true
+          stream: true,
+          task_id: taskId || undefined
         }),
         signal: controller.signal
       });
@@ -195,7 +202,7 @@ export const useSSE = (
               setIsReceiving,
               setIsConnected,
               disconnect
-            });
+            }, isProcessingRef);
           }
           console.log('[SSE] 流式接收完成');
           break;
@@ -220,7 +227,7 @@ export const useSSE = (
             setIsReceiving,
             setIsConnected,
             disconnect
-          });
+          }, isProcessingRef);
         }
       }
       
@@ -255,6 +262,7 @@ export const useSSE = (
     sendMessage,
     disconnect,
     clearSteps,
+    setTaskId,
   };
 };
 /**
@@ -276,9 +284,16 @@ const processSSEData = (
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
     setIsConnected: React.Dispatch<React.SetStateAction<boolean>>;
     disconnect: () => void;
-  }
+  },
+  isProcessingRef: React.MutableRefObject<boolean>
 ) => {
   const { setExecutionSteps, onStep, onChunk, onComplete, onError, setCurrentResponse, responseBufferRef, setIsReceiving, setIsConnected, disconnect } = handlers;
+
+  if (isProcessingRef.current) {
+    console.warn('[SSE] 递归调用被阻止');
+    return;
+  }
+  isProcessingRef.current = true;
   
   // 跳过空行
   if (!line.trim() || !line.startsWith('data: ')) {
@@ -379,7 +394,14 @@ const processSSEData = (
         console.log('[SSE] 未知类型:', rawData.type);
     }
   } catch (err) {
-    console.error('[SSE] 解析数据失败:', err, '原始内容:', line);
+    console.error(
+      '[SSE] 解析数据失败:', 
+      err, 
+      '原始内容:', line,
+      '行长度:', line.length
+    );
+  } finally {
+    isProcessingRef.current = false;
   }
 };
 

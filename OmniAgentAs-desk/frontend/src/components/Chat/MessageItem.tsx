@@ -17,7 +17,8 @@ import {
   CopyOutlined,
   CheckOutlined
 } from '@ant-design/icons';
-import type { ChatMessage, ExecutionStep } from '../../services/api';
+import type { ChatMessage } from '../../services/api';
+import type { ExecutionStep } from '../../utils/sse';
 
 const { Text } = Typography;
 

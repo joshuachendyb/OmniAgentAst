@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Input, Button, Card, List, Tag, Space, message, Alert, Collapse, Badge } from 'antd';
+import { Input, Button, Card, List, Tag, Space, message, Collapse, Badge } from 'antd';
 import { 
   SendOutlined, 
   RobotOutlined, 
@@ -29,7 +29,7 @@ import {
   LoadingOutlined
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
-import { chatApi, sessionApi, ChatMessage, API_BASE_URL } from '../../services/api';
+import { sessionApi, ChatMessage, API_BASE_URL } from '../../services/api';
 import { securityApi } from '../../services/api';
 import MessageItem from './MessageItem';
 import ExecutionPanel from './ExecutionPanel';
@@ -94,6 +94,7 @@ const NewChatContainer: React.FC = () => {
     sendMessage: sendStreamMessage,
     disconnect,
     clearSteps,
+    setTaskId,
   } = useSSE(
     {
       baseURL: 'http://localhost:8000/api/v1',
@@ -148,11 +149,12 @@ const NewChatContainer: React.FC = () => {
       });
       
       // 保存消息到会话
-      if (sessionId && pendingMessage) {
+      const currentPending = pendingMessage;
+      if (sessionId && currentPending) {
         try {
           sessionApi.saveMessage(sessionId, {
             role: 'user',
-            content: pendingMessage.content,
+            content: currentPending.content,
           });
           sessionApi.saveMessage(sessionId, {
             role: 'assistant',
@@ -325,6 +327,7 @@ const NewChatContainer: React.FC = () => {
     // 【修复问题2】生成taskId用于中断功能
     const taskId = crypto.randomUUID();
     setCurrentTaskId(taskId);
+    setTaskId(taskId);
     
     // 【关键修复】先创建assistant消息占位，设置isStreaming=true
     const assistantMessage: Message = {
@@ -568,7 +571,7 @@ const NewChatContainer: React.FC = () => {
               }
             }}
           >
-            <ThunderboltOutlined /> {useStream ? '流式关闭' : '流式开启'}
+            <ThunderboltOutlined /> {useStream ? '流式开启' : '流式关闭'}
           </Tag.CheckableTag>
           
           {/* 执行过程显示开关（仅在流式模式下显示） */}

@@ -209,12 +209,6 @@ const ProviderSettings: React.FC = () => {
     return nameMap[name] || name;
   };
 
-  // 检查验证是否有错误
-  const hasValidationErrors = validationResult && (
-    (validationResult.errors && validationResult.errors.length > 0) ||
-    (validationResult.warnings && validationResult.warnings.length > 0)
-  );
-
   return (
     <div>
       {/* 配置验证提示 - 成功/失败都显示 */}

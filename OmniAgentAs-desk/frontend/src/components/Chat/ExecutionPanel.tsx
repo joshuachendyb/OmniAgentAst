@@ -20,7 +20,7 @@ import {
   ThunderboltOutlined,
   DownloadOutlined,
 } from '@ant-design/icons';
-import type { ExecutionStep } from '../../services/api';
+import type { ExecutionStep } from '../../utils/sse';
 
 const { Text } = Typography;
 
