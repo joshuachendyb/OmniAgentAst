@@ -376,11 +376,13 @@ async def get_model_list():
         if isinstance(longcat_models, list) and longcat_models:
             for model_name in longcat_models:
                 display_name = f"{provider_display_names.get('longcat', 'LongCat')} ({model_name})"
+                is_current = (current_provider == "longcat" and current_model == model_name)
                 models.append(ModelInfo(
                     id=model_id,
                     provider="longcat",
                     model=model_name,
-                    display_name=display_name
+                    display_name=display_name,
+                    current_model=is_current
                 ))
                 model_id += 1
         
@@ -390,11 +392,13 @@ async def get_model_list():
         if isinstance(opencode_models, list) and opencode_models:
             for model_name in opencode_models:
                 display_name = f"{provider_display_names.get('opencode', 'OpenCode')} ({model_name})"
+                is_current = (current_provider == "opencode" and current_model == model_name)
                 models.append(ModelInfo(
                     id=model_id,
                     provider="opencode",
                     model=model_name,
-                    display_name=display_name
+                    display_name=display_name,
+                    current_model=is_current
                 ))
                 model_id += 1
         
@@ -404,11 +408,13 @@ async def get_model_list():
         if isinstance(zhipuai_models, list) and zhipuai_models:
             for model_name in zhipuai_models:
                 display_name = f"{provider_display_names.get('zhipuai', '智谱GLM')} ({model_name})"
+                is_current = (current_provider == "zhipuai" and current_model == model_name)
                 models.append(ModelInfo(
                     id=model_id,
                     provider="zhipuai",
                     model=model_name,
-                    display_name=display_name
+                    display_name=display_name,
+                    current_model=is_current
                 ))
                 model_id += 1
         
