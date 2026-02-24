@@ -67,6 +67,7 @@ const HistoryPage: React.FC = () => {
     total: 0,
   });
   const navigate = useNavigate();
+  const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null); // 前端小新代修改 UX-H02: 继续按钮loading状态
 
   /**
    * 加载会话列表
@@ -132,11 +133,18 @@ const HistoryPage: React.FC = () => {
   };
 
   /**
-   * 恢复对话
+   * 恢复对话 - 前端小新代修改 UX-H02: 添加loading状态
    */
-  const handleResume = (sessionId: string) => {
-    // 跳转到聊天页面，带上session_id参数（使用React Router，不刷新页面）
-    navigate(`/?session_id=${sessionId}`);
+  const handleResume = async (sessionId: string) => {
+    setLoadingSessionId(sessionId);
+    try {
+      // 跳转到聊天页面，带上session_id参数（使用React Router，不刷新页面）
+      navigate(`/?session_id=${sessionId}`);
+    } catch (error) {
+      message.error('跳转失败');
+    } finally {
+      setLoadingSessionId(null);
+    }
   };
 
   /**
@@ -216,31 +224,32 @@ const HistoryPage: React.FC = () => {
                      size="small"
                      className="session-card"
                      style={{ height: '100%' }}
-                    actions={[
-                      <Tooltip title="继续对话">
-                        <Button
-                          type="link"
-                          icon={<MessageOutlined />}
-                          onClick={() => handleResume(session.session_id)}
-                        >
-                          继续
-                        </Button>
-                      </Tooltip>,
-                      <Popconfirm
-                        title="删除会话"
-                        description={`确定要删除"${session.title}"吗？此操作不可恢复。`}
-                        onConfirm={() => handleDelete(session.session_id)}
-                        okText="删除"
-                        cancelText="取消"
-                        okButtonProps={{ danger: true }}
-                      >
-                        <Tooltip title="删除会话">
-                          <Button type="link" danger icon={<DeleteOutlined />}>
-                            删除
-                          </Button>
-                        </Tooltip>
-                      </Popconfirm>,
-                    ]}
+                     actions={[
+                       <Tooltip title="继续对话">
+                         <Button
+                           type="link"
+                           icon={<MessageOutlined />}
+                           onClick={() => handleResume(session.session_id)}
+                           loading={loadingSessionId === session.session_id}
+                         >
+                           继续
+                         </Button>
+                       </Tooltip>,
+                       <Popconfirm
+                         title="删除会话"
+                         description={`确定要删除"${session.title}"吗？此操作不可恢复。`}
+                         onConfirm={() => handleDelete(session.session_id)}
+                         okText="删除"
+                         cancelText="取消"
+                         okButtonProps={{ danger: true }}
+                       >
+                         <Tooltip title="删除会话">
+                           <Button type="link" danger icon={<DeleteOutlined />}>
+                             删除
+                           </Button>
+                         </Tooltip>
+                       </Popconfirm>,
+                     ]}
                   >
                     <Card.Meta
                       title={

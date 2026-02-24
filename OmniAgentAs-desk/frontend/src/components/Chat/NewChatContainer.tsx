@@ -472,7 +472,7 @@ const NewChatContainer: React.FC = () => {
   };
 
   /**
-   * 新建会话
+   * 新建会话 - 前端小新代修改 UX-C01: 新会话提示
    */
   const handleNewSession = async () => {
     try {
@@ -480,6 +480,16 @@ const NewChatContainer: React.FC = () => {
       setSessionId(newSession.session_id);
       setSessionTitle('新会话');
       setMessages([]);
+      
+      // 添加系统提示消息 - 新会话提示
+      const systemMessage: Message = {
+        id: (Date.now() + 1000).toString(),
+        role: 'system',
+        content: '💡 新会话已创建！开始与AI助手对话吧。',
+        timestamp: new Date(),
+      };
+      setMessages([systemMessage]);
+      
       clearSteps();
       disconnect();
       window.history.pushState({}, '', `/?session_id=${newSession.session_id}`);
