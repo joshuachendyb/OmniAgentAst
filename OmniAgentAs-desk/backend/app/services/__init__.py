@@ -7,6 +7,55 @@ AI服务工厂
 2. provider 配置是否存在
 3. 必要字段是否存在（api_key, model, api_base）
 4. 验证结果上报前端显示
+
+================================================================================
+【重要！统一Fallback逻辑 - 所有代码编写人员必须遵守！】
+
+逻辑规则：
+1. 只有当 ai.provider 存在 且 ai.model 存在 且 ai.model 在 ai.provider 的 models 列表中
+   时，才使用 ai.provider + ai.model
+2. 否则（任何一个条件不满足：ai.provider不存在/ai.model不存在/ai.model不在列表中）
+   统一fallback到：模型列表的第一个 模型provider+model
+3. 禁止有"当前provider"的概念和理解，容易引起逻辑错误
+4. 所有相关代码必须按照此逻辑实现，不能再次犯错误！
+================================================================================
+
+================================================================================
+【绝对禁止！硬编码Provider名称 - 所有代码编写人员必须遵守！】
+
+禁止事项：
+1. 绝对禁止在代码中硬编码具体的provider名称（如"zhipuai"、"opencode"、"longcat"等）
+2. 所有provider必须从配置文件中动态遍历，不能写死
+3. 配置文件里有什么provider，代码就处理什么provider
+4. 这是通用程序，不是只给这几个provider用的！
+
+正确做法：
+ai_config = config.get('ai', {})
+for provider_name in ai_config.keys():
+    if provider_name == 'provider' or provider_name == 'model':
+        continue
+    provider_data = ai_config.get(provider_name, {})
+    # 处理这个provider
+================================================================================
+
+================================================================================
+【变量命名规范 - 所有代码编写人员必须遵守！】
+
+禁止事项：
+1. 禁止使用单独的"provider"变量名来表示模型信息
+2. 模型信息 = provider + model，两者缺一不可
+3. 单独的"provider"容易引起误解，让人以为只是处理provider
+4. 涉及模型的变量名必须明确表示是模型信息
+
+正确命名：
+- final_provider, final_model  - 分别表示provider和model
+- fallback_provider, fallback_model  - 分别表示fallback的provider和model
+- current_provider, current_model  - 分别表示当前的provider和model
+
+错误命名（禁止）：
+- current_provider  - 单独用，容易误解为只是provider
+- fallback_provider  - 单独用，容易误解
+================================================================================
 """
 
 import os
@@ -203,7 +252,44 @@ class AIServiceFactory:
                 warnings=warnings
             )
         
-        # 7. 检查必要字段
+        # ====================================================================
+        # 【统一Fallback逻辑 - 必须遵守！】
+        # 1. 找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
+        fallback_provider = ''
+        fallback_model = ''
+        for provider_name in ai_config.keys():
+            if provider_name == 'provider' or provider_name == 'model':
+                continue
+            provider_data = ai_config.get(provider_name, {})
+            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
+                fallback_provider = provider_name
+                fallback_model = provider_data['models'][0]
+                break
+        
+        # 如果没有找到任何provider，用默认值
+        if not fallback_provider:
+            fallback_provider = 'zhipuai'
+            fallback_model = ''
+        
+        # 2. 检查 ai.provider 和 ai.model 是否有效
+        selected_provider = ai_config.get('provider', '')
+        selected_model = ai_config.get('model', '')
+        
+        is_valid = (
+            selected_provider and 
+            selected_provider in ai_config and 
+            'models' in ai_config[selected_provider] and 
+            selected_model and 
+            selected_model in ai_config[selected_provider]['models']
+        )
+        
+        # 3. 使用有效配置或fallback
+        if is_valid:
+            model = selected_model
+        else:
+            model = fallback_model
+        # ====================================================================
+        
         # api_key
         api_key = provider_config.get("api_key")
         if not api_key:
@@ -211,12 +297,7 @@ class AIServiceFactory:
         elif not isinstance(api_key, str) or api_key.strip() == "":
             errors.append(f"provider '{provider}' 的 api_key 为空")
         
-        # model
-        model = provider_config.get("model", "")
-        if not model:
-            errors.append(f"provider '{provider}' 缺少 model 配置")
-        elif not isinstance(model, str) or model.strip() == "":
-            errors.append(f"provider '{provider}' 的 model 为空")
+        # 不再检查provider下的model，因为已经没有这个字段了
         
         # api_base
         api_base = provider_config.get("api_base")
@@ -272,22 +353,58 @@ class AIServiceFactory:
             config = cls.load_config(config_path)
             ai_config = config.get("ai", {})
             
-            # 【修改】同时读取 provider 和 model
-            provider = ai_config.get("provider", "zhipuai")
-            model = ai_config.get("model", "")  # 新增：读取顶层ai.model
+            # ====================================================================
+            # 【统一Fallback逻辑 - 必须遵守！】
+            # 1. 找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
+            fallback_provider = ''
+            fallback_model = ''
+            for provider_name in ai_config.keys():
+                if provider_name == 'provider' or provider_name == 'model':
+                    continue
+                provider_data = ai_config.get(provider_name, {})
+                if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
+                    fallback_provider = provider_name
+                    fallback_model = provider_data['models'][0]
+                    break
             
-            cls._current_provider = provider
+            # 如果没有找到任何provider，用默认值
+            if not fallback_provider:
+                fallback_provider = 'zhipuai'
+                fallback_model = ''
             
-            print(f"[AIServiceFactory] 创建服务实例: provider={provider}, model={model}")
+            # 2. 检查 ai.provider 和 ai.model 是否有效
+            selected_provider = ai_config.get('provider', '')
+            selected_model = ai_config.get('model', '')
             
-            provider_config = ai_config.get(provider, {})
+            is_valid = (
+                selected_provider and 
+                selected_provider in ai_config and 
+                'models' in ai_config[selected_provider] and 
+                selected_model and 
+                selected_model in ai_config[selected_provider]['models']
+            )
+            
+            # 3. 使用有效配置或fallback
+            if is_valid:
+                final_provider = selected_provider
+                final_model = selected_model
+            else:
+                final_provider = fallback_provider
+                final_model = fallback_model
+            # ====================================================================
+            
+            cls._current_provider = final_provider
+            
+            print(f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}")
+            
+            provider_config = ai_config.get(final_provider, {})
             
             # 只有当provider配置完全不存在时才fallback
             if not provider_config:
                 for key, val in ai_config.items():
                     if key != "provider" and isinstance(val, dict) and val.get("api_key"):
-                        print(f"[AIServiceFactory] 警告: provider={provider} 配置不存在，使用 {key}")
-                        provider = key
+                        print(f"[AIServiceFactory] 警告: provider={final_provider} 配置不存在，使用 {key}")
+                        final_provider = key
                         provider_config = val
                         break
             
@@ -295,14 +412,11 @@ class AIServiceFactory:
                 print(f"[AIServiceFactory] 错误: 未找到任何有效的provider配置")
                 provider_config = {}
             
-            # 【修改】使用顶层ai.model，如果为空则用provider下的默认model
-            final_model = model if model else provider_config.get("model", "")
-            
             cls._instance = BaseAIService(
                 api_key=provider_config.get("api_key", ""),
                 model=final_model,
                 api_base=provider_config.get("api_base", "https://api.openai.com/v1"),
-                provider=provider,  # 新增：传递provider
+                provider=final_provider,  # 新增：传递provider
                 timeout=provider_config.get("timeout", 30)
             )
         

@@ -6,6 +6,77 @@
 配置管理API路由
 提供系统配置的获取、更新、验证功能
 支持从YAML文件持久化配置
+
+================================================================================
+【重要！统一Fallback逻辑 - 所有代码编写人员必须遵守！】
+
+逻辑规则：
+1. 只有当 ai.provider 存在 且 ai.model 存在 且 ai.model 在 ai.provider 的 models 列表中
+   时，才使用 ai.provider + ai.model
+2. 否则（任何一个条件不满足：ai.provider不存在/ai.model不存在/ai.model不在列表中）
+   统一fallback到：模型列表的第一个 模型provider+model
+3. 禁止有"当前provider"的概念和理解，容易引起逻辑错误
+4. 所有相关代码必须按照此逻辑实现，不能再次犯错误！
+
+正确示例：
+ai_config = config.get('ai', {})
+fallback_provider = 'zhipuai'
+fallback_model = ''
+for p in ['zhipuai', 'opencode', 'longcat']:
+    if p in ai_config and 'models' in ai_config[p] and ai_config[p]['models']:
+        fallback_provider = p
+        fallback_model = ai_config[p]['models'][0]
+        break
+
+selected_provider = ai_config.get('provider', '')
+selected_model = ai_config.get('model', '')
+
+if (selected_provider and selected_provider in ai_config and 
+    'models' in ai_config[selected_provider] and 
+    selected_model and selected_model in ai_config[selected_provider]['models']):
+    final_provider = selected_provider
+    final_model = selected_model
+else:
+    final_provider = fallback_provider
+    final_model = fallback_model
+================================================================================
+
+================================================================================
+【绝对禁止！硬编码Provider名称 - 所有代码编写人员必须遵守！】
+
+禁止事项：
+1. 绝对禁止在代码中硬编码具体的provider名称（如"zhipuai"、"opencode"、"longcat"等）
+2. 所有provider必须从配置文件中动态遍历，不能写死
+3. 配置文件里有什么provider，代码就处理什么provider
+4. 这是通用程序，不是只给这几个provider用的！
+
+正确做法：
+ai_config = config.get('ai', {})
+for provider_name in ai_config.keys():
+    if provider_name == 'provider' or provider_name == 'model':
+        continue
+    provider_data = ai_config.get(provider_name, {})
+    # 处理这个provider
+================================================================================
+
+================================================================================
+【变量命名规范 - 所有代码编写人员必须遵守！】
+
+禁止事项：
+1. 禁止使用单独的"provider"变量名来表示模型信息
+2. 模型信息 = provider + model，两者缺一不可
+3. 单独的"provider"容易引起误解，让人以为只是处理provider
+4. 涉及模型的变量名必须明确表示是模型信息
+
+正确命名：
+- final_provider, final_model  - 分别表示provider和model
+- fallback_provider, fallback_model  - 分别表示fallback的provider和model
+- current_provider, current_model  - 分别表示当前的provider和model
+
+错误命名（禁止）：
+- current_provider  - 单独用，容易误解为只是provider
+- fallback_provider  - 单独用，容易误解
+================================================================================
 """
 
 import os
@@ -88,13 +159,51 @@ async def get_system_config():
     """
     try:
         config = get_config_instance()
+        ai_config = config.get('ai', {})
         
-        # 获取当前AI配置
-        provider = config.get('ai.provider', 'zhipuai')
-        ai_config = config.get_ai_config(provider)
+        # ====================================================================
+        # 【统一Fallback逻辑 - 必须遵守！】
+        # 1. 找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
+        fallback_provider = ''
+        fallback_model = ''
+        for provider_name in ai_config.keys():
+            if provider_name == 'provider' or provider_name == 'model':
+                continue
+            provider_data = ai_config.get(provider_name, {})
+            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
+                fallback_provider = provider_name
+                fallback_model = provider_data['models'][0]
+                break
         
-        # 检查API Key是否已配置（脱敏）
-        api_key = ai_config.get('api_key', '')
+        # 如果没有找到任何provider，用默认值
+        if not fallback_provider:
+            fallback_provider = 'zhipuai'
+            fallback_model = ''
+        
+        # 2. 检查 ai.provider 和 ai.model 是否有效
+        selected_provider = ai_config.get('provider', '')
+        selected_model = ai_config.get('model', '')
+        
+        is_valid = (
+            selected_provider and 
+            selected_provider in ai_config and 
+            'models' in ai_config[selected_provider] and 
+            selected_model and 
+            selected_model in ai_config[selected_provider]['models']
+        )
+        
+        # 3. 使用有效配置或fallback
+        if is_valid:
+            final_provider = selected_provider
+            final_model = selected_model
+        else:
+            final_provider = fallback_provider
+            final_model = fallback_model
+        # ====================================================================
+        
+        # 获取当前provider的配置，读取其api_key
+        provider_config = ai_config.get(final_provider, {})
+        api_key = provider_config.get('api_key', '')
         api_key_configured = bool(api_key and api_key.strip() != '')
         
         # 获取主题和语言配置（如果没有则使用默认值）
@@ -117,11 +226,11 @@ async def get_system_config():
         else:
             security_config = SecurityConfig(**security_config)
         
-        logger.info(f"获取配置成功: provider={provider}")
+        logger.info(f"获取配置成功: provider={final_provider}, model={final_model}")
         
         return ConfigResponse(
-            ai_provider=provider,
-            ai_model=ai_config.get('model', ''),
+            ai_provider=final_provider,
+            ai_model=final_model,
             api_key_configured=api_key_configured,
             theme=theme,
             language=language,
@@ -174,12 +283,13 @@ async def update_config(config_update: ConfigUpdate):
                     detail=f"切换AI提供商失败: {str(e)}"
                 )
         
-        # 更新AI模型 - 更新对应provider下的model字段
+        # 【修正】更新AI模型 - 只更新顶层ai.model
         # 如果只传了ai_model没传ai_provider，使用当前配置的provider
         if config_update.ai_model:
             provider = config_update.ai_provider or config_data.get('ai', {}).get('provider', 'zhipuai')
             if provider in config_data['ai']:
-                config_data['ai'][provider]['model'] = config_update.ai_model
+                # 【修正】只更新顶层 ai.model
+                config_data['ai']['model'] = config_update.ai_model
                 logger.info(f"切换AI模型成功: provider={provider}, model={config_update.ai_model}")
                 # 【修复】清空AIServiceFactory缓存，强制重新读取配置
                 AIServiceFactory._instance = None
@@ -277,7 +387,35 @@ async def validate_config(request: ConfigValidateRequest):
         # 使用通用BaseAIService验证
         from app.services.base import BaseAIService
         
-        model_name = provider_config.get('model', '')
+        # 【修复】优先用用户指定的provider，只有当指定provider无效时才fallback
+        ai_config = config.get('ai', {})
+        current_model_provider = request.provider
+        
+        # 检查用户指定的provider是否有有效配置
+        provider_has_models = (
+            current_model_provider in ai_config and 
+            'models' in ai_config[current_model_provider] and 
+            ai_config[current_model_provider]['models']
+        )
+        
+        # 如果用户指定的provider无效，fallback到第一个有效的provider（动态遍历，不是硬编码！）
+        if not provider_has_models:
+            for provider_name in ai_config.keys():
+                if provider_name == 'provider' or provider_name == 'model':
+                    continue
+                provider_data = ai_config.get(provider_name, {})
+                if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
+                    current_model_provider = provider_name
+                    break
+        
+        # model优先用配置的，如果没有就用当前模型的第一个model
+        model_name = ai_config.get('model', '')
+        if not model_name:
+            current_model_models = ai_config.get(current_model_provider, {}).get('models', [])
+            if current_model_models and len(current_model_models) > 0:
+                model_name = current_model_models[0]
+        
+        provider_config = ai_config.get(current_model_provider, {})
         api_base = provider_config.get('api_base', 'https://api.openai.com/v1')
         
         temp_service = BaseAIService(
@@ -328,6 +466,7 @@ class ModelInfo(BaseModel):
     provider: str = Field(..., description="提供商名称(小写)")
     model: str = Field(..., description="模型名称")
     display_name: str = Field(..., description="显示名称，格式: Provider (model)")
+    current_model: bool = Field(default=False, description="是否为当前模型")
 
 
 class ModelListResponse(BaseModel):
@@ -351,86 +490,86 @@ async def get_model_list():
         config = get_config_instance()
         config.reload()
         
-        # 从配置中读取模型信息
-        zhipuai_config = config.get('ai.zhipuai', {})
-        opencode_config = config.get('ai.opencode', {})
-        longcat_config = config.get('ai.longcat', {})
+        ai_config = config.get('ai', {})
         
-        default_provider = config.get('ai.provider', 'zhipuai')
+        # ====================================================================
+        # 【统一Fallback逻辑 - 必须遵守！】
+        # 1. 找第一个有models的provider作为fallback
+        fallback_provider = ''
+        fallback_model = ''
+        # 动态遍历所有provider（不是硬编码！）
+        for provider_name in ai_config.keys():
+            if provider_name == 'provider' or provider_name == 'model':
+                continue
+            provider_data = ai_config.get(provider_name, {})
+            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
+                fallback_provider = provider_name
+                fallback_model = provider_data['models'][0]
+                break
         
-        # 构建模型列表 - 按照配置文件中provider的实际顺序
-        # 配置文件顺序: longcat -> opencode -> zhipuai
+        # 如果没有找到任何provider，用默认值
+        if not fallback_provider:
+            fallback_provider = 'zhipuai'
+            fallback_model = ''
+        
+        # 2. 检查 ai.provider 和 ai.model 是否有效
+        selected_provider = ai_config.get('provider', '')
+        selected_model = ai_config.get('model', '')
+        
+        is_valid = (
+            selected_provider and 
+            selected_provider in ai_config and 
+            'models' in ai_config[selected_provider] and 
+            selected_model and 
+            selected_model in ai_config[selected_provider]['models']
+        )
+        
+        # 3. 使用有效配置或fallback
+        if is_valid:
+            final_provider = selected_provider
+            final_model = selected_model
+        else:
+            final_provider = fallback_provider
+            final_model = fallback_model
+        # ====================================================================
+        
+        # 构建模型列表 - 动态遍历配置文件中的所有provider
         models = []
         model_id = 1  # 从1开始的序号
         
-        # 定义provider的显示名称映射
-        provider_display_names = {
-            "longcat": "LongCat",
-            "opencode": "OpenCode",
-            "zhipuai": "智谱GLM"
-        }
-        
-        # LongCat模型（配置文件中第一个provider）
-        longcat_config = config.get('ai.longcat', {})
-        longcat_models = longcat_config.get('models', [])
-        if isinstance(longcat_models, list) and longcat_models:
-            for model_name in longcat_models:
-                display_name = f"{provider_display_names.get('longcat', 'LongCat')} ({model_name})"
-                is_current = (current_provider == "longcat" and current_model == model_name)
-                models.append(ModelInfo(
-                    id=model_id,
-                    provider="longcat",
-                    model=model_name,
-                    display_name=display_name,
-                    current_model=is_current
-                ))
-                model_id += 1
-        
-        # OpenCode模型（配置文件中第二个provider）
-        opencode_config = config.get('ai.opencode', {})
-        opencode_models = opencode_config.get('models', [])
-        if isinstance(opencode_models, list) and opencode_models:
-            for model_name in opencode_models:
-                display_name = f"{provider_display_names.get('opencode', 'OpenCode')} ({model_name})"
-                is_current = (current_provider == "opencode" and current_model == model_name)
-                models.append(ModelInfo(
-                    id=model_id,
-                    provider="opencode",
-                    model=model_name,
-                    display_name=display_name,
-                    current_model=is_current
-                ))
-                model_id += 1
-        
-        # 智谱模型（配置文件中第三个provider）
-        zhipuai_config = config.get('ai.zhipuai', {})
-        zhipuai_models = zhipuai_config.get('models', [])
-        if isinstance(zhipuai_models, list) and zhipuai_models:
-            for model_name in zhipuai_models:
-                display_name = f"{provider_display_names.get('zhipuai', '智谱GLM')} ({model_name})"
-                is_current = (current_provider == "zhipuai" and current_model == model_name)
-                models.append(ModelInfo(
-                    id=model_id,
-                    provider="zhipuai",
-                    model=model_name,
-                    display_name=display_name,
-                    current_model=is_current
-                ))
-                model_id += 1
+        # 动态遍历所有provider（不是硬编码！）
+        for provider_name in ai_config.keys():
+            if provider_name == 'provider' or provider_name == 'model':
+                continue
+            provider_data = ai_config.get(provider_name, {})
+            if not isinstance(provider_data, dict):
+                continue
+            provider_models = provider_data.get('models', [])
+            if isinstance(provider_models, list) and provider_models:
+                for model_name in provider_models:
+                    display_name = f"{provider_name} ({model_name})"
+                    is_current = (final_provider == provider_name and final_model == model_name)
+                    models.append(ModelInfo(
+                        id=model_id,
+                        provider=provider_name,
+                        model=model_name,
+                        display_name=display_name,
+                        current_model=is_current
+                    ))
+                    model_id += 1
         
         logger.info(f"获取模型列表成功: {len(models)}个模型")
         
         return ModelListResponse(
             models=models,
-            default_provider=default_provider
+            default_provider=final_provider
         )
-        
     except Exception as e:
         logger.error(f"获取模型列表失败: {e}")
         # 返回空列表，不返回硬编码默认值
         return ModelListResponse(
             models=[],
-            default_provider="zhipuai"
+            default_provider=''
         )
 
 
@@ -494,30 +633,72 @@ async def get_full_config():
         config = get_config_instance()
         config.reload()
         ai_config = config.get('ai', {})
-        current_provider = ai_config.get('provider', 'zhipuai')
-        current_model = ai_config.get(current_provider, {}).get('model', '')
+        
+        # ====================================================================
+        # 【统一Fallback逻辑 - 必须遵守！】
+        # 1. 找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
+        fallback_provider = ''
+        fallback_model = ''
+        for provider_name in ai_config.keys():
+            if provider_name == 'provider' or provider_name == 'model':
+                continue
+            provider_data = ai_config.get(provider_name, {})
+            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
+                fallback_provider = provider_name
+                fallback_model = provider_data['models'][0]
+                break
+        
+        # 如果没有找到任何provider，用默认值
+        if not fallback_provider:
+            fallback_provider = 'zhipuai'
+            fallback_model = ''
+        
+        # 2. 检查 ai.provider 和 ai.model 是否有效
+        selected_provider = ai_config.get('provider', '')
+        selected_model = ai_config.get('model', '')
+        
+        is_valid = (
+            selected_provider and 
+            selected_provider in ai_config and 
+            'models' in ai_config[selected_provider] and 
+            selected_model and 
+            selected_model in ai_config[selected_provider]['models']
+        )
+        
+        # 3. 使用有效配置或fallback
+        if is_valid:
+            final_provider = selected_provider
+            final_model = selected_model
+        else:
+            final_provider = fallback_provider
+            final_model = fallback_model
+        # ====================================================================
         
         providers = {}
-        for provider_name in ['opencode', 'zhipuai', 'longcat']:
+        # 动态遍历所有provider（不是硬编码！）
+        for provider_name in ai_config.keys():
+            if provider_name == 'provider' or provider_name == 'model':
+                continue
             provider_data = ai_config.get(provider_name, {})
-            if provider_data:
-                # 个人系统，返回明文API Key
-                api_key = provider_data.get('api_key', '')
-                
-                providers[provider_name] = ProviderInfo(
-                    name=provider_name,
-                    api_base=provider_data.get('api_base', ''),
-                    api_key=api_key,  # 返回明文Key
-                    model=provider_data.get('model', ''),
-                    models=provider_data.get('models', []),
-                    timeout=provider_data.get('timeout', 60),
-                    max_retries=provider_data.get('max_retries', 3)
-                )
+            if not isinstance(provider_data, dict):
+                continue
+            # 个人系统，返回明文API Key
+            api_key = provider_data.get('api_key', '')
+            
+            providers[provider_name] = ProviderInfo(
+                name=provider_name,
+                api_base=provider_data.get('api_base', ''),
+                api_key=api_key,  # 返回明文Key
+                model='',  # provider下已无model字段，统一在顶层ai.model
+                models=provider_data.get('models', []),
+                timeout=provider_data.get('timeout', 60),
+                max_retries=provider_data.get('max_retries', 3)
+            )
         
         return FullConfigResponse(
             providers=providers,
-            current_provider=current_provider,
-            current_model=current_model
+            current_provider=final_provider,
+            current_model=final_model
         )
     except Exception as e:
         logger.error(f"获取完整配置失败: {e}")
@@ -604,9 +785,11 @@ async def delete_model(provider_name: str, model_name: str):
         models.remove(model_name)
         config['ai'][provider_name]['models'] = models
         
-        # 如果删除的是当前模型，更新为第一个
-        if provider_config.get('model') == model_name and models:
-            config['ai'][provider_name]['model'] = models[0]
+        # 如果删除的是当前模型，更新顶层 ai.model 为新列表的第一个
+        ai_config = config.get('ai', {})
+        current_model = ai_config.get('model', '')
+        if current_model == model_name and models:
+            config['ai']['model'] = models[0]
         
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
@@ -650,7 +833,8 @@ async def update_provider(provider_name: str, data: ProviderUpdate):
         if data.api_key is not None:
             config['ai'][provider_name]['api_key'] = data.api_key
         if data.model is not None:
-            config['ai'][provider_name]['model'] = data.model
+            # 【修正】更新顶层 ai.model，而不是 provider 下的 model
+            config['ai']['model'] = data.model
         if data.timeout is not None:
             config['ai'][provider_name]['timeout'] = data.timeout
         if data.max_retries is not None:
@@ -700,9 +884,9 @@ async def add_model(provider_name: str, data: ModelAddRequest):
         models.append(data.model)
         config['ai'][provider_name]['models'] = models
         
-        # 如果没有当前模型，设为新增的模型
-        if not config['ai'][provider_name].get('model'):
-            config['ai'][provider_name]['model'] = data.model
+        # 如果，设为新增的顶层没有ai.model模型
+        if not config['ai'].get('model'):
+            config['ai']['model'] = data.model
         
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
