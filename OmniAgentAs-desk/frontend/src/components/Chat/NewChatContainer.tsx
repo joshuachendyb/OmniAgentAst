@@ -573,7 +573,7 @@ const NewChatContainer: React.FC = () => {
               }
             }}
           >
-            <ThunderboltOutlined /> {useStream ? '流式开启' : '流式关闭'}
+            <ThunderboltOutlined /> {useStream ? '流式关闭' : '流式开启'}
           </Tag.CheckableTag>
           
           {/* 执行过程显示开关（仅在流式模式下显示） */}
