@@ -16,19 +16,31 @@ import { message } from 'antd';
  */
 export interface ExecutionStep {
   /** 步骤类型 */
-  type: 'thought' | 'action' | 'observation' | 'final' | 'error' | 'interrupted' | 'chunk';
+  type: 'thought' | 'action' | 'observation' | 'final' | 'error' | 'interrupted' | 'chunk' | 'start';
   /** 步骤内容 */
   content?: string;
   /** 工具名称 */
   tool?: string;
   /** 工具参数 */
   params?: Record<string, any>;
+  /** action参数（action_input） - 前端小新代修改 */
+  action_input?: Record<string, any>;
   /** 执行结果 */
   result?: any;
+  /** observation（观察结果） - 前端小新代修改 */
+  observation?: any;
   /** 时间戳 */
   timestamp: number;
   /** 步骤序号 */
   stepNumber?: number;
+  /** 模型名称 - 前端小新代修改 */
+  model?: string;
+  /** 任务ID - 前端小新代修改 */
+  task_id?: string;
+  /** 显示名称 - 前端小新代修改 */
+  display_name?: string;
+  /** provider名称 - 前端小新代修改 */
+  provider?: string;
 }
 
 /**
@@ -365,13 +377,16 @@ const processSSEData = (
         onChunk?.(rawData.content || '');
         break;
       case 'final':
-        // 最终结果
+        // 最终结果 - 前端小新代修改
         console.log('[SSE] 最终结果:', step.content);
-        // 不要覆盖已经累积的内容
-        if (step.content && !responseBufferRef.current) {
-          responseBufferRef.current = step.content;
-          setCurrentResponse(responseBufferRef.current);
-          onChunk?.(step.content);
+        // 优化判断逻辑：优先使用后端返回的content，避免忽略有效内容
+        if (step.content) {
+          // 如果已有累积内容，不覆盖；如果没有，则用后端返回的
+          if (!responseBufferRef.current) {
+            responseBufferRef.current = step.content;
+            setCurrentResponse(responseBufferRef.current);
+            onChunk?.(step.content);
+          }
         }
         // 获取model字段
         const model = rawData.model;
