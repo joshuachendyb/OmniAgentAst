@@ -217,11 +217,29 @@ const ProviderSettings: React.FC = () => {
 
   return (
     <div>
-      {/* 配置验证失败提示 */}
-      {hasValidationErrors && (
+      {/* 配置验证提示 - 成功/失败都显示 */}
+      {validationResult && (
         <Alert
-          message="⚠️ 配置验证失败 - 点击查看详情"
-          type="warning"
+          message={
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {validationResult.success ? (
+                <>
+                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                  <strong>配置验证成功</strong>
+                </>
+              ) : (
+                <>
+                  <ReloadOutlined style={{ color: '#faad14' }} />
+                  <strong>配置验证发现问题</strong>
+                </>
+              )}
+              <span style={{ marginLeft: 8, cursor: 'pointer', textDecoration: 'underline' }}>
+                点击查看详情
+              </span>
+            </div>
+          }
+          description={validationResult.message}
+          type={validationResult.success ? 'success' : 'warning'}
           showIcon
           style={{ marginBottom: 16, cursor: 'pointer' }}
           onClick={() => setValidationModalVisible(true)}
@@ -230,44 +248,142 @@ const ProviderSettings: React.FC = () => {
 
       {/* 验证详情弹框 */}
       <Modal
-        title="配置验证详情"
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {validationResult?.success ? (
+              <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />
+            ) : (
+              <ReloadOutlined style={{ color: '#faad14', fontSize: 18 }} />
+            )}
+            配置验证详情
+          </span>
+        }
         open={validationModalVisible}
         onCancel={() => setValidationModalVisible(false)}
         footer={[
-          <Button key="close" type="primary" onClick={() => setValidationModalVisible(false)}>
+          <Button key="close" onClick={() => setValidationModalVisible(false)}>
             关闭
           </Button>,
-          <Button key="revalidate" onClick={handleLoadWithValidation}>
+          <Button key="revalidate" onClick={handleLoadWithValidation} loading={loading}>
             重新验证
-          </Button>
+          </Button>,
         ]}
         width={600}
       >
         {validationResult && (
           <div>
-            <p><strong>Provider:</strong> {validationResult.provider}</p>
-            <p><strong>Model:</strong> {validationResult.model}</p>
-            <p><strong>状态:</strong> {validationResult.success ? '✅ 通过' : '❌ 失败'}</p>
+            <Alert 
+              message={
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {validationResult.success ? (
+                    <>
+                      <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                      <strong>配置验证成功</strong>
+                    </>
+                  ) : (
+                    <>
+                      <ReloadOutlined style={{ color: '#faad14' }} />
+                      <strong>配置验证发现问题</strong>
+                    </>
+                  )}
+                </div>
+              }
+              description={validationResult.message}
+              type={validationResult.success ? 'success' : 'warning'} 
+              showIcon 
+              style={{ marginBottom: 24 }}
+            />
+            
+            {/* 配置信息卡片 */}
+            <div style={{ 
+              background: '#fafafa', 
+              padding: 16, 
+              borderRadius: 8, 
+              marginBottom: 24 
+            }}>
+              <div style={{ display: 'flex', gap: 24 }}>
+                <div>
+                  <span style={{ color: '#666', fontSize: 12 }}>当前 Provider</span>
+                  <div style={{ fontSize: 16, fontWeight: 500, marginTop: 4 }}>
+                    {validationResult.provider}
+                  </div>
+                </div>
+                <div>
+                  <span style={{ color: '#666', fontSize: 12 }}>当前 Model</span>
+                  <div style={{ fontSize: 16, fontWeight: 500, marginTop: 4 }}>
+                    {validationResult.model}
+                  </div>
+                </div>
+              </div>
+            </div>
             
             {validationResult.errors && validationResult.errors.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <h4 style={{ color: '#ff4d4f' }}>❌ 错误 ({validationResult.errors.length})</h4>
-                <ul>
-                  {validationResult.errors.map((err: string, idx: number) => (
-                    <li key={idx} style={{ color: '#ff4d4f' }}>{err}</li>
-                  ))}
-                </ul>
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 8, 
+                  marginBottom: 12,
+                  color: '#ff4d4f',
+                  fontSize: 14,
+                  fontWeight: 500
+                }}>
+                  <span style={{ fontSize: 18 }}>❌</span>
+                  错误 ({validationResult.errors.length})
+                </div>
+                <div style={{ 
+                  background: '#fff1f0', 
+                  border: '1px solid #ffa39e', 
+                  borderRadius: 6, 
+                  padding: '12px 16px'
+                }}>
+                  <ul style={{ 
+                    margin: 0, 
+                    paddingLeft: 20, 
+                    color: '#ff4d4f',
+                    fontSize: 14,
+                    lineHeight: 1.8
+                  }}>
+                    {validationResult.errors.map((err: string, idx: number) => (
+                      <li key={idx}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             )}
             
             {validationResult.warnings && validationResult.warnings.length > 0 && (
-              <div style={{ marginTop: 16 }}>
-                <h4 style={{ color: '#faad14' }}>⚠️ 警告 ({validationResult.warnings.length})</h4>
-                <ul>
-                  {validationResult.warnings.map((warn: string, idx: number) => (
-                    <li key={idx} style={{ color: '#faad14' }}>{warn}</li>
-                  ))}
-                </ul>
+              <div>
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: 8, 
+                  marginBottom: 12,
+                  color: '#faad14',
+                  fontSize: 14,
+                  fontWeight: 500
+                }}>
+                  <span style={{ fontSize: 18 }}>⚠️</span>
+                  警告 ({validationResult.warnings.length})
+                </div>
+                <div style={{ 
+                  background: '#fffbe6', 
+                  border: '1px solid #ffe58f', 
+                  borderRadius: 6, 
+                  padding: '12px 16px'
+                }}>
+                  <ul style={{ 
+                    margin: 0, 
+                    paddingLeft: 20, 
+                    color: '#faad14',
+                    fontSize: 14,
+                    lineHeight: 1.8
+                  }}>
+                    {validationResult.warnings.map((warn: string, idx: number) => (
+                      <li key={idx}>{warn}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
             )}
           </div>
