@@ -388,9 +388,10 @@ export const configApi = {
   /**
    * 获取可用模型列表
    * @author 小新
+   * @update 2026-02-24 修改类型以匹配后端返回（id, provider, model, display_name, current_model）
    */
-  getModelList: async (): Promise<{ models: { id: string; name: string; provider: string }[]; default_provider: string }> => {
-    const response = await api.get<{ models: { id: string; name: string; provider: string }[]; default_provider: string }>('/config/models');
+  getModelList: async (): Promise<{ models: { id: number; provider: string; model: string; display_name: string; current_model: boolean }[]; default_provider: string }> => {
+    const response = await api.get<{ models: { id: number; provider: string; model: string; display_name: string; current_model: boolean }[]; default_provider: string }>('/config/models');
     return response.data;
   },
 

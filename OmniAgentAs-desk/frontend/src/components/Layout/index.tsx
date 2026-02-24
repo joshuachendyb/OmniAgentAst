@@ -124,13 +124,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         setModelList(modelData.models);
       }
       
-      // 更新当前选中的模型 - 使用config中的ai_model来匹配正确的模型
-      if (config.ai_provider && config.ai_model && modelData.models) {
-        const currentModel = modelData.models.find(
-          m => m.provider === config.ai_provider && m.id.includes(config.ai_model)
-        );
+      // 更新当前选中的模型 - 直接使用后端返回的current_model字段
+      if (modelData.models && modelData.models.length > 0) {
+        const currentModel = modelData.models.find(m => m.current_model === true);
         if (currentModel) {
-          setCurrentProvider(currentModel.id);
+          // 格式: "provider-modelname"
+          setCurrentProvider(`${currentModel.provider}-${currentModel.model}`);
         }
       }
       
