@@ -14,7 +14,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Input, Button, Card, List, Tag, Space, message, Collapse, Badge } from 'antd';
+import { Input, Button, Card, List, Tag, Space, message, Badge } from 'antd';
 import { 
   SendOutlined, 
   RobotOutlined, 
@@ -25,14 +25,12 @@ import {
   PlayCircleOutlined,
   ThunderboltOutlined,
   EyeOutlined,
-  EyeInvisibleOutlined,
-  LoadingOutlined
+  EyeInvisibleOutlined
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { sessionApi, ChatMessage, API_BASE_URL } from '../../services/api';
 import { securityApi } from '../../services/api';
 import MessageItem from './MessageItem';
-import ExecutionPanel from './ExecutionPanel';
 import DangerConfirmModal from '../DangerConfirmModal';
 import SecurityAlert from '../SecurityAlert';
 import { showSecurityNotification } from '../SecurityNotification';
@@ -40,7 +38,6 @@ import { getRiskLevel } from '../../types/security';
 import { useSSE, ExecutionStep } from '../../utils/sse';
 
 const { TextArea } = Input;
-const { Panel } = Collapse;
 
 interface Message extends ChatMessage {
   id: string;
@@ -330,15 +327,16 @@ const NewChatContainer: React.FC = () => {
     setCurrentTaskId(taskId);
     setTaskId(taskId);
     
-    // 【关键修复】先创建assistant消息占位，设置isStreaming=true
-    const assistantMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: '',
-      timestamp: new Date(),
-      executionSteps: [],
-      isStreaming: true,
-    };
+     // 【关键修复】先创建assistant消息占位，设置isStreaming=true
+     const assistantMessage: Message = {
+       id: (Date.now() + 1).toString(),
+       role: 'assistant',
+       content: '',
+       timestamp: new Date(),
+       executionSteps: [],
+       isStreaming: true,
+       model: undefined,  // 前端小新代修改：明确设置可选属性
+     };
     setMessages((prev) => [...prev, assistantMessage]);
     
     // 保存待发送消息，用于onComplete时保存到会话
@@ -593,26 +591,7 @@ const NewChatContainer: React.FC = () => {
         </Space>
       }
     >
-      {/* 执行过程面板（可折叠） */}
-      {useStream && showExecution && messages.some(m => m.isStreaming || (m.executionSteps && m.executionSteps.length > 0)) && (
-        <Collapse 
-          defaultActiveKey={['execution']} 
-          style={{ marginBottom: 16 }}
-        >
-          <Panel 
-            header={
-              <Space>
-                <ThunderboltOutlined />
-                <span>AI思考过程</span>
-                {isReceiving && <LoadingOutlined />}
-              </Space>
-            } 
-            key="execution"
-          >
-            <ExecutionPanel steps={executionSteps} isActive={isReceiving} />
-          </Panel>
-        </Collapse>
-      )}
+      {/* AI思考过程面板已移至MessageItem内部 - 前端小新代修改 */}
 
       {/* 消息列表 */}
       <div
@@ -647,10 +626,10 @@ const NewChatContainer: React.FC = () => {
                   width: '100%',
                 }}
               >
-                <MessageItem 
-                  message={item} 
-                  showExecution={showExecution}
-                />
+                 <MessageItem 
+                   message={item} 
+                   showExecution={showExecution}
+                 />
               </List.Item>
             )}
           />

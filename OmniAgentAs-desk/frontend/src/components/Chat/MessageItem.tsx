@@ -9,18 +9,21 @@
  */
 
 import React, { useState } from 'react';
-import { Avatar, Typography, Tooltip, Button, message as antMessage } from 'antd';
+import { Avatar, Tooltip, Button, message as antMessage, Collapse, Space } from 'antd';
 import { 
   UserOutlined, 
   RobotOutlined, 
   InfoCircleOutlined,
   CopyOutlined,
-  CheckOutlined
+  CheckOutlined,
+  ThunderboltOutlined,
+  LoadingOutlined
 } from '@ant-design/icons';
 import type { ChatMessage } from '../../services/api';
 import type { ExecutionStep } from '../../utils/sse';
+import ExecutionPanel from './ExecutionPanel';  // 前端小新代修改：引入执行过程面板
 
-const { Text } = Typography;
+const { Panel } = Collapse;
 
 interface MessageItemProps {
   message: ChatMessage & { 
@@ -28,6 +31,7 @@ interface MessageItemProps {
     timestamp: Date;
     executionSteps?: ExecutionStep[];
     model?: string;  // 模型名称
+    isStreaming?: boolean;  // 前端小新代修改：是否正在流式生成
   };
   showExecution?: boolean;
 }
@@ -48,7 +52,7 @@ interface MessageItemProps {
  */
 const MessageItem: React.FC<MessageItemProps> = ({ 
   message, 
-  showExecution = false 
+  showExecution = false,
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -284,47 +288,38 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
             {/* 消息内容 */}
             <div style={{ wordBreak: 'break-word', overflowWrap: 'break-word', paddingRight: 32 }}>
+              {/* 前端小新代修改：在流式生成时添加光标提示，使用默认值false */}
               {message.content}
+              {(message.isStreaming ?? false) && (
+                <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
+              )}
             </div>
 
-            {/* 执行过程展示（仅AI消息） */}
-            {showExecution && message.executionSteps && message.executionSteps.length > 0 && (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  background: 'rgba(0,0,0,0.02)',
-                  borderRadius: 8,
-                  borderLeft: '3px solid #52c41a',
-                }}
-              >
-                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
-                  🤔 执行过程（{message.executionSteps.length}步）
-                </Text>
-                {message.executionSteps.map((step, idx) => (
-                  <div key={idx} style={{ marginBottom: 8, fontSize: 13 }}>
-                    {step.type === 'thought' && (
-                      <div style={{ color: '#666', fontStyle: 'italic' }}>
-                        🧠 {step.content}
-                      </div>
-                    )}
-                    {step.type === 'action' && (
-                      <div>
-                        <span style={{ color: '#1890ff' }}>🔧 {step.tool}</span>
-                        <pre style={{ margin: '4px 0', fontSize: 11, background: '#f5f5f5', padding: 4 }}>
-                          {JSON.stringify(step.params, null, 2)}
-                        </pre>
-                        {step.result && (
-                          <div style={{ color: '#52c41a', fontSize: 12 }}>
-                            ↳ {step.result}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
+             {/* 执行过程展示（仅AI消息）- 前端小新代修改 */}
+             {showExecution && (
+               <div style={{ marginTop: 12 }}>
+                 <Collapse 
+                   defaultActiveKey={(message.isStreaming ?? false) ? ['execution'] : []}  // 流式时默认展开
+                   size="small"
+                 >
+                   <Panel 
+                     header={
+                       <Space>
+                         <ThunderboltOutlined />
+                         <span>AI思考过程</span>
+                         {(message.isStreaming ?? false) && <LoadingOutlined />}
+                       </Space>
+                     } 
+                     key="execution"
+                   >
+                     <ExecutionPanel 
+                       steps={message.executionSteps || []} 
+                       isActive={message.isStreaming || false} 
+                     />
+                   </Panel>
+                 </Collapse>
+               </div>
+             )}
           </div>
 
           {/* 时间戳 */}
