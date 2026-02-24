@@ -150,11 +150,15 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     const initApp = async () => {
       setCheckingStatus(true);
       try {
-        // 【修改】先调用完整配置验证，获取所有配置项的验证结果
-        const validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
+        // 【新增】先调用完整配置验证，获取所有配置项的验证结果（不破坏原来的逻辑）
+        try {
+          const validation = await configApi.validateFullConfig();
+          setValidationResult(validation);
+        } catch (err) {
+          console.warn('配置验证失败:', err);
+        }
         
-        // 再并行获取模型列表和配置
+        // 并行获取模型列表和配置（原来的逻辑完全不变！）
         const [modelData, config] = await Promise.all([
           configApi.getModelList(),
           configApi.getConfig()
@@ -429,7 +433,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
             <Title level={4} style={{ margin: 0, fontWeight: 500, fontSize: isMobile ? 16 : 18 }}>
               对话与任务
             </Title>
-            {/* 服务状态显示 - 原来的显示方法，保持不变！ */}
+            {/* 服务状态显示 - 根据检查结果显示不同颜色 */}
             {checkingStatus ? (
               <span style={{ color: '#999' }}>检查中...</span>
             ) : serviceStatus?.success ? (
@@ -441,20 +445,20 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
               <Tag color={serviceStatus.message.includes('限速') || serviceStatus.message.includes('欠费') || serviceStatus.message.includes('额度') ? 'warning' : 'error'}>
                 {serviceStatus.provider} {serviceStatus.model && `(${serviceStatus.model})`} - {serviceStatus.message}
               </Tag>
-            ) : (
-              // 未配置或初始状态
-              <Tag color="error">未配置</Tag>
-            )}
-            {/* 【新增】配置验证状态 - 只在失败/有警告时显示，叠加在原来的显示后面！ */}
-            {validationResult && (!validationResult.success || (validationResult.warnings && validationResult.warnings.length > 0)) && (
-              <Tag 
-                color="warning" 
-                style={{ cursor: 'pointer' }}
-                onClick={() => setValidationModalVisible(true)}
-              >
-                ⚠️ 配置验证
-              </Tag>
-            )}
+             ) : (
+               // 未配置或初始状态
+               <Tag color="error">未配置</Tag>
+             )}
+             {/* 【新增】配置验证警告 - 当validationResult有错误或警告时显示 */}
+             {validationResult && (!validationResult.success || (validationResult.warnings && validationResult.warnings.length > 0)) && (
+               <Tag 
+                 color="warning" 
+                 style={{ cursor: 'pointer' }}
+                 onClick={() => setValidationModalVisible(true)}
+               >
+                 ⚠️ 配置验证
+               </Tag>
+             )}
           </div>
           
           {/* 右侧操作区 */}
@@ -540,35 +544,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       
       {/* 【新增】配置验证详情弹框 */}
       <Modal
-        title={
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {validationResult?.success ? (
-              <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />
-            ) : (
-              <ReloadOutlined style={{ color: '#faad14', fontSize: 18 }} />
-            )}
-            配置验证详情
-          </span>
-        }
+        title="配置验证详情"
         open={validationModalVisible}
         onCancel={() => setValidationModalVisible(false)}
         footer={[
           <Button key="close" onClick={() => setValidationModalVisible(false)}>
             关闭
-          </Button>,
-          <Button key="recheck" onClick={async () => {
-            try {
-              setCheckingStatus(true);
-              const validation = await configApi.validateFullConfig();
-              setValidationResult(validation);
-              message.success('重新验证成功');
-            } catch (error) {
-              message.error('重新验证失败');
-            } finally {
-              setCheckingStatus(false);
-            }
-          }} loading={checkingStatus}>
-            重新验证
           </Button>,
           <Button key="settings" type="primary" onClick={() => {
             setValidationModalVisible(false);
@@ -582,117 +563,31 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         {validationResult && (
           <div>
             <Alert 
-              message={
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {validationResult.success ? (
-                    <>
-                      <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                      <strong>配置验证成功</strong>
-                    </>
-                  ) : (
-                    <>
-                      <ReloadOutlined style={{ color: '#faad14' }} />
-                      <strong>配置验证发现问题</strong>
-                    </>
-                  )}
-                </div>
-              }
-              description={validationResult.message}
-              type={validationResult.success ? 'success' : 'warning'} 
+              message={validationResult.message} 
+              type={validationResult.success ? 'success' : 'error'} 
               showIcon 
-              style={{ marginBottom: 24 }}
+              style={{ marginBottom: 16 }}
             />
             
-            {/* 配置信息卡片 */}
-            <div style={{ 
-              background: '#fafafa', 
-              padding: 16, 
-              borderRadius: 8, 
-              marginBottom: 24 
-            }}>
-              <div style={{ display: 'flex', gap: 24 }}>
-                <div>
-                  <span style={{ color: '#666', fontSize: 12 }}>当前 Provider</span>
-                  <div style={{ fontSize: 16, fontWeight: 500, marginTop: 4 }}>
-                    {validationResult.provider}
-                  </div>
-                </div>
-                <div>
-                  <span style={{ color: '#666', fontSize: 12 }}>当前 Model</span>
-                  <div style={{ fontSize: 16, fontWeight: 500, marginTop: 4 }}>
-                    {validationResult.model}
-                  </div>
-                </div>
-              </div>
-            </div>
-            
             {validationResult.errors && validationResult.errors.length > 0 && (
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 8, 
-                  marginBottom: 12,
-                  color: '#ff4d4f',
-                  fontSize: 14,
-                  fontWeight: 500
-                }}>
-                  <span style={{ fontSize: 18 }}>❌</span>
-                  错误 ({validationResult.errors.length})
-                </div>
-                <div style={{ 
-                  background: '#fff1f0', 
-                  border: '1px solid #ffa39e', 
-                  borderRadius: 6, 
-                  padding: '12px 16px'
-                }}>
-                  <ul style={{ 
-                    margin: 0, 
-                    paddingLeft: 20, 
-                    color: '#ff4d4f',
-                    fontSize: 14,
-                    lineHeight: 1.8
-                  }}>
-                    {validationResult.errors.map((err, idx) => (
-                      <li key={idx}>{err}</li>
-                    ))}
-                  </ul>
-                </div>
+              <div style={{ marginBottom: 16 }}>
+                <h4 style={{ color: '#ff4d4f' }}>错误 ({validationResult.errors.length})</h4>
+                <ul style={{ paddingLeft: 20, color: '#ff4d4f' }}>
+                  {validationResult.errors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
               </div>
             )}
             
             {validationResult.warnings && validationResult.warnings.length > 0 && (
               <div>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 8, 
-                  marginBottom: 12,
-                  color: '#faad14',
-                  fontSize: 14,
-                  fontWeight: 500
-                }}>
-                  <span style={{ fontSize: 18 }}>⚠️</span>
-                  警告 ({validationResult.warnings.length})
-                </div>
-                <div style={{ 
-                  background: '#fffbe6', 
-                  border: '1px solid #ffe58f', 
-                  borderRadius: 6, 
-                  padding: '12px 16px'
-                }}>
-                  <ul style={{ 
-                    margin: 0, 
-                    paddingLeft: 20, 
-                    color: '#faad14',
-                    fontSize: 14,
-                    lineHeight: 1.8
-                  }}>
-                    {validationResult.warnings.map((warn, idx) => (
-                      <li key={idx}>{warn}</li>
-                    ))}
-                  </ul>
-                </div>
+                <h4 style={{ color: '#faad14' }}>警告 ({validationResult.warnings.length})</h4>
+                <ul style={{ paddingLeft: 20, color: '#faad14' }}>
+                  {validationResult.warnings.map((warn, idx) => (
+                    <li key={idx}>{warn}</li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
