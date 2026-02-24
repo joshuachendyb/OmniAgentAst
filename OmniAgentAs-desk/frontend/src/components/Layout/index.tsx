@@ -429,7 +429,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
             <Title level={4} style={{ margin: 0, fontWeight: 500, fontSize: isMobile ? 16 : 18 }}>
               对话与任务
             </Title>
-            {/* 服务状态显示 - 根据检查结果显示不同颜色 */}
+            {/* 服务状态显示 - 原来的显示方法，保持不变！ */}
             {checkingStatus ? (
               <span style={{ color: '#999' }}>检查中...</span>
             ) : serviceStatus?.success ? (
@@ -445,27 +445,15 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
               // 未配置或初始状态
               <Tag color="error">未配置</Tag>
             )}
-            {/* 【新增】配置验证状态 - 成功/失败都显示 */}
-            {validationResult && (
-              <>
-                {validationResult.success ? (
-                  <Tag 
-                    color="success" 
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setValidationModalVisible(true)}
-                  >
-                    <CheckCircleOutlined /> 配置正常
-                  </Tag>
-                ) : (
-                  <Tag 
-                    color="warning" 
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setValidationModalVisible(true)}
-                  >
-                    ⚠️ 配置异常
-                  </Tag>
-                )}
-              </>
+            {/* 【新增】配置验证状态 - 只在失败/有警告时显示，叠加在原来的显示后面！ */}
+            {validationResult && (!validationResult.success || (validationResult.warnings && validationResult.warnings.length > 0)) && (
+              <Tag 
+                color="warning" 
+                style={{ cursor: 'pointer' }}
+                onClick={() => setValidationModalVisible(true)}
+              >
+                ⚠️ 配置验证
+              </Tag>
             )}
           </div>
           
