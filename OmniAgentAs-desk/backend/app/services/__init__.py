@@ -102,6 +102,29 @@ class AIServiceFactory:
         return os.path.join(base_dir, "config", "config.yaml")
     
     @classmethod
+    def _get_fallback_provider_and_model(cls, ai_config: dict) -> tuple[str, str]:
+        """
+        获取 fallback 的 provider 和 model（统一 Fallback 逻辑）
+        
+        Args:
+            ai_config: ai 配置字典
+            
+        Returns:
+            tuple: (fallback_provider, fallback_model)
+        """
+        fallback_provider = ''
+        fallback_model = ''
+        for provider_name in ai_config.keys():
+            if provider_name == 'provider' or provider_name == 'model':
+                continue
+            provider_data = ai_config.get(provider_name, {})
+            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
+                fallback_provider = provider_name
+                fallback_model = provider_data['models'][0]
+                break
+        return fallback_provider, fallback_model
+    
+    @classmethod
     def load_config(cls, config_path: Optional[str] = None) -> dict:
         """加载配置文件"""
         if cls._config is not None:
@@ -194,26 +217,35 @@ class AIServiceFactory:
                 warnings=warnings
             )
         
+        # ====================================================================
+        # 【统一Fallback逻辑 - 必须遵守！】
+        # 先找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
+        fallback_provider, fallback_model = cls._get_fallback_provider_and_model(ai_config)
+        
+        # 如果没有找到任何provider，保持空值
+        # 不再硬编码默认provider，让配置文件完全控制
+        # ====================================================================
+        
         # 4. 检查 provider 字段是否存在
-        provider = ai_config.get("provider")
-        if not provider:
+        selected_provider = ai_config.get("provider")
+        if not selected_provider:
             errors.append("ai.provider 字段为空，请在配置文件中设置 ai.provider")
             return ConfigValidationResult(
                 success=False,
-                provider="unknown",
-                model=model,
+                provider=fallback_provider if fallback_provider else "unknown",
+                model=fallback_model,
                 message="ai.provider 未设置",
                 errors=errors,
                 warnings=warnings
             )
         
         # 5. 检查 model 字段是否存在
-        model = ai_config.get("model")
-        if not model:
+        selected_model = ai_config.get("model")
+        if not selected_model:
             errors.append("ai.model 字段为空，请在配置文件中设置 ai.model")
             return ConfigValidationResult(
                 success=False,
-                provider=provider,
+                provider=selected_provider,
                 model="",
                 message="ai.model 未设置",
                 errors=errors,
@@ -221,113 +253,81 @@ class AIServiceFactory:
             )
         
         # 6. 检查 provider 配置块是否存在
-        provider_config = ai_config.get(provider)
-        if not provider_config:
-            errors.append(f"ai.{provider} 配置块不存在，请在配置文件中添加 ai.{provider} 配置块")
+        selected_provider_config = ai_config.get(selected_provider)
+        if not selected_provider_config:
+            errors.append(f"ai.{selected_provider} 配置块不存在，请在配置文件中添加 ai.{selected_provider} 配置块")
             return ConfigValidationResult(
                 success=False,
-                provider=provider,
-                model=model,
-                message=f"ai.{provider} 配置块不存在",
+                provider=selected_provider,
+                model=selected_model,
+                message=f"ai.{selected_provider} 配置块不存在",
                 errors=errors,
                 warnings=warnings
             )
         
         # 7. 检查 provider 配置块格式是否正确
-        if not isinstance(provider_config, dict):
-            errors.append(f"ai.{provider} 配置格式错误，应该是字典类型（当前是 {type(provider_config).__name__} 类型）")
+        if not isinstance(selected_provider_config, dict):
+            errors.append(f"ai.{selected_provider} 配置格式错误，应该是字典类型（当前是 {type(selected_provider_config).__name__} 类型）")
             return ConfigValidationResult(
                 success=False,
-                provider=provider,
-                model=model,
-                message=f"ai.{provider} 配置格式错误",
+                provider=selected_provider,
+                model=selected_model,
+                message=f"ai.{selected_provider} 配置格式错误",
                 errors=errors,
                 warnings=warnings
             )
         
         # 8. 检查 model 是否在 provider 的 models 列表中
-        provider_models = provider_config.get("models", [])
-        if model not in provider_models:
+        provider_models = selected_provider_config.get("models", [])
+        if selected_model not in provider_models:
             available_models = ", ".join(provider_models) if provider_models else "（空）"
-            errors.append(f"model '{model}' 不在 ai.{provider}.models 列表中。可用的 model: {available_models}")
+            errors.append(f"model '{selected_model}' 不在 ai.{selected_provider}.models 列表中。可用的 model: {available_models}")
             return ConfigValidationResult(
                 success=False,
-                provider=provider,
-                model=model,
-                message=f"model '{model}' 无效",
+                provider=selected_provider,
+                model=selected_model,
+                message=f"model '{selected_model}' 无效",
                 errors=errors,
                 warnings=warnings
             )
         
-        # ====================================================================
-        # 【统一Fallback逻辑 - 必须遵守！】
-        # 1. 找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
-        fallback_provider = ''
-        fallback_model = ''
-        for provider_name in ai_config.keys():
-            if provider_name == 'provider' or provider_name == 'model':
-                continue
-            provider_data = ai_config.get(provider_name, {})
-            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
-                fallback_provider = provider_name
-                fallback_model = provider_data['models'][0]
-                break
-        
-        # 如果没有找到任何provider，保持空值
-        # 不再硬编码默认provider，让配置文件完全控制
-        
-        # 2. 检查 ai.provider 和 ai.model 是否有效
-        selected_provider = ai_config.get('provider', '')
-        selected_model = ai_config.get('model', '')
-        
-        is_valid = (
-            selected_provider and 
-            selected_provider in ai_config and 
-            'models' in ai_config[selected_provider] and 
-            selected_model and 
-            selected_model in ai_config[selected_provider]['models']
-        )
-        
-        # 3. 使用有效配置或fallback
-        if is_valid:
-            model = selected_model
-        else:
-            model = fallback_model
-        # ====================================================================
+        # 9. 确定最终使用的 provider 和 model（都验证通过了，就用选择的）
+        final_provider = selected_provider
+        final_model = selected_model
         
         # api_key
-        api_key = provider_config.get("api_key")
+        api_key = selected_provider_config.get("api_key")
         if not api_key:
-            errors.append(f"provider '{provider}' 缺少 api_key 配置")
+            errors.append(f"provider '{final_provider}' 缺少 api_key 配置")
         elif not isinstance(api_key, str) or api_key.strip() == "":
-            errors.append(f"provider '{provider}' 的 api_key 为空")
+            errors.append(f"provider '{final_provider}' 的 api_key 为空")
         
         # 不再检查provider下的model，因为已经没有这个字段了
         
         # api_base
-        api_base = provider_config.get("api_base")
+        api_base = selected_provider_config.get("api_base")
         if not api_base:
-            warnings.append(f"provider '{provider}' 未配置 api_base，将使用默认值")
+            warnings.append(f"provider '{final_provider}' 未配置 api_base，将使用默认值")
         
-        # 8. 构建结果
+        # 10. 构建结果
         if errors:
             return ConfigValidationResult(
                 success=False,
-                provider=provider,
-                model=model,
+                provider=final_provider,
+                model=final_model,
                 message=f"配置验证失败: {len(errors)} 个错误",
                 errors=errors,
                 warnings=warnings
             )
         
-        message = f"配置验证通过: provider={provider}, model={model}"
+        message = f"配置验证通过: provider={final_provider}, model={final_model}"
         if warnings:
             message += f" ({len(warnings)} 个警告)"
         
         return ConfigValidationResult(
             success=True,
-            provider=provider,
-            model=model,
+            provider=final_provider,
+            model=final_model,
             message=message,
             errors=errors,
             warnings=warnings
@@ -361,16 +361,7 @@ class AIServiceFactory:
             # ====================================================================
             # 【统一Fallback逻辑 - 必须遵守！】
             # 1. 找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
-            fallback_provider = ''
-            fallback_model = ''
-            for provider_name in ai_config.keys():
-                if provider_name == 'provider' or provider_name == 'model':
-                    continue
-                provider_data = ai_config.get(provider_name, {})
-                if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
-                    fallback_provider = provider_name
-                    fallback_model = provider_data['models'][0]
-                    break
+            fallback_provider, fallback_model = cls._get_fallback_provider_and_model(ai_config)
             
             # 如果没有找到任何provider，保持空值
             # 不再硬编码默认provider，让配置文件完全控制
