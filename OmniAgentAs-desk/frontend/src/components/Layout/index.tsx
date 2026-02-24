@@ -416,9 +416,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           {renderNavContent()}
         </Drawer>
       ) : (
-        /* 桌面端：左侧导航栏 */
+        /* 桌面端：左侧导航栏 - 前端小新代修改 VIS-L02: 220px→180px */
         <Sider
-          width={220}
+          width={180}
           theme="light"
           collapsible
           collapsed={collapsed}
@@ -553,14 +553,14 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           </div>
         </Header>
 
-        {/* 主内容区 - 只有这层有留白 */}
+        {/* 主内容区 - 只有这层有留白 - 前端小新代修改 VIS-L01: 留白优化 */}
         <Content
           style={{
-            margin: 8,
-            padding: 8,
+            margin: 16,
+            padding: 20,
             background: '#f5f5f5',
-            borderRadius: 8,
-            minHeight: 280,
+            borderRadius: 12,
+            minHeight: 400,
             overflow: 'auto',
           }}
         >

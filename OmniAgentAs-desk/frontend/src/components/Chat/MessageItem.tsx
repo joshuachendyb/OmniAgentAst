@@ -121,15 +121,15 @@ const MessageItem: React.FC<MessageItemProps> = ({
   };
 
   /**
-   * 获取消息样式
+   * 获取消息样式 - 前端小新代修改 VIS-C01: 圆角优化, VIS-C02: padding优化, VIS-C03: 阴影优化
    */
   const getMessageStyle = () => {
     const baseStyle: React.CSSProperties = {
       maxWidth: '100%',
       minWidth: '60px',
       width: 'auto',
-      padding: '12px 16px',
-      borderRadius: '12px',
+      padding: '16px 20px',
+      borderRadius: '16px',
       position: 'relative',
       transition: 'all 0.3s ease',
       whiteSpace: 'pre-wrap',
@@ -143,8 +143,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           ...baseStyle,
           background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)',
           color: '#fff',
-          borderRadius: '12px 12px 2px 12px',
-          boxShadow: '0 2px 8px rgba(24,144,255,0.3)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
         };
       case 'assistant':
         return {
@@ -152,8 +151,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           background: '#fff',
           border: '1px solid #b7eb8f',
           color: '#262626',
-          borderRadius: '12px 12px 12px 2px',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
         };
       case 'system':
         return {
@@ -226,7 +224,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       style={{
         display: 'flex',
         justifyContent: isSystem ? 'center' : isUser ? 'flex-end' : 'flex-start',
-        marginBottom: 16,
+        marginBottom: 24,
         padding: '0 8px',
         width: '100%',
         boxSizing: 'border-box' as const,

@@ -959,7 +959,7 @@ const SessionHistory: React.FC = () => {
 const Settings: React.FC = () => {
   return (
     <div style={{ padding: 0, margin: 0 }}>
-      <Card style={{ marginTop: 0 }}>
+      <Card style={{ marginTop: 0 }} bodyStyle={{ padding: '32px' }}> {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
         <Tabs defaultActiveKey="model" type="card">
           <TabPane
             tab={

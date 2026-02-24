@@ -184,7 +184,7 @@ const HistoryPage: React.FC = () => {
           <Spin spinning={loading}>
             <List
               grid={{
-                gutter: 16,
+                gutter: [24, 24],
                 xs: 1,
                 sm: 1,
                 md: 2,
