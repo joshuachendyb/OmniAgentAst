@@ -324,9 +324,10 @@ async def validate_config(request: ConfigValidateRequest):
 
 class ModelInfo(BaseModel):
     """模型信息"""
-    id: str = Field(..., description="模型ID")
-    name: str = Field(..., description="模型显示名称")
-    provider: str = Field(..., description="所属提供商")
+    id: int = Field(..., description="模型ID序号")
+    provider: str = Field(..., description="提供商名称(小写)")
+    model: str = Field(..., description="模型名称")
+    display_name: str = Field(..., description="显示名称，格式: Provider (model)")
 
 
 class ModelListResponse(BaseModel):
@@ -360,39 +361,56 @@ async def get_model_list():
         # 构建模型列表 - 按照配置文件中provider的实际顺序
         # 配置文件顺序: longcat -> opencode -> zhipuai
         models = []
+        model_id = 1  # 从1开始的序号
+        
+        # 定义provider的显示名称映射
+        provider_display_names = {
+            "longcat": "LongCat",
+            "opencode": "OpenCode",
+            "zhipuai": "智谱GLM"
+        }
         
         # LongCat模型（配置文件中第一个provider）
         longcat_config = config.get('ai.longcat', {})
         longcat_models = longcat_config.get('models', [])
         if isinstance(longcat_models, list) and longcat_models:
             for model_name in longcat_models:
+                display_name = f"{provider_display_names.get('longcat', 'LongCat')} ({model_name})"
                 models.append(ModelInfo(
-                    id=f"longcat-{model_name}",
-                    name=f"LongCat ({model_name})",
-                    provider="longcat"
+                    id=model_id,
+                    provider="longcat",
+                    model=model_name,
+                    display_name=display_name
                 ))
+                model_id += 1
         
         # OpenCode模型（配置文件中第二个provider）
         opencode_config = config.get('ai.opencode', {})
         opencode_models = opencode_config.get('models', [])
         if isinstance(opencode_models, list) and opencode_models:
             for model_name in opencode_models:
+                display_name = f"{provider_display_names.get('opencode', 'OpenCode')} ({model_name})"
                 models.append(ModelInfo(
-                    id=f"opencode-{model_name}",
-                    name=f"OpenCode ({model_name})",
-                    provider="opencode"
+                    id=model_id,
+                    provider="opencode",
+                    model=model_name,
+                    display_name=display_name
                 ))
+                model_id += 1
         
         # 智谱模型（配置文件中第三个provider）
         zhipuai_config = config.get('ai.zhipuai', {})
         zhipuai_models = zhipuai_config.get('models', [])
         if isinstance(zhipuai_models, list) and zhipuai_models:
             for model_name in zhipuai_models:
+                display_name = f"{provider_display_names.get('zhipuai', '智谱GLM')} ({model_name})"
                 models.append(ModelInfo(
-                    id=f"zhipuai-{model_name}",
-                    name=f"智谱GLM ({model_name})",
-                    provider="zhipuai"
+                    id=model_id,
+                    provider="zhipuai",
+                    model=model_name,
+                    display_name=display_name
                 ))
+                model_id += 1
         
         logger.info(f"获取模型列表成功: {len(models)}个模型")
         

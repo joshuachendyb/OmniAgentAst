@@ -27,6 +27,7 @@ import {
   Row,
   Col,
   Switch,
+  Alert,
 } from 'antd';
 import {
   PlusOutlined,
@@ -54,6 +55,8 @@ const ProviderSettings: React.FC = () => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [validationResult, setValidationResult] = useState<any>(null);
+  const [validationModalVisible, setValidationModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [addModelModalVisible, setAddModelModalVisible] = useState(false);
   const [addProviderModalVisible, setAddProviderModalVisible] = useState(false);
@@ -86,8 +89,19 @@ const ProviderSettings: React.FC = () => {
     }
   };
 
+  // 加载配置时同时进行验证
+  const handleLoadWithValidation = async () => {
+    await loadConfig();
+    try {
+      const result = await configApi.validateFullConfig();
+      setValidationResult(result);
+    } catch (error) {
+      console.error('配置验证失败:', error);
+    }
+  };
+
   useEffect(() => {
-    loadConfig();
+    handleLoadWithValidation();
   }, []);
 
   // 编辑Provider
@@ -195,8 +209,71 @@ const ProviderSettings: React.FC = () => {
     return nameMap[name] || name;
   };
 
+  // 检查验证是否有错误
+  const hasValidationErrors = validationResult && (
+    (validationResult.errors && validationResult.errors.length > 0) ||
+    (validationResult.warnings && validationResult.warnings.length > 0)
+  );
+
   return (
     <div>
+      {/* 配置验证失败提示 */}
+      {hasValidationErrors && (
+        <Alert
+          message="⚠️ 配置验证失败 - 点击查看详情"
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16, cursor: 'pointer' }}
+          onClick={() => setValidationModalVisible(true)}
+        />
+      )}
+
+      {/* 验证详情弹框 */}
+      <Modal
+        title="配置验证详情"
+        open={validationModalVisible}
+        onCancel={() => setValidationModalVisible(false)}
+        footer={[
+          <Button key="close" type="primary" onClick={() => setValidationModalVisible(false)}>
+            关闭
+          </Button>,
+          <Button key="revalidate" onClick={handleLoadWithValidation}>
+            重新验证
+          </Button>
+        ]}
+        width={600}
+      >
+        {validationResult && (
+          <div>
+            <p><strong>Provider:</strong> {validationResult.provider}</p>
+            <p><strong>Model:</strong> {validationResult.model}</p>
+            <p><strong>状态:</strong> {validationResult.success ? '✅ 通过' : '❌ 失败'}</p>
+            
+            {validationResult.errors && validationResult.errors.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <h4 style={{ color: '#ff4d4f' }}>❌ 错误 ({validationResult.errors.length})</h4>
+                <ul>
+                  {validationResult.errors.map((err: string, idx: number) => (
+                    <li key={idx} style={{ color: '#ff4d4f' }}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {validationResult.warnings && validationResult.warnings.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <h4 style={{ color: '#faad14' }}>⚠️ 警告 ({validationResult.warnings.length})</h4>
+                <ul>
+                  {validationResult.warnings.map((warn: string, idx: number) => (
+                    <li key={idx} style={{ color: '#faad14' }}>{warn}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
       {/* 右上角添加按钮 */}
       <div style={{ marginBottom: 16, textAlign: 'right' }}>
         <Button 

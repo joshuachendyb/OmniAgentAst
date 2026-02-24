@@ -24,9 +24,10 @@ class Message:
 
 class ChatResponse:
     """聊天响应类"""
-    def __init__(self, content: str, model: str, error: Optional[str] = None):
+    def __init__(self, content: str, model: str, provider: str = "", error: Optional[str] = None):
         self.content = content
         self.model = model
+        self.provider = provider  # 新增
         self.error = error
         self.success = error is None
 
@@ -55,10 +56,11 @@ class BaseAIService:
     新增provider只需在配置文件中添加配置，零代码修改！
     """
     
-    def __init__(self, api_key: str, model: str, api_base: str, timeout: int = 60):
+    def __init__(self, api_key: str, model: str, api_base: str, provider: str = "", timeout: int = 60):
         self.api_key = api_key
         self.model = model
         self.api_base = api_base
+        self.provider = provider  # 新增：记录当前使用的provider
         
         # 安全转换 timeout，处理非法字符串、None、空值等情况
         try:
@@ -90,9 +92,9 @@ class BaseAIService:
                     full_content += chunk.content
                 if chunk.is_done:
                     break
-            return ChatResponse(content=full_content, model=self.model)
+            return ChatResponse(content=full_content, model=self.model, provider=self.provider)
         except Exception as e:
-            return ChatResponse(content="", model=self.model, error=str(e))
+            return ChatResponse(content="", model=self.model, provider=self.provider, error=str(e))
     
     async def chat_stream(self, message: str, history: Optional[List[Message]] = None) -> AsyncGenerator[StreamChunk, None]:
         """发送对话请求（流式返回）"""

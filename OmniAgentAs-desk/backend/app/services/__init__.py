@@ -272,10 +272,13 @@ class AIServiceFactory:
             config = cls.load_config(config_path)
             ai_config = config.get("ai", {})
             
+            # 【修改】同时读取 provider 和 model
             provider = ai_config.get("provider", "zhipuai")
+            model = ai_config.get("model", "")  # 新增：读取顶层ai.model
+            
             cls._current_provider = provider
             
-            print(f"[AIServiceFactory] 创建服务实例: provider={provider}")
+            print(f"[AIServiceFactory] 创建服务实例: provider={provider}, model={model}")
             
             provider_config = ai_config.get(provider, {})
             
@@ -292,10 +295,14 @@ class AIServiceFactory:
                 print(f"[AIServiceFactory] 错误: 未找到任何有效的provider配置")
                 provider_config = {}
             
+            # 【修改】使用顶层ai.model，如果为空则用provider下的默认model
+            final_model = model if model else provider_config.get("model", "")
+            
             cls._instance = BaseAIService(
                 api_key=provider_config.get("api_key", ""),
-                model=provider_config.get("model", ""),
+                model=final_model,
                 api_base=provider_config.get("api_base", "https://api.openai.com/v1"),
+                provider=provider,  # 新增：传递provider
                 timeout=provider_config.get("timeout", 30)
             )
         

@@ -320,6 +320,16 @@ export interface ModelAddRequest {
   model: string;
 }
 
+// 完整配置验证响应（小新新增）
+export interface FullConfigValidationResponse {
+  success: boolean;
+  provider: string;
+  model: string;
+  message: string;
+  errors: string[];
+  warnings: string[];
+}
+
 export interface ProviderAddRequest {
   name: string;
   api_base: string;
@@ -361,6 +371,17 @@ export const configApi = {
    */
   validateConfig: async (data: ConfigValidateRequest): Promise<ConfigValidateResponse> => {
     const response = await api.post<ConfigValidateResponse>('/config/validate', data);
+    return response.data;
+  },
+
+  /**
+   * 验证完整配置（validate-full接口）
+   * 用于启动时全面检查所有Provider和Model配置
+   * @author 小欧
+   * @update 2026-02-23 新增
+   */
+  validateFullConfig: async (): Promise<FullConfigValidationResponse> => {
+    const response = await api.get<FullConfigValidationResponse>('/config/validate-full');
     return response.data;
   },
 

@@ -11,7 +11,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Layout, Menu, Typography, Avatar, Badge, Tooltip, Drawer, Button, Grid, Tag, Select, message } from 'antd';
+import { Layout, Menu, Typography, Avatar, Badge, Tooltip, Drawer, Button, Grid, Tag, Select, message, Modal, Alert } from 'antd';
 import {
   MessageOutlined,
   FolderOutlined,
@@ -85,6 +85,17 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   const [modelList, setModelList] = useState<{id: string; name: string; provider: string}[]>([]);
   // 【新增】默认提供商
   const [defaultProvider, setDefaultProvider] = useState<string>('zhipuai');
+  // 【新增】完整配置验证结果
+  const [validationResult, setValidationResult] = useState<{
+    success: boolean;
+    provider: string;
+    model: string;
+    message: string;
+    errors: string[];
+    warnings: string[];
+  } | null>(null);
+  // 【新增】验证详情弹框
+  const [validationModalVisible, setValidationModalVisible] = useState(false);
   
   // 【新增】刷新模型列表 - 点击下拉框时调用，获取最新配置
   const refreshModelList = async () => {
@@ -139,7 +150,11 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     const initApp = async () => {
       setCheckingStatus(true);
       try {
-        // 并行获取模型列表和配置
+        // 【修改】先调用完整配置验证，获取所有配置项的验证结果
+        const validation = await configApi.validateFullConfig();
+        setValidationResult(validation);
+        
+        // 再并行获取模型列表和配置
         const [modelData, config] = await Promise.all([
           configApi.getModelList(),
           configApi.getConfig()
@@ -430,6 +445,16 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
               // 未配置或初始状态
               <Tag color="error">未配置</Tag>
             )}
+            {/* 【新增】配置验证警告 - 当validationResult有错误或警告时显示 */}
+            {validationResult && !validationResult.success && (
+              <Tag 
+                color="warning" 
+                style={{ cursor: 'pointer' }}
+                onClick={() => setValidationModalVisible(true)}
+              >
+                ⚠️ 配置验证失败 - 点击查看详情
+              </Tag>
+            )}
           </div>
           
           {/* 右侧操作区 */}
@@ -512,6 +537,58 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           {children}
         </Content>
       </Layout>
+      
+      {/* 【新增】配置验证详情弹框 */}
+      <Modal
+        title="配置验证详情"
+        open={validationModalVisible}
+        onCancel={() => setValidationModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setValidationModalVisible(false)}>
+            关闭
+          </Button>,
+          <Button key="settings" type="primary" onClick={() => {
+            setValidationModalVisible(false);
+            navigate('/settings');
+          }}>
+            去设置
+          </Button>,
+        ]}
+        width={600}
+      >
+        {validationResult && (
+          <div>
+            <Alert 
+              message={validationResult.message} 
+              type={validationResult.success ? 'success' : 'error'} 
+              showIcon 
+              style={{ marginBottom: 16 }}
+            />
+            
+            {validationResult.errors && validationResult.errors.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <h4 style={{ color: '#ff4d4f' }}>错误 ({validationResult.errors.length})</h4>
+                <ul style={{ paddingLeft: 20, color: '#ff4d4f' }}>
+                  {validationResult.errors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {validationResult.warnings && validationResult.warnings.length > 0 && (
+              <div>
+                <h4 style={{ color: '#faad14' }}>警告 ({validationResult.warnings.length})</h4>
+                <ul style={{ paddingLeft: 20, color: '#faad14' }}>
+                  {validationResult.warnings.map((warn, idx) => (
+                    <li key={idx}>{warn}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </Layout>
   );
 };

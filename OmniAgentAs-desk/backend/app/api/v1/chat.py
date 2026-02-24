@@ -18,6 +18,13 @@ from app.services.file_operations.agent import FileOperationAgent
 from app.services.shell_security import check_command_safety
 from app.utils.logger import logger
 
+# Provider显示名称映射
+PROVIDER_DISPLAY_NAMES = {
+    "longcat": "LongCat",
+    "opencode": "OpenCode",
+    "zhipuai": "智谱GLM"
+}
+
 router = APIRouter()
 
 class ChatMessage(BaseModel):
@@ -30,12 +37,15 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage] = Field(..., description="消息列表")
     stream: bool = Field(default=False, description="是否流式返回")
     temperature: Optional[float] = Field(default=0.7, ge=0, le=2, description="温度参数")
+    provider: Optional[str] = Field(default=None, description="前端指定的提供商")
+    model: Optional[str] = Field(default=None, description="前端指定的模型")
 
 class ChatResponse(BaseModel):
     """聊天响应"""
     success: bool = Field(..., description="是否成功")
     content: str = Field(default="", description="回复内容")
     model: str = Field(default="", description="使用的模型")
+    provider: str = Field(default="", description="使用的提供商")
     error: Optional[str] = Field(default=None, description="错误信息")
     execution_steps: Optional[List[Dict]] = Field(default=None, description="执行步骤详情列表")
 
@@ -242,6 +252,7 @@ async def chat(request: ChatRequest):
             success=response.success,
             content=response.content,
             model=response.model,
+            provider=ai_service.provider,
             error=response.error
         )
         
@@ -281,6 +292,24 @@ async def chat_stream(request: ChatRequest):
         """生成SSE流，支持中断"""
         # 注册任务
         running_tasks[task_id] = {"status": "running", "cancelled": False}
+        
+        # 【修改】优先使用前端传递的模型信息，fallback到配置文件
+        if request.provider and request.model:
+            # 验证模型是否在配置文件中
+            ai_service = AIServiceFactory.get_service_for_model(
+                request.provider, 
+                request.model
+            )
+        else:
+            # 前端没传，使用配置文件默认值
+            ai_service = AIServiceFactory.get_service()
+        
+        # 【修改】在流式响应开始时发送start事件，返回display_name
+        display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
+        yield f"data: {json.dumps({
+            'type': 'start',
+            'display_name': display_name
+        })}\n\n"
         
         try:
             # 获取最后一条用户消息
@@ -365,13 +394,17 @@ async def chat_stream(request: ChatRequest):
                         yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
                     else:
                         # 发送最终结果
-                        # 【修复-小沈】在SSE响应中添加model字段，让前端显示当前使用的模型
-                        if result.success:
-                            result_content = getattr(result, 'content', '')
-                            yield f"data: {json.dumps({'type': 'final', 'content': result_content, 'model': ai_service.model})}\n\n"
-                        else:
-                            result_error = getattr(result, 'error', '执行失败')
-                            yield f"data: {json.dumps({'type': 'error', 'content': result_error})}\n\n"
+                         # 【修复】小沈】在SSE响应中添加model字段，让前端显示当前使用的模型
+                         if result.success:
+                             result_content = getattr(result, 'content', '')
+                             # 【新增】返回display_name
+                             display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
+                             yield f"data: {json.dumps({'type': 'final', 'content': result_content, 'model': ai_service.model, 'display_name': display_name})}\n\n"
+                         else:
+                             result_error = getattr(result, 'error', '执行失败')
+                             # 【新增】返回display_name
+                             display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
+                             yield f"data: {json.dumps({'type': 'error', 'content': result_error, 'model': ai_service.model, 'display_name': display_name})}\n\n"
                             
                 except Exception as e:
                     yield f"data: {json.dumps({'type': 'error', 'content': f'执行出错: {str(e)}'})}\n\n"
@@ -404,13 +437,13 @@ async def chat_stream(request: ChatRequest):
                     
                     if chunk.content:
                         full_content += chunk.content
-                        # 逐token发送到前端
-                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk.content, 'model': chunk.model})}\n\n"
+                        # 逐token发送到前端，【新增】添加provider字段作为兜底
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk.content, 'model': chunk.model, 'provider': ai_service.provider})}\n\n"
                     
                     if chunk.is_done:
                         break
-                    # 发送最终结果
-                yield f"data: {json.dumps({'type': 'final', 'content': full_content, 'model': ai_service.model})}\n\n"
+                    # 发送最终结果，【新增】添加provider字段作为兜底
+                yield f"data: {json.dumps({'type': 'final', 'content': full_content, 'model': ai_service.model, 'provider': ai_service.provider})}\n\n"
                         
         except asyncio.CancelledError:
             # 客户端断开连接，任务被中断
