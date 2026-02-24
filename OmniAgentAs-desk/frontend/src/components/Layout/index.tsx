@@ -229,7 +229,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       key: '/',
       icon: <MessageOutlined />,
       label: (
-        <Badge count={unreadCount} size="small" offset={[10, 0]}>
+        <Badge count={unreadCount} size="small" offset={[6, -4]}>
           <span>对话与下任务</span>
         </Badge>
       ),
@@ -255,7 +255,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       key: '/history',
       icon: <HistoryOutlined />,
       label: (
-        <Badge count={sessionCount} size="small" offset={[10, 0]} showZero={false}>
+        <Badge count={sessionCount} size="small" offset={[6, -4]} showZero={false}>
           <span>历史记录</span>
         </Badge>
       ),
@@ -372,21 +372,23 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         onClick={handleMenuClick}
         style={{
           borderRight: 0,
-          paddingTop: 8,
+          paddingTop: 12,
+          paddingBottom: 12,
         }}
       />
 
-      {/* 底部信息 */}
+      {/* 底部信息 - 前端小新代修改 VIS-L04: 优化底部信息 */}
       <div
         style={{
           position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
-          padding: '12px 16px',
-          borderTop: '1px solid #f0f0f0',
-          fontSize: 12,
-          color: '#999',
+          padding: '16px 20px',
+          borderTop: '1px solid #e8e8e8',
+          fontSize: 13,
+          color: '#666',
+          background: '#fafafa',
           textAlign: isMobile || collapsed ? 'center' : 'left',
         }}
       >
@@ -434,19 +436,20 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
 
       {/* 右侧内容区 */}
       <Layout>
-        {/* 顶部Header */}
+        {/* 顶部Header - 前端小新代修改 VIS-L03: 固定Header高度64px */}
         <Header
           style={{
+            height: 64,
             background: '#fff',
             boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-            padding: isMobile ? '0 16px' : '0 24px',
+            padding: isMobile ? '0 16px' : '0 32px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             zIndex: 99,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
             {/* 移动端菜单按钮 */}
             {isMobile && (
               <Button
@@ -553,17 +556,17 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           </div>
         </Header>
 
-        {/* 主内容区 - 只有这层有留白 - 前端小新代修改 VIS-L01: 留白优化 */}
-        <Content
-          style={{
-            margin: 16,
-            padding: 20,
-            background: '#f5f5f5',
-            borderRadius: 12,
-            minHeight: 400,
-            overflow: 'auto',
-          }}
-        >
+         {/* 主内容区 - 只有这层有留白 - 前端小新代修改 VIS-L01: 留白优化, VIS-G02: 背景色优化 */}
+         <Content
+           style={{
+             margin: 16,
+             padding: 20,
+             background: '#f8fafc',
+             borderRadius: 12,
+             minHeight: 400,
+             overflow: 'auto',
+           }}
+         >
           {children}
         </Content>
       </Layout>

@@ -210,10 +210,11 @@ const HistoryPage: React.FC = () => {
               }}
               renderItem={(session) => (
                 <List.Item>
-                  <Card
-                    hoverable
-                    size="small"
-                    style={{ height: '100%' }}
+                   <Card
+                     hoverable
+                     size="small"
+                     className="session-card"
+                     style={{ height: '100%' }}
                     actions={[
                       <Tooltip title="继续对话">
                         <Button
@@ -295,10 +296,21 @@ const HistoryPage: React.FC = () => {
               </Space>
             </div>
           )}
-        </Space>
-      </Card>
-    </div>
-  );
-};
+         </Space>
+       </Card>
+       
+       {/* 自定义CSS - 卡片hover效果 */}
+       <style>{`
+         .session-card {
+           transition: all 0.3s ease;
+         }
+         .session-card:hover {
+           transform: translateY(-4px);
+           box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+         }
+       `}</style>
+     </div>
+   );
+ };
 
 export default HistoryPage;

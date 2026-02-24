@@ -77,28 +77,28 @@ const MessageItem: React.FC<MessageItemProps> = ({
     switch (message.role) {
       case 'user':
         return (
-          <Avatar 
-            size={36} 
-            icon={<UserOutlined />} 
-            style={{ background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)' }}
-          />
-        );
-      case 'assistant':
-        return (
-          <Avatar 
-            size={36} 
-            icon={<RobotOutlined />} 
-            style={{ background: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)' }}
-          />
-        );
-      case 'system':
-        return (
-          <Avatar 
-            size={36} 
-            icon={<InfoCircleOutlined />} 
-            style={{ background: '#faad14' }}
-          />
-        );
+           <Avatar 
+             size={40} 
+             icon={<UserOutlined />} 
+             style={{ background: 'linear-gradient(135deg, #1890ff 0%, #096dd9 100%)' }}
+           />
+         );
+       case 'assistant':
+         return (
+           <Avatar 
+             size={40} 
+             icon={<RobotOutlined />} 
+             style={{ background: 'linear-gradient(135deg, #52c41a 0%, #389e0d 100%)' }}
+           />
+         );
+       case 'system':
+         return (
+           <Avatar 
+             size={40} 
+             icon={<InfoCircleOutlined />} 
+             style={{ background: '#faad14' }}
+           />
+         );
       default:
         return null;
     }
@@ -250,14 +250,15 @@ const MessageItem: React.FC<MessageItemProps> = ({
         {/* 角色名称 */}
         {!isSystem && (
           <div
-            style={{
-              marginBottom: 4,
-              fontSize: 12,
-              color: isUser ? '#1890ff' : '#52c41a',
-              fontWeight: 500,
-              textAlign: isUser ? 'right' : 'left',
-              padding: '0 4px',
-            }}
+             style={{
+               marginBottom: 4,
+               fontSize: 12,
+               color: isUser ? '#1890ff' : '#52c41a',
+               fontWeight: 500,
+               textAlign: isUser ? 'right' : 'left',
+               padding: '0 4px',
+               opacity: 0.85,
+             }}
           >
             {getRoleName()}
           </div>
@@ -273,13 +274,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
                 size="small"
                 icon={copied ? <CheckOutlined style={{ color: '#52c41a' }} /> : <CopyOutlined />}
                 onClick={handleCopy}
-                style={{
-                  position: 'absolute',
-                  top: 4,
-                  right: 4,
-                  opacity: 0,
-                  transition: 'opacity 0.2s',
-                }}
+                 style={{
+                   position: 'absolute',
+                   top: 4,
+                   right: 4,
+                   opacity: 0,
+                   transition: 'opacity 0.3s ease, transform 0.3s ease',
+                   transform: 'translateY(-2px)',
+                 }}
                 className="copy-button"
               />
             </Tooltip>
