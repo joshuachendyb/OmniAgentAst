@@ -89,7 +89,7 @@ class AIServiceFactory:
     """AI服务工厂 - 一个通用类支持所有OpenAI兼容API"""
     
     _instance: Optional[BaseAIService] = None
-    _current_provider: str = "zhipuai"
+    _current_provider: str = ""
     _config: Optional[dict] = None
     _lock: threading.Lock = threading.Lock()
     
@@ -116,9 +116,7 @@ class AIServiceFactory:
         except Exception as e:
             print(f"[AIServiceFactory] 警告: 无法加载配置文件 {actual_path}: {e}")
             config = {
-                "ai": {
-                    "provider": cls._current_provider
-                }
+                "ai": {}
             }
         
         return config
@@ -196,39 +194,67 @@ class AIServiceFactory:
                 warnings=warnings
             )
         
-        # 4. 检查 provider 字段
+        # 4. 检查 provider 字段是否存在
         provider = ai_config.get("provider")
         if not provider:
-            errors.append("未指定 provider，请在 ai.provider 中配置")
+            errors.append("ai.provider 字段为空，请在配置文件中设置 ai.provider")
             return ConfigValidationResult(
                 success=False,
                 provider="unknown",
                 model=model,
-                message="未指定 provider",
+                message="ai.provider 未设置",
                 errors=errors,
                 warnings=warnings
             )
         
-        # 6. 检查 provider 配置是否存在
+        # 5. 检查 model 字段是否存在
+        model = ai_config.get("model")
+        if not model:
+            errors.append("ai.model 字段为空，请在配置文件中设置 ai.model")
+            return ConfigValidationResult(
+                success=False,
+                provider=provider,
+                model="",
+                message="ai.model 未设置",
+                errors=errors,
+                warnings=warnings
+            )
+        
+        # 6. 检查 provider 配置块是否存在
         provider_config = ai_config.get(provider)
         if not provider_config:
-            errors.append(f"provider '{provider}' 的配置不存在，请在 ai.{provider} 中配置")
+            errors.append(f"ai.{provider} 配置块不存在，请在配置文件中添加 ai.{provider} 配置块")
             return ConfigValidationResult(
                 success=False,
                 provider=provider,
                 model=model,
-                message=f"provider '{provider}' 配置不存在",
+                message=f"ai.{provider} 配置块不存在",
                 errors=errors,
                 warnings=warnings
             )
         
+        # 7. 检查 provider 配置块格式是否正确
         if not isinstance(provider_config, dict):
-            errors.append(f"provider '{provider}' 配置格式错误，应为字典类型")
+            errors.append(f"ai.{provider} 配置格式错误，应该是字典类型（当前是 {type(provider_config).__name__} 类型）")
             return ConfigValidationResult(
                 success=False,
                 provider=provider,
                 model=model,
-                message=f"provider '{provider}' 配置格式错误",
+                message=f"ai.{provider} 配置格式错误",
+                errors=errors,
+                warnings=warnings
+            )
+        
+        # 8. 检查 model 是否在 provider 的 models 列表中
+        provider_models = provider_config.get("models", [])
+        if model not in provider_models:
+            available_models = ", ".join(provider_models) if provider_models else "（空）"
+            errors.append(f"model '{model}' 不在 ai.{provider}.models 列表中。可用的 model: {available_models}")
+            return ConfigValidationResult(
+                success=False,
+                provider=provider,
+                model=model,
+                message=f"model '{model}' 无效",
                 errors=errors,
                 warnings=warnings
             )
@@ -247,10 +273,8 @@ class AIServiceFactory:
                 fallback_model = provider_data['models'][0]
                 break
         
-        # 如果没有找到任何provider，用默认值
-        if not fallback_provider:
-            fallback_provider = 'zhipuai'
-            fallback_model = ''
+        # 如果没有找到任何provider，保持空值
+        # 不再硬编码默认provider，让配置文件完全控制
         
         # 2. 检查 ai.provider 和 ai.model 是否有效
         selected_provider = ai_config.get('provider', '')
@@ -348,10 +372,8 @@ class AIServiceFactory:
                     fallback_model = provider_data['models'][0]
                     break
             
-            # 如果没有找到任何provider，用默认值
-            if not fallback_provider:
-                fallback_provider = 'zhipuai'
-                fallback_model = ''
+            # 如果没有找到任何provider，保持空值
+            # 不再硬编码默认provider，让配置文件完全控制
             
             # 2. 检查 ai.provider 和 ai.model 是否有效
             selected_provider = ai_config.get('provider', '')
@@ -465,5 +487,6 @@ class AIServiceFactory:
     def reset(cls):
         """重置工厂状态"""
         cls._instance = None
-        cls._current_provider = "zhipuai"
+        cls._current_provider = ""
+        cls._config = None
         print("[AIServiceFactory] 工厂状态已重置")

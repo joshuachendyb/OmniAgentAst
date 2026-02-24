@@ -20,12 +20,15 @@
 
 正确示例：
 ai_config = config.get('ai', {})
-fallback_provider = 'zhipuai'
+fallback_provider = ''
 fallback_model = ''
-for p in ['zhipuai', 'opencode', 'longcat']:
-    if p in ai_config and 'models' in ai_config[p] and ai_config[p]['models']:
-        fallback_provider = p
-        fallback_model = ai_config[p]['models'][0]
+for provider_name in ai_config.keys():
+    if provider_name == 'provider' or provider_name == 'model':
+        continue
+    provider_data = ai_config.get(provider_name, {})
+    if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
+        fallback_provider = provider_name
+        fallback_model = provider_data['models'][0]
         break
 
 selected_provider = ai_config.get('provider', '')
