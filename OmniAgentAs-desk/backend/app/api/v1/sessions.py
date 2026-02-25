@@ -460,9 +460,17 @@ async def get_session_messages(session_id: str):
         logger.info(f"获取会话消息: session_id={session_id}, count={len(messages)}")
         
         # 构建返回数据，包含新字段
-        title_locked = bool(session.get('title_locked', 0)) if 'title_locked' in session else False
+        title_locked_val = 0
+        if 'title_locked' in session.keys():
+            title_locked_val = session['title_locked']
+        title_locked = bool(title_locked_val)
         title_source = "user" if title_locked else "auto"
-        title_updated_at = _convert_to_utc(session['title_updated_at']) if 'title_updated_at' in session else _convert_to_utc(session['created_at'])
+        title_updated_at_val = None
+        if 'title_updated_at' in session.keys():
+            title_updated_at_val = session['title_updated_at']
+        elif 'created_at' in session.keys():
+            title_updated_at_val = session['created_at']
+        title_updated_at = _convert_to_utc(title_updated_at_val) if title_updated_at_val else _convert_to_utc(None)
         
         # 返回对象格式，包含session_id、title、title_locked、title_source、title_updated_at、messages
         return {
@@ -696,7 +704,11 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
         # 乐观锁检查（只有传递了version参数时才进行）
-        current_version = session['version'] if fields_exist['version'] and 'version' in session else 0
+        # 确保current_version有正确的默认值
+        if fields_exist['version'] and 'version' in session and session['version'] is not None:
+            current_version = session['version']
+        else:
+            current_version = 1  # 如果version不存在或为None，默认从1开始
         version_conflict = False
         if update_data.version is not None and fields_exist['version']:
             if update_data.version != current_version:
