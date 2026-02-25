@@ -603,7 +603,7 @@ const NewChatContainer: React.FC = () => {
     >
       {/* AI思考过程面板已移至MessageItem内部 - 前端小新代修改 */}
 
-      {/* 消息列表 */}
+      {/* 消息列表 - 前端小新代修改 UX-C04: 时间分隔线 */}
       <div
         style={{
           height: 400,
@@ -624,25 +624,49 @@ const NewChatContainer: React.FC = () => {
             </p>
           </div>
         ) : (
-          <List
-            itemLayout="horizontal"
-            dataSource={messages}
-            renderItem={(item) => (
-              <List.Item
-                style={{
-                  justifyContent: item.role === 'user' ? 'flex-end' : 'flex-start',
-                  border: 'none',
-                  padding: '8px 0',
-                  width: '100%',
-                }}
-              >
-                 <MessageItem 
-                   message={item} 
-                   showExecution={showExecution}
-                 />
-              </List.Item>
-            )}
-          />
+          <div>
+            {(() => {
+              // 时间分隔线
+              const elements: React.ReactNode[] = [];
+              let lastDate: string | null = null;
+              
+              for (let i = 0; i < messages.length; i++) {
+                const item = messages[i];
+                const currentDate = new Date(item.timestamp).toLocaleDateString('zh-CN');
+                
+                if (lastDate !== currentDate) {
+                  elements.push(
+                    <div key={`date-${i}`} style={{ textAlign: 'center', margin: '16px 0', position: 'relative' }}>
+                      <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, backgroundColor: '#e8e8e8' }} />
+                      <span style={{ background: '#fafafa', padding: '0 16px', color: '#999', fontSize: 12, position: 'relative', zIndex: 1 }}>
+                        {currentDate}
+                      </span>
+                    </div>
+                  );
+                  lastDate = currentDate;
+                }
+                
+                elements.push(
+                  <List.Item
+                    key={item.id}
+                    style={{
+                      justifyContent: item.role === 'user' ? 'flex-end' : 'flex-start',
+                      border: 'none',
+                      padding: '8px 0',
+                      width: '100%',
+                    }}
+                  >
+                    <MessageItem 
+                      message={item} 
+                      showExecution={showExecution}
+                    />
+                  </List.Item>
+                );
+              }
+              
+              return elements;
+            })()}
+          </div>
         )}
         <div ref={messagesEndRef} />
       </div>
