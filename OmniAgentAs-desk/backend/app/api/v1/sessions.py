@@ -706,9 +706,9 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
         # 调试信息：打印session的内容
-        logger.debug(f"查询到的session: {dict(session)}")
-        logger.debug(f"session keys: {session.keys()}")
-        logger.debug(f"fields_exist: {fields_exist}")
+        # logger.debug(f"查询到的session: {dict(session)}")
+        # logger.debug(f"session keys: {session.keys()}")
+        # logger.debug(f"fields_exist: {fields_exist}")
         
         # 乐观锁检查（只有传递了version参数时才进行）
         # 确保current_version有正确的默认值
@@ -716,7 +716,7 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             current_version = session['version']
         else:
             current_version = 1  # 如果version不存在或为None，默认从1开始
-        logger.debug(f"current_version: {current_version}")
+        # logger.debug(f"current_version: {current_version}")
         
         version_conflict = False
         if update_data.version is not None and fields_exist['version']:
@@ -766,13 +766,13 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         final_values = update_values + where_params
         
         # 调试信息 - 使用print确保能看到
-        print(f"DEBUG update_fields: {update_fields}")
-        print(f"DEBUG final_values: {final_values}")
-        print(f"DEBUG where_clause: {where_clause}")
-        print(f"DEBUG Full SQL: UPDATE chat_sessions SET {', '.join(update_fields)} {where_clause}")
+        # print(f"DEBUG update_fields: {update_fields}")
+        # print(f"DEBUG final_values: {final_values}")
+        # print(f"DEBUG where_clause: {where_clause}")
+        # print(f"DEBUG Full SQL: UPDATE chat_sessions SET {', '.join(update_fields)} {where_clause}")
         
         cursor.execute(
-            f'UPDATE chat_sessions SET {", ".join(update_fields)} {where_clause}',
+            f'UPDATE chat_sessions SET {', '.join(update_fields)} {where_clause}',
             final_values
         )
         
