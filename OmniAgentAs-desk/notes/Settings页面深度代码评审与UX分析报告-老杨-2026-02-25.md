@@ -182,13 +182,17 @@ export const useSettings = () => {
 
 **文件位置**: `config/config.yaml`
 
+**⚠️ 注意：当前config.yaml存在结构错误，违反了设计约定**
+
+**当前错误的config.yaml**：
+
 ```yaml
 ai:
   longcat:                    # Provider配置
     api_base: https://api.longcat.chat/openai/v1
     api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
     max_retries: 3
-    model: LongCat-Flash-Thinking-2601    # 当前使用的模型
+    model: LongCat-Flash-Thinking-2601    # ❌ 错误：provider下不应该有model字段
     models:                             # 模型列表
       - LongCat-Flash-Thinking
       - LongCat-Flash-Thinking
@@ -198,7 +202,7 @@ ai:
     api_base: https://opencode.ai/zen/v1
     api_key: sk-6rMee9Ez89iRCEvDayPq2hdTrMGKyPesy5K88uZKVAqOrc7tg6sVqRI5T1pP2LXb
     max_retries: 3
-    model: glm-5-free
+    model: glm-5-free                    # ❌ 错误：provider下不应该有model字段
     models:
       - minimax-m2.5-free
       - glm-5-free
@@ -209,40 +213,291 @@ ai:
     api_base: https://test.com
     api_key: test123
     max_retries: 3
-    model: glm-4.7-flash
+    model: glm-4.7-flash                # ❌ 错误：provider下不应该有model字段
     models:
       - glm-4.7-flash
       - cogview-3-flash
     timeout: 90
   
-  model: kimi-k2.5-free    # 全局当前模型（顶层）
-  provider: zhipuai          # 全局当前Provider（顶层）
+  model: kimi-k2.5-free    # ✅ 正确：全局当前模型（顶层）
+  provider: zhipuai          # ❌ 错误：provider是zhipuai，但model=kimi-k2.5-free（不在zhipuai中）
 ```
 
-**配置层次与前端界面的映射关系**:
+**正确的config.yaml结构**（符合设计约定）：
+
+```yaml
+ai:
+  provider: opencode          # ✅ 正确：顶层配置，当前使用的provider
+  model: kimi-k2.5-free     # ✅ 正确：顶层配置，当前使用的模型
+  
+  longcat:                   # Provider配置
+    api_base: https://api.longcat.chat/openai/v1
+    api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
+    models:                   # ✅ 只保留models列表
+      - LongCat-Flash-Thinking
+      - LongCat-Flash-Thinking-2601
+    timeout: 120
+    max_retries: 3
+  
+  opencode:
+    api_base: https://opencode.ai/zen/v1
+    api_key: sk-6rMee9Ez89iRCEvDayPq2hdTrMGKyPesy5K88uZKVAqOrc7tg6sVqRI5T1pP2LXb
+    models:                   # ✅ 只保留models列表
+      - minimax-m2.5-free
+      - glm-5-free
+      - kimi-k2.5-free
+    timeout: 120
+    max_retries: 3
+  
+  zhipuai:
+    api_base: https://test.com
+    api_key: test123
+    models:                   # ✅ 只保留models列表
+      - glm-4.7-flash
+      - glm-4.6v-flash
+      - cogview-3-flash
+    timeout: 90
+    max_retries: 3
+```
+
+**config.yaml结构核心规则**（来自小沈的《模型配置文件写入接口深度分析与新设计》）:
+
+| 规则 | 说明 | 重要性 |
+|------|------|--------|
+| **规则1** | 顶层 `ai.provider` 和 `ai.model` 必须存在 | P0-绝对必要 |
+| **规则2** | 每个provider下**只保留** `models` 列表（无model字段） | P0-绝对必要 |
+| **规则3** | `ai.model` 必须在 `ai.provider` 的 `models` 列表中 | P0-绝对必要 |
+| **规则4** | 整个配置文件**只能有一组** `ai.provider` 和 `ai.model`（都在顶层） | P0-绝对必要 |
+| **规则5** | Provider配置下**必须有**：api_base, api_key | P0-绝对必要 |
+| **规则6** | Provider配置下**可选**：timeout, max_retries, temperature, top_p, max_tokens 等 | P2-可选 |
+| **规则7** | Provider配置下**不能**有 `model` 字段（已废弃） | P0-绝对禁止 |
+
+**当前config.yaml违反的规则**:
+
+| 违反的规则 | 位置 | 问题 | 严重程度 |
+|-----------|------|------|---------|
+| 规则2 | longcat.provider (第191行) | provider下有model字段 | P0-错误 |
+| 规则2 | opencode.provider (第201行) | provider下有model字段 | P0-错误 |
+| 规则2 | zhipuai.provider (第212行) | provider下有model字段 | P0-错误 |
+| 规则3 | ai.provider + ai.model (第218-219行) | provider=zhipuai，但model=kimi-k2.5-free（不在zhipuai的models中） | P0-错误 |
+
+**配置层次与前端界面的映射关系**（基于正确的结构）:
 
 | config.yaml层级 | 配置项 | 前端对应 | 说明 |
 |-----------------|--------|---------|------|
+| ai.provider | - | 全局当前Provider | 顶层配置 |
+| ai.model | - | 全局当前模型 | 顶层配置 |
 | ai.{provider} | api_base | Provider.api_base | API基础URL |
 | ai.{provider} | api_key | Provider.api_key | API密钥 |
-| ai.{provider} | max_retries | Provider.max_retries | 最大重试次数 |
-| ai.{provider} | model | Provider.model | 当前使用的模型 |
-| ai.{provider}.models | - | Provider.models | 模型列表 |
+| ai.{provider}.models | - | Provider.models | 模型列表（唯一必要的列表） |
 | ai.{provider} | timeout | Provider.timeout | 请求超时时间 |
-| ai.model | - | 全局当前模型 | 顶层配置 |
-| ai.provider | - | 全局当前Provider | 顶层配置 |
+| ai.{provider} | max_retries | Provider.max_retries | 最大重试次数 |
+| ai.{provider} | model | ❌ 已废弃 | 不应该在provider下存在 |
 
-### 2.3 界面重构方案（左右分栏布局）
+### 2.4 config.yaml问题修复方法
 
+**修复方法1：使用后端新增的修复接口（推荐）**
+
+小沈在《模型配置文件写入接口深度分析与新设计》中设计了新的`POST /config/fix`接口，可以自动修复常见问题：
+
+```bash
+# 调用修复接口，自动删除所有provider下废弃的model字段
+curl -X POST http://localhost:8000/api/v1/config/fix
+
+# 响应示例
+{
+  "success": true,
+  "fixed_issues": [
+    "删除 provider 'longcat' 下废弃的 model 字段",
+    "删除 provider 'opencode' 下废弃的 model 字段",
+    "删除 provider 'zhipuai' 下废弃的 model 字段"
+  ],
+  "warnings": [],
+  "backup_path": "D:\\2bktest\\MDview\\OmniAgentAs-desk\\config\\config.yaml.backup.20260226_001200"
+}
+```
+
+**修复方法2：手动修正Provider和Model匹配**
+
+自动修复后，还需要手动修正`ai.provider`和`ai.model`的匹配问题：
+
+```bash
+# 调用更新配置接口，设置正确的provider和model
+curl -X PUT http://localhost:8000/api/v1/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "ai_provider": "opencode",
+    "ai_model": "kimi-k2.5-free"
+  }'
+```
+
+**修复方法3：完整修复流程（推荐）**
+
+1. **步骤1**：调用`POST /config/fix`接口，自动删除废弃字段
+2. **步骤2**：调用`PUT /config`，设置正确的`ai.provider = opencode, ai.model = kimi-k2.5-free`
+3. **步骤3**：调用`GET /config/validate-full`，验证配置完整性
+
+**修复后的正确config.yaml**：
+
+```yaml
+ai:
+  provider: opencode      # ✅ 修正：改为opencode
+  model: kimi-k2.5-free   # ✅ 保持不变（在opencode的models中）  
+  longcat:
+    api_base: https://api.longcat.chat/openai/v1
+    api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
+    max_retries: 3
+    # ❌ 已删除：model: LongCat-Flash-Thinking-2601
+    models:
+      - LongCat-Flash-Thinking-2601
+      - LongCat-Flash-Thinking
+    timeout: 120
+  
+  opencode:
+    api_base: https://opencode.ai/zen/v1
+    api_key: sk-6rMee9Ez89iRCECEvDayPq2hdTrMGKyPesy5K88uZKVAqOrc7tg6sVqRI5T1pP2LXb
+    max_retries: 3
+    # ❌ 已删除：model: glm-5-free
+    models:
+      - minimax-m2.5-free
+      - glm-5-free
+      - kimi-k2.5-free
+    timeout: 120
+  
+  zhipuai:
+    api_base: https://test.com
+    api_key: test123
+    max_retries: 3
+    # ❌ 已删除：model: glm-4.7-flash
+    models:
+      - glm-4.7-flash
+      - glm-4.6v-flash
+      - cogview-3-flash
+    timeout: 90
+```
+
+### 2.5 前端需要更新的代码点
+
+**更新点1：Provider组件不再读取provider下的model字段**
+
+```typescript
+// ❌ 错误：读取provider下的model字段（已废弃）
+const currentModel = provider.model || ai.model;
+
+// ✅ 正确：只读取顶层ai.model
+const currentModel = ai.model;
+```
+
+**更新点2：Provider组件不再写入provider下的model字段**
+
+```typescript
+// ❌ 错误：写入provider下的model字段（已废弃）
+await configApi.updateProvider(providerName, {
+  ...formData,
+  model: selectedModel  // ❌ 不应该写入
+});
+
+// ✅ 正确：不写入model字段，只更新顶层ai.model
+await configApi.updateProvider(providerName, {
+  api_base: formData.api_base,
+  api_key: formData.api_key,
+  models: formData.models,
+  timeout: formData.timeout,
+  max_retries: formData.max_retries
+  // ❌ 不写入model字段
+});
+// 然后更新顶层ai.model
+await configApi.updateConfig({
+  ai_model: selectedModel
+});
+```
+
+**更新点3：添加Provider时不写model字段**
+
+```typescript
+// ❌ 错误：添加时写入model字段
+await configApi.addProvider({
+  name: formData.name,
+  api_base: formData.api_base,
+  api_key: formData.api_key,
+  model: formData.models[0],  // ❌ 不应该写入
+  models: formData.models
+});
+
+// ✅ 正确：不写入model字段
+await configApi.addProvider({
+  name: formData.name,
+  api_base: formData.api_base,
+  api_key: formData.api_key,
+  models: formData.models
+  // ❌ 不写入model字段
+});
+```
+
+### 2.6 界面面构方案（左右分栏布局）
+ 
 #### 设计原则
+ 
+| 原则 | 说明 | 体现 | 强调规则 |
+|------|------|------|---------|
+| **结构可视化** | 界面结构应体现config.yaml的层次结构 | 左侧列表 + 右侧详情 | 规则4：ai.provider和ai.model只能在顶层 |
+| **配置上下文** | 用户编辑时清楚知道在修改config.yaml的哪个部分 | 明确标注"config.yaml: ai.{provider}" | 规则7：provider下不能有model字段 |
+| **人性化操作** | 复杂的YAML配置转化为直观的表单控件 | 使用Ant Design表单组件 | 规则2：provider下只保留models列表 |
+| **实时反馈** | 修改后立即显示配置验证状态 | 集成后端验证API | 规则3：ai.model必须在ai.provider的models中 |
+| **渐进式披露** | 默认只显示关键配置，高级配置可折叠展开 | 使用Collapse组件 | - |
 
-| 原则 | 说明 | 体现 |
-|------|------|------|
-| **结构可视化** | 界面结构应体现config.yaml的层次结构 | 左侧列表 + 右侧详情 |
-| **配置上下文** | 用户编辑时清楚知道在修改config.yaml的哪个部分 | 明确标注"config.yaml: ai.{provider}" |
-| **人性化操作** | 复杂的YAML配置转化为直观的表单控件 | 使用Ant Design表单组件 |
-| **实时反馈** | 修改后立即显示配置验证状态 | 集成后端验证API |
-| **渐进式披露** | 默认只显示关键配置，高级配置可折叠展开 | 使用Collapse组件 |
+**⚠️ 核心规则强调（来自小沈的《模型配置文件写入接口深度分析与新设计》）**：
+
+**规则4（绝对必要）**：`ai.provider` 和 `ai.model` **只能在顶层**（ai的头部），**不能在其他地方出现**
+
+**⚠️ 重要设计约束（来自老陈的要求）**：
+
+**规则8（交互约束）**：在config.yaml的头部和模型配置页面的头部，编辑`ai.provider`和`ai.model`时：
+
+| 编辑项 | 约束 | 原因 | 实现方式 |
+|--------|------|------|---------|
+| **ai.provider** | 必须使用**选择方式（下拉框）**，不能手写 | 防止输入不存在的provider名称 | `<Select>`组件 |
+|`ai.model` | 必须使用**选择方式（下拉框）**，不能手写 | 防止输入不在provider的models中的模型名 | `<Select>`组件，选项动态加载 |
+
+**为什么要禁止手写？**
+
+1. **防止违反规则3**：`ai.model`必须在`ai.provider`的models列表中
+   - 手写可能输入不存在的模型名
+   - 下拉框选项自动过滤，确保选项有效
+
+2. **防止违反规则1**：`ai.provider`必须是已配置的provider
+   - 手写可能输入不存在的provider名称
+   - 下拉框选项从config.yaml动态读取，确保选项有效
+
+3. **提升用户体验**：
+   - 减少拼写错误
+   - 减少记忆负担
+   - 提供可视化提示
+
+**正确结构**：
+```yaml
+ai:
+  provider: opencode      # ✅ 只能在顶层
+  model: kimi-k2.5-free     # ✅ 只能在顶层
+  opencode:
+    models:             # ✅ provider下只有models列表
+      - kimi-k2.5-free
+    # ❌ 绝对不能有: model: xxx
+```
+
+**错误结构（违反规则4）**：
+```yaml
+ai:
+  opencode:
+    model: glm-5-free    # ❌ 错误：provider下不能有model字段
+  model: kimi-k2.5-free   # ❌ 重复：顶层和provider下都有model
+```
+
+**前端界面设计必须体现这个规则**：
+
+1. **全局配置区**（顶部或左侧）：显示和编辑`ai.provider`和`ai.model`
+2. **Provider配置区**（右侧详情）：**只显示和编辑**`api_base`、`api_key`、`models`、`timeout`、`max_retries`等
+3. **禁止操作**：Provider配置区**绝对不能**显示或编辑`model`字段
 
 #### 方案：左右分栏布局（类似VS Code设置）
 
@@ -940,6 +1195,12 @@ const getProviderDisplayName = (name: string) => {
 ---
 
 **报告完成时间**: 2026-02-25 13:33:24  
+**更新时间**: 2026-02-26 08:30:00  
 **评审人**: 老杨（资深代码评审专家、UI/UE/UX资深分析专家）  
-**文档版本**: v1.0（专业整合完整版）  
-**下次评审**: 实施第一阶段优化后
+**文档版本**: v1.1（根据小沈的config.yaml规则更新）  
+**更新内容**: 
+- 更新2.2章节：添加小沈设计的7条config.yaml核心规则
+- 更新2.2章节：明确当前config.yaml违反的规则（规则2、规则7）
+- 新增2.4章节：config.yaml问题修复方法（3种修复方案）
+- 新增2.5章节：前端需要更新的代码点（3个更新点）
+- 确认config.yaml结构遵循：顶层ai.provider和ai.model，provider下只有models列表（无model字段）

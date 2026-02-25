@@ -18,6 +18,8 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from app.utils.logger import logger
 
+from sqlite3 import Connection, Cursor
+
 router = APIRouter()
 
 # 数据库路径
@@ -497,8 +499,8 @@ class MessageCreate(BaseModel):
 
 class SessionUpdate(BaseModel):
     """会话更新请求"""
-    title: str = Field(..., description="会话标题")
-    version: Optional[int] = Field(None, description="版本号（乐观锁）")
+    title: Optional[str] = Field(None, description="会话标题", min_length=1, max_length=200)
+    version: int = Field(..., ge=1, description="乐观锁版本号")
     updated_by: Optional[str] = Field(None, description="修改者")
 
 
@@ -719,7 +721,7 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         # logger.debug(f"current_version: {current_version}")
         
         version_conflict = False
-        if update_data.version is not None and fields_exist['version']:
+        if fields_exist['version']:
             if update_data.version != current_version:
                 version_conflict = True
         
@@ -757,8 +759,8 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         where_params = [session_id]
         where_clause = f'WHERE id = ?'
         
-        # 如果传递了version，添加到WHERE子句和参数中
-        if update_data.version is not None and fields_exist['version']:
+        # 如果version字段存在，添加到WHERE子句和参数中（乐观锁）
+        if fields_exist['version']:
             where_clause += ' AND version = ?'
             where_params.append(update_data.version)
         
@@ -777,7 +779,7 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         )
         
         # 乐观锁验证：如果UPDATE影响了0行，说明version不匹配
-        if cursor.rowcount == 0 and fields_exist['version'] and update_data.version is not None:
+        if cursor.rowcount == 0 and fields_exist['version']:
             conn.close()
             raise HTTPException(status_code=409, detail=f"版本冲突: 当前版本={current_version}, 请求版本={update_data.version}")
         
