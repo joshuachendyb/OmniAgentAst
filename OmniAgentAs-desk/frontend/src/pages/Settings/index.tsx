@@ -49,7 +49,101 @@ const { Text } = Typography;
 const { TabPane } = Tabs;
 
 /**
+ * 全局配置区域组件（ai.provider和ai.model）
+ * @author 小新
+ * @update 2026-02-26 新增
+ */
+const GlobalConfigArea: React.FC<{
+  providers: ProviderInfo[];
+  currentProvider: string;
+  currentModel: string;
+  onProviderChange: (provider: string) => void;
+  onModelChange: (model: string) => void;
+}> = ({ providers, currentProvider, currentModel, onProviderChange, onModelChange }) => {
+  return (
+    <Card size="small" style={{ marginBottom: 24 }}>
+      <Row gutter={[16, 16]}>
+        <Col span={12}>
+          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+            当前Provider:
+          </Text>
+          <Select
+            value={currentProvider}
+            onChange={onProviderChange}
+            style={{ width: '100%' }}
+            placeholder="选择Provider"
+          >
+            {providers.map(p => (
+              <Select.Option key={p.name} value={p.name}>
+                {p.name}
+              </Select.Option>
+            ))}
+          </Select>
+        </Col>
+        <Col span={12}>
+          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+            当前模型:
+          </Text>
+          <Select
+            value={currentModel}
+            onChange={onModelChange}
+            style={{ width: '100%' }}
+            placeholder="选择模型"
+          >
+            {providers.find(p => p.name === currentProvider)?.models.map(model => (
+              <Select.Option key={model} value={model}>
+                {model}
+              </Select.Option>
+            ))}
+          </Select>
+        </Col>
+      </Row>
+    </Card>
+  );
+};
+
+/**
+ * Provider列表组件（左侧）
+ * @author 小新
+ * @update 2026-02-26 新增
+ */
+const ProviderList: React.FC<{
+  providers: ProviderInfo[];
+  currentProvider: string;
+  onSelect: (provider: ProviderInfo) => void;
+}> = ({ providers, currentProvider, onSelect }) => {
+  return (
+    <div style={{ borderRight: '1px solid #f0f0f0', paddingRight: 16 }}>
+      <Typography.Title level={5} style={{ marginBottom: 16 }}>
+        Provider列表
+      </Typography.Title>
+      {providers.map(provider => (
+        <Card
+          key={provider.name}
+          size="small"
+          style={{ marginBottom: 12, cursor: 'pointer' }}
+          onClick={() => onSelect(provider)}
+          bodyStyle={{
+            backgroundColor: provider.name === currentProvider ? '#e6f7ff' : 'transparent',
+          }}
+        >
+          <Space>
+            <ApiOutlined />
+            <Text strong>{provider.name}</Text>
+            {provider.name === currentProvider && (
+              <Tag color="success">当前使用</Tag>
+            )}
+          </Space>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
+/**
  * Provider管理页面组件
+ * @author 小新
+ * @update 2026-02-26 重构：提取子组件
  */
 const ProviderSettings: React.FC = () => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
