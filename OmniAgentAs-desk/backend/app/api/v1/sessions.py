@@ -737,8 +737,13 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         new_version = current_version + 1
         
         # 根据字段存在性动态构建更新语句
-        update_fields = ['title = ?', 'updated_at = ?']
-        update_values = [update_data.title, utc_time]
+        update_fields = ['updated_at = ?']
+        update_values = [utc_time]
+        
+        # 只有当title不为None时才更新title
+        if update_data.title is not None:
+            update_fields.append('title = ?')
+            update_values.append(update_data.title)
         
         # 如果version字段存在，更新它
         if fields_exist['version']:
