@@ -687,20 +687,24 @@ async def update_session(session_id: str, update_data: SessionUpdate):
                 conn.close()
                 raise HTTPException(status_code=409, detail=f"版本冲突: 当前版本={current_version}, 请求版本={update_data.version}")
         
-        # 更新标题
+         # 更新标题
         utc_time = get_utc_timestamp()
+        
+        # 递增版本号
+        new_version = current_version + 1
         
         # 根据字段存在性动态构建更新语句
         update_fields = ['title = ?', 'updated_at = ?']
         update_values = [update_data.title, utc_time]
         
-        # 递增版本号
-        new_version = current_version + 1
-        
-        # 如果version字段存在，更新它
+        # 如果version字段存在，更新它并添加乐观锁检查
+        where_clause = f'WHERE id = ?'
         if fields_exist['version']:
             update_fields.append('version = ?')
             update_values.append(new_version)
+            # 乐观锁：只在version匹配时更新
+            if update_data.version is not None:
+                where_clause += f' AND version = {update_data.version}'
         
         # 如果title_locked字段存在，锁定标题（手动更新）
         if fields_exist['title_locked']:
@@ -715,9 +719,14 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         update_values.append(session_id)
         
         cursor.execute(
-            f'UPDATE chat_sessions SET {", ".join(update_fields)} WHERE id = ?',
+            f'UPDATE chat_sessions SET {", ".join(update_fields)} {where_clause}',
             update_values
         )
+        
+        # 乐观锁验证：如果UPDATE影响了0行，说明version不匹配
+        if cursor.rowcount == 0 and fields_exist['version'] and update_data.version is not None:
+            conn.close()
+            raise HTTPException(status_code=409, detail=f"版本冲突: 当前版本={current_version}, 请求版本={update_data.version}")
         
         conn.commit()
         conn.close()
