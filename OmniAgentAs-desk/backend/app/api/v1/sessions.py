@@ -746,22 +746,32 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             update_fields.append('title_locked = ?')
             update_values.append(True)  # 手动更新锁定标题
         
-        # 如果title_updated_at字段存在，更新它
+         # 如果title_updated_at字段存在，更新它
         if fields_exist['title_updated_at']:
             update_fields.append('title_updated_at = ?')
             update_values.append(utc_time)
         
-        # 构建WHERE子句，只有传递了version时才添加乐观锁检查
+        # 构建WHERE子句的参数列表
+        where_params = [session_id]
         where_clause = f'WHERE id = ?'
+        
+        # 如果传递了version，添加到WHERE子句和参数中
         if update_data.version is not None and fields_exist['version']:
             where_clause += ' AND version = ?'
-            update_values.append(update_data.version)
+            where_params.append(update_data.version)
         
-        update_values.append(session_id)
+        # 合并update_values和where_params
+        final_values = update_values + where_params
+        
+        # 调试信息 - 使用print确保能看到
+        print(f"DEBUG update_fields: {update_fields}")
+        print(f"DEBUG final_values: {final_values}")
+        print(f"DEBUG where_clause: {where_clause}")
+        print(f"DEBUG Full SQL: UPDATE chat_sessions SET {', '.join(update_fields)} {where_clause}")
         
         cursor.execute(
             f'UPDATE chat_sessions SET {", ".join(update_fields)} {where_clause}',
-            update_values
+            final_values
         )
         
         # 乐观锁验证：如果UPDATE影响了0行，说明version不匹配
