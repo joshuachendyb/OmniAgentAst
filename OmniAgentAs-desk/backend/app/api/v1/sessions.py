@@ -698,6 +698,87 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         raise HTTPException(status_code=500, detail=f"更新会话失败: {str(e)}")
 
 
+@router.get("/sessions/titles/batch")
+async def get_session_titles_batch(
+    session_ids: str = Query(..., description="会话ID列表（逗号分隔）")
+):
+    """
+    批量获取会话标题
+    
+    优化内容：
+    1. 减少API调用次数，一次获取多个会话标题
+    2. 返回title相关字段（title, title_locked, title_updated_at）
+    3. 参数验证：空ID列表返回400，超过100个返回400
+    
+    P0风险缓解：添加了字段存在性检查，向后兼容旧数据库结构
+    
+    Args:
+        session_ids: 逗号分隔的会话ID列表
+        
+    Returns:
+        dict: 批量会话标题信息
+    """
+    try:
+        # 参数验证
+        if not session_ids or session_ids.strip() == "":
+            raise HTTPException(status_code=400, detail="会话ID列表不能为空")
+        
+        id_list = session_ids.split(",")
+        
+        # 数量限制
+        if len(id_list) > 100:
+            raise HTTPException(status_code=400, detail="会话ID数量不能超过100个")
+        
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        
+        # P0风险缓解：检查数据库字段是否存在（向后兼容）
+        fields_exist = check_db_fields_exist(conn)
+        
+        # 构建查询
+        placeholders = ",".join(["?" for _ in id_list])
+        
+        # 根据字段存在性动态构建查询
+        if fields_exist['title_locked'] and fields_exist['title_updated_at']:
+            query = f'''
+                SELECT id, title, COALESCE(title_locked, 0) as title_locked,
+                       COALESCE(title_updated_at, created_at) as title_updated_at
+                FROM chat_sessions
+                WHERE id IN ({placeholders}) AND is_deleted = FALSE
+            '''
+        else:
+            # 兼容模式：查询基本字段
+            query = f'''
+                SELECT id, title, 0 as title_locked, created_at as title_updated_at
+                FROM chat_sessions
+                WHERE id IN ({placeholders}) AND is_deleted = FALSE
+            '''
+        
+        cursor.execute(query, id_list)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # 构建返回数据
+        sessions = []
+        for row in rows:
+            sessions.append({
+                "session_id": row['id'],
+                "title": row['title'],
+                "title_locked": bool(row.get('title_locked', False)),
+                "title_updated_at": _convert_to_utc(row.get('title_updated_at'))
+            })
+        
+        logger.info(f"批量获取会话标题: 请求{len(id_list)}个, 返回{len(sessions)}个")
+        
+        return {"sessions": sessions}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"批量获取会话标题失败: {e}")
+        raise HTTPException(status_code=500, detail=f"批量获取会话标题失败: {str(e)}")
+
+
 @router.delete("/sessions/{session_id}")
 async def delete_session(session_id: str):
     """
