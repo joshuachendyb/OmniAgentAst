@@ -714,12 +714,12 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         update_fields = ['title = ?', 'updated_at = ?']
         update_values = [update_data.title, utc_time]
         
-         # 如果version字段存在，更新它并添加乐观锁检查
+         # 如果version字段存在，更新它并添加乐观锁检查（只有传递了version时才加WHERE条件）
         where_clause = f'WHERE id = ?'
         if fields_exist['version']:
             update_fields.append('version = ?')
             update_values.append(new_version)
-            # 乐观锁：只在version匹配时更新
+            # 乐观锁：只有在传递了version参数时才加WHERE条件
             if update_data.version is not None:
                 where_clause += ' AND version = ?'
                 update_values.insert(-1, update_data.version)  # 插入到session_id前面
