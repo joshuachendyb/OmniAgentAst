@@ -703,12 +703,19 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
+        # 调试信息：打印session的内容
+        logger.debug(f"查询到的session: {dict(session)}")
+        logger.debug(f"session keys: {session.keys()}")
+        logger.debug(f"fields_exist: {fields_exist}")
+        
         # 乐观锁检查（只有传递了version参数时才进行）
         # 确保current_version有正确的默认值
-        if fields_exist['version'] and 'version' in session and session['version'] is not None:
+        if fields_exist['version'] and 'version' in session.keys() and session['version'] is not None:
             current_version = session['version']
         else:
             current_version = 1  # 如果version不存在或为None，默认从1开始
+        logger.debug(f"current_version: {current_version}")
+        
         version_conflict = False
         if update_data.version is not None and fields_exist['version']:
             if update_data.version != current_version:
@@ -719,7 +726,7 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             conn.close()
             raise HTTPException(status_code=409, detail=f"版本冲突: 当前版本={current_version}, 请求版本={update_data.version}")
         
-         # 更新标题
+          # 更新标题
         utc_time = get_utc_timestamp()
         
         # 递增版本号
@@ -729,15 +736,10 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         update_fields = ['title = ?', 'updated_at = ?']
         update_values = [update_data.title, utc_time]
         
-         # 如果version字段存在，更新它并添加乐观锁检查（只有传递了version时才加WHERE条件）
-        where_clause = f'WHERE id = ?'
+        # 如果version字段存在，更新它
         if fields_exist['version']:
             update_fields.append('version = ?')
             update_values.append(new_version)
-            # 乐观锁：只有在传递了version参数时才加WHERE条件
-            if update_data.version is not None:
-                where_clause += ' AND version = ?'
-                update_values.insert(-1, update_data.version)  # 插入到session_id前面
         
         # 如果title_locked字段存在，锁定标题（手动更新）
         if fields_exist['title_locked']:
@@ -748,6 +750,12 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         if fields_exist['title_updated_at']:
             update_fields.append('title_updated_at = ?')
             update_values.append(utc_time)
+        
+        # 构建WHERE子句，只有传递了version时才添加乐观锁检查
+        where_clause = f'WHERE id = ?'
+        if update_data.version is not None and fields_exist['version']:
+            where_clause += ' AND version = ?'
+            update_values.append(update_data.version)
         
         update_values.append(session_id)
         
