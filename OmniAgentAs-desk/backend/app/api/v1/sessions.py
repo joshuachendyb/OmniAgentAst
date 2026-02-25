@@ -457,9 +457,9 @@ async def get_session_messages(session_id: str):
         logger.info(f"获取会话消息: session_id={session_id}, count={len(messages)}")
         
         # 构建返回数据，包含新字段
-        title_locked = bool(session.get('title_locked', False))
+        title_locked = bool(session.get('title_locked', 0)) if 'title_locked' in session else False
         title_source = "user" if title_locked else "auto"
-        title_updated_at = _convert_to_utc(session.get('title_updated_at'))
+        title_updated_at = _convert_to_utc(session['title_updated_at']) if 'title_updated_at' in session else _convert_to_utc(session['created_at'])
         
         # 返回对象格式，包含session_id、title、title_locked、title_source、title_updated_at、messages
         return {
@@ -562,7 +562,7 @@ async def save_message(session_id: str, message: MessageCreate):
         new_title = session['title']
         
         # P0风险缓解：检查字段是否存在，如果不存在则假设标题未锁定
-        title_locked = session['title_locked'] if fields_exist['title_locked'] else False
+        title_locked = session['title_locked'] if fields_exist['title_locked'] and 'title_locked' in session else False
         
         if not title_locked and new_message_count == 1:
             # 第一条消息，且标题未被锁定，使用消息内容作为标题
@@ -600,7 +600,7 @@ async def save_message(session_id: str, message: MessageCreate):
                 update_values.append(utc_time)
             
             if fields_exist['version']:
-                current_version = session.get('version', 0)
+                current_version = session['version'] if 'version' in session else 0
                 update_fields.append('version = ?')
                 update_values.append(current_version + 1)  # 递增版本号
             
@@ -681,7 +681,7 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
         # 乐观锁检查（如果传递了version参数）
-        current_version = session.get('version', 0) if fields_exist['version'] else 0
+        current_version = session['version'] if fields_exist['version'] and 'version' in session else 0
         if update_data.version is not None and fields_exist['version']:
             if update_data.version != current_version:
                 conn.close()
@@ -796,11 +796,14 @@ async def get_session_titles_batch(
         # 构建返回数据
         sessions = []
         for row in rows:
+            title_locked_val = row['title_locked'] if 'title_locked' in row else 0
+            title_updated_at_val = row['title_updated_at'] if 'title_updated_at' in row else row.get('created_at')
+            
             sessions.append({
                 "session_id": row['id'],
                 "title": row['title'],
-                "title_locked": bool(row.get('title_locked', False)),
-                "title_updated_at": _convert_to_utc(row.get('title_updated_at'))
+                "title_locked": bool(title_locked_val),
+                "title_updated_at": _convert_to_utc(title_updated_at_val)
             })
         
         logger.info(f"批量获取会话标题: 请求{len(id_list)}个, 返回{len(sessions)}个")
