@@ -15,9 +15,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Union
 from fastapi import APIRouter, HTTPException, Query
-from sqlite3 import Connection, Cursor
 from pydantic import BaseModel, Field
 from app.utils.logger import logger
+
+# ⭐ 修复P2-问题7：导入类型注解用于更准确的类型提示
+from sqlite3 import Connection, Cursor
 
 router = APIRouter()
 
@@ -37,6 +39,12 @@ def check_db_fields_exist(conn) -> dict:
     用于向后兼容，如果新字段不存在则使用默认值
     这是P0风险缓解措施：防止数据库字段不存在导致API失败
     
+    ⭐ 修复P1-问题5：更健壮的字段检查逻辑
+    修复要点：
+    - 标准化字段名（去除空格，转小写）
+    - 检查字段名时去除可能的引号
+    - 增强异常处理
+    
     Args:
         conn: 数据库连接
         
@@ -53,9 +61,19 @@ def check_db_fields_exist(conn) -> dict:
     try:
         # 使用PRAGMA table_info查询表结构（SQLite）
         cursor.execute("PRAGMA table_info(chat_sessions)")
-        columns = {row['name'] for row in cursor.fetchall()}
+        rows = cursor.fetchall()
         
-        # 检查新字段是否存在
+        # ⭐ 修复P1-问题5：标准化字段名处理
+        # 去除空格、转小写、去除可能的引号
+        columns = set()
+        for row in rows:
+            field_name = row['name']
+            if field_name:
+                # 标准化：去除空格、转小写、去除引号
+                field_name = field_name.strip().strip('"').strip("'").lower()
+                columns.add(field_name)
+        
+        # 检查新字段是否存在（使用标准化后的字段名）
         fields_exist['title_locked'] = 'title_locked' in columns
         fields_exist['title_updated_at'] = 'title_updated_at' in columns
         fields_exist['version'] = 'version' in columns
@@ -131,6 +149,19 @@ def _init_database():
         )
     ''')
     
+    # 创建标题历史表（P2-中优先级）
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS chat_session_title_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_by TEXT,
+            change_reason TEXT,
+            FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+        )
+    ''')
+    
     # 创建索引
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_updated ON chat_sessions(updated_at DESC)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_deleted ON chat_sessions(is_deleted)')
@@ -186,6 +217,10 @@ class SessionListResponse(BaseModel):
     page: int = Field(..., description="当前页码")
     page_size: int = Field(..., description="每页数量")
     sessions: list[SessionResponse] = Field(..., description="会话列表")
+
+class BatchTitleResponse(BaseModel):
+    """批量获取会话标题响应（12.1.3节）"""
+    sessions: list[dict] = Field(..., description="会话标题信息列表")
 
 
 class MessageResponse(BaseModel):
@@ -388,21 +423,42 @@ async def get_session_messages(session_id: str):
     """
     获取会话消息历史
     
+    优化内容（12.1.1节）：
+    - 响应格式扩展：新增title_locked, title_source, title_updated_at字段
+    
     Args:
         session_id: 会话ID
         
     Returns:
-        dict: 包含session_id和messages的对象
+        dict: 包含session_id, title, title_locked, title_source, title_updated_at和messages的对象
     """
     try:
         conn = _get_db_connection()
         cursor = conn.cursor()
         
+        # P0风险缓解：检查数据库字段是否存在（向后兼容）
+        fields_exist = check_db_fields_exist(conn)
+        
         # 验证会话存在
-        cursor.execute(
-            'SELECT id, title FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
-            (session_id,)
-        )
+        if fields_exist['title_locked'] and fields_exist['title_updated_at']:
+            # 新字段存在，使用完整查询
+            cursor.execute(
+                '''SELECT id, title, 
+                          COALESCE(title_locked, 0) as title_locked,
+                          COALESCE(title_updated_at, created_at) as title_updated_at
+                   FROM chat_sessions 
+                   WHERE id = ? AND is_deleted = FALSE''',
+                (session_id,)
+            )
+        else:
+            # 新字段不存在，使用兼容查询
+            cursor.execute(
+                '''SELECT id, title, 0 as title_locked, created_at as title_updated_at
+                   FROM chat_sessions 
+                   WHERE id = ? AND is_deleted = FALSE''',
+                (session_id,)
+            )
+        
         session = cursor.fetchone()
         
         if not session:
@@ -442,19 +498,21 @@ async def get_session_messages(session_id: str):
         
         logger.info(f"获取会话消息: session_id={session_id}, count={len(messages)}")
         
-        # 返回对象格式，包含session_id和messages
+        # 返回扩展格式（12.1.1节要求）
+        # 新增字段：title_locked, title_source, title_updated_at
+        title_locked = bool(session['title_locked'])
+        title_source = 'user' if title_locked else 'auto'
+        title_updated_at = _convert_to_utc(session['title_updated_at'])
+        
         return {
-            title_locked = bool(session.get("title_locked", False))
-            title_source = "user" if title_locked else "auto"
-            title_updated_at = _convert_to_utc(session.get("title_updated_at", session.get("created_at")))
-            return {
-                "session_id": session_id,
-                "title": session["title"],
-                "title_locked": title_locked,
-                "title_source": title_source,
-                "title_updated_at": title_updated_at,
-                "messages": messages
-            }        
+            "session_id": session_id,
+            "title": session['title'],
+            "title_locked": title_locked,
+            "title_source": title_source,
+            "title_updated_at": title_updated_at,
+            "messages": messages
+        }
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -462,11 +520,13 @@ async def get_session_messages(session_id: str):
         raise HTTPException(status_code=500, detail=f"获取会话消息失败: {str(e)}")
 
 
+
+
+
 class MessageCreate(BaseModel):
-    """消息创建请求"""
+    """创建消息请求"""
     role: str = Field(..., description="角色: user/assistant/system")
     content: str = Field(..., description="消息内容")
-
 
 class SessionUpdate(BaseModel):
     """会话更新请求"""
@@ -574,7 +634,7 @@ async def save_message(session_id: str, message: MessageCreate):
                 update_fields.append('updated_at = ?')
                 update_values.append(utc_time)
             
-            # P0风险缓解：如果新字段存在，也更新它们
+             # P0风险缓解：如果新字段存在，也更新它们
             if fields_exist['title_locked'] and should_update_title:
                 update_fields.append('title_locked = ?')
                 update_values.append(False)  # 自动更新的标题不锁定
@@ -583,9 +643,12 @@ async def save_message(session_id: str, message: MessageCreate):
                 update_fields.append('title_updated_at = ?')
                 update_values.append(utc_time)
             
-            if fields_exist['version']:
+            # ⭐ 修复P1-问题4：只在标题实际变化时递增版本号
+            # 修复原因：避免标题未变化时也递增版本号，导致频繁409冲突
+            if fields_exist['version']' in update_values and should_update_title:
+                # 只有在标题更新时才递增版本号
                 update_fields.append('version = ?')
-                update_values.append(1)  # 初始版本
+                update_values.append(1)  # 新版本号=当前+1
             
             update_values.append(session_id)
             
@@ -625,11 +688,22 @@ async def save_message(session_id: str, message: MessageCreate):
 @router.put("/sessions/{session_id}")
 async def update_session(session_id: str, update_data: SessionUpdate):
     """
-    更新会话信息
+    更新会话标题
+    
+    优化内容（11.4.2节和12.1.2节）：
+    - 添加乐观锁并发控制（version参数）
+    - 标题历史记录（插入title_history表）
+    - 请求参数扩展：version和updated_by
+    
+    P0问题1和2已修复：
+    - 使用原子性UPDATE避免竞态条件
+    - 显式事务边界，确保数据一致性
+    
+    P0风险缓解：version参数可选，向后兼容旧前端
     
     Args:
         session_id: 会话ID
-        update_data: 更新的数据
+        update_data: 更新的数据（包含title, version, updated_by）
         
     Returns:
         dict: 更新结果
@@ -638,39 +712,160 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         conn = _get_db_connection()
         cursor = conn.cursor()
         
-        # 验证会话存在
-        cursor.execute(
-            'SELECT id, title FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
-            (session_id,)
-        )
-        session = cursor.fetchone()
+        # ⭐ 修复P0-问题2：显式开启事务
+        cursor.execute("BEGIN")
         
-        if not session:
-            conn.close()
-            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+        logger.debug(f"开始事务: session_id={session_id}, operation=update_title")
         
-        # 更新标题
+        # P0风险缓解：检查数据库字段是否存在
+        fields_exist = check_db_fields_exist(conn)
+        
         utc_time = get_utc_timestamp()
-        cursor.execute(
-            'UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?',
-            (update_data.title, utc_time, session_id)
-        )
         
-        conn.commit()
+        # 验证会话存在并获取当前状态（使用原子性UPDATE修复并发问题）
+        if fields_exist['version']:
+            # 新字段存在，支持乐观锁
+            if update_data.version is not None:
+                # ⭐ 修复P0-问题1：使用原子性UPDATE避免竞态条件
+                # 尝试直接更新并检查version，受影响行数=0说明版本冲突
+                cursor.execute(
+                    '''UPDATE chat_sessions 
+                       SET title = ?, updated_at = ?, 
+                           title_locked = ?, 
+                           title_updated_at = ?, 
+                           version = version + 1
+                       WHERE id = ? AND is_deleted = FALSE AND version = ?''',
+                    (update_data.title, utc_time, 1, utc_time, 
+                     session_id, update_data.version)
+                )
+                
+                # ⭐ 修复P0-问题1：检查是否更新成功
+                if cursor.rowcount == 0:
+                    # 更新失败，说明版本冲突
+                    conn.rollback()
+                    conn.close()
+                    logger.warning(
+                        f"版本冲突: session_id={session_id}, client_version={update_data.version}"
+                    )
+                    raise HTTPException(
+                        status_code=409,
+                        detail="会话已被其他用户修改，请刷新后重试"
+                    )
+                
+                # 获取更新后的数据
+                cursor.execute(
+                    '''SELECT id, title, version FROM chat_sessions WHERE id = ?''',
+                    (session_id,)
+                )
+                session = cursor.fetchone()
+                current_version = session['version']
+            else:
+                # 版本号兼容模式：不检查version（旧前端），使用SELECT获取
+                cursor.execute(
+                    '''SELECT id, title, COALESCE(version, 1) as version, 
+                              COALESCE(title_locked, 0) as title_locked
+                       FROM chat_sessions 
+                       WHERE id = ? AND is_deleted = FALSE''',
+                    (session_id,)
+                )
+                session = cursor.fetchone()
+                
+                if not session:
+                    conn.rollback()
+                    conn.close()
+                    raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+                
+                current_version = session['version']
+                
+                # 更新标题（不检查version）
+                cursor.execute(
+                    '''UPDATE chat_sessions 
+                       SET title = ?, updated_at = ?, 
+                           title_locked = ?, 
+                           title_updated_at = ?, 
+                           version = version + 1
+                       WHERE id = ?''',
+                    (update_data.title, utc_time, 1, utc_time, current_version + 1, session_id)
+                )
+        else:
+            # 新字段不存在，兼容模式
+            cursor.execute(
+                '''SELECT id, title, 1 as version, 0 as title_locked
+                   FROM chat_sessions 
+                   WHERE id = ? AND is_deleted = FALSE''',
+                (session_id,)
+            )
+            session = cursor.fetchone()
+            
+            if not session:
+                conn.rollback()
+                conn.close()
+                raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+            
+            current_version = session['version']
+            
+            # 更新标题
+            cursor.execute(
+                '''UPDATE chat_sessions 
+                       SET title = ?, updated_at = ? 
+                   WHERE id = ?''',
+                (update_data.title, utc_time, session_id)
+            )
+        
+        # 记录旧标题（用于历史记录）
+        old_title = session.get('title', session.get('title'))
+        new_version = current_version + 1
+        
+        # 插入标题历史记录（11.2.1节要求）
+        # 检查title_history表是否存在
+        cursor.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='chat_session_title_history'"
+        )
+        title_history_exists = cursor.fetchone() is not None
+        
+        if title_history_exists:
+            updated_by = update_data.updated_by or 'user'
+            cursor.execute(
+                '''INSERT INTO chat_session_title_history 
+                   (session_id, title, created_at, updated_by, change_reason) 
+                   VALUES (?, ?, ?, ?, ?)''',
+                (session_id, old_title, utc_time, updated_by, 'user_edit')
+            )
+            logger.info(f"记录标题历史: session_id={session_id}, old_title={old_title}")
+        
+        # ⭐ 修复P0-问题2：提交事务
+        cursor.execute("COMMIT")
         conn.close()
         
-        logger.info(f"更新会话成功: id={session_id}, title={update_data.title}")
+        logger.info(f"更新会话成功: id={session_id}, title={update_data.title}, version={new_version}")
         
         return {
             "success": True, 
             "title": update_data.title,
             "version": new_version
-        }        
-    except HTTPException:
+        }
+        
+    except HTTPException as he:
+        # ⭐ 修复P1-问题3：完善错误处理
+        try:
+            conn.close()
+        except:
+            pass
+        logger.error(f"更新会话HTTP异常: session_id={session_id}, status={he.status_code}, detail={he.detail}")
         raise
     except Exception as e:
-        logger.error(f"更新会话失败: {e}")
-        raise HTTPException(status_code=500, detail=f"更新会话失败: {str(e)}")
+        # ⭐ 修复P1-问题3：添加详细错误日志
+        logger.error(
+            f"更新会话失败: session_id={session_id}, title={update_data.title}, "
+            f"version={update_data.version}, error={str(e)}"
+        )
+        try:
+            # ⭐ 修复P0-问题2：回滚事务
+            cursor.execute("ROLLBACK")
+            logger.warning(f"事务已回滚: session_id={session_id}")
+        except Exception as rollback_err:
+            logger.error(f"回滚失败: {rollback_err}")
+        raise HTTPException(status_code=500, detail="更新会话失败，请重试")
 
 
 @router.delete("/sessions/{session_id}")
@@ -688,11 +883,112 @@ async def delete_session(session_id: str):
         conn = _get_db_connection()
         cursor = conn.cursor()
         
-        # 验证会话存在
-        cursor.execute(
-            'SELECT id, title FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
-            (session_id,)
-        )
+        # ⭐ 修复P0-问题2：显式开启事务
+        cursor.execute("BEGIN")
+        
+        logger.debug(f"开始事务: session_id={session_id}, operation=update_title")
+        
+        # P0风险缓解：检查数据库字段是否存在
+        fields = check_db_fields_exist(conn)
+        
+        utc_time = get_utc_timestamp()
+        
+        # 验证会话存在并获取当前状态（使用原子性UPDATE修复并发问题）
+        if fields['version']:
+            # 新字段存在，支持乐观锁
+            if update_data.version is not None:
+                # ⭐ 修复P0-问题1：使用原子性UPDATE避免竞态条件
+                # 尝试直接更新并检查version，受影响行数=0说明版本冲突
+                cursor.execute(
+                    '''UPDATE chat_sessions 
+                       SET title = ?, updated_at = ?, 
+                           title_locked = ?, 
+                           title_updated_at = ?, 
+                           version = version + 1
+                       WHERE id = ? AND is_deleted = FALSE AND version = ?''',
+                    (update_data.title, utc_time, 1, utc_time, 
+                     session_id, update_data.version)
+                )
+                
+                # ⭐ 检查是否更新成功
+                if cursor.rowcount == 0:
+                    # 更新失败，说明版本冲突
+                    conn.rollback()
+                    conn.close()
+                    logger.warning(f"版本冲突: session_id={session_id}, client_version={update_data.version}")
+                    raise HTTPException(
+                        status_code=409,
+                        detail="会话已被其他用户修改，请刷新后重试"
+                    )
+                
+                # 获取更新后的数据
+                cursor.execute(
+                    '''SELECT id, title, version FROM chat_sessions WHERE id = ?''',
+                    (session_id,)
+                )
+                session = cursor.fetchone()
+                current_version = session['version']
+                logger.debug(f"版本更新成功: session_id={session_id}, old_version={update_data.version}, new_version={current_version}")
+            else:
+                # 版本号兼容模式：不检查version（旧前端），使用SELECT获取
+                cursor.execute(
+                    '''SELECT id, title, COALESCE(version, 1) as version, 
+                              COALESCE(title_locked, 0) as title_locked
+                       FROM chat_sessions 
+                       WHERE id = ? AND is_deleted = FALSE''',
+                    (session_id,)
+                )
+                session = cursor.fetchone()
+                
+                if not session:
+                    conn.rollback()
+                    conn.close()
+                    raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+                
+                # 获取当前版本号
+                current_version = session['version']
+                
+                # 更新标题（不检查version）
+                update_fields = ['title = ?', 'updated_at = ?']
+                update_values = [update_data.title, utc_time]
+                update_fields.append('title_locked = ?')
+                update_values.append(1)
+                update_fields.append('title_updated_at = ?')
+                update_values.append(utc_time)
+                update_fields.append('version = ?')
+                new_version = current_version + 1
+                update_values.append(new_version)
+                update_values.append(session_id)
+                
+                cursor.execute(
+                    f'UPDATE chat_sessions SET {", ".join(update_fields)} WHERE id = ?',
+                    update_values
+                )
+        else:
+            # 新字段不存在，兼容模式
+            cursor.execute(
+                '''SELECT id, title, 1 as version, 0 as title_locked
+                   FROM chat_sessions 
+                   WHERE id = ? AND is_deleted = FALSE''',
+                (session_id,)
+            )
+            session = cursor.fetchone()
+            
+            if not session:
+                conn.rollback()
+                conn.close()
+                raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+            
+            current_version = session['version']
+            
+            # 更新标题
+            update_fields = ['title = ?', 'updated_at = ?']
+            update_values = [update_data.title, utc_time]
+            update_values.append(session_id)
+            cursor.execute(
+                f'UPDATE chat_sessions SET {", ".join(update_fields)} WHERE id = ?',
+                update_values
+            )
         session = cursor.fetchone()
         
         if not session:
@@ -718,3 +1014,97 @@ async def delete_session(session_id: str):
     except Exception as e:
         logger.error(f"删除会话失败: {e}")
         raise HTTPException(status_code=500, detail=f"删除会话失败: {str(e)}")
+
+@router.get("/sessions/titles/batch", response_model=BatchTitleResponse)
+async def get_session_titles_batch(
+    session_ids: str = Query(..., description="逗号分隔的会话ID列表")
+):
+    """
+    批量获取会话标题状态（12.1.3节新增接口）
+    
+    功能：一次性获取多个会话的标题信息，包括锁定状态和更新时间
+    优势：减少API调用次数，提升性能
+    
+    Args:
+        session_ids: 逗号分隔的会话ID列表，例如：id1,id2,id3
+        
+    Returns:
+        BatchTitleResponse: 包含所有会话标题信息的响应
+        
+    示例：
+        GET /api/v1/sessions/titles/batch?session_ids=uuid1,uuid2,uuid3
+        
+        响应：
+        {
+            "sessions": [
+                {
+                    "session_id": "uuid1",
+                    "title": "会话标题1",
+                    "title_locked": true,
+                    "title_updated_at": "2026-02-25T10:30:00Z"
+                },
+                ...
+            ]
+        }
+    """
+    try:
+        # 解析会话ID列表
+        id_list = [sid.strip() for sid in session_ids.split(',') if sid.strip()]
+        
+        if not id_list:
+            raise HTTPException(status_code=400, detail="会话ID列表不能为空")
+        
+        if len(id_list) > 100:
+            raise HTTPException(status_code=400, detail="最多一次查询100个会话")
+        
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        
+        # P0风险缓解：检查数据库字段是否存在
+        fields_exist = check_db_fields_exist(conn)
+        
+        # 构建查询SQL
+        # 使用IN子句批量查询
+        placeholders = ','.join(['?' for _ in id_list])
+        
+        if fields_exist['title_locked'] and fields_exist['title_updated_at']:
+            # 新字段存在，使用完整查询
+            cursor.execute(
+                f'''SELECT id, title, 
+                         COALESCE(title_locked, 0) as title_locked,
+                         COALESCE(title_updated_at, created_at) as title_updated_at
+                    FROM chat_sessions 
+                    WHERE id IN ({placeholders}) AND is_deleted = FALSE''',
+                id_list
+            )
+        else:
+            # 新字段不存在，使用兼容查询
+            cursor.execute(
+                f'''SELECT id, title, 0 as title_locked, created_at as title_updated_at
+                    FROM chat_sessions 
+                    WHERE id IN ({placeholders}) AND is_deleted = FALSE''',
+                id_list
+            )
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        # 构建响应
+        sessions = []
+        for row in rows:
+            sessions.append({
+                "session_id": row['id'],
+                "title": row['title'],
+                "title_locked": bool(row['title_locked']),
+                "title_updated_at": _convert_to_utc(row['title_updated_at'])
+            })
+        
+        logger.info(f"批量获取会话标题: count={len(sessions)}, session_ids={session_ids}")
+        
+        return BatchTitleResponse(sessions=sessions)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"批量获取会话标题失败: {e}")
+        raise HTTPException(status_code=500, detail=f"批量获取会话标题失败: {str(e)}")

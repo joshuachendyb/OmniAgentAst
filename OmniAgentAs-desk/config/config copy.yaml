@@ -1,34 +1,35 @@
 ai:
-  longcat:
-    api_base: https://api.longcat.chat/openai/v1
-    api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
-    max_retries: 3
-    model: LongCat-Flash-Thinking-2601
-    models:
-    - LongCat-Flash-Thinking
-    - LongCat-Flash-Thinking-2601
-    timeout: 120
+  # ✅ 顶层配置（全局）
+  model: kimi-k2.5-free
+  provider: zhipuai  # ✅ 当前Provider
+
+  # ✅ Provider配置（多个）
+
   opencode:
     api_base: https://opencode.ai/zen/v1
-    api_key: sk-6rMee9Ez89iRCEvDayPq2hdTrMGKyPesy5K88uZKVAqOrc7tg6sVqRI5T1pP2LXb
-    max_retries: 3
-    model: glm-5-free
+    api_key: sk_xxx...
     models:
-    - minimax-m2.5-free
-    - glm-5-free
-    - kimi-k2.5-free
-    timeout: 120
-  provider: zhipuai
+      - minimax-m2.5-free
+      - kimi-k2.5-free
+      timeout: 120
+
+  longcat:
+    api_base: https://api.longcat.chat/openai/v1
+    api_key: ak_xxx...
+    models:
+      - LongCat-Flash-Thinking
+      - LongCat-Flash-Thinking
+      timeout: 120
+
   zhipuai:
-    api_base: https://open.bigmodel.cn/api/paas/v4
-    api_key: 5790cd6d8981471da11dda7523da11ad.VT36xKqyrpQKVR8C
+    api_base: https://test.com
+    api_key: test123
     max_retries: 3
-    model: glm-4.7-flash
     models:
-    - glm-4.7-flash
-    - glm-4.6v-flash
-    - cogview-3-flash
-    timeout: 90
+      - glm-4.7-flash
+      - cogview-3-flash
+      timeout: 90
+
 app:
   debug: false
   language: zh-CN

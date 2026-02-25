@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Union
 from fastapi import APIRouter, HTTPException, Query
-from sqlite3 import Connection, Cursor
 from pydantic import BaseModel, Field
 from app.utils.logger import logger
 
@@ -444,17 +443,10 @@ async def get_session_messages(session_id: str):
         
         # 返回对象格式，包含session_id和messages
         return {
-            title_locked = bool(session.get("title_locked", False))
-            title_source = "user" if title_locked else "auto"
-            title_updated_at = _convert_to_utc(session.get("title_updated_at", session.get("created_at")))
-            return {
-                "session_id": session_id,
-                "title": session["title"],
-                "title_locked": title_locked,
-                "title_source": title_source,
-                "title_updated_at": title_updated_at,
-                "messages": messages
-            }        
+            "session_id": session_id,
+            "messages": messages
+        }
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -471,8 +463,6 @@ class MessageCreate(BaseModel):
 class SessionUpdate(BaseModel):
     """会话更新请求"""
     title: str = Field(..., description="会话标题")
-    version: Optional[int] = Field(None, description="版本号（乐观锁）")
-    updated_by: Optional[str] = Field(None, description="修改者")
 
 
 @router.post("/sessions/{session_id}/messages")
@@ -661,11 +651,8 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         
         logger.info(f"更新会话成功: id={session_id}, title={update_data.title}")
         
-        return {
-            "success": True, 
-            "title": update_data.title,
-            "version": new_version
-        }        
+        return {"success": True, "title": update_data.title}
+        
     except HTTPException:
         raise
     except Exception as e:
