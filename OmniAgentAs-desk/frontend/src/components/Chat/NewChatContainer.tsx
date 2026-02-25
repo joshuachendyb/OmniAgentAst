@@ -82,14 +82,15 @@ const NewChatContainer: React.FC = () => {
   const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
   const [checkingDanger, setCheckingDanger] = useState(false);
   const [blockedCommand, setBlockedCommand] = useState<{ command: string; score: number; message: string } | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
   
   // P1级别优化：新增状态变量
   type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
-  const [sessionJumpLoading, setSessionJumpLoading] = useState(false);
+  const [_sessionJumpLoading, setSessionJumpLoading] = useState(false);
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
-  const [lastSaveTime, setLastSaveTime] = useState<number>(0);
-  const [isSavingTitle, setIsSavingTitle] = useState(false);
+  const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
+  const [_isSavingTitle, setIsSavingTitle] = useState(false);
 
   // SSE Hook配置（用于流式输出）
   const {
@@ -369,13 +370,18 @@ const NewChatContainer: React.FC = () => {
    * 检查网络连接状态
    */
   const checkNetworkConnection = async (): Promise<boolean> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    
     try {
       const response = await fetch(`${API_BASE_URL}/health`, { 
         method: 'HEAD',
-        timeout: 3000 
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
       return response.ok;
     } catch (error) {
+      clearTimeout(timeoutId);
       console.warn('网络连接检查失败:', error);
       return false;
     }
@@ -611,6 +617,9 @@ const NewChatContainer: React.FC = () => {
         setSessionJumpLoading(false);
         message.destroy('session-load');
       }
+      
+      // 标记初始化完成
+      setIsInitialized(true);
     };
 
     loadSession();
@@ -808,10 +817,9 @@ const NewChatContainer: React.FC = () => {
   };
 
   /**
-   * 新建会话 - 前端小新代修改 UX-C01: 新会话提示
-   * P1级别优化：添加重试机制和更好的错误处理
+   * 新建会话 - 内部实现，支持重试机制
    */
-  const handleNewSession = async (retry: number = 0) => {
+  const handleNewSessionInternal = async (retry: number = 0) => {
     const retryKey = 'new-session';
     const maxRetries = 3;
     
@@ -863,7 +871,7 @@ const NewChatContainer: React.FC = () => {
         
         // 延迟1秒后重试
         setTimeout(() => {
-          handleNewSession(newRetry);
+          handleNewSessionInternal(newRetry);
         }, 1000);
         return;
       }
@@ -882,6 +890,13 @@ const NewChatContainer: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  /**
+   * 新建会话 - 按钮点击处理函数
+   */
+  const handleNewSession = () => {
+    handleNewSessionInternal(0);
   };
 
   /**
