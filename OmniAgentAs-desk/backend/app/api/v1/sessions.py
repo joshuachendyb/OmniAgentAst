@@ -600,8 +600,9 @@ async def save_message(session_id: str, message: MessageCreate):
                 update_values.append(utc_time)
             
             if fields_exist['version']:
+                current_version = session.get('version', 0)
                 update_fields.append('version = ?')
-                update_values.append(1)  # 初始版本
+                update_values.append(current_version + 1)  # 递增版本号
             
             update_values.append(session_id)
             
