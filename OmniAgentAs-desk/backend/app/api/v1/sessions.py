@@ -463,6 +463,8 @@ class MessageCreate(BaseModel):
 class SessionUpdate(BaseModel):
     """会话更新请求"""
     title: str = Field(..., description="会话标题")
+    version: Optional[int] = Field(None, description="版本号（乐观锁）")
+    updated_by: Optional[str] = Field(None, description="修改者")
 
 
 @router.post("/sessions/{session_id}/messages")
