@@ -517,9 +517,19 @@ async def save_message(session_id: str, message: MessageCreate):
         # P0风险缓解：检查数据库字段是否存在（向后兼容）
         fields_exist = check_db_fields_exist(conn)
         
-        # 根据字段存在性动态构建查询语句
-        if fields_exist['title_locked']:
-            # 新字段存在，使用完整查询
+         # 根据字段存在性动态构建查询语句
+        if fields_exist['title_locked'] and fields_exist['version']:
+            # 新字段都存在，使用完整查询
+            cursor.execute(
+                '''SELECT id, title, message_count, 
+                          COALESCE(title_locked, 0) as title_locked, 
+                          COALESCE(version, 0) as version
+                   FROM chat_sessions 
+                   WHERE id = ? AND is_deleted = FALSE''',
+                (session_id,)
+            )
+        elif fields_exist['title_locked']:
+            # 只有title_locked存在
             cursor.execute(
                 '''SELECT id, title, message_count, 
                           COALESCE(title_locked, 0) as title_locked 
@@ -590,7 +600,9 @@ async def save_message(session_id: str, message: MessageCreate):
                 update_fields.append('updated_at = ?')
                 update_values.append(utc_time)
             
-            # P0风险缓解：如果新字段存在，也更新它们
+             # P0风险缓解：如果新字段存在，也更新它们
+            # 注意：只有在自动更新标题时（非锁定状态），才设置title_locked=False
+            # 如果标题已经被锁定了，我们不会更新标题，所以也不会修改title_locked状态
             if fields_exist['title_locked'] and should_update_title:
                 update_fields.append('title_locked = ?')
                 update_values.append(False)  # 自动更新的标题不锁定
