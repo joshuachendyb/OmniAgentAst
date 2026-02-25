@@ -578,7 +578,9 @@ async def save_message(session_id: str, message: MessageCreate):
         new_message_count = session['message_count'] + 1
         
         # P0风险缓解：检查字段是否存在，如果不存在则假设标题未锁定
-        title_locked_val = session['title_locked'] if fields_exist['title_locked'] and 'title_locked' in session else 0
+        title_locked_val = 0
+        if fields_exist['title_locked'] and 'title_locked' in session.keys():
+            title_locked_val = session['title_locked']
         title_locked = bool(title_locked_val)
         
         # 只有当标题未被锁定，且是第一条消息，且消息不是空的，才更新标题
