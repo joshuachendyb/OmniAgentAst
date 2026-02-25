@@ -397,11 +397,26 @@ async def get_session_messages(session_id: str):
         conn = _get_db_connection()
         cursor = conn.cursor()
         
-        # 验证会话存在
-        cursor.execute(
-            'SELECT id, title FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
-            (session_id,)
-        )
+        # P0风险缓解：检查数据库字段是否存在（向后兼容）
+        fields_exist = check_db_fields_exist(conn)
+        
+        # 验证会话存在并获取标题相关字段
+        if fields_exist['title_locked'] and fields_exist['title_updated_at']:
+            cursor.execute(
+                '''SELECT id, title, COALESCE(title_locked, 0) as title_locked,
+                          COALESCE(title_updated_at, created_at) as title_updated_at, created_at
+                   FROM chat_sessions 
+                   WHERE id = ? AND is_deleted = FALSE''',
+                (session_id,)
+            )
+        else:
+            # 兼容模式：查询基本字段
+            cursor.execute(
+                '''SELECT id, title, created_at, created_at as title_updated_at
+                   FROM chat_sessions 
+                   WHERE id = ? AND is_deleted = FALSE''',
+                (session_id,)
+            )
         session = cursor.fetchone()
         
         if not session:
@@ -441,9 +456,18 @@ async def get_session_messages(session_id: str):
         
         logger.info(f"获取会话消息: session_id={session_id}, count={len(messages)}")
         
-        # 返回对象格式，包含session_id和messages
+        # 构建返回数据，包含新字段
+        title_locked = bool(session.get('title_locked', False))
+        title_source = "user" if title_locked else "auto"
+        title_updated_at = _convert_to_utc(session.get('title_updated_at'))
+        
+        # 返回对象格式，包含session_id、title、title_locked、title_source、title_updated_at、messages
         return {
             "session_id": session_id,
+            "title": session['title'],
+            "title_locked": title_locked,
+            "title_source": title_source,
+            "title_updated_at": title_updated_at,
             "messages": messages
         }
         
