@@ -566,13 +566,13 @@ async def save_message(session_id: str, message: MessageCreate):
         # 计算新的消息计数
         new_message_count = session['message_count'] + 1
         
-        # 优化：标题保护逻辑
-        # 如果标题未被锁定，且是第一条消息，才考虑更新标题
+        # P0风险缓解：检查字段是否存在，如果不存在则假设标题未锁定
+        title_locked_val = session['title_locked'] if fields_exist['title_locked'] and 'title_locked' in session else 0
+        title_locked = bool(title_locked_val)
+        
+        # 只有当标题未被锁定，且是第一条消息，且消息不是空的，才更新标题
         should_update_title = False
         new_title = session['title']
-        
-        # P0风险缓解：检查字段是否存在，如果不存在则假设标题未锁定
-        title_locked = session['title_locked'] if fields_exist['title_locked'] and 'title_locked' in session else False
         
         if not title_locked and new_message_count == 1:
             # 第一条消息，且标题未被锁定，使用消息内容作为标题
@@ -678,7 +678,7 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         # 验证会话存在并获取当前版本
         if fields_exist['version']:
             cursor.execute(
-                'SELECT id, title, COALESCE(version, 0) as version FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
+                'SELECT id, title, COALESCE(version, 1) as version FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
                 (session_id,)
             )
         else:
@@ -709,14 +709,15 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         update_fields = ['title = ?', 'updated_at = ?']
         update_values = [update_data.title, utc_time]
         
-        # 如果version字段存在，更新它并添加乐观锁检查
+         # 如果version字段存在，更新它并添加乐观锁检查
         where_clause = f'WHERE id = ?'
         if fields_exist['version']:
             update_fields.append('version = ?')
             update_values.append(new_version)
             # 乐观锁：只在version匹配时更新
             if update_data.version is not None:
-                where_clause += f' AND version = {update_data.version}'
+                where_clause += ' AND version = ?'
+                update_values.insert(-1, update_data.version)  # 插入到session_id前面
         
         # 如果title_locked字段存在，锁定标题（手动更新）
         if fields_exist['title_locked']:
