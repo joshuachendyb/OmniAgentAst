@@ -250,9 +250,9 @@ async def get_system_config():
 @router.put("/config")
 async def update_config(config_update: ConfigUpdate):
     """
-    更新系统配置
+    更新系统配置（新版本：带验证和备份）
     
-    将配置持久化到config.yaml文件
+    将配置持久化到config.yaml文件，写入前先验证完整性
     
     Args:
         config_update: 配置更新请求
@@ -263,11 +263,14 @@ async def update_config(config_update: ConfigUpdate):
     try:
         config_path = _get_config_path()
         
-        # 读取现有配置
+        # 1. 【新增】自动备份
+        backup_path = _backup_config_file(config_path)
+        
+        # 2. 读取现有配置
         with open(config_path, 'r', encoding='utf-8') as f:
             config_data = yaml.safe_load(f) or {}
         
-        # 更新AI配置
+        # 3. 应用更新（保持原有逻辑）
         if config_update.ai_provider:
             # 验证提供商 - 检查是否在配置文件中（通用方式，不硬编码）
             ai_config = config_data.get('ai', {})
@@ -335,11 +338,26 @@ async def update_config(config_update: ConfigUpdate):
             config_data['security'] = security_dict
             logger.info(f"更新安全配置成功")
         
-        # 写回配置文件
+        # 4. 【新增】自动修复常见问题
+        config_data = _fix_config_common_issues(config_data)
+        
+        # 5. 【新增】验证配置完整性
+        is_valid, errors, warnings = _validate_config_integrity(config_data)
+        
+        if not is_valid:
+            return {
+                "success": False,
+                "message": "配置验证失败",
+                "errors": errors,
+                "warnings": warnings,
+                "backup_path": str(backup_path)
+            }
+        
+        # 6. 写回配置文件
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
         
-        # 重新加载配置
+        # 7. 重新加载
         config = get_config_instance()
         config.reload()
         
@@ -348,7 +366,9 @@ async def update_config(config_update: ConfigUpdate):
         return {
             "success": True,
             "message": "配置更新成功",
-            "updated_fields": config_update.dict(exclude_none=True)
+            "updated_fields": config_update.dict(exclude_none=True),
+            "warnings": warnings,
+            "backup_path": str(backup_path)
         }
         
     except HTTPException:
