@@ -510,9 +510,10 @@ export const sessionApi = {
   /**
    * 获取会话消息
    * @author 小新
+   * @update 2026-02-25 添加title字段返回
    */
-  getSessionMessages: async (sessionId: string): Promise<{ session_id: string; messages: Message[] }> => {
-    const response = await api.get<{ session_id: string; messages: Message[] }>(`/sessions/${sessionId}/messages`);
+  getSessionMessages: async (sessionId: string): Promise<{ session_id: string; title?: string; messages: Message[] }> => {
+    const response = await api.get<{ session_id: string; title?: string; messages: Message[] }>(`/sessions/${sessionId}/messages`);
     return response.data;
   },
 
