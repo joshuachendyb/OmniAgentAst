@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional, Union
 from fastapi import APIRouter, HTTPException, Query
-from sqlite3 import Connection, Cursor
 from pydantic import BaseModel, Field
 from app.utils.logger import logger
 
@@ -444,17 +443,10 @@ async def get_session_messages(session_id: str):
         
         # 返回对象格式，包含session_id和messages
         return {
-            title_locked = bool(session.get("title_locked", False))
-            title_source = "user" if title_locked else "auto"
-            title_updated_at = _convert_to_utc(session.get("title_updated_at", session.get("created_at")))
-            return {
-                "session_id": session_id,
-                "title": session["title"],
-                "title_locked": title_locked,
-                "title_source": title_source,
-                "title_updated_at": title_updated_at,
-                "messages": messages
-            }        
+            "session_id": session_id,
+            "messages": messages
+        }
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -471,8 +463,6 @@ class MessageCreate(BaseModel):
 class SessionUpdate(BaseModel):
     """会话更新请求"""
     title: str = Field(..., description="会话标题")
-    version: Optional[int] = Field(None, description="版本号（乐观锁）")
-    updated_by: Optional[str] = Field(None, description="修改者")
 
 
 @router.post("/sessions/{session_id}/messages")
@@ -627,45 +617,78 @@ async def update_session(session_id: str, update_data: SessionUpdate):
     """
     更新会话信息
     
+    优化内容：
+    1. 版本号返回：返回更新后的version字段
+    2. 乐观锁支持：检查version字段是否存在
+    3. updated_by字段支持：记录修改者
+    
     Args:
         session_id: 会话ID
         update_data: 更新的数据
         
     Returns:
-        dict: 更新结果
+        dict: 更新结果（包含version字段）
     """
     try:
         conn = _get_db_connection()
         cursor = conn.cursor()
         
-        # 验证会话存在
-        cursor.execute(
-            'SELECT id, title FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
-            (session_id,)
-        )
+        # P0风险缓解：检查数据库字段是否存在（向后兼容）
+        fields_exist = check_db_fields_exist(conn)
+        
+        # 验证会话存在并获取当前版本
+        if fields_exist['version']:
+            cursor.execute(
+                'SELECT id, title, COALESCE(version, 0) as version FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
+                (session_id,)
+            )
+        else:
+            cursor.execute(
+                'SELECT id, title FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
+                (session_id,)
+            )
         session = cursor.fetchone()
         
         if not session:
             conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
+        # 乐观锁检查（如果传递了version参数）
+        current_version = session.get('version', 0) if fields_exist['version'] else 0
+        if update_data.version is not None and fields_exist['version']:
+            if update_data.version != current_version:
+                conn.close()
+                raise HTTPException(status_code=409, detail=f"版本冲突: 当前版本={current_version}, 请求版本={update_data.version}")
+        
         # 更新标题
         utc_time = get_utc_timestamp()
+        
+        # 根据字段存在性动态构建更新语句
+        update_fields = ['title = ?', 'updated_at = ?']
+        update_values = [update_data.title, utc_time]
+        
+        # 递增版本号
+        new_version = current_version + 1
+        
+        # 如果version字段存在，更新它
+        if fields_exist['version']:
+            update_fields.append('version = ?')
+            update_values.append(new_version)
+        
+        update_values.append(session_id)
+        
         cursor.execute(
-            'UPDATE chat_sessions SET title = ?, updated_at = ? WHERE id = ?',
-            (update_data.title, utc_time, session_id)
+            f'UPDATE chat_sessions SET {", ".join(update_fields)} WHERE id = ?',
+            update_values
         )
         
         conn.commit()
         conn.close()
         
-        logger.info(f"更新会话成功: id={session_id}, title={update_data.title}")
+        logger.info(f"更新会话成功: id={session_id}, title={update_data.title}, version={new_version}")
         
-        return {
-            "success": True, 
-            "title": update_data.title,
-            "version": new_version
-        }        
+        return {"success": True, "title": update_data.title, "version": new_version}
+        
     except HTTPException:
         raise
     except Exception as e:
