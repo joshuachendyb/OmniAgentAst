@@ -24,6 +24,7 @@ import {
   Badge,
   Tooltip,
   Pagination,
+  Checkbox,
 } from 'antd';
 import {
   HistoryOutlined,
@@ -67,7 +68,8 @@ const HistoryPage: React.FC = () => {
     total: 0,
   });
   const navigate = useNavigate();
-  const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null); // 前端小新代修改 UX-H02: 继续按钮loading状态
+  const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null); 
+  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set()); // 前端小新代修改 UX-H03: 批量删除功能
 
   /**
    * 加载会话列表
@@ -133,6 +135,28 @@ const HistoryPage: React.FC = () => {
   };
 
   /**
+   * 批量删除会话 - 前端小新代修改 UX-H03: 批量删除
+   */
+  const handleBatchDelete = async () => {
+    if (selectedSessions.size === 0) {
+      message.warning('请先选择要删除的会话');
+      return;
+    }
+    try {
+      for (const sessionId of selectedSessions) {
+        await sessionApi.deleteSession(sessionId);
+      }
+      message.success(`已删除 ${selectedSessions.size} 个会话`);
+      setSelectedSessions(new Set());
+      // 刷新列表
+      loadSessions(pagination.current, keyword);
+    } catch (error) {
+      message.error('批量删除会话失败');
+      console.error('批量删除会话失败:', error);
+    }
+  };
+
+  /**
    * 恢复对话 - 前端小新代修改 UX-H02: 添加loading状态
    */
   const handleResume = async (sessionId: string) => {
@@ -159,25 +183,40 @@ const HistoryPage: React.FC = () => {
       <Card bordered={false}>
         <Space direction="vertical" style={{ width: '100%' }} size="large">
           {/* 标题栏 */}
-          <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-            <Title level={3} style={{ margin: 0 }}>
-              <HistoryOutlined /> 历史会话
-            </Title>
-            <Space>
-              <Button
-                icon={<ReloadOutlined />}
-                onClick={handleRefresh}
-                loading={loading}
-              >
-                刷新
-              </Button>
-              <Badge count={pagination.total} showZero>
-                <Button icon={<CommentOutlined />}>
-                  总会话
-                </Button>
-              </Badge>
-            </Space>
-          </Space>
+           <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+             <Title level={3} style={{ margin: 0 }}>
+               <HistoryOutlined /> 历史会话
+             </Title>
+             <Space>
+               {/* 前端小新代修改 UX-H03: 批量删除按钮 */}
+               {selectedSessions.size > 0 && (
+                 <Popconfirm
+                   title={`确定要删除选中的 ${selectedSessions.size} 个会话吗？`}
+                   description="此操作不可恢复"
+                   onConfirm={handleBatchDelete}
+                   okText="确定"
+                   cancelText="取消"
+                   okButtonProps={{ danger: true }}
+                 >
+                   <Button danger icon={<DeleteOutlined />}>
+                     批量删除 ({selectedSessions.size})
+                   </Button>
+                 </Popconfirm>
+               )}
+               <Button
+                 icon={<ReloadOutlined />}
+                 onClick={handleRefresh}
+                 loading={loading}
+               >
+                 刷新
+               </Button>
+               <Badge count={pagination.total} showZero>
+                 <Button icon={<CommentOutlined />}>
+                   总会话
+                 </Button>
+               </Badge>
+             </Space>
+           </Space>
 
           {/* 搜索栏 */}
           <Search
@@ -217,40 +256,54 @@ const HistoryPage: React.FC = () => {
                   />
                 ),
               }}
-              renderItem={(session) => (
-                <List.Item>
-                   <Card
-                     hoverable
-                     size="small"
-                     className="session-card"
-                     style={{ height: '100%' }}
-                     actions={[
-                       <Tooltip title="继续对话">
-                         <Button
-                           type="link"
-                           icon={<MessageOutlined />}
-                           onClick={() => handleResume(session.session_id)}
-                           loading={loadingSessionId === session.session_id}
-                         >
-                           继续
-                         </Button>
-                       </Tooltip>,
-                       <Popconfirm
-                         title="删除会话"
-                         description={`确定要删除"${session.title}"吗？此操作不可恢复。`}
-                         onConfirm={() => handleDelete(session.session_id)}
-                         okText="删除"
-                         cancelText="取消"
-                         okButtonProps={{ danger: true }}
-                       >
-                         <Tooltip title="删除会话">
-                           <Button type="link" danger icon={<DeleteOutlined />}>
-                             删除
-                           </Button>
-                         </Tooltip>
-                       </Popconfirm>,
-                     ]}
-                  >
+               renderItem={(session) => (
+                 <List.Item>
+                    <Card
+                      hoverable
+                      size="small"
+                      className="session-card"
+                      style={{ height: '100%' }}
+                      actions={[
+                        <Tooltip title="继续对话">
+                          <Button
+                            type="link"
+                            icon={<MessageOutlined />}
+                            onClick={() => handleResume(session.session_id)}
+                            loading={loadingSessionId === session.session_id}
+                          >
+                            继续
+                          </Button>
+                        </Tooltip>,
+                        <Popconfirm
+                          title="删除会话"
+                          description={`确定要删除"${session.title}"吗？此操作不可恢复。`}
+                          onConfirm={() => handleDelete(session.session_id)}
+                          okText="删除"
+                          cancelText="取消"
+                          okButtonProps={{ danger: true }}
+                        >
+                          <Tooltip title="删除会话">
+                            <Button type="link" danger icon={<DeleteOutlined />}>
+                              删除
+                            </Button>
+                          </Tooltip>
+                        </Popconfirm>,
+                      ]}
+                      extra={
+                        <Checkbox
+                          checked={selectedSessions.has(session.session_id)}
+                          onChange={(e) => {
+                            const newSelected = new Set(selectedSessions);
+                            if (e.target.checked) {
+                              newSelected.add(session.session_id);
+                            } else {
+                              newSelected.delete(session.session_id);
+                            }
+                            setSelectedSessions(newSelected);
+                          }}
+                        />
+                      }
+                    >
                     <Card.Meta
                       title={
                         <Tooltip title={session.title}>
