@@ -377,7 +377,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         }}
       />
 
-      {/* 底部信息 - 前端小新代修改 VIS-L04: 优化底部信息 */}
+      {/* 底部信息 - 前端小新代修改 VIS-L04: 优化底部信息, UX-L04: 添加点击查看版本详情 */}
       <div
         style={{
           position: 'absolute',
@@ -390,7 +390,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           color: '#666',
           background: '#fafafa',
           textAlign: isMobile || collapsed ? 'center' : 'left',
+          cursor: 'pointer',
+          transition: 'background 0.3s ease',
         }}
+        onClick={() => message.info('OmniAgentAst v2.1.0 - 桌面版AI助手')}
+        onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f0f0'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.background = '#fafafa'; }}
       >
         {isMobile || collapsed ? 'v2.1' : '版本 v2.1.0'}
       </div>
