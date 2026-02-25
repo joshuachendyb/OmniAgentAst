@@ -248,6 +248,32 @@ const NewChatContainer: React.FC = () => {
     };
   }, [messages, sessionId, sessionTitle]);
 
+  // 全局快捷键 - 前端小新代修改 UX-G02: 全局快捷键
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl/Cmd + Enter 发送消息
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handleSend();
+      }
+      // Ctrl/Cmd + K 清空对话
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        handleClear();
+      }
+      // Ctrl/Cmd + N 新建会话
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        handleNewSession();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [inputValue, loading]);
+
   // ============================================
   // 加载历史会话
   // ============================================

@@ -855,6 +855,7 @@ const SessionHistory: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [keyword, setKeyword] = useState(''); // 前端小新代修改 UX-S04: 添加搜索功能
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set()); // 前端小新代修改 UX-H03: 批量删除
 
   const loadSessions = async (searchKeyword?: string) => {
     setLoadingSessions(true);
@@ -894,22 +895,63 @@ const SessionHistory: React.FC = () => {
     }
   };
 
+  // 前端小新代修改 UX-H03: 批量删除
+  const handleToggleSelectSession = (sessionId: string) => {
+    const newSelected = new Set(selectedSessionIds);
+    if (newSelected.has(sessionId)) {
+      newSelected.delete(sessionId);
+    } else {
+      newSelected.add(sessionId);
+    }
+    setSelectedSessionIds(newSelected);
+  };
+
+  // 前端小新代修改 UX-H03: 批量删除
+  const handleBatchDelete = async () => {
+    try {
+      for (const sessionId of selectedSessionIds) {
+        await sessionApi.deleteSession(sessionId);
+      }
+      message.success(`已删除 ${selectedSessionIds.size} 个会话`);
+      setSelectedSessionIds(new Set());
+      loadSessions(keyword);
+    } catch (error) {
+      message.error('批量删除失败');
+    }
+  };
+
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
         <Space style={{ width: '100%', justifyContent: 'space-between' }}>
-          <Popconfirm
-            title="确定要清空所有会话吗？"
-            description="此操作不可恢复"
-            onConfirm={handleClearAllSessions}
-            okText="确定"
-            cancelText="取消"
-            okButtonProps={{ danger: true }}
-          >
-            <Button danger icon={<DeleteOutlined />}>
-              清空所有会话
-            </Button>
-          </Popconfirm>
+          <Space>
+            <Popconfirm
+              title="确定要清空所有会话吗？"
+              description="此操作不可恢复"
+              onConfirm={handleClearAllSessions}
+              okText="确定"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+            >
+              <Button danger icon={<DeleteOutlined />}>
+                清空所有会话
+              </Button>
+            </Popconfirm>
+            {/* 前端小新代修改 UX-H03: 批量删除 */}
+            {selectedSessionIds.size > 0 && (
+              <Popconfirm
+                title={`确定删除选中的 ${selectedSessionIds.size} 个会话吗？`}
+                onConfirm={handleBatchDelete}
+                okText="确定"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+              >
+                <Button danger icon={<DeleteOutlined />}>
+                  删除选中 ({selectedSessionIds.size})
+                </Button>
+              </Popconfirm>
+            )}
+          </Space>
           <Space>
             {/* 前端小新代修改 UX-S04: 添加搜索框 */}
             <Input
@@ -951,7 +993,18 @@ const SessionHistory: React.FC = () => {
             ]}
           >
             <List.Item.Meta
-              title={session.title || '未命名会话'}
+              title={
+                <Space>
+                  {/* 前端小新代修改 UX-H03: 批量删除复选框 */}
+                  <input
+                    type="checkbox"
+                    checked={selectedSessionIds.has(session.session_id)}
+                    onChange={() => handleToggleSelectSession(session.session_id)}
+                    style={{ marginRight: 8 }}
+                  />
+                  {session.title || '未命名会话'}
+                </Space>
+              }
               description={
                 <Space direction="vertical" size={0}>
                   <Text type="secondary">
@@ -980,7 +1033,10 @@ const Settings: React.FC = () => {
   return (
     <div style={{ padding: 0, margin: 0 }}>
       <Card style={{ marginTop: 0 }} bodyStyle={{ padding: '32px' }}> {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
-         <Tabs defaultActiveKey="model" type="line">
+         <Tabs 
+           defaultActiveKey="model" 
+           type="line" 
+         >
           <TabPane
             tab={
               <span>
