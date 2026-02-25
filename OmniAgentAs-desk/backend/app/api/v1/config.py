@@ -1,6 +1,7 @@
 # 配置管理API路由
 # 编程人：小沈
 # 创建时间：2026-02-17
+# 更新时间：2026-02-26 02:09:53
 
 """
 配置管理API路由
@@ -84,8 +85,10 @@ for provider_name in ai_config.keys():
 
 import os
 import yaml
+import shutil
 from pathlib import Path
-from typing import Optional, Dict, Any
+from datetime import datetime
+from typing import Optional, Dict, Any, Tuple, List
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from app.config import get_config as get_config_instance
@@ -274,7 +277,7 @@ async def update_config(config_update: ConfigUpdate):
                     detail=f"不支持的提供商: {config_update.ai_provider}"
                 )
             config_data['ai']['provider'] = config_update.ai_provider
-            
+                
             # 切换AI服务提供商
             try:
                 AIServiceFactory.switch_provider(config_update.ai_provider)
@@ -926,7 +929,6 @@ async def add_provider(data: ProviderAddRequest):
         config['ai'][data.name] = {
             'api_base': data.api_base,
             'api_key': data.api_key,
-            'model': data.model,
             'models': data.models if data.models else [data.model],
             'timeout': data.timeout,
             'max_retries': data.max_retries
@@ -950,10 +952,17 @@ async def add_provider(data: ProviderAddRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
 # ============================================
 # 完整配置验证API
 # ============================================
+
+class ConfigFixResponse(BaseModel):
+    """配置修复响应"""
+    success: bool = Field(..., description="修复是否成功")
+    fixed_issues: List[str] = Field(default_factory=list, description="修复的问题列表")
+    warnings: List[str] = Field(default_factory=list, description="警告列表")
+    backup_path: str = Field("", description="备份文件路径")
+
 
 class FullConfigValidationResponse(BaseModel):
     """完整配置验证响应"""
@@ -963,6 +972,168 @@ class FullConfigValidationResponse(BaseModel):
     message: str = Field(..., description="验证消息")
     errors: list[str] = Field(default_factory=list, description="错误列表")
     warnings: list[str] = Field(default_factory=list, description="警告列表")
+
+
+def _backup_config_file(config_path: Path) -> Path:
+    """
+    自动备份配置文件
+    
+    返回备份文件路径
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_path = config_path.parent / f"config.yaml.backup.{timestamp}"
+    
+    shutil.copy2(config_path, backup_path)
+    logger.info(f"配置文件已备份: {backup_path}")
+    
+    return backup_path
+
+
+def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
+    """
+    完整验证配置文件完整性
+    
+    返回: (是否通过, 错误列表, 警告列表)
+    """
+    errors = []
+    warnings = []
+    
+    ai_config = config_data.get('ai', {})
+    
+    # 1. 检查 ai.provider 和 ai.model 是否存在
+    if 'provider' not in ai_config:
+        errors.append("缺少 ai.provider 字段")
+    if 'model' not in ai_config:
+        errors.append("缺少 ai.model 字段")
+    
+    if errors:
+        return False, errors, warnings
+    
+    selected_provider = ai_config['provider']
+    selected_model = ai_config['model']
+    
+    # 2. 检查 provider 是否存在
+    if selected_provider not in ai_config:
+        errors.append(f"provider '{selected_provider}' 不存在")
+        return False, errors, warnings
+    
+    provider_config = ai_config[selected_provider]
+    
+    # 3. 检查 provider 下必须有 api_base 和 api_key
+    if 'api_base' not in provider_config:
+        errors.append(f"provider '{selected_provider}' 缺少 api_base 字段")
+    if 'api_key' not in provider_config:
+        errors.append(f"provider '{selected_provider}' 缺少 api_key 字段")
+    
+    if errors:
+        return False, errors, warnings
+    
+    # 4. 检查 provider 下是否有 models 列表
+    if 'models' not in provider_config:
+        errors.append(f"provider '{selected_provider}' 缺少 models 列表")
+        return False, errors, warnings
+    
+    models_list = provider_config['models']
+    
+    # 5. 检查 model 是否在 models 列表中
+    if selected_model not in models_list:
+        errors.append(f"model '{selected_model}' 不在 provider '{selected_provider}' 的 models 列表中")
+        return False, errors, warnings
+    
+    # 6. 检查并警告：provider 下是否有废弃的 model 字段
+    for provider_name in ai_config.keys():
+        if provider_name == 'provider' or provider_name == 'model':
+            continue
+        provider_data = ai_config.get(provider_name, {})
+        if isinstance(provider_data, dict) and 'model' in provider_data:
+            warnings.append(f"provider '{provider_name}' 下有废弃的 model 字段，建议删除")
+    
+    return True, errors, warnings
+
+
+def _fix_config_common_issues(config_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    自动修复常见的配置问题
+    
+    修复内容：
+    1. 删除所有 provider 下废弃的 model 字段
+    """
+    ai_config = config_data.get('ai', {})
+    
+    # 清理所有 provider 下废弃的 model 字段
+    for provider_name in ai_config.keys():
+        if provider_name == 'provider' or provider_name == 'model':
+            continue
+        provider_data = ai_config.get(provider_name, {})
+        if isinstance(provider_data, dict) and 'model' in provider_data:
+            del provider_data['model']
+            logger.info(f"已删除 provider '{provider_name}' 下废弃的 model 字段")
+    
+    return config_data
+
+
+@router.post("/config/fix", response_model=ConfigFixResponse)
+async def fix_config():
+    """
+    修复配置文件常见问题
+    
+    修复内容：
+    1. 删除所有 provider 下废弃的 model 字段
+    2. 验证配置完整性
+    """
+    try:
+        config_path = _get_config_path()
+        
+        # 1. 备份
+        backup_path = _backup_config_file(config_path)
+        
+        # 2. 读取配置
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config_data = yaml.safe_load(f) or {}
+        
+        fixed_issues = []
+        
+        # 3. 自动修复
+        ai_config = config_data.get('ai', {})
+        for provider_name in ai_config.keys():
+            if provider_name == 'provider' or provider_name == 'model':
+                continue
+            provider_data = ai_config.get(provider_name, {})
+            if isinstance(provider_data, dict) and 'model' in provider_data:
+                del provider_data['model']
+                fixed_issues.append(f"删除 provider '{provider_name}' 下废弃的 model 字段")
+        
+        # 4. 验证修复后的配置
+        is_valid, errors, warnings = _validate_config_integrity(config_data)
+        
+        if not is_valid:
+            return ConfigFixResponse(
+                success=False,
+                fixed_issues=fixed_issues,
+                warnings=warnings + errors,
+                backup_path=str(backup_path)
+            )
+        
+        # 5. 写入修复后的配置
+        with open(config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
+        
+        # 6. 重新加载
+        config = get_config_instance()
+        config.reload()
+        
+        logger.info(f"配置修复成功: 修复了 {len(fixed_issues)} 个问题")
+        
+        return ConfigFixResponse(
+            success=True,
+            fixed_issues=fixed_issues,
+            warnings=warnings,
+            backup_path=str(backup_path)
+        )
+        
+    except Exception as e:
+        logger.error(f"配置修复失败: {e}")
+        raise HTTPException(status_code=500, detail=f"配置修复失败: {str(e)}")
 
 
 @router.get("/config/validate-full", response_model=FullConfigValidationResponse)
