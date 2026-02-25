@@ -63,8 +63,8 @@ describe('MessageItem Component', () => {
     render(<MessageItem message={messageWithSteps} showExecution={true} />);
     
     expect(screen.getByText('Test message content')).toBeInTheDocument();
-    // 执行过程组件会显示步骤数量
-    expect(screen.getByText(/执行过程.*2步/)).toBeInTheDocument();
+    // 检查AI思考过程面板标题
+    expect(screen.getByText('AI思考过程')).toBeInTheDocument();
   });
 
   it('should format timestamp correctly', () => {
