@@ -52,12 +52,17 @@ export const createMockConfig = (
 /**
  * Create a mock session
  * @author 小新
+ * @update 2026-02-25 新增title_locked, title_source, title_updated_at, version字段
  */
 export const createMockSession = (
   overrides: Partial<Session> = {}
 ): Session => ({
   session_id: `session-${Date.now()}`,
   title: 'Test Session',
+  title_locked: false,           // ⭐ 新增
+  title_source: 'auto',          // ⭐ 新增
+  title_updated_at: null,         // ⭐ 新增
+  version: 1,                    // ⭐ 新增
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   message_count: 10,

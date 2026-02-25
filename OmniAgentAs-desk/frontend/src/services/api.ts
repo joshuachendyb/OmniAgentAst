@@ -454,10 +454,15 @@ export const configApi = {
 // 会话管理接口
 // @author 小新
 // @update 2026-02-18 已对接真实API
+// @update 2026-02-25 新增title_locked, title_source, title_updated_at, version字段
 // ============================================
 export interface Session {
   session_id: string;
   title: string;
+  title_locked: boolean;           // ⭐ 新增：标题是否被用户锁定
+  title_source: 'user' | 'auto';   // ⭐ 新增：标题来源（用户手动/自动生成）
+  title_updated_at: string | null; // ⭐ 新增：标题最后更新时间
+  version?: number;           // ⭐ 新增：乐观锁版本号
   created_at: string;
   updated_at: string;
   message_count: number;
@@ -477,6 +482,44 @@ export interface Message {
   content: string;
   timestamp: string;
   execution_steps?: ExecutionStep[];
+}
+
+// ⭐ 新增：获取会话消息响应（包含新字段）
+export interface GetSessionMessagesResponse {
+  session_id: string;
+  title: string;
+  title_locked: boolean;
+  title_source: 'user' | 'auto';
+  title_updated_at: string | null;
+  version?: number;
+  messages: Message[];
+}
+
+// ⭐ 新增：更新会话标题请求（包含version参数）
+export interface UpdateSessionRequest {
+  title: string;
+  version: number;                 // ⭐ 新增：版本号（乐观锁，必须）
+  updated_by?: string;             // ⭐ 新增：修改者（可选）
+}
+
+// ⭐ 新增：更新会话标题响应
+export interface UpdateSessionResponse {
+  success: boolean;
+  title: string;
+  version?: number;
+  title_locked?: boolean;
+  title_updated_at?: string;
+}
+
+// ⭐ 新增：批量获取会话标题响应
+export interface BatchTitleResponse {
+  sessions: Array<{
+    session_id: string;
+    title: string;
+    title_locked: boolean;
+    title_updated_at: string | null;
+    version?: number;
+  }>;
 }
 
 /**
@@ -510,11 +553,18 @@ export const sessionApi = {
   /**
    * 获取会话消息
    * @author 小新
-   * @update 2026-02-25 添加title字段返回
+   * @update 2026-02-25 新增title_locked, title_source, title_updated_at, version字段
    */
-  getSessionMessages: async (sessionId: string): Promise<{ session_id: string; title?: string; messages: Message[] }> => {
-    const response = await api.get<{ session_id: string; title?: string; messages: Message[] }>(`/sessions/${sessionId}/messages`);
-    return response.data;
+  getSessionMessages: async (sessionId: string): Promise<GetSessionMessagesResponse> => {
+    const response = await api.get<GetSessionMessagesResponse>(`/sessions/${sessionId}/messages`);
+    // ⭐ 兼容性处理：确保新增字段有默认值
+    return {
+      ...response.data,
+      title_locked: response.data.title_locked ?? false,
+      title_source: response.data.title_source ?? 'auto',
+      title_updated_at: response.data.title_updated_at ?? null,
+      version: response.data.version ?? 1
+    };
   },
 
   /**
@@ -538,9 +588,54 @@ export const sessionApi = {
   /**
    * 更新会话标题
    * @author 小新
+   * @update 2026-02-25 新增version和updated_by参数
    */
-  updateSession: async (sessionId: string, title: string): Promise<{ success: boolean; title: string }> => {
-    const response = await api.put<{ success: boolean; title: string }>(`/sessions/${sessionId}`, { title });
+  updateSession: async (
+    sessionId: string, 
+    title: string, 
+    version: number           // ⭐ 必须参数：版本号
+  ): Promise<UpdateSessionResponse> => {
+    const response = await api.put<UpdateSessionResponse>(
+      `/sessions/${sessionId}`, 
+      { 
+        title, 
+        version,         // ⭐ 必须传递
+        updated_by: 'user'  // ⭐ 可选：标记用户修改
+      }
+    );
+    return response.data;
+  },
+
+  /**
+   * 批量获取会话标题状态
+   * @author 小新
+   * @update 2026-02-25 新增批量接口
+   * @update 2026-02-25 添加输入验证（Q001）
+   */
+  getSessionTitlesBatch: async (sessionIds: string[]): Promise<BatchTitleResponse> => {
+    // 验证1：检查数组是否为空
+    if (!sessionIds || sessionIds.length === 0) {
+      throw new Error('会话ID列表不能为空');
+    }
+    
+    // 验证2：检查数组长度（最多50个）
+    if (sessionIds.length > 50) {
+      throw new Error('批量获取标题最多支持50个会话ID');
+    }
+    
+    // 验证3：检查每个ID的有效性并过滤
+    const validIds = sessionIds.filter(id => id && id.trim());
+    if (validIds.length === 0) {
+      throw new Error('没有有效的会话ID');
+    }
+    
+    // 验证4：检查URL长度
+    const url = `/sessions/titles/batch?session_ids=${validIds.join(',')}`;
+    if (url.length > 2000) {
+      throw new Error('请求URL过长，请减少会话数量');
+    }
+    
+    const response = await api.get<BatchTitleResponse>(url);
     return response.data;
   },
 };
