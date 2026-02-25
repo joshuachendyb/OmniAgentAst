@@ -330,7 +330,15 @@ export interface FullConfigValidationResponse {
   warnings: string[];
 }
 
-export interface ProviderAddRequest {
+// 配置修复响应（小沈新接口）
+export interface ConfigFixResponse {
+  success: boolean;
+  fixed_issues: string[];
+  warnings: string[];
+  backup_path: string;
+}
+
+export interface ProviderAddRequest { {
   name: string;
   api_base: string;
   api_key: string;
@@ -446,6 +454,17 @@ export const configApi = {
    */
   addProvider: async (data: ProviderAddRequest): Promise<{ success: boolean; message: string }> => {
     const response = await api.post('/config/provider', data);
+    return response.data;
+  },
+
+  /**
+   * 修复配置文件常见问题
+   * 自动删除provider下废弃的model字段
+   * @author 小新
+   * @update 2026-02-26 对接小沈新接口
+   */
+  fixConfig: async (): Promise<ConfigFixResponse> => {
+    const response = await api.post<ConfigFixResponse>('/config/fix');
     return response.data;
   },
 };
