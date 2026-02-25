@@ -820,23 +820,30 @@ const SecuritySettings: React.FC = () => {
         </Col>
       </Row>
 
-      <Form.Item>
-        <Button
-          type="primary"
-          htmlType="submit"
-          icon={<SafetyOutlined />}
-          loading={savingSecurity}
-        >
-          保存安全配置
-        </Button>
-        <Button
-          style={{ marginLeft: 8 }}
-          icon={<ReloadOutlined />}
-          onClick={loadSecurityConfig}
-        >
-          重置
-        </Button>
-      </Form.Item>
+       <Form.Item>
+         <Button
+           type="primary"
+           htmlType="submit"
+           icon={<SafetyOutlined />}
+           loading={savingSecurity}
+         >
+           保存安全配置
+         </Button>
+         <Popconfirm
+           title="确定要重置安全配置吗？"
+           description="此操作将恢复默认设置"
+           onConfirm={loadSecurityConfig}
+           okText="确定"
+           cancelText="取消"
+         >
+           <Button
+             style={{ marginLeft: 8 }}
+             icon={<ReloadOutlined />}
+           >
+             重置
+           </Button>
+         </Popconfirm>
+       </Form.Item>
     </Form>
   );
 };
