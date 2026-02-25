@@ -6,22 +6,7 @@
  * @update 2026-02-25 新增标题管理测试
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-
-vi.mock('axios', () => ({
-  default: {
-    create: vi.fn(() => ({
-      get: vi.fn(),
-      post: vi.fn(),
-      put: vi.fn(),
-      delete: vi.fn(),
-      interceptors: {
-        request: { use: vi.fn() },
-        response: { use: vi.fn() },
-      },
-    })),
-  },
-}));
+import { describe, it, expect } from 'vitest';
 
 import { sessionApi } from '../../services/api';
 import type { 
@@ -33,14 +18,6 @@ import type {
 } from '../../services/api';
 
 describe('标题管理功能测试', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   describe('API接口定义', () => {
     it('应该定义Session接口包含新字段', () => {
       const session: Session = {
