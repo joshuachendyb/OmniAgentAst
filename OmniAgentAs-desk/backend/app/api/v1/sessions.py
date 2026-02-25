@@ -702,6 +702,16 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             update_fields.append('version = ?')
             update_values.append(new_version)
         
+        # 如果title_locked字段存在，锁定标题（手动更新）
+        if fields_exist['title_locked']:
+            update_fields.append('title_locked = ?')
+            update_values.append(True)  # 手动更新锁定标题
+        
+        # 如果title_updated_at字段存在，更新它
+        if fields_exist['title_updated_at']:
+            update_fields.append('title_updated_at = ?')
+            update_values.append(utc_time)
+        
         update_values.append(session_id)
         
         cursor.execute(
