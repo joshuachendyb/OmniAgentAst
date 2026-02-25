@@ -692,12 +692,17 @@ async def update_session(session_id: str, update_data: SessionUpdate):
             conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
-        # 乐观锁检查（如果传递了version参数）
+        # 乐观锁检查（只有传递了version参数时才进行）
         current_version = session['version'] if fields_exist['version'] and 'version' in session else 0
+        version_conflict = False
         if update_data.version is not None and fields_exist['version']:
             if update_data.version != current_version:
-                conn.close()
-                raise HTTPException(status_code=409, detail=f"版本冲突: 当前版本={current_version}, 请求版本={update_data.version}")
+                version_conflict = True
+        
+        # 如果有版本冲突，直接返回错误，不执行更新
+        if version_conflict:
+            conn.close()
+            raise HTTPException(status_code=409, detail=f"版本冲突: 当前版本={current_version}, 请求版本={update_data.version}")
         
          # 更新标题
         utc_time = get_utc_timestamp()
