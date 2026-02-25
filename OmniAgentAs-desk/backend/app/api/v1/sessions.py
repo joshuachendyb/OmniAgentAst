@@ -113,7 +113,10 @@ def _init_database():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             message_count INTEGER DEFAULT 0,
-            is_deleted BOOLEAN DEFAULT FALSE
+            is_deleted BOOLEAN DEFAULT FALSE,
+            title_locked BOOLEAN DEFAULT FALSE,
+            title_updated_at TIMESTAMP,
+            version INTEGER DEFAULT 1
         )
     ''')
     
