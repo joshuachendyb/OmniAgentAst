@@ -854,11 +854,12 @@ const SecuritySettings: React.FC = () => {
 const SessionHistory: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
+  const [keyword, setKeyword] = useState(''); // 前端小新代修改 UX-S04: 添加搜索功能
 
-  const loadSessions = async () => {
+  const loadSessions = async (searchKeyword?: string) => {
     setLoadingSessions(true);
     try {
-      const response = await sessionApi.listSessions(1, 50);
+      const response = await sessionApi.listSessions(1, 50, searchKeyword);
       setSessions(response.sessions);
     } catch (error) {
       message.error('加载会话历史失败');
@@ -875,7 +876,7 @@ const SessionHistory: React.FC = () => {
     try {
       await sessionApi.deleteSession(sessionId);
       message.success('会话已删除');
-      loadSessions();
+      loadSessions(keyword);
     } catch (error) {
       message.error('删除会话失败');
     }
@@ -896,26 +897,38 @@ const SessionHistory: React.FC = () => {
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        <Popconfirm
-          title="确定要清空所有会话吗？"
-          description="此操作不可恢复"
-          onConfirm={handleClearAllSessions}
-          okText="确定"
-          cancelText="取消"
-          okButtonProps={{ danger: true }}
-        >
-          <Button danger icon={<DeleteOutlined />}>
-            清空所有会话
-          </Button>
-        </Popconfirm>
-        <Button
-          style={{ marginLeft: 8 }}
-          icon={<ReloadOutlined />}
-          onClick={loadSessions}
-          loading={loadingSessions}
-        >
-          刷新列表
-        </Button>
+        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+          <Popconfirm
+            title="确定要清空所有会话吗？"
+            description="此操作不可恢复"
+            onConfirm={handleClearAllSessions}
+            okText="确定"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
+            <Button danger icon={<DeleteOutlined />}>
+              清空所有会话
+            </Button>
+          </Popconfirm>
+          <Space>
+            {/* 前端小新代修改 UX-S04: 添加搜索框 */}
+            <Input
+              placeholder="搜索会话标题..."
+              allowClear
+              style={{ width: 240 }}
+              onChange={(e) => setKeyword(e.target.value)}
+              onPressEnter={(e) => loadSessions(e.currentTarget.value)}
+            />
+            <Button
+              style={{ marginLeft: 8 }}
+              icon={<ReloadOutlined />}
+              onClick={() => loadSessions(keyword)}
+              loading={loadingSessions}
+            >
+              刷新列表
+            </Button>
+          </Space>
+        </Space>
       </div>
 
       <List
