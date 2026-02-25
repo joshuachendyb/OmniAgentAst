@@ -57,7 +57,14 @@ Command not found: basedpyright-langserver To install: pip install basedpyright 
 9 修改完成后要做代码的语法检查和静态检查
 10 做集成测试和动态测试，做自动化的测试全面测试
 自有自己测试通过后才可以交付用户进行检查。
+OmniAgentAs-desk\doc\API接口说明-配置验证接口-2026-02-23.md  小沈提到 这个 要求前端配合进行修改，小新你看看这个要求和修改你先分析一下有没有意义。
 
+
+我现在 OmniAgentAs-desk\config\config.yaml 这个配置文件的 两个参数 22行的  provider: zhipuai 和11 行的 model: kimi-k2.5-free
+有问题， 这两是 确定当前可以使用的 模型，
+这两个参数 的规则是 必须在配置文件的头部， 必须同时存在
+之前没有注意到，现在发现 应该的model 必须是 provider 下的mode才可以的。 还必须有这个规则才可以的。
+不知道谁修改了他们的位置， 而且 都model不是相应的provider的model  这个规则也是我才发现的， 你检查一下， 配置文件检查函数里面是不是有类似这样的检查规则，
 
 
 
