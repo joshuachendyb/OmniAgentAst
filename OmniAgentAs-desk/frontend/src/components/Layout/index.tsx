@@ -450,14 +450,16 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-            {/* 移动端菜单按钮 */}
+            {/* 移动端菜单按钮 - 前端小新代修改 UX-L02: 增大按钮尺寸，添加tooltip */}
             {isMobile && (
-              <Button
-                type="text"
-                icon={<MenuOutlined />}
-                onClick={() => setDrawerVisible(true)}
-                style={{ fontSize: 18 }}
-              />
+              <Tooltip title="打开导航菜单">
+                <Button
+                  type="text"
+                  icon={<MenuOutlined />}
+                  onClick={() => setDrawerVisible(true)}
+                  style={{ fontSize: 20, padding: '8px 12px' }}
+                />
+              </Tooltip>
             )}
             <Title level={4} style={{ margin: 0, fontWeight: 500, fontSize: isMobile ? 16 : 18 }}>
               对话与任务
