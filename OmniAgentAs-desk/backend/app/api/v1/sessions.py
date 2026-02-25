@@ -797,7 +797,7 @@ async def get_session_titles_batch(
         sessions = []
         for row in rows:
             title_locked_val = row['title_locked'] if 'title_locked' in row else 0
-            title_updated_at_val = row['title_updated_at'] if 'title_updated_at' in row else row.get('created_at')
+            title_updated_at_val = row['title_updated_at'] if 'title_updated_at' in row else row['created_at'] if 'created_at' in row else None
             
             sessions.append({
                 "session_id": row['id'],
