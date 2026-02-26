@@ -8,6 +8,7 @@
 import httpx
 import json
 import asyncio
+from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -232,7 +233,10 @@ async def chat(request: ChatRequest):
         
         # 【修复】非文件操作，正常调用AI服务
         # 获取AI服务实例
-        ai_service = AIServiceFactory.get_service()
+        if request.provider and request.model:
+            ai_service = AIServiceFactory.get_service_for_model(request.provider, request.model)
+        else:
+            ai_service = AIServiceFactory.get_service()
         
         # 转换消息格式
         from app.services.base import Message
@@ -270,7 +274,23 @@ async def chat(request: ChatRequest):
 # ============================================================
 
 # 任务管理字典（存储运行中的任务，用于中断）
+running_tasks_lock = asyncio.Lock()
 running_tasks: dict[str, dict] = {}
+TASK_TIMEOUT = timedelta(hours=1)  # 1小时超时
+
+async def cleanup_expired_tasks():
+    """清理过期任务"""
+    now = datetime.now()
+    async with running_tasks_lock:
+        expired_tasks = [
+            task_id for task_id, task in running_tasks.items()
+            if task.get("created_at") and now - task["created_at"] > TASK_TIMEOUT
+        ]
+        for task_id in expired_tasks:
+            del running_tasks[task_id]
+        if expired_tasks:
+            logger.info(f"清理了 {len(expired_tasks)} 个过期任务")
+
 
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
@@ -292,7 +312,12 @@ async def chat_stream(request: ChatRequest):
     async def generate():
         """生成SSE流，支持中断"""
         # 注册任务
-        running_tasks[task_id] = {"status": "running", "cancelled": False}
+        async with running_tasks_lock:
+            running_tasks[task_id] = {
+                "status": "running", 
+                "cancelled": False,
+                "created_at": datetime.now()
+            }
         
         # 【修改】优先使用前端传递的模型信息，fallback到配置文件
         if request.provider and request.model:
@@ -324,9 +349,10 @@ async def chat_stream(request: ChatRequest):
             await asyncio.sleep(0.3)
             
             # 检查是否被中断
-            if running_tasks.get(task_id, {}).get("cancelled", False):
-                yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
-                return
+            async with running_tasks_lock:
+                if running_tasks.get(task_id, {}).get("cancelled", False):
+                    yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                    return
             
             # 检测文件操作意图
             is_file_op, _, confidence = detect_file_operation_intent(last_message)
@@ -337,9 +363,10 @@ async def chat_stream(request: ChatRequest):
                 await asyncio.sleep(0.3)
                 
                 # 检查是否被中断
-                if running_tasks.get(task_id, {}).get("cancelled", False):
-                    yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
-                    return
+                async with running_tasks_lock:
+                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                        yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                        return
                 
                 # 安全检测
                 is_safe, risk = check_command_safety(last_message)
@@ -375,9 +402,10 @@ async def chat_stream(request: ChatRequest):
                     if hasattr(result, 'steps') and result.steps:
                         for i, step in enumerate(result.steps, 1):
                             # 每步检查是否被中断
-                            if running_tasks.get(task_id, {}).get("cancelled", False):
-                                yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
-                                break
+                            async with running_tasks_lock:
+                                if running_tasks.get(task_id, {}).get("cancelled", False):
+                                    yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                                    break
                             
                             # Step是对象，使用属性访问
                             step_thought = getattr(step, 'thought', '')
@@ -394,21 +422,19 @@ async def chat_stream(request: ChatRequest):
                             await asyncio.sleep(0.5)
                     
                     # 检查是否被中断
-                    if running_tasks.get(task_id, {}).get("cancelled", False):
-                        yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
-                    else:
-                        # 发送最终结果
-                         # 【修复】小沈】在SSE响应中添加model字段，让前端显示当前使用的模型
-                         if result.success:
-                             result_content = getattr(result, 'content', '')
-                             # 【新增】返回display_name和provider
-                             display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
-                             yield f"data: {json.dumps({'type': 'final', 'content': result_content, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
-                         else:
-                             result_error = getattr(result, 'error', '执行失败')
-                             # 【新增】返回display_name和provider
-                             display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
-                             yield f"data: {json.dumps({'type': 'error', 'content': result_error, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
+                    async with running_tasks_lock:
+                        if running_tasks.get(task_id, {}).get("cancelled", False):
+                            yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                        else:
+                            # 发送最终结果
+                            if result.success:
+                                result_content = getattr(result, 'content', '')
+                                display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
+                                yield f"data: {json.dumps({'type': 'final', 'content': result_content, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
+                            else:
+                                result_error = getattr(result, 'error', '执行失败')
+                                display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
+                                yield f"data: {json.dumps({'type': 'error', 'content': result_error, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
                             
                 except Exception as e:
                     yield f"data: {json.dumps({'type': 'error', 'content': f'执行出错: {str(e)}'})}\n\n"
@@ -418,9 +444,10 @@ async def chat_stream(request: ChatRequest):
                 await asyncio.sleep(0.3)
                 
                 # 检查是否被中断
-                if running_tasks.get(task_id, {}).get("cancelled", False):
-                    yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
-                    return
+                async with running_tasks_lock:
+                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                        yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                        return
                 
                 ai_service = AIServiceFactory.get_service()
                 from app.services.base import Message
@@ -435,9 +462,10 @@ async def chat_stream(request: ChatRequest):
                     history=history
                 ):
                     # 检查是否被中断
-                    if running_tasks.get(task_id, {}).get("cancelled", False):
-                        yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
-                        return
+                    async with running_tasks_lock:
+                        if running_tasks.get(task_id, {}).get("cancelled", False):
+                            yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                            return
                     
                     if chunk.content:
                         full_content += chunk.content
@@ -451,7 +479,8 @@ async def chat_stream(request: ChatRequest):
                         
         except asyncio.CancelledError:
             # 客户端断开连接，任务被中断
-            running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
+            async with running_tasks_lock:
+                running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
             yield f"data: {json.dumps({'type': 'interrupted', 'content': '客户端断开连接，任务中断'})}\n\n"
             
         except Exception as e:
@@ -459,8 +488,9 @@ async def chat_stream(request: ChatRequest):
         
         finally:
             # 清理任务
-            if task_id in running_tasks:
-                del running_tasks[task_id]
+            async with running_tasks_lock:
+                if task_id in running_tasks:
+                    del running_tasks[task_id]
     
     return StreamingResponse(
         generate(),
@@ -484,10 +514,11 @@ async def cancel_stream_task(task_id: str):
     
     - **task_id**: 任务ID
     """
-    if task_id in running_tasks:
-        running_tasks[task_id]["cancelled"] = True
-        running_tasks[task_id]["status"] = "cancelled"
-        return {"success": True, "message": f"任务 {task_id} 已标记为中断"}
+    async with running_tasks_lock:
+        if task_id in running_tasks:
+            running_tasks[task_id]["cancelled"] = True
+            running_tasks[task_id]["status"] = "cancelled"
+            return {"success": True, "message": f"任务 {task_id} 已标记为中断"}
     return {"success": False, "message": f"任务 {task_id} 不存在"}
 
 
