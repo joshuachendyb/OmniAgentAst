@@ -834,7 +834,7 @@ async def delete_model(provider_name: str, model_name: str):
 @router.put("/config/provider/{provider_name}")
 async def update_provider(provider_name: str, data: ProviderUpdate):
     """
-    更新Provider配置
+    更新Provider配置（新版本：带验证和备份）
     
     Args:
         provider_name: Provider名称
@@ -843,13 +843,16 @@ async def update_provider(provider_name: str, data: ProviderUpdate):
     try:
         config_path = _get_config_path()
         
+        # 1. 自动备份
+        backup_path = _backup_config_file(config_path)
+        
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
         
         if provider_name not in config.get('ai', {}):
             raise HTTPException(status_code=404, detail=f"Provider {provider_name} 不存在")
         
-        # 更新配置
+        # 2. 更新配置
         if data.api_base is not None:
             config['ai'][provider_name]['api_base'] = data.api_base
         if data.api_key is not None:
@@ -862,6 +865,21 @@ async def update_provider(provider_name: str, data: ProviderUpdate):
         if data.max_retries is not None:
             config['ai'][provider_name]['max_retries'] = data.max_retries
         
+        # 3. 自动修复常见问题
+        config = _fix_config_common_issues(config)
+        
+        # 4. 验证配置完整性
+        is_valid, errors, warnings = _validate_config_integrity(config)
+        
+        if not is_valid:
+            return {
+                "success": False,
+                "message": "配置验证失败",
+                "errors": errors,
+                "warnings": warnings,
+                "backup_path": str(backup_path)
+            }
+        
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
         
@@ -872,7 +890,12 @@ async def update_provider(provider_name: str, data: ProviderUpdate):
         # 清空AIServiceFactory缓存
         AIServiceFactory.reset()
         
-        return {"success": True, "message": f"Provider {provider_name} 已更新"}
+        return {
+            "success": True,
+            "message": f"Provider {provider_name} 已更新",
+            "warnings": warnings,
+            "backup_path": str(backup_path)
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -931,13 +954,13 @@ async def add_model(provider_name: str, data: ModelAddRequest):
 @router.post("/config/provider")
 async def add_provider(data: ProviderAddRequest):
     """
-    添加新Provider
-    
-    Args:
-        data: Provider配置
+    添加新Provider（新版本：不写废弃的model字段）
     """
     try:
         config_path = _get_config_path()
+        
+        # 1. 自动备份
+        backup_path = _backup_config_file(config_path)
         
         with open(config_path, 'r', encoding='utf-8') as f:
             config = yaml.safe_load(f)
@@ -945,14 +968,25 @@ async def add_provider(data: ProviderAddRequest):
         if data.name in config.get('ai', {}):
             raise HTTPException(status_code=400, detail=f"Provider {data.name} 已存在")
         
-        # 添加Provider
+        # 2. 【修正】不写 provider 下的 model 字段
         config['ai'][data.name] = {
             'api_base': data.api_base,
             'api_key': data.api_key,
-            'models': data.models if data.models else [data.model],
+            'models': data.models if data.models else ([data.model] if data.model else []),
             'timeout': data.timeout,
             'max_retries': data.max_retries
         }
+        
+        # 3. 验证配置
+        is_valid, errors, warnings = _validate_config_integrity(config)
+        
+        if not is_valid:
+            return {
+                "success": False,
+                "message": "配置验证失败",
+                "errors": errors,
+                "backup_path": str(backup_path)
+            }
         
         with open(config_path, 'w', encoding='utf-8') as f:
             yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
@@ -964,7 +998,11 @@ async def add_provider(data: ProviderAddRequest):
         # 清空AIServiceFactory缓存
         AIServiceFactory.reset()
         
-        return {"success": True, "message": f"Provider {data.name} 已添加"}
+        return {
+            "success": True,
+            "message": f"Provider {data.name} 已添加",
+            "warnings": warnings
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -1169,6 +1207,7 @@ async def validate_full_config():
     5. api_key 是否存在
     6. model 是否存在
     7. api_base 是否存在
+    8. 【新增】检查是否有废弃的model字段
     
     Returns:
         FullConfigValidationResponse: 包含错误列表和警告列表的完整验证结果
@@ -1177,7 +1216,24 @@ async def validate_full_config():
         # 使用AIServiceFactory的验证方法
         validation_result = AIServiceFactory.validate_config()
         
-        logger.info(f"完整配置验证: success={validation_result.success}, errors={len(validation_result.errors)}, warnings={len(validation_result.warnings)}")
+        # 【新增】检查是否有废弃的model字段
+        config_path = _get_config_path()
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config_data = yaml.safe_load(f) or {}
+        
+        additional_warnings = []
+        ai_config = config_data.get('ai', {})
+        for provider_name in ai_config.keys():
+            if provider_name == 'provider' or provider_name == 'model':
+                continue
+            provider_data = ai_config.get(provider_name, {})
+            if isinstance(provider_data, dict) and 'model' in provider_data:
+                additional_warnings.append(f"provider '{provider_name}' 下有废弃的 model 字段，建议调用 /config/fix 接口修复")
+        
+        # 合并警告
+        all_warnings = validation_result.warnings + additional_warnings
+        
+        logger.info(f"完整配置验证: success={validation_result.success}, errors={len(validation_result.errors)}, warnings={len(all_warnings)}")
         
         return FullConfigValidationResponse(
             success=validation_result.success,
@@ -1185,7 +1241,7 @@ async def validate_full_config():
             model=validation_result.model,
             message=validation_result.message,
             errors=validation_result.errors,
-            warnings=validation_result.warnings
+            warnings=all_warnings
         )
         
     except Exception as e:
