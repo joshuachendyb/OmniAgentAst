@@ -205,7 +205,6 @@ const ProviderSettings: React.FC = () => {
     form.setFieldsValue({
       api_base: provider.api_base,
       api_key: provider.api_key,
-      model: provider.model,
       timeout: provider.timeout,
       max_retries: provider.max_retries,
     });
@@ -664,14 +663,6 @@ const ProviderSettings: React.FC = () => {
             name="api_key"
           >
             <Input.Password placeholder="留空保持原密钥不变" />
-          </Form.Item>
-
-          <Form.Item
-            label="当前使用模型"
-            name="model"
-            rules={[{ required: true, message: '请输入模型名称' }]}
-          >
-            <Input placeholder="glm-4-flash" />
           </Form.Item>
 
           <Row gutter={16}>
