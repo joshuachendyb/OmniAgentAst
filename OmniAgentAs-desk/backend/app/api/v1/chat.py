@@ -694,16 +694,30 @@ async def switch_ai_provider(provider: str):
     """
     切换AI提供商
     
-    - **provider**: 提供商名称 (zhipuai | opencode)
+    - **provider**: 提供商名称 (从配置中动态支持)
     
-    用于在智谱和OpenCode之间切换
+    用于切换AI提供商
     """
     try:
-        # 验证提供商名称
-        if provider not in ["zhipuai", "opencode"]:
+        # 验证提供商名称（从配置中动态验证）
+        from app.config import get_config as get_config_instance
+        
+        config = get_config_instance()
+        ai_config = config.get('ai', {})
+        
+        # 获取所有可用的provider（排除provider和model这两个配置项）
+        available_providers = []
+        for provider_name in ai_config.keys():
+            if provider_name == 'provider' or provider_name == 'model':
+                continue
+            provider_data = ai_config.get(provider_name, {})
+            if isinstance(provider_data, dict):
+                available_providers.append(provider_name)
+        
+        if provider not in available_providers:
             raise HTTPException(
                 status_code=400,
-                detail=f"不支持的提供商: {provider}，支持的选项: zhipuai, opencode"
+                detail=f"不支持的提供商: {provider}，支持的选项: {', '.join(available_providers)}"
             )
         
         # 切换提供商

@@ -477,6 +477,105 @@ class AIServiceFactory:
     @classmethod
     def reset(cls):
         """重置工厂状态"""
+        with cls._lock:
+            cls._instance = None
+            cls._current_provider = ""
+            cls._config = None
+    
+    @classmethod
+    def get_service_for_model(cls, provider: str, model: str, config_path: Optional[str] = None):
+        """
+        根据指定的 provider 和 model 获取服务实例
+        
+        使用统一Fallback逻辑验证 provider 和 model 是否有效，
+        如果有效则使用指定值，否则使用 fallback 值。
+        
+        Args:
+            provider: 提供商名称
+            model: 模型名称
+            config_path: 配置文件路径（可选）
+            
+        Returns:
+            BaseAIService: AI服务实例
+        """
+        with cls._lock:
+            actual_path = cls.get_config_path(config_path)
+            config = cls.load_config(config_path)
+            ai_config = config.get("ai", {})
+            
+            # ====================================================================
+            # 【统一Fallback逻辑 - 必须遵守！】
+            # 1. 先找第一个有models的provider作为fallback
+            fallback_provider, fallback_model = cls._get_fallback_provider_and_model(ai_config)
+            
+            # 2. 检查指定的 provider + model 是否有效
+            is_valid = (
+                provider and 
+                provider in ai_config and 
+                'models' in ai_config[provider] and 
+                model and 
+                model in ai_config[provider]['models']
+            )
+            
+            # 3. 有效则使用指定值，否则使用fallback
+            if is_valid:
+                final_provider = provider
+                final_model = model
+            else:
+                final_provider = fallback_provider
+                final_model = fallback_model
+                print(f"[AIServiceFactory] 警告: 指定的 provider={provider}, model={model} 无效，使用 fallback: {final_provider}, {final_model}")
+            # ====================================================================
+            
+            # 更新配置文件中的 provider 和 model
+            try:
+                with open(actual_path, 'r', encoding='utf-8') as f:
+                    config_data = yaml.safe_load(f)
+                
+                if config_data and 'ai' in config_data:
+                    config_data['ai']['provider'] = final_provider
+                    config_data['ai']['model'] = final_model
+                    
+                    with open(actual_path, 'w', encoding='utf-8') as f:
+                        yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
+            except Exception as e:
+                print(f"[AIServiceFactory] 警告: 无法更新配置文件: {e}")
+            
+            # 关闭旧实例
+            if cls._instance is not None:
+                try:
+                    asyncio.create_task(cls._instance.close())
+                except Exception as e:
+                    print(f"[AIServiceFactory] 关闭旧实例出错: {e}")
+            
+            cls._instance = None
+            cls._current_provider = final_provider
+            
+            print(f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}")
+            
+            provider_config = ai_config.get(final_provider, {})
+            
+            if not provider_config:
+                for key, val in ai_config.items():
+                    if key != "provider" and isinstance(val, dict) and val.get("api_key"):
+                        print(f"[AIServiceFactory] 警告: provider={final_provider} 配置不存在，使用 {key}")
+                        final_provider = key
+                        provider_config = val
+                        break
+            
+            if not provider_config:
+                print(f"[AIServiceFactory] 错误: 未找到任何有效的provider配置")
+                provider_config = {}
+            
+            cls._instance = BaseAIService(
+                api_key=provider_config.get("api_key", ""),
+                model=final_model,
+                api_base=provider_config.get("api_base", "https://api.openai.com/v1"),
+                provider=final_provider,
+                timeout=provider_config.get("timeout", 30)
+            )
+            
+            return cls._instance
         cls._instance = None
         cls._current_provider = ""
         cls._config = None
