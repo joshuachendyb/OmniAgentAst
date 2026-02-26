@@ -645,7 +645,7 @@ async def save_message(session_id: str, message: MessageCreate):
             
             # ⭐ 修复P1-问题4：只在标题实际变化时递增版本号
             # 修复原因：避免标题未变化时也递增版本号，导致频繁409冲突
-            if fields_exist['version']' in update_values and should_update_title:
+            if fields_exist['version'] and should_update_title:
                 # 只有在标题更新时才递增版本号
                 update_fields.append('version = ?')
                 update_values.append(1)  # 新版本号=当前+1
@@ -708,6 +708,8 @@ async def update_session(session_id: str, update_data: SessionUpdate):
     Returns:
         dict: 更新结果
     """
+    conn = None
+    cursor = None
     try:
         conn = _get_db_connection()
         cursor = conn.cursor()
@@ -848,7 +850,8 @@ async def update_session(session_id: str, update_data: SessionUpdate):
     except HTTPException as he:
         # ⭐ 修复P1-问题3：完善错误处理
         try:
-            conn.close()
+            if conn:
+                conn.close()
         except:
             pass
         logger.error(f"更新会话HTTP异常: session_id={session_id}, status={he.status_code}, detail={he.detail}")
@@ -861,10 +864,16 @@ async def update_session(session_id: str, update_data: SessionUpdate):
         )
         try:
             # ⭐ 修复P0-问题2：回滚事务
-            cursor.execute("ROLLBACK")
-            logger.warning(f"事务已回滚: session_id={session_id}")
+            if cursor:
+                cursor.execute("ROLLBACK")
+                logger.warning(f"事务已回滚: session_id={session_id}")
         except Exception as rollback_err:
             logger.error(f"回滚失败: {rollback_err}")
+        try:
+            if conn:
+                conn.close()
+        except:
+            pass
         raise HTTPException(status_code=500, detail="更新会话失败，请重试")
 
 
@@ -883,112 +892,11 @@ async def delete_session(session_id: str):
         conn = _get_db_connection()
         cursor = conn.cursor()
         
-        # ⭐ 修复P0-问题2：显式开启事务
-        cursor.execute("BEGIN")
-        
-        logger.debug(f"开始事务: session_id={session_id}, operation=update_title")
-        
-        # P0风险缓解：检查数据库字段是否存在
-        fields = check_db_fields_exist(conn)
-        
-        utc_time = get_utc_timestamp()
-        
-        # 验证会话存在并获取当前状态（使用原子性UPDATE修复并发问题）
-        if fields['version']:
-            # 新字段存在，支持乐观锁
-            if update_data.version is not None:
-                # ⭐ 修复P0-问题1：使用原子性UPDATE避免竞态条件
-                # 尝试直接更新并检查version，受影响行数=0说明版本冲突
-                cursor.execute(
-                    '''UPDATE chat_sessions 
-                       SET title = ?, updated_at = ?, 
-                           title_locked = ?, 
-                           title_updated_at = ?, 
-                           version = version + 1
-                       WHERE id = ? AND is_deleted = FALSE AND version = ?''',
-                    (update_data.title, utc_time, 1, utc_time, 
-                     session_id, update_data.version)
-                )
-                
-                # ⭐ 检查是否更新成功
-                if cursor.rowcount == 0:
-                    # 更新失败，说明版本冲突
-                    conn.rollback()
-                    conn.close()
-                    logger.warning(f"版本冲突: session_id={session_id}, client_version={update_data.version}")
-                    raise HTTPException(
-                        status_code=409,
-                        detail="会话已被其他用户修改，请刷新后重试"
-                    )
-                
-                # 获取更新后的数据
-                cursor.execute(
-                    '''SELECT id, title, version FROM chat_sessions WHERE id = ?''',
-                    (session_id,)
-                )
-                session = cursor.fetchone()
-                current_version = session['version']
-                logger.debug(f"版本更新成功: session_id={session_id}, old_version={update_data.version}, new_version={current_version}")
-            else:
-                # 版本号兼容模式：不检查version（旧前端），使用SELECT获取
-                cursor.execute(
-                    '''SELECT id, title, COALESCE(version, 1) as version, 
-                              COALESCE(title_locked, 0) as title_locked
-                       FROM chat_sessions 
-                       WHERE id = ? AND is_deleted = FALSE''',
-                    (session_id,)
-                )
-                session = cursor.fetchone()
-                
-                if not session:
-                    conn.rollback()
-                    conn.close()
-                    raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-                
-                # 获取当前版本号
-                current_version = session['version']
-                
-                # 更新标题（不检查version）
-                update_fields = ['title = ?', 'updated_at = ?']
-                update_values = [update_data.title, utc_time]
-                update_fields.append('title_locked = ?')
-                update_values.append(1)
-                update_fields.append('title_updated_at = ?')
-                update_values.append(utc_time)
-                update_fields.append('version = ?')
-                new_version = current_version + 1
-                update_values.append(new_version)
-                update_values.append(session_id)
-                
-                cursor.execute(
-                    f'UPDATE chat_sessions SET {", ".join(update_fields)} WHERE id = ?',
-                    update_values
-                )
-        else:
-            # 新字段不存在，兼容模式
-            cursor.execute(
-                '''SELECT id, title, 1 as version, 0 as title_locked
-                   FROM chat_sessions 
-                   WHERE id = ? AND is_deleted = FALSE''',
-                (session_id,)
-            )
-            session = cursor.fetchone()
-            
-            if not session:
-                conn.rollback()
-                conn.close()
-                raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
-            
-            current_version = session['version']
-            
-            # 更新标题
-            update_fields = ['title = ?', 'updated_at = ?']
-            update_values = [update_data.title, utc_time]
-            update_values.append(session_id)
-            cursor.execute(
-                f'UPDATE chat_sessions SET {", ".join(update_fields)} WHERE id = ?',
-                update_values
-            )
+        # 验证会话存在
+        cursor.execute(
+            'SELECT id FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
+            (session_id,)
+        )
         session = cursor.fetchone()
         
         if not session:
