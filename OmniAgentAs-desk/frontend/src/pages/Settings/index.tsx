@@ -1260,6 +1260,24 @@ const Settings: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [pendingKey, setPendingKey] = useState<string>('');
+  const [configFilePath, setConfigFilePath] = useState<string>('');
+
+  const loadConfigFilePath = async () => {
+    try {
+      const result = await configApi.fixConfig();
+      setConfigFilePath(result.backup_path);
+    } catch (error) {
+      console.error('加载配置文件路径失败:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadConfigFilePath();
+  }, []);
+
+  const handleOpenConfigDir = () => {
+    message.info(`配置文件路径: ${configFilePath}`);
+  };
 
   // Tab切换处理
   const handleTabChange = (key: string) => {
@@ -1283,9 +1301,21 @@ const Settings: React.FC = () => {
     setConfirmModalVisible(false);
   };
 
-  return (
-    <div style={{ padding: 0, margin: 0 }}>
-       <Card style={{ marginTop: 0 }} bodyStyle={{ padding: '32px' }}> {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
+   return (
+     <div style={{ padding: 0, margin: 0 }}>
+        <Card style={{ marginTop: 0 }} bodyStyle={{ padding: '32px' }}> {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
+          {/* 配置文件路径标注 */}
+          {configFilePath && (
+            <div style={{ marginBottom: 16, padding: '12px', background: '#f6ffed', borderRadius: 4 }}>
+              <Space>
+                <Text type="secondary">配置文件：</Text>
+                <Text code>{configFilePath}</Text>
+                <Button type="link" size="small" onClick={handleOpenConfigDir}>
+                  查看路径
+                </Button>
+              </Space>
+            </div>
+          )}
           <Tabs
             activeKey={activeKey}
             onChange={handleTabChange}
