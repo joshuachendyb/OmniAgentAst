@@ -6,11 +6,12 @@
  * - SSE流式输出 + 执行步骤可视化
  * - 安全检测v2.0（基于score的4级响应）
  * - 任务中断控制
+ * - 标题管理优化（版本控制、锁定状态、来源标记）
  * 
  * @author 小新
- * @version 3.0.0
+ * @version 3.1.0
  * @since 2026-02-23
- * @update 整合 Chat/index.tsx 功能 + ChatContainer 流式输出
+ * @update 2026-02-25 新增版本号控制、标题锁定状态、409冲突处理
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
@@ -39,6 +40,24 @@ import { useSSE, ExecutionStep } from '../../utils/sse';
 
 const { TextArea } = Input;
 
+// ⭐ 防抖函数（简单实现，不依赖lodash）
+const debounce = <T extends (...args: any[]) => any>(
+  func: T,
+  delay: number
+): ((...args: Parameters<T>) => void) => {
+  let timeoutId: NodeJS.Timeout | null = null;
+  
+  return (...args: Parameters<T>): void => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+    timeoutId = setTimeout(() => {
+      func(...args);
+      timeoutId = null;
+    }, delay);
+  };
+};
+
 interface Message extends ChatMessage {
   id: string;
   timestamp: Date;
@@ -66,8 +85,12 @@ const NewChatContainer: React.FC = () => {
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string>('新会话');
+  const [sessionVersion, setSessionVersion] = useState<number>(1);  // ⭐ 新增：会话版本号
+  const [titleLocked, setTitleLocked] = useState<boolean>(false);  // ⭐ 新增：标题锁定状态
+  const [titleSource, setTitleSource] = useState<'user' | 'auto'>('auto');  // ⭐ 新增：标题来源
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState('');
+  const [lastSavedTitle, setLastSavedTitle] = useState<string>('');  // ⭐ 新增：记录最后保存的标题
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // 流式输出相关状态
@@ -82,6 +105,15 @@ const NewChatContainer: React.FC = () => {
   const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
   const [checkingDanger, setCheckingDanger] = useState(false);
   const [blockedCommand, setBlockedCommand] = useState<{ command: string; score: number; message: string } | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+  
+  // P1级别优化：新增状态变量
+  type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [_sessionJumpLoading, setSessionJumpLoading] = useState(false);
+  const [retryCount, setRetryCount] = useState<Record<string, number>>({});
+  const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
+  const [_isSavingTitle, setIsSavingTitle] = useState(false);
 
   // SSE Hook配置（用于流式输出）
   const {
@@ -130,7 +162,7 @@ const NewChatContainer: React.FC = () => {
       });
     }, []),
     // onComplete - 流式完成
-    useCallback((fullResponse: string, model?: string) => {
+    useCallback(async (fullResponse: string, model?: string) => {
       setMessages(prev => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage && lastMessage.role === 'assistant') {
@@ -150,16 +182,26 @@ const NewChatContainer: React.FC = () => {
       const currentPending = pendingMessage;
       if (sessionId && currentPending) {
         try {
-          sessionApi.saveMessage(sessionId, {
+          // 保存用户消息
+          await sessionApi.saveMessage(sessionId, {
             role: 'user',
             content: currentPending.content,
           });
-          sessionApi.saveMessage(sessionId, {
+          
+          // 保存AI回复
+          await sessionApi.saveMessage(sessionId, {
             role: 'assistant',
             content: fullResponse,
           });
+          
+          // 🔴 修复：确保会话标题持久化
+          if (sessionTitle && sessionTitle.trim() && sessionTitle !== '新会话') {
+            await ensureTitlePersisted(sessionId, sessionTitle);
+          }
+          
+          console.log('✅ 消息和标题保存成功');
         } catch (saveError) {
-          console.error('保存消息失败:', saveError);
+          console.error('保存消息或标题失败:', saveError);
         }
       }
       
@@ -169,6 +211,13 @@ const NewChatContainer: React.FC = () => {
     // onError - 流式错误
     useCallback((error: string) => {
       console.error('SSE流式错误:', error);
+      
+      // 🔴 修复：更好的用户反馈
+      message.error({
+        content: `AI响应失败: ${error}`,
+        duration: 5,
+      });
+      
       setMessages(prev => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage && lastMessage.role === 'assistant') {
@@ -201,14 +250,17 @@ const NewChatContainer: React.FC = () => {
   const STORAGE_KEY = 'chat_session_state';
 
   const saveState = () => {
-    if (messages.length > 0) {
+    // 🔴 修复：只要有会话ID就保存，即使消息为空
+    if (sessionId) {
       const state = {
         messages,
         sessionId,
         sessionTitle,
+        timestamp: Date.now(), // 🔴 修复：添加时间戳，用于判断新旧
         scrollPosition: messagesEndRef.current?.parentElement?.scrollTop || 0,
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      console.log('💾 保存会话状态:', sessionId, sessionTitle);
     }
   };
 
@@ -217,19 +269,33 @@ const NewChatContainer: React.FC = () => {
     if (saved) {
       try {
         const state = JSON.parse(saved);
-        if (state.messages && state.messages.length > 0) {
-          setMessages(state.messages);
+        // 🔴 修复：检查时间戳，避免恢复过时的状态（超过5分钟）
+        const currentTime = Date.now();
+        const savedTime = state.timestamp || 0;
+        const timeDiff = currentTime - savedTime;
+        
+        // 只恢复5分钟内的状态
+        if (timeDiff > 5 * 60 * 1000) {
+          console.log('🕒 会话状态已过期，跳过恢复');
+          sessionStorage.removeItem(STORAGE_KEY);
+          return false;
+        }
+        
+        if (state.sessionId) {
+          setMessages(state.messages || []);
           setSessionId(state.sessionId);
-          setSessionTitle(state.sessionTitle);
+          setSessionTitle(state.sessionTitle || '会话');
           setTimeout(() => {
             if (messagesEndRef.current?.parentElement) {
               messagesEndRef.current.parentElement.scrollTop = state.scrollPosition || 0;
             }
           }, 100);
+          console.log('🔄 恢复会话状态:', state.sessionId, state.sessionTitle);
           return true;
         }
       } catch (e) {
         console.warn('恢复会话状态失败:', e);
+        sessionStorage.removeItem(STORAGE_KEY); // 🔴 修复：清除损坏的数据
       }
     }
     return false;
@@ -247,6 +313,51 @@ const NewChatContainer: React.FC = () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [messages, sessionId, sessionTitle]);
+
+  // P1级别优化：状态验证和同步机制
+  useEffect(() => {
+    if (!sessionId || !isInitialized) return;
+
+    const validateAndSyncState = async () => {
+      try {
+        // 验证前端状态与后端一致性
+        const sessionData = await sessionApi.getSessionMessages(sessionId);
+        
+        // 获取后端返回的正确标题
+        const backendTitle = getSessionTitle(sessionData, '会话');
+        
+        // 如果前端标题与后端不一致，强制同步
+        if (backendTitle !== sessionTitle && backendTitle !== '会话') {
+          console.warn('🔄 标题不一致，强制同步:', {
+            frontend: sessionTitle,
+            backend: backendTitle
+          });
+          setSessionTitle(backendTitle);
+        }
+        
+        // 验证消息数量
+        if (sessionData.messages && sessionData.messages.length > 0) {
+          const frontendMsgCount = messages.filter(m => m.role !== 'system').length;
+          const backendMsgCount = sessionData.messages.length;
+          
+          if (Math.abs(frontendMsgCount - backendMsgCount) > 2) {
+            console.warn('🔄 消息数量差异较大，建议刷新页面');
+          }
+        }
+        
+      } catch (error) {
+        console.warn('状态验证失败:', error);
+        // 状态验证失败不影响用户体验，静默处理
+      }
+    };
+
+    // 每2分钟验证一次状态一致性
+    const intervalId = setInterval(() => {
+      validateAndSyncState();
+    }, 2 * 60 * 1000);
+
+    return () => clearInterval(intervalId);
+  }, [sessionId, sessionTitle, messages, isInitialized]);
 
   // 全局快捷键 - 前端小新代修改 UX-G02: 全局快捷键
   useEffect(() => {
@@ -275,21 +386,112 @@ const NewChatContainer: React.FC = () => {
   }, [inputValue, loading]);
 
   // ============================================
+  // 网络连接检查
+  // ============================================
+  
+  /**
+   * 检查网络连接状态
+   */
+  const checkNetworkConnection = async (): Promise<boolean> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/health`, { 
+        method: 'HEAD',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      return response.ok;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      console.warn('网络连接检查失败:', error);
+      return false;
+    }
+  };
+
+  // ============================================
+  // 统一的标题管理函数
+  // ============================================
+  
+  /**
+   * 获取会话标题 - 统一管理所有标题来源
+   * 优先级：1. API返回的title > 2. 用户修改过的标题 > 3. 消息内容 > 4. 默认标题
+   */
+  const getSessionTitle = (
+    sessionData: { title?: string; messages?: any[] },
+    defaultTitle: string = '会话'
+  ): string => {
+    // 1. 最高优先级：API返回的title字段
+    if (sessionData.title && sessionData.title.trim()) {
+      return sessionData.title.trim();
+    }
+    
+    // 2. 次优先级：消息内容（只在没有API title时使用）
+    if (sessionData.messages && sessionData.messages.length > 0) {
+      const firstMessage = sessionData.messages[0];
+      if (firstMessage?.content) {
+        // 只取前30个字符，避免过长
+        const contentTitle = firstMessage.content.substring(0, 30).trim();
+        if (contentTitle) {
+          return contentTitle;
+        }
+      }
+    }
+    
+    // 3. 默认标题
+    return defaultTitle;
+  };
+
+  /**
+   * 生成新会话标题 - 智能生成有意义的标题
+   * 🔄 优化：添加更多时间细分，使标题更精确
+   */
+  const generateNewSessionTitle = (): string => {
+    const now = new Date();
+    const hours = now.getHours();
+    let timeOfDay = '';
+    
+    // 更精确的时间段划分
+    if (hours >= 5 && hours < 8) timeOfDay = '清晨';
+    else if (hours >= 8 && hours < 12) timeOfDay = '上午';
+    else if (hours >= 12 && hours < 14) timeOfDay = '午间';
+    else if (hours >= 14 && hours < 18) timeOfDay = '下午';
+    else if (hours >= 18 && hours < 21) timeOfDay = '晚间';
+    else if (hours >= 21 && hours < 24) timeOfDay = '深夜';
+    else timeOfDay = '深夜'; // 0-5点
+    
+    const dateStr = `${now.getMonth() + 1}月${now.getDate()}日`;
+    return `${dateStr} ${timeOfDay}会话 ${hours}:${now.getMinutes().toString().padStart(2, '0')}`;
+  };
+
+  // ⭐ 防抖版本的保存标题函数
+  const debouncedSaveTitle = useCallback(
+    debounce(async (sessionId: string, title: string) => {
+      await ensureTitlePersisted(sessionId, title);
+    }, 1000),
+    []
+  );
+
+  // ============================================
   // 加载历史会话
   // ============================================
   useEffect(() => {
     const loadSession = async () => {
       const urlSessionId = searchParams.get('session_id');
       
-      if (!urlSessionId) {
-        const restored = restoreState();
-        if (restored) {
-          console.log('从缓存恢复会话状态');
-          return;
-        }
-      }
-
+      // 🔴 修复1: URL参数绝对优先 - 清除旧的sessionStorage
       if (urlSessionId) {
+        // P1级别优化：添加会话跳转加载状态
+        setSessionJumpLoading(true);
+        message.loading({ content: '正在加载会话...', key: 'session-load', duration: 0 });
+        
+        // 清除旧的sessionStorage，避免干扰
+        sessionStorage.removeItem(STORAGE_KEY);
+        
+        const retryKey = `session-load-${urlSessionId}`;
+        const currentRetry = retryCount[retryKey] || 0;
+        
         try {
           const sessionData = await sessionApi.getSessionMessages(urlSessionId);
           if (sessionData.messages && sessionData.messages.length > 0) {
@@ -300,36 +502,120 @@ const NewChatContainer: React.FC = () => {
               content: m.content,
               timestamp: new Date(m.timestamp),
             })));
-            const titleFromApi = sessionData.messages[0]?.content?.substring(0, 30) || '会话';
-            setSessionTitle(titleFromApi);
-            console.log('从URL加载会话:', urlSessionId);
+            
+            // ⭐ 2026-02-25 更新：加载新增字段
+            const title = getSessionTitle(sessionData, '会话');
+            setSessionTitle(title);
+            
+            // ⭐ 设置新字段
+            if (sessionData.version !== undefined) {
+              setSessionVersion(sessionData.version);
+            }
+            if (sessionData.title_locked !== undefined) {
+              setTitleLocked(sessionData.title_locked);
+            }
+            if (sessionData.title_source) {
+              setTitleSource(sessionData.title_source);
+            }
+            
+            // 加载成功
+            setSessionJumpLoading(false);
+            message.success({ content: '会话加载成功', key: 'session-load' });
+            setRetryCount(prev => ({ ...prev, [retryKey]: 0 }));
+            
+            console.log('🔵 从URL加载会话:', urlSessionId, '标题:', title, '版本:', sessionData.version);
             return;
           }
         } catch (error) {
           console.warn('加载URL会话失败:', error);
+          
+          // 重试机制 - 最多3次
+          if (currentRetry < 3) {
+            const newRetry = currentRetry + 1;
+            setRetryCount(prev => ({ ...prev, [retryKey]: newRetry }));
+            message.warning({ 
+              content: `加载失败，正在重试 (${newRetry}/3)...`, 
+              key: 'session-load',
+              duration: 0 
+            });
+            
+            // 延迟1秒后重试
+            setTimeout(() => {
+              loadSession();
+            }, 1000);
+          } else {
+            // 超过重试次数，显示错误
+            setSessionJumpLoading(false);
+            message.error({ 
+              content: '加载会话失败，请检查网络后重试', 
+              key: 'session-load' 
+            });
+            setRetryCount(prev => ({ ...prev, [retryKey]: 0 }));
+          }
+        }
+      }
+      
+      // 🔴 修复3: 只有在没有URL参数时才考虑sessionStorage
+      if (!urlSessionId) {
+        const restored = restoreState();
+        if (restored) {
+          console.log('🟢 从缓存恢复会话状态');
+          // 如果是从缓存恢复，也要关闭加载状态
+          setSessionJumpLoading(false);
+          message.destroy('session-load');
+          return;
         }
       }
 
-      try {
-        const response = await sessionApi.listSessions(1, 1);
-        if (response.sessions && response.sessions.length > 0) {
-          const latestSession = response.sessions[0];
-          const sessionData = await sessionApi.getSessionMessages(latestSession.session_id);
-          setSessionId(latestSession.session_id);
-          setSessionTitle(latestSession.title);
-          if (sessionData.messages && sessionData.messages.length > 0) {
-            setMessages(sessionData.messages.map((m: any) => ({
-              id: m.id?.toString() || Date.now().toString(),
-              role: m.role,
-              content: m.content,
-              timestamp: new Date(m.timestamp),
-            })));
-          }
-          console.log('加载最近会话:', latestSession.session_id);
-        }
-      } catch (error) {
-        console.warn('加载最近会话失败:', error);
+       // 🔴 修复4: 如果都没有，加载加载最近会话
+       try {
+         const response = await sessionApi.listSessions(1, 1);
+         if (response.sessions && response.sessions.length > 0) {
+           const latestSession = response.sessions[0];
+           const sessionData = await sessionApi.getSessionMessages(latestSession.session_id);
+           setSessionId(latestSession.session_id);
+           
+           // 🔴 修复5: 使用统一的标题管理函数
+           const title = getSessionTitle({
+             title: latestSession.title, // 优先使用listSessions返回的title
+             messages: sessionData.messages
+           }, '会话');
+           setSessionTitle(title);
+           
+           // ⭐ 2026-02-25 更新：加载新增字段
+           if (latestSession.version !== undefined) {
+             setSessionVersion(latestSession.version);
+           }
+           if (latestSession.title_locked !== undefined) {
+             setTitleLocked(latestSession.title_locked);
+           }
+           if (latestSession.title_source) {
+             setTitleSource(latestSession.title_source);
+           }
+           
+           if (sessionData.messages && sessionData.messages.length > 0) {
+             setMessages(sessionData.messages.map((m: any) => ({
+               id: m.id?.toString() || Date.now().toString(),
+               role: m.role,
+               content: m.content,
+               timestamp: new Date(m.timestamp),
+             })));
+           }
+           console.log('🟡 加载最近会话:', latestSession.session_id, '标题:', title, '版本:', latestSession.version);
+            
+           // 关闭加载状态
+           setSessionJumpLoading(false);
+           message.destroy('session-load');
+         }
+       } catch (error) {
+         console.warn('加载最近会话失败:', error);
+        // 即使失败也关闭加载状态
+        setSessionJumpLoading(false);
+        message.destroy('session-load');
       }
+      
+      // 标记初始化完成
+      setIsInitialized(true);
     };
 
     loadSession();
@@ -405,6 +691,27 @@ const NewChatContainer: React.FC = () => {
   const handleSend = async () => {
     if (!inputValue.trim() || loading) return;
 
+    // 🔴 修复：添加输入长度限制和验证
+    if (inputValue.trim().length > 5000) {
+      message.warning('消息过长，请精简到5000字符以内');
+      return;
+    }
+
+    // 🔴 修复：网络连接检查
+    setLoading(true);
+    try {
+      const isNetworkOK = await checkNetworkConnection();
+      if (!isNetworkOK) {
+        message.error('网络连接异常，请检查网络后重试');
+        setLoading(false);
+        return;
+      }
+    } catch (error) {
+      console.warn('网络检查异常:', error);
+    } finally {
+      setLoading(false);
+    }
+
     let currentSessionId = sessionId;
     if (!currentSessionId) {
       try {
@@ -413,7 +720,10 @@ const NewChatContainer: React.FC = () => {
         setSessionId(currentSessionId);
         console.log('创建新会话:', currentSessionId);
       } catch (error) {
+        const errMsg = error instanceof Error ? error.message : '网络错误';
+        message.error(`创建会话失败: ${errMsg}`);
         console.error('创建会话失败:', error);
+        return; // 🔴 修复：创建会话失败时停止发送
       }
     }
 
@@ -468,12 +778,17 @@ const NewChatContainer: React.FC = () => {
           message.error('危险操作已被系统拦截');
           break;
       }
-    } catch (error) {
-      console.warn('安全检测异常:', error);
-      setCheckingDanger(false);
-      await executeStreamSend(userMessage);
-    }
-  };
+      } catch (error) {
+        console.warn('安全检测异常:', error);
+        setCheckingDanger(false);
+        // 🔴 修复：更好的错误处理和用户反馈
+        message.warning({
+          content: '安全检测服务暂时不可用，将以普通模式发送消息',
+          duration: 3,
+        });
+        await executeStreamSend(userMessage);
+      }
+    };
 
   /**
    * 危险命令确认执行
@@ -498,14 +813,23 @@ const NewChatContainer: React.FC = () => {
   };
 
   /**
-   * 新建会话 - 前端小新代修改 UX-C01: 新会话提示
+   * 新建会话 - 内部实现，支持重试机制
    */
-  const handleNewSession = async () => {
+  const handleNewSessionInternal = async (retry: number = 0) => {
+    const retryKey = 'new-session';
+    const maxRetries = 3;
+    
+    setLoading(true);
     try {
-      const newSession = await sessionApi.createSession('新会话');
+      // 生成智能标题
+      const newTitle = generateNewSessionTitle();
+      const newSession = await sessionApi.createSession(newTitle);
       setSessionId(newSession.session_id);
-      setSessionTitle('新会话');
+      setSessionTitle(newTitle);
       setMessages([]);
+      
+      // 🔴 修复：清除旧的sessionStorage
+      sessionStorage.removeItem(STORAGE_KEY);
       
       // 添加系统提示消息 - 新会话提示
       const systemMessage: Message = {
@@ -519,11 +843,56 @@ const NewChatContainer: React.FC = () => {
       clearSteps();
       disconnect();
       window.history.pushState({}, '', `/?session_id=${newSession.session_id}`);
-      message.success('已创建新会话');
+      
+      // 🎨 优化：添加更丰富的反馈
+      message.success({
+        content: `已创建新会话: ${newTitle}`,
+        duration: 3,
+        style: { marginTop: '50vh' },
+      });
+      
+      // 重置重试计数
+      setRetryCount(prev => ({ ...prev, [retryKey]: 0 }));
+      
     } catch (error) {
-      message.error('创建会话失败');
+      // P1级别优化：重试机制
+      if (retry < maxRetries) {
+        const newRetry = retry + 1;
+        setRetryCount(prev => ({ ...prev, [retryKey]: newRetry }));
+        
+        message.warning({
+          content: `创建会话失败，正在重试 (${newRetry}/${maxRetries})...`,
+          duration: 2,
+        });
+        
+        // 延迟1秒后重试
+        setTimeout(() => {
+          handleNewSessionInternal(newRetry);
+        }, 1000);
+        return;
+      }
+      
+      // 🔴 修复：更好的错误处理
+      const errMsg = error instanceof Error ? error.message : '未知错误';
+      message.error({
+        content: `创建会话失败: ${errMsg}`,
+        duration: 5,
+      });
       console.error('创建会话失败:', error);
+      
+      // 重置重试计数
+      setRetryCount(prev => ({ ...prev, [retryKey]: 0 }));
+      
+    } finally {
+      setLoading(false);
     }
+  };
+
+  /**
+   * 新建会话 - 按钮点击处理函数
+   */
+  const handleNewSession = () => {
+    handleNewSessionInternal(0);
   };
 
   /**
@@ -544,45 +913,49 @@ const NewChatContainer: React.FC = () => {
           {isReceiving && (
             <Badge status="processing" text="接收中..." />
           )}
-          {sessionId && (
-            <Tag 
-              color="blue"
-              icon={editingTitle ? null : <EditOutlined />}
-              onClick={() => {
-                if (!editingTitle) {
-                  setTitleInput(sessionTitle);
-                  setEditingTitle(true);
-                }
-              }}
-              style={{ cursor: 'pointer' }}
-            >
-              {sessionTitle}
-            </Tag>
-          )}
-          {editingTitle && (
-            <Input
-              size="small"
-              value={titleInput}
-              onChange={(e) => setTitleInput(e.target.value)}
-              onPressEnter={async () => {
-                if (titleInput.trim() && sessionId) {
-                  try {
-                     await sessionApi.updateSession(sessionId, titleInput.trim(), 1);
-                    setSessionTitle(titleInput.trim());
-                    message.success('会话标题已更新');
-                  } catch (error) {
-                    message.error('更新标题失败');
-                  }
-                }
-                setEditingTitle(false);
-              }}
-              onBlur={() => {
-                setEditingTitle(false);
-              }}
-              style={{ width: 150 }}
-              autoFocus
-            />
-          )}
+            {sessionId && (
+              editingTitle ? (
+                <Space>
+                  <Input
+                    value={titleInput}
+                    onChange={(e) => setTitleInput(e.target.value)}
+                    onPressEnter={async (e) => {
+                      e.preventDefault();
+                      if (titleInput.trim() && sessionId) {
+                        try {
+                          // 🔴 修复：回车时保存
+                      await sessionApi.updateSession(sessionId, titleInput.trim(), sessionVersion);
+                      setSessionTitle(titleInput.trim());
+                      setTitleSource('user');  // ⭐ 标记为用户修改
+                      await ensureTitlePersisted(sessionId, titleInput.trim());
+                      message.success('标题已保存');
+                        } catch (error) {
+                          console.warn('保存标题失败:', error);
+                          message.error('保存标题失败，请重试');
+                        }
+                      }
+                      setEditingTitle(false);
+                    }}
+                    onBlur={async () => {
+                      if (titleInput.trim() && sessionId) {
+                        try {
+                          // 🔴 修复：失去焦点时也保存
+                          await sessionApi.updateSession(sessionId, titleInput.trim(), sessionVersion);
+                          setSessionTitle(titleInput.trim());
+                          setTitleSource('user');  // ⭐ 标记为用户修改
+                          await ensureTitlePersisted(sessionId, titleInput.trim());
+                          message.success('会话标题已更新');
+                        } catch (error) {
+                          message.error('更新标题失败');
+                        }
+                      }
+                      setEditingTitle(false);
+                    }}
+               style={{ width: 200 }}
+               autoFocus
+               placeholder="输入会话标题"
+             />
+           )}
         </Space>
       }
       extra={
