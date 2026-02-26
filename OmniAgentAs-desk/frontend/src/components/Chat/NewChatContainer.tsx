@@ -197,9 +197,9 @@ const NewChatContainer: React.FC = () => {
           });
           
           // 🔴 修复：确保会话标题持久化
-          if (sessionTitle && sessionTitle.trim() && sessionTitle !== '新会话') {
-            await ensureTitlePersisted(sessionId, sessionTitle);
-          }
+           if (sessionTitle && sessionTitle.trim() && sessionTitle !== '新会话') {
+             debouncedSaveTitle(sessionId, sessionTitle);
+           }
           
           console.log('✅ 消息和标题保存成功');
         } catch (saveError) {
@@ -565,7 +565,7 @@ const NewChatContainer: React.FC = () => {
         
         // 延迟1秒后重试
         setTimeout(() => {
-          ensureTitlePersisted(sessionId, title);
+          debouncedSaveTitle(sessionId, title);
         }, 1000);
       } else {
         // 超过重试次数，显示错误
@@ -1033,11 +1033,11 @@ const NewChatContainer: React.FC = () => {
                       e.preventDefault();
                       if (titleInput.trim() && sessionId) {
                         try {
-                          // 🔴 修复：回车时保存
-                      await sessionApi.updateSession(sessionId, titleInput.trim(), sessionVersion);
-                      setSessionTitle(titleInput.trim());
-                      setTitleSource('user');  // ⭐ 标记为用户修改
-                      await ensureTitlePersisted(sessionId, titleInput.trim());
+                           // 🔴 修复：回车时保存
+                       await sessionApi.updateSession(sessionId, titleInput.trim(), sessionVersion);
+                       setSessionTitle(titleInput.trim());
+                       setTitleSource('user');  // ⭐ 标记为用户修改
+                       debouncedSaveTitle(sessionId, titleInput.trim());
                       message.success('标题已保存');
                         } catch (error) {
                           console.warn('保存标题失败:', error);
@@ -1053,7 +1053,7 @@ const NewChatContainer: React.FC = () => {
                           await sessionApi.updateSession(sessionId, titleInput.trim(), sessionVersion);
                           setSessionTitle(titleInput.trim());
                           setTitleSource('user');  // ⭐ 标记为用户修改
-                          await ensureTitlePersisted(sessionId, titleInput.trim());
+                          debouncedSaveTitle(sessionId, titleInput.trim());
                           message.success('会话标题已更新');
                         } catch (error) {
                           message.error('更新标题失败');
