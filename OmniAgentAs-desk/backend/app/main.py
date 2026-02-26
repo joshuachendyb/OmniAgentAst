@@ -8,8 +8,9 @@ import traceback
 import logging
 from pathlib import Path
 
-from app.api.v1 import health, chat, file_operations, config, sessions, security, execution
+from app.api.v1 import health, chat, file_operations, config, sessions, security, execution, metrics
 from app.utils.logger import logger
+from app.utils.monitoring import setup_monitoring
 
 # 配置日志
 logging.basicConfig(
@@ -55,6 +56,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 监控中间件配置
+setup_monitoring(app)
 
 # 【修复】全局异常处理 - HTTP异常
 @app.exception_handler(StarletteHTTPException)
@@ -113,6 +117,7 @@ app.include_router(config.router, prefix="/api/v1", tags=["config"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(security.router, prefix="/api/v1", tags=["security"])
 app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
+app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 
 @app.get("/")
 async def root():

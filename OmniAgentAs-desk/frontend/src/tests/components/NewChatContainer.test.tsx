@@ -20,14 +20,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 describe('防抖机制', () => {
   let mockFn: ReturnType<typeof vi.fn>;
-  let timeoutId: NodeJS.Timeout | null = null;
+    let timeoutId: number | null = null;
 
   // 防抖函数实现（与NewChatContainer.tsx中的实现相同）
   const debounce = <T extends (...args: any[]) => any>(
     func: T,
     delay: number
   ): ((...args: Parameters<T>) => void) => {
-    let timeoutId: NodeJS.Timeout | null = null;
+  let timeoutId: number | null = null;
     
     return (...args: Parameters<T>): void => {
       if (timeoutId) {
@@ -242,7 +242,6 @@ describe('标题来源标记逻辑', () => {
     let titleSource: 'user' | 'auto' = 'auto';
     
     // 自动生成标题（来源保持不变）
-    const newTitle = '2月26日 下午会话 14:30';
     titleSource = 'auto'; // 明确标记
     
     expect(titleSource).toBe('auto');
@@ -294,6 +293,7 @@ describe('版本控制逻辑', () => {
     const serverVersion = 5;
     const clientVersion = 1;
     
+    // @ts-ignore
     if (clientVersion !== serverVersion) {
       expect(() => {
         throw new Error('版本号不匹配，会话已被其他客户端修改');
@@ -320,8 +320,7 @@ describe('版本控制逻辑', () => {
 
 describe('标题持久化逻辑', () => {
   it('应该在消息保存后持久化标题', () => {
-    const sessionId = 'test-session-123';
-    const sessionTitle = '测试标题';
+    let sessionTitle: string = '测试标题';
     const messages = [
       { role: 'user', content: '你好' },
       { role: 'assistant', content: '你好！有什么我可以帮助你的吗？' }
@@ -344,14 +343,14 @@ describe('标题持久化逻辑', () => {
   });
 
   it('默认标题不应持久化', () => {
-    const sessionTitle = '新会话';
+    let sessionTitle: string = '新会话';
     const shouldPersist = sessionTitle !== '新会话' && sessionTitle.trim() !== '';
     
     expect(shouldPersist).toBe(false);
   });
 
   it('有效标题应该持久化', () => {
-    const sessionTitle = '用户定义的会话标题';
+    let sessionTitle: string = '用户定义的会话标题';
     const shouldPersist = sessionTitle !== '新会话' && sessionTitle.trim() !== '';
     
     expect(shouldPersist).toBe(true);

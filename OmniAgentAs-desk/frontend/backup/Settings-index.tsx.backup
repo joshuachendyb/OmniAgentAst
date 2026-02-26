@@ -28,6 +28,7 @@ import {
   Col,
   Switch,
   Alert,
+  Progress,
 } from 'antd';
 import {
   PlusOutlined,
@@ -49,11 +50,132 @@ const { Text } = Typography;
 const { TabPane } = Tabs;
 
 /**
+ * 全局配置区域组件（ai.provider和ai.model）
+ * @author 小新
+ * @update 2026-02-26 新增
+ */
+const GlobalConfigArea: React.FC<{
+  providers: ProviderInfo[];
+  currentProvider: string;
+  currentModel: string;
+  onProviderChange: (provider: string) => void;
+  onModelChange: (model: string) => void;
+}> = ({ providers, currentProvider, currentModel, onProviderChange, onModelChange }) => {
+  return (
+    <Card size="small" style={{ marginBottom: 24 }}>
+      <Row gutter={[16, 16]}>
+        <Col span={12}>
+          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+            当前Provider:
+          </Text>
+          <Select
+            value={currentProvider}
+            onChange={onProviderChange}
+            style={{ width: '100%' }}
+            placeholder="选择Provider"
+          >
+            {providers.map(p => (
+              <Select.Option key={p.name} value={p.name}>
+                {p.name}
+              </Select.Option>
+            ))}
+          </Select>
+        </Col>
+        <Col span={12}>
+          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+            当前模型:
+          </Text>
+          <Select
+            value={currentModel}
+            onChange={onModelChange}
+            style={{ width: '100%' }}
+            placeholder="选择模型"
+          >
+            {providers.find(p => p.name === currentProvider)?.models.map(model => (
+              <Select.Option key={model} value={model}>
+                {model}
+              </Select.Option>
+            ))}
+          </Select>
+        </Col>
+      </Row>
+    </Card>
+  );
+};
+
+/**
+ * Provider列表组件（左侧）
+ * @author 小新
+ * @update 2026-02-26 新增
+ */
+const ProviderList: React.FC<{
+  providers: ProviderInfo[];
+  currentProvider: string;
+  onSelect: (provider: ProviderInfo) => void;
+}> = ({ providers, currentProvider, onSelect }) => {
+  return (
+    <div style={{ borderRight: '1px solid #f0f0f0', paddingRight: 16 }}>
+      <Typography.Title level={5} style={{ marginBottom: 16 }}>
+        Provider列表
+      </Typography.Title>
+      {providers.map(provider => (
+        <Card
+          key={provider.name}
+          size="small"
+          style={{ marginBottom: 12, cursor: 'pointer' }}
+          onClick={() => onSelect(provider)}
+          bodyStyle={{
+            backgroundColor: provider.name === currentProvider ? '#e6f7ff' : 'transparent',
+          }}
+        >
+          <Space>
+            <ApiOutlined />
+            <Text strong>{provider.name}</Text>
+            {provider.name === currentProvider && (
+              <Tag color="success">当前使用</Tag>
+            )}
+          </Space>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
+/**
+ * 脏状态检测Hook
+ * @author 小新
+ * @update 2026-02-26 新增
+ */
+const useDirtyState = (form: FormInstance, onDirtyChange: (isDirty: boolean) => void) => {
+  useEffect(() => {
+    const checkDirty = () => {
+      onDirtyChange(form.isFieldsTouched());
+    };
+
+    const unsubscribe = form.getFieldsValue();
+    checkDirty();
+
+    const handleFieldChange = () => {
+      checkDirty();
+    };
+
+    form.onValuesChange(handleFieldChange);
+
+    return () => {
+      form.offValuesChange(handleFieldChange);
+    };
+  }, [form, onDirtyChange]);
+};
+
+/**
  * Provider管理页面组件
+ * @author 小新
+ * @update 2026-02-26 重构：提取子组件
  */
 const ProviderSettings: React.FC = () => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState<string>('');
+  const [currentModel, setCurrentModel] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [validationResult, setValidationResult] = useState<any>(null);
   const [validationModalVisible, setValidationModalVisible] = useState(false);
@@ -61,12 +183,19 @@ const ProviderSettings: React.FC = () => {
   const [addModelModalVisible, setAddModelModalVisible] = useState(false);
   const [addProviderModalVisible, setAddProviderModalVisible] = useState(false);
   const [editingProvider, setEditingProvider] = useState<ProviderInfo | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
   const [selectedProviderForModel, setSelectedProviderForModel] = useState<string>('');
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({}); // 控制每个Provider的API Key显示
-  
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set()); // 选中的模型
+  const [deleteProgress, setDeleteProgress] = useState<{ current: number, total: number }>({ current: 0, total: 0 });
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+
   const [form] = Form.useForm();
   const [modelForm] = Form.useForm();
   const [providerForm] = Form.useForm();
+
+  // 使用脏状态检测Hook
+  useDirtyState(form, setIsDirty);
 
   // 切换API Key显示/隐藏
   const toggleShowApiKey = (providerName: string) => {
@@ -110,7 +239,6 @@ const ProviderSettings: React.FC = () => {
     form.setFieldsValue({
       api_base: provider.api_base,
       api_key: provider.api_key,
-      model: provider.model,
       timeout: provider.timeout,
       max_retries: provider.max_retries,
     });
@@ -148,6 +276,42 @@ const ProviderSettings: React.FC = () => {
       loadConfig();
     } catch (error: any) {
       message.error(error.response?.data?.detail || '删除失败');
+    }
+  };
+
+  // 批量删除模型（并发优化）
+  const handleBatchDeleteModels = async (providerName: string, models: string[]) => {
+    setDeleteProgress({ current: 0, total: models.length });
+    setDeleteModalVisible(false);
+
+    try {
+      const deletePromises = models.map(async (modelName, index) => {
+        try {
+          await configApi.deleteModel(providerName, modelName);
+          setDeleteProgress({ current: index + 1, total: models.length });
+          return { success: true, model: modelName };
+        } catch (error) {
+          setDeleteProgress({ current: index + 1, total: models.length });
+          return { success: false, model: modelName, error };
+        }
+      });
+
+      const results = await Promise.all(deletePromises);
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.length - successCount;
+
+      if (failCount === 0) {
+        message.success(`批量删除完成：${successCount} 个模型`);
+      } else {
+        message.warning(`批量删除完成：${successCount} 成功，${failCount} 失败`);
+      }
+
+      setSelectedModels(new Set());
+      loadConfig();
+    } catch (error: any) {
+      message.error('批量删除失败');
+    } finally {
+      setDeleteProgress({ current: 0, total: 0 });
     }
   };
 
@@ -209,8 +373,44 @@ const ProviderSettings: React.FC = () => {
     return nameMap[name] || name;
   };
 
+  // 全局配置 - Provider切换
+  const onProviderChange = async (provider: string) => {
+    const providerData = providers.find(p => p.name === provider);
+    if (!providerData) return;
+    setCurrentProvider(provider);
+    setCurrentModel(providerData.model || providerData.models[0] || '');
+    await configApi.updateConfig({
+      ai_provider: provider as 'zhipuai' | 'opencode' | 'longcat',
+      ai_model: providerData.model || providerData.models[0] || '',
+    });
+    loadConfig();
+  };
+
+  // 全局配置 - Model切换
+  const onModelChange = async (model: string) => {
+    setCurrentModel(model);
+    await configApi.updateConfig({
+      ai_provider: currentProvider as 'zhipuai' | 'opencode' | 'longcat',
+      ai_model: model,
+    });
+    loadConfig();
+  };
+
   return (
     <div>
+      {/* 全局配置区域 */}
+      <GlobalConfigArea
+        providers={providers}
+        currentProvider={currentProvider}
+        currentModel={currentModel}
+        onProviderChange={onProviderChange}
+        onModelChange={onModelChange}
+      />
+      {/* 配置验证提示 - 成功/失败都显示 */}
+
+
+
+
       {/* 配置验证提示 - 成功/失败都显示 */}
       {validationResult && (
         <Alert
@@ -470,38 +670,72 @@ const ProviderSettings: React.FC = () => {
 
             {/* 模型列表 */}
             <div style={{ marginBottom: 8 }}>
-              <Space style={{ marginBottom: 8 }}>
-                <Text strong>模型列表：</Text>
-                <Button 
-                  type="link" 
-                  size="small" 
-                  icon={<PlusOutlined />}
-                  onClick={() => {
-                    setSelectedProviderForModel(provider.name);
-                    setAddModelModalVisible(true);
-                  }}
-                >
-                  添加模型
-                </Button>
-              </Space>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {provider.models.map((model) => (
-                  <Tag
-                    key={model}
-                    color={model === provider.model ? 'geekblue' : 'default'}
-                    closable
-                    onClose={(e) => {
-                      e.preventDefault();
-                      handleDeleteModel(provider.name, model);
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => handleSwitchProvider(provider.name, model)}
-                  >
-                    {model === provider.model && <CheckCircleOutlined style={{ marginRight: 4 }} />}
-                    {model}
-                  </Tag>
-                ))}
-              </div>
+               <Space style={{ marginBottom: 8 }}>
+                 <Text strong>模型列表：</Text>
+                 <Button
+                   type="link"
+                   size="small"
+                   icon={<PlusOutlined />}
+                   onClick={() => {
+                     setSelectedProviderForModel(provider.name);
+                     setAddModelModalVisible(true);
+                   }}
+                 >
+                   添加模型
+                 </</Button>
+                 {selectedModels.size > 0 && (
+                   <Popconfirm
+                     title={`确定删除选中的 ${selectedModels.size} 个模型吗？`}
+                     onConfirm={() => handleBatchDeleteModels(provider.name, Array.from(selectedModels))}
+                     okText="确定"
+                     cancelText="取消"
+                     okButtonProps={{ danger: true }}
+                   >
+                     <Button type="link" danger icon={<DeleteOutlined />}>
+                       批量删除 ({selectedModels.size})
+                     </Button>
+                   </Popconfirm>
+                 )}
+               </Space>
+               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                 {provider.models.map((model) => (
+                   <Tag
+                     key={model}
+                     color={model === provider.model ? 'geekblue' : selectedModels.has(model) ? 'volcano' : 'default'}
+                     closable
+                     onClose={(e) => {
+                       e.preventDefault();
+                       e.stopPropagation();
+                       handleDeleteModel(provider.name, model);
+                     }}
+                     onClick={() => {
+                       const newSelected = new Set(selectedModels);
+                       if (newSelected.has(model)) {
+                         newSelected.delete(model);
+                       } else {
+                         newSelected.add(model);
+                       }
+                       setSelectedModels(newSelected);
+                     }}
+                     style={{ cursor: 'pointer', userSelect: 'none' }}
+                   >
+                     {model === provider.model && <CheckCircleOutlined style={{ marginRight: 4 }} />}
+                     {selectedModels.has(model) && <span style={{ marginRight: 4 }}>✓</span>}
+                     {model}
+                   </Tag>
+                 ))}
+               </div>
+
+               {/* 批量删除进度指示器 */}
+               {deleteProgress.total > 0 && (
+                 <div style={{ marginTop: 8 }}>
+                   <Progress
+                     percent={Math.round((deleteProgress.current / deleteProgress.total) * 100)}
+                     status="active"
+                     format={() => `${deleteProgress.current}/${deleteProgress.total}`}
+                   />
+                 </div>
+               )}
             </div>
           </Card>
         )}
@@ -533,14 +767,6 @@ const ProviderSettings: React.FC = () => {
             name="api_key"
           >
             <Input.Password placeholder="留空保持原密钥不变" />
-          </Form.Item>
-
-          <Form.Item
-            label="当前使用模型"
-            name="model"
-            rules={[{ required: true, message: '请输入模型名称' }]}
-          >
-            <Input placeholder="glm-4-flash" />
           </Form.Item>
 
           <Row gutter={16}>
@@ -909,8 +1135,7 @@ const SessionHistory: React.FC = () => {
   // 前端小新代修改 UX-H03: 批量删除
   const handleBatchDelete = async () => {
     try {
-      // 将 Set 转换为数组进行迭代
-      for (const sessionId of Array.from(selectedSessionIds)) {
+      for (const sessionId of selectedSessionIds) {
         await sessionApi.deleteSession(sessionId);
       }
       message.success(`已删除 ${selectedSessionIds.size} 个会话`);
@@ -1031,13 +1256,71 @@ const SessionHistory: React.FC = () => {
  * 设置页面主组件
  */
 const Settings: React.FC = () => {
-  return (
-    <div style={{ padding: 0, margin: 0 }}>
-      <Card style={{ marginTop: 0 }} bodyStyle={{ padding: '32px' }}> {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
-         <Tabs 
-           defaultActiveKey="model" 
-           type="line" 
-         >
+  const [activeKey, setActiveKey] = useState('model');
+  const [isDirty, setIsDirty] = useState(false);
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [pendingKey, setPendingKey] = useState<string>('');
+  const [configFilePath, setConfigFilePath] = useState<string>('');
+
+  const loadConfigFilePath = async () => {
+    try {
+      const result = await configApi.fixConfig();
+      setConfigFilePath(result.backup_path);
+    } catch (error) {
+      console.error('加载配置文件路径失败:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadConfigFilePath();
+  }, []);
+
+  const handleOpenConfigDir = () => {
+    message.info(`配置文件路径: ${configFilePath}`);
+  };
+
+  // Tab切换处理
+  const handleTabChange = (key: string) => {
+    if (isDirty) {
+      setPendingKey(key);
+      setConfirmModalVisible(true);
+    } else {
+      setActiveKey(key);
+    }
+  };
+
+  // 确认切换Tab
+  const handleConfirmSwitch = () => {
+    setIsDirty(false);
+    setActiveKey(pendingKey);
+    setConfirmModalVisible(false);
+  };
+
+  // 取消切换Tab
+  const handleCancelSwitch = () => {
+    setConfirmModalVisible(false);
+  };
+
+   return (
+     <div style={{ padding: 0, margin: 0 }}>
+        <Card style={{ marginTop: 0 }} bodyStyle={{ padding: '32px' }}> {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
+          {/* 配置文件路径标注 */}
+          {configFilePath && (
+            <div style={{ marginBottom: 16, padding: '12px', background: '#f6ffed', borderRadius: 4 }}>
+              <Space>
+                <Text type="secondary">配置文件：</Text>
+                <Text code>{configFilePath}</Text>
+                <Button type="link" size="small" onClick={handleOpenConfigDir}>
+                  查看路径
+                </Button>
+              </Space>
+            </div>
+          )}
+          <Tabs
+            activeKey={activeKey}
+            onChange={handleTabChange}
+            type="line"
+          >
           <TabPane
             tab={
               <span>
@@ -1070,10 +1353,22 @@ const Settings: React.FC = () => {
           >
             <SessionHistory />
           </TabPane>
-        </Tabs>
-      </Card>
-    </div>
-  );
+          </Tabs>
+       </Card>
+
+      {/* Tab切换确认对话框 */}
+      <Modal
+        title="确认切换Tab"
+        open={confirmModalVisible}
+        onOk={handleConfirmSwitch}
+        onCancel={handleCancelSwitch}
+        okText="保存并切换"
+        cancelText="取消切换"
+      >
+        <p>当前Tab有未保存的修改，是否保存后切换？</p>
+      </Modal>
+     </div>
+   );
 };
 
 export default Settings;
