@@ -28,6 +28,7 @@ import {
   Col,
   Switch,
   Alert,
+  Progress,
 } from 'antd';
 import {
   PlusOutlined,
@@ -185,7 +186,10 @@ const ProviderSettings: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [selectedProviderForModel, setSelectedProviderForModel] = useState<string>('');
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({}); // 控制每个Provider的API Key显示
-  
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set()); // 选中的模型
+  const [deleteProgress, setDeleteProgress] = useState<{ current: number, total: number }>({ current: 0, total: 0 });
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+
   const [form] = Form.useForm();
   const [modelForm] = Form.useForm();
   const [providerForm] = Form.useForm();
@@ -272,6 +276,42 @@ const ProviderSettings: React.FC = () => {
       loadConfig();
     } catch (error: any) {
       message.error(error.response?.data?.detail || '删除失败');
+    }
+  };
+
+  // 批量删除模型（并发优化）
+  const handleBatchDeleteModels = async (providerName: string, models: string[]) => {
+    setDeleteProgress({ current: 0, total: models.length });
+    setDeleteModalVisible(false);
+
+    try {
+      const deletePromises = models.map(async (modelName, index) => {
+        try {
+          await configApi.deleteModel(providerName, modelName);
+          setDeleteProgress({ current: index + 1, total: models.length });
+          return { success: true, model: modelName };
+        } catch (error) {
+          setDeleteProgress({ current: index + 1, total: models.length });
+          return { success: false, model: modelName, error };
+        }
+      });
+
+      const results = await Promise.all(deletePromises);
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.length - successCount;
+
+      if (failCount === 0) {
+        message.success(`批量删除完成：${successCount} 个模型`);
+      } else {
+        message.warning(`批量删除完成：${successCount} 成功，${failCount} 失败`);
+      }
+
+      setSelectedModels(new Set());
+      loadConfig();
+    } catch (error: any) {
+      message.error('批量删除失败');
+    } finally {
+      setDeleteProgress({ current: 0, total: 0 });
     }
   };
 
@@ -630,38 +670,72 @@ const ProviderSettings: React.FC = () => {
 
             {/* 模型列表 */}
             <div style={{ marginBottom: 8 }}>
-              <Space style={{ marginBottom: 8 }}>
-                <Text strong>模型列表：</Text>
-                <Button 
-                  type="link" 
-                  size="small" 
-                  icon={<PlusOutlined />}
-                  onClick={() => {
-                    setSelectedProviderForModel(provider.name);
-                    setAddModelModalVisible(true);
-                  }}
-                >
-                  添加模型
-                </Button>
-              </Space>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {provider.models.map((model) => (
-                  <Tag
-                    key={model}
-                    color={model === provider.model ? 'geekblue' : 'default'}
-                    closable
-                    onClose={(e) => {
-                      e.preventDefault();
-                      handleDeleteModel(provider.name, model);
-                    }}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => handleSwitchProvider(provider.name, model)}
-                  >
-                    {model === provider.model && <CheckCircleOutlined style={{ marginRight: 4 }} />}
-                    {model}
-                  </Tag>
-                ))}
-              </div>
+               <Space style={{ marginBottom: 8 }}>
+                 <Text strong>模型列表：</Text>
+                 <Button
+                   type="link"
+                   size="small"
+                   icon={<PlusOutlined />}
+                   onClick={() => {
+                     setSelectedProviderForModel(provider.name);
+                     setAddModelModalVisible(true);
+                   }}
+                 >
+                   添加模型
+                 </</Button>
+                 {selectedModels.size > 0 && (
+                   <Popconfirm
+                     title={`确定删除选中的 ${selectedModels.size} 个模型吗？`}
+                     onConfirm={() => handleBatchDeleteModels(provider.name, Array.from(selectedModels))}
+                     okText="确定"
+                     cancelText="取消"
+                     okButtonProps={{ danger: true }}
+                   >
+                     <Button type="link" danger icon={<DeleteOutlined />}>
+                       批量删除 ({selectedModels.size})
+                     </Button>
+                   </Popconfirm>
+                 )}
+               </Space>
+               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                 {provider.models.map((model) => (
+                   <Tag
+                     key={model}
+                     color={model === provider.model ? 'geekblue' : selectedModels.has(model) ? 'volcano' : 'default'}
+                     closable
+                     onClose={(e) => {
+                       e.preventDefault();
+                       e.stopPropagation();
+                       handleDeleteModel(provider.name, model);
+                     }}
+                     onClick={() => {
+                       const newSelected = new Set(selectedModels);
+                       if (newSelected.has(model)) {
+                         newSelected.delete(model);
+                       } else {
+                         newSelected.add(model);
+                       }
+                       setSelectedModels(newSelected);
+                     }}
+                     style={{ cursor: 'pointer', userSelect: 'none' }}
+                   >
+                     {model === provider.model && <CheckCircleOutlined style={{ marginRight: 4 }} />}
+                     {selectedModels.has(model) && <span style={{ marginRight: 4 }}>✓</span>}
+                     {model}
+                   </Tag>
+                 ))}
+               </div>
+
+               {/* 批量删除进度指示器 */}
+               {deleteProgress.total > 0 && (
+                 <div style={{ marginTop: 8 }}>
+                   <Progress
+                     percent={Math.round((deleteProgress.current / deleteProgress.total) * 100)}
+                     status="active"
+                     format={() => `${deleteProgress.current}/${deleteProgress.total}`}
+                   />
+                 </div>
+               )}
             </div>
           </Card>
         )}
