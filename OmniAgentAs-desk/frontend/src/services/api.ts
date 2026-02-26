@@ -338,7 +338,7 @@ export interface ConfigFixResponse {
   backup_path: string;
 }
 
-export interface ProviderAddRequest { {
+export interface ProviderAddRequest {
   name: string;
   api_base: string;
   api_key: string;

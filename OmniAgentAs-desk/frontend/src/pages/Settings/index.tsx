@@ -148,6 +148,7 @@ const ProviderList: React.FC<{
 const ProviderSettings: React.FC = () => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState<string>('');
+  const [currentModel, setCurrentModel] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [validationResult, setValidationResult] = useState<any>(null);
   const [validationModalVisible, setValidationModalVisible] = useState(false);
@@ -303,8 +304,44 @@ const ProviderSettings: React.FC = () => {
     return nameMap[name] || name;
   };
 
+  // 全局配置 - Provider切换
+  const onProviderChange = async (provider: string) => {
+    const providerData = providers.find(p => p.name === provider);
+    if (!providerData) return;
+    setCurrentProvider(provider);
+    setCurrentModel(providerData.model || providerData.models[0] || '');
+    await configApi.updateConfig({
+      ai_provider: provider as 'zhipuai' | 'opencode' | 'longcat',
+      ai_model: providerData.model || providerData.models[0] || '',
+    });
+    loadConfig();
+  };
+
+  // 全局配置 - Model切换
+  const onModelChange = async (model: string) => {
+    setCurrentModel(model);
+    await configApi.updateConfig({
+      ai_provider: currentProvider as 'zhipuai' | 'opencode' | 'longcat',
+      ai_model: model,
+    });
+    loadConfig();
+  };
+
   return (
     <div>
+      {/* 全局配置区域 */}
+      <GlobalConfigArea
+        providers={providers}
+        currentProvider={currentProvider}
+        currentModel={currentModel}
+        onProviderChange={onProviderChange}
+        onModelChange={onModelChange}
+      />
+      {/* 配置验证提示 - 成功/失败都显示 */}
+
+
+
+
       {/* 配置验证提示 - 成功/失败都显示 */}
       {validationResult && (
         <Alert
