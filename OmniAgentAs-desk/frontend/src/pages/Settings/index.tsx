@@ -141,6 +141,32 @@ const ProviderList: React.FC<{
 };
 
 /**
+ * 脏状态检测Hook
+ * @author 小新
+ * @update 2026-02-26 新增
+ */
+const useDirtyState = (form: FormInstance, onDirtyChange: (isDirty: boolean) => void) => {
+  useEffect(() => {
+    const checkDirty = () => {
+      onDirtyChange(form.isFieldsTouched());
+    };
+
+    const unsubscribe = form.getFieldsValue();
+    checkDirty();
+
+    const handleFieldChange = () => {
+      checkDirty();
+    };
+
+    form.onValuesChange(handleFieldChange);
+
+    return () => {
+      form.offValuesChange(handleFieldChange);
+    };
+  }, [form, onDirtyChange]);
+};
+
+/**
  * Provider管理页面组件
  * @author 小新
  * @update 2026-02-26 重构：提取子组件
@@ -156,12 +182,16 @@ const ProviderSettings: React.FC = () => {
   const [addModelModalVisible, setAddModelModalVisible] = useState(false);
   const [addProviderModalVisible, setAddProviderModalVisible] = useState(false);
   const [editingProvider, setEditingProvider] = useState<ProviderInfo | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
   const [selectedProviderForModel, setSelectedProviderForModel] = useState<string>('');
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({}); // 控制每个Provider的API Key显示
   
   const [form] = Form.useForm();
   const [modelForm] = Form.useForm();
   const [providerForm] = Form.useForm();
+
+  // 使用脏状态检测Hook
+  useDirtyState(form, setIsDirty);
 
   // 切换API Key显示/隐藏
   const toggleShowApiKey = (providerName: string) => {
@@ -1152,13 +1182,41 @@ const SessionHistory: React.FC = () => {
  * 设置页面主组件
  */
 const Settings: React.FC = () => {
+  const [activeKey, setActiveKey] = useState('model');
+  const [isDirty, setIsDirty] = useState(false);
+  const [confirmModalVisible, setConfirmModalVisible] = useState(false);
+  const [pendingKey, setPendingKey] = useState<string>('');
+
+  // Tab切换处理
+  const handleTabChange = (key: string) => {
+    if (isDirty) {
+      setPendingKey(key);
+      setConfirmModalVisible(true);
+    } else {
+      setActiveKey(key);
+    }
+  };
+
+  // 确认切换Tab
+  const handleConfirmSwitch = () => {
+    setIsDirty(false);
+    setActiveKey(pendingKey);
+    setConfirmModalVisible(false);
+  };
+
+  // 取消切换Tab
+  const handleCancelSwitch = () => {
+    setConfirmModalVisible(false);
+  };
+
   return (
     <div style={{ padding: 0, margin: 0 }}>
-      <Card style={{ marginTop: 0 }} bodyStyle={{ padding: '32px' }}> {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
-         <Tabs 
-           defaultActiveKey="model" 
-           type="line" 
-         >
+       <Card style={{ marginTop: 0 }} bodyStyle={{ padding: '32px' }}> {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
+          <Tabs
+            activeKey={activeKey}
+            onChange={handleTabChange}
+            type="line"
+          >
           <TabPane
             tab={
               <span>
@@ -1191,10 +1249,22 @@ const Settings: React.FC = () => {
           >
             <SessionHistory />
           </TabPane>
-        </Tabs>
-      </Card>
-    </div>
-  );
+          </Tabs>
+       </Card>
+
+      {/* Tab切换确认对话框 */}
+      <Modal
+        title="确认切换Tab"
+        open={confirmModalVisible}
+        onOk={handleConfirmSwitch}
+        onCancel={handleCancelSwitch}
+        okText="保存并切换"
+        cancelText="取消切换"
+      >
+        <p>当前Tab有未保存的修改，是否保存后切换？</p>
+      </Modal>
+     </div>
+   );
 };
 
 export default Settings;
