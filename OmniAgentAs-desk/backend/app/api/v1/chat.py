@@ -220,8 +220,23 @@ async def chat(request: ChatRequest):
     支持文件操作：自动检测文件操作意图并执行
     """
     try:
+        # 【修复P2-002】验证消息列表
+        if not request.messages:
+            raise HTTPException(
+                status_code=400,
+                detail="消息列表不能为空"
+            )
+        
+        # 验证每条消息的内容
+        for i, msg in enumerate(request.messages):
+            if not msg.content or not msg.content.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"第{i+1}条消息内容不能为空"
+                )
+        
         # 获取最后一条用户消息
-        last_message = request.messages[-1].content if request.messages else ""
+        last_message = request.messages[-1].content
         
         # 【修复】检测文件操作意图（返回3个值：是否文件操作、操作类型、置信度）
         is_file_op, op_type, confidence = detect_file_operation_intent(last_message)
@@ -261,10 +276,29 @@ async def chat(request: ChatRequest):
             error=response.error
         )
         
+    except HTTPException:
+        # FastAPI的HTTP异常直接抛出，让FastAPI处理
+        raise
+    except ValueError as e:
+        # 客户端输入错误
+        logger.warning(f"聊天请求参数错误: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"请求参数错误: {str(e)}"
+        )
+    except IndexError as e:
+        # 消息列表索引错误（虽然前面已验证，但保留防御）
+        logger.warning(f"消息列表索引错误: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail="消息列表格式错误"
+        )
     except Exception as e:
+        # 服务端错误，记录详细日志但返回通用错误信息
+        logger.error(f"聊天请求服务端错误: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"对话请求失败: {str(e)}"
+            detail="服务器内部错误，请稍后重试"
         )
 
 

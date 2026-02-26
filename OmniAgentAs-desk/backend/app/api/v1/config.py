@@ -285,11 +285,15 @@ async def update_config(config_update: ConfigUpdate):
             try:
                 AIServiceFactory.switch_provider(config_update.ai_provider)
                 logger.info(f"切换AI提供商成功: {config_update.ai_provider}")
+            except HTTPException:
+                # FastAPI的HTTP异常直接抛出
+                raise
             except Exception as e:
-                logger.error(f"切换AI提供商失败: {e}")
+                # 【修复P2-007】记录详细日志但返回通用错误信息
+                logger.error(f"切换AI提供商失败: {e}", exc_info=True)
                 raise HTTPException(
                     status_code=500,
-                    detail=f"切换AI提供商失败: {str(e)}"
+                    detail="切换AI提供商失败，请检查配置"
                 )
         
         # 【修正】更新AI模型 - 只更新顶层ai.model
@@ -307,9 +311,30 @@ async def update_config(config_update: ConfigUpdate):
         # 更新API Key - 通用方式（不硬编码）
         if config_update.provider_api_keys:
             for provider_name, api_key in config_update.provider_api_keys.items():
+                # 【修复P2-003】验证API Key格式
+                if not api_key or not isinstance(api_key, str):
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Provider {provider_name} 的API Key不能为空"
+                    )
+                
+                # 基本格式验证：至少10个字符，去除空格后不能为空
+                cleaned_key = api_key.strip()
+                if len(cleaned_key) < 10:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Provider {provider_name} 的API Key格式无效（长度不足）"
+                    )
+                
+                # 检查Provider是否存在
                 if provider_name in config_data.get('ai', {}):
-                    config_data['ai'][provider_name]['api_key'] = api_key
+                    config_data['ai'][provider_name]['api_key'] = cleaned_key
                     logger.info(f"更新Provider API Key成功: {provider_name}")
+                else:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"不支持的Provider: {provider_name}"
+                    )
         
         # 确保app配置节存在
         if 'app' not in config_data:
@@ -374,8 +399,9 @@ async def update_config(config_update: ConfigUpdate):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"更新配置失败: {e}")
-        raise HTTPException(status_code=500, detail=f"更新配置失败: {str(e)}")
+        # 【修复P2-007】记录详细日志但返回通用错误信息
+        logger.error(f"更新配置失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="更新配置失败，请稍后重试")
 
 
 @router.post("/config/validate", response_model=ConfigValidateResponse)

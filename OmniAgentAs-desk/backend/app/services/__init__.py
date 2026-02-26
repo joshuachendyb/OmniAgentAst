@@ -336,8 +336,6 @@ class AIServiceFactory:
     @classmethod
     def get_service(cls, config_path: Optional[str] = None) -> BaseAIService:
         """获取AI服务实例 - 带完整配置验证"""
-        cls._instance = None
-        
         # 先进行配置验证
         validation = cls.validate_config(config_path)
         
@@ -355,6 +353,7 @@ class AIServiceFactory:
                 print(f"  ⚠️ {warning}")
         
         with cls._lock:
+            cls._instance = None  # 在锁内部重置，避免竞态条件
             config = cls.load_config(config_path)
             ai_config = config.get("ai", {})
             
@@ -481,6 +480,7 @@ class AIServiceFactory:
             cls._instance = None
             cls._current_provider = ""
             cls._config = None
+            print("[AIServiceFactory] 工厂状态已重置")
     
     @classmethod
     def get_service_for_model(cls, provider: str, model: str, config_path: Optional[str] = None):
@@ -576,7 +576,3 @@ class AIServiceFactory:
             )
             
             return cls._instance
-        cls._instance = None
-        cls._current_provider = ""
-        cls._config = None
-        print("[AIServiceFactory] 工厂状态已重置")
