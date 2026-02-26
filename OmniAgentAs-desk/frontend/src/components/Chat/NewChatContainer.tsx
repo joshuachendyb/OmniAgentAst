@@ -15,18 +15,20 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Input, Button, Card, List, Tag, Space, message, Badge } from 'antd';
+import { Input, Button, Card, List, Tag, Space, message, Badge, Tooltip } from 'antd';
 import { 
   SendOutlined, 
   RobotOutlined, 
   PlusOutlined, 
-  EditOutlined, 
+ 
   CloseCircleOutlined, 
   PauseCircleOutlined, 
   PlayCircleOutlined,
   ThunderboltOutlined,
   EyeOutlined,
-  EyeInvisibleOutlined
+  EyeInvisibleOutlined,
+  InfoCircleOutlined,
+  LockOutlined
 } from '@ant-design/icons';
 import { useSearchParams } from 'react-router-dom';
 import { sessionApi, ChatMessage, API_BASE_URL } from '../../services/api';
@@ -45,7 +47,7 @@ const debounce = <T extends (...args: any[]) => any>(
   func: T,
   delay: number
 ): ((...args: Parameters<T>) => void) => {
-  let timeoutId: NodeJS.Timeout | null = null;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
   
   return (...args: Parameters<T>): void => {
     if (timeoutId) {
@@ -463,6 +465,114 @@ const NewChatContainer: React.FC = () => {
     
     const dateStr = `${now.getMonth() + 1}月${now.getDate()}日`;
     return `${dateStr} ${timeOfDay}会话 ${hours}:${now.getMinutes().toString().padStart(2, '0')}`;
+  };
+
+  // ⭐ 确保标题持久化到后端（带防抖、重试、版本冲突处理）
+  const ensureTitlePersisted = async (sessionId: string, title: string) => {
+    if (!sessionId || !title.trim()) return;
+    
+    // ⭐ 防抖检查：标题未变化时跳过保存
+    if (title === lastSavedTitle) {
+      console.log('标题未变化，跳过保存');
+      return;
+    }
+    
+    // ⭐ 防抖检查：正在保存时跳过重复请求
+    if (saveStatus === 'saving') {
+      console.log('正在保存中，跳过重复请求');
+      return;
+    }
+    
+    const retryKey = `title-save-${sessionId}`;
+    const currentRetry = retryCount[retryKey] || 0;
+    
+    try {
+      setSaveStatus('saving');
+      setIsSavingTitle(true);
+      
+      // 如果标题不是默认标题，保存到后端
+      if (title !== '新会话' && title !== '会话') {
+        // ⭐ 直接使用状态中的版本号
+        const response = await sessionApi.updateSession(sessionId, title.trim(), sessionVersion);
+        
+        // ⭐ 更新本地版本号
+        if (response.version) {
+          setSessionVersion(response.version);
+        }
+        
+        // ⭐ 更新最后保存的标题
+        setLastSavedTitle(title);
+        
+        console.log('💾 标题持久化成功:', sessionId, title, '版本:', sessionVersion);
+      }
+      
+      // 更新本地sessionStorage
+      saveState();
+      
+      // 保存成功
+      setSaveStatus('saved');
+      setIsSavingTitle(false);
+      setLastSaveTime(Date.now());
+      setRetryCount(prev => ({ ...prev, [retryKey]: 0 }));
+      
+      // 2秒后恢复到idle状态
+      setTimeout(() => {
+        setSaveStatus('idle');
+      }, 2000);
+      
+    } catch (error: any) {
+      console.warn('标题持久化失败:', error);
+      
+      // ⭐ 处理409版本冲突错误
+      if (error?.response?.status === 409) {
+        const errorMsg = error.response.data?.detail || '版本冲突，该会话已被其他人修改';
+        message.error(errorMsg);
+        
+        // ⭐ 从服务器重新获取最新数据
+        try {
+          const sessionData = await sessionApi.getSessionMessages(sessionId);
+          if (sessionData.version) {
+            setSessionVersion(sessionData.version);
+          }
+          if (sessionData.title) {
+            setSessionTitle(sessionData.title);
+          }
+          if (sessionData.title_locked !== undefined) {
+            setTitleLocked(sessionData.title_locked);
+          }
+          if (sessionData.title_source) {
+            setTitleSource(sessionData.title_source);
+          }
+          
+          message.info('已自动同步最新数据，请重试');
+        } catch (syncError) {
+          console.error('同步最新数据失败:', syncError);
+        }
+        
+        setSaveStatus('error');
+        setIsSavingTitle(false);
+        return;
+      }
+      
+      // 其他错误：重试机制 - 最多3次
+      setSaveStatus('error');
+      setIsSavingTitle(false);
+      
+      if (currentRetry < 3) {
+        const newRetry = currentRetry + 1;
+        setRetryCount(prev => ({ ...prev, [retryKey]: newRetry }));
+        message.warning(`保存失败，正在重试 (${newRetry}/3)...`);
+        
+        // 延迟1秒后重试
+        setTimeout(() => {
+          ensureTitlePersisted(sessionId, title);
+        }, 1000);
+      } else {
+        // 超过重试次数，显示错误
+        message.error('保存失败，请检查网络后重试');
+        setRetryCount(prev => ({ ...prev, [retryKey]: 0 }));
+      }
+    }
   };
 
   // ⭐ 防抖版本的保存标题函数
@@ -954,8 +1064,32 @@ const NewChatContainer: React.FC = () => {
                style={{ width: 200 }}
                autoFocus
                placeholder="输入会话标题"
-             />
-           )}
+              />
+            </Space>
+          ) : (
+              <span
+                style={{ 
+                  cursor: 'pointer', 
+                  color: titleSource === 'auto' ? '#666' : '#000',
+                  fontSize: titleSource === 'auto' ? '14px' : '16px',
+                  fontWeight: titleSource === 'user' ? 'bold' : 'normal'
+                }}
+                onClick={() => setEditingTitle(true)}
+              >
+                {sessionTitle || '未命名会话'}
+                {titleSource === 'auto' && (
+                  <Tooltip title="AI自动生成的标题">
+                    <InfoCircleOutlined style={{ fontSize: 12, marginLeft: 4, color: '#999' }} />
+                  </Tooltip>
+                )}
+                {titleLocked && (
+                  <Tooltip title="标题已锁定，防止自动覆盖">
+                    <LockOutlined style={{ fontSize: 12, marginLeft: 4, color: '#1890ff' }} />
+                  </Tooltip>
+                )}
+              </span>
+            )
+          )}
         </Space>
       }
       extra={
