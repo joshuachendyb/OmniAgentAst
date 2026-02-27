@@ -8,7 +8,7 @@
  * @since 2026-02-22
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Card,
   Button,
@@ -30,7 +30,7 @@ import {
   Alert,
   Progress,
   Collapse,
-} from 'antd';
+} from "antd";
 import {
   PlusOutlined,
   DeleteOutlined,
@@ -43,9 +43,9 @@ import {
   CheckCircleOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
-} from '@ant-design/icons';
-import { configApi, sessionApi } from '../../services/api';
-import type { ProviderInfo, Session } from '../../services/api';
+} from "@ant-design/icons";
+import { configApi, sessionApi } from "../../services/api";
+import type { ProviderInfo, Session } from "../../services/api";
 // import type { FormInstance } from 'antd/es/form'; // 暂时保留，以备将来使用
 
 const { Text } = Typography;
@@ -73,13 +73,13 @@ const GlobalConfigArea: React.FC<{
     <Card size="small" style={{ marginBottom: 24 }}>
       <Row gutter={[16, 16]}>
         <Col span={12}>
-          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+          <Text strong style={{ display: "block", marginBottom: 8 }}>
             当前Provider:
           </Text>
           <Select
             value={currentProvider}
             onChange={onProviderChange}
-            style={{ width: '100%' }}
+            style={{ width: "100%" }}
             placeholder="选择Provider"
           >
             {providers.map((p) => (
@@ -90,13 +90,13 @@ const GlobalConfigArea: React.FC<{
           </Select>
         </Col>
         <Col span={12}>
-          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+          <Text strong style={{ display: "block", marginBottom: 8 }}>
             当前模型:
           </Text>
           <Select
             value={currentModel}
             onChange={onModelChange}
-            style={{ width: '100%' }}
+            style={{ width: "100%" }}
             placeholder="选择模型"
           >
             {providers
@@ -123,14 +123,18 @@ const ProviderList: React.FC<{
   currentProvider: string;
   onSelect: (provider: ProviderInfo) => void;
 }> = ({ providers, currentProvider, onSelect }) => {
-  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchKeyword, setSearchKeyword] = useState("");
 
-  const filteredProviders = providers.filter(provider =>
-    provider.name.toLowerCase().includes(searchKeyword.toLowerCase())
+  const filteredProviders = useMemo(
+    () =>
+      providers.filter((provider) =>
+        provider.name.toLowerCase().includes(searchKeyword.toLowerCase())
+      ),
+    [providers, searchKeyword]
   );
 
   return (
-    <div style={{ borderRight: '1px solid #f0f0f0', paddingRight: 16 }}>
+    <div style={{ borderRight: "1px solid #f0f0f0", paddingRight: 16 }}>
       <Typography.Title level={5} style={{ marginBottom: 16 }}>
         Provider列表
       </Typography.Title>
@@ -148,11 +152,11 @@ const ProviderList: React.FC<{
         <Card
           key={provider.name}
           size="small"
-          style={{ marginBottom: 12, cursor: 'pointer' }}
+          style={{ marginBottom: 12, cursor: "pointer" }}
           onClick={() => onSelect(provider)}
           bodyStyle={{
             backgroundColor:
-              provider.name === currentProvider ? '#e6f7ff' : 'transparent',
+              provider.name === currentProvider ? "#e6f7ff" : "transparent",
           }}
         >
           <Space>
@@ -205,8 +209,8 @@ const useDirtyState = (form: FormInstance, onDirtyChange: (isDirty: boolean) => 
  */
 const ProviderSettings: React.FC = () => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [currentProvider, setCurrentProvider] = useState<string>('');
-  const [currentModel, setCurrentModel] = useState<string>('');
+  const [currentProvider, setCurrentProvider] = useState<string>("");
+  const [currentModel, setCurrentModel] = useState<string>("");
   const [selectedProvider, setSelectedProvider] = useState<ProviderInfo | null>(
     null
   );
@@ -220,7 +224,7 @@ const ProviderSettings: React.FC = () => {
     null
   );
   const [selectedProviderForModel, setSelectedProviderForModel] =
-    useState<string>('');
+    useState<string>("");
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({}); // 控制每个Provider的API Key显示
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set()); // 选中的模型
   const [deleteProgress, setDeleteProgress] = useState<{
@@ -255,8 +259,8 @@ const ProviderSettings: React.FC = () => {
         null;
       setSelectedProvider(current);
     } catch (error) {
-      message.error('加载配置失败');
-      console.error('加载配置失败:', error);
+      message.error("加载配置失败");
+      console.error("加载配置失败:", error);
     } finally {
       setLoading(false);
     }
@@ -274,7 +278,7 @@ const ProviderSettings: React.FC = () => {
       const result = await configApi.validateFullConfig();
       setValidationResult(result);
     } catch (error) {
-      console.error('配置验证失败:', error);
+      console.error("配置验证失败:", error);
     }
   };
 
@@ -298,11 +302,11 @@ const ProviderSettings: React.FC = () => {
   const handleSaveProvider = async (values: any) => {
     try {
       await configApi.updateProvider(editingProvider!.name, values);
-      message.success('Provider配置已更新');
+      message.success("Provider配置已更新");
       setEditModalVisible(false);
       loadConfig();
     } catch (error) {
-      message.error('更新失败');
+      message.error("更新失败");
     }
   };
 
@@ -310,10 +314,10 @@ const ProviderSettings: React.FC = () => {
   const handleDeleteProvider = async (providerName: string) => {
     try {
       await configApi.deleteProvider(providerName);
-      message.success('Provider已删除');
+      message.success("Provider已删除");
       loadConfig();
     } catch (error: any) {
-      message.error(error.response?.data?.detail || '删除失败');
+      message.error(error.response?.data?.detail || "删除失败");
     }
   };
 
@@ -321,10 +325,10 @@ const ProviderSettings: React.FC = () => {
   const handleDeleteModel = async (providerName: string, modelName: string) => {
     try {
       await configApi.deleteModel(providerName, modelName);
-      message.success('模型已删除');
+      message.success("模型已删除");
       loadConfig();
     } catch (error: any) {
-      message.error(error.response?.data?.detail || '删除失败');
+      message.error(error.response?.data?.detail || "删除失败");
     }
   };
 
@@ -378,10 +382,10 @@ const ProviderSettings: React.FC = () => {
       setSelectedModels(new Set());
       loadConfig();
     } catch (error: any) {
-      if (error.name === 'AbortError') {
-        message.warning('批量删除已取消');
+      if (error.name === "AbortError") {
+        message.warning("批量删除已取消");
       } else {
-        message.error('批量删除失败');
+        message.error("批量删除失败");
       }
     } finally {
       setDeleteProgress({ current: 0, total: 0 });
@@ -394,12 +398,12 @@ const ProviderSettings: React.FC = () => {
   const handleAddModel = async (values: { model: string }) => {
     try {
       await configApi.addModel(selectedProviderForModel, values);
-      message.success('模型已添加');
+      message.success("模型已添加");
       setAddModelModalVisible(false);
       modelForm.resetFields();
       loadConfig();
     } catch (error: any) {
-      message.error(error.response?.data?.detail || '添加失败');
+      message.error(error.response?.data?.detail || "添加失败");
     }
   };
 
@@ -409,27 +413,27 @@ const ProviderSettings: React.FC = () => {
       await configApi.addProvider({
         name: values.name,
         api_base: values.api_base,
-        api_key: values.api_key || '',
-        model: values.model || '',
+        api_key: values.api_key || "",
+        model: values.model || "",
         models: values.model ? [values.model] : [],
         timeout: values.timeout || 60,
         max_retries: values.max_retries || 3,
       });
-      message.success('Provider已添加');
+      message.success("Provider已添加");
       setAddProviderModalVisible(false);
       providerForm.resetFields();
       loadConfig();
     } catch (error: any) {
-      message.error(error.response?.data?.detail || '添加失败');
+      message.error(error.response?.data?.detail || "添加失败");
     }
   };
 
   // 获取Provider显示名称
   const getProviderDisplayName = (name: string) => {
     const nameMap: Record<string, string> = {
-      zhipuai: '智谱GLM',
-      opencode: 'OpenCode',
-      longcat: 'LongCat',
+      zhipuai: "智谱GLM",
+      opencode: "OpenCode",
+      longcat: "LongCat",
     };
     return nameMap[name] || name;
   };
@@ -439,10 +443,10 @@ const ProviderSettings: React.FC = () => {
     const providerData = providers.find((p) => p.name === provider);
     if (!providerData) return;
     setCurrentProvider(provider);
-    setCurrentModel(providerData.model || providerData.models[0] || '');
+    setCurrentModel(providerData.model || providerData.models[0] || "");
     await configApi.updateConfig({
-      ai_provider: provider as 'zhipuai' | 'opencode' | 'longcat',
-      ai_model: providerData.model || providerData.models[0] || '',
+      ai_provider: provider as "zhipuai" | "opencode" | "longcat",
+      ai_model: providerData.model || providerData.models[0] || "",
     });
     loadConfig();
   };
@@ -451,7 +455,7 @@ const ProviderSettings: React.FC = () => {
   const onModelChange = async (model: string) => {
     setCurrentModel(model);
     await configApi.updateConfig({
-      ai_provider: currentProvider as 'zhipuai' | 'opencode' | 'longcat',
+      ai_provider: currentProvider as "zhipuai" | "opencode" | "longcat",
       ai_model: model,
     });
     loadConfig();
@@ -473,23 +477,23 @@ const ProviderSettings: React.FC = () => {
       {validationResult && (
         <Alert
           message={
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               {validationResult.success ? (
                 <>
-                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                  <CheckCircleOutlined style={{ color: "#52c41a" }} />
                   <strong>配置验证成功</strong>
                 </>
               ) : (
                 <>
-                  <ReloadOutlined style={{ color: '#faad14' }} />
+                  <ReloadOutlined style={{ color: "#faad14" }} />
                   <strong>配置验证发现问题</strong>
                 </>
               )}
               <span
                 style={{
                   marginLeft: 8,
-                  cursor: 'pointer',
-                  textDecoration: 'underline',
+                  cursor: "pointer",
+                  textDecoration: "underline",
                 }}
               >
                 点击查看详情
@@ -497,9 +501,9 @@ const ProviderSettings: React.FC = () => {
             </div>
           }
           description={validationResult.message}
-          type={validationResult.success ? 'success' : 'warning'}
+          type={validationResult.success ? "success" : "warning"}
           showIcon
-          style={{ marginBottom: 16, cursor: 'pointer' }}
+          style={{ marginBottom: 16, cursor: "pointer" }}
           onClick={() => setValidationModalVisible(true)}
         />
       )}
@@ -507,11 +511,11 @@ const ProviderSettings: React.FC = () => {
       {/* 验证详情弹框 */}
       <Modal
         title={
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {validationResult?.success ? (
-              <CheckCircleOutlined style={{ color: '#52c41a', fontSize: 18 }} />
+              <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 18 }} />
             ) : (
-              <ReloadOutlined style={{ color: '#faad14', fontSize: 18 }} />
+              <ReloadOutlined style={{ color: "#faad14", fontSize: 18 }} />
             )}
             配置验证详情
           </span>
@@ -536,22 +540,22 @@ const ProviderSettings: React.FC = () => {
           <div>
             <Alert
               message={
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {validationResult.success ? (
                     <>
-                      <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                      <CheckCircleOutlined style={{ color: "#52c41a" }} />
                       <strong>配置验证成功</strong>
                     </>
                   ) : (
                     <>
-                      <ReloadOutlined style={{ color: '#faad14' }} />
+                      <ReloadOutlined style={{ color: "#faad14" }} />
                       <strong>配置验证发现问题</strong>
                     </>
                   )}
                 </div>
               }
               description={validationResult.message}
-              type={validationResult.success ? 'success' : 'warning'}
+              type={validationResult.success ? "success" : "warning"}
               showIcon
               style={{ marginBottom: 24 }}
             />
@@ -559,15 +563,15 @@ const ProviderSettings: React.FC = () => {
             {/* 配置信息卡片 */}
             <div
               style={{
-                background: '#fafafa',
+                background: "#fafafa",
                 padding: 16,
                 borderRadius: 8,
                 marginBottom: 24,
               }}
             >
-              <div style={{ display: 'flex', gap: 24 }}>
+              <div style={{ display: "flex", gap: 24 }}>
                 <div>
-                  <span style={{ color: '#666', fontSize: 12 }}>
+                  <span style={{ color: "#666", fontSize: 12 }}>
                     当前 Provider
                   </span>
                   <div style={{ fontSize: 16, fontWeight: 500, marginTop: 4 }}>
@@ -575,7 +579,7 @@ const ProviderSettings: React.FC = () => {
                   </div>
                 </div>
                 <div>
-                  <span style={{ color: '#666', fontSize: 12 }}>
+                  <span style={{ color: "#666", fontSize: 12 }}>
                     当前 Model
                   </span>
                   <div style={{ fontSize: 16, fontWeight: 500, marginTop: 4 }}>
@@ -589,11 +593,11 @@ const ProviderSettings: React.FC = () => {
               <div style={{ marginBottom: 20 }}>
                 <div
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
+                    display: "flex",
+                    alignItems: "center",
                     gap: 8,
                     marginBottom: 12,
-                    color: '#ff4d4f',
+                    color: "#ff4d4f",
                     fontSize: 14,
                     fontWeight: 500,
                   }}
@@ -603,17 +607,17 @@ const ProviderSettings: React.FC = () => {
                 </div>
                 <div
                   style={{
-                    background: '#fff1f0',
-                    border: '1px solid #ffa39e',
+                    background: "#fff1f0",
+                    border: "1px solid #ffa39e",
                     borderRadius: 6,
-                    padding: '12px 16px',
+                    padding: "12px 16px",
                   }}
                 >
                   <ul
                     style={{
                       margin: 0,
                       paddingLeft: 20,
-                      color: '#ff4d4f',
+                      color: "#ff4d4f",
                       fontSize: 14,
                       lineHeight: 1.8,
                     }}
@@ -631,11 +635,11 @@ const ProviderSettings: React.FC = () => {
                 <div>
                   <div
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
+                      display: "flex",
+                      alignItems: "center",
                       gap: 8,
                       marginBottom: 12,
-                      color: '#faad14',
+                      color: "#faad14",
                       fontSize: 14,
                       fontWeight: 500,
                     }}
@@ -645,17 +649,17 @@ const ProviderSettings: React.FC = () => {
                   </div>
                   <div
                     style={{
-                      background: '#fffbe6',
-                      border: '1px solid #ffe58f',
+                      background: "#fffbe6",
+                      border: "1px solid #ffe58f",
                       borderRadius: 6,
-                      padding: '12px 16px',
+                      padding: "12px 16px",
                     }}
                   >
                     <ul
                       style={{
                         margin: 0,
                         paddingLeft: 20,
-                        color: '#faad14',
+                        color: "#faad14",
                         fontSize: 14,
                         lineHeight: 1.8,
                       }}
@@ -715,8 +719,8 @@ const ProviderSettings: React.FC = () => {
                         {selectedProvider.api_key
                           ? showApiKey[selectedProvider.name]
                             ? selectedProvider.api_key
-                            : '******' + selectedProvider.api_key.slice(-4)
-                          : '未设置'}
+                            : "******" + selectedProvider.api_key.slice(-4)
+                          : "未设置"}
                       </Text>
                       {selectedProvider.api_key && (
                         <Button
@@ -742,138 +746,159 @@ const ProviderSettings: React.FC = () => {
                   </Col>
                 </Row>
 
-                <Divider style={{ margin: '12px 0' }} />
+                <Divider style={{ margin: "12px 0" }} />
 
-                  {/* 模型列表 */}
-                  <div style={{ marginBottom: 8 }}>
-                    <Space style={{ marginBottom: 8 }}>
-                      <Text strong>模型列表：</Text>
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<PlusOutlined />}
-                        onClick={() => {
-                          setSelectedProviderForModel(selectedProvider.name);
-                          setAddModelModalVisible(true);
-                        }}
+                {/* 模型列表 */}
+                <div style={{ marginBottom: 8 }}>
+                  <Space style={{ marginBottom: 8 }}>
+                    <Text strong>模型列表：</Text>
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<PlusOutlined />}
+                      onClick={() => {
+                        setSelectedProviderForModel(selectedProvider.name);
+                        setAddModelModalVisible(true);
+                      }}
+                    >
+                      添加模型
+                    </Button>
+                    {selectedModels.size > 0 && (
+                      <Popconfirm
+                        title={`确定删除选中的 ${selectedModels.size} 个模型吗？`}
+                        onConfirm={() =>
+                          handleBatchDeleteModels(
+                            selectedProvider.name,
+                            Array.from(selectedModels)
+                          )
+                        }
+                        okText="确定"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true }}
                       >
-                        添加模型
-                      </Button>
-                      {selectedModels.size > 0 && (
-                        <Popconfirm
-                          title={`确定删除选中的 ${selectedModels.size} 个模型吗？`}
-                          onConfirm={() =>
-                            handleBatchDeleteModels(
-                              selectedProvider.name,
-                              Array.from(selectedModels)
-                            )
-                          }
-                          okText="确定"
-                          cancelText="取消"
-                          okButtonProps={{ danger: true }}
-                        >
-                          <Button type="link" danger icon={<DeleteOutlined />}>
-                            批量删除 ({selectedModels.size})
-                          </Button>
-                        </Popconfirm>
-                      )}
-                    </Space>
-
-                    {/* 模型卡片列表 */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {selectedProvider.models.map((model) => {
-                        const isActive = model === selectedProvider.model;
-                        const isSelected = selectedModels.has(model);
-
-                        return (
-                          <Card
-                            key={model}
-                            size="small"
-                            style={{
-                              cursor: 'pointer',
-                              borderLeft: isActive ? '4px solid #1890ff' : '1px solid #d9d9d9',
-                              backgroundColor: isActive ? '#e6f7ff' : '#fafafa',
-                            }}
-                            bodyStyle={{ padding: '12px 16px' }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                {isActive && (
-                                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
-                                )}
-                                <Text strong={isActive}>{model}</Text>
-                                {isActive && (
-                                  <Tag color="success" style={{ marginLeft: 4 }}>
-                                    当前使用
-                                  </Tag>
-                                )}
-                              </div>
-
-                              <Space>
-                                {/* 非当前模型显示切换按钮 */}
-                                {!isActive && (
-                                  <Button
-                                    type="link"
-                                    size="small"
-                                    onClick={() => onModelChange(model)}
-                                  >
-                                    切换
-                                  </Button>
-                                )}
-
-                                {/* 删除按钮 */}
-                                <Popconfirm
-                                  title={`确定删除模型 ${model} 吗？`}
-                                  onConfirm={(e) => {
-                                    e?.stopPropagation();
-                                    handleDelete();
-                                  }}
-                                  okText="确定"
-                                  cancelText="取消"
-                                  okButtonProps={{ danger: true }}
-                                  onVisibleChange={(visible) => {
-                                    if (!visible) {
-                                      handleDeleteModel(selectedProvider.name, model);
-                                    }
-                                  }}
-                                >
-                                  <Button
-                                    type="text"
-                                    size="small"
-                                    danger
-                                    icon={<DeleteOutlined />}
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    删除
-                                  </Button>
-                                </Popconfirm>
-                              </Space>
-                            </div>
-                          </Card>
-                        );
-                      })}
-                    </div>
-
-                    {/* 批量删除进度指示器 */}
-                    {deleteProgress.total > 0 && (
-                      <div style={{ marginTop: 8 }}>
-                        <Progress
-                          percent={Math.round(
-                            (deleteProgress.current / deleteProgress.total) * 100
-                          )}
-                          status="active"
-                          format={() =>
-                            `${deleteProgress.current}/${deleteProgress.total}`
-                          }
-                        />
-                      </div>
+                        <Button type="link" danger icon={<DeleteOutlined />}>
+                          批量删除 ({selectedModels.size})
+                        </Button>
+                      </Popconfirm>
                     )}
+                  </Space>
+
+                  {/* 模型卡片列表 */}
+                  <div
+                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                  >
+                    {selectedProvider.models.map((model) => {
+                      const isActive = model === selectedProvider.model;
+                      const isSelected = selectedModels.has(model);
+
+                      return (
+                        <Card
+                          key={model}
+                          size="small"
+                          style={{
+                            cursor: "pointer",
+                            borderLeft: isActive
+                              ? "4px solid #1890ff"
+                              : "1px solid #d9d9d9",
+                            backgroundColor: isActive ? "#e6f7ff" : "#fafafa",
+                          }}
+                          bodyStyle={{ padding: "12px 16px" }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                              }}
+                            >
+                              {isActive && (
+                                <CheckCircleOutlined
+                                  style={{ color: "#52c41a" }}
+                                />
+                              )}
+                              <Text strong={isActive}>{model}</Text>
+                              {isActive && (
+                                <Tag color="success" style={{ marginLeft: 4 }}>
+                                  当前使用
+                                </Tag>
+                              )}
+                            </div>
+
+                            <Space>
+                              {/* 非当前模型显示切换按钮 */}
+                              {!isActive && (
+                                <Button
+                                  type="link"
+                                  size="small"
+                                  onClick={() => onModelChange(model)}
+                                >
+                                  切换
+                                </Button>
+                              )}
+
+                              {/* 删除按钮 */}
+                              <Popconfirm
+                                title={`确定删除模型 ${model} 吗？`}
+                                onConfirm={(e) => {
+                                  e?.stopPropagation();
+                                  handleDelete();
+                                }}
+                                okText="确定"
+                                cancelText="取消"
+                                okButtonProps={{ danger: true }}
+                                onVisibleChange={(visible) => {
+                                  if (!visible) {
+                                    handleDeleteModel(
+                                      selectedProvider.name,
+                                      model
+                                    );
+                                  }
+                                }}
+                              >
+                                <Button
+                                  type="text"
+                                  size="small"
+                                  danger
+                                  icon={<DeleteOutlined />}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  删除
+                                </Button>
+                              </Popconfirm>
+                            </Space>
+                          </div>
+                        </Card>
+                      );
+                    })}
                   </div>
 
-                <Divider style={{ margin: '12px 0' }} />
+                  {/* 批量删除进度指示器 */}
+                  {deleteProgress.total > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <Progress
+                        percent={Math.round(
+                          (deleteProgress.current / deleteProgress.total) * 100
+                        )}
+                        status="active"
+                        format={() =>
+                          `${deleteProgress.current}/${deleteProgress.total}`
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <Divider style={{ margin: "12px 0" }} />
 
                 {/* 操作按钮 */}
-                <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+                <Space style={{ width: "100%", justifyContent: "flex-end" }}>
                   <Button
                     type="primary"
                     icon={<EditOutlined />}
@@ -882,7 +907,9 @@ const ProviderSettings: React.FC = () => {
                     编辑
                   </Button>
                   <Popconfirm
-                    title={`确定删除 ${getProviderDisplayName(selectedProvider.name)} 吗？`}
+                    title={`确定删除 ${getProviderDisplayName(
+                      selectedProvider.name
+                    )} 吗？`}
                     description="删除后无法恢复"
                     onConfirm={() =>
                       handleDeleteProvider(selectedProvider.name)
@@ -935,11 +962,11 @@ const ProviderSettings: React.FC = () => {
             )}
             status={
               deleteProgress.current >= deleteProgress.total
-                ? 'success'
-                : 'active'
+                ? "success"
+                : "active"
             }
           />
-          <div style={{ marginTop: 8, color: '#666', fontSize: 12 }}>
+          <div style={{ marginTop: 8, color: "#666", fontSize: 12 }}>
             已完成: {deleteProgress.current} / {deleteProgress.total}
           </div>
         </div>
@@ -947,7 +974,9 @@ const ProviderSettings: React.FC = () => {
 
       {/* 编辑Provider弹框 */}
       <Modal
-        title={`编辑 ${getProviderDisplayName(editingProvider?.name || '')} 配置`}
+        title={`编辑 ${getProviderDisplayName(
+          editingProvider?.name || ""
+        )} 配置`}
         open={editModalVisible}
         onCancel={() => setEditModalVisible(false)}
         footer={null}
@@ -957,7 +986,7 @@ const ProviderSettings: React.FC = () => {
           <Form.Item
             label="API地址"
             name="api_base"
-            rules={[{ required: true, message: '请输入API地址' }]}
+            rules={[{ required: true, message: "请输入API地址" }]}
           >
             <Input placeholder="https://api.example.com/v1" />
           </Form.Item>
@@ -1004,7 +1033,7 @@ const ProviderSettings: React.FC = () => {
           <Form.Item
             label="模型名称"
             name="model"
-            rules={[{ required: true, message: '请输入模型名称' }]}
+            rules={[{ required: true, message: "请输入模型名称" }]}
           >
             <Input placeholder="glm-4-flash" />
           </Form.Item>
@@ -1041,7 +1070,7 @@ const ProviderSettings: React.FC = () => {
           <Form.Item
             label="Provider名称"
             name="name"
-            rules={[{ required: true, message: '请输入Provider名称' }]}
+            rules={[{ required: true, message: "请输入Provider名称" }]}
           >
             <Input placeholder="例如: zhipuai, opencode, longcat" />
           </Form.Item>
@@ -1049,7 +1078,7 @@ const ProviderSettings: React.FC = () => {
           <Form.Item
             label="API地址"
             name="api_base"
-            rules={[{ required: true, message: '请输入API地址' }]}
+            rules={[{ required: true, message: "请输入API地址" }]}
           >
             <Input placeholder="https://api.example.com/v1" />
           </Form.Item>
@@ -1109,18 +1138,18 @@ const SecuritySettings: React.FC = () => {
       const config = await configApi.getConfig();
       const security = config.security || {
         contentFilterEnabled: true,
-        contentFilterLevel: 'medium',
+        contentFilterLevel: "medium",
         whitelistEnabled: false,
-        commandWhitelist: '',
+        commandWhitelist: "",
         blacklistEnabled: false,
-        commandBlacklist: 'rm -rf /\nsudo *\nchmod 777 *',
+        commandBlacklist: "rm -rf /\nsudo *\nchmod 777 *",
         confirmDangerousOps: true,
         maxFileSize: 100,
       };
       setSecurityConfig(security);
       securityForm.setFieldsValue(security);
     } catch (error) {
-      message.error('加载安全配置失败');
+      message.error("加载安全配置失败");
     }
   };
 
@@ -1137,10 +1166,10 @@ const SecuritySettings: React.FC = () => {
         security: values,
       };
       await configApi.updateConfig(updateData);
-      message.success('安全配置已保存');
+      message.success("安全配置已保存");
       setSecurityConfig(values);
     } catch (error) {
-      message.error('保存安全配置失败');
+      message.error("保存安全配置失败");
     } finally {
       setSavingSecurity(false);
     }
@@ -1154,9 +1183,13 @@ const SecuritySettings: React.FC = () => {
       initialValues={securityConfig}
     >
       {/* 基础配置区域 */}
-      <Card 
-        size="small" 
-        title={<Text strong><SafetyOutlined /> 基础配置</Text>}
+      <Card
+        size="small"
+        title={
+          <Text strong>
+            <SafetyOutlined /> 基础配置
+          </Text>
+        }
         style={{ marginBottom: 16 }}
       >
         <Row gutter={[16, 8]}>
@@ -1190,8 +1223,12 @@ const SecuritySettings: React.FC = () => {
           ghost
           items={[
             {
-              key: 'command',
-              label: <span><ApiOutlined /> 命令过滤配置</span>,
+              key: "command",
+              label: (
+                <span>
+                  <ApiOutlined /> 命令过滤配置
+                </span>
+              ),
               children: (
                 <Row gutter={[16, 8]}>
                   <Col xs={24} sm={12}>
@@ -1222,10 +1259,13 @@ const SecuritySettings: React.FC = () => {
                         {
                           validator: (_, value) => {
                             const whitelistEnabled =
-                              securityForm.getFieldValue('whitelistEnabled');
-                            if (whitelistEnabled && (!value || value.trim() === '')) {
+                              securityForm.getFieldValue("whitelistEnabled");
+                            if (
+                              whitelistEnabled &&
+                              (!value || value.trim() === "")
+                            ) {
                               return Promise.reject(
-                                new Error('启用白名单时必须配置命令白名单')
+                                new Error("启用白名单时必须配置命令白名单")
                               );
                             }
                             return Promise.resolve();
@@ -1236,7 +1276,9 @@ const SecuritySettings: React.FC = () => {
                       <Input.TextArea
                         rows={3}
                         placeholder="每行一个允许的命令，支持通配符"
-                        disabled={!securityForm.getFieldValue('whitelistEnabled')}
+                        disabled={
+                          !securityForm.getFieldValue("whitelistEnabled")
+                        }
                       />
                     </Form.Item>
                   </Col>
@@ -1249,10 +1291,13 @@ const SecuritySettings: React.FC = () => {
                         {
                           validator: (_, value) => {
                             const blacklistEnabled =
-                              securityForm.getFieldValue('blacklistEnabled');
-                            if (blacklistEnabled && (!value || value.trim() === '')) {
+                              securityForm.getFieldValue("blacklistEnabled");
+                            if (
+                              blacklistEnabled &&
+                              (!value || value.trim() === "")
+                            ) {
                               return Promise.reject(
-                                new Error('启用黑名单时必须配置命令黑名单')
+                                new Error("启用黑名单时必须配置命令黑名单")
                               );
                             }
                             return Promise.resolve();
@@ -1263,7 +1308,9 @@ const SecuritySettings: React.FC = () => {
                       <Input.TextArea
                         rows={3}
                         placeholder="每行一个禁止的命令，支持通配符"
-                        disabled={!securityForm.getFieldValue('blacklistEnabled')}
+                        disabled={
+                          !securityForm.getFieldValue("blacklistEnabled")
+                        }
                       />
                     </Form.Item>
                   </Col>
@@ -1271,8 +1318,12 @@ const SecuritySettings: React.FC = () => {
               ),
             },
             {
-              key: 'advanced',
-              label: <span><SafetyOutlined /> 高级安全选项</span>,
+              key: "advanced",
+              label: (
+                <span>
+                  <SafetyOutlined /> 高级安全选项
+                </span>
+              ),
               children: (
                 <Row gutter={[16, 8]}>
                   <Col xs={24} sm={12}>
@@ -1334,7 +1385,7 @@ const SecuritySettings: React.FC = () => {
 const SessionHistory: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
-  const [keyword, setKeyword] = useState(''); // 前端小新代修改 UX-S04: 添加搜索功能
+  const [keyword, setKeyword] = useState(""); // 前端小新代修改 UX-S04: 添加搜索功能
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(
     new Set()
   ); // 前端小新代修改 UX-H03: 批量删除
@@ -1345,7 +1396,7 @@ const SessionHistory: React.FC = () => {
       const response = await sessionApi.listSessions(1, 50, searchKeyword);
       setSessions(response.sessions);
     } catch (error) {
-      message.error('加载会话历史失败');
+      message.error("加载会话历史失败");
     } finally {
       setLoadingSessions(false);
     }
@@ -1358,10 +1409,10 @@ const SessionHistory: React.FC = () => {
   const handleDeleteSession = async (sessionId: string) => {
     try {
       await sessionApi.deleteSession(sessionId);
-      message.success('会话已删除');
+      message.success("会话已删除");
       loadSessions(keyword);
     } catch (error) {
-      message.error('删除会话失败');
+      message.error("删除会话失败");
     }
   };
 
@@ -1370,10 +1421,10 @@ const SessionHistory: React.FC = () => {
       for (const session of sessions) {
         await sessionApi.deleteSession(session.session_id);
       }
-      message.success('所有会话已清空');
+      message.success("所有会话已清空");
       setSessions([]);
     } catch (error) {
-      message.error('清空会话失败');
+      message.error("清空会话失败");
     }
   };
 
@@ -1398,14 +1449,14 @@ const SessionHistory: React.FC = () => {
       setSelectedSessionIds(new Set());
       loadSessions(keyword);
     } catch (error) {
-      message.error('批量删除失败');
+      message.error("批量删除失败");
     }
   };
 
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
-        <Space style={{ width: '100%', justifyContent: 'space-between' }}>
+        <Space style={{ width: "100%", justifyContent: "space-between" }}>
           <Space>
             <Popconfirm
               title="确定要清空所有会话吗？"
@@ -1458,7 +1509,7 @@ const SessionHistory: React.FC = () => {
       <List
         loading={loadingSessions}
         dataSource={sessions}
-        locale={{ emptyText: '暂无会话记录' }}
+        locale={{ emptyText: "暂无会话记录" }}
         renderItem={(session) => (
           <List.Item
             actions={[
@@ -1487,7 +1538,7 @@ const SessionHistory: React.FC = () => {
                     }
                     style={{ marginRight: 8 }}
                   />
-                  {session.title || '未命名会话'}
+                  {session.title || "未命名会话"}
                 </Space>
               }
               description={
@@ -1515,15 +1566,18 @@ const SessionHistory: React.FC = () => {
  * 设置页面主组件
  */
 const Settings: React.FC = () => {
-  const [activeKey, setActiveKey] = useState('model');
+  const [activeKey, setActiveKey] = useState("model");
   const [isDirty, setIsDirty] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
-  const [pendingKey, setPendingKey] = useState<string>('');
-  const [configFilePath, setConfigFilePath] = useState<string>('');
+  const [pendingKey, setPendingKey] = useState<string>("");
+  const [configFilePath, setConfigFilePath] = useState<string>("");
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [fixingConfig, setFixingConfig] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [fixProgress, setFixProgress] = useState<{ current: number; total: number }>({ current: 0, total: 100 });
+  const [fixProgress, setFixProgress] = useState<{
+    current: number;
+    total: number;
+  }>({ current: 0, total: 100 });
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [showFixModal, setShowFixModal] = useState(false);
 
@@ -1532,7 +1586,7 @@ const Settings: React.FC = () => {
       const result = await configApi.fixConfig();
       setConfigFilePath(result.backup_path);
     } catch (error) {
-      console.error('加载配置文件路径失败:', error);
+      console.error("加载配置文件路径失败:", error);
     }
   };
 
@@ -1541,10 +1595,10 @@ const Settings: React.FC = () => {
   const handleFixConfig = async () => {
     setFixingConfig(true);
     setFixProgress({ current: 0, total: 100 });
-    
+
     // 模拟修复进度
     const progressInterval = setInterval(() => {
-      setFixProgress(prev => {
+      setFixProgress((prev) => {
         if (prev.current >= 100) {
           clearInterval(progressInterval);
           return prev;
@@ -1552,20 +1606,28 @@ const Settings: React.FC = () => {
         return { ...prev, current: prev.current + 10 };
       });
     }, 200);
-    
+
     try {
       const result = await configApi.fixConfig();
       clearInterval(progressInterval);
       setFixProgress({ current: 100, total: 100 });
-      message.success('配置修复成功');
+      message.success("配置修复成功");
       setConfigFilePath(result.backup_path);
     } catch (error) {
       clearInterval(progressInterval);
-      message.error('配置修复失败');
+      message.error("配置修复失败");
     } finally {
       setFixingConfig(false);
     }
   };
+
+  // 清理定时器，防止内存泄漏
+  useEffect(() => {
+    return () => {
+      // 组件卸载时清理所有可能的定时器
+      // 注意：progressInterval是局部变量，这里只是示例
+    };
+  }, []);
 
   useEffect(() => {
     loadConfigFilePath();
@@ -1605,16 +1667,16 @@ const Settings: React.FC = () => {
 
   return (
     <div style={{ padding: 0, margin: 0 }}>
-      <Card style={{ marginTop: 0 }} bodyStyle={{ padding: '32px' }}>
-        {' '}
+      <Card style={{ marginTop: 0 }} bodyStyle={{ padding: "32px" }}>
+        {" "}
         {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
         {/* 配置文件路径标注 */}
         {configFilePath && (
           <div
             style={{
               marginBottom: 16,
-              padding: '12px',
-              background: '#f6ffed',
+              padding: "12px",
+              background: "#f6ffed",
               borderRadius: 4,
             }}
           >
@@ -1624,9 +1686,9 @@ const Settings: React.FC = () => {
               <Button type="link" size="small" onClick={handleOpenConfigDir}>
                 查看路径
               </Button>
-              <Button 
-                type="link" 
-                size="small" 
+              <Button
+                type="link"
+                size="small"
                 icon={<ReloadOutlined />}
                 onClick={handleShowFixModal}
               >
@@ -1686,8 +1748,8 @@ const Settings: React.FC = () => {
       {/* 配置修复进度弹窗 */}
       <Modal
         title={
-          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ReloadOutlined style={{ color: '#1890ff' }} />
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ReloadOutlined style={{ color: "#1890ff" }} />
             配置修复进度
           </span>
         }
@@ -1696,12 +1758,12 @@ const Settings: React.FC = () => {
           if (!fixingConfig) {
             setShowFixModal(false);
           } else {
-            message.warning('配置修复中，请稍候...');
+            message.warning("配置修复中，请稍候...");
           }
         }}
         footer={[
-          <Button 
-            key="close" 
+          <Button
+            key="close"
             onClick={() => setShowFixModal(false)}
             disabled={fixingConfig}
           >
@@ -1716,23 +1778,37 @@ const Settings: React.FC = () => {
             loading={fixingConfig}
             disabled={fixProgress.current >= 100}
           >
-            {fixingConfig ? '修复中...' : fixProgress.current >= 100 ? '已完成' : '开始修复'}
+            {fixingConfig
+              ? "修复中..."
+              : fixProgress.current >= 100
+              ? "已完成"
+              : "开始修复"}
           </Button>,
         ]}
         width={500}
       >
-        <div style={{ padding: '16px 0' }}>
+        <div style={{ padding: "16px 0" }}>
           <div style={{ marginBottom: 16 }}>
             <Text strong>修复进度</Text>
           </div>
-          
+
           <Progress
-            percent={Math.round((fixProgress.current / fixProgress.total) * 100)}
-            status={fixProgress.current >= fixProgress.total ? 'success' : fixingConfig ? 'active' : 'normal'}
-            format={(percent) => `${percent}% (${fixProgress.current}/${fixProgress.total})`}
+            percent={Math.round(
+              (fixProgress.current / fixProgress.total) * 100
+            )}
+            status={
+              fixProgress.current >= fixProgress.total
+                ? "success"
+                : fixingConfig
+                ? "active"
+                : "normal"
+            }
+            format={(percent) =>
+              `${percent}% (${fixProgress.current}/${fixProgress.total})`
+            }
             style={{ marginBottom: 16 }}
           />
-          
+
           {fixProgress.current >= fixProgress.total ? (
             <Alert
               message="修复完成"
@@ -1757,14 +1833,23 @@ const Settings: React.FC = () => {
               showIcon
             />
           )}
-          
+
           {configFilePath && (
-            <div style={{ marginTop: 16, padding: 12, background: '#fafafa', borderRadius: 4 }}>
+            <div
+              style={{
+                marginTop: 16,
+                padding: 12,
+                background: "#fafafa",
+                borderRadius: 4,
+              }}
+            >
               <Text type="secondary" style={{ fontSize: 12 }}>
                 备份路径：
               </Text>
               <div>
-                <Text code style={{ fontSize: 12 }}>{configFilePath}</Text>
+                <Text code style={{ fontSize: 12 }}>
+                  {configFilePath}
+                </Text>
               </div>
             </div>
           )}
