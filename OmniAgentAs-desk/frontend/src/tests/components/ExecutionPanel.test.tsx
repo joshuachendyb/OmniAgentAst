@@ -1,6 +1,6 @@
 /**
  * ExecutionPanel Component Tests
- * 
+ *
  * @author 小新
  * @description Unit tests for ExecutionPanel component
  */
@@ -37,14 +37,14 @@ describe('ExecutionPanel Component', () => {
 
   it('should render empty state when no steps provided', () => {
     render(<ExecutionPanel steps={[]} isActive={false} />);
-    
+
     // 组件显示"执行详情"或"执行详情 (0步)"
     expect(screen.getByText(/执行详情/)).toBeInTheDocument();
   });
 
   it('should render all execution steps', () => {
     render(<ExecutionPanel steps={mockSteps} isActive={false} />);
-    
+
     expect(screen.getByText('I need to analyze the file')).toBeInTheDocument();
     expect(screen.getByText(/read_file/)).toBeInTheDocument();
     expect(screen.getByText('Task completed')).toBeInTheDocument();
@@ -60,14 +60,14 @@ describe('ExecutionPanel Component', () => {
 
   it('should not show loading indicator when inactive', () => {
     render(<ExecutionPanel steps={mockSteps} isActive={false} />);
-    
+
     // Should not show processing indicator
     expect(screen.queryByText(/执行中/)).not.toBeInTheDocument();
   });
 
   it('should display step count in header', () => {
     render(<ExecutionPanel steps={mockSteps} isActive={false} />);
-    
+
     // 组件在标题中显示步骤数，如"执行详情 (4步)"
     expect(screen.getByText(/执行详情.*4步/)).toBeInTheDocument();
   });
@@ -81,9 +81,9 @@ describe('ExecutionPanel Component', () => {
         timestamp: Date.now(),
       },
     ];
-    
+
     render(<ExecutionPanel steps={actionStep} isActive={false} />);
-    
+
     expect(screen.getByText(/write_file/)).toBeInTheDocument();
     expect(screen.getByText(/path/)).toBeInTheDocument();
   });
@@ -96,9 +96,9 @@ describe('ExecutionPanel Component', () => {
         timestamp: Date.now(),
       },
     ];
-    
+
     render(<ExecutionPanel steps={observationStep} isActive={false} />);
-    
+
     expect(screen.getByText(/success/)).toBeInTheDocument();
   });
 
@@ -110,9 +110,9 @@ describe('ExecutionPanel Component', () => {
         timestamp: Date.now(),
       },
     ];
-    
+
     render(<ExecutionPanel steps={errorStep} isActive={false} />);
-    
+
     expect(screen.getByText(/Failed to read file/)).toBeInTheDocument();
   });
 
@@ -138,11 +138,11 @@ describe('ExecutionPanel Component', () => {
         timestamp: Date.now(),
       },
     ];
-    
+
     const { container } = render(
       <ExecutionPanel steps={minimalSteps} isActive={false} />
     );
-    
+
     // Should render without errors even without optional fields
     expect(container.querySelector('.ant-timeline')).toBeInTheDocument();
   });
@@ -151,13 +151,14 @@ describe('ExecutionPanel Component', () => {
     const longContentStep: ExecutionStep[] = [
       {
         type: 'thought',
-        content: 'This is a very long thought that might need to be truncated or wrapped properly in the UI to ensure good user experience',
+        content:
+          'This is a very long thought that might need to be truncated or wrapped properly in the UI to ensure good user experience',
         timestamp: Date.now(),
       },
     ];
-    
+
     render(<ExecutionPanel steps={longContentStep} isActive={false} />);
-    
+
     expect(screen.getByText(longContentStep[0].content!)).toBeInTheDocument();
   });
 
@@ -165,12 +166,12 @@ describe('ExecutionPanel Component', () => {
     const { rerender } = render(
       <ExecutionPanel steps={[mockSteps[0]]} isActive={true} />
     );
-    
+
     expect(screen.getByText('I need to analyze the file')).toBeInTheDocument();
-    
+
     // Add more steps
     rerender(<ExecutionPanel steps={mockSteps} isActive={true} />);
-    
+
     expect(screen.getByText('Task completed')).toBeInTheDocument();
   });
 });

@@ -1,8 +1,8 @@
 /**
  * Settings组件 - 系统设置页面
- * 
+ *
  * 功能：模型配置管理（Provider和Model）
- * 
+ *
  * @author 小欧
  * @version 2.0.0
  * @since 2026-02-22
@@ -29,6 +29,7 @@ import {
   Switch,
   Alert,
   Progress,
+  Collapse,
 } from 'antd';
 import {
   PlusOutlined,
@@ -61,7 +62,13 @@ const GlobalConfigArea: React.FC<{
   currentModel: string;
   onProviderChange: (provider: string) => void;
   onModelChange: (model: string) => void;
-}> = ({ providers, currentProvider, currentModel, onProviderChange, onModelChange }) => {
+}> = ({
+  providers,
+  currentProvider,
+  currentModel,
+  onProviderChange,
+  onModelChange,
+}) => {
   return (
     <Card size="small" style={{ marginBottom: 24 }}>
       <Row gutter={[16, 16]}>
@@ -75,7 +82,7 @@ const GlobalConfigArea: React.FC<{
             style={{ width: '100%' }}
             placeholder="选择Provider"
           >
-            {providers.map(p => (
+            {providers.map((p) => (
               <Select.Option key={p.name} value={p.name}>
                 {p.name}
               </Select.Option>
@@ -92,11 +99,13 @@ const GlobalConfigArea: React.FC<{
             style={{ width: '100%' }}
             placeholder="选择模型"
           >
-            {providers.find(p => p.name === currentProvider)?.models.map(model => (
-              <Select.Option key={model} value={model}>
-                {model}
-              </Select.Option>
-            ))}
+            {providers
+              .find((p) => p.name === currentProvider)
+              ?.models.map((model) => (
+                <Select.Option key={model} value={model}>
+                  {model}
+                </Select.Option>
+              ))}
           </Select>
         </Col>
       </Row>
@@ -114,19 +123,36 @@ const ProviderList: React.FC<{
   currentProvider: string;
   onSelect: (provider: ProviderInfo) => void;
 }> = ({ providers, currentProvider, onSelect }) => {
+  const [searchKeyword, setSearchKeyword] = useState('');
+
+  const filteredProviders = providers.filter(provider =>
+    provider.name.toLowerCase().includes(searchKeyword.toLowerCase())
+  );
+
   return (
     <div style={{ borderRight: '1px solid #f0f0f0', paddingRight: 16 }}>
       <Typography.Title level={5} style={{ marginBottom: 16 }}>
         Provider列表
       </Typography.Title>
-      {providers.map(provider => (
+
+      {/* 搜索框 */}
+      <Input
+        placeholder="搜索Provider..."
+        allowClear
+        style={{ marginBottom: 16 }}
+        onChange={(e) => setSearchKeyword(e.target.value)}
+        prefix={<ApiOutlined />}
+      />
+
+      {filteredProviders.map((provider) => (
         <Card
           key={provider.name}
           size="small"
           style={{ marginBottom: 12, cursor: 'pointer' }}
           onClick={() => onSelect(provider)}
           bodyStyle={{
-            backgroundColor: provider.name === currentProvider ? '#e6f7ff' : 'transparent',
+            backgroundColor:
+              provider.name === currentProvider ? '#e6f7ff' : 'transparent',
           }}
         >
           <Space>
@@ -138,6 +164,16 @@ const ProviderList: React.FC<{
           </Space>
         </Card>
       ))}
+
+      {filteredProviders.length === 0 && (
+        <Alert
+          message="未找到匹配的Provider"
+          description="尝试调整搜索关键词"
+          type="info"
+          showIcon
+          style={{ marginBottom: 12 }}
+        />
+      )}
     </div>
   );
 };
@@ -171,18 +207,26 @@ const ProviderSettings: React.FC = () => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState<string>('');
   const [currentModel, setCurrentModel] = useState<string>('');
-  const [selectedProvider, setSelectedProvider] = useState<ProviderInfo | null>(null);
+  const [selectedProvider, setSelectedProvider] = useState<ProviderInfo | null>(
+    null
+  );
   const [loading, setLoading] = useState(false);
   const [validationResult, setValidationResult] = useState<any>(null);
   const [validationModalVisible, setValidationModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [addModelModalVisible, setAddModelModalVisible] = useState(false);
   const [addProviderModalVisible, setAddProviderModalVisible] = useState(false);
-  const [editingProvider, setEditingProvider] = useState<ProviderInfo | null>(null);
-  const [selectedProviderForModel, setSelectedProviderForModel] = useState<string>('');
+  const [editingProvider, setEditingProvider] = useState<ProviderInfo | null>(
+    null
+  );
+  const [selectedProviderForModel, setSelectedProviderForModel] =
+    useState<string>('');
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({}); // 控制每个Provider的API Key显示
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set()); // 选中的模型
-  const [deleteProgress, setDeleteProgress] = useState<{ current: number, total: number }>({ current: 0, total: 0 });
+  const [deleteProgress, setDeleteProgress] = useState<{
+    current: number;
+    total: number;
+  }>({ current: 0, total: 0 });
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [deleteCancelled, setDeleteCancelled] = useState(false);
   const deleteControllerRef = React.useRef<AbortController | null>(null);
@@ -193,7 +237,7 @@ const ProviderSettings: React.FC = () => {
 
   // 切换API Key显示/隐藏
   const toggleShowApiKey = (providerName: string) => {
-    setShowApiKey(prev => ({ ...prev, [providerName]: !prev[providerName] }));
+    setShowApiKey((prev) => ({ ...prev, [providerName]: !prev[providerName] }));
   };
 
   // 加载配置
@@ -205,7 +249,10 @@ const ProviderSettings: React.FC = () => {
       setProviders(providerList);
       setCurrentProvider(data.current_provider);
       // 设置当前选中的Provider为当前使用的Provider或第一个Provider
-      const current = providerList.find(p => p.name === data.current_provider) || providerList[0] || null;
+      const current =
+        providerList.find((p) => p.name === data.current_provider) ||
+        providerList[0] ||
+        null;
       setSelectedProvider(current);
     } catch (error) {
       message.error('加载配置失败');
@@ -282,7 +329,10 @@ const ProviderSettings: React.FC = () => {
   };
 
   // 批量删除模型（并发优化，支持取消）
-  const handleBatchDeleteModels = async (providerName: string, models: string[]) => {
+  const handleBatchDeleteModels = async (
+    providerName: string,
+    models: string[]
+  ) => {
     setDeleteProgress({ current: 0, total: models.length });
     setDeleteModalVisible(true);
     setDeleteCancelled(false);
@@ -295,7 +345,7 @@ const ProviderSettings: React.FC = () => {
         if (deleteCancelled) {
           return { success: false, model: modelName, cancelled: true };
         }
-        
+
         try {
           await configApi.deleteModel(providerName, modelName);
           setDeleteProgress({ current: index + 1, total: models.length });
@@ -307,16 +357,22 @@ const ProviderSettings: React.FC = () => {
       });
 
       const results = await Promise.all(deletePromises);
-      const successCount = results.filter(r => r.success).length;
-      const failCount = results.filter(r => !r.success && !r.cancelled).length;
-      const cancelledCount = results.filter(r => r.cancelled).length;
+      const successCount = results.filter((r) => r.success).length;
+      const failCount = results.filter(
+        (r) => !r.success && !r.cancelled
+      ).length;
+      const cancelledCount = results.filter((r) => r.cancelled).length;
 
       if (deleteCancelled) {
-        message.warning(`批量删除已取消：${successCount} 成功，${cancelledCount} 未执行`);
+        message.warning(
+          `批量删除已取消：${successCount} 成功，${cancelledCount} 未执行`
+        );
       } else if (failCount === 0) {
         message.success(`批量删除完成：${successCount} 个模型`);
       } else {
-        message.warning(`批量删除完成：${successCount} 成功，${failCount} 失败`);
+        message.warning(
+          `批量删除完成：${successCount} 成功，${failCount} 失败`
+        );
       }
 
       setSelectedModels(new Set());
@@ -380,7 +436,7 @@ const ProviderSettings: React.FC = () => {
 
   // 全局配置 - Provider切换
   const onProviderChange = async (provider: string) => {
-    const providerData = providers.find(p => p.name === provider);
+    const providerData = providers.find((p) => p.name === provider);
     if (!providerData) return;
     setCurrentProvider(provider);
     setCurrentModel(providerData.model || providerData.models[0] || '');
@@ -413,9 +469,6 @@ const ProviderSettings: React.FC = () => {
       />
       {/* 配置验证提示 - 成功/失败都显示 */}
 
-
-
-
       {/* 配置验证提示 - 成功/失败都显示 */}
       {validationResult && (
         <Alert
@@ -432,7 +485,13 @@ const ProviderSettings: React.FC = () => {
                   <strong>配置验证发现问题</strong>
                 </>
               )}
-              <span style={{ marginLeft: 8, cursor: 'pointer', textDecoration: 'underline' }}>
+              <span
+                style={{
+                  marginLeft: 8,
+                  cursor: 'pointer',
+                  textDecoration: 'underline',
+                }}
+              >
                 点击查看详情
               </span>
             </div>
@@ -463,7 +522,11 @@ const ProviderSettings: React.FC = () => {
           <Button key="close" onClick={() => setValidationModalVisible(false)}>
             关闭
           </Button>,
-          <Button key="revalidate" onClick={handleLoadWithValidation} loading={loading}>
+          <Button
+            key="revalidate"
+            onClick={handleLoadWithValidation}
+            loading={loading}
+          >
             重新验证
           </Button>,
         ]}
@@ -471,7 +534,7 @@ const ProviderSettings: React.FC = () => {
       >
         {validationResult && (
           <div>
-            <Alert 
+            <Alert
               message={
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {validationResult.success ? (
@@ -488,61 +551,73 @@ const ProviderSettings: React.FC = () => {
                 </div>
               }
               description={validationResult.message}
-              type={validationResult.success ? 'success' : 'warning'} 
-              showIcon 
+              type={validationResult.success ? 'success' : 'warning'}
+              showIcon
               style={{ marginBottom: 24 }}
             />
-            
+
             {/* 配置信息卡片 */}
-            <div style={{ 
-              background: '#fafafa', 
-              padding: 16, 
-              borderRadius: 8, 
-              marginBottom: 24 
-            }}>
+            <div
+              style={{
+                background: '#fafafa',
+                padding: 16,
+                borderRadius: 8,
+                marginBottom: 24,
+              }}
+            >
               <div style={{ display: 'flex', gap: 24 }}>
                 <div>
-                  <span style={{ color: '#666', fontSize: 12 }}>当前 Provider</span>
+                  <span style={{ color: '#666', fontSize: 12 }}>
+                    当前 Provider
+                  </span>
                   <div style={{ fontSize: 16, fontWeight: 500, marginTop: 4 }}>
                     {validationResult.provider}
                   </div>
                 </div>
                 <div>
-                  <span style={{ color: '#666', fontSize: 12 }}>当前 Model</span>
+                  <span style={{ color: '#666', fontSize: 12 }}>
+                    当前 Model
+                  </span>
                   <div style={{ fontSize: 16, fontWeight: 500, marginTop: 4 }}>
                     {validationResult.model}
                   </div>
                 </div>
               </div>
             </div>
-            
+
             {validationResult.errors && validationResult.errors.length > 0 && (
               <div style={{ marginBottom: 20 }}>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 8, 
-                  marginBottom: 12,
-                  color: '#ff4d4f',
-                  fontSize: 14,
-                  fontWeight: 500
-                }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    marginBottom: 12,
+                    color: '#ff4d4f',
+                    fontSize: 14,
+                    fontWeight: 500,
+                  }}
+                >
                   <span style={{ fontSize: 18 }}>❌</span>
                   错误 ({validationResult.errors.length})
                 </div>
-                <div style={{ 
-                  background: '#fff1f0', 
-                  border: '1px solid #ffa39e', 
-                  borderRadius: 6, 
-                  padding: '12px 16px'
-                }}>
-                  <ul style={{ 
-                    margin: 0, 
-                    paddingLeft: 20, 
-                    color: '#ff4d4f',
-                    fontSize: 14,
-                    lineHeight: 1.8
-                  }}>
+                <div
+                  style={{
+                    background: '#fff1f0',
+                    border: '1px solid #ffa39e',
+                    borderRadius: 6,
+                    padding: '12px 16px',
+                  }}
+                >
+                  <ul
+                    style={{
+                      margin: 0,
+                      paddingLeft: 20,
+                      color: '#ff4d4f',
+                      fontSize: 14,
+                      lineHeight: 1.8,
+                    }}
+                  >
                     {validationResult.errors.map((err: string, idx: number) => (
                       <li key={idx}>{err}</li>
                     ))}
@@ -550,41 +625,50 @@ const ProviderSettings: React.FC = () => {
                 </div>
               </div>
             )}
-            
-            {validationResult.warnings && validationResult.warnings.length > 0 && (
-              <div>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: 8, 
-                  marginBottom: 12,
-                  color: '#faad14',
-                  fontSize: 14,
-                  fontWeight: 500
-                }}>
-                  <span style={{ fontSize: 18 }}>⚠️</span>
-                  警告 ({validationResult.warnings.length})
+
+            {validationResult.warnings &&
+              validationResult.warnings.length > 0 && (
+                <div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      marginBottom: 12,
+                      color: '#faad14',
+                      fontSize: 14,
+                      fontWeight: 500,
+                    }}
+                  >
+                    <span style={{ fontSize: 18 }}>⚠️</span>
+                    警告 ({validationResult.warnings.length})
+                  </div>
+                  <div
+                    style={{
+                      background: '#fffbe6',
+                      border: '1px solid #ffe58f',
+                      borderRadius: 6,
+                      padding: '12px 16px',
+                    }}
+                  >
+                    <ul
+                      style={{
+                        margin: 0,
+                        paddingLeft: 20,
+                        color: '#faad14',
+                        fontSize: 14,
+                        lineHeight: 1.8,
+                      }}
+                    >
+                      {validationResult.warnings.map(
+                        (warn: string, idx: number) => (
+                          <li key={idx}>{warn}</li>
+                        )
+                      )}
+                    </ul>
+                  </div>
                 </div>
-                <div style={{ 
-                  background: '#fffbe6', 
-                  border: '1px solid #ffe58f', 
-                  borderRadius: 6, 
-                  padding: '12px 16px'
-                }}>
-                  <ul style={{ 
-                    margin: 0, 
-                    paddingLeft: 20, 
-                    color: '#faad14',
-                    fontSize: 14,
-                    lineHeight: 1.8
-                  }}>
-                    {validationResult.warnings.map((warn: string, idx: number) => (
-                      <li key={idx}>{warn}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
+              )}
           </div>
         )}
       </Modal>
@@ -599,7 +683,7 @@ const ProviderSettings: React.FC = () => {
             onSelect={onSelectProvider}
           />
         </Col>
-        
+
         {/* 右侧Provider详细信息 */}
         <Col xs={24} md={16}>
           {selectedProvider ? (
@@ -610,11 +694,13 @@ const ProviderSettings: React.FC = () => {
                   配置详情：{getProviderDisplayName(selectedProvider.name)}
                   <Tag color="blue">{selectedProvider.name}</Tag>
                   {selectedProvider.name === currentProvider && (
-                    <Tag icon={<CheckCircleOutlined />} color="success">当前使用</Tag>
+                    <Tag icon={<CheckCircleOutlined />} color="success">
+                      当前使用
+                    </Tag>
                   )}
                 </Space>
               </Typography.Title>
-              
+
               <Card size="small">
                 {/* Provider基本信息 */}
                 <Row gutter={[16, 8]} style={{ marginBottom: 16 }}>
@@ -626,16 +712,26 @@ const ProviderSettings: React.FC = () => {
                     <Space>
                       <Text type="secondary">API密钥：</Text>
                       <Text>
-                        {selectedProvider.api_key 
-                          ? (showApiKey[selectedProvider.name] ? selectedProvider.api_key : '******' + selectedProvider.api_key.slice(-4)) 
+                        {selectedProvider.api_key
+                          ? showApiKey[selectedProvider.name]
+                            ? selectedProvider.api_key
+                            : '******' + selectedProvider.api_key.slice(-4)
                           : '未设置'}
                       </Text>
                       {selectedProvider.api_key && (
-                        <Button 
-                          type="text" 
-                          size="small" 
-                          icon={showApiKey[selectedProvider.name] ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-                          onClick={() => toggleShowApiKey(selectedProvider.name)}
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={
+                            showApiKey[selectedProvider.name] ? (
+                              <EyeInvisibleOutlined />
+                            ) : (
+                              <EyeOutlined />
+                            )
+                          }
+                          onClick={() =>
+                            toggleShowApiKey(selectedProvider.name)
+                          }
                         />
                       )}
                     </Space>
@@ -648,83 +744,139 @@ const ProviderSettings: React.FC = () => {
 
                 <Divider style={{ margin: '12px 0' }} />
 
-                {/* 模型列表 */}
-                <div style={{ marginBottom: 8 }}>
-                   <Space style={{ marginBottom: 8 }}>
-                     <Text strong>模型列表：</Text>
-                     <Button
-                       type="link"
-                       size="small"
-                       icon={<PlusOutlined />}
-                       onClick={() => {
-                         setSelectedProviderForModel(selectedProvider.name);
-                         setAddModelModalVisible(true);
-                       }}
-                     >
-                       添加模型
-                     </Button>
-                     {selectedModels.size > 0 && (
-                       <Popconfirm
-                         title={`确定删除选中的 ${selectedModels.size} 个模型吗？`}
-                         onConfirm={() => handleBatchDeleteModels(selectedProvider.name, Array.from(selectedModels))}
-                         okText="确定"
-                         cancelText="取消"
-                         okButtonProps={{ danger: true }}
-                       >
-                         <Button type="link" danger icon={<DeleteOutlined />}>
-                           批量删除 ({selectedModels.size})
-                         </Button>
-                       </Popconfirm>
-                     )}
-                   </Space>
-                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                     {selectedProvider.models.map((model) => (
-                       <Tag
-                         key={model}
-                         color={model === selectedProvider.model ? 'geekblue' : selectedModels.has(model) ? 'volcano' : 'default'}
-                         closable
-                         onClose={(e) => {
-                           e.preventDefault();
-                           e.stopPropagation();
-                           handleDeleteModel(selectedProvider.name, model);
-                         }}
-                         onClick={() => {
-                           const newSelected = new Set(selectedModels);
-                           if (newSelected.has(model)) {
-                             newSelected.delete(model);
-                           } else {
-                             newSelected.add(model);
-                           }
-                           setSelectedModels(newSelected);
-                         }}
-                         style={{ cursor: 'pointer', userSelect: 'none' }}
-                       >
-                         {model === selectedProvider.model && <CheckCircleOutlined style={{ marginRight: 4 }} />}
-                         {selectedModels.has(model) && <span style={{ marginRight: 4 }}>✓</span>}
-                         {model}
-                       </Tag>
-                     ))}
-                   </div>
+                  {/* 模型列表 */}
+                  <div style={{ marginBottom: 8 }}>
+                    <Space style={{ marginBottom: 8 }}>
+                      <Text strong>模型列表：</Text>
+                      <Button
+                        type="link"
+                        size="small"
+                        icon={<PlusOutlined />}
+                        onClick={() => {
+                          setSelectedProviderForModel(selectedProvider.name);
+                          setAddModelModalVisible(true);
+                        }}
+                      >
+                        添加模型
+                      </Button>
+                      {selectedModels.size > 0 && (
+                        <Popconfirm
+                          title={`确定删除选中的 ${selectedModels.size} 个模型吗？`}
+                          onConfirm={() =>
+                            handleBatchDeleteModels(
+                              selectedProvider.name,
+                              Array.from(selectedModels)
+                            )
+                          }
+                          okText="确定"
+                          cancelText="取消"
+                          okButtonProps={{ danger: true }}
+                        >
+                          <Button type="link" danger icon={<DeleteOutlined />}>
+                            批量删除 ({selectedModels.size})
+                          </Button>
+                        </Popconfirm>
+                      )}
+                    </Space>
 
-                   {/* 批量删除进度指示器 */}
-                   {deleteProgress.total > 0 && (
-                     <div style={{ marginTop: 8 }}>
-                       <Progress
-                         percent={Math.round((deleteProgress.current / deleteProgress.total) * 100)}
-                         status="active"
-                         format={() => `${deleteProgress.current}/${deleteProgress.total}`}
-                       />
-                     </div>
-                   )}
-                </div>
+                    {/* 模型卡片列表 */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {selectedProvider.models.map((model) => {
+                        const isActive = model === selectedProvider.model;
+                        const isSelected = selectedModels.has(model);
+
+                        return (
+                          <Card
+                            key={model}
+                            size="small"
+                            style={{
+                              cursor: 'pointer',
+                              borderLeft: isActive ? '4px solid #1890ff' : '1px solid #d9d9d9',
+                              backgroundColor: isActive ? '#e6f7ff' : '#fafafa',
+                            }}
+                            bodyStyle={{ padding: '12px 16px' }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                {isActive && (
+                                  <CheckCircleOutlined style={{ color: '#52c41a' }} />
+                                )}
+                                <Text strong={isActive}>{model}</Text>
+                                {isActive && (
+                                  <Tag color="success" style={{ marginLeft: 4 }}>
+                                    当前使用
+                                  </Tag>
+                                )}
+                              </div>
+
+                              <Space>
+                                {/* 非当前模型显示切换按钮 */}
+                                {!isActive && (
+                                  <Button
+                                    type="link"
+                                    size="small"
+                                    onClick={() => onModelChange(model)}
+                                  >
+                                    切换
+                                  </Button>
+                                )}
+
+                                {/* 删除按钮 */}
+                                <Popconfirm
+                                  title={`确定删除模型 ${model} 吗？`}
+                                  onConfirm={(e) => {
+                                    e?.stopPropagation();
+                                    handleDelete();
+                                  }}
+                                  okText="确定"
+                                  cancelText="取消"
+                                  okButtonProps={{ danger: true }}
+                                  onVisibleChange={(visible) => {
+                                    if (!visible) {
+                                      handleDeleteModel(selectedProvider.name, model);
+                                    }
+                                  }}
+                                >
+                                  <Button
+                                    type="text"
+                                    size="small"
+                                    danger
+                                    icon={<DeleteOutlined />}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    删除
+                                  </Button>
+                                </Popconfirm>
+                              </Space>
+                            </div>
+                          </Card>
+                        );
+                      })}
+                    </div>
+
+                    {/* 批量删除进度指示器 */}
+                    {deleteProgress.total > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <Progress
+                          percent={Math.round(
+                            (deleteProgress.current / deleteProgress.total) * 100
+                          )}
+                          status="active"
+                          format={() =>
+                            `${deleteProgress.current}/${deleteProgress.total}`
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
 
                 <Divider style={{ margin: '12px 0' }} />
 
                 {/* 操作按钮 */}
                 <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
-                  <Button 
-                    type="primary" 
-                    icon={<EditOutlined />} 
+                  <Button
+                    type="primary"
+                    icon={<EditOutlined />}
                     onClick={() => handleEditProvider(selectedProvider)}
                   >
                     编辑
@@ -732,7 +884,9 @@ const ProviderSettings: React.FC = () => {
                   <Popconfirm
                     title={`确定删除 ${getProviderDisplayName(selectedProvider.name)} 吗？`}
                     description="删除后无法恢复"
-                    onConfirm={() => handleDeleteProvider(selectedProvider.name)}
+                    onConfirm={() =>
+                      handleDeleteProvider(selectedProvider.name)
+                    }
                     okText="确定"
                     cancelText="取消"
                   >
@@ -763,9 +917,9 @@ const ProviderSettings: React.FC = () => {
           setDeleteCancelled(true);
         }}
         footer={[
-          <Button 
-            key="cancel" 
-            danger 
+          <Button
+            key="cancel"
+            danger
             onClick={() => setDeleteCancelled(true)}
             disabled={deleteProgress.current >= deleteProgress.total}
           >
@@ -775,9 +929,15 @@ const ProviderSettings: React.FC = () => {
       >
         <p>正在删除 {deleteProgress.total} 个模型，请稍候...</p>
         <div style={{ marginTop: 16 }}>
-          <Progress 
-            percent={Math.round((deleteProgress.current / deleteProgress.total) * 100)}
-            status={deleteProgress.current >= deleteProgress.total ? 'success' : 'active'}
+          <Progress
+            percent={Math.round(
+              (deleteProgress.current / deleteProgress.total) * 100
+            )}
+            status={
+              deleteProgress.current >= deleteProgress.total
+                ? 'success'
+                : 'active'
+            }
           />
           <div style={{ marginTop: 8, color: '#666', fontSize: 12 }}>
             已完成: {deleteProgress.current} / {deleteProgress.total}
@@ -793,11 +953,7 @@ const ProviderSettings: React.FC = () => {
         footer={null}
         width={600}
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleSaveProvider}
-        >
+        <Form form={form} layout="vertical" onFinish={handleSaveProvider}>
           <Form.Item
             label="API地址"
             name="api_base"
@@ -806,27 +962,18 @@ const ProviderSettings: React.FC = () => {
             <Input placeholder="https://api.example.com/v1" />
           </Form.Item>
 
-          <Form.Item
-            label="API密钥"
-            name="api_key"
-          >
+          <Form.Item label="API密钥" name="api_key">
             <Input.Password placeholder="留空保持原密钥不变" />
           </Form.Item>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item
-                label="超时时间(秒)"
-                name="timeout"
-              >
+              <Form.Item label="超时时间(秒)" name="timeout">
                 <Input type="number" />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item
-                label="最大重试次数"
-                name="max_retries"
-              >
+              <Form.Item label="最大重试次数" name="max_retries">
                 <Input type="number" />
               </Form.Item>
             </Col>
@@ -837,9 +984,7 @@ const ProviderSettings: React.FC = () => {
               <Button type="primary" htmlType="submit">
                 保存
               </Button>
-              <Button onClick={() => setEditModalVisible(false)}>
-                取消
-              </Button>
+              <Button onClick={() => setEditModalVisible(false)}>取消</Button>
             </Space>
           </Form.Item>
         </Form>
@@ -855,11 +1000,7 @@ const ProviderSettings: React.FC = () => {
         }}
         footer={null}
       >
-        <Form
-          form={modelForm}
-          layout="vertical"
-          onFinish={handleAddModel}
-        >
+        <Form form={modelForm} layout="vertical" onFinish={handleAddModel}>
           <Form.Item
             label="模型名称"
             name="model"
@@ -913,27 +1054,17 @@ const ProviderSettings: React.FC = () => {
             <Input placeholder="https://api.example.com/v1" />
           </Form.Item>
 
-          <Form.Item
-            label="API密钥"
-            name="api_key"
-          >
+          <Form.Item label="API密钥" name="api_key">
             <Input.Password placeholder="可选" />
           </Form.Item>
 
-          <Form.Item
-            label="默认模型"
-            name="model"
-          >
+          <Form.Item label="默认模型" name="model">
             <Input placeholder="glm-4-flash" />
           </Form.Item>
 
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item
-                label="超时时间(秒)"
-                name="timeout"
-                initialValue={60}
-              >
+              <Form.Item label="超时时间(秒)" name="timeout" initialValue={60}>
                 <Input type="number" />
               </Form.Item>
             </Col>
@@ -971,6 +1102,7 @@ const SecuritySettings: React.FC = () => {
   const [securityConfig, setSecurityConfig] = useState<any>({});
   const [securityForm] = Form.useForm();
   const [savingSecurity, setSavingSecurity] = useState(false);
+  const [advancedCollapse, setAdvancedCollapse] = useState<string[]>([]);
 
   const loadSecurityConfig = async () => {
     try {
@@ -1021,143 +1153,177 @@ const SecuritySettings: React.FC = () => {
       onFinish={handleSaveSecurityConfig}
       initialValues={securityConfig}
     >
-      <Row gutter={[16, 8]}>
-        <Col xs={24} sm={12}>
-          <Form.Item
-            label="启用内容安全"
-            name="contentFilterEnabled"
-            valuePropName="checked"
-          >
-            <Switch checkedChildren="开" unCheckedChildren="关" />
-          </Form.Item>
-        </Col>
+      {/* 基础配置区域 */}
+      <Card 
+        size="small" 
+        title={<Text strong><SafetyOutlined /> 基础配置</Text>}
+        style={{ marginBottom: 16 }}
+      >
+        <Row gutter={[16, 8]}>
+          <Col xs={24} sm={12}>
+            <Form.Item
+              label="启用内容安全"
+              name="contentFilterEnabled"
+              valuePropName="checked"
+            >
+              <Switch checkedChildren="开" unCheckedChildren="关" />
+            </Form.Item>
+          </Col>
 
-        <Col xs={24} sm={12}>
-          <Form.Item
-            label="敏感词过滤级别"
-            name="contentFilterLevel"
-          >
-            <Select>
-              <Select.Option value="low">低</Select.Option>
-              <Select.Option value="medium">中</Select.Option>
-              <Select.Option value="high">高</Select.Option>
-            </Select>
-          </Form.Item>
-        </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item label="敏感词过滤级别" name="contentFilterLevel">
+              <Select>
+                <Select.Option value="low">低</Select.Option>
+                <Select.Option value="medium">中</Select.Option>
+                <Select.Option value="high">高</Select.Option>
+              </Select>
+            </Form.Item>
+          </Col>
+        </Row>
+      </Card>
 
-        <Col xs={24} sm={12}>
-          <Form.Item
-            label="启用命令白名单"
-            name="whitelistEnabled"
-            valuePropName="checked"
-          >
-            <Switch checkedChildren="开" unCheckedChildren="关" />
-          </Form.Item>
-        </Col>
+      {/* 高级配置可折叠区域 */}
+      <Card size="small" title={<Text strong>⚙️ 高级配置</Text>}>
+        <Collapse
+          activeKey={advancedCollapse}
+          onChange={(keys) => setAdvancedCollapse(keys as string[])}
+          ghost
+          items={[
+            {
+              key: 'command',
+              label: <span><ApiOutlined /> 命令过滤配置</span>,
+              children: (
+                <Row gutter={[16, 8]}>
+                  <Col xs={24} sm={12}>
+                    <Form.Item
+                      label="启用命令白名单"
+                      name="whitelistEnabled"
+                      valuePropName="checked"
+                    >
+                      <Switch checkedChildren="开" unCheckedChildren="关" />
+                    </Form.Item>
+                  </Col>
 
-        <Col xs={24} sm={12}>
-          <Form.Item
-            label="启用命令黑名单"
-            name="blacklistEnabled"
-            valuePropName="checked"
-          >
-            <Switch checkedChildren="开" unCheckedChildren="关" />
-          </Form.Item>
-        </Col>
+                  <Col xs={24} sm={12}>
+                    <Form.Item
+                      label="启用命令黑名单"
+                      name="blacklistEnabled"
+                      valuePropName="checked"
+                    >
+                      <Switch checkedChildren="开" unCheckedChildren="关" />
+                    </Form.Item>
+                  </Col>
 
-        <Col xs={24} sm={12}>
-          <Form.Item
-            label="命令白名单"
-            name="commandWhitelist"
-            rules={[{ 
-              validator: (_, value) => {
-                const whitelistEnabled = securityForm.getFieldValue('whitelistEnabled');
-                if (whitelistEnabled && (!value || value.trim() === '')) {
-                  return Promise.reject(new Error('启用白名单时必须配置命令白名单'));
-                }
-                return Promise.resolve();
-              }
-            }]}
-          >
-            <Input.TextArea 
-              rows={3} 
-              placeholder="每行一个允许的命令，支持通配符"
-              disabled={!securityForm.getFieldValue('whitelistEnabled')}
-            />
-          </Form.Item>
-        </Col>
+                  <Col xs={24} sm={12}>
+                    <Form.Item
+                      label="命令白名单"
+                      name="commandWhitelist"
+                      rules={[
+                        {
+                          validator: (_, value) => {
+                            const whitelistEnabled =
+                              securityForm.getFieldValue('whitelistEnabled');
+                            if (whitelistEnabled && (!value || value.trim() === '')) {
+                              return Promise.reject(
+                                new Error('启用白名单时必须配置命令白名单')
+                              );
+                            }
+                            return Promise.resolve();
+                          },
+                        },
+                      ]}
+                    >
+                      <Input.TextArea
+                        rows={3}
+                        placeholder="每行一个允许的命令，支持通配符"
+                        disabled={!securityForm.getFieldValue('whitelistEnabled')}
+                      />
+                    </Form.Item>
+                  </Col>
 
-        <Col xs={24} sm={12}>
-          <Form.Item
-            label="命令黑名单"
-            name="commandBlacklist"
-            rules={[{ 
-              validator: (_, value) => {
-                const blacklistEnabled = securityForm.getFieldValue('blacklistEnabled');
-                if (blacklistEnabled && (!value || value.trim() === '')) {
-                  return Promise.reject(new Error('启用黑名单时必须配置命令黑名单'));
-                }
-                return Promise.resolve();
-              }
-            }]}
-          >
-            <Input.TextArea 
-              rows={3} 
-              placeholder="每行一个禁止的命令，支持通配符"
-              disabled={!securityForm.getFieldValue('blacklistEnabled')}
-            />
-          </Form.Item>
-        </Col>
+                  <Col xs={24} sm={12}>
+                    <Form.Item
+                      label="命令黑名单"
+                      name="commandBlacklist"
+                      rules={[
+                        {
+                          validator: (_, value) => {
+                            const blacklistEnabled =
+                              securityForm.getFieldValue('blacklistEnabled');
+                            if (blacklistEnabled && (!value || value.trim() === '')) {
+                              return Promise.reject(
+                                new Error('启用黑名单时必须配置命令黑名单')
+                              );
+                            }
+                            return Promise.resolve();
+                          },
+                        },
+                      ]}
+                    >
+                      <Input.TextArea
+                        rows={3}
+                        placeholder="每行一个禁止的命令，支持通配符"
+                        disabled={!securityForm.getFieldValue('blacklistEnabled')}
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              ),
+            },
+            {
+              key: 'advanced',
+              label: <span><SafetyOutlined /> 高级安全选项</span>,
+              children: (
+                <Row gutter={[16, 8]}>
+                  <Col xs={24} sm={12}>
+                    <Form.Item
+                      label="危险操作二次确认"
+                      name="confirmDangerousOps"
+                      valuePropName="checked"
+                    >
+                      <Switch checkedChildren="开" unCheckedChildren="关" />
+                    </Form.Item>
+                  </Col>
 
-        <Col xs={24} sm={12}>
-          <Form.Item
-            label="危险操作二次确认"
-            name="confirmDangerousOps"
-            valuePropName="checked"
-          >
-            <Switch checkedChildren="开" unCheckedChildren="关" />
-          </Form.Item>
-        </Col>
+                  <Col xs={24} sm={12}>
+                    <Form.Item label="最大文件操作大小(MB)" name="maxFileSize">
+                      <Select>
+                        <Select.Option value={10}>10</Select.Option>
+                        <Select.Option value={50}>50</Select.Option>
+                        <Select.Option value={100}>100</Select.Option>
+                        <Select.Option value={500}>500</Select.Option>
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                </Row>
+              ),
+            },
+          ]}
+        />
+      </Card>
 
-        <Col xs={24} sm={12}>
-          <Form.Item
-            label="最大文件操作大小(MB)"
-            name="maxFileSize"
-          >
-            <Select>
-              <Select.Option value={10}>10</Select.Option>
-              <Select.Option value={50}>50</Select.Option>
-              <Select.Option value={100}>100</Select.Option>
-              <Select.Option value={500}>500</Select.Option>
-            </Select>
-          </Form.Item>
-        </Col>
-      </Row>
-
-       <Form.Item>
-         <Button
-           type="primary"
-           htmlType="submit"
-           icon={<SafetyOutlined />}
-           loading={savingSecurity}
-         >
-           保存安全配置
-         </Button>
-         <Popconfirm
-           title="确定要重置安全配置吗？"
-           description="此操作将恢复默认设置"
-           onConfirm={loadSecurityConfig}
-           okText="确定"
-           cancelText="取消"
-         >
-           <Button
-             style={{ marginLeft: 8 }}
-             icon={<ReloadOutlined />}
-           >
-             重置
-           </Button>
-         </Popconfirm>
-       </Form.Item>
+      {/* 保存和重置按钮 */}
+      <div style={{ marginTop: 24 }}>
+        <Button
+          type="primary"
+          htmlType="submit"
+          icon={<SafetyOutlined />}
+          loading={savingSecurity}
+        >
+          保存安全配置
+        </Button>
+        <Popconfirm
+          title="确定要重置安全配置吗？"
+          description="此操作将恢复默认设置"
+          onConfirm={loadSecurityConfig}
+          okText="确定"
+          cancelText="取消"
+        >
+          <Button style={{ marginLeft: 8 }} icon={<ReloadOutlined />}>
+            重置
+          </Button>
+        </Popconfirm>
+      </div>
     </Form>
   );
 };
@@ -1169,7 +1335,9 @@ const SessionHistory: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [keyword, setKeyword] = useState(''); // 前端小新代修改 UX-S04: 添加搜索功能
-  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set()); // 前端小新代修改 UX-H03: 批量删除
+  const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(
+    new Set()
+  ); // 前端小新代修改 UX-H03: 批量删除
 
   const loadSessions = async (searchKeyword?: string) => {
     setLoadingSessions(true);
@@ -1295,6 +1463,7 @@ const SessionHistory: React.FC = () => {
           <List.Item
             actions={[
               <Popconfirm
+                key="delete"
                 title="确定删除此会话吗？"
                 onConfirm={() => handleDeleteSession(session.session_id)}
                 okText="删除"
@@ -1313,7 +1482,9 @@ const SessionHistory: React.FC = () => {
                   <input
                     type="checkbox"
                     checked={selectedSessionIds.has(session.session_id)}
-                    onChange={() => handleToggleSelectSession(session.session_id)}
+                    onChange={() =>
+                      handleToggleSelectSession(session.session_id)
+                    }
                     style={{ marginRight: 8 }}
                   />
                   {session.title || '未命名会话'}
@@ -1349,6 +1520,12 @@ const Settings: React.FC = () => {
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [pendingKey, setPendingKey] = useState<string>('');
   const [configFilePath, setConfigFilePath] = useState<string>('');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [fixingConfig, setFixingConfig] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [fixProgress, setFixProgress] = useState<{ current: number; total: number }>({ current: 0, total: 100 });
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [showFixModal, setShowFixModal] = useState(false);
 
   const loadConfigFilePath = async () => {
     try {
@@ -1359,12 +1536,49 @@ const Settings: React.FC = () => {
     }
   };
 
+  // 配置修复功能
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const handleFixConfig = async () => {
+    setFixingConfig(true);
+    setFixProgress({ current: 0, total: 100 });
+    
+    // 模拟修复进度
+    const progressInterval = setInterval(() => {
+      setFixProgress(prev => {
+        if (prev.current >= 100) {
+          clearInterval(progressInterval);
+          return prev;
+        }
+        return { ...prev, current: prev.current + 10 };
+      });
+    }, 200);
+    
+    try {
+      const result = await configApi.fixConfig();
+      clearInterval(progressInterval);
+      setFixProgress({ current: 100, total: 100 });
+      message.success('配置修复成功');
+      setConfigFilePath(result.backup_path);
+    } catch (error) {
+      clearInterval(progressInterval);
+      message.error('配置修复失败');
+    } finally {
+      setFixingConfig(false);
+    }
+  };
+
   useEffect(() => {
     loadConfigFilePath();
   }, []);
 
   const handleOpenConfigDir = () => {
     message.info(`配置文件路径: ${configFilePath}`);
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+
+  const handleShowFixModal = () => {
+    setShowFixModal(true);
   };
 
   // Tab切换处理
@@ -1389,26 +1603,39 @@ const Settings: React.FC = () => {
     setConfirmModalVisible(false);
   };
 
-   return (
-     <div style={{ padding: 0, margin: 0 }}>
-        <Card style={{ marginTop: 0 }} bodyStyle={{ padding: '32px' }}> {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
-          {/* 配置文件路径标注 */}
-          {configFilePath && (
-            <div style={{ marginBottom: 16, padding: '12px', background: '#f6ffed', borderRadius: 4 }}>
-              <Space>
-                <Text type="secondary">配置文件：</Text>
-                <Text code>{configFilePath}</Text>
-                <Button type="link" size="small" onClick={handleOpenConfigDir}>
-                  查看路径
-                </Button>
-              </Space>
-            </div>
-          )}
-          <Tabs
-            activeKey={activeKey}
-            onChange={handleTabChange}
-            type="line"
+  return (
+    <div style={{ padding: 0, margin: 0 }}>
+      <Card style={{ marginTop: 0 }} bodyStyle={{ padding: '32px' }}>
+        {' '}
+        {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
+        {/* 配置文件路径标注 */}
+        {configFilePath && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: '12px',
+              background: '#f6ffed',
+              borderRadius: 4,
+            }}
           >
+            <Space>
+              <Text type="secondary">配置文件：</Text>
+              <Text code>{configFilePath}</Text>
+              <Button type="link" size="small" onClick={handleOpenConfigDir}>
+                查看路径
+              </Button>
+              <Button 
+                type="link" 
+                size="small" 
+                icon={<ReloadOutlined />}
+                onClick={handleShowFixModal}
+              >
+                修复配置
+              </Button>
+            </Space>
+          </div>
+        )}
+        <Tabs activeKey={activeKey} onChange={handleTabChange} type="line">
           <TabPane
             tab={
               <span>
@@ -1441,8 +1668,8 @@ const Settings: React.FC = () => {
           >
             <SessionHistory />
           </TabPane>
-          </Tabs>
-       </Card>
+        </Tabs>
+      </Card>
 
       {/* Tab切换确认对话框 */}
       <Modal
@@ -1455,8 +1682,96 @@ const Settings: React.FC = () => {
       >
         <p>当前Tab有未保存的修改，是否保存后切换？</p>
       </Modal>
-     </div>
-   );
+
+      {/* 配置修复进度弹窗 */}
+      <Modal
+        title={
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <ReloadOutlined style={{ color: '#1890ff' }} />
+            配置修复进度
+          </span>
+        }
+        open={showFixModal}
+        onCancel={() => {
+          if (!fixingConfig) {
+            setShowFixModal(false);
+          } else {
+            message.warning('配置修复中，请稍候...');
+          }
+        }}
+        footer={[
+          <Button 
+            key="close" 
+            onClick={() => setShowFixModal(false)}
+            disabled={fixingConfig}
+          >
+            关闭
+          </Button>,
+          <Button
+            key="start"
+            type="primary"
+            onClick={() => {
+              handleFixConfig();
+            }}
+            loading={fixingConfig}
+            disabled={fixProgress.current >= 100}
+          >
+            {fixingConfig ? '修复中...' : fixProgress.current >= 100 ? '已完成' : '开始修复'}
+          </Button>,
+        ]}
+        width={500}
+      >
+        <div style={{ padding: '16px 0' }}>
+          <div style={{ marginBottom: 16 }}>
+            <Text strong>修复进度</Text>
+          </div>
+          
+          <Progress
+            percent={Math.round((fixProgress.current / fixProgress.total) * 100)}
+            status={fixProgress.current >= fixProgress.total ? 'success' : fixingConfig ? 'active' : 'normal'}
+            format={(percent) => `${percent}% (${fixProgress.current}/${fixProgress.total})`}
+            style={{ marginBottom: 16 }}
+          />
+          
+          {fixProgress.current >= fixProgress.total ? (
+            <Alert
+              message="修复完成"
+              description="配置文件已成功修复并备份"
+              type="success"
+              showIcon
+              style={{ marginBottom: 12 }}
+            />
+          ) : fixingConfig ? (
+            <Alert
+              message="正在修复配置"
+              description="请勿关闭此窗口，修复过程正在进行中..."
+              type="info"
+              showIcon
+              style={{ marginBottom: 12 }}
+            />
+          ) : (
+            <Alert
+              message="准备修复配置"
+              description="点击'开始修复'按钮执行配置修复操作"
+              type="warning"
+              showIcon
+            />
+          )}
+          
+          {configFilePath && (
+            <div style={{ marginTop: 16, padding: 12, background: '#fafafa', borderRadius: 4 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                备份路径：
+              </Text>
+              <div>
+                <Text code style={{ fontSize: 12 }}>{configFilePath}</Text>
+              </div>
+            </div>
+          )}
+        </div>
+      </Modal>
+    </div>
+  );
 };
 
 export default Settings;

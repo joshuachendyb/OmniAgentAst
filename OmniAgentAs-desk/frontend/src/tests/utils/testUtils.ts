@@ -1,6 +1,6 @@
 /**
  * Test Utilities
- * 
+ *
  * @author 小新
  * @description Test utilities and helpers for frontend tests
  */
@@ -38,9 +38,7 @@ export const createMockExecutionStep = (
  * Create a mock config
  * @author 小新
  */
-export const createMockConfig = (
-  overrides: Partial<Config> = {}
-): Config => ({
+export const createMockConfig = (overrides: Partial<Config> = {}): Config => ({
   ai_provider: 'zhipuai',
   ai_model: 'glm-4-flash',
   api_key_configured: true,
@@ -59,10 +57,10 @@ export const createMockSession = (
 ): Session => ({
   session_id: `session-${Date.now()}`,
   title: 'Test Session',
-  title_locked: false,           // ⭐ 新增
-  title_source: 'auto',          // ⭐ 新增
-  title_updated_at: null,         // ⭐ 新增
-  version: 1,                    // ⭐ 新增
+  title_locked: false, // ⭐ 新增
+  title_source: 'auto', // ⭐ 新增
+  title_updated_at: null, // ⭐ 新增
+  version: 1, // ⭐ 新增
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   message_count: 10,
@@ -106,16 +104,20 @@ export class MockEventSource {
 
   addEventListener() {}
   removeEventListener() {}
-  dispatchEvent() { return true; }
+  dispatchEvent() {
+    return true;
+  }
 
   /**
    * Simulate receiving a message
    */
   simulateMessage(data: unknown) {
     if (this.onmessage) {
-      this.onmessage(new MessageEvent('message', {
-        data: JSON.stringify(data),
-      }));
+      this.onmessage(
+        new MessageEvent('message', {
+          data: JSON.stringify(data),
+        })
+      );
     }
   }
 
@@ -143,8 +145,8 @@ export const setupEventSourceMock = () => {
 /**
  * Wait for a specified time
  */
-export const wait = (ms: number): Promise<void> => 
-  new Promise(resolve => setTimeout(resolve, ms));
+export const wait = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Create a deferred promise for async testing
@@ -156,12 +158,12 @@ export function createDeferred<T>(): {
 } {
   let resolve!: (value: T) => void;
   let reject!: (error: Error) => void;
-  
+
   const promise = new Promise<T>((res, rej) => {
     resolve = res;
     reject = rej;
   });
-  
+
   return { promise, resolve, reject };
 }
 
@@ -203,7 +205,7 @@ export const generateMocks = <T>(
  */
 export const mockLocalStorage = () => {
   const store: Record<string, string> = {};
-  
+
   return {
     getItem: vi.fn((key: string) => store[key] || null),
     setItem: vi.fn((key: string, value: string) => {
@@ -213,7 +215,7 @@ export const mockLocalStorage = () => {
       delete store[key];
     }),
     clear: vi.fn(() => {
-      Object.keys(store).forEach(key => delete store[key]);
+      Object.keys(store).forEach((key) => delete store[key]);
     }),
     getStore: () => ({ ...store }),
   };
@@ -245,7 +247,7 @@ export const expectToHaveText = (
   if (!element) {
     throw new Error('Element is null');
   }
-  
+
   if (typeof text === 'string') {
     expect(element.textContent).toContain(text);
   } else {
@@ -265,7 +267,7 @@ export const simulateTyping = async (
     element.dispatchEvent(new KeyboardEvent('keydown', { key: char }));
     element.dispatchEvent(new KeyboardEvent('keypress', { key: char }));
     element.dispatchEvent(new KeyboardEvent('keyup', { key: char }));
-    
+
     if (delay > 0) {
       await wait(delay);
     }

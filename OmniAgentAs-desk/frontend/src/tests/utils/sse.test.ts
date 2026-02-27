@@ -1,14 +1,14 @@
 /**
  * SSE Utility Tests
- * 
+ *
  * @author 小新
  * @description Unit tests for SSE streaming utilities
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { 
-  useSSE, 
-  createSSEConnection, 
+import {
+  useSSE,
+  createSSEConnection,
   formatExecutionStep,
   type ExecutionStep,
 } from '../../utils/sse';
@@ -198,9 +198,11 @@ describe('SSE Utilities', () => {
 
       // Simulate receiving message
       if (eventSource.onmessage) {
-        eventSource.onmessage(new MessageEvent('message', {
-          data: JSON.stringify(stepMessage),
-        }));
+        eventSource.onmessage(
+          new MessageEvent('message', {
+            data: JSON.stringify(stepMessage),
+          })
+        );
       }
 
       expect(mockHandlers.onStep).toHaveBeenCalled();
@@ -223,9 +225,11 @@ describe('SSE Utilities', () => {
 
       // Simulate receiving complete message
       if (eventSource.onmessage) {
-        eventSource.onmessage(new MessageEvent('message', {
-          data: JSON.stringify(completeMessage),
-        }));
+        eventSource.onmessage(
+          new MessageEvent('message', {
+            data: JSON.stringify(completeMessage),
+          })
+        );
       }
 
       expect(mockHandlers.onComplete).toHaveBeenCalled();
@@ -250,9 +254,11 @@ describe('SSE Utilities', () => {
 
       // Simulate receiving error message
       if (eventSource.onmessage) {
-        eventSource.onmessage(new MessageEvent('message', {
-          data: JSON.stringify(errorMessage),
-        }));
+        eventSource.onmessage(
+          new MessageEvent('message', {
+            data: JSON.stringify(errorMessage),
+          })
+        );
       }
 
       expect(mockHandlers.onError).toHaveBeenCalledWith('Connection failed');

@@ -1,8 +1,8 @@
 /**
  * SSE工具模块 - Server-Sent Events流式处理
- * 
+ *
  * 功能：建立SSE连接、接收流式数据、处理执行步骤
- * 
+ *
  * @author 小新
  * @version 1.0.0
  * @since 2026-02-17
@@ -16,7 +16,15 @@ import { message } from 'antd';
  */
 export interface ExecutionStep {
   /** 步骤类型 */
-  type: 'thought' | 'action' | 'observation' | 'final' | 'error' | 'interrupted' | 'chunk' | 'start';
+  type:
+    | 'thought'
+    | 'action'
+    | 'observation'
+    | 'final'
+    | 'error'
+    | 'interrupted'
+    | 'chunk'
+    | 'start';
   /** 步骤内容 */
   content?: string;
   /** 工具名称 */
@@ -99,7 +107,7 @@ export interface UseSSEReturn {
 
 /**
  * SSE Hook - 用于组件中流式通信
- * 
+ *
  * @param config - SSE配置
  * @param onStep - 执行步骤回调
  * @param onChunk - 消息片段回调
@@ -118,7 +126,7 @@ export const useSSE = (
   const [isReceiving, setIsReceiving] = useState(false);
   const [executionSteps, setExecutionSteps] = useState<ExecutionStep[]>([]);
   const [currentResponse, setCurrentResponse] = useState('');
-  
+
   const eventSourceRef = useRef<EventSource | null>(null);
   const responseBufferRef = useRef('');
   const isProcessingRef = useRef(false);
@@ -148,123 +156,133 @@ export const useSSE = (
 
   /**
    * 发送消息建立SSE连接（使用fetch + ReadableStream，支持POST请求）
-   * 
+   *
    * 【修复】EventSource只支持GET请求，无法向后端发送message参数
    * 改用fetch + ReadableStream，支持POST请求和流式数据解析
    */
-  const sendMessage = useCallback(async (content: string) => {
-    console.log('[SSE sendMessage] 函数被调用, content:', content);
-    // 断开已有连接
-    disconnect();
-    clearSteps();
-    
-    setIsReceiving(true);
-    setIsConnected(true);
-    
-    try {
-      // 构建请求 - 使用POST方法，message放在body中
-      const url = `${config.baseURL}/chat/stream`;
-      
-      // 使用AbortController支持取消
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
-      
-       const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(config.token ? { 'Authorization': `Bearer ${config.token}` } : {})
-        },
-        body: JSON.stringify({
-          messages: [
-            { role: 'user', content: content }
-          ],
-          stream: true,
-          task_id: taskId || undefined
-        }),
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      if (!response.body) {
-        throw new Error('响应体为空');
-      }
-      
-      // 使用ReadableStream读取流式数据
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
-      
-      console.log('[SSE] 开始接收流式数据...');
-      
-      while (true) {
-        const { done, value } = await reader.read();
-        
-        if (done) {
-          // 处理剩余的buffer数据
-          if (buffer.trim()) {
-            processSSEData(buffer, {
-              setExecutionSteps,
-              onStep,
-              onChunk,
-              onComplete,
-              onError,
-              setCurrentResponse,
-              responseBufferRef,
-              setIsReceiving,
-              setIsConnected,
-              disconnect,
-              setServerTaskId
-            }, isProcessingRef);
+  const sendMessage = useCallback(
+    async (content: string) => {
+      console.log('[SSE sendMessage] 函数被调用, content:', content);
+      // 断开已有连接
+      disconnect();
+      clearSteps();
+
+      setIsReceiving(true);
+      setIsConnected(true);
+
+      try {
+        // 构建请求 - 使用POST方法，message放在body中
+        const url = `${config.baseURL}/chat/stream`;
+
+        // 使用AbortController支持取消
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超时
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(config.token
+              ? { Authorization: `Bearer ${config.token}` }
+              : {}),
+          },
+          body: JSON.stringify({
+            messages: [{ role: 'user', content: content }],
+            stream: true,
+            task_id: taskId || undefined,
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        if (!response.body) {
+          throw new Error('响应体为空');
+        }
+
+        // 使用ReadableStream读取流式数据
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        console.log('[SSE] 开始接收流式数据...');
+
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const { done, value } = await reader.read();
+
+          if (done) {
+            // 处理剩余的buffer数据
+            if (buffer.trim()) {
+              processSSEData(
+                buffer,
+                {
+                  setExecutionSteps,
+                  onStep,
+                  onChunk,
+                  onComplete,
+                  onError,
+                  setCurrentResponse,
+                  responseBufferRef,
+                  setIsReceiving,
+                  setIsConnected,
+                  disconnect,
+                  setServerTaskId,
+                },
+                isProcessingRef
+              );
+            }
+            console.log('[SSE] 流式接收完成');
+            break;
           }
-          console.log('[SSE] 流式接收完成');
-          break;
+
+          // 解码数据块
+          buffer += decoder.decode(value, { stream: true });
+
+          // 按行分割，处理SSE格式
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // 保留最后一个不完整的行
+
+          for (const line of lines) {
+            processSSEData(
+              line,
+              {
+                setExecutionSteps,
+                onStep,
+                onChunk,
+                onComplete,
+                onError,
+                setCurrentResponse,
+                responseBufferRef,
+                setIsReceiving,
+                setIsConnected,
+                disconnect,
+                setServerTaskId,
+              },
+              isProcessingRef
+            );
+          }
         }
-        
-        // 解码数据块
-        buffer += decoder.decode(value, { stream: true });
-        
-        // 按行分割，处理SSE格式
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // 保留最后一个不完整的行
-        
-        for (const line of lines) {
-          processSSEData(line, {
-            setExecutionSteps,
-            onStep,
-            onChunk,
-            onComplete,
-            onError,
-            setCurrentResponse,
-            responseBufferRef,
-            setIsReceiving,
-            setIsConnected,
-            disconnect,
-            setServerTaskId
-          }, isProcessingRef);
+      } catch (error: any) {
+        console.error('[SSE] 请求错误:', error);
+        setIsConnected(false);
+        setIsReceiving(false);
+
+        if (error.name === 'AbortError') {
+          message.warning('请求超时');
+          onError?.('请求超时');
+        } else {
+          message.error(`连接异常: ${error.message}`);
+          onError?.(error.message);
         }
       }
-      
-    } catch (error: any) {
-      console.error('[SSE] 请求错误:', error);
-      setIsConnected(false);
-      setIsReceiving(false);
-      
-      if (error.name === 'AbortError') {
-        message.warning('请求超时');
-        onError?.('请求超时');
-      } else {
-        message.error(`连接异常: ${error.message}`);
-        onError?.(error.message);
-      }
-    }
-    
-  }, [config, disconnect, clearSteps, onStep, onChunk, onComplete, onError]);
+    },
+    [config, disconnect, clearSteps, onStep, onChunk, onComplete, onError]
+  );
 
   // 组件卸载时清理
   useEffect(() => {
@@ -273,7 +291,7 @@ export const useSSE = (
     };
   }, [disconnect]);
 
-    return {
+  return {
     isConnected,
     isReceiving,
     executionSteps,
@@ -288,7 +306,7 @@ export const useSSE = (
 };
 /**
  * 处理单行SSE数据
- * 
+ *
  * 解析后端的SSE格式数据，触发相应的回调
  * 支持6种事件类型：thought/action/observation/final/error/interrupted
  */
@@ -309,36 +327,48 @@ const processSSEData = (
   },
   isProcessingRef: React.MutableRefObject<boolean>
 ) => {
-  const { setExecutionSteps, onStep, onChunk, onComplete, onError, setCurrentResponse, responseBufferRef, setIsReceiving, setIsConnected, disconnect, setServerTaskId } = handlers;
+  const {
+    setExecutionSteps,
+    onStep,
+    onChunk,
+    onComplete,
+    onError,
+    setCurrentResponse,
+    responseBufferRef,
+    setIsReceiving,
+    setIsConnected,
+    disconnect,
+    setServerTaskId,
+  } = handlers;
 
   if (isProcessingRef.current) {
     console.warn('[SSE] 递归调用被阻止');
     return;
   }
   isProcessingRef.current = true;
-  
+
   // 跳过空行
   if (!line.trim() || !line.startsWith('data: ')) {
     return;
   }
-  
+
   try {
     // 解析SSE数据（去掉 "data: " 前缀）
     const rawData = JSON.parse(line.slice(6));
-    
+
     console.log('[SSE] 收到数据:', rawData.type, rawData);
-    
+
     // 构建ExecutionStep对象
     const step: ExecutionStep = {
       type: rawData.type as ExecutionStep['type'],
       content: rawData.content || rawData.error || '',
-      tool: rawData.action,        // action作为工具名
+      tool: rawData.action, // action作为工具名
       params: rawData.action_input, // action_input作为参数
       result: rawData.observation, // observation作为结果
       timestamp: Date.now(),
-      stepNumber: rawData.step || 1
+      stepNumber: rawData.step || 1,
     };
-    
+
     switch (rawData.type) {
       case 'start':
         // 【前端小新代修改】收到start事件，保存后端返回的task_id
@@ -347,28 +377,28 @@ const processSSEData = (
           setServerTaskId(rawData.task_id);
         }
         break;
-        
+
       case 'thought':
         // 思考步骤
         console.log('[SSE] 思考:', step.content);
-        setExecutionSteps(prev => [...prev, step]);
+        setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
         break;
-        
+
       case 'action':
         // 行动步骤
         console.log('[SSE] 行动:', step.content);
-        setExecutionSteps(prev => [...prev, step]);
+        setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
         break;
-        
+
       case 'observation':
         // 观察结果 - 包含ReAct三要素
         console.log('[SSE] 观察:', step.result);
-        setExecutionSteps(prev => [...prev, step]);
+        setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
         break;
-        
+
       case 'chunk':
         // 流式内容片段 - 逐token返回
         console.log('[SSE] 内容片段:', rawData.content);
@@ -376,7 +406,7 @@ const processSSEData = (
         setCurrentResponse(responseBufferRef.current);
         onChunk?.(rawData.content || '');
         break;
-      case 'final':
+      case 'final': {
         // 最终结果 - 前端小新代修改
         console.log('[SSE] 最终结果:', step.content);
         // 优化判断逻辑：优先使用后端返回的content，避免忽略有效内容
@@ -402,7 +432,8 @@ const processSSEData = (
           console.log('[SSE] onComplete不存在！');
         }
         break;
-      case 'interrupted':
+      }
+      case 'interrupted': {
         // 中断
         setIsReceiving(false);
         setIsConnected(false);
@@ -412,7 +443,8 @@ const processSSEData = (
         onError?.(interruptMsg);
         console.log('[SSE] 中断:', interruptMsg);
         break;
-      case 'error':
+      }
+      case 'error': {
         // 错误
         setIsReceiving(false);
         setIsConnected(false);
@@ -422,16 +454,19 @@ const processSSEData = (
         onError?.(errorMsg);
         console.error('[SSE] 错误:', errorMsg);
         break;
-        
+      }
+
       default:
         console.log('[SSE] 未知类型:', rawData.type);
     }
   } catch (err) {
     console.error(
-      '[SSE] 解析数据失败:', 
-      err, 
-      '原始内容:', line,
-      '行长度:', line.length
+      '[SSE] 解析数据失败:',
+      err,
+      '原始内容:',
+      line,
+      '行长度:',
+      line.length
     );
   } finally {
     isProcessingRef.current = false;
@@ -440,7 +475,7 @@ const processSSEData = (
 
 /**
  * 创建SSE连接（非Hook方式）
- * 
+ *
  * @param url - SSE端点URL
  * @param handlers - 事件处理器
  * @returns EventSource实例
@@ -458,41 +493,41 @@ export const createSSEConnection = (
 ): EventSource => {
   const eventSource = new EventSource(url);
   let responseBuffer = '';
-  
+
   eventSource.onopen = () => {
     console.log('[SSE] 连接已建立');
     handlers.onOpen?.();
   };
-  
+
   eventSource.onmessage = (event) => {
     try {
       const data: StreamMessage = JSON.parse(event.data);
-      
+
       switch (data.type) {
         case 'start':
           console.log('[SSE] 开始接收:', data.messageId);
           break;
-          
+
         case 'step':
           if (data.data && typeof data.data === 'object') {
             handlers.onStep?.(data.data as ExecutionStep);
           }
           break;
-          
+
         case 'chunk':
           if (typeof data.data === 'string') {
             responseBuffer += data.data;
             handlers.onChunk?.(data.data);
           }
           break;
-          
+
         case 'complete':
           eventSource.close();
           handlers.onComplete?.(responseBuffer);
           handlers.onClose?.();
           console.log('[SSE] 接收完成');
           break;
-          
+
         case 'error':
           eventSource.close();
           handlers.onError?.(data.error || '未知错误');
@@ -504,20 +539,20 @@ export const createSSEConnection = (
       console.error('[SSE] 解析消息失败:', err);
     }
   };
-  
+
   eventSource.onerror = (error) => {
     console.error('[SSE] 连接错误:', error);
     handlers.onError?.('连接错误');
     handlers.onClose?.();
     eventSource.close();
   };
-  
+
   return eventSource;
 };
 
 /**
  * 解析执行步骤内容
- * 
+ *
  * @param step - 执行步骤
  * @returns 格式化后的显示文本
  */
@@ -531,7 +566,9 @@ export const formatExecutionStep = (step: ExecutionStep): string => {
       }
       return step.content || '执行动作...';
     case 'observation':
-      return step.result ? `观察结果: ${JSON.stringify(step.result)}` : step.content || '观察中...';
+      return step.result
+        ? `观察结果: ${JSON.stringify(step.result)}`
+        : step.content || '观察中...';
     case 'final':
       return step.content || '任务完成';
     case 'error':

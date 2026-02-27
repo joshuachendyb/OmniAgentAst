@@ -1,6 +1,6 @@
 /**
  * 标题管理功能测试
- * 
+ *
  * @author 小新
  * @description 测试标题管理相关API和功能
  * @update 2026-02-25 新增标题管理测试
@@ -9,12 +9,12 @@
 import { describe, it, expect } from 'vitest';
 
 import { sessionApi } from '../../services/api';
-import type { 
-  Session, 
-  GetSessionMessagesResponse, 
-  UpdateSessionRequest, 
+import type {
+  Session,
+  GetSessionMessagesResponse,
+  UpdateSessionRequest,
   UpdateSessionResponse,
-  BatchTitleResponse 
+  BatchTitleResponse,
 } from '../../services/api';
 
 describe('标题管理功能测试', () => {

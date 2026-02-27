@@ -1,15 +1,25 @@
 /**
  * ExecutionPanel组件 - 执行过程可视化
- * 
+ *
  * 功能：展示ReAct循环的执行步骤，包括思考、工具调用、观察结果
- * 
+ *
  * @author 小新
  * @version 1.0.0
  * @since 2026-02-17
  */
 
 import React, { useState } from 'react';
-import { Collapse, Timeline, Card, Tag, Spin, Button, Space, Tooltip, Typography } from 'antd';
+import {
+  Collapse,
+  Timeline,
+  Card,
+  Tag,
+  Spin,
+  Button,
+  Space,
+  Tooltip,
+  Typography,
+} from 'antd';
 import {
   CaretRightOutlined,
   CheckCircleOutlined,
@@ -34,13 +44,13 @@ interface ExecutionPanelProps {
 
 /**
  * 执行过程面板组件
- * 
+ *
  * 设计要点：
  * - 默认折叠，点击展开
  * - 时间线展示执行步骤
  * - 不同步骤类型用不同颜色标识
  * - 支持查看原始数据和导出
- * 
+ *
  * @param steps - 执行步骤数组
  * @param isActive - 是否正在执行
  * @param totalTime - 总耗时（毫秒）
@@ -137,8 +147,8 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
 
       case 'action':
         return (
-          <Card 
-            size="small" 
+          <Card
+            size="small"
             title={
               <Space>
                 <CodeOutlined style={{ color: '#1890ff' }} />
@@ -149,7 +159,9 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
             styles={{ body: { padding: 12 } }}
           >
             <div style={{ marginBottom: 8 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>参数：</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                参数：
+              </Text>
               <pre
                 style={{
                   margin: '4px 0 0 0',
@@ -166,7 +178,9 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
             </div>
             {step.result && (
               <div style={{ marginTop: 8 }}>
-                <Text type="secondary" style={{ fontSize: 12 }}>结果：</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  结果：
+                </Text>
                 <div
                   style={{
                     marginTop: 4,
@@ -177,8 +191,8 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
                     fontSize: 12,
                   }}
                 >
-                  {typeof step.result === 'string' 
-                    ? step.result 
+                  {typeof step.result === 'string'
+                    ? step.result
                     : JSON.stringify(step.result)}
                 </div>
               </div>
@@ -199,8 +213,8 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
           >
             <EyeOutlined style={{ color: '#52c41a', marginRight: 8 }} />
             <span style={{ color: '#389e0d' }}>
-              {typeof step.result === 'string' 
-                ? step.result 
+              {typeof step.result === 'string'
+                ? step.result
                 : JSON.stringify(step.result)}
             </span>
           </div>
@@ -246,7 +260,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
 
   // 计算步骤数
   const stepCount = steps.length;
-  const hasError = steps.some(s => s.type === 'error');
+  const hasError = steps.some((s) => s.type === 'error');
 
   return (
     <Collapse
@@ -264,7 +278,9 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
           label: (
             <Space>
               {isActive ? (
-                <Spin indicator={<LoadingOutlined style={{ fontSize: 16 }} spin />} />
+                <Spin
+                  indicator={<LoadingOutlined style={{ fontSize: 16 }} spin />}
+                />
               ) : hasError ? (
                 <CloseCircleOutlined style={{ color: '#ff4d4f' }} />
               ) : (
@@ -272,7 +288,8 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
               )}
               <span>
                 {isActive ? '正在执行' : '执行详情'}
-                {stepCount > 0 && ` (${stepCount}步${totalTime ? `，耗时${formatDuration(totalTime)}` : ''})`}
+                {stepCount > 0 &&
+                  ` (${stepCount}步${totalTime ? `，耗时${formatDuration(totalTime)}` : ''})`}
               </span>
               {hasError && <Tag color="error">有错误</Tag>}
             </Space>
@@ -311,20 +328,26 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({
                   dot: getStepIcon(step.type),
                   color: getStepColor(step.type),
                   label: (
-                    <Tag 
+                    <Tag
                       color={getStepColor(step.type)}
                       style={{ fontSize: 11 }}
                     >
                       {getStepLabel(step.type)}
                     </Tag>
                   ),
-                  children: renderStepContent(step, index)
+                  children: renderStepContent(step, index),
                 })),
-                ...(isActive ? [{
-                  dot: <LoadingOutlined spin />,
-                  color: '#1890ff',
-                  children: <span style={{ color: '#1890ff' }}>执行中...</span>
-                }] : [])
+                ...(isActive
+                  ? [
+                      {
+                        dot: <LoadingOutlined spin />,
+                        color: '#1890ff',
+                        children: (
+                          <span style={{ color: '#1890ff' }}>执行中...</span>
+                        ),
+                      },
+                    ]
+                  : []),
               ]}
             />
           ),

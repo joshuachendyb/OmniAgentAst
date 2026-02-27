@@ -25,7 +25,12 @@ vi.mock('axios', () => ({
 }));
 
 // Import API after mocking
-import { chatApi, configApi, sessionApi, securityApi } from '../../services/api';
+import {
+  chatApi,
+  configApi,
+  sessionApi,
+  securityApi,
+} from '../../services/api';
 
 describe('API Integration Tests', () => {
   beforeEach(() => {

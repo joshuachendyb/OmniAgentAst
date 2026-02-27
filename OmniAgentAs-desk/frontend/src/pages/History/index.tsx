@@ -1,8 +1,8 @@
 /**
  * HistoryPage组件 - 历史会话页面
- * 
+ *
  * 功能：展示会话列表、搜索、恢复对话、删除会话
- * 
+ *
  * @author 小新
  * @version 1.0.0
  * @since 2026-02-18
@@ -42,7 +42,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import 'dayjs/locale/zh-cn';
 
 // 配置dayjs
- dayjs.extend(relativeTime);
+dayjs.extend(relativeTime);
 dayjs.locale('zh-cn');
 
 const { Title, Text } = Typography;
@@ -50,7 +50,7 @@ const { Search } = Input;
 
 /**
  * 历史会话页面组件
- * 
+ *
  * 功能特性：
  * - 会话列表展示（带分页）
  * - 关键词搜索
@@ -68,8 +68,10 @@ const HistoryPage: React.FC = () => {
     total: 0,
   });
   const navigate = useNavigate();
-  const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null); 
-  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set()); // 前端小新代修改 UX-H03: 批量删除功能
+  const [loadingSessionId, setLoadingSessionId] = useState<string | null>(null);
+  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(
+    new Set()
+  ); // 前端小新代修改 UX-H03: 批量删除功能
 
   /**
    * 加载会话列表
@@ -183,46 +185,48 @@ const HistoryPage: React.FC = () => {
       <Card bordered={false}>
         <Space direction="vertical" style={{ width: '100%' }} size="large">
           {/* 标题栏 */}
-           <Space style={{ justifyContent: 'space-between', width: '100%' }}>
-             <Title level={3} style={{ margin: 0 }}>
-               <HistoryOutlined /> 历史会话
-             </Title>
-             <Space>
-               {/* 前端小新代修改 UX-H03: 批量删除按钮 */}
-               {selectedSessions.size > 0 && (
-                 <Popconfirm
-                   title={`确定要删除选中的 ${selectedSessions.size} 个会话吗？`}
-                   description="此操作不可恢复"
-                   onConfirm={handleBatchDelete}
-                   okText="确定"
-                   cancelText="取消"
-                   okButtonProps={{ danger: true }}
-                 >
-                   <Button danger icon={<DeleteOutlined />}>
-                     批量删除 ({selectedSessions.size})
-                   </Button>
-                 </Popconfirm>
-               )}
-               <Button
-                 icon={<ReloadOutlined />}
-                 onClick={handleRefresh}
-                 loading={loading}
-               >
-                 刷新
-               </Button>
-               <Badge count={pagination.total} showZero>
-                 <Button icon={<CommentOutlined />}>
-                   总会话
-                 </Button>
-               </Badge>
-             </Space>
-           </Space>
+          <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+            <Title level={3} style={{ margin: 0 }}>
+              <HistoryOutlined /> 历史会话
+            </Title>
+            <Space>
+              {/* 前端小新代修改 UX-H03: 批量删除按钮 */}
+              {selectedSessions.size > 0 && (
+                <Popconfirm
+                  title={`确定要删除选中的 ${selectedSessions.size} 个会话吗？`}
+                  description="此操作不可恢复"
+                  onConfirm={handleBatchDelete}
+                  okText="确定"
+                  cancelText="取消"
+                  okButtonProps={{ danger: true }}
+                >
+                  <Button danger icon={<DeleteOutlined />}>
+                    批量删除 ({selectedSessions.size})
+                  </Button>
+                </Popconfirm>
+              )}
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={handleRefresh}
+                loading={loading}
+              >
+                刷新
+              </Button>
+              <Badge count={pagination.total} showZero>
+                <Button icon={<CommentOutlined />}>总会话</Button>
+              </Badge>
+            </Space>
+          </Space>
 
           {/* 搜索栏 */}
           <Search
             placeholder="搜索会话标题..."
             allowClear
-            enterButton={<><SearchOutlined /> 搜索</>}
+            enterButton={
+              <>
+                <SearchOutlined /> 搜索
+              </>
+            }
             size="large"
             onSearch={handleSearch}
             loading={loading}
@@ -256,54 +260,55 @@ const HistoryPage: React.FC = () => {
                   />
                 ),
               }}
-               renderItem={(session) => (
-                 <List.Item>
-                    <Card
-                      hoverable
-                      size="small"
-                      className="session-card"
-                      style={{ height: '100%' }}
-                      actions={[
-                        <Tooltip title="继续对话">
-                          <Button
-                            type="link"
-                            icon={<MessageOutlined />}
-                            onClick={() => handleResume(session.session_id)}
-                            loading={loadingSessionId === session.session_id}
-                          >
-                            继续
-                          </Button>
-                        </Tooltip>,
-                        <Popconfirm
-                          title="删除会话"
-                          description={`确定要删除"${session.title}"吗？此操作不可恢复。`}
-                          onConfirm={() => handleDelete(session.session_id)}
-                          okText="删除"
-                          cancelText="取消"
-                          okButtonProps={{ danger: true }}
+              renderItem={(session) => (
+                <List.Item>
+                  <Card
+                    hoverable
+                    size="small"
+                    className="session-card"
+                    style={{ height: '100%' }}
+                     actions={[
+                      <Tooltip key="resume" title="继续对话">
+                        <Button
+                          type="link"
+                          icon={<MessageOutlined />}
+                          onClick={() => handleResume(session.session_id)}
+                          loading={loadingSessionId === session.session_id}
                         >
-                          <Tooltip title="删除会话">
-                            <Button type="link" danger icon={<DeleteOutlined />}>
-                              删除
-                            </Button>
-                          </Tooltip>
-                        </Popconfirm>,
-                      ]}
-                      extra={
-                        <Checkbox
-                          checked={selectedSessions.has(session.session_id)}
-                          onChange={(e) => {
-                            const newSelected = new Set(selectedSessions);
-                            if (e.target.checked) {
-                              newSelected.add(session.session_id);
-                            } else {
-                              newSelected.delete(session.session_id);
-                            }
-                            setSelectedSessions(newSelected);
-                          }}
-                        />
-                      }
-                    >
+                          继续
+                        </Button>
+                      </Tooltip>,
+                      <Popconfirm
+                        key="delete"
+                        title="删除会话"
+                        description={`确定要删除"${session.title}"吗？此操作不可恢复。`}
+                        onConfirm={() => handleDelete(session.session_id)}
+                        okText="删除"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true }}
+                      >
+                        <Tooltip title="删除会话">
+                          <Button type="link" danger icon={<DeleteOutlined />}>
+                            删除
+                          </Button>
+                        </Tooltip>
+                      </Popconfirm>,
+                    ]}
+                    extra={
+                      <Checkbox
+                        checked={selectedSessions.has(session.session_id)}
+                        onChange={(e) => {
+                          const newSelected = new Set(selectedSessions);
+                          if (e.target.checked) {
+                            newSelected.add(session.session_id);
+                          } else {
+                            newSelected.delete(session.session_id);
+                          }
+                          setSelectedSessions(newSelected);
+                        }}
+                      />
+                    }
+                  >
                     <Card.Meta
                       title={
                         <Tooltip title={session.title}>
@@ -313,7 +318,11 @@ const HistoryPage: React.FC = () => {
                         </Tooltip>
                       }
                       description={
-                        <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                        <Space
+                          direction="vertical"
+                          size="small"
+                          style={{ width: '100%' }}
+                        >
                           <Space>
                             <Tag icon={<CommentOutlined />} color="blue">
                               {session.message_count} 条消息
@@ -326,7 +335,10 @@ const HistoryPage: React.FC = () => {
                             </Text>
                           </Space>
                           <Text type="secondary" style={{ fontSize: 11 }}>
-                            创建于 {dayjs(session.created_at).format('YYYY-MM-DD HH:mm')}
+                            创建于{' '}
+                            {dayjs(session.created_at).format(
+                              'YYYY-MM-DD HH:mm'
+                            )}
                           </Text>
                         </Space>
                       }
@@ -337,25 +349,25 @@ const HistoryPage: React.FC = () => {
             />
           </Spin>
 
-           {/* 分页 - 前端小新代修改 VIS-H03: 改用Antd Pagination组件 */}
-           {pagination.total > 0 && (
-             <div style={{ textAlign: 'center', marginTop: 24 }}>
-               <Pagination
-                 current={pagination.current}
-                 total={pagination.total}
-                 pageSize={pagination.pageSize}
-                 onChange={(page) => loadSessions(page, keyword)}
-                 showSizeChanger={false}
-                 showQuickJumper
-                 showTotal={(total) => `共 ${total} 条`}
-               />
-             </div>
-           )}
-         </Space>
-       </Card>
-       
-       {/* 自定义CSS - 卡片hover效果 */}
-       <style>{`
+          {/* 分页 - 前端小新代修改 VIS-H03: 改用Antd Pagination组件 */}
+          {pagination.total > 0 && (
+            <div style={{ textAlign: 'center', marginTop: 24 }}>
+              <Pagination
+                current={pagination.current}
+                total={pagination.total}
+                pageSize={pagination.pageSize}
+                onChange={(page) => loadSessions(page, keyword)}
+                showSizeChanger={false}
+                showQuickJumper
+                showTotal={(total) => `共 ${total} 条`}
+              />
+            </div>
+          )}
+        </Space>
+      </Card>
+
+      {/* 自定义CSS - 卡片hover效果 */}
+      <style>{`
          .session-card {
            transition: all 0.3s ease;
          }
@@ -364,8 +376,8 @@ const HistoryPage: React.FC = () => {
            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
          }
        `}</style>
-     </div>
-   );
- };
+    </div>
+  );
+};
 
 export default HistoryPage;

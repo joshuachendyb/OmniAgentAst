@@ -28,7 +28,7 @@ const HealthCheck: React.FC = () => {
       message.warning('请输入测试消息');
       return;
     }
-    
+
     try {
       const response = await healthApi.echo(testMessage);
       setEchoResponse(response);
@@ -69,7 +69,9 @@ const HealthCheck: React.FC = () => {
 
       {echoResponse && (
         <div style={{ background: '#f6ffed', padding: 12, borderRadius: 4 }}>
-          <div><strong>后端回复:</strong> {echoResponse.received}</div>
+          <div>
+            <strong>后端回复:</strong> {echoResponse.received}
+          </div>
           <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
             时间戳: {new Date(echoResponse.timestamp).toLocaleString()}
           </div>

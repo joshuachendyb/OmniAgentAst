@@ -1,8 +1,8 @@
 /**
  * Layout组件 - 应用主布局（响应式版）
- * 
+ *
  * 功能：左右分栏布局，左侧导航栏，右侧内容区，支持移动端响应式
- * 
+ *
  * @author 小新
  * @version 1.1.0
  * @since 2026-02-17
@@ -11,7 +11,22 @@
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Layout, Menu, Typography, Avatar, Badge, Tooltip, Drawer, Button, Grid, Tag, Select, message, Modal, Alert } from 'antd';
+import {
+  Layout,
+  Menu,
+  Typography,
+  Avatar,
+  Badge,
+  Tooltip,
+  Drawer,
+  Button,
+  Grid,
+  Tag,
+  Select,
+  message,
+  Modal,
+  Alert,
+} from 'antd';
 import {
   MessageOutlined,
   FolderOutlined,
@@ -43,17 +58,17 @@ interface LayoutProps {
 
 /**
  * 主布局组件
- * 
+ *
  * 设计要点：
  * - 左侧固定宽度220px导航栏
  * - 右侧自适应内容区
  * - 响应式：移动端变为抽屉
  * - 导航项带图标和徽标
  * - 集成React Router导航
- * 
+ *
  * @param children - 子组件（页面内容）
  * @param activeKey - 当前激活的菜单项
- * 
+ *
  * @author 小新
  * @version 1.2.0
  * @since 2026-02-17
@@ -75,14 +90,29 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   // 响应式断点
   const screens = useBreakpoint();
   const isMobile = !screens.md; // md以下认为是移动端
-  
+
   // 【新增】检查服务状态
-  const [serviceStatus, setServiceStatus] = useState<{success: boolean; message: string; provider: string; model: string} | null>(null);
+  const [serviceStatus, setServiceStatus] = useState<{
+    success: boolean;
+    message: string;
+    provider: string;
+    model: string;
+  } | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(false);
   // 【修改】当前选中的模型ID（格式: provider-modelname）
-  const [_currentProvider, setCurrentProvider] = useState<string>('opencode-minimax-m2.5-free');
+  const [_currentProvider, setCurrentProvider] = useState<string>(
+    'opencode-minimax-m2.5-free'
+  );
   // 【修改】模型列表 - 类型匹配后端返回（id, provider, model, display_name, current_model）
-  const [modelList, setModelList] = useState<{id: number; provider: string; model: string; display_name: string; current_model: boolean}[]>([]);
+  const [modelList, setModelList] = useState<
+    {
+      id: number;
+      provider: string;
+      model: string;
+      display_name: string;
+      current_model: boolean;
+    }[]
+  >([]);
   // 【新增】默认提供商
   const [defaultProvider, setDefaultProvider] = useState<string>('zhipuai');
   // 【新增】完整配置验证结果
@@ -96,7 +126,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   } | null>(null);
   // 【新增】验证详情弹框
   const [validationModalVisible, setValidationModalVisible] = useState(false);
-  
+
   // 【修复】刷新模型列表 - 同时刷新验证状态
   const refreshModelList = async () => {
     try {
@@ -107,7 +137,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       } catch (err) {
         console.warn('刷新验证状态失败:', err);
       }
-      
+
       const modelData = await configApi.getModelList();
       if (modelData.models) {
         setModelList(modelData.models);
@@ -117,7 +147,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       console.warn('刷新模型列表失败:', error);
     }
   };
-  
+
   // 手动检查服务
   const handleCheckService = async () => {
     setCheckingStatus(true);
@@ -129,23 +159,25 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       } catch (err) {
         console.warn('刷新验证状态失败:', err);
       }
-      
+
       const modelData = await configApi.getModelList();
-      
+
       // 更新模型列表
       if (modelData.models) {
         setModelList(modelData.models);
       }
-      
+
       // 更新当前选中的模型 - 直接使用后端返回的current_model字段
       if (modelData.models && modelData.models.length > 0) {
-        const currentModel = modelData.models.find(m => m.current_model === true);
+        const currentModel = modelData.models.find(
+          (m) => m.current_model === true
+        );
         if (currentModel) {
           // 使用id（数字类型），转为字符串保持一致
           setCurrentProvider(String(currentModel.id));
         }
       }
-      
+
       // 检查服务状态
       const status = await chatApi.validateService();
       setServiceStatus(status);
@@ -155,9 +187,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       setCheckingStatus(false);
     }
   };
-  
+
   // 页面加载时检查服务
-  
+
   // 【新增】检查服务状态
   useEffect(() => {
     const initApp = async () => {
@@ -171,18 +203,18 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         } catch (err) {
           console.warn('配置验证失败:', err);
           // 验证失败时设置空结果，补全所有字段
-          const errorResult = { 
-            success: false, 
-            provider: '', 
-            model: '', 
-            message: '配置验证接口调用失败', 
-            errors: ['配置验证接口调用失败'], 
-            warnings: [] as string[] 
+          const errorResult = {
+            success: false,
+            provider: '',
+            model: '',
+            message: '配置验证接口调用失败',
+            errors: ['配置验证接口调用失败'],
+            warnings: [] as string[],
           };
           setValidationResult(errorResult);
           validation = errorResult;
         }
-        
+
         // 【修复】根据验证结果决定是否获取模型列表
         // 设计文档要求：验证失败时不获取列表或显示空列表
         if (!validation || !validation.success) {
@@ -190,23 +222,25 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           setCheckingStatus(false);
           return;
         }
-        
+
         // 验证成功才获取模型列表
         const modelData = await configApi.getModelList();
-        
+
         // 设置模型列表
         if (modelData.models && modelData.models.length > 0) {
           setModelList(modelData.models);
           // 设置默认提供商
           setDefaultProvider(modelData.default_provider || 'zhipuai');
-          
+
           // 设置当前选中的模型 - 直接使用后端返回的 current_model 字段
-          const currentModel = modelData.models.find(m => m.current_model === true);
+          const currentModel = modelData.models.find(
+            (m) => m.current_model === true
+          );
           if (currentModel) {
             setCurrentProvider(String(currentModel.id));
           }
         }
-        
+
         // 检查服务状态
         const status = await chatApi.validateService();
         setServiceStatus(status);
@@ -221,7 +255,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
 
   /**
    * 导航菜单配置
-   * 
+   *
    * 注意：disabled项表示功能预留，待后续开发
    */
   const menuItems: MenuItem[] = [
@@ -255,7 +289,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       key: '/history',
       icon: <HistoryOutlined />,
       label: (
-        <Badge count={sessionCount} size="small" offset={[6, -4]} showZero={false}>
+        <Badge
+          count={sessionCount}
+          size="small"
+          offset={[6, -4]}
+          showZero={false}
+        >
           <span>历史记录</span>
         </Badge>
       ),
@@ -275,9 +314,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
 
   /**
    * 菜单点击处理
-   * 
+   *
    * 功能：使用React Router进行页面导航
-   * 
+   *
    * @author 小新
    */
   const handleMenuClick: MenuProps['onClick'] = (e) => {
@@ -394,8 +433,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           transition: 'background 0.3s ease',
         }}
         onClick={() => message.info('OmniAgentAst v2.1.0 - 桌面版AI助手')}
-        onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f0f0'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = '#fafafa'; }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = '#f0f0f0';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = '#fafafa';
+        }}
       >
         {isMobile || collapsed ? 'v2.1' : '版本 v2.1.0'}
       </div>
@@ -466,7 +509,14 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                 />
               </Tooltip>
             )}
-            <Title level={4} style={{ margin: 0, fontWeight: 500, fontSize: isMobile ? 16 : 18 }}>
+            <Title
+              level={4}
+              style={{
+                margin: 0,
+                fontWeight: 500,
+                fontSize: isMobile ? 16 : 18,
+              }}
+            >
               对话与任务
             </Title>
             {/* 服务状态显示 - 根据检查结果显示不同颜色 - 前端小新代修改 UX-L03: 可点击重试 */}
@@ -474,35 +524,51 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
               <span style={{ color: '#999' }}>检查中...</span>
             ) : serviceStatus?.success ? (
               <Tag color="success">
-                <CheckCircleOutlined /> {serviceStatus.provider} {serviceStatus.model && `(${serviceStatus.model})`}
+                <CheckCircleOutlined /> {serviceStatus.provider}{' '}
+                {serviceStatus.model && `(${serviceStatus.model})`}
               </Tag>
             ) : serviceStatus?.message ? (
               // 有错误信息显示红色/黄色（根据错误类型），可点击重试
-              <Tag 
-                color={serviceStatus.message.includes('限速') || serviceStatus.message.includes('欠费') || serviceStatus.message.includes('额度') ? 'warning' : 'error'}
+              <Tag
+                color={
+                  serviceStatus.message.includes('限速') ||
+                  serviceStatus.message.includes('欠费') ||
+                  serviceStatus.message.includes('额度')
+                    ? 'warning'
+                    : 'error'
+                }
                 onClick={handleCheckService}
                 style={{ cursor: 'pointer' }}
               >
-                {serviceStatus.provider} {serviceStatus.model && `(${serviceStatus.model})`} - {serviceStatus.message} (点击重试)
+                {serviceStatus.provider}{' '}
+                {serviceStatus.model && `(${serviceStatus.model})`} -{' '}
+                {serviceStatus.message} (点击重试)
               </Tag>
-             ) : (
-               // 未配置或初始状态，可点击检查
-               <Tag color="error" onClick={handleCheckService} style={{ cursor: 'pointer' }}>
-                 未配置 (点击检查)
-               </Tag>
-             )}
-             {/* 【新增】配置验证警告 - 当validationResult有错误或警告时显示 */}
-             {validationResult && (!validationResult.success || (validationResult.warnings && validationResult.warnings.length > 0)) && (
-               <Tag 
-                 color="warning" 
-                 style={{ cursor: 'pointer' }}
-                 onClick={() => setValidationModalVisible(true)}
-               >
-                 ⚠️ 配置验证
-               </Tag>
-             )}
+            ) : (
+              // 未配置或初始状态，可点击检查
+              <Tag
+                color="error"
+                onClick={handleCheckService}
+                style={{ cursor: 'pointer' }}
+              >
+                未配置 (点击检查)
+              </Tag>
+            )}
+            {/* 【新增】配置验证警告 - 当validationResult有错误或警告时显示 */}
+            {validationResult &&
+              (!validationResult.success ||
+                (validationResult.warnings &&
+                  validationResult.warnings.length > 0)) && (
+                <Tag
+                  color="warning"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => setValidationModalVisible(true)}
+                >
+                  ⚠️ 配置验证
+                </Tag>
+              )}
           </div>
-          
+
           {/* 右侧操作区 */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {/* 模型选择下拉框 */}
@@ -520,25 +586,33 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                 onChange={async (value: string) => {
                   try {
                     // 从modelList中找到对应的模型，获取完整的provider和model
-                    const selectedModel = modelList.find(m => String(m.id) === value);
+                    const selectedModel = modelList.find(
+                      (m) => String(m.id) === value
+                    );
                     if (!selectedModel) {
                       message.error('未找到对应的模型');
                       return;
                     }
-                    
+
                     // 从model id中提取model名称 (格式: "provider-modelname")
-                    const modelName = value.replace(`${selectedModel.provider}-`, '');
-                    
+                    const modelName = value.replace(
+                      `${selectedModel.provider}-`,
+                      ''
+                    );
+
                     // 调用API切换provider和model
-                    await configApi.updateConfig({ 
-                      ai_provider: selectedModel.provider as 'zhipuai' | 'opencode' | 'longcat',
-                      ai_model: modelName
+                    await configApi.updateConfig({
+                      ai_provider: selectedModel.provider as
+                        | 'zhipuai'
+                        | 'opencode'
+                        | 'longcat',
+                      ai_model: modelName,
                     });
                     message.success(`已切换到 ${selectedModel.display_name}`);
-                    
+
                     // 切换后更新当前选中的模型ID
                     setCurrentProvider(value);
-                    
+
                     // 切换后自动检查服务
                     handleCheckService();
                   } catch (error) {
@@ -548,7 +622,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
               >
                 {modelList.map((model) => (
                   <Option key={model.id} value={String(model.id)}>
-                    {model.provider === defaultProvider ? '★ ' : ''}{model.display_name}
+                    {model.provider === defaultProvider ? '★ ' : ''}
+                    {model.display_name}
                   </Option>
                 ))}
               </Select>
@@ -569,21 +644,21 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           </div>
         </Header>
 
-         {/* 主内容区 - 只有这层有留白 - 前端小新代修改 VIS-L01: 留白优化, VIS-G02: 背景色优化 */}
-         <Content
-           style={{
-             margin: 16,
-             padding: 20,
-             background: '#f8fafc',
-             borderRadius: 12,
-             minHeight: 400,
-             overflow: 'auto',
-           }}
-         >
+        {/* 主内容区 - 只有这层有留白 - 前端小新代修改 VIS-L01: 留白优化, VIS-G02: 背景色优化 */}
+        <Content
+          style={{
+            margin: 16,
+            padding: 20,
+            background: '#f8fafc',
+            borderRadius: 12,
+            minHeight: 400,
+            overflow: 'auto',
+          }}
+        >
           {children}
         </Content>
       </Layout>
-      
+
       {/* 【新增】配置验证详情弹框 */}
       <Modal
         title="配置验证详情"
@@ -593,10 +668,14 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           <Button key="close" onClick={() => setValidationModalVisible(false)}>
             关闭
           </Button>,
-          <Button key="settings" type="primary" onClick={() => {
-            setValidationModalVisible(false);
-            navigate('/settings');
-          }}>
+          <Button
+            key="settings"
+            type="primary"
+            onClick={() => {
+              setValidationModalVisible(false);
+              navigate('/settings');
+            }}
+          >
             去设置
           </Button>,
         ]}
@@ -604,16 +683,18 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       >
         {validationResult && (
           <div>
-            <Alert 
-              message={validationResult.message} 
-              type={validationResult.success ? 'success' : 'error'} 
-              showIcon 
+            <Alert
+              message={validationResult.message}
+              type={validationResult.success ? 'success' : 'error'}
+              showIcon
               style={{ marginBottom: 16 }}
             />
-            
+
             {validationResult.errors && validationResult.errors.length > 0 && (
               <div style={{ marginBottom: 16 }}>
-                <h4 style={{ color: '#ff4d4f' }}>错误 ({validationResult.errors.length})</h4>
+                <h4 style={{ color: '#ff4d4f' }}>
+                  错误 ({validationResult.errors.length})
+                </h4>
                 <ul style={{ paddingLeft: 20, color: '#ff4d4f' }}>
                   {validationResult.errors.map((err, idx) => (
                     <li key={idx}>{err}</li>
@@ -621,17 +702,20 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                 </ul>
               </div>
             )}
-            
-            {validationResult.warnings && validationResult.warnings.length > 0 && (
-              <div>
-                <h4 style={{ color: '#faad14' }}>警告 ({validationResult.warnings.length})</h4>
-                <ul style={{ paddingLeft: 20, color: '#faad14' }}>
-                  {validationResult.warnings.map((warn, idx) => (
-                    <li key={idx}>{warn}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+
+            {validationResult.warnings &&
+              validationResult.warnings.length > 0 && (
+                <div>
+                  <h4 style={{ color: '#faad14' }}>
+                    警告 ({validationResult.warnings.length})
+                  </h4>
+                  <ul style={{ paddingLeft: 20, color: '#faad14' }}>
+                    {validationResult.warnings.map((warn, idx) => (
+                      <li key={idx}>{warn}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
           </div>
         )}
       </Modal>

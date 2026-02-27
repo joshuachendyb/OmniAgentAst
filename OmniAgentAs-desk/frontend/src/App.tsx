@@ -1,8 +1,8 @@
 /**
  * 应用入口组件 - App.tsx
- * 
+ *
  * 功能：应用根组件，整合Layout布局和路由
- * 
+ *
  * @author 小新
  * @version 3.0.0
  * @since 2026-02-17
@@ -18,14 +18,14 @@ import Settings from './pages/Settings';
 
 /**
  * 路由内容组件
- * 
+ *
  * 功能：根据当前路由渲染不同页面，并传递activeKey给Layout
- * 
+ *
  * @author 小新
  */
 const RouterContent: React.FC = () => {
   const location = useLocation();
-  
+
   return (
     <AppLayout activeKey={location.pathname}>
       <Routes>
@@ -41,7 +41,7 @@ const RouterContent: React.FC = () => {
 
 /**
  * 应用主组件
- * 
+ *
  * 变更记录：
  * - v3.0.0 (2026-02-18 by 小新): 集成React Router，支持多页面路由
  * - v2.0.0 (2026-02-17 by 小新): 重构为左右分栏布局，使用AppLayout组件

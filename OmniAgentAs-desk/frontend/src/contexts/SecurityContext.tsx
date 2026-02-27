@@ -1,15 +1,21 @@
 /**
  * 安全检测上下文 - SecurityContext.tsx
- * 
+ *
  * 功能：使用React Context API管理安全检测状态
- * 
+ *
  * @author 小新
  * @version 1.0.0
  * @since 2026-02-19
  * @update 初始版本，基于阶段2.1危险等级设计文档
  */
 
-import React, { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  ReactNode,
+} from 'react';
 import type { SecurityCheckResponse, RiskLevelConfig } from '../types/security';
 import { getRiskLevel } from '../types/security';
 import { securityApi } from '../services/api';
@@ -33,7 +39,7 @@ interface SecurityContextType extends SecurityState {
   canProceed: boolean;
   needConfirmation: boolean;
   isBlocked: boolean;
-  
+
   // Actions
   checkCommand: (command: string) => Promise<SecurityCheckResponse>;
   clearResult: () => void;
@@ -47,18 +53,21 @@ const SecurityContext = createContext<SecurityContextType | null>(null);
 
 /**
  * 安全检测Provider组件
- * 
+ *
  * @param children 子组件
  * @author 小新
  */
-export const SecurityProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+export const SecurityProvider: React.FC<{ children: ReactNode }> = ({
+  children,
+}) => {
   // ==================== State ====================
-  const [lastCheckResult, setLastCheckResult] = useState<SecurityCheckResponse | null>(null);
+  const [lastCheckResult, setLastCheckResult] =
+    useState<SecurityCheckResponse | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // ==================== Getters ====================
-  
+
   /**
    * 当前分数
    */
@@ -67,7 +76,8 @@ export const SecurityProvider: React.FC<{ children: ReactNode }> = ({ children }
   /**
    * 当前风险等级配置
    */
-  const currentRiskLevel = currentScore !== null ? getRiskLevel(currentScore) : null;
+  const currentRiskLevel =
+    currentScore !== null ? getRiskLevel(currentScore) : null;
 
   /**
    * 是否可以直接执行（0-6分）
@@ -85,42 +95,45 @@ export const SecurityProvider: React.FC<{ children: ReactNode }> = ({ children }
   const isBlocked = currentRiskLevel?.level === 'CRITICAL';
 
   // ==================== Actions ====================
-  
+
   /**
    * 检查命令安全性
-   * 
+   *
    * @param command 要检查的命令
    * @returns 检查结果
    * @author 小新
    */
-  const checkCommand = useCallback(async (command: string): Promise<SecurityCheckResponse> => {
-    setIsChecking(true);
-    setError(null);
-    
-    try {
-      const result = await securityApi.checkCommand(command);
-      setLastCheckResult(result);
-      
-      if (!result.success) {
-        setError(result.error || '安全检查失败');
+  const checkCommand = useCallback(
+    async (command: string): Promise<SecurityCheckResponse> => {
+      setIsChecking(true);
+      setError(null);
+
+      try {
+        const result = await securityApi.checkCommand(command);
+        setLastCheckResult(result);
+
+        if (!result.success) {
+          setError(result.error || '安全检查失败');
+        }
+
+        return result;
+      } catch (err: any) {
+        const errorMsg = err?.message || '安全检查请求失败';
+        setError(errorMsg);
+
+        const errorResult: SecurityCheckResponse = {
+          success: false,
+          error: errorMsg,
+        };
+        setLastCheckResult(errorResult);
+
+        return errorResult;
+      } finally {
+        setIsChecking(false);
       }
-      
-      return result;
-    } catch (err: any) {
-      const errorMsg = err?.message || '安全检查请求失败';
-      setError(errorMsg);
-      
-      const errorResult: SecurityCheckResponse = {
-        success: false,
-        error: errorMsg
-      };
-      setLastCheckResult(errorResult);
-      
-      return errorResult;
-    } finally {
-      setIsChecking(false);
-    }
-  }, []);
+    },
+    []
+  );
 
   /**
    * 清空检查结果
@@ -145,18 +158,18 @@ export const SecurityProvider: React.FC<{ children: ReactNode }> = ({ children }
     lastCheckResult,
     isChecking,
     error,
-    
+
     // Getters
     currentScore,
     currentRiskLevel,
     canProceed,
     needConfirmation,
     isBlocked,
-    
+
     // Actions
     checkCommand,
     clearResult,
-    clearError
+    clearError,
   };
 
   return (
@@ -168,7 +181,7 @@ export const SecurityProvider: React.FC<{ children: ReactNode }> = ({ children }
 
 /**
  * 使用安全检测上下文的Hook
- * 
+ *
  * @returns 安全检测上下文
  * @throws 如果在Provider外使用会抛出错误
  * @author 小新
@@ -184,16 +197,16 @@ export const useSecurity = (): SecurityContextType => {
 /**
  * 安全检测Hook（简化版）
  * 直接返回是否可以继续执行
- * 
+ *
  * @returns 检查函数和状态
  * @author 小新
  */
 export const useSecurityCheck = () => {
   const security = useSecurity();
-  
+
   return {
     ...security,
-    
+
     /**
      * 检查命令并返回是否可以继续
      * @param command 要检查的命令
@@ -201,13 +214,13 @@ export const useSecurityCheck = () => {
      */
     checkAndCanProceed: async (command: string): Promise<boolean> => {
       const result = await security.checkCommand(command);
-      
+
       if (!result.success || !result.data) {
         return false;
       }
-      
+
       const riskLevel = getRiskLevel(result.data.score);
       return riskLevel.canProceed;
-    }
+    },
   };
 };

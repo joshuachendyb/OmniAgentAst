@@ -1,8 +1,8 @@
 /**
  * ShortcutPanel组件 - 快捷指令面板
- * 
+ *
  * 功能：提供常用快捷指令的快速访问
- * 
+ *
  * @author 小新
  * @version 1.0.0
  * @since 2026-02-21
@@ -31,12 +31,18 @@ const shortcuts: Shortcut[] = [
   { command: '/settings', description: '打开设置页面', category: '系统' },
 ];
 
-const ShortcutPanel: React.FC<ShortcutPanelProps> = ({ 
-  visible, onClose, onExecute 
+const ShortcutPanel: React.FC<ShortcutPanelProps> = ({
+  visible,
+  onClose,
+  onExecute,
 }) => {
   return (
     <Modal
-      title={<><ThunderboltOutlined /> 快捷指令</>}
+      title={
+        <>
+          <ThunderboltOutlined /> 快捷指令
+        </>
+      }
       open={visible}
       onCancel={onClose}
       footer={null}
@@ -47,8 +53,9 @@ const ShortcutPanel: React.FC<ShortcutPanelProps> = ({
         renderItem={(item) => (
           <List.Item
             actions={[
-              <Button 
-                type="primary" 
+              <Button
+                key="execute"
+                type="primary"
                 size="small"
                 onClick={() => {
                   onExecute(item.command);
@@ -56,7 +63,7 @@ const ShortcutPanel: React.FC<ShortcutPanelProps> = ({
                 }}
               >
                 执行
-              </Button>
+              </Button>,
             ]}
           >
             <List.Item.Meta

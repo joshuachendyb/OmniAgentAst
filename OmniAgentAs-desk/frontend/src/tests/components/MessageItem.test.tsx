@@ -20,7 +20,7 @@ describe('MessageItem Component', () => {
 
   it('should render user message', () => {
     render(<MessageItem message={baseMessage} />);
-    
+
     expect(screen.getByText('Test message content')).toBeInTheDocument();
     expect(screen.getByText('我')).toBeInTheDocument();
   });
@@ -31,9 +31,9 @@ describe('MessageItem Component', () => {
       role: 'assistant' as const,
       content: 'AI response',
     };
-    
+
     render(<MessageItem message={assistantMessage} />);
-    
+
     expect(screen.getByText('AI response')).toBeInTheDocument();
     expect(screen.getByText('AI助手')).toBeInTheDocument();
   });
@@ -44,9 +44,9 @@ describe('MessageItem Component', () => {
       role: 'system' as const,
       content: 'System notification',
     };
-    
+
     render(<MessageItem message={systemMessage} />);
-    
+
     expect(screen.getByText('System notification')).toBeInTheDocument();
   });
 
@@ -55,13 +55,22 @@ describe('MessageItem Component', () => {
       ...baseMessage,
       role: 'assistant' as const,
       executionSteps: [
-        { type: 'thought' as const, content: 'Thinking...', timestamp: Date.now() },
-        { type: 'action' as const, tool: 'read_file', params: {}, timestamp: Date.now() },
+        {
+          type: 'thought' as const,
+          content: 'Thinking...',
+          timestamp: Date.now(),
+        },
+        {
+          type: 'action' as const,
+          tool: 'read_file',
+          params: {},
+          timestamp: Date.now(),
+        },
       ],
     };
-    
+
     render(<MessageItem message={messageWithSteps} showExecution={true} />);
-    
+
     expect(screen.getByText('Test message content')).toBeInTheDocument();
     // 检查AI思考过程面板标题
     expect(screen.getByText('AI思考过程')).toBeInTheDocument();
@@ -72,9 +81,9 @@ describe('MessageItem Component', () => {
       ...baseMessage,
       timestamp: new Date('2024-01-15T10:30:00'),
     };
-    
+
     render(<MessageItem message={messageWithTime} />);
-    
+
     // Should render without errors
     expect(screen.getByText('Test message content')).toBeInTheDocument();
   });
@@ -84,9 +93,9 @@ describe('MessageItem Component', () => {
       ...baseMessage,
       content: '```python\nprint("hello")\n```',
     };
-    
+
     render(<MessageItem message={codeMessage} />);
-    
+
     // Content should be rendered (code formatting depends on implementation)
     expect(screen.getByText(/print/)).toBeInTheDocument();
   });
@@ -100,23 +109,23 @@ describe('MessageItem Component', () => {
       value: mockClipboard,
       writable: true,
     });
-    
+
     render(<MessageItem message={baseMessage} />);
-    
+
     // Component should render copy button (hidden by default, shown on hover)
     expect(screen.getByText('Test message content')).toBeInTheDocument();
   });
 
   it('should apply different styles for different roles', () => {
     const { rerender } = render(<MessageItem message={baseMessage} />);
-    
+
     // User message
     expect(screen.getByText('我')).toBeInTheDocument();
-    
+
     // Assistant message
     rerender(<MessageItem message={{ ...baseMessage, role: 'assistant' }} />);
     expect(screen.getByText('AI助手')).toBeInTheDocument();
-    
+
     // System message (no role name shown)
     rerender(<MessageItem message={{ ...baseMessage, role: 'system' }} />);
     expect(screen.queryByText('我')).not.toBeInTheDocument();
@@ -128,9 +137,9 @@ describe('MessageItem Component', () => {
       ...baseMessage,
       content: 'Line 1\nLine 2\nLine 3\n\nLine 4 after empty line',
     };
-    
+
     const { container } = render(<MessageItem message={longMessage} />);
-    
+
     // 组件使用whiteSpace: 'pre-wrap'保留换行符，但整个内容是一个文本节点
     // 所以应该检查整个内容是否存在，而不是单独的行
     expect(screen.getByText(/Line 1/)).toBeInTheDocument();
@@ -142,9 +151,9 @@ describe('MessageItem Component', () => {
       ...baseMessage,
       content: '',
     };
-    
+
     const { container } = render(<MessageItem message={emptyMessage} />);
-    
+
     // Should render without errors - 检查容器是否正确渲染
     // 消息气泡容器应该存在
     expect(container.querySelector('[style*="pre-wrap"]')).toBeInTheDocument();

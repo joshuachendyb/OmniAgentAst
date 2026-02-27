@@ -1,8 +1,8 @@
 /**
  * API服务层 - api.ts
- * 
+ *
  * 功能：封装所有后端API调用，统一错误处理和类型定义
- * 
+ *
  * @author 小新
  * @version 2.0.0
  * @since 2026-02-17
@@ -17,7 +17,7 @@ const API_BASE_URL = 'http://localhost:8000/api/v1';
 
 /**
  * Axios实例配置
- * 
+ *
  * 包含统一错误处理和日志记录
  */
 const api = axios.create({
@@ -52,7 +52,7 @@ api.interceptors.response.use(
   },
   (error) => {
     console.error('[API Response Error]', error);
-    
+
     // 统一错误提示
     if (error.response?.status === 401) {
       message.error('API Key无效，请检查配置');
@@ -61,9 +61,11 @@ api.interceptors.response.use(
     } else if (error.code === 'ECONNABORTED') {
       message.error('请求超时，请检查网络');
     } else {
-      message.error('操作失败：' + (error.response?.data?.detail || error.message));
+      message.error(
+        '操作失败：' + (error.response?.data?.detail || error.message)
+      );
     }
-    
+
     return Promise.reject(error);
   }
 );
@@ -123,7 +125,13 @@ export interface ChatResponse {
 // 流式API（SSE）接口
 // ============================================
 export interface StreamStep {
-  type: 'thought' | 'action' | 'observation' | 'error' | 'interrupted' | 'final';
+  type:
+    | 'thought'
+    | 'action'
+    | 'observation'
+    | 'error'
+    | 'interrupted'
+    | 'final';
   step?: number;
   thought?: string;
   action?: string;
@@ -146,7 +154,10 @@ export interface ValidateResponse {
 }
 
 export const chatApi = {
-  sendMessage: async (messages: ChatMessage[], temperature: number = 0.7): Promise<ChatResponse> => {
+  sendMessage: async (
+    messages: ChatMessage[],
+    temperature: number = 0.7
+  ): Promise<ChatResponse> => {
     const response = await api.post<ChatResponse>('/chat', {
       messages,
       stream: false,
@@ -168,45 +179,55 @@ export const chatApi = {
       const response = await fetch(`${API_BASE_URL}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages, stream: true })
+        body: JSON.stringify({ messages, stream: true }),
       });
-      
+
       // 【诊断】检查响应状态
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('流式请求失败:', response.status, response.statusText, errorText);
-        callbacks.onError(`请求失败: ${response.status} ${response.statusText}`);
+        console.error(
+          '流式请求失败:',
+          response.status,
+          response.statusText,
+          errorText
+        );
+        callbacks.onError(
+          `请求失败: ${response.status} ${response.statusText}`
+        );
         return;
       }
-      
+
       // 检查是否为流式响应
       if (!response.body) {
         console.error('响应体为空');
         callbacks.onError('响应体为空，无法读取流数据');
         return;
       }
-      
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      
+
+      // eslint-disable-next-line no-constant-condition
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        
+
         const chunk = decoder.decode(value);
         const lines = chunk.split('\n');
-        
+
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
-              
-              if (data.type === 'thought' || 
-                  data.type === 'action' || 
-                  data.type === 'observation') {
+
+              if (
+                data.type === 'thought' ||
+                data.type === 'action' ||
+                data.type === 'observation'
+              ) {
                 callbacks.onStep(data);
               } else if (data.type === 'final') {
-                callbacks.onComplete(data.content, data.model);  // 传递model
+                callbacks.onComplete(data.content, data.model); // 传递model
               } else if (data.type === 'interrupted') {
                 message.warning('任务已被中断');
               } else if (data.type === 'error') {
@@ -237,8 +258,12 @@ export const chatApi = {
    * 切换AI提供商 - 已存在API
    * @author 小新
    */
-  switchProvider: async (provider: 'zhipuai' | 'opencode'): Promise<ValidateResponse> => {
-    const response = await api.post<ValidateResponse>(`/chat/switch/${provider}`);
+  switchProvider: async (
+    provider: 'zhipuai' | 'opencode'
+  ): Promise<ValidateResponse> => {
+    const response = await api.post<ValidateResponse>(
+      `/chat/switch/${provider}`
+    );
     return response.data;
   },
 };
@@ -350,7 +375,7 @@ export interface ProviderAddRequest {
 
 /**
  * 配置管理API
- * 
+ *
  * @author 小新
  * @update 2026-02-18 对接小沈后端API
  */
@@ -368,7 +393,9 @@ export const configApi = {
    * 更新配置
    * @author 小新
    */
-  updateConfig: async (config: ConfigUpdate): Promise<{ success: boolean; message: string }> => {
+  updateConfig: async (
+    config: ConfigUpdate
+  ): Promise<{ success: boolean; message: string }> => {
     const response = await api.put('/config', config);
     return response.data;
   },
@@ -377,8 +404,13 @@ export const configApi = {
    * 验证配置
    * @author 小新
    */
-  validateConfig: async (data: ConfigValidateRequest): Promise<ConfigValidateResponse> => {
-    const response = await api.post<ConfigValidateResponse>('/config/validate', data);
+  validateConfig: async (
+    data: ConfigValidateRequest
+  ): Promise<ConfigValidateResponse> => {
+    const response = await api.post<ConfigValidateResponse>(
+      '/config/validate',
+      data
+    );
     return response.data;
   },
 
@@ -389,7 +421,9 @@ export const configApi = {
    * @update 2026-02-23 新增
    */
   validateFullConfig: async (): Promise<FullConfigValidationResponse> => {
-    const response = await api.get<FullConfigValidationResponse>('/config/validate-full');
+    const response = await api.get<FullConfigValidationResponse>(
+      '/config/validate-full'
+    );
     return response.data;
   },
 
@@ -398,8 +432,26 @@ export const configApi = {
    * @author 小新
    * @update 2026-02-24 修改类型以匹配后端返回（id, provider, model, display_name, current_model）
    */
-  getModelList: async (): Promise<{ models: { id: number; provider: string; model: string; display_name: string; current_model: boolean }[]; default_provider: string }> => {
-    const response = await api.get<{ models: { id: number; provider: string; model: string; display_name: string; current_model: boolean }[]; default_provider: string }>('/config/models');
+  getModelList: async (): Promise<{
+    models: {
+      id: number;
+      provider: string;
+      model: string;
+      display_name: string;
+      current_model: boolean;
+    }[];
+    default_provider: string;
+  }> => {
+    const response = await api.get<{
+      models: {
+        id: number;
+        provider: string;
+        model: string;
+        display_name: string;
+        current_model: boolean;
+      }[];
+      default_provider: string;
+    }>('/config/models');
     return response.data;
   },
 
@@ -416,7 +468,9 @@ export const configApi = {
    * 删除Provider
    * @author 小欧
    */
-  deleteProvider: async (providerName: string): Promise<{ success: boolean; message: string }> => {
+  deleteProvider: async (
+    providerName: string
+  ): Promise<{ success: boolean; message: string }> => {
     const response = await api.delete(`/config/provider/${providerName}`);
     return response.data;
   },
@@ -425,8 +479,13 @@ export const configApi = {
    * 删除Provider下的模型
    * @author 小欧
    */
-  deleteModel: async (providerName: string, modelName: string): Promise<{ success: boolean; message: string }> => {
-    const response = await api.delete(`/config/provider/${providerName}/model/${modelName}`);
+  deleteModel: async (
+    providerName: string,
+    modelName: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await api.delete(
+      `/config/provider/${providerName}/model/${modelName}`
+    );
     return response.data;
   },
 
@@ -434,7 +493,10 @@ export const configApi = {
    * 更新Provider配置
    * @author 小欧
    */
-  updateProvider: async (providerName: string, data: ProviderUpdate): Promise<{ success: boolean; message: string }> => {
+  updateProvider: async (
+    providerName: string,
+    data: ProviderUpdate
+  ): Promise<{ success: boolean; message: string }> => {
     const response = await api.put(`/config/provider/${providerName}`, data);
     return response.data;
   },
@@ -443,8 +505,14 @@ export const configApi = {
    * 添加模型到Provider
    * @author 小欧
    */
-  addModel: async (providerName: string, data: ModelAddRequest): Promise<{ success: boolean; message: string }> => {
-    const response = await api.post(`/config/provider/${providerName}/model`, data);
+  addModel: async (
+    providerName: string,
+    data: ModelAddRequest
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post(
+      `/config/provider/${providerName}/model`,
+      data
+    );
     return response.data;
   },
 
@@ -452,7 +520,9 @@ export const configApi = {
    * 添加新Provider
    * @author 小欧
    */
-  addProvider: async (data: ProviderAddRequest): Promise<{ success: boolean; message: string }> => {
+  addProvider: async (
+    data: ProviderAddRequest
+  ): Promise<{ success: boolean; message: string }> => {
     const response = await api.post('/config/provider', data);
     return response.data;
   },
@@ -478,10 +548,10 @@ export const configApi = {
 export interface Session {
   session_id: string;
   title: string;
-  title_locked: boolean;           // ⭐ 新增：标题是否被用户锁定
-  title_source: 'user' | 'auto';   // ⭐ 新增：标题来源（用户手动/自动生成）
+  title_locked: boolean; // ⭐ 新增：标题是否被用户锁定
+  title_source: 'user' | 'auto'; // ⭐ 新增：标题来源（用户手动/自动生成）
   title_updated_at: string | null; // ⭐ 新增：标题最后更新时间
-  version?: number;           // ⭐ 新增：乐观锁版本号
+  version?: number; // ⭐ 新增：乐观锁版本号
   created_at: string;
   updated_at: string;
   message_count: number;
@@ -517,8 +587,8 @@ export interface GetSessionMessagesResponse {
 // ⭐ 新增：更新会话标题请求（包含version参数）
 export interface UpdateSessionRequest {
   title: string;
-  version: number;                 // ⭐ 新增：版本号（乐观锁，必须）
-  updated_by?: string;             // ⭐ 新增：修改者（可选）
+  version: number; // ⭐ 新增：版本号（乐观锁，必须）
+  updated_by?: string; // ⭐ 新增：修改者（可选）
 }
 
 // ⭐ 新增：更新会话标题响应
@@ -543,7 +613,7 @@ export interface BatchTitleResponse {
 
 /**
  * 会话管理API
- * 
+ *
  * @author 小新
  * @update 2026-02-18 已对接真实API
  */
@@ -553,8 +623,22 @@ export const sessionApi = {
    * @author 小新
    * @update 2026-02-18 已对接真实API
    */
-  createSession: async (title?: string): Promise<{ session_id: string; title: string; created_at: string; updated_at: string; message_count: number }> => {
-    const response = await api.post<{ session_id: string; title: string; created_at: string; updated_at: string; message_count: number }>('/sessions', { title });
+  createSession: async (
+    title?: string
+  ): Promise<{
+    session_id: string;
+    title: string;
+    created_at: string;
+    updated_at: string;
+    message_count: number;
+  }> => {
+    const response = await api.post<{
+      session_id: string;
+      title: string;
+      created_at: string;
+      updated_at: string;
+      message_count: number;
+    }>('/sessions', { title });
     return response.data;
   },
 
@@ -562,10 +646,16 @@ export const sessionApi = {
    * 获取会话列表
    * @author 小新
    */
-  listSessions: async (page: number = 1, pageSize: number = 20, keyword?: string): Promise<SessionListResponse> => {
+  listSessions: async (
+    page: number = 1,
+    pageSize: number = 20,
+    keyword?: string
+  ): Promise<SessionListResponse> => {
     const params: any = { page, page_size: pageSize };
     if (keyword) params.keyword = keyword;
-    const response = await api.get<SessionListResponse>('/sessions', { params });
+    const response = await api.get<SessionListResponse>('/sessions', {
+      params,
+    });
     return response.data;
   },
 
@@ -574,15 +664,19 @@ export const sessionApi = {
    * @author 小新
    * @update 2026-02-25 新增title_locked, title_source, title_updated_at, version字段
    */
-  getSessionMessages: async (sessionId: string): Promise<GetSessionMessagesResponse> => {
-    const response = await api.get<GetSessionMessagesResponse>(`/sessions/${sessionId}/messages`);
+  getSessionMessages: async (
+    sessionId: string
+  ): Promise<GetSessionMessagesResponse> => {
+    const response = await api.get<GetSessionMessagesResponse>(
+      `/sessions/${sessionId}/messages`
+    );
     // ⭐ 兼容性处理：确保新增字段有默认值
     return {
       ...response.data,
       title_locked: response.data.title_locked ?? false,
       title_source: response.data.title_source ?? 'auto',
       title_updated_at: response.data.title_updated_at ?? null,
-      version: response.data.version ?? 1
+      version: response.data.version ?? 1,
     };
   },
 
@@ -590,8 +684,14 @@ export const sessionApi = {
    * 保存消息到会话
    * @author 小新
    */
-  saveMessage: async (sessionId: string, message: { role: string; content: string }): Promise<{ success: boolean }> => {
-    const response = await api.post<{ success: boolean }>(`/sessions/${sessionId}/messages`, message);
+  saveMessage: async (
+    sessionId: string,
+    message: { role: string; content: string }
+  ): Promise<{ success: boolean }> => {
+    const response = await api.post<{ success: boolean }>(
+      `/sessions/${sessionId}/messages`,
+      message
+    );
     return response.data;
   },
 
@@ -600,7 +700,9 @@ export const sessionApi = {
    * @author 小新
    */
   deleteSession: async (sessionId: string): Promise<{ success: boolean }> => {
-    const response = await api.delete<{ success: boolean }>(`/sessions/${sessionId}`);
+    const response = await api.delete<{ success: boolean }>(
+      `/sessions/${sessionId}`
+    );
     return response.data;
   },
 
@@ -610,16 +712,16 @@ export const sessionApi = {
    * @update 2026-02-25 新增version和updated_by参数
    */
   updateSession: async (
-    sessionId: string, 
-    title: string, 
-    version: number           // ⭐ 必须参数：版本号
+    sessionId: string,
+    title: string,
+    version: number // ⭐ 必须参数：版本号
   ): Promise<UpdateSessionResponse> => {
     const response = await api.put<UpdateSessionResponse>(
-      `/sessions/${sessionId}`, 
-      { 
-        title, 
-        version,         // ⭐ 必须传递
-        updated_by: 'user'  // ⭐ 可选：标记用户修改
+      `/sessions/${sessionId}`,
+      {
+        title,
+        version, // ⭐ 必须传递
+        updated_by: 'user', // ⭐ 可选：标记用户修改
       }
     );
     return response.data;
@@ -631,29 +733,31 @@ export const sessionApi = {
    * @update 2026-02-25 新增批量接口
    * @update 2026-02-25 添加输入验证（Q001）
    */
-  getSessionTitlesBatch: async (sessionIds: string[]): Promise<BatchTitleResponse> => {
+  getSessionTitlesBatch: async (
+    sessionIds: string[]
+  ): Promise<BatchTitleResponse> => {
     // 验证1：检查数组是否为空
     if (!sessionIds || sessionIds.length === 0) {
       throw new Error('会话ID列表不能为空');
     }
-    
+
     // 验证2：检查数组长度（最多50个）
     if (sessionIds.length > 50) {
       throw new Error('批量获取标题最多支持50个会话ID');
     }
-    
+
     // 验证3：检查每个ID的有效性并过滤
-    const validIds = sessionIds.filter(id => id && id.trim());
+    const validIds = sessionIds.filter((id) => id && id.trim());
     if (validIds.length === 0) {
       throw new Error('没有有效的会话ID');
     }
-    
+
     // 验证4：检查URL长度
     const url = `/sessions/titles/batch?session_ids=${validIds.join(',')}`;
     if (url.length > 2000) {
       throw new Error('请求URL过长，请减少会话数量');
     }
-    
+
     const response = await api.get<BatchTitleResponse>(url);
     return response.data;
   },
@@ -664,7 +768,11 @@ export const sessionApi = {
 // @author 小新
 // @update 2026-02-19 升级到v2.0 API契约（score+message精简版）
 // ============================================
-import type { SecurityCheckResponse, SecurityCheckRequest, UseSecurityCheckReturn } from '../types/security';
+import type {
+  SecurityCheckResponse,
+  SecurityCheckRequest,
+  UseSecurityCheckReturn,
+} from '../types/security';
 import { getRiskLevel } from '../types/security';
 
 /**
@@ -679,27 +787,29 @@ export const securityApi = {
   /**
    * 检查命令安全性
    * 调用后端 /api/v1/security/check 接口
-   * 
+   *
    * @param command 要检查的命令
    * @returns 安全检测结果（包含score和message）
    * @author 小新
    */
   checkCommand: async (command: string): Promise<SecurityCheckResponse> => {
-    const response = await api.post<SecurityCheckResponse>('/security/check', { command } as SecurityCheckRequest);
+    const response = await api.post<SecurityCheckResponse>('/security/check', {
+      command,
+    } as SecurityCheckRequest);
     return response.data;
   },
 
   /**
    * 检查命令并解析风险等级
    * 封装checkCommand，返回更详细的解析结果
-   * 
+   *
    * @param command 要检查的命令
    * @returns 解析后的风险等级信息
    * @author 小新
    */
   checkWithLevel: async (command: string): Promise<UseSecurityCheckReturn> => {
     const response = await securityApi.checkCommand(command);
-    
+
     if (!response.success || !response.data) {
       throw new Error(response.error || '安全检查失败');
     }
@@ -712,7 +822,7 @@ export const securityApi = {
       message,
       level: riskLevel.level,
       canProceed: riskLevel.canProceed,
-      ui: riskLevel.ui
+      ui: riskLevel.ui,
     };
   },
 };
