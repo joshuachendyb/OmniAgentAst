@@ -145,6 +145,8 @@ const ProviderSettings: React.FC = () => {
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set()); // 选中的模型
   const [deleteProgress, setDeleteProgress] = useState<{ current: number, total: number }>({ current: 0, total: 0 });
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [deleteCancelled, setDeleteCancelled] = useState(false);
+  const deleteControllerRef = React.useRef<AbortController | null>(null);
 
   const [form] = Form.useForm();
   const [modelForm] = Form.useForm();
@@ -232,13 +234,21 @@ const ProviderSettings: React.FC = () => {
     }
   };
 
-  // 批量删除模型（并发优化）
+  // 批量删除模型（并发优化，支持取消）
   const handleBatchDeleteModels = async (providerName: string, models: string[]) => {
     setDeleteProgress({ current: 0, total: models.length });
     setDeleteModalVisible(true);
+    setDeleteCancelled(false);
+
+    const controller = new AbortController();
+    deleteControllerRef.current = controller;
 
     try {
       const deletePromises = models.map(async (modelName, index) => {
+        if (deleteCancelled) {
+          return { success: false, model: modelName, cancelled: true };
+        }
+        
         try {
           await configApi.deleteModel(providerName, modelName);
           setDeleteProgress({ current: index + 1, total: models.length });
@@ -251,9 +261,12 @@ const ProviderSettings: React.FC = () => {
 
       const results = await Promise.all(deletePromises);
       const successCount = results.filter(r => r.success).length;
-      const failCount = results.length - successCount;
+      const failCount = results.filter(r => !r.success && !r.cancelled).length;
+      const cancelledCount = results.filter(r => r.cancelled).length;
 
-      if (failCount === 0) {
+      if (deleteCancelled) {
+        message.warning(`批量删除已取消：${successCount} 成功，${cancelledCount} 未执行`);
+      } else if (failCount === 0) {
         message.success(`批量删除完成：${successCount} 个模型`);
       } else {
         message.warning(`批量删除完成：${successCount} 成功，${failCount} 失败`);
@@ -262,10 +275,15 @@ const ProviderSettings: React.FC = () => {
       setSelectedModels(new Set());
       loadConfig();
     } catch (error: any) {
-      message.error('批量删除失败');
+      if (error.name === 'AbortError') {
+        message.warning('批量删除已取消');
+      } else {
+        message.error('批量删除失败');
+      }
     } finally {
       setDeleteProgress({ current: 0, total: 0 });
       setDeleteModalVisible(false);
+      deleteControllerRef.current = null;
     }
   };
 
@@ -683,12 +701,32 @@ const ProviderSettings: React.FC = () => {
 
       {/* 批量删除确认弹框 */}
       <Modal
-        title="批量删除确认"
+        title="批量删除"
         open={deleteModalVisible}
-        onCancel={() => setDeleteModalVisible(false)}
-        footer={null}
+        onCancel={() => {
+          setDeleteCancelled(true);
+        }}
+        footer={[
+          <Button 
+            key="cancel" 
+            danger 
+            onClick={() => setDeleteCancelled(true)}
+            disabled={deleteProgress.current >= deleteProgress.total}
+          >
+            取消
+          </Button>,
+        ]}
       >
         <p>正在删除 {deleteProgress.total} 个模型，请稍候...</p>
+        <div style={{ marginTop: 16 }}>
+          <Progress 
+            percent={Math.round((deleteProgress.current / deleteProgress.total) * 100)}
+            status={deleteProgress.current >= deleteProgress.total ? 'success' : 'active'}
+          />
+          <div style={{ marginTop: 8, color: '#666', fontSize: 12 }}>
+            已完成: {deleteProgress.current} / {deleteProgress.total}
+          </div>
+        </div>
       </Modal>
 
       {/* 编辑Provider弹框 */}
