@@ -45,6 +45,7 @@ import {
 } from '@ant-design/icons';
 import { configApi, sessionApi } from '../../services/api';
 import type { ProviderInfo, Session } from '../../services/api';
+// import type { FormInstance } from 'antd/es/form'; // 暂时保留，以备将来使用
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
@@ -104,68 +105,24 @@ const GlobalConfigArea: React.FC<{
 };
 
 /**
- * Provider列表组件（左侧）
+ * 脏状态检测Hook（暂时保留，以备将来使用）
  * @author 小新
  * @update 2026-02-26 新增
  */
-const ProviderList: React.FC<{
-  providers: ProviderInfo[];
-  currentProvider: string;
-  onSelect: (provider: ProviderInfo) => void;
-}> = ({ providers, currentProvider, onSelect }) => {
-  return (
-    <div style={{ borderRight: '1px solid #f0f0f0', paddingRight: 16 }}>
-      <Typography.Title level={5} style={{ marginBottom: 16 }}>
-        Provider列表
-      </Typography.Title>
-      {providers.map(provider => (
-        <Card
-          key={provider.name}
-          size="small"
-          style={{ marginBottom: 12, cursor: 'pointer' }}
-          onClick={() => onSelect(provider)}
-          bodyStyle={{
-            backgroundColor: provider.name === currentProvider ? '#e6f7ff' : 'transparent',
-          }}
-        >
-          <Space>
-            <ApiOutlined />
-            <Text strong>{provider.name}</Text>
-            {provider.name === currentProvider && (
-              <Tag color="success">当前使用</Tag>
-            )}
-          </Space>
-        </Card>
-      ))}
-    </div>
-  );
-};
-
-/**
- * 脏状态检测Hook
- * @author 小新
- * @update 2026-02-26 新增
- */
+/*
 const useDirtyState = (form: FormInstance, onDirtyChange: (isDirty: boolean) => void) => {
   useEffect(() => {
     const checkDirty = () => {
       onDirtyChange(form.isFieldsTouched());
     };
 
-    const unsubscribe = form.getFieldsValue();
     checkDirty();
 
-    const handleFieldChange = () => {
-      checkDirty();
-    };
-
-    form.onValuesChange(handleFieldChange);
-
-    return () => {
-      form.offValuesChange(handleFieldChange);
-    };
+    // 使用isFieldsTouched()检测，不再监听字段变化
+    // 因为Ant Design Form没有直接的watchValues方法
   }, [form, onDirtyChange]);
 };
+*/
 
 /**
  * Provider管理页面组件
@@ -183,7 +140,6 @@ const ProviderSettings: React.FC = () => {
   const [addModelModalVisible, setAddModelModalVisible] = useState(false);
   const [addProviderModalVisible, setAddProviderModalVisible] = useState(false);
   const [editingProvider, setEditingProvider] = useState<ProviderInfo | null>(null);
-  const [isDirty, setIsDirty] = useState(false);
   const [selectedProviderForModel, setSelectedProviderForModel] = useState<string>('');
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({}); // 控制每个Provider的API Key显示
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set()); // 选中的模型
@@ -193,9 +149,6 @@ const ProviderSettings: React.FC = () => {
   const [form] = Form.useForm();
   const [modelForm] = Form.useForm();
   const [providerForm] = Form.useForm();
-
-  // 使用脏状态检测Hook
-  useDirtyState(form, setIsDirty);
 
   // 切换API Key显示/隐藏
   const toggleShowApiKey = (providerName: string) => {
@@ -282,7 +235,7 @@ const ProviderSettings: React.FC = () => {
   // 批量删除模型（并发优化）
   const handleBatchDeleteModels = async (providerName: string, models: string[]) => {
     setDeleteProgress({ current: 0, total: models.length });
-    setDeleteModalVisible(false);
+    setDeleteModalVisible(true);
 
     try {
       const deletePromises = models.map(async (modelName, index) => {
@@ -312,6 +265,7 @@ const ProviderSettings: React.FC = () => {
       message.error('批量删除失败');
     } finally {
       setDeleteProgress({ current: 0, total: 0 });
+      setDeleteModalVisible(false);
     }
   };
 
@@ -346,20 +300,6 @@ const ProviderSettings: React.FC = () => {
       loadConfig();
     } catch (error: any) {
       message.error(error.response?.data?.detail || '添加失败');
-    }
-  };
-
-  // 切换当前Provider
-  const handleSwitchProvider = async (providerName: string, modelName: string) => {
-    try {
-      await configApi.updateConfig({
-        ai_provider: providerName as 'zhipuai' | 'opencode' | 'longcat',
-        ai_model: modelName,
-      });
-      message.success(`已切换到 ${providerName} (${modelName})`);
-      loadConfig();
-    } catch (error) {
-      message.error('切换失败');
     }
   };
 
@@ -682,7 +622,7 @@ const ProviderSettings: React.FC = () => {
                    }}
                  >
                    添加模型
-                 </</Button>
+                  </Button>
                  {selectedModels.size > 0 && (
                    <Popconfirm
                      title={`确定删除选中的 ${selectedModels.size} 个模型吗？`}
@@ -726,20 +666,30 @@ const ProviderSettings: React.FC = () => {
                  ))}
                </div>
 
-               {/* 批量删除进度指示器 */}
-               {deleteProgress.total > 0 && (
-                 <div style={{ marginTop: 8 }}>
-                   <Progress
-                     percent={Math.round((deleteProgress.current / deleteProgress.total) * 100)}
-                     status="active"
-                     format={() => `${deleteProgress.current}/${deleteProgress.total}`}
-                   />
-                 </div>
-               )}
-            </div>
-          </Card>
-        )}
-      />
+                {/* 批量删除进度指示器 */}
+                {deleteProgress.total > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <Progress
+                      percent={Math.round((deleteProgress.current / deleteProgress.total) * 100)}
+                      status="active"
+                      format={() => `${deleteProgress.current}/${deleteProgress.total}`}
+                    />
+                  </div>
+                )}
+             </div>
+           </Card>
+         )}
+       />
+
+      {/* 批量删除确认弹框 */}
+      <Modal
+        title="批量删除确认"
+        open={deleteModalVisible}
+        onCancel={() => setDeleteModalVisible(false)}
+        footer={null}
+      >
+        <p>正在删除 {deleteProgress.total} 个模型，请稍候...</p>
+      </Modal>
 
       {/* 编辑Provider弹框 */}
       <Modal
