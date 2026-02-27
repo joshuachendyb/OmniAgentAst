@@ -105,6 +105,44 @@ const GlobalConfigArea: React.FC<{
 };
 
 /**
+ * Provider列表组件（左侧）
+ * @author 小新
+ * @update 2026-02-26 新增
+ */
+const ProviderList: React.FC<{
+  providers: ProviderInfo[];
+  currentProvider: string;
+  onSelect: (provider: ProviderInfo) => void;
+}> = ({ providers, currentProvider, onSelect }) => {
+  return (
+    <div style={{ borderRight: '1px solid #f0f0f0', paddingRight: 16 }}>
+      <Typography.Title level={5} style={{ marginBottom: 16 }}>
+        Provider列表
+      </Typography.Title>
+      {providers.map(provider => (
+        <Card
+          key={provider.name}
+          size="small"
+          style={{ marginBottom: 12, cursor: 'pointer' }}
+          onClick={() => onSelect(provider)}
+          bodyStyle={{
+            backgroundColor: provider.name === currentProvider ? '#e6f7ff' : 'transparent',
+          }}
+        >
+          <Space>
+            <ApiOutlined />
+            <Text strong>{provider.name}</Text>
+            {provider.name === currentProvider && (
+              <Tag color="success">当前使用</Tag>
+            )}
+          </Space>
+        </Card>
+      ))}
+    </div>
+  );
+};
+
+/**
  * 脏状态检测Hook（暂时保留，以备将来使用）
  * @author 小新
  * @update 2026-02-26 新增
@@ -133,6 +171,7 @@ const ProviderSettings: React.FC = () => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState<string>('');
   const [currentModel, setCurrentModel] = useState<string>('');
+  const [selectedProvider, setSelectedProvider] = useState<ProviderInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [validationResult, setValidationResult] = useState<any>(null);
   const [validationModalVisible, setValidationModalVisible] = useState(false);
@@ -165,12 +204,20 @@ const ProviderSettings: React.FC = () => {
       const providerList = Object.values(data.providers);
       setProviders(providerList);
       setCurrentProvider(data.current_provider);
+      // 设置当前选中的Provider为当前使用的Provider或第一个Provider
+      const current = providerList.find(p => p.name === data.current_provider) || providerList[0] || null;
+      setSelectedProvider(current);
     } catch (error) {
       message.error('加载配置失败');
       console.error('加载配置失败:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // 选择Provider
+  const onSelectProvider = (provider: ProviderInfo) => {
+    setSelectedProvider(provider);
   };
 
   // 加载配置时同时进行验证
@@ -542,162 +589,171 @@ const ProviderSettings: React.FC = () => {
         )}
       </Modal>
 
-      {/* 右上角添加按钮 */}
-      <div style={{ marginBottom: 16, textAlign: 'right' }}>
-        <Button 
-          type="primary" 
-          icon={<PlusOutlined />}
-          onClick={() => setAddProviderModalVisible(true)}
-        >
-          新增Provider
-        </Button>
-      </div>
-
-      {/* Provider列表 */}
-      <List
-        loading={loading}
-        dataSource={providers}
-        renderItem={(provider) => (
-          <Card 
-            size="small" 
-            style={{ marginBottom: 16 }}
-            title={
-              <Space>
-                <ApiOutlined />
-                <span style={{ fontWeight: 'bold' }}>{getProviderDisplayName(provider.name)}</span>
-                <Tag color="blue">{provider.name}</Tag>
-                {provider.name === currentProvider && (
-                  <Tag icon={<CheckCircleOutlined />} color="success">当前使用</Tag>
-                )}
-              </Space>
-            }
-            extra={
-              <Space>
-                <Button 
-                  type="link" 
-                  icon={<EditOutlined />} 
-                  onClick={() => handleEditProvider(provider)}
-                >
-                  编辑
-                </Button>
-                <Popconfirm
-                  title={`确定删除 ${getProviderDisplayName(provider.name)} 吗？`}
-                  description="删除后无法恢复"
-                  onConfirm={() => handleDeleteProvider(provider.name)}
-                  okText="确定"
-                  cancelText="取消"
-                >
-                  <Button type="link" danger icon={<DeleteOutlined />}>
-                    删除
-                  </Button>
-                </Popconfirm>
-              </Space>
-            }
-          >
-            {/* Provider基本信息 */}
-            <Row gutter={[16, 8]} style={{ marginBottom: 16 }}>
-              <Col span={24}>
-                <Text type="secondary">API地址：</Text>
-                <Text code>{provider.api_base}</Text>
-              </Col>
-              <Col span={24}>
+      {/* Provider配置区域 */}
+      <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
+        {/* 左侧Provider列表 */}
+        <Col xs={24} md={8}>
+          <ProviderList
+            providers={providers}
+            currentProvider={currentProvider}
+            onSelect={onSelectProvider}
+          />
+        </Col>
+        
+        {/* 右侧Provider详细信息 */}
+        <Col xs={24} md={16}>
+          {selectedProvider ? (
+            <div>
+              <Typography.Title level={5} style={{ marginBottom: 24 }}>
                 <Space>
-                  <Text type="secondary">API密钥：</Text>
-                  <Text>
-                    {provider.api_key 
-                      ? (showApiKey[provider.name] ? provider.api_key : '******' + provider.api_key.slice(-4)) 
-                      : '未设置'}
-                  </Text>
-                  {provider.api_key && (
-                    <Button 
-                      type="text" 
-                      size="small" 
-                      icon={showApiKey[provider.name] ? <EyeInvisibleOutlined /> : <EyeOutlined />}
-                      onClick={() => toggleShowApiKey(provider.name)}
-                    />
+                  <ApiOutlined />
+                  配置详情：{getProviderDisplayName(selectedProvider.name)}
+                  <Tag color="blue">{selectedProvider.name}</Tag>
+                  {selectedProvider.name === currentProvider && (
+                    <Tag icon={<CheckCircleOutlined />} color="success">当前使用</Tag>
                   )}
                 </Space>
-              </Col>
-              <Col span={24}>
-                <Text type="secondary">当前模型：</Text>
-                <Text strong>{provider.model}</Text>
-              </Col>
-            </Row>
+              </Typography.Title>
+              
+              <Card size="small">
+                {/* Provider基本信息 */}
+                <Row gutter={[16, 8]} style={{ marginBottom: 16 }}>
+                  <Col span={24}>
+                    <Text type="secondary">API地址：</Text>
+                    <Text code>{selectedProvider.api_base}</Text>
+                  </Col>
+                  <Col span={24}>
+                    <Space>
+                      <Text type="secondary">API密钥：</Text>
+                      <Text>
+                        {selectedProvider.api_key 
+                          ? (showApiKey[selectedProvider.name] ? selectedProvider.api_key : '******' + selectedProvider.api_key.slice(-4)) 
+                          : '未设置'}
+                      </Text>
+                      {selectedProvider.api_key && (
+                        <Button 
+                          type="text" 
+                          size="small" 
+                          icon={showApiKey[selectedProvider.name] ? <EyeInvisibleOutlined /> : <EyeOutlined />}
+                          onClick={() => toggleShowApiKey(selectedProvider.name)}
+                        />
+                      )}
+                    </Space>
+                  </Col>
+                  <Col span={24}>
+                    <Text type="secondary">当前模型：</Text>
+                    <Text strong>{selectedProvider.model}</Text>
+                  </Col>
+                </Row>
 
-            <Divider style={{ margin: '12px 0' }} />
+                <Divider style={{ margin: '12px 0' }} />
 
-            {/* 模型列表 */}
-            <div style={{ marginBottom: 8 }}>
-               <Space style={{ marginBottom: 8 }}>
-                 <Text strong>模型列表：</Text>
-                 <Button
-                   type="link"
-                   size="small"
-                   icon={<PlusOutlined />}
-                   onClick={() => {
-                     setSelectedProviderForModel(provider.name);
-                     setAddModelModalVisible(true);
-                   }}
-                 >
-                   添加模型
-                  </Button>
-                 {selectedModels.size > 0 && (
-                   <Popconfirm
-                     title={`确定删除选中的 ${selectedModels.size} 个模型吗？`}
-                     onConfirm={() => handleBatchDeleteModels(provider.name, Array.from(selectedModels))}
-                     okText="确定"
-                     cancelText="取消"
-                     okButtonProps={{ danger: true }}
-                   >
-                     <Button type="link" danger icon={<DeleteOutlined />}>
-                       批量删除 ({selectedModels.size})
+                {/* 模型列表 */}
+                <div style={{ marginBottom: 8 }}>
+                   <Space style={{ marginBottom: 8 }}>
+                     <Text strong>模型列表：</Text>
+                     <Button
+                       type="link"
+                       size="small"
+                       icon={<PlusOutlined />}
+                       onClick={() => {
+                         setSelectedProviderForModel(selectedProvider.name);
+                         setAddModelModalVisible(true);
+                       }}
+                     >
+                       添加模型
                      </Button>
-                   </Popconfirm>
-                 )}
-               </Space>
-               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                 {provider.models.map((model) => (
-                   <Tag
-                     key={model}
-                     color={model === provider.model ? 'geekblue' : selectedModels.has(model) ? 'volcano' : 'default'}
-                     closable
-                     onClose={(e) => {
-                       e.preventDefault();
-                       e.stopPropagation();
-                       handleDeleteModel(provider.name, model);
-                     }}
-                     onClick={() => {
-                       const newSelected = new Set(selectedModels);
-                       if (newSelected.has(model)) {
-                         newSelected.delete(model);
-                       } else {
-                         newSelected.add(model);
-                       }
-                       setSelectedModels(newSelected);
-                     }}
-                     style={{ cursor: 'pointer', userSelect: 'none' }}
-                   >
-                     {model === provider.model && <CheckCircleOutlined style={{ marginRight: 4 }} />}
-                     {selectedModels.has(model) && <span style={{ marginRight: 4 }}>✓</span>}
-                     {model}
-                   </Tag>
-                 ))}
-               </div>
+                     {selectedModels.size > 0 && (
+                       <Popconfirm
+                         title={`确定删除选中的 ${selectedModels.size} 个模型吗？`}
+                         onConfirm={() => handleBatchDeleteModels(selectedProvider.name, Array.from(selectedModels))}
+                         okText="确定"
+                         cancelText="取消"
+                         okButtonProps={{ danger: true }}
+                       >
+                         <Button type="link" danger icon={<DeleteOutlined />}>
+                           批量删除 ({selectedModels.size})
+                         </Button>
+                       </Popconfirm>
+                     )}
+                   </Space>
+                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                     {selectedProvider.models.map((model) => (
+                       <Tag
+                         key={model}
+                         color={model === selectedProvider.model ? 'geekblue' : selectedModels.has(model) ? 'volcano' : 'default'}
+                         closable
+                         onClose={(e) => {
+                           e.preventDefault();
+                           e.stopPropagation();
+                           handleDeleteModel(selectedProvider.name, model);
+                         }}
+                         onClick={() => {
+                           const newSelected = new Set(selectedModels);
+                           if (newSelected.has(model)) {
+                             newSelected.delete(model);
+                           } else {
+                             newSelected.add(model);
+                           }
+                           setSelectedModels(newSelected);
+                         }}
+                         style={{ cursor: 'pointer', userSelect: 'none' }}
+                       >
+                         {model === selectedProvider.model && <CheckCircleOutlined style={{ marginRight: 4 }} />}
+                         {selectedModels.has(model) && <span style={{ marginRight: 4 }}>✓</span>}
+                         {model}
+                       </Tag>
+                     ))}
+                   </div>
 
-                {/* 批量删除进度指示器 */}
-                {deleteProgress.total > 0 && (
-                  <div style={{ marginTop: 8 }}>
-                    <Progress
-                      percent={Math.round((deleteProgress.current / deleteProgress.total) * 100)}
-                      status="active"
-                      format={() => `${deleteProgress.current}/${deleteProgress.total}`}
-                    />
-                  </div>
-                )}
-             </div>
-           </Card>
-         )}
-       />
+                   {/* 批量删除进度指示器 */}
+                   {deleteProgress.total > 0 && (
+                     <div style={{ marginTop: 8 }}>
+                       <Progress
+                         percent={Math.round((deleteProgress.current / deleteProgress.total) * 100)}
+                         status="active"
+                         format={() => `${deleteProgress.current}/${deleteProgress.total}`}
+                       />
+                     </div>
+                   )}
+                </div>
+
+                <Divider style={{ margin: '12px 0' }} />
+
+                {/* 操作按钮 */}
+                <Space style={{ width: '100%', justifyContent: 'flex-end' }}>
+                  <Button 
+                    type="primary" 
+                    icon={<EditOutlined />} 
+                    onClick={() => handleEditProvider(selectedProvider)}
+                  >
+                    编辑
+                  </Button>
+                  <Popconfirm
+                    title={`确定删除 ${getProviderDisplayName(selectedProvider.name)} 吗？`}
+                    description="删除后无法恢复"
+                    onConfirm={() => handleDeleteProvider(selectedProvider.name)}
+                    okText="确定"
+                    cancelText="取消"
+                  >
+                    <Button type="primary" danger icon={<DeleteOutlined />}>
+                      删除
+                    </Button>
+                  </Popconfirm>
+                </Space>
+              </Card>
+            </div>
+          ) : (
+            <Alert
+              message="请选择一个Provider"
+              description="在左侧列表中点击选择一个Provider以查看详细配置"
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          )}
+        </Col>
+      </Row>
 
       {/* 批量删除确认弹框 */}
       <Modal
@@ -1006,6 +1062,50 @@ const SecuritySettings: React.FC = () => {
             valuePropName="checked"
           >
             <Switch checkedChildren="开" unCheckedChildren="关" />
+          </Form.Item>
+        </Col>
+
+        <Col xs={24} sm={12}>
+          <Form.Item
+            label="命令白名单"
+            name="commandWhitelist"
+            rules={[{ 
+              validator: (_, value) => {
+                const whitelistEnabled = securityForm.getFieldValue('whitelistEnabled');
+                if (whitelistEnabled && (!value || value.trim() === '')) {
+                  return Promise.reject(new Error('启用白名单时必须配置命令白名单'));
+                }
+                return Promise.resolve();
+              }
+            }]}
+          >
+            <Input.TextArea 
+              rows={3} 
+              placeholder="每行一个允许的命令，支持通配符"
+              disabled={!securityForm.getFieldValue('whitelistEnabled')}
+            />
+          </Form.Item>
+        </Col>
+
+        <Col xs={24} sm={12}>
+          <Form.Item
+            label="命令黑名单"
+            name="commandBlacklist"
+            rules={[{ 
+              validator: (_, value) => {
+                const blacklistEnabled = securityForm.getFieldValue('blacklistEnabled');
+                if (blacklistEnabled && (!value || value.trim() === '')) {
+                  return Promise.reject(new Error('启用黑名单时必须配置命令黑名单'));
+                }
+                return Promise.resolve();
+              }
+            }]}
+          >
+            <Input.TextArea 
+              rows={3} 
+              placeholder="每行一个禁止的命令，支持通配符"
+              disabled={!securityForm.getFieldValue('blacklistEnabled')}
+            />
           </Form.Item>
         </Col>
 

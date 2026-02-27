@@ -42,6 +42,9 @@ import { useSSE, ExecutionStep } from '../../utils/sse';
 
 const { TextArea } = Input;
 
+// ⭐ 常量配置
+const SESSION_EXPIRY_TIME = 5 * 60 * 1000; // 5分钟
+
 // ⭐ 防抖函数（简单实现，不依赖lodash）
 const debounce = <T extends (...args: any[]) => any>(
   func: T,
@@ -277,7 +280,7 @@ const NewChatContainer: React.FC = () => {
         const timeDiff = currentTime - savedTime;
         
         // 只恢复5分钟内的状态
-        if (timeDiff > 5 * 60 * 1000) {
+        if (timeDiff > SESSION_EXPIRY_TIME) {
           console.log('🕒 会话状态已过期，跳过恢复');
           sessionStorage.removeItem(STORAGE_KEY);
           return false;
