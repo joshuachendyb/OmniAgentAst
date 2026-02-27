@@ -112,7 +112,7 @@ const NewChatContainer: React.FC = () => {
   // P1级别优化：新增状态变量
   type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
-  const [sessionJumpLoading, setSessionJumpLoading] = useState(false);
+  const [_sessionJumpLoading, setSessionJumpLoading] = useState(false);
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
   const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
   const [_isSavingTitle, setIsSavingTitle] = useState(false);
