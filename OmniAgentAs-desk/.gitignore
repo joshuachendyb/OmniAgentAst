@@ -92,3 +92,8 @@ tmp/
 *.temp
 *.bak
 nul
+
+# Playwright测试报告和结果
+frontend/playwright-report/
+frontend/test-results/
+
