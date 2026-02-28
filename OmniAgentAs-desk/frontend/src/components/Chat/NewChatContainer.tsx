@@ -77,6 +77,7 @@ interface Message extends ChatMessage {
   timestamp: Date;
   executionSteps?: ExecutionStep[];
   isStreaming?: boolean;
+  isError?: boolean; // 前端小新代修改：是否为错误消息
   model?: string;
 }
 
@@ -257,7 +258,8 @@ const NewChatContainer: React.FC = () => {
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...lastMessage,
-            content: lastMessage.content || "抱歉，发生了错误",
+            content: lastMessage.content || `**错误**: ${error}`,
+            isError: true, // 前端小新代修改：标记为错误消息
             isStreaming: false,
           };
           return updated;
