@@ -1223,12 +1223,12 @@ const NewChatContainer: React.FC = () => {
       {/* 消息列表 - 前端小新代修改 UX-C04: 时间分隔线 */}
       <div
         style={{
-          height: 400,
+          height: 500,
           overflowY: "auto",
           border: "1px solid #f0f0f0",
           borderRadius: 8,
-          padding: 16,
-          marginBottom: 16,
+          padding: "0 24px 0 8px",
+          marginBottom: 8,
           backgroundColor: "#fafafa",
         }}
       >
