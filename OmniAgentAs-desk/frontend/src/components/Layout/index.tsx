@@ -645,10 +645,18 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         </Header>
 
         {/* 主内容区 - 只有这层有留白 - 前端小新代修改 VIS-L01: 留白优化, VIS-G02: 背景色优化 */}
+        {/* 
+          📝 留白调整说明（修改这里调整 Card 组件与外边框的间距）：
+          padding: "上 右 下 左"
+          - 上：Card 与顶部标题栏的间距（当前值：6px）
+          - 右：Card 与右侧边框的间距（当前值：6px）
+          - 下：Card 与底部边框的间距（当前值：10px）
+          - 左：Card 与左侧菜单的间距（当前值：6px）
+        */}
         <Content
           style={{
             margin: 0,
-            padding: 0,
+            padding: "6px 6px 10px 6px",
             background: "#f8fafc",
             borderRadius: 12,
             minHeight: 400,

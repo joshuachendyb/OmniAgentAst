@@ -1091,6 +1091,8 @@ const NewChatContainer: React.FC = () => {
 
   return (
     <Card
+      headStyle={{ padding: "8px 8px 4px 8px" }}
+      bodyStyle={{ padding: "0 8px 8px 8px" }}
       title={
         <Space>
           <RobotOutlined />
@@ -1227,8 +1229,8 @@ const NewChatContainer: React.FC = () => {
           overflowY: "auto",
           border: "1px solid #f0f0f0",
           borderRadius: 8,
-          padding: "0 24px 0 8px",
-          marginBottom: 8,
+          padding: "0 1px 1px 0",
+          marginBottom: 1,
           backgroundColor: "#fafafa",
         }}
       >
@@ -1261,7 +1263,7 @@ const NewChatContainer: React.FC = () => {
                       key={`date-${i}`}
                       style={{
                         textAlign: "center",
-                        margin: "16px 0",
+                        margin: "1px 0",
                         position: "relative",
                       }}
                     >
