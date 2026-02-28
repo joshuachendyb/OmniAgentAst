@@ -189,7 +189,11 @@ const HistoryPage: React.FC = () => {
       style={{ padding: "25px", background: "#fff" }}
     >
       <Card bordered={false}>
-        <Space direction="vertical" style={{ width: "100%" }} size="large">
+        <Space
+          direction="vertical"
+          style={{ width: "100%", padding: "0 5px" }}
+          size="large"
+        >
           {/* 标题栏 */}
           <Space style={{ justifyContent: "space-between", width: "100%" }}>
             <Title level={3} style={{ margin: 0 }}>
@@ -315,40 +319,43 @@ const HistoryPage: React.FC = () => {
                       />
                     }
                   >
-                    <Card.Meta
-                      title={
-                        <Tooltip title={session.title}>
-                          <Text strong ellipsis style={{ maxWidth: 200 }}>
-                            {session.title}
-                          </Text>
-                        </Tooltip>
-                      }
-                      description={
-                        <Space
-                          direction="vertical"
-                          size="small"
-                          style={{ width: "100%" }}
-                        >
-                          <Space>
-                            <Tag icon={<CommentOutlined />} color="blue">
-                              {session.message_count} 条消息
-                            </Tag>
-                          </Space>
-                          <Space>
-                            <ClockCircleOutlined style={{ color: "#999" }} />
-                            <Text type="secondary" style={{ fontSize: 12 }}>
-                              更新于 {formatTime(session.updated_at)}
+                    {/* 前端小新代修改 VIS-H02: 会话方块内部文字左侧留白 */}
+                    <div style={{ padding: "0 10px" }}>
+                      <Card.Meta
+                        title={
+                          <Tooltip title={session.title}>
+                            <Text strong ellipsis style={{ maxWidth: 200 }}>
+                              {session.title}
+                            </Text>
+                          </Tooltip>
+                        }
+                        description={
+                          <Space
+                            direction="vertical"
+                            size="small"
+                            style={{ width: "100%" }}
+                          >
+                            <Space>
+                              <Tag icon={<CommentOutlined />} color="blue">
+                                {session.message_count} 条消息
+                              </Tag>
+                            </Space>
+                            <Space>
+                              <ClockCircleOutlined style={{ color: "#999" }} />
+                              <Text type="secondary" style={{ fontSize: 12 }}>
+                                更新于 {formatTime(session.updated_at)}
+                              </Text>
+                            </Space>
+                            <Text type="secondary" style={{ fontSize: 11 }}>
+                              创建于{" "}
+                              {dayjs(session.created_at).format(
+                                "YYYY-MM-DD HH:mm"
+                              )}
                             </Text>
                           </Space>
-                          <Text type="secondary" style={{ fontSize: 11 }}>
-                            创建于{" "}
-                            {dayjs(session.created_at).format(
-                              "YYYY-MM-DD HH:mm"
-                            )}
-                          </Text>
-                        </Space>
-                      }
-                    />
+                        }
+                      />
+                    </div>
                   </Card>
                 </List.Item>
               )}

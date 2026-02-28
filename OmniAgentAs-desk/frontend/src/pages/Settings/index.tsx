@@ -1704,7 +1704,9 @@ const Settings: React.FC = () => {
             </Space>
           </div>
         )}
-        <Tabs activeKey={activeKey} onChange={handleTabChange} type="line">
+        {/* 前端小新代修改 VIS-S03: 设置页面Tab内容左右留白 */}
+        <div style={{ padding: "0 5px" }}>
+          <Tabs activeKey={activeKey} onChange={handleTabChange} type="line">
           <TabPane
             tab={
               <span>
@@ -1738,6 +1740,7 @@ const Settings: React.FC = () => {
             <SessionHistory />
           </TabPane>
         </Tabs>
+        </div>
       </Card>
 
       {/* Tab切换确认对话框 */}
