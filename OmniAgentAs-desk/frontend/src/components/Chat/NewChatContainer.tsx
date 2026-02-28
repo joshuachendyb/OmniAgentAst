@@ -828,7 +828,7 @@ const NewChatContainer: React.FC = () => {
     const assistantMessage: Message = {
       id: (Date.now() + 1).toString(),
       role: "assistant",
-      content: "",
+      content: "🤔 AI 正在思考...", // 【修复问题 2】显示占位文本，避免空白气泡
       timestamp: new Date(),
       executionSteps: [],
       isStreaming: true,
