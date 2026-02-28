@@ -1567,6 +1567,32 @@ const SessionHistory: React.FC = () => {
 /**
  * 设置页面主组件
  */
+/**
+ * TODO: 配置文件路径功能待完善 [2026-02-28]
+ *
+ * 当前问题：
+ * 1. configFilePath 相关的 UI 之前被从 Tabs 上方移除，但未完全迁移
+ * 2. handleOpenConfigDir 和 handleShowFixModal 函数已定义但未被使用
+ * 3. 配置文件路径信息目前只在 Modal（配置修复进度弹窗）中显示
+ *
+ * 建议解决方案：
+ * 方案A：将配置文件路径相关功能迁移到"模型配置"Tab内部的 ProviderSettings 组件顶部
+ * - 显示备份路径
+ * - 添加"打开配置目录"按钮（调用后端 API 打开文件夹）
+ * - 添加"修复配置"按钮（触发 handleFixConfig）
+ *
+ * 方案B：在 Tabs 上方（Card 内部、Tabs 外部）添加功能入口
+ *
+ * 相关变量和函数：
+ * - configFilePath: 配置文件备份路径状态
+ * - loadConfigFilePath(): 加载配置文件路径
+ * - handleFixConfig(): 修复配置功能
+ * - handleOpenConfigDir(): 打开配置目录（需完善实现）
+ * - handleShowFixModal(): 显示修复弹窗（需绑定按钮）
+ *
+ * @author 小欧
+ * @update 2026-02-28 添加待办说明
+ */
 const Settings: React.FC = () => {
   const [activeKey, setActiveKey] = useState("model");
   const [isDirty, setIsDirty] = useState(false);
@@ -1635,12 +1661,14 @@ const Settings: React.FC = () => {
     loadConfigFilePath();
   }, []);
 
+  // TODO: 此函数待使用 - 配置文件路径功能完善后调用 [2026-02-28 小新]
+  // @ts-ignore TS6133: 函数待使用
   const handleOpenConfigDir = () => {
     message.info(`配置文件路径: ${configFilePath}`);
   };
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-
+  // TODO: 此函数待使用 - 配置文件路径功能完善后绑定到按钮 [2026-02-28 小新]
+  // @ts-ignore TS6133: 函数待使用
   const handleShowFixModal = () => {
     setShowFixModal(true);
   };
@@ -1676,70 +1704,42 @@ const Settings: React.FC = () => {
       style={{ padding: "25px", background: "#fff" }}
     >
       <Card style={{ marginTop: 0 }}>
-        {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
-        {/* 配置文件路径标注 */}
-        {configFilePath && (
-          <div
-            style={{
-              marginBottom: 16,
-              padding: "12px",
-              background: "#f6ffed",
-              borderRadius: 4,
-            }}
-          >
-            <Space>
-              <Text type="secondary">配置文件：</Text>
-              <Text code>{configFilePath}</Text>
-              <Button type="link" size="small" onClick={handleOpenConfigDir}>
-                查看路径
-              </Button>
-              <Button
-                type="link"
-                size="small"
-                icon={<ReloadOutlined />}
-                onClick={handleShowFixModal}
-              >
-                修复配置
-              </Button>
-            </Space>
-          </div>
-        )}
         {/* 前端小新代修改 VIS-S03: 设置页面Tab内容左右留白 */}
         <div style={{ padding: "0 5px" }}>
           <Tabs activeKey={activeKey} onChange={handleTabChange} type="line">
-          <TabPane
-            tab={
-              <span>
-                <KeyOutlined /> 模型配置
-              </span>
-            }
-            key="model"
-          >
-            <ProviderSettings />
-          </TabPane>
+            <TabPane
+              tab={
+                <span>
+                  <KeyOutlined /> 模型配置
+                </span>
+              }
+              key="model"
+            >
+              <ProviderSettings />
+            </TabPane>
 
-          <TabPane
-            tab={
-              <span>
-                <SafetyOutlined /> 安全配置
-              </span>
-            }
-            key="security"
-          >
-            <SecuritySettings />
-          </TabPane>
+            <TabPane
+              tab={
+                <span>
+                  <SafetyOutlined /> 安全配置
+                </span>
+              }
+              key="security"
+            >
+              <SecuritySettings />
+            </TabPane>
 
-          <TabPane
-            tab={
-              <span>
-                <HistoryOutlined /> 会话历史
-              </span>
-            }
-            key="sessions"
-          >
-            <SessionHistory />
-          </TabPane>
-        </Tabs>
+            <TabPane
+              tab={
+                <span>
+                  <HistoryOutlined /> 会话历史
+                </span>
+              }
+              key="sessions"
+            >
+              <SessionHistory />
+            </TabPane>
+          </Tabs>
         </div>
       </Card>
 
