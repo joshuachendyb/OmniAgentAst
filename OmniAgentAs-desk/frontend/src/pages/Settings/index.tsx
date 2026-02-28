@@ -1662,14 +1662,16 @@ const Settings: React.FC = () => {
   }, []);
 
   // TODO: 此函数待使用 - 配置文件路径功能完善后调用 [2026-02-28 小新]
-  // @ts-ignore TS6133: 函数待使用
-  const handleOpenConfigDir = () => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // @ts-expect-error TS6133: 函数待使用
+  const _handleOpenConfigDir = () => {
     message.info(`配置文件路径: ${configFilePath}`);
   };
 
   // TODO: 此函数待使用 - 配置文件路径功能完善后绑定到按钮 [2026-02-28 小新]
-  // @ts-ignore TS6133: 函数待使用
-  const handleShowFixModal = () => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // @ts-expect-error TS6133: 函数待使用
+  const _handleShowFixModal = () => {
     setShowFixModal(true);
   };
 
