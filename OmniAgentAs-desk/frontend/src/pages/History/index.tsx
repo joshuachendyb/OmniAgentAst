@@ -8,7 +8,7 @@
  * @since 2026-02-18
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Card,
   List,
@@ -25,7 +25,7 @@ import {
   Tooltip,
   Pagination,
   Checkbox,
-} from 'antd';
+} from "antd";
 import {
   HistoryOutlined,
   SearchOutlined,
@@ -34,16 +34,16 @@ import {
   ReloadOutlined,
   ClockCircleOutlined,
   CommentOutlined,
-} from '@ant-design/icons';
-import { sessionApi, Session } from '../../services/api';
-import { useNavigate } from 'react-router-dom';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
-import 'dayjs/locale/zh-cn';
+} from "@ant-design/icons";
+import { sessionApi, Session } from "../../services/api";
+import { useNavigate } from "react-router-dom";
+import dayjs from "dayjs";
+import relativeTime from "dayjs/plugin/relativeTime";
+import "dayjs/locale/zh-cn";
 
 // 配置dayjs
 dayjs.extend(relativeTime);
-dayjs.locale('zh-cn');
+dayjs.locale("zh-cn");
 
 const { Title, Text } = Typography;
 const { Search } = Input;
@@ -61,7 +61,7 @@ const { Search } = Input;
 const HistoryPage: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(false);
-  const [keyword, setKeyword] = useState('');
+  const [keyword, setKeyword] = useState("");
   const [pagination, setPagination] = useState({
     current: 1,
     pageSize: 20,
@@ -91,8 +91,8 @@ const HistoryPage: React.FC = () => {
         total: response.total,
       });
     } catch (error) {
-      message.error('加载会话列表失败');
-      console.error('加载会话列表失败:', error);
+      message.error("加载会话列表失败");
+      console.error("加载会话列表失败:", error);
     } finally {
       setLoading(false);
     }
@@ -118,7 +118,7 @@ const HistoryPage: React.FC = () => {
    */
   const handleRefresh = () => {
     loadSessions(pagination.current, keyword);
-    message.success('列表已刷新');
+    message.success("列表已刷新");
   };
 
   /**
@@ -127,12 +127,12 @@ const HistoryPage: React.FC = () => {
   const handleDelete = async (sessionId: string) => {
     try {
       await sessionApi.deleteSession(sessionId);
-      message.success('会话已删除');
+      message.success("会话已删除");
       // 刷新列表
       loadSessions(pagination.current, keyword);
     } catch (error) {
-      message.error('删除会话失败');
-      console.error('删除会话失败:', error);
+      message.error("删除会话失败");
+      console.error("删除会话失败:", error);
     }
   };
 
@@ -141,7 +141,7 @@ const HistoryPage: React.FC = () => {
    */
   const handleBatchDelete = async () => {
     if (selectedSessions.size === 0) {
-      message.warning('请先选择要删除的会话');
+      message.warning("请先选择要删除的会话");
       return;
     }
     try {
@@ -153,8 +153,8 @@ const HistoryPage: React.FC = () => {
       // 刷新列表
       loadSessions(pagination.current, keyword);
     } catch (error) {
-      message.error('批量删除会话失败');
-      console.error('批量删除会话失败:', error);
+      message.error("批量删除会话失败");
+      console.error("批量删除会话失败:", error);
     }
   };
 
@@ -167,7 +167,7 @@ const HistoryPage: React.FC = () => {
       // 跳转到聊天页面，带上session_id参数（使用React Router，不刷新页面）
       navigate(`/?session_id=${sessionId}`);
     } catch (error) {
-      message.error('跳转失败');
+      message.error("跳转失败");
     } finally {
       setLoadingSessionId(null);
     }
@@ -181,11 +181,17 @@ const HistoryPage: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: 0, margin: 0 }}>
+    // 前端小新代修改 VIS-H01: 历史记录页面内部留白
+    // 原因: index.css 中 .ant-card-body { padding: 0 !important; } 会覆盖 Card 组件的 bodyStyle 属性
+    // 解决方案: 通过外层 div 的 padding 来控制页面内部留白，padding 值为 25px（上下左右统一）
+    <div
+      className="history-page"
+      style={{ padding: "25px", background: "#fff" }}
+    >
       <Card bordered={false}>
-        <Space direction="vertical" style={{ width: '100%' }} size="large">
+        <Space direction="vertical" style={{ width: "100%" }} size="large">
           {/* 标题栏 */}
-          <Space style={{ justifyContent: 'space-between', width: '100%' }}>
+          <Space style={{ justifyContent: "space-between", width: "100%" }}>
             <Title level={3} style={{ margin: 0 }}>
               <HistoryOutlined /> 历史会话
             </Title>
@@ -266,8 +272,8 @@ const HistoryPage: React.FC = () => {
                     hoverable
                     size="small"
                     className="session-card"
-                    style={{ height: '100%' }}
-                     actions={[
+                    style={{ height: "100%" }}
+                    actions={[
                       <Tooltip key="resume" title="继续对话">
                         <Button
                           type="link"
@@ -321,7 +327,7 @@ const HistoryPage: React.FC = () => {
                         <Space
                           direction="vertical"
                           size="small"
-                          style={{ width: '100%' }}
+                          style={{ width: "100%" }}
                         >
                           <Space>
                             <Tag icon={<CommentOutlined />} color="blue">
@@ -329,15 +335,15 @@ const HistoryPage: React.FC = () => {
                             </Tag>
                           </Space>
                           <Space>
-                            <ClockCircleOutlined style={{ color: '#999' }} />
+                            <ClockCircleOutlined style={{ color: "#999" }} />
                             <Text type="secondary" style={{ fontSize: 12 }}>
                               更新于 {formatTime(session.updated_at)}
                             </Text>
                           </Space>
                           <Text type="secondary" style={{ fontSize: 11 }}>
-                            创建于{' '}
+                            创建于{" "}
                             {dayjs(session.created_at).format(
-                              'YYYY-MM-DD HH:mm'
+                              "YYYY-MM-DD HH:mm"
                             )}
                           </Text>
                         </Space>
@@ -351,7 +357,7 @@ const HistoryPage: React.FC = () => {
 
           {/* 分页 - 前端小新代修改 VIS-H03: 改用Antd Pagination组件 */}
           {pagination.total > 0 && (
-            <div style={{ textAlign: 'center', marginTop: 24 }}>
+            <div style={{ textAlign: "center", marginTop: 24 }}>
               <Pagination
                 current={pagination.current}
                 total={pagination.total}

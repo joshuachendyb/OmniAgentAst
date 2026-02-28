@@ -789,7 +789,6 @@ const ProviderSettings: React.FC = () => {
                   >
                     {selectedProvider.models.map((model) => {
                       const isActive = model === selectedProvider.model;
-                      const isSelected = selectedModels.has(model);
 
                       return (
                         <Card
@@ -848,7 +847,10 @@ const ProviderSettings: React.FC = () => {
                                 title={`确定删除模型 ${model} 吗？`}
                                 onConfirm={(e) => {
                                   e?.stopPropagation();
-                                  handleDelete();
+                                  handleDeleteModel(
+                                    selectedProvider.name,
+                                    model
+                                  );
                                 }}
                                 okText="确定"
                                 cancelText="取消"
@@ -1666,9 +1668,14 @@ const Settings: React.FC = () => {
   };
 
   return (
-    <div style={{ padding: 0, margin: 0 }}>
-      <Card style={{ marginTop: 0 }} bodyStyle={{ padding: "32px" }}>
-        {" "}
+    // 前端小新代修改 VIS-S01: 设置页面内部留白
+    // 原因: index.css 中 .ant-card-body { padding: 0 !important; } 会覆盖 Card 组件的 bodyStyle 属性
+    // 解决方案: 通过外层 div 的 padding 来控制页面内部留白，padding 值为 25px（上下左右统一）
+    <div
+      className="settings-page"
+      style={{ padding: "25px", background: "#fff" }}
+    >
+      <Card style={{ marginTop: 0 }}>
         {/* 前端小新代修改 VIS-S01: 增加Card内部padding */}
         {/* 配置文件路径标注 */}
         {configFilePath && (

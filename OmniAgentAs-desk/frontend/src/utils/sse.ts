@@ -325,7 +325,10 @@ const processSSEData = (
     disconnect: () => void;
     setServerTaskId?: (taskId: string) => void;
   },
-  isProcessingRef: React.MutableRefObject<boolean>
+  // 前端小新代修改 VIS-S02: 修复 ESLint 未使用参数警告
+  // 原因: 原参数 isProcessingRef 未被使用，但函数调用处仍传入该参数
+  // 解决: 在参数名前加下划线 _ 表示故意未使用，保持函数签名兼容
+  _isProcessingRef: React.MutableRefObject<boolean>
 ) => {
   const {
     setExecutionSteps,
