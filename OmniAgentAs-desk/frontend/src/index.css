@@ -15,22 +15,22 @@ body {
   padding: 0;
 }
 
-/* Card 组件 body - 强制 padding 为 0 */
+/* Card 组件 body - 强制 padding 为 0（保留给对话页面自定义控制） */
 .ant-card-body {
   padding: 0 !important;
+}
+
+/* 对话页面消息列表容器 - 控制消息显示留白 */
+.chat-message-list {
+  padding: 0 24px 0 8px !important;
+  margin: 0 !important;
+  margin-bottom: 4px !important;
 }
 
 /* Card 组件 head - 调整 padding */
 .ant-card-head {
   padding: 8px 24px 4px 24px !important;
   border-bottom: 1px solid #f0f0f0 !important;
-}
-
-/* 消息列表容器 - 强制覆盖 padding */
-.chat-message-list {
-  padding: 0 24px 0 8px !important;
-  margin: 0 !important;
-  margin-bottom: 4px !important;
 }
 
 /* 输入区域 */
