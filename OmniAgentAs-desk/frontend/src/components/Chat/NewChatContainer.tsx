@@ -14,7 +14,7 @@
  * @update 2026-02-25 新增版本号控制、标题锁定状态、409冲突处理
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Input,
   Button,
@@ -25,7 +25,7 @@ import {
   message,
   Badge,
   Tooltip,
-} from 'antd';
+} from "antd";
 import {
   SendOutlined,
   RobotOutlined,
@@ -38,16 +38,16 @@ import {
   EyeInvisibleOutlined,
   InfoCircleOutlined,
   LockOutlined,
-} from '@ant-design/icons';
-import { useSearchParams } from 'react-router-dom';
-import { sessionApi, ChatMessage, API_BASE_URL } from '../../services/api';
-import { securityApi } from '../../services/api';
-import MessageItem from './MessageItem';
-import DangerConfirmModal from '../DangerConfirmModal';
-import SecurityAlert from '../SecurityAlert';
-import { showSecurityNotification } from '../SecurityNotification';
-import { getRiskLevel } from '../../types/security';
-import { useSSE, ExecutionStep } from '../../utils/sse';
+} from "@ant-design/icons";
+import { useSearchParams } from "react-router-dom";
+import { sessionApi, ChatMessage, API_BASE_URL } from "../../services/api";
+import { securityApi } from "../../services/api";
+import MessageItem from "./MessageItem";
+import DangerConfirmModal from "../DangerConfirmModal";
+import SecurityAlert from "../SecurityAlert";
+import { showSecurityNotification } from "../SecurityNotification";
+import { getRiskLevel } from "../../types/security";
+import { useSSE, ExecutionStep } from "../../utils/sse";
 
 const { TextArea } = Input;
 
@@ -93,18 +93,18 @@ interface Message extends ChatMessage {
 const NewChatContainer: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState("");
   const [loading, setLoading] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [sessionTitle, setSessionTitle] = useState<string>('新会话');
+  const [sessionTitle, setSessionTitle] = useState<string>("新会话");
   const [sessionVersion, setSessionVersion] = useState<number>(1); // ⭐ 新增：会话版本号
   const [titleLocked, setTitleLocked] = useState<boolean>(false); // ⭐ 新增：标题锁定状态
-  const [titleSource, setTitleSource] = useState<'user' | 'auto'>('auto'); // ⭐ 新增：标题来源
+  const [titleSource, setTitleSource] = useState<"user" | "auto">("auto"); // ⭐ 新增：标题来源
   const [editingTitle, setEditingTitle] = useState(false);
-  const [titleInput, setTitleInput] = useState('');
-  const [lastSavedTitle, setLastSavedTitle] = useState<string>(''); // ⭐ 新增：记录最后保存的标题
+  const [titleInput, setTitleInput] = useState("");
+  const [lastSavedTitle, setLastSavedTitle] = useState<string>(""); // ⭐ 新增：记录最后保存的标题
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 流式输出相关状态
@@ -113,9 +113,9 @@ const NewChatContainer: React.FC = () => {
 
   // 安全检测v2.0状态
   const [dangerModalVisible, setDangerModalVisible] = useState(false);
-  const [dangerCommand, setDangerCommand] = useState('');
+  const [dangerCommand, setDangerCommand] = useState("");
   const [dangerScore, setDangerScore] = useState(0);
-  const [dangerMessage, setDangerMessage] = useState('');
+  const [dangerMessage, setDangerMessage] = useState("");
   const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
   const [checkingDanger, setCheckingDanger] = useState(false);
   const [blockedCommand, setBlockedCommand] = useState<{
@@ -126,8 +126,8 @@ const NewChatContainer: React.FC = () => {
   const [isInitialized, setIsInitialized] = useState(false);
 
   // P1级别优化：新增状态变量
-  type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  type SaveStatus = "idle" | "saving" | "saved" | "error";
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [_sessionJumpLoading, setSessionJumpLoading] = useState(false);
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
   const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
@@ -145,8 +145,8 @@ const NewChatContainer: React.FC = () => {
     serverTaskId,
   } = useSSE(
     {
-      baseURL: 'http://localhost:8000/api/v1',
-      sessionId: sessionId || 'default-session',
+      baseURL: "http://localhost:8000/api/v1",
+      sessionId: sessionId || "default-session",
     },
     // onStep - 收到执行步骤
     useCallback((step: ExecutionStep) => {
@@ -154,7 +154,7 @@ const NewChatContainer: React.FC = () => {
         const lastMessage = prev[prev.length - 1];
         if (
           lastMessage &&
-          lastMessage.role === 'assistant' &&
+          lastMessage.role === "assistant" &&
           lastMessage.isStreaming
         ) {
           const updatedSteps = [...(lastMessage.executionSteps || []), step];
@@ -174,7 +174,7 @@ const NewChatContainer: React.FC = () => {
         const lastMessage = prev[prev.length - 1];
         if (
           lastMessage &&
-          lastMessage.role === 'assistant' &&
+          lastMessage.role === "assistant" &&
           lastMessage.isStreaming
         ) {
           const updated = [...prev];
@@ -192,7 +192,7 @@ const NewChatContainer: React.FC = () => {
       async (fullResponse: string, model?: string) => {
         setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
-          if (lastMessage && lastMessage.role === 'assistant') {
+          if (lastMessage && lastMessage.role === "assistant") {
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...lastMessage,
@@ -211,13 +211,13 @@ const NewChatContainer: React.FC = () => {
           try {
             // 保存用户消息
             await sessionApi.saveMessage(sessionId, {
-              role: 'user',
+              role: "user",
               content: currentPending.content,
             });
 
             // 保存AI回复
             await sessionApi.saveMessage(sessionId, {
-              role: 'assistant',
+              role: "assistant",
               content: fullResponse,
             });
 
@@ -225,14 +225,14 @@ const NewChatContainer: React.FC = () => {
             if (
               sessionTitle &&
               sessionTitle.trim() &&
-              sessionTitle !== '新会话'
+              sessionTitle !== "新会话"
             ) {
               debouncedSaveTitle(sessionId, sessionTitle);
             }
 
-            console.log('✅ 消息和标题保存成功');
+            console.log("✅ 消息和标题保存成功");
           } catch (saveError) {
-            console.error('保存消息或标题失败:', saveError);
+            console.error("保存消息或标题失败:", saveError);
           }
         }
 
@@ -243,7 +243,7 @@ const NewChatContainer: React.FC = () => {
     ),
     // onError - 流式错误
     useCallback((error: string) => {
-      console.error('SSE流式错误:', error);
+      console.error("SSE流式错误:", error);
 
       // 🔴 修复：更好的用户反馈
       message.error({
@@ -253,11 +253,11 @@ const NewChatContainer: React.FC = () => {
 
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
-        if (lastMessage && lastMessage.role === 'assistant') {
+        if (lastMessage && lastMessage.role === "assistant") {
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...lastMessage,
-            content: lastMessage.content || '抱歉，发生了错误',
+            content: lastMessage.content || "抱歉，发生了错误",
             isStreaming: false,
           };
           return updated;
@@ -270,7 +270,7 @@ const NewChatContainer: React.FC = () => {
 
   // 自动滚动到底部
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
@@ -280,7 +280,7 @@ const NewChatContainer: React.FC = () => {
   // ============================================
   // 会话状态持久化
   // ============================================
-  const STORAGE_KEY = 'chat_session_state';
+  const STORAGE_KEY = "chat_session_state";
 
   const saveState = () => {
     // 🔴 修复：只要有会话ID就保存，即使消息为空
@@ -293,7 +293,7 @@ const NewChatContainer: React.FC = () => {
         scrollPosition: messagesEndRef.current?.parentElement?.scrollTop || 0,
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      console.log('💾 保存会话状态:', sessionId, sessionTitle);
+      console.log("💾 保存会话状态:", sessionId, sessionTitle);
     }
   };
 
@@ -309,7 +309,7 @@ const NewChatContainer: React.FC = () => {
 
         // 只恢复5分钟内的状态
         if (timeDiff > SESSION_EXPIRY_TIME) {
-          console.log('🕒 会话状态已过期，跳过恢复');
+          console.log("🕒 会话状态已过期，跳过恢复");
           sessionStorage.removeItem(STORAGE_KEY);
           return false;
         }
@@ -317,18 +317,18 @@ const NewChatContainer: React.FC = () => {
         if (state.sessionId) {
           setMessages(state.messages || []);
           setSessionId(state.sessionId);
-          setSessionTitle(state.sessionTitle || '会话');
+          setSessionTitle(state.sessionTitle || "会话");
           setTimeout(() => {
             if (messagesEndRef.current?.parentElement) {
               messagesEndRef.current.parentElement.scrollTop =
                 state.scrollPosition || 0;
             }
           }, 100);
-          console.log('🔄 恢复会话状态:', state.sessionId, state.sessionTitle);
+          console.log("🔄 恢复会话状态:", state.sessionId, state.sessionTitle);
           return true;
         }
       } catch (e) {
-        console.warn('恢复会话状态失败:', e);
+        console.warn("恢复会话状态失败:", e);
         sessionStorage.removeItem(STORAGE_KEY); // 🔴 修复：清除损坏的数据
       }
     }
@@ -342,9 +342,9 @@ const NewChatContainer: React.FC = () => {
         saveState();
       }
     };
-    document.addEventListener('visibilitychange', handleVisibilityChange);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [messages, sessionId, sessionTitle]);
 
@@ -358,11 +358,11 @@ const NewChatContainer: React.FC = () => {
         const sessionData = await sessionApi.getSessionMessages(sessionId);
 
         // 获取后端返回的正确标题
-        const backendTitle = getSessionTitle(sessionData, '会话');
+        const backendTitle = getSessionTitle(sessionData, "会话");
 
         // 如果前端标题与后端不一致，强制同步
-        if (backendTitle !== sessionTitle && backendTitle !== '会话') {
-          console.warn('🔄 标题不一致，强制同步:', {
+        if (backendTitle !== sessionTitle && backendTitle !== "会话") {
+          console.warn("🔄 标题不一致，强制同步:", {
             frontend: sessionTitle,
             backend: backendTitle,
           });
@@ -372,27 +372,24 @@ const NewChatContainer: React.FC = () => {
         // 验证消息数量
         if (sessionData.messages && sessionData.messages.length > 0) {
           const frontendMsgCount = messages.filter(
-            (m) => m.role !== 'system'
+            (m) => m.role !== "system"
           ).length;
           const backendMsgCount = sessionData.messages.length;
 
           if (Math.abs(frontendMsgCount - backendMsgCount) > 2) {
-            console.warn('🔄 消息数量差异较大，建议刷新页面');
+            console.warn("🔄 消息数量差异较大，建议刷新页面");
           }
         }
       } catch (error) {
-        console.warn('状态验证失败:', error);
+        console.warn("状态验证失败:", error);
         // 状态验证失败不影响用户体验，静默处理
       }
     };
 
     // 每2分钟验证一次状态一致性
-    const intervalId = setInterval(
-      () => {
-        validateAndSyncState();
-      },
-      2 * 60 * 1000
-    );
+    const intervalId = setInterval(() => {
+      validateAndSyncState();
+    }, 2 * 60 * 1000);
 
     return () => clearInterval(intervalId);
   }, [sessionId, sessionTitle, messages, isInitialized]);
@@ -401,25 +398,25 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Ctrl/Cmd + Enter 发送消息
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
         e.preventDefault();
         handleSend();
       }
       // Ctrl/Cmd + K 清空对话
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
         handleClear();
       }
       // Ctrl/Cmd + N 新建会话
-      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+      if ((e.ctrlKey || e.metaKey) && e.key === "n") {
         e.preventDefault();
         handleNewSession();
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown);
+    document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, [inputValue, loading]);
 
@@ -436,14 +433,14 @@ const NewChatContainer: React.FC = () => {
 
     try {
       const response = await fetch(`${API_BASE_URL}/health`, {
-        method: 'HEAD',
+        method: "GET",
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
       return response.ok;
     } catch (error) {
       clearTimeout(timeoutId);
-      console.warn('网络连接检查失败:', error);
+      console.warn("网络连接检查失败:", error);
       return false;
     }
   };
@@ -458,7 +455,7 @@ const NewChatContainer: React.FC = () => {
    */
   const getSessionTitle = (
     sessionData: { title?: string; messages?: any[] },
-    defaultTitle: string = '会话'
+    defaultTitle: string = "会话"
   ): string => {
     // 1. 最高优先级：API返回的title字段
     if (sessionData.title && sessionData.title.trim()) {
@@ -488,19 +485,22 @@ const NewChatContainer: React.FC = () => {
   const generateNewSessionTitle = (): string => {
     const now = new Date();
     const hours = now.getHours();
-    let timeOfDay = '';
+    let timeOfDay = "";
 
     // 更精确的时间段划分
-    if (hours >= 5 && hours < 8) timeOfDay = '清晨';
-    else if (hours >= 8 && hours < 12) timeOfDay = '上午';
-    else if (hours >= 12 && hours < 14) timeOfDay = '午间';
-    else if (hours >= 14 && hours < 18) timeOfDay = '下午';
-    else if (hours >= 18 && hours < 21) timeOfDay = '晚间';
-    else if (hours >= 21 && hours < 24) timeOfDay = '深夜';
-    else timeOfDay = '深夜'; // 0-5点
+    if (hours >= 5 && hours < 8) timeOfDay = "清晨";
+    else if (hours >= 8 && hours < 12) timeOfDay = "上午";
+    else if (hours >= 12 && hours < 14) timeOfDay = "午间";
+    else if (hours >= 14 && hours < 18) timeOfDay = "下午";
+    else if (hours >= 18 && hours < 21) timeOfDay = "晚间";
+    else if (hours >= 21 && hours < 24) timeOfDay = "深夜";
+    else timeOfDay = "深夜"; // 0-5点
 
     const dateStr = `${now.getMonth() + 1}月${now.getDate()}日`;
-    return `${dateStr} ${timeOfDay}会话 ${hours}:${now.getMinutes().toString().padStart(2, '0')}`;
+    return `${dateStr} ${timeOfDay}会话 ${hours}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, "0")}`;
   };
 
   // ⭐ 确保标题持久化到后端（带防抖、重试、版本冲突处理）
@@ -509,13 +509,13 @@ const NewChatContainer: React.FC = () => {
 
     // ⭐ 防抖检查：标题未变化时跳过保存
     if (title === lastSavedTitle) {
-      console.log('标题未变化，跳过保存');
+      console.log("标题未变化，跳过保存");
       return;
     }
 
     // ⭐ 防抖检查：正在保存时跳过重复请求
-    if (saveStatus === 'saving') {
-      console.log('正在保存中，跳过重复请求');
+    if (saveStatus === "saving") {
+      console.log("正在保存中，跳过重复请求");
       return;
     }
 
@@ -523,11 +523,11 @@ const NewChatContainer: React.FC = () => {
     const currentRetry = retryCount[retryKey] || 0;
 
     try {
-      setSaveStatus('saving');
+      setSaveStatus("saving");
       setIsSavingTitle(true);
 
       // 如果标题不是默认标题，保存到后端
-      if (title !== '新会话' && title !== '会话') {
+      if (title !== "新会话" && title !== "会话") {
         // ⭐ 直接使用状态中的版本号
         const response = await sessionApi.updateSession(
           sessionId,
@@ -544,10 +544,10 @@ const NewChatContainer: React.FC = () => {
         setLastSavedTitle(title);
 
         console.log(
-          '💾 标题持久化成功:',
+          "💾 标题持久化成功:",
           sessionId,
           title,
-          '版本:',
+          "版本:",
           sessionVersion
         );
       }
@@ -556,22 +556,22 @@ const NewChatContainer: React.FC = () => {
       saveState();
 
       // 保存成功
-      setSaveStatus('saved');
+      setSaveStatus("saved");
       setIsSavingTitle(false);
       setLastSaveTime(Date.now());
       setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
 
       // 2秒后恢复到idle状态
       setTimeout(() => {
-        setSaveStatus('idle');
+        setSaveStatus("idle");
       }, 2000);
     } catch (error: any) {
-      console.warn('标题持久化失败:', error);
+      console.warn("标题持久化失败:", error);
 
       // ⭐ 处理409版本冲突错误
       if (error?.response?.status === 409) {
         const errorMsg =
-          error.response.data?.detail || '版本冲突，该会话已被其他人修改';
+          error.response.data?.detail || "版本冲突，该会话已被其他人修改";
         message.error(errorMsg);
 
         // ⭐ 从服务器重新获取最新数据
@@ -590,18 +590,18 @@ const NewChatContainer: React.FC = () => {
             setTitleSource(sessionData.title_source);
           }
 
-          message.info('已自动同步最新数据，请重试');
+          message.info("已自动同步最新数据，请重试");
         } catch (syncError) {
-          console.error('同步最新数据失败:', syncError);
+          console.error("同步最新数据失败:", syncError);
         }
 
-        setSaveStatus('error');
+        setSaveStatus("error");
         setIsSavingTitle(false);
         return;
       }
 
       // 其他错误：重试机制 - 最多3次
-      setSaveStatus('error');
+      setSaveStatus("error");
       setIsSavingTitle(false);
 
       if (currentRetry < 3) {
@@ -615,7 +615,7 @@ const NewChatContainer: React.FC = () => {
         }, 1000);
       } else {
         // 超过重试次数，显示错误
-        message.error('保存失败，请检查网络后重试');
+        message.error("保存失败，请检查网络后重试");
         setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
       }
     }
@@ -634,15 +634,15 @@ const NewChatContainer: React.FC = () => {
   // ============================================
   useEffect(() => {
     const loadSession = async () => {
-      const urlSessionId = searchParams.get('session_id');
+      const urlSessionId = searchParams.get("session_id");
 
       // 🔴 修复1: URL参数绝对优先 - 清除旧的sessionStorage
       if (urlSessionId) {
         // P1级别优化：添加会话跳转加载状态
         setSessionJumpLoading(true);
         message.loading({
-          content: '正在加载会话...',
-          key: 'session-load',
+          content: "正在加载会话...",
+          key: "session-load",
           duration: 0,
         });
 
@@ -666,7 +666,7 @@ const NewChatContainer: React.FC = () => {
             );
 
             // ⭐ 2026-02-25 更新：加载新增字段
-            const title = getSessionTitle(sessionData, '会话');
+            const title = getSessionTitle(sessionData, "会话");
             setSessionTitle(title);
 
             // ⭐ 设置新字段
@@ -682,21 +682,21 @@ const NewChatContainer: React.FC = () => {
 
             // 加载成功
             setSessionJumpLoading(false);
-            message.success({ content: '会话加载成功', key: 'session-load' });
+            message.success({ content: "会话加载成功", key: "session-load" });
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
 
             console.log(
-              '🔵 从URL加载会话:',
+              "🔵 从URL加载会话:",
               urlSessionId,
-              '标题:',
+              "标题:",
               title,
-              '版本:',
+              "版本:",
               sessionData.version
             );
             return;
           }
         } catch (error) {
-          console.warn('加载URL会话失败:', error);
+          console.warn("加载URL会话失败:", error);
 
           // 重试机制 - 最多3次
           if (currentRetry < 3) {
@@ -704,7 +704,7 @@ const NewChatContainer: React.FC = () => {
             setRetryCount((prev) => ({ ...prev, [retryKey]: newRetry }));
             message.warning({
               content: `加载失败，正在重试 (${newRetry}/3)...`,
-              key: 'session-load',
+              key: "session-load",
               duration: 0,
             });
 
@@ -716,8 +716,8 @@ const NewChatContainer: React.FC = () => {
             // 超过重试次数，显示错误
             setSessionJumpLoading(false);
             message.error({
-              content: '加载会话失败，请检查网络后重试',
-              key: 'session-load',
+              content: "加载会话失败，请检查网络后重试",
+              key: "session-load",
             });
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
           }
@@ -728,10 +728,10 @@ const NewChatContainer: React.FC = () => {
       if (!urlSessionId) {
         const restored = restoreState();
         if (restored) {
-          console.log('🟢 从缓存恢复会话状态');
+          console.log("🟢 从缓存恢复会话状态");
           // 如果是从缓存恢复，也要关闭加载状态
           setSessionJumpLoading(false);
-          message.destroy('session-load');
+          message.destroy("session-load");
           return;
         }
       }
@@ -752,7 +752,7 @@ const NewChatContainer: React.FC = () => {
               title: latestSession.title, // 优先使用listSessions返回的title
               messages: sessionData.messages,
             },
-            '会话'
+            "会话"
           );
           setSessionTitle(title);
 
@@ -778,23 +778,23 @@ const NewChatContainer: React.FC = () => {
             );
           }
           console.log(
-            '🟡 加载最近会话:',
+            "🟡 加载最近会话:",
             latestSession.session_id,
-            '标题:',
+            "标题:",
             title,
-            '版本:',
+            "版本:",
             latestSession.version
           );
 
           // 关闭加载状态
           setSessionJumpLoading(false);
-          message.destroy('session-load');
+          message.destroy("session-load");
         }
       } catch (error) {
-        console.warn('加载最近会话失败:', error);
+        console.warn("加载最近会话失败:", error);
         // 即使失败也关闭加载状态
         setSessionJumpLoading(false);
-        message.destroy('session-load');
+        message.destroy("session-load");
       }
 
       // 标记初始化完成
@@ -825,8 +825,8 @@ const NewChatContainer: React.FC = () => {
     // 【关键修复】先创建assistant消息占位，设置isStreaming=true
     const assistantMessage: Message = {
       id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: '',
+      role: "assistant",
+      content: "",
       timestamp: new Date(),
       executionSteps: [],
       isStreaming: true,
@@ -848,14 +848,14 @@ const NewChatContainer: React.FC = () => {
     const taskIdToCancel = serverTaskId || currentTaskId;
     if (taskIdToCancel) {
       try {
-        message.info('正在中断任务...');
+        message.info("正在中断任务...");
         await fetch(`${API_BASE_URL}/chat/stream/cancel/${taskIdToCancel}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
         });
-        message.success('任务中断请求已发送');
+        message.success("任务中断请求已发送");
       } catch (error) {
-        message.error('发送中断请求失败: ' + (error as Error).message);
+        message.error("发送中断请求失败: " + (error as Error).message);
       }
     }
   };
@@ -865,7 +865,7 @@ const NewChatContainer: React.FC = () => {
    */
   const handleTogglePause = () => {
     setIsPaused(!isPaused);
-    message.info('暂停功能后端暂未实现，仅显示UI状态');
+    message.info("暂停功能后端暂未实现，仅显示UI状态");
   };
 
   /**
@@ -876,7 +876,7 @@ const NewChatContainer: React.FC = () => {
 
     // 🔴 修复：添加输入长度限制和验证
     if (inputValue.trim().length > 5000) {
-      message.warning('消息过长，请精简到5000字符以内');
+      message.warning("消息过长，请精简到5000字符以内");
       return;
     }
 
@@ -885,12 +885,12 @@ const NewChatContainer: React.FC = () => {
     try {
       const isNetworkOK = await checkNetworkConnection();
       if (!isNetworkOK) {
-        message.error('网络连接异常，请检查网络后重试');
+        message.error("网络连接异常，请检查网络后重试");
         setLoading(false);
         return;
       }
     } catch (error) {
-      console.warn('网络检查异常:', error);
+      console.warn("网络检查异常:", error);
     } finally {
       setLoading(false);
     }
@@ -903,24 +903,24 @@ const NewChatContainer: React.FC = () => {
         );
         currentSessionId = newSession.session_id;
         setSessionId(currentSessionId);
-        console.log('创建新会话:', currentSessionId);
+        console.log("创建新会话:", currentSessionId);
       } catch (error) {
-        const errMsg = error instanceof Error ? error.message : '网络错误';
+        const errMsg = error instanceof Error ? error.message : "网络错误";
         message.error(`创建会话失败: ${errMsg}`);
-        console.error('创建会话失败:', error);
+        console.error("创建会话失败:", error);
         return; // 🔴 修复：创建会话失败时停止发送
       }
     }
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      role: 'user',
+      role: "user",
       content: inputValue.trim(),
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInputValue('');
+    setInputValue("");
     setBlockedCommand(null);
 
     // 安全检测v2.0
@@ -930,7 +930,7 @@ const NewChatContainer: React.FC = () => {
       setCheckingDanger(false);
 
       if (!checkResult.success || !checkResult.data) {
-        console.warn('安全检测失败:', checkResult.error);
+        console.warn("安全检测失败:", checkResult.error);
         await executeStreamSend(userMessage);
         return;
       }
@@ -939,21 +939,21 @@ const NewChatContainer: React.FC = () => {
       const riskLevel = getRiskLevel(score);
 
       switch (riskLevel.level) {
-        case 'SAFE':
+        case "SAFE":
           await executeStreamSend(userMessage);
           break;
-        case 'MEDIUM':
+        case "MEDIUM":
           showSecurityNotification(userMessage.content, score, riskMessage);
           await executeStreamSend(userMessage);
           break;
-        case 'HIGH':
+        case "HIGH":
           setDangerCommand(userMessage.content);
           setDangerScore(score);
           setDangerMessage(riskMessage);
           setPendingMessage(userMessage);
           setDangerModalVisible(true);
           break;
-        case 'CRITICAL':
+        case "CRITICAL":
           setBlockedCommand({
             command: userMessage.content,
             score,
@@ -962,15 +962,15 @@ const NewChatContainer: React.FC = () => {
           setMessages((prev) =>
             prev.filter((msg) => msg.id !== userMessage.id)
           );
-          message.error('危险操作已被系统拦截');
+          message.error("危险操作已被系统拦截");
           break;
       }
     } catch (error) {
-      console.warn('安全检测异常:', error);
+      console.warn("安全检测异常:", error);
       setCheckingDanger(false);
       // 🔴 修复：更好的错误处理和用户反馈
       message.warning({
-        content: '安全检测服务暂时不可用，将以普通模式发送消息',
+        content: "安全检测服务暂时不可用，将以普通模式发送消息",
         duration: 3,
       });
       await executeStreamSend(userMessage);
@@ -994,7 +994,7 @@ const NewChatContainer: React.FC = () => {
     setDangerModalVisible(false);
     if (pendingMessage) {
       setMessages((prev) => prev.filter((msg) => msg.id !== pendingMessage.id));
-      message.info('已取消危险命令的执行');
+      message.info("已取消危险命令的执行");
     }
     setPendingMessage(null);
   };
@@ -1003,7 +1003,7 @@ const NewChatContainer: React.FC = () => {
    * 新建会话 - 内部实现，支持重试机制
    */
   const handleNewSessionInternal = async (retry: number = 0) => {
-    const retryKey = 'new-session';
+    const retryKey = "new-session";
     const maxRetries = 3;
 
     setLoading(true);
@@ -1021,21 +1021,21 @@ const NewChatContainer: React.FC = () => {
       // 添加系统提示消息 - 新会话提示
       const systemMessage: Message = {
         id: (Date.now() + 1000).toString(),
-        role: 'system',
-        content: '💡 新会话已创建！开始与AI助手对话吧。',
+        role: "system",
+        content: "💡 新会话已创建！开始与AI助手对话吧。",
         timestamp: new Date(),
       };
       setMessages([systemMessage]);
 
       clearSteps();
       disconnect();
-      window.history.pushState({}, '', `/?session_id=${newSession.session_id}`);
+      window.history.pushState({}, "", `/?session_id=${newSession.session_id}`);
 
       // 🎨 优化：添加更丰富的反馈
       message.success({
         content: `已创建新会话: ${newTitle}`,
         duration: 3,
-        style: { marginTop: '50vh' },
+        style: { marginTop: "50vh" },
       });
 
       // 重置重试计数
@@ -1059,12 +1059,12 @@ const NewChatContainer: React.FC = () => {
       }
 
       // 🔴 修复：更好的错误处理
-      const errMsg = error instanceof Error ? error.message : '未知错误';
+      const errMsg = error instanceof Error ? error.message : "未知错误";
       message.error({
         content: `创建会话失败: ${errMsg}`,
         duration: 5,
       });
-      console.error('创建会话失败:', error);
+      console.error("创建会话失败:", error);
 
       // 重置重试计数
       setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
@@ -1113,12 +1113,12 @@ const NewChatContainer: React.FC = () => {
                           sessionVersion
                         );
                         setSessionTitle(titleInput.trim());
-                        setTitleSource('user'); // ⭐ 标记为用户修改
+                        setTitleSource("user"); // ⭐ 标记为用户修改
                         debouncedSaveTitle(sessionId, titleInput.trim());
-                        message.success('标题已保存');
+                        message.success("标题已保存");
                       } catch (error) {
-                        console.warn('保存标题失败:', error);
-                        message.error('保存标题失败，请重试');
+                        console.warn("保存标题失败:", error);
+                        message.error("保存标题失败，请重试");
                       }
                     }
                     setEditingTitle(false);
@@ -1133,11 +1133,11 @@ const NewChatContainer: React.FC = () => {
                           sessionVersion
                         );
                         setSessionTitle(titleInput.trim());
-                        setTitleSource('user'); // ⭐ 标记为用户修改
+                        setTitleSource("user"); // ⭐ 标记为用户修改
                         debouncedSaveTitle(sessionId, titleInput.trim());
-                        message.success('会话标题已更新');
+                        message.success("会话标题已更新");
                       } catch (error) {
-                        message.error('更新标题失败');
+                        message.error("更新标题失败");
                       }
                     }
                     setEditingTitle(false);
@@ -1150,25 +1150,25 @@ const NewChatContainer: React.FC = () => {
             ) : (
               <span
                 style={{
-                  cursor: 'pointer',
-                  color: titleSource === 'auto' ? '#666' : '#000',
-                  fontSize: titleSource === 'auto' ? '14px' : '16px',
-                  fontWeight: titleSource === 'user' ? 'bold' : 'normal',
+                  cursor: "pointer",
+                  color: titleSource === "auto" ? "#666" : "#000",
+                  fontSize: titleSource === "auto" ? "14px" : "16px",
+                  fontWeight: titleSource === "user" ? "bold" : "normal",
                 }}
                 onClick={() => setEditingTitle(true)}
               >
-                {sessionTitle || '未命名会话'}
-                {titleSource === 'auto' && (
+                {sessionTitle || "未命名会话"}
+                {titleSource === "auto" && (
                   <Tooltip title="AI自动生成的标题">
                     <InfoCircleOutlined
-                      style={{ fontSize: 12, marginLeft: 4, color: '#999' }}
+                      style={{ fontSize: 12, marginLeft: 4, color: "#999" }}
                     />
                   </Tooltip>
                 )}
                 {titleLocked && (
                   <Tooltip title="标题已锁定，防止自动覆盖">
                     <LockOutlined
-                      style={{ fontSize: 12, marginLeft: 4, color: '#1890ff' }}
+                      style={{ fontSize: 12, marginLeft: 4, color: "#1890ff" }}
                     />
                   </Tooltip>
                 )}
@@ -1198,7 +1198,7 @@ const NewChatContainer: React.FC = () => {
               }
             }}
           >
-            <ThunderboltOutlined /> {useStream ? '流式关闭' : '流式开启'}
+            <ThunderboltOutlined /> {useStream ? "流式关闭" : "流式开启"}
           </Tag.CheckableTag>
 
           {/* 执行过程显示开关（仅在流式模式下显示） */}
@@ -1208,7 +1208,7 @@ const NewChatContainer: React.FC = () => {
               icon={showExecution ? <EyeOutlined /> : <EyeInvisibleOutlined />}
               onClick={() => setShowExecution(!showExecution)}
             >
-              {showExecution ? '隐藏过程' : '显示过程'}
+              {showExecution ? "隐藏过程" : "显示过程"}
             </Button>
           )}
 
@@ -1224,22 +1224,22 @@ const NewChatContainer: React.FC = () => {
       <div
         style={{
           height: 400,
-          overflowY: 'auto',
-          border: '1px solid #f0f0f0',
+          overflowY: "auto",
+          border: "1px solid #f0f0f0",
           borderRadius: 8,
           padding: 16,
           marginBottom: 16,
-          backgroundColor: '#fafafa',
+          backgroundColor: "#fafafa",
         }}
       >
         {messages.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#999', marginTop: 100 }}>
+          <div style={{ textAlign: "center", color: "#999", marginTop: 100 }}>
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
             <p>开始与AI助手对话</p>
             <p style={{ fontSize: 12 }}>
               {useStream
-                ? '流式模式已开启 - 可实时查看AI思考过程'
-                : '普通模式 - 一次性返回完整回复'}
+                ? "流式模式已开启 - 可实时查看AI思考过程"
+                : "普通模式 - 一次性返回完整回复"}
             </p>
           </div>
         ) : (
@@ -1252,7 +1252,7 @@ const NewChatContainer: React.FC = () => {
               for (let i = 0; i < messages.length; i++) {
                 const item = messages[i];
                 const currentDate = new Date(item.timestamp).toLocaleDateString(
-                  'zh-CN'
+                  "zh-CN"
                 );
 
                 if (lastDate !== currentDate) {
@@ -1260,28 +1260,28 @@ const NewChatContainer: React.FC = () => {
                     <div
                       key={`date-${i}`}
                       style={{
-                        textAlign: 'center',
-                        margin: '16px 0',
-                        position: 'relative',
+                        textAlign: "center",
+                        margin: "16px 0",
+                        position: "relative",
                       }}
                     >
                       <div
                         style={{
-                          position: 'absolute',
-                          top: '50%',
+                          position: "absolute",
+                          top: "50%",
                           left: 0,
                           right: 0,
                           height: 1,
-                          backgroundColor: '#e8e8e8',
+                          backgroundColor: "#e8e8e8",
                         }}
                       />
                       <span
                         style={{
-                          background: '#fafafa',
-                          padding: '0 16px',
-                          color: '#999',
+                          background: "#fafafa",
+                          padding: "0 16px",
+                          color: "#999",
                           fontSize: 12,
-                          position: 'relative',
+                          position: "relative",
                           zIndex: 1,
                         }}
                       >
@@ -1297,10 +1297,10 @@ const NewChatContainer: React.FC = () => {
                     key={item.id}
                     style={{
                       justifyContent:
-                        item.role === 'user' ? 'flex-end' : 'flex-start',
-                      border: 'none',
-                      padding: '8px 0',
-                      width: '100%',
+                        item.role === "user" ? "flex-end" : "flex-start",
+                      border: "none",
+                      padding: "8px 0",
+                      width: "100%",
                     }}
                   >
                     <MessageItem message={item} showExecution={showExecution} />
@@ -1316,7 +1316,7 @@ const NewChatContainer: React.FC = () => {
       </div>
 
       {/* 输入区域 */}
-      <Space direction="vertical" style={{ width: '100%' }}>
+      <Space direction="vertical" style={{ width: "100%" }}>
         {/* 中断和暂停按钮 */}
         {loading && (
           <Space style={{ marginTop: 8, marginBottom: 8 }}>
@@ -1331,7 +1331,7 @@ const NewChatContainer: React.FC = () => {
               icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
               onClick={handleTogglePause}
             >
-              {isPaused ? '继续' : '暂停'}
+              {isPaused ? "继续" : "暂停"}
             </Button>
           </Space>
         )}
@@ -1340,8 +1340,8 @@ const NewChatContainer: React.FC = () => {
           onChange={(e) => setInputValue(e.target.value)}
           placeholder={
             useStream
-              ? '输入消息... (流式模式可实时查看思考过程)'
-              : '输入消息...'
+              ? "输入消息... (流式模式可实时查看思考过程)"
+              : "输入消息..."
           }
           autoSize={{ minRows: 2, maxRows: 4 }}
           onPressEnter={(e) => {
@@ -1361,10 +1361,10 @@ const NewChatContainer: React.FC = () => {
           block
         >
           {isReceiving
-            ? '接收中...'
+            ? "接收中..."
             : checkingDanger
-              ? '安全检查中...'
-              : '发送消息'}
+            ? "安全检查中..."
+            : "发送消息"}
         </Button>
       </Space>
 

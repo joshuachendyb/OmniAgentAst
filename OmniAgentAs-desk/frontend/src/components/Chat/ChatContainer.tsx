@@ -1,14 +1,14 @@
 /**
- * ChatContainer组件 - 带流式支持的对话容器
+ * ChatContainer 组件 - 带流式支持的对话容器
  *
- * 功能：集成SSE流式通信，执行过程可视化、消息美化
+ * 功能：集成 SSE 流式通信，执行过程可视化、消息美化
  *
  * @author 小新
  * @version 2.0.0
  * @since 2026-02-17
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Input,
   Button,
@@ -19,7 +19,7 @@ import {
   Alert,
   Collapse,
   Badge,
-} from 'antd';
+} from "antd";
 import {
   SendOutlined,
   RobotOutlined,
@@ -27,11 +27,11 @@ import {
   ThunderboltOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
-} from '@ant-design/icons';
-import { ChatMessage, ValidateResponse, chatApi } from '../../services/api';
-import MessageItem from './MessageItem';
-import ExecutionPanel from './ExecutionPanel';
-import { useSSE, ExecutionStep } from '../../utils/sse';
+} from "@ant-design/icons";
+import { ChatMessage, ValidateResponse, chatApi } from "../../services/api";
+import MessageItem from "./MessageItem";
+import ExecutionPanel from "./ExecutionPanel";
+import { useSSE, ExecutionStep } from "../../utils/sse";
 
 const { TextArea } = Input;
 const { Panel } = Collapse;
@@ -54,20 +54,20 @@ interface Message extends ChatMessage {
  */
 const ChatContainer: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState("");
   const [loading, setLoading] = useState(false);
   const [serviceStatus, _setServiceStatus] = useState<ValidateResponse | null>(
     null
   );
   const [currentProvider, _setCurrentProvider] = useState<
-    'zhipuai' | 'opencode'
-  >('zhipuai');
-  const [currentModel, _setCurrentModel] = useState<string>('');
+    "zhipuai" | "opencode"
+  >("zhipuai");
+  const [currentModel, _setCurrentModel] = useState<string>("");
   const [showExecution, setShowExecution] = useState(true);
   const [useStream, setUseStream] = useState(true); // 默认使用流式
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const currentSessionId = useRef<string>('default-session');
+  const currentSessionId = useRef<string>("default-session");
 
   // 加载服务状态
   useEffect(() => {
@@ -77,7 +77,7 @@ const ChatContainer: React.FC = () => {
         _setServiceStatus(status);
         if (
           status.success &&
-          (status.provider === 'zhipuai' || status.provider === 'opencode')
+          (status.provider === "zhipuai" || status.provider === "opencode")
         ) {
           _setCurrentProvider(status.provider);
         }
@@ -85,7 +85,7 @@ const ChatContainer: React.FC = () => {
           _setCurrentModel(status.model);
         }
       } catch (e) {
-        console.warn('加载服务状态失败:', e);
+        console.warn("加载服务状态失败:", e);
       }
     };
     loadServiceStatus();
@@ -103,7 +103,7 @@ const ChatContainer: React.FC = () => {
     setTaskId: _setTaskId,
   } = useSSE(
     {
-      baseURL: 'http://localhost:8000/api/v1',
+      baseURL: "http://localhost:8000/api/v1",
       sessionId: currentSessionId.current,
     },
     // onStep - 收到执行步骤
@@ -112,7 +112,7 @@ const ChatContainer: React.FC = () => {
         const lastMessage = prev[prev.length - 1];
         if (
           lastMessage &&
-          lastMessage.role === 'assistant' &&
+          lastMessage.role === "assistant" &&
           lastMessage.isStreaming
         ) {
           // 更新最后一条消息的executionSteps
@@ -133,7 +133,7 @@ const ChatContainer: React.FC = () => {
         const lastMessage = prev[prev.length - 1];
         if (
           lastMessage &&
-          lastMessage.role === 'assistant' &&
+          lastMessage.role === "assistant" &&
           lastMessage.isStreaming
         ) {
           const updated = [...prev];
@@ -150,7 +150,7 @@ const ChatContainer: React.FC = () => {
     useCallback((fullResponse: string, model?: string) => {
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
-        if (lastMessage && lastMessage.role === 'assistant') {
+        if (lastMessage && lastMessage.role === "assistant") {
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...lastMessage,
@@ -166,14 +166,14 @@ const ChatContainer: React.FC = () => {
     }, []),
     // onError - 流式错误
     useCallback((error: string) => {
-      console.error('SSE流式错误:', error);
+      console.error("SSE流式错误:", error);
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
-        if (lastMessage && lastMessage.role === 'assistant') {
+        if (lastMessage && lastMessage.role === "assistant") {
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...lastMessage,
-            content: lastMessage.content || '抱歉，发生了错误',
+            content: lastMessage.content || "抱歉，发生了错误",
             isStreaming: false,
           };
           return updated;
@@ -186,7 +186,7 @@ const ChatContainer: React.FC = () => {
 
   // 自动滚动到底部
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
   useEffect(() => {
@@ -198,13 +198,13 @@ const ChatContainer: React.FC = () => {
     if (!inputValue.trim() || loading) return;
 
     const userContent = inputValue.trim();
-    setInputValue('');
+    setInputValue("");
     setLoading(true);
 
     // 添加用户消息
     const userMessage: Message = {
       id: Date.now().toString(),
-      role: 'user',
+      role: "user",
       content: userContent,
       timestamp: new Date(),
     };
@@ -215,12 +215,12 @@ const ChatContainer: React.FC = () => {
       // 先添加一个空的AI消息占位
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: '',
+        role: "assistant",
+        content: "",
         timestamp: new Date(),
         executionSteps: [],
         isStreaming: true,
-        model: serviceStatus?.model || currentModel || 'unknown', // 【修复】创建消息时直接设置model
+        model: serviceStatus?.model || currentModel || "unknown", // 【修复】创建消息时直接设置model
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
@@ -241,17 +241,23 @@ const ChatContainer: React.FC = () => {
 
   const getProviderName = (provider: string) => {
     const names: Record<string, string> = {
-      zhipuai: '智谱AI',
-      opencode: 'OpenCode',
-      openai: 'OpenAI',
-      anthropic: 'Anthropic',
-      longcat: 'LongCat',
+      zhipuai: "智谱AI",
+      opencode: "OpenCode",
+      openai: "OpenAI",
+      anthropic: "Anthropic",
+      longcat: "LongCat",
     };
     return names[provider] || provider;
   };
 
   return (
     <Card
+      className="chat-card-no-padding"
+      headStyle={{
+        padding: "8px 24px 4px 24px",
+        borderBottom: "1px solid #f0f0f0",
+      }}
+      bodyStyle={{ padding: 0 }}
       title={
         <Space>
           <RobotOutlined />
@@ -263,7 +269,7 @@ const ChatContainer: React.FC = () => {
         <Space>
           {/* 流式开关 */}
           <Tag.CheckableTag checked={useStream} onChange={setUseStream}>
-            <ThunderboltOutlined /> {useStream ? '流式开启' : '流式关闭'}
+            <ThunderboltOutlined /> {useStream ? "流式开启" : "流式关闭"}
           </Tag.CheckableTag>
 
           {/* 执行过程显示开关 */}
@@ -272,7 +278,7 @@ const ChatContainer: React.FC = () => {
             icon={showExecution ? <EyeOutlined /> : <EyeInvisibleOutlined />}
             onClick={() => setShowExecution(!showExecution)}
           >
-            {showExecution ? '隐藏过程' : '显示过程'}
+            {showExecution ? "隐藏过程" : "显示过程"}
           </Button>
 
           <Button onClick={handleClear} size="small">
@@ -284,26 +290,26 @@ const ChatContainer: React.FC = () => {
       {/* 服务状态提示 */}
       {serviceStatus && (
         <Alert
-          message={serviceStatus.success ? 'AI服务正常' : 'AI服务异常'}
+          message={serviceStatus.success ? "AI 服务正常" : "AI 服务异常"}
           description={
             <>
               <p>
-                <strong>当前提供商:</strong> {getProviderName(currentProvider)}{' '}
+                <strong>当前提供商:</strong> {getProviderName(currentProvider)}{" "}
                 {currentModel && `(${currentModel})`}
               </p>
               <p>
                 <strong>状态:</strong> {serviceStatus.message}
               </p>
               {!serviceStatus.success && (
-                <p style={{ marginTop: 8, color: '#666' }}>
-                  💡 提示: 您可以尝试切换到另一个提供商，或检查API配置
+                <p style={{ marginTop: 8, color: "#666" }}>
+                  💡 提示：您可以尝试切换到另一个提供商，或检查 API 配置
                 </p>
               )}
             </>
           }
-          type={serviceStatus.success ? 'success' : 'warning'}
+          type={serviceStatus.success ? "success" : "warning"}
           showIcon
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 8 }}
         />
       )}
 
@@ -315,8 +321,8 @@ const ChatContainer: React.FC = () => {
             m.isStreaming || (m.executionSteps && m.executionSteps.length > 0)
         ) && (
           <Collapse
-            defaultActiveKey={['execution']}
-            style={{ marginBottom: 16 }}
+            defaultActiveKey={["execution"]}
+            style={{ marginBottom: 8 }}
           >
             <Panel
               header={
@@ -335,24 +341,23 @@ const ChatContainer: React.FC = () => {
 
       {/* 消息列表 */}
       <div
+        className="chat-message-list"
         style={{
-          height: 400,
-          overflowY: 'auto',
-          border: '1px solid #f0f0f0',
+          height: 600,
+          overflowY: "auto",
+          border: "1px solid #f0f0f0",
           borderRadius: 8,
-          padding: 16,
-          marginBottom: 16,
-          backgroundColor: '#fafafa',
+          backgroundColor: "#fafafa",
         }}
       >
         {messages.length === 0 ? (
-          <div style={{ textAlign: 'center', color: '#999', marginTop: 100 }}>
+          <div style={{ textAlign: "center", color: "#999", marginTop: 100 }}>
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
             <p>开始与AI助手对话</p>
             <p style={{ fontSize: 12 }}>
               {useStream
-                ? '流式模式已开启 - 可实时查看AI思考过程'
-                : '普通模式 - 一次性返回完整回复'}
+                ? "流式模式已开启 - 可实时查看AI思考过程"
+                : "普通模式 - 一次性返回完整回复"}
             </p>
           </div>
         ) : (
@@ -363,9 +368,9 @@ const ChatContainer: React.FC = () => {
               <List.Item
                 style={{
                   justifyContent:
-                    item.role === 'user' ? 'flex-end' : 'flex-start',
-                  border: 'none',
-                  padding: '8px 0',
+                    item.role === "user" ? "flex-end" : "flex-start",
+                  border: "none",
+                  padding: "8px 0",
                 }}
               >
                 <MessageItem message={item} showExecution={showExecution} />
@@ -377,14 +382,14 @@ const ChatContainer: React.FC = () => {
       </div>
 
       {/* 输入区域 */}
-      <Space direction="vertical" style={{ width: '100%' }}>
+      <Space direction="vertical" className="chat-input-area" style={{ width: "100%", gap: 4 }}>
         <TextArea
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           placeholder={
             useStream
-              ? '输入消息... (流式模式可实时查看思考过程)'
-              : '输入消息...'
+              ? "输入消息... (流式模式可实时查看思考过程)"
+              : "输入消息..."
           }
           autoSize={{ minRows: 2, maxRows: 4 }}
           onPressEnter={(e) => {
@@ -403,7 +408,7 @@ const ChatContainer: React.FC = () => {
           disabled={!inputValue.trim()}
           block
         >
-          {isReceiving ? '接收中...' : '发送消息'}
+          {isReceiving ? "接收中..." : "发送消息"}
         </Button>
       </Space>
     </Card>

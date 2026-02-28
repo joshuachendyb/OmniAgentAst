@@ -9,8 +9,8 @@
  * @update 2026-02-18 添加移动端响应式支持
  */
 
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Layout,
   Menu,
@@ -26,7 +26,7 @@ import {
   message,
   Modal,
   Alert,
-} from 'antd';
+} from "antd";
 import {
   MessageOutlined,
   FolderOutlined,
@@ -38,18 +38,18 @@ import {
   MenuOutlined,
   CheckCircleOutlined,
   ReloadOutlined,
-} from '@ant-design/icons';
-import { configApi, chatApi } from '../../services/api';
-import type { MenuProps } from 'antd';
+} from "@ant-design/icons";
+import { configApi, chatApi } from "../../services/api";
+import type { MenuProps } from "antd";
 const { Option } = Select;
-import ShortcutPanel from '../ShortcutPanel';
+import ShortcutPanel from "../ShortcutPanel";
 
 const { useBreakpoint } = Grid;
 
 const { Sider, Content, Header } = Layout;
 const { Title } = Typography;
 
-type MenuItem = Required<MenuProps>['items'][number];
+type MenuItem = Required<MenuProps>["items"][number];
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -74,7 +74,7 @@ interface LayoutProps {
  * @since 2026-02-17
  * @update 2026-02-18 集成React Router导航 - by 小新
  */
-const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
+const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   // 路由导航
   const navigate = useNavigate();
   // 未读消息数（实际应从全局状态获取）
@@ -101,7 +101,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   const [checkingStatus, setCheckingStatus] = useState(false);
   // 【修改】当前选中的模型ID（格式: provider-modelname）
   const [_currentProvider, setCurrentProvider] = useState<string>(
-    'opencode-minimax-m2.5-free'
+    "opencode-minimax-m2.5-free"
   );
   // 【修改】模型列表 - 类型匹配后端返回（id, provider, model, display_name, current_model）
   const [modelList, setModelList] = useState<
@@ -114,7 +114,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
     }[]
   >([]);
   // 【新增】默认提供商
-  const [defaultProvider, setDefaultProvider] = useState<string>('zhipuai');
+  const [defaultProvider, setDefaultProvider] = useState<string>("zhipuai");
   // 【新增】完整配置验证结果
   const [validationResult, setValidationResult] = useState<{
     success: boolean;
@@ -135,16 +135,16 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         const validation = await configApi.validateFullConfig();
         setValidationResult(validation);
       } catch (err) {
-        console.warn('刷新验证状态失败:', err);
+        console.warn("刷新验证状态失败:", err);
       }
 
       const modelData = await configApi.getModelList();
       if (modelData.models) {
         setModelList(modelData.models);
-        setDefaultProvider(modelData.default_provider || 'zhipuai');
+        setDefaultProvider(modelData.default_provider || "zhipuai");
       }
     } catch (error) {
-      console.warn('刷新模型列表失败:', error);
+      console.warn("刷新模型列表失败:", error);
     }
   };
 
@@ -157,7 +157,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         const validation = await configApi.validateFullConfig();
         setValidationResult(validation);
       } catch (err) {
-        console.warn('刷新验证状态失败:', err);
+        console.warn("刷新验证状态失败:", err);
       }
 
       const modelData = await configApi.getModelList();
@@ -182,7 +182,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       const status = await chatApi.validateService();
       setServiceStatus(status);
     } catch (error) {
-      console.warn('服务检查失败:', error);
+      console.warn("服务检查失败:", error);
     } finally {
       setCheckingStatus(false);
     }
@@ -201,14 +201,14 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           validation = await configApi.validateFullConfig();
           setValidationResult(validation);
         } catch (err) {
-          console.warn('配置验证失败:', err);
+          console.warn("配置验证失败:", err);
           // 验证失败时设置空结果，补全所有字段
           const errorResult = {
             success: false,
-            provider: '',
-            model: '',
-            message: '配置验证接口调用失败',
-            errors: ['配置验证接口调用失败'],
+            provider: "",
+            model: "",
+            message: "配置验证接口调用失败",
+            errors: ["配置验证接口调用失败"],
             warnings: [] as string[],
           };
           setValidationResult(errorResult);
@@ -230,7 +230,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         if (modelData.models && modelData.models.length > 0) {
           setModelList(modelData.models);
           // 设置默认提供商
-          setDefaultProvider(modelData.default_provider || 'zhipuai');
+          setDefaultProvider(modelData.default_provider || "zhipuai");
 
           // 设置当前选中的模型 - 直接使用后端返回的 current_model 字段
           const currentModel = modelData.models.find(
@@ -245,7 +245,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         const status = await chatApi.validateService();
         setServiceStatus(status);
       } catch (error) {
-        console.warn('初始化失败:', error);
+        console.warn("初始化失败:", error);
       } finally {
         setCheckingStatus(false);
       }
@@ -260,7 +260,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
    */
   const menuItems: MenuItem[] = [
     {
-      key: '/',
+      key: "/",
       icon: <MessageOutlined />,
       label: (
         <Badge count={unreadCount} size="small" offset={[6, -4]}>
@@ -269,13 +269,13 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       ),
     },
     {
-      key: '/files',
+      key: "/files",
       icon: <FolderOutlined />,
-      label: '文件管理',
+      label: "文件管理",
       disabled: true,
     },
     {
-      key: '/knowledge',
+      key: "/knowledge",
       icon: <BookOutlined />,
       label: (
         <Tooltip title="即将上线" placement="right">
@@ -284,9 +284,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       ),
       disabled: true,
     },
-    { type: 'divider' },
+    { type: "divider" },
     {
-      key: '/history',
+      key: "/history",
       icon: <HistoryOutlined />,
       label: (
         <Badge
@@ -300,15 +300,15 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       ),
     },
     {
-      key: '/shortcuts',
+      key: "/shortcuts",
       icon: <ThunderboltOutlined />,
-      label: '快捷指令',
+      label: "快捷指令",
     },
-    { type: 'divider' },
+    { type: "divider" },
     {
-      key: '/settings',
+      key: "/settings",
       icon: <SettingOutlined />,
-      label: '设置',
+      label: "设置",
     },
   ];
 
@@ -319,10 +319,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
    *
    * @author 小新
    */
-  const handleMenuClick: MenuProps['onClick'] = (e) => {
+  const handleMenuClick: MenuProps["onClick"] = (e) => {
     const key = e.key;
     // 快捷指令特殊处理
-    if (key === '/shortcuts') {
+    if (key === "/shortcuts") {
       setShortcutPanelVisible(true);
       if (isMobile) {
         setDrawerVisible(false);
@@ -343,24 +343,24 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
   const handleShortcutExecute = (command: string) => {
     // 根据快捷指令执行不同操作
     switch (command) {
-      case '/clear':
+      case "/clear":
         // 清空当前对话
-        console.log('清空对话');
+        console.log("清空对话");
         break;
-      case '/help':
+      case "/help":
         // 显示帮助
-        console.log('显示帮助');
+        console.log("显示帮助");
         break;
-      case '/history':
+      case "/history":
         // 跳转到历史记录
-        navigate('/history');
+        navigate("/history");
         break;
-      case '/settings':
+      case "/settings":
         // 跳转到设置
-        navigate('/settings');
+        navigate("/settings");
         break;
       default:
-        console.log('执行快捷指令:', command);
+        console.log("执行快捷指令:", command);
     }
   };
 
@@ -373,29 +373,29 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       <div
         style={{
           height: 64,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: isMobile || collapsed ? 'center' : 'flex-start',
-          padding: isMobile || collapsed ? 0 : '0 16px',
-          borderBottom: '1px solid #f0f0f0',
+          display: "flex",
+          alignItems: "center",
+          justifyContent: isMobile || collapsed ? "center" : "flex-start",
+          padding: isMobile || collapsed ? 0 : "0 16px",
+          borderBottom: "1px solid #f0f0f0",
         }}
       >
         <Avatar
           size={40}
           icon={<DesktopOutlined />}
-          style={{ background: '#1890ff', flexShrink: 0 }}
+          style={{ background: "#1890ff", flexShrink: 0 }}
         />
         {!isMobile && !collapsed && (
           <Title
             level={5}
             style={{
-              margin: '0 0 0 12px',
+              margin: "0 0 0 12px",
               fontSize: 16,
               fontWeight: 600,
-              color: '#1890ff',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
+              color: "#1890ff",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
             }}
           >
             OmniAgentAst.
@@ -419,34 +419,34 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
       {/* 底部信息 - 前端小新代修改 VIS-L04: 优化底部信息, UX-L04: 添加点击查看版本详情 */}
       <div
         style={{
-          position: 'absolute',
+          position: "absolute",
           bottom: 0,
           left: 0,
           right: 0,
-          padding: '16px 20px',
-          borderTop: '1px solid #e8e8e8',
+          padding: "16px 20px",
+          borderTop: "1px solid #e8e8e8",
           fontSize: 13,
-          color: '#666',
-          background: '#fafafa',
-          textAlign: isMobile || collapsed ? 'center' : 'left',
-          cursor: 'pointer',
-          transition: 'background 0.3s ease',
+          color: "#666",
+          background: "#fafafa",
+          textAlign: isMobile || collapsed ? "center" : "left",
+          cursor: "pointer",
+          transition: "background 0.3s ease",
         }}
-        onClick={() => message.info('OmniAgentAst v2.1.0 - 桌面版AI助手')}
+        onClick={() => message.info("OmniAgentAst v2.1.0 - 桌面版AI助手")}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background = '#f0f0f0';
+          e.currentTarget.style.background = "#f0f0f0";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = '#fafafa';
+          e.currentTarget.style.background = "#fafafa";
         }}
       >
-        {isMobile || collapsed ? 'v2.1' : '版本 v2.1.0'}
+        {isMobile || collapsed ? "v2.1" : "版本 v2.1.0"}
       </div>
     </>
   );
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <Layout style={{ minHeight: "100vh" }}>
       {/* 快捷指令弹窗 */}
       <ShortcutPanel
         visible={shortcutPanelVisible}
@@ -474,7 +474,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           collapsed={collapsed}
           onCollapse={setCollapsed}
           style={{
-            boxShadow: '2px 0 8px rgba(0,0,0,0.05)',
+            boxShadow: "2px 0 8px rgba(0,0,0,0.05)",
             zIndex: 100,
           }}
         >
@@ -487,17 +487,17 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
         {/* 顶部Header - 前端小新代修改 VIS-L03: 固定Header高度64px */}
         <Header
           style={{
-            height: 64,
-            background: '#fff',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-            padding: isMobile ? '0 16px' : '0 32px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            height: 43,
+            background: "#fff",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+            padding: isMobile ? "0 16px" : "0 20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
             zIndex: 99,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
             {/* 移动端菜单按钮 - 前端小新代修改 UX-L02: 增大按钮尺寸，添加tooltip */}
             {isMobile && (
               <Tooltip title="打开导航菜单">
@@ -505,7 +505,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                   type="text"
                   icon={<MenuOutlined />}
                   onClick={() => setDrawerVisible(true)}
-                  style={{ fontSize: 20, padding: '8px 12px' }}
+                  style={{ fontSize: 20, padding: "8px 12px" }}
                 />
               </Tooltip>
             )}
@@ -521,27 +521,27 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
             </Title>
             {/* 服务状态显示 - 根据检查结果显示不同颜色 - 前端小新代修改 UX-L03: 可点击重试 */}
             {checkingStatus ? (
-              <span style={{ color: '#999' }}>检查中...</span>
+              <span style={{ color: "#999" }}>检查中...</span>
             ) : serviceStatus?.success ? (
               <Tag color="success">
-                <CheckCircleOutlined /> {serviceStatus.provider}{' '}
+                <CheckCircleOutlined /> {serviceStatus.provider}{" "}
                 {serviceStatus.model && `(${serviceStatus.model})`}
               </Tag>
             ) : serviceStatus?.message ? (
               // 有错误信息显示红色/黄色（根据错误类型），可点击重试
               <Tag
                 color={
-                  serviceStatus.message.includes('限速') ||
-                  serviceStatus.message.includes('欠费') ||
-                  serviceStatus.message.includes('额度')
-                    ? 'warning'
-                    : 'error'
+                  serviceStatus.message.includes("限速") ||
+                  serviceStatus.message.includes("欠费") ||
+                  serviceStatus.message.includes("额度")
+                    ? "warning"
+                    : "error"
                 }
                 onClick={handleCheckService}
-                style={{ cursor: 'pointer' }}
+                style={{ cursor: "pointer" }}
               >
-                {serviceStatus.provider}{' '}
-                {serviceStatus.model && `(${serviceStatus.model})`} -{' '}
+                {serviceStatus.provider}{" "}
+                {serviceStatus.model && `(${serviceStatus.model})`} -{" "}
                 {serviceStatus.message} (点击重试)
               </Tag>
             ) : (
@@ -549,7 +549,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
               <Tag
                 color="error"
                 onClick={handleCheckService}
-                style={{ cursor: 'pointer' }}
+                style={{ cursor: "pointer" }}
               >
                 未配置 (点击检查)
               </Tag>
@@ -561,7 +561,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                   validationResult.warnings.length > 0)) && (
                 <Tag
                   color="warning"
-                  style={{ cursor: 'pointer' }}
+                  style={{ cursor: "pointer" }}
                   onClick={() => setValidationModalVisible(true)}
                 >
                   ⚠️ 配置验证
@@ -570,7 +570,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           </div>
 
           {/* 右侧操作区 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {/* 模型选择下拉框 */}
             {modelList.length > 0 ? (
               <Select
@@ -590,22 +590,22 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                       (m) => String(m.id) === value
                     );
                     if (!selectedModel) {
-                      message.error('未找到对应的模型');
+                      message.error("未找到对应的模型");
                       return;
                     }
 
                     // 从model id中提取model名称 (格式: "provider-modelname")
                     const modelName = value.replace(
                       `${selectedModel.provider}-`,
-                      ''
+                      ""
                     );
 
                     // 调用API切换provider和model
                     await configApi.updateConfig({
                       ai_provider: selectedModel.provider as
-                        | 'zhipuai'
-                        | 'opencode'
-                        | 'longcat',
+                        | "zhipuai"
+                        | "opencode"
+                        | "longcat",
                       ai_model: modelName,
                     });
                     message.success(`已切换到 ${selectedModel.display_name}`);
@@ -616,13 +616,13 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
                     // 切换后自动检查服务
                     handleCheckService();
                   } catch (error) {
-                    message.error('切换失败');
+                    message.error("切换失败");
                   }
                 }}
               >
                 {modelList.map((model) => (
                   <Option key={model.id} value={String(model.id)}>
-                    {model.provider === defaultProvider ? '★ ' : ''}
+                    {model.provider === defaultProvider ? "★ " : ""}
                     {model.display_name}
                   </Option>
                 ))}
@@ -640,19 +640,19 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
               检查服务
             </Button>
             <Avatar size="small" icon={<DesktopOutlined />} />
-            <span style={{ color: '#666', fontSize: 14 }}>用户</span>
+            <span style={{ color: "#666", fontSize: 14 }}>用户</span>
           </div>
         </Header>
 
         {/* 主内容区 - 只有这层有留白 - 前端小新代修改 VIS-L01: 留白优化, VIS-G02: 背景色优化 */}
         <Content
           style={{
-            margin: 16,
-            padding: 20,
-            background: '#f8fafc',
+            margin: 0,
+            padding: 0,
+            background: "#f8fafc",
             borderRadius: 12,
             minHeight: 400,
-            overflow: 'auto',
+            overflow: "auto",
           }}
         >
           {children}
@@ -673,7 +673,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
             type="primary"
             onClick={() => {
               setValidationModalVisible(false);
-              navigate('/settings');
+              navigate("/settings");
             }}
           >
             去设置
@@ -685,17 +685,17 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
           <div>
             <Alert
               message={validationResult.message}
-              type={validationResult.success ? 'success' : 'error'}
+              type={validationResult.success ? "success" : "error"}
               showIcon
               style={{ marginBottom: 16 }}
             />
 
             {validationResult.errors && validationResult.errors.length > 0 && (
               <div style={{ marginBottom: 16 }}>
-                <h4 style={{ color: '#ff4d4f' }}>
+                <h4 style={{ color: "#ff4d4f" }}>
                   错误 ({validationResult.errors.length})
                 </h4>
-                <ul style={{ paddingLeft: 20, color: '#ff4d4f' }}>
+                <ul style={{ paddingLeft: 20, color: "#ff4d4f" }}>
                   {validationResult.errors.map((err, idx) => (
                     <li key={idx}>{err}</li>
                   ))}
@@ -706,10 +706,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = '/' }) => {
             {validationResult.warnings &&
               validationResult.warnings.length > 0 && (
                 <div>
-                  <h4 style={{ color: '#faad14' }}>
+                  <h4 style={{ color: "#faad14" }}>
                     警告 ({validationResult.warnings.length})
                   </h4>
-                  <ul style={{ paddingLeft: 20, color: '#faad14' }}>
+                  <ul style={{ paddingLeft: 20, color: "#faad14" }}>
                     {validationResult.warnings.map((warn, idx) => (
                       <li key={idx}>{warn}</li>
                     ))}
