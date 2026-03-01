@@ -422,49 +422,19 @@ class AIServiceFactory:
     
     @classmethod
     def switch_provider(cls, provider: str, config_path: Optional[str] = None):
-        """切换AI提供商"""
-        print(f"[AIServiceFactory] 切换提供商: {provider}")
+        """【废弃】切换AI提供商 - 请使用updateConfig同时更新provider和model"""
+        import warnings
+        warnings.warn(
+            "AIServiceFactory.switch_provider() 已废弃，请使用 /api/v1/config (PUT) 同时更新provider和model",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        print(f"[AIServiceFactory] ⚠️ switch_provider() 已废弃，请使用 /api/v1/config (PUT)")
         
-        with cls._lock:
-            old_provider = cls._current_provider
-            
-            if cls._instance is not None:
-                try:
-                    asyncio.create_task(cls._instance.close())
-                except Exception as e:
-                    print(f"[AIServiceFactory] 关闭旧实例出错: {e}")
-            
-            cls._instance = None
-            cls._current_provider = provider
-            
-            actual_path = cls.get_config_path(config_path)
-            try:
-                with open(actual_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                
-                pattern = r'(ai:\s*\n[^#]*provider:\s*["\']?)(\w+)(["\']?)'
-                match = re.search(pattern, content)
-                if match:
-                    new_content = content[:match.start(2)] + provider + content[match.end(2):]
-                else:
-                    new_content = re.sub(r'(provider:\s*["\']?)(\w+)(["\']?)', rf'\g<1>{provider}\g<3>', content, count=1)
-                
-                with open(actual_path, 'w', encoding='utf-8') as f:
-                    f.write(new_content)
-                
-            except Exception as e:
-                print(f"[AIServiceFactory] 警告: 无法更新配置文件: {e}")
-        
-        try:
-            new_service = cls.get_service(config_path)
-            print(f"[AIServiceFactory] 新实例创建成功: {provider}")
-            return new_service
-        except Exception as e:
-            print(f"[AIServiceFactory] 创建新实例失败，回滚到旧提供商: {old_provider}")
-            with cls._lock:
-                cls._current_provider = old_provider
-                cls._instance = None
-            raise e
+        # 抛出异常，避免误用
+        raise NotImplementedError(
+            "AIServiceFactory.switch_provider() 已废弃，请使用 /api/v1/config (PUT) 同时更新provider和model"
+        )
     
     @classmethod
     def get_current_provider(cls) -> str:

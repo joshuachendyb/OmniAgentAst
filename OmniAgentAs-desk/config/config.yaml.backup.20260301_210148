@@ -7,7 +7,7 @@ ai:
     - LongCat-Flash-Thinking-2601
     - LongCat-Flash-Thinking
     timeout: 120
-  model: kimi-k2.5-free
+  model: minimax-m2.5-free
   opencode:
     api_base: https://opencode.ai/zen/v1
     api_key: sk-6rMee9Ez89iRCEvDayPq2hdTrMGKyPesy5K88uZKVAqOrc7tg6sVqRI5T1pP2LXb

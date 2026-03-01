@@ -89,6 +89,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, Tuple, List
+from collections import OrderedDict
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from app.config import get_config as get_config_instance
@@ -96,6 +97,57 @@ from app.services import AIServiceFactory
 from app.utils.logger import logger
 
 router = APIRouter()
+
+
+def ordered_dict(data: dict) -> OrderedDict:
+    """
+    将字典转换为OrderedDict，保持特定顺序
+    ai节点下：provider和model在最前面，其他provider按字母顺序
+    """
+    if not isinstance(data, dict):
+        return data
+    
+    result = OrderedDict()
+    
+    # ai节点的特定顺序
+    if 'ai' in data:
+        ai_data = data['ai']
+        ai_ordered = OrderedDict()
+        
+        # 首先添加provider和model（如果存在）
+        if 'provider' in ai_data:
+            ai_ordered['provider'] = ai_data['provider']
+        if 'model' in ai_data:
+            ai_ordered['model'] = ai_data['model']
+        
+        # 然后添加其他key，按字母顺序
+        for key in sorted(ai_data.keys()):
+            if key not in ('provider', 'model'):
+                value = ai_data[key]
+                if isinstance(value, dict):
+                    ai_ordered[key] = ordered_dict(value)
+                else:
+                    ai_ordered[key] = value
+        
+        result['ai'] = ai_ordered
+    
+    # 处理其他节点，按字母顺序
+    for key in sorted(data.keys()):
+        if key != 'ai':
+            value = data[key]
+            if isinstance(value, dict):
+                result[key] = ordered_dict(value)
+            else:
+                result[key] = value
+    
+    return result
+
+
+def write_yaml_with_order(file_path: str, data: dict):
+    """使用OrderedDict写入YAML，保持特定顺序"""
+    ordered_data = ordered_dict(data)
+    with open(file_path, 'w', encoding='utf-8') as f:
+        yaml.dump(ordered_data, f, allow_unicode=True, default_flow_style=False)
 
 
 # ============================================
@@ -312,21 +364,12 @@ async def update_config(config_update: ConfigUpdate):
                     detail=f"不支持的提供商: {config_update.ai_provider}"
                 )
             config_data['ai']['provider'] = config_update.ai_provider
-                
-            # 切换AI服务提供商
-            try:
-                AIServiceFactory.switch_provider(config_update.ai_provider)
-                logger.info(f"切换AI提供商成功: {config_update.ai_provider}")
-            except HTTPException:
-                # FastAPI的HTTP异常直接抛出
-                raise
-            except Exception as e:
-                # 【修复P2-007】记录详细日志但返回通用错误信息
-                logger.error(f"切换AI提供商失败: {e}", exc_info=True)
-                raise HTTPException(
-                    status_code=500,
-                    detail="切换AI提供商失败，请检查配置"
-                )
+            
+            # 【修复】不再调用switch_provider，直接清空缓存让get_service重新加载
+            # 统一由updateConfig处理provider和model的更新
+            AIServiceFactory._instance = None
+            AIServiceFactory._current_provider = config_update.ai_provider
+            logger.info(f"切换AI提供商成功: {config_update.ai_provider}")
         
         # 【修正】更新AI模型 - 只更新顶层ai.model
         # 如果只传了ai_model没传ai_provider，使用当前配置的provider
@@ -407,7 +450,7 @@ async def update_config(config_update: ConfigUpdate):
         
         # 6. 写回配置文件
         with open(config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
+            write_yaml_with_order(str(config_path), config_data)
         
         # 7. 重新加载
         config = get_config_instance()
@@ -839,8 +882,7 @@ async def delete_provider(provider_name: str):
             if remaining:
                 config['ai']['provider'] = remaining[0]
         
-        with open(config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        write_yaml_with_order(str(config_path), config)
         
         # 重新加载配置
         config_obj = get_config_instance()
@@ -894,8 +936,7 @@ async def delete_model(provider_name: str, model_name: str):
         if current_model == model_name and models:
             config['ai']['model'] = models[0]
         
-        with open(config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        write_yaml_with_order(str(config_path), config)
         
         # 重新加载配置
         config_obj = get_config_instance()
@@ -961,8 +1002,7 @@ async def update_provider(provider_name: str, data: ProviderUpdate):
                 "backup_path": str(backup_path)
             }
         
-        with open(config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        write_yaml_with_order(str(config_path), config)
         
         # 重新加载配置
         config_obj = get_config_instance()
@@ -1014,8 +1054,7 @@ async def add_model(provider_name: str, data: ModelAddRequest):
         if not config['ai'].get('model'):
             config['ai']['model'] = data.model
         
-        with open(config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        write_yaml_with_order(str(config_path), config)
         
         # 重新加载配置
         config_obj = get_config_instance()
@@ -1069,8 +1108,7 @@ async def add_provider(data: ProviderAddRequest):
                 "backup_path": str(backup_path)
             }
         
-        with open(config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+        write_yaml_with_order(str(config_path), config)
         
         # 重新加载配置
         config_obj = get_config_instance()
@@ -1255,7 +1293,7 @@ async def fix_config():
         
         # 5. 写入修复后的配置
         with open(config_path, 'w', encoding='utf-8') as f:
-            yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
+            write_yaml_with_order(str(config_path), config_data)
         
         # 6. 重新加载
         config = get_config_instance()

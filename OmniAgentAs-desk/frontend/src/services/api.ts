@@ -295,8 +295,14 @@ export interface SecurityConfig {
 }
 
 export interface ConfigUpdate {
+  // ⭐⭐⭐ 重要：provider 和 model 必须成对使用！⭐⭐⭐
+  // 切换模型时，必须同时提供 ai_provider 和 ai_model
+  // 原因：同一个 model 名称可能属于多个 provider（如 kimi-k2.5-free 可能在多个 provider 下）
+  // 只有 provider+model 组合才能唯一确定一个模型
+  // 设计原则：发送时两个字段，接收时两个字段，使用时两个字段必须同时使用
   ai_provider?: string;
   ai_model?: string;
+
   // ⭐ 修复：使用统一的 provider_api_keys，不硬编码 provider 名称
   provider_api_keys?: Record<string, string>; // {provider_name: api_key}
   theme?: "light" | "dark";

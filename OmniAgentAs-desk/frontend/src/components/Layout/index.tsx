@@ -615,7 +615,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                       return;
                     }
 
-                    // 从model id中提取model名称 (格式: "provider-modelname")
+                    // ⭐⭐⭐ 重要：provider 和 model 必须成对使用！⭐⭐⭐
+                    // 从 selectedModel 中同时获取 provider 和 model
+                    // 原因：同一个 model 名称可能属于多个 provider
+                    // 只有 provider+model 组合才能唯一确定一个模型
                     const modelName = selectedModel.model; // 直接使用 selectedModel.model
 
                     // 调用API切换provider和model
