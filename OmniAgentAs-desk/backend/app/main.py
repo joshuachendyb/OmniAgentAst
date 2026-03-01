@@ -18,31 +18,20 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-# 【修复-波次5】从version.txt读取版本号，确保所有地方版本一致
-# 【修复-2026-02-18】使用绝对路径，确保在任何工作目录下都能正确读取
-# 【修复-2026-02-28】添加UTF-8编码支持，解决中文编码问题
 def get_version() -> str:
     """从version.txt读取版本号"""
     try:
-        # 使用绝对路径：从当前文件(backend/app/main.py)向上两级到项目根目录
         current_file = Path(__file__).resolve()
         backend_dir = current_file.parent.parent
         project_root = backend_dir.parent
         version_file = project_root / "version.txt"
         
-        logger.info(f"Looking for version.txt at: {version_file}")
-        
         if version_file.exists():
-            # 【修复】使用UTF-8编码读取，解决中文编码问题
             version = version_file.read_text(encoding='utf-8').strip()
-            logger.info(f"Read version: {version}")
-            # 去掉v前缀（如果有）
             return version.lstrip('v')
-        else:
-            logger.warning(f"version.txt not found at {version_file}")
     except Exception as e:
         logger.warning(f"Failed to read version.txt: {e}")
-    return "0.4.13"  # 默认版本（更新为最新版本）
+    return "0.4.13"
 
 app = FastAPI(
     title="OmniAgentAst API",
@@ -50,25 +39,21 @@ app = FastAPI(
     version=get_version()
 )
 
-# 应用启动时打印版本信息
-print(f"\n🚀 OmniAgentAst Backend v{get_version()} 启动完成\n")
+print("OmniAgentAst Backend v" + get_version() + " started")
 
 # CORS配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应限制为前端地址
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 监控中间件配置
 setup_monitoring(app)
 
-# 【修复】全局异常处理 - HTTP异常
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    """处理HTTP异常"""
     logger.error(f"HTTP Exception: {exc.status_code} - {exc.detail}")
     return JSONResponse(
         status_code=exc.status_code,
@@ -80,10 +65,8 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         }
     )
 
-# 【修复】全局异常处理 - 验证异常
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """处理请求验证异常"""
     logger.error(f"Validation Error: {exc.errors()}")
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -95,10 +78,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         }
     )
 
-# 【修复】全局异常处理 - 通用异常
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    """处理所有未捕获的异常"""
     error_msg = str(exc)
     error_trace = traceback.format_exc()
     
@@ -114,7 +95,6 @@ async def general_exception_handler(request: Request, exc: Exception):
         }
     )
 
-# 注册路由
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operations"])
@@ -131,5 +111,3 @@ async def root():
         "version": "0.2.2",
         "docs": "/docs"
     }
-
-# 启动命令: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

@@ -771,13 +771,26 @@ const NewChatContainer: React.FC = () => {
           if (sessionData.messages && sessionData.messages.length > 0) {
             setSessionId(urlSessionId);
             setMessages(
-              sessionData.messages.map((m: any) => ({
-                id: m.id?.toString() || Date.now().toString(),
-                role: m.role,
-                content: m.content,
-                timestamp: new Date(m.timestamp),
-                executionSteps: m.execution_steps || m.executionSteps || [],
-              }))
+              sessionData.messages.map((m: any) => {
+                // 安全地处理 executionSteps 字段
+                let executionSteps: ExecutionStep[] = [];
+                if (m.execution_steps && Array.isArray(m.execution_steps)) {
+                  executionSteps = m.execution_steps;
+                } else if (
+                  m.executionSteps &&
+                  Array.isArray(m.executionSteps)
+                ) {
+                  executionSteps = m.executionSteps;
+                }
+
+                return {
+                  id: m.id?.toString() || Date.now().toString(),
+                  role: m.role,
+                  content: m.content,
+                  timestamp: new Date(m.timestamp),
+                  executionSteps,
+                };
+              })
             );
 
             // ⭐ 2026-02-25 更新：加载新增字段
@@ -884,12 +897,26 @@ const NewChatContainer: React.FC = () => {
 
           if (sessionData.messages && sessionData.messages.length > 0) {
             setMessages(
-              sessionData.messages.map((m: any) => ({
-                id: m.id?.toString() || Date.now().toString(),
-                role: m.role,
-                content: m.content,
-                timestamp: new Date(m.timestamp),
-              }))
+              sessionData.messages.map((m: any) => {
+                // 安全地处理 executionSteps 字段
+                let executionSteps: ExecutionStep[] = [];
+                if (m.execution_steps && Array.isArray(m.execution_steps)) {
+                  executionSteps = m.execution_steps;
+                } else if (
+                  m.executionSteps &&
+                  Array.isArray(m.executionSteps)
+                ) {
+                  executionSteps = m.executionSteps;
+                }
+
+                return {
+                  id: m.id?.toString() || Date.now().toString(),
+                  role: m.role,
+                  content: m.content,
+                  timestamp: new Date(m.timestamp),
+                  executionSteps,
+                };
+              })
             );
           }
           console.log(

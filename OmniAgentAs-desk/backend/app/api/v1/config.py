@@ -338,6 +338,7 @@ async def update_config(config_update: ConfigUpdate):
                 logger.info(f"切换AI模型成功: provider={provider}, model={config_update.ai_model}")
                 # 【修复】清空AIServiceFactory缓存，强制重新读取配置
                 AIServiceFactory._instance = None
+                AIServiceFactory._config = None
                 logger.info(f"已清空AIServiceFactory缓存")
         
         # 更新API Key - 通用方式（不硬编码）
