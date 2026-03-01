@@ -1045,7 +1045,8 @@ async def validate_ai_service():
         )
 
 
-@router.post("/chat/switch/{provider}", response_model=ValidateResponse)
+# 【隐藏】冗余接口，已被 /config PUT 替代，仅保留以防后续需要
+@router.post("/chat/switch/{provider}", response_model=ValidateResponse, include_in_schema=False)
 async def switch_ai_provider(provider: str):
     """
     切换AI提供商
