@@ -63,6 +63,8 @@ export interface ExecutionStep {
   stepNumber?: number;
   /** 模型名称 - 前端小新代修改 */
   model?: string;
+  /** 显示名称（后端返回的完整名称，如"OpenAI (GPT-4)"） - 前端小新代修改 */
+  display_name?: string;
   /** 提供商 - 前端小新代修改 */
   provider?: string;
   /** 显示名称 - 前端小新代修改 */
@@ -403,7 +405,8 @@ const processSSEData = (
           (responseBufferRef.current as any)._provider = rawData.provider;
         }
         if (rawData.display_name) {
-          (responseBufferRef.current as any)._displayName = rawData.display_name;
+          (responseBufferRef.current as any)._displayName =
+            rawData.display_name;
         }
         // 【修复问题 7】发送 start 步骤，用于创建占位消息
         const startStep: ExecutionStep = {
@@ -412,7 +415,7 @@ const processSSEData = (
           timestamp: Date.now(),
           model: rawData.model,
           provider: rawData.provider,
-          displayName: rawData.display_name,  // ✅ 新增
+          displayName: rawData.display_name, // ✅ 新增
         };
         setExecutionSteps((prev) => [...prev, startStep]);
         onStep?.(startStep);
@@ -535,7 +538,10 @@ export const createSSEConnection = (
     onOpen?: () => void;
     onStep?: (step: ExecutionStep) => void;
     onChunk?: (chunk: string) => void;
-    onComplete?: (fullResponse: string, metadata?: string | SSEMetadata) => void;
+    onComplete?: (
+      fullResponse: string,
+      metadata?: string | SSEMetadata
+    ) => void;
     onError?: (error: string | SSEError) => void;
     onClose?: () => void;
   }

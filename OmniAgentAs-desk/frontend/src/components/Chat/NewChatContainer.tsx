@@ -169,11 +169,7 @@ const NewChatContainer: React.FC = () => {
               isStreaming: true,
               model: step.model,
               provider: step.provider,
-              displayName: step.model
-                ? `${step.provider ? step.provider.toUpperCase() : ""} (${
-                    step.model
-                  })`.replace(/^ /, "")
-                : undefined, // 【修复 display_name 显示 bug】构建 display_name
+              displayName: step.display_name, // 【修复 display_name 显示 bug】直接使用后端返回的 display_name
             };
             return [...prev, newAssistantMessage];
           }
