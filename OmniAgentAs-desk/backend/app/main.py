@@ -27,11 +27,13 @@ def get_version() -> str:
         version_file = project_root / "version.txt"
         
         if version_file.exists():
-            version = version_file.read_text(encoding='utf-8').strip()
+            # 【修复】只读取第一行作为版本号
+            with open(version_file, 'r', encoding='utf-8') as f:
+                version = f.readline().strip()
             return version.lstrip('v')
     except Exception as e:
         logger.warning(f"Failed to read version.txt: {e}")
-    return "0.4.13"
+    return "0.4.14"
 
 app = FastAPI(
     title="OmniAgentAst API",

@@ -61,9 +61,11 @@ import {
   CheckCircleOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
+  DesktopOutlined,
 } from "@ant-design/icons";
 import { configApi } from "../../services/api";
 import type { ProviderInfo } from "../../services/api";
+import HealthCheck from "../../components/HealthCheck";
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
@@ -1525,6 +1527,17 @@ const Settings: React.FC = () => {
               key="security"
             >
               <SecuritySettings />
+            </TabPane>
+
+            <TabPane
+              tab={
+                <span>
+                  <DesktopOutlined /> 系统状态
+                </span>
+              }
+              key="system"
+            >
+              <HealthCheck />
             </TabPane>
           </Tabs>
         </div>
