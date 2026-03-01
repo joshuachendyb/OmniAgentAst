@@ -269,6 +269,8 @@ const ProviderSettings: React.FC = () => {
       const providerList = Object.values(data.providers);
       setProviders(providerList);
       setCurrentProvider(data.current_provider);
+      // 【修复】同时设置当前模型
+      setCurrentModel(data.current_model);
       // 设置当前选中的Provider为当前使用的Provider或第一个Provider
       const current =
         providerList.find((p) => p.name === data.current_provider) ||
@@ -457,13 +459,20 @@ const ProviderSettings: React.FC = () => {
 
   // 全局配置 - Provider切换
   const onProviderChange = async (provider: string) => {
+    // 【修复】从完整配置中获取当前使用的模型，而不是用providerData.models[0]
+    const fullConfig = await configApi.getFullConfig();
     const providerData = providers.find((p) => p.name === provider);
     if (!providerData) return;
     setCurrentProvider(provider);
-    setCurrentModel(providerData.model || providerData.models[0] || "");
+    // 如果切换到当前使用的provider，使用当前模型；否则使用provider的第一个模型
+    const targetModel =
+      fullConfig.current_provider === provider
+        ? fullConfig.current_model
+        : providerData.models[0];
+    setCurrentModel(targetModel);
     await configApi.updateConfig({
       ai_provider: provider as "zhipuai" | "opencode" | "longcat",
-      ai_model: providerData.model || providerData.models[0] || "",
+      ai_model: targetModel,
     });
     loadConfig();
   };
