@@ -1365,12 +1365,12 @@ const NewChatContainer: React.FC = () => {
         }}
       >
         {messages.length === 0 ? (
-          <div style={{ textAlign: "center", color: "#999", marginTop: 100 }}>
+          <div style={{ textAlign: "center", color: "#999", marginTop: 60 }}>
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
-            <p>开始与AI助手对话</p>
+            <p>开始与 AI 助手对话</p>
             <p style={{ fontSize: 12 }}>
               {useStream
-                ? "流式模式已开启 - 可实时查看AI思考过程"
+                ? "流式模式已开启 - 可实时查看 AI 思考过程"
                 : "普通模式 - 一次性返回完整回复"}
             </p>
           </div>

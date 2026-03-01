@@ -148,14 +148,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
   };
 
   /**
-   * 获取消息样式 - 前端小新代修改 VIS-C01: 圆角优化，VIS-C02: padding 优化，VIS-C03: 阴影优化，VIS-E01: 错误消息样式
+   * 获取消息样式 - 前端小新代修改 VIS-C01: 圆角优化，VIS-C02: padding 优化，VIS-C03: 阴影优化，VIS-E01: 错误消息样式，UX-C04: 留白优化
    */
   const getMessageStyle = () => {
     const baseStyle: React.CSSProperties = {
       maxWidth: "100%",
       minWidth: "60px",
       width: "auto",
-      padding: "16px 20px",
+      padding: "12px 16px", // ✅ 老杨 UX 优化：16px 20px → 12px 16px，减少留白
       borderRadius: "16px",
       position: "relative",
       transition: "all 0.3s ease",
@@ -266,7 +266,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           : isUser
           ? "flex-end"
           : "flex-start",
-        marginBottom: 24,
+        marginBottom: 16, // ✅ 老杨 UX 优化：24px → 16px，减少留白
         padding: "0 8px",
         width: "100%",
         boxSizing: "border-box" as const,
