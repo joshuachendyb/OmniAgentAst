@@ -434,7 +434,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
           activeKey={activeKey}
           onChange={setActiveKey}
           style={{
-            marginTop: 12,
+            marginTop: 6, // ✅ 小新第二修复 2026-03-01 15:52:51：减少留白 12px → 6px
             background: "#fafafa",
             borderRadius: 8,
             overflow: "hidden",
