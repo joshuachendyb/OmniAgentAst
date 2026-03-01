@@ -539,8 +539,8 @@ export const createSSEConnection = (
     onOpen?: () => void;
     onStep?: (step: ExecutionStep) => void;
     onChunk?: (chunk: string) => void;
-    onComplete?: (fullResponse: string, model?: string) => void;
-    onError?: (error: string) => void;
+    onComplete?: (fullResponse: string, metadata?: string | SSEMetadata) => void;
+    onError?: (error: string | SSEError) => void;
     onClose?: () => void;
   }
 ): EventSource => {
