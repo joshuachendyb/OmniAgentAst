@@ -426,6 +426,33 @@ const NewChatContainer: React.FC = () => {
     };
   }, [messages, currentResponse, executionSteps]);
 
+  // 组件卸载前保存状态（用于路由切换场景）
+  useEffect(() => {
+    return () => {
+      // 组件卸载时保存当前状态
+      // 🔴 修复：使用useState的当前值，而不是ref（因为卸载时DOM已不存在）
+      if (sessionId && messages.length > 0) {
+        // 从messages数组中计算滚动位置：最后一条消息
+        const scrollPosition = messages.length; // 保存消息数量作为滚动标记
+        const state = {
+          messages,
+          sessionId,
+          sessionTitle,
+          timestamp: Date.now(),
+          scrollPosition, // 保存消息数量，而不是DOM滚动位置
+          shouldScrollToBottom: true, // 标记需要滚动到底部
+        };
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        console.log(
+          "💾 组件卸载前保存会话状态:",
+          sessionId,
+          "消息数:",
+          messages.length
+        );
+      }
+    };
+  }, [sessionId, messages, sessionTitle]);
+
   // ============================================
   // 会话状态持久化
   // ============================================
@@ -467,13 +494,32 @@ const NewChatContainer: React.FC = () => {
           setMessages(state.messages || []);
           setSessionId(state.sessionId);
           setSessionTitle(state.sessionTitle || "会话");
-          setTimeout(() => {
-            if (messagesEndRef.current?.parentElement) {
-              messagesEndRef.current.parentElement.scrollTop =
-                state.scrollPosition || 0;
-            }
-          }, 100);
-          console.log("🔄 恢复会话状态:", state.sessionId, state.sessionTitle);
+
+          // 🔴 修复：根据保存的标记决定是否滚动到底部
+          if (state.shouldScrollToBottom) {
+            // 使用requestAnimationFrame确保DOM更新后再滚动
+            requestAnimationFrame(() => {
+              setTimeout(() => {
+                scrollToBottomDelayed();
+              }, 100);
+            });
+          } else if (state.scrollPosition !== undefined) {
+            // 恢复之前的滚动位置
+            setTimeout(() => {
+              if (messagesEndRef.current?.parentElement) {
+                messagesEndRef.current.parentElement.scrollTop =
+                  state.scrollPosition;
+              }
+            }, 100);
+          }
+
+          console.log(
+            "🔄 恢复会话状态:",
+            state.sessionId,
+            state.sessionTitle,
+            "消息数:",
+            state.messages?.length
+          );
           return true;
         }
       } catch (e) {
