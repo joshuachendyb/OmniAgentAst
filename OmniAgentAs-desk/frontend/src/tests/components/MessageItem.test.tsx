@@ -35,7 +35,8 @@ describe('MessageItem Component', () => {
     render(<MessageItem message={assistantMessage} />);
 
     expect(screen.getByText('AI response')).toBeInTheDocument();
-    expect(screen.getByText('AI助手')).toBeInTheDocument();
+    // 修复测试：使用部分匹配，因为角色名称可能包含模型信息
+    expect(screen.getByText(/AI 助手/)).toBeInTheDocument();
   });
 
   it('should render system message', () => {
@@ -124,12 +125,13 @@ describe('MessageItem Component', () => {
 
     // Assistant message
     rerender(<MessageItem message={{ ...baseMessage, role: 'assistant' }} />);
-    expect(screen.getByText('AI助手')).toBeInTheDocument();
+    // 修复测试：使用部分匹配
+    expect(screen.getByText(/AI 助手/)).toBeInTheDocument();
 
     // System message (no role name shown)
     rerender(<MessageItem message={{ ...baseMessage, role: 'system' }} />);
     expect(screen.queryByText('我')).not.toBeInTheDocument();
-    expect(screen.queryByText('AI助手')).not.toBeInTheDocument();
+    expect(screen.queryByText(/AI 助手/)).not.toBeInTheDocument();
   });
 
   it('should handle long content with proper formatting', () => {
