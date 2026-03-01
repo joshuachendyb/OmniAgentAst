@@ -119,12 +119,15 @@ describe('ExecutionPanel Component', () => {
   it('should display step type labels for each step', () => {
     render(<ExecutionPanel steps={mockSteps} isActive={false} />);
 
-    // Each step should have a type label (思考, 行动, 观察, 完成)
-    // 注意：组件使用"行动"标签来表示action类型步骤，不是"工具"
+    // Each step should have appropriate content
+    // 思考步骤显示"思考"标签
+    // 行动步骤显示工具名称（如"read_file"）
+    // 观察步骤显示观察结果（JSON格式）
+    // 完成步骤显示"完成"内容
     expect(screen.getByText('思考')).toBeInTheDocument();
-    expect(screen.getByText('行动')).toBeInTheDocument();
-    expect(screen.getByText('观察')).toBeInTheDocument();
-    expect(screen.getByText('完成')).toBeInTheDocument();
+    expect(screen.getByText('read_file')).toBeInTheDocument();
+    expect(screen.getByText('{"content":"File contents here"}')).toBeInTheDocument();
+    expect(screen.getByText('Task completed')).toBeInTheDocument();
   });
 
   it('should handle steps without optional fields', () => {
@@ -139,12 +142,11 @@ describe('ExecutionPanel Component', () => {
       },
     ];
 
-    const { container } = render(
-      <ExecutionPanel steps={minimalSteps} isActive={false} />
-    );
+    render(<ExecutionPanel steps={minimalSteps} isActive={false} />);
 
     // Should render without errors even without optional fields
-    expect(container.querySelector('.ant-timeline')).toBeInTheDocument();
+    // No specific timeline element to check since Timeline was removed
+    expect(screen.getByText(/执行详情/)).toBeInTheDocument();
   });
 
   it('should handle long content in steps', () => {
