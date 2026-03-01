@@ -127,14 +127,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
         if (message.content === "🤔 AI 正在思考..." && message.isStreaming) {
           return `🤔 AI 助手【加载中...】`;
         }
-        
+
         // 前端小新代修改 VIS-E02: 错误消息显示错误标识
         if (message.isError) {
           // 【修复 display_name 显示 bug】优先显示 displayName，其次 model
           // ✅ 老杨 UX 建议：添加错误图标（⚠️）
           const displayName = message.displayName || message.model;
-          return displayName 
-            ? `⚠️ AI 助手【${displayName}】【错误】` 
+          return displayName
+            ? `⚠️ AI 助手【${displayName}】【错误】`
             : `⚠️ AI 助手【错误】`;
         }
         // 【修复 display_name 显示 bug】优先显示 displayName，其次 model
@@ -360,11 +360,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
                 <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
               )}
             </div>
-            
+
             {/* ✅ 老杨 UX 建议：添加 CSS 动画 */}
-            {(message.content === "🤔 AI 正在思考..." && message.isStreaming) || message.isError ? (
+            {(message.content === "🤔 AI 正在思考..." && message.isStreaming) ||
+            message.isError ? (
               <style>{`
-                ${message.content === "🤔 AI 正在思考..." && message.isStreaming ? `
+                ${
+                  message.content === "🤔 AI 正在思考..." && message.isStreaming
+                    ? `
                   @keyframes thinking-pulse {
                     0%, 100% { opacity: 1; }
                     50% { opacity: 0.6; }
@@ -372,8 +375,12 @@ const MessageItem: React.FC<MessageItemProps> = ({
                   .thinking-message {
                     animation: thinking-pulse 1.5s ease-in-out infinite;
                   }
-                ` : ''}
-                ${message.isError ? `
+                `
+                    : ""
+                }
+                ${
+                  message.isError
+                    ? `
                   @keyframes error-fade-in {
                     from {
                       opacity: 0;
@@ -387,12 +394,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
                   .error-message {
                     animation: error-fade-in 0.3s ease-out;
                   }
-                ` : ''}
+                `
+                    : ""
+                }
               `}</style>
             ) : null}
 
-            {/* 执行过程展示（仅AI消息）- 前端小新代修改 */}
-            {showExecution && (
+            {/* 执行过程展示（仅 AI 消息）- 前端小新修复：添加消息类型判断 */}
+            {showExecution && message.role === "assistant" && (
               <div style={{ marginTop: 12 }}>
                 <Collapse
                   defaultActiveKey={
