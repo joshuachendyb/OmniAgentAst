@@ -949,10 +949,6 @@ async def validate_ai_service():
         # ⭐ 从全局状态获取 backup_path（由 update_config 设置）
         backup_path, config_path = AIServiceFactory.get_backup_paths()
         
-        # ⭐ 调试日志：记录验证信息
-        logger.info(f'🔍 [后端] 验证服务：backup_path={backup_path}, config_path={config_path}')
-        logger.info(f'🔍 [后端] 当前服务：provider={provider}, model={current_model}')
-        
         # 检查 API Key 是否为空
         if not ai_service.api_key or ai_service.api_key.strip() == "":
             # ⭐ 验证失败：恢复备份
