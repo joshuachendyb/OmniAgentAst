@@ -1173,6 +1173,77 @@ def _backup_config_file(config_path: Path) -> Path:
     return backup_path
 
 
+# ================================================================================
+# 防御性备份清理函数（暂时不启用，等待后续调试完成后再启用）
+# ================================================================================
+# 
+# 【背景】
+# 备份机制设计：
+#   1. 用户切换模型 → update_config → 创建备份文件
+#   2. 调用 validateService 验证
+#   3. 验证成功 → 删除备份
+#   4. 验证失败 → 恢复备份
+# 
+# 正常情况下：
+#   - 备份文件会在验证成功后立即删除
+#   - 不会出现多个备份文件遗留
+# 
+# 异常情况（需要清理）：
+#   1. 用户切换模型后直接关闭应用（没调用validateService）
+#   2. 应用异常崩溃
+#   3. 验证过程中网络中断
+#   → 以上情况会导致备份文件遗留
+# 
+# 启动时清理策略：
+#   1. 扫描 config 目录下的所有 config.yaml.backup.* 文件
+#   2. 删除所有遗留的备份文件
+#   3. 原因：当前配置文件已经是最新状态（成功时被删除，失败时被恢复）
+# 
+# 【何时启用】
+#   当前阶段暂时不启用，因为：
+#   1. 备份逻辑还在调试中
+#   2. 需要确保正常流程备份文件都能正确删除
+#   3. 调试完成后，再在后端启动时调用此函数
+# 
+# 【启用方式】
+#   在 backend/app/main.py 的启动流程中，首次调用API前调用此函数：
+#   
+#   from app.api.v1.config import cleanup_all_backups
+#   cleanup_all_backups(Path("D:/2bktest/MDview/OmniAgentAs-desk/config/config.yaml"))
+# 
+# ================================================================================
+def cleanup_all_backups(config_path: Path) -> int:
+    """
+    清理所有遗留的配置文件备份文件（防御性函数）
+    
+    【使用场景】
+    - 后端启动时调用
+    - 清理上次异常退出时遗留的备份文件
+    
+    【清理策略】
+    - 删除所有 config.yaml.backup.* 文件
+    - 原因：当前配置文件已经是正确状态
+#     - 成功时会删除最新备份，失败时会恢复备份
+    
+    【参数】
+    - config_path: 配置文件路径
+    
+    【返回值】
+    - 清理的备份文件数量
+    """
+    backup_files = list(config_path.parent.glob("config.yaml.backup.*"))
+    count = 0
+    for backup_file in backup_files:
+        backup_file.unlink(missing_ok=True)
+        logger.info(f"已清理遗留备份: {backup_file}")
+        count += 1
+    
+    if count > 0:
+        logger.info(f"启动时清理了 {count} 个遗留备份文件")
+    
+    return count
+
+
 def _validate_config_integrity(config_data: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
     """
     完整验证配置文件完整性
