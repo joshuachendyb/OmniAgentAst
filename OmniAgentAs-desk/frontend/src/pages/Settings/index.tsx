@@ -62,6 +62,7 @@ import {
   EyeOutlined,
   EyeInvisibleOutlined,
 } from "@ant-design/icons";
+import { configApi } from "../../services/api";
 import type { ProviderInfo } from "../../services/api";
 
 const { Text } = Typography;
