@@ -297,10 +297,10 @@ export interface SecurityConfig {
 export interface ConfigUpdate {
   ai_provider?: string;
   ai_model?: string;
-  zhipu_api_key?: string;
-  opencode_api_key?: string;
-  longcat_api_key?: string;
+  // ⭐ 修复：使用统一的 provider_api_keys，不硬编码 provider 名称
+  provider_api_keys?: Record<string, string>; // {provider_name: api_key}
   theme?: "light" | "dark";
+  language?: string; // ⭐ 新增：language 字段
   // 安全配置
   security?: SecurityConfig;
 }
