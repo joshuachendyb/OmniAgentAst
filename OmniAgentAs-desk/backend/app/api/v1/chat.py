@@ -85,6 +85,67 @@ def get_user_friendly_error(error: Exception) -> tuple[str, str]:
         # 其他错误返回通用信息，不泄露技术细节
         return ("unknown_error", "AI 处理异常，请稍后重试")
 
+
+# ============================================================
+# 统一中断检查工具函数 - 小沈代修改【修复问题 5】
+# ============================================================
+
+async def check_and_yield_if_interrupted(
+    task_id: str, 
+    running_tasks: dict, 
+    running_tasks_lock: asyncio.Lock
+) -> tuple[bool, str]:
+    """
+    检查任务是否被中断，如果是则返回中断消息
+    
+    Args:
+        task_id: 任务 ID
+        running_tasks: 运行中任务字典
+        running_tasks_lock: 任务锁
+    
+    Returns:
+        (is_interrupted, interrupt_message) 元组
+        - is_interrupted: 是否被中断
+        - interrupt_message: 中断消息（如果未被中断则为空字符串）
+    """
+    async with running_tasks_lock:
+        if running_tasks.get(task_id, {}).get("cancelled", False):
+            return True, f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\\n\\n"
+    return False, ""
+
+
+# ============================================================
+# 统一 final 响应工具函数 - 小沈代修改【修复问题 6】
+# ============================================================
+
+def create_final_response(
+    content: str,
+    model: str,
+    provider: str,
+    display_name: Optional[str] = None
+) -> str:
+    """
+    创建统一的 final 响应格式
+    
+    Args:
+        content: 最终内容
+        model: 模型名称
+        provider: 提供商
+        display_name: 显示名称（可选）
+    
+    Returns:
+        SSE 格式的 final 响应字符串
+    """
+    response = {
+        'type': 'final',
+        'content': content,
+        'model': model,
+        'provider': provider
+    }
+    if display_name:
+        response['display_name'] = display_name
+    return f"data: {json.dumps(response)}\\n\\n"
+
 router = APIRouter()
 
 class ChatMessage(BaseModel):
@@ -523,19 +584,17 @@ async def chat_stream(request: ChatRequest):
                             if result.success:
                                 result_content = getattr(result, 'content', '')
                                 display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
-                                yield f"data: {json.dumps({'type': 'final', 'content': result_content, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
+                                yield create_final_response(
+                                    content=result_content,
+                                    model=ai_service.model,
+                                    provider=ai_service.provider,
+                                    display_name=display_name
+                                )
                             else:
                                 result_error = getattr(result, 'error', '执行失败')
                                 display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
                                 yield f"data: {json.dumps({'type': 'error', 'content': result_error, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
                             
-                except Exception as e:
-                    # 【小沈代修改 - 修复问题 4】统一错误处理格式，记录日志
-                    logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
-                    yield create_error_response(
-                        error_type="file_operation_error",
-                        content="文件操作执行失败"
-                    )
                 except Exception as e:
                     # 【小沈代修改 - 修复问题 4】统一错误处理格式，记录日志
                     logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
