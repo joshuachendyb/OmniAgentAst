@@ -621,10 +621,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
 
                     // 调用API切换provider和model
                     await configApi.updateConfig({
-                      ai_provider: selectedModel.provider as
-                        | "zhipuai"
-                        | "opencode"
-                        | "longcat",
+                      ai_provider: selectedModel.provider, // ⭐ 删除类型断言，使用字符串
                       ai_model: modelName,
                     });
                     message.success(`已切换到 ${selectedModel.display_name}`);
