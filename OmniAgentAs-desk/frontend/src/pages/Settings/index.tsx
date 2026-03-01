@@ -62,7 +62,6 @@ import {
   EyeOutlined,
   EyeInvisibleOutlined,
 } from "@ant-design/icons";
-import { configApi, sessionApi } from "../../services/api";
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
