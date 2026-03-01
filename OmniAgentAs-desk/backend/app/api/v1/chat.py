@@ -530,7 +530,19 @@ async def chat_stream(request: ChatRequest):
                                 yield f"data: {json.dumps({'type': 'error', 'content': result_error, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
                             
                 except Exception as e:
-                    yield f"data: {json.dumps({'type': 'error', 'content': f'执行出错: {str(e)}'})}\n\n"
+                    # 【小沈代修改 - 修复问题 4】统一错误处理格式，记录日志
+                    logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
+                    yield create_error_response(
+                        error_type="file_operation_error",
+                        content="文件操作执行失败"
+                    )
+                except Exception as e:
+                    # 【小沈代修改 - 修复问题 4】统一错误处理格式，记录日志
+                    logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
+                    yield create_error_response(
+                        error_type="file_operation_error",
+                        content="文件操作执行失败"
+                    )
             else:
                 # 普通对话：调用AI服务（流式）
                 yield f"data: {json.dumps({'type': 'action', 'step': 1, 'content': '正在调用AI服务...'})}\n\n"

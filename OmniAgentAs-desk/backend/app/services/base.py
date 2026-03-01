@@ -33,11 +33,14 @@ class ChatResponse:
 
 
 class StreamChunk:
-    """流式响应片段"""
-    def __init__(self, content: str, model: str, is_done: bool = False):
+    """流式响应片段 - 小沈代修改【修复问题 7】"""
+    def __init__(self, content: str, model: str, is_done: bool = False, 
+                 error: Optional[str] = None, error_type: Optional[str] = None):
         self.content = content
         self.model = model
         self.is_done = is_done
+        self.error = error  # 新增：错误信息
+        self.error_type = error_type  # 新增：错误类型
 
 
 class BaseAIService:
@@ -142,11 +145,25 @@ class BaseAIService:
                 
                 yield StreamChunk(content="", model=self.model, is_done=True)
                 
-        except httpx.TimeoutException:
-            yield StreamChunk(content="", model=self.model, is_done=True)
+        except httpx.TimeoutException as e:
+            # 【小沈代修改 - 修复问题 7】返回详细错误信息
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                error="请求超时",
+                error_type="timeout_error"
+            )
         except Exception as e:
-            print(f"[BaseAIService] 流式调用失败: {str(e)}")
-            yield StreamChunk(content="", model=self.model, is_done=True)
+            # 【小沈代修改 - 修复问题 7】记录日志，返回用户友好错误
+            print(f"[BaseAIService] 流式调用失败：{str(e)}")
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                error="AI 服务调用失败",
+                error_type="unknown_error"
+            )
     
     async def validate(self) -> bool:
         """验证API Key是否有效"""
