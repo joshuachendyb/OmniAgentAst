@@ -295,7 +295,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
           offset={[6, -4]}
           showZero={false}
         >
-          <span>历史记录</span>
+          <span>历史会话</span>
         </Badge>
       ),
     },
@@ -308,7 +308,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     {
       key: "/settings",
       icon: <SettingOutlined />,
-      label: "设置",
+      label: "系统设置",
     },
   ];
 
