@@ -153,6 +153,23 @@ const NewChatContainer: React.FC = () => {
     useCallback((step: ExecutionStep) => {
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
+        // 【修复问题 7】如果是 start 步骤，创建占位消息
+        if (step.type === "start") {
+          // 检查是否已有消息
+          if (!lastMessage || lastMessage.role !== "assistant") {
+            const newAssistantMessage: Message = {
+              id: (Date.now() + 1).toString(),
+              role: "assistant",
+              content: step.content || "🤔 AI 正在思考...",
+              timestamp: new Date(),
+              executionSteps: [step],
+              isStreaming: true,
+              model: step.model,
+            };
+            return [...prev, newAssistantMessage];
+          }
+        }
+        // 普通步骤：追加到 executionSteps
         if (
           lastMessage &&
           lastMessage.role === "assistant" &&

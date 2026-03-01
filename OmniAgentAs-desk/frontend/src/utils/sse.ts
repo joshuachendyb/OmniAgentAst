@@ -366,11 +366,28 @@ const processSSEData = (
 
     switch (rawData.type) {
       case "start":
-        // 【前端小新代修改】收到start事件，保存后端返回的task_id
-        console.log("[SSE] 收到start事件:", rawData);
+        // 【修复问题 7】收到 start 事件，保存后端返回的所有信息
+        console.log("[SSE] 收到 start 事件:", rawData);
         if (rawData.task_id && setServerTaskId) {
           setServerTaskId(rawData.task_id);
         }
+        // 【修复问题 7】保存 model 和 provider 信息，供后续使用
+        if (rawData.model) {
+          (responseBufferRef.current as any)._model = rawData.model;
+        }
+        if (rawData.provider) {
+          (responseBufferRef.current as any)._provider = rawData.provider;
+        }
+        // 【修复问题 7】发送 start 步骤，用于创建占位消息
+        const startStep: ExecutionStep = {
+          type: "start",
+          content: "🤔 AI 正在思考...",
+          timestamp: Date.now(),
+          model: rawData.model,
+          provider: rawData.provider,
+        };
+        setExecutionSteps((prev) => [...prev, startStep]);
+        onStep?.(startStep);
         break;
 
       case "thought":
