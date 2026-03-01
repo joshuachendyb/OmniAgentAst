@@ -171,6 +171,12 @@ const NewChatContainer: React.FC = () => {
               provider: step.provider,
               displayName: step.display_name, // 【修复 display_name 显示 bug】直接使用后端返回的 display_name
             };
+            console.log(
+              "[NewChatContainer] 创建助手消息 - displayName:",
+              step.display_name,
+              "model:",
+              step.model
+            );
             return [...prev, newAssistantMessage];
           }
         }

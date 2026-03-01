@@ -139,6 +139,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
         }
         // 【修复 display_name 显示 bug】优先显示 displayName，其次 model
         const displayName = message.displayName || message.model;
+        console.log('[MessageItem] 显示名称 - displayName:', message.displayName, 'model:', message.model, '最终显示:', displayName);
         return displayName ? `AI 助手【${displayName}】` : "AI 助手";
       }
       case "system":
