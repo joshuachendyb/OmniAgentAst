@@ -1,5 +1,76 @@
 根据文档，联调步骤是：
 
+用户点击下拉框选择模型
+   ↓
+【第 1 步】前端 Select onChange 触发
+   value = "${provider}-${model}" (如："opencode-kimi-k2.5-free")
+   ↓
+【第 2 步】从 modelList 查找 selectedModel
+   const selectedModel = modelList.find(m => `${m.provider}-${m.model}` === value)
+   ↓
+【第 3 步】调用 API 切换模型
+   configApi.updateConfig({
+     ai_provider: selectedModel.provider,
+     ai_model: selectedModel.model
+   })
+   ↓
+【第 4 步】后端处理配置更新
+   4.1 备份配置文件 → backup_path
+   4.2 更新 ai.provider
+   4.3 更新 ai.model
+   4.4 清空缓存（AIServiceFactory._instance + _config）
+   4.5 设置全局备份路径（AIServiceFactory.set_backup_paths）
+   4.6 写入配置文件
+   4.7 返回成功（包含 backup_path）
+   ↓
+【第 5 步】前端更新选中状态
+   setCurrentProvider(value)  // "${provider}-${model}"
+   ↓
+【第 6 步】前端自动调用 handleCheckService
+   ↓
+【第 7 步】handleCheckService 刷新配置验证
+   configApi.validateFullConfig()
+   ↓
+【第 8 步】handleCheckService 刷新模型列表
+   configApi.getModelList()
+   ↓
+【第 9 步】后端 getModelList 确定 current_model
+   9.1 读取配置文件 ai.provider 和 ai.model
+   9.2 验证配置是否有效
+   9.3 设置 final_provider 和 final_model
+   9.4 构建模型列表，标记 current_model
+       is_current = (final_provider == provider_name and final_model == model_name)
+   9.5 返回模型列表
+   ↓
+【第 10 步】前端更新当前选中的模型
+   const currentModel = modelData.models.find(m => m.current_model === true)
+   setCurrentProvider(`${currentModel.provider}-${currentModel.model}`)
+   ↓
+【第 11 步】handleCheckService 验证服务可用性
+   chatApi.validateService() → GET /chat/validate
+   ↓
+【第 12 步】后端 validate_ai_service 验证
+   12.1 获取 AI 服务（加载配置）
+   12.2 获取 provider 和 model
+   12.3 获取 backup_path（从全局状态）
+   12.4 检查 API Key
+   12.5 调用 ai_service.validate()
+   12.6 验证成功 → 删除备份 ✅
+   12.7 验证失败 → 恢复备份 ❌
+   12.8 清除全局状态
+   12.9 返回验证结果
+   ↓
+【第 13 步】前端显示验证结果
+   setServiceStatus(status)
+   显示绿色（成功）或红色（失败）
+   ↓
+完成
+
+
+
+
+
+
 步骤1: 启动后端服务 ✅（已完成）
   ↓
 步骤2: 启动前端开发服务 ✅（已完成）
@@ -19,3 +90,12 @@
 步骤9: 问题修复
   ↓
 步骤10: 验收确认
+
+
+小新看 你之前有这样的想法——应该改为：
+
+if (!validation || !validation.success) {
+  // 仍然获取模型列表，但标记为不可用
+  const modelData = await configApi.getModelList();
+  setModelList(modelData.models || []);
+}——  小新  这个理解 你不对的 这个 检查的是配置文件，文件都失败了，读取列表是没有意义的。

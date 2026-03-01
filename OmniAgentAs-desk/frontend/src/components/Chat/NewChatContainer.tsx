@@ -526,8 +526,8 @@ const NewChatContainer: React.FC = () => {
                     };
                   })
                 );
-                // 也同步标题
-                const title = getSessionTitle(sessionData, "会话");
+                // 也同步标题 - 直接从API获取
+                const title = sessionData.title || "会话";
                 setSessionTitle(title);
                 if (sessionData.version !== undefined) {
                   setSessionVersion(sessionData.version);
@@ -554,7 +554,7 @@ const NewChatContainer: React.FC = () => {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [messages, sessionId, sessionTitle, getSessionTitle]);
+  }, [messages, sessionId, sessionTitle]);
 
   // P1级别优化：状态验证和同步机制
   useEffect(() => {
@@ -566,7 +566,7 @@ const NewChatContainer: React.FC = () => {
         const sessionData = await sessionApi.getSessionMessages(sessionId);
 
         // 获取后端返回的正确标题
-        const backendTitle = getSessionTitle(sessionData, "会话");
+        const backendTitle = sessionData.title || "会话";
 
         // 如果前端标题与后端不一致，强制同步
         if (backendTitle !== sessionTitle && backendTitle !== "会话") {
