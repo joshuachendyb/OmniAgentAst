@@ -306,7 +306,8 @@ export interface ConfigUpdate {
 }
 
 export interface ConfigValidateRequest {
-  provider: "zhipuai" | "opencode";
+  // ⭐ 修复：使用字符串，不硬编码 provider 名称
+  provider: string;
   api_key: string;
 }
 
