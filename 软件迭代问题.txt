@@ -67,6 +67,17 @@ OmniAgentAs-desk\doc\API接口说明-配置验证接口-2026-02-23.md  小沈提
 不知道谁修改了他们的位置， 而且 都model不是相应的provider的model  这个规则也是我才发现的， 你检查一下， 配置文件检查函数里面是不是有类似这样的检查规则，
 
 
+1. ai.provider 和ai.model  必须在顶层
+2. ai.model 必须是ai.provider 下的mode才可以的。
+3. 每一个 真实的provider下面不能有出现model 这个字段 ，只能有models 字段
+4. 整个 配置文件只能有一 ai.model 和 ai.provider
 
+我看你总结是 Provider配置验证规则
+- provider名称格式：只能包含字母、数字、下划线和连字符
+- model名称格式：只能包含字母、数字、下划线和连字符
+- 模型名称不能与provider名称相同
+- 模型名称不能与当前模型名称相同（已在使用中）————这条是错误 的。与下面一条错误相同的
+- 添加Provider时必须至少指定一个model）—— 这条是 provider下的model字段吗，如果是就是错误的非常错误。严重错误
+- 每个Provider至少包含一个model—— 描述不准确应该是 provider下面必须有models 字段 models里面至少一个model 
 
 
