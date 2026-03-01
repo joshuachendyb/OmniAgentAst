@@ -452,13 +452,9 @@ const processSSEData = (
       case "chunk": {
         // 流式内容片段 - 逐 token 返回
         console.log("[SSE] 内容片段:", rawData.content);
-        const contentLength = (rawData.content || "").length;
-        const contentStart = responseBufferRef.current.length;
-        const contentEnd = contentStart + contentLength;
         responseBufferRef.current += rawData.content || "";
         setCurrentResponse(responseBufferRef.current);
-        // 【修复问题 3】传递内容位置信息
-        onChunk?.(rawData.content || "", contentStart, contentEnd);
+        onChunk?.(rawData.content || "");
         break;
       }
       case "final": {

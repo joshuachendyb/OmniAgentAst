@@ -248,7 +248,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(({
    * 渲染步骤内容（专家级优化：移除 Card，优化布局）
    */
   const renderStepContent = useCallback((step: ExecutionStep, index: number) => {
-    const stepStyle = STEP_STYLES[step.type] || STEP_STYLES.thought;
+    const stepStyle = STEP_STYLES[step.type as keyof typeof STEP_STYLES] || STEP_STYLES.thought;
 
     switch (step.type) {
       case 'thought':
@@ -400,9 +400,9 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(({
     ...steps.map((step, index) => ({
       key: index,
       dot: getStepIcon(step.type),
-      color: STEP_STYLES[step.type]?.borderColor || '#999',
+      color: STEP_STYLES[step.type as keyof typeof STEP_STYLES]?.borderColor || '#999',
       label: (
-        <Tag color={STEP_STYLES[step.type]?.borderColor || '#999'} style={{ fontSize: 11 }}>
+        <Tag color={STEP_STYLES[step.type as keyof typeof STEP_STYLES]?.borderColor || '#999'} style={{ fontSize: 11 }}>
           {getStepLabel(step.type)}
         </Tag>
       ),

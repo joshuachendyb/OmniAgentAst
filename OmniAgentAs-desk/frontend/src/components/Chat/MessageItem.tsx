@@ -37,9 +37,10 @@ interface MessageItemProps {
     id: string;
     timestamp: Date;
     executionSteps?: ExecutionStep[];
-    model?: string; // 模型名称
-    isStreaming?: boolean; // 前端小新代修改：是否正在流式生成
-    isError?: boolean; // 前端小新代修改：是否为错误消息
+    model?: string;
+    isStreaming?: boolean;
+    isError?: boolean;
+    displayName?: string; // 前端小新代修改：显示名称
   };
   showExecution?: boolean;
 }
