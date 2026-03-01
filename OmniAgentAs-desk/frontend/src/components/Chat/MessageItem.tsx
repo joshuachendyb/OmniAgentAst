@@ -200,6 +200,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
           color: "#ad6800",
           maxWidth: "90%",
           textAlign: "center" as const,
+          wordBreak: "keep-all" as const, // ✅ 小新修复：系统消息不折行
+          overflowWrap: "anywhere" as const, // ✅ 小新修复：系统消息不折行
         };
       default:
         return baseStyle;
@@ -303,6 +305,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
               textAlign: isUser ? "right" : "left",
               padding: "0 4px",
               opacity: 0.85,
+              whiteSpace: "nowrap", // ✅ 小新修复：角色名称不折行
             }}
           >
             {getRoleName()}
