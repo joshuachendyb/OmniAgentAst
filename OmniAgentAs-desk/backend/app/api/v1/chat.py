@@ -19,12 +19,71 @@ from app.services.file_operations.agent import FileOperationAgent
 from app.services.shell_security import check_command_safety
 from app.utils.logger import logger
 
-# Provider显示名称映射
+# Provider 显示名称映射
 PROVIDER_DISPLAY_NAMES = {
     "longcat": "LongCat",
     "opencode": "OpenCode",
-    "zhipuai": "智谱GLM"
+    "zhipuai": "智谱 GLM"
 }
+
+# ============================================================
+# 统一错误处理工具函数 - 小沈代修改【修复问题 1、2、3】
+# ============================================================
+
+def create_error_response(
+    error_type: str,
+    content: str,
+    model: Optional[str] = None,
+    provider: Optional[str] = None
+) -> str:
+    """
+    创建统一的错误响应格式
+    
+    Args:
+        error_type: 错误类型（如 timeout_error, connection_error 等）
+        content: 用户友好的错误信息
+        model: 模型名称（可选）
+        provider: 提供商（可选）
+    
+    Returns:
+        SSE 格式的错误响应字符串
+    """
+    response = {
+        'type': 'error',
+        'error_type': error_type,
+        'content': content
+    }
+    if model:
+        response['model'] = model
+    if provider:
+        response['provider'] = provider
+    return f"data: {json.dumps(response)}\\n\\n"
+
+
+def get_user_friendly_error(error: Exception) -> tuple[str, str]:
+    """
+    获取用户友好的错误信息
+    
+    Args:
+        error: 异常对象
+    
+    Returns:
+        (error_type, error_message) 元组
+    """
+    error_type = type(error).__name__
+    
+    # 根据错误类型返回用户友好的错误信息
+    if error_type == "TimeoutError" or "timeout" in str(error).lower():
+        return ("timeout_error", "请求超时，请重试")
+    elif error_type == "ConnectionError" or "connection" in str(error).lower():
+        return ("connection_error", "网络连接失败，请检查网络")
+    elif error_type == "HTTPError" or "HTTP" in str(error).lower():
+        return ("http_error", "服务器响应异常，请稍后重试")
+    elif error_type == "ValueError":
+        return ("value_error", "参数值错误，请检查输入")
+    else:
+        # 其他错误返回通用信息，不泄露技术细节
+        return ("unknown_error", "AI 处理异常，请稍后重试")
 
 router = APIRouter()
 
