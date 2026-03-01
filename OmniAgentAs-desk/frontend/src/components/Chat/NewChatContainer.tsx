@@ -79,6 +79,8 @@ interface Message extends ChatMessage {
   isStreaming?: boolean;
   isError?: boolean; // 前端小新代修改：是否为错误消息
   model?: string;
+  provider?: string; // 前端小新代修改：提供商
+  displayName?: string; // 前端小新代修改：显示名称（如"OpenAI (GPT-4)"）
 }
 
 /**
@@ -165,6 +167,8 @@ const NewChatContainer: React.FC = () => {
               executionSteps: [step],
               isStreaming: true,
               model: step.model,
+              provider: step.provider,
+              displayName: step.model ? `${step.provider ? step.provider.toUpperCase() : ''} (${step.model})`.replace(/^ /, '') : undefined, // 【修复 display_name 显示 bug】构建 display_name
             };
             return [...prev, newAssistantMessage];
           }

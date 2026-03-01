@@ -124,9 +124,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
       case "assistant":
         // 前端小新代修改 VIS-E02: 错误消息显示错误标识
         if (message.isError) {
-          return message.model ? `AI 助手【${message.model}】【错误】` : "AI 助手【错误】";
+          // 【修复 display_name 显示 bug】优先显示 displayName，其次 model
+          const displayName = message.displayName || message.model;
+          return displayName ? `AI 助手【${displayName}】【错误】` : "AI 助手【错误】";
         }
-        return message.model ? `AI 助手【${message.model}】` : "AI 助手";
+        // 【修复 display_name 显示 bug】优先显示 displayName，其次 model
+        const displayName = message.displayName || message.model;
+        return displayName ? `AI 助手【${displayName}】` : "AI 助手";
       case "system":
         return "系统";
       default:

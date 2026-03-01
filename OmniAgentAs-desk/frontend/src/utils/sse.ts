@@ -365,18 +365,21 @@ const processSSEData = (
     };
 
     switch (rawData.type) {
-      case "start":
+      case "start": {
         // 【修复问题 7】收到 start 事件，保存后端返回的所有信息
         console.log("[SSE] 收到 start 事件:", rawData);
         if (rawData.task_id && setServerTaskId) {
           setServerTaskId(rawData.task_id);
         }
-        // 【修复问题 7】保存 model 和 provider 信息，供后续使用
+        // 【修复问题 7】保存 model、provider 和 display_name 信息
         if (rawData.model) {
           (responseBufferRef.current as any)._model = rawData.model;
         }
         if (rawData.provider) {
           (responseBufferRef.current as any)._provider = rawData.provider;
+        }
+        if (rawData.display_name) {
+          (responseBufferRef.current as any)._displayName = rawData.display_name;
         }
         // 【修复问题 7】发送 start 步骤，用于创建占位消息
         const startStep: ExecutionStep = {
@@ -389,6 +392,7 @@ const processSSEData = (
         setExecutionSteps((prev) => [...prev, startStep]);
         onStep?.(startStep);
         break;
+      }
 
       case "thought":
         // 思考步骤
