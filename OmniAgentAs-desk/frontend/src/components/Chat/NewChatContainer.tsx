@@ -776,6 +776,7 @@ const NewChatContainer: React.FC = () => {
                 role: m.role,
                 content: m.content,
                 timestamp: new Date(m.timestamp),
+                executionSteps: m.execution_steps || m.executionSteps || [],
               }))
             );
 

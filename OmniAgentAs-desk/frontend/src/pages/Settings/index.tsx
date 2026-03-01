@@ -1462,18 +1462,6 @@ const Settings: React.FC = () => {
     loadConfigInfo();
   }, []);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  // @ts-expect-error TS6133: 函数待使用
-  const _handleOpenConfigDir = () => {
-    message.info(`配置文件路径: ${configFilePath}`);
-  };
-
-  // TODO: 此函数待使用 - 配置文件路径功能完善后绑定到按钮 [2026-02-28 小新]
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  // @ts-expect-error TS6133: 函数待使用
-  const _handleShowFixModal = () => {
-    setShowFixModal(true);
-  };
-
   // Tab切换处理
   const handleTabChange = (key: string) => {
     if (isDirty) {
@@ -1544,7 +1532,6 @@ const Settings: React.FC = () => {
       >
         <p>当前Tab有未保存的修改，是否保存后切换？</p>
       </Modal>
-
     </div>
   );
 };
