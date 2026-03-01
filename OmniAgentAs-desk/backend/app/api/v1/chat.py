@@ -22,26 +22,19 @@ from pathlib import Path
 import shutil
 
 # Provider 显示名称映射
-# 从配置文件动态获取Provider显示名称 - 小新第二修复 2026-03-01 16:17:55
+# 从配置文件验证Provider是否存在 - 小新第二修复 2026-03-01 17:04:23
 def get_provider_display_name(provider: str) -> str:
     """
-    从配置文件动态获取Provider显示名称
-    如果配置文件中没有特殊显示名称，则返回原始provider名称
+    直接返回provider名称，不做任何映射转换
+    只验证provider是否在配置文件中存在
     """
     from app.config import get_config
     config = get_config()
     ai_config = config.get('ai', {})
     
-    # 检查配置文件中是否有这个provider
+    # 如果provider在配置文件中存在，直接返回原始名称
     if provider in ai_config:
-        # 对于中文友好显示，可以在这里添加简单的映射
-        # 但不应该硬编码，应该从配置文件读取
-        provider_mappings = {
-            "longcat": "LongCat",
-            "opencode": "OpenCode", 
-            "zhipuai": "智谱 GLM"
-        }
-        return provider_mappings.get(provider, provider)
+        return provider
     else:
         return provider
 
@@ -521,27 +514,7 @@ async def chat_stream(request: ChatRequest):
             yield f"data: {json.dumps({'type': 'thought', 'content': '正在分析任务...'})}\n\n"
             await asyncio.sleep(0.3)
             
-            # 【小沈代修改 - 修复问题 5】统一中断检查
-            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
-            if is_interrupted:
-                yield interrupt_msg
-                return
-            # 【小沈代修改 - 修复问题 5】统一中断检查
-            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
-            if is_interrupted:
-                yield interrupt_msg
-                return
-            # 【小沈代修改 - 修复问题 5】统一中断检查
-            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
-            if is_interrupted:
-                yield interrupt_msg
-                return
-            # 【小沈代修改 - 修复问题 5】统一中断检查
-            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
-            if is_interrupted:
-                yield interrupt_msg
-                return
-            # 【小沈代修改 - 修复问题 5】统一中断检查
+            # ⭐ 修复：只检查一次中断（删除 4 次重复代码）
             is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
             if is_interrupted:
                 yield interrupt_msg
