@@ -1365,7 +1365,7 @@ const NewChatContainer: React.FC = () => {
         }}
       >
         {messages.length === 0 ? (
-          <div style={{ textAlign: "center", color: "#999", marginTop: 60 }}>
+          <div style={{ textAlign: "center", color: "#999", marginTop: 50 }}>
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
             <p>开始与 AI 助手对话</p>
             <p style={{ fontSize: 12 }}>
