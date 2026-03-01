@@ -18,6 +18,8 @@ from app.services.file_operations.tools import get_file_tools
 from app.services.file_operations.agent import FileOperationAgent
 from app.services.shell_security import check_command_safety
 from app.utils.logger import logger
+from pathlib import Path
+import shutil
 
 # Provider 显示名称映射
 PROVIDER_DISPLAY_NAMES = {
@@ -810,12 +812,62 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
         )
 
 
+# ============================================================
+# 备份管理辅助函数 - 小欧新增
+# ============================================================
+
+async def _delete_backup():
+    """
+    删除备份文件（验证成功后调用）
+    """
+    try:
+        # 从 config.yaml 的同目录查找最新的备份文件
+        from app.api.v1.config import _get_config_path
+        config_path = _get_config_path()
+        backup_dir = config_path.parent
+        
+        # 查找最新的备份文件
+        backup_files = sorted(backup_dir.glob("config.yaml.backup.*"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if backup_files:
+            latest_backup = backup_files[0]
+            latest_backup.unlink(missing_ok=True)
+            logger.info(f"验证成功，已删除备份：{latest_backup}")
+    except Exception as e:
+        logger.error(f"删除备份失败：{e}")
+
+
+async def _restore_backup_and_delete():
+    """
+    恢复备份文件并删除备份（验证失败后调用）
+    """
+    try:
+        # 从 config.yaml 的同目录查找最新的备份文件
+        from app.api.v1.config import _get_config_path
+        config_path = _get_config_path()
+        backup_dir = config_path.parent
+        
+        # 查找最新的备份文件
+        backup_files = sorted(backup_dir.glob("config.yaml.backup.*"), key=lambda x: x.stat().st_mtime, reverse=True)
+        if backup_files:
+            latest_backup = backup_files[0]
+            # 恢复备份
+            shutil.copy2(str(latest_backup), str(config_path))
+            logger.info(f"验证失败，已恢复备份：{latest_backup}")
+            # 删除备份
+            latest_backup.unlink(missing_ok=True)
+            logger.info(f"已删除备份：{latest_backup}")
+    except Exception as e:
+        logger.error(f"恢复备份失败：{e}")
+
+
 @router.get("/chat/validate", response_model=ValidateResponse)
 async def validate_ai_service():
     """
-    验证AI服务配置是否正确
+    验证 AI 服务配置是否正确
     
-    用于测试API密钥是否有效
+    用于测试 API 密钥是否有效
+    
+    ⭐ 重要：验证成功后删除备份，验证失败时恢复备份
     """
     try:
         # 获取当前服务（同时会加载当前配置）
@@ -827,26 +879,32 @@ async def validate_ai_service():
         # 获取当前模型名称
         current_model = ai_service.model
         
-        # 检查API Key是否为空
+        # 检查 API Key 是否为空
         if not ai_service.api_key or ai_service.api_key.strip() == "":
+            # ⭐ 验证失败：恢复备份
+            await _restore_backup_and_delete()
             return ValidateResponse(
                 success=False,
                 provider=provider,
                 model=current_model,
-                message=f"AI服务未配置：{provider} ({current_model}) 的API Key为空。请在 config/config.yaml 中配置。"
+                message=f"AI 服务未配置：{provider} ({current_model}) 的 API Key 为空。请在 config/config.yaml 中配置。"
             )
         
         # 验证服务
         is_valid = await ai_service.validate()
         
         if is_valid:
+            # ⭐ 验证成功：删除备份
+            await _delete_backup()
             return ValidateResponse(
                 success=True,
                 provider=provider,
                 model=current_model,
-                message=f"AI服务验证成功，当前使用 {provider} ({current_model})"
+                message=f"AI 服务验证成功，当前使用 {provider} ({current_model})"
             )
         else:
+            # ⭐ 验证失败：恢复备份
+            await _restore_backup_and_delete()
             # 验证失败，尝试获取详细错误信息
             # 通过发送一个实际请求来获取错误详情
             test_response = None

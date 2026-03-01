@@ -400,16 +400,15 @@ async def update_config(config_update: ConfigUpdate):
         
         logger.info(f"配置更新成功：{config_update.dict(exclude_none=True)}")
         
-        # ⭐ 成功：删除备份文件
-        logger.info(f"配置更新成功，删除备份：{backup_path}")
-        backup_path.unlink(missing_ok=True)
+        # ⭐ 修改：暂时保留备份文件，由 validateService 决定删除/恢复
+        logger.info(f"配置更新成功，备份文件保留：{backup_path}，等待服务验证")
         
         return {
             "success": True,
-            "message": "配置更新成功",
+            "message": "配置更新成功，请验证服务可用性",
             "updated_fields": config_update.dict(exclude_none=True),
             "warnings": warnings,
-            "backup_path": None  # 已删除
+            "backup_path": str(backup_path)  # 保留备份路径，供 validateService 使用
         }
         
     except HTTPException:
