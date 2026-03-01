@@ -78,6 +78,7 @@ interface Message extends ChatMessage {
   executionSteps?: ExecutionStep[];
   isStreaming?: boolean;
   isError?: boolean; // 前端小新代修改：是否为错误消息
+  errorType?: string; // 前端小新代修改：错误类型
   model?: string;
   provider?: string; // 前端小新代修改：提供商
   displayName?: string; // 前端小新代修改：显示名称（如"OpenAI (GPT-4)"）
@@ -241,9 +242,18 @@ const NewChatContainer: React.FC = () => {
         return prev;
       });
     }, []),
-    // onComplete - 流式完成
+    // onComplete - 流式完成 - 前端小新代修改：适配后端新格式
     useCallback(
-      async (fullResponse: string, model?: string) => {
+      async (fullResponse: string, metadata?: string | {
+        model?: string;
+        provider?: string;
+        displayName?: string;
+      }) => {
+        // ✅ 支持旧格式（model 字符串）和新格式（metadata 对象）
+        const metadataObj = typeof metadata === 'string'
+          ? { model: metadata }
+          : metadata || {};
+        
         setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
@@ -252,7 +262,9 @@ const NewChatContainer: React.FC = () => {
               ...lastMessage,
               content: fullResponse,
               isStreaming: false,
-              model: model || lastMessage.model,
+              model: metadataObj.model || lastMessage.model,
+              provider: metadataObj.provider || lastMessage.provider,
+              displayName: metadataObj.displayName || lastMessage.displayName,
             };
             return updated;
           }
@@ -344,25 +356,39 @@ const NewChatContainer: React.FC = () => {
       },
       [sessionId, pendingMessage]
     ),
-    // onError - 流式错误
-    useCallback((error: string) => {
-      console.error("SSE流式错误:", error);
-
+    // onError - 流式错误 - 前端小新代修改：适配后端新格式
+    useCallback((error: string | {
+      type: string;
+      message: string;
+      rawMessage: string;
+      model?: string;
+      provider?: string;
+    }) => {
+      // ✅ 支持字符串和对象两种格式
+      const errorObj = typeof error === 'string' 
+        ? { type: 'unknown_error', message: error, rawMessage: error }
+        : error;
+      
+      console.error("SSE 流式错误:", errorObj);
+      
       // 🔴 修复：更好的用户反馈
       message.error({
-        content: `AI响应失败: ${error}`,
+        content: `AI 响应失败：${errorObj.message}`,
         duration: 5,
       });
-
+      
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (lastMessage && lastMessage.role === "assistant") {
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...lastMessage,
-            content: lastMessage.content || `**错误**: ${error}`,
+            content: lastMessage.content || `**错误**: ${errorObj.message}`,
             isError: true, // 前端小新代修改：标记为错误消息
             isStreaming: false,
+            errorType: errorObj.type,  // ✅ 保存错误类型
+            model: errorObj.model,  // ✅ 保存模型
+            provider: errorObj.provider,  // ✅ 保存提供商
           };
           return updated;
         }

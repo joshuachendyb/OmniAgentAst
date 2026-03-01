@@ -12,6 +12,26 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { message } from "antd";
 
 /**
+ * SSE 错误对象 - 前端小新代修改：支持新旧两种格式
+ */
+export interface SSEError {
+  type: string;
+  message: string;
+  rawMessage: string;
+  model?: string;
+  provider?: string;
+}
+
+/**
+ * SSE 元数据 - 前端小新代修改：支持新旧两种格式
+ */
+export interface SSEMetadata {
+  model?: string;
+  provider?: string;
+  displayName?: string;
+}
+
+/**
  * 执行步骤类型
  */
 export interface ExecutionStep {
@@ -43,6 +63,10 @@ export interface ExecutionStep {
   stepNumber?: number;
   /** 模型名称 - 前端小新代修改 */
   model?: string;
+  /** 提供商 - 前端小新代修改 */
+  provider?: string;
+  /** 显示名称 - 前端小新代修改 */
+  displayName?: string;
   /** 关联的内容起始位置 - 前端小新代修改：用于追溯思考过程 */
   contentStart?: number;
   /** 关联的内容结束位置 - 前端小新代修改：用于追溯思考过程 */
@@ -117,8 +141,8 @@ export const useSSE = (
   config: SSEConfig,
   onStep?: (step: ExecutionStep) => void,
   onChunk?: (chunk: string) => void,
-  onComplete?: (fullResponse: string, model?: string) => void,
-  onError?: (error: string) => void
+  onComplete?: (fullResponse: string, metadata?: string | SSEMetadata) => void,
+  onError?: (error: string | SSEError) => void
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -388,6 +412,7 @@ const processSSEData = (
           timestamp: Date.now(),
           model: rawData.model,
           provider: rawData.provider,
+          displayName: rawData.display_name,  // ✅ 新增
         };
         setExecutionSteps((prev) => [...prev, startStep]);
         onStep?.(startStep);
