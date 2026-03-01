@@ -22,11 +22,28 @@ from pathlib import Path
 import shutil
 
 # Provider 显示名称映射
-PROVIDER_DISPLAY_NAMES = {
-    "longcat": "LongCat",
-    "opencode": "OpenCode",
-    "zhipuai": "智谱 GLM"
-}
+# 从配置文件动态获取Provider显示名称 - 小新第二修复 2026-03-01 16:17:55
+def get_provider_display_name(provider: str) -> str:
+    """
+    从配置文件动态获取Provider显示名称
+    如果配置文件中没有特殊显示名称，则返回原始provider名称
+    """
+    from app.config import get_config
+    config = get_config()
+    ai_config = config.get('ai', {})
+    
+    # 检查配置文件中是否有这个provider
+    if provider in ai_config:
+        # 对于中文友好显示，可以在这里添加简单的映射
+        # 但不应该硬编码，应该从配置文件读取
+        provider_mappings = {
+            "longcat": "LongCat",
+            "opencode": "OpenCode", 
+            "zhipuai": "智谱 GLM"
+        }
+        return provider_mappings.get(provider, provider)
+    else:
+        return provider
 
 # ============================================================
 # 统一错误处理工具函数 - 小沈代修改【修复问题 1、2、3】
@@ -487,7 +504,7 @@ async def chat_stream(request: ChatRequest):
             ai_service = AIServiceFactory.get_service()
         
         # 【前端小新代修改】在流式响应开始时发送start事件，返回display_name、provider、model、task_id
-        display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
+        display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
         yield f"data: {json.dumps({
             'type': 'start',
             'display_name': display_name,
@@ -605,7 +622,7 @@ async def chat_stream(request: ChatRequest):
                             # 发送最终结果
                             if result.success:
                                 result_content = getattr(result, 'content', '')
-                                display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
+                                display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
                                 yield create_final_response(
                                     content=result_content,
                                     model=ai_service.model,
@@ -614,7 +631,7 @@ async def chat_stream(request: ChatRequest):
                                 )
                             else:
                                 result_error = getattr(result, 'error', '执行失败')
-                                display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
+                                display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
                                 yield f"data: {json.dumps({'type': 'error', 'content': result_error, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
                             
                 except Exception as e:
