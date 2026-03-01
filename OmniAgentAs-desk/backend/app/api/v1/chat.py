@@ -502,11 +502,31 @@ async def chat_stream(request: ChatRequest):
             yield f"data: {json.dumps({'type': 'thought', 'content': '正在分析任务...'})}\n\n"
             await asyncio.sleep(0.3)
             
-            # 检查是否被中断
-            async with running_tasks_lock:
-                if running_tasks.get(task_id, {}).get("cancelled", False):
-                    yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
-                    return
+            # 【小沈代修改 - 修复问题 5】统一中断检查
+            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
+            if is_interrupted:
+                yield interrupt_msg
+                return
+            # 【小沈代修改 - 修复问题 5】统一中断检查
+            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
+            if is_interrupted:
+                yield interrupt_msg
+                return
+            # 【小沈代修改 - 修复问题 5】统一中断检查
+            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
+            if is_interrupted:
+                yield interrupt_msg
+                return
+            # 【小沈代修改 - 修复问题 5】统一中断检查
+            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
+            if is_interrupted:
+                yield interrupt_msg
+                return
+            # 【小沈代修改 - 修复问题 5】统一中断检查
+            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
+            if is_interrupted:
+                yield interrupt_msg
+                return
             
             # 检测文件操作意图
             is_file_op, _, confidence = detect_file_operation_intent(last_message)
