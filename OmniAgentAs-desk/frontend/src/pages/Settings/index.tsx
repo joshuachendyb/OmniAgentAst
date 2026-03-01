@@ -1382,7 +1382,7 @@ const SecuritySettings: React.FC = () => {
 };
 
 /**
- * 会话历史页面组件
+ * 设置页面主组件
  */
 const SessionHistory: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -1729,17 +1729,6 @@ const Settings: React.FC = () => {
               key="security"
             >
               <SecuritySettings />
-            </TabPane>
-
-            <TabPane
-              tab={
-                <span>
-                  <HistoryOutlined /> 会话历史
-                </span>
-              }
-              key="sessions"
-            >
-              <SessionHistory />
             </TabPane>
           </Tabs>
         </div>

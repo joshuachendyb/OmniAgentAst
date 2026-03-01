@@ -159,6 +159,25 @@ const HistoryPage: React.FC = () => {
   };
 
   /**
+   * 清空所有会话 - 从小新代修改：从 Settings 页面迁移过来
+   */
+  const handleClearAllSessions = async () => {
+    try {
+      for (const session of sessions) {
+        await sessionApi.deleteSession(session.session_id);
+      }
+      message.success("所有会话已清空");
+      setSelectedSessions(new Set());
+      // 刷新列表
+      loadSessions(1, "");
+      setKeyword("");
+    } catch (error) {
+      message.error("清空会话失败");
+      console.error("清空会话失败:", error);
+    }
+  };
+
+  /**
    * 恢复对话 - 前端小新代修改 UX-H02: 添加loading状态
    */
   const handleResume = async (sessionId: string) => {
@@ -200,6 +219,19 @@ const HistoryPage: React.FC = () => {
               <HistoryOutlined /> 历史会话
             </Title>
             <Space>
+              {/* 清空所有会话按钮 - 从小新代修改：从 Settings 页面迁移 */}
+              <Popconfirm
+                title="确定要清空所有会话吗？"
+                description="此操作不可恢复"
+                onConfirm={handleClearAllSessions}
+                okText="确定"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+              >
+                <Button danger icon={<DeleteOutlined />}>
+                  清空所有会话
+                </Button>
+              </Popconfirm>
               {/* 前端小新代修改 UX-H03: 批量删除按钮 */}
               {selectedSessions.size > 0 && (
                 <Popconfirm

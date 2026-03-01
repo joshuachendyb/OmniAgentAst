@@ -1230,7 +1230,7 @@ const NewChatContainer: React.FC = () => {
                         );
                         setSessionTitle(titleInput.trim());
                         setTitleSource("user"); // ⭐ 标记为用户修改
-                        debouncedSaveTitle(sessionId, titleInput.trim());
+                        // ⭐ 修复 409 冲突：删除重复的 debouncedSaveTitle 调用，上面已经保存了
                         message.success("标题已保存");
                       } catch (error) {
                         console.warn("保存标题失败:", error);
@@ -1250,7 +1250,7 @@ const NewChatContainer: React.FC = () => {
                         );
                         setSessionTitle(titleInput.trim());
                         setTitleSource("user"); // ⭐ 标记为用户修改
-                        debouncedSaveTitle(sessionId, titleInput.trim());
+                        // ⭐ 修复 409 冲突：删除重复的 debouncedSaveTitle 调用，上面已经保存了
                         message.success("会话标题已更新");
                       } catch (error) {
                         message.error("更新标题失败");
