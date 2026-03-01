@@ -287,6 +287,55 @@ const NewChatContainer: React.FC = () => {
             console.log("✅ 消息和标题保存成功");
           } catch (saveError) {
             console.error("保存消息或标题失败:", saveError);
+            // 【修复问题 11】添加重试机制和用户提示
+            let retryCount = 0;
+            const maxRetries = 3;
+            
+            const retrySave = async () => {
+              while (retryCount < maxRetries) {
+                retryCount++;
+                message.warning({
+                  content: `保存失败，正在重试 (${retryCount}/${maxRetries})...`,
+                  duration: 2,
+                });
+                
+                try {
+                  await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                  await sessionApi.saveMessage(sessionId, {
+                    role: "user",
+                    content: currentPending.content,
+                  });
+                  await sessionApi.saveMessage(sessionId, {
+                    role: "assistant",
+                    content: fullResponse,
+                  });
+                  message.success("消息保存成功");
+                  return;
+                } catch (error) {
+                  if (retryCount === maxRetries) {
+                    message.error({
+                      content: "消息保存失败，请刷新页面重试",
+                      duration: 5,
+                    });
+                    // 本地缓存消息（防止丢失）
+                    try {
+                      const cacheKey = `unsaved_messages_${sessionId}`;
+                      const cached = JSON.parse(localStorage.getItem(cacheKey) || "[]");
+                      cached.push({
+                        user: currentPending.content,
+                        assistant: fullResponse,
+                        timestamp: Date.now(),
+                      });
+                      localStorage.setItem(cacheKey, JSON.stringify(cached));
+                    } catch (cacheError) {
+                      console.error("本地缓存失败:", cacheError);
+                    }
+                  }
+                }
+              }
+            };
+            
+            retrySave();
           }
         }
 
