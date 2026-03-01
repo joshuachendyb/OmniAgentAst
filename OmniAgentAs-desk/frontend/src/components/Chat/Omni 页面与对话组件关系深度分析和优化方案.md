@@ -1056,9 +1056,602 @@ console.log('[NewChatContainer] step.display_name:', step.display_name);
 
 ---
 
-**文档版本**: v3.0  
+---
+
+## 十二、基于真实代码的深度分析（实事求是的解决方案）
+
+**分析时间**: 2026-03-01 14:30:20  
+**分析人**: 小新（前端开发）  
+**分析依据**: 实际代码文件（MessageItem.tsx、ExecutionPanel.tsx、NewChatContainer.tsx、chat.py、sse.ts）
+
+### 12.1 问题1：系统消息折行 - CSS属性冲突
+
+#### 实际代码分析
+
+**当前代码状态**（MessageItem.tsx 第154-209行）：
+
+```typescript
+const getMessageStyle = () => {
+  const baseStyle: React.CSSProperties = {
+    maxWidth: "100%",
+    minWidth: "60px",
+    width: "auto",
+    padding: "8px 10px",
+    borderRadius: "16px",
+    position: "relative",
+    transition: "all 0.3s ease",
+    whiteSpace: "pre-wrap",      // ← 【问题1】这里设置了 pre-wrap
+    wordBreak: "normal",
+    overflowWrap: "break-word",
+  };
+
+  // ... 中间省略 ...
+
+  case "system":
+    return {
+      ...baseStyle,               // ← 【关键】继承了 baseStyle 的 whiteSpace: "pre-wrap"
+      background: "#fffbe6",
+      border: "1px solid #ffe58f",
+      color: "#ad6800",
+      maxWidth: "90%",
+      textAlign: "center" as const,
+      wordBreak: "keep-all" as const,      // ← 【修改1】试图覆盖
+      overflowWrap: "anywhere" as const,   // ← 【修改2】试图覆盖
+    };
+```
+
+#### 根本原因
+
+**CSS属性冲突**：
+
+1. `baseStyle` 中设置了 `whiteSpace: "pre-wrap"`，会导致文本在空格处换行
+2. system case 通过 `...baseStyle` 继承了这个属性
+3. 虽然 system case 设置了 `wordBreak: "keep-all"` 和 `overflowWrap: "anywhere"`
+4. 但是 `whiteSpace: "pre-wrap"` 的优先级更高，会优先生效
+5. 导致 `"💡 新会话已创建！开始与 AI 助手对话吧。"` 仍然会因为 `pre-wrap` 而折行
+
+#### 正确的解决方案
+
+```typescript
+// MessageItem.tsx - getMessageStyle 函数
+case "system":
+  return {
+    ...baseStyle,
+    background: "#fffbe6",
+    border: "1px solid #ffe58f",
+    color: "#ad6800",
+    maxWidth: "90%",
+    textAlign: "center" as const,
+    whiteSpace: "nowrap" as const,      // ← 【修复】改为 nowrap，强制不折行
+    // 移除 wordBreak 和 overflowWrap，因为 nowrap 已经足够
+  };
+```
+
+---
+
+### 12.2 问题2：角色名称折行 - 已修复
+
+#### 实际代码验证
+
+**当前代码**（MessageItem.tsx 第298-313行）：
+
+```typescript
+{/* 角色名称 */}
+{!isSystem && (
+  <div
+    style={{
+      marginBottom: 2,
+      fontSize: 12,
+      color: isUser ? "#1890ff" : "#52c41a",
+      fontWeight: 500,
+      textAlign: isUser ? "right" : "left",
+      padding: "0 4px",
+      opacity: 0.85,
+      whiteSpace: "nowrap", // ✅ 小新修复：角色名称不折行
+    }}
+  >
+    {getRoleName()}
+  </div>
+)}
+```
+
+#### 结论
+
+代码已正确设置 `whiteSpace: "nowrap"`，此问题应该已解决。
+
+**如果仍然折行，可能原因**：
+1. 浏览器缓存导致旧代码仍在运行
+2. 需要强制刷新（Ctrl + F5）
+
+---
+
+### 12.3 问题3：执行过程留白太大 - 代码已优化
+
+#### 实际代码检查
+
+**NewChatContainer.tsx 第1208-1209行**：
+```typescript
+headStyle={{ padding: "4px 4px 2px 4px" }}
+bodyStyle={{ padding: "0 4px 4px 4px" }}
+```
+✅ Card 的 padding 已经很小（4px）
+
+**NewChatContainer.tsx 第1346行**：
+```typescript
+padding: "0 2px 2px 0",
+marginBottom: 0,
+```
+✅ 消息列表容器的 padding 已经很小（2px）
+
+**MessageItem.tsx 第272-273行**：
+```typescript
+marginBottom: 12,
+padding: "0 4px",
+```
+✅ MessageItem 的间距已经很小（12px + 4px）
+
+**ExecutionPanel.tsx 第176-178行**：
+```css
+.ant-collapse-content-box {
+  padding: 2px 2px 1px 2px;  // ✅ 已设置极小 padding
+}
+
+.ant-collapse-header {
+  padding: 2px 4px !important;  // ✅ 已设置极小 padding
+  font-size: 12px;
+}
+```
+✅ Collapse 的 padding 已经很小（2px）
+
+#### 结论
+
+代码中的 padding 已经设置得很小，如果实际显示仍然留白太大，可能是因为：
+
+1. **浏览器缓存**导致旧代码仍在运行
+2. **CSS 优先级问题**导致设置被覆盖
+3. **其他未发现的位置**还有 padding
+
+**排查步骤**：
+
+**步骤1：强制刷新浏览器**
+- Windows: Ctrl + F5
+- Mac: Cmd + Shift + R
+
+**步骤2：检查浏览器开发者工具**
+```javascript
+// 在浏览器控制台执行
+const collapseContent = document.querySelector('.ant-collapse-content-box');
+console.log('padding:', window.getComputedStyle(collapseContent).padding);
+
+const collapseHeader = document.querySelector('.ant-collapse-header');
+console.log('padding:', window.getComputedStyle(collapseHeader).padding);
+```
+
+**步骤3：如果仍然很大，使用 !important**
+```css
+/* 在 ExecutionPanel.tsx 的 ANIMATION_STYLE 中添加 */
+.ant-collapse-content-box {
+  padding: 2px 2px 1px 2px !important;
+}
+
+.ant-collapse-header {
+  padding: 2px 4px !important;
+  min-height: 20px !important;  // ← 减少最小高度
+}
+
+.ant-timeline-item {
+  margin: 0 0 1px 0 !important;  // ← 减少 margin
+  padding: 0 !important;
+}
+
+.ant-timeline-item-content {
+  margin: 0 0 0 16px !important;  // ← 减少左边距
+}
+```
+
+---
+
+### 12.4 问题4：步骤布局错乱 - Timeline组件结构限制 ⭐ **最关键**
+
+#### 实际代码分析
+
+**当前代码**（ExecutionPanel.tsx 第474-506行）：
+
+```typescript
+const timelineItems = useMemo(
+  () => [
+    ...steps.map((step, index) => ({
+      key: index,
+      dot: getStepIcon(step.type),
+      color:
+        STEP_STYLES[step.type as keyof typeof STEP_STYLES]?.borderColor ||
+        "#999",
+      label: (                                // ← 【关键】Tag 放在 label 中
+        <Tag
+          color={
+            STEP_STYLES[step.type as keyof typeof STEP_STYLES]
+              ?.borderColor || "#999"
+          }
+          style={{ fontSize: 11 }}
+        >
+          {getStepLabel(step.type)}
+        </Tag>
+      ),
+      children: renderStepContent(step, index),  // ← 【关键】内容放在 children 中
+    })),
+  ],
+  [steps, isActive, getStepIcon, getStepLabel, renderStepContent]
+);
+```
+
+#### Timeline 渲染结果
+
+**Ant Design Timeline 的 HTML 结构**：
+
+```html
+<div class="ant-timeline">
+  <!-- Item 1 -->
+  <div class="ant-timeline-item">
+    <div class="ant-timeline-item-head">●</div>
+    <div class="ant-timeline-item-label">        <!-- ← Tag 在这里 -->
+      <Tag>思考</Tag>
+    </div>
+    <div class="ant-timeline-item-content">      <!-- ← 内容在这里 -->
+      <div className="step-item">
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <Tag>思考</Tag>  <!-- ← renderStepContent 中的 Tag -->
+          <div>内容...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+```
+
+#### 问题分析
+
+1. **Timeline.Item 的 label 和 children 是分开渲染的**
+   - label 渲染在 `.ant-timeline-item-label` 中
+   - children 渲染在 `.ant-timeline-item-content` 中
+   - 这两个 div 是兄弟元素，**默认是垂直排列的**
+
+2. **renderStepContent 中的 flex 布局无法跨越边界**
+   - 即使 `renderStepContent` 内部使用了 `display: 'flex'`
+   - 也只能控制 content 内部的内容
+   - 无法影响 label 和 content 的排列方式
+
+3. **结果**：
+   - 第一个 Tag（label 中的）单独一行
+   - 第二个 Tag（renderStepContent 中的）和内容在同一行
+   - 导致"竖立显示"
+
+#### 根本原因
+
+**Timeline 组件的 HTML 结构强制垂直布局，无法通过 CSS 改变。**
+
+#### 正确的解决方案
+
+**完全移除 Timeline，使用自定义布局**
+
+**修改 ExecutionPanel.tsx**：
+
+```typescript
+// 移除 Timeline 组件
+import { Collapse, Tag, Spin, Button, Space, Tooltip, Typography, message } from "antd";
+// import { Timeline } from "antd";  // ← 移除
+
+// 修改渲染逻辑
+const renderStepContent = useCallback(
+  (step: ExecutionStep, index: number) => {
+    const stepStyle =
+      STEP_STYLES[step.type as keyof typeof STEP_STYLES] ||
+      STEP_STYLES.thought;
+
+    switch (step.type) {
+      case "thought":
+        return (
+          <div className="step-item" style={{ display: 'flex', alignItems: 'flex-start', gap: '4px', marginBottom: '2px' }}>
+            <Tag color={stepStyle.borderColor} style={{ fontSize: 11, flexShrink: 0 }}>
+              思考
+            </Tag>
+            <div
+              style={{
+                ...stepStyle,
+                padding: "4px 6px",
+                borderRadius: 4,
+                fontSize: 11,
+                lineHeight: 1.4,
+                flex: 1,
+              }}
+            >
+              {step.content}
+            </div>
+          </div>
+        );
+
+      case "action":
+        return (
+          <div className="step-item">
+            <div className="action-step">
+              <div className="step-header" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <CodeOutlined />
+                <span>{step.tool}</span>
+                {/* ... 复制按钮 ... */}
+              </div>
+              {/* ... 参数和结果 ... */}
+            </div>
+          </div>
+        );
+
+      // ... 其他 case ...
+    }
+  },
+  [copiedIndex, copyToClipboard]
+);
+
+// 修改 Collapse 的 children
+return (
+  <>
+    <style>{ANIMATION_STYLE}</style>
+    <Collapse
+      activeKey={activeKey}
+      onChange={setActiveKey}
+      style={{
+        marginTop: 12,
+        background: "#fafafa",
+        borderRadius: 8,
+        overflow: "hidden",
+      }}
+      items={[
+        {
+          key: "1",
+          label: (
+            <Space>
+              {isActive ? (
+                <Spin indicator={<LoadingOutlined style={{ fontSize: 16 }} spin />} />
+              ) : hasError ? (
+                <CloseCircleOutlined style={{ color: "#ff4d4f" }} />
+              ) : (
+                <CheckCircleOutlined style={{ color: "#52c41a" }} />
+              )}
+              <span>
+                {isActive ? "正在执行" : "执行详情"}
+                {stepCount > 0 &&
+                  ` (${stepCount}步${
+                    totalTime ? `，耗时${formatDuration(totalTime)}` : ""
+                  })`}
+              </span>
+              {hasError && <Tag color="error">有错误</Tag>}
+            </Space>
+          ),
+          children: (
+            // ← 【修改】移除 Timeline，直接渲染步骤
+            <div style={{ padding: "4px" }}>
+              {steps.map((step, index) => (
+                <div key={index}>
+                  {renderStepContent(step, index)}
+                </div>
+              ))}
+              {isActive && (
+                <div style={{ color: "#1890ff", fontSize: 11, marginTop: "4px" }}>
+                  <LoadingOutlined style={{ fontSize: 10 }} spin /> 执行中...
+                </div>
+              )}
+            </div>
+          ),
+        },
+      ]}
+    />
+  </>
+);
+```
+
+**关键变化**：
+1. 移除 `Timeline` 组件
+2. 直接使用 `div` 渲染步骤
+3. 使用 `display: 'flex'` 控制 Tag 和内容的排列
+4. 统一间距为 2px
+
+---
+
+### 12.5 问题5：AI助手模型名称显示不对 - 需要数据流追踪
+
+#### 实际代码分析
+
+**后端代码**（chat.py 第487-495行）：
+
+```python
+# 【前端小新代修改】在流式响应开始时发送start事件，返回display_name、provider、model、task_id
+display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
+yield f"data: {json.dumps({
+    'type': 'start',
+    'display_name': display_name,  # ← 后端正确返回了 display_name
+    'provider': ai_service.provider,
+    'model': ai_service.model,
+    'task_id': task_id
+})}\n\n"
+```
+
+**SSE 类型定义**（sse.ts 第66-71行）：
+
+```typescript
+/** 显示名称（后端返回的完整名称，如"OpenAI (GPT-4)"） - 前端小新代修改 */
+display_name?: string;
+/** 提供商 - 前端小新代修改 */
+provider?: string;
+/** 显示名称 - 前端小新代修改 */
+displayName?: string;  // ← 【注意】有两个相似的字段
+```
+
+**NewChatContainer.tsx 第172行**：
+
+```typescript
+displayName: step.display_name, // 【修复 display_name 显示 bug】直接使用后端返回的 display_name
+```
+
+**MessageItem.tsx 第135-142行**：
+
+```typescript
+const displayName = message.displayName || message.model;
+return displayName ? `AI 助手【${displayName}】` : "AI 助手";
+```
+
+#### 问题排查步骤
+
+**步骤1：添加调试日志**
+
+后端（chat.py）：
+```python
+display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
+print(f"[DEBUG] display_name: {display_name}")  # ← 添加调试日志
+yield f"data: {json.dumps({
+    'type': 'start',
+    'display_name': display_name,
+    'provider': ai_service.provider,
+    'model': ai_service.model,
+    'task_id': task_id
+})}\n\n"
+```
+
+前端（sse.ts）：
+```typescript
+case "start":
+  console.log('[SSE] start 事件:', rawData);
+  console.log('[SSE] display_name:', rawData.display_name);
+  break;
+```
+
+前端（NewChatContainer.tsx 第172行）：
+```typescript
+displayName: step.display_name,
+console.log('[NewChatContainer] step.display_name:', step.display_name);  // ← 添加调试日志
+```
+
+前端（MessageItem.tsx 第135-136行）：
+```typescript
+const displayName = message.displayName || message.model;
+console.log('[MessageItem] message.displayName:', message.displayName);  // ← 添加调试日志
+console.log('[MessageItem] message.model:', message.model);
+```
+
+**步骤2：运行测试**
+
+1. 启动后端服务
+2. 启动前端服务
+3. 发送消息
+4. 查看浏览器控制台的日志
+
+**步骤3：根据日志结果修复**
+
+**场景1：后端没有返回 display_name**
+```python
+# 检查 backend/app/api/v1/chat.py 第487-495行
+# 确保 display_name 被正确计算和返回
+```
+
+**场景2：前端没有正确接收**
+```typescript
+// 检查 frontend/src/utils/sse.ts
+// 确保 ExecutionStep 类型定义正确
+export interface ExecutionStep {
+  display_name?: string;  // ← 确保这个字段存在
+}
+```
+
+**场景3：字段名不一致**
+```typescript
+// NewChatContainer.tsx 第172行
+displayName: step.display_name,  // ← 使用后端返回的字段名
+
+// sse.ts 第66-71行
+display_name?: string;  // ← 统一使用下划线命名
+// displayName?: string;  // ← 移除重复字段
+```
+
+**场景4：数据传递正确，但显示仍然错误**
+```typescript
+// MessageItem.tsx 第135-142行
+const displayName = message.displayName || message.model;
+console.log('[MessageItem] 最终显示:', displayName);
+return displayName ? `AI 助手【${displayName}】` : "AI 助手";
+```
+
+---
+
+### 12.6 实施优先级
+
+| 优先级 | 问题 | 预计时间 | 难度 | 原因 |
+|-------|------|---------|------|------|
+| **P0** | 系统消息折行 | 10分钟 | 简单 | 修改一行代码 |
+| **P0** | 步骤布局错乱 | 2小时 | 中等 | 需要重写 ExecutionPanel |
+| **P1** | 执行过程留白太大 | 30分钟 | 简单 | 可能只需要清除缓存 |
+| **P1** | AI助手模型名称显示 | 1小时 | 中等 | 需要追踪数据流 |
+| **P2** | 角色名称折行 | 10分钟 | 简单 | 已修复，只需验证 |
+
+**总工作时间**：约3.5小时
+
+---
+
+### 12.7 验证与测试清单
+
+1. **系统消息折行**
+   - [ ] 修改代码
+   - [ ] 运行 `npm run build`
+   - [ ] 强制刷新浏览器（Ctrl + F5）
+   - [ ] 创建新会话
+   - [ ] 检查系统消息是否折行
+
+2. **步骤布局错乱**
+   - [ ] 重写 ExecutionPanel
+   - [ ] 运行 `npm run build`
+   - [ ] 强制刷新浏览器（Ctrl + F5）
+   - [ ] 发送消息
+   - [ ] 检查 Tag 和内容是否在同一行
+
+3. **执行过程留白**
+   - [ ] 强制刷新浏览器
+   - [ ] 使用浏览器开发者工具检查 padding
+   - [ ] 如果仍然很大，添加 !important
+
+4. **AI助手模型名称**
+   - [ ] 添加调试日志
+   - [ ] 运行测试
+   - [ ] 查看控制台日志
+   - [ ] 根据日志修复
+
+5. **角色名称折行**
+   - [ ] 强制刷新浏览器
+   - [ ] 检查角色名称是否折行
+
+---
+
+### 12.8 核心经验教训
+
+1. **仔细阅读实际代码，不要想当然**
+   - 我之前的分析没有仔细阅读代码，导致分析不准确
+   - 必须基于实际代码分析问题
+
+2. **CSS 属性的相互影响**
+   - `whiteSpace`、`wordBreak`、`overflowWrap` 会相互影响
+   - 需要理解它们的优先级和组合效果
+
+3. **UI 组件的限制**
+   - Timeline 组件的 HTML 结构强制垂直布局
+   - 不能通过 CSS 改变，必须修改 HTML 结构或移除组件
+
+4. **数据流追踪的重要性**
+   - 前后端数据流很长，每个环节都可能出问题
+   - 需要添加调试日志追踪数据流
+
+5. **浏览器缓存问题**
+   - 修改代码后可能不会立即生效
+   - 需要强制刷新或清除缓存
+
+---
+
+**文档版本**: v4.0  
 **创建时间**: 2026-03-01 12:09:24  
-**更新时间**: 2026-03-01 12:58:45  
+**更新时间**: 2026-03-01 14:30:20  
 **作者**: 小新（前端开发）  
 **状态**: 持续更新  
-**下次更新**: 根据排查结果更新
+**下次更新**: 根据实施结果更新
