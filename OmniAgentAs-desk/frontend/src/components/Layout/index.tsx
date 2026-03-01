@@ -95,15 +95,18 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   useEffect(() => {
     const loadSessionCount = async () => {
       try {
+        console.log("🔍 开始加载会话数量...");
         const response = await sessionApi.listSessions(1, 1);
+        console.log("📊 会话数量响应:", response);
         setSessionCount(response.total);
+        console.log("✅ 会话数量设置为:", response.total);
       } catch (error) {
-        console.error("加载会话数量失败:", error);
+        console.error("❌ 加载会话数量失败:", error);
         // 失败时显示 0，避免误导
         setSessionCount(0);
       }
     };
-    
+
     loadSessionCount();
   }, []);
 
