@@ -43,12 +43,10 @@ export interface ExecutionStep {
   stepNumber?: number;
   /** 模型名称 - 前端小新代修改 */
   model?: string;
-  /** 任务ID - 前端小新代修改 */
-  task_id?: string;
-  /** 显示名称 - 前端小新代修改 */
-  display_name?: string;
-  /** provider名称 - 前端小新代修改 */
-  provider?: string;
+  /** 关联的内容起始位置 - 前端小新代修改：用于追溯思考过程 */
+  contentStart?: number;
+  /** 关联的内容结束位置 - 前端小新代修改：用于追溯思考过程 */
+  contentEnd?: number;
 }
 
 /**
@@ -378,6 +376,9 @@ const processSSEData = (
       case "thought":
         // 思考步骤
         console.log("[SSE] 思考:", step.content);
+        // 【修复问题 3】添加内容位置信息
+        step.contentStart = responseBufferRef.current.length;
+        step.contentEnd = step.contentStart;
         setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
         break;
@@ -385,24 +386,35 @@ const processSSEData = (
       case "action":
         // 行动步骤
         console.log("[SSE] 行动:", step.content);
+        // 【修复问题 3】添加内容位置信息
+        step.contentStart = responseBufferRef.current.length;
+        step.contentEnd = step.contentStart;
         setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
         break;
 
       case "observation":
-        // 观察结果 - 包含ReAct三要素
+        // 观察结果 - 包含 ReAct 三要素
         console.log("[SSE] 观察:", step.result);
+        // 【修复问题 3】添加内容位置信息
+        step.contentStart = responseBufferRef.current.length;
+        step.contentEnd = step.contentStart;
         setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
         break;
 
-      case "chunk":
-        // 流式内容片段 - 逐token返回
+      case "chunk": {
+        // 流式内容片段 - 逐 token 返回
         console.log("[SSE] 内容片段:", rawData.content);
+        const contentLength = (rawData.content || "").length;
+        const contentStart = responseBufferRef.current.length;
+        const contentEnd = contentStart + contentLength;
         responseBufferRef.current += rawData.content || "";
         setCurrentResponse(responseBufferRef.current);
-        onChunk?.(rawData.content || "");
+        // 【修复问题 3】传递内容位置信息
+        onChunk?.(rawData.content || "", contentStart, contentEnd);
         break;
+      }
       case "final": {
         // 最终结果 - 前端小新代修改
         console.log("[SSE] 最终结果:", step.content);

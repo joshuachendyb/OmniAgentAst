@@ -170,6 +170,38 @@ const NewChatContainer: React.FC = () => {
       });
     }, []),
     // onChunk - 收到内容片段
+    useCallback((chunk: string, contentStart?: number, contentEnd?: number) => {
+      setMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (
+          lastMessage &&
+          lastMessage.role === "assistant" &&
+          lastMessage.isStreaming
+        ) {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            ...lastMessage,
+            content: lastMessage.content + chunk,
+          };
+          return updated;
+        }
+        // 【修复问题 2】如果没有 assistant 消息，创建第一条（收到第一个 chunk 时）
+        if (!lastMessage || lastMessage.role !== "assistant") {
+          const newAssistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: "assistant",
+            content: chunk, // 使用收到的第一个 chunk
+            timestamp: new Date(),
+            executionSteps: [],
+            isStreaming: true,
+            model: undefined,
+          };
+          return [...prev, newAssistantMessage];
+        }
+        return prev;
+      });
+    }, []),
+    // onChunk - 收到内容片段
     useCallback((chunk: string) => {
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
