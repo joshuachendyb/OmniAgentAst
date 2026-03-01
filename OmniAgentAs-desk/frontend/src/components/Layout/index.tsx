@@ -606,7 +606,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                   try {
                     // 从modelList中找到对应的模型，获取完整的provider和model
                     const selectedModel = modelList.find(
-                      (m) => String(m.id) === value
+                      (m) => `${m.provider}-${m.model}` === value
                     );
                     if (!selectedModel) {
                       message.error("未找到对应的模型");
@@ -634,7 +634,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                 }}
               >
                 {modelList.map((model) => (
-                  <Option key={model.id} value={String(model.id)}>
+                  <Option
+                    key={model.id}
+                    value={`${model.provider}-${model.model}`}
+                  >
                     {model.provider === defaultProvider ? "★ " : ""}
                     {model.display_name}
                   </Option>
