@@ -1414,16 +1414,7 @@ const Settings: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [pendingKey, setPendingKey] = useState<string>("");
-  const [configFilePath, setConfigFilePath] = useState<string>("");
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [fixingConfig, setFixingConfig] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [fixProgress, setFixProgress] = useState<{
-    current: number;
-    total: number;
-  }>({ current: 0, total: 100 });
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [showFixModal, setShowFixModal] = useState(false);
+  // ⭐ 删除未使用的状态变量：configFilePath, fixingConfig, fixProgress, showFixModal
 
   /**
    * 加载配置信息（只读，不备份）
@@ -1433,51 +1424,18 @@ const Settings: React.FC = () => {
     try {
       // 只读验证配置，不修改
       const validation = await configApi.validateFullConfig();
-      console.log('📋 配置验证结果:', validation);
-      
-      // 如果需要，可以从验证结果中提取配置文件路径信息
-      // 但不再调用 fixConfig 进行备份
+      console.log("📋 配置验证结果:", validation);
     } catch (error) {
       console.error("加载配置信息失败:", error);
     }
   };
 
-  // 配置修复功能（用户主动触发）
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleFixConfig = async () => {
-    setFixingConfig(true);
-    setFixProgress({ current: 0, total: 100 });
-
-    // 模拟修复进度
-    const progressInterval = setInterval(() => {
-      setFixProgress((prev) => {
-        if (prev.current >= 100) {
-          clearInterval(progressInterval);
-          return prev;
-        }
-        return { ...prev, current: prev.current + 10 };
-      });
-    }, 200);
-
-    try {
-      const result = await configApi.fixConfig();
-      clearInterval(progressInterval);
-      setFixProgress({ current: 100, total: 100 });
-      message.success("配置修复成功");
-      setConfigFilePath(result.backup_path);
-    } catch (error) {
-      clearInterval(progressInterval);
-      message.error("配置修复失败");
-    } finally {
-      setFixingConfig(false);
-    }
-  };
+  // ⭐ 删除未使用的函数：handleFixConfig
 
   // 清理定时器，防止内存泄漏
   useEffect(() => {
     return () => {
       // 组件卸载时清理所有可能的定时器
-      // 注意：progressInterval是局部变量，这里只是示例
     };
   }, []);
 
@@ -1485,8 +1443,6 @@ const Settings: React.FC = () => {
     // ⭐ 修复：启动时只读验证，不备份
     loadConfigInfo();
   }, []);
-
-  // TODO: 此函数待使用 - 配置文件路径功能完善后调用 [2026-02-28 小新]
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   // @ts-expect-error TS6133: 函数待使用
   const _handleOpenConfigDir = () => {

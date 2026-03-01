@@ -947,7 +947,7 @@ async def validate_ai_service():
                 success=False,
                 provider=provider,
                 model=current_model,
-                message=f"AI 服务未配置：{provider} ({current_model}) 的 API Key 为空。请在 config/config.yaml 中配置。"
+                message=f"AI 服务未配置：{provider} ({current_model}) 的 API Key 为空。请在 config/config.yaml 中配置。（配置已恢复到更新前的状态）"  # ⭐ 添加说明
             )
         
         # 验证服务
@@ -971,7 +971,7 @@ async def validate_ai_service():
                 await _restore_backup_and_delete_by_path(backup_path, config_path)
             # ⭐ 清除全局状态
             AIServiceFactory.clear_backup_paths()
-            # 验证失败，尝试获取详细错误信息
+            # 验证失败，尝试获取详细错误信息，并明确说明配置已恢复
             # 通过发送一个实际请求来获取错误详情
             test_response = None
             try:
