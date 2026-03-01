@@ -1425,16 +1425,24 @@ const Settings: React.FC = () => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [showFixModal, setShowFixModal] = useState(false);
 
-  const loadConfigFilePath = async () => {
+  /**
+   * 加载配置信息（只读，不备份）
+   * ⭐ 修复：启动时只验证配置，不修复/不备份
+   */
+  const loadConfigInfo = async () => {
     try {
-      const result = await configApi.fixConfig();
-      setConfigFilePath(result.backup_path);
+      // 只读验证配置，不修改
+      const validation = await configApi.validateFullConfig();
+      console.log('📋 配置验证结果:', validation);
+      
+      // 如果需要，可以从验证结果中提取配置文件路径信息
+      // 但不再调用 fixConfig 进行备份
     } catch (error) {
-      console.error("加载配置文件路径失败:", error);
+      console.error("加载配置信息失败:", error);
     }
   };
 
-  // 配置修复功能
+  // 配置修复功能（用户主动触发）
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleFixConfig = async () => {
     setFixingConfig(true);
@@ -1474,7 +1482,8 @@ const Settings: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    loadConfigFilePath();
+    // ⭐ 修复：启动时只读验证，不备份
+    loadConfigInfo();
   }, []);
 
   // TODO: 此函数待使用 - 配置文件路径功能完善后调用 [2026-02-28 小新]

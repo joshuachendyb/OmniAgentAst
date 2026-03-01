@@ -265,10 +265,14 @@ async def update_config(config_update: ConfigUpdate):
         
         # 1. 【新增】自动备份
         backup_path = _backup_config_file(config_path)
+        logger.info(f"配置文件已备份：{backup_path}")
         
         # 2. 读取现有配置
         with open(config_path, 'r', encoding='utf-8') as f:
-            config_data = yaml.safe_load(f) or {}
+            original_config_data = yaml.safe_load(f) or {}
+        
+        # 复制一份用于修改
+        config_data = original_config_data.copy()
         
         # 3. 应用更新（保持原有逻辑）
         if config_update.ai_provider:
@@ -370,6 +374,11 @@ async def update_config(config_update: ConfigUpdate):
         is_valid, errors, warnings = _validate_config_integrity(config_data)
         
         if not is_valid:
+            # ⭐ 验证失败：恢复备份
+            logger.warning(f"配置验证失败，恢复备份：{backup_path}")
+            shutil.copy2(backup_path, config_path)
+            # 删除备份文件
+            backup_path.unlink(missing_ok=True)
             return {
                 "success": False,
                 "message": "配置验证失败",
@@ -377,6 +386,28 @@ async def update_config(config_update: ConfigUpdate):
                 "warnings": warnings,
                 "backup_path": str(backup_path)
             }
+        
+        # 6. 写回配置文件
+        with open(config_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
+        
+        # 7. 重新加载
+        config = get_config_instance()
+        config.reload()
+        
+        logger.info(f"配置更新成功：{config_update.dict(exclude_none=True)}")
+        
+        # ⭐ 成功：删除备份文件
+        logger.info(f"配置更新成功，删除备份：{backup_path}")
+        backup_path.unlink(missing_ok=True)
+        
+        return {
+            "success": True,
+            "message": "配置更新成功",
+            "updated_fields": config_update.dict(exclude_none=True),
+            "warnings": warnings,
+            "backup_path": None  # 已删除
+        }
         
         # 6. 写回配置文件
         with open(config_path, 'w', encoding='utf-8') as f:
@@ -397,10 +428,24 @@ async def update_config(config_update: ConfigUpdate):
         }
         
     except HTTPException:
+        # ⭐ HTTP 异常：恢复备份
+        try:
+            logger.warning(f"发生 HTTP 异常，恢复备份：{backup_path}")
+            shutil.copy2(backup_path, config_path)
+            backup_path.unlink(missing_ok=True)
+        except:
+            pass
         raise
     except Exception as e:
-        # 【修复P2-007】记录详细日志但返回通用错误信息
-        logger.error(f"更新配置失败: {e}", exc_info=True)
+        # ⭐ 其他异常：恢复备份
+        try:
+            logger.error(f"更新配置失败，恢复备份：{backup_path}, 错误：{e}")
+            shutil.copy2(backup_path, config_path)
+            backup_path.unlink(missing_ok=True)
+        except:
+            pass
+        # 【修复 P2-007】记录详细日志但返回通用错误信息
+        logger.error(f"更新配置失败：{e}", exc_info=True)
         raise HTTPException(status_code=500, detail="更新配置失败，请稍后重试")
 
 
