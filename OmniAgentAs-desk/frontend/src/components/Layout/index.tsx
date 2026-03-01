@@ -614,10 +614,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                     }
 
                     // 从model id中提取model名称 (格式: "provider-modelname")
-                    const modelName = value.replace(
-                      `${selectedModel.provider}-`,
-                      ""
-                    );
+                    const modelName = selectedModel.model;  // 直接使用 selectedModel.model
 
                     // 调用API切换provider和model
                     await configApi.updateConfig({
