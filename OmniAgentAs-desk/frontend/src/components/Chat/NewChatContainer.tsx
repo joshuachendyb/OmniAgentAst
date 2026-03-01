@@ -243,88 +243,101 @@ const NewChatContainer: React.FC = () => {
           return prev;
         });
 
-        // 保存消息到会话
-        const currentPending = pendingMessage;
-        if (sessionId && currentPending) {
-          try {
-            // 保存用户消息
-            await sessionApi.saveMessage(sessionId, {
-              role: "user",
-              content: currentPending.content,
-            });
+         // 保存消息到会话
+         const currentPending = pendingMessage;
+         if (sessionId && currentPending) {
+           try {
+             // 保存用户消息
+             await sessionApi.saveMessage(sessionId, {
+               role: "user",
+               content: currentPending.content,
+             });
 
-            // 保存AI回复
-            await sessionApi.saveMessage(sessionId, {
-              role: "assistant",
-              content: fullResponse,
-            });
+             // 保存AI回复
+             await sessionApi.saveMessage(sessionId, {
+               role: "assistant",
+               content: fullResponse,
+             });
 
-            // 🔴 修复：确保会话标题持久化
-            if (
-              sessionTitle &&
-              sessionTitle.trim() &&
-              sessionTitle !== "新会话"
-            ) {
-              debouncedSaveTitle(sessionId, sessionTitle);
-            }
+             // 🔴 修复：确保会话标题持久化
+             if (
+               sessionTitle &&
+               sessionTitle.trim() &&
+               sessionTitle !== "新会话"
+             ) {
+               debouncedSaveTitle(sessionId, sessionTitle);
+             }
 
-            console.log("✅ 消息和标题保存成功");
-          } catch (saveError) {
-            console.error("保存消息或标题失败:", saveError);
-            // 【修复问题 11】添加重试机制和用户提示
-            let retryCount = 0;
-            const maxRetries = 3;
+             console.log("✅ 消息和标题保存成功");
+           } catch (saveError: any) {
+             console.error("保存消息或标题失败:", saveError);
+             // 修复：正确的错误处理，而不是重复相同的失败操作
+             let retryCount = 0;
+             const maxRetries = 3;
 
-            const retrySave = async () => {
-              while (retryCount < maxRetries) {
-                retryCount++;
-                message.warning({
-                  content: `保存失败，正在重试 (${retryCount}/${maxRetries})...`,
-                  duration: 2,
-                });
+             const retrySave = async () => {
+               while (retryCount < maxRetries) {
+                 retryCount++;
+                 message.warning({
+                   content: `保存失败，正在重试 (${retryCount}/${maxRetries})...`,
+                   duration: 2,
+                 });
 
-                try {
-                  await new Promise((resolve) =>
-                    setTimeout(resolve, 1000 * retryCount)
-                  );
-                  await sessionApi.saveMessage(sessionId, {
-                    role: "user",
-                    content: currentPending.content,
-                  });
-                  await sessionApi.saveMessage(sessionId, {
-                    role: "assistant",
-                    content: fullResponse,
-                  });
-                  message.success("消息保存成功");
-                  return;
-                } catch (error) {
-                  if (retryCount === maxRetries) {
-                    message.error({
-                      content: "消息保存失败，请刷新页面重试",
-                      duration: 5,
-                    });
-                    // 本地缓存消息（防止丢失）
-                    try {
-                      const cacheKey = `unsaved_messages_${sessionId}`;
-                      const cached = JSON.parse(
-                        localStorage.getItem(cacheKey) || "[]"
-                      );
-                      cached.push({
-                        user: currentPending.content,
-                        assistant: fullResponse,
-                        timestamp: Date.now(),
-                      });
-                      localStorage.setItem(cacheKey, JSON.stringify(cached));
-                    } catch (cacheError) {
-                      console.error("本地缓存失败:", cacheError);
-                    }
-                  }
-                }
-              }
-            };
+                 try {
+                   await new Promise((resolve) =>
+                     setTimeout(resolve, 1000 * retryCount)
+                   );
+                   await sessionApi.saveMessage(sessionId, {
+                     role: "user",
+                     content: currentPending.content,
+                   });
+                   await sessionApi.saveMessage(sessionId, {
+                     role: "assistant",
+                     content: fullResponse,
+                   });
+                   message.success("消息保存成功");
+                   return;
+                 } catch (error: any) {
+                   // 检查是否是409版本冲突或其他错误
+                   if (error?.response?.status === 409) {
+                     message.error("会话数据冲突，请刷新页面");
+                     break; // 版本冲突不重试
+                   } else if (retryCount === maxRetries) {
+                     message.error({
+                       content: "消息保存失败，请刷新页面重试",
+                       duration: 5,
+                     });
+                     // 本地缓存消息（防止丢失）
+                     try {
+                       const cacheKey = `unsaved_messages_${sessionId}`;
+                       const cached = JSON.parse(
+                         localStorage.getItem(cacheKey) || "[]"
+                       );
+                       // 避免重复缓存
+                       const exists = cached.some((msg: any) => 
+                         msg.user === currentPending.content && 
+                         msg.assistant === fullResponse
+                       );
+                       if (!exists) {
+                         cached.push({
+                           user: currentPending.content,
+                           assistant: fullResponse,
+                           timestamp: Date.now(),
+                         });
+                         localStorage.setItem(cacheKey, JSON.stringify(cached));
+                         message.info("消息已暂存到本地");
+                       }
+                     } catch (cacheError) {
+                       console.error("本地缓存失败:", cacheError);
+                     }
+                     break; // 达到最大重试次数
+                   }
+                 }
+               }
+             };
 
-            retrySave();
-          }
+             retrySave();
+           }
         }
 
         setLoading(false);
@@ -579,9 +592,10 @@ const NewChatContainer: React.FC = () => {
     // 2. 次优先级：消息内容（只在没有API title时使用）
     if (sessionData.messages && sessionData.messages.length > 0) {
       const firstMessage = sessionData.messages[0];
-      if (firstMessage?.content) {
-        // 只取前30个字符，避免过长
-        const contentTitle = firstMessage.content.substring(0, 30).trim();
+      if (firstMessage?.content != null && firstMessage.content !== '') {
+        // 只取前30个字符，避免过长，确保 content 是字符串
+        const contentStr = String(firstMessage.content);
+        const contentTitle = contentStr.substring(0, 30).trim();
         if (contentTitle) {
           return contentTitle;
         }
@@ -785,9 +799,9 @@ const NewChatContainer: React.FC = () => {
 
                 return {
                   id: m.id?.toString() || Date.now().toString(),
-                  role: m.role,
-                  content: m.content,
-                  timestamp: new Date(m.timestamp),
+                  role: m.role || 'assistant', // 修复：确保 role 有效
+                  content: m.content || '', // 修复：确保 content 不为 undefined
+                  timestamp: new Date(m.timestamp || Date.now()), // 修复：确保 timestamp 有效
                   executionSteps,
                 };
               })
@@ -911,9 +925,9 @@ const NewChatContainer: React.FC = () => {
 
                 return {
                   id: m.id?.toString() || Date.now().toString(),
-                  role: m.role,
-                  content: m.content,
-                  timestamp: new Date(m.timestamp),
+                  role: m.role || 'assistant', // 修复：确保 role 有效
+                  content: m.content || '', // 修复：确保 content 不为 undefined
+                  timestamp: new Date(m.timestamp || Date.now()), // 修复：确保 timestamp 有效
                   executionSteps,
                 };
               })
@@ -1249,40 +1263,74 @@ const NewChatContainer: React.FC = () => {
                   onPressEnter={async (e) => {
                     e.preventDefault();
                     if (titleInput.trim() && sessionId) {
-                      try {
-                        // 🔴 修复：回车时保存
-                        await sessionApi.updateSession(
-                          sessionId,
-                          titleInput.trim(),
-                          sessionVersion
-                        );
-                        setSessionTitle(titleInput.trim());
-                        setTitleSource("user"); // ⭐ 标记为用户修改
-                        // ⭐ 修复 409 冲突：删除重复的 debouncedSaveTitle 调用，上面已经保存了
-                        message.success("标题已保存");
-                      } catch (error) {
-                        console.warn("保存标题失败:", error);
-                        message.error("保存标题失败，请重试");
-                      }
+                       try {
+                         // 🔴 修复：回车时保存
+                         await sessionApi.updateSession(
+                           sessionId,
+                           titleInput.trim(),
+                           sessionVersion
+                         );
+                         setSessionTitle(titleInput.trim());
+                         setTitleSource("user"); // ⭐ 标记为用户修改
+                         // ⭐ 修复 409 冲突：删除重复的 debouncedSaveTitle 调用，上面已经保存了
+                         message.success("标题已保存");
+                       } catch (error: any) {
+                         // ⭐ 处理 409 版本冲突
+                         if (error?.response?.status === 409) {
+                           message.error("会话已被其他用户修改，请刷新页面");
+                           // 尝试重新获取最新的会话信息
+                           try {
+                             const sessionData = await sessionApi.getSessionMessages(sessionId);
+                             if (sessionData.version) {
+                               setSessionVersion(sessionData.version);
+                             }
+                             if (sessionData.title) {
+                               setSessionTitle(sessionData.title);
+                             }
+                           } catch (refreshError) {
+                             console.error("刷新会话数据失败:", refreshError);
+                           }
+                         } else {
+                           console.warn("保存标题失败:", error);
+                           message.error("保存标题失败，请重试");
+                         }
+                       }
                     }
                     setEditingTitle(false);
                   }}
                   onBlur={async () => {
                     if (titleInput.trim() && sessionId) {
-                      try {
-                        // 🔴 修复：失去焦点时也保存
-                        await sessionApi.updateSession(
-                          sessionId,
-                          titleInput.trim(),
-                          sessionVersion
-                        );
-                        setSessionTitle(titleInput.trim());
-                        setTitleSource("user"); // ⭐ 标记为用户修改
-                        // ⭐ 修复 409 冲突：删除重复的 debouncedSaveTitle 调用，上面已经保存了
-                        message.success("会话标题已更新");
-                      } catch (error) {
-                        message.error("更新标题失败");
-                      }
+                       try {
+                         // 🔴 修复：失去焦点时也保存
+                         await sessionApi.updateSession(
+                           sessionId,
+                           titleInput.trim(),
+                           sessionVersion
+                         );
+                         setSessionTitle(titleInput.trim());
+                         setTitleSource("user"); // ⭐ 标记为用户修改
+                         // ⭐ 修复 409 冲突：删除重复的 debouncedSaveTitle 调用，上面已经保存了
+                         message.success("会话标题已更新");
+                       } catch (error: any) {
+                         // ⭐ 处理 409 版本冲突
+                         if (error?.response?.status === 409) {
+                           message.error("会话已被其他用户修改，请刷新页面");
+                           // 尝试重新获取最新的会话信息
+                           try {
+                             const sessionData = await sessionApi.getSessionMessages(sessionId);
+                             if (sessionData.version) {
+                               setSessionVersion(sessionData.version);
+                             }
+                             if (sessionData.title) {
+                               setSessionTitle(sessionData.title);
+                             }
+                           } catch (refreshError) {
+                             console.error("刷新会话数据失败:", refreshError);
+                           }
+                         } else {
+                           message.error("更新标题失败");
+                         }
+                       }
                     }
                     setEditingTitle(false);
                   }}

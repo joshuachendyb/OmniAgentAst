@@ -344,7 +344,10 @@ const HistoryPage: React.FC = () => {
                         <Button
                           type="link"
                           icon={<MessageOutlined />}
-                          onClick={() => handleResume(session.session_id)}
+                          onClick={(e) => {
+                            e.stopPropagation(); // 防止事件冒泡
+                            handleResume(session.session_id);
+                          }}
                           loading={loadingSessionId === session.session_id}
                         >
                           继续
@@ -354,13 +357,20 @@ const HistoryPage: React.FC = () => {
                         key="delete"
                         title="删除会话"
                         description={`确定要删除"${session.title}"吗？此操作不可恢复。`}
-                        onConfirm={() => handleDelete(session.session_id)}
+                        onConfirm={() => {
+                          handleDelete(session.session_id);
+                        }}
                         okText="删除"
                         cancelText="取消"
                         okButtonProps={{ danger: true }}
                       >
                         <Tooltip title="删除会话">
-                          <Button type="link" danger icon={<DeleteOutlined />}>
+                          <Button
+                            type="link"
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={(e) => e.stopPropagation()} // 防止事件冒泡
+                          >
                             删除
                           </Button>
                         </Tooltip>
@@ -370,6 +380,7 @@ const HistoryPage: React.FC = () => {
                       <Checkbox
                         checked={selectedSessions.has(session.session_id)}
                         onChange={(e) => {
+                          e.stopPropagation(); // 防止事件冒泡
                           const newSelected = new Set(selectedSessions);
                           if (e.target.checked) {
                             newSelected.add(session.session_id);

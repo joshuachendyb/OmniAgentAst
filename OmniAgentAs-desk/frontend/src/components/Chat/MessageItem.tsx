@@ -357,7 +357,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
               }
             >
               {/* 前端小新代修改：在流式生成时添加光标提示，使用默认值 false */}
-              {message.content}
+              {message.content && typeof message.content === 'string' 
+                ? message.content 
+                : String(message.content || '')}
               {(message.isStreaming ?? false) && (
                 <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
               )}

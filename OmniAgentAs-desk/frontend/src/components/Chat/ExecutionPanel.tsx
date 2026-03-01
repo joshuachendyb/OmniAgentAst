@@ -300,7 +300,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                         参数：
                       </Text>
                       <pre className="step-params">
-                        {JSON.stringify(step.params, null, 2)}
+                        {JSON.stringify(step.params || {}, null, 2)}
                       </pre>
                     </div>
                   )}
@@ -311,8 +311,8 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                       </Text>
                       <div className="step-result">
                         {typeof step.result === "string"
-                          ? step.result
-                          : JSON.stringify(step.result)}
+                          ? (step.result || '')
+                          : JSON.stringify(step.result || {})}
                       </div>
                     </div>
                   )}
@@ -331,11 +331,11 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                   }}
                 >
                   <EyeOutlined style={{ marginRight: 8 }} />
-                  <span>
-                    {typeof step.result === "string"
-                      ? step.result
-                      : JSON.stringify(step.result)}
-                  </span>
+                   <span>
+                     {typeof step.result === "string"
+                       ? (step.result || '')
+                       : JSON.stringify(step.result || {})}
+                   </span>
                   <Button
                     type="text"
                     size="small"
