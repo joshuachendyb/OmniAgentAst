@@ -901,8 +901,11 @@ const NewChatContainer: React.FC = () => {
           duration: 0,
         });
 
-        // 清除旧的sessionStorage，避免干扰
-        sessionStorage.removeItem(STORAGE_KEY);
+        // 🔴 修复：不要清除sessionStorage
+        // 原因：用户从历史页面点击会话后，如果清除了sessionStorage
+        // 返回聊天页面时无法恢复之前的会话状态
+        // 改为：加载URL会话后，也会更新sessionStorage（在下面代码中）
+        // sessionStorage.removeItem(STORAGE_KEY);
 
         const retryKey = `session-load-${urlSessionId}`;
         const currentRetry = retryCount[retryKey] || 0;
