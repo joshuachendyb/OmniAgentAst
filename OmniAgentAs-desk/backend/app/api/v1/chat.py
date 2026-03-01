@@ -668,7 +668,13 @@ async def chat_stream(request: ChatRequest):
             yield f"data: {json.dumps({'type': 'interrupted', 'content': '客户端断开连接，任务中断'})}\n\n"
             
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': f'流式响应出错: {str(e)}'})}\n\n"
+            # 【小沈代修改 - 统一错误处理】使用 get_user_friendly_error 和 create_error_response
+            logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
+            error_type, error_message = get_user_friendly_error(e)
+            yield create_error_response(
+                error_type=error_type,
+                content=error_message
+            )
         
         finally:
             # 清理任务
