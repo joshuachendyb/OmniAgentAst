@@ -170,7 +170,10 @@ const HistoryPage: React.FC = () => {
       }
 
       // ⭐ 修复：获取所有会话（不分页），确保删除全部
-      const allSessionsResponse = await sessionApi.listSessions(1, pagination.total);
+      const allSessionsResponse = await sessionApi.listSessions(
+        1,
+        pagination.total
+      );
       const allSessions = allSessionsResponse.sessions;
 
       if (allSessions.length === 0) {
@@ -201,14 +204,18 @@ const HistoryPage: React.FC = () => {
   };
 
   /**
-   * 恢复对话 - 前端小新代修改 UX-H02: 添加loading状态
+   * 恢复对话 - 前端小新代修改 UX-H02: 添加 loading 状态
    */
   const handleResume = async (sessionId: string) => {
+    console.log("🔄 准备跳转到会话:", sessionId);
     setLoadingSessionId(sessionId);
     try {
-      // 跳转到聊天页面，带上session_id参数（使用React Router，不刷新页面）
-      navigate(`/?session_id=${sessionId}`);
+      // 跳转到聊天页面，带上 session_id 参数（使用 React Router，不刷新页面）
+      // ⭐ 修复：使用 replace 避免浏览器历史记录堆积
+      navigate(`/?session_id=${sessionId}`, { replace: true });
+      console.log("✅ 跳转成功:", sessionId);
     } catch (error) {
+      console.error("❌ 跳转失败:", error);
       message.error("跳转失败");
     } finally {
       setLoadingSessionId(null);
