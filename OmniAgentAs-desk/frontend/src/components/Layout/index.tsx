@@ -193,7 +193,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         );
         if (currentModel) {
           // 使用id（数字类型），转为字符串保持一致
-          setCurrentProvider(String(currentModel.id));
+          setCurrentProvider(`${currentModel.provider}-${currentModel.model}`); // 2b50 4fee590dFf1a4f7f7528 provider-model 683c5f0f
         }
       }
 
@@ -256,7 +256,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
             (m) => m.current_model === true
           );
           if (currentModel) {
-            setCurrentProvider(String(currentModel.id));
+            setCurrentProvider(
+              `${currentModel.provider}-${currentModel.model}`
+            ); // 2b50 4fee590dFf1a4f7f7528 provider-model 683c5f0f
           }
         }
 
