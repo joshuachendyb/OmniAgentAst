@@ -28,13 +28,11 @@ import {
   message,
 } from "antd";
 import {
-  CaretRightOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   LoadingOutlined,
   CodeOutlined,
   EyeOutlined,
-  ThunderboltOutlined,
   DownloadOutlined,
   CopyOutlined,
   CheckOutlined,
@@ -199,46 +197,6 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
 
     const [activeKey, setActiveKey] = useState<string | string[]>("1");
     const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
-
-    /**
-     * 获取步骤图标
-     */
-    const getStepIcon = useCallback((type: ExecutionStep["type"]) => {
-      switch (type) {
-        case "thought":
-          return <ThunderboltOutlined style={{ color: "#faad14" }} />;
-        case "action":
-          return <CodeOutlined style={{ color: "#1890ff" }} />;
-        case "observation":
-          return <EyeOutlined style={{ color: "#52c41a" }} />;
-        case "final":
-          return <CheckCircleOutlined style={{ color: "#52c41a" }} />;
-        case "error":
-          return <CloseCircleOutlined style={{ color: "#ff4d4f" }} />;
-        default:
-          return <CaretRightOutlined />;
-      }
-    }, []);
-
-    /**
-     * 获取步骤标签
-     */
-    const getStepLabel = useCallback((type: ExecutionStep["type"]) => {
-      switch (type) {
-        case "thought":
-          return "思考";
-        case "action":
-          return "行动";
-        case "observation":
-          return "观察";
-        case "final":
-          return "完成";
-        case "error":
-          return "错误";
-        default:
-          return "步骤";
-      }
-    }, []);
 
     /**
      * 格式化耗时
@@ -469,41 +427,6 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
       [steps]
     );
 
-    // 生成 Timeline 项目（使用 useMemo 优化性能）
-    const timelineItems = useMemo(
-      () => [
-        ...steps.map((step, index) => ({
-          key: index,
-          dot: getStepIcon(step.type),
-          color:
-            STEP_STYLES[step.type as keyof typeof STEP_STYLES]?.borderColor ||
-            "#999",
-          label: (
-            <Tag
-              color={
-                STEP_STYLES[step.type as keyof typeof STEP_STYLES]
-                  ?.borderColor || "#999"
-              }
-              style={{ fontSize: 11 }}
-            >
-              {getStepLabel(step.type)}
-            </Tag>
-          ),
-          children: renderStepContent(step, index),
-        })),
-        ...(isActive
-          ? [
-              {
-                dot: <LoadingOutlined spin />,
-                color: "#1890ff",
-                children: <span style={{ color: "#1890ff" }}>执行中...</span>,
-              },
-            ]
-          : []),
-      ],
-      [steps, isActive, getStepIcon, getStepLabel, renderStepContent]
-    );
-
     return (
       <>
         <style>{ANIMATION_STYLE}</style>
@@ -567,11 +490,28 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                 </Space>
               ),
               children: (
-                <Timeline
-                  mode="left"
-                  style={{ padding: "8px 4px" }}
-                  items={timelineItems}
-                />
+                // ✅ 小新第二修复 2026-03-01 15:06:37：移除Timeline，使用自定义flex布局
+                // 解决步骤布局错乱问题：Timeline的label和children分在不同div中，导致Tag和内容竖立显示
+                <div style={{ padding: "4px" }}>
+                  {steps.map((step, index) => (
+                    <div key={index}>{renderStepContent(step, index)}</div>
+                  ))}
+                  {isActive && (
+                    <div
+                      style={{
+                        color: "#1890ff",
+                        fontSize: 11,
+                        marginTop: "4px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                      }}
+                    >
+                      <LoadingOutlined style={{ fontSize: 10 }} spin />{" "}
+                      执行中...
+                    </div>
+                  )}
+                </div>
               ),
             },
           ]}
