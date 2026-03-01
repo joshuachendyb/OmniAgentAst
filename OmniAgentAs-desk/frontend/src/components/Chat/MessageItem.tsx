@@ -121,16 +121,25 @@ const MessageItem: React.FC<MessageItemProps> = ({
     switch (message.role) {
       case "user":
         return "我";
-      case "assistant":
+      case "assistant": {
+        // ✅ 老杨 UX 建议：占位消息显示 loading 状态
+        if (message.content === "🤔 AI 正在思考..." && message.isStreaming) {
+          return `🤔 AI 助手【加载中...】`;
+        }
+        
         // 前端小新代修改 VIS-E02: 错误消息显示错误标识
         if (message.isError) {
           // 【修复 display_name 显示 bug】优先显示 displayName，其次 model
+          // ✅ 老杨 UX 建议：添加错误图标（⚠️）
           const displayName = message.displayName || message.model;
-          return displayName ? `AI 助手【${displayName}】【错误】` : "AI 助手【错误】";
+          return displayName 
+            ? `⚠️ AI 助手【${displayName}】【错误】` 
+            : `⚠️ AI 助手【错误】`;
         }
         // 【修复 display_name 显示 bug】优先显示 displayName，其次 model
         const displayName = message.displayName || message.model;
         return displayName ? `AI 助手【${displayName}】` : "AI 助手";
+      }
       case "system":
         return "系统";
       default:
@@ -334,13 +343,52 @@ const MessageItem: React.FC<MessageItemProps> = ({
                 overflowWrap: "break-word",
                 paddingRight: 32,
               }}
+              className={
+                // ✅ 老杨 UX 建议：占位消息添加脉冲动画
+                message.content === "🤔 AI 正在思考..." && message.isStreaming
+                  ? "thinking-message"
+                  : // ✅ 老杨 UX 建议：错误消息添加淡入动画
+                  message.isError
+                  ? "error-message"
+                  : ""
+              }
             >
-              {/* 前端小新代修改：在流式生成时添加光标提示，使用默认值false */}
+              {/* 前端小新代修改：在流式生成时添加光标提示，使用默认值 false */}
               {message.content}
               {(message.isStreaming ?? false) && (
                 <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
               )}
             </div>
+            
+            {/* ✅ 老杨 UX 建议：添加 CSS 动画 */}
+            {(message.content === "🤔 AI 正在思考..." && message.isStreaming) || message.isError ? (
+              <style>{`
+                ${message.content === "🤔 AI 正在思考..." && message.isStreaming ? `
+                  @keyframes thinking-pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.6; }
+                  }
+                  .thinking-message {
+                    animation: thinking-pulse 1.5s ease-in-out infinite;
+                  }
+                ` : ''}
+                ${message.isError ? `
+                  @keyframes error-fade-in {
+                    from {
+                      opacity: 0;
+                      transform: translateY(-10px);
+                    }
+                    to {
+                      opacity: 1;
+                      transform: translateY(0);
+                    }
+                  }
+                  .error-message {
+                    animation: error-fade-in 0.3s ease-out;
+                  }
+                ` : ''}
+              `}</style>
+            ) : null}
 
             {/* 执行过程展示（仅AI消息）- 前端小新代修改 */}
             {showExecution && (
