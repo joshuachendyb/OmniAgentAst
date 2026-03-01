@@ -790,9 +790,275 @@ marginTop: 6,      // 12 → 6px (-50%)
 
 ---
 
-**文档版本**: v2.0  
+## 十一、遗留问题深度分析（刷新页面后仍未解决）
+
+**分析时间**: 2026-03-01 12:58:45  
+**分析人**: 小新
+
+### 11.1 问题现象
+
+刷新页面后，发现以下两个问题**仍然存在**：
+
+1. ❌ **系统消息仍然折行**
+   - 现象："💡 新会话已创建！开始与 AI 助手对话吧。" 文字折行
+   - 预期：短提示不应该折行
+
+2. ❌ **AI 助手后面显示模型名称不对**
+   - 现象：显示【minimax-m2.5-free】（只有 model）
+   - 预期：应该显示【OpenAI (GPT-4)】（完整的 display_name）
+
+### 11.2 代码状态检查
+
+#### 问题 1：系统消息折行
+
+**代码已修改**：
+```typescript
+// MessageItem.tsx:203-204
+case "system":
+  return {
+    ...baseStyle,
+    wordBreak: "keep-all" as const, // ✅ 已修改
+    overflowWrap: "anywhere" as const, // ✅ 已修改
+  };
+```
+
+**但问题仍然存在，可能原因**：
+
+1. **浏览器缓存问题**
+   - 虽然刷新了页面，但可能使用了缓存的 JS 文件
+   - 需要强制刷新（Ctrl+F5）或清除缓存
+
+2. **样式覆盖问题**
+   - 可能有其他 CSS 规则覆盖了我们的设置
+   - 需要使用 `!important` 强制覆盖
+
+3. **父容器宽度限制**
+   - 如果父容器宽度太小，即使设置了 `wordBreak: "keep-all"` 也会折行
+   - 需要检查父容器的宽度设置
+
+#### 问题 2：模型名称显示
+
+**代码已修改**：
+```typescript
+// NewChatContainer.tsx:172
+displayName: step.display_name, // ✅ 已修改为直接使用后端返回
+
+// sse.ts:66
+display_name?: string; // ✅ 已添加字段
+```
+
+**但问题仍然存在，可能原因**：
+
+1. **后端没有返回 display_name**
+   - 后端可能没有正确返回 display_name 字段
+   - 需要检查后端代码和网络请求
+
+2. **displayName 没有被正确传递**
+   - step 中有 display_name，但可能没有传递到 message
+   - 需要检查数据流
+
+3. **MessageItem 没有正确使用 displayName**
+   - MessageItem 中可能还在使用旧的逻辑
+   - 需要检查 getRoleName 函数
+
+### 11.3 深入分析
+
+#### 问题 1 根本原因：CSS 优先级不够
+
+**分析**：
+```typescript
+// 当前代码（可能不够）
+wordBreak: "keep-all",
+overflowWrap: "anywhere"
+```
+
+**问题**：这些样式可能被 Ant Design 的默认样式覆盖了！
+
+**正确方案**：需要使用 `!important` 或者内联样式强制覆盖
+
+#### 问题 2 根本原因：后端可能没有返回 display_name
+
+**分析流程**：
+```
+后端 chat.py
+  ↓ 返回 start 事件
+  ↓ 包含 display_name 字段？
+前端 sse.ts
+  ↓ 接收 start 事件
+  ↓ step.display_name 有值吗？
+前端 NewChatContainer.tsx
+  ↓ 创建 message
+  ↓ message.displayName = step.display_name
+前端 MessageItem.tsx
+  ↓ 显示 AI 助手【displayName】
+  ↓ 显示正确吗？
+```
+
+**可能断点**：
+1. 后端没有返回 display_name
+2. 前端没有正确接收
+3. 数据没有正确传递
+
+### 11.4 排查步骤
+
+#### 问题 1 排查步骤
+
+1. **检查浏览器控制台**
+   ```javascript
+   // 在浏览器控制台执行
+   const systemMessage = document.querySelector('.ant-message-system');
+   console.log(window.getComputedStyle(systemMessage).wordBreak);
+   console.log(window.getComputedStyle(systemMessage).overflowWrap);
+   ```
+
+2. **强制刷新**
+   - Windows: Ctrl + F5
+   - Mac: Cmd + Shift + R
+
+3. **清除缓存**
+   - 关闭浏览器
+   - 清除浏览器缓存
+   - 重新打开
+
+4. **检查构建文件**
+   ```bash
+   # 检查 dist 目录是否更新
+   ls -la dist/
+   ```
+
+#### 问题 2 排查步骤
+
+1. **检查网络请求**
+   ```javascript
+   // 在浏览器控制台查看 Network 标签
+   // 找到 /api/v1/chat/stream 请求
+   // 查看响应中的 start 事件
+   // 是否包含 display_name 字段？
+   ```
+
+2. **检查后端代码**
+   ```python
+   # backend/app/api/v1/chat.py:488
+   display_name = f"{PROVIDER_DISPLAY_NAMES.get(ai_service.provider, ai_service.provider)} ({ai_service.model})"
+   # 这行代码执行了吗？
+   ```
+
+3. **前端添加调试日志**
+   ```typescript
+   // sse.ts:390
+   console.log('[SSE] start 事件:', rawData);
+   console.log('[SSE] display_name:', rawData.display_name);
+   ```
+
+4. **检查数据流**
+   ```typescript
+   // NewChatContainer.tsx:172
+   console.log('[NewChatContainer] step.display_name:', step.display_name);
+   console.log('[NewChatContainer] message.displayName:', message.displayName);
+   ```
+
+### 11.5 解决方案
+
+#### 问题 1 解决方案
+
+**方案 A：使用!important 强制覆盖**
+```typescript
+// MessageItem.tsx
+case "system":
+  return {
+    ...baseStyle,
+    wordBreak: 'keep-all !important' as any,
+    overflowWrap: 'anywhere !important' as any,
+  };
+```
+
+**方案 B：使用 CSS 类名**
+```typescript
+// MessageItem.tsx
+<div className={message.role === 'system' ? 'system-message' : ''}>
+  {message.content}
+</div>
+
+// CSS
+.system-message {
+  word-break: keep-all !important;
+  overflow-wrap: anywhere !important;
+}
+```
+
+**方案 C：检查父容器宽度**
+```typescript
+// 确保父容器足够宽
+maxWidth: 'calc(100% - 40px)', // 增加可用宽度
+```
+
+#### 问题 2 解决方案
+
+**步骤 1：确认后端返回**
+```python
+# backend/app/api/v1/chat.py
+print(f'[DEBUG] display_name: {display_name}')
+print(f'[DEBUG] start 事件数据：{data}')
+```
+
+**步骤 2：前端添加调试**
+```typescript
+// sse.ts
+case "start":
+  console.log('[SSE] 收到 start 事件:', rawData);
+  console.log('[SSE] display_name:', rawData.display_name);
+  break;
+```
+
+**步骤 3：检查数据流**
+```typescript
+// NewChatContainer.tsx
+console.log('[NewChatContainer] step:', step);
+console.log('[NewChatContainer] step.display_name:', step.display_name);
+```
+
+### 11.6 经验教训
+
+1. ✅ **代码修改≠生效**
+   - 修改了代码不一定立即生效
+   - 需要清除缓存、强制刷新
+
+2. ✅ **CSS 优先级陷阱**
+   - 内联样式可能被 CSS 类覆盖
+   - 需要使用 `!important` 强制覆盖
+
+3. ✅ **数据流追踪**
+   - 从后端到前端的数据流很长
+   - 每个环节都可能出问题
+   - 需要添加调试日志追踪
+
+4. ✅ **浏览器缓存**
+   - 浏览器缓存会导致修改不生效
+   - 开发环境应该禁用缓存
+
+### 11.7 下一步行动
+
+**立即执行**：
+1. 添加调试日志（sse.ts、NewChatContainer.tsx）
+2. 检查网络请求（浏览器 Network 标签）
+3. 确认后端返回数据
+4. 强制刷新页面（Ctrl+F5）
+
+**短期执行**：
+1. 使用 `!important` 强制覆盖 CSS
+2. 添加 CSS 类名方式
+3. 检查父容器宽度设置
+
+**长期执行**：
+1. 开发环境禁用浏览器缓存
+2. 添加数据流调试工具
+3. 建立 CSS 优先级规范
+
+---
+
+**文档版本**: v3.0  
 **创建时间**: 2026-03-01 12:09:24  
-**更新时间**: 2026-03-01 12:45:41  
+**更新时间**: 2026-03-01 12:58:45  
 **作者**: 小新（前端开发）  
 **状态**: 持续更新  
-**下次更新**: 根据 ExecutionPanel 重写情况更新
+**下次更新**: 根据排查结果更新
