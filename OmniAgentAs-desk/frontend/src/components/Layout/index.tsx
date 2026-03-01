@@ -39,7 +39,7 @@ import {
   CheckCircleOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { configApi, chatApi } from "../../services/api";
+import { configApi, chatApi, sessionApi } from "../../services/api";
 import type { MenuProps } from "antd";
 const { Option } = Select;
 import ShortcutPanel from "../ShortcutPanel";
@@ -79,8 +79,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   const navigate = useNavigate();
   // 未读消息数（实际应从全局状态获取）
   const [unreadCount] = useState(0);
-  // 会话数量
-  const [sessionCount] = useState(5);
+  // ⭐ 修复：会话数量 - 从后端获取真实值
+  const [sessionCount, setSessionCount] = useState(0);
   // 导航折叠状态
   const [collapsed, setCollapsed] = useState(false);
   // 移动端抽屉显示状态
@@ -89,7 +89,23 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   const [shortcutPanelVisible, setShortcutPanelVisible] = useState(false);
   // 响应式断点
   const screens = useBreakpoint();
-  const isMobile = !screens.md; // md以下认为是移动端
+  const isMobile = !screens.md; // md 以下认为是移动端
+
+  // ⭐ 新增：加载会话数量（用于菜单角标显示）
+  useEffect(() => {
+    const loadSessionCount = async () => {
+      try {
+        const response = await sessionApi.listSessions(1, 1);
+        setSessionCount(response.total);
+      } catch (error) {
+        console.error("加载会话数量失败:", error);
+        // 失败时显示 0，避免误导
+        setSessionCount(0);
+      }
+    };
+    
+    loadSessionCount();
+  }, []);
 
   // 【新增】检查服务状态
   const [serviceStatus, setServiceStatus] = useState<{

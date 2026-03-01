@@ -1649,9 +1649,176 @@ return displayName ? `AI 助手【${displayName}】` : "AI 助手";
 
 ---
 
-**文档版本**: v4.0  
+---
+
+## 十三、问题修复记录与追踪
+
+### 13.1 问题1：系统消息折行 - 修复完成 ✅
+
+**修复时间**: 2026-03-01 14:38:19  
+**修复人**: 小新第二  
+**优先级**: P0  
+**状态**: ✅ 已完成
+
+#### 13.1.1 问题分析过程
+
+**问题现象**：
+- 系统消息 `"💡 新会话已创建！开始与 AI 助手对话吧。"` 会折行显示
+- 短提示不应该折行，影响美观
+
+**原始代码分析**：
+
+```typescript
+// MessageItem.tsx 第154-166行
+const getMessageStyle = () => {
+  const baseStyle: React.CSSProperties = {
+    maxWidth: "100%",
+    minWidth: "60px",
+    width: "auto",
+    padding: "8px 10px",
+    borderRadius: "16px",
+    position: "relative",
+    transition: "all 0.3s ease",
+    whiteSpace: "pre-wrap",      // ← 【关键】这会导致在空格处换行
+    wordBreak: "normal",
+    overflowWrap: "break-word",
+  };
+
+  // ... 省略 ...
+
+  case "system":
+    return {
+      ...baseStyle,               // ← 继承了 whiteSpace: "pre-wrap"
+      background: "#fffbe6",
+      border: "1px solid #ffe58f",
+      color: "#ad6800",
+      maxWidth: "90%",
+      textAlign: "center" as const,
+      wordBreak: "keep-all" as const,      // ← 试图修复，但无效
+      overflowWrap: "anywhere" as const,   // ← 试图修复，但无效
+    };
+```
+
+**根本原因**：
+1. `baseStyle` 中设置了 `whiteSpace: "pre-wrap"`，会导致文本在空格处换行
+2. system case 通过 `...baseStyle` 继承了这个属性
+3. 虽然 system case 设置了 `wordBreak: "keep-all"` 和 `overflowWrap: "anywhere"`
+4. 但是 `whiteSpace: "pre-wrap"` 的优先级更高，会优先生效
+5. **CSS属性冲突**：`whiteSpace` 会覆盖 `wordBreak` 和 `overflowWrap` 的效果
+
+#### 13.1.2 修复方案
+
+**修复方法**：
+- 在 system case 中设置 `whiteSpace: "nowrap"`，覆盖 `baseStyle` 的 `"pre-wrap"`
+- 移除 `wordBreak` 和 `overflowWrap`，因为 `nowrap` 已经足够
+
+**修改后的代码**：
+
+```typescript
+// MessageItem.tsx 第195-204行
+case "system":
+  return {
+    ...baseStyle,
+    background: "#fffbe6",
+    border: "1px solid #ffe58f",
+    color: "#ad6800",
+    maxWidth: "90%",
+    textAlign: "center" as const,
+    whiteSpace: "nowrap" as const, // ✅ 覆盖 baseStyle 的 pre-wrap，强制不折行
+  };
+```
+
+**修改位置**：
+- 文件：`src/components/Chat/MessageItem.tsx`
+- 行号：第203行
+- 变更：将 `wordBreak: "keep-all"` 和 `overflowWrap: "anywhere"` 改为 `whiteSpace: "nowrap"`
+
+#### 13.1.3 测试验证
+
+**构建测试**：
+```bash
+cd D:\2bktest\MDview\OmniAgentAs-desk\frontend
+npm run build
+```
+
+**测试结果**：
+```
+> omniagent-frontend@0.1.0 build
+> tsc && vite build
+
+# ✅ 构建成功，没有引入新错误
+```
+
+**验证清单**：
+- [x] 修改代码
+- [x] 运行 `npm run build` - ✅ 通过
+- [ ] 强制刷新浏览器（Ctrl + F5） - ⏳ 待用户验证
+- [ ] 创建新会话 - ⏳ 待用户验证
+- [ ] 检查系统消息是否折行 - ⏳ 待用户验证
+
+#### 13.1.4 代码提交
+
+**提交信息**：
+```
+fix: 修复系统消息折行问题
+
+**问题描述**：
+- 系统消息 "💡 新会话已创建！开始与 AI 助手对话吧。" 会折行显示
+- 原因：baseStyle 的 whiteSpace: "pre-wrap" 会导致在空格处换行
+
+**修复方案**：
+- 在 system case 中设置 whiteSpace: "nowrap"，覆盖 baseStyle 的 pre-wrap
+- 移除 wordBreak 和 overflowWrap，因为 nowrap 已经足够
+
+**修改文件**：
+- src/components/Chat/MessageItem.tsx (第203行)
+
+**测试结果**：
+- ✅ 构建通过
+- ✅ 没有引入新错误
+
+**修复时间**：2026-03-01 14:38:19
+**修复人**：小新第二
+```
+
+**Git提交**：
+```bash
+git add src/components/Chat/MessageItem.tsx
+git commit -m "fix: 修复系统消息折行问题"
+# 提交成功：5102a1e
+```
+
+#### 13.1.5 修复效果评估
+
+**预期效果**：
+- ✅ 系统消息不再折行，完整显示在一行
+- ✅ 不影响其他消息类型的显示
+- ✅ 代码更简洁，移除了冗余的CSS属性
+
+**待验证项**（需要用户测试）：
+- [ ] 浏览器实际显示效果
+- [ ] 不同屏幕宽度下的表现
+- [ ] 长系统消息的处理
+
+#### 13.1.6 经验总结
+
+**成功的关键**：
+1. ✅ **仔细阅读原始代码**：发现了 `baseStyle` 中的 `whiteSpace: "pre-wrap"`
+2. ✅ **理解CSS优先级**：`whiteSpace` 会影响 `wordBreak` 和 `overflowWrap` 的效果
+3. ✅ **选择正确的解决方案**：直接覆盖 `whiteSpace` 而不是添加更多属性
+4. ✅ **保持代码简洁**：移除冗余的 `wordBreak` 和 `overflowWrap`
+
+**修复用时**：约10分钟（符合预期）
+
+**下一步**：
+- 等待用户验证浏览器显示效果
+- 如果验证通过，继续修复问题4（步骤布局错乱）
+
+---
+
+**文档版本**: v4.1  
 **创建时间**: 2026-03-01 12:09:24  
-**更新时间**: 2026-03-01 14:30:20  
-**作者**: 小新（前端开发）  
+**更新时间**: 2026-03-01 14:55:36  
+**作者**: 小新第二  
 **状态**: 持续更新  
-**下次更新**: 根据实施结果更新
+**下次更新**: 问题1验证后或问题4修复后更新
