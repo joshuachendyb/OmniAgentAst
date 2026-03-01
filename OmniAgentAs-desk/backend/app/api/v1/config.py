@@ -343,24 +343,11 @@ async def update_config(config_update: ConfigUpdate):
         # 更新API Key - 通用方式（不硬编码）
         if config_update.provider_api_keys:
             for provider_name, api_key in config_update.provider_api_keys.items():
-                # 【修复P2-003】验证API Key格式
-                if not api_key or not isinstance(api_key, str):
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Provider {provider_name} 的API Key不能为空"
-                    )
-                
-                # 基本格式验证：至少10个字符，去除空格后不能为空
-                cleaned_key = api_key.strip()
-                if len(cleaned_key) < 10:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Provider {provider_name} 的API Key格式无效（长度不足）"
-                    )
+                # ⭐ 用户要求：不验证 API Key 格式（2026-03-01）
                 
                 # 检查Provider是否存在
                 if provider_name in config_data.get('ai', {}):
-                    config_data['ai'][provider_name]['api_key'] = cleaned_key
+                    config_data['ai'][provider_name]['api_key'] = api_key.strip()
                     logger.info(f"更新Provider API Key成功: {provider_name}")
                 else:
                     raise HTTPException(
