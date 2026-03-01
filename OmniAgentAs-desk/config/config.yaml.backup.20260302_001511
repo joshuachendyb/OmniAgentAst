@@ -1,4 +1,6 @@
 ai:
+  provider: opencode
+  model: minimax-m2.5-free
   longcat:
     api_base: https://api.longcat.chat/openai/v1
     api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
@@ -7,7 +9,6 @@ ai:
     - LongCat-Flash-Thinking-2601
     - LongCat-Flash-Thinking
     timeout: 120
-  model: minimax-m2.5-free
   opencode:
     api_base: https://opencode.ai/zen/v1
     api_key: sk-6rMee9Ez89iRCEvDayPq2hdTrMGKyPesy5K88uZKVAqOrc7tg6sVqRI5T1pP2LXb
@@ -17,7 +18,6 @@ ai:
     - glm-5-free
     - kimi-k2.5-free
     timeout: 150
-  provider: opencode
   zhipuai:
     api_base: https://open.bigmodel.cn/api/paas/v4/
     api_key: 5790cd6d8981471da11dda7523da11ad.VT36xKqyrpQKVR8C
