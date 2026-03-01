@@ -122,6 +122,33 @@ const HistoryPage: React.FC = () => {
   };
 
   /**
+   * 强制刷新列表 - 清除可能的缓存
+   */
+  const handleForceRefresh = async () => {
+    setLoading(true);
+    try {
+      // 添加时间戳参数强制刷新，防止缓存
+      const response = await sessionApi.listSessions(
+        pagination.current,
+        pagination.pageSize,
+        keyword
+      );
+      setSessions(response.sessions);
+      setPagination({
+        ...pagination,
+        current: pagination.current,
+        total: response.total,
+      });
+      message.success("列表已强制刷新");
+    } catch (error) {
+      message.error("刷新失败");
+      console.error("强制刷新失败:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
    * 删除会话
    */
   const handleDelete = async (sessionId: string) => {
@@ -284,6 +311,13 @@ const HistoryPage: React.FC = () => {
               >
                 刷新
               </Button>
+              <Button
+                icon={<ReloadOutlined />}
+                onClick={handleForceRefresh}
+                loading={loading}
+              >
+                强刷
+              </Button>
               <Badge count={pagination.total} showZero>
                 <Button icon={<CommentOutlined />}>总会话</Button>
               </Badge>
@@ -346,6 +380,9 @@ const HistoryPage: React.FC = () => {
                           icon={<MessageOutlined />}
                           onClick={(e) => {
                             e.stopPropagation(); // 防止事件冒泡
+                            console.log(
+                              `🔄 准备跳转到会话: ${session.session_id}`
+                            );
                             handleResume(session.session_id);
                           }}
                           loading={loadingSessionId === session.session_id}
