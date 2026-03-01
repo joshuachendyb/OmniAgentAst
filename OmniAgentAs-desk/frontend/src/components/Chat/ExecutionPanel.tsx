@@ -174,11 +174,11 @@ const ANIMATION_STYLE = `
   
   /* 优化 Collapse 间距 */
   .ant-collapse-content-box {
-    padding: 8px 8px 4px 8px;
+    padding: 2px 2px 1px 2px;
   }
   
   .ant-collapse-header {
-    padding: 6px 12px !important;
+    padding: 2px 4px !important;
     font-size: 12px;
   }
 `;

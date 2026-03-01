@@ -270,7 +270,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           ? "flex-end"
           : "flex-start",
         marginBottom: 12, // ✅ 用户建议：24px → 12px（减少 50%），更紧凑
-        padding: "0 8px",
+        padding: "0 4px",
         width: "100%",
         boxSizing: "border-box" as const,
       }}
@@ -298,7 +298,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
         {!isSystem && (
           <div
             style={{
-              marginBottom: 4,
+              marginBottom: 2,
               fontSize: 12,
               color: isUser ? "#1890ff" : "#52c41a",
               fontWeight: 500,
@@ -435,7 +435,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           {/* 时间戳 */}
           <div
             style={{
-              marginTop: 4,
+              marginTop: 2,
               fontSize: 11,
               color: "#bfbfbf",
               textAlign: isUser ? "right" : "left",

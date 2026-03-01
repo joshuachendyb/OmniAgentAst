@@ -169,7 +169,11 @@ const NewChatContainer: React.FC = () => {
               isStreaming: true,
               model: step.model,
               provider: step.provider,
-              displayName: step.model ? `${step.provider ? step.provider.toUpperCase() : ''} (${step.model})`.replace(/^ /, '') : undefined, // 【修复 display_name 显示 bug】构建 display_name
+              displayName: step.model
+                ? `${step.provider ? step.provider.toUpperCase() : ""} (${
+                    step.model
+                  })`.replace(/^ /, "")
+                : undefined, // 【修复 display_name 显示 bug】构建 display_name
             };
             return [...prev, newAssistantMessage];
           }
@@ -212,16 +216,20 @@ const NewChatContainer: React.FC = () => {
     }, []),
     // onComplete - 流式完成 - 前端小新代修改：适配后端新格式
     useCallback(
-      async (fullResponse: string, metadata?: string | {
-        model?: string;
-        provider?: string;
-        displayName?: string;
-      }) => {
+      async (
+        fullResponse: string,
+        metadata?:
+          | string
+          | {
+              model?: string;
+              provider?: string;
+              displayName?: string;
+            }
+      ) => {
         // ✅ 支持旧格式（model 字符串）和新格式（metadata 对象）
-        const metadataObj = typeof metadata === 'string'
-          ? { model: metadata }
-          : metadata || {};
-        
+        const metadataObj =
+          typeof metadata === "string" ? { model: metadata } : metadata || {};
+
         setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
@@ -270,7 +278,7 @@ const NewChatContainer: React.FC = () => {
             // 【修复问题 11】添加重试机制和用户提示
             let retryCount = 0;
             const maxRetries = 3;
-            
+
             const retrySave = async () => {
               while (retryCount < maxRetries) {
                 retryCount++;
@@ -278,9 +286,11 @@ const NewChatContainer: React.FC = () => {
                   content: `保存失败，正在重试 (${retryCount}/${maxRetries})...`,
                   duration: 2,
                 });
-                
+
                 try {
-                  await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+                  await new Promise((resolve) =>
+                    setTimeout(resolve, 1000 * retryCount)
+                  );
                   await sessionApi.saveMessage(sessionId, {
                     role: "user",
                     content: currentPending.content,
@@ -300,7 +310,9 @@ const NewChatContainer: React.FC = () => {
                     // 本地缓存消息（防止丢失）
                     try {
                       const cacheKey = `unsaved_messages_${sessionId}`;
-                      const cached = JSON.parse(localStorage.getItem(cacheKey) || "[]");
+                      const cached = JSON.parse(
+                        localStorage.getItem(cacheKey) || "[]"
+                      );
                       cached.push({
                         user: currentPending.content,
                         assistant: fullResponse,
@@ -314,7 +326,7 @@ const NewChatContainer: React.FC = () => {
                 }
               }
             };
-            
+
             retrySave();
           }
         }
@@ -325,45 +337,53 @@ const NewChatContainer: React.FC = () => {
       [sessionId, pendingMessage]
     ),
     // onError - 流式错误 - 前端小新代修改：适配后端新格式
-    useCallback((error: string | {
-      type: string;
-      message: string;
-      rawMessage: string;
-      model?: string;
-      provider?: string;
-    }) => {
-      // ✅ 支持字符串和对象两种格式
-      const errorObj = typeof error === 'string' 
-        ? { type: 'unknown_error', message: error, rawMessage: error }
-        : error;
-      
-      console.error("SSE 流式错误:", errorObj);
-      
-      // 🔴 修复：更好的用户反馈
-      message.error({
-        content: `AI 响应失败：${errorObj.message}`,
-        duration: 5,
-      });
-      
-      setMessages((prev) => {
-        const lastMessage = prev[prev.length - 1];
-        if (lastMessage && lastMessage.role === "assistant") {
-          const updated = [...prev];
-          updated[updated.length - 1] = {
-            ...lastMessage,
-            content: lastMessage.content || `**错误**: ${errorObj.message}`,
-            isError: true, // 前端小新代修改：标记为错误消息
-            isStreaming: false,
-            errorType: errorObj.type,  // ✅ 保存错误类型
-            model: errorObj.model,  // ✅ 保存模型
-            provider: errorObj.provider,  // ✅ 保存提供商
-          };
-          return updated;
-        }
-        return prev;
-      });
-      setLoading(false);
-    }, [])
+    useCallback(
+      (
+        error:
+          | string
+          | {
+              type: string;
+              message: string;
+              rawMessage: string;
+              model?: string;
+              provider?: string;
+            }
+      ) => {
+        // ✅ 支持字符串和对象两种格式
+        const errorObj =
+          typeof error === "string"
+            ? { type: "unknown_error", message: error, rawMessage: error }
+            : error;
+
+        console.error("SSE 流式错误:", errorObj);
+
+        // 🔴 修复：更好的用户反馈
+        message.error({
+          content: `AI 响应失败：${errorObj.message}`,
+          duration: 5,
+        });
+
+        setMessages((prev) => {
+          const lastMessage = prev[prev.length - 1];
+          if (lastMessage && lastMessage.role === "assistant") {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              ...lastMessage,
+              content: lastMessage.content || `**错误**: ${errorObj.message}`,
+              isError: true, // 前端小新代修改：标记为错误消息
+              isStreaming: false,
+              errorType: errorObj.type, // ✅ 保存错误类型
+              model: errorObj.model, // ✅ 保存模型
+              provider: errorObj.provider, // ✅ 保存提供商
+            };
+            return updated;
+          }
+          return prev;
+        });
+        setLoading(false);
+      },
+      []
+    )
   );
 
   // 自动滚动到底部
@@ -1189,8 +1209,8 @@ const NewChatContainer: React.FC = () => {
 
   return (
     <Card
-      headStyle={{ padding: "8px 8px 4px 8px" }}
-      bodyStyle={{ padding: "0 8px 8px 8px" }}
+      headStyle={{ padding: "4px 4px 2px 4px" }}
+      bodyStyle={{ padding: "0 4px 4px 4px" }}
       title={
         <Space>
           <RobotOutlined />
@@ -1327,8 +1347,8 @@ const NewChatContainer: React.FC = () => {
           overflowY: "auto",
           border: "1px solid #f0f0f0",
           borderRadius: 8,
-          padding: "0 1px 1px 0",
-          marginBottom: 1,
+          padding: "0 2px 2px 0",
+          marginBottom: 0,
           backgroundColor: "#fafafa",
         }}
       >
