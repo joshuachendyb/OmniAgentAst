@@ -250,15 +250,39 @@ async def get_system_config():
 @router.put("/config")
 async def update_config(config_update: ConfigUpdate):
     """
-    更新系统配置（新版本：带验证和备份）
+    更新系统配置（带备份恢复机制）
     
-    将配置持久化到 config.yaml 文件，写入前先验证完整性
+    备份策略：
+    1. 更新前备份配置文件
+    2. 验证配置完整性
+    3. 保留备份文件（不立即删除）
+    4. 返回 backup_path 供 validate_ai_service 使用
+    
+    备份删除/恢复逻辑：
+    - 由 validate_ai_service 决定
+    - 验证成功 → 删除备份 ✅
+    - 验证失败 → 恢复备份 ❌
+    
+    设计原因：
+    - 配置更新后立即验证服务可用性
+    - 避免无效配置导致系统不可用
+    - 保证配置可回滚
+    
+    完整流程：
+    1. 用户切换模型 → updateConfig
+    2. 后端备份 → 更新配置 → 返回成功
+    3. 前端调用 → validateService
+    4. 验证成功 → 删除备份
+    5. 验证失败 → 恢复备份
     
     Args:
         config_update: 配置更新请求
         
     Returns:
-        dict: 更新结果
+        dict: 更新结果（包含 backup_path）
+    
+    作者：小欧
+    时间：2026-03-01
     """
     backup_path = None  # ⭐ 初始化备份路径
     config_path = None  # ⭐ 初始化配置路径

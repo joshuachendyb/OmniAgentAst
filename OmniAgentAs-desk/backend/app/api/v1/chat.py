@@ -819,6 +819,20 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
 async def _delete_backup():
     """
     删除备份文件（验证成功后调用）
+    
+    调用时机：
+    - validate_ai_service 验证成功后
+    
+    功能：
+    1. 查找 config.yaml 同目录的最新备份
+    2. 删除备份文件
+    
+    设计原因：
+    - 验证成功说明新配置可用
+    - 删除备份避免文件累积
+    
+    作者：小欧
+    时间：2026-03-01
     """
     try:
         # 从 config.yaml 的同目录查找最新的备份文件
@@ -839,6 +853,22 @@ async def _delete_backup():
 async def _restore_backup_and_delete():
     """
     恢复备份文件并删除备份（验证失败后调用）
+    
+    调用时机：
+    - validate_ai_service 验证失败后
+    
+    功能：
+    1. 查找 config.yaml 同目录的最新备份
+    2. 恢复备份到 config.yaml
+    3. 删除备份文件
+    
+    设计原因：
+    - 验证失败说明新配置不可用
+    - 恢复到旧配置保证系统可用
+    - 删除备份避免文件累积
+    
+    作者：小欧
+    时间：2026-03-01
     """
     try:
         # 从 config.yaml 的同目录查找最新的备份文件
