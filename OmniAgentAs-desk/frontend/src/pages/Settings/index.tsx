@@ -33,7 +33,6 @@ import {
   Card,
   Button,
   Tabs,
-  List,
   Tag,
   Space,
   Typography,
@@ -64,8 +63,6 @@ import {
   EyeInvisibleOutlined,
 } from "@ant-design/icons";
 import { configApi, sessionApi } from "../../services/api";
-import type { ProviderInfo, Session } from "../../services/api";
-// import type { FormInstance } from 'antd/es/form'; // 暂时保留，以备将来使用
 
 const { Text } = Typography;
 const { TabPane } = Tabs;

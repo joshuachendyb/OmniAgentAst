@@ -405,8 +405,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
             {/* 执行过程展示（仅 AI 消息）- 前端小新修复：添加消息类型判断 */}
             {showExecution && message.role === "assistant" && (
               <div style={{ marginTop: 6 }}>
-                {" "}
-                // ✅ 小新第二修复 2026-03-01 15:48:13：减少留白 12px → 6px
+                {/* ✅ 小新第二修复 2026-03-01 15:48:13：减少留白 12px → 6px */}
                 <Collapse
                   defaultActiveKey={
                     message.isStreaming ?? false ? ["execution"] : []
