@@ -200,8 +200,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           color: "#ad6800",
           maxWidth: "90%",
           textAlign: "center" as const,
-          wordBreak: "keep-all" as const, // ✅ 小新修复：系统消息不折行
-          overflowWrap: "anywhere" as const, // ✅ 小新修复：系统消息不折行
+          whiteSpace: "nowrap" as const, // ✅ 小新修复 2026-03-01 14:38:19：系统消息不折行，覆盖 baseStyle 的 pre-wrap
         };
       default:
         return baseStyle;
