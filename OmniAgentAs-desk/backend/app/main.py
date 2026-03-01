@@ -50,6 +50,9 @@ app = FastAPI(
     version=get_version()
 )
 
+# 应用启动时打印版本信息
+print(f"\n🚀 OmniAgentAst Backend v{get_version()} 启动完成\n")
+
 # CORS配置
 app.add_middleware(
     CORSMiddleware,

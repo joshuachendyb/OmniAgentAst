@@ -440,12 +440,13 @@ async def get_session_messages(session_id: str):
         fields_exist = check_db_fields_exist(conn)
         
         # 验证会话存在
-        if fields_exist['title_locked'] and fields_exist['title_updated_at']:
-            # 新字段存在，使用完整查询
+        if fields_exist['title_locked'] and fields_exist['title_updated_at'] and fields_exist['version']:
+            # 所有新字段都存在，使用完整查询
             cursor.execute(
                 '''SELECT id, title, 
                           COALESCE(title_locked, 0) as title_locked,
-                          COALESCE(title_updated_at, created_at) as title_updated_at
+                          COALESCE(title_updated_at, created_at) as title_updated_at,
+                          COALESCE(version, 1) as version
                    FROM chat_sessions 
                    WHERE id = ? AND is_deleted = FALSE''',
                 (session_id,)
@@ -453,7 +454,7 @@ async def get_session_messages(session_id: str):
         else:
             # 新字段不存在，使用兼容查询
             cursor.execute(
-                '''SELECT id, title, 0 as title_locked, created_at as title_updated_at
+                '''SELECT id, title, 0 as title_locked, created_at as title_updated_at, 1 as version
                    FROM chat_sessions 
                    WHERE id = ? AND is_deleted = FALSE''',
                 (session_id,)
@@ -504,12 +505,16 @@ async def get_session_messages(session_id: str):
         title_source = 'user' if title_locked else 'auto'
         title_updated_at = _convert_to_utc(session['title_updated_at'])
         
+        # ⭐ 修复API设计缺陷：也需要返回version字段，以便前端正确调用更新API
+        version = session['version'] if 'version' in session else 1
+        
         return {
             "session_id": session_id,
             "title": session['title'],
             "title_locked": title_locked,
             "title_source": title_source,
             "title_updated_at": title_updated_at,
+            "version": version,  # ⭐ 添加version字段
             "messages": messages
         }
         
@@ -814,8 +819,8 @@ async def update_session(session_id: str, update_data: SessionUpdate):
                 (update_data.title, utc_time, session_id)
             )
         
-        # 记录旧标题（用于历史记录）
-        old_title = session.get('title', session.get('title'))
+        # 记录旧标题（用于历史记录）- 修复sqlite3.Row不支持.get()方法
+        old_title = session['title'] if session else ''
         new_version = current_version + 1
         
         # 插入标题历史记录（11.2.1节要求）
