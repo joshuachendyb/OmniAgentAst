@@ -286,6 +286,7 @@ async def update_config(config_update: ConfigUpdate):
     """
     backup_path = None  # ⭐ 初始化备份路径
     config_path = None  # ⭐ 初始化配置路径
+    backup_restored = False  # ⭐ 标记备份是否已恢复，避免重复
     
     try:
         config_path = _get_config_path()
@@ -402,8 +403,10 @@ async def update_config(config_update: ConfigUpdate):
         
         if not is_valid:
             # ⭐ 验证失败：恢复备份
-            logger.warning(f"配置验证失败，恢复备份：{backup_path}")
-            shutil.copy2(backup_path, config_path)
+            if not backup_restored and backup_path and backup_path.exists():
+                logger.warning(f"配置验证失败，恢复备份：{backup_path}")
+                shutil.copy2(str(backup_path), str(config_path))  # type: ignore
+                backup_restored = True  # ⭐ 标记已恢复
             # 删除备份文件
             backup_path.unlink(missing_ok=True)
             return {
@@ -424,7 +427,10 @@ async def update_config(config_update: ConfigUpdate):
         
         logger.info(f"配置更新成功：{config_update.dict(exclude_none=True)}")
         
-        # ⭐ 修改：暂时保留备份文件，由 validateService 决定删除/恢复
+        # ⭐ 修改：设置全局备份路径，供 validate_ai_service 使用
+        AIServiceFactory.set_backup_paths(str(backup_path), str(config_path))
+        
+        # ⭐ 保留备份（不删除），等待 validate_ai_service 处理
         logger.info(f"配置更新成功，备份文件保留：{backup_path}，等待服务验证")
         
         return {
@@ -437,23 +443,29 @@ async def update_config(config_update: ConfigUpdate):
         
     except HTTPException:
         # ⭐ HTTP 异常：恢复备份
-        if backup_path is not None and config_path is not None and backup_path.exists():
+        if not backup_restored and backup_path is not None and config_path is not None and backup_path.exists():
             try:
                 logger.warning(f"发生 HTTP 异常，恢复备份：{backup_path}")
                 shutil.copy2(str(backup_path), str(config_path))  # type: ignore
-                backup_path.unlink(missing_ok=True)
+                backup_restored = True  # ⭐ 标记已恢复
             except:
                 pass
+        # 清理备份文件
+        if backup_path:
+            backup_path.unlink(missing_ok=True)
         raise
     except Exception as e:
         # ⭐ 其他异常：恢复备份
-        if backup_path is not None and config_path is not None and backup_path.exists():
+        if not backup_restored and backup_path is not None and config_path is not None and backup_path.exists():
             try:
                 logger.error(f"更新配置失败，恢复备份：{backup_path}, 错误：{e}")
                 shutil.copy2(str(backup_path), str(config_path))  # type: ignore
-                backup_path.unlink(missing_ok=True)
+                backup_restored = True  # ⭐ 标记已恢复
             except:
                 pass
+        # 清理备份文件
+        if backup_path:
+            backup_path.unlink(missing_ok=True)
         # 【修复 P2-007】记录详细日志但返回通用错误信息
         logger.error(f"更新配置失败：{e}", exc_info=True)
         raise HTTPException(status_code=500, detail="更新配置失败，请稍后重试")

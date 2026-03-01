@@ -816,76 +816,101 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
 # 备份管理辅助函数 - 小欧新增
 # ============================================================
 
-async def _delete_backup():
+async def _delete_backup_by_path(backup_path: str):
     """
-    删除备份文件（验证成功后调用）
+    删除指定备份文件（验证成功后调用）
+    
+    ⭐ 修复：接收明确的 backup_path 参数，避免竞态条件
     
     调用时机：
     - validate_ai_service 验证成功后
     
     功能：
-    1. 查找 config.yaml 同目录的最新备份
-    2. 删除备份文件
+    1. 验证备份文件是否存在
+    2. 验证备份文件命名格式
+    3. 验证备份文件时间（10 分钟内）
+    4. 删除备份文件
     
     设计原因：
     - 验证成功说明新配置可用
     - 删除备份避免文件累积
+    - 显式传递路径避免误操作
     
     作者：小欧
     时间：2026-03-01
     """
     try:
-        # 从 config.yaml 的同目录查找最新的备份文件
-        from app.api.v1.config import _get_config_path
-        config_path = _get_config_path()
-        backup_dir = config_path.parent
+        from pathlib import Path
+        backup = Path(backup_path)
         
-        # 查找最新的备份文件
-        backup_files = sorted(backup_dir.glob("config.yaml.backup.*"), key=lambda x: x.stat().st_mtime, reverse=True)
-        if backup_files:
-            latest_backup = backup_files[0]
-            latest_backup.unlink(missing_ok=True)
-            logger.info(f"验证成功，已删除备份：{latest_backup}")
+        # 验证备份文件是否存在
+        if not backup.exists():
+            logger.warning(f"备份文件不存在：{backup_path}")
+            return
+        
+        # 验证备份文件命名格式
+        if not backup.name.startswith("config.yaml.backup."):
+            logger.error(f"无效的备份文件名：{backup.name}")
+            return
+        
+        # 验证备份文件时间（必须是 10 分钟内的）
+        import time
+        file_mtime = backup.stat().st_mtime
+        if time.time() - file_mtime > 600:  # 10 分钟
+            logger.warning(f"备份文件过期，跳过删除：{backup_path}")
+            return
+        
+        backup.unlink()
+        logger.info(f"验证成功，已删除备份：{backup_path}")
     except Exception as e:
         logger.error(f"删除备份失败：{e}")
 
 
-async def _restore_backup_and_delete():
+async def _restore_backup_and_delete_by_path(backup_path: str, config_path: str):
     """
-    恢复备份文件并删除备份（验证失败后调用）
+    恢复指定备份文件并删除备份（验证失败后调用）
+    
+    ⭐ 修复：接收明确的 backup_path 和 config_path 参数
     
     调用时机：
     - validate_ai_service 验证失败后
     
     功能：
-    1. 查找 config.yaml 同目录的最新备份
-    2. 恢复备份到 config.yaml
-    3. 删除备份文件
+    1. 验证备份文件是否存在
+    2. 验证备份文件命名格式
+    3. 恢复备份到配置文件
+    4. 删除备份文件
     
     设计原因：
     - 验证失败说明新配置不可用
     - 恢复到旧配置保证系统可用
-    - 删除备份避免文件累积
+    - 显式传递路径避免误操作
     
     作者：小欧
     时间：2026-03-01
     """
     try:
-        # 从 config.yaml 的同目录查找最新的备份文件
-        from app.api.v1.config import _get_config_path
-        config_path = _get_config_path()
-        backup_dir = config_path.parent
+        from pathlib import Path
+        backup = Path(backup_path)
+        config = Path(config_path)
         
-        # 查找最新的备份文件
-        backup_files = sorted(backup_dir.glob("config.yaml.backup.*"), key=lambda x: x.stat().st_mtime, reverse=True)
-        if backup_files:
-            latest_backup = backup_files[0]
-            # 恢复备份
-            shutil.copy2(str(latest_backup), str(config_path))
-            logger.info(f"验证失败，已恢复备份：{latest_backup}")
-            # 删除备份
-            latest_backup.unlink(missing_ok=True)
-            logger.info(f"已删除备份：{latest_backup}")
+        # 验证备份文件是否存在
+        if not backup.exists():
+            logger.warning(f"备份文件不存在，无法恢复：{backup_path}")
+            return
+        
+        # 验证备份文件命名格式
+        if not backup.name.startswith("config.yaml.backup."):
+            logger.error(f"无效的备份文件名：{backup.name}")
+            return
+        
+        # 恢复备份
+        shutil.copy2(str(backup), str(config))
+        logger.info(f"验证失败，已恢复备份：{backup_path}")
+        
+        # 删除备份
+        backup.unlink()
+        logger.info(f"已删除备份：{backup_path}")
     except Exception as e:
         logger.error(f"恢复备份失败：{e}")
 
@@ -898,6 +923,7 @@ async def validate_ai_service():
     用于测试 API 密钥是否有效
     
     ⭐ 重要：验证成功后删除备份，验证失败时恢复备份
+    ⭐ 修复：从全局状态获取 backup_path
     """
     try:
         # 获取当前服务（同时会加载当前配置）
@@ -909,10 +935,14 @@ async def validate_ai_service():
         # 获取当前模型名称
         current_model = ai_service.model
         
+        # ⭐ 从全局状态获取 backup_path（由 update_config 设置）
+        backup_path, config_path = AIServiceFactory.get_backup_paths()
+        
         # 检查 API Key 是否为空
         if not ai_service.api_key or ai_service.api_key.strip() == "":
             # ⭐ 验证失败：恢复备份
-            await _restore_backup_and_delete()
+            if backup_path and config_path:
+                await _restore_backup_and_delete_by_path(backup_path, config_path)
             return ValidateResponse(
                 success=False,
                 provider=provider,
@@ -925,7 +955,10 @@ async def validate_ai_service():
         
         if is_valid:
             # ⭐ 验证成功：删除备份
-            await _delete_backup()
+            if backup_path:
+                await _delete_backup_by_path(backup_path)
+            # ⭐ 清除全局状态
+            AIServiceFactory.clear_backup_paths()
             return ValidateResponse(
                 success=True,
                 provider=provider,
@@ -934,7 +967,10 @@ async def validate_ai_service():
             )
         else:
             # ⭐ 验证失败：恢复备份
-            await _restore_backup_and_delete()
+            if backup_path and config_path:
+                await _restore_backup_and_delete_by_path(backup_path, config_path)
+            # ⭐ 清除全局状态
+            AIServiceFactory.clear_backup_paths()
             # 验证失败，尝试获取详细错误信息
             # 通过发送一个实际请求来获取错误详情
             test_response = None

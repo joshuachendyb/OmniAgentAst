@@ -86,12 +86,16 @@ class ConfigValidationResult:
 
 
 class AIServiceFactory:
-    """AI服务工厂 - 一个通用类支持所有OpenAI兼容API"""
+    """AI 服务工厂 - 一个通用类支持所有 OpenAI 兼容 API"""
     
     _instance: Optional[BaseAIService] = None
     _current_provider: str = ""
     _config: Optional[dict] = None
     _lock: threading.Lock = threading.Lock()
+    
+    # ⭐ 新增：备份管理全局状态
+    _backup_path: Optional[str] = None
+    _config_path: Optional[str] = None
     
     @classmethod
     def get_config_path(cls, config_path: Optional[str] = None) -> str:
@@ -576,3 +580,21 @@ class AIServiceFactory:
             )
             
             return cls._instance
+    
+    # ⭐ 新增：备份管理全局状态访问方法
+    @classmethod
+    def set_backup_paths(cls, backup_path: str, config_path: str):
+        """设置备份文件路径（由 update_config 调用）"""
+        cls._backup_path = backup_path
+        cls._config_path = config_path
+    
+    @classmethod
+    def get_backup_paths(cls):
+        """获取备份文件路径（由 validate_ai_service 调用）"""
+        return cls._backup_path, cls._config_path
+    
+    @classmethod
+    def clear_backup_paths(cls):
+        """清除备份文件路径（验证完成后调用）"""
+        cls._backup_path = None
+        cls._config_path = None
