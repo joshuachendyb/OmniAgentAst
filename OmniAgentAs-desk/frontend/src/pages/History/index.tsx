@@ -163,17 +163,31 @@ const HistoryPage: React.FC = () => {
    */
   const handleClearAllSessions = async () => {
     try {
-      for (const session of sessions) {
-        await sessionApi.deleteSession(session.session_id);
+      // 检查是否有会话
+      if (sessions.length === 0) {
+        message.warning("当前没有会话可清空");
+        return;
       }
-      message.success("所有会话已清空");
+
+      // 批量删除所有会话
+      const deletePromises = sessions.map((session) =>
+        sessionApi.deleteSession(session.session_id)
+      );
+
+      await Promise.all(deletePromises);
+      message.success(`已清空 ${sessions.length} 个会话`);
       setSelectedSessions(new Set());
-      // 刷新列表
-      loadSessions(1, "");
       setKeyword("");
+      // 刷新列表（直接重置状态，不需要等待 API）
+      setSessions([]);
+      setPagination({ ...pagination, current: 1, total: 0 });
+      // 重新加载列表确保数据一致性
+      await loadSessions(1, "");
     } catch (error) {
       message.error("清空会话失败");
       console.error("清空会话失败:", error);
+      // 失败后刷新列表以恢复正确状态
+      await loadSessions(pagination.current, keyword);
     }
   };
 
