@@ -246,6 +246,12 @@ const NewChatContainer: React.FC = () => {
         // 保存消息到会话
         const currentPending = pendingMessage;
         if (sessionId && currentPending) {
+          // 🔴 修复：添加详细的调试日志
+          console.log("🔍 保存消息:");
+          console.log("  当前sessionId state:", sessionId);
+          console.log("  pendingMessage:", currentPending);
+          console.log("  fullResponse length:", fullResponse.length);
+
           try {
             // 保存用户消息
             await sessionApi.saveMessage(sessionId, {
@@ -271,6 +277,7 @@ const NewChatContainer: React.FC = () => {
             console.log("✅ 消息和标题保存成功");
           } catch (saveError: any) {
             console.error("保存消息或标题失败:", saveError);
+            console.error("使用的sessionId:", sessionId);
             // 修复：正确的错误处理，而不是重复相同的失败操作
             let retryCount = 0;
             const maxRetries = 3;
