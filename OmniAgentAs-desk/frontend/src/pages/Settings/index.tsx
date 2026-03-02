@@ -276,8 +276,7 @@ const ProviderSettings: React.FC = () => {
       // 设置当前选中的Provider为当前使用的Provider或第一个Provider
       const current =
         providerList.find((p) => p.name === data.current_provider) ||
-        providerList[0] ||
-        null;
+        (providerList.length > 0 ? providerList[0] : null);
       setSelectedProvider(current);
     } catch (error) {
       message.error("加载配置失败");
@@ -471,10 +470,13 @@ const ProviderSettings: React.FC = () => {
     if (!providerData) return;
     setCurrentProvider(provider);
     // 如果切换到当前使用的provider，使用当前模型；否则使用provider的第一个模型
+    // 【修复】检查models是否为空数组
     const targetModel =
       fullConfig.current_provider === provider
         ? fullConfig.current_model
-        : providerData.models[0];
+        : providerData.models.length > 0
+        ? providerData.models[0]
+        : "";
     setCurrentModel(targetModel);
     await configApi.updateConfig({
       ai_provider: provider,
