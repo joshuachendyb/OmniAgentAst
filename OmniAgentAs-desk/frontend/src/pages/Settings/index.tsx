@@ -1450,6 +1450,8 @@ const SecuritySettings: React.FC = () => {
  * @update 2026-02-28 添加待办说明
  */
 const Settings: React.FC = () => {
+  // 注意：React 18 自动批处理状态更新，无需手动优化
+  // 多个 setState 调用会自动合并为一次重渲染
   const [activeKey, setActiveKey] = useState("model");
   const [isDirty, setIsDirty] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
