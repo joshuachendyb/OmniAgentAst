@@ -648,12 +648,11 @@ async def save_message(session_id: str, message: MessageCreate):
                 update_fields.append('title_updated_at = ?')
                 update_values.append(utc_time)
             
-            # ⭐ 修复P1-问题4：只在标题实际变化时递增版本号
+# ⭐ 修复P1-问题4：只在标题实际变化时递增版本号
             # 修复原因：避免标题未变化时也递增版本号，导致频繁409冲突
             if fields_exist['version'] and should_update_title:
                 # 只有在标题更新时才递增版本号
-                update_fields.append('version = ?')
-                update_values.append(1)  # 新版本号=当前+1
+                update_fields.append('version = version + 1')  # 【小新第二修复 2026-03-02】使用SQL递增，而不是设置为1
             
             update_values.append(session_id)
             

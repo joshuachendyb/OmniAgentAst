@@ -105,7 +105,8 @@ const NewChatContainer: React.FC = () => {
   const [sessionTitle, setSessionTitle] = useState<string>("新会话");
   const [sessionVersion, setSessionVersion] = useState<number>(1); // ⭐ 新增：会话版本号
   const [titleLocked, setTitleLocked] = useState<boolean>(false); // ⭐ 新增：标题锁定状态
-  const [titleSource, setTitleSource] = useState<"user" | "auto">("auto"); // ⭐ 新增：标题来源
+  // 【小新第二修复 2026-03-02】title_source 是后端根据 title_locked 动态计算的，
+  // 不需要前端维护状态，直接使用 titleLocked 即可
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState("");
   const [lastSavedTitle, setLastSavedTitle] = useState<string>(""); // ⭐ 新增：记录最后保存的标题
@@ -271,16 +272,9 @@ const NewChatContainer: React.FC = () => {
               content: fullResponse,
             });
 
-            // 🔴 修复：确保会话标题持久化
-            if (
-              sessionTitle &&
-              sessionTitle.trim() &&
-              sessionTitle !== "新会话"
-            ) {
-              debouncedSaveTitle(sessionIdToUse, sessionTitle);
-            }
-
-            console.log("✅ 消息和标题保存成功");
+            // 【小新第二修复 2026-03-02】后端已在 save_message 中自动生成和保存标题，
+            // 不需要前端再次保存，避免覆盖后端的自动标题
+            console.log("✅ 消息保存成功");
           } catch (saveError: any) {
             console.error("保存消息或标题失败:", saveError);
             console.error("使用的sessionId:", sessionId);
@@ -596,9 +590,7 @@ const NewChatContainer: React.FC = () => {
                 if (sessionData.title_locked !== undefined) {
                   setTitleLocked(sessionData.title_locked);
                 }
-                if (sessionData.title_source) {
-                  setTitleSource(sessionData.title_source);
-                }
+                // 【小新第二修复 2026-03-02】title_source 由后端动态计算，前端不需要读取
 
                 console.log(
                   `🔄 会话数据已同步，消息数: ${sessionData.messages.length}`
@@ -856,9 +848,7 @@ const NewChatContainer: React.FC = () => {
           if (sessionData.title_locked !== undefined) {
             setTitleLocked(sessionData.title_locked);
           }
-          if (sessionData.title_source) {
-            setTitleSource(sessionData.title_source);
-          }
+          // 【小新第二修复 2026-03-02】title_source 由后端动态计算，前端不需要读取
 
           message.info("已自动同步最新数据，请重试");
         } catch (syncError) {
@@ -965,9 +955,7 @@ const NewChatContainer: React.FC = () => {
             if (sessionData.title_locked !== undefined) {
               setTitleLocked(sessionData.title_locked);
             }
-            if (sessionData.title_source) {
-              setTitleSource(sessionData.title_source);
-            }
+            // 【小新第二修复 2026-03-02】title_source 由后端动态计算，前端不需要读取
 
             // 加载成功
             setSessionJumpLoading(false);
@@ -1054,9 +1042,7 @@ const NewChatContainer: React.FC = () => {
           if (latestSession.title_locked !== undefined) {
             setTitleLocked(latestSession.title_locked);
           }
-          if (latestSession.title_source) {
-            setTitleSource(latestSession.title_source);
-          }
+          // 【小新第二修复 2026-03-02】title_source 由后端动态计算，前端不需要读取
 
           if (sessionData.messages && sessionData.messages.length > 0) {
             setMessages(
@@ -1465,8 +1451,7 @@ const NewChatContainer: React.FC = () => {
                           sessionVersion
                         );
                         setSessionTitle(titleInput.trim());
-                        setTitleSource("user"); // ⭐ 标记为用户修改
-                        // ⭐ 修复 409 冲突：删除重复的 debouncedSaveTitle 调用，上面已经保存了
+                        setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
                         message.success("会话标题已更新");
                       } catch (error: any) {
                         // ⭐ 处理 409 版本冲突
@@ -1501,14 +1486,14 @@ const NewChatContainer: React.FC = () => {
               <span
                 style={{
                   cursor: "pointer",
-                  color: titleSource === "auto" ? "#666" : "#000",
-                  fontSize: titleSource === "auto" ? "14px" : "16px",
-                  fontWeight: titleSource === "user" ? "bold" : "normal",
+                  color: titleLocked ? "#000" : "#666", // 【小新第二修复 2026-03-02】使用 titleLocked 替代 titleSource
+                  fontSize: titleLocked ? "16px" : "14px",
+                  fontWeight: titleLocked ? "bold" : "normal",
                 }}
                 onClick={() => setEditingTitle(true)}
               >
                 {sessionTitle || "未命名会话"}
-                {titleSource === "auto" && (
+                {!titleLocked && ( // 【小新第二修复 2026-03-02】使用 titleLocked 替代 titleSource
                   <Tooltip title="AI自动生成的标题">
                     <InfoCircleOutlined
                       style={{ fontSize: 12, marginLeft: 4, color: "#999" }}
