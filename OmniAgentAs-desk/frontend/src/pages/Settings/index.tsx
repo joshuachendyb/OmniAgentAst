@@ -471,16 +471,14 @@ const ProviderSettings: React.FC = () => {
   // 全局配置 - Provider切换
   const onProviderChange = async (provider: string) => {
     try {
-      // 【修复】从完整配置中获取当前使用的模型，而不是用providerData.models[0]
-      const fullConfig = await configApi.getFullConfig();
       const providerData = providers.find((p) => p.name === provider);
       if (!providerData) return;
       setCurrentProvider(provider);
       // 如果切换到当前使用的provider，使用当前模型；否则使用provider的第一个模型
-      // 【修复】检查models是否为空数组
+      // 【修复】直接使用本地state，不再调用getFullConfig()多余的API
       const targetModel =
-        fullConfig.current_provider === provider
-          ? fullConfig.current_model
+        currentProvider === provider
+          ? currentModel
           : providerData.models.length > 0
           ? providerData.models[0]
           : "";
