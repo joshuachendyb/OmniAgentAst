@@ -971,6 +971,12 @@ const NewChatContainer: React.FC = () => {
               sessionData.version
             );
             return;
+          } else {
+            // 【小新第二修复 2026-03-02】URL会话加载失败（没有消息），也return，避免加载最近会话
+            console.warn("🔴 URL会话没有消息，跳过加载:", urlSessionId);
+            setSessionJumpLoading(false);
+            message.destroy("session-load");
+            return;
           }
         } catch (error) {
           console.warn("加载URL会话失败:", error);
@@ -1011,6 +1017,14 @@ const NewChatContainer: React.FC = () => {
           message.destroy("session-load");
           return;
         }
+      }
+
+      // 【小新第二修复 2026-03-02】只有在没有URL参数时才加载最近会话
+      if (urlSessionId) {
+        console.warn("🔴 有URL参数，不加载最近会话:", urlSessionId);
+        setSessionJumpLoading(false);
+        message.destroy("session-load");
+        return;
       }
 
       // 🔴 修复4: 如果都没有，加载加载最近会话
