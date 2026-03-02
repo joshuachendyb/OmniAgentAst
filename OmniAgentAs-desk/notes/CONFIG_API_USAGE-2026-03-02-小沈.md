@@ -93,11 +93,12 @@ logging:
 | 类别 | API | 方法 | 用途 |
 |------|-----|------|------|
 | 健康检查 | `/api/v1/health` | GET | 检查后端是否正常，获取版本号 |
+| 配置路径 | `/api/v1/config/path` | GET | 获取配置文件完整路径（新增） |
 | 配置读取 | `/api/v1/config` | GET | 获取当前系统配置（脱敏） |
 | 配置更新 | `/api/v1/config` | PUT | 切换模型、修改主题等保存配置 |
 | 模型验证 | `/api/v1/config/validate` | POST | 验证API Key是否有效（需provider+api_key） |
 | 模型列表 | `/api/v1/config/models` | GET | 获取可用模型列表供选择 |
-| 完整验证 | `/api/v1/config/validate-full` | GET | 验证config.yaml配置完整性（不是测试AI服务） |
+| 完整验证 | `/api/v1/config/validate-full` | GET | 验证config.yaml配置完整性（新增逻辑有效性检查） |
 | 完整配置 | `/api/v1/config/full` | GET | 获取完整配置（调试用） |
 | AI服务验证 | `/api/v1/chat/validate` | GET | 测试AI服务是否可用（触发备份删除/恢复） |
 | **配置修复** | `/api/v1/config/fix` | **POST** | **自动修复配置问题** |
@@ -293,7 +294,21 @@ logging:
 
 ---
 
-### 2. 获取当前配置
+### 2. 获取配置文件路径（新增）
+- **URL**: `GET /api/v1/config/path`
+- **用途**: 获取配置文件的完整路径和所在目录（新增接口）
+- **响应**:
+  ```json
+  {
+    "config_path": "D:\\2bktest\\MDview\\OmniAgentAs-desk\\config\\config.yaml",
+    "config_dir": "D:\\2bktest\\MDview\\OmniAgentAs-desk\\config",
+    "exists": true
+  }
+  ```
+
+---
+
+### 3. 获取当前配置
 - **URL**: `GET /api/v1/config`
 - **用途**: 获取当前系统配置（用于前端显示当前设置，不包含真实API Key）
 - **响应**:
@@ -396,9 +411,15 @@ logging:
 
 ---
 
-### 6. 完整配置验证
+### 7. 完整配置验证（新增逻辑有效性检查）
 - **URL**: `GET /api/v1/config/validate-full`
 - **用途**: 对配置文件本身进行完整性验证（不是测试AI服务），检查config.yaml是否有错误或警告
+- **新增验证项**：
+  1. 检查 ai.provider 是否存在
+  2. 检查 ai.provider 的值是否在配置中
+  3. 检查 ai.provider 的配置是否是有效的字典
+  4. 检查 ai.model 是否存在
+  5. 检查 ai.model 是否在 ai.provider 的 models 列表中
 - **响应**:
   ```json
   {
@@ -413,7 +434,7 @@ logging:
 
 ---
 
-### 7. 获取完整配置
+### 8. 获取完整配置
 - **URL**: `GET /api/v1/config/full`
 - **用途**: 获取完整配置信息（包含所有provider的详细配置，用于高级设置或调试）
 - **响应**:
@@ -432,7 +453,7 @@ logging:
 
 ---
 
-### 8. 验证AI服务
+### 9. 验证AI服务
 - **URL**: `GET /api/v1/chat/validate`
 - **用途**: 切换模型后或启动时，实际调用AI服务测试是否可用（会触发备份删除/恢复）
 - **响应**:
@@ -501,11 +522,12 @@ updateConfig → validateService → 根据结果处理
 | 序号 | API | 方法 | 用途 |
 |------|-----|------|------|
 | 1 | `/api/v1/health` | GET | 检查后端健康，获取版本号 |
-| 2 | `/api/v1/config` | GET | 获取当前配置（脱敏） |
-| 3 | `/api/v1/config/models` | GET | 获取模型列表 |
-| 4 | `/api/v1/config/validate-full` | GET | 验证配置文件完整性 |
-| 5 | `/api/v1/config/full` | GET | 获取完整配置 |
-| 6 | `/api/v1/chat/validate` | GET | 验证AI服务可用性 |
+| 2 | `/api/v1/config/path` | GET | 获取配置文件路径（新增） |
+| 3 | `/api/v1/config` | GET | 获取当前配置（脱敏） |
+| 4 | `/api/v1/config/models` | GET | 获取模型列表 |
+| 5 | `/api/v1/config/validate-full` | GET | 验证配置文件完整性（新增逻辑有效性检查） |
+| 6 | `/api/v1/config/full` | GET | 获取完整配置 |
+| 7 | `/api/v1/chat/validate` | GET | 验证AI服务可用性 |
 
 ### 写入类API
 
@@ -552,9 +574,8 @@ updateConfig → validateService → 根据结果处理
 ## 附录：Provider管理API
 
 ### 1. 自动修复配置
-### 1. 自动修复配置
 
-- **URL**: `POST /api/v1/config/fix**
+- **URL**: `POST /api/v1/config/fix`
 - **用途**: 当 validate-full 返回警告提示"provider下有废弃的model字段"时，调用此接口自动修复
 - **响应**:
   ```json
@@ -724,7 +745,8 @@ ai:
 
 ---
 
-**更新时间**: 2026-03-02 18:45:00
-**版本**: v1.4
+**更新时间**: 2026-03-03 02:56:59
+**版本**: v1.5
 **编写者**: 小沈
+**更新内容**: 2026-03-03 新增 /api/v1/config/path 接口，更新 /api/v1/config/validate-full 接口说明（新增逻辑有效性检查）
 **测试说明**: 2026-03-02 18:30 所有API已通过实际测试验证，每个接口已添加"用途"说明

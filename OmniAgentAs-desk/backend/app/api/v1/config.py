@@ -1158,6 +1158,13 @@ class FullConfigValidationResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list, description="警告列表")
 
 
+class ConfigPathResponse(BaseModel):
+    """配置文件路径响应"""
+    config_path: str = Field(..., description="配置文件完整路径")
+    config_dir: str = Field(..., description="配置文件所在目录")
+    exists: bool = Field(..., description="配置文件是否存在")
+
+
 def _backup_config_file(config_path: Path) -> Path:
     """
     自动备份配置文件
@@ -1391,6 +1398,26 @@ async def fix_config():
         raise HTTPException(status_code=500, detail=f"配置修复失败: {str(e)}")
 
 
+@router.get("/config/path", response_model=ConfigPathResponse)
+async def get_config_path():
+    """
+    获取配置文件路径
+    
+    Returns:
+        ConfigPathResponse: 配置文件路径信息
+    """
+    try:
+        config_path = _get_config_path()
+        return ConfigPathResponse(
+            config_path=str(config_path),
+            config_dir=str(config_path.parent),
+            exists=config_path.exists()
+        )
+    except Exception as e:
+        logger.error(f"获取配置路径失败: {e}")
+        raise HTTPException(status_code=500, detail=f"获取配置路径失败: {str(e)}")
+
+
 @router.get("/config/validate-full", response_model=FullConfigValidationResponse)
 async def validate_full_config():
     """
@@ -1405,6 +1432,8 @@ async def validate_full_config():
     6. model 是否存在
     7. api_base 是否存在
     8. 【新增】检查是否有废弃的model字段
+    9. 【新增】ai.provider 逻辑有效性检查
+    10. 【新增】ai.model 逻辑有效性检查
     
     Returns:
         FullConfigValidationResponse: 包含错误列表和警告列表的完整验证结果
@@ -1419,7 +1448,34 @@ async def validate_full_config():
             config_data = yaml.safe_load(f) or {}
         
         additional_warnings = []
+        errors = []  # 【修正】提前定义errors
+        
         ai_config = config_data.get('ai', {})
+        
+        selected_provider = ai_config.get('provider', '')  # 先获取避免未定义
+        
+        # 【新增】ai.provider 逻辑有效性检查
+        if 'provider' not in ai_config:
+            errors.append("缺少 ai.provider 字段")
+        else:
+            selected_provider = ai_config['provider']
+            if selected_provider not in ai_config:
+                errors.append(f"ai.provider 的值 '{selected_provider}' 不在配置中")
+            elif not isinstance(ai_config.get(selected_provider, {}), dict):
+                errors.append(f"ai.provider '{selected_provider}' 的配置不是有效的字典")
+        
+        # 【新增】ai.model 逻辑有效性检查
+        if 'model' not in ai_config:
+            errors.append("缺少 ai.model 字段")
+        else:
+            selected_model = ai_config['model']
+            if selected_provider:  # 只有当ai.provider存在时才检查ai.model
+                provider_config = ai_config.get(selected_provider, {})
+                models_list = provider_config.get('models', [])
+                if selected_model not in models_list:
+                    errors.append(f"ai.model '{selected_model}' 不在 ai.provider '{selected_provider}' 的 models 列表中")
+        
+        # 检查废弃的'model'字段
         for provider_name in ai_config.keys():
             if provider_name == 'provider' or provider_name == 'model':
                 continue
@@ -1427,17 +1483,21 @@ async def validate_full_config():
             if isinstance(provider_data, dict) and 'model' in provider_data:
                 additional_warnings.append(f"provider '{provider_name}' 下有废弃的 model 字段，建议调用 /config/fix 接口修复")
         
-        # 合并警告
+        # 合并错误和警告
+        all_errors = validation_result.errors + errors
         all_warnings = validation_result.warnings + additional_warnings
         
-        logger.info(f"完整配置验证: success={validation_result.success}, errors={len(validation_result.errors)}, warnings={len(all_warnings)}")
+        # 判断验证结果
+        success = len(all_errors) == 0 and validation_result.success
+        
+        logger.info(f"完整配置验证: success={success}, errors={len(all_errors)}, warnings={len(all_warnings)}")
         
         return FullConfigValidationResponse(
-            success=validation_result.success,
-            provider=validation_result.provider,
-            model=validation_result.model,
-            message=validation_result.message,
-            errors=validation_result.errors,
+            success=success,
+            provider=ai_config.get('provider', validation_result.provider),
+            model=ai_config.get('model', validation_result.model),
+            message=f"配置验证通过: provider={ai_config.get('provider', validation_result.provider)}, model={ai_config.get('model', validation_result.model)}" if success else f"配置验证失败: {len(all_errors)} 个错误",
+            errors=all_errors,
             warnings=all_warnings
         )
         
