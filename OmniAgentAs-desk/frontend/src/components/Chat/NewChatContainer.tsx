@@ -927,6 +927,8 @@ const NewChatContainer: React.FC = () => {
           const sessionData = await sessionApi.getSessionMessages(urlSessionId);
           if (sessionData.messages && sessionData.messages.length > 0) {
             setSessionId(urlSessionId);
+            // 【小新第二修复 2026-03-02】加载会话时也更新ref
+            currentSessionIdRef.current = urlSessionId;
             setMessages(
               sessionData.messages.map((m: any) => {
                 // 安全地处理 executionSteps 字段
@@ -1030,6 +1032,8 @@ const NewChatContainer: React.FC = () => {
             latestSession.session_id
           );
           setSessionId(latestSession.session_id);
+          // 【小新第二修复 2026-03-02】加载最近会话时也更新ref
+          currentSessionIdRef.current = latestSession.session_id;
 
           // 🔴 修复5: 使用统一的标题管理函数
           const title = getSessionTitle(
