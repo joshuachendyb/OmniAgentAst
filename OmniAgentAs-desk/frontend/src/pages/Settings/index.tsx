@@ -64,7 +64,7 @@ import {
   DesktopOutlined,
   FolderOpenOutlined,
 } from "@ant-design/icons";
-import { configApi } from "../../services/api";
+import { configApi, chatApi } from "../../services/api";
 import type { ProviderInfo, ConfigPathResponse } from "../../services/api";
 import HealthCheck from "../../components/HealthCheck";
 
@@ -307,6 +307,13 @@ const ProviderSettings: React.FC = () => {
     } catch (error) {
       console.error("配置验证失败:", error);
     }
+
+    // 验证AI服务可用性（触发后端备份清理）
+    try {
+      await chatApi.validateService();
+    } catch (error) {
+      console.warn("AI服务验证失败:", error);
+    }
   };
 
   useEffect(() => {
@@ -484,11 +491,23 @@ const ProviderSettings: React.FC = () => {
       setCurrentModel(option.model);
       setCurrentDisplayName(option.display_name);
 
+      // 更新配置（后端会自动创建备份）
       await configApi.updateConfig({
         ai_provider: option.provider,
         ai_model: option.model,
       });
+
+      // 刷新配置
       loadConfig();
+
+      // 验证服务可用性（触发后端备份删除/恢复机制）
+      try {
+        await chatApi.validateService();
+      } catch (e) {
+        // 验证失败不影响切换成功提示
+        console.warn("服务验证失败:", e);
+      }
+
       message.success(`已切换到 ${option.display_name}`);
     } catch (error) {
       message.error("切换模型失败");
