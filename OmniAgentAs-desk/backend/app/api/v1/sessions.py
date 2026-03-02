@@ -610,16 +610,13 @@ async def save_message(session_id: str, message: MessageCreate):
         should_update_title = False
         new_title = session['title']
         
-        # P0风险缓解：检查字段是否存在，如果不存在则假设标题未锁定
+# P0风险缓解：检查字段是否存在，如果不存在则假设标题未锁定
         title_locked = session['title_locked'] if fields_exist['title_locked'] else False
-        
-        if not title_locked and new_message_count == 1:
-            # 第一条消息，且标题未被锁定，使用消息内容作为标题
-            if message.content and len(message.content) > 0:
-                new_title = message.content[:30] if len(message.content) > 30 else message.content
-                should_update_title = True
-                logger.info(f"会话 {session_id} 标题自动更新为: {new_title}")
-        
+
+        # 【小新第二修复 2026-03-02】删除自动用消息内容作为标题的逻辑
+        # 原因：前端已经生成漂亮的时间标题（如"3月1日 深夜会话 23:18"），
+        # 不需要后端用消息内容覆盖。标题应该由用户手动修改才更新。
+
         # 优化：updated_at更新时机
         # 只在以下情况更新updated_at：
         # 1. 标题被更新
