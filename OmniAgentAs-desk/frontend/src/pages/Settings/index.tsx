@@ -473,7 +473,7 @@ const ProviderSettings: React.FC = () => {
         : providerData.models[0];
     setCurrentModel(targetModel);
     await configApi.updateConfig({
-      ai_provider: provider as "zhipuai" | "opencode" | "longcat",
+      ai_provider: provider,
       ai_model: targetModel,
     });
     loadConfig();
@@ -483,7 +483,7 @@ const ProviderSettings: React.FC = () => {
   const onModelChange = async (model: string) => {
     setCurrentModel(model);
     await configApi.updateConfig({
-      ai_provider: currentProvider as "zhipuai" | "opencode" | "longcat",
+      ai_provider: currentProvider,
       ai_model: model,
     });
     loadConfig();
