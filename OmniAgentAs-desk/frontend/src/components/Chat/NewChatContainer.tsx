@@ -369,8 +369,8 @@ const NewChatContainer: React.FC = () => {
 
         setLoading(false);
         // 【小新第三修复 2026-03-02】清理ref和state
-        pendingMessageRef.current = null;  // 同步清理
-        setPendingMessage(null);           // 异步清理
+        pendingMessageRef.current = null; // 同步清理
+        setPendingMessage(null); // 异步清理
       },
       [sessionId, pendingMessage]
     ),
@@ -999,9 +999,12 @@ const NewChatContainer: React.FC = () => {
             return;
           } else {
             // 【小新第四修复 2026-03-02 15:45:30】URL会话加载失败（没有消息），清理状态避免混乱
-            console.warn("🔴 URL会话没有消息，清理状态并跳过加载:", urlSessionId);
+            console.warn(
+              "🔴 URL会话没有消息，清理状态并跳过加载:",
+              urlSessionId
+            );
             setSessionId(null);
-            currentSessionIdRef.current = null;  // 同步清理ref
+            currentSessionIdRef.current = null; // 同步清理ref
             setMessages([]);
             setSessionTitle("新会话");
             setSessionVersion(1);
@@ -1172,7 +1175,7 @@ const NewChatContainer: React.FC = () => {
     setMessages((prev) => [...prev, assistantMessage]);
 
     // 保存待发送消息到ref（同步）和state（异步）
-    pendingMessageRef.current = userMessage;  // 同步更新，立即生效 ✅
+    pendingMessageRef.current = userMessage; // 同步更新，立即生效 ✅
     setPendingMessage(userMessage);
 
     // 发送流式请求
@@ -1326,9 +1329,11 @@ const NewChatContainer: React.FC = () => {
    * 危险命令确认执行
    */
   const handleDangerConfirm = async () => {
-    if (pendingMessage) {
+    // 【小新第五修复 2026-03-02】优先使用ref中的pendingMessage，确保获取正确的值
+    const messageToProcess = pendingMessageRef.current || pendingMessage;
+    if (messageToProcess) {
       setDangerModalVisible(false);
-      await executeStreamSend(pendingMessage);
+      await executeStreamSend(messageToProcess);
     }
   };
 
@@ -1337,10 +1342,16 @@ const NewChatContainer: React.FC = () => {
    */
   const handleDangerCancel = () => {
     setDangerModalVisible(false);
-    if (pendingMessage) {
-      setMessages((prev) => prev.filter((msg) => msg.id !== pendingMessage.id));
+    // 【小新第五修复 2026-03-02】优先使用ref中的pendingMessage
+    const messageToCancel = pendingMessageRef.current || pendingMessage;
+    if (messageToCancel) {
+      setMessages((prev) =>
+        prev.filter((msg) => msg.id !== messageToCancel.id)
+      );
       message.info("已取消危险命令的执行");
     }
+    // 【小新第五修复 2026-03-02】同步清理ref和state
+    pendingMessageRef.current = null;
     setPendingMessage(null);
   };
 
