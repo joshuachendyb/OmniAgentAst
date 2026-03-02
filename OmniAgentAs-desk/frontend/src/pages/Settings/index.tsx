@@ -883,14 +883,6 @@ const ProviderSettings: React.FC = () => {
                                 okText="确定"
                                 cancelText="取消"
                                 okButtonProps={{ danger: true }}
-                                onVisibleChange={(visible) => {
-                                  if (!visible) {
-                                    handleDeleteModel(
-                                      selectedProvider.name,
-                                      model
-                                    );
-                                  }
-                                }}
                               >
                                 <Button
                                   type="text"
