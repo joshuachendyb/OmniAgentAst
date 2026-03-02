@@ -130,7 +130,8 @@ const ProviderList: React.FC<{
   providers: ProviderInfo[];
   currentProvider: string;
   onSelect: (provider: ProviderInfo) => void;
-}> = ({ providers, currentProvider, onSelect }) => {
+  onAdd?: () => void;
+}> = ({ providers, currentProvider, onSelect, onAdd }) => {
   const [searchKeyword, setSearchKeyword] = useState("");
 
   const filteredProviders = useMemo(
@@ -143,9 +144,27 @@ const ProviderList: React.FC<{
 
   return (
     <div style={{ borderRight: "1px solid #f0f0f0", paddingRight: 16 }}>
-      <Typography.Title level={5} style={{ marginBottom: 16 }}>
-        Provider列表
-      </Typography.Title>
+      <Space
+        style={{
+          marginBottom: 16,
+          width: "100%",
+          justifyContent: "space-between",
+        }}
+      >
+        <Typography.Title level={5} style={{ marginBottom: 0 }}>
+          Provider列表
+        </Typography.Title>
+        {onAdd && (
+          <Button
+            type="primary"
+            size="small"
+            icon={<PlusOutlined />}
+            onClick={onAdd}
+          >
+            添加
+          </Button>
+        )}
+      </Space>
 
       {/* 搜索框 */}
       <Input
@@ -337,9 +356,27 @@ const ProviderSettings: React.FC = () => {
   const handleSaveProvider = async (values: any) => {
     try {
       await configApi.updateProvider(editingProvider!.name, values);
+
+      // 刷新配置
+      loadConfig();
+
+      // 验证配置文件
+      try {
+        const validation = await configApi.validateFullConfig();
+        setValidationResult(validation);
+      } catch (e) {
+        console.warn("验证配置文件失败:", e);
+      }
+
+      // 验证服务可用性
+      try {
+        await chatApi.validateService();
+      } catch (e) {
+        console.warn("验证服务失败:", e);
+      }
+
       message.success("Provider配置已更新");
       setEditModalVisible(false);
-      loadConfig();
     } catch (error) {
       message.error("更新失败");
     }
@@ -349,8 +386,19 @@ const ProviderSettings: React.FC = () => {
   const handleDeleteProvider = async (providerName: string) => {
     try {
       await configApi.deleteProvider(providerName);
-      message.success("Provider已删除");
+
+      // 刷新配置
       loadConfig();
+
+      // 验证配置文件
+      try {
+        const validation = await configApi.validateFullConfig();
+        setValidationResult(validation);
+      } catch (e) {
+        console.warn("验证配置文件失败:", e);
+      }
+
+      message.success("Provider已删除");
     } catch (error: any) {
       message.error(error.response?.data?.detail || "删除失败");
     }
@@ -360,8 +408,19 @@ const ProviderSettings: React.FC = () => {
   const handleDeleteModel = async (providerName: string, modelName: string) => {
     try {
       await configApi.deleteModel(providerName, modelName);
-      message.success("模型已删除");
+
+      // 刷新配置
       loadConfig();
+
+      // 验证配置文件
+      try {
+        const validation = await configApi.validateFullConfig();
+        setValidationResult(validation);
+      } catch (e) {
+        console.warn("验证配置文件失败:", e);
+      }
+
+      message.success("模型已删除");
     } catch (error: any) {
       message.error(error.response?.data?.detail || "删除失败");
     }
@@ -423,6 +482,14 @@ const ProviderSettings: React.FC = () => {
 
       setSelectedModels(new Set());
       loadConfig();
+
+      // 验证配置文件
+      try {
+        const validation = await configApi.validateFullConfig();
+        setValidationResult(validation);
+      } catch (e) {
+        console.warn("验证配置文件失败:", e);
+      }
     } catch (error: any) {
       if (error.name === "AbortError") {
         message.warning("批量删除已取消");
@@ -440,10 +507,28 @@ const ProviderSettings: React.FC = () => {
   const handleAddModel = async (values: { model: string }) => {
     try {
       await configApi.addModel(selectedProviderForModel, values);
+
+      // 刷新配置
+      loadConfig();
+
+      // 验证配置文件
+      try {
+        const validation = await configApi.validateFullConfig();
+        setValidationResult(validation);
+      } catch (e) {
+        console.warn("验证配置文件失败:", e);
+      }
+
+      // 验证服务可用性
+      try {
+        await chatApi.validateService();
+      } catch (e) {
+        console.warn("验证服务失败:", e);
+      }
+
       message.success("模型已添加");
       setAddModelModalVisible(false);
       modelForm.resetFields();
-      loadConfig();
     } catch (error: any) {
       message.error(error.response?.data?.detail || "添加失败");
     }
@@ -461,10 +546,28 @@ const ProviderSettings: React.FC = () => {
         timeout: values.timeout || 60,
         max_retries: values.max_retries || 3,
       });
+
+      // 刷新配置
+      loadConfig();
+
+      // 验证配置文件
+      try {
+        const validation = await configApi.validateFullConfig();
+        setValidationResult(validation);
+      } catch (e) {
+        console.warn("验证配置文件失败:", e);
+      }
+
+      // 验证服务可用性
+      try {
+        await chatApi.validateService();
+      } catch (e) {
+        console.warn("验证服务失败:", e);
+      }
+
       message.success("Provider已添加");
       setAddProviderModalVisible(false);
       providerForm.resetFields();
-      loadConfig();
     } catch (error: any) {
       message.error(error.response?.data?.detail || "添加失败");
     }
@@ -782,6 +885,7 @@ const ProviderSettings: React.FC = () => {
             providers={providers}
             currentProvider={currentProvider}
             onSelect={onSelectProvider}
+            onAdd={() => setAddProviderModalVisible(true)}
           />
         </Col>
 
@@ -929,17 +1033,6 @@ const ProviderSettings: React.FC = () => {
                             </div>
 
                             <Space>
-                              {/* 非当前模型显示切换按钮 */}
-                              {!isActive && (
-                                <Button
-                                  type="link"
-                                  size="small"
-                                  onClick={() => onModelChange(model)}
-                                >
-                                  切换
-                                </Button>
-                              )}
-
                               {/* 删除按钮 */}
                               <Popconfirm
                                 title={`确定删除模型 ${model} 吗？`}
