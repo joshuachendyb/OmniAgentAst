@@ -506,6 +506,8 @@ const NewChatContainer: React.FC = () => {
         if (state.sessionId) {
           setMessages(state.messages || []);
           setSessionId(state.sessionId);
+          // 【小新第二修复 2026-03-02】从sessionStorage恢复时也更新ref
+          currentSessionIdRef.current = state.sessionId;
           setSessionTitle(state.sessionTitle || "会话");
 
           // 🔴 修复：根据保存的标记决定是否滚动到底部
@@ -1320,6 +1322,8 @@ const NewChatContainer: React.FC = () => {
       const newTitle = generateNewSessionTitle();
       const newSession = await sessionApi.createSession(newTitle);
       setSessionId(newSession.session_id);
+      // 【小新第二修复 2026-03-02】新建会话时也更新ref
+      currentSessionIdRef.current = newSession.session_id;
       setSessionTitle(newTitle);
       setMessages([]);
 
