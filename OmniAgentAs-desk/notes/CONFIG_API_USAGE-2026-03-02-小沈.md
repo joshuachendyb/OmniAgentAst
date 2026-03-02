@@ -32,28 +32,28 @@
 
 ```yaml
 ai:
-  provider: opencode        # 当前选中的provider（必须在前）
-  model: kimi-k2.5-free   # 当前选中的model（必须在后）
-  opencode:
-    api_base: https://opencode.ai/zen/v1
-    api_key: sk-xxx
-    max_retries: 3
-    models:
-    - minimax-m2.5-free
-    - glm-5-free
-    - kimi-k2.5-free
-    timeout: 150
+  provider: opencode        # 当前选中的provider（必须放在ai块最前面）
+  model: kimi-k2.5-free    # 当前选中的model（必须放在provider后面）
+  opencode:                # provider名称（不能有model字段！）
+    api_base: https://opencode.ai/zen/v1    # ✅ 必填：API地址
+    api_key: sk-xxx                      # ✅ 必填：API密钥
+    models:                              # ✅ 必填：可用模型列表
+      - minimax-m2.5-free
+      - glm-5-free
+      - kimi-k2.5-free
+    timeout: 150                          # 可选：超时时间（秒）
+    max_retries: 3                       # 可选：最大重试次数
   zhipuai:
     api_base: https://open.bigmodel.cn/api/paas/v4/
     api_key: xxx
     models:
-    - glm-4.7-flash
+      - glm-4.7-flash
     timeout: 90
   longcat:
     api_base: https://api.longcat.chat/openai/v1
     api_key: xxx
     models:
-    - LongCat-Flash-Thinking-2601
+      - LongCat-Flash-Thinking-2601
     timeout: 120
 
 app:
@@ -72,7 +72,17 @@ logging:
 
 1. **ai.provider 和 ai.model 必须放在最前面**（第1、2行）
 2. **provider配置顺序**：先provider/model，再各个provider详情
-3. **每个provider必须配置**：api_key、api_base、models、timeout
+3. **每个provider必须配置以下子字段**：
+
+| 子字段 | 类型 | 必填 | 说明 |
+|--------|------|------|------|
+| `api_base` | string | ✅ 必填 | AI服务的API地址（如 https://opencode.ai/zen/v1） |
+| `api_key` | string | ✅ 必填 | API密钥 |
+| `models` | array | ✅ 必填 | 可用模型列表（如 ["minimax-m2.5-free", "glm-5-free"]） |
+| `timeout` | number | 可选 | 请求超时时间（秒），默认120 |
+| `max_retries` | number | 可选 | 最大重试次数，默认3 |
+
+**注意**：❌ provider下面**不能**有 `model` 字段（已废弃）
 
 ---
 
@@ -80,16 +90,22 @@ logging:
 
 ### 模型配置相关API
 
-| 类别 | API | 方法 | 说明 |
+| 类别 | API | 方法 | 用途 |
 |------|-----|------|------|
-| 健康检查 | `/api/v1/health` | GET | 获取后端健康状态和版本号 |
-| 配置读取 | `/api/v1/config` | GET | 获取当前配置 |
-| 配置更新 | `/api/v1/config` | PUT | 更新配置 |
-| 模型验证 | `/api/v1/config/validate` | POST | 验证API Key是否有效 |
-| 模型列表 | `/api/v1/config/models` | GET | 获取可用模型列表 |
-| 完整验证 | `/api/v1/config/validate-full` | GET | 完整配置验证 |
-| 完整配置 | `/api/v1/config/full` | GET | 获取完整配置 |
-| AI服务验证 | `/api/v1/chat/validate` | GET | 验证AI服务可用性 |
+| 健康检查 | `/api/v1/health` | GET | 检查后端是否正常，获取版本号 |
+| 配置读取 | `/api/v1/config` | GET | 获取当前系统配置（脱敏） |
+| 配置更新 | `/api/v1/config` | PUT | 切换模型、修改主题等保存配置 |
+| 模型验证 | `/api/v1/config/validate` | POST | 验证API Key是否有效（需provider+api_key） |
+| 模型列表 | `/api/v1/config/models` | GET | 获取可用模型列表供选择 |
+| 完整验证 | `/api/v1/config/validate-full` | GET | 验证config.yaml配置完整性（不是测试AI服务） |
+| 完整配置 | `/api/v1/config/full` | GET | 获取完整配置（调试用） |
+| AI服务验证 | `/api/v1/chat/validate` | GET | 测试AI服务是否可用（触发备份删除/恢复） |
+| **配置修复** | `/api/v1/config/fix` | **POST** | **自动修复配置问题** |
+| 添加Provider | `/api/v1/config/provider` | POST | 添加新Provider |
+| 更新Provider | `/api/v1/config/provider/{name}` | PUT | 修改Provider配置 |
+| 删除Provider | `/api/v1/config/provider/{name}` | DELETE | 删除Provider |
+| 添加模型 | `/api/v1/config/provider/{name}/model` | POST | 添加模型到Provider |
+| 删除模型 | `/api/v1/config/provider/{name}/model/{model_name}` | DELETE | 删除Provider下的模型 |
 
 ---
 
@@ -265,7 +281,7 @@ logging:
 
 ### 1. 健康检查
 - **URL**: `GET /api/v1/health`
-- **描述**: 获取后端健康状态和版本号
+- **用途**: 检查后端服务是否正常运行，获取版本号用于前端显示
 - **响应**:
   ```json
   {
@@ -279,7 +295,7 @@ logging:
 
 ### 2. 获取当前配置
 - **URL**: `GET /api/v1/config`
-- **描述**: 获取当前系统配置（脱敏，不返回真实API Key）
+- **用途**: 获取当前系统配置（用于前端显示当前设置，不包含真实API Key）
 - **响应**:
   ```json
   {
@@ -304,7 +320,7 @@ logging:
 
 ### 3. 更新配置
 - **URL**: `PUT /api/v1/config`
-- **描述**: 更新系统配置
+- **用途**: 用户在设置页面切换模型、修改主题等配置时调用此接口保存配置
 - **请求体**:
   ```json
   {
@@ -333,11 +349,12 @@ logging:
 
 ### 4. 验证API Key
 - **URL**: `POST /api/v1/config/validate`
-- **描述**: 验证指定provider的API Key是否有效
+- **用途**: 用户在设置页面点击"验证"按钮时，测试输入的API Key是否有效
 - **请求体**:
   ```json
   {
-    "provider": "opencode"
+    "provider": "opencode",
+    "api_key": "sk-xxx"
   }
   ```
 - **响应**:
@@ -353,7 +370,7 @@ logging:
 
 ### 5. 获取模型列表
 - **URL**: `GET /api/v1/config/models`
-- **描述**: 获取所有可用的模型列表
+- **用途**: 启动时或刷新下拉框时，获取所有可用的模型列表供用户选择
 - **响应**:
   ```json
   {
@@ -381,7 +398,7 @@ logging:
 
 ### 6. 完整配置验证
 - **URL**: `GET /api/v1/config/validate-full`
-- **描述**: 完整验证所有配置
+- **用途**: 对配置文件本身进行完整性验证（不是测试AI服务），检查config.yaml是否有错误或警告
 - **响应**:
   ```json
   {
@@ -398,7 +415,7 @@ logging:
 
 ### 7. 获取完整配置
 - **URL**: `GET /api/v1/config/full`
-- **描述**: 获取完整配置（包含所有provider详情）
+- **用途**: 获取完整配置信息（包含所有provider的详细配置，用于高级设置或调试）
 - **响应**:
   ```json
   {
@@ -417,7 +434,7 @@ logging:
 
 ### 8. 验证AI服务
 - **URL**: `GET /api/v1/chat/validate`
-- **描述**: 验证当前配置的AI服务是否可用
+- **用途**: 切换模型后或启动时，实际调用AI服务测试是否可用（会触发备份删除/恢复）
 - **响应**:
   ```json
   {
@@ -481,21 +498,27 @@ updateConfig → validateService → 根据结果处理
 
 ### 读取类API
 
-| 序号 | API | 方法 | 说明 |
+| 序号 | API | 方法 | 用途 |
 |------|-----|------|------|
-| 1 | `/api/v1/health` | GET | 健康检查，返回版本号 |
+| 1 | `/api/v1/health` | GET | 检查后端健康，获取版本号 |
 | 2 | `/api/v1/config` | GET | 获取当前配置（脱敏） |
 | 3 | `/api/v1/config/models` | GET | 获取模型列表 |
-| 4 | `/api/v1/config/validate-full` | GET | 完整配置验证 |
+| 4 | `/api/v1/config/validate-full` | GET | 验证配置文件完整性 |
 | 5 | `/api/v1/config/full` | GET | 获取完整配置 |
 | 6 | `/api/v1/chat/validate` | GET | 验证AI服务可用性 |
 
 ### 写入类API
 
-| 序号 | API | 方法 | 说明 |
+| 序号 | API | 方法 | 用途 |
 |------|-----|------|------|
-| 1 | `/api/v1/config` | PUT | 更新配置 |
+| 1 | `/api/v1/config` | PUT | 更新配置（切换模型等） |
 | 2 | `/api/v1/config/validate` | POST | 验证API Key |
+| 3 | `/api/v1/config/fix` | POST | 自动修复配置 |
+| 4 | `/api/v1/config/provider` | POST | 添加Provider |
+| 5 | `/api/v1/config/provider/{name}` | PUT | 更新Provider |
+| 6 | `/api/v1/config/provider/{name}` | DELETE | 删除Provider |
+| 7 | `/api/v1/config/provider/{name}/model` | POST | 添加模型 |
+| 8 | `/api/v1/config/provider/{name}/model/{model_name}` | DELETE | 删除模型 |
 
 ---
 
@@ -526,6 +549,182 @@ updateConfig → validateService → 根据结果处理
 
 ---
 
-**更新时间**: 2026-03-02 15:00:00
-**版本**: v1.0
+## 附录：Provider管理API
+
+### 1. 自动修复配置
+### 1. 自动修复配置
+
+- **URL**: `POST /api/v1/config/fix**
+- **用途**: 当 validate-full 返回警告提示"provider下有废弃的model字段"时，调用此接口自动修复
+- **响应**:
+  ```json
+  {
+    "success": true,
+    "fixed_issues": [
+      "删除 provider 'zhipuai' 下废弃的 model 字段"
+    ],
+    "warnings": [],
+    "backup_path": "D:\\...\\config.yaml.backup.20260302_150000"
+  }
+  ```
+
+**触发场景**：
+- 当 `/api/v1/config/validate-full` 返回警告 `"provider 'xxx' 下有废弃的 model 字段，建议调用 /config/fix 接口修复"`
+
+---
+
+### 2. 添加Provider
+
+- **URL**: `POST /api/v1/config/provider`
+- **用途**: 在配置文件中添加一个新的AI Provider（前端"设置页面"新增Provider按钮）
+- **请求体**:
+  ```json
+  {
+    "name": "newprovider",
+    "api_base": "https://api.newprovider.com/v1",
+    "api_key": "sk-xxx",
+    "models": ["model-1", "model-2"],
+    "timeout": 120,
+    "max_retries": 3
+  }
+  ```
+- **响应**:
+  ```json
+  {
+    "success": true,
+    "message": "Provider newprovider 已添加",
+    "warnings": []
+  }
+  ```
+
+---
+
+### 3. 更新Provider
+
+- **URL**: `PUT /api/v1/config/provider/{provider_name}`
+- **用途**: 修改现有Provider的配置（前端"设置页面"修改Provider配置）
+- **请求体**:
+  ```json
+  {
+    "api_base": "https://api.newprovider.com/v1",
+    "api_key": "sk-xxx",
+    "model": "model-2",
+    "timeout": 120,
+    "max_retries": 3
+  }
+  ```
+- **响应**:
+  ```json
+  {
+    "success": true,
+    "message": "Provider opencode 已更新",
+    "warnings": [],
+    "backup_path": "D:\\...\\config.yaml.backup.20260302_150000"
+  }
+  ```
+
+---
+
+### 4. 删除Provider
+
+- **URL**: `DELETE /api/v1/config/provider/{provider_name}`
+- **用途**: 删除指定的AI Provider（前端"设置页面"删除Provider按钮）
+- **响应**:
+  ```json
+  {
+    "success": true,
+    "message": "Provider longcat 已删除"
+  }
+  ```
+
+**注意**：
+- 至少需要保留一个Provider
+- 如果删除当前使用的Provider，会自动切换到第一个Provider
+
+---
+
+### 5. 添加模型
+
+- **URL**: `POST /api/v1/config/provider/{provider_name}/model`
+- **用途**: 向指定Provider添加新模型（前端"设置页面"添加模型按钮）
+- **请求体**:
+  ```json
+  {
+    "model": "new-model-1"
+  }
+  ```
+- **响应**:
+  ```json
+  {
+    "success": true,
+    "message": "模型 new-model-1 已添加"
+  }
+  ```
+
+---
+
+### 6. 删除模型
+
+- **URL**: `DELETE /api/v1/config/provider/{provider_name}/model/{model_name}`
+- **用途**: 从指定Provider删除模型（前端"设置页面"删除模型按钮）
+- **响应**:
+  ```json
+  {
+    "success": true,
+    "message": "模型 old-model 已删除"
+  }
+  ```
+
+**注意**：
+- 每个Provider至少需要保留一个模型
+- 如果删除当前使用的模型，会自动切换到该Provider的第一个模型
+
+---
+
+## 已废弃接口（仅保留兼容）
+
+### /chat/switch/{provider}
+
+- **状态**: ⚠️ **已废弃**，不再推荐使用
+- **原因**: 功能已被 `/api/v1/config` PUT 接口替代
+- **URL**: `POST /api/v1/chat/switch/{provider}`
+- **说明**: 已被 `PUT /api/v1/config` 替代，仅保留以防后续需要
+
+---
+
+## 附录：配置文件规范
+
+### 正确格式
+
+```yaml
+ai:
+  provider: opencode        # 顶层：当前使用的provider
+  model: kimi-k2.5-free    # 顶层：当前使用的model
+  opencode:
+    api_base: https://opencode.ai/zen/v1
+    api_key: sk-xxx
+    models:
+      - minimax-m2.5-free
+      - glm-5-free
+    timeout: 120
+    max_retries: 3
+  zhipuai:
+    api_base: https://open.bigmodel.cn/api/paas/v4/
+    api_key: xxx
+    models:
+      - glm-4.7-flash
+```
+
+### 禁止事项
+
+| 禁止项 | 说明 |
+|--------|------|
+| ❌ provider下不能有model字段 | 只能有api_base, api_key, models, timeout, max_retries |
+| ❌ 不能硬编码provider名称 | 必须从配置文件动态读取 |
+
+---
+
+**更新时间**: 2026-03-02 18:45:00
+**版本**: v1.4
 **编写者**: 小沈
+**测试说明**: 2026-03-02 18:30 所有API已通过实际测试验证，每个接口已添加"用途"说明
