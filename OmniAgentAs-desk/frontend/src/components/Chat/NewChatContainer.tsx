@@ -110,6 +110,8 @@ const NewChatContainer: React.FC = () => {
   const [titleInput, setTitleInput] = useState("");
   const [lastSavedTitle, setLastSavedTitle] = useState<string>(""); // ⭐ 新增：记录最后保存的标题
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  // 【小新第二修复 2026-03-02】用于保存当前会话ID，确保onComplete时使用正确的ID
+  const currentSessionIdRef = useRef<string | null>(null);
 
   // 流式输出相关状态
   const [showExecution, setShowExecution] = useState(true);
@@ -245,22 +247,26 @@ const NewChatContainer: React.FC = () => {
 
         // 保存消息到会话
         const currentPending = pendingMessage;
-        if (sessionId && currentPending) {
+        // 【小新第二修复 2026-03-02】优先使用ref中的sessionId，确保使用正确的ID
+        const sessionIdToUse = currentSessionIdRef.current || sessionId;
+        if (sessionIdToUse && currentPending) {
           // 🔴 修复：添加详细的调试日志
           console.log("🔍 保存消息:");
-          console.log("  当前sessionId state:", sessionId);
+          console.log("  ref中的sessionId:", currentSessionIdRef.current);
+          console.log("  state中的sessionId:", sessionId);
+          console.log("  最终使用的sessionId:", sessionIdToUse);
           console.log("  pendingMessage:", currentPending);
           console.log("  fullResponse length:", fullResponse.length);
 
           try {
             // 保存用户消息
-            await sessionApi.saveMessage(sessionId, {
+            await sessionApi.saveMessage(sessionIdToUse, {
               role: "user",
               content: currentPending.content,
             });
 
             // 保存AI回复
-            await sessionApi.saveMessage(sessionId, {
+            await sessionApi.saveMessage(sessionIdToUse, {
               role: "assistant",
               content: fullResponse,
             });
@@ -271,7 +277,7 @@ const NewChatContainer: React.FC = () => {
               sessionTitle.trim() &&
               sessionTitle !== "新会话"
             ) {
-              debouncedSaveTitle(sessionId, sessionTitle);
+              debouncedSaveTitle(sessionIdToUse, sessionTitle);
             }
 
             console.log("✅ 消息和标题保存成功");
@@ -294,11 +300,11 @@ const NewChatContainer: React.FC = () => {
                   await new Promise((resolve) =>
                     setTimeout(resolve, 1000 * retryCount)
                   );
-                  await sessionApi.saveMessage(sessionId, {
+                  await sessionApi.saveMessage(sessionIdToUse, {
                     role: "user",
                     content: currentPending.content,
                   });
-                  await sessionApi.saveMessage(sessionId, {
+                  await sessionApi.saveMessage(sessionIdToUse, {
                     role: "assistant",
                     content: fullResponse,
                   });
@@ -1196,6 +1202,8 @@ const NewChatContainer: React.FC = () => {
         );
         currentSessionId = newSession.session_id;
         setSessionId(currentSessionId);
+        // 【小新第二修复 2026-03-02】保存到ref，确保onComplete时使用正确的ID
+        currentSessionIdRef.current = currentSessionId;
         console.log("创建新会话:", currentSessionId);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : "网络错误";
@@ -1203,6 +1211,9 @@ const NewChatContainer: React.FC = () => {
         console.error("创建会话失败:", error);
         return; // 🔴 修复：创建会话失败时停止发送
       }
+    } else {
+      // 【小新第二修复 2026-03-02】已有会话时也保存到ref
+      currentSessionIdRef.current = currentSessionId;
     }
 
     const userMessage: Message = {
