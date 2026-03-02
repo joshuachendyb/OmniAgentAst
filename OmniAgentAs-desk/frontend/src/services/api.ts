@@ -371,6 +371,13 @@ export interface ConfigFixResponse {
   backup_path: string;
 }
 
+// 配置文件路径响应
+export interface ConfigPathResponse {
+  config_path: string;
+  config_dir: string;
+  exists: boolean;
+}
+
 export interface ProviderAddRequest {
   name: string;
   api_base: string;
@@ -546,6 +553,16 @@ export const configApi = {
    */
   fixConfig: async (): Promise<ConfigFixResponse> => {
     const response = await api.post<ConfigFixResponse>("/config/fix");
+    return response.data;
+  },
+
+  /**
+   * 获取配置文件路径
+   * @author 小新
+   * @update 2026-03-03 新增
+   */
+  getConfigPath: async (): Promise<ConfigPathResponse> => {
+    const response = await api.get<ConfigPathResponse>("/config/path");
     return response.data;
   },
 };

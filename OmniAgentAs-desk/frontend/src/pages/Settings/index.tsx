@@ -62,9 +62,10 @@ import {
   EyeOutlined,
   EyeInvisibleOutlined,
   DesktopOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 import { configApi } from "../../services/api";
-import type { ProviderInfo } from "../../services/api";
+import type { ProviderInfo, ConfigPathResponse } from "../../services/api";
 import HealthCheck from "../../components/HealthCheck";
 
 const { Text } = Typography;
@@ -228,6 +229,8 @@ const ProviderSettings: React.FC = () => {
     total: number;
   }>({ current: 0, total: 0 });
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  // 配置文件路径信息
+  const [configPath, setConfigPath] = useState<ConfigPathResponse | null>(null);
   const deleteControllerRef = React.useRef<AbortController | null>(null);
 
   const [form] = Form.useForm();
@@ -273,6 +276,23 @@ const ProviderSettings: React.FC = () => {
     }
   };
 
+  // 加载配置文件路径
+  const loadConfigPath = async () => {
+    try {
+      const pathData = await configApi.getConfigPath();
+      setConfigPath(pathData);
+    } catch (error) {
+      console.error("加载配置文件路径失败:", error);
+    }
+  };
+
+  // 打开配置文件所在目录
+  const handleOpenConfigDir = () => {
+    if (configPath?.config_dir) {
+      window.open(`file://${configPath.config_dir}`, "_blank");
+    }
+  };
+
   // 选择Provider
   const onSelectProvider = (provider: ProviderInfo) => {
     setSelectedProvider(provider);
@@ -291,6 +311,7 @@ const ProviderSettings: React.FC = () => {
 
   useEffect(() => {
     handleLoadWithValidation();
+    loadConfigPath();
   }, []);
 
   // 编辑Provider
@@ -483,6 +504,43 @@ const ProviderSettings: React.FC = () => {
         currentDisplayName={currentDisplayName}
         onDisplayNameChange={onDisplayNameChange}
       />
+      {/* 配置文件路径显示 */}
+      {configPath && (
+        <Card
+          size="small"
+          style={{ marginBottom: 16 }}
+          title={
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <DesktopOutlined />
+              配置文件路径
+            </span>
+          }
+          extra={
+            <Button
+              type="link"
+              size="small"
+              onClick={handleOpenConfigDir}
+              icon={<FolderOpenOutlined />}
+            >
+              打开目录
+            </Button>
+          }
+        >
+          <div style={{ wordBreak: "break-all" }}>
+            <Text type="secondary">路径: </Text>
+            <Text code>{configPath.config_path}</Text>
+            {configPath.exists ? (
+              <Tag color="green" style={{ marginLeft: 8 }}>
+                存在
+              </Tag>
+            ) : (
+              <Tag color="red" style={{ marginLeft: 8 }}>
+                不存在
+              </Tag>
+            )}
+          </div>
+        </Card>
+      )}
       {/* 配置验证提示 - 成功/失败都显示 */}
 
       {/* 配置验证提示 - 成功/失败都显示 */}
