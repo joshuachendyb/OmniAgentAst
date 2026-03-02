@@ -500,6 +500,14 @@ const ProviderSettings: React.FC = () => {
       // 刷新配置
       loadConfig();
 
+      // 刷新配置验证状态（根据小沈文档流程）
+      try {
+        const validation = await configApi.validateFullConfig();
+        setValidationResult(validation);
+      } catch (e) {
+        console.warn("刷新验证状态失败:", e);
+      }
+
       // 验证服务可用性（触发后端备份删除/恢复机制）
       try {
         await chatApi.validateService();
