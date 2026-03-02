@@ -1,43 +1,53 @@
-v0.4.14
+v0.5.0
 
 更新内容：
-1. 修复会话标题管理功能
-   - 修复会话标题保存 409 版本冲突错误
-   - 删除重复的 API 调用，优化保存逻辑
-   - 后端 API 返回 version 字段，确保前后端一致性
+1. 修复 message_count 始终为 0 的问题
+   - 问题根因：React 闭包陷阱导致 pendingMessage 为 null
+   - 添加 pendingMessageRef 同步存储机制
+   - 在 executeStreamSend 中同步更新 ref
+   - 在 onComplete 中优先使用 ref 值
+   - 解决异步状态更新导致的 stale closure 问题
 
-2. 优化历史会话页面功能
-   - 从 Settings 页面迁移会话管理功能到 History 页面
-   - 删除重复的会话历史 Tab，统一入口
-   - 修复清空所有会话只删除当前页的问题
-   - 优化为并行删除，提升性能
+2. 完善消息发送流程
+   - 在 onComplete 中添加 ensureTitlePersisted 调用
+   - 确保会话标题在消息发送完成后正确保存
+   - 修复多次发送消息时标题丢失的问题
 
-3. 后端修复
-   - get_session_messages 返回 version 字段
-   - 修复多个后端问题，提升系统稳定性
-   - 优化菜单名称，提升用户体验
+3. 代码质量优化
+   - 移除 saveMessage 调用中的 message_count 参数（后端自动处理）
+   - 修正 api.ts 中的类型定义
+   - 删除重复的 messagesCountRef 定义
+   - 修复 handleDangerConfirm 和 handleDangerCancel 中的闭包陷阱
+   - URL 会话加载失败时正确清理状态
 
-4. 代码质量优化
-   - 删除未使用的组件和导入（195 行）
-   - 优化错误处理和状态管理
-   - 改进用户提示信息
+4. API 规范对齐
+   - 遵循后端 API 设计规范
+   - 前端不再传递 message_count 参数
+   - 依赖后端自动维护消息计数
+
+5. 数据库验证
+   - 验证 chat_messages 表数据结构
+   - 确认 message_count 由后端 sessions.py 自动维护
+   - 测试 saveMessage 正确写入消息到数据库
 
 技术细节：
-- NewChatContainer.tsx: 删除 2 处重复 API 调用
-- History/index.tsx: 重构清空所有会话逻辑
-- Settings/index.tsx: 删除 SessionHistory 组件
-- sessions.py: 添加 version 字段到查询返回
+- NewChatContainer.tsx: 添加 pendingMessageRef 解决闭包问题
+- NewChatContainer.tsx: 修复 onComplete 回调中的状态同步
+- NewChatContainer.tsx: 移除 message_count 冗余参数
+- NewChatContainer.tsx: 修复 handleDangerConfirm/Cancel 闭包陷阱
+- api.ts: 修正 SaveMessageRequest 类型定义
+- sse.ts: 分析 onComplete 回调机制
 
 版本升级说明：
-- v0.4.13: 修复架构一致性和权限管理问题
-- v0.4.14: 修复会话标题管理和历史会话功能（本次升级）
+- v0.4.14: 修复会话标题管理和历史会话功能
+- v0.5.0: 修复 message_count 为 0 问题及闭包陷阱（本次升级）
 
 验证结果：
-- ✅ 会话标题编辑功能正常，无 409 错误
-- ✅ 清空所有会话一次删除全部，不分页
-- ✅ 批量删除、单个删除功能正常
+- ✅ message_count 在消息发送后正确更新
+- ✅ 闭包陷阱问题彻底解决
+- ✅ 会话标题在消息发送后正确保存
 - ✅ TypeScript 编译通过，无新增警告
 - ✅ 代码质量提升，符合团队规范
 
-参与开发：小欧、小新、小沈、小查
-完成时间：2026-03-01 14:45:00
+参与开发：小欧、小新、小沈、小查、小健
+完成时间：2026-03-03 00:38:48
