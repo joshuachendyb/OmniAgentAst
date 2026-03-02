@@ -464,35 +464,47 @@ const ProviderSettings: React.FC = () => {
 
   // 全局配置 - Provider切换
   const onProviderChange = async (provider: string) => {
-    // 【修复】从完整配置中获取当前使用的模型，而不是用providerData.models[0]
-    const fullConfig = await configApi.getFullConfig();
-    const providerData = providers.find((p) => p.name === provider);
-    if (!providerData) return;
-    setCurrentProvider(provider);
-    // 如果切换到当前使用的provider，使用当前模型；否则使用provider的第一个模型
-    // 【修复】检查models是否为空数组
-    const targetModel =
-      fullConfig.current_provider === provider
-        ? fullConfig.current_model
-        : providerData.models.length > 0
-        ? providerData.models[0]
-        : "";
-    setCurrentModel(targetModel);
-    await configApi.updateConfig({
-      ai_provider: provider,
-      ai_model: targetModel,
-    });
-    loadConfig();
+    try {
+      // 【修复】从完整配置中获取当前使用的模型，而不是用providerData.models[0]
+      const fullConfig = await configApi.getFullConfig();
+      const providerData = providers.find((p) => p.name === provider);
+      if (!providerData) return;
+      setCurrentProvider(provider);
+      // 如果切换到当前使用的provider，使用当前模型；否则使用provider的第一个模型
+      // 【修复】检查models是否为空数组
+      const targetModel =
+        fullConfig.current_provider === provider
+          ? fullConfig.current_model
+          : providerData.models.length > 0
+          ? providerData.models[0]
+          : "";
+      setCurrentModel(targetModel);
+      await configApi.updateConfig({
+        ai_provider: provider,
+        ai_model: targetModel,
+      });
+      loadConfig();
+      message.success("Provider已切换");
+    } catch (error) {
+      message.error("切换Provider失败");
+      console.error("切换Provider失败:", error);
+    }
   };
 
   // 全局配置 - Model切换
   const onModelChange = async (model: string) => {
-    setCurrentModel(model);
-    await configApi.updateConfig({
-      ai_provider: currentProvider,
-      ai_model: model,
-    });
-    loadConfig();
+    try {
+      setCurrentModel(model);
+      await configApi.updateConfig({
+        ai_provider: currentProvider,
+        ai_model: model,
+      });
+      loadConfig();
+      message.success("模型已切换");
+    } catch (error) {
+      message.error("切换模型失败");
+      console.error("切换模型失败:", error);
+    }
   };
 
   return (
