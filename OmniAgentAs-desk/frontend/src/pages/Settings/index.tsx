@@ -449,14 +449,18 @@ const ProviderSettings: React.FC = () => {
     }
   };
 
-  // 获取Provider显示名称
-  const getProviderDisplayName = (name: string) => {
-    const nameMap: Record<string, string> = {
-      zhipuai: "智谱GLM",
-      opencode: "OpenCode",
-      longcat: "LongCat",
-    };
-    return nameMap[name] || name;
+  // 获取Provider显示名称 - 从配置文件动态获取
+  const getProviderDisplayName = (
+    name: string,
+    providerList?: ProviderInfo[]
+  ) => {
+    if (providerList && providerList.length > 0) {
+      const provider = providerList.find((p) => p.name === name);
+      if (provider && (provider as any).display_name) {
+        return (provider as any).display_name;
+      }
+    }
+    return name;
   };
 
   // 全局配置 - Provider切换
@@ -723,7 +727,8 @@ const ProviderSettings: React.FC = () => {
               <Typography.Title level={5} style={{ marginBottom: 24 }}>
                 <Space>
                   <ApiOutlined />
-                  配置详情：{getProviderDisplayName(selectedProvider.name)}
+                  配置详情：
+                  {getProviderDisplayName(selectedProvider.name, providers)}
                   <Tag color="blue">{selectedProvider.name}</Tag>
                   {selectedProvider.name === currentProvider && (
                     <Tag icon={<CheckCircleOutlined />} color="success">
@@ -930,7 +935,8 @@ const ProviderSettings: React.FC = () => {
                   </Button>
                   <Popconfirm
                     title={`确定删除 ${getProviderDisplayName(
-                      selectedProvider.name
+                      selectedProvider.name,
+                      providers
                     )} 吗？`}
                     description="删除后无法恢复"
                     onConfirm={() =>
@@ -997,7 +1003,8 @@ const ProviderSettings: React.FC = () => {
       {/* 编辑Provider弹框 */}
       <Modal
         title={`编辑 ${getProviderDisplayName(
-          editingProvider?.name || ""
+          editingProvider?.name || "",
+          providers
         )} 配置`}
         open={editModalVisible}
         onCancel={() => setEditModalVisible(false)}
