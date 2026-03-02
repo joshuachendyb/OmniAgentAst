@@ -1413,8 +1413,7 @@ const NewChatContainer: React.FC = () => {
                           sessionVersion
                         );
                         setSessionTitle(titleInput.trim());
-                        setTitleSource("user"); // ⭐ 标记为用户修改
-                        // ⭐ 修复 409 冲突：删除重复的 debouncedSaveTitle 调用，上面已经保存了
+                        setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
                         message.success("标题已保存");
                       } catch (error: any) {
                         // ⭐ 处理 409 版本冲突
