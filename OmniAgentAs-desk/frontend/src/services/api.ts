@@ -332,6 +332,7 @@ export interface ProviderInfo {
   models: string[];
   timeout: number;
   max_retries: number;
+  display_name?: string; // 可选的显示名称
 }
 
 export interface FullConfigResponse {

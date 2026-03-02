@@ -455,8 +455,8 @@ const ProviderSettings: React.FC = () => {
   ) => {
     if (providerList && providerList.length > 0) {
       const provider = providerList.find((p) => p.name === name);
-      if (provider && (provider as any).display_name) {
-        return (provider as any).display_name;
+      if (provider && provider.display_name) {
+        return provider.display_name;
       }
     }
     return name;
