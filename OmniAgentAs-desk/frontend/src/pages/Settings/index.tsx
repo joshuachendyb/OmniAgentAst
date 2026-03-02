@@ -460,14 +460,10 @@ const ProviderSettings: React.FC = () => {
       const providerData = providers.find((p) => p.name === provider);
       if (!providerData) return;
       setCurrentProvider(provider);
-      // 如果切换到当前使用的provider，使用当前模型；否则使用provider的第一个模型
-      // 【修复】直接使用本地state，不再调用getFullConfig()多余的API
+      // 用户切换到新provider时，直接使用新provider的第一个模型作为默认
+      // 避免因currentProvider异步更新导致的逻辑问题
       const targetModel =
-        currentProvider === provider
-          ? currentModel
-          : providerData.models.length > 0
-          ? providerData.models[0]
-          : "";
+        providerData.models.length > 0 ? providerData.models[0] : "";
       setCurrentModel(targetModel);
       await configApi.updateConfig({
         ai_provider: provider,
