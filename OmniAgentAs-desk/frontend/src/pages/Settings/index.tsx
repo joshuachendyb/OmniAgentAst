@@ -251,7 +251,6 @@ const ProviderSettings: React.FC = () => {
     total: number;
   }>({ current: 0, total: 0 });
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
-  const [deleteCancelled, setDeleteCancelled] = useState(false);
   const deleteControllerRef = React.useRef<AbortController | null>(null);
 
   const [form] = Form.useForm();
@@ -359,22 +358,29 @@ const ProviderSettings: React.FC = () => {
   ) => {
     setDeleteProgress({ current: 0, total: models.length });
     setDeleteModalVisible(true);
-    setDeleteCancelled(false);
 
     const controller = new AbortController();
     deleteControllerRef.current = controller;
 
     try {
       const deletePromises = models.map(async (modelName, index) => {
-        if (deleteCancelled) {
+        // 检查是否已中止
+        if (controller.signal.aborted) {
           return { success: false, model: modelName, cancelled: true };
         }
 
         try {
-          await configApi.deleteModel(providerName, modelName);
+          // 传递 signal 参数以支持取消
+          await configApi.deleteModel(providerName, modelName, {
+            signal: controller.signal,
+          });
           setDeleteProgress({ current: index + 1, total: models.length });
           return { success: true, model: modelName };
-        } catch (error) {
+        } catch (error: any) {
+          // 如果是取消错误
+          if (error.name === "AbortError" || controller.signal.aborted) {
+            return { success: false, model: modelName, cancelled: true };
+          }
           setDeleteProgress({ current: index + 1, total: models.length });
           return { success: false, model: modelName, error };
         }
@@ -387,7 +393,7 @@ const ProviderSettings: React.FC = () => {
       ).length;
       const cancelledCount = results.filter((r) => r.cancelled).length;
 
-      if (deleteCancelled) {
+      if (controller.signal.aborted) {
         message.warning(
           `批量删除已取消：${successCount} 成功，${cancelledCount} 未执行`
         );
@@ -983,13 +989,21 @@ const ProviderSettings: React.FC = () => {
         title="批量删除"
         open={deleteModalVisible}
         onCancel={() => {
-          setDeleteCancelled(true);
+          // 调用 abort() 中止进行中的请求
+          if (deleteControllerRef.current) {
+            deleteControllerRef.current.abort();
+          }
         }}
         footer={[
           <Button
             key="cancel"
             danger
-            onClick={() => setDeleteCancelled(true)}
+            onClick={() => {
+              // 调用 abort() 中止进行中的请求
+              if (deleteControllerRef.current) {
+                deleteControllerRef.current.abort();
+              }
+            }}
             disabled={deleteProgress.current >= deleteProgress.total}
           >
             取消

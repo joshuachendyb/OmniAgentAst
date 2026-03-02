@@ -486,13 +486,16 @@ export const configApi = {
   /**
    * 删除Provider下的模型
    * @author 小欧
+   * @param signal AbortController.signal 用于取消请求
    */
   deleteModel: async (
     providerName: string,
-    modelName: string
+    modelName: string,
+    options?: { signal?: AbortSignal }
   ): Promise<{ success: boolean; message: string }> => {
     const response = await api.delete(
-      `/config/provider/${providerName}/model/${modelName}`
+      `/config/provider/${providerName}/model/${modelName}`,
+      options?.signal ? { signal: options.signal } : {}
     );
     return response.data;
   },
