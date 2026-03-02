@@ -71,60 +71,48 @@ const { Text } = Typography;
 const { TabPane } = Tabs;
 
 /**
- * 全局配置区域组件（ai.provider和ai.model）
+ * 全局配置区域组件（显示 display_name 列表）
  * @author 小新
- * @update 2026-02-26 新增
+ * @update 2026-03-03 重构为单一下拉框
  */
+interface ModelOption {
+  id: number;
+  provider: string;
+  model: string;
+  display_name: string;
+  current_model: boolean;
+}
+
 const GlobalConfigArea: React.FC<{
-  providers: ProviderInfo[];
-  currentProvider: string;
-  currentModel: string;
-  onProviderChange: (provider: string) => void;
-  onModelChange: (model: string) => void;
-}> = ({
-  providers,
-  currentProvider,
-  currentModel,
-  onProviderChange,
-  onModelChange,
-}) => {
+  modelList: ModelOption[];
+  currentDisplayName: string;
+  onDisplayNameChange: (option: ModelOption) => void;
+}> = ({ modelList, currentDisplayName, onDisplayNameChange }) => {
   return (
     <Card size="small" style={{ marginBottom: 24 }}>
       <Row gutter={[16, 16]}>
-        <Col span={12}>
-          <Text strong style={{ display: "block", marginBottom: 8 }}>
-            当前Provider:
-          </Text>
-          <Select
-            value={currentProvider}
-            onChange={onProviderChange}
-            style={{ width: "100%" }}
-            placeholder="选择Provider"
-          >
-            {providers.map((p) => (
-              <Select.Option key={p.name} value={p.name}>
-                {p.name}
-              </Select.Option>
-            ))}
-          </Select>
-        </Col>
-        <Col span={12}>
+        <Col span={24}>
           <Text strong style={{ display: "block", marginBottom: 8 }}>
             当前模型:
           </Text>
           <Select
-            value={currentModel}
-            onChange={onModelChange}
+            value={currentDisplayName}
+            onChange={(displayName) => {
+              const option = modelList.find(
+                (m) => m.display_name === displayName
+              );
+              if (option) {
+                onDisplayNameChange(option);
+              }
+            }}
             style={{ width: "100%" }}
             placeholder="选择模型"
           >
-            {providers
-              .find((p) => p.name === currentProvider)
-              ?.models.map((model) => (
-                <Select.Option key={model} value={model}>
-                  {model}
-                </Select.Option>
-              ))}
+            {modelList.map((m) => (
+              <Select.Option key={m.display_name} value={m.display_name}>
+                {m.display_name}
+              </Select.Option>
+            ))}
           </Select>
         </Col>
       </Row>
@@ -216,6 +204,9 @@ const ProviderSettings: React.FC = () => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState<string>("");
   const [currentModel, setCurrentModel] = useState<string>("");
+  // 模型列表（从 getModelList API 获取，包含 display_name）
+  const [modelList, setModelList] = useState<ModelOption[]>([]);
+  const [currentDisplayName, setCurrentDisplayName] = useState<string>("");
   const [selectedProvider, setSelectedProvider] = useState<ProviderInfo | null>(
     null
   );
@@ -252,12 +243,23 @@ const ProviderSettings: React.FC = () => {
   const loadConfig = async () => {
     setLoading(true);
     try {
+      // 获取完整配置
       const data = await configApi.getFullConfig();
       const providerList = Object.values(data.providers);
       setProviders(providerList);
       setCurrentProvider(data.current_provider);
-      // 【修复】同时设置当前模型
       setCurrentModel(data.current_model);
+
+      // 获取模型列表（包含 display_name）
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
+
+      // 设置当前显示名称
+      const currentModelOption = modelData.models.find((m) => m.current_model);
+      if (currentModelOption) {
+        setCurrentDisplayName(currentModelOption.display_name);
+      }
+
       // 设置当前选中的Provider为当前使用的Provider或第一个Provider
       const current =
         providerList.find((p) => p.name === data.current_provider) ||
@@ -454,39 +456,19 @@ const ProviderSettings: React.FC = () => {
     return name;
   };
 
-  // 全局配置 - Provider切换
-  const onProviderChange = async (provider: string) => {
+  // 全局配置 - 模型选择（同时更换 provider 和 model）
+  const onDisplayNameChange = async (option: ModelOption) => {
     try {
-      const providerData = providers.find((p) => p.name === provider);
-      if (!providerData) return;
-      setCurrentProvider(provider);
-      // 用户切换到新provider时，直接使用新provider的第一个模型作为默认
-      // 避免因currentProvider异步更新导致的逻辑问题
-      const targetModel =
-        providerData.models.length > 0 ? providerData.models[0] : "";
-      setCurrentModel(targetModel);
-      await configApi.updateConfig({
-        ai_provider: provider,
-        ai_model: targetModel,
-      });
-      loadConfig();
-      message.success("Provider已切换");
-    } catch (error) {
-      message.error("切换Provider失败");
-      console.error("切换Provider失败:", error);
-    }
-  };
+      setCurrentProvider(option.provider);
+      setCurrentModel(option.model);
+      setCurrentDisplayName(option.display_name);
 
-  // 全局配置 - Model切换
-  const onModelChange = async (model: string) => {
-    try {
-      setCurrentModel(model);
       await configApi.updateConfig({
-        ai_provider: currentProvider,
-        ai_model: model,
+        ai_provider: option.provider,
+        ai_model: option.model,
       });
       loadConfig();
-      message.success("模型已切换");
+      message.success(`已切换到 ${option.display_name}`);
     } catch (error) {
       message.error("切换模型失败");
       console.error("切换模型失败:", error);
@@ -497,11 +479,9 @@ const ProviderSettings: React.FC = () => {
     <div>
       {/* 全局配置区域 */}
       <GlobalConfigArea
-        providers={providers}
-        currentProvider={currentProvider}
-        currentModel={currentModel}
-        onProviderChange={onProviderChange}
-        onModelChange={onModelChange}
+        modelList={modelList}
+        currentDisplayName={currentDisplayName}
+        onDisplayNameChange={onDisplayNameChange}
       />
       {/* 配置验证提示 - 成功/失败都显示 */}
 
