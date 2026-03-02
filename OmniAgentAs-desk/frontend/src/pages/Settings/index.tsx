@@ -504,7 +504,7 @@ const ProviderSettings: React.FC = () => {
         currentDisplayName={currentDisplayName}
         onDisplayNameChange={onDisplayNameChange}
       />
-      {/* 配置文件路径显示 */}
+      {/* 配置文件路径显示 - 放在模型配置Tab内部顶部 */}
       {configPath && (
         <Card
           size="small"
