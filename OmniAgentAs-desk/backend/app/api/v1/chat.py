@@ -636,7 +636,9 @@ async def chat_stream(request: ChatRequest):
                         content="文件操作执行失败"
                     )
             else:
-                # 普通对话：调用AI服务（流式）- 【小沈修改2026-03-03】移除不必要的步骤显示
+                # 普通对话：调用AI服务（流式）
+                yield f"data: {json.dumps({'type': 'action', 'step': 1, 'content': '正在调用AI服务...'})}\n\n"
+                await asyncio.sleep(0.3)
                 
                 # 检查是否被中断
                 async with running_tasks_lock:
