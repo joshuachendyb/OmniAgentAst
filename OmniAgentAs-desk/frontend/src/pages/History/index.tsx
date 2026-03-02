@@ -447,7 +447,7 @@ const HistoryPage: React.FC = () => {
                           >
                             <Space>
                               <Tag icon={<CommentOutlined />} color="blue">
-                                {session.message_count} 条消息
+                                {session.message_count ?? 0} 条消息
                               </Tag>
                             </Space>
                             <Space>

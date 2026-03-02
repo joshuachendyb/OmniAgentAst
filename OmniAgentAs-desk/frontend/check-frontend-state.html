@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>检查前端状态</title>
+</head>
+<body>
+    <h1>前端状态检查</h1>
+    <button onclick="checkSessionStorage()">检查sessionStorage</button>
+    <button onclick="clearSessionStorage()">清空sessionStorage</button>
+    <pre id="output"></pre>
+
+    <script>
+        function checkSessionStorage() {
+            const output = document.getElementById('output');
+            const chatState = sessionStorage.getItem('chat_session_state');
+            
+            if (chatState) {
+                const state = JSON.parse(chatState);
+                output.textContent = JSON.stringify(state, null, 2);
+                console.log('前端会话状态:', state);
+            } else {
+                output.textContent = 'sessionStorage中没有chat_session_state';
+            }
+        }
+
+        function clearSessionStorage() {
+            sessionStorage.removeItem('chat_session_state');
+            document.getElementById('output').textContent = '已清空';
+            console.log('已清空sessionStorage');
+        }
+
+        // 自动检查
+        window.onload = checkSessionStorage;
+    </script>
+</body>
+</html>

@@ -113,6 +113,10 @@ const NewChatContainer: React.FC = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   // 【小新第二修复 2026-03-02】用于保存当前会话ID，确保onComplete时使用正确的ID
   const currentSessionIdRef = useRef<string | null>(null);
+  // 【小新第二修复 2026-03-02】用于同步跟踪消息数量，确保保存时能获取准确值
+  const messagesCountRef = useRef<number>(0);
+  // 【小新第三修复 2026-03-02】用于同步存储pendingMessage，解决React闭包陷阱
+  const pendingMessageRef = useRef<Message | null>(null);
 
   // 流式输出相关状态
   const [showExecution, setShowExecution] = useState(true);
@@ -247,7 +251,8 @@ const NewChatContainer: React.FC = () => {
         });
 
         // 保存消息到会话
-        const currentPending = pendingMessage;
+        // 【小新第三修复 2026-03-02】优先使用ref中的pendingMessage，确保获取正确的值
+        const currentPending = pendingMessageRef.current || pendingMessage;
         // 【小新第二修复 2026-03-02】优先使用ref中的sessionId，确保使用正确的ID
         const sessionIdToUse = currentSessionIdRef.current || sessionId;
         if (sessionIdToUse && currentPending) {
@@ -260,20 +265,30 @@ const NewChatContainer: React.FC = () => {
           console.log("  fullResponse length:", fullResponse.length);
 
           try {
-            // 保存用户消息
+            // 使用 ref 获取当前消息数量（已通过 useEffect 同步更新）
+            const currentCount = messagesCountRef.current;
+
+            // 保存用户消息（API会自动处理消息计数）
             await sessionApi.saveMessage(sessionIdToUse, {
               role: "user",
               content: currentPending.content,
+              // 不传递 message_count，让后端自动处理
             });
 
-            // 保存AI回复
+            // 保存AI回复（API会自动处理消息计数）
             await sessionApi.saveMessage(sessionIdToUse, {
               role: "assistant",
               content: fullResponse,
+              // 不传递 message_count，让后端自动处理
             });
 
-            // 【小新第二修复 2026-03-02】后端已在 save_message 中自动生成和保存标题，
-            // 不需要前端再次保存，避免覆盖后端的自动标题
+            // 【小新第四修复 2026-03-02】确保标题被持久化保存
+            // 虽然后端会在 save_message 中自动生成标题，但需要确保用户修改的标题被保存
+            if (sessionIdToUse) {
+              const currentTitle = sessionTitle; // 获取当前标题
+              await ensureTitlePersisted(sessionIdToUse, currentTitle);
+              console.log("✅ 标题持久化保存完成");
+            }
             console.log("✅ 消息保存成功");
           } catch (saveError: any) {
             console.error("保存消息或标题失败:", saveError);
@@ -294,13 +309,17 @@ const NewChatContainer: React.FC = () => {
                   await new Promise((resolve) =>
                     setTimeout(resolve, 1000 * retryCount)
                   );
+                  // 使用 ref 获取当前消息数量
+                  const retryCountNow = messagesCountRef.current;
                   await sessionApi.saveMessage(sessionIdToUse, {
                     role: "user",
                     content: currentPending.content,
+                    // 不传递 message_count，让后端自动处理
                   });
                   await sessionApi.saveMessage(sessionIdToUse, {
                     role: "assistant",
                     content: fullResponse,
+                    // 不传递 message_count，让后端自动处理
                   });
                   message.success("消息保存成功");
                   return;
@@ -349,7 +368,9 @@ const NewChatContainer: React.FC = () => {
         }
 
         setLoading(false);
-        setPendingMessage(null);
+        // 【小新第三修复 2026-03-02】清理ref和state
+        pendingMessageRef.current = null;  // 同步清理
+        setPendingMessage(null);           // 异步清理
       },
       [sessionId, pendingMessage]
     ),
@@ -418,6 +439,11 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages, currentResponse, executionSteps]);
+
+  // 【小新第二修复 2026-03-02】同步跟踪消息数量，用于保存消息时获取准确的值
+  useEffect(() => {
+    messagesCountRef.current = messages.length;
+  }, [messages]);
 
   // 当页面从隐藏状态变为显示时也自动滚动到底部
   useEffect(() => {
@@ -972,8 +998,14 @@ const NewChatContainer: React.FC = () => {
             );
             return;
           } else {
-            // 【小新第二修复 2026-03-02】URL会话加载失败（没有消息），也return，避免加载最近会话
-            console.warn("🔴 URL会话没有消息，跳过加载:", urlSessionId);
+            // 【小新第四修复 2026-03-02 15:45:30】URL会话加载失败（没有消息），清理状态避免混乱
+            console.warn("🔴 URL会话没有消息，清理状态并跳过加载:", urlSessionId);
+            setSessionId(null);
+            currentSessionIdRef.current = null;  // 同步清理ref
+            setMessages([]);
+            setSessionTitle("新会话");
+            setSessionVersion(1);
+            setTitleLocked(false);
             setSessionJumpLoading(false);
             message.destroy("session-load");
             return;
@@ -1139,7 +1171,8 @@ const NewChatContainer: React.FC = () => {
     };
     setMessages((prev) => [...prev, assistantMessage]);
 
-    // 保存待发送消息，用于onComplete时保存到会话
+    // 保存待发送消息到ref（同步）和state（异步）
+    pendingMessageRef.current = userMessage;  // 同步更新，立即生效 ✅
     setPendingMessage(userMessage);
 
     // 发送流式请求
@@ -1260,6 +1293,8 @@ const NewChatContainer: React.FC = () => {
           setDangerCommand(userMessage.content);
           setDangerScore(score);
           setDangerMessage(riskMessage);
+          // 【小新第三修复 2026-03-02】同步更新ref
+          pendingMessageRef.current = userMessage;
           setPendingMessage(userMessage);
           setDangerModalVisible(true);
           break;
