@@ -165,6 +165,7 @@ const NewChatContainer: React.FC = () => {
         const lastMessage = prev[prev.length - 1];
         // 【修复问题 7】如果是 start 步骤，创建占位消息
         if (step.type === "start") {
+          console.log("🔍 onStep 收到 start 事件: step=", step);
           // 检查是否已有消息
           if (!lastMessage || lastMessage.role !== "assistant") {
             const newAssistantMessage: Message = {
@@ -178,6 +179,7 @@ const NewChatContainer: React.FC = () => {
               provider: step.provider,
               displayName: step.displayName, // 直接使用后端返回的 displayName（驼峰）
             };
+            console.log("🔍 创建新AI助手消息: displayName=", newAssistantMessage.displayName);
             return [...prev, newAssistantMessage];
           }
         }

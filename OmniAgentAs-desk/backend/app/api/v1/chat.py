@@ -623,7 +623,6 @@ async def chat_stream(request: ChatRequest):
                             # 发送最终结果
                             if result.success:
                                 result_content = getattr(result, 'content', '')
-                                display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
                                 yield create_final_response(
                                     content=result_content,
                                     model=ai_service.model,
@@ -632,7 +631,6 @@ async def chat_stream(request: ChatRequest):
                                 )
                             else:
                                 result_error = getattr(result, 'error', '执行失败')
-                                display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
                                 yield f"data: {json.dumps({'type': 'error', 'content': result_error, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
                             
                 except Exception as e:

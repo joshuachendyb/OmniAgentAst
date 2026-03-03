@@ -17,7 +17,7 @@ from typing import List, Optional, Union
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from app.utils.logger import logger
-from app.utils.display_name_cache import get_cached_display_name  # ⭐ 【小沈添加 2026-03-03】
+from app.utils.display_name_cache import get_cached_display_name, clear_cached_display_name  # ⭐ 【小沈添加 2026-03-03】【小健更新 2026-03-04】
 
 # ⭐ 修复P2-问题7：导入类型注解用于更准确的类型提示
 from sqlite3 import Connection, Cursor
@@ -980,6 +980,9 @@ async def delete_session(session_id: str):
         
         conn.commit()
         conn.close()
+        
+        # ⭐ 【小健添加 2026-03-04】删除会话时同时清除缓存
+        clear_cached_display_name(session_id)
         
         logger.info(f"删除会话成功: id={session_id}")
         
