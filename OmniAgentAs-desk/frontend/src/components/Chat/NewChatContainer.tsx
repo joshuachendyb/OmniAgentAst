@@ -1764,6 +1764,10 @@ const NewChatContainer: React.FC = () => {
             }
           }}
           disabled={loading || isReceiving}
+          style={{
+            borderColor: '#a8a8a8', // 加深输入框边框颜色
+            boxShadow: 'none',
+          }}
         />
         <Button
           type="primary"
@@ -1772,6 +1776,12 @@ const NewChatContainer: React.FC = () => {
           loading={loading || isReceiving || checkingDanger}
           disabled={!inputValue.trim()}
           block
+          style={{
+            backgroundColor: !inputValue.trim() ? '#e6e6e6' : '#0066cc', // disabled 时加深，active 时柔和蓝
+            borderColor: !inputValue.trim() ? '#d0d0d0' : '#0066cc',
+            color: !inputValue.trim() ? 'rgba(0,0,0,0.4)' : '#fff',
+            fontWeight: 500,
+          }}
         >
           {isReceiving
             ? "接收中..."
