@@ -326,34 +326,38 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
         {/* 消息气泡 - 直接渲染，减少一层 div */}
         <div style={{ ...getMessageStyle(), position: "relative" }}>
-          {/* 复制按钮（悬停显示）- 优化样式 */}
-          <Tooltip title={copied ? "已复制" : "复制"}>
-            <Button
-              type="text"
-              size="small"
-              icon={
-                copied ? (
-                  <CheckOutlined style={{ color: "#52c41a" }} />
-                ) : (
-                  <CopyOutlined style={{ color: isUser ? "#1890ff" : "#595959" }} />
-                )
-              }
-              onClick={handleCopy}
-              style={{
-                position: "absolute",
-                top: 8,
-                right: 8,
-                opacity: 0,
-                transition: "opacity 0.2s ease",
-                background: isUser ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.04)",
-                borderRadius: "6px",
-                padding: "2px 6px",
-                minHeight: "auto",
-                height: "24px",
-              }}
-              className="copy-button"
-            />
-          </Tooltip>
+            {/* 复制按钮（悬停显示）- 透明背景，小巧精致 */}
+            <Tooltip title={copied ? "已复制" : "复制"}>
+              <Button
+                type="text"
+                size="small"
+                icon={
+                  copied ? (
+                    <CheckOutlined style={{ color: "#52c41a" }} />
+                  ) : (
+                    <CopyOutlined style={{ color: isUser ? "rgba(255,255,255,0.9)" : "#595959" }} />
+                  )
+                }
+                onClick={handleCopy}
+                style={{
+                  position: "absolute",
+                  top: 4,
+                  right: 6,
+                  opacity: 0,
+                  transition: "opacity 0.2s ease",
+                  background: "transparent",
+                  border: "none",
+                  boxShadow: "none",
+                  padding: "0 4px",
+                  minHeight: "auto",
+                  height: "20px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                className="copy-button"
+              />
+            </Tooltip>
 
           {/* 消息内容 */}
           <div
