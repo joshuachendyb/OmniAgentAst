@@ -273,9 +273,9 @@ async def create_session(session_create: Optional[SessionCreate] = None):
         
         utc_time = get_utc_timestamp()
         
-        # 【小沈修复 2026-03-03】获取is_valid值
-        # 前端用户创建会话时传入True，测试代码默认为False
-        is_valid = session_create.is_valid if session_create and session_create.is_valid is not None else False
+        # 【小沈修改 2026-03-03】新创建的会话默认is_valid=FALSE
+        # 只有在首次保存消息后，才会自动设置为TRUE
+        is_valid = False
         
         # 优化：初始化新字段（根据字段是否存在动态构建SQL）
         # title_locked = FALSE (默认未锁定)
@@ -701,6 +701,15 @@ async def save_message(session_id: str, message: MessageCreate):
                 'UPDATE chat_sessions SET message_count = ? WHERE id = ?',
                 (new_message_count, session_id)
             )
+        
+        # 【小沈修改2026-03-03】保存消息后，自动将该会话的is_valid设置为TRUE
+        # 这是因为只要有消息保存，说明是真实用户会话
+        cursor.execute(
+            'UPDATE chat_sessions SET is_valid = TRUE WHERE id = ? AND is_valid = FALSE',
+            (session_id,)
+        )
+        if cursor.rowcount > 0:
+            logger.info(f"会话自动标记为有效: session_id={session_id}")
         
         # 提交事务
         conn.commit()
