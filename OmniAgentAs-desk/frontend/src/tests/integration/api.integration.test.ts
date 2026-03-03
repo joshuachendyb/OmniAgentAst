@@ -3,7 +3,7 @@
  *
  * @author 小新
  * @description Integration tests for API services with mock server
- * @update 2026-02-18 修复API调用以匹配实际API定义 by 小新
+ * @update 2026-02-18 修复 API 调用以匹配实际 API 定义 by 小新
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';

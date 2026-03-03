@@ -1055,7 +1055,7 @@ const NewChatContainer: React.FC = () => {
 
       // 🔴 修复4: 如果都没有，加载最近的会话（只获取最近的1个，直接加载，不筛选消息数量）
       try {
-        const response = await sessionApi.listSessions(1, 1);
+        const response = await sessionApi.listSessions(1, 1, undefined, true); // ⭐ 只加载有效会话
         if (response.sessions && response.sessions.length > 0) {
           const latestSession = response.sessions[0];
           const sessionData = await sessionApi.getSessionMessages(

@@ -82,7 +82,8 @@ const HistoryPage: React.FC = () => {
       const response = await sessionApi.listSessions(
         page,
         pagination.pageSize,
-        searchKeyword
+        searchKeyword,
+        true  // ⭐ 只显示有效会话
       );
       setSessions(response.sessions);
       setPagination({
@@ -131,7 +132,8 @@ const HistoryPage: React.FC = () => {
       const response = await sessionApi.listSessions(
         pagination.current,
         pagination.pageSize,
-        keyword
+        keyword,
+        true  // ⭐ 只显示有效会话
       );
       setSessions(response.sessions);
       setPagination({
@@ -199,7 +201,9 @@ const HistoryPage: React.FC = () => {
       // ⭐ 修复：获取所有会话（不分页），确保删除全部
       const allSessionsResponse = await sessionApi.listSessions(
         1,
-        pagination.total
+        pagination.total,
+        undefined,
+        true  // ⭐ 只显示有效会话
       );
       const allSessions = allSessionsResponse.sessions;
 
@@ -372,7 +376,11 @@ const HistoryPage: React.FC = () => {
                     hoverable
                     size="small"
                     className="session-card"
-                    style={{ height: "100%" }}
+                    style={{ 
+                      height: "100%",
+                      opacity: session.is_valid ? 1 : 0.5,  // ⭐ 无效会话灰色显示
+                      backgroundColor: session.is_valid ? "#fff" : "#f5f5f5"  // ⭐ 灰色背景
+                    }}
                     actions={[
                       <Tooltip key="resume" title="继续对话">
                         <Button

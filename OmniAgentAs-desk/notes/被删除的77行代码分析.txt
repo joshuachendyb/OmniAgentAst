@@ -1,0 +1,82 @@
+// ============================================================
+// 被删除的77行代码（第360-436行）
+// 来源：d122205 版本
+// ============================================================
+
+            console.log("✅ 消息保存成功");     // ← 多余的独立行（语法错误）
+          } catch (saveError: any) {             // ← 孤立的 catch，没有对应 try（语法错误）
+            console.error("保存消息或标题失败:", saveError);
+            console.error("使用的sessionId:", sessionId);
+            // 修复：正确的错误处理，而不是重复相同的失败操作
+            let retryCount = 0;
+            const maxRetries = 3;
+
+            const retrySave = async () => {       // ← 重试保存逻辑
+              while (retryCount < maxRetries) {
+                retryCount++;
+                message.warning({
+                  content: `保存失败，正在重试 (${retryCount}/${maxRetries})...`,
+                  duration: 2,
+                });
+
+                try {
+                  await new Promise((resolve) =>
+                    setTimeout(resolve, 1000 * retryCount)
+                  );
+                  // 使用 ref 获取当前消息数量
+                  const retryCountNow = messagesCountRef.current;
+                  await sessionApi.saveMessage(sessionIdToUse, {
+                    role: "user",
+                    content: currentPending.content,
+                    // 不传递 message_count，让后端自动处理
+                  });
+                  await sessionApi.saveMessage(sessionIdToUse, {
+                    role: "assistant",
+                    content: fullResponse,
+                    // 不传递 message_count，让后端自动处理
+                  });
+                  message.success("消息保存成功");
+                  return;
+                } catch (error: any) {
+                  // 检查是否是409版本冲突或其他错误
+                  if (error?.response?.status === 409) {
+                    message.error("会话数据冲突，请刷新页面");
+                    break; // 版本冲突不重试
+                  } else if (retryCount === maxRetries) {
+                    message.error({
+                      content: "消息保存失败，请刷新页面重试",
+                      duration: 5,
+                    });
+                    // 本地缓存消息（防止丢失）
+                    try {
+                      const cacheKey = `unsaved_messages_${sessionId}`;
+                      const cached = JSON.parse(
+                        localStorage.getItem(cacheKey) || "[]"
+                      );
+                      // 避免重复缓存
+                      const exists = cached.some(
+                        (msg: any) =>
+                          msg.user === currentPending.content &&
+                          msg.assistant === fullResponse
+                      );
+                      if (!exists) {
+                        cached.push({
+                          user: currentPending.content,
+                          assistant: fullResponse,
+                          timestamp: Date.now(),
+                        });
+                        localStorage.setItem(cacheKey, JSON.stringify(cached));
+                        message.info("消息已暂存到本地");
+                      }
+                    } catch (cacheError) {
+                      console.error("本地缓存失败:", cacheError);
+                    }
+                    break; // 达到最大重试次数
+                  }
+                }
+              }
+            };
+
+            retrySave();
+          }                                     // ← catch 结束
+        }                                        // ← 多余的闭合括号

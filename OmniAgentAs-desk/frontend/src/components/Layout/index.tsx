@@ -96,7 +96,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     const loadSessionCount = async () => {
       try {
         console.log("🔍 开始加载会话数量...");
-        const response = await sessionApi.listSessions(1, 1);
+        const response = await sessionApi.listSessions(1, 1, undefined, true); // ⭐ 只加载有效会话
         console.log("📊 会话数量响应:", response);
         setSessionCount(response.total);
         console.log("✅ 会话数量设置为:", response.total);

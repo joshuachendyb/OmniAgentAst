@@ -583,6 +583,7 @@ export interface Session {
   created_at: string;
   updated_at: string;
   message_count: number;
+  is_valid: boolean; // ⭐ 新增：是否为有效会话（用户创建=true，测试创建=false）
 }
 
 export interface SessionListResponse {
@@ -674,14 +675,17 @@ export const sessionApi = {
   /**
    * 获取会话列表
    * @author 小新
+   * @update 2026-03-03 新增 isValid 参数，支持过滤有效/无效会话
    */
   listSessions: async (
     page: number = 1,
     pageSize: number = 20,
-    keyword?: string
+    keyword?: string,
+    isValid?: boolean  // ⭐ 新增参数：true=有效会话，false=无效会话，undefined=全部
   ): Promise<SessionListResponse> => {
     const params: any = { page, page_size: pageSize };
     if (keyword) params.keyword = keyword;
+    if (isValid !== undefined) params.is_valid = isValid;  // ⭐ 新增
     const response = await api.get<SessionListResponse>("/sessions", {
       params,
     });
