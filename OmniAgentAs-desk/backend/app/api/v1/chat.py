@@ -39,6 +39,7 @@ from app.services.file_operations.tools import get_file_tools
 from app.services.file_operations.agent import FileOperationAgent
 from app.services.shell_security import check_command_safety
 from app.utils.logger import logger
+from app.utils.display_name_cache import cache_display_name  # ⭐ 【小沈添加 2026-03-03】
 from pathlib import Path
 import shutil
 
@@ -194,6 +195,7 @@ class ChatRequest(BaseModel):
     provider: Optional[str] = Field(default=None, description="前端指定的提供商")
     model: Optional[str] = Field(default=None, description="前端指定的模型")
     task_id: Optional[str] = Field(default=None, description="前端指定的任务ID - 前端小新代修改")
+    session_id: Optional[str] = Field(default=None, description="会话ID - 小沈添加 2026-03-03，用于缓存display_name")
 
 class ChatResponse(BaseModel):
     """聊天响应"""
@@ -519,6 +521,11 @@ async def chat_stream(request: ChatRequest):
         
         # 【前端小新代修改】在流式响应开始时发送start事件，返回display_name、provider、model、task_id
         display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
+        
+        # ⭐ 【小沈添加 2026-03-03】从请求中获取 session_id 并缓存 display_name
+        if request.session_id:
+            cache_display_name(request.session_id, display_name)
+        
         yield f"data: {json.dumps({
             'type': 'start',
             'display_name': display_name,

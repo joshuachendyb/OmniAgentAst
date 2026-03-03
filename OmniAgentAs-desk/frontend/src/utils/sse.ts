@@ -183,10 +183,11 @@ export const useSSE = (
    *
    * 【修复】EventSource只支持GET请求，无法向后端发送message参数
    * 改用fetch + ReadableStream，支持POST请求和流式数据解析
+   * 【小沈添加 2026-03-03】增加sessionId参数，用于后端缓存display_name
    */
   const sendMessage = useCallback(
-    async (content: string) => {
-      console.log("[SSE sendMessage] 函数被调用, content:", content);
+    async (content: string, sessionId?: string) => {
+      console.log("[SSE sendMessage] 函数被调用, content:", content, "sessionId:", sessionId);
       // 断开已有连接
       disconnect();
       clearSteps();
@@ -214,6 +215,7 @@ export const useSSE = (
             messages: [{ role: "user", content: content }],
             stream: true,
             task_id: taskId || undefined,
+            session_id: sessionId || undefined, // ⭐ 【小沈添加 2026-03-03】传递sessionId
           }),
           signal: controller.signal,
         });

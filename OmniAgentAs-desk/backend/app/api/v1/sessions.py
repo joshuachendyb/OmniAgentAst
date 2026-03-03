@@ -17,6 +17,7 @@ from typing import List, Optional, Union
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from app.utils.logger import logger
+from app.utils.display_name_cache import get_cached_display_name  # ⭐ 【小沈添加 2026-03-03】
 
 # ⭐ 修复P2-问题7：导入类型注解用于更准确的类型提示
 from sqlite3 import Connection, Cursor
@@ -149,9 +150,17 @@ def _init_database():
             content TEXT NOT NULL,
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             execution_steps TEXT,
-            FOREIGN KEY (session_id) REFERENCES chat_sessions(id)
+            display_name TEXT  -- 记录消息收发时使用的模型显示名称
         )
     ''')
+    
+    # 【小沈添加 2026-03-03】添加 display_name 字段（如果不存在）
+    try:
+        cursor.execute('SELECT display_name FROM chat_messages LIMIT 1')
+    except:
+        cursor.execute('ALTER TABLE chat_messages ADD COLUMN display_name TEXT')
+        conn.commit()
+        print("数据库已添加 display_name 字段")
     
     # 创建标题历史表（P2-中优先级）
     cursor.execute('''
@@ -231,12 +240,13 @@ class BatchTitleResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     """消息响应"""
-    id: int = Field(..., description="消息ID")
-    session_id: str = Field(..., description="会话ID")
+    id: int = Field(..., description="消息 ID")
+    session_id: str = Field(..., description="会话 ID")
     role: str = Field(..., description="角色")
     content: str = Field(..., description="消息内容")
     timestamp: str = Field(..., description="时间戳")
     execution_steps: Optional[list] = Field(None, description="执行步骤（数组格式）")
+    display_name: Optional[str] = Field(None, description="模型显示名称（记录消息收发时使用的模型）")
 
 
 # ============== API接口 ==============
@@ -505,9 +515,9 @@ async def get_session_messages(session_id: str):
             conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
-        # 获取消息
+        # 获取消息（添加 display_name 字段）
         cursor.execute(
-            '''SELECT id, session_id, role, content, timestamp, execution_steps 
+            '''SELECT id, session_id, role, content, timestamp, execution_steps, display_name
                FROM chat_messages 
                WHERE session_id = ?
                ORDER BY timestamp ASC''',
@@ -533,7 +543,8 @@ async def get_session_messages(session_id: str):
                 role=row['role'],
                 content=row['content'],
                 timestamp=_convert_to_utc(row['timestamp']),
-                execution_steps=execution_steps_data
+                execution_steps=execution_steps_data,
+                display_name=row['display_name']  # 添加 display_name 字段
             ))
         
         logger.info(f"获取会话消息: session_id={session_id}, count={len(messages)}")
@@ -570,8 +581,9 @@ async def get_session_messages(session_id: str):
 
 class MessageCreate(BaseModel):
     """创建消息请求"""
-    role: str = Field(..., description="角色: user/assistant/system")
+    role: str = Field(..., description="角色：user/assistant/system")
     content: str = Field(..., description="消息内容")
+    display_name: Optional[str] = Field(None, description="模型显示名称（可选，记录消息收发时使用的模型）")
 
 class SessionUpdate(BaseModel):
     """会话更新请求"""
@@ -635,10 +647,16 @@ async def save_message(session_id: str, message: MessageCreate):
         # 开始事务处理
         utc_time = get_utc_timestamp()
         
-        # 插入消息
+        # ⭐ 【小沈添加 2026-03-03】从缓存获取 display_name（如果是AI回复且前端未提供）
+        display_name_to_save = message.display_name
+        if message.role == "assistant" and not display_name_to_save:
+            display_name_to_save = get_cached_display_name(session_id)
+            logger.debug(f"从缓存获取 display_name: session_id={session_id}, display_name={display_name_to_save}")
+        
+        # 插入消息（添加 display_name 字段）
         cursor.execute(
-            'INSERT INTO chat_messages (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)',
-            (session_id, message.role, message.content, utc_time)
+            'INSERT INTO chat_messages (session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?)',
+            (session_id, message.role, message.content, utc_time, display_name_to_save)
         )
         message_id = cursor.lastrowid
         

@@ -253,7 +253,6 @@ const NewChatContainer: React.FC = () => {
         // 保存AI回复到会话
         // 【小沈修复2026-03-03】现在只保存AI回复消息，用户消息已在发送前保存
         // 这样更加健壮，即使AI响应失败，用户消息也已保存
-        // 【小新第六修复 2026-03-03】保存display_name到数据库，记录使用的模型
         const currentSessionId = currentSessionIdRef.current || sessionId;
         const currentPending = pendingMessageRef.current || pendingMessage;
         if (currentSessionId && fullResponse && fullResponse.trim()) {
@@ -264,7 +263,6 @@ const NewChatContainer: React.FC = () => {
           console.log("  最终使用的sessionId:", currentSessionId);
           console.log("  currentPending:", currentPending);
           console.log("  fullResponse length:", fullResponse.length);
-          console.log("  metadataObj.displayName:", metadataObj.displayName);
 
           try {
             // 保存AI回复（API会自动处理消息计数）
@@ -272,8 +270,8 @@ const NewChatContainer: React.FC = () => {
             await sessionApi.saveMessage(currentSessionId, {
               role: "assistant",
               content: fullResponse,
-              display_name: metadataObj.displayName,
               // 不传递 message_count，让后端自动处理
+              // 不传递 display_name，后端从缓存自动获取（小沈优化 2026-03-03）
             });
 
             // 【小新第四修复 2026-03-02】确保标题被持久化保存
@@ -1200,8 +1198,8 @@ const NewChatContainer: React.FC = () => {
       console.warn("⚠️ 未找到sessionId，无法保存用户消息:", userMessage.id);
     }
 
-    // 发送流式请求
-    sendStreamMessage(userMessage.content);
+    // 发送流式请求 - 【小沈添加 2026-03-03】传递sessionId用于后端缓存display_name
+    sendStreamMessage(userMessage.content, currentSessionIdRef.current || sessionId);
   };
 
   /**
