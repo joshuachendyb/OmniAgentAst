@@ -293,7 +293,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           alignItems: isUser ? "flex-end" : "flex-start",
         }}
       >
-        {/* 角色名称 */}
+        {/* 角色名称和时间戳区域 */}
         {!isSystem && (
           <div
             style={{
@@ -304,10 +304,28 @@ const MessageItem: React.FC<MessageItemProps> = ({
               textAlign: isUser ? "right" : "left",
               padding: "0 4px",
               opacity: 0.85,
-              whiteSpace: "nowrap", // ✅ 小新修复：角色名称不折行
+              whiteSpace: "nowrap",
+              display: "flex",
+              alignItems: "center",
+              gap: isUser ? "0" : "8px",
+              flexDirection: isUser ? "row-reverse" : "row",
             }}
           >
-            {getRoleName()}
+            <span style={{ whiteSpace: "nowrap" }}>
+              {getRoleName()}
+            </span>
+            {/* 时间戳移到角色名称同一行 */}
+            <span
+              style={{
+                fontSize: 11,
+                color: "#bfbfbf",
+                whiteSpace: "nowrap",
+              }}
+            >
+              <Tooltip title={formatTime(message.timestamp)}>
+                <span>{getRelativeTime(message.timestamp)}</span>
+              </Tooltip>
+            </span>
           </div>
         )}
 
@@ -334,6 +352,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
                   opacity: 0,
                   transition: "opacity 0.3s ease, transform 0.3s ease",
                   transform: "translateY(-2px)",
+                  background: isUser ? "#fff" : "transparent", // 用户气泡用白色背景
+                  border: isUser ? "1px solid rgba(255,255,255,0.8)" : "none",
                 }}
                 className="copy-button"
               />
@@ -432,22 +452,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
                 </Collapse>
               </div>
             )}
-          </div>
-
-          {/* 时间戳 */}
-          <div
-            style={{
-              marginTop: 2,
-              fontSize: 11,
-              color: "#bfbfbf",
-              textAlign: isUser ? "right" : "left",
-              padding: "0 4px",
-            }}
-          >
-            <Tooltip title={formatTime(message.timestamp)}>
-              <span>{getRelativeTime(message.timestamp)}</span>
-            </Tooltip>
-          </div>
+            </div>
         </div>
       </div>
 
