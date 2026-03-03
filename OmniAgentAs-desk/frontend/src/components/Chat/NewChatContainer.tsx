@@ -1712,7 +1712,7 @@ const NewChatContainer: React.FC = () => {
                       justifyContent:
                         item.role === "user" ? "flex-end" : "flex-start",
                       border: "none",
-                      padding: "8px 0",
+                      padding: 0,
                       width: "100%",
                     }}
                   >

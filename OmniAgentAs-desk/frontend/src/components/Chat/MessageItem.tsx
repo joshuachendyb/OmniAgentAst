@@ -263,46 +263,41 @@ const MessageItem: React.FC<MessageItemProps> = ({
     <div
       style={{
         display: "flex",
+        alignItems: "flex-start",
         justifyContent: isSystem
           ? "center"
           : isUser
           ? "flex-end"
           : "flex-start",
-        marginBottom: 12, // ✅ 用户建议：24px → 12px（减少 50%），更紧凑
-        padding: "0 4px",
+        marginBottom: 12,
+        gap: 12,
         width: "100%",
-        boxSizing: "border-box" as const,
       }}
     >
-      {/* 左侧头像（AI消息） */}
+      {/* 左侧头像（AI 消息） */}
       {!isUser && !isSystem && (
-        <div style={{ marginRight: 12, marginTop: 4, flexShrink: 0 }}>
+        <div style={{ flexShrink: 0, marginTop: 8 }}>
           {getAvatar()}
         </div>
       )}
 
-      {/* 消息内容区 - 自适应宽度，从头像旁开始 */}
+      {/* 消息内容区 - 简化结构 */}
       <div
         style={{
-          flexGrow: 1,
-          flexShrink: 1,
-          minWidth: 0,
-          maxWidth: "calc(100% - 60px)",
           display: "flex",
           flexDirection: "column",
           alignItems: isUser ? "flex-end" : "flex-start",
+          maxWidth: "calc(100% - 60px)",
         }}
       >
         {/* 角色名称和时间戳区域 */}
         {!isSystem && (
           <div
             style={{
-              marginBottom: 2,
+              marginBottom: 4,
               fontSize: 12,
               color: isUser ? "#1890ff" : "#52c41a",
               fontWeight: 500,
-              textAlign: isUser ? "right" : "left",
-              padding: "0 4px",
               opacity: 0.85,
               whiteSpace: "nowrap",
               display: "flex",
@@ -329,139 +324,135 @@ const MessageItem: React.FC<MessageItemProps> = ({
           </div>
         )}
 
-        {/* 消息气泡 */}
-        <div style={{ position: "relative" }}>
-          <div style={getMessageStyle()}>
-            {/* 复制按钮（悬停显示） */}
-            <Tooltip title={copied ? "已复制" : "复制"}>
-              <Button
-                type="text"
-                size="small"
-                icon={
-                  copied ? (
-                    <CheckOutlined style={{ color: "#52c41a" }} />
-                  ) : (
-                    <CopyOutlined />
-                  )
-                }
-                onClick={handleCopy}
-                style={{
-                  position: "absolute",
-                  top: 4,
-                  right: 4,
-                  opacity: 0,
-                  transition: "opacity 0.3s ease, transform 0.3s ease",
-                  transform: "translateY(-2px)",
-                  background: isUser ? "#fff" : "transparent", // 用户气泡用白色背景
-                  border: isUser ? "1px solid rgba(255,255,255,0.8)" : "none",
-                }}
-                className="copy-button"
-              />
-            </Tooltip>
-
-            {/* 消息内容 */}
-            <div
+        {/* 消息气泡 - 直接渲染，减少一层 div */}
+        <div style={{ ...getMessageStyle(), position: "relative" }}>
+          {/* 复制按钮（悬停显示）- 优化样式 */}
+          <Tooltip title={copied ? "已复制" : "复制"}>
+            <Button
+              type="text"
+              size="small"
+              icon={
+                copied ? (
+                  <CheckOutlined style={{ color: "#52c41a" }} />
+                ) : (
+                  <CopyOutlined style={{ color: isUser ? "#1890ff" : "#595959" }} />
+                )
+              }
+              onClick={handleCopy}
               style={{
-                wordBreak: "break-word",
-                overflowWrap: "break-word",
-                paddingRight: 32,
+                position: "absolute",
+                top: 8,
+                right: 8,
+                opacity: 0,
+                transition: "opacity 0.2s ease",
+                background: isUser ? "rgba(255,255,255,0.9)" : "rgba(0,0,0,0.04)",
+                borderRadius: "6px",
+                padding: "2px 6px",
+                minHeight: "auto",
+                height: "24px",
               }}
-              className={
-                // ✅ 老杨 UX 建议：占位消息添加脉冲动画
+              className="copy-button"
+            />
+          </Tooltip>
+
+          {/* 消息内容 */}
+          <div
+            style={{
+              wordBreak: "break-word",
+              overflowWrap: "break-word",
+              paddingRight: 32,
+            }}
+            className={
+              message.content === "🤔 AI 正在思考..." && message.isStreaming
+                ? "thinking-message"
+                : message.isError
+                ? "error-message"
+                : ""
+            }
+          >
+            {message.content && typeof message.content === 'string' 
+              ? message.content 
+              : String(message.content || '')}
+            {(message.isStreaming ?? false) && (
+              <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
+            )}
+          </div>
+
+          {/* CSS 动画 */}
+          {(message.content === "🤔 AI 正在思考..." && message.isStreaming) ||
+          message.isError ? (
+            <style>{`
+              ${
                 message.content === "🤔 AI 正在思考..." && message.isStreaming
-                  ? "thinking-message"
-                  : // ✅ 老杨 UX 建议：错误消息添加淡入动画
-                  message.isError
-                  ? "error-message"
+                  ? `
+                @keyframes thinking-pulse {
+                  0%, 100% { opacity: 1; }
+                  50% { opacity: 0.6; }
+                }
+                .thinking-message {
+                  animation: thinking-pulse 1.5s ease-in-out infinite;
+                }
+              `
                   : ""
               }
-            >
-              {/* 前端小新代修改：在流式生成时添加光标提示，使用默认值 false */}
-              {message.content && typeof message.content === 'string' 
-                ? message.content 
-                : String(message.content || '')}
-              {(message.isStreaming ?? false) && (
-                <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
-              )}
-            </div>
-
-            {/* ✅ 老杨 UX 建议：添加 CSS 动画 */}
-            {(message.content === "🤔 AI 正在思考..." && message.isStreaming) ||
-            message.isError ? (
-              <style>{`
-                ${
-                  message.content === "🤔 AI 正在思考..." && message.isStreaming
-                    ? `
-                  @keyframes thinking-pulse {
-                    0%, 100% { opacity: 1; }
-                    50% { opacity: 0.6; }
+              ${
+                message.isError
+                  ? `
+                @keyframes error-fade-in {
+                  from {
+                    opacity: 0;
+                    transform: translateY(-10px);
                   }
-                  .thinking-message {
-                    animation: thinking-pulse 1.5s ease-in-out infinite;
+                  to {
+                    opacity: 1;
+                    transform: translateY(0);
                   }
-                `
-                    : ""
                 }
-                ${
-                  message.isError
-                    ? `
-                  @keyframes error-fade-in {
-                    from {
-                      opacity: 0;
-                      transform: translateY(-10px);
-                    }
-                    to {
-                      opacity: 1;
-                      transform: translateY(0);
-                    }
-                  }
-                  .error-message {
-                    animation: error-fade-in 0.3s ease-out;
-                  }
-                `
-                    : ""
+                .error-message {
+                  animation: error-fade-in 0.3s ease-out;
                 }
-              `}</style>
-            ) : null}
+              `
+                  : ""
+              }
+            `}</style>
+          ) : null}
 
-            {/* 执行过程展示（仅 AI 消息）- 前端小新修复：添加消息类型判断 */}
-            {showExecution && message.role === "assistant" && (
-              <div style={{ marginTop: 6 }}>
-                {/* ✅ 小新第二修复 2026-03-01 15:48:13：减少留白 12px → 6px */}
-                <Collapse
-                  defaultActiveKey={
-                    message.isStreaming ?? false ? ["execution"] : []
-                  } // 流式时默认展开
-                  size="small"
+          {/* 执行过程展示（仅 AI 消息） */}
+          {showExecution && message.role === "assistant" && (
+            <div style={{ marginTop: 6 }}>
+              <Collapse
+                defaultActiveKey={
+                  message.isStreaming ?? false ? ["execution"] : []
+                }
+                size="small"
+              >
+                <Panel
+                  header={
+                    <Space>
+                      <ThunderboltOutlined />
+                      <span>AI 思考过程</span>
+                      {(message.isStreaming ?? false) && <LoadingOutlined />}
+                    </Space>
+                  }
+                  key="execution"
                 >
-                  <Panel
-                    header={
-                      <Space>
-                        <ThunderboltOutlined />
-                        <span>AI思考过程</span>
-                        {(message.isStreaming ?? false) && <LoadingOutlined />}
-                      </Space>
-                    }
-                    key="execution"
-                  >
-                    <ExecutionPanel
-                      steps={message.executionSteps || []}
-                      isActive={message.isStreaming || false}
-                    />
-                  </Panel>
-                </Collapse>
-              </div>
-            )}
+                  <ExecutionPanel
+                    steps={message.executionSteps || []}
+                    isActive={message.isStreaming || false}
+                  />
+                </Panel>
+              </Collapse>
             </div>
+          )}
         </div>
       </div>
 
       {/* 右侧头像（用户消息） */}
       {isUser && (
-        <div style={{ marginLeft: 12, marginTop: 4 }}>{getAvatar()}</div>
+        <div style={{ flexShrink: 0, marginTop: 8 }}>{getAvatar()}</div>
       )}
 
-      {/* CSS样式 - 悬停显示复制按钮 */}
+      {/* CSS 样式 - 悬停显示复制按钮 */}
       <style>{`
         .copy-button {
           opacity: 0 !important;
