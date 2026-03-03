@@ -176,7 +176,7 @@ const NewChatContainer: React.FC = () => {
               isStreaming: true,
               model: step.model,
               provider: step.provider,
-              displayName: step.display_name, // 【修复 display_name 显示 bug】直接使用后端返回的 display_name
+              displayName: step.displayName, // 直接使用后端返回的 displayName（驼峰）
             };
             return [...prev, newAssistantMessage];
           }
