@@ -90,7 +90,7 @@ const GlobalConfigArea: React.FC<{
   onDisplayNameChange: (option: ModelOption) => void;
 }> = ({ modelList, currentDisplayName, onDisplayNameChange }) => {
   return (
-    <Card size="small" style={{ marginBottom: 24, maxWidth: "650px" }}>
+    <Card size="small" style={{ marginBottom: 24,  }}>
       <Row gutter={[16, 16]}>
         <Col span={24}>
           <Text strong style={{ display: "block", marginBottom: 8 }}>
@@ -106,7 +106,7 @@ const GlobalConfigArea: React.FC<{
                 onDisplayNameChange(option);
               }
             }}
-            style={{ width: "100%", maxWidth: "650px" }}
+            style={{ width: "100%",  }}
             placeholder="选择模型"
           >
             {modelList.map((m) => (
@@ -170,7 +170,7 @@ const ProviderList: React.FC<{
       <Input
         placeholder="搜索Provider..."
         allowClear
-        style={{ marginBottom: 16, maxWidth: "650px" }}
+        style={{ marginBottom: 16,  }}
         onChange={(e) => setSearchKeyword(e.target.value)}
         prefix={<ApiOutlined />}
       />
@@ -638,7 +638,7 @@ const ProviderSettings: React.FC = () => {
       {configPath && (
         <Card
           size="small"
-          style={{ marginBottom: 16, maxWidth: "650px" }}
+          style={{ marginBottom: 16,  }}
           title={
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <DesktopOutlined />
@@ -674,7 +674,7 @@ const ProviderSettings: React.FC = () => {
       {/* 配置验证提示 - 成功/失败都显示 */}
 
       {/* 配置验证提示 - 成功/失败都显示 */}
-      <div style={{ maxWidth: "650px" }}>
+      <div style={{  }}>
       {validationResult && (
         <Alert
           message={
@@ -704,7 +704,7 @@ const ProviderSettings: React.FC = () => {
           description={validationResult.message}
           type={validationResult.success ? "success" : "warning"}
           showIcon
-          style={{ marginBottom: 16, cursor: "pointer", maxWidth: "650px" }}
+          style={{ marginBottom: 16, cursor: "pointer",  }}
           onClick={() => setValidationModalVisible(true)}
         />
       )}
@@ -893,7 +893,7 @@ const ProviderSettings: React.FC = () => {
 
         {/* 右侧Provider详细信息 */}
         <Col xs={24} md={9}>
-          <div style={{ maxWidth: "650px" }}>
+          <div style={{  }}>
           {selectedProvider ? (
             <div>
               <Typography.Title level={5} style={{ marginBottom: 24 }}>
@@ -941,7 +941,7 @@ const ProviderSettings: React.FC = () => {
 
               <Card size="small">
                 {/* Provider基本信息 */}
-                <Row gutter={[16, 8]} style={{ marginBottom: 16, maxWidth: "650px" }}>
+                <Row gutter={[16, 8]} style={{ marginBottom: 16,  }}>
                   <Col span={24}>
                     <Text type="secondary">API地址：</Text>
                     <Text code>{selectedProvider.api_base}</Text>
@@ -1120,7 +1120,7 @@ const ProviderSettings: React.FC = () => {
               description="在左侧列表中点击选择一个Provider以查看详细配置"
               type="info"
               showIcon
-              style={{ marginBottom: 16, maxWidth: "650px" }}
+              style={{ marginBottom: 16,  }}
             />
           )}
           </div>
@@ -1390,7 +1390,7 @@ const SecuritySettings: React.FC = () => {
             <SafetyOutlined /> 基础配置
           </Text>
         }
-        style={{ marginBottom: 16, maxWidth: "650px" }}
+        style={{ marginBottom: 16,  }}
       >
         <Row gutter={[16, 8]}>
           <Col xs={24} sm={12}>
