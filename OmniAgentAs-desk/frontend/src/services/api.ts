@@ -650,6 +650,7 @@ export const sessionApi = {
    * 创建新会话
    * @author 小新
    * @update 2026-02-18 已对接真实API
+   * @update 2026-03-03 添加is_valid=True，标识为有效会话
    */
   createSession: async (
     title?: string
@@ -666,7 +667,7 @@ export const sessionApi = {
       created_at: string;
       updated_at: string;
       message_count: number;
-    }>("/sessions", { title });
+    }>("/sessions", { title, is_valid: true });
     return response.data;
   },
 

@@ -55,7 +55,8 @@ def check_db_fields_exist(conn) -> dict:
     fields_exist = {
         'title_locked': False,
         'title_updated_at': False,
-        'version': False
+        'version': False,
+        'is_valid': False  # 【小沈修复 2026-03-03】添加is_valid字段检查
     }
     
     try:
@@ -77,6 +78,7 @@ def check_db_fields_exist(conn) -> dict:
         fields_exist['title_locked'] = 'title_locked' in columns
         fields_exist['title_updated_at'] = 'title_updated_at' in columns
         fields_exist['version'] = 'version' in columns
+        fields_exist['is_valid'] = 'is_valid' in columns  # 【小沈修复 2026-03-03】添加is_valid字段检查
         
         # 如果有字段不存在，记录警告日志
         missing_fields = [f for f, exists in fields_exist.items() if not exists]
@@ -132,9 +134,18 @@ def _init_database():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             message_count INTEGER DEFAULT 0,
-            is_deleted BOOLEAN DEFAULT FALSE
+            is_deleted BOOLEAN DEFAULT FALSE,
+            is_valid BOOLEAN DEFAULT FALSE
         )
     ''')
+    
+    # 【小沈修复 2026-03-03】如果is_valid字段不存在，则添加（向后兼容旧数据库）
+    try:
+        cursor.execute('SELECT is_valid FROM chat_sessions LIMIT 1')
+    except:
+        cursor.execute('ALTER TABLE chat_sessions ADD COLUMN is_valid BOOLEAN DEFAULT FALSE')
+        conn.commit()
+        print("数据库已添加 is_valid 字段")
     
     # 创建消息表
     cursor.execute('''
@@ -200,6 +211,7 @@ class Message(BaseModel):
 class SessionCreate(BaseModel):
     """创建会话请求"""
     title: Optional[str] = Field(None, description="会话标题（可选，不提供则自动生成）")
+    is_valid: Optional[bool] = Field(False, description="是否为有效会话（前端用户创建时传入True；测试代码不传默认为False）")
 
 
 class SessionResponse(BaseModel):
@@ -267,31 +279,45 @@ async def create_session(session_create: Optional[SessionCreate] = None):
         
         utc_time = get_utc_timestamp()
         
+        # 【小沈修复 2026-03-03】获取is_valid值
+        # 前端用户创建传入True，测试代码不传默认为True
+        # 如果数据库没有is_valid字段，则默认为True
+        is_valid = session_create.is_valid if session_create else True
+        
         # 优化：初始化新字段（根据字段是否存在动态构建SQL）
         # title_locked = FALSE (默认未锁定)
         # title_updated_at = 创建时间
         # version = 1 (初始版本号)
         
         # 根据字段存在性动态构建插入语句（P0风险缓解）
-        if fields_exist['title_locked'] and fields_exist['title_updated_at'] and fields_exist['version']:
+        # 【小沈修复 2026-03-03】添加 is_valid 字段，标识是否为有效会话
+        # 有效会话：用户手动创建的会话（is_valid=True）
+        # 无效会话：测试代码创建的会话（is_valid=False，默认）
+        
+        # 判断是否所有新字段都存在
+        all_fields_exist = (fields_exist['title_locked'] and 
+                           fields_exist['title_updated_at'] and 
+                           fields_exist['version'] and 
+                           fields_exist.get('is_valid', False))
+        
+        if all_fields_exist:
             # 所有新字段都存在，使用完整插入
             cursor.execute(
                 '''INSERT INTO chat_sessions 
-                   (id, title, created_at, updated_at, title_locked, title_updated_at, version) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                (session_id, title, utc_time, utc_time, False, utc_time, 1)
+                   (id, title, created_at, updated_at, title_locked, title_updated_at, version, is_valid) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                (session_id, title, utc_time, utc_time, False, utc_time, 1, is_valid)
             )
-            logger.info(f"创建会话（使用新字段）: id={session_id}, title={title}")
+            logger.info(f"创建会话（使用新字段）: id={session_id}, title={title}, is_valid={is_valid}")
         else:
-            # 新字段不存在，使用兼容模式（向后兼容）
+            # 兼容模式：只插入is_valid字段
             cursor.execute(
                 '''INSERT INTO chat_sessions 
-                   (id, title, created_at, updated_at) 
-                   VALUES (?, ?, ?, ?)''',
-                (session_id, title, utc_time, utc_time)
+                   (id, title, created_at, updated_at, is_valid) 
+                   VALUES (?, ?, ?, ?, ?)''',
+                (session_id, title, utc_time, utc_time, is_valid)
             )
-            missing = [f for f, exists in fields_exist.items() if not exists]
-            logger.warning(f"创建会话（兼容模式，缺少字段: {missing}）: id={session_id}")
+            logger.info(f"创建会话（兼容模式）: id={session_id}, title={title}, is_valid={is_valid}")
         
         conn.commit()
         conn.close()

@@ -250,33 +250,24 @@ const NewChatContainer: React.FC = () => {
           return prev;
         });
 
-        // 保存消息到会话
-        // 【小新第三修复 2026-03-02】优先使用ref中的pendingMessage，确保获取正确的值
+        // 保存AI回复到会话
+        // 【小沈修复2026-03-03】现在只保存AI回复消息，用户消息已在发送前保存
+        // 这样更加健壮，即使AI响应失败，用户消息也已保存
+        const currentSessionId = currentSessionIdRef.current || sessionId;
         const currentPending = pendingMessageRef.current || pendingMessage;
-        // 【小新第二修复 2026-03-02】优先使用ref中的sessionId，确保使用正确的ID
-        const sessionIdToUse = currentSessionIdRef.current || sessionId;
-        if (sessionIdToUse && currentPending) {
+        if (currentSessionId && fullResponse && fullResponse.trim()) {
           // 🔴 修复：添加详细的调试日志
-          console.log("🔍 保存消息:");
+          console.log("🔍 保存AI回复:");
           console.log("  ref中的sessionId:", currentSessionIdRef.current);
           console.log("  state中的sessionId:", sessionId);
-          console.log("  最终使用的sessionId:", sessionIdToUse);
-          console.log("  pendingMessage:", currentPending);
+          console.log("  最终使用的sessionId:", currentSessionId);
+          console.log("  currentPending:", currentPending);
           console.log("  fullResponse length:", fullResponse.length);
 
           try {
-            // 使用 ref 获取当前消息数量（已通过 useEffect 同步更新）
-            const currentCount = messagesCountRef.current;
-
-            // 保存用户消息（API会自动处理消息计数）
-            await sessionApi.saveMessage(sessionIdToUse, {
-              role: "user",
-              content: currentPending.content,
-              // 不传递 message_count，让后端自动处理
-            });
-
             // 保存AI回复（API会自动处理消息计数）
-            await sessionApi.saveMessage(sessionIdToUse, {
+            // 用户消息已在调用 /chat/stream 之前保存
+            await sessionApi.saveMessage(currentSessionId, {
               role: "assistant",
               content: fullResponse,
               // 不传递 message_count，让后端自动处理
@@ -284,11 +275,88 @@ const NewChatContainer: React.FC = () => {
 
             // 【小新第四修复 2026-03-02】确保标题被持久化保存
             // 虽然后端会在 save_message 中自动生成标题，但需要确保用户修改的标题被保存
-            if (sessionIdToUse) {
+            if (currentSessionId) {
               const currentTitle = sessionTitle; // 获取当前标题
-              await ensureTitlePersisted(sessionIdToUse, currentTitle);
+              await ensureTitlePersisted(currentSessionId, currentTitle);
               console.log("✅ 标题持久化保存完成");
             }
+            console.log("✅ AI回复保存成功");
+          } catch (saveError: any) {
+            console.error("保存AI回复或标题失败:", saveError);
+            console.error("使用的sessionId:", currentSessionId);
+            // 修复：正确的错误处理，重试保存AI回复
+            let retryCount = 0;
+            const maxRetries = 3;
+
+            const retrySave = async () => {
+              while (retryCount < maxRetries) {
+                retryCount++;
+                message.warning({
+                  content: `保存AI回复失败，正在重试 (${retryCount}/${maxRetries})...`,
+                  duration: 2,
+                });
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                try {
+                  // 保存AI回复
+                  await sessionApi.saveMessage(currentSessionId, {
+                    role: "assistant",
+                    content: fullResponse,
+                    // 不传递 message_count，让后端自动处理
+                  });
+
+                  // 保存标题
+                  if (currentSessionId) {
+                    const currentTitle = sessionTitle; // 获取当前标题
+                    await ensureTitlePersisted(currentSessionId, currentTitle);
+                  }
+                  message.success("AI回复保存成功");
+                  return;
+                } catch (error: any) {
+                  // 检查是否是409版本冲突或其他错误
+                  if (error?.response?.status === 409) {
+                    message.error("会话数据冲突，请刷新页面");
+                    break; // 版本冲突不重试
+                  } else if (retryCount === maxRetries) {
+                    message.error({
+                      content: "AI回复保存失败，请刷新页面重试",
+                      duration: 5,
+                    });
+                    // 本地缓存AI回复（防止丢失）
+                    try {
+                      const cacheKey = `unsaved_ai_responses_${currentSessionId}`;
+                      const cached = JSON.parse(
+                        localStorage.getItem(cacheKey) || "[]"
+                      );
+                      // 避免重复缓存
+                      const exists = cached.some(
+                        (msg: any) =>
+                          msg.assistant === fullResponse
+                      );
+                      if (!exists) {
+                        cached.push({
+                          assistant: fullResponse,
+                          timestamp: Date.now(),
+                        });
+                        localStorage.setItem(cacheKey, JSON.stringify(cached));
+                        message.info("AI回复已暂存到本地");
+                      }
+                    } catch (cacheError) {
+                      console.error("本地缓存失败:", cacheError);
+                    }
+                    break; // 达到最大重试次数
+                  }
+                }
+              }
+            };
+
+            retrySave();
+          }
+        } else {
+          console.warn("⚠️ 无法保存AI回复：缺少sessionId或fullResponse");
+          console.log("  currentSessionId:", currentSessionId);
+          console.log("  fullResponse exists:", !!fullResponse);
+        }
             console.log("✅ 消息保存成功");
           } catch (saveError: any) {
             console.error("保存消息或标题失败:", saveError);
@@ -1177,6 +1245,25 @@ const NewChatContainer: React.FC = () => {
     // 保存待发送消息到ref（同步）和state（异步）
     pendingMessageRef.current = userMessage; // 同步更新，立即生效 ✅
     setPendingMessage(userMessage);
+
+    // 【小沈修复2026-03-03】在调用 /chat/stream 之前先保存用户消息
+    // 这样即使AI响应失败，用户消息也不会丢失
+    const currentSessionId = currentSessionIdRef.current || sessionId;
+    if (currentSessionId) {
+      try {
+        console.log("🔍 在调用AI之前先保存用户消息:", userMessage);
+        await sessionApi.saveMessage(currentSessionId, {
+          role: "user",
+          content: userMessage.content,
+        });
+        console.log("✅ 用户消息保存成功");
+      } catch (error) {
+        console.error("❌ 保存用户消息失败:", error);
+        message.error("用户消息保存失败，但AI请求将继续发送");
+      }
+    } else {
+      console.warn("⚠️ 未找到sessionId，无法保存用户消息:", userMessage.id);
+    }
 
     // 发送流式请求
     sendStreamMessage(userMessage.content);
