@@ -894,16 +894,45 @@ const ProviderSettings: React.FC = () => {
           {selectedProvider ? (
             <div>
               <Typography.Title level={5} style={{ marginBottom: 24 }}>
-                <Space>
-                  <ApiOutlined />
-                  配置详情：
-                  {getProviderDisplayName(selectedProvider.name, providers)}
-                  <Tag color="blue">{selectedProvider.name}</Tag>
-                  {selectedProvider.name === currentProvider && (
-                    <Tag icon={<CheckCircleOutlined />} color="success">
-                      当前使用
-                    </Tag>
-                  )}
+                <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                  {/* 左侧: 标题内容 */}
+                  <Space>
+                    <ApiOutlined />
+                    配置详情：
+                    {getProviderDisplayName(selectedProvider.name, providers)}
+                    <Tag color="blue">{selectedProvider.name}</Tag>
+                    {selectedProvider.name === currentProvider && (
+                      <Tag icon={<CheckCircleOutlined />} color="success">
+                        当前使用
+                      </Tag>
+                    )}
+                  </Space>
+                  
+                  {/* 右侧: 操作按钮 */}
+                  <Space>
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<EditOutlined />}
+                      onClick={() => handleEditProvider(selectedProvider)}
+                    >
+                      编辑
+                    </Button>
+                    <Popconfirm
+                      title={`确定删除 ${getProviderDisplayName(
+                        selectedProvider.name,
+                        providers
+                      )} 吗？`}
+                      description="删除后无法恢复"
+                      onConfirm={() => handleDeleteProvider(selectedProvider.name)}
+                      okText="确定"
+                      cancelText="取消"
+                    >
+                      <Button type="primary" danger size="small" icon={<DeleteOutlined />}>
+                        删除
+                      </Button>
+                    </Popconfirm>
+                  </Space>
                 </Space>
               </Typography.Title>
 
@@ -1080,34 +1109,6 @@ const ProviderSettings: React.FC = () => {
                   )}
                 </div>
 
-                <Divider style={{ margin: "12px 0" }} />
-
-                {/* 操作按钮 */}
-                <Space style={{ width: "100%", justifyContent: "flex-end" }}>
-                  <Button
-                    type="primary"
-                    icon={<EditOutlined />}
-                    onClick={() => handleEditProvider(selectedProvider)}
-                  >
-                    编辑
-                  </Button>
-                  <Popconfirm
-                    title={`确定删除 ${getProviderDisplayName(
-                      selectedProvider.name,
-                      providers
-                    )} 吗？`}
-                    description="删除后无法恢复"
-                    onConfirm={() =>
-                      handleDeleteProvider(selectedProvider.name)
-                    }
-                    okText="确定"
-                    cancelText="取消"
-                  >
-                    <Button type="primary" danger icon={<DeleteOutlined />}>
-                      删除
-                    </Button>
-                  </Popconfirm>
-                </Space>
               </Card>
             </div>
           ) : (
@@ -1610,6 +1611,7 @@ const Settings: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [pendingKey, setPendingKey] = useState<string>("");
+  const [configPath, setConfigPath] = useState<ConfigPathResponse | null>(null);
   // ⭐ 删除未使用的状态变量：configFilePath, fixingConfig, fixProgress, showFixModal
 
   /**
@@ -1627,6 +1629,16 @@ const Settings: React.FC = () => {
   };
 
   // ⭐ 删除未使用的函数：handleFixConfig
+
+  // 加载配置文件路径
+  const loadConfigPath = async () => {
+    try {
+      const pathData = await configApi.getConfigPath();
+      setConfigPath(pathData);
+    } catch (error) {
+      console.error("加载配置文件路径失败:", error);
+    }
+  };
 
   // 清理定时器，防止内存泄漏
   useEffect(() => {
