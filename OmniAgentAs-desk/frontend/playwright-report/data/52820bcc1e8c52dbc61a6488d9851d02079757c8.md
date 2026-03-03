@@ -1,0 +1,170 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - img "desktop" [ref=e8]:
+          - img [ref=e9]
+        - heading "OmniAgentAst." [level=5] [ref=e11]
+      - menu [ref=e12]:
+        - menuitem "message 对话与下任务" [ref=e13] [cursor=pointer]:
+          - img "message" [ref=e14]:
+            - img [ref=e15]
+          - generic [ref=e18]: 对话与下任务
+        - menuitem "folder 文件管理" [disabled] [ref=e19]:
+          - img "folder" [ref=e20]:
+            - img [ref=e21]
+          - generic [ref=e23]: 文件管理
+        - menuitem "book 知识库" [disabled] [ref=e24]:
+          - img "book" [ref=e25]:
+            - img [ref=e26]
+          - generic [ref=e28]: 知识库
+        - separator [ref=e29]
+        - menuitem "history 历史会话 1 5" [ref=e30] [cursor=pointer]:
+          - img "history" [ref=e31]:
+            - img [ref=e32]
+          - generic [ref=e35]:
+            - text: 历史会话
+            - superscript [ref=e36]:
+              - generic [ref=e37]:
+                - generic [ref=e38]: "1"
+                - generic [ref=e39]: "5"
+        - menuitem "thunderbolt 快捷指令" [ref=e40] [cursor=pointer]:
+          - img "thunderbolt" [ref=e41]:
+            - img [ref=e42]
+          - generic [ref=e44]: 快捷指令
+        - separator [ref=e45]
+        - menuitem "setting 系统设置" [ref=e46] [cursor=pointer]:
+          - img "setting" [ref=e47]:
+            - img [ref=e48]
+          - generic [ref=e50]: 系统设置
+      - generic [ref=e51] [cursor=pointer]: 版本 v2.1.0
+    - img "left" [ref=e53] [cursor=pointer]:
+      - img [ref=e54]
+  - generic [ref=e56]:
+    - banner [ref=e57]:
+      - generic [ref=e58]:
+        - heading "对话与任务" [level=4] [ref=e59]
+        - generic [ref=e60]: 检查中...
+      - generic [ref=e61]:
+        - generic [ref=e62] [cursor=pointer]:
+          - generic [ref=e64]:
+            - combobox [ref=e66]
+            - generic [ref=e67]: ★ opencode (minimax-m2.5-free)
+          - generic:
+            - img:
+              - img
+        - button "loading 检查服务" [ref=e68]:
+          - img "loading" [ref=e70]:
+            - img [ref=e71]
+          - generic [ref=e73]: 检查服务
+        - img "desktop" [ref=e75]:
+          - img [ref=e76]
+        - generic [ref=e78]: 用户
+    - main [ref=e79]:
+      - generic [ref=e80]:
+        - generic [ref=e82]:
+          - generic [ref=e84]:
+            - img "robot" [ref=e86]:
+              - img [ref=e87]
+            - generic [ref=e89]: AI对话助手
+            - generic [ref=e91]: 接收中...
+            - generic [ref=e94] [cursor=pointer]:
+              - text: Test message
+              - img "info-circle" [ref=e95]:
+                - img [ref=e96]
+          - generic [ref=e100]:
+            - button "plus 新建会话" [ref=e102] [cursor=pointer]:
+              - img "plus" [ref=e104]:
+                - img [ref=e105]
+              - generic [ref=e108]: 新建会话
+            - generic [ref=e111] [cursor=pointer]:
+              - img "thunderbolt" [ref=e112]:
+                - img [ref=e113]
+              - text: 流式关闭
+            - button "eye 隐藏过程" [ref=e116] [cursor=pointer]:
+              - img "eye" [ref=e118]:
+                - img [ref=e119]
+              - generic [ref=e121]: 隐藏过程
+            - button "清空对话" [ref=e123] [cursor=pointer]:
+              - generic [ref=e124]: 清空对话
+        - generic [ref=e125]:
+          - generic [ref=e127]:
+            - generic [ref=e128]: 2026/3/3
+            - listitem [ref=e130]:
+              - generic [ref=e131]:
+                - generic [ref=e132]:
+                  - generic [ref=e133]: 我
+                  - generic [ref=e134]:
+                    - generic [ref=e135]:
+                      - button "copy" [ref=e136] [cursor=pointer]:
+                        - img "copy" [ref=e138]:
+                          - img [ref=e139]
+                      - generic [ref=e141]: Hello, AI!
+                    - generic [ref=e142]: 刚刚
+                - img "user" [ref=e145]:
+                  - img [ref=e146]
+            - listitem [ref=e148]:
+              - generic [ref=e149]:
+                - img "robot" [ref=e152]:
+                  - img [ref=e153]
+                - generic [ref=e155]:
+                  - generic [ref=e156]: 🤔 AI 助手【加载中...】
+                  - generic [ref=e157]:
+                    - generic [ref=e158]:
+                      - button "copy" [ref=e159] [cursor=pointer]:
+                        - img "copy" [ref=e161]:
+                          - img [ref=e162]
+                      - generic [ref=e164]: 🤔 AI 正在思考...▌
+                      - generic [ref=e167]:
+                        - button "expanded thunderbolt AI思考过程 loading" [expanded] [ref=e168] [cursor=pointer]:
+                          - img "expanded" [ref=e170]:
+                            - img [ref=e171]
+                          - generic [ref=e174]:
+                            - img "thunderbolt" [ref=e176]:
+                              - img [ref=e177]
+                            - generic [ref=e179]: AI思考过程
+                            - img "loading" [ref=e181]:
+                              - img [ref=e182]
+                        - generic [ref=e187]:
+                          - button "expanded loading 正在执行 (2步)" [expanded] [ref=e188] [cursor=pointer]:
+                            - img "expanded" [ref=e190]:
+                              - img [ref=e191]
+                            - generic [ref=e194]:
+                              - img "loading" [ref=e197]:
+                                - img [ref=e198]
+                              - generic [ref=e201]: 正在执行 (2步)
+                          - generic [ref=e204]:
+                            - generic [ref=e207]:
+                              - generic [ref=e208]: 思考
+                              - generic [ref=e209]: 正在分析任务...
+                            - generic [ref=e213]:
+                              - img "code" [ref=e214]:
+                                - img [ref=e215]
+                              - button "copy" [ref=e217] [cursor=pointer]:
+                                - img "copy" [ref=e219]:
+                                  - img [ref=e220]
+                            - generic [ref=e222]:
+                              - img "loading" [ref=e223]:
+                                - img [ref=e224]
+                              - text: 执行中...
+                    - generic [ref=e226]: 刚刚
+          - generic [ref=e227]:
+            - generic [ref=e229]:
+              - button "close-circle 中断" [ref=e231] [cursor=pointer]:
+                - img "close-circle" [ref=e233]:
+                  - img [ref=e234]
+                - generic [ref=e236]: 中断
+              - button "pause-circle 暂停" [ref=e238] [cursor=pointer]:
+                - img "pause-circle" [ref=e240]:
+                  - img [ref=e241]
+                - generic [ref=e243]: 暂停
+            - textbox "输入消息... (流式模式可实时查看思考过程)" [disabled] [ref=e245]
+            - button "loading 接收中..." [disabled] [ref=e247]:
+              - generic:
+                - img "loading":
+                  - img
+              - generic: 接收中...
+```

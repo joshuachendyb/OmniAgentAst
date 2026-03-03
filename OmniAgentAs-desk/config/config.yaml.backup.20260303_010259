@@ -40,7 +40,7 @@ security:
   commandBlacklist: ''
   commandWhitelist: ''
   confirmDangerousOps: true
-  contentFilterEnabled: true
+  contentFilterEnabled: false
   contentFilterLevel: medium
   maxFileSize: 100
   whitelistEnabled: false

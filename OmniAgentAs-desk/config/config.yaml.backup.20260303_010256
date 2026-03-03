@@ -1,6 +1,6 @@
 ai:
-  provider: zhipuai
-  model: glm-4.7-flash
+  provider: opencode
+  model: minimax-m2.5-free
   longcat:
     api_base: https://api.longcat.chat/openai/v1
     api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
@@ -40,7 +40,7 @@ security:
   commandBlacklist: ''
   commandWhitelist: ''
   confirmDangerousOps: true
-  contentFilterEnabled: true
+  contentFilterEnabled: false
   contentFilterLevel: medium
   maxFileSize: 100
   whitelistEnabled: false
