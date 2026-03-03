@@ -90,7 +90,7 @@ const GlobalConfigArea: React.FC<{
   onDisplayNameChange: (option: ModelOption) => void;
 }> = ({ modelList, currentDisplayName, onDisplayNameChange }) => {
   return (
-    <Card size="small" style={{ marginBottom: 24 }}>
+    <Card size="small" style={{ marginBottom: 24, maxWidth: "900px" }}>
       <Row gutter={[16, 16]}>
         <Col span={24}>
           <Text strong style={{ display: "block", marginBottom: 8 }}>
@@ -170,7 +170,7 @@ const ProviderList: React.FC<{
       <Input
         placeholder="搜索Provider..."
         allowClear
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 16, maxWidth: "900px" }}
         onChange={(e) => setSearchKeyword(e.target.value)}
         prefix={<ApiOutlined />}
       />
@@ -638,7 +638,7 @@ const ProviderSettings: React.FC = () => {
       {configPath && (
         <Card
           size="small"
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 16, maxWidth: "900px" }}
           title={
             <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <DesktopOutlined />
@@ -703,7 +703,7 @@ const ProviderSettings: React.FC = () => {
           description={validationResult.message}
           type={validationResult.success ? "success" : "warning"}
           showIcon
-          style={{ marginBottom: 16, cursor: "pointer" }}
+          style={{ marginBottom: 16, cursor: "pointer", maxWidth: "900px" }}
           onClick={() => setValidationModalVisible(true)}
         />
       )}
@@ -880,7 +880,7 @@ const ProviderSettings: React.FC = () => {
       {/* Provider配置区域 */}
       <Row gutter={[16, 16]} style={{ marginTop: 24 }}>
         {/* 左侧Provider列表 */}
-        <Col xs={24} md={8}>
+        <Col xs={24} md={5}>
           <ProviderList
             providers={providers}
             currentProvider={currentProvider}
@@ -890,7 +890,8 @@ const ProviderSettings: React.FC = () => {
         </Col>
 
         {/* 右侧Provider详细信息 */}
-        <Col xs={24} md={16}>
+        <Col xs={24} md={9}>
+          <div style={{ maxWidth: "900px" }}>
           {selectedProvider ? (
             <div>
               <Typography.Title level={5} style={{ marginBottom: 24 }}>
@@ -938,7 +939,7 @@ const ProviderSettings: React.FC = () => {
 
               <Card size="small">
                 {/* Provider基本信息 */}
-                <Row gutter={[16, 8]} style={{ marginBottom: 16 }}>
+                <Row gutter={[16, 8]} style={{ marginBottom: 16, maxWidth: "900px" }}>
                   <Col span={24}>
                     <Text type="secondary">API地址：</Text>
                     <Text code>{selectedProvider.api_base}</Text>
@@ -1117,9 +1118,10 @@ const ProviderSettings: React.FC = () => {
               description="在左侧列表中点击选择一个Provider以查看详细配置"
               type="info"
               showIcon
-              style={{ marginBottom: 16 }}
+              style={{ marginBottom: 16, maxWidth: "900px" }}
             />
           )}
+          </div>
         </Col>
       </Row>
 
@@ -1386,7 +1388,7 @@ const SecuritySettings: React.FC = () => {
             <SafetyOutlined /> 基础配置
           </Text>
         }
-        style={{ marginBottom: 16 }}
+        style={{ marginBottom: 16, maxWidth: "900px" }}
       >
         <Row gutter={[16, 8]}>
           <Col xs={24} sm={12}>
