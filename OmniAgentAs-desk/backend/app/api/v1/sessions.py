@@ -484,7 +484,8 @@ async def get_session_messages(session_id: str):
                 '''SELECT id, title, 
                           COALESCE(title_locked, 0) as title_locked,
                           COALESCE(title_updated_at, created_at) as title_updated_at,
-                          COALESCE(version, 1) as version
+                          COALESCE(version, 1) as version,
+                          COALESCE(is_valid, 1) as is_valid
                    FROM chat_sessions 
                    WHERE id = ? AND is_deleted = FALSE''',
                 (session_id,)
@@ -492,7 +493,7 @@ async def get_session_messages(session_id: str):
         else:
             # 新字段不存在，使用兼容查询
             cursor.execute(
-                '''SELECT id, title, 0 as title_locked, created_at as title_updated_at, 1 as version
+                '''SELECT id, title, 0 as title_locked, created_at as title_updated_at, 1 as version, 1 as is_valid
                    FROM chat_sessions 
                    WHERE id = ? AND is_deleted = FALSE''',
                 (session_id,)
@@ -553,6 +554,7 @@ async def get_session_messages(session_id: str):
             "title_source": title_source,
             "title_updated_at": title_updated_at,
             "version": version,  # ⭐ 添加version字段
+            "is_valid": session['is_valid'],  # 【小沈添加】返回会话有效性状态
             "messages": messages
         }
         
