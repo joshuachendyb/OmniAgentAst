@@ -130,16 +130,15 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
         // 前端小新代修改 VIS-E02: 错误消息显示错误标识
         if (message.isError) {
-          // 【修复 display_name 显示 bug】优先显示 displayName，其次 model
           // ✅ 老杨 UX 建议：添加错误图标（⚠️）
-          const displayName = message.displayName || message.model;
-          return displayName
-            ? `⚠️ AI 助手【${displayName}】【错误】`
+          return message.displayName
+            ? `⚠️ AI 助手【${message.displayName}】【错误】`
             : `⚠️ AI 助手【错误】`;
         }
-        // 【修复 display_name 显示 bug】优先显示 displayName，其次 model
-        const displayName = message.displayName || message.model;
-        return displayName ? `AI 助手【${displayName}】` : "AI 助手";
+        // 直接使用后端返回的 displayName，用【】包住显示
+        return message.displayName
+          ? `AI 助手【${message.displayName}】`
+          : "AI 助手";
       }
       case "system":
         return "系统";

@@ -472,16 +472,18 @@ const processSSEData = (
             onChunk?.(step.content);
           }
         }
-        // 获取model字段
+        // 获取model字段和displayName
         const model = rawData.model;
+        const displayName = rawData.display_name;
         console.log("[SSE] 当前模型:", model);
-        console.log("[SSE] 准备调用onComplete, model:", model);
+        console.log("[SSE] 准备调用onComplete, model:", model, "displayName:", displayName);
         setIsReceiving(false);
         setIsConnected(false);
         disconnect();
         if (onComplete) {
           console.log("[SSE] onComplete存在，调用它");
-          onComplete(responseBufferRef.current, model);
+          // 传递 metadata 对象，包含 model 和 displayName
+          onComplete(responseBufferRef.current, { model, displayName });
         } else {
           console.log("[SSE] onComplete不存在！");
         }
