@@ -319,9 +319,8 @@ const ProviderSettings: React.FC = () => {
 
   // 加载配置时同时进行验证
   const handleLoadWithValidation = async () => {
-    // 并行执行：加载配置 + 加载配置路径
-    await Promise.all([loadConfig(), loadConfigPath()]);
-
+    await loadConfig();
+    
     try {
       const result = await configApi.validateFullConfig();
       setValidationResult(result);
@@ -1648,6 +1647,10 @@ const Settings: React.FC = () => {
       setConfirmModalVisible(true);
     } else {
       setActiveKey(key);
+      // 切换到模型配置Tab时，按需加载配置文件路径
+      if (key === "model" && !configPath) {
+        loadConfigPath();
+      }
     }
   };
 
