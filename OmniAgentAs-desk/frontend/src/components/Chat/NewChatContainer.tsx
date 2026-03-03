@@ -1130,7 +1130,7 @@ const NewChatContainer: React.FC = () => {
         return;
       }
 
-      // 🔴 修复4: 如果都没有，加载加载最近会话
+      // 🔴 修复4: 如果都没有，加载最近的会话（只获取最近的1个，直接加载，不筛选消息数量）
       try {
         const response = await sessionApi.listSessions(1, 1);
         if (response.sessions && response.sessions.length > 0) {
@@ -1197,12 +1197,21 @@ const NewChatContainer: React.FC = () => {
           // 关闭加载状态
           setSessionJumpLoading(false);
           message.destroy("session-load");
+        } else {
+          // 如果没有获取到会话，显示提示信息
+          console.log("🟡 没有找到任何会话，显示新会话界面");
+          setSessionTitle("新会话");
+          setMessages([]);
+          setSessionId(null);
+          setSessionJumpLoading(false);
+          message.destroy("session-load");
         }
       } catch (error) {
         console.warn("加载最近会话失败:", error);
         // 即使失败也关闭加载状态
         setSessionJumpLoading(false);
         message.destroy("session-load");
+        // 在错误情况下也可以显示默认的新会话界面
       }
 
       // 标记初始化完成
