@@ -628,87 +628,98 @@ const ProviderSettings: React.FC = () => {
 
   return (
     <div>
-      {/* 全局配置区域 */}
-      <GlobalConfigArea
-        modelList={modelList}
-        currentDisplayName={currentDisplayName}
-        onDisplayNameChange={onDisplayNameChange}
-      />
-      {/* 配置文件路径显示 - 放在模型配置Tab内部顶部 */}
+      {/* 全局配置区域 - 使用 Row/Col 布局与下方 Provider 配置区域对齐 */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={0} md={5}></Col>
+        <Col xs={24} md={9}>
+          <GlobalConfigArea
+            modelList={modelList}
+            currentDisplayName={currentDisplayName}
+            onDisplayNameChange={onDisplayNameChange}
+          />
+        </Col>
+      </Row>
+      {/* 配置文件路径显示 - 使用 Row/Col 布局与下方 Provider 配置区域对齐 */}
       {configPath && (
-        <Card
-          size="small"
-          style={{ marginBottom: 16,  }}
-          title={
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <DesktopOutlined />
-              配置文件路径
-            </span>
-          }
-          extra={
-            <Button
-              type="link"
+        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+          <Col xs={0} md={5}></Col>
+          <Col xs={24} md={9}>
+            <Card
               size="small"
-              onClick={handleOpenConfigDir}
-              icon={<FolderOpenOutlined />}
+              style={{ marginBottom: 0 }}
+              title={
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <DesktopOutlined />
+                  配置文件路径
+                </span>
+              }
+              extra={
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={handleOpenConfigDir}
+                  icon={<FolderOpenOutlined />}
+                >
+                  打开目录
+                </Button>
+              }
             >
-              打开目录
-            </Button>
-          }
-        >
-          <div style={{ wordBreak: "break-all" }}>
-            <Text type="secondary">路径: </Text>
-            <Text code>{configPath.config_path}</Text>
-            {configPath.exists ? (
-              <Tag color="green" style={{ marginLeft: 8 }}>
-                存在
-              </Tag>
-            ) : (
-              <Tag color="red" style={{ marginLeft: 8 }}>
-                不存在
-              </Tag>
-            )}
-          </div>
-        </Card>
+              <div style={{ wordBreak: "break-all" }}>
+                <Text type="secondary">路径： </Text>
+                <Text code>{configPath.config_path}</Text>
+                {configPath.exists ? (
+                  <Tag color="green" style={{ marginLeft: 8 }}>
+                    存在
+                  </Tag>
+                ) : (
+                  <Tag color="red" style={{ marginLeft: 8 }}>
+                    不存在
+                  </Tag>
+                )}
+              </div>
+            </Card>
+          </Col>
+        </Row>
       )}
-      {/* 配置验证提示 - 成功/失败都显示 */}
-
-      {/* 配置验证提示 - 成功/失败都显示 */}
-      <div style={{  }}>
+      {/* 配置验证提示 - 使用 Row/Col 布局与下方 Provider 配置区域对齐 */}
       {validationResult && (
-        <Alert
-          message={
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {validationResult.success ? (
-                <>
-                  <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                  <strong>配置验证成功</strong>
-                </>
-              ) : (
-                <>
-                  <ReloadOutlined style={{ color: "#faad14" }} />
-                  <strong>配置验证发现问题</strong>
-                </>
-              )}
-              <span
-                style={{
-                  marginLeft: 8,
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                }}
-              >
-                点击查看详情
-              </span>
-            </div>
-          }
-          description={validationResult.message}
-          type={validationResult.success ? "success" : "warning"}
-          showIcon
-          style={{ marginBottom: 16, cursor: "pointer",  }}
-          onClick={() => setValidationModalVisible(true)}
-        />
+        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+          <Col xs={0} md={5}></Col>
+          <Col xs={24} md={9}>
+            <Alert
+              message={
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {validationResult.success ? (
+                    <>
+                      <CheckCircleOutlined style={{ color: "#52c41a" }} />
+                      <strong>配置验证成功</strong>
+                    </>
+                  ) : (
+                    <>
+                      <ReloadOutlined style={{ color: "#faad14" }} />
+                      <strong>配置验证发现问题</strong>
+                    </>
+                  )}
+                  <span
+                    style={{
+                      marginLeft: 8,
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                    }}
+                  >
+                    点击查看详情
+                  </span>
+                </div>
+              }
+              description={validationResult.message}
+              type={validationResult.success ? "success" : "warning"}
+              showIcon
+              style={{ marginBottom: 0, cursor: "pointer" }}
+              onClick={() => setValidationModalVisible(true)}
+            />
+          </Col>
+        </Row>
       )}
-      </div>
 
       {/* 验证详情弹框 */}
       <Modal
