@@ -74,12 +74,12 @@ def check_db_fields_exist(conn) -> dict:
                 field_name = field_name.strip().strip('"').strip("'").lower()
                 columns.add(field_name)
         
-        # 检查新字段是否存在（使用标准化后的字段名）
+        # 检查新字段是否存在（现在所有字段都总是存在）
         fields_exist['title_locked'] = 'title_locked' in columns
         fields_exist['title_updated_at'] = 'title_updated_at' in columns
         fields_exist['version'] = 'version' in columns
-        fields_exist['is_valid'] = 'is_valid' in columns  # 【小沈修复 2026-03-03】添加is_valid字段检查
-        
+        fields_exist['is_valid'] = True  # 现在总是存在
+            
         # 如果有字段不存在，记录警告日志
         missing_fields = [f for f, exists in fields_exist.items() if not exists]
         if missing_fields:
@@ -139,13 +139,9 @@ def _init_database():
         )
     ''')
     
-    # 【小沈修复 2026-03-03】如果is_valid字段不存在，则添加（向后兼容旧数据库）
-    try:
-        cursor.execute('SELECT is_valid FROM chat_sessions LIMIT 1')
-    except:
-        cursor.execute('ALTER TABLE chat_sessions ADD COLUMN is_valid BOOLEAN DEFAULT FALSE')
-        conn.commit()
-        print("数据库已添加 is_valid 字段")
+    # 【小沈修复 2026-03-03】将现有会话的 is_valid 字段设置为 true
+    cursor.execute('''UPDATE chat_sessions SET is_valid = TRUE WHERE is_valid IS NULL OR is_valid = FALSE''')
+    conn.commit()
     
     # 创建消息表
     cursor.execute('''
@@ -221,6 +217,7 @@ class SessionResponse(BaseModel):
     created_at: str = Field(..., description="创建时间")
     updated_at: str = Field(..., description="更新时间")
     message_count: int = Field(..., description="消息数量")
+    is_valid: Optional[bool] = Field(None, description="是否为有效会话")
 
 
 class SessionListResponse(BaseModel):
@@ -280,9 +277,8 @@ async def create_session(session_create: Optional[SessionCreate] = None):
         utc_time = get_utc_timestamp()
         
         # 【小沈修复 2026-03-03】获取is_valid值
-        # 前端用户创建传入True，测试代码不传默认为True
-        # 如果数据库没有is_valid字段，则默认为True
-        is_valid = session_create.is_valid if session_create else True
+        # 前端用户创建会话时传入True，测试代码默认为False
+        is_valid = session_create.is_valid if session_create and session_create.is_valid is not None else False
         
         # 优化：初始化新字段（根据字段是否存在动态构建SQL）
         # title_locked = FALSE (默认未锁定)
@@ -294,30 +290,14 @@ async def create_session(session_create: Optional[SessionCreate] = None):
         # 有效会话：用户手动创建的会话（is_valid=True）
         # 无效会话：测试代码创建的会话（is_valid=False，默认）
         
-        # 判断是否所有新字段都存在
-        all_fields_exist = (fields_exist['title_locked'] and 
-                           fields_exist['title_updated_at'] and 
-                           fields_exist['version'] and 
-                           fields_exist.get('is_valid', False))
-        
-        if all_fields_exist:
-            # 所有新字段都存在，使用完整插入
-            cursor.execute(
-                '''INSERT INTO chat_sessions 
-                   (id, title, created_at, updated_at, title_locked, title_updated_at, version, is_valid) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-                (session_id, title, utc_time, utc_time, False, utc_time, 1, is_valid)
-            )
-            logger.info(f"创建会话（使用新字段）: id={session_id}, title={title}, is_valid={is_valid}")
-        else:
-            # 兼容模式：只插入is_valid字段
-            cursor.execute(
-                '''INSERT INTO chat_sessions 
-                   (id, title, created_at, updated_at, is_valid) 
-                   VALUES (?, ?, ?, ?, ?)''',
-                (session_id, title, utc_time, utc_time, is_valid)
-            )
-            logger.info(f"创建会话（兼容模式）: id={session_id}, title={title}, is_valid={is_valid}")
+        # 总是使用完整字段插入（现在所有字段都存在）
+        cursor.execute(
+            '''INSERT INTO chat_sessions 
+               (id, title, created_at, updated_at, title_locked, title_updated_at, version, is_valid) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+            (session_id, title, utc_time, utc_time, False, utc_time, 1, is_valid)
+        )
+        logger.info(f"创建会话（使用新字段）: id={session_id}, title={title}, is_valid={is_valid}")
         
         conn.commit()
         conn.close()
@@ -329,7 +309,8 @@ async def create_session(session_create: Optional[SessionCreate] = None):
             title=title,
             created_at=utc_time,
             updated_at=utc_time,
-            message_count=0
+            message_count=0,
+            is_valid=is_valid
         )
         
     except Exception as e:
@@ -341,7 +322,8 @@ async def create_session(session_create: Optional[SessionCreate] = None):
 async def list_sessions(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
-    keyword: Optional[str] = Query(None, description="搜索关键词")
+    keyword: Optional[str] = Query(None, description="搜索关键词"),
+    is_valid: Optional[bool] = Query(None, description="过滤有效会话（True=有效，False=无效，None=全部）")
 ):
     """
     获取会话列表
@@ -365,14 +347,26 @@ async def list_sessions(
         
         # 先获取总数
         if keyword:
-            cursor.execute(
-                'SELECT COUNT(*) FROM chat_sessions WHERE is_deleted = FALSE AND title LIKE ?',
-                (f'%{keyword}%',)
-            )
+            if is_valid is not None:
+                cursor.execute(
+                    'SELECT COUNT(*) FROM chat_sessions WHERE is_deleted = FALSE AND title LIKE ? AND is_valid = ?',
+                    (f'%{keyword}%', is_valid)
+                )
+            else:
+                cursor.execute(
+                    'SELECT COUNT(*) FROM chat_sessions WHERE is_deleted = FALSE AND title LIKE ?',
+                    (f'%{keyword}%',)
+                )
         else:
-            cursor.execute(
-                'SELECT COUNT(*) FROM chat_sessions WHERE is_deleted = FALSE'
-            )
+            if is_valid is not None:
+                cursor.execute(
+                    'SELECT COUNT(*) FROM chat_sessions WHERE is_deleted = FALSE AND is_valid = ?',
+                    (is_valid,)
+                )
+            else:
+                cursor.execute(
+                    'SELECT COUNT(*) FROM chat_sessions WHERE is_deleted = FALSE'
+                )
         total = cursor.fetchone()[0]
         
         # 构建查询
@@ -382,23 +376,43 @@ async def list_sessions(
         # 这样新创建的会话会排在前面，同时活跃的会话也能保持较高位置
         if keyword:
             # 搜索标题
-            cursor.execute(
-                '''SELECT id, title, created_at, updated_at, message_count 
-                   FROM chat_sessions 
-                   WHERE is_deleted = FALSE AND title LIKE ?
-                   ORDER BY updated_at DESC 
-                   LIMIT ? OFFSET ?''',
-                (f'%{keyword}%', page_size, offset)
-            )
+            if is_valid is not None:
+                cursor.execute(
+                    '''SELECT id, title, created_at, updated_at, message_count, is_valid
+                       FROM chat_sessions 
+                       WHERE is_deleted = FALSE AND title LIKE ? AND is_valid = ?
+                       ORDER BY updated_at DESC 
+                       LIMIT ? OFFSET ?''',
+                    (f'%{keyword}%', is_valid, page_size, offset)
+                )
+            else:
+                cursor.execute(
+                    '''SELECT id, title, created_at, updated_at, message_count, is_valid
+                       FROM chat_sessions 
+                       WHERE is_deleted = FALSE AND title LIKE ?
+                       ORDER BY updated_at DESC 
+                       LIMIT ? OFFSET ?''',
+                    (f'%{keyword}%', page_size, offset)
+                )
         else:
-            cursor.execute(
-                '''SELECT id, title, created_at, updated_at, message_count 
-                   FROM chat_sessions 
-                   WHERE is_deleted = FALSE
-                   ORDER BY updated_at DESC 
-                   LIMIT ? OFFSET ?''',
-                (page_size, offset)
-            )
+            if is_valid is not None:
+                cursor.execute(
+                    '''SELECT id, title, created_at, updated_at, message_count, is_valid
+                       FROM chat_sessions 
+                       WHERE is_deleted = FALSE AND is_valid = ?
+                       ORDER BY updated_at DESC 
+                       LIMIT ? OFFSET ?''',
+                    (is_valid, page_size, offset)
+                )
+            else:
+                cursor.execute(
+                    '''SELECT id, title, created_at, updated_at, message_count, is_valid
+                       FROM chat_sessions 
+                       WHERE is_deleted = FALSE
+                       ORDER BY updated_at DESC 
+                       LIMIT ? OFFSET ?''',
+                    (page_size, offset)
+                )
         
         rows = cursor.fetchall()
         conn.close()
@@ -427,7 +441,8 @@ async def list_sessions(
                 title=row['title'],
                 created_at=created_at_str,
                 updated_at=updated_at_str,
-                message_count=row['message_count']
+                message_count=row['message_count'],
+                is_valid=row['is_valid']
             ))
         
         logger.info(f"获取会话列表: page={page}, page_size={page_size}, keyword={keyword}, count={len(sessions)}")
