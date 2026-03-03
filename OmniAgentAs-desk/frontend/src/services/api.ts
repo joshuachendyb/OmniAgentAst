@@ -491,7 +491,23 @@ export const configApi = {
   },
 
   /**
-   * 删除Provider下的模型
+   * 更新模型名称
+   * @author 小欧
+   */
+  updateModel: async (
+    providerName: string,
+    oldModelName: string,
+    newModelName: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const response = await api.put(
+      `/config/provider/${providerName}/model/${oldModelName}`,
+      { model: newModelName }
+    );
+    return response.data;
+  },
+
+  /**
+   * 删除 Provider 下的模型
    * @author 小欧
    * @param signal AbortController.signal 用于取消请求
    */

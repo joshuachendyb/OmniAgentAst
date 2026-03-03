@@ -59,6 +59,7 @@ import {
   SafetyOutlined,
   ReloadOutlined,
   CheckCircleOutlined,
+  CloseCircleOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
   DesktopOutlined,
@@ -89,10 +90,64 @@ const GlobalConfigArea: React.FC<{
   currentDisplayName: string;
   onDisplayNameChange: (option: ModelOption) => void;
 }> = ({ modelList, currentDisplayName, onDisplayNameChange }) => {
+  const [configPath, setConfigPath] = useState<any>(null);
+
+  useEffect(() => {
+    const loadConfigPath = async () => {
+      try {
+        const pathData = await configApi.getConfigPath();
+        setConfigPath(pathData);
+      } catch (error) {
+        console.error("加载配置文件路径失败:", error);
+      }
+    };
+    loadConfigPath();
+  }, []);
+
+  const handleOpenConfigDir = () => {
+    if (configPath?.config_path) {
+      window.open(`file://${configPath.config_path}`, '_blank');
+    }
+  };
+
   return (
-    <Card size="small" style={{ marginBottom: 24,  }}>
+    <Card size="small" style={{ marginBottom: 24 }}>
       <Row gutter={[16, 16]}>
         <Col span={24}>
+          {/* 配置文件路径显示 - 上一行标签，下一行信息框 */}
+          {configPath && (
+            <div style={{ marginBottom: 16 }}>
+              <Text strong style={{ display: "block", marginBottom: 8 }}>
+                配置文件路径：
+              </Text>
+              <Card size="small" style={{ backgroundColor: "#fafafa" }}>
+                <div style={{ wordBreak: "break-all", marginBottom: 8 }}>
+                  <Text code>{configPath.config_path}</Text>
+                </div>
+                <Space>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<FolderOpenOutlined />}
+                    onClick={handleOpenConfigDir}
+                  >
+                    打开目录
+                  </Button>
+                  {configPath.exists ? (
+                    <Tag color="green" icon={<CheckCircleOutlined />}>
+                      存在
+                    </Tag>
+                  ) : (
+                    <Tag color="red" icon={<CloseCircleOutlined />}>
+                      不存在
+                    </Tag>
+                  )}
+                </Space>
+              </Card>
+            </div>
+          )}
+
+          {/* 当前模型 - 上一行标签，下一行下拉框 */}
           <Text strong style={{ display: "block", marginBottom: 8 }}>
             当前模型:
           </Text>
@@ -106,7 +161,7 @@ const GlobalConfigArea: React.FC<{
                 onDisplayNameChange(option);
               }
             }}
-            style={{ width: "100%",  }}
+            style={{ width: "100%" }}
             placeholder="选择模型"
           >
             {modelList.map((m) => (
@@ -401,6 +456,41 @@ const ProviderSettings: React.FC = () => {
       message.success("Provider已删除");
     } catch (error: any) {
       message.error(error.response?.data?.detail || "删除失败");
+    }
+  };
+
+  // 编辑模型
+  const [editingModel, setEditingModel] = useState<{provider: string, model: string} | null>(null);
+  const [modelEditForm] = Form.useForm();
+
+  const handleEditModel = async (providerName: string, modelName: string) => {
+    setEditingModel({ provider: providerName, model: modelName });
+    modelEditForm.setFieldsValue({ model: modelName });
+    setEditModalVisible(true);
+  };
+
+  const handleUpdateModel = async (values: { model: string }) => {
+    if (!editingModel) return;
+    try {
+      await configApi.updateModel(editingModel.provider, editingModel.model, values.model);
+
+      // 刷新配置
+      loadConfig();
+
+      // 验证配置文件
+      try {
+        const validation = await configApi.validateFullConfig();
+        setValidationResult(validation);
+      } catch (e) {
+        console.warn("验证配置文件失败:", e);
+      }
+
+      message.success("模型已更新");
+      setEditModalVisible(false);
+      setEditingModel(null);
+      modelEditForm.resetFields();
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || "更新失败");
     }
   };
 
@@ -1073,6 +1163,18 @@ const ProviderSettings: React.FC = () => {
                             </div>
 
                             <Space>
+                              {/* 编辑按钮 */}
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<EditOutlined />}
+                                onClick={(e) => {
+                                  e?.stopPropagation();
+                                  handleEditModel(selectedProvider.name, model);
+                                }}
+                              >
+                                编辑
+                              </Button>
                               {/* 删除按钮 */}
                               <Popconfirm
                                 title={`确定删除模型 ${model} 吗？`}
@@ -1252,6 +1354,39 @@ const ProviderSettings: React.FC = () => {
                 添加
               </Button>
               <Button onClick={() => setAddModelModalVisible(false)}>
+                取消
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 编辑模型弹框 */}
+      <Modal
+        title="编辑模型"
+        open={editModalVisible}
+        onCancel={() => {
+          setEditModalVisible(false);
+          setEditingModel(null);
+          modelEditForm.resetFields();
+        }}
+        footer={null}
+      >
+        <Form form={modelEditForm} layout="vertical" onFinish={handleUpdateModel}>
+          <Form.Item
+            label="模型名称"
+            name="model"
+            rules={[{ required: true, message: "请输入模型名称" }]}
+          >
+            <Input placeholder="glm-4-flash" />
+          </Form.Item>
+
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                保存
+              </Button>
+              <Button onClick={() => setEditModalVisible(false)}>
                 取消
               </Button>
             </Space>
