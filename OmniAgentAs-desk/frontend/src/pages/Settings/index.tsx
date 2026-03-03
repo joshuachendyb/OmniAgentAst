@@ -106,7 +106,7 @@ const GlobalConfigArea: React.FC<{
                 onDisplayNameChange(option);
               }
             }}
-            style={{ width: "100%" }}
+            style={{ width: "100%", maxWidth: "900px" }}
             placeholder="选择模型"
           >
             {modelList.map((m) => (
@@ -674,6 +674,7 @@ const ProviderSettings: React.FC = () => {
       {/* 配置验证提示 - 成功/失败都显示 */}
 
       {/* 配置验证提示 - 成功/失败都显示 */}
+      <div style={{ maxWidth: "900px" }}>
       {validationResult && (
         <Alert
           message={
@@ -707,6 +708,7 @@ const ProviderSettings: React.FC = () => {
           onClick={() => setValidationModalVisible(true)}
         />
       )}
+      </div>
 
       {/* 验证详情弹框 */}
       <Modal
