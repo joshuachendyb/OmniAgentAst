@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import MessageItem from '../../components/Chat/MessageItem';
 
 describe('MessageItem Component', () => {
@@ -51,7 +51,7 @@ describe('MessageItem Component', () => {
     expect(screen.getByText('System notification')).toBeInTheDocument();
   });
 
-  it('should display message with execution steps', () => {
+  it('should display message with execution steps', async () => {
     const messageWithSteps = {
       ...baseMessage,
       role: 'assistant' as const,
@@ -73,8 +73,10 @@ describe('MessageItem Component', () => {
     render(<MessageItem message={messageWithSteps} showExecution={true} />);
 
     expect(screen.getByText('Test message content')).toBeInTheDocument();
-    // 检查AI思考过程面板标题
-    expect(screen.getByText('AI思考过程')).toBeInTheDocument();
+    // 检查 AI 思考过程面板标题 - 使用 waitFor 等待异步渲染
+    await waitFor(() => {
+      expect(screen.getByText('AI 思考过程')).toBeInTheDocument();
+    });
   });
 
   it('should format timestamp correctly', () => {
