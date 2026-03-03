@@ -135,13 +135,21 @@ def _init_database():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             message_count INTEGER DEFAULT 0,
             is_deleted BOOLEAN DEFAULT FALSE,
-            is_valid BOOLEAN DEFAULT FALSE
+            is_valid BOOLEAN DEFAULT TRUE  -- 默认为TRUE，表示现有会话都是有效会话
         )
     ''')
     
-    # 【小沈修复 2026-03-03】将现有会话的 is_valid 字段设置为 true
-    cursor.execute('''UPDATE chat_sessions SET is_valid = TRUE WHERE is_valid IS NULL OR is_valid = FALSE''')
-    conn.commit()
+    # 【小沈修复 2026-03-03】检查 is_valid 字段是否存在，如果不存在则添加
+    # 并将现有会话的 is_valid 字段设置为 true（因为现有会话都是用户创建的）
+    try:
+        cursor.execute('SELECT is_valid FROM chat_sessions LIMIT 1')
+        # 如果能执行这句，说明字段已存在，无需操作
+    except:
+        # 如果执行失败，说明字段不存在，需要添加
+        cursor.execute('ALTER TABLE chat_sessions ADD COLUMN is_valid BOOLEAN DEFAULT TRUE')
+        # 将现有会话的 is_valid 字段设置为 true（对于已经存在的会话）
+        cursor.execute('''UPDATE chat_sessions SET is_valid = TRUE''')
+        conn.commit()
     
     # 创建消息表
     cursor.execute('''
