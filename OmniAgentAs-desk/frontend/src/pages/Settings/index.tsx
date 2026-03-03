@@ -630,7 +630,7 @@ const ProviderSettings: React.FC = () => {
     <div>
       {/* 全局配置区域 - 使用 Row/Col 布局与下方 Provider 配置区域对齐 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col xs={24} md={14} offset={5}>
+        <Col xs={24} md={9} offset={5}>
           <GlobalConfigArea
             modelList={modelList}
             currentDisplayName={currentDisplayName}
@@ -641,7 +641,7 @@ const ProviderSettings: React.FC = () => {
       {/* 配置文件路径显示 - 使用 Row/Col 布局与下方 Provider 配置区域对齐 */}
       {configPath && (
         <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={14} offset={5}>
+        <Col xs={24} md={9} offset={5}>
             <Card
               size="small"
               style={{ marginBottom: 0 }}
@@ -682,7 +682,7 @@ const ProviderSettings: React.FC = () => {
       {/* 配置验证提示 - 使用 Row/Col 布局与下方 Provider 配置区域对齐 */}
       {validationResult && (
         <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={14} offset={5}>
+        <Col xs={24} md={9} offset={5}>
             <Alert
               message={
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
