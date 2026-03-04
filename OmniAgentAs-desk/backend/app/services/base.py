@@ -165,14 +165,39 @@ class BaseAIService:
                             if choices:
                                 delta = choices[0].get("delta", {})
                                 logger.info(f"[AI Response] delta.keys: {list(delta.keys())}")
+                                
+                                # 【重要修复】同时检查 delta.content 和外层的 content 字段
+                                # LongCat API 会在外层 content 字段返回累积的内容
                                 content = delta.get("content", "")
+                                outer_content = data.get("content", "")  # 外层的 content 字段
+                                
+                                logger.info(f"[AI Response] delta.content='{content[:50] if content else '(empty)'}', outer_content='{outer_content[:50] if outer_content else '(empty)'}'")
+                                
+                                # 【关键调试】打印 delta 的所有内容
+                                logger.info(f"[AI Response] delta = {json.dumps(delta, ensure_ascii=False)[:500]}")
+                                
                                 # 【小新修复】LongCat API 可能返回不同的字段名
-                                reasoning_content = delta.get("reasoning_content", "") or delta.get("reasoning", "")
-                                logger.info(f"[AI Response] content='{content}', reasoning_content='{reasoning_content}'")
+                                # 尝试多种可能的字段名
+                                reasoning_content = (
+                                    delta.get("reasoning_content") or 
+                                    delta.get("reasoning") or 
+                                    delta.get("thought") or
+                                    ""
+                                )
+                                logger.info(f"[AI Response] 尝试获取 reasoning_content: '{reasoning_content[:100] if reasoning_content else '(empty)'}'")
+                                
                                 # 【修复】同时支持 content 和 reasoning_content 字段
                                 # LongCat 等模型在流式模式下使用 reasoning_content
                                 if not content and reasoning_content:
                                     content = reasoning_content
+                                    logger.info(f"[AI Response] 使用 reasoning_content 作为 content")
+                                
+                                # 【额外修复】如果外层有 content，使用外层的 content
+                                # LongCat API 会在外层返回累积的完整内容
+                                if outer_content:
+                                    content = outer_content
+                                    logger.info(f"[AI Response] 使用外层 content 字段")
+                                
                                 finish_reason = choices[0].get("finish_reason", "")
                                 # 【调试】记录content
                                 logger.info(f"[AI Response Content] model={self.model}, content_length={len(content) if content else 0}, content='{content[:100] if content else '(empty)'}', reasoning_content='{reasoning_content[:100] if reasoning_content else '(empty)'}', finish_reason={finish_reason}")
