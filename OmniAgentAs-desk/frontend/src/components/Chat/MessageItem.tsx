@@ -338,10 +338,10 @@ const MessageItem: React.FC<MessageItemProps> = ({
               {getRoleName()}
             </span>
             {/* 时间戳移到角色名称同一行 */}
-            <span
+              <span
               style={{
                 fontSize: 11,
-                color: "#bfbfbf",
+                color: "#999999",
                 whiteSpace: "nowrap",
               }}
             >

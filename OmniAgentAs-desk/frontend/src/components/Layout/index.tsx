@@ -281,7 +281,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       icon: <MessageOutlined />,
       label: (
         <Badge count={unreadCount} size="small" offset={[6, -4]}>
-          <span>对话与下任务</span>
+          <span>对话任务</span>
         </Badge>
       ),
     },
@@ -592,7 +592,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
             {modelList.length > 0 ? (
               <Select
                 value={_currentProvider}
-                style={{ width: 240 }}
+                style={{ minWidth: 350 }}
+                dropdownStyle={{ minWidth: 350 }}
                 size="small"
                 // 【新增】打开下拉框时刷新模型列表，获取最新配置
                 onDropdownVisibleChange={async (open: boolean) => {

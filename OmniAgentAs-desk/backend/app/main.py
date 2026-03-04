@@ -5,7 +5,6 @@ from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from datetime import datetime
 import traceback
-import logging
 from pathlib import Path
 
 from app.api.v1 import health, chat, file_operations, config, sessions, security, execution, metrics
