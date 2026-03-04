@@ -319,9 +319,8 @@ def detect_file_operation_intent(message: str) -> tuple[bool, str, float]:
             best_score = score
             best_intent = intent
     
-    # 【修复】提高置信度阈值，减少误判
-    # 只有置信度 >= 0.5 才认为是文件操作意图
-    CONFIDENCE_THRESHOLD = 0.5
+    # 【修复】设置置信度阈值
+    CONFIDENCE_THRESHOLD = 0.2
     
     if best_score >= CONFIDENCE_THRESHOLD and best_intent is not None:
         return True, best_intent, min(best_score, 1.0)
@@ -680,7 +679,17 @@ async def chat_stream(request: ChatRequest):
                         else:
                             # 发送最终结果
                             if result.success:
-                                result_content = getattr(result, 'content', '')
+                                # 【修复】正确提取 Agent 的回复内容
+                                result_content = result.message  # 默认值
+                                if result.steps:
+                                    last_step = result.steps[-1]
+                                    if last_step.observation and last_step.observation.get("result"):
+                                        result_data = last_step.observation["result"]
+                                        if isinstance(result_data, dict) and "result" in result_data:
+                                            result_content = result_data["result"]
+                                        elif isinstance(result_data, str):
+                                            result_content = result_data
+                                
                                 logger.info(f"[Step final] 发送final步骤(文件操作成功), content长度: {len(result_content)}")
                                 yield create_final_response(
                                     content=result_content,
