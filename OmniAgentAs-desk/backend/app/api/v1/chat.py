@@ -659,12 +659,23 @@ async def chat_stream(request: ChatRequest):
                             step_action = getattr(step, 'action', '')
                             step_observation = getattr(step, 'observation', '')
                             
+                            # 提取 result 字段（展平 observation.result.result）
+                            step_result = ""
+                            if step_observation and isinstance(step_observation, dict):
+                                if "result" in step_observation:
+                                    result_data = step_observation["result"]
+                                    if isinstance(result_data, dict) and "result" in result_data:
+                                        step_result = result_data["result"]
+                                    elif isinstance(result_data, str):
+                                        step_result = result_data
+                            
+                            # 修改字段名以匹配前端期望的格式
                             step_data = {
                                 'type': 'observation',
                                 'step': i + 2,
-                                'thought': step_thought,
-                                'action': step_action,
-                                'observation': step_observation
+                                'content': step_thought,      # 前端期望 content
+                                'tool': step_action,           # 前端期望 tool
+                                'result': step_result        # 前端期望 result
                             }
                             logger.info(f"[Step observation] 发送observation步骤(Agent执行): {json.dumps(step_data, ensure_ascii=False)}")
                             yield f"data: {json.dumps(step_data)}\n\n"
@@ -914,17 +925,27 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
                     elif isinstance(result_data, str):
                         content = result_data
             
-            # 将执行步骤作为独立字段返回
+            # 将执行步骤作为独立字段返回（修改字段名以匹配前端期望）
             execution_steps_list = None
             if result.steps:
                 execution_steps_list = []
                 for step in result.steps:
+                    # 提取 result 字段（展平 observation.result.result）
+                    step_result = ""
+                    if step.observation and isinstance(step.observation, dict):
+                        if "result" in step.observation:
+                            result_data = step.observation["result"]
+                            if isinstance(result_data, dict) and "result" in result_data:
+                                step_result = result_data["result"]
+                            elif isinstance(result_data, str):
+                                step_result = result_data
+                    
                     execution_steps_list.append({
+                        "type": "observation",
                         "step": step.step_number,
-                        "thought": step.thought,
-                        "action": step.action,
-                        "action_input": step.action_input,
-                        "observation": step.observation
+                        "content": step.thought,        # 前端期望 content
+                        "tool": step.action,             # 前端期望 tool
+                        "result": step_result            # 前端期望 result
                     })
             
             # 添加简短的执行摘要到content（兼容性保留）
