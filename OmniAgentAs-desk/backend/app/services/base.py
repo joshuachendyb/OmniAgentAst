@@ -147,6 +147,11 @@ class BaseAIService:
                             if choices:
                                 delta = choices[0].get("delta", {})
                                 content = delta.get("content", "")
+                                reasoning_content = delta.get("reasoning_content", "")
+                                # 【修复】同时支持 content 和 reasoning_content 字段
+                                # LongCat 等模型在流式模式下使用 reasoning_content
+                                if not content and reasoning_content:
+                                    content = reasoning_content
                                 finish_reason = choices[0].get("finish_reason", "")
                                 # 【调试】记录content
                                 logger.info(f"[AI Response Content] model={self.model}, content_length={len(content) if content else 0}, content_preview={content[:200] if content else '(empty)'}, finish_reason={finish_reason}")
