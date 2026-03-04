@@ -733,6 +733,9 @@ async def chat_stream(request: ChatRequest):
                 # 【修复-小沈】使用流式API，逐token返回
                 full_content = ""
                 chunk_count = 0
+                
+                # 【调试】确认调用 chat_stream
+                logger.info(f"[DEBUG] 开始调用 ai_service.chat_stream, message={last_message[:50]}...")
                 async for chunk in ai_service.chat_stream(
                     message=last_message,
                     history=history
