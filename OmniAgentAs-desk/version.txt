@@ -89,28 +89,46 @@ v0.5.1
 v0.5.2
 
 更新内容：
-1. 下拉框宽度优化
+1. 后端日志统一化
+   - 统一日志配置，所有模块使用app.utils.logger
+   - 修复日志记录问题，使用logger替代print
+   - 添加logger handler确保日志输出
+   - 文件：backend/app/utils/logger.py
+
+2. 后端Agent结果提取修复
+   - 修复Agent返回结果提取逻辑，正确获取AI回复内容
+   - 修复流式模式下Agent结果提取，从steps中获取真实回复
+   - 修复LongCat API返回格式解析问题
+   - 修复LongCat API返回空内容问题
+   - 支持LongCat API的reasoning字段
+   - 文件：backend/app/services/base.py
+
+3. 文件操作意图检测优化
+   - 提高置信度阈值从0.2到0.6，减少误判
+   - 文件：backend/app/services/intent_detector.py
+
+4. 下拉框宽度优化
    - 问题：模型名称显示不完整，加"★"后被截断
    - 修复：下拉框宽度从240px改为350px自适应
-   - 文件：Layout/index.tsx
+   - 文件：frontend/src/components/Layout/index.tsx
 
-2. 气泡时间颜色调整
+5. 气泡时间颜色调整
    - 问题：时间颜色太暗(#bfbfbf)
    - 修复：改为更亮的灰色(#999999)
-   - 文件：MessageItem.tsx
+   - 文件：frontend/src/components/Chat/MessageItem.tsx
 
-3. 菜单名称简化
+6. 菜单名称简化
    - "对话与下任务"改为"对话任务"
-   - 文件：Layout/index.tsx
+   - 文件：frontend/src/components/Layout/index.tsx
 
-4. 测试文件整理
+7. 测试文件整理
    - 创建test_tools/目录
    - 移动26个测试脚本
    - 删除test/和"修复/"目录
 
 版本升级说明：
 - v0.5.1: 修复displayName显示问题
-- v0.5.2: UI优化及代码整理（本次升级）
+- v0.5.2: 后端日志和Agent修复+UI优化（本次升级）
 
-参与开发：小欧、小新
+参与开发：小欧、小新、小沈
 完成时间：2026-03-05 07:18:26
