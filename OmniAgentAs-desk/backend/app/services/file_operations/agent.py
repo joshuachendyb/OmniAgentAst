@@ -244,7 +244,17 @@ class ToolExecutor:
         
         try:
             # 参数规范化：处理不同参数名
-            if action == "list_directory":
+            # 处理通用的 path 参数映射到具体参数名
+            if action in ["read_file", "write_file", "delete_file"]:
+                # 这些工具期望 file_path 参数
+                if "path" in action_input and "file_path" not in action_input:
+                    # 将 path 参数重命名为 file_path
+                    action_input["file_path"] = action_input.pop("path")
+                elif "path" in action_input and "file_path" in action_input:
+                    # 两者都存在，优先使用 file_path，删除 path
+                    del action_input["path"]
+            
+            elif action == "list_directory":
                 # 处理 path 和 dir_path 参数名不一致问题
                 if "path" in action_input and "dir_path" not in action_input:
                     # 将 path 参数重命名为 dir_path
@@ -252,6 +262,30 @@ class ToolExecutor:
                 elif "path" in action_input and "dir_path" in action_input:
                     # 两者都存在，优先使用 dir_path，删除 path
                     del action_input["path"]
+            
+            elif action == "move_file":
+                # 处理可能的参数名变体
+                if "source" in action_input and "source_path" not in action_input:
+                    action_input["source_path"] = action_input.pop("source")
+                if "src" in action_input and "source_path" not in action_input:
+                    action_input["source_path"] = action_input.pop("src")
+                
+                if "destination" in action_input and "destination_path" not in action_input:
+                    action_input["destination_path"] = action_input.pop("destination")
+                if "dest" in action_input and "destination_path" not in action_input:
+                    action_input["destination_path"] = action_input.pop("dest")
+                if "target" in action_input and "destination_path" not in action_input:
+                    action_input["destination_path"] = action_input.pop("target")
+            
+            elif action == "search_files":
+                # search_files 已经使用 path 参数，但需要确保存在
+                if "path" not in action_input:
+                    action_input["path"] = "."
+            
+            elif action == "generate_report":
+                # generate_report 使用 output_dir 参数
+                if "output" in action_input and "output_dir" not in action_input:
+                    action_input["output_dir"] = action_input.pop("output")
             
             # 执行工具
             result = await tool(**action_input)
