@@ -12,11 +12,8 @@ from app.api.v1 import health, chat, file_operations, config, sessions, security
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# 配置日志 - 使用统一的 logger 配置，不再使用 basicConfig
+# 日志统一在 app/utils/logger.py 中配置
 
 def get_version() -> str:
     """从version.txt读取版本号"""

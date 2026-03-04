@@ -2,10 +2,11 @@ from fastapi import APIRouter
 from datetime import datetime
 from pydantic import BaseModel
 from pathlib import Path
-import logging
+
+# 使用统一的日志配置
+from app.utils.logger import logger
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
 
 class HealthResponse(BaseModel):
     status: str

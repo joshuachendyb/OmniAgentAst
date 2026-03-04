@@ -18,10 +18,6 @@ from app.services.file_operations import (
 from app.services.file_operations.safety import OperationType
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
-import logging
-
-# 日志分层：工具级别日志
-logger_tool = logging.getLogger("omniagent.tool")
 
 
 # ============================================================
@@ -62,8 +58,8 @@ def register_tool(name: str = None, description: str = "", category: str = "file
         }
         _TOOL_REGISTRY[tool_name] = tool_info
         
-        # 使用logger_tool记录注册信息
-        logger_tool.info(f"Tool registered: {tool_name} (category: {category})")
+        # 使用统一logger记录注册信息
+        logger.info(f"Tool registered: {tool_name} (category: {category})")
         
         return func
     

@@ -19,11 +19,11 @@
 """
 
 from typing import List, Dict, Optional
-import logging
 
 from app.services.base import Message
 
-logger = logging.getLogger(__name__)
+# 使用统一的日志配置
+from app.utils.logger import logger
 
 
 def messages_to_dict_list(messages: Optional[List[Message]]) -> List[Dict[str, str]]:

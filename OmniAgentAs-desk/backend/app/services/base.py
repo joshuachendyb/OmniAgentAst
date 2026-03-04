@@ -9,22 +9,10 @@ AI服务通用实现
 
 import json
 import httpx
-import logging
 from typing import List, Dict, Optional, AsyncGenerator
 
-# 使用 print 输出到控制台，确保能看到调试信息
-logger = logging.getLogger(__name__)
-
-# 确保 logger 级别为 INFO
-logger.setLevel(logging.INFO)
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    handler.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-
-print_logger = print  # 直接使用 print 确保输出
+# 使用统一的日志配置
+from app.utils.logger import logger
 
 
 class Message:

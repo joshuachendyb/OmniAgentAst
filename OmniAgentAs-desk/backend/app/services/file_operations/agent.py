@@ -4,7 +4,6 @@ ReAct Agent实现 (ReAct Agent Implementation)
 """
 import asyncio
 import json
-import logging
 import re
 from typing import Dict, Any, List, Optional, Callable
 from datetime import datetime
@@ -15,11 +14,6 @@ from app.services.file_operations.tools import FileTools
 from app.services.file_operations.prompts import FileOperationPrompts
 from app.services.file_operations.session import get_session_service
 from app.utils.logger import logger
-
-# 日志分层：创建不同级别的logger
-logger_agent = logging.getLogger("omniagent.agent")   # ReAct级别日志
-logger_tool = logging.getLogger("omniagent.tool")     # 工具级别日志
-logger_api = logging.getLogger("omniagent.api")       # API级别日志
 
 
 class AgentStatus(Enum):
@@ -616,34 +610,34 @@ class FileOperationAgent:
                 if observation.get("success") or observation.get("error") is None:
                     if attempt > 0:
                         # 重试成功后记录日志
-                        logger_agent.info(
+                        logger.info(
                             f"Action '{action}' succeeded after {attempt + 1} attempt(s)"
                         )
                     return observation
                 
                 # 执行失败，记录错误
                 last_error = observation.get("error", "Unknown error")
-                logger_tool.warning(
+                logger.warning(
                     f"Action '{action}' failed (attempt {attempt + 1}/{max_retries}): {last_error}"
                 )
                 
             except Exception as e:
                 last_error = str(e)
-                logger_tool.error(
+                logger.error(
                     f"Action '{action}' raised exception (attempt {attempt + 1}/{max_retries}): {e}"
                 )
             
             # 如果还有重试次数，等待后重试（指数退避）
             if attempt < max_retries - 1:
                 wait_time = 2 ** attempt  # 1s, 2s, 4s
-                logger_agent.info(
+                logger.info(
                     f"Retrying '{action}' in {wait_time}s... (attempt {attempt + 2}/{max_retries})"
                 )
                 await asyncio.sleep(wait_time)
         
         # 所有重试都失败
         error_msg = f"Action '{action}' failed after {max_retries} attempts: {last_error}"
-        logger_agent.error(error_msg)
+        logger.error(error_msg)
         return {
             "success": False,
             "error": error_msg,
