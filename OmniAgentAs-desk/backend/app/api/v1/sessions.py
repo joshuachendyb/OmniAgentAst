@@ -676,10 +676,8 @@ async def save_message(session_id: str, message: MessageCreate):
         # 不需要后端用消息内容覆盖。标题应该由用户手动修改才更新。
 
         # 优化：updated_at更新时机
-        # 只在以下情况更新updated_at：
-        # 1. 标题被更新
-        # 2. 每5条消息更新一次（避免频繁更新）
-        should_update_updated_at = should_update_title or (new_message_count % 5 == 0)
+        # 每次保存消息都更新updated_at，因为它是"最后活动时间"
+        should_update_updated_at = True
         
         # 执行会话更新（根据字段存在性动态构建SQL）
         if should_update_title or should_update_updated_at:
