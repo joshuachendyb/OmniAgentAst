@@ -118,7 +118,7 @@ class BaseAIService:
         """发送对话请求（流式返回）"""
         
         # 【关键调试】确认 chat_stream 方法被调用
-        print(f"🔍 [BaseAIService.chat_stream] 被调用! model={self.model}, provider={self.provider}")
+        print(f"[BaseAIService.chat_stream] 被调用! model={self.model}, provider={self.provider}")
         logger.info(f"[BaseAIService.chat_stream] START - model={self.model}, provider={self.provider}")
         
         messages = self._build_messages(message, history)
@@ -145,8 +145,14 @@ class BaseAIService:
                     if not line or line.strip() == "":
                         continue
                     
+                    # 【重要修复】API返回的是 "data:{" 而不是 "data: {"
+                    # 需要同时处理两种情况
                     if line.startswith("data: "):
                         data_str = line[6:]
+                    elif line.startswith("data:"):
+                        data_str = line[5:]
+                    else:
+                        continue
                         
                         # 【调试】记录AI返回的原始数据
                         logger.info(f"[AI Response Raw] model={self.model}, data_str={data_str}")
@@ -161,20 +167,17 @@ class BaseAIService:
                             logger.info(f"[AI Response Parsed] model={self.model}, data.keys={list(data.keys())}")
                             
                             choices = data.get("choices", [])
-                            logger.info(f"[AI Response] choices count: {len(choices)}")
+                            print(f"[DEBUG] choices count: {len(choices)}")
+                            
+                            content = ""
+                            outer_content = ""
+                            reasoning_content = ""
                             if choices:
                                 delta = choices[0].get("delta", {})
-                                logger.info(f"[AI Response] delta.keys: {list(delta.keys())}")
-                                
-                                # 【重要修复】同时检查 delta.content 和外层的 content 字段
-                                # LongCat API 会在外层 content 字段返回累积的内容
+                                print(f"[DEBUG] delta: {delta}")
                                 content = delta.get("content", "")
                                 outer_content = data.get("content", "")  # 外层的 content 字段
-                                
-                                logger.info(f"[AI Response] delta.content='{content[:50] if content else '(empty)'}', outer_content='{outer_content[:50] if outer_content else '(empty)'}'")
-                                
-                                # 【关键调试】打印 delta 的所有内容
-                                logger.info(f"[AI Response] delta = {json.dumps(delta, ensure_ascii=False)[:500]}")
+                                print(f"[DEBUG] content: {repr(content)}, outer_content: {repr(outer_content)}")
                                 
                                 # 【小新修复】LongCat API 可能返回不同的字段名
                                 # 尝试多种可能的字段名
@@ -184,19 +187,19 @@ class BaseAIService:
                                     delta.get("thought") or
                                     ""
                                 )
-                                logger.info(f"[AI Response] 尝试获取 reasoning_content: '{reasoning_content[:100] if reasoning_content else '(empty)'}'")
+                                print(f"[DEBUG] reasoning_content: {repr(reasoning_content)}")
                                 
                                 # 【修复】同时支持 content 和 reasoning_content 字段
                                 # LongCat 等模型在流式模式下使用 reasoning_content
                                 if not content and reasoning_content:
                                     content = reasoning_content
-                                    logger.info(f"[AI Response] 使用 reasoning_content 作为 content")
+                                    print(f"[DEBUG] 使用 reasoning_content: {repr(content)}")
                                 
                                 # 【额外修复】如果外层有 content，使用外层的 content
                                 # LongCat API 会在外层返回累积的完整内容
                                 if outer_content:
                                     content = outer_content
-                                    logger.info(f"[AI Response] 使用外层 content 字段")
+                                    print(f"[DEBUG] 使用外层 content: {repr(content)}")
                                 
                                 finish_reason = choices[0].get("finish_reason", "")
                                 # 【调试】记录content
