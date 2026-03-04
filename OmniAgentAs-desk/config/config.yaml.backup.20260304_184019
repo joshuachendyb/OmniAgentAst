@@ -1,0 +1,46 @@
+ai:
+  provider: zhipuai
+  model: cogview-3-flash
+  longcat:
+    api_base: https://api.longcat.chat/openai/v1
+    api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
+    max_retries: 3
+    models:
+    - LongCat-Flash-Thinking-2601
+    - LongCat-Flash-Thinking
+    timeout: 120
+  opencode:
+    api_base: https://opencode.ai/zen/v1
+    api_key: sk-6rMee9Ez89iRCEvDayPq2hdTrMGKyPesy5K88uZKVAqOrc7tg6sVqRI5T1pP2LXb
+    max_retries: 3
+    models:
+    - minimax-m2.5-free
+    - glm-5-free
+    - kimi-k2.5-free
+    timeout: 150
+  zhipuai:
+    api_base: https://open.bigmodel.cn/api/paas/v4/
+    api_key: 5790cd6d8981471da11dda7523da11ad.VT36xKqyrpQKVR8C
+    max_retries: 3
+    models:
+    - glm-4.7-flash
+    - glm-4.6v-flash
+    - cogview-3-flash
+    timeout: 90
+app:
+  debug: false
+  language: zh-CN
+  max_history_length: 10
+  theme: light
+logging:
+  backup_count: 5
+  level: INFO
+  max_file_size: 10485760
+security:
+  commandBlacklist: ''
+  commandWhitelist: ''
+  confirmDangerousOps: true
+  contentFilterEnabled: true
+  contentFilterLevel: medium
+  maxFileSize: 100
+  whitelistEnabled: false
