@@ -59,7 +59,7 @@ import {
   SafetyOutlined,
   ReloadOutlined,
   CheckCircleOutlined,
-  CloseCircleOutlined,
+  WarningOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
   DesktopOutlined,
@@ -105,8 +105,9 @@ const GlobalConfigArea: React.FC<{
   }, []);
 
   const handleOpenConfigDir = () => {
-    if (configPath?.config_path) {
-      window.open(`file://${configPath.config_path}`, '_blank');
+    if (configPath?.config_dir) {
+      // Windows 系统使用 file:/// 协议打开文件夹
+      window.open(`file://${configPath.config_dir}`, '_blank');
     }
   };
 
@@ -126,20 +127,20 @@ const GlobalConfigArea: React.FC<{
                 </div>
                 <Space>
                   <Button
-                    type="link"
+                    type="primary"
                     size="small"
                     icon={<FolderOpenOutlined />}
                     onClick={handleOpenConfigDir}
                   >
-                    打开目录
+                    打开配置目录
                   </Button>
                   {configPath.exists ? (
                     <Tag color="green" icon={<CheckCircleOutlined />}>
-                      存在
+                      配置文件正常
                     </Tag>
                   ) : (
-                    <Tag color="red" icon={<CloseCircleOutlined />}>
-                      不存在
+                    <Tag color="orange" icon={<WarningOutlined />}>
+                      配置文件不存在
                     </Tag>
                   )}
                 </Space>
