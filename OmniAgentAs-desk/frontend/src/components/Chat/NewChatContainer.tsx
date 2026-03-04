@@ -190,14 +190,33 @@ const NewChatContainer: React.FC = () => {
               content: step.content || "🤔 AI 正在思考...",
               timestamp: new Date(),
               executionSteps: [step],
-              isStreaming: true,
+              isStreaming: true,  // 确保是 true
               model: step.model,
               provider: step.provider,
               displayName: finalDisplayName, // 直接使用后端返回的 displayName（驼峰）
             };
-            console.log("🔍 创建新AI助手消息: displayName=", newAssistantMessage.displayName);
+            console.log("🔍 创建新AI助手消息: displayName=", newAssistantMessage.displayName, "isStreaming=", newAssistantMessage.isStreaming);
             console.log("🔍 完整消息对象:", JSON.stringify(newAssistantMessage, null, 2));
             return [...prev, newAssistantMessage];
+          } else {
+            // 已有assistant消息，更新displayName
+            console.log("🔍 已有assistant消息，更新displayName, 当前isStreaming=", lastMessage.isStreaming);
+            // 提取displayName
+            const extractedDisplayName = step.displayName || step.display_name;
+            let finalDisplayName = extractedDisplayName;
+            if (!finalDisplayName && step.model && step.provider) {
+              finalDisplayName = `${step.provider} (${step.model})`;
+            }
+            // 更新最后一条消息的displayName
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              ...lastMessage,
+              displayName: finalDisplayName || lastMessage.displayName,
+              model: step.model || lastMessage.model,
+              provider: step.provider || lastMessage.provider,
+            };
+            console.log("🔍 更新后的displayName=", updated[updated.length - 1].displayName);
+            return updated;
           }
         }
         // 普通步骤：追加到 executionSteps
@@ -621,11 +640,13 @@ const NewChatContainer: React.FC = () => {
 
                 return {
                   id: m.id?.toString() || Date.now().toString(),
-                  role: m.role || "assistant", // 修复：确保 role 有效
-                  content: m.content || "", // 修复：确保 content 不为 undefined
-                  timestamp: new Date(m.timestamp || Date.now()), // 修复：确保 timestamp 有效
+                  role: m.role || "assistant",
+                  content: m.content || "",
+                  timestamp: new Date(m.timestamp || Date.now()),
                   executionSteps,
-                  displayName: m.display_name, // 前端小新代修改：模型显示名称
+                  displayName: m.display_name || undefined,
+                  model: m.model || undefined,
+                  provider: m.provider || undefined,
                 };
                   })
                 );
@@ -988,6 +1009,9 @@ const NewChatContainer: React.FC = () => {
                   content: m.content || "", // 修复：确保 content 不为 undefined
                   timestamp: new Date(m.timestamp || Date.now()), // 修复：确保 timestamp 有效
                   executionSteps,
+                  displayName: m.display_name || undefined,
+                  model: m.model || undefined,
+                  provider: m.provider || undefined,
                 };
               })
             );

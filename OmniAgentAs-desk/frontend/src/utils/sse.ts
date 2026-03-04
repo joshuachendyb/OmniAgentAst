@@ -257,6 +257,7 @@ export const useSSE = (
                   setIsReceiving,
                   setIsConnected,
                   disconnect,
+                  setServerTaskId,
                 },
                 isProcessingRef
               );
@@ -286,6 +287,7 @@ export const useSSE = (
                  setIsReceiving,
                  setIsConnected,
                  disconnect,
+                 setServerTaskId,
                },
                isProcessingRef
              );
@@ -347,6 +349,7 @@ const processSSEData = (
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
     setIsConnected: React.Dispatch<React.SetStateAction<boolean>>;
     disconnect: () => void;
+    setServerTaskId?: (taskId: string) => void;
   },
   // 前端小新代修改 VIS-S02: 修复 ESLint 未使用参数警告
   // 原因: 原参数 isProcessingRef 未被使用，但函数调用处仍传入该参数
@@ -364,6 +367,7 @@ const processSSEData = (
     setIsReceiving,
     setIsConnected,
     disconnect,
+    setServerTaskId,
   } = handlers;
 
   // 跳过空行
@@ -395,25 +399,39 @@ const processSSEData = (
       stepNumber: rawData.step || 1,
     };
 
+    // 如果有 task_id，设置后端返回的任务ID
+    if (rawData.task_id && setServerTaskId) {
+      setServerTaskId(rawData.task_id);
+    }
+
     switch (rawData.type) {
       case "start": {
         // ⭐ 【小沈添加 2026-03-03】start步骤，用于创建占位消息
-
         
-        if (rawData.model) {
-          (responseBufferRef.current as any)._model = rawData.model;
+        // 保存 model 和 displayName 到 responseBufferRef（如果是对象的话）
+        if (typeof responseBufferRef.current === 'object' && responseBufferRef.current !== null) {
+          if (rawData.model) {
+            (responseBufferRef.current as any)._model = rawData.model;
+          }
+          if (rawData.display_name) {
+            (responseBufferRef.current as any)._displayName = rawData.display_name;
+          }
         }
-        if (rawData.display_name) {
-          (responseBufferRef.current as any)._displayName =
-            rawData.display_name;
-        }
-        // 【修复问题 7】发送 start 步骤，用于创建占位消息
+        
         // 计算 displayName：优先使用后端返回的 display_name，如果为空则从 model/provider 构建
         let displayName = rawData.display_name;
+        console.log("[SSE start] rawData:", rawData);
+        console.log("[SSE start] rawData.display_name:", rawData.display_name);
+        console.log("[SSE start] rawData.model:", rawData.model);
+        console.log("[SSE start] rawData.provider:", rawData.provider);
+        
         if (!displayName && rawData.model && rawData.provider) {
           displayName = `${rawData.provider} (${rawData.model})`;
-
+          console.log("[SSE start] 从model/provider构建displayName:", displayName);
         }
+        
+        console.log("[SSE start] 最终displayName:", displayName);
+        
         const startStep: ExecutionStep = {
           type: "start",
           content: "🤔 AI 正在思考...",
@@ -424,8 +442,10 @@ const processSSEData = (
           display_name: displayName, // 同时设置两个字段，确保兼容性
         };
 
+        console.log("[SSE start] 创建的startStep:", startStep);
         setExecutionSteps((prev) => [...prev, startStep]);
         onStep?.(startStep);
+        console.log("[SSE start] 已调用onStep回调");
         break;
       }
 
@@ -494,8 +514,6 @@ const processSSEData = (
           // 传递 metadata 对象，包含 model 和 displayName
           const metadata: any = { model, displayName };
           onComplete(responseBufferRef.current, metadata);
-        } else {
-
         }
         break;
       }
