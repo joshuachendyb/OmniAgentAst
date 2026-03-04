@@ -64,6 +64,8 @@ import {
   EyeInvisibleOutlined,
   DesktopOutlined,
   FolderOpenOutlined,
+  FileTextOutlined,
+  CheckOutlined,
 } from "@ant-design/icons";
 import { configApi, chatApi } from "../../services/api";
 import type { ProviderInfo } from "../../services/api";
@@ -91,6 +93,10 @@ const GlobalConfigArea: React.FC<{
   onDisplayNameChange: (option: ModelOption) => void;
 }> = ({ modelList, currentDisplayName, onDisplayNameChange }) => {
   const [configPath, setConfigPath] = useState<any>(null);
+  const [configContent, setConfigContent] = useState<string>("");
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [validationResult, setValidationResult] = useState<any>(null);
+  const [validating, setValidating] = useState(false);
 
   useEffect(() => {
     const loadConfigPath = async () => {
@@ -104,10 +110,42 @@ const GlobalConfigArea: React.FC<{
     loadConfigPath();
   }, []);
 
-  const handleOpenConfigDir = () => {
-    if (configPath?.config_dir) {
-      // Windows 系统使用 file:/// 协议打开文件夹
-      window.open(`file://${configPath.config_dir}`, '_blank');
+  const handleOpenConfigDir = async () => {
+    try {
+      await configApi.openConfigFolder();
+    } catch (error) {
+      console.error("打开配置目录失败:", error);
+      message.error("打开配置目录失败");
+    }
+  };
+
+  const handleViewConfig = async () => {
+    try {
+      const result = await configApi.readConfigFile();
+      setConfigContent(result.content);
+      setShowConfigModal(true);
+    } catch (error) {
+      console.error("读取配置文件失败:", error);
+      message.error("读取配置文件失败");
+    }
+  };
+
+  const handleValidateConfig = async () => {
+    setValidating(true);
+    setValidationResult(null);
+    try {
+      // 同时获取配置内容和验证结果
+      const [validationResult, contentResult] = await Promise.all([
+        configApi.validateFullConfig(),
+        configApi.readConfigFile()
+      ]);
+      setValidationResult(validationResult);
+      setConfigContent(contentResult.content);
+    } catch (error) {
+      console.error("检测配置文件失败:", error);
+      message.error("检测配置文件失败");
+    } finally {
+      setValidating(false);
     }
   };
 
@@ -133,6 +171,21 @@ const GlobalConfigArea: React.FC<{
                     onClick={handleOpenConfigDir}
                   >
                     打开配置目录
+                  </Button>
+                  <Button
+                    size="small"
+                    icon={<FileTextOutlined />}
+                    onClick={handleViewConfig}
+                  >
+                    查看配置
+                  </Button>
+                  <Button
+                    size="small"
+                    icon={<CheckOutlined />}
+                    onClick={handleValidateConfig}
+                    loading={validating}
+                  >
+                    检测配置
                   </Button>
                   {configPath.exists ? (
                     <Tag color="green" icon={<CheckCircleOutlined />}>
@@ -173,6 +226,105 @@ const GlobalConfigArea: React.FC<{
           </Select>
         </Col>
       </Row>
+
+      {/* 查看配置文件 Modal */}
+      <Modal
+        title="配置文件内容"
+        open={showConfigModal}
+        onCancel={() => setShowConfigModal(false)}
+        width={800}
+        footer={[
+          <Button key="close" onClick={() => setShowConfigModal(false)}>
+            关闭
+          </Button>,
+        ]}
+      >
+        <pre style={{ 
+          maxHeight: 500, 
+          overflow: "auto", 
+          backgroundColor: "#f5f5f5", 
+          padding: 12,
+          borderRadius: 4,
+          fontSize: 12
+        }}>
+          {configContent}
+        </pre>
+      </Modal>
+
+      {/* 检测配置结果 Modal */}
+      <Modal
+        title="配置检测结果"
+        open={!!validationResult}
+        onCancel={() => setValidationResult(null)}
+        width={800}
+        footer={[
+          <Button key="close" onClick={() => setValidationResult(null)}>
+            关闭
+          </Button>,
+        ]}
+      >
+        {validationResult && (
+          <div>
+            {/* 检测状态 */}
+            <Alert
+              type={validationResult.success ? "success" : "error"}
+              message={validationResult.success ? "配置检测通过" : "配置检测失败"}
+              description={validationResult.message}
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+
+            {/* 当前配置 */}
+            <div style={{ marginBottom: 16 }}>
+              <Text strong>当前配置：</Text>
+              <div style={{ marginTop: 8 }}>
+                <Tag color="blue">Provider: {validationResult.provider}</Tag>
+                <Tag color="green">Model: {validationResult.model}</Tag>
+              </div>
+            </div>
+
+            {/* 错误列表 */}
+            {validationResult.errors && validationResult.errors.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <Text strong type="danger">错误列表：</Text>
+                <ul style={{ color: "#ff4d4f", marginTop: 8 }}>
+                  {validationResult.errors.map((err: string, idx: number) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* 警告列表 */}
+            {validationResult.warnings && validationResult.warnings.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <Text strong type="warning">警告列表：</Text>
+                <ul style={{ color: "#faad14", marginTop: 8 }}>
+                  {validationResult.warnings.map((warn: string, idx: number) => (
+                    <li key={idx}>{warn}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* 配置文件全文 */}
+            <div>
+              <Text strong>配置文件全文：</Text>
+              <pre style={{ 
+                maxHeight: 300, 
+                overflow: "auto", 
+                backgroundColor: "#f5f5f5", 
+                padding: 12,
+                borderRadius: 4,
+                fontSize: 12,
+                marginTop: 8
+              }}>
+                {configContent}
+              </pre>
+            </div>
+          </div>
+        )}
+      </Modal>
     </Card>
   );
 };
@@ -187,7 +339,8 @@ const ProviderList: React.FC<{
   currentProvider: string;
   onSelect: (provider: ProviderInfo) => void;
   onAdd?: () => void;
-}> = ({ providers, currentProvider, onSelect, onAdd }) => {
+  modelList: ModelOption[];
+}> = ({ providers, currentProvider, onSelect, onAdd, modelList }) => {
   const [searchKeyword, setSearchKeyword] = useState("");
 
   const filteredProviders = useMemo(
@@ -245,7 +398,8 @@ const ProviderList: React.FC<{
           <Space>
             <ApiOutlined />
             <Text strong>{provider.name}</Text>
-            {provider.name === currentProvider && (
+            {/* ⭐ 修复：只显示真正正在使用的模型对应的Provider的"当前使用"标签 */}
+            {modelList.some(m => m.provider === provider.name && m.current_model) && (
               <Tag color="success">当前使用</Tag>
             )}
           </Space>
@@ -276,7 +430,7 @@ const ProviderList: React.FC<{
  * @author 小新
  * @update 2026-02-26 重构：提取子组件
  */
-const ProviderSettings: React.FC = () => {
+const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = true }) => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState<string>("");
   // 模型列表（从 getModelList API 获取，包含 display_name）
@@ -375,8 +529,11 @@ const ProviderSettings: React.FC = () => {
   };
 
   useEffect(() => {
-    handleLoadWithValidation();
-  }, []);
+    // ⭐ 老杨修复：按需加载 - 只在shouldLoad为true时加载
+    if (shouldLoad) {
+      handleLoadWithValidation();
+    }
+  }, [shouldLoad]);
 
   // 编辑Provider
   const handleEditProvider = (provider: ProviderInfo) => {
@@ -927,6 +1084,7 @@ const ProviderSettings: React.FC = () => {
             currentProvider={currentProvider}
             onSelect={onSelectProvider}
             onAdd={() => setAddProviderModalVisible(true)}
+            modelList={modelList}
           />
         </Col>
 
@@ -1709,6 +1867,8 @@ const Settings: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [pendingKey, setPendingKey] = useState<string>("");
+  // ⭐ 老杨修复：按需加载 - 跟踪已加载的Tab
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(["model"])); // 默认"model"已加载
   // ⭐ 删除未使用的状态变量：configFilePath, fixingConfig, fixProgress, showFixModal
 
   /**
@@ -1745,6 +1905,8 @@ const Settings: React.FC = () => {
       setConfirmModalVisible(true);
     } else {
       setActiveKey(key);
+      // ⭐ 老杨修复：按需加载 - 切换Tab时标记已加载
+      setLoadedTabs(prev => new Set(prev).add(key));
     }
   };
 
@@ -1780,7 +1942,8 @@ const Settings: React.FC = () => {
               }
               key="model"
             >
-              <ProviderSettings />
+              {/* ⭐ 老杨修复：按需加载 - 传递shouldLoad参数 */}
+              <ProviderSettings shouldLoad={loadedTabs.has("model")} />
             </TabPane>
 
             <TabPane
