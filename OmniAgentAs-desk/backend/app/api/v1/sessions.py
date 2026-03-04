@@ -388,7 +388,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND title LIKE ? AND is_valid = ?
-                       ORDER BY created_at DESC, updated_at DESC 
+                       ORDER BY updated_at DESC, created_at DESC 
                        LIMIT ? OFFSET ?''',
                     (f'%{keyword}%', is_valid, page_size, offset)
                 )
@@ -397,7 +397,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND title LIKE ?
-                       ORDER BY created_at DESC, updated_at DESC 
+                       ORDER BY updated_at DESC, created_at DESC 
                        LIMIT ? OFFSET ?''',
                     (f'%{keyword}%', page_size, offset)
                 )
@@ -407,7 +407,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND is_valid = ?
-                       ORDER BY created_at DESC, updated_at DESC 
+                       ORDER BY updated_at DESC, created_at DESC 
                        LIMIT ? OFFSET ?''',
                     (is_valid, page_size, offset)
                 )
@@ -416,7 +416,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE
-                       ORDER BY created_at DESC, updated_at DESC 
+                       ORDER BY updated_at DESC, created_at DESC 
                        LIMIT ? OFFSET ?''',
                     (page_size, offset)
                 )
