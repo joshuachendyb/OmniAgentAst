@@ -319,8 +319,9 @@ def detect_file_operation_intent(message: str) -> tuple[bool, str, float]:
             best_score = score
             best_intent = intent
     
-    # 【修复】设置置信度阈值
-    CONFIDENCE_THRESHOLD = 0.2
+    # 【修复】提高置信度阈值，减少误判
+    # 只有置信度 >= 0.5 才认为是文件操作意图
+    CONFIDENCE_THRESHOLD = 0.5
     
     if best_score >= CONFIDENCE_THRESHOLD and best_intent is not None:
         return True, best_intent, min(best_score, 1.0)
