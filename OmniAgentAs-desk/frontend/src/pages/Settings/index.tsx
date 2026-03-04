@@ -219,8 +219,8 @@ const GlobalConfigArea: React.FC<{
             placeholder="选择模型"
           >
             {modelList.map((m) => (
-              <Select.Option key={m.display_name} value={m.display_name}>
-                {m.display_name}
+              <Select.Option key={`${m.provider}-${m.model}`} value={m.display_name}>
+                {m.display_name} {m.current_model === true ? " *" : ""}
               </Select.Option>
             ))}
           </Select>
@@ -480,6 +480,8 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       // 获取模型列表（包含 display_name）
       const modelData = await configApi.getModelList();
+      console.log("从后端获取的模型列表：", JSON.stringify(modelData.models, null, 2));
+      // 直接使用原始数据，不做任何修改
       setModelList(modelData.models);
 
       // 设置当前显示名称

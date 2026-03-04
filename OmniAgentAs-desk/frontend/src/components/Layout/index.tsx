@@ -132,8 +132,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       current_model: boolean;
     }[]
   >([]);
-  // 【新增】默认提供商
-  const [defaultProvider, setDefaultProvider] = useState<string>("zhipuai");
+
   // 【新增】完整配置验证结果
   const [validationResult, setValidationResult] = useState<{
     success: boolean;
@@ -160,7 +159,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       const modelData = await configApi.getModelList();
       if (modelData.models) {
         setModelList(modelData.models);
-        setDefaultProvider(modelData.default_provider || "zhipuai");
       }
     } catch (error) {
       console.warn("刷新模型列表失败:", error);
@@ -245,11 +243,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         // 验证成功才获取模型列表
         const modelData = await configApi.getModelList();
 
-        // 设置模型列表
-        if (modelData.models && modelData.models.length > 0) {
-          setModelList(modelData.models);
-          // 设置默认提供商
-          setDefaultProvider(modelData.default_provider || "zhipuai");
+         // 设置模型列表
+         if (modelData.models && modelData.models.length > 0) {
+           setModelList(modelData.models);
 
           // 设置当前选中的模型 - 直接使用后端返回的 current_model 字段
           const currentModel = modelData.models.find(
@@ -643,7 +639,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                     key={model.id}
                     value={`${model.provider}-${model.model}`}
                   >
-                    {model.provider === defaultProvider ? "★ " : ""}
+                    {model.current_model === true ? "★ " : ""}
                     {model.display_name}
                   </Option>
                 ))}

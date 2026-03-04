@@ -103,31 +103,31 @@ export interface SSEConfig {
   taskId?: string;
 }
 
-/**
- * SSE Hook返回值
- */
-export interface UseSSEReturn {
-  /** 是否连接中 */
-  isConnected: boolean;
-  /** 是否正在接收 */
-  isReceiving: boolean;
-  /** 执行步骤列表 */
-  executionSteps: ExecutionStep[];
-  /** 当前AI回复内容 */
-  currentResponse: string;
-  /** 发送消息 */
-  sendMessage: (content: string, sessionId?: string) => void;
-  /** 断开连接 */
-  disconnect: () => void;
-  /** 清空步骤 */
-  clearSteps: () => void;
-  /** 设置任务ID - 前端小新代修改 */
-  setTaskId: (taskId: string) => void;
-  /** 后端返回的任务ID - 前端小新代修改 */
-  serverTaskId?: string | null;
-  /** 设置后端返回的任务ID - 前端小新代修改 */
-  setServerTaskId?: (taskId: string) => void;
-}
+  /**
+   * SSE Hook返回值
+   */
+  export interface UseSSEReturn {
+    /** 是否连接中 */
+    isConnected: boolean;
+    /** 是否正在接收 */
+    isReceiving: boolean;
+    /** 执行步骤列表 */
+    executionSteps: ExecutionStep[];
+    /** 当前AI回复内容 */
+    currentResponse: string;
+    /** 发送消息 */
+    sendMessage: (content: string, sessionId?: string) => void;
+    /** 断开连接 */
+    disconnect: () => void;
+    /** 清空步骤 */
+    clearSteps: () => void;
+    /** 设置任务ID - 前端小新代修改 */
+    setTaskId: (taskId: string) => void;
+    /** 后端返回的任务ID - 前端小新代修改 */
+    serverTaskId?: string | null;
+    /** 设置后端返回的任务ID - 前端小新代修改 */
+    setServerTaskId?: (taskId: string | null) => void;
+  }
 
 /**
  * SSE Hook - 用于组件中流式通信
@@ -187,7 +187,7 @@ export const useSSE = (
    */
   const sendMessage = useCallback(
     async (content: string, sessionId?: string) => {
-      console.log("[SSE sendMessage] 函数被调用, content:", content, "sessionId:", sessionId);
+
       // 断开已有连接
       disconnect();
       clearSteps();
@@ -235,7 +235,7 @@ export const useSSE = (
         const decoder = new TextDecoder("utf-8");
         let buffer = "";
 
-        console.log("[SSE] 开始接收流式数据...");
+
 
         // eslint-disable-next-line no-constant-condition
         while (true) {
@@ -244,7 +244,7 @@ export const useSSE = (
           if (done) {
             // 处理剩余的buffer数据
             if (buffer.trim()) {
-              processSSEData(
+             processSSEData(
                 buffer,
                 {
                   setExecutionSteps,
@@ -257,12 +257,11 @@ export const useSSE = (
                   setIsReceiving,
                   setIsConnected,
                   disconnect,
-                  setServerTaskId,
                 },
                 isProcessingRef
               );
             }
-            console.log("[SSE] 流式接收完成");
+
             break;
           }
 
@@ -273,25 +272,24 @@ export const useSSE = (
           const lines = buffer.split("\n");
           buffer = lines.pop() || ""; // 保留最后一个不完整的行
 
-          for (const line of lines) {
-            processSSEData(
-              line,
-              {
-                setExecutionSteps,
-                onStep,
-                onChunk,
-                onComplete,
-                onError,
-                setCurrentResponse,
-                responseBufferRef,
-                setIsReceiving,
-                setIsConnected,
-                disconnect,
-                setServerTaskId,
-              },
-              isProcessingRef
-            );
-          }
+           for (const line of lines) {
+             processSSEData(
+               line,
+               {
+                 setExecutionSteps,
+                 onStep,
+                 onChunk,
+                 onComplete,
+                 onError,
+                 setCurrentResponse,
+                 responseBufferRef,
+                 setIsReceiving,
+                 setIsConnected,
+                 disconnect,
+               },
+               isProcessingRef
+             );
+           }
         }
       } catch (error: any) {
         console.error("[SSE] 请求错误:", error);
@@ -349,7 +347,6 @@ const processSSEData = (
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
     setIsConnected: React.Dispatch<React.SetStateAction<boolean>>;
     disconnect: () => void;
-    setServerTaskId?: (taskId: string) => void;
   },
   // 前端小新代修改 VIS-S02: 修复 ESLint 未使用参数警告
   // 原因: 原参数 isProcessingRef 未被使用，但函数调用处仍传入该参数
@@ -367,7 +364,6 @@ const processSSEData = (
     setIsReceiving,
     setIsConnected,
     disconnect,
-    setServerTaskId,
   } = handlers;
 
   // 跳过空行
@@ -379,19 +375,14 @@ const processSSEData = (
     // 解析 SSE 数据（去掉 "data: " 前缀）
     let jsonStr = line.slice(6);
     
-    // 【调试】打印原始 JSON 字符串的详细信息
-    console.log("[SSE] 原始JSON字符串:", {
-      length: jsonStr.length,
-      repr: jsonStr.substring(0, 100),
-      charCodes: Array.from(jsonStr.slice(0, 20)).map(c => c.charCodeAt(0))
-    });
+
     
     // 去除可能的尾随空白字符（\n\r等）
     jsonStr = jsonStr.trim();
     
     const rawData = JSON.parse(jsonStr);
 
-    console.log("[SSE] 收到数据:", rawData.type, rawData);
+
 
     // 构建 ExecutionStep 对象
     const step: ExecutionStep = {
@@ -406,31 +397,33 @@ const processSSEData = (
 
     switch (rawData.type) {
       case "start": {
-        // 【修复问题 7】收到 start 事件，保存后端返回的所有信息
-        console.log("[SSE] 收到 start 事件:", rawData);
-        if (rawData.task_id && setServerTaskId) {
-          setServerTaskId(rawData.task_id);
-        }
-        // 【修复问题 7】保存 model、provider 和 display_name 信息
+        // ⭐ 【小沈添加 2026-03-03】start步骤，用于创建占位消息
+
+        
         if (rawData.model) {
           (responseBufferRef.current as any)._model = rawData.model;
-        }
-        if (rawData.provider) {
-          (responseBufferRef.current as any)._provider = rawData.provider;
         }
         if (rawData.display_name) {
           (responseBufferRef.current as any)._displayName =
             rawData.display_name;
         }
         // 【修复问题 7】发送 start 步骤，用于创建占位消息
+        // 计算 displayName：优先使用后端返回的 display_name，如果为空则从 model/provider 构建
+        let displayName = rawData.display_name;
+        if (!displayName && rawData.model && rawData.provider) {
+          displayName = `${rawData.provider} (${rawData.model})`;
+
+        }
         const startStep: ExecutionStep = {
           type: "start",
           content: "🤔 AI 正在思考...",
           timestamp: Date.now(),
           model: rawData.model,
           provider: rawData.provider,
-          displayName: rawData.display_name, // ✅ 新增
+          displayName: displayName, // ✅ 新增
+          display_name: displayName, // 同时设置两个字段，确保兼容性
         };
+
         setExecutionSteps((prev) => [...prev, startStep]);
         onStep?.(startStep);
         break;
@@ -438,7 +431,7 @@ const processSSEData = (
 
       case "thought":
         // 思考步骤
-        console.log("[SSE] 思考:", step.content);
+
         // 【修复问题 3】添加内容位置信息
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
@@ -448,7 +441,7 @@ const processSSEData = (
 
       case "action":
         // 行动步骤
-        console.log("[SSE] 行动:", step.content);
+
         // 【修复问题 3】添加内容位置信息
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
@@ -458,7 +451,7 @@ const processSSEData = (
 
       case "observation":
         // 观察结果 - 包含 ReAct 三要素
-        console.log("[SSE] 观察:", step.result);
+
         // 【修复问题 3】添加内容位置信息
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
@@ -468,7 +461,7 @@ const processSSEData = (
 
       case "chunk": {
         // 流式内容片段 - 逐 token 返回
-        console.log("[SSE] 内容片段:", rawData.content);
+
         responseBufferRef.current += rawData.content || "";
         setCurrentResponse(responseBufferRef.current);
         onChunk?.(rawData.content || "");
@@ -476,7 +469,7 @@ const processSSEData = (
       }
       case "final": {
         // 最终结果 - 前端小新代修改
-        console.log("[SSE] 最终结果:", step.content);
+
         // 优化判断逻辑：优先使用后端返回的content，避免忽略有效内容
         if (step.content) {
           // 如果已有累积内容，不覆盖；如果没有，则用后端返回的
@@ -489,7 +482,9 @@ const processSSEData = (
         // 获取model字段和displayName
         const model = rawData.model;
         const displayName = rawData.display_name;
+        console.log("[SSE] final 事件 rawData:", rawData);
         console.log("[SSE] 当前模型:", model);
+        console.log("[SSE] rawData.display_name 值:", rawData.display_name);
         console.log("[SSE] 准备调用onComplete, model:", model, "displayName:", displayName);
         setIsReceiving(false);
         setIsConnected(false);
@@ -500,7 +495,7 @@ const processSSEData = (
           const metadata: any = { model, displayName };
           onComplete(responseBufferRef.current, metadata);
         } else {
-          console.log("[SSE] onComplete不存在！");
+
         }
         break;
       }
@@ -512,7 +507,7 @@ const processSSEData = (
         const interruptMsg = step.content || "任务被中断";
         message.warning(interruptMsg);
         onError?.(interruptMsg);
-        console.log("[SSE] 中断:", interruptMsg);
+
         break;
       }
       case "error": {

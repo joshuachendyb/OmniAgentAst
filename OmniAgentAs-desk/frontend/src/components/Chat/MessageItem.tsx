@@ -119,6 +119,20 @@ const MessageItem: React.FC<MessageItemProps> = ({
    * 获取角色名称
    */
   const getRoleName = () => {
+    // 调试日志：检查消息对象
+     if (message.role === "assistant") {
+       console.log("🔍 MessageItem.getRoleName - 消息对象:", {
+         id: message.id,
+         role: message.role,
+         isStreaming: message.isStreaming,
+         displayName: message.displayName,
+         model: message.model,
+         content: message.content?.substring?.(0, 50),
+         // 检查所有属性
+         allProps: Object.keys(message)
+       });
+     }
+    
     switch (message.role) {
       case "user":
         return "我";
@@ -127,9 +141,18 @@ const MessageItem: React.FC<MessageItemProps> = ({
         // 前端小新代修改：只要 isStreaming 为 true，就显示加载状态，并且显示 displayName
         if (message.isStreaming) {
           // 前端小新代修改：加载状态也显示 displayName（如果存在）
-          return message.displayName
-            ? `🤔 AI 助手【${message.displayName}】【加载中...】`
+          // 如果 displayName 为空，尝试使用 model 构建
+          let displayNameToShow = message.displayName;
+          if (!displayNameToShow && message.model) {
+            displayNameToShow = message.model;
+            console.log("🔍 MessageItem.getRoleName - 从model构建displayName:", displayNameToShow);
+          }
+          
+          const result = displayNameToShow
+            ? `🤔 AI 助手【${displayNameToShow}】【加载中...】`
             : `🤔 AI 助手【加载中...】`;
+          console.log("🔍 MessageItem.getRoleName - 流式状态，返回:", result);
+          return result;
         }
 
         // 前端小新代修改 VIS-E02: 错误消息显示错误标识
@@ -140,9 +163,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
             : `⚠️ AI 助手【错误】`;
         }
         // 直接使用后端返回的 displayName，用【】包住显示
-        return message.displayName
+        const result = message.displayName
           ? `AI 助手【${message.displayName}】`
           : "AI 助手";
+        console.log("🔍 MessageItem.getRoleName - 非流式状态，返回:", result);
+        return result;
       }
       case "system":
         return "系统";

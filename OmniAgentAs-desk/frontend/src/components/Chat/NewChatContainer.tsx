@@ -165,11 +165,25 @@ const NewChatContainer: React.FC = () => {
         const lastMessage = prev[prev.length - 1];
         // 【修复问题 7】如果是 start 步骤，创建占位消息
         if (step.type === "start") {
-          console.log("🔍 onStep 收到 start 事件: step=", step);
+          console.log("🔍 onStep 收到 start 事件: step=", JSON.stringify(step, null, 2));
           console.log("🔍 step.displayName 值:", step.displayName);
           console.log("🔍 step.display_name 值:", step.display_name);
+          console.log("🔍 step.model 值:", step.model);
+          console.log("🔍 step.provider 值:", step.provider);
+          
           // 检查是否已有消息
           if (!lastMessage || lastMessage.role !== "assistant") {
+            // 提取displayName，优先使用驼峰命名的displayName
+            const extractedDisplayName = step.displayName || step.display_name;
+            console.log("🔍 提取的displayName:", extractedDisplayName);
+            
+            // 如果 extractedDisplayName 为空，尝试从其他字段构建
+            let finalDisplayName = extractedDisplayName;
+            if (!finalDisplayName && step.model && step.provider) {
+              finalDisplayName = `${step.provider} (${step.model})`;
+              console.log("🔍 从model/provider构建displayName:", finalDisplayName);
+            }
+            
             const newAssistantMessage: Message = {
               id: (Date.now() + 1).toString(),
               role: "assistant",
@@ -179,16 +193,10 @@ const NewChatContainer: React.FC = () => {
               isStreaming: true,
               model: step.model,
               provider: step.provider,
-              displayName: step.displayName || step.display_name, // 直接使用后端返回的 displayName（驼峰）
+              displayName: finalDisplayName, // 直接使用后端返回的 displayName（驼峰）
             };
             console.log("🔍 创建新AI助手消息: displayName=", newAssistantMessage.displayName);
-            console.log("🔍 消息详情:", {
-              id: newAssistantMessage.id,
-              role: newAssistantMessage.role,
-              content: newAssistantMessage.content,
-              isStreaming: newAssistantMessage.isStreaming,
-              displayName: newAssistantMessage.displayName
-            });
+            console.log("🔍 完整消息对象:", JSON.stringify(newAssistantMessage, null, 2));
             return [...prev, newAssistantMessage];
           }
         }
