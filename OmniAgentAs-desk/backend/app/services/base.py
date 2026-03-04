@@ -146,11 +146,14 @@ class BaseAIService:
                             print(f"[AI Response Parsed] model={self.model}, data.keys={list(data.keys())}")
                             
                             choices = data.get("choices", [])
+                            print(f"[AI Response] choices count: {len(choices)}")
                             if choices:
                                 delta = choices[0].get("delta", {})
+                                print(f"[AI Response] delta.keys: {list(delta.keys())}")
                                 content = delta.get("content", "")
                                 # 【小新修复】LongCat API 可能返回不同的字段名
                                 reasoning_content = delta.get("reasoning_content", "") or delta.get("reasoning", "")
+                                print(f"[AI Response] content='{content}', reasoning_content='{reasoning_content}'")
                                 # 【修复】同时支持 content 和 reasoning_content 字段
                                 # LongCat 等模型在流式模式下使用 reasoning_content
                                 if not content and reasoning_content:
@@ -160,6 +163,8 @@ class BaseAIService:
                                 print(f"[AI Response Content] model={self.model}, content_length={len(content) if content else 0}, content='{content[:100] if content else '(empty)'}', reasoning_content='{reasoning_content[:100] if reasoning_content else '(empty)'}', finish_reason={finish_reason}")
                                 if content:
                                     yield StreamChunk(content=content, model=self.model, is_done=False)
+                            else:
+                                print("[AI Response] WARNING: choices is empty!")
                         except json.JSONDecodeError as e:
                             logger.warning(f"[AI Response] JSON解析失败: {e}, data_str={data_str[:200]}")
                             continue
