@@ -200,8 +200,9 @@ const NewChatContainer: React.FC = () => {
         return prev;
       });
     }, []),
-    // onChunk - 收到内容片段
+     // onChunk - 收到内容片段
     useCallback((chunk: string) => {
+      console.log("🔍 [onChunk] 收到内容片段:", JSON.stringify(chunk).substring(0, 100));
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (
@@ -276,13 +277,9 @@ const NewChatContainer: React.FC = () => {
               // 不传递 display_name，后端从缓存自动获取（小沈优化 2026-03-03）
             });
 
-            // 【小新第四修复 2026-03-02】确保标题被持久化保存
-            // 虽然后端会在 save_message 中自动生成标题，但需要确保用户修改的标题被保存
-            if (currentSessionId) {
-              const currentTitle = sessionTitle; // 获取当前标题
-              await ensureTitlePersisted(currentSessionId, currentTitle);
-              console.log("✅ 标题持久化保存完成");
-            }
+            // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
+            // 原因：标题应该在用户修改时立即保存，避免版本冲突
+            // 如果需要同步最新数据，应该在用户修改标题时处理
             console.log("✅ AI回复保存成功");
           } catch (saveError) {
             console.error("保存AI回复或标题失败:", saveError);
@@ -308,16 +305,13 @@ const NewChatContainer: React.FC = () => {
                     // 不传递 message_count，让后端自动处理
                   });
 
-                  // 保存标题
-                  if (currentSessionId) {
-                    const currentTitle = sessionTitle; // 获取当前标题
-                    await ensureTitlePersisted(currentSessionId, currentTitle);
-                  }
+                  // ⭐ 【小新修复 2026-03-04】重试保存AI回复时也不再调用 ensureTitlePersisted
+                  // 原因：标题应该在用户修改时立即保存，避免版本冲突
                   message.success("AI回复保存成功");
                   return;
-                 } catch (error) {
-                   // 检查是否是409版本冲突或其他错误
-                  if (error?.response?.status === 409) {
+                  } catch (error: any) {
+                    // 检查是否是409版本冲突或其他错误
+                   if (error?.response?.status === 409) {
                     message.error("会话数据冲突，请刷新页面");
                     break; // 版本冲突不重试
                   } else if (retryCount === maxRetries) {
@@ -361,11 +355,13 @@ const NewChatContainer: React.FC = () => {
           console.log("  fullResponse exists:", !!fullResponse);
         }
 
-        setLoading(false);
-        // 【小新第三修复 2026-03-02】清理ref和state
-        pendingMessageRef.current = null; // 同步清理
-        setPendingMessage(null); // 异步清理
-      },
+         console.log("🔍 [onComplete] SSE流完成，设置loading=false");
+         setLoading(false);
+         // 【小新第三修复 2026-03-02】清理ref和state
+         pendingMessageRef.current = null; // 同步清理
+         setPendingMessage(null); // 异步清理
+         console.log("✅ [onComplete] 处理完成");
+       },
       [sessionId, pendingMessage]
     ),
     // onError - 流式错误 - 前端小新代修改：适配后端新格式
@@ -387,13 +383,15 @@ const NewChatContainer: React.FC = () => {
             ? { type: "unknown_error", message: error, rawMessage: error }
             : error;
 
-        console.error("SSE 流式错误:", errorObj);
+         console.error("🔴 [onError] SSE 流式错误:", errorObj);
+         console.error("  错误类型:", errorObj.type);
+         console.error("  错误消息:", errorObj.message);
 
-        // 🔴 修复：更好的用户反馈
-        message.error({
-          content: `AI 响应失败：${errorObj.message}`,
-          duration: 5,
-        });
+         // 🔴 修复：更好的用户反馈
+         message.error({
+           content: `AI 响应失败：${errorObj.message}`,
+           duration: 5,
+         });
 
         setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
@@ -410,11 +408,13 @@ const NewChatContainer: React.FC = () => {
             };
             return updated;
           }
-          return prev;
-        });
-        setLoading(false);
-      },
-      []
+           return prev;
+         });
+         console.log("🔍 [onError] 错误处理完成，设置loading=false");
+         setLoading(false);
+         console.log("✅ [onError] 处理完成");
+       },
+       []
     )
   );
 
@@ -592,13 +592,14 @@ const NewChatContainer: React.FC = () => {
                       executionSteps = m.executionSteps;
                     }
 
-                    return {
-                      id: m.id?.toString() || Date.now().toString(),
-                      role: m.role || "assistant", // 修复：确保 role 有效
-                      content: m.content || "", // 修复：确保 content 不为 undefined
-                      timestamp: new Date(m.timestamp || Date.now()), // 修复：确保 timestamp 有效
-                      executionSteps,
-                    };
+                return {
+                  id: m.id?.toString() || Date.now().toString(),
+                  role: m.role || "assistant", // 修复：确保 role 有效
+                  content: m.content || "", // 修复：确保 content 不为 undefined
+                  timestamp: new Date(m.timestamp || Date.now()), // 修复：确保 timestamp 有效
+                  executionSteps,
+                  displayName: m.display_name, // 前端小新代修改：模型显示名称
+                };
                   })
                 );
                 // 也同步标题 - 直接从API获取
@@ -847,11 +848,11 @@ const NewChatContainer: React.FC = () => {
       setTimeout(() => {
         setSaveStatus("idle");
       }, 2000);
-     } catch (error) {
-       console.warn("标题持久化失败:", error);
+      } catch (error: any) {
+        console.warn("标题持久化失败:", error);
 
-      // ⭐ 处理409版本冲突错误
-      if (error?.response?.status === 409) {
+       // ⭐ 处理409版本冲突错误
+       if (error?.response?.status === 409) {
         const errorMsg =
           error.response.data?.detail || "版本冲突，该会话已被其他人修改";
         message.error(errorMsg);
@@ -1157,11 +1158,15 @@ const NewChatContainer: React.FC = () => {
    * @update 2026-02-23 修复：添加assistant消息占位，确保onStep/onChunk能正确更新
    */
   const executeStreamSend = async (userMessage: Message) => {
+    console.log("🔍 [executeStreamSend] 开始执行流式发送");
+    console.log("  userMessage:", userMessage);
+    
     setLoading(true);
     clearSteps();
 
     // 【修复问题2】生成taskId用于中断功能
     const taskId = crypto.randomUUID();
+    console.log("🔍 [executeStreamSend] 生成的taskId:", taskId);
     setCurrentTaskId(taskId);
     setTaskId(taskId);
 
@@ -1175,6 +1180,7 @@ const NewChatContainer: React.FC = () => {
       isStreaming: true,
       model: undefined, // 前端小新代修改：明确设置可选属性
     };
+    console.log("🔍 [executeStreamSend] 创建assistant占位消息:", assistantMessage);
     setMessages((prev) => [...prev, assistantMessage]);
 
     // 保存待发送消息到ref（同步）和state（异步）
@@ -1184,6 +1190,8 @@ const NewChatContainer: React.FC = () => {
     // 【小沈修复2026-03-03】在调用 /chat/stream 之前先保存用户消息
     // 这样即使AI响应失败，用户消息也不会丢失
     const currentSessionId = currentSessionIdRef.current || sessionId;
+    console.log("🔍 [executeStreamSend] 使用的sessionId:", currentSessionId);
+    
     if (currentSessionId) {
       try {
         console.log("🔍 在调用AI之前先保存用户消息:", userMessage);
@@ -1200,8 +1208,13 @@ const NewChatContainer: React.FC = () => {
       console.warn("⚠️ 未找到sessionId，无法保存用户消息:", userMessage.id);
     }
 
+    console.log("🔍 [executeStreamSend] 准备调用sendStreamMessage...");
+    console.log("  content:", userMessage.content);
+    console.log("  sessionId:", currentSessionIdRef.current || sessionId);
+    
     // 发送流式请求 - 【小沈添加 2026-03-03】传递sessionId用于后端缓存display_name
-    sendStreamMessage(userMessage.content, currentSessionIdRef.current || sessionId);
+    sendStreamMessage(userMessage.content, currentSessionIdRef.current ?? sessionId ?? undefined);
+    console.log("✅ [executeStreamSend] sendStreamMessage已调用");
   };
 
   /**
@@ -1233,30 +1246,35 @@ const NewChatContainer: React.FC = () => {
 
   /**
    * 发送消息（带安全检测v2.0）
-   */
-  const handleSend = async () => {
-    if (!inputValue.trim() || loading) return;
+    */
+   const handleSend = async () => {
+     console.log("🔍 [handleSend] 函数开始执行");
+     console.log("  inputValue:", inputValue);
+     console.log("  loading:", loading);
+     
+     if (!inputValue.trim() || loading) return;
 
-    // 🔴 修复：添加输入长度限制和验证
-    if (inputValue.trim().length > 5000) {
-      message.warning("消息过长，请精简到5000字符以内");
-      return;
-    }
+     // 🔴 修复：添加输入长度限制和验证
+     if (inputValue.trim().length > 5000) {
+       message.warning("消息过长，请精简到5000字符以内");
+       return;
+     }
 
-    // 🔴 修复：网络连接检查
-    setLoading(true);
-    try {
-      const isNetworkOK = await checkNetworkConnection();
-      if (!isNetworkOK) {
-        message.error("网络连接异常，请检查网络后重试");
-        setLoading(false);
-        return;
-      }
-    } catch (error) {
-      console.warn("网络检查异常:", error);
-    } finally {
-      setLoading(false);
-    }
+     // 🔴 修复：网络连接检查 - 移除过早的setLoading(false)
+     setLoading(true);
+     try {
+       console.log("🔍 [handleSend] 开始检查网络连接...");
+       const isNetworkOK = await checkNetworkConnection();
+       if (!isNetworkOK) {
+         console.error("❌ [handleSend] 网络连接异常");
+         message.error("网络连接异常，请检查网络后重试");
+         setLoading(false);
+         return;
+       }
+       console.log("✅ [handleSend] 网络连接正常");
+     } catch (error) {
+       console.warn("⚠️ [handleSend] 网络检查异常:", error);
+     }
 
     let currentSessionId = sessionId;
     if (!currentSessionId) {
@@ -1494,10 +1512,10 @@ const NewChatContainer: React.FC = () => {
                           titleInput.trim(),
                           sessionVersion
                         );
-                        setSessionTitle(titleInput.trim());
+                         setSessionTitle(titleInput.trim());
                         setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
                          message.success("标题已保存");
-                       } catch (error) {
+                       } catch (error: any) {
                          // ⭐ 处理 409 版本冲突
                         if (error?.response?.status === 409) {
                           message.error("会话已被其他用户修改，请刷新页面");
@@ -1531,10 +1549,10 @@ const NewChatContainer: React.FC = () => {
                           titleInput.trim(),
                           sessionVersion
                         );
-                        setSessionTitle(titleInput.trim());
+                         setSessionTitle(titleInput.trim());
                         setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
                          message.success("会话标题已更新");
-                       } catch (error) {
+                       } catch (error: any) {
                          // ⭐ 处理 409 版本冲突
                         if (error?.response?.status === 409) {
                           message.error("会话已被其他用户修改，请刷新页面");

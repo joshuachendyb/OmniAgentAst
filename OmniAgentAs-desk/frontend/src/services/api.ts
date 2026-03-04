@@ -616,6 +616,7 @@ export interface Message {
   content: string;
   timestamp: string;
   execution_steps?: ExecutionStep[];
+  display_name?: string; // 前端小新代修改：模型显示名称
 }
 
 // ⭐ 新增：获取会话消息响应（包含新字段）
