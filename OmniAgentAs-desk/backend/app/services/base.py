@@ -187,15 +187,13 @@ class BaseAIService:
                                 ""
                             )
                             
-                            # 【修复】同时支持 content 和 reasoning_content 字段
+                            # 【修复】只使用 delta.content 或 reasoning_content 作为增量内容
+                            # 不使用 outer_content，因为它包含累积的完整内容会导致重复
                             # LongCat 等模型在流式模式下使用 reasoning_content
                             if not content and reasoning_content:
                                 content = reasoning_content
                             
-                            # 【额外修复】如果外层有 content，使用外层的 content
-                            # LongCat API 会在外层返回累积的完整内容
-                            if outer_content:
-                                content = outer_content
+                            # 注意：不再使用 outer_content，避免重复累积问题
                             
                             finish_reason = choices[0].get("finish_reason", "")
                             # 【调试】记录content
