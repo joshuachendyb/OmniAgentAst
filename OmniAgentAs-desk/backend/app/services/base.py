@@ -116,6 +116,11 @@ class BaseAIService:
     
     async def chat_stream(self, message: str, history: Optional[List[Message]] = None) -> AsyncGenerator[StreamChunk, None]:
         """发送对话请求（流式返回）"""
+        
+        # 【关键调试】确认 chat_stream 方法被调用
+        print(f"🔍 [BaseAIService.chat_stream] 被调用! model={self.model}, provider={self.provider}")
+        logger.info(f"[BaseAIService.chat_stream] START - model={self.model}, provider={self.provider}")
+        
         messages = self._build_messages(message, history)
         
         try:
