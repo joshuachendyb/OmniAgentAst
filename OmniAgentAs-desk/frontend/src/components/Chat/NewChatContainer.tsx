@@ -580,17 +580,17 @@ const NewChatContainer: React.FC = () => {
               );
               if (sessionData.messages && sessionData.messages.length > 0) {
                 setMessages(
-                  sessionData.messages.map((m: any) => {
-                    // 安全地处理 executionSteps 字段
-                    let executionSteps: ExecutionStep[] = [];
-                    if (m.execution_steps && Array.isArray(m.execution_steps)) {
-                      executionSteps = m.execution_steps;
-                    } else if (
-                      m.executionSteps &&
-                      Array.isArray(m.executionSteps)
-                    ) {
-                      executionSteps = m.executionSteps;
-                    }
+               sessionData.messages.map((m: any) => {
+                // 安全地处理 executionSteps 字段
+                let executionSteps: ExecutionStep[] = [];
+                if (m.execution_steps && Array.isArray(m.execution_steps)) {
+                  executionSteps = m.execution_steps;
+                } else if (
+                  m.executionSteps &&
+                  Array.isArray(m.executionSteps)
+                ) {
+                  executionSteps = m.executionSteps;
+                }
 
                 return {
                   id: m.id?.toString() || Date.now().toString(),

@@ -285,7 +285,8 @@ async def create_session(session_create: Optional[SessionCreate] = None):
         
         # 【小沈修改 2026-03-03】新创建的会话默认is_valid=FALSE
         # 只有在首次保存消息后，才会自动设置为TRUE
-        is_valid = False
+        # 【小沈修复 2026-03-04】尊重前端传入的is_valid参数
+        is_valid = session_create.is_valid if session_create and session_create.is_valid is not None else False
         
         # 优化：初始化新字段（根据字段是否存在动态构建SQL）
         # title_locked = FALSE (默认未锁定)
