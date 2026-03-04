@@ -101,12 +101,12 @@ def setup_logger(name: str) -> logging.Logger:
     if is_debug:
         # Debug模式：详细格式
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+            '%(asctime)s - %(name)s - %(levelname)s - %(filename)s - [%(lineno)d] - %(message)s'
         )
     else:
-        # 生产模式：简洁格式
+        # 生产模式：简洁格式（在级别后添加文件名）
         formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s'
+            '%(asctime)s - %(levelname)s - %(filename)s - %(message)s'
         )
     
     # 全局只创建一次处理器
