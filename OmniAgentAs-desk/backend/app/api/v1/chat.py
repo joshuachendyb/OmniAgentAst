@@ -889,10 +889,22 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
         
         # 将 AgentResult 转换为 ChatResponse
         if result.success:
-            # 构建详细响应
-            content = result.message
+            # 【修复】正确提取 Agent 的回复内容
+            # 实际的回复在最后一个 step 的 observation.result.result 中
+            content = result.message  # 默认值
             
-            # 【修复】将执行步骤作为独立字段返回，而不是拼接到content中
+            if result.steps:
+                # 获取最后一个 step
+                last_step = result.steps[-1]
+                if last_step.observation and last_step.observation.get("result"):
+                    # 提取真正的回复内容
+                    result_data = last_step.observation["result"]
+                    if isinstance(result_data, dict) and "result" in result_data:
+                        content = result_data["result"]
+                    elif isinstance(result_data, str):
+                        content = result_data
+            
+            # 将执行步骤作为独立字段返回
             execution_steps_list = None
             if result.steps:
                 execution_steps_list = []
