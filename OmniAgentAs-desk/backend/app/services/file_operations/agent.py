@@ -569,6 +569,12 @@ class FileOperationAgent:
             else:
                 content = str(response)
             
+            # 【调试】记录LLM返回的原始内容
+            logger.info(f"[LLM Response Raw] content={repr(content)[:500]}")
+            
+            if not content:
+                logger.warning("[LLM Response] Warning: LLM returned empty content!")
+            
             self.conversation_history.append({"role": "assistant", "content": content})
             return content
             
