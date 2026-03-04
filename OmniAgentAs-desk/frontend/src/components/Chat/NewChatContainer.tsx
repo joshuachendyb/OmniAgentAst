@@ -166,6 +166,8 @@ const NewChatContainer: React.FC = () => {
         // 【修复问题 7】如果是 start 步骤，创建占位消息
         if (step.type === "start") {
           console.log("🔍 onStep 收到 start 事件: step=", step);
+          console.log("🔍 step.displayName 值:", step.displayName);
+          console.log("🔍 step.display_name 值:", step.display_name);
           // 检查是否已有消息
           if (!lastMessage || lastMessage.role !== "assistant") {
             const newAssistantMessage: Message = {
@@ -177,9 +179,16 @@ const NewChatContainer: React.FC = () => {
               isStreaming: true,
               model: step.model,
               provider: step.provider,
-              displayName: step.displayName, // 直接使用后端返回的 displayName（驼峰）
+              displayName: step.displayName || step.display_name, // 直接使用后端返回的 displayName（驼峰）
             };
             console.log("🔍 创建新AI助手消息: displayName=", newAssistantMessage.displayName);
+            console.log("🔍 消息详情:", {
+              id: newAssistantMessage.id,
+              role: newAssistantMessage.role,
+              content: newAssistantMessage.content,
+              isStreaming: newAssistantMessage.isStreaming,
+              displayName: newAssistantMessage.displayName
+            });
             return [...prev, newAssistantMessage];
           }
         }
@@ -238,8 +247,10 @@ const NewChatContainer: React.FC = () => {
 
         // 🔴 修复：处理 AI 返回空内容的情况
         let finalResponse = fullResponse;
+        let isError = false;
         if (!finalResponse || !finalResponse.trim()) {
           finalResponse = "抱歉，我暂时无法回答这个问题。请您稍后再尝试，或者换个方式提问。";
+          isError = true; // 标记为错误类型，以便显示红色样式
           console.warn("⚠️ AI 返回了空内容，已使用默认回复");
         }
 
@@ -251,6 +262,7 @@ const NewChatContainer: React.FC = () => {
               ...lastMessage,
               content: finalResponse,
               isStreaming: false,
+              isError: isError, // 传递错误标记
               model: metadataObj.model || lastMessage.model,
               provider: metadataObj.provider || lastMessage.provider,
               displayName: metadataObj.displayName || lastMessage.displayName,

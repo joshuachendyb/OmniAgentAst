@@ -124,7 +124,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
         return "我";
       case "assistant": {
         // ✅ 老杨 UX 建议：占位消息显示 loading 状态
-        if (message.content === "🤔 AI 正在思考..." && message.isStreaming) {
+        // 前端小新代修改：只要 isStreaming 为 true，就显示加载状态，并且显示 displayName
+        if (message.isStreaming) {
           // 前端小新代修改：加载状态也显示 displayName（如果存在）
           return message.displayName
             ? `🤔 AI 助手【${message.displayName}】【加载中...】`
