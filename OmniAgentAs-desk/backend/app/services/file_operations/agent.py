@@ -243,6 +243,16 @@ class ToolExecutor:
         tool = self.available_tools[action]
         
         try:
+            # 参数规范化：处理不同参数名
+            if action == "list_directory":
+                # 处理 path 和 dir_path 参数名不一致问题
+                if "path" in action_input and "dir_path" not in action_input:
+                    # 将 path 参数重命名为 dir_path
+                    action_input["dir_path"] = action_input.pop("path")
+                elif "path" in action_input and "dir_path" in action_input:
+                    # 两者都存在，优先使用 dir_path，删除 path
+                    del action_input["path"]
+            
             # 执行工具
             result = await tool(**action_input)
             
