@@ -64,6 +64,7 @@ export const createMockSession = (
   created_at: new Date().toISOString(),
   updated_at: new Date().toISOString(),
   message_count: 10,
+  is_valid: true,
   ...overrides,
 });
 

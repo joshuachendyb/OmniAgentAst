@@ -581,6 +581,27 @@ export const configApi = {
     const response = await api.get<ConfigPathResponse>("/config/path");
     return response.data;
   },
+
+  /**
+   * 打开配置文件所在目录
+   * 调用系统资源管理器打开文件夹
+   * @author 小新
+   * @update 2026-03-04 新增
+   */
+  openConfigFolder: async (): Promise<{ success: boolean; path: string }> => {
+    const response = await api.post<{ success: boolean; path: string }>("/config/open-folder");
+    return response.data;
+  },
+
+  /**
+   * 读取配置文件原文内容
+   * @author 小新
+   * @update 2026-03-04 新增
+   */
+  readConfigFile: async (): Promise<{ success: boolean; config_path: string; content: string }> => {
+    const response = await api.get<{ success: boolean; config_path: string; content: string }>("/config/read");
+    return response.data;
+  },
 };
 
 // ============================================

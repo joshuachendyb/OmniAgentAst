@@ -125,7 +125,10 @@ const MessageItem: React.FC<MessageItemProps> = ({
       case "assistant": {
         // ✅ 老杨 UX 建议：占位消息显示 loading 状态
         if (message.content === "🤔 AI 正在思考..." && message.isStreaming) {
-          return `🤔 AI 助手【加载中...】`;
+          // 前端小新代修改：加载状态也显示 displayName（如果存在）
+          return message.displayName
+            ? `🤔 AI 助手【${message.displayName}】【加载中...】`
+            : `🤔 AI 助手【加载中...】`;
         }
 
         // 前端小新代修改 VIS-E02: 错误消息显示错误标识

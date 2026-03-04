@@ -30,6 +30,7 @@ describe('标题管理功能测试', () => {
         created_at: '2026-02-25T10:00:00Z',
         updated_at: '2026-02-25T10:00:00Z',
         message_count: 0,
+        is_valid: true,
       };
 
       expect(session.session_id).toBe('test-session-1');

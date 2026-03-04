@@ -1418,6 +1418,66 @@ async def get_config_path():
         raise HTTPException(status_code=500, detail=f"获取配置路径失败: {str(e)}")
 
 
+@router.post("/config/open-folder")
+async def open_config_folder():
+    """
+    打开配置文件所在目录（调用系统资源管理器）
+    
+    在Windows上使用explorer.exe打开文件夹
+    """
+    try:
+        config_path = _get_config_path()
+        config_dir = str(config_path.parent)
+        
+        if not os.path.exists(config_dir):
+            raise HTTPException(status_code=404, detail=f"配置目录不存在: {config_dir}")
+        
+        # 使用Windows资源管理器打开文件夹
+        # explorer /select,"file" 会打开文件夹并选中文件
+        # explorer /e,"folder" 会打开文件夹
+        import subprocess
+        subprocess.Popen(['explorer', '/e,', config_dir], 
+                        stdout=subprocess.DEVNULL, 
+                        stderr=subprocess.DEVNULL)
+        
+        logger.info(f"已打开配置目录: {config_dir}")
+        return {"success": True, "path": config_dir}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"打开配置目录失败: {e}")
+        raise HTTPException(status_code=500, detail=f"打开配置目录失败: {str(e)}")
+
+
+@router.get("/config/read")
+async def read_config_file():
+    """
+    读取配置文件原文内容
+    
+    Returns:
+        配置文件原文内容
+    """
+    try:
+        config_path = _get_config_path()
+        
+        if not config_path.exists():
+            raise HTTPException(status_code=404, detail=f"配置文件不存在: {config_path}")
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        return {
+            "success": True,
+            "config_path": str(config_path),
+            "content": content
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"读取配置文件失败: {e}")
+        raise HTTPException(status_code=500, detail=f"读取配置文件失败: {str(e)}")
+
+
 @router.get("/config/validate-full", response_model=FullConfigValidationResponse)
 async def validate_full_config():
     """
