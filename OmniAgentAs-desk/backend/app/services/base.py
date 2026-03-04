@@ -133,8 +133,8 @@ class BaseAIService:
                     if line.startswith("data: "):
                         data_str = line[6:]
                         
-                        # 【调试】记录AI返回的原始数据（使用print确保输出）
-                        print(f"[AI Response Raw] model={self.model}, data_str={data_str}")
+                        # 【调试】记录AI返回的原始数据
+                        logger.info(f"[AI Response Raw] model={self.model}, data_str={data_str}")
                         
                         if data_str.strip() == "[DONE]":
                             yield StreamChunk(content="", model=self.model, is_done=True)
@@ -142,29 +142,29 @@ class BaseAIService:
                         
                         try:
                             data = json.loads(data_str)
-                            # 【调试】记录解析后的完整数据（使用print确保输出）
-                            print(f"[AI Response Parsed] model={self.model}, data.keys={list(data.keys())}")
+                            # 【调试】记录解析后的完整数据
+                            logger.info(f"[AI Response Parsed] model={self.model}, data.keys={list(data.keys())}")
                             
                             choices = data.get("choices", [])
-                            print(f"[AI Response] choices count: {len(choices)}")
+                            logger.info(f"[AI Response] choices count: {len(choices)}")
                             if choices:
                                 delta = choices[0].get("delta", {})
-                                print(f"[AI Response] delta.keys: {list(delta.keys())}")
+                                logger.info(f"[AI Response] delta.keys: {list(delta.keys())}")
                                 content = delta.get("content", "")
                                 # 【小新修复】LongCat API 可能返回不同的字段名
                                 reasoning_content = delta.get("reasoning_content", "") or delta.get("reasoning", "")
-                                print(f"[AI Response] content='{content}', reasoning_content='{reasoning_content}'")
+                                logger.info(f"[AI Response] content='{content}', reasoning_content='{reasoning_content}'")
                                 # 【修复】同时支持 content 和 reasoning_content 字段
                                 # LongCat 等模型在流式模式下使用 reasoning_content
                                 if not content and reasoning_content:
                                     content = reasoning_content
                                 finish_reason = choices[0].get("finish_reason", "")
-                                # 【调试】记录content（使用print确保输出）
-                                print(f"[AI Response Content] model={self.model}, content_length={len(content) if content else 0}, content='{content[:100] if content else '(empty)'}', reasoning_content='{reasoning_content[:100] if reasoning_content else '(empty)'}', finish_reason={finish_reason}")
+                                # 【调试】记录content
+                                logger.info(f"[AI Response Content] model={self.model}, content_length={len(content) if content else 0}, content='{content[:100] if content else '(empty)'}', reasoning_content='{reasoning_content[:100] if reasoning_content else '(empty)'}', finish_reason={finish_reason}")
                                 if content:
                                     yield StreamChunk(content=content, model=self.model, is_done=False)
                             else:
-                                print("[AI Response] WARNING: choices is empty!")
+                                logger.warning("[AI Response] WARNING: choices is empty!")
                         except json.JSONDecodeError as e:
                             logger.warning(f"[AI Response] JSON解析失败: {e}, data_str={data_str[:200]}")
                             continue
@@ -182,7 +182,7 @@ class BaseAIService:
             )
         except Exception as e:
             # 【小沈代修改 - 修复问题 7】记录日志，返回用户友好错误
-            print(f"[BaseAIService] 流式调用失败：{str(e)}")
+            logger.error(f"[BaseAIService] 流式调用失败：{str(e)}")
             yield StreamChunk(
                 content="", 
                 model=self.model, 
