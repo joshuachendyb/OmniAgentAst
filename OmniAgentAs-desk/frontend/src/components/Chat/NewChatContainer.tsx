@@ -236,13 +236,20 @@ const NewChatContainer: React.FC = () => {
         const metadataObj =
           typeof metadata === "string" ? { model: metadata } : metadata || {};
 
+        // 🔴 修复：处理 AI 返回空内容的情况
+        let finalResponse = fullResponse;
+        if (!finalResponse || !finalResponse.trim()) {
+          finalResponse = "抱歉，我暂时无法回答这个问题。请您稍后再尝试，或者换个方式提问。";
+          console.warn("⚠️ AI 返回了空内容，已使用默认回复");
+        }
+
         setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...lastMessage,
-              content: fullResponse,
+              content: finalResponse,
               isStreaming: false,
               model: metadataObj.model || lastMessage.model,
               provider: metadataObj.provider || lastMessage.provider,
@@ -258,21 +265,21 @@ const NewChatContainer: React.FC = () => {
         // 这样更加健壮，即使AI响应失败，用户消息也已保存
         const currentSessionId = currentSessionIdRef.current || sessionId;
         const currentPending = pendingMessageRef.current || pendingMessage;
-        if (currentSessionId && fullResponse && fullResponse.trim()) {
+        if (currentSessionId && finalResponse && finalResponse.trim()) {
           // 🔴 修复：添加详细的调试日志
           console.log("🔍 保存AI回复:");
           console.log("  ref中的sessionId:", currentSessionIdRef.current);
           console.log("  state中的sessionId:", sessionId);
           console.log("  最终使用的sessionId:", currentSessionId);
           console.log("  currentPending:", currentPending);
-          console.log("  fullResponse length:", fullResponse.length);
+          console.log("  finalResponse length:", finalResponse.length);
 
           try {
             // 保存AI回复（API会自动处理消息计数）
             // 用户消息已在调用 /chat/stream 之前保存
             await sessionApi.saveMessage(currentSessionId, {
               role: "assistant",
-              content: fullResponse,
+              content: finalResponse,
               // 不传递 message_count，让后端自动处理
               // 不传递 display_name，后端从缓存自动获取（小沈优化 2026-03-03）
             });
@@ -301,7 +308,7 @@ const NewChatContainer: React.FC = () => {
                   // 保存AI回复
                   await sessionApi.saveMessage(currentSessionId, {
                     role: "assistant",
-                    content: fullResponse,
+                    content: finalResponse,
                     // 不传递 message_count，让后端自动处理
                   });
 
@@ -326,13 +333,13 @@ const NewChatContainer: React.FC = () => {
                         localStorage.getItem(cacheKey) || "[]"
                       );
                       // 避免重复缓存
-                      const exists = cached.some(
+                       const exists = cached.some(
                         (msg: any) =>
-                          msg.assistant === fullResponse
+                          msg.assistant === finalResponse
                       );
                       if (!exists) {
                         cached.push({
-                          assistant: fullResponse,
+                          assistant: finalResponse,
                           timestamp: Date.now(),
                         });
                         localStorage.setItem(cacheKey, JSON.stringify(cached));
