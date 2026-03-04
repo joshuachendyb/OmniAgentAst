@@ -397,8 +397,8 @@ async def chat(request: ChatRequest):
         # 【修复】检测文件操作意图（返回3个值：是否文件操作、操作类型、置信度）
         is_file_op, op_type, confidence = detect_file_operation_intent(last_message)
         
-        # 【修复】只有在置信度足够高时才执行文件操作（从0.3提高到0.6，减少误判）
-        if is_file_op and confidence >= 0.6:
+        # 【修复】只有在置信度足够高时才执行文件操作
+        if is_file_op and confidence >= 0.3:
             # 【修复】文件操作路由到 FileTools
             return await handle_file_operation(last_message, op_type)
         
@@ -592,7 +592,7 @@ async def chat_stream(request: ChatRequest):
             # 检测文件操作意图
             is_file_op, _, confidence = detect_file_operation_intent(last_message)
             
-            if is_file_op and confidence >= 0.6:
+            if is_file_op and confidence >= 0.3:
                 # 文件操作：逐步推送执行步骤
                 action1_data = {'type': 'action', 'step': 1, 'content': '检测到文件操作意图，开始执行...'}
                 logger.info(f"[Step action] 发送action步骤(文件检测): {json.dumps(action1_data, ensure_ascii=False)}")
