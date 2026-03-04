@@ -66,7 +66,7 @@ import {
   FolderOpenOutlined,
 } from "@ant-design/icons";
 import { configApi, chatApi } from "../../services/api";
-import type { ProviderInfo, ConfigPathResponse } from "../../services/api";
+import type { ProviderInfo } from "../../services/api";
 import HealthCheck from "../../components/HealthCheck";
 
 const { Text } = Typography;
@@ -278,7 +278,6 @@ const ProviderList: React.FC<{
 const ProviderSettings: React.FC = () => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState<string>("");
-  const [currentModel, setCurrentModel] = useState<string>("");
   // 模型列表（从 getModelList API 获取，包含 display_name）
   const [modelList, setModelList] = useState<ModelOption[]>([]);
   const [currentDisplayName, setCurrentDisplayName] = useState<string>("");
@@ -303,8 +302,6 @@ const ProviderSettings: React.FC = () => {
     total: number;
   }>({ current: 0, total: 0 });
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
-  // 配置文件路径信息
-  const [configPath, setConfigPath] = useState<ConfigPathResponse | null>(null);
   const deleteControllerRef = React.useRef<AbortController | null>(null);
 
   const [form] = Form.useForm();
@@ -325,7 +322,6 @@ const ProviderSettings: React.FC = () => {
       const providerList = Object.values(data.providers);
       setProviders(providerList);
       setCurrentProvider(data.current_provider);
-      setCurrentModel(data.current_model);
 
       // 获取模型列表（包含 display_name）
       const modelData = await configApi.getModelList();
@@ -351,21 +347,7 @@ const ProviderSettings: React.FC = () => {
   };
 
   // 加载配置文件路径
-  const loadConfigPath = async () => {
-    try {
-      const pathData = await configApi.getConfigPath();
-      setConfigPath(pathData);
-    } catch (error) {
-      console.error("加载配置文件路径失败:", error);
-    }
-  };
-
-  // 打开配置文件所在目录
-  const handleOpenConfigDir = () => {
-    if (configPath?.config_dir) {
-      window.open(`file://${configPath.config_dir}`, "_blank");
-    }
-  };
+  // 打开配置文件所在目录（在 GlobalConfigArea 组件中实现）
 
   // 选择Provider
   const onSelectProvider = (provider: ProviderInfo) => {
@@ -681,7 +663,6 @@ const ProviderSettings: React.FC = () => {
   const onDisplayNameChange = async (option: ModelOption) => {
     try {
       setCurrentProvider(option.provider);
-      setCurrentModel(option.model);
       setCurrentDisplayName(option.display_name);
 
       // 更新配置（后端会自动创建备份）
@@ -728,47 +709,6 @@ const ProviderSettings: React.FC = () => {
           />
         </Col>
       </Row>
-      {/* 配置文件路径显示 - 使用 Row/Col 布局与下方 Provider 配置区域对齐 */}
-      {configPath && (
-        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-        <Col xs={24} md={16}>
-            <Card
-              size="small"
-              style={{ marginBottom: 0 }}
-              title={
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <DesktopOutlined />
-                  配置文件路径
-                </span>
-              }
-              extra={
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={handleOpenConfigDir}
-                  icon={<FolderOpenOutlined />}
-                >
-                  打开目录
-                </Button>
-              }
-            >
-              <div style={{ wordBreak: "break-all" }}>
-                <Text type="secondary">路径： </Text>
-                <Text code>{configPath.config_path}</Text>
-                {configPath.exists ? (
-                  <Tag color="green" style={{ marginLeft: 8 }}>
-                    存在
-                  </Tag>
-                ) : (
-                  <Tag color="red" style={{ marginLeft: 8 }}>
-                    不存在
-                  </Tag>
-                )}
-              </div>
-            </Card>
-          </Col>
-        </Row>
-      )}
       {/* 配置验证提示 - 使用 Row/Col 布局与下方 Provider 配置区域对齐 */}
       {validationResult && (
         <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
@@ -1722,8 +1662,18 @@ const SecuritySettings: React.FC = () => {
   );
 };
 
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /**
- * 设置页面主组件
+ * 设置页面
+ *
+ * 功能：
+ * - Provider管理（添加、编辑、删除、切换）
+ * - 模型管理（添加、编辑、删除）
+ * - 配置文件操作（导入、导出、打开目录）
+ * - 安全设置（安全检测v2.0配置）
+ *
+ * @author 小新
+ * @update 2026-02-26 重构：提取子组件
  */
 /**
  * TODO: 配置文件路径功能待完善 [2026-02-28]
@@ -1758,7 +1708,6 @@ const Settings: React.FC = () => {
   const [isDirty, setIsDirty] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [pendingKey, setPendingKey] = useState<string>("");
-  const [configPath, setConfigPath] = useState<ConfigPathResponse | null>(null);
   // ⭐ 删除未使用的状态变量：configFilePath, fixingConfig, fixProgress, showFixModal
 
   /**
@@ -1777,16 +1726,6 @@ const Settings: React.FC = () => {
 
   // ⭐ 删除未使用的函数：handleFixConfig
 
-  // 加载配置文件路径
-  const loadConfigPath = async () => {
-    try {
-      const pathData = await configApi.getConfigPath();
-      setConfigPath(pathData);
-    } catch (error) {
-      console.error("加载配置文件路径失败:", error);
-    }
-  };
-
   // 清理定时器，防止内存泄漏
   useEffect(() => {
     return () => {
@@ -1798,18 +1737,13 @@ const Settings: React.FC = () => {
     // ⭐ 修复：启动时只读验证，不备份
     loadConfigInfo();
   }, []);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  // Tab切换处理
+  // Tab 切换处理
   const handleTabChange = (key: string) => {
     if (isDirty) {
       setPendingKey(key);
       setConfirmModalVisible(true);
     } else {
       setActiveKey(key);
-      // 切换到模型配置Tab时，按需加载配置文件路径
-      if (key === "model" && !configPath) {
-        loadConfigPath();
-      }
     }
   };
 
