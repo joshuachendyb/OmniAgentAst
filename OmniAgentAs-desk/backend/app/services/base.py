@@ -145,6 +145,8 @@ class BaseAIService:
                     if not line or line.strip() == "":
                         continue
                     
+                    print(f"[DEBUG] line: {repr(line[:80])}")
+                    
                     # 【重要修复】API返回的是 "data:{" 而不是 "data: {"
                     # 需要同时处理两种情况
                     if line.startswith("data: "):
@@ -153,64 +155,58 @@ class BaseAIService:
                         data_str = line[5:]
                     else:
                         continue
+                    
+                    # 【调试】记录AI返回的原始数据
+                    logger.info(f"[AI Response Raw] model={self.model}, data_str={data_str}")
+                    
+                    if data_str.strip() == "[DONE]":
+                        yield StreamChunk(content="", model=self.model, is_done=True)
+                        return
+                    
+                    try:
+                        data = json.loads(data_str)
+                        # 【调试】记录解析后的完整数据
+                        logger.info(f"[AI Response Parsed] model={self.model}, data.keys={list(data.keys())}")
                         
-                        # 【调试】记录AI返回的原始数据
-                        logger.info(f"[AI Response Raw] model={self.model}, data_str={data_str}")
+                        choices = data.get("choices", [])
                         
-                        if data_str.strip() == "[DONE]":
-                            yield StreamChunk(content="", model=self.model, is_done=True)
-                            return
-                        
-                        try:
-                            data = json.loads(data_str)
-                            # 【调试】记录解析后的完整数据
-                            logger.info(f"[AI Response Parsed] model={self.model}, data.keys={list(data.keys())}")
+                        content = ""
+                        outer_content = ""
+                        reasoning_content = ""
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "")
+                            outer_content = data.get("content", "")  # 外层的 content 字段
                             
-                            choices = data.get("choices", [])
-                            print(f"[DEBUG] choices count: {len(choices)}")
+                            # 【小新修复】LongCat API 可能返回不同的字段名
+                            # 尝试多种可能的字段名
+                            reasoning_content = (
+                                delta.get("reasoning_content") or 
+                                delta.get("reasoning") or 
+                                delta.get("thought") or
+                                ""
+                            )
                             
-                            content = ""
-                            outer_content = ""
-                            reasoning_content = ""
-                            if choices:
-                                delta = choices[0].get("delta", {})
-                                print(f"[DEBUG] delta: {delta}")
-                                content = delta.get("content", "")
-                                outer_content = data.get("content", "")  # 外层的 content 字段
-                                print(f"[DEBUG] content: {repr(content)}, outer_content: {repr(outer_content)}")
-                                
-                                # 【小新修复】LongCat API 可能返回不同的字段名
-                                # 尝试多种可能的字段名
-                                reasoning_content = (
-                                    delta.get("reasoning_content") or 
-                                    delta.get("reasoning") or 
-                                    delta.get("thought") or
-                                    ""
-                                )
-                                print(f"[DEBUG] reasoning_content: {repr(reasoning_content)}")
-                                
-                                # 【修复】同时支持 content 和 reasoning_content 字段
-                                # LongCat 等模型在流式模式下使用 reasoning_content
-                                if not content and reasoning_content:
-                                    content = reasoning_content
-                                    print(f"[DEBUG] 使用 reasoning_content: {repr(content)}")
-                                
-                                # 【额外修复】如果外层有 content，使用外层的 content
-                                # LongCat API 会在外层返回累积的完整内容
-                                if outer_content:
-                                    content = outer_content
-                                    print(f"[DEBUG] 使用外层 content: {repr(content)}")
-                                
-                                finish_reason = choices[0].get("finish_reason", "")
-                                # 【调试】记录content
-                                logger.info(f"[AI Response Content] model={self.model}, content_length={len(content) if content else 0}, content='{content[:100] if content else '(empty)'}', reasoning_content='{reasoning_content[:100] if reasoning_content else '(empty)'}', finish_reason={finish_reason}")
-                                if content:
-                                    yield StreamChunk(content=content, model=self.model, is_done=False)
-                            else:
-                                logger.warning("[AI Response] WARNING: choices is empty!")
-                        except json.JSONDecodeError as e:
-                            logger.warning(f"[AI Response] JSON解析失败: {e}, data_str={data_str[:200]}")
-                            continue
+                            # 【修复】同时支持 content 和 reasoning_content 字段
+                            # LongCat 等模型在流式模式下使用 reasoning_content
+                            if not content and reasoning_content:
+                                content = reasoning_content
+                            
+                            # 【额外修复】如果外层有 content，使用外层的 content
+                            # LongCat API 会在外层返回累积的完整内容
+                            if outer_content:
+                                content = outer_content
+                            
+                            finish_reason = choices[0].get("finish_reason", "")
+                            # 【调试】记录content
+                            logger.info(f"[AI Response Content] model={self.model}, content_length={len(content) if content else 0}, finish_reason={finish_reason}")
+                            if content:
+                                yield StreamChunk(content=content, model=self.model, is_done=False)
+                        else:
+                            logger.warning("[AI Response] WARNING: choices is empty!")
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"[AI Response] JSON解析失败: {e}, data_str={data_str[:200]}")
+                        continue
                 
                 yield StreamChunk(content="", model=self.model, is_done=True)
                 
