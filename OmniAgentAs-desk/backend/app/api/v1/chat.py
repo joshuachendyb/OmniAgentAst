@@ -736,6 +736,8 @@ async def chat_stream(request: ChatRequest):
                 
                 # 【调试】确认调用 chat_stream
                 logger.info(f"[DEBUG] 开始调用 ai_service.chat_stream, message={last_message[:50]}...")
+                logger.info(f"[DEBUG] ai_service type: {type(ai_service)}, ai_service.provider: {ai_service.provider}, ai_service.model: {ai_service.model}")
+                
                 async for chunk in ai_service.chat_stream(
                     message=last_message,
                     history=history
