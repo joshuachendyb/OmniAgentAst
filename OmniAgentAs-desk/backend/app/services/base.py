@@ -9,7 +9,10 @@ AI服务通用实现
 
 import json
 import httpx
+import logging
 from typing import List, Dict, Optional, AsyncGenerator
+
+logger = logging.getLogger(__name__)
 
 
 class Message:
@@ -128,19 +131,29 @@ class BaseAIService:
                     if line.startswith("data: "):
                         data_str = line[6:]
                         
+                        # 【调试】记录AI返回的原始数据
+                        logger.info(f"[AI Response Raw] model={self.model}, data_str={data_str}")
+                        
                         if data_str.strip() == "[DONE]":
                             yield StreamChunk(content="", model=self.model, is_done=True)
                             return
                         
                         try:
                             data = json.loads(data_str)
+                            # 【调试】记录解析后的完整数据
+                            logger.info(f"[AI Response Parsed] model={self.model}, data.keys={list(data.keys())}")
+                            
                             choices = data.get("choices", [])
                             if choices:
                                 delta = choices[0].get("delta", {})
                                 content = delta.get("content", "")
+                                finish_reason = choices[0].get("finish_reason", "")
+                                # 【调试】记录content
+                                logger.info(f"[AI Response Content] model={self.model}, content_length={len(content) if content else 0}, content_preview={content[:200] if content else '(empty)'}, finish_reason={finish_reason}")
                                 if content:
                                     yield StreamChunk(content=content, model=self.model, is_done=False)
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"[AI Response] JSON解析失败: {e}, data_str={data_str[:200]}")
                             continue
                 
                 yield StreamChunk(content="", model=self.model, is_done=True)

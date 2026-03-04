@@ -35,6 +35,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 from app.services import AIServiceFactory
+from app.services.base import Message  # ⭐ 【调试添加】用于日志记录
 from app.services.file_operations.tools import get_file_tools
 from app.services.file_operations.agent import FileOperationAgent
 from app.services.shell_security import check_command_safety
@@ -91,7 +92,7 @@ def create_error_response(
         response['model'] = model
     if provider:
         response['provider'] = provider
-    return f"data: {json.dumps(response)}\\n\\n"
+    return f"data: {json.dumps(response)}\n\n"
 
 
 def get_user_friendly_error(error: Exception) -> tuple[str, str]:
@@ -144,7 +145,7 @@ async def check_and_yield_if_interrupted(
     """
     async with running_tasks_lock:
         if running_tasks.get(task_id, {}).get("cancelled", False):
-            return True, f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\\n\\n"
+            return True, f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
     return False, ""
 
 
@@ -178,7 +179,7 @@ def create_final_response(
     }
     if display_name:
         response['display_name'] = display_name
-    return f"data: {json.dumps(response)}\\n\\n"
+    return f"data: {json.dumps(response)}\n\n"
 
 router = APIRouter()
 
@@ -495,6 +496,19 @@ async def chat_stream(request: ChatRequest):
     """
     import uuid
     
+    # ⭐ 【调试日志】记录用户发送的原始请求信息
+    logger.info("=" * 80)
+    logger.info("[Chat Request] 收到聊天请求")
+    logger.info(f"  - messages 数量: {len(request.messages)}")
+    logger.info(f"  - request.provider: {request.provider}")
+    logger.info(f"  - request.model: {request.model}")
+    logger.info(f"  - request.session_id: {request.session_id}")
+    logger.info(f"  - request.task_id: {request.task_id}")
+    for i, msg in enumerate(request.messages):
+        content_preview = msg.content[:200] + "..." if len(msg.content) > 200 else msg.content
+        logger.info(f"  - messages[{i}] role={msg.role}: {content_preview}")
+    logger.info("=" * 80)
+    
     # 【前端小新代修改】优先使用前端传递的task_id，没有才自己生成
     task_id = request.task_id if request.task_id else str(uuid.uuid4())
     
@@ -519,6 +533,9 @@ async def chat_stream(request: ChatRequest):
             # 前端没传，使用配置文件默认值
             ai_service = AIServiceFactory.get_service()
         
+        # ⭐ 【调试日志】记录选择的AI服务
+        logger.info(f"[AI Service] 选择的AI服务: provider={ai_service.provider}, model={ai_service.model}, api_base={ai_service.api_base}")
+        
         # 【前端小新代修改】在流式响应开始时发送start事件，返回display_name、provider、model、task_id
         display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
         
@@ -526,20 +543,44 @@ async def chat_stream(request: ChatRequest):
         if request.session_id:
             cache_display_name(request.session_id, display_name)
         
-        yield f"data: {json.dumps({
+        # ⭐ 【调试日志】记录发送的 start 步骤
+        start_data = {
             'type': 'start',
             'display_name': display_name,
             'provider': ai_service.provider,
             'model': ai_service.model,
             'task_id': task_id
-        })}\n\n"
+        }
+        logger.info(f"[Step start] 发送start步骤: {json.dumps(start_data, ensure_ascii=False)}")
+        
+        yield f"data: {json.dumps(start_data)}\n\n"
         
         try:
             # 获取最后一条用户消息
             last_message = request.messages[-1].content if request.messages else ""
             
+            # 构建历史消息
+            history = []
+            if len(request.messages) > 1:
+                for msg in request.messages[:-1]:
+                    history.append(Message(role=msg.role, content=msg.content))
+            
+            # ⭐ 【调试日志】记录调用AI服务的参数
+            logger.info("=" * 80)
+            logger.info(f"[AI Call] 开始调用AI服务")
+            logger.info(f"  - provider: {ai_service.provider}")
+            logger.info(f"  - model: {ai_service.model}")
+            logger.info(f"  - last_message: {last_message[:500]}..." if len(last_message) > 500 else f"  - last_message: {last_message}")
+            logger.info(f"  - history 数量: {len(history)}")
+            for i, h in enumerate(history):
+                content_preview = h.content[:200] + "..." if len(h.content) > 200 else h.content
+                logger.info(f"    history[{i}] role={h.role}: {content_preview}")
+            logger.info("=" * 80)
+            
             # 1. 发送思考 - 正在分析任务
-            yield f"data: {json.dumps({'type': 'thought', 'content': '正在分析任务...'})}\n\n"
+            thought_data = {'type': 'thought', 'content': '正在分析任务...'}
+            logger.info(f"[Step thought] 发送thought步骤: {json.dumps(thought_data, ensure_ascii=False)}")
+            yield f"data: {json.dumps(thought_data)}\n\n"
             await asyncio.sleep(0.3)
             
             # ⭐ 修复：只检查一次中断（删除 4 次重复代码）
@@ -553,22 +594,30 @@ async def chat_stream(request: ChatRequest):
             
             if is_file_op and confidence >= 0.3:
                 # 文件操作：逐步推送执行步骤
-                yield f"data: {json.dumps({'type': 'action', 'step': 1, 'content': '检测到文件操作意图，开始执行...'})}\n\n"
+                action1_data = {'type': 'action', 'step': 1, 'content': '检测到文件操作意图，开始执行...'}
+                logger.info(f"[Step action] 发送action步骤(文件检测): {json.dumps(action1_data, ensure_ascii=False)}")
+                yield f"data: {json.dumps(action1_data)}\n\n"
                 await asyncio.sleep(0.3)
                 
                 # 检查是否被中断
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
-                        yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                        interrupted_data = {'type': 'interrupted', 'content': '任务已被中断'}
+                        logger.info(f"[Step interrupted] 发送interrupted步骤: {json.dumps(interrupted_data, ensure_ascii=False)}")
+                        yield f"data: {json.dumps(interrupted_data)}\n\n"
                         return
                 
                 # 安全检测
                 is_safe, risk = check_command_safety(last_message)
                 if not is_safe:
-                    yield f"data: {json.dumps({'type': 'error', 'content': f'危险操作需确认: {risk}'})}\n\n"
+                    error_data = {'type': 'error', 'content': f'危险操作需确认: {risk}'}
+                    logger.info(f"[Step error] 发送error步骤(安全检测): {json.dumps(error_data, ensure_ascii=False)}")
+                    yield f"data: {json.dumps(error_data)}\n\n"
                     return
                 
-                yield f"data: {json.dumps({'type': 'observation', 'step': 1, 'content': '安全检测通过'})}\n\n"
+                observation1_data = {'type': 'observation', 'step': 1, 'content': '安全检测通过'}
+                logger.info(f"[Step observation] 发送observation步骤: {json.dumps(observation1_data, ensure_ascii=False)}")
+                yield f"data: {json.dumps(observation1_data)}\n\n"
                 await asyncio.sleep(0.3)
                 
                 # 创建Agent执行
@@ -586,7 +635,9 @@ async def chat_stream(request: ChatRequest):
                     session_id=session_id
                 )
                 
-                yield f"data: {json.dumps({'type': 'action', 'step': 2, 'content': '执行文件操作...'})}\n\n"
+                action2_data = {'type': 'action', 'step': 2, 'content': '执行文件操作...'}
+                logger.info(f"[Step action] 发送action步骤(执行文件): {json.dumps(action2_data, ensure_ascii=False)}")
+                yield f"data: {json.dumps(action2_data)}\n\n"
                 
                 # 流式执行（每步检查中断）
                 try:
@@ -598,7 +649,9 @@ async def chat_stream(request: ChatRequest):
                             # 每步检查是否被中断
                             async with running_tasks_lock:
                                 if running_tasks.get(task_id, {}).get("cancelled", False):
-                                    yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                                    interrupted_data = {'type': 'interrupted', 'content': '任务已被中断'}
+                                    logger.info(f"[Step interrupted] 发送interrupted步骤: {json.dumps(interrupted_data, ensure_ascii=False)}")
+                                    yield f"data: {json.dumps(interrupted_data)}\n\n"
                                     break
                             
                             # Step是对象，使用属性访问
@@ -606,23 +659,28 @@ async def chat_stream(request: ChatRequest):
                             step_action = getattr(step, 'action', '')
                             step_observation = getattr(step, 'observation', '')
                             
-                            yield f"data: {json.dumps({
+                            step_data = {
                                 'type': 'observation',
                                 'step': i + 2,
                                 'thought': step_thought,
                                 'action': step_action,
                                 'observation': step_observation
-                            })}\n\n"
+                            }
+                            logger.info(f"[Step observation] 发送observation步骤(Agent执行): {json.dumps(step_data, ensure_ascii=False)}")
+                            yield f"data: {json.dumps(step_data)}\n\n"
                             await asyncio.sleep(0.5)
                     
                     # 检查是否被中断
                     async with running_tasks_lock:
                         if running_tasks.get(task_id, {}).get("cancelled", False):
-                            yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                            interrupted_data = {'type': 'interrupted', 'content': '任务已被中断'}
+                            logger.info(f"[Step interrupted] 发送interrupted步骤: {json.dumps(interrupted_data, ensure_ascii=False)}")
+                            yield f"data: {json.dumps(interrupted_data)}\n\n"
                         else:
                             # 发送最终结果
                             if result.success:
                                 result_content = getattr(result, 'content', '')
+                                logger.info(f"[Step final] 发送final步骤(文件操作成功), content长度: {len(result_content)}")
                                 yield create_final_response(
                                     content=result_content,
                                     model=ai_service.model,
@@ -631,8 +689,10 @@ async def chat_stream(request: ChatRequest):
                                 )
                             else:
                                 result_error = getattr(result, 'error', '执行失败')
-                                yield f"data: {json.dumps({'type': 'error', 'content': result_error, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider})}\n\n"
-                            
+                                error_data = {'type': 'error', 'content': result_error, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider}
+                                logger.info(f"[Step error] 发送error步骤(文件操作失败): {json.dumps(error_data, ensure_ascii=False)}")
+                                yield f"data: {json.dumps(error_data)}\n\n"
+                    
                 except Exception as e:
                     # 【小沈代修改 - 修复问题 4】统一错误处理格式，记录日志
                     logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
@@ -642,53 +702,93 @@ async def chat_stream(request: ChatRequest):
                     )
             else:
                 # 普通对话：调用AI服务（流式）
-                yield f"data: {json.dumps({'type': 'action', 'step': 1, 'content': '正在调用AI服务...'})}\n\n"
+                action_data = {'type': 'action', 'step': 1, 'content': '正在调用AI服务...'}
+                logger.info(f"[Step action] 发送action步骤(调用AI): {json.dumps(action_data, ensure_ascii=False)}")
+                yield f"data: {json.dumps(action_data)}\n\n"
                 await asyncio.sleep(0.3)
                 
                 # 检查是否被中断
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
-                        yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                        interrupted_data = {'type': 'interrupted', 'content': '任务已被中断'}
+                        logger.info(f"[Step interrupted] 发送interrupted步骤: {json.dumps(interrupted_data, ensure_ascii=False)}")
+                        yield f"data: {json.dumps(interrupted_data)}\n\n"
                         return
                 
-                ai_service = AIServiceFactory.get_service()
                 from app.services.base import Message
                 history = []
                 if len(request.messages) > 1:
                     for msg in request.messages[:-1]:
                         history.append(Message(role=msg.role, content=msg.content))
+                
+                # ⭐ 【调试日志】记录完整的AI调用参数
+                logger.info("=" * 80)
+                logger.info(f"[AI Stream Call] 开始流式调用AI")
+                logger.info(f"  - provider: {ai_service.provider}")
+                logger.info(f"  - model: {ai_service.model}")
+                logger.info(f"  - message: {last_message[:300]}..." if len(last_message) > 300 else f"  - message: {last_message}")
+                logger.info(f"  - history count: {len(history)}")
+                logger.info("=" * 80)
+                
                 # 【修复-小沈】使用流式API，逐token返回
                 full_content = ""
+                chunk_count = 0
                 async for chunk in ai_service.chat_stream(
                     message=last_message,
                     history=history
                 ):
+                    chunk_count += 1
                     # 检查是否被中断
                     async with running_tasks_lock:
                         if running_tasks.get(task_id, {}).get("cancelled", False):
-                            yield f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
+                            interrupted_data = {'type': 'interrupted', 'content': '任务已被中断'}
+                            logger.info(f"[Step interrupted] 发送interrupted步骤: {json.dumps(interrupted_data, ensure_ascii=False)}")
+                            yield f"data: {json.dumps(interrupted_data)}\n\n"
                             return
                     
                     if chunk.content:
                         full_content += chunk.content
+                        # ⭐ 【调试日志】记录每个chunk
+                        logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
                         # 逐token发送到前端，【新增】添加provider字段作为兜底
-                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk.content, 'model': chunk.model, 'provider': ai_service.provider})}\n\n"
+                        chunk_data = {'type': 'chunk', 'content': chunk.content, 'model': chunk.model, 'provider': ai_service.provider}
+                        logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}")
+                        yield f"data: {json.dumps(chunk_data)}\n\n"
                     
                     if chunk.is_done:
                         break
-                    # 发送最终结果，【新增】添加provider字段作为兜底
-                yield f"data: {json.dumps({'type': 'final', 'content': full_content, 'model': ai_service.model, 'provider': ai_service.provider})}\n\n"
+                
+                # ⭐ 【调试日志】记录完整的AI响应
+                logger.info("=" * 80)
+                logger.info(f"[AI Response Complete] AI响应完成")
+                logger.info(f"  - total chunks: {chunk_count}")
+                logger.info(f"  - full_content length: {len(full_content)}")
+                logger.info(f"  - full_content preview: {full_content[:500]}..." if len(full_content) > 500 else f"  - full_content: {full_content}")
+                logger.info("=" * 80)
+                
+                # 发送最终结果，【新增】添加provider字段作为兜底
+                logger.info(f"[Step final] 发送final步骤, content长度={len(full_content)}, content预览={full_content[:200]}..." if len(full_content) > 200 else f"[Step final] 发送final步骤, content={full_content}")
+                yield create_final_response(
+                    content=full_content,
+                    model=ai_service.model,
+                    provider=ai_service.provider,
+                    display_name=display_name
+                )
                         
         except asyncio.CancelledError:
             # 客户端断开连接，任务被中断
             async with running_tasks_lock:
                 running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
-            yield f"data: {json.dumps({'type': 'interrupted', 'content': '客户端断开连接，任务中断'})}\n\n"
+            interrupted_data = {'type': 'interrupted', 'content': '客户端断开连接，任务中断'}
+            logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开): {json.dumps(interrupted_data, ensure_ascii=False)}")
+            yield f"data: {json.dumps(interrupted_data)}\n\n"
             
         except Exception as e:
             # 【小沈代修改 - 统一错误处理】使用 get_user_friendly_error 和 create_error_response
             logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
             error_type, error_message = get_user_friendly_error(e)
+            error_data = {'type': 'error', 'error_type': error_type, 'content': error_message}
+            logger.info(f"[Step error] 发送error步骤: {json.dumps(error_data, ensure_ascii=False)}")
             yield create_error_response(
                 error_type=error_type,
                 content=error_message

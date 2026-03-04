@@ -116,7 +116,7 @@ export interface UseSSEReturn {
   /** 当前AI回复内容 */
   currentResponse: string;
   /** 发送消息 */
-  sendMessage: (content: string) => void;
+  sendMessage: (content: string, sessionId?: string) => void;
   /** 断开连接 */
   disconnect: () => void;
   /** 清空步骤 */
@@ -377,7 +377,19 @@ const processSSEData = (
 
   try {
     // 解析 SSE 数据（去掉 "data: " 前缀）
-    const rawData = JSON.parse(line.slice(6));
+    let jsonStr = line.slice(6);
+    
+    // 【调试】打印原始 JSON 字符串的详细信息
+    console.log("[SSE] 原始JSON字符串:", {
+      length: jsonStr.length,
+      repr: jsonStr.substring(0, 100),
+      charCodes: Array.from(jsonStr.slice(0, 20)).map(c => c.charCodeAt(0))
+    });
+    
+    // 去除可能的尾随空白字符（\n\r等）
+    jsonStr = jsonStr.trim();
+    
+    const rawData = JSON.parse(jsonStr);
 
     console.log("[SSE] 收到数据:", rawData.type, rawData);
 
@@ -485,7 +497,8 @@ const processSSEData = (
         if (onComplete) {
           console.log("[SSE] onComplete存在，调用它");
           // 传递 metadata 对象，包含 model 和 displayName
-          onComplete(responseBufferRef.current, { model, displayName });
+          const metadata: any = { model, displayName };
+          onComplete(responseBufferRef.current, metadata);
         } else {
           console.log("[SSE] onComplete不存在！");
         }
