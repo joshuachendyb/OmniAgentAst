@@ -557,6 +557,12 @@ const processSSEData = (
       }
 
       case "interrupted": {
+        const interruptedStep: ExecutionStep = {
+          type: "interrupted",
+          content: "任务已中断",
+          timestamp: Date.now(),
+        };
+        setExecutionSteps((prev) => [...prev, interruptedStep]);
         onComplete?.(responseBufferRef.current, undefined);
         setIsReceiving(false);
         setIsConnected(false);
