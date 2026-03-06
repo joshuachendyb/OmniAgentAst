@@ -33,24 +33,37 @@ export interface SSEMetadata {
 }
 
 /**
- * 执行步骤类型
+ * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  */
 export interface ExecutionStep {
-  type: "thought" | "action" | "observation" | "final" | "error" | "interrupted" | "chunk" | "start";
-  content?: string;
-  tool?: string;
-  params?: Record<string, any>;
-  action_input?: Record<string, any>;
-  result?: any;
-  observation?: any;
-  timestamp: number;
-  stepNumber?: number;
-  model?: string;
-  display_name?: string;
-  provider?: string;
-  displayName?: string;
-  contentStart?: number;
-  contentEnd?: number;
+  // === 通用字段 ===
+  type: "thought" | "action" | "observation" | "chunk" | "final" | "error" | "interrupted" | "start";
+  content?: string;        // 思考内容/错误信息（type=thought/observation/final都有）
+  
+  // === type=action/observation 字段 ===
+  step?: number;          // 步骤序号（type=action/observation有）—— 与后端一致
+  thought?: string;       // Agent.thought的值（type=observation有）
+  action?: string;        // Agent.action的值，执行动作名称（如"read_file"）
+  observation?: any;      // Agent.observation原始对象（保留，用于调试）
+  tool?: string;          // = action，与后端保持一致
+  result?: string;        // simplify_observation处理后的文本（显示用这个，不要用observation！）
+  
+  // === type=action 字段 ===
+  action_input?: Record<string, any>;  // 工具调用参数
+  
+  // === type=chunk/final/start 字段 ===
+  model?: string;         // AI模型
+  provider?: string;      // AI提供商
+  display_name?: string;  // 显示名称
+  displayName?: string;   // 兼容字段
+  
+  // === type=error 字段 ===
+  error?: string;         // 错误信息
+  
+  // === 前端额外字段 ===
+  timestamp: number;      // 前端生成的时间戳
+  contentStart?: number;  // content起始位置（用于流式定位）
+  contentEnd?: number;    // content结束位置
 }
 
 /**
@@ -450,11 +463,14 @@ const processSSEData = (
     const step: ExecutionStep = {
       type: rawData.type as ExecutionStep["type"],
       content: rawData.content || rawData.error || "",
-      tool: rawData.action,
-      params: rawData.action_input,
-      result: rawData.observation,
+      step: rawData.step || 1,           // 与后端一致：step
+      thought: rawData.thought,          // Agent.thought的值
+      action: rawData.action,            // 执行动作名称，与后端一致
+      observation: rawData.observation,  // 保留原始对象，用于调试
+      tool: rawData.tool || rawData.action,  // = action
+      result: rawData.result,            // simplify_observation处理后的文本（显示用这个！）
+      action_input: rawData.action_input, // 工具调用参数
       timestamp: Date.now(),
-      stepNumber: rawData.step || 1,
     };
 
     if (rawData.task_id && setServerTaskId) {

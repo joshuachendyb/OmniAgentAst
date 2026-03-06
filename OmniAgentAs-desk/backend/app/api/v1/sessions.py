@@ -594,7 +594,7 @@ class SessionUpdate(BaseModel):
 
 
 @router.post("/sessions/{session_id}/messages")
-async def save_message(session_id: str, message: MessageCreate):
+async def save_message(session_id: str, message: MessageCreate, execution_steps: Optional[str] = None):
     """
     保存消息到会话
     
@@ -602,12 +602,14 @@ async def save_message(session_id: str, message: MessageCreate):
     1. 标题保护逻辑：如果标题被锁定，不自动更新标题
     2. updated_at更新时机优化：不再每次保存消息都更新
     3. 事务处理优化：确保消息保存和标题更新的一致性
+    4. 添加 execution_steps 字段保存执行步骤
     
     P0风险缓解：添加了字段存在性检查，向后兼容旧数据库结构
     
     Args:
         session_id: 会话ID
         message: 消息内容
+        execution_steps: 执行步骤JSON字符串
         
     Returns:
         dict: 保存结果
@@ -654,10 +656,10 @@ async def save_message(session_id: str, message: MessageCreate):
             display_name_to_save = get_cached_display_name(session_id)
             logger.debug(f"从缓存获取 display_name: session_id={session_id}, display_name={display_name_to_save}")
         
-        # 插入消息（添加 display_name 字段）
+        # 插入消息（添加 display_name 和 execution_steps 字段）
         cursor.execute(
-            'INSERT INTO chat_messages (session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?)',
-            (session_id, message.role, message.content, utc_time, display_name_to_save)
+            'INSERT INTO chat_messages (session_id, role, content, timestamp, display_name, execution_steps) VALUES (?, ?, ?, ?, ?, ?)',
+            (session_id, message.role, message.content, utc_time, display_name_to_save, execution_steps)
         )
         message_id = cursor.lastrowid
         

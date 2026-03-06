@@ -634,7 +634,7 @@ async def chat_stream(request: ChatRequest):
                 logger.info(f"    history[{i}] role={h.role}: {content_preview}")
             logger.info("=" * 80)
             
-            # 1. 发送思考 - 正在分析任务
+            # 1. 发送思考 - 正在分析任务（固定提示）
             thought_data = {'type': 'thought', 'content': '正在分析任务...'}
             logger.info(f"[Step thought] 发送thought步骤: {json.dumps(thought_data, ensure_ascii=False)}")
             yield f"data: {json.dumps(thought_data)}\n\n"
