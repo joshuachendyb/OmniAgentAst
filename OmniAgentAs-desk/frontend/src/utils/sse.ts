@@ -513,6 +513,11 @@ const processSSEData = (
         responseBufferRef.current += rawData.content || "";
         setCurrentResponse(responseBufferRef.current);
         onChunk?.(rawData.content || "");
+        // 收到chunk时，AI开始回复，关闭步骤显示UI
+        onComplete?.(responseBufferRef.current, {
+          model: rawData.model,
+          provider: rawData.provider,
+        } as SSEMetadata);
         break;
       }
 
@@ -538,7 +543,13 @@ const processSSEData = (
       }
 
       case "error": {
-        const errorMsg = rawData.content || rawData.error || "未知错误";
+        const errorMsg = rawData.content || "未知错误";
+        const errorStep: ExecutionStep = {
+          type: "error",
+          content: errorMsg,
+          timestamp: Date.now(),
+        };
+        setExecutionSteps((prev) => [...prev, errorStep]);
         onError?.(errorMsg);
         setIsReceiving(false);
         setIsConnected(false);

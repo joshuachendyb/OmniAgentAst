@@ -402,6 +402,63 @@ const MessageItem: React.FC<MessageItemProps> = ({
                 : ""
             }
           >
+            {/* 执行过程展示（仅 AI 消息）- 优化：思考+执行在消息内容之前 */}
+            {showExecution && message.role === "assistant" && message.executionSteps && message.executionSteps.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                {/* 思考步骤始终直接显示（不折叠）- 最先显示 */}
+                {message.executionSteps
+                  ?.filter((step) => step.type === "thought")
+                  .map((step, index) => (
+                    <ExecutionPanel
+                      key={`thought-${index}`}
+                      steps={[step]}
+                      isActive={false}
+                    />
+                  ))}
+                
+                {/* 判断是否有执行步骤（action/observation） */}
+                {(() => {
+                  const hasExecution = message.executionSteps?.some(
+                    (step) => step.type === "action" || step.type === "observation"
+                  );
+                  
+                  return hasExecution ? (
+                    // 有执行步骤：显示折叠区域
+                    <Collapse
+                      defaultActiveKey={
+                        message.isStreaming ?? false ? ["execution"] : []
+                      }
+                      size="small"
+                      style={{ marginBottom: 8 }}
+                    >
+                      <Panel
+                        header={
+                          <Space>
+                            <ThunderboltOutlined />
+                            <span>执行详情</span>
+                            {(message.isStreaming ?? false) && <LoadingOutlined />}
+                          </Space>
+                        }
+                        key="execution"
+                      >
+                        {/* 只渲染执行步骤（action + observation） */}
+                        {message.executionSteps
+                          ?.filter((step) => step.type === "action" || step.type === "observation")
+                          .map((step, index) => (
+                            <ExecutionPanel
+                              key={index}
+                              steps={[step]}
+                              isActive={message.isStreaming || false}
+                            />
+                          ))}
+                      </Panel>
+                    </Collapse>
+                  ) : null;
+                })()}
+              </div>
+            )}
+
+            {/* 消息内容 - 最后显示 */}
             {message.content && typeof message.content === 'string' 
               ? message.content 
               : String(message.content || '')}
@@ -448,34 +505,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
               }
             `}</style>
           ) : null}
-
-          {/* 执行过程展示（仅 AI 消息） */}
-          {showExecution && message.role === "assistant" && (
-            <div style={{ marginTop: 6 }}>
-              <Collapse
-                defaultActiveKey={
-                  message.isStreaming ?? false ? ["execution"] : []
-                }
-                size="small"
-              >
-                <Panel
-                  header={
-                    <Space>
-                      <ThunderboltOutlined />
-                      <span>AI 思考过程</span>
-                      {(message.isStreaming ?? false) && <LoadingOutlined />}
-                    </Space>
-                  }
-                  key="execution"
-                >
-                  <ExecutionPanel
-                    steps={message.executionSteps || []}
-                    isActive={message.isStreaming || false}
-                  />
-                </Panel>
-              </Collapse>
-            </div>
-          )}
         </div>
       </div>
 

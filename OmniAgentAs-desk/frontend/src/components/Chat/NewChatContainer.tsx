@@ -294,6 +294,22 @@ const NewChatContainer: React.FC = () => {
               provider: metadataObj.provider || lastMessage.provider,
               displayName: metadataObj.displayName || lastMessage.displayName,
             };
+            
+            // ⭐ 【小新修复 2026-03-06】保存执行步骤到会话
+            // 在消息状态更新后保存executionSteps
+            const executionStepsToSave = updated[updated.length - 1].executionSteps;
+            if (executionStepsToSave && executionStepsToSave.length > 0) {
+              // 保存executionSteps到数据库
+              const currentSessionIdForSteps = currentSessionIdRef.current || sessionId;
+              sessionApi.saveExecutionSteps(currentSessionIdForSteps, executionStepsToSave)
+                .then(() => {
+                  console.log("✅ 执行步骤保存成功");
+                })
+                .catch((err) => {
+                  console.warn("⚠️ 保存执行步骤失败:", err);
+                });
+            }
+            
             return updated;
           }
           return prev;
