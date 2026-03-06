@@ -150,6 +150,63 @@ async def check_and_yield_if_interrupted(
 
 
 # ============================================================
+# observation 清洗函数 - 小沈添加【将复杂的observation简化为可读文本】
+# ============================================================
+
+def simplify_observation(observation: Optional[Dict]) -> str:
+    """
+    将 observation 简化为可读的文本
+    
+    处理各种情况：
+    - 正常完成：提取 result 内容
+    - list_directory：显示文件数量
+    - 执行失败：返回错误信息
+    - 空数据：返回默认文本
+    
+    Args:
+        observation: Agent 返回的观察结果
+        
+    Returns:
+        可读的文本字符串
+    """
+    if not observation:
+        return "（无结果）"
+    
+    # 检查是否成功
+    if not observation.get("success", True):
+        error = observation.get("error", "未知错误")
+        return f"❌ {error}"
+    
+    # 提取 result
+    result = observation.get("result")
+    if not result:
+        return "（无结果）"
+    
+    # 根据 result 类型处理
+    if isinstance(result, dict):
+        # 文件列表
+        if "entries" in result:
+            count = result.get("total_count", len(result.get("entries", [])))
+            return f"📁 列出了 {count} 个文件/目录"
+        
+        # finish 的结果
+        if "result" in result:
+            inner = result["result"]
+            if isinstance(inner, str):
+                return inner[:200]
+        
+        # 其他字典，转为简洁文本
+        keys = list(result.keys())[:3]
+        return f"{{ {', '.join(keys)} }}"
+    
+    elif isinstance(result, str):
+        return result[:200]
+    
+    else:
+        return str(result)[:200]
+
+
+# ============================================================
 # 统一 final 响应工具函数 - 小沈代修改【修复问题 6】
 # ============================================================
 
@@ -659,23 +716,20 @@ async def chat_stream(request: ChatRequest):
                             step_action = getattr(step, 'action', '')
                             step_observation = getattr(step, 'observation', '')
                             
-                            # 提取 result 字段（展平 observation.result.result）
-                            step_result = ""
-                            if step_observation and isinstance(step_observation, dict):
-                                if "result" in step_observation:
-                                    result_data = step_observation["result"]
-                                    if isinstance(result_data, dict) and "result" in result_data:
-                                        step_result = result_data["result"]
-                                    elif isinstance(result_data, str):
-                                        step_result = result_data
+                            # 使用清洗函数生成可读文本
+                            step_result = simplify_observation(step_observation)
                             
-                            # 修改字段名以匹配前端期望的格式
+                            # 发送字段：按前后端统一原则，只发送核心字段，删除冗余兼容字段
+                            # 修改时间：2026-03-06 15:40:00 修改人：小沈
+                            # 删除：content（=thought重复）、tool（=action重复）、error（用content）
                             step_data = {
+                                # 核心字段
                                 'type': 'observation',
                                 'step': i + 2,
-                                'content': step_thought,      # 前端期望 content
-                                'tool': step_action,           # 前端期望 tool
-                                'result': step_result        # 前端期望 result
+                                'thought': step_thought,
+                                'action': step_action,
+                                'observation': step_observation,
+                                'result': step_result
                             }
                             logger.info(f"[Step observation] 发送observation步骤(Agent执行): {json.dumps(step_data, ensure_ascii=False)}")
                             yield f"data: {json.dumps(step_data)}\n\n"
