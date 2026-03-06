@@ -37,7 +37,7 @@ export interface SSEMetadata {
  */
 export interface ExecutionStep {
   // === 通用字段 ===
-  type: "thought" | "action" | "observation" | "chunk" | "final" | "error" | "interrupted" | "start";
+  type: "thought" | "action" | "observation" | "chunk" | "final" | "error" | "interrupted" | "start" | "paused" | "resumed";
   content?: string;        // 思考内容/错误信息（type=thought/observation/final都有）
   
   // === type=action/observation 字段 ===
@@ -160,7 +160,9 @@ export const useSSE = (
   onStep?: (step: ExecutionStep) => void,
   onChunk?: (chunk: string) => void,
   onComplete?: (fullResponse: string, metadata?: string | SSEMetadata) => void,
-  onError?: (error: string | SSEError) => void
+  onError?: (error: string | SSEError) => void,
+  onPaused?: () => void,
+  onResumed?: () => void
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -303,6 +305,8 @@ export const useSSE = (
               onChunk,
               onComplete,
               onError,
+              onPaused,
+              onResumed,
               setCurrentResponse,
               responseBufferRef,
               setIsReceiving,
@@ -325,6 +329,8 @@ export const useSSE = (
             onChunk,
             onComplete,
             onError,
+            onPaused,
+            onResumed,
             setCurrentResponse,
             responseBufferRef,
             setIsReceiving,
@@ -428,6 +434,8 @@ const processSSEData = (
     onChunk?: (chunk: string) => void;
     onComplete?: (fullResponse: string, model?: string) => void;
     onError?: (error: string) => void;
+    onPaused?: () => void;
+    onResumed?: () => void;
     setCurrentResponse: React.Dispatch<React.SetStateAction<string>>;
     responseBufferRef: React.MutableRefObject<string>;
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
@@ -443,6 +451,8 @@ const processSSEData = (
     onChunk,
     onComplete,
     onError,
+    onPaused,
+    onResumed,
     setCurrentResponse,
     responseBufferRef,
     setIsReceiving,
@@ -566,6 +576,16 @@ const processSSEData = (
         onComplete?.(responseBufferRef.current, undefined);
         setIsReceiving(false);
         setIsConnected(false);
+        break;
+      }
+
+      case "paused": {
+        onPaused?.();
+        break;
+      }
+
+      case "resumed": {
+        onResumed?.();
         break;
       }
     }
