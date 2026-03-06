@@ -118,6 +118,11 @@ const NewChatContainer: React.FC = () => {
   // 【小新第三修复 2026-03-02】用于同步存储pendingMessage，解决React闭包陷阱
   const pendingMessageRef = useRef<Message | null>(null);
 
+  // ⭐ 暂停功能缓冲区：暂存暂停期间接收的数据
+  const displayBufferRef = useRef<any[]>([]);
+  // ⭐ 暂停状态ref，用于在回调中同步访问
+  const isPausedRef = useRef(false);
+
   // 流式输出相关状态
   const [showExecution, setShowExecution] = useState(true);
   const [useStream, setUseStream] = useState(true); // 默认使用流式
@@ -161,6 +166,13 @@ const NewChatContainer: React.FC = () => {
     },
     // onStep - 收到执行步骤
     useCallback((step: ExecutionStep) => {
+      // ⭐ 暂停时存入缓冲区，不直接显示
+      if (isPausedRef.current) {
+        console.log("⏸️ [onStep] 暂停中，存入缓冲区, type:", step.type);
+        displayBufferRef.current.push({ type: "step", step });
+        return;
+      }
+      
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         // 【修复问题 7】如果是 start 步骤，创建占位消息
@@ -239,6 +251,14 @@ const NewChatContainer: React.FC = () => {
      // onChunk - 收到内容片段
     useCallback((chunk: string) => {
       console.log("🔍 [onChunk] 收到内容片段:", JSON.stringify(chunk).substring(0, 100));
+      
+      // ⭐ 暂停时存入缓冲区，不直接显示
+      if (isPausedRef.current) {
+        console.log("⏸️ [onChunk] 暂停中，存入缓冲区");
+        displayBufferRef.current.push({ type: "chunk", content: chunk });
+        return;
+      }
+      
       setMessages((prev) => {
         const lastMessage = prev[prev.length - 1];
         if (
@@ -456,12 +476,46 @@ const NewChatContainer: React.FC = () => {
           }
            return prev;
          });
-         console.log("🔍 [onError] 错误处理完成，设置loading=false");
-         setLoading(false);
-         console.log("✅ [onError] 处理完成");
+        console.log("🔍 [onError] 错误处理完成，设置loading=false");
+        setLoading(false);
+        console.log("✅ [onError] 处理完成");
        },
        []
-    )
+    ),
+    // onPaused - 暂停事件
+    useCallback(() => {
+      console.log("⏸️ [onPaused] 收到暂停事件");
+      setIsPaused(true);
+    }, []),
+    // onResumed - 恢复事件
+    useCallback(() => {
+      console.log("▶️ [onResumed] 收到恢复事件，缓冲区长度:", displayBufferRef.current.length);
+      
+      // 从缓冲区按顺序显示数据
+      displayBufferRef.current.forEach(data => {
+        if (data.type === "chunk" && data.content) {
+          // 处理 chunk 类型
+          setMessages((prev) => {
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage && lastMessage.role === "assistant" && lastMessage.isStreaming) {
+              const updated = [...prev];
+              updated[updated.length - 1] = {
+                ...lastMessage,
+                content: lastMessage.content + data.content,
+              };
+              return updated;
+            }
+            return prev;
+          });
+        } else if (data.type === "step" && data.step) {
+          // 处理 step 类型 - 这里简单处理，实际可能需要更复杂的逻辑
+          console.log("📦 [onResumed] 处理 step 数据:", data.step.type);
+        }
+      });
+      
+      displayBufferRef.current = []; // 清空缓冲区
+      setIsPaused(false);
+    }, [])
   );
 
   // 自动滚动到底部
@@ -475,6 +529,11 @@ const NewChatContainer: React.FC = () => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 100); // 延迟100ms确保DOM更新完成
   };
+
+  // ⭐ 同步 isPaused 状态到 ref，供回调中使用
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
   useEffect(() => {
     scrollToBottom();
@@ -1290,9 +1349,40 @@ const NewChatContainer: React.FC = () => {
   /**
    * 任务暂停/继续
    */
-  const handleTogglePause = () => {
-    setIsPaused(!isPaused);
-    message.info("暂停功能后端暂未实现，仅显示UI状态");
+  const handleTogglePause = async () => {
+    if (!serverTaskId) {
+      message.warning("当前没有进行中的任务");
+      return;
+    }
+
+    try {
+      if (!isPaused) {
+        // 暂停：发送暂停请求
+        const response = await fetch(
+          `http://localhost:8000/api/v1/chat/stream/pause/${serverTaskId}`,
+          { method: "POST" }
+        );
+        if (response.ok) {
+          console.log("⏸️ 已发送暂停请求");
+        } else {
+          message.error("暂停请求失败");
+        }
+      } else {
+        // 继续：发送恢复请求
+        const response = await fetch(
+          `http://localhost:8000/api/v1/chat/stream/resume/${serverTaskId}`,
+          { method: "POST" }
+        );
+        if (response.ok) {
+          console.log("▶️ 已发送恢复请求");
+        } else {
+          message.error("恢复请求失败");
+        }
+      }
+    } catch (error) {
+      console.error("❌ 暂停/继续请求失败:", error);
+      message.error("暂停/继续请求失败: " + (error as Error).message);
+    }
   };
 
   /**

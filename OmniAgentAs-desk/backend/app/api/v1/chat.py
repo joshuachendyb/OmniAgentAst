@@ -33,7 +33,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, AsyncGenerator
 from app.services import AIServiceFactory
 from app.services.base import Message  # ⭐ 【调试添加】用于日志记录
 from app.services.file_operations.tools import get_file_tools
@@ -147,6 +147,44 @@ async def check_and_yield_if_interrupted(
         if running_tasks.get(task_id, {}).get("cancelled", False):
             return True, f"data: {json.dumps({'type': 'interrupted', 'content': '任务已被中断'})}\n\n"
     return False, ""
+
+
+async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_tasks_lock: asyncio.Lock) -> AsyncGenerator[str, None]:
+    """
+    检查任务是否被暂停，如果是则发送paused事件并等待恢复
+    
+    Args:
+        task_id: 任务ID
+        running_tasks: 运行中任务字典
+        running_tasks_lock: 任务锁
+    
+    Yields:
+        SSE 格式的事件字符串 (paused/resumed)
+    """
+    while True:
+        async with running_tasks_lock:
+            is_paused = running_tasks.get(task_id, {}).get("paused", False)
+            is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
+            
+            if is_cancelled:
+                return  # 暂停期间被取消了
+            
+            if not is_paused:
+                # 不再暂停，恢复发送
+                if running_tasks.get(task_id, {}).get("_was_paused", False):
+                    # 发送恢复事件
+                    yield f"data: {json.dumps({'type': 'resumed', 'content': '任务已恢复'})}\n\n"
+                    running_tasks[task_id]["_was_paused"] = False
+                return
+        
+        # 暂停中，等待恢复
+        if is_paused and not running_tasks.get(task_id, {}).get("_was_paused", False):
+            # 刚进入暂停状态，发送paused事件
+            async with running_tasks_lock:
+                running_tasks[task_id]["_was_paused"] = True
+            yield f"data: {json.dumps({'type': 'paused', 'content': '任务已暂停'})}\n\n"
+        
+        await asyncio.sleep(0.5)  # 每0.5秒检查一次
 
 
 # ============================================================
@@ -570,12 +608,13 @@ async def chat_stream(request: ChatRequest):
     task_id = request.task_id if request.task_id else str(uuid.uuid4())
     
     async def generate():
-        """生成SSE流，支持中断"""
+        """生成SSE流，支持中断和暂停"""
         # 注册任务
         async with running_tasks_lock:
             running_tasks[task_id] = {
                 "status": "running", 
                 "cancelled": False,
+                "paused": False,  # 暂停状态
                 "created_at": datetime.now()
             }
         
@@ -645,6 +684,10 @@ async def chat_stream(request: ChatRequest):
             if is_interrupted:
                 yield interrupt_msg
                 return
+            
+            # ⭐ 暂停检查：如果暂停则等待恢复
+            async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
+                yield pause_event
             
             # 检测文件操作意图
             is_file_op, _, confidence = detect_file_operation_intent(last_message)
@@ -826,6 +869,10 @@ async def chat_stream(request: ChatRequest):
                             yield f"data: {json.dumps(interrupted_data)}\n\n"
                             return
                     
+                    # ⭐ 暂停检查：AI流式响应过程中也检查暂停状态
+                    async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
+                        yield pause_event
+                    
                     if chunk.content:
                         full_content += chunk.content
                         # ⭐ 【调试日志】记录每个chunk
@@ -907,6 +954,43 @@ async def cancel_stream_task(task_id: str):
             running_tasks[task_id]["cancelled"] = True
             running_tasks[task_id]["status"] = "cancelled"
             return {"success": True, "message": f"任务 {task_id} 已标记为中断"}
+    return {"success": False, "message": f"任务 {task_id} 不存在"}
+
+
+# 任务暂停/继续接口
+# ============================================================
+
+@router.post("/chat/stream/pause/{task_id}")
+async def pause_stream_task(task_id: str):
+    """
+    暂停指定的流式任务
+    
+    - **task_id**: 任务ID
+    - 暂停时：前端停止显示，但后端继续处理，数据暂存缓冲区
+    """
+    async with running_tasks_lock:
+        if task_id in running_tasks:
+            running_tasks[task_id]["paused"] = True
+            running_tasks[task_id]["status"] = "paused"
+            logger.info(f"[Pause] 任务 {task_id} 已暂停")
+            return {"success": True, "message": f"任务 {task_id} 已暂停"}
+    return {"success": False, "message": f"任务 {task_id} 不存在"}
+
+
+@router.post("/chat/stream/resume/{task_id}")
+async def resume_stream_task(task_id: str):
+    """
+    继续指定的流式任务
+    
+    - **task_id**: 任务ID
+    - 继续时：前端恢复显示暂存的数据
+    """
+    async with running_tasks_lock:
+        if task_id in running_tasks:
+            running_tasks[task_id]["paused"] = False
+            running_tasks[task_id]["status"] = "running"
+            logger.info(f"[Resume] 任务 {task_id} 已继续")
+            return {"success": True, "message": f"任务 {task_id} 已继续"}
     return {"success": False, "message": f"任务 {task_id} 不存在"}
 
 
