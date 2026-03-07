@@ -272,8 +272,9 @@ const NewChatContainer: React.FC = () => {
           lastMessage.isStreaming
         ) {
           const updated = [...prev];
-          // 【小沈修复】如果是思考过程，设置 is_reasoning 标记
-          const newIsReasoning = isReasoning ? true : lastMessage.is_reasoning;
+          // 【小沈修复】如果当前chunk是正式内容(isReasoning=false)，则is_reasoning应设为false
+          // 否则保持之前的值（允许从思考过程切换到正式内容）
+          const newIsReasoning = isReasoning === false ? false : (lastMessage.is_reasoning || false);
           updated[updated.length - 1] = {
             ...lastMessage,
             content: lastMessage.content + chunk,
