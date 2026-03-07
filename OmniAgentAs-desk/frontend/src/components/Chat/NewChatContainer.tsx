@@ -627,11 +627,14 @@ const NewChatContainer: React.FC = () => {
         messages,
         sessionId,
         sessionTitle,
-        timestamp: Date.now(), // 🔴 修复：添加时间戳，用于判断新旧
+        timestamp: Date.now(),
         scrollPosition: messagesEndRef.current?.parentElement?.scrollTop || 0,
+        // 保存暂停/中断状态，避免页面切换时状态丢失
+        isPaused,
+        isReceiving,
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      console.log("💾 保存会话状态:", sessionId, sessionTitle);
+      console.log("💾 保存会话状态:", sessionId, sessionTitle, { isPaused, isReceiving });
     }
   };
 
@@ -666,6 +669,14 @@ const NewChatContainer: React.FC = () => {
           // 【小新第二修复 2026-03-02】从sessionStorage恢复时也更新ref
           currentSessionIdRef.current = state.sessionId;
           setSessionTitle(state.sessionTitle || "会话");
+
+          // 恢复暂停/中断状态
+          if (state.isPaused !== undefined) {
+            setIsPaused(state.isPaused);
+            isPausedRef.current = state.isPaused;
+            console.log("🔄 恢复暂停状态:", state.isPaused);
+          }
+          // 注意：isReceiving 状态不需要恢复，因为页面切换回来后需要重新开始接收
 
           // 🔴 修复：根据保存的标记决定是否滚动到底部
           if (state.shouldScrollToBottom) {
@@ -735,6 +746,12 @@ const NewChatContainer: React.FC = () => {
                 setMessages(state.messages);
                 if (state.sessionTitle) {
                   setSessionTitle(state.sessionTitle);
+                }
+                // 恢复暂停状态
+                if (state.isPaused !== undefined) {
+                  setIsPaused(state.isPaused);
+                  isPausedRef.current = state.isPaused;
+                  console.log("🔄 恢复暂停状态:", state.isPaused);
                 }
                 // 滚动到底部
                 scrollToBottomDelayed();
