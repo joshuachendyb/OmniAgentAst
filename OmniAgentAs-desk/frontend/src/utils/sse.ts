@@ -572,6 +572,11 @@ const processSSEData = (
         onShowSteps?.(false);
         // 传递 is_reasoning 和 reasoning 区分思考过程和最终答案
         onChunk?.(chunkContent, rawData.is_reasoning || false, rawData.reasoning || "");
+        
+        // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
+        // 这样MessageItem可以遍历并分别显示思考过程和正式内容
+        setExecutionSteps((prev) => [...prev, step]);
+        onStep?.(step);
         break;
       }
 

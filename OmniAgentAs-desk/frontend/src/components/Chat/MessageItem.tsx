@@ -553,47 +553,87 @@ const isUser = message.role === "user";
                 <StepRow key={`thought-${index}`} step={step} />
               ))}
 
-            {/* 4. 最终答案content - 思考/执行之后 【小沈修复】添加思考过程样式区分 */}
-            <div
-              style={{
-                wordBreak: "break-word",
-                overflowWrap: "break-word",
-                paddingRight: 32,
-                // 【小沈修复】思考过程使用灰色斜体样式，与正式回答区分
-                ...(message.is_reasoning ? {
-                  color: '#888',
-                  fontStyle: 'italic',
-                  fontSize: '0.95em',
-                } : {}),
-              }}
-              className={
-                message.content === "🤔 AI 正在思考..." && message.isStreaming
-                  ? "thinking-message"
-                  : message.isError
-                  ? "error-message"
-                  : message.is_reasoning
-                  ? "reasoning-message"
-                  : ""
-              }
-            >
-              {/* 【小沈修复】思考过程添加标签提示 */}
-              {message.is_reasoning && (
-                <span style={{ 
-                  color: '#888', 
-                  fontSize: '0.85em', 
-                  marginRight: 4,
-                  fontWeight: 500,
-                }}>
-                  💭 思考中:
-                </span>
-              )}
-              {message.content && typeof message.content === 'string' 
-                ? message.content 
-                : String(message.content || '')}
-              {(message.isStreaming ?? false) && (
-                <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
-              )}
-            </div>
+            {/* 【小沈修复】4. AI回复chunk - 遍历executionSteps分别显示思考过程和正式内容 */}
+            {message.executionSteps
+              ?.filter(step => step.type === "chunk")
+              .map((step, index) => {
+                const isReasoning = step.is_reasoning === true;
+                return (
+                  <span
+                    key={`chunk-${index}`}
+                    style={{
+                      // 思考过程：灰色斜体；正式内容：正常黑色
+                      ...(isReasoning ? {
+                        color: '#888',
+                        fontStyle: 'italic',
+                        fontSize: '0.95em',
+                        display: 'block',
+                        marginTop: 4,
+                      } : {
+                        color: '#000',
+                        display: 'inline',
+                      }),
+                    }}
+                  >
+                    {/* 思考过程添加标签 */}
+                    {isReasoning && index === 0 && (
+                      <span style={{ 
+                        color: '#888', 
+                        fontSize: '0.85em', 
+                        marginRight: 4,
+                        fontWeight: 500,
+                      }}>
+                        💭 思考中:
+                      </span>
+                    )}
+                    {step.answer_content || step.content || ''}
+                  </span>
+                );
+              })}
+
+            {/* 5. 最终答案content - 如果没有executionSteps则回退到content显示 */}
+            {(!message.executionSteps || message.executionSteps.filter(s => s.type === "chunk").length === 0) && (
+              <div
+                style={{
+                  wordBreak: "break-word",
+                  overflowWrap: "break-word",
+                  paddingRight: 32,
+                  // 【小沈修复】思考过程使用灰色斜体样式，与正式回答区分
+                  ...(message.is_reasoning ? {
+                    color: '#888',
+                    fontStyle: 'italic',
+                    fontSize: '0.95em',
+                  } : {}),
+                }}
+                className={
+                  message.content === "🤔 AI 正在思考..." && message.isStreaming
+                    ? "thinking-message"
+                    : message.isError
+                    ? "error-message"
+                    : message.is_reasoning
+                    ? "reasoning-message"
+                    : ""
+                }
+              >
+                {/* 【小沈修复】思考过程添加标签提示 */}
+                {message.is_reasoning && (
+                  <span style={{ 
+                    color: '#888', 
+                    fontSize: '0.85em', 
+                    marginRight: 4,
+                    fontWeight: 500,
+                  }}>
+                    💭 思考中:
+                  </span>
+                )}
+                {message.content && typeof message.content === 'string' 
+                  ? message.content 
+                  : String(message.content || '')}
+                {(message.isStreaming ?? false) && (
+                  <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
+                )}
+              </div>
+            )}
           </>
 
           {/* CSS 动画 */}
