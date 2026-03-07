@@ -715,7 +715,16 @@ async def chat_stream(request: ChatRequest):
                     yield f"data: {json.dumps(error_data)}\n\n"
                     return
                 
-                observation1_data = {'type': 'observation', 'step': 1, 'content': '安全检测通过'}
+                # 【小健检查修复】遵循字段设计原则5：禁止兼容字段
+                # 删除 content 字段，使用核心字段 thought/action/result
+                observation1_data = {
+                    'type': 'observation',
+                    'step': 1,
+                    'thought': '',  # 安全检测没有思考过程
+                    'action': 'security_check',  # 执行的动作
+                    'observation': {'is_safe': is_safe, 'risk': risk},  # 原始结果
+                    'result': f'安全检测{"通过" if is_safe else "未通过"}'  # 清洗后的文本
+                }
                 logger.info(f"[Step observation] 发送observation步骤: {json.dumps(observation1_data, ensure_ascii=False)}")
                 yield f"data: {json.dumps(observation1_data)}\n\n"
                 await asyncio.sleep(0.3)
