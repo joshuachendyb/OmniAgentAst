@@ -680,6 +680,7 @@ async def chat_stream(request: ChatRequest):
             # 【原则4整改】字段拆分：content → thinking_prompt
             thought_data = {'type': 'thought', 'thinking_prompt': '正在分析任务...'}
             logger.info(f"[Step thought] 发送thought步骤: {json.dumps(thought_data, ensure_ascii=False)}")
+            logger.info(f"🔍🔍DEBUG🔍 [] 即将发送thought事件给前端 🔍🔍🔍")
             yield f"data: {json.dumps(thought_data)}\n\n"
             await asyncio.sleep(0.3)
             
