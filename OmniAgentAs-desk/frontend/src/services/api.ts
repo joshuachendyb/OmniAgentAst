@@ -638,6 +638,7 @@ export interface Message {
   timestamp: string;
   execution_steps?: ExecutionStep[];
   display_name?: string; // 前端小新代修改：模型显示名称
+  is_reasoning?: boolean; // 【小沈修复】是否为思考过程（用于样式区分）
 }
 
 // ⭐ 新增：获取会话消息响应（包含新字段）

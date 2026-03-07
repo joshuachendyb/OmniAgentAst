@@ -252,14 +252,14 @@ const NewChatContainer: React.FC = () => {
         return prev;
       });
     }, []),
-     // onChunk - 收到内容片段
-    useCallback((chunk: string) => {
-      console.log("🔍 [onChunk] 收到内容片段:", JSON.stringify(chunk).substring(0, 100));
+    // onChunk - 收到内容片段 【小沈修复】添加 isReasoning 参数支持思考过程样式区分
+    useCallback((chunk: string, isReasoning?: boolean, reasoningContent?: string) => {
+      console.log("🔍 [onChunk] 收到内容片段:", JSON.stringify(chunk).substring(0, 100), "isReasoning:", isReasoning);
       
       // ⭐ 暂停时存入缓冲区，不直接显示
       if (isPausedRef.current) {
         console.log("⏸️ [onChunk] 暂停中，存入缓冲区");
-        displayBufferRef.current.push({ type: "chunk", content: chunk });
+        displayBufferRef.current.push({ type: "chunk", content: chunk, isReasoning });
         return;
       }
       
@@ -271,9 +271,12 @@ const NewChatContainer: React.FC = () => {
           lastMessage.isStreaming
         ) {
           const updated = [...prev];
+          // 【小沈修复】如果是思考过程，设置 is_reasoning 标记
+          const newIsReasoning = isReasoning ? true : lastMessage.is_reasoning;
           updated[updated.length - 1] = {
             ...lastMessage,
             content: lastMessage.content + chunk,
+            is_reasoning: newIsReasoning,
           };
           return updated;
         }

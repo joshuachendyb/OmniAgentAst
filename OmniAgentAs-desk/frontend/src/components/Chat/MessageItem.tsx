@@ -552,21 +552,40 @@ const isUser = message.role === "user";
                 <StepRow key={`thought-${index}`} step={step} />
               ))}
 
-            {/* 4. 最终答案content - 思考/执行之后 */}
+            {/* 4. 最终答案content - 思考/执行之后 【小沈修复】添加思考过程样式区分 */}
             <div
               style={{
                 wordBreak: "break-word",
                 overflowWrap: "break-word",
                 paddingRight: 32,
+                // 【小沈修复】思考过程使用灰色斜体样式，与正式回答区分
+                ...(message.is_reasoning ? {
+                  color: '#888',
+                  fontStyle: 'italic',
+                  fontSize: '0.95em',
+                } : {}),
               }}
               className={
                 message.content === "🤔 AI 正在思考..." && message.isStreaming
                   ? "thinking-message"
                   : message.isError
                   ? "error-message"
+                  : message.is_reasoning
+                  ? "reasoning-message"
                   : ""
               }
             >
+              {/* 【小沈修复】思考过程添加标签提示 */}
+              {message.is_reasoning && (
+                <span style={{ 
+                  color: '#888', 
+                  fontSize: '0.85em', 
+                  marginRight: 4,
+                  fontWeight: 500,
+                }}>
+                  💭 思考中:
+                </span>
+              )}
               {message.content && typeof message.content === 'string' 
                 ? message.content 
                 : String(message.content || '')}
@@ -578,7 +597,8 @@ const isUser = message.role === "user";
 
           {/* CSS 动画 */}
           {(message.content === "🤔 AI 正在思考..." && message.isStreaming) ||
-          message.isError ? (
+          message.isError ||
+          message.is_reasoning ? (
             <style>{`
               ${
                 message.content === "🤔 AI 正在思考..." && message.isStreaming
@@ -608,6 +628,16 @@ const isUser = message.role === "user";
                 }
                 .error-message {
                   animation: error-fade-in 0.3s ease-out;
+              }
+              `
+                  : ""
+              }
+              ${
+                message.is_reasoning
+                  ? `
+                .reasoning-message {
+                  color: #888;
+                  font-style: italic;
                 }
               `
                   : ""

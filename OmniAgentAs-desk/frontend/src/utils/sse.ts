@@ -68,6 +68,10 @@ export interface ExecutionStep {
   provider?: string;      // AI提供商
   display_name?: string;  // 显示名称
   
+  // === 思考过程与正式内容区分字段（后端新增）===
+  is_reasoning?: boolean;  // 是否为思考过程（true=思考过程，false=正式内容）
+  reasoning?: string;       // 思考过程内容（当 is_reasoning=true 时使用）
+  
   // === 前端额外字段 ===
   timestamp: number;      // 前端生成的时间戳
   contentStart?: number;  // content起始位置（用于流式定位）
@@ -506,6 +510,11 @@ const processSSEData = (
       observation: rawData.observation,  // 保留原始对象，用于调试
       result: rawData.result,            // simplify_observation处理后的文本
       action_input: rawData.action_input, // 工具调用参数
+      
+      // 【小沈修复】思考过程与正式内容区分字段
+      is_reasoning: rawData.is_reasoning || false,
+      reasoning: rawData.reasoning || "",
+      
       timestamp: Date.now(),
     };
 
