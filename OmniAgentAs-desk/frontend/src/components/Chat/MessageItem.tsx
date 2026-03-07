@@ -91,6 +91,7 @@ interface MessageItemProps {
     isStreaming?: boolean;
     isError?: boolean;
     display_name?: string; // 前端小新代修改：显示名称
+    is_reasoning?: boolean; // 【小沈修复】是否为思考过程
   };
   showExecution?: boolean;
 }

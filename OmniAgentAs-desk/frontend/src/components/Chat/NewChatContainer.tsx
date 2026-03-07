@@ -82,6 +82,7 @@ interface Message extends ChatMessage {
   model?: string;
   provider?: string; // 前端小新代修改：提供商
   display_name?: string; // 前端小新代修改：显示名称（如"OpenAI (GPT-4)"）
+  is_reasoning?: boolean; // 【小沈修复】是否为思考过程（用于样式区分）
 }
 
 /**
