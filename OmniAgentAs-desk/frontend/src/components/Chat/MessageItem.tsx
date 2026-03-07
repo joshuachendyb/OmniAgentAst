@@ -128,25 +128,40 @@ const MessageItem: React.FC<MessageItemProps> = ({
   };
 
   /**
-   * 导出消息内容（按文档6.6.3节设计：JSON格式包含executionSteps）
+   * 导出消息内容
+   * - 有执行步骤：导出JSON格式
+   * - 无执行步骤：导出TXT格式
    */
   const handleExport = () => {
     try {
-      // 构建导出数据：包含时间戳和执行步骤数组
-      const exportData = {
-        timestamp: new Date().toLocaleString("zh-CN"),
-        messageId: message.id,
-        role: message.role,
-        content: message.content,
-        executionSteps: message.executionSteps || [],
-      };
+      const hasSteps = message.executionSteps && message.executionSteps.length > 0;
       
-      const jsonStr = JSON.stringify(exportData, null, 2);
-      const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
+      let blob: Blob;
+      let filename: string;
+      
+      if (hasSteps) {
+        // 有执行步骤：导出JSON格式
+        const exportData = {
+          timestamp: new Date().toLocaleString("zh-CN"),
+          messageId: message.id,
+          role: message.role,
+          content: message.content,
+          executionSteps: message.executionSteps,
+        };
+        const jsonStr = JSON.stringify(exportData, null, 2);
+        blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
+        filename = `execution_steps_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
+      } else {
+        // 无执行步骤：导出TXT格式
+        const content = message.content || "";
+        blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+        filename = `message_${message.id}_${new Date().toLocaleString("zh-CN").replace(/[/:]/g, "-")}.txt`;
+      }
+      
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `execution_steps_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
