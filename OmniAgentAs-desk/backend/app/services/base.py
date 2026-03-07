@@ -38,12 +38,15 @@ class ChatResponse:
 class StreamChunk:
     """流式响应片段 - 小沈代修改【修复问题 7】"""
     def __init__(self, content: str, model: str, is_done: bool = False, 
-                 error: Optional[str] = None, error_type: Optional[str] = None):
+                 error: Optional[str] = None, error_type: Optional[str] = None,
+                 reasoning: Optional[str] = None, is_reasoning: bool = False):
         self.content = content
         self.model = model
         self.is_done = is_done
         self.error = error  # 新增：错误信息
         self.error_type = error_type  # 新增：错误类型
+        self.reasoning = reasoning  # 新增：思考过程内容
+        self.is_reasoning = is_reasoning  # 新增：是否是思考过程
 
 
 class BaseAIService:
@@ -185,9 +188,27 @@ class BaseAIService:
                             
                             finish_reason = choices[0].get("finish_reason", "")
                             # 【调试】记录content
-                            logger.info(f"[AI Response Content] model={self.model}, content_length={len(content) if content else 0}, finish_reason={finish_reason}")
-                            if content:
-                                yield StreamChunk(content=content, model=self.model, is_done=False)
+                            logger.info(f"[AI Response Content] model={self.model}, content_length={len(content) if content else 0}, reasoning_length={len(reasoning_content) if reasoning_content else 0}, finish_reason={finish_reason}")
+                            
+                            # 【小沈修复】分别返回思考过程和最终内容
+                            # 先返回思考过程（如果有）
+                            if reasoning_content:
+                                yield StreamChunk(
+                                    content=reasoning_content, 
+                                    model=self.model, 
+                                    is_done=False,
+                                    reasoning=reasoning_content,
+                                    is_reasoning=True
+                                )
+                            # 再返回实际内容（如果有，且不是由reasoning转换来的）
+                            if content and content != reasoning_content:
+                                yield StreamChunk(
+                                    content=content, 
+                                    model=self.model, 
+                                    is_done=False,
+                                    reasoning="",
+                                    is_reasoning=False
+                                )
                         else:
                             logger.warning("[AI Response] WARNING: choices is empty!")
                     except json.JSONDecodeError as e:

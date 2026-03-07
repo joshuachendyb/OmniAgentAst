@@ -878,8 +878,16 @@ async def chat_stream(request: ChatRequest):
                         # ⭐ 【调试日志】记录每个chunk
                         logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
                         # 逐token发送到前端，【新增】添加provider字段作为兜底
-                        chunk_data = {'type': 'chunk', 'content': chunk.content, 'model': chunk.model, 'provider': ai_service.provider}
-                        logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}")
+                        # 【小沈修复】添加 is_reasoning 和 reasoning 字段区分思考过程
+                        chunk_data = {
+                            'type': 'chunk', 
+                            'content': chunk.content, 
+                            'model': chunk.model, 
+                            'provider': ai_service.provider,
+                            'is_reasoning': getattr(chunk, 'is_reasoning', False),  # 是否思考过程
+                            'reasoning': getattr(chunk, 'reasoning', '')  # 思考过程内容
+                        }
+                        logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}, is_reasoning={chunk_data['is_reasoning']}")
                         yield f"data: {json.dumps(chunk_data)}\n\n"
                     
                     if chunk.is_done:

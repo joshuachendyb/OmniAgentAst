@@ -57,6 +57,10 @@ export interface ExecutionStep {
   display_name?: string;  // 显示名称
   displayName?: string;   // 兼容字段
   
+  // === type=chunk 新增：思考过程字段 ===
+  is_reasoning?: boolean;  // 是否是思考过程
+  reasoning?: string;       // 思考过程内容
+
   // === type=error 字段 ===
   error?: string;         // 错误信息
   
@@ -158,11 +162,12 @@ const calculateReconnectDelay = (attempt: number, baseDelay: number, maxDelay: n
 export const useSSE = (
   config: SSEConfig,
   onStep?: (step: ExecutionStep) => void,
-  onChunk?: (chunk: string) => void,
+  onChunk?: (chunk: string, isReasoning?: boolean, reasoning?: string) => void,
   onComplete?: (fullResponse: string, metadata?: string | SSEMetadata) => void,
   onError?: (error: string | SSEError) => void,
   onPaused?: () => void,
-  onResumed?: () => void
+  onResumed?: () => void,
+  onShowSteps?: (show: boolean) => void  // 新增：控制步骤显示/隐藏
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -307,6 +312,7 @@ export const useSSE = (
               onError,
               onPaused,
               onResumed,
+              onShowSteps,
               setCurrentResponse,
               responseBufferRef,
               setIsReceiving,
@@ -331,6 +337,7 @@ export const useSSE = (
             onError,
             onPaused,
             onResumed,
+            onShowSteps,
             setCurrentResponse,
             responseBufferRef,
             setIsReceiving,
@@ -431,11 +438,12 @@ const processSSEData = (
   handlers: {
     setExecutionSteps: React.Dispatch<React.SetStateAction<ExecutionStep[]>>;
     onStep?: (step: ExecutionStep) => void;
-    onChunk?: (chunk: string) => void;
+    onChunk?: (chunk: string, isReasoning?: boolean, reasoning?: string) => void;
     onComplete?: (fullResponse: string, model?: string) => void;
     onError?: (error: string) => void;
     onPaused?: () => void;
     onResumed?: () => void;
+    onShowSteps?: (show: boolean) => void;
     setCurrentResponse: React.Dispatch<React.SetStateAction<string>>;
     responseBufferRef: React.MutableRefObject<string>;
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
@@ -453,6 +461,7 @@ const processSSEData = (
     onError,
     onPaused,
     onResumed,
+    onShowSteps,
     setCurrentResponse,
     responseBufferRef,
     setIsReceiving,
@@ -522,7 +531,10 @@ const processSSEData = (
       case "chunk": {
         responseBufferRef.current += rawData.content || "";
         setCurrentResponse(responseBufferRef.current);
-        onChunk?.(rawData.content || "");
+        // 【小沈修复】收到chunk时关闭步骤UI，开始显示回复内容
+        onShowSteps?.(false);
+        // 传递 is_reasoning 和 reasoning 区分思考过程和最终答案
+        onChunk?.(rawData.content || "", rawData.is_reasoning || false, rawData.reasoning || "");
         break;
       }
 

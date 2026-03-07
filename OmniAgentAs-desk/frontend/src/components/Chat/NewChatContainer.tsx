@@ -515,6 +515,11 @@ const NewChatContainer: React.FC = () => {
       
       displayBufferRef.current = []; // 清空缓冲区
       setIsPaused(false);
+    }, []),
+    // onShowSteps - 控制步骤显示/隐藏（收到chunk时关闭步骤UI）
+    useCallback((show: boolean) => {
+      console.log("👁️ [onShowSteps] 设置步骤显示状态:", show);
+      setShowExecution(show);
     }, [])
   );
 
