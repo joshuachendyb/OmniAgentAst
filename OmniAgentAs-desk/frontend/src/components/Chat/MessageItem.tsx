@@ -88,8 +88,8 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
                 // 再显示详细的文件列表
                 const obsResult = step.observation?.result;
                 if (obsResult?.entries && Array.isArray(obsResult.entries)) {
-                  const fileList = obsResult.entries.map((entry: any)entry.type === "directory" ? "📁" : => 
-                    `${ "📄"} ${entry.name}`
+                  const fileList = obsResult.entries.map((entry: any) => 
+                    `${entry.type === "directory" ? "📁" : "📄"} ${entry.name}`
                   ).join("\n");
                   output = output ? output + "\n" + fileList : fileList;
                 }
