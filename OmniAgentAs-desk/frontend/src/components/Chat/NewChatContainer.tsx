@@ -99,6 +99,10 @@ const NewChatContainer: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [loading, setLoading] = useState(false);
+  // ⭐ 新增：等待时间计时器（正计时）
+  const [waitTime, setWaitTime] = useState(0);
+  const waitTimerRef = useRef<number | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);  // ⭐ 新增：重试状态
   const [isPaused, setIsPaused] = useState(false);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -423,6 +427,13 @@ const NewChatContainer: React.FC = () => {
 
          console.log("🔍 [onComplete] SSE流完成，设置loading=false");
          setLoading(false);
+         // ⭐ 停止等待计时器
+         if (waitTimerRef.current) {
+           clearInterval(waitTimerRef.current);
+           waitTimerRef.current = null;
+         }
+         setWaitTime(0);
+         setIsRetrying(false);
          // 【小新第三修复 2026-03-02】清理ref和state
          pendingMessageRef.current = null; // 同步清理
          setPendingMessage(null); // 异步清理
@@ -478,6 +489,13 @@ const NewChatContainer: React.FC = () => {
          });
         console.log("🔍 [onError] 错误处理完成，设置loading=false");
         setLoading(false);
+        // ⭐ 停止等待计时器
+        if (waitTimerRef.current) {
+          clearInterval(waitTimerRef.current);
+          waitTimerRef.current = null;
+        }
+        setWaitTime(0);
+        setIsRetrying(false);
         console.log("✅ [onError] 处理完成");
        },
        []
@@ -520,6 +538,13 @@ const NewChatContainer: React.FC = () => {
     useCallback((show: boolean) => {
       console.log("👁️ [onShowSteps] 设置步骤显示状态:", show);
       setShowExecution(show);
+    }, []),
+    // ⭐ onRetry - 重试事件
+    useCallback((message: string) => {
+      console.log("🔄 [onRetry] 收到重试事件:", message);
+      setIsRetrying(true);  // 设置重试状态
+      // 重置计时器（重新开始计时）
+      setWaitTime(0);
     }, [])
   );
 
@@ -1288,6 +1313,15 @@ const NewChatContainer: React.FC = () => {
     console.log("  userMessage:", userMessage);
     
     setLoading(true);
+    // ⭐ 启动等待计时器
+    setWaitTime(0);
+    setIsRetrying(false);
+    if (waitTimerRef.current) {
+      clearInterval(waitTimerRef.current);
+    }
+    waitTimerRef.current = setInterval(() => {
+      setWaitTime(t => t + 1);
+    }, 1000);
     clearSteps();
 
     // 【修复问题2】生成taskId用于中断功能
@@ -1422,12 +1456,18 @@ const NewChatContainer: React.FC = () => {
      try {
        console.log("🔍 [handleSend] 开始检查网络连接...");
        const isNetworkOK = await checkNetworkConnection();
-       if (!isNetworkOK) {
-         console.error("❌ [handleSend] 网络连接异常");
-         message.error("网络连接异常，请检查网络后重试");
-         setLoading(false);
-         return;
-       }
+        if (!isNetworkOK) {
+          console.error("❌ [handleSend] 网络连接异常");
+          message.error("网络连接异常，请检查网络后重试");
+          setLoading(false);
+          // ⭐ 停止等待计时器
+          if (waitTimerRef.current) {
+            clearInterval(waitTimerRef.current);
+            waitTimerRef.current = null;
+          }
+          setWaitTime(0);
+          return;
+        }
        console.log("✅ [handleSend] 网络连接正常");
      } catch (error) {
        console.warn("⚠️ [handleSend] 网络检查异常:", error);
@@ -1625,6 +1665,12 @@ const NewChatContainer: React.FC = () => {
       setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
     } finally {
       setLoading(false);
+      // ⭐ 停止等待计时器
+      if (waitTimerRef.current) {
+        clearInterval(waitTimerRef.current);
+        waitTimerRef.current = null;
+      }
+      setWaitTime(0);
     }
   };
 
@@ -1908,6 +1954,14 @@ const NewChatContainer: React.FC = () => {
 
       {/* 输入区域 */}
       <Space direction="vertical" style={{ width: "100%" }}>
+        {/* ⭐ 等待时间显示（正计时） */}
+        {loading && waitTime > 0 && (
+          <div style={{ marginTop: 8, marginBottom: 4 }}>
+            <Tag color={waitTime > 30 ? "error" : waitTime > 15 ? "warning" : "processing"}>
+              {isRetrying ? "🔄 正在重试..." : `⏱️ 已等待 ${waitTime} 秒`}
+            </Tag>
+          </div>
+        )}
         {/* 中断和暂停按钮 */}
         {loading && (
           <Space style={{ marginTop: 8, marginBottom: 8 }}>

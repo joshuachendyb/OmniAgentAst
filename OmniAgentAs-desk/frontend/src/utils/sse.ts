@@ -37,7 +37,8 @@ export interface SSEMetadata {
  */
 export interface ExecutionStep {
   // === 通用字段 ===
-  type: "thought" | "action" | "observation" | "chunk" | "final" | "error" | "interrupted" | "start" | "paused" | "resumed";
+  // ⭐ 新增retrying类型用于重试提示
+  type: "thought" | "action" | "observation" | "chunk" | "final" | "error" | "interrupted" | "start" | "paused" | "resumed" | "retrying";
   content?: string;        // 前端显示用：根据type使用不同字段填充
   
   // === 思考/动作提示字段（后端字段拆分） ===
@@ -170,7 +171,9 @@ export const useSSE = (
   onError?: (error: string | SSEError) => void,
   onPaused?: () => void,
   onResumed?: () => void,
-  onShowSteps?: (show: boolean) => void  // 新增：控制步骤显示/隐藏
+  onShowSteps?: (show: boolean) => void,  // 新增：控制步骤显示/隐藏
+  // ⭐ 新增：重试回调
+  onRetry?: (message: string) => void
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -192,7 +195,7 @@ export const useSSE = (
     maxDelay: 10000,
   });
   const reconnectAttemptsRef = useRef(0);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
   const pendingMessageRef = useRef<{ content: string; sessionId?: string } | null>(null);
 
   /**
@@ -316,6 +319,7 @@ export const useSSE = (
               onPaused,
               onResumed,
               onShowSteps,
+              onRetry,
               setCurrentResponse,
               responseBufferRef,
               setIsReceiving,
@@ -341,6 +345,7 @@ export const useSSE = (
             onPaused,
             onResumed,
             onShowSteps,
+            onRetry,
             setCurrentResponse,
             responseBufferRef,
             setIsReceiving,
@@ -405,7 +410,7 @@ export const useSSE = (
       // 请求结束后重置
       isProcessingRef.current = false;
     },
-    [config, disconnect, clearSteps, onStep, onChunk, onComplete, onError]
+    [config, disconnect, clearSteps, onStep, onChunk, onComplete, onError, onRetry]
   );
 
   // 组件卸载时清理
@@ -447,6 +452,7 @@ const processSSEData = (
     onPaused?: () => void;
     onResumed?: () => void;
     onShowSteps?: (show: boolean) => void;
+    onRetry?: (message: string) => void;
     setCurrentResponse: React.Dispatch<React.SetStateAction<string>>;
     responseBufferRef: React.MutableRefObject<string>;
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
@@ -465,6 +471,7 @@ const processSSEData = (
     onPaused,
     onResumed,
     onShowSteps,
+    onRetry,
     setCurrentResponse,
     responseBufferRef,
     setIsReceiving,
@@ -612,6 +619,14 @@ const processSSEData = (
         // 使用 message 填充 content
         step.content = step.message || "";
         onResumed?.();
+        break;
+      }
+
+      // ⭐ 新增：重试状态处理
+      case "retrying": {
+        // 使用 message 填充 content
+        step.content = step.message || "正在重试...";
+        onRetry?.(step.message || "正在重试...");
         break;
       }
     }
