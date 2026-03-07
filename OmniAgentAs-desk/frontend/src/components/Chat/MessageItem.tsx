@@ -72,9 +72,9 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
         {step.type === "observation" && (
           <>{typeof step.result === "string" ? step.result : JSON.stringify(step.result)}</>
         )}
-        {step.type === "thought" && step.thinking_prompt}
-        {step.type === "final" && step.answer_content}
-        {step.type === "error" && step.error_message}
+        {step.type === "thought" && (step.thinking_prompt || "")}
+        {step.type === "final" && (step.answer_content || "")}
+        {step.type === "error" && (step.error_message || "")}
       </span>
     </div>
   );
@@ -128,16 +128,25 @@ const MessageItem: React.FC<MessageItemProps> = ({
   };
 
   /**
-   * 导出消息内容
+   * 导出消息内容（按文档6.6.3节设计：JSON格式包含executionSteps）
    */
   const handleExport = () => {
     try {
-      const content = message.content || "";
-      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      // 构建导出数据：包含时间戳和执行步骤数组
+      const exportData = {
+        timestamp: new Date().toLocaleString("zh-CN"),
+        messageId: message.id,
+        role: message.role,
+        content: message.content,
+        executionSteps: message.executionSteps || [],
+      };
+      
+      const jsonStr = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `消息_${message.id}_${new Date().toLocaleString("zh-CN").replace(/[/:]/g, "-")}.txt`;
+      a.download = `execution_steps_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
