@@ -546,12 +546,18 @@ const processSSEData = (
       case "thought": {
         // 使用 thinking_prompt 填充 content
         step.content = step.thinking_prompt || "";
+        // 添加到步骤数组，显示思考过程
+        setExecutionSteps((prev) => [...prev, step]);
+        onStep?.(step);
         break;
       }
 
       case "action": {
         // 使用 action_description 填充 content
         step.content = step.action_description || "";
+        // 添加到步骤数组，显示执行动作
+        setExecutionSteps((prev) => [...prev, step]);
+        onStep?.(step);
         break;
       }
 
