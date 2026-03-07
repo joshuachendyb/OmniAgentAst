@@ -80,17 +80,16 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
             {/* 显示执行结果 */}
             <div>
               {(() => {
-                if (typeof step.result === "string") {
-                  // 如果是字符串，直接显示
-                  return step.result;
-                }
-                // 检查 result 对象中是否有 entries（从 observation.result 中获取）
-                const result = step.result as any;
-                const entries = result?.entries || step.observation?.result?.entries;
-                if (entries && Array.isArray(entries)) {
-                  return entries.map((entry: any) => 
+                // 优先从 observation.result 获取文件列表
+                const obsResult = step.observation?.result;
+                if (obsResult?.entries && Array.isArray(obsResult.entries)) {
+                  return obsResult.entries.map((entry: any) => 
                     `${entry.type === "directory" ? "📁" : "📄"} ${entry.name}`
                   ).join("\n");
+                }
+                // 如果是字符串，直接显示
+                if (typeof step.result === "string") {
+                  return step.result;
                 }
                 return JSON.stringify(step.result);
               })()}
