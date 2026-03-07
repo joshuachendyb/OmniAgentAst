@@ -25,6 +25,7 @@ import {
   CheckOutlined,
   ThunderboltOutlined,
   LoadingOutlined,
+  DownloadOutlined,
 } from "@ant-design/icons";
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
@@ -123,6 +124,27 @@ const MessageItem: React.FC<MessageItemProps> = ({
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
       antMessage.error("复制失败");
+    }
+  };
+
+  /**
+   * 导出消息内容
+   */
+  const handleExport = () => {
+    try {
+      const content = message.content || "";
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `消息_${message.id}_${new Date().toLocaleString("zh-CN").replace(/[/:]/g, "-")}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      antMessage.success("导出成功");
+    } catch (err) {
+      antMessage.error("导出失败");
     }
   };
 
@@ -427,6 +449,33 @@ const isUser = message.role === "user";
                 position: "absolute",
                 top: 4,
                 right: 6,
+                opacity: 0,
+                transition: "opacity 0.2s ease",
+                background: "transparent",
+                border: "none",
+                boxShadow: "none",
+                padding: "0 4px",
+                minHeight: "auto",
+                height: "20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            />
+          </Tooltip>
+
+          {/* 导出按钮 */}
+          <Tooltip title="导出">
+            <Button
+              className="copy-button"
+              type="text"
+              size="small"
+              icon={<DownloadOutlined style={{ color: isUser ? "rgba(255,255,255,0.9)" : "#595959" }} />}
+              onClick={handleExport}
+              style={{
+                position: "absolute",
+                top: 4,
+                right: 30,
                 opacity: 0,
                 transition: "opacity 0.2s ease",
                 background: "transparent",
