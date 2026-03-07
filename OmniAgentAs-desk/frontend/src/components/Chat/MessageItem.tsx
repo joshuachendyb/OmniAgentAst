@@ -70,7 +70,16 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
           </>
         )}
         {step.type === "observation" && (
-          <>{typeof step.result === "string" ? step.result : JSON.stringify(step.result)}</>
+          <>
+            {/* 显示 Agent 的思考过程 */}
+            {step.thought && (
+              <div style={{ color: "#888", fontStyle: "italic", marginBottom: 4, fontSize: "0.95em" }}>
+                💭 {step.thought}
+              </div>
+            )}
+            {/* 显示执行结果 */}
+            <div>{typeof step.result === "string" ? step.result : JSON.stringify(step.result)}</div>
+          </>
         )}
         {step.type === "thought" && (step.thinking_prompt || "")}
         {step.type === "final" && (step.answer_content || "")}
@@ -392,6 +401,12 @@ const isUser = message.role === "user";
   const hasExecution = message.executionSteps?.some(
     step => step.type === "action" || step.type === "observation"
   ) ?? false;
+
+  // 调试日志：检查执行步骤
+  if (message.role === "assistant" && message.executionSteps && message.executionSteps.length > 0) {
+    console.log("🔍 MessageItem - executionSteps:", JSON.stringify(message.executionSteps.map(s => ({ type: s.type, action_description: s.action_description, result: s.result }))));
+    console.log("🔍 MessageItem - hasExecution:", hasExecution);
+  }
 
   return (
     <div

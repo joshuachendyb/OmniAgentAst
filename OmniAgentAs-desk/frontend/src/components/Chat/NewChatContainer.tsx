@@ -255,7 +255,7 @@ const NewChatContainer: React.FC = () => {
       });
     }, []),
     // onChunk - 收到内容片段 【小沈修复】添加 isReasoning 参数支持思考过程样式区分
-    useCallback((chunk: string, isReasoning?: boolean, reasoningContent?: string) => {
+    useCallback((chunk: string, isReasoning?: boolean, _reasoningContent?: string) => {
       console.log("🔍 [onChunk] 收到内容片段:", JSON.stringify(chunk).substring(0, 100), "isReasoning:", isReasoning);
       
       // ⭐ 暂停时存入缓冲区，不直接显示

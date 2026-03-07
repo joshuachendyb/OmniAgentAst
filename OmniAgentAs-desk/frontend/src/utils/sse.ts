@@ -451,7 +451,7 @@ const processSSEData = (
     setExecutionSteps: React.Dispatch<React.SetStateAction<ExecutionStep[]>>;
     onStep?: (step: ExecutionStep) => void;
     onChunk?: (chunk: string, isReasoning?: boolean, reasoning?: string) => void;
-    onComplete?: (fullResponse: string, model?: string) => void;
+    onComplete?: (fullResponse: string, metadata?: string | SSEMetadata) => void;
     onError?: (error: string) => void;
     onPaused?: () => void;
     onResumed?: () => void;
@@ -480,7 +480,7 @@ const processSSEData = (
     responseBufferRef,
     setIsReceiving,
     setIsConnected,
-    disconnect,
+    disconnect: _disconnect,
     setServerTaskId,
   } = handlers;
 
