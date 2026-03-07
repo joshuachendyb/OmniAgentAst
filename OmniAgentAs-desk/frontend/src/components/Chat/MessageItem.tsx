@@ -78,7 +78,12 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
               </div>
             )}
             {/* 显示执行结果 */}
-            <div>{typeof step.result === "string" ? step.result : JSON.stringify(step.result)}</div>
+            <div>
+              {(() => {
+                console.log("🔍 [StepRow] observation result:", step.result);
+                return typeof step.result === "string" ? step.result : JSON.stringify(step.result);
+              })()}
+            </div>
           </>
         )}
         {step.type === "thought" && (step.thinking_prompt || "")}
@@ -402,12 +407,6 @@ const isUser = message.role === "user";
     step => step.type === "action" || step.type === "observation"
   ) ?? false;
 
-  // 调试日志：检查执行步骤
-  if (message.role === "assistant" && message.executionSteps && message.executionSteps.length > 0) {
-    console.log("🔍 MessageItem - executionSteps:", JSON.stringify(message.executionSteps.map(s => ({ type: s.type, action_description: s.action_description, result: s.result }))));
-    console.log("🔍 MessageItem - hasExecution:", hasExecution);
-  }
-
   return (
     <div
       style={{
@@ -535,7 +534,7 @@ const isUser = message.role === "user";
             />
           </Tooltip>
 
-          {/* 优化后的消息气泡结构 - 按照文档6.3.1节 */}
+          {/* 优化后的消息气泡结构 - 按照文档6.6.5节：按时间顺序线性渲染 */}
           <>
             {/* 1. 思考步骤 - 直接显示在最前面，不折叠 */}
             {message.executionSteps
@@ -544,32 +543,77 @@ const isUser = message.role === "user";
                 <StepRow key={`thought-${index}`} step={step} />
               ))}
 
-            {/* 2. 执行步骤 - 可折叠 */}
+            {/* 2. 执行步骤 - 按 action 分组，每组一个折叠面板 */}
             {hasExecution && message.role === "assistant" && (
-              <Collapse
-                defaultActiveKey={
-                  message.isStreaming ?? false ? ["execution"] : []
-                }
-                size="small"
-                style={{ marginBottom: 8 }}
-              >
-                <Panel
-                  header={
-                    <Space>
-                      <ThunderboltOutlined />
-                      <span>执行详情</span>
-                      {(message.isStreaming ?? false) && <LoadingOutlined />}
-                    </Space>
+              <div>
+                {(() => {
+                  const actionObservationSteps = message.executionSteps?.filter(
+                    step => step.type === "action" || step.type === "observation"
+                  ) || [];
+                  
+                  // 将 action 和后续的 observation 分组
+                  const groups: ExecutionStep[][] = [];
+                  let currentGroup: ExecutionStep[] = [];
+                  
+                  // 调试：打印原始步骤
+                  console.log("🔍 分组原始步骤:", actionObservationSteps.map(s => ({ type: s.type, action_description: s.action_description })));
+                  
+                  for (const step of actionObservationSteps) {
+                    if (step.type === "action") {
+                      // 如果当前组有内容，先保存
+                      if (currentGroup.length > 0) {
+                        groups.push(currentGroup);
+                      }
+                      // 开始新组
+                      currentGroup = [step];
+                    } else if (step.type === "observation") {
+                      // observation 加入当前组
+                      currentGroup.push(step);
+                    }
                   }
-                  key="execution"
-                >
-                  {message.executionSteps
-                    ?.filter(step => step.type === "action" || step.type === "observation")
-                    .map((step, index) => (
-                      <StepRow key={index} step={step} />
-                    ))}
-                </Panel>
-              </Collapse>
+                  // 保存最后一个组
+                  if (currentGroup.length > 0) {
+                    groups.push(currentGroup);
+                  }
+                  
+                  // 调试：打印分组结果
+                  console.log("🔍 分组结果:", groups.length, "组", groups.map((g, i) => ({ 
+                    groupIndex: i, 
+                    steps: g.map(s => s.type) 
+                  })));
+                  
+                  // 渲染每个组（折叠面板）
+                  console.log("🔍 渲染折叠面板: groups.length =", groups.length);
+                  return groups.map((group, groupIndex) => {
+                    console.log("🔍 渲染第" + (groupIndex + 1) + "个折叠面板, 步骤数:", group.length);
+                    return (
+                    <Collapse
+                      key={`execution-${groupIndex}-${group.length}`}
+                      defaultActiveKey={
+                        message.isStreaming ?? false ? [`execution-${groupIndex}`] : []
+                      }
+                      size="small"
+                      style={{ marginBottom: 8 }}
+                    >
+                      <Panel
+                        header={
+                          <Space>
+                            <ThunderboltOutlined />
+                            <span>执行详情 {groupIndex + 1}</span>
+                            {(message.isStreaming ?? false) && <LoadingOutlined />}
+                          </Space>
+                        }
+                        key={`execution-${groupIndex}`}
+                      >
+                        {group.map((step, stepIndex) => (
+                          <StepRow key={stepIndex} step={step} />
+                        ))}
+                      </Panel>
+                    </Collapse>
+                    );
+                  });
+                })()}
+              </div>
             )}
 
             {/* 【小沈修复】4. AI回复chunk - 先分组相同类型的chunk，再分别显示 */}
