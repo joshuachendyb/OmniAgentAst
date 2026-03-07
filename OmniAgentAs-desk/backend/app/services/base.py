@@ -162,12 +162,10 @@ class BaseAIService:
                         choices = data.get("choices", [])
                         
                         content = ""
-                        outer_content = ""
                         reasoning_content = ""
                         if choices:
                             delta = choices[0].get("delta", {})
                             content = delta.get("content", "")
-                            outer_content = data.get("content", "")  # 外层的 content 字段
                             
                             # 【小新修复】LongCat API 可能返回不同的字段名
                             # 尝试多种可能的字段名
@@ -178,11 +176,10 @@ class BaseAIService:
                                 ""
                             )
                             
-                            # 【修复】只使用 delta.content 或 reasoning_content 作为增量内容
-                            # 不使用 outer_content，因为它包含累积的完整内容会导致重复
+                            # 【修复】保持 reasoning_content 和 content 独立，不要混在一起
+                            # reasoning_content 是思考过程，content 是正式回答
                             # LongCat 等模型在流式模式下使用 reasoning_content
-                            if not content and reasoning_content:
-                                content = reasoning_content
+                            # 不再将 reasoning_content 赋给 content
                             
                             # 注意：不再使用 outer_content，避免重复累积问题
                             
@@ -200,8 +197,8 @@ class BaseAIService:
                                     reasoning=reasoning_content,
                                     is_reasoning=True
                                 )
-                            # 再返回实际内容（如果有，且不是由reasoning转换来的）
-                            if content and content != reasoning_content:
+                            # 再返回实际内容（如果有）
+                            if content:
                                 yield StreamChunk(
                                     content=content, 
                                     model=self.model, 
