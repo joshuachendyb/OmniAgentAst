@@ -10,6 +10,129 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 险分析。
 
 
+字节跳动 豆包（网页版）
+操作路径：打开豆包网页版 → 进入「豆包插件」→ 找到「添加自定义 MCP 插件」→ 填入 SSE 地址 https://epexegetic-uncrated-steffanie.ngrok-free.dev/sse 和你的认证 Token → 保存即可，平台会自动识别所有打印工具，不用写任何代码。
+月之暗面 Kimi（网页版）
+操作路径：打开 Kimi 网页版 → 左下角设置 → 找到「MCP 服务配置」→ 填入 SSE 地址和 Token → 保存即可，原生支持 MCP 全协议。
+阿里 通义千问（网页版）
+操作路径：打开通义千问网页版 → 进入「插件市场」→ 找到「自定义 MCP 插件」→ 填入地址和 Token 即可。
+
+"""
+import asyncio
+import logging
+import os
+import json
+from mcp.server import Server
+from mcp.server.sse import SseServerTransport
+from starlette.applications import Starlette
+from starlette.routing import Route
+from starlette.middleware import Middleware
+from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.authentication import requires, AuthenticationBackend, AuthCredentials, SimpleUser
+from starlette.responses import JSONResponse
+# v304 原有工具
+from tools.com_excel import register_com_excel_tools
+from tools.com_word import register_com_word_tools
+from tools.uia_tools import register_uia_tools
+from tools.smart_execute import register_smart_execute
+from tools.file_tools import register_file_tools
+from tools.window_tools import register_window_tools
+# v305 新增工具
+from tools.snapshot import register_snapshot_tools
+from tools.batch_tools import register_batch_tools
+# 硬件层
+from hardware.capture_card import HDMICaptureCard
+from hardware.hid_controller import CH9329Controller
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("ruyi-pilot-v305")
+# ============================================================
+# 安全配置 (建议通过环境变量设置)
+# ============================================================
+API_KEY = os.getenv("RUYI_API_KEY", "your-secret-key-here") # 请修改此处的密钥或设置环境变量
+class TokenAuthBackend(AuthenticationMiddleware):
+    """
+    简单的 Token 认证中间件，确保只有持有密钥的客户端能连接
+    """
+    async def authenticate(self, request):
+        if "Authorization" not in request.headers:
+            return None
+        auth = request.headers["Authorization"]
+        try:
+            scheme, token = auth.split()
+            if scheme.lower() == 'bearer' and token == API_KEY:
+                return AuthCredentials(["authenticated"]), SimpleUser("remote_user")
+        except ValueError:
+            return None
+        return None
+# ============================================================
+# 初始化硬件
+# ============================================================
+capture_card = HDMICaptureCard()
+hid_controller = CH9329Controller()
+# ============================================================
+# 创建 MCP Server 实例
+# ============================================================
+server = Server("ruyi-pilot-v305")
+# ============================================================
+# 注册所有工具 (保持不变)
+# ============================================================
+# --- v304 继承工具 ---
+register_com_excel_tools(server, hid_controller)
+register_com_word_tools(server, hid_controller)
+register_uia_tools(server, hid_controller)
+register_smart_execute(server, hid_controller, capture_card)
+register_file_tools(server, hid_controller)
+register_window_tools(server, hid_controller)
+# --- v305 新增工具 ---
+register_snapshot_tools(server, capture_card, hid_controller)
+register_batch_tools(server, hid_controller, capture_card)
+logger.info("RuyiPilot v305 (SSE模式) 正在初始化...")
+# ============================================================
+# SSE 服务端点配置
+# ============================================================
+sse = SseServerTransport("/messages")
+@requires("authenticated")
+async def handle_sse(request):
+    """
+    处理 SSE 连接请求。
+    客户端通过 GET /sse 建立长连接。
+    """
+    logger.info(f"客户端已连接: {request.client}")
+    async with sse.connect_sse(
+        request.scope,
+        request.receive,
+        request._send,
+    ) as (read_stream, write_stream):
+        await server.run(
+            read_stream,
+            write_stream,
+            server.create_initialization_options()
+        )
+@requires("authenticated")
+async def handle_messages(request):
+    """
+    处理客户端发来的 JSON-RPC 消息。
+    客户端通过 POST /messages 发送指令。
+    """
+    await sse.handle_post_message(request.scope, request.receive, request._send)
+# ============================================================
+# 启动 Web 服务
+# ============================================================
+app = Starlette(
+    debug=True,
+    routes=[
+        Route("/sse", endpoint=handle_sse),               # SSE 入口
+        Route("/messages", endpoint=handle_messages, methods=["POST"]), # 消息处理
+    ],
+    middleware=[Middleware(AuthenticationMiddleware, backend=TokenAuthBackend())],
+    on_startup=[lambda: logger.info("RuyiPilot v305 服务已启动，监听端口 8000")]
+)
+if __name__ == "__main__":
+    import uvicorn
+    # 监听所有网卡接口 (0.0.0.0)，端口 8000
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
 前面提到的那个关于模型的变量名问题非常严重， 我提出的要求务必注释到代码中，要求所有代码编写人员务必遵守。
 另外我看你写代码的时候有下来信息
 

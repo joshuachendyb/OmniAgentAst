@@ -544,8 +544,10 @@ const processSSEData = (
       }
 
       case "thought": {
+        console.log("🔍 [sse thought] 收到thought事件, rawData=", JSON.stringify(rawData));
         // 使用 thinking_prompt 填充 content
         step.content = step.thinking_prompt || "";
+        console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
         // 添加到步骤数组，显示思考过程
         setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
