@@ -80,8 +80,17 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
             {/* 显示执行结果 */}
             <div>
               {(() => {
-                console.log("🔍 [StepRow] observation result:", step.result);
-                return typeof step.result === "string" ? step.result : JSON.stringify(step.result);
+                if (typeof step.result === "string") {
+                  return step.result;
+                }
+                // 如果是对象且有entries（文件列表），格式化显示
+                const result = step.result as any;
+                if (result.entries && Array.isArray(result.entries)) {
+                  return result.entries.map((entry: any) => 
+                    `${entry.type === "directory" ? "📁" : "📄"} ${entry.name}`
+                  ).join("\n");
+                }
+                return JSON.stringify(step.result);
               })()}
             </div>
           </>
