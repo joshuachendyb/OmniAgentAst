@@ -80,18 +80,18 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
             {/* 显示执行结果 */}
             <div>
               {(() => {
-                // 先显示 summary 字符串
+                // 先显示详细的文件列表
                 let output = "";
-                if (typeof step.result === "string") {
-                  output = step.result;
-                }
-                // 再显示详细的文件列表
                 const obsResult = step.observation?.result;
                 if (obsResult?.entries && Array.isArray(obsResult.entries)) {
                   const fileList = obsResult.entries.map((entry: any) => 
                     `${entry.type === "directory" ? "📁" : "📄"} ${entry.name}`
                   ).join("\n");
-                  output = output ? output + "\n" + fileList : fileList;
+                  output = fileList;
+                }
+                // 再显示 summary 字符串
+                if (typeof step.result === "string") {
+                  output = output ? output + "\n" + step.result : step.result;
                 }
                 return output || JSON.stringify(step.result);
               })()}
