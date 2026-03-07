@@ -14,23 +14,23 @@ describe('ExecutionPanel Component', () => {
   const mockSteps: ExecutionStep[] = [
     {
       type: 'thought',
-      content: 'I need to analyze the file',
+      thinking_prompt: 'I need to analyze the file',
       timestamp: Date.now() - 3000,
     },
     {
       type: 'action',
-      tool: 'read_file',
-      params: { path: '/test.txt' },
+      action: 'read_file',
+      action_input: { path: '/test.txt' },
       timestamp: Date.now() - 2000,
     },
     {
       type: 'observation',
-      result: { content: 'File contents here' },
+      result: 'File contents here',
       timestamp: Date.now() - 1000,
     },
     {
       type: 'final',
-      content: 'Task completed',
+      answer_content: 'Task completed',
       timestamp: Date.now(),
     },
   ];
@@ -76,8 +76,8 @@ describe('ExecutionPanel Component', () => {
     const actionStep: ExecutionStep[] = [
       {
         type: 'action',
-        tool: 'write_file',
-        params: { path: '/output.txt', content: 'data' },
+        action: 'write_file',
+        action_input: { path: '/output.txt', content: 'data' },
         timestamp: Date.now(),
       },
     ];
@@ -92,7 +92,7 @@ describe('ExecutionPanel Component', () => {
     const observationStep: ExecutionStep[] = [
       {
         type: 'observation',
-        result: { status: 'success', data: [1, 2, 3] },
+        result: 'success',
         timestamp: Date.now(),
       },
     ];
@@ -106,7 +106,7 @@ describe('ExecutionPanel Component', () => {
     const errorStep: ExecutionStep[] = [
       {
         type: 'error',
-        content: 'Failed to read file',
+        error_message: 'Failed to read file',
         timestamp: Date.now(),
       },
     ];
@@ -122,11 +122,11 @@ describe('ExecutionPanel Component', () => {
     // Each step should have appropriate content
     // 思考步骤显示"思考"标签
     // 行动步骤显示工具名称（如"read_file"）
-    // 观察步骤显示观察结果（JSON格式）
+    // 观察步骤显示观察结果
     // 完成步骤显示"完成"内容
     expect(screen.getByText('思考')).toBeInTheDocument();
     expect(screen.getByText('read_file')).toBeInTheDocument();
-    expect(screen.getByText('{"content":"File contents here"}')).toBeInTheDocument();
+    expect(screen.getByText('File contents here')).toBeInTheDocument();
     expect(screen.getByText('Task completed')).toBeInTheDocument();
   });
 
@@ -153,7 +153,7 @@ describe('ExecutionPanel Component', () => {
     const longContentStep: ExecutionStep[] = [
       {
         type: 'thought',
-        content:
+        thinking_prompt:
           'This is a very long thought that might need to be truncated or wrapped properly in the UI to ensure good user experience',
         timestamp: Date.now(),
       },
@@ -161,7 +161,7 @@ describe('ExecutionPanel Component', () => {
 
     render(<ExecutionPanel steps={longContentStep} isActive={false} />);
 
-    expect(screen.getByText(longContentStep[0].content!)).toBeInTheDocument();
+    expect(screen.getByText(longContentStep[0].thinking_prompt!)).toBeInTheDocument();
   });
 
   it('should update when steps change', () => {

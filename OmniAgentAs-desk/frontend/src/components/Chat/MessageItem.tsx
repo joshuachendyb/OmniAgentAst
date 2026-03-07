@@ -61,10 +61,10 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
       <span style={{ color: "#333", wordBreak: "break-word" }}>
         {step.type === "action" && (
           <>
-            {step.tool}
-            {step.params && (
+            {step.action}
+            {step.action_input && (
               <span style={{ color: "#999", marginLeft: 8, fontSize: 12 }}>
-                参数：{JSON.stringify(step.params)}
+                参数：{JSON.stringify(step.action_input)}
               </span>
             )}
           </>
@@ -72,9 +72,9 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
         {step.type === "observation" && (
           <>{typeof step.result === "string" ? step.result : JSON.stringify(step.result)}</>
         )}
-        {step.type === "thought" && step.content}
-        {step.type === "final" && step.content}
-        {step.type === "error" && step.content}
+        {step.type === "thought" && step.thinking_prompt}
+        {step.type === "final" && step.answer_content}
+        {step.type === "error" && step.error_message}
       </span>
     </div>
   );

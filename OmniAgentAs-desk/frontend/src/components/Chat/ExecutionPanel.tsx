@@ -287,7 +287,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                       flex: 1,
                     }}
                   >
-                    {step.content}
+                    {step.thinking_prompt}
                   </div>
                 </div>
               </div>
@@ -299,8 +299,8 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                 <div className="action-step">
                   <div className="step-header">
                     <CodeOutlined />
-                    {/* 使用action字段，不要使用tool字段 */}
-                    <span>{step.action || step.tool || "未知工具"}</span>
+                    {/* 使用action字段 */}
+                    <span>{step.action || "未知工具"}</span>
                     <Button
                       type="text"
                       size="small"
@@ -413,7 +413,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                   }}
                 >
                   <CheckCircleOutlined style={{ marginRight: 8 }} />
-                  <span>{step.content}</span>
+                  <span>{step.answer_content}</span>
                   <Button
                     type="text"
                     size="small"
@@ -424,7 +424,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                         <CopyOutlined />
                       )
                     }
-                    onClick={() => copyToClipboard(step.content || "", index)}
+                    onClick={() => copyToClipboard(step.answer_content || "", index)}
                     className="copy-btn"
                     style={{ float: "right", padding: 0 }}
                   />
@@ -447,7 +447,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                   }}
                 >
                   <CloseCircleOutlined style={{ marginRight: 8 }} />
-                  <span>{step.content}</span>
+                  <span>{step.error_message}</span>
                 </div>
               </div>
             );
