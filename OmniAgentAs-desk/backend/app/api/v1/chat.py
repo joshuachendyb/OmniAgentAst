@@ -870,52 +870,131 @@ async def chat_stream(request: ChatRequest):
                 logger.info(f"  - history count: {len(history)}")
                 logger.info("=" * 80)
                 
-                # 【修复-小沈】使用流式API，逐token返回
-                full_content = ""
-                chunk_count = 0
+                # ⭐ 【新增-重试机制】AI调用重试配置
+                max_retries = 2  # 最多重试2次
+                ai_call_successful = False  # AI调用是否成功
+                last_error = None  # 记录最后一次错误
                 
-                # 【调试】确认调用 chat_stream
-                logger.info(f"[DEBUG] 开始调用 ai_service.chat_stream, message={last_message[:50]}...")
-                logger.info(f"[DEBUG] ai_service type: {type(ai_service)}, ai_service.provider: {ai_service.provider}, ai_service.model: {ai_service.model}")
+                # ⭐ 【新增-重试机制】外层重试循环
+                full_content = ""  # 初始化，避免LSP错误
+                chunk_count = 0  # 初始化，避免LSP错误
                 
-                async for chunk in ai_service.chat_stream(
-                    message=last_message,
-                    history=history
-                ):
-                    chunk_count += 1
-                    # 检查是否被中断
-                    # 【原则4整改】content → message
-                    async with running_tasks_lock:
-                        if running_tasks.get(task_id, {}).get("cancelled", False):
-                            interrupted_data = {'type': 'interrupted', 'message': '任务已被中断'}
-                            logger.info(f"[Step interrupted] 发送interrupted步骤: {json.dumps(interrupted_data, ensure_ascii=False)}")
-                            yield f"data: {json.dumps(interrupted_data)}\n\n"
-                            return
-                    
-                    # ⭐ 暂停检查：AI流式响应过程中也检查暂停状态
-                    async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
-                        yield pause_event
-                    
-                    if chunk.content:
-                        full_content += chunk.content
-                        # ⭐ 【调试日志】记录每个chunk
-                        logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
-                        # 逐token发送到前端，【新增】添加provider字段作为兜底
-                        # 【小沈修复】添加 is_reasoning 和 reasoning 字段区分思考过程
-                        # 【原则4整改】content → answer_content
-                        chunk_data = {
-                            'type': 'chunk', 
-                            'answer_content': chunk.content,
-                            'model': chunk.model, 
-                            'provider': ai_service.provider,
-                            'is_reasoning': getattr(chunk, 'is_reasoning', False),  # 是否思考过程
-                            'reasoning': getattr(chunk, 'reasoning', '')  # 思考过程内容
+                for retry_attempt in range(max_retries + 1):
+                    if retry_attempt > 0:
+                        # 非首次尝试，等待后重试（指数退避）
+                        wait_time = 2 ** (retry_attempt - 1)  # 第1次重试等2s，第2次等4s
+                        logger.info(f"[Retry] 第{retry_attempt}次重试，等待{wait_time}秒...")
+                        
+                        # 发送重试提示给前端
+                        retry_data = {
+                            'type': 'retrying',
+                            'message': f'请求超时，正在重试 ({retry_attempt}/{max_retries})...',
+                            'wait_time': wait_time
                         }
-                        logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}, is_reasoning={chunk_data['is_reasoning']}")
-                        yield f"data: {json.dumps(chunk_data)}\n\n"
+                        yield f"data: {json.dumps(retry_data)}\n\n"
+                        await asyncio.sleep(wait_time)
+                        
+                        # 重置计数器，准备重新计数
+                        logger.info(f"[Retry] 开始第{retry_attempt + 1}次AI调用")
                     
-                    if chunk.is_done:
-                        break
+                    # 使用流式API，逐token返回
+                    full_content = ""
+                    chunk_count = 0
+                    has_received_content = False  # 本次调用是否收到内容
+                    chunk = None  # 初始化，避免LSP错误
+                    
+                    # 【调试】确认调用 chat_stream
+                    logger.info(f"[DEBUG] 开始调用 ai_service.chat_stream, message={last_message[:50]}...")
+                    logger.info(f"[DEBUG] ai_service type: {type(ai_service)}, ai_service.provider: {ai_service.provider}, ai_service.model: {ai_service.model}")
+                    
+                    try:
+                        async for chunk in ai_service.chat_stream(
+                            message=last_message,
+                            history=history
+                        ):
+                            chunk_count += 1
+                            # 检查是否被中断
+                            # 【原则4整改】content → message
+                            async with running_tasks_lock:
+                                if running_tasks.get(task_id, {}).get("cancelled", False):
+                                    interrupted_data = {'type': 'interrupted', 'message': '任务已被中断'}
+                                    logger.info(f"[Step interrupted] 发送interrupted步骤: {json.dumps(interrupted_data, ensure_ascii=False)}")
+                                    yield f"data: {json.dumps(interrupted_data)}\n\n"
+                                    return
+                            
+                            # ⭐ 暂停检查：AI流式响应过程中也检查暂停状态
+                            async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
+                                yield pause_event
+                            
+                            # ⭐ 【新增-重试机制】检查chunk是否有错误
+                            if chunk.error:
+                                last_error = chunk.error
+                                logger.warning(f"[AI Call] chunk返回错误: {chunk.error}, error_type: {getattr(chunk, 'error_type', 'unknown')}")
+                                # 如果是超时错误，可以重试
+                                if getattr(chunk, 'error_type', '') == 'timeout_error':
+                                    logger.info(f"[AI Call] 检测到超时错误，准备重试...")
+                                    break  # 跳出内层循环，触发重试
+                                else:
+                                    # 其他错误，不重试
+                                    logger.error(f"[AI Call] 检测到非超时错误，不重试: {chunk.error}")
+                                    ai_call_successful = False
+                                    break
+                            
+                            if chunk.content:
+                                has_received_content = True
+                                full_content += chunk.content
+                                # ⭐ 【调试日志】记录每个chunk
+                                logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
+                                # 逐token发送到前端，【新增】添加provider字段作为兜底
+                                # 【小沈修复】添加 is_reasoning 和 reasoning 字段区分思考过程
+                                # 【原则4整改】content → answer_content
+                                chunk_data = {
+                                    'type': 'chunk', 
+                                    'answer_content': chunk.content,
+                                    'model': chunk.model, 
+                                    'provider': ai_service.provider,
+                                    'is_reasoning': getattr(chunk, 'is_reasoning', False),  # 是否思考过程
+                                    'reasoning': getattr(chunk, 'reasoning', '')  # 思考过程内容
+                                }
+                                logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}, is_reasoning={chunk_data['is_reasoning']}")
+                                yield f"data: {json.dumps(chunk_data)}\n\n"
+                            
+                            if chunk.is_done:
+                                break
+                        
+                        # ⭐ 【新增-重试机制】判断本次调用是否成功
+                        if has_received_content or chunk_count > 0:
+                            # 收到了内容，或者至少收到了done信号，认为成功
+                            ai_call_successful = True
+                            logger.info(f"[AI Call] 第{retry_attempt + 1}次调用成功，chunk_count={chunk_count}, content_length={len(full_content)}")
+                            break  # 跳出重试循环
+                        elif last_error and chunk is not None and getattr(chunk, 'error_type', '') == 'timeout_error':
+                            # 没有收到内容且是超时错误，继续重试（chunk不为None才能安全访问）
+                            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用超时无响应，准备重试...")
+                            continue
+                        else:
+                            # 其他情况（没有错误但也没有内容）
+                            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用无响应且无错误信息")
+                            continue
+                            
+                    except Exception as e:
+                        last_error = str(e)
+                        logger.error(f"[AI Call] 第{retry_attempt + 1}次调用异常: {e}")
+                        # 检查是否是网络错误（可以重试）
+                        if "timeout" in str(e).lower() or "connection" in str(e).lower():
+                            logger.warning(f"[AI Call] 网络错误，准备重试...")
+                            continue
+                        else:
+                            # 其他异常不重试
+                            logger.error(f"[AI Call] 非网络异常，不重试: {e}")
+                            break
+                
+                # ⭐ 【新增-重试机制】重试循环结束，检查最终结果
+                if not ai_call_successful:
+                    if last_error:
+                        logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}")
+                    else:
+                        logger.error(f"[AI Call] 所有重试失败，无有效响应")
                 
                 # ⭐ 【调试日志】记录完整的AI响应
                 logger.info("=" * 80)
