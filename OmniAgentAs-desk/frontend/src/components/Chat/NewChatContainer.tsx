@@ -706,66 +706,88 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
+        // 页面隐藏时：保存当前状态并断开SSE连接
         saveState();
+        // 断开SSE连接，避免后台持续消耗资源
+        if (isReceiving) {
+          disconnect();
+          console.log("🔌 页面隐藏，断开SSE连接");
+        }
       } else {
-        // 当页面重新变为可见时，如果是从其他页面（如设置页面）返回，
-        // 检查是否需要重新加载会话数据以确保同步
+        // 页面重新可见时：不再重新请求API，避免覆盖当前消息
+        // 改为从sessionStorage恢复状态，如果缓存有效的话
         const urlSessionId = new URLSearchParams(window.location.search).get(
           "session_id"
         );
         if (urlSessionId && urlSessionId === sessionId) {
-          console.log("🔄 从后台返回，重新加载会话数据以确保同步");
-          // 延迟加载，避免页面还没完全展示时就加载
-          setTimeout(async () => {
+          // 先尝试从缓存恢复
+          const saved = sessionStorage.getItem(STORAGE_KEY);
+          if (saved) {
             try {
-              const sessionData = await sessionApi.getSessionMessages(
-                sessionId
-              );
-              if (sessionData.messages && sessionData.messages.length > 0) {
-                setMessages(
-               sessionData.messages.map((m: any) => {
-                // 安全地处理 executionSteps 字段
-                let executionSteps: ExecutionStep[] = [];
-                if (m.execution_steps && Array.isArray(m.execution_steps)) {
-                  executionSteps = m.execution_steps;
-                } else if (
-                  m.executionSteps &&
-                  Array.isArray(m.executionSteps)
-                ) {
-                  executionSteps = m.executionSteps;
+              const state = JSON.parse(saved);
+              const currentTime = Date.now();
+              const savedTime = state.timestamp || 0;
+              const timeDiff = currentTime - savedTime;
+              
+              // 缓存有效（5分钟内），且当前有消息，则恢复缓存状态
+              if (timeDiff <= SESSION_EXPIRY_TIME && state.messages && state.messages.length > 0) {
+                console.log("🔄 从缓存恢复会话状态，消息数:", state.messages.length);
+                setMessages(state.messages);
+                if (state.sessionTitle) {
+                  setSessionTitle(state.sessionTitle);
                 }
-
-                return {
-                  id: m.id?.toString() || Date.now().toString(),
-                  role: m.role || "assistant",
-                  content: m.content || "",
-                  timestamp: new Date(m.timestamp || Date.now()),
-                  executionSteps,
-                  display_name: m.display_name,
-                  model: m.model || undefined,
-                  provider: m.provider || undefined,
-                };
-                  })
-                );
-                // 也同步标题 - 直接从API获取
-                const title = sessionData.title || "会话";
-                setSessionTitle(title);
-                if (sessionData.version !== undefined) {
-                  setSessionVersion(sessionData.version);
-                }
-                if (sessionData.title_locked !== undefined) {
-                  setTitleLocked(sessionData.title_locked);
-                }
-                // 【小新第二修复 2026-03-02】title_source 由后端动态计算，前端不需要读取
-
-                console.log(
-                  `🔄 会话数据已同步，消息数: ${sessionData.messages.length}`
-                );
+                // 滚动到底部
+                scrollToBottomDelayed();
+                return; // 不再请求API
               }
-            } catch (error) {
-              console.warn("重新加载会话数据失败:", error);
+            } catch (e) {
+              console.warn("恢复缓存失败:", e);
             }
-          }, 100); // 延迟100ms，确保页面渲染完成
+          }
+          
+          // 缓存无效或为空时，才从API加载（仅首次加载时）
+          if (messages.length === 0) {
+            console.log("🔄 首次加载，从API获取会话数据");
+            setTimeout(async () => {
+              try {
+                const sessionData = await sessionApi.getSessionMessages(
+                  sessionId
+                );
+                if (sessionData.messages && sessionData.messages.length > 0) {
+                  setMessages(
+                    sessionData.messages.map((m: any) => {
+                      let executionSteps: ExecutionStep[] = [];
+                      if (m.execution_steps && Array.isArray(m.execution_steps)) {
+                        executionSteps = m.execution_steps;
+                      } else if (m.executionSteps && Array.isArray(m.executionSteps)) {
+                        executionSteps = m.executionSteps;
+                      }
+                      return {
+                        id: m.id?.toString() || Date.now().toString(),
+                        role: m.role || "assistant",
+                        content: m.content || "",
+                        timestamp: new Date(m.timestamp || Date.now()),
+                        executionSteps,
+                        display_name: m.display_name,
+                        model: m.model || undefined,
+                        provider: m.provider || undefined,
+                      };
+                    })
+                  );
+                  const title = sessionData.title || "会话";
+                  setSessionTitle(title);
+                  if (sessionData.version !== undefined) {
+                    setSessionVersion(sessionData.version);
+                  }
+                  if (sessionData.title_locked !== undefined) {
+                    setTitleLocked(sessionData.title_locked);
+                  }
+                }
+              } catch (error) {
+                console.warn("加载会话数据失败:", error);
+              }
+            }, 100);
+          }
         }
       }
     };
@@ -773,7 +795,7 @@ const NewChatContainer: React.FC = () => {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [messages, sessionId, sessionTitle]);
+  }, [messages, sessionId, sessionTitle, isReceiving]);
 
   // P1级别优化：状态验证和同步机制
   useEffect(() => {
