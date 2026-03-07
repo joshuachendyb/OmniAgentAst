@@ -8,7 +8,7 @@
  * @since 2026-02-17
  */
 
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import {
   Avatar,
   Tooltip,
@@ -61,11 +61,11 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
       <span style={{ color: "#333", wordBreak: "break-word" }}>
         {step.type === "action" && (
           <>
-            {step.action}
+            {step.action_description || step.action || "执行中..."}
             {step.action_input && (
               <span style={{ color: "#999", marginLeft: 8, fontSize: 12 }}>
-                参数：{JSON.stringify(step.action_input)}
-              </span>
+              参数：{JSON.stringify(step.action_input)}
+            </span>
             )}
           </>
         )}
@@ -110,7 +110,7 @@ interface MessageItemProps {
  */
 const MessageItem: React.FC<MessageItemProps> = ({
   message,
-  showExecution = false,
+  showExecution: _showExecution = false,
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -133,9 +133,12 @@ const MessageItem: React.FC<MessageItemProps> = ({
    * - 有执行步骤：导出JSON格式
    * - 无执行步骤：导出TXT格式
    */
-  const handleExport = () => {
+  const handleExport = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    console.log("🔍 [handleExport] 开始导出, message.id=", message.id);
     try {
       const hasSteps = message.executionSteps && message.executionSteps.length > 0;
+      console.log("🔍 [handleExport] hasSteps=", hasSteps, "executionSteps=", message.executionSteps);
       
       let blob: Blob;
       let filename: string;
@@ -169,6 +172,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       URL.revokeObjectURL(url);
       antMessage.success("导出成功");
     } catch (err) {
+      console.error("🔍 [handleExport] 导出失败, error=", err);
       antMessage.error("导出失败");
     }
   };
@@ -518,6 +522,13 @@ const isUser = message.role === "user";
 
           {/* 优化后的消息气泡结构 - 按照文档6.3.1节 */}
           <>
+            {/* 1. 思考步骤 - 直接显示在最前面，不折叠 */}
+            {message.executionSteps
+              ?.filter(step => step.type === "thought")
+              .map((step, index) => (
+                <StepRow key={`thought-${index}`} step={step} />
+              ))}
+
             {/* 2. 执行步骤 - 可折叠 */}
             {hasExecution && message.role === "assistant" && (
               <Collapse
@@ -545,13 +556,6 @@ const isUser = message.role === "user";
                 </Panel>
               </Collapse>
             )}
-
-            {/* 3. 思考步骤 - 直接显示，不折叠 */}
-            {message.executionSteps
-              ?.filter(step => step.type === "thought")
-              .map((step, index) => (
-                <StepRow key={`thought-${index}`} step={step} />
-              ))}
 
             {/* 【小沈修复】4. AI回复chunk - 先分组相同类型的chunk，再分别显示 */}
             {(() => {

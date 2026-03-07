@@ -47,7 +47,7 @@ const CollapsibleResult: React.FC<{
   index: number;
   copyToClipboard: (text: string, index: number) => void;
   copiedIndex: number | null;
-}> = ({ result, index, copyToClipboard, copiedIndex }) => {
+}> = ({ result, index: _index, copyToClipboard: _copyToClipboard, copiedIndex: _copiedIndex }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const displayText = isExpanded ? result : result.substring(0, 200);
 

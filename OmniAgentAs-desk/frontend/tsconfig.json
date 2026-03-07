@@ -19,5 +19,6 @@
     "allowSyntheticDefaultImports": true
   },
   "include": ["src"],
+  "exclude": ["src/backup", "src/tests"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
