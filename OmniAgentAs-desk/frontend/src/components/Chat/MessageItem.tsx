@@ -81,12 +81,14 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
             <div>
               {(() => {
                 if (typeof step.result === "string") {
+                  // 如果是字符串，直接显示
                   return step.result;
                 }
-                // 如果是对象且有entries（文件列表），格式化显示
+                // 检查 result 对象中是否有 entries（从 observation.result 中获取）
                 const result = step.result as any;
-                if (result.entries && Array.isArray(result.entries)) {
-                  return result.entries.map((entry: any) => 
+                const entries = result?.entries || step.observation?.result?.entries;
+                if (entries && Array.isArray(entries)) {
+                  return entries.map((entry: any) => 
                     `${entry.type === "directory" ? "📁" : "📄"} ${entry.name}`
                   ).join("\n");
                 }
