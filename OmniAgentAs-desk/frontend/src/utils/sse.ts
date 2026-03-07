@@ -38,14 +38,26 @@ export interface SSEMetadata {
 export interface ExecutionStep {
   // === 通用字段 ===
   type: "thought" | "action" | "observation" | "chunk" | "final" | "error" | "interrupted" | "start" | "paused" | "resumed";
-  content?: string;        // 思考内容/错误信息（type=thought/observation/final都有）
+  content?: string;        // 前端显示用：根据type使用不同字段填充
   
-  // === type=action/observation 字段 ===
-  step?: number;          // 步骤序号（type=action/observation有）—— 与后端一致
-  thought?: string;       // Agent.thought的值（type=observation有）
-  action?: string;        // Agent.action的值，执行动作名称（如"read_file"）
-  observation?: any;      // Agent.observation原始对象（保留，用于调试）
-  result?: string;        // simplify_observation处理后的文本（显示用这个，不要用observation！）
+  // === 思考/动作提示字段（后端字段拆分） ===
+  thinking_prompt?: string;    // thought 类型的提示文本
+  action_description?: string; // action 类型的描述文本
+  
+  // === AI回复字段（后端字段拆分） ===
+  answer_content?: string;    // chunk/final 类型的AI回复
+  
+  // === 错误/中断字段（后端字段拆分） ===
+  error_message?: string;      // error 类型的错误信息
+  message?: string;           // interrupted 类型的中断信息
+  
+  // === 保留字段（不变）===
+  // observation 相关
+  step?: number;
+  thought?: string;
+  action?: string;
+  observation?: any;
+  result?: string;
   
   // === type=action 字段 ===
   action_input?: Record<string, any>;  // 工具调用参数
@@ -54,13 +66,6 @@ export interface ExecutionStep {
   model?: string;         // AI模型
   provider?: string;      // AI提供商
   display_name?: string;  // 显示名称
-  
-  // === type=chunk 新增：思考过程字段 ===
-  is_reasoning?: boolean;  // 是否是思考过程
-  reasoning?: string;       // 思考过程内容
-
-  // === type=error 字段 ===
-  error?: string;         // 错误信息
   
   // === 前端额外字段 ===
   timestamp: number;      // 前端生成的时间戳
@@ -479,12 +484,20 @@ const processSSEData = (
 
     const step: ExecutionStep = {
       type: rawData.type as ExecutionStep["type"],
-      content: rawData.content || rawData.error || "",
+      
+      // 根据不同type使用不同字段（后端字段拆分方案）
+      thinking_prompt: rawData.thinking_prompt,
+      action_description: rawData.action_description,
+      answer_content: rawData.answer_content,
+      error_message: rawData.error_message,
+      message: rawData.message,
+      
+      // 保留字段
       step: rawData.step || 1,           // 与后端一致：step
       thought: rawData.thought,          // Agent.thought的值
       action: rawData.action,            // 执行动作名称，与后端一致
       observation: rawData.observation,  // 保留原始对象，用于调试
-      result: rawData.result,            // simplify_observation处理后的文本（显示用这个！）
+      result: rawData.result,            // simplify_observation处理后的文本
       action_input: rawData.action_input, // 工具调用参数
       timestamp: Date.now(),
     };
@@ -514,8 +527,18 @@ const processSSEData = (
         break;
       }
 
-      case "thought":
-      case "action":
+      case "thought": {
+        // 使用 thinking_prompt 填充 content
+        step.content = step.thinking_prompt || "";
+        break;
+      }
+
+      case "action": {
+        // 使用 action_description 填充 content
+        step.content = step.action_description || "";
+        break;
+      }
+
       case "observation": {
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
@@ -525,16 +548,20 @@ const processSSEData = (
       }
 
       case "chunk": {
-        responseBufferRef.current += rawData.content || "";
+        // 使用 answer_content 填充 content
+        const chunkContent = step.answer_content || "";
+        responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
         // 【小沈修复】收到chunk时关闭步骤UI，开始显示回复内容
         onShowSteps?.(false);
         // 传递 is_reasoning 和 reasoning 区分思考过程和最终答案
-        onChunk?.(rawData.content || "", rawData.is_reasoning || false, rawData.reasoning || "");
+        onChunk?.(chunkContent, rawData.is_reasoning || false, rawData.reasoning || "");
         break;
       }
 
       case "final": {
+        // 使用 answer_content 填充 content
+        step.content = step.answer_content || "";
         if (step.content) {
           if (!responseBufferRef.current) {
             responseBufferRef.current = step.content;
@@ -556,7 +583,9 @@ const processSSEData = (
       }
 
       case "error": {
-        const errorMsg = rawData.content || rawData.error || "未知错误";
+        // 使用 error_message 填充 content
+        const errorMsg = step.error_message || rawData.error_message || "未知错误";
+        step.content = errorMsg;
         onError?.(errorMsg);
         setIsReceiving(false);
         setIsConnected(false);
@@ -564,6 +593,8 @@ const processSSEData = (
       }
 
       case "interrupted": {
+        // 使用 message 填充 content
+        step.content = step.message || "";
         onComplete?.(responseBufferRef.current, undefined);
         setIsReceiving(false);
         setIsConnected(false);
@@ -571,11 +602,15 @@ const processSSEData = (
       }
 
       case "paused": {
+        // 使用 message 填充 content
+        step.content = step.message || "";
         onPaused?.();
         break;
       }
 
       case "resumed": {
+        // 使用 message 填充 content
+        step.content = step.message || "";
         onResumed?.();
         break;
       }

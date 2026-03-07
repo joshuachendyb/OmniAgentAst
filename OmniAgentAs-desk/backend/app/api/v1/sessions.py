@@ -19,6 +19,34 @@ from pydantic import BaseModel, Field
 from app.utils.logger import logger
 from app.utils.display_name_cache import get_cached_display_name, clear_cached_display_name  # ⭐ 【小沈添加 2026-03-03】【小健更新 2026-03-04】
 
+
+def extract_display_name_from_steps(execution_steps_data: list) -> Optional[str]:
+    """
+    从 execution_steps 中提取 display_name 信息
+    用于兼容早期保存的历史消息（当时没有单独存储 display_name）
+
+    @author 小新
+    @update 2026-03-07 修复历史消息 display_name 不显示的问题
+    """
+    if not execution_steps_data:
+        return None
+
+    for step in execution_steps_data:
+        if isinstance(step, dict):
+            # 查找包含 model 或 provider 的步骤（通常是 start/chunk/final 类型）
+            if step.get("type") in ["start", "chunk", "final"]:
+                model = step.get("model", "")
+                provider = step.get("provider", "")
+                if model or provider:
+                    # 优先使用缓存的 display_name 格式
+                    if provider and model:
+                        return f"{provider} ({model})"
+                    elif model:
+                        return model
+                    elif provider:
+                        return provider
+    return None
+
 # ⭐ 修复P2-问题7：导入类型注解用于更准确的类型提示
 from sqlite3 import Connection, Cursor
 
@@ -537,7 +565,12 @@ async def get_session_messages(session_id: str):
                     execution_steps_data = json.loads(row['execution_steps'])
                 except json.JSONDecodeError:
                     logger.warning(f"解析 execution_steps 失败: {row['execution_steps']}")
-            
+
+            # ⭐ 小新修复 2026-03-07：如果 display_name 为空，尝试从 execution_steps 中提取
+            display_name = row['display_name']
+            if not display_name and execution_steps_data:
+                display_name = extract_display_name_from_steps(execution_steps_data)
+
             messages.append(MessageResponse(
                 id=row['id'],
                 session_id=row['session_id'],
@@ -545,7 +578,7 @@ async def get_session_messages(session_id: str):
                 content=row['content'],
                 timestamp=_convert_to_utc(row['timestamp']),
                 execution_steps=execution_steps_data,
-                display_name=row['display_name']  # 添加 display_name 字段
+                display_name=display_name  # 添加 display_name 字段
             ))
         
         logger.info(f"获取会话消息: session_id={session_id}, count={len(messages)}")

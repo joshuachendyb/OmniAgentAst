@@ -628,6 +628,14 @@ const NewChatContainer: React.FC = () => {
         }
 
         if (state.sessionId) {
+          // ⭐ 小新修复 2026-03-07：检查缓存消息是否缺少 display_name，如果是则跳过恢复，从 API 重新加载
+          const hasDisplayName = state.messages?.some((m: any) => m.display_name);
+          if (!hasDisplayName) {
+            console.log("🕒 缓存消息缺少 display_name，跳过恢复，从 API 重新加载");
+            sessionStorage.removeItem(STORAGE_KEY);
+            return false;
+          }
+          
           setMessages(state.messages || []);
           setSessionId(state.sessionId);
           // 【小新第二修复 2026-03-02】从sessionStorage恢复时也更新ref
@@ -1223,6 +1231,9 @@ const NewChatContainer: React.FC = () => {
                   content: m.content || "", // 修复：确保 content 不为 undefined
                   timestamp: new Date(m.timestamp || Date.now()), // 修复：确保 timestamp 有效
                   executionSteps,
+                  display_name: m.display_name, // ⭐ 小新修复 2026-03-07：添加 display_name
+                  model: m.model || undefined,
+                  provider: m.provider || undefined,
                 };
               })
             );
