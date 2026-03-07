@@ -78,24 +78,36 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
               </div>
             )}
             {/* 显示执行结果 */}
-            <div>
-              {(() => {
-                // 先显示详细的文件列表
-                let output = "";
-                const obsResult = step.observation?.result;
-                if (obsResult?.entries && Array.isArray(obsResult.entries)) {
-                  const fileList = obsResult.entries.map((entry: any) => 
-                    `${entry.type === "directory" ? "📁" : "📄"} ${entry.name}`
-                  ).join("\n");
-                  output = fileList;
-                }
-                // 再显示 summary 字符串
-                if (typeof step.result === "string") {
-                  output = output ? output + "\n" + step.result : step.result;
-                }
-                return output || JSON.stringify(step.result);
-              })()}
-            </div>
+            {(() => {
+              const obsResult = step.observation?.result;
+              const hasEntries = obsResult?.entries && Array.isArray(obsResult.entries);
+              
+              return (
+                <div>
+                  {/* 文件列表框框 */}
+                  {hasEntries && (
+                    <div style={{ 
+                      background: "#f5f5f5", 
+                      borderRadius: 6, 
+                      padding: "8px 12px", 
+                      marginBottom: 8,
+                      fontSize: "0.9em",
+                      whiteSpace: "pre-wrap",
+                      maxHeight: 300,
+                      overflow: "auto"
+                    }}>
+                      {obsResult.entries.map((entry: any) => 
+                        `${entry.type === "directory" ? "📁" : "📄"} ${entry.name}`
+                      ).join("\n")}
+                    </div>
+                  )}
+                  {/* summary 字符串 */}
+                  {typeof step.result === "string" && (
+                    <div>{step.result}</div>
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
         {step.type === "thought" && (step.thinking_prompt || "")}
