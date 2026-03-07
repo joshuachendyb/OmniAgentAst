@@ -553,43 +553,54 @@ const isUser = message.role === "user";
                 <StepRow key={`thought-${index}`} step={step} />
               ))}
 
-            {/* 【小沈修复】4. AI回复chunk - 遍历executionSteps分别显示思考过程和正式内容 */}
-            {message.executionSteps
-              ?.filter(step => step.type === "chunk")
-              .map((step, index) => {
-                const isReasoning = step.is_reasoning === true;
-                return (
-                  <span
-                    key={`chunk-${index}`}
-                    style={{
-                      // 思考过程：灰色斜体；正式内容：正常黑色
-                      ...(isReasoning ? {
-                        color: '#888',
-                        fontStyle: 'italic',
-                        fontSize: '0.95em',
-                        display: 'block',
-                        marginTop: 4,
-                      } : {
-                        color: '#000',
-                        display: 'inline',
-                      }),
-                    }}
-                  >
-                    {/* 思考过程添加标签 */}
-                    {isReasoning && index === 0 && (
-                      <span style={{ 
-                        color: '#888', 
-                        fontSize: '0.85em', 
-                        marginRight: 4,
-                        fontWeight: 500,
-                      }}>
-                        💭 思考中:
-                      </span>
-                    )}
-                    {step.answer_content || step.content || ''}
-                  </span>
-                );
-              })}
+            {/* 【小沈修复】4. AI回复chunk - 先分组相同类型的chunk，再分别显示 */}
+            {(() => {
+              const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
+              
+              // 分组：将连续相同类型的chunk合并
+              const groupedChunks: { isReasoning: boolean; content: string }[] = [];
+              for (const chunk of chunks) {
+                const isReasoning = chunk.is_reasoning === true;
+                const content = chunk.answer_content || chunk.content || '';
+                if (groupedChunks.length > 0 && groupedChunks[groupedChunks.length - 1].isReasoning === isReasoning) {
+                  // 相同类型，合并
+                  groupedChunks[groupedChunks.length - 1].content += content;
+                } else {
+                  // 新类型，创建新组
+                  groupedChunks.push({ isReasoning, content });
+                }
+              }
+              
+              // 渲染分组后的chunk
+              return groupedChunks.map((group, index) => (
+                <span
+                  key={`chunk-group-${index}`}
+                  style={{
+                    // 思考过程：灰色斜体；正式内容：正常黑色
+                    ...(group.isReasoning ? {
+                      color: '#888',
+                      fontStyle: 'italic',
+                      fontSize: '0.95em',
+                    } : {
+                      color: '#000',
+                    }),
+                  }}
+                >
+                  {/* 只有第一组思考过程添加标签 */}
+                  {group.isReasoning && index === 0 && (
+                    <span style={{ 
+                      color: '#888', 
+                      fontSize: '0.85em', 
+                      marginRight: 4,
+                      fontWeight: 500,
+                    }}>
+                      💭 思考中:
+                    </span>
+                  )}
+                  {group.content}
+                </span>
+              ));
+            })()}
 
             {/* 5. 最终答案content - 如果没有executionSteps则回退到content显示 */}
             {(!message.executionSteps || message.executionSteps.filter(s => s.type === "chunk").length === 0) && (
