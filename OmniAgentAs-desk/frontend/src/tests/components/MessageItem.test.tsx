@@ -73,10 +73,12 @@ describe('MessageItem Component', () => {
     render(<MessageItem message={messageWithSteps} showExecution={true} />);
 
     expect(screen.getByText('Test message content')).toBeInTheDocument();
-    // 检查 AI 思考过程面板标题 - 使用 waitFor 等待异步渲染
+    // 检查执行详情面板标题（按文档6.3.1要求改为"执行详情"）
     await waitFor(() => {
-      expect(screen.getByText('AI 思考过程')).toBeInTheDocument();
+      expect(screen.getByText('执行详情')).toBeInTheDocument();
     });
+    // 检查思考步骤直接显示（不折叠）
+    expect(screen.getByText('思考：')).toBeInTheDocument();
   });
 
   it('should format timestamp correctly', () => {

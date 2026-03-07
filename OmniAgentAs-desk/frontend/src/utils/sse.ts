@@ -29,7 +29,7 @@ export interface SSEError {
 export interface SSEMetadata {
   model?: string;
   provider?: string;
-  displayName?: string;
+  display_name?: string;
 }
 
 /**
@@ -45,7 +45,6 @@ export interface ExecutionStep {
   thought?: string;       // Agent.thought的值（type=observation有）
   action?: string;        // Agent.action的值，执行动作名称（如"read_file"）
   observation?: any;      // Agent.observation原始对象（保留，用于调试）
-  tool?: string;          // = action，与后端保持一致
   result?: string;        // simplify_observation处理后的文本（显示用这个，不要用observation！）
   
   // === type=action 字段 ===
@@ -55,7 +54,6 @@ export interface ExecutionStep {
   model?: string;         // AI模型
   provider?: string;      // AI提供商
   display_name?: string;  // 显示名称
-  displayName?: string;   // 兼容字段
   
   // === type=chunk 新增：思考过程字段 ===
   is_reasoning?: boolean;  // 是否是思考过程
@@ -486,7 +484,6 @@ const processSSEData = (
       thought: rawData.thought,          // Agent.thought的值
       action: rawData.action,            // 执行动作名称，与后端一致
       observation: rawData.observation,  // 保留原始对象，用于调试
-      tool: rawData.tool || rawData.action,  // = action
       result: rawData.result,            // simplify_observation处理后的文本（显示用这个！）
       action_input: rawData.action_input, // 工具调用参数
       timestamp: Date.now(),
@@ -509,7 +506,6 @@ const processSSEData = (
           timestamp: Date.now(),
           model: rawData.model,
           provider: rawData.provider,
-          displayName: displayName,
           display_name: displayName,
         };
 
@@ -547,11 +543,11 @@ const processSSEData = (
           }
         }
 
-        const displayName = rawData.display_name || rawData.displayName;
+        const displayName = rawData.display_name;
         onComplete?.(responseBufferRef.current, {
           model: rawData.model,
           provider: rawData.provider,
-          displayName,
+          display_name: displayName,
         } as SSEMetadata);
 
         setIsReceiving(false);

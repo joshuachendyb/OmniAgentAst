@@ -81,7 +81,7 @@ interface Message extends ChatMessage {
   errorType?: string; // 前端小新代修改：错误类型
   model?: string;
   provider?: string; // 前端小新代修改：提供商
-  displayName?: string; // 前端小新代修改：显示名称（如"OpenAI (GPT-4)"）
+  display_name?: string; // 前端小新代修改：显示名称（如"OpenAI (GPT-4)"）
 }
 
 /**
@@ -178,22 +178,22 @@ const NewChatContainer: React.FC = () => {
         // 【修复问题 7】如果是 start 步骤，创建占位消息
         if (step.type === "start") {
           console.log("🔍 onStep 收到 start 事件: step=", JSON.stringify(step, null, 2));
-          console.log("🔍 step.displayName 值:", step.displayName);
+          console.log("🔍 step.display_name 值:", step.display_name);
           console.log("🔍 step.display_name 值:", step.display_name);
           console.log("🔍 step.model 值:", step.model);
           console.log("🔍 step.provider 值:", step.provider);
           
           // 检查是否已有消息
           if (!lastMessage || lastMessage.role !== "assistant") {
-            // 提取displayName，优先使用驼峰命名的displayName
-            const extractedDisplayName = step.displayName || step.display_name;
-            console.log("🔍 提取的displayName:", extractedDisplayName);
+            // 提取display_name
+            const extractedDisplay_name = step.display_name;
+            console.log("🔍 提取的display_name:", extractedDisplay_name);
             
-            // 如果 extractedDisplayName 为空，尝试从其他字段构建
-            let finalDisplayName = extractedDisplayName;
-            if (!finalDisplayName && step.model && step.provider) {
-              finalDisplayName = `${step.provider} (${step.model})`;
-              console.log("🔍 从model/provider构建displayName:", finalDisplayName);
+            // 如果 extractedDisplay_name 为空，尝试从其他字段构建
+            let finalDisplay_name = extractedDisplay_name;
+            if (!finalDisplay_name && step.model && step.provider) {
+              finalDisplay_name = `${step.provider} (${step.model})`;
+              console.log("🔍 从model/provider构建display_name:", finalDisplay_name);
             }
             
             const newAssistantMessage: Message = {
@@ -205,29 +205,29 @@ const NewChatContainer: React.FC = () => {
               isStreaming: true,  // 确保是 true
               model: step.model,
               provider: step.provider,
-              displayName: finalDisplayName, // 直接使用后端返回的 displayName（驼峰）
+              display_name: finalDisplay_name, // 直接使用后端返回的 display_name
             };
-            console.log("🔍 创建新AI助手消息: displayName=", newAssistantMessage.displayName, "isStreaming=", newAssistantMessage.isStreaming);
+            console.log("🔍 创建新AI助手消息: display_name=", newAssistantMessage.display_name, "isStreaming=", newAssistantMessage.isStreaming);
             console.log("🔍 完整消息对象:", JSON.stringify(newAssistantMessage, null, 2));
             return [...prev, newAssistantMessage];
           } else {
-            // 已有assistant消息，更新displayName
-            console.log("🔍 已有assistant消息，更新displayName, 当前isStreaming=", lastMessage.isStreaming);
-            // 提取displayName
-            const extractedDisplayName = step.displayName || step.display_name;
-            let finalDisplayName = extractedDisplayName;
-            if (!finalDisplayName && step.model && step.provider) {
-              finalDisplayName = `${step.provider} (${step.model})`;
+            // 已有assistant消息，更新display_name
+            console.log("🔍 已有assistant消息，更新display_name, 当前isStreaming=", lastMessage.isStreaming);
+            // 提取display_name
+            const extractedDisplay_name = step.display_name;
+            let finalDisplay_name = extractedDisplay_name;
+            if (!finalDisplay_name && step.model && step.provider) {
+              finalDisplay_name = `${step.provider} (${step.model})`;
             }
-            // 更新最后一条消息的displayName
+            // 更新最后一条消息的display_name
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...lastMessage,
-              displayName: finalDisplayName || lastMessage.displayName,
+              display_name: finalDisplay_name || lastMessage.display_name,
               model: step.model || lastMessage.model,
               provider: step.provider || lastMessage.provider,
             };
-            console.log("🔍 更新后的displayName=", updated[updated.length - 1].displayName);
+            console.log("🔍 更新后的display_name=", updated[updated.length - 1].display_name);
             return updated;
           }
         }
@@ -285,7 +285,7 @@ const NewChatContainer: React.FC = () => {
           | {
               model?: string;
               provider?: string;
-              displayName?: string;
+              display_name?: string;
             }
       ) => {
         // ✅ 支持旧格式（model 字符串）和新格式（metadata 对象）
@@ -312,7 +312,7 @@ const NewChatContainer: React.FC = () => {
               isError: isError, // 传递错误标记
               model: metadataObj.model || lastMessage.model,
               provider: metadataObj.provider || lastMessage.provider,
-              displayName: metadataObj.displayName || lastMessage.displayName,
+              display_name: metadataObj.display_name || lastMessage.display_name,
             };
             return updated;
           }
@@ -708,7 +708,7 @@ const NewChatContainer: React.FC = () => {
                   content: m.content || "",
                   timestamp: new Date(m.timestamp || Date.now()),
                   executionSteps,
-                  displayName: m.display_name || undefined,
+                  display_name: m.display_name,
                   model: m.model || undefined,
                   provider: m.provider || undefined,
                 };
@@ -1073,7 +1073,7 @@ const NewChatContainer: React.FC = () => {
                   content: m.content || "", // 修复：确保 content 不为 undefined
                   timestamp: new Date(m.timestamp || Date.now()), // 修复：确保 timestamp 有效
                   executionSteps,
-                  displayName: m.display_name || undefined,
+                  display_name: m.display_name,
                   model: m.model || undefined,
                   provider: m.provider || undefined,
                 };

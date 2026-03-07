@@ -8,7 +8,7 @@
  * @since 2026-02-17
  */
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Avatar,
   Tooltip,
@@ -28,7 +28,56 @@ import {
 } from "@ant-design/icons";
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
-import ExecutionPanel from "./ExecutionPanel"; // 前端小新代修改：引入执行过程面板
+/**
+ * 步骤行组件 - 单行步骤显示（优化后新增）
+ * 思考和执行分开渲染，用颜色区分类型
+ */
+const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
+  const colorMap: Record<string, string> = {
+    thought: "#faad14",
+    action: "#1890ff",
+    observation: "#52c41a",
+    final: "#52c41a",
+    error: "#cf1322",
+  };
+
+  const labelMap: Record<string, string> = {
+    thought: "思考",
+    action: "工具",
+    observation: "结果",
+    final: "答案",
+    error: "错误",
+  };
+
+  const color = colorMap[step.type] || "#666";
+  const label = labelMap[step.type] || "步骤";
+
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <span style={{ color, fontWeight: 500, marginRight: 8 }}>
+        {label}：
+      </span>
+      <span style={{ color: "#333", wordBreak: "break-word" }}>
+        {step.type === "action" && (
+          <>
+            {step.tool}
+            {step.params && (
+              <span style={{ color: "#999", marginLeft: 8, fontSize: 12 }}>
+                参数：{JSON.stringify(step.params)}
+              </span>
+            )}
+          </>
+        )}
+        {step.type === "observation" && (
+          <>{typeof step.result === "string" ? step.result : JSON.stringify(step.result)}</>
+        )}
+        {step.type === "thought" && step.content}
+        {step.type === "final" && step.content}
+        {step.type === "error" && step.content}
+      </span>
+    </div>
+  );
+};
 
 const { Panel } = Collapse;
 
@@ -40,7 +89,7 @@ interface MessageItemProps {
     model?: string;
     isStreaming?: boolean;
     isError?: boolean;
-    displayName?: string; // 前端小新代修改：显示名称
+    display_name?: string; // 前端小新代修改：显示名称
   };
   showExecution?: boolean;
 }
@@ -120,51 +169,52 @@ const MessageItem: React.FC<MessageItemProps> = ({
    */
   const getRoleName = () => {
     // 调试日志：检查消息对象
-     if (message.role === "assistant") {
-       console.log("🔍 MessageItem.getRoleName - 消息对象:", {
-         id: message.id,
-         role: message.role,
-         isStreaming: message.isStreaming,
-         displayName: message.displayName,
-         model: message.model,
-         content: message.content?.substring?.(0, 50),
-         // 检查所有属性
-         allProps: Object.keys(message)
-       });
-     }
-    
+      if (message.role === "assistant") {
+        console.log("🔍 MessageItem.getRoleName - 消息对象:", {
+          id: message.id,
+          role: message.role,
+          isStreaming: message.isStreaming,
+          display_name: message.display_name,
+          model: message.model,
+          content: message.content?.substring?.(0, 50),
+          // 检查所有属性
+          allProps: Object.keys(message)
+        });
+      }
+     
     switch (message.role) {
       case "user":
         return "我";
       case "assistant": {
         // ✅ 老杨 UX 建议：占位消息显示 loading 状态
-        // 前端小新代修改：只要 isStreaming 为 true，就显示加载状态，并且显示 displayName
+        // 前端小新代修改：只要 isStreaming 为 true，就显示加载状态，并且显示 display_name
         if (message.isStreaming) {
-          // 前端小新代修改：加载状态也显示 displayName（如果存在）
-          // 如果 displayName 为空，尝试使用 model 构建
-          let displayNameToShow = message.displayName;
-          if (!displayNameToShow && message.model) {
-            displayNameToShow = message.model;
-            console.log("🔍 MessageItem.getRoleName - 从model构建displayName:", displayNameToShow);
+          // 前端小新代修改：加载状态也显示 display_name（如果存在）
+          // 如果 display_name 为空，尝试使用 model 构建
+          let display_nameToShow = message.display_name;
+          if (!display_nameToShow && message.model) {
+            display_nameToShow = message.model;
+            console.log("🔍 MessageItem.getRoleName - 从model构建display_name:", display_nameToShow);
           }
           
-          const result = displayNameToShow
-            ? `🤔 AI 助手【${displayNameToShow}】【加载中...】`
+          const result = display_nameToShow
+            ? `🤔 AI 助手【${display_nameToShow}】【加载中...】`
             : `🤔 AI 助手【加载中...】`;
           console.log("🔍 MessageItem.getRoleName - 流式状态，返回:", result);
           return result;
         }
 
+
         // 前端小新代修改 VIS-E02: 错误消息显示错误标识
         if (message.isError) {
           // ✅ 老杨 UX 建议：添加错误图标（⚠️）
-          return message.displayName
-            ? `⚠️ AI 助手【${message.displayName}】【错误】`
+          return message.display_name
+            ? `⚠️ AI 助手【${message.display_name}】【错误】`
             : `⚠️ AI 助手【错误】`;
         }
-        // 直接使用后端返回的 displayName，用【】包住显示
-        const result = message.displayName
-          ? `AI 助手【${message.displayName}】`
+        // 直接使用后端返回的 display_name，用【】包住显示
+        const result = message.display_name
+          ? `AI 助手【${message.display_name}】`
           : "AI 助手";
         console.log("🔍 MessageItem.getRoleName - 非流式状态，返回:", result);
         return result;
@@ -284,8 +334,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
     }
   };
 
-  const isUser = message.role === "user";
+const isUser = message.role === "user";
   const isSystem = message.role === "system";
+
+  // 判断是否有执行步骤（action/observation）
+  const hasExecution = message.executionSteps?.some(
+    step => step.type === "action" || step.type === "observation"
+  ) ?? false;
 
   return (
     <div
@@ -352,63 +407,100 @@ const MessageItem: React.FC<MessageItemProps> = ({
           </div>
         )}
 
-        {/* 消息气泡 - 直接渲染，减少一层 div */}
+        {/* 消息内容 - 优化后的结构 */}
         <div style={{ ...getMessageStyle(), position: "relative" }}>
-            {/* 复制按钮（悬停显示）- 透明背景，小巧精致 */}
-            <Tooltip title={copied ? "已复制" : "复制"}>
-              <Button
-                type="text"
-                size="small"
-                icon={
-                  copied ? (
-                    <CheckOutlined style={{ color: "#52c41a" }} />
-                  ) : (
-                    <CopyOutlined style={{ color: isUser ? "rgba(255,255,255,0.9)" : "#595959" }} />
-                  )
-                }
-                onClick={handleCopy}
-                style={{
-                  position: "absolute",
-                  top: 4,
-                  right: 6,
-                  opacity: 0,
-                  transition: "opacity 0.2s ease",
-                  background: "transparent",
-                  border: "none",
-                  boxShadow: "none",
-                  padding: "0 4px",
-                  minHeight: "auto",
-                  height: "20px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                className="copy-button"
-              />
-            </Tooltip>
+          {/* 复制按钮（悬停显示）- 透明背景，小巧精致 */}
+          <Tooltip title={copied ? "已复制" : "复制"}>
+            <Button
+              type="text"
+              size="small"
+              icon={
+                copied ? (
+                  <CheckOutlined style={{ color: "#52c41a" }} />
+                ) : (
+                  <CopyOutlined style={{ color: isUser ? "rgba(255,255,255,0.9)" : "#595959" }} />
+                )
+              }
+              onClick={handleCopy}
+              style={{
+                position: "absolute",
+                top: 4,
+                right: 6,
+                opacity: 0,
+                transition: "opacity 0.2s ease",
+                background: "transparent",
+                border: "none",
+                boxShadow: "none",
+                padding: "0 4px",
+                minHeight: "auto",
+                height: "20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            />
+          </Tooltip>
 
-          {/* 消息内容 */}
-          <div
-            style={{
-              wordBreak: "break-word",
-              overflowWrap: "break-word",
-              paddingRight: 32,
-            }}
-            className={
-              message.content === "🤔 AI 正在思考..." && message.isStreaming
-                ? "thinking-message"
-                : message.isError
-                ? "error-message"
-                : ""
-            }
-          >
-            {message.content && typeof message.content === 'string' 
-              ? message.content 
-              : String(message.content || '')}
-            {(message.isStreaming ?? false) && (
-              <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
+          {/* 优化后的消息气泡结构 - 按照文档6.3.1节 */}
+          <>
+            {/* 2. 执行步骤 - 可折叠 */}
+            {hasExecution && message.role === "assistant" && (
+              <Collapse
+                defaultActiveKey={
+                  message.isStreaming ?? false ? ["execution"] : []
+                }
+                size="small"
+                style={{ marginBottom: 8 }}
+              >
+                <Panel
+                  header={
+                    <Space>
+                      <ThunderboltOutlined />
+                      <span>执行详情</span>
+                      {(message.isStreaming ?? false) && <LoadingOutlined />}
+                    </Space>
+                  }
+                  key="execution"
+                >
+                  {message.executionSteps
+                    ?.filter(step => step.type === "action" || step.type === "observation")
+                    .map((step, index) => (
+                      <StepRow key={index} step={step} />
+                    ))}
+                </Panel>
+              </Collapse>
             )}
-          </div>
+
+            {/* 3. 思考步骤 - 直接显示，不折叠 */}
+            {message.executionSteps
+              ?.filter(step => step.type === "thought")
+              .map((step, index) => (
+                <StepRow key={`thought-${index}`} step={step} />
+              ))}
+
+            {/* 4. 最终答案content - 思考/执行之后 */}
+            <div
+              style={{
+                wordBreak: "break-word",
+                overflowWrap: "break-word",
+                paddingRight: 32,
+              }}
+              className={
+                message.content === "🤔 AI 正在思考..." && message.isStreaming
+                  ? "thinking-message"
+                  : message.isError
+                  ? "error-message"
+                  : ""
+              }
+            >
+              {message.content && typeof message.content === 'string' 
+                ? message.content 
+                : String(message.content || '')}
+              {(message.isStreaming ?? false) && (
+                <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
+              )}
+            </div>
+          </>
 
           {/* CSS 动画 */}
           {(message.content === "🤔 AI 正在思考..." && message.isStreaming) ||
@@ -423,8 +515,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
                 }
                 .thinking-message {
                   animation: thinking-pulse 1.5s ease-in-out infinite;
-                }
-              `
+              }
+                `
                   : ""
               }
               ${
@@ -448,34 +540,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
               }
             `}</style>
           ) : null}
-
-          {/* 执行过程展示（仅 AI 消息） */}
-          {showExecution && message.role === "assistant" && (
-            <div style={{ marginTop: 6 }}>
-              <Collapse
-                defaultActiveKey={
-                  message.isStreaming ?? false ? ["execution"] : []
-                }
-                size="small"
-              >
-                <Panel
-                  header={
-                    <Space>
-                      <ThunderboltOutlined />
-                      <span>AI 思考过程</span>
-                      {(message.isStreaming ?? false) && <LoadingOutlined />}
-                    </Space>
-                  }
-                  key="execution"
-                >
-                  <ExecutionPanel
-                    steps={message.executionSteps || []}
-                    isActive={message.isStreaming || false}
-                  />
-                </Panel>
-              </Collapse>
-            </div>
-          )}
         </div>
       </div>
 
