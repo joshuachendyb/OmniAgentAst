@@ -41,6 +41,35 @@ import type { ExecutionStep } from "../../utils/sse";
 
 const { Text } = Typography;
 
+// 长文本折叠组件
+const CollapsibleResult: React.FC<{
+  result: string;
+  index: number;
+  copyToClipboard: (text: string, index: number) => void;
+  copiedIndex: number | null;
+}> = ({ result, index, copyToClipboard, copiedIndex }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const displayText = isExpanded ? result : result.substring(0, 200);
+
+  return (
+    <div className="step-result">
+      <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        {displayText}
+        {result.length > 200 && (
+          <Button
+            type="link"
+            size="small"
+            onClick={() => setIsExpanded(!isExpanded)}
+            style={{ padding: 0, height: "auto", fontSize: 10 }}
+          >
+            {isExpanded ? "收起" : `...展开更多 (${result.length}字符)`}
+          </Button>
+        )}
+      </pre>
+    </div>
+  );
+};
+
 // ============================================================
 // 样式常量（专家级优化：提取样式，提高可维护性）
 // ============================================================
@@ -270,7 +299,8 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                 <div className="action-step">
                   <div className="step-header">
                     <CodeOutlined />
-                    <span>{step.tool}</span>
+                    {/* 使用action字段，不要使用tool字段 */}
+                    <span>{step.action || step.tool || "未知工具"}</span>
                     <Button
                       type="text"
                       size="small"
@@ -284,7 +314,8 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                       onClick={() =>
                         copyToClipboard(
                           JSON.stringify({
-                            params: step.params,
+                            action: step.action,
+                            action_input: step.action_input,
                             result: step.result,
                           }),
                           index
@@ -294,26 +325,31 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                       style={{ marginLeft: "auto", padding: 0 }}
                     />
                   </div>
-                  {step.params && (
+                  {/* 使用action_input字段 */}
+                  {step.action_input && (
                     <div>
                       <Text type="secondary" style={{ fontSize: 10 }}>
                         参数：
                       </Text>
                       <pre className="step-params">
-                        {JSON.stringify(step.params || {}, null, 2)}
+                        {JSON.stringify(step.action_input || {}, null, 2)}
                       </pre>
                     </div>
                   )}
+                  {/* 使用result字段（已简化），不要使用observation */}
                   {step.result && (
                     <div>
                       <Text type="secondary" style={{ fontSize: 10 }}>
                         结果：
                       </Text>
-                      <div className="step-result">
-                        {typeof step.result === "string"
-                          ? (step.result || '')
-                          : JSON.stringify(step.result || {})}
-                      </div>
+                      {/* 长文本折叠处理 */}
+                      {typeof step.result === "string" && step.result.length > 200 ? (
+                        <CollapsibleResult result={step.result} index={index} copyToClipboard={copyToClipboard} copiedIndex={copiedIndex} />
+                      ) : (
+                        <div className="step-result">
+                          {step.result}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -331,11 +367,16 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                   }}
                 >
                   <EyeOutlined style={{ marginRight: 8 }} />
-                   <span>
-                     {typeof step.result === "string"
-                       ? (step.result || '')
-                       : JSON.stringify(step.result || {})}
-                   </span>
+                  {/* 使用result字段（已简化），不要使用observation原始对象 */}
+                  <span>
+                    {typeof step.result === "string"
+                      ? step.result.length > 200 ? (
+                        <CollapsibleResult result={step.result} index={index} copyToClipboard={copyToClipboard} copiedIndex={copiedIndex} />
+                      ) : (
+                        step.result
+                      )
+                      : "无结果"}
+                  </span>
                   <Button
                     type="text"
                     size="small"
@@ -350,7 +391,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                       copyToClipboard(
                         typeof step.result === "string"
                           ? step.result
-                          : JSON.stringify(step.result),
+                          : JSON.stringify(step.result || {}),
                         index
                       )
                     }

@@ -752,7 +752,7 @@ export const sessionApi = {
   },
 
   /**
-   * 保存消息到会话
+    * 保存消息到会话
    * @author 小新
    */
   saveMessage: async (
@@ -762,6 +762,22 @@ export const sessionApi = {
     const response = await api.post<{ success: boolean }>(
       `/sessions/${sessionId}/messages`,
       message
+    );
+    return response.data;
+  },
+
+  /**
+   * 保存执行步骤到会话
+   * @author 小新
+   * @update 2026-03-06 新增：用于保存AI思考过程的执行步骤
+   */
+  saveExecutionSteps: async (
+    sessionId: string,
+    executionSteps: any[]
+  ): Promise<{ success: boolean }> => {
+    const response = await api.post<{ success: boolean }>(
+      `/sessions/${sessionId}/execution_steps`,
+      { execution_steps: executionSteps }
     );
     return response.data;
   },
