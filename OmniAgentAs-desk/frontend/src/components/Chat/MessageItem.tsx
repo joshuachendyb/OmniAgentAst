@@ -412,6 +412,7 @@ const isUser = message.role === "user";
           {/* 复制按钮（悬停显示）- 透明背景，小巧精致 */}
           <Tooltip title={copied ? "已复制" : "复制"}>
             <Button
+              className="copy-button"
               type="text"
               size="small"
               icon={
