@@ -1,11 +1,16 @@
 """
 ReAct Agent实现 (ReAct Agent Implementation)
 实现Thought-Action-Observation循环的文件操作智能体
+
+【重构Phase 2】：
+- 重新设计Step类（ThoughtStep/ActionToolStep/ObservationStep）
+- 实现run_stream异步流式输出
+- 统一返回格式（execution_status）
 """
 import asyncio
 import json
 import re
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable, AsyncGenerator
 from datetime import datetime
 from dataclasses import dataclass, field
 from enum import Enum
@@ -28,8 +33,77 @@ class AgentStatus(Enum):
 
 
 @dataclass
+class ThoughtStep:
+    """Thought阶段的数据结构"""
+    step_number: int
+    content: str
+    reasoning: Optional[str] = None
+    action_tool: str = ""
+    params: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "step_number": self.step_number,
+            "content": self.content,
+            "reasoning": self.reasoning,
+            "action_tool": self.action_tool,
+            "params": self.params
+        }
+
+
+@dataclass
+class ActionToolStep:
+    """Action阶段的数据结构"""
+    step_number: int
+    tool_name: str
+    tool_params: Dict[str, Any] = field(default_factory=dict)
+    execution_status: str = "success"
+    summary: str = ""
+    raw_data: Optional[Dict[str, Any]] = None
+    action_retry_count: int = 0
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "step_number": self.step_number,
+            "tool_name": self.tool_name,
+            "tool_params": self.tool_params,
+            "execution_status": self.execution_status,
+            "summary": self.summary,
+            "raw_data": self.raw_data,
+            "action_retry_count": self.action_retry_count
+        }
+
+
+@dataclass
+class ObservationStep:
+    """Observation阶段的数据结构"""
+    step_number: int
+    execution_status: str
+    summary: str
+    raw_data: Optional[Dict[str, Any]] = None
+    content: str = ""
+    reasoning: Optional[str] = None
+    action_tool: str = ""
+    params: Dict[str, Any] = field(default_factory=dict)
+    is_finished: bool = False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "step_number": self.step_number,
+            "execution_status": self.execution_status,
+            "summary": self.summary,
+            "raw_data": self.raw_data,
+            "content": self.content,
+            "reasoning": self.reasoning,
+            "action_tool": self.action_tool,
+            "params": self.params,
+            "is_finished": self.is_finished
+        }
+
+
+@dataclass
 class Step:
-    """ReAct步骤"""
+    """ReAct步骤（兼容旧版本）"""
     step_number: int
     thought: str
     action: str
@@ -38,7 +112,6 @@ class Step:
     timestamp: datetime = field(default_factory=datetime.now)
     
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典"""
         return {
             "step_number": self.step_number,
             "thought": self.thought,
@@ -104,23 +177,33 @@ class ToolParser:
             if not parsed:
                 raise ValueError(f"Failed to parse response as JSON: {e}")
         
-        # 验证必要字段
-        if "thought" not in parsed:
-            raise ValueError("Missing required field: 'thought'")
+        # 【Phase2重构】支持新字段名：action_tool, params
+        # 同时兼容旧字段名：action, action_input
         
-        if "action" not in parsed:
-            raise ValueError("Missing required field: 'action'")
+        # 获取content（思考内容）
+        content = parsed.get("content", parsed.get("thought", ""))
         
-        if "action_input" not in parsed and "actionInput" not in parsed:
-            # 如果没有action_input，尝试使用空字典
-            parsed["action_input"] = {}
+        # 获取action_tool（新）或action（旧）
+        action_tool = parsed.get("action_tool", parsed.get("action", "finish"))
+        
+        # 获取params（新）或action_input（旧）
+        if "params" in parsed:
+            params = parsed.get("params", {})
+        elif "action_input" in parsed:
+            params = parsed.get("action_input", {})
         elif "actionInput" in parsed:
-            parsed["action_input"] = parsed.pop("actionInput")
+            params = parsed.get("actionInput", {})
+        else:
+            params = {}
+        
+        # 获取reasoning（推理过程）
+        reasoning = parsed.get("reasoning")
         
         return {
-            "thought": parsed["thought"],
-            "action": parsed["action"],
-            "action_input": parsed.get("action_input", {})
+            "content": content,
+            "action_tool": action_tool,
+            "params": params,
+            "reasoning": reasoning
         }
     
     @staticmethod
@@ -284,33 +367,46 @@ class ToolExecutor:
             # 执行工具
             result = await tool(**action_input)
             
-            # 格式化结果
+            # 【Phase2重构】适配tools.py的统一返回格式 {status, summary, data, retry_count}
             if isinstance(result, dict):
-                if result.get("success", False):
+                # 新格式直接返回
+                if "status" in result and "summary" in result:
                     return {
-                        "success": True,
-                        "result": result,
-                        "message": result.get("message", f"Successfully executed {action}")
+                        "status": result.get("status", "success"),
+                        "summary": result.get("summary", ""),
+                        "data": result.get("data"),
+                        "retry_count": result.get("retry_count", 0)
+                    }
+                # 旧格式转换
+                elif result.get("success", False):
+                    return {
+                        "status": "success",
+                        "summary": result.get("message", f"Successfully executed {action}"),
+                        "data": result,
+                        "retry_count": 0
                     }
                 else:
                     return {
-                        "success": False,
-                        "error": result.get("error", f"Failed to execute {action}"),
-                        "result": result
+                        "status": "error",
+                        "summary": result.get("error", f"Failed to execute {action}"),
+                        "data": result,
+                        "retry_count": 0
                     }
             else:
                 return {
-                    "success": True,
-                    "result": result,
-                    "message": f"Successfully executed {action}"
+                    "status": "success",
+                    "summary": f"Successfully executed {action}",
+                    "data": result,
+                    "retry_count": 0
                 }
                 
         except Exception as e:
             logger.error(f"Tool execution error: {e}", exc_info=True)
             return {
-                "success": False,
-                "error": f"Execution error: {str(e)}",
-                "result": None
+                "status": "error",
+                "summary": f"Execution error: {str(e)}",
+                "data": None,
+                "retry_count": 0
             }
 
 
@@ -542,6 +638,177 @@ class FileOperationAgent:
                     # 重置标记
                     self._session_created_by_agent = False
                     self.session_id = None
+                except Exception as e:
+                    logger.error(f"Failed to complete session {session_id}: {e}")
+    
+    async def run_stream(
+        self,
+        task: str,
+        context: Optional[Dict[str, Any]] = None,
+        system_prompt: Optional[str] = None,
+        max_steps: int = 10
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        【Phase2新增】异步流式执行Agent，每轮循环完成后立即yield输出
+        
+        Args:
+            task: 任务描述
+            context: 额外上下文
+            system_prompt: 自定义系统prompt（可选）
+            max_steps: 最大迭代次数
+        
+        Yields:
+            各个阶段的输出字典
+        """
+        # 重置状态
+        self.steps = []
+        self.conversation_history = []
+        self.status = AgentStatus.THINKING
+        self.llm_call_count = 0
+        
+        # 确保session存在
+        session_id = self.session_id
+        if not session_id:
+            session_id = self.session_service.create_session(
+                agent_id="file-operation-agent",
+                task_description=task
+            )
+            self._session_created_by_agent = True
+            if hasattr(self.file_tools, 'set_session'):
+                self.file_tools.set_session(session_id)
+            logger.info(f"Session created in run_stream(): {session_id}")
+        
+        # 构建初始prompt
+        sys_prompt = system_prompt or self.prompts.get_system_prompt()
+        task_prompt = self.prompts.get_task_prompt(task, context)
+        
+        # 添加到对话历史
+        self.conversation_history.append({"role": "system", "content": sys_prompt})
+        self.conversation_history.append({"role": "user", "content": task_prompt})
+        
+        step_count = 0
+        
+        try:
+            while step_count < max_steps:
+                step_count += 1
+                
+                # ========== Thought阶段 ==========
+                self.status = AgentStatus.THINKING
+                response = await self._get_llm_response()
+                
+                # 解析响应
+                try:
+                    parsed = self.parser.parse_response(response)
+                except ValueError as e:
+                    logger.error(f"Failed to parse LLM response: {e}")
+                    self._add_observation_to_history(f"Parse error: {e}. Please respond with valid JSON format.")
+                    continue
+                
+                thought_content = parsed.get("content", "")
+                reasoning = parsed.get("reasoning")
+                action_tool = parsed.get("action_tool", "finish")
+                params = parsed.get("params", {})
+                
+                # 立即yield thought
+                yield {
+                    "type": "thought",
+                    "step": step_count,
+                    "content": thought_content,
+                    "reasoning": reasoning,
+                    "action_tool": action_tool,
+                    "params": params
+                }
+                
+                # 判断是否结束
+                if action_tool == "finish":
+                    # 任务完成
+                    yield {
+                        "type": "final",
+                        "content": params.get("result", thought_content)
+                    }
+                    break
+                
+                # ========== Action阶段 ==========
+                self.status = AgentStatus.EXECUTING
+                execution_result = await self.executor.execute(action_tool, params)
+                
+                # 立即yield action_tool结果
+                yield {
+                    "type": "action_tool",
+                    "step": step_count,
+                    "tool_name": action_tool,
+                    "tool_params": params,
+                    "execution_status": execution_result.get("status", "success"),
+                    "summary": execution_result.get("summary", ""),
+                    "raw_data": execution_result.get("data"),
+                    "action_retry_count": execution_result.get("retry_count", 0)
+                }
+                
+                # ========== Observation阶段 ==========
+                # 将action结果格式化为输入
+                observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}"
+                self._add_observation_to_history(observation_text)
+                
+                # 调用LLM获取下一个决策
+                self.status = AgentStatus.OBSERVING
+                llm_response = await self._get_llm_response()
+                
+                try:
+                    parsed_obs = self.parser.parse_response(llm_response)
+                except ValueError as e:
+                    logger.error(f"Failed to parse observation LLM response: {e}")
+                    parsed_obs = {"content": "无法解析LLM响应", "action_tool": "finish", "params": {}}
+                
+                is_finished = parsed_obs.get("action_tool") == "finish"
+                
+                # 立即yield observation
+                yield {
+                    "type": "observation",
+                    "step": step_count,
+                    "execution_status": execution_result.get("status", "success"),
+                    "summary": execution_result.get("summary", ""),
+                    "raw_data": execution_result.get("data"),
+                    "content": parsed_obs.get("content", ""),
+                    "reasoning": parsed_obs.get("reasoning"),
+                    "action_tool": parsed_obs.get("action_tool", "finish"),
+                    "params": parsed_obs.get("params", {}),
+                    "is_finished": is_finished
+                }
+                
+                # 更新消息历史
+                self.conversation_history.append({"role": "assistant", "content": thought_content})
+                
+                # 判断是否结束
+                if is_finished:
+                    # 发送final
+                    yield {
+                        "type": "final",
+                        "content": parsed_obs.get("content", "任务已完成")
+                    }
+                    break
+            
+            # 超过最大步数
+            if step_count >= max_steps:
+                yield {
+                    "type": "error",
+                    "code": "MAX_STEPS_EXCEEDED",
+                    "message": f"已达到最大迭代次数 {max_steps}"
+                }
+                
+        except Exception as e:
+            logger.error(f"Agent run_stream error: {e}", exc_info=True)
+            yield {
+                "type": "error",
+                "code": "INTERNAL_ERROR",
+                "message": str(e)
+            }
+        finally:
+            # 关闭session
+            if self._session_created_by_agent and session_id and self.session_service:
+                try:
+                    self.session_service.complete_session(session_id, success=True)
+                    logger.info(f"Session completed in run_stream: {session_id}")
+                    self._session_created_by_agent = False
                 except Exception as e:
                     logger.error(f"Failed to complete session {session_id}: {e}")
     
