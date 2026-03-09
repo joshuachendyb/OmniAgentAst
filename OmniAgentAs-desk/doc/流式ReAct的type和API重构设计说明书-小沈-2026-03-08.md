@@ -2,7 +2,7 @@
 
 **编写人**: 小沈
 **编写时间**: 2026-03-08 21:50:00
-**更新时间**: 2026-03-09 12:26:19
+**更新时间**: 2026-03-09 13:02:21
 **存放位置**: D:\2bktest\MDview\OmniAgentAs-desk\doc\
 
 ---
@@ -560,16 +560,60 @@ chat.py: for step in result.steps:
 
 ---
 
-### 5.1 type=start（任务开始）
+### 5.1 type=start（任务开始 + 安全检查）
 
 **是 Stage 还是 Type？**
 - **Type**（初始化阶段，不是循环的一部分）
 
+**包含两个子阶段**：
+
+| 子阶段 | 说明 | 执行时机 |
+|--------|------|---------|
+| 初始化 | 设置AI模型、任务ID等 | 开始时 |
+| 安全检查 | 规则检查用户输入是否安全 | 初始化后，调用Agent前 |
+
 **输入**：无（任务开始）
 
-**输出**：display_name, model, provider, task_id
+**输出**：display_name, model, provider, task_id, security_check
 
-**传导**：不传导到下一阶段（只是初始化）
+**传导**：安全检查通过后 → 进入ReAct循环
+
+---
+
+### 5.1.1 安全检查流程（整合自调试笔记11章）
+
+```
+用户发送: "删除 C:\Windows\System32"
+                ↓
+        ┌───────────────────────────────────────┐
+        │  阶段1：规则检查（后端自动）            │
+        │  check_command_safety()               │
+        │  → 拦截明显危险命令（rm -rf /等）      │
+        └───────────────────────────────────────┘
+                ↓
+        ┌───────────────────────────────────────┐
+        │  阶段2：LLM推理（第一个Thought）       │
+        │  → 分析命令意图，给出智能提示          │
+        └───────────────────────────────────────┘
+                ↓
+        ┌───────────────────────────────────────┐
+        │  阶段3：用户确认（可选）               │
+        │  → 确认 → 执行                        │
+        │  → 取消 → 停止                        │
+        └───────────────────────────────────────┘
+```
+
+**安全检查三层保障**：
+
+| 层级 | 作用 | 优势 |
+|------|------|------|
+| **规则检查** | 快速拦截 `rm -rf /`、`format C:` 等 | 毫秒级响应，100%准确 |
+| **LLM推理** | 分析命令意图，给出智能提示 | 语义理解，判断更准确 |
+| **用户确认** | 危险操作需要用户许可 | 最终安全保障 |
+
+---
+
+### 5.1.2 字段分析
 
 **字段分析**：
 
@@ -579,8 +623,73 @@ chat.py: for step in result.steps:
 | model | AI模型 | 必要 | ✅ |
 | provider | AI提供商 | 必要 | ✅ |
 | task_id | 任务ID | 必要 | ✅ |
+| security_check | 安全检查结果 | 必要 | ✅ 新增 |
 
-**结论**：✅ 保留，字段完整，属于 Type
+**security_check 字段结构**：
+
+| 字段 | 作用 | 必要性 | 说明 |
+|------|------|--------|------|
+| is_safe | 是否安全 | 必要 | true=安全，false=危险 |
+| risk_level | 风险等级 | 可选 | low/medium/high/critical |
+| risk | 风险描述 | 可选 | 具体风险说明 |
+| blocked | 是否被拦截 | 可选 | true=已拦截，不执行LLM |
+
+**结论**：✅ 保留，整合security_check后字段完整
+
+---
+
+### 5.1.3 JSON示例
+
+**安全检查通过**：
+```json
+{
+  "type": "start",
+  "display_name": "OpenAI (gpt-4)",
+  "model": "gpt-4",
+  "provider": "openai",
+  "task_id": "abc123",
+  "security_check": {
+    "is_safe": true,
+    "risk_level": null,
+    "risk": null,
+    "blocked": false
+  }
+}
+```
+
+**安全检查拦截（危险命令）**：
+```json
+{
+  "type": "start",
+  "display_name": "OpenAI (gpt-4)",
+  "model": "gpt-4",
+  "provider": "openai",
+  "task_id": "abc123",
+  "security_check": {
+    "is_safe": false,
+    "risk_level": "critical",
+    "risk": "检测到危险命令：rm -rf /",
+    "blocked": true
+  }
+}
+```
+
+**安全检查通过但有警告**：
+```json
+{
+  "type": "start",
+  "display_name": "OpenAI (gpt-4)",
+  "model": "gpt-4",
+  "provider": "openai",
+  "task_id": "abc123",
+  "security_check": {
+    "is_safe": true,
+    "risk_level": "medium",
+    "risk": "检测到删除操作，请确认",
+    "blocked": false
+  }
+}
+```
 
 ---
 
@@ -1513,14 +1622,14 @@ else:
 
 | 序号 | type | 说明 | 与LLM关系 |
 |------|------|------|----------|
-| 1 | start | 任务开始 | 初始化 |
+| 1 | start | 任务开始（含安全检查） | 初始化+安全检查 |
 | 2 | thought | LLM推理 | ✅ 直接相关 |
 | 3 | action_tool | 执行动作 | ✅ 直接相关 |
 | 4 | observation | 执行结果判断 | ✅ 直接相关 |
 | 5 | final | 最终回复 | ✅ 直接相关 |
 | 6 | chunk | 流式内容片段 | ✅ 直接相关（LLM输出） |
 | 7 | error | 错误状态 | Agent相关 |
-| 8 | status | Agent执行状态 | Agent相关（整合自5.8-5.11） |
+| 8 | status | Agent执行状态 | Agent相关 |
 
 ### 6.2 整合说明
 
@@ -1552,7 +1661,7 @@ else:
 
 ## 七、各type详细设计
 
-### 7.1 start - 任务开始
+### 7.1 start - 任务开始（含安全检查）
 
 ```json
 {
@@ -1560,7 +1669,13 @@ else:
   "display_name": "OpenAI (gpt-4)",
   "model": "gpt-4",
   "provider": "openai",
-  "task_id": "abc123"
+  "task_id": "abc123",
+  "security_check": {
+    "is_safe": true,
+    "risk_level": null,
+    "risk": null,
+    "blocked": false
+  }
 }
 ```
 
