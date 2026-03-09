@@ -1481,7 +1481,7 @@ else:
 
 ---
 
-### 5.8-5.11 状态类型整合说明
+### 5.8 type=status 说明
 
 **分析**：interrupted、paused、resumed、retrying 都是Agent内部执行状态，与LLM无直接关系。
 
