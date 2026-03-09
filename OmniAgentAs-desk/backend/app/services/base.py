@@ -108,10 +108,6 @@ class BaseAIService:
     async def chat_stream(self, message: str, history: Optional[List[Message]] = None) -> AsyncGenerator[StreamChunk, None]:
         """发送对话请求（流式返回）"""
         
-        # 【关键调试】确认 chat_stream 方法被调用
-        print(f"[BaseAIService.chat_stream] 被调用! model={self.model}, provider={self.provider}")
-        logger.info(f"[BaseAIService.chat_stream] START - model={self.model}, provider={self.provider}")
-        
         messages = self._build_messages(message, history)
         
         try:
@@ -145,17 +141,12 @@ class BaseAIService:
                     else:
                         continue
                     
-                    # 【调试】记录AI返回的原始数据
-                    logger.info(f"[AI Response Raw] model={self.model}, data_str={data_str}")
-                    
                     if data_str.strip() == "[DONE]":
                         yield StreamChunk(content="", model=self.model, is_done=True)
                         return
                     
                     try:
                         data = json.loads(data_str)
-                        # 【调试】记录解析后的完整数据
-                        logger.info(f"[AI Response Parsed] model={self.model}, data.keys={list(data.keys())}")
                         
                         choices = data.get("choices", [])
                         
@@ -182,8 +173,6 @@ class BaseAIService:
                             # 注意：不再使用 outer_content，避免重复累积问题
                             
                             finish_reason = choices[0].get("finish_reason", "")
-                            # 【调试】记录content
-                            logger.info(f"[AI Response Content] model={self.model}, content_length={len(content) if content else 0}, reasoning_length={len(reasoning_content) if reasoning_content else 0}, finish_reason={finish_reason}")
                             
                             # 【小沈修复】分别返回思考过程和最终内容
                             # 先返回思考过程（如果有）
