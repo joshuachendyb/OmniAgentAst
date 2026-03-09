@@ -79,24 +79,24 @@ class TestReadFile:
         # 执行读取
         result = await file_tools_with_real_safety.read_file(str(test_file))
         
-        # 验证结果
-        assert result["success"] is True
-        assert result["content"] is not None
-        assert result["total_lines"] == 5
-        assert result["start_line"] == 1
-        assert result["end_line"] == 5
-        assert result["has_more"] is False
-        assert result["encoding"] == "utf-8"
-        assert "Line 1" in result["content"]
+        # 验证结果 - 使用新字段status
+        assert result["status"] == "success"
+        assert result["data"]["content"] is not None
+        assert result["data"]["total_lines"] == 5
+        assert result["data"]["start_line"] == 1
+        assert result["data"]["end_line"] == 5
+        assert result["data"]["has_more"] is False
+        assert result["data"]["encoding"] == "utf-8"
+        assert "Line 1" in result["data"]["content"]
     
     @pytest.mark.asyncio
     async def test_read_file_not_found(self, file_tools_with_real_safety):
         """TC002: 文件不存在处理"""
         result = await file_tools_with_real_safety.read_file("/nonexistent/file.txt")
         
-        assert result["success"] is False
-        assert "File not found" in result["error"]
-        assert result["content"] is None
+        assert result["status"] == "error"
+        assert "File not found" in result["data"]["error"]
+        assert result["data"]["content"] is None
     
     @pytest.mark.asyncio
     async def test_read_file_with_offset_and_limit(self, file_tools_with_real_safety, temp_dir):
@@ -109,26 +109,26 @@ class TestReadFile:
         # 读取第5行开始，最多5行
         result = await file_tools_with_real_safety.read_file(str(test_file), offset=5, limit=5)
         
-        assert result["success"] is True
-        assert result["start_line"] == 5
+        assert result["status"] == "success"
+        assert result["data"]["start_line"] == 5
         # end_line是被读取的最后一行的行号（包含）
         # 第5行开始，读5行 = 第5,6,7,8,9行
-        assert result["end_line"] == 9
-        assert result["has_more"] is True  # 还有更多行
+        assert result["data"]["end_line"] == 9
+        assert result["data"]["has_more"] is True  # 还有更多行
         # 验证包含的行
-        assert "5: Line 5" in result["content"]
-        assert "9: Line 9" in result["content"]
+        assert "5: Line 5" in result["data"]["content"]
+        assert "9: Line 9" in result["data"]["content"]
         # 验证不包含的行
-        assert "4: Line 4" not in result["content"]  # 不包含第4行
-        assert "10: Line 10" not in result["content"]  # 不包含第10行
+        assert "4: Line 4" not in result["data"]["content"]  # 不包含第4行
+        assert "10: Line 10" not in result["data"]["content"]  # 不包含第10行
     
     @pytest.mark.asyncio
     async def test_read_file_directory(self, file_tools_with_real_safety, temp_dir):
         """TC004: 尝试读取目录应失败"""
         result = await file_tools_with_real_safety.read_file(str(temp_dir))
         
-        assert result["success"] is False
-        assert "Not a file" in result["error"]
+        assert result["status"] == "error"
+        assert "Not a file" in result["data"]["error"]
     
     @pytest.mark.asyncio
     async def test_read_file_with_encoding(self, file_tools_with_real_safety, temp_dir):
@@ -139,8 +139,8 @@ class TestReadFile:
         
         result = await file_tools_with_real_safety.read_file(str(test_file), encoding="utf-8")
         
-        assert result["success"] is True
-        assert "Hello 世界" in result["content"]
+        assert result["status"] == "success"
+        assert "Hello 世界" in result["data"]["content"]
 
 
 class TestWriteFile:
@@ -155,11 +155,11 @@ class TestWriteFile:
         result = await file_tools_with_real_safety.write_file(str(target_file), content)
         
         # 验证返回结果
-        assert result["success"] is True
-        assert result["operation_id"] is not None
-        assert result["operation_id"].startswith("op-")
-        assert result["file_path"] == str(target_file)
-        assert result["bytes_written"] == len(content.encode("utf-8"))
+        assert result["status"] == "success"
+        assert result["data"]["operation_id"] is not None
+        assert result["data"]["operation_id"].startswith("op-")
+        assert result["data"]["file_path"] == str(target_file)
+        assert result["data"]["bytes_written"] == len(content.encode("utf-8"))
         
         # 验证文件确实被写入
         assert target_file.exists()
@@ -172,8 +172,8 @@ class TestWriteFile:
         
         result = await file_tools_with_real_safety.write_file("/tmp/test.txt", "content")
         
-        assert result["success"] is False
-        assert "No active session" in result["error"]
+        assert result["status"] == "error"
+        assert "No active session" in result["data"]["error"]
     
     @pytest.mark.asyncio
     async def test_write_file_overwrite(self, file_tools_with_real_safety, temp_dir):
@@ -183,7 +183,7 @@ class TestWriteFile:
         
         result = await file_tools_with_real_safety.write_file(str(test_file), "New content")
         
-        assert result["success"] is True
+        assert result["status"] == "success"
         assert test_file.read_text() == "New content"
 
 
@@ -201,12 +201,12 @@ class TestListDirectory:
         
         result = await file_tools_with_real_safety.list_directory(str(temp_dir))
         
-        assert result["success"] is True
+        assert result["status"] == "success"
         # 至少包含我们创建的3个条目（safety服务可能创建额外目录如recycle, reports）
-        assert result["total_count"] >= 3
+        assert result["data"]["total"] >= 3
         
         # 验证文件信息
-        file_names = [e["name"] for e in result["entries"]]
+        file_names = [e["name"] for e in result["data"]["entries"]]
         assert "file1.txt" in file_names
         assert "file2.py" in file_names
         assert "subdir" in file_names
@@ -222,11 +222,11 @@ class TestListDirectory:
         
         result = await file_tools_with_real_safety.list_directory(str(temp_dir), recursive=True)
         
-        assert result["success"] is True
+        assert result["status"] == "success"
         # 应包含: level1(目录), level1/file1.txt, level1/level2(目录), level1/level2/file2.txt
-        assert result["total_count"] >= 4
+        assert result["data"]["total"] >= 4
         
-        paths = [e["path"] for e in result["entries"]]
+        paths = [e["path"] for e in result["data"]["entries"]]
         assert any("level1" in p for p in paths)
         assert any("level2" in p for p in paths)
     
@@ -235,8 +235,8 @@ class TestListDirectory:
         """TC011: 目录不存在处理"""
         result = await file_tools_with_real_safety.list_directory("/nonexistent/dir")
         
-        assert result["success"] is False
-        assert "Directory not found" in result["error"]
+        assert result["status"] == "error"
+        assert "Directory not found" in result["data"]["error"]
     
     @pytest.mark.asyncio
     async def test_list_directory_not_a_directory(self, file_tools_with_real_safety, temp_dir):
@@ -246,8 +246,8 @@ class TestListDirectory:
         
         result = await file_tools_with_real_safety.list_directory(str(test_file))
         
-        assert result["success"] is False
-        assert "Not a directory" in result["error"]
+        assert result["status"] == "error"
+        assert "Not a directory" in result["data"]["error"]
 
 
 class TestDeleteFile:
@@ -263,10 +263,10 @@ class TestDeleteFile:
         result = await file_tools_with_real_safety.delete_file(str(test_file))
         
         # 验证返回结果
-        assert result["success"] is True
-        assert result["operation_id"] is not None
-        assert result["operation_id"].startswith("op-")
-        assert "backup" in result["message"].lower() or "deleted" in result["message"].lower()
+        assert result["status"] == "success"
+        assert result["data"]["operation_id"] is not None
+        assert result["data"]["operation_id"].startswith("op-")
+        assert "backup" in result["data"]["message"].lower() or "deleted" in result["data"]["message"].lower()
         
         # 验证文件已删除
         assert not test_file.exists()
@@ -276,8 +276,8 @@ class TestDeleteFile:
         """TC014: 删除不存在的文件"""
         result = await file_tools_with_real_safety.delete_file("/nonexistent/file.txt")
         
-        assert result["success"] is False
-        assert "File not found" in result["error"]
+        assert result["status"] == "error"
+        assert "File not found" in result["data"]["error"]
     
     @pytest.mark.asyncio
     async def test_delete_file_no_session(self, file_tools_with_real_safety):
@@ -286,8 +286,8 @@ class TestDeleteFile:
         
         result = await file_tools_with_real_safety.delete_file("/tmp/test.txt")
         
-        assert result["success"] is False
-        assert "No active session" in result["error"]
+        assert result["status"] == "error"
+        assert "No active session" in result["data"]["error"]
     
     @pytest.mark.asyncio
     async def test_delete_directory_recursive(self, file_tools_with_real_safety, temp_dir):
@@ -299,7 +299,7 @@ class TestDeleteFile:
         
         result = await file_tools_with_real_safety.delete_file(str(test_dir), recursive=True)
         
-        assert result["success"] is True
+        assert result["status"] == "success"
         assert not test_dir.exists()
 
 
@@ -316,11 +316,11 @@ class TestMoveFile:
         result = await file_tools_with_real_safety.move_file(str(source), str(dest))
         
         # 验证返回结果
-        assert result["success"] is True
-        assert result["operation_id"] is not None
-        assert result["operation_id"].startswith("op-")
-        assert result["source"] == str(source)
-        assert result["destination"] == str(dest)
+        assert result["status"] == "success"
+        assert result["data"]["operation_id"] is not None
+        assert result["data"]["operation_id"].startswith("op-")
+        assert result["data"]["source"] == str(source)
+        assert result["data"]["destination"] == str(dest)
         
         # 验证文件已移动
         assert not source.exists()
@@ -335,8 +335,8 @@ class TestMoveFile:
             "/tmp/dest.txt"
         )
         
-        assert result["success"] is False
-        assert "Source not found" in result["error"]
+        assert result["status"] == "error"
+        assert "Source not found" in result["data"]["error"]
     
     @pytest.mark.asyncio
     async def test_move_file_no_session(self, file_tools_with_real_safety):
@@ -345,8 +345,8 @@ class TestMoveFile:
         
         result = await file_tools_with_real_safety.move_file("/tmp/src.txt", "/tmp/dst.txt")
         
-        assert result["success"] is False
-        assert "No active session" in result["error"]
+        assert result["status"] == "error"
+        assert "No active session" in result["data"]["error"]
 
 
 class TestSearchFiles:
@@ -362,12 +362,12 @@ class TestSearchFiles:
         
         result = await file_tools_with_real_safety.search_files("world", str(temp_dir))
         
-        assert result["success"] is True
-        assert result["pattern"] == "world"
-        assert result["files_matched"] >= 2
+        assert result["status"] == "success"
+        assert result["data"]["pattern"] == "world"
+        assert result["data"]["files_matched"] >= 2
         
         # 验证结果
-        matches = result["matches"]
+        matches = result["data"]["matches"]
         assert len(matches) > 0
     
     @pytest.mark.asyncio
@@ -381,8 +381,8 @@ class TestSearchFiles:
             use_regex=True
         )
         
-        assert result["success"] is True
-        assert result["total_matches"] >= 2
+        assert result["status"] == "success"
+        assert result["data"]["total_matches"] >= 2
     
     @pytest.mark.asyncio
     async def test_search_files_invalid_regex(self, file_tools_with_real_safety, temp_dir):
@@ -393,16 +393,16 @@ class TestSearchFiles:
             use_regex=True
         )
         
-        assert result["success"] is False
-        assert "Invalid regex" in result["error"]
+        assert result["status"] == "error"
+        assert "Invalid regex" in result["data"]["error"]
     
     @pytest.mark.asyncio
     async def test_search_files_not_found(self, file_tools_with_real_safety):
         """TC023: 搜索路径不存在"""
         result = await file_tools_with_real_safety.search_files("pattern", "/nonexistent/path")
         
-        assert result["success"] is False
-        assert "Path not found" in result["error"]
+        assert result["status"] == "error"
+        assert "Path not found" in result["data"]["error"]
     
     @pytest.mark.asyncio
     async def test_search_files_with_pattern(self, file_tools_with_real_safety, temp_dir):
@@ -414,9 +414,9 @@ class TestSearchFiles:
         # 只搜索.py文件
         result = await file_tools_with_real_safety.search_files("code", str(temp_dir), file_pattern="*.py")
         
-        assert result["success"] is True
+        assert result["status"] == "success"
         # 应只匹配到script.py
-        file_paths = [m["file"] for m in result["matches"]]
+        file_paths = [m["file"] for m in result["data"]["matches"]]
         assert all(".py" in f for f in file_paths)
 
 
@@ -428,9 +428,9 @@ class TestGenerateReport:
         """TC025: 成功生成操作报告"""
         result = await file_tools_with_real_safety.generate_report(str(temp_dir))
         
-        assert result["success"] is True
-        assert result["session_id"] == "test-session"
-        assert "reports" in result
+        assert result["status"] == "success"
+        assert result["data"]["session_id"] == "test-session"
+        assert "reports" in result["data"]
     
     @pytest.mark.asyncio
     async def test_generate_report_no_session(self, file_tools_with_real_safety):
@@ -439,8 +439,8 @@ class TestGenerateReport:
         
         result = await file_tools_with_real_safety.generate_report()
         
-        assert result["success"] is False
-        assert "No active session" in result["error"]
+        assert result["status"] == "error"
+        assert "No active session" in result["data"]["error"]
 
 
 class TestFileToolsIntegration:
