@@ -236,18 +236,18 @@ async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_t
             if not is_paused:
                 # 不再暂停，恢复发送
                 if running_tasks.get(task_id, {}).get("_was_paused", False):
-                    # 【原则4整改】content → message
-                    yield f"data: {json.dumps({'type': 'resumed', 'message': '任务已恢复'})}\n\n"
+                    # 【问题5修复】统一使用type='status' + status_value
+                    yield f"data: {json.dumps({'type': 'status', 'status_value': 'resumed', 'message': '任务已恢复'})}\n\n"
                     running_tasks[task_id]["_was_paused"] = False
                 return
         
         # 暂停中，等待恢复
         if is_paused and not running_tasks.get(task_id, {}).get("_was_paused", False):
             # 刚进入暂停状态，发送paused事件
-            # 【原则4整改】content → message
+            # 【问题5修复】统一使用type='status' + status_value
             async with running_tasks_lock:
                 running_tasks[task_id]["_was_paused"] = True
-            yield f"data: {json.dumps({'type': 'paused', 'message': '任务已暂停'})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', 'status_value': 'paused', 'message': '任务已暂停'})}\n\n"
         
         await asyncio.sleep(0.5)  # 每0.5秒检查一次
 
@@ -697,17 +697,41 @@ async def chat_stream(request: ChatRequest):
         if request.session_id:
             cache_display_name(request.session_id, display_name)
         
-        # 发送 start 步骤
+        # 【问题1修复】在start阶段添加安全检查
+        # 获取最后一条用户消息进行安全检查
+        last_message = request.messages[-1].content if request.messages else ""
+        security_check_result = check_command_safety(last_message)
+        
+        # 发送 start 步骤（包含security_check）
         start_data = {
             'type': 'start',
             'display_name': display_name,
             'provider': ai_service.provider,
             'model': ai_service.model,
-            'task_id': task_id
+            'task_id': task_id,
+            'security_check': {
+                'is_safe': security_check_result.get('is_safe', True),
+                'risk_level': security_check_result.get('risk_level'),
+                'risk': security_check_result.get('risk'),
+                'blocked': security_check_result.get('blocked', False)
+            }
         }
         logger.info(f"[Step start] 发送start步骤")
         
         yield f"data: {json.dumps(start_data)}\n\n"
+        
+        # 如果安全检查未通过，直接返回错误
+        if not security_check_result.get('is_safe', True):
+            risk = security_check_result.get('risk', '未知风险')
+            error_data = {
+                'type': 'error',
+                'message': f'危险操作需确认: {risk}',
+                'error_type': 'security',
+                'details': f"risk_level: {security_check_result.get('risk_level')}"
+            }
+            logger.info(f"[Step error] 发送error步骤(安全检测拦截)")
+            yield f"data: {json.dumps(error_data)}\n\n"
+            return
         
         try:
             # 获取最后一条用户消息
@@ -748,26 +772,33 @@ async def chat_stream(request: ChatRequest):
             
             if is_file_op and confidence >= 0.3:
                 # 文件操作：逐步推送执行步骤
-                # 【原则4整改】字段拆分：content → action_description
-                action1_data = {'type': 'action', 'step': next_step(), 'action_description': '检测到文件操作意图，开始执行...'}
-                logger.info(f"[Step action] 发送action步骤(文件检测)")
+                # 【问题2修复】type改为action_tool，添加必需字段
+                action1_data = {
+                    'type': 'action_tool',
+                    'action_type': 'notification',
+                    'action_name': 'file_detection',
+                    'action_input': {'description': '检测到文件操作意图，开始执行...'},
+                    'step': next_step(),
+                    'raw_data': None,
+                    'action_retry_count': 0
+                }
                 yield f"data: {json.dumps(action1_data)}\n\n"
                 await asyncio.sleep(0.3)
                 
                 # 检查是否被中断
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
-                        # 【原则4整改】字段拆分：content → message
-                        interrupted_data = {'type': 'interrupted', 'message': '任务已被中断'}
-                        logger.info(f"[Step interrupted] 发送interrupted步骤")
+                        # 【问题5修复】统一使用type='status' + status_value
+                        interrupted_data = {'type': 'status', 'status_value': 'interrupted', 'message': '任务已被中断'}
+                        logger.info(f"[Step status] 发送status步骤(interrupted)")
                         yield f"data: {json.dumps(interrupted_data)}\n\n"
                         return
                 
                 # 安全检测
                 is_safe, risk = check_command_safety(last_message)
                 if not is_safe:
-                    # 【原则4整改】字段拆分：content → error_message
-                    error_data = {'type': 'error', 'error_message': f'危险操作需确认: {risk}'}
+                    # 【问题6修复】error_message改为message
+                    error_data = {'type': 'error', 'message': f'危险操作需确认: {risk}'}
                     logger.info(f"[Step error] 发送error步骤(安全检测)")
                     yield f"data: {json.dumps(error_data)}\n\n"
                     return
@@ -801,9 +832,16 @@ async def chat_stream(request: ChatRequest):
                     session_id=session_id
                 )
                 
-                # 【原则4整改】字段拆分：content → action_description
-                action2_data = {'type': 'action', 'step': next_step(), 'action_description': '执行文件操作...'}
-                logger.info(f"[Step action] 发送action步骤(执行文件)")
+                # 【问题2修复】type改为action_tool，添加必需字段
+                action2_data = {
+                    'type': 'action_tool',
+                    'action_type': 'notification',
+                    'action_name': 'file_operation',
+                    'action_input': {'description': '执行文件操作...'},
+                    'step': next_step(),
+                    'raw_data': None,
+                    'action_retry_count': 0
+                }
                 yield f"data: {json.dumps(action2_data)}\n\n"
                 
                 # 流式执行（每步检查中断）
@@ -813,8 +851,9 @@ async def chat_stream(request: ChatRequest):
                         # 每步检查是否被中断
                         async with running_tasks_lock:
                             if running_tasks.get(task_id, {}).get("cancelled", False):
-                                interrupted_data = {'type': 'interrupted', 'message': '任务已被中断'}
-                                logger.info(f"[Step interrupted] 发送interrupted步骤")
+                                # 【问题5修复】统一使用type='status' + status_value
+                                interrupted_data = {'type': 'status', 'status_value': 'interrupted', 'message': '任务已被中断'}
+                                logger.info(f"[Step status] 发送status步骤(interrupted)")
                                 yield f"data: {json.dumps(interrupted_data)}\n\n"
                                 break
                         
@@ -836,14 +875,16 @@ async def chat_stream(request: ChatRequest):
                         elif event_type == 'action_tool':
                             # Action阶段
                             action_data = {
-                                'type': 'action',
+                                'type': 'action_tool',
                                 'step': event.get('step', 0),
                                 'tool_name': event.get('tool_name', ''),
                                 'tool_params': event.get('tool_params', {}),
                                 'execution_status': event.get('execution_status', 'success'),
-                                'summary': event.get('summary', '')
+                                'summary': event.get('summary', ''),
+                                'raw_data': event.get('raw_data'),
+                                'action_retry_count': event.get('action_retry_count', 0)
                             }
-                            logger.info(f"[Step action] 发送action步骤(执行工具)")
+                            logger.info(f"[Step action_tool] 发送action_tool步骤(执行工具)")
                             yield f"data: {json.dumps(action_data)}\n\n"
                         
                         elif event_type == 'observation':
@@ -853,10 +894,12 @@ async def chat_stream(request: ChatRequest):
                                 'step': event.get('step', 0),
                                 'execution_status': event.get('execution_status', 'success'),
                                 'summary': event.get('summary', ''),
+                                'raw_data': event.get('raw_data'),
                                 'content': event.get('content', ''),
                                 'reasoning': event.get('reasoning', ''),
                                 'action_tool': event.get('action_tool', ''),
-                                'params': event.get('params', {})
+                                'params': event.get('params', {}),
+                                'is_finished': event.get('is_finished', False)
                             }
                             logger.info(f"[Step observation] 发送observation步骤")
                             yield f"data: {json.dumps(observation_data)}\n\n"
@@ -894,9 +937,16 @@ async def chat_stream(request: ChatRequest):
                     )
             else:
                 # 普通对话：调用AI服务（流式）
-                # 【原则4整改】content → action_description
-                action_data = {'type': 'action', 'step': next_step(), 'action_description': '正在调用AI服务...'}
-                logger.info(f"[Step action] 发送action步骤(调用AI)")
+                # 【问题2修复】type改为action_tool，添加必需字段
+                action_data = {
+                    'type': 'action_tool',
+                    'action_type': 'notification',
+                    'action_name': 'ai_call',
+                    'action_input': {'description': '正在调用AI服务...'},
+                    'step': next_step(),
+                    'raw_data': None,
+                    'action_retry_count': 0
+                }
                 yield f"data: {json.dumps(action_data)}\n\n"
                 await asyncio.sleep(0.3)
                 
@@ -931,7 +981,8 @@ async def chat_stream(request: ChatRequest):
                         
                         # 发送重试提示给前端
                         retry_data = {
-                            'type': 'retrying',
+                            'type': 'status',
+                            'status_value': 'retrying',
                             'message': f'请求超时，正在重试 ({retry_attempt}/{max_retries})...',
                             'wait_time': wait_time
                         }
@@ -1069,8 +1120,8 @@ async def chat_stream(request: ChatRequest):
             # 【小沈代修改 - 统一错误处理】使用 get_user_friendly_error 和 create_error_response
             logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
             error_type, error_message = get_user_friendly_error(e)
-            # 【原则4整改】content → error_message
-            error_data = {'type': 'error', 'error_type': error_type, 'error_message': error_message}
+            # 【问题6修复】error_message → message
+            error_data = {'type': 'error', 'error_type': error_type, 'message': error_message}
             logger.info(f"[Step error] 发送error步骤")
             yield create_error_response(
                 error_type=error_type,
