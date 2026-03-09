@@ -4645,7 +4645,7 @@ paused → modified_command → 重新开始整个流程
 
 ---
 
-#### 9.8.3 分页数据请求接口（待开发）
+#### 9.8.3 分页数据请求接口（已实现）
 
 用于请求大型目录列表的分页数据：
 
@@ -4654,7 +4654,7 @@ paused → modified_command → 重新开始整个流程
 | **接口地址** | `/api/v1/chat/stream/next-page` |
 | **请求方法** | `POST` |
 | **Content-Type** | `application/json` |
-| **实现状态** | ❌ 未实现（待开发） |
+| **实现状态** | ✅ 已实现 |
 
 **功能说明**：
 - 用于在接收到action_tool响应后，请求大型目录列表的下一页数据
@@ -4671,13 +4671,19 @@ paused → modified_command → 重新开始整个流程
 
 | 字段 | 类型 | 必要性 | 说明 |
 |------|------|--------|------|
-| task_id | string | **必要** | 原始任务ID |
+| task_id | string | **必要** | 原始任务ID（session_id） |
+| tool_name | string | **必要** | 工具名称（如list_directory） |
+| tool_params | object | **必要** | 工具参数字典（必须包含dir_path） |
 | next_page_token | string | **必要** | 从action_tool响应中获取的令牌 |
 
 **请求示例**：
 ```json
 {
   "task_id": "abc123",
+  "tool_name": "list_directory",
+  "tool_params": {
+    "dir_path": "C:/Users/test/Documents"
+  },
   "next_page_token": "MTAw"
 }
 ```
@@ -4728,6 +4734,18 @@ paused → modified_command → 重新开始整个流程
 ```
 
 **字段说明**：
+
+**请求字段**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| task_id | string | 必要 | 任务ID（session_id） |
+| tool_name | string | 必要 | 工具名称（如list_directory） |
+| tool_params | object | 必要 | 工具参数字典 |
+| tool_params.dir_path | string | 必要 | 目录路径 |
+| next_page_token | string | 必要 | 分页令牌 |
+
+**响应字段**：
 
 | 字段 | 类型 | 必要性 | 说明 |
 |------|------|--------|------|
