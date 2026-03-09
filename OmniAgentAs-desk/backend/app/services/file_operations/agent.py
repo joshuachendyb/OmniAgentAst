@@ -556,23 +556,35 @@ class FileOperationAgent:
                     )
                     continue
                 
+                
+                # 【Phase4修复】使用新字段名（兼容旧字段）
+                thought_content = parsed.get("content", parsed.get("thought", ""))
+                action_tool = parsed.get("action_tool", parsed.get("action", "finish"))
+                params = parsed.get("params", parsed.get("action_input", {}))
+                
                 # 创建步骤记录
                 step = Step(
                     step_number=current_step,
-                    thought=parsed["thought"],
-                    action=parsed["action"],
-                    action_input=parsed["action_input"]
+                    thought=thought_content,
+                    action=action_tool,
+                    action_input=params
                 )
                 
                 logger.info(
-                    f"Step {current_step}: {parsed['action']} - {parsed['thought'][:50]}..."
+                    f"Step {current_step}: {action_tool} - {thought_content[:50]}..."
                 )
                 
                 # 3. 检查是否完成
-                if parsed["action"] == "finish":
+                if action_tool == "finish":
+                    # 处理 final_result 格式
+                    if isinstance(params, dict):
+                        final_result = params
+                    else:
+                        final_result = {"result": str(params)}
+                    
                     step.observation = {
                         "success": True,
-                        "result": parsed["action_input"]
+                        "result": final_result
                     }
                     self.steps.append(step)
                     self.status = AgentStatus.COMPLETED
@@ -583,15 +595,15 @@ class FileOperationAgent:
                         steps=self.steps,
                         total_steps=current_step,
                         session_id=session_id,
-                        final_result=parsed["action_input"]
+                        final_result=final_result
                     )
                     return result
                 
                 # 4. Observation - 执行动作（使用重试机制）
                 self.status = AgentStatus.EXECUTING
                 observation = await self._execute_with_retry(
-                    parsed["action"],
-                    parsed["action_input"]
+                    action_tool,
+                    params
                 )
                 
                 step.observation = observation
