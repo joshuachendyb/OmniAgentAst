@@ -4406,92 +4406,61 @@ curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
 
 ---
 
-### 10.1.2 与后端重构配套的修改点（调试分析补充）
+### 10.1.2 前端修改前提说明（重要）
 
-根据调试笔记第6章分析，由于第5-9章的后端重构，前端需要相应更新以下修改点：
+> **修改原则**：采用方案一，不做字段映射兼容。后端先完成重构后，前端再按本章说明进行修改。
 
-#### 10.1.2.1 类型定义遗漏（3处）
+#### 10.1.2.1 修改顺序依赖
 
-| 序号 | 遗漏项 | 说明 | 重要性 |
-|------|--------|------|--------|
-| F1 | 新建 `types/chat.ts` | 实际文件不存在，需要新建 | 🔴 高 |
-| F2 | 类型名称统一 | 设计文档定义 `ThoughtMessage` 等，实际使用 `ExecutionStep` | 🔴 高 |
-| F3 | action_tool类型映射 | 需要支持 `action_tool` 到 `action` 的映射 | 🔴 高 |
+| 阶段 | 工作内容 | 前提条件 |
+|------|---------|---------|
+| **阶段1：后端重构** | 第8-9章的后端代码重构 | - |
+| **阶段2：API验证** | 验证后端API使用新字段名 | 后端重构完成 |
+| **阶段3：前端修改** | 按本章说明修改前端代码 | 后端API已使用新字段 |
 
-#### 10.1.2.2 API端点问题（2处）
+**重要**：
+- 阶段1（后端）未完成前，前端不能开始阶段3
+- 前端代码直接使用新字段名：`action_tool`、`params`、`tool_name`、`tool_params`
+- **禁止添加字段映射层**，必须等后端API返回新字段名后再修改前端
 
-| 序号 | 遗漏项 | 说明 | 重要性 |
-|------|--------|------|--------|
-| F4 | API端点确认 | 设计文档用 `/api/v1/chat`，实际用 `/api/v1/chat/stream` | 🔴 高 |
-| F5 | 端点差异处理 | 需要说明如何处理端点差异 | 🟡 中 |
+#### 10.1.2.2 前端修改前置条件检查清单
 
-#### 10.1.2.3 字段名称映射（4处）
+后端重构完成并验证通过后，方可开始前端修改：
 
-由于后端重构使用了新字段名，需要在前端添加映射层：
+| 检查项 | 验证方法 | 状态 |
+|--------|---------|------|
+| 后端返回 `action_tool` 而非 `action` | 调用API检查响应 | ☐ |
+| 后端返回 `params` 而非 `action_input` | 调用API检查响应 | ☐ |
+| 后端返回 `tool_name` 字段 | 调用API检查响应 | ☐ |
+| 后端返回 `tool_params` 字段 | 调用API检查响应 | ☐ |
+| 所有8种type都能正确返回 | 调用API检查响应 | ☐ |
 
-| 序号 | 字段 | 设计文档（目标） | 当前代码（现状） | 解决方案 |
-|------|------|-----------------|-----------------|---------|
-| F6 | 类型名 | `action_tool` | `action` | 需映射 |
-| F7 | 参数字段 | `params` | `action_input` | 需映射 |
-| F8 | 工具名字段 | `tool_name` | `action` | 需映射 |
-| F9 | 工具参数 | `tool_params` | `action_input` | 需映射 |
+#### 10.1.2.3 前端需要修改的文件清单
 
-**字段映射实现示例**：
-```typescript
-// 在 api.ts 中添加适配层
-function mapBackendResponse(data: any): any {
-  // action_tool → action
-  if (data.action_tool !== undefined && data.action === undefined) {
-    data.action = data.action_tool;
-  }
-  // params → action_input
-  if (data.params !== undefined && data.action_input === undefined) {
-    data.action_input = data.params;
-  }
-  // tool_name → action
-  if (data.tool_name !== undefined && data.action === undefined) {
-    data.action = data.tool_name;
-  }
-  // tool_params → action_input
-  if (data.tool_params !== undefined && data.action_input === undefined) {
-    data.action_input = data.tool_params;
-  }
-  return data;
-}
-```
+> **说明**：以下文件需要按10.2-10.5节的详细说明进行修改
 
-#### 10.1.2.4 缺失文件处理（2处）
+| 序号 | 文件路径 | 作用 | 修改阶段 |
+|------|---------|------|---------|
+| 1 | `frontend/src/types/chat.ts` | 新建类型定义文件 | 阶段3-首批 |
+| 2 | `frontend/src/components/Chat/MessageItem.tsx` | 修改消息显示组件 | 阶段3-首批 |
+| 3 | `frontend/src/services/api.ts` | 修改API调用服务 | 阶段3-二批 |
+| 4 | `frontend/src/utils/sse.ts` | 修改SSE处理逻辑 | 阶段3-二批 |
+| 5 | `frontend/src/components/Chat/ChatInput.tsx` | 输入组件（可选） | 阶段3-可选 |
 
-| 序号 | 遗漏项 | 说明 | 重要性 |
-|------|--------|------|--------|
-| F10 | `hooks/useChat.ts` | 文件不存在 | 🔴 高 |
-| F11 | SSE逻辑位置 | 现有逻辑在 `utils/sse.ts` 的 `useSSE` hook中 | - |
+#### 10.1.2.4 消息处理需要覆盖的type
 
-#### 10.1.2.5 消息处理遗漏（4处）
+> **说明**：前端需要正确处理以下8种type，来自后端第7章设计
 
-| 序号 | 遗漏项 | 设计文档处理 | 实际代码处理 | 状态 |
-|------|--------|-------------|-------------|------|
-| F12 | start类型 | 需要处理 | 当前未处理 | ❌ 遗漏 |
-| F13 | chunk类型 | 需要处理 | sse.ts已处理 | ⚠️ 部分 |
-| F14 | status类型 | 需要处理 | sse.ts已处理 | ⚠️ 部分 |
-| F15 | action_tool | 需映射为action | 当前直接使用action | ❌ 不一致 |
-
-#### 10.1.2.6 修改优先级
-
-**第一优先级（必须修改）**：
-- F1: 新建 `types/chat.ts`
-- F3-F9: 字段映射层实现
-- F12: 添加start类型处理
-- F15: action_tool到action的映射
-
-**第二优先级（建议修改）**：
-- F2: 类型名称统一
-- F4-F5: API端点确认
-- F10: useChat.ts或确认现有hook
-
-**第三优先级（可选）**：
-- F11: 现有sse.ts逻辑优化
-- F13-F14: chunk/status处理优化
+| type值 | 含义 | 后端返回字段 | 前端处理要求 |
+|--------|------|-------------|-------------|
+| start | 任务开始 | action_tool, params, security_check | ✅ 必须处理 |
+| thought | LLM思考 | action_tool, params | ✅ 必须处理 |
+| action_tool | 执行动作 | tool_name, tool_params, execution_status | ✅ 必须处理 |
+| observation | 执行结果判断 | is_finished | ✅ 必须处理 |
+| chunk | 流式内容片段 | chunk_reasoning | ✅ 必须处理 |
+| final | 最终回复 | content | ✅ 必须处理 |
+| error | 错误 | retryable, retry_after | ✅ 必须处理 |
+| status | 执行状态 | status_value | ✅ 必须处理 |
 
 ---
 
