@@ -2,7 +2,7 @@
 
 **编写人**: 小沈
 **编写时间**: 2026-03-08 21:50:00
-**更新时间**: 2026-03-09 10:59:52
+**更新时间**: 2026-03-09 11:20:50
 **存放位置**: D:\2bktest\MDview\OmniAgentAs-desk\doc\
 
 ---
@@ -767,6 +767,7 @@ LLM返回给thought阶段的完整JSON结构（包含思考结果和下一步行
 | execution_status | 执行状态 | 必要 | ✅ | 输出 |
 | summary | 结果描述 | 必要 | ✅ | 输出 |
 | raw_data | 原始数据 | 可选 | ✅ | 输出 |
+| retry_count | 重试次数 | 可选 | ✅ | 输出 |
 
 **结论**：✅ 保留，字段完整，属于 Stage
 
@@ -833,7 +834,7 @@ action_tool阶段执行完成后，输出给Observation阶段的JSON结构：
 }
 ```
 
-**场景2：执行失败**
+**场景2：执行失败（重试后仍失败）**
 ```json
 {
   "type": "action_tool",
@@ -842,7 +843,8 @@ action_tool阶段执行完成后，输出给Observation阶段的JSON结构：
   "params": {"path": "C:\\Users\\xxx\\notexist.txt"},
   "execution_status": "error",
   "summary": "读取文件失败，错误原因：文件不存在",
-  "raw_data": null
+  "raw_data": null,
+  "retry_count": 3
 }
 ```
 
@@ -910,6 +912,24 @@ action_tool阶段执行完成后，输出给Observation阶段的JSON结构：
 **raw_data为null的情况**：
 - execution_status为error时
 - 操作不返回数据时
+
+#### 4. retry_count（重试次数）
+
+**作用**：记录工具执行失败后的重试次数
+
+**规则**：
+
+| 场景 | retry_count值 |
+|------|--------------|
+| 首次执行成功 | 0或不返回 |
+| 执行1次后成功 | 1 |
+| 执行2次后成功 | 2 |
+| 执行3次后仍失败 | 3 |
+
+**使用场景**：
+- 当工具执行失败时，Agent会自动重试
+- retry_count记录了重试的次数
+- LLM可以根据retry_count决定是否继续重试或放弃
 
 ---
 
