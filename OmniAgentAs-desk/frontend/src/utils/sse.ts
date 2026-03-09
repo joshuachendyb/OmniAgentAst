@@ -572,8 +572,8 @@ const processSSEData = (
       }
 
       case "chunk": {
-        // 使用 content 字段（设计文档第7.6节）
-        const chunkContent = rawData.content || "";
+        // 后端实际返回 answer_content 字段
+        const chunkContent = rawData.answer_content || rawData.content || "";
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
         // 【小沈修复】收到chunk时关闭步骤UI，开始显示回复内容
@@ -589,8 +589,8 @@ const processSSEData = (
       }
 
       case "final": {
-        // 使用 content 字段（设计文档第7.5节）
-        step.content = rawData.content || "";
+        // 后端实际返回 answer_content 字段
+        step.content = rawData.answer_content || rawData.content || "";
         if (step.content) {
           if (!responseBufferRef.current) {
             responseBufferRef.current = step.content;
