@@ -365,6 +365,9 @@ class FileOperationAgent:
         self.status = AgentStatus.IDLE
         self.conversation_history: List[Dict[str, str]] = []
         
+        # 【新增】LLM调用计数器
+        self.llm_call_count = 0
+        
         logger.info(f"FileOperationAgent initialized (session: {session_id})")
     
     async def run(
@@ -404,6 +407,10 @@ class FileOperationAgent:
         self.steps = []
         self.conversation_history = []
         self.status = AgentStatus.THINKING
+        
+        # 【新增】重置LLM调用计数器
+        self.llm_call_count = 0
+        logger.info(f"[LLM Counter] Agent run started, LLM counter reset to 0")
         
         # 【修复】使用局部变量管理session，避免并发问题
         session_id = self.session_id
@@ -540,6 +547,10 @@ class FileOperationAgent:
     
     async def _get_llm_response(self) -> str:
         """获取LLM响应"""
+        # 【新增】计数器递增
+        self.llm_call_count += 1
+        logger.info(f"[LLM Counter] >>> LLM called, count: {self.llm_call_count}")
+        
         try:
             # 最后一条消息作为当前消息
             last_message = self.conversation_history[-1]["content"]
