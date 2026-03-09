@@ -18,7 +18,7 @@
     dict_history = messages_to_dict_list(history)
 """
 
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 from app.services.base import Message
 
@@ -154,3 +154,67 @@ def convert_chat_history(
 # 【修复】修正别名指向，使其语义正确
 # dict_history_to_messages 的语义是 "dict -> messages"
 dict_history_to_messages = dict_list_to_messages
+
+
+# ============================================================
+# Phase 3 新增：ReAct字段转换函数 - 小沈添加
+# ============================================================
+
+def observation_to_llm_input(observation_step: Dict[str, Any]) -> str:
+    """
+    将observation阶段的结果格式化为LLM的输入
+    
+    格式化公式：Observation: {execution_status} - {summary}
+    
+    Args:
+        observation_step: action_tool阶段的执行结果
+    
+    Returns:
+        格式化后的字符串
+    """
+    if not isinstance(observation_step, dict):
+        return "Observation: unknown"
+    
+    status = observation_step.get("execution_status", observation_step.get("status", "unknown"))
+    summary = observation_step.get("summary", "")
+    return f"Observation: {status} - {summary}"
+
+
+def thought_to_message(thought_step: Dict[str, Any]) -> Dict[str, str]:
+    """
+    将thought阶段转换为对话消息格式
+    
+    Args:
+        thought_step: thought阶段的输出
+    
+    Returns:
+        字典格式的消息 {"role": "assistant", "content": "..."}
+    """
+    if not isinstance(thought_step, dict):
+        return {"role": "assistant", "content": ""}
+    
+    return {
+        "role": "assistant",
+        "content": thought_step.get("content", "")
+    }
+
+
+def action_tool_to_message(action_tool_step: Dict[str, Any]) -> Dict[str, str]:
+    """
+    将action_tool阶段转换为用户消息格式（用于Observation）
+    
+    Args:
+        action_tool_step: action_tool阶段的输出
+    
+    Returns:
+        字典格式的消息 {"role": "user", "content": "..."}
+    """
+    if not isinstance(action_tool_step, dict):
+        return {"role": "user", "content": ""}
+    
+    # 格式化为LLM输入
+    status = action_tool_step.get("execution_status", "unknown")
+    summary = action_tool_step.get("summary", "")
+    content = f"Observation: {status} - {summary}"
+    
+    return {"role": "user", "content": content}
