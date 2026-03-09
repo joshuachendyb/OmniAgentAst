@@ -808,78 +808,82 @@ async def chat_stream(request: ChatRequest):
                 
                 # 流式执行（每步检查中断）
                 try:
-                    result = await agent.run(last_message)
-                    
-                    # 推送执行步骤详情
-                    if hasattr(result, 'steps') and result.steps:
-                        for i, step in enumerate(result.steps, 1):
-                            # 每步检查是否被中断
-                            # 【原则4整改】字段拆分：content → message
-                            async with running_tasks_lock:
-                                if running_tasks.get(task_id, {}).get("cancelled", False):
-                                    interrupted_data = {'type': 'interrupted', 'message': '任务已被中断'}
-                                    logger.info(f"[Step interrupted] 发送interrupted步骤")
-                                    yield f"data: {json.dumps(interrupted_data)}\n\n"
-                                    break
-                            
-                            # Step是对象，使用属性访问
-                            step_thought = getattr(step, 'thought', '')
-                            step_action = getattr(step, 'action', '')
-                            step_observation = getattr(step, 'observation', '')
-                            
-                            # 使用清洗函数生成可读文本
-                            step_result = simplify_observation(step_observation)
-                            
-                            # 发送字段：按前后端统一原则，只发送核心字段，删除冗余兼容字段
-                            # 修改时间：2026-03-06 15:40:00 修改人：小沈
-                            # 删除：content（=thought重复）、tool（=action重复）、error（用content）
-                            step_data = {
-                                # 核心字段
-                                'type': 'observation',
-                                'step': next_step(),
-                                'thought': step_thought,
-                                'action': step_action,
-                                'observation': step_observation,
-                                'result': step_result
+                    # 【Phase4核心修改】使用run_stream异步流式输出
+                    async for event in agent.run_stream(last_message):
+                        # 每步检查是否被中断
+                        async with running_tasks_lock:
+                            if running_tasks.get(task_id, {}).get("cancelled", False):
+                                interrupted_data = {'type': 'interrupted', 'message': '任务已被中断'}
+                                logger.info(f"[Step interrupted] 发送interrupted步骤")
+                                yield f"data: {json.dumps(interrupted_data)}\n\n"
+                                break
+                        
+                        event_type = event.get('type')
+                        
+                        if event_type == 'thought':
+                            # Thought阶段
+                            thought_data = {
+                                'type': 'thought',
+                                'step': event.get('step', 0),
+                                'content': event.get('content', ''),
+                                'reasoning': event.get('reasoning', ''),
+                                'action_tool': event.get('action_tool', ''),
+                                'params': event.get('params', {})
                             }
-                            logger.info(f"[Step observation] 发送observation步骤(Agent执行)")
-                            yield f"data: {json.dumps(step_data)}\n\n"
-                            await asyncio.sleep(0.5)
+                            logger.info(f"[Step thought] 发送thought步骤")
+                            yield f"data: {json.dumps(thought_data)}\n\n"
+                        
+                        elif event_type == 'action_tool':
+                            # Action阶段
+                            action_data = {
+                                'type': 'action',
+                                'step': event.get('step', 0),
+                                'tool_name': event.get('tool_name', ''),
+                                'tool_params': event.get('tool_params', {}),
+                                'execution_status': event.get('execution_status', 'success'),
+                                'summary': event.get('summary', '')
+                            }
+                            logger.info(f"[Step action] 发送action步骤(执行工具)")
+                            yield f"data: {json.dumps(action_data)}\n\n"
+                        
+                        elif event_type == 'observation':
+                            # Observation阶段
+                            observation_data = {
+                                'type': 'observation',
+                                'step': event.get('step', 0),
+                                'execution_status': event.get('execution_status', 'success'),
+                                'summary': event.get('summary', ''),
+                                'content': event.get('content', ''),
+                                'reasoning': event.get('reasoning', ''),
+                                'action_tool': event.get('action_tool', ''),
+                                'params': event.get('params', {})
+                            }
+                            logger.info(f"[Step observation] 发送observation步骤")
+                            yield f"data: {json.dumps(observation_data)}\n\n"
+                        
+                        elif event_type == 'final':
+                            # 最终结果
+                            final_data = {
+                                'type': 'final',
+                                'content': event.get('content', '')
+                            }
+                            logger.info(f"[Step final] 发送final步骤")
+                            yield f"data: {json.dumps(final_data)}\n\n"
+                            break
+                        
+                        elif event_type == 'error':
+                            # 错误
+                            error_data = {
+                                'type': 'error',
+                                'message': event.get('message', '未知错误')
+                            }
+                            logger.info(f"[Step error] 发送error步骤")
+                            yield f"data: {json.dumps(error_data)}\n\n"
+                            break
+                        
+                        await asyncio.sleep(0.05)
                     
-                    # 检查是否被中断
-                    async with running_tasks_lock:
-                        if running_tasks.get(task_id, {}).get("cancelled", False):
-                            # 【原则4整改】字段拆分：content → message
-                            interrupted_data = {'type': 'interrupted', 'message': '任务已被中断'}
-                            logger.info(f"[Step interrupted] 发送interrupted步骤")
-                            yield f"data: {json.dumps(interrupted_data)}\n\n"
-                        else:
-                            # 发送最终结果
-                            if result.success:
-                                # 【修复】正确提取 Agent 的回复内容
-                                result_content = result.message  # 默认值
-                                if result.steps:
-                                    last_step = result.steps[-1]
-                                    if last_step.observation and last_step.observation.get("result"):
-                                        result_data = last_step.observation["result"]
-                                        if isinstance(result_data, dict) and "result" in result_data:
-                                            result_content = result_data["result"]
-                                        elif isinstance(result_data, str):
-                                            result_content = result_data
-                                
-                                logger.info(f"[Step final] 发送final步骤(文件操作成功)")
-                                yield create_final_response(
-                                    content=result_content,
-                                    model=ai_service.model,
-                                    provider=ai_service.provider,
-                                    display_name=display_name
-                                )
-                            else:
-                                result_error = getattr(result, 'error', '执行失败')
-                                # 【原则4整改】content → error_message
-                                error_data = {'type': 'error', 'error_message': result_error, 'model': ai_service.model, 'display_name': display_name, 'provider': ai_service.provider}
-                                logger.info(f"[Step error] 发送error步骤(文件操作失败)")
-                                yield f"data: {json.dumps(error_data)}\n\n"
+                    # 检查是否被中断（在循环内已处理）
                     
                 except Exception as e:
                     # 【小沈代修改 - 修复问题 4】统一错误处理格式，记录日志
