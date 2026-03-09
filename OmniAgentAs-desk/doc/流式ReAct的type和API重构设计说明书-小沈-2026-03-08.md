@@ -2,7 +2,7 @@
 
 **编写人**: 小沈
 **编写时间**: 2026-03-08 21:50:00
-**更新时间**: 2026-03-09 11:20:50
+**更新时间**: 2026-03-09 11:45:20
 **存放位置**: D:\2bktest\MDview\OmniAgentAs-desk\doc\
 
 ---
@@ -618,6 +618,7 @@ chat.py: for step in result.steps:
 | 字段 | 作用 | 必要性 | 合理? | 属于 |
 |------|------|--------|-------|-------|
 | content | LLM的思考内容 | 必要 | ✅ | 输出 |
+| reasoning | LLM的推理过程 | 可选 | ✅ | 输出 |
 | action_tool | 工具名称 | 必要 | ✅ | 输出（传导到Action） |
 | params | 工具参数 | 必要 | ✅ | 输出（传导到Action） |
 
@@ -762,12 +763,12 @@ LLM返回给thought阶段的完整JSON结构（包含思考结果和下一步行
 | 字段 | 作用 | 必要性 | 合理? | 属于 |
 |------|------|--------|-------|-------|
 | step | 步骤序号 | 必要 | ✅ | 辅助 |
-| name | 工具名称 | 必要 | ✅ | 输入 |
-| params | 工具参数 | 必要 | ✅ | 输入 |
+| tool_name | 工具名称 | 必要 | ✅ | 输入 |
+| tool_params | 工具参数 | 必要 | ✅ | 输入 |
 | execution_status | 执行状态 | 必要 | ✅ | 输出 |
 | summary | 结果描述 | 必要 | ✅ | 输出 |
 | raw_data | 原始数据 | 可选 | ✅ | 输出 |
-| retry_count | 重试次数 | 可选 | ✅ | 输出 |
+| action_retry_count | 重试次数 | 可选 | ✅ | 输出 |
 
 **结论**：✅ 保留，字段完整，属于 Stage
 
@@ -780,8 +781,8 @@ action_tool阶段的输入来自Thought阶段，由Agent解析后执行：
 **输入结构**：
 ```json
 {
-  "name": "list_directory",
-  "params": {
+  "tool_name": "list_directory",
+  "tool_params": {
     "path": "C:\\Users\\xxx\\Desktop"
   }
 }
@@ -789,8 +790,8 @@ action_tool阶段的输入来自Thought阶段，由Agent解析后执行：
 
 | 字段 | 类型 | 来源 | 说明 |
 |------|------|------|------|
-| name | string | Thought阶段LLM返回的action_tool | 要执行的工具名称 |
-| params | object | Thought阶段LLM返回的params | 工具执行参数 |
+| tool_name | string | Thought阶段LLM返回的action_tool | 要执行的工具名称 |
+| tool_params | object | Thought阶段LLM返回的params | 工具执行参数 |
 
 ---
 
@@ -819,8 +820,8 @@ action_tool阶段执行完成后，输出给Observation阶段的JSON结构：
 {
   "type": "action_tool",
   "step": 1,
-  "name": "list_directory",
-  "params": {"path": "C:\\Users\\xxx\\Desktop"},
+  "tool_name": "list_directory",
+  "tool_params": {"path": "C:\\Users\\xxx\\Desktop"},
   "execution_status": "success",
   "summary": "成功读取目录，文件列表：['file1.txt', 'file2.txt', 'folder1']",
   "raw_data": {
@@ -839,12 +840,12 @@ action_tool阶段执行完成后，输出给Observation阶段的JSON结构：
 {
   "type": "action_tool",
   "step": 1,
-  "name": "read_file",
-  "params": {"path": "C:\\Users\\xxx\\notexist.txt"},
+  "tool_name": "read_file",
+  "tool_params": {"path": "C:\\Users\\xxx\\notexist.txt"},
   "execution_status": "error",
   "summary": "读取文件失败，错误原因：文件不存在",
   "raw_data": null,
-  "retry_count": 3
+  "action_retry_count": 3
 }
 ```
 
@@ -853,8 +854,8 @@ action_tool阶段执行完成后，输出给Observation阶段的JSON结构：
 {
   "type": "action_tool",
   "step": 1,
-  "name": "write_file",
-  "params": {"path": "C:\\Users\\xxx\\test.txt", "content": "..."},
+  "tool_name": "write_file",
+  "tool_params": {"path": "C:\\Users\\xxx\\test.txt", "content": "..."},
   "execution_status": "warning",
   "summary": "文件写入成功，但编码已自动转换为UTF-8",
   "raw_data": {
@@ -913,14 +914,14 @@ action_tool阶段执行完成后，输出给Observation阶段的JSON结构：
 - execution_status为error时
 - 操作不返回数据时
 
-#### 4. retry_count（重试次数）
+#### 4. action_retry_count（重试次数）
 
 **作用**：记录工具执行失败后的重试次数
 
 **规则**：
 
-| 场景 | retry_count值 |
-|------|--------------|
+| 场景 | action_retry_count值 |
+|------|---------------------|
 | 首次执行成功 | 0或不返回 |
 | 执行1次后成功 | 1 |
 | 执行2次后成功 | 2 |
@@ -928,8 +929,8 @@ action_tool阶段执行完成后，输出给Observation阶段的JSON结构：
 
 **使用场景**：
 - 当工具执行失败时，Agent会自动重试
-- retry_count记录了重试的次数
-- LLM可以根据retry_count决定是否继续重试或放弃
+- action_retry_count记录了重试的次数
+- LLM可以根据action_retry_count决定是否继续重试或放弃
 
 ---
 
@@ -953,19 +954,20 @@ action_tool阶段执行完成后，输出给Observation阶段的JSON结构：
 
 | 设计文档字段名 | 7.3示例字段名 | 说明 |
 |---------------|--------------|------|
-| name | name | ✅ 一致 |
-| params | input | ⚠️ 需要统一为params |
-| execution_status | status | ⚠️ 需要统一为execution_status |
-| summary | message | ⚠️ 需要统一为summary |
-| raw_data | data | ⚠️ 需要统一为raw_data |
+| tool_name | tool_name | ✅ 一致 |
+| tool_params | tool_params | ✅ 一致 |
+| execution_status | execution_status | ✅ 一致 |
+| summary | summary | ✅ 一致 |
+| raw_data | raw_data | ✅ 一致 |
+| action_retry_count | action_retry_count | ✅ 一致 |
 
 **统一后的7.3示例**：
 ```json
 {
   "type": "action_tool",
   "step": 1,
-  "name": "list_directory",
-  "params": {"path": "C:\\Users\\xxx\\Desktop"},
+  "tool_name": "list_directory",
+  "tool_params": {"path": "C:\\Users\\xxx\\Desktop"},
   "execution_status": "success",
   "summary": "成功读取目录",
   "raw_data": {"entries": ["file1.txt", "file2.txt"]}
@@ -1599,8 +1601,8 @@ else:
 {
   "type": "action_tool",
   "step": 1,
-  "name": "list_directory",
-  "params": {"path": "C:\\Users\\xxx\\Desktop"},
+  "tool_name": "list_directory",
+  "tool_params": {"path": "C:\\Users\\xxx\\Desktop"},
   "execution_status": "success",
   "summary": "成功读取目录，文件列表：['file1.txt', 'file2.txt']",
   "raw_data": {
@@ -1729,7 +1731,7 @@ else:
 { "type": "start", ... }
 
 { "type": "thought", "content": "用户想要查看桌面文件夹...", "action_tool": "list_directory", "params": {"path": "Desktop"} }
-{ "type": "action_tool", "step": 1, "name": "list_directory", "params": {"path": "Desktop"}, "execution_status": "success", "summary": "成功读取目录", "raw_data": {...} }
+{ "type": "action_tool", "step": 1, "tool_name": "list_directory", "tool_params": {"path": "Desktop"}, "execution_status": "success", "summary": "成功读取目录", "raw_data": {...} }
 { "type": "observation", "execution_status": "success", "summary": "成功", "raw_data": {...}, "content": "已获取内容", "action_tool": "finish", "params": {} }
 
 { "type": "final", "content": "桌面有文件：..." }
