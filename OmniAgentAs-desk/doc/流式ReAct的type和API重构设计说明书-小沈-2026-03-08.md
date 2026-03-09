@@ -2,7 +2,7 @@
 
 **编写人**: 小沈
 **编写时间**: 2026-03-08 21:50:00
-**更新时间**: 2026-03-09 13:02:21
+**更新时间**: 2026-03-09 14:20:00
 **存放位置**: D:\2bktest\MDview\OmniAgentAs-desk\doc\
 
 ---
@@ -2254,49 +2254,1927 @@ running → retrying → running
 
 ---
 
-## 八、待补充
+## 八、后端代码重构升级详细说明
 
-（本章内容已合并到第七章）
+**编写人**: 小沈
+**编写时间**: 2026-03-09 14:11:11
 
 ---
 
-## 九、前端显示对照
+### 8.1 重构目标概述
 
-```javascript
-switch(step.type) {
-  case 'start': 
-    显示AI名称 + 安全检查状态; 
-    break;
-  case 'thought': 
-    显示💭思考内容 + 下一个工具; 
-    break;
-  case 'action_tool': 
-    显示🔧工具名 + 执行状态(成功/失败/警告); 
-    break;
-  case 'observation': 
-    显示📋结果 + 下一步意图; 
-    break;
-  case 'chunk': 
-    流式显示回复内容; 
-    break;
-  case 'final': 
-    显示最终回复; 
-    break;
-  case 'error': 
-    显示❌错误信息; 
-    break;
-  case 'status': 
-    switch(step.status_value) {
-      case 'interrupted': 显示⏹️中断信息; break;
-      case 'paused': 显示⏸️暂停等待; break;
-      case 'resumed': 显示▶️继续执行; break;
-      case 'retrying': 显示🔄重试中; break;
+本次后端代码重构的核心目标是：**实现真正的实时流式推送，遵守ReAct循环的三个独立阶段原则，消除硬编码和嵌套错误**。
+
+#### 8.1.1 需要重构的文件清单
+
+| 序号 | 文件路径 | 作用 | 重构优先级 |
+|------|---------|------|-----------|
+| 1 | `backend/app/api/v1/chat.py` | API入口，SSE流式响应 | 🔴 高 |
+| 2 | `backend/app/services/file_operations/agent.py` | ReAct Agent核心逻辑 | 🔴 高 |
+| 3 | `backend/app/services/file_operations/adapter.py` | 参数类型适配器 | 🟡 中 |
+| 4 | `backend/app/services/file_operations/tools.py` | 文件操作工具集 | 🟡 中 |
+| 5 | `backend/app/services/file_operations/safety.py` | 安全检查模块 | 🟡 中 |
+
+---
+
+### 8.2 chat.py 重构详细说明
+
+#### 8.2.1 当前问题诊断
+
+| 问题编号 | 问题描述 | 位置 | 影响 |
+|---------|---------|------|------|
+| P8-001 | 第一个thought硬编码 | chat.py:697-702 | 违反ReAct原则，LLM推理被跳过 |
+| P8-002 | 第一个action_tool硬编码 | chat.py:721-723 | 违反ReAct原则 |
+| P8-003 | 推送时机错误（批量模式） | chat.py:780 | 等所有轮次执行完才推送，非实时 |
+| P8-004 | observation嵌套thought/action_tool | chat.py:observation字段 | 数据结构混乱 |
+| P8-005 | 错误响应字段不一致 | create_error_response函数 | error_type/error_message命名混乱 |
+
+#### 8.2.2 重构方案
+
+##### 8.2.2.1 移除硬编码，实现真正的LLM推理
+
+**当前代码（错误）**：
+```python
+# ❌ 硬编码的第一个thought
+first_thought = "正在分析任务..."
+yield f"data: {json.dumps({'type': 'thought', 'content': first_thought})}\n\n"
+
+# ❌ 硬编码的第一个action_tool  
+first_action = "检测到文件操作意图..."
+yield f"data: {json.dumps({'type': 'action_tool', 'action_tool_description': first_action})}\n\n"
+```
+
+**重构后代码（正确）**：
+```python
+# ✅ 正确流程：调用LLM获取第一个thought
+# 1. 构建消息列表（用户输入）
+messages = [
+    {"role": "system", "content": system_prompt},
+    {"role": "user", "content": user_input}
+]
+
+# 2. 调用LLM
+llm_response = await llm_service.chat(messages)
+
+# 3. 解析LLM返回的JSON
+parsed = json.loads(llm_response)
+thought_content = parsed.get("content")
+action_tool = parsed.get("action_tool")
+params = parsed.get("params", {})
+
+# 4. 实时推送thought
+yield f"data: {json.dumps({'type': 'thought', 'content': thought_content, 'action_tool': action_tool, 'params': params})}\n\n"
+
+# 5. 执行action_tool
+# ... 执行代码 ...
+
+# 6. 实时推送action_tool结果
+yield f"data: {json.dumps({'type': 'action_tool', 'step': 1, 'tool_name': action_tool, 'tool_params': params, 'execution_status': 'success', 'summary': '...'})}\n\n"
+```
+
+##### 8.2.2.2 实现真正的实时流式推送
+
+**当前代码（错误）**：
+```python
+# ❌ 批量模式：等所有轮次执行完才推送
+result = await agent.run()  # 阻塞等待所有轮次完成
+
+for step in result.steps:   # 然后才一个个推送
+    yield f"data: {json.dumps(step)}\n\n"
+```
+
+**重构后代码（正确）**：
+```python
+# ✅ 实时模式：每轮循环完成后立即推送
+async for event in agent.run_stream():
+    # event可能是：
+    # - {"type": "thought", "content": "...", "action_tool": "...", "params": {...}}
+    # - {"type": "action_tool", "step": 1, "tool_name": "...", "execution_status": "success", ...}
+    # - {"type": "observation", "step": 1, ...}
+    yield f"data: {json.dumps(event)}\n\n"
+```
+
+##### 8.2.2.3 统一错误响应格式
+
+**重构后的错误响应格式**：
+```python
+def create_error_response(
+    error_type: str,
+    message: str,
+    code: str = "INTERNAL_ERROR",
+    details: Optional[str] = None,
+    stack: Optional[str] = None
+) -> str:
+    """
+    统一的错误响应格式
+    
+    字段说明：
+    - type: 固定为 "error"
+    - code: 错误码（如 TIMEOUT, NOT_FOUND, SECURITY_BLOCKED）
+    - message: 用户可读的错误消息
+    - error_type: 错误类型（如 network, file_system, validation）
+    - details: 详细错误信息（可选）
+    - stack: 堆栈信息（可选，仅用于调试）
+    """
+    response = {
+        'type': 'error',
+        'code': code,
+        'message': message,
+        'error_type': error_type
     }
-    break;
+    if details:
+        response['details'] = details
+    if stack:
+        response['stack'] = stack
+    return f"data: {json.dumps(response)}\n\n"
+```
+
+---
+
+### 8.3 agent.py 重构详细说明
+
+#### 8.3.1 当前问题诊断
+
+| 问题编号 | 问题描述 | 位置 | 影响 |
+|---------|---------|------|------|
+| P8-006 | Step类字段不完整 | agent.py:Step类 | 缺少reasoning、is_finished等字段 |
+| P8-007 | 阻塞式执行 | agent.run()方法 | 没有实现异步流式输出 |
+| P8-008 | 缺少安全检查集成 | agent.run() | 安全检查没有在Agent中体现 |
+| P8-009 | action_tool命名不一致 | 多个位置 | 有时用action有时用tool_name |
+
+#### 8.3.2 重构方案
+
+##### 8.3.2.1 重新设计Step类
+
+**当前代码（不完整）**：
+```python
+@dataclass
+class Step:
+    step_number: int
+    thought: str
+    action: str
+    action_input: Dict[str, Any]
+    observation: Optional[Dict[str, Any]] = None
+```
+
+**重构后代码（完整）**：
+```python
+@dataclass
+class ThoughtStep:
+    """Thought阶段的数据结构"""
+    step_number: int
+    content: str                              # LLM的思考内容
+    reasoning: Optional[str] = None           # LLM的推理过程（可选）
+    action_tool: str = ""                     # 要执行的工具名称
+    params: Dict[str, Any] = field(default_factory=dict)  # 工具参数
+
+
+@dataclass
+class ActionToolStep:
+    """Action阶段的数据结构"""
+    step_number: int
+    tool_name: str                            # 工具名称（统一命名）
+    tool_params: Dict[str, Any] = field(default_factory=dict)  # 工具参数
+    execution_status: str = "success"         # 执行状态：success/error/warning
+    summary: str = ""                         # 人类可读的结果描述
+    raw_data: Optional[Dict[str, Any]] = None # 机器可读的结构化数据
+    action_retry_count: int = 0               # 重试次数
+
+
+@dataclass
+class ObservationStep:
+    """Observation阶段的数据结构"""
+    step_number: int
+    # 输入部分（来自action_tool阶段）
+    execution_status: str
+    summary: str
+    raw_data: Optional[Dict[str, Any]]
+    # 输出部分（LLM返回的新决策）
+    content: str                              # LLM基于结果的新思考
+    reasoning: Optional[str] = None           # LLM的推理过程
+    action_tool: str = ""                     # 下一个要执行的工具
+    params: Dict[str, Any] = field(default_factory=dict)  # 工具参数
+    is_finished: bool = False                # 是否完成任务
+```
+
+##### 8.3.2.2 实现异步流式输出
+
+**新增run_stream方法**：
+```python
+async def run_stream(self, user_input: str, max_steps: int = 10):
+    """
+    异步流式执行Agent，每轮循环完成后立即yield输出
+    
+    Args:
+        user_input: 用户输入
+        max_steps: 最大迭代次数
+    
+    Yields:
+        各个阶段的输出字典
+    """
+    # 第1步：构建初始消息列表
+    messages = self._build_messages(user_input)
+    
+    step_count = 0
+    
+    while step_count < max_steps:
+        # ========== Thought阶段 ==========
+        # 调用LLM获取思考
+        llm_response = await self.llm_service.chat(messages)
+        parsed = json.loads(llm_response)
+        
+        thought_content = parsed.get("content", "")
+        reasoning = parsed.get("reasoning")
+        action_tool = parsed.get("action_tool", "finish")
+        params = parsed.get("params", {})
+        
+        # 立即yield thought
+        yield {
+            "type": "thought",
+            "step": step_count + 1,
+            "content": thought_content,
+            "reasoning": reasoning,
+            "action_tool": action_tool,
+            "params": params
+        }
+        
+        # 判断是否结束
+        if action_tool == "finish":
+            break
+        
+        # ========== Action阶段 ==========
+        execution_result = await self._execute_tool(action_tool, params)
+        
+        # 立即yield action_tool结果
+        yield {
+            "type": "action_tool",
+            "step": step_count + 1,
+            "tool_name": action_tool,
+            "tool_params": params,
+            "execution_status": execution_result["status"],
+            "summary": execution_result["summary"],
+            "raw_data": execution_result.get("data"),
+            "action_retry_count": execution_result.get("retry_count", 0)
+        }
+        
+        # ========== Observation阶段 ==========
+        # 将action结果格式化为输入
+        observation_text = f"Observation: {execution_result['status']} - {execution_result['summary']}"
+        messages.append({"role": "user", "content": observation_text})
+        
+        # 调用LLM获取下一个决策
+        llm_response = await self.llm_service.chat(messages)
+        parsed = json.loads(llm_response)
+        
+        # 立即yield observation
+        yield {
+            "type": "observation",
+            "step": step_count + 1,
+            "execution_status": execution_result["status"],
+            "summary": execution_result["summary"],
+            "raw_data": execution_result.get("data"),
+            "content": parsed.get("content", ""),
+            "reasoning": parsed.get("reasoning"),
+            "action_tool": parsed.get("action_tool", "finish"),
+            "params": parsed.get("params", {}),
+            "is_finished": parsed.get("action_tool") == "finish"
+        }
+        
+        # 更新消息历史
+        messages.append({"role": "assistant", "content": thought_content})
+        
+        # 判断是否结束
+        if parsed.get("action_tool") == "finish":
+            break
+            
+        step_count += 1
+    
+    # 任务结束，yield final
+    yield {
+        "type": "final",
+        "content": parsed.get("content", "任务已完成")
+    }
+```
+
+##### 8.3.2.3 集成安全检查
+
+**新增安全检查集成**：
+```python
+async def run_stream(self, user_input: str, max_steps: int = 10):
+    """
+    异步流式执行Agent（带安全检查）
+    """
+    # ========== 安全检查阶段 ==========
+    from app.services.shell_security import check_command_safety
+    
+    safety_result = await check_command_safety(user_input)
+    
+    # 如果被拦截，立即返回错误
+    if safety_result.get("blocked", False):
+        yield {
+            "type": "error",
+            "code": "SECURITY_BLOCKED",
+            "message": safety_result.get("risk", "危险命令已拦截"),
+            "error_type": "security",
+            "details": f"risk_level: {safety_result.get('risk_level')}"
+        }
+        return
+    
+    # 如果有警告但未拦截，yield警告信息
+    if safety_result.get("risk_level") in ["medium", "high"]:
+        yield {
+            "type": "start",
+            # ... 其他字段 ...
+            "security_check": safety_result
+        }
+        # 继续执行，但需要用户确认（这里简化处理）
+    
+    # 继续正常的ReAct循环...
+    async for event in self._run_react_loop(user_input, max_steps):
+        yield event
+```
+
+---
+
+### 8.4 adapter.py 重构详细说明
+
+#### 8.4.1 当前状态
+
+adapter.py 当前的实现已经比较完善，主要完成了：
+- `messages_to_dict_list`: Message对象转字典
+- `dict_list_to_messages`: 字典转Message对象
+- `convert_chat_history`: 通用转换函数
+
+#### 8.4.2 需要扩展的功能
+
+##### 8.4.2.1 新增字段转换函数
+
+根据新的type设计，需要新增以下转换函数：
+
+```python
+def observation_to_llm_input(observation_step: Dict[str, Any]) -> str:
+    """
+    将observation阶段的结果格式化为LLM的输入
+    
+    格式化公式：Observation: {execution_status} - {summary}
+    
+    Args:
+        observation_step: action_tool阶段的执行结果
+        
+    Returns:
+        格式化后的字符串
+    """
+    status = observation_step.get("execution_status", "unknown")
+    summary = observation_step.get("summary", "")
+    return f"Observation: {status} - {summary}"
+
+
+def thought_to_message(thought_step: Dict[str, Any]) -> Dict[str, str]:
+    """
+    将thought阶段转换为对话消息格式
+    
+    Args:
+        thought_step: thought阶段的输出
+        
+    Returns:
+        字典格式的消息 {"role": "assistant", "content": "..."}
+    """
+    return {
+        "role": "assistant",
+        "content": thought_step.get("content", "")
+    }
+```
+
+---
+
+### 8.5 tools.py 重构详细说明
+
+#### 8.5.1 当前问题诊断
+
+| 问题编号 | 问题描述 | 影响 |
+|---------|---------|------|
+| P8-010 | 返回格式不统一 | 不同工具返回格式不一致 |
+| P8-011 | 缺少execution_status字段 | 前端无法判断执行结果 |
+
+#### 8.5.2 统一工具返回格式
+
+**重构后统一返回格式**：
+```python
+def execute_tool(tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    统一的工具执行返回格式
+    
+    Returns:
+        {
+            "status": "success" | "error" | "warning",
+            "summary": "人类可读的结果描述",
+            "data": {...} | null,
+            "retry_count": 0
+        }
+    """
+    # 执行具体工具
+    try:
+        result = _dispatch_tool(tool_name, params)
+        
+        # 成功
+        return {
+            "status": "success",
+            "summary": _generate_summary(tool_name, result),
+            "data": result,
+            "retry_count": 0
+        }
+    except Warning as w:
+        # 有警告但成功
+        return {
+            "status": "warning",
+            "summary": str(w),
+            "data": result,
+            "retry_count": 0
+        }
+    except Exception as e:
+        # 执行失败
+        return {
+            "status": "error",
+            "summary": f"执行失败：{str(e)}",
+            "data": None,
+            "retry_count": 0
+        }
+```
+
+---
+
+### 8.6 safety.py 重构详细说明
+
+#### 8.6.1 当前状态
+
+safety.py 已经实现了基本的安全检查功能。
+
+#### 8.6.2 需要扩展的功能
+
+##### 8.6.2.1 增强安全检查结果格式
+
+```python
+async def check_command_safety(command: str) -> Dict[str, Any]:
+    """
+    检查命令安全性
+    
+    Returns:
+        {
+            "is_safe": bool,           # 是否安全
+            "risk_level": str | null,  # low/medium/high/critical
+            "risk": str | null,        # 风险描述
+            "blocked": bool,            # 是否被拦截
+            "rule_matched": str | null # 匹配的规则名称
+        }
+    """
+    # ... 现有逻辑 ...
+    
+    # 扩展返回格式
+    return {
+        "is_safe": is_safe,
+        "risk_level": risk_level,
+        "risk": risk_description,
+        "blocked": blocked,
+        "rule_matched": matched_rule
+    }
+```
+
+---
+
+### 8.7 重构后的文件结构
+
+#### 8.7.1 重构后的目录结构
+
+```
+backend/app/
+├── api/v1/
+│   └── chat.py                    # 【重构】API入口
+└── services/file_operations/
+    ├── agent.py                   # 【重构】ReAct Agent核心
+    ├── adapter.py                  # 【扩展】参数适配器
+    ├── tools.py                   # 【重构】工具集
+    └── safety.py                  # 【扩展】安全检查
+```
+
+#### 8.7.2 新增/修改的函数清单
+
+| 文件 | 函数/类 | 操作 | 说明 |
+|------|---------|------|------|
+| chat.py | create_error_response | 修改 | 统一错误响应格式 |
+| chat.py | check_and_yield_if_interrupted | 修改 | 集成新的status类型 |
+| chat.py | check_and_yield_if_paused | 修改 | 集成新的status类型 |
+| chat.py | chat_endpoint | 重构 | 移除硬编码，实现实时流式 |
+| agent.py | ThoughtStep | 新增 | Thought阶段数据结构 |
+| agent.py | ActionToolStep | 新增 | Action阶段数据结构 |
+| agent.py | ObservationStep | 新增 | Observation阶段数据结构 |
+| agent.py | run_stream | 新增 | 异步流式输出方法 |
+| adapter.py | observation_to_llm_input | 新增 | observation格式化 |
+| adapter.py | thought_to_message | 新增 | thought转消息格式 |
+| tools.py | execute_tool | 修改 | 统一返回格式 |
+| safety.py | check_command_safety | 修改 | 增强返回格式 |
+
+---
+
+### 8.8 重构验证检查清单
+
+完成重构后，必须验证以下各项：
+
+#### 8.8.1 功能验证
+
+- [ ] 第一个thought不再硬编码，由LLM生成
+- [ ] 第一个action_tool不再硬编码，由LLM生成
+- [ ] 推送时机改为实时（每轮循环完成后立即推送）
+- [ ] observation不再嵌套thought/action_tool
+- [ ] 错误响应格式统一（type/code/message/error_type）
+
+#### 8.8.2 数据结构验证
+
+- [ ] thought类型包含：content, reasoning(可选), action_tool, params
+- [ ] action_tool类型包含：step, tool_name, tool_params, execution_status, summary, raw_data(可选), action_retry_count(可选)
+- [ ] observation类型包含：step, execution_status, summary, raw_data(可选), content, reasoning(可选), action_tool, params, is_finished
+- [ ] error类型包含：type, code, message, error_type, details(可选), stack(可选)
+- [ ] status类型包含：type, status_value, message
+
+#### 8.8.3 流程验证
+
+- [ ] ReAct循环顺序正确：Thought → Action → Observation → (下一轮)Thought
+- [ ] 每轮循环结束后立即推送，不需要等全部完成
+- [ ] 安全检查在ReAct循环开始前执行
+- [ ] 用户确认流程正确：paused → 用户确认 → resumed
+
+---
+
+**更新时间**: 2026-03-09 14:11:11
+**编写人**: 小沈
+
+---
+
+## 九、流式API接口详细使用说明
+
+**编写人**: 小沈
+**编写时间**: 2026-03-09 14:15:00
+
+---
+
+### 9.1 API接口概述
+
+#### 9.1.1 接口基本信息
+
+| 项目 | 说明 |
+|------|------|
+| **接口地址** | `/api/v1/chat` |
+| **请求方法** | `POST` |
+| **响应类型** | `SSE (Server-Sent Events)` |
+| **Content-Type** | `text/event-stream` |
+
+#### 9.1.2 请求头要求
+
+```
+Content-Type: application/json
+Accept: text/event-stream
+```
+
+---
+
+### 9.2 请求格式详解
+
+#### 9.2.1 请求参数结构
+
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "帮我查看桌面文件夹"
+    }
+  ],
+  "stream": true,
+  "temperature": 0.7,
+  "provider": "openai",
+  "model": "gpt-4",
+  "task_id": "可选的任务ID",
+  "session_id": "可选的会话ID"
+}
+```
+
+#### 9.2.2 字段详细说明
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| messages | array | **必要** | 消息列表，当前只支持单条用户消息 |
+| messages[].role | string | **必要** | 固定为 "user" |
+| messages[].content | string | **必要** | 用户输入的自然语言 |
+| stream | boolean | 可选 | 是否流式返回，固定为 true |
+| temperature | float | 可选 | 温度参数，范围 0-2，默认 0.7 |
+| provider | string | 可选 | AI提供商，不指定则使用默认 |
+| model | string | 可选 | AI模型，不指定则使用默认 |
+| task_id | string | 可选 | 任务ID，用于追踪调试 |
+| session_id | string | 可选 | 会话ID，用于缓存display_name |
+
+---
+
+### 9.3 SSE响应格式详解
+
+#### 9.3.1 SSE基本格式
+
+```
+data: {"type": "...", ...}
+
+```
+
+**重要说明**：
+1. 每个数据块以 `data: ` 开头
+2. 数据必须是有效的JSON字符串
+3. 数据块之间用空行分隔（两个换行符）
+4. 前端需要使用 `EventSource` 或 `fetch` + `ReadableStream` 接收
+
+#### 9.3.2 type类型一览表
+
+| type值 | 含义 | 出现时机 |
+|--------|------|---------|
+| start | 任务开始 | 任务初始化时 |
+| thought | LLM思考 | ReAct第1阶段 |
+| action_tool | 执行动作 | ReAct第2阶段 |
+| observation | 执行结果判断 | ReAct第3阶段 |
+| chunk | 流式内容片段 | 普通对话流式输出 |
+| final | 最终回复 | 任务完成时 |
+| error | 错误 | 发生错误时 |
+| status | 执行状态 | 状态变化时 |
+
+---
+
+### 9.4 每种type的详细响应格式
+
+#### 9.4.1 type=start（任务开始）
+
+**发送时机**：后端接收到请求，开始处理时
+
+**响应示例**：
+```json
+{
+  "type": "start",
+  "display_name": "OpenAI (gpt-4)",
+  "model": "gpt-4",
+  "provider": "openai",
+  "task_id": "abc123",
+  "security_check": {
+    "is_safe": true,
+    "risk_level": null,
+    "risk": null,
+    "blocked": false
+  }
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| type | string | 固定值 "start" |
+| display_name | string | AI显示名称，如 "OpenAI (gpt-4)" |
+| model | string | 实际使用的AI模型 |
+| provider | string | AI提供商 |
+| task_id | string | 任务唯一标识 |
+| security_check | object | 安全检查结果 |
+| security_check.is_safe | boolean | 是否安全：true=安全，false=危险 |
+| security_check.risk_level | string/null | 风险等级：low/medium/high/critical，无风险时为null |
+| security_check.risk | string/null | 风险描述，无风险时为null |
+| security_check.blocked | boolean | 是否被拦截：true=已拦截，不执行LLM |
+
+**前端处理**：
+```javascript
+if (data.type === 'start') {
+  console.log(`任务开始: ${data.task_id}`);
+  console.log(`AI: ${data.display_name}`);
+  // 显示安全检查状态
+  if (data.security_check.is_safe === false) {
+    // 显示危险警告
+    showWarning(data.security_check.risk);
+  }
 }
 ```
 
 ---
 
-**更新时间**: 2026-03-09 14:30:00
+#### 9.4.2 type=thought（LLM思考）
+
+**发送时机**：LLM返回推理结果时（ReAct循环第1阶段）
+
+**响应示例**：
+```json
+{
+  "type": "thought",
+  "step": 1,
+  "content": "用户想要查看桌面文件夹，我需要先列出桌面目录的内容",
+  "reasoning": "用户提到了'查看'和'文件夹'，这是一个目录列表操作",
+  "action_tool": "list_directory",
+  "params": {
+    "path": "C:\\Users\\xxx\\Desktop"
+  }
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| type | string | 固定值 "thought" |
+| step | number | 当前是第几轮ReAct循环，从1开始 |
+| content | string | LLM的思考内容，说明当前分析 |
+| reasoning | string/null | LLM的推理过程（可选），说明为什么做此决策 |
+| action_tool | string | LLM决定要执行的工具名称 |
+| params | object | 工具执行的参数 |
+
+**action_tool取值范围**：
+
+| action_tool | 说明 | params示例 |
+|-------------|------|-----------|
+| list_directory | 列出目录 | {"path": "..."} |
+| read_file | 读取文件 | {"path": "..."} |
+| write_file | 写入文件 | {"path": "...", "content": "..."} |
+| create_directory | 创建目录 | {"path": "..."} |
+| delete_file | 删除文件 | {"path": "..."} |
+| move_file | 移动文件 | {"source": "...", "destination": "..."} |
+| copy_file | 复制文件 | {"source": "...", "destination": "..."} |
+| finish | 完成任务 | {} |
+
+**前端处理**：
+```javascript
+if (data.type === 'thought') {
+  // 显示思考中...
+  showThinking(data.content);
+  // 显示即将执行的工具
+  showNextAction(data.action_tool, data.params);
+}
+```
+
+---
+
+#### 9.4.3 type=action_tool（执行动作）
+
+**发送时机**：工具执行完成后（ReAct循环第2阶段）
+
+**响应示例**：
+```json
+{
+  "type": "action_tool",
+  "step": 1,
+  "tool_name": "list_directory",
+  "tool_params": {
+    "path": "C:\\Users\\xxx\\Desktop"
+  },
+  "execution_status": "success",
+  "summary": "成功读取目录，文件列表：['file1.txt', 'file2.txt', 'folder1']",
+  "raw_data": {
+    "entries": [
+      {"name": "file1.txt", "type": "file", "size": 1024},
+      {"name": "file2.txt", "type": "file", "size": 2048},
+      {"name": "folder1", "type": "directory"}
+    ],
+    "total": 3
+  },
+  "action_retry_count": 0
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| type | string | 固定值 "action_tool" |
+| step | number | 步骤序号，与对应的thought对应 |
+| tool_name | string | 执行的工具名称 |
+| tool_params | object | 工具执行的参数 |
+| execution_status | string | 执行状态：success/error/warning |
+| summary | string | 人类可读的执行结果摘要 |
+| raw_data | object/null | 机器可读的结构化数据，执行失败时为null |
+| action_retry_count | number | 重试次数，0=首次执行 |
+
+**execution_status取值**：
+
+| 值 | 说明 | 场景 |
+|----|------|------|
+| success | 执行成功 | 正常完成操作 |
+| error | 执行失败 | 操作异常或失败 |
+| warning | 执行有警告 | 操作完成但有需要注意的情况 |
+
+**前端处理**：
+```javascript
+if (data.type === 'action_tool') {
+  // 显示工具执行状态
+  if (data.execution_status === 'success') {
+    showSuccess(data.summary);
+    // 可以解析raw_data获取详细数据
+  } else if (data.execution_status === 'error') {
+    showError(data.summary);
+  } else if (data.execution_status === 'warning') {
+    showWarning(data.summary);
+  }
+}
+```
+
+---
+
+#### 9.4.4 type=observation（执行结果判断）
+
+**发送时机**：LLM根据action_tool执行结果做出下一步决策时（ReAct循环第3阶段）
+
+**响应示例**：
+```json
+{
+  "type": "observation",
+  "step": 1,
+  "execution_status": "success",
+  "summary": "成功读取目录",
+  "raw_data": {
+    "entries": [
+      {"name": "file1.txt", "type": "file"},
+      {"name": "file2.txt", "type": "file"}
+    ]
+  },
+  "content": "已获取目录内容，第一个文件是file1.txt，现在需要读取它的内容",
+  "reasoning": "用户想要查看文件内容，列表中有file1.txt和file2.txt，先读取第一个",
+  "action_tool": "read_file",
+  "params": {
+    "path": "C:\\Users\\xxx\\Desktop\\file1.txt"
+  },
+  "is_finished": false
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| type | string | 固定值 "observation" |
+| step | number | 步骤序号，与action_tool对应 |
+| execution_status | string | 来自action_tool的执行状态 |
+| summary | string | 来自action_tool的结果描述 |
+| raw_data | object/null | 来自action_tool的原始数据 |
+| content | string | LLM基于结果的新思考 |
+| reasoning | string/null | LLM的推理过程（可选） |
+| action_tool | string | LLM决定的下一步工具 |
+| params | object | 工具参数 |
+| is_finished | boolean | 是否完成任务：true=结束，false=继续 |
+
+**前端处理**：
+```javascript
+if (data.type === 'observation') {
+  // 显示结果分析
+  showAnalysis(data.content);
+  
+  // 判断是否结束
+  if (data.is_finished === true) {
+    // 任务即将完成，等待final
+    console.log("任务即将完成");
+  } else {
+    // 继续执行下一个工具
+    showNextAction(data.action_tool, data.params);
+  }
+}
+```
+
+---
+
+#### 9.4.5 type=chunk（流式内容片段）
+
+**发送时机**：LLM流式输出回复时（仅用于普通对话，ReAct过程不使用）
+
+**响应示例**：
+```json
+{
+  "type": "chunk",
+  "content": "你",
+  "is_reasoning": false,
+  "chunk_reasoning": null
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| type | string | 固定值 "chunk" |
+| content | string | 回复片段内容 |
+| is_reasoning | boolean | 是否在思考阶段 |
+| chunk_reasoning | string/null | 思考内容（可选） |
+
+**使用场景说明**：
+
+| 场景 | 是否发送chunk | 说明 |
+|------|---------------|------|
+| 普通对话 | ✅ 发送 | AI生成文本时逐块返回，实现打字机效果 |
+| ReAct文件操作 | ❌ 不发送 | 只有thought/action_tool/observation，最后直接final |
+
+**前端处理**：
+```javascript
+if (data.type === 'chunk') {
+  // 追加内容到显示区域（实现打字机效果）
+  appendToMessage(data.content);
+}
+```
+
+---
+
+#### 9.4.6 type=final（最终回复）
+
+**发送时机**：任务完成时
+
+**响应示例**：
+```json
+{
+  "type": "final",
+  "content": "桌面有3个文件：file1.txt、file2.txt、folder1。"
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| type | string | 固定值 "final" |
+| content | string | 完整回复内容 |
+
+**触发条件**：
+- LLM在observation阶段返回 action_tool = "finish"
+- 任务执行失败，需要告知用户错误信息
+- 达到最大迭代次数
+
+**前端处理**：
+```javascript
+if (data.type === 'final') {
+  // 显示最终回复
+  showFinalMessage(data.content);
+  // 任务结束
+  console.log("任务完成");
+}
+```
+
+---
+
+#### 9.4.7 type=error（错误）
+
+**发送时机**：发生错误时
+
+**响应示例**：
+```json
+{
+  "type": "error",
+  "code": "TIMEOUT",
+  "message": "请求超时，请重试",
+  "error_type": "network",
+  "details": "连接远程服务器超时",
+  "stack": "Traceback (most recent call last):\n  File..."
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| type | string | 固定值 "error" |
+| code | string | 错误码 |
+| message | string | 用户可读的错误消息 |
+| error_type | string/null | 错误类型：network/file_system/validation/security |
+| details | string/null | 详细错误信息 |
+| stack | string/null | 堆栈信息（仅用于调试） |
+
+**code取值建议**：
+
+| code | 说明 |
+|------|------|
+| TIMEOUT | 请求超时 |
+| NOT_FOUND | 资源不存在 |
+| PERMISSION_DENIED | 权限不足 |
+| SECURITY_BLOCKED | 安全拦截 |
+| VALIDATION_ERROR | 参数验证错误 |
+| INTERNAL_ERROR | 内部错误 |
+
+**前端处理**：
+```javascript
+if (data.type === 'error') {
+  // 显示错误信息
+  showError(data.message);
+  // 记录错误码（用于调试）
+  console.error(`Error ${data.code}: ${data.error_type}`);
+}
+```
+
+---
+
+#### 9.4.8 type=status（执行状态）
+
+**发送时机**：Agent内部执行状态变化时
+
+**响应示例**：
+```json
+{
+  "type": "status",
+  "status_value": "paused",
+  "message": "等待用户确认：确定要删除 test.txt 吗？"
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| type | string | 固定值 "status" |
+| status_value | string | 具体状态值 |
+| message | string | 状态消息 |
+
+**status_value取值说明**：
+
+| status_value | 说明 | 触发场景 |
+|--------------|------|----------|
+| interrupted | 任务中断 | 用户主动中断、安全拦截、达到最大迭代 |
+| paused | 任务暂停 | 等待用户确认、等待资源 |
+| resumed | 任务恢复 | 用户确认后继续、资源可用 |
+| retrying | 任务重试 | 工具执行失败自动重试 |
+
+**状态流转关系**：
+
+```
+running → paused → resumed → running
+running → interrupted → 结束
+running → retrying → running
+```
+
+**前端处理**：
+```javascript
+if (data.type === 'status') {
+  switch (data.status_value) {
+    case 'interrupted':
+      showInterrupted(data.message);
+      break;
+    case 'paused':
+      showPaused(data.message);
+      // 显示确认按钮
+      showConfirmButton();
+      break;
+    case 'resumed':
+      showResumed(data.message);
+      break;
+    case 'retrying':
+      showRetrying(data.message);
+      break;
+  }
+}
+```
+
+---
+
+### 9.5 完整交互流程示例
+
+#### 9.5.1 普通对话流程
+
+```
+客户端发送: POST /api/v1/chat
+           {"messages": [{"role": "user", "content": "你好"}], "stream": true}
+
+服务端返回:
+data: {"type": "start", "display_name": "OpenAI (gpt-4)", "task_id": "abc123", ...}
+
+data: {"type": "thought", "step": 1, "content": "用户问你好，我应该礼貌回复", "action_tool": "finish", "params": {}}
+
+data: {"type": "chunk", "content": "你", "is_reasoning": false}
+data: {"type": "chunk", "content": "好", "is_reasoning": false}
+data: {"type": "chunk", "content": "！", "is_reasoning": false}
+
+data: {"type": "final", "content": "你好！有什么可以帮助你的？"}
+```
+
+#### 9.5.2 文件操作流程（单轮）
+
+```
+客户端发送: POST /api/v1/chat
+           {"messages": [{"role": "user", "content": "帮我查看桌面"}], "stream": true}
+
+服务端返回:
+data: {"type": "start", ...}
+
+data: {"type": "thought", "step": 1, "content": "用户想要查看桌面文件夹...", 
+       "action_tool": "list_directory", "params": {"path": "Desktop"}}
+
+data: {"type": "action_tool", "step": 1, "tool_name": "list_directory", 
+       "tool_params": {"path": "Desktop"}, "execution_status": "success", 
+       "summary": "成功读取目录", "raw_data": {...}}
+
+data: {"type": "observation", "step": 1, "execution_status": "success", 
+       "summary": "成功读取目录", "content": "已获取目录内容，现在整理成列表回复用户",
+       "action_tool": "finish", "params": {}, "is_finished": true}
+
+data: {"type": "final", "content": "桌面有3个文件：file1.txt, file2.txt, folder1"}
+```
+
+#### 9.5.3 文件操作流程（多轮）
+
+```
+客户端发送: POST /api/v1/chat
+           {"messages": [{"role": "user", "content": "帮我查看桌面，然后读取第一个文件"}], "stream": true}
+
+服务端返回:
+data: {"type": "start", ...}
+
+【第1轮循环】
+data: {"type": "thought", "step": 1, ..., "action_tool": "list_directory", "params": {"path": "Desktop"}}
+data: {"type": "action_tool", "step": 1, ..., "execution_status": "success", ...}
+data: {"type": "observation", "step": 1, ..., "action_tool": "read_file", "params": {"path": "Desktop/file1.txt"}, "is_finished": false}
+
+【第2轮循环】
+data: {"type": "thought", "step": 2, ..., "action_tool": "read_file", "params": {"path": "Desktop/file1.txt"}}
+data: {"type": "action_tool", "step": 2, ..., "execution_status": "success", ...}
+data: {"type": "observation", "step": 2, ..., "action_tool": "finish", "params": {}, "is_finished": true}
+
+data: {"type": "final", "content": "桌面有2个文件：file1.txt和file2.txt。第一个文件file1.txt的内容是：..."}
+```
+
+#### 9.5.4 错误处理流程
+
+```
+客户端发送: POST /api/v1/chat
+           {"messages": [{"role": "user", "content": "读取不存在的文件"}], "stream": true}
+
+服务端返回:
+data: {"type": "start", ...}
+
+data: {"type": "thought", ..., "action_tool": "read_file", ...}
+data: {"type": "action_tool", ..., "execution_status": "error", "summary": "读取文件失败：文件不存在"}
+data: {"type": "observation", ..., "execution_status": "error", "action_tool": "finish", "is_finished": true}
+
+data: {"type": "final", "content": "读取文件失败：文件不存在。请检查文件路径是否正确。"}
+```
+
+#### 9.5.5 安全拦截流程
+
+```
+客户端发送: POST /api/v1/chat
+           {"messages": [{"role": "user", "content": "删除 C:\\Windows\\System32"}], "stream": true}
+
+服务端返回:
+data: {"type": "start", "security_check": {"is_safe": false, "risk_level": "critical", "risk": "检测到系统关键目录操作", "blocked": true}}
+
+data: {"type": "error", "code": "SECURITY_BLOCKED", "message": "检测到危险命令，已被安全规则拦截", "error_type": "security"}
+```
+
+#### 9.5.6 用户确认流程
+
+```
+【任务执行到需要确认时】
+data: {"type": "observation", ..., "content": "检测到删除操作，需要用户确认", "action_tool": "finish", ...}
+
+data: {"type": "status", "status_value": "paused", "message": "等待用户确认：确定要删除 test.txt 吗？"}
+
+【用户点击确认后】
+客户端发送: POST /api/v1/chat/confirm
+           {"task_id": "abc123", "confirmed": true}
+
+服务端返回:
+data: {"type": "status", "status_value": "resumed", "message": "用户已确认，继续执行"}
+
+【继续执行删除操作】
+...
+```
+
+---
+
+### 9.6 前端接收处理代码示例
+
+#### 9.6.1 使用fetch + ReadableStream
+
+```javascript
+async function sendMessage(messages) {
+  const response = await fetch('/api/v1/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages: messages,
+      stream: true
+    })
+  });
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    
+    // 处理SSE数据块
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const data = JSON.parse(line.slice(6));
+        handleServerEvent(data);
+      }
+    }
+  }
+}
+
+function handleServerEvent(data) {
+  switch (data.type) {
+    case 'start':
+      handleStart(data);
+      break;
+    case 'thought':
+      handleThought(data);
+      break;
+    case 'action_tool':
+      handleActionTool(data);
+      break;
+    case 'observation':
+      handleObservation(data);
+      break;
+    case 'chunk':
+      handleChunk(data);
+      break;
+    case 'final':
+      handleFinal(data);
+      break;
+    case 'error':
+      handleError(data);
+      break;
+    case 'status':
+      handleStatus(data);
+      break;
+  }
+}
+```
+
+#### 9.6.2 使用EventSource（仅GET请求，不适用本API）
+
+**注意**：EventSource只支持GET请求，不适用于POST请求的流式API。上述fetch示例是正确的方式。
+
+---
+
+### 9.7 错误响应码处理
+
+| HTTP状态码 | 说明 | 前端处理 |
+|-----------|------|---------|
+| 200 | 正常响应 | 解析SSE流 |
+| 400 | 请求参数错误 | 显示错误信息 |
+| 401 | 未认证 | 跳转登录 |
+| 403 | 无权限 | 显示权限不足 |
+| 500 | 服务器内部错误 | 显示服务器错误 |
+| 503 | 服务不可用 | 显示服务暂不可用 |
+
+---
+
+**更新时间**: 2026-03-09 14:15:00
+**编写人**: 小沈
+
+---
+
+## 十、前端配合升级修改说明
+
+**编写人**: 小沈
+**编写时间**: 2026-03-09 14:20:00
+
+---
+
+### 10.1 前端修改概述
+
+本次前端修改的核心目标是：**适配新的流式API响应格式，正确处理所有type类型，实现实时流式显示**。
+
+#### 10.1.1 需要修改的文件清单
+
+| 序号 | 文件路径 | 作用 | 修改优先级 |
+|------|---------|------|-----------|
+| 1 | `frontend/src/components/Chat/MessageItem.tsx` | 消息显示组件 | 🔴 高 |
+| 2 | `frontend/src/hooks/useChat.ts` | 聊天Hook | 🔴 高 |
+| 3 | `frontend/src/services/api.ts` | API调用服务 | 🟡 中 |
+| 4 | `frontend/src/types/chat.ts` | 类型定义 | 🔴 高 |
+| 5 | `frontend/src/components/Chat/ChatInput.tsx` | 输入组件 | 🟡 中 |
+
+---
+
+### 10.2 类型定义修改
+
+#### 10.2.1 新增TypeScript类型定义
+
+**文件**: `frontend/src/types/chat.ts`
+
+```typescript
+// ============================================================
+// 流式API响应类型定义
+// ============================================================
+
+// 安全检查结果
+export interface SecurityCheck {
+  is_safe: boolean;
+  risk_level: 'low' | 'medium' | 'high' | 'critical' | null;
+  risk: string | null;
+  blocked: boolean;
+}
+
+// start类型
+export interface StartMessage {
+  type: 'start';
+  display_name: string;
+  model: string;
+  provider: string;
+  task_id: string;
+  security_check: SecurityCheck;
+}
+
+// thought类型
+export interface ThoughtMessage {
+  type: 'thought';
+  step: number;
+  content: string;
+  reasoning?: string;
+  action_tool: string;
+  params: Record<string, any>;
+}
+
+// action_tool类型
+export interface ActionToolMessage {
+  type: 'action_tool';
+  step: number;
+  tool_name: string;
+  tool_params: Record<string, any>;
+  execution_status: 'success' | 'error' | 'warning';
+  summary: string;
+  raw_data?: Record<string, any> | null;
+  action_retry_count: number;
+}
+
+// observation类型
+export interface ObservationMessage {
+  type: 'observation';
+  step: number;
+  execution_status: 'success' | 'error' | 'warning';
+  summary: string;
+  raw_data?: Record<string, any> | null;
+  content: string;
+  reasoning?: string;
+  action_tool: string;
+  params: Record<string, any>;
+  is_finished: boolean;
+}
+
+// chunk类型
+export interface ChunkMessage {
+  type: 'chunk';
+  content: string;
+  is_reasoning: boolean;
+  chunk_reasoning?: string;
+}
+
+// final类型
+export interface FinalMessage {
+  type: 'final';
+  content: string;
+}
+
+// error类型
+export interface ErrorMessage {
+  type: 'error';
+  code: string;
+  message: string;
+  error_type?: string;
+  details?: string;
+  stack?: string;
+}
+
+// status类型
+export type StatusValue = 'interrupted' | 'paused' | 'resumed' | 'retrying';
+
+export interface StatusMessage {
+  type: 'status';
+  status_value: StatusValue;
+  message: string;
+}
+
+// 联合类型 - 所有可能的响应类型
+export type StreamMessage = 
+  | StartMessage 
+  | ThoughtMessage 
+  | ActionToolMessage 
+  | ObservationMessage 
+  | ChunkMessage 
+  | FinalMessage 
+  | ErrorMessage 
+  | StatusMessage;
+```
+
+---
+
+### 10.3 API调用服务修改
+
+#### 10.3.1 修改fetch调用方式
+
+**文件**: `frontend/src/services/api.ts`
+
+```typescript
+/**
+ * 发送聊天消息（流式）
+ * @param messages 消息列表
+ * @param onMessage 消息回调
+ * @returns void
+ */
+export async function sendChatMessage(
+  messages: ChatMessage[],
+  onMessage: (message: StreamMessage) => void
+): Promise<void> {
+  const response = await fetch('/api/v1/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages: messages,
+      stream: true
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Response body is not readable');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      
+      // 处理SSE数据块
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6)) as StreamMessage;
+            onMessage(data);
+          } catch (e) {
+            console.error('Failed to parse message:', e);
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+```
+
+---
+
+### 10.4 消息Hook修改
+
+#### 10.4.1 修改useChat Hook
+
+**文件**: `frontend/src/hooks/useChat.ts`
+
+```typescript
+import { useState, useCallback } from 'react';
+import { StreamMessage, ChatMessage } from '../types/chat';
+import { sendChatMessage } from '../services/api';
+
+export function useChat() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentStep, setCurrentStep] = useState<StreamMessage | null>(null);
+
+  const sendMessage = useCallback(async (content: string) => {
+    const userMessage: ChatMessage = { role: 'user', content };
+    const newMessages = [...messages, userMessage];
+    
+    setMessages(newMessages);
+    setIsLoading(true);
+    setCurrentStep(null);
+
+    try {
+      await sendChatMessage(newMessages, (streamMessage) => {
+        // 处理每种类型的消息
+        switch (streamMessage.type) {
+          case 'start':
+            handleStartMessage(streamMessage);
+            break;
+          case 'thought':
+            handleThoughtMessage(streamMessage);
+            break;
+          case 'action_tool':
+            handleActionToolMessage(streamMessage);
+            break;
+          case 'observation':
+            handleObservationMessage(streamMessage);
+            break;
+          case 'chunk':
+            handleChunkMessage(streamMessage);
+            break;
+          case 'final':
+            handleFinalMessage(streamMessage);
+            break;
+          case 'error':
+            handleErrorMessage(streamMessage);
+            break;
+          case 'status':
+            handleStatusMessage(streamMessage);
+            break;
+        }
+        
+        setCurrentStep(streamMessage);
+      });
+    } catch (error) {
+      console.error('Chat error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [messages]);
+
+  // ... 各种处理函数
+  const handleStartMessage = (msg: StreamMessage) => {
+    // 处理start类型
+  };
+  
+  const handleThoughtMessage = (msg: StreamMessage) => {
+    // 处理thought类型
+  };
+  
+  // ... 其他处理函数
+
+  return {
+    messages,
+    sendMessage,
+    isLoading,
+    currentStep
+  };
+}
+```
+
+---
+
+### 10.5 消息显示组件修改
+
+#### 10.5.1 修改MessageItem组件
+
+**文件**: `frontend/src/components/Chat/MessageItem.tsx`
+
+```typescript
+import React from 'react';
+import { StreamMessage } from '../../types/chat';
+
+interface MessageItemProps {
+  message: StreamMessage;
+}
+
+export const MessageItem: React.FC<MessageItemProps> = ({ message }) => {
+  switch (message.type) {
+    case 'start':
+      return <StartDisplay message={message} />;
+    case 'thought':
+      return <ThoughtDisplay message={message} />;
+    case 'action_tool':
+      return <ActionToolDisplay message={message} />;
+    case 'observation':
+      return <ObservationDisplay message={message} />;
+    case 'chunk':
+      return <ChunkDisplay message={message} />;
+    case 'final':
+      return <FinalDisplay message={message} />;
+    case 'error':
+      return <ErrorDisplay message={message} />;
+    case 'status':
+      return <StatusDisplay message={message} />;
+    default:
+      return null;
+  }
+};
+
+// 各类型显示组件
+const StartDisplay: React.FC<{ message: any }> = ({ message }) => {
+  return (
+    <div className="message-start">
+      <div className="ai-name">{message.display_name}</div>
+      {message.security_check && (
+        <div className={`security-badge ${message.security_check.is_safe ? 'safe' : 'danger'}`}>
+          {message.security_check.is_safe ? '安全检查通过' : '危险：' + message.security_check.risk}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const ThoughtDisplay: React.FC<{ message: any }> = ({ message }) => {
+  return (
+    <div className="message-thought">
+      <div className="thought-icon">💭</div>
+      <div className="thought-content">
+        <div className="content">{message.content}</div>
+        {message.reasoning && (
+          <div className="reasoning">推理过程：{message.reasoning}</div>
+        )}
+        <div className="next-action">
+          下一步：{message.action_tool}
+          {message.params && JSON.stringify(message.params)}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ActionToolDisplay: React.FC<{ message: any }> = ({ message }) => {
+  const statusClass = message.execution_status;
+  return (
+    <div className={`message-action-tool ${statusClass}`}>
+      <div className="tool-icon">🔧</div>
+      <div className="tool-info">
+        <div className="tool-name">步骤{message.step}: {message.tool_name}</div>
+        <div className="tool-status">{message.execution_status}</div>
+        <div className="tool-summary">{message.summary}</div>
+        {message.action_retry_count > 0 && (
+          <div className="retry-count">重试次数：{message.action_retry_count}</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ObservationDisplay: React.FC<{ message: any }> = ({ message }) => {
+  return (
+    <div className="message-observation">
+      <div className="observation-icon">📋</div>
+      <div className="observation-content">
+        <div className="result-status">执行结果：{message.execution_status}</div>
+        <div className="content">{message.content}</div>
+        {message.reasoning && (
+          <div className="reasoning">推理：{message.reasoning}</div>
+        )}
+        {message.is_finished ? (
+          <div className="finished">任务即将完成</div>
+        ) : (
+          <div className="next-action">
+            继续执行：{message.action_tool}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ChunkDisplay: React.FC<{ message: any }> = ({ message }) => {
+  return (
+    <div className="message-chunk">
+      {message.content}
+    </div>
+  );
+};
+
+const FinalDisplay: React.FC<{ message: any }> = ({ message }) => {
+  return (
+    <div className="message-final">
+      <div className="final-icon">✅</div>
+      <div className="final-content">{message.content}</div>
+    </div>
+  );
+};
+
+const ErrorDisplay: React.FC<{ message: any }> = ({ message }) => {
+  return (
+    <div className="message-error">
+      <div className="error-icon">❌</div>
+      <div className="error-content">
+        <div className="error-message">{message.message}</div>
+        <div className="error-code">错误码：{message.code}</div>
+        {message.details && <div className="error-details">{message.details}</div>}
+      </div>
+    </div>
+  );
+};
+
+const StatusDisplay: React.FC<{ message: any }> = ({ message }) => {
+  const statusConfig = {
+    interrupted: { icon: '⏹️', className: 'interrupted' },
+    paused: { icon: '⏸️', className: 'paused' },
+    resumed: { icon: '▶️', className: 'resumed' },
+    retrying: { icon: '🔄', className: 'retrying' }
+  };
+  
+  const config = statusConfig[message.status_value];
+  
+  return (
+    <div className={`message-status ${config.className}`}>
+      <div className="status-icon">{config.icon}</div>
+      <div className="status-message">{message.message}</div>
+    </div>
+  );
+};
+```
+
+---
+
+### 10.6 用户确认流程
+
+#### 10.6.1 处理paused状态
+
+当收到 `type: 'status', status_value: 'paused'` 时，前端需要显示确认对话框：
+
+```typescript
+const handleStatusMessage = (message: any) => {
+  if (message.status_value === 'paused') {
+    // 显示确认对话框
+    showConfirmDialog(message.message);
+  } else if (message.status_value === 'resumed') {
+    // 隐藏确认对话框，继续显示
+    hideConfirmDialog();
+  } else if (message.status_value === 'interrupted') {
+    // 显示中断信息
+    showInterruptedMessage(message.message);
+  } else if (message.status_value === 'retrying') {
+    // 显示重试信息
+    showRetryingMessage(message.message);
+  }
+};
+
+function showConfirmDialog(message: string) {
+  // 显示带有"确认"和"取消"按钮的对话框
+  // 用户点击后调用确认API
+}
+```
+
+---
+
+### 10.7 样式修改
+
+#### 10.7.1 新增CSS样式
+
+```css
+/* 消息类型样式 */
+
+/* start类型 */
+.message-start {
+  padding: 10px;
+  background: #f5f5f5;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.message-start .security-badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.message-start .security-badge.safe {
+  background: #4caf50;
+  color: white;
+}
+
+.message-start .security-badge.danger {
+  background: #f44336;
+  color: white;
+}
+
+/* thought类型 */
+.message-thought {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  background: #e3f2fd;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.message-thought .reasoning {
+  font-size: 12px;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* action_tool类型 */
+.message-action-tool {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.message-action-tool.success {
+  background: #e8f5e9;
+}
+
+.message-action-tool.error {
+  background: #ffebee;
+}
+
+.message-action-tool.warning {
+  background: #fff3e0;
+}
+
+/* observation类型 */
+.message-observation {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  background: #f3e5f5;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+/* status类型 */
+.message-status {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.message-status.paused {
+  background: #fff8e1;
+}
+
+.message-status.interrupted {
+  background: #ffebee;
+}
+
+.message-status.resumed {
+  background: #e8f5e9;
+}
+
+.message-status.retrying {
+  background: #e3f2fd;
+}
+```
+
+---
+
+### 10.8 前端修改验证检查清单
+
+完成修改后，必须验证以下各项：
+
+#### 10.8.1 功能验证
+
+- [ ] 能够正确接收并解析 start 类型
+- [ ] 能够正确接收并解析 thought 类型
+- [ ] 能够正确接收并解析 action_tool 类型
+- [ ] 能够正确接收并解析 observation 类型
+- [ ] 能够正确接收并解析 chunk 类型（打字机效果）
+- [ ] 能够正确接收并解析 final 类型
+- [ ] 能够正确接收并解析 error 类型
+- [ ] 能够正确接收并解析 status 类型
+
+#### 10.8.2 交互验证
+
+- [ ] 实时流式显示正常（不等待全部完成）
+- [ ] 用户确认对话框正确显示
+- [ ] 错误信息正确显示
+- [ ] 安全警告正确显示
+
+#### 10.8.3 样式验证
+
+- [ ] 各类型消息样式正确
+- [ ] 执行状态颜色正确（success=绿，error=红，warning=橙）
+- [ ] 状态类型样式正确
+
+---
+
+### 10.9 常见问题处理
+
+#### 10.9.1 SSE数据解析问题
+
+**问题**：有时会收到不完整的JSON
+
+**解决方案**：使用buffer缓存，参考上面的`sendChatMessage`函数实现
+
+#### 10.9.2 chunk和final同时出现的问题
+
+**问题**：chunk和final会同时出现吗？
+
+**答案**：
+- ReAct文件操作：只出现final，不出现chunk
+- 普通对话：先出现多个chunk，最后出现final
+
+#### 10.9.3 状态丢失问题
+
+**问题**：刷新页面后状态丢失
+
+**解决方案**：
+- 保存task_id到localStorage
+- 刷新后通过task_id恢复会话状态
+
+---
+
+**更新时间**: 2026-03-09 14:20:00
 **编写人**: 小沈
