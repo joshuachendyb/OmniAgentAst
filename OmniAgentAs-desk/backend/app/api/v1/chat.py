@@ -725,9 +725,11 @@ async def chat_stream(request: ChatRequest):
             risk = security_check_result.get('risk', '未知风险')
             error_data = {
                 'type': 'error',
+                'code': 'SECURITY_BLOCKED',
                 'message': f'危险操作需确认: {risk}',
                 'error_type': 'security',
-                'details': f"risk_level: {security_check_result.get('risk_level')}"
+                'details': f"risk_level: {security_check_result.get('risk_level')}",
+                'retryable': False
             }
             logger.info(f"[Step error] 发送error步骤(安全检测拦截)")
             yield f"data: {json.dumps(error_data)}\n\n"
@@ -918,7 +920,10 @@ async def chat_stream(request: ChatRequest):
                             # 错误
                             error_data = {
                                 'type': 'error',
-                                'message': event.get('message', '未知错误')
+                                'code': 'AGENT_ERROR',
+                                'message': event.get('message', '未知错误'),
+                                'error_type': 'agent',
+                                'retryable': event.get('retryable', False)
                             }
                             logger.info(f"[Step error] 发送error步骤")
                             yield f"data: {json.dumps(error_data)}\n\n"
@@ -929,11 +934,11 @@ async def chat_stream(request: ChatRequest):
                     # 检查是否被中断（在循环内已处理）
                     
                 except Exception as e:
-                    # 【小沈代修改 - 修复问题 4】统一错误处理格式，记录日志
+                    # 【小沈代修改 - 修复问题4】统一错误处理格式，记录日志
                     logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
                     yield create_error_response(
                         error_type="file_operation_error",
-                        content="文件操作执行失败"
+                        message="文件操作执行失败"
                     )
             else:
                 # 普通对话：调用AI服务（流式）
@@ -1125,7 +1130,7 @@ async def chat_stream(request: ChatRequest):
             logger.info(f"[Step error] 发送error步骤")
             yield create_error_response(
                 error_type=error_type,
-                content=error_message
+                message=error_message
             )
         
         finally:
