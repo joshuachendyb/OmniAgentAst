@@ -1702,6 +1702,9 @@ else:
 
 ### 7.1 start - 任务开始（含安全检查）
 
+**说明**：任务初始化阶段，不是ReAct循环的一部分。包含初始化和安全检查两个子阶段。
+
+**JSON示例**：
 ```json
 {
   "type": "start",
@@ -1718,10 +1721,38 @@ else:
 }
 ```
 
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "start" |
+| display_name | string | 必要 | AI显示名称，如 "OpenAI (gpt-4)" |
+| model | string | 必要 | AI模型，如 "gpt-4"、"gpt-4o" |
+| provider | string | 必要 | AI提供商，如 "openai"、"anthropic" |
+| task_id | string | 必要 | 唯一标识一次用户请求，用于追踪调试 |
+| security_check | object | 必要 | 本次请求的安全检查结果 |
+
+**security_check 字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| is_safe | boolean | 必要 | true=安全，false=危险 |
+| risk_level | string/null | 可选 | low/medium/high/critical，无风险时为null |
+| risk | string/null | 可选 | 风险描述，无风险时为null |
+| blocked | boolean | 必要 | true=已拦截，不执行LLM |
+
+**处理流程**：
+```
+用户发送消息 → 安全检查（规则检查） → 文件操作意图检测 → 进入ReAct循环
+```
+
 ---
 
 ### 7.2 thought - LLM思考（Stage）
 
+**说明**：ReAct循环第1阶段。输入是用户输入或上一轮Observation结果，输出是LLM返回的content + action_tool + params。
+
+**JSON示例**：
 ```json
 {
   "type": "thought",
@@ -1731,10 +1762,36 @@ else:
 }
 ```
 
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "thought" |
+| content | string | 必要 | LLM的思考内容，说明当前分析和下一步意图 |
+| action_tool | string | 必要 | 要执行的工具名称，如 list_directory、finish |
+| params | object | 必要 | 工具执行的参数，可为空对象{} |
+
+**输入来源**：
+
+| 轮次 | 输入来源 | 输入格式 |
+|------|----------|----------|
+| 第1轮 | 用户消息 | role=user, content=用户原始输入 |
+| 后续轮次 | conversation_history | role=user, content=`Observation: {status} - {message}` |
+
+**处理流程**：
+```
+输入（用户消息或Observation结果） → 构建消息列表 → 调用LLM → 解析LLM返回 → 输出content+action_tool+params
+```
+
+**传导**：action_tool + params 传给 Action阶段
+
 ---
 
 ### 7.3 action_tool - 执行动作（Stage）
 
+**说明**：ReAct循环第2阶段。输入是Thought阶段的tool_name + tool_params，输出是execution_status + summary + raw_data。
+
+**JSON示例**：
 ```json
 {
   "type": "action_tool",
@@ -1753,10 +1810,53 @@ else:
 }
 ```
 
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "action_tool" |
+| step | number | 必要 | 步骤序号，从1开始计数 |
+| tool_name | string | 必要 | 工具名称，来自Thought阶段 |
+| tool_params | object | 必要 | 工具参数，来自Thought阶段 |
+| execution_status | string | 必要 | 执行状态：success/error/warning |
+| summary | string | 必要 | 人类可读的执行结果摘要 |
+| raw_data | object/null | 可选 | 机器可读的结构化数据 |
+| action_retry_count | number | 可选 | 重试次数，0=首次执行 |
+
+**execution_status 取值**：
+
+| 值 | 说明 | 场景 |
+|---|------|------|
+| success | 执行成功 | 正常完成操作 |
+| error | 执行失败 | 操作异常或失败 |
+| warning | 执行有警告 | 操作完成但有需要注意的情况 |
+
+**各工具的raw_data结构**：
+
+| 工具名称 | raw_data结构 |
+|----------|-------------|
+| list_directory | `{"entries": [...], "total": number}` |
+| read_file | `{"content": string, "encoding": string, "lines": number}` |
+| write_file | `{"path": string, "size": number, "encoding": string}` |
+| create_directory | `{"path": string, "created": boolean}` |
+| delete_file | `{"path": string, "deleted": boolean}` |
+| move_file | `{"source": string, "destination": string, "moved": boolean}` |
+| copy_file | `{"source": string, "destination": string, "copied": boolean}` |
+
+**处理流程**：
+```
+tool_name + tool_params → 解析工具名称 → 校验参数 → 调用工具函数 → 捕获执行结果 → 组装输出
+```
+
+**传导**：execution_status + summary + raw_data 作为Observation的输入
+
 ---
 
 ### 7.4 observation - 执行结果（Stage）
 
+**说明**：ReAct循环第3阶段。输入是action_tool的执行结果，输出是LLM返回的content + reasoning + action_tool + params + is_finished。同时包含输入和输出两部分。
+
+**JSON示例**：
 ```json
 {
   "type": "observation",
@@ -1770,10 +1870,59 @@ else:
 }
 ```
 
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "observation" |
+| step | number | 必要 | 步骤序号，与action_tool对应 |
+| execution_status | string | 必要 | 执行状态，来自action_tool输出 |
+| summary | string | 必要 | 结果描述，来自action_tool输出 |
+| raw_data | object/null | 可选 | 原始数据，来自action_tool输出 |
+| content | string | 必要 | LLM基于结果生成的新思考 |
+| reasoning | string | 可选 | LLM的推理过程，说明为什么做此决策 |
+| action_tool | string | 必要 | LLM决定的下一步工具 |
+| params | object | 必要 | 工具参数 |
+| is_finished | boolean | 必要 | 是否完成任务：true=结束，false=继续 |
+
+**输入格式化规则**：
+```
+Observation: {execution_status} - {summary}
+```
+
+**action_tool 取值范围**：
+
+| action_tool | 说明 |
+|-------------|------|
+| finish | 完成任务 |
+| list_directory | 列出目录 |
+| read_file | 读取文件 |
+| write_file | 写入文件 |
+| create_directory | 创建目录 |
+| delete_file | 删除文件 |
+| move_file | 移动文件 |
+| copy_file | 复制文件 |
+
+**is_finished 判断逻辑**：
+```
+if action_tool == "finish": is_finished = true
+else: is_finished = false
+```
+
+**处理流程**：
+```
+action_tool执行结果 → 格式化输入 → 构建消息 → 调用LLM → 解析LLM返回 → 传导到下一轮Thought
+```
+
+**传导**：content + action_tool + params 传给下一轮Thought阶段
+
 ---
 
 ### 7.5 final - 最终回复
 
+**说明**：ReAct循环结束后的最终输出。不需要再调用LLM，直接整理最终回复给用户。
+
+**JSON示例**：
 ```json
 {
   "type": "final",
@@ -1781,10 +1930,30 @@ else:
 }
 ```
 
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "final" |
+| content | string | 必要 | 完整回复内容 |
+
+**触发条件**：
+- LLM在observation阶段返回 action_tool = "finish"
+- 任务执行失败，需要告知用户错误信息
+- 达到最大迭代次数
+
+**处理流程**：
+```
+ReAct循环结束 → 整理最终回复 → 输出final → 任务结束
+```
+
 ---
 
 ### 7.6 chunk - 流式内容
 
+**说明**：LLM流式输出时的内容片段。不参与ReAct循环，专门用于普通对话场景的流式显示。
+
+**JSON示例**：
 ```json
 {
   "type": "chunk",
@@ -1794,10 +1963,41 @@ else:
 }
 ```
 
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "chunk" |
+| content | string | 必要 | 回复片段内容 |
+| is_reasoning | boolean | 可选 | 是否在思考阶段 |
+| chunk_reasoning | string | 可选 | 思考内容（避免与thought的reasoning混淆） |
+
+**使用场景**：
+
+| 场景 | 是否使用chunk | 说明 |
+|------|---------------|------|
+| 普通对话 | ✅ 使用 | AI生成文本时逐块返回 |
+| ReAct文件操作 | ❌ 不使用 | 只有thought/action_tool/observation，最后直接final |
+
+**与ReAct的关系**：
+- chunk是ReAct循环之外的辅助type
+- ReAct过程中不需要chunk
+- chunk只用于普通对话的流式显示
+
+**流式接口 vs 非流式接口**：
+
+| 接口类型 | 是否需要chunk |
+|----------|---------------|
+| 流式接口 | ✅ 需要 |
+| 非流式接口 | ❌ 不需要 |
+
 ---
 
 ### 7.7 error - 错误
 
+**说明**：错误状态，不参与循环。用于报告系统错误、安全拦截等。
+
+**JSON示例**：
 ```json
 {
   "type": "error",
@@ -1809,71 +2009,254 @@ else:
 }
 ```
 
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "error" |
+| code | string | 必要 | 错误码，如 TIMEOUT、NOT_FOUND、SECURITY_BLOCKED |
+| message | string | 必要 | 用户可读的错误消息 |
+| error_type | string | 可选 | 错误类型，如 network、file_system、validation |
+| details | string | 可选 | 详细错误信息 |
+| stack | string | 可选 | 堆栈信息（仅用于调试） |
+
+**code 取值建议**：
+
+| code | 说明 |
+|------|------|
+| TIMEOUT | 请求超时 |
+| NOT_FOUND | 资源不存在 |
+| PERMISSION_DENIED | 权限不足 |
+| SECURITY_BLOCKED | 安全拦截 |
+| VALIDATION_ERROR | 参数验证错误 |
+| INTERNAL_ERROR | 内部错误 |
+
+**触发场景**：
+- 安全规则拦截危险命令
+- LLM调用超时
+- 文件操作失败
+- 参数验证错误
+
 ---
 
 ### 7.8 status - Agent执行状态（整合自原5.8-5.11）
 
-**状态1：中断**
-```json
-{
-  "type": "status",
-  "status_value": "interrupted",
-  "message": "任务已被中断"
-}
-```
+**说明**：Agent内部执行状态，与LLM无直接关系。整合了interrupted、paused、resumed、retrying四个状态。
 
-**状态2：暂停**
-```json
-{
-  "type": "status",
-  "status_value": "paused",
-  "message": "任务已暂停"
-}
-```
+**JSON示例**：
 
-**状态3：恢复**
-```json
-{
-  "type": "status",
-  "status_value": "resumed",
-  "message": "任务已恢复"
-}
-```
+| 状态 | JSON |
+|------|------|
+| 中断 | `{"type": "status", "status_value": "interrupted", "message": "任务已被中断"}` |
+| 暂停 | `{"type": "status", "status_value": "paused", "message": "任务已暂停"}` |
+| 恢复 | `{"type": "status", "status_value": "resumed", "message": "任务已恢复"}` |
+| 重试中 | `{"type": "status", "status_value": "retrying", "message": "正在重试..."}` |
 
-**状态4：重试中**
-```json
-{
-  "type": "status",
-  "status_value": "retrying",
-  "message": "正在重试..."
-}
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "status" |
+| status_value | string | 必要 | 具体状态值：interrupted/paused/resumed/retrying |
+| message | string | 必要 | 状态消息，人类可读 |
+
+**status_value 取值说明**：
+
+| 值 | 说明 | 触发场景 |
+|---|------|----------|
+| interrupted | 任务中断 | 用户主动中断、安全拦截、达到最大迭代 |
+| paused | 任务暂停 | 等待用户确认、等待资源 |
+| resumed | 任务恢复 | 用户确认后继续、资源可用 |
+| retrying | 任务重试 | 工具执行失败自动重试 |
+
+**状态流转关系**：
+```
+running → paused → resumed → running
+running → interrupted → 结束
+running → retrying → running
 ```
 
 ---
 
-## 八、完整时间线示例
+### 7.9 完整时间线示例
 
-### 8.1 普通对话
+#### 7.9.1 普通对话时间线
 
 ```
-{ "type": "start", "display_name": "OpenAI (gpt-4)", "task_id": "xxx" }
+用户发送: "你好"
+    ↓
+{ "type": "start", "display_name": "OpenAI (gpt-4)", "task_id": "xxx", ... }
+    ↓
 { "type": "thought", "content": "用户问你好，我应该礼貌回复", "action_tool": "finish", "params": {} }
-{ "type": "chunk", "content": "你好" }
+    ↓
+{ "type": "chunk", "content": "你" }
+{ "type": "chunk", "content": "好" }
 { "type": "chunk", "content": "！" }
+    ↓
+{ "type": "final", "content": "你好！有什么可以帮助你的？" }
+    ↓
+任务结束
+```
+
+**JSON流示例**：
+```json
+{ "type": "start", "display_name": "OpenAI (gpt-4)", "task_id": "abc123", "security_check": {...} }
+{ "type": "thought", "content": "用户问你好，我应该礼貌回复", "action_tool": "finish", "params": {} }
+{ "type": "chunk", "content": "你", "is_reasoning": false }
+{ "type": "chunk", "content": "好", "is_reasoning": false }
+{ "type": "chunk", "content": "！", "is_reasoning": false }
 { "type": "final", "content": "你好！有什么可以帮助你的？" }
 ```
 
-### 8.2 文件操作
+---
+
+#### 7.9.2 文件操作时间线
 
 ```
+用户发送: "帮我查看桌面文件夹"
+    ↓
 { "type": "start", ... }
-
-{ "type": "thought", "content": "用户想要查看桌面文件夹...", "action_tool": "list_directory", "params": {"path": "Desktop"} }
-{ "type": "action_tool", "step": 1, "tool_name": "list_directory", "tool_params": {"path": "Desktop"}, "execution_status": "success", "summary": "成功读取目录", "raw_data": {...} }
-{ "type": "observation", "execution_status": "success", "summary": "成功", "raw_data": {...}, "content": "已获取内容", "action_tool": "finish", "params": {} }
-
-{ "type": "final", "content": "桌面有文件：..." }
+    ↓
+{ "type": "thought", "content": "用户想要查看桌面文件夹，我需要先列出桌面目录的内容", 
+  "action_tool": "list_directory", "params": {"path": "Desktop"} }
+    ↓
+{ "type": "action_tool", "step": 1, "tool_name": "list_directory", 
+  "tool_params": {"path": "Desktop"}, "execution_status": "success", 
+  "summary": "成功读取目录", "raw_data": {...} }
+    ↓
+{ "type": "observation", "step": 1, "execution_status": "success", 
+  "summary": "成功读取目录", "raw_data": {...}, 
+  "content": "已获取目录内容，现在整理成列表回复用户",
+  "action_tool": "finish", "params": {} }
+    ↓
+{ "type": "final", "content": "桌面有文件：github_ping.log, github_trace.log..." }
+    ↓
+任务结束
 ```
+
+**JSON流示例**：
+```json
+{ "type": "start", "display_name": "OpenAI (gpt-4)", "task_id": "abc123", "security_check": {...} }
+{ "type": "thought", "content": "用户想要查看桌面文件夹，我需要先列出桌面目录的内容", "action_tool": "list_directory", "params": {"path": "Desktop"} }
+{ "type": "action_tool", "step": 1, "tool_name": "list_directory", "tool_params": {"path": "Desktop"}, "execution_status": "success", "summary": "成功读取目录，文件列表：['file1.txt', 'file2.txt', 'folder1']", "raw_data": {"entries": [...], "total": 3} }
+{ "type": "observation", "step": 1, "execution_status": "success", "summary": "成功读取目录", "raw_data": {"entries": [...], "total": 3}, "content": "已获取目录内容，现在整理成列表回复用户", "action_tool": "finish", "params": {} }
+{ "type": "final", "content": "桌面有文件：file1.txt, file2.txt, folder1" }
+```
+
+---
+
+#### 7.9.3 多轮文件操作时间线
+
+```
+用户发送: "帮我查看桌面，然后读取第一个文件"
+    ↓
+{ "type": "start", ... }
+    ↓
+【第1轮循环】
+{ "type": "thought", "content": "用户想要查看桌面文件夹，我需要先列出桌面目录的内容", 
+  "action_tool": "list_directory", "params": {"path": "Desktop"} }
+    ↓
+{ "type": "action_tool", "step": 1, "tool_name": "list_directory", 
+  "tool_params": {"path": "Desktop"}, "execution_status": "success", 
+  "summary": "成功读取目录", "raw_data": {"entries": ["file1.txt", "file2.txt"], "total": 2} }
+    ↓
+{ "type": "observation", "step": 1, "execution_status": "success", 
+  "summary": "成功读取目录", "raw_data": {...}, 
+  "content": "已获取桌面文件列表，第一个文件是file1.txt，现在需要读取它的内容",
+  "action_tool": "read_file", "params": {"path": "Desktop/file1.txt"} }
+    ↓
+【第2轮循环】
+{ "type": "thought", "content": "已获取文件列表，现在读取第一个文件的内容", 
+  "action_tool": "read_file", "params": {"path": "Desktop/file1.txt"} }
+    ↓
+{ "type": "action_tool", "step": 2, "tool_name": "read_file", 
+  "tool_params": {"path": "Desktop/file1.txt"}, "execution_status": "success", 
+  "summary": "成功读取文件", "raw_data": {"content": "文件内容...", "lines": 10} }
+    ↓
+{ "type": "observation", "step": 2, "execution_status": "success", 
+  "summary": "成功读取文件", "raw_data": {...}, 
+  "content": "已获取文件内容，现在整理成可读格式回复用户",
+  "action_tool": "finish", "params": {} }
+    ↓
+{ "type": "final", "content": "桌面有两个文件：file1.txt 和 file2.txt。第一个文件 file1.txt 的内容是：..." }
+    ↓
+任务结束
+```
+
+---
+
+#### 7.9.4 错误处理时间线
+
+```
+用户发送: "帮我读取不存在的文件"
+    ↓
+{ "type": "start", ... }
+    ↓
+{ "type": "thought", "content": "用户想要读取文件，我先尝试读取指定路径", 
+  "action_tool": "read_file", "params": {"path": "Desktop/notexist.txt"} }
+    ↓
+{ "type": "action_tool", "step": 1, "tool_name": "read_file", 
+  "tool_params": {"path": "Desktop/notexist.txt"}, "execution_status": "error", 
+  "summary": "读取文件失败，错误原因：文件不存在", "raw_data": null, "action_retry_count": 0 }
+    ↓
+{ "type": "observation", "step": 1, "execution_status": "error", 
+  "summary": "读取文件失败，错误原因：文件不存在", "raw_data": null,
+  "content": "文件不存在，需要先确认文件路径是否正确",
+  "action_tool": "finish", "params": {}, "is_finished": true }
+    ↓
+{ "type": "final", "content": "读取文件失败：文件不存在。请检查文件路径是否正确。" }
+    ↓
+任务结束（失败）
+```
+
+---
+
+#### 7.9.5 带安全检查的时间线
+
+```
+用户发送: "删除 C:\Windows\System32"
+    ↓
+{ "type": "start", "security_check": {...} }
+    ↓
+【安全检查阶段】
+{ "type": "status", "status_value": "interrupted", "message": "危险命令已拦截：检测到系统关键目录操作" }
+    ↓
+{ "type": "error", "code": "SECURITY_BLOCKED", "message": "检测到危险命令，已被安全规则拦截" }
+    ↓
+任务结束
+```
+
+---
+
+#### 7.9.6 带用户确认的时间线
+
+```
+用户发送: "删除桌面上的 test.txt"
+    ↓
+{ "type": "start", ... }
+    ↓
+{ "type": "thought", "content": "用户想要删除文件，我需要先确认文件是否存在", 
+  "action_tool": "list_directory", "params": {"path": "Desktop"} }
+    ↓
+{ "type": "action_tool", ... }
+    ↓
+{ "type": "observation", ... "content": "检测到删除操作，需要用户确认", 
+  "action_tool": "finish", ... }
+    ↓
+{ "type": "status", "status_value": "paused", "message": "等待用户确认：确定要删除 test.txt 吗？" }
+    ↓
+【用户点击"确认"】
+{ "type": "status", "status_value": "resumed", "message": "用户已确认，继续执行" }
+    ↓
+【继续执行删除操作】
+...
+```
+
+---
+
+## 八、待补充
+
+（本章内容已合并到第七章）
 
 ---
 
@@ -1881,18 +2264,39 @@ else:
 
 ```javascript
 switch(step.type) {
-  case 'start': 显示AI名称; break;
-  case 'thought': 显示💭思考内容; break;
-  case 'action_tool': 显示🔧工具名和参数; break;
-  case 'observation': 显示📋结果（成功/失败）; break;
-  case 'chunk': 流式显示回复内容; break;
-  case 'final': 显示最终回复; break;
-  case 'error': 显示❌错误信息; break;
-  case 'interrupted': 显示⏹️中断信息; break;
+  case 'start': 
+    显示AI名称 + 安全检查状态; 
+    break;
+  case 'thought': 
+    显示💭思考内容 + 下一个工具; 
+    break;
+  case 'action_tool': 
+    显示🔧工具名 + 执行状态(成功/失败/警告); 
+    break;
+  case 'observation': 
+    显示📋结果 + 下一步意图; 
+    break;
+  case 'chunk': 
+    流式显示回复内容; 
+    break;
+  case 'final': 
+    显示最终回复; 
+    break;
+  case 'error': 
+    显示❌错误信息; 
+    break;
+  case 'status': 
+    switch(step.status_value) {
+      case 'interrupted': 显示⏹️中断信息; break;
+      case 'paused': 显示⏸️暂停等待; break;
+      case 'resumed': 显示▶️继续执行; break;
+      case 'retrying': 显示🔄重试中; break;
+    }
+    break;
 }
 ```
 
 ---
 
-**更新时间**: 2026-03-08 23:30:00
+**更新时间**: 2026-03-09 14:30:00
 **编写人**: 小沈
