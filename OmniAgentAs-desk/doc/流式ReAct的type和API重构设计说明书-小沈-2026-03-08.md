@@ -2,7 +2,7 @@
 
 **编写人**: 小沈
 **编写时间**: 2026-03-08 21:50:00
-**更新时间**: 2026-03-09 11:45:20
+**更新时间**: 2026-03-09 12:26:19
 **存放位置**: D:\2bktest\MDview\OmniAgentAs-desk\doc\
 
 ---
@@ -1446,11 +1446,11 @@ else:
 
 **字段分析**：
 
-| 字段 | 作用 | 必要性 | 合理? |
-|------|------|--------|-------|
-| content | 回复片段 | 必要 | ✅ |
-| is_reasoning | 是否思考 | 可选 | ✅ |
-| reasoning | 思考内容 | 可选 | ✅ |
+| 字段 | 作用 | 必要性 | 合理? | 备注 |
+|------|------|--------|-------|------|
+| content | 回复片段 | 必要 | ✅ | |
+| is_reasoning | 是否思考 | 可选 | ✅ | |
+| chunk_reasoning | 思考内容 | 可选 | ⚠️ 建议改为chunk_reasoning避免与thought的reasoning混淆 |
 
 **结论**：✅ 保留，字段完整，属于 Type（用于普通对话，ReAct过程不需要）
 
@@ -1463,7 +1463,7 @@ else:
 
 **输入**：无
 
-**输出**：code + message
+**输出**：code + message + error_type + details
 
 **传导**：不传导到下一阶段
 
@@ -1473,96 +1473,80 @@ else:
 |------|------|--------|-------|
 | code | 错误码 | 必要 | ✅ |
 | message | 错误消息 | 必要 | ✅ |
+| error_type | 错误类型 | 可选 | ✅ 补充 |
+| details | 详细错误信息 | 可选 | ✅ 补充 |
+| stack | 堆栈信息 | 可选 | ✅ 补充（仅调试用） |
 
 **结论**：✅ 保留，字段完整，属于 Type
 
 ---
 
-### 5.8 type=interrupted（中断）
+### 5.8-5.11 状态类型整合说明
 
-**是 Stage 还是 Type？**
-- **Type**（中断状态，不参与循环）
+**分析**：interrupted、paused、resumed、retrying 都是Agent内部执行状态，与LLM无直接关系。
 
-**输入**：无
+**整合方案**：整合为一个统一的 **type=status** 类型，用 `status_value` 字段区分具体状态。
 
-**输出**：message
-
-**传导**：不传导到下一阶段
-
-**字段分析**：
+**整合后的字段设计**：
 
 | 字段 | 作用 | 必要性 | 合理? |
 |------|------|--------|-------|
-| message | 中断消息 | 必要 | ✅ |
+| status_value | 具体状态值 | 必要 | ✅ |
+| message | 状态消息 | 必要 | ✅ |
 
-**结论**：✅ 保留，字段完整，属于 Type
+**status_value取值**：
 
----
+| 值 | 说明 | 对应原type |
+|---|------|-----------|
+| interrupted | 任务中断 | 5.8 |
+| paused | 任务暂停 | 5.9 |
+| resumed | 任务恢复 | 5.10 |
+| retrying | 任务重试中 | 5.11 |
 
-### 5.9 type=paused（暂停）
-
-**是 Stage 还是 Type？**
-- **Type**（暂停状态，不参与循环）
-
-**输入**：无
-
-**输出**：message
-
-**传导**：不传导到下一阶段
-
-**字段分析**：
-
-| 字段 | 作用 | 必要性 | 合理? |
-|------|------|--------|-------|
-| message | 暂停消息 | 必要 | ✅ |
-
-**结论**：✅ 保留，字段完整，属于 Type
+**结论**：✅ 整合为一个统一的status类型
 
 ---
 
-### 5.10 type=resumed（恢复）
+## 六、type整合总结
 
-**是 Stage 还是 Type？**
-- **Type**（恢复状态，不参与循环）
+### 6.1 整合后的type列表
 
-**输入**：无
+| 序号 | type | 说明 | 与LLM关系 |
+|------|------|------|----------|
+| 1 | start | 任务开始 | 初始化 |
+| 2 | thought | LLM推理 | ✅ 直接相关 |
+| 3 | action_tool | 执行动作 | ✅ 直接相关 |
+| 4 | observation | 执行结果判断 | ✅ 直接相关 |
+| 5 | final | 最终回复 | ✅ 直接相关 |
+| 6 | chunk | 流式内容片段 | ✅ 直接相关（LLM输出） |
+| 7 | error | 错误状态 | Agent相关 |
+| 8 | status | Agent执行状态 | Agent相关（整合自5.8-5.11） |
 
-**输出**：message
+### 6.2 整合说明
 
-**传导**：不传导到下一阶段
+| 原type | 整合后 | 说明 |
+|--------|--------|------|
+| interrupted | status | ✅ 整合 |
+| paused | status | ✅ 整合 |
+| resumed | status | ✅ 整合 |
+| retrying | status | ✅ 整合 |
 
-**字段分析**：
+### 6.3 整合后的status字段
 
-| 字段 | 作用 | 必要性 | 合理? |
-|------|------|--------|-------|
-| message | 恢复消息 | 必要 | ✅ |
+```json
+{
+  "type": "status",
+  "status_value": "paused",
+  "message": "任务已暂停"
+}
+```
 
-**结论**：✅ 保留，字段完整，属于 Type
-
----
-
-### 5.11 type=retrying（重试）
-
-**是 Stage 还是 Type？**
-- **Type**（重试状态，不参与循环）
-
-**输入**：无
-
-**输出**：message
-
-**传导**：不传导到下一阶段
-
-**字段分析**：
-
-| 字段 | 作用 | 必要性 | 合理? |
-|------|------|--------|-------|
-| message | 重试消息 | 必要 | ✅ |
-
-**结论**：✅ 保留，字段完整，属于 Type
-
----
-
-## 六、（待补充）
+| status_value | 说明 |
+|-------------|------|
+| interrupted | 任务被中断 |
+| paused | 任务暂停中 |
+| resumed | 任务已恢复 |
+| retrying | 任务重试中 |
 
 ---
 
@@ -1651,7 +1635,8 @@ else:
 {
   "type": "chunk",
   "content": "这是回复片段",
-  "is_reasoning": false
+  "is_reasoning": false,
+  "chunk_reasoning": "用户问你好，我应该礼貌回复"
 }
 ```
 
@@ -1663,50 +1648,49 @@ else:
 {
   "type": "error",
   "code": "TIMEOUT",
-  "message": "请求超时，请重试"
+  "message": "请求超时，请重试",
+  "error_type": "network",
+  "details": "连接远程服务器超时",
+  "stack": "Traceback (most recent call last):\n  File \"...\""
 }
 ```
 
 ---
 
-### 7.8 interrupted - 中断
+### 7.8 status - Agent执行状态（整合自原5.8-5.11）
 
+**状态1：中断**
 ```json
 {
-  "type": "interrupted",
+  "type": "status",
+  "status_value": "interrupted",
   "message": "任务已被中断"
 }
 ```
 
----
-
-### 7.9 paused - 暂停
-
+**状态2：暂停**
 ```json
 {
-  "type": "paused",
+  "type": "status",
+  "status_value": "paused",
   "message": "任务已暂停"
 }
 ```
 
----
-
-### 7.10 resumed - 恢复
-
+**状态3：恢复**
 ```json
 {
-  "type": "resumed",
+  "type": "status",
+  "status_value": "resumed",
   "message": "任务已恢复"
 }
 ```
 
----
-
-### 7.11 retrying - 重试
-
+**状态4：重试中**
 ```json
 {
-  "type": "retrying",
+  "type": "status",
+  "status_value": "retrying",
   "message": "正在重试..."
 }
 ```
