@@ -369,24 +369,30 @@ chat.py: for step in result.steps:
 
 ## 四、type设计原则（必须遵守）
 
-### 4.1 原则1：禁止嵌套
+### 4.1 原则1：各阶段信息独立表达
 
-**错误** ❌：
+**核心说明**：
+- 每个type只表达**当前阶段**的信息，不重复表达其他阶段的内容
+- 不同阶段之间是**时间序列**关系（按顺序传递），不是"嵌套"关系
+- Observation阶段包含"上一轮Action结果"和"LLM新决策"是**时间顺序上的连续**，不是嵌套
+
+**错误示例（真正嵌套）** ❌：
 ```json
 {
   "type": "observation",
-  "thought": "...",        // 不该在这里
-  "action_tool": "...",         // 不该在这里
-  "observation": {...}      // 嵌套自己！
+  "thought": "...",        // 重复表达上一轮thought的内容！
+  "action_tool": "...",   // 重复表达上一轮action_tool的内容！
+  "observation": {...}     // 嵌套自己！
 }
 ```
 
-**正确** ✅：
+**正确示例（时间序列）** ✅：
 ```json
-{ "type": "thought", "content": "..." },
-{ "type": "action_tool", "name": "list_directory", "input": {...} },
-{ "type": "observation", "status": "success", "message": "..." }
+{ "type": "thought", "content": "...", "action_tool": "list_directory", "params": {...} }
+{ "type": "action_tool", "tool_name": "list_directory", "execution_status": "success", "summary": "..." }
+{ "type": "observation", "execution_status": "success", "summary": "...", "content": "...", "action_tool": "read_file" }
 ```
+> **说明**：observation中同时包含execution_status（上一轮action_tool的结果）和content/action_tool（LLM的新决策），这是**时间上的连续传递**，不是嵌套。当前阶段既携带上一阶段的结果，又包含自己的输出，这是ReAct循环的标准模式。
 
 ### 4.2 原则2：type名称不能出现在字段名
 
