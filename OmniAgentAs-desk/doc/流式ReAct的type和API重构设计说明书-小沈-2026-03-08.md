@@ -2,7 +2,7 @@
 
 **编写人**: 小沈
 **编写时间**: 2026-03-08 21:50:00
-**更新时间**: 2026-03-09 10:37:11
+**更新时间**: 2026-03-09 10:44:48
 **存放位置**: D:\2bktest\MDview\OmniAgentAs-desk\doc\
 
 ---
@@ -980,6 +980,293 @@ action_tool阶段执行完成后，输出给Observation阶段的JSON结构：
 | params | 下一个参数 | 可选 | ✅ | 输出 |
 
 **结论**：✅ 保留，属于 Stage
+
+---
+
+### 5.4.1 observation阶段的输入结构
+
+observation阶段的输入来自action_tool阶段的输出，即action_tool执行完成后返回的结果：
+
+**输入结构**：
+```json
+{
+  "execution_status": "success",
+  "summary": "成功读取目录，文件列表：['file1.txt', 'file2.txt']",
+  "raw_data": {
+    "entries": [
+      {"name": "file1.txt", "type": "file", "size": 1024},
+      {"name": "file2.txt", "type": "file", "size": 2048}
+    ],
+    "total": 2
+  }
+}
+```
+
+| 字段 | 类型 | 来源 | 说明 |
+|------|------|------|------|
+| execution_status | string | action_tool阶段输出 | 执行状态：success/error/warning |
+| summary | string | action_tool阶段输出 | 人类可读的结果描述 |
+| raw_data | object | action_tool阶段输出 | 机器可读的结构化数据 |
+
+---
+
+### 5.4.2 observation阶段处理流程
+
+observation阶段是ReAct循环的关键连接点，它将action_tool的执行结果反馈给LLM，让LLM决定下一步做什么：
+
+```
+action_tool执行完成 → 收到 execution_status + summary + raw_data
+    ↓
+1. 格式化输入 → 将execution_status/summary/raw_data格式化为文本
+2. 构建消息 → 构造给LLM的消息格式
+3. 调用LLM → 让LLM基于执行结果继续推理
+4. 解析输出 → LLM返回的content + action_tool + params
+5. 传导结果 → 将action_tool + params传给下一轮action_tool阶段
+```
+
+---
+
+### 5.4.3 observation阶段的输入格式化规则
+
+在将action_tool的输出发送给LLM之前，需要先格式化输入：
+
+**格式化公式**：
+```
+Observation: {execution_status} - {summary}
+```
+
+**具体示例**：
+
+| action_tool执行结果 | 格式化后的输入 |
+|--------------------|---------------|
+| success | `Observation: success - 成功读取目录，文件列表：[file1.txt, file2.txt]` |
+| error | `Observation: error - 读取文件失败，错误原因：文件不存在` |
+| warning | `Observation: warning - 文件写入成功，但编码已自动转换为UTF-8` |
+
+**格式化后的完整消息列表示例**：
+```json
+[
+  {"role": "system", "content": "你是一个文件操作助手..."},
+  {"role": "user", "content": "帮我查看桌面文件"},        // 第1轮用户输入
+  {"role": "assistant", "content": "用户想要查看桌面文件夹..."}, // LLM的思考
+  {"role": "user", "content": "Observation: success - 成功读取目录，文件列表：[file1.txt, file2.txt]"},  // action_tool执行结果
+  ...
+]
+```
+
+---
+
+### 5.4.4 observation阶段的输出JSON结构
+
+LLM收到格式化后的Observation输入后，返回的JSON结构（与thought阶段相同）：
+
+**场景1：action_tool执行成功，LLM决定继续执行下一个工具**
+```json
+{
+  "type": "observation",
+  "step": 1,
+  "execution_status": "success",
+  "summary": "成功读取目录",
+  "raw_data": {"entries": ["file1.txt", "file2.txt"]},
+  "content": "已成功获取桌面文件列表，现在需要读取第一个文件的内容",
+  "action_tool": "read_file",
+  "params": {"path": "C:\\Users\\xxx\\Desktop\\file1.txt"}
+}
+```
+
+**场景2：action_tool执行成功，LLM决定结束任务**
+```json
+{
+  "type": "observation",
+  "step": 1,
+  "execution_status": "success",
+  "summary": "成功读取目录",
+  "raw_data": {"entries": ["file1.txt", "file2.txt"]},
+  "content": "已获取桌面文件列表，共2个文件，现在整理成列表回复用户",
+  "action_tool": "finish",
+  "params": {}
+}
+```
+
+**场景3：action_tool执行失败，LLM决定重试**
+```json
+{
+  "type": "observation",
+  "step": 1,
+  "execution_status": "error",
+  "summary": "读取文件失败，错误原因：文件不存在",
+  "raw_data": null,
+  "content": "文件不存在，需要先确认文件路径是否正确，尝试列出目录查看可用文件",
+  "action_tool": "list_directory",
+  "params": {"path": "C:\\Users\\xxx\\Desktop"}
+}
+```
+
+**场景4：action_tool执行失败，LLM决定结束任务（无法恢复）**
+```json
+{
+  "type": "observation",
+  "step": 1,
+  "execution_status": "error",
+  "summary": "删除文件失败，错误原因：权限不足",
+  "raw_data": null,
+  "content": "由于权限不足，无法删除该文件，需要告知用户权限问题",
+  "action_tool": "finish",
+  "params": {}
+}
+```
+
+**场景5：action_tool有警告，LLM继续执行**
+```json
+{
+  "type": "observation",
+  "step": 1,
+  "execution_status": "warning",
+  "summary": "文件写入成功，但编码已自动转换为UTF-8",
+  "raw_data": {"path": "C:\\Users\\xxx\\test.txt", "encoding": "utf-8"},
+  "content": "文件已成功写入，虽然编码有变化但不影响内容，现在回复用户",
+  "action_tool": "finish",
+  "params": {}
+}
+```
+
+---
+
+### 5.4.5 字段详细说明
+
+#### 1. step（步骤序号）
+
+**作用**：标识当前是第几轮循环
+
+**规则**：
+- 从1开始计数
+- 每执行一轮action_tool，step + 1
+
+#### 2. execution_status（执行状态）
+
+**作用**：来自action_tool阶段的执行状态
+
+**取值**：
+
+| 值 | 来源 | 说明 |
+|---|------|------|
+| success | action_tool输出 | 执行成功 |
+| error | action_tool输出 | 执行失败 |
+| warning | action_tool输出 | 执行有警告 |
+
+#### 3. summary（结果描述）
+
+**作用**：来自action_tool阶段的人类可读结果描述
+
+**内容**：直接使用action_tool阶段返回的summary字段
+
+#### 4. raw_data（原始数据）
+
+**作用**：来自action_tool阶段的机器可读数据
+
+**内容**：直接使用action_tool阶段返回的raw_data字段，可能为null
+
+#### 5. content（LLM的新思考）
+
+**作用**：LLM基于action_tool执行结果生成的新思考
+
+**生成规则**：
+
+| execution_status | content内容方向 |
+|-----------------|----------------|
+| success | 基于成功结果，下一步要做什么 |
+| error | 分析错误原因，如何恢复或替代 |
+| warning | 处理警告信息，是否有影响 |
+
+#### 6. action_tool（下一个工具）
+
+**作用**：LLM决定的下一步要执行的工具
+
+**取值范围**：
+
+| action_tool | 说明 | 使用场景 |
+|-------------|------|---------|
+| finish | 完成任务 | 结果已完整，可以回复用户 |
+| list_directory | 列出目录 | 需要查看更多文件 |
+| read_file | 读取文件 | 需要获取文件内容 |
+| write_file | 写入文件 | 需要保存内容 |
+| create_directory | 创建目录 | 需要创建新目录 |
+| delete_file | 删除文件 | 需要删除文件 |
+| move_file | 移动文件 | 需要移动文件位置 |
+| copy_file | 复制文件 | 需要复制文件 |
+| 其他工具 | 自定义工具 | 根据系统可用工具决定 |
+
+#### 7. params（下一个参数）
+
+**作用**：action_tool要执行的参数
+
+**规则**：
+- 与action_tool配套使用
+- 如果action_tool是finish，params为空对象{}
+
+---
+
+### 5.4.6 observation阶段完整时间线示例
+
+**示例：查看桌面文件并读取第一个文件**
+
+```
+第1轮循环：
+  Thought: "用户想要查看桌面文件夹..."
+          action_tool: list_directory
+          params: {path: "Desktop"}
+  
+  action_tool: execution_status=success, summary="成功读取目录", raw_data={entries: [file1.txt, file2.txt]}
+  
+  Observation: LLM收到 "Observation: success - 成功读取目录"
+              content: "已获取文件列表，第一个文件是file1.txt，需要读取内容"
+              action_tool: read_file
+              params: {path: "Desktop/file1.txt"}
+
+第2轮循环：
+  Thought: LLM收到 "Observation: success - 已读取文件内容"
+          content: "文件内容已获取，现在整理成可读格式回复用户"
+          action_tool: finish
+          params: {}
+
+  action_tool: execution_status=success, summary="成功读取文件", raw_data={content: "文件内容..."}
+  
+  Observation: LLM收到 "Observation: success - 成功读取文件"
+              content: "任务完成"
+              action_tool: finish
+              params: {}
+
+  Final: 任务完成
+```
+
+---
+
+### 5.4.7 与7.4章节的字段名称对照
+
+**当前5.4字段 vs 7.4示例字段**：
+
+| 5.4字段名 | 7.4示例字段名 | 说明 |
+|----------|--------------|------|
+| execution_status | execution_status | ✅ 一致 |
+| summary | summary | ✅ 一致 |
+| raw_data | raw_data | ✅ 一致 |
+| content | content | ✅ 一致 |
+| action_tool | action_tool | ✅ 一致 |
+| params | params | ✅ 一致 |
+
+**7.4完整示例**：
+```json
+{
+  "type": "observation",
+  "step": 1,
+  "execution_status": "success",
+  "summary": "成功读取目录",
+  "raw_data": {"entries": ["file1.txt", "file2.txt"]},
+  "content": "已获取目录内容，现在整理成列表回复用户",
+  "action_tool": "finish",
+  "params": {}
+}
+```
 
 ---
 
