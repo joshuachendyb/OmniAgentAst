@@ -331,10 +331,10 @@ def create_final_response(
     Returns:
     SSE 格式的 final 响应字符串
     """
-    # 【原则4整改】content → answer_content
+    # 【问题5修复】final使用content字段
     response = {
         'type': 'final',
-        'answer_content': content,
+        'content': content,
         'model': model,
         'provider': provider
     }
@@ -777,10 +777,11 @@ async def chat_stream(request: ChatRequest):
                 # 【问题2修复】type改为action_tool，添加必需字段
                 action1_data = {
                     'type': 'action_tool',
-                    'action_type': 'notification',
-                    'action_name': 'file_detection',
-                    'action_input': {'description': '检测到文件操作意图，开始执行...'},
                     'step': next_step(),
+                    'tool_name': 'notification',
+                    'tool_params': {'description': '检测到文件操作意图，开始执行...'},
+                    'execution_status': 'success',
+                    'summary': '检测到文件操作意图，开始执行...',
                     'raw_data': None,
                     'action_retry_count': 0
                 }
@@ -806,14 +807,18 @@ async def chat_stream(request: ChatRequest):
                     return
                 
                 # 【小健检查修复】遵循字段设计原则5：禁止兼容字段
-                # 删除 content 字段，使用核心字段 thought/action/result
+                # 【问题4修复】observation使用设计文档字段
                 observation1_data = {
                     'type': 'observation',
                     'step': next_step(),
-                    'thought': '',  # 安全检测没有思考过程
-                    'action': 'security_check',  # 执行的动作
-                    'observation': {'is_safe': is_safe, 'risk': risk},  # 原始结果
-                    'result': f'安全检测{"通过" if is_safe else "未通过"}'  # 清洗后的文本
+                    'execution_status': 'success',
+                    'summary': f'安全检测{"通过" if is_safe else "未通过"}',
+                    'raw_data': {'is_safe': is_safe, 'risk': risk},
+                    'content': '',  # 安全检测没有思考过程
+                    'reasoning': '',
+                    'action_tool': 'security_check',
+                    'params': {},
+                    'is_finished': True
                 }
                 logger.info(f"[Step observation] 发送observation步骤")
                 yield f"data: {json.dumps(observation1_data)}\n\n"
@@ -837,10 +842,11 @@ async def chat_stream(request: ChatRequest):
                 # 【问题2修复】type改为action_tool，添加必需字段
                 action2_data = {
                     'type': 'action_tool',
-                    'action_type': 'notification',
-                    'action_name': 'file_operation',
-                    'action_input': {'description': '执行文件操作...'},
                     'step': next_step(),
+                    'tool_name': 'notification',
+                    'tool_params': {'description': '执行文件操作...'},
+                    'execution_status': 'success',
+                    'summary': '执行文件操作...',
                     'raw_data': None,
                     'action_retry_count': 0
                 }
@@ -945,10 +951,11 @@ async def chat_stream(request: ChatRequest):
                 # 【问题2修复】type改为action_tool，添加必需字段
                 action_data = {
                     'type': 'action_tool',
-                    'action_type': 'notification',
-                    'action_name': 'ai_call',
-                    'action_input': {'description': '正在调用AI服务...'},
                     'step': next_step(),
+                    'tool_name': 'notification',
+                    'tool_params': {'description': '正在调用AI服务...'},
+                    'execution_status': 'success',
+                    'summary': '正在调用AI服务...',
                     'raw_data': None,
                     'action_retry_count': 0
                 }
@@ -1046,14 +1053,14 @@ async def chat_stream(request: ChatRequest):
                                 logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
                                 # 逐token发送到前端，【新增】添加provider字段作为兜底
                                 # 【小沈修复】添加 is_reasoning 和 reasoning 字段区分思考过程
-                                # 【原则4整改】content → answer_content
+                                # 【问题6修复】chunk使用content和chunk_reasoning字段
                                 chunk_data = {
                                     'type': 'chunk', 
-                                    'answer_content': chunk.content,
+                                    'content': chunk.content,
                                     'model': chunk.model, 
                                     'provider': ai_service.provider,
                                     'is_reasoning': getattr(chunk, 'is_reasoning', False),  # 是否思考过程
-                                    'reasoning': getattr(chunk, 'reasoning', '')  # 思考过程内容
+                                    'chunk_reasoning': getattr(chunk, 'reasoning', '')  # 思考过程内容
                                 }
                                 logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}, is_reasoning={chunk_data['is_reasoning']}")
                                 yield f"data: {json.dumps(chunk_data)}\n\n"
