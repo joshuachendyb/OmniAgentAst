@@ -3480,16 +3480,16 @@ Accept: text/event-stream
 
 | 序号 | 接口地址 | 请求方法 | 用途 | 类型 | 状态 |
 |------|---------|---------|------|------|------|
-| 1 | `/api/v1/chat/stream` | POST | 主聊天接口（非流式） | 非流式 | ✅ 已实现 |
-| 2 | `/api/v1/chat/stream/stream` | POST | 流式聊天接口 | **流式** | 🔴 **待重构** |
-| 3 | `/api/v1/chat/stream/stream/cancel/{task_id}` | POST | 取消任务 | - | ✅ 已实现 |
-| 4 | `/api/v1/chat/stream/stream/pause/{task_id}` | POST | 暂停任务 | - | ✅ 已实现 |
-| 5 | `/api/v1/chat/stream/stream/resume/{task_id}` | POST | 恢复任务 | - | ✅ 已实现 |
-| 6 | `/api/v1/chat/stream/confirm` | POST | 用户确认接口 | - | ✅ 已实现 |
-| 7 | `/api/v1/chat/stream/stream/next-page` | POST | 分页数据请求 | - | ✅ 已实现 |
+| 1 | `/api/v1/chat` | POST | 主聊天接口（非流式） | 非流式 | ❌ **废弃** |
+| 2 | `/api/v1/chat/stream` | POST | 流式聊天接口 | **流式** | 🔴 **本次重构重点** |
+| 3 | `/api/v1/chat/stream/cancel/{task_id}` | POST | 取消任务 | - | ✅ 已实现 |
+| 4 | `/api/v1/chat/stream/pause/{task_id}` | POST | 暂停任务 | - | ✅ 已实现 |
+| 5 | `/api/v1/chat/stream/resume/{task_id}` | POST | 恢复任务 | - | ✅ 已实现 |
+| 6 | `/api/v1/chat/confirm` | POST | 用户确认接口 | - | ✅ 已实现 |
+| 7 | `/api/v1/chat/stream/next-page` | POST | 分页数据请求 | - | ✅ 已实现 |
 
 **接口修改说明**：
-- **接口1 (`/chat`)**：非流式接口，一次性返回完整内容，不需要chunk类型
+- **接口1 (`/chat`)**：非流式接口，**已废弃**，未来有需要时再重构
 - **接口2 (`/chat/stream`)**：**本次重构的重点**，需要从批量推送改为实时流式推送，实现每轮ReAct循环结束后立即推送
 - 接口3-7为任务控制相关接口，详见9.8节
 
