@@ -2,7 +2,7 @@
 
 **编写人**: 小沈
 **编写时间**: 2026-03-08 21:50:00
-**更新时间**: 2026-03-08 23:30:00
+**更新时间**: 2026-03-09 10:37:11
 **存放位置**: D:\2bktest\MDview\OmniAgentAs-desk\doc\
 
 ---
@@ -749,26 +749,208 @@ LLM返回给thought阶段的完整JSON结构（包含思考结果和下一步行
 **是 Stage 还是 Type？**
 - **Stage**（ReAct循环第2阶段）
 
-**输入**：action_tool + params（来自Thought阶段）
+**输入**：name + params（来自Thought阶段）
 
-**处理**：Agent解析 → 调用本地action_tool → 执行获得结果
+**处理**：Agent解析 → 调用本地工具 → 执行获得结果
 
-**输出**：status + message + data
+**输出**：execution_status + summary + raw_data
 
-**传导**：status + message + data 作为Observation的输入
+**传导**：execution_status + summary + raw_data 作为Observation的输入
 
 **字段分析**：
 
 | 字段 | 作用 | 必要性 | 合理? | 属于 |
 |------|------|--------|-------|-------|
 | step | 步骤序号 | 必要 | ✅ | 辅助 |
-| action_tool | 工具名称 | 必要 | ✅ | 输入 |
+| name | 工具名称 | 必要 | ✅ | 输入 |
 | params | 工具参数 | 必要 | ✅ | 输入 |
-| status | 执行状态 | 必要 | ✅ | 输出 |
-| message | 结果描述 | 必要 | ✅ | 输出 |
-| data | 原始数据 | 可选 | ✅ | 输出 |
+| execution_status | 执行状态 | 必要 | ✅ | 输出 |
+| summary | 结果描述 | 必要 | ✅ | 输出 |
+| raw_data | 原始数据 | 可选 | ✅ | 输出 |
 
 **结论**：✅ 保留，字段完整，属于 Stage
+
+---
+
+### 5.3.1 action_tool阶段的输入结构
+
+action_tool阶段的输入来自Thought阶段，由Agent解析后执行：
+
+**输入结构**：
+```json
+{
+  "name": "list_directory",
+  "params": {
+    "path": "C:\\Users\\xxx\\Desktop"
+  }
+}
+```
+
+| 字段 | 类型 | 来源 | 说明 |
+|------|------|------|------|
+| name | string | Thought阶段LLM返回的action_tool | 要执行的工具名称 |
+| params | object | Thought阶段LLM返回的params | 工具执行参数 |
+
+---
+
+### 5.3.2 action_tool阶段处理流程
+
+Agent收到name + params后的处理流程：
+
+```
+Agent收到 name + params
+    ↓
+1. 解析name → 找到对应的工具函数
+2. 校验params → 检查必填参数是否存在
+3. 调用工具函数 → 执行具体操作
+4. 捕获执行结果 → 成功/失败/异常
+5. 组装输出 → execution_status + summary + raw_data
+```
+
+---
+
+### 5.3.3 action_tool阶段的输出JSON结构
+
+action_tool阶段执行完成后，输出给Observation阶段的JSON结构：
+
+**场景1：执行成功**
+```json
+{
+  "type": "action_tool",
+  "step": 1,
+  "name": "list_directory",
+  "params": {"path": "C:\\Users\\xxx\\Desktop"},
+  "execution_status": "success",
+  "summary": "成功读取目录，文件列表：['file1.txt', 'file2.txt', 'folder1']",
+  "raw_data": {
+    "entries": [
+      {"name": "file1.txt", "type": "file", "size": 1024},
+      {"name": "file2.txt", "type": "file", "size": 2048},
+      {"name": "folder1", "type": "directory"}
+    ],
+    "total": 3
+  }
+}
+```
+
+**场景2：执行失败**
+```json
+{
+  "type": "action_tool",
+  "step": 1,
+  "name": "read_file",
+  "params": {"path": "C:\\Users\\xxx\\notexist.txt"},
+  "execution_status": "error",
+  "summary": "读取文件失败，错误原因：文件不存在",
+  "raw_data": null
+}
+```
+
+**场景3：执行有警告**
+```json
+{
+  "type": "action_tool",
+  "step": 1,
+  "name": "write_file",
+  "params": {"path": "C:\\Users\\xxx\\test.txt", "content": "..."},
+  "execution_status": "warning",
+  "summary": "文件写入成功，但编码已自动转换为UTF-8",
+  "raw_data": {
+    "path": "C:\\Users\\xxx\\test.txt",
+    "encoding": "utf-8",
+    "original_encoding": "gbk"
+  }
+}
+```
+
+---
+
+### 5.3.4 字段详细说明
+
+#### 1. execution_status（执行状态）
+
+**作用**：表示工具执行的整体状态
+
+**取值范围**：
+
+| 值 | 说明 | 场景 |
+|---|------|------|
+| success | 执行成功 | 正常完成操作 |
+| error | 执行失败 | 操作异常或失败 |
+| warning | 执行有警告 | 操作完成但有需要注意的情况 |
+
+#### 2. summary（结果描述）
+
+**作用**：人类可读的执行结果摘要，用于显示给用户
+
+**生成规则**：
+
+| execution_status | summary格式 | 示例 |
+|-----------------|-------------|------|
+| success | `{操作}成功，{结果描述}` | "成功读取目录，文件列表：[...]" |
+| error | `{操作}失败，错误原因：{错误信息}` | "读取文件失败，错误原因：文件不存在" |
+| warning | `{操作}成功，但{警告信息}` | "文件写入成功，但编码已自动转换为UTF-8" |
+
+#### 3. raw_data（原始数据）
+
+**作用**：机器可读的结构化数据，供后续处理使用
+
+**包含内容**：
+
+| 工具类型 | raw_data内容 |
+|----------|-------------|
+| list_directory | 目录条目列表、文件数量、文件属性 |
+| read_file | 文件内容、编码、行数 |
+| write_file | 写入后的文件信息 |
+| create_directory | 创建的目录信息 |
+| delete_file | 删除操作的结果 |
+| move_file | 移动后的路径信息 |
+| copy_file | 复制后的路径信息 |
+
+**raw_data为null的情况**：
+- execution_status为error时
+- 操作不返回数据时
+
+---
+
+### 5.3.5 各工具的raw_data结构
+
+| 工具名称 | raw_data结构 |
+|----------|-------------|
+| list_directory | `{"entries": [...], "total": number}` |
+| read_file | `{"content": string, "encoding": string, "lines": number}` |
+| write_file | `{"path": string, "size": number, "encoding": string}` |
+| create_directory | `{"path": string, "created": boolean}` |
+| delete_file | `{"path": string, "deleted": boolean}` |
+| move_file | `{"source": string, "destination": string, "moved": boolean}` |
+| copy_file | `{"source": string, "destination": string, "copied": boolean}` |
+
+---
+
+### 5.3.6 与7.3章节的字段名称对照
+
+**设计文档字段名 vs 7.3示例字段名**：
+
+| 设计文档字段名 | 7.3示例字段名 | 说明 |
+|---------------|--------------|------|
+| name | name | ✅ 一致 |
+| params | input | ⚠️ 需要统一为params |
+| execution_status | status | ⚠️ 需要统一为execution_status |
+| summary | message | ⚠️ 需要统一为summary |
+| raw_data | data | ⚠️ 需要统一为raw_data |
+
+**统一后的7.3示例**：
+```json
+{
+  "type": "action_tool",
+  "step": 1,
+  "name": "list_directory",
+  "params": {"path": "C:\\Users\\xxx\\Desktop"},
+  "execution_status": "success",
+  "summary": "成功读取目录",
+  "raw_data": {"entries": ["file1.txt", "file2.txt"]}
+}
+```
 
 ---
 
@@ -777,7 +959,7 @@ LLM返回给thought阶段的完整JSON结构（包含思考结果和下一步行
 **是 Stage 还是 Type？**
 - **Stage**（ReAct循环第3阶段）
 
-**输入**：status + message + data（来自Action阶段）
+**输入**：execution_status + summary + raw_data（来自action_tool阶段）
 
 **处理**：调用LLM（让LLM基于结果继续推理）
 
@@ -790,9 +972,9 @@ LLM返回给thought阶段的完整JSON结构（包含思考结果和下一步行
 | 字段 | 作用 | 必要性 | 合理? | 属于 |
 |------|------|--------|-------|-------|
 | step | 步骤序号 | 必要 | ✅ | 辅助 |
-| status | 执行状态 | 必要 | ✅ | 输入 |
-| message | 结果描述 | 必要 | ✅ | 输入 |
-| data | 原始数据 | 可选 | ✅ | 输入 |
+| execution_status | 执行状态 | 必要 | ✅ | 输入（来自action_tool） |
+| summary | 结果描述 | 必要 | ✅ | 输入（来自action_tool） |
+| raw_data | 原始数据 | 可选 | ✅ | 输入（来自action_tool） |
 | content | LLM的新思考 | 必要 | ✅ | 输出 |
 | action_tool | 下一个工具 | 可选 | ✅ | 输出 |
 | params | 下一个参数 | 可选 | ✅ | 输出 |
@@ -1045,10 +1227,16 @@ LLM返回给thought阶段的完整JSON结构（包含思考结果和下一步行
   "type": "action_tool",
   "step": 1,
   "name": "list_directory",
-  "input": {"path": "C:\\Users\\xxx\\Desktop"},
-  "status": "success",
-  "message": "成功读取目录",
-  "data": {"entries": ["file1.txt", "file2.txt"]}
+  "params": {"path": "C:\\Users\\xxx\\Desktop"},
+  "execution_status": "success",
+  "summary": "成功读取目录，文件列表：['file1.txt', 'file2.txt']",
+  "raw_data": {
+    "entries": [
+      {"name": "file1.txt", "type": "file", "size": 1024},
+      {"name": "file2.txt", "type": "file", "size": 2048}
+    ],
+    "total": 2
+  }
 }
 ```
 
@@ -1060,9 +1248,9 @@ LLM返回给thought阶段的完整JSON结构（包含思考结果和下一步行
 {
   "type": "observation",
   "step": 1,
-  "status": "success",
-  "message": "成功读取目录",
-  "data": {"entries": ["file1.txt", "file2.txt"]},
+  "execution_status": "success",
+  "summary": "成功读取目录",
+  "raw_data": {"entries": ["file1.txt", "file2.txt"]},
   "content": "已获取目录内容，现在整理成列表回复用户",
   "action_tool": "finish",
   "params": {}
@@ -1168,8 +1356,8 @@ LLM返回给thought阶段的完整JSON结构（包含思考结果和下一步行
 { "type": "start", ... }
 
 { "type": "thought", "content": "用户想要查看桌面文件夹...", "action_tool": "list_directory", "params": {"path": "Desktop"} }
-{ "type": "action_tool", "step": 1, "name": "list_directory", "input": {"path": "Desktop"}, "status": "success", "message": "成功", "data": {...} }
-{ "type": "observation", "status": "success", "message": "成功", "data": {...}, "content": "已获取内容", "action_tool": "finish", "params": {} }
+{ "type": "action_tool", "step": 1, "name": "list_directory", "params": {"path": "Desktop"}, "execution_status": "success", "summary": "成功读取目录", "raw_data": {...} }
+{ "type": "observation", "execution_status": "success", "summary": "成功", "raw_data": {...}, "content": "已获取内容", "action_tool": "finish", "params": {} }
 
 { "type": "final", "content": "桌面有文件：..." }
 ```
