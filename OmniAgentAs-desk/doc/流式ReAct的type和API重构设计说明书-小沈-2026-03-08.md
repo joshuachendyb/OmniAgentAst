@@ -4353,14 +4353,14 @@ function handleServerEvent(data) {
 
 | 项目 | 说明 |
 |------|------|
-| **接口地址** | `/api/v1/chat/stream/stream/cancel/{task_id}` |
+| **接口地址** | `/api/v1/chat/stream/cancel/{task_id}` |
 | **请求方法** | `POST` |
 | **请求参数** | task_id（路径参数）：任务ID |
 | **响应格式** | JSON |
 
 **请求示例**：
 ```bash
-curl -X POST http://localhost:8000/api/v1/chat/stream/stream/cancel/abc123
+curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
 ```
 
 **响应示例**：
@@ -4376,19 +4376,37 @@ curl -X POST http://localhost:8000/api/v1/chat/stream/stream/cancel/abc123
 
 | 项目 | 说明 |
 |------|------|
-| **接口地址** | `/api/v1/chat/stream/stream/pause/{task_id}` |
+| **接口地址** | `/api/v1/chat/stream/pause/{task_id}` |
 | **请求方法** | `POST` |
 | **请求参数** | task_id（路径参数）：任务ID |
 | **响应格式** | JSON |
+
+**响应示例**：
+```json
+{
+  "type": "status",
+  "status_value": "paused",
+  "message": "任务已暂停"
+}
+```
 
 ##### 恢复任务 API
 
 | 项目 | 说明 |
 |------|------|
-| **接口地址** | `/api/v1/chat/stream/stream/resume/{task_id}` |
+| **接口地址** | `/api/v1/chat/stream/resume/{task_id}` |
 | **请求方法** | `POST` |
 | **请求参数** | task_id（路径参数）：任务ID |
 | **响应格式** | JSON |
+
+**响应示例**：
+```json
+{
+  "type": "status",
+  "status_value": "resumed",
+  "message": "任务已恢复"
+}
+```
 
 ---
 
@@ -4435,7 +4453,7 @@ curl -X POST http://localhost:8000/api/v1/chat/stream/stream/cancel/abc123
 
 | 项目 | 说明 |
 |------|------|
-| **接口地址** | `/api/v1/chat/stream/stream/next-page` |
+| **接口地址** | `/api/v1/chat/stream/next-page` |
 | **请求方法** | `POST` |
 | **Content-Type** | `application/json` |
 

@@ -624,7 +624,7 @@ const isUser = message.role === "user";
                           <Space>
                             <ThunderboltOutlined />
                             <span>执行详情 {groupIndex + 1}</span>
-                            {(message.isStreaming ?? false) && groupIndex === (actionObservationGroups?.length ?? 0) - 1 && <LoadingOutlined />}
+                            {(message.isStreaming ?? false) && groupIndex === groups.length - 1 && <LoadingOutlined />}
                           </Space>
                         }
                         key={`execution-${groupIndex}`}
