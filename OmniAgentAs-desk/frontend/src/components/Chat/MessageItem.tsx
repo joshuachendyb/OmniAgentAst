@@ -59,13 +59,14 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
         {label}：
       </span>
       <span style={{ color: "#333", wordBreak: "break-word" }}>
-        {step.type === "action" && (
+        {/* 【小新重构2026-03-09】action 改为 action_tool */}
+        {step.type === "action_tool" && (
           <>
-            {step.action_description || step.action || "执行中..."}
-            {step.action_input && (
+            {step.action_description || step.tool_name || step.action || "执行中..."}
+            {step.tool_params && (
               <span style={{ color: "#999", marginLeft: 8, fontSize: 12 }}>
-              参数：{JSON.stringify(step.action_input)}
-            </span>
+              参数：{JSON.stringify(step.tool_params)}
+              </span>
             )}
           </>
         )}
@@ -426,9 +427,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
 const isUser = message.role === "user";
   const isSystem = message.role === "system";
 
-  // 判断是否有执行步骤（action/observation）
+  // 【小新重构2026-03-09】判断是否有执行步骤（action_tool/observation）
   const hasExecution = message.executionSteps?.some(
-    step => step.type === "action" || step.type === "observation"
+    step => step.type === "action_tool" || step.type === "observation"
   ) ?? false;
 
   return (
@@ -567,15 +568,15 @@ const isUser = message.role === "user";
                 <StepRow key={`thought-${index}`} step={step} />
               ))}
 
-            {/* 2. 执行步骤 - 按 action 分组，每组一个折叠面板 */}
+            {/* 【小新重构2026-03-09】2. 执行步骤 - 按 action_tool 分组，每组一个折叠面板 */}
             {hasExecution && message.role === "assistant" && (
               <div>
                 {(() => {
                   const actionObservationSteps = message.executionSteps?.filter(
-                    step => step.type === "action" || step.type === "observation"
+                    step => step.type === "action_tool" || step.type === "observation"
                   ) || [];
                   
-                  // 将 action 和后续的 observation 分组
+                  // 将 action_tool 和后续的 observation 分组
                   const groups: ExecutionStep[][] = [];
                   let currentGroup: ExecutionStep[] = [];
                   
@@ -583,7 +584,7 @@ const isUser = message.role === "user";
                   console.log("🔍 分组原始步骤:", actionObservationSteps.map(s => ({ type: s.type, action_description: s.action_description })));
                   
                   for (const step of actionObservationSteps) {
-                    if (step.type === "action") {
+                    if (step.type === "action_tool") {
                       // 如果当前组有内容，先保存
                       if (currentGroup.length > 0) {
                         groups.push(currentGroup);

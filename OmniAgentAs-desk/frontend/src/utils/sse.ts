@@ -34,16 +34,21 @@ export interface SSEMetadata {
 
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
+ * 【小新重构2026-03-09】适配新API字段名
  */
 export interface ExecutionStep {
   // === 通用字段 ===
-  // ⭐ 新增retrying类型用于重试提示
-  type: "thought" | "action" | "observation" | "chunk" | "final" | "error" | "interrupted" | "start" | "paused" | "resumed" | "retrying";
+  // ⭐ 新增action_tool类型，替换原来的action
+  type: "thought" | "action_tool" | "observation" | "chunk" | "final" | "error" | "interrupted" | "start" | "paused" | "resumed" | "retrying";
   content?: string;        // 前端显示用：根据type使用不同字段填充
   
   // === 思考/动作提示字段（后端字段拆分） ===
   thinking_prompt?: string;    // thought 类型的提示文本
-  action_description?: string; // action 类型的描述文本
+  action_description?: string; // action_tool 类型的描述文本
+  
+  // 【小新重构2026-03-09】thought类型需要的字段
+  action_tool?: string;        // thought类型的下一步动作
+  params?: Record<string, any>; // thought类型的参数
   
   // === AI回复字段（后端字段拆分） ===
   answer_content?: string;    // chunk/final 类型的AI回复
@@ -56,12 +61,20 @@ export interface ExecutionStep {
   // observation 相关
   step?: number;
   thought?: string;
-  action?: string;
+  action?: string;  // 兼容旧字段
   observation?: any;
   result?: string;
   
-  // === type=action 字段 ===
-  action_input?: Record<string, any>;  // 工具调用参数
+  // === 【小新重构】type=action_tool 新字段 ===
+  tool_name?: string;           // 工具名称（新）
+  tool_params?: Record<string, any>; // 工具参数（新）
+  execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
+  summary?: string;             // 执行摘要（新）
+  raw_data?: Record<string, any> | null; // 原始数据（新）
+  action_retry_count?: number;  // 重试次数（新）
+  
+  // === type=action 旧字段（兼容） ===
+  action_input?: Record<string, any>;  // 工具调用参数（旧）
   
   // === type=chunk/final/start 字段 ===
   model?: string;         // AI模型
@@ -545,8 +558,11 @@ const processSSEData = (
 
       case "thought": {
         console.log("🔍 [sse thought] 收到thought事件, rawData=", JSON.stringify(rawData));
-        // 使用 thinking_prompt 填充 content
+        // 【小新重构2026-03-09】使用 thinking_prompt 填充 content
         step.content = step.thinking_prompt || "";
+        // 【小新重构2026-03-09】兼容新字段 action_tool
+        step.action_tool = rawData.action_tool || rawData.action || "";
+        step.params = rawData.params || rawData.action_input || {};
         console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
         // 添加到步骤数组，显示思考过程
         setExecutionSteps((prev) => [...prev, step]);
@@ -554,9 +570,17 @@ const processSSEData = (
         break;
       }
 
-      case "action": {
+      // 【小新重构2026-03-09】case "action" 改为 "action_tool"
+      case "action_tool": {
+        // 【小新重构2026-03-09】使用新字段 tool_name, tool_params
+        step.tool_name = rawData.tool_name || rawData.action || "";
+        step.tool_params = rawData.tool_params || rawData.action_input || {};
+        step.execution_status = rawData.execution_status || 'success';
+        step.summary = rawData.summary || "";
+        step.raw_data = rawData.raw_data || null;
+        step.action_retry_count = rawData.action_retry_count || 0;
         // 使用 action_description 填充 content
-        step.content = step.action_description || "";
+        step.content = step.action_description || step.tool_name || "";
         // 添加到步骤数组，显示执行动作
         setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);

@@ -293,14 +293,14 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
               </div>
             );
 
-          case "action":
+          case "action_tool":
             return (
               <div className="step-item">
                 <div className="action-step">
                   <div className="step-header">
                     <CodeOutlined />
-                    {/* 使用action字段 */}
-                    <span>{step.action || "未知工具"}</span>
+                    {/* 【小新重构2026-03-09】使用tool_name字段 */}
+                    <span>{step.tool_name || step.action || "未知工具"}</span>
                     <Button
                       type="text"
                       size="small"
