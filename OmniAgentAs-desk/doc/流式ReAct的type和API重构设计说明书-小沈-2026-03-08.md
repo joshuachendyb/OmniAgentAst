@@ -2,7 +2,7 @@
 
 **编写人**: 小沈
 **编写时间**: 2026-03-08 21:50:00
-**更新时间**: 2026-03-09 14:20:00
+**更新时间**: 2026-03-09 21:27:28
 **存放位置**: D:\2bktest\MDview\OmniAgentAs-desk\doc\
 
 ---
@@ -4357,20 +4357,53 @@ function handleServerEvent(data) {
 | **请求方法** | `POST` |
 | **请求参数** | task_id（路径参数）：任务ID |
 | **响应格式** | JSON |
+| **实现状态** | ✅ 已实现 |
+
+**功能说明**：
+- 用于中断正在执行的流式任务
+- 调用后，后端会将任务标记为cancelled，停止继续执行
+- SSE流会接收到status=interrupted事件后结束
 
 **请求示例**：
 ```bash
 curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
 ```
 
-**响应示例**：
+**响应示例（成功）**：
 ```json
 {
-  "type": "status",
-  "status_value": "interrupted",
-  "message": "任务已被用户取消"
+  "success": true,
+  "message": "任务 abc123 已标记为中断"
 }
 ```
+
+**响应示例（失败-任务不存在）**：
+```json
+{
+  "success": false,
+  "message": "任务 abc123 不存在"
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| success | boolean | 必要 | 是否成功 |
+| message | string | 必要 | 结果描述消息 |
+
+**错误处理**：
+
+| HTTP状态码 | 场景 | 错误消息 |
+|-----------|------|---------|
+| 200 | 成功 | success: true |
+| 404 | 任务不存在 | success: false |
+
+**与SSE事件配合**：
+- 调用cancel后，SSE流会发送：`{"type": "status", "status_value": "interrupted", "message": "任务已被中断"}`
+- 前端收到后应停止显示并清理任务状态
+
+---
 
 ##### 暂停任务 API
 
@@ -4380,15 +4413,60 @@ curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
 | **请求方法** | `POST` |
 | **请求参数** | task_id（路径参数）：任务ID |
 | **响应格式** | JSON |
+| **实现状态** | ✅ 已实现 |
 
-**响应示例**：
+**功能说明**：
+- 用于暂停正在执行的流式任务
+- 暂停时：前端停止显示，但后端继续处理，数据暂存缓冲区
+- 适用于等待用户确认的场景
+
+**请求示例**：
+```bash
+curl -X POST http://localhost:8000/api/v1/chat/stream/pause/abc123
+```
+
+**响应示例（成功）**：
 ```json
 {
-  "type": "status",
-  "status_value": "paused",
-  "message": "任务已暂停"
+  "success": true,
+  "message": "任务 abc123 已暂停"
 }
 ```
+
+**响应示例（失败-任务不存在）**：
+```json
+{
+  "success": false,
+  "message": "任务 abc123 不存在"
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| success | boolean | 必要 | 是否成功 |
+| message | string | 必要 | 结果描述消息 |
+
+**错误处理**：
+
+| HTTP状态码 | 场景 | 错误消息 |
+|-----------|------|---------|
+| 200 | 成功 | success: true |
+| 404 | 任务不存在 | success: false |
+
+**与SSE事件配合**：
+- 调用pause后，SSE流会发送：`{"type": "status", "status_value": "paused", "message": "任务已暂停"}`
+- 前端收到后应显示暂停状态，等待用户操作
+- 暂停后可以调用resume继续，或调用cancel中断
+
+**状态流转**：
+```
+running → paused → resumed → running
+running → paused → cancelled
+```
+
+---
 
 ##### 恢复任务 API
 
@@ -4398,19 +4476,61 @@ curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
 | **请求方法** | `POST` |
 | **请求参数** | task_id（路径参数）：任务ID |
 | **响应格式** | JSON |
+| **实现状态** | ✅ 已实现 |
 
-**响应示例**：
+**功能说明**：
+- 用于恢复已暂停的流式任务
+- 继续时：前端恢复显示暂存的数据
+- 必须先调用pause暂停任务后才能调用resume
+
+**请求示例**：
+```bash
+curl -X POST http://localhost:8000/api/v1/chat/stream/resume/abc123
+```
+
+**响应示例（成功）**：
 ```json
 {
-  "type": "status",
-  "status_value": "resumed",
-  "message": "任务已恢复"
+  "success": true,
+  "message": "任务 abc123 已继续"
 }
+```
+
+**响应示例（失败-任务不存在）**：
+```json
+{
+  "success": false,
+  "message": "任务 abc123 不存在"
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| success | boolean | 必要 | 是否成功 |
+| message | string | 必要 | 结果描述消息 |
+
+**错误处理**：
+
+| HTTP状态码 | 场景 | 错误消息 |
+|-----------|------|---------|
+| 200 | 成功 | success: true |
+| 404 | 任务不存在 | success: false |
+| 400 | 任务未暂停 | success: false |
+
+**与SSE事件配合**：
+- 调用resume后，SSE流会发送：`{"type": "status", "status_value": "resumed", "message": "任务已恢复"}`
+- 前端收到后应恢复显示，继续接收后续数据
+
+**状态流转**：
+```
+running → paused → resumed → running
 ```
 
 ---
 
-#### 9.8.2 用户确认接口
+#### 9.8.2 用户确认接口（待开发）
 
 用于在任务暂停（等待用户确认）后，用户进行确认或拒绝：
 
@@ -4419,6 +4539,17 @@ curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
 | **接口地址** | `/api/v1/chat/stream/confirm` |
 | **请求方法** | `POST` |
 | **Content-Type** | `application/json` |
+| **实现状态** | ❌ 未实现（待开发） |
+
+**功能说明**：
+- 用于用户在任务暂停（等待确认）后进行操作
+- 支持三种操作：确认执行、拒绝执行、修改命令后重新执行
+- 调用后，后端会发送status=resumed事件继续执行
+
+**使用场景**：
+1. 任务执行到需要用户确认的步骤（如删除文件）
+2. 后端发送status=paused事件，前端显示确认对话框
+3. 用户点击确认/拒绝后，调用本接口
 
 **请求参数**：
 
@@ -4428,7 +4559,7 @@ curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
 | confirmed | boolean | **必要** | 用户选择：true=确认执行，false=拒绝执行 |
 | modified_command | string | 可选 | 如果用户选择修改命令，传入新命令 |
 
-**请求示例**：
+**请求示例（确认执行）**：
 ```json
 {
   "task_id": "abc123",
@@ -4436,18 +4567,85 @@ curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
 }
 ```
 
-**响应示例**：
+**请求示例（拒绝执行）**：
 ```json
 {
-  "type": "status",
-  "status_value": "resumed",
+  "task_id": "abc123",
+  "confirmed": false
+}
+```
+
+**请求示例（修改命令）**：
+```json
+{
+  "task_id": "abc123",
+  "confirmed": true,
+  "modified_command": "读取桌面文件"
+}
+```
+
+**响应示例（确认执行-成功）**：
+```json
+{
+  "success": true,
   "message": "用户已确认，继续执行"
 }
 ```
 
+**响应示例（拒绝执行-成功）**：
+```json
+{
+  "success": true,
+  "message": "用户已拒绝，任务终止"
+}
+```
+
+**响应示例（失败）**：
+```json
+{
+  "success": false,
+  "message": "任务不存在或已结束"
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| success | boolean | 必要 | 是否成功 |
+| message | string | 必要 | 结果描述消息 |
+
+**错误处理**：
+
+| HTTP状态码 | 场景 | 错误消息 |
+|-----------|------|---------|
+| 200 | 成功 | success: true |
+| 404 | 任务不存在 | success: false |
+| 400 | 任务未暂停 | success: false |
+
+**与SSE事件配合**：
+
+1. **确认执行**：
+   - 调用confirm后，SSE流发送：`{"type": "status", "status_value": "resumed", "message": "用户已确认，继续执行"}`
+   - 然后继续执行后续步骤
+
+2. **拒绝执行**：
+   - 调用confirm后，SSE流发送：`{"type": "status", "status_value": "interrupted", "message": "用户已拒绝，任务终止"}`
+   - 任务结束
+
+3. **修改命令**：
+   - 调用confirm后，后端会使用新的modified_command重新开始执行流程
+
+**状态流转**：
+```
+paused → confirmed=true → resumed → running → final
+paused → confirmed=false → interrupted → 结束
+paused → modified_command → 重新开始整个流程
+```
+
 ---
 
-#### 9.8.3 分页数据请求接口
+#### 9.8.3 分页数据请求接口（待开发）
 
 用于请求大型目录列表的分页数据：
 
@@ -4456,6 +4654,18 @@ curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
 | **接口地址** | `/api/v1/chat/stream/next-page` |
 | **请求方法** | `POST` |
 | **Content-Type** | `application/json` |
+| **实现状态** | ❌ 未实现（待开发） |
+
+**功能说明**：
+- 用于在接收到action_tool响应后，请求大型目录列表的下一页数据
+- 当前端收到has_more=true的响应时，调用此接口获取更多数据
+- 不需要重新执行LLM，直接返回分页数据
+
+**使用场景**：
+1. action_tool返回has_more=true
+2. 用户滚动到底部触发加载更多
+3. 调用next-page接口获取下一页数据
+4. 前端追加显示新数据
 
 **请求参数**：
 
@@ -4472,9 +4682,30 @@ curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
 }
 ```
 
-**响应示例**：
+**响应示例（成功）**：
 ```json
 {
+  "success": true,
+  "type": "action_tool",
+  "step": 1,
+  "tool_name": "list_directory",
+  "execution_status": "success",
+  "raw_data": {
+    "entries": [
+      {"name": "file101.txt", "type": "file", "size": 1024},
+      {"name": "file102.txt", "type": "file", "size": 2048}
+    ],
+    "total": 100000,
+    "has_more": true,
+    "next_page_token": "MjAw"
+  }
+}
+```
+
+**响应示例（最后一页）**：
+```json
+{
+  "success": true,
   "type": "action_tool",
   "step": 1,
   "tool_name": "list_directory",
@@ -4482,8 +4713,156 @@ curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
   "raw_data": {
     "entries": [...],
     "total": 100000,
-    "has_more": true,
-    "next_page_token": "MjAw"
+    "has_more": false,
+    "next_page_token": null
+  }
+}
+```
+
+**响应示例（失败）**：
+```json
+{
+  "success": false,
+  "message": "分页令牌无效或已过期"
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| success | boolean | 必要 | 是否成功 |
+| type | string | 必要 | 固定为"action_tool" |
+| step | number | 必要 | 步骤序号 |
+| tool_name | string | 必要 | 工具名称 |
+| execution_status | string | 必要 | 执行状态 |
+| raw_data | object | 必要 | 分页数据 |
+| raw_data.entries | array | 必要 | 当前页的数据条目 |
+| raw_data.total | number | 必要 | 总数据量 |
+| raw_data.has_more | boolean | 必要 | 是否还有更多 |
+| raw_data.next_page_token | string/null | 必要 | 下一页令牌 |
+
+**错误处理**：
+
+| HTTP状态码 | 场景 | 错误消息 |
+|-----------|------|---------|
+| 200 | 成功 | success: true |
+| 404 | 任务不存在 | success: false |
+| 400 | 分页令牌无效 | success: false |
+
+**与SSE事件配合**：
+
+1. **首次请求**：在action_tool响应中获取next_page_token
+2. **后续请求**：使用next_page_token调用本接口
+3. **循环**：直到has_more=false为止
+
+**分页流程示例**：
+```
+action_tool响应 → has_more=true, next_page_token="MTAw"
+      ↓
+用户滚动到底部
+      ↓
+调用next-page → 返回101-200条, has_more=true, next_page_token="MjAw"
+      ↓
+用户滚动到底部
+      ↓
+调用next-page → 返回201-300条, has_more=false (最后一页)
+```
+
+---
+
+#### 9.8.4 AI服务验证接口
+
+用于验证AI服务配置是否正确（新增）：
+
+| 项目 | 说明 |
+|------|------|
+| **接口地址** | `/api/v1/chat/validate` |
+| **请求方法** | `GET` |
+| **实现状态** | ✅ 已实现 |
+
+**功能说明**：
+- 用于测试AI服务API密钥是否有效
+- 验证当前配置的provider和model是否可用
+- 返回验证结果和错误信息
+
+**请求示例**：
+```bash
+curl -X GET http://localhost:8000/api/v1/chat/validate
+```
+
+**响应示例（成功）**：
+```json
+{
+  "success": true,
+  "provider": "openai",
+  "model": "gpt-4",
+  "message": "AI 服务验证成功，当前使用 openai (gpt-4)"
+}
+```
+
+**响应示例（失败-API Key为空）**：
+```json
+{
+  "success": false,
+  "provider": "openai",
+  "model": "gpt-4",
+  "message": "AI 服务未配置：openai (gpt-4) 的 API Key 为空。请在 config/config.yaml 中配置。"
+}
+```
+
+**响应示例（失败-API Key无效）**：
+```json
+{
+  "success": false,
+  "provider": "openai",
+  "model": "gpt-4",
+  "message": "API Key无效：openai (gpt-4) 的API Key认证失败，请检查Key是否正确"
+}
+```
+
+**响应示例（失败-网络超时）**：
+```json
+{
+  "success": false,
+  "provider": "openai",
+  "model": "gpt-4",
+  "message": "连接失败：无法连接到 openai (gpt-4) API，请检查网络或API地址配置"
+}
+```
+
+**字段说明**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| success | boolean | 必要 | 验证是否通过 |
+| provider | string | 必要 | 当前使用的提供商 |
+| model | string | 必要 | 当前使用的模型 |
+| message | string | 必要 | 验证结果描述 |
+
+**错误类型**：
+
+| 错误类型 | 说明 | 解决方案 |
+|---------|------|---------|
+| API Key为空 | 未配置API Key | 在config.yaml中配置 |
+| API Key无效 | 认证失败 | 检查Key是否正确 |
+| 速率限制 | 请求太频繁 | 等待后重试 |
+| 连接失败 | 网络问题 | 检查网络或API地址 |
+
+---
+
+#### 9.8.5 AI服务切换接口（已废弃）
+
+| 项目 | 说明 |
+|------|------|
+| **接口地址** | `/api/v1/chat/switch/{provider}` |
+| **请求方法** | `POST` |
+| **状态** | ⚠️ 已废弃，使用配置更新接口替代 |
+
+**说明**：
+- 此接口已废弃，不再使用
+- 切换AI服务应通过更新配置文件实现
+- 保留仅用于兼容旧版前端
   }
 }
 ```
