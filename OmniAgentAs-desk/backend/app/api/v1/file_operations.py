@@ -598,3 +598,75 @@ async def rollback_session(session_id: str):
     except Exception as e:
         logger.error(f"Session rollback failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============ 分页数据请求接口 ============
+
+class NextPageRequest(BaseModel):
+    """分页请求模型"""
+    task_id: str = Field(..., description="任务ID（session_id）")
+    tool_name: str = Field(..., description="工具名称（如list_directory）")
+    tool_params: Dict[str, Any] = Field(default_factory=dict, description="工具参数")
+    next_page_token: str = Field(..., description="分页令牌")
+
+
+class NextPageResponse(BaseModel):
+    """分页响应模型"""
+    success: bool
+    type: str = "action_tool"
+    step: int
+    tool_name: str
+    execution_status: str
+    raw_data: Dict[str, Any]
+
+
+@router.post("/chat/stream/next-page", response_model=NextPageResponse)
+async def get_next_page(request: NextPageRequest):
+    """
+    分页数据请求接口
+    
+    用于请求大型目录列表的分页数据：
+    - 当前端收到has_more=true的响应时，调用此接口获取更多数据
+    - 不需要重新执行LLM，直接返回分页数据
+    
+    **请求参数**：
+    - task_id: 任务ID（session_id）
+    - tool_name: 工具名称（如list_directory）
+    - tool_params: 工具参数（必须包含dir_path）
+    - next_page_token: 从action_tool响应中获取的令牌
+    """
+    try:
+        from app.services.file_operations import FileTools
+        from app.services.file_operations.tools import FileOperationTools
+        
+        # 创建 FileTools 实例
+        file_tools = FileTools(session_id=request.task_id)
+        tools = FileOperationTools(file_tools=file_tools)
+        
+        # 调用对应工具的分页方法
+        tool_func = getattr(tools, request.tool_name, None)
+        if not tool_func:
+            raise HTTPException(status_code=400, detail=f"Tool {request.tool_name} not found")
+        
+        # 添加 page_token 参数
+        params = request.tool_params.copy()
+        params["page_token"] = request.next_page_token
+        
+        # 执行工具
+        result = await tool_func(**params)
+        
+        # 返回分页数据
+        return NextPageResponse(
+            success=result.get("status") == "success",
+            type="action_tool",
+            step=1,  # 分页请求作为独立步骤
+            tool_name=request.tool_name,
+            execution_status=result.get("status", "success"),
+            raw_data=result.get("data", {})
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Next page request failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
