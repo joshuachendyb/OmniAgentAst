@@ -59,8 +59,8 @@ class TestMonitoringIntegration:
         assert "application/json" in response.headers["content-type"]
         
         data = response.json()
-        assert "status" in data
-        assert data["status"] == "ok"
+        assert "success" in data
+        assert data["success"] is True
         assert "metrics" in data
     
     def test_metrics_raw_endpoint_returns_200(self, client):
@@ -86,8 +86,8 @@ class TestMonitoringIntegration:
         # Assert
         assert response.status_code == 200
         data = response.json()
-        assert "status" in data
-        assert data["status"] in ["healthy", "degraded", "unhealthy"]
+        assert "success" in data
+        assert data["success"] is True
     
     def test_metrics_reset_endpoint_resets_metrics(self, client):
         """测试重置指标端点"""

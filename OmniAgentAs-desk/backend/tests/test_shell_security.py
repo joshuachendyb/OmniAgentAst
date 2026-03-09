@@ -162,8 +162,8 @@ class TestQuickFunctions:
     
     def test_check_command_safety(self):
         """测试快速检查函数"""
-        is_safe, reason = check_command_safety("ls")
-        assert is_safe is True
+        result = check_command_safety("ls")
+        assert result["is_safe"] is True
     
     def test_is_command_safe(self):
         """测试快速安全判断"""
