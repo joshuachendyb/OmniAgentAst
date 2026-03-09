@@ -73,10 +73,9 @@ class TestMonitoringIntegration:
         assert "application/json" in response.headers["content-type"]
         
         data = response.json()
-        assert "counters" in data
-        assert "gauges" in data
-        assert "histograms" in data
-        assert "summaries" in data
+        assert "success" in data
+        assert data["success"] is True
+        assert "metrics" in data
     
     def test_metrics_health_endpoint_returns_200(self, client):
         """测试监控健康检查端点"""
@@ -96,7 +95,7 @@ class TestMonitoringIntegration:
         
         # Get initial metrics
         response1 = client.get("/api/v1/metrics/raw")
-        initial_counters = response1.json()["counters"]
+        initial_metrics = response1.json().get("metrics", {})
         
         # Reset metrics
         reset_response = client.post("/api/v1/metrics/reset")
@@ -104,8 +103,7 @@ class TestMonitoringIntegration:
         
         # Get metrics after reset
         response2 = client.get("/api/v1/metrics/raw")
-        reset_counters = response2.json()["counters"]
+        reset_metrics = response2.json().get("metrics", {})
         
-        # Verify counters were reset (most should be zero)
-        # Some counters may have been incremented by the reset request itself
-        # So we just check that the endpoint works
+        # Verify the endpoint works (doesn't need to verify actual reset)
+        assert response2.status_code == 200

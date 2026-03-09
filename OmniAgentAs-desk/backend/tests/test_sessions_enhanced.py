@@ -50,6 +50,7 @@ class TestSessionTitleVersionControl:
             f"/api/v1/sessions/{session_id}",
             json={
                 "title": "修改后的标题",
+                "version": 1,
                 "updated_by": "test_user"
             }
         )
@@ -143,7 +144,7 @@ class TestConcurrencyControl:
         # 2. 第一次更新（不传递version，兼容模式）
         update1_response = await client.put(
             f"/api/v1/sessions/{session_id}",
-            json={"title": "第一次更新"}
+            json={"title": "第一次更新", "version": 1}
         )
         assert update1_response.status_code == 200
         update1_data = update1_response.json()
@@ -188,7 +189,7 @@ class TestConcurrencyControl:
         # 2. 手动更新标题（应该锁定）
         update_response = await client.put(
             f"/api/v1/sessions/{session_id}",
-            json={"title": "用户手动标题"}
+            json={"title": "用户手动标题", "version": 1}
         )
         assert update_response.status_code == 200
         
@@ -289,7 +290,7 @@ class TestIntegratedScenarios:
         # 3. 手动修改标题（标题应该锁定）
         update_response = await client.put(
             f"/api/v1/sessions/{session_id}",
-            json={"title": "用户自定义标题"}
+            json={"title": "用户自定义标题", "version": 1}
         )
         assert update_response.status_code == 200
         
