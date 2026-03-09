@@ -336,8 +336,9 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                       onClick={() =>
                         copyToClipboard(
                           JSON.stringify({
-                            action: step.action,
-                            action_input: step.action_input,
+                            tool_name: step.tool_name || step.action,
+                            // 【小查修复2026-03-09】优先使用新字段tool_params，兼容旧字段action_input
+                            tool_params: step.tool_params || step.action_input,
                             result: step.result,
                           }),
                           index
@@ -347,14 +348,14 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                       style={{ marginLeft: "auto", padding: 0 }}
                     />
                   </div>
-                  {/* 使用action_input字段 */}
-                  {step.action_input && (
+                  {/* 【小查修复2026-03-09】优先使用新字段tool_params */}
+                  {(step.tool_params || step.action_input) && (
                     <div>
                       <Text type="secondary" style={{ fontSize: 10 }}>
                         参数：
                       </Text>
                       <pre className="step-params">
-                        {JSON.stringify(step.action_input || {}, null, 2)}
+                        {JSON.stringify(step.tool_params || step.action_input || {}, null, 2)}
                       </pre>
                     </div>
                   )}
