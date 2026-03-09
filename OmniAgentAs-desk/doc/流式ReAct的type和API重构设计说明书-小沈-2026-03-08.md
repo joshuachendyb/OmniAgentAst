@@ -661,13 +661,13 @@ chat.py: for step in result.steps:
 
 **字段分析**：
 
-| 字段 | 作用 | 必要性 | 合理? |
-|------|------|--------|-------|
-| display_name | 显示AI名称 | 必要 | ✅ |
-| model | AI模型 | 必要 | ✅ |
-| provider | AI提供商 | 必要 | ✅ |
-| task_id | 任务ID | 必要 | ✅ |
-| security_check | 安全检查结果 | 必要 | ✅ 新增 |
+| 字段 | 作用 | 必要性 | 说明 |
+|------|------|--------|------|
+| display_name | 显示AI名称 | 必要 | 如 "OpenAI (gpt-4)" |
+| model | AI模型 | 必要 | 如 "gpt-4"、"gpt-4o" |
+| provider | AI提供商 | 必要 | 如 "openai"、"anthropic" |
+| task_id | 会话/请求ID | 必要 | 唯一标识一次用户请求，用于追踪调试 |
+| security_check | 安全检查结果 | 必要 | 本次请求的安全检查结果 |
 
 **security_check 字段结构**：
 
