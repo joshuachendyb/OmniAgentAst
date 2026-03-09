@@ -25,7 +25,7 @@ Shell命令黑名单安全检查服务
 import re
 import os
 import json
-from typing import Tuple, List, Optional, Set, Dict
+from typing import Tuple, List, Optional, Set, Dict, Any
 from app.utils.logger import logger
 
 try:
@@ -637,18 +637,35 @@ def get_safety_checker() -> CommandSafetyChecker:
     return _safety_checker
 
 
-def check_command_safety(command: str) -> Tuple[bool, str]:
+def check_command_safety(command: str) -> Dict[str, Any]:
     """
     快速检查命令安全性
     
     Args:
         command: 待检查的命令
-        
+    
     Returns:
-        Tuple[bool, str]: (是否安全, 危险原因)
+        Dict[str, Any]: 安全检查结果，包含：
+            - is_safe: bool, 是否安全
+            - risk_level: str, 风险等级 (safe/low/medium/high/critical)
+            - risk: str, 风险描述
+            - blocked: bool, 是否被拦截
+            - rule_matched: str, 匹配的规则名称
     """
     checker = get_safety_checker()
-    return checker.check(command)
+    is_safe, risk = checker.check(command)
+    risk_level = checker.get_risk_level(command)
+    
+    # 确定是否被拦截（高风险直接拦截）
+    blocked = not is_safe and risk_level in ["high", "critical"]
+    
+    return {
+        "is_safe": is_safe,
+        "risk_level": risk_level,
+        "risk": risk if risk else None,
+        "blocked": blocked,
+        "rule_matched": risk if not is_safe else None
+    }
 
 
 def is_command_safe(command: str) -> bool:
