@@ -136,8 +136,6 @@ class BaseAIService:
                     if not line or line.strip() == "":
                         continue
                     
-                    print(f"[DEBUG] line: {repr(line[:80])}")
-                    
                     # 【重要修复】API返回的是 "data:{" 而不是 "data: {"
                     # 需要同时处理两种情况
                     if line.startswith("data: "):
