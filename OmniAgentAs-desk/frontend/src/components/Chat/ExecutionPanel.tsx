@@ -36,6 +36,8 @@ import {
   DownloadOutlined,
   CopyOutlined,
   CheckOutlined,
+  // 【小新重构2026-03-09】新增图标
+  RobotOutlined,
 } from "@ant-design/icons";
 import type { ExecutionStep } from "../../utils/sse";
 
@@ -260,6 +262,26 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
           STEP_STYLES.thought;
 
         switch (step.type) {
+          // 【小新重构2026-03-09】新增 start 类型处理
+          case "start":
+            return (
+              <div className="step-item">
+                <div className="start-step">
+                  <div className="step-header">
+                    <RobotOutlined />
+                    <span>{step.display_name || "AI助手"}</span>
+                  </div>
+                  {step.model && (
+                    <div className="step-info">
+                      模型: {step.provider} ({step.model})
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+
+          // 【小新重构2026-03-09】新增 status 类型处理
+          // 注意：status类型的step.type可能是"paused"/"resumed"/"interrupted"/"retrying"
           case "thought":
             return (
               <div className="step-item">
