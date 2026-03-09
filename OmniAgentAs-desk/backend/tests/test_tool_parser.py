@@ -34,9 +34,9 @@ class TestParseResponse:
         
         result = ToolParser.parse_response(response)
         
-        assert result["thought"] == "I need to read the file to understand its content"
-        assert result["action"] == "read_file"
-        assert result["action_input"]["file_path"] == "/tmp/test.txt"
+        assert result["content"] == "I need to read the file to understand its content"
+        assert result["action_tool"] == "read_file"
+        assert result["params"]["file_path"] == "/tmp/test.txt"
     
     def test_parse_json_code_block(self):
         """TC030: 解析Markdown JSON代码块"""
@@ -54,8 +54,8 @@ class TestParseResponse:
         
         result = ToolParser.parse_response(response)
         
-        assert result["action"] == "read_file"
-        assert result["action_input"]["file_path"] == "/path/to/file.py"
+        assert result["action_tool"] == "read_file"
+        assert result["params"]["file_path"] == "/path/to/file.py"
     
     def test_parse_code_block_without_json_label(self):
         """TC031: 解析无json标签的代码块"""
@@ -73,11 +73,11 @@ class TestParseResponse:
         
         result = ToolParser.parse_response(response)
         
-        assert result["action"] == "list_directory"
-        assert result["action_input"]["dir_path"] == "/tmp"
+        assert result["action_tool"] == "list_directory"
+        assert result["params"]["dir_path"] == "/tmp"
     
     def test_parse_response_missing_thought(self):
-        """TC032: 缺少thought字段应抛出异常"""
+        """TC032: 缺少thought字段应使用默认值"""
         response = '''
         {
             "action": "read_file",
@@ -85,13 +85,14 @@ class TestParseResponse:
         }
         '''
         
-        with pytest.raises(ValueError) as exc_info:
-            ToolParser.parse_response(response)
+        result = ToolParser.parse_response(response)
         
-        assert "Missing required field: 'thought'" in str(exc_info.value)
+        # 现在使用默认值，不抛出异常
+        assert result["content"] == ""  # 默认空字符串
+        assert result["action_tool"] == "read_file"
     
     def test_parse_response_missing_action(self):
-        """TC033: 缺少action字段应抛出异常"""
+        """TC033: 缺少action字段应使用默认值"""
         response = '''
         {
             "thought": "I need to read the file",
@@ -99,10 +100,11 @@ class TestParseResponse:
         }
         '''
         
-        with pytest.raises(ValueError) as exc_info:
-            ToolParser.parse_response(response)
+        result = ToolParser.parse_response(response)
         
-        assert "Missing required field: 'action'" in str(exc_info.value)
+        # 现在使用默认值，不抛出异常
+        assert result["content"] == "I need to read the file"
+        assert result["action_tool"] == "finish"  # 默认finish
     
     def test_parse_response_missing_action_input(self):
         """TC034: 缺少action_input字段应使用空字典"""
@@ -115,8 +117,8 @@ class TestParseResponse:
         
         result = ToolParser.parse_response(response)
         
-        assert result["action"] == "finish"
-        assert result["action_input"] == {}
+        assert result["action_tool"] == "finish"
+        assert result["params"] == {}
     
     def test_parse_response_action_input_camel_case(self):
         """TC035: 处理camelCase的actionInput"""
@@ -130,9 +132,9 @@ class TestParseResponse:
         
         result = ToolParser.parse_response(response)
         
-        assert result["action"] == "write_file"
-        assert "action_input" in result
-        assert result["action_input"]["file_path"] == "/tmp/out.txt"
+        assert result["action_tool"] == "write_file"
+        assert "params" in result
+        assert result["params"]["file_path"] == "/tmp/out.txt"
     
     def test_parse_response_with_extra_fields(self):
         """TC036: 处理包含额外字段的响应"""
@@ -148,8 +150,8 @@ class TestParseResponse:
         
         result = ToolParser.parse_response(response)
         
-        assert result["thought"] == "Reading configuration"
-        assert result["action"] == "read_file"
+        assert result["content"] == "Reading configuration"
+        assert result["action_tool"] == "read_file"
         # 注：当前实现会过滤额外字段，只保留thought/action/action_input
         # 这是设计决策，确保返回结构的一致性
 
@@ -169,9 +171,9 @@ class TestParseInvalidResponse:
         
         result = ToolParser.parse_response(response)
         
-        assert "read" in result["thought"].lower() or "understand" in result["thought"].lower()
-        assert result["action"] == "read_file"
-        assert result["action_input"]["file_path"] == "/etc/config.yaml"
+        assert "read" in result["content"].lower() or "understand" in result["content"].lower()
+        assert result["action_tool"] == "read_file"
+        assert result["params"]["file_path"] == "/etc/config.yaml"
     
     def test_parse_malformed_json(self):
         """TC038: 解析格式错误的JSON"""
@@ -188,7 +190,7 @@ class TestParseInvalidResponse:
         result = ToolParser.parse_response(response)
         
         # 至少应该提取到action
-        assert result["action"] == "list_directory"
+        assert result["action_tool"] == "list_directory"
     
     def test_parse_empty_response(self):
         """TC039: 解析空响应应抛出异常"""
@@ -206,17 +208,18 @@ class TestParseInvalidResponse:
             ToolParser.parse_response(response)
     
     def test_parse_partial_json(self):
-        """TC041: 部分JSON（只有thought）"""
+        """TC041: 部分JSON（只有thought）使用默认值"""
         response = '''
         {
             "thought": "I am thinking about what to do next"
         }
         '''
         
-        with pytest.raises(ValueError) as exc_info:
-            ToolParser.parse_response(response)
+        result = ToolParser.parse_response(response)
         
-        assert "Missing required field: 'action'" in str(exc_info.value)
+        # 现在使用默认值，不抛出异常
+        assert result["content"] == "I am thinking about what to do next"
+        assert result["action_tool"] == "finish"  # 默认finish
 
 
 class TestExtractFromText:
@@ -234,7 +237,7 @@ class TestExtractFromText:
         for text, expected_thought in test_cases:
             result = ToolParser._extract_from_text(text)
             if result:
-                assert expected_thought.lower() in result["thought"].lower()
+                assert expected_thought.lower() in result["content"].lower()
     
     def test_extract_action_various_formats(self):
         """TC043: 提取不同格式的action"""
@@ -248,7 +251,7 @@ class TestExtractFromText:
         for text, expected_action in test_cases:
             result = ToolParser._extract_from_text(text)
             if result:
-                assert result["action"] == expected_action
+                assert result["action_tool"] == expected_action
     
     def test_extract_action_input(self):
         """TC044: 提取action_input参数"""
@@ -260,7 +263,7 @@ class TestExtractFromText:
         
         if result:
             assert "action_input" in result
-            assert result["action_input"]["file_path"] == "/tmp/test.txt"
+            assert result["params"]["file_path"] == "/tmp/test.txt"
     
     def test_extract_no_match(self):
         """TC045: 无法提取任何有效信息"""
@@ -286,8 +289,8 @@ class ToolParserEdgeCases:
         
         result = ToolParser.parse_response(response)
         
-        assert "我需要读取文件" in result["thought"]
-        assert result["action_input"]["file_path"] == "/tmp/测试.txt"
+        assert "我需要读取文件" in result["content"]
+        assert result["params"]["file_path"] == "/tmp/测试.txt"
     
     def test_parse_nested_json(self):
         """TC047: 解析嵌套JSON对象"""
@@ -308,7 +311,7 @@ class ToolParserEdgeCases:
         
         result = ToolParser.parse_response(response)
         
-        assert result["action_input"]["content"]["nested"]["deep"] == "value"
+        assert result["params"]["content"]["nested"]["deep"] == "value"
     
     def test_parse_large_response(self):
         """TC048: 解析大型响应"""
@@ -321,8 +324,8 @@ class ToolParserEdgeCases:
         
         result = ToolParser.parse_response(response)
         
-        assert len(result["thought"]) > 1000
-        assert result["action"] == "read_file"
+        assert len(result["content"]) > 1000
+        assert result["action_tool"] == "read_file"
     
     def test_parse_special_characters(self):
         """TC049: 解析包含特殊字符的响应"""
@@ -336,7 +339,7 @@ class ToolParserEdgeCases:
         
         result = ToolParser.parse_response(response)
         
-        assert "C:" in result["action_input"]["file_path"]
+        assert "C:" in result["params"]["file_path"]
     
     def test_parse_array_in_action_input(self):
         """TC050: action_input包含数组"""
@@ -353,8 +356,8 @@ class ToolParserEdgeCases:
         
         result = ToolParser.parse_response(response)
         
-        assert isinstance(result["action_input"]["patterns"], list)
-        assert len(result["action_input"]["patterns"]) == 3
+        assert isinstance(result["params"]["patterns"], list)
+        assert len(result["params"]["patterns"]) == 3
 
 
 if __name__ == "__main__":
