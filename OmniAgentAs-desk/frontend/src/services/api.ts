@@ -917,4 +917,137 @@ export const securityApi = {
 
 export { API_BASE_URL };
 
+// ============================================================
+// 【小新重构2026-03-09】ReAct任务控制API
+// 根据设计文档第10.10-10.12节添加
+// ============================================================
+
+/**
+ * 任务控制响应类型
+ */
+interface TaskControlResponse {
+  success: boolean;
+  message: string;
+}
+
+/**
+ * 分页数据响应类型
+ */
+interface NextPageResponse {
+  success: boolean;
+  data?: any;
+  next_page_token?: string;
+  has_more: boolean;
+}
+
+/**
+ * 用户确认请求类型
+ */
+interface ConfirmRequest {
+  task_id: string;
+  confirmed: boolean;
+  modified_command?: string;
+}
+
+/**
+ * 分页数据请求类型
+ */
+interface NextPageRequest {
+  task_id: string;
+  tool_name: string;
+  next_page_token: string;
+}
+
+/**
+ * 任务控制API - 用于流式任务执行过程中的控制
+ */
+export const taskControlApi = {
+  /**
+   * 取消任务
+   * POST /api/v1/chat/stream/cancel/{task_id}
+   * 
+   * @param taskId 任务ID
+   * @returns 取消结果
+   */
+  cancel: async (taskId: string): Promise<TaskControlResponse> => {
+    const response = await api.post<TaskControlResponse>(`/chat/stream/cancel/${taskId}`);
+    return response.data;
+  },
+
+  /**
+   * 暂停任务
+   * POST /api/v1/chat/stream/pause/{task_id}
+   * 
+   * @param taskId 任务ID
+   * @returns 暂停结果
+   */
+  pause: async (taskId: string): Promise<TaskControlResponse> => {
+    const response = await api.post<TaskControlResponse>(`/chat/stream/pause/${taskId}`);
+    return response.data;
+  },
+
+  /**
+   * 恢复任务
+   * POST /api/v1/chat/stream/resume/{task_id}
+   * 
+   * @param taskId 任务ID
+   * @returns 恢复结果
+   */
+  resume: async (taskId: string): Promise<TaskControlResponse> => {
+    const response = await api.post<TaskControlResponse>(`/chat/stream/resume/${taskId}`);
+    return response.data;
+  },
+
+  /**
+   * 用户确认操作
+   * POST /api/v1/chat/stream/confirm
+   * 
+   * @param taskId 任务ID
+   * @param confirmed 用户选择：true=确认执行，false=拒绝执行
+   * @param modifiedCommand 可选，修改后的命令
+   * @returns 确认结果
+   */
+  confirm: async (
+    taskId: string, 
+    confirmed: boolean, 
+    modifiedCommand?: string
+  ): Promise<TaskControlResponse> => {
+    const body: ConfirmRequest = {
+      task_id: taskId,
+      confirmed: confirmed,
+    };
+    
+    if (modifiedCommand) {
+      body.modified_command = modifiedCommand;
+    }
+    
+    const response = await api.post<TaskControlResponse>('/chat/stream/confirm', body);
+    return response.data;
+  },
+
+  /**
+   * 请求分页数据
+   * POST /api/v1/chat/stream/next-page
+   * 
+   * @param taskId 任务ID
+   * @param toolName 工具名称
+   * @param nextPageToken 分页令牌
+   * @returns 分页数据结果
+   */
+  nextPage: async (
+    taskId: string, 
+    toolName: string, 
+    nextPageToken: string
+  ): Promise<NextPageResponse> => {
+    const body: NextPageRequest = {
+      task_id: taskId,
+      tool_name: toolName,
+      next_page_token: nextPageToken,
+    };
+    
+    const response = await api.post<NextPageResponse>('/chat/stream/next-page', body);
+    return response.data;
+  },
+};
+
 export default api;
