@@ -1794,7 +1794,9 @@ else:
 ```json
 {
   "type": "thought",
+  "step": 1,
   "content": "用户想要查看桌面文件夹...",
+  "reasoning": "用户提到了'查看'和'文件夹'，这是目录列表操作",
   "action_tool": "list_directory",
   "params": {"path": "C:\\Users\\xxx\\Desktop"}
 }
@@ -1805,7 +1807,9 @@ else:
 | 字段 | 类型 | 必要性 | 说明 |
 |------|------|--------|------|
 | type | string | 固定值 | 固定为 "thought" |
+| step | number | 必要 | 当前是第几轮ReAct循环，从1开始 |
 | content | string | 必要 | LLM的思考内容，说明当前分析和下一步意图 |
+| reasoning | string | 可选 | LLM的推理过程，说明为什么会做此决策 |
 | action_tool | string | 必要 | 要执行的工具名称，如 list_directory、finish |
 | params | object | 必要 | 工具执行的参数，可为空对象{} |
 
@@ -2466,6 +2470,99 @@ def create_error_response(
 
 ---
 
+#### 8.2.2.4 其他需要修改的辅助函数
+
+根据调试分析，以下辅助函数也需要配合新的数据结构进行修改：
+
+##### C2 get_user_friendly_error 函数修改
+
+**作用**：将错误转换为用户友好的格式
+
+**需要配合修改**：
+- 新的错误格式使用 `code` 和 `message` 字段
+- 需要适配新的 `error_type` 分类
+
+```python
+def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
+    """
+    将系统错误转换为用户友好的错误格式
+    
+    Returns:
+        {
+            "code": "FILE_NOT_FOUND",
+            "message": "用户可读的错误消息",
+            "error_type": "file_system"
+        }
+    """
+    # 根据错误类型映射到新的错误格式
+    pass
+```
+
+##### C3 check_and_yield_if_interrupted 函数修改
+
+**作用**：检查任务是否被中断，配合新的status类型
+
+**需要配合修改**：
+- 使用新的 `type: "status", status_value: "interrupted"` 格式
+
+##### C4 check_and_yield_if_paused 函数修改
+
+**作用**：检查任务是否暂停，配合新的status类型
+
+**需要配合修改**：
+- 使用新的 `type: "status", status_value: "paused"` 格式
+
+##### C5 simplify_observation 函数修改
+
+**作用**：简化观察结果，配合新的observation格式
+
+**需要配合修改**：
+- 新的observation格式包含：`content`, `reasoning`, `action_tool`, `params`, `is_finished`
+
+##### C6 detect_file_operation_intent 函数修改
+
+**作用**：检测文件操作意图
+
+**需要配合修改**：
+- 更新返回格式以适配新的数据结构
+
+##### C7 extract_file_path 函数修改
+
+**作用**：从用户输入中提取文件路径
+
+**需要配合修改**：
+- 可能需要增强以支持更多路径格式
+
+##### C8 cancel_stream_task 函数修改
+
+**作用**：取消正在进行的流式任务
+
+**需要配合修改**：
+- 取消时发送 `type: "status", status_value: "interrupted"`
+
+##### C9 pause_stream_task 函数修改
+
+**作用**：暂停流式任务
+
+**需要配合修改**：
+- 暂停时发送 `type: "status", status_value: "paused"`
+
+##### C10 resume_stream_task 函数修改
+
+**作用**：恢复暂停的任务
+
+**需要配合修改**：
+- 恢复时发送 `type: "status", status_value: "resumed"`
+
+##### C11 handle_file_operation 函数修改
+
+**作用**：处理文件操作请求
+
+**需要配合修改**：
+- 更新返回格式以包含 `execution_status` 字段
+
+---
+
 ### 8.3 agent.py 重构详细说明
 
 #### 8.3.1 当前问题诊断
@@ -2671,6 +2768,59 @@ async def run_stream(self, user_input: str, max_steps: int = 10):
 
 ---
 
+#### 8.3.2.4 其他需要修改的类和函数
+
+根据调试分析，以下类和函数也需要配合新的数据结构进行修改：
+
+##### A5 ToolParser.parse_response 方法修改
+
+**作用**：解析LLM返回的响应
+
+**需要配合修改**：
+- 支持新的字段名：`action_tool`（原 `action`）和 `params`（原 `action_input`）
+- 返回格式需要包含 `content`, `reasoning`, `action_tool`, `params`
+
+##### A6 ToolParser._extract_from_text 方法修改
+
+**作用**：从文本中提取工具调用信息
+
+**需要配合修改**：
+- 支持从新的JSON格式中提取字段
+
+##### A7 ToolExecutor 类修改
+
+**作用**：工具执行器
+
+**需要配合修改**：
+- 更新返回格式，添加 `execution_status` 字段
+- 支持 `success`/`error`/`warning` 三种状态
+
+##### A8 FileOperationAgent.run 方法
+
+**作用**：现有的阻塞式运行方法
+
+**需要配合修改**：
+- 标记为废弃或保留作为兼容
+- 建议使用新的 `run_stream` 方法
+
+##### A9 _execute_with_retry 方法修改
+
+**作用**：带重试机制的执行
+
+**需要配合修改**：
+- 配合新的错误分类（`retryable` 字段）
+- 更新重试逻辑
+
+##### A10 _format_observation 方法修改
+
+**作用**：格式化观察结果
+
+**需要配合修改**：
+- 配合新的 `observation` 格式
+- 包含 `execution_status`, `summary`, `raw_data`, `content`, `reasoning`, `action_tool`, `params`, `is_finished`
+
+---
+
 ### 8.4 adapter.py 重构详细说明
 
 #### 8.4.1 当前状态
@@ -2719,6 +2869,33 @@ def thought_to_message(thought_step: Dict[str, Any]) -> Dict[str, str]:
         "content": thought_step.get("content", "")
     }
 ```
+
+#### 8.4.3 遗漏的修改点（调试分析补充）
+
+根据调试分析，以下函数也需要配合新的type格式进行适配：
+
+##### P3 messages_to_dict_list 函数修改
+
+**作用**：将Message对象列表转换为字典列表
+
+**需要配合修改**：
+- 适配新的type格式（如 `action_tool` 字段）
+- 确保转换后的格式与新的数据结构兼容
+
+##### P4 dict_list_to_messages 函数修改
+
+**作用**：将字典列表转换为Message对象列表
+
+**需要配合修改**：
+- 适配新的type格式
+- 正确解析 `action_tool`, `params` 等新字段
+
+##### P5 convert_chat_history 函数修改
+
+**作用**：通用聊天历史转换函数
+
+**需要配合修改**：
+- 适配新格式的通用转换逻辑
 
 ---
 
@@ -2774,6 +2951,164 @@ def execute_tool(tool_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
             "data": None,
             "retry_count": 0
         }
+```
+
+#### 8.5.3 遗漏的修改点（调试分析补充）
+
+根据调试分析，以下工具方法也需要配合新的返回格式进行修改：
+
+##### T2 FileTools.read_file 函数修改
+
+**作用**：读取文件内容
+
+**需要配合修改**：
+- 添加 `execution_status` 字段
+- 返回格式统一为：`{status, summary, data, retry_count}`
+
+##### T3 FileTools.write_file 函数修改
+
+**作用**：写入文件内容
+
+**需要配合修改**：
+- 添加 `execution_status` 字段
+
+##### T4 FileTools.list_directory 函数修改
+
+**作用**：列出目录内容
+
+**需要配合修改**：
+- 添加 `execution_status` 字段
+- 添加分页支持（`has_more`, `next_page_token`）
+
+##### T5 FileTools.delete_file 函数修改
+
+**作用**：删除文件
+
+**需要配合修改**：
+- 添加 `execution_status` 字段
+
+##### T6 FileTools.move_file 函数修改
+
+**作用**：移动文件
+
+**需要配合修改**：
+- 添加 `execution_status` 字段
+
+##### T7 FileTools.search_files 函数修改
+
+**作用**：搜索文件
+
+**需要配合修改**：
+- 添加 `execution_status` 字段
+
+##### T8 FileTools.generate_report 函数修改
+
+**作用**：生成报告
+
+**需要配合修改**：
+- 添加 `execution_status` 字段
+
+##### T9 register_tool 函数修改
+
+**作用**：注册工具
+
+**需要配合修改**：
+- 确保返回格式统一
+
+##### T10 get_tool 函数修改
+
+**作用**：获取工具
+
+**需要配合修改**：
+- 可能需要更新以支持新的工具格式
+
+##### T11 list_directory_with_pagination 函数新增
+
+**作用**：支持分页的目录列表
+
+**功能说明**：
+- 返回分页数据，包含 has_more 和 next_page_token
+- 支持通过 page_token 请求下一页
+- 支持自定义 page_size
+
+```python
+def list_directory_with_pagination(path: str, page_token: str = None, page_size: int = PAGE_SIZE) -> Dict[str, Any]:
+    """
+    支持分页的目录列表
+    
+    Returns:
+        {
+            "entries": [...],        # 当前页的数据
+            "total": 100000,         # 总数量
+            "has_more": true,        # 是否有更多
+            "next_page_token": "xxx" # 下一页令牌
+        }
+    """
+    # 获取所有条目
+    all_entries = scan_directory(path)
+    total = len(all_entries)
+    
+    # 计算分页
+    start_idx = 0
+    if page_token:
+        start_idx = decode_page_token(page_token)
+    
+    end_idx = min(start_idx + page_size, total)
+    page_entries = all_entries[start_idx:end_idx]
+    
+    # 生成结果
+    result = {
+        "entries": page_entries,
+        "total": total,
+        "has_more": end_idx < total
+    }
+    
+    if result["has_more"]:
+        result["next_page_token"] = encode_page_token(end_idx)
+    
+    return result
+```
+
+##### T12 encode_page_token 函数新增
+
+**作用**：编码页码令牌
+
+```python
+def encode_page_token(offset: int) -> str:
+    """编码页码令牌"""
+    return base64.b64encode(str(offset).encode()).decode()
+```
+
+##### T13 decode_page_token 函数新增
+
+**作用**：解码页码令牌
+
+```python
+def decode_page_token(token: str) -> int:
+    """解码页码令牌"""
+    try:
+        return int(base64.b64decode(token.encode()).decode())
+    except:
+        return 0
+```
+
+##### T14 _generate_summary 函数新增
+
+**作用**：生成人类可读的结果摘要
+
+```python
+def _generate_summary(tool_name: str, result: Any) -> str:
+    """生成结果摘要"""
+    if tool_name == "list_directory":
+        entries = result.get("entries", [])
+        return f"成功读取目录，共 {len(entries)} 个项目"
+    elif tool_name == "read_file":
+        content = result.get("content", "")
+        return f"成功读取文件，内容长度：{len(content)} 字符"
+    elif tool_name == "write_file":
+        return "文件写入成功"
+    # ... 其他工具的摘要生成逻辑
+    return "操作完成"
 ```
 
 ---
@@ -2909,7 +3244,9 @@ except Exception as e:
 
 ---
 
-### 8.6.4 分页支持实现（新增）
+### 8.6.4 分页支持实现（新增，实际在tools.py中实现）
+
+> **说明**：分页功能实现位于 `tools.py` 中的 `list_directory_with_pagination` 函数，此处仅列出设计要点。
 
 #### 8.6.4.1 分页配置
 
@@ -2991,6 +3328,32 @@ if tool_name == "list_directory":
     }
 ```
 
+#### 8.6.5 遗漏的修改点（调试分析补充）
+
+根据调试分析，以下SafetyChecker类的方法也需要配合新的返回格式进行修改：
+
+##### S2 SafetyChecker.check 方法修改
+
+**作用**：综合安全检查方法
+
+**需要配合修改**：
+- 返回完整的安全检查对象：`is_safe`, `risk_level`, `risk`, `blocked`
+- 确保字段名称与新的API设计一致
+
+##### S3 SafetyChecker.get_risk_level 方法修改
+
+**作用**：获取风险等级
+
+**需要配合修改**：
+- 更新返回格式以包含完整的风险信息
+
+##### S4 SafetyChecker.is_safe 方法修改
+
+**作用**：判断是否安全
+
+**需要配合修改**：
+- 更新判断逻辑以支持新的风险分类
+
 ---
 
 ### 8.7 重构后的文件结构
@@ -3012,18 +3375,43 @@ backend/app/
 
 | 文件 | 函数/类 | 操作 | 说明 |
 |------|---------|------|------|
-| chat.py | create_error_response | 修改 | 统一错误响应格式 |
+| chat.py | create_error_response | 修改 | 统一错误响应格式（包含retryable字段） |
 | chat.py | check_and_yield_if_interrupted | 修改 | 集成新的status类型 |
 | chat.py | check_and_yield_if_paused | 修改 | 集成新的status类型 |
+| chat.py | check_and_yield_if_retrying | 新增 | 集成新的status类型（重试中） |
 | chat.py | chat_endpoint | 重构 | 移除硬编码，实现实时流式 |
+| chat.py | get_user_friendly_error | 修改 | 适配新的错误格式 |
+| chat.py | cancel_stream_task | 修改 | 发送status=interrupted |
+| chat.py | pause_stream_task | 修改 | 发送status=paused |
+| chat.py | resume_stream_task | 修改 | 发送status=resumed |
 | agent.py | ThoughtStep | 新增 | Thought阶段数据结构 |
 | agent.py | ActionToolStep | 新增 | Action阶段数据结构 |
 | agent.py | ObservationStep | 新增 | Observation阶段数据结构 |
 | agent.py | run_stream | 新增 | 异步流式输出方法 |
+| agent.py | _run_react_loop | 新增 | ReAct循环内部方法 |
+| agent.py | _execute_tool | 新增 | 工具执行内部方法 |
+| agent.py | ToolParser.parse_response | 修改 | 适配新字段名 |
+| agent.py | ToolExecutor | 修改 | 添加execution_status字段 |
+| agent.py | _execute_with_retry | 修改 | 适配retryable错误分类 |
+| agent.py | _format_observation | 修改 | 适配新observation格式 |
+| adapter.py | messages_to_dict_list | 修改 | 适配新type格式 |
+| adapter.py | dict_list_to_messages | 修改 | 适配新type格式 |
+| adapter.py | convert_chat_history | 修改 | 通用转换适配 |
 | adapter.py | observation_to_llm_input | 新增 | observation格式化 |
 | adapter.py | thought_to_message | 新增 | thought转消息格式 |
 | tools.py | execute_tool | 修改 | 统一返回格式 |
+| tools.py | _dispatch_tool | 新增 | 工具分发内部方法 |
+| tools.py | _generate_summary | 新增 | 生成结果摘要 |
+| tools.py | FileTools.read_file | 修改 | 添加execution_status |
+| tools.py | FileTools.write_file | 修改 | 添加execution_status |
+| tools.py | FileTools.list_directory | 修改 | 添加execution_status和分页 |
+| tools.py | list_directory_with_pagination | 新增 | 分页支持实现 |
+| tools.py | encode_page_token | 新增 | 页码令牌编码 |
+| tools.py | decode_page_token | 新增 | 页码令牌解码 |
 | safety.py | check_command_safety | 修改 | 增强返回格式 |
+| safety.py | SafetyChecker.check | 修改 | 适配新返回格式 |
+| safety.py | classify_error | 新增 | 错误分类函数 |
+| safety.py | create_error_response | 新增 | 创建错误响应（含retryable） |
 
 ---
 
@@ -3044,7 +3432,7 @@ backend/app/
 - [ ] thought类型包含：content, reasoning(可选), action_tool, params
 - [ ] action_tool类型包含：step, tool_name, tool_params, execution_status, summary, raw_data(可选), action_retry_count(可选)
 - [ ] observation类型包含：step, execution_status, summary, raw_data(可选), content, reasoning(可选), action_tool, params, is_finished
-- [ ] error类型包含：type, code, message, error_type, details(可选), stack(可选)
+- [ ] error类型包含：type, code, message, error_type, retryable, retry_after(可选), details(可选), stack(可选)
 - [ ] status类型包含：type, status_value, message
 
 #### 8.8.3 流程验证
@@ -3864,6 +4252,137 @@ function handleServerEvent(data) {
 
 ---
 
+### 9.8 遗漏的API接口（调试分析补充）
+
+根据调试分析，以下API接口需要在设计文档中补充说明：
+
+#### 9.8.1 任务控制API
+
+用于在流式任务执行过程中进行控制（取消、暂停、恢复）：
+
+##### 取消任务 API
+
+| 项目 | 说明 |
+|------|------|
+| **接口地址** | `/api/v1/chat/stream/cancel/{task_id}` |
+| **请求方法** | `POST` |
+| **请求参数** | task_id（路径参数）：任务ID |
+| **响应格式** | JSON |
+
+**请求示例**：
+```bash
+curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/abc123
+```
+
+**响应示例**：
+```json
+{
+  "type": "status",
+  "status_value": "interrupted",
+  "message": "任务已被用户取消"
+}
+```
+
+##### 暂停任务 API
+
+| 项目 | 说明 |
+|------|------|
+| **接口地址** | `/api/v1/chat/stream/pause/{task_id}` |
+| **请求方法** | `POST` |
+| **请求参数** | task_id（路径参数）：任务ID |
+| **响应格式** | JSON |
+
+##### 恢复任务 API
+
+| 项目 | 说明 |
+|------|------|
+| **接口地址** | `/api/v1/chat/stream/resume/{task_id}` |
+| **请求方法** | `POST` |
+| **请求参数** | task_id（路径参数）：任务ID |
+| **响应格式** | JSON |
+
+---
+
+#### 9.8.2 用户确认接口
+
+用于在任务暂停（等待用户确认）后，用户进行确认或拒绝：
+
+| 项目 | 说明 |
+|------|------|
+| **接口地址** | `/api/v1/chat/confirm` |
+| **请求方法** | `POST` |
+| **Content-Type** | `application/json` |
+
+**请求参数**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| task_id | string | **必要** | 任务ID |
+| confirmed | boolean | **必要** | 用户选择：true=确认执行，false=拒绝执行 |
+| modified_command | string | 可选 | 如果用户选择修改命令，传入新命令 |
+
+**请求示例**：
+```json
+{
+  "task_id": "abc123",
+  "confirmed": true
+}
+```
+
+**响应示例**：
+```json
+{
+  "type": "status",
+  "status_value": "resumed",
+  "message": "用户已确认，继续执行"
+}
+```
+
+---
+
+#### 9.8.3 分页数据请求接口
+
+用于请求大型目录列表的分页数据：
+
+| 项目 | 说明 |
+|------|------|
+| **接口地址** | `/api/v1/chat/stream/next-page` |
+| **请求方法** | `POST` |
+| **Content-Type** | `application/json` |
+
+**请求参数**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| task_id | string | **必要** | 原始任务ID |
+| next_page_token | string | **必要** | 从action_tool响应中获取的令牌 |
+
+**请求示例**：
+```json
+{
+  "task_id": "abc123",
+  "next_page_token": "MTAw"
+}
+```
+
+**响应示例**：
+```json
+{
+  "type": "action_tool",
+  "step": 1,
+  "tool_name": "list_directory",
+  "execution_status": "success",
+  "raw_data": {
+    "entries": [...],
+    "total": 100000,
+    "has_more": true,
+    "next_page_token": "MjAw"
+  }
+}
+```
+
+---
+
 ## 十、前端配合升级修改说明
 
 **编写人**: 小沈
@@ -3884,6 +4403,95 @@ function handleServerEvent(data) {
 | 3 | `frontend/src/services/api.ts` | API调用服务 | 🟡 中 |
 | 4 | `frontend/src/types/chat.ts` | 类型定义 | 🔴 高 |
 | 5 | `frontend/src/components/Chat/ChatInput.tsx` | 输入组件 | 🟡 中 |
+
+---
+
+### 10.1.2 与后端重构配套的修改点（调试分析补充）
+
+根据调试笔记第6章分析，由于第5-9章的后端重构，前端需要相应更新以下修改点：
+
+#### 10.1.2.1 类型定义遗漏（3处）
+
+| 序号 | 遗漏项 | 说明 | 重要性 |
+|------|--------|------|--------|
+| F1 | 新建 `types/chat.ts` | 实际文件不存在，需要新建 | 🔴 高 |
+| F2 | 类型名称统一 | 设计文档定义 `ThoughtMessage` 等，实际使用 `ExecutionStep` | 🔴 高 |
+| F3 | action_tool类型映射 | 需要支持 `action_tool` 到 `action` 的映射 | 🔴 高 |
+
+#### 10.1.2.2 API端点问题（2处）
+
+| 序号 | 遗漏项 | 说明 | 重要性 |
+|------|--------|------|--------|
+| F4 | API端点确认 | 设计文档用 `/api/v1/chat`，实际用 `/api/v1/chat/stream` | 🔴 高 |
+| F5 | 端点差异处理 | 需要说明如何处理端点差异 | 🟡 中 |
+
+#### 10.1.2.3 字段名称映射（4处）
+
+由于后端重构使用了新字段名，需要在前端添加映射层：
+
+| 序号 | 字段 | 设计文档（目标） | 当前代码（现状） | 解决方案 |
+|------|------|-----------------|-----------------|---------|
+| F6 | 类型名 | `action_tool` | `action` | 需映射 |
+| F7 | 参数字段 | `params` | `action_input` | 需映射 |
+| F8 | 工具名字段 | `tool_name` | `action` | 需映射 |
+| F9 | 工具参数 | `tool_params` | `action_input` | 需映射 |
+
+**字段映射实现示例**：
+```typescript
+// 在 api.ts 中添加适配层
+function mapBackendResponse(data: any): any {
+  // action_tool → action
+  if (data.action_tool !== undefined && data.action === undefined) {
+    data.action = data.action_tool;
+  }
+  // params → action_input
+  if (data.params !== undefined && data.action_input === undefined) {
+    data.action_input = data.params;
+  }
+  // tool_name → action
+  if (data.tool_name !== undefined && data.action === undefined) {
+    data.action = data.tool_name;
+  }
+  // tool_params → action_input
+  if (data.tool_params !== undefined && data.action_input === undefined) {
+    data.action_input = data.tool_params;
+  }
+  return data;
+}
+```
+
+#### 10.1.2.4 缺失文件处理（2处）
+
+| 序号 | 遗漏项 | 说明 | 重要性 |
+|------|--------|------|--------|
+| F10 | `hooks/useChat.ts` | 文件不存在 | 🔴 高 |
+| F11 | SSE逻辑位置 | 现有逻辑在 `utils/sse.ts` 的 `useSSE` hook中 | - |
+
+#### 10.1.2.5 消息处理遗漏（4处）
+
+| 序号 | 遗漏项 | 设计文档处理 | 实际代码处理 | 状态 |
+|------|--------|-------------|-------------|------|
+| F12 | start类型 | 需要处理 | 当前未处理 | ❌ 遗漏 |
+| F13 | chunk类型 | 需要处理 | sse.ts已处理 | ⚠️ 部分 |
+| F14 | status类型 | 需要处理 | sse.ts已处理 | ⚠️ 部分 |
+| F15 | action_tool | 需映射为action | 当前直接使用action | ❌ 不一致 |
+
+#### 10.1.2.6 修改优先级
+
+**第一优先级（必须修改）**：
+- F1: 新建 `types/chat.ts`
+- F3-F9: 字段映射层实现
+- F12: 添加start类型处理
+- F15: action_tool到action的映射
+
+**第二优先级（建议修改）**：
+- F2: 类型名称统一
+- F4-F5: API端点确认
+- F10: useChat.ts或确认现有hook
+
+**第三优先级（可选）**：
+- F11: 现有sse.ts逻辑优化
+- F13-F14: chunk/status处理优化
 
 ---
 
