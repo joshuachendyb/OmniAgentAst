@@ -5609,5 +5609,426 @@ function showConfirmDialog(message: string) {
 
 ---
 
-**更新时间**: 2026-03-09 16:55:00
+### 10.10 任务控制API调用说明
+
+> **说明**：以下为第9章9.8节中定义的任务控制API在前端的具体调用方法
+
+#### 10.10.1 取消任务 API
+
+**接口地址**：`POST /api/v1/chat/stream/cancel/{task_id}`
+
+**功能**：中断正在执行的流式任务
+
+**调用示例**：
+```typescript
+/**
+ * 取消正在执行的任务
+ * @param taskId 任务ID
+ * @returns 取消结果
+ */
+export async function cancelTask(taskId: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`/api/v1/chat/stream/cancel/${taskId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  
+  return response.json();
+}
+```
+
+**使用场景**：
+- 用户点击"取消"按钮时调用
+- 调用后SSE会接收到 `type: 'status', status_value: 'interrupted'` 事件
+
+---
+
+#### 10.10.2 暂停任务 API
+
+**接口地址**：`POST /api/v1/chat/stream/pause/{task_id}`
+
+**功能**：暂停正在执行的流式任务，等待用户确认
+
+**调用示例**：
+```typescript
+/**
+ * 暂停任务
+ * @param taskId 任务ID
+ * @returns 暂停结果
+ */
+export async function pauseTask(taskId: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`/api/v1/chat/stream/pause/${taskId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  
+  return response.json();
+}
+```
+
+**使用场景**：
+- 后端发送需要用户确认的操作时自动触发
+- 调用后SSE会接收到 `type: 'status', status_value: 'paused'` 事件
+
+---
+
+#### 10.10.3 恢复任务 API
+
+**接口地址**：`POST /api/v1/chat/stream/resume/{task_id}`
+
+**功能**：恢复已暂停的任务
+
+**调用示例**：
+```typescript
+/**
+ * 恢复已暂停的任务
+ * @param taskId 任务ID
+ * @returns 恢复结果
+ */
+export async function resumeTask(taskId: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`/api/v1/chat/stream/resume/${taskId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+  
+  return response.json();
+}
+```
+
+**使用场景**：
+- 用户确认后调用（等同于confirm接口）
+- 调用后SSE会接收到 `type: 'status', status_value: 'resumed'` 事件
+
+---
+
+### 10.11 用户确认接口调用说明
+
+> **说明**：用于在任务暂停（等待用户确认）后，用户进行确认或拒绝
+
+#### 10.11.1 接口详细信息
+
+**接口地址**：`POST /api/v1/chat/stream/confirm`
+
+**请求参数**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| task_id | string | **必要** | 任务ID |
+| confirmed | boolean | **必要** | 用户选择：true=确认执行，false=拒绝执行 |
+| modified_command | string | 可选 | 如果用户选择修改命令，传入新命令 |
+
+**调用示例**：
+```typescript
+/**
+ * 用户确认操作
+ * @param taskId 任务ID
+ * @param confirmed true=确认执行，false=拒绝执行
+ * @param modifiedCommand 可选，修改后的命令
+ * @returns 确认结果
+ */
+export async function confirmTask(
+  taskId: string, 
+  confirmed: boolean, 
+  modifiedCommand?: string
+): Promise<{ success: boolean; message: string }> {
+  const body: any = {
+    task_id: taskId,
+    confirmed: confirmed,
+  };
+  
+  if (modifiedCommand) {
+    body.modified_command = modifiedCommand;
+  }
+  
+  const response = await fetch('/api/v1/chat/stream/confirm', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  
+  return response.json();
+}
+```
+
+**使用场景**：
+
+| 操作 | confirmed | modified_command | SSE响应 |
+|------|-----------|------------------|---------|
+| 确认执行 | true | 无 | status: resumed |
+| 拒绝执行 | false | 无 | status: interrupted |
+| 修改命令 | true | 有新命令 | 重新开始执行流程 |
+
+**状态流转**：
+```
+paused → confirmed=true → resumed → running → final
+paused → confirmed=false → interrupted → 结束
+paused → modified_command → 重新开始整个流程
+```
+
+---
+
+### 10.12 分页数据请求接口调用说明
+
+> **说明**：用于在action_tool消息中加载更多数据
+
+#### 10.12.1 接口详细信息
+
+**接口地址**：`POST /api/v1/chat/stream/next-page`
+
+**请求参数**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| task_id | string | **必要** | 任务ID |
+| tool_name | string | **必要** | 工具名称（如 list_directory） |
+| next_page_token | string | **必要** | 分页令牌 |
+
+**调用示例**：
+```typescript
+/**
+ * 请求分页数据
+ * @param taskId 任务ID
+ * @param toolName 工具名称
+ * @param nextPageToken 分页令牌
+ * @returns 分页数据结果
+ */
+export async function requestNextPage(
+  taskId: string, 
+  toolName: string, 
+  nextPageToken: string
+): Promise<{
+  success: boolean;
+  data?: any;
+  next_page_token?: string;
+  has_more: boolean;
+}> {
+  const response = await fetch('/api/v1/chat/stream/next-page', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      task_id: taskId,
+      tool_name: toolName,
+      next_page_token: nextPageToken,
+    }),
+  });
+  
+  return response.json();
+}
+```
+
+**在ActionToolDisplay组件中使用**：
+
+```typescript
+const ActionToolDisplay: React.FC<{ message: any }> = ({ message }) => {
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  
+  const handleLoadMore = async () => {
+    if (message.raw_data?.next_page_token) {
+      setIsLoadingMore(true);
+      try {
+        const result = await requestNextPage(
+          message.task_id,
+          message.tool_name,
+          message.raw_data.next_page_token
+        );
+        
+        if (result.success && result.data) {
+          // 合并新数据到现有列表
+          console.log('加载更多数据成功:', result.data);
+        }
+      } catch (error) {
+        console.error('加载更多数据失败:', error);
+      } finally {
+        setIsLoadingMore(false);
+      }
+    }
+  };
+  
+  // ... 组件渲染逻辑
+};
+```
+
+---
+
+### 10.13 完整API调用服务整合示例
+
+> **说明**：将所有API调用整合到统一的服务文件中
+
+**文件**: `frontend/src/services/chatApi.ts`
+
+```typescript
+import { StreamMessage } from '../types/chat';
+
+// ============================================================
+// 流式聊天主接口
+// ============================================================
+
+/**
+ * 发送聊天消息（流式）
+ */
+export async function sendChatMessage(
+  messages: ChatMessage[],
+  onMessage: (message: StreamMessage) => void
+): Promise<void> {
+  const response = await fetch('/api/v1/chat/stream', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages: messages,
+      stream: true
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Response body is not readable');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6)) as StreamMessage;
+            onMessage(data);
+          } catch (e) {
+            console.error('Failed to parse message:', e);
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+// ============================================================
+// 任务控制API
+// ============================================================
+
+/**
+ * 取消任务
+ */
+export async function cancelTask(taskId: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`/api/v1/chat/stream/cancel/${taskId}`, {
+    method: 'POST',
+  });
+  return response.json();
+}
+
+/**
+ * 暂停任务
+ */
+export async function pauseTask(taskId: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`/api/v1/chat/stream/pause/${taskId}`, {
+    method: 'POST',
+  });
+  return response.json();
+}
+
+/**
+ * 恢复任务
+ */
+export async function resumeTask(taskId: string): Promise<{ success: boolean; message: string }> {
+  const response = await fetch(`/api/v1/chat/stream/resume/${taskId}`, {
+    method: 'POST',
+  });
+  return response.json();
+}
+
+// ============================================================
+// 用户确认API
+// ============================================================
+
+/**
+ * 用户确认操作
+ */
+export async function confirmTask(
+  taskId: string,
+  confirmed: boolean,
+  modifiedCommand?: string
+): Promise<{ success: boolean; message: string }> {
+  const body: any = {
+    task_id: taskId,
+    confirmed: confirmed,
+  };
+  
+  if (modifiedCommand) {
+    body.modified_command = modifiedCommand;
+  }
+  
+  const response = await fetch('/api/v1/chat/stream/confirm', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  
+  return response.json();
+}
+
+// ============================================================
+// 分页数据请求API
+// ============================================================
+
+/**
+ * 请求分页数据
+ */
+export async function requestNextPage(
+  taskId: string,
+  toolName: string,
+  nextPageToken: string
+): Promise<{
+  success: boolean;
+  data?: any;
+  next_page_token?: string;
+  has_more: boolean;
+}> {
+  const response = await fetch('/api/v1/chat/stream/next-page', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      task_id: taskId,
+      tool_name: toolName,
+      next_page_token: nextPageToken,
+    }),
+  });
+  
+  return response.json();
+}
+```
+
+---
+
+**更新时间**: 2026-03-09 22:00:00
+**更新内容**: 补充第10章缺少的任务控制API、用户确认接口、分页数据请求接口的详细调用说明
 **编写人**: 小沈
