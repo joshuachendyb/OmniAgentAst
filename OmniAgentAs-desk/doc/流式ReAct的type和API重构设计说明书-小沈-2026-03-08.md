@@ -1594,7 +1594,7 @@ else:
 
 **输入**：无（直接来自 LLM 流式响应）
 
-**输出**：content + is_reasoning + reasoning
+**输出**：content + is_reasoning + chunk_reasoning
 
 **传导**：不传导到下一阶段
 
@@ -1604,7 +1604,7 @@ else:
 |------|------|--------|-------|------|
 | content | 回复片段 | 必要 | ✅ | |
 | is_reasoning | 是否思考 | 可选 | ✅ | |
-| chunk_reasoning | 思考内容 | 可选 | ⚠️ 建议改为chunk_reasoning避免与thought的reasoning混淆 |
+| chunk_reasoning | 思考内容 | 可选 | ✅ 已统一为chunk_reasoning，避免与thought的reasoning混淆 |
 
 **结论**：✅ 保留，字段完整，属于 Type（用于普通对话，ReAct过程不需要）
 
@@ -1669,7 +1669,7 @@ else:
 |------|------|------|----------|
 | 1 | start | 任务开始（含安全检查） | 初始化+安全检查 |
 | 2 | thought | LLM推理 | ✅ 直接相关 |
-| 3 | action_tool | 执行动作 | ✅ 直接相关 |
+| 3 | action_tool | 执行动作 | 输入来自LLM，本地执行 |
 | 4 | observation | 执行结果判断 | ✅ 直接相关 |
 | 5 | final | 最终回复 | ✅ 直接相关 |
 | 6 | chunk | 流式内容片段 | ✅ 直接相关（LLM输出） |
@@ -4182,5 +4182,5 @@ function showConfirmDialog(message: string) {
 
 ---
 
-**更新时间**: 2026-03-09 14:20:00
+**更新时间**: 2026-03-09 16:35:41
 **编写人**: 小沈
