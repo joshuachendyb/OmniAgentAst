@@ -40,7 +40,10 @@ export interface ExecutionStep {
   // === 通用字段 ===
   // ⭐ 新增action_tool类型，替换原来的action
   type: "thought" | "action_tool" | "observation" | "chunk" | "final" | "error" | "interrupted" | "start" | "paused" | "resumed" | "retrying";
-  content?: string;        // 前端显示用：根据type使用不同字段填充
+  content?: string;        // 前端显示用：根据type使用不同字段填充小查修复202
+  
+  // 【6-03-09】添加task_id字段，用于分页请求
+  task_id?: string;      // 任务ID，用于分页请求
   
   // === 思考/动作提示字段（后端字段拆分） ===
   thinking_prompt?: string;    // thought 类型的提示文本
@@ -64,6 +67,8 @@ export interface ExecutionStep {
   action?: string;  // 兼容旧字段
   observation?: any;
   result?: string;
+  // 【小查修复2026-03-09】添加is_finished字段
+  is_finished?: boolean;  // observation类型的是否完成标志
   
   // === 【小新重构】type=action_tool 新字段 ===
   tool_name?: string;           // 工具名称（新）

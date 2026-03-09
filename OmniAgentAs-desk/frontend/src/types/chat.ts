@@ -43,14 +43,15 @@ export interface StartMessage {
 /**
  * thought类型 - LLM思考
  * 发送时机：ReAct第1阶段，LLM分析任务
+ * 【小查修复2026-03-09】action_tool和params改为可选
  */
 export interface ThoughtMessage {
   type: 'thought';
   step: number;
   content: string;
   reasoning?: string;
-  action_tool: string;
-  params: Record<string, any>;
+  action_tool?: string;  // 可选：某些thought可能不包含动作
+  params?: Record<string, any>;  // 可选：某些thought可能不包含参数
 }
 
 /**
