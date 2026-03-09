@@ -1611,10 +1611,13 @@ const NewChatContainer: React.FC = () => {
    * 危险命令确认执行
    */
   const handleDangerConfirm = async () => {
+    // 【强制修复】立即关闭弹窗，重置loading状态
+    setDangerModalVisible(false);
+    setLoading(false);
+    
     // 【小新第五修复 2026-03-02】优先使用ref中的pendingMessage，确保获取正确的值
     const messageToProcess = pendingMessageRef.current || pendingMessage;
     if (messageToProcess) {
-      setDangerModalVisible(false);
       await executeStreamSend(messageToProcess);
     }
   };
@@ -1623,7 +1626,10 @@ const NewChatContainer: React.FC = () => {
    * 危险命令取消执行
    */
   const handleDangerCancel = () => {
+    // 【强制修复】立即关闭弹窗，重置loading状态
     setDangerModalVisible(false);
+    setLoading(false);
+    
     // 【小新第五修复 2026-03-02】优先使用ref中的pendingMessage
     const messageToCancel = pendingMessageRef.current || pendingMessage;
     if (messageToCancel) {
