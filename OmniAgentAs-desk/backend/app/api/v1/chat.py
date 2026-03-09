@@ -62,40 +62,59 @@ def get_provider_display_name(provider: str) -> str:
         return provider
 
 # ============================================================
-# 统一错误处理工具函数 - 小沈代修改【修复问题 1、2、3】
+# 统一错误处理工具函数 - 小沈代修改【Phase4重构】
 # ============================================================
 
 def create_error_response(
     error_type: str,
-    content: str,
+    message: str,
+    code: str = "INTERNAL_ERROR",
     model: Optional[str] = None,
-    provider: Optional[str] = None
+    provider: Optional[str] = None,
+    details: Optional[str] = None,
+    stack: Optional[str] = None,
+    retryable: bool = False,
+    retry_after: Optional[int] = None
 ) -> str:
     """
     创建统一的错误响应格式
     
     Args:
         error_type: 错误类型（如 timeout_error, connection_error 等）
-        content: 用户友好的错误信息
+        message: 用户友好的错误信息
+        code: 错误码（如 TIMEOUT, NOT_FOUND, SECURITY_BLOCKED）
         model: 模型名称（可选）
         provider: 提供商（可选）
+        details: 详细错误信息（可选）
+        stack: 堆栈信息（可选，仅用于调试）
+        retryable: 是否可重试（可选）
+        retry_after: 重试等待秒数（可选）
     
     Returns:
         SSE 格式的错误响应字符串
     """
     response = {
-    'type': 'error',
-    'error_type': error_type,
-    'error_message': content  # 【原则4整改】content → error_message
-}
+        'type': 'error',
+        'code': code,
+        'message': message,
+        'error_type': error_type
+    }
     if model:
         response['model'] = model
     if provider:
         response['provider'] = provider
+    if details:
+        response['details'] = details
+    if stack:
+        response['stack'] = stack
+    if retryable:
+        response['retryable'] = retryable
+    if retry_after is not None:
+        response['retry_after'] = retry_after
     return f"data: {json.dumps(response)}\n\n"
 
 
-def get_user_friendly_error(error: Exception) -> tuple[str, str]:
+def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
     """
     获取用户友好的错误信息
     
@@ -103,22 +122,66 @@ def get_user_friendly_error(error: Exception) -> tuple[str, str]:
         error: 异常对象
     
     Returns:
-        (error_type, error_message) 元组
+        错误信息字典，包含 code, message, error_type, retryable
     """
     error_type = type(error).__name__
+    error_msg = str(error).lower()
     
     # 根据错误类型返回用户友好的错误信息
-    if error_type == "TimeoutError" or "timeout" in str(error).lower():
-        return ("timeout_error", "请求超时，请重试")
-    elif error_type == "ConnectionError" or "connection" in str(error).lower():
-        return ("connection_error", "网络连接失败，请检查网络")
-    elif error_type == "HTTPError" or "HTTP" in str(error).lower():
-        return ("http_error", "服务器响应异常，请稍后重试")
+    if error_type == "TimeoutError" or "timeout" in error_msg:
+        return {
+            "code": "TIMEOUT",
+            "message": "请求超时，请重试",
+            "error_type": "network",
+            "retryable": True,
+            "retry_after": 5
+        }
+    elif error_type == "ConnectionError" or "connection" in error_msg:
+        return {
+            "code": "CONNECTION_ERROR",
+            "message": "网络连接失败，请检查网络",
+            "error_type": "network",
+            "retryable": True,
+            "retry_after": 10
+        }
+    elif error_type == "HTTPError" or "http" in error_msg:
+        return {
+            "code": "HTTP_ERROR",
+            "message": "服务器响应异常，请稍后重试",
+            "error_type": "network",
+            "retryable": True,
+            "retry_after": 10
+        }
     elif error_type == "ValueError":
-        return ("value_error", "参数值错误，请检查输入")
+        return {
+            "code": "VALIDATION_ERROR",
+            "message": "参数值错误，请检查输入",
+            "error_type": "validation",
+            "retryable": False
+        }
+    elif "not found" in error_msg or "不存在" in error_msg:
+        return {
+            "code": "NOT_FOUND",
+            "message": "文件或资源不存在",
+            "error_type": "file_system",
+            "retryable": False
+        }
+    elif "permission" in error_msg or "权限" in error_msg:
+        return {
+            "code": "PERMISSION_DENIED",
+            "message": "权限不足，无法执行操作",
+            "error_type": "security",
+            "retryable": False
+        }
     else:
         # 其他错误返回通用信息，不泄露技术细节
-        return ("unknown_error", "AI 处理异常，请稍后重试")
+        return {
+            "code": "UNKNOWN_ERROR",
+            "message": "AI 处理异常，请稍后重试",
+            "error_type": "unknown",
+            "retryable": True,
+            "retry_after": 5
+        }
 
 
 # ============================================================
@@ -145,8 +208,8 @@ async def check_and_yield_if_interrupted(
     """
     async with running_tasks_lock:
         if running_tasks.get(task_id, {}).get("cancelled", False):
-            # 【原则4整改】content → message
-            return True, f"data: {json.dumps({'type': 'interrupted', 'message': '任务已被中断'})}\n\n"
+            # 【Phase4重构】使用新status格式
+            return True, f"data: {json.dumps({'type': 'status', 'status_value': 'interrupted', 'message': '任务已被中断'})}\n\n"
     return False, ""
 
 
