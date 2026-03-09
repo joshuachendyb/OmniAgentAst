@@ -2816,6 +2816,183 @@ async def check_command_safety(command: str) -> Dict[str, Any]:
 
 ---
 
+### 8.6.3 错误分类与重试机制实现（新增）
+
+#### 8.6.3.1 错误分类设计
+
+根据错误性质分为**可重试**和**不可重试**两类：
+
+```python
+class ErrorCategory:
+    """错误分类枚举"""
+    # 可重试错误（临时性问题）
+    NETWORK_TIMEOUT = "NETWORK_TIMEOUT"        # 网络超时
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"  # 服务不可用
+    RATE_LIMIT = "RATE_LIMIT"                  # 速率限制
+    
+    # 不可重试错误（永久性问题）
+    FILE_NOT_FOUND = "FILE_NOT_FOUND"          # 文件不存在
+    PERMISSION_DENIED = "PERMISSION_DENIED"    # 权限不足
+    INVALID_PARAMS = "INVALID_PARAMS"           # 参数错误
+    UNKNOWN_TOOL = "UNKNOWN_TOOL"              # 未知工具
+```
+
+#### 8.6.3.2 错误响应格式
+
+```python
+def create_error_response(error: Exception, context: Dict = None) -> Dict[str, Any]:
+    """
+    创建错误响应，包含retryable字段
+    
+    Returns:
+        {
+            "type": "error",
+            "code": "ERROR_CODE",
+            "message": "错误消息",
+            "error_type": "error_type分类",
+            "retryable": true/false,
+            "retry_after": 5  # 仅当retryable=true时
+        }
+    """
+    error_code, error_type, retryable, retry_after = classify_error(error)
+    
+    response = {
+        "type": "error",
+        "code": error_code,
+        "message": str(error),
+        "error_type": error_type,
+        "retryable": retryable
+    }
+    
+    if retryable and retry_after:
+        response["retry_after"] = retry_after
+    
+    return response
+
+
+def classify_error(error: Exception) -> Tuple[str, str, bool, int]:
+    """
+    分类错误，返回 (code, type, retryable, retry_after)
+    """
+    error_msg = str(error).lower()
+    
+    # 可重试错误
+    if isinstance(error, TimeoutError) or "timeout" in error_msg:
+        return ("NETWORK_TIMEOUT", "network", True, 5)
+    if "connection" in error_msg or "unavailable" in error_msg:
+        return ("SERVICE_UNAVAILABLE", "network", True, 10)
+    if "429" in error_msg or "rate limit" in error_msg:
+        return ("RATE_LIMIT", "network", True, 30)
+    
+    # 不可重试错误
+    if "not found" in error_msg or "不存在" in error_msg:
+        return ("FILE_NOT_FOUND", "file_system", False, 0)
+    if "permission" in error_msg or "权限" in error_msg:
+        return ("PERMISSION_DENIED", "security", False, 0)
+    if "invalid" in error_msg or "参数" in error_msg:
+        return ("INVALID_PARAMS", "validation", False, 0)
+    
+    # 默认未知错误
+    return ("UNKNOWN_ERROR", "unknown", False, 0)
+```
+
+#### 8.6.3.3 前端错误处理示例
+
+```python
+# chat.py 中处理错误
+try:
+    result = await agent.run_stream(user_input)
+except Exception as e:
+    error_response = create_error_response(e)
+    yield f"data: {json.dumps(error_response)}\n\n"
+```
+
+---
+
+### 8.6.4 分页支持实现（新增）
+
+#### 8.6.4.1 分页配置
+
+```python
+# 分页配置常量
+PAGE_SIZE = 100  # 每页返回数量
+MAX_PAGE_SIZE = 500  # 最大单页数量
+```
+
+#### 8.6.4.2 list_directory 分页实现
+
+```python
+def list_directory_with_pagination(path: str, page_token: str = None, page_size: int = PAGE_SIZE) -> Dict[str, Any]:
+    """
+    支持分页的目录列表
+    
+    Returns:
+        {
+            "entries": [...],        # 当前页的数据
+            "total": 100000,         # 总数量
+            "has_more": true,        # 是否有更多
+            "next_page_token": "xxx" # 下一页令牌
+        }
+    """
+    # 获取所有条目
+    all_entries = scan_directory(path)
+    total = len(all_entries)
+    
+    # 计算分页
+    start_idx = 0
+    if page_token:
+        start_idx = decode_page_token(page_token)
+    
+    end_idx = min(start_idx + page_size, total)
+    page_entries = all_entries[start_idx:end_idx]
+    
+    # 生成结果
+    result = {
+        "entries": page_entries,
+        "total": total,
+        "has_more": end_idx < total
+    }
+    
+    if result["has_more"]:
+        result["next_page_token"] = encode_page_token(end_idx)
+    
+    return result
+
+
+def encode_page_token(offset: int) -> str:
+    """编码页码令牌"""
+    return base64.b64encode(str(offset).encode()).decode()
+
+
+def decode_page_token(token: str) -> int:
+    """解码页码令牌"""
+    try:
+        return int(base64.b64decode(token.encode()).decode())
+    except:
+        return 0
+```
+
+#### 8.6.4.3 action_tool 返回分页数据
+
+```python
+# 在 execute_tool 中返回分页数据
+if tool_name == "list_directory":
+    path = params.get("path", ".")
+    page_token = params.get("page_token")
+    page_size = params.get("page_size", PAGE_SIZE)
+    
+    result = list_directory_with_pagination(path, page_token, page_size)
+    
+    return {
+        "status": "success",
+        "summary": f"成功读取目录，共 {result['total']} 个项目",
+        "data": result,
+        "retry_count": 0
+    }
+```
+
+---
+
 ### 8.7 重构后的文件结构
 
 #### 8.7.1 重构后的目录结构
@@ -3125,6 +3302,51 @@ if (data.type === 'thought') {
 | raw_data | object/null | 机器可读的结构化数据，执行失败时为null |
 | action_retry_count | number | 重试次数，0=首次执行 |
 
+**分页数据示例（新增）**：
+
+当数据量较大时（如列出100000个文件），返回分页数据：
+
+```json
+{
+  "type": "action_tool",
+  "step": 1,
+  "tool_name": "list_directory",
+  "tool_params": {
+    "path": "D:\\"
+  },
+  "execution_status": "success",
+  "summary": "成功读取目录，共 100000 个项目",
+  "raw_data": {
+    "entries": [
+      {"name": "file1.txt", "type": "file", "size": 1024},
+      {"name": "file2.txt", "type": "file", "size": 2048}
+    ],
+    "total": 100000,
+    "has_more": true,
+    "next_page_token": "MTAw"
+  },
+  "action_retry_count": 0
+}
+```
+
+**分页字段说明**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| total | number | 总数据量 |
+| has_more | boolean | 是否有更多数据 |
+| next_page_token | string | 下一页令牌，用于请求下一页 |
+
+**前端分页处理**：
+
+```javascript
+if (data.raw_data && data.raw_data.has_more) {
+  // 用户滚动到底部时请求下一页
+  const nextPage = await fetchNextPage(data.raw_data.next_page_token);
+  appendEntries(nextPage.raw_data.entries);
+}
+```
+
 **execution_status取值**：
 
 | 值 | 说明 | 场景 |
@@ -3324,6 +3546,41 @@ if (data.type === 'final') {
 | SECURITY_BLOCKED | 安全拦截 |
 | VALIDATION_ERROR | 参数验证错误 |
 | INTERNAL_ERROR | 内部错误 |
+
+**retryable字段（新增）**：
+
+```json
+// 可重试错误
+{
+  "type": "error",
+  "code": "NETWORK_TIMEOUT",
+  "message": "网络请求超时",
+  "error_type": "network",
+  "retryable": true,
+  "retry_after": 5
+}
+
+// 不可重试错误
+{
+  "type": "error",
+  "code": "FILE_NOT_FOUND",
+  "message": "文件不存在",
+  "error_type": "file_system",
+  "retryable": false
+}
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| retryable | boolean | 是否可重试 |
+| retry_after | number | 重试等待秒数（仅retryable=true时） |
+
+**retryable取值**：
+
+| 值 | 说明 | 典型场景 |
+|----|------|---------|
+| true | 可重试 | 网络超时、服务不可用 |
+| false | 不可重试 | 文件不存在、权限不足、参数错误 |
 
 **前端处理**：
 ```javascript
@@ -3968,6 +4225,15 @@ const ThoughtDisplay: React.FC<{ message: any }> = ({ message }) => {
 
 const ActionToolDisplay: React.FC<{ message: any }> = ({ message }) => {
   const statusClass = message.execution_status;
+  const hasMore = message.raw_data?.has_more;
+  
+  const handleLoadMore = () => {
+    if (hasMore && message.raw_data?.next_page_token) {
+      // 请求下一页数据
+      console.log(`请求下一页: ${message.raw_data.next_page_token}`);
+    }
+  };
+  
   return (
     <div className={`message-action-tool ${statusClass}`}>
       <div className="tool-icon">🔧</div>
@@ -3977,6 +4243,13 @@ const ActionToolDisplay: React.FC<{ message: any }> = ({ message }) => {
         <div className="tool-summary">{message.summary}</div>
         {message.action_retry_count > 0 && (
           <div className="retry-count">重试次数：{message.action_retry_count}</div>
+        )}
+        {hasMore && (
+          <div className="pagination-info">
+            <span className="total-count">共 {message.raw_data.total} 个项目</span>
+            <span className="has-more">还有更多</span>
+            <button onClick={handleLoadMore} className="load-more-button">加载更多</button>
+          </div>
         )}
       </div>
     </div>
@@ -4023,6 +4296,15 @@ const FinalDisplay: React.FC<{ message: any }> = ({ message }) => {
 };
 
 const ErrorDisplay: React.FC<{ message: any }> = ({ message }) => {
+  const canRetry = message.retryable === true;
+  
+  const handleRetry = () => {
+    if (canRetry && message.retry_after) {
+      // 显示倒计时后重试
+      console.log(`将在 ${message.retry_after} 秒后重试...`);
+    }
+  };
+  
   return (
     <div className="message-error">
       <div className="error-icon">❌</div>
@@ -4030,6 +4312,19 @@ const ErrorDisplay: React.FC<{ message: any }> = ({ message }) => {
         <div className="error-message">{message.message}</div>
         <div className="error-code">错误码：{message.code}</div>
         {message.details && <div className="error-details">{message.details}</div>}
+        {canRetry ? (
+          <div className="retry-info">
+            <span className="retryable-badge">可重试</span>
+            {message.retry_after && (
+              <span className="retry-after">等待 {message.retry_after} 秒后可重试</span>
+            )}
+            <button onClick={handleRetry} className="retry-button">重试</button>
+          </div>
+        ) : (
+          <div className="non-retryable-info">
+            <span className="non-retryable-badge">不可重试</span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -4251,5 +4546,5 @@ function showConfirmDialog(message: string) {
 
 ---
 
-**更新时间**: 2026-03-09 16:45:00
+**更新时间**: 2026-03-09 16:55:00
 **编写人**: 小沈
