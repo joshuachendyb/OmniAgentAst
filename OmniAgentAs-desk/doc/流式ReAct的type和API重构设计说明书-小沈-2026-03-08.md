@@ -1617,7 +1617,7 @@ else:
 
 **输入**：无
 
-**输出**：code + message + error_type + details
+**输出**：code + message + error_type + details + retryable
 
 **传导**：不传导到下一阶段
 
@@ -1630,8 +1630,40 @@ else:
 | error_type | 错误类型 | 可选 | ✅ 补充 |
 | details | 详细错误信息 | 可选 | ✅ 补充 |
 | stack | 堆栈信息 | 可选 | ✅ 补充（仅调试用） |
+| retryable | 是否可重试 | 可选 | ✅ 新增，告诉前端是否可重试 |
+| retry_after | 重试等待秒数 | 可选 | ✅ 新增，配合retryable使用 |
 
-**结论**：✅ 保留，字段完整，属于 Type
+**错误分类设计**：
+
+```json
+// 可重试错误（临时性问题，如网络抖动）
+{
+  "type": "error",
+  "code": "NETWORK_TIMEOUT",
+  "message": "网络请求超时",
+  "error_type": "network",
+  "retryable": true,
+  "retry_after": 5
+}
+
+// 不可重试错误（永久性问题，如文件不存在）
+{
+  "type": "error",
+  "code": "FILE_NOT_FOUND",
+  "message": "文件不存在",
+  "error_type": "file_system",
+  "retryable": false
+}
+```
+
+**retryable取值**：
+
+| 值 | 说明 | 典型场景 |
+|----|------|---------|
+| true | 可重试 | 网络超时、服务不可用、临时性错误 |
+| false | 不可重试 | 文件不存在、权限不足、参数错误 |
+
+**结论**：✅ 保留，字段完整，属于 Type，新增retryable字段支持错误分类
 
 ---
 
@@ -1811,10 +1843,45 @@ else:
       {"name": "file1.txt", "type": "file", "size": 1024},
       {"name": "file2.txt", "type": "file", "size": 2048}
     ],
-    "total": 2
+    "total": 100000,
+    "has_more": true,
+    "next_page_token": "abc123"
   }
 }
 ```
+
+**分页支持说明**：
+
+当返回数据量较大时（如列出目录有100000个文件），使用分页避免前端卡死：
+
+```json
+{
+  "raw_data": {
+    "entries": [
+      {"name": "file1.txt", ...},
+      ...  // 只返回前 100 个
+    ],
+    "total": 100000,           // 总共 100000 个
+    "has_more": true,          // 还有更多
+    "next_page_token": "abc123"  // 下一页令牌
+  }
+}
+```
+
+**raw_data分页字段**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| entries | array | 必要 | 数据条目数组 |
+| total | number | 可选 | 总数据量（当启用分页时返回） |
+| has_more | boolean | 可选 | 是否有更多数据 |
+| next_page_token | string | 可选 | 下一页令牌，用于获取下一批数据 |
+
+**前端处理分页**：
+
+1. 首次请求：后端返回前100条 + has_more=true + next_page_token
+2. 用户滚动到底部：前端用next_page_token请求下一页
+3. 直到has_more=false，表示数据全部加载完成
 
 **字段说明**：
 
@@ -1841,13 +1908,15 @@ else:
 
 | 工具名称 | raw_data结构 |
 |----------|-------------|
-| list_directory | `{"entries": [...], "total": number}` |
+| list_directory | `{"entries": [...], "total": number, "has_more": bool, "next_page_token": string}` |
 | read_file | `{"content": string, "encoding": string, "lines": number}` |
 | write_file | `{"path": string, "size": number, "encoding": string}` |
 | create_directory | `{"path": string, "created": boolean}` |
 | delete_file | `{"path": string, "deleted": boolean}` |
 | move_file | `{"source": string, "destination": string, "moved": boolean}` |
 | copy_file | `{"source": string, "destination": string, "copied": boolean}` |
+
+> **说明**：list_directory 工具支持分页，当数据量超过单次返回限制时，返回 `has_more: true` 和 `next_page_token`，前端可循环请求获取完整数据。
 
 **处理流程**：
 ```
@@ -4182,5 +4251,5 @@ function showConfirmDialog(message: string) {
 
 ---
 
-**更新时间**: 2026-03-09 16:35:41
+**更新时间**: 2026-03-09 16:45:00
 **编写人**: 小沈
