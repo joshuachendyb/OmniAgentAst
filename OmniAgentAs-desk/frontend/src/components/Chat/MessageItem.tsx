@@ -29,14 +29,19 @@ import {
 } from "@ant-design/icons";
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
+import { taskControlApi } from "../../services/api";
+
 /**
  * 步骤行组件 - 单行步骤显示（优化后新增）
  * 思考和执行分开渲染，用颜色区分类型
+ * 【小新重构2026-03-09】添加分页支持
  */
-const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
+const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, taskId }) => {
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  
   const colorMap: Record<string, string> = {
     thought: "#faad14",
-    action: "#1890ff",
+    action_tool: "#1890ff",
     observation: "#52c41a",
     final: "#52c41a",
     error: "#cf1322",
@@ -44,7 +49,7 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
 
   const labelMap: Record<string, string> = {
     thought: "思考",
-    action: "工具",
+    action_tool: "工具",
     observation: "结果",
     final: "答案",
     error: "错误",
@@ -52,6 +57,34 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
 
   const color = colorMap[step.type] || "#666";
   const label = labelMap[step.type] || "步骤";
+
+  // 【小新重构2026-03-09】处理加载更多
+  const handleLoadMore = async () => {
+    if (!step.raw_data?.has_more || !step.raw_data?.next_page_token || !taskId) {
+      return;
+    }
+    
+    setIsLoadingMore(true);
+    try {
+      const result = await taskControlApi.nextPage(
+        taskId,
+        step.tool_name || step.action || "",
+        step.raw_data.next_page_token
+      );
+      
+      if (result.success && result.data) {
+        console.log("✅ 加载更多成功:", result.data);
+        // TODO: 追加新数据到列表（需要状态管理）
+      }
+    } catch (error) {
+      console.error("❌ 加载更多失败:", error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+
+  // 检查是否有分页数据
+  const hasMore = step.raw_data?.has_more === true && !!step.raw_data?.next_page_token;
 
   return (
     <div style={{ marginBottom: 4 }}>
@@ -67,6 +100,28 @@ const StepRow: React.FC<{ step: ExecutionStep }> = ({ step }) => {
               <span style={{ color: "#999", marginLeft: 8, fontSize: 12 }}>
               参数：{JSON.stringify(step.tool_params)}
               </span>
+            )}
+            {/* 【小新重构2026-03-09】显示分页信息 */}
+            {step.raw_data && (
+              <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                {step.raw_data.total && (
+                  <span style={{ marginRight: 12 }}>
+                    共 {step.raw_data.total} 个项目
+                  </span>
+                )}
+                {hasMore && (
+                  <span 
+                    onClick={handleLoadMore}
+                    style={{ 
+                      cursor: "pointer", 
+                      color: isLoadingMore ? "#999" : "#1890ff",
+                      textDecoration: "underline"
+                    }}
+                  >
+                    {isLoadingMore ? "加载中..." : "加载更多"}
+                  </span>
+                )}
+              </div>
             )}
           </>
         )}
@@ -131,6 +186,7 @@ interface MessageItemProps {
     isError?: boolean;
     display_name?: string; // 前端小新代修改：显示名称
     is_reasoning?: boolean; // 【小沈修复】是否为思考过程
+    task_id?: string; // 【小新重构2026-03-09】任务ID，用于分页请求
   };
   showExecution?: boolean;
 }
@@ -565,7 +621,7 @@ const isUser = message.role === "user";
             {message.executionSteps
               ?.filter(step => step.type === "thought")
               .map((step, index) => (
-                <StepRow key={`thought-${index}`} step={step} />
+                <StepRow key={`thought-${index}`} step={step} taskId={message.task_id} />
               ))}
 
             {/* 【小新重构2026-03-09】2. 执行步骤 - 按 action_tool 分组，每组一个折叠面板 */}
@@ -631,7 +687,7 @@ const isUser = message.role === "user";
                         key={`execution-${groupIndex}`}
                       >
                         {group.map((step, stepIndex) => (
-                          <StepRow key={stepIndex} step={step} />
+                          <StepRow key={stepIndex} step={step} taskId={message.task_id} />
                         ))}
                       </Panel>
                     </Collapse>
