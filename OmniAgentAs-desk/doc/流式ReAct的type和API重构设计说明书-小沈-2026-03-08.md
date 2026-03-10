@@ -6056,6 +6056,20 @@ export async function requestNextPage(
 
 本文档定义了流式ReAct API的8种type，用于前端识别和处理不同类型的消息。
 
+### 11.0 type使用场景说明
+
+**8种type分为两类场景**：
+
+| 场景 | 流程 | 使用的type |
+|------|------|----------|
+| **普通对话** | start → chunk → final | start, chunk, final |
+| **ReAct文件操作** | start → thought → action_tool → observation → ... → final | start, thought, action_tool, observation, final |
+
+**重要说明**：
+- **chunk只在普通对话场景使用**，不会出现在ReAct循环过程中
+- **chunk与ReAct循环互斥**，不会同时出现
+- 两种场景的区别在于：是否需要文件操作（由安全检查和意图识别决定）
+
 ---
 
 ### 11.1 type=start（任务开始）
