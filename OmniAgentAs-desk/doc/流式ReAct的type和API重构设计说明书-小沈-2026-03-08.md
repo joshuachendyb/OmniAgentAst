@@ -6064,23 +6064,23 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 说明 |
-|------|------|--------|------|
-| type | string | 固定值 | 固定为 "start" |
-| display_name | string | 必要 | AI显示名称，如 "OpenAI (gpt-4)" |
-| model | string | 必要 | AI模型，如 "gpt-4"、"gpt-4o" |
-| provider | string | 必要 | AI提供商，如 "openai"、"anthropic" |
-| task_id | string | 必要 | 唯一标识一次用户请求 |
-| security_check | object | 必要 | 本次请求的安全检查结果 |
+| 字段 | 类型 | 必要性 | 作用 | 说明 |
+|------|------|--------|------|------|
+| type | string | 固定值 | 固定值 | 固定为 "start" |
+| display_name | string | 必要 | 显示AI名称 | 如 "OpenAI (gpt-4)" |
+| model | string | 必要 | AI模型 | 如 "gpt-4"、"gpt-4o" |
+| provider | string | 必要 | AI提供商 | 如 "openai"、"anthropic" |
+| task_id | string | 必要 | 会话/请求ID | 唯一标识一次用户请求 |
+| security_check | object | 必要 | 安全检查结果 | 本次请求的安全检查结果 |
 
 **security_check 子字段**：
 
-| 字段 | 类型 | 必要性 | 说明 |
-|------|------|--------|------|
-| is_safe | boolean | 必要 | true=安全，false=危险 |
-| risk_level | string/null | 可选 | low/medium/high/critical |
-| risk | string/null | 可选 | 风险描述 |
-| blocked | boolean | 必要 | true=已拦截，不执行LLM |
+| 字段 | 类型 | 必要性 | 作用 | 说明 |
+|------|------|--------|------|------|
+| is_safe | boolean | 必要 | 是否安全 | true=安全，false=危险 |
+| risk_level | string/null | 可选 | 风险等级 | low/medium/high/critical |
+| risk | string/null | 可选 | 风险描述 | 风险描述 |
+| blocked | boolean | 必要 | 是否被拦截 | true=已拦截，不执行LLM |
 
 ---
 
@@ -6090,14 +6090,14 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 说明 |
-|------|------|--------|------|
-| type | string | 固定值 | 固定为 "thought" |
-| step | number | 必要 | 当前是第几轮ReAct循环，从1开始 |
-| content | string | 必要 | LLM的思考内容 |
-| reasoning | string | 可选 | LLM的推理过程 |
-| action_tool | string | 必要 | 要执行的工具名称 |
-| params | object | 必要 | 工具执行的参数 |
+| 字段 | 类型 | 必要性 | 作用 | 说明 |
+|------|------|--------|------|------|
+| type | string | 固定值 | 固定值 | 固定为 "thought" |
+| step | number | 必要 | 步骤序号 | 当前是第几轮ReAct循环，从1开始 |
+| content | string | 必要 | LLM思考内容 | LLM的思考内容 |
+| reasoning | string | 可选 | LLM推理过程 | LLM的推理过程 |
+| action_tool | string | 必要 | 工具名称 | 要执行的工具名称 |
+| params | object | 必要 | 工具参数 | 工具执行的参数 |
 
 ---
 
@@ -6107,16 +6107,16 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 说明 |
-|------|------|--------|------|
-| type | string | 固定值 | 固定为 "action_tool" |
-| step | number | 必要 | 步骤序号 |
-| tool_name | string | 必要 | 工具名称 |
-| tool_params | object | 必要 | 工具参数 |
-| execution_status | string | 必要 | 执行状态：success/error/warning |
-| summary | string | 必要 | 人类可读的执行结果摘要 |
-| raw_data | object/null | 可选 | 机器可读的结构化数据 |
-| action_retry_count | number | 可选 | 重试次数，0=首次执行 |
+| 字段 | 类型 | 必要性 | 作用 | 说明 |
+|------|------|--------|------|------|
+| type | string | 固定值 | 固定值 | 固定为 "action_tool" |
+| step | number | 必要 | 步骤序号 | 步骤序号 |
+| tool_name | string | 必要 | 工具名称 | 工具名称 |
+| tool_params | object | 必要 | 工具参数 | 工具参数 |
+| execution_status | string | 必要 | 执行状态 | 执行状态：success/error/warning |
+| summary | string | 必要 | 结果描述 | 人类可读的执行结果摘要 |
+| raw_data | object/null | 可选 | 原始数据 | 机器可读的结构化数据 |
+| action_retry_count | number | 可选 | 重试次数 | 重试次数，0=首次执行 |
 
 ---
 
@@ -6126,18 +6126,18 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 说明 |
-|------|------|--------|------|
-| type | string | 固定值 | 固定为 "observation" |
-| step | number | 必要 | 步骤序号 |
-| execution_status | string | 必要 | 执行状态，来自action_tool输出 |
-| summary | string | 必要 | 结果描述，来自action_tool输出 |
-| raw_data | object/null | 可选 | 原始数据，来自action_tool输出 |
-| content | string | 必要 | LLM基于结果生成的新思考 |
-| reasoning | string | 可选 | LLM的推理过程 |
-| action_tool | string | 必要 | LLM决定的下一步工具 |
-| params | object | 必要 | 工具参数 |
-| is_finished | boolean | 必要 | 是否完成任务 |
+| 字段 | 类型 | 必要性 | 作用 | 说明 |
+|------|------|--------|------|------|
+| type | string | 固定值 | 固定值 | 固定为 "observation" |
+| step | number | 必要 | 步骤序号 | 步骤序号 |
+| execution_status | string | 必要 | 执行状态 | 执行状态，来自action_tool输出 |
+| summary | string | 必要 | 结果描述 | 结果描述，来自action_tool输出 |
+| raw_data | object/null | 可选 | 原始数据 | 原始数据，来自action_tool输出 |
+| content | string | 必要 | LLM新思考 | LLM基于结果生成的新思考 |
+| reasoning | string | 可选 | LLM推理过程 | LLM的推理过程 |
+| action_tool | string | 必要 | 下一个工具 | LLM决定的下一步工具 |
+| params | object | 必要 | 工具参数 | 工具参数 |
+| is_finished | boolean | 必要 | 是否完成 | 是否完成任务 |
 
 ---
 
@@ -6147,11 +6147,11 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 说明 |
-|------|------|--------|------|
-| type | string | 固定值 | 固定为 "final" |
-| content | string | 必要 | 完整回复内容 |
-| display_name | string | 必要 | AI显示名称，如 "OpenAI (gpt-4)" |
+| 字段 | 类型 | 必要性 | 作用 | 说明 |
+|------|------|--------|------|------|
+| type | string | 固定值 | 固定值 | 固定为 "final" |
+| content | string | 必要 | 完整回复 | 完整回复内容 |
+| display_name | string | 必要 | AI显示名称 | AI显示名称，如 "OpenAI (gpt-4)" |
 
 ---
 
@@ -6161,12 +6161,12 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 说明 |
-|------|------|--------|------|
-| type | string | 固定值 | 固定为 "chunk" |
-| content | string | 必要 | 回复片段内容 |
-| is_reasoning | boolean | 可选 | 是否在思考阶段 |
-| chunk_reasoning | string | 可选 | 思考内容（避免与thought的reasoning混淆） |
+| 字段 | 类型 | 必要性 | 作用 | 说明 |
+|------|------|--------|------|------|
+| type | string | 固定值 | 固定值 | 固定为 "chunk" |
+| content | string | 必要 | 回复片段 | 回复片段内容 |
+| is_reasoning | boolean | 可选 | 是否思考 | 是否在思考阶段 |
+| chunk_reasoning | string | 可选 | 思考内容 | 思考内容（避免与thought的reasoning混淆） |
 
 ---
 
@@ -6176,16 +6176,16 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 说明 |
-|------|------|--------|------|
-| type | string | 固定值 | 固定为 "error" |
-| code | string | 必要 | 错误码，如 TIMEOUT、NOT_FOUND、SECURITY_BLOCKED |
-| message | string | 必要 | 用户可读的错误消息 |
-| error_type | string | 可选 | 错误类型，如 network、file_system |
-| details | string | 可选 | 详细错误信息 |
-| stack | string | 可选 | 堆栈信息（仅用于调试） |
-| retryable | boolean | 可选 | 是否可重试 |
-| retry_after | number | 可选 | 重试等待秒数 |
+| 字段 | 类型 | 必要性 | 作用 | 说明 |
+|------|------|--------|------|------|
+| type | string | 固定值 | 固定值 | 固定为 "error" |
+| code | string | 必要 | 错误码 | 错误码，如 TIMEOUT、NOT_FOUND、SECURITY_BLOCKED |
+| message | string | 必要 | 错误消息 | 用户可读的错误消息 |
+| error_type | string | 可选 | 错误类型 | 错误类型，如 network、file_system |
+| details | string | 可选 | 详细错误信息 | 详细错误信息 |
+| stack | string | 可选 | 堆栈信息 | 堆栈信息（仅用于调试） |
+| retryable | boolean | 可选 | 是否可重试 | 是否可重试 |
+| retry_after | number | 可选 | 重试等待秒数 | 重试等待秒数 |
 
 ---
 
@@ -6195,11 +6195,11 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 说明 |
-|------|------|--------|------|
-| type | string | 固定值 | 固定为 "status" |
-| status_value | string | 必要 | 具体状态值 |
-| message | string | 必要 | 状态消息 |
+| 字段 | 类型 | 必要性 | 作用 | 说明 |
+|------|------|--------|------|------|
+| type | string | 固定值 | 固定值 | 固定为 "status" |
+| status_value | string | 必要 | 具体状态值 | 具体状态值 |
+| message | string | 必要 | 状态消息 | 状态消息 |
 
 **status_value 取值说明**：
 
