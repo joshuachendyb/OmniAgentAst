@@ -6774,9 +6774,11 @@ export async function requestNextPage(
 
 ### 11.6 type=chunk（流式内容片段）
 
-**说明**：LLM流式输出时的内容片段，用于普通对话场景。
+**说明**：LLM流式输出时的内容片段，用于普通对话场景。**不参与ReAct循环**，仅用于流式输出。
 
-**字段汇总表**：
+---
+
+#### 11.6.1 字段汇总表
 
 | 字段 | 类型 | 必要性 | 含义 | 来源 | UI显示 |
 |------|------|--------|------|------|--------|
@@ -6784,6 +6786,126 @@ export async function requestNextPage(
 | content | string | 必要 | 回复片段 | LLM返回 | 是 |
 | is_reasoning | boolean | 可选 | 是否思考阶段 | LLM返回 | 否 |
 | chunk_reasoning | string | 可选 | 思考内容 | LLM返回 | 是 |
+
+---
+
+#### 11.6.2 字段用途说明
+
+**一、用于逻辑判断的字段**
+
+| 字段 | 用途 | 说明 |
+|------|------|------|
+| type | 判断消息类型 | 固定为 "chunk" |
+| is_reasoning | 判断当前阶段 | true=思考中，false=输出中 |
+
+**二、用于显示的字段（直接用于output，内容不改变）**
+
+| 显示位置 | 字段 | 显示内容 |
+|---------|------|---------|
+| 内容区 | content | LLM返回的流式片段 |
+| 思考区（可选） | chunk_reasoning | 思考过程（可折叠） |
+
+---
+
+#### 11.6.3 UI显示布局
+
+**总体布局结构**：
+
+```
+┌─────────────────────────────────────────────────┐
+│ 你好！有什么可以帮助你的？                     │  ← content（第一段）
+│ ─────────────────────────────────────────────── │
+│ 我可以帮助你管理文件、搜索信息等。             │  ← content（第二段）
+└─────────────────────────────────────────────────┘
+```
+
+**显示说明**：
+- 无type标签（chunk是片段，不单独显示）
+- 直接显示content内容
+- 多个chunk按顺序拼接显示
+- 思考过程（chunk_reasoning）默认折叠，点击展开
+
+---
+
+#### 11.6.4 UI线框图
+
+**情况1：普通对话（无思考过程）**
+
+```
+┌─────────────────────────────────────────────────┐
+│ 你好！我是你的AI助手。                         │
+│ 有什么我可以帮助你的吗？                       │
+└─────────────────────────────────────────────────┘
+```
+
+**情况2：有思考过程（is_reasoning=true）**
+
+```
+┌─────────────────────────────────────────────────┐
+│ ▼ 思考过程（点击展开）                        │
+│   让我分析一下用户的问题...                    │
+│ ─────────────────────────────────────────────── │
+│ 根据你的描述，你需要文件管理功能。             │
+│ 我可以帮你列出文件、读取内容等。               │
+└─────────────────────────────────────────────────┘
+```
+
+**情况3：流式输出中**
+
+```
+┌─────────────────────────────────────────────────┐
+│ 正在输入中...                                  │  ← 最后一块chunk时显示
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+#### 11.6.5 补充说明
+
+**一、chunk与其他type的区别**
+
+| 特性 | chunk | thought/action_tool/observation/final |
+|------|-------|-------------------------------------|
+| 是否在ReAct循环中 | ❌ 不是 | thought/action_tool/observation是，final/error/incident不是 |
+| 是否参与循环 | ❌ 不参与 | 部分参与 |
+| 是否有step | ❌ 无step | thought/action_tool/observation/final有step |
+| 是否调用LLM | ❌ 不调用（是LLM返回的） | 部分调用 |
+| 用途 | 普通对话流式输出 | ReAct任务执行 |
+
+**二、使用场景**
+
+| 场景 | 使用type | 说明 |
+|------|---------|------|
+| 普通对话 | chunk | 非ReAct模式，简单的问答 |
+| ReAct任务 | thought/action_tool/observation/final | 完整的ReAct循环 |
+| 混合模式 | chunk + ReAct | 先对话，再执行任务 |
+
+**三、前端处理逻辑**
+
+```javascript
+if (data.type === 'chunk') {
+    // 追加到内容区
+    appendToContent(data.content);
+
+    // 如果有思考过程
+    if (data.chunk_reasoning) {
+        updateReasoning(data.chunk_reasoning);
+    }
+
+    // 如果是思考阶段
+    if (data.is_reasoning) {
+        showThinkingIndicator();
+    } else {
+        hideThinkingIndicator();
+    }
+}
+```
+
+**四、与ReAct的关系**
+
+- **chunk不参与ReAct循环** - 独立于ReAct之外
+- **可以与ReAct共存** - 例如：先对话(chunk) → 执行任务(ReAct)
+- **结束标志** - 收到final/error/incident时，chunk流式输出结束
 
 ---
 
@@ -7613,6 +7735,163 @@ function handleSSEData(data) {
 
 ---
 
-**更新时间**: 2026-03-11 00:04:57
-**更新内容**: 11.7补充字段用途/UI线框图/补充说明，error完整设计
+### 12.6 error错误码体系实现
+
+**功能说明**：统一error类型的错误码生成逻辑，规范化错误分类。
+
+**错误码分类**（共9类）：
+
+| 错误码 | 错误类型 | 说明 | 触发场景 |
+|--------|---------|------|---------|
+| TIMEOUT | network | LLM调用超时 | LLM响应超时 |
+| NETWORK_ERROR | network | 网络连接失败 | 网络异常 |
+| LLM_ERROR | llm | LLM返回错误 | LLM异常响应 |
+| TOOL_ERROR | tool | 工具执行错误 | 工具执行失败 |
+| FILE_NOT_FOUND | file_system | 文件不存在 | 路径错误 |
+| PERMISSION_DENIED | file_system | 权限不足 | 权限问题 |
+| SECURITY_BLOCKED | security | 安全拦截 | 危险操作 |
+| INVALID_INPUT | validation | 输入参数错误 | 参数校验失败 |
+| INTERNAL_ERROR | system | 内部错误 | 系统异常 |
+
+**待修改代码位置**：`backend/app/api/v1/chat.py`
+
+**实现要求**：
+
+1. **统一错误码生成函数**：
+```python
+def generate_error_response(error: Exception, step: int) -> dict:
+    """生成统一的error响应"""
+    
+    # 根据异常类型映射错误码
+    if isinstance(error, TimeoutError):
+        code = "TIMEOUT"
+        error_type = "network"
+        retryable = True
+    elif isinstance(error, FileNotFoundError):
+        code = "FILE_NOT_FOUND"
+        error_type = "file_system"
+        retryable = False
+    elif isinstance(error, PermissionError):
+        code = "PERMISSION_DENIED"
+        error_type = "file_system"
+        retryable = False
+    elif isinstance(error, SecurityError):
+        code = "SECURITY_BLOCKED"
+        error_type = "security"
+        retryable = False
+    elif isinstance(error, ValidationError):
+        code = "INVALID_INPUT"
+        error_type = "validation"
+        retryable = False
+    else:
+        code = "INTERNAL_ERROR"
+        error_type = "system"
+        retryable = True
+    
+    return {
+        "type": "error",
+        "step": step,
+        "code": code,
+        "message": str(error),
+        "error_type": error_type,
+        "retryable": retryable,
+        "retry_after": 30 if retryable else None
+    }
+```
+
+2. **错误码映射规则**：
+   - 网络相关 → TIMEOUT / NETWORK_ERROR
+   - 文件相关 → FILE_NOT_FOUND / PERMISSION_DENIED
+   - 安全相关 → SECURITY_BLOCKED
+   - 输入相关 → INVALID_INPUT
+   - LLM相关 → LLM_ERROR
+   - 其他 → INTERNAL_ERROR
+
+3. **retryable设置规则**：
+   - 可重试：TIMEOUT、NETWORK_ERROR、LLM_ERROR、INTERNAL_ERROR
+   - 不可重试：SECURITY_BLOCKED、FILE_NOT_FOUND、PERMISSION_DENIED、INVALID_INPUT
+
+**实现状态**：❌ 未实现
+
+---
+
+### 12.7 incident状态事件机制实现
+
+**功能说明**：实现incident类型的4种状态事件机制。
+
+**状态值分类**（共4类）：
+
+| status_value | 说明 | 触发者 | 前端操作 |
+|-------------|------|--------|---------|
+| paused | 任务暂停 | 用户主动 | 显示继续/取消按钮 |
+| resumed | 任务恢复 | 用户主动 | 显示恢复提示 |
+| retrying | 任务重试中 | 系统自动 | 显示重试进度 |
+| interrupted | 任务中断 | 用户主动/系统被动 | 显示中断提示 |
+
+**待修改代码位置**：`backend/app/api/v1/chat.py`
+
+**实现要求**：
+
+1. **状态管理**：
+```python
+# 任务状态管理
+task_states = {}  # {task_id: {"status": "running/paused/interrupted", "retry_count": 0}}
+
+def pause_task(task_id: str):
+    """暂停任务"""
+    if task_id in task_states:
+        task_states[task_id]["status"] = "paused"
+        yield {
+            "type": "incident",
+            "status_value": "paused",
+            "message": "任务已暂停。是否继续执行？"
+        }
+
+def resume_task(task_id: str):
+    """恢复任务"""
+    if task_id in task_states:
+        task_states[task_id]["status"] = "running"
+        yield {
+            "type": "incident",
+            "status_value": "resumed",
+            "message": "任务已恢复，继续执行中..."
+        }
+
+def interrupt_task(task_id: str, reason: str = "用户中断"):
+    """中断任务"""
+    if task_id in task_states:
+        task_states[task_id]["status"] = "interrupted"
+        yield {
+            "type": "incident",
+            "status_value": "interrupted",
+            "message": f"任务已中断: {reason}"
+        }
+
+def retry_task(task_id: str):
+    """重试任务"""
+    if task_id in task_states:
+        task_states[task_id]["retry_count"] += 1
+        yield {
+            "type": "incident",
+            "status_value": "retrying",
+            "message": f"正在重试... (第{task_states[task_id]['retry_count']}次)"
+        }
+```
+
+2. **触发场景**：
+   - **paused**：用户调用暂停接口
+   - **resumed**：用户调用恢复接口
+   - **interrupted**：用户调用中断接口 / 系统强制中断
+   - **retrying**：工具执行失败，配置了自动重试
+
+3. **与用户确认的区别**：
+   - incident.paused：用户主动暂停流程
+   - is_need_confirm：LLM要求用户确认
+
+**实现状态**：❌ 未实现
+
+---
+
+**更新时间**: 2026-03-11 00:12:33
+**更新内容**: 新增12.6 error错误码体系+12.7 incident状态事件机制
 **编写人**: 小沈
