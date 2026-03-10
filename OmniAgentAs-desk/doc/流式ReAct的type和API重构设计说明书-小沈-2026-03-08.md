@@ -6212,6 +6212,77 @@ export async function requestNextPage(
 
 ---
 
+### 11.9 step字段的设计说明（重要补充）
+
+#### 11.9.1 当前实现分析
+
+**当前代码实现**（chat.py:747-752）：
+```python
+# 步骤计数器从0开始
+step_counter = 0
+
+def next_step():
+    nonlocal step_counter
+    step_counter += 1  # 先+1
+    return step_counter  # 再返回
+```
+
+**当前step分配**：
+
+| type | step值 | 说明 |
+|------|--------|------|
+| start | 无 | 不在ReAct循环内 |
+| thought | 1,4,7... | 每轮第1个step |
+| action_tool | 2,5,8... | 每轮第2个step |
+| observation | 3,6,9... | 每轮第3个step |
+| final | 无 | 不在ReAct循环内 |
+
+**问题**：start和final没有step值，无法表示整个任务的进度。
+
+---
+
+#### 11.9.2 建议的改进方案
+
+**改进后的step分配**：
+
+| type | step值 | 说明 |
+|------|--------|------|
+| **start** | **1** | 任务开始（头） |
+| thought | 2,5,8... | 每轮第1个step |
+| action_tool | 3,6,9... | 每轮第2个step |
+| observation | 4,7,10... | 每轮第3个step |
+| **final** | **最后值** | 任务结束（尾） |
+
+**轮次计算**：
+- 第1轮：start(1) → thought(2) → action_tool(3) → observation(4) → final
+- 第2轮：start(1) → thought(2) → action_tool(3) → observation(4) → thought(5) → action_tool(6) → observation(7) → final
+
+---
+
+#### 11.9.3 待修改的代码清单
+
+**需要修改的文件**：`backend/app/api/v1/chat.py`
+
+| 位置 | 当前代码 | 需要修改为 |
+|------|---------|-----------|
+| 第747行 | `step_counter = 0` | `step_counter = 1` |
+| 第755行 | `thought_data = {'type': 'thought', 'step': next_step()` | `thought_data = {'type': 'thought', 'step': next_step()` |
+| 第778行 | `'step': next_step()` (action1) | 不变 |
+| 第811行 | `'step': next_step()` (observation1) | 不变 |
+| 第843行 | `'step': next_step()` (action2) | 不变 |
+| 第900行 | `'step': event.get('step', 0)` (observation) | 不变 |
+| 第952行 | `'step': next_step()` (action3) | 不变 |
+
+**说明**：
+- 将 `step_counter` 初始值从0改为1
+- 这样start发送时虽然没有step字段，但内部计数器从1开始
+- thought会是step=2，action_tool是step=3，observation是step=4
+- final时记录最终的step值
+
+**注意**：此修改需与前端讨论后统一执行，前端需要对应更新每个type显示的内容。
+
+---
+
 **更新时间**: 2026-03-10
 **更新内容**: 新增第11章：新8种type的汇总说明
 **编写人**: 小新
