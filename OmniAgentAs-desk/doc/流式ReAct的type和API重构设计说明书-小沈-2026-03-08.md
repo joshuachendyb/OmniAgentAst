@@ -6138,28 +6138,28 @@ export async function requestNextPage(
 
 #### 11.1.1 字段汇总表
 
-| 字段 | 类型 | 必要性 | 作用 | 说明 |
-|------|------|--------|------|------|
-| type | string | 固定值 | 固定值 | 固定为 "start" |
-| step | number | 必要 | 步骤序号 | 任务步骤序号，从1开始（根据11.9改进建议） |
-| content | string | 必要 | LLM分析内容/澄清问题 | 当is_clear=true显示analysis，当is_clear=false显示clarification_question |
-| reasoning | string | 可选 | LLM推理过程 | LLM的推理过程 |
-| is_clear | boolean | 必要 | 输入是否清晰 | true=清晰，false=含混不清 |
-| is_need_confirm | boolean | 必要 | 是否需要确认 | 是否需要用户确认执行 |
-| display_name | string | 必要 | 显示AI名称 | 如 "OpenAI (gpt-4)" |
-| model | string | 必要 | AI模型 | 如 "gpt-4"、"gpt-4o" |
-| provider | string | 必要 | AI提供商 | 如 "openai"、"anthropic" |
-| task_id | string | 必要 | 会话/请求ID | 唯一标识一次用户请求 |
-| security_check | object | 必要 | 安全检查结果 | 本次请求的安全检查结果 |
+| 字段 | 类型 | 必要性 | 含义 | 来源 | UI显示 |
+|------|------|--------|------|------|--------|
+| type | string | 固定值 | 固定为 "start" | 固定值 | 否 |
+| step | number | 必要 | 步骤序号，从1开始 | 后端生成 | 是 |
+| content | string | 必要 | LLM分析内容或澄清问题 | LLM返回 | 是 |
+| reasoning | string | 可选 | LLM推理过程 | LLM返回 | 否 |
+| is_clear | boolean | 必要 | 输入是否清晰 | LLM返回 | 否 |
+| is_need_confirm | boolean | 必要 | 是否需要用户确认 | LLM返回 | 否 |
+| display_name | string | 必要 | AI显示名称 | 配置获取 | 是 |
+| model | string | 必要 | AI模型 | 配置获取 | 否 |
+| provider | string | 必要 | AI提供商 | 配置获取 | 否 |
+| task_id | string | 必要 | 唯一标识一次请求 | 后端生成 | 否 |
+| security_check | object | 必要 | 安全检查结果 | 后端生成 | 部分 |
 
 **security_check 子字段**：
 
-| 字段 | 类型 | 必要性 | 作用 | 说明 |
-|------|------|--------|------|------|
-| is_safe | boolean | 必要 | 是否安全 | true=安全，false=危险 |
-| risk_level | string/null | 可选 | 风险等级 | low/medium/high/critical |
-| risk | string/null | 可选 | 风险描述 | 风险描述 |
-| blocked | boolean | 必要 | 是否被拦截 | true=已拦截，不执行LLM |
+| 字段 | 类型 | 必要性 | 含义 | 来源 | UI显示 |
+|------|------|--------|------|------|--------|
+| is_safe | boolean | 必要 | 是否安全 | 后端生成 | 否 |
+| risk_level | string/null | 可选 | 风险等级 | 后端生成 | 是 |
+| risk | string/null | 可选 | 风险描述 | 后端生成 | 是 |
+| blocked | boolean | 必要 | 是否被拦截 | 后端生成 | 否 |
 
 ---
 
@@ -6305,18 +6305,70 @@ export async function requestNextPage(
 
 **说明**：ReAct循环第1阶段，LLM推理决定下一步行动。
 
-**字段汇总表**：
+---
 
-| 字段 | 类型 | 必要性 | 作用 | 说明 |
-|------|------|--------|------|------|
-| type | string | 固定值 | 固定值 | 固定为 "thought" |
-| step | number | 必要 | 步骤序号 | 当前是第几轮ReAct循环，从1开始 |
-| content | string | 必要 | LLM思考内容 | LLM的思考内容 |
-| reasoning | string | 可选 | LLM推理过程 | LLM的推理过程 |
-| action_tool | string | 必要 | 工具名称 | 要执行的工具名称 |
-| params | object | 必要 | 工具参数 | 工具执行的参数 |
+#### 11.2.1 字段汇总表
 
-**thought阶段的总体UI显示布局**：
+| 字段 | 类型 | 必要性 | 含义 | 来源 | UI显示 |
+|------|------|--------|------|------|--------|
+| type | string | 固定值 | 固定为 "thought" | 固定值 | 否 |
+| step | number | 必要 | 步骤序号 | 后端生成 | 是 |
+| content | string | 必要 | LLM思考内容 | LLM返回 | 是 |
+| reasoning | string | 可选 | LLM推理过程 | LLM返回 | 否 |
+| action_tool | string | 必要 | 要执行的工具名称 | LLM返回 | 是 |
+| params | object | 必要 | 工具参数 | LLM返回 | 是 |
+
+---
+
+#### 11.2.2 字段用途说明
+
+**一、用于逻辑判断的字段**
+
+| 字段 | 用途 | 说明 |
+|------|------|------|
+| type | 判断消息类型 | 固定为 "thought" |
+| step | 步骤序号 | 用于显示和追踪进度 |
+| action_tool | 判断下一步行动 | 决定调用哪个工具 |
+
+**二、用于显示的字段（直接用于output，内容不改变）**
+
+| 显示位置 | 字段 | 显示内容 |
+|---------|------|---------|
+| 第一行左侧 | type | "thought" |
+| 第一行中间 | step | "step N" |
+| 内容区第一行 | content | LLM思考内容 |
+| 内容区工具 | action_tool | 工具名称 |
+| 内容区参数 | params | 工具参数 |
+
+---
+
+#### 11.2.3 UI显示布局
+
+**总体布局结构**：
+
+```
+┌─────────────────────────────────────────────────┐
+│ thought                     step 2              │
+│ ─────────────────────────────────────────────── │
+│ 正在思考...                                     │  ← 第二行占位（LLM响应慢时）
+│ ─────────────────────────────────────────────── │
+│ 用户想要查看桌面文件，需要先调用文件列表工具     │  ← content
+│                                                 │
+│ 工具: list_directory                           │
+│ 参数: {"path": "C:\\Users"}                   │
+└─────────────────────────────────────────────────┘
+```
+
+**显示说明**：
+- 第一行：type名称 + step编号（无状态标签）
+- 第二行："正在思考..."占位符（LLM响应慢时显示）
+- 内容区：显示content、action_tool、params
+
+---
+
+#### 11.2.4 UI线框图
+
+**情况1：正常推理（action_tool有值）**
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -6327,11 +6379,32 @@ export async function requestNextPage(
 │ 工具: list_directory                           │
 │ 参数: {"path": "C:\\Users"}                   │
 └─────────────────────────────────────────────────┘
+        ↓ 分割线 ↓
 ```
 
-**显示说明**：
-- 第一行：type名称 + step编号（无状态标签，内容第一行已包含信息）
-- 内容区：显示LLM思考内容、工具名称、工具参数
+**情况2：任务完成（action_tool=finish）**
+
+```
+┌─────────────────────────────────────────────────┐
+│ thought                     step 2              │
+│ ─────────────────────────────────────────────── │
+│ 用户问你好，我应该礼貌回复                       │
+│                                                 │
+│ 工具: finish                                   │
+│ 参数: {}                                       │
+└─────────────────────────────────────────────────┘
+        ↓ 分割线 ↓
+```
+
+---
+
+#### 11.2.5 补充说明
+
+- thought阶段调用LLM，有"正在思考..."占位区
+- action_tool是LLM决定的下一步行动，可能是具体工具名，也可能是"finish"表示任务完成
+- params是工具参数，如果是finish则为空对象{}
+- **ReAct退出点只在thought阶段**：当action_tool=finish时从thought进入final
+- 进入thought(type2)的情况：start之后第一轮、observation之后进入新一轮
 
 ---
 
@@ -6339,20 +6412,50 @@ export async function requestNextPage(
 
 **说明**：ReAct循环第2阶段，执行Thought阶段指定的工具。
 
-**字段汇总表**：
+---
 
-| 字段 | 类型 | 必要性 | 作用 | 说明 |
-|------|------|--------|------|------|
-| type | string | 固定值 | 固定值 | 固定为 "action_tool" |
-| step | number | 必要 | 步骤序号 | 步骤序号 |
-| tool_name | string | 必要 | 工具名称 | 工具名称 |
-| tool_params | object | 必要 | 工具参数 | 工具参数 |
-| execution_status | string | 必要 | 执行状态 | 执行状态：success/error/warning |
-| summary | string | 必要 | 结果描述 | 人类可读的执行结果摘要 |
-| raw_data | object/null | 可选 | 原始数据 | 机器可读的结构化数据 |
-| action_retry_count | number | 可选 | 重试次数 | 重试次数，0=首次执行 |
+#### 11.3.1 字段汇总表
 
-**action_tool阶段的总体UI显示布局**：
+| 字段 | 类型 | 必要性 | 含义 | 来源 | UI显示 |
+|------|------|--------|------|------|--------|
+| type | string | 固定值 | 固定为 "action_tool" | 固定值 | 否 |
+| step | number | 必要 | 步骤序号 | 后端生成 | 是 |
+| tool_name | string | 必要 | 工具名称 | thought传入 | 是 |
+| tool_params | object | 必要 | 工具参数 | thought传入 | 是 |
+| execution_status | string | 必要 | 执行状态 | 工具返回 | 是 |
+| summary | string | 必要 | 结果摘要 | 工具返回 | 是 |
+| raw_data | object/null | 可选 | 原始数据 | 工具返回 | 否 |
+| action_retry_count | number | 可选 | 重试次数 | 后端生成 | 否 |
+
+---
+
+#### 11.3.2 字段用途说明
+
+**一、用于逻辑判断的字段**
+
+| 字段 | 用途 | 说明 |
+|------|------|------|
+| type | 判断消息类型 | 固定为 "action_tool" |
+| step | 步骤序号 | 用于显示和追踪进度 |
+| execution_status | 判断执行结果 | success=成功，error=失败，warning=警告 |
+| action_retry_count | 判断是否重试 | >0表示是重试执行 |
+
+**二、用于显示的字段（直接用于output，内容不改变）**
+
+| 显示位置 | 字段 | 显示内容 |
+|---------|------|---------|
+| 第一行左侧 | type | "action_tool" |
+| 第一行中间 | step | "step N" |
+| 内容区第一行 | tool_name | "正在执行: xxx" |
+| 内容区 | raw_data | 原始数据（可折叠） |
+| 内容区 | execution_status | 执行状态 + 图标 |
+| 内容区 | summary | 结果摘要 |
+
+---
+
+#### 11.3.3 UI显示布局
+
+**总体布局结构**：
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -6371,7 +6474,7 @@ export async function requestNextPage(
 **显示说明**：
 - 第一行：type名称 + step编号（无状态标签）
 - 内容区：
-  - 工具名称（第一行）
+  - 工具名称（第一行，显示"正在执行: xxx"）
   - 原始数据（可折叠框，点击展开）
   - 执行状态（success/error/warning + 图标）
   - 结果摘要
@@ -6380,26 +6483,143 @@ export async function requestNextPage(
 
 ---
 
+#### 11.3.4 UI线框图
+
+**情况1：执行成功（execution_status=success）**
+
+```
+┌─────────────────────────────────────────────────┐
+│ action_tool                  step 3              │
+│ ─────────────────────────────────────────────── │
+│ 正在执行: list_directory                        │
+│ ─────────────────────────────────────────────── │
+│ ▼ 原始数据（点击展开）                         │
+│   {file_list: ["a.txt", "b.txt", ...]}        │
+│ ─────────────────────────────────────────────── │
+│ 执行状态: success ✅                           │
+│ 结果摘要: 成功获取文件列表，共5个文件           │
+└─────────────────────────────────────────────────┘
+        ↓ 分割线 ↓
+```
+
+**情况2：执行失败（execution_status=error）**
+
+```
+┌─────────────────────────────────────────────────┐
+│ action_tool                  step 3              │
+│ ─────────────────────────────────────────────── │
+│ 正在执行: read_file                            │
+│ ─────────────────────────────────────────────── │
+│ ▼ 原始数据（点击展开）                         │
+│   {error: "File not found", code: "ENOENT"}    │
+│ ─────────────────────────────────────────────── │
+│ 执行状态: error ❌                             │
+│ 结果摘要: 文件不存在，路径错误                  │
+└─────────────────────────────────────────────────┘
+        ↓ 分割线 ↓
+```
+
+**情况3：执行警告（execution_status=warning）**
+
+```
+┌─────────────────────────────────────────────────┐
+│ action_tool                  step 3              │
+│ ─────────────────────────────────────────────── │
+│ 正在执行: delete_file                          │
+│ ─────────────────────────────────────────────── │
+│ ▼ 原始数据（点击展开）                         │
+│   {deleted: true, warning: "Permission denied"} │
+│ ─────────────────────────────────────────────── │
+│ 执行状态: warning ⚠️                           │
+│ 结果摘要: 文件已删除，但权限不足无法删除元数据   │
+└─────────────────────────────────────────────────┘
+        ↓ 分割线 ↓
+```
+
+---
+
+#### 11.3.5 补充说明
+
+- action_tool阶段不调用LLM，无"正在思考..."占位区
+- raw_data默认折叠，点击展开查看详情
+- action_retry_count > 0 时，可显示"重试中"或"第N次重试"
+
+---
+
 ### 11.4 type=observation（执行结果判断）
 
 **说明**：ReAct循环第3阶段，将执行结果反馈给LLM判断是否完成。
 
-**字段汇总表**：
+---
 
-| 字段 | 类型 | 必要性 | 作用 | 说明 |
-|------|------|--------|------|------|
-| type | string | 固定值 | 固定值 | 固定为 "observation" |
-| step | number | 必要 | 步骤序号 | 步骤序号 |
-| execution_status | string | 必要 | 执行状态 | 执行状态，来自action_tool输出 |
-| summary | string | 必要 | 结果描述 | 结果描述，来自action_tool输出 |
-| raw_data | object/null | 可选 | 原始数据 | 原始数据，来自action_tool输出 |
-| content | string | 必要 | LLM新思考 | LLM基于结果生成的新思考 |
-| reasoning | string | 可选 | LLM推理过程 | LLM的推理过程 |
-| action_tool | string | 必要 | 下一个工具 | LLM决定的下一步工具 |
-| params | object | 必要 | 工具参数 | 工具参数 |
-| is_finished | boolean | 必要 | 是否完成 | 是否完成任务 |
+#### 11.4.1 字段汇总表
 
-**observation阶段的总体UI显示布局**：
+| 字段 | 类型 | 必要性 | 含义 | 来源 | UI显示 |
+|------|------|--------|------|------|--------|
+| type | string | 固定值 | 固定为 "observation" | 固定值 | 否 |
+| step | number | 必要 | 步骤序号 | 后端生成 | 是 |
+| execution_status | string | 必要 | 执行状态 | action_tool传入 | 否 |
+| summary | string | 必要 | 结果摘要 | action_tool传入 | 是 |
+| raw_data | object/null | 可选 | 原始数据 | action_tool传入 | 否 |
+| content | string | 必要 | LLM新思考 | LLM返回 | 是 |
+| reasoning | string | 可选 | LLM推理过程 | LLM返回 | 否 |
+| action_tool | string | 可选 | 下一步工具（LLM返回则有，否则进入thought） | LLM返回 | 是 |
+| params | object | 可选 | 工具参数（LLM返回则有，否则进入thought） | LLM返回 | 是 |
+| is_finished | boolean | 必要 | 是否完成 | LLM返回 | 否 |
+
+---
+
+#### 11.4.2 字段用途说明
+
+**一、用于逻辑判断的字段**
+
+| 字段 | 用途 | 说明 |
+|------|------|------|
+| type | 判断消息类型 | 固定为 "observation" |
+| step | 步骤序号 | 用于显示和追踪进度 |
+| is_finished | 判断是否完成 | true=任务完成，进入final；false=继续下一轮 |
+
+**二、用于显示的字段（直接用于output，内容不改变）**
+
+| 显示位置 | 字段 | 显示内容 |
+|---------|------|---------|
+| 第一行左侧 | type | "observation" |
+| 第一行中间 | step | "step N" |
+| 内容区第一行 | content | LLM新思考 |
+| 内容区工具 | action_tool | 工具名称 |
+| 内容区参数 | params | 工具参数 |
+| 内容区 | is_finished | "是" / "否" |
+
+---
+
+#### 11.4.3 UI显示布局
+
+**总体布局结构**：
+
+```
+┌─────────────────────────────────────────────────┐
+│ observation                  step 4              │
+│ ─────────────────────────────────────────────── │
+│ 正在思考...                                     │  ← 第二行占位（LLM响应慢时）
+│ ─────────────────────────────────────────────── │
+│ 已获取文件列表，继续下一步：读取README.md       │  ← content
+│                                                 │
+│ 工具: read_file                                 │  ← action_tool
+│ 参数: {"path": "C:\\Users\\README.md"}         │  ← params
+│ 是否完成: false                                 │  ← is_finished
+└─────────────────────────────────────────────────┘
+```
+
+**显示说明**：
+- 第一行：type名称 + step编号
+- 第二行："正在思考..."占位符（LLM响应慢时显示）
+- 内容区：显示content、action_tool、params、is_finished
+
+---
+
+#### 11.4.4 UI线框图
+
+**情况1：任务未完成（is_finished=false）**
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -6409,19 +6629,35 @@ export async function requestNextPage(
 │                                                 │
 │ 工具: read_file                                 │
 │ 参数: {"path": "C:\\Users\\README.md"}         │
-│ 是否完成: false                                 │
+│ 是否完成: 否                                    │
 └─────────────────────────────────────────────────┘
+        ↓ 分割线 ↓
 ```
 
-**显示说明**：
-- 第一行：type名称 + step编号（无状态标签，内容第一行已包含信息）
-- 内容区：
-  - LLM新思考（content）
-  - 工具名称（action_tool）
-  - 工具参数（params）
-  - 是否完成（is_finished）
+**情况2：任务完成（is_finished=true）**
+
+```
+┌─────────────────────────────────────────────────┐
+│ observation                  step 4              │
+│ ─────────────────────────────────────────────── │
+│ 已完成所有文件分析，任务完成                     │
+│                                                 │
+│ 是否完成: 是                                    │
+└─────────────────────────────────────────────────┘
+        ↓ 分割线 ↓
+        ↓ is_finished=true，后端继续调用LLM生成thought
+        ↓ thought返回action_tool=finish，进入final
+```
 
 ---
+
+#### 11.4.5 补充说明
+
+- observation阶段调用LLM，有"正在思考..."占位区
+- LLM返回action_tool+params → 直接进入action_tool(type3)
+- LLM未返回action_tool → 进入thought(type2)让LLM再思考
+- is_finished=true时，后端继续调用LLM生成thought，最终从thought退出进入final
+- **ReAct退出点只在thought阶段**：当action_tool=finish时从thought退出
 
 ### 11.5 type=final（最终回复）
 
@@ -6429,12 +6665,12 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 作用 | 说明 |
-|------|------|--------|------|------|
-| type | string | 固定值 | 固定值 | 固定为 "final" |
-| step | number | 必要 | 最终步骤序号 | 整个任务的最终步骤序号（根据11.9改进建议） |
-| content | string | 必要 | 完整回复 | 完整回复内容 |
-| display_name | string | 必要 | AI显示名称 | AI显示名称，如 "OpenAI (gpt-4)" |
+| 字段 | 类型 | 必要性 | 含义 | 来源 | UI显示 |
+|------|------|--------|------|------|--------|
+| type | string | 固定值 | 固定为 "final" | 固定值 | 否 |
+| step | number | 必要 | 最终步骤序号 | 后端生成 | 是 |
+| content | string | 必要 | 完整回复 | LLM返回 | 是 |
+| display_name | string | 必要 | AI显示名称 | 配置获取 | 是 |
 
 **final阶段的总体UI显示布局**：
 
@@ -6461,12 +6697,12 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 作用 | 说明 |
-|------|------|--------|------|------|
-| type | string | 固定值 | 固定值 | 固定为 "chunk" |
-| content | string | 必要 | 回复片段 | 回复片段内容 |
-| is_reasoning | boolean | 可选 | 是否思考 | 是否在思考阶段 |
-| chunk_reasoning | string | 可选 | 思考内容 | 思考内容（避免与thought的reasoning混淆） |
+| 字段 | 类型 | 必要性 | 含义 | 来源 | UI显示 |
+|------|------|--------|------|------|--------|
+| type | string | 固定值 | 固定为 "chunk" | 固定值 | 否 |
+| content | string | 必要 | 回复片段 | LLM返回 | 是 |
+| is_reasoning | boolean | 可选 | 是否思考阶段 | LLM返回 | 否 |
+| chunk_reasoning | string | 可选 | 思考内容 | LLM返回 | 是 |
 
 ---
 
@@ -6476,17 +6712,17 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 作用 | 说明 |
-|------|------|--------|------|------|
-| type | string | 固定值 | 固定值 | 固定为 "error" |
-| step | number | 必要 | error自己的步骤序号 | 错误发生时的步骤序号（根据11.9改进建议），值为当前已完成step+1，用于定位错误发生在哪一步 |
-| code | string | 必要 | 错误码 | 错误码，如 TIMEOUT、NOT_FOUND、SECURITY_BLOCKED |
-| message | string | 必要 | 错误消息 | 用户可读的错误消息 |
-| error_type | string | 可选 | 错误类型 | 错误类型，如 network、file_system |
-| details | string | 可选 | 详细错误信息 | 详细错误信息 |
-| stack | string | 可选 | 堆栈信息 | 堆栈信息（仅用于调试） |
-| retryable | boolean | 可选 | 是否可重试 | 是否可重试 |
-| retry_after | number | 可选 | 重试等待秒数 | 重试等待秒数 |
+| 字段 | 类型 | 必要性 | 含义 | 来源 | UI显示 |
+|------|------|--------|------|------|--------|
+| type | string | 固定值 | 固定为 "error" | 固定值 | 否 |
+| step | number | 必要 | 错误步骤序号 | 后端生成 | 是 |
+| code | string | 必要 | 错误码 | 后端生成 | 是 |
+| message | string | 必要 | 错误消息 | 后端生成 | 是 |
+| error_type | string | 可选 | 错误类型 | 后端生成 | 否 |
+| details | string | 可选 | 详细错误信息 | 后端生成 | 否 |
+| stack | string | 可选 | 堆栈信息 | 后端生成 | 否 |
+| retryable | boolean | 可选 | 是否可重试 | 后端生成 | 否 |
+| retry_after | number | 可选 | 重试等待秒数 | 后端生成 | 是 |
 
 ---
 
@@ -6496,11 +6732,11 @@ export async function requestNextPage(
 
 **字段汇总表**：
 
-| 字段 | 类型 | 必要性 | 作用 | 说明 |
-|------|------|--------|------|------|
-| type | string | 固定值 | 固定值 | 固定为 "incident" |
-| status_value | string | 必要 | 具体状态值 | 具体状态值 |
-| message | string | 必要 | 事件消息 | 事件消息 |
+| 字段 | 类型 | 必要性 | 含义 | 来源 | UI显示 |
+|------|------|--------|------|------|--------|
+| type | string | 固定值 | 固定为 "incident" | 固定值 | 否 |
+| status_value | string | 必要 | 具体状态值 | 后端生成 | 是 |
+| message | string | 必要 | 事件消息 | 后端生成 | 是 |
 
 **status_value 取值说明**：
 
@@ -6567,6 +6803,40 @@ export async function requestNextPage(
 
 **待修改代码位置**：`backend/app/api/v1/chat.py`
 
+**接口/前端影响说明**：
+
+**1. SSE返回字段变化**：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| content | string | LLM分析内容（当is_clear=true时为analysis，当is_clear=false时为clarification_question） |
+| is_clear | boolean | 输入是否清晰（true=清晰，false=含混不清） |
+| is_need_confirm | boolean | 是否需要用户确认执行 |
+
+**2. 前端解析逻辑**：
+
+```javascript
+// 解析Start阶段SSE数据
+if (data.type === 'start') {
+    // 判断是否需要澄清
+    if (data.is_clear === false) {
+        // 显示澄清问题，等待用户输入
+        showClarificationQuestion(data.content)
+    } else if (data.is_need_confirm === true) {
+        // 需要用户确认
+        showConfirmDialog(data.content, data.security_check)
+    } else {
+        // 正常继续，显示分析内容
+        showContent(data.content)
+    }
+}
+```
+
+**3. 特殊情况处理**：
+- 当is_clear=false时：前端暂停ReAct流程，等待用户输入澄清信息
+- 当is_need_confirm=true时：前端弹出确认对话框
+- 当security_check.blocked=true时：前端弹出拦截提示
+
 **实现状态**：❌ 未实现
 
 ---
@@ -6628,7 +6898,40 @@ def next_step():
 
 ---
 
-### 12.3 用户确认接口
+### 12.3 ReAct流程-observation阶段的逻辑修改
+
+**功能说明**：根据标准ReAct模式，修正observation阶段的循环逻辑。
+
+**observation阶段流程逻辑**：
+
+```
+action_tool(type3) → observation(type4) → ?
+                                      ↓
+                    ┌───────────────────────────────┘
+                    ↓
+        observation阶段LLM返回判断：
+        ├── 有action_tool+params → 直接进入action_tool(type3)
+        └── 无action_tool → 进入thought(type2)让LLM再思考
+```
+
+**具体逻辑变化**：
+
+| 原逻辑 | 新逻辑 |
+|--------|--------|
+| 直接决定下一步 | 根据LLM返回决定：<br>- 有action_tool → type3<br>- 无action_tool → type2 |
+
+**待修改代码位置**：`backend/app/api/v1/chat.py`
+
+**修改内容**：
+- observation阶段LLM调用后检查返回是否有action_tool和params
+- 有action_tool → yield action_tool(type3)
+- 无action_tool → 继续调用LLM生成thought
+
+**实现状态**：❌ 未实现
+
+---
+
+### 12.4 用户确认接口
 
 **功能说明**：用于在任务暂停（等待用户确认）后，用户进行确认或拒绝。
 
@@ -6637,24 +6940,165 @@ def next_step():
 | 接口地址 | `/api/v1/chat/stream/confirm` |
 | 请求方法 | `POST` |
 
-**功能要求**：
-- 支持三种操作：确认执行、拒绝执行、修改命令后重新执行
-- 调用后，后端会发送status=resumed事件继续执行
+---
+
+#### 12.4.1 请求参数
+
+```json
+{
+    "task_id": "任务ID",
+    "action": "confirm" | "reject" | "modify",
+    "modified_content": "修改后的命令（仅action=modify时需要）"
+}
+```
+
+**参数说明**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| task_id | string | ✅ | 任务ID（从前端获取当前任务） |
+| action | string | ✅ | 操作类型：confirm=确认执行，reject=拒绝执行，modify=修改后重新执行 |
+| modified_content | string | ⚠️ | 仅当action=modify时必填，表示用户修改后的命令 |
+
+---
+
+#### 12.4.2 返回响应
+
+**成功响应（action=confirm或modify）**：
+```json
+{
+    "success": true,
+    "message": "任务已继续执行"
+}
+```
+后端会发送 `status=resumed` 事件，继续流式输出。
+
+**成功响应（action=reject）**：
+```json
+{
+    "success": true,
+    "message": "任务已取消"
+}
+```
+后端会发送 `final` 类型，结束流式输出。
+
+**错误响应**：
+```json
+{
+    "success": false,
+    "error": "错误信息"
+}
+```
+
+---
+
+#### 12.4.3 后端处理逻辑
+
+| action | 处理逻辑 |
+|--------|---------|
+| **confirm** | 设置 `running_tasks[task_id]["paused"] = False`，继续执行ReAct循环 |
+| **reject** | 发送 `final` 类型（content="用户拒绝了该操作"），结束流式输出 |
+| **modify** | 替换原始用户输入为 `modified_content`，设置 `paused=False`，继续执行 |
+
+---
+
+#### 12.4.4 前端实现
+
+```javascript
+// 用户确认弹框处理
+async function handleConfirmAction(action, modifiedContent = null) {
+    const response = await fetch('/api/v1/chat/stream/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            task_id: currentTaskId,
+            action: action,
+            modified_content: modifiedContent
+        })
+    });
+    
+    const data = await response.json();
+    if (data.success) {
+        closeConfirmDialog();
+        
+        if (action === 'reject') {
+            // 等待final事件结束
+        } else {
+            // confirm 或 modify：等待resumed事件
+        }
+    }
+}
+```
+
+---
+
+#### 12.4.5 状态流程图
+
+```
+用户输入 → Start阶段LLM判断 → is_need_confirm=true
+                    ↓
+            前端弹出确认框
+                    ↓
+    ┌───────────────┼───────────────┐
+    ↓               ↓               ↓
+  确认           拒绝           修改
+    ↓               ↓               ↓
+  paused=false  发送final      替换输入+paused=false
+    ↓               ↓               ↓
+  发送resumed   结束流式         继续执行
+```
+
+---
+
+#### 12.4.6 技术细节确认
+
+**Q1: task_id 前端如何获取？**
+- **选择**：方案A - 前端维护当前task_id
+- **说明**：通过SSE连接的event source或WebSocket获取，存储在前端状态中
+
+**Q2: modify后如何处理？**
+- **选择**：方案B - 替换输入后，直接进入ReAct循环
+- **说明**：不重新走Start阶段LLM判断，直接替换用户输入继续执行
+
+---
 
 **实现状态**：❌ 未实现
 
 ---
 
-### 12.4 待确认事项
+### 12.5 ReAct流程-thought阶段的退出逻辑修改
 
-| 序号 | 事项 | 说明 |
-|------|------|------|
-| 1 | step字段改进 | 需要与前端讨论后统一执行 |
-| 2 | 用户确认接口 | 需要确认产品需求后再开发 |
-| 3 | Start阶段LLM调用 | 需要确认系统提示内容是否合适 |
+**功能说明**：thought阶段判断action_tool=finish时，从thought进入final阶段。
+
+**thought阶段流程逻辑**：
+
+```
+observation(type4) → thought(type2) → ?
+                          ↓
+              ┌───────────────────────────────┘
+              ↓
+    判断action_tool是否等于"finish"
+              ↓
+    ├── action_tool=finish → 进入final
+    └── 其他 → 进入action_tool(type3)
+```
+
+**具体逻辑变化**：
+
+| 原逻辑 | 新逻辑 |
+|--------|--------|
+| 无退出逻辑 | action_tool=finish时从thought进入final |
+
+**待修改代码位置**：`backend/app/api/v1/chat.py`
+
+**修改内容**：
+- thought阶段判断action_tool是否等于"finish"
+- 如果是finish → yield final，结束ReAct循环
+
+**实现状态**：❌ 未实现
 
 ---
 
 **更新时间**: 2026-03-10
-**更新内容**: 整理第12章待开发任务清单
+**更新内容**: 修正12章结构，observation和thought逻辑分开
 **编写人**: 小新

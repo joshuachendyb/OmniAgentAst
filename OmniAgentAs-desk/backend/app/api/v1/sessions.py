@@ -622,7 +622,7 @@ class MessageCreate(BaseModel):
 class SessionUpdate(BaseModel):
     """会话更新请求"""
     title: Optional[str] = Field(None, description="会话标题", min_length=1, max_length=200)
-    version: int = Field(..., ge=1, description="乐观锁版本号")
+    version: Optional[int] = Field(None, ge=1, description="乐观锁版本号（可选，向后兼容旧前端）")
     updated_by: Optional[str] = Field(None, description="修改者")
 
 
@@ -889,7 +889,7 @@ async def update_session(session_id: str, update_data: SessionUpdate):
                            title_updated_at = ?, 
                            version = version + 1
                        WHERE id = ?''',
-                    (update_data.title, utc_time, 1, utc_time, current_version + 1, session_id)
+                    (update_data.title, utc_time, 1, utc_time, session_id)
                 )
         else:
             # 新字段不存在，兼容模式

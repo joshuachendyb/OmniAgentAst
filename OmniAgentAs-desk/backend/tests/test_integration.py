@@ -97,8 +97,8 @@ class TestMonitoringIntegration:
         response1 = client.get("/api/v1/metrics/raw")
         initial_metrics = response1.json().get("metrics", {})
         
-        # Reset metrics
-        reset_response = client.post("/api/v1/metrics/reset")
+        # Reset metrics (需要confirm字段)
+        reset_response = client.post("/api/v1/metrics/reset", json={"confirm": True})
         assert reset_response.status_code == 200
         
         # Get metrics after reset
