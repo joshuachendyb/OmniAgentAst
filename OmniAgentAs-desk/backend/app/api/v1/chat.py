@@ -332,9 +332,11 @@ def create_final_response(
     SSE 格式的 final 响应字符串
     """
     # 【问题5修复】final使用content字段（遵循设计文档7.5要求）
+    # 【补充】添加display_name字段
     response = {
         'type': 'final',
-        'content': content
+        'content': content,
+        'display_name': display_name if display_name else f"{provider} ({model})"
     }
     return f"data: {json.dumps(response)}\n\n"
 
