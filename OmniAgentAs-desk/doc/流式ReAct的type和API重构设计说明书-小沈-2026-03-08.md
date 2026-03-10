@@ -6195,7 +6195,7 @@ export async function requestNextPage(
 | 字段 | 类型 | 必要性 | 作用 | 说明 |
 |------|------|--------|------|------|
 | type | string | 固定值 | 固定值 | 固定为 "error" |
-| step | number | 必要 | 错误发生时的步骤序号 | 错误发生时的步骤序号（根据11.9改进建议），用于定位错误发生在哪一步 |
+| step | number | 必要 | error自己的步骤序号 | 错误发生时的步骤序号（根据11.9改进建议），值为当前已完成step+1，用于定位错误发生在哪一步 |
 | code | string | 必要 | 错误码 | 错误码，如 TIMEOUT、NOT_FOUND、SECURITY_BLOCKED |
 | message | string | 必要 | 错误消息 | 用户可读的错误消息 |
 | error_type | string | 可选 | 错误类型 | 错误类型，如 network、file_system |
