@@ -14,13 +14,13 @@ describe('ExecutionPanel Component', () => {
   const mockSteps: ExecutionStep[] = [
     {
       type: 'thought',
-      thinking_prompt: 'I need to analyze the file',
+      content: 'I need to analyze the file',
       timestamp: Date.now() - 3000,
     },
     {
-      type: 'action',
-      action: 'read_file',
-      action_input: { path: '/test.txt' },
+      type: 'action_tool',
+      tool_name: 'read_file',
+      tool_params: { path: '/test.txt' },
       timestamp: Date.now() - 2000,
     },
     {
@@ -75,9 +75,9 @@ describe('ExecutionPanel Component', () => {
   it('should format tool action step correctly', () => {
     const actionStep: ExecutionStep[] = [
       {
-        type: 'action',
-        action: 'write_file',
-        action_input: { path: '/output.txt', content: 'data' },
+        type: 'action_tool',
+        tool_name: 'write_file',
+        tool_params: { path: '/output.txt', content: 'data' },
         timestamp: Date.now(),
       },
     ];
@@ -137,7 +137,7 @@ describe('ExecutionPanel Component', () => {
         timestamp: Date.now(),
       },
       {
-        type: 'action',
+        type: 'action_tool',
         timestamp: Date.now(),
       },
     ];
@@ -153,7 +153,7 @@ describe('ExecutionPanel Component', () => {
     const longContentStep: ExecutionStep[] = [
       {
         type: 'thought',
-        thinking_prompt:
+        content:
           'This is a very long thought that might need to be truncated or wrapped properly in the UI to ensure good user experience',
         timestamp: Date.now(),
       },
@@ -161,7 +161,7 @@ describe('ExecutionPanel Component', () => {
 
     render(<ExecutionPanel steps={longContentStep} isActive={false} />);
 
-    expect(screen.getByText(longContentStep[0].thinking_prompt!)).toBeInTheDocument();
+    expect(screen.getByText(longContentStep[0].content!)).toBeInTheDocument();
   });
 
   it('should update when steps change', () => {

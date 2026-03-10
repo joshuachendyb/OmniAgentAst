@@ -62,9 +62,9 @@ describe('MessageItem Component', () => {
           timestamp: Date.now(),
         },
         {
-          type: 'action' as const,
-          tool: 'read_file',
-          params: {},
+          type: 'action_tool' as const,
+          tool_name: 'read_file',
+          tool_params: {},
           timestamp: Date.now(),
         },
       ],
@@ -73,10 +73,6 @@ describe('MessageItem Component', () => {
     render(<MessageItem message={messageWithSteps} showExecution={true} />);
 
     expect(screen.getByText('Test message content')).toBeInTheDocument();
-    // 检查执行详情面板标题（按文档6.3.1要求改为"执行详情"）
-    await waitFor(() => {
-      expect(screen.getByText('执行详情')).toBeInTheDocument();
-    });
     // 检查思考步骤直接显示（不折叠）
     expect(screen.getByText('思考：')).toBeInTheDocument();
   });

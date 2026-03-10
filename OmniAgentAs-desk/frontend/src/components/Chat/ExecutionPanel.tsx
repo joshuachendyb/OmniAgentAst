@@ -309,7 +309,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                       flex: 1,
                     }}
                   >
-                    {step.thinking_prompt}
+                    {step.content}
                   </div>
                 </div>
               </div>
@@ -321,8 +321,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                 <div className="action-step">
                   <div className="step-header">
                     <CodeOutlined />
-                    {/* 【小新重构2026-03-09】使用tool_name字段 */}
-                    <span>{step.tool_name || step.action || "未知工具"}</span>
+                    <span>{step.tool_name || "未知工具"}</span>
                     <Button
                       type="text"
                       size="small"
@@ -336,9 +335,8 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                       onClick={() =>
                         copyToClipboard(
                           JSON.stringify({
-                            tool_name: step.tool_name || step.action,
-                            // 【小查修复2026-03-09】优先使用新字段tool_params，兼容旧字段action_input
-                            tool_params: step.tool_params || step.action_input,
+                            tool_name: step.tool_name,
+                            tool_params: step.tool_params,
                             result: step.result,
                           }),
                           index
@@ -348,14 +346,13 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                       style={{ marginLeft: "auto", padding: 0 }}
                     />
                   </div>
-                  {/* 【小查修复2026-03-09】优先使用新字段tool_params */}
-                  {(step.tool_params || step.action_input) && (
+                  {step.tool_params && (
                     <div>
                       <Text type="secondary" style={{ fontSize: 10 }}>
                         参数：
                       </Text>
                       <pre className="step-params">
-                        {JSON.stringify(step.tool_params || step.action_input || {}, null, 2)}
+                        {JSON.stringify(step.tool_params || {}, null, 2)}
                       </pre>
                     </div>
                   )}

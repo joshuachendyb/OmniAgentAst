@@ -45,6 +45,10 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
     observation: "#52c41a",
     final: "#52c41a",
     error: "#cf1322",
+    paused: "#fa8c16",
+    resumed: "#52c41a",
+    interrupted: "#cf1322",
+    retrying: "#1890ff",
   };
 
   const labelMap: Record<string, string> = {
@@ -53,6 +57,10 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
     observation: "结果",
     final: "答案",
     error: "错误",
+    paused: "暂停",
+    resumed: "恢复",
+    interrupted: "中断",
+    retrying: "重试",
   };
 
   const color = colorMap[step.type] || "#666";
@@ -68,7 +76,7 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
     try {
       const result = await taskControlApi.nextPage(
         taskId,
-        step.tool_name || step.action || "",
+        step.tool_name || "",
         step.raw_data.next_page_token
       );
       
@@ -92,10 +100,9 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
         {label}：
       </span>
       <span style={{ color: "#333", wordBreak: "break-word" }}>
-        {/* 【小新重构2026-03-09】action 改为 action_tool */}
         {step.type === "action_tool" && (
           <>
-            {step.action_description || step.tool_name || step.action || "执行中..."}
+            {step.action_description || step.tool_name || "执行中..."}
             {step.tool_params && (
               <span style={{ color: "#999", marginLeft: 8, fontSize: 12 }}>
               参数：{JSON.stringify(step.tool_params)}
@@ -166,7 +173,19 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
             })()}
           </>
         )}
-        {step.type === "thought" && (step.thinking_prompt || "")}
+        {step.type === "thought" && (step.content || "")}
+        {/* 【小查修复2026-03-10】添加status类型渲染 */}
+        {["paused", "resumed", "interrupted", "retrying"].includes(step.type) && (
+          <span style={{ 
+            color: colorMap[step.type] || "#666", 
+            fontWeight: 500,
+            padding: "4px 8px",
+            borderRadius: 4,
+            background: `${colorMap[step.type] || "#666"}15`,
+          }}>
+            {labelMap[step.type] || "状态"}: {step.content || step.message || ""}
+          </span>
+        )}
         {step.type === "final" && (step.answer_content || "")}
         {step.type === "error" && (step.error_message || "")}
       </span>
@@ -483,9 +502,14 @@ const MessageItem: React.FC<MessageItemProps> = ({
 const isUser = message.role === "user";
   const isSystem = message.role === "system";
 
-  // 【小新重构2026-03-09】判断是否有执行步骤（action_tool/observation）
+  // 判断是否有执行步骤（action_tool/observation）
   const hasExecution = message.executionSteps?.some(
     step => step.type === "action_tool" || step.type === "observation"
+  ) ?? false;
+
+  // 【小查修复2026-03-10】判断是否有status类型步骤
+  const hasStatus = message.executionSteps?.some(
+    step => ["paused", "resumed", "interrupted", "retrying"].includes(step.type)
   ) ?? false;
 
   return (
@@ -625,6 +649,7 @@ const isUser = message.role === "user";
               ))}
 
             {/* 【小新重构2026-03-09】2. 执行步骤 - 按 action_tool 分组，每组一个折叠面板 */}
+            {/* 【小查修复2026-03-10】兼容旧类型 action */}
             {hasExecution && message.role === "assistant" && (
               <div>
                 {(() => {
@@ -694,6 +719,17 @@ const isUser = message.role === "user";
                     );
                   });
                 })()}
+              </div>
+            )}
+
+            {/* 【小查修复2026-03-10】渲染status类型步骤 */}
+            {hasStatus && (
+              <div style={{ marginBottom: 8 }}>
+                {message.executionSteps
+                  ?.filter(step => ["paused", "resumed", "interrupted", "retrying"].includes(step.type))
+                  .map((step, index) => (
+                    <StepRow key={`status-${index}`} step={step} taskId={message.task_id} />
+                  ))}
               </div>
             )}
 

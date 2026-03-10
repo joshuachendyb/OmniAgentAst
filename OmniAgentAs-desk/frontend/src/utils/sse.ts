@@ -11,6 +11,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { message } from "antd";
+import type { StreamMessage } from "../types/chat";
 
 /**
  * SSE 错误对象
@@ -94,16 +95,6 @@ export interface ExecutionStep {
   timestamp: number;      // 前端生成的时间戳
   contentStart?: number;  // content起始位置（用于流式定位）
   contentEnd?: number;    // content结束位置
-}
-
-/**
- * 流式消息类型
- */
-export interface StreamMessage {
-  type: "start" | "step" | "chunk" | "complete" | "error";
-  data?: ExecutionStep | string;
-  messageId?: string;
-  error?: string;
 }
 
 /**
@@ -554,6 +545,15 @@ const processSSEData = (
           model: rawData.model,
           provider: rawData.provider,
           display_name: displayName,
+          // 【小新修复2026-03-10】添加task_id字段映射
+          task_id: rawData.task_id,
+          // 【小查修复2026-03-10】添加security_check字段处理
+          raw_data: rawData.security_check ? {
+            is_safe: rawData.security_check.is_safe,
+            risk_level: rawData.security_check.risk_level,
+            risk: rawData.security_check.risk,
+            blocked: rawData.security_check.blocked,
+          } : undefined,
         };
 
         setExecutionSteps((prev) => [...prev, startStep]);
@@ -563,11 +563,10 @@ const processSSEData = (
 
       case "thought": {
         console.log("🔍 [sse thought] 收到thought事件, rawData=", JSON.stringify(rawData));
-        // 【小新重构2026-03-09】使用 thinking_prompt 填充 content
-        step.content = step.thinking_prompt || "";
-        // 【小新重构2026-03-09】兼容新字段 action_tool
-        step.action_tool = rawData.action_tool || rawData.action || "";
-        step.params = rawData.params || rawData.action_input || {};
+        step.content = rawData.content || "";
+        step.reasoning = rawData.reasoning || "";
+        step.action_tool = rawData.action_tool || "";
+        step.params = rawData.params || {};
         console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
         // 添加到步骤数组，显示思考过程
         setExecutionSteps((prev) => [...prev, step]);
@@ -575,11 +574,10 @@ const processSSEData = (
         break;
       }
 
-      // 【小新重构2026-03-09】case "action" 改为 "action_tool"
       case "action_tool": {
-        // 【小新重构2026-03-09】使用新字段 tool_name, tool_params
-        step.tool_name = rawData.tool_name || rawData.action || "";
-        step.tool_params = rawData.tool_params || rawData.action_input || {};
+        // 使用新字段 tool_name, tool_params
+        step.tool_name = rawData.tool_name || "";
+        step.tool_params = rawData.tool_params || {};
         step.execution_status = rawData.execution_status || 'success';
         step.summary = rawData.summary || "";
         step.raw_data = rawData.raw_data || null;
@@ -593,6 +591,15 @@ const processSSEData = (
       }
 
       case "observation": {
+        // 【小查修复2026-03-10】添加is_finished和raw_data字段映射
+        step.is_finished = rawData.is_finished ?? false;
+        step.raw_data = rawData.raw_data ?? null;
+        step.execution_status = rawData.execution_status ?? 'success';
+        step.summary = rawData.summary ?? '';
+        step.content = rawData.content ?? '';
+        step.reasoning = rawData.reasoning ?? '';
+        step.action_tool = rawData.action_tool ?? '';
+        step.params = rawData.params ?? {};
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
         setExecutionSteps((prev) => [...prev, step]);
@@ -607,8 +614,10 @@ const processSSEData = (
         setCurrentResponse(responseBufferRef.current);
         // 【小沈修复】收到chunk时关闭步骤UI，开始显示回复内容
         onShowSteps?.(false);
+        // 【小查修复2026-03-10】兼容设计文档要求的chunk_reasoning字段
+        const reasoning = rawData.chunk_reasoning || rawData.reasoning || "";
         // 传递 is_reasoning 和 reasoning 区分思考过程和最终答案
-        onChunk?.(chunkContent, rawData.is_reasoning || false, rawData.reasoning || "");
+        onChunk?.(chunkContent, rawData.is_reasoning || false, reasoning);
         
         // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
         // 这样MessageItem可以遍历并分别显示思考过程和正式内容
@@ -641,12 +650,60 @@ const processSSEData = (
       }
 
       case "error": {
-        // 使用 error_message 填充 content
-        const errorMsg = step.error_message || rawData.error_message || "未知错误";
+        const errorMsg = rawData.message || "未知错误";
         step.content = errorMsg;
+        step.error_message = errorMsg;
+        if (rawData.code) {
+          (step as any).code = rawData.code;
+        }
+        if (rawData.error_type) {
+          (step as any).error_type = rawData.error_type;
+        }
+        // 【小查修复2026-03-10】添加设计文档要求的字段
+        if (rawData.details) {
+          (step as any).details = rawData.details;
+        }
+        if (rawData.stack) {
+          (step as any).stack = rawData.stack;
+        }
+        if (rawData.retryable !== undefined) {
+          (step as any).retryable = rawData.retryable;
+        }
+        if (rawData.retry_after !== undefined) {
+          (step as any).retry_after = rawData.retry_after;
+        }
         onError?.(errorMsg);
         setIsReceiving(false);
         setIsConnected(false);
+        break;
+      }
+
+      // 【小查修复2026-03-10】新增：status类型处理（后端发送type='status'，status_value字段）
+      case "status": {
+        const statusValue = rawData.status_value;
+        const statusMessage = rawData.message || "";
+        step.type = statusValue as ExecutionStep["type"];
+        step.content = statusMessage;
+        
+        // 根据status_value调用对应的回调
+        switch (statusValue) {
+          case "interrupted":
+            onComplete?.(responseBufferRef.current, undefined);
+            setIsReceiving(false);
+            setIsConnected(false);
+            break;
+          case "paused":
+            onPaused?.();
+            break;
+          case "resumed":
+            onResumed?.();
+            break;
+          case "retrying":
+            onRetry?.(statusMessage || "正在重试...");
+            break;
+          default:
+            console.warn("[SSE] 未知的status_value:", statusValue);
+        }
         break;
       }
 
