@@ -331,15 +331,11 @@ def create_final_response(
     Returns:
     SSE 格式的 final 响应字符串
     """
-    # 【问题5修复】final使用content字段
+    # 【问题5修复】final使用content字段（遵循设计文档7.5要求）
     response = {
         'type': 'final',
-        'content': content,
-        'model': model,
-        'provider': provider
+        'content': content
     }
-    if display_name:
-        response['display_name'] = display_name
     return f"data: {json.dumps(response)}\n\n"
 
 router = APIRouter()
@@ -1053,12 +1049,10 @@ async def chat_stream(request: ChatRequest):
                                 logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
                                 # 逐token发送到前端，【新增】添加provider字段作为兜底
                                 # 【小沈修复】添加 is_reasoning 和 reasoning 字段区分思考过程
-                                # 【问题6修复】chunk使用content和chunk_reasoning字段
+                                # 【问题6修复】chunk使用content和chunk_reasoning字段（遵循设计文档7.6要求）
                                 chunk_data = {
                                     'type': 'chunk', 
                                     'content': chunk.content,
-                                    'model': chunk.model, 
-                                    'provider': ai_service.provider,
                                     'is_reasoning': getattr(chunk, 'is_reasoning', False),  # 是否思考过程
                                     'chunk_reasoning': getattr(chunk, 'reasoning', '')  # 思考过程内容
                                 }
