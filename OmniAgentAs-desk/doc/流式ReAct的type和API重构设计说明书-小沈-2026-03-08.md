@@ -6188,13 +6188,14 @@ export async function requestNextPage(
 
 ### 11.7 type=error（错误）
 
-**说明**：错误状态，不参与循环，用于报告系统错误、安全拦截等。
+**说明**：错误状态，不参与循环，用于报告系统错误、安全拦截等。另一种形式的"结束"。
 
 **字段汇总表**：
 
 | 字段 | 类型 | 必要性 | 作用 | 说明 |
 |------|------|--------|------|------|
 | type | string | 固定值 | 固定值 | 固定为 "error" |
+| step | number | 必要 | 错误发生时的步骤序号 | 错误发生时的步骤序号（根据11.9改进建议），用于定位错误发生在哪一步 |
 | code | string | 必要 | 错误码 | 错误码，如 TIMEOUT、NOT_FOUND、SECURITY_BLOCKED |
 | message | string | 必要 | 错误消息 | 用户可读的错误消息 |
 | error_type | string | 可选 | 错误类型 | 错误类型，如 network、file_system |
