@@ -6052,6 +6052,166 @@ export async function requestNextPage(
 
 ---
 
-**更新时间**: 2026-03-09 22:00:00
-**更新内容**: 补充第10章缺少的任务控制API、用户确认接口、分页数据请求接口的详细调用说明
-**编写人**: 小沈
+## 十一、新8种type的汇总说明
+
+本文档定义了流式ReAct API的8种type，用于前端识别和处理不同类型的消息。
+
+---
+
+### 11.1 type=start（任务开始）
+
+**说明**：任务初始化阶段，包含初始化和安全检查两个子阶段。
+
+**字段汇总表**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "start" |
+| display_name | string | 必要 | AI显示名称，如 "OpenAI (gpt-4)" |
+| model | string | 必要 | AI模型，如 "gpt-4"、"gpt-4o" |
+| provider | string | 必要 | AI提供商，如 "openai"、"anthropic" |
+| task_id | string | 必要 | 唯一标识一次用户请求 |
+| security_check | object | 必要 | 本次请求的安全检查结果 |
+
+**security_check 子字段**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| is_safe | boolean | 必要 | true=安全，false=危险 |
+| risk_level | string/null | 可选 | low/medium/high/critical |
+| risk | string/null | 可选 | 风险描述 |
+| blocked | boolean | 必要 | true=已拦截，不执行LLM |
+
+---
+
+### 11.2 type=thought（LLM思考）
+
+**说明**：ReAct循环第1阶段，LLM推理决定下一步行动。
+
+**字段汇总表**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "thought" |
+| step | number | 必要 | 当前是第几轮ReAct循环，从1开始 |
+| content | string | 必要 | LLM的思考内容 |
+| reasoning | string | 可选 | LLM的推理过程 |
+| action_tool | string | 必要 | 要执行的工具名称 |
+| params | object | 必要 | 工具执行的参数 |
+
+---
+
+### 11.3 type=action_tool（执行动作）
+
+**说明**：ReAct循环第2阶段，执行Thought阶段指定的工具。
+
+**字段汇总表**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "action_tool" |
+| step | number | 必要 | 步骤序号 |
+| tool_name | string | 必要 | 工具名称 |
+| tool_params | object | 必要 | 工具参数 |
+| execution_status | string | 必要 | 执行状态：success/error/warning |
+| summary | string | 必要 | 人类可读的执行结果摘要 |
+| raw_data | object/null | 可选 | 机器可读的结构化数据 |
+| action_retry_count | number | 可选 | 重试次数，0=首次执行 |
+
+---
+
+### 11.4 type=observation（执行结果判断）
+
+**说明**：ReAct循环第3阶段，将执行结果反馈给LLM判断是否完成。
+
+**字段汇总表**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "observation" |
+| step | number | 必要 | 步骤序号 |
+| execution_status | string | 必要 | 执行状态，来自action_tool输出 |
+| summary | string | 必要 | 结果描述，来自action_tool输出 |
+| raw_data | object/null | 可选 | 原始数据，来自action_tool输出 |
+| content | string | 必要 | LLM基于结果生成的新思考 |
+| reasoning | string | 可选 | LLM的推理过程 |
+| action_tool | string | 必要 | LLM决定的下一步工具 |
+| params | object | 必要 | 工具参数 |
+| is_finished | boolean | 必要 | 是否完成任务 |
+
+---
+
+### 11.5 type=final（最终回复）
+
+**说明**：ReAct循环结束后的最终输出。
+
+**字段汇总表**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "final" |
+| content | string | 必要 | 完整回复内容 |
+| display_name | string | 必要 | AI显示名称，如 "OpenAI (gpt-4)" |
+
+---
+
+### 11.6 type=chunk（流式内容片段）
+
+**说明**：LLM流式输出时的内容片段，用于普通对话场景。
+
+**字段汇总表**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "chunk" |
+| content | string | 必要 | 回复片段内容 |
+| is_reasoning | boolean | 可选 | 是否在思考阶段 |
+| chunk_reasoning | string | 可选 | 思考内容（避免与thought的reasoning混淆） |
+
+---
+
+### 11.7 type=error（错误）
+
+**说明**：错误状态，不参与循环，用于报告系统错误、安全拦截等。
+
+**字段汇总表**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "error" |
+| code | string | 必要 | 错误码，如 TIMEOUT、NOT_FOUND、SECURITY_BLOCKED |
+| message | string | 必要 | 用户可读的错误消息 |
+| error_type | string | 可选 | 错误类型，如 network、file_system |
+| details | string | 可选 | 详细错误信息 |
+| stack | string | 可选 | 堆栈信息（仅用于调试） |
+| retryable | boolean | 可选 | 是否可重试 |
+| retry_after | number | 可选 | 重试等待秒数 |
+
+---
+
+### 11.8 type=status（Agent执行状态）
+
+**说明**：Agent内部执行状态，整合了中断、暂停、恢复、重试四个状态。
+
+**字段汇总表**：
+
+| 字段 | 类型 | 必要性 | 说明 |
+|------|------|--------|------|
+| type | string | 固定值 | 固定为 "status" |
+| status_value | string | 必要 | 具体状态值 |
+| message | string | 必要 | 状态消息 |
+
+**status_value 取值说明**：
+
+| 值 | 说明 |
+|-----|------|
+| interrupted | 任务中断 |
+| paused | 任务暂停 |
+| resumed | 任务恢复 |
+| retrying | 任务重试中 |
+
+---
+
+**更新时间**: 2026-03-10
+**更新内容**: 新增第11章：新8种type的汇总说明
+**编写人**: 小新
