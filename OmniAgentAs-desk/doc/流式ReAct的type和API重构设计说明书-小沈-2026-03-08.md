@@ -6067,6 +6067,7 @@ export async function requestNextPage(
 | 字段 | 类型 | 必要性 | 作用 | 说明 |
 |------|------|--------|------|------|
 | type | string | 固定值 | 固定值 | 固定为 "start" |
+| step | number | 必要 | 步骤序号 | 任务步骤序号，从1开始（根据11.9改进建议） |
 | display_name | string | 必要 | 显示AI名称 | 如 "OpenAI (gpt-4)" |
 | model | string | 必要 | AI模型 | 如 "gpt-4"、"gpt-4o" |
 | provider | string | 必要 | AI提供商 | 如 "openai"、"anthropic" |
@@ -6150,6 +6151,7 @@ export async function requestNextPage(
 | 字段 | 类型 | 必要性 | 作用 | 说明 |
 |------|------|--------|------|------|
 | type | string | 固定值 | 固定值 | 固定为 "final" |
+| step | number | 必要 | 最终步骤序号 | 整个任务的最终步骤序号（根据11.9改进建议） |
 | content | string | 必要 | 完整回复 | 完整回复内容 |
 | display_name | string | 必要 | AI显示名称 | AI显示名称，如 "OpenAI (gpt-4)" |
 
