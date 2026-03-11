@@ -223,11 +223,15 @@ export const chatApi = {
               if (
                 data.type === "thought" ||
                 data.type === "action" ||
-                data.type === "observation"
+                data.type === "observation" ||
+                data.type === "chunk" ||
+                data.type === "final"
               ) {
                 callbacks.onStep(data);
-              } else if (data.type === "final") {
-                callbacks.onComplete(data.content, data.model); // 传递model
+                // final 额外调用 onComplete 更新 message.content
+                if (data.type === "final") {
+                  callbacks.onComplete(data.content, data.model);
+                }
               } else if (data.type === "interrupted") {
                 message.warning("任务已被中断");
               } else if (data.type === "error") {
