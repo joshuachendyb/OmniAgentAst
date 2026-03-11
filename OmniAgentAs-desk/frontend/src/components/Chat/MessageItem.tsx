@@ -770,8 +770,8 @@ const isUser = message.role === "user";
                     }),
                   }}
                 >
-                  {/* 只有第一组思考过程添加标签 */}
-                  {group.isReasoning && index === 0 && (
+                  {/* 只有第一个思考过程分组添加标签 */}
+                  {group.isReasoning && groupedChunks.findIndex(g => g.isReasoning) === index && (
                     <span style={{ 
                       color: '#888', 
                       fontSize: '0.85em', 

@@ -178,7 +178,7 @@ export const useSSE = (
   config: SSEConfig,
   onStep?: (step: ExecutionStep) => void,
   onChunk?: (chunk: string, isReasoning?: boolean) => void,
-  onComplete?: (fullResponse: string, metadata?: string | SSEMetadata) => void,
+  onComplete?: (fullResponse: string, metadata?: string | SSEMetadata, executionSteps?: ExecutionStep[]) => void,
   onError?: (error: string | SSEError) => void,
   onPaused?: () => void,
   onResumed?: () => void,
@@ -189,6 +189,7 @@ export const useSSE = (
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
   const [executionSteps, setExecutionSteps] = useState<ExecutionStep[]>([]);
+  const executionStepsRef = useRef<ExecutionStep[]>([]);
   const [currentResponse, setCurrentResponse] = useState("");
   const [reconnectStatus, setReconnectStatus] = useState<"idle" | "connecting" | "reconnecting" | "failed">("idle");
 
@@ -232,9 +233,15 @@ export const useSSE = (
    */
   const clearSteps = useCallback(() => {
     setExecutionSteps([]);
+    executionStepsRef.current = [];
     setCurrentResponse("");
     responseBufferRef.current = "";
   }, []);
+
+  // 同步 executionSteps 到 ref
+  useEffect(() => {
+    executionStepsRef.current = executionSteps;
+  }, [executionSteps]);
 
   /**
    * 执行重连
@@ -321,23 +328,24 @@ export const useSSE = (
 
         if (done) {
           if (buffer.trim()) {
-            processSSEData(buffer, {
-              setExecutionSteps,
-              onStep,
-              onChunk,
-              onComplete,
-              onError,
-              onPaused,
-              onResumed,
-              onShowSteps,
-              onRetry,
-              setCurrentResponse,
-              responseBufferRef,
-              setIsReceiving,
-              setIsConnected,
-              disconnect,
-              setServerTaskId,
-            }, isProcessingRef);
+        processSSEData(buffer, {
+          setExecutionSteps,
+          getCurrentExecutionSteps: () => executionStepsRef.current,
+          onStep,
+          onChunk,
+          onComplete,
+          onError,
+          onPaused,
+          onResumed,
+          onShowSteps,
+          onRetry,
+          setCurrentResponse,
+          responseBufferRef,
+          setIsReceiving,
+          setIsConnected,
+          disconnect,
+          setServerTaskId,
+        }, isProcessingRef);
           }
           break;
         }
@@ -349,6 +357,7 @@ export const useSSE = (
         for (const line of lines) {
           processSSEData(line, {
             setExecutionSteps,
+            getCurrentExecutionSteps: () => executionStepsRef.current,
             onStep,
             onChunk,
             onComplete,
@@ -456,9 +465,10 @@ const processSSEData = (
   line: string,
   handlers: {
     setExecutionSteps: React.Dispatch<React.SetStateAction<ExecutionStep[]>>;
+    getCurrentExecutionSteps: () => ExecutionStep[];
     onStep?: (step: ExecutionStep) => void;
     onChunk?: (chunk: string, isReasoning?: boolean) => void;
-    onComplete?: (fullResponse: string, metadata?: string | SSEMetadata) => void;
+    onComplete?: (fullResponse: string, metadata?: string | SSEMetadata, executionSteps?: ExecutionStep[]) => void;
     onError?: (error: string) => void;
     onPaused?: () => void;
     onResumed?: () => void;
@@ -643,7 +653,7 @@ const processSSEData = (
           model: rawData.model,
           provider: rawData.provider,
           display_name: displayName,
-        } as SSEMetadata);
+        } as SSEMetadata, [...handlers.getCurrentExecutionSteps(), step]);
 
         setIsReceiving(false);
         setIsConnected(false);

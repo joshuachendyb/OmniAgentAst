@@ -298,7 +298,8 @@ const NewChatContainer: React.FC = () => {
               model?: string;
               provider?: string;
               display_name?: string;
-            }
+            },
+        executionStepsFromSSE?: ExecutionStep[]
       ) => {
         // ✅ 支持旧格式（model 字符串）和新格式（metadata 对象）
         const metadataObj =
@@ -337,6 +338,8 @@ const NewChatContainer: React.FC = () => {
         // 这样更加健壮，即使AI响应失败，用户消息也已保存
         const currentSessionId = currentSessionIdRef.current || sessionId;
         const currentPending = pendingMessageRef.current || pendingMessage;
+        // 使用从SSE传递的executionSteps，确保获取最新的数据
+        const stepsToSave = executionStepsFromSSE || executionStepsRef.current || [];
         if (currentSessionId && finalResponse && finalResponse.trim()) {
           // 🔴 修复：添加详细的调试日志
           console.log("🔍 保存AI回复:");
@@ -345,6 +348,7 @@ const NewChatContainer: React.FC = () => {
           console.log("  最终使用的sessionId:", currentSessionId);
           console.log("  currentPending:", currentPending);
           console.log("  finalResponse length:", finalResponse.length);
+          console.log("  executionStepsFromSSE:", executionStepsFromSSE?.length);
 
           try {
             // 【小新修复 2026-03-11】分开保存：
@@ -353,13 +357,13 @@ const NewChatContainer: React.FC = () => {
             await sessionApi.saveMessage(currentSessionId, {
               role: "assistant",
               content: finalResponse,
-              execution_steps: executionStepsRef.current || [],
+              execution_steps: stepsToSave,
             });
 
             // 保存 execution_steps 到最后一条消息（保留兼容）
-            if (executionStepsRef.current && executionStepsRef.current.length > 0) {
-              await sessionApi.saveExecutionSteps(currentSessionId, executionStepsRef.current);
-              console.log("✅ 执行步骤保存成功，共", executionStepsRef.current.length, "步");
+            if (stepsToSave && stepsToSave.length > 0) {
+              await sessionApi.saveExecutionSteps(currentSessionId, stepsToSave);
+              console.log("✅ 执行步骤保存成功，共", stepsToSave.length, "步");
             }
 
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
@@ -452,10 +456,10 @@ const NewChatContainer: React.FC = () => {
          // 【小新第三修复 2026-03-02】清理ref和state
          pendingMessageRef.current = null; // 同步清理
          setPendingMessage(null); // 异步清理
-         console.log("✅ [onComplete] 处理完成");
-       },
-      [sessionId, pendingMessage]
-    ),
+          console.log("✅ [onComplete] 处理完成");
+        },
+       [] // 依赖数组为空，因为使用 ref 而不是 state
+     ),
     // onError - 流式错误 - 前端小新代修改：适配后端新格式
     useCallback(
       (
