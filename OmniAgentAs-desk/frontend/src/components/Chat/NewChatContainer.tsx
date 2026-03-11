@@ -344,15 +344,19 @@ const NewChatContainer: React.FC = () => {
           console.log("  finalResponse length:", finalResponse.length);
 
           try {
-            // 保存AI回复（API会自动处理消息计数）
-            // 用户消息已在调用 /chat/stream 之前保存
+            // 【小新修复 2026-03-11】分开保存：
+            // 1. saveMessage 只保存消息内容（消息已在流式开始时创建）
+            // 2. saveExecutionSteps 更新最后一条消息的 execution_steps
             await sessionApi.saveMessage(currentSessionId, {
               role: "assistant",
               content: finalResponse,
-              execution_steps: executionSteps,
-              // 不传递 message_count，让后端自动处理
-              // 不传递 display_name，后端从缓存自动获取（小沈优化 2026-03-03）
             });
+
+            // 保存 execution_steps 到最后一条消息
+            if (executionSteps && executionSteps.length > 0) {
+              await sessionApi.saveExecutionSteps(currentSessionId, executionSteps);
+              console.log("✅ 执行步骤保存成功，共", executionSteps.length, "步");
+            }
 
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
             // 原因：标题应该在用户修改时立即保存，避免版本冲突
