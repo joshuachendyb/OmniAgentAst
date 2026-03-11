@@ -600,15 +600,15 @@ const processSSEData = (
       }
 
       case "observation": {
-        // 【小查修复2026-03-10】添加is_finished和raw_data字段映射
+        // 【2026-03-11 重命名】observation字段加 obs_ 前缀
         step.is_finished = rawData.is_finished ?? false;
-        step.raw_data = rawData.raw_data ?? null;
-        step.execution_status = rawData.execution_status ?? 'success';
-        step.summary = rawData.summary ?? '';
+        step.raw_data = rawData.obs_raw_data ?? null;
+        step.execution_status = rawData.obs_execution_status ?? 'success';
+        step.summary = rawData.obs_summary ?? '';
         step.content = rawData.content ?? '';
-        step.reasoning = rawData.reasoning ?? '';
-        step.action_tool = rawData.action_tool ?? '';
-        step.params = rawData.params ?? {};
+        step.reasoning = rawData.obs_reasoning ?? '';
+        step.action_tool = rawData.obs_action_tool ?? '';
+        step.params = rawData.obs_params ?? {};
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
         setExecutionSteps((prev) => [...prev, step]);
