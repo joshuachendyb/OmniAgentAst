@@ -3924,7 +3924,7 @@ if (data.type === 'observation') {
     console.log("任务即将完成");
   } else {
     // 继续执行下一个工具
-    showNextAction(data.action_tool, data.params);
+    showNextAction(data.obs_action_tool, data.obs_params);
   }
 }
 ```
