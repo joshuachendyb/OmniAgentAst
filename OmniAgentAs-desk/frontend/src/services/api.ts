@@ -759,12 +759,12 @@ export const sessionApi = {
 
   /**
    * 保存消息到会话
-  * @author 小新
-  * @update 2026-03-11: 添加 executionSteps 参数
+   * @author 小新
+   * @update 2026-03-11: 添加 execution_steps 参数
    */
   saveMessage: async (
     sessionId: string,
-    message: { role: string; content: string; executionSteps?: any[] }
+    message: { role: string; content: string; execution_steps?: any[] }
   ): Promise<{ success: boolean }> => {
     const response = await api.post<{ success: boolean }>(
       `/sessions/${sessionId}/messages`,
