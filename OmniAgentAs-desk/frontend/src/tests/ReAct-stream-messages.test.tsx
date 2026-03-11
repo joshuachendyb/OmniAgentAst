@@ -102,14 +102,12 @@ const TEST_MESSAGES = {
     type: 'chunk' as const,
     content: '这是流式输出的第一个片段',
     is_reasoning: false,
-    chunk_reasoning: undefined,
   },
 
   chunkWithReasoning: {
     type: 'chunk' as const,
     content: '正在分析用户的问题...',
     is_reasoning: true,
-    chunk_reasoning: '用户想要查询航班信息，我需要先调用搜索工具',
   },
 
   final: {

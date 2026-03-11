@@ -94,7 +94,6 @@ export interface ChunkMessage {
   type: 'chunk';
   content: string;
   is_reasoning: boolean;
-  chunk_reasoning?: string;
 }
 
 /**

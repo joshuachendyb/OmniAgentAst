@@ -433,7 +433,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                   }}
                 >
                   <CheckCircleOutlined style={{ marginRight: 8 }} />
-                  <span>{step.answer_content}</span>
+                  <span>{step.content}</span>
                   <Button
                     type="text"
                     size="small"
@@ -444,7 +444,7 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
                         <CopyOutlined />
                       )
                     }
-                    onClick={() => copyToClipboard(step.answer_content || "", index)}
+                    onClick={() => copyToClipboard(step.content || "", index)}
                     className="copy-btn"
                     style={{ float: "right", padding: 0 }}
                   />

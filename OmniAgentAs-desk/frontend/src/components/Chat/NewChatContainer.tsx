@@ -255,7 +255,7 @@ const NewChatContainer: React.FC = () => {
       });
     }, []),
     // onChunk - 收到内容片段 【小沈修复】添加 isReasoning 参数支持思考过程样式区分
-    useCallback((chunk: string, isReasoning?: boolean, _reasoningContent?: string) => {
+    useCallback((chunk: string, isReasoning?: boolean) => {
       console.log("🔍 [onChunk] 收到内容片段:", JSON.stringify(chunk).substring(0, 100), "isReasoning:", isReasoning);
       
       // ⭐ 暂停时存入缓冲区，不直接显示
@@ -273,9 +273,8 @@ const NewChatContainer: React.FC = () => {
           lastMessage.isStreaming
         ) {
           const updated = [...prev];
-          // 【小沈修复】如果当前chunk是正式内容(isReasoning=false)，则is_reasoning应设为false
-          // 否则保持之前的值（允许从思考过程切换到正式内容）
-          const newIsReasoning = isReasoning === false ? false : (lastMessage.is_reasoning || false);
+          // 【小查修复】直接使用传入的isReasoning值，正确处理思考过程切换
+          const newIsReasoning = isReasoning ?? false;
           updated[updated.length - 1] = {
             ...lastMessage,
             content: lastMessage.content + chunk,

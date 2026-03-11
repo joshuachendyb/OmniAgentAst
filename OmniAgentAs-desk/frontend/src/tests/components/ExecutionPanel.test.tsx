@@ -30,7 +30,7 @@ describe('ExecutionPanel Component', () => {
     },
     {
       type: 'final',
-      answer_content: 'Task completed',
+      content: 'Task completed',
       timestamp: Date.now(),
     },
   ];

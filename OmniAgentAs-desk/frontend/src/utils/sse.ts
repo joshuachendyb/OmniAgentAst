@@ -53,12 +53,7 @@ export interface ExecutionStep {
   action_tool?: string;        // thought类型的下一步动作
   params?: Record<string, any>; // thought类型的参数
   
-  // === AI回复字段（后端字段拆分） ===
-  answer_content?: string;    // chunk/final 类型的AI回复
-  
-  // === 错误/中断字段（后端字段拆分） ===
-  error_message?: string;      // error 类型的错误信息
-  message?: string;           // interrupted 类型的中断信息
+  // === 保留字段（不变）===
   
   // === 保留字段（不变）===
   // observation 相关
@@ -90,6 +85,10 @@ export interface ExecutionStep {
   is_reasoning?: boolean;  // 是否为思考过程（true=思考过程，false=正式内容）
   reasoning?: string;       // 思考过程内容（当 is_reasoning=true 时使用）
   
+  // === 错误/中断字段 ===
+  error_message?: string;      // error 类型的错误信息
+  message?: string;           // interrupted 类型的中断信息
+
   // === 前端额外字段 ===
   timestamp: number;      // 前端生成的时间戳
   contentStart?: number;  // content起始位置（用于流式定位）
@@ -178,7 +177,7 @@ const calculateReconnectDelay = (attempt: number, baseDelay: number, maxDelay: n
 export const useSSE = (
   config: SSEConfig,
   onStep?: (step: ExecutionStep) => void,
-  onChunk?: (chunk: string, isReasoning?: boolean, reasoning?: string) => void,
+  onChunk?: (chunk: string, isReasoning?: boolean) => void,
   onComplete?: (fullResponse: string, metadata?: string | SSEMetadata) => void,
   onError?: (error: string | SSEError) => void,
   onPaused?: () => void,
@@ -458,7 +457,7 @@ const processSSEData = (
   handlers: {
     setExecutionSteps: React.Dispatch<React.SetStateAction<ExecutionStep[]>>;
     onStep?: (step: ExecutionStep) => void;
-    onChunk?: (chunk: string, isReasoning?: boolean, reasoning?: string) => void;
+    onChunk?: (chunk: string, isReasoning?: boolean) => void;
     onComplete?: (fullResponse: string, metadata?: string | SSEMetadata) => void;
     onError?: (error: string) => void;
     onPaused?: () => void;
@@ -507,7 +506,7 @@ const processSSEData = (
       // 根据不同type使用不同字段（后端字段拆分方案）
       thinking_prompt: rawData.thinking_prompt,
       action_description: rawData.action_description,
-      answer_content: rawData.answer_content,
+      content: rawData.content,
       error_message: rawData.error_message,
       message: rawData.message,
       
@@ -607,16 +606,14 @@ const processSSEData = (
       }
 
       case "chunk": {
-        // 后端实际返回 answer_content 字段
-        const chunkContent = rawData.answer_content || rawData.content || "";
+        // 后端发送的是 content 字段（根据设计文档9.4.5）
+        const chunkContent = rawData.content || "";
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
         // 【小沈修复】收到chunk时关闭步骤UI，开始显示回复内容
         onShowSteps?.(false);
-        // 【小查修复2026-03-10】兼容设计文档要求的chunk_reasoning字段
-        const reasoning = rawData.chunk_reasoning || rawData.reasoning || "";
-        // 传递 is_reasoning 和 reasoning 区分思考过程和最终答案
-        onChunk?.(chunkContent, rawData.is_reasoning || false, reasoning);
+        // 传递 is_reasoning 区分思考过程和最终答案
+        onChunk?.(chunkContent, rawData.is_reasoning || false);
         
         // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
         // 这样MessageItem可以遍历并分别显示思考过程和正式内容
@@ -626,8 +623,8 @@ const processSSEData = (
       }
 
       case "final": {
-        // 后端实际返回 answer_content 字段
-        step.content = rawData.answer_content || rawData.content || "";
+        // 后端实际返回 content 字段（根据设计文档9.4.6）
+        step.content = rawData.content || "";
         if (step.content) {
           if (!responseBufferRef.current) {
             responseBufferRef.current = step.content;
