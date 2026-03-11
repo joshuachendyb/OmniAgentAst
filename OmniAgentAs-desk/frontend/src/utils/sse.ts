@@ -601,15 +601,14 @@ const processSSEData = (
 
       case "observation": {
         // 【小查修复2026-03-10】添加is_finished和raw_data字段映射
-        // 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
         step.is_finished = rawData.is_finished ?? false;
-        step.obs_raw_data = rawData.obs_raw_data ?? null;
-        step.obs_execution_status = rawData.obs_execution_status ?? 'success';
-        step.obs_summary = rawData.obs_summary ?? '';
+        step.raw_data = rawData.raw_data ?? null;
+        step.execution_status = rawData.execution_status ?? 'success';
+        step.summary = rawData.summary ?? '';
         step.content = rawData.content ?? '';
-        step.obs_reasoning = rawData.obs_reasoning ?? '';
-        step.obs_action_tool = rawData.obs_action_tool ?? '';
-        step.obs_params = rawData.obs_params ?? {};
+        step.reasoning = rawData.reasoning ?? '';
+        step.action_tool = rawData.action_tool ?? '';
+        step.params = rawData.params ?? {};
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
         setExecutionSteps((prev) => [...prev, step]);
@@ -617,6 +616,7 @@ const processSSEData = (
         break;
       }
 
+      case "chunk": {
         // 【小查修复】统一使用 is_reasoning (snake_case)
         console.log("🔍 [SSE chunk] rawData.is_reasoning =", rawData.is_reasoning, "type =", rawData.type);
         const chunkContent = rawData.content || "";

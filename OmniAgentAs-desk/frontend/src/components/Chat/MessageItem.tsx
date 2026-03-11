@@ -743,10 +743,10 @@ const isUser = message.role === "user";
               // 分组：将连续相同类型的chunk合并
               const groupedChunks: { is_reasoning: boolean; content: string }[] = [];
               for (const chunk of chunks) {
-                // 【小查修复】统一使用 is_reasoning (snake_case)
-                const is_reasoning = chunk.is_reasoning === true || chunk.is_reasoning === 'true' || chunk.is_reasoning === 1 || chunk.is_reasoning === '1';
+                // 【小查修复】类型已经是 boolean，直接使用
+                const is_reasoning = !!chunk.is_reasoning;
                 const content = chunk.content || '';
-                console.log("🔍 [chunk渲染] 单个chunk: is_reasoning原值=", chunk.is_reasoning, "is_reasoning=", is_reasoning, "content前10字=", content.substring(0, 10));
+                console.log("🔍 [chunk渲染] 单个chunk: is_reasoning=", is_reasoning, "content前10字=", content.substring(0, 10));
                 if (groupedChunks.length > 0 && groupedChunks[groupedChunks.length - 1].is_reasoning === is_reasoning) {
                   // 相同类型，合并
                   groupedChunks[groupedChunks.length - 1].content += content;
