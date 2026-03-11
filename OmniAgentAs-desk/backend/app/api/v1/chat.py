@@ -236,7 +236,7 @@ async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_t
             if not is_paused:
                 # 不再暂停，恢复发送
                 if running_tasks.get(task_id, {}).get("_was_paused", False):
-                    # 【问题5修复】统一使用type='status' + status_value
+            # 【问题5修复】统一使用type='status' + incident_value
                     yield f"data: {json.dumps({'type': 'status', 'incident_value': 'resumed', 'message': '任务已恢复'})}\n\n"
                     running_tasks[task_id]["_was_paused"] = False
                 return
@@ -244,7 +244,7 @@ async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_t
         # 暂停中，等待恢复
         if is_paused and not running_tasks.get(task_id, {}).get("_was_paused", False):
             # 刚进入暂停状态，发送paused事件
-            # 【问题5修复】统一使用type='status' + status_value
+            # 【问题5修复】统一使用type='status' + incident_value
             async with running_tasks_lock:
                 running_tasks[task_id]["_was_paused"] = True
             yield f"data: {json.dumps({'type': 'status', 'incident_value': 'paused', 'message': '任务已暂停'})}\n\n"
@@ -792,7 +792,7 @@ async def chat_stream(request: ChatRequest):
                 # 检查是否被中断
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
-                        # 【问题5修复】统一使用type='status' + status_value
+                        # 【问题5修复】统一使用type='status' + incident_value
                         interrupted_data = {'type': 'status', 'incident_value': 'interrupted', 'message': '任务已被中断'}
                         logger.info(f"[Step status] 发送status步骤(interrupted)")
                         yield f"data: {json.dumps(interrupted_data)}\n\n"
