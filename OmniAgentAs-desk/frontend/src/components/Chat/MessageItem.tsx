@@ -30,6 +30,7 @@ import {
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
 import { taskControlApi } from "../../services/api";
+import { renderContent } from "../../utils/markdown";
 
 /**
  * 步骤行组件 - 单行步骤显示（优化后新增）
@@ -747,7 +748,7 @@ const isUser = message.role === "user";
               console.log("🔍 [chunk渲染] 前5个chunk的is_reasoning=", chunks.slice(0, 5).map(c => c.is_reasoning));
               console.log("🔍 [chunk渲染] 后5个chunk的is_reasoning=", chunks.slice(-5).map(c => c.is_reasoning));
               
-              // 逐个渲染chunk，直接显示内容
+              // 逐个渲染chunk，使用renderContent渲染Markdown和LaTeX
               return chunks.map((chunk, index) => {
                 const is_reasoning = !!chunk.is_reasoning;
                 const content = (chunk.content || '').replace(/\n\n/g, '\n');
@@ -761,7 +762,7 @@ const isUser = message.role === "user";
                       fontSize: is_reasoning ? '0.95em' : '1em',
                     }}
                   >
-                    {content}
+                    {renderContent(content)}
                   </span>
                 );
               });
@@ -792,9 +793,10 @@ const isUser = message.role === "user";
                 }
               >
                 {/* 【小查修复】已移除回退显示"思考中"标签，统一用chunk渲染 */}
+                {/* 【小新修复】使用renderContent渲染Markdown和LaTeX */}
                 {message.content && typeof message.content === 'string' 
-                  ? message.content.replace(/\n\n/g, '\n')
-                  : String(message.content || '').replace(/\n\n/g, '\n')}
+                  ? renderContent(message.content.replace(/\n\n/g, '\n'))
+                  : renderContent(String(message.content || '').replace(/\n\n/g, '\n'))}
                 {(message.isStreaming ?? false) && (
                   <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
                 )}
