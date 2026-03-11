@@ -256,6 +256,8 @@ const NewChatContainer: React.FC = () => {
     }, []),
     // onChunk - 收到内容片段 【小沈修复】添加 isReasoning 参数支持思考过程样式区分
     useCallback((chunk: string, isReasoning?: boolean, _reasoningContent?: string) => {
+      console.log("%c[onChunk] called!", "color: #FF00FF; font-weight: bold", "isReasoning:", isReasoning);
+      
       // ⭐ 暂停时存入缓冲区，不直接显示
       if (isPausedRef.current) {
         console.log("⏸️ [onChunk] 暂停中，存入缓冲区");
@@ -271,9 +273,9 @@ const NewChatContainer: React.FC = () => {
           lastMessage.isStreaming
         ) {
           const updated = [...prev];
-          // 【小沈修复】如果当前chunk是正式内容(isReasoning=false)，则is_reasoning应设为false
-          // 否则保持之前的值（允许从思考过程切换到正式内容）
-          const newIsReasoning = isReasoning === false ? false : (lastMessage.is_reasoning || false);
+          // 【修复】直接使用当前chunk的isReasoning值，不再继承之前的值
+          const newIsReasoning = isReasoning === true;
+          console.log("%c[onChunk] set is_reasoning:", "color: #FF00FF", newIsReasoning);
           updated[updated.length - 1] = {
             ...lastMessage,
             content: lastMessage.content + chunk,
@@ -350,6 +352,15 @@ const NewChatContainer: React.FC = () => {
               // 不传递 message_count，让后端自动处理
               // 不传递 display_name，后端从缓存自动获取（小沈优化 2026-03-03）
             });
+
+            // 【小欧修复 2026-03-11】保存AI回复后，保存执行步骤到历史
+            // 直接从 useSSE 返回的 executionSteps 获取，而不是从 messages 中获取
+            if (executionSteps && executionSteps.length > 0) {
+              await sessionApi.saveExecutionSteps(currentSessionId, executionSteps);
+              console.log("✅ [新消息] 执行步骤保存成功，共", executionSteps.length, "步");
+              // 保存成功后清空 executionSteps
+              clearSteps();
+            }
 
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
             // 原因：标题应该在用户修改时立即保存，避免版本冲突

@@ -11,7 +11,6 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { message } from "antd";
-import type { StreamMessage } from "../types/chat";
 
 /**
  * SSE 错误对象
@@ -191,6 +190,10 @@ export const useSSE = (
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
   const [executionSteps, setExecutionSteps] = useState<ExecutionStep[]>([]);
+  
+  // 【小新修复】用 ref 追踪上一次的 is_reasoning 值
+  const lastChunkIsReasoningRef = useRef<boolean | null>(null);
+  
   const [currentResponse, setCurrentResponse] = useState("");
   const [reconnectStatus, setReconnectStatus] = useState<"idle" | "connecting" | "reconnecting" | "failed">("idle");
 
@@ -325,6 +328,8 @@ export const useSSE = (
           if (buffer.trim()) {
             processSSEData(buffer, {
               setExecutionSteps,
+              executionSteps,
+              lastChunkIsReasoningRef,
               onStep,
               onChunk,
               onComplete,
@@ -351,6 +356,8 @@ export const useSSE = (
         for (const line of lines) {
           processSSEData(line, {
             setExecutionSteps,
+            executionSteps,
+            lastChunkIsReasoningRef,
             onStep,
             onChunk,
             onComplete,
@@ -372,6 +379,14 @@ export const useSSE = (
       // 成功，重置重连状态
       setReconnectStatus("idle");
       reconnectAttemptsRef.current = 0;
+      
+      // ═══════════════════════════════════════════════════════════
+      // ═══════════════════════ 消息结束 ═══════════════════════
+      // ═══════════════════════════════════════════════════════════
+      console.log("%c╔═════╗", "color: #FF9800; font-weight: bold");
+      console.log("%c║ ✅ 消息结束 │ " + new Date().toLocaleTimeString() + "      ║", "color: #FF9800; font-weight: bold");
+      console.log("%c╚═════╝", "color: #FF9800; font-weight: bold");
+      // ═══════════════════════════════════════════════════════════
     } catch (error: any) {
       console.error("[SSE] 请求错误:", error);
       setIsConnected(false);
@@ -418,6 +433,16 @@ export const useSSE = (
       pendingMessageRef.current = { content, sessionId };
       reconnectAttemptsRef.current = 0;
       
+      // ═══════════════════════════════════════════════════════════
+      // ═══════════════════════ 新消息开始 ═══════════════════════
+      // ═══════════════════════════════════════════════════════════
+      const userMsgPreview = content.length > 50 ? content.substring(0, 50) + "..." : content;
+      console.log("%c╔═════╗", "color: #4CAF50; font-weight: bold");
+      console.log("%c║ 🆕 新消息  │ " + new Date().toLocaleTimeString() + "      ║", "color: #4CAF50; font-weight: bold");
+      console.log("%c║ 👤 " + userMsgPreview + " ║", "color: #2196F3; font-weight: bold");
+      console.log("%c╚═════╝", "color: #4CAF50; font-weight: bold");
+      // ═══════════════════════════════════════════════════════════
+      
       await sendMessageInternal(content, sessionId);
       
       // 请求结束后重置
@@ -452,12 +477,14 @@ export const useSSE = (
 };
 
 /**
- * 处理单行SSE数据
- */
+  * 处理单行SSE数据
+  */
 const processSSEData = (
   line: string,
   handlers: {
     setExecutionSteps: React.Dispatch<React.SetStateAction<ExecutionStep[]>>;
+    executionSteps: ExecutionStep[];
+    lastChunkIsReasoningRef: React.MutableRefObject<boolean | null>;
     onStep?: (step: ExecutionStep) => void;
     onChunk?: (chunk: string, isReasoning?: boolean, reasoning?: string) => void;
     onComplete?: (fullResponse: string, metadata?: string | SSEMetadata) => void;
@@ -477,6 +504,8 @@ const processSSEData = (
 ) => {
   const {
     setExecutionSteps,
+    executionSteps,
+    lastChunkIsReasoningRef,  // 【小新修复】添加
     onStep,
     onChunk,
     onComplete,
@@ -562,66 +591,56 @@ const processSSEData = (
       }
 
       case "thought": {
-        console.log("🔍 [sse thought] 收到thought事件, rawData=", JSON.stringify(rawData));
+        console.log("%c--- thought ---", "color: #00BCD4");
+        // 【小新修复】重置 is_reasoning 追踪
+        lastChunkIsReasoningRef.current = null;
+        
         step.content = rawData.content || "";
         step.reasoning = rawData.reasoning || "";
         step.action_tool = rawData.action_tool || "";
         step.params = rawData.params || {};
-        console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
         // 添加到步骤数组，显示思考过程
         setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
         break;
       }
 
-      case "action_tool": {
-        // 使用新字段 tool_name, tool_params
-        step.tool_name = rawData.tool_name || "";
-        step.tool_params = rawData.tool_params || {};
-        step.execution_status = rawData.execution_status || 'success';
-        step.summary = rawData.summary || "";
-        step.raw_data = rawData.raw_data || null;
-        step.action_retry_count = rawData.action_retry_count || 0;
-        // 使用 action_description 填充 content
-        step.content = step.action_description || step.tool_name || "";
-        // 添加到步骤数组，显示执行动作
-        setExecutionSteps((prev) => [...prev, step]);
-        onStep?.(step);
-        break;
-      }
-
-      case "observation": {
-        // 【小查修复2026-03-10】添加is_finished和raw_data字段映射
-        step.is_finished = rawData.is_finished ?? false;
-        step.raw_data = rawData.raw_data ?? null;
-        step.execution_status = rawData.execution_status ?? 'success';
-        step.summary = rawData.summary ?? '';
-        step.content = rawData.content ?? '';
-        step.reasoning = rawData.reasoning ?? '';
-        step.action_tool = rawData.action_tool ?? '';
-        step.params = rawData.params ?? {};
-        step.contentStart = responseBufferRef.current.length;
-        step.contentEnd = step.contentStart;
-        setExecutionSteps((prev) => [...prev, step]);
-        onStep?.(step);
-        break;
-      }
-
       case "chunk": {
-        // 后端实际返回 answer_content 字段
-        const chunkContent = rawData.answer_content || rawData.content || "";
+        const chunkContent = rawData.content || "";
+        const chunkIsReasoning = rawData.is_reasoning === true;
+        
+        // 【新逻辑】只要收到 is_reasoning=false 的 chunk，就隐藏 thought
+        const shouldHideThought = !chunkIsReasoning;
+        
+        // 更新 ref
+        lastChunkIsReasoningRef.current = chunkIsReasoning;
+        
+        // 存入 step
+        step.content = chunkContent;
+        step.is_reasoning = chunkIsReasoning;
+        
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
-        // 【小沈修复】收到chunk时关闭步骤UI，开始显示回复内容
         onShowSteps?.(false);
-        // 【小查修复2026-03-10】兼容设计文档要求的chunk_reasoning字段
-        const reasoning = rawData.chunk_reasoning || rawData.reasoning || "";
-        // 传递 is_reasoning 和 reasoning 区分思考过程和最终答案
-        onChunk?.(chunkContent, rawData.is_reasoning || false, reasoning);
         
-        // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
-        // 这样MessageItem可以遍历并分别显示思考过程和正式内容
-        setExecutionSteps((prev) => [...prev, step]);
+        const reasoning = rawData.reasoning || "";
+        console.log("%c[sse.ts] 准备调用onChunk, isReasoning=", "color: #FF00FF", chunkIsReasoning);
+        onChunk?.(chunkContent, chunkIsReasoning, reasoning);
+        
+        // 状态转换时：清除 thought，添加标记
+        if (shouldHideThought) {
+          const filteredSteps = executionSteps.filter(s => s.type !== "thought");
+          const replyStep: ExecutionStep = {
+            type: "chunk",
+            content: "💬 LLM回复如下：",
+            is_reasoning: false,
+            timestamp: Date.now(),
+          };
+          setExecutionSteps([...filteredSteps, replyStep, step]);
+        } else {
+          setExecutionSteps([...executionSteps, step]);
+        }
+        
         onStep?.(step);
         break;
       }
@@ -644,6 +663,10 @@ const processSSEData = (
           display_name: displayName,
         } as SSEMetadata);
 
+        // 【小欧修复】不要在 final 时清空 executionSteps！
+        // 让父组件自己决定何时清空（需要在保存到数据库之后再清空）
+        // setExecutionSteps([]);
+        
         setIsReceiving(false);
         setIsConnected(false);
         break;

@@ -333,20 +333,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
    * 获取角色名称
    */
   const getRoleName = () => {
-    // 调试日志：检查消息对象
-      if (message.role === "assistant") {
-        console.log("🔍 MessageItem.getRoleName - 消息对象:", {
-          id: message.id,
-          role: message.role,
-          isStreaming: message.isStreaming,
-          display_name: message.display_name,
-          model: message.model,
-          content: message.content?.substring?.(0, 50),
-          // 检查所有属性
-          allProps: Object.keys(message)
-        });
-      }
-     
     switch (message.role) {
       case "user":
         return "我";
@@ -359,13 +345,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
           let display_nameToShow = message.display_name;
           if (!display_nameToShow && message.model) {
             display_nameToShow = message.model;
-            console.log("🔍 MessageItem.getRoleName - 从model构建display_name:", display_nameToShow);
           }
           
           const result = display_nameToShow
             ? `🤔 AI 助手【${display_nameToShow}】【加载中...】`
             : `🤔 AI 助手【加载中...】`;
-          console.log("🔍 MessageItem.getRoleName - 流式状态，返回:", result);
           return result;
         }
 
@@ -381,7 +365,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
         const result = message.display_name
           ? `AI 助手【${message.display_name}】`
           : "AI 助手";
-        console.log("🔍 MessageItem.getRoleName - 非流式状态，返回:", result);
         return result;
       }
       case "system":
@@ -736,14 +719,13 @@ const isUser = message.role === "user";
             {/* 【小沈修复】4. AI回复chunk - 先分组相同类型的chunk，再分别显示 */}
             {(() => {
               const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
-              console.log("🔍 [chunk渲染] chunks数组=", JSON.stringify(chunks.map(c => ({type: c.type, is_reasoning: c.is_reasoning, content: (c.content || c.answer_content || '').substring(0, 50)}))));
+              console.log("🔍 [MessageItem] chunks.length =", chunks.length, "chunks:", chunks.map(c => ({ is_reasoning: c.is_reasoning, content: (c.content || c.answer_content || '').slice(0, 20) })));
               
               // 分组：将连续相同类型的chunk合并
               const groupedChunks: { isReasoning: boolean; content: string }[] = [];
               for (const chunk of chunks) {
                 const isReasoning = chunk.is_reasoning === true;
                 const content = chunk.answer_content || chunk.content || '';
-                console.log("🔍 [chunk渲染] 单个chunk: isReasoning=", isReasoning, "content=", content.substring(0, 50));
                 if (groupedChunks.length > 0 && groupedChunks[groupedChunks.length - 1].isReasoning === isReasoning) {
                   // 相同类型，合并
                   groupedChunks[groupedChunks.length - 1].content += content;
@@ -752,8 +734,6 @@ const isUser = message.role === "user";
                   groupedChunks.push({ isReasoning, content });
                 }
               }
-              
-              console.log("🔍 [chunk渲染] 分组结果=", JSON.stringify(groupedChunks.map(g => ({isReasoning: g.isReasoning, contentLen: g.content.length}))));
               
               // 渲染分组后的chunk
               return groupedChunks.map((group, index) => (
@@ -785,51 +765,8 @@ const isUser = message.role === "user";
                 </span>
               ));
             })()}
-
-            {/* 5. 最终答案content - 如果没有executionSteps则回退到content显示 */}
-            {(!message.executionSteps || message.executionSteps.filter(s => s.type === "chunk").length === 0) && (
-              <div
-                style={{
-                  wordBreak: "break-word",
-                  overflowWrap: "break-word",
-                  paddingRight: 32,
-                  // 【小沈修复】思考过程使用灰色斜体样式，与正式回答区分
-                  ...(message.is_reasoning ? {
-                    color: '#888',
-                    fontStyle: 'italic',
-                    fontSize: '0.95em',
-                  } : {}),
-                }}
-                className={
-                  message.content === "🤔 AI 正在思考..." && message.isStreaming
-                    ? "thinking-message"
-                    : message.isError
-                    ? "error-message"
-                    : message.is_reasoning
-                    ? "reasoning-message"
-                    : ""
-                }
-              >
-                {/* 【小沈修复】思考过程添加标签提示 */}
-                {message.is_reasoning && (
-                  <span style={{ 
-                    color: '#888', 
-                    fontSize: '0.85em', 
-                    marginRight: 4,
-                    fontWeight: 500,
-                  }}>
-                    💭 思考中:
-                  </span>
-                )}
-                {message.content && typeof message.content === 'string' 
-                  ? message.content 
-                  : String(message.content || '')}
-                {(message.isStreaming ?? false) && (
-                  <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
-                )}
-              </div>
-            )}
           </>
+
 
           {/* CSS 动画 */}
           {(message.content === "🤔 AI 正在思考..." && message.isStreaming) ||
