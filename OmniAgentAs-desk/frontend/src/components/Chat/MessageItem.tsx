@@ -734,12 +734,8 @@ const isUser = message.role === "user";
               </div>
             )}
 
-            {/* 【小新修复】显示"💭 思考中:"标签 - 基于chunks中是否有is_reasoning=true的chunk */}
-            {(() => {
-              const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
-              const hasReasoningChunk = chunks.some(chunk => chunk.is_reasoning === true);
-              return hasReasoningChunk;
-            })() && (
+            {/* 【小新修复】在推理过程中显示"💭 思考中:"标签，推理完成后自动隐藏 */}
+            {message.is_reasoning && (
               <span style={{ color: '#888', fontSize: '0.85em', marginRight: 4, fontWeight: 500 }}>
                 💭 思考中:
               </span>
