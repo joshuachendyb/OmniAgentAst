@@ -11,7 +11,6 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { message } from "antd";
-import type { StreamMessage } from "../types/chat";
 
 /**
  * SSE 错误对象

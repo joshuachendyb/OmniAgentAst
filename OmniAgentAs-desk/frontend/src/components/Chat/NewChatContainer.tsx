@@ -349,6 +349,7 @@ const NewChatContainer: React.FC = () => {
             await sessionApi.saveMessage(currentSessionId, {
               role: "assistant",
               content: finalResponse,
+              executionSteps: executionSteps,
               // 不传递 message_count，让后端自动处理
               // 不传递 display_name，后端从缓存自动获取（小沈优化 2026-03-03）
             });
