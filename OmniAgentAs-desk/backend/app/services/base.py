@@ -110,6 +110,9 @@ class BaseAIService:
         
         messages = self._build_messages(message, history)
         
+        # 【调试日志】记录发送给LLM的原始信息
+        logger.info(f"[LLM Request] model={self.model}, messages数量={len(messages)}, 首条消息={messages[0] if messages else '无'}")
+        
         try:
             async with self.client.stream(
                 "POST",
@@ -148,16 +151,16 @@ class BaseAIService:
                     try:
                         data = json.loads(data_str)
                         
+                        # 【调试日志】记录LLM返回的原始信息（精简版）
                         choices = data.get("choices", [])
-                        
-                        content = ""
-                        reasoning_content = ""
                         if choices:
                             delta = choices[0].get("delta", {})
-                            content = delta.get("content", "")
+                            content_val = delta.get("content", "") or ""
+                            reasoning_val = delta.get("reasoning_content") or delta.get("reasoning") or ""
+                            finish_reason = choices[0].get("finish_reason", "")
+                            logger.info(f"[LLM Response] content长度={len(content_val)}, reasoning长度={len(reasoning_val)}, finish_reason={finish_reason}")
                             
-                            # 【小新修复】LongCat API 可能返回不同的字段名
-                            # 尝试多种可能的字段名
+                            content = delta.get("content", "")
                             reasoning_content = (
                                 delta.get("reasoning_content") or 
                                 delta.get("reasoning") or 
