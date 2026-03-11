@@ -946,19 +946,8 @@ async def chat_stream(request: ChatRequest):
                     )
             else:
                 # 普通对话：调用AI服务（流式）
-                # 【问题2修复】type改为action_tool，添加必需字段
-                action_data = {
-                    'type': 'action_tool',
-                    'step': next_step(),
-                    'tool_name': 'notification',
-                    'tool_params': {'description': '正在调用AI服务...'},
-                    'execution_status': 'success',
-                    'summary': '正在调用AI服务...',
-                    'raw_data': None,
-                    'action_retry_count': 0
-                }
-                yield f"data: {json.dumps(action_data)}\n\n"
-                await asyncio.sleep(0.3)
+                # 【优化1版修复】不发送action_tool，直接发送chunk
+                # 符合5-9章设计：普通对话只有chunk → final
                 
                 # 检查是否被中断
                 async with running_tasks_lock:
