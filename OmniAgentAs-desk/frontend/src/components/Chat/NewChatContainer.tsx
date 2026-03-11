@@ -237,11 +237,11 @@ const NewChatContainer: React.FC = () => {
             return updated;
           }
         }
-        // 普通步骤：追加到 executionSteps（final 类型即使 isStreaming 已变为 false 也要加入）
+        // 普通步骤：追加到 executionSteps
         if (
           lastMessage &&
           lastMessage.role === "assistant" &&
-          (lastMessage.isStreaming || step.type === "final")
+          lastMessage.isStreaming
         ) {
           const updatedSteps = [...(lastMessage.executionSteps || []), step];
           const updated = [...prev];
@@ -256,7 +256,7 @@ const NewChatContainer: React.FC = () => {
     }, []),
     // onChunk - 收到内容片段 【小沈修复】添加 isReasoning 参数支持思考过程样式区分
     useCallback((chunk: string, isReasoning?: boolean, _reasoningContent?: string) => {
-      console.log("%c[onChunk] called!", "color: #FF00FF; font-weight: bold", "isReasoning:", isReasoning);
+      console.log("🔍 [onChunk] 收到内容片段:", JSON.stringify(chunk).substring(0, 100), "isReasoning:", isReasoning);
       
       // ⭐ 暂停时存入缓冲区，不直接显示
       if (isPausedRef.current) {
@@ -273,9 +273,9 @@ const NewChatContainer: React.FC = () => {
           lastMessage.isStreaming
         ) {
           const updated = [...prev];
-          // 【修复】直接使用当前chunk的isReasoning值，不再继承之前的值
-          const newIsReasoning = isReasoning === true;
-          console.log("%c[onChunk] set is_reasoning:", "color: #FF00FF", newIsReasoning);
+          // 【小沈修复】如果当前chunk是正式内容(isReasoning=false)，则is_reasoning应设为false
+          // 否则保持之前的值（允许从思考过程切换到正式内容）
+          const newIsReasoning = isReasoning === false ? false : (lastMessage.is_reasoning || false);
           updated[updated.length - 1] = {
             ...lastMessage,
             content: lastMessage.content + chunk,
@@ -336,7 +336,7 @@ const NewChatContainer: React.FC = () => {
         const currentPending = pendingMessageRef.current || pendingMessage;
         if (currentSessionId && finalResponse && finalResponse.trim()) {
           // 🔴 修复：添加详细的调试日志
-            console.log("🆕 [新消息] 保存AI回复:");
+          console.log("🔍 保存AI回复:");
           console.log("  ref中的sessionId:", currentSessionIdRef.current);
           console.log("  state中的sessionId:", sessionId);
           console.log("  最终使用的sessionId:", currentSessionId);
@@ -353,19 +353,10 @@ const NewChatContainer: React.FC = () => {
               // 不传递 display_name，后端从缓存自动获取（小沈优化 2026-03-03）
             });
 
-            // 【小欧修复 2026-03-11】保存AI回复后，保存执行步骤到历史
-            // 直接从 useSSE 返回的 executionSteps 获取，而不是从 messages 中获取
-            if (executionSteps && executionSteps.length > 0) {
-              await sessionApi.saveExecutionSteps(currentSessionId, executionSteps);
-              console.log("✅ [新消息] 执行步骤保存成功，共", executionSteps.length, "步");
-              // 保存成功后清空 executionSteps
-              clearSteps();
-            }
-
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
             // 原因：标题应该在用户修改时立即保存，避免版本冲突
             // 如果需要同步最新数据，应该在用户修改标题时处理
-            console.log("✅ [新消息] AI回复保存成功");
+            console.log("✅ AI回复保存成功");
           } catch (saveError) {
             console.error("保存AI回复或标题失败:", saveError);
             console.error("使用的sessionId:", currentSessionId);
@@ -452,7 +443,7 @@ const NewChatContainer: React.FC = () => {
          // 【小新第三修复 2026-03-02】清理ref和state
          pendingMessageRef.current = null; // 同步清理
          setPendingMessage(null); // 异步清理
-          console.log("✅ [SSE] 流完成");
+         console.log("✅ [onComplete] 处理完成");
        },
       [sessionId, pendingMessage]
     ),
@@ -779,7 +770,7 @@ const NewChatContainer: React.FC = () => {
           
           // 缓存无效或为空时，才从API加载（仅首次加载时）
           if (messages.length === 0) {
-            console.log("📜 [历史] 加载中...");
+            console.log("🔄 首次加载，从API获取会话数据");
             setTimeout(async () => {
               try {
                 const sessionData = await sessionApi.getSessionMessages(
@@ -1243,7 +1234,7 @@ const NewChatContainer: React.FC = () => {
       if (!urlSessionId) {
         const restored = restoreState();
         if (restored) {
-            console.log("🟢 [历史] 恢复完成");
+          console.log("🟢 从缓存恢复会话状态");
           // 如果是从缓存恢复，也要关闭加载状态
           setSessionJumpLoading(false);
           message.destroy("session-load");
