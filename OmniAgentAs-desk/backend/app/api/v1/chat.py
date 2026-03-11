@@ -376,9 +376,13 @@ class ValidateResponse(BaseModel):
 
 def detect_file_operation_intent(message: str) -> tuple[bool, str, float]:
     """
-    检测用户消息是否包含文件操作意图（增强版）
+    检测用户消息是否包含文件操作意图（优化版）
     
-    【修复】添加置信度评分，支持更多关键词和模糊匹配
+    【重写】修复问题：
+    1. 子串匹配 → 完整词匹配
+    2. 关键词太宽泛 → 只保留明确操作词
+    3. 去掉加分项
+    4. 提高阈值到0.6
     
     Args:
         message: 用户输入消息
@@ -386,67 +390,73 @@ def detect_file_operation_intent(message: str) -> tuple[bool, str, float]:
     Returns:
         (是否文件操作, 操作类型, 置信度0-1)
     """
+    import re
     message_lower = message.lower().strip()
     
-    # 【修复】扩展关键词库，添加更多变体和同义词
+    # 只保留明确的文件操作关键词（避免日常用语误匹配）
     intent_patterns = {
         "read": {
             "keywords": [
-                '读取文件', '查看文件', '打开文件', '读文件', '看文件内容', '显示文件内容',
-                'read file', 'view file', 'open file', 'show file', 'display file',
-                '查看', '打开', '读一下', '看一下', '显示', '展示',
-                'view', 'open', 'read', 'show', 'display', 'cat'
+                # 中文明确表达
+                '读取文件', '查看文件内容', '打开文件内容', '读文件内容', '显示文件内容',
+                '读取', '查看文件', '打开文件', '读文件', '看文件',
+                # 英文明确表达
+                'read file', 'view file content', 'open file', 'show file content',
+                'read the file', 'cat file',
             ],
-            "weight": 1.0
         },
         "write": {
             "keywords": [
-                '写入文件', '创建文件', '保存文件', '写文件', '修改文件', '更新文件',
-                'write file', 'create file', 'save file', 'update file', 'edit file',
-                '写入', '创建', '保存', '写', '修改', '更新', '编辑',
-                'write', 'create', 'save', 'edit', 'update', 'modify'
+                # 中文明确表达
+                '写入文件', '创建文件', '保存文件到', '写文件内容', '修改文件内容',
+                '创建', '保存到', '写入', '新建文件', '新建文',
+                # 英文明确表达
+                'write file', 'create file', 'save file', 'write to file', 'create a file',
             ],
-            "weight": 1.0
         },
         "list": {
             "keywords": [
-                '列出目录', '查看目录', '显示文件', '有哪些文件', '文件列表', '目录内容',
-                'list directory', 'show files', 'list files', 'ls', 'dir', 'll',
-                '列出', '目录', '文件夹', '有什么', '文件有哪些',
-                'list', 'ls', 'dir', 'directory', 'folders'
+                # 中文明确表达
+                '列出目录内容', '查看目录', '显示文件列表', '文件列表', '目录内容',
+                '列出', '目录列表', '查看有哪些文件', '列出文件',
+                # 英文明确表达
+                'list directory', 'list files', 'show file list', 'ls -',
+                'list all files', 'show files in',
             ],
-            "weight": 0.9
         },
         "delete": {
             "keywords": [
-                '删除文件', '移除文件', '删掉文件', '删除目录', '清空文件',
-                'delete file', 'remove file', 'del file', 'rm file', 'erase file',
-                '删除', '移除', '删掉', '清空', '销毁',
-                'delete', 'remove', 'del', 'rm', 'erase', 'trash'
+                # 中文明确表达
+                '删除文件', '删除这个文件', '删除指定文件', '移除文件', '删掉文件',
+                '删除', '移除', '删掉', '清空', '删除目录',
+                # 英文明确表达
+                'delete file', 'remove file', 'delete this file', 'rm file',
+                'delete the file', 'erase file',
             ],
-            "weight": 1.0
         },
         "move": {
             "keywords": [
-                '移动文件', '重命名文件', '改名', '转移文件', '复制文件',
-                'move file', 'rename file', 'mv file', 'cp file', 'copy file',
-                '移动', '重命名', '改名', '转移', '复制', '拷贝',
-                'move', 'rename', 'mv', 'cp', 'copy'
+                # 中文明确表达
+                '移动文件', '移动到', '重命名文件', '改名文件', '转移文件',
+                '复制文件', '剪切文件',
+                '移动', '重命名', '转移', '复制', '改名',
+                # 英文明确表达
+                'move file', 'rename file', 'move to', 'copy file', 'mv file',
             ],
-            "weight": 1.0
         },
         "search": {
             "keywords": [
-                '搜索文件', '查找文件', '找文件', '搜索内容', '查找内容', '全文搜索',
-                'search file', 'find file', 'grep', 'search content', 'locate',
-                '搜索', '查找', '找一下', '搜一下', '查询',
-                'search', 'find', 'grep', 'locate', 'lookup'
+                # 中文明确表达
+                '搜索文件', '查找文件内容', '全文搜索', '搜索内容', '查找文件',
+                '搜索', '查找', '搜文件', '搜索文件内容',
+                # 英文明确表达
+                'search file', 'search content', 'find file', 'grep file',
+                'search in file', 'find content',
             ],
-            "weight": 0.9
         }
     }
     
-    # 【修复】计算每个意图的匹配得分
+    # 完整词匹配：单词边界匹配
     best_intent = None
     best_score = 0.0
     
@@ -455,31 +465,23 @@ def detect_file_operation_intent(message: str) -> tuple[bool, str, float]:
         matched_keywords = []
         
         for keyword in config["keywords"]:
-            if keyword in message_lower:
-                # 完整词匹配得分更高
-                if keyword in message_lower.split() or len(keyword) >= 6:
-                    score += 0.3
-                else:
-                    score += 0.2
+            # 使用单词边界匹配，确保是完整词
+            pattern = r'\b' + re.escape(keyword) + r'\b'
+            if re.search(pattern, message_lower):
+                # 完整词匹配，得1.0分
+                score += 1.0
                 matched_keywords.append(keyword)
         
         # 应用权重
-        score *= config["weight"]
-        
-        # 如果有多个关键词匹配，增加置信度
-        if len(matched_keywords) >= 2:
-            score += 0.2
-        
-        # 如果包含文件路径特征，增加置信度
-        if any(char in message for char in ['/', '\\', '.txt', '.md', '.py', '.json']):
-            score += 0.1
+        weight = 1.0
+        score *= weight
         
         if score > best_score:
             best_score = score
             best_intent = intent
     
-    # 【修复】设置置信度阈值
-    CONFIDENCE_THRESHOLD = 0.2
+    # 提高阈值到0.6（必须匹配至少一个完整关键词）
+    CONFIDENCE_THRESHOLD = 0.6
     
     if best_score >= CONFIDENCE_THRESHOLD and best_intent is not None:
         return True, best_intent, min(best_score, 1.0)
