@@ -1040,14 +1040,12 @@ async def chat_stream(request: ChatRequest):
                                 full_content += chunk.content
                                 # ⭐ 【调试日志】记录每个chunk
                                 logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
-                                # 逐token发送到前端，【新增】添加provider字段作为兜底
-                                # 【小沈修复】添加 is_reasoning 和 reasoning 字段区分思考过程
-                                # 【问题6修复】chunk使用content和chunk_reasoning字段（遵循设计文档7.6要求）
+                                # 逐token发送到前端
+                                # 【重要】清晰接口：只使用 content 和 is_reasoning 两个字段
                                 chunk_data = {
                                     'type': 'chunk', 
-                                    'content': chunk.content,
-                                    'is_reasoning': getattr(chunk, 'is_reasoning', False),  # 是否思考过程
-                                    'chunk_reasoning': getattr(chunk, 'reasoning', '')  # 思考过程内容
+                                    'content': chunk.content,                    # 显示的文本内容
+                                    'is_reasoning': getattr(chunk, 'is_reasoning', False)  # true=思考，false=回答
                                 }
                                 logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}, is_reasoning={chunk_data['is_reasoning']}")
                                 yield f"data: {json.dumps(chunk_data)}\n\n"

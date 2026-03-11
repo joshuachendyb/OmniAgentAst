@@ -175,13 +175,13 @@ class BaseAIService:
                             finish_reason = choices[0].get("finish_reason", "")
                             
                             # 【小沈修复】分别返回思考过程和最终内容
-                            # 先返回思考过程（如果有）
+                            # 统一使用 content 字段，is_reasoning 区分类型
                             if reasoning_content:
                                 yield StreamChunk(
                                     content=reasoning_content, 
                                     model=self.model, 
                                     is_done=False,
-                                    reasoning=reasoning_content,
+                                    reasoning="",  # 清空，不冗余
                                     is_reasoning=True
                                 )
                             # 再返回实际内容（如果有）
@@ -190,7 +190,7 @@ class BaseAIService:
                                     content=content, 
                                     model=self.model, 
                                     is_done=False,
-                                    reasoning="",
+                                    reasoning="",  # 清空，不冗余
                                     is_reasoning=False
                                 )
                         else:

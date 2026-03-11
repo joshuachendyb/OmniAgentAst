@@ -173,7 +173,7 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
             })()}
           </>
         )}
-        {step.type === "thought" && (step.content || "")}
+        {step.type === "thought" && (step.thinking_prompt || step.content || "")}
         {/* 【小查修复2026-03-10】添加status类型渲染 */}
         {["paused", "resumed", "interrupted", "retrying"].includes(step.type) && (
           <span style={{ 
@@ -736,12 +736,14 @@ const isUser = message.role === "user";
             {/* 【小沈修复】4. AI回复chunk - 先分组相同类型的chunk，再分别显示 */}
             {(() => {
               const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
+              console.log("🔍 [chunk渲染] chunks数组=", JSON.stringify(chunks.map(c => ({type: c.type, is_reasoning: c.is_reasoning, content: (c.content || c.answer_content || '').substring(0, 50)}))));
               
               // 分组：将连续相同类型的chunk合并
               const groupedChunks: { isReasoning: boolean; content: string }[] = [];
               for (const chunk of chunks) {
                 const isReasoning = chunk.is_reasoning === true;
                 const content = chunk.answer_content || chunk.content || '';
+                console.log("🔍 [chunk渲染] 单个chunk: isReasoning=", isReasoning, "content=", content.substring(0, 50));
                 if (groupedChunks.length > 0 && groupedChunks[groupedChunks.length - 1].isReasoning === isReasoning) {
                   // 相同类型，合并
                   groupedChunks[groupedChunks.length - 1].content += content;
@@ -750,6 +752,8 @@ const isUser = message.role === "user";
                   groupedChunks.push({ isReasoning, content });
                 }
               }
+              
+              console.log("🔍 [chunk渲染] 分组结果=", JSON.stringify(groupedChunks.map(g => ({isReasoning: g.isReasoning, contentLen: g.content.length}))));
               
               // 渲染分组后的chunk
               return groupedChunks.map((group, index) => (
