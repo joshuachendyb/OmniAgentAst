@@ -740,20 +740,10 @@ const isUser = message.role === "user";
               console.log("🔍 [chunk渲染] 前5个chunk的is_reasoning=", chunks.slice(0, 5).map(c => c.is_reasoning));
               console.log("🔍 [chunk渲染] 后5个chunk的is_reasoning=", chunks.slice(-5).map(c => c.is_reasoning));
               
-              // 逐个渲染chunk
-              let hasShownLabel = false;
-              
+              // 逐个渲染chunk，直接显示内容
               return chunks.map((chunk, index) => {
                 const is_reasoning = !!chunk.is_reasoning;
                 const content = chunk.content || '';
-                
-                // 只有第一个 is_reasoning=true 的chunk才显示标签
-                const showLabel = is_reasoning && !hasShownLabel;
-                if (showLabel) {
-                  hasShownLabel = true;
-                }
-                
-                console.log(`🔍 [chunk渲染] index=${index}, is_reasoning=${is_reasoning}, showLabel=${showLabel}, hasShownLabel=${hasShownLabel}`);
                 
                 return (
                   <span
@@ -764,16 +754,6 @@ const isUser = message.role === "user";
                       fontSize: is_reasoning ? '0.95em' : '1em',
                     }}
                   >
-                    {showLabel && (
-                      <span style={{ 
-                        color: '#888', 
-                        fontSize: '0.85em', 
-                        marginRight: 4,
-                        fontWeight: 500,
-                      }}>
-                        💭 思考中:
-                      </span>
-                    )}
                     {content}
                   </span>
                 );
@@ -804,17 +784,7 @@ const isUser = message.role === "user";
                     : ""
                 }
               >
-                {/* 【小沈修复】思考过程添加标签提示 */}
-                {message.is_reasoning && (
-                  <span style={{ 
-                    color: '#888', 
-                    fontSize: '0.85em', 
-                    marginRight: 4,
-                    fontWeight: 500,
-                  }}>
-                    💭 思考中:
-                  </span>
-                )}
+                {/* 【小查修复】已移除回退显示"思考中"标签，统一用chunk渲染 */}
                 {message.content && typeof message.content === 'string' 
                   ? message.content 
                   : String(message.content || '')}
