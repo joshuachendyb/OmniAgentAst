@@ -285,3 +285,38 @@ def test_provider_invalid_switch():
     # 由于实现可能变化，跳过此测试
     pytest.skip("AIServiceFactory内部实现可能有变化，跳过此测试")
 
+
+def test_create_error_response():
+    """TC015: 测试错误响应生成"""
+    from app.api.v1.chat import create_error_response
+    import json
+    
+    # 测试 timeout 错误
+    result = create_error_response(
+        error_type="timeout",
+        message="请求超时，请重试"
+    )
+    data = json.loads(result.replace("data: ", ""))
+    assert data["type"] == "error"
+    assert data["error_type"] == "timeout"
+    assert data["message"] == "请求超时，请重试"
+    
+    # 测试 empty_response 错误
+    result = create_error_response(
+        error_type="empty_response",
+        message="模型未能生成有效回复，请尝试更换问题或稍后重试"
+    )
+    data = json.loads(result.replace("data: ", ""))
+    assert data["type"] == "error"
+    assert data["error_type"] == "empty_response"
+    assert "模型" in data["message"]
+    
+    # 测试 network 错误
+    result = create_error_response(
+        error_type="network",
+        message="网络连接失败，请检查网络"
+    )
+    data = json.loads(result.replace("data: ", ""))
+    assert data["type"] == "error"
+    assert data["error_type"] == "network"
+

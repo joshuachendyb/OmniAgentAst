@@ -138,7 +138,7 @@ export interface UseSSEReturn {
 /**
  * 错误类型分类
  */
-type ErrorType = "network" | "timeout" | "server" | "unknown";
+type ErrorType = "network" | "timeout" | "server" | "unknown" | "empty_response";
 
 /**
  * 分类错误类型
@@ -147,6 +147,11 @@ const classifyError = (error: any): ErrorType => {
   if (error.name === "AbortError") return "timeout";
   if (error.message?.includes("fetch") || error.message?.includes("network")) return "network";
   if (error.message?.includes("HTTP")) return "server";
+  // 后端返回的error_type直接使用
+  if (error.error_type === "empty_response") return "empty_response";
+  if (error.error_type === "timeout") return "timeout";
+  if (error.error_type === "network") return "network";
+  if (error.error_type === "server") return "server";
   return "unknown";
 };
 
@@ -161,6 +166,8 @@ const getFriendlyErrorMessage = (errorType: ErrorType, originalMessage: string):
       return "网络连接失败，请检查网络后重试";
     case "server":
       return `服务器错误: ${originalMessage}`;
+    case "empty_response":
+      return "模型未能生成有效回复，请尝试更换问题或稍后重试";
     default:
       return `连接异常: ${originalMessage}`;
   }

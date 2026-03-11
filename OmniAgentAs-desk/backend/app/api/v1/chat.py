@@ -1086,10 +1086,29 @@ async def chat_stream(request: ChatRequest):
                 # ⭐ 【新增-重试机制】重试循环结束，检查最终结果
                 if not ai_call_successful:
                     logger.error(f"[AI Call] 重试失败，ai_call_successful={ai_call_successful}")
+                    # 根据错误原因返回不同的错误提示
                     if last_error:
                         logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}")
+                        # 判断错误类型
+                        last_error_lower = last_error.lower()
+                        if "timeout" in last_error_lower:
+                            error_type, error_message = "timeout", "请求超时，请重试"
+                        elif "connection" in last_error_lower or "network" in last_error_lower:
+                            error_type, error_message = "network", "网络连接失败，请检查网络"
+                        else:
+                            error_type, error_message = "server", f"服务调用失败: {last_error}"
                     else:
-                        logger.error(f"[AI Call] 所有重试失败，无有效响应")
+                        # 没有错误但也没有收到有效内容，可能是模型返回空响应
+                        logger.error(f"[AI Call] 所有重试失败，无有效响应（模型返回空内容）")
+                        error_type, error_message = "empty_response", "模型未能生成有效回复，请尝试更换问题或稍后重试"
+                    
+                    # 发送error步骤而不是final步骤
+                    logger.info(f"[Step error] 发送error步骤: error_type={error_type}, message={error_message}")
+                    yield create_error_response(
+                        error_type=error_type,
+                        message=error_message
+                    )
+                    return  # 直接返回，不再发送final步骤
                 
                 # 发送最终结果，【新增】添加provider字段作为兜底
                 content_preview = full_content[:200] + "..." if len(full_content) > 200 else full_content

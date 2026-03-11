@@ -17,23 +17,46 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
  */
 describe('错误分类', () => {
   // 模拟 classifyError 函数（因为它是在模块内部，需要通过导出或重新实现来测试）
-  
+  const classifyError = (error: any): string => {
+    if (error.name === 'AbortError') return 'timeout';
+    if (error.message?.includes('fetch') || error.message?.includes('network')) return 'network';
+    if (error.message?.includes('HTTP')) return 'server';
+    // 后端返回的error_type直接使用
+    if (error.error_type === 'empty_response') return 'empty_response';
+    if (error.error_type === 'timeout') return 'timeout';
+    if (error.error_type === 'network') return 'network';
+    if (error.error_type === 'server') return 'server';
+    return 'unknown';
+  };
+
   it('应识别超时错误', () => {
     const error = { name: 'AbortError' };
-    // classifyError(error) 应该返回 'timeout'
-    expect(error.name).toBe('AbortError');
+    expect(classifyError(error)).toBe('timeout');
   });
 
   it('应识别网络错误', () => {
     const error = { message: 'Failed to fetch' };
-    // classifyError(error) 应该返回 'network'
-    expect(error.message).toContain('fetch');
+    expect(classifyError(error)).toBe('network');
   });
 
   it('应识别服务器错误', () => {
     const error = { message: 'HTTP 500: Internal Server Error' };
-    // classifyError(error) 应该返回 'server'
-    expect(error.message).toContain('HTTP');
+    expect(classifyError(error)).toBe('server');
+  });
+
+  it('应识别后端返回的empty_response错误', () => {
+    const error = { error_type: 'empty_response', message: '模型返回空内容' };
+    expect(classifyError(error)).toBe('empty_response');
+  });
+
+  it('应识别后端返回的timeout错误', () => {
+    const error = { error_type: 'timeout', message: '请求超时' };
+    expect(classifyError(error)).toBe('timeout');
+  });
+
+  it('应识别后端返回的network错误', () => {
+    const error = { error_type: 'network', message: '网络错误' };
+    expect(classifyError(error)).toBe('network');
   });
 });
 
@@ -98,6 +121,8 @@ describe('友好错误消息', () => {
         return '网络连接失败，请检查网络后重试';
       case 'server':
         return `服务器错误: ${originalMessage}`;
+      case 'empty_response':
+        return '模型未能生成有效回复，请尝试更换问题或稍后重试';
       default:
         return `连接异常: ${originalMessage}`;
     }
@@ -116,6 +141,12 @@ describe('友好错误消息', () => {
   it('应返回服务器错误提示', () => {
     const msg = getFriendlyErrorMessage('server', '500 Internal Error');
     expect(msg).toContain('服务器错误');
+  });
+
+  it('应返回空响应错误提示', () => {
+    const msg = getFriendlyErrorMessage('empty_response', '模型返回空内容');
+    expect(msg).toContain('模型');
+    expect(msg).toContain('有效回复');
   });
 
   it('应返回默认错误提示', () => {
