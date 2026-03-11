@@ -734,7 +734,7 @@ const isUser = message.role === "user";
               </div>
             )}
 
-            {/* 【小新修复】判断是否有正在推理的chunk，用于显示思考中标签 */}
+            {/* 【小新修复】显示"💭 思考中:"标签 - 基于chunks中是否有is_reasoning=true的chunk */}
             {(() => {
               const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
               const hasReasoningChunk = chunks.some(chunk => chunk.is_reasoning === true);
@@ -745,26 +745,31 @@ const isUser = message.role === "user";
               </span>
             )}
 
-            {/* 【小新修复】4. AI回复chunk - 合并后统一渲染，解决LaTeX公式被拆分的问题 */}
+            {/* 【小查修复】4. AI回复chunk - 逐个渲染 */}
             {(() => {
               const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
               console.log("🔍 [chunk渲染] message.id=", message.id, "chunks数量=", chunks.length, "isStreaming=", message.isStreaming);
               console.log("🔍 [chunk渲染] 前5个chunk的is_reasoning=", chunks.slice(0, 5).map(c => c.is_reasoning));
               console.log("🔍 [chunk渲染] 后5个chunk的is_reasoning=", chunks.slice(-5).map(c => c.is_reasoning));
               
-              if (chunks.length === 0) return null;
-              
-              // 合并所有chunk内容（修复换行问题）
-              const mergedContent = chunks
-                .map(chunk => (chunk.content || '').replace(/\n\n/g, '\n'))
-                .join('');
-              
-              // 渲染合并后的内容（支持LaTeX）
-              return (
-                <div style={{ wordBreak: "break-word", overflowWrap: "break-word" }}>
-                  {renderContent(mergedContent)}
-                </div>
-              );
+              // 逐个渲染chunk，使用renderContent渲染Markdown和LaTeX
+              return chunks.map((chunk, index) => {
+                const is_reasoning = !!chunk.is_reasoning;
+                const content = (chunk.content || '').replace(/\n\n/g, '\n');
+                
+                return (
+                  <span
+                    key={`chunk-${index}`}
+                    style={{
+                      color: is_reasoning ? '#888' : '#000',
+                      fontStyle: is_reasoning ? 'italic' : 'normal',
+                      fontSize: is_reasoning ? '0.95em' : '1em',
+                    }}
+                  >
+                    {renderContent(content)}
+                  </span>
+                );
+              });
             })()}
 
             {/* 5. 最终答案content - 如果没有executionSteps则回退到content显示 */}
