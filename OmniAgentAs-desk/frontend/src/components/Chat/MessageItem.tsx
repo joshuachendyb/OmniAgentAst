@@ -733,7 +733,14 @@ const isUser = message.role === "user";
               </div>
             )}
 
-            {/* 【小查修复】4. AI回复chunk - 逐个渲染，is_reasoning=true时显示标签，false时不显示 */}
+            {/* 【小新修复】在推理过程中显示"💭 思考中:"标签，推理完成后自动隐藏 */}
+            {message.is_reasoning && (
+              <span style={{ color: '#888', fontSize: '0.85em', marginRight: 4, fontWeight: 500 }}>
+                💭 思考中:
+              </span>
+            )}
+
+            {/* 【小查修复】4. AI回复chunk - 逐个渲染 */}
             {(() => {
               const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
               console.log("🔍 [chunk渲染] message.id=", message.id, "chunks数量=", chunks.length, "isStreaming=", message.isStreaming);
