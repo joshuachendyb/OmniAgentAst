@@ -634,6 +634,11 @@ const processSSEData = (
         }
 
         const displayName = rawData.display_name;
+        
+        // 【小查修复】保存final到executionSteps，以便导出功能能获取到
+        setExecutionSteps((prev) => [...prev, step]);
+        onStep?.(step);
+
         onComplete?.(responseBufferRef.current, {
           model: rawData.model,
           provider: rawData.provider,
