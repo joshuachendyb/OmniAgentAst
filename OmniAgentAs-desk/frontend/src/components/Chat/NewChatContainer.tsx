@@ -353,9 +353,10 @@ const NewChatContainer: React.FC = () => {
             await sessionApi.saveMessage(currentSessionId, {
               role: "assistant",
               content: finalResponse,
+              execution_steps: executionStepsRef.current || [],
             });
 
-            // 保存 execution_steps 到最后一条消息
+            // 保存 execution_steps 到最后一条消息（保留兼容）
             if (executionStepsRef.current && executionStepsRef.current.length > 0) {
               await sessionApi.saveExecutionSteps(currentSessionId, executionStepsRef.current);
               console.log("✅ 执行步骤保存成功，共", executionStepsRef.current.length, "步");
