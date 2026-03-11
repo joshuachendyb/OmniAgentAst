@@ -82,7 +82,7 @@ interface Message extends ChatMessage {
   model?: string;
   provider?: string; // 前端小新代修改：提供商
   display_name?: string; // 前端小新代修改：显示名称（如"OpenAI (GPT-4)"）
-  is_reasoning?: boolean; // 【小沈修复】是否为思考过程（用于样式区分）
+  isReasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 camelCase）
 }
 
 /**
@@ -257,9 +257,9 @@ const NewChatContainer: React.FC = () => {
       });
     }, []),
 
-    // onChunk - 收到内容片段 【小沈修复】添加 isReasoning 参数支持思考过程样式区分
+    // onChunk - 收到内容片段 【小查修复】统一使用 isReasoning (camelCase)
     useCallback((chunk: string, isReasoning?: boolean) => {
-      console.log("🔍 [onChunk] 收到内容片段:", JSON.stringify(chunk).substring(0, 100), "isReasoning:", isReasoning);
+      console.log("🔍 [onChunk] 收到chunk, isReasoning:", isReasoning, "content前20字:", chunk.substring(0, 20));
       
       // ⭐ 暂停时存入缓冲区，不直接显示
       if (isPausedRef.current) {
@@ -281,7 +281,7 @@ const NewChatContainer: React.FC = () => {
           updated[updated.length - 1] = {
             ...lastMessage,
             content: lastMessage.content + chunk,
-            is_reasoning: newIsReasoning,
+            isReasoning: newIsReasoning,  // 【小查修复】统一使用 camelCase
           };
           return updated;
         }
@@ -322,7 +322,7 @@ const NewChatContainer: React.FC = () => {
               ...lastMessage,
               content: finalResponse,
               isStreaming: false,
-              is_reasoning: false, // 【小查修复】流式完成后重置为false，确保思考中标签消失
+              isReasoning: false, // 【小查修复】流式完成后重置为false，确保思考中标签消失
               isError: isError, // 传递错误标记
               model: metadataObj.model || lastMessage.model,
               provider: metadataObj.provider || lastMessage.provider,

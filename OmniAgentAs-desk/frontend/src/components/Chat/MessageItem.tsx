@@ -204,7 +204,7 @@ interface MessageItemProps {
     isStreaming?: boolean;
     isError?: boolean;
     display_name?: string; // 前端小新代修改：显示名称
-    is_reasoning?: boolean; // 【小沈修复】是否为思考过程
+    isReasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 camelCase）
     task_id?: string; // 【小新重构2026-03-09】任务ID，用于分页请求
   };
   showExecution?: boolean;
@@ -733,17 +733,20 @@ const isUser = message.role === "user";
               </div>
             )}
 
-            {/* 【小沈修复】4. AI回复chunk - 先分组相同类型的chunk，再分别显示 */}
+            {/* 【小查修复】4. AI回复chunk - 先分组相同类型的chunk，再分别显示 */}
             {(() => {
               const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
-              console.log("🔍 [chunk渲染] chunks数组=", JSON.stringify(chunks.map(c => ({type: c.type, is_reasoning: c.is_reasoning, content: (c.content || '').substring(0, 50)}))));
+              console.log("🔍 [chunk渲染] message.id=", message.id, "chunks数量=", chunks.length, "isStreaming=", message.isStreaming);
+              console.log("🔍 [chunk渲染] 前5个chunk的isReasoning=", chunks.slice(0, 5).map(c => c.isReasoning));
+              console.log("🔍 [chunk渲染] 后5个chunk的isReasoning=", chunks.slice(-5).map(c => c.isReasoning));
               
               // 分组：将连续相同类型的chunk合并
               const groupedChunks: { isReasoning: boolean; content: string }[] = [];
               for (const chunk of chunks) {
-                const isReasoning = chunk.is_reasoning === true;
+                // 【小查修复】统一使用 isReasoning (camelCase)
+                const isReasoning = chunk.isReasoning === true || chunk.isReasoning === 'true' || chunk.isReasoning === 1 || chunk.isReasoning === '1';
                 const content = chunk.content || '';
-                console.log("🔍 [chunk渲染] 单个chunk: isReasoning=", isReasoning, "content=", content.substring(0, 50));
+                console.log("🔍 [chunk渲染] 单个chunk: isReasoning原值=", chunk.isReasoning, "isReasoning=", isReasoning, "content前10字=", content.substring(0, 10));
                 if (groupedChunks.length > 0 && groupedChunks[groupedChunks.length - 1].isReasoning === isReasoning) {
                   // 相同类型，合并
                   groupedChunks[groupedChunks.length - 1].content += content;
@@ -753,7 +756,11 @@ const isUser = message.role === "user";
                 }
               }
               
-              console.log("🔍 [chunk渲染] 分组结果=", JSON.stringify(groupedChunks.map(g => ({isReasoning: g.isReasoning, contentLen: g.content.length}))));
+              console.log("🔍 [chunk渲染] 分组结果: 共", groupedChunks.length, "组");
+              groupedChunks.forEach((g, i) => {
+                console.log(`🔍 [chunk渲染] 组${i}: isReasoning=${g.isReasoning}, content长度=${g.content.length}, 前20字=${g.content.substring(0, 20)}`);
+              });
+              console.log("🔍 [chunk渲染] 将显示的标签条件: group.isReasoning && findIndex === index");
               
               // 渲染分组后的chunk
               return groupedChunks.map((group, index) => (
@@ -771,7 +778,12 @@ const isUser = message.role === "user";
                   }}
                 >
                   {/* 只有第一个思考过程分组添加标签 */}
-                  {group.isReasoning && groupedChunks.findIndex(g => g.isReasoning) === index && (
+                  {(() => {
+                    const firstReasoningIndex = groupedChunks.findIndex(g => g.isReasoning);
+                    const shouldShowLabel = group.isReasoning && firstReasoningIndex === index;
+                    console.log(`🔍 [标签显示条件] index=${index}, group.isReasoning=${group.isReasoning}, firstReasoningIndex=${firstReasoningIndex}, shouldShowLabel=${shouldShowLabel}`);
+                    return shouldShowLabel;
+                  })() && (
                     <span style={{ 
                       color: '#888', 
                       fontSize: '0.85em', 
@@ -794,7 +806,7 @@ const isUser = message.role === "user";
                   overflowWrap: "break-word",
                   paddingRight: 32,
                   // 【小沈修复】思考过程使用灰色斜体样式，与正式回答区分
-                  ...(message.is_reasoning ? {
+                  ...(message.isReasoning ? {
                     color: '#888',
                     fontStyle: 'italic',
                     fontSize: '0.95em',
@@ -805,13 +817,13 @@ const isUser = message.role === "user";
                     ? "thinking-message"
                     : message.isError
                     ? "error-message"
-                    : message.is_reasoning
+                    : message.isReasoning
                     ? "reasoning-message"
                     : ""
                 }
               >
                 {/* 【小沈修复】思考过程添加标签提示 */}
-                {message.is_reasoning && (
+                {message.isReasoning && (
                   <span style={{ 
                     color: '#888', 
                     fontSize: '0.85em', 
@@ -834,7 +846,7 @@ const isUser = message.role === "user";
           {/* CSS 动画 */}
           {(message.content === "🤔 AI 正在思考..." && message.isStreaming) ||
           message.isError ||
-          message.is_reasoning ? (
+          message.isReasoning ? (
             <style>{`
               ${
                 message.content === "🤔 AI 正在思考..." && message.isStreaming
@@ -869,7 +881,7 @@ const isUser = message.role === "user";
                   : ""
               }
               ${
-                message.is_reasoning
+                message.isReasoning
                   ? `
                 .reasoning-message {
                   color: #888;

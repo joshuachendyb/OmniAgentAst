@@ -81,9 +81,9 @@ export interface ExecutionStep {
   provider?: string;      // AI提供商
   display_name?: string;  // 显示名称
   
-  // === 思考过程与正式内容区分字段（后端新增）===
-  is_reasoning?: boolean;  // 是否为思考过程（true=思考过程，false=正式内容）
-  reasoning?: string;       // 思考过程内容（当 is_reasoning=true 时使用）
+  // === 思考过程与正式内容区分字段（统一使用 isReasoning camelCase）===
+  isReasoning?: boolean;  // 是否为思考过程（true=思考过程，false=正式内容）
+  reasoning?: string;       // 思考过程内容（当 isReasoning=true 时使用）
   
   // === 错误/中断字段 ===
   error_message?: string;      // error 类型的错误信息
@@ -529,8 +529,9 @@ const processSSEData = (
       action_input: rawData.action_input, // 工具调用参数
       
       // 【小沈修复】思考过程与正式内容区分字段
-      is_reasoning: rawData.is_reasoning || false,
-      reasoning: rawData.reasoning || "",
+        // 【小查修复】统一使用 camelCase: isReasoning
+        isReasoning: rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1',
+        reasoning: rawData.reasoning || "",
       
       timestamp: Date.now(),
     };
@@ -600,14 +601,15 @@ const processSSEData = (
 
       case "observation": {
         // 【小查修复2026-03-10】添加is_finished和raw_data字段映射
+        // 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
         step.is_finished = rawData.is_finished ?? false;
-        step.raw_data = rawData.raw_data ?? null;
-        step.execution_status = rawData.execution_status ?? 'success';
-        step.summary = rawData.summary ?? '';
+        step.obs_raw_data = rawData.obs_raw_data ?? null;
+        step.obs_execution_status = rawData.obs_execution_status ?? 'success';
+        step.obs_summary = rawData.obs_summary ?? '';
         step.content = rawData.content ?? '';
-        step.reasoning = rawData.reasoning ?? '';
-        step.action_tool = rawData.action_tool ?? '';
-        step.params = rawData.params ?? {};
+        step.obs_reasoning = rawData.obs_reasoning ?? '';
+        step.obs_action_tool = rawData.obs_action_tool ?? '';
+        step.obs_params = rawData.obs_params ?? {};
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
         setExecutionSteps((prev) => [...prev, step]);
@@ -615,15 +617,16 @@ const processSSEData = (
         break;
       }
 
-      case "chunk": {
-        // 后端发送的是 content 字段（根据设计文档9.4.5）
+        // 【小查修复】统一使用 isReasoning (camelCase)
+        console.log("🔍 [SSE chunk] rawData.is_reasoning =", rawData.is_reasoning, "type =", rawData.type);
         const chunkContent = rawData.content || "";
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
         // 【小沈修复】收到chunk时关闭步骤UI，开始显示回复内容
         onShowSteps?.(false);
-        // 传递 is_reasoning 区分思考过程和最终答案
-        onChunk?.(chunkContent, rawData.is_reasoning || false);
+        // 传递 isReasoning 区分思考过程和最终答案
+        const isReasoning = rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1';
+        onChunk?.(chunkContent, isReasoning);
         
         // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
         // 这样MessageItem可以遍历并分别显示思考过程和正式内容
@@ -689,14 +692,15 @@ const processSSEData = (
         break;
       }
 
-      // 【小查修复2026-03-10】新增：status类型处理（后端发送type='status'，status_value字段）
+      // 【小查修复2026-03-10】新增：status类型处理（后端发送type='status'，incident_value字段）
+      // 【2026-03-11 重命名】status_value -> incident_value
       case "status": {
-        const statusValue = rawData.status_value;
+        const statusValue = rawData.incident_value;
         const statusMessage = rawData.message || "";
         step.type = statusValue as ExecutionStep["type"];
         step.content = statusMessage;
         
-        // 根据status_value调用对应的回调
+        // 根据incident_value调用对应的回调
         switch (statusValue) {
           case "interrupted":
             onComplete?.(responseBufferRef.current, undefined);
@@ -713,7 +717,7 @@ const processSSEData = (
             onRetry?.(statusMessage || "正在重试...");
             break;
           default:
-            console.warn("[SSE] 未知的status_value:", statusValue);
+            console.warn("[SSE] 未知的incident_value:", statusValue);
         }
         break;
       }

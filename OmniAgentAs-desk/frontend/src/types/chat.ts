@@ -72,17 +72,18 @@ export interface ActionToolMessage {
 /**
  * observation类型 - 执行结果判断
  * 发送时机：ReAct第3阶段，工具执行完成后
+ * 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
  */
 export interface ObservationMessage {
   type: 'observation';
   step: number;
-  execution_status: 'success' | 'error' | 'warning';
-  summary: string;
-  raw_data?: Record<string, any> | null;
+  obs_execution_status: 'success' | 'error' | 'warning';
+  obs_summary: string;
+  obs_raw_data?: Record<string, any> | null;
   content: string;
-  reasoning?: string;
-  action_tool: string;
-  params: Record<string, any>;
+  obs_reasoning?: string;
+  obs_action_tool: string;
+  obs_params: Record<string, any>;
   is_finished: boolean;
 }
 
@@ -93,7 +94,7 @@ export interface ObservationMessage {
 export interface ChunkMessage {
   type: 'chunk';
   content: string;
-  is_reasoning: boolean;
+  isReasoning: boolean; // 【小查修复】统一使用 camelCase
 }
 
 /**
@@ -128,10 +129,11 @@ export type StatusValue = 'interrupted' | 'paused' | 'resumed' | 'retrying';
 /**
  * status类型 - 执行状态
  * 发送时机：状态变化时（暂停、恢复、中断、重试）
+ * 【2026-03-11 重命名】status_value -> incident_value
  */
 export interface StatusMessage {
   type: 'status';
-  status_value: StatusValue;
+  incident_value: StatusValue;
   message: string;
 }
 
