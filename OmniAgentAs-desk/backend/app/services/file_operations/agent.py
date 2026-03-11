@@ -774,16 +774,17 @@ class FileOperationAgent:
                 is_finished = parsed_obs.get("action_tool") == "finish"
                 
                 # 立即yield observation
+                # 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
                 yield {
                     "type": "observation",
                     "step": step_count,
-                    "execution_status": execution_result.get("status", "success"),
-                    "summary": execution_result.get("summary", ""),
-                    "raw_data": execution_result.get("data"),
+                    "obs_execution_status": execution_result.get("status", "success"),
+                    "obs_summary": execution_result.get("summary", ""),
+                    "obs_raw_data": execution_result.get("data"),
                     "content": parsed_obs.get("content", ""),
-                    "reasoning": parsed_obs.get("reasoning"),
-                    "action_tool": parsed_obs.get("action_tool", "finish"),
-                    "params": parsed_obs.get("params", {}),
+                    "obs_reasoning": parsed_obs.get("reasoning"),
+                    "obs_action_tool": parsed_obs.get("action_tool", "finish"),
+                    "obs_params": parsed_obs.get("params", {}),
                     "is_finished": is_finished
                 }
                 
