@@ -22,13 +22,19 @@ def get_version() -> str:
         project_root = backend_dir.parent
         version_file = project_root / "version.txt"
         
+        print(f"[Version] current_file: {current_file}")
+        print(f"[Version] backend_dir: {backend_dir}")
+        print(f"[Version] project_root: {project_root}")
+        print(f"[Version] version_file: {version_file}")
+        print(f"[Version] version_file exists: {version_file.exists()}")
+        
         if version_file.exists():
-            # 【修复】只读取第一行作为版本号
             with open(version_file, 'r', encoding='utf-8') as f:
                 version = f.readline().strip()
+            print(f"[Version] read version: {version}")
             return version.lstrip('v')
     except Exception as e:
-        logger.warning(f"Failed to read version.txt: {e}")
+        print(f"[Version] Failed to read version.txt: {e}")
     return "0.4.14"
 
 app = FastAPI(
