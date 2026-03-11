@@ -237,11 +237,11 @@ const NewChatContainer: React.FC = () => {
             return updated;
           }
         }
-        // 普通步骤：追加到 executionSteps
+        // 普通步骤：追加到 executionSteps（final 类型即使 isStreaming 已变为 false 也要加入）
         if (
           lastMessage &&
           lastMessage.role === "assistant" &&
-          lastMessage.isStreaming
+          (lastMessage.isStreaming || step.type === "final")
         ) {
           const updatedSteps = [...(lastMessage.executionSteps || []), step];
           const updated = [...prev];
@@ -256,8 +256,6 @@ const NewChatContainer: React.FC = () => {
     }, []),
     // onChunk - 收到内容片段 【小沈修复】添加 isReasoning 参数支持思考过程样式区分
     useCallback((chunk: string, isReasoning?: boolean, _reasoningContent?: string) => {
-      console.log("🔍 [onChunk] 收到内容片段:", JSON.stringify(chunk).substring(0, 100), "isReasoning:", isReasoning);
-      
       // ⭐ 暂停时存入缓冲区，不直接显示
       if (isPausedRef.current) {
         console.log("⏸️ [onChunk] 暂停中，存入缓冲区");
@@ -336,7 +334,7 @@ const NewChatContainer: React.FC = () => {
         const currentPending = pendingMessageRef.current || pendingMessage;
         if (currentSessionId && finalResponse && finalResponse.trim()) {
           // 🔴 修复：添加详细的调试日志
-          console.log("🔍 保存AI回复:");
+            console.log("🆕 [新消息] 保存AI回复:");
           console.log("  ref中的sessionId:", currentSessionIdRef.current);
           console.log("  state中的sessionId:", sessionId);
           console.log("  最终使用的sessionId:", currentSessionId);
@@ -356,7 +354,7 @@ const NewChatContainer: React.FC = () => {
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
             // 原因：标题应该在用户修改时立即保存，避免版本冲突
             // 如果需要同步最新数据，应该在用户修改标题时处理
-            console.log("✅ AI回复保存成功");
+            console.log("✅ [新消息] AI回复保存成功");
           } catch (saveError) {
             console.error("保存AI回复或标题失败:", saveError);
             console.error("使用的sessionId:", currentSessionId);
@@ -443,7 +441,7 @@ const NewChatContainer: React.FC = () => {
          // 【小新第三修复 2026-03-02】清理ref和state
          pendingMessageRef.current = null; // 同步清理
          setPendingMessage(null); // 异步清理
-         console.log("✅ [onComplete] 处理完成");
+          console.log("✅ [SSE] 流完成");
        },
       [sessionId, pendingMessage]
     ),
@@ -770,7 +768,7 @@ const NewChatContainer: React.FC = () => {
           
           // 缓存无效或为空时，才从API加载（仅首次加载时）
           if (messages.length === 0) {
-            console.log("🔄 首次加载，从API获取会话数据");
+            console.log("📜 [历史] 加载中...");
             setTimeout(async () => {
               try {
                 const sessionData = await sessionApi.getSessionMessages(
@@ -1234,7 +1232,7 @@ const NewChatContainer: React.FC = () => {
       if (!urlSessionId) {
         const restored = restoreState();
         if (restored) {
-          console.log("🟢 从缓存恢复会话状态");
+            console.log("🟢 [历史] 恢复完成");
           // 如果是从缓存恢复，也要关闭加载状态
           setSessionJumpLoading(false);
           message.destroy("session-load");
