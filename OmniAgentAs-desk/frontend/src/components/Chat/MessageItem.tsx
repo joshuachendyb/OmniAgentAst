@@ -733,69 +733,51 @@ const isUser = message.role === "user";
               </div>
             )}
 
-            {/* 【小查修复】4. AI回复chunk - 先分组相同类型的chunk，再分别显示 */}
+            {/* 【小查修复】4. AI回复chunk - 逐个渲染，is_reasoning=true时显示标签，false时不显示 */}
             {(() => {
               const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
               console.log("🔍 [chunk渲染] message.id=", message.id, "chunks数量=", chunks.length, "isStreaming=", message.isStreaming);
               console.log("🔍 [chunk渲染] 前5个chunk的is_reasoning=", chunks.slice(0, 5).map(c => c.is_reasoning));
               console.log("🔍 [chunk渲染] 后5个chunk的is_reasoning=", chunks.slice(-5).map(c => c.is_reasoning));
               
-              // 分组：将连续相同类型的chunk合并
-              const groupedChunks: { is_reasoning: boolean; content: string }[] = [];
-              for (const chunk of chunks) {
-                // 【小查修复】类型已经是 boolean，直接使用
+              // 逐个渲染chunk
+              let hasShownLabel = false;
+              
+              return chunks.map((chunk, index) => {
                 const is_reasoning = !!chunk.is_reasoning;
                 const content = chunk.content || '';
-                console.log("🔍 [chunk渲染] 单个chunk: is_reasoning=", is_reasoning, "content前10字=", content.substring(0, 10));
-                if (groupedChunks.length > 0 && groupedChunks[groupedChunks.length - 1].is_reasoning === is_reasoning) {
-                  // 相同类型，合并
-                  groupedChunks[groupedChunks.length - 1].content += content;
-                } else {
-                  // 新类型，创建新组
-                  groupedChunks.push({ is_reasoning, content });
+                
+                // 只有第一个 is_reasoning=true 的chunk才显示标签
+                const showLabel = is_reasoning && !hasShownLabel;
+                if (showLabel) {
+                  hasShownLabel = true;
                 }
-              }
-              
-              console.log("🔍 [chunk渲染] 分组结果: 共", groupedChunks.length, "组");
-              groupedChunks.forEach((g, i) => {
-                console.log(`🔍 [chunk渲染] 组${i}: is_reasoning=${g.is_reasoning}, content长度=${g.content.length}, 前20字=${g.content.substring(0, 20)}`);
+                
+                console.log(`🔍 [chunk渲染] index=${index}, is_reasoning=${is_reasoning}, showLabel=${showLabel}, hasShownLabel=${hasShownLabel}`);
+                
+                return (
+                  <span
+                    key={`chunk-${index}`}
+                    style={{
+                      color: is_reasoning ? '#888' : '#000',
+                      fontStyle: is_reasoning ? 'italic' : 'normal',
+                      fontSize: is_reasoning ? '0.95em' : '1em',
+                    }}
+                  >
+                    {showLabel && (
+                      <span style={{ 
+                        color: '#888', 
+                        fontSize: '0.85em', 
+                        marginRight: 4,
+                        fontWeight: 500,
+                      }}>
+                        💭 思考中:
+                      </span>
+                    )}
+                    {content}
+                  </span>
+                );
               });
-              console.log("🔍 [chunk渲染] 将显示的标签条件: group.is_reasoning && findIndex === index");
-              
-              // 渲染分组后的chunk
-              return groupedChunks.map((group, index) => (
-                <span
-                  key={`chunk-group-${index}`}
-                  style={{
-                    // 思考过程：灰色斜体；正式内容：正常黑色
-                    ...(group.is_reasoning ? {
-                      color: '#888',
-                      fontStyle: 'italic',
-                      fontSize: '0.95em',
-                    } : {
-                      color: '#000',
-                    }),
-                  }}
-                >
-                  {/* 只有第一个思考过程分组添加标签 */}
-                  {(() => {
-                    const firstReasoningIndex = groupedChunks.findIndex(g => g.is_reasoning);
-                    const shouldShowLabel = group.is_reasoning && firstReasoningIndex === index;
-                    console.log(`🔍 [标签=${index}, group显示条件] index.is_reasoning=${group.is_reasoning}, firstReasoningIndex=${firstReasoningIndex}, shouldShowLabel=${shouldShowLabel}`);
-                    return shouldShowLabel;
-                  })() && (
-                    <span style={{ 
-                      color: '#888', 
-                      fontSize: '0.85em', 
-                      marginRight: 4,
-                      fontWeight: 500,
-                    }}>
-                      💭 思考中:
-                    </span>
-                  )}
-                  {group.content}
-                </span>
-              ));
             })()}
 
             {/* 5. 最终答案content - 如果没有executionSteps则回退到content显示 */}
