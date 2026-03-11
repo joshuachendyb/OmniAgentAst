@@ -227,6 +227,7 @@ export const chatApi = {
                 data.type === "chunk" ||
                 data.type === "final"
               ) {
+                console.log("🔍 [api.ts] 收到事件, type=", data.type, "data=", JSON.stringify(data));
                 callbacks.onStep(data);
                 // final 额外调用 onComplete 更新 message.content
                 if (data.type === "final") {
