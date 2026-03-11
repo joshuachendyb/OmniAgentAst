@@ -618,6 +618,7 @@ class MessageCreate(BaseModel):
     role: str = Field(..., description="角色：user/assistant/system")
     content: str = Field(..., description="消息内容")
     display_name: Optional[str] = Field(None, description="模型显示名称（可选，记录消息收发时使用的模型）")
+    execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
 
 class SessionUpdate(BaseModel):
     """会话更新请求"""
@@ -627,7 +628,7 @@ class SessionUpdate(BaseModel):
 
 
 @router.post("/sessions/{session_id}/messages")
-async def save_message(session_id: str, message: MessageCreate, execution_steps: Optional[str] = None):
+async def save_message(session_id: str, message: MessageCreate):
     """
     保存消息到会话
     
@@ -641,8 +642,7 @@ async def save_message(session_id: str, message: MessageCreate, execution_steps:
     
     Args:
         session_id: 会话ID
-        message: 消息内容
-        execution_steps: 执行步骤JSON字符串
+        message: 消息内容（包含 execution_steps）
         
     Returns:
         dict: 保存结果
@@ -690,9 +690,10 @@ async def save_message(session_id: str, message: MessageCreate, execution_steps:
             logger.debug(f"从缓存获取 display_name: session_id={session_id}, display_name={display_name_to_save}")
         
         # 插入消息（添加 display_name 和 execution_steps 字段）
+        execution_steps_json = json.dumps(message.execution_steps) if message.execution_steps else None
         cursor.execute(
             'INSERT INTO chat_messages (session_id, role, content, timestamp, display_name, execution_steps) VALUES (?, ?, ?, ?, ?, ?)',
-            (session_id, message.role, message.content, utc_time, display_name_to_save, execution_steps)
+            (session_id, message.role, message.content, utc_time, display_name_to_save, execution_steps_json)
         )
         message_id = cursor.lastrowid
         
@@ -785,6 +786,87 @@ async def save_message(session_id: str, message: MessageCreate, execution_steps:
     except Exception as e:
         logger.error(f"保存消息失败: {e}")
         raise HTTPException(status_code=500, detail=f"保存消息失败: {str(e)}")
+
+
+class ExecutionStepsUpdate(BaseModel):
+    """更新执行步骤请求"""
+    execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
+
+
+@router.post("/sessions/{session_id}/execution_steps")
+async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdate):
+    """
+    保存/更新会话的执行步骤
+    
+    功能：单独保存或更新消息的 execution_steps 字段
+    与 save_message 的区别：只更新 execution_steps，不插入新消息
+    
+    Args:
+        session_id: 会话ID
+        update_data: 包含 execution_steps 的请求体
+        
+    Returns:
+        dict: 保存结果
+    """
+    try:
+        conn = _get_db_connection()
+        cursor = conn.cursor()
+        
+        # 检查会话是否存在
+        cursor.execute(
+            'SELECT id FROM chat_sessions WHERE id = ? AND is_deleted = FALSE',
+            (session_id,)
+        )
+        session = cursor.fetchone()
+        
+        if not session:
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
+        
+        # 查找该会话的最后一条消息（用于更新 execution_steps）
+        cursor.execute(
+            '''SELECT id, content FROM chat_messages 
+               WHERE session_id = ? 
+               ORDER BY timestamp DESC LIMIT 1''',
+            (session_id,)
+        )
+        last_message = cursor.fetchone()
+        
+        if not last_message:
+            conn.close()
+            raise HTTPException(status_code=404, detail=f"会话中没有消息: {session_id}")
+        
+        # 更新最后一条消息的 execution_steps
+        # 注：execution_steps 字段在表创建时已添加（见第180行），无需检查字段存在性
+        execution_steps_json = json.dumps(update_data.execution_steps) if update_data.execution_steps else None
+        cursor.execute(
+            'UPDATE chat_messages SET execution_steps = ? WHERE id = ?',
+            (execution_steps_json, last_message['id'])
+        )
+        
+        # 更新会话的 updated_at
+        utc_time = get_utc_timestamp()
+        cursor.execute(
+            'UPDATE chat_sessions SET updated_at = ? WHERE id = ?',
+            (utc_time, session_id)
+        )
+        
+        # 提交事务
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"保存执行步骤成功: session_id={session_id}, message_id={last_message['id']}")
+        
+        return {
+            "success": True,
+            "message_id": last_message['id']
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"保存执行步骤失败: {e}")
+        raise HTTPException(status_code=500, detail=f"保存执行步骤失败: {str(e)}")
 
 
 @router.put("/sessions/{session_id}")
