@@ -127,6 +127,8 @@ const NewChatContainer: React.FC = () => {
   const displayBufferRef = useRef<any[]>([]);
   // ⭐ 暂停状态ref，用于在回调中同步访问
   const isPausedRef = useRef(false);
+  // 【小查修复】用于在回调中获取最新的executionSteps
+  const executionStepsRef = useRef<ExecutionStep[]>([]);
 
   // 流式输出相关状态
   const [showExecution, setShowExecution] = useState(true);
@@ -254,6 +256,7 @@ const NewChatContainer: React.FC = () => {
         return prev;
       });
     }, []),
+
     // onChunk - 收到内容片段 【小沈修复】添加 isReasoning 参数支持思考过程样式区分
     useCallback((chunk: string, isReasoning?: boolean) => {
       console.log("🔍 [onChunk] 收到内容片段:", JSON.stringify(chunk).substring(0, 100), "isReasoning:", isReasoning);
@@ -318,6 +321,7 @@ const NewChatContainer: React.FC = () => {
               ...lastMessage,
               content: finalResponse,
               isStreaming: false,
+              is_reasoning: false, // 【小查修复】流式完成后重置为false，确保思考中标签消失
               isError: isError, // 传递错误标记
               model: metadataObj.model || lastMessage.model,
               provider: metadataObj.provider || lastMessage.provider,
@@ -352,9 +356,9 @@ const NewChatContainer: React.FC = () => {
             });
 
             // 保存 execution_steps 到最后一条消息
-            if (executionSteps && executionSteps.length > 0) {
-              await sessionApi.saveExecutionSteps(currentSessionId, executionSteps);
-              console.log("✅ 执行步骤保存成功，共", executionSteps.length, "步");
+            if (executionStepsRef.current && executionStepsRef.current.length > 0) {
+              await sessionApi.saveExecutionSteps(currentSessionId, executionStepsRef.current);
+              console.log("✅ 执行步骤保存成功，共", executionStepsRef.current.length, "步");
             }
 
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
@@ -578,6 +582,11 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages, currentResponse, executionSteps]);
+
+  // 【小查修复】同步executionSteps到ref，确保onComplete能获取最新值
+  useEffect(() => {
+    executionStepsRef.current = executionSteps;
+  }, [executionSteps]);
 
   // 【小新第二修复 2026-03-02】同步跟踪消息数量，用于保存消息时获取准确的值
   useEffect(() => {
