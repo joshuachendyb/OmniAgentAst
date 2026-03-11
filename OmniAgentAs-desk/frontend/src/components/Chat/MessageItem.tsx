@@ -744,11 +744,8 @@ const isUser = message.role === "user";
             {/* 【小查修复】4. AI回复chunk - 逐个渲染 */}
             {(() => {
               const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
-              console.log("🔍 [chunk渲染] message.id=", message.id, "chunks数量=", chunks.length, "isStreaming=", message.isStreaming);
-              console.log("🔍 [chunk渲染] 前5个chunk的is_reasoning=", chunks.slice(0, 5).map(c => c.is_reasoning));
-              console.log("🔍 [chunk渲染] 后5个chunk的is_reasoning=", chunks.slice(-5).map(c => c.is_reasoning));
               
-              // 逐个渲染chunk，使用renderContent渲染Markdown和LaTeX
+              // 逐个渲染chunk
               return chunks.map((chunk, index) => {
                 const is_reasoning = !!chunk.is_reasoning;
                 const content = (chunk.content || '').replace(/\n\n/g, '\n');
