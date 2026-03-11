@@ -236,7 +236,7 @@ async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_t
             if not is_paused:
                 # 不再暂停，恢复发送
                 if running_tasks.get(task_id, {}).get("_was_paused", False):
-            # 【问题5修复】统一使用type='status' + incident_value
+                    # 【问题5修复】统一使用type='status' + incident_value
                     yield f"data: {json.dumps({'type': 'status', 'incident_value': 'resumed', 'message': '任务已恢复'})}\n\n"
                     running_tasks[task_id]["_was_paused"] = False
                 return
@@ -1285,9 +1285,10 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
                     execution_steps_list.append({
                         "type": "observation",
                         "step": step.step_number,
-                        "content": step.thought,        # 前端期望 content
-                        "tool": step.action,             # 前端期望 tool
-                        "result": step_result            # 前端期望 result
+                        "thought": step.thought,        # 前端期望 thought
+                        "action": step.action,             # 前端期望 action
+                        "result": step_result,            # 前端期望 result
+                        "observation": step.observation   # 前端期望 observation 对象
                     })
             
             # 添加简短的执行摘要到content（兼容性保留）
