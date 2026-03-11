@@ -601,6 +601,32 @@ const processSSEData = (
         break;
       }
 
+      case "action_tool": {
+        // 使用新字段 tool_name, tool_params
+        step.tool_name = rawData.tool_name || "";
+        step.tool_params = rawData.tool_params || "";
+        // 使用 action_description 填充 content
+        step.content = rawData.action_description || rawData.tool_name || "";
+        // 添加到步骤数组，显示执行动作
+        setExecutionSteps((prev) => [...prev, step]);
+        onStep?.(step);
+        break;
+      }
+
+      case "observation": {
+        // 【小查修复2026-03-10】添加is_finished和raw_data字段映射
+        step.is_finished = rawData.is_finished ?? false;
+        step.raw_data = rawData.raw_data ?? null;
+        step.reasoning = rawData.reasoning ?? '';
+        step.action_tool = rawData.action_tool ?? '';
+        step.params = rawData.params ?? {};
+        step.contentStart = responseBufferRef.current.length;
+        step.contentEnd = step.contentStart;
+        setExecutionSteps((prev) => [...prev, step]);
+        onStep?.(step);
+        break;
+      }
+
       case "chunk": {
         const chunkContent = rawData.content || "";
         const chunkIsReasoning = rawData.is_reasoning === true;
