@@ -1082,21 +1082,15 @@ async def chat_stream(request: ChatRequest):
                 
                 # ⭐ 【新增-重试机制】重试循环结束，检查最终结果
                 if not ai_call_successful:
+                    logger.error(f"[AI Call] 重试失败，ai_call_successful={ai_call_successful}")
                     if last_error:
                         logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}")
                     else:
                         logger.error(f"[AI Call] 所有重试失败，无有效响应")
                 
-                # ⭐ 【调试日志】记录完整的AI响应
-                logger.info("=" * 80)
-                logger.info(f"[AI Response Complete] AI响应完成")
-                logger.info(f"  - total chunks: {chunk_count}")
-                logger.info(f"  - full_content length: {len(full_content)}")
-                logger.info(f"  - full_content preview: {full_content[:500]}..." if len(full_content) > 500 else f"  - full_content: {full_content}")
-                logger.info("=" * 80)
-                
                 # 发送最终结果，【新增】添加provider字段作为兜底
-                logger.info(f"[Step final] 发送final步骤, content长度={len(full_content)}, content预览={full_content[:200]}..." if len(full_content) > 200 else f"[Step final] 发送final步骤, content={full_content}")
+                logger.info(f"[Step final] 🚀 准备发送final步骤, full_content长度={len(full_content)}")
+                logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={full_content[:200]}..." if len(full_content) > 200 else f"[Step final] 🚀 发送final步骤, content={full_content}")
                 yield create_final_response(
                     content=full_content,
                     model=ai_service.model,
