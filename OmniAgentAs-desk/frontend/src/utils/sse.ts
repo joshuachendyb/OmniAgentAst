@@ -81,9 +81,9 @@ export interface ExecutionStep {
   provider?: string;      // AI提供商
   display_name?: string;  // 显示名称
   
-  // === 思考过程与正式内容区分字段（统一使用 isReasoning camelCase）===
-  isReasoning?: boolean;  // 是否为思考过程（true=思考过程，false=正式内容）
-  reasoning?: string;       // 思考过程内容（当 isReasoning=true 时使用）
+  // === 思考过程与正式内容区分字段（统一使用 is_reasoning snake_case）===
+  is_reasoning?: boolean;  // 是否为思考过程（true=思考过程，false=正式内容）
+  reasoning?: string;       // 思考过程内容（当 is_reasoning=true 时使用）
   
   // === 错误/中断字段 ===
   error_message?: string;      // error 类型的错误信息
@@ -177,7 +177,7 @@ const calculateReconnectDelay = (attempt: number, baseDelay: number, maxDelay: n
 export const useSSE = (
   config: SSEConfig,
   onStep?: (step: ExecutionStep) => void,
-  onChunk?: (chunk: string, isReasoning?: boolean) => void,
+  onChunk?: (chunk: string, is_reasoning?: boolean) => void,
   onComplete?: (fullResponse: string, metadata?: string | SSEMetadata, executionSteps?: ExecutionStep[]) => void,
   onError?: (error: string | SSEError) => void,
   onPaused?: () => void,
@@ -467,7 +467,7 @@ const processSSEData = (
     setExecutionSteps: React.Dispatch<React.SetStateAction<ExecutionStep[]>>;
     getCurrentExecutionSteps: () => ExecutionStep[];
     onStep?: (step: ExecutionStep) => void;
-    onChunk?: (chunk: string, isReasoning?: boolean) => void;
+    onChunk?: (chunk: string, is_reasoning?: boolean) => void;
     onComplete?: (fullResponse: string, metadata?: string | SSEMetadata, executionSteps?: ExecutionStep[]) => void;
     onError?: (error: string) => void;
     onPaused?: () => void;
@@ -529,8 +529,8 @@ const processSSEData = (
       action_input: rawData.action_input, // 工具调用参数
       
       // 【小沈修复】思考过程与正式内容区分字段
-        // 【小查修复】统一使用 camelCase: isReasoning
-        isReasoning: rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1',
+        // 【小查修复】统一使用 snake_case: is_reasoning
+        is_reasoning: rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1',
         reasoning: rawData.reasoning || "",
       
       timestamp: Date.now(),
@@ -617,16 +617,16 @@ const processSSEData = (
         break;
       }
 
-        // 【小查修复】统一使用 isReasoning (camelCase)
+        // 【小查修复】统一使用 is_reasoning (snake_case)
         console.log("🔍 [SSE chunk] rawData.is_reasoning =", rawData.is_reasoning, "type =", rawData.type);
         const chunkContent = rawData.content || "";
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
         // 【小沈修复】收到chunk时关闭步骤UI，开始显示回复内容
         onShowSteps?.(false);
-        // 传递 isReasoning 区分思考过程和最终答案
-        const isReasoning = rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1';
-        onChunk?.(chunkContent, isReasoning);
+        // 传递 is_reasoning 区分思考过程和最终答案
+        const is_reasoning = rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1';
+        onChunk?.(chunkContent, is_reasoning);
         
         // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
         // 这样MessageItem可以遍历并分别显示思考过程和正式内容

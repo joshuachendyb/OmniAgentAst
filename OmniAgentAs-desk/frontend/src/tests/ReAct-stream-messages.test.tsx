@@ -101,13 +101,13 @@ const TEST_MESSAGES = {
   chunk: {
     type: 'chunk' as const,
     content: '这是流式输出的第一个片段',
-    isReasoning: false,
+    is_reasoning: false,
   },
 
   chunkWithReasoning: {
     type: 'chunk' as const,
     content: '正在分析用户的问题...',
-    isReasoning: true,
+    is_reasoning: true,
   },
 
   final: {
@@ -265,9 +265,9 @@ describe('【小查测试】10.1 消息类型数据结构验证', () => {
   });
 
   describe('chunk类型结构', () => {
-    it('应包含isReasoning字段', () => {
-      expect(TEST_MESSAGES.chunk.isReasoning).toBe(false);
-      expect(TEST_MESSAGES.chunkWithReasoning.isReasoning).toBe(true);
+    it('应包含is_reasoning字段', () => {
+      expect(TEST_MESSAGES.chunk.is_reasoning).toBe(false);
+      expect(TEST_MESSAGES.chunkWithReasoning.is_reasoning).toBe(true);
     });
 
     it('应包含content字段', () => {
@@ -369,9 +369,9 @@ describe('【小查测试】10.2 类型守卫函数', () => {
       expect(isChunkMessage(TEST_MESSAGES.chunk)).toBe(true);
     });
 
-    it('应正确识别isReasoning字段', () => {
-      expect(TEST_MESSAGES.chunk.isReasoning).toBe(false);
-      expect(TEST_MESSAGES.chunkWithReasoning.isReasoning).toBe(true);
+    it('应正确识别is_reasoning字段', () => {
+      expect(TEST_MESSAGES.chunk.is_reasoning).toBe(false);
+      expect(TEST_MESSAGES.chunkWithReasoning.is_reasoning).toBe(true);
     });
   });
 

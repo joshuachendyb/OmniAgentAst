@@ -643,7 +643,7 @@ export interface Message {
   timestamp: string;
   execution_steps?: ExecutionStep[];
   display_name?: string; // 前端小新代修改：模型显示名称
-  isReasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 camelCase）
+  is_reasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 snake_case）
 }
 
 // ⭐ 新增：获取会话消息响应（包含新字段）

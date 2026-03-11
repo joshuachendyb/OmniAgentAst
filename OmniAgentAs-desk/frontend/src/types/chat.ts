@@ -94,7 +94,7 @@ export interface ObservationMessage {
 export interface ChunkMessage {
   type: 'chunk';
   content: string;
-  isReasoning: boolean; // 【小查修复】统一使用 camelCase
+  is_reasoning: boolean; // 统一使用 snake_case（与后端一致）
 }
 
 /**

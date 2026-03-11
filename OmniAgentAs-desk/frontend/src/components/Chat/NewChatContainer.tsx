@@ -82,7 +82,7 @@ interface Message extends ChatMessage {
   model?: string;
   provider?: string; // 前端小新代修改：提供商
   display_name?: string; // 前端小新代修改：显示名称（如"OpenAI (GPT-4)"）
-  isReasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 camelCase）
+  is_reasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 snake_case）
 }
 
 /**
@@ -257,14 +257,14 @@ const NewChatContainer: React.FC = () => {
       });
     }, []),
 
-    // onChunk - 收到内容片段 【小查修复】统一使用 isReasoning (camelCase)
-    useCallback((chunk: string, isReasoning?: boolean) => {
-      console.log("🔍 [onChunk] 收到chunk, isReasoning:", isReasoning, "content前20字:", chunk.substring(0, 20));
+    // onChunk - 收到内容片段 【小查修复】统一使用 is_reasoning (snake_case)
+    useCallback((chunk: string, is_reasoning?: boolean) => {
+      console.log("🔍 [onChunk] 收到chunk, is_reasoning:", is_reasoning, "content前20字:", chunk.substring(0, 20));
       
       // ⭐ 暂停时存入缓冲区，不直接显示
       if (isPausedRef.current) {
         console.log("⏸️ [onChunk] 暂停中，存入缓冲区");
-        displayBufferRef.current.push({ type: "chunk", content: chunk, isReasoning });
+        displayBufferRef.current.push({ type: "chunk", content: chunk, is_reasoning });
         return;
       }
       
@@ -276,12 +276,12 @@ const NewChatContainer: React.FC = () => {
           lastMessage.isStreaming
         ) {
           const updated = [...prev];
-          // 【小查修复】直接使用传入的isReasoning值，正确处理思考过程切换
-          const newIsReasoning = isReasoning ?? false;
+          // 【小查修复】直接使用传入的is_reasoning值，正确处理思考过程切换
+          const newIs_reasoning = is_reasoning ?? false;
           updated[updated.length - 1] = {
             ...lastMessage,
             content: lastMessage.content + chunk,
-            isReasoning: newIsReasoning,  // 【小查修复】统一使用 camelCase
+            is_reasoning: newIs_reasoning,
           };
           return updated;
         }
@@ -322,7 +322,7 @@ const NewChatContainer: React.FC = () => {
               ...lastMessage,
               content: finalResponse,
               isStreaming: false,
-              isReasoning: false, // 【小查修复】流式完成后重置为false，确保思考中标签消失
+              is_reasoning: false, // 【小查修复】流式完成后重置为false，确保思考中标签消失
               isError: isError, // 传递错误标记
               model: metadataObj.model || lastMessage.model,
               provider: metadataObj.provider || lastMessage.provider,
