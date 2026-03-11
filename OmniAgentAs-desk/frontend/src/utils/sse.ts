@@ -328,7 +328,6 @@ export const useSSE = (
           if (buffer.trim()) {
             processSSEData(buffer, {
               setExecutionSteps,
-              executionSteps,
               lastChunkIsReasoningRef,
               onStep,
               onChunk,
@@ -356,7 +355,6 @@ export const useSSE = (
         for (const line of lines) {
           processSSEData(line, {
             setExecutionSteps,
-            executionSteps,
             lastChunkIsReasoningRef,
             onStep,
             onChunk,
@@ -483,7 +481,6 @@ const processSSEData = (
   line: string,
   handlers: {
     setExecutionSteps: React.Dispatch<React.SetStateAction<ExecutionStep[]>>;
-    executionSteps: ExecutionStep[];
     lastChunkIsReasoningRef: React.MutableRefObject<boolean | null>;
     onStep?: (step: ExecutionStep) => void;
     onChunk?: (chunk: string, isReasoning?: boolean, reasoning?: string) => void;
@@ -504,7 +501,6 @@ const processSSEData = (
 ) => {
   const {
     setExecutionSteps,
-    executionSteps,
     lastChunkIsReasoningRef,  // 【小新修复】添加
     onStep,
     onChunk,
@@ -628,17 +624,20 @@ const processSSEData = (
         onChunk?.(chunkContent, chunkIsReasoning, reasoning);
         
         // 状态转换时：清除 thought，添加标记
+        // 【小查修复】使用 prev 而不是外部 executionSteps，避免闭包问题
         if (shouldHideThought) {
-          const filteredSteps = executionSteps.filter(s => s.type !== "thought");
-          const replyStep: ExecutionStep = {
-            type: "chunk",
-            content: "💬 LLM回复如下：",
-            is_reasoning: false,
-            timestamp: Date.now(),
-          };
-          setExecutionSteps([...filteredSteps, replyStep, step]);
+          setExecutionSteps((prev) => {
+            const filteredSteps = prev.filter(s => s.type !== "thought");
+            const replyStep: ExecutionStep = {
+              type: "chunk",
+              content: "💬 LLM回复如下：",
+              is_reasoning: false,
+              timestamp: Date.now(),
+            };
+            return [...filteredSteps, replyStep, step];
+          });
         } else {
-          setExecutionSteps([...executionSteps, step]);
+          setExecutionSteps((prev) => [...prev, step]);
         }
         
         onStep?.(step);

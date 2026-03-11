@@ -93,7 +93,7 @@ def create_error_response(
     Returns:
         SSE 格式的错误响应字符串
     """
-    response = {
+    response: Dict[str, Any] = {
         'type': 'error',
         'code': code,
         'message': message,
@@ -108,9 +108,9 @@ def create_error_response(
     if stack:
         response['stack'] = stack
     if retryable:
-        response['retryable'] = retryable
+        response['retryable'] = retryable  # type: ignore
     if retry_after is not None:
-        response['retry_after'] = retry_after
+        response['retry_after'] = retry_after  # type: ignore
     return f"data: {json.dumps(response)}\n\n"
 
 
@@ -740,6 +740,7 @@ async def chat_stream(request: ChatRequest):
             last_message = request.messages[-1].content if request.messages else ""
             
             # 构建历史消息
+            from app.services.base import Message
             history = []
             if len(request.messages) > 1:
                 for msg in request.messages[:-1]:
@@ -1089,8 +1090,8 @@ async def chat_stream(request: ChatRequest):
                         logger.error(f"[AI Call] 所有重试失败，无有效响应")
                 
                 # 发送最终结果，【新增】添加provider字段作为兜底
-                logger.info(f"[Step final] 🚀 准备发送final步骤, full_content长度={len(full_content)}")
-                logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={full_content[:200]}..." if len(full_content) > 200 else f"[Step final] 🚀 发送final步骤, content={full_content}")
+                content_preview = full_content[:200] + "..." if len(full_content) > 200 else full_content
+                logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={content_preview}")
                 yield create_final_response(
                     content=full_content,
                     model=ai_service.model,
