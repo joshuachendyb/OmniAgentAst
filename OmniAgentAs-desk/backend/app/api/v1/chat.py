@@ -209,7 +209,7 @@ async def check_and_yield_if_interrupted(
     async with running_tasks_lock:
         if running_tasks.get(task_id, {}).get("cancelled", False):
             # 【Phase4重构】使用新status格式
-            return True, f"data: {json.dumps({'type': 'status', 'status_value': 'interrupted', 'message': '任务已被中断'})}\n\n"
+            return True, f"data: {json.dumps({'type': 'status', 'incident_value': 'interrupted', 'message': '任务已被中断'})}\n\n"
     return False, ""
 
 
@@ -237,7 +237,7 @@ async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_t
                 # 不再暂停，恢复发送
                 if running_tasks.get(task_id, {}).get("_was_paused", False):
                     # 【问题5修复】统一使用type='status' + status_value
-                    yield f"data: {json.dumps({'type': 'status', 'status_value': 'resumed', 'message': '任务已恢复'})}\n\n"
+                    yield f"data: {json.dumps({'type': 'status', 'incident_value': 'resumed', 'message': '任务已恢复'})}\n\n"
                     running_tasks[task_id]["_was_paused"] = False
                 return
         
@@ -247,7 +247,7 @@ async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_t
             # 【问题5修复】统一使用type='status' + status_value
             async with running_tasks_lock:
                 running_tasks[task_id]["_was_paused"] = True
-            yield f"data: {json.dumps({'type': 'status', 'status_value': 'paused', 'message': '任务已暂停'})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', 'incident_value': 'paused', 'message': '任务已暂停'})}\n\n"
         
         await asyncio.sleep(0.5)  # 每0.5秒检查一次
 
@@ -793,7 +793,7 @@ async def chat_stream(request: ChatRequest):
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
                         # 【问题5修复】统一使用type='status' + status_value
-                        interrupted_data = {'type': 'status', 'status_value': 'interrupted', 'message': '任务已被中断'}
+                        interrupted_data = {'type': 'status', 'incident_value': 'interrupted', 'message': '任务已被中断'}
                         logger.info(f"[Step status] 发送status步骤(interrupted)")
                         yield f"data: {json.dumps(interrupted_data)}\n\n"
                         return
@@ -809,16 +809,17 @@ async def chat_stream(request: ChatRequest):
                 
                 # 【小健检查修复】遵循字段设计原则5：禁止兼容字段
                 # 【问题4修复】observation使用设计文档字段
+                # 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
                 observation1_data = {
                     'type': 'observation',
                     'step': next_step(),
-                    'execution_status': 'success',
-                    'summary': f'安全检测{"通过" if is_safe else "未通过"}',
-                    'raw_data': {'is_safe': is_safe, 'risk': risk},
+                    'obs_execution_status': 'success',
+                    'obs_summary': f'安全检测{"通过" if is_safe else "未通过"}',
+                    'obs_raw_data': {'is_safe': is_safe, 'risk': risk},
                     'content': '',  # 安全检测没有思考过程
-                    'reasoning': '',
-                    'action_tool': 'security_check',
-                    'params': {},
+                    'obs_reasoning': '',
+                    'obs_action_tool': 'security_check',
+                    'obs_params': {},
                     'is_finished': True
                 }
                 logger.info(f"[Step observation] 发送observation步骤")
@@ -860,8 +861,8 @@ async def chat_stream(request: ChatRequest):
                         # 每步检查是否被中断
                         async with running_tasks_lock:
                             if running_tasks.get(task_id, {}).get("cancelled", False):
-                                # 【问题5修复】统一使用type='status' + status_value
-                                interrupted_data = {'type': 'status', 'status_value': 'interrupted', 'message': '任务已被中断'}
+                                # 【2026-03-11 重命名】status_value -> incident_value
+                                interrupted_data = {'type': 'status', 'incident_value': 'interrupted', 'message': '任务已被中断'}
                                 logger.info(f"[Step status] 发送status步骤(interrupted)")
                                 yield f"data: {json.dumps(interrupted_data)}\n\n"
                                 break
@@ -898,16 +899,17 @@ async def chat_stream(request: ChatRequest):
                         
                         elif event_type == 'observation':
                             # Observation阶段
+                            # 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
                             observation_data = {
                                 'type': 'observation',
                                 'step': event.get('step', 0),
-                                'execution_status': event.get('execution_status', 'success'),
-                                'summary': event.get('summary', ''),
-                                'raw_data': event.get('raw_data'),
+                                'obs_execution_status': event.get('execution_status', 'success'),
+                                'obs_summary': event.get('summary', ''),
+                                'obs_raw_data': event.get('raw_data'),
                                 'content': event.get('content', ''),
-                                'reasoning': event.get('reasoning', ''),
-                                'action_tool': event.get('action_tool', ''),
-                                'params': event.get('params', {}),
+                                'obs_reasoning': event.get('reasoning', ''),
+                                'obs_action_tool': event.get('action_tool', ''),
+                                'obs_params': event.get('params', {}),
                                 'is_finished': event.get('is_finished', False)
                             }
                             logger.info(f"[Step observation] 发送observation步骤")
@@ -984,7 +986,7 @@ async def chat_stream(request: ChatRequest):
                         # 发送重试提示给前端
                         retry_data = {
                             'type': 'status',
-                            'status_value': 'retrying',
+                            'incident_value': 'retrying',
                             'message': f'请求超时，正在重试 ({retry_attempt}/{max_retries})...',
                             'wait_time': wait_time
                         }
