@@ -445,6 +445,14 @@ const NewChatContainer: React.FC = () => {
         }
 
          console.log("🔍 [onComplete] SSE流完成，设置loading=false");
+         
+         // ========== 黄色结束标志 ==========
+         console.log("%c┌─────", "color: #FFD700; font-weight: bold; font-size: 14px;");
+         console.log("%c│ ✅ AI响应完成 END", "color: #FFD700; font-weight: bold; font-size: 14px;");
+         console.log("%c│ 完整回复长度: " + (fullResponse?.length || 0), "color: #FFD700; font-size: 12px;");
+         console.log("%c└─────", "color: #FFD700; font-weight: bold; font-size: 14px;");
+         // ==================================
+         
          setLoading(false);
          // ⭐ 停止等待计时器
          if (waitTimerRef.current) {
@@ -751,10 +759,14 @@ const NewChatContainer: React.FC = () => {
       } else {
         // 页面重新可见时：不再重新请求API，避免覆盖当前消息
         // 改为从sessionStorage恢复状态，如果缓存有效的话
+        
+        // 🔧 调试模式：跳过缓存，直接从API加载
+        const DEBUG_LOAD_FROM_API = true; // 调试时设为true，每次都从数据库加载
+        
         const urlSessionId = new URLSearchParams(window.location.search).get(
           "session_id"
         );
-        if (urlSessionId && urlSessionId === sessionId) {
+        if (urlSessionId && urlSessionId === sessionId && !DEBUG_LOAD_FROM_API) {
           // 先尝试从缓存恢复
           const saved = sessionStorage.getItem(STORAGE_KEY);
           if (saved) {
@@ -795,6 +807,11 @@ const NewChatContainer: React.FC = () => {
                   sessionId
                 );
                 if (sessionData.messages && sessionData.messages.length > 0) {
+                  // ========== 历史消息加载日志 ==========
+                  console.log("%c┌───── 历史消息加载 START ─────", "color: blue; font-weight: bold; font-size: 14px;");
+                  console.log("%c│ 共 " + sessionData.messages.length + " 条消息", "color: blue; font-size: 12px;");
+                  // ======================================
+                  
                   setMessages(
                     sessionData.messages.map((m: any) => {
                       let executionSteps: ExecutionStep[] = [];
@@ -803,6 +820,13 @@ const NewChatContainer: React.FC = () => {
                       } else if (m.executionSteps && Array.isArray(m.executionSteps)) {
                         executionSteps = m.executionSteps;
                       }
+                      
+                      // 每条消息的日志
+                      const isUser = m.role === "user";
+                      const roleColor = isUser ? "green" : "purple";
+                      const roleLabel = isUser ? "👤 用户" : "🤖 AI";
+                      console.log("%c│ " + roleLabel + " | " + (m.content || "").substring(0, 50) + "...", "color: " + roleColor + "; font-size: 11px;");
+                      
                       return {
                         id: m.id?.toString() || Date.now().toString(),
                         role: m.role || "assistant",
@@ -815,6 +839,9 @@ const NewChatContainer: React.FC = () => {
                       };
                     })
                   );
+                  
+                  console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
+                  // ======================================
                   const title = sessionData.title || "会话";
                   setSessionTitle(title);
                   if (sessionData.version !== undefined) {
@@ -1147,6 +1174,11 @@ const NewChatContainer: React.FC = () => {
         try {
           const sessionData = await sessionApi.getSessionMessages(urlSessionId);
           if (sessionData.messages && sessionData.messages.length > 0) {
+            // ========== 历史消息加载日志 ==========
+            console.log("%c┌───── 历史消息加载 START ─────", "color: blue; font-weight: bold; font-size: 14px;");
+            console.log("%c│ 共 " + sessionData.messages.length + " 条消息", "color: blue; font-size: 12px;");
+            // ======================================
+            
             setSessionId(urlSessionId);
             // 【小新第二修复 2026-03-02】加载会话时也更新ref
             currentSessionIdRef.current = urlSessionId;
@@ -1162,6 +1194,12 @@ const NewChatContainer: React.FC = () => {
                 ) {
                   executionSteps = m.executionSteps;
                 }
+                
+                // 每条消息的日志
+                const isUser = m.role === "user";
+                const roleColor = isUser ? "green" : "purple";
+                const roleLabel = isUser ? "👤 用户" : "🤖 AI";
+                console.log("%c│ " + roleLabel + " | " + (m.content || "").substring(0, 50) + "...", "color: " + roleColor + "; font-size: 11px;");
 
                 return {
                   id: m.id?.toString() || Date.now().toString(),
@@ -1175,6 +1213,9 @@ const NewChatContainer: React.FC = () => {
                 };
               })
             );
+            
+            console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
+            // ======================================
 
             // ⭐ 2026-02-25 更新：加载新增字段
             const title = getSessionTitle(sessionData, "会话");
@@ -1568,6 +1609,13 @@ const NewChatContainer: React.FC = () => {
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
     setBlockedCommand(null);
+
+    // ========== 红色开始标志 ==========
+    console.log("%c┌─────", "color: red; font-weight: bold; font-size: 14px;");
+    console.log("%c│ 🚀 用户发送消息 START", "color: red; font-weight: bold; font-size: 14px;");
+    console.log("%c│ 内容: " + userMessage.content.substring(0, 100), "color: red; font-size: 12px;");
+    console.log("%c└─────", "color: red; font-weight: bold; font-size: 14px;");
+    // ==================================
 
     // 安全检测v2.0
     setCheckingDanger(true);
