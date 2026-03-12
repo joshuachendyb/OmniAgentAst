@@ -390,9 +390,11 @@ const ProviderList: React.FC<{
           size="small"
           style={{ marginBottom: 12, cursor: "pointer" }}
           onClick={() => onSelect(provider)}
-          bodyStyle={{
-            backgroundColor:
-              provider.name === currentProvider ? "#e6f7ff" : "transparent",
+          styles={{
+            body: {
+              backgroundColor:
+                provider.name === currentProvider ? "#e6f7ff" : "transparent",
+            },
           }}
         >
           <Space>
@@ -1234,7 +1236,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
                               : "1px solid #d9d9d9",
                             backgroundColor: isActive ? "#e6f7ff" : "#fafafa",
                           }}
-                          bodyStyle={{ padding: "12px 16px" }}
+                          styles={{ body: { padding: "12px 16px" } }}
                         >
                           <div
                             style={{

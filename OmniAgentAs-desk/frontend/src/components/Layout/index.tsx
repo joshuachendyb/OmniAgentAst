@@ -478,7 +478,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
           onClose={() => setDrawerVisible(false)}
           open={drawerVisible}
           width={220}
-          bodyStyle={{ padding: 0 }}
+          styles={{ body: { padding: 0 } }}
         >
           {renderNavContent()}
         </Drawer>
@@ -593,10 +593,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
               <Select
                 value={_currentProvider}
                 style={{ minWidth: 350 }}
-                dropdownStyle={{ minWidth: 350 }}
+                styles={{ popup: { root: { minWidth: 350 } } }}
                 size="small"
                 // 【新增】打开下拉框时刷新模型列表，获取最新配置
-                onDropdownVisibleChange={async (open: boolean) => {
+                onOpenChange={async (open: boolean) => {
                   if (open) {
                     await refreshModelList();
                   }

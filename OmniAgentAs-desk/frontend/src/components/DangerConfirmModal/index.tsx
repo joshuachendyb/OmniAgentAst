@@ -70,8 +70,10 @@ export const DangerConfirmModal: React.FC<DangerConfirmModalProps> = ({
         borderRadius: '8px',
         overflow: 'hidden',
       }}
-      bodyStyle={{
-        padding: '24px',
+      styles={{
+        body: {
+          padding: '24px',
+        },
       }}
     >
       <div style={{ textAlign: 'center' }}>

@@ -1781,8 +1781,7 @@ const NewChatContainer: React.FC = () => {
 
   return (
     <Card
-      headStyle={{ padding: "4px 4px 2px 4px" }}
-      bodyStyle={{ padding: "0 4px 4px 4px" }}
+      styles={{ header: { padding: "4px 4px 2px 4px" }, body: { padding: "0 4px 4px 4px" } }}
       title={
         <Space>
           <RobotOutlined />
