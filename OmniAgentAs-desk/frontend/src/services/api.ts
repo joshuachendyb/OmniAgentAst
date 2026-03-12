@@ -142,7 +142,8 @@ export interface StreamStep {
 
 export interface StreamCallbacks {
   onStep: (step: StreamStep) => void;
-  onComplete: (result: string, model?: string) => void;
+  // 【小新修复 2026-03-12】添加第三个参数接收完整data对象
+  onComplete: (result: string, model?: string, data?: any) => void;
   onError: (error: string) => void;
 }
 
@@ -230,8 +231,9 @@ export const chatApi = {
                 console.log("🔍 [api.ts] 收到事件, type=", data.type, "data=", JSON.stringify(data));
                 callbacks.onStep(data);
                 // final 额外调用 onComplete 更新 message.content
+                // 【小新修复 2026-03-12】传递完整的data对象，避免依赖ref的异步更新
                 if (data.type === "final") {
-                  callbacks.onComplete(data.content, data.model);
+                  callbacks.onComplete(data.content, data.model, data);
                 }
               } else if (data.type === "interrupted") {
                 message.warning("任务已被中断");

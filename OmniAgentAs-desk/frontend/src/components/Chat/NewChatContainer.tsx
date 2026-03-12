@@ -436,17 +436,19 @@ const NewChatContainer: React.FC = () => {
       });
     }, []),
     // onComplete - 流式完成 - 前端小新代修改：适配后端新格式
+    // 【小新修复 2026-03-12】第三个参数改为接收完整的data对象
     useCallback(
       async (
         fullResponse: string,
-        metadata?:
-          | string
-          | {
-              model?: string;
-              provider?: string;
-              display_name?: string;
-            },
-        executionStepsFromSSE?: ExecutionStep[]
+        metadata?: string | {
+          model?: string;
+          provider?: string;
+          display_name?: string;
+        },
+        sseData?: {
+          execution_steps?: ExecutionStep[];
+          [key: string]: any;
+        }
       ) => {
         // ✅ 支持旧格式（model 字符串）和新格式（metadata 对象）
         const metadataObj =
@@ -485,8 +487,10 @@ const NewChatContainer: React.FC = () => {
         // 这样更加健壮，即使AI响应失败，用户消息也已保存
         const currentSessionId = currentSessionIdRef.current || sessionId;
         const currentPending = pendingMessageRef.current || pendingMessage;
-        // 使用从SSE传递的executionSteps，确保获取最新的数据
-        const stepsToSave = executionStepsFromSSE || executionStepsRef.current || [];
+        // 【小新修复 2026-03-12】优先使用sseData传递的execution_steps，其次fallback到ref
+        // 这样避免依赖React状态更新的时序问题
+        const stepsFromSSE = sseData?.execution_steps;
+        const stepsToSave = stepsFromSSE || executionStepsRef.current || [];
         if (currentSessionId && finalResponse && finalResponse.trim()) {
           // 🔴 修复：添加详细的调试日志
           console.log("🔍 保存AI回复:");
@@ -495,7 +499,8 @@ const NewChatContainer: React.FC = () => {
           console.log("  最终使用的sessionId:", currentSessionId);
           console.log("  currentPending:", currentPending);
           console.log("  finalResponse length:", finalResponse.length);
-          console.log("  executionStepsFromSSE:", executionStepsFromSSE?.length);
+          console.log("  sseData传递的steps:", stepsFromSSE?.length);
+          console.log("  fallback ref中的steps:", executionStepsRef.current?.length);
 
           try {
             // 【小新修复 2026-03-11】分开保存：
