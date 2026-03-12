@@ -736,8 +736,20 @@ const isUser = message.role === "user";
               });
             })()}
 
-            {/* 5. 最终答案content - 如果没有executionSteps则回退到content显示 */}
-            {(!message.executionSteps || message.executionSteps.filter(s => s.type === "chunk").length === 0) && (
+            {/* 5. 最终答案content - 兼容历史消息不完整的情况 */}
+            {(() => {
+              const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
+              // 判断是否有 is_reasoning=false 的chunk
+              const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
+              
+              // SSE实时（isStreaming=true）：按原来逻辑，只有没有chunk时才显示content
+              if (message.isStreaming) {
+                return chunks.length === 0;
+              }
+              
+              // 历史消息：没有 is_reasoning=false 的chunk时，显示content（补充不完整的chunk）
+              return !hasFalseReasoning;
+            })() && (
               <div
                 style={{
                   wordBreak: "break-word",
