@@ -30,7 +30,7 @@ import {
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
 import { taskControlApi } from "../../services/api";
-import { renderContent } from "../../utils/markdown";
+import { } from "../../utils/markdown";
 
 /**
  * 步骤行组件 - 单行步骤显示（优化后新增）
@@ -332,22 +332,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
 
   /**
    * 获取角色名称
-   */
+    */
   const getRoleName = () => {
-    // 调试日志：检查消息对象
-      if (message.role === "assistant") {
-        console.log("🔍 MessageItem.getRoleName - 消息对象:", {
-          id: message.id,
-          role: message.role,
-          isStreaming: message.isStreaming,
-          display_name: message.display_name,
-          model: message.model,
-          content: message.content?.substring?.(0, 50),
-          // 检查所有属性
-          allProps: Object.keys(message)
-        });
-      }
-     
     switch (message.role) {
       case "user":
         return "我";
@@ -360,13 +346,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
           let display_nameToShow = message.display_name;
           if (!display_nameToShow && message.model) {
             display_nameToShow = message.model;
-            console.log("🔍 MessageItem.getRoleName - 从model构建display_name:", display_nameToShow);
           }
           
           const result = display_nameToShow
             ? `🤔 AI 助手【${display_nameToShow}】【加载中...】`
             : `🤔 AI 助手【加载中...】`;
-          console.log("🔍 MessageItem.getRoleName - 流式状态，返回:", result);
           return result;
         }
 
@@ -379,11 +363,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
             : `⚠️ AI 助手【错误】`;
         }
         // 直接使用后端返回的 display_name，用【】包住显示
-        const result = message.display_name
+        return message.display_name
           ? `AI 助手【${message.display_name}】`
           : "AI 助手";
-        console.log("🔍 MessageItem.getRoleName - 非流式状态，返回:", result);
-        return result;
       }
       case "system":
         return "系统";
@@ -649,7 +631,7 @@ const isUser = message.role === "user";
                 <StepRow key={`thought-${index}`} step={step} taskId={message.task_id} />
               ))}
 
-            {/* 【小新重构2026-03-09】2. 执行步骤 - 按 action_tool 分组，每组一个折叠面板 */}
+            {/* 【小新重构2026-03-09】按 action_tool 分组，每组一个折叠面板 */}
             {/* 【小查修复2026-03-10】兼容旧类型 action */}
             {hasExecution && message.role === "assistant" && (
               <div>
@@ -661,9 +643,6 @@ const isUser = message.role === "user";
                   // 将 action_tool 和后续的 observation 分组
                   const groups: ExecutionStep[][] = [];
                   let currentGroup: ExecutionStep[] = [];
-                  
-                  // 调试：打印原始步骤
-                  console.log("🔍 分组原始步骤:", actionObservationSteps.map(s => ({ type: s.type, action_description: s.action_description })));
                   
                   for (const step of actionObservationSteps) {
                     if (step.type === "action_tool") {
@@ -682,17 +661,9 @@ const isUser = message.role === "user";
                   if (currentGroup.length > 0) {
                     groups.push(currentGroup);
                   }
-                  
-                  // 调试：打印分组结果
-                  console.log("🔍 分组结果:", groups.length, "组", groups.map((g, i) => ({ 
-                    groupIndex: i, 
-                    steps: g.map(s => s.type) 
-                  })));
-                  
+                   
                   // 渲染每个组（折叠面板）
-                  console.log("🔍 渲染折叠面板: groups.length =", groups.length);
                   return groups.map((group, groupIndex) => {
-                    console.log("🔍 渲染第" + (groupIndex + 1) + "个折叠面板, 步骤数:", group.length);
                     return (
                     <Collapse
                       key={`execution-${groupIndex}-${group.length}`}
@@ -759,7 +730,7 @@ const isUser = message.role === "user";
                       fontSize: is_reasoning ? '0.95em' : '1em',
                     }}
                   >
-                    {renderContent(content)}
+                    {content}
                   </span>
                 );
               });
@@ -790,10 +761,9 @@ const isUser = message.role === "user";
                 }
               >
                 {/* 【小查修复】已移除回退显示"思考中"标签，统一用chunk渲染 */}
-                {/* 【小新修复】使用renderContent渲染Markdown和LaTeX */}
                 {message.content && typeof message.content === 'string' 
-                  ? renderContent(message.content.replace(/\n\n/g, '\n'))
-                  : renderContent(String(message.content || '').replace(/\n\n/g, '\n'))}
+                  ? message.content.replace(/\n\n/g, '\n')
+                  : String(message.content || '').replace(/\n\n/g, '\n')}
                 {(message.isStreaming ?? false) && (
                   <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
                 )}
