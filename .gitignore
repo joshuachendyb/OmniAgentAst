@@ -1,41 +1,14 @@
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
-env/
-venv/
-ENV/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
 
-# 环境变量和密钥
-.env
-.env.local
-.env.*.local
-*.key
-*.pem
-OmniAgentAs-desk/backend/config/config.yaml
+# Virtual Environment
+venv/
+env/
+.venv/
 
 # IDE
 .vscode/
@@ -44,31 +17,33 @@ OmniAgentAs-desk/backend/config/config.yaml
 *.swo
 *~
 
-# 数据和日志
-ai_os_data/
-*.log
-server.log
-nul
-
-# 操作系统
+# OS
 .DS_Store
 Thumbs.db
 
-# 临时文件
-*.tmp
-*.temp
+# Test files
+test_*.py
+*.test.py
+
+# Backup files
+*.backup
 *.bak
+*.orig
 
-# 排除目录
-LAW初版/
-NMermaidReader/
+# Configuration
+config.yaml.backup.*
 
-# 原型项目（已不维护）
-ai-agent-os/
+# Logs
+*.log
+logs/
 
-# 原型项目（已不维护）
-ai-agent-os/
+# Build
+build/
+dist/
+*.egg-info/
 
-# 归档分支已备份的资料（保留本地文件但Git管理）
-# 这些文件已纳入Git管理，不再忽略
-# 详见 archive 分支备份
+# Docker
+.dockerignore
+docker-compose.override.yml
+# Windows special device names
+nul

@@ -1,0 +1,119 @@
+# 安全配置文件
+# 用于CRSS评分系统的可配置项
+
+# 危险命令黑名单（按类型分类）
+dangerous_commands:
+  # Bash/Linux危险命令
+  bash:
+    - rm -rf /
+    - rm -rf /*
+    - rm -rf /bin
+    - rm -rf /usr
+    - rm -rf /etc
+    - rm -rf /home
+    - rmdir /
+    - mkfs
+    - dd if=/dev/zero
+    - sudo
+    - chmod 777 /
+    - cat /etc/passwd
+    - cat /etc/shadow
+    - nc -e
+    - nmap
+    - sqlmap
+    - kill -9 -1
+  
+  # Windows CMD危险命令
+  cmd:
+    - del /f /s /q
+    - format
+    - format c:
+    - reg query HKLM\\
+    - reg delete
+    - taskkill /f /im
+    - sc delete
+    - netsh advfirewall set allprofiles state off
+  
+  # PowerShell危险命令
+  powershell:
+    - Remove-Item -Recurse -Force
+    - Set-ExecutionPolicy Unrestricted
+    - Invoke-Expression
+    - Invoke-WebRequest
+    - Stop-Computer
+    - Disable-NetFirewallRule
+    - Set-MpPreference -Disable*
+    - Clear-Disk
+  
+  # 中文危险命令（通用）
+  chinese:
+    - 读取密码
+    - 读取shadow
+    - 格式化硬盘
+    - 格式化磁盘
+    - 关闭防火墙
+    - 禁用杀软
+    - 停止服务
+    - 修改注册表
+    - 重启电脑
+    - 关机
+
+# 系统关键目录列表（用于检测危险操作）
+# 可根据实际需求修改
+system_critical_dirs:
+  # Windows系统目录
+  - C:\Windows
+  - C:\Windows\System32
+  - C:\Windows\SysWOW64
+  - C:\Program Files
+  - C:\Program Files (x86)
+  - C:\Users\Public
+  - C:\Recovery
+  
+  # Linux系统目录
+  - /bin
+  - /sbin
+  - /usr/bin
+  - /usr/sbin
+  - /lib
+  - /lib64
+  - /etc
+  - /sys
+  - /proc
+  - /dev
+  - /boot
+  - /root
+  - /var
+  - /opt
+  - /srv
+
+# 项目保护目录列表（用户自定义）
+# 可根据实际项目需求修改
+project_protected_dirs:
+  # 项目代码目录
+  - backend/
+  - frontend/
+  - src/
+  - tests/
+  - config/
+  
+  # 文档目录
+  - doc/
+  - doc-阶段2.1/
+  - doc-阶段2.2/
+  - docs/
+  
+  # 版本控制
+  - .git/
+  - .svn/
+  
+  # 配置文件
+  - package.json
+  - requirements.txt
+  - version.txt
+  - .env
+  - .env.local
+  
+  # 其他需要保护的目录
+  - 笔记目录/
+  - notes/
