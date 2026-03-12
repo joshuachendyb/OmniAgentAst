@@ -1,0 +1,13 @@
+# 最小化依赖 - 仅用于测试
+# 安装这个文件而不是 requirements-test.txt
+
+# 核心框架
+fastapi==0.109.0
+pydantic==2.5.3
+
+# 测试框架
+pytest==8.0.0
+pytest-asyncio==0.23.0
+httpx==0.26.0
+
+# 注意: 不安装 uvicorn，测试不需要它
