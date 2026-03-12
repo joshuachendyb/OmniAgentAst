@@ -286,6 +286,8 @@ const NewChatContainer: React.FC = () => {
     message: string;
   } | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  // 【小查修复】使用 ref 存储加载状态，避免触发 useEffect
+  const isLoadingHistoryRef = useRef(false);
 
   // P1级别优化：新增状态变量
   type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -920,9 +922,10 @@ const NewChatContainer: React.FC = () => {
           }
           
           // 缓存无效或为空时，才从API加载（仅首次加载时）
-          // 【小查修复】添加 isInitialized 检查，避免与 searchParams 的 useEffect 重复调用
-          if (messages.length === 0 && !isInitialized) {
+          // 【小查修复】添加 isInitialized 和 isLoadingHistoryRef 检查，避免重复调用
+          if (messages.length === 0 && !isInitialized && !isLoadingHistoryRef.current) {
             console.log("🔄 首次加载，从API获取会话数据");
+            isLoadingHistoryRef.current = true; // 加锁
             setTimeout(async () => {
               // 调用统一的历史消息加载函数
               const result = await loadHistoryMessages(sessionId);
@@ -936,6 +939,7 @@ const NewChatContainer: React.FC = () => {
                   setTitleLocked(result.title_locked);
                 }
               }
+              isLoadingHistoryRef.current = false; // 解锁
             }, 100);
           }
         }
@@ -1224,6 +1228,15 @@ const NewChatContainer: React.FC = () => {
         const retryKey = `session-load-${urlSessionId}`;
         const currentRetry = retryCount[retryKey] || 0;
 
+        // 【小查修复】如果正在加载中，跳过此次调用
+        if (isLoadingHistoryRef.current) {
+          console.log("⏭️ 正在加载中，跳过重复调用");
+          setSessionJumpLoading(false);
+          message.destroy("session-load");
+          return;
+        }
+
+        isLoadingHistoryRef.current = true; // 加锁
         try {
           // 调用统一的历史消息加载函数
           const result = await loadHistoryMessages(urlSessionId);
@@ -1252,6 +1265,7 @@ const NewChatContainer: React.FC = () => {
               "版本:",
               sessionVersion
             );
+            isLoadingHistoryRef.current = false; // 解锁
             return;
           } else {
             // 【小新第四修复 2026-03-02 15:45:30】URL会话加载失败（没有消息），清理状态避免混乱
@@ -1267,10 +1281,12 @@ const NewChatContainer: React.FC = () => {
             setTitleLocked(false);
             setSessionJumpLoading(false);
             message.destroy("session-load");
+            isLoadingHistoryRef.current = false; // 解锁
             return;
           }
         } catch (error) {
           console.warn("加载URL会话失败:", error);
+          isLoadingHistoryRef.current = false; // 解锁
 
           // 重试机制 - 最多3次
           if (currentRetry < 3) {
@@ -1289,6 +1305,7 @@ const NewChatContainer: React.FC = () => {
           } else {
             // 超过重试次数，显示错误
             setSessionJumpLoading(false);
+            isLoadingHistoryRef.current = false; // 解锁
             message.error({
               content: "加载会话失败，请检查网络后重试",
               key: "session-load",
@@ -1305,6 +1322,7 @@ const NewChatContainer: React.FC = () => {
           console.log("🟢 从缓存恢复会话状态");
           // 如果是从缓存恢复，也要关闭加载状态
           setSessionJumpLoading(false);
+          isLoadingHistoryRef.current = false; // 解锁
           message.destroy("session-load");
           return;
         }
@@ -1319,7 +1337,16 @@ const NewChatContainer: React.FC = () => {
       }
 
       // 🔴 修复4: 如果都没有，加载最近的会话
-      // 调用统一的历史消息加载函数
+      // 【小查修复】添加 isLoadingHistoryRef 检查，避免重复调用
+      if (isLoadingHistoryRef.current) {
+        console.log("⏭️ 正在加载中，跳过重复调用");
+        setSessionJumpLoading(false);
+        setIsInitialized(true);
+        message.destroy("session-load");
+        return;
+      }
+      
+      isLoadingHistoryRef.current = true; // 加锁
       try {
         const result = await loadLatestHistoryMessages();
         if (result) {
@@ -1353,11 +1380,13 @@ const NewChatContainer: React.FC = () => {
 
         // 关闭加载状态
         setSessionJumpLoading(false);
+        isLoadingHistoryRef.current = false; // 解锁
         message.destroy("session-load");
       } catch (error) {
         console.warn("加载最近会话失败:", error);
         // 即使失败也关闭加载状态
         setSessionJumpLoading(false);
+        isLoadingHistoryRef.current = false; // 解锁
         message.destroy("session-load");
       }
 
