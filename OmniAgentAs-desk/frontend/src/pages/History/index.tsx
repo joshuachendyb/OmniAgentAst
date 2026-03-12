@@ -388,9 +388,6 @@ const HistoryPage: React.FC = () => {
                           icon={<MessageOutlined />}
                           onClick={(e) => {
                             e.stopPropagation(); // 防止事件冒泡
-                            console.log(
-                              `🔄 准备跳转到会话: ${session.session_id}`
-                            );
                             handleResume(session.session_id);
                           }}
                           loading={loadingSessionId === session.session_id}
