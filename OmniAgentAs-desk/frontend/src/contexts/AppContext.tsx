@@ -14,7 +14,6 @@ import React, {
   useContext,
   useState,
   useCallback,
-  useEffect,
   ReactNode,
 } from "react";
 import { configApi, chatApi, sessionApi } from "../services/api";

@@ -39,7 +39,7 @@ import {
   CheckCircleOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
-import { configApi, chatApi, sessionApi } from "../../services/api";
+import { configApi } from "../../services/api";
 import type { MenuProps } from "antd";
 const { Option } = Select;
 import ShortcutPanel from "../ShortcutPanel";
@@ -96,9 +96,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     serviceStatus,
     modelList,
     validationResult,
-    validationLoading,
-    modelListLoading,
-    serviceStatusLoading,
     initializeApp,
     refreshAll,
   } = useApp();
