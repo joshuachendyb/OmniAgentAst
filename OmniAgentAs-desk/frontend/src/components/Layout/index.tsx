@@ -43,6 +43,7 @@ import { configApi, chatApi, sessionApi } from "../../services/api";
 import type { MenuProps } from "antd";
 const { Option } = Select;
 import ShortcutPanel from "../ShortcutPanel";
+import { useApp } from "../../contexts/AppContext";
 
 const { useBreakpoint } = Grid;
 
@@ -79,8 +80,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   const navigate = useNavigate();
   // 未读消息数（实际应从全局状态获取）
   const [unreadCount] = useState(0);
-  // ⭐ 修复：会话数量 - 从后端获取真实值
-  const [sessionCount, setSessionCount] = useState(0);
   // 导航折叠状态
   const [collapsed, setCollapsed] = useState(false);
   // 移动端抽屉显示状态
@@ -91,183 +90,53 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   const screens = useBreakpoint();
   const isMobile = !screens.md; // md 以下认为是移动端
 
-  // ⭐ 新增：加载会话数量（用于菜单角标显示）
+  // ⭐ 使用AppContext缓存API数据，避免重复调用
+  const {
+    sessionCount,
+    serviceStatus,
+    modelList,
+    validationResult,
+    validationLoading,
+    modelListLoading,
+    serviceStatusLoading,
+    initializeApp,
+    refreshAll,
+  } = useApp();
+
+  // 同步sessionCount到本地state（因为其他地方可能依赖sessionCount变量）
+  const [_sessionCount, setSessionCount] = useState(0);
   useEffect(() => {
-    const loadSessionCount = async () => {
-      try {
-        console.log("🔍 开始加载会话数量...");
-        const response = await sessionApi.listSessions(1, 1, undefined, true); // ⭐ 只加载有效会话
-        console.log("📊 会话数量响应:", response);
-        setSessionCount(response.total);
-        console.log("✅ 会话数量设置为:", response.total);
-      } catch (error) {
-        console.error("❌ 加载会话数量失败:", error);
-        // 失败时显示 0，避免误导
-        setSessionCount(0);
-      }
-    };
+    setSessionCount(sessionCount);
+  }, [sessionCount]);
 
-    loadSessionCount();
-  }, []);
-
-  // 【新增】检查服务状态
-  const [serviceStatus, setServiceStatus] = useState<{
-    success: boolean;
-    message: string;
-    provider: string;
-    model: string;
-  } | null>(null);
+  // 【新增】检查服务状态 - 使用AppContext
   const [checkingStatus, setCheckingStatus] = useState(false);
   // 【修改】当前选中的模型ID（格式: provider-modelname）
   const [_currentProvider, setCurrentProvider] = useState<string>(
     "opencode-minimax-m2.5-free"
   );
-  // 【修改】模型列表 - 类型匹配后端返回（id, provider, model, display_name, current_model）
-  const [modelList, setModelList] = useState<
-    {
-      id: number;
-      provider: string;
-      model: string;
-      display_name: string;
-      current_model: boolean;
-    }[]
-  >([]);
 
-  // 【新增】完整配置验证结果
-  const [validationResult, setValidationResult] = useState<{
-    success: boolean;
-    provider: string;
-    model: string;
-    message: string;
-    errors: string[];
-    warnings: string[];
-  } | null>(null);
   // 【新增】验证详情弹框
   const [validationModalVisible, setValidationModalVisible] = useState(false);
 
-  // 【修复】刷新模型列表 - 同时刷新验证状态
+  // 【修复】刷新模型列表 - 使用AppContext的refreshAll
   const refreshModelList = async () => {
-    try {
-      // 同时刷新验证状态
-      try {
-        const validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
-      } catch (err) {
-        console.warn("刷新验证状态失败:", err);
-      }
-
-      const modelData = await configApi.getModelList();
-      if (modelData.models) {
-        setModelList(modelData.models);
-      }
-    } catch (error) {
-      console.warn("刷新模型列表失败:", error);
-    }
+    await refreshAll();
   };
 
-  // 手动检查服务
+  // 手动检查服务 - 使用AppContext刷新数据
   const handleCheckService = async () => {
     setCheckingStatus(true);
     try {
-      // 【修复】同时刷新验证状态和模型列表
-      try {
-        const validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
-      } catch (err) {
-        console.warn("刷新验证状态失败:", err);
-      }
-
-      const modelData = await configApi.getModelList();
-
-      // 更新模型列表
-      if (modelData.models) {
-        setModelList(modelData.models);
-      }
-
-      // 更新当前选中的模型 - 直接使用后端返回的current_model字段
-      if (modelData.models && modelData.models.length > 0) {
-        const currentModel = modelData.models.find(
-          (m) => m.current_model === true
-        );
-        if (currentModel) {
-          // 使用id（数字类型），转为字符串保持一致
-          setCurrentProvider(`${currentModel.provider}-${currentModel.model}`); // 2b50 4fee590dFf1a4f7f7528 provider-model 683c5f0f
-        }
-      }
-
-      // 检查服务状态
-      const status = await chatApi.validateService();
-      setServiceStatus(status);
-    } catch (error) {
-      console.warn("服务检查失败:", error);
+      await refreshAll();
     } finally {
       setCheckingStatus(false);
     }
   };
 
-  // 页面加载时检查服务
-
-  // 【新增】检查服务状态
+  // 页面加载时初始化 - 使用AppContext
   useEffect(() => {
-    const initApp = async () => {
-      setCheckingStatus(true);
-      try {
-        // 【修复】先调用完整配置验证，获取所有配置项的验证结果
-        let validation = null;
-        try {
-          validation = await configApi.validateFullConfig();
-          setValidationResult(validation);
-        } catch (err) {
-          console.warn("配置验证失败:", err);
-          // 验证失败时设置空结果，补全所有字段
-          const errorResult = {
-            success: false,
-            provider: "",
-            model: "",
-            message: "配置验证接口调用失败",
-            errors: ["配置验证接口调用失败"],
-            warnings: [] as string[],
-          };
-          setValidationResult(errorResult);
-          validation = errorResult;
-        }
-
-        // 【修复】根据验证结果决定是否获取模型列表
-        // 设计文档要求：验证失败时不获取列表或显示空列表
-        if (!validation || !validation.success) {
-          setModelList([]);
-          setCheckingStatus(false);
-          return;
-        }
-
-        // 验证成功才获取模型列表
-        const modelData = await configApi.getModelList();
-
-         // 设置模型列表
-         if (modelData.models && modelData.models.length > 0) {
-           setModelList(modelData.models);
-
-          // 设置当前选中的模型 - 直接使用后端返回的 current_model 字段
-          const currentModel = modelData.models.find(
-            (m) => m.current_model === true
-          );
-          if (currentModel) {
-            setCurrentProvider(
-              `${currentModel.provider}-${currentModel.model}`
-            ); // 2b50 4fee590dFf1a4f7f7528 provider-model 683c5f0f
-          }
-        }
-
-        // 检查服务状态
-        const status = await chatApi.validateService();
-        setServiceStatus(status);
-      } catch (error) {
-        console.warn("初始化失败:", error);
-      } finally {
-        setCheckingStatus(false);
-      }
-    };
-    initApp();
+    initializeApp();
   }, []);
 
   /**

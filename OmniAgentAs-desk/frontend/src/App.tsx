@@ -15,6 +15,8 @@ import AppLayout from './components/Layout';
 import NewChatContainer from './components/Chat/NewChatContainer';
 import HistoryPage from './pages/History';
 import Settings from './pages/Settings';
+import { SecurityProvider } from './contexts/SecurityContext';
+import { AppProvider } from './contexts/AppContext';
 
 /**
  * 路由内容组件
@@ -50,7 +52,11 @@ const RouterContent: React.FC = () => {
 const App: React.FC = () => {
   return (
     <BrowserRouter>
-      <RouterContent />
+      <SecurityProvider>
+        <AppProvider>
+          <RouterContent />
+        </AppProvider>
+      </SecurityProvider>
     </BrowserRouter>
   );
 };
