@@ -760,31 +760,17 @@ const NewChatContainer: React.FC = () => {
   }, [messages, currentResponse, executionSteps]);
 
   // 组件卸载前保存状态（用于路由切换场景）
+  // 【小查修复】移除组件卸载时的保存，因为页面隐藏时已经保存，避免重复
   useEffect(() => {
     return () => {
-      // 组件卸载时保存当前状态
-      // 🔴 修复：使用useState的当前值，而不是ref（因为卸载时DOM已不存在）
-      if (sessionId && messages.length > 0) {
-        // 从messages数组中计算滚动位置：最后一条消息
-        const scrollPosition = messages.length; // 保存消息数量作为滚动标记
-        const state = {
-          messages,
-          sessionId,
-          sessionTitle,
-          timestamp: Date.now(),
-          scrollPosition, // 保存消息数量，而不是DOM滚动位置
-          shouldScrollToBottom: true, // 标记需要滚动到底部
-        };
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        console.log(
-          "💾 组件卸载前保存会话状态:",
-          sessionId,
-          "消息数:",
-          messages.length
-        );
-      }
+      // 组件卸载时不再单独保存状态
+      // 原因：页面隐藏时会触发saveState，组件卸载前页面必定先隐藏
+      // 如果需要保存，saveState() 会在页面隐藏时被调用
+      console.log(
+        "🔄 组件卸载（页面即将跳转或关闭）"
+      );
     };
-  }, [sessionId, messages, sessionTitle]);
+  }, []);
 
   // ============================================
   // 会话状态持久化
