@@ -172,15 +172,21 @@ const loadHistoryMessages = async (
     }
 
     // 解析消息
-    const messages = sessionData.messages.map(parseMessage);
+    const messages = sessionData.messages.map((rawMsg: any, index: number) => {
+      const parsedMsg = parseMessage(rawMsg);
+      // 附加原始序号（从数据库返回的顺序）
+      (parsedMsg as any).dbIndex = index + 1;
+      return parsedMsg;
+    });
 
-    // 日志每条消息
-    messages.forEach((m: Message) => {
+    // 日志每条消息（带序号）
+    messages.forEach((m: Message & { dbIndex?: number }) => {
       const isUser = m.role === "user";
       const roleColor = isUser ? "green" : "purple";
       const roleLabel = isUser ? "👤 用户" : "🤖 AI";
+      const msgIndex = m.dbIndex || "?";
       console.log(
-        "%c│ " + roleLabel + " | " + (m.content || "").substring(0, 50) + "...", 
+        "%c│ [" + msgIndex + "] " + roleLabel + " | " + (m.content || "").substring(0, 40) + "...", 
         "color: " + roleColor + "; font-size: 11px;"
       );
     });
