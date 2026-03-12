@@ -53,6 +53,10 @@ const { TextArea } = Input;
 
 // ⭐ 常量配置
 const SESSION_EXPIRY_TIME = 5 * 60 * 1000; // 5分钟
+const STORAGE_KEY = "chat_session_state";
+// ⭐ DEBUG模式：强制从数据库加载（设为true时跳过缓存，每次从API加载）
+// 【小查修复】统一定义在顶部，方便配置
+const DEBUG_LOAD_FROM_API = import.meta.env.DEV || false;
 
 // ⭐ 防抖函数（简单实现，不依赖lodash）
 const debounce = <T extends (...args: any[]) => any>(
@@ -84,6 +88,141 @@ interface Message extends ChatMessage {
   display_name?: string; // 前端小新代修改：显示名称（如"OpenAI (GPT-4)"）
   is_reasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 snake_case）
 }
+
+// ============================================
+// 历史消息统一读取模块 - 小新 2026-03-12
+// ============================================
+
+// 解析单条消息
+const parseMessage = (rawMessage: any): Message => {
+  // 处理 executionSteps（兼容两种字段名）
+  let executionSteps: ExecutionStep[] = [];
+  if (rawMessage.execution_steps && Array.isArray(rawMessage.execution_steps)) {
+    executionSteps = rawMessage.execution_steps;
+  } else if (rawMessage.executionSteps && Array.isArray(rawMessage.executionSteps)) {
+    executionSteps = rawMessage.executionSteps;
+  }
+
+  return {
+    id: rawMessage.id?.toString() || Date.now().toString(),
+    role: rawMessage.role || "assistant",
+    content: rawMessage.content || "",
+    timestamp: new Date(rawMessage.timestamp || Date.now()),
+    executionSteps,
+    display_name: rawMessage.display_name,
+    model: rawMessage.model || undefined,
+    provider: rawMessage.provider || undefined,
+    is_reasoning: rawMessage.is_reasoning, // 【小查修复】添加 is_reasoning 字段处理
+  };
+};
+
+// 历史消息加载结果类型
+interface HistoryLoadResult {
+  messages: Message[];
+  title: string;
+  sessionId: string;
+  version?: number;
+  title_locked?: boolean;
+}
+
+// 加载历史消息（统一入口）
+const loadHistoryMessages = async (
+  sessionId: string,
+  options?: { useCache?: boolean }
+): Promise<HistoryLoadResult | null> => {
+  console.log("%c┌───── 历史消息加载 START ─────", "color: blue; font-weight: bold; font-size: 14px;");
+
+  try {
+    // 先尝试从缓存读取（如果启用且不在DEBUG模式）
+    if (options?.useCache !== false && !DEBUG_LOAD_FROM_API) {
+      const saved = sessionStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        try {
+          const state = JSON.parse(saved);
+          const currentTime = Date.now();
+          const savedTime = state.timestamp || 0;
+          const timeDiff = currentTime - savedTime;
+
+          // 缓存有效（5分钟内），且sessionId匹配
+          if (timeDiff <= SESSION_EXPIRY_TIME && 
+              state.sessionId === sessionId && 
+              state.messages?.length > 0) {
+            console.log("%c│ 从缓存恢复: " + state.messages.length + " 条消息", "color: blue; font-size: 12px;");
+            console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
+            return {
+              messages: state.messages,
+              title: state.sessionTitle || "会话",
+              sessionId: state.sessionId,
+            };
+          }
+        } catch (e) {
+          console.warn("缓存解析失败:", e);
+        }
+      }
+    }
+
+    // 从数据库读取
+    const sessionData = await sessionApi.getSessionMessages(sessionId);
+
+    // 检查是否有消息
+    if (!sessionData.messages || sessionData.messages.length === 0) {
+      console.log("%c│ 无历史消息", "color: blue; font-size: 12px;");
+      console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
+      return null;
+    }
+
+    // 解析消息
+    const messages = sessionData.messages.map(parseMessage);
+
+    // 日志每条消息
+    messages.forEach((m: Message) => {
+      const isUser = m.role === "user";
+      const roleColor = isUser ? "green" : "purple";
+      const roleLabel = isUser ? "👤 用户" : "🤖 AI";
+      console.log(
+        "%c│ " + roleLabel + " | " + (m.content || "").substring(0, 50) + "...", 
+        "color: " + roleColor + "; font-size: 11px;"
+      );
+    });
+
+    // 日志结束
+    console.log("%c│ 共 " + messages.length + " 条消息", "color: blue; font-size: 12px;");
+    console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
+
+    // 返回统一格式
+    return {
+      messages,
+      title: sessionData.title || "会话",
+      sessionId: sessionId,
+      version: sessionData.version,
+      title_locked: sessionData.title_locked,
+    };
+
+  } catch (error) {
+    console.error("加载历史消息失败:", error);
+    return null;
+  }
+};
+
+// 加载最近会话的历史消息
+const loadLatestHistoryMessages = async (): Promise<HistoryLoadResult | null> => {
+  try {
+    const response = await sessionApi.listSessions(1, 1, undefined, true);
+    if (response.sessions && response.sessions.length > 0) {
+      const latestSession = response.sessions[0];
+      const result = await loadHistoryMessages(latestSession.session_id);
+      if (result) {
+        return { ...result, sessionId: latestSession.session_id };
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error("加载最近会话失败:", error);
+    return null;
+  }
+};
+
+/**
 
 /**
  * NewChatContainer - 升级版对话容器
@@ -650,8 +789,7 @@ const NewChatContainer: React.FC = () => {
   // ============================================
   // 会话状态持久化
   // ============================================
-  const STORAGE_KEY = "chat_session_state";
-
+  
   const saveState = () => {
     // 🔴 修复：只要有会话ID就保存，即使消息为空
     if (sessionId) {
@@ -760,9 +898,6 @@ const NewChatContainer: React.FC = () => {
         // 页面重新可见时：不再重新请求API，避免覆盖当前消息
         // 改为从sessionStorage恢复状态，如果缓存有效的话
         
-        // 🔧 调试模式：跳过缓存，直接从API加载
-        const DEBUG_LOAD_FROM_API = true; // 调试时设为true，每次都从数据库加载
-        
         const urlSessionId = new URLSearchParams(window.location.search).get(
           "session_id"
         );
@@ -802,57 +937,17 @@ const NewChatContainer: React.FC = () => {
           if (messages.length === 0) {
             console.log("🔄 首次加载，从API获取会话数据");
             setTimeout(async () => {
-              try {
-                const sessionData = await sessionApi.getSessionMessages(
-                  sessionId
-                );
-                if (sessionData.messages && sessionData.messages.length > 0) {
-                  // ========== 历史消息加载日志 ==========
-                  console.log("%c┌───── 历史消息加载 START ─────", "color: blue; font-weight: bold; font-size: 14px;");
-                  console.log("%c│ 共 " + sessionData.messages.length + " 条消息", "color: blue; font-size: 12px;");
-                  // ======================================
-                  
-                  setMessages(
-                    sessionData.messages.map((m: any) => {
-                      let executionSteps: ExecutionStep[] = [];
-                      if (m.execution_steps && Array.isArray(m.execution_steps)) {
-                        executionSteps = m.execution_steps;
-                      } else if (m.executionSteps && Array.isArray(m.executionSteps)) {
-                        executionSteps = m.executionSteps;
-                      }
-                      
-                      // 每条消息的日志
-                      const isUser = m.role === "user";
-                      const roleColor = isUser ? "green" : "purple";
-                      const roleLabel = isUser ? "👤 用户" : "🤖 AI";
-                      console.log("%c│ " + roleLabel + " | " + (m.content || "").substring(0, 50) + "...", "color: " + roleColor + "; font-size: 11px;");
-                      
-                      return {
-                        id: m.id?.toString() || Date.now().toString(),
-                        role: m.role || "assistant",
-                        content: m.content || "",
-                        timestamp: new Date(m.timestamp || Date.now()),
-                        executionSteps,
-                        display_name: m.display_name,
-                        model: m.model || undefined,
-                        provider: m.provider || undefined,
-                      };
-                    })
-                  );
-                  
-                  console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
-                  // ======================================
-                  const title = sessionData.title || "会话";
-                  setSessionTitle(title);
-                  if (sessionData.version !== undefined) {
-                    setSessionVersion(sessionData.version);
-                  }
-                  if (sessionData.title_locked !== undefined) {
-                    setTitleLocked(sessionData.title_locked);
-                  }
+              // 调用统一的历史消息加载函数
+              const result = await loadHistoryMessages(sessionId);
+              if (result) {
+                setMessages(result.messages);
+                setSessionTitle(result.title);
+                if (result.version !== undefined) {
+                  setSessionVersion(result.version);
                 }
-              } catch (error) {
-                console.warn("加载会话数据失败:", error);
+                if (result.title_locked !== undefined) {
+                  setTitleLocked(result.title_locked);
+                }
               }
             }, 100);
           }
@@ -966,35 +1061,6 @@ const NewChatContainer: React.FC = () => {
   // 统一的标题管理函数
   // ============================================
 
-  /**
-   * 获取会话标题 - 统一管理所有标题来源
-   * 优先级：1. API返回的title > 2. 用户修改过的标题 > 3. 消息内容 > 4. 默认标题
-   */
-  const getSessionTitle = (
-    sessionData: { title?: string; messages?: any[] },
-    defaultTitle: string = "会话"
-  ): string => {
-    // 1. 最高优先级：API返回的title字段
-    if (sessionData.title && sessionData.title.trim()) {
-      return sessionData.title.trim();
-    }
-
-    // 2. 次优先级：消息内容（只在没有API title时使用）
-    if (sessionData.messages && sessionData.messages.length > 0) {
-      const firstMessage = sessionData.messages[0];
-      if (firstMessage?.content != null && firstMessage.content !== "") {
-        // 只取前30个字符，避免过长，确保 content 是字符串
-        const contentStr = String(firstMessage.content);
-        const contentTitle = contentStr.substring(0, 30).trim();
-        if (contentTitle) {
-          return contentTitle;
-        }
-      }
-    }
-
-    // 3. 默认标题
-    return defaultTitle;
-  };
 
   /**
    * 生成新会话标题 - 智能生成有意义的标题
@@ -1172,64 +1238,20 @@ const NewChatContainer: React.FC = () => {
         const currentRetry = retryCount[retryKey] || 0;
 
         try {
-          const sessionData = await sessionApi.getSessionMessages(urlSessionId);
-          if (sessionData.messages && sessionData.messages.length > 0) {
-            // ========== 历史消息加载日志 ==========
-            console.log("%c┌───── 历史消息加载 START ─────", "color: blue; font-weight: bold; font-size: 14px;");
-            console.log("%c│ 共 " + sessionData.messages.length + " 条消息", "color: blue; font-size: 12px;");
-            // ======================================
-            
-            setSessionId(urlSessionId);
+          // 调用统一的历史消息加载函数
+          const result = await loadHistoryMessages(urlSessionId);
+          if (result) {
+            setSessionId(result.sessionId);
             // 【小新第二修复 2026-03-02】加载会话时也更新ref
-            currentSessionIdRef.current = urlSessionId;
-            setMessages(
-              sessionData.messages.map((m: any) => {
-                // 安全地处理 executionSteps 字段
-                let executionSteps: ExecutionStep[] = [];
-                if (m.execution_steps && Array.isArray(m.execution_steps)) {
-                  executionSteps = m.execution_steps;
-                } else if (
-                  m.executionSteps &&
-                  Array.isArray(m.executionSteps)
-                ) {
-                  executionSteps = m.executionSteps;
-                }
-                
-                // 每条消息的日志
-                const isUser = m.role === "user";
-                const roleColor = isUser ? "green" : "purple";
-                const roleLabel = isUser ? "👤 用户" : "🤖 AI";
-                console.log("%c│ " + roleLabel + " | " + (m.content || "").substring(0, 50) + "...", "color: " + roleColor + "; font-size: 11px;");
-
-                return {
-                  id: m.id?.toString() || Date.now().toString(),
-                  role: m.role || "assistant", // 修复：确保 role 有效
-                  content: m.content || "", // 修复：确保 content 不为 undefined
-                  timestamp: new Date(m.timestamp || Date.now()), // 修复：确保 timestamp 有效
-                  executionSteps,
-                  display_name: m.display_name,
-                  model: m.model || undefined,
-                  provider: m.provider || undefined,
-                };
-              })
-            );
-            
-            console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
-            // ======================================
-
-            // ⭐ 2026-02-25 更新：加载新增字段
-            const title = getSessionTitle(sessionData, "会话");
-            setSessionTitle(title);
-
-            // ⭐ 设置新字段
-            if (sessionData.version !== undefined) {
-              setSessionVersion(sessionData.version);
+            currentSessionIdRef.current = result.sessionId;
+            setMessages(result.messages);
+            setSessionTitle(result.title);
+            if (result.version !== undefined) {
+              setSessionVersion(result.version);
             }
-            if (sessionData.title_locked !== undefined) {
-              setTitleLocked(sessionData.title_locked);
+            if (result.title_locked !== undefined) {
+              setTitleLocked(result.title_locked);
             }
-            // 【小新第二修复 2026-03-02】title_source 由后端动态计算，前端不需要读取
-
             // 加载成功
             setSessionJumpLoading(false);
             message.success({ content: "会话加载成功", key: "session-load" });
@@ -1239,9 +1261,9 @@ const NewChatContainer: React.FC = () => {
               "🔵 从URL加载会话:",
               urlSessionId,
               "标题:",
-              title,
+              sessionTitle,
               "版本:",
-              sessionData.version
+              sessionVersion
             );
             return;
           } else {
@@ -1309,91 +1331,47 @@ const NewChatContainer: React.FC = () => {
         return;
       }
 
-      // 🔴 修复4: 如果都没有，加载最近的会话（只获取最近的1个，直接加载，不筛选消息数量）
+      // 🔴 修复4: 如果都没有，加载最近的会话
+      // 调用统一的历史消息加载函数
       try {
-        const response = await sessionApi.listSessions(1, 1, undefined, true); // ⭐ 只加载有效会话
-        if (response.sessions && response.sessions.length > 0) {
-          const latestSession = response.sessions[0];
-          const sessionData = await sessionApi.getSessionMessages(
-            latestSession.session_id
-          );
-          setSessionId(latestSession.session_id);
+        const result = await loadLatestHistoryMessages();
+        if (result) {
+          setSessionId(result.sessionId);
           // 【小新第二修复 2026-03-02】加载最近会话时也更新ref
-          currentSessionIdRef.current = latestSession.session_id;
-
-          // 🔴 修复5: 使用统一的标题管理函数
-          const title = getSessionTitle(
-            {
-              title: latestSession.title, // 优先使用listSessions返回的title
-              messages: sessionData.messages,
-            },
-            "会话"
-          );
-          setSessionTitle(title);
-
-          // ⭐ 2026-02-25 更新：加载新增字段
-          if (latestSession.version !== undefined) {
-            setSessionVersion(latestSession.version);
+          currentSessionIdRef.current = result.sessionId;
+          setSessionTitle(result.title);
+          if (result.version !== undefined) {
+            setSessionVersion(result.version);
           }
-          if (latestSession.title_locked !== undefined) {
-            setTitleLocked(latestSession.title_locked);
+          if (result.title_locked !== undefined) {
+            setTitleLocked(result.title_locked);
           }
-          // 【小新第二修复 2026-03-02】title_source 由后端动态计算，前端不需要读取
-
-          if (sessionData.messages && sessionData.messages.length > 0) {
-            setMessages(
-              sessionData.messages.map((m: any) => {
-                // 安全地处理 executionSteps 字段
-                let executionSteps: ExecutionStep[] = [];
-                if (m.execution_steps && Array.isArray(m.execution_steps)) {
-                  executionSteps = m.execution_steps;
-                } else if (
-                  m.executionSteps &&
-                  Array.isArray(m.executionSteps)
-                ) {
-                  executionSteps = m.executionSteps;
-                }
-
-                return {
-                  id: m.id?.toString() || Date.now().toString(),
-                  role: m.role || "assistant", // 修复：确保 role 有效
-                  content: m.content || "", // 修复：确保 content 不为 undefined
-                  timestamp: new Date(m.timestamp || Date.now()), // 修复：确保 timestamp 有效
-                  executionSteps,
-                  display_name: m.display_name, // ⭐ 小新修复 2026-03-07：添加 display_name
-                  model: m.model || undefined,
-                  provider: m.provider || undefined,
-                };
-              })
-            );
-          }
+          setMessages(result.messages);
+          
           console.log(
             "🟡 加载最近会话:",
-            latestSession.session_id,
+            result.sessionId,
             "标题:",
-            title,
+            result.title,
             "版本:",
-            latestSession.version
+            result.version
           );
-
-          // 关闭加载状态
-          setSessionJumpLoading(false);
-          message.destroy("session-load");
         } else {
           // 如果没有获取到会话，显示提示信息
           console.log("🟡 没有找到任何会话，显示新会话界面");
           setSessionTitle("新会话");
           setMessages([]);
           setSessionId(null);
-          setSessionJumpLoading(false);
-          message.destroy("session-load");
         }
+
+        // 关闭加载状态
+        setSessionJumpLoading(false);
+        message.destroy("session-load");
       } catch (error) {
         console.warn("加载最近会话失败:", error);
         // 即使失败也关闭加载状态
         setSessionJumpLoading(false);
         message.destroy("session-load");
-        // 在错误情况下也可以显示默认的新会话界面
       }
 
       // 标记初始化完成
