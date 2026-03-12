@@ -934,7 +934,8 @@ const NewChatContainer: React.FC = () => {
           }
           
           // 缓存无效或为空时，才从API加载（仅首次加载时）
-          if (messages.length === 0) {
+          // 【小查修复】添加 isInitialized 检查，避免与 searchParams 的 useEffect 重复调用
+          if (messages.length === 0 && !isInitialized) {
             console.log("🔄 首次加载，从API获取会话数据");
             setTimeout(async () => {
               // 调用统一的历史消息加载函数
