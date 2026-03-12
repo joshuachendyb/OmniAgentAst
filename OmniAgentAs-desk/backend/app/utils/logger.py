@@ -73,6 +73,45 @@ _logging_configured = False
 # 存储共享的处理器
 _file_handler: Optional[logging.handlers.RotatingFileHandler] = None
 _console_handler: Optional[logging.StreamHandler] = None
+# 记录当前日志文件的日期
+_current_log_date: str = ""
+
+def _get_log_file_path() -> Path:
+    """获取当日日志文件路径"""
+    return LOG_DIR / f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
+
+def _setup_file_handler() -> logging.handlers.RotatingFileHandler:
+    """创建文件处理器"""
+    log_file = _get_log_file_path()
+    _file_handler = logging.handlers.RotatingFileHandler(
+        log_file,
+        maxBytes=LogConfig.get_max_bytes(),
+        backupCount=LogConfig.get_backup_count(),
+        encoding='utf-8'
+    )
+    return _file_handler
+
+def _check_and_rotate_log_file(logger: logging.Logger):
+    """检查是否需要切换到新的日志文件（日期变化时）"""
+    global _current_log_date
+    
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    # 如果日期变了，需要重新创建文件处理器
+    if _current_log_date != today:
+        _current_log_date = today
+        
+        # 移除旧的文件处理器
+        for handler in logger.handlers[:]:
+            if isinstance(handler, logging.handlers.RotatingFileHandler):
+                handler.close()
+                logger.removeHandler(handler)
+        
+        # 创建新的文件处理器
+        new_handler = _setup_file_handler()
+        new_handler.setFormatter(logger.handlers[0].formatter if logger.handlers else logging.Formatter('%(asctime)s - %(levelname)s - %(filename)s - %(message)s'))
+        new_handler.setLevel(logger.level)
+        logger.addHandler(new_handler)
 
 def setup_logger(name: str) -> logging.Logger:
     """
@@ -89,8 +128,9 @@ def setup_logger(name: str) -> logging.Logger:
     
     logger = logging.getLogger(name)
     
-    # 如果已经配置过，直接返回
+    # 如果已经配置过，检查是否需要切换日志文件
     if logger.handlers:
+        _check_and_rotate_log_file(logger)
         return logger
     
     # 获取配置
@@ -101,24 +141,22 @@ def setup_logger(name: str) -> logging.Logger:
     if is_debug:
         # Debug模式：详细格式
         formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s'
+            '%(asctime)s - %(name)s - %(levelname)s - %(filename)s - [%(lineno)d] - %(message)s'
         )
     else:
-        # 生产模式：简洁格式
+        # 生产模式：简洁格式（在级别后添加文件名）
         formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s'
+            '%(asctime)s - %(levelname)s - %(filename)s - %(message)s'
         )
     
     # 全局只创建一次处理器
     if not _logging_configured:
+        # 初始化当前日期
+        global _current_log_date
+        _current_log_date = datetime.now().strftime('%Y-%m-%d')
+        
         # 文件处理器 - 带轮转
-        log_file = LOG_DIR / f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
-        _file_handler = logging.handlers.RotatingFileHandler(
-            log_file,
-            maxBytes=LogConfig.get_max_bytes(),
-            backupCount=LogConfig.get_backup_count(),
-            encoding='utf-8'
-        )
+        _file_handler = _setup_file_handler()
         _file_handler.setFormatter(formatter)
         _file_handler.setLevel(log_level)
         
@@ -130,10 +168,13 @@ def setup_logger(name: str) -> logging.Logger:
         
         _logging_configured = True
     
+    # 检查并切换日志文件（日期变化时）
+    _check_and_rotate_log_file(logger)
+    
     # 为每个logger添加处理器（创建新的实例以避免共享问题）
     if _file_handler and _console_handler:
-        # 为每个logger创建处理器副本
-        log_file = LOG_DIR / f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
+        # 为每个logger创建处理器副本，使用当天的日志文件
+        log_file = _get_log_file_path()
         file_handler = logging.handlers.RotatingFileHandler(
             log_file,
             maxBytes=LogConfig.get_max_bytes(),

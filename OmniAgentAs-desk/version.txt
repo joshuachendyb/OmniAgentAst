@@ -1,1 +1,207 @@
-v0.4.5
+v0.5.4
+
+更新内容：
+1. 修复 message_count 始终为 0 的问题
+   - 问题根因：React 闭包陷阱导致 pendingMessage 为 null
+   - 添加 pendingMessageRef 同步存储机制
+   - 在 executeStreamSend 中同步更新 ref
+   - 在 onComplete 中优先使用 ref 值
+   - 解决异步状态更新导致的 stale closure 问题
+
+2. 完善消息发送流程
+   - 在 onComplete 中添加 ensureTitlePersisted 调用
+   - 确保会话标题在消息发送完成后正确保存
+   - 修复多次发送消息时标题丢失的问题
+
+3. 代码质量优化
+   - 移除 saveMessage 调用中的 message_count 参数（后端自动处理）
+   - 修正 api.ts 中的类型定义
+   - 删除重复的 messagesCountRef 定义
+   - 修复 handleDangerConfirm 和 handleDangerCancel 中的闭包陷阱
+   - URL 会话加载失败时正确清理状态
+
+4. API 规范对齐
+   - 遵循后端 API 设计规范
+   - 前端不再传递 message_count 参数
+   - 依赖后端自动维护消息计数
+
+5. 数据库验证
+   - 验证 chat_messages 表数据结构
+   - 确认 message_count 由后端 sessions.py 自动维护
+   - 测试 saveMessage 正确写入消息到数据库
+
+技术细节：
+- NewChatContainer.tsx: 添加 pendingMessageRef 解决闭包问题
+- NewChatContainer.tsx: 修复 onComplete 回调中的状态同步
+- NewChatContainer.tsx: 移除 message_count 冗余参数
+- NewChatContainer.tsx: 修复 handleDangerConfirm/Cancel 闭包陷阱
+- api.ts: 修正 SaveMessageRequest 类型定义
+- sse.ts: 分析 onComplete 回调机制
+
+版本升级说明：
+- v0.4.14: 修复会话标题管理和历史会话功能
+- v0.5.4: 修复 message_count 为 0 问题及闭包陷阱（本次升级）
+
+验证结果：
+- ✅ message_count 在消息发送后正确更新
+- ✅ 闭包陷阱问题彻底解决
+- ✅ 会话标题在消息发送后正确保存
+- ✅ TypeScript 编译通过，无新增警告
+- ✅ 代码质量提升，符合团队规范
+
+参与开发：小欧、小新、小沈、小查、小健
+完成时间：2026-03-03 00:38:48
+
+---
+
+v0.5.1
+
+更新内容：
+1. 修复 displayName 显示问题
+   - 问题：历史消息、start事件、final事件的displayName显示不正常
+   - 修复点1：sse.ts - 添加responseBufferRef类型检查，避免字符串添加属性报错
+   - 修复点2：sse.ts - 加回setServerTaskId参数传递
+   - 修复点3：NewChatContainer.tsx - 加载历史消息时添加displayName/model/provider字段
+   - 修复点4：NewChatContainer.tsx - start事件更新时同时更新displayName
+
+技术细节：
+- sse.ts: 添加typeof检查确保responseBufferRef.current是对象
+- sse.ts: 保留setServerTaskId参数和回调处理
+- NewChatContainer.tsx: loadSession中加载display_name字段
+- NewChatContainer.tsx: onStep中start事件更新displayName逻辑
+
+版本升级说明：
+- v0.4.14: 修复会话标题管理和历史会话功能
+- v0.5.4: 修复 message_count 为 0 问题及闭包陷阱
+- v0.5.1: 修复displayName显示问题（历史消息/start事件/final事件）
+
+验证结果：
+- ✅ 历史消息displayName正常显示
+- ✅ start事件displayName正常显示
+- ✅ final事件displayName正常显示
+- ✅ TypeScript编译通过
+
+参与开发：小欧、小新、小沈、小查、小健
+完成时间：2026-03-04 18:44:37
+
+---
+
+v0.5.2
+
+更新内容：
+1. 后端日志统一化
+   - 统一日志配置，所有模块使用app.utils.logger
+   - 修复日志记录问题，使用logger替代print
+   - 添加logger handler确保日志输出
+   - 文件：backend/app/utils/logger.py
+
+2. 后端Agent结果提取修复
+   - 修复Agent返回结果提取逻辑，正确获取AI回复内容
+   - 修复流式模式下Agent结果提取，从steps中获取真实回复
+   - 修复LongCat API返回格式解析问题
+   - 修复LongCat API返回空内容问题
+   - 支持LongCat API的reasoning字段
+   - 文件：backend/app/services/base.py
+
+3. 文件操作意图检测优化
+   - 提高置信度阈值从0.2到0.6，减少误判
+   - 文件：backend/app/services/intent_detector.py
+
+4. 下拉框宽度优化
+   - 问题：模型名称显示不完整，加"★"后被截断
+   - 修复：下拉框宽度从240px改为350px自适应
+   - 文件：frontend/src/components/Layout/index.tsx
+
+5. 气泡时间颜色调整
+   - 问题：时间颜色太暗(#bfbfbf)
+   - 修复：改为更亮的灰色(#999999)
+   - 文件：frontend/src/components/Chat/MessageItem.tsx
+
+6. 菜单名称简化
+   - "对话与下任务"改为"对话任务"
+   - 文件：frontend/src/components/Layout/index.tsx
+
+7. 测试文件整理
+   - 创建test_tools/目录
+   - 移动26个测试脚本
+   - 删除test/和"修复/"目录
+
+版本升级说明：
+- v0.5.1: 修复displayName显示问题
+- v0.5.2: 后端日志和Agent修复+UI优化（本次升级）
+
+参与开发：小欧、小新、小沈
+完成时间：2026-03-05 07:18:26
+
+---
+
+v0.5.3
+
+更新内容：
+1. 设计文档修正（第8-10章）
+   - 第8章：补充函数清单、修正retryable字段验证、调整分页章节位置
+   - 第9章：修正API接口地址（/chat=非流式，/chat/stream=流式）、补充完整API清单
+   - 第10章：确认使用方案一（后端先改→前端再改），删除冗余字段映射说明
+   - 文件：doc/流式ReAct的type和API重构设计说明书.md
+
+2. 文档目录清理
+   - 删除doc目录36个废弃文件
+   - 删除notes目录调试笔记
+   - 文件：doc/*, notes/*
+
+3. 后端日志清理
+   - chat.py：删除ensure_ascii=False冗余日志
+   - base.py：删除所有调试日志（[AI Response Raw/Parsed/Content]等）
+   - 修复simplify_observation类型错误
+   - 文件：backend/app/api/v1/chat.py, backend/app/services/base.py
+
+4. LLM调用计数器
+   - chat.py：添加LLM调用计数
+   - agent.py：添加LLM调用计数
+   - 文件：backend/app/api/v1/chat.py, backend/app/services/file_operations/agent.py
+
+5. 前端修复
+   - MessageItem.tsx：修复流式加载图标只在最后一个分组显示
+   - 文件：frontend/src/components/Chat/MessageItem.tsx
+
+版本升级说明：
+- v0.5.2: 后端日志和Agent修复+UI优化
+- v0.5.3: 设计文档修正+日志清理+LLM计数器（本次升级）
+
+参与开发：小沈、小查
+完成时间：2026-03-09 21:15:44
+
+---
+
+v0.5.4
+
+更新内容：
+1. 设计文档完善（11.4-11.8）
+   - 11.4 observation：修正observation→thought→final逻辑，明确不存在直接进入final
+   - 11.5 final：补充字段用途/UI线框图/补充说明，明确final唯一入口
+   - 11.6 chunk：补充UI布局和逻辑说明
+   - 11.7 error：补充完整设计（字段用途/UI布局/线框图/触发场景）
+   - 11.8 incident：补充完整设计（字段用途/UI布局/线框图/补充说明）
+
+2. 待开发任务清单完善（12章）
+   - 12.1：补充Start之后流程说明
+   - 12.5：补充前端适配说明
+   - 12.6：新增error错误码体系实现
+   - 12.7：新增incident状态事件机制实现
+
+3. 11章与12章对照检查
+   - 检查11章逻辑变化是否在12章都有对应实现说明
+   - 修正observation阶段逻辑描述
+   - 确认接口变化只在12.1和12.4
+
+技术细节：
+- 文件：doc/流式ReAct的type和API重构设计说明书-小沈-2026-03-08.md
+- 11章8个type全部完善：start/thought/action_tool/observation/final/chunk/error/incident
+- 12章7个待开发任务：12.1-12.7
+
+版本升级说明：
+- v0.5.3: 设计文档修正+日志清理+LLM计数器
+- v0.5.4: 设计文档11章完善+12章补充（本次升级）
+
+参与开发：小沈、小查、小健
+完成时间：2026-03-11 06:55:04

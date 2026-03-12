@@ -329,3 +329,112 @@ class TestAliasCorrectness:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ============================================================
+# 设计文档第8.4.2节要求的新函数测试 - 小健补充
+# ============================================================
+
+class TestReActAdapterFunctions:
+    """测试设计文档第8.4.2节要求的ReAct适配器函数"""
+    
+    def test_observation_to_llm_input_success(self):
+        """测试observation_to_llm_input格式化成功结果"""
+        from app.services.file_operations.adapter import observation_to_llm_input
+        
+        observation = {
+            "execution_status": "success",
+            "summary": "成功读取目录，文件列表：['file1.txt', 'file2.txt']"
+        }
+        
+        result = observation_to_llm_input(observation)
+        
+        assert result == "Observation: success - 成功读取目录，文件列表：['file1.txt', 'file2.txt']"
+    
+    def test_observation_to_llm_input_error(self):
+        """测试observation_to_llm_input格式化错误结果"""
+        from app.services.file_operations.adapter import observation_to_llm_input
+        
+        observation = {
+            "execution_status": "error",
+            "summary": "文件不存在"
+        }
+        
+        result = observation_to_llm_input(observation)
+        
+        assert result == "Observation: error - 文件不存在"
+    
+    def test_observation_to_llm_input_warning(self):
+        """测试observation_to_llm_input格式化警告结果"""
+        from app.services.file_operations.adapter import observation_to_llm_input
+        
+        observation = {
+            "execution_status": "warning",
+            "summary": "文件过大，已截断"
+        }
+        
+        result = observation_to_llm_input(observation)
+        
+        assert result == "Observation: warning - 文件过大，已截断"
+    
+    def test_observation_to_llm_input_empty(self):
+        """测试observation_to_llm_input空输入"""
+        from app.services.file_operations.adapter import observation_to_llm_input
+        
+        result = observation_to_llm_input({})
+        
+        assert result == "Observation: unknown - "
+    
+    def test_observation_to_llm_input_none(self):
+        """测试observation_to_llm_input None输入"""
+        from app.services.file_operations.adapter import observation_to_llm_input
+        
+        result = observation_to_llm_input(None)
+        
+        assert result == "Observation: unknown"
+    
+    def test_observation_to_llm_input_with_status_field(self):
+        """测试observation_to_llm_input兼容旧字段status"""
+        from app.services.file_operations.adapter import observation_to_llm_input
+        
+        observation = {
+            "status": "success",  # 旧字段名
+            "summary": "测试结果"
+        }
+        
+        result = observation_to_llm_input(observation)
+        
+        assert result == "Observation: success - 测试结果"
+    
+    def test_thought_to_message(self):
+        """测试thought_to_message转换"""
+        from app.services.file_operations.adapter import thought_to_message
+        
+        thought = {
+            "content": "用户想要查看桌面文件夹",
+            "action_tool": "list_directory",
+            "params": {"path": "C:\\Users\\test\\Desktop"}
+        }
+        
+        result = thought_to_message(thought)
+        
+        assert result["role"] == "assistant"
+        assert result["content"] == "用户想要查看桌面文件夹"
+    
+    def test_thought_to_message_empty(self):
+        """测试thought_to_message空输入"""
+        from app.services.file_operations.adapter import thought_to_message
+        
+        result = thought_to_message({})
+        
+        assert result["role"] == "assistant"
+        assert result["content"] == ""
+    
+    def test_thought_to_message_none(self):
+        """测试thought_to_message None输入"""
+        from app.services.file_operations.adapter import thought_to_message
+        
+        result = thought_to_message(None)
+        
+        assert result["role"] == "assistant"
+        assert result["content"] == ""

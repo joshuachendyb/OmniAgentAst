@@ -1,8 +1,16 @@
 """
 MCP文件操作工具集 (MCP File Operation Tools)
 实现ReAct执行器所需的文件操作工具，包含完整的安全机制
+
+【重构】统一返回格式：
+- 所有工具方法返回统一的格式：{status, summary, data, retry_count}
+- status: success/error/warning
+- summary: 人类可读的结果描述
+- data: 原始数据
+- retry_count: 重试次数
 """
 import asyncio
+import base64
 import os
 import re
 import shutil
@@ -18,10 +26,14 @@ from app.services.file_operations import (
 from app.services.file_operations.safety import OperationType
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
-import logging
 
-# 日志分层：工具级别日志
-logger_tool = logging.getLogger("omniagent.tool")
+
+# ============================================================
+# 分页配置常量 - 小沈添加【Phase 1重构】
+# ============================================================
+
+PAGE_SIZE = 100  # 每页返回数量
+MAX_PAGE_SIZE = 500  # 最大单页数量
 
 
 # ============================================================
@@ -32,7 +44,7 @@ logger_tool = logging.getLogger("omniagent.tool")
 _TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {}
 
 
-def register_tool(name: str = None, description: str = "", category: str = "file"):
+def register_tool(name: Optional[str] = None, description: str = "", category: str = "file"):
     """
     工具注册装饰器
     
@@ -62,15 +74,15 @@ def register_tool(name: str = None, description: str = "", category: str = "file
         }
         _TOOL_REGISTRY[tool_name] = tool_info
         
-        # 使用logger_tool记录注册信息
-        logger_tool.info(f"Tool registered: {tool_name} (category: {category})")
+        # 使用统一logger记录注册信息
+        logger.info(f"Tool registered: {tool_name} (category: {category})")
         
         return func
     
     return decorator
 
 
-def get_registered_tools(category: str = None) -> Dict[str, Dict[str, Any]]:
+def get_registered_tools(category: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
     """
     获取已注册的工具列表
     
@@ -138,26 +150,28 @@ class FileTools:
             offset: 起始行号（1-based）
             limit: 最大读取行数
             encoding: 文件编码
-            
+        
         Returns:
-            文件内容和元数据
+            统一格式：{status, summary, data, retry_count}
         """
         path = Path(file_path)
         
         try:
             if not path.exists():
-                return {
+                raw_result = {
                     "success": False,
                     "error": f"File not found: {file_path}",
                     "content": None
                 }
-            
+                return _to_unified_format(raw_result, "read_file")
+        
             if not path.is_file():
-                return {
+                raw_result = {
                     "success": False,
                     "error": f"Not a file: {file_path}",
                     "content": None
                 }
+                return _to_unified_format(raw_result, "read_file")
             
             # 读取文件内容（异步执行）
             def _read_sync():
@@ -184,7 +198,7 @@ class FileTools:
             # 检查是否有截断
             has_more = end_idx < total_lines
             
-            return {
+            raw_result = {
                 "success": True,
                 "content": content,
                 "total_lines": total_lines,
@@ -194,14 +208,16 @@ class FileTools:
                 "file_size": path.stat().st_size,
                 "encoding": encoding
             }
+            return _to_unified_format(raw_result, "read_file")
             
         except Exception as e:
             logger.error(f"Failed to read file {file_path}: {e}")
-            return {
+            raw_result = {
                 "success": False,
                 "error": str(e),
                 "content": None
             }
+            return _to_unified_format(raw_result, "read_file")
     
     @register_tool(name="write_file", description="写入文件内容，自动创建目录", category="file")
     async def write_file(
@@ -217,16 +233,17 @@ class FileTools:
             file_path: 文件路径
             content: 文件内容
             encoding: 文件编码
-            
+        
         Returns:
-            写入结果
+            统一格式：{status, summary, data, retry_count}
         """
         if not self.session_id:
-            return {
+            raw_result = {
                 "success": False,
                 "error": "No active session",
                 "operation_id": None
             }
+            return _to_unified_format(raw_result, "write_file")
         
         path = Path(file_path)
         
@@ -254,33 +271,37 @@ class FileTools:
             )
             
             if success:
-                return {
+                raw_result = {
                     "success": True,
                     "operation_id": operation_id,
                     "file_path": str(path),
                     "bytes_written": len(content.encode(encoding))
                 }
             else:
-                return {
+                raw_result = {
                     "success": False,
                     "error": "Failed to write file",
                     "operation_id": operation_id
                 }
+            return _to_unified_format(raw_result, "write_file")
                 
         except Exception as e:
             logger.error(f"Failed to write file {file_path}: {e}")
-            return {
+            raw_result = {
                 "success": False,
                 "error": str(e),
                 "operation_id": None
             }
+            return _to_unified_format(raw_result, "write_file")
     
     @register_tool(name="list_directory", description="列出目录内容，支持过滤和排序", category="file")
     async def list_directory(
         self,
         dir_path: str,
         recursive: bool = False,
-        max_depth: int = 10
+        max_depth: int = 10,
+        page_token: Optional[str] = None,
+        page_size: int = PAGE_SIZE
     ) -> Dict[str, Any]:
         """
         列出目录内容
@@ -289,26 +310,31 @@ class FileTools:
             dir_path: 目录路径
             recursive: 是否递归列出
             max_depth: 最大递归深度（仅recursive=True时有效）
-            
+            page_token: 分页令牌（可选）
+            page_size: 每页数量（默认100）
+        
         Returns:
-            目录内容列表
+            统一格式：{status, summary, data, retry_count}
+            data包含: entries, total, has_more, next_page_token
         """
         path = Path(dir_path)
         
         try:
             if not path.exists():
-                return {
+                raw_result = {
                     "success": False,
                     "error": f"Directory not found: {dir_path}",
                     "entries": []
                 }
+                return _to_unified_format(raw_result, "list_directory")
             
             if not path.is_dir():
-                return {
+                raw_result = {
                     "success": False,
                     "error": f"Not a directory: {dir_path}",
                     "entries": []
                 }
+                return _to_unified_format(raw_result, "list_directory")
             
             # 异步执行目录遍历
             def _list_sync():
@@ -330,10 +356,8 @@ class FileTools:
                                     if item.is_dir():
                                         _scan_recursive(item, current_depth + 1)
                                 except (PermissionError, OSError):
-                                    # 跳过无权限访问的文件/目录
                                     continue
                         except (PermissionError, OSError):
-                            # 跳过无权限访问的目录
                             return
                     
                     _scan_recursive(path, 1)
@@ -347,25 +371,45 @@ class FileTools:
                         })
                 return entries
             
-            entries = await asyncio.to_thread(_list_sync)
+            all_entries = await asyncio.to_thread(_list_sync)
             
             # 排序：目录在前，文件在后，按名称排序
-            entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"]))
+            all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"]))
             
-            return {
+            total = len(all_entries)
+            
+            # 分页处理
+            start_idx = 0
+            if page_token:
+                start_idx = decode_page_token(page_token)
+            
+            # 限制page_size不超过最大值
+            page_size = min(page_size, MAX_PAGE_SIZE)
+            
+            end_idx = min(start_idx + page_size, total)
+            page_entries = all_entries[start_idx:end_idx]
+            
+            has_more = end_idx < total
+            next_page_token = encode_page_token(end_idx) if has_more else None
+            
+            raw_result = {
                 "success": True,
-                "entries": entries,
-                "total_count": len(entries),
+                "entries": page_entries,
+                "total": total,
+                "has_more": has_more,
+                "next_page_token": next_page_token,
                 "directory": str(path)
             }
+            return _to_unified_format(raw_result, "list_directory")
             
         except Exception as e:
             logger.error(f"Failed to list directory {dir_path}: {e}")
-            return {
+            raw_result = {
                 "success": False,
                 "error": str(e),
                 "entries": []
             }
+            return _to_unified_format(raw_result, "list_directory")
     
     @register_tool(name="delete_file", description="删除文件或目录，自动备份到回收站", category="file")
     async def delete_file(
@@ -379,26 +423,28 @@ class FileTools:
         Args:
             file_path: 文件/目录路径
             recursive: 是否递归删除目录
-            
+        
         Returns:
-            删除结果
+            统一格式：{status, summary, data, retry_count}
         """
         if not self.session_id:
-            return {
+            raw_result = {
                 "success": False,
                 "error": "No active session",
                 "operation_id": None
             }
+            return _to_unified_format(raw_result, "delete_file")
         
         path = Path(file_path)
         
         try:
             if not path.exists():
-                return {
+                raw_result = {
                     "success": False,
                     "error": f"File not found: {file_path}",
                     "operation_id": None
                 }
+                return _to_unified_format(raw_result, "delete_file")
             
             # 记录操作
             operation_id = self.safety.record_operation(
@@ -427,26 +473,28 @@ class FileTools:
             )
             
             if success:
-                return {
+                raw_result = {
                     "success": True,
                     "operation_id": operation_id,
                     "deleted_path": str(path),
                     "message": "File deleted (backup in recycle bin)"
                 }
             else:
-                return {
+                raw_result = {
                     "success": False,
                     "error": "Failed to delete file",
                     "operation_id": operation_id
                 }
+            return _to_unified_format(raw_result, "delete_file")
                 
         except Exception as e:
             logger.error(f"Failed to delete {file_path}: {e}")
-            return {
+            raw_result = {
                 "success": False,
                 "error": str(e),
                 "operation_id": None
             }
+            return _to_unified_format(raw_result, "delete_file")
     
     @register_tool(name="move_file", description="移动或重命名文件", category="file")
     async def move_file(
@@ -460,27 +508,29 @@ class FileTools:
         Args:
             source_path: 源路径
             destination_path: 目标路径
-            
+        
         Returns:
-            移动结果
+            统一格式：{status, summary, data, retry_count}
         """
         if not self.session_id:
-            return {
+            raw_result = {
                 "success": False,
                 "error": "No active session",
                 "operation_id": None
             }
+            return _to_unified_format(raw_result, "move_file")
         
         src = Path(source_path)
         dst = Path(destination_path)
         
         try:
             if not src.exists():
-                return {
+                raw_result = {
                     "success": False,
                     "error": f"Source not found: {source_path}",
                     "operation_id": None
                 }
+                return _to_unified_format(raw_result, "move_file")
             
             # 记录操作
             operation_id = self.safety.record_operation(
@@ -505,7 +555,7 @@ class FileTools:
             )
             
             if success:
-                return {
+                raw_result = {
                     "success": True,
                     "operation_id": operation_id,
                     "source": str(src),
@@ -513,19 +563,21 @@ class FileTools:
                     "message": f"Moved: {src.name} -> {dst}"
                 }
             else:
-                return {
+                raw_result = {
                     "success": False,
                     "error": "Failed to move file",
                     "operation_id": operation_id
                 }
+            return _to_unified_format(raw_result, "move_file")
                 
         except Exception as e:
             logger.error(f"Failed to move {source_path} -> {destination_path}: {e}")
-            return {
+            raw_result = {
                 "success": False,
                 "error": str(e),
                 "operation_id": None
             }
+            return _to_unified_format(raw_result, "move_file")
     
     @register_tool(name="search_files", description="搜索文件内容，支持正则表达式", category="search")
     async def search_files(
@@ -545,20 +597,20 @@ class FileTools:
             file_pattern: 文件匹配模式
             use_regex: 是否使用正则表达式
             max_results: 最大结果数量限制
-            
+        
         Returns:
-            搜索结果
+            统一格式：{status, summary, data, retry_count}
         """
         search_path = Path(path)
-        results = []
         
         try:
             if not search_path.exists():
-                return {
+                raw_result = {
                     "success": False,
                     "error": f"Path not found: {path}",
                     "matches": []
                 }
+                return _to_unified_format(raw_result, "search_files")
             
             # 编译正则表达式
             regex = None
@@ -566,11 +618,12 @@ class FileTools:
                 try:
                     regex = re.compile(pattern)
                 except re.error as e:
-                    return {
+                    raw_result = {
                         "success": False,
                         "error": f"Invalid regex pattern: {e}",
                         "matches": []
                     }
+                    return _to_unified_format(raw_result, "search_files")
             
             # 搜索文件（异步执行）
             def _search_sync():
@@ -640,20 +693,22 @@ class FileTools:
             
             search_result = await asyncio.to_thread(_search_sync)
             
-            return {
+            raw_result = {
                 "success": True,
                 "pattern": pattern,
                 "path": str(search_path),
                 **search_result
             }
+            return _to_unified_format(raw_result, "search_files")
             
         except Exception as e:
             logger.error(f"Failed to search files: {e}")
-            return {
+            raw_result = {
                 "success": False,
                 "error": str(e),
                 "matches": []
             }
+            return _to_unified_format(raw_result, "search_files")
     
     @register_tool(name="generate_report", description="生成操作报告", category="system")
     async def generate_report(self, output_dir: Optional[str] = None) -> Dict[str, Any]:
@@ -662,45 +717,197 @@ class FileTools:
         
         Args:
             output_dir: 报告输出目录
-            
+        
         Returns:
-            报告生成结果
+            统一格式：{status, summary, data, retry_count}
         """
         if not self.session_id:
-            return {
+            raw_result = {
                 "success": False,
                 "error": "No active session",
                 "reports": {}
             }
+            return _to_unified_format(raw_result, "generate_report")
         
         try:
             output_path = Path(output_dir) if output_dir else None
             
+            # 保存session_id为局部变量，避免闭包问题
+            session_id = self.session_id or ""
+            
             # 异步执行报告生成
             def _generate_sync():
-                return self.visualizer.generate_all_reports(self.session_id, output_path)
+                return self.visualizer.generate_all_reports(session_id, output_path)
             
             reports = await asyncio.to_thread(_generate_sync)
             
             # 转换为字符串路径
             report_paths = {k: str(v) for k, v in reports.items()}
             
-            return {
+            raw_result = {
                 "success": True,
                 "session_id": self.session_id,
                 "reports": report_paths
             }
+            return _to_unified_format(raw_result, "generate_report")
             
         except Exception as e:
             logger.error(f"Failed to generate report: {e}")
-            return {
+            raw_result = {
                 "success": False,
                 "error": str(e),
                 "reports": {}
             }
+            return _to_unified_format(raw_result, "generate_report")
 
 
 # 工具函数导出
 def get_file_tools(session_id: Optional[str] = None) -> FileTools:
     """获取文件工具实例"""
     return FileTools(session_id)
+
+
+# ============================================================
+# 统一返回格式辅助函数 - 小沈添加【Phase 1重构】
+# ============================================================
+
+def _generate_summary(tool_name: str, result: Any) -> str:
+    """
+    生成人类可读的结果摘要
+    
+    Args:
+        tool_name: 工具名称
+        result: 原始执行结果
+    
+    Returns:
+        人类可读的结果描述
+    """
+    if not isinstance(result, dict):
+        return "操作完成"
+    
+    if tool_name == "read_file":
+        content = result.get("content", "")
+        total_lines = result.get("total_lines", 0)
+        if result.get("success") is False:
+            return f"读取失败：{result.get('error', '未知错误')}"
+        return f"成功读取文件，内容长度：{len(content) if content else 0} 字符，共 {total_lines} 行"
+    
+    elif tool_name == "write_file":
+        if result.get("success") is False:
+            return f"写入失败：{result.get('error', '未知错误')}"
+        bytes_written = result.get("bytes_written", 0)
+        file_path = result.get("file_path", "")
+        return f"成功写入文件 {file_path}，共 {bytes_written} 字节"
+    
+    elif tool_name == "list_directory":
+        entries = result.get("entries", [])
+        total = result.get("total_count", len(entries))
+        if result.get("success") is False:
+            return f"列出目录失败：{result.get('error', '未知错误')}"
+        return f"成功读取目录，共 {total} 个项目"
+    
+    elif tool_name == "delete_file":
+        if result.get("success") is False:
+            return f"删除失败：{result.get('error', '未知错误')}"
+        deleted_path = result.get("deleted_path", "")
+        return f"成功删除 {deleted_path}（已备份到回收站）"
+    
+    elif tool_name == "move_file":
+        if result.get("success") is False:
+            return f"移动失败：{result.get('error', '未知错误')}"
+        source = result.get("source", "")
+        destination = result.get("destination", "")
+        return f"成功移动文件：{source} -> {destination}"
+    
+    elif tool_name == "search_files":
+        if result.get("success") is False:
+            return f"搜索失败：{result.get('error', '未知错误')}"
+        files_matched = result.get("files_matched", 0)
+        total_matches = result.get("total_matches", 0)
+        return f"搜索完成，找到 {files_matched} 个文件，共 {total_matches} 处匹配"
+    
+    elif tool_name == "generate_report":
+        if result.get("success") is False:
+            return f"生成报告失败：{result.get('error', '未知错误')}"
+        reports = result.get("reports", {})
+        return f"成功生成 {len(reports)} 个报告"
+    
+    return "操作完成"
+
+
+def _to_unified_format(result: Dict[str, Any], tool_name: str, retry_count: int = 0) -> Dict[str, Any]:
+    """
+    将工具执行结果转换为统一格式
+    
+    Args:
+        result: 原始执行结果
+        tool_name: 工具名称
+        retry_count: 重试次数
+    
+    Returns:
+        统一格式的结果：{status, summary, data, retry_count}
+    """
+    if not isinstance(result, dict):
+        return {
+            "status": "error",
+            "summary": "执行结果格式错误",
+            "data": None,
+            "retry_count": retry_count
+        }
+    
+    # 判断执行状态
+    success = result.get("success")
+    if success is True:
+        status = "success"
+    elif success is False:
+        status = "error"
+    else:
+        # 如果没有success字段，默认为success
+        status = "success"
+    
+    # 生成人类可读的摘要
+    summary = _generate_summary(tool_name, result)
+    
+    return {
+        "status": status,
+        "summary": summary,
+        "data": result,
+        "retry_count": retry_count
+    }
+
+
+# ============================================================
+# 分页支持函数 - 小沈添加【Phase 1重构】
+# ============================================================
+
+PAGE_SIZE = 100  # 每页返回数量
+MAX_PAGE_SIZE = 500  # 最大单页数量
+
+
+def encode_page_token(offset: int) -> str:
+    """
+    编码页码令牌
+    
+    Args:
+        offset: 偏移量
+    
+    Returns:
+        编码后的令牌字符串
+    """
+    return base64.b64encode(str(offset).encode()).decode()
+
+
+def decode_page_token(token: str) -> int:
+    """
+    解码页码令牌
+    
+    Args:
+        token: 编码后的令牌字符串
+    
+    Returns:
+        偏移量
+    """
+    try:
+        return int(base64.b64decode(token.encode()).decode())
+    except (ValueError, Exception):
+        return 0

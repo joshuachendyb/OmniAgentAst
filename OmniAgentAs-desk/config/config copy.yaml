@@ -1,0 +1,41 @@
+ai:
+  # ✅ 顶层配置（全局）
+  model: kimi-k2.5-free
+  provider: zhipuai  # ✅ 当前Provider
+
+  # ✅ Provider配置（多个）
+
+  opencode:
+    api_base: https://opencode.ai/zen/v1
+    api_key: sk_xxx...
+    models:
+      - minimax-m2.5-free
+      - kimi-k2.5-free
+      timeout: 120
+
+  longcat:
+    api_base: https://api.longcat.chat/openai/v1
+    api_key: ak_xxx...
+    models:
+      - LongCat-Flash-Thinking
+      - LongCat-Flash-Thinking
+      timeout: 120
+
+  zhipuai:
+    api_base: https://test.com
+    api_key: test123
+    max_retries: 3
+    models:
+      - glm-4.7-flash
+      - cogview-3-flash
+      timeout: 90
+
+app:
+  debug: false
+  language: zh-CN
+  max_history_length: 10
+  theme: light
+logging:
+  backup_count: 5
+  level: INFO
+  max_file_size: 10485760

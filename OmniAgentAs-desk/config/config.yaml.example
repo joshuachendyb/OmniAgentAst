@@ -5,22 +5,35 @@
 # 3.  config.yaml 已被Git忽略，不会提交到仓库
 
 ai:
-  # 默认AI提供商: zhipuai 或 opencode
-  provider: zhipuai
-  
-  # 智谱AI配置
-  zhipuai:
-    model: glm-4.7-flash
-    api_key: ""  # 请填入您的智谱API Key (https://open.bigmodel.cn/)
-    api_base: https://open.bigmodel.cn/api/paas/v4
-    timeout: 60
-  
-  # OpenCode配置
+  # ✅ 顶层配置（全局）
+  model: kimi-k2.5-free
+  provider: opencode  # ✅ 当前Provider
+
+  # ✅ Provider配置（多个）
   opencode:
-    model: kimi-k2.5-free
-    api_key: ""  # 请填入您的OpenCode API Key (https://opencode.ai)
     api_base: https://opencode.ai/zen/v1
-    timeout: 60
+    api_key: sk_xxx...
+    models:
+      - minimax-m2.5-free
+      - kimi-k2.5-free
+      timeout: 120
+
+  longcat:
+    api_base: https://api.longcat.chat/openai/v1
+    api_key: ak_xxx...
+    models:
+      - LongCat-Flash-Thinking
+      - LongCat-Flash-Thinking
+      timeout: 120
+
+  zhipuai:
+    api_base: https://test.com
+    api_key: test123
+    max_retries: 3
+    models:
+      - glm-4.7-flash
+      - cogview-3-flash
+      timeout: 90
 
 # 文件操作配置
 file_operations:

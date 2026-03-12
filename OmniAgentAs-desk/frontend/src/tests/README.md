@@ -1,20 +1,21 @@
-/**
- * Testing README
- * 
- * @author 小新
- * @description Testing documentation and guide
- */
+/\*\*
+
+- Testing README
+-
+- @author 小新
+- @description Testing documentation and guide
+  \*/
 
 # Frontend Testing Guide
 
 ## Testing Stack
 
-| Type | Tool | Purpose |
-|------|------|---------|
-| Unit Testing | Vitest | Component and utility unit tests |
-| Integration Testing | Vitest + MSW | API integration tests |
-| E2E Testing | Playwright | End-to-end user flow tests |
-| Coverage | @vitest/coverage-v8 | Code coverage reporting |
+| Type                | Tool                | Purpose                          |
+| ------------------- | ------------------- | -------------------------------- |
+| Unit Testing        | Vitest              | Component and utility unit tests |
+| Integration Testing | Vitest + MSW        | API integration tests            |
+| E2E Testing         | Playwright          | End-to-end user flow tests       |
+| Coverage            | @vitest/coverage-v8 | Code coverage reporting          |
 
 ## Directory Structure
 

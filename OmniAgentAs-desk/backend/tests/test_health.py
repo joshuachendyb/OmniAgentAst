@@ -28,11 +28,11 @@ def test_fastapi_config():
     
     assert app.title == "OmniAgentAst API"
     # 【修复】版本号从version.txt动态读取，不再硬编码
-    # 读取version.txt获取实际版本号
+    # 读取version.txt获取实际版本号（只读第一行）
     version_file = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "..", "version.txt")
     if os.path.exists(version_file):
-        with open(version_file, 'r') as f:
-            expected_version = f.read().strip().lstrip('v')
+        with open(version_file, 'r', encoding='utf-8') as f:
+            expected_version = f.readline().strip().lstrip('v')
     else:
         expected_version = "0.3.5"  # 默认版本
     

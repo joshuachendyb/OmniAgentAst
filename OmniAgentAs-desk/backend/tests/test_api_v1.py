@@ -157,8 +157,12 @@ class TestSecurityAPI:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "safe" in data
-        assert data["safe"] is True
+        # 验证返回格式 success/data/error
+        assert "success" in data
+        assert "data" in data
+        assert data["success"] is True
+        # 安全命令：score < 5
+        assert data["data"]["score"] < 5
     
     def test_security_check_dangerous_command(self):
         """测试安全命令检查 - 危险命令"""
@@ -168,8 +172,11 @@ class TestSecurityAPI:
         )
         assert response.status_code == 200
         data = response.json()
-        assert "safe" in data
-        assert data["safe"] is False
+        # 验证返回格式 success/data/error
+        assert "success" in data
+        assert "data" in data
+        # 危险命令：score >= 5
+        assert data["data"]["score"] >= 5
 
 
 class TestExecutionAPI:

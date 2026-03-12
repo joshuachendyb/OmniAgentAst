@@ -1,8 +1,8 @@
 /**
  * 安全检测类型定义 - security.ts
- * 
+ *
  * 功能：定义安全检测相关的TypeScript类型和常量
- * 
+ *
  * @author 小新
  * @version 1.0.0
  * @since 2026-02-19
@@ -14,12 +14,12 @@
  * 后端返回格式（精简版）
  */
 export interface SecurityCheckResponse {
-  success: boolean;      // API是否成功调用
+  success: boolean; // API是否成功调用
   data?: {
-    score: number;       // 风险分数：0-10分，整数
-    message: string;     // 用户可见的提示信息
+    score: number; // 风险分数：0-10分，整数
+    message: string; // 用户可见的提示信息
   };
-  error?: string;        // API调用失败时的错误信息
+  error?: string; // API调用失败时的错误信息
 }
 
 /**
@@ -34,7 +34,7 @@ export interface RiskLevelConfig {
   level: RiskLevelType;
   min: number;
   max: number;
-  canProceed: boolean;   // 是否可直接执行
+  canProceed: boolean; // 是否可直接执行
   ui: 'silent' | 'notification' | 'modal' | 'alert';
 }
 
@@ -48,29 +48,29 @@ export const RISK_LEVELS: Record<RiskLevelType, RiskLevelConfig> = {
     min: 0,
     max: 3,
     canProceed: true,
-    ui: 'silent'
+    ui: 'silent',
   },
   MEDIUM: {
     level: 'MEDIUM',
     min: 4,
     max: 6,
     canProceed: true,
-    ui: 'notification'
+    ui: 'notification',
   },
   HIGH: {
     level: 'HIGH',
     min: 7,
     max: 8,
     canProceed: false,
-    ui: 'modal'
+    ui: 'modal',
   },
   CRITICAL: {
     level: 'CRITICAL',
     min: 9,
     max: 10,
     canProceed: false,
-    ui: 'alert'
-  }
+    ui: 'alert',
+  },
 } as const;
 
 /**
@@ -91,11 +91,15 @@ export interface SecurityCheckState {
 export function getRiskLevel(score: number): RiskLevelConfig {
   // 边界值检查：异常值按最高风险处理
   if (typeof score !== 'number' || isNaN(score)) {
-    console.warn(`[Security] Invalid score type: ${typeof score}, defaulting to CRITICAL`);
+    console.warn(
+      `[Security] Invalid score type: ${typeof score}, defaulting to CRITICAL`
+    );
     return RISK_LEVELS.CRITICAL;
   }
   if (score < 0 || score > 10) {
-    console.warn(`[Security] Score out of range: ${score}, defaulting to CRITICAL`);
+    console.warn(
+      `[Security] Score out of range: ${score}, defaulting to CRITICAL`
+    );
     return RISK_LEVELS.CRITICAL;
   }
   if (score <= 3) return RISK_LEVELS.SAFE;

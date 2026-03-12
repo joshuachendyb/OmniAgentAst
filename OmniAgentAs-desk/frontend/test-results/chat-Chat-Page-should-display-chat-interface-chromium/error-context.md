@@ -1,0 +1,101 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e3]:
+  - complementary [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - img "desktop" [ref=e8]:
+          - img [ref=e9]
+        - heading "OmniAgentAst." [level=5] [ref=e11]
+      - menu [ref=e12]:
+        - menuitem "message 对话与下任务" [ref=e13] [cursor=pointer]:
+          - img "message" [ref=e14]:
+            - img [ref=e15]
+          - generic [ref=e18]: 对话与下任务
+        - menuitem "folder 文件管理" [disabled] [ref=e19]:
+          - img "folder" [ref=e20]:
+            - img [ref=e21]
+          - generic [ref=e23]: 文件管理
+        - menuitem "book 知识库" [disabled] [ref=e24]:
+          - img "book" [ref=e25]:
+            - img [ref=e26]
+          - generic [ref=e28]: 知识库
+        - separator [ref=e29]
+        - menuitem "history 历史会话 1 6" [ref=e30] [cursor=pointer]:
+          - img "history" [ref=e31]:
+            - img [ref=e32]
+          - generic [ref=e35]:
+            - text: 历史会话
+            - superscript [ref=e36]:
+              - generic [ref=e37]:
+                - generic [ref=e38]: "1"
+                - generic [ref=e39]: "6"
+        - menuitem "thunderbolt 快捷指令" [ref=e40] [cursor=pointer]:
+          - img "thunderbolt" [ref=e41]:
+            - img [ref=e42]
+          - generic [ref=e44]: 快捷指令
+        - separator [ref=e45]
+        - menuitem "setting 系统设置" [ref=e46] [cursor=pointer]:
+          - img "setting" [ref=e47]:
+            - img [ref=e48]
+          - generic [ref=e50]: 系统设置
+      - generic [ref=e51] [cursor=pointer]: 版本 v2.1.0
+    - img "left" [ref=e53] [cursor=pointer]:
+      - img [ref=e54]
+  - generic [ref=e56]:
+    - banner [ref=e57]:
+      - generic [ref=e58]:
+        - heading "对话与任务" [level=4] [ref=e59]
+        - generic [ref=e60]: 检查中...
+      - generic [ref=e61]:
+        - generic [ref=e62] [cursor=pointer]:
+          - generic [ref=e64]:
+            - combobox [ref=e66]
+            - generic [ref=e67]: ★ opencode (minimax-m2.5-free)
+          - generic:
+            - img:
+              - img
+        - button "loading 检查服务" [ref=e68]:
+          - img "loading" [ref=e70]:
+            - img [ref=e71]
+          - generic [ref=e73]: 检查服务
+        - img "desktop" [ref=e75]:
+          - img [ref=e76]
+        - generic [ref=e78]: 用户
+    - main [ref=e79]:
+      - generic [ref=e80]:
+        - generic [ref=e82]:
+          - generic [ref=e84]:
+            - img "robot" [ref=e86]:
+              - img [ref=e87]
+            - generic [ref=e89]: AI对话助手
+          - generic [ref=e91]:
+            - button "plus 新建会话" [ref=e93] [cursor=pointer]:
+              - img "plus" [ref=e95]:
+                - img [ref=e96]
+              - generic [ref=e99]: 新建会话
+            - generic [ref=e102] [cursor=pointer]:
+              - img "thunderbolt" [ref=e103]:
+                - img [ref=e104]
+              - text: 流式关闭
+            - button "eye 隐藏过程" [ref=e107] [cursor=pointer]:
+              - img "eye" [ref=e109]:
+                - img [ref=e110]
+              - generic [ref=e112]: 隐藏过程
+            - button "清空对话" [ref=e114] [cursor=pointer]:
+              - generic [ref=e115]: 清空对话
+        - generic [ref=e116]:
+          - generic [ref=e118]:
+            - img "robot" [ref=e119]:
+              - img [ref=e120]
+            - paragraph [ref=e122]: 开始与 AI 助手对话
+            - paragraph [ref=e123]: 流式模式已开启 - 可实时查看 AI 思考过程
+          - generic [ref=e124]:
+            - textbox "输入消息... (流式模式可实时查看思考过程)" [ref=e126]
+            - button "send 发送消息" [disabled] [ref=e128]:
+              - generic:
+                - img "send":
+                  - img
+              - generic: 发送消息
+```

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>前端消息状态调试</title>
+</head>
+<body>
+    <h1>前端消息状态调试工具</h1>
+    
+    <div style="margin: 20px 0;">
+        <h2>1. React State（当前页面状态）</h2>
+        <pre id="reactState">需要从React DevTools查看</pre>
+        <p>打开浏览器DevTools → React标签 → 选择组件查看messages state</p>
+    </div>
+    
+    <div style="margin: 20px 0;">
+        <h2>2. sessionStorage缓存</h2>
+        <pre id="sessionStorage"></pre>
+        <button onclick="loadSessionStorage()">加载sessionStorage</button>
+    </div>
+    
+    <div style="margin: 20px 0;">
+        <h2>3. localStorage缓存</h2>
+        <pre id="localStorage"></pre>
+        <button onclick="loadLocalStorage()">加载localStorage</button>
+    </div>
+    
+    <div style="margin: 20px 0;">
+        <h2>4. URL参数</h2>
+        <pre id="urlParams"></pre>
+        <button onclick="loadURLParams()">加载URL参数</button>
+    </div>
+    
+    <div style="margin: 20px 0;">
+        <h2>5. 所有存储的会话数据</h2>
+        <pre id="allStorage"></pre>
+        <button onclick="loadAllStorage()">加载所有存储数据</button>
+    </div>
+
+    <script>
+        function loadSessionStorage() {
+            const output = document.getElementById('sessionStorage');
+            const result = {};
+            
+            for (let i = 0; i < sessionStorage.length; i++) {
+                const key = sessionStorage.key(i);
+                const value = sessionStorage.getItem(key);
+                try {
+                    result[key] = JSON.parse(value);
+                } catch (e) {
+                    result[key] = value;
+                }
+            }
+            
+            output.textContent = JSON.stringify(result, null, 2);
+            console.log('SessionStorage:', result);
+        }
+
+        function loadLocalStorage() {
+            const output = document.getElementById('localStorage');
+            const result = {};
+            
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                const value = localStorage.getItem(key);
+                try {
+                    result[key] = JSON.parse(value);
+                } catch (e) {
+                    result[key] = value;
+                }
+            }
+            
+            output.textContent = JSON.stringify(result, null, 2);
+            console.log('LocalStorage:', result);
+        }
+
+        function loadURLParams() {
+            const output = document.getElementById('urlParams');
+            const params = new URLSearchParams(window.location.search);
+            const result = {};
+            
+            for (const [key, value] of params) {
+                result[key] = value;
+            }
+            
+            result['fullURL'] = window.location.href;
+            result['pathname'] = window.location.pathname;
+            
+            output.textContent = JSON.stringify(result, null, 2);
+            console.log('URL参数:', result);
+        }
+
+        function loadAllStorage() {
+            const output = document.getElementById('allStorage');
+            const result = {
+                sessionStorage: {},
+                localStorage: {}
+            };
+            
+            // sessionStorage
+            for (let i = 0; i < sessionStorage.length; i++) {
+                const key = sessionStorage.key(i);
+                const value = sessionStorage.getItem(key);
+                try {
+                    result.sessionStorage[key] = JSON.parse(value);
+                } catch (e) {
+                    result.sessionStorage[key] = value;
+                }
+            }
+            
+            // localStorage
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                const value = localStorage.getItem(key);
+                try {
+                    result.localStorage[key] = JSON.parse(value);
+                } catch (e) {
+                    result.localStorage[key] = value;
+                }
+            }
+            
+            output.textContent = JSON.stringify(result, null, 2);
+            console.log('所有存储数据:', result);
+        }
+
+        // 自动加载
+        window.onload = function() {
+            loadSessionStorage();
+            loadLocalStorage();
+            loadURLParams();
+            loadAllStorage();
+        };
+    </script>
+</body>
+</html>

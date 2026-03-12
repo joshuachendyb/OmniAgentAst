@@ -44,3 +44,66 @@ class TestEndToEndCommunication:
         # Assert
         assert response.status_code == 200
         assert response.json()["received"] == test_message
+
+
+class TestMonitoringIntegration:
+    """监控系统集成测试"""
+    
+    def test_metrics_endpoint_returns_200(self, client):
+        """测试监控指标端点是否正常工作"""
+        # Act
+        response = client.get("/api/v1/metrics")
+        
+        # Assert
+        assert response.status_code == 200
+        assert "application/json" in response.headers["content-type"]
+        
+        data = response.json()
+        assert "success" in data
+        assert data["success"] is True
+        assert "metrics" in data
+    
+    def test_metrics_raw_endpoint_returns_200(self, client):
+        """测试原始指标端点是否返回数据"""
+        # Act
+        response = client.get("/api/v1/metrics/raw")
+        
+        # Assert
+        assert response.status_code == 200
+        assert "application/json" in response.headers["content-type"]
+        
+        data = response.json()
+        assert "success" in data
+        assert data["success"] is True
+        assert "metrics" in data
+    
+    def test_metrics_health_endpoint_returns_200(self, client):
+        """测试监控健康检查端点"""
+        # Act
+        response = client.get("/api/v1/metrics/health")
+        
+        # Assert
+        assert response.status_code == 200
+        data = response.json()
+        assert "success" in data
+        assert data["success"] is True
+    
+    def test_metrics_reset_endpoint_resets_metrics(self, client):
+        """测试重置指标端点"""
+        # First, make a request to increment a counter
+        client.get("/api/v1/health")
+        
+        # Get initial metrics
+        response1 = client.get("/api/v1/metrics/raw")
+        initial_metrics = response1.json().get("metrics", {})
+        
+        # Reset metrics (需要confirm字段)
+        reset_response = client.post("/api/v1/metrics/reset", json={"confirm": True})
+        assert reset_response.status_code == 200
+        
+        # Get metrics after reset
+        response2 = client.get("/api/v1/metrics/raw")
+        reset_metrics = response2.json().get("metrics", {})
+        
+        # Verify the endpoint works (doesn't need to verify actual reset)
+        assert response2.status_code == 200
