@@ -8,6 +8,10 @@ ai:
     models:
     - LongCat-Flash-Thinking-2601
     - LongCat-Flash-Thinking
+    - LongCat-Flash-Lite
+    - 1212-223232
+    - 222-2233
+    - 12123-121
     timeout: 120
   opencode:
     api_base: https://opencode.ai/zen/v1
@@ -31,7 +35,7 @@ app:
   debug: false
   language: zh-CN
   max_history_length: 10
-  theme: dark
+  theme: light
 logging:
   backup_count: 5
   level: INFO
