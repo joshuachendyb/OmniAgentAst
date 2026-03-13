@@ -204,24 +204,48 @@ class BaseAIService:
                 
                 yield StreamChunk(content="", model=self.model, is_done=True)
                 
-        except httpx.TimeoutException as e:
-            # 【小沈代修改 - 修复问题 7】返回详细错误信息
+        except httpx.TimeoutException:
             yield StreamChunk(
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error="请求超时",
+                error="请求超时，请重试",
                 error_type="timeout_error"
+            )
+        except httpx.ReadError as e:
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                error=f"读取响应失败: {str(e)[:50]}",
+                error_type="read_error"
+            )
+        except httpx.ConnectError as e:
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                error=f"连接失败: {str(e)[:50]}",
+                error_type="connect_error"
+            )
+        except httpx.ProtocolError as e:
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                error=f"协议错误: {str(e)[:50]}",
+                error_type="protocol_error"
             )
         except Exception as e:
             # 【小沈代修改 - 修复问题 7】记录日志，返回用户友好错误
             import traceback
-            logger.error(f"[BaseAIService] 流式调用失败：{str(e)}, 异常类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}")
+            error_type_name = type(e).__name__
+            logger.error(f"[BaseAIService] 流式调用失败：{str(e)}, 异常类型: {error_type_name}, 堆栈: {traceback.format_exc()}")
             yield StreamChunk(
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error="AI 服务调用失败",
+                error=f"AI 服务调用失败: {error_type_name}",
                 error_type="unknown_error"
             )
     
