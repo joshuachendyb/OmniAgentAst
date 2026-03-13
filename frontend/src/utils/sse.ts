@@ -728,37 +728,6 @@ const processSSEData = (
         }
         break;
       }
-
-      case "interrupted": {
-        // 使用 message 填充 content
-        step.content = step.message || "";
-        onComplete?.(responseBufferRef.current, undefined);
-        setIsReceiving(false);
-        setIsConnected(false);
-        break;
-      }
-
-      case "paused": {
-        // 使用 message 填充 content
-        step.content = step.message || "";
-        onPaused?.();
-        break;
-      }
-
-      case "resumed": {
-        // 使用 message 填充 content
-        step.content = step.message || "";
-        onResumed?.();
-        break;
-      }
-
-      // ⭐ 新增：重试状态处理
-      case "retrying": {
-        // 使用 message 填充 content
-        step.content = step.message || "正在重试...";
-        onRetry?.(step.message || "正在重试...");
-        break;
-      }
     }
   } catch (error) {
     console.error("[SSE] 解析数据失败:", error);
