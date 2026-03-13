@@ -31,6 +31,7 @@ import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
 import { taskControlApi } from "../../services/api";
 import { } from "../../utils/markdown";
+import ErrorDetail from "./ErrorDetail";
 
 /**
  * 步骤行组件 - 单行步骤显示（优化后新增）
@@ -894,127 +895,19 @@ const isUser = message.role === "user";
               </div>
             )}
             
-            {/* 【小查修复2026-03-13】错误详情面板 - 友好展示error的11个字段 */}
+            {/* 【小新重构2026-03-13】使用独立ErrorDetail组件 */}
             {message.isError && (
-              <div style={{
-                marginTop: 12,
-                padding: '10px 12px',
-                // 根据error_type显示不同颜色
-                background: message.errorType === 'security_error' 
-                  ? 'rgba(255, 193, 7, 0.1)'  // 黄色-待确认
-                  : message.errorType === 'agent'
-                  ? 'rgba(24, 144, 255, 0.1)'  // 蓝色-Agent错误
-                  : 'rgba(255, 77, 79, 0.08)',  // 红色-普通错误
-                borderRadius: 8,
-                border: `1px solid ${
-                  message.errorType === 'security_error'
-                    ? 'rgba(255, 193, 7, 0.3)'
-                    : message.errorType === 'agent'
-                    ? 'rgba(24, 144, 255, 0.3)'
-                    : 'rgba(255, 77, 79, 0.2)'
-                }`,
-                fontSize: '0.85em',
-                color: message.errorType === 'security_error' 
-                  ? '#d48806'
-                  : message.errorType === 'agent'
-                  ? '#1890ff'
-                  : '#cf1322',
-              }}>
-                {/* 错误类型标题 - 根据不同类型显示不同标题 */}
-                <div style={{ fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {message.errorType === 'security_error' && <span>⚠️ 待确认</span>}
-                  {message.errorType === 'agent' && <span>🤖 Agent错误</span>}
-                  {message.errorType === 'network' && <span>🌐 网络错误</span>}
-                  {message.errorType === 'validation' && <span>⚠️ 参数错误</span>}
-                  {message.errorType === 'file_system' && <span>📁 文件错误</span>}
-                  {message.errorType === 'security' && <span>🔒 权限错误</span>}
-                  {message.errorType === 'unknown' && <span>❓ 未知错误</span>}
-                  {!['security_error', 'agent', 'network', 'validation', 'file_system', 'security', 'unknown'].includes(message.errorType || '') && 
-                    <span>❌ 错误详情</span>
-                  }
-                </div>
-                
-                {/* 错误信息表格 */}
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8em' }}>
-                  <tbody>
-                    {message.errorType && (
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>类型:</td>
-                        <td style={{ padding: '2px 0' }}><code style={{ 
-                          background: message.errorType === 'security_error' 
-                            ? 'rgba(255,193,7,0.2)'
-                            : message.errorType === 'agent'
-                            ? 'rgba(24,144,255,0.2)'
-                            : 'rgba(255,77,79,0.15)', 
-                          padding: '1px 4px', borderRadius: 3 
-                        }}>{message.errorType}</code></td>
-                      </tr>
-                    )}
-                    {message.errorCode && (
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>错误码:</td>
-                        <td style={{ padding: '2px 0' }}><code style={{ background: 'rgba(255,77,79,0.15)', padding: '1px 4px', borderRadius: 3 }}>{message.errorCode}</code></td>
-                      </tr>
-                    )}
-                    {message.model && (
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>模型:</td>
-                        <td style={{ padding: '2px 0' }}>{message.model}</td>
-                      </tr>
-                    )}
-                    {message.provider && (
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>提供商:</td>
-                        <td style={{ padding: '2px 0' }}>{message.provider}</td>
-                      </tr>
-                    )}
-                    {message.errorRetryable !== undefined && (
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>可重试:</td>
-                        <td style={{ padding: '2px 0' }}>
-                          {message.errorRetryable ? (
-                            <span style={{ color: '#52c41a' }}>是</span>
-                          ) : (
-                            <span style={{ color: '#ff4d4f' }}>否</span>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                    {message.errorRetryAfter !== undefined && (
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>重试等待:</td>
-                        <td style={{ padding: '2px 0' }}>{message.errorRetryAfter} 秒</td>
-                      </tr>
-                    )}
-                    {message.errorTimestamp && (
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>时间:</td>
-                        <td style={{ padding: '2px 0' }}>{message.errorTimestamp}</td>
-                      </tr>
-                    )}
-                    {message.errorDetails && (
-                      <tr>
-                        <td style={{ padding: '2px 8px 2px 0', color: '#888', verticalAlign: 'top', whiteSpace: 'nowrap' }}>详情:</td>
-                        <td style={{ padding: '2px 0', wordBreak: 'break-all' }}>{message.errorDetails}</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-                
-                {/* 重试按钮（如果可重试） */}
-                {message.errorRetryable && (
-                  <div style={{ marginTop: 10 }}>
-                    <Button 
-                      type="primary" 
-                      size="small"
-                      onClick={() => window.location.reload()}
-                      style={{ background: '#ff4d4f', borderColor: '#ff4d4f' }}
-                    >
-                      点击重试
-                    </Button>
-                  </div>
-                )}
-              </div>
+              <ErrorDetail
+                errorType={message.errorType}
+                errorCode={message.errorCode}
+                errorTimestamp={message.errorTimestamp}
+                errorDetails={message.errorDetails}
+                errorStack={message.errorStack}
+                errorRetryable={message.errorRetryable}
+                errorRetryAfter={message.errorRetryAfter}
+                model={message.model}
+                provider={message.provider}
+              />
             )}
           </>
 
