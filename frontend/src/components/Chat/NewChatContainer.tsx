@@ -143,6 +143,13 @@ const NewChatContainer: React.FC = () => {
   // 【小查修复】使用 ref 存储加载状态，避免触发 useEffect
   const isLoadingHistoryRef = useRef(false);
 
+  // 防重日志标记
+  const logFlagsRef = useRef({
+    chunkFirstDone: false,
+    showStepsFalseDone: false,
+    showStepsTrueDone: false,
+  });
+
   // P1级别优化：新增状态变量
   type SaveStatus = "idle" | "saving" | "saved" | "error";
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
@@ -169,8 +176,11 @@ const NewChatContainer: React.FC = () => {
     // onStep - 收到执行步骤
     useCallback((step: ExecutionStep) => {
       // 只打印第一个chunk，减少日志
-      if (step.type === "chunk" && !step.content) {
-        // 第一个chunk打印，后续不打印
+      if (step.type === "chunk") {
+        if (!logFlagsRef.current.chunkFirstDone) {
+          console.log("🔍 [onStep] 收到步骤, type= chunk (第一个)");
+          logFlagsRef.current.chunkFirstDone = true;
+        }
       } else {
         console.log("🔍 [onStep] 收到步骤, type=", step.type);
       }
@@ -562,7 +572,14 @@ const NewChatContainer: React.FC = () => {
     }, []),
     // onShowSteps - 控制步骤显示/隐藏（收到chunk时关闭步骤UI）
     useCallback((show: boolean) => {
-      console.log("👁️ [onShowSteps] 设置步骤显示状态:", show);
+      // 只打印第一次 false 和第一次 true，减少日志
+      if (show && !logFlagsRef.current.showStepsTrueDone) {
+        console.log("👁️ [onShowSteps] 设置步骤显示状态: true (第一次)");
+        logFlagsRef.current.showStepsTrueDone = true;
+      } else if (!show && !logFlagsRef.current.showStepsFalseDone) {
+        console.log("👁️ [onShowSteps] 设置步骤显示状态: false (第一次)");
+        logFlagsRef.current.showStepsFalseDone = true;
+      }
       setShowExecution(show);
     }, []),
     // ⭐ onRetry - 重试事件
@@ -1582,6 +1599,13 @@ const NewChatContainer: React.FC = () => {
       currentSessionIdRef.current = newSession.session_id;
       setSessionTitle(newTitle);
       setMessages([]);
+      
+      // 重置日志标记
+      logFlagsRef.current = {
+        chunkFirstDone: false,
+        showStepsFalseDone: false,
+        showStepsTrueDone: false,
+      };
 
       // 🔴 修复：清除旧的sessionStorage
       sessionStorage.removeItem(STORAGE_KEY);
