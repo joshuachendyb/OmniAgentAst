@@ -98,6 +98,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     validationResult,
     initializeApp,
     refreshAll,
+    isInitialized,
   } = useApp();
 
   // 同步sessionCount到本地state（因为其他地方可能依赖sessionCount变量）
@@ -106,12 +107,30 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     setSessionCount(sessionCount);
   }, [sessionCount]);
 
-  // 【新增】检查服务状态 - 使用AppContext
+  // 【修复问题1】检查服务状态 - 使用AppContext
+  // 监听初始化状态，在初始化过程中显示loading
   const [checkingStatus, setCheckingStatus] = useState(false);
-  // 【修改】当前选中的模型ID（格式: provider-modelname）
-  const [_currentProvider, setCurrentProvider] = useState<string>(
-    "opencode-minimax-m2.5-free"
-  );
+
+  // 初始化时同步设置checkingStatus
+  useEffect(() => {
+    if (!isInitialized) {
+      setCheckingStatus(true);
+    } else {
+      setCheckingStatus(false);
+    }
+  }, [isInitialized]);
+
+  // 【修复问题2】当前选中的模型ID（格式: provider-modelname）
+  // 根据serviceStatus自动设置默认值
+  const [_currentProvider, setCurrentProvider] = useState<string>("");
+
+  // 监听serviceStatus变化，自动设置下拉框默认值
+  useEffect(() => {
+    if (serviceStatus?.provider && serviceStatus?.model) {
+      const defaultProvider = `${serviceStatus.provider}-${serviceStatus.model}`;
+      setCurrentProvider(defaultProvider);
+    }
+  }, [serviceStatus]);
 
   // 【新增】验证详情弹框
   const [validationModalVisible, setValidationModalVisible] = useState(false);
