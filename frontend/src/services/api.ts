@@ -126,18 +126,49 @@ export interface ChatResponse {
 // ============================================
 export interface StreamStep {
   type:
+    | "start"
     | "thought"
-    | "action"
+    | "action_tool"
     | "observation"
+    | "chunk"
+    | "final"
     | "error"
+    | "incident"
     | "interrupted"
-    | "final";
+    | "paused"
+    | "resumed"
+    | "retrying";
   step?: number;
   thought?: string;
-  action?: string;
+  action_tool?: string;
   action_input?: any;
   observation?: any;
   content?: string;
+  // action_tool 相关字段
+  tool_name?: string;
+  tool_params?: Record<string, any>;
+  execution_status?: 'success' | 'error' | 'warning';
+  summary?: string;
+  // observation 相关字段
+  obs_execution_status?: 'success' | 'error' | 'warning';
+  obs_summary?: string;
+  obs_raw_data?: Record<string, any>;
+  is_finished?: boolean;
+  // chunk 相关字段
+  is_reasoning?: boolean;
+  // error 相关字段
+  error_type?: string;
+  code?: string;
+  details?: string;
+  stack?: string;
+  retryable?: boolean;
+  retry_after?: number;
+  timestamp?: string;
+  model?: string;
+  provider?: string;
+  // incident 相关字段
+  incident_value?: string;
+  wait_time?: number;
 }
 
 export interface StreamCallbacks {
