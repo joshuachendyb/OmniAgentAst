@@ -168,7 +168,12 @@ const NewChatContainer: React.FC = () => {
     },
     // onStep - 收到执行步骤
     useCallback((step: ExecutionStep) => {
-      console.log("🔍 [onStep] 收到步骤, type=", step.type, "step=", JSON.stringify(step));
+      // 只打印第一个chunk，减少日志
+      if (step.type === "chunk" && !step.content) {
+        // 第一个chunk打印，后续不打印
+      } else {
+        console.log("🔍 [onStep] 收到步骤, type=", step.type);
+      }
       // ⭐ 暂停时存入缓冲区，不直接显示
       if (isPausedRef.current) {
         console.log("⏸️ [onStep] 暂停中，存入缓冲区, type:", step.type);
