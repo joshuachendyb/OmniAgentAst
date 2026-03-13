@@ -820,7 +820,8 @@ const isUser = message.role === "user";
               // 逐个渲染chunk
               return chunks.map((chunk, index) => {
                 const is_reasoning = !!chunk.is_reasoning;
-                let content = (chunk.content || '').replace(/\n\n/g, '\n');
+                // let content = (chunk.content || '').replace(/\n\n/g, '\n');
+                let content = chunk.content || '';
                 
                 // 如果是从思考模式切换到回答模式（is_reasoning: true -> false），在开头加空行
                 if (index > 0) {
