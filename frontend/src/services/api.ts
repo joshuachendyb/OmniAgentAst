@@ -238,8 +238,8 @@ export const chatApi = {
               } else if (data.type === "interrupted") {
                 message.warning("任务已被中断");
               } else if (data.type === "error") {
-                message.error(data.content);
-                callbacks.onError(data.content);
+                message.error(data.message || data.content);
+                callbacks.onError(data.message || data.content);
               }
             } catch (e) {
               console.warn("[API SSE] 解析数据失败:", e, "原始行:", line);
