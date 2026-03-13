@@ -247,5 +247,113 @@
 
 ---
 
+## 任务控制接口
+
+### 1. 取消任务接口
+
+**接口**: `POST /api/v1/chat/stream/cancel/{task_id}`
+
+**参数**:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| task_id | string | ✅ | 任务ID（URL路径参数） |
+| session_id | string | ❌ | 会话ID（查询参数，用于阻止5分钟内重连） |
+
+**请求示例**:
+```bash
+# 不带session_id（基础功能）
+curl -X POST http://localhost:8000/api/v1/chat/stream/cancel/task_123
+
+# 带session_id（阻止重连，推荐）
+curl -X POST "http://localhost:8000/api/v1/chat/stream/cancel/task_123?session_id=session_abc"
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "任务 task_123 已中断"
+}
+```
+
+**功能说明**:
+- 标记任务为中断状态
+- 强制关闭HTTP连接，立即终止LLM调用
+- 如果传入session_id，会记录中断状态，5分钟内禁止同一会话重连
+- 向后兼容：不传session_id也能工作
+
+---
+
+### 2. 暂停任务接口
+
+**接口**: `POST /api/v1/chat/stream/pause/{task_id}`
+
+**参数**:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| task_id | string | ✅ | 任务ID（URL路径参数） |
+| session_id | string | ❌ | 会话ID（查询参数） |
+
+**请求示例**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat/stream/pause/task_123?session_id=session_abc"
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "任务 task_123 已暂停"
+}
+```
+
+**功能说明**:
+- 暂停任务的执行（但后端继续处理，数据暂存缓冲区）
+- 前端停止显示AI响应
+
+---
+
+### 3. 恢复任务接口
+
+**接口**: `POST /api/v1/chat/stream/resume/{task_id}`
+
+**参数**:
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| task_id | string | ✅ | 任务ID（URL路径参数） |
+| session_id | string | ❌ | 会话ID（查询参数） |
+
+**请求示例**:
+```bash
+curl -X POST "http://localhost:8000/api/v1/chat/stream/resume/task_123?session_id=session_abc"
+```
+
+**响应**:
+```json
+{
+  "success": true,
+  "message": "任务 task_123 已继续"
+}
+```
+
+**功能说明**:
+- 恢复暂停的任务
+- 前端恢复显示暂存的数据
+
+---
+
+## 错误响应
+
+任务控制接口的错误响应：
+
+```json
+{
+  "success": false,
+  "message": "任务 task_123 不存在"
+}
+```
+
+---
+
 **编写人**: 小沈
-**时间**: 2026-03-13 16:30:00
+**更新时间**: 2026-03-14 10:00:00
