@@ -39,13 +39,13 @@ class ChatResponse:
 class StreamChunk:
     """流式响应片段 - 小沈代修改【修复问题 7】"""
     def __init__(self, content: str, model: str, is_done: bool = False, 
-                 error: Optional[str] = None, error_type: Optional[str] = None,
+                 stream_error: Optional[str] = None, stream_error_type: Optional[str] = None,
                  reasoning: Optional[str] = None, is_reasoning: bool = False):
         self.content = content
         self.model = model
         self.is_done = is_done
-        self.error = error  # 新增：错误信息
-        self.error_type = error_type  # 新增：错误类型
+        self.stream_error = stream_error  # 流式请求错误信息
+        self.stream_error_type = stream_error_type  # 流式请求错误类型
         self.reasoning = reasoning  # 新增：思考过程内容
         self.is_reasoning = is_reasoning  # 新增：是否是思考过程
 
@@ -210,56 +210,56 @@ class BaseAIService:
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error="请求超时，请重试",
-                error_type="timeout_error"
+                stream_error="请求超时，请重试",
+                stream_error_type="timeout_error"
             )
         except (httpx.ReadError, httpcore.ReadError):
             yield StreamChunk(
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error="读取响应失败，请重试",
-                error_type="read_error"
+                stream_error="读取响应失败，请重试",
+                stream_error_type="read_error"
             )
         except (httpx.ConnectError, httpcore.ConnectError):
             yield StreamChunk(
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error="连接失败，请检查网络",
-                error_type="connect_error"
+                stream_error="连接失败，请检查网络",
+                stream_error_type="connect_error"
             )
         except (httpx.ProtocolError, httpcore.ProtocolError, httpx.RemoteProtocolError, httpcore.RemoteProtocolError, httpx.LocalProtocolError, httpcore.LocalProtocolError):
             yield StreamChunk(
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error="协议错误，请重试",
-                error_type="protocol_error"
+                stream_error="协议错误，请重试",
+                stream_error_type="protocol_error"
             )
         except (httpx.ProxyError, httpcore.ProxyError):
             yield StreamChunk(
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error="代理错误，请检查网络配置",
-                error_type="proxy_error"
+                stream_error="代理错误，请检查网络配置",
+                stream_error_type="proxy_error"
             )
         except (httpx.WriteError, httpcore.WriteError):
             yield StreamChunk(
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error="发送请求失败",
-                error_type="write_error"
+                stream_error="发送请求失败",
+                stream_error_type="write_error"
             )
         except (httpx.NetworkError, httpcore.NetworkError):
             yield StreamChunk(
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error="网络错误，请检查网络连接",
-                error_type="network_error"
+                stream_error="网络错误，请检查网络连接",
+                stream_error_type="network_error"
             )
         except Exception as e:
             # 【小沈代修改 - 修复问题 7】记录日志，返回用户友好错误
@@ -270,8 +270,8 @@ class BaseAIService:
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error=f"AI 服务调用失败: {error_type_name}",
-                error_type="unknown_error"
+                stream_error=f"AI 服务调用失败: {error_type_name}",
+                stream_error_type="unknown_error"
             )
     
     async def validate(self) -> bool:
