@@ -111,16 +111,20 @@ export interface FinalMessage {
 /**
  * error类型 - 错误
  * 发送时机：发生错误时
+ * 【小查修复2026-03-13】补充完整11个字段，与API文档对齐
  */
 export interface ErrorMessage {
   type: 'error';
-  code: string;
-  message: string;
-  error_type?: string;
-  details?: string;
-  stack?: string;
-  retryable?: boolean;
-  retry_after?: number;
+  error_type: string;  // 必填
+  message: string;      // 必填
+  code: string;         // 必填
+  timestamp: string;    // 必填
+  model?: string;       // 可选
+  provider?: string;    // 可选
+  details?: string;     // 可选
+  stack?: string;       // 可选
+  retryable?: boolean;  // 可选
+  retry_after?: number; // 可选
 }
 
 /**

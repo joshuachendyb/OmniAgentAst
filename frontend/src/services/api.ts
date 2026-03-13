@@ -223,7 +223,7 @@ export const chatApi = {
 
               if (
                 data.type === "thought" ||
-                data.type === "action" ||
+                data.type === "action_tool" ||
                 data.type === "observation" ||
                 data.type === "chunk" ||
                 data.type === "final"
