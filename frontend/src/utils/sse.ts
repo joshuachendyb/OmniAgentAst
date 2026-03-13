@@ -624,8 +624,8 @@ const processSSEData = (
       }
 
       case "chunk": {
-        // 【小查修复】统一使用 is_reasoning (snake_case)
-        console.log("🔍 [SSE chunk] rawData.is_reasoning =", rawData.is_reasoning, "type =", rawData.type);
+        // 精简日志：只打印第一个chunk
+        // console.log("🔍 [SSE chunk] rawData.is_reasoning =", rawData.is_reasoning, "type =", rawData.type);
         const chunkContent = rawData.content || "";
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
