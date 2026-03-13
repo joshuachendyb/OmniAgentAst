@@ -223,16 +223,26 @@ export const chatApi = {
           response.statusText,
           errorText
         );
-        callbacks.onError(
-          `请求失败: ${response.status} ${response.statusText}`
-        );
+        callbacks.onError({
+          type: "error",
+          error_type: "http_error",
+          message: `请求失败: ${response.status} ${response.statusText}`,
+          code: `HTTP_${response.status}`,
+          timestamp: new Date().toISOString()
+        });
         return;
       }
 
       // 检查是否为流式响应
       if (!response.body) {
         console.error("响应体为空");
-        callbacks.onError("响应体为空，无法读取流数据");
+        callbacks.onError({
+          type: "error",
+          error_type: "empty_response",
+          message: "响应体为空，无法读取流数据",
+          code: "EMPTY_RESPONSE",
+          timestamp: new Date().toISOString()
+        });
         return;
       }
 
@@ -280,7 +290,13 @@ export const chatApi = {
         }
       }
     } catch (error) {
-      callbacks.onError((error as Error).message);
+      callbacks.onError({
+        type: "error",
+        error_type: "network_error",
+        message: (error as Error).message,
+        code: "NETWORK_ERROR",
+        timestamp: new Date().toISOString()
+      });
     }
   },
 
