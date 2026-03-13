@@ -60,6 +60,16 @@ import {
   DEBUG_LOAD_FROM_API,
 } from "../../utils/chatHistory";
 
+// 【新增 2026-03-13】从独立文件导入日志和消息提示函数
+import { logAIComplete, logUserSend } from "../../utils/chatLogger";
+import {
+  showSaveSuccess,
+  showSaveError,
+  showLoadSuccess,
+  showNetworkError,
+  showSessionConflict,
+} from "../../utils/chatMessages";
+
 const { TextArea } = Input;
 
 // 【小新 2026-03-13 代码拆分】类型和工具函数已提取到独立文件
@@ -386,7 +396,7 @@ const NewChatContainer: React.FC = () => {
 
                   // ⭐ 【小新修复 2026-03-04】重试保存AI回复时也不再调用 ensureTitlePersisted
                   // 原因：标题应该在用户修改时立即保存，避免版本冲突
-                  message.success("AI回复保存成功");
+                  showSaveSuccess("AI回复保存成功");
                   return;
                   } catch (error: any) {
                     // 检查是否是409版本冲突或其他错误
@@ -436,12 +446,9 @@ const NewChatContainer: React.FC = () => {
 
          console.log("🔍 [onComplete] SSE流完成，设置loading=false");
          
-         // ========== 黄色结束标志 ==========
-         console.log("%c┌─────", "color: #FFD700; font-weight: bold; font-size: 14px;");
-         console.log("%c│ ✅ AI响应完成 END", "color: #FFD700; font-weight: bold; font-size: 14px;");
-         console.log("%c│ 完整回复长度: " + (fullResponse?.length || 0), "color: #FFD700; font-size: 12px;");
-         console.log("%c└─────", "color: #FFD700; font-weight: bold; font-size: 14px;");
-         // ==================================
+          // ========== 黄色结束标志 ==========
+          logAIComplete(fullResponse?.length || 0);
+          // ==================================
          
          setLoading(false);
          // ⭐ 停止等待计时器
@@ -1103,7 +1110,7 @@ const NewChatContainer: React.FC = () => {
             }
             // 加载成功
             setSessionJumpLoading(false);
-            message.success({ content: "会话加载成功", key: "session-load" });
+            showLoadSuccess("会话加载成功");
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
 
             console.log(
@@ -1405,7 +1412,7 @@ const NewChatContainer: React.FC = () => {
        const isNetworkOK = await checkNetworkConnection();
         if (!isNetworkOK) {
           console.error("❌ [handleSend] 网络连接异常");
-          message.error("网络连接异常，请检查网络后重试");
+          showNetworkError();
           setLoading(false);
           // ⭐ 停止等待计时器
           if (waitTimerRef.current) {
@@ -1454,10 +1461,7 @@ const NewChatContainer: React.FC = () => {
     setBlockedCommand(null);
 
     // ========== 红色开始标志 ==========
-    console.log("%c┌─────", "color: red; font-weight: bold; font-size: 14px;");
-    console.log("%c│ 🚀 用户发送消息 START", "color: red; font-weight: bold; font-size: 14px;");
-    console.log("%c│ 内容: " + userMessage.content.substring(0, 100), "color: red; font-size: 12px;");
-    console.log("%c└─────", "color: red; font-weight: bold; font-size: 14px;");
+    logUserSend(userMessage.content);
     // ==================================
 
     // 安全检测v2.0
@@ -1687,7 +1691,7 @@ const NewChatContainer: React.FC = () => {
                        } catch (error: any) {
                          // ⭐ 处理 409 版本冲突
                         if (error?.response?.status === 409) {
-                          message.error("会话已被其他用户修改，请刷新页面");
+                          showSessionConflict();
                           // 尝试重新获取最新的会话信息
                           try {
                             const sessionData =
@@ -1703,7 +1707,7 @@ const NewChatContainer: React.FC = () => {
                           }
                         } else {
                           console.warn("保存标题失败:", error);
-                          message.error("保存标题失败，请重试");
+                          showSaveError("保存标题失败，请重试");
                         }
                       }
                     }
@@ -1724,7 +1728,7 @@ const NewChatContainer: React.FC = () => {
                        } catch (error: any) {
                          // ⭐ 处理 409 版本冲突
                         if (error?.response?.status === 409) {
-                          message.error("会话已被其他用户修改，请刷新页面");
+                          showSessionConflict();
                           // 尝试重新获取最新的会话信息
                           try {
                             const sessionData =
@@ -1739,7 +1743,7 @@ const NewChatContainer: React.FC = () => {
                             console.error("刷新会话数据失败:", refreshError);
                           }
                         } else {
-                          message.error("更新标题失败");
+                          showSaveError("更新标题失败");
                         }
                       }
                     }
