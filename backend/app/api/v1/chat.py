@@ -99,9 +99,9 @@ def create_error_response(
         'message': message,
         'error_type': error_type
     }
-    if model:
+    if model is not None:
         response['model'] = model
-    if provider:
+    if provider is not None:
         response['provider'] = provider
     if details:
         response['details'] = details
@@ -733,8 +733,8 @@ async def chat_stream(request: ChatRequest):
                 'details': f"risk_level: {security_check_result.get('risk_level')}",
                 'retryable': False,
                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'model': request.model or '',
-                'provider': request.provider or ''
+                'model': request.model,
+                'provider': request.provider
             }
             logger.info(f"[Step error] 发送error步骤(安全检测拦截)")
             yield f"data: {json.dumps(error_data)}\n\n"
@@ -811,7 +811,10 @@ async def chat_stream(request: ChatRequest):
                     yield create_error_response(
                         error_type="security_error",
                         message=f"危险操作需确认: {risk}",
-                        code="SECURITY_BLOCKED"
+                        code="SECURITY_BLOCKED",
+                        model=ai_service.model,
+                        provider=ai_service.provider,
+                        retryable=False
                     )
                     return
                 
@@ -942,8 +945,8 @@ async def chat_stream(request: ChatRequest):
                                 'error_type': 'agent',
                                 'retryable': event.get('retryable', False),
                                 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                'model': request.model or '',
-                                'provider': request.provider or ''
+                                'model': request.model,
+                                'provider': request.provider
                             }
                             logger.info(f"[Step error] 发送error步骤")
                             yield f"data: {json.dumps(error_data)}\n\n"
@@ -958,7 +961,10 @@ async def chat_stream(request: ChatRequest):
                     logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
                     yield create_error_response(
                         error_type="file_operation_error",
-                        message="文件操作执行失败"
+                        message="文件操作执行失败",
+                        model=ai_service.model,
+                        provider=ai_service.provider,
+                        retryable=False
                     )
             else:
                 # 普通对话：调用AI服务（流式）
@@ -1128,7 +1134,11 @@ async def chat_stream(request: ChatRequest):
                     logger.info(f"[Step error] 发送error步骤: error_type={error_type}, message={error_message}")
                     yield create_error_response(
                         error_type=error_type,
-                        message=error_message
+                        message=error_message,
+                        model=ai_service.model,
+                        provider=ai_service.provider,
+                        retryable=True,
+                        retry_after=3
                     )
                     return  # 直接返回，不再发送final步骤
                 
@@ -1154,11 +1164,16 @@ async def chat_stream(request: ChatRequest):
         except Exception as e:
             # 【小沈代修改 - 统一错误处理】使用 get_user_friendly_error 和 create_error_response
             logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
-            error_type, error_message = get_user_friendly_error(e)
+            error_info = get_user_friendly_error(e)
             logger.info(f"[Step error] 发送error步骤")
             yield create_error_response(
-                error_type=error_type,
-                message=error_message
+                error_type=error_info.get("error_type", "server"),
+                message=error_info.get("message", "服务调用失败"),
+                code=error_info.get("code", "INTERNAL_ERROR"),
+                model=ai_service.model,
+                provider=ai_service.provider,
+                retryable=error_info.get("retryable", False),
+                retry_after=error_info.get("retry_after")
             )
         
         finally:
