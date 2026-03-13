@@ -136,11 +136,14 @@ export type StatusValue = 'interrupted' | 'paused' | 'resumed' | 'retrying';
  * status类型 - 执行状态
  * 发送时机：状态变化时（暂停、恢复、中断、重试）
  * 【2026-03-11 重命名】status_value -> incident_value
+ * 【2026-03-14 小查修复】按API文档要求补充完整字段（5个字段）
  */
 export interface StatusMessage {
   type: 'incident';
   incident_value: StatusValue;
   message: string;
+  timestamp: string;       // 必填，时间戳
+  wait_time?: number;    // 仅 retrying 时可选，重试等待秒数
 }
 
 // ============================================================
