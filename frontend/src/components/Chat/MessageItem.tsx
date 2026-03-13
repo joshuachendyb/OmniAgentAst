@@ -306,6 +306,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
         exportData.error = {
           errorType: message.errorType,
           errorCode: message.errorCode,
+          errorMessage: message.errorMessage,
           errorDetails: message.errorDetails,
           errorStack: message.errorStack,
           errorRetryable: message.errorRetryable,
