@@ -1485,13 +1485,14 @@ async def validate_ai_service():
             end_time = datetime.now()
             elapsed = (end_time - start_time).total_seconds()
             end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(API Key为空)")
+            error_msg = f"AI 服务未配置：{provider} ({current_model}) 的 API Key 为空"
+            logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(API Key为空), 消息: {error_msg}")
             
             return ValidateResponse(
                 success=False,
                 provider=provider,
                 model=current_model,
-                message=f"AI 服务未配置：{provider} ({current_model}) 的 API Key 为空。请在 config/config.yaml 中配置。（配置已恢复到更新前的状态）"  # ⭐ 添加说明
+                message=error_msg + "。请在 config/config.yaml 中配置。（配置已恢复到更新前的状态）"  # ⭐ 添加说明
             )
         
         # 验证服务
@@ -1508,13 +1509,14 @@ async def validate_ai_service():
             end_time = datetime.now()
             elapsed = (end_time - start_time).total_seconds()
             end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 成功")
+            success_msg = f"AI 服务验证成功，当前使用 {provider} ({current_model})"
+            logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 成功, 消息: {success_msg}")
             
             return ValidateResponse(
                 success=True,
                 provider=provider,
                 model=current_model,
-                message=f"AI 服务验证成功，当前使用 {provider} ({current_model})"
+                message=success_msg
             )
         else:
             # ⭐ 验证失败：恢复备份
@@ -1526,7 +1528,7 @@ async def validate_ai_service():
             end_time = datetime.now()
             elapsed = (end_time - start_time).total_seconds()
             end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(验证返回False)")
+            logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(验证返回False), provider: {provider}, model: {current_model}")
             # 验证失败，尝试获取详细错误信息，并明确说明配置已恢复
             # 通过发送一个实际请求来获取错误详情
             test_response = None
@@ -1554,54 +1556,63 @@ async def validate_ai_service():
             # 根据状态码返回不同的错误信息
             if test_response:
                 if test_response.status_code == 401:
+                    end_time = datetime.now()
+                    elapsed = (end_time - start_time).total_seconds()
+                    end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+                    error_msg = f"API Key无效：{provider} ({current_model}) 的API Key认证失败"
+                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(HTTP 401), 消息: {error_msg}")
+                    
                     return ValidateResponse(
                         success=False,
                         provider=provider,
                         model=current_model,
-                        message=f"API Key无效：{provider} ({current_model}) 的API Key认证失败，请检查Key是否正确"
+                        message=error_msg + "，请检查Key是否正确"
                     )
                 elif test_response.status_code == 429:
                     end_time = datetime.now()
                     elapsed = (end_time - start_time).total_seconds()
                     end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
-                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(HTTP 429)")
+                    error_msg = f"速率限制：{provider} ({current_model}) API请求太频繁"
+                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(HTTP 429), 消息: {error_msg}")
                     
                     return ValidateResponse(
                         success=False,
                         provider=provider,
                         model=current_model,
-                        message=f"速率限制：{provider} ({current_model}) API请求太频繁，请等待几分钟后重试"
+                        message=error_msg + "，请等待几分钟后重试"
                     )
                 else:
                     end_time = datetime.now()
                     elapsed = (end_time - start_time).total_seconds()
                     end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
-                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(HTTP {test_response.status_code})")
+                    error_msg = f"API错误：{provider} ({current_model}) 返回HTTP {test_response.status_code}"
+                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(HTTP {test_response.status_code}), 消息: {error_msg}")
                     
                     return ValidateResponse(
                         success=False,
                         provider=provider,
                         model=current_model,
-                        message=f"API错误：{provider} ({current_model}) 返回HTTP {test_response.status_code}，请检查配置"
+                        message=error_msg + "，请检查配置"
                     )
             else:
                 end_time = datetime.now()
                 elapsed = (end_time - start_time).total_seconds()
                 end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
-                logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(连接失败)")
+                error_msg = f"连接失败：无法连接到 {provider} ({current_model}) API"
+                logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(连接失败), 消息: {error_msg}")
                 
                 return ValidateResponse(
                     success=False,
                     provider=provider,
                     model=current_model,
-                    message=f"连接失败：无法连接到 {provider} ({current_model}) API，请检查网络或API地址配置"
+                    message=error_msg + "，请检查网络或API地址配置"
                 )
             
     except Exception as e:
         end_time = datetime.now()
         elapsed = (end_time - start_time).total_seconds()
         end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
-        logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(异常: {str(e)})")
+        logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(异常), 错误: {str(e)}")
         
         return ValidateResponse(
             success=False,
