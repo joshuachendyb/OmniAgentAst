@@ -732,7 +732,9 @@ async def chat_stream(request: ChatRequest):
                 'error_type': 'security',
                 'details': f"risk_level: {security_check_result.get('risk_level')}",
                 'retryable': False,
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'model': request.model or '',
+                'provider': request.provider or ''
             }
             logger.info(f"[Step error] 发送error步骤(安全检测拦截)")
             yield f"data: {json.dumps(error_data)}\n\n"
@@ -939,7 +941,9 @@ async def chat_stream(request: ChatRequest):
                                 'message': event.get('message', '未知错误'),
                                 'error_type': 'agent',
                                 'retryable': event.get('retryable', False),
-                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                'model': request.model or '',
+                                'provider': request.provider or ''
                             }
                             logger.info(f"[Step error] 发送error步骤")
                             yield f"data: {json.dumps(error_data)}\n\n"
