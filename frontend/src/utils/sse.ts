@@ -229,8 +229,9 @@ export const useSSE = (
 
   /**
    * 断开连接
+   * @param manualDisconnect - 是否是手动中断（手动中断不允许重连）
    */
-  const disconnect = useCallback(() => {
+  const disconnect = useCallback((manualDisconnect: boolean = false) => {
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
@@ -243,6 +244,16 @@ export const useSSE = (
     setIsReceiving(false);
     setReconnectStatus("idle");
     reconnectAttemptsRef.current = 0;
+    
+    // 手动中断时清除 pendingMessage 并阻止重连
+    if (manualDisconnect) {
+      pendingMessageRef.current = null;
+      reconnectConfigRef.current.enabled = false;
+      // 3秒后恢复重连功能（避免永久禁用）
+      setTimeout(() => {
+        reconnectConfigRef.current.enabled = true;
+      }, 3000);
+    }
   }, []);
 
   /**

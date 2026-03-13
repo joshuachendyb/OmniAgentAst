@@ -1408,12 +1408,17 @@ setMessages((prev) => {
 
   /**
    * 任务中断处理 - 前端小新代修改
+   * 【小查修复2026-03-14】传递true参数，阻止重连
    */
   const handleInterrupt = async () => {
     const taskIdToCancel = serverTaskId || currentTaskId;
     if (taskIdToCancel) {
       try {
         message.info("正在中断任务...");
+        
+        // ✅ 先断开连接，停止自动重连！传递true表示手动中断
+        disconnect(true);
+        
         await fetch(`${API_BASE_URL}/chat/stream/cancel/${taskIdToCancel}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
