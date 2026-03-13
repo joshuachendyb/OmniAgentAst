@@ -79,15 +79,37 @@ class BaseAIService:
             timeout_value = 60.0
         self.timeout = int(timeout_value)
         
+        # 【小沈-2026-03-13修复】取消read超时，使用总超时10分钟
+        # 原因：模型思考可能长时间停顿，read超时会导致误判
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(
-                300.0,  # 总超时5分钟（流式响应可能很长）
+                600.0,  # 总超时10分钟（足够长，不限制流式响应）
                 connect=10.0,     # 连接超时10秒
-                read=60.0,  # 每次读取超时60秒
-                write=10.0
+                # 不设置read超时，让模型自由停顿
             ),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
         )
+        
+        # 【小沈-2026-03-13修复】添加取消机制
+        self._cancelled = False
+        self._current_response: Optional[httpx.Response] = None
+    
+    def cancel(self):
+        """强制取消当前请求"""
+        logger.info(f"[BaseAIService.cancel] 正在强制取消请求, model={self.model}")
+        self._cancelled = True
+        # 【关键】关闭当前HTTP响应，强制中断aiter_lines
+        if self._current_response:
+            try:
+                self._current_response.close()
+                logger.info("[BaseAIService.cancel] HTTP响应已强制关闭")
+            except Exception as e:
+                logger.error(f"[BaseAIService.cancel] 关闭响应失败: {e}")
+    
+    def reset_cancel(self):
+        """重置取消状态（用于新请求）"""
+        self._cancelled = False
+        self._current_response = None
     
     def _build_messages(self, message: str, history: Optional[List[Message]] = None) -> List[Dict]:
         """构建消息列表"""
@@ -114,6 +136,9 @@ class BaseAIService:
     async def chat_stream(self, message: str, history: Optional[List[Message]] = None) -> AsyncGenerator[StreamChunk, None]:
         """发送对话请求（流式返回）"""
         
+        # 【小沈-2026-03-13修复】重置取消状态
+        self.reset_cancel()
+        
         messages = self._build_messages(message, history)
         
         # 【调试日志】记录发送给LLM的原始信息
@@ -133,11 +158,19 @@ class BaseAIService:
                     "stream": True
                 }
             ) as response:
+                # 【小沈-2026-03-13修复】保存当前响应，用于强制取消
+                self._current_response = response
+                
                 if response.status_code != 200:
                     yield StreamChunk(content="", model=self.model, is_done=True)
                     return
                 
                 async for line in response.aiter_lines():
+                    # 【小沈-2026-03-13修复】检查是否被取消
+                    if self._cancelled:
+                        logger.info("[chat_stream] 检测到取消标志，中断流式响应")
+                        yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                        return
                     if not line or line.strip() == "":
                         continue
                     
@@ -278,6 +311,9 @@ class BaseAIService:
                 stream_error=f"AI 服务调用失败: {error_type_name}",
                 stream_error_type="unknown_error"
             )
+        finally:
+            # 【小沈-2026-03-13修复】清理当前响应引用
+            self._current_response = None
     
     async def validate(self) -> bool:
         """验证API Key是否有效"""
