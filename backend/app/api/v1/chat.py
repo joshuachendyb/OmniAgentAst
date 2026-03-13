@@ -1026,17 +1026,17 @@ async def chat_stream(request: ChatRequest):
                                 yield pause_event
                             
                             # ⭐ 【新增-重试机制】检查chunk是否有错误
-                            if chunk.error:
-                                last_error = chunk.error
-                                last_error_type = getattr(chunk, 'error_type', 'unknown')
-                                logger.warning(f"[AI Call] chunk返回错误: {chunk.error}, error_type: {last_error_type}")
+                            if chunk.stream_error:
+                                last_error = chunk.stream_error
+                                last_error_type = getattr(chunk, 'stream_error_type', 'unknown')
+                                logger.warning(f"[AI Call] 流式请求返回错误: {chunk.stream_error}, error_type: {last_error_type}")
                                 # 如果是超时错误，可以重试
                                 if last_error_type == 'timeout_error':
                                     logger.info(f"[AI Call] 检测到超时错误，准备重试...")
                                     break  # 跳出内层循环，触发重试
                                 else:
                                     # 其他错误，不重试
-                                    logger.error(f"[AI Call] 检测到非超时错误，不重试: {chunk.error}")
+                                    logger.error(f"[AI Call] 检测到非超时错误，不重试: {chunk.stream_error}")
                                     ai_call_successful = False
                                     break
                             
