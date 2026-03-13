@@ -181,10 +181,7 @@ const NewChatContainer: React.FC = () => {
         // 【修复问题 7】如果是 start 步骤，创建占位消息
         if (step.type === "start") {
           console.log("🔍 onStep 收到 start 事件: step=", JSON.stringify(step, null, 2));
-          console.log("🔍 step.display_name 值:", step.display_name);
-          console.log("🔍 step.display_name 值:", step.display_name);
-          console.log("🔍 step.model 值:", step.model);
-          console.log("🔍 step.provider 值:", step.provider);
+          console.log("🔍 display_name:", step.display_name, "| model:", step.model, "| provider:", step.provider);
           
           // 检查是否已有消息
           if (!lastMessage || lastMessage.role !== "assistant") {
