@@ -231,7 +231,7 @@ const NewChatContainer: React.FC = () => {
               model: step.model || lastMessage.model,
               provider: step.provider || lastMessage.provider,
             };
-            console.log("🔍 更新后的display_name=", updated[updated.length - 1].display_name);
+            // 第219行已打印日志，这里不再重复
             return updated;
           }
         }
