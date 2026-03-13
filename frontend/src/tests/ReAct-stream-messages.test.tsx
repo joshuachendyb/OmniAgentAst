@@ -302,20 +302,20 @@ describe('【小查测试】10.1 消息类型数据结构验证', () => {
 
   describe('status类型结构', () => {
     it('paused状态应正确', () => {
-      expect(TEST_MESSAGES.statusPaused.status_value).toBe('paused');
+      expect(TEST_MESSAGES.statusPaused.incident_value).toBe('paused');
       expect(TEST_MESSAGES.statusPaused.message).toBe('检测到危险操作，需要用户确认');
     });
 
     it('resumed状态应正确', () => {
-      expect(TEST_MESSAGES.statusResumed.status_value).toBe('resumed');
+      expect(TEST_MESSAGES.statusResumed.incident_value).toBe('resumed');
     });
 
     it('interrupted状态应正确', () => {
-      expect(TEST_MESSAGES.statusInterrupted.status_value).toBe('interrupted');
+      expect(TEST_MESSAGES.statusInterrupted.incident_value).toBe('interrupted');
     });
 
     it('retrying状态应正确', () => {
-      expect(TEST_MESSAGES.statusRetrying.status_value).toBe('retrying');
+      expect(TEST_MESSAGES.statusRetrying.incident_value).toBe('retrying');
     });
   });
 });
