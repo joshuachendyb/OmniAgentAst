@@ -175,7 +175,8 @@ export interface StreamCallbacks {
   onStep: (step: StreamStep) => void;
   // 【小新修复 2026-03-12】添加第三个参数接收完整data对象
   onComplete: (result: string, model?: string, data?: any) => void;
-  onError: (error: string) => void;
+  // 【小查修复2026-03-13】支持字符串或完整错误对象
+  onError: (error: string | { type: string; error_type: string; message: string; code: string; timestamp: string; model?: string; provider?: string; details?: string; stack?: string; retryable?: boolean; retry_after?: number }) => void;
 }
 
 export interface ValidateResponse {
