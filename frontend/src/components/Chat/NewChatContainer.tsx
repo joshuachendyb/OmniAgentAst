@@ -519,7 +519,7 @@ const NewChatContainer: React.FC = () => {
            duration: 5,
          });
 
-        setMessages((prev) => {
+setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
             const updated = [...prev];
@@ -544,8 +544,32 @@ const NewChatContainer: React.FC = () => {
             return updated;
           }
            return prev;
-        });
-        console.log("🔍 [onError] 错误处理完成，设置loading=false");
+         });
+
+         // 【小查修复2026-03-14】错误消息也需要保存到数据库
+         const currentSessionId = currentSessionIdRef.current || sessionId;
+         if (currentSessionId) {
+           sessionApi.saveMessage(currentSessionId, {
+             role: "assistant",
+             content: errorObj.message,
+             execution_steps: executionStepsRef.current || [],
+             isError: true,
+             errorType: errorObj.error_type,
+             errorCode: errorObj.code,
+             errorMessage: errorObj.message,
+             errorDetails: errorObj.details,
+             errorStack: errorObj.stack,
+             errorRetryable: errorObj.retryable,
+             errorRetryAfter: errorObj.retry_after,
+             errorTimestamp: errorObj.timestamp,
+             model: errorObj.model,
+             provider: errorObj.provider,
+           }).catch((saveErr) => {
+             console.error("❌ 保存错误消息失败:", saveErr);
+           });
+         }
+
+         console.log("🔍 [onError] 错误处理完成，设置loading=false");
         setLoading(false);
         // ⭐ 停止等待计时器
         if (waitTimerRef.current) {

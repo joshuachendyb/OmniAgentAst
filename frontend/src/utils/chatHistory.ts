@@ -47,6 +47,7 @@ export const debounce = <T extends (...args: any[]) => any>(
 
 /**
  * 解析单条消息
+ * @update 2026-03-14: 添加错误相关字段解析
  */
 export const parseMessage = (rawMessage: any): Message => {
   // 处理 executionSteps（兼容两种字段名）
@@ -67,6 +68,16 @@ export const parseMessage = (rawMessage: any): Message => {
     model: rawMessage.model || undefined,
     provider: rawMessage.provider || undefined,
     is_reasoning: rawMessage.is_reasoning,
+    // 错误相关字段（小查修复2026-03-14）
+    isError: rawMessage.is_error || rawMessage.isError || false,
+    errorType: rawMessage.error_type || rawMessage.errorType || undefined,
+    errorCode: rawMessage.error_code || rawMessage.errorCode || undefined,
+    errorMessage: rawMessage.error_message || rawMessage.errorMessage || undefined,
+    errorDetails: rawMessage.error_details || rawMessage.errorDetails || undefined,
+    errorStack: rawMessage.error_stack || rawMessage.errorStack || undefined,
+    errorRetryable: rawMessage.error_retryable || rawMessage.errorRetryable || undefined,
+    errorRetryAfter: rawMessage.error_retry_after || rawMessage.errorRetryAfter || undefined,
+    errorTimestamp: rawMessage.error_timestamp || rawMessage.errorTimestamp || undefined,
   };
 };
 
