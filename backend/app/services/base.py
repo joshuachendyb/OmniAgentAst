@@ -80,7 +80,11 @@ class BaseAIService:
         self.timeout = int(timeout_value)
         
         self.client = httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout_value, connect=10.0),
+            timeout=httpx.Timeout(
+                connect=10.0,     # 连接超时10秒
+                read=timeout_value,  # 每次读取超时（不是总时间）
+                write=10.0
+            ),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
         )
     
