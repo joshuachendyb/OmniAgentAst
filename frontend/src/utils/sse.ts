@@ -743,7 +743,7 @@ const processSSEData = (
           case "retrying": {
             // 【小查修复2026-03-13】传递wait_time给重试回调
             const retryMsg = rawData.message || "正在重试...";
-            onRetry?.(retryMsg);
+            onRetry?.(retryMsg, rawData.wait_time);
             break;
           }
           default:
