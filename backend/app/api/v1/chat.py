@@ -637,6 +637,8 @@ running_tasks: dict[str, dict] = {}
 
 # 【小沈-2026-03-13修复】会话级别中断记录（防止重连循环）
 # 记录已中断的会话ID和最后一次中断时间
+# TODO【小健-2026-03-13深度检查】：需要添加定期清理机制，否则长期运行会内存泄漏
+# TODO【小健-2026-03-13深度检查】：需要添加锁保护，否则并发写入可能有竞态条件
 interrupted_sessions: dict[str, datetime] = {}
 INTERRUPTED_SESSION_TIMEOUT = timedelta(minutes=5)  # 5分钟后允许重新连接
 TASK_TIMEOUT = timedelta(hours=1)  # 1小时超时
@@ -1242,6 +1244,7 @@ async def cancel_stream_task(task_id: str, session_id: Optional[str] = None):
     - **session_id**: 会话ID（可选，用于阻止重连）
     """
     # 【小沈-2026-03-13修复】记录会话级别中断，阻止5分钟内的重连
+    # TODO【小健-2026-03-13深度检查】：空session_id需要特殊处理，避免空字符串跳过检查
     if session_id:
         interrupted_sessions[session_id] = datetime.now()
         logger.info(f"[Session Interrupted] 会话 {session_id} 已标记为中断，5分钟内禁止重连")
@@ -1253,6 +1256,7 @@ async def cancel_stream_task(task_id: str, session_id: Optional[str] = None):
             task_info["status"] = "cancelled"
             
             # 【小沈-2026-03-13修复】关键！强制关闭HTTP连接
+            # TODO【小健-2026-03-13深度检查】：应在锁外调用cancel，避免长时间持有锁
             if "ai_service" in task_info and task_info["ai_service"]:
                 ai_service = task_info["ai_service"]
                 try:
