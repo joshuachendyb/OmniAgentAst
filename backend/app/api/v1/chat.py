@@ -634,6 +634,11 @@ async def chat(request: ChatRequest):
 # 任务管理字典（存储运行中的任务，用于中断）
 running_tasks_lock = asyncio.Lock()
 running_tasks: dict[str, dict] = {}
+
+# 【小沈-2026-03-13修复】会话级别中断记录（防止重连循环）
+# 记录已中断的会话ID和最后一次中断时间
+interrupted_sessions: dict[str, datetime] = {}
+INTERRUPTED_SESSION_TIMEOUT = timedelta(minutes=5)  # 5分钟后允许重新连接
 TASK_TIMEOUT = timedelta(hours=1)  # 1小时超时
 
 async def cleanup_expired_tasks():
@@ -667,21 +672,34 @@ async def chat_stream(request: ChatRequest):
     # 【前端小新代修改】优先使用前端传递的task_id，没有才自己生成
     task_id = request.task_id if request.task_id else str(uuid.uuid4())
     
+    # 【小沈-2026-03-13修复】检查会话是否已中断（防止重连循环）
+    session_id = request.session_id
+    if session_id and session_id in interrupted_sessions:
+        last_interrupt = interrupted_sessions[session_id]
+        if datetime.now() - last_interrupt < INTERRUPTED_SESSION_TIMEOUT:
+            logger.warning(f"[Session Blocked] 会话 {session_id} 在5分钟内被中断过，拒绝重连")
+            
+            async def blocked_response():
+                yield create_error_response(
+                    error_type="session_interrupted",
+                    message="会话已中断，请新建对话",
+                    code="SESSION_INTERRUPTED",
+                    retryable=False
+                )
+            
+            return StreamingResponse(
+                blocked_response(),
+                media_type="text/event-stream"
+            )
+        else:
+            # 超过5分钟，清除记录，允许重新连接
+            logger.info(f"[Session Cleared] 会话 {session_id} 中断已超过5分钟，清除记录")
+            del interrupted_sessions[session_id]
+    
     async def generate():
         """生成SSE流，支持中断和暂停"""
         # 【新增】每次对话开始，重置LLM调用计数器
         llm_call_count = 0
-        
-        # 注册任务
-        async with running_tasks_lock:
-            running_tasks[task_id] = {
-                "status": "running", 
-                "cancelled": False,
-                "paused": False,  # 暂停状态
-                "created_at": datetime.now()
-            }
-        
-        logger.info(f"[LLM Total Counter] ====== New conversation started, counter reset to 0 ======")
         
         # 【修改】优先使用前端传递的模型信息，fallback到配置文件
         if request.provider and request.model:
@@ -691,6 +709,18 @@ async def chat_stream(request: ChatRequest):
             )
         else:
             ai_service = AIServiceFactory.get_service()
+        
+        # 注册任务（包含ai_service引用，用于强制中断）
+        async with running_tasks_lock:
+            running_tasks[task_id] = {
+                "status": "running", 
+                "cancelled": False,
+                "paused": False,  # 暂停状态
+                "created_at": datetime.now(),
+                "ai_service": ai_service  # 【小沈-2026-03-13修复】保存ai_service引用
+            }
+        
+        logger.info(f"[LLM Total Counter] ====== New conversation started, counter reset to 0 ======")
         
         # 【前端小新代修改】在流式响应开始时发送start事件
         display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
@@ -1087,22 +1117,25 @@ async def chat_stream(request: ChatRequest):
                             logger.error(f"[AI Call] 非网络异常，不重试: {e}")
                             break
                     
-                    # ⭐ 【新增-重试机制】判断本次调用是否成功
+                    # ⭐ 【小沈-2026-03-13修复】修复重试判断逻辑
                     if has_received_content:
-                        # 只收到有效内容才算成功
+                        # ✅ 已经收到过内容，说明模型在工作，标记成功不重试
                         ai_call_successful = True
-                        logger.info(f"[AI Call] 第{retry_attempt + 1}次调用成功")
+                        logger.info(f"[AI Call] 第{retry_attempt + 1}次调用成功（已收到内容）")
                     elif last_error and last_error_type == 'timeout_error':
-                        # 没有收到内容且是超时错误，继续重试（chunk不为None才能安全访问）
-                        logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用超时无响应，准备重试...")
+                        # ⚠️ 真正的超时错误才重试
+                        logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用超时，准备重试...")
                         continue
                     elif last_error:
-                        # 有错误但不是超时错误，退出重试循环，让外层处理错误
+                        # ❌ 有其他错误，不重试，让外层处理
+                        logger.error(f"[AI Call] 第{retry_attempt + 1}次调用失败（非超时错误）: {last_error}")
                         break
                     else:
-                        # 其他情况（没有错误但也没有内容）
-                        logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用无响应且无错误信息")
-                        continue
+                        # ✅ 【修复】没有收到内容也没有错误，可能是模型还在思考第一个字
+                        # 标记为成功，不重试，给模型更多时间
+                        ai_call_successful = True
+                        logger.info(f"[AI Call] 第{retry_attempt + 1}次调用完成（模型尚未输出，等待中）")
+                        break
                     
                     # ⭐ 【新增-重试机制】重试循环结束，检查最终结果
                 if not ai_call_successful:
@@ -1201,17 +1234,40 @@ async def chat_stream(request: ChatRequest):
 # ============================================================
 
 @router.post("/chat/stream/cancel/{task_id}")
-async def cancel_stream_task(task_id: str):
+async def cancel_stream_task(task_id: str, session_id: Optional[str] = None):
     """
     中断指定的流式任务
     
     - **task_id**: 任务ID
+    - **session_id**: 会话ID（可选，用于阻止重连）
     """
+    # 【小沈-2026-03-13修复】记录会话级别中断，阻止5分钟内的重连
+    if session_id:
+        interrupted_sessions[session_id] = datetime.now()
+        logger.info(f"[Session Interrupted] 会话 {session_id} 已标记为中断，5分钟内禁止重连")
+    
     async with running_tasks_lock:
         if task_id in running_tasks:
-            running_tasks[task_id]["cancelled"] = True
-            running_tasks[task_id]["status"] = "cancelled"
-            return {"success": True, "message": f"任务 {task_id} 已标记为中断"}
+            task_info = running_tasks[task_id]
+            task_info["cancelled"] = True
+            task_info["status"] = "cancelled"
+            
+            # 【小沈-2026-03-13修复】关键！强制关闭HTTP连接
+            if "ai_service" in task_info and task_info["ai_service"]:
+                ai_service = task_info["ai_service"]
+                try:
+                    ai_service.cancel()
+                    logger.info(f"[Task Cancelled] 任务 {task_id} HTTP连接已强制关闭")
+                except Exception as e:
+                    logger.error(f"[Task Cancelled] 关闭HTTP连接失败: {e}")
+            
+            logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为中断")
+            return {"success": True, "message": f"任务 {task_id} 已中断"}
+    
+    # 即使任务不存在，也记录会话中断
+    if session_id:
+        return {"success": True, "message": f"会话 {session_id} 已标记为中断（任务可能已完成）"}
+    
     return {"success": False, "message": f"任务 {task_id} 不存在"}
 
 
