@@ -420,7 +420,14 @@ export const useSSE = (
       } else {
         setReconnectStatus("failed");
         message.error(friendlyMessage);
-        onError?.(friendlyMessage);
+        // 【小新修复2026-03-13】传递完整的错误对象
+        onError?.({
+          type: "error",
+          error_type: "connection_error",
+          message: friendlyMessage,
+          code: "CONNECTION_FAILED",
+          timestamp: new Date().toISOString()
+        });
       }
     }
   };
@@ -486,11 +493,11 @@ const processSSEData = (
     onStep?: (step: ExecutionStep) => void;
     onChunk?: (chunk: string, is_reasoning?: boolean) => void;
     onComplete?: (fullResponse: string, metadata?: string | SSEMetadata, executionSteps?: ExecutionStep[]) => void;
-    onError?: (error: string) => void;
+    onError?: (error: string | SSEError) => void;
     onPaused?: () => void;
     onResumed?: () => void;
     onShowSteps?: (show: boolean) => void;
-    onRetry?: (message: string) => void;
+    onRetry?: (message: string, waitTime?: number) => void;
     setCurrentResponse: React.Dispatch<React.SetStateAction<string>>;
     responseBufferRef: React.MutableRefObject<string>;
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
@@ -584,7 +591,7 @@ const processSSEData = (
 
         setExecutionSteps((prev) => [...prev, startStep]);
         onStep?.(startStep);
-        // 【小查修复】收到start时显示步骤UI
+        // 【小查修复】收到start时显示步骤UI（必须在onStep之后）
         onShowSteps?.(true);
         break;
       }
@@ -721,7 +728,20 @@ const processSSEData = (
         if (rawData.timestamp) {
           (step as any).timestamp = rawData.timestamp;
         }
-        onError?.(errorMsg);
+        // 【小新修复2026-03-13】传递完整的错误对象，保留error_type等字段
+        onError?.({
+          type: "error",
+          error_type: rawData.error_type || "unknown_error",
+          message: errorMsg,
+          code: rawData.code || "UNKNOWN_ERROR",
+          model: rawData.model,
+          provider: rawData.provider,
+          details: rawData.details,
+          stack: rawData.stack,
+          retryable: rawData.retryable,
+          retry_after: rawData.retry_after,
+          timestamp: rawData.timestamp || new Date().toISOString()
+        });
         setIsReceiving(false);
         setIsConnected(false);
         break;
