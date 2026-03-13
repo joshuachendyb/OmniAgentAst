@@ -253,6 +253,7 @@ export interface NextPageResponse {
 
 /**
  * 聊天消息（扩展）
+ * 【小查修复2026-03-13】扩展error相关字段，与API文档11个字段对齐
  */
 export interface Message extends ChatMessage {
   id: string;
@@ -260,7 +261,14 @@ export interface Message extends ChatMessage {
   executionSteps?: ExecutionStep[];
   isStreaming?: boolean;
   isError?: boolean;
-  errorType?: string;
+  // 错误相关字段（与API文档对齐）
+  errorType?: string;        // error_type
+  errorCode?: string;       // code
+  errorDetails?: string;    // details
+  errorStack?: string;      // stack
+  errorRetryable?: boolean; // retryable
+  errorRetryAfter?: number; // retry_after
+  errorTimestamp?: string;  // timestamp
   model?: string;
   provider?: string;
   display_name?: string;

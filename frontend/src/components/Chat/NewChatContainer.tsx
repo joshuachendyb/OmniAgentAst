@@ -478,27 +478,40 @@ const NewChatContainer: React.FC = () => {
        [] // 依赖数组为空，因为使用 ref 而不是 state
      ),
     // onError - 流式错误 - 前端小新代修改：适配后端新格式
+    // 【小查修复2026-03-13】适配API文档的11个字段
     useCallback(
       (
         error:
           | string
           | {
+              // 必填字段（5个）
               type: string;
+              error_type: string;
               message: string;
-              rawMessage: string;
+              code: string;
+              timestamp: string;
+              // 可选字段（6个）
               model?: string;
               provider?: string;
+              details?: string;
+              stack?: string;
+              retryable?: boolean;
+              retry_after?: number;
             }
       ) => {
         // ✅ 支持字符串和对象两种格式
         const errorObj =
           typeof error === "string"
-            ? { type: "unknown_error", message: error, rawMessage: error }
+            ? { type: "error", error_type: "unknown_error", message: error, code: "UNKNOWN_ERROR", timestamp: new Date().toISOString() }
             : error;
 
          console.error("🔴 [onError] SSE 流式错误:", errorObj);
-         console.error("  错误类型:", errorObj.type);
+         console.error("  错误类型(error_type):", errorObj.error_type);
+         console.error("  错误码(code):", errorObj.code);
          console.error("  错误消息:", errorObj.message);
+         console.error("  模型:", errorObj.model);
+         console.error("  提供商:", errorObj.provider);
+         console.error("  是否可重试:", errorObj.retryable);
 
          // 🔴 修复：更好的用户反馈
          message.error({
@@ -515,14 +528,21 @@ const NewChatContainer: React.FC = () => {
               content: lastMessage.content || `**错误**: ${errorObj.message}`,
               isError: true, // 前端小新代修改：标记为错误消息
               isStreaming: false,
-              errorType: errorObj.type, // ✅ 保存错误类型
-              model: errorObj.model, // ✅ 保存模型
-              provider: errorObj.provider, // ✅ 保存提供商
+              // 【小查修复2026-03-13】保存完整的error 11个字段
+              errorType: errorObj.error_type,      // error_type
+              errorCode: errorObj.code,            // code
+              errorDetails: errorObj.details,       // details
+              errorStack: errorObj.stack,         // stack
+              errorRetryable: errorObj.retryable,  // retryable
+              errorRetryAfter: errorObj.retry_after, // retry_after
+              errorTimestamp: errorObj.timestamp,   // timestamp
+              model: errorObj.model,                // model
+              provider: errorObj.provider,           // provider
             };
             return updated;
           }
            return prev;
-         });
+        });
         console.log("🔍 [onError] 错误处理完成，设置loading=false");
         setLoading(false);
         // ⭐ 停止等待计时器
@@ -582,12 +602,16 @@ const NewChatContainer: React.FC = () => {
       }
       setShowExecution(show);
     }, []),
-    // ⭐ onRetry - 重试事件
-    useCallback((message: string) => {
-      console.log("🔄 [onRetry] 收到重试事件:", message);
+    // ⭐ onRetry - 重试事件 - 【小查修复2026-03-13】添加waitTime参数
+    useCallback((message: string, waitTime?: number) => {
+      console.log("🔄 [onRetry] 收到重试事件:", message, "等待时间:", waitTime);
       setIsRetrying(true);  // 设置重试状态
-      // 重置计时器（重新开始计时）
-      setWaitTime(0);
+      // 如果有wait_time，设置等待时间
+      if (waitTime !== undefined) {
+        setWaitTime(waitTime);
+      } else {
+        setWaitTime(0);
+      }
     }, [])
   );
 

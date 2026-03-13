@@ -13,14 +13,24 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { message } from "antd";
 
 /**
- * SSE 错误对象
+ * SSE 错误对象 - 与后端API文档的11个字段完全对应
+ * 文档：API-chat-stream.md
  */
 export interface SSEError {
-  type: string;
-  message: string;
-  rawMessage: string;
-  model?: string;
-  provider?: string;
+  // 必填字段（4个）
+  type: string;           // 固定值: error
+  error_type: string;    // 错误类型
+  message: string;        // 用户友好的错误信息
+  code: string;          // 错误码
+  // 必填字段（1个）
+  timestamp: string;      // 时间戳
+  // 可选字段（6个）
+  model?: string;        // 模型名称
+  provider?: string;      // 提供商名称
+  details?: string;      // 详细错误信息
+  stack?: string;        // 堆栈信息
+  retryable?: boolean;   // 是否可重试
+  retry_after?: number;  // 重试等待秒数
 }
 
 /**
@@ -190,8 +200,8 @@ export const useSSE = (
   onPaused?: () => void,
   onResumed?: () => void,
   onShowSteps?: (show: boolean) => void,  // 新增：控制步骤显示/隐藏
-  // ⭐ 新增：重试回调
-  onRetry?: (message: string) => void
+  // ⭐ 新增：重试回调 - 【小查修复2026-03-13】添加wait_time参数
+  onRetry?: (message: string, waitTime?: number) => void
 ): UseSSEReturn => {
   const [isConnected, setIsConnected] = useState(false);
   const [isReceiving, setIsReceiving] = useState(false);
@@ -680,6 +690,13 @@ const processSSEData = (
         if (rawData.error_type) {
           (step as any).error_type = rawData.error_type;
         }
+        // 【小查修复2026-03-13】补充缺失的model和provider字段（文档要求11个字段）
+        if (rawData.model) {
+          (step as any).model = rawData.model;
+        }
+        if (rawData.provider) {
+          (step as any).provider = rawData.provider;
+        }
         // 【小查修复2026-03-10】添加设计文档要求的字段
         if (rawData.details) {
           (step as any).details = rawData.details;
@@ -723,15 +740,22 @@ const processSSEData = (
           case "resumed":
             onResumed?.();
             break;
-          case "retrying":
-            onRetry?.(statusMessage || "正在重试...");
+          case "retrying": {
+            // 【小查修复2026-03-13】传递wait_time给重试回调
+            const retryMsg = rawData.message || "正在重试...";
+            onRetry?.(retryMsg);
             break;
+          }
           default:
             console.warn("[SSE] 未知的incident_value:", statusValue);
         }
         // 添加timestamp字段
         if (rawData.timestamp) {
           (step as any).timestamp = rawData.timestamp;
+        }
+        // 【小查修复2026-03-13】添加wait_time字段（仅retrying使用）
+        if (rawData.wait_time !== undefined) {
+          (step as any).wait_time = rawData.wait_time;
         }
         break;
       }
