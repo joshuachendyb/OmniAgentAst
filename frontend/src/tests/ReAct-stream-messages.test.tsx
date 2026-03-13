@@ -134,26 +134,26 @@ const TEST_MESSAGES = {
   },
 
   statusPaused: {
-    type: 'status' as const,
-    status_value: 'paused' as const,
+    type: 'incident' as const,
+    incident_value: 'paused' as const,
     message: '检测到危险操作，需要用户确认',
   },
 
   statusResumed: {
-    type: 'status' as const,
-    status_value: 'resumed' as const,
+    type: 'incident' as const,
+    incident_value: 'resumed' as const,
     message: '用户已确认，继续执行任务',
   },
 
   statusInterrupted: {
-    type: 'status' as const,
-    status_value: 'interrupted' as const,
+    type: 'incident' as const,
+    incident_value: 'interrupted' as const,
     message: '任务已被用户中断',
   },
 
   statusRetrying: {
-    type: 'status' as const,
-    status_value: 'retrying' as const,
+    type: 'incident' as const,
+    incident_value: 'retrying' as const,
     message: '正在重试，尝试第3次...',
   },
 

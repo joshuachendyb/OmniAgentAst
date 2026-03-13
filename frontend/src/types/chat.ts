@@ -134,7 +134,7 @@ export type StatusValue = 'interrupted' | 'paused' | 'resumed' | 'retrying';
  * 【2026-03-11 重命名】status_value -> incident_value
  */
 export interface StatusMessage {
-  type: 'status';
+  type: 'incident';
   incident_value: StatusValue;
   message: string;
 }
@@ -192,7 +192,7 @@ export function isErrorMessage(msg: StreamMessage): msg is ErrorMessage {
 }
 
 export function isStatusMessage(msg: StreamMessage): msg is StatusMessage {
-  return msg.type === 'status';
+  return msg.type === 'incident';
 }
 
 // ============================================================

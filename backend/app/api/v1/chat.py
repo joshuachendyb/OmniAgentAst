@@ -209,7 +209,7 @@ async def check_and_yield_if_interrupted(
     async with running_tasks_lock:
         if running_tasks.get(task_id, {}).get("cancelled", False):
             # 【Phase4重构】使用新status格式
-            return True, f"data: {json.dumps({'type': 'status', 'incident_value': 'interrupted', 'message': '任务已被中断'})}\n\n"
+            return True, f"data: {json.dumps({'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断'})}\n\n"
     return False, ""
 
 
@@ -236,18 +236,18 @@ async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_t
             if not is_paused:
                 # 不再暂停，恢复发送
                 if running_tasks.get(task_id, {}).get("_was_paused", False):
-                    # 【问题5修复】统一使用type='status' + incident_value
-                    yield f"data: {json.dumps({'type': 'status', 'incident_value': 'resumed', 'message': '任务已恢复'})}\n\n"
+                    # 【问题5修复】统一使用type='incident' + incident_value
+                    yield f"data: {json.dumps({'type': 'incident', 'incident_value': 'resumed', 'message': '任务已恢复'})}\n\n"
                     running_tasks[task_id]["_was_paused"] = False
                 return
         
         # 暂停中，等待恢复
         if is_paused and not running_tasks.get(task_id, {}).get("_was_paused", False):
             # 刚进入暂停状态，发送paused事件
-            # 【问题5修复】统一使用type='status' + incident_value
+            # 【问题5修复】统一使用type='incident' + incident_value
             async with running_tasks_lock:
                 running_tasks[task_id]["_was_paused"] = True
-            yield f"data: {json.dumps({'type': 'status', 'incident_value': 'paused', 'message': '任务已暂停'})}\n\n"
+            yield f"data: {json.dumps({'type': 'incident', 'incident_value': 'paused', 'message': '任务已暂停'})}\n\n"
         
         await asyncio.sleep(0.5)  # 每0.5秒检查一次
 
@@ -792,9 +792,9 @@ async def chat_stream(request: ChatRequest):
                 # 检查是否被中断
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
-                        # 【问题5修复】统一使用type='status' + incident_value
-                        interrupted_data = {'type': 'status', 'incident_value': 'interrupted', 'message': '任务已被中断'}
-                        logger.info(f"[Step status] 发送status步骤(interrupted)")
+                        # 【问题5修复】统一使用type='incident' + incident_value
+                        interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断'}
+                        logger.info(f"[Step incident] 发送incident步骤(interrupted)")
                         yield f"data: {json.dumps(interrupted_data)}\n\n"
                         return
                 
@@ -862,8 +862,8 @@ async def chat_stream(request: ChatRequest):
                         async with running_tasks_lock:
                             if running_tasks.get(task_id, {}).get("cancelled", False):
                                 # 【2026-03-11 重命名】status_value -> incident_value
-                                interrupted_data = {'type': 'status', 'incident_value': 'interrupted', 'message': '任务已被中断'}
-                                logger.info(f"[Step status] 发送status步骤(interrupted)")
+                                interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断'}
+                                logger.info(f"[Step incident] 发送incident步骤(interrupted)")
                                 yield f"data: {json.dumps(interrupted_data)}\n\n"
                                 break
                         
@@ -958,8 +958,8 @@ async def chat_stream(request: ChatRequest):
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
                         # 【原则4整改】字段拆分：content → message
-                        interrupted_data = {'type': 'interrupted', 'message': '任务已被中断'}
-                        logger.info(f"[Step interrupted] 发送interrupted步骤")
+                        interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断'}
+                        logger.info(f"[Step incident] 发送interrupted步骤")
                         yield f"data: {json.dumps(interrupted_data)}\n\n"
                         return
                 
@@ -986,7 +986,7 @@ async def chat_stream(request: ChatRequest):
                         
                         # 发送重试提示给前端
                         retry_data = {
-                            'type': 'status',
+                            'type': 'incident',
                             'incident_value': 'retrying',
                             'message': f'请求超时，正在重试 ({retry_attempt}/{max_retries})...',
                             'wait_time': wait_time
@@ -1016,8 +1016,8 @@ async def chat_stream(request: ChatRequest):
                             # 【原则4整改】content → message
                             async with running_tasks_lock:
                                 if running_tasks.get(task_id, {}).get("cancelled", False):
-                                    interrupted_data = {'type': 'interrupted', 'message': '任务已被中断'}
-                                    logger.info(f"[Step interrupted] 发送interrupted步骤")
+                                    interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断'}
+                                    logger.info(f"[Step incident] 发送interrupted步骤")
                                     yield f"data: {json.dumps(interrupted_data)}\n\n"
                                     return
                             
@@ -1090,15 +1090,22 @@ async def chat_stream(request: ChatRequest):
                     logger.error(f"[AI Call] 重试失败，ai_call_successful={ai_call_successful}")
                     # 根据错误原因返回不同的错误提示
                     if last_error:
-                        logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}")
-                        # 判断错误类型
-                        last_error_lower = last_error.lower()
-                        if "timeout" in last_error_lower:
-                            error_type, error_message = "timeout", "请求超时，请重试"
-                        elif "connection" in last_error_lower or "network" in last_error_lower:
-                            error_type, error_message = "network", "网络连接失败，请检查网络"
+                        logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}, 类型: {last_error_type}")
+                        # 使用之前保存的 error_type
+                        error_type_map = {
+                            'timeout_error': ('timeout', '请求超时，请重试'),
+                            'read_error': ('server', '读取响应失败，请重试'),
+                            'connect_error': ('network', '连接失败，请检查网络'),
+                            'protocol_error': ('server', '协议错误，请重试'),
+                            'proxy_error': ('network', '代理错误，请检查网络配置'),
+                            'write_error': ('server', '发送请求失败'),
+                            'network_error': ('network', '网络错误，请检查网络连接'),
+                        }
+                        if last_error_type in error_type_map:
+                            code, error_message = error_type_map[last_error_type]
                         else:
-                            error_type, error_message = "server", f"服务调用失败: {last_error}"
+                            code, error_message = 'server', f"服务调用失败: {last_error}"
+                        error_type = code
                     else:
                         # 没有错误但也没有收到有效内容，可能是模型返回空响应
                         logger.error(f"[AI Call] 所有重试失败，无有效响应（模型返回空内容）")
