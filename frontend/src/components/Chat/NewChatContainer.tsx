@@ -115,6 +115,8 @@ const NewChatContainer: React.FC = () => {
   const messagesCountRef = useRef<number>(0);
   // 【小新第三修复 2026-03-02】用于同步存储pendingMessage，解决React闭包陷阱
   const pendingMessageRef = useRef<Message | null>(null);
+  // 【小查修复2026-03-14】添加messagesRef避免visibilitychange useEffect频繁重新注册
+  const messagesRef = useRef<Message[]>([]);
 
   // ⭐ 暂停功能缓冲区：暂存暂停期间接收的数据
   const displayBufferRef = useRef<any[]>([]);
@@ -669,8 +671,10 @@ setMessages((prev) => {
   }, [executionSteps]);
 
   // 【小新第二修复 2026-03-02】同步跟踪消息数量，用于保存消息时获取准确的值
+  // 【小查修复2026-03-14】同时同步messagesRef，避免visibilitychange useEffect频繁重新注册
   useEffect(() => {
     messagesCountRef.current = messages.length;
+    messagesRef.current = messages;
   }, [messages]);
 
   // 当页面从隐藏状态变为显示时也自动滚动到底部
@@ -849,7 +853,8 @@ setMessages((prev) => {
           
           // 缓存无效或为空时，才从API加载（仅首次加载时）
           // 【小查修复】添加 isInitialized 和 isLoadingHistoryRef 检查，避免重复调用
-          if (messages.length === 0 && !isInitialized && !isLoadingHistoryRef.current) {
+          // 【小查修复2026-03-14】使用messagesRef.current避免依赖messages
+          if (messagesRef.current.length === 0 && !isInitialized && !isLoadingHistoryRef.current) {
             console.log("🔄 首次加载，从API获取会话数据");
             isLoadingHistoryRef.current = true; // 加锁
             setTimeout(async () => {
@@ -875,7 +880,7 @@ setMessages((prev) => {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [messages, sessionId, sessionTitle, isReceiving]);
+  }, [sessionId, isReceiving]);  // 【小查修复2026-03-14】移除messages依赖，使用messagesRef.current
 
   // P1级别优化：状态验证和同步机制
   useEffect(() => {
@@ -1726,6 +1731,7 @@ setMessages((prev) => {
    * 新建会话 - 按钮点击处理函数
    */
   const handleNewSession = () => {
+    console.log("🔍 [handleNewSession] 按钮被点击");
     handleNewSessionInternal(0);
   };
 
