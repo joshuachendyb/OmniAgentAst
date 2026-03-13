@@ -538,8 +538,9 @@ setMessages((prev) => {
               errorRetryable: errorObj.retryable,  // retryable
               errorRetryAfter: errorObj.retry_after, // retry_after
               errorTimestamp: errorObj.timestamp,   // timestamp
-              model: errorObj.model,                // model
-              provider: errorObj.provider,           // provider
+              // 如果 errorObj 中没有 model/provider，使用消息中已有的值
+              model: errorObj.model || lastMessage.model,
+              provider: errorObj.provider || lastMessage.provider,
             };
             return updated;
           }
@@ -563,8 +564,9 @@ setMessages((prev) => {
              retryable: errorObj.retryable,
              retry_after: errorObj.retry_after,
              timestamp: errorObj.timestamp,
-             model: errorObj.model,
-             provider: errorObj.provider,
+              // 如果 errorObj 中没有 model/provider，使用消息中已有的值
+              model: errorObj.model || lastMessage.model,
+              provider: errorObj.provider || lastMessage.provider,
            }).catch((saveErr) => {
              console.error("❌ 保存错误消息失败:", saveErr);
            });
