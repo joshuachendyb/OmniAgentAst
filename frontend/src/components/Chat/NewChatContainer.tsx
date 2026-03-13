@@ -9,9 +9,9 @@
  * - 标题管理优化（版本控制、锁定状态、来源标记）
  *
  * @author 小新
- * @version 3.1.0
+ * @version 3.2.0
  * @since 2026-02-23
- * @update 2026-02-25 新增版本号控制、标题锁定状态、409冲突处理
+ * @update 2026-03-13 代码拆分：类型和工具函数提取到独立文件
  */
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
@@ -40,7 +40,7 @@ import {
   LockOutlined,
 } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
-import { sessionApi, ChatMessage, API_BASE_URL } from "../../services/api";
+import { sessionApi, API_BASE_URL } from "../../services/api";
 import { securityApi } from "../../services/api";
 import MessageItem from "./MessageItem";
 import DangerConfirmModal from "../DangerConfirmModal";
@@ -49,184 +49,22 @@ import { showSecurityNotification } from "../SecurityNotification";
 import { getRiskLevel } from "../../types/security";
 import { useSSE, ExecutionStep } from "../../utils/sse";
 
+// 【新增 2026-03-13】从独立文件导入类型和工具函数
+import type { Message } from "../../types/chat";
+import {
+  debounce,
+  loadHistoryMessages,
+  loadLatestHistoryMessages,
+  SESSION_EXPIRY_TIME,
+  STORAGE_KEY,
+  DEBUG_LOAD_FROM_API,
+} from "../../utils/chatHistory";
+
 const { TextArea } = Input;
 
-// ⭐ 常量配置
-const SESSION_EXPIRY_TIME = 5 * 60 * 1000; // 5分钟
-const STORAGE_KEY = "chat_session_state";
-// ⭐ DEBUG模式：强制从数据库加载（设为true时跳过缓存，每次从API加载）
-// 【小查修复】统一定义在顶部，方便配置
-const DEBUG_LOAD_FROM_API = import.meta.env.DEV || false;
-
-// ⭐ 防抖函数（简单实现，不依赖lodash）
-const debounce = <T extends (...args: any[]) => any>(
-  func: T,
-  delay: number
-): ((...args: Parameters<T>) => void) => {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  return (...args: Parameters<T>): void => {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-    timeoutId = setTimeout(() => {
-      func(...args);
-      timeoutId = null;
-    }, delay);
-  };
-};
-
-interface Message extends ChatMessage {
-  id: string;
-  timestamp: Date;
-  executionSteps?: ExecutionStep[];
-  isStreaming?: boolean;
-  isError?: boolean; // 前端小新代修改：是否为错误消息
-  errorType?: string; // 前端小新代修改：错误类型
-  model?: string;
-  provider?: string; // 前端小新代修改：提供商
-  display_name?: string; // 前端小新代修改：显示名称（如"OpenAI (GPT-4)"）
-  is_reasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 snake_case）
-}
-
-// ============================================
-// 历史消息统一读取模块 - 小新 2026-03-12
-// ============================================
-
-// 解析单条消息
-const parseMessage = (rawMessage: any): Message => {
-  // 处理 executionSteps（兼容两种字段名）
-  let executionSteps: ExecutionStep[] = [];
-  if (rawMessage.execution_steps && Array.isArray(rawMessage.execution_steps)) {
-    executionSteps = rawMessage.execution_steps;
-  } else if (rawMessage.executionSteps && Array.isArray(rawMessage.executionSteps)) {
-    executionSteps = rawMessage.executionSteps;
-  }
-
-  return {
-    id: rawMessage.id?.toString() || Date.now().toString(),
-    role: rawMessage.role || "assistant",
-    content: rawMessage.content || "",
-    timestamp: new Date(rawMessage.timestamp || Date.now()),
-    executionSteps,
-    display_name: rawMessage.display_name,
-    model: rawMessage.model || undefined,
-    provider: rawMessage.provider || undefined,
-    is_reasoning: rawMessage.is_reasoning, // 【小查修复】添加 is_reasoning 字段处理
-  };
-};
-
-// 历史消息加载结果类型
-interface HistoryLoadResult {
-  messages: Message[];
-  title: string;
-  sessionId: string;
-  version?: number;
-  title_locked?: boolean;
-}
-
-// 加载历史消息（统一入口）
-const loadHistoryMessages = async (
-  sessionId: string,
-  options?: { useCache?: boolean }
-): Promise<HistoryLoadResult | null> => {
-  console.log("%c┌───── 历史消息加载 START ─────", "color: blue; font-weight: bold; font-size: 14px;");
-
-  try {
-    // 先尝试从缓存读取（如果启用且不在DEBUG模式）
-    if (options?.useCache !== false && !DEBUG_LOAD_FROM_API) {
-      const saved = sessionStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        try {
-          const state = JSON.parse(saved);
-          const currentTime = Date.now();
-          const savedTime = state.timestamp || 0;
-          const timeDiff = currentTime - savedTime;
-
-          // 缓存有效（5分钟内），且sessionId匹配
-          if (timeDiff <= SESSION_EXPIRY_TIME && 
-              state.sessionId === sessionId && 
-              state.messages?.length > 0) {
-            console.log("%c│ 从缓存恢复: " + state.messages.length + " 条消息", "color: blue; font-size: 12px;");
-            console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
-            return {
-              messages: state.messages,
-              title: state.sessionTitle || "会话",
-              sessionId: state.sessionId,
-            };
-          }
-        } catch (e) {
-          console.warn("缓存解析失败:", e);
-        }
-      }
-    }
-
-    // 从数据库读取
-    const sessionData = await sessionApi.getSessionMessages(sessionId);
-
-    // 检查是否有消息
-    if (!sessionData.messages || sessionData.messages.length === 0) {
-      console.log("%c│ 无历史消息", "color: blue; font-size: 12px;");
-      console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
-      return null;
-    }
-
-    // 解析消息
-    const messages = sessionData.messages.map((rawMsg: any, index: number) => {
-      const parsedMsg = parseMessage(rawMsg);
-      // 附加原始序号（从数据库返回的顺序）
-      (parsedMsg as any).dbIndex = index + 1;
-      return parsedMsg;
-    });
-
-    // 日志每条消息（带序号）
-    messages.forEach((m: Message & { dbIndex?: number }) => {
-      const isUser = m.role === "user";
-      const roleColor = isUser ? "green" : "purple";
-      const roleLabel = isUser ? "👤 用户" : "🤖 AI";
-      const msgIndex = m.dbIndex || "?";
-      console.log(
-        "%c│ [" + msgIndex + "] " + roleLabel + " | " + (m.content || "").substring(0, 40) + "...", 
-        "color: " + roleColor + "; font-size: 11px;"
-      );
-    });
-
-    // 日志结束
-    console.log("%c│ 共 " + messages.length + " 条消息", "color: blue; font-size: 12px;");
-    console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
-
-    // 返回统一格式
-    return {
-      messages,
-      title: sessionData.title || "会话",
-      sessionId: sessionId,
-      version: sessionData.version,
-      title_locked: sessionData.title_locked,
-    };
-
-  } catch (error) {
-    console.error("加载历史消息失败:", error);
-    return null;
-  }
-};
-
-// 加载最近会话的历史消息
-const loadLatestHistoryMessages = async (): Promise<HistoryLoadResult | null> => {
-  try {
-    const response = await sessionApi.listSessions(1, 1, undefined, true);
-    if (response.sessions && response.sessions.length > 0) {
-      const latestSession = response.sessions[0];
-      const result = await loadHistoryMessages(latestSession.session_id);
-      if (result) {
-        return { ...result, sessionId: latestSession.session_id };
-      }
-    }
-    return null;
-  } catch (error) {
-    console.error("加载最近会话失败:", error);
-    return null;
-  }
-};
+// 【小新 2026-03-13 代码拆分】类型和工具函数已提取到独立文件
+// - 类型定义: src/types/chat.ts
+// - 工具函数: src/utils/chatHistory.ts
 
 /**
 

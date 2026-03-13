@@ -9,6 +9,8 @@
  * @since 2026-03-09
  */
 
+import type { ExecutionStep } from "../utils/sse";
+
 // ============================================================
 // 安全检查相关类型
 // ============================================================
@@ -243,4 +245,35 @@ export interface NextPageResponse {
   data?: any;
   next_page_token?: string;
   has_more: boolean;
+}
+
+// ============================================================
+// NewChatContainer 专用类型 - 小新 2026-03-13
+// ============================================================
+
+/**
+ * 聊天消息（扩展）
+ */
+export interface Message extends ChatMessage {
+  id: string;
+  timestamp: Date;
+  executionSteps?: ExecutionStep[];
+  isStreaming?: boolean;
+  isError?: boolean;
+  errorType?: string;
+  model?: string;
+  provider?: string;
+  display_name?: string;
+  is_reasoning?: boolean;
+}
+
+/**
+ * 历史消息加载结果
+ */
+export interface HistoryLoadResult {
+  messages: Message[];
+  title: string;
+  sessionId: string;
+  version?: number;
+  title_locked?: boolean;
 }
