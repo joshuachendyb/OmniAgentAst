@@ -9,6 +9,7 @@ AI服务通用实现
 
 import json
 import httpx
+import httpcore
 from typing import List, Dict, Optional, AsyncGenerator
 
 # 使用统一的日志配置
@@ -212,29 +213,53 @@ class BaseAIService:
                 error="请求超时，请重试",
                 error_type="timeout_error"
             )
-        except httpx.ReadError as e:
+        except (httpx.ReadError, httpcore.ReadError):
             yield StreamChunk(
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error=f"读取响应失败: {str(e)[:50]}",
+                error="读取响应失败，请重试",
                 error_type="read_error"
             )
-        except httpx.ConnectError as e:
+        except (httpx.ConnectError, httpcore.ConnectError):
             yield StreamChunk(
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error=f"连接失败: {str(e)[:50]}",
+                error="连接失败，请检查网络",
                 error_type="connect_error"
             )
-        except httpx.ProtocolError as e:
+        except (httpx.ProtocolError, httpcore.ProtocolError, httpx.RemoteProtocolError, httpcore.RemoteProtocolError, httpx.LocalProtocolError, httpcore.LocalProtocolError):
             yield StreamChunk(
                 content="", 
                 model=self.model, 
                 is_done=True,
-                error=f"协议错误: {str(e)[:50]}",
+                error="协议错误，请重试",
                 error_type="protocol_error"
+            )
+        except (httpx.ProxyError, httpcore.ProxyError):
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                error="代理错误，请检查网络配置",
+                error_type="proxy_error"
+            )
+        except (httpx.WriteError, httpcore.WriteError):
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                error="发送请求失败",
+                error_type="write_error"
+            )
+        except (httpx.NetworkError, httpcore.NetworkError):
+            yield StreamChunk(
+                content="", 
+                model=self.model, 
+                is_done=True,
+                error="网络错误，请检查网络连接",
+                error_type="network_error"
             )
         except Exception as e:
             # 【小沈代修改 - 修复问题 7】记录日志，返回用户友好错误
