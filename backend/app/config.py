@@ -161,6 +161,12 @@ class Config:
     def reload(self):
         """重新加载配置"""
         self._load_config()
+        # 清除 AIServiceFactory 的配置缓存，确保同步
+        try:
+            from app.services import AIServiceFactory
+            AIServiceFactory._config = None
+        except Exception:
+            pass
     
     @property
     def raw_config(self) -> Dict[str, Any]:

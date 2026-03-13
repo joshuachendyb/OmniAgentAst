@@ -341,7 +341,11 @@ class AIServiceFactory:
     @classmethod
     def get_service(cls, config_path: Optional[str] = None) -> BaseAIService:
         """获取AI服务实例 - 带完整配置验证"""
-        # 先进行配置验证
+        # 先清除配置缓存，确保验证和创建服务使用最新配置
+        with cls._lock:
+            cls._config = None
+        
+        # 再进行配置验证
         validation = cls.validate_config(config_path)
         
         if not validation.success:
@@ -358,7 +362,8 @@ class AIServiceFactory:
                 print(f"  ⚠️ {warning}")
         
         with cls._lock:
-            cls._instance = None  # 在锁内部重置，避免竞态条件
+            cls._instance = None
+            cls._config = None  # 清除配置缓存，确保读取最新配置文件
             config = cls.load_config(config_path)
             ai_config = config.get("ai", {})
             
@@ -473,6 +478,10 @@ class AIServiceFactory:
         Returns:
             BaseAIService: AI服务实例
         """
+        # 先清除配置缓存，确保读取最新配置文件
+        with cls._lock:
+            cls._config = None
+        
         with cls._lock:
             actual_path = cls.get_config_path(config_path)
             config = cls.load_config(config_path)
@@ -524,6 +533,7 @@ class AIServiceFactory:
                     print(f"[AIServiceFactory] 关闭旧实例出错: {e}")
             
             cls._instance = None
+            cls._config = None  # 清除配置缓存，确保读取最新配置文件
             cls._current_provider = final_provider
             
             print(f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}")
