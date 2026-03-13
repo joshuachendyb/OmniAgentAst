@@ -1279,13 +1279,18 @@ async def cancel_stream_task(task_id: str, session_id: Optional[str] = None):
 # ============================================================
 
 @router.post("/chat/stream/pause/{task_id}")
-async def pause_stream_task(task_id: str):
+async def pause_stream_task(task_id: str, session_id: Optional[str] = None):
     """
     暂停指定的流式任务
     
     - **task_id**: 任务ID
+    - **session_id**: 会话ID（可选，用于记录暂停状态）
     - 暂停时：前端停止显示，但后端继续处理，数据暂存缓冲区
     """
+    # 【小沈-2026-03-13修复】支持session_id参数（可选）
+    if session_id:
+        logger.info(f"[Pause] 会话 {session_id} 暂停任务 {task_id}")
+    
     async with running_tasks_lock:
         if task_id in running_tasks:
             running_tasks[task_id]["paused"] = True
@@ -1296,13 +1301,18 @@ async def pause_stream_task(task_id: str):
 
 
 @router.post("/chat/stream/resume/{task_id}")
-async def resume_stream_task(task_id: str):
+async def resume_stream_task(task_id: str, session_id: Optional[str] = None):
     """
     继续指定的流式任务
     
     - **task_id**: 任务ID
+    - **session_id**: 会话ID（可选，用于记录恢复状态）
     - 继续时：前端恢复显示暂存的数据
     """
+    # 【小沈-2026-03-13修复】支持session_id参数（可选）
+    if session_id:
+        logger.info(f"[Resume] 会话 {session_id} 恢复任务 {task_id}")
+    
     async with running_tasks_lock:
         if task_id in running_tasks:
             running_tasks[task_id]["paused"] = False
