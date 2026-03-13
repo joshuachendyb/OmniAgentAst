@@ -302,16 +302,16 @@ const MessageItem: React.FC<MessageItemProps> = ({
       }
       
       if (isError) {
-        // 错误消息：导出JSON格式（包含完整的11个error字段）
+        // 错误消息：导出JSON格式（使用API文档字段名）
         exportData.error = {
-          errorType: message.errorType,
-          errorCode: message.errorCode,
-          errorMessage: message.errorMessage,
-          errorDetails: message.errorDetails,
-          errorStack: message.errorStack,
-          errorRetryable: message.errorRetryable,
-          errorRetryAfter: message.errorRetryAfter,
-          errorTimestamp: message.errorTimestamp,
+          error_type: message.errorType,
+          code: message.errorCode,
+          message: message.errorMessage,
+          details: message.errorDetails,
+          stack: message.errorStack,
+          retryable: message.errorRetryable,
+          retry_after: message.errorRetryAfter,
+          timestamp: message.errorTimestamp,
           model: message.model,
           provider: message.provider,
         };
