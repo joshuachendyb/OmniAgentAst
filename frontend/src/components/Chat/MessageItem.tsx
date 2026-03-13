@@ -337,7 +337,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
             case 'final':
               return baseExport;
             case 'error':
-              return { ...baseExport, code: (step as any).code, error_type: (step as any).error_type, details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, retry_after: (step as any).retry_after };
+              return { ...baseExport, code: (step as any).code, error_type: (step as any).error_type, details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider };
             case 'interrupted':
             case 'paused':
             case 'resumed':
