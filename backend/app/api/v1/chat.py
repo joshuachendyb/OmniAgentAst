@@ -973,6 +973,7 @@ async def chat_stream(request: ChatRequest):
                 max_retries = 2
                 ai_call_successful = False
                 last_error = None
+                last_error_type = None
                 
                 full_content = ""
                 chunk_count = 0
@@ -1027,9 +1028,10 @@ async def chat_stream(request: ChatRequest):
                             # ⭐ 【新增-重试机制】检查chunk是否有错误
                             if chunk.error:
                                 last_error = chunk.error
-                                logger.warning(f"[AI Call] chunk返回错误: {chunk.error}, error_type: {getattr(chunk, 'error_type', 'unknown')}")
+                                last_error_type = getattr(chunk, 'error_type', 'unknown')
+                                logger.warning(f"[AI Call] chunk返回错误: {chunk.error}, error_type: {last_error_type}")
                                 # 如果是超时错误，可以重试
-                                if getattr(chunk, 'error_type', '') == 'timeout_error':
+                                if last_error_type == 'timeout_error':
                                     logger.info(f"[AI Call] 检测到超时错误，准备重试...")
                                     break  # 跳出内层循环，触发重试
                                 else:
