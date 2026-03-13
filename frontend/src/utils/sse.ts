@@ -647,8 +647,6 @@ const processSSEData = (
         const chunkContent = rawData.content || "";
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
-        // 【小沈修复】收到chunk时关闭步骤UI，开始显示回复内容
-        onShowSteps?.(false);
         // 传递 is_reasoning 区分思考过程和最终答案
         const is_reasoning = rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1';
         onChunk?.(chunkContent, is_reasoning);
@@ -657,6 +655,8 @@ const processSSEData = (
         // 这样MessageItem可以遍历并分别显示思考过程和正式内容
         setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
+        // 【小查修复】收到chunk时关闭步骤UI，开始显示回复内容（必须在onStep之后）
+        onShowSteps?.(false);
         break;
       }
 
