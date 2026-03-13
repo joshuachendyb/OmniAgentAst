@@ -693,6 +693,9 @@ const processSSEData = (
         if (rawData.retry_after !== undefined) {
           (step as any).retry_after = rawData.retry_after;
         }
+        if (rawData.timestamp) {
+          (step as any).timestamp = rawData.timestamp;
+        }
         onError?.(errorMsg);
         setIsReceiving(false);
         setIsConnected(false);
@@ -725,6 +728,10 @@ const processSSEData = (
             break;
           default:
             console.warn("[SSE] 未知的incident_value:", statusValue);
+        }
+        // 添加timestamp字段
+        if (rawData.timestamp) {
+          (step as any).timestamp = rawData.timestamp;
         }
         break;
       }
