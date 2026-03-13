@@ -139,37 +139,6 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
         }}
       >
         <tbody>
-          {errorType && (
-            <tr>
-              <td
-                style={{
-                  padding: "2px 8px 2px 0",
-                  color: "#888",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                类型:
-              </td>
-              <td style={{ padding: "2px 0" }}>
-                <code
-                  style={{
-                    background:
-                      errorType === "security_error"
-                        ? "rgba(255, 193, 7, 0.2)"
-                        : errorType === "agent"
-                        ? "rgba(24, 144, 255, 0.2)"
-                        : "rgba(255, 77, 79, 0.15)",
-                    padding: "1px 4px",
-                    borderRadius: 3,
-                    fontSize: "0.9em",
-                    color: colors.color,
-                  }}
-                >
-                  {errorType}
-                </code>
-              </td>
-            </tr>
-          )}
           {errorMessage && (
             <tr>
               <td
@@ -193,31 +162,50 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
               </td>
             </tr>
           )}
-          {errorCode && (
-            <tr>
-              <td
+          <tr>
+            <td
+              style={{
+                padding: "2px 8px 2px 0",
+                color: "#888",
+                whiteSpace: "nowrap",
+              }}
+            >
+              类型:
+            </td>
+            <td style={{ padding: "2px 8px 10px 0" }}>
+              <code
                 style={{
-                  padding: "2px 8px 2px 0",
-                  color: "#888",
-                  whiteSpace: "nowrap",
+                  background:
+                    errorType === "security_error"
+                      ? "rgba(255, 193, 7, 0.2)"
+                      : errorType === "agent"
+                      ? "rgba(24, 144, 255, 0.2)"
+                      : "rgba(255, 77, 79, 0.15)",
+                  padding: "1px 6px",
+                  borderRadius: 3,
+                  fontSize: "0.9em",
+                  color: colors.color,
                 }}
               >
-                错误码:
-              </td>
-              <td style={{ padding: "2px 0" }}>
-                <code
-                  style={{
-                    background: "rgba(0,0,0,0.05)",
-                    padding: "1px 4px",
-                    borderRadius: 3,
-                    fontSize: "0.9em",
-                  }}
-                >
-                  {errorCode}
-                </code>
-              </td>
-            </tr>
-          )}
+                {errorType || "unknown"}
+              </code>
+              {errorCode && (
+                <>
+                  <span style={{ margin: "0 8px", color: "#999" }}>|</span>
+                  <code
+                    style={{
+                      background: "rgba(0,0,0,0.05)",
+                      padding: "1px 6px",
+                      borderRadius: 3,
+                      fontSize: "0.9em",
+                    }}
+                  >
+                    {errorCode}
+                  </code>
+                </>
+              )}
+            </td>
+          </tr>
           {errorTimestamp && (
             <tr>
               <td
@@ -234,7 +222,7 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
               </td>
             </tr>
           )}
-          {model && (
+          {(model || provider) && (
             <tr>
               <td
                 style={{
@@ -243,23 +231,16 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
                   whiteSpace: "nowrap",
                 }}
               >
-                模型:
+                来源:
               </td>
-              <td style={{ padding: "2px 0" }}>{model}</td>
-            </tr>
-          )}
-          {provider && (
-            <tr>
-              <td
-                style={{
-                  padding: "2px 8px 2px 0",
-                  color: "#888",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                提供商:
+              <td style={{ padding: "2px 0" }}>
+                {provider && model 
+                  ? `${provider} (${model})`
+                  : provider 
+                    ? provider 
+                    : model
+                }
               </td>
-              <td style={{ padding: "2px 0" }}>{provider}</td>
             </tr>
           )}
           {errorRetryable !== undefined && (

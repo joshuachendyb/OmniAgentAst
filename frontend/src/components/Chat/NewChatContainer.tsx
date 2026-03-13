@@ -525,8 +525,9 @@ const NewChatContainer: React.FC = () => {
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...lastMessage,
-              content: lastMessage.content || `**错误**: ${errorObj.message}`,
-              isError: true, // 前端小新代修改：标记为错误消息
+              // 错误时直接用错误消息替换内容，不保留"思考中"
+              content: errorObj.message,
+              isError: true,
               isStreaming: false,
               // 【小查修复2026-03-13】保存完整的error 11个字段
               errorType: errorObj.error_type,      // error_type
