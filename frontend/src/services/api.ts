@@ -652,7 +652,7 @@ export const sessionApi = {
    * 保存消息到会话
    * @author 小新
    * @update 2026-03-11: 添加 execution_steps 参数
-   * @update 2026-03-14: 添加错误相关字段
+   * @update 2026-03-14: 添加错误相关字段（使用API文档字段名 - snake_case）
    */
   saveMessage: async (
     sessionId: string,
@@ -660,16 +660,18 @@ export const sessionApi = {
       role: string;
       content: string;
       execution_steps?: any[];
-      // 错误相关字段
-      isError?: boolean;
-      errorType?: string;
-      errorCode?: string;
-      errorMessage?: string;
-      errorDetails?: string;
-      errorStack?: string;
-      errorRetryable?: boolean;
-      errorRetryAfter?: number;
-      errorTimestamp?: string;
+      // 错误相关字段（API文档字段名）
+      is_error?: boolean;
+      error_type?: string;
+      code?: string;
+      message?: string;
+      details?: string;
+      stack?: string;
+      retryable?: boolean;
+      retry_after?: number;
+      timestamp?: string;
+      model?: string;
+      provider?: string;
     }
   ): Promise<{ success: boolean }> => {
     const response = await api.post<{ success: boolean }>(
