@@ -699,9 +699,9 @@ const processSSEData = (
         break;
       }
 
-      // 【小查修复2026-03-10】新增：status类型处理（后端发送type='status'，incident_value字段）
+      // 【小查修复2026-03-10】新增：incident类型处理（后端发送type='incident'，incident_value字段）
       // 【2026-03-11 重命名】status_value -> incident_value
-      case "status": {
+      case "incident": {
         const statusValue = rawData.incident_value;
         const statusMessage = rawData.message || "";
         step.type = statusValue as ExecutionStep["type"];
