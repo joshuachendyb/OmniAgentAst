@@ -215,7 +215,8 @@ class BaseAIService:
             )
         except Exception as e:
             # 【小沈代修改 - 修复问题 7】记录日志，返回用户友好错误
-            logger.error(f"[BaseAIService] 流式调用失败：{str(e)}")
+            import traceback
+            logger.error(f"[BaseAIService] 流式调用失败：{str(e)}, 异常类型: {type(e).__name__}, 堆栈: {traceback.format_exc()}")
             yield StreamChunk(
                 content="", 
                 model=self.model, 
