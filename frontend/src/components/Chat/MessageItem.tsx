@@ -212,6 +212,7 @@ interface MessageItemProps {
     // 【小查修复2026-03-13】error相关字段（与API文档11个字段对齐）
     errorType?: string;      // error_type
     errorCode?: string;     // code
+    errorMessage?: string;  // message - 错误消息内容
     errorDetails?: string;   // details
     errorStack?: string;    // stack
     errorRetryable?: boolean; // retryable
@@ -900,6 +901,7 @@ const isUser = message.role === "user";
               <ErrorDetail
                 errorType={message.errorType}
                 errorCode={message.errorCode}
+                errorMessage={message.errorMessage}
                 errorTimestamp={message.errorTimestamp}
                 errorDetails={message.errorDetails}
                 errorStack={message.errorStack}
