@@ -7,7 +7,13 @@
 
 ---
 
-## 请求
+## 一、概述
+
+聊天流式API，提供完整的对话和任务控制功能。
+
+---
+
+## 二、请求
 
 ```json
 {
@@ -16,7 +22,7 @@
 }
 ```
 
-## 响应 (SSE) - 按顺序
+## 三、响应 (SSE) - 按顺序
 
 | 序号 | type | 说明 |
 |------|------|------|
@@ -31,7 +37,7 @@
 
 ---
 
-## incident 类型（type=incident 时使用）
+## 四、incident 类型（type=incident 时使用）
 
 ### 完整字段（共5个字段）
 
@@ -97,7 +103,7 @@
 
 ---
 
-## error 类型（type=error 时使用）
+## 五、error 类型（type=error 时使用）
 
 ### 完整字段（共11个字段）
 
@@ -247,9 +253,9 @@
 
 ---
 
-## 任务控制接口
+## 六、任务控制接口
 
-### 1. 取消任务接口
+### 6.1 取消任务接口
 
 **接口**: `POST /api/v1/chat/stream/cancel/{task_id}`
 
@@ -284,7 +290,7 @@ curl -X POST "http://localhost:8000/api/v1/chat/stream/cancel/task_123?session_i
 
 ---
 
-### 2. 暂停任务接口
+### 6.2 暂停任务接口
 
 **接口**: `POST /api/v1/chat/stream/pause/{task_id}`
 
@@ -313,7 +319,7 @@ curl -X POST "http://localhost:8000/api/v1/chat/stream/pause/task_123?session_id
 
 ---
 
-### 3. 恢复任务接口
+### 6.3 恢复任务接口
 
 **接口**: `POST /api/v1/chat/stream/resume/{task_id}`
 
@@ -342,7 +348,7 @@ curl -X POST "http://localhost:8000/api/v1/chat/stream/resume/task_123?session_i
 
 ---
 
-## 错误响应
+## 七、任务控制接口的错误响应
 
 任务控制接口的错误响应：
 
