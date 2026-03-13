@@ -216,7 +216,7 @@ const NewChatContainer: React.FC = () => {
             return [...prev, newAssistantMessage];
           } else {
             // 已有assistant消息，更新display_name
-            console.log("🔍 已有assistant消息，更新display_name:", step.display_name || `${step.provider} (${step.model})`);
+            console.log("🔍 已有assistant消息，更新display_name:", step.display_name || `${step.provider} (${step.model})`, "| isStreaming=", lastMessage.isStreaming);
             // 提取display_name
             const extractedDisplay_name = step.display_name;
             let finalDisplay_name = extractedDisplay_name;
