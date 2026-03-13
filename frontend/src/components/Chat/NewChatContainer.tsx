@@ -250,7 +250,8 @@ const NewChatContainer: React.FC = () => {
 
     // onChunk - 收到内容片段 【小查修复】统一使用 is_reasoning (snake_case)
     useCallback((chunk: string, is_reasoning?: boolean) => {
-      console.log("🔍 [onChunk] 收到chunk, is_reasoning:", is_reasoning, "content前20字:", chunk.substring(0, 20));
+      // 精简日志：调试通过，不再打印每个chunk
+      // console.log("🔍 [onChunk] 收到chunk, is_reasoning:", is_reasoning, "content前20字:", chunk.substring(0, 20));
       
       // ⭐ 暂停时存入缓冲区，不直接显示
       if (isPausedRef.current) {
