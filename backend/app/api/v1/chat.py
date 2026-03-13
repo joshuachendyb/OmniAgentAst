@@ -1450,7 +1450,17 @@ async def validate_ai_service():
     
     ⭐ 重要：验证成功后删除备份，验证失败时恢复备份
     ⭐ 修复：从全局状态获取 backup_path
+    
+    日志记录：
+    - 开始时间、provider、model
+    - 结束时间、结果、耗时
     """
+    from datetime import datetime
+    start_time = datetime.now()
+    start_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    logger.info(f"[检查服务] 开始验证 - 时间: {start_str}")
+    
     try:
         # 获取当前服务（同时会加载当前配置）
         ai_service = AIServiceFactory.get_service()
@@ -1461,6 +1471,8 @@ async def validate_ai_service():
         # 获取当前模型名称
         current_model = ai_service.model
         
+        logger.info(f"[检查服务] 加载配置完成 - provider: {provider}, model: {current_model}")
+        
         # ⭐ 从全局状态获取 backup_path（由 update_config 设置）
         backup_path, config_path = AIServiceFactory.get_backup_paths()
         
@@ -1469,6 +1481,12 @@ async def validate_ai_service():
             # ⭐ 验证失败：恢复备份
             if backup_path and config_path:
                 await _restore_backup_and_delete_by_path(backup_path, config_path)
+            
+            end_time = datetime.now()
+            elapsed = (end_time - start_time).total_seconds()
+            end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(API Key为空)")
+            
             return ValidateResponse(
                 success=False,
                 provider=provider,
@@ -1477,6 +1495,7 @@ async def validate_ai_service():
             )
         
         # 验证服务
+        logger.info(f"[检查服务] 开始调用 API 验证...")
         is_valid = await ai_service.validate()
         
         if is_valid:
@@ -1485,6 +1504,12 @@ async def validate_ai_service():
                 await _delete_backup_by_path(backup_path)
             # ⭐ 清除全局状态
             AIServiceFactory.clear_backup_paths()
+            
+            end_time = datetime.now()
+            elapsed = (end_time - start_time).total_seconds()
+            end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 成功")
+            
             return ValidateResponse(
                 success=True,
                 provider=provider,
@@ -1497,6 +1522,11 @@ async def validate_ai_service():
                 await _restore_backup_and_delete_by_path(backup_path, config_path)
             # ⭐ 清除全局状态
             AIServiceFactory.clear_backup_paths()
+            
+            end_time = datetime.now()
+            elapsed = (end_time - start_time).total_seconds()
+            end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+            logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(验证返回False)")
             # 验证失败，尝试获取详细错误信息，并明确说明配置已恢复
             # 通过发送一个实际请求来获取错误详情
             test_response = None
@@ -1531,6 +1561,11 @@ async def validate_ai_service():
                         message=f"API Key无效：{provider} ({current_model}) 的API Key认证失败，请检查Key是否正确"
                     )
                 elif test_response.status_code == 429:
+                    end_time = datetime.now()
+                    elapsed = (end_time - start_time).total_seconds()
+                    end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(HTTP 429)")
+                    
                     return ValidateResponse(
                         success=False,
                         provider=provider,
@@ -1538,6 +1573,11 @@ async def validate_ai_service():
                         message=f"速率限制：{provider} ({current_model}) API请求太频繁，请等待几分钟后重试"
                     )
                 else:
+                    end_time = datetime.now()
+                    elapsed = (end_time - start_time).total_seconds()
+                    end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(HTTP {test_response.status_code})")
+                    
                     return ValidateResponse(
                         success=False,
                         provider=provider,
@@ -1545,6 +1585,11 @@ async def validate_ai_service():
                         message=f"API错误：{provider} ({current_model}) 返回HTTP {test_response.status_code}，请检查配置"
                     )
             else:
+                end_time = datetime.now()
+                elapsed = (end_time - start_time).total_seconds()
+                end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+                logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(连接失败)")
+                
                 return ValidateResponse(
                     success=False,
                     provider=provider,
@@ -1553,6 +1598,11 @@ async def validate_ai_service():
                 )
             
     except Exception as e:
+        end_time = datetime.now()
+        elapsed = (end_time - start_time).total_seconds()
+        end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(异常: {str(e)})")
+        
         return ValidateResponse(
             success=False,
             provider="unknown",
