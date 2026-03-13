@@ -202,11 +202,20 @@ interface MessageItemProps {
     timestamp: Date;
     executionSteps?: ExecutionStep[];
     model?: string;
+    provider?: string; // 提供商
     isStreaming?: boolean;
     isError?: boolean;
     display_name?: string; // 前端小新代修改：显示名称
     is_reasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 snake_case）
     task_id?: string; // 【小新重构2026-03-09】任务ID，用于分页请求
+    // 【小查修复2026-03-13】error相关字段（与API文档11个字段对齐）
+    errorType?: string;      // error_type
+    errorCode?: string;     // code
+    errorDetails?: string;   // details
+    errorStack?: string;    // stack
+    errorRetryable?: boolean; // retryable
+    errorRetryAfter?: number; // retry_after
+    errorTimestamp?: string;  // timestamp
   };
   showExecution?: boolean;
 }
@@ -246,36 +255,122 @@ const MessageItem: React.FC<MessageItemProps> = ({
   /**
    * 导出消息内容
    * - 有执行步骤：导出JSON格式
-   * - 无执行步骤：导出TXT格式
+   * - 有执行步骤：导出JSON格式（包含所有8种type的完整字段）
+   * - 是错误消息：导出JSON格式（包含完整error信息）
+   * - 是incident消息：导出JSON格式（包含完整incident信息）
+   * 8种type: start, thought, action_tool, observation, chunk, final, error, incident
    */
   const handleExport = (e: React.MouseEvent) => {
     e.stopPropagation();
     console.log("🔍 [handleExport] 开始导出, message.id=", message.id);
     try {
       const hasSteps = message.executionSteps && message.executionSteps.length > 0;
-      console.log("🔍 [handleExport] hasSteps=", hasSteps, "executionSteps=", message.executionSteps);
+      const isError = message.isError;
+      console.log("🔍 [handleExport] hasSteps=", hasSteps, "isError=", isError, "executionSteps=", message.executionSteps);
       
       let blob: Blob;
       let filename: string;
       
-      if (hasSteps) {
-        // 有执行步骤：导出JSON格式
-        const exportData = {
-          timestamp: new Date().toLocaleString("zh-CN"),
-          messageId: message.id,
-          role: message.role,
-          content: message.content,
-          executionSteps: message.executionSteps,
+      // 统一的导出数据结构
+      const exportData: Record<string, any> = {
+        timestamp: new Date().toLocaleString("zh-CN"),
+        messageId: message.id,
+        role: message.role,
+        content: message.content,
+      };
+      
+      // 检查是否包含incident类型的步骤（incident对应的是interrupted/paused/resumed/retrying）
+      const hasIncident = hasSteps && message.executionSteps?.some(
+        (step) => step.type === 'interrupted' || step.type === 'paused' || 
+                  step.type === 'resumed' || step.type === 'retrying'
+      );
+      
+      if (hasIncident) {
+        // 【小查修复2026-03-13】包含incident类型：导出JSON格式（包含完整的incident字段）
+        exportData.incidentSteps = message.executionSteps?.filter(
+          (step) => step.type === 'interrupted' || step.type === 'paused' || 
+                    step.type === 'resumed' || step.type === 'retrying'
+        ).map(step => ({
+          type: step.type,
+          incident_value: (step as any).incident_value || step.content,
+          message: step.content,
+          timestamp: (step as any).timestamp,
+          wait_time: (step as any).wait_time,
+        }));
+      }
+      
+      if (isError) {
+        // 错误消息：导出JSON格式（包含完整的11个error字段）
+        exportData.error = {
+          errorType: message.errorType,
+          errorCode: message.errorCode,
+          errorDetails: message.errorDetails,
+          errorStack: message.errorStack,
+          errorRetryable: message.errorRetryable,
+          errorRetryAfter: message.errorRetryAfter,
+          errorTimestamp: message.errorTimestamp,
+          model: message.model,
+          provider: message.provider,
         };
-        const jsonStr = JSON.stringify(exportData, null, 2);
-        blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
+        exportData.executionSteps = message.executionSteps;
+        filename = `error_${message.id}_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
+      } else if (hasSteps) {
+        // 有执行步骤：导出JSON格式（包含所有8种type的完整字段）
+        // 8种type: start, thought, action_tool, observation, chunk, final, error, incident
+        exportData.executionSteps = message.executionSteps?.map(step => {
+          const baseExport: Record<string, any> = {
+            type: step.type,
+            content: step.content,
+            timestamp: step.timestamp,
+          };
+          
+          // 根据不同type添加对应字段
+          switch (step.type) {
+            case 'thought':
+              return { ...baseExport, step: step.step, reasoning: step.reasoning, action_tool: step.action_tool, params: step.params };
+            case 'action_tool':
+              return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, action_retry_count: step.action_retry_count };
+            case 'observation':
+              return { ...baseExport, step: step.step, obs_execution_status: (step as any).obs_execution_status, obs_summary: (step as any).obs_summary, obs_raw_data: (step as any).obs_raw_data, is_finished: step.is_finished };
+            case 'chunk':
+              return { ...baseExport, is_reasoning: step.is_reasoning };
+            case 'final':
+              return baseExport;
+            case 'error':
+              return { ...baseExport, code: (step as any).code, error_type: (step as any).error_type, details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, retry_after: (step as any).retry_after };
+            case 'interrupted':
+            case 'paused':
+            case 'resumed':
+            case 'retrying':
+              return { ...baseExport, incident_value: (step as any).incident_value || step.type, wait_time: (step as any).wait_time };
+            case 'start':
+              return { ...baseExport, task_id: step.task_id };
+            default:
+              return baseExport;
+          }
+        });
         filename = `execution_steps_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
       } else {
         // 无执行步骤：导出TXT格式
         const content = message.content || "";
         blob = new Blob([content], { type: "text/plain;charset=utf-8" });
         filename = `message_${message.id}_${new Date().toLocaleString("zh-CN").replace(/[/:]/g, "-")}.txt`;
+        
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        antMessage.success("导出成功");
+        return;
       }
+      
+      // JSON格式导出
+      const jsonStr = JSON.stringify(exportData, null, 2);
+      blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
       
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -382,7 +477,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
       maxWidth: "100%",
       minWidth: "60px",
       width: "auto",
-      padding: "8px 10px", // ✅ 用户建议：16px 20px → 8px 10px（减少 50%），更紧凑
+      // 【小查修复2026-03-13】拆分为单独属性，避免与paddingRight冲突
+      paddingTop: 8,
+      paddingBottom: 8,
+      paddingLeft: 10,
+      paddingRight: 10,
       borderRadius: "16px",
       position: "relative",
       transition: "all 0.3s ease",
@@ -409,6 +508,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           background: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
           color: "#fff",
           boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+          paddingRight: 30, // 为右侧按钮留出空间
         };
       case "assistant":
         return {
@@ -417,6 +517,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           border: "1px solid #b7eb8f",
           color: "#262626",
           boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+          paddingRight: 30, // 为右侧按钮留出空间
         };
       case "system":
         return {
@@ -777,7 +878,130 @@ const isUser = message.role === "user";
                   ? message.content.replace(/\n\n/g, '\n')
                   : String(message.content || '').replace(/\n\n/g, '\n')}
                 {(message.isStreaming ?? false) && (
-                  <span style={{ opacity: 0.5, marginLeft: 2 }}>▌</span>
+                  <span className="thinking-cursor" style={{ marginLeft: 2 }}>▌</span>
+                )}
+              </div>
+            )}
+            
+            {/* 【小查修复2026-03-13】错误详情面板 - 友好展示error的11个字段 */}
+            {message.isError && (
+              <div style={{
+                marginTop: 12,
+                padding: '10px 12px',
+                // 根据error_type显示不同颜色
+                background: message.errorType === 'security_error' 
+                  ? 'rgba(255, 193, 7, 0.1)'  // 黄色-待确认
+                  : message.errorType === 'agent'
+                  ? 'rgba(24, 144, 255, 0.1)'  // 蓝色-Agent错误
+                  : 'rgba(255, 77, 79, 0.08)',  // 红色-普通错误
+                borderRadius: 8,
+                border: `1px solid ${
+                  message.errorType === 'security_error'
+                    ? 'rgba(255, 193, 7, 0.3)'
+                    : message.errorType === 'agent'
+                    ? 'rgba(24, 144, 255, 0.3)'
+                    : 'rgba(255, 77, 79, 0.2)'
+                }`,
+                fontSize: '0.85em',
+                color: message.errorType === 'security_error' 
+                  ? '#d48806'
+                  : message.errorType === 'agent'
+                  ? '#1890ff'
+                  : '#cf1322',
+              }}>
+                {/* 错误类型标题 - 根据不同类型显示不同标题 */}
+                <div style={{ fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {message.errorType === 'security_error' && <span>⚠️ 待确认</span>}
+                  {message.errorType === 'agent' && <span>🤖 Agent错误</span>}
+                  {message.errorType === 'network' && <span>🌐 网络错误</span>}
+                  {message.errorType === 'validation' && <span>⚠️ 参数错误</span>}
+                  {message.errorType === 'file_system' && <span>📁 文件错误</span>}
+                  {message.errorType === 'security' && <span>🔒 权限错误</span>}
+                  {message.errorType === 'unknown' && <span>❓ 未知错误</span>}
+                  {!['security_error', 'agent', 'network', 'validation', 'file_system', 'security', 'unknown'].includes(message.errorType || '') && 
+                    <span>❌ 错误详情</span>
+                  }
+                </div>
+                
+                {/* 错误信息表格 */}
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8em' }}>
+                  <tbody>
+                    {message.errorType && (
+                      <tr>
+                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>类型:</td>
+                        <td style={{ padding: '2px 0' }}><code style={{ 
+                          background: message.errorType === 'security_error' 
+                            ? 'rgba(255,193,7,0.2)'
+                            : message.errorType === 'agent'
+                            ? 'rgba(24,144,255,0.2)'
+                            : 'rgba(255,77,79,0.15)', 
+                          padding: '1px 4px', borderRadius: 3 
+                        }}>{message.errorType}</code></td>
+                      </tr>
+                    )}
+                    {message.errorCode && (
+                      <tr>
+                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>错误码:</td>
+                        <td style={{ padding: '2px 0' }}><code style={{ background: 'rgba(255,77,79,0.15)', padding: '1px 4px', borderRadius: 3 }}>{message.errorCode}</code></td>
+                      </tr>
+                    )}
+                    {message.model && (
+                      <tr>
+                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>模型:</td>
+                        <td style={{ padding: '2px 0' }}>{message.model}</td>
+                      </tr>
+                    )}
+                    {message.provider && (
+                      <tr>
+                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>提供商:</td>
+                        <td style={{ padding: '2px 0' }}>{message.provider}</td>
+                      </tr>
+                    )}
+                    {message.errorRetryable !== undefined && (
+                      <tr>
+                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>可重试:</td>
+                        <td style={{ padding: '2px 0' }}>
+                          {message.errorRetryable ? (
+                            <span style={{ color: '#52c41a' }}>是</span>
+                          ) : (
+                            <span style={{ color: '#ff4d4f' }}>否</span>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                    {message.errorRetryAfter !== undefined && (
+                      <tr>
+                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>重试等待:</td>
+                        <td style={{ padding: '2px 0' }}>{message.errorRetryAfter} 秒</td>
+                      </tr>
+                    )}
+                    {message.errorTimestamp && (
+                      <tr>
+                        <td style={{ padding: '2px 8px 2px 0', color: '#888', whiteSpace: 'nowrap' }}>时间:</td>
+                        <td style={{ padding: '2px 0' }}>{message.errorTimestamp}</td>
+                      </tr>
+                    )}
+                    {message.errorDetails && (
+                      <tr>
+                        <td style={{ padding: '2px 8px 2px 0', color: '#888', verticalAlign: 'top', whiteSpace: 'nowrap' }}>详情:</td>
+                        <td style={{ padding: '2px 0', wordBreak: 'break-all' }}>{message.errorDetails}</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+                
+                {/* 重试按钮（如果可重试） */}
+                {message.errorRetryable && (
+                  <div style={{ marginTop: 10 }}>
+                    <Button 
+                      type="primary" 
+                      size="small"
+                      onClick={() => window.location.reload()}
+                      style={{ background: '#ff4d4f', borderColor: '#ff4d4f' }}
+                    >
+                      点击重试
+                    </Button>
+                  </div>
                 )}
               </div>
             )}
@@ -795,9 +1019,18 @@ const isUser = message.role === "user";
                   0%, 100% { opacity: 1; }
                   50% { opacity: 0.6; }
                 }
+                @keyframes cursor-spin {
+                  0% { transform: rotate(0deg); }
+                  100% { transform: rotate(360deg); }
+                }
                 .thinking-message {
                   animation: thinking-pulse 1.5s ease-in-out infinite;
-              }
+                }
+                .thinking-cursor {
+                  display: inline-block;
+                  animation: cursor-spin 1s linear infinite;
+                  opacity: 0.7;
+                }
                 `
                   : ""
               }

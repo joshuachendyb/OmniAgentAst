@@ -14,6 +14,7 @@ import React, {
   useContext,
   useState,
   useCallback,
+  useRef,
   ReactNode,
 } from "react";
 import { configApi, chatApi, sessionApi } from "../services/api";
@@ -117,6 +118,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   // 标记是否已初始化
   const [isInitialized, setIsInitialized] = useState(false);
 
+  // 标记初始化是否正在进行中（防止React Strict Mode重复调用）
+  const initInProgressRef = useRef(false);
+
   // ==================== Actions ====================
 
   /**
@@ -208,11 +212,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
    * @author 小新
    */
   const initializeApp = useCallback(async () => {
+    // 防止重复调用（React Strict Mode会导致useEffect运行两次）
+    if (initInProgressRef.current) {
+      console.log("[AppContext] 初始化进行中，跳过");
+      return;
+    }
     if (isInitialized) {
       console.log("[AppContext] 已初始化，跳过");
       return;
     }
 
+    initInProgressRef.current = true;
     console.log("[AppContext] 开始初始化...");
     setValidationLoading(true);
     setModelListLoading(true);
@@ -272,6 +282,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     } catch (error) {
       console.error("[AppContext] 初始化失败:", error);
     } finally {
+      initInProgressRef.current = false;
       setValidationLoading(false);
       setModelListLoading(false);
       setServiceStatusLoading(false);
