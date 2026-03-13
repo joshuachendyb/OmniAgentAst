@@ -3,6 +3,7 @@ import React from "react";
 interface ErrorDetailProps {
   errorType?: string;
   errorCode?: string;
+  errorMessage?: string;  // message - 错误消息内容
   errorTimestamp?: string;
   errorDetails?: string;
   errorStack?: string;
@@ -21,6 +22,7 @@ interface ErrorDetailProps {
 const ErrorDetail: React.FC<ErrorDetailProps> = ({
   errorType,
   errorCode,
+  errorMessage,
   errorTimestamp,
   errorDetails,
   errorStack,
@@ -165,6 +167,29 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
                 >
                   {errorType}
                 </code>
+              </td>
+            </tr>
+          )}
+          {errorMessage && (
+            <tr>
+              <td
+                style={{
+                  padding: "2px 8px 2px 0",
+                  color: "#888",
+                  whiteSpace: "nowrap",
+                  verticalAlign: "top",
+                }}
+              >
+                消息:
+              </td>
+              <td
+                style={{
+                  padding: "2px 0",
+                  color: colors.color,
+                  fontWeight: 500,
+                }}
+              >
+                {errorMessage}
               </td>
             </tr>
           )}

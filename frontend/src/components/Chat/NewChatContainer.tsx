@@ -531,6 +531,7 @@ const NewChatContainer: React.FC = () => {
               // 【小查修复2026-03-13】保存完整的error 11个字段
               errorType: errorObj.error_type,      // error_type
               errorCode: errorObj.code,            // code
+              errorMessage: errorObj.message,      // message - 错误消息内容
               errorDetails: errorObj.details,       // details
               errorStack: errorObj.stack,         // stack
               errorRetryable: errorObj.retryable,  // retryable
