@@ -592,13 +592,11 @@ const NewChatContainer: React.FC = () => {
     }, []),
     // onShowSteps - 控制步骤显示/隐藏（收到chunk时关闭步骤UI）
     useCallback((show: boolean) => {
-      // 只打印第一次 false 和第一次 true，减少日志
-      if (show && !logFlagsRef.current.showStepsTrueDone) {
-        console.log("👁️ [onShowSteps] 设置步骤显示状态: true (第一次)");
-        logFlagsRef.current.showStepsTrueDone = true;
-      } else if (!show && !logFlagsRef.current.showStepsFalseDone) {
-        console.log("👁️ [onShowSteps] 设置步骤显示状态: false (第一次)");
-        logFlagsRef.current.showStepsFalseDone = true;
+      // 打印所有调用，不跳过（方便调试）
+      if (show) {
+        console.log("👁️ [onShowSteps] 设置步骤显示状态: true");
+      } else {
+        console.log("👁️ [onShowSteps] 设置步骤显示状态: false");
       }
       setShowExecution(show);
     }, []),
