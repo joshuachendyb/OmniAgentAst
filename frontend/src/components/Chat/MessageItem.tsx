@@ -266,7 +266,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
     try {
       const hasSteps = message.executionSteps && message.executionSteps.length > 0;
       const isError = message.isError;
-      console.log("🔍 [handleExport] hasSteps=", hasSteps, "isError=", isError, "executionSteps=", message.executionSteps);
+      console.log("🔍 [handleExport] hasSteps=", hasSteps, "isError=", isError, "executionSteps数量=", message.executionSteps?.length);
       
       let blob: Blob;
       let filename: string;
@@ -820,18 +820,18 @@ const isUser = message.role === "user";
               // 逐个渲染chunk
               return chunks.map((chunk, index) => {
                 const is_reasoning = !!chunk.is_reasoning;
-                // let content = (chunk.content || '').replace(/\n\n/g, '\n');
-                let content = chunk.content || '';
+                // 过滤掉 AI 模型返回的特殊标签
+                const content = (chunk.content || '').replace(/<\/?longcat_think>/g, '').replace(/\n\n/g, '\n');
                 
                 // 如果是从思考模式切换到回答模式（is_reasoning: true -> false），在开头加空行
-                if (index > 0) {
-                  const prevChunk = chunks[index - 1];
-                  const prevIsReasoning = !!prevChunk.is_reasoning;
-                  // 当前是false，前一个是true，说明切换了，加空行
-                  if (!is_reasoning && prevIsReasoning && content.startsWith('\n')) {
-                    content = '\n' + content;
-                  }
-                }
+                // if (index > 0) {
+                //   const prevChunk = chunks[index - 1];
+                //   const prevIsReasoning = !!prevChunk.is_reasoning;
+                //   // 当前是false，前一个是true，说明切换了，加空行
+                //   if (!is_reasoning && prevIsReasoning && content.startsWith('\n')) {
+                //     content = '\n' + content;
+                //   }
+                // }
                 
                 return (
                   <span
