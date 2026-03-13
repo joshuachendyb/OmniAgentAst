@@ -584,6 +584,8 @@ const processSSEData = (
 
         setExecutionSteps((prev) => [...prev, startStep]);
         onStep?.(startStep);
+        // 【小查修复】收到start时显示步骤UI
+        onShowSteps?.(true);
         break;
       }
 
@@ -597,6 +599,8 @@ const processSSEData = (
         // 添加到步骤数组，显示思考过程
         setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
+        // 【小查修复】收到thought时显示步骤UI
+        onShowSteps?.(true);
         break;
       }
 
@@ -613,6 +617,8 @@ const processSSEData = (
         // 添加到步骤数组，显示执行动作
         setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
+        // 【小查修复】收到action_tool时显示步骤UI
+        onShowSteps?.(true);
         break;
       }
 
@@ -630,6 +636,8 @@ const processSSEData = (
         step.contentEnd = step.contentStart;
         setExecutionSteps((prev) => [...prev, step]);
         onStep?.(step);
+        // 【小查修复】收到observation时显示步骤UI
+        onShowSteps?.(true);
         break;
       }
 
