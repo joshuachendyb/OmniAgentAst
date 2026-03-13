@@ -242,7 +242,7 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
               <td
                 style={{
                   padding: "2px 8px 2px 0",
-                  color: "888",
+                  color: "#888",
                   whiteSpace: "nowrap",
                 }}
               >
