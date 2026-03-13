@@ -652,10 +652,25 @@ export const sessionApi = {
    * 保存消息到会话
    * @author 小新
    * @update 2026-03-11: 添加 execution_steps 参数
+   * @update 2026-03-14: 添加错误相关字段
    */
   saveMessage: async (
     sessionId: string,
-    message: { role: string; content: string; execution_steps?: any[] }
+    message: {
+      role: string;
+      content: string;
+      execution_steps?: any[];
+      // 错误相关字段
+      isError?: boolean;
+      errorType?: string;
+      errorCode?: string;
+      errorMessage?: string;
+      errorDetails?: string;
+      errorStack?: string;
+      errorRetryable?: boolean;
+      errorRetryAfter?: number;
+      errorTimestamp?: string;
+    }
   ): Promise<{ success: boolean }> => {
     const response = await api.post<{ success: boolean }>(
       `/sessions/${sessionId}/messages`,
