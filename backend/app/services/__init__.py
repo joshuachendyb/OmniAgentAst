@@ -582,3 +582,9 @@ class AIServiceFactory:
         with cls._backup_lock:
             cls._backup_path = None
             cls._config_path = None
+    
+    @classmethod
+    def clear_config_cache(cls):
+        """清除配置缓存（供 Config.reload() 调用）⭐ 带锁保护"""
+        with cls._lock:
+            cls._config = None
