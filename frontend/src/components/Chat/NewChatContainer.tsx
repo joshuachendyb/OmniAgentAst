@@ -1419,7 +1419,12 @@ setMessages((prev) => {
         // ✅ 先断开连接，停止自动重连！传递true表示手动中断
         disconnect(true);
         
-        await fetch(`${API_BASE_URL}/chat/stream/cancel/${taskIdToCancel}`, {
+        // 【小查修复2026-03-14】传递session_id参数，阻止5分钟内重连（按API文档要求）
+        const cancelUrl = sessionId 
+          ? `${API_BASE_URL}/chat/stream/cancel/${taskIdToCancel}?session_id=${sessionId}`
+          : `${API_BASE_URL}/chat/stream/cancel/${taskIdToCancel}`;
+        
+        await fetch(cancelUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         });
@@ -1432,7 +1437,7 @@ setMessages((prev) => {
 
   /**
    * 任务暂停/继续
-   */
+    */
   const handleTogglePause = async () => {
     if (!serverTaskId) {
       message.warning("当前没有进行中的任务");
@@ -1440,10 +1445,13 @@ setMessages((prev) => {
     }
 
     try {
+      // 【小查修复2026-03-14】按API文档要求传递session_id参数
+      const sessionParam = sessionId ? `?session_id=${sessionId}` : '';
+      
       if (!isPaused) {
         // 暂停：发送暂停请求
         const response = await fetch(
-          `http://localhost:8000/api/v1/chat/stream/pause/${serverTaskId}`,
+          `${API_BASE_URL}/chat/stream/pause/${serverTaskId}${sessionParam}`,
           { method: "POST" }
         );
         if (response.ok) {
@@ -1454,7 +1462,7 @@ setMessages((prev) => {
       } else {
         // 继续：发送恢复请求
         const response = await fetch(
-          `http://localhost:8000/api/v1/chat/stream/resume/${serverTaskId}`,
+          `${API_BASE_URL}/chat/stream/resume/${serverTaskId}${sessionParam}`,
           { method: "POST" }
         );
         if (response.ok) {
