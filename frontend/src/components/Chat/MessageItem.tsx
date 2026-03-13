@@ -304,6 +304,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       if (isError) {
         // 错误消息：导出JSON格式（使用API文档字段名）
         exportData.error = {
+          type: "error",
           error_type: message.errorType,
           code: message.errorCode,
           message: message.errorMessage,
