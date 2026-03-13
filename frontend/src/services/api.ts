@@ -270,7 +270,8 @@ export const chatApi = {
                 message.warning("任务已被中断");
               } else if (data.type === "error") {
                 message.error(data.message || data.content);
-                callbacks.onError(data.message || data.content);
+                // 【小新修复2026-03-13】传递完整的错误对象，保留error_type等字段
+                callbacks.onError(data);
               }
             } catch (e) {
               console.warn("[API SSE] 解析数据失败:", e, "原始行:", line);
