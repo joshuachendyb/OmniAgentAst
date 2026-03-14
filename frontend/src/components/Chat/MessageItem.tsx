@@ -674,7 +674,7 @@ const isUser = message.role === "user";
         )}
 
         {/* 消息内容 - 优化后的结构 */}
-        <div style={{ ...getMessageStyle(), position: "relative", paddingRight: 80 }}>
+        <div style={{ ...getMessageStyle(), position: "relative" }}>
           {/* 复制按钮（悬停显示）- 小巧精致 */}
           <Tooltip title={copied ? "已复制" : "复制"}>
             <Button
