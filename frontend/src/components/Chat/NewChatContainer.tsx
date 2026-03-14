@@ -1249,6 +1249,8 @@ setMessages((prev) => {
             setSessionJumpLoading(false);
             showLoadSuccess("会话加载成功");
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
+            // 【小新修复 2026-03-14】销毁loading消息，避免一直显示
+            message.destroy("session-load");
 
             console.log(
               "🔵 从URL加载会话:",
