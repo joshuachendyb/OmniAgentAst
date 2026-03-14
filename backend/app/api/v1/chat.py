@@ -616,6 +616,20 @@ async def chat(request: ChatRequest):
     except HTTPException:
         # FastAPI的HTTP异常直接抛出，让FastAPI处理
         raise
+    except json.JSONDecodeError as e:
+        # 【小沈修复 2026-03-14】JSON解析错误
+        logger.warning(f"聊天请求JSON解析错误: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"请求JSON格式错误: {str(e)}"
+        )
+    except (KeyError, TypeError) as e:
+        # 【小沈修复 2026-03-14】消息结构缺失字段或类型错误
+        logger.warning(f"聊天请求消息结构错误: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"消息缺少必需字段或类型错误: {str(e)}"
+        )
     except ValueError as e:
         # 客户端输入错误
         logger.warning(f"聊天请求参数错误: {e}")
@@ -629,6 +643,20 @@ async def chat(request: ChatRequest):
         raise HTTPException(
             status_code=400,
             detail="消息列表格式错误"
+        )
+    except httpx.TimeoutException as e:
+        # 【小沈修复 2026-03-14】AI服务请求超时
+        logger.error(f"AI服务请求超时: {e}")
+        raise HTTPException(
+            status_code=504,
+            detail="AI服务响应超时，请稍后重试"
+        )
+    except httpx.RequestError as e:
+        # 【小沈修复 2026-03-14】AI服务网络错误
+        logger.error(f"AI服务网络错误: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="AI服务暂时不可用，请稍后重试"
         )
     except Exception as e:
         # 服务端错误，记录详细日志但返回通用错误信息

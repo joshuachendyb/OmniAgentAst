@@ -297,6 +297,8 @@ async def create_session(session_create: Optional[SessionCreate] = None):
     Returns:
         SessionResponse: 创建的会话信息
     """
+    conn = None
+    cursor = None
     try:
         session_id = str(uuid.uuid4())
         
@@ -336,7 +338,6 @@ async def create_session(session_create: Optional[SessionCreate] = None):
         logger.info(f"创建会话（使用新字段）: id={session_id}, title={title}, is_valid={is_valid}")
         
         conn.commit()
-        conn.close()
         
         logger.info(f"创建会话成功: id={session_id}, title={title}")
         
@@ -352,6 +353,18 @@ async def create_session(session_create: Optional[SessionCreate] = None):
     except Exception as e:
         logger.error(f"创建会话失败: {e}")
         raise HTTPException(status_code=500, detail=f"创建会话失败: {str(e)}")
+    finally:
+        # 【小沈修复 2026-03-14】确保数据库连接和游标关闭，防止连接泄漏
+        if cursor:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 @router.get("/sessions", response_model=SessionListResponse)
@@ -1072,6 +1085,8 @@ async def delete_session(session_id: str):
     Returns:
         dict: 删除结果
     """
+    conn = None
+    cursor = None
     try:
         conn = _get_db_connection()
         cursor = conn.cursor()
@@ -1084,7 +1099,6 @@ async def delete_session(session_id: str):
         session = cursor.fetchone()
         
         if not session:
-            conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
         # 软删除
@@ -1095,7 +1109,6 @@ async def delete_session(session_id: str):
         )
         
         conn.commit()
-        conn.close()
         
         # ⭐ 【小健添加 2026-03-04】删除会话时同时清除缓存
         clear_cached_display_name(session_id)
@@ -1109,6 +1122,18 @@ async def delete_session(session_id: str):
     except Exception as e:
         logger.error(f"删除会话失败: {e}")
         raise HTTPException(status_code=500, detail=f"删除会话失败: {str(e)}")
+    finally:
+        # 【小沈修复 2026-03-14】确保数据库连接和游标关闭，防止连接泄漏
+        if cursor:
+            try:
+                cursor.close()
+            except Exception:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 @router.get("/sessions/titles/batch", response_model=BatchTitleResponse)
 async def get_session_titles_batch(
