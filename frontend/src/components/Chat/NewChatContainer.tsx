@@ -172,7 +172,7 @@ const NewChatContainer: React.FC = () => {
     serverTaskId,
   } = useSSE(
     {
-      baseURL: "http://localhost:8000/api/v1",
+      baseURL: API_BASE_URL,
       sessionId: sessionId || "default-session",
     },
     // onStep - 收到执行步骤
@@ -403,10 +403,34 @@ const NewChatContainer: React.FC = () => {
             // 原因：标题应该在用户修改时立即保存，避免版本冲突
             // 如果需要同步最新数据，应该在用户修改标题时处理
             console.log("✅ AI回复保存成功");
-          } catch (saveError) {
+          } catch (saveError: any) {
             console.error("保存AI回复或标题失败:", saveError);
             console.error("使用的sessionId:", currentSessionId);
-            // 修复：正确的错误处理，重试保存AI回复
+            
+            // 【小新修复 2026-03-14】分类处理不同错误类型
+            const errorCode = saveError?.response?.status;
+            const errorDetail = saveError?.response?.data?.detail;
+            
+            // 情况1：409版本冲突 - 不重试，直接提示
+            if (errorCode === 409) {
+              message.error("会话数据冲突，请刷新页面");
+              // 尝试从服务器获取最新数据
+              try {
+                const sessionData = await sessionApi.getSessionMessages(currentSessionId);
+                if (sessionData.title) setSessionTitle(sessionData.title);
+              } catch (syncError) {
+                console.error("同步失败:", syncError);
+              }
+              return;
+            }
+            
+            // 情况2：业务错误（404会话不存在, 400参数错误等）- 不重试
+            if (errorCode === 404 || errorCode === 400) {
+              message.error(errorDetail || "保存失败，请刷新页面");
+              return;
+            }
+            
+            // 情况3：网络或服务器错误 - 重试
             let retryCount = 0;
             const maxRetries = 3;
 
@@ -432,41 +456,41 @@ const NewChatContainer: React.FC = () => {
                   showSaveSuccess("AI回复保存成功");
                   return;
                   } catch (error: any) {
-                    // 检查是否是409版本冲突或其他错误
+                    // 检查是否是409版本冲突
                    if (error?.response?.status === 409) {
-                    message.error("会话数据冲突，请刷新页面");
-                    break; // 版本冲突不重试
-                  } else if (retryCount === maxRetries) {
-                    message.error({
-                      content: "AI回复保存失败，请刷新页面重试",
-                      duration: 5,
-                    });
-                    // 本地缓存AI回复（防止丢失）
-                    try {
-                      const cacheKey = `unsaved_ai_responses_${currentSessionId}`;
-                      const cached = JSON.parse(
-                        localStorage.getItem(cacheKey) || "[]"
-                      );
-                      // 避免重复缓存
-                       const exists = cached.some(
-                        (msg: any) =>
-                          msg.assistant === finalResponse
-                      );
-                      if (!exists) {
-                        cached.push({
-                          assistant: finalResponse,
-                          timestamp: Date.now(),
-                        });
-                        localStorage.setItem(cacheKey, JSON.stringify(cached));
-                        message.info("AI回复已暂存到本地");
-                      }
-                    } catch (cacheError) {
-                      console.error("本地缓存失败:", cacheError);
-                    }
-                    break; // 达到最大重试次数
-                  }
-                }
-              }
+                     message.error("会话数据冲突，请刷新页面");
+                     break; // 版本冲突不重试
+                   } else if (retryCount === maxRetries) {
+                     message.error({
+                       content: "AI回复保存失败，请刷新页面重试",
+                       duration: 5,
+                     });
+                     // 本地缓存AI回复（防止丢失）
+                     try {
+                       const cacheKey = `unsaved_ai_responses_${currentSessionId}`;
+                       const cached = JSON.parse(
+                         localStorage.getItem(cacheKey) || "[]"
+                       );
+                       //避免重复缓存
+                        const exists = cached.some(
+                         (msg: any) =>
+                           msg.assistant === finalResponse
+                       );
+                       if (!exists) {
+                         cached.push({
+                           assistant: finalResponse,
+                           timestamp: Date.now(),
+                         });
+                         localStorage.setItem(cacheKey, JSON.stringify(cached));
+                         message.info("AI回复已暂存到本地");
+                       }
+                     } catch (cacheError) {
+                       console.error("本地缓存失败:", cacheError);
+                     }
+                     break; // 达到最大重试次数
+                   }
+                 }
+               }
             };
 
             retrySave();

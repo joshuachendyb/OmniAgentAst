@@ -13,7 +13,8 @@ import axios from "axios";
 import { message } from "antd";
 import type { ExecutionStep } from "../utils/sse";
 
-const API_BASE_URL = "http://localhost:8000/api/v1";
+// 【小新修复 2026-03-14】统一API地址配置，支持环境变量
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
 
 /**
  * Axios实例配置
@@ -828,8 +829,6 @@ export const securityApi = {
     };
   },
 };
-
-export { API_BASE_URL };
 
 // ============================================================
 // 【小新重构2026-03-09】ReAct任务控制API
