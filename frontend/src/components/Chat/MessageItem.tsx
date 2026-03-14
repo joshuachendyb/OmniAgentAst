@@ -175,7 +175,15 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
             })()}
           </>
         )}
-        {step.type === "thought" && (step.thinking_prompt || step.content || "")}
+        {step.type === "thought" && (
+          <span style={{ 
+            display: "inline-block", 
+            maxWidth: "calc(100% - 80px)",
+            wordBreak: "break-word" 
+          }}>
+            {step.thinking_prompt || step.content || ""}
+          </span>
+        )}
         {/* 【小查修复2026-03-10】添加status类型渲染 */}
         {["paused", "resumed", "interrupted", "retrying"].includes(step.type) && (
           <span style={{ 
@@ -666,7 +674,7 @@ const isUser = message.role === "user";
         )}
 
         {/* 消息内容 - 优化后的结构 */}
-        <div style={{ ...getMessageStyle(), position: "relative", paddingRight: 60 }}>
+        <div style={{ ...getMessageStyle(), position: "relative", paddingRight: 80 }}>
           {/* 复制按钮（悬停显示）- 小巧精致 */}
           <Tooltip title={copied ? "已复制" : "复制"}>
             <Button
