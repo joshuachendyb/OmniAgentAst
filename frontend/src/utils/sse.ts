@@ -134,7 +134,7 @@ export interface UseSSEReturn {
   executionSteps: ExecutionStep[];
   currentResponse: string;
   sendMessage: (content: string, sessionId?: string) => void;
-  disconnect: () => void;
+  disconnect: (manualDisconnect?: boolean) => void;
   clearSteps: () => void;
   setTaskId: (taskId: string) => void;
   serverTaskId?: string | null;
@@ -513,7 +513,7 @@ const processSSEData = (
     responseBufferRef: React.MutableRefObject<string>;
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
     setIsConnected: React.Dispatch<React.SetStateAction<boolean>>;
-    disconnect: () => void;
+    disconnect: (manualDisconnect?: boolean) => void;
     setServerTaskId?: (taskId: string) => void;
   },
   _isProcessingRef: React.MutableRefObject<boolean>

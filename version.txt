@@ -1,3 +1,54 @@
+v0.5.6
+
+更新内容：
+1. 修复error响应缺少model/provider等字段
+   - 问题：后端发送error时未返回完整的11个字段
+   - 修复：在create_error_response调用时添加model/provider/retryable等字段
+   - 文件：backend/app/api/v1/chat.py
+
+2. 修复HTTP超时策略
+   - 问题：read超时60秒导致正常输出被误判为超时
+   - 修复：取消read超时，使用总超时10分钟
+   - 文件：backend/app/services/base.py
+
+3. 实现强制中断机制
+   - 问题：cancel接口只设置标记，无法强制终止卡住的HTTP连接
+   - 修复：
+     - BaseAIService添加_cancelled标志和cancel()方法
+     - chat_stream()中检查取消标志
+     - cancel_stream_task()中调用ai_service.cancel()强制关闭连接
+   - 文件：backend/app/services/base.py, backend/app/api/v1/chat.py
+
+4. 添加会话级别中断记录
+   - 问题：前端重连时后端无法识别已中断的会话
+   - 修复：使用interrupted_sessions字典记录中断的session_id
+   - 5分钟内同一会话禁止重连
+   - 文件：backend/app/api/v1/chat.py
+
+5. 修复重试判断逻辑
+   - 问题：无脑重试导致正常输出也被重试
+   - 修复：区分"已收到内容"和"模型还在思考"两种情况
+   - 文件：backend/app/api/v1/chat.py
+
+6. pause/resume接口支持session_id参数
+   - 文件：backend/app/api/v1/chat.py
+
+7. 更新API文档
+   - 文件：docs/API-chat-stream.md
+
+技术细节：
+- base.py: 添加cancel/reset_cancel方法，修改超时配置
+- chat.py: 添加interrupted_sessions字典，修改cancel/pause/resume接口
+
+版本升级说明：
+- v0.5.5: 文档目录整理
+- v0.5.6: 修复中断机制+HTTP超时+重试逻辑（本次升级）
+
+参与开发：小沈，小健
+完成时间：2026-03-14 10:30:00
+
+---
+
 v0.5.5
 
 更新内容：
