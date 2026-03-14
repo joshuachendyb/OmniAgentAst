@@ -111,7 +111,7 @@ app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 
 # 【小沈修复 2026-03-14】启动后台清理任务，定期清理过期任务
 import asyncio
-from app.api.v1.chat import cleanup_expired_tasks
+from app.api.v1.chat_stream import cleanup_expired_tasks
 
 @app.on_event("startup")
 async def startup_event():
