@@ -818,6 +818,7 @@ const isUser = message.role === "user";
             )}
 
             {/* 【小查修复】4. AI回复chunk - 逐个渲染 */}
+            {/* 【小新修复 2026-03-14】is_reasoning切换时自动添加换行 */}
             {(() => {
               const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
               
@@ -825,17 +826,24 @@ const isUser = message.role === "user";
               return chunks.map((chunk, index) => {
                 const is_reasoning = !!chunk.is_reasoning;
                 // 过滤掉 AI 模型返回的特殊标签
-                const content = (chunk.content || '').replace(/<\/?longcat_think>/g, '').replace(/\n\n/g, '\n');
+                let content = (chunk.content || '').replace(/<\/?longcat_think>/g, '');
                 
-                // 如果是从思考模式切换到回答模式（is_reasoning: true -> false），在开头加空行
-                // if (index > 0) {
-                //   const prevChunk = chunks[index - 1];
-                //   const prevIsReasoning = !!prevChunk.is_reasoning;
-                //   // 当前是false，前一个是true，说明切换了，加空行
-                //   if (!is_reasoning && prevIsReasoning && content.startsWith('\n')) {
-                //     content = '\n' + content;
-                //   }
-                // }
+                // 【小新修复 2026-03-14】判断是否需要在前面加换行
+                // 当 is_reasoning 从 true->false 或 false->true 切换时
+                if (index > 0) {
+                  const prevChunk = chunks[index - 1];
+                  const prevIsReasoning = !!prevChunk.is_reasoning;
+                  const prevContent = prevChunk.content || '';
+                  
+                  // 只有在切换时才处理
+                  if (is_reasoning !== prevIsReasoning) {
+                    // 检查前一个chunk是否以\n结尾
+                    if (!prevContent.endsWith('\n')) {
+                      // 在当前chunk前面加换行
+                      content = '\n' + content;
+                    }
+                  }
+                }
                 
                 return (
                   <span
