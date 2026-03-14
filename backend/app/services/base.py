@@ -79,13 +79,14 @@ class BaseAIService:
             timeout_value = 60.0
         self.timeout = int(timeout_value)
         
-        # 【小沈-2026-03-13修复】取消read超时，使用总超时10分钟
-        # 原因：模型思考可能长时间停顿，read超时会导致误判
+        # 【小沈-2026-03-14修复】流式读取不设总超时，由 RetryController 统一管理空闲超时
+        # 原理：连接阶段10秒超时，读取阶段不超时，空闲检测由调用方控制
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(
-                600.0,  # 总超时10分钟（足够长，不限制流式响应）
-                connect=10.0,     # 连接超时10秒
-                # 不设置read超时，让模型自由停顿
+                connect=10.0,      # 连接超时10秒
+                read=None,         # 读取不超时（流式请求可能很长）
+                write=10.0,        # 写入超时10秒
+                pool=10.0,         # 连接池超时10秒
             ),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
         )
