@@ -177,8 +177,8 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
         )}
         {step.type === "thought" && (
           <span style={{ 
-            display: "inline-block", 
-            maxWidth: "calc(100% - 80px)",
+            display: "block", 
+            marginRight: 70,
             wordBreak: "break-word" 
           }}>
             {step.thinking_prompt || step.content || ""}
