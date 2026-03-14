@@ -1177,6 +1177,7 @@ async def chat_stream(request: ChatRequest):
                         logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}, 类型: {last_error_type}")
                         # 使用之前保存的 error_type
                         error_type_map = {
+                            'idle_timeout': ('timeout', '请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试'),
                             'timeout_error': ('timeout', '请求超时，请重试'),
                             'read_error': ('server', '读取响应失败，请重试'),
                             'connect_error': ('network', '连接失败，请检查网络'),
