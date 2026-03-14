@@ -148,8 +148,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     setModelListLoading(true);
     try {
       const modelData = await configApi.getModelList();
-      if (modelData.models) {
+      // 【小新修复 2026-03-14】添加可选链检查，避免 modelData 为 null 时报错
+      if (modelData?.models && Array.isArray(modelData.models)) {
         setModelList(modelData.models);
+      } else {
+        console.warn("getModelList 返回数据格式异常:", modelData);
+        setModelList([]);
       }
     } catch (error) {
       console.warn("刷新模型列表失败:", error);

@@ -98,6 +98,15 @@ export interface ExecutionStep {
   // === 错误/中断字段 ===
   error_message?: string;      // error 类型的错误信息
   message?: string;           // interrupted 类型的中断信息
+  
+  // 【小新修复 2026-03-14】error类型完整字段（避免使用 as any）
+  code?: string;              // 技术错误码（如 INTERNAL_ERROR）
+  error_type?: string;        // 业务错误类型（如 empty_response）
+  details?: string;           // 详细错误信息
+  stack?: string;             // 堆栈信息
+  retryable?: boolean;        // 是否可重试
+  retry_after?: number;       // 重试等待秒数
+  wait_time?: number;         // 等待时间（秒）
 
   // === 前端额外字段 ===
   timestamp: number;      // 前端生成的时间戳
@@ -474,6 +483,11 @@ export const useSSE = (
       disconnect();
       // 【修复小查问题】清理 pendingMessageRef 避免内存泄漏
       pendingMessageRef.current = null;
+      // 【小新修复 2026-03-14】额外确保 reconnectTimeoutRef 被清理
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
     };
   }, [disconnect]);
 
@@ -710,34 +724,35 @@ const processSSEData = (
         const errorMsg = rawData.message || "未知错误";
         step.content = errorMsg;
         step.error_message = errorMsg;
+        // 【小新修复 2026-03-14】直接赋值，无需 as any（已在接口中定义字段）
         if (rawData.code) {
-          (step as any).code = rawData.code;
+          step.code = rawData.code;
         }
         if (rawData.error_type) {
-          (step as any).error_type = rawData.error_type;
+          step.error_type = rawData.error_type;
         }
         // 【小查修复2026-03-13】补充缺失的model和provider字段（文档要求11个字段）
         if (rawData.model) {
-          (step as any).model = rawData.model;
+          step.model = rawData.model;
         }
         if (rawData.provider) {
-          (step as any).provider = rawData.provider;
+          step.provider = rawData.provider;
         }
         // 【小查修复2026-03-10】添加设计文档要求的字段
         if (rawData.details) {
-          (step as any).details = rawData.details;
+          step.details = rawData.details;
         }
         if (rawData.stack) {
-          (step as any).stack = rawData.stack;
+          step.stack = rawData.stack;
         }
         if (rawData.retryable !== undefined) {
-          (step as any).retryable = rawData.retryable;
+          step.retryable = rawData.retryable;
         }
         if (rawData.retry_after !== undefined) {
-          (step as any).retry_after = rawData.retry_after;
+          step.retry_after = rawData.retry_after;
         }
         if (rawData.timestamp) {
-          (step as any).timestamp = rawData.timestamp;
+          step.timestamp = rawData.timestamp;
         }
         // 【小新修复2026-03-13】传递完整的错误对象，保留error_type等字段
         onError?.({

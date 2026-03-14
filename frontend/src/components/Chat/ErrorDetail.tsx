@@ -21,7 +21,7 @@ interface ErrorDetailProps {
  */
 const ErrorDetail: React.FC<ErrorDetailProps> = ({
   errorType,
-  errorCode,
+  errorCode: _errorCode,  // 【小新修复2026-03-14】保留但不使用（用户无需看到技术错误码）
   errorMessage,
   errorTimestamp,
   errorDetails,
@@ -187,23 +187,9 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
                   color: colors.color,
                 }}
               >
+                {/* 【小新修复 2026-03-14】只显示error_type（业务错误类型），不显示code（技术错误码） */}
                 {errorType || "unknown"}
               </code>
-              {errorCode && (
-                <>
-                  <span style={{ margin: "0 8px", color: "#999" }}>|</span>
-                  <code
-                    style={{
-                      background: "rgba(0,0,0,0.05)",
-                      padding: "1px 6px",
-                      borderRadius: 3,
-                      fontSize: "0.9em",
-                    }}
-                  >
-                    {errorCode}
-                  </code>
-                </>
-              )}
             </td>
           </tr>
           {errorTimestamp && (
