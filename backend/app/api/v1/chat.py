@@ -1175,10 +1175,32 @@ async def chat_stream(request: ChatRequest):
                     
                     else:
                         # 【边界情况】流正常结束但无内容（模型思考中或空响应）
-                        # 判断为成功，不重试（给模型更多时间）
-                        ai_call_successful = True
-                        logger.info(f"[AI Call] 第{retry_attempt + 1}次调用完成（流结束，模型可能尚在思考）")
-                        break
+                        # 【小沈&小新修复 2026-03-14】检查是否收到内容
+                        if has_received_content and full_content.strip():
+                            # 收到了有效内容，判断为成功
+                            ai_call_successful = True
+                            logger.info(f"[AI Call] 第{retry_attempt + 1}次调用完成，收到内容长度={len(full_content)}")
+                            break
+                        else:
+                            # 【修复】未收到内容，视为错误，发送error步骤
+                            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用完成但无内容（流结束，模型未返回有效内容）")
+                            if retry_controller.can_retry():
+                                # 还能重试
+                                retry_controller.increment_retry()
+                                logger.info(f"[AI Call] 空响应，准备第{retry_controller.get_retry_count() + 1}次重试...")
+                                continue
+                            else:
+                                # 已达最大重试次数，发送error步骤
+                                logger.error(f"[AI Call] 空响应重试失败，已达最大重试次数{max_retries}")
+                                yield create_error_response(
+                                    error_type="empty_response",
+                                    message="模型未能生成有效回复，请尝试更换问题或稍后重试",
+                                    model=ai_service.model,
+                                    provider=ai_service.provider,
+                                    retryable=True,
+                                    retry_after=3
+                                )
+                                return  # 直接返回，不再发送final步骤
                     
                     # ⭐ 【新增-重试机制】重试循环结束，检查最终结果
                 if not ai_call_successful:
