@@ -299,6 +299,7 @@ const NewChatContainer: React.FC = () => {
     }, []),
     // onComplete - 流式完成 - 前端小新代修改：适配后端新格式
     // 【小新修复 2026-03-12】第三个参数改为接收完整的data对象
+    // 【小沈修复 2026-03-14】第三个参数实际是ExecutionStep[]数组，不是对象
     useCallback(
       async (
         fullResponse: string,
@@ -307,10 +308,7 @@ const NewChatContainer: React.FC = () => {
           provider?: string;
           display_name?: string;
         },
-        sseData?: {
-          execution_steps?: ExecutionStep[];
-          [key: string]: any;
-        }
+        executionStepsFromSSE?: ExecutionStep[]
       ) => {
         // ✅ 支持旧格式（model 字符串）和新格式（metadata 对象）
         const metadataObj =
@@ -362,9 +360,13 @@ const NewChatContainer: React.FC = () => {
         // 这样更加健壮，即使AI响应失败，用户消息也已保存
         const currentSessionId = currentSessionIdRef.current || sessionId;
         const currentPending = pendingMessageRef.current || pendingMessage;
-        // 【小新修复 2026-03-12】优先使用sseData传递的execution_steps，其次fallback到ref
-        // 这样避免依赖React状态更新的时序问题
-        const stepsFromSSE = sseData?.execution_steps;
+        // 【小查修复 2026-03-14】恢复使用executionStepsFromSSE参数
+        // 历史教训：2026-03-12 小沈提交commit 800f0fd27时，将参数从ExecutionStep[]改为{sseData?: {execution_steps?: ExecutionStep[]}}
+        // 但调用方sse.ts第716行仍然传递ExecutionStep[]数组，导致类型不匹配
+        // 结果：sseData?.execution_steps永远是undefined，思考过程(execution_steps)无法保存到数据库
+        // 症状：AI回复完成后刷新页面，"思考"部分的详细内容丢失，只剩下"正在分析任务..."
+        // 教训：修改函数签名时必须同步修改所有调用方，不能单方面改变参数结构！
+        const stepsFromSSE = executionStepsFromSSE;
         const stepsToSave = stepsFromSSE || executionStepsRef.current || [];
         if (currentSessionId && finalResponse && finalResponse.trim()) {
           // 🔴 修复：添加详细的调试日志
@@ -374,7 +376,7 @@ const NewChatContainer: React.FC = () => {
           console.log("  最终使用的sessionId:", currentSessionId);
           console.log("  currentPending:", currentPending);
           console.log("  finalResponse length:", finalResponse.length);
-          console.log("  sseData传递的steps:", stepsFromSSE?.length);
+          console.log("  onComplete参数传递的steps:", stepsFromSSE?.length);
           console.log("  fallback ref中的steps:", executionStepsRef.current?.length);
 
           try {
