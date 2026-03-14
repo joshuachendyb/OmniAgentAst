@@ -567,13 +567,10 @@ const NewChatContainer: React.FC = () => {
          console.error("  提供商:", errorObj.provider);
          console.error("  是否可重试:", errorObj.retryable);
 
-         // 🔴 修复：更好的用户反馈
-         message.error({
-           content: `AI 响应失败：${errorObj.message}`,
-           duration: 5,
-         });
+          // 【小新修改 2026-03-14】移除重复弹框，ErrorDetail 气泡已完整显示错误信息
+          // 不再显示 message.error 弹框，避免与 ErrorDetail 重复
 
-setMessages((prev) => {
+ setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
             const updated = [...prev];
