@@ -7,7 +7,7 @@ from datetime import datetime
 import traceback
 from pathlib import Path
 
-from app.api.v1 import health, chat, file_operations, config, sessions, security, execution, metrics
+from app.api.v1 import health, chat_non_stream, chat_stream, file_operations, config, sessions, security, execution, metrics
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
 
@@ -100,7 +100,8 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
-app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
+app.include_router(chat_non_stream.router, prefix="/api/v1", tags=["chat"])
+app.include_router(chat_stream.router, prefix="/api/v1", tags=["chat"])
 app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operations"])
 app.include_router(config.router, prefix="/api/v1", tags=["config"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])

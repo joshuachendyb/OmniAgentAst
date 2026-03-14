@@ -704,3 +704,17 @@ interrupted_sessions: dict[str, datetime] = {}
 INTERRUPTED_SESSION_TIMEOUT = timedelta(minutes=5)  # 5分钟后允许重新连接
 TASK_TIMEOUT = timedelta(hours=1)  # 1小时超时
 
+
+async def cleanup_expired_tasks():
+    """清理过期任务"""
+    now = datetime.now()
+    async with running_tasks_lock:
+        expired_tasks = [
+            task_id for task_id, task in running_tasks.items()
+            if task.get("created_at") and now - task["created_at"] > TASK_TIMEOUT
+        ]
+        for task_id in expired_tasks:
+            del running_tasks[task_id]
+        if expired_tasks:
+            logger.info(f"清理了 {len(expired_tasks)} 个过期任务")
+
