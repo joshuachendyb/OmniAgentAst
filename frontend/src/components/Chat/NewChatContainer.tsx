@@ -317,12 +317,21 @@ const NewChatContainer: React.FC = () => {
           typeof metadata === "string" ? { model: metadata } : metadata || {};
 
         // 🔴 修复：处理 AI 返回空内容的情况
+        // 【小新修复 2026-03-14】补充完整的错误字段，避免导出时缺少error_type等
         let finalResponse = fullResponse;
         let isError = false;
+        let errorType: string | undefined = undefined;
+        let errorCode: string | undefined = undefined;
+        let errorMessage: string | undefined = undefined;
+        
         if (!finalResponse || !finalResponse.trim()) {
           finalResponse = "抱歉，我暂时无法回答这个问题。请您稍后再尝试，或者换个方式提问。";
           isError = true; // 标记为错误类型，以便显示红色样式
-          console.warn("⚠️ AI 返回了空内容，已使用默认回复");
+          // 【小新修复 2026-03-14】补充错误字段，与onError保持一致
+          errorType = "empty_response";
+          errorCode = "EMPTY_RESPONSE";
+          errorMessage = "模型未能生成有效回复，请尝试更换问题或稍后重试";
+          console.warn("⚠️ AI 返回了空内容，已使用默认回复，errorType:", errorType);
         }
 
         setMessages((prev) => {
@@ -335,6 +344,10 @@ const NewChatContainer: React.FC = () => {
               isStreaming: false,
               is_reasoning: false, // 【小查修复】流式完成后重置为false，确保思考中标签消失
               isError: isError, // 传递错误标记
+              // 【小新修复 2026-03-14】补充错误字段，与onError保持一致
+              errorType: errorType,
+              errorCode: errorCode,
+              errorMessage: errorMessage,
               model: metadataObj.model || lastMessage.model,
               provider: metadataObj.provider || lastMessage.provider,
               display_name: metadataObj.display_name || lastMessage.display_name,
