@@ -757,6 +757,9 @@ setMessages((prev) => {
   // 【小查修复】移除组件卸载时的保存，因为页面隐藏时已经保存，避免重复
   useEffect(() => {
     return () => {
+      // 【小新修复 2026-03-14】组件卸载时销毁所有可能残留的message
+      message.destroy("session-load");
+      
       // 组件卸载时不再单独保存状态
       // 原因：页面隐藏时会触发saveState，组件卸载前页面必定先隐藏
       // 如果需要保存，saveState() 会在页面隐藏时被调用
@@ -877,6 +880,10 @@ setMessages((prev) => {
       } else {
         // 页面重新可见时：不再重新请求API，避免覆盖当前消息
         // 改为从sessionStorage恢复状态，如果缓存有效的话
+        
+        // 【小新修复 2026-03-14】强制销毁可能残留的loading消息
+        message.destroy("session-load");
+        setSessionJumpLoading(false);
         
         const urlSessionId = new URLSearchParams(window.location.search).get(
           "session_id"
@@ -1206,6 +1213,8 @@ setMessages((prev) => {
       if (urlSessionId) {
         // P1级别优化：添加会话跳转加载状态
         setSessionJumpLoading(true);
+        // 【小新修复 2026-03-14】显示loading前先销毁旧的，避免重复
+        message.destroy("session-load");
         message.loading({
           content: "正在加载会话...",
           key: "session-load",
