@@ -42,6 +42,20 @@ build/
 dist/
 *.egg-info/
 
+# Node modules
+node_modules/
+frontend/node_modules/
+
+# Vite cache
+.vite/
+frontend/.vite/
+
+# Test reports
+playwright-report/
+test-results/
+frontend/playwright-report/
+frontend/test-results/
+
 # Docker
 .dockerignore
 docker-compose.override.yml
