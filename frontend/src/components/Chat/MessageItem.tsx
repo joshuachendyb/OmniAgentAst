@@ -830,15 +830,16 @@ const isUser = message.role === "user";
                 
                 // 【小新修复 2026-03-14】判断是否需要在前面加换行
                 // 当 is_reasoning 从 true->false 或 false->true 切换时
+                // 【小查修复 2026-03-14】使用过滤后的内容判断，避免标签干扰
                 if (index > 0) {
                   const prevChunk = chunks[index - 1];
                   const prevIsReasoning = !!prevChunk.is_reasoning;
-                  const prevContent = prevChunk.content || '';
+                  const prevContentFiltered = (prevChunk.content || '').replace(/<\/?longcat_think>/g, '');
                   
                   // 只有在切换时才处理
                   if (is_reasoning !== prevIsReasoning) {
-                    // 检查前一个chunk是否以\n结尾
-                    if (!prevContent.endsWith('\n')) {
+                    // 检查前一个chunk过滤后是否以\n结尾
+                    if (!prevContentFiltered.endsWith('\n')) {
                       // 在当前chunk前面加换行
                       content = '\n' + content;
                     }
