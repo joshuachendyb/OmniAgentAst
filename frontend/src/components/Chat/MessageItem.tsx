@@ -175,15 +175,7 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
             })()}
           </>
         )}
-        {step.type === "thought" && (
-          <span style={{ 
-            display: "block", 
-            marginRight: 70,
-            wordBreak: "break-word" 
-          }}>
-            {step.thinking_prompt || step.content || ""}
-          </span>
-        )}
+        {step.type === "thought" && (step.thinking_prompt || step.content || "")}
         {/* 【小查修复2026-03-10】添加status类型渲染 */}
         {["paused", "resumed", "interrupted", "retrying"].includes(step.type) && (
           <span style={{ 
@@ -675,7 +667,7 @@ const isUser = message.role === "user";
 
         {/* 消息内容 - 优化后的结构 */}
         <div style={{ ...getMessageStyle(), position: "relative" }}>
-          {/* 复制按钮（悬停显示）- 小巧精致 */}
+          {/* 复制按钮（悬停显示）- 透明背景，小巧精致 */}
           <Tooltip title={copied ? "已复制" : "复制"}>
             <Button
               className="copy-button"
@@ -838,16 +830,15 @@ const isUser = message.role === "user";
                 
                 // 【小新修复 2026-03-14】判断是否需要在前面加换行
                 // 当 is_reasoning 从 true->false 或 false->true 切换时
-                // 【小查修复 2026-03-14】使用过滤后的内容判断，避免标签干扰
                 if (index > 0) {
                   const prevChunk = chunks[index - 1];
                   const prevIsReasoning = !!prevChunk.is_reasoning;
-                  const prevContentFiltered = (prevChunk.content || '').replace(/<\/?longcat_think>/g, '');
+                  const prevContent = prevChunk.content || '';
                   
                   // 只有在切换时才处理
                   if (is_reasoning !== prevIsReasoning) {
-                    // 检查前一个chunk过滤后是否以\n结尾
-                    if (!prevContentFiltered.endsWith('\n')) {
+                    // 检查前一个chunk是否以\n结尾
+                    if (!prevContent.endsWith('\n')) {
                       // 在当前chunk前面加换行
                       content = '\n' + content;
                     }
