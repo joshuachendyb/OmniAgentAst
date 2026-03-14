@@ -696,7 +696,6 @@ const isUser = message.role === "user";
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                zIndex: 10, // 【小新修复 2026-03-14】确保按钮在最上层
               }}
             />
           </Tooltip>
@@ -724,7 +723,6 @@ const isUser = message.role === "user";
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                zIndex: 10, // 【小新修复 2026-03-14】确保按钮在最上层，不被思考步骤文字覆盖
               }}
             />
           </Tooltip>
