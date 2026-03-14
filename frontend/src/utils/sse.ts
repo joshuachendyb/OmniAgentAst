@@ -766,7 +766,7 @@ const processSSEData = (
           stack: rawData.stack,
           retryable: rawData.retryable,
           retry_after: rawData.retry_after,
-          timestamp: rawData.timestamp || new Date().toISOString()
+          timestamp: new Date().toISOString()
         });
         setIsReceiving(false);
         setIsConnected(false);
