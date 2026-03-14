@@ -667,7 +667,7 @@ const isUser = message.role === "user";
 
         {/* 消息内容 - 优化后的结构 */}
         <div style={{ ...getMessageStyle(), position: "relative" }}>
-          {/* 复制按钮（悬停显示）- 透明背景，小巧精致 */}
+          {/* 复制按钮（悬停显示）- 小巧精致 */}
           <Tooltip title={copied ? "已复制" : "复制"}>
             <Button
               className="copy-button"
@@ -687,9 +687,9 @@ const isUser = message.role === "user";
                 right: 6,
                 opacity: 0,
                 transition: "opacity 0.2s ease",
-                background: "transparent",
+                background: isUser ? "rgba(24, 144, 255, 0.95)" : "rgba(255, 255, 255, 0.95)", // 【小新修复 2026-03-14】添加背景色，避免被文字覆盖
                 border: "none",
-                boxShadow: "none",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
                 padding: "0 4px",
                 minHeight: "auto",
                 height: "20px",
@@ -714,9 +714,9 @@ const isUser = message.role === "user";
                 right: 30,
                 opacity: 0,
                 transition: "opacity 0.2s ease",
-                background: "transparent",
+                background: isUser ? "rgba(24, 144, 255, 0.95)" : "rgba(255, 255, 255, 0.95)", // 【小新修复 2026-03-14】添加背景色，避免被文字覆盖
                 border: "none",
-                boxShadow: "none",
+                boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
                 padding: "0 4px",
                 minHeight: "auto",
                 height: "20px",
