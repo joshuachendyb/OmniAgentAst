@@ -626,7 +626,7 @@ setMessages((prev) => {
            });
          }
 
-         console.log("🔍 [onError] 错误处理完成，设置loading=false");
+          console.log("🔍 [onError] 错误处理完成，设置loading=false");
         setLoading(false);
         // ⭐ 停止等待计时器
         if (waitTimerRef.current) {
@@ -636,6 +636,16 @@ setMessages((prev) => {
         setWaitTime(0);
         setIsRetrying(false);
         console.log("✅ [onError] 处理完成");
+        
+        // 【小查修复 2026-03-14】延迟检查确保状态已重置，防止按钮无法点击
+        setTimeout(() => {
+          console.log("🔍 [onError] 延迟检查状态 - loading:", loading, "isReceiving:", isReceiving);
+          // 如果状态仍未重置，强制重置
+          if (loading) {
+            console.warn("⚠️ [onError] loading 仍为 true，强制重置");
+            setLoading(false);
+          }
+        }, 100);
        },
        []
     ),
