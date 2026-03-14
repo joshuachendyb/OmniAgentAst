@@ -97,7 +97,7 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
   const hasMore = step.raw_data?.has_more === true && !!step.raw_data?.next_page_token;
 
   return (
-    <div style={{ marginBottom: 4 }}>
+    <div style={{ marginBottom: 4, marginRight: 30 }}>
       <span style={{ color, fontWeight: 500, marginRight: 8 }}>
         {label}：
       </span>
