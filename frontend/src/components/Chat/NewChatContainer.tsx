@@ -381,10 +381,16 @@ const NewChatContainer: React.FC = () => {
             // 【小新修复 2026-03-11】分开保存：
             // 1. saveMessage 只保存消息内容（消息已在流式开始时创建）
             // 2. saveExecutionSteps 更新最后一条消息的 execution_steps
+            // 【小查修复2026-03-14】空响应时也要保存错误字段
             await sessionApi.saveMessage(currentSessionId, {
               role: "assistant",
               content: finalResponse,
               execution_steps: stepsToSave,
+              // 空响应错误字段
+              is_error: isError || undefined,
+              error_type: errorType,
+              code: errorCode,
+              message: errorMessage,
             });
 
             // 保存 execution_steps 到最后一条消息（保留兼容）
