@@ -115,6 +115,15 @@ class FileTools:
     - 支持回滚操作
     """
     
+    # 【小沈修复 2026-03-14】允许的文件操作路径白名单（防止路径遍历攻击）
+    ALLOWED_PATHS = [
+        Path.home(),  # 用户主目录
+        Path("/tmp"),  # Linux临时目录
+        Path("/var/tmp"),  # Linux临时目录
+        Path(os.environ.get("TEMP", "C:/Windows/Temp")),  # Windows临时目录
+        Path(os.environ.get("TMP", "/tmp")),  # 通用临时目录
+    ]
+    
     def __init__(self, session_id: Optional[str] = None):
         self.safety = get_file_safety_service()
         self.session = get_session_service()
@@ -133,6 +142,38 @@ class FileTools:
         """设置当前会话ID"""
         self.session_id = session_id
         self._sequence = 0
+    
+    def _validate_path(self, file_path: str) -> tuple[bool, str]:
+        """
+        验证文件路径是否合法
+        
+        【小沈修复 2026-03-14】防止路径遍历攻击
+        
+        Args:
+            file_path: 文件路径
+            
+        Returns:
+            (is_valid, error_message)
+        """
+        try:
+            # 规范化路径（解析..和.）
+            path = Path(file_path).resolve()
+            
+            # 检查路径是否在白名单内
+            for allowed_path in self.ALLOWED_PATHS:
+                try:
+                    # 检查路径是否是白名单路径的子目录
+                    path.relative_to(allowed_path.resolve())
+                    return True, ""
+                except ValueError:
+                    # 不在此白名单路径下，继续检查下一个
+                    continue
+            
+            # 路径不在任何白名单内
+            return False, f"路径 '{file_path}' 不在允许的操作范围内"
+            
+        except Exception as e:
+            return False, f"路径验证失败: {str(e)}"
     
     @register_tool(name="read_file", description="读取文件内容，支持指定偏移量和行数限制", category="file")
     async def read_file(
@@ -154,6 +195,15 @@ class FileTools:
         Returns:
             统一格式：{status, summary, data, retry_count}
         """
+        # 【小沈修复 2026-03-14】验证路径合法性
+        is_valid, error_msg = self._validate_path(file_path)
+        if not is_valid:
+            return _to_unified_format({
+                "success": False,
+                "error": error_msg,
+                "content": None
+            }, "read_file")
+        
         path = Path(file_path)
         
         try:
@@ -237,6 +287,15 @@ class FileTools:
         Returns:
             统一格式：{status, summary, data, retry_count}
         """
+        # 【小沈修复 2026-03-14】验证路径合法性
+        is_valid, error_msg = self._validate_path(file_path)
+        if not is_valid:
+            return _to_unified_format({
+                "success": False,
+                "error": error_msg,
+                "content": None
+            }, "write_file")
+        
         if not self.session_id:
             raw_result = {
                 "success": False,
@@ -317,6 +376,15 @@ class FileTools:
             统一格式：{status, summary, data, retry_count}
             data包含: entries, total, has_more, next_page_token
         """
+        # 【小沈修复 2026-03-14】验证路径合法性
+        is_valid, error_msg = self._validate_path(dir_path)
+        if not is_valid:
+            return _to_unified_format({
+                "success": False,
+                "error": error_msg,
+                "entries": []
+            }, "list_directory")
+        
         path = Path(dir_path)
         
         try:
@@ -427,6 +495,15 @@ class FileTools:
         Returns:
             统一格式：{status, summary, data, retry_count}
         """
+        # 【小沈修复 2026-03-14】验证路径合法性
+        is_valid, error_msg = self._validate_path(file_path)
+        if not is_valid:
+            return _to_unified_format({
+                "success": False,
+                "error": error_msg,
+                "operation_id": None
+            }, "delete_file")
+        
         if not self.session_id:
             raw_result = {
                 "success": False,
@@ -512,6 +589,23 @@ class FileTools:
         Returns:
             统一格式：{status, summary, data, retry_count}
         """
+        # 【小沈修复 2026-03-14】验证源路径和目标路径合法性
+        is_valid_src, error_msg_src = self._validate_path(source_path)
+        if not is_valid_src:
+            return _to_unified_format({
+                "success": False,
+                "error": f"源路径{error_msg_src}",
+                "operation_id": None
+            }, "move_file")
+        
+        is_valid_dst, error_msg_dst = self._validate_path(destination_path)
+        if not is_valid_dst:
+            return _to_unified_format({
+                "success": False,
+                "error": f"目标路径{error_msg_dst}",
+                "operation_id": None
+            }, "move_file")
+        
         if not self.session_id:
             raw_result = {
                 "success": False,

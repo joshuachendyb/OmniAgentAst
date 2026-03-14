@@ -108,6 +108,28 @@ app.include_router(security.router, prefix="/api/v1", tags=["security"])
 app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 
+
+# 【小沈修复 2026-03-14】启动后台清理任务，定期清理过期任务
+import asyncio
+from app.api.v1.chat import cleanup_expired_tasks
+
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时启动后台任务"""
+    async def cleanup_task():
+        """定期清理过期任务"""
+        while True:
+            try:
+                await cleanup_expired_tasks()
+            except Exception as e:
+                logger.error(f"清理过期任务失败: {e}")
+            await asyncio.sleep(3600)  # 每小时执行一次
+    
+    # 启动后台任务
+    asyncio.create_task(cleanup_task())
+    logger.info("后台清理任务已启动")
+
+
 @app.get("/")
 async def root():
     return {
