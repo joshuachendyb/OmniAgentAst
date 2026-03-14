@@ -430,7 +430,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                 {serviceStatus.model && `(${serviceStatus.model})`}
               </Tag>
             ) : serviceStatus?.message ? (
-              // 有错误信息显示红色/黄色（根据错误类型），可点击重试
+              // 【小新修复 2026-03-14】后端message已包含provider/model，直接显示不再重复拼接
               <Tag
                 color={
                   serviceStatus.message.includes("限速") ||
@@ -442,8 +442,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                 onClick={handleCheckService}
                 style={{ cursor: "pointer" }}
               >
-                {serviceStatus.provider}{" "}
-                {serviceStatus.model && `(${serviceStatus.model})`} -{" "}
                 {serviceStatus.message} (点击重试)
               </Tag>
             ) : (
