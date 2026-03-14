@@ -328,11 +328,11 @@ test.describe('Settings Page - Navigation', () => {
     // Wait for initial load
     await page.waitForTimeout(1000);
 
-    // Try to switch to different tabs
+    // 【小查修复2026-03-14】Settings页面实际tabs：模型配置、安全配置、系统状态
     const tabs = [
       { name: /模型配置/, check: /配置/ },
       { name: /安全配置/, check: /安全/ },
-      { name: /会话历史/, check: /会话/ },
+      { name: /系统状态/, check: /状态/ },
     ];
 
     for (const tab of tabs) {
@@ -355,7 +355,7 @@ test.describe('Settings Page - Navigation', () => {
     // Navigate to chat page
     await page.goto('/');
 
-    // Should be on chat page
-    await expect(page.getByText(/AI助手/)).toBeVisible();
+    // 【小查修复2026-03-14】页面标题实际为"AI对话助手"
+    await expect(page.getByText('AI对话助手')).toBeVisible();
   });
 });

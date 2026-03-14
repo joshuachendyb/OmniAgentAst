@@ -552,24 +552,24 @@ setMessages((prev) => {
          // 【小查修复2026-03-14】错误消息也需要保存到数据库
          const currentSessionId = currentSessionIdRef.current || sessionId;
          if (currentSessionId) {
-           sessionApi.saveMessage(currentSessionId, {
-             role: "assistant",
-             content: errorObj.message,
-             execution_steps: executionStepsRef.current || [],
-             // 使用API文档字段名（snake_case）
-             is_error: true,
-             error_type: errorObj.error_type,
-             code: errorObj.code,
-             message: errorObj.message,
-             details: errorObj.details,
-             stack: errorObj.stack,
-             retryable: errorObj.retryable,
-             retry_after: errorObj.retry_after,
-             timestamp: errorObj.timestamp,
-              // 如果 errorObj 中没有 model/provider，使用消息中已有的值
-              model: errorObj.model || lastMessage.model,
-              provider: errorObj.provider || lastMessage.provider,
-           }).catch((saveErr) => {
+            sessionApi.saveMessage(currentSessionId, {
+              role: "assistant",
+              content: errorObj.message,
+              execution_steps: executionStepsRef.current || [],
+              // 使用API文档字段名（snake_case）
+              is_error: true,
+              error_type: errorObj.error_type,
+              code: errorObj.code,
+              message: errorObj.message,
+              details: errorObj.details,
+              stack: errorObj.stack,
+              retryable: errorObj.retryable,
+              retry_after: errorObj.retry_after,
+              timestamp: errorObj.timestamp,
+               // 如果 errorObj 中没有 model/provider，使用消息中已有的值
+               model: errorObj.model || messagesRef.current[messagesRef.current.length - 1]?.model,
+               provider: errorObj.provider || messagesRef.current[messagesRef.current.length - 1]?.provider,
+            }).catch((saveErr) => {
              console.error("❌ 保存错误消息失败:", saveErr);
            });
          }

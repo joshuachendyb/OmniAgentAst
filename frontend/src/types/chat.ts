@@ -269,6 +269,7 @@ export interface Message extends ChatMessage {
   isStreaming?: boolean;
   isError?: boolean;
   // 错误相关字段（与API文档对齐）
+  errorMessage?: string;     // message - 错误消息内容【小查添加2026-03-14】
   errorType?: string;        // error_type
   errorCode?: string;       // code
   errorDetails?: string;    // details
