@@ -1825,6 +1825,7 @@ setMessages((prev) => {
    * 清空对话
    */
   const handleClear = () => {
+    console.log("🔍 [handleClear] 清空对话按钮被点击");
     setMessages([]);
     clearSteps();
     disconnect();
@@ -1960,6 +1961,7 @@ setMessages((prev) => {
             onClick={handleNewSession}
             size="small"
             type="primary"
+            style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
           >
             新建会话
           </Button>
@@ -1968,11 +1970,13 @@ setMessages((prev) => {
           <Tag.CheckableTag
             checked={useStream}
             onChange={(checked) => {
+              console.log("🔍 [流式开关] 被点击，新状态:", checked);
               setUseStream(checked);
               if (!checked) {
                 setShowExecution(false);
               }
             }}
+            style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
           >
             <ThunderboltOutlined /> {useStream ? "流式关闭" : "流式开启"}
           </Tag.CheckableTag>
@@ -1982,13 +1986,21 @@ setMessages((prev) => {
             <Button
               size="small"
               icon={showExecution ? <EyeOutlined /> : <EyeInvisibleOutlined />}
-              onClick={() => setShowExecution(!showExecution)}
+              onClick={() => {
+                console.log("🔍 [显示过程] 按钮被点击");
+                setShowExecution(!showExecution);
+              }}
+              style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
             >
               {showExecution ? "隐藏过程" : "显示过程"}
             </Button>
           )}
 
-          <Button onClick={handleClear} size="small">
+          <Button 
+            onClick={handleClear} 
+            size="small"
+            style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
+          >
             清空对话
           </Button>
         </Space>
