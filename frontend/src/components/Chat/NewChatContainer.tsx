@@ -484,16 +484,25 @@ const NewChatContainer: React.FC = () => {
                          localStorage.setItem(cacheKey, JSON.stringify(cached));
                          message.info("AI回复已暂存到本地");
                        }
-                     } catch (cacheError) {
-                       console.error("本地缓存失败:", cacheError);
-                     }
-                     break; // 达到最大重试次数
-                   }
-                 }
-               }
+                      } catch (cacheError) {
+                        console.error("本地缓存失败:", cacheError);
+                      }
+                      break; // 达到最大重试次数
+                    }
+                  }
+                }
             };
-
-            retrySave();
+            
+            // 【小查修复2026-03-14】重试完成后必须设置loading=false
+            retrySave().finally(() => {
+              setLoading(false);
+              setWaitTime(0);
+              setIsRetrying(false);
+              if (waitTimerRef.current) {
+                clearInterval(waitTimerRef.current);
+                waitTimerRef.current = null;
+              }
+            });
           }
         } else {
           console.warn("⚠️ 无法保存AI回复：缺少sessionId或fullResponse");
