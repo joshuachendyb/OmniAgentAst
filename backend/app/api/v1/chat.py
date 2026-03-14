@@ -131,6 +131,17 @@ def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
     error_type = type(error).__name__
     error_msg = str(error).lower()
     
+    # 【小沈-2026-03-14修复】优先处理 IdleTimeoutError
+    from app.utils.idle_timeout import IdleTimeoutError
+    if isinstance(error, IdleTimeoutError):
+        return {
+            "code": "IDLE_TIMEOUT",
+            "message": "请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试",
+            "error_type": "timeout",
+            "retryable": True,
+            "retry_after": 5
+        }
+    
     # 根据错误类型返回用户友好的错误信息
     if error_type == "TimeoutError" or "timeout" in error_msg:
         return {
