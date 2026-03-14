@@ -41,6 +41,8 @@ from app.services.file_operations.agent import FileOperationAgent
 from app.services.shell_security import check_command_safety
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name  # ⭐ 【小沈添加 2026-03-03】
+from app.utils.retry_controller import RetryController  # 【小沈-2026-03-14添加】统一的空闲超时和重试控制器
+from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError  # 【小沈-2026-03-14添加】通用的空闲超时异步迭代器
 from pathlib import Path
 import shutil
 
@@ -1018,8 +1020,10 @@ async def chat_stream(request: ChatRequest):
                     for msg in request.messages[:-1]:
                         history.append(Message(role=msg.role, content=msg.content))
                 
-                # 重试机制配置
-                max_retries = 2
+                # 【小沈-2026-03-14修复】统一的空闲超时和重试机制
+                # 空闲超时由 IdleTimeoutIterator 实时检测，重试次数由 RetryController 管理
+                max_retries = 3  # 最大重试次数：3次（总共4次调用）
+                retry_controller = RetryController(max_retries=max_retries)
                 ai_call_successful = False
                 last_error = None
                 last_error_type = None
@@ -1029,38 +1033,38 @@ async def chat_stream(request: ChatRequest):
                 
                 for retry_attempt in range(max_retries + 1):
                     if retry_attempt > 0:
-                        # 非首次尝试，等待后重试（指数退避）
-                        wait_time = 2 ** (retry_attempt - 1)  # 第1次重试等2s，第2次等4s
-                        logger.info(f"[Retry] 第{retry_attempt}次重试，等待{wait_time}秒...")
-                        
                         # 发送重试提示给前端
                         retry_data = {
                             'type': 'incident',
                             'incident_value': 'retrying',
                             'message': f'请求超时，正在重试 ({retry_attempt}/{max_retries})...',
-                            'wait_time': wait_time,
                             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         }
                         yield f"data: {json.dumps(retry_data)}\n\n"
-                        await asyncio.sleep(wait_time)
-                        
-                        # 重置计数器，准备重新计数
-                        logger.info(f"[Retry] 开始第{retry_attempt + 1}次AI调用")
+                        logger.info(f"[Retry] 开始第{retry_attempt + 1}次AI调用（共{max_retries + 1}次）")
                     
                     # 使用流式API，逐token返回
                     full_content = ""
                     chunk_count = 0
                     has_received_content = False  # 本次调用是否收到内容
                     chunk = None  # 初始化
+                    idle_timeout_stream = None  # 初始化，用于异常处理中获取空闲时间
                     
                     try:
                         llm_call_count += 1
                         logger.info(f"[LLM Total Counter] >>> Stream AI called, count: {llm_call_count}")
                         
-                        async for chunk in ai_service.chat_stream(
-                            message=last_message,
-                            history=history
-                        ):
+                        # 【小沈-2026-03-14修复】使用 IdleTimeoutIterator 包装流式迭代器，实现实时空闲超时检测
+                        idle_timeout_stream = IdleTimeoutIterator(
+                            ai_service.chat_stream(message=last_message, history=history),
+                            timeout_seconds=30.0,
+                            name=f"AI-Stream-{retry_attempt + 1}"
+                        )
+                        
+                        async for chunk in idle_timeout_stream:
+                            # 注意：IdleTimeoutIterator 自动检测空闲超时，收到内容时自动重置计时器
+                            # 如果30秒内没有下一个 chunk，会抛出 IdleTimeoutError
+                            
                             chunk_count += 1
                             # 检查是否被中断
                             # 【原则4整改】content → message
@@ -1075,20 +1079,15 @@ async def chat_stream(request: ChatRequest):
                             async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
                                 yield pause_event
                             
-                            # ⭐ 【新增-重试机制】检查chunk是否有错误
+                            # ⭐ 检查chunk是否有错误（非空闲超时错误）
                             if chunk.stream_error:
                                 last_error = chunk.stream_error
                                 last_error_type = getattr(chunk, 'stream_error_type', 'unknown')
                                 logger.warning(f"[AI Call] 流式请求返回错误: {chunk.stream_error}, error_type: {last_error_type}")
-                                # 如果是超时错误，可以重试
-                                if last_error_type == 'timeout_error':
-                                    logger.info(f"[AI Call] 检测到超时错误，准备重试...")
-                                    break  # 跳出内层循环，触发重试
-                                else:
-                                    # 其他错误，不重试
-                                    logger.error(f"[AI Call] 检测到非超时错误，不重试: {chunk.stream_error}")
-                                    ai_call_successful = False
-                                    break
+                                # 非空闲超时错误，直接报错不重试
+                                logger.error(f"[AI Call] 检测到错误，不重试: {chunk.stream_error}")
+                                ai_call_successful = False
+                                break
                             
                             if chunk.content:
                                 has_received_content = True
@@ -1107,36 +1106,67 @@ async def chat_stream(request: ChatRequest):
                             if chunk.is_done:
                                 break
                     
+                    except IdleTimeoutError as e:
+                        # ⭐ 【关键】空闲超时异常 - 30秒无内容（由 IdleTimeoutIterator 实时检测）
+                        last_error = str(e)
+                        last_error_type = 'idle_timeout'
+                        elapsed = idle_timeout_stream.get_elapsed_time() if idle_timeout_stream else 30.0
+                        logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时：{elapsed:.1f}秒无内容")
+                        # 空闲超时进入后面的重试判断逻辑
+                    
                     except Exception as e:
                         last_error = str(e)
+                        last_error_type = 'network_error'
                         logger.error(f"[AI Call] 第{retry_attempt + 1}次调用异常: {e}")
-                        # 检查是否是网络错误（可以重试）
-                        if "timeout" in str(e).lower() or "connection" in str(e).lower():
-                            logger.warning(f"[AI Call] 网络错误，准备重试...")
-                            continue
-                        else:
-                            # 其他异常不重试
-                            logger.error(f"[AI Call] 非网络异常，不重试: {e}")
-                            break
+                        # 其他异常进入后面的错误判断逻辑
                     
-                    # ⭐ 【小沈-2026-03-13修复】修复重试判断逻辑
+                    # ⭐ 【小沈-2026-03-14重构】统一的重试判断逻辑
+                    # 判断优先级：1.收到内容成功 → 2.空闲超时重试 → 3.网络错误重试 → 4.其他错误失败
+                    
                     if has_received_content:
-                        # ✅ 已经收到过内容，说明模型在工作，标记成功不重试
+                        # ✅ 已经收到过内容，说明模型在工作
                         ai_call_successful = True
                         logger.info(f"[AI Call] 第{retry_attempt + 1}次调用成功（已收到内容）")
-                    elif last_error and last_error_type == 'timeout_error':
-                        # ⚠️ 真正的超时错误才重试
-                        logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用超时，准备重试...")
-                        continue
+                        break  # 【关键】成功后立即退出重试循环
+                    
+                    elif last_error_type == 'idle_timeout':
+                        # ⚠️ 空闲超时（30秒无内容）
+                        if retry_controller.can_retry():
+                            # 还能重试
+                            retry_controller.increment_retry()
+                            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时30秒，准备第{retry_controller.get_retry_count() + 1}次重试...")
+                            continue
+                        else:
+                            # 已达最大重试次数
+                            logger.error(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时，已达最大重试次数{max_retries}")
+                            last_error = "空闲超时：模型30秒未响应"
+                            ai_call_successful = False
+                            break
+                    
+                    elif last_error_type == 'network_error':
+                        # ⚠️ 网络错误（连接失败、读取失败等）
+                        if retry_controller.can_retry():
+                            # 还能重试
+                            retry_controller.increment_retry()
+                            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用网络错误，准备第{retry_controller.get_retry_count() + 1}次重试...")
+                            continue
+                        else:
+                            # 已达最大重试次数
+                            logger.error(f"[AI Call] 第{retry_attempt + 1}次调用网络错误，已达最大重试次数{max_retries}")
+                            ai_call_successful = False
+                            break
+                    
                     elif last_error:
-                        # ❌ 有其他错误，不重试，让外层处理
-                        logger.error(f"[AI Call] 第{retry_attempt + 1}次调用失败（非超时错误）: {last_error}")
+                        # ❌ 有其他错误（非空闲超时、非网络错误）
+                        logger.error(f"[AI Call] 第{retry_attempt + 1}次调用失败（其他错误）: {last_error}")
+                        ai_call_successful = False
                         break
+                    
                     else:
-                        # ✅ 【修复】没有收到内容也没有错误，可能是模型还在思考第一个字
-                        # 标记为成功，不重试，给模型更多时间
+                        # 【边界情况】流正常结束但无内容（模型思考中或空响应）
+                        # 判断为成功，不重试（给模型更多时间）
                         ai_call_successful = True
-                        logger.info(f"[AI Call] 第{retry_attempt + 1}次调用完成（模型尚未输出，等待中）")
+                        logger.info(f"[AI Call] 第{retry_attempt + 1}次调用完成（流结束，模型可能尚在思考）")
                         break
                     
                     # ⭐ 【新增-重试机制】重试循环结束，检查最终结果
