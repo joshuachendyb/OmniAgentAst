@@ -150,14 +150,11 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
         <span>{colors.title}</span>
       </div>
 
-      {/* 错误消息 - 突出显示 */}
+      {/* 错误消息 - 简化显示 */}
       {errorMessage && (
         <div
           style={{
-            marginBottom: 12,
-            padding: "10px 12px",
-            background: "rgba(255, 255, 255, 0.5)",
-            borderRadius: 6,
+            marginBottom: 8,
             fontWeight: 500,
             color: colors.color,
             fontSize: "14px",
