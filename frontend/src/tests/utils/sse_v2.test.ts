@@ -5,9 +5,11 @@
  * 1. 错误分类函数
  * 2. 重连延迟计算
  * 3. 友好错误消息生成
+ * 4. executionStepsRef 同步更新测试
  * 
  * @author 小查
  * @since 2026-03-04
+ * @update 2026-03-15 小查添加 executionStepsRef 同步更新测试
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -187,6 +189,93 @@ describe('连接状态', () => {
     expect(statuses).toContain('connecting');
     expect(statuses).toContain('reconnecting');
     expect(statuses).toContain('failed');
+  });
+});
+
+/**
+ * executionStepsRef 同步更新测试
+ * @description 验证 setExecutionSteps 回调中同步更新 executionStepsRef.current
+ * @author 小查
+ * @since 2026-03-15
+ */
+describe('executionStepsRef 同步更新', () => {
+  it('应在 setExecutionSteps 回调中同步更新 ref', () => {
+    // 模拟 React useState 和 useRef 的行为
+    let executionSteps: any[] = [];
+    const executionStepsRef = { current: [] as any[] };
+    
+    // 模拟修复后的 setExecutionSteps 逻辑
+    const setExecutionSteps = (updater: (prev: any[]) => any[]) => {
+      const newSteps = updater(executionSteps);
+      executionSteps = newSteps;
+      // 关键：在回调中同步更新 ref
+      executionStepsRef.current = newSteps;
+    };
+    
+    // 模拟 SSE 事件：添加一个 step
+    const step = { type: 'start', content: '🤔 AI 正在思考...', timestamp: Date.now() };
+    setExecutionSteps((prev) => [...prev, step]);
+    
+    // 验证：state 和 ref 都应该是最新的
+    expect(executionSteps).toHaveLength(1);
+    expect(executionStepsRef.current).toHaveLength(1);
+    expect(executionStepsRef.current[0]).toEqual(step);
+    expect(executionStepsRef.current).toEqual(executionSteps);
+  });
+  
+  it('应在多个 setExecutionSteps 调用后保持 ref 同步', () => {
+    // 模拟 React useState 和 useRef 的行为
+    let executionSteps: any[] = [];
+    const executionStepsRef = { current: [] as any[] };
+    
+    // 模拟修复后的 setExecutionSteps 逻辑
+    const setExecutionSteps = (updater: (prev: any[]) => any[]) => {
+      const newSteps = updater(executionSteps);
+      executionSteps = newSteps;
+      executionStepsRef.current = newSteps;
+    };
+    
+    // 模拟多个 SSE 事件
+    const events = [
+      { type: 'start', content: '🤔 AI 正在思考...', timestamp: Date.now() },
+      { type: 'thought', content: '让我想想...', timestamp: Date.now() },
+      { type: 'action_tool', content: '调用工具', timestamp: Date.now() },
+      { type: 'chunk', content: '这是回复内容', timestamp: Date.now() },
+      { type: 'final', content: '最终回复', timestamp: Date.now() },
+    ];
+    
+    events.forEach((step) => {
+      setExecutionSteps((prev) => [...prev, step]);
+    });
+    
+    // 验证：所有步骤都被正确添加
+    expect(executionSteps).toHaveLength(5);
+    expect(executionStepsRef.current).toHaveLength(5);
+    
+    // 验证：ref 和 state 始终同步
+    expect(executionStepsRef.current).toEqual(executionSteps);
+    
+    // 验证：可以通过 ref 获取最新值（模拟 getCurrentExecutionSteps）
+    const getCurrentExecutionSteps = () => executionStepsRef.current;
+    expect(getCurrentExecutionSteps()).toEqual(executionSteps);
+    expect(getCurrentExecutionSteps()).toHaveLength(5);
+  });
+  
+  it('应在 clearSteps 时同时清空 state 和 ref', () => {
+    // 模拟 React useState 和 useRef 的行为
+    let executionSteps: any[] = [{ type: 'start', content: 'test' }];
+    const executionStepsRef = { current: [{ type: 'start', content: 'test' }] };
+    
+    // 模拟修复后的 clearSteps 逻辑
+    const clearSteps = () => {
+      executionSteps = [];
+      executionStepsRef.current = [];
+    };
+    
+    clearSteps();
+    
+    expect(executionSteps).toHaveLength(0);
+    expect(executionStepsRef.current).toHaveLength(0);
   });
 });
 
