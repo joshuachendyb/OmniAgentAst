@@ -558,140 +558,6 @@ def extract_file_path(message: str) -> Optional[str]:
     
     return None
 
-
-@router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """
-    发送对话请求
-    
-    - **messages**: 消息列表，格式为 [{"role": "user", "content": "你好"}]
-    - **stream**: 是否流式返回（当前版本不支持，预留）
-    - **temperature**: 创造性参数，0-2之间
-    
-    返回AI助手的回复内容
-    支持文件操作：自动检测文件操作意图并执行
-    """
-    # 【新增】每次对话开始，LLM调用计数器
-    llm_call_count = 0
-    
-    try:
-        # 【修复P2-002】验证消息列表
-        if not request.messages:
-            raise HTTPException(
-                status_code=400,
-                detail="消息列表不能为空"
-            )
-        
-        # 验证每条消息的内容
-        for i, msg in enumerate(request.messages):
-            if not msg.content or not msg.content.strip():
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"第{i+1}条消息内容不能为空"
-                )
-        
-        # 获取最后一条用户消息
-        last_message = request.messages[-1].content
-        
-        # 【修复】检测文件操作意图（返回3个值：是否文件操作、操作类型、置信度）
-        is_file_op, op_type, confidence = detect_file_operation_intent(last_message)
-        
-        # 【修复】只有在置信度足够高时才执行文件操作
-        if is_file_op and confidence >= 0.3:
-            # 【修复】文件操作路由到 FileTools
-            return await handle_file_operation(last_message, op_type)
-        
-        # 【修复】非文件操作，正常调用AI服务
-        # 获取AI服务实例
-        if request.provider and request.model:
-            ai_service = AIServiceFactory.get_service_for_model(request.provider, request.model)
-        else:
-            ai_service = AIServiceFactory.get_service()
-        
-        # 转换消息格式
-        from app.services.base import Message
-        history = []
-        
-        # 除最后一条消息外，其他作为历史记录
-        if len(request.messages) > 1:
-            for msg in request.messages[:-1]:
-                history.append(Message(role=msg.role, content=msg.content))
-        
-        # 调用AI服务（非流式）
-        llm_call_count += 1
-        logger.info(f"[LLM Total Counter] >>> Non-stream AI called, count: {llm_call_count}")
-        response = await ai_service.chat(
-            message=last_message,
-            history=history
-        )
-        
-        return ChatResponse(
-            success=response.success,
-            content=response.content,
-            model=response.model,
-            provider=ai_service.provider,
-            error=response.error
-        )
-        
-    except HTTPException:
-        # FastAPI的HTTP异常直接抛出，让FastAPI处理
-        raise
-    except json.JSONDecodeError as e:
-        # 【小沈修复 2026-03-14】JSON解析错误
-        logger.warning(f"聊天请求JSON解析错误: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"请求JSON格式错误: {str(e)}"
-        )
-    except (KeyError, TypeError) as e:
-        # 【小沈修复 2026-03-14】消息结构缺失字段或类型错误
-        logger.warning(f"聊天请求消息结构错误: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"消息缺少必需字段或类型错误: {str(e)}"
-        )
-    except ValueError as e:
-        # 客户端输入错误
-        logger.warning(f"聊天请求参数错误: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail=f"请求参数错误: {str(e)}"
-        )
-    except IndexError as e:
-        # 消息列表索引错误（虽然前面已验证，但保留防御）
-        logger.warning(f"消息列表索引错误: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail="消息列表格式错误"
-        )
-    except httpx.TimeoutException as e:
-        # 【小沈修复 2026-03-14】AI服务请求超时
-        logger.error(f"AI服务请求超时: {e}")
-        raise HTTPException(
-            status_code=504,
-            detail="AI服务响应超时，请稍后重试"
-        )
-    except httpx.RequestError as e:
-        # 【小沈修复 2026-03-14】AI服务网络错误
-        logger.error(f"AI服务网络错误: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="AI服务暂时不可用，请稍后重试"
-        )
-    except Exception as e:
-        # 服务端错误，记录详细日志但返回通用错误信息
-        logger.error(f"聊天请求服务端错误: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail="服务器内部错误，请稍后重试"
-        )
-
-
-# ============================================================
-# SSE流式API - 实时展示ReAct执行步骤
-# 支持任务中断/暂停
-# ============================================================
-
 # 任务管理字典（存储运行中的任务，用于中断）
 running_tasks_lock = asyncio.Lock()
 running_tasks: dict[str, dict] = {}
@@ -703,7 +569,6 @@ running_tasks: dict[str, dict] = {}
 interrupted_sessions: dict[str, datetime] = {}
 INTERRUPTED_SESSION_TIMEOUT = timedelta(minutes=5)  # 5分钟后允许重新连接
 TASK_TIMEOUT = timedelta(hours=1)  # 1小时超时
-
 
 async def cleanup_expired_tasks():
     """清理过期任务"""
@@ -717,4 +582,720 @@ async def cleanup_expired_tasks():
             del running_tasks[task_id]
         if expired_tasks:
             logger.info(f"清理了 {len(expired_tasks)} 个过期任务")
+
+
+@router.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """
+    流式API - SSE (Server-Sent Events)
+    
+    实时推送ReAct执行步骤：思考→行动→观察
+    支持任务中断（前端使用AbortController）
+    
+    - **messages**: 消息列表
+    - **stream**: 是否流式返回（此路由强制为True）
+    - **temperature**: 创造性参数
+    """
+    import uuid
+    
+    # 【前端小新代修改】优先使用前端传递的task_id，没有才自己生成
+    task_id = request.task_id if request.task_id else str(uuid.uuid4())
+    
+    # 【小沈-2026-03-13修复】检查会话是否已中断（防止重连循环）
+    session_id = request.session_id
+    if session_id and session_id in interrupted_sessions:
+        last_interrupt = interrupted_sessions[session_id]
+        if datetime.now() - last_interrupt < INTERRUPTED_SESSION_TIMEOUT:
+            logger.warning(f"[Session Blocked] 会话 {session_id} 在5分钟内被中断过，拒绝重连")
+            
+            async def blocked_response():
+                yield create_error_response(
+                    error_type="session_interrupted",
+                    message="会话已中断，请新建对话",
+                    code="SESSION_INTERRUPTED",
+                    retryable=False
+                )
+            
+            return StreamingResponse(
+                blocked_response(),
+                media_type="text/event-stream"
+            )
+        else:
+            # 超过5分钟，清除记录，允许重新连接
+            logger.info(f"[Session Cleared] 会话 {session_id} 中断已超过5分钟，清除记录")
+            del interrupted_sessions[session_id]
+    
+    async def generate():
+        """生成SSE流，支持中断和暂停"""
+        # 【新增】每次对话开始，重置LLM调用计数器
+        llm_call_count = 0
+        
+        # 【修改】优先使用前端传递的模型信息，fallback到配置文件
+        if request.provider and request.model:
+            ai_service = AIServiceFactory.get_service_for_model(
+                request.provider, 
+                request.model
+            )
+        else:
+            ai_service = AIServiceFactory.get_service()
+        
+        # 注册任务（包含ai_service引用，用于强制中断）
+        async with running_tasks_lock:
+            running_tasks[task_id] = {
+                "status": "running", 
+                "cancelled": False,
+                "paused": False,  # 暂停状态
+                "created_at": datetime.now(),
+                "ai_service": ai_service  # 【小沈-2026-03-13修复】保存ai_service引用
+            }
+        
+        logger.info(f"[LLM Total Counter] ====== New conversation started, counter reset to 0 ======")
+        
+        # 【前端小新代修改】在流式响应开始时发送start事件
+        display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
+        
+        # 缓存 display_name
+        if request.session_id:
+            cache_display_name(request.session_id, display_name)
+        
+        # 【问题1修复】在start阶段添加安全检查
+        # 获取最后一条用户消息进行安全检查
+        last_message = request.messages[-1].content if request.messages else ""
+        security_check_result = check_command_safety(last_message)
+        
+        # 发送 start 步骤（包含security_check）
+        start_data = {
+            'type': 'start',
+            'display_name': display_name,
+            'provider': ai_service.provider,
+            'model': ai_service.model,
+            'task_id': task_id,
+            'security_check': {
+                'is_safe': security_check_result.get('is_safe', True),
+                'risk_level': security_check_result.get('risk_level'),
+                'risk': security_check_result.get('risk'),
+                'blocked': security_check_result.get('blocked', False)
+            }
+        }
+        logger.info(f"[Step start] 发送start步骤")
+        
+        yield f"data: {json.dumps(start_data)}\n\n"
+        
+        # 如果安全检查未通过，直接返回错误
+        if not security_check_result.get('is_safe', True):
+            risk = security_check_result.get('risk', '未知风险')
+            error_data = {
+                'type': 'error',
+                'code': 'SECURITY_BLOCKED',
+                'message': f'危险操作需确认: {risk}',
+                'error_type': 'security',
+                'details': f"risk_level: {security_check_result.get('risk_level')}",
+                'retryable': False,
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'model': request.model,
+                'provider': request.provider
+            }
+            logger.info(f"[Step error] 发送error步骤(安全检测拦截)")
+            yield f"data: {json.dumps(error_data)}\n\n"
+            return
+        
+        try:
+            # 获取最后一条用户消息
+            last_message = request.messages[-1].content if request.messages else ""
+            
+            # 构建历史消息
+            from app.services.base import Message
+            history = []
+            if len(request.messages) > 1:
+                for msg in request.messages[:-1]:
+                    history.append(Message(role=msg.role, content=msg.content))
+            
+            # 步骤计数器
+            step_counter = 0
+            
+            def next_step():
+                nonlocal step_counter
+                step_counter += 1
+                return step_counter
+            
+            # 1. 发送思考
+            thought_data = {'type': 'thought', 'step': next_step(), 'thinking_prompt': '正在分析任务...'}
+            logger.info(f"[Step thought] 发送thought步骤")
+            yield f"data: {json.dumps(thought_data)}\n\n"
+            await asyncio.sleep(0.3)
+            
+            # ⭐ 修复：只检查一次中断（删除 4 次重复代码）
+            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
+            if is_interrupted:
+                yield interrupt_msg
+                return
+            
+            # ⭐ 暂停检查：如果暂停则等待恢复
+            async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
+                yield pause_event
+            
+            # 检测文件操作意图
+            is_file_op, _, confidence = detect_file_operation_intent(last_message)
+            
+            if is_file_op and confidence >= 0.3:
+                # 文件操作：逐步推送执行步骤
+                # 【问题2修复】type改为action_tool，添加必需字段
+                action1_data = {
+                    'type': 'action_tool',
+                    'step': next_step(),
+                    'tool_name': 'notification',
+                    'tool_params': {'description': '检测到文件操作意图，开始执行...'},
+                    'execution_status': 'success',
+                    'summary': '检测到文件操作意图，开始执行...',
+                    'raw_data': None,
+                    'action_retry_count': 0
+                }
+                yield f"data: {json.dumps(action1_data)}\n\n"
+                await asyncio.sleep(0.3)
+                
+                # 检查是否被中断
+                async with running_tasks_lock:
+                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                        # 【问题5修复】统一使用type='incident' + incident_value
+                        interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                        logger.info(f"[Step incident] 发送incident步骤(interrupted)")
+                        yield f"data: {json.dumps(interrupted_data)}\n\n"
+                        return
+                
+                # 安全检测
+                is_safe, risk = check_command_safety(last_message)
+                if not is_safe:
+                    # 【问题6修复】使用统一错误格式
+                    logger.info(f"[Step error] 发送error步骤(安全检测)")
+                    yield create_error_response(
+                        error_type="security_error",
+                        message=f"危险操作需确认: {risk}",
+                        code="SECURITY_BLOCKED",
+                        model=ai_service.model,
+                        provider=ai_service.provider,
+                        retryable=False
+                    )
+                    return
+                
+                # 【小健检查修复】遵循字段设计原则5：禁止兼容字段
+                # 【问题4修复】observation使用设计文档字段
+                # 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
+                observation1_data = {
+                    'type': 'observation',
+                    'step': next_step(),
+                    'obs_execution_status': 'success',
+                    'obs_summary': f'安全检测{"通过" if is_safe else "未通过"}',
+                    'obs_raw_data': {'is_safe': is_safe, 'risk': risk},
+                    'content': '',  # 安全检测没有思考过程
+                    'obs_reasoning': '',
+                    'obs_action_tool': 'security_check',
+                    'obs_params': {},
+                    'is_finished': True
+                }
+                logger.info(f"[Step observation] 发送observation步骤")
+                yield f"data: {json.dumps(observation1_data)}\n\n"
+                await asyncio.sleep(0.3)
+                
+                # 创建Agent执行
+                session_id = str(uuid.uuid4())
+                ai_service = AIServiceFactory.get_service()
+                
+                # 定义llm_client函数（适配FileOperationAgent）
+                async def llm_client(message, history=None):
+                    response = await ai_service.chat(message, history)
+                    # 转换为Agent需要的格式
+                    return type('obj', (object,), {'content': response.content})()
+                
+                agent = FileOperationAgent(
+                    llm_client=llm_client,
+                    session_id=session_id
+                )
+                
+                # 【问题2修复】type改为action_tool，添加必需字段
+                action2_data = {
+                    'type': 'action_tool',
+                    'step': next_step(),
+                    'tool_name': 'notification',
+                    'tool_params': {'description': '执行文件操作...'},
+                    'execution_status': 'success',
+                    'summary': '执行文件操作...',
+                    'raw_data': None,
+                    'action_retry_count': 0
+                }
+                yield f"data: {json.dumps(action2_data)}\n\n"
+                
+                # 流式执行（每步检查中断）
+                try:
+                    # 【Phase4核心修改】使用run_stream异步流式输出
+                    async for event in agent.run_stream(last_message):
+                        # 每步检查是否被中断
+                        async with running_tasks_lock:
+                            if running_tasks.get(task_id, {}).get("cancelled", False):
+                                # 【2026-03-11 重命名】status_value -> incident_value
+                                interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                                logger.info(f"[Step incident] 发送incident步骤(interrupted)")
+                                yield f"data: {json.dumps(interrupted_data)}\n\n"
+                                break
+                        
+                        event_type = event.get('type')
+                        
+                        if event_type == 'thought':
+                            # Thought阶段
+                            thought_data = {
+                                'type': 'thought',
+                                'step': event.get('step', 0),
+                                'content': event.get('content', ''),
+                                'reasoning': event.get('reasoning', ''),
+                                'action_tool': event.get('action_tool', ''),
+                                'params': event.get('params', {})
+                            }
+                            logger.info(f"[Step thought] 发送thought步骤")
+                            yield f"data: {json.dumps(thought_data)}\n\n"
+                        
+                        elif event_type == 'action_tool':
+                            # Action阶段
+                            action_data = {
+                                'type': 'action_tool',
+                                'step': event.get('step', 0),
+                                'tool_name': event.get('tool_name', ''),
+                                'tool_params': event.get('tool_params', {}),
+                                'execution_status': event.get('execution_status', 'success'),
+                                'summary': event.get('summary', ''),
+                                'raw_data': event.get('raw_data'),
+                                'action_retry_count': event.get('action_retry_count', 0)
+                            }
+                            logger.info(f"[Step action_tool] 发送action_tool步骤(执行工具)")
+                            yield f"data: {json.dumps(action_data)}\n\n"
+                        
+                        elif event_type == 'observation':
+                            # Observation阶段
+                            # 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
+                            observation_data = {
+                                'type': 'observation',
+                                'step': event.get('step', 0),
+                                'obs_execution_status': event.get('execution_status', 'success'),
+                                'obs_summary': event.get('summary', ''),
+                                'obs_raw_data': event.get('raw_data'),
+                                'content': event.get('content', ''),
+                                'obs_reasoning': event.get('reasoning', ''),
+                                'obs_action_tool': event.get('action_tool', ''),
+                                'obs_params': event.get('params', {}),
+                                'is_finished': event.get('is_finished', False)
+                            }
+                            logger.info(f"[Step observation] 发送observation步骤")
+                            yield f"data: {json.dumps(observation_data)}\n\n"
+                        
+                        elif event_type == 'final':
+                            # 最终结果
+                            final_data = {
+                                'type': 'final',
+                                'content': event.get('content', '')
+                            }
+                            logger.info(f"[Step final] 发送final步骤")
+                            yield f"data: {json.dumps(final_data)}\n\n"
+                            break
+                        
+                        elif event_type == 'error':
+                            # 错误
+                            error_data = {
+                                'type': 'error',
+                                'code': 'AGENT_ERROR',
+                                'message': event.get('message', '未知错误'),
+                                'error_type': 'agent',
+                                'retryable': event.get('retryable', False),
+                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                'model': request.model,
+                                'provider': request.provider
+                            }
+                            logger.info(f"[Step error] 发送error步骤")
+                            yield f"data: {json.dumps(error_data)}\n\n"
+                            break
+                        
+                        await asyncio.sleep(0.05)
+                    
+                    # 检查是否被中断（在循环内已处理）
+                    
+                except Exception as e:
+                    # 【小沈代修改 - 修复问题4】统一错误处理格式，记录日志
+                    logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
+                    yield create_error_response(
+                        error_type="file_operation_error",
+                        message="文件操作执行失败",
+                        model=ai_service.model,
+                        provider=ai_service.provider,
+                        retryable=False
+                    )
+            else:
+                # 普通对话：调用AI服务（流式）
+                # 【优化1版修复】不发送action_tool，直接发送chunk
+                # 符合5-9章设计：普通对话只有chunk → final
+                
+                # 检查是否被中断
+                async with running_tasks_lock:
+                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                        # 【原则4整改】字段拆分：content → message
+                        interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                        logger.info(f"[Step incident] 发送interrupted步骤")
+                        yield f"data: {json.dumps(interrupted_data)}\n\n"
+                        return
+                
+                from app.services.base import Message
+                history = []
+                if len(request.messages) > 1:
+                    for msg in request.messages[:-1]:
+                        history.append(Message(role=msg.role, content=msg.content))
+                
+                # 【小沈-2026-03-14修复】统一的空闲超时和重试机制
+                # 空闲超时由 IdleTimeoutIterator 实时检测，重试次数由 RetryController 管理
+                max_retries = 3  # 最大重试次数：3次（总共4次调用）
+                retry_controller = RetryController(max_retries=max_retries)
+                ai_call_successful = False
+                last_error = None
+                last_error_type = None
+                
+                full_content = ""
+                chunk_count = 0
+                
+                for retry_attempt in range(max_retries + 1):
+                    if retry_attempt > 0:
+                        # 发送重试提示给前端
+                        retry_data = {
+                            'type': 'incident',
+                            'incident_value': 'retrying',
+                            'message': f'请求超时，正在重试 ({retry_attempt}/{max_retries})...',
+                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        }
+                        yield f"data: {json.dumps(retry_data)}\n\n"
+                        logger.info(f"[Retry] 开始第{retry_attempt + 1}次AI调用（共{max_retries + 1}次）")
+                    
+                    # 使用流式API，逐token返回
+                    full_content = ""
+                    chunk_count = 0
+                    has_received_content = False  # 本次调用是否收到内容
+                    chunk = None  # 初始化
+                    idle_timeout_stream = None  # 初始化，用于异常处理中获取空闲时间
+                    
+                    try:
+                        llm_call_count += 1
+                        logger.info(f"[LLM Total Counter] >>> Stream AI called, count: {llm_call_count}")
+                        
+                        # 【小沈-2026-03-14修复】使用 IdleTimeoutIterator 包装流式迭代器，实现实时空闲超时检测
+                        idle_timeout_stream = IdleTimeoutIterator(
+                            ai_service.chat_stream(message=last_message, history=history),
+                            timeout_seconds=30.0,
+                            name=f"AI-Stream-{retry_attempt + 1}"
+                        )
+                        
+                        async for chunk in idle_timeout_stream:
+                            # 注意：IdleTimeoutIterator 自动检测空闲超时，收到内容时自动重置计时器
+                            # 如果30秒内没有下一个 chunk，会抛出 IdleTimeoutError
+                            
+                            chunk_count += 1
+                            # 检查是否被中断
+                            # 【原则4整改】content → message
+                            async with running_tasks_lock:
+                                if running_tasks.get(task_id, {}).get("cancelled", False):
+                                    interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                                    logger.info(f"[Step incident] 发送interrupted步骤")
+                                    yield f"data: {json.dumps(interrupted_data)}\n\n"
+                                    return
+                            
+                            # ⭐ 暂停检查：AI流式响应过程中也检查暂停状态
+                            async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
+                                yield pause_event
+                            
+                            # ⭐ 检查chunk是否有错误（非空闲超时错误）
+                            if chunk.stream_error:
+                                last_error = chunk.stream_error
+                                last_error_type = getattr(chunk, 'stream_error_type', 'unknown')
+                                logger.warning(f"[AI Call] 流式请求返回错误: {chunk.stream_error}, error_type: {last_error_type}")
+                                # 非空闲超时错误，直接报错不重试
+                                logger.error(f"[AI Call] 检测到错误，不重试: {chunk.stream_error}")
+                                ai_call_successful = False
+                                break
+                            
+                            if chunk.content:
+                                has_received_content = True
+                                full_content += chunk.content
+                                # ⭐ 【调试日志】记录每个chunk
+                                logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
+                                # 逐token发送到前端
+                                # 【重要】清晰接口：只使用 content 和 is_reasoning 两个字段
+                                chunk_data = {
+                                    'type': 'chunk', 
+                                    'content': chunk.content,                    # 显示的文本内容
+                                    'is_reasoning': getattr(chunk, 'is_reasoning', False)  # true=思考，false=回答
+                                }
+                                logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}, is_reasoning={chunk_data['is_reasoning']}")
+                                yield f"data: {json.dumps(chunk_data)}\n\n"
+                            if chunk.is_done:
+                                break
+                    
+                    except IdleTimeoutError as e:
+                        # ⭐ 【关键】空闲超时异常 - 30秒无内容（由 IdleTimeoutIterator 实时检测）
+                        last_error = str(e)
+                        last_error_type = 'idle_timeout'
+                        elapsed = idle_timeout_stream.get_elapsed_time() if idle_timeout_stream else 30.0
+                        logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时：{elapsed:.1f}秒无内容")
+                        # 空闲超时进入后面的重试判断逻辑
+                    
+                    except Exception as e:
+                        last_error = str(e)
+                        last_error_type = 'network_error'
+                        logger.error(f"[AI Call] 第{retry_attempt + 1}次调用异常: {e}")
+                        # 其他异常进入后面的错误判断逻辑
+                    
+                    # ⭐ 【小沈-2026-03-14重构】统一的重试判断逻辑
+                    # 判断优先级：1.收到内容成功 → 2.空闲超时重试 → 3.网络错误重试 → 4.其他错误失败
+                    
+                    if has_received_content:
+                        # ✅ 已经收到过内容，说明模型在工作
+                        ai_call_successful = True
+                        logger.info(f"[AI Call] 第{retry_attempt + 1}次调用成功（已收到内容）")
+                        break  # 【关键】成功后立即退出重试循环
+                    
+                    elif last_error_type == 'idle_timeout':
+                        # ⚠️ 空闲超时（30秒无内容）
+                        if retry_controller.can_retry():
+                            # 还能重试
+                            retry_controller.increment_retry()
+                            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时30秒，准备第{retry_controller.get_retry_count() + 1}次重试...")
+                            continue
+                        else:
+                            # 已达最大重试次数
+                            logger.error(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时，已达最大重试次数{max_retries}")
+                            last_error = "空闲超时：模型30秒未响应"
+                            ai_call_successful = False
+                            break
+                    
+                    elif last_error_type == 'network_error':
+                        # ⚠️ 网络错误（连接失败、读取失败等）
+                        if retry_controller.can_retry():
+                            # 还能重试
+                            retry_controller.increment_retry()
+                            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用网络错误，准备第{retry_controller.get_retry_count() + 1}次重试...")
+                            continue
+                        else:
+                            # 已达最大重试次数
+                            logger.error(f"[AI Call] 第{retry_attempt + 1}次调用网络错误，已达最大重试次数{max_retries}")
+                            ai_call_successful = False
+                            break
+                    
+                    elif last_error:
+                        # ❌ 有其他错误（非空闲超时、非网络错误）
+                        logger.error(f"[AI Call] 第{retry_attempt + 1}次调用失败（其他错误）: {last_error}")
+                        ai_call_successful = False
+                        break
+                    
+                    else:
+                        # 【边界情况】流正常结束但无内容（模型思考中或空响应）
+                        # 【小沈&小新修复 2026-03-14】检查是否收到内容
+                        if has_received_content and full_content.strip():
+                            # 收到了有效内容，判断为成功
+                            ai_call_successful = True
+                            logger.info(f"[AI Call] 第{retry_attempt + 1}次调用完成，收到内容长度={len(full_content)}")
+                            break
+                        else:
+                            # 【修复】未收到内容，视为错误，发送error步骤
+                            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用完成但无内容（流结束，模型未返回有效内容）")
+                            if retry_controller.can_retry():
+                                # 还能重试
+                                retry_controller.increment_retry()
+                                logger.info(f"[AI Call] 空响应，准备第{retry_controller.get_retry_count() + 1}次重试...")
+                                continue
+                            else:
+                                # 已达最大重试次数，发送error步骤
+                                logger.error(f"[AI Call] 空响应重试失败，已达最大重试次数{max_retries}")
+                                yield create_error_response(
+                                    error_type="empty_response",
+                                    message="模型未能生成有效回复，请尝试更换问题或稍后重试",
+                                    model=ai_service.model,
+                                    provider=ai_service.provider,
+                                    retryable=True,
+                                    retry_after=3
+                                )
+                                return  # 直接返回，不再发送final步骤
+                    
+                    # ⭐ 【新增-重试机制】重试循环结束，检查最终结果
+                if not ai_call_successful:
+                    logger.error(f"[AI Call] 重试失败，ai_call_successful={ai_call_successful}")
+                    # 根据错误原因返回不同的错误提示
+                    if last_error:
+                        logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}, 类型: {last_error_type}")
+                        # 使用之前保存的 error_type
+                        error_type_map = {
+                            'idle_timeout': ('timeout', '请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试'),
+                            'timeout_error': ('timeout', '请求超时，请重试'),
+                            'read_error': ('server', '读取响应失败，请重试'),
+                            'connect_error': ('network', '连接失败，请检查网络'),
+                            'protocol_error': ('server', '协议错误，请重试'),
+                            'proxy_error': ('network', '代理错误，请检查网络配置'),
+                            'write_error': ('server', '发送请求失败'),
+                            'network_error': ('network', '网络错误，请检查网络连接'),
+                        }
+                        if last_error_type in error_type_map:
+                            code, error_message = error_type_map[last_error_type]
+                        else:
+                            code, error_message = 'server', f"服务调用失败: {last_error}"
+                        error_type = code
+                    else:
+                        # 没有错误但也没有收到有效内容，可能是模型返回空响应
+                        logger.error(f"[AI Call] 所有重试失败，无有效响应（模型返回空内容）")
+                        error_type, error_message = "empty_response", "模型未能生成有效回复，请尝试更换问题或稍后重试"
+                    
+                    # 发送error步骤而不是final步骤
+                    logger.info(f"[Step error] 发送error步骤: error_type={error_type}, message={error_message}")
+                    yield create_error_response(
+                        error_type=error_type,
+                        message=error_message,
+                        model=ai_service.model,
+                        provider=ai_service.provider,
+                        retryable=True,
+                        retry_after=3
+                    )
+                    return  # 直接返回，不再发送final步骤
+                
+                # 发送最终结果，【新增】添加provider字段作为兜底
+                content_preview = full_content[:200] + "..." if len(full_content) > 200 else full_content
+                logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={content_preview}")
+                yield create_final_response(
+                    content=full_content,
+                    model=ai_service.model,
+                    provider=ai_service.provider,
+                    display_name=display_name
+                )
+                        
+        except asyncio.CancelledError:
+            # 客户端断开连接，任务被中断
+            async with running_tasks_lock:
+                running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
+            # 【原则4整改】content → message
+            interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '客户端断开连接，任务中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
+            yield f"data: {json.dumps(interrupted_data)}\n\n"
+            
+        except Exception as e:
+            # 【小沈代修改 - 统一错误处理】使用 get_user_friendly_error 和 create_error_response
+            logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
+            error_info = get_user_friendly_error(e)
+            logger.info(f"[Step error] 发送error步骤")
+            yield create_error_response(
+                error_type=error_info.get("error_type", "server"),
+                message=error_info.get("message", "服务调用失败"),
+                code=error_info.get("code", "INTERNAL_ERROR"),
+                model=ai_service.model,
+                provider=ai_service.provider,
+                retryable=error_info.get("retryable", False),
+                retry_after=error_info.get("retry_after")
+            )
+        
+        finally:
+            # 【新增】输出最终的 LLM 调用次数
+            logger.info(f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {llm_call_count} ======")
+            
+            # 清理任务
+            async with running_tasks_lock:
+                if task_id in running_tasks:
+                    del running_tasks[task_id]
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # 禁用Nginx缓冲，确保流式输出
+        }
+    )
+
+
+# ============================================================
+# 任务中断接口
+# ============================================================
+
+@router.post("/chat/stream/cancel/{task_id}")
+async def cancel_stream_task(task_id: str, session_id: Optional[str] = None):
+    """
+    中断指定的流式任务
+    
+    - **task_id**: 任务ID
+    - **session_id**: 会话ID（可选，用于阻止重连）
+    """
+    # 【小沈-2026-03-13修复】记录会话级别中断，阻止5分钟内的重连
+    # TODO【小健-2026-03-13深度检查】：空session_id需要特殊处理，避免空字符串跳过检查
+    if session_id:
+        interrupted_sessions[session_id] = datetime.now()
+        logger.info(f"[Session Interrupted] 会话 {session_id} 已标记为中断，5分钟内禁止重连")
+    
+    async with running_tasks_lock:
+        if task_id in running_tasks:
+            task_info = running_tasks[task_id]
+            task_info["cancelled"] = True
+            task_info["status"] = "cancelled"
+            
+            # 【小沈-2026-03-13修复】关键！强制关闭HTTP连接
+            # TODO【小健-2026-03-13深度检查】：应在锁外调用cancel，避免长时间持有锁
+            if "ai_service" in task_info and task_info["ai_service"]:
+                ai_service = task_info["ai_service"]
+                try:
+                    ai_service.cancel()
+                    logger.info(f"[Task Cancelled] 任务 {task_id} HTTP连接已强制关闭")
+                except Exception as e:
+                    logger.error(f"[Task Cancelled] 关闭HTTP连接失败: {e}")
+            
+            logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为中断")
+            return {"success": True, "message": f"任务 {task_id} 已中断"}
+    
+    # 即使任务不存在，也记录会话中断
+    if session_id:
+        return {"success": True, "message": f"会话 {session_id} 已标记为中断（任务可能已完成）"}
+    
+    return {"success": False, "message": f"任务 {task_id} 不存在"}
+
+
+# 任务暂停/继续接口
+# ============================================================
+
+@router.post("/chat/stream/pause/{task_id}")
+async def pause_stream_task(task_id: str, session_id: Optional[str] = None):
+    """
+    暂停指定的流式任务
+    
+    - **task_id**: 任务ID
+    - **session_id**: 会话ID（可选，用于记录暂停状态）
+    - 暂停时：前端停止显示，但后端继续处理，数据暂存缓冲区
+    """
+    # 【小沈-2026-03-13修复】支持session_id参数（可选）
+    if session_id:
+        logger.info(f"[Pause] 会话 {session_id} 暂停任务 {task_id}")
+    
+    async with running_tasks_lock:
+        if task_id in running_tasks:
+            running_tasks[task_id]["paused"] = True
+            running_tasks[task_id]["status"] = "paused"
+            logger.info(f"[Pause] 任务 {task_id} 已暂停")
+            return {"success": True, "message": f"任务 {task_id} 已暂停"}
+    return {"success": False, "message": f"任务 {task_id} 不存在"}
+
+
+@router.post("/chat/stream/resume/{task_id}")
+async def resume_stream_task(task_id: str, session_id: Optional[str] = None):
+    """
+    继续指定的流式任务
+    
+    - **task_id**: 任务ID
+    - **session_id**: 会话ID（可选，用于记录恢复状态）
+    - 继续时：前端恢复显示暂存的数据
+    """
+    # 【小沈-2026-03-13修复】支持session_id参数（可选）
+    if session_id:
+        logger.info(f"[Resume] 会话 {session_id} 恢复任务 {task_id}")
+    
+    async with running_tasks_lock:
+        if task_id in running_tasks:
+            running_tasks[task_id]["paused"] = False
+            running_tasks[task_id]["status"] = "running"
+            logger.info(f"[Resume] 任务 {task_id} 已继续")
+            return {"success": True, "message": f"任务 {task_id} 已继续"}
+    return {"success": False, "message": f"任务 {task_id} 不存在"}
 
