@@ -772,7 +772,7 @@ const processSSEData = (
           model: rawData.model,
           provider: rawData.provider,
           display_name: displayName,
-        } as SSEMetadata, [...handlers.getCurrentExecutionSteps(), step]);
+        } as SSEMetadata, handlers.getCurrentExecutionSteps());  // 【小新修复 2026-03-15】ref已被同步更新，无需再手动加step
 
         setIsReceiving(false);
         setIsConnected(false);
