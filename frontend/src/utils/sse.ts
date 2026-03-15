@@ -368,6 +368,7 @@ export const useSSE = (
         processSSEData(buffer, {
           setExecutionSteps,
           getCurrentExecutionSteps: () => executionStepsRef.current,
+          executionStepsRef,  // 【小新添加 2026-03-15】传递 ref 以便在 processSSEData 内部同步更新
           onStep,
           onChunk,
           onComplete,
@@ -395,6 +396,7 @@ export const useSSE = (
           processSSEData(line, {
             setExecutionSteps,
             getCurrentExecutionSteps: () => executionStepsRef.current,
+            executionStepsRef,  // 【小新添加 2026-03-15】传递 ref 以便在 processSSEData 内部同步更新
             onStep,
             onChunk,
             onComplete,
@@ -515,6 +517,7 @@ const processSSEData = (
   handlers: {
     setExecutionSteps: React.Dispatch<React.SetStateAction<ExecutionStep[]>>;
     getCurrentExecutionSteps: () => ExecutionStep[];
+    executionStepsRef: React.MutableRefObject<ExecutionStep[]>;  // 【小新添加 2026-03-15】用于同步更新 ref
     onStep?: (step: ExecutionStep) => void;
     onChunk?: (chunk: string, is_reasoning?: boolean) => void;
     onComplete?: (fullResponse: string, metadata?: string | SSEMetadata, executionSteps?: ExecutionStep[]) => void;
@@ -614,7 +617,15 @@ const processSSEData = (
           } : undefined,
         };
 
-        setExecutionSteps((prev) => [...prev, startStep]);
+        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
+        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
+        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
+        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, startStep];
+          handlers.executionStepsRef.current = newSteps;
+          return newSteps;
+        });
         onStep?.(startStep);
         // 【小查修复】收到start时显示步骤UI（必须在onStep之后）
         onShowSteps?.(true);
@@ -629,7 +640,15 @@ const processSSEData = (
         step.params = rawData.params || {};
         console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
         // 添加到步骤数组，显示思考过程
-        setExecutionSteps((prev) => [...prev, step]);
+        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
+        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
+        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
+        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          return newSteps;
+        });
         onStep?.(step);
         // 【小查修复】收到thought时显示步骤UI
         onShowSteps?.(true);
@@ -647,7 +666,15 @@ const processSSEData = (
         // 使用 action_description 填充 content
         step.content = step.action_description || step.tool_name || "";
         // 添加到步骤数组，显示执行动作
-        setExecutionSteps((prev) => [...prev, step]);
+        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
+        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
+        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
+        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          return newSteps;
+        });
         onStep?.(step);
         // 【小查修复】收到action_tool时显示步骤UI
         onShowSteps?.(true);
@@ -666,7 +693,15 @@ const processSSEData = (
         step.params = rawData.obs_params ?? {};
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
-        setExecutionSteps((prev) => [...prev, step]);
+        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
+        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
+        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
+        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          return newSteps;
+        });
         onStep?.(step);
         // 【小查修复】收到observation时显示步骤UI
         onShowSteps?.(true);
@@ -693,7 +728,15 @@ const processSSEData = (
         
         // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
         // 这样MessageItem可以遍历并分别显示思考过程和正式内容
-        setExecutionSteps((prev) => [...prev, step]);
+        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
+        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
+        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
+        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          return newSteps;
+        });
         onStep?.(step);
         // 【小查修复】收到chunk时关闭步骤UI，开始显示回复内容（必须在onStep之后）
         onShowSteps?.(false);
@@ -714,7 +757,15 @@ const processSSEData = (
         const displayName = rawData.display_name;
         
         // 【小查修复】保存final到executionSteps，以便导出功能能获取到
-        setExecutionSteps((prev) => [...prev, step]);
+        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
+        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
+        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
+        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          return newSteps;
+        });
         onStep?.(step);
 
         onComplete?.(responseBufferRef.current, {
