@@ -685,6 +685,10 @@ const processSSEData = (
         
         // 【小查修复2026-03-15】使用累积的完整内容，而不是当前小块
         // 原因：保存到数据库时chunk内容需要是完整的，否则历史消息不完整
+        // 历史教训：2026-03-11 小查提交commit af9ec8bd时添加chunk到executionSteps
+        //         但错误地赋值了当前小块(step.content = chunkContent)而非累积内容
+        //         导致历史消息刷新后chunk内容不完整，一直存在至今才被发现
+        //         教训：添加新功能时必须确保数据流的完整性！
         step.content = responseBufferRef.current;
         
         // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
