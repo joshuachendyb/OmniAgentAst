@@ -718,13 +718,24 @@ const processSSEData = (
         const is_reasoning = rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1';
         onChunk?.(chunkContent, is_reasoning);
         
-        // 【小查修复2026-03-15】使用累积的完整内容，而不是当前小块
-        // 原因：保存到数据库时chunk内容需要是完整的，否则历史消息不完整
-        // 历史教训：2026-03-11 小查提交commit af9ec8bd时添加chunk到executionSteps
-        //         但错误地赋值了当前小块(step.content = chunkContent)而非累积内容
-        //         导致历史消息刷新后chunk内容不完整，一直存在至今才被发现
-        //         教训：添加新功能时必须确保数据流的完整性！
-        step.content = responseBufferRef.current;
+        // 【小新修复 2026-03-15 V3】chunk只保存当前小块内容，不保存累积
+        // 核心原则：保存不能多也不能少，每个chunk只保存当前增量
+        // 
+        // 实时显示逻辑（NewChatContainer.tsx）：
+        //   - content累加显示：lastMessage.content + chunk（这是正确的，需要累加才能看到完整内容）
+        // 
+        // 保存数据逻辑（此处）：
+        //   - chunk保存当前小块：step.content = chunkContent（不是累积，只存当前块）
+        //   - final保存完整内容：在final事件中保存message.content完整内容
+        // 
+        // 历史消息显示逻辑（MessageItem.tsx）：
+        //   - 遍历所有chunk逐个显示（每个chunk只显示自己的内容）
+        //   - 如果没有is_reasoning=false的chunk，则显示message.content补充
+        // 
+        // 错误做法会导致的问题：
+        //   - 如果chunk保存累积内容 → 导出JSON每个chunk都重复 → 数据错误
+        //   - 历史教训：不能为了解决刷新问题而破坏保存数据的正确性！
+        step.content = chunkContent;
         
         // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
         // 这样MessageItem可以遍历并分别显示思考过程和正式内容
