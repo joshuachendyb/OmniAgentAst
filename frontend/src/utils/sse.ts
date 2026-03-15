@@ -683,6 +683,10 @@ const processSSEData = (
         const is_reasoning = rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1';
         onChunk?.(chunkContent, is_reasoning);
         
+        // 【小查修复2026-03-15】使用累积的完整内容，而不是当前小块
+        // 原因：保存到数据库时chunk内容需要是完整的，否则历史消息不完整
+        step.content = responseBufferRef.current;
+        
         // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
         // 这样MessageItem可以遍历并分别显示思考过程和正式内容
         setExecutionSteps((prev) => [...prev, step]);
