@@ -773,10 +773,14 @@ const NewChatContainer: React.FC = () => {
   // ============================================
   
   const saveState = () => {
-    // 🔴 修复：只要有会话ID就保存，即使消息为空
+    // 【小新修复 2026-03-15 V2】使用 messagesRef.current 获取最新消息，避免闭包中访问旧消息
+    // 根因：visibilitychange useEffect 依赖 [sessionId, isReceiving]，不包含 messages
+    //      当 messages 更新但 sessionId/isReceiving 不变时，useEffect 不会重新运行
+    //      导致闭包中访问的 messages 是旧值，sessionStorage 保存旧消息
+    // 修复：使用 messagesRef.current（已在第738行同步）获取最新消息，不依赖 useEffect 闭包
     if (sessionId) {
       const state = {
-        messages,
+        messages: messagesRef.current,  // ← 使用 ref 获取最新消息
         sessionId,
         sessionTitle,
         timestamp: Date.now(),
@@ -786,7 +790,11 @@ const NewChatContainer: React.FC = () => {
         isReceiving,
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      console.log("💾 保存会话状态:", sessionId, sessionTitle, { isPaused, isReceiving });
+      console.log("💾 保存会话状态:", sessionId, sessionTitle, { 
+        messageCount: messagesRef.current.length,
+        isPaused, 
+        isReceiving 
+      });
     }
   };
 
