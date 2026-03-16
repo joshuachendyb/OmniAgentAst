@@ -1215,8 +1215,12 @@ async def chat_stream(request: ChatRequest):
                                 
                                 # ⭐ 【小沈修复 2026-03-16】is_reasoning变化时保存，确保回答部分完整
                                 if last_is_reasoning != current_is_reasoning:
-                                    logger.info(f"[Save] is_reasoning变化: {last_is_reasoning} -> {current_is_reasoning}，保存content到数据库")
-                                    await save_execution_steps_to_db(current_execution_steps, current_content)
+                                    logger.info(f"[Save] is_reasoning变化: {last_is_reasoning} -> {current_is_reasoning}，准备保存 {len(current_execution_steps)} steps")
+                                    try:
+                                        await save_execution_steps_to_db(current_execution_steps, current_content)
+                                        logger.info(f"[Save] is_reasoning变化保存成功: {len(current_execution_steps)} steps")
+                                    except Exception as e:
+                                        logger.error(f"[Save] is_reasoning变化保存失败: {e}", exc_info=True)
                                     last_is_reasoning = current_is_reasoning
                                 
                                 logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}, is_reasoning={chunk_data['is_reasoning']}")
