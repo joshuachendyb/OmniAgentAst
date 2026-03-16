@@ -228,18 +228,21 @@ const NewChatContainer: React.FC = () => {
              * 修改原因：saveMessage是INSERT，会创建新消息，只能在流式开始时调用一次
              */
             const currentSessionId = currentSessionIdRef.current || sessionId;
-            sessionApi.saveMessage(currentSessionId, {
-              role: "assistant",
-              content: step.content || "🤔 AI 正在思考...",
-              model: step.model,
-              provider: step.provider,
-              display_name: finalDisplay_name,
-            }).then(() => {
-              console.log("💾 [step.start] AI消息占位已保存到数据库（含metadata）");
-            }).catch((error) => {
-              console.error("💾 [step.start] 保存消息占位失败:", error);
-              // 不阻塞，继续执行
-            });
+            // 修复：添加空值检查，避免类型错误
+            if (currentSessionId) {
+              sessionApi.saveMessage(currentSessionId, {
+                role: "assistant",
+                content: step.content || "🤔 AI 正在思考...",
+                model: step.model,
+                provider: step.provider,
+                display_name: finalDisplay_name,
+              }).then(() => {
+                console.log("💾 [step.start] AI消息占位已保存到数据库（含metadata）");
+              }).catch((error) => {
+                console.error("💾 [step.start] 保存消息占位失败:", error);
+                // 不阻塞，继续执行
+              });
+            }
             
             const newAssistantMessage: Message = {
               id: (Date.now() + 1).toString(),
