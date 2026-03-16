@@ -1191,29 +1191,27 @@ async def chat_stream(request: ChatRequest):
                                 ai_call_successful = False
                                 break
                             
+                            # ⭐ 【小沈修复 2026-03-16】无论content是否为空，都处理chunk并添加到列表
+                            # 避免某些chunk被跳过导致steps不完整
+                            current_is_reasoning = getattr(chunk, 'is_reasoning', False)
+                            
+                            # 无论content是否为空，都创建chunk_data并添加到列表
+                            chunk_data = {
+                                'type': 'chunk', 
+                                'content': chunk.content or '',  # 确保content不为None
+                                'is_reasoning': current_is_reasoning
+                            }
+                            current_execution_steps.append(chunk_data)
+                            
+                            # ⭐ 【调试】每个chunk添加都打印
+                            logger.warning(f"[DEBUG] 添加chunk后列表长度: {len(current_execution_steps)}, is_reasoning={current_is_reasoning}, content_len={len(chunk.content or '')}")
+                            
                             if chunk.content:
                                 has_received_content = True
                                 full_content += chunk.content
-                                
-                                # ⭐ 【小沈添加 2026-03-16 v11.0】跟踪content和is_reasoning变化
-                                # 目的：解决content覆盖问题 - 在is_reasoning变化时保存
                                 current_content = full_content  # 累积content
-                                current_is_reasoning = getattr(chunk, 'is_reasoning', False)
-                                
-                                # ⭐ 【调试日志】记录每个chunk
+                                # ⭐ 【调试日志】记录有内容的chunk
                                 logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
-                                # 逐token发送到前端
-                                # 【重要】清晰接口：只使用 content 和 is_reasoning 两个字段
-                                chunk_data = {
-                                    'type': 'chunk', 
-                                    'content': chunk.content,                    # 显示的文本内容
-                                    'is_reasoning': current_is_reasoning  # true=思考，false=回答
-                                }
-                                
-                                # ⭐ 【小沈修复 2026-03-16】chunk也是step类型，需要先添加到execution_steps
-                                current_execution_steps.append(chunk_data)
-                                # ⭐ 【调试】每个chunk添加都打印
-                                logger.warning(f"[DEBUG] 添加chunk后列表长度: {len(current_execution_steps)}, chunk内容: {chunk.content[:20]}")
                                 
                                 # ⭐ 【小沈修复 2026-03-16】is_reasoning变化时保存，确保回答部分完整
                                 if last_is_reasoning != current_is_reasoning:
@@ -1224,9 +1222,10 @@ async def chat_stream(request: ChatRequest):
                                     except Exception as e:
                                         logger.error(f"[Save] is_reasoning变化保存失败: {e}", exc_info=True)
                                     last_is_reasoning = current_is_reasoning
-                                
-                                logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}, is_reasoning={chunk_data['is_reasoning']}")
-                                yield f"data: {json.dumps(chunk_data)}\n\n"
+                            
+                            # ⭐ 发送chunk给前端
+                            logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content or '')}, is_reasoning={chunk_data['is_reasoning']}")
+                            yield f"data: {json.dumps(chunk_data)}\n\n"
                             if chunk.is_done:
                                 break
                     
