@@ -57,7 +57,6 @@ import {
   loadLatestHistoryMessages,
   SESSION_EXPIRY_TIME,
   STORAGE_KEY,
-  DEBUG_LOAD_FROM_API,
 } from "../../utils/chatHistory";
 
 // 【新增 2026-03-13】从独立文件导入日志和消息提示函数
@@ -211,6 +210,36 @@ const NewChatContainer: React.FC = () => {
               finalDisplay_name = `${step.provider} (${step.model})`;
               console.log("🔍 从model/provider构建display_name:", finalDisplay_name);
             }
+
+            /**
+             * 【小新修改 2026-03-16】
+             * 保存metadata到数据库 - 解决流式数据丢失问题
+             * 
+             * 问题背景：SSE数据保存方案-综合版第18章要求
+             * - 页面切换/刷新时，SSE断开，onComplete不触发，导致数据丢失
+             * - metadata（model/provider/display_name）需要在流式开始时保存
+             * 
+             * 解决方案：
+             * - 在流式开始时调用saveMessage创建消息占位，同时保存metadata
+             * - 后续由后端自动保存execution_steps和content
+             * - onComplete时不再调用saveMessage，避免创建重复消息
+             * 
+             * 修改位置：step.type === "start" 时
+             * 修改原因：saveMessage是INSERT，会创建新消息，只能在流式开始时调用一次
+             */
+            const currentSessionId = currentSessionIdRef.current || sessionId;
+            sessionApi.saveMessage(currentSessionId, {
+              role: "assistant",
+              content: step.content || "🤔 AI 正在思考...",
+              model: step.model,
+              provider: step.provider,
+              display_name: finalDisplay_name,
+            }).then(() => {
+              console.log("💾 [step.start] AI消息占位已保存到数据库（含metadata）");
+            }).catch((error) => {
+              console.error("💾 [step.start] 保存消息占位失败:", error);
+              // 不阻塞，继续执行
+            });
             
             const newAssistantMessage: Message = {
               id: (Date.now() + 1).toString(),
@@ -877,14 +906,71 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // 页面隐藏时：保存当前状态并断开SSE连接
-        saveState();
-        // 断开SSE连接，避免后台持续消耗资源
-        if (isReceiving) {
-          disconnect();
-          console.log("🔌 页面隐藏，断开SSE连接");
+        /**
+         * 【小新修改 2026-03-16】
+         * 页面隐藏时保存数据 - 解决SSE断开导致数据丢失问题
+         * 
+         * 问题背景：SSE数据保存方案-综合版第18章要求
+         * - 页面切换/刷新时，SSE断开，onComplete不触发
+         * - 导致execution_steps和content丢失
+         * 
+         * 解决方案：
+         * 1. 保存execution_steps + content到数据库（双重保险）
+         * 2. 保存到sessionStorage（现有逻辑）
+         * 3. 不断开SSE连接，让fetch自然进行（方案2简化版）
+         * 
+         * 修改位置：document.hidden 时
+         */
+        
+        // 1. 保存execution_steps + content到数据库（双重保险）
+        if (isReceiving && currentSessionIdRef.current) {
+          try {
+            if (executionStepsRef.current.length > 0) {
+              // 获取当前累积的content（从messages中获取）
+              const messages = messagesRef.current || [];
+              const lastMessage = messages[messages.length - 1];
+              const currentContent = lastMessage?.content || '';
+              
+              // 调用saveExecutionSteps，后端已支持content参数
+              sessionApi.saveExecutionSteps(
+                currentSessionIdRef.current,
+                executionStepsRef.current,
+                currentContent
+              ).then(() => {
+                console.log("💾 [visibilitychange] execution_steps + content已保存到数据库");
+              }).catch((error) => {
+                console.error("💾 [visibilitychange] 保存失败:", error);
+                // 不阻塞，继续执行
+              });
+            }
+          } catch (error) {
+            console.error("💾 [visibilitychange] 保存异常:", error);
+          }
         }
+        
+        // 2. 保存到sessionStorage（现有逻辑）
+        saveState();
+        
+        // 3. 不断开SSE连接，让fetch自然进行（方案2简化版）
+        // 如果后续需要断开，可以使用变量控制
+        // if (isReceiving) {
+        //   disconnect();
+        // }
       } else {
+        /**
+         * 【小新修改 2026-03-16】
+         * 页面恢复时强制从sessionStorage恢复 - 解决Debug模式下数据丢失问题
+         * 
+         * 问题背景：
+         * - 第971行有 `!DEBUG_LOAD_FROM_API` 判断
+         * - Debug模式开启时（DEBUG_LOAD_FROM_API = true），不会从sessionStorage恢复
+         * - 直接从API加载，导致页面隐藏时的数据丢失
+         * 
+         * 解决方案：
+         * - 移除 `!DEBUG_LOAD_FROM_API` 检查
+         * - 强制从sessionStorage恢复，确保数据不丢失
+         * - 只有在sessionStorage无效时才从API加载
+         */
         // 页面重新可见时：不再重新请求API，避免覆盖当前消息
         // 改为从sessionStorage恢复状态，如果缓存有效的话
         
@@ -895,8 +981,9 @@ const NewChatContainer: React.FC = () => {
         const urlSessionId = new URLSearchParams(window.location.search).get(
           "session_id"
         );
-        if (urlSessionId && urlSessionId === sessionId && !DEBUG_LOAD_FROM_API) {
-          // 先尝试从缓存恢复
+        // 修复：移除 !DEBUG_LOAD_FROM_API 检查，强制从sessionStorage恢复
+        if (urlSessionId && urlSessionId === sessionId) {
+          // 先尝试从缓存恢复（忽略Debug模式检查）
           const saved = sessionStorage.getItem(STORAGE_KEY);
           if (saved) {
             try {
