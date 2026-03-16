@@ -719,7 +719,8 @@ async def chat_stream(request: ChatRequest):
             - content: 可选的content内容，用于覆盖current_content
             """
             current_execution_steps.append(step)
-            save_content = content if content is not None else current_content
+            # 【小健修复 2026-03-16】修复空字符串判断逻辑：使用bool判断，空字符串也使用current_content
+            save_content = content if content else current_content
             await save_execution_steps_to_db(current_execution_steps, save_content)
         
         # 【修改】优先使用前端传递的模型信息，fallback到配置文件
