@@ -718,10 +718,14 @@ async def chat_stream(request: ChatRequest):
             - step: step字典（包含type等字段）
             - content: 可选的content内容，用于覆盖current_content
             """
+            # ⭐ 【小沈调试 2026-03-16】添加日志确认保存过程
+            logger.info(f"[add_step_and_save] 添加step前: {len(current_execution_steps)} steps, step类型: {step.get('type')}")
             current_execution_steps.append(step)
             # 【小健修复 2026-03-16】修复空字符串判断逻辑：使用bool判断，空字符串也使用current_content
             save_content = content if content else current_content
+            logger.info(f"[add_step_and_save] 准备保存: {len(current_execution_steps)} steps, content长度: {len(save_content) if save_content else 0}")
             await save_execution_steps_to_db(current_execution_steps, save_content)
+            logger.info(f"[add_step_and_save] 保存完成")
         
         # 【修改】优先使用前端传递的模型信息，fallback到配置文件
         if request.provider and request.model:
@@ -1379,6 +1383,8 @@ async def chat_stream(request: ChatRequest):
                 )
                 
                 # 【使用统一函数】添加final步骤到execution_steps并保存
+                # ⭐ 【小沈调试 2026-03-16】添加日志确认execution_steps数量
+                logger.info(f"[Final] 当前execution_steps数量: {len(current_execution_steps)}, 准备添加final步骤")
                 final_step = {
                     'type': 'final',
                     'content': full_content,
@@ -1388,6 +1394,7 @@ async def chat_stream(request: ChatRequest):
                 }
                 current_content = full_content
                 await add_step_and_save(final_step, current_content)
+                logger.info(f"[Final] final步骤已保存，总steps数量: {len(current_execution_steps)}")
                         
         except asyncio.CancelledError:
             # 客户端断开连接，任务被中断
