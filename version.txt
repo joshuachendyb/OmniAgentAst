@@ -1,3 +1,78 @@
+v0.6.2
+
+更新内容：
+1. 修复SSE连接断开导致数据丢失问题
+   - 问题背景：用户切换应用/刷新页面时，SSE断开，onComplete不触发
+   - 解决思路：多重保障机制
+     * 保障1：后端在流式过程中自动保存（每次yield后调用save_execution_steps_to_db）
+     * 保障2：前端step.start时创建消息占位（含metadata）
+     * 保障3：visibilitychange时保存execution_steps+content到数据库
+     * 保障4：sessionStorage保存状态作为补充
+
+2. 前端代码修改
+   - 问题1：step.start重复保存消息占位
+     * 根因：流式过程中可能多次触发step.start（如重试）
+     * 修复：添加hasSavedStartMessageRef标记，只在首次保存
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+   - 问题2：visibilitychange获取content时机错误
+     * 根因：从messagesRef获取content，但流式过程中未更新
+     * 修复：从executionStepsRef中提取最终content
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+   - 问题3：onComplete创建重复消息
+     * 根因：saveMessage是INSERT，每次调用都创建新消息
+     * 修复：移除onComplete中的saveMessage，只保留saveExecutionSteps
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+   - 问题4：Debug模式下sessionStorage恢复失效
+     * 根因：!DEBUG_LOAD_FROM_API判断导致跳过恢复
+     * 修复：移除判断，强制从sessionStorage恢复
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+
+3. 后端代码修改
+   - 问题1：ExecutionStepsUpdate缺少content参数
+     * 修复：添加content字段，支持保存AI回复内容
+     * 文件：backend/app/api/v1/sessions.py
+   - 问题2：没有assistant消息时无法保存
+     * 修复：实现智能UPSERT，自动创建消息占位
+     * 文件：backend/app/api/v1/sessions.py
+   - 问题3：流式过程中实时保存
+     * 修复：在start/thought/chunk等步骤后调用save_execution_steps_to_db
+     * 文件：backend/app/api/v1/chat_stream.py
+
+4. 前端API修改
+   - saveExecutionSteps：添加content参数
+   - saveMessage：添加display_name参数
+   - 文件：frontend/src/services/api.ts
+
+5. 代码审查与修复
+   - 审查人：小健
+   - 发现问题：onComplete会创建重复消息
+   - 修复：移除多余saveMessage调用
+
+技术细节：
+- NewChatContainer.tsx：hasSavedStartMessageRef防重复
+- NewChatContainer.tsx：getLatestContent正确提取content
+- NewChatContainer.tsx：移除onComplete中saveMessage
+- NewChatContainer.tsx：移除DEBUG_LOAD_FROM_API检查
+- sessions.py：ExecutionStepsUpdate添加content
+- sessions.py：智能UPSERT实现
+- chat_stream.py：各步骤后自动保存
+- api.ts：saveExecutionSteps/saveMessage参数完善
+
+数据保存流程（更新后）：
+1. step.start → saveMessage创建消息占位（含metadata）
+2. 流式进行中 → 后端save_execution_steps_to_db自动保存
+3. visibilitychange → saveExecutionSteps保存（双重保险）
+4. onComplete → saveExecutionSteps更新最终数据
+
+版本升级说明：
+- v0.6.1: 修复切换应用后消息消失+chunk重复问题
+- v0.6.2: 修复SSE断开导致数据丢失问题（本次升级）
+
+参与开发：小新、小沈、小健
+完成时间：2026-03-16 12:58:59
+
+---
+
 v0.6.1
 
 更新内容：
