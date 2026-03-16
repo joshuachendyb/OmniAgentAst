@@ -802,21 +802,44 @@ async def save_message(session_id: str, message: MessageCreate):
 
 
 class ExecutionStepsUpdate(BaseModel):
-    """更新执行步骤请求"""
+    """
+    更新执行步骤请求
+    
+    @author 小沈
+    @update 2026-03-16 v11.0修复：增加content参数，解决前端调用时传递content参数被忽略的问题
+    
+    修复的问题：
+    - 缺陷1：API参数不匹配 - 后端saveExecutionSteps只有execution_steps参数，没有content参数
+    - 缺陷5：visibilitychange调用无效 - 前端传递content参数但API不支持
+    """
     execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
+    content: Optional[str] = Field(None, description="AI生成的文本内容，用于实时保存流式输出的内容")
 
 
 @router.post("/sessions/{session_id}/execution_steps")
 async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdate):
     """
-    保存/更新会话的执行步骤
+    保存/更新会话的执行步骤（智能UPSERT）
     
-    功能：单独保存或更新消息的 execution_steps 字段
-    与 save_message 的区别：只更新 execution_steps，不插入新消息
+    功能：单独保存或更新消息的 execution_steps 和 content 字段
+    与 save_message 的区别：只更新 execution_steps 和 content，不插入新消息（除非消息不存在）
+    
+    @author 小沈
+    @update 2026-03-16 v11.0修复：实现智能UPSERT，解决以下问题：
+    
+    修复的问题：
+    - 缺陷3：content覆盖问题 - 直接传递当前累积的content，DB直接覆盖
+    - 缺陷4：message_count重复 - 每次创建消息都+1，可能重复
+    - 缺陷5：visibilitychange调用无效 - 后端API已支持content参数
+    
+    实现逻辑：
+    1. 查找最后一条assistant消息
+    2. 如果不存在，创建消息占位（仅首次创建时更新message_count）
+    3. 更新execution_steps和content字段（智能覆盖）
     
     Args:
         session_id: 会话ID
-        update_data: 包含 execution_steps 的请求体
+        update_data: 包含 execution_steps 和 content 的请求体
         
     Returns:
         dict: 保存结果
@@ -836,43 +859,85 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
             conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
-        # 查找该会话的最后一条消息（用于更新 execution_steps）
+        # 查找该会话的最后一条assistant消息（用于更新 execution_steps 和 content）
+        # @update 2026-03-16：添加role='assistant'过滤，只更新assistant消息
         cursor.execute(
-            '''SELECT id, content FROM chat_messages 
-               WHERE session_id = ? 
+            '''SELECT id, content, role FROM chat_messages 
+               WHERE session_id = ? AND role = 'assistant'
                ORDER BY timestamp DESC LIMIT 1''',
             (session_id,)
         )
         last_message = cursor.fetchone()
         
+        # 【智能UPSERT】如果没有assistant消息，自动创建消息占位
+        # 目的：支持流式过程中实时保存execution_steps
+        # @update 2026-03-16：使用is_new_message标记，避免重复更新message_count
+        is_new_message = False
         if not last_message:
-            conn.close()
-            raise HTTPException(status_code=404, detail=f"会话中没有消息: {session_id}")
+            logger.info(f"会话中无assistant消息，自动创建消息占位: session_id={session_id}")
+            utc_time = get_utc_timestamp()
+            # 使用update_data.content作为初始content（如果提供了的话）
+            initial_content = update_data.content if update_data.content else ''
+            cursor.execute(
+                '''INSERT INTO chat_messages 
+                   (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)''',
+                (session_id, 'assistant', initial_content, utc_time)
+            )
+            last_message = {'id': cursor.lastrowid, 'content': initial_content}
+            is_new_message = True  # 标记为新创建，后续只更新一次message_count
         
-        # 更新最后一条消息的 execution_steps
-        # 注：execution_steps 字段在表创建时已添加（见第180行），无需检查字段存在性
-        execution_steps_json = json.dumps(update_data.execution_steps) if update_data.execution_steps else None
-        cursor.execute(
-            'UPDATE chat_messages SET execution_steps = ? WHERE id = ?',
-            (execution_steps_json, last_message['id'])
-        )
+        # 构建更新字段和值（智能UPSERT）
+        # @update 2026-03-16：同时更新execution_steps和content
+        update_fields = []
+        update_values = []
         
-        # 更新会话的 updated_at
+        # 更新execution_steps（如果有）
+        if update_data.execution_steps:
+            execution_steps_json = json.dumps(update_data.execution_steps)
+            update_fields.append('execution_steps = ?')
+            update_values.append(execution_steps_json)
+        
+        # 更新content（如果有）- 解决缺陷3：content覆盖问题
+        # @update 2026-03-16：直接覆盖，使用传入的content替换原有内容
+        if update_data.content is not None:
+            update_fields.append('content = ?')
+            update_values.append(update_data.content)
+        
+        # 执行更新（如果有字段需要更新）
+        if update_fields:
+            update_values.append(last_message['id'])
+            cursor.execute(
+                f'UPDATE chat_messages SET {", ".join(update_fields)} WHERE id = ?',
+                update_values
+            )
+        
+        # 【修复缺陷4】只在首次创建消息时更新message_count，避免重复
+        # @update 2026-03-16：使用is_new_message标记，只在首次创建时+1
         utc_time = get_utc_timestamp()
-        cursor.execute(
-            'UPDATE chat_sessions SET updated_at = ? WHERE id = ?',
-            (utc_time, session_id)
-        )
+        if is_new_message:
+            # 首次创建消息时，更新message_count
+            cursor.execute(
+                'UPDATE chat_sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?',
+                (utc_time, session_id)
+            )
+        else:
+            # 已有消息时，只更新updated_at
+            cursor.execute(
+                'UPDATE chat_sessions SET updated_at = ? WHERE id = ?',
+                (utc_time, session_id)
+            )
         
         # 提交事务
         conn.commit()
         conn.close()
         
-        logger.info(f"保存执行步骤成功: session_id={session_id}, message_id={last_message['id']}")
+        logger.info(f"保存执行步骤成功: session_id={session_id}, message_id={last_message['id']}, "
+                   f"is_new={is_new_message}, has_content={update_data.content is not None}")
         
         return {
             "success": True,
-            "message_id": last_message['id']
+            "message_id": last_message['id'],
+            "is_new_message": is_new_message
         }
         
     except HTTPException:
