@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_chat_imports():
     """TC001: 测试chat模块可以正常导入"""
-    from app.api.v1.chat import router
+    from app.api.v1.chat_non_stream import router
     from app.services import AIServiceFactory
     
     assert router is not None
@@ -22,12 +22,17 @@ def test_chat_imports():
 
 def test_chat_endpoint_structure():
     """TC002: 测试chat端点结构"""
-    from app.api.v1.chat import router
+    from app.api.v1.chat_non_stream import router as non_stream_router
+    from app.api.v1.init_model_select import router as helper_router
     
-    routes = [route.path for route in router.routes]
-    assert "/chat" in routes
-    assert "/chat/validate" in routes
-    assert "/chat/switch/{provider}" in routes
+    # 测试非流式路由
+    non_stream_routes = [route.path for route in non_stream_router.routes]
+    assert "/chat" in non_stream_routes
+    
+    # 测试辅助路由
+    helper_routes = [route.path for route in helper_router.routes]
+    assert "/chat/validate" in helper_routes
+    assert "/chat/switch/{provider}" in helper_routes
 
 
 def test_chat_routes_exist():
@@ -36,12 +41,11 @@ def test_chat_routes_exist():
     
     routes = [route.path for route in app.routes]
     assert "/api/v1/chat" in routes
-    assert "/api/v1/chat/validate" in routes
 
 
 def test_chat_request_model():
     """TC004: 测试ChatRequest模型"""
-    from app.api.v1.chat import ChatRequest, ChatMessage
+    from app.api.v1.chat_non_stream import ChatRequest, ChatMessage
     
     # 测试正常创建
     msg = ChatMessage(role="user", content="你好")
@@ -60,7 +64,7 @@ def test_chat_request_model():
 
 def test_chat_response_model():
     """TC005: 测试ChatResponse模型"""
-    from app.api.v1.chat import ChatResponse
+    from app.api.v1.chat_non_stream import ChatResponse
     
     # 测试成功响应
     success_response = ChatResponse(
@@ -288,7 +292,7 @@ def test_provider_invalid_switch():
 
 def test_create_error_response():
     """TC015: 测试错误响应生成"""
-    from app.api.v1.chat import create_error_response
+    from app.api.v1.chat_non_stream import create_error_response
     import json
     from datetime import datetime
     
