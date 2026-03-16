@@ -1100,6 +1100,7 @@ async def chat_stream(request: ChatRequest):
                         'type': 'error',
                         'error_type': 'file_operation_error',
                         'message': error_message,
+                        'code': 'FILE_OPERATION_ERROR',
                         'timestamp': int(datetime.now().timestamp() * 1000)
                     }
                     await add_step_and_save(error_step, f"文件操作错误: {error_message}")
@@ -1310,6 +1311,7 @@ async def chat_stream(request: ChatRequest):
                                     'type': 'error',
                                     'error_type': 'empty_response',
                                     'message': error_message,
+                                    'code': 'EMPTY_RESPONSE',
                                     'timestamp': int(datetime.now().timestamp() * 1000)
                                 }
                                 await add_step_and_save(error_step, f"错误: {error_message}")
