@@ -673,6 +673,7 @@ export const sessionApi = {
       timestamp?: string;
       model?: string;
       provider?: string;
+      display_name?: string;  // 【小新修改 2026-03-16】添加display_name字段，支持流式开始时保存metadata
     }
   ): Promise<{ success: boolean }> => {
     const response = await api.post<{ success: boolean }>(
