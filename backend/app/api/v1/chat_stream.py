@@ -122,6 +122,22 @@ def create_error_response(
     return f"data: {json.dumps(response)}\n\n"
 
 
+# ⭐ 【小沈重构 2026-03-16】统一timestamp和incident数据创建函数 - 遵循DRY原则
+def create_timestamp() -> str:
+    """生成显示用timestamp"""
+    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+
+def create_incident_data(incident_value: str, message: str) -> dict:
+    """创建统一的incident数据"""
+    return {
+        'type': 'incident',
+        'incident_value': incident_value,
+        'message': message,
+        'timestamp': create_timestamp()
+    }
+
+
 def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
     """
     获取用户友好的错误信息
@@ -227,8 +243,9 @@ async def check_and_yield_if_interrupted(
     """
     async with running_tasks_lock:
         if running_tasks.get(task_id, {}).get("cancelled", False):
-            # 【Phase4重构】使用新status格式
-            return True, f"data: {json.dumps({'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})}\n\n"
+            # 【使用统一函数】创建incident数据
+            incident_data = create_incident_data('interrupted', '任务已被中断')
+            return True, f"data: {json.dumps(incident_data)}\n\n"
     return False, ""
 
 
@@ -255,18 +272,20 @@ async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_t
             if not is_paused:
                 # 不再暂停，恢复发送
                 if running_tasks.get(task_id, {}).get("_was_paused", False):
-                    # 【问题5修复】统一使用type='incident' + incident_value
-                    yield f"data: {json.dumps({'type': 'incident', 'incident_value': 'resumed', 'message': '任务已恢复', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})}\n\n"
+                    # 【使用统一函数】创建incident数据
+                    resumed_data = create_incident_data('resumed', '任务已恢复')
+                    yield f"data: {json.dumps(resumed_data)}\n\n"
                     running_tasks[task_id]["_was_paused"] = False
                 return
         
         # 暂停中，等待恢复
         if is_paused and not running_tasks.get(task_id, {}).get("_was_paused", False):
             # 刚进入暂停状态，发送paused事件
-            # 【问题5修复】统一使用type='incident' + incident_value
             async with running_tasks_lock:
                 running_tasks[task_id]["_was_paused"] = True
-            yield f"data: {json.dumps({'type': 'incident', 'incident_value': 'paused', 'message': '任务已暂停', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})}\n\n"
+            # 【使用统一函数】创建incident数据
+            paused_data = create_incident_data('paused', '任务已暂停')
+            yield f"data: {json.dumps(paused_data)}\n\n"
         
         await asyncio.sleep(0.5)  # 每0.5秒检查一次
 
@@ -687,6 +706,22 @@ async def chat_stream(request: ChatRequest):
                 # 保存失败不中断流式响应，只记录日志
                 logger.error(f"[Save] 保存失败: {e}")
         
+        # ⭐ 【小沈重构 2026-03-16】统一的添加step并保存函数
+        # 解决之前在每个错误处重复添加保存代码的问题
+        async def add_step_and_save(step: dict, content: Optional[str] = None):
+            """
+            统一的添加step到execution_steps并保存到数据库的函数
+            
+            所有需要保存step的地方都调用此函数，避免代码重复
+            
+            参数：
+            - step: step字典（包含type等字段）
+            - content: 可选的content内容，用于覆盖current_content
+            """
+            current_execution_steps.append(step)
+            save_content = content if content is not None else current_content
+            await save_execution_steps_to_db(current_execution_steps, save_content)
+        
         # 【修改】优先使用前端传递的模型信息，fallback到配置文件
         if request.provider and request.model:
             ai_service = AIServiceFactory.get_service_for_model(
@@ -753,12 +788,23 @@ async def chat_stream(request: ChatRequest):
                 'error_type': 'security',
                 'details': f"risk_level: {security_check_result.get('risk_level')}",
                 'retryable': False,
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'timestamp': create_timestamp(),
                 'model': request.model,
                 'provider': request.provider
             }
             logger.info(f"[Step error] 发送error步骤(安全检测拦截)")
             yield f"data: {json.dumps(error_data)}\n\n"
+            
+            # 【小沈修复 2026-03-16】保存error步骤到数据库
+            error_step = {
+                'type': 'error',
+                'code': error_data['code'],
+                'message': error_data['message'],
+                'error_type': error_data['error_type'],
+                'timestamp': int(datetime.now().timestamp() * 1000)
+            }
+            # 【使用统一函数】保存error步骤到数据库
+            await add_step_and_save(error_step, f"错误: {error_data['message']}")
             return
         
         try:
@@ -828,8 +874,8 @@ async def chat_stream(request: ChatRequest):
                 # 检查是否被中断
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
-                        # 【问题5修复】统一使用type='incident' + incident_value
-                        interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                        # 【使用统一函数】创建incident数据
+                        interrupted_data = create_incident_data('interrupted', '任务已被中断')
                         logger.info(f"[Step incident] 发送incident步骤(interrupted)")
                         yield f"data: {json.dumps(interrupted_data)}\n\n"
                         return
@@ -839,14 +885,26 @@ async def chat_stream(request: ChatRequest):
                 if not is_safe:
                     # 【问题6修复】使用统一错误格式
                     logger.info(f"[Step error] 发送error步骤(安全检测)")
+                    error_message = f"危险操作需确认: {risk}"
                     yield create_error_response(
                         error_type="security_error",
-                        message=f"危险操作需确认: {risk}",
+                        message=error_message,
                         code="SECURITY_BLOCKED",
                         model=ai_service.model,
                         provider=ai_service.provider,
                         retryable=False
                     )
+                    
+                    # 【小沈修复 2026-03-16】保存error步骤到数据库
+                    error_step = {
+                        'type': 'error',
+                        'error_type': 'security_error',
+                        'message': error_message,
+                        'code': 'SECURITY_BLOCKED',
+                        'timestamp': int(datetime.now().timestamp() * 1000)
+                    }
+                    # 【使用统一函数】保存error步骤到数据库
+                    await add_step_and_save(error_step, f"安全拦截: {risk}")
                     return
                 
                 # 【小健检查修复】遵循字段设计原则5：禁止兼容字段
@@ -912,8 +970,8 @@ async def chat_stream(request: ChatRequest):
                         # 每步检查是否被中断
                         async with running_tasks_lock:
                             if running_tasks.get(task_id, {}).get("cancelled", False):
-                                # 【2026-03-11 重命名】status_value -> incident_value
-                                interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                                # 【使用统一函数】创建incident数据
+                                interrupted_data = create_incident_data('interrupted', '任务已被中断')
                                 logger.info(f"[Step incident] 发送incident步骤(interrupted)")
                                 yield f"data: {json.dumps(interrupted_data)}\n\n"
                                 break
@@ -1001,12 +1059,23 @@ async def chat_stream(request: ChatRequest):
                                 'message': event.get('message', '未知错误'),
                                 'error_type': 'agent',
                                 'retryable': event.get('retryable', False),
-                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                'timestamp': create_timestamp(),
                                 'model': request.model,
                                 'provider': request.provider
                             }
                             logger.info(f"[Step error] 发送error步骤")
                             yield f"data: {json.dumps(error_data)}\n\n"
+                            
+                            # 【小沈修复 2026-03-16】保存agent error步骤到数据库
+                            error_step = {
+                                'type': 'error',
+                                'error_type': 'agent',
+                                'message': event.get('message', '未知错误'),
+                                'code': 'AGENT_ERROR',
+                                'timestamp': int(datetime.now().timestamp() * 1000)
+                            }
+                            # 【使用统一函数】保存error步骤到数据库
+                            await add_step_and_save(error_step, f"Agent错误: {event.get('message', '未知错误')}")
                             break
                         
                         await asyncio.sleep(0.05)
@@ -1016,13 +1085,23 @@ async def chat_stream(request: ChatRequest):
                 except Exception as e:
                     # 【小沈代修改 - 修复问题4】统一错误处理格式，记录日志
                     logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
+                    error_message = "文件操作执行失败"
                     yield create_error_response(
                         error_type="file_operation_error",
-                        message="文件操作执行失败",
+                        message=error_message,
                         model=ai_service.model,
                         provider=ai_service.provider,
                         retryable=False
                     )
+                    
+                    # 【使用统一函数】保存error步骤到数据库
+                    error_step = {
+                        'type': 'error',
+                        'error_type': 'file_operation_error',
+                        'message': error_message,
+                        'timestamp': int(datetime.now().timestamp() * 1000)
+                    }
+                    await add_step_and_save(error_step, f"文件操作错误: {error_message}")
             else:
                 # 普通对话：调用AI服务（流式）
                 # 【优化1版修复】不发送action_tool，直接发送chunk
@@ -1031,8 +1110,8 @@ async def chat_stream(request: ChatRequest):
                 # 检查是否被中断
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
-                        # 【原则4整改】字段拆分：content → message
-                        interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                        # 【使用统一函数】创建incident数据
+                        interrupted_data = create_incident_data('interrupted', '任务已被中断')
                         logger.info(f"[Step incident] 发送interrupted步骤")
                         yield f"data: {json.dumps(interrupted_data)}\n\n"
                         return
@@ -1057,12 +1136,8 @@ async def chat_stream(request: ChatRequest):
                 for retry_attempt in range(max_retries + 1):
                     if retry_attempt > 0:
                         # 发送重试提示给前端
-                        retry_data = {
-                            'type': 'incident',
-                            'incident_value': 'retrying',
-                            'message': f'请求超时，正在重试 ({retry_attempt}/{max_retries})...',
-                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        }
+                        # 【使用统一函数】创建incident数据
+                        retry_data = create_incident_data('retrying', f'请求超时，正在重试 ({retry_attempt}/{max_retries})...')
                         yield f"data: {json.dumps(retry_data)}\n\n"
                         logger.info(f"[Retry] 开始第{retry_attempt + 1}次AI调用（共{max_retries + 1}次）")
                     
@@ -1093,7 +1168,8 @@ async def chat_stream(request: ChatRequest):
                             # 【原则4整改】content → message
                             async with running_tasks_lock:
                                 if running_tasks.get(task_id, {}).get("cancelled", False):
-                                    interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                                    # 【使用统一函数】创建incident数据
+                                    interrupted_data = create_incident_data('interrupted', '任务已被中断')
                                     logger.info(f"[Step incident] 发送interrupted步骤")
                                     yield f"data: {json.dumps(interrupted_data)}\n\n"
                                     return
@@ -1218,14 +1294,24 @@ async def chat_stream(request: ChatRequest):
                             else:
                                 # 已达最大重试次数，发送error步骤
                                 logger.error(f"[AI Call] 空响应重试失败，已达最大重试次数{max_retries}")
+                                error_message = "模型未能生成有效回复，请尝试更换问题或稍后重试"
                                 yield create_error_response(
                                     error_type="empty_response",
-                                    message="模型未能生成有效回复，请尝试更换问题或稍后重试",
+                                    message=error_message,
                                     model=ai_service.model,
                                     provider=ai_service.provider,
                                     retryable=True,
                                     retry_after=3
                                 )
+                                
+                                # 【使用统一函数】保存error步骤到数据库
+                                error_step = {
+                                    'type': 'error',
+                                    'error_type': 'empty_response',
+                                    'message': error_message,
+                                    'timestamp': int(datetime.now().timestamp() * 1000)
+                                }
+                                await add_step_and_save(error_step, f"错误: {error_message}")
                                 return  # 直接返回，不再发送final步骤
                     
                     # ⭐ 【新增-重试机制】重试循环结束，检查最终结果
@@ -1265,6 +1351,15 @@ async def chat_stream(request: ChatRequest):
                         retryable=True,
                         retry_after=3
                     )
+                    
+                    # 【使用统一函数】保存error步骤到数据库
+                    error_step = {
+                        'type': 'error',
+                        'error_type': error_type,
+                        'message': error_message,
+                        'timestamp': int(datetime.now().timestamp() * 1000)
+                    }
+                    await add_step_and_save(error_step, f"错误: {error_message}")
                     return  # 直接返回，不再发送final步骤
                 
                 # 发送最终结果，【新增】添加provider字段作为兜底
@@ -1277,34 +1372,60 @@ async def chat_stream(request: ChatRequest):
                     display_name=display_name
                 )
                 
-                # ⭐ 【小沈添加 2026-03-16 v11.0】final步骤后保存完整数据到数据库
-                # 保存完整的execution_steps和content
+                # 【使用统一函数】添加final步骤到execution_steps并保存
+                final_step = {
+                    'type': 'final',
+                    'content': full_content,
+                    'model': ai_service.model,
+                    'provider': ai_service.provider,
+                    'timestamp': int(datetime.now().timestamp() * 1000)
+                }
                 current_content = full_content
-                await save_execution_steps_to_db(current_execution_steps, current_content)
+                await add_step_and_save(final_step, current_content)
                         
         except asyncio.CancelledError:
             # 客户端断开连接，任务被中断
             async with running_tasks_lock:
                 running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
-            # 【原则4整改】content → message
-            interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '客户端断开连接，任务中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            # 【使用统一函数】创建incident数据
+            interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
             logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
             yield f"data: {json.dumps(interrupted_data)}\n\n"
+            
+            # 【使用统一函数】保存interrupted步骤到数据库
+            incident_step = {
+                'type': 'incident',
+                'incident_value': 'interrupted',
+                'message': '客户端断开连接，任务中断',
+                'timestamp': int(datetime.now().timestamp() * 1000)
+            }
+            await add_step_and_save(incident_step, "任务中断")
             
         except Exception as e:
             # 【小沈代修改 - 统一错误处理】使用 get_user_friendly_error 和 create_error_response
             logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
             error_info = get_user_friendly_error(e)
+            error_message = error_info.get("message", "服务调用失败")
             logger.info(f"[Step error] 发送error步骤")
             yield create_error_response(
                 error_type=error_info.get("error_type", "server"),
-                message=error_info.get("message", "服务调用失败"),
+                message=error_message,
                 code=error_info.get("code", "INTERNAL_ERROR"),
                 model=ai_service.model,
                 provider=ai_service.provider,
                 retryable=error_info.get("retryable", False),
                 retry_after=error_info.get("retry_after")
             )
+            
+            # 【使用统一函数】保存error步骤到数据库
+            error_step = {
+                'type': 'error',
+                'error_type': error_info.get("error_type", "server"),
+                'message': error_message,
+                'code': error_info.get("code", "INTERNAL_ERROR"),
+                'timestamp': int(datetime.now().timestamp() * 1000)
+            }
+            await add_step_and_save(error_step, f"错误: {error_message}")
         
         finally:
             # 【新增】输出最终的 LLM 调用次数
