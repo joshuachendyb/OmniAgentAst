@@ -1046,8 +1046,8 @@ async def chat_stream(request: ChatRequest):
                             logger.info(f"[Step final] 发送final步骤")
                             yield f"data: {json.dumps(final_data)}\n\n"
                             
-                            # ⭐ 【小沈添加 2026-03-16 v11.0】final步骤后保存完整数据到数据库
-                            # 保存完整的execution_steps和content
+                            # ⭐ 【小沈修复 2026-03-16】添加final到execution_steps并保存
+                            current_execution_steps.append(final_data)
                             current_content = final_data.get('content', '')
                             await save_execution_steps_to_db(current_execution_steps, current_content)
                             break
