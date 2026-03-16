@@ -1199,14 +1199,6 @@ async def chat_stream(request: ChatRequest):
                                 current_content = full_content  # 累积content
                                 current_is_reasoning = getattr(chunk, 'is_reasoning', False)
                                 
-                                # ⭐ 【小沈添加 2026-03-16 v11.0】检测is_reasoning变化，变化时保存
-                                # 目的：解决content覆盖问题 - 在is_reasoning变化时保存到数据库
-                                if last_is_reasoning != current_is_reasoning:
-                                    # is_reasoning状态变化，保存当前累积的content
-                                    logger.info(f"[Save] is_reasoning变化: {last_is_reasoning} -> {current_is_reasoning}，保存content到数据库")
-                                    await save_execution_steps_to_db(current_execution_steps, current_content)
-                                    last_is_reasoning = current_is_reasoning
-                                
                                 # ⭐ 【调试日志】记录每个chunk
                                 logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
                                 # 逐token发送到前端
@@ -1216,6 +1208,18 @@ async def chat_stream(request: ChatRequest):
                                     'content': chunk.content,                    # 显示的文本内容
                                     'is_reasoning': current_is_reasoning  # true=思考，false=回答
                                 }
+                                
+                                # ⭐ 【小沈修复 2026-03-16】chunk也是step类型，需要先添加到execution_steps
+                                current_execution_steps.append(chunk_data)
+                                
+                                # ⭐ 【小沈添加 2026-03-16 v11.0】检测is_reasoning变化，变化时保存
+                                # 目的：解决content覆盖问题 - 在is_reasoning变化时保存到数据库
+                                if last_is_reasoning != current_is_reasoning:
+                                    # is_reasoning状态变化，保存当前累积的content
+                                    logger.info(f"[Save] is_reasoning变化: {last_is_reasoning} -> {current_is_reasoning}，保存content到数据库")
+                                    await save_execution_steps_to_db(current_execution_steps, current_content)
+                                    last_is_reasoning = current_is_reasoning
+                                
                                 logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}, is_reasoning={chunk_data['is_reasoning']}")
                                 yield f"data: {json.dumps(chunk_data)}\n\n"
                             if chunk.is_done:
