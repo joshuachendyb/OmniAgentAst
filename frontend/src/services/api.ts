@@ -686,14 +686,21 @@ export const sessionApi = {
    * 保存执行步骤到会话
    * @author 小新
    * @update 2026-03-06 新增：用于保存AI思考过程的执行步骤
+   * @update 2026-03-16 修正：增加content参数，支持在visibilitychange时同时保存content
+   * 修正原因：SSE数据保存方案-综合版第18章要求，visibilitychange时需要同时保存
+   *          execution_steps和content，后端API需要支持content参数
    */
   saveExecutionSteps: async (
     sessionId: string,
-    executionSteps: any[]
+    executionSteps: any[],
+    content?: string  // 新增：可选的content参数，用于保存AI回复内容
   ): Promise<{ success: boolean }> => {
     const response = await api.post<{ success: boolean }>(
       `/sessions/${sessionId}/execution_steps`,
-      { execution_steps: executionSteps }
+      { 
+        execution_steps: executionSteps,
+        ...(content !== undefined && { content })  // 有值才传递
+      }
     );
     return response.data;
   },
