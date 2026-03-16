@@ -1,3 +1,114 @@
+v0.6.6
+
+更新内容：
+1. 添加 replyUserMessageId 关联功能
+   - 添加 replyUserMessageIdRef 变量
+   - 用户消息保存后获取 message_id
+   - saveExecutionSteps 调用时传递 replyUserMessageId
+   - visibilitychange 也传递 replyUserMessageId
+   - 文件：frontend/src/components/Chat/NewChatContainer.tsx
+
+验证结果：
+- ✅ 构建成功
+
+版本升级说明：
+- v0.6.5: 删除前端saveMessage调用
+- v0.6.6: 添加replyUserMessageId关联功能（本次升级）
+
+参与开发：小新
+完成时间：2026-03-16 16:45:00
+
+---
+
+v0.6.5
+
+更新内容：
+1. 删除前端3处saveMessage调用
+   - 删除 step.start 时的 saveMessage（后端已自动创建assistant消息+metadata）
+   - 删除重试时的 saveMessage（后端已实时保存）
+   - 删除错误消息的 saveMessage（后端已保存error步骤）
+   - 删除 hasSavedStartMessageRef 相关代码
+
+2. 后端已确认实现以下功能：
+   - start 步骤自动创建 assistant 消息并提取 metadata（model/provider/display_name）
+   - 实时保存 execution_steps（start/thought/chunk 后自动调用）
+   - error 步骤保存错误信息到 execution_steps
+
+代码修改：
+- frontend/src/components/Chat/NewChatContainer.tsx
+
+验证结果：
+- ✅ 构建成功
+
+版本升级说明：
+- v0.6.4: 增加message_id追踪日志
+- v0.6.5: 删除前端saveMessage调用，后端已实现自动保存（本次升级）
+
+参与开发：小新、小沈
+完成时间：2026-03-16 16:30:00
+
+---
+
+v0.6.4
+
+更新内容：
+1. 修复消息"被冲掉"问题 - 增加message_id追踪日志
+   - 用户消息保存成功后输出message_id
+   - step.start保存assistant消息占位后输出message_id
+   - saveExecutionSteps保存后输出message_id
+   - visibilitychange保存后输出message_id
+   - 前端api.ts添加返回类型message_id
+   - 文件：
+     * frontend/src/components/Chat/NewChatContainer.tsx
+     * frontend/src/services/api.ts
+
+验证结果：
+- ✅ 构建成功
+
+版本升级说明：
+- v0.6.3: 修复sessionId不匹配导致消息错乱
+- v0.6.4: 增加message_id追踪日志（本次升级）
+
+参与开发：小新
+完成时间：2026-03-16 16:00:00
+
+---
+
+v0.6.3
+
+更新内容：
+1. 修复sessionStorage恢复时sessionId不匹配导致消息错乱问题
+   - 问题：用户在5分钟内从会话A切换到会话B，可能错误恢复会话A的数据
+   - 修复1：restoreState函数增加urlSessionId与缓存sessionId匹配检查
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+     * 位置：第826-836行
+   - 修复2：visibilitychange页面恢复时增加缓存sessionId与urlSessionId匹配检查
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+     * 位置：第1010-1012行
+
+2. 修复后端并发保存消息导致重复问题
+   - 问题：后端同时保存多个消息到数据库
+   - 修复：数据库已删除并重新初始化
+
+代码审查：
+- 审查人：小健
+- 发现问题：sessionStorage恢复时缺少sessionId验证
+- 修复方案：增加state.sessionId === urlSessionId检查
+
+验证结果：
+- ✅ ESLint检查通过（0 errors）
+- ✅ 单元测试全部通过（205 tests passed）
+- ✅ 生产构建成功
+
+版本升级说明：
+- v0.6.2: 修复SSE断开导致数据丢失问题
+- v0.6.3: 修复sessionId不匹配导致消息错乱（本次升级）
+
+参与开发：小新、小健
+完成时间：2026-03-16 15:45:00
+
+---
+
 v0.6.2
 
 更新内容：

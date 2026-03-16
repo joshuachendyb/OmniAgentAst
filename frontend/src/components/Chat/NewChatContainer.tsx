@@ -62,7 +62,6 @@ import {
 // 【新增 2026-03-13】从独立文件导入日志和消息提示函数
 import { logAIComplete, logUserSend } from "../../utils/chatLogger";
 import {
-  showSaveSuccess,
   showSaveError,
   showLoadSuccess,
   showNetworkError,
@@ -116,6 +115,8 @@ const NewChatContainer: React.FC = () => {
   const pendingMessageRef = useRef<Message | null>(null);
   // 【小查修复2026-03-14】添加messagesRef避免visibilitychange useEffect频繁重新注册
   const messagesRef = useRef<Message[]>([]);
+  // 【小新修复 2026-03-16】保存用户消息ID，用于AI消息关联
+  const replyUserMessageIdRef = useRef<number | null>(null);
 
   // ⭐ 暂停功能缓冲区：暂存暂停期间接收的数据
   const displayBufferRef = useRef<any[]>([]);
@@ -123,8 +124,6 @@ const NewChatContainer: React.FC = () => {
   const isPausedRef = useRef(false);
   // 【小查修复】用于在回调中获取最新的executionSteps
   const executionStepsRef = useRef<ExecutionStep[]>([]);
-  // 【小新修复 2026-03-16】标记是否已保存过start消息，防止重复保存
-  const hasSavedStartMessageRef = useRef(false);
 
   // 流式输出相关状态
   const [showExecution, setShowExecution] = useState(true);
@@ -222,30 +221,14 @@ const NewChatContainer: React.FC = () => {
              * - metadata（model/provider/display_name）需要在流式开始时保存
              * 
              * 解决方案：
-             * - 在流式开始时调用saveMessage创建消息占位，同时保存metadata
+             * - 后端在流式开始时自动创建assistant消息并保存metadata
              * - 后续由后端自动保存execution_steps和content
-             * - onComplete时不再调用saveMessage，避免创建重复消息
+             * - 前端不再调用saveMessage
              * 
              * 修改位置：step.type === "start" 时
-             * 修改原因：saveMessage是INSERT，会创建新消息，只能在流式开始时调用一次
+             * 修改原因：saveMessage是INSERT，会创建新消息，后端已自动处理
              */
-            // 【小新修复 2026-03-16】防止重复保存：只有未保存过时才保存
-            const currentSessionId = currentSessionIdRef.current || sessionId;
-            if (currentSessionId && !hasSavedStartMessageRef.current) {
-              hasSavedStartMessageRef.current = true;  // 先标记已保存，避免重复触发
-              sessionApi.saveMessage(currentSessionId, {
-                role: "assistant",
-                content: step.content || "🤔 AI 正在思考...",
-                model: step.model,
-                provider: step.provider,
-                display_name: finalDisplay_name,
-              }).then(() => {
-                console.log("💾 [step.start] AI消息占位已保存到数据库（含metadata）");
-              }).catch((error) => {
-                console.error("💾 [step.start] 保存消息占位失败:", error);
-                // 不阻塞，继续执行
-              });
-            }
+            // 【小新修复 2026-03-16】删除saveMessage调用，由后端自动创建assistant消息
             
             const newAssistantMessage: Message = {
               id: (Date.now() + 1).toString(),
@@ -420,9 +403,10 @@ const NewChatContainer: React.FC = () => {
             // step.start 已经创建了消息占位，这里只需要更新即可
             // saveExecutionSteps 是智能 UPSERT，会自动找到最后一条 assistant 消息并更新
             // 【小新修复 2026-03-16】传递content参数，解决缺陷3：content覆盖问题
+            // 【小新修复 2026-03-16】传递replyUserMessageId，关联AI消息与用户消息
             if (stepsToSave && stepsToSave.length > 0) {
-              await sessionApi.saveExecutionSteps(currentSessionId, stepsToSave, finalResponse);
-              console.log("✅ 执行步骤保存成功，共", stepsToSave.length, "步");
+              await sessionApi.saveExecutionSteps(currentSessionId, stepsToSave, finalResponse, replyUserMessageIdRef.current || undefined);
+              console.log("✅ 执行步骤保存成功，共", stepsToSave.length, "步, replyUserMessageId:", replyUserMessageIdRef.current);
             }
 
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
@@ -456,79 +440,9 @@ const NewChatContainer: React.FC = () => {
               return;
             }
             
-            // 情况3：网络或服务器错误 - 重试
-            let retryCount = 0;
-            const maxRetries = 3;
-
-            const retrySave = async () => {
-              while (retryCount < maxRetries) {
-                retryCount++;
-                message.warning({
-                  content: `保存AI回复失败，正在重试 (${retryCount}/${maxRetries})...`,
-                  duration: 2,
-                });
-                await new Promise(resolve => setTimeout(resolve, 1000));
-
-                try {
-                  // 保存AI回复
-                  await sessionApi.saveMessage(currentSessionId, {
-                    role: "assistant",
-                    content: finalResponse,
-                    // 不传递 message_count，让后端自动处理
-                  });
-
-                  // ⭐ 【小新修复 2026-03-04】重试保存AI回复时也不再调用 ensureTitlePersisted
-                  // 原因：标题应该在用户修改时立即保存，避免版本冲突
-                  showSaveSuccess("AI回复保存成功");
-                  return;
-                  } catch (error: any) {
-                    // 检查是否是409版本冲突
-                   if (error?.response?.status === 409) {
-                     message.error("会话数据冲突，请刷新页面");
-                     break; // 版本冲突不重试
-                   } else if (retryCount === maxRetries) {
-                     message.error({
-                       content: "AI回复保存失败，请刷新页面重试",
-                       duration: 5,
-                     });
-                     // 本地缓存AI回复（防止丢失）
-                     try {
-                       const cacheKey = `unsaved_ai_responses_${currentSessionId}`;
-                       const cached = JSON.parse(
-                         localStorage.getItem(cacheKey) || "[]"
-                       );
-                       //避免重复缓存
-                        const exists = cached.some(
-                         (msg: any) =>
-                           msg.assistant === finalResponse
-                       );
-                       if (!exists) {
-                         cached.push({
-                           assistant: finalResponse,
-                           timestamp: Date.now(),
-                         });
-                         localStorage.setItem(cacheKey, JSON.stringify(cached));
-                         message.info("AI回复已暂存到本地");
-                       }
-                      } catch (cacheError) {
-                        console.error("本地缓存失败:", cacheError);
-                      }
-                      break; // 达到最大重试次数
-                    }
-                  }
-                }
-            };
-            
-            // 【小查修复2026-03-14】重试完成后必须设置loading=false
-            retrySave().finally(() => {
-              setLoading(false);
-              setWaitTime(0);
-              setIsRetrying(false);
-              if (waitTimerRef.current) {
-                clearInterval(waitTimerRef.current);
-                waitTimerRef.current = null;
-              }
-            });
+            // 情况3：网络或服务器错误
+            // 【小新修复 2026-03-16】后端已实时保存，不需要前端重试保存
+            message.error("网络或服务器错误，请检查网络");
           }
         } else {
           console.warn("⚠️ 无法保存AI回复：缺少sessionId或fullResponse");
@@ -621,35 +535,13 @@ const NewChatContainer: React.FC = () => {
             };
             return updated;
           }
-           return prev;
-         });
+         return prev;
+       });
 
-         // 【小查修复2026-03-14】错误消息也需要保存到数据库
-         const currentSessionId = currentSessionIdRef.current || sessionId;
-         if (currentSessionId) {
-            sessionApi.saveMessage(currentSessionId, {
-              role: "assistant",
-              content: errorObj.message,
-              execution_steps: executionStepsRef.current || [],
-              // 使用API文档字段名（snake_case）
-              is_error: true,
-              error_type: errorObj.error_type,
-              code: errorObj.code,
-              message: errorObj.message,
-              details: errorObj.details,
-              stack: errorObj.stack,
-              retryable: errorObj.retryable,
-              retry_after: errorObj.retry_after,
-              timestamp: errorObj.timestamp,
-               // 如果 errorObj 中没有 model/provider，使用消息中已有的值
-               model: errorObj.model || messagesRef.current[messagesRef.current.length - 1]?.model,
-               provider: errorObj.provider || messagesRef.current[messagesRef.current.length - 1]?.provider,
-            }).catch((saveErr) => {
-             console.error("❌ 保存错误消息失败:", saveErr);
-           });
-         }
-
-          console.log("🔍 [onError] 错误处理完成，设置loading=false");
+         // 【小新修复 2026-03-16】删除错误消息saveMessage调用
+         // 后端会在error步骤时自动保存错误信息到execution_steps
+         
+         console.log("🔍 [onError] 错误处理完成，设置loading=false");
         setLoading(false);
         // ⭐ 停止等待计时器
         if (waitTimerRef.current) {
@@ -935,14 +827,16 @@ const NewChatContainer: React.FC = () => {
                 return lastStep ? ((lastStep as any).content || '') : '';
               };
               const currentContent = getLatestContent();
-              
+               
               // 调用saveExecutionSteps，后端已支持content参数
+              // 【小新修复 2026-03-16】传递replyUserMessageId，关联AI消息与用户消息
               sessionApi.saveExecutionSteps(
                 currentSessionIdRef.current,
                 executionStepsRef.current,
-                currentContent
+                currentContent,
+                replyUserMessageIdRef.current || undefined
               ).then(() => {
-                console.log("💾 [visibilitychange] execution_steps + content已保存到数据库");
+                console.log("💾 [visibilitychange] execution_steps + content已保存到数据库, replyUserMessageId:", replyUserMessageIdRef.current);
               }).catch((error) => {
                 console.error("💾 [visibilitychange] 保存失败:", error);
                 // 不阻塞，继续执行
@@ -1556,11 +1450,13 @@ const NewChatContainer: React.FC = () => {
     if (currentSessionId) {
       try {
         console.log("🔍 在调用AI之前先保存用户消息:", userMessage);
-        await sessionApi.saveMessage(currentSessionId, {
+        const saveResult = await sessionApi.saveMessage(currentSessionId, {
           role: "user",
           content: userMessage.content,
         });
-        console.log("✅ 用户消息保存成功");
+        // 保存用户消息ID，用于AI消息关联
+        replyUserMessageIdRef.current = saveResult?.message_id || null;
+        console.log("✅ 用户消息保存成功, message_id:", saveResult?.message_id);
       } catch (error) {
         console.error("❌ 保存用户消息失败:", error);
         message.error("用户消息保存失败，但AI请求将继续发送");
@@ -1659,8 +1555,8 @@ const NewChatContainer: React.FC = () => {
       
       if (!inputValue.trim() || loading) return;
 
-      // 【小新修复 2026-03-16】重置start消息保存标记，允许新消息保存
-      hasSavedStartMessageRef.current = false;
+      // 【小新修复 2026-03-16】删除hasSavedStartMessageRef，不再需要防止重复保存
+      // 后端已自动处理assistant消息创建
       
       // 🔴 修复：添加输入长度限制和验证
      if (inputValue.trim().length > 5000) {

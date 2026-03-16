@@ -675,8 +675,8 @@ export const sessionApi = {
       provider?: string;
       display_name?: string;  // 【小新修改 2026-03-16】添加display_name字段，支持流式开始时保存metadata
     }
-  ): Promise<{ success: boolean }> => {
-    const response = await api.post<{ success: boolean }>(
+  ): Promise<{ success: boolean; message_id?: number; message_count?: number }> => {
+    const response = await api.post<{ success: boolean; message_id?: number; message_count?: number }>(
       `/sessions/${sessionId}/messages`,
       message
     );
@@ -688,19 +688,25 @@ export const sessionApi = {
    * @author 小新
    * @update 2026-03-06 新增：用于保存AI思考过程的执行步骤
    * @update 2026-03-16 修正：增加content参数，支持在visibilitychange时同时保存content
+   * @update 2026-03-16 修正：增加reply_to_message_id参数，用于校验AI消息ID
    * 修正原因：SSE数据保存方案-综合版第18章要求，visibilitychange时需要同时保存
    *          execution_steps和content，后端API需要支持content参数
    */
   saveExecutionSteps: async (
     sessionId: string,
     executionSteps: any[],
-    content?: string  // 新增：可选的content参数，用于保存AI回复内容
-  ): Promise<{ success: boolean }> => {
-    const response = await api.post<{ success: boolean }>(
+    content?: string,
+    replyUserMessageId?: number  // 新增：回复的用户消息ID
+  ): Promise<{ success: boolean; message_id?: number; is_new_message?: boolean }> => {
+    // ⭐ 【调试】记录前端保存
+    console.log(`💾 [前端保存] sessionId=${sessionId}, stepsCount=${executionSteps.length}, contentLen=${content?.length || 0}, replyUserMessageId=${replyUserMessageId}`);
+    
+    const response = await api.post<{ success: boolean; message_id?: number; is_new_message?: boolean }>(
       `/sessions/${sessionId}/execution_steps`,
       { 
         execution_steps: executionSteps,
-        ...(content !== undefined && { content })  // 有值才传递
+        ...(content !== undefined && { content }),
+        ...(replyUserMessageId !== undefined && { reply_to_message_id: replyUserMessageId })
       }
     );
     return response.data;
