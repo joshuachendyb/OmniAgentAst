@@ -415,23 +415,11 @@ const NewChatContainer: React.FC = () => {
           console.log("  fallback ref中的steps:", executionStepsRef.current?.length);
 
           try {
-            // 【小新修复 2026-03-11】分开保存：
-            // 1. saveMessage 只保存消息内容（消息已在流式开始时创建）
-            // 2. saveExecutionSteps 更新最后一条消息的 execution_steps
-            // 【小查修复2026-03-14】空响应时也要保存错误字段
-            await sessionApi.saveMessage(currentSessionId, {
-              role: "assistant",
-              content: finalResponse,
-              execution_steps: stepsToSave,
-              // 空响应错误字段
-              is_error: isError || undefined,
-              error_type: errorType,
-              code: errorCode,
-              message: errorMessage,
-            });
-
-            // 保存 execution_steps 到最后一条消息（保留兼容）
-            // @update 2026-03-16 v11.0修复：传递content参数，解决缺陷3：content覆盖问题
+            // 【小健修复 2026-03-16】不再调用 saveMessage：
+            // 原因：saveMessage 是 INSERT，会创建重复消息
+            // step.start 已经创建了消息占位，这里只需要更新即可
+            // saveExecutionSteps 是智能 UPSERT，会自动找到最后一条 assistant 消息并更新
+            // 【小新修复 2026-03-16】传递content参数，解决缺陷3：content覆盖问题
             if (stepsToSave && stepsToSave.length > 0) {
               await sessionApi.saveExecutionSteps(currentSessionId, stepsToSave, finalResponse);
               console.log("✅ 执行步骤保存成功，共", stepsToSave.length, "步");
