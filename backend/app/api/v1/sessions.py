@@ -861,6 +861,29 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         
         # 查找该会话的最后一条assistant消息（用于更新 execution_steps 和 content）
         # @update 2026-03-16：添加role='assistant'过滤，只更新assistant消息
+        # 【重要修复】使用message_count来判断是否需要创建新消息，而不是仅依赖timestamp
+        # 根因：如果仅用timestamp排序，上一次对话的assistant消息可能被错误地更新
+        # 解决方案：同时检查timestamp和消息顺序，确保只更新最近一次对话的assistant消息
+        
+        # 先查找会话的message_count
+        cursor.execute(
+            'SELECT message_count FROM chat_sessions WHERE id = ?',
+            (session_id,)
+        )
+        session_info = cursor.fetchone()
+        session_message_count = session_info['message_count'] if session_info else 0
+        
+        # 根据message_count计算应该有多少条assistant消息
+        expected_assistant_count = (session_message_count + 1) // 2
+        
+        # 查找assistant消息数量
+        cursor.execute(
+            'SELECT COUNT(*) FROM chat_messages WHERE session_id = ? AND role = "assistant"',
+            (session_id,)
+        )
+        current_assistant_count = cursor.fetchone()[0]
+        
+        # 查找最后一条assistant消息
         cursor.execute(
             '''SELECT id, content, role FROM chat_messages 
                WHERE session_id = ? AND role = 'assistant'
@@ -869,12 +892,18 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         )
         last_message = cursor.fetchone()
         
-        # 【智能UPSERT】如果没有assistant消息，自动创建消息占位
-        # 目的：支持流式过程中实时保存execution_steps
-        # @update 2026-03-16：使用is_new_message标记，避免重复更新message_count
+        # 【智能判断】只有当没有assistant消息时才创建新消息
+        # @fix 2026-03-16：修复message_count错误导致的重复创建问题
+        # 之前的逻辑是：current_assistant_count < expected_assistant_count 就创建
+        # 但这会导致每次保存都创建新消息，因为expected会根据message_count变化
+        # 正确逻辑：只有当没有任何assistant消息时才创建
+        
         is_new_message = False
-        if not last_message:
-            logger.info(f"会话中无assistant消息，自动创建消息占位: session_id={session_id}")
+        should_create_new = (current_assistant_count == 0)
+        
+        if not last_message or should_create_new:
+            # 没有assistant消息时，创建消息占位
+            logger.info(f"没有assistant消息，创建新消息占位: session_id={session_id}")
             utc_time = get_utc_timestamp()
             # 使用update_data.content作为初始content（如果提供了的话）
             initial_content = update_data.content if update_data.content else ''
