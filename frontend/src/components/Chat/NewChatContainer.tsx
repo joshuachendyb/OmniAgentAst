@@ -398,16 +398,12 @@ const NewChatContainer: React.FC = () => {
           console.log("  fallback ref中的steps:", executionStepsRef.current?.length);
 
           try {
-            // 【小健修复 2026-03-16】不再调用 saveMessage：
-            // 原因：saveMessage 是 INSERT，会创建重复消息
-            // step.start 已经创建了消息占位，这里只需要更新即可
-            // saveExecutionSteps 是智能 UPSERT，会自动找到最后一条 assistant 消息并更新
-            // 【小新修复 2026-03-16】传递content参数，解决缺陷3：content覆盖问题
-            // 【小新修复 2026-03-16】传递replyUserMessageId，关联AI消息与用户消息
-            if (stepsToSave && stepsToSave.length > 0) {
-              await sessionApi.saveExecutionSteps(currentSessionId, stepsToSave, finalResponse, replyUserMessageIdRef.current || undefined);
-              console.log("✅ 执行步骤保存成功，共", stepsToSave.length, "步, replyUserMessageId:", replyUserMessageIdRef.current);
-            }
+            // ⭐ 【小沈修复 2026-03-17】删除前端保存：
+            // 原因：后端在流式结束时已经自动保存了完整数据（包含所有steps）
+            // 前端保存会覆盖后端数据，导致数据丢失（112条→99条）
+            // 数据由后端生成，后端自己知道完整数据，不需要前端指挥
+            // 后端saveExecutionSteps改为忽略前端传入的数据，只用自己生成的
+            console.log("✅ AI回复完成，后端已自动保存完整数据");
 
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
             // 原因：标题应该在用户修改时立即保存，避免版本冲突

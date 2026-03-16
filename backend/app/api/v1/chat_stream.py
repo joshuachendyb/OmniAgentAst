@@ -691,17 +691,21 @@ async def chat_stream(request: ChatRequest):
                 return
             
             try:
+                # 前端会传reply_to_message_id，但后端不使用，只用内存变量assistant_message_ids
+                user_message_id = sessions._user_message_ids.get(request.session_id)
+                
                 # 调用sessions模块的save_execution_steps函数
                 # 注意：这是一个异步函数调用
                 result = await sessions.save_execution_steps(
                     request.session_id,
                     sessions.ExecutionStepsUpdate(
                         execution_steps=execution_steps,
-                        content=content
+                        content=content,
+                        reply_to_message_id=user_message_id
                     )
                 )
                 logger.debug(f"[Save] 保存成功: session_id={request.session_id}, "
-                           f"steps_count={len(execution_steps)}, has_content={content is not None}")
+                           f"user_msg_id={user_message_id}, steps_count={len(execution_steps)}, has_content={content is not None}")
             except Exception as e:
                 # ⭐ 【小沈修复 2026-03-16】保存失败记录详细错误，便于排查问题
                 logger.error(f"[Save] 保存失败: {e}", exc_info=True)
@@ -1374,6 +1378,17 @@ async def chat_stream(request: ChatRequest):
                     await add_step_and_save(error_step, f"错误: {error_message}")
                     return  # 直接返回，不再发送final步骤
                 
+                # ⭐ 【小沈修复 2026-03-17】先添加final步骤到数组，再保存
+                # 解决删除重复保存代码后，final步骤丢失的问题
+                final_step = {
+                    'type': 'final',
+                    'content': full_content,
+                    'model': ai_service.model,
+                    'provider': ai_service.provider,
+                    'timestamp': int(datetime.now().timestamp() * 1000)
+                }
+                current_execution_steps.append(final_step)
+                
                 # ⭐ 【小沈修复 2026-03-16】final前强制保存一次，确保所有steps都写入数据库
                 # 解决is_reasoning变化后未保存导致的丢失问题
                 logger.info(f"[Step final] 💾 final前强制保存: {len(current_execution_steps)} steps")
@@ -1389,16 +1404,7 @@ async def chat_stream(request: ChatRequest):
                     display_name=display_name
                 )
                 
-                # 【使用统一函数】添加final步骤到execution_steps并保存
-                final_step = {
-                    'type': 'final',
-                    'content': full_content,
-                    'model': ai_service.model,
-                    'provider': ai_service.provider,
-                    'timestamp': int(datetime.now().timestamp() * 1000)
-                }
-                current_content = full_content
-                await add_step_and_save(final_step, current_content)
+                # ⭐ 【小沈修复 2026-03-17】删除重复保存：上面已经保存过，不需要再保存一次
                         
         except asyncio.CancelledError:
             # 客户端断开连接，任务被中断

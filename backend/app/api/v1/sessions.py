@@ -8,6 +8,11 @@
 使用SQLite数据库存储会话和消息
 """
 
+# 【新增 2026-03-16】存储每个session的消息ID
+# key: session_id, value: user_message_id 或 assistant_message_id
+_user_message_ids: dict = {}
+_assistant_message_ids: dict = {}
+
 import sqlite3
 import uuid
 import json
@@ -164,7 +169,7 @@ def _init_database():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             message_count INTEGER DEFAULT 0,
             is_deleted BOOLEAN DEFAULT FALSE,
-            is_valid BOOLEAN DEFAULT FALSE  -- 默认为FALSE，新创建的会话默认为无效，需要前端明确标记为有效
+            is_valid BOOLEAN DEFAULT FALSE
         )
     ''')
     # 注意：现在所有会话都已具有 is_valid 字段，无需额外的检查或更新操作
@@ -710,6 +715,11 @@ async def save_message(session_id: str, message: MessageCreate):
         )
         message_id = cursor.lastrowid
         
+        # 【新增 2026-03-16】保存用户消息ID到内存字典，用于生成AI消息ID
+        if message.role == 'user':
+            _user_message_ids[session_id] = message_id
+            logger.info(f"[保存用户消息ID] message_id={message_id}, session_id={session_id}")
+        
         # 计算新的消息计数
         new_message_count = session['message_count'] + 1
         
@@ -878,53 +888,73 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         # 根据message_count计算应该有多少条assistant消息
         expected_assistant_count = (session_message_count + 1) // 2
         
-        # ⭐ 【重要修复 2026-03-16】基于用户消息ID+1创建AI消息
-        # 方法1（主要）：基于用户消息ID+1创建AI消息
-        # 方法2（校验）：前端传递reply_to_message_id，用于校验
+        # ⭐ 【重要修复 2026-03-17】每次都重新计算AI消息ID，不依赖缓存
+        # 缓存逻辑错误：之前一直用第一次的缓存ID，导致后续消息覆盖问题
+        # 修复：每次都用当前用户消息ID+1来计算AI消息ID
         
-        reply_to_message_id = update_data.reply_to_message_id
+        # 计算AI消息ID = 用户消息ID + 1
+        user_message_id = _user_message_ids.get(session_id)
         
-        # 查找该session的最后一条消息（任何角色）
-        cursor.execute(
-            '''SELECT id, role FROM chat_messages 
-               WHERE session_id = ?
-               ORDER BY id DESC LIMIT 1''',
-            (session_id,)
-        )
-        last_message = cursor.fetchone()
-        
-        # 计算期望的assistant消息ID：用户消息ID + 1
-        expected_assistant_id = None
-        should_create_new = False
-        
-        if last_message:
-            # 基于最后一条消息ID+1作为AI消息ID
-            # 不管最后一条是user还是assistant，直接ID+1
-            expected_assistant_id = last_message['id'] + 1
+        if user_message_id:
+            expected_assistant_id = user_message_id + 1
+            # 存入字典（更新为最新的）
+            _assistant_message_ids[session_id] = expected_assistant_id
+            logger.info(f"[重新计算AI消息ID] user_message_id={user_message_id}, assistant_message_id={expected_assistant_id}")
+            # 检查消息是否已存在
+            cursor.execute('SELECT id, role FROM chat_messages WHERE id = ?', (expected_assistant_id,))
+            existing_msg = cursor.fetchone()
+            
+            if existing_msg:
+                if existing_msg['role'] == 'assistant':
+                    should_create_new = False
+                    logger.info(f"[更新现有] assistant消息(ID={expected_assistant_id}): session_id={session_id}")
+                else:
+                    should_create_new = True
+                    logger.warning(f"[ID被占用] ID={expected_assistant_id}是{existing_msg['role']}，创建新消息")
+            else:
+                should_create_new = True
+                logger.info(f"[新建] ID={expected_assistant_id}不存在，创建assistant消息: session_id={session_id}")
+        else:
+            # 计算AI消息ID = 用户消息ID + 1
+            user_message_id = _user_message_ids.get(session_id)
+            
+            if user_message_id:
+                expected_assistant_id = user_message_id + 1
+                # 存入字典
+                _assistant_message_ids[session_id] = expected_assistant_id
+                logger.info(f"[计算AI消息ID] user_message_id={user_message_id}, assistant_message_id={expected_assistant_id}")
+            else:
+                # 内存没有查数据库
+                cursor.execute(
+                    '''SELECT id FROM chat_messages 
+                       WHERE session_id = ? AND role = 'user'
+                       ORDER BY id DESC LIMIT 1''',
+                    (session_id,)
+                )
+                last_user_msg = cursor.fetchone()
+                
+                if last_user_msg:
+                    expected_assistant_id = last_user_msg['id'] + 1
+                    _assistant_message_ids[session_id] = expected_assistant_id
+                    logger.info(f"[基于数据库] user_msg_id={last_user_msg['id']}, assistant_msg_id={expected_assistant_id}")
+                else:
+                    expected_assistant_id = 1
+                    logger.warning(f"[异常] session没有用户消息，ID={session_id}")
             
             # 检查消息是否已存在
             cursor.execute('SELECT id, role FROM chat_messages WHERE id = ?', (expected_assistant_id,))
             existing_msg = cursor.fetchone()
             
             if existing_msg:
-                # 消息已存在，检查是否是同一次对话的assistant消息
                 if existing_msg['role'] == 'assistant':
-                    # 更新现有消息
                     should_create_new = False
                     logger.info(f"[更新现有] assistant消息(ID={expected_assistant_id}): session_id={session_id}")
                 else:
-                    # ID被其他角色占用，创建新消息
                     should_create_new = True
                     logger.warning(f"[ID被占用] ID={expected_assistant_id}是{existing_msg['role']}，创建新消息")
             else:
-                # 消息不存在，创建新消息
                 should_create_new = True
                 logger.info(f"[新建] ID={expected_assistant_id}不存在，创建assistant消息: session_id={session_id}")
-        else:
-            # session中没有任何消息，创建第一条assistant消息
-            should_create_new = True
-            expected_assistant_id = 1
-            logger.info(f"[新建] session中没有消息，创建第一条assistant消息: session_id={session_id}")
         
         # ⭐ 【重要修复 2026-03-16】从execution_steps的start步骤提取metadata
         metadata = {'model': None, 'provider': None, 'display_name': None}
