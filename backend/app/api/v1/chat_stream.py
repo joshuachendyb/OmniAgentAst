@@ -1212,6 +1212,8 @@ async def chat_stream(request: ChatRequest):
                                 
                                 # ⭐ 【小沈修复 2026-03-16】chunk也是step类型，需要先添加到execution_steps
                                 current_execution_steps.append(chunk_data)
+                                # ⭐ 【调试】每个chunk添加都打印
+                                logger.warning(f"[DEBUG] 添加chunk后列表长度: {len(current_execution_steps)}, chunk内容: {chunk.content[:20]}")
                                 
                                 # ⭐ 【小沈修复 2026-03-16】is_reasoning变化时保存，确保回答部分完整
                                 if last_is_reasoning != current_is_reasoning:
