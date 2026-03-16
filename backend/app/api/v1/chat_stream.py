@@ -1360,6 +1360,7 @@ async def chat_stream(request: ChatRequest):
                         'type': 'error',
                         'error_type': error_type,
                         'message': error_message,
+                        'code': 'AI_CALL_ERROR',
                         'timestamp': int(datetime.now().timestamp() * 1000)
                     }
                     await add_step_and_save(error_step, f"错误: {error_message}")
