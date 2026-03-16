@@ -945,17 +945,17 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
             # 保存metadata到数据库
             display_name_to_save = metadata['display_name'] or f"{metadata['provider']} ({metadata['model']})" if metadata['provider'] and metadata['model'] else None
             
+            # ⭐ 【重要】使用期望的ID插入，而不是让数据库自动生成
             cursor.execute(
                 '''INSERT INTO chat_messages 
-                   (session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?)''',
-                (session_id, 'assistant', initial_content, utc_time, display_name_to_save)
+                   (id, session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?, ?)''',
+                (expected_assistant_id, session_id, 'assistant', initial_content, utc_time, display_name_to_save)
             )
-            actual_message_id = cursor.lastrowid
-            last_message = {'id': actual_message_id, 'content': initial_content}
+            last_message = {'id': expected_assistant_id, 'content': initial_content}
             is_new_message = True
             
             # ⭐ 【调试】记录新消息ID和创建时间
-            logger.info(f"🆕 [新消息创建] message_id={actual_message_id}, expected_id={expected_assistant_id}, session_id={session_id}, timestamp={utc_time}, display_name={display_name_to_save}")
+            logger.info(f"🆕 [新消息创建] message_id={expected_assistant_id}, session_id={session_id}, timestamp={utc_time}, display_name={display_name_to_save}")
         else:
             # 更新现有消息
             is_new_message = False
@@ -969,14 +969,15 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
                 # 保存metadata到数据库
                 display_name_to_save = metadata['display_name'] or f"{metadata['provider']} ({metadata['model']})" if metadata['provider'] and metadata['model'] else None
                 
+                # ⭐ 【重要】使用期望的ID插入
                 cursor.execute(
                     '''INSERT INTO chat_messages 
-                       (session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?)''',
-                    (session_id, 'assistant', initial_content, utc_time, display_name_to_save)
+                       (id, session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?, ?)''',
+                    (expected_assistant_id, session_id, 'assistant', initial_content, utc_time, display_name_to_save)
                 )
-                last_message = {'id': cursor.lastrowid, 'content': initial_content}
+                last_message = {'id': expected_assistant_id, 'content': initial_content}
                 is_new_message = True
-                logger.warning(f"[修复] 消息{expected_assistant_id}不存在，创建新消息ID={cursor.lastrowid}, display_name={display_name_to_save}")
+                logger.warning(f"[修复] 消息{expected_assistant_id}不存在，创建新消息ID={expected_assistant_id}, display_name={display_name_to_save}")
             else:
                 last_message = {'id': expected_assistant_id, 'content': ''}
                 logger.info(f"[更新] assistant消息(ID={expected_assistant_id}): session_id={session_id}")
