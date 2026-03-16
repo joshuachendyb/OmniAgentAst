@@ -428,8 +428,9 @@ const NewChatContainer: React.FC = () => {
             });
 
             // 保存 execution_steps 到最后一条消息（保留兼容）
+            // @update 2026-03-16 v11.0修复：传递content参数，解决缺陷3：content覆盖问题
             if (stepsToSave && stepsToSave.length > 0) {
-              await sessionApi.saveExecutionSteps(currentSessionId, stepsToSave);
+              await sessionApi.saveExecutionSteps(currentSessionId, stepsToSave, finalResponse);
               console.log("✅ 执行步骤保存成功，共", stepsToSave.length, "步");
             }
 
