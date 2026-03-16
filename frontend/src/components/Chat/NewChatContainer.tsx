@@ -123,6 +123,8 @@ const NewChatContainer: React.FC = () => {
   const isPausedRef = useRef(false);
   // 【小查修复】用于在回调中获取最新的executionSteps
   const executionStepsRef = useRef<ExecutionStep[]>([]);
+  // 【小新修复 2026-03-16】标记是否已保存过start消息，防止重复保存
+  const hasSavedStartMessageRef = useRef(false);
 
   // 流式输出相关状态
   const [showExecution, setShowExecution] = useState(true);
@@ -227,9 +229,10 @@ const NewChatContainer: React.FC = () => {
              * 修改位置：step.type === "start" 时
              * 修改原因：saveMessage是INSERT，会创建新消息，只能在流式开始时调用一次
              */
+            // 【小新修复 2026-03-16】防止重复保存：只有未保存过时才保存
             const currentSessionId = currentSessionIdRef.current || sessionId;
-            // 修复：添加空值检查，避免类型错误
-            if (currentSessionId) {
+            if (currentSessionId && !hasSavedStartMessageRef.current) {
+              hasSavedStartMessageRef.current = true;  // 先标记已保存，避免重复触发
               sessionApi.saveMessage(currentSessionId, {
                 role: "assistant",
                 content: step.content || "🤔 AI 正在思考...",
@@ -925,15 +928,25 @@ const NewChatContainer: React.FC = () => {
          * 
          * 修改位置：document.hidden 时
          */
-        
+         
         // 1. 保存execution_steps + content到数据库（双重保险）
         if (isReceiving && currentSessionIdRef.current) {
           try {
             if (executionStepsRef.current.length > 0) {
-              // 获取当前累积的content（从messages中获取）
-              const messages = messagesRef.current || [];
-              const lastMessage = messages[messages.length - 1];
-              const currentContent = lastMessage?.content || '';
+              // 【小新修复 2026-03-16】从executionSteps中提取最终的content
+              // 而不是从messagesRef获取，因为流式过程中的content还没更新到messagesRef
+              const getLatestContent = (): string => {
+                const steps = executionStepsRef.current;
+                // 找到type为final的步骤，其content是最终内容
+                const finalStep = steps.find(s => (s as any).type === "final");
+                if (finalStep) {
+                  return (finalStep as any).content || '';
+                }
+                // 如果没有final步骤，返回最后一个chunk的content
+                const lastStep = steps[steps.length - 1];
+                return lastStep ? ((lastStep as any).content || '') : '';
+              };
+              const currentContent = getLatestContent();
               
               // 调用saveExecutionSteps，后端已支持content参数
               sessionApi.saveExecutionSteps(
@@ -1649,16 +1662,19 @@ const NewChatContainer: React.FC = () => {
   };
 
   /**
-   * 发送消息（带安全检测v2.0）
-    */
-   const handleSend = async () => {
-     console.log("🔍 [handleSend] 函数开始执行");
-     console.log("  inputValue:", inputValue);
-     console.log("  loading:", loading);
-     
-     if (!inputValue.trim() || loading) return;
+    * 发送消息（带安全检测v2.0）
+     */
+    const handleSend = async () => {
+      console.log("🔍 [handleSend] 函数开始执行");
+      console.log("  inputValue:", inputValue);
+      console.log("  loading:", loading);
+      
+      if (!inputValue.trim() || loading) return;
 
-     // 🔴 修复：添加输入长度限制和验证
+      // 【小新修复 2026-03-16】重置start消息保存标记，允许新消息保存
+      hasSavedStartMessageRef.current = false;
+      
+      // 🔴 修复：添加输入长度限制和验证
      if (inputValue.trim().length > 5000) {
        message.warning("消息过长，请精简到5000字符以内");
        return;
