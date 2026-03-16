@@ -703,8 +703,9 @@ async def chat_stream(request: ChatRequest):
                 logger.debug(f"[Save] 保存成功: session_id={request.session_id}, "
                            f"steps_count={len(execution_steps)}, has_content={content is not None}")
             except Exception as e:
-                # 保存失败不中断流式响应，只记录日志
-                logger.error(f"[Save] 保存失败: {e}")
+                # ⭐ 【小沈修复 2026-03-16】保存失败记录详细错误，便于排查问题
+                logger.error(f"[Save] 保存失败: {e}", exc_info=True)
+                # 注意：不抛出异常，避免中断流式响应
         
         # ⭐ 【小沈重构 2026-03-16】统一的添加step并保存函数
         # 解决之前在每个错误处重复添加保存代码的问题
@@ -718,14 +719,10 @@ async def chat_stream(request: ChatRequest):
             - step: step字典（包含type等字段）
             - content: 可选的content内容，用于覆盖current_content
             """
-            # ⭐ 【小沈调试 2026-03-16】添加日志确认保存过程
-            logger.info(f"[add_step_and_save] 添加step前: {len(current_execution_steps)} steps, step类型: {step.get('type')}")
             current_execution_steps.append(step)
             # 【小健修复 2026-03-16】修复空字符串判断逻辑：使用bool判断，空字符串也使用current_content
             save_content = content if content else current_content
-            logger.info(f"[add_step_and_save] 准备保存: {len(current_execution_steps)} steps, content长度: {len(save_content) if save_content else 0}")
             await save_execution_steps_to_db(current_execution_steps, save_content)
-            logger.info(f"[add_step_and_save] 保存完成")
         
         # 【修改】优先使用前端传递的模型信息，fallback到配置文件
         if request.provider and request.model:
@@ -1372,6 +1369,11 @@ async def chat_stream(request: ChatRequest):
                     await add_step_and_save(error_step, f"错误: {error_message}")
                     return  # 直接返回，不再发送final步骤
                 
+                # ⭐ 【小沈修复 2026-03-16】final前强制保存一次，确保所有steps都写入数据库
+                # 解决is_reasoning变化后未保存导致的丢失问题
+                logger.info(f"[Step final] 💾 final前强制保存: {len(current_execution_steps)} steps")
+                await save_execution_steps_to_db(current_execution_steps, full_content)
+                
                 # 发送最终结果，【新增】添加provider字段作为兜底
                 content_preview = full_content[:200] + "..." if len(full_content) > 200 else full_content
                 logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={content_preview}")
@@ -1383,8 +1385,6 @@ async def chat_stream(request: ChatRequest):
                 )
                 
                 # 【使用统一函数】添加final步骤到execution_steps并保存
-                # ⭐ 【小沈调试 2026-03-16】添加日志确认execution_steps数量
-                logger.info(f"[Final] 当前execution_steps数量: {len(current_execution_steps)}, 准备添加final步骤")
                 final_step = {
                     'type': 'final',
                     'content': full_content,
@@ -1394,7 +1394,6 @@ async def chat_stream(request: ChatRequest):
                 }
                 current_content = full_content
                 await add_step_and_save(final_step, current_content)
-                logger.info(f"[Final] final步骤已保存，总steps数量: {len(current_execution_steps)}")
                         
         except asyncio.CancelledError:
             # 客户端断开连接，任务被中断
