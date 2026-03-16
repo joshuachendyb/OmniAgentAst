@@ -811,9 +811,11 @@ class ExecutionStepsUpdate(BaseModel):
     修复的问题：
     - 缺陷1：API参数不匹配 - 后端saveExecutionSteps只有execution_steps参数，没有content参数
     - 缺陷5：visibilitychange调用无效 - 前端传递content参数但API不支持
+    - 缺陷6：无法判断新一轮对话 - 添加reply_to_message_id参数用于校验
     """
     execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
     content: Optional[str] = Field(None, description="AI生成的文本内容，用于实时保存流式输出的内容")
+    reply_to_message_id: Optional[int] = Field(None, description="回复的用户消息ID，用于校验和创建正确的AI消息ID")
 
 
 @router.post("/sessions/{session_id}/execution_steps")
@@ -876,44 +878,108 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         # 根据message_count计算应该有多少条assistant消息
         expected_assistant_count = (session_message_count + 1) // 2
         
-        # 查找assistant消息数量
-        cursor.execute(
-            'SELECT COUNT(*) FROM chat_messages WHERE session_id = ? AND role = "assistant"',
-            (session_id,)
-        )
-        current_assistant_count = cursor.fetchone()[0]
+        # ⭐ 【重要修复 2026-03-16】基于用户消息ID+1创建AI消息
+        # 方法1（主要）：基于用户消息ID+1创建AI消息
+        # 方法2（校验）：前端传递reply_to_message_id，用于校验
         
-        # 查找最后一条assistant消息
+        reply_to_message_id = update_data.reply_to_message_id
+        
+        # 查找该session的最后一条消息（任何角色）
         cursor.execute(
-            '''SELECT id, content, role FROM chat_messages 
-               WHERE session_id = ? AND role = 'assistant'
-               ORDER BY timestamp DESC LIMIT 1''',
+            '''SELECT id, role FROM chat_messages 
+               WHERE session_id = ?
+               ORDER BY id DESC LIMIT 1''',
             (session_id,)
         )
         last_message = cursor.fetchone()
         
-        # 【智能判断】只有当没有assistant消息时才创建新消息
-        # @fix 2026-03-16：修复message_count错误导致的重复创建问题
-        # 之前的逻辑是：current_assistant_count < expected_assistant_count 就创建
-        # 但这会导致每次保存都创建新消息，因为expected会根据message_count变化
-        # 正确逻辑：只有当没有任何assistant消息时才创建
+        # 计算期望的assistant消息ID：用户消息ID + 1
+        expected_assistant_id = None
+        should_create_new = False
         
-        is_new_message = False
-        should_create_new = (current_assistant_count == 0)
+        if last_message:
+            # 基于最后一条消息ID+1作为AI消息ID
+            # 不管最后一条是user还是assistant，直接ID+1
+            expected_assistant_id = last_message['id'] + 1
+            
+            # 检查消息是否已存在
+            cursor.execute('SELECT id, role FROM chat_messages WHERE id = ?', (expected_assistant_id,))
+            existing_msg = cursor.fetchone()
+            
+            if existing_msg:
+                # 消息已存在，检查是否是同一次对话的assistant消息
+                if existing_msg['role'] == 'assistant':
+                    # 更新现有消息
+                    should_create_new = False
+                    logger.info(f"[更新现有] assistant消息(ID={expected_assistant_id}): session_id={session_id}")
+                else:
+                    # ID被其他角色占用，创建新消息
+                    should_create_new = True
+                    logger.warning(f"[ID被占用] ID={expected_assistant_id}是{existing_msg['role']}，创建新消息")
+            else:
+                # 消息不存在，创建新消息
+                should_create_new = True
+                logger.info(f"[新建] ID={expected_assistant_id}不存在，创建assistant消息: session_id={session_id}")
+        else:
+            # session中没有任何消息，创建第一条assistant消息
+            should_create_new = True
+            expected_assistant_id = 1
+            logger.info(f"[新建] session中没有消息，创建第一条assistant消息: session_id={session_id}")
         
-        if not last_message or should_create_new:
-            # 没有assistant消息时，创建消息占位
-            logger.info(f"没有assistant消息，创建新消息占位: session_id={session_id}")
+        # ⭐ 【重要修复 2026-03-16】从execution_steps的start步骤提取metadata
+        metadata = {'model': None, 'provider': None, 'display_name': None}
+        if update_data.execution_steps:
+            for step in update_data.execution_steps:
+                if step.get('type') == 'start':
+                    metadata['model'] = step.get('model')
+                    metadata['provider'] = step.get('provider')
+                    metadata['display_name'] = step.get('display_name')
+                    logger.info(f"[提取metadata] 从start步骤提取: model={metadata['model']}, provider={metadata['provider']}, display_name={metadata['display_name']}")
+                    break
+        
+        # 如果需要创建新消息
+        if should_create_new:
             utc_time = get_utc_timestamp()
-            # 使用update_data.content作为初始content（如果提供了的话）
             initial_content = update_data.content if update_data.content else ''
+            
+            # 保存metadata到数据库
+            display_name_to_save = metadata['display_name'] or f"{metadata['provider']} ({metadata['model']})" if metadata['provider'] and metadata['model'] else None
+            
             cursor.execute(
                 '''INSERT INTO chat_messages 
-                   (session_id, role, content, timestamp) VALUES (?, ?, ?, ?)''',
-                (session_id, 'assistant', initial_content, utc_time)
+                   (session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?)''',
+                (session_id, 'assistant', initial_content, utc_time, display_name_to_save)
             )
-            last_message = {'id': cursor.lastrowid, 'content': initial_content}
-            is_new_message = True  # 标记为新创建，后续只更新一次message_count
+            actual_message_id = cursor.lastrowid
+            last_message = {'id': actual_message_id, 'content': initial_content}
+            is_new_message = True
+            
+            # ⭐ 【调试】记录新消息ID和创建时间
+            logger.info(f"🆕 [新消息创建] message_id={actual_message_id}, expected_id={expected_assistant_id}, session_id={session_id}, timestamp={utc_time}, display_name={display_name_to_save}")
+        else:
+            # 更新现有消息
+            is_new_message = False
+            # 确认消息存在
+            cursor.execute('SELECT id FROM chat_messages WHERE id = ?', (expected_assistant_id,))
+            if not cursor.fetchone():
+                # 消息不存在，创建新消息
+                utc_time = get_utc_timestamp()
+                initial_content = update_data.content if update_data.content else ''
+                
+                # 保存metadata到数据库
+                display_name_to_save = metadata['display_name'] or f"{metadata['provider']} ({metadata['model']})" if metadata['provider'] and metadata['model'] else None
+                
+                cursor.execute(
+                    '''INSERT INTO chat_messages 
+                       (session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?)''',
+                    (session_id, 'assistant', initial_content, utc_time, display_name_to_save)
+                )
+                last_message = {'id': cursor.lastrowid, 'content': initial_content}
+                is_new_message = True
+                logger.warning(f"[修复] 消息{expected_assistant_id}不存在，创建新消息ID={cursor.lastrowid}, display_name={display_name_to_save}")
+            else:
+                last_message = {'id': expected_assistant_id, 'content': ''}
+                logger.info(f"[更新] assistant消息(ID={expected_assistant_id}): session_id={session_id}")
         
         # 构建更新字段和值（智能UPSERT）
         # @update 2026-03-16：同时更新execution_steps和content
@@ -943,6 +1009,11 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         # 【修复缺陷4】只在首次创建消息时更新message_count，避免重复
         # @update 2026-03-16：使用is_new_message标记，只在首次创建时+1
         utc_time = get_utc_timestamp()
+        message_id = last_message['id']
+        
+        # ⭐ 【调试】记录保存的消息ID和时间
+        logger.info(f"💾 [后端保存] message_id={message_id}, session_id={session_id}, timestamp={utc_time}, is_new={is_new_message}, steps_count={len(update_data.execution_steps) if update_data.execution_steps else 0}, reply_to={update_data.reply_to_message_id}")
+        
         if is_new_message:
             # 首次创建消息时，更新message_count
             cursor.execute(
