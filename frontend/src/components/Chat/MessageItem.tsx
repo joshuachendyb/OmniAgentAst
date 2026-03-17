@@ -175,17 +175,6 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
             })()}
           </>
         )}
-        {step.type === "thought" && (
-          <span style={{ 
-            color: colorMap.thought,
-            fontWeight: 500,
-            padding: "4px 8px",
-            borderRadius: 4,
-            background: "#faad1415",
-          }}>
-            💭 {step.thinking_prompt || step.content || ""}
-          </span>
-        )}
         {/* 【小查修复2026-03-10】添加status类型渲染 */}
         {["paused", "resumed", "interrupted", "retrying"].includes(step.type) && (
           <span style={{ 
