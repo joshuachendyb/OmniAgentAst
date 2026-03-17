@@ -619,11 +619,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
 const isUser = message.role === "user";
   const isSystem = message.role === "system";
 
-  // 判断是否有执行步骤（action_tool/observation）
-  const hasExecution = message.executionSteps?.some(
-    step => step.type === "action_tool" || step.type === "observation"
-  ) ?? false;
-
   // 【小查修复2026-03-10】判断是否有status类型步骤
   const hasStatus = message.executionSteps?.some(
     step => ["paused", "resumed", "interrupted", "retrying"].includes(step.type)
@@ -756,83 +751,113 @@ const isUser = message.role === "user";
             />
           </Tooltip>
 
-          {/* 优化后的消息气泡结构 - 按照文档6.6.5节：按时间顺序线性渲染 */}
+          {/* 【小强优化 2026-03-18】瀑布式显示 - 按 step 顺序，互不嵌套 */}
           <>
-            {/* 1. 思考步骤 - 直接显示在最前面，不折叠 */}
-            {message.executionSteps
-              ?.filter(step => step.type === "thought")
-              .map((step, index) => (
-                <StepRow key={`thought-${index}`} step={step} taskId={message.task_id} />
-              ))}
+            {/* 【小强优化 2026-03-18】瀑布式显示 - 按 step 顺序，互不嵌套 */}
+            {(() => {
+              // 获取所有步骤并按 step 排序
+              const allSteps = message.executionSteps || [];
+              const sortedSteps = [...allSteps].sort((a, b) => {
+                if (a.step && b.step) {
+                  return a.step - b.step;
+                }
+                return 0;
+              });
 
-            {/* 【小新重构2026-03-09】按 action_tool 分组，每组一个折叠面板 */}
-            {/* 【小查修复2026-03-10】兼容旧类型 action */}
-            {hasExecution && message.role === "assistant" && (
-              <div>
-                {(() => {
-                  const actionObservationSteps = message.executionSteps?.filter(
-                    step => step.type === "action_tool" || step.type === "observation"
-                  ) || [];
-                  
-                  // 将 action_tool 和后续的 observation 分组
-                  const groups: ExecutionStep[][] = [];
-                  let currentGroup: ExecutionStep[] = [];
-                  
-                  for (const step of actionObservationSteps) {
+              // 每个 action_tool 单独折叠面板，observation 平铺显示
+              return (
+                <>
+                  {sortedSteps.map((step, index) => {
+                    // action_tool：每个单独折叠面板
                     if (step.type === "action_tool") {
-                      // 如果当前组有内容，先保存
-                      if (currentGroup.length > 0) {
-                        groups.push(currentGroup);
-                      }
-                      // 开始新组
-                      currentGroup = [step];
-                    } else if (step.type === "observation") {
-                      // observation 加入当前组
-                      currentGroup.push(step);
+                      return (
+                        <Collapse
+                          key={`action-${index}`}
+                          defaultActiveKey={(message.isStreaming ?? false) ? [`action-${index}`] : []}
+                          size="small"
+                          style={{ marginBottom: 8 }}
+                          items={[{
+                            key: `action-${index}`,
+                            label: (
+                              <Space>
+                                <ThunderboltOutlined />
+                                <span>步骤{step.step}  工具：{step.tool_name || "执行中"}</span>
+                                {(message.isStreaming ?? false) && <LoadingOutlined />}
+                              </Space>
+                            ),
+                            children: (
+                              <>
+                                {step.tool_params && (
+                                  <div style={{ background: "#f5f5f5", padding: "8px 12px", borderRadius: 6, fontSize: "0.9em", marginBottom: 8, color: "#666" }}>
+                                    <strong>参数：</strong>
+                                    <code style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+                                      {JSON.stringify(step.tool_params, null, 2)}
+                                    </code>
+                                  </div>
+                                )}
+                                {step.execution_status && (
+                                  <div style={{ fontSize: "0.9em", color: "#666", marginBottom: 4 }}>
+                                    状态：{step.execution_status}
+                                  </div>
+                                )}
+                              </>
+                            ),
+                          }]}
+                        />
+                      );
                     }
-                  }
-                  // 保存最后一个组
-                  if (currentGroup.length > 0) {
-                    groups.push(currentGroup);
-                  }
-                   
-                  // 渲染每个组（折叠面板）
-                  return groups.map((group, groupIndex) => {
-                    return (
-                    <Collapse
-                      key={`execution-${groupIndex}-${group.length}`}
-                      defaultActiveKey={
-                        message.isStreaming ?? false ? [`execution-${groupIndex}`] : []
-                      }
-                      size="small"
-                      style={{ marginBottom: 8 }}
-                      items={[
-                        {
-                          key: `execution-${groupIndex}`,
-                          label: (
-                            <Space>
-                              <ThunderboltOutlined />
-                              <span>执行详情 {groupIndex + 1}</span>
-                              {(message.isStreaming ?? false) && groupIndex === groups.length - 1 && <LoadingOutlined />}
-                            </Space>
-                          ),
-                          children: (
-                            <>
-                              {group.map((step, stepIndex) => (
-                                <StepRow key={stepIndex} step={step} taskId={message.task_id} />
-                              ))}
-                            </>
-                          ),
-                        },
-                      ]}
-                    />
-                    );
-                  });
-                })()}
-              </div>
-            )}
-
-            {/* 【小查修复2026-03-10】渲染status类型步骤 */}
+                    
+                    // observation：平铺显示，带底色区隔
+                    if (step.type === "observation") {
+                      return (
+                        <div key={`step-${index}`} style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 6, background: "#f0f5ff" }}>
+                          <StepRow step={step} taskId={message.task_id} />
+                        </div>
+                      );
+                    }
+                    
+                    // thought：平铺显示，带底色区隔
+                    if (step.type === "thought") {
+                      return (
+                        <div key={`step-${index}`} style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 6, background: "#faad1415" }}>
+                          <StepRow step={step} taskId={message.task_id} />
+                        </div>
+                      );
+                    }
+                    
+                    // start：平铺显示，带底色区隔
+                    if (step.type === "start") {
+                      return (
+                        <div key={`step-${index}`} style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 6, background: "#e6f7ff" }}>
+                          <StepRow step={step} taskId={message.task_id} />
+                        </div>
+                      );
+                    }
+                    
+                    // status 类型（paused/resumed/interrupted/retrying）：平铺显示
+                    if (["paused", "resumed", "interrupted", "retrying"].includes(step.type)) {
+                      return (
+                        <div key={`step-${index}`} style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 6, background: "#fff7e6" }}>
+                          <StepRow step={step} taskId={message.task_id} />
+                        </div>
+                      );
+                    }
+                    
+                    // error：平铺显示
+                    if (step.type === "error") {
+                      return (
+                        <div key={`step-${index}`} style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 6, background: "#fff1f0", border: "1px solid #ffa39e" }}>
+                          <StepRow step={step} taskId={message.task_id} />
+                        </div>
+                      );
+                    }
+                    
+                    // 其他类型：使用 StepRow 默认渲染
+                    return <StepRow key={`step-${index}`} step={step} taskId={message.task_id} />;
+                  })}
+                </>
+              );
+            })}
             {hasStatus && (
               <div style={{ marginBottom: 8 }}>
                 {message.executionSteps
