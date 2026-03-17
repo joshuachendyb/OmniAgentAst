@@ -824,6 +824,9 @@ const processSSEData = (
         if (rawData.timestamp) {
           step.timestamp = rawData.timestamp;
         }
+        // 【小沈修复 2026-03-17】先调用onStep，将error步骤添加到executionSteps
+        // 问题：之前只调用onError，没有调用onStep，导致error步骤丢失
+        onStep?.(step);
         // 【小新修复2026-03-13】传递完整的错误对象，保留error_type等字段
         onError?.({
           type: "error",

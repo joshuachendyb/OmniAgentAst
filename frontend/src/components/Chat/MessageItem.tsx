@@ -293,7 +293,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
       
       // 统一的导出数据结构
       const exportData: Record<string, any> = {
-        timestamp: new Date().toLocaleString("zh-CN"),
+        timestamp: formatTimestamp(message.timestamp instanceof Date ? message.timestamp.getTime() : message.timestamp),
         messageId: message.id,
         role: message.role,
         content: message.content,
