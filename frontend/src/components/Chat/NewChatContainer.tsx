@@ -727,6 +727,7 @@ const NewChatContainer: React.FC = () => {
         const currentTime = Date.now();
         const savedTime = state.timestamp || 0;
         const timeDiff = currentTime - savedTime;
+        console.log("🕒 缓存时间差:", timeDiff, "ms", "(", (timeDiff/60000).toFixed(2), "分钟)", "过期时间:", SESSION_EXPIRY_TIME, "ms");
 
         // 只恢复5分钟内的状态
         if (timeDiff > SESSION_EXPIRY_TIME) {
@@ -894,6 +895,7 @@ const NewChatContainer: React.FC = () => {
               const currentTime = Date.now();
               const savedTime = state.timestamp || 0;
               const timeDiff = currentTime - savedTime;
+              console.log("🕒 缓存时间差:", timeDiff, "ms", "(", (timeDiff/60000).toFixed(2), "分钟)", "过期时间:", SESSION_EXPIRY_TIME, "ms");
               
               // 缓存有效（5分钟内），且当前有消息，则恢复缓存状态
               if (timeDiff <= SESSION_EXPIRY_TIME && state.messages && state.messages.length > 0) {
