@@ -709,13 +709,13 @@ const processSSEData = (
       }
 
       case "chunk": {
-        // 精简日志：只打印第一个chunk
-        // console.log("🔍 [SSE chunk] rawData.is_reasoning =", rawData.is_reasoning, "type =", rawData.type);
         const chunkContent = rawData.content || "";
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
         // 传递 is_reasoning 区分思考过程和最终答案
         const is_reasoning = rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1';
+        // 【小强修复 2026-03-17】显示每个 chunk 的 is_reasoning 状态，方便调试
+        console.log("💬 [SSE chunk] is_reasoning =", is_reasoning, "content =", chunkContent.substring(0, 50));
         onChunk?.(chunkContent, is_reasoning);
         
         // 【小新修复 2026-03-15 V3】chunk只保存当前小块内容，不保存累积
