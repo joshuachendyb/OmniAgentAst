@@ -738,22 +738,27 @@ const processSSEData = (
         step.content = chunkContent;
         
         // 【小沈带小强修改 2026-03-17】
-        // 问题描述：前端导出JSON时只有3个步骤（start, thought, chunk），但数据库有55个步骤
-        //          前端显示只看到1个chunk "用户"，而不是52个真正的内容chunk
+        // 问题描述：前端导出 JSON 时只有 3 个步骤（start, thought, chunk），但数据库有 55 个步骤
+        //          前端显示只看到 1 个 chunk "用户"，而不是 52 个真正的内容 chunk
         // 根因分析：
-        //   1. setExecutionSteps 是异步更新 React state，虽然在回调中更新了ref，但可能有时序问题
-        //   2. onComplete 调用 getCurrentExecutionSteps() 时，可能获取到的不是完整的55个chunk
-        //   3. 现象：前端显示只看到1个chunk "用户"，导出文件也只有3个步骤
-        //          实际上是前端只渲染了1个chunk（message.content），而不是52个独立的chunk
+        //   1. setExecutionSteps 是异步更新 React state，虽然在回调中更新了 ref，但可能有时序问题
+        //   2. onComplete 调用 getCurrentExecutionSteps() 时，可能获取到的不是完整的 55 个 chunk
+        //   3. 现象：前端显示只看到 1 个 chunk "用户"，导出文件也只有 3 个步骤
+        //          实际上是前端只渲染了 1 个 chunk（message.content），而不是 52 个独立的 chunk
         // 修复方案：
-        //   直接在处理每个chunk时同步更新ref和state，确保onComplete能获取到完整的chunk列表
-        //   这样即使前端渲染只显示message.content，导出功能也能获取到完整的52个chunk步骤
+        //   直接在处理每个 chunk 时同步更新 ref 和 state，确保 onComplete 能获取到完整的 chunk 列表
+        //   这样即使前端渲染只显示 message.content，导出功能也能获取到完整的 52 个 chunk 步骤
         const newSteps = [...handlers.executionStepsRef.current, step];
         handlers.executionStepsRef.current = newSteps;
         setExecutionSteps(newSteps);
         onStep?.(step);
-        // 【小查修复】收到chunk时关闭步骤UI，开始显示回复内容（必须在onStep之后）
-        onShowSteps?.(false);
+        // 【小查修复】收到 chunk 时关闭步骤 UI，开始显示回复内容（必须在 onStep 之后）
+        // 【小强修复 2026-03-17】根据 is_reasoning 区分：true=显示步骤 UI，false=关闭步骤 UI
+        if (is_reasoning) {
+          onShowSteps?.(true);   // 思考过程的 chunk
+        } else {
+          onShowSteps?.(false);  // 最终答案的 chunk
+        }
         break;
       }
 
