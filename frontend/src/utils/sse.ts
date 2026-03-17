@@ -737,10 +737,17 @@ const processSSEData = (
         //   - 历史教训：不能为了解决刷新问题而破坏保存数据的正确性！
         step.content = chunkContent;
         
-        // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
-        // 这样MessageItem可以遍历并分别显示思考过程和正式内容
-        // 【小新修复 2026-03-15 V2】直接更新ref，确保onComplete能获取最新值
-        // 【小沈补充 2026-03-17】简化逻辑，直接追加step
+        // 【小沈带小强修改 2026-03-17】
+        // 问题描述：前端导出JSON时只有3个步骤（start, thought, chunk），但数据库有55个步骤
+        //          前端显示只看到1个chunk "用户"，而不是52个真正的内容chunk
+        // 根因分析：
+        //   1. setExecutionSteps 是异步更新 React state，虽然在回调中更新了ref，但可能有时序问题
+        //   2. onComplete 调用 getCurrentExecutionSteps() 时，可能获取到的不是完整的55个chunk
+        //   3. 现象：前端显示只看到1个chunk "用户"，导出文件也只有3个步骤
+        //          实际上是前端只渲染了1个chunk（message.content），而不是52个独立的chunk
+        // 修复方案：
+        //   直接在处理每个chunk时同步更新ref和state，确保onComplete能获取到完整的chunk列表
+        //   这样即使前端渲染只显示message.content，导出功能也能获取到完整的52个chunk步骤
         const newSteps = [...handlers.executionStepsRef.current, step];
         handlers.executionStepsRef.current = newSteps;
         setExecutionSteps(newSteps);
