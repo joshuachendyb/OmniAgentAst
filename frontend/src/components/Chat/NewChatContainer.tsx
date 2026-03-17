@@ -1209,11 +1209,13 @@ const NewChatContainer: React.FC = () => {
       const urlSessionId = searchParams.get("session_id");
 
       // 检测是否是强制刷新（Ctrl+F5或Cmd+Shift+R）
-      // 使用最新的PerformanceNavigationTiming API
-      const navType = performance.getEntriesByType("navigation")[0]?.type;
-      const isForceReload = navType === "reload";
-      if (isForceReload) {
-        console.log("🔄 检测到强制刷新，清除sessionStorage缓存");
+      // 使用最新的PerformanceNavigationTiming API（Navigation Timing Level 2标准）
+      // 兼容性：Chrome/Edge/Firefox/Safari均支持（2021年10月起Baseline）
+      const navigationEntry = performance.getEntriesByType("navigation")?.[0];
+      const isReload = navigationEntry?.type === "reload";
+      
+      if (isReload) {
+        console.log("🔄 检测到刷新操作，清除sessionStorage缓存");
         sessionStorage.removeItem(STORAGE_KEY);
       }
 
