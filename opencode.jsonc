@@ -3,8 +3,15 @@
   "instructions": [
     "前端开发人员戒律.md",
     "AGENTS.md",
-    "docs/development-standards.md",
-    "test/testing-guidelines.md",
-    "packages/*/AGENTS.md"
+    "D:/50RuleTool/规范与规则/git 使用规范.md",
+    "D:/50RuleTool/规范与规则/版本号变更规范.md",
+    "D:/50RuleTool/规范与规则/笔记及日志写入规则.md",
+    "D:/50RuleTool/规范与规则/AI 自主自动化测试规范.md",
+    "D:/50RuleTool/规范与规则/代码开发自查清单规范.md",
+    "D:/50RuleTool/规范与规则/代码深度审查实践规范.md",
+    "D:/50RuleTool/规范与规则/代码风险分析实践指南.md",
+    "D:/50RuleTool/规范与规则/软件代码迭代规范.md",
+    "D:/50RuleTool/规范与规则/软件迭代代码备份规则.md",
+    "docs/API-chat-stream.md"
   ]
 }
