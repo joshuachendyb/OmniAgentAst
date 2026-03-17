@@ -356,15 +356,21 @@ const NewChatContainer: React.FC = () => {
           const lastMessage = prev[prev.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
             const updated = [...prev];
-            // 【关键修复】确保executionSteps也更新到最新
-            // 【小强调试 2026-03-17】添加日志排查 final 丢失问题
-            console.log("🔍 [onComplete] 更新消息 executionSteps:");
-            console.log("  executionStepsFromSSE 参数:", executionStepsFromSSE?.length);
-            console.log("  executionStepsRef.current:", executionStepsRef.current?.length);
-            console.log("  lastMessage.executionSteps:", lastMessage.executionSteps?.length);
-            const latestSteps = executionStepsFromSSE || executionStepsRef.current || lastMessage.executionSteps || [];
-            console.log("  latestSteps 数量:", latestSteps?.length);
-            console.log("  latestSteps 最后5个类型:", latestSteps?.slice(-5).map((s: any) => s.type));
+            // 【小强修复 2026-03-18】修复竞争条件导致的final/steps丢失问题
+            // 问题：onStep异步更新message.executionSteps，onComplete可能在其完成前执行，导致覆盖
+            // 解决：优先使用message中已有的executionSteps（如果更长），否则使用SSE传递的
+            const sseSteps = executionStepsFromSSE || executionStepsRef.current || [];
+            const msgSteps = lastMessage.executionSteps || [];
+            // 选择更长的那个，避免覆盖已存在的数据
+            const latestSteps = msgSteps.length >= sseSteps.length ? msgSteps : sseSteps;
+            
+            // 【调试日志】
+            console.log("🔍 [onComplete] 修复竞争条件 - executionSteps选择:");
+            console.log("  SSE传递的steps:", sseSteps.length);
+            console.log("  message已有的steps:", msgSteps.length);
+            console.log("  最终选择:", latestSteps.length, msgSteps.length >= sseSteps.length ? "(使用message的)" : "(使用SSE的)");
+            console.log("  最后5个类型:", latestSteps?.slice(-5).map((s: any) => s.type));
+            
             updated[updated.length - 1] = {
               ...lastMessage,
               content: finalResponse,
@@ -528,8 +534,11 @@ const NewChatContainer: React.FC = () => {
   setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
-            // 【关键修复】确保executionSteps也更新到最新
-            const latestSteps = executionStepsRef.current || lastMessage.executionSteps || [];
+            // 【小强修复 2026-03-18】修复竞争条件 - 选择更长的executionSteps
+            const refSteps = executionStepsRef.current || [];
+            const msgSteps = lastMessage.executionSteps || [];
+            const latestSteps = msgSteps.length >= refSteps.length ? msgSteps : refSteps;
+            
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...lastMessage,
