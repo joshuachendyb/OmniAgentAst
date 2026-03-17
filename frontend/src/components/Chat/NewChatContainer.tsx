@@ -1463,6 +1463,24 @@ const NewChatContainer: React.FC = () => {
         // 保存用户消息ID，用于AI消息关联
         backendUserMessageId = saveResult?.message_id || null;
         replyUserMessageIdRef.current = backendUserMessageId;
+        
+        // 【关键修复】用后端返回的ID更新用户消息ID
+        if (backendUserMessageId) {
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            // 找到用户消息，用后端ID更新
+            const userMsgIndex = newMessages.findIndex(m => m.id === userMessage.id);
+            if (userMsgIndex !== -1) {
+              newMessages[userMsgIndex] = {
+                ...newMessages[userMsgIndex],
+                id: backendUserMessageId!.toString()
+              };
+              console.log("✅ 用户消息ID已更新:", backendUserMessageId);
+            }
+            return newMessages;
+          });
+        }
+        
         console.log("✅ 用户消息保存成功, message_id:", saveResult?.message_id);
       } catch (error) {
         console.error("❌ 保存用户消息失败:", error);
