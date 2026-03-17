@@ -1442,19 +1442,6 @@ const NewChatContainer: React.FC = () => {
     setCurrentTaskId(taskId);
     setTaskId(taskId);
 
-    // 【关键修复】先创建assistant消息占位，设置isStreaming=true
-    const assistantMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: "assistant",
-      content: "🤔 AI 正在思考...", // 【修复问题 2】显示占位文本，避免空白气泡
-      timestamp: new Date(),
-      executionSteps: [],
-      isStreaming: true,
-      model: undefined, // 前端小新代修改：明确设置可选属性
-    };
-    console.log("🔍 [executeStreamSend] 创建assistant占位消息:", assistantMessage);
-    setMessages((prev) => [...prev, assistantMessage]);
-
     // 保存待发送消息到ref（同步）和state（异步）
     pendingMessageRef.current = userMessage; // 同步更新，立即生效 ✅
     setPendingMessage(userMessage);
@@ -1464,6 +1451,8 @@ const NewChatContainer: React.FC = () => {
     const currentSessionId = currentSessionIdRef.current || sessionId;
     console.log("🔍 [executeStreamSend] 使用的sessionId:", currentSessionId);
     
+    let backendUserMessageId: number | null = null;
+    
     if (currentSessionId) {
       try {
         console.log("🔍 在调用AI之前先保存用户消息:", userMessage);
@@ -1472,7 +1461,8 @@ const NewChatContainer: React.FC = () => {
           content: userMessage.content,
         });
         // 保存用户消息ID，用于AI消息关联
-        replyUserMessageIdRef.current = saveResult?.message_id || null;
+        backendUserMessageId = saveResult?.message_id || null;
+        replyUserMessageIdRef.current = backendUserMessageId;
         console.log("✅ 用户消息保存成功, message_id:", saveResult?.message_id);
       } catch (error) {
         console.error("❌ 保存用户消息失败:", error);
@@ -1481,6 +1471,25 @@ const NewChatContainer: React.FC = () => {
     } else {
       console.warn("⚠️ 未找到sessionId，无法保存用户消息:", userMessage.id);
     }
+
+    // 【关键修复】用后端返回的message_id生成assistant消息ID（后端逻辑：user_id + 1 = assistant_id）
+    const assistantId = backendUserMessageId 
+      ? (backendUserMessageId + 1).toString() 
+      : (Date.now() + 1).toString();
+    console.log("🔍 assistant消息ID:", assistantId, "(后端ID:", backendUserMessageId, "+1)");
+
+    // 【关键修复】用后端返回的ID创建assistant消息
+    const assistantMessage: Message = {
+      id: assistantId,
+      role: "assistant",
+      content: "🤔 AI 正在思考...", // 【修复问题 2】显示占位文本，避免空白气泡
+      timestamp: new Date(),
+      executionSteps: [],
+      isStreaming: true,
+      model: undefined, // 前端小新代修改：明确设置可选属性
+    };
+    console.log("🔍 [executeStreamSend] 创建assistant占位消息:", assistantMessage);
+    setMessages((prev) => [...prev, assistantMessage]);
 
     console.log("🔍 [executeStreamSend] 准备调用sendStreamMessage...");
     console.log("  content:", userMessage.content);
