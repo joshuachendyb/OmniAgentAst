@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": [
+    "前端开发人员戒律.md",
+    "AGENTS.md",
+    "docs/development-standards.md",
+    "test/testing-guidelines.md",
+    "packages/*/AGENTS.md"
+  ]
+}
