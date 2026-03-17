@@ -319,6 +319,20 @@ const MessageItem: React.FC<MessageItemProps> = ({
         }));
       }
       
+      // 辅助函数：把时间戳转换为可读的北京时间
+      const formatTimestamp = (ts: number | string | undefined): string => {
+        if (!ts) return '';
+        const date = new Date(typeof ts === 'string' ? parseInt(ts) : ts);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        const ms = String(date.getMilliseconds()).padStart(3, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
+      };
+       
       if (isError) {
         // 错误消息：导出JSON格式（使用API文档字段名）
         exportData.error = {
@@ -343,7 +357,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           const baseExport: Record<string, any> = {
             type: step.type,
             content: step.content,
-            timestamp: step.timestamp,
+            timestamp: formatTimestamp(step.timestamp),  // 转换为可读格式
           };
           
           // 根据不同type添加对应字段
