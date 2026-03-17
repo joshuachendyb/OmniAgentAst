@@ -21,7 +21,9 @@
  */
 export const formatTimestamp = (ts: number | string | undefined): string => {
   if (!ts) return '';
-  const date = new Date(typeof ts === 'string' ? parseInt(ts) : ts);
+  const timestamp = typeof ts === 'string' ? parseInt(ts, 10) : ts;
+  if (isNaN(timestamp)) return '';
+  const date = new Date(timestamp);
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
