@@ -650,7 +650,8 @@ const processSSEData = (
         const startStep: ExecutionStep = {
           type: "start",
           content: "🤔 AI 正在思考...",
-          timestamp: Date.now(),
+          // 【小资修复 2026-03-18】使用后端返回的timestamp，而不是前端生成
+          timestamp: timestampValue,
           model: rawData.model,
           provider: rawData.provider,
           display_name: displayName,
