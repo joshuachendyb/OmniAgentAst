@@ -123,8 +123,14 @@ def create_error_response(
     if retry_after is not None:
         response['retry_after'] = retry_after  # type: ignore
     # 添加timestamp字段
-    response['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    response['timestamp'] = create_timestamp()
     return f"data: {json.dumps(response)}\n\n"
+
+
+def create_timestamp() -> int:
+    """生成统一的时间戳（毫秒）"""
+    return create_timestamp()
+
 
 def create_incident_data(incident_value: str, message: str, step: Optional[int] = None) -> dict:
     """创建统一的incident数据"""
@@ -132,7 +138,7 @@ def create_incident_data(incident_value: str, message: str, step: Optional[int] 
         'type': 'incident',
         'incident_value': incident_value,
         'message': message,
-        'timestamp': int(datetime.now().timestamp() * 1000)
+        'timestamp': create_timestamp()
     }
     if step is not None:
         data['step'] = step
@@ -670,7 +676,7 @@ async def chat_stream(request: ChatRequest):
                 'error_type': 'security',
                 'details': f"risk_level: {security_check_result.get('risk_level')}",
                 'retryable': False,
-                'timestamp': int(datetime.now().timestamp() * 1000),
+                'timestamp': create_timestamp(),
                 'model': request.model,
                 'provider': request.provider
             }
@@ -683,7 +689,7 @@ async def chat_stream(request: ChatRequest):
                 'code': error_data['code'],
                 'message': error_data['message'],
                 'error_type': error_data['error_type'],
-                'timestamp': int(datetime.now().timestamp() * 1000)
+                'timestamp': create_timestamp()
             }
             # 【使用统一函数】保存error步骤到数据库
             await add_step_and_save(error_step, f"错误: {error_data['message']}")
@@ -778,7 +784,7 @@ async def chat_stream(request: ChatRequest):
                         'error_type': 'security_error',
                         'message': error_message,
                         'code': 'SECURITY_BLOCKED',
-                        'timestamp': int(datetime.now().timestamp() * 1000)
+                        'timestamp': create_timestamp()
                     }
                     # 【使用统一函数】保存error步骤到数据库
                     await add_step_and_save(error_step, f"安全拦截: {risk}")
@@ -938,7 +944,7 @@ async def chat_stream(request: ChatRequest):
                                 'message': event.get('message', '未知错误'),
                                 'error_type': 'agent',
                                 'retryable': event.get('retryable', False),
-                                'timestamp': int(datetime.now().timestamp() * 1000),
+                                'timestamp': create_timestamp(),
                                 'model': request.model,
                                 'provider': request.provider
                             }
@@ -951,7 +957,7 @@ async def chat_stream(request: ChatRequest):
                                 'error_type': 'agent',
                                 'message': event.get('message', '未知错误'),
                                 'code': 'AGENT_ERROR',
-                                'timestamp': int(datetime.now().timestamp() * 1000)
+                                'timestamp': create_timestamp()
                             }
                             # 【使用统一函数】保存error步骤到数据库
                             await add_step_and_save(error_step, f"Agent错误: {event.get('message', '未知错误')}")
@@ -980,7 +986,7 @@ async def chat_stream(request: ChatRequest):
                         'error_type': 'file_operation_error',
                         'message': error_message,
                         'code': 'FILE_OPERATION_ERROR',
-                        'timestamp': int(datetime.now().timestamp() * 1000)
+                        'timestamp': create_timestamp()
                     }
                     await add_step_and_save(error_step, f"文件操作错误: {error_message}")
             else:
@@ -1211,7 +1217,7 @@ async def chat_stream(request: ChatRequest):
                                     'error_type': 'empty_response',
                                     'message': error_message,
                                     'code': 'EMPTY_RESPONSE',
-                                    'timestamp': int(datetime.now().timestamp() * 1000)
+                                    'timestamp': create_timestamp()
                                 }
                                 await add_step_and_save(error_step, f"错误: {error_message}")
                                 return  # 直接返回，不再发送final步骤
@@ -1261,7 +1267,7 @@ async def chat_stream(request: ChatRequest):
                         'error_type': error_type,
                         'message': error_message,
                         'code': 'AI_CALL_ERROR',
-                        'timestamp': int(datetime.now().timestamp() * 1000)
+                        'timestamp': create_timestamp()
                     }
                     await add_step_and_save(error_step, f"错误: {error_message}")
                     return  # 直接返回，不再发送final步骤
@@ -1292,7 +1298,7 @@ async def chat_stream(request: ChatRequest):
                     'content': full_content,
                     'model': ai_service.model,
                     'provider': ai_service.provider,
-                    'timestamp': int(datetime.now().timestamp() * 1000)
+                    'timestamp': create_timestamp()
                 }
                 current_execution_steps.append(final_step)
                 
@@ -1326,7 +1332,7 @@ async def chat_stream(request: ChatRequest):
                 'type': 'incident',
                 'incident_value': 'interrupted',
                 'message': '客户端断开连接，任务中断',
-                'timestamp': int(datetime.now().timestamp() * 1000)
+                'timestamp': create_timestamp()
             }
             await add_step_and_save(incident_step, "任务中断")
             
@@ -1353,7 +1359,7 @@ async def chat_stream(request: ChatRequest):
                 'error_type': error_info.get("error_type", "server"),
                 'message': error_message,
                 'code': error_info.get("code", "INTERNAL_ERROR"),
-                'timestamp': int(datetime.now().timestamp() * 1000)
+                'timestamp': create_timestamp()
             }
             await add_step_and_save(error_step, f"错误: {error_message}")
         
