@@ -314,7 +314,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           type: step.type,
           incident_value: (step as any).incident_value || step.content,
           message: step.content,
-          timestamp: (step as any).timestamp,
+          timestamp: formatTimestamp((step as any).timestamp),
           wait_time: (step as any).wait_time,
         }));
       }
@@ -344,7 +344,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           stack: message.errorStack,
           retryable: message.errorRetryable,
           retry_after: message.errorRetryAfter,
-          timestamp: message.errorTimestamp,
+          timestamp: formatTimestamp(message.errorTimestamp),
           model: message.model,
           provider: message.provider,
         };
