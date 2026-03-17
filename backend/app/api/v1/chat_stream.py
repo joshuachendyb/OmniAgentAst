@@ -753,7 +753,9 @@ async def chat_stream(request: ChatRequest):
                         return
                 
                 # 安全检测
-                is_safe, risk = check_command_safety(last_message)
+                safety_result = check_command_safety(last_message)
+                is_safe = safety_result.get("is_safe", True)
+                risk = safety_result.get("risk", "")
                 if not is_safe:
                     # 【问题6修复】使用统一错误格式
                     logger.info(f"[Step error] 发送error步骤(安全检测)")
