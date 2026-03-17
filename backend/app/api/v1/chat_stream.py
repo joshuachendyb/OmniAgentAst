@@ -645,6 +645,7 @@ async def chat_stream(request: ChatRequest):
         start_data = {
             'type': 'start',
             'step': next_step(),
+            'timestamp': create_timestamp(),
             'display_name': display_name,
             'provider': ai_service.provider,
             'model': ai_service.model,
@@ -707,7 +708,12 @@ async def chat_stream(request: ChatRequest):
                     history.append(Message(role=msg.role, content=msg.content))
             
             # 1. 发送思考
-            thought_data = {'type': 'thought', 'step': next_step(), 'thinking_prompt': '正在分析任务...'}
+            thought_data = {
+                'type': 'thought',
+                'step': next_step(),
+                'timestamp': create_timestamp(),
+                'thinking_prompt': '正在分析任务...'
+            }
             logger.info(f"[Step thought] 发送thought步骤 - step={thought_data['step']}, thinking_prompt={thought_data['thinking_prompt']}")
             yield f"data: {json.dumps(thought_data)}\n\n"
             
@@ -736,6 +742,7 @@ async def chat_stream(request: ChatRequest):
                 action1_data = {
                     'type': 'action_tool',
                     'step': next_step(),
+                    'timestamp': create_timestamp(),
                     'tool_name': 'notification',
                     'tool_params': {'description': '检测到文件操作意图，开始执行...'},
                     'execution_status': 'success',
@@ -796,6 +803,7 @@ async def chat_stream(request: ChatRequest):
                 observation1_data = {
                     'type': 'observation',
                     'step': next_step(),
+                    'timestamp': create_timestamp(),
                     'obs_execution_status': 'success',
                     'obs_summary': f'安全检测{"通过" if is_safe else "未通过"}',
                     'obs_raw_data': {'is_safe': is_safe, 'risk': risk},
@@ -833,6 +841,7 @@ async def chat_stream(request: ChatRequest):
                 action2_data = {
                     'type': 'action_tool',
                     'step': next_step(),
+                    'timestamp': create_timestamp(),
                     'tool_name': 'notification',
                     'tool_params': {'description': '执行文件操作...'},
                     'execution_status': 'success',
@@ -866,6 +875,7 @@ async def chat_stream(request: ChatRequest):
                             thought_data = {
                                 'type': 'thought',
                                 'step': next_step(),
+                                'timestamp': create_timestamp(),
                                 'content': event.get('content', ''),
                                 'reasoning': event.get('reasoning', ''),
                                 'action_tool': event.get('action_tool', ''),
@@ -883,6 +893,7 @@ async def chat_stream(request: ChatRequest):
                             action_data = {
                                 'type': 'action_tool',
                                 'step': next_step(),
+                                'timestamp': create_timestamp(),
                                 'tool_name': event.get('tool_name', ''),
                                 'tool_params': event.get('tool_params', {}),
                                 'execution_status': event.get('execution_status', 'success'),
@@ -903,6 +914,7 @@ async def chat_stream(request: ChatRequest):
                             observation_data = {
                                 'type': 'observation',
                                 'step': next_step(),
+                                'timestamp': create_timestamp(),
                                 'obs_execution_status': event.get('execution_status', 'success'),
                                 'obs_summary': event.get('summary', ''),
                                 'obs_raw_data': event.get('raw_data'),
@@ -924,6 +936,7 @@ async def chat_stream(request: ChatRequest):
                             final_data = {
                                 'type': 'final',
                                 'step': next_step(),
+                                'timestamp': create_timestamp(),
                                 'content': event.get('content', '')
                             }
                             logger.info(f"[Step final] 发送final步骤 - step={final_data['step']}, content长度={len(final_data['content'])}")
@@ -1099,6 +1112,7 @@ async def chat_stream(request: ChatRequest):
                             # 无论content是否为空，都创建chunk_data并添加到列表
                             chunk_data = {
                                 'type': 'chunk', 
+                                'timestamp': create_timestamp(),
                                 'content': chunk.content or '',  # 确保content不为None
                                 'is_reasoning': current_is_reasoning
                             }
