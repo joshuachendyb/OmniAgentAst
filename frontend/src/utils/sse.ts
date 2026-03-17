@@ -739,15 +739,11 @@ const processSSEData = (
         
         // 【小沈修复】同时调用onStep，将chunk存储到executionSteps数组
         // 这样MessageItem可以遍历并分别显示思考过程和正式内容
-        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
-        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
-        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
-        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
-          return newSteps;
-        });
+        // 【小新修复 2026-03-15 V2】直接更新ref，确保onComplete能获取最新值
+        // 【小沈补充 2026-03-17】简化逻辑，直接追加step
+        const newSteps = [...handlers.executionStepsRef.current, step];
+        handlers.executionStepsRef.current = newSteps;
+        setExecutionSteps(newSteps);
         onStep?.(step);
         // 【小查修复】收到chunk时关闭步骤UI，开始显示回复内容（必须在onStep之后）
         onShowSteps?.(false);
