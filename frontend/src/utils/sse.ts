@@ -448,7 +448,7 @@ export const useSSE = (
           error_type: "connection_error",
           message: friendlyMessage,
           code: "CONNECTION_FAILED",
-          timestamp: rawData.timestamp || new Date().toISOString()
+          timestamp: new Date().toISOString()
         });
       }
     }

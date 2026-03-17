@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>全面分析错误文件</title>
+<style>
+  body { font-family: Arial; max-width: 1200px; margin: 0 auto; padding: 20px; }
+  .section { background: #f5f5f5; border-radius: 8px; padding: 20px; margin: 20px 0; }
+  .error { color: #f5222d; background: #fff2f0; padding: 10px; margin: 5px 0; border-radius: 4px; }
+  .warning { color: #fa8c16; background: #fff7e6; padding: 10px; margin: 5px 0; border-radius: 4px; }
+  .success { color: #52c41a; background: #f6ffed; padding: 10px; margin: 5px 0; border-radius: 4px; }
+  pre { background: #fafafa; border: 1px solid #e8e8e8; padding: 15px; overflow-x: auto; white-space: pre-wrap; }
+  table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+  th, td { border: 1px solid #d9d9d9; padding: 8px 12px; text-align: left; }
+  th { background: #fafafa; }
+  .count { font-size: 24px; font-weight: bold; color: #1890ff; }
+</style>
+</head>
+<body>
+  <h1>🔍 全面分析错误文件</h1>
+  <input type="file" id="fileInput" accept=".json" />
+  <div id="result"></div>
+
+  <script>
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const data = JSON.parse(event.target.result);
+        analyze(data);
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+
+    function analyze(data) {
+      let html = '';
+      
+      // 统计
+      const problems = {
+        timestamp1970: [],
+        timestampNumber: [],
+        missingFields: []
+      };
+      
+      // 1. 顶层分析
+      html += '<div class="section"><h2>【1】顶层字段</h2><table>';
+      for (const [key, val] of Object.entries(data)) {
+        if (key === 'executionSteps') {
+          html += `<tr><td>${key}</td><td>[${val.length} 个步骤]</td></tr>`;
+        } else if (key === 'error') {
+          html += `<tr><td>${key}</td><td>[对象，见下文]</td></tr>`;
+        } else {
+          html += `<tr><td>${key}</td><td>${typeof val === 'string' ? val : JSON.stringify(val)}</td></tr>`;
+        }
+      }
+      html += '</table></div>';
+      
+      // 2. error 对象分析
+      html += '<div class="section"><h2>【2】error 对象详细分析</h2><table>';
+      if (data.error) {
+        for (const [key, val] of Object.entries(data.error)) {
+          let status = '';
+          if (key === 'timestamp' && typeof val === 'string' && val.startsWith('1970')) {
+            status = ' ❌ 错误 (1970 年)';
+            problems.timestamp1970.push('error.timestamp');
+          } else if (key === 'timestamp' && typeof val === 'number') {
+            status = ' ⚠️ 未转换 (数字)';
+            problems.timestampNumber.push('error.timestamp');
+          } else if (key === 'timestamp') {
+            status = ' ✅ 正确';
+          }
+          html += `<tr><td>${key}</td><td>${str(val)}${status}</td></tr>`;
+        }
+      }
+      html += '</table></div>';
+      
+      // 3. executionSteps 分析
+      html += '<div class="section"><h2>【3】executionSteps 详细分析</h2>';
+      if (data.executionSteps) {
+        data.executionSteps.forEach((step, i) => {
+          html += `<h3>步骤 ${i}: type=${step.type}</h3><table>`;
+          for (const [key, val] of Object.entries(step)) {
+            let status = '';
+            if (key === 'timestamp') {
+              if (typeof val === 'string' && val.startsWith('1970')) {
+                status = ' ❌ 错误 (1970 年)';
+                problems.timestamp1970.push(`executionSteps[${i}](${step.type}).timestamp`);
+              } else if (typeof val === 'number') {
+                status = ' ⚠️ 未转换 (数字)';
+                problems.timestampNumber.push(`executionSteps[${i}](${step.type}).timestamp`);
+              } else if (typeof val === 'string') {
+                status = ' ✅ 正确';
+              }
+            }
+            html += `<tr><td>${key}</td><td>${str(val)}${status}</td></tr>`;
+          }
+          html += '</table>';
+        });
+      }
+      html += '</div>';
+      
+      // 4. 问题总结
+      html += '<div class="section"><h2>【4】问题总结</h2>';
+      const total = problems.timestamp1970.length + problems.timestampNumber.length;
+      
+      if (problems.timestamp1970.length > 0) {
+        html += '<div class="error">';
+        html += `<strong>❌ timestamp 是 1970 年 (错误数据): ${problems.timestamp1970.length} 个</strong><ul>`;
+        problems.timestamp1970.forEach(p => html += `<li>${p}</li>`);
+        html += '</ul></div>';
+      }
+      
+      if (problems.timestampNumber.length > 0) {
+        html += '<div class="warning">';
+        html += `<strong>⚠️ timestamp 是数字 (未转换): ${problems.timestampNumber.length} 个</strong><ul>`;
+        problems.timestampNumber.forEach(p => html += `<li>${p}</li>`);
+        html += '</ul></div>';
+      }
+      
+      if (total === 0) {
+        html += '<div class="success"><strong>✅ 没有发现问题！所有 timestamp 都正确。</strong></div>';
+      } else {
+        html += `<div class="error"><span class="count">${total}</span> 个问题需要修复</div>`;
+      }
+      
+      html += '</div>';
+      
+      document.getElementById('result').innerHTML = html;
+    }
+    
+    function str(val) {
+      if (val === null || val === undefined) return '<em style="color:#999">null</em>';
+      if (typeof val === 'string') return val.length > 200 ? val.substring(0, 200) + '...' : val;
+      return JSON.stringify(val);
+    }
+  </script>
+</body>
+</html>
