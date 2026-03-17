@@ -599,8 +599,19 @@ const NewChatContainer: React.FC = () => {
             return prev;
           });
         } else if (data.type === "step" && data.step) {
-          // 处理 step 类型 - 这里简单处理，实际可能需要更复杂的逻辑
-          console.log("📦 [onResumed] 处理 step 数据:", data.step.type);
+          // 【关键修复】恢复时要把step添加到executionSteps
+          setMessages((prev) => {
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage && lastMessage.role === "assistant" && lastMessage.isStreaming) {
+              const updated = [...prev];
+              updated[updated.length - 1] = {
+                ...lastMessage,
+                executionSteps: [...(lastMessage.executionSteps || []), data.step],
+              };
+              return updated;
+            }
+            return prev;
+          });
         }
       });
       
