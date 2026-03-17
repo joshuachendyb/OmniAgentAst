@@ -597,6 +597,19 @@ const processSSEData = (
     jsonStr = jsonStr.trim();
     const rawData = JSON.parse(jsonStr);
 
+    // 【小强修复 2026-03-18】统一处理timestamp转换
+    // 后端有些字段返回字符串格式timestamp，前端需要转换为毫秒数
+    let timestampValue = Date.now();
+    if (rawData.timestamp) {
+      if (typeof rawData.timestamp === 'number') {
+        timestampValue = rawData.timestamp;
+      } else if (typeof rawData.timestamp === 'string') {
+        // 尝试解析字符串时间戳
+        const parsed = Date.parse(rawData.timestamp);
+        timestampValue = isNaN(parsed) ? Date.now() : parsed;
+      }
+    }
+    
     const step: ExecutionStep = {
       type: rawData.type as ExecutionStep["type"],
       
@@ -617,10 +630,10 @@ const processSSEData = (
       
       // 【小沈修复】思考过程与正式内容区分字段
         // 【小查修复】统一使用 snake_case: is_reasoning
-        is_reasoning: rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1',
+        is_reasoning: rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === 'true',
         reasoning: rawData.reasoning || "",
-      
-      timestamp: Date.now(),
+       
+      timestamp: timestampValue,
     };
 
     if (rawData.task_id && setServerTaskId) {
@@ -885,7 +898,7 @@ const processSSEData = (
           stack: rawData.stack,
           retryable: rawData.retryable,
           retry_after: rawData.retry_after,
-          timestamp: rawData.timestamp || new Date().toISOString()
+          timestamp: rawData.timestamp || timestampValue
         });
         setIsReceiving(false);
         setIsConnected(false);
