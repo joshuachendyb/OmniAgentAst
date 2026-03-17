@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>LaTeX 解析 - 最终版</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+    h1 { color: #333; border-bottom: 2px solid #1890ff; padding-bottom: 10px; }
+    .section { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .title { font-size: 18px; font-weight: bold; color: #1890ff; margin-bottom: 15px; }
+    .result-box { background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 20px; line-height: 2; font-size: 15px; }
+    .success { color: #52c41a; font-weight: bold; }
+    .katex { font-size: 1.1em; }
+    input[type="file"] { margin: 20px 0; padding: 15px; border: 2px dashed #1890ff; border-radius: 8px; width: 100%; max-width: 600px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>🔬 LaTeX 解析 - 最终版（支持所有格式）</h1>
+  
+  <div class="section">
+    <h2>选择 JSON 文件</h2>
+    <input type="file" id="fileInput" accept=".json" />
+    <div id="status"></div>
+  </div>
+  
+  <div class="section" id="sec4" style="display:none;">
+    <div class="title">渲染结果</div>
+    <div class="result-box" id="rendered"></div>
+  </div>
+
+  <script>
+    // 匹配平衡括号
+    function findMatchingBrace(text, start) {
+      let depth = 0;
+      for (let i = start; i < text.length; i++) {
+        if (text[i] === '{') depth++;
+        else if (text[i] === '}') {
+          depth--;
+          if (depth === 0) return i;
+        }
+      }
+      return -1;
+    }
+    
+    // 处理 \command{content} 支持嵌套
+    function processCommand(text, cmd, handler) {
+      let result = text;
+      let searchPos = 0;
+      
+      while (searchPos < result.length) {
+        const cmdIndex = result.indexOf('\' + cmd + '{', searchPos);
+        if (cmdIndex === -1) break;
+        
+        const braceStart = cmdIndex + cmd.length + 1;
+        const braceEnd = findMatchingBrace(result, braceStart);
+        
+        if (braceEnd === -1) break;
+        
+        const inner = result.substring(braceStart, braceEnd);
+        const replacement = handler(inner, cmdIndex);
+        
+        result = result.substring(0, cmdIndex) + replacement + result.substring(braceEnd + 1);
+        searchPos = cmdIndex + replacement.length;
+      }
+      
+      return result;
+    }
+    
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        try {
+          const json = JSON.parse(event.target.result);
+          const content = json.content || '';
+          if (!content) throw new Error('没有找到 content 字段');
+          
+          console.log('Content 长度:', content.length);
+          console.log('boxed 数量:', (content.match(/\boxed/g) || []).length);
+          
+          renderContent(content);
+          document.getElementById('sec4').style.display = 'block';
+          
+        } catch(err) {
+          document.getElementById('status').innerHTML = '<span class="error-text">错误：' + err.message + '</span>';
+        }
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+    
+    function renderContent(content) {
+      let processed = content;
+      
+      // 1. 处理 \[ ... \]
+      processed = processed.replace(/\\[([\s\S]*?)\\]/g, (m, f) => {
+        try { return katex.renderToString(f.trim(), { displayMode: true, throwOnError: false, strict: false }); }
+        catch(e) { return m; }
+      });
+      
+      // 2. 处理 \begin{aligned}
+      processed = processed.replace(/\begin\{aligned\}([\s\S]*?)\end\{aligned\}/g, (m, inner) => {
+        try { return katex.renderToString('\begin{aligned}' + inner + '\end{aligned}', { displayMode: true, throwOnError: false, strict: false }); }
+        catch(e) { return m; }
+      });
+      
+      // 3. 处理 \ (换行)
+      processed = processed.replace(/\\/g, '\\');
+      
+      // 4. 处理 \cdot
+      processed = processed.replace(/\cdot/g, '\cdot');
+      
+      // 5. 处理 \overline{}
+      processed = processCommand(processed, 'overline', (inner) => {
+        try { return katex.renderToString('\overline{' + inner + '}', { displayMode: false, throwOnError: false, strict: false }); }
+        catch(e) { return '\overline{' + inner + '}'; }
+      });
+      
+      // 6. 处理 \dfrac{}{}
+      processed = processed.replace(/\dfrac\{([^}]+)\}\{([^}]+)\}/g, (m, a, b) => {
+        try { return katex.renderToString('\dfrac{' + a + '}{' + b + '}', { displayMode: false, throwOnError: false, strict: false }); }
+        catch(e) { return m; }
+      });
+      
+      // 7. 处理 \frac{}{}
+      processed = processed.replace(/\frac\{([^}]+)\}\{([^}]+)\}/g, (m, a, b) => {
+        try { return katex.renderToString('\frac{' + a + '}{' + b + '}', { displayMode: false, throwOnError: false, strict: false }); }
+        catch(e) { return m; }
+      });
+      
+      // 8. 处理 \gcd() - 特殊处理
+      processed = processed.replace(/\gcd\((\d+),(\d+)\)/g, (m, a, b) => {
+        try { return katex.renderToString('\gcd(' + a + ',' + b + ')', { displayMode: false, throwOnError: false, strict: false }); }
+        catch(e) { return m; }
+      });
+      
+      // 9. 最后处理 \boxed{} - 支持嵌套
+      processed = processCommand(processed, 'boxed', (inner) => {
+        console.log('\boxed 内容:', inner.substring(0, 50));
+        try {
+          // 先处理内部的 LaTeX 命令
+          let processedInner = inner;
+          // 如果内部还有 \frac 等，递归处理
+          processedInner = processedInner.replace(/\dfrac\{([^}]+)\}\{([^}]+)\}/g, (m, a, b) => {
+            try { return katex.renderToString('\dfrac{' + a + '}{' + b + '}', { displayMode: false, throwOnError: false }); }
+            catch(e) { return m; }
+          });
+          processedInner = processedInner.replace(/\frac\{([^}]+)\}\{([^}]+)\}/g, (m, a, b) => {
+            try { return katex.renderToString('\frac{' + a + '}{' + b + '}', { displayMode: false, throwOnError: false }); }
+            catch(e) { return m; }
+          });
+          processedInner = processedInner.replace(/\overline\{([^}]+)\}/g, (m, a) => {
+            try { return katex.renderToString('\overline{' + a + '}', { displayMode: false, throwOnError: false }); }
+            catch(e) { return m; }
+          });
+          
+          return katex.renderToString('\boxed{' + processedInner + '}', { displayMode: false, throwOnError: false, strict: false });
+        } catch(e) {
+          console.error('\boxed 失败:', e.message, '内容:', inner);
+          return '\boxed{' + inner + '}';
+        }
+      });
+      
+      // Markdown 解析
+      marked.setOptions({ breaks: true, gfm: true, headerIds: false });
+      const html = marked.parse(processed);
+      
+      document.getElementById('rendered').innerHTML = html;
+      document.getElementById('status').innerHTML = '<span class="success">✅ 解析完成！所有 7 个 boxed 应该都渲染了</span>';
+    }
+  </script>
+</body>
+</html>
