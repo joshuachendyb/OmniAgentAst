@@ -4,33 +4,27 @@ import json
 conn = sqlite3.connect('C:/Users/40968/.omniagent/chat_history.db')
 c = conn.cursor()
 
-# Get all messages in session 6658e10c-a459-4194-a7fe-12f501fffcae
-c.execute("""
-    SELECT id, role, content, execution_steps 
-    FROM chat_messages 
-    WHERE session_id = '6658e10c-a459-4194-a7fe-12f501fffcae'
-    ORDER BY id
-""")
+# Check message 794
+c.execute("SELECT id, role, content, execution_steps FROM chat_messages WHERE id = 794")
+row = c.fetchone()
 
-rows = c.fetchall()
-
-print(f"=== Session 6658e10c - {len(rows)} messages ===\n")
-
-for row in rows:
-    msg_id, role, content, steps_json = row
+if row:
+    print(f"=== Message {row[0]} ===")
+    print(f"Role: {row[1]}")
+    print(f"Content: {row[2]}")
     
-    print(f"Message {msg_id} ({role}):")
-    
-    if steps_json:
+    if row[3]:
         try:
-            steps = json.loads(steps_json)
-            print(f"  Steps: {len(steps)} - {[s.get('type') for s in steps]}")
-            # Show content preview
-            print(f"  Content: {str(content)[:50] if content else 'None'}...")
-        except:
-            print(f"  Steps: (parse error)")
+            steps = json.loads(row[3])
+            print(f"\nExecution steps count: {len(steps)}")
+            print("Step types:")
+            for s in steps:
+                print(f"  - {s.get('type')}")
+        except Exception as e:
+            print(f"Parse error: {e}")
     else:
-        print(f"  Steps: None")
-    print()
+        print("No execution_steps")
+else:
+    print("Message 794 not found")
 
 conn.close()
