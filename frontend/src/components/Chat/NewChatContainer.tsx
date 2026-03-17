@@ -1208,6 +1208,13 @@ const NewChatContainer: React.FC = () => {
     const loadSession = async () => {
       const urlSessionId = searchParams.get("session_id");
 
+      // 检测是否是强制刷新（Ctrl+F5或Cmd+Shift+R）
+      const isForceReload = performance.navigation.type === 1; // 1 = TYPE_RELOAD
+      if (isForceReload) {
+        console.log("🔄 检测到强制刷新，清除sessionStorage缓存");
+        sessionStorage.removeItem(STORAGE_KEY);
+      }
+
       // 🔴 修复1: URL参数绝对优先 - 清除旧的sessionStorage
       if (urlSessionId) {
         // P1级别优化：添加会话跳转加载状态
