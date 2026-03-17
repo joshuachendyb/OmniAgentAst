@@ -115,12 +115,18 @@ def detect_file_operation_intent(message: str) -> Tuple[bool, str, float]:
         matched_keywords = []
         
         for keyword in config["keywords"]:
-            # 使用单词边界匹配，确保是完整词
-            pattern = r'\b' + re.escape(keyword) + r'\b'
-            if re.search(pattern, message_lower):
-                # 完整词匹配，得1.0分
-                score += 1.0
-                matched_keywords.append(keyword)
+            # 【修复】\b单词边界在纯中文环境下失效，改为直接包含检查
+            # 同时对英文关键词使用小写匹配，中文关键词使用原始大小写匹配
+            if keyword.isascii():
+                # 英文关键词，转小写匹配
+                if keyword.lower() in message_lower:
+                    score += 1.0
+                    matched_keywords.append(keyword)
+            else:
+                # 中文关键词，直接包含检查
+                if keyword in message:
+                    score += 1.0
+                    matched_keywords.append(keyword)
         
         # 应用权重
         weight = 1.0

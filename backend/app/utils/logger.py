@@ -12,6 +12,23 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+# 【修复】禁用logging在emit失败时打印错误堆栈，避免控制台噪音
+logging.raiseExceptions = False
+
+
+class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """安全的轮转文件处理器，捕获轮转错误避免程序崩溃"""
+    
+    def emit(self, record):
+        try:
+            super().emit(record)
+        except PermissionError:
+            # 轮转失败时静默忽略
+            pass
+        except Exception:
+            # 其他错误也静默忽略
+            pass
+
 # 日志目录
 LOG_DIR = Path(__file__).parent.parent.parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
@@ -80,10 +97,10 @@ def _get_log_file_path() -> Path:
     """获取当日日志文件路径"""
     return LOG_DIR / f"app_{datetime.now().strftime('%Y-%m-%d')}.log"
 
-def _setup_file_handler() -> logging.handlers.RotatingFileHandler:
+def _setup_file_handler() -> SafeRotatingFileHandler:
     """创建文件处理器"""
     log_file = _get_log_file_path()
-    _file_handler = logging.handlers.RotatingFileHandler(
+    _file_handler = SafeRotatingFileHandler(
         log_file,
         maxBytes=LogConfig.get_max_bytes(),
         backupCount=LogConfig.get_backup_count(),
@@ -175,12 +192,21 @@ def setup_logger(name: str) -> logging.Logger:
     if _file_handler and _console_handler:
         # 为每个logger创建处理器副本，使用当天的日志文件
         log_file = _get_log_file_path()
-        file_handler = logging.handlers.RotatingFileHandler(
-            log_file,
-            maxBytes=LogConfig.get_max_bytes(),
-            backupCount=LogConfig.get_backup_count(),
-            encoding='utf-8'
-        )
+        
+        # 【修复】添加轮转失败时的错误处理
+        try:
+            file_handler = SafeRotatingFileHandler(
+                log_file,
+                maxBytes=LogConfig.get_max_bytes(),
+                backupCount=LogConfig.get_backup_count(),
+                encoding='utf-8'
+            )
+        except Exception as e:
+            # 轮转失败时，使用不带轮转的 FileHandler
+            import warnings
+            warnings.warn(f"RotatingFileHandler创建失败: {e}，使用普通FileHandler")
+            file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        
         file_handler.setFormatter(formatter)
         file_handler.setLevel(log_level)
         
