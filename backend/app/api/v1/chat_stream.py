@@ -126,20 +126,13 @@ def create_error_response(
     response['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return f"data: {json.dumps(response)}\n\n"
 
-
-# ⭐ 【小沈重构 2026-03-16】统一timestamp和incident数据创建函数 - 遵循DRY原则
-def create_timestamp() -> str:
-    """生成显示用timestamp"""
-    return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-
 def create_incident_data(incident_value: str, message: str, step: Optional[int] = None) -> dict:
     """创建统一的incident数据"""
     data = {
         'type': 'incident',
         'incident_value': incident_value,
         'message': message,
-        'timestamp': create_timestamp()
+        'timestamp': int(datetime.now().timestamp() * 1000)
     }
     if step is not None:
         data['step'] = step
@@ -677,7 +670,7 @@ async def chat_stream(request: ChatRequest):
                 'error_type': 'security',
                 'details': f"risk_level: {security_check_result.get('risk_level')}",
                 'retryable': False,
-                'timestamp': create_timestamp(),
+                'timestamp': int(datetime.now().timestamp() * 1000),
                 'model': request.model,
                 'provider': request.provider
             }
@@ -945,7 +938,7 @@ async def chat_stream(request: ChatRequest):
                                 'message': event.get('message', '未知错误'),
                                 'error_type': 'agent',
                                 'retryable': event.get('retryable', False),
-                                'timestamp': create_timestamp(),
+                                'timestamp': int(datetime.now().timestamp() * 1000),
                                 'model': request.model,
                                 'provider': request.provider
                             }
