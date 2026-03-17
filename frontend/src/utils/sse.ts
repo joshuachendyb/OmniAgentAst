@@ -152,6 +152,20 @@ export interface UseSSEReturn {
   reconnectStatus: "idle" | "connecting" | "reconnecting" | "failed";
   /** 手动重连 */
   reconnect: () => void;
+  /** 性能指标 */
+  performanceMetrics?: PerformanceMetrics | null;
+}
+
+/**
+ * SSE性能指标
+ * 【小强添加 2026-03-18】用于追踪用户体验
+ */
+export interface PerformanceMetrics {
+  ttft: number;            // Time To First Token 首token时间（毫秒）
+  totalTokens: number;     // 估算总token数
+  tokensPerSecond: number; // 每秒token数
+  totalTime: number;      // 总响应时间（毫秒）
+  chunkCount: number;     // chunk数量
 }
 
 /**
@@ -193,11 +207,19 @@ const getFriendlyErrorMessage = (errorType: ErrorType, originalMessage: string):
 };
 
 /**
- * 计算重连延迟（指数退避）
+ * 计算重连延迟（指数退避 + Full Jitter）
+ * 【小强修复 2026-03-18】增强重试策略，使用Full Jitter算法
+ * 
+ * Full Jitter公式：delay = random(0, min(baseDelay * 2^attempt, maxDelay))
+ * 优点：避免多客户端同时重连造成"惊群效应"
  */
 const calculateReconnectDelay = (attempt: number, baseDelay: number, maxDelay: number): number => {
-  const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
-  return delay + Math.random() * 1000; // 添加随机抖动
+  // 指数退避
+  const exponentialDelay = baseDelay * Math.pow(2, attempt);
+  // Full Jitter：在[0, exponentialDelay]范围内随机
+  const jitter = Math.random() * exponentialDelay;
+  // 最终延迟不超过maxDelay
+  return Math.min(jitter, maxDelay);
 };
 
 export const useSSE = (
@@ -235,6 +257,12 @@ export const useSSE = (
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const pendingMessageRef = useRef<{ content: string; sessionId?: string } | null>(null);
+
+  // 【小强添加 2026-03-18】性能指标相关
+  const [performanceMetrics, setPerformanceMetrics] = useState<PerformanceMetrics | null>(null);
+  const ttftRef = useRef<number>(0);  // 存储TTFT值
+  const requestStartTimeRef = useRef<number>(0);
+  const chunkCountRef = useRef<number>(0);
 
   /**
    * 断开连接
@@ -320,6 +348,12 @@ export const useSSE = (
   const sendMessageInternal = async (content: string, sessionId?: string) => {
     disconnect();
     clearSteps();
+
+    // 【小强添加 2026-03-18】重置性能指标并记录开始时间
+    requestStartTimeRef.current = Date.now();
+    ttftRef.current = 0;
+    chunkCountRef.current = 0;
+    setPerformanceMetrics(null);
 
     setIsReceiving(true);
     setIsConnected(true);
@@ -506,6 +540,7 @@ export const useSSE = (
     setServerTaskId,
     reconnectStatus,
     reconnect,
+    performanceMetrics,  // 【小强添加 2026-03-18】性能指标
   };
 };
 
@@ -711,11 +746,12 @@ const processSSEData = (
       case "chunk": {
         // 精简日志：只打印第一个 chunk
         // console.log("🔍 [SSE chunk] rawData.is_reasoning =", rawData.is_reasoning, "type =", rawData.type);
+        
+        // 传递 is_reasoning 区分思考过程和最终答案
+        const is_reasoning = rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1';
         const chunkContent = rawData.content || "";
         responseBufferRef.current += chunkContent;
         setCurrentResponse(responseBufferRef.current);
-        // 传递 is_reasoning 区分思考过程和最终答案
-        const is_reasoning = rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1';
         onChunk?.(chunkContent, is_reasoning);
         
         // 【小新修复 2026-03-15 V3】chunk只保存当前小块内容，不保存累积
