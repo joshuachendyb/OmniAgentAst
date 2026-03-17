@@ -175,7 +175,17 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
             })()}
           </>
         )}
-        {step.type === "thought" && (step.thinking_prompt || step.content || "")}
+        {step.type === "thought" && (
+          <span style={{ 
+            color: colorMap.thought,
+            fontWeight: 500,
+            padding: "4px 8px",
+            borderRadius: 4,
+            background: "#faad1415",
+          }}>
+            💭 思考: {step.thinking_prompt || step.content || ""}
+          </span>
+        )}
         {/* 【小查修复2026-03-10】添加status类型渲染 */}
         {["paused", "resumed", "interrupted", "retrying"].includes(step.type) && (
           <span style={{ 
@@ -188,8 +198,16 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
             {labelMap[step.type] || "状态"}: {step.content || step.message || ""}
           </span>
         )}
-        {step.type === "final" && (step.content || "")}
-        {step.type === "error" && (step.error_message || "")}
+        {step.type === "final" && (
+          <span style={{ color: colorMap.final, fontWeight: 500 }}>
+            ✅ {step.content || ""}
+          </span>
+        )}
+        {step.type === "error" && (
+          <span style={{ color: colorMap.error, fontWeight: 500 }}>
+            ❌ 错误: {step.error_message || ""}
+          </span>
+        )}
       </span>
     </div>
   );
