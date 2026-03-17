@@ -49,6 +49,9 @@ class IntentClassifier:
                 # 通用动词
                 '写入', '创建', '保存', '写', '修改', '更新', '编辑', '删除', '复制', '移动', '重命名', '列出',
                 'write', 'create', 'save', 'edit', 'update', 'delete', 'copy', 'move', 'rename', 'list',
+                # 【新增】通用文件操作相关词
+                '查看', '浏览', '搜索', '找文件', '看目录', '看文件夹',
+                '桌面', '文件夹', '目录', '文件列表', '有什么文件',
             ],
             "file_extensions": ['.txt', '.md', '.py', '.js', '.ts', '.json', '.yaml', '.yml', '.xml', '.csv'],
         },
@@ -98,7 +101,7 @@ class IntentClassifier:
         # 检查是否是动作类
         action_type, action_confidence = cls._detect_action_intent(message_lower)
         
-        if action_type and action_confidence > 0.5:
+        if action_type and action_confidence > 0.4:
             # 是动作类
             return IntentType.ACTION, action_type, action_confidence
         else:
@@ -187,3 +190,23 @@ def classify_intent(message: str) -> Tuple[IntentType, Optional[ActionType], flo
         (意图类型，动作类型，置信度)
     """
     return IntentClassifier.classify(message)
+
+
+def detect_file_operation_intent(message: str) -> Tuple[bool, str, float]:
+    """
+    检测用户消息是否包含文件操作意图
+    
+    引用 classify_intent 函数，使用子串匹配逻辑
+    
+    Args:
+        message: 用户输入消息
+        
+    Returns:
+        (是否文件操作, 操作类型, 置信度0-1)
+    """
+    intent_type, action_type, confidence = classify_intent(message)
+    
+    if intent_type == IntentType.ACTION and action_type == ActionType.FILE_OPERATION:
+        return True, "file", confidence
+    
+    return False, "", 0.0
