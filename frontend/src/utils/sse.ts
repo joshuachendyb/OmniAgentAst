@@ -643,6 +643,8 @@ const processSSEData = (
           display_name: displayName,
           // 【小新修复2026-03-10】添加task_id字段映射
           task_id: rawData.task_id,
+          // 【小强修复 2026-03-18】添加step字段映射，后端已返回step值
+          step: rawData.step || 1,
           // 【小查修复2026-03-10】添加security_check字段处理
           raw_data: rawData.security_check ? {
             is_safe: rawData.security_check.is_safe,
