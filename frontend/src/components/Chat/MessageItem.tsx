@@ -278,7 +278,21 @@ const MessageItem: React.FC<MessageItemProps> = ({
       
       let blob: Blob;
       let filename: string;
-      
+
+      // 辅助函数：把时间戳转换为可读的北京时间（必须放在使用之前）
+      const formatTimestamp = (ts: number | string | undefined): string => {
+        if (!ts) return '';
+        const date = new Date(typeof ts === 'string' ? parseInt(ts) : ts);
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        const ms = String(date.getMilliseconds()).padStart(3, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
+      };
+       
       // 统一的导出数据结构
       const exportData: Record<string, any> = {
         timestamp: formatTimestamp(message.timestamp instanceof Date ? message.timestamp.getTime() : message.timestamp),
@@ -306,20 +320,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
           wait_time: (step as any).wait_time,
         }));
       }
-      
-      // 辅助函数：把时间戳转换为可读的北京时间
-      const formatTimestamp = (ts: number | string | undefined): string => {
-        if (!ts) return '';
-        const date = new Date(typeof ts === 'string' ? parseInt(ts) : ts);
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        const seconds = String(date.getSeconds()).padStart(2, '0');
-        const ms = String(date.getMilliseconds()).padStart(3, '0');
-        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
-      };
        
       if (isError) {
         // 错误消息：导出JSON格式（使用API文档字段名）
