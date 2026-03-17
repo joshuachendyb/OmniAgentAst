@@ -1209,7 +1209,9 @@ const NewChatContainer: React.FC = () => {
       const urlSessionId = searchParams.get("session_id");
 
       // 检测是否是强制刷新（Ctrl+F5或Cmd+Shift+R）
-      const isForceReload = performance.navigation.type === 1; // 1 = TYPE_RELOAD
+      // 使用最新的PerformanceNavigationTiming API
+      const navType = performance.getEntriesByType("navigation")[0]?.type;
+      const isForceReload = navType === "reload";
       if (isForceReload) {
         console.log("🔄 检测到强制刷新，清除sessionStorage缓存");
         sessionStorage.removeItem(STORAGE_KEY);
