@@ -30,6 +30,7 @@ import {
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
 import { taskControlApi } from "../../services/api";
+import { formatTimestamp } from "../../utils/timestamp";
 import { } from "../../utils/markdown";
 import ErrorDetail from "./ErrorDetail";
 
@@ -278,20 +279,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
       
       let blob: Blob;
       let filename: string;
-
-      // 辅助函数：把时间戳转换为可读的北京时间（必须放在使用之前）
-      const formatTimestamp = (ts: number | string | undefined): string => {
-        if (!ts) return '';
-        const date = new Date(typeof ts === 'string' ? parseInt(ts) : ts);
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        const seconds = String(date.getSeconds()).padStart(2, '0');
-        const ms = String(date.getMilliseconds()).padStart(3, '0');
-        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
-      };
        
       // 统一的导出数据结构
       const exportData: Record<string, any> = {
