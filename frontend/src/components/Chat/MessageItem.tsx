@@ -183,7 +183,7 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
             borderRadius: 4,
             background: "#faad1415",
           }}>
-            💭 思考: {step.thinking_prompt || step.content || ""}
+            💭 {step.thinking_prompt || step.content || ""}
           </span>
         )}
         {/* 【小查修复2026-03-10】添加status类型渲染 */}
