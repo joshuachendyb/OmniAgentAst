@@ -81,7 +81,8 @@ def create_error_response(
     details: Optional[str] = None,
     stack: Optional[str] = None,
     retryable: bool = False,
-    retry_after: Optional[int] = None
+    retry_after: Optional[int] = None,
+    step: Optional[int] = None
 ) -> str:
     """
     创建统一的错误响应格式
@@ -96,6 +97,7 @@ def create_error_response(
         stack: 堆栈信息（可选，仅用于调试）
         retryable: 是否可重试（可选）
         retry_after: 重试等待秒数（可选）
+        step: 步骤序号（可选）
     
     Returns:
         SSE 格式的错误响应字符串
@@ -106,6 +108,8 @@ def create_error_response(
         'message': message,
         'error_type': error_type
     }
+    if step is not None:
+        response['step'] = step
     if model is not None:
         response['model'] = model
     if provider is not None:
@@ -129,14 +133,17 @@ def create_timestamp() -> str:
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 
-def create_incident_data(incident_value: str, message: str) -> dict:
+def create_incident_data(incident_value: str, message: str, step: Optional[int] = None) -> dict:
     """创建统一的incident数据"""
-    return {
+    data = {
         'type': 'incident',
         'incident_value': incident_value,
         'message': message,
         'timestamp': create_timestamp()
     }
+    if step is not None:
+        data['step'] = step
+    return data
 
 
 def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
@@ -627,9 +634,18 @@ async def chat_stream(request: ChatRequest):
         last_message = request.messages[-1].content if request.messages else ""
         security_check_result = check_command_safety(last_message)
         
+        # 步骤计数器（用于统一生成step序号）
+        step_counter = 0
+        
+        def next_step():
+            nonlocal step_counter
+            step_counter += 1
+            return step_counter
+        
         # 发送 start 步骤（包含security_check）
         start_data = {
             'type': 'start',
+            'step': next_step(),
             'display_name': display_name,
             'provider': ai_service.provider,
             'model': ai_service.model,
@@ -641,7 +657,7 @@ async def chat_stream(request: ChatRequest):
                 'blocked': security_check_result.get('blocked', False)
             }
         }
-        logger.info(f"[Step start] 发送start步骤")
+        logger.info(f"[Step start] 发送start步骤 - step={start_data['step']}, model={ai_service.model}, provider={ai_service.provider}, task_id={task_id[:8]}..., security_check.is_safe={security_check_result.get('is_safe', True)}")
         
         yield f"data: {json.dumps(start_data)}\n\n"
         
@@ -655,6 +671,7 @@ async def chat_stream(request: ChatRequest):
             risk = security_check_result.get('risk', '未知风险')
             error_data = {
                 'type': 'error',
+                'step': next_step(),
                 'code': 'SECURITY_BLOCKED',
                 'message': f'危险操作需确认: {risk}',
                 'error_type': 'security',
@@ -664,7 +681,7 @@ async def chat_stream(request: ChatRequest):
                 'model': request.model,
                 'provider': request.provider
             }
-            logger.info(f"[Step error] 发送error步骤(安全检测拦截)")
+            logger.info(f"[Step error] 发送error步骤(安全检测拦截) - step={error_data['step']}, code={error_data['code']}, message={error_data['message']}, retryable={error_data['retryable']}")
             yield f"data: {json.dumps(error_data)}\n\n"
             
             # 【小沈修复 2026-03-16】保存error步骤到数据库
@@ -690,17 +707,9 @@ async def chat_stream(request: ChatRequest):
                 for msg in request.messages[:-1]:
                     history.append(Message(role=msg.role, content=msg.content))
             
-            # 步骤计数器
-            step_counter = 0
-            
-            def next_step():
-                nonlocal step_counter
-                step_counter += 1
-                return step_counter
-            
             # 1. 发送思考
             thought_data = {'type': 'thought', 'step': next_step(), 'thinking_prompt': '正在分析任务...'}
-            logger.info(f"[Step thought] 发送thought步骤")
+            logger.info(f"[Step thought] 发送thought步骤 - step={thought_data['step']}, thinking_prompt={thought_data['thinking_prompt']}")
             yield f"data: {json.dumps(thought_data)}\n\n"
             
             # ⭐ 【小沈添加 2026-03-16 v11.0】thought步骤后保存到数据库
@@ -747,8 +756,8 @@ async def chat_stream(request: ChatRequest):
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
                         # 【使用统一函数】创建incident数据
-                        interrupted_data = create_incident_data('interrupted', '任务已被中断')
-                        logger.info(f"[Step incident] 发送incident步骤(interrupted)")
+                        interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
+                        logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
                         yield f"data: {json.dumps(interrupted_data)}\n\n"
                         return
                 
@@ -758,7 +767,7 @@ async def chat_stream(request: ChatRequest):
                 risk = safety_result.get("risk", "")
                 if not is_safe:
                     # 【问题6修复】使用统一错误格式
-                    logger.info(f"[Step error] 发送error步骤(安全检测)")
+                    logger.info(f"[Step error] 发送error步骤(安全检测) - risk={risk}")
                     error_message = f"危险操作需确认: {risk}"
                     yield create_error_response(
                         error_type="security_error",
@@ -766,7 +775,8 @@ async def chat_stream(request: ChatRequest):
                         code="SECURITY_BLOCKED",
                         model=ai_service.model,
                         provider=ai_service.provider,
-                        retryable=False
+                        retryable=False,
+                        step=next_step()
                     )
                     
                     # 【小沈修复 2026-03-16】保存error步骤到数据库
@@ -796,7 +806,7 @@ async def chat_stream(request: ChatRequest):
                     'obs_params': {},
                     'is_finished': True
                 }
-                logger.info(f"[Step observation] 发送observation步骤")
+                logger.info(f"[Step observation] 发送observation步骤 - step={observation1_data['step']}, is_finished={observation1_data['is_finished']}, obs_execution_status={observation1_data['obs_execution_status']}")
                 yield f"data: {json.dumps(observation1_data)}\n\n"
                 
                 # ⭐ 【小沈添加 2026-03-16 v11.0】observation1步骤后保存到数据库
@@ -845,8 +855,8 @@ async def chat_stream(request: ChatRequest):
                         async with running_tasks_lock:
                             if running_tasks.get(task_id, {}).get("cancelled", False):
                                 # 【使用统一函数】创建incident数据
-                                interrupted_data = create_incident_data('interrupted', '任务已被中断')
-                                logger.info(f"[Step incident] 发送incident步骤(interrupted)")
+                                interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
+                                logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
                                 yield f"data: {json.dumps(interrupted_data)}\n\n"
                                 break
                         
@@ -862,7 +872,7 @@ async def chat_stream(request: ChatRequest):
                                 'action_tool': event.get('action_tool', ''),
                                 'params': event.get('params', {})
                             }
-                            logger.info(f"[Step thought] 发送thought步骤")
+                            logger.info(f"[Step thought] 发送thought步骤 - step={thought_data['step']}, action_tool={thought_data['action_tool']}, reasoning长度={len(thought_data['reasoning'] or '')}, content长度={len(thought_data['content'] or '')}")
                             yield f"data: {json.dumps(thought_data)}\n\n"
                             
                             # ⭐ 【小沈添加 2026-03-16 v11.0】thought步骤后保存到数据库
@@ -881,7 +891,7 @@ async def chat_stream(request: ChatRequest):
                                 'raw_data': event.get('raw_data'),
                                 'action_retry_count': event.get('action_retry_count', 0)
                             }
-                            logger.info(f"[Step action_tool] 发送action_tool步骤(执行工具)")
+                            logger.info(f"[Step action_tool] 发送action_tool步骤 - step={action_data['step']}, tool_name={action_data['tool_name']}, execution_status={action_data['execution_status']}, retry_count={action_data['action_retry_count']}")
                             yield f"data: {json.dumps(action_data)}\n\n"
                             
                             # ⭐ 【小沈添加 2026-03-16 v11.0】action_tool步骤后保存到数据库
@@ -903,7 +913,7 @@ async def chat_stream(request: ChatRequest):
                                 'obs_params': event.get('params', {}),
                                 'is_finished': event.get('is_finished', False)
                             }
-                            logger.info(f"[Step observation] 发送observation步骤")
+                            logger.info(f"[Step observation] 发送observation步骤 - step={observation_data['step']}, is_finished={observation_data['is_finished']}, obs_execution_status={observation_data['obs_execution_status']}, content长度={len(observation_data['content'])}")
                             yield f"data: {json.dumps(observation_data)}\n\n"
                             
                             # ⭐ 【小沈添加 2026-03-16 v11.0】observation步骤后保存到数据库
@@ -914,9 +924,10 @@ async def chat_stream(request: ChatRequest):
                             # 最终结果
                             final_data = {
                                 'type': 'final',
+                                'step': next_step(),
                                 'content': event.get('content', '')
                             }
-                            logger.info(f"[Step final] 发送final步骤")
+                            logger.info(f"[Step final] 发送final步骤 - step={final_data['step']}, content长度={len(final_data['content'])}")
                             yield f"data: {json.dumps(final_data)}\n\n"
                             
                             # ⭐ 【小沈修复 2026-03-16】添加final到execution_steps并保存
@@ -929,6 +940,7 @@ async def chat_stream(request: ChatRequest):
                             # 错误
                             error_data = {
                                 'type': 'error',
+                                'step': next_step(),
                                 'code': 'AGENT_ERROR',
                                 'message': event.get('message', '未知错误'),
                                 'error_type': 'agent',
@@ -937,7 +949,7 @@ async def chat_stream(request: ChatRequest):
                                 'model': request.model,
                                 'provider': request.provider
                             }
-                            logger.info(f"[Step error] 发送error步骤")
+                            logger.info(f"[Step error] 发送error步骤 - step={error_data['step']}, code={error_data['code']}, message={error_data['message']}, retryable={error_data['retryable']}")
                             yield f"data: {json.dumps(error_data)}\n\n"
                             
                             # 【小沈修复 2026-03-16】保存agent error步骤到数据库
@@ -965,7 +977,8 @@ async def chat_stream(request: ChatRequest):
                         message=error_message,
                         model=ai_service.model,
                         provider=ai_service.provider,
-                        retryable=False
+                        retryable=False,
+                        step=next_step()
                     )
                     
                     # 【使用统一函数】保存error步骤到数据库
@@ -986,8 +999,8 @@ async def chat_stream(request: ChatRequest):
                 async with running_tasks_lock:
                     if running_tasks.get(task_id, {}).get("cancelled", False):
                         # 【使用统一函数】创建incident数据
-                        interrupted_data = create_incident_data('interrupted', '任务已被中断')
-                        logger.info(f"[Step incident] 发送interrupted步骤")
+                        interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
+                        logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
                         yield f"data: {json.dumps(interrupted_data)}\n\n"
                         return
                 
@@ -1016,7 +1029,7 @@ async def chat_stream(request: ChatRequest):
                     if retry_attempt > 0:
                         # 发送重试提示给前端
                         # 【使用统一函数】创建incident数据
-                        retry_data = create_incident_data('retrying', f'请求超时，正在重试 ({retry_attempt}/{max_retries})...')
+                        retry_data = create_incident_data('retrying', f'请求超时，正在重试 ({retry_attempt}/{max_retries})...', step=next_step())
                         yield f"data: {json.dumps(retry_data)}\n\n"
                         logger.info(f"[Retry] 开始第{retry_attempt + 1}次AI调用（共{max_retries + 1}次）")
                     
@@ -1061,8 +1074,8 @@ async def chat_stream(request: ChatRequest):
                             async with running_tasks_lock:
                                 if running_tasks.get(task_id, {}).get("cancelled", False):
                                     # 【使用统一函数】创建incident数据
-                                    interrupted_data = create_incident_data('interrupted', '任务已被中断')
-                                    logger.info(f"[Step incident] 发送interrupted步骤")
+                                    interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
+                                    logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
                                     yield f"data: {json.dumps(interrupted_data)}\n\n"
                                     return
                             
@@ -1195,7 +1208,8 @@ async def chat_stream(request: ChatRequest):
                                     model=ai_service.model,
                                     provider=ai_service.provider,
                                     retryable=True,
-                                    retry_after=3
+                                    retry_after=3,
+                                    step=next_step()
                                 )
                                 
                                 # 【使用统一函数】保存error步骤到数据库
@@ -1244,7 +1258,8 @@ async def chat_stream(request: ChatRequest):
                         model=ai_service.model,
                         provider=ai_service.provider,
                         retryable=True,
-                        retry_after=3
+                        retry_after=3,
+                        step=next_step()
                     )
                     
                     # 【使用统一函数】保存error步骤到数据库
@@ -1309,8 +1324,8 @@ async def chat_stream(request: ChatRequest):
             async with running_tasks_lock:
                 running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
             # 【使用统一函数】创建incident数据
-            interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
-            logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
+            interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断', step=next_step())
+            logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=客户端断开连接，任务中断")
             yield f"data: {json.dumps(interrupted_data)}\n\n"
             
             # 【使用统一函数】保存interrupted步骤到数据库
@@ -1327,7 +1342,7 @@ async def chat_stream(request: ChatRequest):
             logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
             error_info = get_user_friendly_error(e)
             error_message = error_info.get("message", "服务调用失败")
-            logger.info(f"[Step error] 发送error步骤")
+            logger.info(f"[Step error] 发送error步骤 - error_type={error_info.get('error_type')}, message={error_message}, code={error_info.get('code')}")
             yield create_error_response(
                 error_type=error_info.get("error_type", "server"),
                 message=error_message,
@@ -1335,7 +1350,8 @@ async def chat_stream(request: ChatRequest):
                 model=ai_service.model,
                 provider=ai_service.provider,
                 retryable=error_info.get("retryable", False),
-                retry_after=error_info.get("retry_after")
+                retry_after=error_info.get("retry_after"),
+                step=next_step()
             )
             
             # 【使用统一函数】保存error步骤到数据库
