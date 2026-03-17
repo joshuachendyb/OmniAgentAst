@@ -857,19 +857,23 @@ const processSSEData = (
         // 根据incident_value调用对应的回调
         switch (statusValue) {
           case "interrupted":
+            onStep?.(step);  // 添加到executionSteps
             onComplete?.(responseBufferRef.current, undefined);
             setIsReceiving(false);
             setIsConnected(false);
             break;
           case "paused":
+            onStep?.(step);  // 添加到executionSteps
             onPaused?.();
             break;
           case "resumed":
+            onStep?.(step);  // 添加到executionSteps
             onResumed?.();
             break;
           case "retrying": {
             // 【小查修复2026-03-13】传递wait_time给重试回调
             const retryMsg = rawData.message || "正在重试...";
+            onStep?.(step);  // 添加到executionSteps
             onRetry?.(retryMsg, rawData.wait_time);
             break;
           }
