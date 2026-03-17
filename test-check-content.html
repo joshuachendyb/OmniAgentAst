@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>检查内容格式</title></head>
+<body>
+<pre id="output"></pre>
+<input type="file" id="fileInput" accept=".json" />
+<script>
+document.getElementById('fileInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const json = JSON.parse(event.target.result);
+    const content = json.content || '';
+    
+    // 找所有包含 boxed 的片段
+    const lines = content.split('\n');
+    let output = '=== 检查 content 中的 boxed 格式 ===\n\n';
+    
+    lines.forEach((line, i) => {
+      if (line.includes('boxed') || line.includes('\b')) {
+        output += `第${i+1}行:\n`;
+        output += `原始：${JSON.stringify(line.substring(0, 150))}\n`;
+        output += `显示：${line.substring(0, 150)}\n\n`;
+      }
+    });
+    
+    // 统计
+    output += `\n=== 统计 ===\n`;
+    output += `\boxed 出现：${(content.match(/\boxed/g) || []).length} 次\n`;
+    output += `\\boxed 出现：${(content.match(/\\boxed/g) || []).length} 次\n`;
+    output += `\\boxed 出现：${(content.match(/\\\\boxed/g) || []).length} 次\n`;
+    
+    document.getElementById('output').textContent = output;
+  };
+  reader.readAsText(file, 'utf-8');
+});
+</script>
+</body>
+</html>

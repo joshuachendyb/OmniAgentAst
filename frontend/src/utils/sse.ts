@@ -448,7 +448,7 @@ export const useSSE = (
           error_type: "connection_error",
           message: friendlyMessage,
           code: "CONNECTION_FAILED",
-          timestamp: new Date().toISOString()
+          timestamp: rawData.timestamp || new Date().toISOString()
         });
       }
     }
@@ -839,7 +839,7 @@ const processSSEData = (
           stack: rawData.stack,
           retryable: rawData.retryable,
           retry_after: rawData.retry_after,
-          timestamp: new Date().toISOString()
+          timestamp: rawData.timestamp || new Date().toISOString()
         });
         setIsReceiving(false);
         setIsConnected(false);

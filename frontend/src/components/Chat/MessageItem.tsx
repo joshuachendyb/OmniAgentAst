@@ -323,7 +323,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
           model: message.model,
           provider: message.provider,
         };
-        exportData.executionSteps = message.executionSteps;
+        // 【小强修复 2026-03-17】executionSteps 也要转换 timestamp
+        exportData.executionSteps = message.executionSteps?.map(step => ({
+          ...step,
+          timestamp: formatTimestamp(step.timestamp),
+        }));
         filename = `error_${message.id}_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
       } else if (hasSteps) {
         // 有执行步骤：导出JSON格式（包含所有8种type的完整字段）

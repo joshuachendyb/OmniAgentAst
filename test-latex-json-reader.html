@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LaTeX 解析测试 - 读取 JSON 文件</title>
+  
+  <!-- KaTeX -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  
+  <!-- marked -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    
+    h1 { color: #333; border-bottom: 2px solid #1890ff; padding-bottom: 10px; }
+    
+    .upload-section {
+      background: white;
+      border-radius: 8px;
+      padding: 30px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    
+    .upload-section input[type="file"] {
+      margin: 20px 0;
+      padding: 15px;
+      border: 2px dashed #1890ff;
+      border-radius: 8px;
+      width: 100%;
+      max-width: 600px;
+      cursor: pointer;
+    }
+    
+    .test-section {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      display: none;
+    }
+    
+    .test-section.visible { display: block; }
+    
+    .test-title { font-size: 18px; font-weight: bold; color: #1890ff; margin-bottom: 15px; }
+    .label { font-size: 14px; color: #666; margin-bottom: 8px; font-weight: bold; }
+    
+    .content-box {
+      background: #fafafa;
+      border: 1px solid #e8e8e8;
+      border-radius: 4px;
+      padding: 15px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-size: 12px;
+      line-height: 1.5;
+      max-height: 400px;
+      overflow-y: auto;
+      font-family: 'Consolas', 'Courier New', monospace;
+    }
+    
+    .result-box {
+      background: #f6ffed;
+      border: 1px solid #b7eb8f;
+      border-radius: 4px;
+      padding: 20px;
+      margin-top: 15px;
+      line-height: 2;
+      font-size: 15px;
+    }
+    
+    .success { color: #52c41a; font-weight: bold; }
+    .error-text { color: #f5222d; }
+    .info { color: #1890ff; }
+    
+    .katex-display { margin: 1em 0; overflow-x: auto; overflow-y: hidden; }
+    .katex { font-size: 1.15em; }
+    
+    .stats {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    
+    .stat-item {
+      background: #f0f5ff;
+      border: 1px solid #91d5ff;
+      border-radius: 4px;
+      padding: 10px 15px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔬 LaTeX 解析测试 - 从 JSON 文件读取 content</h1>
+  
+  <!-- 上传区域 -->
+  <div class="upload-section">
+    <h2>请选择 JSON 文件</h2>
+    <p class="info">选择 execution_steps_*.json 文件，将自动提取 content 字段进行解析测试</p>
+    <input type="file" id="fileInput" accept=".json" />
+    <div id="fileStatus"></div>
+  </div>
+  
+  <!-- 步骤 1: 文件信息 -->
+  <div class="test-section" id="section1">
+    <div class="test-title">步骤 1: 文件信息</div>
+    <div id="fileInfo"></div>
+  </div>
+  
+  <!-- 步骤 2: LaTeX 统计 -->
+  <div class="test-section" id="section2">
+    <div class="test-title">步骤 2: LaTeX 公式统计</div>
+    <div id="latexStats"></div>
+  </div>
+  
+  <!-- 步骤 3: 原始内容（纯文本，无 Markdown 解析） -->
+  <div class="test-section" id="section3">
+    <div class="test-title">步骤 3: 原始内容（纯文本显示，无 Markdown/LaTeX 解析）</div>
+    <div class="label">完整 content 内容：</div>
+    <div class="content-box" id="raw-content"></div>
+  </div>
+  
+  <!-- 步骤 4: 渲染结果（Markdown + LaTeX 解析后） -->
+  <div class="test-section" id="section4">
+    <div class="test-title">步骤 4: 渲染结果（Markdown + LaTeX 解析后）</div>
+    <div class="label">解析后的 HTML 渲染：</div>
+    <div class="result-box" id="rendered"></div>
+  </div>
+  
+  <!-- 状态 -->
+  <div class="test-section" id="section5">
+    <div class="test-title">状态</div>
+    <div id="status"></div>
+  </div>
+
+  <script>
+    let rawContent = '';
+    
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      document.getElementById('fileStatus').innerHTML = '<span class="info">正在读取文件：' + file.name + '</span>';
+      
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        try {
+          const json = JSON.parse(event.target.result);
+          rawContent = json.content || '';
+          
+          if (!rawContent) {
+            throw new Error('JSON 文件中没有找到 content 字段');
+          }
+          
+          // 显示文件信息
+          document.getElementById('fileInfo').innerHTML = `
+            <p><strong>文件名:</strong> ${file.name}</p>
+            <p><strong>文件大小:</strong> ${(file.size / 1024).toFixed(2)} KB</p>
+            <p><strong>Content 长度:</strong> ${rawContent.length} 字符</p>
+            <p><strong>行数:</strong> ${rawContent.split('\n').length} 行</p>
+          `;
+          document.getElementById('section1').classList.add('visible');
+          
+          // 统计 LaTeX 公式
+          const patterns = {
+            '\\\\boxed': (rawContent.match(/\\\\boxed/g) || []).length,
+            '\\\\frac': (rawContent.match(/\\\\frac/g) || []).length,
+            '\\\\dfrac': (rawContent.match(/\\\\dfrac/g) || []).length,
+            '\\\\[': (rawContent.match(/\\\\\[/g) || []).length,
+            '\\\\]': (rawContent.match(/\\\\\]/g) || []).length,
+            '\\\\(': (rawContent.match(/\\\\\(/g) || []).length,
+            '\\\\)': (rawContent.match(/\\\\\)/g) || []).length,
+            '\\\\begin{aligned}': (rawContent.match(/\\\\begin\{aligned\}/g) || []).length,
+            '\\\\end{aligned}': (rawContent.match(/\\\\end\{aligned\}/g) || []).length,
+            '\\\\\\\\': (rawContent.match(/\\\\\\\\/g) || []).length,
+            '\\\\cdot': (rawContent.match(/\\\\cdot/g) || []).length,
+            '\\\\overline': (rawContent.match(/\\\\overline/g) || []).length,
+          };
+          
+          let statsHtml = '<div class="stats">';
+          for (const [key, count] of Object.entries(patterns)) {
+            if (count > 0) {
+              statsHtml += `<div class="stat-item"><strong>${key}</strong>: ${count} 个</div>`;
+            }
+          }
+          statsHtml += '</div>';
+          document.getElementById('latexStats').innerHTML = statsHtml;
+          document.getElementById('section2').classList.add('visible');
+          
+          // 步骤 3: 显示原始内容（纯文本）
+          document.getElementById('raw-content').textContent = rawContent;
+          document.getElementById('section3').classList.add('visible');
+          
+          // 步骤 4: 解析并渲染
+          parseAndRender(rawContent);
+          document.getElementById('section4').classList.add('visible');
+          document.getElementById('section5').classList.add('visible');
+          
+        } catch(error) {
+          document.getElementById('fileStatus').innerHTML = '<span class="error-text">❌ 解析 JSON 失败：' + error.message + '</span>';
+        }
+      };
+      
+      reader.onerror = function() {
+        document.getElementById('fileStatus').innerHTML = '<span class="error-text">❌ 读取文件失败</span>';
+      };
+      
+      reader.readAsText(file, 'utf-8');
+    });
+    
+    // 解析 LaTeX 并渲染
+    function parseAndRender(content) {
+      console.log('=== 开始解析 ===');
+      console.log('原始长度:', content.length);
+      
+      let processed = content;
+      
+      // 1. 处理 \\\\[ ... \\\\] - 区块公式
+      processed = processed.replace(/\\\\\[([\s\S]*?)\\\\\]/g, function(match, formula) {
+        console.log('找到 \\\\[...\\\\]');
+        try {
+          return katex.renderToString(formula.trim(), { displayMode: true, throwOnError: false });
+        } catch(e) { 
+          console.error('\\\\[ 解析错误:', e.message);
+          return '<span class="error-text">[LaTeX Error]</span>';
+        }
+      });
+      
+      // 2. 处理 \\\\( ... \\\\) - 行内公式
+      processed = processed.replace(/\\\\\(([\s\S]*?)\\\\\)/g, function(match, formula) {
+        try {
+          return katex.renderToString(formula.trim(), { displayMode: false, throwOnError: false });
+        } catch(e) { return match; }
+      });
+      
+      // 3. 处理 \\\\boxed{}
+      processed = processed.replace(/\\\\boxed\{([^}]+)\}/g, function(match, inner) {
+        console.log('找到 \\\\boxed{', inner.substring(0, 30), '...}');
+        try {
+          return katex.renderToString('\\boxed{' + inner + '}', { displayMode: false, throwOnError: false });
+        } catch(e) { return match; }
+      });
+      
+      // 4. 处理 \\\\dfrac{}{}
+      processed = processed.replace(/\\\\dfrac\{([^}]+)\}\{([^}]+)\}/g, function(match, num, den) {
+        try {
+          return katex.renderToString('\\dfrac{' + num + '}{' + den + '}', { displayMode: false, throwOnError: false });
+        } catch(e) { return match; }
+      });
+      
+      // 5. 处理 \\\\frac{}{}
+      processed = processed.replace(/\\\\frac\{([^}]+)\}\{([^}]+)\}/g, function(match, num, den) {
+        try {
+          return katex.renderToString('\\frac{' + num + '}{' + den + '}', { displayMode: false, throwOnError: false });
+        } catch(e) { return match; }
+      });
+      
+      // 6. 处理 \\\\overline{}
+      processed = processed.replace(/\\\\overline\{([^}]+)\}/g, function(match, inner) {
+        try {
+          return katex.renderToString('\\overline{' + inner + '}', { displayMode: false, throwOnError: false });
+        } catch(e) { return match; }
+      });
+      
+      // 7. 处理 \\\\begin{aligned}...\\\\end{aligned}
+      processed = processed.replace(/\\\\begin\{aligned\}([\s\S]*?)\\\\end\{aligned\}/g, function(match, inner) {
+        console.log('找到 \\\\begin{aligned}');
+        try {
+          return katex.renderToString('\\begin{aligned}' + inner + '\\end{aligned}', { displayMode: true, throwOnError: false });
+        } catch(e) { return match; }
+      });
+      
+      // 8. 处理 \\\\\\\\ -> \\ (LaTeX 换行)
+      processed = processed.replace(/\\\\\\\\/g, '\\\\');
+      
+      // 9. 处理 \\\\cdot
+      processed = processed.replace(/\\\\cdot/g, '\\cdot');
+      
+      console.log('LaTeX 解析完成');
+      
+      // 使用 marked 解析 Markdown
+      marked.setOptions({ breaks: true, gfm: true, headerIds: false });
+      const html = marked.parse(processed);
+      
+      document.getElementById('rendered').innerHTML = html;
+      document.getElementById('status').innerHTML = '<span class="success">✅ 解析完成！请查看步骤 4 的渲染结果</span>';
+      
+      console.log('=== 解析完成 ===');
+    }
+  </script>
+</body>
+</html>
