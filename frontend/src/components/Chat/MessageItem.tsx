@@ -202,8 +202,6 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
   );
 };
 
-const { Panel } = Collapse;
-
 interface MessageItemProps {
   message: ChatMessage & {
     id: string;
@@ -784,22 +782,26 @@ const isUser = message.role === "user";
                       }
                       size="small"
                       style={{ marginBottom: 8 }}
-                    >
-                      <Panel
-                        header={
-                          <Space>
-                            <ThunderboltOutlined />
-                            <span>执行详情 {groupIndex + 1}</span>
-                            {(message.isStreaming ?? false) && groupIndex === groups.length - 1 && <LoadingOutlined />}
-                          </Space>
-                        }
-                        key={`execution-${groupIndex}`}
-                      >
-                        {group.map((step, stepIndex) => (
-                          <StepRow key={stepIndex} step={step} taskId={message.task_id} />
-                        ))}
-                      </Panel>
-                    </Collapse>
+                      items={[
+                        {
+                          key: `execution-${groupIndex}`,
+                          label: (
+                            <Space>
+                              <ThunderboltOutlined />
+                              <span>执行详情 {groupIndex + 1}</span>
+                              {(message.isStreaming ?? false) && groupIndex === groups.length - 1 && <LoadingOutlined />}
+                            </Space>
+                          ),
+                          children: (
+                            <>
+                              {group.map((step, stepIndex) => (
+                                <StepRow key={stepIndex} step={step} taskId={message.task_id} />
+                              ))}
+                            </>
+                          ),
+                        },
+                      ]}
+                    />
                     );
                   });
                 })()}
