@@ -866,7 +866,7 @@ async def chat_stream(request: ChatRequest):
                             # Thought阶段
                             thought_data = {
                                 'type': 'thought',
-                                'step': event.get('step', 0),
+                                'step': next_step(),
                                 'content': event.get('content', ''),
                                 'reasoning': event.get('reasoning', ''),
                                 'action_tool': event.get('action_tool', ''),
@@ -883,7 +883,7 @@ async def chat_stream(request: ChatRequest):
                             # Action阶段
                             action_data = {
                                 'type': 'action_tool',
-                                'step': event.get('step', 0),
+                                'step': next_step(),
                                 'tool_name': event.get('tool_name', ''),
                                 'tool_params': event.get('tool_params', {}),
                                 'execution_status': event.get('execution_status', 'success'),
@@ -903,7 +903,7 @@ async def chat_stream(request: ChatRequest):
                             # 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
                             observation_data = {
                                 'type': 'observation',
-                                'step': event.get('step', 0),
+                                'step': next_step(),
                                 'obs_execution_status': event.get('execution_status', 'success'),
                                 'obs_summary': event.get('summary', ''),
                                 'obs_raw_data': event.get('raw_data'),
