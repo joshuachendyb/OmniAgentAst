@@ -245,7 +245,7 @@ const NewChatContainer: React.FC = () => {
             console.log("🔍 完整消息对象:", JSON.stringify(newAssistantMessage, null, 2));
             return [...prev, newAssistantMessage];
           } else {
-            // 已有assistant消息，更新display_name
+            // 已有assistant消息，更新display_name和executionSteps
             console.log("🔍 已有assistant消息，更新display_name:", step.display_name || `${step.provider} (${step.model})`, "| isStreaming=", lastMessage.isStreaming);
             // 提取display_name
             const extractedDisplay_name = step.display_name;
@@ -253,13 +253,15 @@ const NewChatContainer: React.FC = () => {
             if (!finalDisplay_name && step.model && step.provider) {
               finalDisplay_name = `${step.provider} (${step.model})`;
             }
-            // 更新最后一条消息的display_name
+            // 更新最后一条消息的display_name和executionSteps
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...lastMessage,
               display_name: finalDisplay_name || lastMessage.display_name,
               model: step.model || lastMessage.model,
               provider: step.provider || lastMessage.provider,
+              // 【小沈修复 2026-03-17】将start步骤添加到executionSteps
+              executionSteps: [...(lastMessage.executionSteps || []), step],
             };
             // 第219行已打印日志，这里不再重复
             return updated;
@@ -354,20 +356,23 @@ const NewChatContainer: React.FC = () => {
           const lastMessage = prev[prev.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
             const updated = [...prev];
+            // 【关键修复】确保executionSteps也更新到最新
+            const latestSteps = stepsFromSSE || executionStepsRef.current || lastMessage.executionSteps || [];
             updated[updated.length - 1] = {
               ...lastMessage,
               content: finalResponse,
               isStreaming: false,
-              is_reasoning: false, // 【小查修复】流式完成后重置为false，确保思考中标签消失
-              isError: isError, // 传递错误标记
-              // 【小新修复 2026-03-14】补充错误字段，与onError保持一致
+              is_reasoning: false,
+              isError: isError,
               errorType: errorType,
               errorCode: errorCode,
               errorMessage: errorMessage,
               model: metadataObj.model || lastMessage.model,
               provider: metadataObj.provider || lastMessage.provider,
               display_name: metadataObj.display_name || lastMessage.display_name,
+              executionSteps: latestSteps,
             };
+            console.log("✅ onComplete更新消息executionSteps数量:", latestSteps.length);
             return updated;
           }
           return prev;
@@ -693,14 +698,13 @@ const NewChatContainer: React.FC = () => {
   // ============================================
   
   const saveState = () => {
-    // 【小新修复 2026-03-15 V2】使用 messagesRef.current 获取最新消息，避免闭包中访问旧消息
-    // 根因：visibilitychange useEffect 依赖 [sessionId, isReceiving]，不包含 messages
-    //      当 messages 更新但 sessionId/isReceiving 不变时，useEffect 不会重新运行
-    //      导致闭包中访问的 messages 是旧值，sessionStorage 保存旧消息
-    // 修复：使用 messagesRef.current（已在第738行同步）获取最新消息，不依赖 useEffect 闭包
+    // 【小沈修复 2026-03-17】直接使用 messages 状态，而不是 messagesRef.current
+    // 根因：messagesRef.current 是通过 useEffect 异步同步的，当页面隐藏时可能还没更新完成
+    //      导致 sessionStorage 保存的消息缺少 start 步骤
+    // 修复：直接使用 messages 状态，确保获取最新数据
     if (sessionId) {
       const state = {
-        messages: messagesRef.current,  // ← 使用 ref 获取最新消息
+        messages: messages,  // ← 直接使用 messages 状态
         sessionId,
         sessionTitle,
         timestamp: Date.now(),
@@ -711,7 +715,7 @@ const NewChatContainer: React.FC = () => {
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       console.log("💾 保存会话状态:", sessionId, sessionTitle, { 
-        messageCount: messagesRef.current.length,
+        messageCount: messages.length,
         isPaused, 
         isReceiving 
       });
