@@ -357,7 +357,14 @@ const NewChatContainer: React.FC = () => {
           if (lastMessage && lastMessage.role === "assistant") {
             const updated = [...prev];
             // 【关键修复】确保executionSteps也更新到最新
-            const latestSteps = stepsFromSSE || executionStepsRef.current || lastMessage.executionSteps || [];
+            // 【小强调试 2026-03-17】添加日志排查 final 丢失问题
+            console.log("🔍 [onComplete] 更新消息 executionSteps:");
+            console.log("  executionStepsFromSSE 参数:", executionStepsFromSSE?.length);
+            console.log("  executionStepsRef.current:", executionStepsRef.current?.length);
+            console.log("  lastMessage.executionSteps:", lastMessage.executionSteps?.length);
+            const latestSteps = executionStepsFromSSE || executionStepsRef.current || lastMessage.executionSteps || [];
+            console.log("  latestSteps 数量:", latestSteps?.length);
+            console.log("  latestSteps 最后5个类型:", latestSteps?.slice(-5).map((s: any) => s.type));
             updated[updated.length - 1] = {
               ...lastMessage,
               content: finalResponse,
@@ -390,7 +397,6 @@ const NewChatContainer: React.FC = () => {
         // 症状：AI回复完成后刷新页面，"思考"部分的详细内容丢失，只剩下"正在分析任务..."
         // 教训：修改函数签名时必须同步修改所有调用方，不能单方面改变参数结构！
         const stepsFromSSE = executionStepsFromSSE;
-        const stepsToSave = stepsFromSSE || executionStepsRef.current || [];
         if (currentSessionId && finalResponse && finalResponse.trim()) {
           // 🔴 修复：添加详细的调试日志
           console.log("🔍 保存AI回复:");
@@ -711,6 +717,23 @@ const NewChatContainer: React.FC = () => {
   // 会话状态持久化
   // ============================================
   
+  // 【小强修复 2026-03-17】保存状态前确保 SSE 数据已处理完成
+  // 问题：页面隐藏时 saveState() 可能还在接收 final 步骤，导致缓存中缺少 final
+  // 修复：在 onComplete 回调中 SSE 完成时立即保存，确保 final 步骤已包含
+  const saveStateWithSSECheck = () => {
+    if (isReceiving) {
+      console.log("⚠️ [saveState] SSE 正在接收数据，延迟保存...");
+      // 延迟 300ms 后再保存，给 SSE 时间处理 final 步骤
+      setTimeout(() => {
+        console.log("⚠️ [saveState] 延迟后执行保存...");
+        saveState();
+      }, 300);
+    } else {
+      // SSE 已完成，直接保存
+      saveState();
+    }
+  };
+  
   const saveState = () => {
     // 【小沈修复 2026-03-17】直接使用 messages 状态，而不是 messagesRef.current
     // 根因：messagesRef.current 是通过 useEffect 异步同步的，当页面隐藏时可能还没更新完成
@@ -870,8 +893,8 @@ const NewChatContainer: React.FC = () => {
           }
         }
         
-        // 2. 保存到sessionStorage（现有逻辑）
-        saveState();
+        // 2. 保存到sessionStorage（带 SSE 检查）
+        saveStateWithSSECheck();
         
         // 3. 不断开SSE连接，让fetch自然进行（方案2简化版）
         // 如果后续需要断开，可以使用变量控制
@@ -1229,7 +1252,7 @@ const NewChatContainer: React.FC = () => {
       // 检测是否是强制刷新（Ctrl+F5或Cmd+Shift+R）
       // 使用最新的PerformanceNavigationTiming API（Navigation Timing Level 2标准）
       // 兼容性：Chrome/Edge/Firefox/Safari均支持（2021年10月起Baseline）
-      const navigationEntry = performance.getEntriesByType("navigation")?.[0];
+      const navigationEntry = performance.getEntriesByType("navigation")?.[0] as PerformanceNavigationTiming | undefined;
       const isReload = navigationEntry?.type === "reload";
       
       if (isReload) {
