@@ -568,7 +568,9 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
     """
     try:
         # 【新增】安全检测 - 检查是否为危险操作
-        is_safe, risk = check_command_safety(message)
+        safety_result = check_command_safety(message)
+        is_safe = safety_result.get("is_safe", True)
+        risk = safety_result.get("risk", "")
         if not is_safe:
             return ChatResponse(
                 success=False,
