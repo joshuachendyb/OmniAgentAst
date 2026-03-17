@@ -519,9 +519,11 @@ const NewChatContainer: React.FC = () => {
           // 【小新修改 2026-03-14】移除重复弹框，ErrorDetail 气泡已完整显示错误信息
           // 不再显示 message.error 弹框，避免与 ErrorDetail 重复
 
- setMessages((prev) => {
+  setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
+            // 【关键修复】确保executionSteps也更新到最新
+            const latestSteps = executionStepsRef.current || lastMessage.executionSteps || [];
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...lastMessage,
@@ -529,6 +531,7 @@ const NewChatContainer: React.FC = () => {
               content: errorObj.message,
               isError: true,
               isStreaming: false,
+              executionSteps: latestSteps,
               // 【小查修复2026-03-13】保存完整的error 11个字段
               errorType: errorObj.error_type,      // error_type
               errorCode: errorObj.code,            // code
