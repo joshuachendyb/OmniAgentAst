@@ -1092,15 +1092,10 @@ async def chat_stream(request: ChatRequest):
                             }
                             current_execution_steps.append(chunk_data)
                             
-                            # ⭐ 【调试】每个chunk添加都打印
-                            logger.warning(f"[DEBUG] 添加chunk后列表长度: {len(current_execution_steps)}, is_reasoning={current_is_reasoning}, content_len={len(chunk.content or '')}")
-                            
                             if chunk.content:
                                 has_received_content = True
                                 full_content += chunk.content
                                 current_content = full_content  # 累积content
-                                # ⭐ 【调试日志】记录有内容的chunk
-                                logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
                                 
                                 # ⭐ 【小沈修复 2026-03-16】is_reasoning变化时保存，确保回答部分完整
                                 if last_is_reasoning != current_is_reasoning:
