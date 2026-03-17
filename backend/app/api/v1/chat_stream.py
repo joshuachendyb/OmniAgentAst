@@ -1139,6 +1139,10 @@ async def chat_stream(request: ChatRequest):
                 
                 full_content = ""
                 chunk_count = 0
+                # ⭐ 【小沈修复 2026-03-17】添加保护机制：防止AI一直输出reasoning导致流式不结束
+                max_chunk_count = 5000  # 最大chunk数量
+                empty_content_count = 0  # 连续空content次数
+                max_empty_content_count = 100  # 最大连续空content次数
                 
                 for retry_attempt in range(max_retries + 1):
                     if retry_attempt > 0:
@@ -1171,6 +1175,19 @@ async def chat_stream(request: ChatRequest):
                             # 如果30秒内没有下一个 chunk，会抛出 IdleTimeoutError
                             
                             chunk_count += 1
+                            
+                            # ⭐ 【小沈修复 2026-03-17】保护机制：防止AI一直输出reasoning导致流式不结束
+                            if chunk_count > max_chunk_count:
+                                logger.warning(f"[AI Call] 超过最大chunk数量 {max_chunk_count}，强制结束")
+                                break
+                            if not chunk.content and getattr(chunk, 'is_reasoning', False):
+                                empty_content_count += 1
+                                if empty_content_count > max_empty_content_count:
+                                    logger.warning(f"[AI Call] 连续 {max_empty_content_count} 次无实际内容，强制结束")
+                                    break
+                            else:
+                                empty_content_count = 0
+                            
                             # 检查是否被中断
                             # 【原则4整改】content → message
                             async with running_tasks_lock:
