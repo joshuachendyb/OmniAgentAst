@@ -1378,8 +1378,27 @@ async def chat_stream(request: ChatRequest):
                     await add_step_and_save(error_step, f"错误: {error_message}")
                     return  # 直接返回，不再发送final步骤
                 
-                # ⭐ 【小沈修复 2026-03-17】先添加final步骤到数组，再保存
-                # 解决删除重复保存代码后，final步骤丢失的问题
+                # ═══════════════════════════════════════════════════════════════════════════════
+                # ⭐ 【小沈修复 2026-03-17 问题分析与修复说明】
+                #
+                # 问题：AI消息的execution_steps数据丢失（完整数据112条→数据库只有99条）
+                #
+                # 根因分析：
+                #   1. 后端在流式结束时自动保存完整数据（包含所有steps，112条）
+                #   2. 前端onComplete也调用saveExecutionSteps，传99条覆盖后端数据
+                #   3. 前后端重复保存，后保存的覆盖先保存的
+                #
+                # 修复方案：
+                #   1. 先添加final步骤到current_execution_steps数组
+                #   2. 保存一次到数据库（包含完整steps）
+                #   3. 删除后续的重复保存代码
+                #   4. 前端配合：删除onComplete中的saveExecutionSteps调用
+                #
+                # 数据流：后端生成steps → 后端保存1次 → 前端不再保存
+                # 核心思想：数据由后端生成，后端自己知道完整数据，不需要前端指挥
+                # ═══════════════════════════════════════════════════════════════════════════════
+                
+                # 先添加final步骤到数组，再保存
                 final_step = {
                     'type': 'final',
                     'content': full_content,
@@ -1389,8 +1408,7 @@ async def chat_stream(request: ChatRequest):
                 }
                 current_execution_steps.append(final_step)
                 
-                # ⭐ 【小沈修复 2026-03-16】final前强制保存一次，确保所有steps都写入数据库
-                # 解决is_reasoning变化后未保存导致的丢失问题
+                # final前强制保存一次，确保所有steps都写入数据库
                 logger.info(f"[Step final] 💾 final前强制保存: {len(current_execution_steps)} steps")
                 await save_execution_steps_to_db(current_execution_steps, full_content)
                 
@@ -1404,7 +1422,7 @@ async def chat_stream(request: ChatRequest):
                     display_name=display_name
                 )
                 
-                # ⭐ 【小沈修复 2026-03-17】删除重复保存：上面已经保存过，不需要再保存一次
+                # 删除重复保存：上面已经保存过，不需要再保存一次
                         
         except asyncio.CancelledError:
             # 客户端断开连接，任务被中断
