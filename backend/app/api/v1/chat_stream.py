@@ -129,7 +129,7 @@ def create_error_response(
 
 def create_timestamp() -> int:
     """生成统一的时间戳（毫秒）"""
-    return create_timestamp()
+    return int(datetime.now().timestamp() * 1000)
 
 
 def create_incident_data(incident_value: str, message: str, step: Optional[int] = None) -> dict:
