@@ -99,6 +99,20 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
 
   return (
     <div style={{ marginBottom: 4, marginRight: 30 }}>
+      {/* 【小强修复 2026-03-18】显示步骤编号 */}
+      {step.step && (
+        <span style={{ 
+          background: "#1890ff", 
+          color: "white", 
+          padding: "1px 6px", 
+          borderRadius: 4, 
+          fontSize: 11, 
+          marginRight: 8,
+          fontWeight: 500
+        }}>
+          步骤{step.step}
+        </span>
+      )}
       <span style={{ color, fontWeight: 500, marginRight: 8 }}>
         {label}：
       </span>
@@ -350,16 +364,20 @@ const MessageItem: React.FC<MessageItemProps> = ({
             case 'chunk':
               return { ...baseExport, is_reasoning: step.is_reasoning };
             case 'final':
-              return baseExport;
+              // 【小强修复 2026-03-18】添加 step 字段
+              return { ...baseExport, step: step.step };
             case 'error':
-              return { ...baseExport, code: (step as any).code, error_type: (step as any).error_type, details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider };
+              // 【小强修复 2026-03-18】添加 step 字段
+              return { ...baseExport, step: step.step, code: (step as any).code, error_type: (step as any).error_type, details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider };
             case 'interrupted':
             case 'paused':
             case 'resumed':
             case 'retrying':
-              return { ...baseExport, incident_value: (step as any).incident_value || step.type, wait_time: (step as any).wait_time };
+              // 【小强修复 2026-03-18】添加 step 字段
+              return { ...baseExport, step: step.step, incident_value: (step as any).incident_value || step.type, wait_time: (step as any).wait_time };
             case 'start':
-              return { ...baseExport, task_id: step.task_id };
+              // 【小强修复 2026-03-18】添加 step 字段
+              return { ...baseExport, task_id: step.task_id, step: step.step };
             default:
               return baseExport;
           }
