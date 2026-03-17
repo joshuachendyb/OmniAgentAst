@@ -162,9 +162,11 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
                       maxHeight: 300,
                       overflow: "auto"
                     }}>
-                      {obsResult.entries.map((entry: any) => 
-                        `${entry.type === "directory" ? "📁" : "📄"} ${entry.name}`
-                      ).join("\n")}
+                      {obsResult.entries.map((entry: any, idx: number) => (
+                        <React.Fragment key={`entry-${idx}`}>
+                          {entry.type === "directory" ? "📁" : "📄"} {entry.name}
+                        </React.Fragment>
+                      ))}
                     </div>
                   )}
                   {/* summary 字符串 */}
