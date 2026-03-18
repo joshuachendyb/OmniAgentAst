@@ -861,6 +861,10 @@ const processSSEData = (
         if (rawData.error_type) {
           step.error_type = rawData.error_type;
         }
+        // 【小强修复 2026-03-18】确保step字段被正确设置
+        if (rawData.step) {
+          step.step = rawData.step;
+        }
         // 【小查修复2026-03-13】补充缺失的model和provider字段（文档要求11个字段）
         if (rawData.model) {
           step.model = rawData.model;

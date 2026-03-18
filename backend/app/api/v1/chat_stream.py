@@ -685,8 +685,10 @@ async def chat_stream(request: ChatRequest):
             yield f"data: {json.dumps(error_data)}\n\n"
             
             # 【小沈修复 2026-03-16】保存error步骤到数据库
+            # 【小强修复 2026-03-18】添加step字段
             error_step = {
                 'type': 'error',
+                'step': error_data['step'],  # 添加step字段
                 'code': error_data['code'],
                 'message': error_data['message'],
                 'error_type': error_data['error_type'],
@@ -786,8 +788,10 @@ async def chat_stream(request: ChatRequest):
                     )
                     
                     # 【小沈修复 2026-03-16】保存error步骤到数据库
+                    # 【小强修复 2026-03-18】添加step字段
                     error_step = {
                         'type': 'error',
+                        'step': next_step(),  # 添加step字段
                         'error_type': 'security_error',
                         'message': error_message,
                         'code': 'SECURITY_BLOCKED',
@@ -857,8 +861,13 @@ async def chat_stream(request: ChatRequest):
                 
                 # 流式执行（每步检查中断）
                 try:
+                    # 【小沈添加】从配置中读取 max_steps
+                    from app.config import get_config
+                    config = get_config()
+                    max_steps = config.get('app', {}).get('max_steps', 100)
+                    
                     # 【Phase4核心修改】使用run_stream异步流式输出
-                    async for event in agent.run_stream(last_message):
+                    async for event in agent.run_stream(last_message, max_steps=max_steps):
                         # 每步检查是否被中断
                         async with running_tasks_lock:
                             if running_tasks.get(task_id, {}).get("cancelled", False):
@@ -965,8 +974,10 @@ async def chat_stream(request: ChatRequest):
                             yield f"data: {json.dumps(error_data)}\n\n"
                             
                             # 【小沈修复 2026-03-16】保存agent error步骤到数据库
+                            # 【小强修复 2026-03-18】添加step字段
                             error_step = {
                                 'type': 'error',
+                                'step': error_data['step'],  # 添加step字段
                                 'error_type': 'agent',
                                 'message': event.get('message', '未知错误'),
                                 'code': 'AGENT_ERROR',
@@ -994,8 +1005,10 @@ async def chat_stream(request: ChatRequest):
                     )
                     
                     # 【使用统一函数】保存error步骤到数据库
+                    # 【小强修复 2026-03-18】添加step字段
                     error_step = {
                         'type': 'error',
+                        'step': next_step(),  # 添加step字段
                         'error_type': 'file_operation_error',
                         'message': error_message,
                         'code': 'FILE_OPERATION_ERROR',
@@ -1226,8 +1239,10 @@ async def chat_stream(request: ChatRequest):
                                 )
                                 
                                 # 【使用统一函数】保存error步骤到数据库
+                                # 【小强修复 2026-03-18】添加step字段
                                 error_step = {
                                     'type': 'error',
+                                    'step': next_step(),  # 添加step字段
                                     'error_type': 'empty_response',
                                     'message': error_message,
                                     'code': 'EMPTY_RESPONSE',
@@ -1276,8 +1291,10 @@ async def chat_stream(request: ChatRequest):
                     )
                     
                     # 【使用统一函数】保存error步骤到数据库
+                    # 【小强修复 2026-03-18】添加step字段
                     error_step = {
                         'type': 'error',
+                        'step': next_step(),  # 添加step字段
                         'error_type': error_type,
                         'message': error_message,
                         'code': 'AI_CALL_ERROR',
@@ -1368,8 +1385,10 @@ async def chat_stream(request: ChatRequest):
             )
             
             # 【使用统一函数】保存error步骤到数据库
+            # 【小强修复 2026-03-18】添加step字段
             error_step = {
                 'type': 'error',
+                'step': next_step(),  # 添加step字段
                 'error_type': error_info.get("error_type", "server"),
                 'message': error_message,
                 'code': error_info.get("code", "INTERNAL_ERROR"),
