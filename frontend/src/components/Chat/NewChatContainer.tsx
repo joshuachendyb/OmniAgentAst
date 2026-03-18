@@ -687,9 +687,25 @@ const NewChatContainer: React.FC = () => {
 
   // 【小新第二修复 2026-03-02】同步跟踪消息数量，用于保存消息时获取准确的值
   // 【小查修复2026-03-14】同时同步messagesRef，避免visibilitychange useEffect频繁重新注册
+  // 【问题2修复 2026-03-18】当正在接收SSE数据时，持续保存到sessionStorage（页面隐藏期间也能保存）
   useEffect(() => {
     messagesCountRef.current = messages.length;
     messagesRef.current = messages;
+    
+    // 当正在接收SSE数据时，每次messages更新都保存到sessionStorage
+    // 这样即使页面隐藏，也能持续保存最新steps
+    if (isReceiving && sessionId) {
+      const state = {
+        messages: messages,
+        sessionId,
+        sessionTitle,
+        timestamp: Date.now(),
+        scrollPosition: messagesEndRef.current?.parentElement?.scrollTop || 0,
+        isPaused,
+        isReceiving,
+      };
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
   }, [messages]);
 
   // 当页面从隐藏状态变为显示时也自动滚动到底部
@@ -706,19 +722,57 @@ const NewChatContainer: React.FC = () => {
     };
   }, [messages, currentResponse, executionSteps]);
 
-  // 组件卸载前保存状态（用于路由切换场景）
-  // 【小查修复】移除组件卸载时的保存，因为页面隐藏时已经保存，避免重复
+  // 组件卸载前保存状态（用于路由切换/F5刷新/Ctrl+F5强制刷新场景）
+  // 【问题2修复 2026-03-18】增加beforeunload事件监听，刷新时也能保存数据
   useEffect(() => {
+    // beforeunload：页面刷新/关闭前触发
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // 当正在接收SSE数据时，同步保存最新状态
+      if (isReceiving && sessionId) {
+        console.log("💾 [beforeunload] 刷新前保存状态, steps:", executionStepsRef.current.length);
+        
+        // 同步保存最新数据（从executionStepsRef获取最新steps）
+        let messagesToSave = messages;
+        if (executionStepsRef.current.length > 0) {
+          messagesToSave = messages.map((msg, idx) => {
+            if (msg.role === 'assistant' && msg.isStreaming && idx === messages.length - 1) {
+              return {
+                ...msg,
+                executionSteps: executionStepsRef.current,
+              };
+            }
+            return msg;
+          });
+        }
+        
+        const state = {
+          messages: messagesToSave,
+          sessionId,
+          sessionTitle,
+          timestamp: Date.now(),
+          scrollPosition: 0,
+          isPaused,
+          isReceiving,
+        };
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        
+        // 提示浏览器不要关闭（可选）
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    
+    // 添加事件监听
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
     return () => {
-      // 【小新修复 2026-03-14】组件卸载时销毁所有可能残留的message
+      // 销毁可能残留的loading消息
       message.destroy("session-load");
       
-      // 组件卸载时不再单独保存状态
-      // 原因：页面隐藏时会触发saveState，组件卸载前页面必定先隐藏
-      // 如果需要保存，saveState() 会在页面隐藏时被调用
-      console.log(
-        "🔄 组件卸载（页面即将跳转或关闭）"
-      );
+      // 移除事件监听
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      
+      console.log("🔄 组件卸载（页面即将跳转或关闭）");
     };
   }, []);
 
@@ -749,8 +803,25 @@ const NewChatContainer: React.FC = () => {
     //      导致 sessionStorage 保存的消息缺少 start 步骤
     // 修复：直接使用 messages 状态，确保获取最新数据
     if (sessionId) {
+      // 【问题2修复 2026-03-18】当正在接收SSE数据时，messages状态可能是异步更新未完成的
+      // 需要从executionStepsRef获取最新steps并更新到messages中保存
+      let messagesToSave = messages;
+      if (isReceiving && executionStepsRef.current.length > 0) {
+        console.log("🔧 [saveState] SSE正在接收，合并最新steps到messages保存:", executionStepsRef.current.length);
+        messagesToSave = messages.map((msg, idx) => {
+          // 找到最后一条assistant消息（正在流式输出的）
+          if (msg.role === 'assistant' && msg.isStreaming && idx === messages.length - 1) {
+            return {
+              ...msg,
+              executionSteps: executionStepsRef.current,
+            };
+          }
+          return msg;
+        });
+      }
+      
       const state = {
-        messages: messages,  // ← 直接使用 messages 状态
+        messages: messagesToSave,  // ← 使用合并后的messages
         sessionId,
         sessionTitle,
         timestamp: Date.now(),
@@ -761,9 +832,10 @@ const NewChatContainer: React.FC = () => {
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       console.log("💾 保存会话状态:", sessionId, sessionTitle, { 
-        messageCount: messages.length,
+        messageCount: messagesToSave.length,
         isPaused, 
-        isReceiving 
+        isReceiving,
+        latestStepsCount: executionStepsRef.current.length,
       });
     }
   };
@@ -949,7 +1021,11 @@ const NewChatContainer: React.FC = () => {
               
               // 缓存有效（5分钟内），且当前有消息，则恢复缓存状态
               if (timeDiff <= SESSION_EXPIRY_TIME && state.messages && state.messages.length > 0) {
-                console.log("🔄 从缓存恢复会话状态，消息数:", state.messages.length);
+                console.log("🔄 从缓存恢复会话状态，消息数:", state.messages.length, "isReceiving:", state.isReceiving);
+                
+                // 【问题2修复 2026-03-18】如果页面隐藏时SSE还在接收数据（state.isReceiving=true）
+                // sessionStorage保存的可能不是最新steps，需要从API获取最新数据
+                // 正常恢复（页面隐藏时SSE已完成）
                 setMessages(state.messages);
                 if (state.sessionTitle) {
                   setSessionTitle(state.sessionTitle);

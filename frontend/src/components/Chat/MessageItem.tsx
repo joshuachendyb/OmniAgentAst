@@ -14,8 +14,6 @@ import {
   Tooltip,
   Button,
   message as antMessage,
-  Collapse,
-  Space,
 } from "antd";
 import {
   UserOutlined,
@@ -23,8 +21,6 @@ import {
   InfoCircleOutlined,
   CopyOutlined,
   CheckOutlined,
-  ThunderboltOutlined,
-  LoadingOutlined,
   DownloadOutlined,
 } from "@ant-design/icons";
 import type { ChatMessage } from "../../services/api";
@@ -757,113 +753,19 @@ const isUser = message.role === "user";
           </Tooltip>
 
           <>
-          {/* 【小强优化 2026-03-18】瀑布式显示 - 按 step 顺序，互不嵌套 */}
+          {/* 【小强简化2026-03-18】按step顺序显示 - 用StepRow渲染 */}
           {(() => {
-              // 获取所有步骤并按 step 排序
               const allSteps = message.executionSteps || [];
               const sortedSteps = [...allSteps].sort((a, b) => {
-                if (a.step && b.step) {
-                  return a.step - b.step;
-                }
+                if (a.step && b.step) return a.step - b.step;
                 return 0;
               });
-
-              // 每个 action_tool 单独折叠面板，observation 平铺显示
-              return (
-                <>
-                  {sortedSteps.map((step, index) => {
-                    // action_tool：每个单独折叠面板
-                    if (step.type === "action_tool") {
-                      return (
-                        <Collapse
-                          key={`action-${index}`}
-                          defaultActiveKey={(message.isStreaming ?? false) ? [`action-${index}`] : []}
-                          size="small"
-                          style={{ marginBottom: 8 }}
-                          items={[{
-                            key: `action-${index}`,
-                            label: (
-                              <Space>
-                                <ThunderboltOutlined />
-                                <span>步骤{step.step}  工具：{step.tool_name || "执行中"}</span>
-                                {(message.isStreaming ?? false) && <LoadingOutlined />}
-                              </Space>
-                            ),
-                            children: (
-                              <>
-                                {step.tool_params && (
-                                  <div style={{ background: "#f5f5f5", padding: "8px 12px", borderRadius: 6, fontSize: "0.9em", marginBottom: 8, color: "#666" }}>
-                                    <strong>参数：</strong>
-                                    <code style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-                                      {JSON.stringify(step.tool_params, null, 2)}
-                                    </code>
-                                  </div>
-                                )}
-                                {step.execution_status && (
-                                  <div style={{ fontSize: "0.9em", color: "#666", marginBottom: 4 }}>
-                                    状态：{step.execution_status}
-                                  </div>
-                                )}
-                              </>
-                            ),
-                          }]}
-                        />
-                      );
-                    }
-                    
-                    // observation：平铺显示，带底色区隔
-                    if (step.type === "observation") {
-                      return (
-                        <div key={`step-${index}`} style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 6, background: "#f0f5ff" }}>
-                          <StepRow step={step} taskId={message.task_id} />
-                        </div>
-                      );
-                    }
-                    
-                    // thought：平铺显示，带底色区隔
-                    if (step.type === "thought") {
-                      return (
-                        <div key={`step-${index}`} style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 6, background: "#faad1415" }}>
-                          <StepRow step={step} taskId={message.task_id} />
-                        </div>
-                      );
-                    }
-                    
-                    // start：平铺显示，带底色区隔
-                    if (step.type === "start") {
-                      return (
-                        <div key={`step-${index}`} style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 6, background: "#e6f7ff" }}>
-                          <StepRow step={step} taskId={message.task_id} />
-                        </div>
-                      );
-                    }
-                    
-                    // incident 类型（paused/resumed/interrupted/retrying）：平铺显示
-                    if (["paused", "resumed", "interrupted", "retrying"].includes(step.type)) {
-                      return (
-                        <div key={`step-${index}`} style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 6, background: "#fff7e6" }}>
-                          <StepRow step={step} taskId={message.task_id} />
-                        </div>
-                      );
-                    }
-                    
-                    // error：平铺显示
-                    if (step.type === "error") {
-                      return (
-                        <div key={`step-${index}`} style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 6, background: "#fff1f0", border: "1px solid #ffa39e" }}>
-                          <StepRow step={step} taskId={message.task_id} />
-                        </div>
-                      );
-                    }
-                    
-                    // 其他类型：使用 StepRow 默认渲染
-                    return <StepRow key={`step-${index}`} step={step} taskId={message.task_id} />;
-                  })}
-                </>
-              );
-            })}
-             
-             {/* 【小新修复】在推理过程中显示"💭 思考中:"标签，推理完成后自动隐藏 */}
+              return sortedSteps.map((step, index) => (
+                <StepRow key={`step-${index}`} step={step} taskId={message.task_id} />
+              ));
+            })()}
+              
+              {/* 【小新修复】在推理过程中显示"💭 思考中:"标签 */}
             {message.is_reasoning && (
               <span style={{ color: '#888', fontSize: '0.85em', marginRight: 4, fontWeight: 500 }}>
                 💭 思考中:
