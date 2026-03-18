@@ -43,6 +43,7 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   
   const colorMap: Record<string, string> = {
+    start: "#1890ff",
     thought: "#faad14",
     action_tool: "#1890ff",
     observation: "#52c41a",
@@ -55,6 +56,7 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
   };
 
   const labelMap: Record<string, string> = {
+    start: "开始",
     thought: "思考",
     action_tool: "工具",
     observation: "结果",
@@ -191,6 +193,14 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
               );
             })()}
           </>
+        )}
+        {step.type === "start" && (
+          <span style={{ 
+            color: colorMap.start,
+            fontWeight: 500,
+          }}>
+            🚀 {step.task_id || "任务开始"}
+          </span>
         )}
         {step.type === "thought" && (
           <span style={{ 
@@ -751,10 +761,9 @@ const isUser = message.role === "user";
             />
           </Tooltip>
 
-          {/* 【小强优化 2026-03-18】瀑布式显示 - 按 step 顺序，互不嵌套 */}
           <>
-            {/* 【小强优化 2026-03-18】瀑布式显示 - 按 step 顺序，互不嵌套 */}
-            {(() => {
+          {/* 【小强优化 2026-03-18】瀑布式显示 - 按 step 顺序，互不嵌套 */}
+          {(() => {
               // 获取所有步骤并按 step 排序
               const allSteps = message.executionSteps || [];
               const sortedSteps = [...allSteps].sort((a, b) => {
