@@ -51,6 +51,12 @@ export interface SSEMetadata {
 /**
  * 执行步骤类型 - 与后端字段完全对应，便于调试和理解
  * 【小新重构2026-03-09】适配新API字段名
+ * 
+ * 【重要】8种type说明：
+ * - 内容步骤：start（开始）、chunk（AI流式回复的内容片段）、final（最终回答）
+ *   【chunk是AI流式输出的内容片段，不是执行步骤，显示在AI回复区域，不在步骤列表】
+ * - 执行步骤：thought（思考）、action_tool（工具调用）、observation（工具结果）
+ * - 异常步骤：error（错误）、incident（中断）
  */
 export interface ExecutionStep {
   // === 通用字段 ===
