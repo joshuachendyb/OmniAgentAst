@@ -732,10 +732,11 @@ const NewChatContainer: React.FC = () => {
         console.log("💾 [beforeunload] 刷新前保存状态, steps:", executionStepsRef.current.length);
         
         // 同步保存最新数据（从executionStepsRef获取最新steps）
-        let messagesToSave = messages;
+        // 【修复 2026-03-18】使用messagesRef.current获取最新messages，而不是闭包中的messages
+        let messagesToSave = messagesRef.current;
         if (executionStepsRef.current.length > 0) {
-          messagesToSave = messages.map((msg, idx) => {
-            if (msg.role === 'assistant' && msg.isStreaming && idx === messages.length - 1) {
+          messagesToSave = messagesRef.current.map((msg, idx) => {
+            if (msg.role === 'assistant' && msg.isStreaming && idx === messagesRef.current.length - 1) {
               return {
                 ...msg,
                 executionSteps: executionStepsRef.current,
@@ -805,12 +806,13 @@ const NewChatContainer: React.FC = () => {
     if (sessionId) {
       // 【问题2修复 2026-03-18】当正在接收SSE数据时，messages状态可能是异步更新未完成的
       // 需要从executionStepsRef获取最新steps并更新到messages中保存
-      let messagesToSave = messages;
+      // 【修复 2026-03-18】使用messagesRef.current获取最新messages，而不是闭包中的messages
+      let messagesToSave = messagesRef.current;
       if (isReceiving && executionStepsRef.current.length > 0) {
         console.log("🔧 [saveState] SSE正在接收，合并最新steps到messages保存:", executionStepsRef.current.length);
-        messagesToSave = messages.map((msg, idx) => {
+        messagesToSave = messagesRef.current.map((msg, idx) => {
           // 找到最后一条assistant消息（正在流式输出的）
-          if (msg.role === 'assistant' && msg.isStreaming && idx === messages.length - 1) {
+          if (msg.role === 'assistant' && msg.isStreaming && idx === messagesRef.current.length - 1) {
             return {
               ...msg,
               executionSteps: executionStepsRef.current,
