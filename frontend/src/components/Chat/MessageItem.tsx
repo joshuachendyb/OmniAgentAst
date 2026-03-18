@@ -970,20 +970,58 @@ const isUser = message.role === "user";
               });
             })()}
 
-            {/* 5. 最终答案content - 兼容历史消息不完整的情况 */}
+            {/* 【小新修改 2026-03-18】在执行 content 回退前，先判断是否有 action_tool */}
+            {/* 设计思路：
+              * 1. 遍历 executionSteps，检查是否有 action_tool 类型的步骤
+              * 2. 如果有 action_tool（hasAction=1），则不执行 content 回退
+              * 3. 如果没有 action_tool（hasAction=0），则执行原来的 content 回退逻辑
+              * 目的：区分 ReAct 模式（有 action_tool）和普通对话模式（无 action_tool）
+              */}
             {(() => {
-              const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
-              // 判断是否有 is_reasoning=false 的chunk
-              const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
+              // ==================== 步骤 1：计算 hasAction 变量 ====================
+              // hasAction = 0：默认值，表示没有 action_tool
+              // hasAction = 1：表示有 action_tool（ReAct 模式）
+              let hasAction = 0;
               
-              // SSE实时（isStreaming=true）：按原来逻辑，只有没有chunk时才显示content
-              if (message.isStreaming) {
-                return chunks.length === 0;
+              // 遍历 message.executionSteps 数组，检查每个 step 的 type
+              for (const step of (message.executionSteps || [])) {
+                // 如果当前 step 的类型是 action_tool（工具调用）
+                if (step.type === 'action_tool') {
+                  hasAction = 1;  // 标记为 ReAct 模式
+                  break;  // 找到 action_tool 后立即停止遍历（不需要继续检查）
+                }
+                // 如果当前 step 的类型是 chunk（AI 回复内容片段）
+                if (step.type === 'chunk') {
+                  hasAction = 0;  // 标记为普通对话模式
+                  // 不 break，继续遍历（后面可能还有 action_tool）
+                }
               }
               
-              // 历史消息：没有 is_reasoning=false 的chunk时，显示content（补充不完整的chunk）
-              return !hasFalseReasoning;
+              // ==================== 步骤 2：根据 hasAction 判断是否执行 content 回退 ====================
+              // 只有当 hasAction !== 1（即没有 action_tool）时，才执行 content 回退逻辑
+              if (hasAction !== 1) {
+                // ==================== 步骤 3：执行原来的 content 回退判断逻辑（原 974-986 行） ====================
+                // 过滤出所有 type 为 chunk 的步骤
+                const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
+                // 检查是否存在 is_reasoning=false 的 chunk（表示有非思考过程的内容）
+                const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
+                
+                // 情况 A：SSE 实时模式（isStreaming=true）
+                // 触发条件：只有当没有 chunk 时才显示 content（作为备用）
+                if (message.isStreaming) {
+                  return chunks.length === 0;
+                }
+                
+                // 情况 B：历史消息模式（isStreaming=false）
+                // 触发条件：当没有 is_reasoning=false 的 chunk 时，显示 content（补充不完整的 chunk 数据）
+                return !hasFalseReasoning;
+              }
+              
+              // 如果 hasAction === 1（有 action_tool），返回 false，不执行 content 回退
+              return false;
             })() && (
+              // ==================== 步骤 4：渲染 content 的 div（原 987-1017 行） ====================
+              // 只有当上面的 IIFE 返回 true 时，才会渲染这个 div
               <div
                 style={{
                   wordBreak: "break-word",
@@ -1006,7 +1044,8 @@ const isUser = message.role === "user";
                     : ""
                 }
               >
-                {/* 【小查修复】已移除回退显示"思考中"标签，统一用chunk渲染 */}
+                {/* 【小查修复】已移除回退显示"思考中"标签，统一用 chunk 渲染 */}
+                {/* 显示 content 内容：将双换行符\n\n替换为单换行符\n */}
                 {message.content && typeof message.content === 'string' 
                   ? message.content.replace(/\n\n/g, '\n')
                   : String(message.content || '').replace(/\n\n/g, '\n')}
