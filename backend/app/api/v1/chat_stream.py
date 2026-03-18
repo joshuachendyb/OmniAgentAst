@@ -33,7 +33,7 @@ from datetime import datetime, timedelta
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, AsyncGenerator, Any
+from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 from app.services import AIServiceFactory
 from app.services.base import Message  # ⭐ 【调试添加】用于日志记录
 from app.services.file_operations.tools import get_file_tools
@@ -233,7 +233,8 @@ def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
 async def check_and_yield_if_interrupted(
     task_id: str, 
     running_tasks: dict, 
-    running_tasks_lock: asyncio.Lock
+    running_tasks_lock: asyncio.Lock,
+    next_step: Optional[Callable[[], int]] = None
 ) -> tuple[bool, str]:
     """
     检查任务是否被中断，如果是则返回中断消息
@@ -242,6 +243,7 @@ async def check_and_yield_if_interrupted(
         task_id: 任务 ID
         running_tasks: 运行中任务字典
         running_tasks_lock: 任务锁
+        next_step: 步骤计数器函数（可选）
     
     Returns:
         (is_interrupted, interrupt_message) 元组
@@ -251,12 +253,18 @@ async def check_and_yield_if_interrupted(
     async with running_tasks_lock:
         if running_tasks.get(task_id, {}).get("cancelled", False):
             # 【使用统一函数】创建incident数据
-            incident_data = create_incident_data('interrupted', '任务已被中断')
+            step_value = next_step() if next_step else None
+            incident_data = create_incident_data('interrupted', '任务已被中断', step=step_value)
             return True, f"data: {json.dumps(incident_data)}\n\n"
     return False, ""
 
 
-async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_tasks_lock: asyncio.Lock) -> AsyncGenerator[str, None]:
+async def check_and_yield_if_paused(
+    task_id: str, 
+    running_tasks: dict, 
+    running_tasks_lock: asyncio.Lock,
+    next_step: Optional[Callable[[], int]] = None
+) -> AsyncGenerator[str, None]:
     """
     检查任务是否被暂停，如果是则发送paused事件并等待恢复
     
@@ -264,6 +272,7 @@ async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_t
         task_id: 任务ID
         running_tasks: 运行中任务字典
         running_tasks_lock: 任务锁
+        next_step: 步骤计数器函数（可选）
     
     Yields:
         SSE 格式的事件字符串 (paused/resumed)
@@ -280,7 +289,8 @@ async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_t
                 # 不再暂停，恢复发送
                 if running_tasks.get(task_id, {}).get("_was_paused", False):
                     # 【使用统一函数】创建incident数据
-                    resumed_data = create_incident_data('resumed', '任务已恢复')
+                    step_value = next_step() if next_step else None
+                    resumed_data = create_incident_data('resumed', '任务已恢复', step=step_value)
                     yield f"data: {json.dumps(resumed_data)}\n\n"
                     running_tasks[task_id]["_was_paused"] = False
                 return
@@ -291,7 +301,8 @@ async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_t
             async with running_tasks_lock:
                 running_tasks[task_id]["_was_paused"] = True
             # 【使用统一函数】创建incident数据
-            paused_data = create_incident_data('paused', '任务已暂停')
+            step_value = next_step() if next_step else None
+            paused_data = create_incident_data('paused', '任务已暂停', step=step_value)
             yield f"data: {json.dumps(paused_data)}\n\n"
         
         await asyncio.sleep(0.5)  # 每0.5秒检查一次
@@ -726,13 +737,13 @@ async def chat_stream(request: ChatRequest):
             await asyncio.sleep(0.3)
             
             # ⭐ 修复：只检查一次中断（删除 4 次重复代码）
-            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
+            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock, next_step)
             if is_interrupted:
                 yield interrupt_msg
                 return
             
             # ⭐ 暂停检查：如果暂停则等待恢复
-            async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
+            async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock, next_step):
                 yield pause_event
             
             # 检测文件操作意图
@@ -1069,10 +1080,11 @@ async def chat_stream(request: ChatRequest):
                         llm_call_count += 1
                         logger.info(f"[LLM Total Counter] >>> Stream AI called, count: {llm_call_count}")
                         
-                        # 【小沈-2026-03-14修复】使用 IdleTimeoutIterator 包装流式迭代器，实现实时空闲超时检测
+                        # 【小沈修复】使用 IdleTimeoutIterator 包装流式迭代器，实现实时空闲超时检测
+                        # 【修改】超时时间从120秒调整为60秒（每次），3次重试合计3分钟
                         idle_timeout_stream = IdleTimeoutIterator(
                             ai_service.chat_stream(message=last_message, history=history),
-                            timeout_seconds=30.0,
+                            timeout_seconds=60.0,
                             name=f"AI-Stream-{retry_attempt + 1}"
                         )
                         
@@ -1105,7 +1117,7 @@ async def chat_stream(request: ChatRequest):
                                     return
                             
                             # ⭐ 暂停检查：AI流式响应过程中也检查暂停状态
-                            async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
+                            async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock, next_step):
                                 yield pause_event
                             
                             # ⭐ 检查chunk是否有错误（非空闲超时错误）
@@ -1350,22 +1362,32 @@ async def chat_stream(request: ChatRequest):
                 # 删除重复保存：上面已经保存过，不需要再保存一次
                         
         except asyncio.CancelledError:
-            # 客户端断开连接，任务被中断
-            async with running_tasks_lock:
-                running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
-            # 【使用统一函数】创建incident数据
-            interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断', step=next_step())
-            logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=客户端断开连接，任务中断")
-            yield f"data: {json.dumps(interrupted_data)}\n\n"
+            # 【小沈修复】客户端断开连接，但后端继续运行
+            # 记录断开事实，继续与LLM通讯，继续保存数据
+            # 只是不再尝试给前端发送数据（因为连接已断开）
+            logger.warning("[前端断开] 检测到前端断开，但继续运行...")
             
-            # 【使用统一函数】保存interrupted步骤到数据库
-            incident_step = {
-                'type': 'incident',
-                'incident_value': 'interrupted',
-                'message': '客户端断开连接，任务中断',
-                'timestamp': create_timestamp()
-            }
-            await add_step_and_save(incident_step, "任务中断")
+            # 标记状态，但不停止后端
+            async with running_tasks_lock:
+                if task_id in running_tasks:
+                    running_tasks[task_id]["frontend_disconnected"] = True
+            
+            # 尝试保存断开记录到数据库（如果还能保存的话）
+            try:
+                incident_step = {
+                    'type': 'incident',
+                    'incident_value': 'interrupted',
+                    'message': '客户端断开连接，后端继续运行',
+                    'timestamp': create_timestamp()
+                }
+                current_execution_steps.append(incident_step)
+                await save_execution_steps_to_db(current_execution_steps, current_content)
+            except Exception as e:
+                logger.warning(f"[前端断开] 保存断开记录失败: {e}")
+            
+            # 不 return，继续让 agent.run_stream() 运行
+            # 继续与LLM通讯，直到LLM完成
+            logger.info("[前端断开] 继续运行，等待LLM处理完成...")
             
         except Exception as e:
             # 【小沈代修改 - 统一错误处理】使用 get_user_friendly_error 和 create_error_response

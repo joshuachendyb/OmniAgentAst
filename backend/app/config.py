@@ -81,6 +81,9 @@ class Config:
                 "file": "logs/app.log",
                 "max_size": "10MB",
                 "backup_count": 5
+            },
+            "app": {
+                "max_steps": 100
             }
         }
     

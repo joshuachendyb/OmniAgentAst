@@ -36,6 +36,7 @@ app:
   language: zh-CN
   max_history_length: 10
   theme: dark
+  max_steps: 100
 logging:
   backup_count: 5
   level: INFO
