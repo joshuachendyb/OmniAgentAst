@@ -55,7 +55,7 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
     start: "开始",
     thought: "分析",
     action_tool: "执行",
-    observation: "观察",
+    observation: "检查",
     final: "总结",
     error: "错误",
     paused: "暂停",
