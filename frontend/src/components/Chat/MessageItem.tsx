@@ -629,11 +629,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
 const isUser = message.role === "user";
   const isSystem = message.role === "system";
 
-  // 【小查修复2026-03-10】判断是否有status类型步骤
-  const hasStatus = message.executionSteps?.some(
-    step => ["paused", "resumed", "interrupted", "retrying"].includes(step.type)
-  ) ?? false;
-
   return (
     <div
       style={{
@@ -843,7 +838,7 @@ const isUser = message.role === "user";
                       );
                     }
                     
-                    // status 类型（paused/resumed/interrupted/retrying）：平铺显示
+                    // incident 类型（paused/resumed/interrupted/retrying）：平铺显示
                     if (["paused", "resumed", "interrupted", "retrying"].includes(step.type)) {
                       return (
                         <div key={`step-${index}`} style={{ marginBottom: 8, padding: "8px 12px", borderRadius: 6, background: "#fff7e6" }}>
@@ -866,16 +861,7 @@ const isUser = message.role === "user";
                   })}
                 </>
               );
-            })}
-            {hasStatus && (
-              <div style={{ marginBottom: 8 }}>
-                {message.executionSteps
-                  ?.filter(step => ["paused", "resumed", "interrupted", "retrying"].includes(step.type))
-                  .map((step, index) => (
-                    <StepRow key={`status-${index}`} step={step} taskId={message.task_id} />
-                  ))}
-              </div>
-            )}
+            })()}
 
             {/* 【小新修复】在推理过程中显示"💭 思考中:"标签，推理完成后自动隐藏 */}
             {message.is_reasoning && (
