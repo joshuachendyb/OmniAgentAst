@@ -933,55 +933,17 @@ const NewChatContainer: React.FC = () => {
          * 解决方案：
          * 1. 保存execution_steps + content到数据库（双重保险）
          * 2. 保存到sessionStorage（现有逻辑）
-         * 3. 不断开SSE连接，让fetch自然进行（方案2简化版）
+         * 3. 不断开SSE连接，让fetch自然进行
+         * 
+         * 【小强修复 2026-03-18】删除数据库保存（双重保险），因为sessionStorage已经足够
          * 
          * 修改位置：document.hidden 时
          */
-         
-        // 1. 保存execution_steps + content到数据库（双重保险）
-        if (isReceiving && currentSessionIdRef.current) {
-          try {
-            if (executionStepsRef.current.length > 0) {
-              // 【小新修复 2026-03-16】从executionSteps中提取最终的content
-              // 而不是从messagesRef获取，因为流式过程中的content还没更新到messagesRef
-              const getLatestContent = (): string => {
-                const steps = executionStepsRef.current;
-                // 找到type为final的步骤，其content是最终内容
-                const finalStep = steps.find(s => (s as any).type === "final");
-                if (finalStep) {
-                  return (finalStep as any).content || '';
-                }
-                // 如果没有final步骤，返回最后一个chunk的content
-                const lastStep = steps[steps.length - 1];
-                return lastStep ? ((lastStep as any).content || '') : '';
-              };
-              const currentContent = getLatestContent();
-               
-              // 调用saveExecutionSteps，后端已支持content参数
-              // 【小新修复 2026-03-16】传递replyUserMessageId，关联AI消息与用户消息
-              sessionApi.saveExecutionSteps(
-                currentSessionIdRef.current,
-                executionStepsRef.current,
-                currentContent,
-                replyUserMessageIdRef.current || undefined
-              ).then(() => {
-                console.log("💾 [visibilitychange] execution_steps + content已保存到数据库, replyUserMessageId:", replyUserMessageIdRef.current);
-              }).catch((error) => {
-                console.error("💾 [visibilitychange] 保存失败:", error);
-                // 不阻塞，继续执行
-              });
-            }
-          } catch (error) {
-            console.error("💾 [visibilitychange] 保存异常:", error);
-          }
-        }
         
-        // 2. 保存到sessionStorage（带 SSE 检查）
+        // 保存到sessionStorage（带 SSE 检查）
         saveStateWithSSECheck();
         
-        // 3. 不断开SSE连接，让fetch自然进行（方案2简化版）
-        // 如果后续需要断开，可以使用变量控制
-        // if (isReceiving) {
+        // 不断开SSE连接，让fetch自然进行
         //   disconnect();
         // }
       } else {
