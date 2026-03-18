@@ -1,7 +1,7 @@
 /**
- * SSE工具模块 V2 - Server-Sent Events流式处理
+ * SSE 工具模块 V2 - Server-Sent Events 流式处理
  *
- * 功能：建立SSE连接、接收流式数据、处理执行步骤
+ * 功能：建立 SSE 连接、接收流式数据、处理执行步骤
  * 改进：增加自动重连、错误分类、友好提示
  *
  * @author 小新
@@ -11,6 +11,12 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { message } from "antd";
+
+// 【小强修复 2026-03-18】sessionStorage key - 用于长时间隐藏页面时备份数据
+// 场景：用户切换到其他应用→页面隐藏→SSE 连接不断开→后端数据持续发送
+// 问题：浏览器降频导致回调延迟执行，标签页可能被丢弃
+// 解决：同时保存到 ref + sessionStorage，即使标签页丢弃数据也不会丢失
+const SSE_STORAGE_KEY = "sse_execution_steps_backup";
 
 /**
  * SSE 错误对象 - 与后端API文档的11个字段完全对应
@@ -260,15 +266,60 @@ export const useSSE = (
 
   // 【小强添加 2026-03-18】性能指标相关
   const [performanceMetrics, setPerformanceMetrics] = useState<PerformanceMetrics | null>(null);
-  const ttftRef = useRef<number>(0);  // 存储TTFT值
+  const ttftRef = useRef<number>(0);  // 存储 TTFT 值
   const requestStartTimeRef = useRef<number>(0);
   const chunkCountRef = useRef<number>(0);
+  
+  // 【小强修复 2026-03-18】SSE 超时检测 - 解决页面隐藏后连接断开问题
+  const lastDataTimeRef = useRef<number>(0);  // 最后收到数据的时间
+  const heartbeatTimeoutRef = useRef<number | null>(null);  // 心跳超时检测
+  const HEARTBEAT_TIMEOUT = 60000;  // 60 秒无数据判定为断开
+
+  // 【小强添加 2026-03-18】sessionStorage 备份相关
+  // 恢复：组件初始化时检查是否有备份数据
+  useEffect(() => {
+    const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
+    const savedSteps = sessionStorage.getItem(storageKey);
+    if (savedSteps) {
+      try {
+        const parsedSteps = JSON.parse(savedSteps);
+        if (Array.isArray(parsedSteps) && parsedSteps.length > 0) {
+          console.log(`[SSE] 从 sessionStorage 恢复 ${parsedSteps.length} 个步骤`);
+          executionStepsRef.current = parsedSteps;
+          setExecutionSteps(parsedSteps);
+        }
+      } catch (e) {
+        console.warn("[SSE] 解析 sessionStorage 备份失败:", e);
+        sessionStorage.removeItem(storageKey);
+      }
+    }
+  }, [config.sessionId]);  // 仅在 sessionId 变化时检查
+
+  // 保存到 sessionStorage 的辅助函数
+  const saveStepsToStorage = useCallback((steps: ExecutionStep[]) => {
+    if (steps.length > 0 && config.sessionId) {
+      const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
+      try {
+        sessionStorage.setItem(storageKey, JSON.stringify(steps));
+      } catch (e) {
+        console.warn("[SSE] 保存到 sessionStorage 失败:", e);
+      }
+    }
+  }, [config.sessionId]);
+
+  // 清空 sessionStorage 的辅助函数
+  const clearStepsFromStorage = useCallback(() => {
+    const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
+    sessionStorage.removeItem(storageKey);
+  }, [config.sessionId]);
 
   /**
    * 断开连接
    * @param manualDisconnect - 是否是手动中断（手动中断不允许重连）
    */
   const disconnect = useCallback((manualDisconnect: boolean = false) => {
+    // 清空 sessionStorage 备份
+    clearStepsFromStorage();
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
@@ -301,7 +352,9 @@ export const useSSE = (
     executionStepsRef.current = [];
     setCurrentResponse("");
     responseBufferRef.current = "";
-  }, []);
+    // 【小强添加 2026-03-18】同时清空 sessionStorage 备份
+    clearStepsFromStorage();
+  }, [clearStepsFromStorage]);
 
   // 同步 executionSteps 到 ref
   useEffect(() => {
@@ -392,9 +445,25 @@ export const useSSE = (
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let buffer = "";
+      
+      // 【小强修复 2026-03-18】初始化最后数据时间
+      lastDataTimeRef.current = Date.now();
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
+        // 【小强修复 2026-03-18】添加超时检测 - 解决页面隐藏后连接断开问题
+        if (heartbeatTimeoutRef.current) {
+          clearTimeout(heartbeatTimeoutRef.current);
+        }
+        heartbeatTimeoutRef.current = window.setTimeout(() => {
+          const timeSinceLastData = Date.now() - lastDataTimeRef.current;
+          if (timeSinceLastData > HEARTBEAT_TIMEOUT && isReceiving) {
+            console.warn(`[SSE] 心跳超时：已经${timeSinceLastData/1000}秒未收到数据，判定连接断开`);
+            // 触发超时错误
+            throw new Error("SSE 连接超时：长时间未收到数据");
+          }
+        }, HEARTBEAT_TIMEOUT);
+        
         const { done, value } = await reader.read();
 
         if (done) {
@@ -403,6 +472,7 @@ export const useSSE = (
           setExecutionSteps,
           getCurrentExecutionSteps: () => executionStepsRef.current,
           executionStepsRef,  // 【小新添加 2026-03-15】传递 ref 以便在 processSSEData 内部同步更新
+          saveStepsToStorage,  // 【小强添加 2026-03-18】传递 sessionStorage 保存函数
           onStep,
           onChunk,
           onComplete,
@@ -422,6 +492,9 @@ export const useSSE = (
           break;
         }
 
+        // 【小强修复 2026-03-18】更新最后数据时间
+        lastDataTimeRef.current = Date.now();
+        
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
@@ -431,6 +504,7 @@ export const useSSE = (
             setExecutionSteps,
             getCurrentExecutionSteps: () => executionStepsRef.current,
             executionStepsRef,  // 【小新添加 2026-03-15】传递 ref 以便在 processSSEData 内部同步更新
+            saveStepsToStorage,  // 【小强添加 2026-03-18】传递 sessionStorage 保存函数
             onStep,
             onChunk,
             onComplete,
@@ -553,6 +627,7 @@ const processSSEData = (
     setExecutionSteps: React.Dispatch<React.SetStateAction<ExecutionStep[]>>;
     getCurrentExecutionSteps: () => ExecutionStep[];
     executionStepsRef: React.MutableRefObject<ExecutionStep[]>;  // 【小新添加 2026-03-15】用于同步更新 ref
+    saveStepsToStorage?: (steps: ExecutionStep[]) => void;  // 【小强添加 2026-03-18】保存到 sessionStorage
     onStep?: (step: ExecutionStep) => void;
     onChunk?: (chunk: string, is_reasoning?: boolean) => void;
     onComplete?: (fullResponse: string, metadata?: string | SSEMetadata, executionSteps?: ExecutionStep[]) => void;
@@ -572,6 +647,7 @@ const processSSEData = (
 ) => {
   const {
     setExecutionSteps,
+    saveStepsToStorage,
     onStep,
     onChunk,
     onComplete,
@@ -675,6 +751,8 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, startStep];
           handlers.executionStepsRef.current = newSteps;
+          // 【小强添加 2026-03-18】同时保存到 sessionStorage
+          saveStepsToStorage?.(newSteps);
           return newSteps;
         });
         onStep?.(startStep);
@@ -698,6 +776,8 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
+          // 【小强添加 2026-03-18】同时保存到 sessionStorage
+          saveStepsToStorage?.(newSteps);
           return newSteps;
         });
         onStep?.(step);
@@ -724,6 +804,8 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
+          // 【小强添加 2026-03-18】同时保存到 sessionStorage
+          saveStepsToStorage?.(newSteps);
           return newSteps;
         });
         onStep?.(step);
@@ -751,6 +833,8 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
+          // 【小强添加 2026-03-18】同时保存到 sessionStorage
+          saveStepsToStorage?.(newSteps);
           return newSteps;
         });
         onStep?.(step);
@@ -802,6 +886,8 @@ const processSSEData = (
         //   这样即使前端渲染只显示 message.content，导出功能也能获取到完整的 52 个 chunk 步骤
         const newSteps = [...handlers.executionStepsRef.current, step];
         handlers.executionStepsRef.current = newSteps;
+        // 【小强添加 2026-03-18】同时保存到 sessionStorage
+        saveStepsToStorage?.(newSteps);
         setExecutionSteps(newSteps);
         onStep?.(step);
         // 【小查修复】收到 chunk 时关闭步骤 UI，开始显示回复内容（必须在 onStep 之后）
@@ -835,6 +921,8 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
+          // 【小强添加 2026-03-18】同时保存到 sessionStorage
+          saveStepsToStorage?.(newSteps);
           return newSteps;
         });
         onStep?.(step);
