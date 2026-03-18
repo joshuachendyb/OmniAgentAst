@@ -117,7 +117,8 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
       color: "#333",
       wordBreak: "break-word",
       fontSize: 13,
-      lineHeight: 1.6,
+      lineHeight: 1.8,
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
     };
     return baseStyle;
   };
@@ -128,8 +129,10 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
       background: "linear-gradient(135deg, #fff7e6 0%, #fffbe6 100%)",
       border: "1px solid #ffd591",
       borderRadius: 8,
-      padding: "8px 12px",
-      marginTop: 4,
+      padding: "10px 14px",
+      marginTop: 6,
+      lineHeight: 1.8,
+      fontSize: 13,
     };
   };
 
@@ -142,6 +145,7 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
       padding: "10px 14px",
       marginTop: 6,
       fontSize: "0.9em",
+      lineHeight: 1.8,
       whiteSpace: "pre-wrap",
       maxHeight: 300,
       overflow: "auto",
@@ -217,9 +221,10 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
                 fontSize: 12, 
                 color: "#666",
                 background: "#f5f5f5",
-                padding: "6px 10px",
+                padding: "8px 12px",
                 borderRadius: 6,
                 fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+                lineHeight: 1.6,
               }}>
                 参数：{JSON.stringify(step.tool_params, null, 2)}
               </div>
