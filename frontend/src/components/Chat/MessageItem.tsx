@@ -325,11 +325,13 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
           </span>
         )}
         {step.type === "thought" && (
-          <span style={{ 
+          <div style={{ 
             ...getThoughtBackground(),
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
           }}>
             💭 {step.thinking_prompt || step.content || ""}
-          </span>
+          </div>
         )}
         {step.type === "final" && (
           <span style={{ 
