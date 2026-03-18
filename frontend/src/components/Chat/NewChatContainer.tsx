@@ -926,18 +926,17 @@ const NewChatContainer: React.FC = () => {
          * 【小新修改 2026-03-16】
          * 页面隐藏时保存数据 - 解决SSE断开导致数据丢失问题
          * 
-         * 问题背景：SSE数据保存方案-综合版第18章要求
-         * - 页面切换/刷新时，SSE断开，onComplete不触发
+         * 问题背景：
+         * - 页面切换（最小化/切换标签页）时，SSE可能断开，onComplete不触发
          * - 导致execution_steps和content丢失
          * 
          * 解决方案：
-         * 1. 保存execution_steps + content到数据库（双重保险）
-         * 2. 保存到sessionStorage（现有逻辑）
-         * 3. 不断开SSE连接，让fetch自然进行
+         * 1. 保存到sessionStorage
+         * 2. 不断开SSE连接，让fetch自然进行
          * 
-         * 【小强修复 2026-03-18】删除数据库保存（双重保险），因为sessionStorage已经足够
+         * 【小强修复 2026-03-18】删除数据库保存，因为sessionStorage已经足够
          * 
-         * 修改位置：document.hidden 时
+         * 注意：页面刷新（F5/Ctrl+F5）由beforeunload处理（见第726行）
          */
         
         // 保存到sessionStorage（带 SSE 检查）
