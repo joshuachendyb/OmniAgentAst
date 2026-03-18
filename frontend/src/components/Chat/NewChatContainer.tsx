@@ -364,12 +364,16 @@ const NewChatContainer: React.FC = () => {
             // 选择更长的那个，避免覆盖已存在的数据
             const latestSteps = msgSteps.length >= sseSteps.length ? msgSteps : sseSteps;
             
-            // 【调试日志】
-            console.log("🔍 [onComplete] 修复竞争条件 - executionSteps选择:");
-            console.log("  SSE传递的steps:", sseSteps.length);
-            console.log("  message已有的steps:", msgSteps.length);
-            console.log("  最终选择:", latestSteps.length, msgSteps.length >= sseSteps.length ? "(使用message的)" : "(使用SSE的)");
-            console.log("  最后5个类型:", latestSteps?.slice(-5).map((s: any) => s.type));
+            // 【调试日志】说明：为什么有两个steps数量？
+            // - SSE传递的steps：本次对话实时收到的步骤数量（比如：start → thought → chunk → final）
+            // - message已有的steps：这个消息之前保存的步骤数量（比如：历史会话加载进来的）
+            // - 最终选择：取两者中更多的那个来保存（确保不丢失数据）
+            console.log("📊 [AI回答完成] 正在决定保存哪些步骤数据:");
+            console.log("  ├─ 本次收到的步骤数（实时流式）:", sseSteps.length, "个");
+            console.log("  ├─ 历史已有步骤数:", msgSteps.length, "个");
+            console.log("  └─ 最终保存步骤数:", latestSteps.length, "个", 
+              msgSteps.length >= sseSteps.length ? "← 用了历史的（更多）" : "← 用了本次的（更多）");
+            console.log("  最后5个步骤类型:", latestSteps?.slice(-5).map((s: any) => s.type));
             
             updated[updated.length - 1] = {
               ...lastMessage,
@@ -385,7 +389,7 @@ const NewChatContainer: React.FC = () => {
               display_name: metadataObj.display_name || lastMessage.display_name,
               executionSteps: latestSteps,
             };
-            console.log("✅ onComplete更新消息executionSteps数量:", latestSteps.length);
+            console.log("  └─ ✅ 已更新消息的步骤数量:", latestSteps.length);
             return updated;
           }
           return prev;
@@ -395,7 +399,6 @@ const NewChatContainer: React.FC = () => {
         // 【小沈修复2026-03-03】现在只保存AI回复消息，用户消息已在发送前保存
         // 这样更加健壮，即使AI响应失败，用户消息也已保存
         const currentSessionId = currentSessionIdRef.current || sessionId;
-        const currentPending = pendingMessageRef.current || pendingMessage;
         // 【小查修复 2026-03-14】恢复使用executionStepsFromSSE参数
         // 历史教训：2026-03-12 小沈提交commit 800f0fd27时，将参数从ExecutionStep[]改为{sseData?: {execution_steps?: ExecutionStep[]}}
         // 但调用方sse.ts第716行仍然传递ExecutionStep[]数组，导致类型不匹配
@@ -405,14 +408,11 @@ const NewChatContainer: React.FC = () => {
         const stepsFromSSE = executionStepsFromSSE;
         if (currentSessionId && finalResponse && finalResponse.trim()) {
           // 🔴 修复：添加详细的调试日志
-          console.log("🔍 保存AI回复:");
-          console.log("  ref中的sessionId:", currentSessionIdRef.current);
-          console.log("  state中的sessionId:", sessionId);
-          console.log("  最终使用的sessionId:", currentSessionId);
-          console.log("  currentPending:", currentPending);
-          console.log("  finalResponse length:", finalResponse.length);
-          console.log("  onComplete参数传递的steps:", stepsFromSSE?.length);
-          console.log("  fallback ref中的steps:", executionStepsRef.current?.length);
+          console.log("💾 [保存AI回复] 正在保存到数据库:");
+          console.log("  ├─ 会话ID:", currentSessionId);
+          console.log("  ├─ 回复长度:", finalResponse.length, "字符");
+          console.log("  ├─ SSE传递的步骤数:", stepsFromSSE?.length, "个");
+          console.log("  └─ ref中的步骤数:", executionStepsRef.current?.length, "个");
 
           try {
             // ═══════════════════════════════════════════════════════════════════════════════
@@ -428,50 +428,53 @@ const NewChatContainer: React.FC = () => {
             // 2. 确认后端saveExecutionSteps在所有流程中都正确保存了数据
             // 3. 如有新问题，可考虑恢复前端保存，但需确保不覆盖后端数据
             // ═══════════════════════════════════════════════════════════════════════════════
-            console.log("✅ AI回复完成，后端已自动保存完整数据");
+            console.log("✅ [保存AI回复] 后端已自动保存完整数据，前端无需重复保存");
 
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
             // 原因：标题应该在用户修改时立即保存，避免版本冲突
             // 如果需要同步最新数据，应该在用户修改标题时处理
-            console.log("✅ AI回复保存成功");
+            console.log("✅ [保存AI回复] 保存成功！");
           } catch (saveError: any) {
-            console.error("保存AI回复或标题失败:", saveError);
-            console.error("使用的sessionId:", currentSessionId);
+            console.error("❌ [保存AI回复] 保存失败:", saveError?.message || saveError);
+            console.error("   └─ 保存时使用的会话ID:", currentSessionId);
             
             // 【小新修复 2026-03-14】分类处理不同错误类型
             const errorCode = saveError?.response?.status;
             const errorDetail = saveError?.response?.data?.detail;
             
             // 情况1：409版本冲突 - 不重试，直接提示
+            // 情况1：409版本冲突 - 数据被别人改了
             if (errorCode === 409) {
+              console.error("   └─ 错误类型: 版本冲突（409），数据已被其他修改");
               message.error("会话数据冲突，请刷新页面");
               // 尝试从服务器获取最新数据
               try {
                 const sessionData = await sessionApi.getSessionMessages(currentSessionId);
                 if (sessionData.title) setSessionTitle(sessionData.title);
               } catch (syncError) {
-                console.error("同步失败:", syncError);
+                console.error("   └─ 同步最新数据失败:", syncError);
               }
               return;
             }
             
-            // 情况2：业务错误（404会话不存在, 400参数错误等）- 不重试
+            // 情况2：业务错误（404会话不存在, 400参数错误等）
             if (errorCode === 404 || errorCode === 400) {
+              console.error("   └─ 错误类型: 业务错误（", errorCode, "）:", errorDetail);
               message.error(errorDetail || "保存失败，请刷新页面");
               return;
             }
             
             // 情况3：网络或服务器错误
-            // 【小新修复 2026-03-16】后端已实时保存，不需要前端重试保存
+            console.error("   └─ 错误类型: 网络或服务器错误（", errorCode || "unknown", "）");
             message.error("网络或服务器错误，请检查网络");
           }
         } else {
-          console.warn("⚠️ 无法保存AI回复：缺少sessionId或fullResponse");
-          console.log("  currentSessionId:", currentSessionId);
-          console.log("  fullResponse exists:", !!fullResponse);
+          console.warn("⚠️ [保存AI回复] 跳过保存：缺少必要数据");
+          console.log("   ├─ 会话ID是否为空:", !currentSessionId ? "是（跳过保存）" : "否");
+          console.log("   └─ 回复内容是否为空:", !fullResponse ? "是（跳过保存）" : "否");
         }
 
-         console.log("🔍 [onComplete] SSE流完成，设置loading=false");
+           console.log("📡 [onComplete] AI回答流式传输完成，开始保存数据...");
          
           // ========== 黄色结束标志 ==========
           logAIComplete(fullResponse?.length || 0);
@@ -488,7 +491,7 @@ const NewChatContainer: React.FC = () => {
          // 【小新第三修复 2026-03-02】清理ref和state
          pendingMessageRef.current = null; // 同步清理
          setPendingMessage(null); // 异步清理
-          console.log("✅ [onComplete] 处理完成");
+           console.log("✅ [onComplete] AI回答保存完成！");
         },
        [] // 依赖数组为空，因为使用 ref 而不是 state
      ),
