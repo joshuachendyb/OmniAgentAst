@@ -1362,10 +1362,13 @@ async def chat_stream(request: ChatRequest):
                 # 删除重复保存：上面已经保存过，不需要再保存一次
                         
         except asyncio.CancelledError:
-            # 【小沈修复】客户端断开连接，但后端继续运行
-            # 记录断开事实，继续与LLM通讯，继续保存数据
-            # 只是不再尝试给前端发送数据（因为连接已断开）
-            logger.warning("[前端断开] 检测到前端断开，但继续运行...")
+            # 【小沈修复】客户端断开连接，记录断开事实并保存数据
+            # 说明：
+            # 1. 前端断开后，SSE流会被Cancel，此时会进入此异常处理
+            # 2. 标记 frontend_disconnected = True，记录断开事实
+            # 3. 保存当前的 execution_steps 到数据库（已处理的内容会保留）
+            # 4. 由于外层循环会结束，不会真正"继续运行"
+            logger.warning("[前端断开] 检测到前端断开，正在保存数据...")
             
             # 标记状态，但不停止后端
             async with running_tasks_lock:
@@ -1377,17 +1380,17 @@ async def chat_stream(request: ChatRequest):
                 incident_step = {
                     'type': 'incident',
                     'incident_value': 'interrupted',
-                    'message': '客户端断开连接，后端继续运行',
+                    'message': '客户端断开连接，数据已保存',
                     'timestamp': create_timestamp()
                 }
                 current_execution_steps.append(incident_step)
                 await save_execution_steps_to_db(current_execution_steps, current_content)
+                logger.info("[前端断开] 数据已保存，等待外层循环结束...")
             except Exception as e:
                 logger.warning(f"[前端断开] 保存断开记录失败: {e}")
             
-            # 不 return，继续让 agent.run_stream() 运行
-            # 继续与LLM通讯，直到LLM完成
-            logger.info("[前端断开] 继续运行，等待LLM处理完成...")
+            # 不 return，让外层循环自然结束
+            # 注意：不会继续与LLM通讯，因为流已被取消
             
         except Exception as e:
             # 【小沈代修改 - 统一错误处理】使用 get_user_friendly_error 和 create_error_response
