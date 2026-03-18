@@ -858,10 +858,10 @@ const isUser = message.role === "user";
                     
                     // 其他类型：使用 StepRow 默认渲染
                     return <StepRow key={`step-${index}`} step={step} taskId={message.task_id} />;
-                   })}
-                 </>
-               );
-             })}
+                  })}
+                </>
+              );
+            })}
              
              {/* 【小新修复】在推理过程中显示"💭 思考中:"标签，推理完成后自动隐藏 */}
             {message.is_reasoning && (
