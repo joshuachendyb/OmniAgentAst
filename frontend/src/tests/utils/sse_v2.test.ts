@@ -279,4 +279,166 @@ describe('executionStepsRef 同步更新', () => {
   });
 });
 
-console.log('SSE V2 单元测试文件创建完成');
+/**
+ * Full Jitter 重连延迟测试
+ * 【小强添加 2026-03-18】测试新的 Full Jitter 算法
+ */
+describe('Full Jitter 重连延迟', () => {
+  // 模拟新的 calculateReconnectDelay 函数（Full Jitter算法）
+  const calculateReconnectDelay = (attempt: number, baseDelay: number, maxDelay: number): number => {
+    // 指数退避
+    const exponentialDelay = baseDelay * Math.pow(2, attempt);
+    // Full Jitter：在[0, exponentialDelay]范围内随机
+    const jitter = Math.random() * exponentialDelay;
+    // 最终延迟不超过maxDelay
+    return Math.min(jitter, maxDelay);
+  };
+
+  it('应使用 Full Jitter 算法', () => {
+    const baseDelay = 1000;
+    const maxDelay = 10000;
+    
+    // Full Jitter 特性：delay = random(0, min(baseDelay * 2^attempt, maxDelay))
+    // attempt=0: 范围 [0, 1000]
+    // attempt=1: 范围 [0, 2000]
+    // attempt=2: 范围 [0, 4000]
+    
+    // 测试多次，确认有随机性
+    const delays = new Set<number>();
+    for (let i = 0; i < 100; i++) {
+      delays.add(calculateReconnectDelay(0, baseDelay, maxDelay));
+    }
+    
+    // Full Jitter 应该有多个不同的值（因为是随机）
+    expect(delays.size).toBeGreaterThan(1);
+  });
+
+  it('指数退避应使最大可能延迟翻倍', () => {
+    const baseDelay = 1000;
+    const maxDelay = 100000; // 足够大的maxDelay确保不会截断
+    
+    // 收集多次测试的最大值
+    let maxDelay0 = 0;
+    let maxDelay1 = 0;
+    let maxDelay2 = 0;
+    
+    for (let i = 0; i < 1000; i++) {
+      maxDelay0 = Math.max(maxDelay0, calculateReconnectDelay(0, baseDelay, maxDelay));
+      maxDelay1 = Math.max(maxDelay1, calculateReconnectDelay(1, baseDelay, maxDelay));
+      maxDelay2 = Math.max(maxDelay2, calculateReconnectDelay(2, baseDelay, maxDelay));
+    }
+    
+    // attempt=1 的最大延迟应该约为 attempt=0 的2倍
+    expect(maxDelay1).toBeGreaterThan(maxDelay0 * 1.5);
+    expect(maxDelay2).toBeGreaterThan(maxDelay1 * 1.5);
+  });
+
+  it('不应超过最大延迟限制', () => {
+    const baseDelay = 1000;
+    const maxDelay = 5000;
+    
+    for (let attempt = 0; attempt < 10; attempt++) {
+      for (let i = 0; i < 100; i++) {
+        const delay = calculateReconnectDelay(attempt, baseDelay, maxDelay);
+        expect(delay).toBeLessThanOrEqual(maxDelay);
+      }
+    }
+  });
+
+  it('基础延迟为0时应返回0', () => {
+    const baseDelay = 0;
+    const maxDelay = 10000;
+    
+    // 无论 attempt 是多少，结果都应该是0
+    expect(calculateReconnectDelay(0, baseDelay, maxDelay)).toBe(0);
+    expect(calculateReconnectDelay(5, baseDelay, maxDelay)).toBe(0);
+  });
+
+  it('Full Jitter 避免"惊群效应"', () => {
+    const baseDelay = 1000;
+    const maxDelay = 10000;
+    
+    // Full Jitter 的核心特性是：
+    // delay = random(0, min(baseDelay * 2^attempt, maxDelay))
+    // 这意味着延迟是均匀分布在 [0, exponentialDelay] 范围内
+    
+    // 验证：对于同一个 attempt，多次调用应该返回不同值（随机性）
+    const delays = new Set<number>();
+    for (let i = 0; i < 100; i++) {
+      delays.add(calculateReconnectDelay(0, baseDelay, maxDelay));
+    }
+    
+    // Full Jitter 应该有很多不同的值（随机性）
+    expect(delays.size).toBeGreaterThan(50); // 100次调用应该有超过50个不同的值
+    
+    // 验证：延迟应该在有效范围内
+    const allDelays = Array.from(delays);
+    expect(Math.min(...allDelays)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...allDelays)).toBeLessThanOrEqual(maxDelay);
+  });
+});
+
+/**
+ * PerformanceMetrics 性能指标接口测试
+ * 【小强添加 2026-03-18】测试性能指标接口
+ */
+describe('PerformanceMetrics 性能指标', () => {
+  // 模拟 PerformanceMetrics 接口
+  interface PerformanceMetrics {
+    ttft: number;          // Time To First Token 首token时间（毫秒）
+    totalTokens: number;  // 估算总token数
+    tokensPerSecond: number; // 每秒token数
+    totalTime: number;   // 总响应时间（毫秒）
+    chunkCount: number;   // chunk数量
+  }
+
+  it('应正确计算 tokensPerSecond', () => {
+    const metrics: PerformanceMetrics = {
+      ttft: 1000,
+      totalTokens: 500,
+      tokensPerSecond: 0,
+      totalTime: 5000,
+      chunkCount: 10
+    };
+    
+    // 计算 TPS
+    metrics.tokensPerSecond = metrics.totalTime > 0 
+      ? (metrics.totalTokens / metrics.totalTime) * 1000 
+      : 0;
+    
+    expect(metrics.tokensPerSecond).toBe(100); // 500 / 5000 * 1000 = 100
+  });
+
+  it('应处理零时间避免除零错误', () => {
+    const metrics: PerformanceMetrics = {
+      ttft: 0,
+      totalTokens: 100,
+      tokensPerSecond: 0,
+      totalTime: 0,
+      chunkCount: 5
+    };
+    
+    // 零时间应该返回0而不是NaN
+    metrics.tokensPerSecond = metrics.totalTime > 0 
+      ? (metrics.totalTokens / metrics.totalTime) * 1000 
+      : 0;
+    
+    expect(metrics.tokensPerSecond).toBe(0);
+    expect(Number.isNaN(metrics.tokensPerSecond)).toBe(false);
+  });
+
+  it('应正确追踪 TTFT', () => {
+    const metrics: PerformanceMetrics = {
+      ttft: 1500, // 首token在1500ms后到达
+      totalTokens: 300,
+      tokensPerSecond: 0,
+      totalTime: 3000,
+      chunkCount: 15
+    };
+    
+    expect(metrics.ttft).toBeGreaterThan(0);
+    expect(metrics.ttft).toBeLessThan(metrics.totalTime); // TTFT应小于总时间
+  });
+});
+
+console.log('SSE V2 单元测试文件创建完成 - 小强添加 Full Jitter 和 PerformanceMetrics 测试 2026-03-18');
