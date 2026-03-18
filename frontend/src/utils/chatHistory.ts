@@ -68,6 +68,7 @@ export const parseMessage = (rawMessage: any): Message => {
     model: rawMessage.model || undefined,
     provider: rawMessage.provider || undefined,
     is_reasoning: rawMessage.is_reasoning,
+    isStreaming: rawMessage.is_streaming ?? rawMessage.isStreaming ?? false,
     // 错误相关字段（使用API文档的字段名 - snake_case）
     isError: rawMessage.is_error || false,
     errorType: rawMessage.error_type || undefined,
