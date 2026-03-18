@@ -912,35 +912,33 @@ const processSSEData = (
 
       // 【小查修复2026-03-10】新增：incident类型处理（后端发送type='incident'，incident_value字段）
       // 【2026-03-11 重命名】status_value -> incident_value
+      // 【小强优化 2026-03-18】统一调用onStep，避免重复
       case "incident": {
         const statusValue = rawData.incident_value;
         const statusMessage = rawData.message || "";
         step.type = statusValue as ExecutionStep["type"];
         step.content = statusMessage;
         
+        // 统一调用onStep（所有incident类型都需要添加到executionSteps）
+        onStep?.(step);
+        
         // 根据incident_value调用对应的回调
         switch (statusValue) {
           case "interrupted":
-            onStep?.(step);  // 添加到executionSteps
             onComplete?.(responseBufferRef.current, undefined);
             setIsReceiving(false);
             setIsConnected(false);
             break;
           case "paused":
-            onStep?.(step);  // 添加到executionSteps
             onPaused?.();
             break;
           case "resumed":
-            onStep?.(step);  // 添加到executionSteps
             onResumed?.();
             break;
-          case "retrying": {
+          case "retrying":
             // 【小查修复2026-03-13】传递wait_time给重试回调
-            const retryMsg = rawData.message || "正在重试...";
-            onStep?.(step);  // 添加到executionSteps
-            onRetry?.(retryMsg, rawData.wait_time);
+            onRetry?.(rawData.message || "正在重试...", rawData.wait_time);
             break;
-          }
           default:
             console.warn("[SSE] 未知的incident_value:", statusValue);
         }
