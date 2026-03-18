@@ -417,7 +417,12 @@ const MessageItem: React.FC<MessageItemProps> = ({
    * - 有执行步骤：导出JSON格式（包含所有8种type的完整字段）
    * - 是错误消息：导出JSON格式（包含完整error信息）
    * - 是incident消息：导出JSON格式（包含完整incident信息）
-   * 8种type: start, thought, action_tool, observation, chunk, final, error, incident
+   * 
+   * 【重要】8种type说明：
+   * - 内容步骤：start（开始）、chunk（AI回复内容片段）、final（最终回答）
+   *   【chunk是AI流式输出的内容片段，不是执行步骤，显示在AI回复区域，不在步骤列表】
+   * - 执行步骤：thought（思考）、action_tool（工具调用）、observation（工具结果）
+   * - 异常步骤：error（错误）、incident（中断）
    */
   const handleExport = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -884,9 +889,21 @@ const isUser = message.role === "user";
 
           <>
           {/* 【小强简化2026-03-18】按step顺序显示 - 用StepRow渲染 */}
+          {/* 【重要】过滤逻辑：
+           * - chunk：永远不在步骤列表显示（是AI回复内容，在AI回复区域显示）
+           * - final：普通对话模式（有chunk）时不显示，ReAct模式时显示
+           */}
           {(() => {
               const allSteps = message.executionSteps || [];
-              const sortedSteps = [...allSteps].sort((a, b) => {
+              // 判断是否是普通对话模式（有 chunk）
+              const hasChunk = allSteps.some(step => step.type === 'chunk');
+              // 过滤：普通对话模式下过滤 chunk 和 final
+              const filteredSteps = allSteps.filter(step => {
+                if (step.type === 'chunk') return false;
+                if (step.type === 'final' && hasChunk) return false;
+                return true;
+              });
+              const sortedSteps = [...filteredSteps].sort((a, b) => {
                 if (a.step && b.step) return a.step - b.step;
                 return 0;
               });
@@ -904,6 +921,12 @@ const isUser = message.role === "user";
 
             {/* 【小查修复】4. AI回复chunk - 逐个渲染 */}
             {/* 【小新修复 2026-03-14】is_reasoning切换时自动添加换行 */}
+            {/* 
+             * 【重要】chunk 显示逻辑分两种情况：
+             * 1. SSE实时模式（isStreaming=true）：逐个渲染chunk，message.content作为备用
+             * 2. 历史模式（isStreaming=false）：逐个渲染chunk，数据不完整时用message.content补充
+             * 【chunk是AI流式输出的内容片段，不是执行步骤，显示在AI回复区域，不在步骤列表】
+             */ }
             {(() => {
               const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
               
