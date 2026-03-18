@@ -53,10 +53,10 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
 
   const labelMap: Record<string, string> = {
     start: "开始",
-    thought: "思考",
-    action_tool: "工具",
-    observation: "结果",
-    final: "答案",
+    thought: "分析",
+    action_tool: "执行",
+    observation: "观察",
+    final: "总结",
     error: "错误",
     paused: "暂停",
     resumed: "恢复",
