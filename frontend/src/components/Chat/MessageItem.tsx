@@ -33,22 +33,24 @@ import ErrorDetail from "./ErrorDetail";
 /**
  * 步骤行组件 - 单行步骤显示（优化后新增）
  * 思考和执行分开渲染，用颜色区分类型
- * 【小新重构2026-03-09】添加分页支持
+ * 【小强优化 2026-03-18】UX 视觉升级：渐变徽章、柔和背景、精致阴影
+ * 【小新重构 2026-03-09】添加分页支持
  */
 const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, taskId }) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   
-  const colorMap: Record<string, string> = {
-    start: "#1890ff",
-    thought: "#faad14",
-    action_tool: "#1890ff",
-    observation: "#52c41a",
-    final: "#52c41a",
-    error: "#cf1322",
-    paused: "#fa8c16",
-    resumed: "#52c41a",
-    interrupted: "#cf1322",
-    retrying: "#1890ff",
+  // 【小强优化 2026-03-18】渐变色方案
+  const gradientMap: Record<string, string> = {
+    start: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
+    thought: "linear-gradient(135deg, #faad14 0%, #d48806 100%)",
+    action_tool: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
+    observation: "linear-gradient(135deg, #52c41a 0%, #389e0d 100%)",
+    final: "linear-gradient(135deg, #52c41a 0%, #389e0d 100%)",
+    error: "linear-gradient(135deg, #ff4d4f 0%, #cf1322 100%)",
+    paused: "linear-gradient(135deg, #fa8c16 0%, #d46b08 100%)",
+    resumed: "linear-gradient(135deg, #52c41a 0%, #389e0d 100%)",
+    interrupted: "linear-gradient(135deg, #ff4d4f 0%, #cf1322 100%)",
+    retrying: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
   };
 
   const labelMap: Record<string, string> = {
@@ -64,10 +66,90 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
     retrying: "重试",
   };
 
-  const color = colorMap[step.type] || "#666";
-  const label = labelMap[step.type] || "步骤";
+  const iconMap: Record<string, string> = {
+    start: "🚀",
+    thought: "💭",
+    action_tool: "⚙️",
+    observation: "🔍",
+    final: "✅",
+    error: "❌",
+    paused: "⏸️",
+    resumed: "▶️",
+    interrupted: "⚠️",
+    retrying: "🔄",
+  };
 
-  // 【小新重构2026-03-09】处理加载更多
+  const gradient = gradientMap[step.type] || "#666";
+  const label = labelMap[step.type] || "步骤";
+  const icon = iconMap[step.type] || "";
+
+  // 【小强优化 2026-03-18】步骤编号颜色随类型变化
+  const getStepBadgeStyle = () => {
+    const baseStyle: React.CSSProperties = {
+      background: gradient,
+      color: "white",
+      padding: "2px 8px",
+      borderRadius: 6,
+      fontSize: 11,
+      marginRight: 8,
+      fontWeight: 600,
+      display: "inline-block",
+      minWidth: 50,
+      textAlign: "center",
+      boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+    };
+    return baseStyle;
+  };
+
+  // 【小强优化 2026-03-18】标签样式
+  const getLabelStyle = () => {
+    return {
+      color: gradient,
+      fontWeight: 600,
+      marginRight: 8,
+      fontSize: 13,
+    };
+  };
+
+  // 【小强优化 2026-03-18】内容区域样式
+  const getContentStyle = () => {
+    const baseStyle: React.CSSProperties = {
+      color: "#333",
+      wordBreak: "break-word",
+      fontSize: 13,
+      lineHeight: 1.6,
+    };
+    return baseStyle;
+  };
+
+  // 【小强优化 2026-03-18】思考内容背景
+  const getThoughtBackground = () => {
+    return {
+      background: "linear-gradient(135deg, #fff7e6 0%, #fffbe6 100%)",
+      border: "1px solid #ffd591",
+      borderRadius: 8,
+      padding: "8px 12px",
+      marginTop: 4,
+    };
+  };
+
+  // 【小强优化 2026-03-18】文件列表背景
+  const getFileListBackground = () => {
+    return {
+      background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
+      border: "1px solid #b7eb8f",
+      borderRadius: 8,
+      padding: "10px 14px",
+      marginTop: 6,
+      fontSize: "0.9em",
+      whiteSpace: "pre-wrap",
+      maxHeight: 300,
+      overflow: "auto",
+      boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
+    };
+  };
+
+  // 【小新重构 2026-03-09】处理加载更多
   const handleLoadMore = async () => {
     if (!step.raw_data?.has_more || !step.raw_data?.next_page_token || !taskId) {
       return;
@@ -96,51 +178,87 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
   const hasMore = step.raw_data?.has_more === true && !!step.raw_data?.next_page_token;
 
   return (
-    <div style={{ marginBottom: 4, marginRight: 30 }}>
-      {/* 【小强修复 2026-03-18】显示步骤编号 */}
-      {step.step && (
-        <span style={{ 
-          background: "#1890ff", 
-          color: "white", 
-          padding: "1px 6px", 
-          borderRadius: 4, 
-          fontSize: 11, 
-          marginRight: 8,
-          fontWeight: 500
-        }}>
-          步骤{step.step}
+    <div style={{ 
+      marginBottom: 8, 
+      marginRight: 30,
+      padding: "8px 12px",
+      borderRadius: 8,
+      background: "rgba(0,0,0,0.02)",
+      transition: "all 0.2s ease",
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.background = "rgba(0,0,0,0.04)";
+      e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.background = "rgba(0,0,0,0.02)";
+      e.currentTarget.style.boxShadow = "none";
+    }}
+    >
+      <div style={{ display: "flex", alignItems: "flex-start", flexWrap: "wrap" as const }}>
+        {/* 【小强优化 2026-03-18】步骤编号徽章 */}
+        {step.step && (
+          <span style={getStepBadgeStyle()}>
+            步骤{step.step}
+          </span>
+        )}
+        {/* 【小强优化 2026-03-18】标签带图标 */}
+        <span style={getLabelStyle()}>
+          {icon} {label}：
         </span>
-      )}
-      <span style={{ color, fontWeight: 500, marginRight: 8 }}>
-        {label}：
-      </span>
-      <span style={{ color: "#333", wordBreak: "break-word" }}>
+      </div>
+      <div style={{ ...getContentStyle(), marginTop: 4, marginLeft: 66 }}>
         {step.type === "action_tool" && (
           <>
             {step.action_description || step.tool_name || "执行中..."}
             {step.tool_params && (
-              <span style={{ color: "#999", marginLeft: 8, fontSize: 12 }}>
-              参数：{JSON.stringify(step.tool_params)}
-              </span>
+              <div style={{ 
+                marginTop: 6, 
+                fontSize: 12, 
+                color: "#666",
+                background: "#f5f5f5",
+                padding: "6px 10px",
+                borderRadius: 6,
+                fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+              }}>
+                参数：{JSON.stringify(step.tool_params, null, 2)}
+              </div>
             )}
-            {/* 【小新重构2026-03-09】显示分页信息 */}
+            {/* 【小新重构 2026-03-09】显示分页信息 */}
             {step.raw_data && (
               <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
                 {step.raw_data.total && (
-                  <span style={{ marginRight: 12 }}>
-                    共 {step.raw_data.total} 个项目
+                  <span style={{ 
+                    marginRight: 12,
+                    background: "#e6f7ff",
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    color: "#1890ff",
+                    fontWeight: 500,
+                  }}>
+                    📊 共 {step.raw_data.total} 个项目
                   </span>
                 )}
                 {hasMore && (
                   <span 
                     onClick={handleLoadMore}
                     style={{ 
-                      cursor: "pointer", 
+                      cursor: isLoadingMore ? "not-allowed" : "pointer", 
                       color: isLoadingMore ? "#999" : "#1890ff",
-                      textDecoration: "underline"
+                      textDecoration: isLoadingMore ? "none" : "underline",
+                      fontWeight: 500,
+                      transition: "all 0.2s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isLoadingMore) {
+                        e.currentTarget.style.color = "#096dd9";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = isLoadingMore ? "#999" : "#1890ff";
                     }}
                   >
-                    {isLoadingMore ? "加载中..." : "加载更多"}
+                    {isLoadingMore ? "⏳ 加载中..." : "📄 加载更多"}
                   </span>
                 )}
               </div>
@@ -151,7 +269,13 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
           <>
             {/* 显示 Agent 的思考过程 */}
             {step.thought && (
-              <div style={{ color: "#888", fontStyle: "italic", marginBottom: 4, fontSize: "0.95em" }}>
+              <div style={{ 
+                ...getThoughtBackground(),
+                color: "#888",
+                fontStyle: "italic",
+                marginBottom: 8,
+                fontSize: "0.95em",
+              }}>
                 💭 {step.thought}
               </div>
             )}
@@ -164,26 +288,22 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
                 <div>
                   {/* 文件列表框框 */}
                   {hasEntries && (
-                    <div style={{ 
-                      background: "#f5f5f5", 
-                      borderRadius: 6, 
-                      padding: "8px 12px", 
-                      marginBottom: 8,
-                      fontSize: "0.9em",
-                      whiteSpace: "pre-wrap",
-                      maxHeight: 300,
-                      overflow: "auto"
-                    }}>
+                    <div style={getFileListBackground()}>
                       {obsResult.entries.map((entry: any, idx: number) => (
                         <React.Fragment key={`entry-${idx}`}>
-                          {entry.type === "directory" ? "📁" : "📄"} {entry.name}
+                          <div style={{ 
+                            padding: "4px 0",
+                            borderBottom: idx < obsResult.entries.length - 1 ? "1px solid #e8e8e8" : "none",
+                          }}>
+                            {entry.type === "directory" ? "📁" : "📄"} {entry.name}
+                          </div>
                         </React.Fragment>
                       ))}
                     </div>
                   )}
                   {/* summary 字符串 */}
                   {typeof step.result === "string" && (
-                    <div>{step.result}</div>
+                    <div style={{ marginTop: 6 }}>{step.result}</div>
                   )}
                 </div>
               );
@@ -192,34 +312,39 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
         )}
         {step.type === "start" && (
           <span style={{ 
-            color: colorMap.start,
-            fontWeight: 500,
+            color: "#1890ff",
+            fontWeight: 600,
+            fontSize: 14,
           }}>
             🚀 {step.task_id || "任务开始"}
           </span>
         )}
         {step.type === "thought" && (
           <span style={{ 
-            color: colorMap.thought,
-            fontWeight: 500,
-            padding: "4px 8px",
-            borderRadius: 4,
-            background: "#faad1415",
+            ...getThoughtBackground(),
           }}>
             💭 {step.thinking_prompt || step.content || ""}
           </span>
         )}
         {step.type === "final" && (
-          <span style={{ color: colorMap.final, fontWeight: 500 }}>
+          <span style={{ 
+            color: "#52c41a",
+            fontWeight: 600,
+            fontSize: 14,
+          }}>
             ✅ {step.content || ""}
           </span>
         )}
         {step.type === "error" && (
-          <span style={{ color: colorMap.error, fontWeight: 500 }}>
-            ❌ 错误: {step.error_message || ""}
+          <span style={{ 
+            color: "#ff4d4f",
+            fontWeight: 600,
+            fontSize: 13,
+          }}>
+            ❌ 错误：{step.error_message || ""}
           </span>
         )}
-      </span>
+      </div>
     </div>
   );
 };
