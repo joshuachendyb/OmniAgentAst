@@ -858,12 +858,12 @@ const isUser = message.role === "user";
                     
                     // 其他类型：使用 StepRow 默认渲染
                     return <StepRow key={`step-${index}`} step={step} taskId={message.task_id} />;
-                  })}
-                </>
-              );
-            })()}
-
-            {/* 【小新修复】在推理过程中显示"💭 思考中:"标签，推理完成后自动隐藏 */}
+                   })}
+                 </>
+               );
+             })}
+             
+             {/* 【小新修复】在推理过程中显示"💭 思考中:"标签，推理完成后自动隐藏 */}
             {message.is_reasoning && (
               <span style={{ color: '#888', fontSize: '0.85em', marginRight: 4, fontWeight: 500 }}>
                 💭 思考中:
