@@ -179,6 +179,7 @@ class ConfigUpdate(BaseModel):
     theme: Optional[str] = Field("light", description="主题: light | dark")
     language: Optional[str] = Field("zh-CN", description="语言: zh-CN | en-US")
     security: Optional[SecurityConfig] = Field(None, description="安全配置")
+    max_steps: Optional[int] = Field(None, description="Agent最大迭代次数")
 
 
 class ConfigResponse(BaseModel):
@@ -189,6 +190,7 @@ class ConfigResponse(BaseModel):
     theme: str = Field(..., description="当前主题")
     language: str = Field(..., description="当前语言")
     security: Optional[SecurityConfig] = Field(None, description="安全配置")
+    max_steps: int = Field(100, description="Agent最大迭代次数")
 
 
 class ConfigValidateRequest(BaseModel):
@@ -298,7 +300,8 @@ async def get_system_config():
             api_key_configured=api_key_configured,
             theme=theme,
             language=language,
-            security=security_config
+            security=security_config,
+            max_steps=config.get('app', {}).get('max_steps', 100)
         )
         
     except Exception as e:
@@ -417,6 +420,15 @@ async def update_config(config_update: ConfigUpdate):
         # 更新语言
         if config_update.language:
             config_data['app']['language'] = config_update.language
+        
+        # 更新 max_steps
+        if config_update.max_steps is not None:
+            if config_update.max_steps < 1:
+                raise HTTPException(status_code=400, detail="max_steps 必须大于等于 1")
+            if config_update.max_steps > 1000:
+                raise HTTPException(status_code=400, detail="max_steps 不能超过 1000")
+            config_data['app']['max_steps'] = config_update.max_steps
+            logger.info(f"更新 max_steps 成功: {config_update.max_steps}")
         
         # 更新安全配置
         if config_update.security:

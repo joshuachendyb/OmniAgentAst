@@ -658,7 +658,7 @@ class FileOperationAgent:
         task: str,
         context: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
-        max_steps: int = 10
+        max_steps: int = 100
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         【Phase2新增】异步流式执行Agent，每轮循环完成后立即yield输出
