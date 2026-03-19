@@ -145,6 +145,119 @@ def create_incident_data(incident_value: str, message: str, step: Optional[int] 
     return data
 
 
+# ============================================================
+# Start1 函数 - 小沈添加【2026-03-19】
+# 用于整理start阶段的逻辑，不带LLM调用
+# 备用版本，可与 Start2（带LLM调用）相互替换调试
+# ============================================================
+
+async def process_start_v1(
+    request,                 # ChatRequest
+    ai_service,              # AIService
+    task_id: str,            # 任务ID
+    step_counter,             # 步骤计数器（引用）
+    current_execution_steps,  # 执行步骤列表（引用）
+    current_content,         # 当前内容（引用）
+    save_func,               # 保存到数据库的函数
+    add_step_func,           # 添加步骤到数据库的函数
+    next_step                # next_step()函数（外部传入）
+) -> AsyncGenerator[dict, None]:
+    """
+    处理start阶段（Start1版本，不带LLM调用）
+    
+    功能：
+    1. 构建 display_name
+    2. security_check
+    3. 构建 start_data
+    4. yield start_data（第一次）
+    5. 保存数据库
+    6. if not is_safe → yield error, return
+    
+    Args:
+        request: ChatRequest 用户请求
+        ai_service: AIService AI服务
+        task_id: str 任务ID
+        step_counter: 步骤计数器（引用）
+        current_execution_steps: 执行步骤列表（引用）
+        current_content: 当前内容（引用）
+        save_func: 保存到数据库的函数 save_execution_steps_to_db
+        add_step_func: 添加步骤到数据库的函数 add_step_and_save
+        next_step: next_step()函数（外部传入）
+    
+    Yields:
+        dict: start_data 或 error_data
+    """
+    # 1. 构建 display_name（AI显示名称）
+    display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
+    
+    # 缓存 display_name
+    if request.session_id:
+        cache_display_name(request.session_id, display_name)
+    
+    # 2. 执行 security_check → 安全检查结果
+    last_message = request.messages[-1].content if request.messages else ""
+    security_check_result = check_command_safety(last_message)
+    
+    # 4. 构建 start_data 字典
+    start_data = {
+        'type': 'start',
+        'step': next_step(),
+        'timestamp': create_timestamp(),
+        'display_name': display_name,
+        'provider': ai_service.provider,
+        'model': ai_service.model,
+        'task_id': task_id,
+        'security_check': {
+            'is_safe': security_check_result.get('is_safe', True),
+            'risk_level': security_check_result.get('risk_level'),
+            'risk': security_check_result.get('risk'),
+            'blocked': security_check_result.get('blocked', False)
+        }
+    }
+    
+    logger.info(f"[Step start] 发送start步骤 - step={start_data['step']}, model={ai_service.model}, provider={ai_service.provider}, task_id={task_id[:8]}..., security_check.is_safe={security_check_result.get('is_safe', True)}")
+    
+    # 5. yield start_data（第一次）
+    yield start_data
+    
+    # 6. 保存到数据库
+    current_execution_steps.append(start_data)
+    await save_func(current_execution_steps, current_content)
+    
+    # 7. if not is_safe → yield error, return
+    if not security_check_result.get('is_safe', True):
+        risk = security_check_result.get('risk', '未知风险')
+        error_data = {
+            'type': 'error',
+            'step': next_step(),
+            'code': 'SECURITY_BLOCKED',
+            'message': f'危险操作需确认: {risk}',
+            'error_type': 'security',
+            'details': f"risk_level: {security_check_result.get('risk_level')}",
+            'retryable': False,
+            'timestamp': create_timestamp(),
+            'model': request.model,
+            'provider': request.provider
+        }
+        logger.info(f"[Step error] 发送error步骤(安全检测拦截) - step={error_data['step']}, code={error_data['code']}, message={error_data['message']}, retryable={error_data['retryable']}")
+        yield error_data
+        
+        # 保存error步骤到数据库
+        error_step = {
+            'type': 'error',
+            'step': error_data['step'],
+            'code': error_data['code'],
+            'message': error_data['message'],
+            'error_type': error_data['error_type'],
+            'timestamp': create_timestamp()
+        }
+        await add_step_func(error_step, f"错误: {error_data['message']}")
+        return
+    
+    # 返回 is_safe 标志和 display_name，供主流程判断
+    yield {'_start_complete': True, 'is_safe': True, 'display_name': display_name}
+
+
 def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
     """
     获取用户友好的错误信息
@@ -632,82 +745,37 @@ async def chat_stream(request: ChatRequest):
         
         logger.info(f"[LLM Total Counter] ====== New conversation started, counter reset to 0 ======")
         
-        # 【前端小新代修改】在流式响应开始时发送start事件
-        display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
-        
-        # 缓存 display_name
-        if request.session_id:
-            cache_display_name(request.session_id, display_name)
-        
-        # 【问题1修复】在start阶段添加安全检查
-        # 获取最后一条用户消息进行安全检查
-        last_message = request.messages[-1].content if request.messages else ""
-        security_check_result = check_command_safety(last_message)
-        
-        # 步骤计数器（用于统一生成step序号）
+        # 步骤计数器（用于统一生成step序号）- 定义在generate作用域内，供Start1和后续阶段共用
         step_counter = 0
-        
         def next_step():
             nonlocal step_counter
             step_counter += 1
             return step_counter
         
-        # 发送 start 步骤（包含security_check）
-        start_data = {
-            'type': 'start',
-            'step': next_step(),
-            'timestamp': create_timestamp(),
-            'display_name': display_name,
-            'provider': ai_service.provider,
-            'model': ai_service.model,
-            'task_id': task_id,
-            'security_check': {
-                'is_safe': security_check_result.get('is_safe', True),
-                'risk_level': security_check_result.get('risk_level'),
-                'risk': security_check_result.get('risk'),
-                'blocked': security_check_result.get('blocked', False)
-            }
-        }
-        logger.info(f"[Step start] 发送start步骤 - step={start_data['step']}, model={ai_service.model}, provider={ai_service.provider}, task_id={task_id[:8]}..., security_check.is_safe={security_check_result.get('is_safe', True)}")
+        # 初始化 display_name（供后续阶段使用）
+        display_name = ""
         
-        yield f"data: {json.dumps(start_data)}\n\n"
-        
-        # ⭐ 【小沈添加 2026-03-16 v11.0】start步骤后保存到数据库
-        # 目的：解决页面切换/刷新导致的数据丢失问题 - 后端自动保存作为核心保障
-        current_execution_steps.append(start_data)
-        await save_execution_steps_to_db(current_execution_steps, current_content)
-        
-        # 如果安全检查未通过，直接返回错误
-        if not security_check_result.get('is_safe', True):
-            risk = security_check_result.get('risk', '未知风险')
-            error_data = {
-                'type': 'error',
-                'step': next_step(),
-                'code': 'SECURITY_BLOCKED',
-                'message': f'危险操作需确认: {risk}',
-                'error_type': 'security',
-                'details': f"risk_level: {security_check_result.get('risk_level')}",
-                'retryable': False,
-                'timestamp': create_timestamp(),
-                'model': request.model,
-                'provider': request.provider
-            }
-            logger.info(f"[Step error] 发送error步骤(安全检测拦截) - step={error_data['step']}, code={error_data['code']}, message={error_data['message']}, retryable={error_data['retryable']}")
-            yield f"data: {json.dumps(error_data)}\n\n"
+        # ⭐ 【Start1调用】调用 process_start_v1 处理start阶段
+        async for start_result in process_start_v1(
+            request, ai_service, task_id,
+            step_counter, current_execution_steps, current_content,
+            save_execution_steps_to_db, add_step_and_save, next_step
+        ):
+            # 检查是否是控制消息
+            if isinstance(start_result, dict) and start_result.get('_start_complete'):
+                # Start阶段完成，安全检查通过，继续后续逻辑
+                is_safe = start_result.get('is_safe', True)
+                display_name = start_result.get('display_name', '')
+                if is_safe:
+                    logger.info(f"[Start1] start阶段完成，is_safe={is_safe}，display_name={display_name}，继续执行")
+                continue
             
-            # 【小沈修复 2026-03-16】保存error步骤到数据库
-            # 【小强修复 2026-03-18】添加step字段
-            error_step = {
-                'type': 'error',
-                'step': error_data['step'],  # 添加step字段
-                'code': error_data['code'],
-                'message': error_data['message'],
-                'error_type': error_data['error_type'],
-                'timestamp': create_timestamp()
-            }
-            # 【使用统一函数】保存error步骤到数据库
-            await add_step_and_save(error_step, f"错误: {error_data['message']}")
-            return
+            # yield start_data 或 error_data
+            yield f"data: {json.dumps(start_result)}\n\n"
+            
+            # 如果是error，直接return
+            if isinstance(start_result, dict) and start_result.get('type') == 'error':
+                return
         
         try:
             # 获取最后一条用户消息
