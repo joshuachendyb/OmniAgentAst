@@ -40,6 +40,13 @@ from app.services.file_operations.tools import get_file_tools
 from app.services.file_operations.agent import FileOperationAgent
 from app.services.shell_security import check_command_safety
 from app.api.v1.intent_classifier import detect_file_operation_intent  # 【小沈引用原始函数 2026-03-17】
+from app.api.v1.types.process_action import (
+    process_file_operation,
+    build_action_notification,
+    build_observation_security,
+    handle_action_event,
+    handle_observation_event
+)
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name  # ⭐ 【小沈添加 2026-03-03】
 from app.utils.retry_controller import RetryController  # 【小沈-2026-03-14添加】统一的空闲超时和重试控制器
@@ -151,7 +158,7 @@ def create_incident_data(incident_value: str, message: str, step: Optional[int] 
 # 备用版本，可与 Start2（带LLM调用）相互替换调试
 # ============================================================
 
-async def process_start_v1(
+async def start1(
     request,                 # ChatRequest
     ai_service,              # AIService
     task_id: str,            # 任务ID
@@ -325,6 +332,48 @@ async def thought1(
     
     # 5. 返回 thought_data 供后续处理
     yield thought_data
+
+
+# ============================================================
+# handle_thought_event - 处理 Agent 返回的 thought 事件
+# 对应 thought1 版本（不含 LLM 调用）
+# ============================================================
+def handle_thought_event(raw_event: Dict, step_func: Any) -> Dict:
+    """
+    处理 Agent 返回的 thought 事件，构建 thought_data
+
+    设计文档字段对照（thought类型）：
+    - type: thought
+    - step: next_step()
+    - timestamp: create_timestamp()
+    - content: event.content
+    - reasoning: event.reasoning
+    - action_tool: event.action_tool
+    - params: event.params
+
+    Args:
+        raw_event: Agent 返回的原始 event 字典
+        step_func: next_step() 函数
+
+    Returns:
+        thought_data 字典
+    """
+    thought_data = {
+        'type': 'thought',
+        'step': step_func(),
+        'timestamp': create_timestamp(),
+        'content': raw_event.get('content', ''),
+        'reasoning': raw_event.get('reasoning', ''),
+        'action_tool': raw_event.get('action_tool', ''),
+        'params': raw_event.get('params', {})
+    }
+    logger.info(
+        f"[Step thought] 发送thought步骤 - step={thought_data['step']}, "
+        f"action_tool={thought_data['action_tool']}, "
+        f"reasoning长度={len(thought_data['reasoning'] or '')}, "
+        f"content长度={len(thought_data['content'] or '')}"
+    )
+    return thought_data
 
 
 def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
@@ -824,8 +873,8 @@ async def chat_stream(request: ChatRequest):
         # 初始化 display_name（供后续阶段使用）
         display_name = ""
         
-        # ⭐ 【Start1调用】调用 process_start_v1 处理start阶段
-        async for start_result in process_start_v1(
+        # ⭐ 【start1调用】调用 start1 处理start阶段
+        async for start_result in start1(
             request, ai_service, task_id,
             step_counter, current_execution_steps, current_content,
             save_execution_steps_to_db, add_step_and_save, next_step
@@ -879,282 +928,104 @@ async def chat_stream(request: ChatRequest):
             is_file_op, _, confidence = detect_file_operation_intent(last_message)
             
             if is_file_op and confidence >= 0.3:
-                # 文件操作：逐步推送执行步骤
-                # 【问题2修复】type改为action_tool，添加必需字段
-                action1_data = {
-                    'type': 'action_tool',
-                    'step': next_step(),
-                    'timestamp': create_timestamp(),
-                    'tool_name': 'notification',
-                    'tool_params': {'description': '检测到文件操作意图，开始执行...'},
-                    'execution_status': 'success',
-                    'summary': '检测到文件操作意图，开始执行...',
-                    'raw_data': None,
-                    'action_retry_count': 0
-                }
-                yield f"data: {json.dumps(action1_data)}\n\n"
-                
-                # ⭐ 【小沈添加 2026-03-16 v11.0】action1步骤后保存到数据库
-                current_execution_steps.append(action1_data)
-                await save_execution_steps_to_db(current_execution_steps, current_content)
-                
-                await asyncio.sleep(0.3)
-                
-                # 检查是否被中断
-                async with running_tasks_lock:
-                    if running_tasks.get(task_id, {}).get("cancelled", False):
-                        # 【使用统一函数】创建incident数据
-                        interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
-                        logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
-                        yield f"data: {json.dumps(interrupted_data)}\n\n"
-                        return
-                
-                # 安全检测
-                safety_result = check_command_safety(last_message)
-                is_safe = safety_result.get("is_safe", True)
-                risk = safety_result.get("risk", "")
-                if not is_safe:
-                    # 【问题6修复】使用统一错误格式
-                    logger.info(f"[Step error] 发送error步骤(安全检测) - risk={risk}")
-                    error_message = f"危险操作需确认: {risk}"
-                    yield create_error_response(
-                        error_type="security_error",
-                        message=error_message,
-                        code="SECURITY_BLOCKED",
-                        model=ai_service.model,
-                        provider=ai_service.provider,
-                        retryable=False,
-                        step=next_step()
-                    )
-                    
-                    # 【小沈修复 2026-03-16】保存error步骤到数据库
-                    # 【小强修复 2026-03-18】添加step字段
-                    error_step = {
-                        'type': 'error',
-                        'step': next_step(),  # 添加step字段
-                        'error_type': 'security_error',
-                        'message': error_message,
-                        'code': 'SECURITY_BLOCKED',
-                        'timestamp': create_timestamp()
-                    }
-                    # 【使用统一函数】保存error步骤到数据库
-                    await add_step_and_save(error_step, f"安全拦截: {risk}")
-                    return
-                
-                # 【小健检查修复】遵循字段设计原则5：禁止兼容字段
-                # 【问题4修复】observation使用设计文档字段
-                # 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
-                observation1_data = {
-                    'type': 'observation',
-                    'step': next_step(),
-                    'timestamp': create_timestamp(),
-                    'obs_execution_status': 'success',
-                    'obs_summary': f'安全检测{"通过" if is_safe else "未通过"}',
-                    'obs_raw_data': {'is_safe': is_safe, 'risk': risk},
-                    'content': '',  # 安全检测没有思考过程
-                    'obs_reasoning': '',
-                    'obs_action_tool': 'security_check',
-                    'obs_params': {},
-                    'is_finished': True
-                }
-                logger.info(f"[Step observation] 发送observation步骤 - step={observation1_data['step']}, is_finished={observation1_data['is_finished']}, obs_execution_status={observation1_data['obs_execution_status']}")
-                yield f"data: {json.dumps(observation1_data)}\n\n"
-                
-                # ⭐ 【小沈添加 2026-03-16 v11.0】observation1步骤后保存到数据库
-                current_execution_steps.append(observation1_data)
-                await save_execution_steps_to_db(current_execution_steps, current_content)
-                
-                await asyncio.sleep(0.3)
-                
-                # 创建Agent执行
-                session_id = str(uuid.uuid4())
-                ai_service = AIServiceFactory.get_service()
-                
-                # 定义llm_client函数（适配FileOperationAgent）
-                async def llm_client(message, history=None):
-                    response = await ai_service.chat(message, history)
-                    # 转换为Agent需要的格式
-                    return type('obj', (object,), {'content': response.content})()
-                
-                agent = FileOperationAgent(
-                    llm_client=llm_client,
-                    session_id=session_id
-                )
-                
-                # 【问题2修复】type改为action_tool，添加必需字段
-                action2_data = {
-                    'type': 'action_tool',
-                    'step': next_step(),
-                    'timestamp': create_timestamp(),
-                    'tool_name': 'notification',
-                    'tool_params': {'description': '执行文件操作...'},
-                    'execution_status': 'success',
-                    'summary': '执行文件操作...',
-                    'raw_data': None,
-                    'action_retry_count': 0
-                }
-                yield f"data: {json.dumps(action2_data)}\n\n"
-                
-                # ⭐ 【小沈添加 2026-03-16 v11.0】action2步骤后保存到数据库
-                current_execution_steps.append(action2_data)
-                await save_execution_steps_to_db(current_execution_steps, current_content)
-                
-                # 流式执行（每步检查中断）
-                try:
-                    # 【小沈添加】从配置中读取 max_steps
-                    from app.config import get_config
-                    config = get_config()
-                    max_steps = config.get('app', {}).get('max_steps', 100)
-                    
-                    # 【Phase4核心修改】使用run_stream异步流式输出
-                    async for event in agent.run_stream(last_message, max_steps=max_steps):
-                        # 每步检查是否被中断
-                        async with running_tasks_lock:
-                            if running_tasks.get(task_id, {}).get("cancelled", False):
-                                # 【使用统一函数】创建incident数据
-                                interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
-                                logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
-                                yield f"data: {json.dumps(interrupted_data)}\n\n"
-                                break
-                        
-                        event_type = event.get('type')
-                        
+                # 【Phase5重构】使用 process_file_operation 处理文件操作
+                async for event_data in process_file_operation(
+                    last_message=last_message,
+                    ai_service=ai_service,
+                    task_id=task_id,
+                    current_execution_steps=current_execution_steps,
+                    current_content=current_content,
+                    running_tasks=running_tasks,
+                    running_tasks_lock=running_tasks_lock,
+                    next_step=next_step,
+                    add_step_and_save=add_step_and_save
+                ):
+                    event_keys = set(event_data.keys())
+
+                    # 处理 action_tool 事件
+                    if '_action' in event_keys:
+                        action_data = event_data['_action']
+                        yield f"data: {json.dumps(action_data)}\n\n"
+                        continue
+
+                    # 处理 observation 事件
+                    if '_observation' in event_keys:
+                        observation_data = event_data['_observation']
+                        yield f"data: {json.dumps(observation_data)}\n\n"
+                        continue
+
+                    # 处理错误事件
+                    if '_error' in event_keys:
+                        yield event_data['_error']
+                        continue
+
+                    # 处理中断事件
+                    if '_incident' in event_keys:
+                        yield f"data: {json.dumps(event_data['_incident'])}\n\n"
+                        continue
+
+                    # 处理原始事件（thought/final/error）
+                    if '_raw_event' in event_keys:
+                        raw_event = event_data['_raw_event']
+                        event_type = raw_event.get('type')
+
                         if event_type == 'thought':
-                            # Thought阶段
-                            thought_data = {
-                                'type': 'thought',
-                                'step': next_step(),
-                                'timestamp': create_timestamp(),
-                                'content': event.get('content', ''),
-                                'reasoning': event.get('reasoning', ''),
-                                'action_tool': event.get('action_tool', ''),
-                                'params': event.get('params', {})
-                            }
-                            logger.info(f"[Step thought] 发送thought步骤 - step={thought_data['step']}, action_tool={thought_data['action_tool']}, reasoning长度={len(thought_data['reasoning'] or '')}, content长度={len(thought_data['content'] or '')}")
+                            thought_data = handle_thought_event(raw_event, next_step)
                             yield f"data: {json.dumps(thought_data)}\n\n"
-                            
-                            # ⭐ 【小沈添加 2026-03-16 v11.0】thought步骤后保存到数据库
                             current_execution_steps.append(thought_data)
                             await save_execution_steps_to_db(current_execution_steps, current_content)
-                        
-                        elif event_type == 'action_tool':
-                            # Action阶段
-                            action_data = {
-                                'type': 'action_tool',
-                                'step': next_step(),
-                                'timestamp': create_timestamp(),
-                                'tool_name': event.get('tool_name', ''),
-                                'tool_params': event.get('tool_params', {}),
-                                'execution_status': event.get('execution_status', 'success'),
-                                'summary': event.get('summary', ''),
-                                'raw_data': event.get('raw_data'),
-                                'action_retry_count': event.get('action_retry_count', 0)
-                            }
-                            logger.info(f"[Step action_tool] 发送action_tool步骤 - step={action_data['step']}, tool_name={action_data['tool_name']}, execution_status={action_data['execution_status']}, retry_count={action_data['action_retry_count']}")
-                            yield f"data: {json.dumps(action_data)}\n\n"
-                            
-                            # ⭐ 【小沈添加 2026-03-16 v11.0】action_tool步骤后保存到数据库
-                            current_execution_steps.append(action_data)
-                            await save_execution_steps_to_db(current_execution_steps, current_content)
-                        
-                        elif event_type == 'observation':
-                            # Observation阶段
-                            # 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
-                            observation_data = {
-                                'type': 'observation',
-                                'step': next_step(),
-                                'timestamp': create_timestamp(),
-                                'obs_execution_status': event.get('execution_status', 'success'),
-                                'obs_summary': event.get('summary', ''),
-                                'obs_raw_data': event.get('raw_data'),
-                                'content': event.get('content', ''),
-                                'obs_reasoning': event.get('reasoning', ''),
-                                'obs_action_tool': event.get('action_tool', ''),
-                                'obs_params': event.get('params', {}),
-                                'is_finished': event.get('is_finished', False)
-                            }
-                            logger.info(f"[Step observation] 发送observation步骤 - step={observation_data['step']}, is_finished={observation_data['is_finished']}, obs_execution_status={observation_data['obs_execution_status']}, content长度={len(observation_data['content'])}")
-                            yield f"data: {json.dumps(observation_data)}\n\n"
-                            
-                            # ⭐ 【小沈添加 2026-03-16 v11.0】observation步骤后保存到数据库
-                            current_execution_steps.append(observation_data)
-                            await save_execution_steps_to_db(current_execution_steps, current_content)
-                        
+
                         elif event_type == 'final':
-                            # 最终结果
                             final_data = {
                                 'type': 'final',
                                 'step': next_step(),
                                 'timestamp': create_timestamp(),
-                                'content': event.get('content', '')
+                                'content': raw_event.get('content', '')
                             }
-                            logger.info(f"[Step final] 发送final步骤 - step={final_data['step']}, content长度={len(final_data['content'])}")
+                            logger.info(
+                                f"[Step final] 发送final步骤 - step={final_data['step']}, "
+                                f"content长度={len(final_data['content'])}"
+                            )
                             yield f"data: {json.dumps(final_data)}\n\n"
-                            
-                            # ⭐ 【小沈修复 2026-03-16】添加final到execution_steps并保存
                             current_execution_steps.append(final_data)
                             current_content = final_data.get('content', '')
                             await save_execution_steps_to_db(current_execution_steps, current_content)
                             break
-                        
+
                         elif event_type == 'error':
-                            # 错误
                             error_data = {
                                 'type': 'error',
                                 'step': next_step(),
                                 'code': 'AGENT_ERROR',
-                                'message': event.get('message', '未知错误'),
+                                'message': raw_event.get('message', '未知错误'),
                                 'error_type': 'agent',
-                                'retryable': event.get('retryable', False),
+                                'retryable': raw_event.get('retryable', False),
                                 'timestamp': create_timestamp(),
                                 'model': request.model,
                                 'provider': request.provider
                             }
-                            logger.info(f"[Step error] 发送error步骤 - step={error_data['step']}, code={error_data['code']}, message={error_data['message']}, retryable={error_data['retryable']}")
+                            logger.info(
+                                f"[Step error] 发送error步骤 - step={error_data['step']}, "
+                                f"code={error_data['code']}, "
+                                f"message={error_data['message']}, "
+                                f"retryable={error_data['retryable']}"
+                            )
                             yield f"data: {json.dumps(error_data)}\n\n"
-                            
-                            # 【小沈修复 2026-03-16】保存agent error步骤到数据库
-                            # 【小强修复 2026-03-18】添加step字段
                             error_step = {
                                 'type': 'error',
-                                'step': error_data['step'],  # 添加step字段
+                                'step': error_data['step'],
                                 'error_type': 'agent',
-                                'message': event.get('message', '未知错误'),
+                                'message': raw_event.get('message', '未知错误'),
                                 'code': 'AGENT_ERROR',
                                 'timestamp': create_timestamp()
                             }
-                            # 【使用统一函数】保存error步骤到数据库
-                            await add_step_and_save(error_step, f"Agent错误: {event.get('message', '未知错误')}")
+                            await add_step_and_save(error_step, f"Agent错误: {raw_event.get('message', '未知错误')}")
                             break
-                        
-                        await asyncio.sleep(0.05)
-                    
-                    # 检查是否被中断（在循环内已处理）
-                    
-                except Exception as e:
-                    # 【小沈代修改 - 修复问题4】统一错误处理格式，记录日志
-                    logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
-                    error_message = "文件操作执行失败"
-                    yield create_error_response(
-                        error_type="file_operation_error",
-                        message=error_message,
-                        model=ai_service.model,
-                        provider=ai_service.provider,
-                        retryable=False,
-                        step=next_step()
-                    )
-                    
-                    # 【使用统一函数】保存error步骤到数据库
-                    # 【小强修复 2026-03-18】添加step字段
-                    error_step = {
-                        'type': 'error',
-                        'step': next_step(),  # 添加step字段
-                        'error_type': 'file_operation_error',
-                        'message': error_message,
-                        'code': 'FILE_OPERATION_ERROR',
-                        'timestamp': create_timestamp()
-                    }
-                    await add_step_and_save(error_step, f"文件操作错误: {error_message}")
+                        continue
+
+                    # 文件操作完成信号
+                    if '_file_operation_complete' in event_keys:
+                        continue
             else:
                 # 普通对话：调用AI服务（流式）
                 # 【优化1版修复】不发送action_tool，直接发送chunk

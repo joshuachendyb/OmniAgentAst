@@ -205,9 +205,9 @@ def update_thought_data(
 
 
 # ============================================================
-# process_thought - 主函数
+# process_thought2 - 主函数（Thought2版本 - 带LLM调用）
 # ============================================================
-async def process_thought(
+async def process_thought2(
     prev_step: Optional[Dict],       # 前一阶段数据（start或observation）
     ai_service: Any,                # AIService
     task_id: str,                   # 任务ID
