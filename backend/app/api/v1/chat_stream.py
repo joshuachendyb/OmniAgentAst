@@ -258,6 +258,75 @@ async def process_start_v1(
     yield {'_start_complete': True, 'is_safe': True, 'display_name': display_name}
 
 
+# ============================================================
+# thought1 函数 - Start1版本的thought处理（过渡用）
+# ============================================================
+
+async def thought1(
+    task_id: str,                      # 任务ID
+    next_step,                          # next_step()函数
+    current_execution_steps,             # 执行步骤列表（引用）
+    current_content,                     # 当前内容（引用）
+    save_execution_steps_to_db,          # 保存到数据库的函数
+    running_tasks,                       # 运行任务（用于检查中断）
+    running_tasks_lock                   # 运行任务锁
+) -> AsyncGenerator[Any, None]:
+    """
+    处理 thought 步骤（Start1版本，不含LLM调用）
+    
+    功能：
+    1. 构建 thought_data（只有thinking_prompt）
+    2. yield thought_data（调用方包装成SSE）
+    3. 保存数据库
+    4. sleep(0.3)
+    5. 检查中断（yield SSE字符串）
+    6. 暂停检查（yield SSE字符串）
+    
+    Args:
+        task_id: 任务ID
+        next_step: next_step()函数
+        current_execution_steps: 执行步骤列表
+        current_content: 当前内容
+        save_execution_steps_to_db: 保存到数据库的函数
+        running_tasks: 运行任务
+        running_tasks_lock: 运行任务锁
+    
+    Yields:
+        dict: thought_data 或 str: SSE格式的中断/暂停事件
+    """
+    # 1. 构建 thought_data
+    thought_data = {
+        'type': 'thought',
+        'step': next_step(),
+        'timestamp': create_timestamp(),
+        'thinking_prompt': '正在分析任务...'
+    }
+    logger.info(f"[Step thought] 发送thought步骤 - step={thought_data['step']}, thinking_prompt={thought_data['thinking_prompt']}")
+    
+    # 2. 保存数据库
+    current_execution_steps.append(thought_data)
+    await save_execution_steps_to_db(current_execution_steps, current_content)
+    
+    await asyncio.sleep(0.3)
+    
+    # 3. 检查中断
+    is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(
+        task_id, running_tasks, running_tasks_lock, next_step
+    )
+    if is_interrupted:
+        yield interrupt_msg
+        return
+    
+    # 4. 暂停检查
+    async for pause_event in check_and_yield_if_paused(
+        task_id, running_tasks, running_tasks_lock, next_step
+    ):
+        yield pause_event
+    
+    # 5. 返回 thought_data 供后续处理
+    yield thought_data
+
+
 def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
     """
     获取用户友好的错误信息
@@ -788,31 +857,23 @@ async def chat_stream(request: ChatRequest):
                 for msg in request.messages[:-1]:
                     history.append(Message(role=msg.role, content=msg.content))
             
-            # 1. 发送思考
-            thought_data = {
-                'type': 'thought',
-                'step': next_step(),
-                'timestamp': create_timestamp(),
-                'thinking_prompt': '正在分析任务...'
-            }
-            logger.info(f"[Step thought] 发送thought步骤 - step={thought_data['step']}, thinking_prompt={thought_data['thinking_prompt']}")
-            yield f"data: {json.dumps(thought_data)}\n\n"
-            
-            # ⭐ 【小沈添加 2026-03-16 v11.0】thought步骤后保存到数据库
-            current_execution_steps.append(thought_data)
-            await save_execution_steps_to_db(current_execution_steps, current_content)
-            
-            await asyncio.sleep(0.3)
-            
-            # ⭐ 修复：只检查一次中断（删除 4 次重复代码）
-            is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock, next_step)
-            if is_interrupted:
-                yield interrupt_msg
-                return
-            
-            # ⭐ 暂停检查：如果暂停则等待恢复
-            async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock, next_step):
-                yield pause_event
+            # 1. 发送思考（使用thought1函数）
+            async for thought_result in thought1(
+                task_id=task_id,
+                next_step=next_step,
+                current_execution_steps=current_execution_steps,
+                current_content=current_content,
+                save_execution_steps_to_db=save_execution_steps_to_db,
+                running_tasks=running_tasks,
+                running_tasks_lock=running_tasks_lock
+            ):
+                if isinstance(thought_result, str):
+                    # SSE格式的中断/暂停事件
+                    yield thought_result
+                    return
+                else:
+                    # thought_data 字典
+                    yield f"data: {json.dumps(thought_result)}\n\n"
             
             # 检测文件操作意图
             is_file_op, _, confidence = detect_file_operation_intent(last_message)
