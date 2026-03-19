@@ -40,14 +40,16 @@ from app.services.file_operations.tools import get_file_tools
 from app.services.file_operations.agent import FileOperationAgent
 from app.services.shell_security import check_command_safety
 from app.api.v1.intent_classifier import detect_file_operation_intent  # 【小沈引用原始函数 2026-03-17】
-from app.api.v1.types.process_action1 import (
-    process_file_operation,
+from app.api.v1.action1 import (
     build_action_notification,
     handle_action_event
 )
-from app.api.v1.types.process_observation1 import (
+from app.api.v1.observation1 import (
     build_observation_security,
     handle_observation_event
+)
+from app.api.v1.three_operation import (
+    process_file_operation
 )
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name  # ⭐ 【小沈添加 2026-03-03】
