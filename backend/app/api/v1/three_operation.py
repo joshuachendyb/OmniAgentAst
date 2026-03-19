@@ -1,5 +1,5 @@
-# backend/app/api/v1/types/process_file_operation.py
-# 文件操作入口主函数
+# backend/app/api/v1/three_operation.py
+# 三步操作入口主函数
 # 创建时间: 2026-03-19
 # 创建人: 小沈
 
@@ -46,8 +46,8 @@ async def process_file_operation(
         action_data / observation_data 字典
         结束信号: {'_file_operation_complete': True, 'agent_events': []}
     """
-    from app.api.v1.types.process_action1 import build_action_notification, handle_action_event
-    from app.api.v1.types.process_observation1 import build_observation_security, handle_observation_event
+    from app.api.v1.action1 import build_action_notification, handle_action_event
+    from app.api.v1.observation1 import build_observation_security, handle_observation_event
     from app.services.file_operation_agent import FileOperationAgent
     from app.services.safety_checker import check_command_safety
     from app.chat_stream_helpers import create_incident_data, create_error_response
