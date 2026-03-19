@@ -1,3 +1,141 @@
+v0.6.11
+
+更新时间：2026-03-19 14:59:12
+
+更新内容：
+
+1. is_need_confirm 拆分为两个来源
+   - 设计决定：
+     * is_need_confirm_from_security: 根据安全检查 true/false 分别处理（显示⚠️图标）
+     * is_need_confirm_from_llm: 强制设置为 False
+   
+   a) shell_security.py - check_command_safety() 函数（第659-668行）
+      - 第662行：新增 `is_need_confirm = not is_safe and risk_level in ["medium"]`
+      - 第670行：返回字典新增 `is_need_confirm` 字段
+      
+   b) process_start.py - get_status_icon() 函数（第45-76行）
+      - 参数从 `is_need_confirm` 改为 `is_need_confirm_from_security`
+      - 文档更新说明
+      
+   c) process_start.py - parse_llm_response() 函数（第78-107行）
+      - 返回值从 `is_need_confirm` 改为 `is_need_confirm_from_llm`
+      - 固定返回 False
+      
+   d) process_start.py - process_start() 函数（第270-315行）
+      - 读取 security_result.get('is_need_confirm') 作为 is_need_confirm_from_security
+      - is_need_confirm_from_llm 强制设为 False
+      - 第二次yield 包含两个独立字段
+
+2. 更新测试文件 test_process_start.py
+   - get_status_icon 测试：参数改为 is_need_confirm_from_security
+   - parse_llm_response 测试：断言改为 is_need_confirm_from_llm
+   - process_start 测试：断言改为两个独立字段
+
+验证结果：
+- ✅ 23个测试全部通过
+
+参与开发：小沈
+完成时间：2026-03-19 14:59:12
+
+---
+
+v0.6.10
+
+更新时间：2026-03-19 14:40:00
+
+更新内容：
+
+1. ReAct重构 - Start阶段按type分文件架构
+   - 创建 backend/app/api/v1/types/ 目录
+   - 创建 backend/app/api/v1/adapters/ 目录
+   - 创建 backend/app/api/v1/types/__init__.py
+   - 创建 backend/app/api/v1/adapters/__init__.py
+   - 创建 backend/app/chat_stream_helpers.py（共享辅助函数）
+
+2. Start2版本实现（带LLM调用）
+   - 文件：backend/app/api/v1/types/process_start.py
+   - 功能：安全检查通过后调用LLM分析用户意图
+   - 新增状态图标判断（✅/❓/⚠️/🚫）
+   - 新增二次yield（start_data + content+状态）
+   - 新增LLM调用异常处理（fallback逻辑）
+
+3. Start2函数测试
+   - 文件：backend/tests/test_process_start.py
+   - 23个测试用例全部通过
+   - 测试覆盖：
+     * 状态图标判断（6个测试）
+     * LLM响应解析（5个测试）
+     * LLM输入构建（4个测试）
+     * process_start函数（6个测试）
+     * 集成测试（2个测试）
+
+4. ReAct重构文档
+   - 创建 doc-ReAct重构/ 目录
+   - doc-ReAct重构/第三次ReAct重构设计与计划-小沈-2026-03-19.md
+   - doc-ReAct重构/重构Start设计与实现说明-小沈-2026-03-19.md
+
+5. 代码审查
+   - 审查人：小健
+   - 检查内容：
+     * types/process_start.py 语法检查
+     * LLM调用异常处理
+     * 函数参数类型注解
+     * 未使用导入清理
+
+技术细节：
+
+1. Start2版本新功能：
+   - LLM调用：安全检查通过后调用LLM分析用户意图
+   - 状态图标：根据条件返回不同图标
+     * blocked=true → 🚫 （安全拦截）
+     * is_clear=false → ❓ （输入含混不清）
+     * is_need_confirm=true → ⚠️ （有风险需确认）
+     * 其他 → ✅ （正常，可进入thought）
+   - 二次yield：
+     * 第一次yield：start_data
+     * 第二次yield：content + is_clear + is_need_confirm + status_icon
+    - 异常处理：LLM调用失败时有fallback逻辑
+
+1. Start1版本说明（备用版本，不带LLM调用）：
+   - 文件：backend/app/api/v1/chat_stream.py（第154-258行）
+   - 函数：process_start_v1()
+   - 功能：
+     * 构建display_name（AI显示名称）
+     * security_check安全检查
+     * 构建start_data并yield
+     * 保存到数据库
+     * is_safe检查，不通过则yield error
+   - 与Start2对比：
+     * Start1：不做LLM调用，直接进入thought阶段
+     * Start2：调用LLM分析意图，返回状态图标
+     * Start2是Start1的增强版
+   - 当前状态：主流程仍在使用Start1
+
+2. 按type分文件架构：
+   backend/app/api/v1/
+   ├── types/
+   │   ├── __init__.py
+   │   ├── process_start.py      ✅ 已完成 (Start2)
+   │   ├── process_thought.py    ⏳ 待实现
+   │   ├── process_action.py     ⏳ 待实现
+   │   ├── process_observation.py ⏳ 待实现
+   │   ├── process_final.py      ⏳ 待实现
+   │   ├── process_error.py      ⏳ 待实现
+   │   └── process_incident.py   ⏳ 待实现
+   ├── adapters/
+   │   ├── __init__.py
+   │   └── sse_adapter.py        ⏳ 待实现
+   └── chat_stream.py            主流程（已调用Start1）
+
+3. Mock测试优化：
+   - MockAsyncStream：模拟异步流，支持多chunk分次yield
+   - MockAsyncStreamException：模拟异常流，测试错误处理
+
+参与开发：小沈、小健
+完成时间：2026-03-19 14:40:00
+
+---
+
 v0.6.6
 
 更新内容：
