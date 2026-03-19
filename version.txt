@@ -1,37 +1,121 @@
+v0.6.12
+
+更新时间：2026-03-19 17:00:00
+
+更新内容：
+
+## 1. Thought2版本实现（types/process_thought.py）
+
+更新时间：2026-03-19 17:00:00
+
+### 1.1 新增文件
+
+| 文件 | 说明 |
+|------|------|
+| `backend/app/api/v1/types/process_thought.py` | Thought2版本 thought阶段处理逻辑 |
+
+### 1.2 功能说明
+
+Thought2是带LLM调用的thought阶段处理函数：
+
+| 功能 | 说明 |
+|------|------|
+| reasoning传导 | 从start或observation传导上下文 |
+| 二次yield | 第一次yield"分析中..."占位，第二次yield完整数据 |
+| LLM调用 | 调用LLM获取推理结论+工具选择 |
+| 异常处理 | LLM调用失败时有fallback逻辑 |
+
+### 1.3 process_thought.py 函数列表
+
+| 函数名 | 功能 | 行号 |
+|--------|------|------|
+| `build_reasoning` | 生成reasoning内容 | 45 |
+| `parse_llm_response` | 解析LLM返回 | 83 |
+| `build_llm_input` | 组织LLM输入 | 118 |
+| `build_thought_data_placeholder` | 构建占位版本thought_data | 146 |
+| `update_thought_data` | 更新为完整数据 | 179 |
+| `process_thought` | 主函数 | 217 |
+
+### 1.4 reasoning传导逻辑
+
+| 进入来源 | reasoning内容 | 生成方式 |
+|---------|-------------|---------|
+| 从start进入 | start.content + is_clear | 字符串拼接 |
+| 从observation进入 | observation.summary | 直接取值 |
+
+### 1.5 两次yield字段对比
+
+| 字段 | 第一次yield | 第二次yield |
+|------|------------|------------|
+| type | "thought" | "thought" |
+| step | 序号 | 序号（不变） |
+| timestamp | 时间戳 | 时间戳（不变） |
+| content | "分析中..." | llm_content |
+| reasoning | 传导内容 | 传导内容（不变） |
+| action_tool | 不发 | 工具名称 |
+| params | 不发 | 工具参数 |
+
+### 1.6 验证结果
+
+- ✅ 编译检查通过
+- ✅ 函数清单完整性检查通过（6个函数对照文档8.2.3）
+- ✅ 流程完整性检查通过（12个步骤对照文档1.1）
+- ✅ 字段正确性检查通过
+
+### 1.7 代码审查
+
+- 审查人：小健
+- 检查内容：
+  - 函数清单完整性
+  - 流程完整性
+  - 字段正确性
+  - 文档对照检查
+- 检查结果：✅ 通过，0个问题
+
+参与开发：小沈、小健
+完成时间：2026-03-19 17:00:00
+
+---
+
 v0.6.11
 
 更新时间：2026-03-19 14:59:12
 
 更新内容：
 
-1. is_need_confirm 拆分为两个来源
-   - 设计决定：
-     * is_need_confirm_from_security: 根据安全检查 true/false 分别处理（显示⚠️图标）
-     * is_need_confirm_from_llm: 强制设置为 False
-   
-   a) shell_security.py - check_command_safety() 函数（第659-668行）
-      - 第662行：新增 `is_need_confirm = not is_safe and risk_level in ["medium"]`
-      - 第670行：返回字典新增 `is_need_confirm` 字段
-      
-   b) process_start.py - get_status_icon() 函数（第45-76行）
-      - 参数从 `is_need_confirm` 改为 `is_need_confirm_from_security`
-      - 文档更新说明
-      
-   c) process_start.py - parse_llm_response() 函数（第78-107行）
-      - 返回值从 `is_need_confirm` 改为 `is_need_confirm_from_llm`
-      - 固定返回 False
-      
-   d) process_start.py - process_start() 函数（第270-315行）
-      - 读取 security_result.get('is_need_confirm') 作为 is_need_confirm_from_security
-      - is_need_confirm_from_llm 强制设为 False
-      - 第二次yield 包含两个独立字段
+## 1. is_need_confirm 拆分为两个来源
 
-2. 更新测试文件 test_process_start.py
-   - get_status_icon 测试：参数改为 is_need_confirm_from_security
-   - parse_llm_response 测试：断言改为 is_need_confirm_from_llm
-   - process_start 测试：断言改为两个独立字段
+- 设计决定：
+  - is_need_confirm_from_security: 根据安全检查 true/false 分别处理（显示⚠️图标）
+  - is_need_confirm_from_llm: 强制设置为 False
 
-验证结果：
+### 1.1 修改文件
+
+a) `shell_security.py` - check_command_safety() 函数（第659-668行）
+   - 第662行：新增 `is_need_confirm = not is_safe and risk_level in ["medium"]`
+   - 第670行：返回字典新增 `is_need_confirm` 字段
+
+b) `process_start.py` - get_status_icon() 函数（第45-76行）
+   - 参数从 `is_need_confirm` 改为 `is_need_confirm_from_security`
+
+c) `process_start.py` - parse_llm_response() 函数（第78-107行）
+   - 返回值从 `is_need_confirm` 改为 `is_need_confirm_from_llm`
+   - 固定返回 False
+
+d) `process_start.py` - process_start() 函数（第270-315行）
+   - 读取 security_result.get('is_need_confirm') 作为 is_need_confirm_from_security
+   - is_need_confirm_from_llm 强制设为 False
+   - 第二次yield 包含两个独立字段
+
+### 1.2 更新测试文件
+
+- `test_process_start.py`
+- get_status_icon 测试：参数改为 is_need_confirm_from_security
+- parse_llm_response 测试：断言改为 is_need_confirm_from_llm
+- process_start 测试：断言改为两个独立字段
+
+### 1.3 验证结果
+
 - ✅ 23个测试全部通过
 
 参与开发：小沈
