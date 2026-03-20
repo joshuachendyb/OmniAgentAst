@@ -1,7 +1,8 @@
 # LlamaIndex ReAct 学习报告
 
-**文档版本**: v1.0
+**文档版本**: v2.0
 **创建时间**: 2026-03-20 05:35:00
+**更新时间**: 2026-03-20 13:45:00
 **编写人**: 小沈
 **研究资料数量**: 30+ 篇
 **存放位置**: D:\OmniAgentAs-desk\doc-ReAct重构\
@@ -78,132 +79,228 @@ llama_index.core.agent.react/
 
 ## 3 核心类型定义
 
-### 3.1 ActionReasoningStep
+### 3.1 BaseReasoningStep（实际源码）
 
 **来源**: `llama_index.core.agent.react.types`
 
-**定义**: 代表一个思考 + 行动的步骤
+**定义**: 推理步骤基类（Pydantic BaseModel）
 
 ```python
-from llama_index.core.agent.react.types import ActionReasoningStep
+class BaseReasoningStep(BaseModel):
+    """Reasoning step."""
 
-@dataclass
-class ActionReasoningStep(ReasoningStep):
-    """代表 Thought + Action 的组合。"""
-    
-    thought: str  # 思考内容
-    action: str   # 工具名称
-    action_input: dict  # 工具参数
-    
-    def get_content(self) -> str:
-        return f"Thought: {self.thought}\nAction: {self.action}\nAction Input: {self.action_input}"
-```
-
-### 3.2 ObservationReasoningStep
-
-**来源**: `llama_index.core.agent.react.types`
-
-**定义**: 代表观察结果
-
-```python
-from llama_index.core.agent.react.types import ObservationReasoningStep
-
-@dataclass
-class ObservationReasoningStep(ReasoningStep):
-    """代表 Observation。"""
-    
-    observation: str  # 观察结果
-    
-    def get_content(self) -> str:
-        return f"Observation: {self.observation}"
-```
-
-### 3.3 ReasoningStep 基类
-
-```python
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-
-@dataclass
-class ReasoningStep(ABC):
-    """推理步骤基类。"""
-    
     @abstractmethod
     def get_content(self) -> str:
-        """获取步骤内容的字符串表示。"""
-        pass
-    
+        """Get content."""
+
     @property
     @abstractmethod
     def is_done(self) -> bool:
-        """是否完成。"""
-        pass
+        """Is the reasoning step the last one."""
 ```
+
+### 3.2 ActionReasoningStep（实际源码）
+
+**来源**: `llama_index.core.agent.react.types`
+
+**定义**: Thought + Action 的组合
+
+```python
+class ActionReasoningStep(BaseReasoningStep):
+    """Action Reasoning step."""
+
+    thought: str
+    action: str
+    action_input: Dict
+
+    def get_content(self) -> str:
+        return (
+            f"Thought: {self.thought}\nAction: {self.action}\n"
+            f"Action Input: {self.action_input}"
+        )
+
+    @property
+    def is_done(self) -> bool:
+        return False
+```
+
+### 3.3 ObservationReasoningStep（实际源码）
+
+**来源**: `llama_index.core.agent.react.types`
+
+**定义**: 观察结果
+
+```python
+class ObservationReasoningStep(BaseReasoningStep):
+    """Observation reasoning step."""
+
+    observation: str
+    return_direct: bool = False  # 【新增】直接返回标志
+
+    def get_content(self) -> str:
+        return f"Observation: {self.observation}"
+
+    @property
+    def is_done(self) -> bool:
+        return self.return_direct  # 如果 return_direct=True，直接结束
+```
+
+### 3.4 ResponseReasoningStep（实际源码）
+
+**来源**: `llama_index.core.agent.react.types`
+
+**定义**: 最终回答步骤
+
+```python
+class ResponseReasoningStep(BaseReasoningStep):
+    """Response reasoning step."""
+
+    thought: str
+    response: str
+    is_streaming: bool = False  # 【新增】流式输出标志
+
+    def get_content(self) -> str:
+        if self.is_streaming:
+            return f"Thought: {self.thought}\nAnswer (Starts With): {self.response} ..."
+        else:
+            return f"Thought: {self.thought}\nAnswer: {self.response}"
+
+    @property
+    def is_done(self) -> bool:
+        return True
+```
+
+### 3.5 类型对比表
+
+| 类型 | 字段 | is_done | 说明 |
+|------|------|---------|------|
+| `BaseReasoningStep` | 无 | 抽象 | 基类 |
+| `ActionReasoningStep` | `thought`, `action`, `action_input` | False | 需要调用工具 |
+| `ObservationReasoningStep` | `observation`, `return_direct` | return_direct | 工具执行结果 |
+| `ResponseReasoningStep` | `thought`, `response`, `is_streaming` | True | 最终回答 |
 
 ---
 
-## 4 ReAct Output Parser
+## 4 ReAct Output Parser（实际源码）
 
 ### 4.1 源码实现
 
 **来源**: `llama_index.core.agent.react.output_parser`
 
 ```python
+import re
+from typing import Tuple
 from llama_index.core.agent.react.types import (
     ActionReasoningStep,
-    ObservationReasoningStep,
+    BaseReasoningStep,
     ResponseReasoningStep,
 )
-from llama_index.core.agent.react.output_parser import ReActOutputParser
+from llama_index.core.output_parsers.utils import extract_json_str
 
-class ReActOutputParser:
-    """解析 ReAct 风格的 LLM 输出。"""
+
+def extract_tool_use(input_text: str) -> Tuple[str, str, str]:
+    """从 LLM 输出提取工具调用信息"""
+    pattern = r"(?:\s*Thought: (.*?)|(.+))\n+Action: ([^\n\(\) ]+).*?\n+Action Input: .*?(\{.*\})"
     
-    def parse(self, output: str) -> ReasoningStep:
-        """解析 LLM 输出。"""
-        
-        # 移除前缀
-        output = output.strip()
-        
-        # 检查是否包含 Final Answer
-        if "Final Answer:" in output:
-            answer = output.split("Final Answer:")[-1].strip()
+    match = re.search(pattern, input_text, re.DOTALL)
+    if not match:
+        raise ValueError(f"Could not extract tool use from input text: {input_text}")
+    
+    thought = (match.group(1) or match.group(2)).strip()
+    action = match.group(3).strip()
+    action_input = match.group(4).strip()
+    return thought, action, action_input
+
+
+def action_input_parser(json_str: str) -> dict:
+    """降级 JSON 解析：将单引号替换为双引号"""
+    processed_string = re.sub(r"(?<!\w)\'|\'(?!\w)", '"', json_str)
+    pattern = r'"(\w+)":\s*"([^"]*)"'
+    matches = re.findall(pattern, processed_string)
+    return dict(matches)
+
+
+def extract_final_response(input_text: str) -> Tuple[str, str]:
+    """从 LLM 输出提取最终回答"""
+    pattern = r"\s*Thought:(.*?)Answer:(.*?)(?:$)"
+    match = re.search(pattern, input_text, re.DOTALL)
+    if not match:
+        raise ValueError(f"Could not extract final answer from input text: {input_text}")
+    thought = match.group(1).strip()
+    answer = match.group(2).strip()
+    return thought, answer
+
+
+class ReActOutputParser(BaseOutputParser):
+    """ReAct Output parser."""
+
+    def parse(self, output: str, is_streaming: bool = False) -> BaseReasoningStep:
+        """
+        Parse output from ReAct agent.
+
+        格式1（需要工具）:
+            Thought: <thought>
+            Action: <action>
+            Action Input: <action_input>
+
+        格式2（最终回答）:
+            Thought: <thought>
+            Answer: <answer>
+        """
+        thought_match = re.search(r"Thought:", output, re.MULTILINE)
+        action_match = re.search(r"Action:", output, re.MULTILINE)
+        answer_match = re.search(r"Answer:", output, re.MULTILINE)
+
+        thought_idx = thought_match.start() if thought_match else None
+        action_idx = action_match.start() if action_match else None
+        answer_idx = answer_match.start() if answer_match else None
+
+        # 都没有匹配 → 直接返回文本作为回答
+        if thought_idx is None and action_idx is None and answer_idx is None:
             return ResponseReasoningStep(
-                reasoning=output,
-                response=answer
+                thought="(Implicit) I can answer without any more tools!",
+                response=output,
+                is_streaming=is_streaming,
             )
-        
-        # 解析 Thought + Action
-        thought_match = re.search(r"Thought:\s*(.*?)(?=\n|$)", output, re.DOTALL)
-        action_match = re.search(r"Action:\s*(\w+)", output)
-        action_input_match = re.search(
-            r"Action Input:\s*(.*?)(?=\n(?:Thought|Action|Observation|Final Answer)|$)",
-            output,
-            re.DOTALL
-        )
-        
-        if thought_match and action_match:
-            thought = thought_match.group(1).strip()
-            action = action_match.group(1).strip()
-            
-            action_input_str = ""
-            if action_input_match:
-                action_input_str = action_input_match.group(1).strip()
-            
-            # 尝试解析 JSON
-            try:
-                action_input = json.loads(action_input_str)
-            except:
-                action_input = {"input": action_input_str}
-            
-            return ActionReasoningStep(
-                thought=thought,
-                action=action,
-                action_input=action_input
+
+        # Action 优先于 Answer
+        if (action_idx is not None and answer_idx is not None and action_idx < answer_idx):
+            return parse_action_reasoning_step(output)
+        elif action_idx is not None and answer_idx is None:
+            return parse_action_reasoning_step(output)
+
+        if answer_idx is not None:
+            thought, answer = extract_final_response(output)
+            return ResponseReasoningStep(
+                thought=thought, response=answer, is_streaming=is_streaming
             )
-        
-        # 如果无法解析，返回 Observation
-        return ObservationReasoningStep(observation=output)
+
+        raise ValueError(f"Could not parse output: {output}")
+```
+
+### 4.2 正则表达式详解
+
+**工具调用正则**: `r"(?:\s*Thought: (.*?)|(.+))\n+Action: ([^\n\(\) ]+).*?\n+Action Input: .*?(\{.*\})"`
+
+| 部分 | 含义 |
+|------|------|
+| `(?:\s*Thought: (.*?)|(.+))` | Thought 内容（可选前缀） |
+| `\n+Action: ([^\n\(\) ]+)` | Action 工具名称（不允许空格和括号） |
+| `.*?\n+Action Input: ` | Action Input 前缀 |
+| `.*?(\{.*\})` | JSON 格式的参数 |
+
+**最终回答正则**: `r"\s*Thought:(.*?)Answer:(.*?)(?:$)"`
+
+### 4.3 JSON 解析策略
+
+```
+LLM 输出 Action Input
+        │
+        ├── dirtyjson.loads(json_str) ── 成功 → 返回 dict
+        │
+        └── 失败 → action_input_parser(json_str)
+                ├── 将单引号替换为双引号
+                └── 正则提取 key: value
 ```
 
 ---
@@ -582,7 +679,8 @@ print(ret["response"])
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
-| v1.0 | 2026-03-20 05:35:00 | 初始版本，包含完整 LlamaIndex ReAct 学习报告 | 小沈 |
+| v1.0 | 2026-03-20 05:35:00 | 初始版本 | 小沈 |
+| v2.0 | 2026-03-20 13:45:00 | **深度修正**：基于实际源码修正 ReasoningStep 为 Pydantic BaseModel（非 dataclass）；修正 Output Parser 实际正则表达式（支持 Thought 前缀可选、Action Input JSON 提取）；新增 ResponseReasoningStep（含 is_streaming）、ObservationReasoningStep（含 return_direct）；新增 JSON 解析降级策略（dirtyjson → action_input_parser） | 小沈 |
 
 ---
 
