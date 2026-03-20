@@ -29,7 +29,7 @@ from unittest.mock import patch
 from datetime import datetime
 
 # 导入被测试模块
-from app.services.file_operations.tools import (
+from app.services.agent.tools import (
     # 常量
     PAGE_SIZE,
     MAX_PAGE_SIZE,
@@ -56,7 +56,7 @@ from app.services.file_operations.tools import (
     _to_unified_format,
     _generate_summary,
 )
-from app.services.file_operations.prompts import FileOperationPrompts
+from app.services.agent.prompts import FileOperationPrompts
 
 
 # ============================================================

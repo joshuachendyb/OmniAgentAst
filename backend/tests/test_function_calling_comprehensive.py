@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.services.file_operations.react_schema import (
+from app.services.agent.react_schema import (
     get_tools_schema_for_function_calling,
     get_tool_schema,
     validate_tool_call,
@@ -37,7 +37,7 @@ from app.services.file_operations.react_schema import (
     _extract_type,
     _generate_example_hints
 )
-from app.services.file_operations.tools import (
+from app.services.agent.tools import (
     ReadFileInput,
     WriteFileInput,
     ListDirectoryInput,
@@ -767,7 +767,7 @@ class TestAgentFunctionCallingIntegration:
 
     def test_format_tool_calls_for_agent(self):
         """测试 _format_tool_calls_for_agent 方法"""
-        from app.services.file_operations.agent import FileOperationAgent
+        from app.services.agent.agent import FileOperationAgent
         
         # 创建 mock llm_client
         mock_client = MagicMock()
@@ -799,7 +799,7 @@ class TestAgentFunctionCallingIntegration:
 
     def test_agent_with_function_calling_disabled(self):
         """测试默认不使用 Function Calling"""
-        from app.services.file_operations.agent import FileOperationAgent
+        from app.services.agent.agent import FileOperationAgent
         
         mock_client = MagicMock()
         
@@ -813,7 +813,7 @@ class TestAgentFunctionCallingIntegration:
 
     def test_agent_with_function_calling_enabled(self):
         """测试启用 Function Calling"""
-        from app.services.file_operations.agent import FileOperationAgent
+        from app.services.agent.agent import FileOperationAgent
         
         mock_client = MagicMock()
         tools = get_tools_schema_for_function_calling()
@@ -830,7 +830,7 @@ class TestAgentFunctionCallingIntegration:
 
     def test_format_empty_tool_calls(self):
         """测试格式化空的 tool_calls"""
-        from app.services.file_operations.agent import FileOperationAgent
+        from app.services.agent.agent import FileOperationAgent
         
         mock_client = MagicMock()
         
@@ -844,7 +844,7 @@ class TestAgentFunctionCallingIntegration:
 
     def test_format_multiple_tool_calls(self):
         """测试格式化多个 tool_calls（只取第一个）"""
-        from app.services.file_operations.agent import FileOperationAgent
+        from app.services.agent.agent import FileOperationAgent
         
         mock_client = MagicMock()
         
