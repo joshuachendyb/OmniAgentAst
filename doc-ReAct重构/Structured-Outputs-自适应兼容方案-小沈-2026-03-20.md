@@ -264,7 +264,7 @@ class CapabilityDetector:
             result.tools_tested = True
             result.tools_works = tools_result["works"]
             
-            # 【修复P1-004】Step 2: 探测 response_format（仅在 tools 不支持时）
+            # 【修复P1-004】Step 2: 探测 response_format（记录能力，策略选择由StrategySelector决定）
             rf_result = await self._probe_response_format()
             result.response_format_tested = True
             result.response_format_works = rf_result["works"]
@@ -331,7 +331,7 @@ class CapabilityDetector:
                     },
                     json={
                         "model": self.model,
-                        "messages": [{"role": "user", "content": "Hi"}],
+                        "messages": [{"role": "user", "content": "Say hello and respond with JSON"}],
                         "response_format": schema,
                         "stream": False
                     }
@@ -381,8 +381,9 @@ class CapabilityDetector:
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "param": {"type": "string"}
-                        }
+                            "param": {"type": "string", "description": "A test parameter"}
+                        },
+                        "required": ["param"]
                     }
                 }
             }
@@ -398,7 +399,7 @@ class CapabilityDetector:
                     },
                     json={
                         "model": self.model,
-                        "messages": [{"role": "user", "content": "Use the test tool"}],
+                        "messages": [{"role": "user", "content": "Please call the test_tool function with any parameter"}],
                         "tools": tools,
                         "tool_choice": "auto",
                         "stream": False
@@ -982,8 +983,8 @@ class LLMAdapter:
 │  │   │                                                      │ │
 │  │   ├─ 首次调用？                                           │ │
 │  │   │   ├─ 是 → CapabilityDetector.detect()                │ │
-│  │   │   │       ├─ Step1: 探测 response_format             │ │
-│  │   │   │       ├─ Step2: 探测 tools                       │ │
+│  │   │   │       ├─ Step1: 探测 tools【优先级最高】          │ │
+│  │   │   │       ├─ Step2: 探测 response_format             │ │
 │  │   │   │       └─ Step3: 探测 reasoning                   │ │
 │  │   │   │                                              │ │
 │  │   │   └─ 缓存到 self._capability_cache                  │ │
@@ -1598,16 +1599,36 @@ def test_fallback_to_prompt():
 
 #### 推荐分工：小强主导 + 小沈协助
 
-| 序号 | 任务 | 负责人 | 风险 |
-|------|------|--------|------|
-| 1 | 创建 `capability.py`（能力枚举） | 小强 | 低 |
-| 2 | 创建 `capability_detector.py`（探测器） | 小强 | 中 |
-| 3 | 创建 `strategy_selector.py`（策略选择） | 小强 | 低 |
-| 4 | 创建 `os_adapter.py`（系统适配） | 小强 | 低 |
-| 5 | 创建 `llm_adapter.py`（适配器） | 小强 | 中 |
-| 6 | base.py `chat_with_response_format()` 测试 | 小强 | 中 |
-| 7 | **agent.py 集成** | **小沈** | **高** |
-| 8 | 集成测试 + 回归测试 | 小沈 | 中 |
+| 序号 | 任务 | 负责人 | 风险 | 状态 |
+|------|------|--------|------|------|
+| 1 | 创建 `capability.py`（能力枚举） | 小强 | 低 | ✅完成 |
+| 2 | 创建 `capability_detector.py`（探测器） | 小强 | 中 | ✅完成 |
+| 3 | 创建 `strategy_selector.py`（策略选择） | 小强 | 低 | ✅完成 |
+| 4 | 创建 `os_adapter.py`（系统适配） | 小强 | 低 | ✅完成 |
+| 5 | 创建 `llm_adapter.py`（适配器） | 小强 | 中 | ✅完成 |
+| 6 | base.py `chat_with_response_format()` 测试 | 小强 | 中 | ✅完成 |
+| 7 | **agent.py 集成（含 `_get_llm_response_with_response_format()`）** | **小沈** | **高** | ✅完成 |
+| 8 | 集成测试 + 回归测试（含 response_format 测试） | 小沈 | 中 | ✅完成 |
+
+---
+
+#### 完成记录（小沈 - 2026-03-20 12:00:00）
+
+**7. agent.py 集成 - 完成记录**:
+- ✅ 修改 `__init__()` 添加 `api_base`, `api_key`, `model` 参数
+- ✅ 添加 `LLMAdapter` 初始化逻辑
+- ✅ 修改 `_get_llm_response()` 实现自适应策略选择
+- ✅ 实现 `_get_llm_response_with_response_format()` 方法
+- ✅ 确保向后兼容（不提供 api 配置时使用原有方式）
+
+**8. 集成测试 + 回归测试 - 完成记录**:
+- ✅ 创建 `tests/test_agent_llm_adapter.py`（17个测试）
+  - LLMAdapter 初始化测试（3个）
+  - 自适应策略选择测试（5个）
+  - response_format 方法测试（6个）
+  - 向后兼容性测试（2个）
+  - LLM 调用计数器测试（1个）
+- ✅ 回归测试：test_agent.py 19个测试全部通过
 
 ---
 
@@ -1632,9 +1653,18 @@ def test_fallback_to_prompt():
 ```
 ✅ 负责：
 ├── agent.py 集成（核心风险点）
+│   ├── 修改 agent.py
+│   ├── 集成 LLMAdapter
+│   ├── 实现 _get_llm_response_with_response_format() 方法
+│   └── 确保向后兼容
 ├── 确保向后兼容（不影响现有 Function Calling 模式）
 ├── 集成测试
-└── 回归测试（确保现有功能不受影响）
+│   ├── 测试自适应探测功能
+│   ├── 测试策略选择正确
+│   └── 测试 response_format 模式
+└── 回归测试
+    ├── 确保现有 Function Calling 模式不受影响
+    └── 确保现有 ReAct 模式不受影响
 ```
 
 ---
@@ -1668,11 +1698,13 @@ def test_fallback_to_prompt():
 ```
 7. 修改 agent.py
    └── 集成 LLMAdapter
+   └── 实现 _get_llm_response_with_response_format() 方法
    └── 确保向后兼容
 
 8. 集成测试
    └── 测试自适应探测功能
    └── 测试策略选择正确
+   └── 测试 response_format 模式
 
 9. 回归测试
    └── 确保现有 Function Calling 模式不受影响
