@@ -9,6 +9,15 @@ Tools/File 模块 - 文件操作工具集
 Author: 小沈 - 2026-03-21
 """
 
+from app.services.tools.file.file_schema import (
+    ReadFileInput,
+    WriteFileInput,
+    ListDirectoryInput,
+    DeleteFileInput,
+    MoveFileInput,
+    SearchFilesInput,
+    GenerateReportInput,
+)
 from app.services.tools.file.file_tools import (
     # 常量
     PAGE_SIZE,
@@ -39,6 +48,14 @@ from app.services.tools.file.file_tools import (
 )
 
 __all__ = [
+    # Schema模型
+    "ReadFileInput",
+    "WriteFileInput",
+    "ListDirectoryInput",
+    "DeleteFileInput",
+    "MoveFileInput",
+    "SearchFilesInput",
+    "GenerateReportInput",
     # 常量
     "PAGE_SIZE",
     "MAX_PAGE_SIZE",
@@ -49,14 +66,6 @@ __all__ = [
     "ToolDefinition",
     # 装饰器
     "register_tool",
-    # 模型
-    "ReadFileInput",
-    "WriteFileInput",
-    "ListDirectoryInput",
-    "DeleteFileInput",
-    "MoveFileInput",
-    "SearchFilesInput",
-    "GenerateReportInput",
     # 工具函数
     "get_registered_tools",
     "get_tool",

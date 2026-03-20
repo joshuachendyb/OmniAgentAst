@@ -1,3 +1,9 @@
 """Prompts 模块 - Prompt 模板"""
 
-__all__ = ["base", "file"]
+from .base import BasePrompts
+
+__all__ = [
+    "BasePrompts",
+    "base",
+    "file",
+]
