@@ -18,6 +18,7 @@ from enum import Enum
 from app.services.file_operations.tools import FileTools
 from app.services.file_operations.prompts import FileOperationPrompts
 from app.services.file_operations.session import get_session_service
+from app.services.file_operations.llm_adapter import LLMAdapter
 from app.utils.logger import logger
 
 
@@ -425,7 +426,11 @@ class FileOperationAgent:
         file_tools: Optional[FileTools] = None,
         max_steps: int = 20,
         use_function_calling: bool = False,
-        tools: Optional[List[Dict[str, Any]]] = None
+        tools: Optional[List[Dict[str, Any]]] = None,
+        # 【新增】LLM 配置参数 - 用于 LLMAdapter 自适应探测
+        api_base: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None
     ):
         """
         初始化Agent
@@ -435,6 +440,11 @@ class FileOperationAgent:
             session_id: 会话ID（必需）- 用于文件操作安全追踪和审计
             file_tools: 文件工具实例（可选，默认创建新实例）
             max_steps: 最大执行步数
+            use_function_calling: 是否使用Function Calling模式（向后兼容）
+            tools: 工具定义列表
+            api_base: LLM API地址（可选，用于自适应探测）
+            api_key: LLM API密钥（可选，用于自适应探测）
+            model: LLM模型名称（可选，用于自适应探测）
         """
         # 【修复-波次1】强制要求session_id，避免写操作失败
         if not session_id:
@@ -470,10 +480,22 @@ class FileOperationAgent:
         self.use_function_calling = use_function_calling
         self.tools = tools or []
         
-        if use_function_calling:
-            logger.info(f"FileOperationAgent initialized (session: {session_id}, function_calling=True, tools_count={len(self.tools)})")
+        # 【新增】LLMAdapter 自适应探测 - 2026-03-20 小沈
+        # 如果提供了 API 配置，初始化 LLMAdapter
+        if api_base and api_key and model:
+            self.adapter = LLMAdapter(
+                api_base=api_base,
+                api_key=api_key,
+                model=model,
+                auto_detect=True
+            )
+            logger.info(f"FileOperationAgent initialized (session: {session_id}, adapter=LLMAdapter, model={model})")
         else:
-            logger.info(f"FileOperationAgent initialized (session: {session_id})")
+            self.adapter = None
+            if use_function_calling:
+                logger.info(f"FileOperationAgent initialized (session: {session_id}, function_calling=True, tools_count={len(self.tools)})")
+            else:
+                logger.info(f"FileOperationAgent initialized (session: {session_id})")
     
     async def run(
         self,
@@ -846,15 +868,36 @@ class FileOperationAgent:
             # 前面的消息作为历史
             history_dicts = self.conversation_history[:-1]
             
-            # 【Function Calling】判断使用哪种调用方式 - 2026-03-20 小沈
-            if self.use_function_calling and self.tools:
-                # 使用 Function Calling 模式
+            # 【修改】使用 LLMAdapter 自适应策略 - 2026-03-20 小沈
+            if self.adapter:
+                # 确保能力已探测
+                strategy = await self.adapter.ensure_capability()
+                logger.info(f"[Agent] Using method: {strategy.method}")
+                
+                # 根据策略选择调用方式
+                if strategy.method == "response_format":
+                    response = await self._get_llm_response_with_response_format(
+                        message=last_message,
+                        history_dicts=history_dicts
+                    )
+                elif strategy.method == "tools":
+                    response = await self._get_llm_response_with_tools(
+                        message=last_message,
+                        history_dicts=history_dicts
+                    )
+                else:
+                    response = await self._get_llm_response_text(
+                        message=last_message,
+                        history_dicts=history_dicts
+                    )
+            elif self.use_function_calling and self.tools:
+                # 使用 Function Calling 模式（向后兼容）
                 response = await self._get_llm_response_with_tools(
                     message=last_message,
                     history_dicts=history_dicts
                 )
             else:
-                # 使用普通文本模式
+                # 使用普通文本模式（向后兼容）
                 response = await self._get_llm_response_text(
                     message=last_message,
                     history_dicts=history_dicts
@@ -946,6 +989,98 @@ class FileOperationAgent:
         
         self.conversation_history.append({"role": "assistant", "content": content})
         return content
+    
+    async def _get_llm_response_with_response_format(
+        self,
+        message: str,
+        history_dicts: List[Dict]
+    ) -> str:
+        """
+        【新增】使用 response_format 模式获取 LLM 响应 - 2026-03-20 小沈
+        
+        通过 response_format 约束 JSON 输出，然后解析为 ReAct 格式
+        
+        Args:
+            message: 当前用户消息
+            history_dicts: 对话历史
+        
+        Returns:
+            str: LLM 响应内容（ReAct 格式的 JSON 字符串）
+        """
+        from app.services.file_operations.adapter import dict_list_to_messages
+        
+        # 构建 ReAct Schema
+        schema = {
+            "type": "json_object",
+            "json_schema": {
+                "type": "object",
+                "properties": {
+                    "thought": {"type": "string", "description": "思考过程"},
+                    "action": {"type": "string", "description": "工具名称"},
+                    "action_input": {
+                        "type": "object",
+                        "description": "工具参数"
+                    }
+                },
+                "required": ["thought", "action", "action_input"]
+            }
+        }
+        
+        try:
+            # 构建历史消息
+            history_messages = dict_list_to_messages(history_dicts)
+            
+            # 调用 LLM（使用 chat_with_response_format 方法）
+            response = await self.llm_client.chat_with_response_format(
+                message=message,
+                history=history_messages,
+                response_format=schema
+            )
+            
+            # 处理响应
+            if hasattr(response, 'error') and response.error:
+                logger.error(f"[Agent] response_format error: {response.error}")
+                raise Exception(response.error)
+            
+            if hasattr(response, 'content'):
+                content = response.content
+            elif isinstance(response, dict):
+                content = response.get("content", str(response))
+            else:
+                content = str(response)
+            
+            logger.info(f"[Agent] response_format raw content: {repr(content)[:500]}")
+            
+            # 解析 JSON 响应
+            try:
+                result = json.loads(content)
+                
+                # 提取字段
+                thought = result.get("thought", "")
+                action = result.get("action", "")
+                action_input = result.get("action_input", {})
+                
+                # 转换为 Agent 的 ToolParser 可以理解的格式
+                # 兼容新字段名 (action_tool, params) 和旧字段名 (action, action_input)
+                formatted = {
+                    "thought": thought,
+                    "action_tool": action,  # 新字段名
+                    "params": action_input   # 新字段名
+                }
+                
+                content = json.dumps(formatted, ensure_ascii=False)
+                logger.info(f"[Agent] response_format parsed: action={action}")
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={repr(content)[:200]}")
+                raise Exception(f"Invalid JSON from LLM: {content}")
+            
+            self.conversation_history.append({"role": "assistant", "content": content})
+            return content
+            
+        except Exception as e:
+            logger.error(f"[Agent] _get_llm_response_with_response_format failed: {e}")
+            raise
     
     def _format_tool_calls_for_agent(self, tool_calls: List[Dict[str, Any]]) -> str:
         """
