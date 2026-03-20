@@ -1,3 +1,166 @@
+v0.6.15
+
+更新时间：2026-03-20 10:05:00
+
+更新内容：
+
+## 1. Structured Outputs 自适应兼容方案研究
+
+更新时间：2026-03-20 10:05:00
+
+### 1.1 研究背景
+
+**问题**：原有方案依赖硬编码模型名称，新模型需要手动添加，无法处理未知模型。
+
+**解决方案**：基于特征检测的自适应兼容方案，根据模型反馈自动适配。
+
+### 1.2 三种 Structured Outputs 模式
+
+| 模式 | 是否需要解析 | 可靠性 | 支持模型数 | 推荐度 |
+|------|------------|--------|----------|--------|
+| **tools** | ❌ 不需要 | ✅ 高（结构化返回） | ~50个 | ⭐⭐⭐ 强烈推荐 |
+| **response_format** | ✅ 需要解析 | ⚠️ 中（部分非标准） | ~45个 | ⭐⭐ 可用 |
+| **prompt** | ✅ 需要解析 | ❌ 低（需正则提取） | 所有模型 | ⭐ 不推荐 |
+
+**返回格式对比**：
+
+```
+【tools 模式】- 推荐
+{
+  "tool_calls": [{
+    "function": {
+      "name": "search_files",
+      "arguments": "{\"path\": \"C:/\", \"pattern\": \"*.py\"}"
+    }
+  }]
+}
+✅ 参数已是结构化，直接解析 arguments 即可
+
+【response_format 模式】
+{
+  "content": "{\"action\": \"search_files\", \"path\": \"C:/\", \"pattern\": \"*.py\"}"
+}
+⚠️ content 是 JSON 字符串，需要 json.loads() 解析一次
+
+【prompt 模式】
+{
+  "content": "我需要搜索 C:/ 下的 Python 文件"
+}
+❌ 纯文本，需要正则提取，容易出错
+```
+
+### 1.3 策略优先级（修正）
+
+**根据实测结果修正**：
+
+| 优先级 | 策略 | 支持模型数 | 说明 |
+|--------|------|----------|------|
+| **1** | **tools** | ~50个 | ✅ 支持最广 |
+| **2** | response_format | ~45个 | 部分返回非标准JSON |
+| **3** | prompt | 所有模型 | 降级方案 |
+
+### 1.4 LLM 支持情况汇总
+
+| 模型 | response_format | tools | reasoning_content | 备注 |
+|------|---------------|-------|-----------------|------|
+| **LongCat** | ❌ 空响应 | ✅ 支持 | ✅ 支持 | 七牛版本 |
+| **GLM-4.7 (官方)** | ✅ 支持 | ❌ 不支持 | ✅ 支持 | GLM 官方 API |
+| **GLM-4.6/4.7 (七牛)** | ✅ 支持 | ✅ 支持 | ✅/❌ | 七牛版本 |
+| **DeepSeek-chat** | ✅ 支持 | ✅ 支持 | ❌ | DeepSeek 官方 |
+| **DeepSeek-R1** | ✅ 支持 | ✅ 支持 | ✅ | 完整支持 |
+| **Kimi-K2 (官方)** | ✅ 支持 | ✅ 支持 | ❌ | Kimi 官方 |
+| **Kimi-K2-Thinking** | ❌ 不支持 | ❌ 不支持 | ❌ | 特殊版本 |
+| **MiniMax-M2** | ✅ 支持 | ✅ 支持 | ❌ | 官方文档确认 |
+| **MiniMax-M2.5 (七牛)** | ✅ 支持 | ✅ 支持 | ✅ | 七牛完整支持 |
+| **Qwen-Turbo (七牛)** | ✅ 支持 | ✅ 支持 | ❌ | 七牛版本 |
+| **Qwen3-Max (七牛)** | ✅ 支持 | ✅ 支持 | ❌ | 七牛版本 |
+
+### 1.5 新增系统适配（Windows/Linux/Mac）
+
+**问题背景**：LLM 返回的命令和路径格式需要适配当前操作系统。
+
+```
+【没有告知系统】
+LLM 返回：ls /home/user/file.txt  ← Linux 命令，Windows 用不了
+
+【告知了系统】
+LLM 返回：dir C:\Users\xxx\file.txt  ← Windows 命令，正确
+```
+
+**解决方案**：在 System Prompt 和工具 Description 中告知 LLM 当前操作系统。
+
+### 1.6 新增文档
+
+| 文档 | 说明 | 版本 |
+|------|------|------|
+| `ReAct-框架对比与实现方法总结-小沈-2026-03-20.md` | 5个框架总结报告 | v1.0 |
+| `LLM-Structured-Outputs-支持情况研究报告-小沈-2026-03-20.md` | 含三个概念通俗解释 | v1.2 |
+| `Structured-Outputs-自适应兼容方案-小沈-2026-03-20.md` | 含系统适配（新增） | v1.3 |
+
+### 1.7 核心设计
+
+**OSAdapter 类**：
+
+```python
+class OSAdapter:
+    system = platform.system()  # Windows / Linux / Darwin
+    path_separator = "\\" if is_windows else "/"
+    
+    def get_system_prompt(self) -> str:
+        """生成系统提示信息"""
+        return f"""【操作系统】
+{self.system}
+
+【路径格式】
+- Windows: C:\\Users\\xxx\\file.txt
+- Linux/Mac: /home/xxx/file.txt
+
+【当前系统命令】
+dir/copy/del/type (Windows)
+ls/cp/rm/cat (Linux/Mac)
+"""
+```
+
+**能力探测器**：
+
+```python
+class CapabilityDetector:
+    async def detect(self):
+        # Step1: 探测 tools（优先级最高）
+        # Step2: 探测 response_format（仅在 tools 不支持时）
+        # Step3: 降级到 prompt
+```
+
+**策略选择器**：
+
+```python
+def select(feature: LLMFeature) -> SelectedStrategy:
+    if feature.supports_tools:
+        return SelectedStrategy(method="tools", ...)  # 优先级最高
+    if feature.supports_response_format:
+        return SelectedStrategy(method="response_format", ...)
+    return SelectedStrategy(method="prompt", ...)
+```
+
+---
+
+## 2. Git提交记录
+
+```
+commit 5b6ff49f
+Author: 小沈
+Date:   2026-03-20
+
+docs: 新增Structured Outputs研究报告和自适应兼容方案v1.3 - 小沈-2026-03-20
+
+5 files changed, 3566 insertions(+)
+```
+
+参与开发：小沈
+完成时间：2026-03-20 10:05:00
+
+---
+
 v0.6.14
 
 更新时间：2026-03-20 09:35:30
