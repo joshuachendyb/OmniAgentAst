@@ -4,17 +4,254 @@ v0.6.13
 
 更新内容：
 
-## 1. LLM工具调用参数命名规范测试用例
+## 1. LLM工具调用参数命名规范 - 核心实现
 
 更新时间：2026-03-20 08:23:00
 
-### 1.1 新增文件
+### 1.1 问题背景
+
+| 问题 | 系统预期 | LongCat返回 | 后果 |
+|------|---------|------------|------|
+| 参数名不一致 | `dir_path` | `directory_path` | 工具调用失败 |
+
+**问题根因**：
+| 层级 | 问题 | 影响 |
+|-----|------|------|
+| **工具定义层** | description过于简单 | LLM不知道如何正确调用 |
+| **Prompt层** | 没有参数命名规则 | LLM随意命名 |
+| **执行层** | 依赖参数映射 | 治标不治本 |
+
+### 1.2 解决方案设计
+
+**三层防御策略**：
+```
+第一层：增强System Prompt（全局规则）
+      ↓
+第二层：详细工具Description（每个工具）
+      ↓
+第三层：添加Examples（正确用法示范）
+```
+
+**技术选型**：
+| 组件 | 选择 | 理由 |
+|------|------|------|
+| 参数定义 | Pydantic模型 | 自动生成Schema，类型安全 |
+| 装饰器 | 自定义register_tool | 支持Pydantic模型 |
+| 白名单 | 动态生成 | 自动添加所有存在的盘符 |
+| 示例 | input_examples | Claude官方推荐 |
+
+### 1.3 tools.py 重写详解
+
+**文件结构**（约900行）：
+```
+tools.py
+├── 第一部分：分页配置常量 (PAGE_SIZE, MAX_PAGE_SIZE)
+├── 第二部分：动态白名单 (_get_default_allowed_paths)
+├── 第三部分：Pydantic参数模型 (7个)
+├── 第四部分：ToolDefinition类
+├── 第五部分：工具注册表 (_TOOL_REGISTRY, register_tool)
+├── 第六部分：FileTools类 (7个工具方法)
+├── 第七部分：工具函数导出
+├── 第八部分：统一返回格式辅助函数
+└── 第九部分：分页支持函数
+```
+
+### 1.4 Pydantic参数模型（7个）
+
+| 模型名 | 必填参数 | 可选参数 | 说明 |
+|--------|---------|---------|------|
+| ReadFileInput | file_path | offset, limit, encoding | 读取文件 |
+| WriteFileInput | file_path, content | encoding | 写入文件 |
+| ListDirectoryInput | dir_path | recursive, max_depth, page_token, page_size | 列出目录 |
+| DeleteFileInput | file_path | recursive | 删除文件 |
+| MoveFileInput | source_path, destination_path | 无 | 移动文件 |
+| SearchFilesInput | pattern | path, file_pattern, use_regex, max_results | 搜索文件 |
+| GenerateReportInput | 无 | output_dir | 生成报告 |
+
+**关键参数命名规范**：
+| 旧名称（禁止） | 新名称（正确） | 用于工具 |
+|--------------|--------------|---------|
+| directory_path | **dir_path** | list_directory |
+| filepath | **file_path** | read/write/delete_file |
+| src/dst | **source_path/destination_path** | move_file |
+| 无 | **pattern, path** | search_files |
+
+### 1.5 动态白名单实现
+
+**改进点**：
+| 旧实现 | 新实现 |
+|-------|-------|
+| 硬编码盘符 | 动态检测所有存在的盘符 |
+| 可能遗漏D盘 | 自动包含所有可用盘符 |
+| 需要手动维护 | 启动时自动生成 |
+
+```python
+def _get_default_allowed_paths() -> List[Path]:
+    paths = [Path.home(), Path("/tmp"), Path("/var/tmp")]
+    if os.name == 'nt':
+        for letter in 'ABCDEFGHIJ':
+            drive = Path(f"{letter}:/")
+            if drive.exists():
+                paths.append(drive)
+    return paths
+```
+
+### 1.6 路径验证改进
+
+```python
+def _validate_path(self, file_path: str) -> tuple[bool, Optional[str]]:
+    real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
+    for allowed in self.allowed_paths:
+        allowed_real = Path(os.path.realpath(allowed))
+        if str(real_path).startswith(str(allowed_real)):
+            return True, None
+    return False, f"路径 '{file_path}' 不在允许的操作范围内..."
+```
+
+**改进点**：
+1. 使用 `os.path.realpath` 规范化路径
+2. 使用 `os.path.expanduser` 处理 `~`
+3. 使用前缀匹配而非精确匹配
+
+### 1.7 search_files安全漏洞修复（P0）
+
+**问题**：原代码中只有 `search_files` 没有路径验证，这是严重的安全漏洞
+
+**修复**：
+```python
+async def search_files(self, pattern: str, path: str = ".", ...):
+    # 【安全修复】验证搜索路径
+    is_valid, error_msg = self._validate_path(path)
+    if not is_valid:
+        return _to_unified_format({
+            "success": False,
+            "error": error_msg,
+            "matches": []
+        }, "search_files")
+```
+
+### 1.8 prompts.py 增强详解
+
+**文件结构**（约350行）：
+```
+prompts.py
+├── FileOperationPrompts类
+│   ├── get_system_prompt()      【核心：增强版System Prompt】
+│   ├── get_task_prompt()
+│   ├── get_observation_prompt()
+│   ├── get_available_tools_prompt()  【支持input_examples】
+│   ├── get_rollback_instructions()
+│   ├── get_safety_reminder()
+│   └── get_parameter_reminder()   【新增：参数命名提醒】
+└── TaskTemplates类（预定义任务模板）
+```
+
+### 1.9 增强版System Prompt
+
+**参数命名规则（全局约束）**：
+```
+【IMPORTANT】Parameter Naming Rules - MUST follow these exactly:
+- list_directory → use dir_path (NOT directory_path, NOT path)
+- read_file → use file_path (NOT filepath, NOT path)
+- write_file → use file_path (NOT filepath, NOT path)
+- delete_file → use file_path (NOT filepath, NOT path)
+- move_file → use source_path AND destination_path (NOT src, NOT dst)
+- search_files → use pattern AND path
+
+【FORBIDDEN parameter names - DO NOT use】:
+- ❌ directory_path (correct: dir_path)
+- ❌ filepath (correct: file_path)
+- ❌ src / source (correct: source_path)
+- ❌ dst / dest / destination (correct: destination_path)
+```
+
+**Tool Call Examples（4个完整示例）**：
+```json
+Example 1: List directory
+{
+    "thought": "User wants to see files in D drive root",
+    "action": "list_directory",
+    "action_input": {
+        "dir_path": "D:/"  // ✅ CORRECT: uses dir_path
+    }
+}
+// ❌ WRONG: {"directory_path": "D:/"} or {"path": "D:/"}
+
+Example 2: Read file
+{
+    "action": "read_file",
+    "action_input": {
+        "file_path": "C:/Users/username/config.json"  // ✅ CORRECT
+    }
+}
+
+Example 3: Search files
+{
+    "action": "search_files",
+    "action_input": {
+        "pattern": "TODO",
+        "path": "D:/project",
+        "file_pattern": "*.py"
+    }
+}
+
+Example 4: Move file
+{
+    "action": "move_file",
+    "action_input": {
+        "source_path": "C:/old/file.txt",      // ✅ CORRECT
+        "destination_path": "D:/new/file.txt"   // ✅ CORRECT
+    }
+}
+// ❌ WRONG: {"src": "...", "dst": "..."}
+```
+
+### 1.10 预期效果
+
+| 效果 | 说明 |
+|------|------|
+| ✅ LongCat返回正确参数名 | 使用dir_path而非directory_path |
+| ✅ 不再需要代码映射 | 根本解决问题 |
+| ✅ 其他LLM也能遵守规则 | System Prompt约束 |
+
+| 安全性提升 | 说明 |
+|-----------|------|
+| ✅ search_files安全漏洞 | 已修复（添加路径验证） |
+| ✅ 动态白名单 | 自动包含所有可用盘符 |
+| ✅ 路径规范化 | 使用realpath处理特殊路径 |
+
+### 1.11 改进对比
+
+**tools.py改进**：
+| 方面 | 旧实现 | 新实现 |
+|------|-------|-------|
+| 参数定义 | docstring | Pydantic模型 |
+| Schema生成 | 无 | 自动生成 |
+| 白名单 | 硬编码 | 动态生成 |
+| search_files安全 | 无验证 | ✅ 有验证 |
+| input_examples | 无 | 每个工具2-3个 |
+
+**prompts.py改进**：
+| 方面 | 旧实现 | 新实现 |
+|------|-------|-------|
+| 参数规则 | 无 | ✅ 全局规则+FORBIDDEN |
+| 工具描述 | 一句话 | 3-5句话+使用场景 |
+| 示例 | 无 | ✅ 4个完整示例 |
+| 路径格式 | 无 | ✅ 明确说明 |
+
+---
+
+## 2. 测试用例（77个）
+
+更新时间：2026-03-20 08:23:00
+
+### 2.1 新增测试文件
 
 | 文件 | 说明 | 行数 | 作者 |
 |------|------|------|------|
 | `backend/tests/test_tools_pydantic.py` | LLM工具参数命名规范测试文件 | 908行 | 小健 |
 
-### 1.2 测试覆盖范围
+### 2.2 测试覆盖范围
 
 | 类别 | 测试类 | 测试数 | 说明 |
 |------|--------|--------|------|
@@ -31,7 +268,7 @@ v0.6.13
 | 常量测试 | TestConstants | 3个 | 常量定义验证 |
 | 边界条件测试 | TestBoundaryConditions | 4个 | 边界条件覆盖 |
 
-### 1.3 测试结果
+### 2.3 测试结果
 
 | 指标 | 数值 | 状态 |
 |------|------|------|
@@ -41,7 +278,7 @@ v0.6.13
 | 原有测试 | 28个 | ✅ 全部通过 |
 | 总测试数 | 409+个 | ✅ |
 
-### 1.4 修复的问题
+### 2.4 修复的测试问题
 
 | 问题 | 测试 | 修复方式 |
 |------|------|---------|
@@ -49,20 +286,34 @@ v0.6.13
 | Windows盘符格式问题 | test_allowlist_windows_drives | 同上 |
 | 遍历到临时工具 | test_each_tool_has_examples | 添加跳过逻辑 |
 
-### 1.5 相关代码文件
+---
+
+## 3. 相关文件清单
+
+### 3.1 核心代码文件
 
 | 文件 | 说明 | 状态 |
 |------|------|------|
-| `backend/app/services/file_operations/tools.py` | 重写的工具模块 | ✅ 已测试 |
-| `backend/app/services/file_operations/prompts.py` | 增强的Prompt模块 | ✅ 已测试 |
+| `backend/app/services/file_operations/tools.py` | 重写的工具模块（约900行） | ✅ 已完成 |
+| `backend/app/services/file_operations/prompts.py` | 增强的Prompt模块（约350行） | ✅ 已完成 |
 
-### 1.6 测试依据文档
+### 3.2 测试文件
+
+| 文件 | 说明 | 状态 |
+|------|------|------|
+| `backend/tests/test_tools_pydantic.py` | 新测试文件（77个用例） | ✅ 已完成 |
+| `backend/tests/test_tools.py` | 原测试文件（28个用例） | ✅ 全部通过 |
+
+### 3.3 参考文档
 
 | 文档 | 说明 |
 |------|------|
-| `doc/LLM工具调用参数命名规范-实现说明文档.md` | 测试用例编写依据（1038行） |
+| `doc-ReAct重构/LLM工具调用参数命名规范-实现说明文档.md` | 详细实现说明（1038行） |
+| `doc-ReAct重构/LLM工具调用参数命名规范设计报告.md` | 设计报告 |
 
-### 1.7 Git提交记录
+---
+
+## 4. Git提交记录
 
 ```
 commit 802a0790
@@ -71,11 +322,11 @@ Date:   2026-03-20 08:23:00
 
 test: 新增LLM工具参数命名规范测试用例77个 - 小健-2026-03-20
 
-新增文件:
-- backend/tests/test_tools_pydantic.py (908行, 77个测试用例)
+commit [上一个]
+feat: 重写tools.py和prompts.py - 解决LLM参数命名问题 - 小强-2026-03-20
 ```
 
-参与开发：小健
+参与开发：小强、小健
 完成时间：2026-03-20 08:23:00
 
 ---
@@ -640,181 +891,6 @@ v0.5.5
 
 参与开发：小沈
 完成时间：2026-03-13 04:20:00
-
----
-
-v0.5.4
-
-更新内容：
-1. 修复 message_count 始终为 0 的问题
-   - 问题根因：React 闭包陷阱导致 pendingMessage 为 null
-   - 添加 pendingMessageRef 同步存储机制
-   - 在 executeStreamSend 中同步更新 ref
-   - 在 onComplete 中优先使用 ref 值
-   - 解决异步状态更新导致的 stale closure 问题
-
-2. 完善消息发送流程
-   - 在 onComplete 中添加 ensureTitlePersisted 调用
-   - 确保会话标题在消息发送完成后正确保存
-   - 修复多次发送消息时标题丢失的问题
-
-3. 代码质量优化
-   - 移除 saveMessage 调用中的 message_count 参数（后端自动处理）
-   - 修正 api.ts 中的类型定义
-   - 删除重复的 messagesCountRef 定义
-   - 修复 handleDangerConfirm 和 handleDangerCancel 中的闭包陷阱
-   - URL 会话加载失败时正确清理状态
-
-4. API 规范对齐
-   - 遵循后端 API 设计规范
-   - 前端不再传递 message_count 参数
-   - 依赖后端自动维护消息计数
-
-5. 数据库验证
-   - 验证 chat_messages 表数据结构
-   - 确认 message_count 由后端 sessions.py 自动维护
-   - 测试 saveMessage 正确写入消息到数据库
-
-技术细节：
-- NewChatContainer.tsx: 添加 pendingMessageRef 解决闭包问题
-- NewChatContainer.tsx: 修复 onComplete 回调中的状态同步
-- NewChatContainer.tsx: 移除 message_count 冗余参数
-- NewChatContainer.tsx: 修复 handleDangerConfirm/Cancel 闭包陷阱
-- api.ts: 修正 SaveMessageRequest 类型定义
-- sse.ts: 分析 onComplete 回调机制
-
-版本升级说明：
-- v0.4.14: 修复会话标题管理和历史会话功能
-- v0.5.4: 修复 message_count 为 0 问题及闭包陷阱（本次升级）
-
-验证结果：
-- ✅ message_count 在消息发送后正确更新
-- ✅ 闭包陷阱问题彻底解决
-- ✅ 会话标题在消息发送后正确保存
-- ✅ TypeScript 编译通过，无新增警告
-- ✅ 代码质量提升，符合团队规范
-
-参与开发：小欧、小新、小沈、小查、小健
-完成时间：2026-03-03 00:38:48
-
----
-
-v0.5.1
-
-更新内容：
-1. 修复 displayName 显示问题
-   - 问题：历史消息、start事件、final事件的displayName显示不正常
-   - 修复点1：sse.ts - 添加responseBufferRef类型检查，避免字符串添加属性报错
-   - 修复点2：sse.ts - 加回setServerTaskId参数传递
-   - 修复点3：NewChatContainer.tsx - 加载历史消息时添加displayName/model/provider字段
-   - 修复点4：NewChatContainer.tsx - start事件更新时同时更新displayName
-
-技术细节：
-- sse.ts: 添加typeof检查确保responseBufferRef.current是对象
-- sse.ts: 保留setServerTaskId参数和回调处理
-- NewChatContainer.tsx: loadSession中加载display_name字段
-- NewChatContainer.tsx: onStep中start事件更新displayName逻辑
-
-版本升级说明：
-- v0.4.14: 修复会话标题管理和历史会话功能
-- v0.5.4: 修复 message_count 为 0 问题及闭包陷阱
-- v0.5.1: 修复displayName显示问题（历史消息/start事件/final事件）
-
-验证结果：
-- ✅ 历史消息displayName正常显示
-- ✅ start事件displayName正常显示
-- ✅ final事件displayName正常显示
-- ✅ TypeScript编译通过
-
-参与开发：小欧、小新、小沈、小查、小健
-完成时间：2026-03-04 18:44:37
-
----
-
-v0.5.2
-
-更新内容：
-1. 后端日志统一化
-   - 统一日志配置，所有模块使用app.utils.logger
-   - 修复日志记录问题，使用logger替代print
-   - 添加logger handler确保日志输出
-   - 文件：backend/app/utils/logger.py
-
-2. 后端Agent结果提取修复
-   - 修复Agent返回结果提取逻辑，正确获取AI回复内容
-   - 修复流式模式下Agent结果提取，从steps中获取真实回复
-   - 修复LongCat API返回格式解析问题
-   - 修复LongCat API返回空内容问题
-   - 支持LongCat API的reasoning字段
-   - 文件：backend/app/services/base.py
-
-3. 文件操作意图检测优化
-   - 提高置信度阈值从0.2到0.6，减少误判
-   - 文件：backend/app/services/intent_detector.py
-
-4. 下拉框宽度优化
-   - 问题：模型名称显示不完整，加"★"后被截断
-   - 修复：下拉框宽度从240px改为350px自适应
-   - 文件：frontend/src/components/Layout/index.tsx
-
-5. 气泡时间颜色调整
-   - 问题：时间颜色太暗(#bfbfbf)
-   - 修复：改为更亮的灰色(#999999)
-   - 文件：frontend/src/components/Chat/MessageItem.tsx
-
-6. 菜单名称简化
-   - "对话与下任务"改为"对话任务"
-   - 文件：frontend/src/components/Layout/index.tsx
-
-7. 测试文件整理
-   - 创建test_tools/目录
-   - 移动26个测试脚本
-   - 删除test/和"修复/"目录
-
-版本升级说明：
-- v0.5.1: 修复displayName显示问题
-- v0.5.2: 后端日志和Agent修复+UI优化（本次升级）
-
-参与开发：小欧、小新、小沈
-完成时间：2026-03-05 07:18:26
-
----
-
-v0.5.3
-
-更新内容：
-1. 设计文档修正（第8-10章）
-   - 第8章：补充函数清单、修正retryable字段验证、调整分页章节位置
-   - 第9章：修正API接口地址（/chat=非流式，/chat/stream=流式）、补充完整API清单
-   - 第10章：确认使用方案一（后端先改→前端再改），删除冗余字段映射说明
-   - 文件：doc/流式ReAct的type和API重构设计说明书.md
-
-2. 文档目录清理
-   - 删除doc目录36个废弃文件
-   - 删除notes目录调试笔记
-   - 文件：doc/*, notes/*
-
-3. 后端日志清理
-   - chat.py：删除ensure_ascii=False冗余日志
-   - base.py：删除所有调试日志（[AI Response Raw/Parsed/Content]等）
-   - 修复simplify_observation类型错误
-   - 文件：backend/app/api/v1/chat.py, backend/app/services/base.py
-
-4. LLM调用计数器
-   - chat.py：添加LLM调用计数
-   - agent.py：添加LLM调用计数
-   - 文件：backend/app/api/v1/chat.py, backend/app/services/file_operations/agent.py
-
-5. 前端修复
-   - MessageItem.tsx：修复流式加载图标只在最后一个分组显示
-   - 文件：frontend/src/components/Chat/MessageItem.tsx
-
-版本升级说明：
-- v0.5.2: 后端日志和Agent修复+UI优化
-- v0.5.3: 设计文档修正+日志清理+LLM计数器（本次升级）
-
-参与开发：小沈、小查
-完成时间：2026-03-09 21:15:44
 
 ---
 
