@@ -1,0 +1,180 @@
+{
+  "LongCat": {
+    "LongCat-Flash-Thinking-2601_response_format": {
+      "status_code": 200,
+      "content_length": 0,
+      "content_type": "application/json",
+      "response": null,
+      "error": "JSON parse failed: "
+    },
+    "LongCat-Flash-Thinking-2601_tools": {
+      "status_code": 0,
+      "content_length": 0,
+      "content_type": "",
+      "has_tool_calls": false,
+      "tool_calls": null,
+      "content": null,
+      "error": "HTTPSConnectionPool(host='api.longcat.chat', port=443): Read timed out. (read timeout=30)"
+    },
+    "LongCat-Flash-Thinking-2601_reasoning": {
+      "status_code": 200,
+      "has_reasoning_content": true,
+      "has_content": "2 + 2 equals 4.",
+      "content": "2 + 2 equals 4.",
+      "reasoning_content": "The user is asking a simple arithmetic question: \"What is 2+2?\" This is a straightforward math problem that requires basic addition knowledge. \n\n2+2 is a fundamental arithmetic operation that equals 4. I should provide a clear and direct answer to this uncomplicated question. \n\nI'll respond with the correct answer while maintaining a friendly tone.\n",
+      "error": null
+    }
+  },
+  "OpenCode": {
+    "minimax-m2.5-free_response_format": {
+      "status_code": 429,
+      "content_length": 112,
+      "content_type": "text/plain;charset=UTF-8",
+      "response": null,
+      "error": "HTTP 429: {\"type\":\"error\",\"error\":{\"type\":\"FreeUsageLimitError\",\"message\":\"Rate limit exceeded. Please try again later.\"}}"
+    },
+    "minimax-m2.5-free_tools": {
+      "status_code": 429,
+      "content_length": 112,
+      "content_type": "text/plain;charset=UTF-8",
+      "has_tool_calls": false,
+      "tool_calls": null,
+      "content": null,
+      "error": "HTTP 429: {\"type\":\"error\",\"error\":{\"type\":\"FreeUsageLimitError\",\"message\":\"Rate limit exceeded. Please try again later.\"}}"
+    },
+    "minimax-m2.5-free_reasoning": {
+      "status_code": 429,
+      "has_reasoning_content": false,
+      "has_content": false,
+      "content": null,
+      "reasoning_content": null,
+      "error": "HTTP 429: {\"type\":\"error\",\"error\":{\"type\":\"FreeUsageLimitError\",\"message\":\"Rate limit exceeded. Please try again later.\"}}"
+    },
+    "glm-5-free_response_format": {
+      "status_code": 401,
+      "content_length": 89,
+      "content_type": "text/plain;charset=UTF-8",
+      "response": null,
+      "error": "HTTP 401: {\"type\":\"error\",\"error\":{\"type\":\"ModelError\",\"message\":\"Model glm-5-free not supported\"}}"
+    },
+    "glm-5-free_tools": {
+      "status_code": 401,
+      "content_length": 89,
+      "content_type": "text/plain;charset=UTF-8",
+      "has_tool_calls": false,
+      "tool_calls": null,
+      "content": null,
+      "error": "HTTP 401: {\"type\":\"error\",\"error\":{\"type\":\"ModelError\",\"message\":\"Model glm-5-free not supported\"}}"
+    },
+    "glm-5-free_reasoning": {
+      "status_code": 401,
+      "has_reasoning_content": false,
+      "has_content": false,
+      "content": null,
+      "reasoning_content": null,
+      "error": "HTTP 401: {\"type\":\"error\",\"error\":{\"type\":\"ModelError\",\"message\":\"Model glm-5-free not supported\"}}"
+    },
+    "kimi-k2.5-free_response_format": {
+      "status_code": 401,
+      "content_length": 93,
+      "content_type": "text/plain;charset=UTF-8",
+      "response": null,
+      "error": "HTTP 401: {\"type\":\"error\",\"error\":{\"type\":\"ModelError\",\"message\":\"Model kimi-k2.5-free not supported\"}}"
+    },
+    "kimi-k2.5-free_tools": {
+      "status_code": 401,
+      "content_length": 93,
+      "content_type": "text/plain;charset=UTF-8",
+      "has_tool_calls": false,
+      "tool_calls": null,
+      "content": null,
+      "error": "HTTP 401: {\"type\":\"error\",\"error\":{\"type\":\"ModelError\",\"message\":\"Model kimi-k2.5-free not supported\"}}"
+    },
+    "kimi-k2.5-free_reasoning": {
+      "status_code": 401,
+      "has_reasoning_content": false,
+      "has_content": false,
+      "content": null,
+      "reasoning_content": null,
+      "error": "HTTP 401: {\"type\":\"error\",\"error\":{\"type\":\"ModelError\",\"message\":\"Model kimi-k2.5-free not supported\"}}"
+    },
+    "deepseek-chat_response_format": {
+      "status_code": 401,
+      "content_length": 92,
+      "content_type": "text/plain;charset=UTF-8",
+      "response": null,
+      "error": "HTTP 401: {\"type\":\"error\",\"error\":{\"type\":\"ModelError\",\"message\":\"Model deepseek-chat not supported\"}}"
+    },
+    "deepseek-chat_tools": {
+      "status_code": 401,
+      "content_length": 92,
+      "content_type": "text/plain;charset=UTF-8",
+      "has_tool_calls": false,
+      "tool_calls": null,
+      "content": null,
+      "error": "HTTP 401: {\"type\":\"error\",\"error\":{\"type\":\"ModelError\",\"message\":\"Model deepseek-chat not supported\"}}"
+    },
+    "deepseek-chat_reasoning": {
+      "status_code": 401,
+      "has_reasoning_content": false,
+      "has_content": false,
+      "content": null,
+      "reasoning_content": null,
+      "error": "HTTP 401: {\"type\":\"error\",\"error\":{\"type\":\"ModelError\",\"message\":\"Model deepseek-chat not supported\"}}"
+    }
+  },
+  "ZhipuAI": {
+    "glm-4.7-flash_response_format": {
+      "status_code": 200,
+      "content_length": 1168,
+      "content_type": "application/json; charset=UTF-8",
+      "response": {
+        "choices": [
+          {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+              "content": "{\"message\":\"hi\"}",
+              "reasoning_content": "The user wants a JSON response based on a specific instruction.\nThe instruction is: \"Reply with JSON: {\"message\": \"hi\"}\".\nThe user also provided a system prompt about always following instructions, outputting valid JSON, using a specific structure if unsure, and ending with triple backticks.\nThe user's prompt is extremely simple: \"Reply with JSON: {\"message\": \"hi\"}\".\n\nI need to output the exact JSON object requested.\nThe requested object is: `{\"message\": \"hi\"}`.\nI must wrap this in the triple backticks as requested in the system prompt (\"Ensure always end with \"```\" to indicate the end of the code block\").\n\nSo, the final output should be:\n```\n{\"message\": \"hi\"}\n```",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1773969701,
+        "id": "20260320092137d776b46697e942fb",
+        "model": "glm-4.7-flash",
+        "object": "chat.completion",
+        "request_id": "20260320092137d776b46697e942fb",
+        "usage": {
+          "completion_tokens": 164,
+          "completion_tokens_details": {
+            "reasoning_tokens": 152
+          },
+          "prompt_tokens": 68,
+          "prompt_tokens_details": {
+            "cached_tokens": 2
+          },
+          "total_tokens": 232
+        }
+      },
+      "error": null
+    },
+    "glm-4.7-flash_tools": {
+      "status_code": 200,
+      "content_length": 1002,
+      "content_type": "application/json; charset=UTF-8",
+      "has_tool_calls": false,
+      "tool_calls": null,
+      "content": "I'd be happy to use the hello function for you! However, I need to know what name you'd like me to use in the greeting. Could you please tell me what name to say hello to?",
+      "error": null
+    },
+    "glm-4.7-flash_reasoning": {
+      "status_code": 200,
+      "has_reasoning_content": true,
+      "has_content": "4",
+      "content": "4",
+      "reasoning_content": "1.  **Analyze the user's request:** The user is asking \"What is 2+2?\".\n\n2.  **Identify the core task:** Perform a simple arithmetic calculation.\n\n3.  **Execute the calculation:**\n    *   2 + 2 = 4\n\n4.  **Formulate the answer:** State the result clearly.\n\n5.  **Final Output:** 4.",
+      "error": null
+    }
+  }
+}
