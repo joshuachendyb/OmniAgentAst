@@ -6,8 +6,9 @@ from app.services.agent.intent.registry import Intent, IntentRegistry
 class IntentClassifier:
     """意图分类器"""
 
-    def __init__(self, registry: IntentRegistry):
+    def __init__(self, registry: IntentRegistry, confidence_threshold: float = 0.7):
         self.registry = registry
+        self.confidence_threshold = confidence_threshold
 
     def classify(self, preprocessed: dict, context: dict) -> List[Intent]:
         """
@@ -29,14 +30,16 @@ class IntentClassifier:
         confidence = preprocessed.get("confidence", 0)
 
         # 1. GLiClass 高置信度，直接使用
-        if confidence >= 0.7:
-            intent = self.registry.get(preprocessed["intent"])
+        if confidence >= self.confidence_threshold:
+            intent_name = preprocessed.get("intent", "")
+            intent = self.registry.get(intent_name)
             if intent:
                 matched_intents.append(intent)
 
         # 2. 置信度不足，尝试关键词匹配兜底
         if not matched_intents:
-            matched_intents = self._keyword_match(preprocessed["corrected"])
+            corrected_text = preprocessed.get("corrected", "")
+            matched_intents = self._keyword_match(corrected_text)
 
         # 3. 如果仍然失败，返回空列表（触发回退）
         return matched_intents
