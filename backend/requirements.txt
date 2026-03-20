@@ -14,4 +14,8 @@ aiosqlite==0.19.0
 # HTTP客户端
 httpx==0.26.0
 
+# 预处理模块依赖
+pycorrector==2.3.8
+gliclass==0.0.8
+
 # Python版本要求: >=3.11

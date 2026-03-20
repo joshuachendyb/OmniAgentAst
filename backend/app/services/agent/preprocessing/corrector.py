@@ -6,6 +6,8 @@
 Author: 小沈 - 2026-03-20
 """
 
+from typing import Any
+
 from pycorrector import Corrector
 
 
@@ -15,7 +17,7 @@ class TextCorrector:
     def __init__(self) -> None:
         self.corrector = Corrector()
 
-    def correct(self, text: str) -> tuple[str, list]:
+    def correct(self, text: str) -> tuple[str, list[Any]]:
         """
         校对修正
 
@@ -25,5 +27,8 @@ class TextCorrector:
         Returns:
             tuple: (修正后文本, 修正记录列表)
         """
+        if not text or not text.strip():
+            return text, []
+
         corrected, errors = self.corrector.correct(text)
         return corrected, errors
