@@ -1,3 +1,85 @@
+v0.6.13
+
+更新时间：2026-03-20 08:23:00
+
+更新内容：
+
+## 1. LLM工具调用参数命名规范测试用例
+
+更新时间：2026-03-20 08:23:00
+
+### 1.1 新增文件
+
+| 文件 | 说明 | 行数 | 作者 |
+|------|------|------|------|
+| `backend/tests/test_tools_pydantic.py` | LLM工具参数命名规范测试文件 | 908行 | 小健 |
+
+### 1.2 测试覆盖范围
+
+| 类别 | 测试类 | 测试数 | 说明 |
+|------|--------|--------|------|
+| Pydantic模型测试 | TestPydanticModels | 18个 | 7个Pydantic参数模型验证 |
+| 动态白名单测试 | TestDynamicAllowlist | 4个 | 动态允许目录功能 |
+| ToolDefinition测试 | TestToolDefinition | 5个 | 工具定义类验证 |
+| 装饰器测试 | TestRegisterToolDecorator | 4个 | register_tool装饰器 |
+| 工具注册表测试 | TestToolRegistry | 8个 | 工具注册与管理 |
+| 路径验证测试 | TestPathValidation | 7个 | 路径验证改进 |
+| 安全测试 | TestSearchFilesSecurity | 3个 | search_files安全修复 |
+| Prompts增强测试 | TestPromptsEnhancement | 10个 | Prompts增强功能 |
+| 分页功能测试 | TestPaginationFunctions | 5个 | 分页支持 |
+| 统一格式测试 | TestUnifiedFormat | 6个 | 统一返回格式 |
+| 常量测试 | TestConstants | 3个 | 常量定义验证 |
+| 边界条件测试 | TestBoundaryConditions | 4个 | 边界条件覆盖 |
+
+### 1.3 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 新增测试用例 | 77个 | ✅ |
+| 通过 | 77个 | ✅ |
+| 失败 | 0个 | ✅ |
+| 原有测试 | 28个 | ✅ 全部通过 |
+| 总测试数 | 409+个 | ✅ |
+
+### 1.4 修复的问题
+
+| 问题 | 测试 | 修复方式 |
+|------|------|---------|
+| Windows路径格式比较 | test_allowlist_contains_temp_dirs | 统一转换为正斜杠后比较 |
+| Windows盘符格式问题 | test_allowlist_windows_drives | 同上 |
+| 遍历到临时工具 | test_each_tool_has_examples | 添加跳过逻辑 |
+
+### 1.5 相关代码文件
+
+| 文件 | 说明 | 状态 |
+|------|------|------|
+| `backend/app/services/file_operations/tools.py` | 重写的工具模块 | ✅ 已测试 |
+| `backend/app/services/file_operations/prompts.py` | 增强的Prompt模块 | ✅ 已测试 |
+
+### 1.6 测试依据文档
+
+| 文档 | 说明 |
+|------|------|
+| `doc/LLM工具调用参数命名规范-实现说明文档.md` | 测试用例编写依据（1038行） |
+
+### 1.7 Git提交记录
+
+```
+commit 802a0790
+Author: 小健
+Date:   2026-03-20 08:23:00
+
+test: 新增LLM工具参数命名规范测试用例77个 - 小健-2026-03-20
+
+新增文件:
+- backend/tests/test_tools_pydantic.py (908行, 77个测试用例)
+```
+
+参与开发：小健
+完成时间：2026-03-20 08:23:00
+
+---
+
 v0.6.12
 
 更新时间：2026-03-19 17:00:00
