@@ -1,3 +1,180 @@
+v0.6.14
+
+更新时间：2026-03-20 09:35:30
+
+更新内容：
+
+## 1. Structured Outputs Function Calling 模式实现
+
+更新时间：2026-03-20 09:35:30
+
+### 1.1 核心价值
+
+| 约束层级 | 实现方式 | 约束强度 | 说明 |
+|---------|---------|---------|------|
+| 原第一层 | 增强System Prompt | 软约束 | LLM可能不遵守 |
+| 原第二层 | 详细工具Description | 软约束 | LLM可能忽略 |
+| 原第三层 | Examples示例 | 软约束 | LLM可能不参考 |
+| **新增第四层** | **Function Calling Schema** | **硬约束** | **LLM必须遵守** |
+
+**Function Calling 核心价值**：通过 tools Schema 强制约束 LLM 输出参数名，消除了 agent.py 中参数映射容错代码的必要。
+
+### 1.2 新增文件
+
+| 文件 | 行数 | 作者 | 说明 |
+|------|------|------|------|
+| `react_schema.py` | 387 | 小沈 | Function Calling Schema 生成器 |
+
+### 1.3 react_schema.py 代码结构
+
+```
+react_schema.py
+├── get_tools_schema_for_function_calling()  【核心】生成OpenAI格式Schema
+├── _process_description()                     处理工具描述
+├── _clean_properties()                       清理JSON Schema属性
+├── _extract_type()                           提取类型（支持anyOf/oneOf格式）
+├── _generate_example_hints()                 生成示例提示
+├── get_tool_schema()                         获取单个工具Schema
+├── validate_tool_call()                      验证和解析Function Calling返回
+├── get_available_tools()                     获取工具名称列表
+└── get_finish_tool_schema()                  获取finish工具Schema
+```
+
+### 1.4 LongCat API 支持情况
+
+| 功能 | 支持状态 | 说明 |
+|------|---------|------|
+| `response_format: {type: "json_object"}` | ❌ 不支持（返回空） | 废弃字段 |
+| `tools` / `function_calling` | ✅ **已验证支持** | 参数名正确返回 |
+
+### 1.5 base.py 新增方法
+
+| 方法 | 行号 | 说明 |
+|------|------|------|
+| `chat_with_tools()` | 341 | 非流式Function Calling调用 |
+| `chat_with_tools_stream()` | 463 | 流式Function Calling调用 |
+
+**chat_with_tools() 核心逻辑**：
+```
+1. 构建 messages（当前消息 + 历史）
+2. 添加 tools 参数（OpenAI格式Schema）
+3. 设置 tool_choice（"auto" / "required"）
+4. 调用 API，解析 tool_calls
+5. 返回 ChatResponse（包含序列化后的tool_calls）
+```
+
+### 1.6 agent.py 新增功能
+
+| 功能 | 行号 | 说明 |
+|------|------|------|
+| `use_function_calling` 参数 | 427 | Agent初始化参数，控制是否启用 |
+| `run_with_tools()` | 1122 | 便捷方法，自动启用Function Calling |
+
+**agent.py LLM调用分支**（第850-920行）：
+```python
+if self.use_function_calling and self.tools:
+    # Function Calling 模式：强制参数名正确
+    response = await self.llm_client.chat_with_tools(
+        message=..., history=..., tools=schema
+    )
+else:
+    # 原有 ReAct 文本模式：依赖三层软约束
+```
+
+### 1.7 测试用例（116个）
+
+| 测试文件 | 测试数 | 通过 | 状态 |
+|----------|--------|------|------|
+| `test_react_schema.py` | 47 | 47 | ✅ |
+| `test_function_calling_comprehensive.py` | 69 | 69 | ✅ |
+| **合计** | **116** | **116** | **✅** |
+
+**test_react_schema.py 测试覆盖**：
+- `_extract_type()` 类型提取（anyOf/oneOf格式）
+- `_clean_properties()` 属性清理
+- `_process_description()` 描述处理
+- `_generate_example_hints()` 示例生成
+- `get_tools_schema_for_function_calling()` 完整Schema生成
+- `get_finish_tool_schema()` finish工具Schema
+- 7个工具Schema验证（list_directory/read_file/write_file/delete_file/move_file/search_files/generate_report）
+
+**test_function_calling_comprehensive.py 测试覆盖**：
+- LongCat API响应解析（tool_calls格式）
+- 参数提取正确性（dir_path/file_path等）
+- 必需参数验证
+- 可选参数处理
+- 异常处理（JSON解析错误、缺少参数等）
+- chat_with_tools() 方法
+- chat_with_tools_stream() 方法
+
+### 1.8 LongCat Function Calling 调用验证
+
+**API请求格式**：
+```json
+{
+  "model": "longcat-xxx",
+  "messages": [...],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "list_directory",
+        "description": "...",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "dir_path": {"type": "string", "description": "..."}
+          },
+          "required": ["dir_path"]
+        }
+      }
+    }
+  ],
+  "tool_choice": "auto"
+}
+```
+
+**API响应格式**：
+```json
+{
+  "choices": [{
+    "message": {
+      "tool_calls": [{
+        "id": "call_xxx",
+        "type": "function",
+        "function": {
+          "name": "list_directory",
+          "arguments": "{\"dir_path\": \"D:/\"}"
+        }
+      }]
+    }
+  }]
+}
+```
+
+---
+
+## 2. Git提交记录
+
+```
+commit 445e8de4
+Author: 小查
+Date:   2026-03-20
+
+test: 新增Function Calling全面深度测试69个用例 - 小查-2026-03-20
+
+commit 2b3610fd
+Author: 小沈
+Date:   2026-03-20
+
+feat: 实现Structured Outputs Function Calling模式 - 小沈-2026-03-20
+```
+
+参与开发：小沈、小查
+完成时间：2026-03-20 09:35:30
+
+---
+
 v0.6.13
 
 更新时间：2026-03-20 08:23:00
