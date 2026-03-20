@@ -13,7 +13,7 @@ from app.services.agent.preprocessing.intent_classifier import IntentClassifier
 class TestIntentClassifier:
     """意图分类器测试"""
 
-    @patch("app.services.agent.preprocessing.intent_classifier.GLiClassPipeline")
+    @patch("gliclass.GLiClassPipeline")
     def test_classify_with_labels(self, mock_gliclass_class):
         """测试带标签的分类"""
         mock_classifier_instance = MagicMock()
@@ -41,7 +41,7 @@ class TestIntentClassifier:
         assert result["confidence"] == 0.0
         assert result["all_intents"] == {}
 
-    @patch("app.services.agent.preprocessing.intent_classifier.GLiClassPipeline")
+    @patch("gliclass.GLiClassPipeline")
     def test_classify_single_label(self, mock_gliclass_class):
         """测试单个标签的分类"""
         mock_classifier_instance = MagicMock()
@@ -58,3 +58,11 @@ class TestIntentClassifier:
         assert result["intent"] == "天气查询"
         assert result["confidence"] == 0.95
         assert len(result["all_intents"]) == 1
+
+    @patch("gliclass.GLiClassPipeline")
+    def test_classify_none_text(self, mock_gliclass_class):
+        """测试 None 文本输入"""
+        classifier = IntentClassifier()
+        result = classifier.classify(None, ["file", "network"])
+        assert result["intent"] == "unknown"
+        assert result["confidence"] == 0.0
