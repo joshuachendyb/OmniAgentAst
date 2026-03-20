@@ -664,171 +664,29 @@ print(ret["response"])
 
 ---
 
-## 9 Thought 类型设计深度分析
+## 9 Thought 类型设计：嵌入 vs 独立
 
-### 9.1 标准 ReAct 的 Thought 设计
+### 9.1 两种方案
 
-**原始 ReAct 论文（Yao et al. 2022）**：
+| 方案 | 说明 | 代表 |
+|------|------|------|
+| **嵌入式** | Thought 塞进 Action/Response 里 | LlamaIndex |
+| **独立式** | Thought 单独一个类型 | 标准 ReAct |
 
-```
-Thought → Action → Observation → Thought → Action → Observation → ... → Thought → Final Answer
-```
+### 9.2 哪个更合理？
 
-**核心特点**：
-- Thought 是**独立的推理步骤**
-- 每一步都有明确的类型标记
-- Thought 不和 Action 绑定
+| 维度 | 嵌入式 | 独立式 |
+|------|--------|--------|
+| **扩展性** | 加新类型时要决定 thought 放哪 | 新类型不需要管 thought |
+| **类型职责** | 一个类型做两件事 | 每个类型只做一件事 |
+| **前端渲染** | 需要特殊判断 | 按 type 直接渲染 |
+| **提取思考过程** | 需要遍历多个类型 | 直接过滤 thought 类型 |
 
-**原论文流程图**：
-```
-用户问题
-    │
-    ├── Thought1: "我需要搜索天气信息"
-    ├── Action1: search("天气")
-    ├── Observation1: "今天晴天 25°C"
-    │
-    ├── Thought2: "温度适中，不需要带外套"
-    ├── Action2: search("外套")
-    ├── Observation2: "不需要"
-    │
-    └── Thought3: "我已经知道了"
-        Final Answer: "今天天气很好，不需要带外套"
-```
+### 9.3 结论
 
-### 9.2 LlamaIndex 的 Thought 设计
+**独立 Thought 类型更合理、扩展性更好**。
 
-**LlamaIndex 的做法**：把 Thought 嵌入到 Action 或 Response 中，没有独立的 Thought 类型。
-
-```
-LlamaIndex:
-├── ActionReasoningStep = thought + action + action_input   ← Thought 在这里
-├── ObservationReasoningStep = observation                   ← 没有 Thought
-└── ResponseReasoningStep = thought + response              ← Thought 在这里
-```
-
-**实际流程**：
-```
-current_reasoning = [
-    ActionReasoningStep(
-        thought="我需要搜索天气",          ← Thought 被塞进了 Action 里
-        action="search",
-        action_input={"query": "天气"}
-    ),
-    ObservationReasoningStep(
-        observation="今天晴天 25°C"        ← 没有 Thought
-    ),
-    ResponseReasoningStep(                  ← 没有独立的 Thought 步骤
-        thought="天气很好，不需要外套",
-        response="今天天气很好，不需要带外套"
-    )
-]
-```
-
-### 9.3 LangChain 的 Thought 设计
-
-**LangChain 的做法**：Thought 作为 LLM 输出的一部分，保存在 `AgentAction.log` 中。
-
-```
-LangChain:
-├── AgentAction.log = "Thought: I need to search\nAction: search\nAction Input: {...}"
-│   │                              ↑
-│   └── Thought 在 log 字段里（不单独提取）
-│
-└── AgentFinish.log = "Thought: I now know\nFinal Answer: ..."
-    │                              ↑
-    └── Thought 在 log 字段里（不单独提取）
-```
-
-**实际流程**：
-```
-intermediate_steps = [
-    (AgentAction(tool="search", tool_input="天气", 
-                 log="Thought: I need to search\nAction: search\nAction Input: {...}"),
-     "今天晴天 25°C"),
-    (AgentAction(tool="search", tool_input="外套", 
-                 log="Thought: Based on weather...\nAction: search\nAction Input: {...}"),
-     "不需要"),
-]
-```
-
-### 9.4 对比表
-
-| 对比项 | 标准 ReAct | LlamaIndex | LangChain |
-|--------|-----------|-----------|-----------|
-| **Thought 类型** | 独立类型 | 无（嵌入字段） | 无（在 log 里） |
-| **Action 类型** | 独立类型 | ActionReasoningStep | AgentAction |
-| **Observation 类型** | 独立类型 | ObservationReasoningStep | 无（直接存字符串） |
-| **Final 类型** | 独立类型 | ResponseReasoningStep | AgentFinish |
-| **类型数量** | 4 个 | 3 个 | 2 个 |
-| **Thought 提取** | 直接获取 | 从字段提取 | 从 log 解析 |
-| **类型判断** | 简单（看 type） | 需看类名 | 需看类型 |
-
-### 9.5 为什么 Thought 独立更好？
-
-**场景：追踪推理过程**
-
-```
-// Thought 独立（标准 ReAct）
-steps = [
-    {type: "thought", content: "我需要搜索天气"},      ← 可以直接获取所有思考
-    {type: "action_tool", tool: "search", input: "天气"},
-    {type: "observation", content: "晴天 25°C"},
-    {type: "thought", content: "天气很好，不需要外套"},  ← 独立的思考
-    {type: "final", content: "不需要带外套"},
-]
-
-// Thought 嵌入（LlamaIndex）
-steps = [
-    ActionReasoningStep(thought="我需要搜索天气", action="search", ...),  ← Thought 混在一起
-    ObservationReasoningStep(observation="晴天 25°C"),                    ← 没有 Thought
-    ResponseReasoningStep(thought="天气很好", response="不需要外套"),     ← Thought 混在一起
-]
-
-// 提取所有 Thought：
-// 方案A（独立）: [s for s in steps if s.type == "thought"]
-// 方案B（嵌入）: [s.thought for s in steps if hasattr(s, 'thought')]  ← 更复杂
-```
-
-**场景：前端渲染**
-
-```
-// 独立 Thought → 前端可以直接按 type 渲染
-if step.type == "thought":
-    render("💭 " + step.content)      // 思考气泡
-elif step.type == "action_tool":
-    render("🔧 " + step.tool_name)    // 工具调用卡片
-elif step.type == "observation":
-    render("👁 " + step.content)      // 观察结果
-
-// 嵌入 Thought → 需要额外判断
-if isinstance(step, ActionReasoningStep):
-    render("💭 " + step.thought)      // 先渲染 Thought
-    render("🔧 " + step.action)       // 再渲染 Action
-elif isinstance(step, ObservationReasoningStep):
-    render("👁 " + step.observation)  // 没有 Thought
-```
-
-### 9.6 对 omniAgent 的建议
-
-**建议使用独立 Thought 类型**：
-
-| 方案 | 对 omniAgent 的影响 |
-|------|-------------------|
-| **独立 Thought** | 与现有 `process_thought.py` 一致，前端渲染简单，类型判断直接 |
-| **嵌入 Thought** | 需要修改现有 `process_thought.py`，前端需要额外判断 |
-
-**我们的类型设计建议**：
-
-```
-我们的 ReasoningStep 类型：
-├── thought     → 独立类型（沿用现有 process_thought.py）
-├── action_tool → 独立类型
-├── observation → 独立类型
-├── final       → 独立类型
-├── error       → 独立类型
-├── incident    → 独立类型（paused/resumed/interrupted/retrying）
-└── start       → 独立类型（我们的扩展）
-```
+理由很简单：以后加新类型（incident、error、start）时，不需要改 Thought 的归属逻辑。每个类型只做一件事，类型系统更清晰。
 
 ---
 
@@ -849,7 +707,7 @@ elif isinstance(step, ObservationReasoningStep):
 |------|------|---------|------|
 | v1.0 | 2026-03-20 05:35:00 | 初始版本 | 小沈 |
 | v2.0 | 2026-03-20 13:45:00 | **深度修正**：基于实际源码修正 ReasoningStep 为 Pydantic BaseModel（非 dataclass）；修正 Output Parser 实际正则表达式（支持 Thought 前缀可选、Action Input JSON 提取）；新增 ResponseReasoningStep（含 is_streaming）、ObservationReasoningStep（含 return_direct）；新增 JSON 解析降级策略（dirtyjson → action_input_parser） | 小沈 |
-| v2.1 | 2026-03-20 13:50:00 | **新增第9章：Thought 类型设计深度分析**：标准 ReAct vs LlamaIndex vs LangChain 三种 Thought 设计对比；分析 Thought 独立 vs 嵌入的优缺点；对 omniAgent 的建议（使用独立 Thought 类型） | 小沈 |
+| v2.1 | 2026-03-20 13:50:00 | **新增第9章：Thought 类型设计：嵌入 vs 独立**：分析两种方案，结论是独立 Thought 更合理、扩展性更好 | 小沈 |
 
 ---
 
