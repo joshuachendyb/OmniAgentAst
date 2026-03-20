@@ -10,7 +10,7 @@ AI服务通用实现
 import json
 import httpx
 import httpcore
-from typing import List, Dict, Optional, AsyncGenerator
+from typing import List, Dict, Optional, AsyncGenerator, Any
 
 # 使用统一的日志配置
 from app.utils.logger import logger
@@ -337,3 +337,246 @@ class BaseAIService:
     async def close(self):
         """关闭HTTP客户端"""
         await self.client.aclose()
+    
+    async def chat_with_tools(
+        self,
+        message: str,
+        history: Optional[List[Message]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: str = "auto"
+    ) -> ChatResponse:
+        """
+        发送对话请求（使用 Function Calling）
+        
+        适用于 LongCat 等支持 tools 参数的 LLM
+        通过 tools Schema 强制约束参数名，确保参数正确性
+        
+        Args:
+            message: 当前用户消息
+            history: 对话历史（可选）
+            tools: OpenAI 格式的工具 Schema 列表
+            tool_choice: 工具选择模式 ("auto", "required", {"type": "function", "function": {"name": "xxx"}})
+        
+        Returns:
+            ChatResponse:
+            - content: 工具调用的 JSON 字符串（包含 tool_calls）
+            - model: 使用的模型
+            - provider: 提供商
+            - error: 错误信息（如果有）
+        """
+        try:
+            messages = self._build_messages(message, history)
+            
+            request_json = {
+                "model": self.model,
+                "messages": messages
+            }
+            
+            # 如果提供了 tools，添加到请求中
+            if tools:
+                request_json["tools"] = tools
+                request_json["tool_choice"] = tool_choice
+            
+            logger.info(
+                f"[chat_with_tools] model={self.model}, "
+                f"messages数量={len(messages)}, "
+                f"tools数量={len(tools) if tools else 0}"
+            )
+            
+            response = await self.client.post(
+                f"{self.api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json=request_json
+            )
+            
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"[chat_with_tools] API Error: {response.status_code}, {error_text}")
+                return ChatResponse(
+                    content="",
+                    model=self.model,
+                    provider=self.provider,
+                    error=f"API Error: {response.status_code}"
+                )
+            
+            data = response.json()
+            choices = data.get("choices", [])
+            
+            if not choices:
+                return ChatResponse(
+                    content="",
+                    model=self.model,
+                    provider=self.provider,
+                    error="No response from API"
+                )
+            
+            msg = choices[0].get("message", {})
+            
+            # 检查是否有 tool_calls
+            tool_calls = msg.get("tool_calls", [])
+            if tool_calls:
+                # 返回工具调用信息（序列化为 JSON）
+                return ChatResponse(
+                    content=json.dumps(tool_calls, ensure_ascii=False),
+                    model=self.model,
+                    provider=self.provider
+                )
+            else:
+                # 普通文本响应（LLM 选择不调用工具）
+                content = msg.get("content", "")
+                if not content:
+                    # 检查 finish_reason
+                    finish_reason = choices[0].get("finish_reason", "")
+                    if finish_reason == "tool_calls":
+                        # 有 tool_calls 但解析失败
+                        return ChatResponse(
+                            content="",
+                            model=self.model,
+                            provider=self.provider,
+                            error="Failed to parse tool_calls"
+                        )
+                
+                return ChatResponse(
+                    content=content,
+                    model=self.model,
+                    provider=self.provider
+                )
+                
+        except Exception as e:
+            import traceback
+            error_type_name = type(e).__name__
+            logger.error(
+                f"[chat_with_tools] Exception: {str(e)}, "
+                f"type: {error_type_name}, "
+                f"stack: {traceback.format_exc()}"
+            )
+            return ChatResponse(
+                content="",
+                model=self.model,
+                provider=self.provider,
+                error=f"{error_type_name}: {str(e)}"
+            )
+    
+    async def chat_with_tools_stream(
+        self,
+        message: str,
+        history: Optional[List[Message]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: str = "auto"
+    ) -> AsyncGenerator[StreamChunk, None]:
+        """
+        发送对话请求（使用 Function Calling，流式返回）
+        
+        适用于需要实时显示 LLM 响应和工具调用结果的场景
+        
+        Args:
+            message: 当前用户消息
+            history: 对话历史（可选）
+            tools: OpenAI 格式的工具 Schema 列表
+            tool_choice: 工具选择模式
+        
+        Yields:
+            StreamChunk: 流式响应片段
+        """
+        # 重置取消状态
+        self.reset_cancel()
+        
+        try:
+            messages = self._build_messages(message, history)
+            
+            request_json = {
+                "model": self.model,
+                "messages": messages,
+                "stream": True
+            }
+            
+            if tools:
+                request_json["tools"] = tools
+                request_json["tool_choice"] = tool_choice
+            
+            logger.info(
+                f"[chat_with_tools_stream] model={self.model}, "
+                f"tools数量={len(tools) if tools else 0}"
+            )
+            
+            async with self.client.stream(
+                "POST",
+                f"{self.api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json=request_json
+            ) as response:
+                self._current_response = response
+                
+                if response.status_code != 200:
+                    yield StreamChunk(
+                        content="",
+                        model=self.model,
+                        is_done=True,
+                        stream_error=f"API Error: {response.status_code}"
+                    )
+                    return
+                
+                async for line in response.aiter_lines():
+                    if self._cancelled:
+                        logger.info("[chat_with_tools_stream] Cancelled")
+                        yield StreamChunk(
+                            content="",
+                            model=self.model,
+                            is_done=True,
+                            stream_error="任务已取消",
+                            stream_error_type="cancelled"
+                        )
+                        return
+                    
+                    if not line or line.strip() == "":
+                        continue
+                    
+                    # 处理 data: 前缀
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                    elif line.startswith("data:"):
+                        data_str = line[5:]
+                    else:
+                        continue
+                    
+                    if data_str.strip() == "[DONE]":
+                        yield StreamChunk(content="", model=self.model, is_done=True)
+                        return
+                    
+                    try:
+                        data = json.loads(data_str)
+                        choices = data.get("choices", [])
+                        
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            content = delta.get("content", "") or ""
+                            
+                            if content:
+                                yield StreamChunk(
+                                    content=content,
+                                    model=self.model,
+                                    is_done=False,
+                                    is_reasoning=False
+                                )
+                    except json.JSONDecodeError:
+                        continue
+                
+                yield StreamChunk(content="", model=self.model, is_done=True)
+                
+        except Exception as e:
+            import traceback
+            logger.error(f"[chat_with_tools_stream] Error: {e}")
+            yield StreamChunk(
+                content="",
+                model=self.model,
+                is_done=True,
+                stream_error=str(e)
+            )
+        finally:
+            self._current_response = None
