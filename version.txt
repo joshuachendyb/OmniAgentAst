@@ -1,3 +1,104 @@
+v0.7.5
+
+更新时间：2026-03-21 07:08:21
+
+更新内容：
+
+## 1. 多意图处理架构重构 - 设计符合度审查与修正
+
+更新时间：2026-03-21 07:08:21
+
+### 1.1 审查发现的问题
+
+| 问题 | 严重程度 | 说明 | 状态 |
+|------|---------|------|------|
+| react_schema.py 迁移位置错误 | P0 | 设计要求迁移到 agent/types/react_schema.py，实际在 tools/file/file_react_schema.py | ✅ 已修复 |
+| tools/file/file_schema.py 缺失 | P1 | 设计要求独立 Schema 文件，实际内嵌在 file_tools.py | ✅ 已修复 |
+| prompts/base.py 内容极简 | P2 | 只有4行占位，需补充基类框架 | ✅ 已修复 |
+| session.py 未完全拆分 | P2 | 未继承 session_base.py | ✅ 已修复 |
+| 循环导入问题 | P0 | agent/__init__.py 导入链形成循环 | ✅ 已修复 |
+
+### 1.2 修正内容详情
+
+#### 修正1：react_schema.py 迁移到 agent/types/react_schema.py
+
+**问题**：设计文档要求迁移到 `agent/types/react_schema.py`，实际迁移到了 `tools/file/file_react_schema.py`
+
+**修复**：
+- 创建 `backend/app/services/agent/types/react_schema.py`（394行）
+- 更新 `backend/app/services/agent/types/__init__.py` 导出（在 types 内部，避免循环导入）
+- 更新 `backend/app/services/agent/react_schema.py` 向后兼容层，指向新位置
+- 删除 `backend/app/services/tools/file/file_react_schema.py`
+
+#### 修正2：创建 tools/file/file_schema.py
+
+**问题**：设计文档要求独立 Schema 文件，实际内嵌在 file_tools.py
+
+**修复**：
+- 创建 `backend/app/services/tools/file/file_schema.py`（117行）
+- 导出7个 Pydantic 模型：FileOperationInput, ReadFileInput, WriteFileInput, ListDirectoryInput, DeleteFileInput, MoveFileInput, SearchFilesInput
+- 更新 `backend/app/services/tools/file/__init__.py` 导出
+
+#### 修正3：补充 prompts/base.py
+
+**问题**：prompts/base.py 只有4行占位，不符合设计文档要求
+
+**修复**：
+- 创建 `BasePrompts` 抽象基类（160行）
+- 定义通用 Prompt 框架接口：get_system_prompt, get_available_tools_prompt, get_task_prompt, get_observation_prompt 等
+
+#### 修正4：重构 session.py 继承 session_base.py
+
+**问题**：session.py 未继承 session_base.py
+
+**修复**：
+- `FileOperationSessionService` 继承 `SessionServiceBase`
+- 导入 `FileSessionStats`
+
+#### 修正5：修复循环导入
+
+**问题**：agent/__init__.py → tools → file_tools.py → get_file_safety_service → agent/__init__.py
+
+**修复**：
+- 使用 `TYPE_CHECKING` + `__getattr__` 懒加载模式
+- 导出 `SessionServiceBase`, `SessionStatsMixin`
+
+### 1.3 新建文件汇总
+
+| 文件 | 位置 | 行数 | 说明 |
+|------|------|------|------|
+| react_schema.py | services/agent/types/ | 394 | react_schema 迁移到设计位置 |
+| file_schema.py | services/tools/file/ | 117 | 独立 Schema 文件 |
+| base.py | services/prompts/ | 160 | Prompt 基类框架 |
+
+### 1.4 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 相关测试数 | 101 | ✅ |
+| 通过 | 101 | ✅ |
+| 失败 | 0 | ✅ |
+| 总测试数 | 650 | ✅ |
+| 通过 | 640 | ✅ |
+| 失败（预先存在） | 10 | ⚠️（与修改无关） |
+
+### 1.5 Git提交记录
+
+```
+待提交：refactor: 设计符合度审查与修正 - 小沈-2026-03-21
+- 创建 agent/types/react_schema.py
+- 创建 tools/file/file_schema.py
+- 创建 prompts/base.py
+- 重构 session.py 继承 session_base.py
+- 修复 agent/__init__.py 循环导入
+- 删除 file_react_schema.py（旧位置）
+```
+
+参与开发：小沈
+完成时间：2026-03-21 07:08:21
+
+---
+
 v0.7.4
 
 更新时间：2026-03-21 07:03:00

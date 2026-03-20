@@ -1,8 +1,12 @@
+# -*- coding: utf-8 -*-
 """
 ReAct Agent Structured Outputs 实现 - Function Calling Schema 生成器
 
 【创建时间】2026-03-20 小沈
-【迁移】2026-03-21 小沈 - 从 agent/react_schema.py 迁移到 tools/file/
+【迁移历史】
+  - 2026-03-21 小沈 - 从 agent/react_schema.py 迁移到 tools/file/file_react_schema.py
+  - 2026-03-21 小沈 - 按设计文档要求迁移到 agent/types/react_schema.py
+
 【参考】Structured-Outputs-实现方案-小沈-2026-03-20.md
 
 功能：
@@ -15,7 +19,7 @@ ReAct Agent Structured Outputs 实现 - Function Calling Schema 生成器
 - 无法输出 "directory_path"，只能是 "dir_path"
 - 消除了 agent.py 中参数映射容错代码的必要
 
-迁移时间: 2026-03-21
+更新时间: 2026-03-21 07:15:00
 """
 
 import json
@@ -69,15 +73,11 @@ def get_tools_schema_for_function_calling() -> List[Dict[str, Any]]:
         input_schema = tool.get("input_schema", {})
         examples = tool.get("input_examples", [])
         
-        # 转换 description 中的 FORBIDDEN 规则
-        # 保留重要的参数约束说明
         processed_description = _process_description(description)
         
-        # 转换 parameters
         properties = input_schema.get("properties", {})
         required = input_schema.get("required", [])
         
-        # 清理 properties，移除不必要的字段
         cleaned_properties = _clean_properties(properties)
         
         openai_tool = {
@@ -93,7 +93,6 @@ def get_tools_schema_for_function_calling() -> List[Dict[str, Any]]:
             }
         }
         
-        # 如果有 examples，添加到 description 中作为提示
         if examples:
             example_hints = _generate_example_hints(name, examples)
             if example_hints:
@@ -127,7 +126,6 @@ def _process_description(description: str) -> str:
     ]
     
     for line in lines:
-        # 跳过包含 FORBIDDEN 的行
         if any(pattern in line for pattern in skip_patterns):
             continue
         processed_lines.append(line)
@@ -153,37 +151,29 @@ def _clean_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
         
         clean_param = {}
         
-        # 处理 type：支持直接 type 或 anyOf/oneOf 格式
         param_type = _extract_type(param_schema)
         if param_type:
             clean_param["type"] = param_type
         
-        # 保留 description
         if "description" in param_schema:
             desc = param_schema["description"]
-            # 简化描述，只保留关键信息
             if "【重要】" in desc:
-                # 提取重要信息
                 important_parts = [p for p in desc.split("\n") if "【重要】" in p]
                 if important_parts:
                     clean_param["description"] = important_parts[0].replace("【重要】", "").strip()
                 else:
                     clean_param["description"] = desc.split("\n")[0]
             else:
-                # 取第一行
                 clean_param["description"] = desc.split("\n")[0].strip()
         
-        # 保留 enum (如果有)
         if "enum" in param_schema:
             clean_param["enum"] = param_schema["enum"]
         
-        # 保留数值约束
         if "minimum" in param_schema:
             clean_param["minimum"] = param_schema["minimum"]
         if "maximum" in param_schema:
             clean_param["maximum"] = param_schema["maximum"]
         
-        # 保留 default
         if "default" in param_schema:
             clean_param["default"] = param_schema["default"]
         
@@ -201,18 +191,15 @@ def _extract_type(param_schema: Dict[str, Any]) -> Optional[str]:
     2. anyOf 格式: {"anyOf": [{"type": "string"}, {"type": "null"}]}
     3. oneOf 格式: {"oneOf": [{"type": "string"}, {"type": "null"}]}
     """
-    # 直接 type
     if "type" in param_schema:
         return param_schema["type"]
     
-    # 处理 anyOf 格式（Optional 类型）
     if "anyOf" in param_schema:
         types = set()
         for item in param_schema["anyOf"]:
             if isinstance(item, dict) and "type" in item:
                 types.add(item["type"])
         
-        # 如果包含 string 和 null，返回 string
         if "string" in types:
             return "string"
         if "boolean" in types:
@@ -226,7 +213,6 @@ def _extract_type(param_schema: Dict[str, Any]) -> Optional[str]:
         if "array" in types:
             return "array"
     
-    # 处理 oneOf 格式
     if "oneOf" in param_schema:
         types = set()
         for item in param_schema["oneOf"]:
@@ -254,7 +240,7 @@ def _generate_example_hints(tool_name: str, examples: List[Dict[str, Any]]) -> s
     
     hints = ["使用示例:"]
     
-    for i, example in enumerate(examples[:2], 1):  # 最多2个示例
+    for i, example in enumerate(examples[:2], 1):
         hint_lines = []
         for key, value in example.items():
             hint_lines.append(f"  {key}: {value}")
@@ -302,7 +288,6 @@ def validate_tool_call(tool_call: Dict[str, Any]) -> Dict[str, Any]:
         "error": None
     }
     
-    # 提取工具名称
     func = tool_call.get("function", {})
     tool_name = func.get("name")
     if not tool_name:
@@ -311,7 +296,6 @@ def validate_tool_call(tool_call: Dict[str, Any]) -> Dict[str, Any]:
     
     result["tool_name"] = tool_name
     
-    # 解析 arguments
     arguments_str = func.get("arguments", "{}")
     result["raw_arguments"] = arguments_str
     
@@ -326,7 +310,6 @@ def validate_tool_call(tool_call: Dict[str, Any]) -> Dict[str, Any]:
         result["error"] = f"Failed to parse arguments: {e}"
         return result
     
-    # 验证必需参数
     tool_schema = get_tool_schema(tool_name)
     if tool_schema:
         params_schema = tool_schema.get("function", {}).get("parameters", {})
@@ -380,7 +363,6 @@ def get_finish_tool_schema() -> Dict[str, Any]:
     }
 
 
-# 导出便捷函数
 __all__ = [
     "get_tools_schema_for_function_calling",
     "get_tool_schema",
