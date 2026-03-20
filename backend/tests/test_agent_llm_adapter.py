@@ -25,14 +25,10 @@ from typing import Dict, Any, List
 from unittest.mock import Mock, AsyncMock, MagicMock, patch, PropertyMock
 
 # 导入被测试模块
-from app.services.file_operations.agent import (
-    FileOperationAgent,
-    ToolParser,
-    ToolExecutor,
-    AgentStatus,
-    Step,
-    AgentResult
-)
+from app.services.file_operations.agent import FileOperationAgent
+from app.services.agent.tool_parser import ToolParser
+from app.services.agent.tool_executor import ToolExecutor
+from app.services.agent.types import AgentStatus, Step, AgentResult
 from app.services.file_operations.tools import FileTools
 from app.services.file_operations.capability import LLMCapability
 from app.services.file_operations.strategy_selector import SelectedStrategy

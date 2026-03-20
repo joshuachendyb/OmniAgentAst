@@ -6,5 +6,13 @@ Author: 小沈 - 2026-03-20
 """
 
 from .preprocessing import PreprocessingPipeline, TextCorrector, IntentClassifier
+from .base import BaseAgent, ToolParser, ToolExecutor
 
-__all__ = ["PreprocessingPipeline", "TextCorrector", "IntentClassifier"]
+__all__ = [
+    "PreprocessingPipeline",
+    "TextCorrector",
+    "IntentClassifier",
+    "BaseAgent",
+    "ToolParser",
+    "ToolExecutor",
+]

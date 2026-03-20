@@ -1,280 +1,91 @@
+# -*- coding: utf-8 -*-
 """
-ReAct Agent实现 (ReAct Agent Implementation)
-实现Thought-Action-Observation循环的文件操作智能体
+FileOperationAgent - 文件操作 Agent
 
-【重构Phase 2】：
-- 重新设计Step类（ThoughtStep/ActionToolStep/ObservationStep）
-- 实现run_stream异步流式输出
-- 统一返回格式（execution_status）
+继承 BaseAgent，实现 ReAct 循环的文件操作智能体
+
+【重构 Phase 3】：
+- 删除重复的 ToolParser、ToolExecutor、AgentStatus、Step、AgentResult 定义
+- 继承 BaseAgent，实现抽象方法
+- 保留文件专用逻辑（session管理、prompts、rollback）
+
+Author: 小沈 - 2026-03-21
 """
+
 import asyncio
 import json
-import re
-from typing import Dict, Any, List, Optional, Callable, AsyncGenerator
-from datetime import datetime
-from dataclasses import dataclass, field
-from enum import Enum
+from typing import Dict, Any, List, Optional, AsyncGenerator
 
+from app.services.agent.base import BaseAgent
+from app.services.agent.tool_executor import ToolExecutor
+from app.services.agent.types import Step, AgentResult, AgentStatus
 from app.services.file_operations.tools import FileTools
 from app.services.file_operations.prompts import FileOperationPrompts
 from app.services.file_operations.session import get_session_service
 from app.services.file_operations.llm_adapter import LLMAdapter
+from app.services.file_operations.adapter import dict_list_to_messages
 from app.utils.logger import logger
 
 
-class AgentStatus(Enum):
-    """Agent状态"""
-    IDLE = "idle"
-    THINKING = "thinking"
-    EXECUTING = "executing"
-    OBSERVING = "observing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    ROLLED_BACK = "rolled_back"
-
-
-@dataclass
-class ThoughtStep:
-    """Thought阶段的数据结构"""
-    step_number: int
-    content: str
-    reasoning: Optional[str] = None
-    action_tool: str = ""
-    params: Dict[str, Any] = field(default_factory=dict)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "step_number": self.step_number,
-            "content": self.content,
-            "reasoning": self.reasoning,
-            "action_tool": self.action_tool,
-            "params": self.params
-        }
-
-
-@dataclass
-class ActionToolStep:
-    """Action阶段的数据结构"""
-    step_number: int
-    tool_name: str
-    tool_params: Dict[str, Any] = field(default_factory=dict)
-    execution_status: str = "success"
-    summary: str = ""
-    raw_data: Optional[Dict[str, Any]] = None
-    action_retry_count: int = 0
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "step_number": self.step_number,
-            "tool_name": self.tool_name,
-            "tool_params": self.tool_params,
-            "execution_status": self.execution_status,
-            "summary": self.summary,
-            "raw_data": self.raw_data,
-            "action_retry_count": self.action_retry_count
-        }
-
-
-@dataclass
-class ObservationStep:
-    """Observation阶段的数据结构"""
-    step_number: int
-    execution_status: str
-    summary: str
-    raw_data: Optional[Dict[str, Any]] = None
-    content: str = ""
-    reasoning: Optional[str] = None
-    action_tool: str = ""
-    params: Dict[str, Any] = field(default_factory=dict)
-    is_finished: bool = False
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "step_number": self.step_number,
-            "execution_status": self.execution_status,
-            "summary": self.summary,
-            "raw_data": self.raw_data,
-            "content": self.content,
-            "reasoning": self.reasoning,
-            "action_tool": self.action_tool,
-            "params": self.params,
-            "is_finished": self.is_finished
-        }
-
-
-@dataclass
-class Step:
-    """ReAct步骤（兼容旧版本）"""
-    step_number: int
-    thought: str
-    action: str
-    action_input: Dict[str, Any]
-    observation: Optional[Dict[str, Any]] = None
-    timestamp: datetime = field(default_factory=datetime.now)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "step_number": self.step_number,
-            "thought": self.thought,
-            "action": self.action,
-            "action_input": self.action_input,
-            "observation": self.observation,
-            "timestamp": self.timestamp.isoformat()
-        }
-
-
-@dataclass
-class AgentResult:
-    """Agent执行结果"""
-    success: bool
-    message: str
-    steps: List[Step]
-    total_steps: int
-    session_id: Optional[str] = None
-    final_result: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
-
-
-class ToolParser:
+class FileOperationAgent(BaseAgent):
     """
-    工具解析器
+    文件操作 Agent，继承 BaseAgent
     
-    解析LLM响应中的Thought-Action-ActionInput结构
-    支持JSON格式和Markdown代码块格式
+    实现完整的 Thought-Action-Observation 循环，
+    管理文件操作会话和状态
     """
     
-    @staticmethod
-    def parse_response(response: str) -> Dict[str, Any]:
+    def __init__(
+        self,
+        llm_client: Any,
+        session_id: str,
+        file_tools: Optional[FileTools] = None,
+        max_steps: int = 20,
+        use_function_calling: bool = False,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        api_base: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None
+    ):
         """
-        解析LLM响应
+        初始化 FileOperationAgent
         
         Args:
-            response: LLM的原始响应文本
-            
-        Returns:
-            解析后的字典，包含thought, action, action_input
-            
-        Raises:
-            ValueError: 如果解析失败
+            llm_client: LLM 客户端函数，接收 message 和 history，返回 response
+            session_id: 会话 ID（必需）- 用于文件操作安全追踪和审计
+            file_tools: 文件工具实例（可选，默认创建新实例）
+            max_steps: 最大执行步数
+            use_function_calling: 是否使用 Function Calling 模式
+            tools: 工具定义列表
+            api_base: LLM API 地址（可选，用于自适应探测）
+            api_key: LLM API 密钥（可选，用于自适应探测）
+            model: LLM 模型名称（可选，用于自适应探测）
         """
-        # 首先尝试从JSON代码块中提取
-        json_match = re.search(
-            r'```(?:json)?\s*\n?(.*?)\n?```',
-            response,
-            re.DOTALL | re.IGNORECASE
-        )
+        # 【修复】强制要求 session_id，避免写操作失败
+        if not session_id:
+            raise ValueError("session_id is required for file operation tracking and safety")
         
-        if json_match:
-            json_str = json_match.group(1).strip()
-        else:
-            # 尝试直接解析整个响应
-            json_str = response.strip()
+        # 【修复】调用父类初始化
+        super().__init__(max_steps=max_steps, use_function_calling=use_function_calling)
         
-        try:
-            parsed = json.loads(json_str)
-        except json.JSONDecodeError as e:
-            # 尝试从文本中提取结构
-            parsed = ToolParser._extract_from_text(response)
-            if not parsed:
-                raise ValueError(f"Failed to parse response as JSON: {e}")
+        # File 专用属性
+        self.llm_client = llm_client
+        self.session_id = session_id
         
-        # 【Phase2重构】支持新字段名：action_tool, params
-        # 同时兼容旧字段名：action, action_input
+        # 初始化 session 服务（用于统一管理会话生命周期）
+        self.session_service = get_session_service()
         
-        # 获取content（思考内容）
-        content = parsed.get("content", parsed.get("thought", ""))
+        # 【修复】标记 session 是否由本 Agent 创建（用于正确关闭）
+        self._session_created_by_agent = False
         
-        # 获取action_tool（新）或action（旧）
-        action_tool = parsed.get("action_tool", parsed.get("action", "finish"))
+        # 初始化文件工具，确保 session_id 正确传递
+        self.file_tools = file_tools or FileTools(session_id=session_id)
         
-        # 获取params（新）或action_input（旧）
-        if "params" in parsed:
-            params = parsed.get("params", {})
-        elif "action_input" in parsed:
-            params = parsed.get("action_input", {})
-        elif "actionInput" in parsed:
-            params = parsed.get("actionInput", {})
-        else:
-            params = {}
+        # ToolParser（使用父类的 self.parser）
+        # self.parser = ToolParser()  # BaseAgent 已有
         
-        # 获取reasoning（推理过程）
-        reasoning = parsed.get("reasoning")
-        
-        return {
-            "content": content,
-            "action_tool": action_tool,
-            "params": params,
-            "reasoning": reasoning
-        }
-    
-    @staticmethod
-    def _extract_from_text(text: str) -> Optional[Dict[str, Any]]:
-        """
-        从非结构化文本中提取关键信息
-        
-        用于处理LLM没有返回标准JSON格式的情况
-        """
-        result = {}
-        
-        # 尝试提取thought
-        thought_patterns = [
-            r'(?:thought|thinking|reasoning)["\']?\s*[:=]\s*["\']?(.*?)(?:["\']?\s*[,}\n]|action)',
-            r'(?:I think|I need to|Let me|First,?|Next,?)\s*(.*?)(?:\n\n|\n[A-Z]|$)',
-        ]
-        
-        for pattern in thought_patterns:
-            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-            if match:
-                result["thought"] = match.group(1).strip()
-                break
-        
-        # 尝试提取action
-        action_patterns = [
-            r'(?:action)["\']?\s*[:=]\s*["\']?(\w+)["\']?',
-            r'(?:use|call|execute)\s+(?:the\s+)?(\w+)\s+(?:tool|function)?',
-        ]
-        
-        for pattern in action_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                result["action"] = match.group(1).strip().lower()
-                break
-        
-        # 尝试提取action_input
-        input_patterns = [
-            r'(?:action_input|actionInput|input|parameters)["\']?\s*[:=]\s*({.*?})',
-            r'(?:with|using)\s+parameters?\s*:?\s*({.*?})',
-        ]
-        
-        for pattern in input_patterns:
-            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
-            if match:
-                try:
-                    result["action_input"] = json.loads(match.group(1))
-                except json.JSONDecodeError:
-                    result["action_input"] = {}
-                break
-        
-        if "action_input" not in result:
-            result["action_input"] = {}
-        
-        # 只有在至少有thought和action时才返回
-        if "thought" in result and "action" in result:
-            return result
-        
-        return None
-
-
-class ToolExecutor:
-    """
-    工具执行器
-    
-    负责执行解析后的工具调用，处理错误和结果格式化
-    """
-    
-    def __init__(self, file_tools: FileTools):
-        self.file_tools = file_tools
-        self.available_tools = {
+        # ToolExecutor - 使用 tools dict
+        self._tools_dict = {
             "read_file": self.file_tools.read_file,
             "write_file": self.file_tools.write_file,
             "list_directory": self.file_tools.list_directory,
@@ -283,205 +94,14 @@ class ToolExecutor:
             "search_files": self.file_tools.search_files,
             "generate_report": self.file_tools.generate_report,
         }
-    
-    async def execute(
-        self,
-        action: str,
-        action_input: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        执行工具调用
+        self.executor = ToolExecutor(self._tools_dict)
         
-        Args:
-            action: 工具名称
-            action_input: 工具参数
-            
-        Returns:
-            执行结果，包含success标志和结果数据
-        """
-        # 检查是否是特殊动作
-        if action == "finish":
-            return {
-                "success": True,
-                "result": {
-                    "operation_type": "finish",
-                    "message": action_input.get("result", "Task completed"),
-                    "data": action_input
-                }
-            }
-        
-        # 检查工具是否可用
-        if action not in self.available_tools:
-            return {
-                "success": False,
-                "error": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
-                "result": None
-            }
-        
-        tool = self.available_tools[action]
-        
-        try:
-            # 参数规范化：处理不同参数名
-            # 处理通用的 path 参数映射到具体参数名
-            if action in ["read_file", "write_file", "delete_file"]:
-                # 这些工具期望 file_path 参数
-                if "path" in action_input and "file_path" not in action_input:
-                    # 将 path 参数重命名为 file_path
-                    action_input["file_path"] = action_input.pop("path")
-                elif "path" in action_input and "file_path" in action_input:
-                    # 两者都存在，优先使用 file_path，删除 path
-                    del action_input["path"]
-            
-            elif action == "list_directory":
-                # 处理 path 和 dir_path 参数名不一致问题
-                if "path" in action_input and "dir_path" not in action_input:
-                    # 将 path 参数重命名为 dir_path
-                    action_input["dir_path"] = action_input.pop("path")
-                elif "path" in action_input and "dir_path" in action_input:
-                    # 两者都存在，优先使用 dir_path，删除 path
-                    del action_input["path"]
-            
-            elif action == "move_file":
-                # 处理可能的参数名变体
-                if "source" in action_input and "source_path" not in action_input:
-                    action_input["source_path"] = action_input.pop("source")
-                if "src" in action_input and "source_path" not in action_input:
-                    action_input["source_path"] = action_input.pop("src")
-                
-                if "destination" in action_input and "destination_path" not in action_input:
-                    action_input["destination_path"] = action_input.pop("destination")
-                if "dest" in action_input and "destination_path" not in action_input:
-                    action_input["destination_path"] = action_input.pop("dest")
-                if "target" in action_input and "destination_path" not in action_input:
-                    action_input["destination_path"] = action_input.pop("target")
-            
-            elif action == "search_files":
-                # search_files 已经使用 path 参数，但需要确保存在
-                if "path" not in action_input:
-                    action_input["path"] = "."
-            
-            elif action == "generate_report":
-                # generate_report 使用 output_dir 参数
-                if "output" in action_input and "output_dir" not in action_input:
-                    action_input["output_dir"] = action_input.pop("output")
-            
-            # 执行工具
-            result = await tool(**action_input)
-            
-            # 【Phase2重构】适配tools.py的统一返回格式 {status, summary, data, retry_count}
-            if isinstance(result, dict):
-                # 新格式直接返回
-                if "status" in result and "summary" in result:
-                    return {
-                        "status": result.get("status", "success"),
-                        "summary": result.get("summary", ""),
-                        "data": result.get("data"),
-                        "retry_count": result.get("retry_count", 0)
-                    }
-                # 旧格式转换
-                elif result.get("success", False):
-                    return {
-                        "status": "success",
-                        "summary": result.get("message", f"Successfully executed {action}"),
-                        "data": result,
-                        "retry_count": 0
-                    }
-                else:
-                    return {
-                        "status": "error",
-                        "summary": result.get("error", f"Failed to execute {action}"),
-                        "data": result,
-                        "retry_count": 0
-                    }
-            else:
-                return {
-                    "status": "success",
-                    "summary": f"Successfully executed {action}",
-                    "data": result,
-                    "retry_count": 0
-                }
-                
-        except Exception as e:
-            logger.error(f"Tool execution error: {e}", exc_info=True)
-            return {
-                "status": "error",
-                "summary": f"Execution error: {str(e)}",
-                "data": None,
-                "retry_count": 0
-            }
-
-
-class FileOperationAgent:
-    """
-    文件操作ReAct Agent
-    
-    实现完整的Thought-Action-Observation循环，
-    管理文件操作会话和状态
-    """
-    
-    def __init__(
-        self,
-        llm_client: Callable[..., Any],
-        session_id: str,
-        file_tools: Optional[FileTools] = None,
-        max_steps: int = 20,
-        use_function_calling: bool = False,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        # 【新增】LLM 配置参数 - 用于 LLMAdapter 自适应探测
-        api_base: Optional[str] = None,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None
-    ):
-        """
-        初始化Agent
-        
-        Args:
-            llm_client: LLM客户端函数，接收message和history，返回response
-            session_id: 会话ID（必需）- 用于文件操作安全追踪和审计
-            file_tools: 文件工具实例（可选，默认创建新实例）
-            max_steps: 最大执行步数
-            use_function_calling: 是否使用Function Calling模式（向后兼容）
-            tools: 工具定义列表
-            api_base: LLM API地址（可选，用于自适应探测）
-            api_key: LLM API密钥（可选，用于自适应探测）
-            model: LLM模型名称（可选，用于自适应探测）
-        """
-        # 【修复-波次1】强制要求session_id，避免写操作失败
-        if not session_id:
-            raise ValueError("session_id is required for file operation tracking and safety")
-        self.llm_client = llm_client
-        self.max_steps = max_steps
-        self.session_id = session_id
-        
-        # 初始化session服务（用于统一管理会话生命周期）
-        self.session_service = get_session_service()
-        
-        # 【修复】标记session是否由本Agent创建（用于正确关闭）
-        self._session_created_by_agent = False
-        
-        # 【修复】添加异步锁，确保并发安全
-        self._lock = asyncio.Lock()
-        
-        # 初始化文件工具，确保session_id正确传递
-        self.file_tools = file_tools or FileTools(session_id=session_id)
-        
-        self.parser = ToolParser()
-        self.executor = ToolExecutor(self.file_tools)
         self.prompts = FileOperationPrompts()
         
-        self.steps: List[Step] = []
-        self.status = AgentStatus.IDLE
-        self.conversation_history: List[Dict[str, str]] = []
-        
-        # 【新增】LLM调用计数器
-        self.llm_call_count = 0
-        
-        # 【Function Calling】支持参数 - 2026-03-20 小沈
-        self.use_function_calling = use_function_calling
+        # Function Calling 支持
         self.tools = tools or []
         
-        # 【新增】LLMAdapter 自适应探测 - 2026-03-20 小沈
-        # 如果提供了 API 配置，初始化 LLMAdapter
+        # LLMAdapter 自适应探测
         if api_base and api_key and model:
             self.adapter = LLMAdapter(
                 api_base=api_base,
@@ -497,6 +117,226 @@ class FileOperationAgent:
             else:
                 logger.info(f"FileOperationAgent initialized (session: {session_id})")
     
+    # ========== 抽象方法实现 ==========
+    
+    async def _get_llm_response_text(
+        self,
+        message: str,
+        history_dicts: List[Dict[str, str]]
+    ) -> str:
+        """获取 LLM 响应（文本模式）"""
+        history_messages = dict_list_to_messages(history_dicts)
+        
+        response = await self.llm_client(
+            message=message,
+            history=history_messages
+        )
+        
+        if hasattr(response, 'content'):
+            content = response.content
+        elif isinstance(response, dict):
+            content = response.get("content", str(response))
+        else:
+            content = str(response)
+        
+        logger.info(f"[LLM Response Raw (text)] content={repr(content)[:500]}")
+        
+        if not content:
+            logger.warning("[LLM Response] Warning: LLM returned empty content!")
+        
+        self.conversation_history.append({"role": "assistant", "content": content})
+        return content
+    
+    async def _get_llm_response_with_tools(
+        self,
+        message: str,
+        history_dicts: List[Dict[str, str]]
+    ) -> str:
+        """
+        获取 LLM 响应（Function Calling 模式）
+        
+        通过 tools Schema 强制约束参数名，确保参数正确性
+        """
+        history_messages = dict_list_to_messages(history_dicts)
+        
+        # 检查 llm_client 是否有 chat_with_tools 方法
+        if hasattr(self.llm_client, 'chat_with_tools'):
+            response = await self.llm_client.chat_with_tools(
+                message=message,
+                history=history_messages,
+                tools=self.tools
+            )
+        else:
+            # 如果没有 chat_with_tools 方法，回退到文本模式
+            logger.warning("[Function Calling] llm_client has no chat_with_tools method, falling back to text mode")
+            return await self._get_llm_response_text(message, history_dicts)
+        
+        # 解析 tool_calls
+        if hasattr(response, 'content') and response.content:
+            try:
+                tool_calls = json.loads(response.content)
+                
+                if isinstance(tool_calls, list) and len(tool_calls) > 0:
+                    content = self._format_tool_calls_for_agent(tool_calls)
+                    logger.info(f"[Function Calling] Received tool_calls: {len(tool_calls)} calls")
+                else:
+                    content = response.content
+                    logger.info(f"[Function Calling] LLM returned text (no tool call): {repr(content)[:200]}")
+                    
+            except (json.JSONDecodeError, TypeError) as e:
+                content = response.content
+                logger.info(f"[Function Calling] Non-JSON response: {repr(content)[:200]}")
+        else:
+            content = ""
+            logger.warning("[Function Calling] Empty response from LLM")
+        
+        self.conversation_history.append({"role": "assistant", "content": content})
+        return content
+    
+    async def _execute_tool(
+        self,
+        action: str,
+        action_input: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        执行工具的抽象方法实现
+        
+        代理到 ToolExecutor.execute
+        """
+        return await self.executor.execute(action, action_input)
+    
+    # ========== 重写 _get_llm_response ==========
+    
+    async def _get_llm_response(self) -> str:
+        """获取 LLM 响应的统一入口（重写，添加 adapter 策略选择）"""
+        self.llm_call_count += 1
+        logger.info(f"[LLM Counter] >>> LLM called, count: {self.llm_call_count}")
+        
+        try:
+            last_message = self.conversation_history[-1]["content"]
+            history_dicts = self.conversation_history[:-1]
+            
+            # 【修改】使用 LLMAdapter 自适应策略
+            if self.adapter:
+                strategy = await self.adapter.ensure_capability()
+                logger.info(f"[Agent] Using method: {strategy.method}")
+                
+                if strategy.method == "response_format":
+                    response = await self._get_llm_response_with_response_format(
+                        message=last_message,
+                        history_dicts=history_dicts
+                    )
+                elif strategy.method == "tools":
+                    response = await self._get_llm_response_with_tools(
+                        message=last_message,
+                        history_dicts=history_dicts
+                    )
+                else:
+                    response = await self._get_llm_response_text(
+                        message=last_message,
+                        history_dicts=history_dicts
+                    )
+            elif self.use_function_calling and self.tools:
+                # 使用 Function Calling 模式
+                response = await self._get_llm_response_with_tools(
+                    message=last_message,
+                    history_dicts=history_dicts
+                )
+            else:
+                # 使用普通文本模式
+                response = await self._get_llm_response_text(
+                    message=last_message,
+                    history_dicts=history_dicts
+                )
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"LLM client error: {e}")
+            raise
+    
+    async def _get_llm_response_with_response_format(
+        self,
+        message: str,
+        history_dicts: List[Dict]
+    ) -> str:
+        """
+        【重写】使用 response_format 模式获取 LLM 响应
+        
+        通过 response_format 约束 JSON 输出，然后解析为 ReAct 格式
+        """
+        # 构建 ReAct Schema
+        schema = {
+            "type": "json_object",
+            "json_schema": {
+                "type": "object",
+                "properties": {
+                    "thought": {"type": "string", "description": "思考过程"},
+                    "action": {"type": "string", "description": "工具名称"},
+                    "action_input": {
+                        "type": "object",
+                        "description": "工具参数"
+                    }
+                },
+                "required": ["thought", "action", "action_input"]
+            }
+        }
+        
+        try:
+            history_messages = dict_list_to_messages(history_dicts)
+            
+            # 调用 LLM（使用 chat_with_response_format 方法）
+            response = await self.llm_client.chat_with_response_format(
+                message=message,
+                history=history_messages,
+                response_format=schema
+            )
+            
+            # 处理响应
+            if hasattr(response, 'error') and response.error:
+                logger.error(f"[Agent] response_format error: {response.error}")
+                raise Exception(response.error)
+            
+            if hasattr(response, 'content'):
+                content = response.content
+            elif isinstance(response, dict):
+                content = response.get("content", str(response))
+            else:
+                content = str(response)
+            
+            logger.info(f"[Agent] response_format raw content: {repr(content)[:500]}")
+            
+            # 解析 JSON 响应
+            try:
+                result = json.loads(content)
+                
+                thought = result.get("thought", "")
+                action = result.get("action", "")
+                action_input = result.get("action_input", {})
+                
+                # 转换为 Agent 的 ToolParser 可以理解的格式
+                formatted = {
+                    "thought": thought,
+                    "action_tool": action,
+                    "params": action_input
+                }
+                
+                content = json.dumps(formatted, ensure_ascii=False)
+                logger.info(f"[Agent] response_format parsed: action={action}")
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={repr(content)[:200]}")
+                raise Exception(f"Invalid JSON from LLM: {content}")
+            
+            self.conversation_history.append({"role": "assistant", "content": content})
+            return content
+            
+        except Exception as e:
+            logger.error(f"[Agent] _get_llm_response_with_response_format failed: {e}")
+            raise
+    
+    # ========== 文件专用方法 ==========
+    
     async def run(
         self,
         task: str,
@@ -504,46 +344,43 @@ class FileOperationAgent:
         system_prompt: Optional[str] = None
     ) -> AgentResult:
         """
-        运行Agent完成任务
+        运行 Agent 完成任务
         
         【修复】使用锁保护确保并发安全
-        【修复】每次run独立管理状态和session
+        【修复】每次 run 独立管理状态和 session
         
         Args:
             task: 任务描述
             context: 额外上下文
-            system_prompt: 自定义系统prompt（可选）
+            system_prompt: 自定义系统 prompt（可选）
             
         Returns:
-            Agent执行结果
+            Agent 执行结果
         """
-        # 【修复】使用锁确保同一时间只有一个run执行（并发安全）
         async with self._lock:
-            return await self._run_internal(task, context, system_prompt)
+            return await self._run_with_session(task, context, system_prompt)
     
-    async def _run_internal(
+    async def _run_with_session(
         self,
         task: str,
         context: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None
     ) -> AgentResult:
         """
-        内部运行方法（已被锁保护）
+        内部运行方法（带 session 管理）
         """
-        # 【修复】重置状态，避免多次调用导致的状态污染
+        # 重置状态
         self.steps = []
         self.conversation_history = []
         self.status = AgentStatus.THINKING
-        
-        # 【新增】重置LLM调用计数器
         self.llm_call_count = 0
         logger.info(f"[LLM Counter] Agent run started, LLM counter reset to 0")
         
-        # 【修复】使用局部变量管理session，避免并发问题
+        # 使用局部变量管理 session
         session_id = self.session_id
         session_created_by_this_run = False
         
-        # 【修复】确保session已创建（统一管理会话生命周期）
+        # 确保 session 已创建
         if not session_id:
             session_id = self.session_service.create_session(
                 agent_id="file-operation-agent",
@@ -552,12 +389,11 @@ class FileOperationAgent:
             session_created_by_this_run = True
             self._session_created_by_agent = True
             
-            # 【修复】安全地更新FileTools的session_id
             if hasattr(self.file_tools, 'set_session'):
                 self.file_tools.set_session(session_id)
             logger.info(f"Session created in run(): {session_id}")
         
-        # 构建初始prompt
+        # 构建初始 prompt
         sys_prompt = system_prompt or self.prompts.get_system_prompt()
         task_prompt = self.prompts.get_task_prompt(task, context)
         
@@ -572,7 +408,7 @@ class FileOperationAgent:
             while current_step < self.max_steps:
                 current_step += 1
                 
-                # 1. Thought - 获取LLM响应
+                # 1. Thought - 获取 LLM 响应
                 self.status = AgentStatus.THINKING
                 response = await self._get_llm_response()
                 
@@ -581,14 +417,12 @@ class FileOperationAgent:
                     parsed = self.parser.parse_response(response)
                 except ValueError as e:
                     logger.error(f"Failed to parse LLM response: {e}")
-                    # 添加错误观察，让LLM重试
                     self._add_observation_to_history(
                         f"Parse error: {e}. Please respond with valid JSON format."
                     )
                     continue
                 
-                
-                # 【Phase4修复】使用新字段名（兼容旧字段）
+                # 使用新字段名（兼容旧字段）
                 thought_content = parsed.get("content", parsed.get("thought", ""))
                 action_tool = parsed.get("action_tool", parsed.get("action", "finish"))
                 params = parsed.get("params", parsed.get("action_input", {}))
@@ -607,7 +441,6 @@ class FileOperationAgent:
                 
                 # 3. 检查是否完成
                 if action_tool == "finish":
-                    # 处理 final_result 格式
                     if isinstance(params, dict):
                         final_result = params
                     else:
@@ -672,13 +505,12 @@ class FileOperationAgent:
             return result
             
         finally:
-            # 【修复】只关闭由本次run创建的session
+            # 只关闭由本次 run 创建的 session
             if session_created_by_this_run and session_id and self.session_service:
                 try:
                     success = result.success if result else False
                     self.session_service.complete_session(session_id, success=success)
                     logger.info(f"Session completed: {session_id} (success={success})")
-                    # 重置标记
                     self._session_created_by_agent = False
                     self.session_id = None
                 except Exception as e:
@@ -692,12 +524,12 @@ class FileOperationAgent:
         max_steps: int = 100
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        【Phase2新增】异步流式执行Agent，每轮循环完成后立即yield输出
+        【Phase2新增】异步流式执行 Agent，每轮循环完成后立即 yield 输出
         
         Args:
             task: 任务描述
             context: 额外上下文
-            system_prompt: 自定义系统prompt（可选）
+            system_prompt: 自定义系统 prompt（可选）
             max_steps: 最大迭代次数
         
         Yields:
@@ -709,7 +541,7 @@ class FileOperationAgent:
         self.status = AgentStatus.THINKING
         self.llm_call_count = 0
         
-        # 确保session存在
+        # 确保 session 存在
         session_id = self.session_id
         if not session_id:
             session_id = self.session_service.create_session(
@@ -721,7 +553,7 @@ class FileOperationAgent:
                 self.file_tools.set_session(session_id)
             logger.info(f"Session created in run_stream(): {session_id}")
         
-        # 构建初始prompt
+        # 构建初始 prompt
         sys_prompt = system_prompt or self.prompts.get_system_prompt()
         task_prompt = self.prompts.get_task_prompt(task, context)
         
@@ -735,7 +567,7 @@ class FileOperationAgent:
             while step_count < max_steps:
                 step_count += 1
                 
-                # ========== Thought阶段 ==========
+                # ========== Thought 阶段 ==========
                 self.status = AgentStatus.THINKING
                 response = await self._get_llm_response()
                 
@@ -752,7 +584,7 @@ class FileOperationAgent:
                 action_tool = parsed.get("action_tool", "finish")
                 params = parsed.get("params", {})
                 
-                # 立即yield thought
+                # 立即 yield thought
                 yield {
                     "type": "thought",
                     "step": step_count,
@@ -764,18 +596,17 @@ class FileOperationAgent:
                 
                 # 判断是否结束
                 if action_tool == "finish":
-                    # 任务完成
                     yield {
                         "type": "final",
                         "content": params.get("result", thought_content)
                     }
                     break
                 
-                # ========== Action阶段 ==========
+                # ========== Action 阶段 ==========
                 self.status = AgentStatus.EXECUTING
                 execution_result = await self.executor.execute(action_tool, params)
                 
-                # 立即yield action_tool结果
+                # 立即 yield action_tool 结果
                 yield {
                     "type": "action_tool",
                     "step": step_count,
@@ -787,12 +618,11 @@ class FileOperationAgent:
                     "action_retry_count": execution_result.get("retry_count", 0)
                 }
                 
-                # ========== Observation阶段 ==========
-                # 将action结果格式化为输入
+                # ========== Observation 阶段 ==========
                 observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}"
                 self._add_observation_to_history(observation_text)
                 
-                # 调用LLM获取下一个决策
+                # 调用 LLM 获取下一个决策
                 self.status = AgentStatus.OBSERVING
                 llm_response = await self._get_llm_response()
                 
@@ -804,8 +634,7 @@ class FileOperationAgent:
                 
                 is_finished = parsed_obs.get("action_tool") == "finish"
                 
-                # 立即yield observation
-                # 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
+                # 立即 yield observation
                 yield {
                     "type": "observation",
                     "step": step_count,
@@ -824,7 +653,6 @@ class FileOperationAgent:
                 
                 # 判断是否结束
                 if is_finished:
-                    # 发送final
                     yield {
                         "type": "final",
                         "content": parsed_obs.get("content", "任务已完成")
@@ -847,7 +675,7 @@ class FileOperationAgent:
                 "message": str(e)
             }
         finally:
-            # 关闭session
+            # 关闭 session
             if self._session_created_by_agent and session_id and self.session_service:
                 try:
                     self.session_service.complete_session(session_id, success=True)
@@ -856,356 +684,12 @@ class FileOperationAgent:
                 except Exception as e:
                     logger.error(f"Failed to complete session {session_id}: {e}")
     
-    async def _get_llm_response(self) -> str:
-        """获取LLM响应"""
-        # 【新增】计数器递增
-        self.llm_call_count += 1
-        logger.info(f"[LLM Counter] >>> LLM called, count: {self.llm_call_count}")
-        
-        try:
-            # 最后一条消息作为当前消息
-            last_message = self.conversation_history[-1]["content"]
-            # 前面的消息作为历史
-            history_dicts = self.conversation_history[:-1]
-            
-            # 【修改】使用 LLMAdapter 自适应策略 - 2026-03-20 小沈
-            if self.adapter:
-                # 确保能力已探测
-                strategy = await self.adapter.ensure_capability()
-                logger.info(f"[Agent] Using method: {strategy.method}")
-                
-                # 根据策略选择调用方式
-                if strategy.method == "response_format":
-                    response = await self._get_llm_response_with_response_format(
-                        message=last_message,
-                        history_dicts=history_dicts
-                    )
-                elif strategy.method == "tools":
-                    response = await self._get_llm_response_with_tools(
-                        message=last_message,
-                        history_dicts=history_dicts
-                    )
-                else:
-                    response = await self._get_llm_response_text(
-                        message=last_message,
-                        history_dicts=history_dicts
-                    )
-            elif self.use_function_calling and self.tools:
-                # 使用 Function Calling 模式（向后兼容）
-                response = await self._get_llm_response_with_tools(
-                    message=last_message,
-                    history_dicts=history_dicts
-                )
-            else:
-                # 使用普通文本模式（向后兼容）
-                response = await self._get_llm_response_text(
-                    message=last_message,
-                    history_dicts=history_dicts
-                )
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"LLM client error: {e}")
-            raise
-    
-    async def _get_llm_response_text(
-        self,
-        message: str,
-        history_dicts: List[Dict[str, str]]
-    ) -> str:
-        """获取LLM响应（文本模式）"""
-        from app.services.file_operations.adapter import dict_list_to_messages
-        history_messages = dict_list_to_messages(history_dicts)
-        
-        response = await self.llm_client(
-            message=message,
-            history=history_messages
-        )
-        
-        if hasattr(response, 'content'):
-            content = response.content
-        elif isinstance(response, dict):
-            content = response.get("content", str(response))
-        else:
-            content = str(response)
-        
-        logger.info(f"[LLM Response Raw (text)] content={repr(content)[:500]}")
-        
-        if not content:
-            logger.warning("[LLM Response] Warning: LLM returned empty content!")
-        
-        self.conversation_history.append({"role": "assistant", "content": content})
-        return content
-    
-    async def _get_llm_response_with_tools(
-        self,
-        message: str,
-        history_dicts: List[Dict[str, str]]
-    ) -> str:
-        """
-        获取LLM响应（Function Calling 模式）- 2026-03-20 小沈
-        
-        通过 tools Schema 强制约束参数名，确保参数正确性
-        """
-        from app.services.file_operations.adapter import dict_list_to_messages
-        history_messages = dict_list_to_messages(history_dicts)
-        
-        # 检查 llm_client 是否有 chat_with_tools 方法
-        if hasattr(self.llm_client, 'chat_with_tools'):
-            response = await self.llm_client.chat_with_tools(
-                message=message,
-                history=history_messages,
-                tools=self.tools
-            )
-        else:
-            # 如果 llm_client 没有 chat_with_tools 方法，尝试直接调用
-            logger.warning("[Function Calling] llm_client has no chat_with_tools method, falling back to text mode")
-            return await self._get_llm_response_text(message, history_dicts)
-        
-        # 解析 tool_calls
-        if hasattr(response, 'content') and response.content:
-            # 检查是否是 tool_calls JSON
-            try:
-                tool_calls = json.loads(response.content)
-                
-                if isinstance(tool_calls, list) and len(tool_calls) > 0:
-                    # 有 tool_calls，返回格式化的 JSON
-                    content = self._format_tool_calls_for_agent(tool_calls)
-                    logger.info(f"[Function Calling] Received tool_calls: {len(tool_calls)} calls")
-                else:
-                    # 普通文本响应
-                    content = response.content
-                    logger.info(f"[Function Calling] LLM returned text (no tool call): {repr(content)[:200]}")
-                    
-            except (json.JSONDecodeError, TypeError) as e:
-                # 不是有效的 JSON，当作普通文本处理
-                content = response.content
-                logger.info(f"[Function Calling] Non-JSON response: {repr(content)[:200]}")
-        else:
-            # 空响应
-            content = ""
-            logger.warning("[Function Calling] Empty response from LLM")
-        
-        self.conversation_history.append({"role": "assistant", "content": content})
-        return content
-    
-    async def _get_llm_response_with_response_format(
-        self,
-        message: str,
-        history_dicts: List[Dict]
-    ) -> str:
-        """
-        【新增】使用 response_format 模式获取 LLM 响应 - 2026-03-20 小沈
-        
-        通过 response_format 约束 JSON 输出，然后解析为 ReAct 格式
-        
-        Args:
-            message: 当前用户消息
-            history_dicts: 对话历史
-        
-        Returns:
-            str: LLM 响应内容（ReAct 格式的 JSON 字符串）
-        """
-        from app.services.file_operations.adapter import dict_list_to_messages
-        
-        # 构建 ReAct Schema
-        schema = {
-            "type": "json_object",
-            "json_schema": {
-                "type": "object",
-                "properties": {
-                    "thought": {"type": "string", "description": "思考过程"},
-                    "action": {"type": "string", "description": "工具名称"},
-                    "action_input": {
-                        "type": "object",
-                        "description": "工具参数"
-                    }
-                },
-                "required": ["thought", "action", "action_input"]
-            }
-        }
-        
-        try:
-            # 构建历史消息
-            history_messages = dict_list_to_messages(history_dicts)
-            
-            # 调用 LLM（使用 chat_with_response_format 方法）
-            response = await self.llm_client.chat_with_response_format(
-                message=message,
-                history=history_messages,
-                response_format=schema
-            )
-            
-            # 处理响应
-            if hasattr(response, 'error') and response.error:
-                logger.error(f"[Agent] response_format error: {response.error}")
-                raise Exception(response.error)
-            
-            if hasattr(response, 'content'):
-                content = response.content
-            elif isinstance(response, dict):
-                content = response.get("content", str(response))
-            else:
-                content = str(response)
-            
-            logger.info(f"[Agent] response_format raw content: {repr(content)[:500]}")
-            
-            # 解析 JSON 响应
-            try:
-                result = json.loads(content)
-                
-                # 提取字段
-                thought = result.get("thought", "")
-                action = result.get("action", "")
-                action_input = result.get("action_input", {})
-                
-                # 转换为 Agent 的 ToolParser 可以理解的格式
-                # 兼容新字段名 (action_tool, params) 和旧字段名 (action, action_input)
-                formatted = {
-                    "thought": thought,
-                    "action_tool": action,  # 新字段名
-                    "params": action_input   # 新字段名
-                }
-                
-                content = json.dumps(formatted, ensure_ascii=False)
-                logger.info(f"[Agent] response_format parsed: action={action}")
-                
-            except json.JSONDecodeError as e:
-                logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={repr(content)[:200]}")
-                raise Exception(f"Invalid JSON from LLM: {content}")
-            
-            self.conversation_history.append({"role": "assistant", "content": content})
-            return content
-            
-        except Exception as e:
-            logger.error(f"[Agent] _get_llm_response_with_response_format failed: {e}")
-            raise
-    
-    def _format_tool_calls_for_agent(self, tool_calls: List[Dict[str, Any]]) -> str:
-        """
-        将 tool_calls 格式化为 Agent 可以理解的格式 - 2026-03-20 小沈
-        
-        将 OpenAI 格式的 tool_calls 转换为 Agent 的 ToolParser 可以解析的 JSON 格式
-        """
-        # 提取第一个 tool_call
-        if not tool_calls:
-            return ""
-        
-        tool_call = tool_calls[0]
-        func = tool_call.get("function", {})
-        tool_name = func.get("name", "unknown")
-        
-        # 解析 arguments
-        arguments_str = func.get("arguments", "{}")
-        try:
-            if isinstance(arguments_str, str):
-                arguments = json.loads(arguments_str)
-            else:
-                arguments = arguments_str
-        except json.JSONDecodeError:
-            arguments = {}
-        
-        # 转换为 Agent 的 ToolParser 可以理解的格式
-        # 根据 ToolParser.parse_response 的期望格式
-        formatted = {
-            "thought": f"我需要调用 {tool_name} 工具来完成任务",
-            "action_tool": tool_name,
-            "params": arguments
-        }
-        
-        return json.dumps(formatted, ensure_ascii=False)
-    
-    def _add_observation_to_history(self, observation: str):
-        """添加观察结果到对话历史"""
-        self.conversation_history.append({"role": "user", "content": observation})
-    
-    async def _execute_with_retry(
-        self,
-        action: str,
-        action_input: Dict[str, Any],
-        max_retries: int = 3
-    ) -> Dict[str, Any]:
-        """
-        执行动作并重试（指数退避策略）
-        
-        【新增功能】实现Agent级别重试机制
-        
-        Args:
-            action: 动作名称
-            action_input: 动作参数
-            max_retries: 最大重试次数（默认3次）
-        
-        Returns:
-            执行结果
-        """
-        last_error = None
-        
-        for attempt in range(max_retries):
-            try:
-                # 执行工具
-                observation = await self.executor.execute(action, action_input)
-                
-                # 检查是否执行成功
-                if observation.get("success") or observation.get("error") is None:
-                    if attempt > 0:
-                        # 重试成功后记录日志
-                        logger.info(
-                            f"Action '{action}' succeeded after {attempt + 1} attempt(s)"
-                        )
-                    return observation
-                
-                # 执行失败，记录错误
-                last_error = observation.get("error", "Unknown error")
-                logger.warning(
-                    f"Action '{action}' failed (attempt {attempt + 1}/{max_retries}): {last_error}"
-                )
-                
-            except Exception as e:
-                last_error = str(e)
-                logger.error(
-                    f"Action '{action}' raised exception (attempt {attempt + 1}/{max_retries}): {e}"
-                )
-            
-            # 如果还有重试次数，等待后重试（指数退避）
-            if attempt < max_retries - 1:
-                wait_time = 2 ** attempt  # 1s, 2s, 4s
-                logger.info(
-                    f"Retrying '{action}' in {wait_time}s... (attempt {attempt + 2}/{max_retries})"
-                )
-                await asyncio.sleep(wait_time)
-        
-        # 所有重试都失败
-        error_msg = f"Action '{action}' failed after {max_retries} attempts: {last_error}"
-        logger.error(error_msg)
-        return {
-            "success": False,
-            "error": error_msg,
-            "result": None,
-            "retry_count": max_retries
-        }
-    
-    def _format_observation(self, observation: Dict[str, Any]) -> str:
-        """格式化观察结果为文本"""
-        if observation.get("success", False):
-            result = observation.get("result", {})
-            if isinstance(result, dict):
-                return json.dumps(result, ensure_ascii=False, indent=2)
-            return str(result)
-        else:
-            error = observation.get("error", "Unknown error")
-            return f"Error: {error}"
-    
-    def get_execution_log(self) -> List[Dict[str, Any]]:
-        """获取执行日志"""
-        return [step.to_dict() for step in self.steps]
-    
     async def rollback(self, step_number: Optional[int] = None) -> bool:
         """
         回滚操作
         
         Args:
-            step_number: 要回滚到的步骤号（None表示回滚所有）
+            step_number: 要回滚到的步骤号（None 表示回滚所有）
             
         Returns:
             是否成功
@@ -1221,16 +705,12 @@ class FileOperationAgent:
                 )
                 success = result.get("success", 0) > 0
             else:
-                # 回滚到指定步骤：撤销该步骤之后的所有操作
-                # 找到步骤号大于step_number的所有步骤
+                # 回滚到指定步骤
                 steps_to_rollback = [s for s in self.steps if s.step_number > step_number]
                 
                 if not steps_to_rollback:
-                    # 如果没有找到步骤，可能是step_number本身不存在，或者步骤存在但后面没有需要回滚的步骤
-                    # 返回False表示无需回滚（ gracefully handle invalid step ）
                     return False
                 
-                # 回滚所有后续步骤（按降序，从后往前回滚）
                 success = True
                 for step in sorted(steps_to_rollback, key=lambda s: s.step_number, reverse=True):
                     observation = step.observation or {}
@@ -1248,7 +728,6 @@ class FileOperationAgent:
             return success
             
         except ValueError:
-            # ValueError需要透传（如session_id为None的情况）
             raise
         except Exception as e:
             logger.error(f"Rollback failed: {e}")
@@ -1261,18 +740,17 @@ class FileOperationAgent:
         system_prompt: Optional[str] = None
     ) -> AgentResult:
         """
-        使用 Function Calling 模式运行 Agent - 2026-03-20 小沈
+        使用 Function Calling 模式运行 Agent
         
         通过 tools Schema 强制约束 LLM 输出的参数名，确保参数正确性
-        无需 agent.py 中的参数映射容错代码
         
         Args:
             task: 任务描述
             context: 额外上下文
-            system_prompt: 自定义系统prompt（可选）
+            system_prompt: 自定义系统 prompt（可选）
             
         Returns:
-            Agent执行结果
+            Agent 执行结果
         """
         # 如果没有设置 tools，自动从注册表获取
         if not self.tools:
@@ -1285,9 +763,8 @@ class FileOperationAgent:
         self.use_function_calling = True
         
         try:
-            return await self._run_internal(task, context, system_prompt)
+            return await self._run_with_session(task, context, system_prompt)
         finally:
-            # 恢复原有模式
             self.use_function_calling = original_mode
     
     async def run_stream_with_tools(
@@ -1298,12 +775,12 @@ class FileOperationAgent:
         max_steps: int = 100
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
-        使用 Function Calling 模式流式运行 Agent - 2026-03-20 小沈
+        使用 Function Calling 模式流式运行 Agent
         
         Args:
             task: 任务描述
             context: 额外上下文
-            system_prompt: 自定义系统prompt（可选）
+            system_prompt: 自定义系统 prompt（可选）
             max_steps: 最大迭代次数
         
         Yields:
@@ -1323,5 +800,4 @@ class FileOperationAgent:
             async for chunk in self.run_stream(task, context, system_prompt, max_steps):
                 yield chunk
         finally:
-            # 恢复原有模式
             self.use_function_calling = original_mode
