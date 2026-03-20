@@ -28,8 +28,8 @@ class IntentRegistry:
 
     def list_all(self) -> List[Intent]:
         """列出所有已注册的意图"""
-        return list(self._intents.values())
+        return list(self._intents.values())  # 返回副本，避免并发问题
 
     def get_all_names(self) -> List[str]:
         """获取所有意图名称"""
-        return list(self._intents.keys())
+        return list(self._intents.keys())  # 返回副本
