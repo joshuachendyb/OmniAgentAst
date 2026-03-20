@@ -25,13 +25,13 @@ from typing import Dict, Any, List
 from unittest.mock import Mock, AsyncMock, MagicMock, patch, PropertyMock
 
 # 导入被测试模块
-from app.services.file_operations.agent import FileOperationAgent
+from app.services.agent.agent import FileOperationAgent
 from app.services.agent.tool_parser import ToolParser
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.types import AgentStatus, Step, AgentResult
-from app.services.file_operations.tools import FileTools
-from app.services.file_operations.capability import LLMCapability
-from app.services.file_operations.strategy_selector import SelectedStrategy
+from app.services.agent.tools import FileTools
+from app.services.agent.capability import LLMCapability
+from app.services.agent.strategy_selector import SelectedStrategy
 
 
 # ============ Fixtures ============
@@ -71,13 +71,13 @@ def mock_llm_adapter():
 @pytest.fixture
 def agent_with_adapter(mock_llm_client, mock_file_tools, mock_llm_adapter):
     """创建带 LLMAdapter 的 Agent 实例"""
-    with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+    with patch('app.services.agent.agent.get_session_service') as mock_session:
         mock_session_service = MagicMock()
         mock_session_service.create_session.return_value = "test-session"
         mock_session_service.complete_session.return_value = None
         mock_session.return_value = mock_session_service
         
-        with patch('app.services.file_operations.agent.LLMAdapter') as MockLLMAdapter:
+        with patch('app.services.agent.agent.LLMAdapter') as MockLLMAdapter:
             MockLLMAdapter.return_value = mock_llm_adapter
             
             agent = FileOperationAgent(
@@ -95,7 +95,7 @@ def agent_with_adapter(mock_llm_client, mock_file_tools, mock_llm_adapter):
 @pytest.fixture
 def agent_without_adapter(mock_llm_client, mock_file_tools):
     """创建不带 LLMAdapter 的 Agent 实例（向后兼容）"""
-    with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+    with patch('app.services.agent.agent.get_session_service') as mock_session:
         mock_session_service = MagicMock()
         mock_session_service.create_session.return_value = "test-session"
         mock_session_service.complete_session.return_value = None
@@ -122,12 +122,12 @@ class TestLLMAdapterInitialization:
     
     def test_agent_with_api_config_initializes_adapter(self, mock_llm_client, mock_file_tools):
         """TC070: 提供 API 配置时初始化 LLMAdapter"""
-        with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+        with patch('app.services.agent.agent.get_session_service') as mock_session:
             mock_session_service = MagicMock()
             mock_session_service.create_session.return_value = "test-session"
             mock_session.return_value = mock_session_service
             
-            with patch('app.services.file_operations.agent.LLMAdapter') as MockLLMAdapter:
+            with patch('app.services.agent.agent.LLMAdapter') as MockLLMAdapter:
                 mock_adapter = MagicMock()
                 MockLLMAdapter.return_value = mock_adapter
                 
@@ -150,7 +150,7 @@ class TestLLMAdapterInitialization:
     
     def test_agent_without_api_config_no_adapter(self, mock_llm_client, mock_file_tools):
         """TC071: 不提供 API 配置时不初始化 LLMAdapter"""
-        with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+        with patch('app.services.agent.agent.get_session_service') as mock_session:
             mock_session_service = MagicMock()
             mock_session_service.create_session.return_value = "test-session"
             mock_session.return_value = mock_session_service
@@ -164,7 +164,7 @@ class TestLLMAdapterInitialization:
     
     def test_agent_with_partial_api_config_no_adapter(self, mock_llm_client, mock_file_tools):
         """TC072: 只提供部分 API 配置时不初始化 LLMAdapter"""
-        with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+        with patch('app.services.agent.agent.get_session_service') as mock_session:
             mock_session_service = MagicMock()
             mock_session_service.create_session.return_value = "test-session"
             mock_session.return_value = mock_session_service
@@ -342,7 +342,7 @@ class TestGetLLMResponseWithResponseFormat:
     @pytest.fixture
     def agent_for_response_format(self, mock_llm_client, mock_file_tools):
         """创建用于 response_format 测试的 Agent"""
-        with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+        with patch('app.services.agent.agent.get_session_service') as mock_session:
             mock_session_service = MagicMock()
             mock_session_service.create_session.return_value = "test-session"
             mock_session.return_value = mock_session_service
@@ -520,7 +520,7 @@ class TestBackwardCompatibility:
     
     def test_original_init_signature_works(self, mock_llm_client, mock_file_tools):
         """TC084: 原有初始化签名仍然有效"""
-        with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+        with patch('app.services.agent.agent.get_session_service') as mock_session:
             mock_session_service = MagicMock()
             mock_session_service.create_session.return_value = "test-session"
             mock_session.return_value = mock_session_service
@@ -543,12 +543,12 @@ class TestBackwardCompatibility:
     
     def test_new_init_signature_works(self, mock_llm_client, mock_file_tools):
         """TC085: 新初始化签名有效"""
-        with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+        with patch('app.services.agent.agent.get_session_service') as mock_session:
             mock_session_service = MagicMock()
             mock_session_service.create_session.return_value = "test-session"
             mock_session.return_value = mock_session_service
             
-            with patch('app.services.file_operations.agent.LLMAdapter') as MockLLMAdapter:
+            with patch('app.services.agent.agent.LLMAdapter') as MockLLMAdapter:
                 MockLLMAdapter.return_value = MagicMock()
                 
                 # 使用新签名（提供 api 参数）
@@ -602,12 +602,12 @@ class TestAgentRunIntegration:
     @pytest.fixture
     def agent_for_run_integration(self, mock_llm_client, mock_file_tools):
         """创建用于 run() 集成的 Agent"""
-        with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+        with patch('app.services.agent.agent.get_session_service') as mock_session:
             mock_session_service = MagicMock()
             mock_session_service.create_session.return_value = "test-session"
             mock_session.return_value = mock_session_service
             
-            with patch('app.services.file_operations.agent.LLMAdapter') as MockLLMAdapter:
+            with patch('app.services.agent.agent.LLMAdapter') as MockLLMAdapter:
                 mock_adapter = MagicMock()
                 MockLLMAdapter.return_value = mock_adapter
                 
@@ -690,7 +690,7 @@ class TestResponseFormatDataConversion:
     @pytest.fixture
     def agent_for_conversion(self, mock_llm_client, mock_file_tools):
         """创建用于数据转换测试的 Agent"""
-        with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+        with patch('app.services.agent.agent.get_session_service') as mock_session:
             mock_session_service = MagicMock()
             mock_session_service.create_session.return_value = "test-session"
             mock_session.return_value = mock_session_service

@@ -26,7 +26,7 @@ from pathlib import Path
 # 确保可以导入被测试模块
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.services.file_operations.react_schema import (
+from app.services.agent.react_schema import (
     get_tools_schema_for_function_calling,
     get_tool_schema,
     validate_tool_call,

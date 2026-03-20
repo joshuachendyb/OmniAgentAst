@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.models.file_operations import OperationRecord, OperationType, OperationStatus
-from app.services.file_operations import (
+from app.services.agent import (
     get_file_safety_service,
     get_session_service,
     FileTools
@@ -636,8 +636,8 @@ async def get_next_page(request: NextPageRequest):
     - next_page_token: 从action_tool响应中获取的令牌
     """
     try:
-        from app.services.file_operations import FileTools
-        from app.services.file_operations.tools import FileOperationTools
+        from app.services.agent import FileTools
+        from app.services.agent.tools import FileOperationTools
         
         # 创建 FileTools 实例
         file_tools = FileTools(session_id=request.task_id)
