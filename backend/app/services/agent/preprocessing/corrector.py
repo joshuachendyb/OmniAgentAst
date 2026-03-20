@@ -27,8 +27,8 @@ class TextCorrector:
         Returns:
             tuple: (修正后文本, 修正记录列表)
         """
-        if not text or not text.strip():
-            return text, []
+        if text is None or not text.strip():
+            return str(text) if text else "", []
 
         corrected, errors = self.corrector.correct(text)
         return corrected, errors

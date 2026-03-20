@@ -34,12 +34,8 @@ class IntentClassifier:
                 all_intents: 所有意图及置信度字典
             }
         """
-        if not labels:
-            return {
-                "intent": "unknown",
-                "confidence": 0.0,
-                "all_intents": {},
-            }
+        if not text or not labels:
+            return {"intent": "unknown", "confidence": 0.0, "all_intents": {}}
 
         result = self.classifier(text, labels=labels)
         return {
