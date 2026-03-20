@@ -580,3 +580,92 @@ class BaseAIService:
             )
         finally:
             self._current_response = None
+    
+    async def chat_with_response_format(
+        self,
+        message: str,
+        history: Optional[List[Message]] = None,
+        response_format: Optional[Dict[str, Any]] = None
+    ) -> ChatResponse:
+        """
+        发送对话请求（使用 Structured Outputs response_format）
+        
+        适用于支持 response_format 参数的 LLM
+        
+        Args:
+            message: 当前用户消息
+            history: 对话历史（可选）
+            response_format: OpenAI response_format 参数
+        
+        Returns:
+            ChatResponse: 响应内容
+        """
+        try:
+            messages = self._build_messages(message, history)
+            
+            request_json: Dict[str, Any] = {
+                "model": self.model,
+                "messages": messages
+            }
+            
+            if response_format:
+                request_json["response_format"] = response_format
+            
+            logger.info(
+                f"[chat_with_response_format] model={self.model}, "
+                f"response_format={'provided' if response_format else 'None'}"
+            )
+            
+            response = await self.client.post(
+                f"{self.api_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                },
+                json=request_json
+            )
+            
+            if response.status_code != 200:
+                error_text = response.text
+                logger.error(f"[chat_with_response_format] API Error: {response.status_code}, {error_text}")
+                return ChatResponse(
+                    content="",
+                    model=self.model,
+                    provider=self.provider,
+                    error=f"API Error: {response.status_code}"
+                )
+            
+            data = response.json()
+            choices = data.get("choices", [])
+            
+            if not choices:
+                return ChatResponse(
+                    content="",
+                    model=self.model,
+                    provider=self.provider,
+                    error="No response from API"
+                )
+            
+            msg = choices[0].get("message", {})
+            content = msg.get("content", "")
+            
+            return ChatResponse(
+                content=content,
+                model=self.model,
+                provider=self.provider
+            )
+            
+        except Exception as e:
+            import traceback
+            error_type_name = type(e).__name__
+            logger.error(
+                f"[chat_with_response_format] Exception: {str(e)}, "
+                f"type: {error_type_name}, "
+                f"stack: {traceback.format_exc()}"
+            )
+            return ChatResponse(
+                content="",
+                model=self.model,
+                provider=self.provider,
+                error=f"{error_type_name}: {str(e)}"
+            )

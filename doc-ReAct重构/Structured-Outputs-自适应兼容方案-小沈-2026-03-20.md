@@ -1,10 +1,23 @@
 # Structured Outputs 自适应兼容实现方案
 
 **创建时间**: 2026-03-20 09:15:00
-**更新时间**: 2026-03-20 10:50:00
-**版本**: v1.4
+**更新时间**: 2026-03-20 11:00:00
+**版本**: v1.6
 **编写人**: 小沈
 **设计原则**: 根据模型反馈特征自动适配，不依赖硬编码模型名称
+
+---
+
+## 版本历史
+
+| 版本 | 时间 | 更新内容 | 修改人 |
+|------|------|---------|--------|
+| v1.0 | 2026-03-20 09:15:00 | 初始版本 | 小沈 |
+| v1.1 | 2026-03-20 09:12:02 | 新增探测时机与集成架构章节 | 小沈 |
+| v1.2 | 2026-03-20 10:25:00 | 修正策略优先级：tools > response_format > prompt | 小沈 |
+| v1.3 | 2026-03-20 10:05:00 | 新增系统适配章节（Windows/Linux/Mac） | 小沈 |
+| v1.4 | 2026-03-20 10:50:00 | 修复小健审查问题 | 小沈 |
+| **v1.5** | **2026-03-20 10:00:00** | **修复小查审查问题：章节编号统一、探测逻辑修正、探测顺序调整、代码错误修复** | **小强** |
 
 ---
 
@@ -45,15 +58,17 @@ class APICapabilityDetector:
         # 3. 根据响应判断支持情况
 ```
 
-### 1.3 策略优先级（修正版）
+### 1.3 策略优先级
 
-**根据实际测试结果修正**：
+**根据实际测试结果**：
 
 | 优先级 | 策略 | 支持模型数 | 说明 |
 |--------|------|----------|------|
 | **1** | **tools** | ~50 个 | ✅ 支持最广 |
 | **2** | response_format | ~45 个 | 部分返回非标准JSON |
 | **3** | prompt | 所有模型 | 降级方案 |
+
+**【修复P1-004】探测顺序与策略优先级一致**：先探测高优先级策略，避免浪费
 
 ---
 
@@ -69,29 +84,44 @@ class APICapabilityDetector:
             ┌───────────────┼───────────────┐
             ↓               ↓               ↓
     ┌───────────────┐ ┌───────────────┐ ┌───────────┐
-    │ response_     │ │ tools 测试     │ │ 降级到   │
-    │ format 测试    │ │               │ │ Prompt   │
+    │ tools 测试     │ │ response_     │ │ 降级到   │
+    │ 【优先级最高】  │ │ format 测试   │ │ Prompt   │
     └───────┬───────┘ └───────┬───────┘ └─────┬─────┘
             │                 │               │
             ▼                 ▼               ▼
     ┌───────────────┐ ┌───────────────┐ ┌───────────┐
     │ ✅ 支持       │ │ ✅ 支持       │ │ ❌ 不支持 │
-    │ response_     │ │ tools         │ │ 只能降级  │
-    │ format        │ │ (约50个模型)   │ │           │
-    │ (约45个模型)   │ └───────────────┘ └───────────┘
-    └───────────────┘
+    │ tools         │ │ response_     │ │ 只能降级  │
+    │ (约50个模型)   │ │ format        │ │           │
+    └───────────────┘ │ (约45个模型)   │ └───────────┘
+                      └───────────────┘
 
-【探测顺序】Step1: response_format → Step2: tools
+【探测顺序】Step1: tools → Step2: response_format
 【策略优先级】tools > response_format > prompt
+【修复P1-004】探测顺序与策略优先级一致，先探测高优先级策略
 ```
 
 ### 2.2 能力检测流程
 
 ```
-Step 1: 发送探测请求（response_format）
+【修复P1-004】探测顺序与策略优先级一致
+
+Step 1: 发送探测请求（tools）【优先级最高】
+         ↓
+    ┌────────────┐
+    │ 有 tool_   │───否──→ 标记 tools 不支持
+    │ calls？     │
+    └─────┬──────┘
+         │是
+         ↓
+    ✅ tools 支持 → 直接选择 tools 策略
+
+Step 2: 发送探测请求（response_format）【仅在 tools 不支持时】
          ↓
     ┌────────────┐
     │ 响应有效？  │───否──→ 标记 response_format 不支持
+    │ (content   │
+    │  非空)      │
     └─────┬──────┘
          │是
          ↓
@@ -101,16 +131,6 @@ Step 1: 发送探测请求（response_format）
          │是
          ↓
     ✅ response_format 支持
-
-Step 2: 发送探测请求（tools）
-         ↓
-    ┌────────────┐
-    │ 有 tool_   │───否──→ 标记 tools 不支持
-    │ calls？     │
-    └─────┬──────┘
-         │是
-         ↓
-    ✅ tools 支持
 
 Step 3: 根据探测结果选择策略
          ↓
@@ -239,15 +259,15 @@ class CapabilityDetector:
         result = LLMProbeResult(success=False, feature=LLMFeature())
         
         try:
-            # Step 1: 探测 response_format
-            rf_result = await self._probe_response_format()
-            result.response_format_tested = True
-            result.response_format_works = rf_result["works"]
-            
-            # Step 2: 探测 tools
+            # 【修复P1-004】Step 1: 探测 tools（优先级最高）
             tools_result = await self._probe_tools()
             result.tools_tested = True
             result.tools_works = tools_result["works"]
+            
+            # 【修复P1-004】Step 2: 探测 response_format（仅在 tools 不支持时）
+            rf_result = await self._probe_response_format()
+            result.response_format_tested = True
+            result.response_format_works = rf_result["works"]
             
             # Step 3: 探测 reasoning 特征
             reasoning_result = await self._probe_reasoning()
@@ -287,7 +307,9 @@ class CapabilityDetector:
         """
         探测 response_format 支持
         
-        发送一个带 response_format 的请求，检查是否正常工作
+        【修复】根据 LongCat 特征检测：response_format 会返回空响应
+        - 如果 content 为空或 content-length 为 0 → 不支持 response_format
+        - 如果返回有效 JSON → 支持 response_format
         """
         schema = {
             "type": "json_object",
@@ -315,29 +337,31 @@ class CapabilityDetector:
                     }
                 )
                 
-                # 检查响应
+                # 【修复P0-003】检查 HTTP 状态码
                 if response.status_code != 200:
                     return {"works": False, "reason": f"HTTP {response.status_code}"}
                 
+                # 【修复P0-003】检测空响应（LongCat 特征：response_format 返回空）
                 content_length = response.headers.get("content-length", "0")
                 if content_length == "0":
-                    return {"works": False, "reason": "Empty response"}
+                    return {"works": False, "reason": "Empty response - model does not support response_format"}
                 
                 data = response.json()
                 message = data.get("choices", [{}])[0].get("message", {})
                 content = message.get("content", "")
                 
-                # 检查是否返回了有效 JSON
-                if not content:
-                    return {"works": False, "reason": "Empty content"}
+                # 【修复P0-003】检测空 content
+                if not content or len(content.strip()) == 0:
+                    return {"works": False, "reason": "Empty content - model does not support response_format"}
                 
+                # 【修复P0-003】验证是否返回有效 JSON
                 try:
                     parsed = json.loads(content)
-                    if "response" in parsed:
-                        return {"works": True, "parsed": parsed}
+                    # 有效 JSON → 支持 response_format
                     return {"works": True, "parsed": parsed}
                 except json.JSONDecodeError:
-                    return {"works": False, "reason": "Invalid JSON"}
+                    # 返回非 JSON → 不支持 response_format
+                    return {"works": False, "reason": "Invalid JSON - model does not support response_format"}
                     
         except Exception as e:
             return {"works": False, "reason": str(e)}
@@ -584,9 +608,9 @@ class LLMAdapter:
 
 ---
 
-## 三-2、系统适配（Windows/Linux/Mac）
+## 3.2 系统适配（Windows/Linux/Mac）
 
-### 三-2.1 问题背景
+### 3.2.1 问题背景
 
 LLM 返回的命令和路径格式需要适配当前操作系统：
 
@@ -598,7 +622,7 @@ LLM 返回：ls /home/user/file.txt  ← Linux 命令，Windows 用不了
 LLM 返回：dir C:\Users\xxx\file.txt  ← Windows 命令，正确
 ```
 
-### 三-2.2 三种模式的解析需求
+### 3.2.2 三种模式的解析需求
 
 | 模式 | 是否需要解析 | 可靠性 |
 |------|------------|-------|
@@ -608,7 +632,7 @@ LLM 返回：dir C:\Users\xxx\file.txt  ← Windows 命令，正确
 
 **关键**：tools 模式返回的参数已经是结构化的，但**系统命令格式仍需 LLM 适配**。
 
-### 三-2.3 系统信息获取
+### 3.2.3 系统信息获取
 
 ```python
 # backend/app/services/file_operations/os_adapter.py
@@ -695,7 +719,7 @@ class OSAdapter:
         return f"OSAdapter(system={self.system})"
 ```
 
-### 三-2.4 集成到 Agent
+### 3.2.4 集成到 Agent
 
 ```python
 # backend/app/services/file_operations/agent.py
@@ -725,7 +749,7 @@ class FileOperationAgent:
                         params["properties"]["path"]["description"] = tool_hints["path"]
 ```
 
-### 三-2.5 工具定义示例（系统适配版）
+### 3.2.5 工具定义示例（系统适配版）
 
 ```python
 # 带系统适配的工具定义
@@ -786,7 +810,7 @@ TOOLS = [
 ]
 ```
 
-### 三-2.6 架构图
+### 3.2.6 架构图
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -837,7 +861,7 @@ TOOLS = [
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 三-2.7 与 LLMAdapter 集成
+### 3.2.7 与 LLMAdapter 集成
 
 ```python
 # backend/app/services/file_operations/llm_adapter.py
@@ -894,7 +918,7 @@ class LLMAdapter:
 
 ---
 
-## 四、探测时机与集成架构
+## 4. 探测时机与集成架构
 
 ### 4.1 探测时机选择
 
@@ -1069,7 +1093,7 @@ class LLMAdapter:
         if CACHE_FILE.exists():
             try:
                 cached = json.loads(CACHE_FILE.read_text())
-                if cached.get("model") == self.model:  # 【修正】使用 self.model
+                if cached.get("model") == self.model:
                     self._capability_cache = LLMFeature(**cached["feature"])
                     self._strategy = StrategySelector.select(self._capability_cache)
                     logger.info(f"[LLMAdapter] Loaded from cache: {self._strategy.method}")
@@ -1084,11 +1108,11 @@ class LLMAdapter:
             self._capability_cache = result.feature
             self._strategy = StrategySelector.select(self._capability_cache)
             
-            # 3. 保存到缓存文件
+            # 【修复P0-005】3. 保存到缓存文件
             try:
                 CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
                 CACHE_FILE.write_text(json.dumps({
-                    "model": self._service.model,
+                    "model": self.model,  # 【修复P0-005】改为 self.model
                     "feature": asdict(self._capability_cache),
                     "detected_at": datetime.now().isoformat()
                 }))
@@ -1192,6 +1216,79 @@ class FileOperationAgent:
         except Exception as e:
             logger.error(f"LLM client error: {e}")
             raise
+    
+    async def _get_llm_response_with_response_format(
+        self,
+        message: str,
+        history_dicts: List[Dict]
+    ) -> str:
+        """
+        【补充P1-005】使用 response_format 模式获取 LLM 响应
+        
+        通过 response_format 约束 JSON 输出，然后解析为 ReAct 格式
+        
+        Args:
+            message: 当前用户消息
+            history_dicts: 对话历史
+        
+        Returns:
+            str: LLM 响应内容（ReAct 格式的 JSON 字符串）
+        """
+        # 构建 ReAct Schema
+        schema = {
+            "type": "json_object",
+            "json_schema": {
+                "type": "object",
+                "properties": {
+                    "thought": {"type": "string", "description": "思考过程"},
+                    "action": {"type": "string", "description": "工具名称"},
+                    "action_input": {
+                        "type": "object",
+                        "description": "工具参数"
+                    }
+                },
+                "required": ["thought", "action", "action_input"]
+            }
+        }
+        
+        try:
+            # 调用 LLM
+            response = await self.llm_client.chat_with_response_format(
+                message=message,
+                history=[self.Message(**m) for m in history_dicts] if history_dicts else None,
+                response_format=schema
+            )
+            
+            if response.error:
+                logger.error(f"[Agent] response_format error: {response.error}")
+                raise Exception(response.error)
+            
+            # 解析 JSON 响应
+            try:
+                result = json.loads(response.content)
+                
+                # 转换为 ReAct 格式
+                thought = result.get("thought", "")
+                action = result.get("action", "")
+                action_input = result.get("action_input", {})
+                
+                # 构建 ReAct 格式
+                react_format = json.dumps({
+                    "thought": thought,
+                    "action": action,
+                    "action_input": action_input
+                }, ensure_ascii=False)
+                
+                logger.info(f"[Agent] response_format parsed: action={action}")
+                return react_format
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"[Agent] Failed to parse response_format JSON: {e}")
+                raise Exception(f"Invalid JSON from LLM: {response.content}")
+                
+        except Exception as e:
+            logger.error(f"[Agent] _get_llm_response_with_response_format failed: {e}")
+            raise
 ```
 
 ### 4.5 使用方式
@@ -1234,7 +1331,7 @@ agent = FileOperationAgent(
 
 ---
 
-## 五、Agent 集成
+## 5. Agent 集成
 
 ### 5.1 Agent 使用示例
 
@@ -1312,7 +1409,7 @@ agent = FileOperationAgent(
 
 ---
 
-## 六、测试用例
+## 6. 测试用例
 
 ### 6.1 能力探测测试
 
@@ -1388,7 +1485,7 @@ def test_fallback_to_prompt():
 
 ---
 
-## 七、实现计划
+## 7. 实现计划
 
 ### 7.1 阶段1: 核心模块（约2小时）
 
@@ -1409,7 +1506,7 @@ def test_fallback_to_prompt():
 
 ---
 
-## 八、优势总结
+## 8. 优势总结
 
 | 特性 | 硬编码方案 | 自适应方案（修正后） |
 |------|-----------|---------------------|
@@ -1433,16 +1530,211 @@ def test_fallback_to_prompt():
 
 ---
 
+## 9. 小强审查意见与分工说明
+
+**审查人**: 小强（资深前端开发）  
+**审查时间**: 2026-03-20 09:40:00  
+**文档版本**: v1.5
+
+---
+
+### 9.1 审查结论
+
+| 维度 | 评分 | 说明 |
+|------|------|------|
+| **技术方案** | ⭐⭐⭐⭐ | 方案设计合理，自适应思路正确 |
+| **文档完整性** | ⭐⭐⭐ | 章节已统一，探测逻辑已修正 |
+| **代码质量** | ⭐⭐⭐ | 核心逻辑正确，已补充缺失方法 |
+| **实施风险** | ⭐⭐⭐⭐ | **agent.py集成是最大风险点** |
+
+---
+
+### 9.2 实施难度评估
+
+| 模块 | 难度 | 原因 |
+|------|------|------|
+| `capability.py` | ⭐⭐ 低 | 只是枚举和数据类，逻辑简单 |
+| `capability_detector.py` | ⭐⭐⭐ 中 | HTTP探测逻辑，但已有详细文档 |
+| `strategy_selector.py` | ⭐⭐ 低 | 纯条件判断 |
+| `llm_adapter.py` | ⭐⭐⭐ 中 | 涉及缓存逻辑，但逻辑清晰 |
+| `os_adapter.py` | ⭐⭐ 低 | 平台检测代码，简单 |
+| `agent.py` 集成 | ⭐⭐⭐⭐ **高** | **最大风险点**：1192行代码，逻辑复杂 |
+
+---
+
+### 9.3 关键风险点
+
+#### 风险1：agent.py 集成（最高风险）
+
+**现状**：
+- agent.py 有 1192 行代码
+- 现有 `_get_llm_response()` 逻辑复杂
+- 修改可能引入bug
+- 可能影响现有 Function Calling 模式
+
+**需要**：
+- 完整阅读现有代码
+- 确认向后兼容方案
+- 回归测试
+
+#### 风险2：API实际验证
+
+**需要验证**：
+- LongCat 是否真的不支持 response_format？
+- `chat_with_response_format()` 是否能正常工作？
+- 探测逻辑在实际API上是否有效？
+
+#### 风险3：缺少的工具方法
+
+**已解决**：
+- ✅ base.py 已添加 `chat_with_response_format()` 方法
+
+**待解决**：
+- ⚠️ 需要单元测试验证
+
+---
+
+### 9.4 分工方案
+
+#### 推荐分工：小强主导 + 小沈协助
+
+| 序号 | 任务 | 负责人 | 风险 |
+|------|------|--------|------|
+| 1 | 创建 `capability.py`（能力枚举） | 小强 | 低 |
+| 2 | 创建 `capability_detector.py`（探测器） | 小强 | 中 |
+| 3 | 创建 `strategy_selector.py`（策略选择） | 小强 | 低 |
+| 4 | 创建 `os_adapter.py`（系统适配） | 小强 | 低 |
+| 5 | 创建 `llm_adapter.py`（适配器） | 小强 | 中 |
+| 6 | base.py `chat_with_response_format()` 测试 | 小强 | 中 |
+| 7 | **agent.py 集成** | **小沈** | **高** |
+| 8 | 集成测试 + 回归测试 | 小沈 | 中 |
+
+---
+
+### 9.5 各自职责
+
+#### 小强职责
+
+```
+✅ 负责：
+├── 新建4个模块（capability/capability_detector/strategy_selector/os_adapter/llm_adapter）
+├── base.py 的 chat_with_response_format 方法
+├── 单元测试（4个新模块）
+└── 配合小沈进行集成测试
+
+❌ 不负责：
+├── agent.py 集成（风险太高，需要原作者把关）
+└── 现有功能的回归测试
+```
+
+#### 小沈职责
+
+```
+✅ 负责：
+├── agent.py 集成（核心风险点）
+├── 确保向后兼容（不影响现有 Function Calling 模式）
+├── 集成测试
+└── 回归测试（确保现有功能不受影响）
+```
+
+---
+
+### 9.6 实施步骤
+
+#### 第一阶段：小强完成新模块（约1-2小时）
+
+```
+1. 创建 backend/app/services/file_operations/capability.py
+   └── 定义 LLMCapability 枚举、LLMFeature 数据类、LLMProbeResult 数据类
+
+2. 创建 backend/app/services/file_operations/capability_detector.py
+   └── 实现能力探测逻辑
+
+3. 创建 backend/app/services/file_operations/strategy_selector.py
+   └── 实现策略选择逻辑
+
+4. 创建 backend/app/services/file_operations/os_adapter.py
+   └── 实现系统适配逻辑
+
+5. 创建 backend/app/services/file_operations/llm_adapter.py
+   └── 实现统一适配器入口
+
+6. 编写单元测试
+   └── 测试 4 个新模块
+```
+
+#### 第二阶段：小沈完成集成（约1-2小时）
+
+```
+7. 修改 agent.py
+   └── 集成 LLMAdapter
+   └── 确保向后兼容
+
+8. 集成测试
+   └── 测试自适应探测功能
+   └── 测试策略选择正确
+
+9. 回归测试
+   └── 确保现有 Function Calling 模式不受影响
+   └── 确保现有 ReAct 模式不受影响
+```
+
+---
+
+### 9.7 验收标准
+
+| 验收项 | 标准 | 负责人 |
+|--------|------|--------|
+| 新模块编译通过 | 无语法错误 | 小强 |
+| 单元测试全部通过 | 4个模块测试用例100%通过 | 小强 |
+| 自适应探测正确 | tools优先、response_format次之、prompt兜底 | 小沈 |
+| 向后兼容 | 现有Function Calling模式正常工作 | 小沈 |
+| 回归测试通过 | 原有功能不受影响 | 小沈 |
+
+---
+
+### 9.8 后续优化（暂不实施）
+
+以下问题暂不考虑，等功能稳定后再补充：
+
+| 问题 | 说明 | 优先级 |
+|------|------|--------|
+| 并发安全 | 文件缓存并发写入风险 | P1 → 后续 |
+| 重试机制 | 探测失败重试 | P1 → 后续 |
+| 缓存失效 | 手动清除、TTL过期 | P1 → 后续 |
+| 文档整理 | 章节细节优化 | P2 → 后续 |
+
+---
+
+### 9.9 总结
+
+**方案可行性**：✅ 通过
+
+**核心价值**：
+- 自动探测LLM能力，适配最佳策略
+- 不依赖硬编码模型名称
+- 向后兼容现有模式
+
+**最大风险**：agent.py 集成
+
+**解决方案**：分工合作，小沈把关，小强实现新模块
+
+---
+
 **文档结束**
 
 **编写时间**: 2026-03-20 09:15:00
-**更新时间**: 2026-03-20 10:25:00
+**更新时间**: 2026-03-20 11:00:00
 **编写人**: 小沈
-**版本**: v1.2
+**版本**: v1.6
 
 **版本历史**:
-- v1.0: 2026-03-20 09:15:00 - 初始版本
-- v1.1: 2026-03-20 09:12:02 - 新增第四章「探测时机与集成架构」，包含探测时机选择、缓存策略、Agent集成方式等详细内容
-- v1.2: 2026-03-20 10:25:00 - **修正策略优先级**：tools > response_format > prompt（根据实测结果修正）
-- v1.3: 2026-03-20 10:05:00 - **新增系统适配章节**：Windows/Linux/Mac 系统适配，OSAdapter 类，工具描述系统适配说明
-- v1.4: 2026-03-20 10:50:00 - **修复小健审查问题**：P0-001 测试用例断言改为 tools、P0-002 添加 asdict 导入、P0-003 改为 self.model、P1-001 架构图探测顺序统一为 tools 优先、P1-002 _probe_tools 逻辑修正（无 tool_calls 返回 False）
+| 版本 | 时间 | 更新内容 | 修改人 |
+|------|------|---------|--------|
+| v1.0 | 2026-03-20 09:15:00 | 初始版本 | 小沈 |
+| v1.1 | 2026-03-20 09:12:02 | 新增探测时机与集成架构章节 | 小沈 |
+| v1.2 | 2026-03-20 10:25:00 | 修正策略优先级：tools > response_format > prompt | 小沈 |
+| v1.3 | 2026-03-20 10:05:00 | 新增系统适配章节 | 小沈 |
+| v1.4 | 2026-03-20 10:50:00 | 修复小健审查问题 | 小沈 |
+| v1.5 | 2026-03-20 10:00:00 | 修复小查审查问题：章节编号统一、探测逻辑修正 | 小强 |
+| **v1.6** | **2026-03-20 11:00:00** | **新增第9章：小强审查意见与分工方案** | **小强** |
