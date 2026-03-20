@@ -634,15 +634,133 @@ class FileOperationAgent:
 
 ---
 
-## 9 与现有实现的对比
+## 9 当前项目实施进度对照
 
-| 项目 | 现有实现（错误） | 新设计（正确） |
-|------|-----------------|---------------|
-| action 类型 | action1/action2/action3 | 统一 action_tool |
-| observation 类型 | observation1/observation2/observation3 | 统一 observation |
-| 多 action 逻辑 | action1→action2→action3→obs1 | 不支持（错误模式） |
-| 标准 ReAct | ❌ 不符合 | ✅ 符合 |
-| 字段命名 | 业务命名 | LangChain 标准命名 |
+> **补充时间**: 2026-03-20 08:50:00
+> **补充人**: 小健
+> **说明**: 基于小健对文档的评审意见，补充当前项目实际实现与文档建议的对照
+
+### 9.1 当前项目实际目录结构
+
+根据实际代码实现，目录结构已更新：
+
+```
+backend/app/api/v1/
+├── types/                          # ✅ 已按type分文件
+│   ├── __init__.py
+│   ├── process_start.py         ✅ 已完成 - 包含LLM意图分析
+│   ├── process_thought.py      ✅ 已完成 - Thought2版本带LLM
+│   ├── process_action.py        ✅ 已完成 - 工具执行
+│   ├── process_observation.py   ✅ 已完成 - 带summary字段
+│   ├── process_final.py         ✅ 已完成 - 最终回答
+│   ├── process_error.py         ✅ 已完成 - 错误处理
+│   └── process_incident.py      ✅ 已完成 - 状态事件
+├── adapters/
+│   ├── __init__.py
+│   └── sse_adapter.py          ⏳ 待实现
+└── chat_stream.py               主流程
+```
+
+### 9.2 当前项目实际字段定义
+
+#### 9.2.1 thought（实际）
+
+```python
+{
+    "type": "thought",
+    "step": 1,                    # 步骤序号（项目扩展）
+    "timestamp": 1710892800000,   # 时间戳（项目扩展）
+    "content": "思考内容",        # 思考文本
+    "reasoning": "推理过程",      # 推理内容（项目特有）
+    "action_tool": "list_directory",  # LLM选择的工具（项目特有）
+    "params": {"dir_path": "..."}     # LLM生成的参数（项目特有）
+}
+```
+
+**与文档差异**：
+- 多了 `step` - 步骤序号
+- 多了 `reasoning` - 推理传导
+- 多了 `action_tool`/`params` - LLM决策信息
+
+#### 9.2.2 action_tool（实际）
+
+```python
+{
+    "type": "action_tool",
+    "step": 1,
+    "timestamp": 1710892800000,
+    "name": "list_directory",         # 工具名称
+    "params": {"dir_path": "..."}    # 工具参数
+}
+```
+
+#### 9.2.3 observation（实际）
+
+```python
+{
+    "type": "observation",
+    "step": 2,
+    "timestamp": 1710892801000,
+    "content": "原始结果...",        # 原始结果
+    "summary": "摘要..."            # 长结果摘要（项目特有）
+}
+```
+
+**与文档差异**：
+- 多了 `step` - 步骤序号
+- 多了 `summary` - 长结果摘要
+
+### 9.3 额外的 type（项目特有）
+
+| type | 说明 | 状态 |
+|------|------|------|
+| **start** | 任务开始 | ✅ 已实现 |
+| **thought** | 思考过程（带LLM） | ✅ 已实现 |
+| **action_tool** | 工具执行 | ✅ 已实现 |
+| **observation** | 执行结果（带summary） | ✅ 已实现 |
+| **final** | 最终回答 | ✅ 已实现 |
+| **chunk** | 流式中间输出 | ✅ 已实现 |
+| **error** | 错误信息 | ✅ 已实现 |
+| **incident** | 状态事件 | ✅ 已实现 |
+
+### 9.4 术语对照表
+
+| 文档术语 | 项目实际 | 说明 |
+|---------|---------|------|
+| `action` | `action_tool` | 项目使用更明确的命名 |
+| `action_input` | `params` | 项目使用 params 更直观 |
+| 无 | `reasoning` | 项目特有的推理传导字段 |
+| 无 | `summary` | observation长结果摘要 |
+| 无 | `step` | 步骤序号，便于追踪 |
+| 无 | `start/chunk/error/incident` | 项目扩展的type |
+
+### 9.5 实施进度总览
+
+| 模块 | 文档设计 | 当前实现 | 状态 | 文件 |
+|------|---------|---------|------|------|
+| start | 未设计 | ✅ 完成 | LLM意图分析 | `process_start.py` |
+| thought | 基础版 | ✅ 完成 | Thought2版本 | `process_thought.py` |
+| action_tool | 基础版 | ✅ 完成 | 标准实现 | `process_action.py` |
+| observation | 基础版 | ✅ 完成 | 带summary | `process_observation.py` |
+| final | 基础版 | ✅ 完成 | 标准实现 | `process_final.py` |
+| chunk | 未设计 | ✅ 完成 | 流式中间 | `sse.ts` |
+| error | 未设计 | ✅ 完成 | 错误码体系 | `process_error.py` |
+| incident | 未设计 | ✅ 完成 | 状态事件 | `process_incident.py` |
+| Output Parser | 正则解析 | ⏳ 待增强 | 当前较弱 | - |
+| trim_steps | 文档设计 | ⏳ 待实现 | 上下文裁剪 | - |
+
+---
+
+## 10 与现有实现的对比
+
+| 项目 | 旧实现（错误） | 新设计（正确） | 当前状态 |
+|------|---------------|---------------|---------|
+| action 类型 | action1/action2/action3 | 统一 action_tool | ✅ 已修正 |
+| observation 类型 | observation1/observation2 | 统一 observation | ✅ 已修正 |
+| 多 action 逻辑 | action1→action2→action3→obs1 | 不支持（错误模式） | ✅ 已修正 |
+| 标准 ReAct | ❌ 不符合 | ✅ 符合 | ✅ 已符合 |
+| 字段命名 | 业务命名 | LangChain 标准命名 | ✅ 已对齐 |
+| 额外type | 无 | start/chunk/error/incident | ✅ 项目扩展 |
 
 ---
 
@@ -668,11 +786,33 @@ class FileOperationAgent:
 
 ---
 
-## 12 版本记录
+## 13 下一步行动项
+
+| 优先级 | 建议项 | 当前状态 | 实施难度 |
+|-------|-------|---------|---------|
+| P0 | 统一字段命名与文档一致 | 部分不一致 | 低 |
+| P1 | 增强Output Parser | 当前较弱 | 中 |
+| P2 | 上下文裁剪(trim_steps) | 未实现 | 高 |
+| P3 | scratchpad格式化 | 未实现 | 中 |
+
+---
+
+## 14 参考文档
+
+| 文档 | 说明 |
+|------|------|
+| `doc/流式ReAct的type和API重构设计说明书.md` | 当前项目完整设计 |
+| `doc-ReAct重构/ReAct-框架对比与实现方法总结-小沈-2026-03-20.md` | 框架对比总结 |
+| `doc-ReAct重构/LLM工具调用参数命名规范-实现说明文档.md` | 工具参数规范 |
+
+---
+
+## 15 版本记录
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
 | v1.0 | 2026-03-20 05:07:12 | 初始版本，包含完整字段级数据流设计 | 小沈 |
+| v1.1 | 2026-03-20 08:50:00 | 补充当前项目实施进度、实际字段定义、术语对照、实施进度总览 | 小健 |
 
 ---
 
