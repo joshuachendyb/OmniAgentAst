@@ -1,8 +1,8 @@
 # LlamaIndex ReAct 学习报告
 
-**文档版本**: v2.1
+**文档版本**: v2.2
 **创建时间**: 2026-03-20 05:35:00
-**更新时间**: 2026-03-20 13:50:00
+**更新时间**: 2026-03-20 14:00:00
 **编写人**: 小沈
 **研究资料数量**: 30+ 篇
 **存放位置**: D:\OmniAgentAs-desk\doc-ReAct重构\
@@ -690,7 +690,300 @@ print(ret["response"])
 
 ---
 
-## 10 关键源码链接
+## 10 字段级信息流转深度分析
+
+### 10.1 核心问题：step 之间信息如何传递？
+
+LlamaIndex 的答案：**通过 `ctx.store`（上下文存储）**。
+
+```
+ctx.store（全局共享存储）
+├── current_reasoning: List[BaseReasoningStep]   ← 所有步骤的推理历史
+├── memory: BaseMemory                            ← 对话记忆
+├── max_iterations: int                           ← 最大迭代次数
+├── num_iterations: int                           ← 当前迭代次数
+└── early_stopping_method: str                    ← 提前停止策略
+```
+
+**关键机制**：`current_reasoning` 是整个 ReAct 循环的核心。每一步的结果都 append 到这里，下一步读取它来了解之前发生了什么。
+
+### 10.2 一个完整的循环：字段如何流转
+
+#### 步骤 1：take_step（LLM 调用）
+
+```
+输入：
+├── ctx.store["current_reasoning"] = [step1, step2, ...]  ← 之前的推理步骤
+├── llm_input = [ChatMessage, ...]                        ← 用户消息
+└── tools = [AsyncBaseTool, ...]                          ← 可用工具
+
+处理：
+├── 1. 读取 current_reasoning
+├── 2. formatter.format(tools, llm_input, current_reasoning)
+│   └── 将 current_reasoning 转换为 ChatMessage 列表
+│   └── ObservationReasoningStep → MessageRole.USER
+│   └── 其他 ReasoningStep → MessageRole.ASSISTANT
+├── 3. 拼接: [SystemHeader] + [ChatHistory] + [ReasoningHistory]
+├── 4. 调用 LLM
+├── 5. output_parser.parse(llm_response)
+│   └── 返回 ActionReasoningStep 或 ResponseReasoningStep
+├── 6. current_reasoning.append(reasoning_step)  ← 关键：追加到历史
+├── 7. ctx.store["current_reasoning"] = current_reasoning
+
+输出：
+├── AgentOutput(response, tool_calls)
+│   ├── response: ChatMessage（LLM 原始输出）
+│   └── tool_calls: [ToolSelection]（如果是 ActionReasoningStep）
+└── tool_calls 为空 → 结束循环
+```
+
+#### 步骤 2：parse_agent_output（路由）
+
+```
+输入：AgentOutput
+
+判断：
+├── AgentOutput.retry_messages 非空 → 返回 AgentInput（重试）
+├── AgentOutput.tool_calls 为空 → finalize（结束循环）
+└── AgentOutput.tool_calls 非空 → ToolCall（执行工具）
+```
+
+#### 步骤 3：call_tool（执行工具）
+
+```
+输入：ToolCall(tool_name, tool_kwargs, tool_id)
+
+处理：
+├── tools_by_name[tool_name].call(**tool_kwargs)
+└── 返回 ToolCallResult
+
+输出：ToolCallResult(tool_name, tool_kwargs, tool_id, tool_output, return_direct)
+```
+
+#### 步骤 4：handle_tool_call_results（记录观察）
+
+```
+输入：List[ToolCallResult]
+
+处理（ReactAgent.handle_tool_call_results）：
+├── 对于每个 tool_call_result:
+│   ├── obs_step = ObservationReasoningStep(
+│   │       observation=str(tool_call_result.tool_output.content),
+│   │       return_direct=tool_call_result.return_direct
+│   │   )
+│   ├── current_reasoning.append(obs_step)  ← 关键：追加观察到历史
+│   └── 如果 return_direct=True:
+│       └── current_reasoning.append(ResponseReasoningStep(...))
+│           └── 直接结束
+│
+└── ctx.store["current_reasoning"] = current_reasoning
+
+输出：AgentInput（回到步骤 1）
+```
+
+### 10.3 字段流转图（完整版）
+
+```
+用户输入: "天气怎么样？"
+    │
+    ▼
+┌─ init_run ─────────────────────────────────────────────────┐
+│  user_msg = "天气怎么样？"                                  │
+│  memory.put(ChatMessage(role="user", content="天气..."))  │
+└─────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─ setup_agent ──────────────────────────────────────────────┐
+│  llm_input = [SystemPrompt, ...ChatHistory, user_msg]     │
+└─────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─ run_agent_step → take_step ────────────────────────────────┐
+│  current_reasoning = [] (第一次，空)                        │
+│                                                              │
+│  formatter.format(                                          │
+│    tools=[search, calculator],                              │
+│    chat_history=[user_msg],                                 │
+│    current_reasoning=[]                                     │
+│  )                                                          │
+│  → [SystemHeader + Tools + user_msg]                        │
+│                                                              │
+│  LLM 输出: "Thought: 我需要搜索天气\nAction: search\nAction Input: {\"query\": \"天气\"}" │
+│                                                              │
+│  parser.parse(output) → ActionReasoningStep(                │
+│    thought="我需要搜索天气",                                │
+│    action="search",                                         │
+│    action_input={"query": "天气"}                           │
+│  )                                                          │
+│                                                              │
+│  current_reasoning = [ActionReasoningStep(...)]             │
+│  ctx.store["current_reasoning"] = current_reasoning         │
+└─────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─ parse_agent_output ────────────────────────────────────────┐
+│  AgentOutput.tool_calls = [ToolSelection(                   │
+│    tool_id="uuid",                                          │
+│    tool_name="search",                                      │
+│    tool_kwargs={"query": "天气"}                            │
+│  )]                                                         │
+│  有 tool_calls → 发送 ToolCall 事件                          │
+└─────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─ call_tool ────────────────────────────────────────────────┐
+│  tool = tools_by_name["search"]                            │
+│  result = tool.call(query="天气")                           │
+│  → "今天北京晴天，25°C"                                    │
+│                                                              │
+│  ToolCallResult(                                            │
+│    tool_name="search",                                      │
+│    tool_kwargs={"query": "天气"},                           │
+│    tool_output=ToolOutput(content="今天北京晴天，25°C"),   │
+│    return_direct=False                                      │
+│  )                                                          │
+└─────────────────────────────────────────────────────────────┘
+    │
+    ▼
+┌─ handle_tool_call_results ──────────────────────────────────┐
+│  current_reasoning = [ActionReasoningStep(...)]             │
+│                                                              │
+│  obs_step = ObservationReasoningStep(                       │
+│    observation="今天北京晴天，25°C",                        │
+│    return_direct=False                                      │
+│  )                                                          │
+│  current_reasoning.append(obs_step)                         │
+│                                                              │
+│  current_reasoning = [                                      │
+│    ActionReasoningStep(thought="...", action="search", ...),│
+│    ObservationReasoningStep(observation="今天北京晴天...")  │
+│  ]                                                          │
+│  ctx.store["current_reasoning"] = current_reasoning         │
+└─────────────────────────────────────────────────────────────┘
+    │
+    ▼
+    回到 take_step（第2轮）
+    │
+    ├─ formatter.format(...) 读取 current_reasoning
+    │   → [SystemHeader, user_msg, Assistant(Thought:...Action:...Action Input:...), User(Observation:今天北京晴天...)]
+    │
+    ├─ LLM 输出: "Thought: 天气很好，不需要更多信息\nAnswer: 今天北京晴天，25°C"
+    │
+    ├─ parser.parse(output) → ResponseReasoningStep(
+    │     thought="天气很好，不需要更多信息",
+    │     response="今天北京晴天，25°C"
+    │   )
+    │
+    ├─ current_reasoning.append(ResponseReasoningStep(...))
+    │
+    └─ is_done=True → finalize → 结束
+    │
+    ▼
+┌─ finalize ──────────────────────────────────────────────────┐
+│  current_reasoning = [                                      │
+│    ActionReasoningStep(...),                                │
+│    ObservationReasoningStep(...),                           │
+│    ResponseReasoningStep(...)  ← 最后一个是 Response        │
+│  ]                                                          │
+│                                                              │
+│  reasoning_str = "\n".join([s.get_content() for s in steps])│
+│  memory.put(ChatMessage(role="assistant", content=...))    │
+│  ctx.store["current_reasoning"] = []  ← 清空               │
+│                                                              │
+│  返回: "今天北京晴天，25°C"                                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 10.4 关键字段汇总表
+
+#### ReasoningStep 各类型字段
+
+| 类型 | 字段 | 类型 | 意义 | 对下一步的影响 |
+|------|------|------|------|---------------|
+| **BaseReasoningStep** | - | - | 基类 | - |
+| | `get_content()` | method | 返回字符串表示 | formatter 将其转为 ChatMessage |
+| | `is_done` | property | 是否完成 | 决定是否退出循环 |
+| **ActionReasoningStep** | `thought` | str | LLM 的推理过程 | 传给 LLM 作为上下文 |
+| | `action` | str | 工具名称 | 决定调用哪个工具 |
+| | `action_input` | Dict | 工具参数 | 传给工具执行 |
+| | `is_done` | False | 永远不是终点 | 必须继续循环 |
+| **ObservationReasoningStep** | `observation` | str | 工具执行结果 | 传给 LLM 作为新信息 |
+| | `return_direct` | bool | 是否直接返回 | True 时跳过 LLM，直接结束 |
+| | `is_done` | return_direct | 取决于 return_direct | - |
+| **ResponseReasoningStep** | `thought` | str | 最终推理过程 | 保存到 memory |
+| | `response` | str | 最终回答 | 返回给用户 |
+| | `is_streaming` | bool | 是否流式输出 | 渲染方式不同 |
+| | `is_done` | True | 永远是终点 | 结束循环 |
+
+#### ctx.store 中的字段
+
+| 字段 | 类型 | 意义 | 谁写入 | 谁读取 |
+|------|------|------|--------|--------|
+| `current_reasoning` | List[BaseReasoningStep] | 推理步骤历史 | take_step, handle_tool_call_results | formatter, finalize |
+| `memory` | BaseMemory | 对话记忆 | init_run, finalize | setup_agent |
+| `max_iterations` | int | 最大迭代次数 | init_run | parse_agent_output |
+| `num_iterations` | int | 当前迭代次数 | parse_agent_output | parse_agent_output |
+| `early_stopping_method` | str | 提前停止策略 | init_run | parse_agent_output |
+| `user_msg_str` | str | 用户消息文本 | init_run | setup_agent |
+| `formatted_input_with_state` | bool | 是否已格式化状态 | init_run | setup_agent |
+
+### 10.5 上一个 step 如何影响下一个 step？
+
+**核心机制：通过 `current_reasoning` 传递信息。**
+
+```
+Step N 的输出 → current_reasoning.append(StepN的结果)
+    ↓
+Step N+1 的输入 → formatter.format(current_reasoning)
+    ↓
+Step N+1 的 LLM 输入包含 Step N 的内容
+    ↓
+Step N+1 的 LLM 输出受 Step N 影响
+```
+
+**具体例子**：
+
+```
+第1轮：LLM 说 "Action: search, Action Input: {query: '天气'}"
+    ↓
+current_reasoning = [
+    ActionReasoningStep(thought="需要搜索天气", action="search", action_input={...})
+]
+    ↓
+工具执行结果："今天晴天25°C"
+    ↓
+current_reasoning.append(ObservationReasoningStep(observation="今天晴天25°C"))
+    ↓
+第2轮 formatter.format() 输出：
+[
+    System("You are designed to help..."),
+    User("天气怎么样？"),
+    Assistant("Thought: 需要搜索天气\nAction: search\nAction Input: {'query': '天气'}"),  ← 第1轮的 Action
+    User("Observation: 今天晴天25°C"),  ← 第1轮的 Observation
+]
+    ↓
+LLM 看到这些信息后，知道天气是晴天25°C，不需要再搜索
+    ↓
+LLM 输出："Thought: 已经知道了\nAnswer: 今天北京晴天，25°C"
+```
+
+**关键理解**：`current_reasoning` 就是"上一步影响下一步"的桥梁。每一步的结果被 append 到这里，下一步通过 formatter 读取它，从而获得上下文。
+
+### 10.6 与我们的设计对比
+
+| 对比项 | LlamaIndex | 我们的设计（建议） |
+|--------|-----------|-----------------|
+| **存储位置** | `ctx.store["current_reasoning"]` | `message.execution_steps`（数据库） |
+| **step 类型** | 3 个（Action/Observation/Response） | 6 个（thought/action_tool/observation/final/error/incident） |
+| **信息传递** | current_reasoning.append() | execution_steps.append() |
+| **格式化** | formatter.format() | prompt + context |
+| **循环控制** | num_iterations / max_iterations | 相同 |
+| **结束条件** | `is_done=True`（ResponseReasoningStep） | `type="final"` |
+| **Thought 设计** | 嵌入到 Action/Response | **独立类型**（我们选择的方案） |
+
+---
+
+## 11 关键源码链接
 
 | 文件 | 说明 |
 |------|------|
@@ -701,13 +994,14 @@ print(ret["response"])
 
 ---
 
-## 11 版本记录
+## 12 版本记录
 
 | 版本 | 时间 | 更新内容 | 作者 |
 |------|------|---------|------|
 | v1.0 | 2026-03-20 05:35:00 | 初始版本 | 小沈 |
 | v2.0 | 2026-03-20 13:45:00 | **深度修正**：基于实际源码修正 ReasoningStep 为 Pydantic BaseModel（非 dataclass）；修正 Output Parser 实际正则表达式（支持 Thought 前缀可选、Action Input JSON 提取）；新增 ResponseReasoningStep（含 is_streaming）、ObservationReasoningStep（含 return_direct）；新增 JSON 解析降级策略（dirtyjson → action_input_parser） | 小沈 |
 | v2.1 | 2026-03-20 13:50:00 | **新增第9章：Thought 类型设计：嵌入 vs 独立**：分析两种方案，结论是独立 Thought 更合理、扩展性更好 | 小沈 |
+| v2.2 | 2026-03-20 14:00:00 | **新增第10章：字段级信息流转深度分析**：基于实际源码分析 step 之间信息如何传递；ReasoningStep 各类型字段意义；ctx.store 存储机制；上一个 step 如何通过 current_reasoning 影响下一个 step；完整循环流转图；与我们设计的对比 | 小沈 |
 
 ---
 
