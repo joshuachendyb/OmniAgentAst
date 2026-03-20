@@ -1,3 +1,104 @@
+v0.7.4
+
+更新时间：2026-03-21 07:03:00
+
+更新内容：
+
+## 1. 多意图处理架构重构 - 第9步~第17步迁移完成
+
+更新时间：2026-03-21 07:03:00
+
+### 1.1 完成步骤
+
+| 步骤 | 任务 | 状态 |
+|------|------|------|
+| 第9步 | tools.py → tools/file/file_tools.py + 向后兼容层 | ✅ |
+| 第10步 | safety.py → safety/file/file_safety.py + 向后兼容层 | ✅ |
+| 第11步 | prompts.py → prompts/file/file_prompts.py + 向后兼容层 | ✅ |
+| 第12步 | react_schema.py → tools/file/file_react_schema.py + 向后兼容层 | ✅ |
+| 第13步 | 创建 file_stats.py → intents/definitions/file/file_stats.py | ✅ |
+| 第14步 | 创建 file_intent.py → intents/definitions/file/file_intent.py | ✅ |
+| 第15步 | file_operations.py → file_visualization.py（重命名） | ✅ |
+| 第16步 | 创建 session_base.py → agent/session_base.py | ✅ |
+| 第17步 | 删除旧文件 file_operations.py，完成迁移 | ✅ |
+
+### 1.2 新建文件汇总
+
+| 文件 | 位置 | 行数 | 说明 |
+|------|------|------|------|
+| file_tools.py | services/tools/file/ | 1302 | tools.py 迁移目标 |
+| file_safety.py | services/safety/file/ | 725 | safety.py 迁移目标 |
+| file_prompts.py | services/prompts/file/ | 418 | prompts.py 迁移目标 |
+| file_react_schema.py | services/tools/file/ | 387 | react_schema.py 迁移目标 |
+| file_stats.py | services/intents/definitions/file/ | 72 | file 意图统计 |
+| file_intent.py | services/intents/definitions/file/ | 94 | file 意图定义 |
+| session_base.py | services/agent/ | 134 | 通用会话基类 |
+| file_visualization.py | utils/visualization/ | 627 | 可视化文件（重命名） |
+
+### 1.3 向后兼容层
+
+| 文件 | 位置 | 说明 |
+|------|------|------|
+| tools.py | services/agent/ | 导出所有 tools 符号到新位置 |
+| safety.py | services/agent/ | 导出 safety 符号到新位置 |
+| prompts.py | services/agent/ | 导出 prompts 符号到新位置 |
+| react_schema.py | services/agent/ | 导出 react_schema 符号到新位置 |
+
+### 1.4 最终目录结构
+
+```
+backend/app/services/
+├── tools/file/
+│   ├── __init__.py
+│   ├── file_tools.py        (46,484 bytes)
+│   └── file_react_schema.py (11,821 bytes)
+├── safety/file/
+│   ├── __init__.py
+│   └── file_safety.py       (27,321 bytes)
+├── prompts/file/
+│   ├── __init__.py
+│   └── file_prompts.py      (14,581 bytes)
+├── intents/definitions/file/
+│   ├── __init__.py
+│   ├── file_intent.py       (2,577 bytes)
+│   └── file_stats.py        (1,649 bytes)
+├── agent/
+│   ├── tools.py             ← 向后兼容层
+│   ├── safety.py            ← 向后兼容层
+│   ├── prompts.py           ← 向后兼容层
+│   ├── react_schema.py      ← 向后兼容层
+│   └── session_base.py       (新建)
+└── utils/visualization/
+    ├── __init__.py
+    └── file_visualization.py (已重命名)
+```
+
+### 1.5 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 总测试数 | 650 | ✅ |
+| 通过 | 640 | ✅ |
+| 失败 | 10 | ⚠️（与迁移无关） |
+| 跳过 | 6 | ℹ️ |
+
+### 1.6 Git提交记录
+
+```
+commit 1bb11268
+Author: 小沈
+Date:   2026-03-21
+
+refactor: 完成第9步~第17步，tools/safety/prompts/react_schema迁移到file目录 - 小沈-2026-03-21
+
+16 files changed, 3429 insertions(+), 2827 deletions(-)
+```
+
+参与开发：小沈
+完成时间：2026-03-21 07:03:00
+
+---
+
 v0.7.3
 
 更新时间：2026-03-21 06:13:42
