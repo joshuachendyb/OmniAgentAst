@@ -1,3 +1,121 @@
+v0.7.0
+
+更新时间：2026-03-20 12:43:40
+
+更新内容：
+
+## 1. Structured Outputs 自适应兼容模块开发
+
+更新时间：2026-03-20 12:43:40
+
+### 1.1 新增5个模块
+
+| 模块 | 文件 | 行数 | 作者 | 功能 |
+|------|------|------|------|------|
+| capability.py | `backend/app/services/file_operations/` | 70 | 小强 | LLMCapability枚举、LLMFeature、LLMProbeResult数据类 |
+| capability_detector.py | `backend/app/services/file_operations/` | 267 | 小强 | CapabilityDetector能力探测器，含_probe_tools/_probe_response_format/_probe_reasoning |
+| strategy_selector.py | `backend/app/services/file_operations/` | 70 | 小强 | StrategySelector策略选择器、SelectedStrategy数据类 |
+| os_adapter.py | `backend/app/services/file_operations/` | 96 | 小强 | OSAdapter系统适配器，检测系统并生成适配提示 |
+| llm_adapter.py | `backend/app/services/file_operations/` | 149 | 小强 | LLMAdapter统一适配器入口 |
+
+### 1.2 核心功能
+
+**能力枚举 (capability.py)**：
+```
+LLMCapability 枚举
+├── NONE = 0
+├── RESPONSE_FORMAT  # 支持 response_format
+├── TOOLS            # 支持 tools/function_calling
+├── STREAMING        # 支持流式输出
+└── REASONING        # 支持 reasoning_content
+
+LLMFeature 数据类
+├── capability: LLMCapability
+├── supports_response_format: bool
+├── supports_tools: bool
+├── supports_streaming: bool
+├── supports_reasoning: bool
+├── uses_reasoning_content: bool
+├── uses_outer_content: bool
+├── detected_at: Optional[str]
+└── detection_method: str = "auto"
+
+LLMProbeResult 数据类
+├── success: bool
+├── feature: LLMFeature
+├── response_format_tested: bool
+├── response_format_works: bool
+├── tools_tested: bool
+├── tools_works: bool
+└── error: Optional[str]
+```
+
+**能力探测器 (capability_detector.py)**：
+```
+CapabilityDetector
+├── detect()                    # 自动探测LLM能力（入口）
+├── _probe_tools()              # 探测tools支持
+├── _probe_response_format()    # 探测response_format支持
+├── _probe_reasoning()         # 探测reasoning特征
+└── is_cached()                # 检查缓存状态
+```
+
+**策略选择器 (strategy_selector.py)**：
+```
+StrategySelector.select(feature: LLMFeature) -> SelectedStrategy
+├── tools优先 → method="tools"
+├── response_format次之 → method="response_format"
+└── 降级到prompt → method="prompt"
+```
+
+**系统适配器 (os_adapter.py)**：
+```
+OSAdapter
+├── system              # Windows / Linux / Darwin
+├── is_windows          # 是否Windows
+├── is_linux            # 是否Linux
+├── is_macos            # 是否macOS
+├── path_separator      # 路径分隔符
+├── commands            # 命令映射（dir/ls等）
+├── get_system_prompt() # 生成系统提示
+└── get_tool_descriptions() # 生成工具描述
+```
+
+### 1.3 问题发现与修复
+
+**小资审查发现的问题（3个，已全部修复）**：
+
+| 问题 | 位置 | 现象 | 修复方式 | 状态 |
+|------|------|------|---------|------|
+| uses_outer_content缺失 | capability_detector.py:244 | HTTP非200时返回缺少字段 | 添加 `"uses_outer_content": False` | ✅ 已修复 |
+| uses_outer_content缺失 | capability_detector.py:262 | 网络异常时返回缺少字段 | 添加 `"uses_outer_content": False` | ✅ 已修复 |
+| build_messages(None) TypeError | llm_adapter.py:113 | messages=None时抛出异常 | 添加 `if messages:` 检查 | ✅ 已修复 |
+
+**小健分析确认**：detection_method字段位于LLMFeature中，LLMProbeResult通过feature.detection_method访问，非问题。
+
+### 1.4 测试覆盖
+
+| 测试文件 | 测试数 | 通过 | 状态 |
+|----------|--------|------|------|
+| `test_capability_modules.py` | 34 | 34 | ✅ |
+| `test_capability_modules_strict.py` | 32 | 32 | ✅ |
+| **合计** | **66** | **66** | **✅** |
+
+### 1.5 Git提交记录
+
+```
+commit 764d6453
+Author: 小强
+Date:   2026-03-20
+
+feat: 新增Structured-Outputs自适应兼容能力探测模块(LLMAdapter/capability/capability_detector/strategy_selector/os_adapter)-小强-2026-03-20
+```
+
+参与开发：小强、小资、小健、小沈
+完成时间：2026-03-20 12:43:40
+
+---
+
 v0.6.16
 
 更新时间：2026-03-20 10:50:00
