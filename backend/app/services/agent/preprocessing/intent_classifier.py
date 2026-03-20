@@ -8,16 +8,21 @@ Author: 小沈 - 2026-03-20
 
 from typing import Any
 
-from gliclass import GLiClassPipeline
-
 
 class IntentClassifier:
     """意图分类器"""
 
     def __init__(self) -> None:
-        self.classifier = GLiClassPipeline(
-            model="knowledgator/gliclass-instruct-base-v1.0"
-        )
+        self._classifier = None
+
+    @property
+    def classifier(self):
+        if self._classifier is None:
+            from gliclass import GLiClassPipeline
+            self._classifier = GLiClassPipeline(
+                model="knowledgator/gliclass-instruct-base-v1.0"
+            )
+        return self._classifier
 
     def classify(self, text: str, labels: list[str]) -> dict[str, Any]:
         """

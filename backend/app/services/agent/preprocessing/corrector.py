@@ -8,14 +8,12 @@ Author: 小沈 - 2026-03-20
 
 from typing import Any
 
-from pycorrector import Corrector
-
 
 class TextCorrector:
     """中文文本校对修正"""
 
     def __init__(self) -> None:
-        self.corrector = Corrector()
+        pass  # 延迟初始化
 
     def correct(self, text: str) -> tuple[str, list[Any]]:
         """
@@ -30,5 +28,7 @@ class TextCorrector:
         if text is None or not text.strip():
             return str(text) if text else "", []
 
-        corrected, errors = self.corrector.correct(text)
+        from pycorrector import Corrector
+        corrector = Corrector()
+        corrected, errors = corrector.correct(text)
         return corrected, errors
