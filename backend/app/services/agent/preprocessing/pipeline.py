@@ -8,6 +8,8 @@ Author: 小沈 - 2026-03-20
 
 from typing import Any
 
+from app.utils.logger import logger
+
 from .corrector import TextCorrector
 from .intent_classifier import IntentClassifier
 
@@ -37,9 +39,17 @@ class PreprocessingPipeline:
                 all_intents: 所有意图及置信度
             }
         """
-        corrected, errors = self.corrector.correct(user_input)
+        try:
+            corrected, errors = self.corrector.correct(user_input)
+        except Exception as e:
+            logger.warning(f"Correction failed: {e}")
+            corrected, errors = user_input, []
 
-        intent_result = self.classifier.classify(corrected, intent_labels)
+        try:
+            intent_result = self.classifier.classify(corrected, intent_labels)
+        except Exception as e:
+            logger.warning(f"Classification failed: {e}")
+            intent_result = {"intent": "unknown", "confidence": 0.0, "all_intents": {}}
 
         return {
             "original": user_input,
