@@ -423,7 +423,9 @@ class FileOperationAgent:
         llm_client: Callable[..., Any],
         session_id: str,
         file_tools: Optional[FileTools] = None,
-        max_steps: int = 20
+        max_steps: int = 20,
+        use_function_calling: bool = False,
+        tools: Optional[List[Dict[str, Any]]] = None
     ):
         """
         初始化Agent
@@ -464,7 +466,14 @@ class FileOperationAgent:
         # 【新增】LLM调用计数器
         self.llm_call_count = 0
         
-        logger.info(f"FileOperationAgent initialized (session: {session_id})")
+        # 【Function Calling】支持参数 - 2026-03-20 小沈
+        self.use_function_calling = use_function_calling
+        self.tools = tools or []
+        
+        if use_function_calling:
+            logger.info(f"FileOperationAgent initialized (session: {session_id}, function_calling=True, tools_count={len(self.tools)})")
+        else:
+            logger.info(f"FileOperationAgent initialized (session: {session_id})")
     
     async def run(
         self,
@@ -837,35 +846,140 @@ class FileOperationAgent:
             # 前面的消息作为历史
             history_dicts = self.conversation_history[:-1]
             
-            # 【修复】使用adapter将Dict列表转换为Message列表
-            from app.services.file_operations.adapter import dict_list_to_messages
-            history_messages = dict_list_to_messages(history_dicts)
-            
-            response = await self.llm_client(
-                message=last_message,
-                history=history_messages
-            )
-            
-            # 添加到历史
-            if hasattr(response, 'content'):
-                content = response.content
-            elif isinstance(response, dict):
-                content = response.get("content", str(response))
+            # 【Function Calling】判断使用哪种调用方式 - 2026-03-20 小沈
+            if self.use_function_calling and self.tools:
+                # 使用 Function Calling 模式
+                response = await self._get_llm_response_with_tools(
+                    message=last_message,
+                    history_dicts=history_dicts
+                )
             else:
-                content = str(response)
+                # 使用普通文本模式
+                response = await self._get_llm_response_text(
+                    message=last_message,
+                    history_dicts=history_dicts
+                )
             
-            # 【调试】记录LLM返回的原始内容
-            logger.info(f"[LLM Response Raw] content={repr(content)[:500]}")
-            
-            if not content:
-                logger.warning("[LLM Response] Warning: LLM returned empty content!")
-            
-            self.conversation_history.append({"role": "assistant", "content": content})
-            return content
+            return response
             
         except Exception as e:
             logger.error(f"LLM client error: {e}")
             raise
+    
+    async def _get_llm_response_text(
+        self,
+        message: str,
+        history_dicts: List[Dict[str, str]]
+    ) -> str:
+        """获取LLM响应（文本模式）"""
+        from app.services.file_operations.adapter import dict_list_to_messages
+        history_messages = dict_list_to_messages(history_dicts)
+        
+        response = await self.llm_client(
+            message=message,
+            history=history_messages
+        )
+        
+        if hasattr(response, 'content'):
+            content = response.content
+        elif isinstance(response, dict):
+            content = response.get("content", str(response))
+        else:
+            content = str(response)
+        
+        logger.info(f"[LLM Response Raw (text)] content={repr(content)[:500]}")
+        
+        if not content:
+            logger.warning("[LLM Response] Warning: LLM returned empty content!")
+        
+        self.conversation_history.append({"role": "assistant", "content": content})
+        return content
+    
+    async def _get_llm_response_with_tools(
+        self,
+        message: str,
+        history_dicts: List[Dict[str, str]]
+    ) -> str:
+        """
+        获取LLM响应（Function Calling 模式）- 2026-03-20 小沈
+        
+        通过 tools Schema 强制约束参数名，确保参数正确性
+        """
+        from app.services.file_operations.adapter import dict_list_to_messages
+        history_messages = dict_list_to_messages(history_dicts)
+        
+        # 检查 llm_client 是否有 chat_with_tools 方法
+        if hasattr(self.llm_client, 'chat_with_tools'):
+            response = await self.llm_client.chat_with_tools(
+                message=message,
+                history=history_messages,
+                tools=self.tools
+            )
+        else:
+            # 如果 llm_client 没有 chat_with_tools 方法，尝试直接调用
+            logger.warning("[Function Calling] llm_client has no chat_with_tools method, falling back to text mode")
+            return await self._get_llm_response_text(message, history_dicts)
+        
+        # 解析 tool_calls
+        if hasattr(response, 'content') and response.content:
+            # 检查是否是 tool_calls JSON
+            try:
+                tool_calls = json.loads(response.content)
+                
+                if isinstance(tool_calls, list) and len(tool_calls) > 0:
+                    # 有 tool_calls，返回格式化的 JSON
+                    content = self._format_tool_calls_for_agent(tool_calls)
+                    logger.info(f"[Function Calling] Received tool_calls: {len(tool_calls)} calls")
+                else:
+                    # 普通文本响应
+                    content = response.content
+                    logger.info(f"[Function Calling] LLM returned text (no tool call): {repr(content)[:200]}")
+                    
+            except (json.JSONDecodeError, TypeError) as e:
+                # 不是有效的 JSON，当作普通文本处理
+                content = response.content
+                logger.info(f"[Function Calling] Non-JSON response: {repr(content)[:200]}")
+        else:
+            # 空响应
+            content = ""
+            logger.warning("[Function Calling] Empty response from LLM")
+        
+        self.conversation_history.append({"role": "assistant", "content": content})
+        return content
+    
+    def _format_tool_calls_for_agent(self, tool_calls: List[Dict[str, Any]]) -> str:
+        """
+        将 tool_calls 格式化为 Agent 可以理解的格式 - 2026-03-20 小沈
+        
+        将 OpenAI 格式的 tool_calls 转换为 Agent 的 ToolParser 可以解析的 JSON 格式
+        """
+        # 提取第一个 tool_call
+        if not tool_calls:
+            return ""
+        
+        tool_call = tool_calls[0]
+        func = tool_call.get("function", {})
+        tool_name = func.get("name", "unknown")
+        
+        # 解析 arguments
+        arguments_str = func.get("arguments", "{}")
+        try:
+            if isinstance(arguments_str, str):
+                arguments = json.loads(arguments_str)
+            else:
+                arguments = arguments_str
+        except json.JSONDecodeError:
+            arguments = {}
+        
+        # 转换为 Agent 的 ToolParser 可以理解的格式
+        # 根据 ToolParser.parse_response 的期望格式
+        formatted = {
+            "thought": f"我需要调用 {tool_name} 工具来完成任务",
+            "action_tool": tool_name,
+            "params": arguments
+        }
+        
+        return json.dumps(formatted, ensure_ascii=False)
     
     def _add_observation_to_history(self, observation: str):
         """添加观察结果到对话历史"""
@@ -1004,3 +1118,75 @@ class FileOperationAgent:
         except Exception as e:
             logger.error(f"Rollback failed: {e}")
             return False
+    
+    async def run_with_tools(
+        self,
+        task: str,
+        context: Optional[Dict[str, Any]] = None,
+        system_prompt: Optional[str] = None
+    ) -> AgentResult:
+        """
+        使用 Function Calling 模式运行 Agent - 2026-03-20 小沈
+        
+        通过 tools Schema 强制约束 LLM 输出的参数名，确保参数正确性
+        无需 agent.py 中的参数映射容错代码
+        
+        Args:
+            task: 任务描述
+            context: 额外上下文
+            system_prompt: 自定义系统prompt（可选）
+            
+        Returns:
+            Agent执行结果
+        """
+        # 如果没有设置 tools，自动从注册表获取
+        if not self.tools:
+            from app.services.file_operations.react_schema import get_tools_schema_for_function_calling
+            self.tools = get_tools_schema_for_function_calling()
+            logger.info(f"[run_with_tools] Auto-loaded {len(self.tools)} tools from registry")
+        
+        # 启用 Function Calling 模式
+        original_mode = self.use_function_calling
+        self.use_function_calling = True
+        
+        try:
+            return await self._run_internal(task, context, system_prompt)
+        finally:
+            # 恢复原有模式
+            self.use_function_calling = original_mode
+    
+    async def run_stream_with_tools(
+        self,
+        task: str,
+        context: Optional[Dict[str, Any]] = None,
+        system_prompt: Optional[str] = None,
+        max_steps: int = 100
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        使用 Function Calling 模式流式运行 Agent - 2026-03-20 小沈
+        
+        Args:
+            task: 任务描述
+            context: 额外上下文
+            system_prompt: 自定义系统prompt（可选）
+            max_steps: 最大迭代次数
+        
+        Yields:
+            各个阶段的输出字典
+        """
+        # 如果没有设置 tools，自动从注册表获取
+        if not self.tools:
+            from app.services.file_operations.react_schema import get_tools_schema_for_function_calling
+            self.tools = get_tools_schema_for_function_calling()
+            logger.info(f"[run_stream_with_tools] Auto-loaded {len(self.tools)} tools from registry")
+        
+        # 启用 Function Calling 模式
+        original_mode = self.use_function_calling
+        self.use_function_calling = True
+        
+        try:
+            async for chunk in self.run_stream(task, context, system_prompt, max_steps):
+                yield chunk
+        finally:
+            # 恢复原有模式
+            self.use_function_calling = original_mode
