@@ -600,5 +600,209 @@ class TestLLMCallCounter:
         assert agent_with_adapter.llm_call_count == initial_count + 1
 
 
+class TestAgentRunIntegration:
+    """测试 agent.run() 完整流程集成"""
+    
+    @pytest.fixture
+    def agent_for_run_integration(self, mock_llm_client, mock_file_tools):
+        """创建用于 run() 集成的 Agent"""
+        with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+            mock_session_service = MagicMock()
+            mock_session_service.create_session.return_value = "test-session"
+            mock_session.return_value = mock_session_service
+            
+            with patch('app.services.file_operations.agent.LLMAdapter') as MockLLMAdapter:
+                mock_adapter = MagicMock()
+                MockLLMAdapter.return_value = mock_adapter
+                
+                agent = FileOperationAgent(
+                    llm_client=mock_llm_client,
+                    session_id="test-session",
+                    file_tools=mock_file_tools,
+                    max_steps=5,
+                    api_base="https://api.example.com",
+                    api_key="test-key",
+                    model="test-model"
+                )
+                yield agent
+    
+    @pytest.mark.asyncio
+    async def test_run_with_adapter_response_format(self, agent_for_run_integration):
+        """TC087: agent.run() 使用 adapter response_format 策略"""
+        # 设置策略为 response_format
+        agent_for_run_integration.adapter.ensure_capability = AsyncMock(return_value=SelectedStrategy(
+            method="response_format",
+            capability=LLMCapability.RESPONSE_FORMAT,
+            description="response_format"
+        ))
+        
+        # 设置 llm_client
+        async def mock_response_format(message, history=None, response_format=None):
+            return Mock(
+                content=json.dumps({
+                    "thought": "Task is simple, finishing now",
+                    "action": "finish",
+                    "action_input": {"result": "Completed"}
+                }),
+                error=None
+            )
+        
+        agent_for_run_integration.llm_client.chat_with_response_format = mock_response_format
+        
+        # 运行 agent
+        result = await agent_for_run_integration.run("Simple task")
+        
+        # 验证结果
+        assert result.success is True
+        assert agent_for_run_integration.status == AgentStatus.COMPLETED
+    
+    @pytest.mark.asyncio
+    async def test_run_with_adapter_tools_strategy(self, agent_for_run_integration):
+        """TC088: agent.run() 使用 adapter tools 策略"""
+        # 设置策略为 tools
+        agent_for_run_integration.adapter.ensure_capability = AsyncMock(return_value=SelectedStrategy(
+            method="tools",
+            capability=LLMCapability.TOOLS,
+            description="tools"
+        ))
+        
+        # 设置 llm_client
+        async def mock_chat_with_tools(message, history=None, tools=None):
+            return Mock(
+                content=json.dumps([{
+                    "function": {
+                        "name": "finish",
+                        "arguments": {"result": "Done"}
+                    }
+                }]),
+                error=None
+            )
+        
+        agent_for_run_integration.llm_client.chat_with_tools = mock_chat_with_tools
+        
+        # 运行 agent
+        result = await agent_for_run_integration.run("Finish task")
+        
+        # 验证结果
+        assert result.success is True
+        assert agent_for_run_integration.status == AgentStatus.COMPLETED
+
+
+class TestResponseFormatDataConversion:
+    """测试 response_format 数据转换"""
+    
+    @pytest.fixture
+    def agent_for_conversion(self, mock_llm_client, mock_file_tools):
+        """创建用于数据转换测试的 Agent"""
+        with patch('app.services.file_operations.agent.get_session_service') as mock_session:
+            mock_session_service = MagicMock()
+            mock_session_service.create_session.return_value = "test-session"
+            mock_session.return_value = mock_session_service
+            
+            agent = FileOperationAgent(
+                llm_client=mock_llm_client,
+                session_id="test-session",
+                file_tools=mock_file_tools,
+                max_steps=5
+            )
+            return agent
+    
+    @pytest.mark.asyncio
+    async def test_response_format_converts_action_to_action_tool(self, agent_for_conversion):
+        """TC089: response_format 将 action 转换为 action_tool"""
+        # 设置 llm_client
+        async def mock_response_format(message, history=None, response_format=None):
+            return Mock(
+                content=json.dumps({
+                    "thought": "Need to read a file",
+                    "action": "read_file",
+                    "action_input": {"file_path": "/tmp/test.txt"}
+                }),
+                error=None
+            )
+        
+        agent_for_conversion.llm_client.chat_with_response_format = mock_response_format
+        
+        # 调用方法
+        result = await agent_for_conversion._get_llm_response_with_response_format(
+            message="Read the file",
+            history_dicts=[]
+        )
+        
+        # 验证转换正确
+        parsed = json.loads(result)
+        assert "action_tool" in parsed
+        assert parsed["action_tool"] == "read_file"
+        assert parsed["params"] == {"file_path": "/tmp/test.txt"}
+    
+    @pytest.mark.asyncio
+    async def test_response_format_updates_conversation_history(self, agent_for_conversion):
+        """TC090: response_format 正确更新对话历史"""
+        # 设置 llm_client
+        async def mock_response_format(message, history=None, response_format=None):
+            return Mock(
+                content=json.dumps({
+                    "thought": "Thinking...",
+                    "action": "finish",
+                    "action_input": {"result": "Done"}
+                }),
+                error=None
+            )
+        
+        agent_for_conversion.llm_client.chat_with_response_format = mock_response_format
+        
+        # 初始历史
+        agent_for_conversion.conversation_history = [
+            {"role": "user", "content": "User message"}
+        ]
+        initial_history_len = len(agent_for_conversion.conversation_history)
+        
+        # 调用方法
+        result = await agent_for_conversion._get_llm_response_with_response_format(
+            message="Test",
+            history_dicts=[{"role": "user", "content": "User message"}]
+        )
+        
+        # 验证历史被更新
+        assert len(agent_for_conversion.conversation_history) == initial_history_len + 1
+        assert agent_for_conversion.conversation_history[-1]["role"] == "assistant"
+    
+    @pytest.mark.asyncio
+    async def test_response_format_returns_correct_json_structure(self, agent_for_conversion):
+        """TC091: response_format 返回正确的 JSON 结构"""
+        # 设置 llm_client 返回完整结构
+        async def mock_response_format(message, history=None, response_format=None):
+            return Mock(
+                content=json.dumps({
+                    "thought": "I need to list directory",
+                    "action": "list_directory",
+                    "action_input": {"dir_path": "/tmp"},
+                    "reasoning": "To see available files"
+                }),
+                error=None
+            )
+        
+        agent_for_conversion.llm_client.chat_with_response_format = mock_response_format
+        
+        # 调用方法
+        result = await agent_for_conversion._get_llm_response_with_response_format(
+            message="List files",
+            history_dicts=[]
+        )
+        
+        # 验证返回结构
+        parsed = json.loads(result)
+        
+        # 验证必要的字段
+        assert "thought" in parsed
+        assert "action_tool" in parsed
+        assert "params" in parsed
+        
+        # 验证值正确
+        assert parsed["thought"] == "I need to list directory"
+        assert parsed["action_tool"] == "list_directory"
+        assert parsed["params"] == {"dir_path": "/tmp"}
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
