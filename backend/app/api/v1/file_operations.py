@@ -445,9 +445,8 @@ async def generate_report(
         visualizer = get_visualizer()
         
         if format == "txt":
-            report_path = visualizer.generate_text_report(session_id)
-            if report_path and Path(report_path).exists():
-                content = Path(report_path).read_text(encoding="utf-8")
+            content = visualizer.generate_text_report(session_id)
+            if content:
                 return ReportResponse(
                     success=True,
                     format="txt",
@@ -462,10 +461,13 @@ async def generate_report(
                 )
         
         elif format == "json":
-            report_path = visualizer.generate_json_report(session_id)
-            if report_path and Path(report_path).exists():
+            content = visualizer.generate_json_report(session_id)
+            if content:
                 import json
-                data = json.loads(Path(report_path).read_text(encoding="utf-8"))
+                try:
+                    data = json.loads(content)
+                except json.JSONDecodeError:
+                    data = {"raw_content": content}
                 return ReportResponse(
                     success=True,
                     format="json",
@@ -480,14 +482,12 @@ async def generate_report(
                 )
         
         elif format == "html":
-            report_path = visualizer.generate_html_report(session_id)
-            if report_path and Path(report_path).exists():
-                # 返回文件URL（相对于报告目录）
-                relative_path = Path(report_path).name
+            content = visualizer.generate_html_report(session_id)
+            if content:
                 return ReportResponse(
                     success=True,
                     format="html",
-                    download_url=f"/static/reports/{relative_path}",
+                    content=content,
                     message="HTML report generated successfully"
                 )
             else:
