@@ -621,6 +621,230 @@ class FileOperationVisualizer:
         
         return html_content
     
+    def generate_json_report(self, session_id: str, output_path: Optional[Path] = None) -> str:
+        """
+        生成JSON格式报告
+        
+        Args:
+            session_id: 会话ID
+            output_path: 输出路径
+            
+        Returns:
+            JSON报告文件路径
+        """
+        session_service = get_session_service()
+        session = session_service.get_session(session_id)
+        
+        if not session:
+            logger.error(f"Session not found: {session_id}")
+            return ""
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT operation_type, source_path, destination_path, status,
+                   file_size, is_directory, created_at, error_message
+            FROM file_operations WHERE session_id = ?
+            ORDER BY sequence_number ASC
+        ''', (session_id,))
+        
+        operations = cursor.fetchall()
+        conn.close()
+        
+        report_data = {
+            "session_id": session_id,
+            "agent_id": session.agent_id,
+            "task_description": session.task_description,
+            "created_at": str(session.created_at) if session.created_at else None,
+            "operations": []
+        }
+        
+        for op_type, src, dst, status, size, is_dir, created_at, error in operations:
+            op = {
+                "type": op_type,
+                "source": src,
+                "destination": dst,
+                "status": status,
+                "file_size": size,
+                "is_directory": bool(is_dir),
+                "created_at": str(created_at) if created_at else None,
+                "error_message": error
+            }
+            report_data["operations"].append(op)
+        
+        if output_path:
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(json.dumps(report_data, ensure_ascii=False, indent=2), encoding='utf-8')
+            logger.info(f"JSON report saved: {output_path}")
+            return str(output_path)
+        
+        return json.dumps(report_data, ensure_ascii=False, indent=2)
+    
+    def generate_html_report(self, session_id: str, output_path: Optional[Path] = None) -> str:
+        """
+        生成HTML格式报告（含图表）
+        
+        Args:
+            session_id: 会话ID
+            output_path: 输出路径
+            
+        Returns:
+            HTML报告文件路径
+        """
+        session_service = get_session_service()
+        session = session_service.get_session(session_id)
+        
+        if not session:
+            logger.error(f"Session not found: {session_id}")
+            return ""
+        
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT operation_type, source_path, destination_path, status,
+                   file_size, is_directory, created_at, error_message
+            FROM file_operations WHERE session_id = ?
+            ORDER BY sequence_number ASC
+        ''', (session_id,))
+        
+        operations = cursor.fetchall()
+        conn.close()
+        
+        # 统计数据
+        op_types = {}
+        status_counts = {"success": 0, "failed": 0, "blocked": 0}
+        
+        for op_type, src, dst, status, size, is_dir, created_at, error in operations:
+            op_types[op_type] = op_types.get(op_type, 0) + 1
+            if status in status_counts:
+                status_counts[status] += 1
+        
+        # 生成HTML
+        html_content = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>文件操作报告 - {session_id}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; }}
+        .header {{ background: #f5f5f5; padding: 15px; border-radius: 5px; }}
+        .chart {{ margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }}
+        .operation {{ padding: 10px; margin: 5px 0; border-left: 3px solid #007bff; }}
+        .operation.failed {{ border-left-color: #dc3545; }}
+        .operation.blocked {{ border-left-color: #ffc107; }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>文件操作执行报告</h1>
+        <p>会话ID: {session_id}</p>
+        <p>Agent: {session.agent_id}</p>
+        <p>任务: {session.task_description}</p>
+    </div>
+    
+    <div class="chart">
+        <h2>操作类型统计</h2>
+        <ul>
+            {"".join(f'<li>{op_type}: {count}次</li>' for op_type, count in op_types.items())}
+        </ul>
+    </div>
+    
+    <div class="chart">
+        <h2>状态统计</h2>
+        <ul>
+            <li>成功: {status_counts['success']}次</li>
+            <li>失败: {status_counts['failed']}次</li>
+            <li>被阻止: {status_counts['blocked']}次</li>
+        </ul>
+    </div>
+    
+    <h2>操作详情</h2>
+    {"".join(f'''
+    <div class="operation {status}">
+        <strong>{op_type}</strong>
+        <p>源路径: {src or 'N/A'}</p>
+        <p>目标路径: {dst or 'N/A'}</p>
+        <p>状态: {status}</p>
+        {f'<p>错误: {error}</p>' if error else ''}
+    </div>
+    ''' for op_type, src, dst, status, size, is_dir, created_at, error in operations)}
+</body>
+</html>"""
+        
+        if output_path:
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(html_content, encoding='utf-8')
+            logger.info(f"HTML report saved: {output_path}")
+            return str(output_path)
+        
+        return html_content
+    
+    def generate_mermaid_report(self, session_id: str, output_path: Optional[Path] = None) -> str:
+        """
+        生成Mermaid格式报告（流程图）
+        
+        Args:
+            session_id: 会话ID
+            output_path: 输出路径
+            
+        Returns:
+            Mermaid报告文件路径
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT operation_type, source_path, destination_path, status, sequence_number
+            FROM file_operations WHERE session_id = ?
+            ORDER BY sequence_number ASC
+        ''', (session_id,))
+        
+        operations = cursor.fetchall()
+        conn.close()
+        
+        # 生成Mermaid流程图
+        mermaid_content = "graph TD\n"
+        mermaid_content += f"    Start([开始]) --> Op0\n"
+        
+        for i, (op_type, src, dst, status, seq) in enumerate(operations):
+            node_id = f"Op{i}"
+            next_node_id = f"Op{i+1}" if i < len(operations) - 1 else "End"
+            
+            # 节点标签
+            if src and dst:
+                label = f"{op_type}: {Path(src).name} → {Path(dst).name}"
+            elif src:
+                label = f"{op_type}: {Path(src).name}"
+            elif dst:
+                label = f"{op_type}: {Path(dst).name}"
+            else:
+                label = op_type
+            
+            # 状态样式
+            if status == "success":
+                style = ""
+            elif status == "failed":
+                style = ":::failed"
+            else:
+                style = ":::blocked"
+            
+            mermaid_content += f"    {node_id}[{label}]{style} --> {next_node_id}\n"
+        
+        mermaid_content += f"    Op{len(operations)-1} --> End([结束])\n"
+        mermaid_content += "\n"
+        mermaid_content += "classDef failed fill:#ffcccc,stroke:#dc3545\n"
+        mermaid_content += "classDef blocked fill:#fff3cd,stroke:#ffc107\n"
+        
+        if output_path:
+            output_path = Path(output_path)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(mermaid_content, encoding='utf-8')
+            logger.info(f"Mermaid report saved: {output_path}")
+            return str(output_path)
+        
+        return mermaid_content
+    
     def generate_all_reports(self, session_id: str, output_dir: Optional[Path] = None) -> Dict[str, Path]:
         """
         生成所有类型的报告
