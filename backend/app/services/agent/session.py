@@ -18,11 +18,11 @@ from typing import Optional, List, Dict, Any
 
 from app.models.file_operations import SessionRecord, OperationStatus
 from app.utils.logger import logger
-from app.services.agent.session_base import SessionServiceBase
+from app.services.agent.session_base import SessionServiceBase, SessionStatsMixin
 from app.services.intents.definitions.file.file_stats import FileSessionStats
 
 
-class FileOperationSessionService(SessionServiceBase):
+class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
     """
     文件操作会话管理服务
     
