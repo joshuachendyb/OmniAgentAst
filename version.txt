@@ -1,28 +1,27 @@
-v0.7.14
+v0.7.15
 
-更新时间：2026-03-21 12:00:00
+更新时间：2026-03-21 10:30:00
 
 更新内容：
 
 ## 1. 继续补全测试用例
 
-更新时间：2026-03-21 12:00:00
+更新时间：2026-03-21 10:30:00
 
 ### 1.1 本次补全的测试
 
 | 模块 | 测试文件 | 测试数 | 状态 |
 |------|---------|--------|------|
-| agent/capability_detector.py | test_capability_detector.py | 10 | ✅ 完成 |
-| agent/strategy_selector.py | test_strategy_selector.py | 7 | ✅ 完成 |
-| agent/os_adapter.py | test_os_adapter.py | 16 | ✅ 完成 |
-| **本次合计** | | **33** | |
+| prompts/file/file_prompts.py | test_file_prompts.py | 19 | ✅ 完成 |
+| intents/definitions/file/file_intent.py | test_file_intent.py | 17 | ✅ 完成 |
+| **本次合计** | | **36** | |
 
 ### 1.2 测试结果
 
 | 指标 | 数值 | 状态 |
 |------|------|------|
-| 本次新增测试 | 33 | |
-| 通过 | 33 | ✅ 100% |
+| 本次新增测试 | 36 | |
+| 通过 | 36 | ✅ 100% |
 | 失败 | 0 | ✅ |
 
 ### 1.3 累计补全测试
@@ -31,14 +30,13 @@ v0.7.14
 |------|--------|------|
 | 第一批 | 48 | v0.7.13 |
 | 第二批 | 33 | v0.7.14 |
-| **累计** | **81** | |
+| 第三批 | 36 | v0.7.15 |
+| **累计** | **117** | |
 
 ### 1.4 待补测试模块
 
 | 优先级 | 模块 | 状态 |
 |--------|------|------|
-| P1 | prompts/file/file_prompts.py | ⏳ 待补 |
-| P1 | intents/definitions/file/file_intent.py | ⏳ 待补 |
 | P1 | intents/definitions/file/file_stats.py | ⏳ 待补 |
 | P2 | tools/file/file_tools.py | ⏳ 待补 |
 | P2 | safety/file/file_safety.py | ⏳ 待补 |
@@ -46,136 +44,16 @@ v0.7.14
 ### 1.5 Git提交记录
 
 ```
-e13e9961 test: 新增agent/os_adapter.py测试16个用例 - 小沈-2026-03-21
-992b1f34 test: 新增agent/strategy_selector.py测试7个用例 - 小沈-2026-03-21
-6fde2170 test: 新增agent/capability_detector.py测试10个用例 - 小沈-2026-03-21
+ca31ae36 test: 新增intents/definitions/file/file_intent.py测试17个用例 - 小沈-2026-03-21
+dff1b9a4 test: 新增prompts/file/file_prompts.py测试19个用例 - 小沈-2026-03-21
 ```
 
 参与开发：小沈
-完成时间：2026-03-21 12:00:00
+完成时间：2026-03-21 10:30:00
 
 ---
 
-v0.7.13
-
-更新时间：2026-03-21 11:30:00
-
-更新内容：
-
-## 1. 补全测试用例
-
-更新时间：2026-03-21 11:30:00
-
-### 1.1 背景
-
-发现测试覆盖率不足（模块48.3%，函数50.5%），需要补全测试用例。
-
-### 1.2 本次补全的测试
-
-| 模块 | 测试文件 | 测试数 | 状态 |
-|------|---------|--------|------|
-| agent/base.py | test_base_agent.py | 19 | ✅ 完成 |
-| agent/tool_executor.py | test_tool_executor.py | 15 | ✅ 完成 |
-| prompts/base.py | test_base_prompts.py | 14 | ✅ 完成 |
-| **本次合计** | | **48** | |
-
-### 1.3 测试结果
-
-| 指标 | 数值 | 状态 |
-|------|------|------|
-| 本次新增测试 | 48 | |
-| 通过 | 48 | ✅ 100% |
-| 失败 | 0 | ✅ |
-
-### 1.4 待补测试模块
-
-| 优先级 | 模块 | 状态 |
-|--------|------|------|
-| P0 | agent/capability_detector.py | ⏳ 待补 |
-| P0 | agent/strategy_selector.py | ⏳ 待补 |
-| P0 | agent/os_adapter.py | ⏳ 待补 |
-| P1 | prompts/file/file_prompts.py | ⏳ 待补 |
-| P1 | intents/definitions/file/file_intent.py | ⏳ 待补 |
-| P1 | intents/definitions/file/file_stats.py | ⏳ 待补 |
-| P2 | tools/file/file_tools.py | ⏳ 待补 |
-| P2 | safety/file/file_safety.py | ⏳ 待补 |
-
-### 1.5 Git提交记录
-
-```
-f18118df test: 新增prompts/base.py测试14个用例 - 小沈-2026-03-21
-90d757ef test: 新增agent/tool_executor.py测试15个用例 - 小沈-2026-03-21
-35f205cc test: 新增agent/base.py测试19个用例 - 小沈-2026-03-21
-```
-
-参与开发：小沈
-完成时间：2026-03-21 11:30:00
-
----
-
-v0.7.12
-
-更新时间：2026-03-21 11:00:00
-
-更新内容：
-
-## 1. 彻查并集成未使用功能到Agent主流程
-
-更新时间：2026-03-21 11:00:00
-
-### 1.1 背景
-
-发现多意图重构后，部分新功能虽然代码存在，但没有集成到Agent主流程中，导致这些功能没有被实际执行。
-
-### 1.2 彻查发现的问题
-
-**已集成功能（正常运行）**：
-| 功能 | 调用位置 | 状态 |
-|------|---------|------|
-| FileOperationSessionService | API、可视化、工具类、Agent | ✅ |
-| LLMAdapter | Agent集成 | ✅ |
-| OSAdapter | Agent集成 | ✅ |
-| StrategySelector | LLMAdapter调用 | ✅ |
-| CapabilityDetector | LLMAdapter调用 | ✅ |
-| 可视化报告方法 | API接口调用 | ✅ |
-
-**未集成功能（代码存在但未使用）**：
-| 功能 | 文件位置 | 问题 |
-|------|---------|------|
-| IntentRegistry | agent/intent/registry.py | 未实例化 |
-| PreprocessingPipeline | agent/preprocessing/pipeline.py | 未调用 |
-| BasePrompts | prompts/base.py | FilePrompts未继承 |
-| SessionStatsMixin | agent/session_base.py | 未使用 |
-
-### 1.3 本次集成修复
-
-| 修复项 | 修改文件 | 说明 |
-|--------|---------|------|
-| FileOperationPrompts继承BasePrompts | prompts/file/file_prompts.py | 继承基类，实现抽象方法 |
-| Agent集成IntentRegistry | agent/agent.py | 初始化时创建并注册默认意图 |
-| Agent集成PreprocessingPipeline | agent/agent.py | 初始化时创建预处理流水线 |
-| FileOperationSessionService继承SessionStatsMixin | agent/session.py | 继承统计混入类 |
-
-### 1.4 测试结果
-
-| 指标 | 数值 | 状态 |
-|------|------|------|
-| Agent测试 | 19 | ✅ 全部通过 |
-
-### 1.5 Git提交记录
-
-```
-455bc856 feat: FileOperationSessionService继承SessionStatsMixin - 小沈-2026-03-21
-e957d053 feat: 集成IntentRegistry和PreprocessingPipeline到Agent - 小沈-2026-03-21
-a68f9c72 refactor: FileOperationPrompts继承BasePrompts基类 - 小沈-2026-03-21
-```
-
-参与开发：小沈
-完成时间：2026-03-21 11:00:00
-
----
-
-v0.7.11
+v0.7.14
 
 更新时间：2026-03-21 10:00:00
 
