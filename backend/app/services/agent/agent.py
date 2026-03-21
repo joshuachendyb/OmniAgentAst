@@ -24,6 +24,8 @@ from app.services.agent.prompts import FileOperationPrompts
 from app.services.agent.session import get_session_service
 from app.services.agent.llm_adapter import LLMAdapter
 from app.services.agent.adapter import dict_list_to_messages
+from app.services.agent.intent import IntentRegistry, Intent
+from app.services.agent.preprocessing import PreprocessingPipeline
 from app.utils.logger import logger
 
 
@@ -98,6 +100,13 @@ class FileOperationAgent(BaseAgent):
         
         self.prompts = FileOperationPrompts()
         
+        # 【新增】意图注册表（多意图支持）
+        self.intent_registry = IntentRegistry()
+        self._register_default_intents()
+        
+        # 【新增】预处理流水线（多意图支持）
+        self.preprocessor = PreprocessingPipeline()
+        
         # Function Calling 支持
         self.tools = tools or []
         
@@ -116,6 +125,30 @@ class FileOperationAgent(BaseAgent):
                 logger.info(f"FileOperationAgent initialized (session: {session_id}, function_calling=True, tools_count={len(self.tools)})")
             else:
                 logger.info(f"FileOperationAgent initialized (session: {session_id})")
+    
+    def _register_default_intents(self):
+        """注册默认意图类型"""
+        # file 意图
+        file_intent = Intent(
+            name="file",
+            description="文件读写、目录管理、文件搜索",
+            keywords=["文件", "读取", "写入", "删除", "移动", "目录", "搜索", "创建"],
+            tools=["read_file", "write_file", "list_directory", "delete_file", "move_file", "search_files", "generate_report"],
+            safety_checker="file_safety"
+        )
+        self.intent_registry.register(file_intent)
+        
+        # network 意图（预留）
+        network_intent = Intent(
+            name="network",
+            description="网络搜索、网页访问、API调用",
+            keywords=["搜索", "网络", "网页", "API", "http", "https"],
+            tools=[],  # 待实现
+            safety_checker=None
+        )
+        self.intent_registry.register(network_intent)
+        
+        logger.info(f"Registered {len(self.intent_registry.list_all())} intents")
     
     # ========== 抽象方法实现 ==========
     
