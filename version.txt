@@ -1,3 +1,61 @@
+v0.7.14
+
+更新时间：2026-03-21 12:00:00
+
+更新内容：
+
+## 1. 继续补全测试用例
+
+更新时间：2026-03-21 12:00:00
+
+### 1.1 本次补全的测试
+
+| 模块 | 测试文件 | 测试数 | 状态 |
+|------|---------|--------|------|
+| agent/capability_detector.py | test_capability_detector.py | 10 | ✅ 完成 |
+| agent/strategy_selector.py | test_strategy_selector.py | 7 | ✅ 完成 |
+| agent/os_adapter.py | test_os_adapter.py | 16 | ✅ 完成 |
+| **本次合计** | | **33** | |
+
+### 1.2 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 本次新增测试 | 33 | |
+| 通过 | 33 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+### 1.3 累计补全测试
+
+| 批次 | 测试数 | 版本 |
+|------|--------|------|
+| 第一批 | 48 | v0.7.13 |
+| 第二批 | 33 | v0.7.14 |
+| **累计** | **81** | |
+
+### 1.4 待补测试模块
+
+| 优先级 | 模块 | 状态 |
+|--------|------|------|
+| P1 | prompts/file/file_prompts.py | ⏳ 待补 |
+| P1 | intents/definitions/file/file_intent.py | ⏳ 待补 |
+| P1 | intents/definitions/file/file_stats.py | ⏳ 待补 |
+| P2 | tools/file/file_tools.py | ⏳ 待补 |
+| P2 | safety/file/file_safety.py | ⏳ 待补 |
+
+### 1.5 Git提交记录
+
+```
+e13e9961 test: 新增agent/os_adapter.py测试16个用例 - 小沈-2026-03-21
+992b1f34 test: 新增agent/strategy_selector.py测试7个用例 - 小沈-2026-03-21
+6fde2170 test: 新增agent/capability_detector.py测试10个用例 - 小沈-2026-03-21
+```
+
+参与开发：小沈
+完成时间：2026-03-21 12:00:00
+
+---
+
 v0.7.13
 
 更新时间：2026-03-21 11:30:00
