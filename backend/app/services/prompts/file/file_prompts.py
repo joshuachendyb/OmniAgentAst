@@ -3,25 +3,30 @@
 
 【重构日期】2026-03-19 小强
 【迁移】2026-03-21 小沈 - 从 agent/prompts.py 迁移到 prompts/file/
+【重构】2026-03-21 小沈 - 继承 BasePrompts 基类
 
 改进点：
 1. 添加参数命名规则（全局约束）
 2. 详细工具描述（每个工具3-5句话）
 3. 添加input_examples示例
 4. 统一中英文提示
+5. 继承 BasePrompts 基类
 
 更新时间: 2026-03-19 23:55:00
 迁移时间: 2026-03-21
+重构时间: 2026-03-21
 """
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+import json
+
+from app.services.prompts.base import BasePrompts
 
 
-class FileOperationPrompts:
+class FileOperationPrompts(BasePrompts):
     """文件操作Prompt模板类"""
     
-    @staticmethod
-    def get_system_prompt() -> str:
+    def get_system_prompt(self) -> str:
         """获取增强版系统Prompt"""
         return """You are a professional file management assistant. You help users organize, analyze, and manage files and directories.
 
@@ -168,8 +173,7 @@ Always format responses as JSON:
 
 If task is complete: {"thought": "...", "action": "finish", "action_input": {"result": "summary"}}"""
 
-    @staticmethod
-    def get_task_prompt(task_description: str, context: Optional[Dict[str, Any]] = None) -> str:
+    def get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
         获取任务Prompt
         
@@ -180,7 +184,7 @@ If task is complete: {"thought": "...", "action": "finish", "action_input": {"re
         Returns:
             格式化的任务Prompt
         """
-        base_prompt = f"""Task: {task_description}
+        base_prompt = f"""Task: {task}
 
 Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
@@ -200,19 +204,24 @@ Remember:
         
         return base_prompt
 
-    @staticmethod
-    def get_observation_prompt(observation: Dict[str, Any]) -> str:
+    def get_observation_prompt(self, observation: str) -> str:
         """
         格式化观察结果Prompt
         
         Args:
-            observation: 工具执行结果
+            observation: 工具执行结果（字符串格式）
             
         Returns:
             格式化的观察Prompt
         """
-        if observation.get("success", False):
-            result = observation.get("result", {})
+        # 如果observation是JSON字符串，尝试解析
+        try:
+            obs_dict = json.loads(observation) if isinstance(observation, str) else observation
+        except (json.JSONDecodeError, TypeError):
+            obs_dict = {}
+        
+        if obs_dict.get("success", False):
+            result = obs_dict.get("result", {})
             return f"""Observation: The operation was successful.
 
 Result details:
@@ -222,15 +231,14 @@ Result details:
 
 What's your next step?"""
         else:
-            error = observation.get("error", "Unknown error")
+            error = obs_dict.get("error", "Unknown error")
             return f"""Observation: The operation failed.
 
 Error: {error}
 
 Please reconsider your approach and suggest an alternative action."""
 
-    @staticmethod
-    def get_available_tools_prompt(tools: List[Dict[str, Any]]) -> str:
+    def get_available_tools_prompt(self, tools: Optional[List[Dict[str, Any]]] = None) -> str:
         """
         获取可用工具列表Prompt（增强版 - 支持input_examples）
         
@@ -290,8 +298,7 @@ Please reconsider your approach and suggest an alternative action."""
         
         return "Available Tools:\n" + "\n\n".join(tool_descriptions)
 
-    @staticmethod
-    def get_rollback_instructions() -> str:
+    def get_rollback_instructions(self) -> str:
         """获取回滚指令Prompt"""
         return """If you need to undo previous operations, you can use the rollback functionality.
 
@@ -306,8 +313,7 @@ Rollback will:
 
 Warning: Rollback operations cannot be undone. Be certain before proceeding."""
 
-    @staticmethod
-    def get_safety_reminder() -> str:
+    def get_safety_reminder(self) -> str:
         """获取安全提醒Prompt"""
         return """Safety reminders:
 1. All file deletions are backed up automatically
@@ -317,8 +323,7 @@ Warning: Rollback operations cannot be undone. Be certain before proceeding."""
 5. Be careful when writing files - existing content will be overwritten
 6. Search operations are read-only and safe to use anytime"""
     
-    @staticmethod
-    def get_parameter_reminder() -> str:
+    def get_parameter_reminder(self) -> str:
         """获取参数命名提醒Prompt"""
         return """【Parameter Naming Reminder】
 
