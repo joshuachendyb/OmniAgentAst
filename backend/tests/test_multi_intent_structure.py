@@ -235,25 +235,15 @@ class TestIntentsDirectoryStructure:
     # 设计文档12.2节要求 registry.py 和 classifier.py 在 intents/ 下
     # 但实际在 agent/intent/ 下，这是一个设计偏差
 
-    def test_intents_registry_location_warning(self):
-        """设计文档要求 intents/registry.py，但实际在 agent/intent/registry.py"""
-        # 设计文档12.2节明确：intents/registry.py
-        # 实际实现：agent/intent/registry.py
-        # 这是设计偏差，但不影响功能
-        design_location = BASE_DIR / "intents" / "registry.py"
+    def test_intents_registry_location(self):
+        """registry.py 在 agent/intent/ 下（设计文档12.3第四步确认）"""
         actual_location = BASE_DIR / "agent" / "intent" / "registry.py"
-        assert actual_location.exists(), "registry.py 必须存在（无论在哪）"
-        # 记录偏差但不阻塞测试
-        if not design_location.exists():
-            print("⚠️ 设计偏差：registry.py 在 agent/intent/ 而非 intents/ 下")
+        assert actual_location.exists(), "registry.py 必须在 agent/intent/ 下"
 
-    def test_intents_classifier_location_warning(self):
-        """设计文档要求 intents/classifier.py，但实际在 agent/intent/classifier.py"""
-        design_location = BASE_DIR / "intents" / "classifier.py"
+    def test_intents_classifier_location(self):
+        """classifier.py 在 agent/intent/ 下（设计文档12.3第四步确认）"""
         actual_location = BASE_DIR / "agent" / "intent" / "classifier.py"
-        assert actual_location.exists(), "classifier.py 必须存在（无论在哪）"
-        if not design_location.exists():
-            print("⚠️ 设计偏差：classifier.py 在 agent/intent/ 而非 intents/ 下")
+        assert actual_location.exists(), "classifier.py 必须在 agent/intent/ 下"
 
 
 class TestPromptsDirectoryStructure:
