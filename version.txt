@@ -1,3 +1,46 @@
+v0.7.9
+
+更新时间：2026-03-21 09:15:00
+
+更新内容：
+
+## 1. 补充实现可视化报告3个方法
+
+更新时间：2026-03-21 09:15:00
+
+### 1.1 问题背景
+
+小健设计符合度检查发现：设计文档要求的3个可视化方法（generate_json_report、generate_html_report、generate_mermaid_report）在代码中不存在。经小沈检查，这3个方法是API接口真实调用的需求，需要补充实现。
+
+### 1.2 补充实现的方法
+
+| 方法 | 文件 | 说明 |
+|------|------|------|
+| generate_json_report() | file_visualization.py | 生成JSON格式报告 |
+| generate_html_report() | file_visualization.py | 生成HTML格式报告（含图表） |
+| generate_mermaid_report() | file_visualization.py | 生成Mermaid流程图 |
+
+### 1.3 修正API接口
+
+修正 file_operations.py 中API接口的处理逻辑，让它正确处理这些方法返回的内容。
+
+### 1.4 更新设计文档
+
+设计文档从v2.20更新到v2.21，把3个方法从"待实现"改为"已实现"。
+
+### 1.5 Git提交记录
+
+```
+2441c573 docs: 更新设计文档v2.21，补充实现可视化3个方法 - 小沈-2026-03-21
+20598a55 fix: 修正API接口正确处理报告方法返回内容 - 小沈-2026-03-21
+6db3d900 feat: 补充实现generate_json_report、generate_html_report、generate_mermaid_report方法 - 小沈-2026-03-21
+```
+
+参与开发：小沈
+完成时间：2026-03-21 09:15:00
+
+---
+
 v0.7.8
 
 更新时间：2026-03-21 08:30:00
