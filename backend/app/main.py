@@ -11,6 +11,10 @@ from app.api.v1 import health, chat_non_stream, chat_stream, init_model_select, 
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
 
+# 只过滤uvicorn的访问日志，不影响应用日志
+import logging
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
 # 配置日志 - 使用统一的 logger 配置，不再使用 basicConfig
 # 日志统一在 app/utils/logger.py 中配置
 
