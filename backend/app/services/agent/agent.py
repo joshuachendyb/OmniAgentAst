@@ -23,8 +23,8 @@ from typing import Dict, Any, List, Optional, AsyncGenerator
 from app.services.agent.base import BaseAgent
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.types import Step, AgentResult, AgentStatus
-from app.services.agent.tools import FileTools
-from app.services.agent.prompts import FileOperationPrompts
+from app.services.tools.file.file_tools import FileTools
+from app.services.prompts.file.file_prompts import FileOperationPrompts
 from app.services.agent.session import get_session_service
 from app.services.agent.llm_adapter import LLMAdapter
 from app.services.agent.adapter import dict_list_to_messages

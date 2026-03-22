@@ -33,7 +33,7 @@ from .session_base import SessionServiceBase, SessionStatsMixin
 # ============================================================================
 
 if TYPE_CHECKING:
-    from .safety import (
+    from app.services.safety.file.file_safety import (
         FileOperationSafety,
         FileSafetyConfig,
         get_file_safety_service,
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
         FileOperationSessionService,
         get_session_service,
     )
-    from .tools import (
+    from app.services.tools.file.file_tools import (
         FileTools,
         get_file_tools,
     )
@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 
 def __getattr__(name: str):
     if name in ("FileOperationSafety", "FileSafetyConfig", "get_file_safety_service"):
-        from .safety import (
+        from app.services.safety.file.file_safety import (
             FileOperationSafety,
             FileSafetyConfig,
             get_file_safety_service,
@@ -63,7 +63,7 @@ def __getattr__(name: str):
         )
         return locals()[name]
     if name in ("FileTools", "get_file_tools"):
-        from .tools import FileTools, get_file_tools
+        from app.services.tools.file.file_tools import FileTools, get_file_tools
         return locals()[name]
     if name == "IntentAgent":
         from .agent import IntentAgent

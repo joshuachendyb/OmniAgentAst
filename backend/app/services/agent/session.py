@@ -36,7 +36,7 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
     """
     
     def __init__(self):
-        from app.services.agent.safety import FileSafetyConfig
+        from app.services.safety.file.file_safety import FileSafetyConfig
         self.config = FileSafetyConfig()
         self._init_db()
     
