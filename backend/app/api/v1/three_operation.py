@@ -9,7 +9,7 @@ import asyncio
 import uuid
 from typing import Any, Dict, AsyncGenerator
 
-from app.chat_stream_helpers import create_timestamp
+from app.chat_stream import create_timestamp, create_incident_data, create_error_response
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,6 @@ async def process_file_operation(
     from app.api.v1.observation1 import build_observation_security, handle_observation_event
     from app.services.agent.agent import IntentAgent
     from app.services.safety_checker import check_command_safety
-    from app.chat_stream_helpers import create_incident_data, create_error_response
     from app.config import get_config
 
     # 1. yield action1（notification，开始执行）

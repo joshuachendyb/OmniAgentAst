@@ -222,7 +222,16 @@ def detect_file_operation_intent(message: str) -> Tuple[bool, str, float]:
     Returns:
         (是否文件操作, 操作类型, 置信度0-1)
     """
+    from app.utils.logger import logger
+    
     intent_type, action_type, confidence = classify_intent(message)
+    
+    # 【小沈添加日志 2026-03-22】记录输入输出
+    logger.info(
+        f"[IntentClassifier] detect_file_operation_intent - "
+        f"input: '{message}' -> "
+        f"intent_type: '{intent_type}', action_type: '{action_type}', confidence: {confidence:.4f}"
+    )
     
     if intent_type == IntentType.ACTION and action_type == ActionType.FILE_OPERATION:
         return True, "file", confidence

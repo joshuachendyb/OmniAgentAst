@@ -12,7 +12,7 @@ from typing import Any, Dict, AsyncGenerator
 
 from app.services.shell_security import check_command_safety
 from app.utils.display_name_cache import cache_display_name
-from app.chat_stream_helpers import create_timestamp, get_provider_display_name
+from app.chat_stream import create_timestamp, get_provider_display_name
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ import json
 import logging
 from typing import Any, Dict, Optional, AsyncGenerator, Tuple
 
-from app.chat_stream_helpers import create_timestamp
+from app.chat_stream import create_timestamp
 
 logger = logging.getLogger(__name__)
 
