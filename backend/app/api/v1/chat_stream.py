@@ -1056,7 +1056,8 @@ async def chat_stream(request: ChatRequest):
                             
                             # 无论content是否为空，都创建chunk_data并添加到列表
                             chunk_data = {
-                                'type': 'chunk', 
+                                'type': 'chunk',
+                                'step': next_step(),  # 添加step字段
                                 'timestamp': create_timestamp(),
                                 'content': chunk.content or '',  # 确保content不为None
                                 'is_reasoning': current_is_reasoning
@@ -1258,6 +1259,7 @@ async def chat_stream(request: ChatRequest):
                 # 先添加final步骤到数组，再保存
                 final_step = {
                     'type': 'final',
+                    'step': next_step(),  # 添加step字段
                     'content': full_content,
                     'model': ai_service.model,
                     'provider': ai_service.provider,

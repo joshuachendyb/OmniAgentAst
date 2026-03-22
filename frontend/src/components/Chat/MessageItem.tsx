@@ -505,7 +505,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
             case 'observation':
               return { ...baseExport, step: step.step, obs_execution_status: (step as any).obs_execution_status, obs_summary: (step as any).obs_summary, obs_raw_data: (step as any).obs_raw_data, is_finished: step.is_finished };
             case 'chunk':
-              return { ...baseExport, is_reasoning: step.is_reasoning };
+              return { ...baseExport, step: step.step, is_reasoning: step.is_reasoning };
             case 'final':
               // 【小强修复 2026-03-18】添加 step 字段
               return { ...baseExport, step: step.step };
