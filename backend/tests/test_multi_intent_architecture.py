@@ -439,7 +439,7 @@ class TestSafetyChecker:
 
     def test_safety_exists(self):
         """安全检查模块存在"""
-        from app.services.agent.safety import FileOperationSafety
+        from app.services.safety.file.file_safety import FileOperationSafety
         assert FileOperationSafety is not None
 
     def test_safety_config_has_paths(self):
@@ -463,8 +463,8 @@ class TestReActIntentIntegration:
 
     def test_agent_exists(self):
         """Agent 主循环模块存在"""
-        from app.services.agent.agent import FileOperationAgent
-        assert FileOperationAgent is not None
+        from app.services.agent.agent import IntentAgent
+        assert IntentAgent is not None
 
     def test_base_agent_exists(self):
         """BaseAgent 通用基类存在"""
@@ -825,9 +825,9 @@ class TestBackwardCompatibility:
         assert FileOperationSafety is not None
 
     def test_agent_init_lazy_loads_agent(self):
-        """agent/__init__.py 懒加载 FileOperationAgent"""
-        from app.services.agent import FileOperationAgent
-        assert FileOperationAgent is not None
+        """agent/__init__.py 懒加载 IntentAgent"""
+        from app.services.agent import IntentAgent
+        assert IntentAgent is not None
 
     def test_react_schema_from_new_location(self):
         """react_schema 从新位置 agent/types/react_schema.py 导入"""
@@ -836,7 +836,7 @@ class TestBackwardCompatibility:
 
     def test_react_schema_backward_compatible(self):
         """react_schema 向后兼容层正常工作"""
-        from app.services.agent.react_schema import get_tools_schema_for_function_calling
+        from app.services.agent.types.react_schema import get_tools_schema_for_function_calling
         assert get_tools_schema_for_function_calling is not None
 
     def test_prompts_base_exportable(self):
@@ -1046,3 +1046,248 @@ class TestNoOldFiles:
         from pathlib import Path
         old_file = Path("D:/OmniAgentAs-desk/backend/app/services/tools/file/file_react_schema.py")
         assert not old_file.exists(), "file_react_schema.py 已迁移到 agent/types/react_schema.py"
+
+
+# ============================================================================
+# 第十章测试：IntentAgent集成预处理和意图注册表
+# ============================================================================
+
+class TestIntentAgentIntegration:
+    """测试IntentAgent集成预处理流水线和意图注册表 - 第10章"""
+
+    def test_intent_agent_has_intent_type(self):
+        """IntentAgent有intent_type属性"""
+        from app.services.agent.agent import IntentAgent
+        import inspect
+        sig = inspect.signature(IntentAgent.__init__)
+        assert 'intent_type' in sig.parameters
+
+    def test_intent_agent_default_intent_type_is_file(self):
+        """IntentAgent默认intent_type为file"""
+        import inspect
+        from app.services.agent.agent import IntentAgent
+        sig = inspect.signature(IntentAgent.__init__)
+        intent_type_param = sig.parameters['intent_type']
+        assert intent_type_param.default == "file"
+
+    def test_intent_agent_has_preprocessor(self):
+        """IntentAgent有preprocessor属性"""
+        from unittest.mock import MagicMock, patch
+        from app.services.agent.agent import IntentAgent
+        mock_llm = MagicMock()
+        mock_tools = MagicMock()
+        with patch('app.services.agent.agent.get_session_service'):
+            agent = IntentAgent(llm_client=mock_llm, session_id="test", file_tools=mock_tools)
+            assert hasattr(agent, 'preprocessor')
+
+    def test_intent_agent_has_intent_registry(self):
+        """IntentAgent有intent_registry属性"""
+        from unittest.mock import MagicMock, patch
+        from app.services.agent.agent import IntentAgent
+        mock_llm = MagicMock()
+        mock_tools = MagicMock()
+        with patch('app.services.agent.agent.get_session_service'):
+            agent = IntentAgent(llm_client=mock_llm, session_id="test", file_tools=mock_tools)
+            assert hasattr(agent, 'intent_registry')
+
+    def test_intent_agent_registers_file_intent(self):
+        """IntentAgent注册file意图"""
+        from unittest.mock import MagicMock, patch
+        from app.services.agent.agent import IntentAgent
+        mock_llm = MagicMock()
+        mock_tools = MagicMock()
+        with patch('app.services.agent.agent.get_session_service'):
+            agent = IntentAgent(llm_client=mock_llm, session_id="test", file_tools=mock_tools)
+            assert agent.intent_registry.get("file") is not None
+
+    def test_intent_agent_registers_network_intent(self):
+        """IntentAgent注册network意图"""
+        from unittest.mock import MagicMock, patch
+        from app.services.agent.agent import IntentAgent
+        mock_llm = MagicMock()
+        mock_tools = MagicMock()
+        with patch('app.services.agent.agent.get_session_service'):
+            agent = IntentAgent(llm_client=mock_llm, session_id="test", file_tools=mock_tools)
+            assert agent.intent_registry.get("network") is not None
+
+    def test_intent_agent_unsupported_intent_type_raises(self):
+        """不支持的intent_type抛出异常"""
+        from unittest.mock import MagicMock, patch
+        from app.services.agent.agent import IntentAgent
+        mock_llm = MagicMock()
+        mock_tools = MagicMock()
+        with patch('app.services.agent.agent.get_session_service'):
+            with pytest.raises(ValueError, match="Unsupported intent_type"):
+                IntentAgent(llm_client=mock_llm, session_id="test", file_tools=mock_tools, intent_type="unknown")
+
+    def test_intent_agent_desktop_type_warning(self):
+        """desktop意图类型记录警告日志"""
+        from unittest.mock import MagicMock, patch
+        from app.services.agent.agent import IntentAgent
+        mock_llm = MagicMock()
+        mock_tools = MagicMock()
+        with patch('app.services.agent.agent.get_session_service'):
+            with patch('app.services.agent.agent.logger') as mock_logger:
+                agent = IntentAgent(llm_client=mock_llm, session_id="test", file_tools=mock_tools, intent_type="desktop")
+                mock_logger.warning.assert_called()
+
+    def test_intent_agent_network_type_warning(self):
+        """network意图类型记录警告日志"""
+        from unittest.mock import MagicMock, patch
+        from app.services.agent.agent import IntentAgent
+        mock_llm = MagicMock()
+        mock_tools = MagicMock()
+        with patch('app.services.agent.agent.get_session_service'):
+            with patch('app.services.agent.agent.logger') as mock_logger:
+                agent = IntentAgent(llm_client=mock_llm, session_id="test", file_tools=mock_tools, intent_type="network")
+                mock_logger.warning.assert_called()
+
+
+# ============================================================================
+# 第十一章测试：目录结构完整性
+# ============================================================================
+
+class TestDirectoryStructureCompleteness:
+    """测试目录结构完整性 - 第11章"""
+
+    def test_agent_directory_exists(self):
+        """agent/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent").exists()
+
+    def test_agent_intent_directory_exists(self):
+        """agent/intent/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/intent").exists()
+
+    def test_agent_preprocessing_directory_exists(self):
+        """agent/preprocessing/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/preprocessing").exists()
+
+    def test_agent_types_directory_exists(self):
+        """agent/types/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/types").exists()
+
+    def test_tools_directory_exists(self):
+        """tools/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/tools").exists()
+
+    def test_tools_file_directory_exists(self):
+        """tools/file/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/tools/file").exists()
+
+    def test_safety_directory_exists(self):
+        """safety/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/safety").exists()
+
+    def test_safety_file_directory_exists(self):
+        """safety/file/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/safety/file").exists()
+
+    def test_prompts_directory_exists(self):
+        """prompts/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/prompts").exists()
+
+    def test_prompts_file_directory_exists(self):
+        """prompts/file/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/prompts/file").exists()
+
+    def test_intents_directory_exists(self):
+        """intents/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/intents").exists()
+
+    def test_intents_definitions_file_directory_exists(self):
+        """intents/definitions/file/目录存在"""
+        from pathlib import Path
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/intents/definitions/file").exists()
+
+    def test_no_old_file_operations_directory(self):
+        """旧的file_operations/目录已删除"""
+        from pathlib import Path
+        assert not Path("D:/OmniAgentAs-desk/backend/app/services/file_operations").exists()
+
+    def test_no_backward_compat_files(self):
+        """向后兼容层文件已删除"""
+        from pathlib import Path
+        agent_dir = Path("D:/OmniAgentAs-desk/backend/app/services/agent")
+        assert not (agent_dir / "react_schema.py").exists()
+        assert not (agent_dir / "tools.py").exists()
+        assert not (agent_dir / "prompts.py").exists()
+        assert not (agent_dir / "safety.py").exists()
+
+
+# ============================================================================
+# 第十二章测试：导入路径正确性
+# ============================================================================
+
+class TestImportPathCorrectness:
+    """测试导入路径正确性 - 第12章"""
+
+    def test_import_intent_agent_from_agent(self):
+        """从agent模块导入IntentAgent"""
+        from app.services.agent import IntentAgent
+        assert IntentAgent is not None
+
+    def test_import_file_tools_from_new_location(self):
+        """从新位置导入FileTools"""
+        from app.services.tools.file.file_tools import FileTools
+        assert FileTools is not None
+
+    def test_import_file_safety_from_new_location(self):
+        """从新位置导入FileOperationSafety"""
+        from app.services.safety.file.file_safety import FileOperationSafety
+        assert FileOperationSafety is not None
+
+    def test_import_file_prompts_from_new_location(self):
+        """从新位置导入FileOperationPrompts"""
+        from app.services.prompts.file.file_prompts import FileOperationPrompts
+        assert FileOperationPrompts is not None
+
+    def test_import_react_schema_from_new_location(self):
+        """从新位置导入react_schema"""
+        from app.services.agent.types.react_schema import get_tools_schema_for_function_calling
+        assert get_tools_schema_for_function_calling is not None
+
+    def test_import_intent_registry(self):
+        """导入IntentRegistry"""
+        from app.services.agent.intent import IntentRegistry
+        assert IntentRegistry is not None
+
+    def test_import_intent_classifier(self):
+        """导入IntentClassifier"""
+        from app.services.agent.intent.classifier import IntentClassifier
+        assert IntentClassifier is not None
+
+    def test_import_preprocessing_pipeline(self):
+        """导入PreprocessingPipeline"""
+        from app.services.agent.preprocessing import PreprocessingPipeline
+        assert PreprocessingPipeline is not None
+
+    def test_import_text_corrector(self):
+        """导入TextCorrector"""
+        from app.services.agent.preprocessing.corrector import TextCorrector
+        assert TextCorrector is not None
+
+    def test_import_base_prompts(self):
+        """导入BasePrompts"""
+        from app.services.prompts.base import BasePrompts
+        assert BasePrompts is not None
+
+    def test_import_session_service_base(self):
+        """导入SessionServiceBase"""
+        from app.services.agent.session_base import SessionServiceBase
+        assert SessionServiceBase is not None
+
+    def test_import_session_stats_mixin(self):
+        """导入SessionStatsMixin"""
+        from app.services.agent.session_base import SessionStatsMixin
+        assert SessionStatsMixin is not None
