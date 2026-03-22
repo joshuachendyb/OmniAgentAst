@@ -524,7 +524,8 @@ def create_final_response(
     content: str,
     model: str,
     provider: str,
-    display_name: Optional[str] = None
+    display_name: Optional[str] = None,
+    step: Optional[int] = None
 ) -> str:
     """
     创建统一的 final 响应格式
@@ -534,9 +535,10 @@ def create_final_response(
         model: 模型名称
         provider: 提供商
         display_name: 显示名称（可选）
+        step: 步骤号（可选）
     
     Returns:
-    SSE 格式的 final 响应字符串
+        SSE 格式的 final 响应字符串
     """
     # 【问题5修复】final使用content字段（遵循设计文档7.5要求）
     # 【补充】添加display_name字段
@@ -545,6 +547,8 @@ def create_final_response(
         'content': content,
         'display_name': display_name if display_name else f"{provider} ({model})"
     }
+    if step is not None:
+        response['step'] = step
     return f"data: {json.dumps(response)}\n\n"
 
 router = APIRouter()
@@ -1257,9 +1261,10 @@ async def chat_stream(request: ChatRequest):
                 # ═══════════════════════════════════════════════════════════════════════════════
                 
                 # 先添加final步骤到数组，再保存
+                final_step_value = next_step()  # 【小沈修复 2026-03-22】先获取step值，只调用一次
                 final_step = {
                     'type': 'final',
-                    'step': next_step(),  # 添加step字段
+                    'step': final_step_value,  # 使用已获取的step值
                     'content': full_content,
                     'model': ai_service.model,
                     'provider': ai_service.provider,
@@ -1268,17 +1273,18 @@ async def chat_stream(request: ChatRequest):
                 current_execution_steps.append(final_step)
                 
                 # final前强制保存一次，确保所有steps都写入数据库
-                logger.info(f"[Step final] 💾 final前强制保存: {len(current_execution_steps)} steps")
+                logger.info(f"[Step final] 💾 final前强制保存: {len(current_execution_steps)} steps, step={final_step_value}")
                 await save_execution_steps_to_db(current_execution_steps, full_content)
                 
                 # 发送最终结果，【新增】添加provider字段作为兜底
                 content_preview = full_content[:200] + "..." if len(full_content) > 200 else full_content
-                logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={content_preview}")
+                logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={content_preview}, step={final_step_value}")
                 yield create_final_response(
                     content=full_content,
                     model=ai_service.model,
                     provider=ai_service.provider,
-                    display_name=display_name
+                    display_name=display_name,
+                    step=final_step_value  # 使用同一个step值
                 )
                 
                 # 删除重复保存：上面已经保存过，不需要再保存一次
