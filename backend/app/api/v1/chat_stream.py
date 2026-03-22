@@ -60,6 +60,7 @@ from app.chat_stream import (
     get_provider_display_name,
     create_error_response,
     create_incident_data,
+    create_final_response,
 )  # 【小沈 2026-03-22】从统一模块导入
 from pathlib import Path
 import shutil
@@ -515,41 +516,6 @@ def simplify_observation(observation: Any) -> str:
     else:
         return str(result)[:200]
 
-
-# ============================================================
-# 统一 final 响应工具函数 - 小沈代修改【修复问题 6】
-# ============================================================
-
-def create_final_response(
-    content: str,
-    model: str,
-    provider: str,
-    display_name: Optional[str] = None,
-    step: Optional[int] = None
-) -> str:
-    """
-    创建统一的 final 响应格式
-    
-    Args:
-        content: 最终内容
-        model: 模型名称
-        provider: 提供商
-        display_name: 显示名称（可选）
-        step: 步骤号（可选）
-    
-    Returns:
-        SSE 格式的 final 响应字符串
-    """
-    # 【问题5修复】final使用content字段（遵循设计文档7.5要求）
-    # 【补充】添加display_name字段
-    response = {
-        'type': 'final',
-        'content': content,
-        'display_name': display_name if display_name else f"{provider} ({model})"
-    }
-    if step is not None:
-        response['step'] = step
-    return f"data: {json.dumps(response)}\n\n"
 
 router = APIRouter()
 
