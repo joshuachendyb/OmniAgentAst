@@ -318,6 +318,8 @@ class IntentAgent(BaseAgent):
     ) -> AgentResult:
         """
         内部运行方法（带 session 管理）
+        
+        【设计要求】使用预处理流水线和意图注册表
         """
         # 重置状态
         self.steps = []
@@ -325,6 +327,24 @@ class IntentAgent(BaseAgent):
         self.status = AgentStatus.THINKING
         self.llm_call_count = 0
         logger.info(f"[LLM Counter] Agent run started, LLM counter reset to 0")
+        
+        # 【设计要求】使用预处理流水线预处理用户输入
+        try:
+            preprocessed = self.preprocessor.process(
+                task,
+                list(self.intent_registry.get_all_names())
+            )
+            logger.info(f"[Agent] Preprocessed: intent={preprocessed.get('intent')}, confidence={preprocessed.get('confidence')}")
+        except Exception as e:
+            logger.warning(f"[Agent] Preprocessing failed: {e}, using original input")
+            preprocessed = {"corrected": task, "intent": "unknown", "confidence": 0.0}
+        
+        # 【设计要求】使用意图注册表获取意图定义
+        intent_def = self.intent_registry.get(self.intent_type)
+        if intent_def:
+            logger.info(f"[Agent] Using intent: {intent_def.name} ({intent_def.description})")
+        else:
+            logger.warning(f"[Agent] Intent definition not found for: {self.intent_type}")
         
         # 使用局部变量管理 session
         session_id = self.session_id
