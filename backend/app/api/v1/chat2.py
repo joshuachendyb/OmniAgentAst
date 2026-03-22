@@ -484,10 +484,8 @@ async def chat_stream(request: ChatRequest):
             is_file_op, _, confidence = detect_file_operation_intent(last_message)
             
             if is_file_op and confidence >= 0.3:
-                # 文件操作：直接流式执行
-                # 创建Agent
+                # 文件操作：直接流式执行（使用已有的 ai_service）
                 session_id = str(uuid.uuid4())
-                ai_service = AIServiceFactory.get_service()
                 
                 async def llm_client(message, history=None):
                     response = await ai_service.chat(message, history)
