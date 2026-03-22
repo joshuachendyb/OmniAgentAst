@@ -32,6 +32,9 @@ from app.services.intent import IntentRegistry, Intent
 from app.services.preprocessing import PreprocessingPipeline
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
 from app.utils.logger import logger
+from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse
+from app.chat_stream.chat_helpers import create_final_response
+from app.chat_stream.error_handler import create_error_response
 
 
 class IntentAgent(BaseAgent):
@@ -705,3 +708,91 @@ class IntentAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Rollback failed: {e}")
             return False
+
+    async def ver1_run_stream(
+        self,
+        task: str,
+        model: str,
+        provider: str,
+        context: Optional[Dict[str, Any]] = None,
+        system_prompt: Optional[str] = None,
+        max_steps: int = 100
+    ) -> AsyncGenerator[str, None]:
+        """
+        【Phase4新增】异步流式执行 Agent，直接返回 SSE 格式字符串
+        
+        封装 run_stream()，将每个事件转换为 SSE 字符串，
+        减少调用方（chat2.py）的重复代码。
+        
+        Args:
+            task: 任务描述
+            model: 模型名称（用于 final/error 响应）
+            provider: 提供商（用于 final/error 响应）
+            context: 额外上下文
+            system_prompt: 自定义系统 prompt（可选）
+            max_steps: 最大迭代次数
+        
+        Yields:
+            SSE 格式的字符串
+        """
+        step_count = 0
+        
+        async for event in self.run_stream(
+            task=task,
+            context=context,
+            system_prompt=system_prompt,
+            max_steps=max_steps
+        ):
+            event_type = event.get('type')
+            step_count += 1
+            
+            if event_type == 'thought':
+                yield format_thought_sse(
+                    step=step_count,
+                    content=event.get('content', ''),
+                    reasoning=event.get('reasoning', ''),
+                    action_tool=event.get('action_tool', ''),
+                    params=event.get('params', {})
+                )
+            
+            elif event_type == 'action_tool':
+                yield format_action_tool_sse(
+                    step=step_count,
+                    tool_name=event.get('tool_name', ''),
+                    tool_params=event.get('tool_params', {}),
+                    execution_status=event.get('execution_status', 'success'),
+                    summary=event.get('summary', ''),
+                    raw_data=event.get('raw_data'),
+                    action_retry_count=event.get('action_retry_count', 0)
+                )
+            
+            elif event_type == 'observation':
+                yield format_observation_sse(
+                    step=step_count,
+                    execution_status=event.get('execution_status', 'success'),
+                    summary=event.get('summary', ''),
+                    content=event.get('content', ''),
+                    reasoning=event.get('reasoning', ''),
+                    action_tool=event.get('action_tool', ''),
+                    params=event.get('params', {}),
+                    is_finished=event.get('is_finished', False),
+                    raw_data=event.get('raw_data')
+                )
+            
+            elif event_type == 'final':
+                yield create_final_response(
+                    content=event.get('content', ''),
+                    model=model,
+                    provider=provider,
+                    display_name=f"{provider} ({model})"
+                )
+            
+            elif event_type == 'error':
+                yield create_error_response(
+                    error_type="agent",
+                    message=event.get('message', '未知错误'),
+                    code=event.get('code', 'AGENT_ERROR'),
+                    model=model,
+                    provider=provider,
+                    retryable=event.get('retryable', False)
+                )

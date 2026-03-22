@@ -46,7 +46,6 @@ from app.chat_stream.chat_stream_query import chat_stream_query  # 【重构优�
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data  # 【重构优化】复用 incident_handler 模块
 from app.chat_stream.error_handler import create_error_response, get_user_friendly_error  # 【重构优化】复用 error_handler 模块
 from app.chat_stream.chat_helpers import create_final_response  # 【重构优化】复用 chat_helpers 模块
-from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse  # 【重构优化】复用 SSE 格式化函数
 from app.chat_stream.ver1_detect_file_operation_intent import detect_file_operation_intent, extract_file_path  # 【重构优化】抽取意图检测函数
 from pathlib import Path
 import shutil
@@ -443,8 +442,12 @@ async def chat_stream(request: ChatRequest):
                 )
                 
                 try:
-                    # 【Phase4核心修改】使用run_stream异步流式输出
-                    async for event in agent.run_stream(last_message):
+                    # 【Phase4重构】使用 ver1_run_stream 直接返回 SSE 字符串
+                    async for sse_data in agent.ver1_run_stream(
+                        task=last_message,
+                        model=ai_service.model,
+                        provider=ai_service.provider
+                    ):
                         # 每步检查是否被中断
                         async with running_tasks_lock:
                             if running_tasks.get(task_id, {}).get("cancelled", False):
@@ -453,80 +456,11 @@ async def chat_stream(request: ChatRequest):
                                 yield f"data: {json.dumps(interrupted_data)}\n\n"
                                 break
                         
-                        event_type = event.get('type')
-                        
-                        if event_type == 'thought':
-                            # Thought阶段
-                            step = next_step()
-                            logger.info(f"[Step thought] 发送thought步骤")
-                            yield format_thought_sse(
-                                step=step,
-                                content=event.get('content', ''),
-                                reasoning=event.get('reasoning', ''),
-                                action_tool=event.get('action_tool', ''),
-                                params=event.get('params', {})
-                            )
-
-                        elif event_type == 'action_tool':
-                            # Action阶段
-                            step = next_step()
-                            logger.info(f"[Step action_tool] 发送action_tool步骤(执行工具)")
-                            yield format_action_tool_sse(
-                                step=step,
-                                tool_name=event.get('tool_name', ''),
-                                tool_params=event.get('tool_params', {}),
-                                execution_status=event.get('execution_status', 'success'),
-                                summary=event.get('summary', ''),
-                                raw_data=event.get('raw_data'),
-                                action_retry_count=event.get('action_retry_count', 0)
-                            )
-
-                        elif event_type == 'observation':
-                            # Observation阶段
-                            step = next_step()
-                            logger.info(f"[Step observation] 发送observation步骤")
-                            yield format_observation_sse(
-                                step=step,
-                                execution_status=event.get('execution_status', 'success'),
-                                summary=event.get('summary', ''),
-                                content=event.get('content', ''),
-                                reasoning=event.get('reasoning', ''),
-                                action_tool=event.get('action_tool', ''),
-                                params=event.get('params', {}),
-                                is_finished=event.get('is_finished', False),
-                                raw_data=event.get('raw_data')
-                            )
-                        
-                        elif event_type == 'final':
-                            # 最终结果：使用 create_final_response
-                            final_content = event.get('content', '')
-                            logger.info(f"[Step final] 发送final步骤")
-                            yield create_final_response(
-                                content=final_content,
-                                model=ai_service.model,
-                                provider=ai_service.provider,
-                                display_name=display_name
-                            )
-                            break
-                        
-                        elif event_type == 'error':
-                            logger.info(f"[Step error] 发送error步骤")
-                            yield create_error_response(
-                                error_type="agent",
-                                message=event.get('message', '未知错误'),
-                                code='AGENT_ERROR',
-                                model=ai_service.model,
-                                provider=ai_service.provider,
-                                retryable=event.get('retryable', False)
-                            )
-                            break
-                        
+                        logger.info(f"[FileOp SSE] 发送数据")
+                        yield sse_data
                         await asyncio.sleep(0.05)
                     
-                    # 检查是否被中断（在循环内已处理）
-                    
                 except Exception as e:
-                    # 【小沈代修改 - 修复问题4】统一错误处理格式，记录日志
                     logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
                     yield create_error_response(
                         error_type="file_operation_error",
