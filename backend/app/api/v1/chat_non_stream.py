@@ -37,7 +37,7 @@ from typing import List, Dict, Optional, AsyncGenerator, Any
 from app.services import AIServiceFactory
 from app.services.base import Message  # ⭐ 【调试添加】用于日志记录
 from app.services.agent.tools import get_file_tools
-from app.services.agent.agent import FileOperationAgent
+from app.services.agent.agent import IntentAgent
 from app.services.shell_security import check_command_safety
 from app.api.v1.intent_classifier import detect_file_operation_intent  # 【小沈引用原始函数 2026-03-17】
 from app.utils.logger import logger
@@ -594,8 +594,8 @@ async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
             response = await ai_service.chat(message=message, history=history)
             return response
         
-        # 【修复-Wave2】创建 FileOperationAgent
-        agent = FileOperationAgent(
+        # 【修复-Wave2】创建 IntentAgent
+        agent = IntentAgent(
             llm_client=llm_client_adapter,
             session_id=session_id,
             max_steps=20
