@@ -1,10 +1,32 @@
-v0.7.32
+v0.7.33
 
-更新时间：2026-03-22 17:25:00
+更新时间：2026-03-22 19:06:44
 
 更新内容：
 
-## 1. chat_stream_query.py 流式问答模块创建
+## 1. 修复final导出step字段问题 - 小沈-2026-03-22
+
+更新时间：2026-03-22 19:06:44
+
+### 1.1 完成的工作
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| create_final_response | app/api/v1/chat_stream.py:523 | 添加step参数支持 |
+| final导出 | app/api/v1/chat_stream.py:1282 | 修复step重复调用问题 |
+| final响应 | app/api/v1/chat_stream.py:1280 | 正确传递step参数 |
+
+### 1.2 修复的问题
+
+1. **问题1**: create_final_response函数缺少step参数定义
+   - 修复：添加 `step: Optional[int] = None` 参数
+   
+2. **问题2**: next_step()被调用两次导致step跳变
+   - 修复：先获取final_step_value，在final_step和create_final_response中使用同一个值
+
+---
+
+## 2. chat_stream_query.py 流式问答模块创建
 
 更新时间：2026-03-22 17:25:00
 
