@@ -1,6 +1,6 @@
 """
 Agent LLMAdapter 集成测试 (Agent LLMAdapter Integration Tests)
-测试 FileOperationAgent 与 LLMAdapter 的集成功能
+测试 IntentAgent 与 LLMAdapter 的集成功能
 
 测试范围:
 - LLMAdapter 初始化
@@ -15,6 +15,7 @@ Agent LLMAdapter 集成测试 (Agent LLMAdapter Integration Tests)
 
 创建时间: 2026-03-20 11:45:00
 编写人: 小沈
+重命名: 2026-03-22 小沈 - IntentAgent → IntentAgent
 """
 
 import pytest
@@ -25,7 +26,7 @@ from typing import Dict, Any, List
 from unittest.mock import Mock, AsyncMock, MagicMock, patch, PropertyMock
 
 # 导入被测试模块
-from app.services.agent.agent import FileOperationAgent
+from app.services.agent.agent import IntentAgent
 from app.services.agent.tool_parser import ToolParser
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.types import AgentStatus, Step, AgentResult
@@ -80,7 +81,7 @@ def agent_with_adapter(mock_llm_client, mock_file_tools, mock_llm_adapter):
         with patch('app.services.agent.agent.LLMAdapter') as MockLLMAdapter:
             MockLLMAdapter.return_value = mock_llm_adapter
             
-            agent = FileOperationAgent(
+            agent = IntentAgent(
                 llm_client=mock_llm_client,
                 session_id="test-session",
                 file_tools=mock_file_tools,
@@ -101,7 +102,7 @@ def agent_without_adapter(mock_llm_client, mock_file_tools):
         mock_session_service.complete_session.return_value = None
         mock_session.return_value = mock_session_service
         
-        agent = FileOperationAgent(
+        agent = IntentAgent(
             llm_client=mock_llm_client,
             session_id="test-session",
             file_tools=mock_file_tools,
@@ -131,7 +132,7 @@ class TestLLMAdapterInitialization:
                 mock_adapter = MagicMock()
                 MockLLMAdapter.return_value = mock_adapter
                 
-                agent = FileOperationAgent(
+                agent = IntentAgent(
                     llm_client=mock_llm_client,
                     session_id="test-session",
                     api_base="https://api.example.com",
@@ -155,7 +156,7 @@ class TestLLMAdapterInitialization:
             mock_session_service.create_session.return_value = "test-session"
             mock_session.return_value = mock_session_service
             
-            agent = FileOperationAgent(
+            agent = IntentAgent(
                 llm_client=mock_llm_client,
                 session_id="test-session"
             )
@@ -170,7 +171,7 @@ class TestLLMAdapterInitialization:
             mock_session.return_value = mock_session_service
             
             # 只提供 api_base，没有 api_key 和 model
-            agent = FileOperationAgent(
+            agent = IntentAgent(
                 llm_client=mock_llm_client,
                 session_id="test-session",
                 api_base="https://api.example.com"
@@ -347,7 +348,7 @@ class TestGetLLMResponseWithResponseFormat:
             mock_session_service.create_session.return_value = "test-session"
             mock_session.return_value = mock_session_service
             
-            agent = FileOperationAgent(
+            agent = IntentAgent(
                 llm_client=mock_llm_client,
                 session_id="test-session",
                 file_tools=mock_file_tools,
@@ -526,7 +527,7 @@ class TestBackwardCompatibility:
             mock_session.return_value = mock_session_service
             
             # 使用原有签名（不提供 api 参数）
-            agent = FileOperationAgent(
+            agent = IntentAgent(
                 llm_client=mock_llm_client,
                 session_id="test-session",
                 file_tools=mock_file_tools,
@@ -552,7 +553,7 @@ class TestBackwardCompatibility:
                 MockLLMAdapter.return_value = MagicMock()
                 
                 # 使用新签名（提供 api 参数）
-                agent = FileOperationAgent(
+                agent = IntentAgent(
                     llm_client=mock_llm_client,
                     session_id="test-session",
                     file_tools=mock_file_tools,
@@ -611,7 +612,7 @@ class TestAgentRunIntegration:
                 mock_adapter = MagicMock()
                 MockLLMAdapter.return_value = mock_adapter
                 
-                agent = FileOperationAgent(
+                agent = IntentAgent(
                     llm_client=mock_llm_client,
                     session_id="test-session",
                     file_tools=mock_file_tools,
@@ -695,7 +696,7 @@ class TestResponseFormatDataConversion:
             mock_session_service.create_session.return_value = "test-session"
             mock_session.return_value = mock_session_service
             
-            agent = FileOperationAgent(
+            agent = IntentAgent(
                 llm_client=mock_llm_client,
                 session_id="test-session",
                 file_tools=mock_file_tools,
