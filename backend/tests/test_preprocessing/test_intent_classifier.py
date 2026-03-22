@@ -7,7 +7,7 @@ Author: 小沈 - 2026-03-20
 import pytest
 from unittest.mock import patch, MagicMock
 
-from app.services.agent.preprocessing.intent_classifier import IntentClassifier
+from app.services.preprocessing.intent_classifier import IntentClassifier
 
 
 class TestIntentClassifier:

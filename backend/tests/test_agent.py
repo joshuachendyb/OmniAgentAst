@@ -335,7 +335,7 @@ class TestIntentAgentPreprocessingAndRegistry:
         """测试preprocessor是PreprocessingPipeline实例"""
         from unittest.mock import MagicMock, patch
         from app.services.agent.agent import IntentAgent
-        from app.services.agent.preprocessing import PreprocessingPipeline
+        from app.services.preprocessing import PreprocessingPipeline
         mock_llm = MagicMock()
         mock_tools = MagicMock()
         with patch('app.services.agent.agent.get_session_service'):
@@ -346,7 +346,7 @@ class TestIntentAgentPreprocessingAndRegistry:
         """测试intent_registry是IntentRegistry实例"""
         from unittest.mock import MagicMock, patch
         from app.services.agent.agent import IntentAgent
-        from app.services.agent.intent import IntentRegistry
+        from app.services.intent import IntentRegistry
         mock_llm = MagicMock()
         mock_tools = MagicMock()
         with patch('app.services.agent.agent.get_session_service'):

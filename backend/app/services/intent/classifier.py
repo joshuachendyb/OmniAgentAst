@@ -1,6 +1,14 @@
+# -*- coding: utf-8 -*-
+"""
+Intent Classifier - 意图分类器
+
+基于预处理结果确认意图类型
+Author: 小沈 - 2026-03-22
+"""
+
 from typing import List
 
-from app.services.agent.intent.registry import Intent, IntentRegistry
+from .registry import Intent, IntentRegistry
 
 
 class IntentClassifier:

@@ -32,7 +32,7 @@ class TestIntentModel:
 
     def test_intent_creation_with_all_fields(self):
         """Intent 模型包含所有设计要求的字段"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         intent = Intent(
             name="file",
             description="文件读写、目录管理、文件搜索",
@@ -48,7 +48,7 @@ class TestIntentModel:
 
     def test_intent_safety_checker_optional(self):
         """safety_checker 字段可选（默认None）"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         intent = Intent(
             name="unknown",
             description="未知意图",
@@ -59,14 +59,14 @@ class TestIntentModel:
 
     def test_intent_has_required_fields_from_design(self):
         """验证 Intent 字段与设计文档4.1节一致"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         fields = Intent.model_fields.keys()
         required = {'name', 'description', 'keywords', 'tools', 'safety_checker'}
         assert required.issubset(fields), f"缺少字段: {required - fields}"
 
     def test_intent_keywords_is_list(self):
         """keywords 必须是列表类型"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         intent = Intent(
             name="file", description="文件", keywords=["文件"], tools=["read_file"]
         )
@@ -74,7 +74,7 @@ class TestIntentModel:
 
     def test_intent_tools_is_list(self):
         """tools 必须是列表类型"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         intent = Intent(
             name="file", description="文件", keywords=["文件"], tools=["read_file"]
         )
@@ -86,14 +86,14 @@ class TestIntentRegistry:
 
     def test_registry_creation(self):
         """注册表初始化为空"""
-        from app.services.agent.intent.registry import IntentRegistry
+        from app.services.intent.registry import IntentRegistry
         registry = IntentRegistry()
         assert len(registry.list_all()) == 0
         assert len(registry.get_all_names()) == 0
 
     def test_register_single_intent(self):
         """注册单个意图"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
+        from app.services.intent.registry import Intent, IntentRegistry
         registry = IntentRegistry()
         intent = Intent(name="file", description="文件", keywords=["文件"], tools=["read_file"])
         registry.register(intent)
@@ -102,7 +102,7 @@ class TestIntentRegistry:
 
     def test_register_multiple_intents(self):
         """注册多个意图"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
+        from app.services.intent.registry import Intent, IntentRegistry
         registry = IntentRegistry()
         file_intent = Intent(name="file", description="文件", keywords=["文件"], tools=["read_file"])
         net_intent = Intent(name="network", description="网络", keywords=["搜索"], tools=["http_request"])
@@ -114,7 +114,7 @@ class TestIntentRegistry:
 
     def test_register_overwrites_existing(self):
         """同名意图注册会覆盖（符合设计）"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
+        from app.services.intent.registry import Intent, IntentRegistry
         registry = IntentRegistry()
         intent1 = Intent(name="file", description="v1", keywords=[], tools=[])
         intent2 = Intent(name="file", description="v2", keywords=[], tools=[])
@@ -124,13 +124,13 @@ class TestIntentRegistry:
 
     def test_get_returns_none_for_unknown(self):
         """查询未注册意图返回None"""
-        from app.services.agent.intent.registry import IntentRegistry
+        from app.services.intent.registry import IntentRegistry
         registry = IntentRegistry()
         assert registry.get("nonexistent") is None
 
     def test_list_all_returns_copy(self):
         """list_all 返回副本（避免并发问题）"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
+        from app.services.intent.registry import Intent, IntentRegistry
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="f", keywords=[], tools=[]))
         result1 = registry.list_all()
@@ -139,7 +139,7 @@ class TestIntentRegistry:
 
     def test_get_all_names_returns_copy(self):
         """get_all_names 返回副本"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
+        from app.services.intent.registry import Intent, IntentRegistry
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="f", keywords=[], tools=[]))
         names1 = registry.get_all_names()
@@ -156,7 +156,7 @@ class TestTextCorrector:
 
     def test_corrector_handles_none_input(self):
         """None 输入应返回空字符串"""
-        from app.services.agent.preprocessing.corrector import TextCorrector
+        from app.services.preprocessing.corrector import TextCorrector
         corrector = TextCorrector()
         corrected, errors = corrector.correct(None)
         assert corrected == ""
@@ -164,7 +164,7 @@ class TestTextCorrector:
 
     def test_corrector_handles_empty_string(self):
         """空字符串应返回空字符串"""
-        from app.services.agent.preprocessing.corrector import TextCorrector
+        from app.services.preprocessing.corrector import TextCorrector
         corrector = TextCorrector()
         corrected, errors = corrector.correct("")
         assert corrected == ""
@@ -172,7 +172,7 @@ class TestTextCorrector:
 
     def test_corrector_handles_whitespace_only(self):
         """纯空白字符串应返回空字符串（设计要求）"""
-        from app.services.agent.preprocessing.corrector import TextCorrector
+        from app.services.preprocessing.corrector import TextCorrector
         corrector = TextCorrector()
         corrected, errors = corrector.correct("   ")
         # 设计要求返回空字符串，实际返回原字符串
@@ -183,7 +183,7 @@ class TestTextCorrector:
 
     def test_corrector_returns_tuple(self):
         """correct 方法返回 (修正文本, 修正记录) 元组"""
-        from app.services.agent.preprocessing.corrector import TextCorrector
+        from app.services.preprocessing.corrector import TextCorrector
         mock_corrector = MagicMock()
         mock_corrector.correct.return_value = ("帮我读取文件", ["读起→读取"])
         with patch.dict('sys.modules', {'pycorrector': MagicMock(Corrector=lambda: mock_corrector)}):
@@ -194,7 +194,7 @@ class TestTextCorrector:
 
     def test_corrector_corrects_known_typos(self):
         """修正已知错别字（如：读起→读取）"""
-        from app.services.agent.preprocessing.corrector import TextCorrector
+        from app.services.preprocessing.corrector import TextCorrector
         mock_corrector = MagicMock()
         mock_corrector.correct.return_value = ("帮我读取个文件", ["读起→读取"])
         with patch.dict('sys.modules', {'pycorrector': MagicMock(Corrector=lambda: mock_corrector)}):
@@ -209,13 +209,13 @@ class TestIntentClassifierPreprocessing:
 
     def test_classifier_imports(self):
         """GLiClass IntentClassifier 模块可导入"""
-        from app.services.agent.preprocessing.intent_classifier import IntentClassifier
+        from app.services.preprocessing.intent_classifier import IntentClassifier
         classifier = IntentClassifier()
         assert classifier is not None
 
     def test_classifier_classify_returns_dict(self):
         """classify 方法返回字典"""
-        from app.services.agent.preprocessing.intent_classifier import IntentClassifier
+        from app.services.preprocessing.intent_classifier import IntentClassifier
         classifier = IntentClassifier()
         result = classifier.classify("帮我读取文件", ["file", "network"])
         assert isinstance(result, dict)
@@ -225,7 +225,7 @@ class TestIntentClassifierPreprocessing:
 
     def test_classifier_handles_empty_text(self):
         """空文本应返回 unknown"""
-        from app.services.agent.preprocessing.intent_classifier import IntentClassifier
+        from app.services.preprocessing.intent_classifier import IntentClassifier
         classifier = IntentClassifier()
         result = classifier.classify("", ["file", "network"])
         assert result["intent"] == "unknown"
@@ -233,14 +233,14 @@ class TestIntentClassifierPreprocessing:
 
     def test_classifier_handles_empty_labels(self):
         """空标签列表应返回 unknown"""
-        from app.services.agent.preprocessing.intent_classifier import IntentClassifier
+        from app.services.preprocessing.intent_classifier import IntentClassifier
         classifier = IntentClassifier()
         result = classifier.classify("帮我读取文件", [])
         assert result["intent"] == "unknown"
 
     def test_classifier_handles_none_text(self):
         """None 文本应返回 unknown"""
-        from app.services.agent.preprocessing.intent_classifier import IntentClassifier
+        from app.services.preprocessing.intent_classifier import IntentClassifier
         classifier = IntentClassifier()
         result = classifier.classify(None, ["file"])
         assert result["intent"] == "unknown"
@@ -251,25 +251,25 @@ class TestPreprocessingPipeline:
 
     def test_pipeline_creation(self):
         """流水线创建成功"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         pipeline = PreprocessingPipeline()
         assert pipeline is not None
 
     def test_pipeline_has_corrector(self):
         """流水线包含 corrector 组件"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         pipeline = PreprocessingPipeline()
         assert hasattr(pipeline, 'corrector')
 
     def test_pipeline_has_classifier(self):
         """流水线包含 classifier 组件"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         pipeline = PreprocessingPipeline()
         assert hasattr(pipeline, 'classifier')
 
     def test_pipeline_process_returns_required_fields(self):
         """process 方法返回设计文档要求的所有字段"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         pipeline = PreprocessingPipeline()
         result = pipeline.process("帮我读取文件", ["file", "network"])
         # 设计文档5.1节要求的字段
@@ -282,14 +282,14 @@ class TestPreprocessingPipeline:
 
     def test_pipeline_preserves_original(self):
         """流水线保留原始输入"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         pipeline = PreprocessingPipeline()
         result = pipeline.process("帮我读取文件", ["file", "network"])
         assert result["original"] == "帮我读取文件"
 
     def test_pipeline_handles_correction_failure(self):
         """校对失败时应使用原始文本（异常处理）"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         with patch.object(PreprocessingPipeline, '__init__', lambda self: None):
             pipeline = PreprocessingPipeline.__new__(PreprocessingPipeline)
             pipeline.corrector = MagicMock()
@@ -303,7 +303,7 @@ class TestPreprocessingPipeline:
 
     def test_pipeline_handles_classification_failure(self):
         """意图分类失败时应返回 unknown（异常处理）"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         with patch.object(PreprocessingPipeline, '__init__', lambda self: None):
             pipeline = PreprocessingPipeline.__new__(PreprocessingPipeline)
             pipeline.corrector = MagicMock()
@@ -324,16 +324,16 @@ class TestIntentClassifierLayer:
 
     def test_classifier_creation(self):
         """分类器创建成功，需传入注册表"""
-        from app.services.agent.intent.registry import IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         classifier = IntentClassifier(registry)
         assert classifier is not None
 
     def test_classify_high_confidence(self):
         """高置信度（>=0.7）直接使用 GLiClass 结果"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import Intent, IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="文件", keywords=["文件"], tools=["read_file"]))
         classifier = IntentClassifier(registry, confidence_threshold=0.7)
@@ -346,8 +346,8 @@ class TestIntentClassifierLayer:
 
     def test_classify_low_confidence_falls_back_to_keyword(self):
         """低置信度（<0.7）回退到关键词匹配"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import Intent, IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="文件", keywords=["文件", "读取"], tools=["read_file"]))
         classifier = IntentClassifier(registry, confidence_threshold=0.7)
@@ -360,8 +360,8 @@ class TestIntentClassifierLayer:
 
     def test_classify_returns_empty_when_no_match(self):
         """无法匹配时返回空列表（触发回退机制）"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import Intent, IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="文件", keywords=["文件"], tools=["read_file"]))
         classifier = IntentClassifier(registry, confidence_threshold=0.7)
@@ -373,8 +373,8 @@ class TestIntentClassifierLayer:
 
     def test_classify_returns_list(self):
         """返回值始终是列表（支持多意图）"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import Intent, IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="文件", keywords=["文件"], tools=["read_file"]))
         classifier = IntentClassifier(registry)
@@ -386,8 +386,8 @@ class TestIntentClassifierLayer:
 
     def test_keyword_match_finds_multiple_intents(self):
         """关键词匹配可返回多个意图（多意图拆分）"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import Intent, IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="文件", keywords=["文件"], tools=["read_file"]))
         registry.register(Intent(name="network", description="网络", keywords=["网络"], tools=["http_request"]))
@@ -397,8 +397,8 @@ class TestIntentClassifierLayer:
 
     def test_classify_confidence_threshold_customizable(self):
         """置信度阈值可自定义"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import Intent, IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="文件", keywords=["文件"], tools=["read_file"]))
         classifier = IntentClassifier(registry, confidence_threshold=0.9)
@@ -866,7 +866,7 @@ class TestNoCircularImports:
     def test_import_preprocessing_no_circular(self):
         """导入 preprocessing 模块不产生循环导入"""
         try:
-            import app.services.agent.preprocessing
+            import app.services.preprocessing
             assert True
         except ImportError as e:
             if "circular" in str(e).lower():
@@ -876,7 +876,7 @@ class TestNoCircularImports:
     def test_import_intent_no_circular(self):
         """导入 intent 模块不产生循环导入"""
         try:
-            import app.services.agent.intent
+            import app.services.intent
             assert True
         except ImportError as e:
             if "circular" in str(e).lower():
@@ -916,40 +916,40 @@ class TestDirectoryStructure:
         from pathlib import Path
         assert Path("D:/OmniAgentAs-desk/backend/app/services/agent").exists()
 
-    def test_agent_preprocessing_directory(self):
-        """agent/preprocessing/ 目录存在"""
+    def test_preprocessing_directory(self):
+        """【更新2026-03-22】preprocessing/ 目录存在（独立模块）"""
         from pathlib import Path
-        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/preprocessing").exists()
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/preprocessing").exists()
 
-    def test_agent_preprocessing_corrector(self):
-        """agent/preprocessing/corrector.py 存在"""
+    def test_preprocessing_corrector(self):
+        """【更新2026-03-22】preprocessing/corrector.py 存在"""
         from pathlib import Path
-        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/preprocessing/corrector.py").exists()
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/preprocessing/corrector.py").exists()
 
-    def test_agent_preprocessing_intent_classifier(self):
-        """agent/preprocessing/intent_classifier.py 存在"""
+    def test_preprocessing_intent_classifier(self):
+        """【更新2026-03-22】preprocessing/intent_classifier.py 存在"""
         from pathlib import Path
-        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/preprocessing/intent_classifier.py").exists()
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/preprocessing/intent_classifier.py").exists()
 
-    def test_agent_preprocessing_pipeline(self):
-        """agent/preprocessing/pipeline.py 存在"""
+    def test_preprocessing_pipeline(self):
+        """【更新2026-03-22】preprocessing/pipeline.py 存在"""
         from pathlib import Path
-        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/preprocessing/pipeline.py").exists()
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/preprocessing/pipeline.py").exists()
 
-    def test_agent_intent_directory(self):
-        """agent/intent/ 目录存在"""
+    def test_intent_directory(self):
+        """【更新2026-03-22】intent/ 目录存在（独立模块）"""
         from pathlib import Path
-        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/intent").exists()
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/intent").exists()
 
-    def test_agent_intent_registry(self):
-        """agent/intent/registry.py 存在"""
+    def test_intent_registry(self):
+        """【更新2026-03-22】intent/registry.py 存在"""
         from pathlib import Path
-        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/intent/registry.py").exists()
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/intent/registry.py").exists()
 
-    def test_agent_intent_classifier(self):
-        """agent/intent/classifier.py 存在"""
+    def test_intent_classifier(self):
+        """【更新2026-03-22】intent/classifier.py 存在"""
         from pathlib import Path
-        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/intent/classifier.py").exists()
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/intent/classifier.py").exists()
 
     def test_agent_types_directory(self):
         """agent/types/ 目录存在"""
@@ -1158,12 +1158,12 @@ class TestDirectoryStructureCompleteness:
     def test_agent_intent_directory_exists(self):
         """agent/intent/目录存在"""
         from pathlib import Path
-        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/intent").exists()
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/intent").exists()
 
     def test_agent_preprocessing_directory_exists(self):
         """agent/preprocessing/目录存在"""
         from pathlib import Path
-        assert Path("D:/OmniAgentAs-desk/backend/app/services/agent/preprocessing").exists()
+        assert Path("D:/OmniAgentAs-desk/backend/app/services/preprocessing").exists()
 
     def test_agent_types_directory_exists(self):
         """agent/types/目录存在"""
@@ -1259,22 +1259,22 @@ class TestImportPathCorrectness:
 
     def test_import_intent_registry(self):
         """导入IntentRegistry"""
-        from app.services.agent.intent import IntentRegistry
+        from app.services.intent import IntentRegistry
         assert IntentRegistry is not None
 
     def test_import_intent_classifier(self):
         """导入IntentClassifier"""
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.classifier import IntentClassifier
         assert IntentClassifier is not None
 
     def test_import_preprocessing_pipeline(self):
         """导入PreprocessingPipeline"""
-        from app.services.agent.preprocessing import PreprocessingPipeline
+        from app.services.preprocessing import PreprocessingPipeline
         assert PreprocessingPipeline is not None
 
     def test_import_text_corrector(self):
         """导入TextCorrector"""
-        from app.services.agent.preprocessing.corrector import TextCorrector
+        from app.services.preprocessing.corrector import TextCorrector
         assert TextCorrector is not None
 
     def test_import_base_prompts(self):

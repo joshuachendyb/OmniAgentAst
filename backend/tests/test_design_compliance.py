@@ -30,7 +30,7 @@ class TestChapter5_PreprocessingPipeline:
 
     def test_corrector_returns_tuple(self):
         """设计5.2节：correct方法返回 (修正后文本, 修正记录列表)"""
-        from app.services.agent.preprocessing.corrector import TextCorrector
+        from app.services.preprocessing.corrector import TextCorrector
         corrector = TextCorrector()
         result = corrector.correct(None)
         assert isinstance(result, tuple)
@@ -38,7 +38,7 @@ class TestChapter5_PreprocessingPipeline:
 
     def test_pipeline_process_returns_required_fields(self):
         """设计5.3节：process方法必须返回6个字段"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         pipeline = PreprocessingPipeline()
         result = pipeline.process("测试", ["file", "network"])
         required_fields = {"original", "corrected", "errors", "intent", "confidence", "all_intents"}
@@ -46,14 +46,14 @@ class TestChapter5_PreprocessingPipeline:
 
     def test_pipeline_preserves_original(self):
         """设计5.3节：original字段必须保留原始输入"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         pipeline = PreprocessingPipeline()
         result = pipeline.process("帮我读起个文件", ["file"])
         assert result["original"] == "帮我读起个文件"
 
     def test_pipeline_has_exception_handling(self):
         """设计5.3节：校对失败时应使用原始文本（异常处理）"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         with patch.object(PreprocessingPipeline, '__init__', lambda self: None):
             pipeline = PreprocessingPipeline.__new__(PreprocessingPipeline)
             pipeline.corrector = MagicMock()
@@ -74,8 +74,8 @@ class TestChapter6_IntentClassifier:
 
     def test_classify_returns_list(self):
         """设计6.1节：classify方法必须返回List[Intent]"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import Intent, IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="文件", keywords=["文件"], tools=["read_file"]))
         classifier = IntentClassifier(registry)
@@ -89,16 +89,16 @@ class TestChapter6_IntentClassifier:
 
     def test_confidence_threshold_default_07(self):
         """设计6.1节：置信度阈值默认0.7"""
-        from app.services.agent.intent.registry import IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         classifier = IntentClassifier(registry)
         assert classifier.confidence_threshold == 0.7
 
     def test_keyword_match_fallback(self):
         """设计6.1节：置信度不足时回退到关键词匹配"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import Intent, IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="文件", keywords=["文件", "读取"], tools=["read_file"]))
         classifier = IntentClassifier(registry, confidence_threshold=0.7)
@@ -110,8 +110,8 @@ class TestChapter6_IntentClassifier:
 
     def test_returns_empty_on_failure(self):
         """设计6.1节：全部失败时返回空列表（触发回退机制）"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import Intent, IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="文件", keywords=["文件"], tools=["read_file"]))
         classifier = IntentClassifier(registry)
@@ -123,8 +123,8 @@ class TestChapter6_IntentClassifier:
 
     def test_keyword_match_multiple_intents(self):
         """设计6.1节：关键词匹配可返回多个意图（多意图拆分）"""
-        from app.services.agent.intent.registry import Intent, IntentRegistry
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.registry import Intent, IntentRegistry
+        from app.services.intent.classifier import IntentClassifier
         registry = IntentRegistry()
         registry.register(Intent(name="file", description="文件", keywords=["文件"], tools=["read_file"]))
         registry.register(Intent(name="network", description="网络", keywords=["网络"], tools=["http_request"]))
@@ -149,32 +149,32 @@ class TestChapter12_DirectoryStructure:
         assert not (BASE_DIR / "file_operations").exists()
 
     def test_preprocessing_directory_exists(self):
-        """设计12.3第一步：preprocessing/目录必须存在"""
-        assert (BASE_DIR / "agent" / "preprocessing").exists()
+        """【更新2026-03-22】preprocessing/目录必须存在（独立模块）"""
+        assert (BASE_DIR / "preprocessing").exists()
 
     def test_corrector_exists(self):
-        """设计12.3第二步：corrector.py必须存在"""
-        assert (BASE_DIR / "agent" / "preprocessing" / "corrector.py").exists()
+        """【更新2026-03-22】corrector.py必须存在"""
+        assert (BASE_DIR / "preprocessing" / "corrector.py").exists()
 
     def test_intent_classifier_exists(self):
-        """设计12.3第三步：intent_classifier.py必须存在"""
-        assert (BASE_DIR / "agent" / "preprocessing" / "intent_classifier.py").exists()
+        """【更新2026-03-22】intent_classifier.py必须存在"""
+        assert (BASE_DIR / "preprocessing" / "intent_classifier.py").exists()
 
     def test_pipeline_exists(self):
-        """设计12.3第五步：pipeline.py必须存在"""
-        assert (BASE_DIR / "agent" / "preprocessing" / "pipeline.py").exists()
+        """【更新2026-03-22】pipeline.py必须存在"""
+        assert (BASE_DIR / "preprocessing" / "pipeline.py").exists()
 
     def test_intent_directory_exists(self):
-        """设计12.3第四步：intent/目录必须存在"""
-        assert (BASE_DIR / "agent" / "intent").exists()
+        """【更新2026-03-22】intent/目录必须存在（独立模块）"""
+        assert (BASE_DIR / "intent").exists()
 
     def test_registry_exists_in_intent(self):
-        """设计12.3第四步：registry.py必须在agent/intent/下"""
-        assert (BASE_DIR / "agent" / "intent" / "registry.py").exists()
+        """【更新2026-03-22】registry.py必须在intent/下"""
+        assert (BASE_DIR / "intent" / "registry.py").exists()
 
     def test_classifier_exists_in_intent(self):
-        """设计12.3第四步：classifier.py必须在agent/intent/下"""
-        assert (BASE_DIR / "agent" / "intent" / "classifier.py").exists()
+        """【更新2026-03-22】classifier.py必须在intent/下"""
+        assert (BASE_DIR / "intent" / "classifier.py").exists()
 
     def test_types_directory_exists(self):
         """设计12.3第四步：types/目录必须存在"""
@@ -329,47 +329,47 @@ class TestChapter4_IntentDefinition:
 
     def test_intent_has_name_field(self):
         """设计4.1节：Intent必须有name字段"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         assert "name" in Intent.model_fields
 
     def test_intent_has_description_field(self):
         """设计4.1节：Intent必须有description字段"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         assert "description" in Intent.model_fields
 
     def test_intent_has_keywords_field(self):
         """设计4.1节：Intent必须有keywords字段"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         assert "keywords" in Intent.model_fields
 
     def test_intent_has_tools_field(self):
         """设计4.1节：Intent必须有tools字段"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         assert "tools" in Intent.model_fields
 
     def test_intent_has_safety_checker_field(self):
         """设计4.1节：Intent必须有safety_checker字段"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         assert "safety_checker" in Intent.model_fields
 
     def test_registry_has_register_method(self):
         """设计4.1节：IntentRegistry必须有register方法"""
-        from app.services.agent.intent.registry import IntentRegistry
+        from app.services.intent.registry import IntentRegistry
         assert hasattr(IntentRegistry, 'register')
 
     def test_registry_has_get_method(self):
         """设计4.1节：IntentRegistry必须有get方法"""
-        from app.services.agent.intent.registry import IntentRegistry
+        from app.services.intent.registry import IntentRegistry
         assert hasattr(IntentRegistry, 'get')
 
     def test_registry_has_list_all_method(self):
         """设计4.1节：IntentRegistry必须有list_all方法"""
-        from app.services.agent.intent.registry import IntentRegistry
+        from app.services.intent.registry import IntentRegistry
         assert hasattr(IntentRegistry, 'list_all')
 
     def test_registry_has_get_all_names_method(self):
         """设计4.1节：IntentRegistry必须有get_all_names方法"""
-        from app.services.agent.intent.registry import IntentRegistry
+        from app.services.intent.registry import IntentRegistry
         assert hasattr(IntentRegistry, 'get_all_names')
 
 
