@@ -588,19 +588,15 @@ async def chat_stream(request: ChatRequest):
         # 如果安全检查未通过，直接返回错误
         if not security_check_result.get('is_safe', True):
             risk = security_check_result.get('risk', '未知风险')
-            error_data = {
-                'type': 'error',
-                'code': 'SECURITY_BLOCKED',
-                'message': f'危险操作需确认: {risk}',
-                'error_type': 'security',
-                'details': f"risk_level: {security_check_result.get('risk_level')}",
-                'retryable': False,
-                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'model': request.model,
-                'provider': request.provider
-            }
             logger.info(f"[Step error] 发送error步骤(安全检测拦截)")
-            yield f"data: {json.dumps(error_data)}\n\n"
+            yield create_error_response(
+                error_type="security",
+                message=f'危险操作需确认: {risk}',
+                code='SECURITY_BLOCKED',
+                model=request.model,
+                provider=request.provider,
+                retryable=False
+            )
             return
         
         try:
@@ -674,8 +670,7 @@ async def chat_stream(request: ChatRequest):
                         # 每步检查是否被中断
                         async with running_tasks_lock:
                             if running_tasks.get(task_id, {}).get("cancelled", False):
-                                # 【2026-03-11 重命名】status_value -> incident_value
-                                interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                                interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
                                 logger.info(f"[Step incident] 发送incident步骤(interrupted)")
                                 yield f"data: {json.dumps(interrupted_data)}\n\n"
                                 break
@@ -741,19 +736,15 @@ async def chat_stream(request: ChatRequest):
                             break
                         
                         elif event_type == 'error':
-                            # 错误
-                            error_data = {
-                                'type': 'error',
-                                'code': 'AGENT_ERROR',
-                                'message': event.get('message', '未知错误'),
-                                'error_type': 'agent',
-                                'retryable': event.get('retryable', False),
-                                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                'model': request.model,
-                                'provider': request.provider
-                            }
                             logger.info(f"[Step error] 发送error步骤")
-                            yield f"data: {json.dumps(error_data)}\n\n"
+                            yield create_error_response(
+                                error_type="agent",
+                                message=event.get('message', '未知错误'),
+                                code='AGENT_ERROR',
+                                model=request.model,
+                                provider=request.provider,
+                                retryable=event.get('retryable', False)
+                            )
                             break
                         
                         await asyncio.sleep(0.05)
@@ -794,8 +785,7 @@ async def chat_stream(request: ChatRequest):
             # 客户端断开连接，任务被中断
             async with running_tasks_lock:
                 running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
-            # 【原则4整改】content → message
-            interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '客户端断开连接，任务中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
             logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
             yield f"data: {json.dumps(interrupted_data)}\n\n"
             
