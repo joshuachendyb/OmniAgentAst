@@ -19,6 +19,12 @@ from app.chat_stream.incident_handler import (
     check_and_yield_if_paused,
 )
 from app.chat_stream.chat_stream_query import chat_stream_query
+from app.chat_stream.sse_formatter import (
+    format_sse_event,
+    format_thought_sse,
+    format_action_tool_sse,
+    format_observation_sse,
+)
 
 __all__ = [
     # chat_helpers
@@ -36,4 +42,9 @@ __all__ = [
     "check_and_yield_if_paused",
     # chat_stream_query
     "chat_stream_query",
+    # sse_formatter
+    "format_sse_event",
+    "format_thought_sse",
+    "format_action_tool_sse",
+    "format_observation_sse",
 ]

@@ -47,6 +47,7 @@ from app.chat_stream.chat_stream_query import chat_stream_query  # 【重构优�
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data  # 【重构优化】复用 incident_handler 模块
 from app.chat_stream.error_handler import create_error_response, get_user_friendly_error  # 【重构优化】复用 error_handler 模块
 from app.chat_stream.chat_helpers import create_final_response  # 【重构优化】复用 chat_helpers 模块
+from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse  # 【重构优化】复用 SSE 格式化函数
 from pathlib import Path
 import shutil
 
@@ -679,49 +680,45 @@ async def chat_stream(request: ChatRequest):
                         
                         if event_type == 'thought':
                             # Thought阶段
-                            thought_data = {
-                                'type': 'thought',
-                                'step': event.get('step', 0),
-                                'content': event.get('content', ''),
-                                'reasoning': event.get('reasoning', ''),
-                                'action_tool': event.get('action_tool', ''),
-                                'params': event.get('params', {})
-                            }
+                            step = next_step()
                             logger.info(f"[Step thought] 发送thought步骤")
-                            yield f"data: {json.dumps(thought_data)}\n\n"
-                        
+                            yield format_thought_sse(
+                                step=step,
+                                content=event.get('content', ''),
+                                reasoning=event.get('reasoning', ''),
+                                action_tool=event.get('action_tool', ''),
+                                params=event.get('params', {})
+                            )
+
                         elif event_type == 'action_tool':
                             # Action阶段
-                            action_data = {
-                                'type': 'action_tool',
-                                'step': event.get('step', 0),
-                                'tool_name': event.get('tool_name', ''),
-                                'tool_params': event.get('tool_params', {}),
-                                'execution_status': event.get('execution_status', 'success'),
-                                'summary': event.get('summary', ''),
-                                'raw_data': event.get('raw_data'),
-                                'action_retry_count': event.get('action_retry_count', 0)
-                            }
+                            step = next_step()
                             logger.info(f"[Step action_tool] 发送action_tool步骤(执行工具)")
-                            yield f"data: {json.dumps(action_data)}\n\n"
-                        
+                            yield format_action_tool_sse(
+                                step=step,
+                                tool_name=event.get('tool_name', ''),
+                                tool_params=event.get('tool_params', {}),
+                                execution_status=event.get('execution_status', 'success'),
+                                summary=event.get('summary', ''),
+                                raw_data=event.get('raw_data'),
+                                action_retry_count=event.get('action_retry_count', 0)
+                            )
+
                         elif event_type == 'observation':
                             # Observation阶段
-                            # 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
-                            observation_data = {
-                                'type': 'observation',
-                                'step': event.get('step', 0),
-                                'obs_execution_status': event.get('execution_status', 'success'),
-                                'obs_summary': event.get('summary', ''),
-                                'obs_raw_data': event.get('raw_data'),
-                                'content': event.get('content', ''),
-                                'obs_reasoning': event.get('reasoning', ''),
-                                'obs_action_tool': event.get('action_tool', ''),
-                                'obs_params': event.get('params', {}),
-                                'is_finished': event.get('is_finished', False)
-                            }
+                            step = next_step()
                             logger.info(f"[Step observation] 发送observation步骤")
-                            yield f"data: {json.dumps(observation_data)}\n\n"
+                            yield format_observation_sse(
+                                step=step,
+                                execution_status=event.get('execution_status', 'success'),
+                                summary=event.get('summary', ''),
+                                content=event.get('content', ''),
+                                reasoning=event.get('reasoning', ''),
+                                action_tool=event.get('action_tool', ''),
+                                params=event.get('params', {}),
+                                is_finished=event.get('is_finished', False),
+                                raw_data=event.get('raw_data')
+                            )
                         
                         elif event_type == 'final':
                             # 最终结果：使用 create_final_response
