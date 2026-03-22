@@ -39,16 +39,30 @@ class PreprocessingPipeline:
                 all_intents: 所有意图及置信度
             }
         """
+        # 步骤1: 语句校对
         try:
             corrected, errors = self.corrector.correct(user_input)
+            logger.info(
+                f"[Preprocessing] Corrector - "
+                f"input: '{user_input}' -> "
+                f"output: '{corrected}', errors: {errors}"
+            )
         except Exception as e:
-            logger.warning(f"Correction failed: {e}")
+            logger.warning(f"[Preprocessing] Corrector failed: {e}")
             corrected, errors = user_input, []
 
+        # 步骤2: 意图检测
         try:
             intent_result = self.classifier.classify(corrected, intent_labels)
+            logger.info(
+                f"[Preprocessing] Classifier - "
+                f"input: '{corrected}', labels: {intent_labels} -> "
+                f"intent: '{intent_result['intent']}', "
+                f"confidence: {intent_result['confidence']:.4f}, "
+                f"all_intents: {intent_result['all_intents']}"
+            )
         except Exception as e:
-            logger.warning(f"Classification failed: {e}")
+            logger.warning(f"[Preprocessing] Classifier failed: {e}")
             intent_result = {"intent": "unknown", "confidence": 0.0, "all_intents": {}}
 
         return {
