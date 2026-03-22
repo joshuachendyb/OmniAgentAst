@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-FileOperationAgent - 文件操作 Agent
+IntentAgent - 通用意图 Agent
 
-继承 BaseAgent，实现 ReAct 循环的文件操作智能体
+继承 BaseAgent，实现 ReAct 循环的通用意图智能体，
+通过 intent_type 参数决定加载哪套工具/安全检查/Prompt，
+各意图共用同一套 ReAct 循环逻辑
 
 【重构 Phase 3】：
 - 删除重复的 ToolParser、ToolExecutor、AgentStatus、Step、AgentResult 定义
 - 继承 BaseAgent，实现抽象方法
 - 保留文件专用逻辑（session管理、prompts、rollback）
+
+【重命名】2026-03-21 小沈 - FileOperationAgent → IntentAgent
 
 Author: 小沈 - 2026-03-21
 """
@@ -29,12 +33,13 @@ from app.services.agent.preprocessing import PreprocessingPipeline
 from app.utils.logger import logger
 
 
-class FileOperationAgent(BaseAgent):
+class IntentAgent(BaseAgent):
     """
-    文件操作 Agent，继承 BaseAgent
+    通用意图 Agent，继承 BaseAgent
     
     实现完整的 Thought-Action-Observation 循环，
-    管理文件操作会话和状态
+    通过 intent_type 参数决定加载哪套工具/安全检查/Prompt，
+    各意图共用同一套 ReAct 循环逻辑
     """
     
     def __init__(
@@ -50,11 +55,11 @@ class FileOperationAgent(BaseAgent):
         model: Optional[str] = None
     ):
         """
-        初始化 FileOperationAgent
+        初始化 IntentAgent
         
         Args:
             llm_client: LLM 客户端函数，接收 message 和 history，返回 response
-            session_id: 会话 ID（必需）- 用于文件操作安全追踪和审计
+            session_id: 会话 ID（必需）- 用于操作安全追踪和审计
             file_tools: 文件工具实例（可选，默认创建新实例）
             max_steps: 最大执行步数
             use_function_calling: 是否使用 Function Calling 模式
@@ -118,13 +123,12 @@ class FileOperationAgent(BaseAgent):
                 model=model,
                 auto_detect=True
             )
-            logger.info(f"FileOperationAgent initialized (session: {session_id}, adapter=LLMAdapter, model={model})")
+            logger.info(f"IntentAgent initialized (session: {session_id}, adapter=LLMAdapter, model={model})")
         else:
-            self.adapter = None
-            if use_function_calling:
-                logger.info(f"FileOperationAgent initialized (session: {session_id}, function_calling=True, tools_count={len(self.tools)})")
+            if use_function_calling and tools:
+                logger.info(f"IntentAgent initialized (session: {session_id}, function_calling=True, tools_count={len(self.tools)})")
             else:
-                logger.info(f"FileOperationAgent initialized (session: {session_id})")
+                logger.info(f"IntentAgent initialized (session: {session_id})")
     
     def _register_default_intents(self):
         """注册默认意图类型"""

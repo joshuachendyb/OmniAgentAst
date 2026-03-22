@@ -66,8 +66,12 @@ def __getattr__(name: str):
         from .tools import FileTools, get_file_tools
         return locals()[name]
     if name == "FileOperationAgent":
-        from .agent import FileOperationAgent
-        return FileOperationAgent
+        # 向后兼容：保持原有名称可用
+        from .agent import IntentAgent
+        return IntentAgent
+    if name == "IntentAgent":
+        from .agent import IntentAgent
+        return IntentAgent
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -91,5 +95,6 @@ __all__ = [
     "get_session_service",
     "FileTools",
     "get_file_tools",
-    "FileOperationAgent",
+    "IntentAgent",  # 新名称
+    "FileOperationAgent",  # 向后兼容
 ]
