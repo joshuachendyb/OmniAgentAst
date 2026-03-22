@@ -5,6 +5,8 @@
 # 从chat_stream.py中提取的共享函数，供types模块使用
 
 from datetime import datetime
+import json
+from typing import Optional
 
 
 def create_timestamp() -> int:
@@ -26,3 +28,34 @@ def get_provider_display_name(provider: str) -> str:
         return provider
     else:
         return provider
+
+
+def create_final_response(
+    content: str,
+    model: str,
+    provider: str,
+    display_name: Optional[str] = None,
+    step: Optional[int] = None
+) -> str:
+    """
+    创建统一的 final 响应格式
+    
+    Args:
+        content: 最终内容
+        model: 模型名称
+        provider: 提供商
+        display_name: 显示名称（可选）
+        step: 步骤号
+    
+    Returns:
+    SSE 格式的 final 响应字符串
+    """
+    response = {
+        'type': 'final',
+        'content': content,
+        'display_name': display_name if display_name else f"{provider} ({model})" or None,
+        'timestamp': create_timestamp(),
+    }
+    if step is not None:
+        response['step'] = step
+    return f"data: {json.dumps(response)}\n\n"

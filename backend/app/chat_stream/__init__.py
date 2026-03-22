@@ -6,7 +6,7 @@ chat_stream 模块
 Author: 小沈 - 2026-03-22
 """
 
-from app.chat_stream.chat_helpers import create_timestamp, get_provider_display_name
+from app.chat_stream.chat_helpers import create_timestamp, get_provider_display_name, create_final_response
 from app.chat_stream.error_handler import (
     create_error_response,
     get_user_friendly_error,
@@ -18,11 +18,13 @@ from app.chat_stream.incident_handler import (
     check_and_yield_if_interrupted,
     check_and_yield_if_paused,
 )
+from app.chat_stream.chat_stream_query import chat_stream_query
 
 __all__ = [
     # chat_helpers
     "create_timestamp",
     "get_provider_display_name",
+    "create_final_response",
     # error_handler
     "create_error_response",
     "get_user_friendly_error",
@@ -32,4 +34,6 @@ __all__ = [
     "create_incident_data",
     "check_and_yield_if_interrupted",
     "check_and_yield_if_paused",
+    # chat_stream_query
+    "chat_stream_query",
 ]
