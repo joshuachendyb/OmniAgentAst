@@ -328,11 +328,15 @@ class IntentAgent(BaseAgent):
         self.llm_call_count = 0
         logger.info(f"[LLM Counter] Agent run started, LLM counter reset to 0")
         
+        # 获取 session_id 用于日志追踪
+        session_id = self.session_id or ""
+        
         # 【设计要求】使用预处理流水线预处理用户输入
         try:
             preprocessed = self.preprocessor.process(
                 task,
-                list(self.intent_registry.get_all_names())
+                list(self.intent_registry.get_all_names()),
+                session_id=session_id
             )
             logger.info(f"[Agent] Preprocessed: intent={preprocessed.get('intent')}, confidence={preprocessed.get('confidence')}")
         except Exception as e:
@@ -346,8 +350,7 @@ class IntentAgent(BaseAgent):
         else:
             logger.warning(f"[Agent] Intent definition not found for: {self.intent_type}")
         
-        # 使用局部变量管理 session
-        session_id = self.session_id
+        # 使用局部变量管理 session（session_id 在预处理前已获取）
         session_created_by_this_run = False
         
         # 确保 session 已创建

@@ -352,3 +352,81 @@ class TestIntentAgentPreprocessingAndRegistry:
         with patch('app.services.agent.agent.get_session_service'):
             agent = IntentAgent(llm_client=mock_llm, session_id="test", file_tools=mock_tools)
             assert isinstance(agent.intent_registry, IntentRegistry)
+
+    def test_preprocessor_receives_session_id(self):
+        """测试run()调用preprocessor.process()时传入正确的session_id"""
+        from unittest.mock import MagicMock, patch, AsyncMock
+        from app.services.agent.agent import IntentAgent
+        mock_llm = MagicMock()
+        mock_tools = MagicMock()
+        mock_llm.chat.return_value = MagicMock(
+            content='{"thought": "done", "action": "finish", "action_input": null}',
+            usage=MagicMock(total_tokens=100)
+        )
+        
+        with patch('app.services.agent.agent.get_session_service') as mock_session:
+            mock_session_service = MagicMock()
+            mock_session.return_value = mock_session_service
+            
+            agent = IntentAgent(
+                llm_client=mock_llm,
+                session_id="test-session-123",
+                file_tools=mock_tools
+            )
+            
+            # mock preprocessor.process
+            original_process = agent.preprocessor.process
+            with patch.object(agent.preprocessor, 'process', wraps=original_process) as mock_process:
+                mock_process.return_value = {
+                    "original": "hello",
+                    "corrected": "hello",
+                    "errors": [],
+                    "intent": "general",
+                    "confidence": 0.9,
+                    "all_intents": {}
+                }
+                
+                # 运行agent
+                import asyncio
+                result = asyncio.run(agent.run("hello"))
+                
+                # 验证process被调用，且第三个参数包含session_id
+                mock_process.assert_called_once()
+                call_args = mock_process.call_args
+                
+                # 检查session_id参数被传入
+                assert call_args.kwargs.get('session_id') == "test-session-123", \
+                    f"preprocessor.process未收到正确的session_id，实际调用参数: {call_args}"
+
+    def test_preprocessor_session_id_parameter_exists(self):
+        """测试preprocessor.process()调用时包含session_id参数名"""
+        from unittest.mock import MagicMock, patch
+        from app.services.agent.agent import IntentAgent
+        mock_llm = MagicMock()
+        mock_tools = MagicMock()
+        mock_llm.chat.return_value = MagicMock(
+            content='{"thought": "done", "action": "finish", "action_input": null}',
+            usage=MagicMock(total_tokens=100)
+        )
+        
+        with patch('app.services.agent.agent.get_session_service'):
+            agent = IntentAgent(llm_client=mock_llm, session_id="test-param-check", file_tools=mock_tools)
+            
+            original_process = agent.preprocessor.process
+            with patch.object(agent.preprocessor, 'process', wraps=original_process) as mock_process:
+                mock_process.return_value = {
+                    "original": "test",
+                    "corrected": "test",
+                    "errors": [],
+                    "intent": "general",
+                    "confidence": 0.9,
+                    "all_intents": {}
+                }
+                
+                import asyncio
+                result = asyncio.run(agent.run("test"))
+                
+                # 验证调用时包含session_id参数名
+                call_args = mock_process.call_args
+                assert 'session_id' in call_args.kwargs, \
+                    f"调用preprocessor.process()时未传入session_id参数，实际调用: {call_args}"

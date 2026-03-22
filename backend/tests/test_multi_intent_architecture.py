@@ -1291,3 +1291,223 @@ class TestImportPathCorrectness:
         """导入SessionStatsMixin"""
         from app.services.agent.session_base import SessionStatsMixin
         assert SessionStatsMixin is not None
+
+
+# ============================================================================
+# 补充测试：参数传递验证（小健补充）
+# ============================================================================
+
+class TestPipelineParameterPassing:
+    """测试 PreprocessingPipeline 内部参数传递"""
+
+    def test_corrector_receives_exact_user_input(self):
+        """验证 corrector.correct() 被调用时传入精确的 user_input"""
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
+        pipeline = PreprocessingPipeline()
+        
+        with patch.object(pipeline.corrector, 'correct') as mock_correct:
+            mock_correct.return_value = ("修正后", [])
+            pipeline.classifier = MagicMock()
+            pipeline.classifier.classify.return_value = {"intent": "file", "confidence": 0.8, "all_intents": {}}
+            
+            test_input = "帮我读起个文件"
+            pipeline.process(test_input, ["file", "network"])
+            
+            # 验证 correct 被调用，且参数是 test_input
+            mock_correct.assert_called_once()
+            call_args = mock_correct.call_args[0]
+            assert call_args[0] == test_input, \
+                f"correct() 未收到正确的 user_input，期望: '{test_input}'，实际: '{call_args[0]}'"
+
+    def test_classifier_receives_corrected_text_not_original(self):
+        """验证 classifier.classify() 使用的是修正后的文本，而非原始文本"""
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
+        pipeline = PreprocessingPipeline()
+        
+        with patch.object(pipeline.corrector, 'correct') as mock_correct:
+            mock_correct.return_value = ("帮我读取个文件", ["读起→读取"])
+            
+            with patch.object(pipeline.classifier, 'classify') as mock_classify:
+                mock_classify.return_value = {"intent": "file", "confidence": 0.9, "all_intents": {}}
+                
+                pipeline.process("帮我读起个文件", ["file", "network"])
+                
+                # 验证 classify 被调用时用的是 corrected 而非 original
+                call_args = mock_classify.call_args[0]
+                assert call_args[0] == "帮我读取个文件", \
+                    f"classify() 应该接收修正后的文本 '帮我读取个文件'，实际收到: '{call_args[0]}'"
+                assert call_args[0] != "帮我读起个文件", \
+                    "classify() 不应该接收原始错别字文本"
+
+    def test_classifier_receives_intent_labels(self):
+        """验证 classifier.classify() 收到正确的 intent_labels"""
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
+        pipeline = PreprocessingPipeline()
+        
+        with patch.object(pipeline.corrector, 'correct') as mock_correct:
+            mock_correct.return_value = ("test", [])
+            
+            with patch.object(pipeline.classifier, 'classify') as mock_classify:
+                mock_classify.return_value = {"intent": "file", "confidence": 0.9, "all_intents": {}}
+                
+                test_labels = ["file", "network", "desktop"]
+                pipeline.process("test", test_labels)
+                
+                # 验证 classify 收到的第二个参数是 intent_labels
+                call_args = mock_classify.call_args[0]
+                assert call_args[1] == test_labels, \
+                    f"classify() 未收到正确的 labels，期望: {test_labels}，实际: {call_args[1]}"
+
+    def test_session_id_flows_to_pipeline(self):
+        """验证 session_id 正确传递到 pipeline.process()"""
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
+        from unittest.mock import MagicMock, patch
+        
+        pipeline = PreprocessingPipeline()
+        
+        # mock corrector 和 classifier
+        with patch.object(pipeline.corrector, 'correct') as mock_correct:
+            mock_correct.return_value = ("test", [])
+            
+            with patch.object(pipeline.classifier, 'classify') as mock_classify:
+                mock_classify.return_value = {"intent": "file", "confidence": 0.9, "all_intents": {}}
+                
+                # 调用 process 时传入 session_id
+                result = pipeline.process("test", ["file"], session_id="test-session-123")
+                
+                # 验证结果正确
+                assert result is not None
+                assert "original" in result
+
+    def test_pipeline_data_flow_chain(self):
+        """验证数据流链: user_input -> corrector -> classifier -> result"""
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
+        from unittest.mock import MagicMock, patch
+        
+        pipeline = PreprocessingPipeline()
+        
+        # 定义输入
+        original_input = "帮我读起个文件并搜索"
+        corrected_output = "帮我读取个文件并搜索"
+        labels = ["file", "network"]
+        
+        with patch.object(pipeline.corrector, 'correct') as mock_correct:
+            mock_correct.return_value = (corrected_output, ["读起→读取"])
+            
+            with patch.object(pipeline.classifier, 'classify') as mock_classify:
+                mock_classify.return_value = {
+                    "intent": "file",
+                    "confidence": 0.85,
+                    "all_intents": {"file": 0.85, "network": 0.15}
+                }
+                
+                result = pipeline.process(original_input, labels)
+                
+                # 验证 corrector 收到原始输入
+                assert mock_correct.call_args[0][0] == original_input
+                
+                # 验证 classifier 收到修正后的文本
+                assert mock_classify.call_args[0][0] == corrected_output
+                
+                # 验证 classifier 收到正确的 labels
+                assert mock_classify.call_args[0][1] == labels
+                
+                # 验证结果包含所有必需字段
+                assert result["original"] == original_input
+                assert result["corrected"] == corrected_output
+                assert result["intent"] == "file"
+                assert result["confidence"] == 0.85
+
+
+class TestAgentPreprocessorParameterPassing:
+    """测试 Agent 调用 preprocessor 时的参数传递"""
+
+    def test_agent_passes_session_id_to_preprocessor(self):
+        """验证 Agent.run() 调用 preprocessor.process() 时传入 session_id"""
+        from unittest.mock import MagicMock, patch, AsyncMock
+        from app.services.agent.agent import IntentAgent
+        
+        mock_llm = MagicMock()
+        mock_tools = MagicMock()
+        
+        with patch('app.services.agent.agent.get_session_service') as mock_session:
+            mock_session_service = MagicMock()
+            mock_session.return_value = mock_session_service
+            
+            agent = IntentAgent(
+                llm_client=mock_llm,
+                session_id="agent-test-session-456",
+                file_tools=mock_tools
+            )
+            
+            # mock preprocessor.process
+            with patch.object(agent.preprocessor, 'process') as mock_process:
+                mock_process.return_value = {
+                    "original": "hello",
+                    "corrected": "hello",
+                    "errors": [],
+                    "intent": "general",
+                    "confidence": 0.9,
+                    "all_intents": {}
+                }
+                
+                # mock LLM 响应
+                mock_llm.chat = AsyncMock(return_value='{"thought": "done", "action": "finish", "params": {}}')
+                
+                # 运行 agent
+                import asyncio
+                asyncio.run(agent.run("hello"))
+                
+                # 验证 preprocessor.process 被调用
+                mock_process.assert_called_once()
+                
+                # 验证 session_id 被传入
+                call_kwargs = mock_process.call_args.kwargs
+                assert "session_id" in call_kwargs, \
+                    "preprocessor.process() 调用时必须传入 session_id 参数"
+                assert call_kwargs["session_id"] == "agent-test-session-456", \
+                    f"session_id 不正确，期望: 'agent-test-session-456'，实际: {call_kwargs['session_id']}"
+
+    def test_agent_passes_intent_labels_to_preprocessor(self):
+        """验证 Agent.run() 调用 preprocessor.process() 时传入 intent_labels"""
+        from unittest.mock import MagicMock, patch, AsyncMock
+        from app.services.agent.agent import IntentAgent
+        
+        mock_llm = MagicMock()
+        mock_tools = MagicMock()
+        
+        with patch('app.services.agent.agent.get_session_service') as mock_session:
+            mock_session_service = MagicMock()
+            mock_session.return_value = mock_session_service
+            
+            agent = IntentAgent(
+                llm_client=mock_llm,
+                session_id="agent-test-789",
+                file_tools=mock_tools
+            )
+            
+            with patch.object(agent.preprocessor, 'process') as mock_process:
+                mock_process.return_value = {
+                    "original": "test",
+                    "corrected": "test",
+                    "errors": [],
+                    "intent": "file",
+                    "confidence": 0.9,
+                    "all_intents": {}
+                }
+                
+                mock_llm.chat = AsyncMock(return_value='{"thought": "done", "action": "finish", "params": {}}')
+                
+                import asyncio
+                asyncio.run(agent.run("test"))
+                
+                # 验证 intent_labels 被传入
+                call_kwargs = mock_process.call_args.kwargs
+                call_args = mock_process.call_args.args
+                
+                # 第二个参数应该是 intent_labels 列表
+                assert len(call_args) >= 2, "preprocessor.process() 应该至少有2个位置参数"
+                labels = call_args[1]
+                assert isinstance(labels, list), f"intent_labels 应该是列表，实际: {type(labels)}"
+                assert len(labels) > 0, "intent_labels 不应该为空"
+                assert "file" in labels, "intent_labels 应该包含 'file'"

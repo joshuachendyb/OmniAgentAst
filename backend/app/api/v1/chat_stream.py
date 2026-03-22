@@ -55,6 +55,12 @@ from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name  # ⭐ 【小沈添加 2026-03-03】
 from app.utils.retry_controller import RetryController  # 【小沈-2026-03-14添加】统一的空闲超时和重试控制器
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError  # 【小沈-2026-03-14添加】通用的空闲超时异步迭代器
+from app.chat_stream import (
+    create_timestamp,
+    get_provider_display_name,
+    create_error_response,
+    create_incident_data,
+)  # 【小沈 2026-03-22】从统一模块导入
 from pathlib import Path
 import shutil
 
@@ -62,99 +68,9 @@ import shutil
 # 目的：解决页面切换/刷新导致的数据丢失问题 - 后端自动保存作为核心保障
 from app.api.v1 import sessions
 
-# Provider 显示名称映射
-# 从配置文件验证Provider是否存在 - 小新第二修复 2026-03-01 17:04:23
-def get_provider_display_name(provider: str) -> str:
-    """
-    直接返回provider名称，不做任何映射转换
-    只验证provider是否在配置文件中存在
-    """
-    from app.config import get_config
-    config = get_config()
-    ai_config = config.get('ai', {})
-    
-    # 如果provider在配置文件中存在，直接返回原始名称
-    if provider in ai_config:
-        return provider
-    else:
-        return provider
-
 # ============================================================
-# 统一错误处理工具函数 - 小沈代修改【Phase4重构】
+# 统一错误处理工具函数 - 已移至 app/chat_stream/error_handler.py
 # ============================================================
-
-def create_error_response(
-    error_type: str,
-    message: str,
-    code: str = "INTERNAL_ERROR",
-    model: Optional[str] = None,
-    provider: Optional[str] = None,
-    details: Optional[str] = None,
-    stack: Optional[str] = None,
-    retryable: bool = False,
-    retry_after: Optional[int] = None,
-    step: Optional[int] = None
-) -> str:
-    """
-    创建统一的错误响应格式
-    
-    Args:
-        error_type: 错误类型（如 timeout_error, connection_error 等）
-        message: 用户友好的错误信息
-        code: 错误码（如 TIMEOUT, NOT_FOUND, SECURITY_BLOCKED）
-        model: 模型名称（可选）
-        provider: 提供商（可选）
-        details: 详细错误信息（可选）
-        stack: 堆栈信息（可选，仅用于调试）
-        retryable: 是否可重试（可选）
-        retry_after: 重试等待秒数（可选）
-        step: 步骤序号（可选）
-    
-    Returns:
-        SSE 格式的错误响应字符串
-    """
-    response: Dict[str, Any] = {
-        'type': 'error',
-        'code': code,
-        'message': message,
-        'error_type': error_type
-    }
-    if step is not None:
-        response['step'] = step
-    if model is not None:
-        response['model'] = model
-    if provider is not None:
-        response['provider'] = provider
-    if details:
-        response['details'] = details
-    if stack:
-        response['stack'] = stack
-    if retryable:
-        response['retryable'] = retryable  # type: ignore
-    if retry_after is not None:
-        response['retry_after'] = retry_after  # type: ignore
-    # 添加timestamp字段
-    response['timestamp'] = create_timestamp()
-    return f"data: {json.dumps(response)}\n\n"
-
-
-def create_timestamp() -> int:
-    """生成统一的时间戳（毫秒）"""
-    return int(datetime.now().timestamp() * 1000)
-
-
-def create_incident_data(incident_value: str, message: str, step: Optional[int] = None) -> dict:
-    """创建统一的incident数据"""
-    data = {
-        'type': 'incident',
-        'incident_value': incident_value,
-        'message': message,
-        'timestamp': create_timestamp()
-    }
-    if step is not None:
-        data['step'] = step
-    return data
-
 
 # ============================================================
 # Start1 函数 - 小沈添加【2026-03-19】
