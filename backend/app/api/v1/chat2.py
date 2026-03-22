@@ -43,6 +43,10 @@ from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name  # ⭐ 【小沈添加 2026-03-03】
 from app.utils.retry_controller import RetryController  # 【小沈-2026-03-14添加】统一的空闲超时和重试控制器
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError  # 【小沈-2026-03-14添加】通用的空闲超时异步迭代器
+from app.chat_stream.chat_stream_query import chat_stream_query  # 【重构优化】复用 chat_stream_query 模块
+from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data  # 【重构优化】复用 incident_handler 模块
+from app.chat_stream.error_handler import create_error_response, get_user_friendly_error  # 【重构优化】复用 error_handler 模块
+from app.chat_stream.chat_helpers import create_final_response  # 【重构优化】复用 chat_helpers 模块
 from pathlib import Path
 import shutil
 
@@ -63,209 +67,9 @@ def get_provider_display_name(provider: str) -> str:
     else:
         return provider
 
-# ============================================================
-# 统一错误处理工具函数 - 小沈代修改【Phase4重构】
-# ============================================================
+# 【重构优化】create_error_response, get_user_friendly_error 已移至 app.chat_stream.error_handler
 
-def create_error_response(
-    error_type: str,
-    message: str,
-    code: str = "INTERNAL_ERROR",
-    model: Optional[str] = None,
-    provider: Optional[str] = None,
-    details: Optional[str] = None,
-    stack: Optional[str] = None,
-    retryable: bool = False,
-    retry_after: Optional[int] = None
-) -> str:
-    """
-    创建统一的错误响应格式
-    
-    Args:
-        error_type: 错误类型（如 timeout_error, connection_error 等）
-        message: 用户友好的错误信息
-        code: 错误码（如 TIMEOUT, NOT_FOUND, SECURITY_BLOCKED）
-        model: 模型名称（可选）
-        provider: 提供商（可选）
-        details: 详细错误信息（可选）
-        stack: 堆栈信息（可选，仅用于调试）
-        retryable: 是否可重试（可选）
-        retry_after: 重试等待秒数（可选）
-    
-    Returns:
-        SSE 格式的错误响应字符串
-    """
-    response: Dict[str, Any] = {
-        'type': 'error',
-        'code': code,
-        'message': message,
-        'error_type': error_type
-    }
-    if model is not None:
-        response['model'] = model
-    if provider is not None:
-        response['provider'] = provider
-    if details:
-        response['details'] = details
-    if stack:
-        response['stack'] = stack
-    if retryable:
-        response['retryable'] = retryable  # type: ignore
-    if retry_after is not None:
-        response['retry_after'] = retry_after  # type: ignore
-    # 添加timestamp字段
-    response['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    return f"data: {json.dumps(response)}\n\n"
-
-
-def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
-    """
-    获取用户友好的错误信息
-    
-    Args:
-        error: 异常对象
-    
-    Returns:
-        错误信息字典，包含 code, message, error_type, retryable
-    """
-    error_type = type(error).__name__
-    error_msg = str(error).lower()
-    
-    # 【小沈-2026-03-14修复】优先处理 IdleTimeoutError
-    from app.utils.idle_timeout import IdleTimeoutError
-    if isinstance(error, IdleTimeoutError):
-        return {
-            "code": "IDLE_TIMEOUT",
-            "message": "请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试",
-            "error_type": "timeout",
-            "retryable": True,
-            "retry_after": 5
-        }
-    
-    # 根据错误类型返回用户友好的错误信息
-    if error_type == "TimeoutError" or "timeout" in error_msg:
-        return {
-            "code": "TIMEOUT",
-            "message": "请求超时，请重试",
-            "error_type": "network",
-            "retryable": True,
-            "retry_after": 5
-        }
-    elif error_type == "ConnectionError" or "connection" in error_msg:
-        return {
-            "code": "CONNECTION_ERROR",
-            "message": "网络连接失败，请检查网络",
-            "error_type": "network",
-            "retryable": True,
-            "retry_after": 10
-        }
-    elif error_type == "HTTPError" or "http" in error_msg:
-        return {
-            "code": "HTTP_ERROR",
-            "message": "服务器响应异常，请稍后重试",
-            "error_type": "network",
-            "retryable": True,
-            "retry_after": 10
-        }
-    elif error_type == "ValueError":
-        return {
-            "code": "VALIDATION_ERROR",
-            "message": "参数值错误，请检查输入",
-            "error_type": "validation",
-            "retryable": False
-        }
-    elif "not found" in error_msg or "不存在" in error_msg:
-        return {
-            "code": "NOT_FOUND",
-            "message": "文件或资源不存在",
-            "error_type": "file_system",
-            "retryable": False
-        }
-    elif "permission" in error_msg or "权限" in error_msg:
-        return {
-            "code": "PERMISSION_DENIED",
-            "message": "权限不足，无法执行操作",
-            "error_type": "security",
-            "retryable": False
-        }
-    else:
-        # 其他错误返回通用信息，不泄露技术细节
-        return {
-            "code": "UNKNOWN_ERROR",
-            "message": "AI 处理异常，请稍后重试",
-            "error_type": "unknown",
-            "retryable": True,
-            "retry_after": 5
-        }
-
-
-# ============================================================
-# 统一中断检查工具函数 - 小沈代修改【修复问题 5】
-# ============================================================
-
-async def check_and_yield_if_interrupted(
-    task_id: str, 
-    running_tasks: dict, 
-    running_tasks_lock: asyncio.Lock
-) -> tuple[bool, str]:
-    """
-    检查任务是否被中断，如果是则返回中断消息
-    
-    Args:
-        task_id: 任务 ID
-        running_tasks: 运行中任务字典
-        running_tasks_lock: 任务锁
-    
-    Returns:
-        (is_interrupted, interrupt_message) 元组
-        - is_interrupted: 是否被中断
-        - interrupt_message: 中断消息（如果未被中断则为空字符串）
-    """
-    async with running_tasks_lock:
-        if running_tasks.get(task_id, {}).get("cancelled", False):
-            # 【Phase4重构】使用新status格式
-            return True, f"data: {json.dumps({'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})}\n\n"
-    return False, ""
-
-
-async def check_and_yield_if_paused(task_id: str, running_tasks: dict, running_tasks_lock: asyncio.Lock) -> AsyncGenerator[str, None]:
-    """
-    检查任务是否被暂停，如果是则发送paused事件并等待恢复
-    
-    Args:
-        task_id: 任务ID
-        running_tasks: 运行中任务字典
-        running_tasks_lock: 任务锁
-    
-    Yields:
-        SSE 格式的事件字符串 (paused/resumed)
-    """
-    while True:
-        async with running_tasks_lock:
-            is_paused = running_tasks.get(task_id, {}).get("paused", False)
-            is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
-            
-            if is_cancelled:
-                return  # 暂停期间被取消了
-            
-            if not is_paused:
-                # 不再暂停，恢复发送
-                if running_tasks.get(task_id, {}).get("_was_paused", False):
-                    # 【问题5修复】统一使用type='incident' + incident_value
-                    yield f"data: {json.dumps({'type': 'incident', 'incident_value': 'resumed', 'message': '任务已恢复', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})}\n\n"
-                    running_tasks[task_id]["_was_paused"] = False
-                return
-        
-        # 暂停中，等待恢复
-        if is_paused and not running_tasks.get(task_id, {}).get("_was_paused", False):
-            # 刚进入暂停状态，发送paused事件
-            # 【问题5修复】统一使用type='incident' + incident_value
-            async with running_tasks_lock:
-                running_tasks[task_id]["_was_paused"] = True
-            yield f"data: {json.dumps({'type': 'incident', 'incident_value': 'paused', 'message': '任务已暂停', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})}\n\n"
-        
-        await asyncio.sleep(0.5)  # 每0.5秒检查一次
-
+# 【重构优化】check_and_yield_if_interrupted, check_and_yield_if_paused 已移至 app.chat_stream.incident_handler
 
 # ============================================================
 # observation 清洗函数 - 小沈添加【将复杂的observation简化为可读文本】
@@ -324,36 +128,7 @@ def simplify_observation(observation: Any) -> str:
         return str(result)[:200]
 
 
-# ============================================================
-# 统一 final 响应工具函数 - 小沈代修改【修复问题 6】
-# ============================================================
-
-def create_final_response(
-    content: str,
-    model: str,
-    provider: str,
-    display_name: Optional[str] = None
-) -> str:
-    """
-    创建统一的 final 响应格式
-    
-    Args:
-        content: 最终内容
-        model: 模型名称
-        provider: 提供商
-        display_name: 显示名称（可选）
-    
-    Returns:
-    SSE 格式的 final 响应字符串
-    """
-    # 【问题5修复】final使用content字段（遵循设计文档7.5要求）
-    # 【补充】添加display_name字段
-    response = {
-        'type': 'final',
-        'content': content,
-        'display_name': display_name if display_name else f"{provider} ({model})"
-    }
-    return f"data: {json.dumps(response)}\n\n"
+# 【重构优化】create_final_response 已移至 app.chat_stream.chat_helpers
 
 router = APIRouter()
 
@@ -595,11 +370,6 @@ async def chat(request: ChatRequest):
         
         # 【修复】检测文件操作意图（返回3个值：是否文件操作、操作类型、置信度）
         is_file_op, op_type, confidence = detect_file_operation_intent(last_message)
-        
-        # 【修复】只有在置信度足够高时才执行文件操作
-        if is_file_op and confidence >= 0.3:
-            # 【修复】文件操作路由到 FileTools
-            return await handle_file_operation(last_message, op_type)
         
         # 【修复】非文件操作，正常调用AI服务
         # 获取AI服务实例
@@ -852,6 +622,18 @@ async def chat_stream(request: ChatRequest):
                 step_counter += 1
                 return step_counter
             
+            # 【重构优化】chat_stream_query 需要的变量
+            current_execution_steps: List[Dict] = []  # 执行步骤列表
+            current_content: str = ""  # 当前累积内容
+            last_is_reasoning: Optional[bool] = None  # 上一个is_reasoning状态
+            
+            # 【重构优化】stub函数：chat2.py不需要保存到数据库
+            async def save_execution_steps_to_db(execution_steps: List[Dict], content: str):
+                pass
+            
+            async def add_step_and_save(step: Dict, content: str):
+                pass
+            
             # 1. 发送思考
             thought_data = {'type': 'thought', 'step': next_step(), 'thinking_prompt': '正在分析任务...'}
             logger.info(f"[Step thought] 发送thought步骤")
@@ -872,72 +654,13 @@ async def chat_stream(request: ChatRequest):
             is_file_op, _, confidence = detect_file_operation_intent(last_message)
             
             if is_file_op and confidence >= 0.3:
-                # 文件操作：逐步推送执行步骤
-                # 【问题2修复】type改为action_tool，添加必需字段
-                action1_data = {
-                    'type': 'action_tool',
-                    'step': next_step(),
-                    'tool_name': 'notification',
-                    'tool_params': {'description': '检测到文件操作意图，开始执行...'},
-                    'execution_status': 'success',
-                    'summary': '检测到文件操作意图，开始执行...',
-                    'raw_data': None,
-                    'action_retry_count': 0
-                }
-                yield f"data: {json.dumps(action1_data)}\n\n"
-                await asyncio.sleep(0.3)
-                
-                # 检查是否被中断
-                async with running_tasks_lock:
-                    if running_tasks.get(task_id, {}).get("cancelled", False):
-                        # 【问题5修复】统一使用type='incident' + incident_value
-                        interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-                        logger.info(f"[Step incident] 发送incident步骤(interrupted)")
-                        yield f"data: {json.dumps(interrupted_data)}\n\n"
-                        return
-                
-                # 安全检测
-                is_safe, risk = check_command_safety(last_message)
-                if not is_safe:
-                    # 【问题6修复】使用统一错误格式
-                    logger.info(f"[Step error] 发送error步骤(安全检测)")
-                    yield create_error_response(
-                        error_type="security_error",
-                        message=f"危险操作需确认: {risk}",
-                        code="SECURITY_BLOCKED",
-                        model=ai_service.model,
-                        provider=ai_service.provider,
-                        retryable=False
-                    )
-                    return
-                
-                # 【小健检查修复】遵循字段设计原则5：禁止兼容字段
-                # 【问题4修复】observation使用设计文档字段
-                # 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
-                observation1_data = {
-                    'type': 'observation',
-                    'step': next_step(),
-                    'obs_execution_status': 'success',
-                    'obs_summary': f'安全检测{"通过" if is_safe else "未通过"}',
-                    'obs_raw_data': {'is_safe': is_safe, 'risk': risk},
-                    'content': '',  # 安全检测没有思考过程
-                    'obs_reasoning': '',
-                    'obs_action_tool': 'security_check',
-                    'obs_params': {},
-                    'is_finished': True
-                }
-                logger.info(f"[Step observation] 发送observation步骤")
-                yield f"data: {json.dumps(observation1_data)}\n\n"
-                await asyncio.sleep(0.3)
-                
-                # 创建Agent执行
+                # 文件操作：直接流式执行
+                # 创建Agent
                 session_id = str(uuid.uuid4())
                 ai_service = AIServiceFactory.get_service()
                 
-                # 定义llm_client函数（适配FileOperationAgent）
                 async def llm_client(message, history=None):
                     response = await ai_service.chat(message, history)
-                    # 转换为Agent需要的格式
                     return type('obj', (object,), {'content': response.content})()
                 
                 agent = FileOperationAgent(
@@ -945,20 +668,6 @@ async def chat_stream(request: ChatRequest):
                     session_id=session_id
                 )
                 
-                # 【问题2修复】type改为action_tool，添加必需字段
-                action2_data = {
-                    'type': 'action_tool',
-                    'step': next_step(),
-                    'tool_name': 'notification',
-                    'tool_params': {'description': '执行文件操作...'},
-                    'execution_status': 'success',
-                    'summary': '执行文件操作...',
-                    'raw_data': None,
-                    'action_retry_count': 0
-                }
-                yield f"data: {json.dumps(action2_data)}\n\n"
-                
-                # 流式执行（每步检查中断）
                 try:
                     # 【Phase4核心修改】使用run_stream异步流式输出
                     async for event in agent.run_stream(last_message):
@@ -1020,13 +729,15 @@ async def chat_stream(request: ChatRequest):
                             yield f"data: {json.dumps(observation_data)}\n\n"
                         
                         elif event_type == 'final':
-                            # 最终结果
-                            final_data = {
-                                'type': 'final',
-                                'content': event.get('content', '')
-                            }
+                            # 最终结果：使用 create_final_response
+                            final_content = event.get('content', '')
                             logger.info(f"[Step final] 发送final步骤")
-                            yield f"data: {json.dumps(final_data)}\n\n"
+                            yield create_final_response(
+                                content=final_content,
+                                model=ai_service.model,
+                                provider=ai_service.provider,
+                                display_name=display_name
+                            )
                             break
                         
                         elif event_type == 'error':
@@ -1060,244 +771,24 @@ async def chat_stream(request: ChatRequest):
                         retryable=False
                     )
             else:
-                # 普通对话：调用AI服务（流式）
-                # 【优化1版修复】不发送action_tool，直接发送chunk
-                # 符合5-9章设计：普通对话只有chunk → final
-                
-                # 检查是否被中断
-                async with running_tasks_lock:
-                    if running_tasks.get(task_id, {}).get("cancelled", False):
-                        # 【原则4整改】字段拆分：content → message
-                        interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-                        logger.info(f"[Step incident] 发送interrupted步骤")
-                        yield f"data: {json.dumps(interrupted_data)}\n\n"
-                        return
-                
-                from app.services.base import Message
-                history = []
-                if len(request.messages) > 1:
-                    for msg in request.messages[:-1]:
-                        history.append(Message(role=msg.role, content=msg.content))
-                
-                # 【小沈-2026-03-14修复】统一的空闲超时和重试机制
-                # 空闲超时由 IdleTimeoutIterator 实时检测，重试次数由 RetryController 管理
-                max_retries = 3  # 最大重试次数：3次（总共4次调用）
-                retry_controller = RetryController(max_retries=max_retries)
-                ai_call_successful = False
-                last_error = None
-                last_error_type = None
-                
-                full_content = ""
-                chunk_count = 0
-                
-                for retry_attempt in range(max_retries + 1):
-                    if retry_attempt > 0:
-                        # 发送重试提示给前端
-                        retry_data = {
-                            'type': 'incident',
-                            'incident_value': 'retrying',
-                            'message': f'请求超时，正在重试 ({retry_attempt}/{max_retries})...',
-                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        }
-                        yield f"data: {json.dumps(retry_data)}\n\n"
-                        logger.info(f"[Retry] 开始第{retry_attempt + 1}次AI调用（共{max_retries + 1}次）")
-                    
-                    # 使用流式API，逐token返回
-                    full_content = ""
-                    chunk_count = 0
-                    has_received_content = False  # 本次调用是否收到内容
-                    chunk = None  # 初始化
-                    idle_timeout_stream = None  # 初始化，用于异常处理中获取空闲时间
-                    
-                    try:
-                        llm_call_count += 1
-                        logger.info(f"[LLM Total Counter] >>> Stream AI called, count: {llm_call_count}")
-                        
-                        # 【小沈-2026-03-14修复】使用 IdleTimeoutIterator 包装流式迭代器，实现实时空闲超时检测
-                        idle_timeout_stream = IdleTimeoutIterator(
-                            ai_service.chat_stream(message=last_message, history=history),
-                            timeout_seconds=30.0,
-                            name=f"AI-Stream-{retry_attempt + 1}"
-                        )
-                        
-                        async for chunk in idle_timeout_stream:
-                            # 注意：IdleTimeoutIterator 自动检测空闲超时，收到内容时自动重置计时器
-                            # 如果30秒内没有下一个 chunk，会抛出 IdleTimeoutError
-                            
-                            chunk_count += 1
-                            # 检查是否被中断
-                            # 【原则4整改】content → message
-                            async with running_tasks_lock:
-                                if running_tasks.get(task_id, {}).get("cancelled", False):
-                                    interrupted_data = {'type': 'incident', 'incident_value': 'interrupted', 'message': '任务已被中断', 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-                                    logger.info(f"[Step incident] 发送interrupted步骤")
-                                    yield f"data: {json.dumps(interrupted_data)}\n\n"
-                                    return
-                            
-                            # ⭐ 暂停检查：AI流式响应过程中也检查暂停状态
-                            async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
-                                yield pause_event
-                            
-                            # ⭐ 检查chunk是否有错误（非空闲超时错误）
-                            if chunk.stream_error:
-                                last_error = chunk.stream_error
-                                last_error_type = getattr(chunk, 'stream_error_type', 'unknown')
-                                logger.warning(f"[AI Call] 流式请求返回错误: {chunk.stream_error}, error_type: {last_error_type}")
-                                # 非空闲超时错误，直接报错不重试
-                                logger.error(f"[AI Call] 检测到错误，不重试: {chunk.stream_error}")
-                                ai_call_successful = False
-                                break
-                            
-                            if chunk.content:
-                                has_received_content = True
-                                full_content += chunk.content
-                                # ⭐ 【调试日志】记录每个chunk
-                                logger.debug(f"[AI Chunk] #{chunk_count}: {chunk.content[:100]}..." if len(chunk.content) > 100 else f"[AI Chunk] #{chunk_count}: {chunk.content}")
-                                # 逐token发送到前端
-                                # 【重要】清晰接口：只使用 content 和 is_reasoning 两个字段
-                                chunk_data = {
-                                    'type': 'chunk', 
-                                    'content': chunk.content,                    # 显示的文本内容
-                                    'is_reasoning': getattr(chunk, 'is_reasoning', False)  # true=思考，false=回答
-                                }
-                                logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content)}, is_reasoning={chunk_data['is_reasoning']}")
-                                yield f"data: {json.dumps(chunk_data)}\n\n"
-                            if chunk.is_done:
-                                break
-                    
-                    except IdleTimeoutError as e:
-                        # ⭐ 【关键】空闲超时异常 - 30秒无内容（由 IdleTimeoutIterator 实时检测）
-                        last_error = str(e)
-                        last_error_type = 'idle_timeout'
-                        elapsed = idle_timeout_stream.get_elapsed_time() if idle_timeout_stream else 30.0
-                        logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时：{elapsed:.1f}秒无内容")
-                        # 空闲超时进入后面的重试判断逻辑
-                    
-                    except Exception as e:
-                        last_error = str(e)
-                        last_error_type = 'network_error'
-                        logger.error(f"[AI Call] 第{retry_attempt + 1}次调用异常: {e}")
-                        # 其他异常进入后面的错误判断逻辑
-                    
-                    # ⭐ 【小沈-2026-03-14重构】统一的重试判断逻辑
-                    # 判断优先级：1.收到内容成功 → 2.空闲超时重试 → 3.网络错误重试 → 4.其他错误失败
-                    
-                    if has_received_content:
-                        # ✅ 已经收到过内容，说明模型在工作
-                        ai_call_successful = True
-                        logger.info(f"[AI Call] 第{retry_attempt + 1}次调用成功（已收到内容）")
-                        break  # 【关键】成功后立即退出重试循环
-                    
-                    elif last_error_type == 'idle_timeout':
-                        # ⚠️ 空闲超时（30秒无内容）
-                        if retry_controller.can_retry():
-                            # 还能重试
-                            retry_controller.increment_retry()
-                            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时30秒，准备第{retry_controller.get_retry_count() + 1}次重试...")
-                            continue
-                        else:
-                            # 已达最大重试次数
-                            logger.error(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时，已达最大重试次数{max_retries}")
-                            last_error = "空闲超时：模型30秒未响应"
-                            ai_call_successful = False
-                            break
-                    
-                    elif last_error_type == 'network_error':
-                        # ⚠️ 网络错误（连接失败、读取失败等）
-                        if retry_controller.can_retry():
-                            # 还能重试
-                            retry_controller.increment_retry()
-                            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用网络错误，准备第{retry_controller.get_retry_count() + 1}次重试...")
-                            continue
-                        else:
-                            # 已达最大重试次数
-                            logger.error(f"[AI Call] 第{retry_attempt + 1}次调用网络错误，已达最大重试次数{max_retries}")
-                            ai_call_successful = False
-                            break
-                    
-                    elif last_error:
-                        # ❌ 有其他错误（非空闲超时、非网络错误）
-                        logger.error(f"[AI Call] 第{retry_attempt + 1}次调用失败（其他错误）: {last_error}")
-                        ai_call_successful = False
-                        break
-                    
-                    else:
-                        # 【边界情况】流正常结束但无内容（模型思考中或空响应）
-                        # 【小沈&小新修复 2026-03-14】检查是否收到内容
-                        if has_received_content and full_content.strip():
-                            # 收到了有效内容，判断为成功
-                            ai_call_successful = True
-                            logger.info(f"[AI Call] 第{retry_attempt + 1}次调用完成，收到内容长度={len(full_content)}")
-                            break
-                        else:
-                            # 【修复】未收到内容，视为错误，发送error步骤
-                            logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用完成但无内容（流结束，模型未返回有效内容）")
-                            if retry_controller.can_retry():
-                                # 还能重试
-                                retry_controller.increment_retry()
-                                logger.info(f"[AI Call] 空响应，准备第{retry_controller.get_retry_count() + 1}次重试...")
-                                continue
-                            else:
-                                # 已达最大重试次数，发送error步骤
-                                logger.error(f"[AI Call] 空响应重试失败，已达最大重试次数{max_retries}")
-                                yield create_error_response(
-                                    error_type="empty_response",
-                                    message="模型未能生成有效回复，请尝试更换问题或稍后重试",
-                                    model=ai_service.model,
-                                    provider=ai_service.provider,
-                                    retryable=True,
-                                    retry_after=3
-                                )
-                                return  # 直接返回，不再发送final步骤
-                    
-                    # ⭐ 【新增-重试机制】重试循环结束，检查最终结果
-                if not ai_call_successful:
-                    logger.error(f"[AI Call] 重试失败，ai_call_successful={ai_call_successful}")
-                    # 根据错误原因返回不同的错误提示
-                    if last_error:
-                        logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}, 类型: {last_error_type}")
-                        # 使用之前保存的 error_type
-                        error_type_map = {
-                            'idle_timeout': ('timeout', '请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试'),
-                            'timeout_error': ('timeout', '请求超时，请重试'),
-                            'read_error': ('server', '读取响应失败，请重试'),
-                            'connect_error': ('network', '连接失败，请检查网络'),
-                            'protocol_error': ('server', '协议错误，请重试'),
-                            'proxy_error': ('network', '代理错误，请检查网络配置'),
-                            'write_error': ('server', '发送请求失败'),
-                            'network_error': ('network', '网络错误，请检查网络连接'),
-                        }
-                        if last_error_type in error_type_map:
-                            code, error_message = error_type_map[last_error_type]
-                        else:
-                            code, error_message = 'server', f"服务调用失败: {last_error}"
-                        error_type = code
-                    else:
-                        # 没有错误但也没有收到有效内容，可能是模型返回空响应
-                        logger.error(f"[AI Call] 所有重试失败，无有效响应（模型返回空内容）")
-                        error_type, error_message = "empty_response", "模型未能生成有效回复，请尝试更换问题或稍后重试"
-                    
-                    # 发送error步骤而不是final步骤
-                    logger.info(f"[Step error] 发送error步骤: error_type={error_type}, message={error_message}")
-                    yield create_error_response(
-                        error_type=error_type,
-                        message=error_message,
-                        model=ai_service.model,
-                        provider=ai_service.provider,
-                        retryable=True,
-                        retry_after=3
-                    )
-                    return  # 直接返回，不再发送final步骤
-                
-                # 发送最终结果，【新增】添加provider字段作为兜底
-                content_preview = full_content[:200] + "..." if len(full_content) > 200 else full_content
-                logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={content_preview}")
-                yield create_final_response(
-                    content=full_content,
-                    model=ai_service.model,
-                    provider=ai_service.provider,
-                    display_name=display_name
-                )
+                # 普通对话：调用 chat_stream_query（复用公共逻辑）
+                async for chunk in chat_stream_query(
+                    request=request,
+                    ai_service=ai_service,
+                    task_id=task_id,
+                    llm_call_count=llm_call_count,
+                    current_execution_steps=current_execution_steps,
+                    current_content=current_content,
+                    last_is_reasoning=last_is_reasoning,
+                    last_message=last_message,
+                    running_tasks=running_tasks,
+                    running_tasks_lock=running_tasks_lock,
+                    next_step=next_step,
+                    display_name=display_name,
+                    save_execution_steps_to_db=save_execution_steps_to_db,
+                    add_step_and_save=add_step_and_save,
+                ):
+                    yield chunk
                         
         except asyncio.CancelledError:
             # 客户端断开连接，任务被中断
@@ -1432,127 +923,6 @@ async def resume_stream_task(task_id: str, session_id: Optional[str] = None):
             logger.info(f"[Resume] 任务 {task_id} 已继续")
             return {"success": True, "message": f"任务 {task_id} 已继续"}
     return {"success": False, "message": f"任务 {task_id} 不存在"}
-
-
-async def handle_file_operation(message: str, op_type: str) -> ChatResponse:
-    """
-    处理文件操作请求
-    
-    【修复-Wave2-完整版】使用 FileOperationAgent 执行文件操作
-    【新增】添加安全检测，危险操作需确认
-    实现真正的 ReAct 循环，让 AI 自主决策如何完成任务
-    
-    Args:
-        message: 用户原始消息
-        op_type: 操作类型 (read/write/list/delete/move/search)
-        
-    Returns:
-        ChatResponse 格式的响应
-    """
-    try:
-        # 【新增】安全检测 - 检查是否为危险操作
-        is_safe, risk = check_command_safety(message)
-        if not is_safe:
-            return ChatResponse(
-                success=False,
-                content="",
-                model="file_operation_agent",
-                error=f"危险操作需确认: {risk}"
-            )
-        
-        # 创建会话ID
-        import uuid
-        session_id = str(uuid.uuid4())
-        
-        # 获取AI服务
-        ai_service = AIServiceFactory.get_service()
-        
-        # 【修复-Wave2】创建LLM客户端适配器
-        # Agent需要的llm_client: Callable[[str, List[Message]], Any]
-        # ai_service.chat: Callable[[str, Optional[List[Message]]], ChatResponse]
-        async def llm_client_adapter(message: str, history: Optional[List] = None):
-            """适配器：将 ai_service.chat 包装为 Agent 可用的格式"""
-            response = await ai_service.chat(message=message, history=history)
-            return response
-        
-        # 【修复-Wave2】创建 FileOperationAgent
-        agent = FileOperationAgent(
-            llm_client=llm_client_adapter,
-            session_id=session_id,
-            max_steps=20
-        )
-        
-        # 【修复-Wave2】使用 Agent 执行任务
-        # Agent 会自主决定如何完成文件操作任务
-        result = await agent.run(task=message)
-        
-        # 将 AgentResult 转换为 ChatResponse
-        if result.success:
-            # 【修复】正确提取 Agent 的回复内容
-            # 实际的回复在最后一个 step 的 observation.result.result 中
-            content = result.message  # 默认值
-            
-            if result.steps:
-                # 获取最后一个 step
-                last_step = result.steps[-1]
-                if last_step.observation and last_step.observation.get("result"):
-                    # 提取真正的回复内容
-                    result_data = last_step.observation["result"]
-                    if isinstance(result_data, dict) and "result" in result_data:
-                        content = result_data["result"]
-                    elif isinstance(result_data, str):
-                        content = result_data
-            
-            # 将执行步骤作为独立字段返回（修改字段名以匹配前端期望）
-            execution_steps_list = None
-            if result.steps:
-                execution_steps_list = []
-                for step in result.steps:
-                    # 提取 result 字段（展平 observation.result.result）
-                    step_result = ""
-                    if step.observation and isinstance(step.observation, dict):
-                        if "result" in step.observation:
-                            result_data = step.observation["result"]
-                            if isinstance(result_data, dict) and "result" in result_data:
-                                step_result = result_data["result"]
-                            elif isinstance(result_data, str):
-                                step_result = result_data
-                    
-                    execution_steps_list.append({
-                        "type": "observation",
-                        "step": step.step_number,
-                        "thought": step.thought,        # 前端期望 thought
-                        "action": step.action,             # 前端期望 action
-                        "result": step_result,            # 前端期望 result
-                        "observation": step.observation   # 前端期望 observation 对象
-                    })
-            
-            # 添加简短的执行摘要到content（兼容性保留）
-            if result.steps:
-                content += f"\n\n[执行详情：共 {result.total_steps} 步]"
-            
-            return ChatResponse(
-                success=True,
-                content=content,
-                model="file_operation_agent",
-                error=None,
-                execution_steps=execution_steps_list
-            )
-        else:
-            return ChatResponse(
-                success=False,
-                content="",
-                model="file_operation_agent",
-                error=result.error or "任务执行失败"
-            )
-            
-    except Exception as e:
-        return ChatResponse(
-            success=False,
-            content="",
-            model="file_operation_agent",
-            error=f"文件操作Agent执行失败: {str(e)}"
-        )
 
 
 # ============================================================
