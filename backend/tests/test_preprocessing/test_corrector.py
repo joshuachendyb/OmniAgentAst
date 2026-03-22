@@ -7,7 +7,7 @@ Author: 小沈 - 2026-03-20
 import pytest
 from unittest.mock import patch, MagicMock
 
-from app.services.agent.preprocessing.corrector import TextCorrector
+from app.services.preprocessing.corrector import TextCorrector
 
 
 class TestTextCorrector:

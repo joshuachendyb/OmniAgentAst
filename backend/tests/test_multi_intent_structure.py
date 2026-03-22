@@ -12,6 +12,10 @@
 
 审查人：小查
 审查时间：2026-03-21
+
+【更新 2026-03-22 小沈】
+- preprocessing 和 intent 已移至 services/ 下独立目录
+- 更新目录结构测试
 """
 
 import pytest
@@ -31,38 +35,6 @@ class TestAgentDirectoryStructure:
     def test_no_old_file_operations_directory(self):
         """旧的 file_operations/ 目录必须已删除"""
         assert not (BASE_DIR / "file_operations").exists()
-
-    # --- preprocessing/ 目录 ---
-
-    def test_preprocessing_directory_exists(self):
-        """agent/preprocessing/ 目录必须存在"""
-        assert (BASE_DIR / "agent" / "preprocessing").exists()
-
-    def test_preprocessing_corrector_exists(self):
-        """agent/preprocessing/corrector.py 必须存在（设计第2步）"""
-        assert (BASE_DIR / "agent" / "preprocessing" / "corrector.py").exists()
-
-    def test_preprocessing_intent_classifier_exists(self):
-        """agent/preprocessing/intent_classifier.py 必须存在（设计第3步）"""
-        assert (BASE_DIR / "agent" / "preprocessing" / "intent_classifier.py").exists()
-
-    def test_preprocessing_pipeline_exists(self):
-        """agent/preprocessing/pipeline.py 必须存在（设计第5步）"""
-        assert (BASE_DIR / "agent" / "preprocessing" / "pipeline.py").exists()
-
-    # --- intent/ 目录 ---
-
-    def test_intent_directory_exists(self):
-        """agent/intent/ 目录必须存在"""
-        assert (BASE_DIR / "agent" / "intent").exists()
-
-    def test_intent_registry_exists(self):
-        """agent/intent/registry.py 必须存在（设计第4步）"""
-        assert (BASE_DIR / "agent" / "intent" / "registry.py").exists()
-
-    def test_intent_classifier_exists(self):
-        """agent/intent/classifier.py 必须存在"""
-        assert (BASE_DIR / "agent" / "intent" / "classifier.py").exists()
 
     # --- types/ 目录 ---
 
@@ -139,6 +111,42 @@ class TestAgentDirectoryStructure:
     def test_backward_compat_react_schema_exists(self):
         """agent/react_schema.py 向后兼容层必须存在"""
         assert (BASE_DIR / "agent" / "react_schema.py").exists()
+
+
+class TestPreprocessingDirectoryStructure:
+    """测试 preprocessing/ 目录结构 - 独立模块"""
+
+    def test_preprocessing_directory_exists(self):
+        """preprocessing/ 目录必须存在"""
+        assert (BASE_DIR / "preprocessing").exists()
+
+    def test_preprocessing_corrector_exists(self):
+        """preprocessing/corrector.py 必须存在"""
+        assert (BASE_DIR / "preprocessing" / "corrector.py").exists()
+
+    def test_preprocessing_intent_classifier_exists(self):
+        """preprocessing/intent_classifier.py 必须存在"""
+        assert (BASE_DIR / "preprocessing" / "intent_classifier.py").exists()
+
+    def test_preprocessing_pipeline_exists(self):
+        """preprocessing/pipeline.py 必须存在"""
+        assert (BASE_DIR / "preprocessing" / "pipeline.py").exists()
+
+
+class TestIntentDirectoryStructure:
+    """测试 intent/ 目录结构 - 独立模块"""
+
+    def test_intent_directory_exists(self):
+        """intent/ 目录必须存在"""
+        assert (BASE_DIR / "intent").exists()
+
+    def test_intent_registry_exists(self):
+        """intent/registry.py 必须存在"""
+        assert (BASE_DIR / "intent" / "registry.py").exists()
+
+    def test_intent_classifier_exists(self):
+        """intent/classifier.py 必须存在"""
+        assert (BASE_DIR / "intent" / "classifier.py").exists()
 
 
 class TestToolsDirectoryStructure:
@@ -271,65 +279,65 @@ class TestFileContentValidation:
 
     def test_registry_has_intent_class(self):
         """registry.py 必须定义 Intent 类"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         assert Intent is not None
 
     def test_registry_has_intent_registry_class(self):
         """registry.py 必须定义 IntentRegistry 类"""
-        from app.services.agent.intent.registry import IntentRegistry
+        from app.services.intent.registry import IntentRegistry
         assert IntentRegistry is not None
 
     def test_intent_has_required_fields(self):
         """Intent 类必须有设计要求的字段"""
-        from app.services.agent.intent.registry import Intent
+        from app.services.intent.registry import Intent
         fields = set(Intent.model_fields.keys())
         required = {"name", "description", "keywords", "tools", "safety_checker"}
         assert required.issubset(fields), f"缺少字段: {required - fields}"
 
     def test_intent_registry_has_register(self):
         """IntentRegistry 必须有 register 方法"""
-        from app.services.agent.intent.registry import IntentRegistry
+        from app.services.intent.registry import IntentRegistry
         assert hasattr(IntentRegistry, 'register')
 
     def test_intent_registry_has_get(self):
         """IntentRegistry 必须有 get 方法"""
-        from app.services.agent.intent.registry import IntentRegistry
+        from app.services.intent.registry import IntentRegistry
         assert hasattr(IntentRegistry, 'get')
 
     def test_intent_registry_has_list_all(self):
         """IntentRegistry 必须有 list_all 方法"""
-        from app.services.agent.intent.registry import IntentRegistry
+        from app.services.intent.registry import IntentRegistry
         assert hasattr(IntentRegistry, 'list_all')
 
     def test_intent_registry_has_get_all_names(self):
         """IntentRegistry 必须有 get_all_names 方法"""
-        from app.services.agent.intent.registry import IntentRegistry
+        from app.services.intent.registry import IntentRegistry
         assert hasattr(IntentRegistry, 'get_all_names')
 
     def test_classifier_has_classify_method(self):
         """classifier.py 必须有 classify 方法"""
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.classifier import IntentClassifier
         assert hasattr(IntentClassifier, 'classify')
 
     def test_classifier_has_keyword_match(self):
         """classifier.py 必须有 _keyword_match 方法（关键词匹配兜底）"""
-        from app.services.agent.intent.classifier import IntentClassifier
+        from app.services.intent.classifier import IntentClassifier
         assert hasattr(IntentClassifier, '_keyword_match')
 
     def test_pipeline_has_process_method(self):
         """pipeline.py 必须有 process 方法"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         assert hasattr(PreprocessingPipeline, 'process')
 
     def test_pipeline_has_corrector(self):
         """pipeline.py 必须有 corrector 组件"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         instance = PreprocessingPipeline()
         assert hasattr(instance, 'corrector')
 
     def test_pipeline_has_classifier(self):
         """pipeline.py 必须有 classifier 组件"""
-        from app.services.agent.preprocessing.pipeline import PreprocessingPipeline
+        from app.services.preprocessing.pipeline import PreprocessingPipeline
         instance = PreprocessingPipeline()
         assert hasattr(instance, 'classifier')
 

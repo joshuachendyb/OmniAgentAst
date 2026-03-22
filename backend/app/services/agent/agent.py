@@ -28,8 +28,8 @@ from app.services.prompts.file.file_prompts import FileOperationPrompts
 from app.services.agent.session import get_session_service
 from app.services.agent.llm_adapter import LLMAdapter
 from app.services.agent.adapter import dict_list_to_messages
-from app.services.agent.intent import IntentRegistry, Intent
-from app.services.agent.preprocessing import PreprocessingPipeline
+from app.services.intent import IntentRegistry, Intent
+from app.services.preprocessing import PreprocessingPipeline
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
 from app.utils.logger import logger
 

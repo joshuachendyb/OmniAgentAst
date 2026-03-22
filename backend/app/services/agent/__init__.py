@@ -10,9 +10,11 @@ Agent 模块 - 多意图处理架构 + 文件操作服务
 
 提供：
 1. 通用 Agent 框架（BaseAgent, ToolParser, ToolExecutor）
-2. 用户输入预处理（PreprocessingPipeline, TextCorrector, IntentClassifier）
-3. 意图管理（Intent, IntentRegistry）
-4. 文件操作服务（FileTools, FileSafety等）
+2. 文件操作服务（FileTools, FileSafety等）
+
+【重构 2026-03-22 小沈】
+- preprocessing 和 intent 已移至 services/ 下独立目录
+- 旧路径导入通过懒加载保持向后兼容
 """
 
 from __future__ import annotations
@@ -21,11 +23,11 @@ from typing import TYPE_CHECKING
 # ============================================================================
 # 新框架导出（无循环依赖）
 # ============================================================================
-from .preprocessing import PreprocessingPipeline, TextCorrector, IntentClassifier
+from app.services.preprocessing import PreprocessingPipeline, TextCorrector, IntentClassifier
+from app.services.intent import Intent, IntentRegistry
 from .base import BaseAgent
 from .tool_parser import ToolParser
 from .tool_executor import ToolExecutor
-from .intent import Intent, IntentRegistry
 from .session_base import SessionServiceBase, SessionStatsMixin
 
 # ============================================================================

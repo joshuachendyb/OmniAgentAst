@@ -1,3 +1,75 @@
+v0.7.25
+
+更新时间：2026-03-22 11:30:00
+
+更新内容：
+
+## 1. 目录结构纠偏：preprocessing 和 intent 独立出 agent/
+
+### 1.1 问题背景
+
+北京老陈指出：preprocessing 放在 agent/ 目录下不合理。
+- preprocessing 是对输入文字的处理和意图检测，与 Agent 主循环无关
+- preprocessing 在 Agent 之前执行（用户输入 → preprocessing → agent）
+- 应该是独立模块，不应该依赖 agent
+
+### 1.2 修改内容
+
+| 操作 | 修改前 | 修改后 |
+|------|--------|--------|
+| preprocessing/ | agent/preprocessing/ | services/preprocessing/ |
+| intent/ | agent/intent/ | services/intent/ |
+
+### 1.3 新目录结构
+
+```
+backend/app/services/
+├── preprocessing/   ← 【独立】用户输入预处理
+│   ├── __init__.py
+│   ├── corrector.py
+│   ├── intent_classifier.py
+│   └── pipeline.py
+│
+├── intent/         ← 【独立】意图管理层
+│   ├── __init__.py
+│   ├── registry.py
+│   └── classifier.py
+│
+└── agent/          ← Agent 使用上面的模块
+```
+
+### 1.4 更新的文件
+
+| 文件 | 修改类型 |
+|------|---------|
+| backend/app/services/preprocessing/* | 新建 |
+| backend/app/services/intent/* | 新建 |
+| backend/app/services/agent/agent.py | 更新导入路径 |
+| backend/app/services/agent/__init__.py | 更新导入路径 |
+| backend/tests/test_*.py | 更新导入路径 |
+| doc-多意图/2.预处理与多意图代码目录说明.md | 更新文档 |
+
+### 1.5 测试结果
+
+| 测试文件 | 结果 |
+|---------|------|
+| test_agent.py | 20 passed |
+| test_preprocessing/* | 12 passed |
+| test_intent/* | 14 passed |
+| test_multi_intent_architecture.py (目录测试) | 24 passed |
+| **核心模块合计** | **70 passed** |
+
+### 1.6 设计文档更新
+
+- 更新目录结构图
+- 更新版本为 v1.1
+- 添加更新说明
+
+参与开发：小沈
+完成时间：2026-03-22 11:30:00
+
+---
+
 v0.7.24
 
 更新时间：2026-03-22 12:00:00
