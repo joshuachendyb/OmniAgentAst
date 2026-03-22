@@ -10,7 +10,7 @@ from datetime import datetime
 from dataclasses import dataclass, asdict
 import textwrap
 
-from app.services.agent.safety import FileSafetyConfig
+from app.services.safety.file.file_safety import FileSafetyConfig
 from app.services.agent import get_session_service
 from app.utils.logger import logger
 

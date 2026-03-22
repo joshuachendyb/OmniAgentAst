@@ -637,11 +637,8 @@ async def get_next_page(request: NextPageRequest):
     """
     try:
         from app.services.agent import FileTools
-        from app.services.agent.tools import FileOperationTools
-        
-        # 创建 FileTools 实例
-        file_tools = FileTools(session_id=request.task_id)
-        tools = FileOperationTools(file_tools=file_tools)
+        # FileOperationTools 已废弃，直接使用 FileTools
+        tools = FileTools(session_id=request.task_id)
         
         # 调用对应工具的分页方法
         tool_func = getattr(tools, request.tool_name, None)

@@ -36,7 +36,7 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, AsyncGenerator, Any
 from app.services import AIServiceFactory
 from app.services.base import Message  # ⭐ 【调试添加】用于日志记录
-from app.services.agent.tools import get_file_tools
+from app.services.tools.file.file_tools import get_file_tools
 from app.services.agent.agent import IntentAgent
 from app.services.shell_security import check_command_safety
 from app.api.v1.intent_classifier import detect_file_operation_intent  # 【小沈引用原始函数 2026-03-17】
