@@ -45,7 +45,7 @@ from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError  # 【�
 from app.chat_stream.chat_stream_query import chat_stream_query  # 【重构优化】复用 chat_stream_query 模块
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data  # 【重构优化】复用 incident_handler 模块
 from app.chat_stream.error_handler import create_error_response, get_user_friendly_error  # 【重构优化】复用 error_handler 模块
-from app.chat_stream.chat_helpers import create_final_response  # 【重构优化】复用 chat_helpers 模块
+from app.chat_stream.chat_helpers import create_final_response, create_timestamp  # 【重构优化】复用 chat_helpers 模块
 from app.chat_stream.ver1_detect_file_operation_intent import detect_file_operation_intent, extract_file_path  # 【重构优化】抽取意图检测函数
 from pathlib import Path
 import shutil
@@ -334,6 +334,14 @@ async def chat_stream(request: ChatRequest):
         
         logger.info(f"[LLM Total Counter] ====== New conversation started, counter reset to 0 ======")
         
+        # 步骤计数器（必须在使用前定义）
+        step_counter = 0
+        
+        def next_step():
+            nonlocal step_counter
+            step_counter += 1
+            return step_counter
+        
         # 【前端小新代修改】在流式响应开始时发送start事件
         display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
         
@@ -349,6 +357,8 @@ async def chat_stream(request: ChatRequest):
         # 发送 start 步骤（包含security_check）
         start_data = {
             'type': 'start',
+            'step': next_step(),
+            'timestamp': create_timestamp(),
             'display_name': display_name,
             'provider': ai_service.provider,
             'model': ai_service.model,
@@ -360,7 +370,7 @@ async def chat_stream(request: ChatRequest):
                 'blocked': security_check_result.get('blocked', False)
             }
         }
-        logger.info(f"[Step start] 发送start步骤")
+        logger.info(f"[Step start] 发送start步骤 - step={start_data['step']}")
         
         yield f"data: {json.dumps(start_data)}\n\n"
         
@@ -389,15 +399,8 @@ async def chat_stream(request: ChatRequest):
                 for msg in request.messages[:-1]:
                     history.append(Message(role=msg.role, content=msg.content))
             
-            # 步骤计数器
-            step_counter = 0
-            
-            def next_step():
-                nonlocal step_counter
-                step_counter += 1
-                return step_counter
-            
             # 【重构优化】chat_stream_query 需要的变量
+            # 注意：step_counter 和 next_step() 已在第 338-343 行定义，此处直接复用
             current_execution_steps: List[Dict] = []  # 执行步骤列表
             current_content: str = ""  # 当前累积内容
             last_is_reasoning: Optional[bool] = None  # 上一个is_reasoning状态
@@ -410,8 +413,8 @@ async def chat_stream(request: ChatRequest):
                 pass
             
             # 1. 发送思考
-            thought_data = {'type': 'thought', 'step': next_step(), 'thinking_prompt': '正在分析任务...'}
-            logger.info(f"[Step thought] 发送thought步骤")
+            thought_data = {'type': 'thought', 'step': next_step(), 'timestamp': create_timestamp(), 'thinking_prompt': '正在分析任务...'}
+            logger.info(f"[Step thought] 发送thought步骤 - step={thought_data['step']}")
             yield f"data: {json.dumps(thought_data)}\n\n"
             await asyncio.sleep(0.3)
             
