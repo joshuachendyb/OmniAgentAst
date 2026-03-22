@@ -1,4 +1,48 @@
-v0.7.33
+v0.7.34
+
+更新时间：2026-03-22 19:25:00
+
+更新内容：
+
+## 1. 统一chat_stream和chat_non_stream使用app.chat_stream导入 - 小沈-2026-03-22
+
+### 1.1 修复的问题
+
+| 问题 | 文件 | 说明 |
+|------|------|------|
+| 重复定义 get_provider_display_name | chat_non_stream.py:52-65 | 删除本地定义，改为从 app.chat_stream 导入 |
+| 重复定义 create_error_response | chat_non_stream.py:71-119 | 删除本地定义，改为从 app.chat_stream 导入 |
+| 重复定义 get_user_friendly_error | chat_non_stream.py:122-200 | 删除本地定义，改为从 app.chat_stream 导入 |
+| 重复定义 check_and_yield_if_* | chat_non_stream.py:207-268 | 删除本地定义，改为从 app.chat_stream 导入 |
+| 重复定义 create_final_response | chat_stream.py:523-553 | 删除本地定义，改为从 app.chat_stream 导入 |
+| 重复定义 create_final_response | chat_non_stream.py:332-357 | 删除本地定义，改为从 app.chat_stream 导入 |
+
+### 1.2 保留的函数
+
+| 函数 | 文件 | 说明 |
+|------|------|------|
+| simplify_observation | chat_non_stream.py:275 | app.chat_stream 中没有此函数，需保留 |
+
+### 1.3 代码精简
+
+| 文件 | 修改前 | 修改后 | 删除 |
+|------|--------|--------|------|
+| chat_non_stream.py | 472行 | 212行 | -260行 |
+| chat_stream.py | 1462行 | 1424行 | -38行 |
+| **合计** | | | **-298行** |
+
+### 1.4 验证
+
+- ✅ chat_stream.py 导入成功
+- ✅ chat_non_stream.py 导入成功
+- ✅ 无重复函数定义
+
+参与开发：小沈
+完成时间：2026-03-22 19:25:00
+
+---
+
+## v0.7.33
 
 更新时间：2026-03-22 19:06:44
 
