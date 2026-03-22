@@ -36,7 +36,6 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Optional, AsyncGenerator, Any
 from app.services import AIServiceFactory
 from app.services.base import Message  # ⭐ 【调试添加】用于日志记录
-from app.services.file_operations.tools import get_file_tools
 from app.services.file_operations.agent import FileOperationAgent
 from app.services.shell_security import check_command_safety
 from app.utils.logger import logger
@@ -73,61 +72,8 @@ def get_provider_display_name(provider: str) -> str:
 
 # 【重构优化】check_and_yield_if_interrupted, check_and_yield_if_paused 已移至 app.chat_stream.incident_handler
 
-# ============================================================
-# observation 清洗函数 - 小沈添加【将复杂的observation简化为可读文本】
-# ============================================================
+# 【重构优化】simplify_observation 已删除（未被使用）
 
-def simplify_observation(observation: Any) -> str:
-    """
-    将 observation 简化为可读的文本
-    
-    处理各种情况：
-    - 正常完成：提取 result 内容
-    - list_directory：显示文件数量
-    - 执行失败：返回错误信息
-    - 空数据：返回默认文本
-    
-    Args:
-        observation: Agent 返回的观察结果
-        
-    Returns:
-        可读的文本字符串
-    """
-    if not observation:
-        return "（无结果）"
-    
-    # 检查是否成功
-    if not observation.get("success", True):
-        error = observation.get("error", "未知错误")
-        return f"❌ {error}"
-    
-    # 提取 result
-    result = observation.get("result")
-    if not result:
-        return "（无结果）"
-    
-    # 根据 result 类型处理
-    if isinstance(result, dict):
-        # 文件列表
-        if "entries" in result:
-            count = result.get("total_count", len(result.get("entries", [])))
-            return f"📁 列出了 {count} 个文件/目录"
-        
-        # finish 的结果
-        if "result" in result:
-            inner = result["result"]
-            if isinstance(inner, str):
-                return inner[:200]
-        
-        # 其他字典，转为简洁文本
-        keys = list(result.keys())[:3]
-        return f"{{ {', '.join(keys)} }}"
-    
-    elif isinstance(result, str):
-        return result[:200]
-    
-    else:
-        return str(result)[:200]
 
 
 # 【重构优化】create_final_response 已移至 app.chat_stream.chat_helpers
@@ -427,8 +373,8 @@ async def chat_stream(request: ChatRequest):
                 error_type="security",
                 message=f'危险操作需确认: {risk}',
                 code='SECURITY_BLOCKED',
-                model=request.model,
-                provider=request.provider,
+                model=ai_service.model,
+                provider=ai_service.provider,
                 retryable=False
             )
             return
@@ -569,8 +515,8 @@ async def chat_stream(request: ChatRequest):
                                 error_type="agent",
                                 message=event.get('message', '未知错误'),
                                 code='AGENT_ERROR',
-                                model=request.model,
-                                provider=request.provider,
+                                model=ai_service.model,
+                                provider=ai_service.provider,
                                 retryable=event.get('retryable', False)
                             )
                             break
