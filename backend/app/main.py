@@ -7,7 +7,8 @@ from datetime import datetime
 import traceback
 from pathlib import Path
 
-from app.api.v1 import health, chat_non_stream, chat_stream, init_model_select, file_operations, config, sessions, security, execution, metrics
+from app.api.v1 import health, chat_non_stream, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
+# chat_stream 暂时禁用，使用 chat2 替代
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
 
@@ -105,7 +106,9 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
 app.include_router(chat_non_stream.router, prefix="/api/v1", tags=["chat"])
-app.include_router(chat_stream.router, prefix="/api/v1", tags=["chat"])
+# 【暂时禁用】使用 chat2 替代 chat_stream（待验证后决定是否删除）
+# app.include_router(chat_stream.router, prefix="/api/v1", tags=["chat"])
+app.include_router(chat2.router, prefix="/api/v1", tags=["chat"])
 app.include_router(init_model_select.router, prefix="/api/v1", tags=["chat"])
 app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operations"])
 app.include_router(config.router, prefix="/api/v1", tags=["config"])
@@ -117,7 +120,7 @@ app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 
 # 【小沈修复 2026-03-14】启动后台清理任务，定期清理过期任务
 import asyncio
-from app.api.v1.chat_stream import cleanup_expired_tasks
+from app.api.v1.chat2 import cleanup_expired_tasks  # 从 chat2 导入（chat_stream 已暂时禁用）
 
 @app.on_event("startup")
 async def startup_event():
