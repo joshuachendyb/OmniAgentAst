@@ -30,6 +30,7 @@ from app.services.agent.llm_adapter import LLMAdapter
 from app.services.agent.adapter import dict_list_to_messages
 from app.services.agent.intent import IntentRegistry, Intent
 from app.services.agent.preprocessing import PreprocessingPipeline
+from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
 from app.utils.logger import logger
 
 
@@ -112,6 +113,11 @@ class IntentAgent(BaseAgent):
         # 【新增】预处理流水线（多意图支持）
         self.preprocessor = PreprocessingPipeline()
         
+        # 【新增】LLM调用策略
+        self.text_strategy = TextStrategy()
+        self.tools_strategy = ToolsStrategy(tools=tools or [])
+        self.response_format_strategy = ResponseFormatStrategy()
+        
         # Function Calling 支持
         self.tools = tools or []
         
@@ -156,92 +162,6 @@ class IntentAgent(BaseAgent):
     
     # ========== 抽象方法实现 ==========
     
-    async def _get_llm_response_text(
-        self,
-        message: str,
-        history_dicts: List[Dict[str, str]]
-    ) -> str:
-        """获取 LLM 响应（文本模式）"""
-        history_messages = dict_list_to_messages(history_dicts)
-        
-        response = await self.llm_client(
-            message=message,
-            history=history_messages
-        )
-        
-        if hasattr(response, 'content'):
-            content = response.content
-        elif isinstance(response, dict):
-            content = response.get("content", str(response))
-        else:
-            content = str(response)
-        
-        logger.info(f"[LLM Response Raw (text)] content={repr(content)[:500]}")
-        
-        if not content:
-            logger.warning("[LLM Response] Warning: LLM returned empty content!")
-        
-        self.conversation_history.append({"role": "assistant", "content": content})
-        return content
-    
-    async def _get_llm_response_with_tools(
-        self,
-        message: str,
-        history_dicts: List[Dict[str, str]]
-    ) -> str:
-        """
-        获取 LLM 响应（Function Calling 模式）
-        
-        通过 tools Schema 强制约束参数名，确保参数正确性
-        """
-        history_messages = dict_list_to_messages(history_dicts)
-        
-        # 检查 llm_client 是否有 chat_with_tools 方法
-        if hasattr(self.llm_client, 'chat_with_tools'):
-            response = await self.llm_client.chat_with_tools(
-                message=message,
-                history=history_messages,
-                tools=self.tools
-            )
-        else:
-            # 如果没有 chat_with_tools 方法，回退到文本模式
-            logger.warning("[Function Calling] llm_client has no chat_with_tools method, falling back to text mode")
-            return await self._get_llm_response_text(message, history_dicts)
-        
-        # 解析 tool_calls
-        if hasattr(response, 'content') and response.content:
-            try:
-                tool_calls = json.loads(response.content)
-                
-                if isinstance(tool_calls, list) and len(tool_calls) > 0:
-                    content = self._format_tool_calls_for_agent(tool_calls)
-                    logger.info(f"[Function Calling] Received tool_calls: {len(tool_calls)} calls")
-                else:
-                    content = response.content
-                    logger.info(f"[Function Calling] LLM returned text (no tool call): {repr(content)[:200]}")
-                    
-            except (json.JSONDecodeError, TypeError) as e:
-                content = response.content
-                logger.info(f"[Function Calling] Non-JSON response: {repr(content)[:200]}")
-        else:
-            content = ""
-            logger.warning("[Function Calling] Empty response from LLM")
-        
-        self.conversation_history.append({"role": "assistant", "content": content})
-        return content
-    
-    async def _execute_tool(
-        self,
-        action: str,
-        action_input: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        执行工具的抽象方法实现
-        
-        代理到 ToolExecutor.execute
-        """
-        return await self.executor.execute(action, action_input)
-    
     # ========== 重写 _get_llm_response ==========
     
     async def _get_llm_response(self) -> str:
@@ -259,31 +179,43 @@ class IntentAgent(BaseAgent):
                 logger.info(f"[Agent] Using method: {strategy.method}")
                 
                 if strategy.method == "response_format":
-                    response = await self._get_llm_response_with_response_format(
+                    response = await self.response_format_strategy.call(
+                        llm_client=self.llm_client,
                         message=last_message,
-                        history_dicts=history_dicts
+                        history_dicts=history_dicts,
+                        conversation_history=self.conversation_history
                     )
                 elif strategy.method == "tools":
-                    response = await self._get_llm_response_with_tools(
+                    self.tools_strategy.tools = self.tools or []
+                    response = await self.tools_strategy.call(
+                        llm_client=self.llm_client,
                         message=last_message,
-                        history_dicts=history_dicts
+                        history_dicts=history_dicts,
+                        conversation_history=self.conversation_history
                     )
                 else:
-                    response = await self._get_llm_response_text(
+                    response = await self.text_strategy.call(
+                        llm_client=self.llm_client,
                         message=last_message,
-                        history_dicts=history_dicts
+                        history_dicts=history_dicts,
+                        conversation_history=self.conversation_history
                     )
             elif self.use_function_calling and self.tools:
                 # 使用 Function Calling 模式
-                response = await self._get_llm_response_with_tools(
+                self.tools_strategy.tools = self.tools
+                response = await self.tools_strategy.call(
+                    llm_client=self.llm_client,
                     message=last_message,
-                    history_dicts=history_dicts
+                    history_dicts=history_dicts,
+                    conversation_history=self.conversation_history
                 )
             else:
                 # 使用普通文本模式
-                response = await self._get_llm_response_text(
+                response = await self.text_strategy.call(
+                    llm_client=self.llm_client,
                     message=last_message,
-                    history_dicts=history_dicts
+                    history_dicts=history_dicts,
+                    conversation_history=self.conversation_history
                 )
             
             return response
@@ -292,85 +224,44 @@ class IntentAgent(BaseAgent):
             logger.error(f"LLM client error: {e}")
             raise
     
-    async def _get_llm_response_with_response_format(
+    async def _get_llm_response_text(
         self,
         message: str,
-        history_dicts: List[Dict]
+        history_dicts: List[Dict[str, str]]
     ) -> str:
+        """获取 LLM 响应（文本模式）- 使用策略类"""
+        return await self.text_strategy.call(
+            llm_client=self.llm_client,
+            message=message,
+            history_dicts=history_dicts,
+            conversation_history=self.conversation_history
+        )
+    
+    async def _get_llm_response_with_tools(
+        self,
+        message: str,
+        history_dicts: List[Dict[str, str]]
+    ) -> str:
+        """获取 LLM 响应（Function Calling 模式）- 使用策略类"""
+        self.tools_strategy.tools = self.tools or []
+        return await self.tools_strategy.call(
+            llm_client=self.llm_client,
+            message=message,
+            history_dicts=history_dicts,
+            conversation_history=self.conversation_history
+        )
+    
+    async def _execute_tool(
+        self,
+        action: str,
+        action_input: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
-        【重写】使用 response_format 模式获取 LLM 响应
+        执行工具的抽象方法实现
         
-        通过 response_format 约束 JSON 输出，然后解析为 ReAct 格式
+        代理到 ToolExecutor.execute
         """
-        # 构建 ReAct Schema
-        schema = {
-            "type": "json_object",
-            "json_schema": {
-                "type": "object",
-                "properties": {
-                    "thought": {"type": "string", "description": "思考过程"},
-                    "action": {"type": "string", "description": "工具名称"},
-                    "action_input": {
-                        "type": "object",
-                        "description": "工具参数"
-                    }
-                },
-                "required": ["thought", "action", "action_input"]
-            }
-        }
-        
-        try:
-            history_messages = dict_list_to_messages(history_dicts)
-            
-            # 调用 LLM（使用 chat_with_response_format 方法）
-            response = await self.llm_client.chat_with_response_format(
-                message=message,
-                history=history_messages,
-                response_format=schema
-            )
-            
-            # 处理响应
-            if hasattr(response, 'error') and response.error:
-                logger.error(f"[Agent] response_format error: {response.error}")
-                raise Exception(response.error)
-            
-            if hasattr(response, 'content'):
-                content = response.content
-            elif isinstance(response, dict):
-                content = response.get("content", str(response))
-            else:
-                content = str(response)
-            
-            logger.info(f"[Agent] response_format raw content: {repr(content)[:500]}")
-            
-            # 解析 JSON 响应
-            try:
-                result = json.loads(content)
-                
-                thought = result.get("thought", "")
-                action = result.get("action", "")
-                action_input = result.get("action_input", {})
-                
-                # 转换为 Agent 的 ToolParser 可以理解的格式
-                formatted = {
-                    "thought": thought,
-                    "action_tool": action,
-                    "params": action_input
-                }
-                
-                content = json.dumps(formatted, ensure_ascii=False)
-                logger.info(f"[Agent] response_format parsed: action={action}")
-                
-            except json.JSONDecodeError as e:
-                logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={repr(content)[:200]}")
-                raise Exception(f"Invalid JSON from LLM: {content}")
-            
-            self.conversation_history.append({"role": "assistant", "content": content})
-            return content
-            
-        except Exception as e:
-            logger.error(f"[Agent] _get_llm_response_with_response_format failed: {e}")
-            raise
+        return await self.executor.execute(action, action_input)
     
     # ========== 文件专用方法 ==========
     
@@ -769,72 +660,3 @@ class IntentAgent(BaseAgent):
         except Exception as e:
             logger.error(f"Rollback failed: {e}")
             return False
-    
-    async def run_with_tools(
-        self,
-        task: str,
-        context: Optional[Dict[str, Any]] = None,
-        system_prompt: Optional[str] = None
-    ) -> AgentResult:
-        """
-        使用 Function Calling 模式运行 Agent
-        
-        通过 tools Schema 强制约束 LLM 输出的参数名，确保参数正确性
-        
-        Args:
-            task: 任务描述
-            context: 额外上下文
-            system_prompt: 自定义系统 prompt（可选）
-            
-        Returns:
-            Agent 执行结果
-        """
-        # 如果没有设置 tools，自动从注册表获取
-        if not self.tools:
-            from app.services.agent.react_schema import get_tools_schema_for_function_calling
-            self.tools = get_tools_schema_for_function_calling()
-            logger.info(f"[run_with_tools] Auto-loaded {len(self.tools)} tools from registry")
-        
-        # 启用 Function Calling 模式
-        original_mode = self.use_function_calling
-        self.use_function_calling = True
-        
-        try:
-            return await self._run_with_session(task, context, system_prompt)
-        finally:
-            self.use_function_calling = original_mode
-    
-    async def run_stream_with_tools(
-        self,
-        task: str,
-        context: Optional[Dict[str, Any]] = None,
-        system_prompt: Optional[str] = None,
-        max_steps: int = 100
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        使用 Function Calling 模式流式运行 Agent
-        
-        Args:
-            task: 任务描述
-            context: 额外上下文
-            system_prompt: 自定义系统 prompt（可选）
-            max_steps: 最大迭代次数
-        
-        Yields:
-            各个阶段的输出字典
-        """
-        # 如果没有设置 tools，自动从注册表获取
-        if not self.tools:
-            from app.services.agent.react_schema import get_tools_schema_for_function_calling
-            self.tools = get_tools_schema_for_function_calling()
-            logger.info(f"[run_stream_with_tools] Auto-loaded {len(self.tools)} tools from registry")
-        
-        # 启用 Function Calling 模式
-        original_mode = self.use_function_calling
-        self.use_function_calling = True
-        
-        try:
-            async for chunk in self.run_stream(task, context, system_prompt, max_steps):
-                yield chunk
-        finally:
-            self.use_function_calling = original_mode
