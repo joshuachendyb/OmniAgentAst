@@ -1,3 +1,124 @@
+v0.7.32
+
+更新时间：2026-03-22 17:25:00
+
+更新内容：
+
+## 1. chat_stream_query.py 流式问答模块创建
+
+更新时间：2026-03-22 17:25:00
+
+### 1.1 完成的工作
+
+| 模块 | 文件 | 行数 | 说明 |
+|------|------|------|------|
+| chat_stream_query | app/chat_stream/chat_stream_query.py | 402行 | 流式问答处理函数 |
+| chat_helpers | app/chat_stream/chat_helpers.py | 61行 | 添加 create_final_response |
+| __init__ | app/chat_stream/__init__.py | 40行 | 更新导出 |
+
+### 1.2 函数签名
+
+```python
+async def chat_stream_query(
+    request,                          # ChatRequest 对象
+    ai_service,                       # AI服务实例
+    task_id: str,                     # 任务ID
+    llm_call_count: int,              # LLM调用计数器
+    current_execution_steps: List[Dict],  # 执行步骤列表
+    current_content: str,              # 当前累积内容
+    last_is_reasoning: Optional[bool],  # 上一个is_reasoning状态
+    last_message: str,                # 最后一条用户消息
+    running_tasks: dict,              # 运行中的任务字典
+    running_tasks_lock: asyncio.Lock,  # 任务锁
+    next_step: Callable[[], int],     # 获取下一个步骤号的函数
+    display_name: str,                # 显示名称
+    save_execution_steps_to_db: Callable,  # 保存到数据库的函数
+    add_step_and_save: Callable,       # 添加步骤并保存的函数
+) -> AsyncGenerator[str, None]:
+```
+
+### 1.3 yield 输出的步骤类型
+
+| 步骤 | yield 位置 | 说明 |
+|------|-----------|------|
+| incident | 第76行 | 中断检查后 yield |
+| chunk | 第180行 | 流式输出 chunk |
+| error | 第286行, 第337行 | 错误处理 yield |
+| final | 第396行 | 最终结果 yield |
+
+### 1.4 create_final_response 更新
+
+添加 step 参数和 timestamp 字段：
+```python
+def create_final_response(
+    content: str,
+    model: str,
+    provider: str,
+    display_name: Optional[str] = None,
+    step: Optional[int] = None
+) -> str:
+    # 返回包含 timestamp 的 SSE 响应
+```
+
+### 1.5 测试结果
+
+| 测试项 | 结果 |
+|--------|------|
+| 语法检查 | ✅ 通过 |
+| 导入测试 | ✅ 通过 |
+| 单元测试 | ✅ 22 passed |
+
+### 1.6 架构设计文档更新
+
+- 更新：笔记/多意图系统与现有代码整合架构设计-2026-03-22.md
+- Section 3.3 状态更新为"✅ 已创建"
+- Section 3.3 函数签名已更新为完整参数
+- Section 3.6 移除 create_final_response
+
+参与开发：小沈
+完成时间：2026-03-22 17:25:00
+
+---
+
+v0.7.31
+
+更新时间：2026-03-22 17:13:23
+
+更新内容：
+
+## 1. 架构设计文档 Section 3.3 更新
+
+更新时间：2026-03-22 17:13:23
+
+### 1.1 更新的内容
+
+| 修改项 | 修改前 | 修改后 |
+|--------|--------|--------|
+| Section 3.3 状态 | "⬜ 待创建" | "✅ 已创建" |
+| 描述 | "简单对话流程" | "流式问答处理" |
+| Section 3.4 状态 | "⬜ 待创建" | "✅ 已拆分" |
+| Section 3.5 状态 | "⬜ 待创建" | "✅ 已拆分" |
+| Section 3.6 描述 | "重构中" | "已完成辅助模块拆分" |
+
+### 1.2 文档准确性
+
+- Section 3.3 描述"简单对话"改为"流式问答处理"
+- Section 3.3 明确标注为"待小沈完成的拆分工作"
+- Section 3.4 error_handler.py 已拆分（180行）
+- Section 3.5 incident_handler.py 已拆分（112行）
+- Section 3.6 chat_stream.py 已整合辅助模块
+
+### 1.3 Git提交记录
+
+```
+2460e838 docs: 更新架构设计文档-小沈-2026-03-22
+```
+
+参与开发：小健
+完成时间：2026-03-22 17:13:23
+
+---
+
 v0.7.30
 
 更新时间：2026-03-22 16:51:59
