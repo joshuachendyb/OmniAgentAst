@@ -22,14 +22,2918 @@ v0.7.33
 2. **问题2**: next_step()被调用两次导致step跳变
    - 修复：先获取final_step_value，在final_step和create_final_response中使用同一个值
 
----
-
-## v0.7.32
-更新时间：2026-03-22 17:25:00  
-更新内容：chat_stream_query.py 流式问答模块创建
+参与开发：小沈
+完成时间：2026-03-22 19:06:44
 
 ---
 
-## v0.7.31
-更新时间：2026-03-22 16:45:00
-更新内容：版本号修复和版本历史整理
+v0.7.32
+
+更新时间：2026-03-22 17:25:00
+
+更新内容：
+
+## 1. chat_stream_query.py 流式问答模块创建
+
+更新时间：2026-03-22 17:25:00
+
+### 1.1 完成的工作
+
+| 模块 | 文件 | 行数 | 说明 |
+|------|------|------|------|
+| chat_stream_query | app/chat_stream/chat_stream_query.py | 402行 | 流式问答处理函数 |
+| chat_helpers | app/chat_stream/chat_helpers.py | 61行 | 添加 create_final_response |
+| __init__ | app/chat_stream/__init__.py | 40行 | 更新导出 |
+
+### 1.2 函数签名
+
+```python
+async def chat_stream_query(
+    request,                          # ChatRequest 对象
+    ai_service,                       # AI服务实例
+    task_id: str,                     # 任务ID
+    llm_call_count: int,              # LLM调用计数器
+    current_execution_steps: List[Dict],  # 执行步骤列表
+    current_content: str,              # 当前累积内容
+    last_is_reasoning: Optional[bool],  # 上一个is_reasoning状态
+    last_message: str,                # 最后一条用户消息
+    running_tasks: dict,              # 运行中的任务字典
+    running_tasks_lock: asyncio.Lock,  # 任务锁
+    next_step: Callable[[], int],     # 获取下一个步骤号的函数
+    display_name: str,                # 显示名称
+    save_execution_steps_to_db: Callable,  # 保存到数据库的函数
+    add_step_and_save: Callable,       # 添加步骤并保存的函数
+) -> AsyncGenerator[str, None]:
+```
+
+### 1.3 yield 输出的步骤类型
+
+| 步骤 | yield 位置 | 说明 |
+|------|-----------|------|
+| incident | 第76行 | 中断检查后 yield |
+| chunk | 第180行 | 流式输出 chunk |
+| error | 第286行, 第337行 | 错误处理 yield |
+| final | 第396行 | 最终结果 yield |
+
+### 1.4 create_final_response 更新
+
+添加 step 参数和 timestamp 字段：
+```python
+def create_final_response(
+    content: str,
+    model: str,
+    provider: str,
+    display_name: Optional[str] = None,
+    step: Optional[int] = None
+) -> str:
+    # 返回包含 timestamp 的 SSE 响应
+```
+
+### 1.5 测试结果
+
+| 测试项 | 结果 |
+|--------|------|
+| 语法检查 | ✅ 通过 |
+| 导入测试 | ✅ 通过 |
+| 单元测试 | ✅ 22 passed |
+
+### 1.6 架构设计文档更新
+
+- 更新：笔记/多意图系统与现有代码整合架构设计-2026-03-22.md
+- Section 3.3 状态更新为"✅ 已创建"
+- Section 3.3 函数签名已更新为完整参数
+- Section 3.6 移除 create_final_response
+
+参与开发：小沈
+完成时间：2026-03-22 17:25:00
+
+---
+
+v0.7.31
+
+更新时间：2026-03-22 17:13:23
+
+更新内容：
+
+## 1. 架构设计文档 Section 3.3 更新
+
+更新时间：2026-03-22 17:13:23
+
+### 1.1 更新的内容
+
+| 修改项 | 修改前 | 修改后 |
+|--------|--------|--------|
+| Section 3.3 状态 | "⬜ 待创建" | "✅ 已创建" |
+| 描述 | "简单对话流程" | "流式问答处理" |
+| Section 3.4 状态 | "⬜ 待创建" | "✅ 已拆分" |
+| Section 3.5 状态 | "⬜ 待创建" | "✅ 已拆分" |
+| Section 3.6 描述 | "重构中" | "已完成辅助模块拆分" |
+
+### 1.2 文档准确性
+
+- Section 3.3 描述"简单对话"改为"流式问答处理"
+- Section 3.3 明确标注为"待小沈完成的拆分工作"
+- Section 3.4 error_handler.py 已拆分（180行）
+- Section 3.5 incident_handler.py 已拆分（112行）
+- Section 3.6 chat_stream.py 已整合辅助模块
+
+### 1.3 Git提交记录
+
+```
+2460e838 docs: 更新架构设计文档-小沈-2026-03-22
+```
+
+参与开发：小健
+完成时间：2026-03-22 17:13:23
+
+---
+
+v0.7.30
+
+更新时间：2026-03-22 16:51:59
+
+更新内容：
+
+## 1. 多意图系统与现有代码整合 - 第一阶段完成
+
+更新时间：2026-03-22 16:51:59
+
+### 1.1 完成的模块拆分
+
+| 模块 | 文件 | 行数 | 说明 |
+|------|------|------|------|
+| chat_stream 模块 | app/chat_stream/__init__.py | 35行 | 统一导出 |
+| chat_helpers | app/chat_stream/chat_helpers.py | 28行 | 从 chat_stream_helpers.py 移入 |
+| error_handler | app/chat_stream/error_handler.py | 180行 | 从 chat_stream.py 拆分 |
+| incident_handler | app/chat_stream/incident_handler.py | 112行 | 从 chat_stream.py 拆分 |
+
+### 1.2 更新的导入路径
+
+| 文件 | 状态 |
+|------|------|
+| api/v1/three_operation.py | ✅ 更新 |
+| api/v1/action1.py | ✅ 更新 |
+| api/v1/observation1.py | ✅ 更新 |
+| api/v1/types/process_thought.py | ✅ 更新 |
+| api/v1/types/process_start.py | ✅ 更新 |
+| api/v1/chat_stream.py | ✅ 整合导入 |
+
+### 1.3 chat_stream.py 整合
+
+删除以下重复函数定义，整合为统一导入：
+- `get_provider_display_name()` (第67-81行)
+- `create_error_response()` (第86-138行)
+- `create_timestamp()` (第141-143行)
+- `create_incident_data()` (第146-156行)
+
+### 1.4 测试验证结果
+
+| 测试项 | 结果 | 说明 |
+|--------|------|------|
+| 语法检查 | ✅ 通过 | ast.parse() 验证通过 |
+| 导入测试 | ✅ 通过 | 11项导入全部通过 |
+| 单元测试 | ✅ 105 passed | 7个失败是之前遗留问题 |
+
+### 1.5 架构设计文档
+
+- 更新：笔记/多意图系统与现有代码整合架构设计-2026-03-22.md
+- 版本：v1.1
+- 状态：第一阶段（辅助模块拆分）已完成
+
+参与开发：小沈、小健
+完成时间：2026-03-22 16:51:59
+
+---
+
+v0.7.25
+
+更新时间：2026-03-22 11:30:00
+
+更新内容：
+
+## 1. 目录结构纠偏：preprocessing 和 intent 独立出 agent/
+
+### 1.1 问题背景
+
+北京老陈指出：preprocessing 放在 agent/ 目录下不合理。
+- preprocessing 是对输入文字的处理和意图检测，与 Agent 主循环无关
+- preprocessing 在 Agent 之前执行（用户输入 → preprocessing → agent）
+- 应该是独立模块，不应该依赖 agent
+
+### 1.2 修改内容
+
+| 操作 | 修改前 | 修改后 |
+|------|--------|--------|
+| preprocessing/ | agent/preprocessing/ | services/preprocessing/ |
+| intent/ | agent/intent/ | services/intent/ |
+
+### 1.3 新目录结构
+
+```
+backend/app/services/
+├── preprocessing/   ← 【独立】用户输入预处理
+│   ├── __init__.py
+│   ├── corrector.py
+│   ├── intent_classifier.py
+│   └── pipeline.py
+│
+├── intent/         ← 【独立】意图管理层
+│   ├── __init__.py
+│   ├── registry.py
+│   └── classifier.py
+│
+└── agent/          ← Agent 使用上面的模块
+```
+
+### 1.4 更新的文件
+
+| 文件 | 修改类型 |
+|------|---------|
+| backend/app/services/preprocessing/* | 新建 |
+| backend/app/services/intent/* | 新建 |
+| backend/app/services/agent/agent.py | 更新导入路径 |
+| backend/app/services/agent/__init__.py | 更新导入路径 |
+| backend/tests/test_*.py | 更新导入路径 |
+| doc-多意图/2.预处理与多意图代码目录说明.md | 更新文档 |
+
+### 1.5 测试结果
+
+| 测试文件 | 结果 |
+|---------|------|
+| test_agent.py | 20 passed |
+| test_preprocessing/* | 12 passed |
+| test_intent/* | 14 passed |
+| test_multi_intent_architecture.py (目录测试) | 24 passed |
+| **核心模块合计** | **70 passed** |
+
+### 1.6 设计文档更新
+
+- 更新目录结构图
+- 更新版本为 v1.1
+- 添加更新说明
+
+参与开发：小沈
+完成时间：2026-03-22 11:30:00
+
+---
+
+v0.7.24
+
+更新时间：2026-03-22 12:00:00
+
+更新内容：
+
+## 1. 目录说明文档完善
+
+- 新增预处理与多意图代码目录说明
+- 调整章节结构（第4、5、6、7章改为第3章小节）
+- 修正章节编号和格式错误
+
+## 2. 专家戒律更新
+
+- 更新专家戒律v2.0，整合多意图重构教训
+
+## 3. 文件重命名
+
+- 设计文档和目录说明文件名加序号
+
+### 3.1 Git提交记录
+
+```
+fc219762 docs: 文件名加序号重命名 - 北京老陈-2026-03-22
+6e4052fc docs: 调整目录说明文档章节结构 - 小沈-2026-03-22
+7d29eb99 fix: 修正目录说明文档章节编号和格式错误 - 小沈-2026-03-22
+f586359a docs: 更新目录说明文档 - 小沈-2026-03-22
+03758eca docs: 更新目录说明添加第三章目录结构与说明 - 小沈-2026-03-22
+b0dc4193 docs: 新增预处理与多意图代码目录说明 - 小沈-2026-03-22
+f004a63d docs: 更新专家戒律v2.0整合多意图重构教训 - 小沈-2026-03-22
+```
+
+---
+
+v0.7.23
+
+更新时间：2026-03-22 10:15:00
+
+更新内容：
+
+## 1. 测试用例全面更新
+
+更新时间：2026-03-22 10:15:00
+
+### 1.1 背景
+
+根据设计文档要求，测试用例需要体现重构意义，按照重构思想测试，保证多意图支持、预处理流水线、意图注册表等功能正确实现。
+
+### 1.2 更新的测试文件
+
+| 测试文件 | 测试数 | 更新内容 |
+|---------|--------|---------|
+| test_multi_intent_architecture.py | 157 | 修复旧导入路径，添加IntentAgent集成测试 |
+| test_agent.py | 20 | 添加intent_type、preprocessor、intent_registry测试 |
+
+### 1.3 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| test_multi_intent_architecture.py | 157 | ✅ 全部通过 |
+| test_agent.py | 20 | ✅ 全部通过 |
+
+### 1.4 体现重构意义的测试用例
+
+| 测试类 | 测试数 | 说明 |
+|--------|--------|------|
+| TestIntentAgentMultiIntentSupport | 4 | 测试intent_type参数（file/desktop/network） |
+| TestIntentAgentPreprocessingAndRegistry | 6 | 测试preprocessor和intent_registry |
+
+### 1.5 Git提交记录
+
+```
+caeb3b96 docs: 更新version.txt添加v0.7.22测试用例报告 - 小健-2026-03-22
+bb101107 test: 更新test_agent.py体现重构意义20个用例 - 小健-2026-03-22
+6684e96d test: 更新多意图架构测试用例157个 - 小健-2026-03-22
+```
+
+参与开发：小健
+完成时间：2026-03-22 10:15:00
+
+---
+
+v0.7.22
+
+更新时间：2026-03-22 10:00:00
+
+更新内容：
+
+## 1. 更新测试用例体现重构意义
+
+更新时间：2026-03-22 10:00:00
+
+### 1.1 背景
+
+测试用例需要体现重构的意义和目的，按照重构思想测试，保证多意图支持、预处理流水线、意图注册表等功能正确实现。
+
+### 1.2 更新的测试文件
+
+| 测试文件 | 测试数 | 更新内容 |
+|---------|--------|---------|
+| test_multi_intent_architecture.py | 157 | 修复旧导入路径，添加IntentAgent集成测试 |
+| test_agent.py | 20 | 添加intent_type、preprocessor、intent_registry测试 |
+
+### 1.3 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| test_multi_intent_architecture.py | 157 | ✅ 全部通过 |
+| test_agent.py | 20 | ✅ 全部通过 |
+
+### 1.4 体现重构意义的测试用例
+
+| 测试类 | 测试数 | 说明 |
+|--------|--------|------|
+| TestIntentAgentMultiIntentSupport | 4 | 测试intent_type参数（file/desktop/network） |
+| TestIntentAgentPreprocessingAndRegistry | 6 | 测试preprocessor和intent_registry |
+
+### 1.5 Git提交记录
+
+```
+bb101107 test: 更新test_agent.py体现重构意义20个用例 - 小健-2026-03-22
+6684e96d test: 更新多意图架构测试用例157个 - 小健-2026-03-22
+```
+
+参与开发：小健
+完成时间：2026-03-22 10:00:00
+
+---
+
+v0.7.21
+
+更新时间：2026-03-22 09:45:00
+
+更新内容：
+
+## 1. 删除旧代码向后兼容层文件
+
+更新时间：2026-03-22 09:00:00
+
+### 1.1 背景
+
+Agent目录下存在向后兼容层文件，这些文件只是转发导入，不包含实际代码逻辑，且无其他文件依赖。
+
+### 1.2 删除的文件
+
+| 文件 | 说明 |
+|------|------|
+| agent/react_schema.py | 向后兼容层（161行） |
+| agent/tools.py | 向后兼容层（79行） |
+| agent/prompts.py | 向后兼容层（20行） |
+| agent/safety.py | 向后兼容层（28行） |
+
+### 1.3 修复的导入路径
+
+| 文件 | 修改前 | 修改后 |
+|------|--------|--------|
+| tests/test_agent.py | from app.services.agent.tools import FileTools | from app.services.tools.file.file_tools import FileTools |
+
+### 1.4 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 测试数 | 10 | |
+| 通过 | 10 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+### 1.5 Git提交记录
+
+```
+a947d84d refactor: 删除旧代码向后兼容层文件 - 小健-2026-03-22
+f6c0bfcb refactor: 清除Agent目录下所有向后兼容代码 - 小沈-2026-03-22
+77a71294 refactor: 清除向后兼容代码，全新面貌 - 小沈-2026-03-22
+```
+
+参与开发：小沈、小健
+完成时间：2026-03-22 09:00:00
+
+---
+
+v0.7.18
+
+更新时间：2026-03-22 08:45:00
+
+更新内容：
+
+## 1. 重命名FileOperationAgent为IntentAgent
+
+更新时间：2026-03-22 08:30:00
+
+### 1.1 背景
+
+设计文档12.4节要求将FileOperationAgent重命名为IntentAgent，体现多意图设计。
+
+### 1.2 修改内容
+
+| 修改项 | 修改前 | 修改后 | 状态 |
+|--------|--------|--------|------|
+| 类名 | FileOperationAgent | IntentAgent | ✅ 完成 |
+| agent.py文档注释 | 文件操作Agent | 通用意图Agent | ✅ 完成 |
+| __init__.py导出 | FileOperationAgent | IntentAgent（向后兼容FileOperationAgent） | ✅ 完成 |
+| API层导入 | FileOperationAgent | IntentAgent | ✅ 完成 |
+| 测试文件 | FileOperationAgent | IntentAgent | ✅ 完成 |
+
+### 1.3 向后兼容
+
+- FileOperationAgent名称仍然可用（通过__getattr__懒加载）
+- 不会破坏现有代码
+
+### 1.4 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 测试数 | 10 | |
+| 通过 | 10 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+---
+
+## 2. 精简agent.py代码
+
+更新时间：2026-03-22 08:45:00
+
+### 2.1 背景
+
+设计文档12.4节要求将agent.py从~1000行精简到~300行。
+
+### 2.2 精简内容
+
+| 修改项 | 说明 | 状态 |
+|--------|------|------|
+| 将_get_llm_response_text逻辑移动到llm_strategies.py | 使用TextStrategy | ✅ 完成 |
+| 将_get_llm_response_with_tools逻辑移动到llm_strategies.py | 使用ToolsStrategy | ✅ 完成 |
+| 将_get_llm_response_with_response_format逻辑移动到llm_strategies.py | 使用ResponseFormatStrategy | ✅ 完成 |
+| 删除run_with_tools方法 | 功能合并到run方法 | ✅ 完成 |
+| 删除run_stream_with_tools方法 | 功能合并到run_stream方法 | ✅ 完成 |
+
+### 2.3 精简结果
+
+| 文件 | 修改前 | 修改后 | 精简 |
+|------|--------|--------|------|
+| agent.py | 840行 | 662行 | -178行 |
+| llm_strategies.py | 204行 | 360行 | +156行 |
+
+### 2.4 保留的必要逻辑
+
+| 方法 | 行数 | 说明 |
+|------|------|------|
+| _run_with_session | ~200行 | 核心ReAct循环 |
+| run_stream | ~170行 | 流式执行逻辑 |
+| rollback | ~50行 | 回滚逻辑 |
+| 其他初始化和辅助方法 | ~242行 | 必要的辅助功能 |
+
+### 2.5 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 测试数 | 10 | |
+| 通过 | 10 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+### 2.6 Git提交记录
+
+```
+ae2b28af refactor: 精简agent.py代码，将LLM调用逻辑移动到llm_strategies.py - 小沈-2026-03-22
+11300f8f refactor: 重命名FileOperationAgent为IntentAgent - 小沈-2026-03-22
+```
+
+参与开发：小沈
+完成时间：2026-03-22 08:45:00
+
+---
+
+v0.7.17
+
+更新时间：2026-03-21 11:00:00
+
+更新内容：
+
+## 1. 完成所有测试补全
+
+更新时间：2026-03-21 11:00:00
+
+### 1.1 本次补全的测试
+
+| 模块 | 测试文件 | 测试数 | 状态 |
+|------|---------|--------|------|
+| safety/file/file_safety.py | test_file_safety.py | 19 | ✅ 完成 |
+| **本次合计** | | **19** | |
+
+### 1.2 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 本次新增测试 | 19 | |
+| 通过 | 19 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+### 1.3 累计补全测试
+
+| 批次 | 测试数 | 版本 |
+|------|--------|------|
+| 第一批 | 48 | v0.7.13 |
+| 第二批 | 33 | v0.7.14 |
+| 第三批 | 36 | v0.7.15 |
+| 第四批 | 36 | v0.7.16 |
+| 第五批 | 19 | v0.7.17 |
+| **累计** | **172** | |
+
+### 1.4 测试覆盖率提升
+
+| 指标 | 补全前 | 补全后 | 提升 |
+|------|--------|--------|------|
+| 模块覆盖率 | 48.3% | 80%+ | +31.7% |
+| 函数覆盖率 | 50.5% | 80%+ | +29.5% |
+
+### 1.5 Git提交记录
+
+```
+d762227a test: 新增safety/file/file_safety.py测试19个用例 - 小沈-2026-03-21
+```
+
+参与开发：小沈
+完成时间：2026-03-21 11:00:00
+
+---
+
+v0.7.16
+
+更新时间：2026-03-21 10:45:00
+
+更新内容：
+
+## 1. 继续补全测试用例
+
+更新时间：2026-03-21 10:45:00
+
+### 1.1 本次补全的测试
+
+| 模块 | 测试文件 | 测试数 | 状态 |
+|------|---------|--------|------|
+| intents/definitions/file/file_stats.py | test_file_stats.py | 21 | ✅ 完成 |
+| tools/file/file_tools.py | test_file_tools.py | 15 | ✅ 完成 |
+| **本次合计** | | **36** | |
+
+### 1.2 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 本次新增测试 | 36 | |
+| 通过 | 36 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+### 1.3 累计补全测试
+
+| 批次 | 测试数 | 版本 |
+|------|--------|------|
+| 第一批 | 48 | v0.7.13 |
+| 第二批 | 33 | v0.7.14 |
+| 第三批 | 36 | v0.7.15 |
+| 第四批 | 36 | v0.7.16 |
+| **累计** | **153** | |
+
+### 1.4 待补测试模块
+
+| 优先级 | 模块 | 状态 |
+|--------|------|------|
+| P2 | safety/file/file_safety.py | ⏳ 待补 |
+
+### 1.5 Git提交记录
+
+```
+0b960030 test: 新增tools/file/file_tools.py测试15个用例 - 小沈-2026-03-21
+6cbad607 test: 新增intents/definitions/file/file_stats.py测试21个用例 - 小沈-2026-03-21
+```
+
+参与开发：小沈
+完成时间：2026-03-21 10:45:00
+
+---
+
+v0.7.15
+
+更新时间：2026-03-21 10:30:00
+
+更新内容：
+
+## 1. 继续补全测试用例
+
+更新时间：2026-03-21 10:30:00
+
+### 1.1 本次补全的测试
+
+| 模块 | 测试文件 | 测试数 | 状态 |
+|------|---------|--------|------|
+| prompts/file/file_prompts.py | test_file_prompts.py | 19 | ✅ 完成 |
+| intents/definitions/file/file_intent.py | test_file_intent.py | 17 | ✅ 完成 |
+| **本次合计** | | **36** | |
+
+### 1.2 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 本次新增测试 | 36 | |
+| 通过 | 36 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+### 1.3 累计补全测试
+
+| 批次 | 测试数 | 版本 |
+|------|--------|------|
+| 第一批 | 48 | v0.7.13 |
+| 第二批 | 33 | v0.7.14 |
+| 第三批 | 36 | v0.7.15 |
+| **累计** | **117** | |
+
+### 1.4 待补测试模块
+
+| 优先级 | 模块 | 状态 |
+|--------|------|------|
+| P1 | intents/definitions/file/file_stats.py | ⏳ 待补 |
+| P2 | tools/file/file_tools.py | ⏳ 待补 |
+| P2 | safety/file/file_safety.py | ⏳ 待补 |
+
+### 1.5 Git提交记录
+
+```
+ca31ae36 test: 新增intents/definitions/file/file_intent.py测试17个用例 - 小沈-2026-03-21
+dff1b9a4 test: 新增prompts/file/file_prompts.py测试19个用例 - 小沈-2026-03-21
+```
+
+参与开发：小沈
+完成时间：2026-03-21 10:30:00
+
+---
+
+v0.7.14
+
+更新时间：2026-03-21 10:00:00
+
+更新内容：
+
+## 1. 自适应方案完整性检查
+
+更新时间：2026-03-21 10:00:00
+
+### 1.1 检查背景
+
+自适应方案（Structured-Outputs-自适应兼容方案）在多意图重构前完成，与多意图同等重要。需要检查重构后自适应功能是否完整保留。
+
+### 1.2 自适应方案核心功能
+
+| 功能模块 | 文件位置 | 状态 | 说明 |
+|---------|---------|------|------|
+| LLMCapability枚举 | agent/capability.py | ✅ 存在 | RESPONSE_FORMAT, TOOLS, STREAMING, REASONING |
+| LLMFeature数据类 | agent/capability.py | ✅ 存在 | 9个字段完整 |
+| LLMProbeResult数据类 | agent/capability.py | ✅ 存在 | 探测结果记录 |
+| CapabilityDetector | agent/capability_detector.py | ✅ 存在 | 能力探测器 |
+| StrategySelector | agent/strategy_selector.py | ✅ 存在 | 策略选择器 |
+| OSAdapter | agent/os_adapter.py | ✅ 存在 | 系统适配器 |
+| LLMAdapter | agent/llm_adapter.py | ✅ 存在 | 统一适配器入口 |
+
+### 1.3 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 总测试数 | 22 | |
+| 通过 | 22 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+### 1.4 测试覆盖场景
+
+| 测试类 | 测试数 | 说明 |
+|--------|--------|------|
+| TestLLMAdapterInitialization | 3 | 适配器初始化、API配置处理 |
+| TestGetLLMResponseAdaptive | 5 | 自适应策略选择、向后兼容 |
+| TestGetLLMResponseWithResponseFormat | 6 | response_format模式、错误处理、reasoning支持 |
+| TestBackwardCompatibility | 2 | 新旧初始化签名兼容 |
+| TestLLMCallCounter | 1 | 调用计数器 |
+| TestAgentRunIntegration | 2 | Agent运行集成测试 |
+| TestResponseFormatDataConversion | 3 | 数据转换测试 |
+
+### 1.5 检查结论
+
+| 结论 | 说明 |
+|------|------|
+| **功能完整** | ✅ 自适应方案所有核心功能保留 |
+| **测试通过** | ✅ 22个测试全部通过 |
+| **无丢失功能** | ✅ 无任何功能丢失 |
+
+### 1.6 Git提交记录
+
+```
+已有测试文件：backend/tests/test_agent_llm_adapter.py（22个用例）
+```
+
+参与开发：小健
+完成时间：2026-03-21 10:00:00
+
+---
+
+v0.7.10
+
+更新时间：2026-03-21 09:30:00
+
+更新内容：
+
+## 1. 新增可视化方法测试
+
+更新时间：2026-03-21 09:30:00
+
+### 1.1 测试范围
+
+测试新增的3个可视化方法，确保功能正确可用。
+
+| 测试类 | 测试数 | 说明 |
+|--------|--------|------|
+| TestGenerateJsonReport | 5 | JSON报告生成、字段验证、空操作处理、session不存在、保存文件 |
+| TestGenerateHtmlReport | 5 | HTML报告生成、会话信息、统计数据、session不存在、保存文件 |
+| TestGenerateMermaidReport | 7 | Mermaid报告生成、操作节点、move操作、失败状态、被阻止状态、空操作、保存文件 |
+| **合计** | **17** | |
+
+### 1.2 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 总测试数 | 17 | |
+| 通过 | 17 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+### 1.3 测试覆盖的场景
+
+| 方法 | 测试场景 |
+|------|---------|
+| generate_json_report | 返回JSON字符串、包含必需字段、处理空操作、session不存在返回空、保存到文件 |
+| generate_html_report | 返回HTML字符串、包含会话信息、包含统计数据、session不存在返回空、保存到文件 |
+| generate_mermaid_report | 返回Mermaid字符串、包含操作节点、处理move操作、处理失败状态、处理被阻止状态、处理空操作、保存到文件 |
+
+### 1.4 Git提交记录
+
+```
+191ed014 test: 新增可视化方法测试17个用例 - 小健-2026-03-21
+```
+
+参与开发：小健
+完成时间：2026-03-21 09:30:00
+
+---
+
+v0.7.9
+
+更新时间：2026-03-21 09:15:00
+
+更新内容：
+
+## 1. 补充实现可视化报告3个方法
+
+更新时间：2026-03-21 09:15:00
+
+### 1.1 问题背景
+
+小健设计符合度检查发现：设计文档要求的3个可视化方法（generate_json_report、generate_html_report、generate_mermaid_report）在代码中不存在。经小沈检查，这3个方法是API接口真实调用的需求，需要补充实现。
+
+### 1.2 补充实现的方法
+
+| 方法 | 文件 | 说明 |
+|------|------|------|
+| generate_json_report() | file_visualization.py | 生成JSON格式报告 |
+| generate_html_report() | file_visualization.py | 生成HTML格式报告（含图表） |
+| generate_mermaid_report() | file_visualization.py | 生成Mermaid流程图 |
+
+### 1.3 修正API接口
+
+修正 file_operations.py 中API接口的处理逻辑，让它正确处理这些方法返回的内容。
+
+### 1.4 更新设计文档
+
+设计文档从v2.20更新到v2.21，把3个方法从"待实现"改为"已实现"。
+
+### 1.5 Git提交记录
+
+```
+2441c573 docs: 更新设计文档v2.21，补充实现可视化3个方法 - 小沈-2026-03-21
+20598a55 fix: 修正API接口正确处理报告方法返回内容 - 小沈-2026-03-21
+6db3d900 feat: 补充实现generate_json_report、generate_html_report、generate_mermaid_report方法 - 小沈-2026-03-21
+```
+
+参与开发：小沈
+完成时间：2026-03-21 09:15:00
+
+---
+
+v0.7.8
+
+更新时间：2026-03-21 08:30:00
+
+更新内容：
+
+## 1. 多意图处理架构 - 小健设计符合度严格检查
+
+更新时间：2026-03-21 08:30:00
+
+### 1.1 检查范围
+
+严格对照设计文档逐项检查，确保代码功能一点不能少。
+
+| 设计章节 | 测试类 | 测试数 | 说明 |
+|---------|--------|--------|------|
+| 第五章：预处理流水线 | TestChapter5_PreprocessingPipeline | 4 | pipeline返回字段、异常处理 |
+| 第六章：意图识别层 | TestChapter6_IntentClassifier | 5 | 分类逻辑、置信度阈值、关键词匹配 |
+| 第十二章：目录结构 | TestChapter12_DirectoryStructure | 28 | 17步改造步骤逐项检查 |
+| 第12.1.5节：统计可视化 | TestChapter12_1_5_StatsVisualization | 8 | FileSessionStats字段、可视化方法 |
+| 第四章：意图定义 | TestChapter4_IntentDefinition | 9 | Intent字段、Registry方法 |
+| 第4.2节：File意图 | TestChapter4_2_FileIntent | 4 | FileIntent字段和工具 |
+| 第12.2节：向后兼容 | TestChapter12_2_BackwardCompatibility | 8 | 导入路径、兼容层 |
+| **合计** | | **66** | |
+
+### 1.2 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 总测试数 | 66 | |
+| 通过 | 66 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+### 1.3 检查发现的设计偏差
+
+| 序号 | 问题 | 设计要求 | 实际情况 | 影响 |
+|------|------|---------|---------|------|
+| 1 | 可视化缺少3个方法 | generate_json_report, generate_html_report, generate_mermaid_report | 不存在 | 低：可后续补充 |
+
+### 1.4 关键设计符合度确认
+
+| 设计要求 | 状态 | 说明 |
+|---------|------|------|
+| pipeline.process返回6个字段 | ✅ | original, corrected, errors, intent, confidence, all_intents |
+| IntentClassifier置信度阈值0.7 | ✅ | 默认值正确 |
+| 三层策略：GLiClass→关键词→回退 | ✅ | 实现正确 |
+| 17步改造步骤全部完成 | ✅ | 所有文件和目录存在 |
+| FileSessionStats字段完整 | ✅ | rolled_back_count, report_generated, report_path |
+| FileIntent关联7个工具 | ✅ | 完整 |
+| 向后兼容层正常 | ✅ | 所有导入路径正确 |
+
+### 1.5 Git提交记录
+
+```
+020969d9 test: 新增设计符合度严格检查66个用例 - 小健-2026-03-21
+```
+
+参与开发：小健
+完成时间：2026-03-21 08:30:00
+
+---
+
+v0.7.7
+
+更新时间：2026-03-21 08:00:00
+
+更新内容：
+
+## 1. 多意图处理架构 - 小查目录结构审查
+
+更新时间：2026-03-21 08:00:00
+
+### 1.1 审查范围
+
+依据：多意图处理架构设计-小沈-2026-03-20.md (v2.18) 第12.2节
+
+| 测试类 | 测试数 | 说明 |
+|--------|--------|------|
+| TestAgentDirectoryStructure | 26 | agent/ 目录及子目录结构 |
+| TestToolsDirectoryStructure | 8 | tools/ 按意图分目录结构 |
+| TestSafetyDirectoryStructure | 7 | safety/ 按意图分目录结构 |
+| TestIntentsDirectoryStructure | 7 | intents/ 意图定义结构 |
+| TestPromptsDirectoryStructure | 4 | prompts/ Prompt模板结构 |
+| TestFileContentValidation | 14 | 文件内容符合性验证 |
+| TestImportPathValidation | 11 | 导入路径正确性验证 |
+| **合计** | **79** | |
+
+### 1.2 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 总测试数 | 79 | |
+| 通过 | 79 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+### 1.3 审查发现的设计偏差（非阻塞）
+
+| 序号 | 问题 | 设计要求 | 实际情况 | 影响 |
+|------|------|---------|---------|------|
+| 1 | intents/ 缺少 registry.py 和 classifier.py | intents/registry.py, intents/classifier.py | 在 agent/intent/ 下 | 低：功能正常 |
+
+### 1.4 目录结构验证结果
+
+| 目录 | 状态 | 说明 |
+|------|------|------|
+| agent/ | ✅ | 存在，旧 file_operations/ 已删除 |
+| agent/preprocessing/ | ✅ | corrector.py, intent_classifier.py, pipeline.py 完整 |
+| agent/intent/ | ✅ | registry.py, classifier.py 完整 |
+| agent/types/ | ✅ | step_types.py, result_types.py, react_schema.py 完整 |
+| tools/file/ | ✅ | file_tools.py, file_schema.py 完整 |
+| tools/{network,system,database,desktop}/ | ✅ | 预留目录已创建 |
+| safety/file/ | ✅ | file_safety.py 完整 |
+| safety/{network,system,database,desktop}/ | ✅ | 预留目录已创建 |
+| intents/definitions/file/ | ✅ | file_intent.py, file_stats.py 完整 |
+| prompts/ | ✅ | base.py, file/file_prompts.py 完整 |
+
+### 1.5 Git提交记录
+
+```
+0f57f911 test: 新增多意图架构目录结构审查测试79个用例 - 小查-2026-03-21
+```
+
+参与开发：小查
+完成时间：2026-03-21 08:00:00
+
+---
+
+v0.7.6
+
+更新时间：2026-03-21 07:45:00
+
+更新内容：
+
+## 1. 多意图处理架构 - 小健全面测试审查
+
+更新时间：2026-03-21 07:45:00
+
+### 1.1 测试范围
+
+审查依据：多意图处理架构设计-小沈-2026-03-20.md (v2.18)
+
+| 设计章节 | 测试类 | 测试数 |
+|---------|--------|--------|
+| 第四章：意图类型定义（Registry模式） | TestIntentModel, TestIntentRegistry | 12 |
+| 第五章：用户输入预处理流水线 | TestTextCorrector, TestIntentClassifierPreprocessing, TestPreprocessingPipeline | 17 |
+| 第六章：意图识别层 | TestIntentClassifierLayer | 7 |
+| 第七章：Context/State层 | TestProcessingContext | 1 |
+| 第八章：安全检查层 | TestSafetyChecker | 3 |
+| 第十章：ReAct循环中的意图处理 | TestReActIntentIntegration | 3 |
+| 第十一章：扩展接口设计 | TestExtensionInterface, TestFileIntentDefinition, TestFileSessionStats | 11 |
+| 第十二章：目录改造方法 | TestSessionServiceBase, TestSessionStatsMixin, TestBasePrompts, TestFileSchema | 27 |
+| 向后兼容层 | TestBackwardCompatibility, TestNoCircularImports | 16 |
+| 目录结构完整性 | TestDirectoryStructure, TestNoOldFiles | 25 |
+| **合计** | | **122** |
+
+### 1.2 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 总测试数 | 122 | |
+| 通过 | 122 | ✅ 100% |
+| 失败 | 0 | ✅ |
+
+### 1.3 审查发现的设计偏差（非阻塞）
+
+| 序号 | 问题 | 说明 | 影响 | 建议 |
+|------|------|------|------|------|
+| 1 | FileOperationPrompts 未继承 BasePrompts | file_prompts.py 在 base.py 之前创建，未修改为继承 | 低 | 后续迭代修正 |
+| 2 | TextCorrector 空白输入处理 | 返回原字符串而非空串 | 低 | pipeline层有异常兜底 |
+| 3 | pycorrector/gliclass 未安装 | 依赖库需单独安装 | 低 | pipeline层有异常处理 |
+
+### 1.4 全量后端测试结果
+
+| 指标 | 数值 | 说明 |
+|------|------|------|
+| 总测试数 | 659 | |
+| 通过 | 649 | 98.5% |
+| 失败 | 10 | 预先存在（与本次修改无关） |
+| 错误 | 3 | 预先存在（与本次修改无关） |
+
+### 1.5 Git提交记录
+
+```
+ff752f67 test: 新增多意图架构全面测试122个用例 - 小健-2026-03-21
+```
+
+参与开发：小健
+完成时间：2026-03-21 07:45:00
+
+---
+
+v0.7.5
+
+更新时间：2026-03-21 07:08:21
+
+更新内容：
+
+## 1. 多意图处理架构重构 - 设计符合度审查与修正
+
+更新时间：2026-03-21 07:08:21
+
+### 1.1 审查发现的问题
+
+| 问题 | 严重程度 | 说明 | 状态 |
+|------|---------|------|------|
+| react_schema.py 迁移位置错误 | P0 | 设计要求迁移到 agent/types/react_schema.py，实际在 tools/file/file_react_schema.py | ✅ 已修复 |
+| tools/file/file_schema.py 缺失 | P1 | 设计要求独立 Schema 文件，实际内嵌在 file_tools.py | ✅ 已修复 |
+| prompts/base.py 内容极简 | P2 | 只有4行占位，需补充基类框架 | ✅ 已修复 |
+| session.py 未完全拆分 | P2 | 未继承 session_base.py | ✅ 已修复 |
+| 循环导入问题 | P0 | agent/__init__.py 导入链形成循环 | ✅ 已修复 |
+
+### 1.2 修正内容详情
+
+#### 修正1：react_schema.py 迁移到 agent/types/react_schema.py
+
+**问题**：设计文档要求迁移到 `agent/types/react_schema.py`，实际迁移到了 `tools/file/file_react_schema.py`
+
+**修复**：
+- 创建 `backend/app/services/agent/types/react_schema.py`（394行）
+- 更新 `backend/app/services/agent/types/__init__.py` 导出（在 types 内部，避免循环导入）
+- 更新 `backend/app/services/agent/react_schema.py` 向后兼容层，指向新位置
+- 删除 `backend/app/services/tools/file/file_react_schema.py`
+
+#### 修正2：创建 tools/file/file_schema.py
+
+**问题**：设计文档要求独立 Schema 文件，实际内嵌在 file_tools.py
+
+**修复**：
+- 创建 `backend/app/services/tools/file/file_schema.py`（117行）
+- 导出7个 Pydantic 模型：FileOperationInput, ReadFileInput, WriteFileInput, ListDirectoryInput, DeleteFileInput, MoveFileInput, SearchFilesInput
+- 更新 `backend/app/services/tools/file/__init__.py` 导出
+
+#### 修正3：补充 prompts/base.py
+
+**问题**：prompts/base.py 只有4行占位，不符合设计文档要求
+
+**修复**：
+- 创建 `BasePrompts` 抽象基类（160行）
+- 定义通用 Prompt 框架接口：get_system_prompt, get_available_tools_prompt, get_task_prompt, get_observation_prompt 等
+
+#### 修正4：重构 session.py 继承 session_base.py
+
+**问题**：session.py 未继承 session_base.py
+
+**修复**：
+- `FileOperationSessionService` 继承 `SessionServiceBase`
+- 导入 `FileSessionStats`
+
+#### 修正5：修复循环导入
+
+**问题**：agent/__init__.py → tools → file_tools.py → get_file_safety_service → agent/__init__.py
+
+**修复**：
+- 使用 `TYPE_CHECKING` + `__getattr__` 懒加载模式
+- 导出 `SessionServiceBase`, `SessionStatsMixin`
+
+### 1.3 新建文件汇总
+
+| 文件 | 位置 | 行数 | 说明 |
+|------|------|------|------|
+| react_schema.py | services/agent/types/ | 394 | react_schema 迁移到设计位置 |
+| file_schema.py | services/tools/file/ | 117 | 独立 Schema 文件 |
+| base.py | services/prompts/ | 160 | Prompt 基类框架 |
+
+### 1.4 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 相关测试数 | 101 | ✅ |
+| 通过 | 101 | ✅ |
+| 失败 | 0 | ✅ |
+| 总测试数 | 650 | ✅ |
+| 通过 | 640 | ✅ |
+| 失败（预先存在） | 10 | ⚠️（与修改无关） |
+
+### 1.5 Git提交记录
+
+```
+待提交：refactor: 设计符合度审查与修正 - 小沈-2026-03-21
+- 创建 agent/types/react_schema.py
+- 创建 tools/file/file_schema.py
+- 创建 prompts/base.py
+- 重构 session.py 继承 session_base.py
+- 修复 agent/__init__.py 循环导入
+- 删除 file_react_schema.py（旧位置）
+```
+
+参与开发：小沈
+完成时间：2026-03-21 07:08:21
+
+---
+
+v0.7.4
+
+更新时间：2026-03-21 07:03:00
+
+更新内容：
+
+## 1. 多意图处理架构重构 - 第9步~第17步迁移完成
+
+更新时间：2026-03-21 07:03:00
+
+### 1.1 完成步骤
+
+| 步骤 | 任务 | 状态 |
+|------|------|------|
+| 第9步 | tools.py → tools/file/file_tools.py + 向后兼容层 | ✅ |
+| 第10步 | safety.py → safety/file/file_safety.py + 向后兼容层 | ✅ |
+| 第11步 | prompts.py → prompts/file/file_prompts.py + 向后兼容层 | ✅ |
+| 第12步 | react_schema.py → tools/file/file_react_schema.py + 向后兼容层 | ✅ |
+| 第13步 | 创建 file_stats.py → intents/definitions/file/file_stats.py | ✅ |
+| 第14步 | 创建 file_intent.py → intents/definitions/file/file_intent.py | ✅ |
+| 第15步 | file_operations.py → file_visualization.py（重命名） | ✅ |
+| 第16步 | 创建 session_base.py → agent/session_base.py | ✅ |
+| 第17步 | 删除旧文件 file_operations.py，完成迁移 | ✅ |
+
+### 1.2 新建文件汇总
+
+| 文件 | 位置 | 行数 | 说明 |
+|------|------|------|------|
+| file_tools.py | services/tools/file/ | 1302 | tools.py 迁移目标 |
+| file_safety.py | services/safety/file/ | 725 | safety.py 迁移目标 |
+| file_prompts.py | services/prompts/file/ | 418 | prompts.py 迁移目标 |
+| file_react_schema.py | services/tools/file/ | 387 | react_schema.py 迁移目标 |
+| file_stats.py | services/intents/definitions/file/ | 72 | file 意图统计 |
+| file_intent.py | services/intents/definitions/file/ | 94 | file 意图定义 |
+| session_base.py | services/agent/ | 134 | 通用会话基类 |
+| file_visualization.py | utils/visualization/ | 627 | 可视化文件（重命名） |
+
+### 1.3 向后兼容层
+
+| 文件 | 位置 | 说明 |
+|------|------|------|
+| tools.py | services/agent/ | 导出所有 tools 符号到新位置 |
+| safety.py | services/agent/ | 导出 safety 符号到新位置 |
+| prompts.py | services/agent/ | 导出 prompts 符号到新位置 |
+| react_schema.py | services/agent/ | 导出 react_schema 符号到新位置 |
+
+### 1.4 最终目录结构
+
+```
+backend/app/services/
+├── tools/file/
+│   ├── __init__.py
+│   ├── file_tools.py        (46,484 bytes)
+│   └── file_react_schema.py (11,821 bytes)
+├── safety/file/
+│   ├── __init__.py
+│   └── file_safety.py       (27,321 bytes)
+├── prompts/file/
+│   ├── __init__.py
+│   └── file_prompts.py      (14,581 bytes)
+├── intents/definitions/file/
+│   ├── __init__.py
+│   ├── file_intent.py       (2,577 bytes)
+│   └── file_stats.py        (1,649 bytes)
+├── agent/
+│   ├── tools.py             ← 向后兼容层
+│   ├── safety.py            ← 向后兼容层
+│   ├── prompts.py           ← 向后兼容层
+│   ├── react_schema.py      ← 向后兼容层
+│   └── session_base.py       (新建)
+└── utils/visualization/
+    ├── __init__.py
+    └── file_visualization.py (已重命名)
+```
+
+### 1.5 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 总测试数 | 650 | ✅ |
+| 通过 | 640 | ✅ |
+| 失败 | 10 | ⚠️（与迁移无关） |
+| 跳过 | 6 | ℹ️ |
+
+### 1.6 Git提交记录
+
+```
+commit 1bb11268
+Author: 小沈
+Date:   2026-03-21
+
+refactor: 完成第9步~第17步，tools/safety/prompts/react_schema迁移到file目录 - 小沈-2026-03-21
+
+16 files changed, 3429 insertions(+), 2827 deletions(-)
+```
+
+参与开发：小沈
+完成时间：2026-03-21 07:03:00
+
+---
+
+v0.7.3
+
+更新时间：2026-03-21 06:13:42
+
+更新内容：
+
+## 1. 多意图处理架构重构 - 版本文档整理+错误纠正
+
+更新时间：2026-03-21 06:13:42
+
+### 1.1 重要更正
+
+**北京老陈指出小沈犯的错误**：
+
+| 错误 | 说明 | 违反规范 |
+|------|------|---------|
+| **错误1** | 擅自删除原有tag v0.7.1（指向commit 12f163ac） | 版本号变更规范：禁止删除历史tag |
+| **错误2** | 第2位变更未征得用户同意 | 版本号变更规范：第2位变更必须先征得用户同意 |
+
+### 1.2 纠正措施
+
+| 步骤 | 操作 | 结果 |
+|------|------|------|
+| 1 | 恢复 `v0.7.1` → commit `12f163ac`（第八步完成） | ✅ |
+| 2 | 创建 `v0.7.2` → commit `88f572ff`（第零步完成 + 文档） | ✅ |
+| 3 | 创建 `v0.7.3` → commit `46b688d1`（本次提交） | ✅ |
+
+### 1.3 版本关系
+
+| 版本 | 指向 | 说明 |
+|------|------|------|
+| **v0.7.1** | commit 12f163ac | 第一步~第八步完成（BaseAgent创建完成） |
+| **v0.7.2** | commit 88f572ff | 第零步完成 + 文档纠正 |
+| **v0.7.3** | commit 46b688d1 | 版本文档整理 + 错误纠正（本次） |
+
+### 1.4 Git提交记录
+
+```
+commit 46b688d1
+Author: 小沈
+Date:   2026-03-21 06:05:30
+
+fix: 纠正版本号，v0.7.1恢复指向第八步，v0.7.2为第零步+文档 - 小沈-2026-03-21
+```
+
+参与开发：小沈、北京老陈
+完成时间：2026-03-21 06:13:42
+
+---
+
+v0.7.2
+
+更新时间：2026-03-21 06:03:46
+
+更新内容：
+
+## 1. 多意图处理架构重构 - 第零步完成+文档更新
+
+更新时间：2026-03-21 06:03:46
+
+### 1.1 问题发现
+
+**在对照设计文档检查第一步~第八步时，发现第零步（目录重命名）遗漏**：
+
+| 项目 | 设计文档要求 | 实际情况 |
+|------|------------|---------|
+| **第零步** | `file_operations/` 重命名为 `agent/` | **未执行** - 两个目录并存 |
+
+### 1.2 第零步：目录重命名合并
+
+**执行时间**: 2026-03-21 05:43:00 ~ 05:55:00
+
+**目录结构对比**：
+
+**执行前（混乱）**：
+```
+backend/app/services/
+├── agent/                      ← 【临时新建的通用框架】
+└── file_operations/            ← 【原目录没动！第零步没做！】
+```
+
+**执行后（符合设计）**：
+```
+backend/app/services/
+└── agent/                    ← 【合并后】唯一主目录
+    ├── __init__.py
+    ├── base.py / tool_parser.py / tool_executor.py / llm_strategies.py
+    ├── agent.py / tools.py / safety.py / prompts.py / react_schema.py / session.py
+    ├── llm_adapter.py / os_adapter.py / strategy_selector.py
+    ├── capability_detector.py / capability.py / adapter.py
+    ├── preprocessing/ / intent/ / types/
+```
+
+### 1.3 小健审查发现的问题
+
+| 阶段 | 判定 | 问题数 |
+|------|------|--------|
+| Phase 1: 重命名方案 | ⚠️ 需修改 | 2个 |
+| Phase 2: __init__.py合并 | ❌ 不通过 | 2个 |
+| Phase 3: 替换规则 | ⚠️ 需修改 | 3个 |
+| 遗漏检查 | ❌ 不通过 | 4个 |
+
+**关键问题**：
+1. 遗漏 `get_file_safety_service`：原 `__init__.py` 导出遗漏
+2. 遗漏9个内部文件：只统计了5个外部文件
+
+### 1.4 批量替换导入路径
+
+| 目录 | 替换文件数 |
+|------|-----------|
+| `app/services/agent/` | 7个 |
+| `app/api/v1/` | 3个 |
+| `app/utils/visualization/` | 1个 |
+| `tests/` | 11个 |
+| `tools/` | 2个 |
+| **总计** | **24个文件** |
+
+### 1.5 验证结果
+
+| 验证项 | 结果 |
+|--------|------|
+| Python 导入测试 | ✅ `from app.services.agent import FileTools` |
+| Python 导入测试 | ✅ `from app.services.agent.agent import FileOperationAgent` |
+| test_agent.py | ✅ 19/19 passed |
+| test_tools.py + test_safety.py + test_adapter.py + test_react_schema.py | ✅ 119/119 passed |
+| 全部后端测试 | ✅ 640 passed, 10 failed（失败与rename无关） |
+
+### 1.6 Git提交记录
+
+```
+commit 4298e2d1
+Author: 小沈
+Date:   2026-03-21 05:52:09
+
+refactor: 执行第零步，file_operations目录合并到agent目录 - 小沈-2026-03-21
+
+22 files changed, 8010 insertions(+), 7991 deletions(-)
+  rename backend/app/services/{file_operations => agent}/adapter.py (96%)
+  rename backend/app/services/{file_operations => agent}/agent.py (96%)
+  ...
+```
+
+参与开发：小沈、小健
+完成时间：2026-03-21 06:03:46
+
+---
+
+v0.7.1
+
+更新时间：2026-03-21 05:58:14
+
+更新内容：
+
+## 1. 多意图处理架构重构 - 第一步~第八步完成
+
+更新时间：2026-03-21 05:58:14
+
+### 1.1 变更阶段总览
+
+| 阶段 | 步骤 | 内容 | 状态 |
+|------|------|------|------|
+| **新建阶段** | 第一步 | 创建 preprocessing/ 预处理模块 | ✅ 完成 |
+| **新建阶段** | 第二步 | 创建 intent/ 意图管理模块 | ✅ 完成 |
+| **新建阶段** | 第三步 | 创建 tools/safety/prompts/intents 目录结构 | ✅ 完成 |
+| **新建阶段** | 第四步 | 创建 agent/types/ 数据类型目录 | ✅ 完成 |
+| **新建阶段** | 第五步 | 从 agent.py 提取 ToolParser | ✅ 完成 |
+| **新建阶段** | 第六步 | 从 agent.py 提取 ToolExecutor | ✅ 完成 |
+| **新建阶段** | 第七步 | 新建 llm_strategies.py | ✅ 完成 |
+| **新建阶段** | 第八步 | 改造 agent.py（创建 base.py + 继承） | ✅ 完成 |
+
+### 1.2 新建文件汇总
+
+| 文件 | 说明 | 行数 |
+|------|------|------|
+| `agent/base.py` | BaseAgent 通用基类 | 620行 |
+| `agent/tool_parser.py` | ToolParser 工具解析 | ~128行 |
+| `agent/tool_executor.py` | ToolExecutor 工具执行 | ~146行 |
+| `agent/llm_strategies.py` | LLM调用策略模式 | ~172行 |
+| `agent/preprocessing/` | 用户输入预处理模块 | ~190行 |
+| `agent/intent/` | 意图管理模块 | ~130行 |
+| `agent/types/` | 数据类型定义 | ~150行 |
+
+### 1.3 核心设计
+
+**BaseAgent 职责**：
+- ReAct 循环核心逻辑
+- LLM 调用调度
+- 工具执行管理
+- 状态管理
+
+**FileOperationAgent 职责**：
+- 继承 BaseAgent
+- 实现抽象方法 `_get_llm_response_text()`, `_get_llm_response_with_tools()`, `_get_llm_response_with_response_format()`
+- 文件专用逻辑（session管理、prompts、rollback）
+
+**LLM Strategies 包含策略**：
+| 策略 | 说明 |
+|------|------|
+| TextStrategy | 文本模式：直接返回响应文本 |
+| ToolsStrategy | Function Calling 模式：通过 tools Schema 约束 |
+| ResponseFormatStrategy | response_format 模式：通过 JSON Schema 约束 |
+
+### 1.4 Git提交记录
+
+| Commit | Message | 日期 |
+|--------|---------|------|
+| `12f163ac` | feat: agent/base.py创建BaseAgent基类，file_operations/agent.py重构继承 | 2026-03-21 |
+| `3896244e` | feat: 新建 llm_strategies.py 实现 LLM 调用策略模式 | 2026-03-21 |
+| `99c1466b` | feat: 提取ToolParser和ToolExecutor到独立模块 | 2026-03-20 |
+| `6203ac9a` | feat: 创建agent/types/目录，提取类型定义 | 2026-03-20 |
+| `93ec9a9a` | feat: 创建 services/tools/safety/prompts/intents 目录结构 | 2026-03-20 |
+| `1a580d96` | fix: intent模块添加线程安全、配置化和测试 | 2026-03-20 |
+| `2f4de37f` | feat: 创建 intent 意图分类管理层 | 2026-03-20 |
+
+### 1.5 测试结果
+
+| 测试文件 | 结果 |
+|---------|------|
+| test_agent.py | ✅ 19/19 passed |
+| test_preprocessing/*.py | ✅ 16 passed |
+| test_intent/*.py | ✅ 8 passed |
+| test_tool_parser.py | ✅ 15 passed |
+
+### 1.6 遗留工作（第九步~第十七步）
+
+| 步骤 | 任务 | 状态 |
+|------|------|------|
+| 第九步 | 迁移 tools.py → tools/file/file_tools.py | ⏳ 待执行 |
+| 第十步 | 迁移 safety.py → safety/file/file_safety.py | ⏳ 待执行 |
+| 第十一步 | 迁移 prompts.py → prompts/file/file_prompts.py | ⏳ 待执行 |
+| 第十二步 | 迁移 react_schema.py → agent/types/react_schema.py | ⏳ 待执行 |
+| 第十三天 | 创建 file_stats.py | ⏳ 待执行 |
+| 第十四步 | 创建 file_intent.py | ⏳ 待执行 |
+| 第十五步 | 重命名可视化文件 | ⏳ 待执行 |
+| 第十六步 | 抽象 session_base.py | ⏳ 待执行 |
+| 第十七步 | 删除旧文件，完成迁移 | ⏳ 待执行 |
+
+参与开发：小沈
+完成时间：2026-03-21 05:58:14
+
+---
+
+v0.7.0
+
+更新时间：2026-03-20 12:43:40
+
+更新内容：
+
+## 1. Structured Outputs 自适应兼容模块开发
+
+更新时间：2026-03-20 12:43:40
+
+### 1.1 新增5个模块
+
+| 模块 | 文件 | 行数 | 作者 | 功能 |
+|------|------|------|------|------|
+| capability.py | `backend/app/services/file_operations/` | 70 | 小强 | LLMCapability枚举、LLMFeature、LLMProbeResult数据类 |
+| capability_detector.py | `backend/app/services/file_operations/` | 267 | 小强 | CapabilityDetector能力探测器，含_probe_tools/_probe_response_format/_probe_reasoning |
+| strategy_selector.py | `backend/app/services/file_operations/` | 70 | 小强 | StrategySelector策略选择器、SelectedStrategy数据类 |
+| os_adapter.py | `backend/app/services/file_operations/` | 96 | 小强 | OSAdapter系统适配器，检测系统并生成适配提示 |
+| llm_adapter.py | `backend/app/services/file_operations/` | 149 | 小强 | LLMAdapter统一适配器入口 |
+
+### 1.2 核心功能
+
+**能力枚举 (capability.py)**：
+```
+LLMCapability 枚举
+├── NONE = 0
+├── RESPONSE_FORMAT  # 支持 response_format
+├── TOOLS            # 支持 tools/function_calling
+├── STREAMING        # 支持流式输出
+└── REASONING        # 支持 reasoning_content
+
+LLMFeature 数据类
+├── capability: LLMCapability
+├── supports_response_format: bool
+├── supports_tools: bool
+├── supports_streaming: bool
+├── supports_reasoning: bool
+├── uses_reasoning_content: bool
+├── uses_outer_content: bool
+├── detected_at: Optional[str]
+└── detection_method: str = "auto"
+
+LLMProbeResult 数据类
+├── success: bool
+├── feature: LLMFeature
+├── response_format_tested: bool
+├── response_format_works: bool
+├── tools_tested: bool
+├── tools_works: bool
+└── error: Optional[str]
+```
+
+**能力探测器 (capability_detector.py)**：
+```
+CapabilityDetector
+├── detect()                    # 自动探测LLM能力（入口）
+├── _probe_tools()              # 探测tools支持
+├── _probe_response_format()    # 探测response_format支持
+├── _probe_reasoning()         # 探测reasoning特征
+└── is_cached()                # 检查缓存状态
+```
+
+**策略选择器 (strategy_selector.py)**：
+```
+StrategySelector.select(feature: LLMFeature) -> SelectedStrategy
+├── tools优先 → method="tools"
+├── response_format次之 → method="response_format"
+└── 降级到prompt → method="prompt"
+```
+
+**系统适配器 (os_adapter.py)**：
+```
+OSAdapter
+├── system              # Windows / Linux / Darwin
+├── is_windows          # 是否Windows
+├── is_linux            # 是否Linux
+├── is_macos            # 是否macOS
+├── path_separator      # 路径分隔符
+├── commands            # 命令映射（dir/ls等）
+├── get_system_prompt() # 生成系统提示
+└── get_tool_descriptions() # 生成工具描述
+```
+
+### 1.3 问题发现与修复
+
+**小资审查发现的问题（3个，已全部修复）**：
+
+| 问题 | 位置 | 现象 | 修复方式 | 状态 |
+|------|------|------|---------|------|
+| uses_outer_content缺失 | capability_detector.py:244 | HTTP非200时返回缺少字段 | 添加 `"uses_outer_content": False` | ✅ 已修复 |
+| uses_outer_content缺失 | capability_detector.py:262 | 网络异常时返回缺少字段 | 添加 `"uses_outer_content": False` | ✅ 已修复 |
+| build_messages(None) TypeError | llm_adapter.py:113 | messages=None时抛出异常 | 添加 `if messages:` 检查 | ✅ 已修复 |
+
+**小健分析确认**：detection_method字段位于LLMFeature中，LLMProbeResult通过feature.detection_method访问，非问题。
+
+### 1.4 测试覆盖
+
+| 测试文件 | 测试数 | 通过 | 状态 |
+|----------|--------|------|------|
+| `test_capability_modules.py` | 34 | 34 | ✅ |
+| `test_capability_modules_strict.py` | 32 | 32 | ✅ |
+| **合计** | **66** | **66** | **✅** |
+
+### 1.5 Git提交记录
+
+```
+commit 764d6453
+Author: 小强
+Date:   2026-03-20
+
+feat: 新增Structured-Outputs自适应兼容能力探测模块(LLMAdapter/capability/capability_detector/strategy_selector/os_adapter)-小强-2026-03-20
+```
+
+参与开发：小强、小资、小健、小沈
+完成时间：2026-03-20 12:43:40
+
+---
+
+v0.6.16
+
+更新时间：2026-03-20 10:50:00
+
+更新内容：
+
+## 1. Structured Outputs 自适应兼容方案 v1.4 修复
+
+更新时间：2026-03-20 10:50:00
+
+### 1.1 小健审查发现的问题（8个，已修复6个）
+
+| 优先级 | 问题 | 状态 |
+|--------|------|------|
+| P0-001 | 测试用例断言错误（应断言 tools 而非 response_format） | ✅ 已修复 |
+| P0-002 | asdict 未导入 | ✅ 已修复 |
+| P0-003 | self._service.model 未定义（应改为 self.model） | ✅ 已修复 |
+| P1-001 | 架构图探测顺序不一致（应统一为 tools 优先） | ✅ 已修复 |
+| P1-002 | _probe_tools 逻辑不严格（无 tool_calls 应返回 False） | ✅ 已修复 |
+| P1-003 | httpx 连接管理（可选） | ⏳ 未修复（建议） |
+| P2-001 | commands 逻辑明确 macOS 处理（建议） | ⏳ 未修复（建议） |
+| P2-002 | 文档描述与代码实现不一致 | ✅ 架构图已修复 |
+
+### 1.2 修复内容
+
+1. **P0-001**：测试用例改为断言 "tools"，符合实测结论
+2. **P0-002**：添加 `from dataclasses import asdict` 导入
+3. **P0-003**：改为 `self.model`，修复属性访问错误
+4. **P1-001**：2.1 架构图修正为 tools → response_format → prompt
+5. **P1-002**：`_probe_tools` 无 `tool_calls` 返回 `False`
+
+---
+
+## 2. Git提交记录
+
+```
+提交时间: 2026-03-20 10:50:00
+
+docs: 更新自适应兼容方案v1.4 - 小沈-2026-03-20
+- 版本历史添加v1.4记录
+- 文档头部时间戳更新
+```
+
+参与开发：小沈、小健
+完成时间：2026-03-20 10:50:00
+
+---
+
+v0.6.15
+
+更新时间：2026-03-20 10:05:00
+
+更新内容：
+
+## 1. Structured Outputs 自适应兼容方案研究
+
+更新时间：2026-03-20 10:05:00
+
+### 1.1 研究背景
+
+**问题**：原有方案依赖硬编码模型名称，新模型需要手动添加，无法处理未知模型。
+
+**解决方案**：基于特征检测的自适应兼容方案，根据模型反馈自动适配。
+
+### 1.2 三种 Structured Outputs 模式
+
+| 模式 | 是否需要解析 | 可靠性 | 支持模型数 | 推荐度 |
+|------|------------|--------|----------|--------|
+| **tools** | ❌ 不需要 | ✅ 高（结构化返回） | ~50个 | ⭐⭐⭐ 强烈推荐 |
+| **response_format** | ✅ 需要解析 | ⚠️ 中（部分非标准） | ~45个 | ⭐⭐ 可用 |
+| **prompt** | ✅ 需要解析 | ❌ 低（需正则提取） | 所有模型 | ⭐ 不推荐 |
+
+**返回格式对比**：
+
+```
+【tools 模式】- 推荐
+{
+  "tool_calls": [{
+    "function": {
+      "name": "search_files",
+      "arguments": "{\"path\": \"C:/\", \"pattern\": \"*.py\"}"
+    }
+  }]
+}
+✅ 参数已是结构化，直接解析 arguments 即可
+
+【response_format 模式】
+{
+  "content": "{\"action\": \"search_files\", \"path\": \"C:/\", \"pattern\": \"*.py\"}"
+}
+⚠️ content 是 JSON 字符串，需要 json.loads() 解析一次
+
+【prompt 模式】
+{
+  "content": "我需要搜索 C:/ 下的 Python 文件"
+}
+❌ 纯文本，需要正则提取，容易出错
+```
+
+### 1.3 策略优先级（修正）
+
+**根据实测结果修正**：
+
+| 优先级 | 策略 | 支持模型数 | 说明 |
+|--------|------|----------|------|
+| **1** | **tools** | ~50个 | ✅ 支持最广 |
+| **2** | response_format | ~45个 | 部分返回非标准JSON |
+| **3** | prompt | 所有模型 | 降级方案 |
+
+### 1.4 LLM 支持情况汇总
+
+| 模型 | response_format | tools | reasoning_content | 备注 |
+|------|---------------|-------|-----------------|------|
+| **LongCat** | ❌ 空响应 | ✅ 支持 | ✅ 支持 | 七牛版本 |
+| **GLM-4.7 (官方)** | ✅ 支持 | ❌ 不支持 | ✅ 支持 | GLM 官方 API |
+| **GLM-4.6/4.7 (七牛)** | ✅ 支持 | ✅ 支持 | ✅/❌ | 七牛版本 |
+| **DeepSeek-chat** | ✅ 支持 | ✅ 支持 | ❌ | DeepSeek 官方 |
+| **DeepSeek-R1** | ✅ 支持 | ✅ 支持 | ✅ | 完整支持 |
+| **Kimi-K2 (官方)** | ✅ 支持 | ✅ 支持 | ❌ | Kimi 官方 |
+| **Kimi-K2-Thinking** | ❌ 不支持 | ❌ 不支持 | ❌ | 特殊版本 |
+| **MiniMax-M2** | ✅ 支持 | ✅ 支持 | ❌ | 官方文档确认 |
+| **MiniMax-M2.5 (七牛)** | ✅ 支持 | ✅ 支持 | ✅ | 七牛完整支持 |
+| **Qwen-Turbo (七牛)** | ✅ 支持 | ✅ 支持 | ❌ | 七牛版本 |
+| **Qwen3-Max (七牛)** | ✅ 支持 | ✅ 支持 | ❌ | 七牛版本 |
+
+### 1.5 新增系统适配（Windows/Linux/Mac）
+
+**问题背景**：LLM 返回的命令和路径格式需要适配当前操作系统。
+
+```
+【没有告知系统】
+LLM 返回：ls /home/user/file.txt  ← Linux 命令，Windows 用不了
+
+【告知了系统】
+LLM 返回：dir C:\Users\xxx\file.txt  ← Windows 命令，正确
+```
+
+**解决方案**：在 System Prompt 和工具 Description 中告知 LLM 当前操作系统。
+
+### 1.6 新增文档
+
+| 文档 | 说明 | 版本 |
+|------|------|------|
+| `ReAct-框架对比与实现方法总结-小沈-2026-03-20.md` | 5个框架总结报告 | v1.0 |
+| `LLM-Structured-Outputs-支持情况研究报告-小沈-2026-03-20.md` | 含三个概念通俗解释 | v1.2 |
+| `Structured-Outputs-自适应兼容方案-小沈-2026-03-20.md` | 含系统适配（新增） | v1.3 |
+
+### 1.7 核心设计
+
+**OSAdapter 类**：
+
+```python
+class OSAdapter:
+    system = platform.system()  # Windows / Linux / Darwin
+    path_separator = "\\" if is_windows else "/"
+    
+    def get_system_prompt(self) -> str:
+        """生成系统提示信息"""
+        return f"""【操作系统】
+{self.system}
+
+【路径格式】
+- Windows: C:\\Users\\xxx\\file.txt
+- Linux/Mac: /home/xxx/file.txt
+
+【当前系统命令】
+dir/copy/del/type (Windows)
+ls/cp/rm/cat (Linux/Mac)
+"""
+```
+
+**能力探测器**：
+
+```python
+class CapabilityDetector:
+    async def detect(self):
+        # Step1: 探测 tools（优先级最高）
+        # Step2: 探测 response_format（仅在 tools 不支持时）
+        # Step3: 降级到 prompt
+```
+
+**策略选择器**：
+
+```python
+def select(feature: LLMFeature) -> SelectedStrategy:
+    if feature.supports_tools:
+        return SelectedStrategy(method="tools", ...)  # 优先级最高
+    if feature.supports_response_format:
+        return SelectedStrategy(method="response_format", ...)
+    return SelectedStrategy(method="prompt", ...)
+```
+
+---
+
+## 2. Git提交记录
+
+```
+commit 5b6ff49f
+Author: 小沈
+Date:   2026-03-20
+
+docs: 新增Structured Outputs研究报告和自适应兼容方案v1.3 - 小沈-2026-03-20
+
+5 files changed, 3566 insertions(+)
+```
+
+参与开发：小沈
+完成时间：2026-03-20 10:05:00
+
+---
+
+v0.6.14
+
+更新时间：2026-03-20 09:35:30
+
+更新内容：
+
+## 1. Structured Outputs Function Calling 模式实现
+
+更新时间：2026-03-20 09:35:30
+
+### 1.1 核心价值
+
+| 约束层级 | 实现方式 | 约束强度 | 说明 |
+|---------|---------|---------|------|
+| 原第一层 | 增强System Prompt | 软约束 | LLM可能不遵守 |
+| 原第二层 | 详细工具Description | 软约束 | LLM可能忽略 |
+| 原第三层 | Examples示例 | 软约束 | LLM可能不参考 |
+| **新增第四层** | **Function Calling Schema** | **硬约束** | **LLM必须遵守** |
+
+**Function Calling 核心价值**：通过 tools Schema 强制约束 LLM 输出参数名，消除了 agent.py 中参数映射容错代码的必要。
+
+### 1.2 新增文件
+
+| 文件 | 行数 | 作者 | 说明 |
+|------|------|------|------|
+| `react_schema.py` | 387 | 小沈 | Function Calling Schema 生成器 |
+
+### 1.3 react_schema.py 代码结构
+
+```
+react_schema.py
+├── get_tools_schema_for_function_calling()  【核心】生成OpenAI格式Schema
+├── _process_description()                     处理工具描述
+├── _clean_properties()                       清理JSON Schema属性
+├── _extract_type()                           提取类型（支持anyOf/oneOf格式）
+├── _generate_example_hints()                 生成示例提示
+├── get_tool_schema()                         获取单个工具Schema
+├── validate_tool_call()                      验证和解析Function Calling返回
+├── get_available_tools()                     获取工具名称列表
+└── get_finish_tool_schema()                  获取finish工具Schema
+```
+
+### 1.4 LongCat API 支持情况
+
+| 功能 | 支持状态 | 说明 |
+|------|---------|------|
+| `response_format: {type: "json_object"}` | ❌ 不支持（返回空） | 废弃字段 |
+| `tools` / `function_calling` | ✅ **已验证支持** | 参数名正确返回 |
+
+### 1.5 base.py 新增方法
+
+| 方法 | 行号 | 说明 |
+|------|------|------|
+| `chat_with_tools()` | 341 | 非流式Function Calling调用 |
+| `chat_with_tools_stream()` | 463 | 流式Function Calling调用 |
+
+**chat_with_tools() 核心逻辑**：
+```
+1. 构建 messages（当前消息 + 历史）
+2. 添加 tools 参数（OpenAI格式Schema）
+3. 设置 tool_choice（"auto" / "required"）
+4. 调用 API，解析 tool_calls
+5. 返回 ChatResponse（包含序列化后的tool_calls）
+```
+
+### 1.6 agent.py 新增功能
+
+| 功能 | 行号 | 说明 |
+|------|------|------|
+| `use_function_calling` 参数 | 427 | Agent初始化参数，控制是否启用 |
+| `run_with_tools()` | 1122 | 便捷方法，自动启用Function Calling |
+
+**agent.py LLM调用分支**（第850-920行）：
+```python
+if self.use_function_calling and self.tools:
+    # Function Calling 模式：强制参数名正确
+    response = await self.llm_client.chat_with_tools(
+        message=..., history=..., tools=schema
+    )
+else:
+    # 原有 ReAct 文本模式：依赖三层软约束
+```
+
+### 1.7 测试用例（116个）
+
+| 测试文件 | 测试数 | 通过 | 状态 |
+|----------|--------|------|------|
+| `test_react_schema.py` | 47 | 47 | ✅ |
+| `test_function_calling_comprehensive.py` | 69 | 69 | ✅ |
+| **合计** | **116** | **116** | **✅** |
+
+**test_react_schema.py 测试覆盖**：
+- `_extract_type()` 类型提取（anyOf/oneOf格式）
+- `_clean_properties()` 属性清理
+- `_process_description()` 描述处理
+- `_generate_example_hints()` 示例生成
+- `get_tools_schema_for_function_calling()` 完整Schema生成
+- `get_finish_tool_schema()` finish工具Schema
+- 7个工具Schema验证（list_directory/read_file/write_file/delete_file/move_file/search_files/generate_report）
+
+**test_function_calling_comprehensive.py 测试覆盖**：
+- LongCat API响应解析（tool_calls格式）
+- 参数提取正确性（dir_path/file_path等）
+- 必需参数验证
+- 可选参数处理
+- 异常处理（JSON解析错误、缺少参数等）
+- chat_with_tools() 方法
+- chat_with_tools_stream() 方法
+
+### 1.8 LongCat Function Calling 调用验证
+
+**API请求格式**：
+```json
+{
+  "model": "longcat-xxx",
+  "messages": [...],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "list_directory",
+        "description": "...",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "dir_path": {"type": "string", "description": "..."}
+          },
+          "required": ["dir_path"]
+        }
+      }
+    }
+  ],
+  "tool_choice": "auto"
+}
+```
+
+**API响应格式**：
+```json
+{
+  "choices": [{
+    "message": {
+      "tool_calls": [{
+        "id": "call_xxx",
+        "type": "function",
+        "function": {
+          "name": "list_directory",
+          "arguments": "{\"dir_path\": \"D:/\"}"
+        }
+      }]
+    }
+  }]
+}
+```
+
+---
+
+## 2. Git提交记录
+
+```
+commit 445e8de4
+Author: 小查
+Date:   2026-03-20
+
+test: 新增Function Calling全面深度测试69个用例 - 小查-2026-03-20
+
+commit 2b3610fd
+Author: 小沈
+Date:   2026-03-20
+
+feat: 实现Structured Outputs Function Calling模式 - 小沈-2026-03-20
+```
+
+参与开发：小沈、小查
+完成时间：2026-03-20 09:35:30
+
+---
+
+v0.6.13
+
+更新时间：2026-03-20 08:23:00
+
+更新内容：
+
+## 1. LLM工具调用参数命名规范 - 核心实现
+
+更新时间：2026-03-20 08:23:00
+
+### 1.1 问题背景
+
+| 问题 | 系统预期 | LongCat返回 | 后果 |
+|------|---------|------------|------|
+| 参数名不一致 | `dir_path` | `directory_path` | 工具调用失败 |
+
+**问题根因**：
+| 层级 | 问题 | 影响 |
+|-----|------|------|
+| **工具定义层** | description过于简单 | LLM不知道如何正确调用 |
+| **Prompt层** | 没有参数命名规则 | LLM随意命名 |
+| **执行层** | 依赖参数映射 | 治标不治本 |
+
+### 1.2 解决方案设计
+
+**三层防御策略**：
+```
+第一层：增强System Prompt（全局规则）
+      ↓
+第二层：详细工具Description（每个工具）
+      ↓
+第三层：添加Examples（正确用法示范）
+```
+
+**技术选型**：
+| 组件 | 选择 | 理由 |
+|------|------|------|
+| 参数定义 | Pydantic模型 | 自动生成Schema，类型安全 |
+| 装饰器 | 自定义register_tool | 支持Pydantic模型 |
+| 白名单 | 动态生成 | 自动添加所有存在的盘符 |
+| 示例 | input_examples | Claude官方推荐 |
+
+### 1.3 tools.py 重写详解
+
+**文件结构**（约900行）：
+```
+tools.py
+├── 第一部分：分页配置常量 (PAGE_SIZE, MAX_PAGE_SIZE)
+├── 第二部分：动态白名单 (_get_default_allowed_paths)
+├── 第三部分：Pydantic参数模型 (7个)
+├── 第四部分：ToolDefinition类
+├── 第五部分：工具注册表 (_TOOL_REGISTRY, register_tool)
+├── 第六部分：FileTools类 (7个工具方法)
+├── 第七部分：工具函数导出
+├── 第八部分：统一返回格式辅助函数
+└── 第九部分：分页支持函数
+```
+
+### 1.4 Pydantic参数模型（7个）
+
+| 模型名 | 必填参数 | 可选参数 | 说明 |
+|--------|---------|---------|------|
+| ReadFileInput | file_path | offset, limit, encoding | 读取文件 |
+| WriteFileInput | file_path, content | encoding | 写入文件 |
+| ListDirectoryInput | dir_path | recursive, max_depth, page_token, page_size | 列出目录 |
+| DeleteFileInput | file_path | recursive | 删除文件 |
+| MoveFileInput | source_path, destination_path | 无 | 移动文件 |
+| SearchFilesInput | pattern | path, file_pattern, use_regex, max_results | 搜索文件 |
+| GenerateReportInput | 无 | output_dir | 生成报告 |
+
+**关键参数命名规范**：
+| 旧名称（禁止） | 新名称（正确） | 用于工具 |
+|--------------|--------------|---------|
+| directory_path | **dir_path** | list_directory |
+| filepath | **file_path** | read/write/delete_file |
+| src/dst | **source_path/destination_path** | move_file |
+| 无 | **pattern, path** | search_files |
+
+### 1.5 动态白名单实现
+
+**改进点**：
+| 旧实现 | 新实现 |
+|-------|-------|
+| 硬编码盘符 | 动态检测所有存在的盘符 |
+| 可能遗漏D盘 | 自动包含所有可用盘符 |
+| 需要手动维护 | 启动时自动生成 |
+
+```python
+def _get_default_allowed_paths() -> List[Path]:
+    paths = [Path.home(), Path("/tmp"), Path("/var/tmp")]
+    if os.name == 'nt':
+        for letter in 'ABCDEFGHIJ':
+            drive = Path(f"{letter}:/")
+            if drive.exists():
+                paths.append(drive)
+    return paths
+```
+
+### 1.6 路径验证改进
+
+```python
+def _validate_path(self, file_path: str) -> tuple[bool, Optional[str]]:
+    real_path = Path(os.path.realpath(os.path.expanduser(file_path)))
+    for allowed in self.allowed_paths:
+        allowed_real = Path(os.path.realpath(allowed))
+        if str(real_path).startswith(str(allowed_real)):
+            return True, None
+    return False, f"路径 '{file_path}' 不在允许的操作范围内..."
+```
+
+**改进点**：
+1. 使用 `os.path.realpath` 规范化路径
+2. 使用 `os.path.expanduser` 处理 `~`
+3. 使用前缀匹配而非精确匹配
+
+### 1.7 search_files安全漏洞修复（P0）
+
+**问题**：原代码中只有 `search_files` 没有路径验证，这是严重的安全漏洞
+
+**修复**：
+```python
+async def search_files(self, pattern: str, path: str = ".", ...):
+    # 【安全修复】验证搜索路径
+    is_valid, error_msg = self._validate_path(path)
+    if not is_valid:
+        return _to_unified_format({
+            "success": False,
+            "error": error_msg,
+            "matches": []
+        }, "search_files")
+```
+
+### 1.8 prompts.py 增强详解
+
+**文件结构**（约350行）：
+```
+prompts.py
+├── FileOperationPrompts类
+│   ├── get_system_prompt()      【核心：增强版System Prompt】
+│   ├── get_task_prompt()
+│   ├── get_observation_prompt()
+│   ├── get_available_tools_prompt()  【支持input_examples】
+│   ├── get_rollback_instructions()
+│   ├── get_safety_reminder()
+│   └── get_parameter_reminder()   【新增：参数命名提醒】
+└── TaskTemplates类（预定义任务模板）
+```
+
+### 1.9 增强版System Prompt
+
+**参数命名规则（全局约束）**：
+```
+【IMPORTANT】Parameter Naming Rules - MUST follow these exactly:
+- list_directory → use dir_path (NOT directory_path, NOT path)
+- read_file → use file_path (NOT filepath, NOT path)
+- write_file → use file_path (NOT filepath, NOT path)
+- delete_file → use file_path (NOT filepath, NOT path)
+- move_file → use source_path AND destination_path (NOT src, NOT dst)
+- search_files → use pattern AND path
+
+【FORBIDDEN parameter names - DO NOT use】:
+- ❌ directory_path (correct: dir_path)
+- ❌ filepath (correct: file_path)
+- ❌ src / source (correct: source_path)
+- ❌ dst / dest / destination (correct: destination_path)
+```
+
+**Tool Call Examples（4个完整示例）**：
+```json
+Example 1: List directory
+{
+    "thought": "User wants to see files in D drive root",
+    "action": "list_directory",
+    "action_input": {
+        "dir_path": "D:/"  // ✅ CORRECT: uses dir_path
+    }
+}
+// ❌ WRONG: {"directory_path": "D:/"} or {"path": "D:/"}
+
+Example 2: Read file
+{
+    "action": "read_file",
+    "action_input": {
+        "file_path": "C:/Users/username/config.json"  // ✅ CORRECT
+    }
+}
+
+Example 3: Search files
+{
+    "action": "search_files",
+    "action_input": {
+        "pattern": "TODO",
+        "path": "D:/project",
+        "file_pattern": "*.py"
+    }
+}
+
+Example 4: Move file
+{
+    "action": "move_file",
+    "action_input": {
+        "source_path": "C:/old/file.txt",      // ✅ CORRECT
+        "destination_path": "D:/new/file.txt"   // ✅ CORRECT
+    }
+}
+// ❌ WRONG: {"src": "...", "dst": "..."}
+```
+
+### 1.10 预期效果
+
+| 效果 | 说明 |
+|------|------|
+| ✅ LongCat返回正确参数名 | 使用dir_path而非directory_path |
+| ✅ 不再需要代码映射 | 根本解决问题 |
+| ✅ 其他LLM也能遵守规则 | System Prompt约束 |
+
+| 安全性提升 | 说明 |
+|-----------|------|
+| ✅ search_files安全漏洞 | 已修复（添加路径验证） |
+| ✅ 动态白名单 | 自动包含所有可用盘符 |
+| ✅ 路径规范化 | 使用realpath处理特殊路径 |
+
+### 1.11 改进对比
+
+**tools.py改进**：
+| 方面 | 旧实现 | 新实现 |
+|------|-------|-------|
+| 参数定义 | docstring | Pydantic模型 |
+| Schema生成 | 无 | 自动生成 |
+| 白名单 | 硬编码 | 动态生成 |
+| search_files安全 | 无验证 | ✅ 有验证 |
+| input_examples | 无 | 每个工具2-3个 |
+
+**prompts.py改进**：
+| 方面 | 旧实现 | 新实现 |
+|------|-------|-------|
+| 参数规则 | 无 | ✅ 全局规则+FORBIDDEN |
+| 工具描述 | 一句话 | 3-5句话+使用场景 |
+| 示例 | 无 | ✅ 4个完整示例 |
+| 路径格式 | 无 | ✅ 明确说明 |
+
+---
+
+## 2. 测试用例（77个）
+
+更新时间：2026-03-20 08:23:00
+
+### 2.1 新增测试文件
+
+| 文件 | 说明 | 行数 | 作者 |
+|------|------|------|------|
+| `backend/tests/test_tools_pydantic.py` | LLM工具参数命名规范测试文件 | 908行 | 小健 |
+
+### 2.2 测试覆盖范围
+
+| 类别 | 测试类 | 测试数 | 说明 |
+|------|--------|--------|------|
+| Pydantic模型测试 | TestPydanticModels | 18个 | 7个Pydantic参数模型验证 |
+| 动态白名单测试 | TestDynamicAllowlist | 4个 | 动态允许目录功能 |
+| ToolDefinition测试 | TestToolDefinition | 5个 | 工具定义类验证 |
+| 装饰器测试 | TestRegisterToolDecorator | 4个 | register_tool装饰器 |
+| 工具注册表测试 | TestToolRegistry | 8个 | 工具注册与管理 |
+| 路径验证测试 | TestPathValidation | 7个 | 路径验证改进 |
+| 安全测试 | TestSearchFilesSecurity | 3个 | search_files安全修复 |
+| Prompts增强测试 | TestPromptsEnhancement | 10个 | Prompts增强功能 |
+| 分页功能测试 | TestPaginationFunctions | 5个 | 分页支持 |
+| 统一格式测试 | TestUnifiedFormat | 6个 | 统一返回格式 |
+| 常量测试 | TestConstants | 3个 | 常量定义验证 |
+| 边界条件测试 | TestBoundaryConditions | 4个 | 边界条件覆盖 |
+
+### 2.3 测试结果
+
+| 指标 | 数值 | 状态 |
+|------|------|------|
+| 新增测试用例 | 77个 | ✅ |
+| 通过 | 77个 | ✅ |
+| 失败 | 0个 | ✅ |
+| 原有测试 | 28个 | ✅ 全部通过 |
+| 总测试数 | 409+个 | ✅ |
+
+### 2.4 修复的测试问题
+
+| 问题 | 测试 | 修复方式 |
+|------|------|---------|
+| Windows路径格式比较 | test_allowlist_contains_temp_dirs | 统一转换为正斜杠后比较 |
+| Windows盘符格式问题 | test_allowlist_windows_drives | 同上 |
+| 遍历到临时工具 | test_each_tool_has_examples | 添加跳过逻辑 |
+
+---
+
+## 3. 相关文件清单
+
+### 3.1 核心代码文件
+
+| 文件 | 说明 | 状态 |
+|------|------|------|
+| `backend/app/services/file_operations/tools.py` | 重写的工具模块（约900行） | ✅ 已完成 |
+| `backend/app/services/file_operations/prompts.py` | 增强的Prompt模块（约350行） | ✅ 已完成 |
+
+### 3.2 测试文件
+
+| 文件 | 说明 | 状态 |
+|------|------|------|
+| `backend/tests/test_tools_pydantic.py` | 新测试文件（77个用例） | ✅ 已完成 |
+| `backend/tests/test_tools.py` | 原测试文件（28个用例） | ✅ 全部通过 |
+
+### 3.3 参考文档
+
+| 文档 | 说明 |
+|------|------|
+| `doc-ReAct重构/LLM工具调用参数命名规范-实现说明文档.md` | 详细实现说明（1038行） |
+| `doc-ReAct重构/LLM工具调用参数命名规范设计报告.md` | 设计报告 |
+
+---
+
+## 4. Git提交记录
+
+```
+commit 802a0790
+Author: 小健
+Date:   2026-03-20 08:23:00
+
+test: 新增LLM工具参数命名规范测试用例77个 - 小健-2026-03-20
+
+commit [上一个]
+feat: 重写tools.py和prompts.py - 解决LLM参数命名问题 - 小强-2026-03-20
+```
+
+参与开发：小强、小健
+完成时间：2026-03-20 08:23:00
+
+---
+
+v0.6.12
+
+更新时间：2026-03-19 17:00:00
+
+更新内容：
+
+## 1. Thought2版本实现（types/process_thought.py）
+
+更新时间：2026-03-19 17:00:00
+
+### 1.1 新增文件
+
+| 文件 | 说明 |
+|------|------|
+| `backend/app/api/v1/types/process_thought.py` | Thought2版本 thought阶段处理逻辑 |
+
+### 1.2 功能说明
+
+Thought2是带LLM调用的thought阶段处理函数：
+
+| 功能 | 说明 |
+|------|------|
+| reasoning传导 | 从start或observation传导上下文 |
+| 二次yield | 第一次yield"分析中..."占位，第二次yield完整数据 |
+| LLM调用 | 调用LLM获取推理结论+工具选择 |
+| 异常处理 | LLM调用失败时有fallback逻辑 |
+
+### 1.3 process_thought.py 函数列表
+
+| 函数名 | 功能 | 行号 |
+|--------|------|------|
+| `build_reasoning` | 生成reasoning内容 | 45 |
+| `parse_llm_response` | 解析LLM返回 | 83 |
+| `build_llm_input` | 组织LLM输入 | 118 |
+| `build_thought_data_placeholder` | 构建占位版本thought_data | 146 |
+| `update_thought_data` | 更新为完整数据 | 179 |
+| `process_thought` | 主函数 | 217 |
+
+### 1.4 reasoning传导逻辑
+
+| 进入来源 | reasoning内容 | 生成方式 |
+|---------|-------------|---------|
+| 从start进入 | start.content + is_clear | 字符串拼接 |
+| 从observation进入 | observation.summary | 直接取值 |
+
+### 1.5 两次yield字段对比
+
+| 字段 | 第一次yield | 第二次yield |
+|------|------------|------------|
+| type | "thought" | "thought" |
+| step | 序号 | 序号（不变） |
+| timestamp | 时间戳 | 时间戳（不变） |
+| content | "分析中..." | llm_content |
+| reasoning | 传导内容 | 传导内容（不变） |
+| action_tool | 不发 | 工具名称 |
+| params | 不发 | 工具参数 |
+
+### 1.6 验证结果
+
+- ✅ 编译检查通过
+- ✅ 函数清单完整性检查通过（6个函数对照文档8.2.3）
+- ✅ 流程完整性检查通过（12个步骤对照文档1.1）
+- ✅ 字段正确性检查通过
+
+### 1.7 代码审查
+
+- 审查人：小健
+- 检查内容：
+  - 函数清单完整性
+  - 流程完整性
+  - 字段正确性
+  - 文档对照检查
+- 检查结果：✅ 通过，0个问题
+
+参与开发：小沈、小健
+完成时间：2026-03-19 17:00:00
+
+---
+
+v0.6.11
+
+更新时间：2026-03-19 14:59:12
+
+更新内容：
+
+## 1. is_need_confirm 拆分为两个来源
+
+- 设计决定：
+  - is_need_confirm_from_security: 根据安全检查 true/false 分别处理（显示⚠️图标）
+  - is_need_confirm_from_llm: 强制设置为 False
+
+### 1.1 修改文件
+
+a) `shell_security.py` - check_command_safety() 函数（第659-668行）
+   - 第662行：新增 `is_need_confirm = not is_safe and risk_level in ["medium"]`
+   - 第670行：返回字典新增 `is_need_confirm` 字段
+
+b) `process_start.py` - get_status_icon() 函数（第45-76行）
+   - 参数从 `is_need_confirm` 改为 `is_need_confirm_from_security`
+
+c) `process_start.py` - parse_llm_response() 函数（第78-107行）
+   - 返回值从 `is_need_confirm` 改为 `is_need_confirm_from_llm`
+   - 固定返回 False
+
+d) `process_start.py` - process_start() 函数（第270-315行）
+   - 读取 security_result.get('is_need_confirm') 作为 is_need_confirm_from_security
+   - is_need_confirm_from_llm 强制设为 False
+   - 第二次yield 包含两个独立字段
+
+### 1.2 更新测试文件
+
+- `test_process_start.py`
+- get_status_icon 测试：参数改为 is_need_confirm_from_security
+- parse_llm_response 测试：断言改为 is_need_confirm_from_llm
+- process_start 测试：断言改为两个独立字段
+
+### 1.3 验证结果
+
+- ✅ 23个测试全部通过
+
+参与开发：小沈
+完成时间：2026-03-19 14:59:12
+
+---
+
+v0.6.10
+
+更新时间：2026-03-19 14:40:00
+
+更新内容：
+
+1. ReAct重构 - Start阶段按type分文件架构
+   - 创建 backend/app/api/v1/types/ 目录
+   - 创建 backend/app/api/v1/adapters/ 目录
+   - 创建 backend/app/api/v1/types/__init__.py
+   - 创建 backend/app/api/v1/adapters/__init__.py
+   - 创建 backend/app/chat_stream_helpers.py（共享辅助函数）
+
+2. Start2版本实现（带LLM调用）
+   - 文件：backend/app/api/v1/types/process_start.py
+   - 功能：安全检查通过后调用LLM分析用户意图
+   - 新增状态图标判断（✅/❓/⚠️/🚫）
+   - 新增二次yield（start_data + content+状态）
+   - 新增LLM调用异常处理（fallback逻辑）
+
+3. Start2函数测试
+   - 文件：backend/tests/test_process_start.py
+   - 23个测试用例全部通过
+   - 测试覆盖：
+     * 状态图标判断（6个测试）
+     * LLM响应解析（5个测试）
+     * LLM输入构建（4个测试）
+     * process_start函数（6个测试）
+     * 集成测试（2个测试）
+
+4. ReAct重构文档
+   - 创建 doc-ReAct重构/ 目录
+   - doc-ReAct重构/第三次ReAct重构设计与计划-小沈-2026-03-19.md
+   - doc-ReAct重构/重构Start设计与实现说明-小沈-2026-03-19.md
+
+5. 代码审查
+   - 审查人：小健
+   - 检查内容：
+     * types/process_start.py 语法检查
+     * LLM调用异常处理
+     * 函数参数类型注解
+     * 未使用导入清理
+
+技术细节：
+
+1. Start2版本新功能：
+   - LLM调用：安全检查通过后调用LLM分析用户意图
+   - 状态图标：根据条件返回不同图标
+     * blocked=true → 🚫 （安全拦截）
+     * is_clear=false → ❓ （输入含混不清）
+     * is_need_confirm=true → ⚠️ （有风险需确认）
+     * 其他 → ✅ （正常，可进入thought）
+   - 二次yield：
+     * 第一次yield：start_data
+     * 第二次yield：content + is_clear + is_need_confirm + status_icon
+    - 异常处理：LLM调用失败时有fallback逻辑
+
+1. Start1版本说明（备用版本，不带LLM调用）：
+   - 文件：backend/app/api/v1/chat_stream.py（第154-258行）
+   - 函数：process_start_v1()
+   - 功能：
+     * 构建display_name（AI显示名称）
+     * security_check安全检查
+     * 构建start_data并yield
+     * 保存到数据库
+     * is_safe检查，不通过则yield error
+   - 与Start2对比：
+     * Start1：不做LLM调用，直接进入thought阶段
+     * Start2：调用LLM分析意图，返回状态图标
+     * Start2是Start1的增强版
+   - 当前状态：主流程仍在使用Start1
+
+2. 按type分文件架构：
+   backend/app/api/v1/
+   ├── types/
+   │   ├── __init__.py
+   │   ├── process_start.py      ✅ 已完成 (Start2)
+   │   ├── process_thought.py    ⏳ 待实现
+   │   ├── process_action.py     ⏳ 待实现
+   │   ├── process_observation.py ⏳ 待实现
+   │   ├── process_final.py      ⏳ 待实现
+   │   ├── process_error.py      ⏳ 待实现
+   │   └── process_incident.py   ⏳ 待实现
+   ├── adapters/
+   │   ├── __init__.py
+   │   └── sse_adapter.py        ⏳ 待实现
+   └── chat_stream.py            主流程（已调用Start1）
+
+3. Mock测试优化：
+   - MockAsyncStream：模拟异步流，支持多chunk分次yield
+   - MockAsyncStreamException：模拟异常流，测试错误处理
+
+参与开发：小沈、小健
+完成时间：2026-03-19 14:40:00
+
+---
+
+v0.6.6
+
+更新内容：
+1. 超时重试机制优化
+   - 空闲超时从30秒调整为60秒（每次）
+   - 最大重试3次，合计3分钟
+   - 文件：backend/app/api/v1/chat_stream.py
+
+2. max_steps 可配置化
+   - 默认值从10改为100
+   - 添加到 config/config.yaml（app.max_steps: 100）
+   - 添加到 backend/app/config.py
+   - 添加到 backend/app/api/v1/config.py
+   - agent.run_stream() 支持传入 max_steps 参数
+
+3. 断连处理逻辑修正
+   - CancelledError 时正确保存数据并退出
+   - 修正注释说明
+
+4. 前端步骤显示优化
+   - 过滤 chunk 和 final 避免重复显示
+   - 修复 thought 内容背景分裂问题
+
+5. 文档整理
+   - 移动 ReAct 文档到 doc 目录
+   - 更新 sse_v2 测试用例
+
+版本升级说明：
+- v0.6.6: replyUserMessageId关联功能
+- v0.6.7: 超时优化+max_steps配置+断连处理（本次升级）
+
+参与开发：小沈、小健、小强
+完成时间：2026-03-18 19:56:41
+
+---
+
+v0.6.6
+
+---
+
+v0.6.5
+
+更新内容：
+1. 删除前端3处saveMessage调用
+   - 删除 step.start 时的 saveMessage（后端已自动创建assistant消息+metadata）
+   - 删除重试时的 saveMessage（后端已实时保存）
+   - 删除错误消息的 saveMessage（后端已保存error步骤）
+   - 删除 hasSavedStartMessageRef 相关代码
+
+2. 后端已确认实现以下功能：
+   - start 步骤自动创建 assistant 消息并提取 metadata（model/provider/display_name）
+   - 实时保存 execution_steps（start/thought/chunk 后自动调用）
+   - error 步骤保存错误信息到 execution_steps
+
+代码修改：
+- frontend/src/components/Chat/NewChatContainer.tsx
+
+验证结果：
+- ✅ 构建成功
+
+版本升级说明：
+- v0.6.4: 增加message_id追踪日志
+- v0.6.5: 删除前端saveMessage调用，后端已实现自动保存（本次升级）
+
+参与开发：小新、小沈
+完成时间：2026-03-16 16:30:00
+
+---
+
+v0.6.4
+
+更新内容：
+1. 修复消息"被冲掉"问题 - 增加message_id追踪日志
+   - 用户消息保存成功后输出message_id
+   - step.start保存assistant消息占位后输出message_id
+   - saveExecutionSteps保存后输出message_id
+   - visibilitychange保存后输出message_id
+   - 前端api.ts添加返回类型message_id
+   - 文件：
+     * frontend/src/components/Chat/NewChatContainer.tsx
+     * frontend/src/services/api.ts
+
+验证结果：
+- ✅ 构建成功
+
+版本升级说明：
+- v0.6.3: 修复sessionId不匹配导致消息错乱
+- v0.6.4: 增加message_id追踪日志（本次升级）
+
+参与开发：小新
+完成时间：2026-03-16 16:00:00
+
+---
+
+v0.6.3
+
+更新内容：
+1. 修复sessionStorage恢复时sessionId不匹配导致消息错乱问题
+   - 问题：用户在5分钟内从会话A切换到会话B，可能错误恢复会话A的数据
+   - 修复1：restoreState函数增加urlSessionId与缓存sessionId匹配检查
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+     * 位置：第826-836行
+   - 修复2：visibilitychange页面恢复时增加缓存sessionId与urlSessionId匹配检查
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+     * 位置：第1010-1012行
+
+2. 修复后端并发保存消息导致重复问题
+   - 问题：后端同时保存多个消息到数据库
+   - 修复：数据库已删除并重新初始化
+
+代码审查：
+- 审查人：小健
+- 发现问题：sessionStorage恢复时缺少sessionId验证
+- 修复方案：增加state.sessionId === urlSessionId检查
+
+验证结果：
+- ✅ ESLint检查通过（0 errors）
+- ✅ 单元测试全部通过（205 tests passed）
+- ✅ 生产构建成功
+
+版本升级说明：
+- v0.6.2: 修复SSE断开导致数据丢失问题
+- v0.6.3: 修复sessionId不匹配导致消息错乱（本次升级）
+
+参与开发：小新、小健
+完成时间：2026-03-16 15:45:00
+
+---
+
+v0.6.2
+
+更新内容：
+1. 修复SSE连接断开导致数据丢失问题
+   - 问题背景：用户切换应用/刷新页面时，SSE断开，onComplete不触发
+   - 解决思路：多重保障机制
+     * 保障1：后端在流式过程中自动保存（每次yield后调用save_execution_steps_to_db）
+     * 保障2：前端step.start时创建消息占位（含metadata）
+     * 保障3：visibilitychange时保存execution_steps+content到数据库
+     * 保障4：sessionStorage保存状态作为补充
+
+2. 前端代码修改
+   - 问题1：step.start重复保存消息占位
+     * 根因：流式过程中可能多次触发step.start（如重试）
+     * 修复：添加hasSavedStartMessageRef标记，只在首次保存
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+   - 问题2：visibilitychange获取content时机错误
+     * 根因：从messagesRef获取content，但流式过程中未更新
+     * 修复：从executionStepsRef中提取最终content
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+   - 问题3：onComplete创建重复消息
+     * 根因：saveMessage是INSERT，每次调用都创建新消息
+     * 修复：移除onComplete中的saveMessage，只保留saveExecutionSteps
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+   - 问题4：Debug模式下sessionStorage恢复失效
+     * 根因：!DEBUG_LOAD_FROM_API判断导致跳过恢复
+     * 修复：移除判断，强制从sessionStorage恢复
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+
+3. 后端代码修改
+   - 问题1：ExecutionStepsUpdate缺少content参数
+     * 修复：添加content字段，支持保存AI回复内容
+     * 文件：backend/app/api/v1/sessions.py
+   - 问题2：没有assistant消息时无法保存
+     * 修复：实现智能UPSERT，自动创建消息占位
+     * 文件：backend/app/api/v1/sessions.py
+   - 问题3：流式过程中实时保存
+     * 修复：在start/thought/chunk等步骤后调用save_execution_steps_to_db
+     * 文件：backend/app/api/v1/chat_stream.py
+
+4. 前端API修改
+   - saveExecutionSteps：添加content参数
+   - saveMessage：添加display_name参数
+   - 文件：frontend/src/services/api.ts
+
+5. 代码审查与修复
+   - 审查人：小健
+   - 发现问题：onComplete会创建重复消息
+   - 修复：移除多余saveMessage调用
+
+技术细节：
+- NewChatContainer.tsx：hasSavedStartMessageRef防重复
+- NewChatContainer.tsx：getLatestContent正确提取content
+- NewChatContainer.tsx：移除onComplete中saveMessage
+- NewChatContainer.tsx：移除DEBUG_LOAD_FROM_API检查
+- sessions.py：ExecutionStepsUpdate添加content
+- sessions.py：智能UPSERT实现
+- chat_stream.py：各步骤后自动保存
+- api.ts：saveExecutionSteps/saveMessage参数完善
+
+数据保存流程（更新后）：
+1. step.start → saveMessage创建消息占位（含metadata）
+2. 流式进行中 → 后端save_execution_steps_to_db自动保存
+3. visibilitychange → saveExecutionSteps保存（双重保险）
+4. onComplete → saveExecutionSteps更新最终数据
+
+版本升级说明：
+- v0.6.1: 修复切换应用后消息消失+chunk重复问题
+- v0.6.2: 修复SSE断开导致数据丢失问题（本次升级）
+
+参与开发：小新、小沈、小健
+完成时间：2026-03-16 12:58:59
+
+---
+
+v0.6.1
+
+更新内容：
+1. 修复切换应用后消息消失问题
+   - 问题1：sessionStorage保存旧消息
+     * 根因：visibilitychange useEffect依赖不包含messages，闭包中访问旧消息
+     * 修复：saveState使用messagesRef.current获取最新消息
+     * 文件：frontend/src/components/Chat/NewChatContainer.tsx
+   - 问题2：组件卸载后内存状态丢失（随问题1自动解决）
+   - 问题3：executionStepsRef未同步更新(6处)
+     * 根因：setExecutionSteps是异步的，useEffect在onComplete调用时还未执行
+     * 修复：在setExecutionSteps回调中同步更新executionStepsRef.current
+     * 事件：start/thought/action_tool/observation/chunk/final
+     * 文件：frontend/src/utils/sse.ts
+
+2. 修复onComplete参数step重复问题
+   - 问题：final事件中 [...getCurrentExecutionSteps(), step] 导致step被添加两次
+   - 修复：直接使用getCurrentExecutionSteps()，ref已被同步更新
+   - 文件：frontend/src/utils/sse.ts
+
+3. 修复chunk保存累积内容导致重复问题
+   - 问题：chunk的content保存了累积内容，导致导出JSON每个chunk都重复
+   - 修复：chunk只保存当前小块内容(chunkContent)，增量而非累积
+   - 核心原则：保存不能多也不能少，显示不能多也不能少
+     * 实时显示：buffer累加显示（正确）
+     * 保存数据：chunk只存当前增量（正确）
+     * 历史显示：逐个显示chunk + final补充（正确）
+   - 文件：frontend/src/utils/sse.ts
+
+4. 添加executionStepsRef同步更新测试用例
+   - 新增3个测试用例验证ref同步逻辑
+   - 文件：frontend/src/tests/utils/sse_v2.test.ts
+
+技术细节：
+- NewChatContainer.tsx: saveState使用messagesRef.current
+- sse.ts: 6处setExecutionSteps回调中同步更新ref
+- sse.ts: onComplete参数直接使用getCurrentExecutionSteps()
+- sse.ts: chunk只保存当前小块内容chunkContent
+
+版本升级说明：
+- v0.6.0: 设计文档完善+会话管理功能
+- v0.6.1: 修复切换应用后消息消失+chunk重复问题（本次升级）
+
+参与开发：小新、小查、小沈、小健
+完成时间：2026-03-16 06:34:08
+
+---
+
+v0.5.6
+
+更新内容：
+1. 修复error响应缺少model/provider等字段
+   - 问题：后端发送error时未返回完整的11个字段
+   - 修复：在create_error_response调用时添加model/provider/retryable等字段
+   - 文件：backend/app/api/v1/chat.py
+
+2. 修复HTTP超时策略
+   - 问题：read超时60秒导致正常输出被误判为超时
+   - 修复：取消read超时，使用总超时10分钟
+   - 文件：backend/app/services/base.py
+
+3. 实现强制中断机制
+   - 问题：cancel接口只设置标记，无法强制终止卡住的HTTP连接
+   - 修复：
+     - BaseAIService添加_cancelled标志和cancel()方法
+     - chat_stream()中检查取消标志
+     - cancel_stream_task()中调用ai_service.cancel()强制关闭连接
+   - 文件：backend/app/services/base.py, backend/app/api/v1/chat.py
+
+4. 添加会话级别中断记录
+   - 问题：前端重连时后端无法识别已中断的会话
+   - 修复：使用interrupted_sessions字典记录中断的session_id
+   - 5分钟内同一会话禁止重连
+   - 文件：backend/app/api/v1/chat.py
+
+5. 修复重试判断逻辑
+   - 问题：无脑重试导致正常输出也被重试
+   - 修复：区分"已收到内容"和"模型还在思考"两种情况
+   - 文件：backend/app/api/v1/chat.py
+
+6. pause/resume接口支持session_id参数
+   - 文件：backend/app/api/v1/chat.py
+
+7. 更新API文档
+   - 文件：docs/API-chat-stream.md
+
+技术细节：
+- base.py: 添加cancel/reset_cancel方法，修改超时配置
+- chat.py: 添加interrupted_sessions字典，修改cancel/pause/resume接口
+
+版本升级说明：
+- v0.5.5: 文档目录整理
+- v0.5.6: 修复中断机制+HTTP超时+重试逻辑（本次升级）
+
+参与开发：小沈，小健
+完成时间：2026-03-14 10:30:00
+
+---
+
+v0.5.5
+
+更新内容：
+1. 文档目录整理
+   - 删除空目录 docs/、doc-阶段-new-2.1/
+   - 新建 doc-测试与审查/、doc-会话管理/、doc-Settings配置/
+   - 新建 doc-UI与UX分析/、doc-系统设计/、doc-开发规范/
+   - 移动90个文档到对应分类目录
+   - 创建 AGENTS.md 开发指南文件
+
+2. Git 索引修复
+   - 修复 Windows nul 设备名导致的 Git 索引损坏问题
+   - 添加 nul 到 .gitignore
+
+3. 分支清理
+   - 删除 opencode研究、app-chat、archive 分支
+
+技术细节：
+- doc/：从107个文件整理到30个
+- doc-测试与审查/：35个文件
+- doc-阶段1.3/：7个文件
+- doc-阶段2.1/：47个文件
+- doc-会话管理/：6个文件
+- doc-Settings配置/：10个文件
+- doc-UI与UX分析/：6个文件
+- doc-系统设计/：5个文件
+- doc-开发规范/：5个文件
+- AGENTS.md：新建AI开发助手指南
+
+版本升级说明：
+- v0.5.4: 设计文档11章完善+12章补充
+- v0.5.5: 文档目录整理+Git修复（本次升级）
+
+参与开发：小沈
+完成时间：2026-03-13 04:20:00
+
+---
+
+v0.5.4
+
+更新内容：
+1. 设计文档完善（11.4-11.8）
+   - 11.4 observation：修正observation→thought→final逻辑，明确不存在直接进入final
+   - 11.5 final：补充字段用途/UI线框图/补充说明，明确final唯一入口
+   - 11.6 chunk：补充UI布局和逻辑说明
+   - 11.7 error：补充完整设计（字段用途/UI布局/线框图/触发场景）
+   - 11.8 incident：补充完整设计（字段用途/UI布局/线框图/补充说明）
+
+2. 待开发任务清单完善（12章）
+   - 12.1：补充Start之后流程说明
+   - 12.5：补充前端适配说明
+   - 12.6：新增error错误码体系实现
+   - 12.7：新增incident状态事件机制实现
+
+3. 11章与12章对照检查
+   - 检查11章逻辑变化是否在12章都有对应实现说明
+   - 修正observation阶段逻辑描述
+   - 确认接口变化只在12.1和12.4
+
+技术细节：
+- 文件：doc/流式ReAct的type和API重构设计说明书-小沈-2026-03-08.md
+- 11章8个type全部完善：start/thought/action_tool/observation/final/chunk/error/incident
+- 12章7个待开发任务：12.1-12.7
+
+版本升级说明：
+- v0.5.3: 设计文档修正+日志清理+LLM计数器
+- v0.5.4: 设计文档11章完善+12章补充（本次升级）
+
+参与开发：小沈、小查、小健
+完成时间：2026-03-11 06:55:04
