@@ -47,6 +47,7 @@ class IntentAgent(BaseAgent):
         self,
         llm_client: Any,
         session_id: str,
+        intent_type: str = "file",  # 【新增】意图类型参数
         file_tools: Optional[FileTools] = None,
         max_steps: int = 20,
         use_function_calling: bool = False,
@@ -61,6 +62,7 @@ class IntentAgent(BaseAgent):
         Args:
             llm_client: LLM 客户端函数，接收 message 和 history，返回 response
             session_id: 会话 ID（必需）- 用于操作安全追踪和审计
+            intent_type: 意图类型，决定加载哪套工具/安全检查/Prompt（默认"file"）
             file_tools: 文件工具实例（可选，默认创建新实例）
             max_steps: 最大执行步数
             use_function_calling: 是否使用 Function Calling 模式
@@ -73,10 +75,13 @@ class IntentAgent(BaseAgent):
         if not session_id:
             raise ValueError("session_id is required for file operation tracking and safety")
         
+        # 【新增】保存 intent_type 参数
+        self.intent_type = intent_type
+        
         # 【修复】调用父类初始化
         super().__init__(max_steps=max_steps, use_function_calling=use_function_calling)
         
-        # File 专用属性
+        # 会话ID
         self.llm_client = llm_client
         self.session_id = session_id
         
@@ -86,25 +91,42 @@ class IntentAgent(BaseAgent):
         # 【修复】标记 session 是否由本 Agent 创建（用于正确关闭）
         self._session_created_by_agent = False
         
-        # 初始化文件工具，确保 session_id 正确传递
-        self.file_tools = file_tools or FileTools(session_id=session_id)
-        
-        # ToolParser（使用父类的 self.parser）
-        # self.parser = ToolParser()  # BaseAgent 已有
-        
-        # ToolExecutor - 使用 tools dict
-        self._tools_dict = {
-            "read_file": self.file_tools.read_file,
-            "write_file": self.file_tools.write_file,
-            "list_directory": self.file_tools.list_directory,
-            "delete_file": self.file_tools.delete_file,
-            "move_file": self.file_tools.move_file,
-            "search_files": self.file_tools.search_files,
-            "generate_report": self.file_tools.generate_report,
-        }
-        self.executor = ToolExecutor(self._tools_dict)
-        
-        self.prompts = FileOperationPrompts()
+        # 根据 intent_type 加载对应工具/安全检查/Prompt
+        if intent_type == "file":
+            # 初始化文件工具，确保 session_id 正确传递
+            self.file_tools = file_tools or FileTools(session_id=session_id)
+            
+            # ToolExecutor - 使用 tools dict
+            self._tools_dict = {
+                "read_file": self.file_tools.read_file,
+                "write_file": self.file_tools.write_file,
+                "list_directory": self.file_tools.list_directory,
+                "delete_file": self.file_tools.delete_file,
+                "move_file": self.file_tools.move_file,
+                "search_files": self.file_tools.search_files,
+                "generate_report": self.file_tools.generate_report,
+            }
+            self.executor = ToolExecutor(self._tools_dict)
+            
+            self.prompts = FileOperationPrompts()
+            
+            logger.info(f"IntentAgent initialized (intent_type=file, session: {session_id})")
+        elif intent_type == "desktop":
+            # 预留：桌面操作意图
+            self.file_tools = None
+            self._tools_dict = {}
+            self.executor = ToolExecutor(self._tools_dict)
+            self.prompts = None
+            logger.warning(f"IntentAgent initialized (intent_type=desktop, session: {session_id}) - not implemented")
+        elif intent_type == "network":
+            # 预留：网络操作意图
+            self.file_tools = None
+            self._tools_dict = {}
+            self.executor = ToolExecutor(self._tools_dict)
+            self.prompts = None
+            logger.warning(f"IntentAgent initialized (intent_type=network, session: {session_id}) - not implemented")
+        else:
+            raise ValueError(f"Unsupported intent_type: {intent_type}. Supported: file, desktop, network")
         
         # 【新增】意图注册表（多意图支持）
         self.intent_registry = IntentRegistry()
