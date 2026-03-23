@@ -69,6 +69,9 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
   const pathToNode = new Map<string, TreeNode>();
   const rootNodes: TreeNode[] = [];
 
+  // 标准化 rootPath，移除末尾斜杠
+  const normalizedRoot = rootPath.replace(/\\/g, '/').replace(/\/$/, '');
+
   // 按 type 排序：目录在前，文件在后
   const sortedEntries = [...entries].sort((a, b) => {
     if (a.type === 'directory' && b.type === 'file') return -1;
@@ -94,61 +97,78 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
     const node = pathToNode.get(entry.path);
     if (!node) continue;
 
-    // 解析路径，确定父级
-    let parentPath: string | null = null;
-    
-    if (entry.path.includes('/') || entry.path.includes('\\')) {
-      // 处理路径分割符统一
-      const normalizedPath = entry.path.replace(/\\/g, '/');
-      const rootNormalized = rootPath.replace(/\\/g, '/');
-      
-      if (normalizedPath.startsWith(rootNormalized)) {
-        // 绝对路径：从 rootPath 开始解析父级
-        const relativePath = normalizedPath.substring(rootNormalized.length);
-        const parts = relativePath.split('/').filter(Boolean);
-        
-        if (parts.length > 1) {
-          // 有父级
-          parts.pop(); // 移除当前项
-          let parentFullPath = rootNormalized;
-          for (let i = 0; i < parts.length; i++) {
-            parentFullPath = parentFullPath + '/' + parts[i];
-            if (!pathToNode.has(parentFullPath)) {
-              // 父级目录不在 entries 中，需要创建虚拟节点
-              const parentNode: TreeNode = {
-                key: parentFullPath,
-                title: parts[i],
-                type: 'directory',
-                path: parentFullPath,
-                size: null,
-                children: [],
-              };
-              pathToNode.set(parentFullPath, parentNode);
-            }
-          }
-          parentPath = parentFullPath;
-        } else {
-          // 直接子项，父级是 rootPath
-          parentPath = rootNormalized;
-        }
-      } else {
-        // 相对路径
-        const parts = normalizedPath.split('/').filter(Boolean);
-        if (parts.length > 1) {
-          parts.pop();
-          parentPath = rootNormalized + '/' + parts.join('/');
-        } else {
-          parentPath = rootNormalized;
-        }
-      }
+    // 标准化当前路径
+    const normalizedPath = entry.path.replace(/\\/g, '/');
+
+    // 计算相对路径：从 rootPath 之后的部分
+    let relativePath: string;
+    if (normalizedPath.startsWith(normalizedRoot + '/')) {
+      relativePath = normalizedPath.substring(normalizedRoot.length + 1);
+    } else if (normalizedPath.startsWith(normalizedRoot)) {
+      relativePath = normalizedPath.substring(normalizedRoot.length);
+    } else {
+      // 相对路径情况
+      relativePath = normalizedPath;
     }
 
-    // 将节点添加到父级或根节点列表
-    if (parentPath && pathToNode.has(parentPath)) {
-      const parentNode = pathToNode.get(parentPath);
+    const parts = relativePath.split('/').filter(Boolean);
+
+    if (parts.length === 0) {
+      // 根路径本身就是节点
+      rootNodes.push(node);
+      continue;
+    }
+
+    if (parts.length === 1) {
+      // 直接子项，父级是 rootPath
+      const parentNode = pathToNode.get(normalizedRoot);
       if (parentNode?.children) {
         parentNode.children.push(node);
+      } else {
+        rootNodes.push(node);
       }
+      continue;
+    }
+
+    // 多层嵌套：构建虚拟目录链
+    // parts = ['src', 'components', 'App.tsx']
+    // 需要创建: src -> components -> App.tsx
+
+    let currentParentPath = normalizedRoot;
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      const fullPath = currentParentPath + '/' + part;
+
+      if (!pathToNode.has(fullPath)) {
+        // 创建虚拟目录
+        const virtualNode: TreeNode = {
+          key: fullPath,
+          title: part,
+          type: 'directory',
+          path: fullPath,
+          size: null,
+          children: [],
+        };
+        pathToNode.set(fullPath, virtualNode);
+
+        // 链接到父级
+        const parentNode = pathToNode.get(currentParentPath);
+        if (parentNode?.children) {
+          parentNode.children.push(virtualNode);
+        } else if (currentParentPath === normalizedRoot) {
+          // 第一层虚拟目录
+          rootNodes.push(virtualNode);
+        }
+      }
+
+      currentParentPath = fullPath;
+    }
+
+    // 最后一项添加到其父级
+    const finalParentNode = pathToNode.get(currentParentPath);
+    if (finalParentNode?.children) {
+      finalParentNode.children.push(node);
     } else {
       rootNodes.push(node);
     }
@@ -159,11 +179,9 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
     return nodes.map(node => {
       if (node.type === 'directory' && node.children) {
         node.children = cleanEmptyChildren(node.children);
-        // 如果目录为空，保留空数组
       }
       return node;
     }).sort((a, b) => {
-      // 目录在前，文件在后
       if (a.type === 'directory' && b.type === 'file') return -1;
       if (a.type === 'file' && b.type === 'directory') return 1;
       return a.title.localeCompare(b.title);
