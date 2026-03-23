@@ -14,6 +14,8 @@ import {
   Tooltip,
   Button,
   message as antMessage,
+  Tree,
+  Input,
 } from "antd";
 import {
   UserOutlined,
@@ -22,6 +24,9 @@ import {
   CopyOutlined,
   CheckOutlined,
   DownloadOutlined,
+  FolderOutlined,
+  FileOutlined,
+  SearchOutlined,
 } from "@ant-design/icons";
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
@@ -29,6 +34,207 @@ import { taskControlApi } from "../../services/api";
 import { formatTimestamp } from "../../utils/timestamp";
 import { } from "../../utils/markdown";
 import ErrorDetail from "./ErrorDetail";
+
+/**
+ * 树形节点类型 - 用于 convertEntriesToTree 函数
+ */
+interface TreeNode {
+  key: string;
+  title: string;
+  type: 'directory' | 'file';
+  children?: TreeNode[];
+  path: string;
+  size: number | null;
+}
+
+/**
+ * 条目类型 - list_directory 工具返回的文件条目
+ */
+interface Entry {
+  name: string;
+  path: string;
+  type: 'directory' | 'file';
+  size: number | null;
+}
+
+/**
+ * 将扁平的 entries 数组转换为树形结构（供 Tree 组件使用）
+ * 【小强实现 2026-03-23】阶段4任务2：convertToTree数据转换函数
+ */
+function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
+  if (!entries || entries.length === 0) {
+    return [];
+  }
+
+  const pathToNode = new Map<string, TreeNode>();
+  const rootNodes: TreeNode[] = [];
+
+  // 按 type 排序：目录在前，文件在后
+  const sortedEntries = [...entries].sort((a, b) => {
+    if (a.type === 'directory' && b.type === 'file') return -1;
+    if (a.type === 'file' && b.type === 'directory') return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  // 第一遍：创建所有节点
+  for (const entry of sortedEntries) {
+    const node: TreeNode = {
+      key: entry.path,
+      title: entry.name,
+      type: entry.type,
+      path: entry.path,
+      size: entry.size,
+      children: entry.type === 'directory' ? [] : undefined,
+    };
+    pathToNode.set(entry.path, node);
+  }
+
+  // 第二遍：构建父子关系
+  for (const entry of sortedEntries) {
+    const node = pathToNode.get(entry.path);
+    if (!node) continue;
+
+    // 解析路径，确定父级
+    let parentPath: string | null = null;
+    
+    if (entry.path.includes('/') || entry.path.includes('\\')) {
+      // 处理路径分割符统一
+      const normalizedPath = entry.path.replace(/\\/g, '/');
+      const rootNormalized = rootPath.replace(/\\/g, '/');
+      
+      if (normalizedPath.startsWith(rootNormalized)) {
+        // 绝对路径：从 rootPath 开始解析父级
+        const relativePath = normalizedPath.substring(rootNormalized.length);
+        const parts = relativePath.split('/').filter(Boolean);
+        
+        if (parts.length > 1) {
+          // 有父级
+          parts.pop(); // 移除当前项
+          let parentFullPath = rootNormalized;
+          for (let i = 0; i < parts.length; i++) {
+            parentFullPath = parentFullPath + '/' + parts[i];
+            if (!pathToNode.has(parentFullPath)) {
+              // 父级目录不在 entries 中，需要创建虚拟节点
+              const parentNode: TreeNode = {
+                key: parentFullPath,
+                title: parts[i],
+                type: 'directory',
+                path: parentFullPath,
+                size: null,
+                children: [],
+              };
+              pathToNode.set(parentFullPath, parentNode);
+            }
+          }
+          parentPath = parentFullPath;
+        } else {
+          // 直接子项，父级是 rootPath
+          parentPath = rootNormalized;
+        }
+      } else {
+        // 相对路径
+        const parts = normalizedPath.split('/').filter(Boolean);
+        if (parts.length > 1) {
+          parts.pop();
+          parentPath = rootNormalized + '/' + parts.join('/');
+        } else {
+          parentPath = rootNormalized;
+        }
+      }
+    }
+
+    // 将节点添加到父级或根节点列表
+    if (parentPath && pathToNode.has(parentPath)) {
+      const parentNode = pathToNode.get(parentPath);
+      if (parentNode?.children) {
+        parentNode.children.push(node);
+      }
+    } else {
+      rootNodes.push(node);
+    }
+  }
+
+  // 清理空目录的 children
+  const cleanEmptyChildren = (nodes: TreeNode[]): TreeNode[] => {
+    return nodes.map(node => {
+      if (node.type === 'directory' && node.children) {
+        node.children = cleanEmptyChildren(node.children);
+        // 如果目录为空，保留空数组
+      }
+      return node;
+    }).sort((a, b) => {
+      // 目录在前，文件在后
+      if (a.type === 'directory' && b.type === 'file') return -1;
+      if (a.type === 'file' && b.type === 'directory') return 1;
+      return a.title.localeCompare(b.title);
+    });
+  };
+
+  return cleanEmptyChildren(rootNodes);
+}
+
+/**
+ * 非递归模式虚拟列表组件
+ * 【小强实现 2026-03-23】阶段4任务3：非递归模式虚拟列表
+ */
+interface VirtualFileListProps {
+  entries: any[];
+}
+
+const VirtualFileList: React.FC<VirtualFileListProps> = ({ entries }) => {
+  const [searchText, setSearchText] = useState('');
+  
+  const filteredEntries = searchText
+    ? entries.filter((entry: Entry) => 
+        entry.name.toLowerCase().includes(searchText.toLowerCase())
+      )
+    : entries;
+  
+  const fileListStyle: React.CSSProperties = {
+    background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
+    border: "1px solid #b7eb8f",
+    borderRadius: 8,
+    padding: "10px 14px",
+    marginTop: 6,
+    fontSize: "0.9em",
+    lineHeight: 1.8,
+    whiteSpace: "pre-wrap",
+  };
+  
+  return (
+    <div style={fileListStyle}>
+      <Input
+        prefix={<SearchOutlined style={{ color: '#bbb' }} />}
+        placeholder="搜索文件..."
+        allowClear
+        style={{ marginBottom: 8, fontSize: 12 }}
+        size="small"
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+      />
+      <div style={{ maxHeight: 300, overflow: 'auto' }}>
+        {filteredEntries.map((entry: Entry, idx: number) => (
+          <div 
+            key={`file-${idx}`}
+            style={{ 
+              padding: '4px 0',
+              borderBottom: idx < filteredEntries.length - 1 ? '1px solid #e8e8e8' : 'none',
+            }}
+          >
+            <span>
+              {entry.type === "directory" ? "📁" : "📄"} {entry.name}
+              {entry.type === "file" && entry.size !== null && (
+                <span style={{ color: '#888', marginLeft: 8, fontSize: 11 }}>
+                  ({(entry.size / 1024).toFixed(1)} KB)
+                </span>
+              )}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
 /**
  * 步骤行组件 - 单行步骤显示（优化后新增）
@@ -241,41 +447,67 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 参数：{JSON.stringify(step.tool_params, null, 2)}
               </div>
             )}
-            {/* 【小沈修复 2026-03-23】显示文件列表 - 带折叠功能（使用Map管理状态） */}
-            {step.raw_data?.entries && step.raw_data.entries.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                {/* 折叠按钮和文件计数 */}
-                <div style={{ marginBottom: 6 }}>
-                  <span 
-                    onClick={() => toggleExpand(stepIndex)}
-                    style={{ 
-                      cursor: "pointer", 
-                      color: "#1890ff",
-                      fontSize: 12,
-                      fontWeight: 500,
-                    }}
-                  >
-                    {isExpanded ? "▼ 收起" : "▶ 展开"} 文件列表 
-                    ({step.raw_data.entries.length}个)
-                  </span>
-                </div>
-                {/* 文件列表内容 */}
-                {isExpanded && step.raw_data?.entries && (
-                  <div style={getFileListBackground()}>
-                    {step.raw_data?.entries?.map((entry: any, idx: number) => (
-                      <React.Fragment key={`action-entry-${idx}`}>
-                        <div style={{ 
-                          padding: "4px 0",
-                          borderBottom: (step.raw_data?.entries?.length ?? 0) > 1 && idx < (step.raw_data?.entries?.length ?? 0) - 1 ? "1px solid #e8e8e8" : "none",
-                        }}>
-                          {entry.type === "directory" ? "📁" : "📄"} {entry.name}
-                        </div>
-                      </React.Fragment>
-                    ))}
+            {/* 【小强实现 2026-03-23】阶段4任务1：isRecursive判断逻辑 */}
+            {(() => {
+              const isRecursive = step.tool_params?.recursive === true;
+              const entries = step.raw_data?.entries || [];
+              const rootPath = step.raw_data?.directory || '';
+              
+              // 只有在递归模式下才计算 treeData
+              const treeData = isRecursive ? convertEntriesToTree(entries as Entry[], rootPath) : [];
+              
+              return (
+                <div style={{ marginTop: 8 }}>
+                  {/* 折叠按钮和文件计数 */}
+                  <div style={{ marginBottom: 6 }}>
+                    <span 
+                      onClick={() => toggleExpand(stepIndex)}
+                      style={{ 
+                        cursor: "pointer", 
+                        color: isRecursive ? "#52c41a" : "#1890ff",
+                        fontSize: 12,
+                        fontWeight: 500,
+                      }}
+                    >
+                      {isExpanded 
+                        ? "▼ 收起" 
+                        : "▶ 展开"} 
+                      {isRecursive ? "目录树" : "文件列表"} 
+                      ({entries.length}个)
+                      {isRecursive && <span style={{ marginLeft: 8, color: '#888' }}>🌲 递归模式</span>}
+                    </span>
                   </div>
-                )}
-              </div>
-            )}
+                  
+                  {/* 文件列表内容 - 根据 isRecursive 选择显示方案 */}
+                  {isExpanded && entries.length > 0 && (
+                    isRecursive ? (
+                      /* 【小强实现 2026-03-23】阶段4任务4：递归模式树形结构 */
+                      <div style={getFileListBackground()}>
+                        <Tree
+                          showLine={{ showLeafIcon: true }}
+                          treeData={treeData}
+                          defaultExpandAll={false}
+                          style={{
+                            background: 'transparent',
+                            fontSize: 13,
+                          }}
+                          icon={({ data }: any) => 
+                            data.type === 'directory' 
+                              ? <FolderOutlined style={{ color: '#faad14' }} /> 
+                              : <FileOutlined style={{ color: '#1890ff' }} />
+                          }
+                        />
+                      </div>
+                    ) : (
+                      /* 【小强实现 2026-03-23】阶段4任务3：非递归模式虚拟列表 */
+                      <VirtualFileList 
+                        entries={entries} 
+                      />
+                    )
+                  )}
+                </div>
+              );
+            })()}
             {/* 【小新重构 2026-03-09】显示分页信息 */}
             {step.raw_data && (
               <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
@@ -392,9 +624,9 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                           )}
                         </div>
                       )}
-                      {/* 【小沈修复 2026-03-23】summary 字符串 - 使用 step.summary 而非 step.result */}
-                      {typeof step.summary === "string" && (
-                        <div style={{ marginTop: 6 }}>{step.summary}</div>
+                      {/* 【小强修正 2026-03-23】summary 字符串 - 使用 step.obs_summary（和SSE后端字段名一致） */}
+                      {typeof step.obs_summary === "string" && (
+                        <div style={{ marginTop: 6 }}>{step.obs_summary}</div>
                       )}
                     </div>
                   );

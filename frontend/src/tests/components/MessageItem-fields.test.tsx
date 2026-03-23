@@ -89,10 +89,10 @@ describe('【阶段1】字段错误修复测试', () => {
             type: 'observation' as const,
             step: 1,
             timestamp: Date.now(),
-            // 提供 reasoning 而非 thought，组件应正确显示
-            reasoning: 'Agent reasoning text',
-            content: '',  // 空content，确保显示reasoning
-            raw_data: null,
+            // 提供 obs_reasoning 而非 thought，组件应正确显示
+            obs_reasoning: 'Agent reasoning text',
+            content: '',  // 空content，确保显示obs_reasoning
+            obs_raw_data: null,
           },
         ],
       };
@@ -121,7 +121,7 @@ describe('【阶段1】字段错误修复测试', () => {
             step: 1,
             timestamp: Date.now(),
             content: '',  // 空content，显示文件列表
-            raw_data: {
+            obs_raw_data: {
               entries: [
                 { name: 'file1.txt', type: 'file', path: '/path/file1.txt' },
                 { name: 'folder1', type: 'directory', path: '/path/folder1' },
@@ -154,8 +154,8 @@ describe('【阶段1】字段错误修复测试', () => {
             step: 1,
             timestamp: Date.now(),
             content: '',  // 空content
-            raw_data: null,  // 空raw_data
-            summary: 'This is a summary string',  // 使用正确的summary字段
+            obs_raw_data: null,  // 空obs_raw_data
+            obs_summary: 'This is a summary string',  // 使用正确的obs_summary字段
           },
         ],
       };
@@ -212,7 +212,7 @@ describe('【阶段2】Map状态管理测试', () => {
           step: 1,
           timestamp: Date.now(),
           content: '',
-          raw_data: {
+          obs_raw_data: {
             entries: [
               { name: 'file1.txt', type: 'file', path: '/path/file1.txt' },
             ],
@@ -223,7 +223,7 @@ describe('【阶段2】Map状态管理测试', () => {
           step: 2,
           timestamp: Date.now(),
           content: '',
-          raw_data: {
+          obs_raw_data: {
             entries: [
               { name: 'file2.txt', type: 'file', path: '/path/file2.txt' },
             ],
