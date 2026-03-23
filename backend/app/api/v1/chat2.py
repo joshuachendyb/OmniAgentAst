@@ -47,6 +47,7 @@ from app.chat_stream.incident_handler import check_and_yield_if_interrupted, che
 from app.chat_stream.error_handler import create_error_response, get_user_friendly_error  # 【重构优化】复用 error_handler 模块
 from app.chat_stream.chat_helpers import create_final_response, create_timestamp  # 【重构优化】复用 chat_helpers 模块
 from app.chat_stream.ver1_detect_file_operation_intent import detect_file_operation_intent, extract_file_path  # 【重构优化】抽取意图检测函数
+from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse  # 【小沈重构 2026-03-23】统一消息保存模块
 from pathlib import Path
 import shutil
 
@@ -405,12 +406,13 @@ async def chat_stream(request: ChatRequest):
             current_content: str = ""  # 当前累积内容
             last_is_reasoning: Optional[bool] = None  # 上一个is_reasoning状态
             
-            # 【重构优化】stub函数：chat2.py不需要保存到数据库
-            async def save_execution_steps_to_db(execution_steps: List[Dict], content: str):
-                pass
+            # 【小沈重构 2026-03-23】使用统一的 message_saver 模块
+            # 为了与 chat_stream_query 的参数签名兼容，创建包装函数
+            async def wrapped_save_steps(execution_steps: List[Dict], content: Optional[str] = None):
+                await save_execution_steps_to_db(request.session_id, execution_steps, content)
             
-            async def add_step_and_save(step: Dict, content: str):
-                pass
+            async def wrapped_add_step(step: Dict, content: Optional[str] = None):
+                await add_step_and_save(current_execution_steps, step, request.session_id, content)
             
             # 1. 发送思考
             thought_data = {'type': 'thought', 'step': next_step(), 'timestamp': create_timestamp(), 'thinking_prompt': '正在分析任务...'}
@@ -459,6 +461,18 @@ async def chat_stream(request: ChatRequest):
                                 yield f"data: {json.dumps(interrupted_data)}\n\n"
                                 break
                         
+                        # 【小沈修复 2026-03-23】解析 SSE 并保存到数据库
+                        if sse_data.startswith("data: "):
+                            step_data = json.loads(sse_data[6:])
+                            current_execution_steps.append(step_data)
+                            # 更新 current_content（如果是 final 或 chunk 类型）
+                            if step_data.get('type') == 'final':
+                                current_content = step_data.get('content', '')
+                            elif step_data.get('type') == 'chunk':
+                                current_content = (current_content or '') + (step_data.get('content', '') or '')
+                            # 保存到数据库
+                            await save_execution_steps_to_db(request.session_id, current_execution_steps, current_content)
+                        
                         logger.info(f"[FileOp SSE] 发送数据")
                         yield sse_data
                         await asyncio.sleep(0.05)
@@ -487,8 +501,8 @@ async def chat_stream(request: ChatRequest):
                     running_tasks_lock=running_tasks_lock,
                     next_step=next_step,
                     display_name=display_name,
-                    save_execution_steps_to_db=save_execution_steps_to_db,
-                    add_step_and_save=add_step_and_save,
+                    save_execution_steps_to_db=wrapped_save_steps,
+                    add_step_and_save=wrapped_add_step,
                 ):
                     yield chunk
                         
