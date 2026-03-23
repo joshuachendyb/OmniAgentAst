@@ -1,3 +1,61 @@
+v0.7.45
+
+更新时间：2026-03-23 09:58:09
+
+更新内容：
+
+## 1. 修复 final/error 步骤 step 多 1 的问题 - 小沈-2026-03-23
+
+### 1.1 问题描述
+
+普通对话测试发现 final 步骤的 step 比预期多了 1。
+
+### 1.2 根因分析
+
+代码中 `next_step()` 被调用了两次：
+```python
+# 错误代码
+final_step = {
+    'step': next_step(),  # 第1次调用 → step = n
+}
+# ...
+yield create_final_response(
+    step=next_step()  # 第2次调用 → step = n+1
+)
+```
+
+### 1.3 修复方案
+
+只调用一次 `next_step()`，把值存到变量里复用：
+```python
+final_step_value = next_step()
+final_step = {
+    'step': final_step_value,
+    ...
+}
+yield create_final_response(step=final_step_value)
+```
+
+### 1.4 修复的步骤类型
+
+| 步骤类型 | 位置 | 状态 |
+|----------|------|------|
+| final | chat_stream_query.py | ✅ 已修复 |
+| error（空响应重试失败） | chat_stream_query.py | ✅ 已修复 |
+| error（重试循环失败） | chat_stream_query.py | ✅ 已修复 |
+| incident/chunk/retrying | chat_stream_query.py | ✅ 确认无问题 |
+
+### 1.5 验证结果
+
+- 普通对话测试：✅ 通过
+- step 编号连续：✅ 正常
+- 数据保存：✅ 正常
+
+参与开发：小沈
+完成时间：2026-03-23 09:58:09
+
+---
+
 v0.7.44
 
 更新时间：2026-03-23 09:43:47
