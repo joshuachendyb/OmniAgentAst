@@ -14,8 +14,6 @@ import {
   Tooltip,
   Button,
   message as antMessage,
-  Tree,
-  Input,
 } from "antd";
 import {
   UserOutlined,
@@ -24,9 +22,6 @@ import {
   CopyOutlined,
   CheckOutlined,
   DownloadOutlined,
-  FolderOutlined,
-  FileOutlined,
-  SearchOutlined,
 } from "@ant-design/icons";
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
@@ -43,225 +38,6 @@ import DeleteFileView from "./views/DeleteFileView";
 import MoveFileView from "./views/MoveFileView";
 import SearchFilesView from "./views/SearchFilesView";
 import GenerateReportView from "./views/GenerateReportView";
-
-/**
- * 树形节点类型 - 用于 convertEntriesToTree 函数
- */
-interface TreeNode {
-  key: string;
-  title: string;
-  type: 'directory' | 'file';
-  children?: TreeNode[];
-  path: string;
-  size: number | null;
-}
-
-/**
- * 条目类型 - list_directory 工具返回的文件条目
- */
-interface Entry {
-  name: string;
-  path: string;
-  type: 'directory' | 'file';
-  size: number | null;
-}
-
-/**
- * 将扁平的 entries 数组转换为树形结构（供 Tree 组件使用）
- * 【小强实现 2026-03-23】阶段4任务2：convertToTree数据转换函数
- */
-function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
-  if (!entries || entries.length === 0) {
-    return [];
-  }
-
-  const pathToNode = new Map<string, TreeNode>();
-  const rootNodes: TreeNode[] = [];
-
-  // 标准化 rootPath，移除末尾斜杠
-  const normalizedRoot = rootPath.replace(/\\/g, '/').replace(/\/$/, '');
-
-  // 按 type 排序：目录在前，文件在后
-  const sortedEntries = [...entries].sort((a, b) => {
-    if (a.type === 'directory' && b.type === 'file') return -1;
-    if (a.type === 'file' && b.type === 'directory') return 1;
-    return a.name.localeCompare(b.name);
-  });
-
-  // 第一遍：创建所有节点
-  for (const entry of sortedEntries) {
-    const node: TreeNode = {
-      key: entry.path,
-      title: entry.name,
-      type: entry.type,
-      path: entry.path,
-      size: entry.size,
-      children: entry.type === 'directory' ? [] : undefined,
-    };
-    pathToNode.set(entry.path, node);
-  }
-
-  // 第二遍：构建父子关系
-  for (const entry of sortedEntries) {
-    const node = pathToNode.get(entry.path);
-    if (!node) continue;
-
-    // 标准化当前路径
-    const normalizedPath = entry.path.replace(/\\/g, '/');
-
-    // 计算相对路径：从 rootPath 之后的部分
-    let relativePath: string;
-    if (normalizedPath.startsWith(normalizedRoot + '/')) {
-      relativePath = normalizedPath.substring(normalizedRoot.length + 1);
-    } else if (normalizedPath.startsWith(normalizedRoot)) {
-      relativePath = normalizedPath.substring(normalizedRoot.length);
-    } else {
-      // 相对路径情况
-      relativePath = normalizedPath;
-    }
-
-    const parts = relativePath.split('/').filter(Boolean);
-
-    if (parts.length === 0) {
-      // 根路径本身就是节点
-      rootNodes.push(node);
-      continue;
-    }
-
-    if (parts.length === 1) {
-      // 直接子项，父级是 rootPath
-      const parentNode = pathToNode.get(normalizedRoot);
-      if (parentNode?.children) {
-        parentNode.children.push(node);
-      } else {
-        rootNodes.push(node);
-      }
-      continue;
-    }
-
-    // 多层嵌套：构建虚拟目录链
-    // parts = ['src', 'components', 'App.tsx']
-    // 需要创建: src -> components -> App.tsx
-
-    let currentParentPath = normalizedRoot;
-
-    for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i];
-      const fullPath = currentParentPath + '/' + part;
-
-      if (!pathToNode.has(fullPath)) {
-        // 创建虚拟目录
-        const virtualNode: TreeNode = {
-          key: fullPath,
-          title: part,
-          type: 'directory',
-          path: fullPath,
-          size: null,
-          children: [],
-        };
-        pathToNode.set(fullPath, virtualNode);
-
-        // 链接到父级
-        const parentNode = pathToNode.get(currentParentPath);
-        if (parentNode?.children) {
-          parentNode.children.push(virtualNode);
-        } else if (currentParentPath === normalizedRoot) {
-          // 第一层虚拟目录
-          rootNodes.push(virtualNode);
-        }
-      }
-
-      currentParentPath = fullPath;
-    }
-
-    // 最后一项添加到其父级
-    const finalParentNode = pathToNode.get(currentParentPath);
-    if (finalParentNode?.children) {
-      finalParentNode.children.push(node);
-    } else {
-      rootNodes.push(node);
-    }
-  }
-
-  // 清理空目录的 children
-  const cleanEmptyChildren = (nodes: TreeNode[]): TreeNode[] => {
-    return nodes.map(node => {
-      if (node.type === 'directory' && node.children) {
-        node.children = cleanEmptyChildren(node.children);
-      }
-      return node;
-    }).sort((a, b) => {
-      if (a.type === 'directory' && b.type === 'file') return -1;
-      if (a.type === 'file' && b.type === 'directory') return 1;
-      return a.title.localeCompare(b.title);
-    });
-  };
-
-  return cleanEmptyChildren(rootNodes);
-}
-
-/**
- * 非递归模式虚拟列表组件
- * 【小强实现 2026-03-23】阶段4任务3：非递归模式虚拟列表
- */
-interface VirtualFileListProps {
-  entries: any[];
-}
-
-const VirtualFileList: React.FC<VirtualFileListProps> = ({ entries }) => {
-  const [searchText, setSearchText] = useState('');
-  
-  const filteredEntries = searchText
-    ? entries.filter((entry: Entry) => 
-        entry.name.toLowerCase().includes(searchText.toLowerCase())
-      )
-    : entries;
-  
-  const fileListStyle: React.CSSProperties = {
-    background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
-    border: "1px solid #b7eb8f",
-    borderRadius: 8,
-    padding: "10px 14px",
-    marginTop: 6,
-    fontSize: "0.9em",
-    lineHeight: 1.8,
-    whiteSpace: "pre-wrap",
-  };
-  
-  return (
-    <div style={fileListStyle}>
-      <Input
-        prefix={<SearchOutlined style={{ color: '#bbb' }} />}
-        placeholder="搜索文件..."
-        allowClear
-        style={{ marginBottom: 8, fontSize: 12 }}
-        size="small"
-        value={searchText}
-        onChange={(e) => setSearchText(e.target.value)}
-      />
-      <div style={{ maxHeight: 300, overflow: 'auto' }}>
-        {filteredEntries.map((entry: Entry, idx: number) => (
-          <div 
-            key={`file-${idx}`}
-            style={{ 
-              padding: '4px 0',
-              borderBottom: idx < filteredEntries.length - 1 ? '1px solid #e8e8e8' : 'none',
-            }}
-          >
-            <span>
-              {entry.type === "directory" ? "📁" : "📄"} {entry.name}
-              {entry.type === "file" && entry.size !== null && (
-                <span style={{ color: '#888', marginLeft: 8, fontSize: 11 }}>
-                  ({(entry.size / 1024).toFixed(1)} KB)
-                </span>
-              )}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
 
 /**
  * 步骤行组件 - 单行步骤显示（优化后新增）
@@ -481,10 +257,6 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             {(() => {
               const isRecursive = step.tool_params?.recursive === true;
               const entries = step.raw_data?.entries || [];
-              const rootPath = step.raw_data?.directory || '';
-              
-              // 只有在递归模式下才计算 treeData
-              const treeData = isRecursive ? convertEntriesToTree(entries as Entry[], rootPath) : [];
               
               return (
                 <div style={{ marginTop: 8 }}>
@@ -508,34 +280,6 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                     </span>
                   </div>
                   
-                  {/* 文件列表内容 - 根据 isRecursive 选择显示方案 */}
-                  {isExpanded && entries.length > 0 && (
-                    isRecursive ? (
-                      /* 【小强实现 2026-03-23】阶段4任务4：递归模式树形结构 */
-                      <div style={getFileListBackground()}>
-                        <Tree
-                          showLine={{ showLeafIcon: true }}
-                          treeData={treeData}
-                          defaultExpandAll={false}
-                          style={{
-                            background: 'transparent',
-                            fontSize: 13,
-                          }}
-                          icon={({ data }: any) => 
-                            data.type === 'directory' 
-                              ? <FolderOutlined style={{ color: '#faad14' }} /> 
-                              : <FileOutlined style={{ color: '#1890ff' }} />
-                          }
-                        />
-                      </div>
-                    ) : (
-                      /* 【小强实现 2026-03-23】阶段4任务3：非递归模式虚拟列表 */
-                      <VirtualFileList 
-                        entries={entries} 
-                      />
-                    )
-                  )}
-
                   {/* 【小强实现 2026-03-24】阶段3：使用 renderToolResult 渲染工具结果视图 */}
                   {isExpanded && renderToolResult(step)}
                 </div>
