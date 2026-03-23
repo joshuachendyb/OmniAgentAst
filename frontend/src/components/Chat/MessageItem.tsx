@@ -36,8 +36,20 @@ import ErrorDetail from "./ErrorDetail";
  * 【小强优化 2026-03-18】UX 视觉升级：渐变徽章、柔和背景、精致阴影
  * 【小新重构 2026-03-09】添加分页支持
  */
-const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, taskId }) => {
+// 【小资修复 2026-03-23】StepRow props：接收全局Map状态
+interface StepRowProps {
+  step: ExecutionStep;
+  taskId?: string;
+  stepIndex?: number;
+  expandedSteps: Map<number, boolean>;
+  toggleExpand: (index: number) => void;
+}
+
+const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expandedSteps, toggleExpand }) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // 【小资修复 2026-03-23】从全局Map读取展开状态（未设置的key默认展开）
+  const isExpanded = expandedSteps.get(stepIndex) ?? true;
   
   // 【小强优化 2026-03-18】渐变色方案
   const gradientMap: Record<string, string> = {
@@ -229,6 +241,41 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
                 参数：{JSON.stringify(step.tool_params, null, 2)}
               </div>
             )}
+            {/* 【小沈修复 2026-03-23】显示文件列表 - 带折叠功能（使用Map管理状态） */}
+            {step.raw_data?.entries && step.raw_data.entries.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                {/* 折叠按钮和文件计数 */}
+                <div style={{ marginBottom: 6 }}>
+                  <span 
+                    onClick={() => toggleExpand(stepIndex)}
+                    style={{ 
+                      cursor: "pointer", 
+                      color: "#1890ff",
+                      fontSize: 12,
+                      fontWeight: 500,
+                    }}
+                  >
+                    {isExpanded ? "▼ 收起" : "▶ 展开"} 文件列表 
+                    ({step.raw_data.entries.length}个)
+                  </span>
+                </div>
+                {/* 文件列表内容 */}
+                {isExpanded && step.raw_data?.entries && (
+                  <div style={getFileListBackground()}>
+                    {step.raw_data?.entries?.map((entry: any, idx: number) => (
+                      <React.Fragment key={`action-entry-${idx}`}>
+                        <div style={{ 
+                          padding: "4px 0",
+                          borderBottom: (step.raw_data?.entries?.length ?? 0) > 1 && idx < (step.raw_data?.entries?.length ?? 0) - 1 ? "1px solid #e8e8e8" : "none",
+                        }}>
+                          {entry.type === "directory" ? "📁" : "📄"} {entry.name}
+                        </div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             {/* 【小新重构 2026-03-09】显示分页信息 */}
             {step.raw_data && (
               <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
@@ -272,8 +319,8 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
         )}
         {step.type === "observation" && (
           <>
-            {/* 显示 Agent 的思考过程 */}
-            {step.thought && (
+            {/* 【小沈修复 2026-03-23】显示 Agent 的思考过程 - 使用 step.reasoning 而非 step.thought */}
+            {step.reasoning && (
               <div style={{ 
                 ...getThoughtBackground(),
                 color: "#888",
@@ -281,7 +328,7 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
                 marginBottom: 8,
                 fontSize: "0.95em",
               }}>
-                💭 {step.thought}
+                💭 {step.reasoning}
               </div>
             )}
             {/* 【小沈修复2026-03-23】显示 observation 的 content 字段 */}
@@ -303,30 +350,51 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
             {/* 显示执行结果 - 只有当没有 content 时才显示 */}
             {!step.content && (
               <div>
-                {/* 文件列表框框 */}
+                {/* 【小沈修复 2026-03-23】文件列表框框 - 使用 step.raw_data 而非 step.observation?.result */}
                 {(() => {
-                  const obsResult = step.observation?.result;
-                  const hasEntries = obsResult?.entries && Array.isArray(obsResult.entries);
+                  const obsRawData = step.raw_data;
+                  const hasEntries = obsRawData?.entries && Array.isArray(obsRawData.entries);
+                  const entryCount = hasEntries ? obsRawData.entries.length : 0;
                   
                   return (
                     <div>
                       {hasEntries && (
-                        <div style={getFileListBackground()}>
-                          {obsResult.entries.map((entry: any, idx: number) => (
-                            <React.Fragment key={`entry-${idx}`}>
-                              <div style={{ 
-                                padding: "4px 0",
-                                borderBottom: idx < obsResult.entries.length - 1 ? "1px solid #e8e8e8" : "none",
-                              }}>
-                                {entry.type === "directory" ? "📁" : "📄"} {entry.name}
-                              </div>
-                            </React.Fragment>
-                          ))}
+                        <div>
+                          {/* 折叠按钮和文件计数 */}
+                          <div style={{ marginBottom: 6 }}>
+                            <span 
+                              onClick={() => toggleExpand(stepIndex)}
+                              style={{ 
+                                cursor: "pointer", 
+                                color: "#52c41a",
+                                fontSize: 12,
+                                fontWeight: 500,
+                              }}
+                            >
+                              {isExpanded ? "▼ 收起" : "▶ 展开"} 文件列表 
+                              ({entryCount}个)
+                            </span>
+                          </div>
+                          {/* 文件列表内容 */}
+                          {isExpanded && obsRawData?.entries && (
+                            <div style={getFileListBackground()}>
+                              {obsRawData.entries.map((entry: any, idx: number) => (
+                                <React.Fragment key={`obs-entry-${idx}`}>
+                                  <div style={{ 
+                                    padding: "4px 0",
+                                    borderBottom: idx < obsRawData.entries.length - 1 ? "1px solid #e8e8e8" : "none",
+                                  }}>
+                                    {entry.type === "directory" ? "📁" : "📄"} {entry.name}
+                                  </div>
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
-                      {/* summary 字符串 */}
-                      {typeof step.result === "string" && (
-                        <div style={{ marginTop: 6 }}>{step.result}</div>
+                      {/* 【小沈修复 2026-03-23】summary 字符串 - 使用 step.summary 而非 step.result */}
+                      {typeof step.summary === "string" && (
+                        <div style={{ marginTop: 6 }}>{step.summary}</div>
                       )}
                     </div>
                   );
@@ -350,7 +418,8 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}>
-            💭 {step.thinking_prompt || step.content || ""}
+            {/* 【小沈修复 2026-03-23】使用 step.reasoning 而非 step.thinking_prompt */}
+            💭 {step.reasoning || step.content || ""}
           </div>
         )}
         {step.type === "final" && (
@@ -422,6 +491,17 @@ const MessageItem: React.FC<MessageItemProps> = ({
   sessionTitle,
 }) => {
   const [copied, setCopied] = useState(false);
+  // 【小强修复 2026-03-23】使用Map存储每个步骤的展开状态，支持多步骤独立折叠
+  const [expandedSteps, setExpandedSteps] = useState<Map<number, boolean>>(new Map([[0, true]]));
+
+  // 【小强修复 2026-03-23】切换展开状态
+  const toggleExpand = (index: number) => {
+    setExpandedSteps(prev => {
+      const newMap = new Map(prev);
+      newMap.set(index, !newMap.get(index));
+      return newMap;
+    });
+  };
 
   /**
    * 复制消息内容
@@ -529,7 +609,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
             case 'action_tool':
               return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, action_retry_count: step.action_retry_count };
             case 'observation':
-              return { ...baseExport, step: step.step, obs_execution_status: (step as any).obs_execution_status, obs_summary: (step as any).obs_summary, obs_raw_data: (step as any).obs_raw_data, is_finished: step.is_finished };
+              // 【小沈修复 2026-03-23】修正字段名（去掉obs_前缀）+ 补充缺少的字段
+              return { ...baseExport, step: step.step, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, content: step.content, reasoning: step.reasoning, action_tool: step.action_tool, params: step.params, is_finished: step.is_finished };
             case 'chunk':
               return { ...baseExport, step: step.step, is_reasoning: step.is_reasoning };
             case 'final':
@@ -936,7 +1017,7 @@ const isUser = message.role === "user";
                 return 0;
               });
               return sortedSteps.map((step, index) => (
-                <StepRow key={`step-${index}`} step={step} taskId={message.task_id} />
+                <StepRow key={`step-${index}`} step={step} taskId={message.task_id} stepIndex={index} expandedSteps={expandedSteps} toggleExpand={toggleExpand} />
               ));
             })()}
               
