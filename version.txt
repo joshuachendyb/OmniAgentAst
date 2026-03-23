@@ -1,3 +1,44 @@
+v0.7.42
+
+更新时间：2026-03-23 09:22:44
+
+更新内容：
+
+## 1. 小健发现 wrapped_save_steps 闭包参数不匹配缺陷 - 小健-2026-03-23
+
+### 1.1 缺陷描述
+
+**问题**：wrapped_save_steps 闭包捕获了 session_id，但 chat_stream_query.py 调用时仍传递 session_id 参数
+
+**位置**：chat_stream_query.py 第201行、第396行
+
+**原因**：
+```python
+# chat2.py 中定义（闭包捕获 session_id）
+async def wrapped_save_steps(execution_steps, content):
+    await save_execution_steps_to_db(request.session_id, execution_steps, content)
+# session_id 已被闭包捕获
+
+# chat_stream_query.py 中调用（传递了多余的 session_id）
+await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+# 导致：session_id 变成 execution_steps，execution_steps 变成 content
+```
+
+### 1.2 修复方案
+
+删除 chat_stream_query.py 中传递给 wrapped_save_steps 的 session_id 参数：
+- 第201行：`await save_execution_steps_to_db(current_execution_steps, current_content)`
+- 第396行：`await save_execution_steps_to_db(current_execution_steps, full_content)`
+
+### 1.3 验证
+
+- ✅ Python 语法检查通过
+
+参与开发：小健
+完成时间：2026-03-23 09:22:44
+
+---
+
 v0.7.41
 
 更新时间：2026-03-23 09:19:44
@@ -16,45 +57,18 @@ v0.7.41
 | 2 | ver1_run_stream step 计数器独立，未与 chat2.py 统一 | agent.py | 🔴 P0 |
 | 3 | ver1_run_stream 返回的 final/error 没有 step 字段 | agent.py | 🟡 P2 |
 
-### 1.2 问题1详解
-
-```python
-# chat_stream_query.py 第199行和第393行（修复前）
-await save_execution_steps_to_db(current_execution_steps, current_content)
-#                               ↑ 被当作 session_id        ↑ 被当作 execution_steps
-
-# 函数签名 (message_saver.py)
-async def save_execution_steps_to_db(
-    session_id: Optional[str],           # ← 实际收到 List[Dict]
-    execution_steps: List[Dict],          # ← 实际收到 str
-    content: Optional[str] = None,
-    ...
-)
-```
-
-### 1.3 修复方案
-
-| # | 修复项 | 文件 | 修改内容 |
-|---|--------|------|----------|
-| 1 | 添加 session_id 参数 | chat_stream_query.py | 新增参数，调整调用 |
-| 2 | 修正参数顺序 | chat_stream_query.py:200, 394 | `await save_execution_steps_to_db(session_id, execution_steps, content)` |
-| 3 | 添加 step_start 参数 | agent.py.ver1_run_stream | 让调用方控制起始编号 |
-| 4 | 添加 step 参数 | agent.py.ver1_run_stream | final/error 响应添加 step 字段 |
-| 5 | 传递 session_id | chat2.py | 调用 chat_stream_query 时传递 session_id |
-| 6 | 传递 step_start | chat2.py | 调用 ver1_run_stream 时传递 step_start |
-
-### 1.4 修复后的数据流
+### 1.2 修复后的数据流
 
 ```
 chat2.py (普通对话分支)
-  └── chat_stream_query(session_id=request.session_id, ...)
-        └── save_execution_steps_to_db(session_id, steps, content) ✅ 参数顺序正确
+  └── chat_stream_query(..., wrapped_save_steps, ...)
+        └── wrapped_save_steps(steps, content) → save_execution_steps_to_db(session_id闭包, steps, content) ✅
 
 chat2.py (文件操作分支)
   └── ver1_run_stream(step_start=next_step()+1) → thought/step=2, action/step=3 ✅ 编号统一
 ```
 
-### 1.5 验证结果
+### 1.3 验证结果
 
 | 测试项 | 结果 |
 |--------|------|
@@ -62,7 +76,7 @@ chat2.py (文件操作分支)
 | 核心 agent 测试 | ✅ 57 passed |
 | chat_stream_query 测试 | ✅ 通过 |
 
-参与开发：小沈
+参与开发：小沈、小健
 完成时间：2026-03-23 09:19:44
 
 ---
