@@ -1,3 +1,72 @@
+v0.7.41
+
+更新时间：2026-03-23 09:19:44
+
+更新内容：
+
+## 1. chat_stream_query.py 参数顺序修复 + ver1_run_stream step 统一 - 小沈-2026-03-23
+
+### 1.1 发现的问题
+
+使用系统性调试流程（Phase 1: Root Cause Investigation）分析发现3个严重问题：
+
+| # | 问题 | 文件 | 严重程度 |
+|---|------|------|----------|
+| 1 | save_execution_steps_to_db 调用参数顺序错误 | chat_stream_query.py:199, 393 | 🔴 P0 |
+| 2 | ver1_run_stream step 计数器独立，未与 chat2.py 统一 | agent.py | 🔴 P0 |
+| 3 | ver1_run_stream 返回的 final/error 没有 step 字段 | agent.py | 🟡 P2 |
+
+### 1.2 问题1详解
+
+```python
+# chat_stream_query.py 第199行和第393行（修复前）
+await save_execution_steps_to_db(current_execution_steps, current_content)
+#                               ↑ 被当作 session_id        ↑ 被当作 execution_steps
+
+# 函数签名 (message_saver.py)
+async def save_execution_steps_to_db(
+    session_id: Optional[str],           # ← 实际收到 List[Dict]
+    execution_steps: List[Dict],          # ← 实际收到 str
+    content: Optional[str] = None,
+    ...
+)
+```
+
+### 1.3 修复方案
+
+| # | 修复项 | 文件 | 修改内容 |
+|---|--------|------|----------|
+| 1 | 添加 session_id 参数 | chat_stream_query.py | 新增参数，调整调用 |
+| 2 | 修正参数顺序 | chat_stream_query.py:200, 394 | `await save_execution_steps_to_db(session_id, execution_steps, content)` |
+| 3 | 添加 step_start 参数 | agent.py.ver1_run_stream | 让调用方控制起始编号 |
+| 4 | 添加 step 参数 | agent.py.ver1_run_stream | final/error 响应添加 step 字段 |
+| 5 | 传递 session_id | chat2.py | 调用 chat_stream_query 时传递 session_id |
+| 6 | 传递 step_start | chat2.py | 调用 ver1_run_stream 时传递 step_start |
+
+### 1.4 修复后的数据流
+
+```
+chat2.py (普通对话分支)
+  └── chat_stream_query(session_id=request.session_id, ...)
+        └── save_execution_steps_to_db(session_id, steps, content) ✅ 参数顺序正确
+
+chat2.py (文件操作分支)
+  └── ver1_run_stream(step_start=next_step()+1) → thought/step=2, action/step=3 ✅ 编号统一
+```
+
+### 1.5 验证结果
+
+| 测试项 | 结果 |
+|--------|------|
+| Python 语法检查 | ✅ 通过 |
+| 核心 agent 测试 | ✅ 57 passed |
+| chat_stream_query 测试 | ✅ 通过 |
+
+参与开发：小沈
+完成时间：2026-03-23 09:19:44
+
+---
+
 v0.7.40
 
 更新时间：2026-03-23 08:49:24
