@@ -336,7 +336,7 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
 
       {/* 根据 recursive 参数选择显示方案 */}
       {isRecursive ? (
-        /* 递归模式：树形结构 */
+        /* 递归模式：树形结构 - 外层div统一管理滚动，DirectoryTree不设置滚动属性 */
         <div style={fileListBackground}>
           <DirectoryTree
             showLine={{ showLeafIcon: true }}
@@ -345,8 +345,6 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
             style={{
               background: "transparent",
               fontSize: 13,
-              maxHeight: 300,
-              overflow: "auto",
             }}
             icon={({ data }: any) =>
               data.type === "directory" ? (
@@ -358,7 +356,7 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
           />
         </div>
       ) : (
-        /* 非递归模式：虚拟列表 */
+        /* 非递归模式：虚拟列表 - List自身管理滚动，外层div不限制 */
         <VirtualFileList entries={entries} />
       )}
 
