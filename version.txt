@@ -1,8 +1,83 @@
+v0.7.56
+
+更新时间：2026-03-23 19:09:26
+
+更新内容：
+
+## 1. 删除废弃的旧文件 - 小沈-2026-03-23
+
+### 1.1 删除的文件
+
+| 文件 | 说明 |
+|------|------|
+| app/api/v1/action1.py | 废弃（仅被 three_operation.py 引用） |
+| app/api/v1/observation1.py | 废弃（仅被 three_operation.py 引用） |
+| app/api/v1/three_operation.py | 废弃（仅被 chat_stream.py 引用） |
+| app/api/v1/chat_stream.py | 废弃（chat2.py 已替代） |
+| app/api/v1/types/process_start.py | 废弃（仅被 chat_stream 引用） |
+| app/api/v1/types/process_thought.py | 废弃（仅被 chat_stream 引用） |
+| app/api/v1/types/ | 空目录已删除 |
+
+### 1.2 保留的文件
+
+| 文件 | 说明 |
+|------|------|
+| chat2.py | 当前使用的流式对话端点 |
+| chat_non_stream.py | 非流式对话端点 |
+
+### 1.3 Git 提交
+
+```
+71b867ad refactor: 删除废弃的旧文件 - 小沈-2026-03-23
+```
+
+参与开发：小沈
+完成时间：2026-03-23 19:09:26
+
+---
+
 v0.7.54
 
 更新时间：2026-03-23 12:55:17
 
 更新内容：
+
+v0.7.55
+
+更新时间：2026-03-23 13:36:00
+
+更新内容：
+
+## 1. 修复 list_directory 分页导致数据丢失问题 - 小沈-2026-03-23
+
+### 1.1 问题描述
+
+使用 list_directory 工具时，无论是否递归，都会因为 page_size=100 导致数据丢失：
+- 例如1000条数据，只返回前100条
+- 递归查询3118条数据，也只返回100条
+- 导致LLM和数据库只看到部分数据，影响决策
+
+### 1.2 修复方案
+
+修改 file_tools.py 中的 list_directory 函数：
+1. page_size 默认值从 100 改为 None
+2. page_size 为 None 时，返回所有数据（不分页）
+3. 只有明确传 page_size 参数才进行分页
+
+### 1.3 修改的文件
+
+| 文件 | 修改内容 |
+|------|----------|
+| app/services/tools/file/file_tools.py | page_size 默认值改为 None，添加返回全部数据的逻辑 |
+
+### 1.4 验证
+
+待测试：确认数据库保存完整数据，前端显示完整数据
+
+参与开发：小沈
+完成时间：2026-03-23 13:36:00
+
+---
 
 ## 1. 验证并确认step计数器统一机制 - 小沈-2026-03-23
 
@@ -102,6 +177,55 @@ start=1, thought=2, action=3, obs=4, final=5, error=6 ✅ 连续
 
 参与开发：小沈
 完成时间：2026-03-23 12:55:00
+
+---
+
+v0.7.53
+
+更新时间：2026-03-23 13:03:31
+
+更新内容：
+
+## 1. 消息保存和 step 计数器修复汇总 - 小沈-2026-03-23
+
+### 1.1 修复的问题
+
+| 版本 | 问题 | 修复 |
+|------|------|------|
+| v0.7.40 | chat2.py 文件操作分支未保存到数据库 | 新增 message_saver.py 统一消息保存模块 |
+| v0.7.41 | chat_stream_query.py 参数顺序错误 | 修复 wrapped_save_steps 闭包参数 |
+| v0.7.42 | wrapped_save_steps 闭包参数不匹配 | 删除多余的 session_id 参数 |
+| v0.7.43 | 文件操作分支 thought 步骤未保存 | 添加到 current_execution_steps 并保存 |
+| v0.7.44 | chat2.py 重复发送 thought 逻辑 | 删除重复代码，添加警告注释 |
+| v0.7.45 | final/error 步骤 step 多 1 | 修复 next_step() 调用两次问题 |
+| v0.7.46 | 文件操作 start 步骤未保存 | 发送后立即添加到列表并保存 |
+| v0.7.47 | 所有对话 start 步骤未保存 | 在发送前初始化列表，发送后立即保存 |
+
+### 1.2 关键修改
+
+**message_saver.py 统一模块**：
+- `save_execution_steps_to_db` - 保存到数据库
+- `add_step_and_save` - 添加步骤并保存
+- `parse_and_save_sse` - 解析 SSE 并保存
+
+**chat2.py 修复**：
+- 使用 message_saver 模块
+- 统一保存逻辑
+- 修复 start/thought/final/error 步骤保存
+
+**chat_stream_query.py 修复**：
+- 修复 wrapped_save_steps 闭包参数
+- 修复 next_step() 重复调用
+- 添加警告注释
+
+### 1.3 验证结果
+
+- ✅ 所有消息步骤（start, thought, action_tool, observation, chunk, final, error, incident）正确保存
+- ✅ step 计数器连续无跳号
+- ✅ 数据库与导出数据一致
+
+参与开发：小沈、小健
+完成时间：2026-03-23 10:13:00
 
 ---
 
