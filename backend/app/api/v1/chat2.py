@@ -343,6 +343,10 @@ async def chat_stream(request: ChatRequest):
             step_counter += 1
             return step_counter
         
+        # 【小沈修复 2026-03-23】先初始化 execution_steps 列表，后续 start 会添加到这里
+        current_execution_steps: List[Dict] = []  # 执行步骤列表
+        current_content: str = ""  # 当前累积内容
+        
         # 【前端小新代修改】在流式响应开始时发送start事件
         display_name = f"{get_provider_display_name(ai_service.provider)} ({ai_service.model})"
         
@@ -376,8 +380,8 @@ async def chat_stream(request: ChatRequest):
         yield f"data: {json.dumps(start_data)}\n\n"
         
         # 【小沈修复 2026-03-23】将 start 添加到 execution_steps 并保存到数据库
-        # 注意：current_execution_steps 在后面才初始化，这里先保存
-        await save_execution_steps_to_db(request.session_id, [start_data], "")
+        current_execution_steps.append(start_data)
+        await save_execution_steps_to_db(request.session_id, current_execution_steps, "")
         
         # 如果安全检查未通过，直接返回错误
         if not security_check_result.get('is_safe', True):
@@ -405,9 +409,7 @@ async def chat_stream(request: ChatRequest):
                     history.append(Message(role=msg.role, content=msg.content))
             
             # 【重构优化】chat_stream_query 需要的变量
-            # 注意：step_counter 和 next_step() 已在第 338-343 行定义，此处直接复用
-            current_execution_steps: List[Dict] = []  # 执行步骤列表
-            current_content: str = ""  # 当前累积内容
+            # 注意：step_counter, next_step(), current_execution_steps 已在前面定义，此处直接复用
             last_is_reasoning: Optional[bool] = None  # 上一个is_reasoning状态
             
             # 【小沈重构 2026-03-23】使用统一的 message_saver 模块

@@ -1,3 +1,66 @@
+v0.7.47
+
+更新时间：2026-03-23 10:12:50
+
+更新内容：
+
+## 1. 修复所有对话 start 步骤未保存的问题 - 小沈-2026-03-23
+
+### 1.1 问题描述
+
+不管是普通对话还是文件操作，start 步骤都没有被添加到 `current_execution_steps` 列表，导致：
+1. 数据库中没有 start 步骤
+2. 导出的消息 execution_steps 里缺少 start
+
+### 1.2 根因分析
+
+```python
+# chat2.py 原代码
+step_counter = 0
+
+# 发送 start
+yield f"data: {json.dumps(start_data)}\n\n"
+# start 被发送了，但没有被添加到 current_execution_steps
+
+# 后面才初始化
+current_execution_steps: List[Dict] = []  # 太晚了！
+```
+
+### 1.3 修复方案
+
+1. 在发送 start **之前**先初始化 `current_execution_steps`
+2. 发送 start 后立即添加到列表
+3. 保存到数据库
+
+```python
+# 1. 先初始化
+current_execution_steps: List[Dict] = []
+current_content: str = ""
+
+# 2. 发送 start
+yield f"data: {json.dumps(start_data)}\n\n"
+
+# 3. 添加到列表并保存
+current_execution_steps.append(start_data)
+await save_execution_steps_to_db(request.session_id, current_execution_steps, "")
+```
+
+### 1.4 影响范围
+
+| 对话类型 | 修复前 | 修复后 |
+|----------|--------|--------|
+| 普通对话 | start 未保存 | ✅ start 已保存 |
+| 文件操作 | start 未保存 | ✅ start 已保存 |
+
+### 1.5 验证
+
+- Python 语法检查：✅ 通过
+
+参与开发：小沈
+完成时间：2026-03-23 10:12:50
+
+---
+
 v0.7.46
 
 更新时间：2026-03-23 10:07:00
