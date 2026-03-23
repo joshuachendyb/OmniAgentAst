@@ -2,7 +2,7 @@
 
 **创建时间**: 2026-03-23 16:07:56  
 **编写人**: 小沈  
-**版本**: v2.13（2026-03-23 20:55:00 小强对照第8章完善第9.5节Map方案）
+**版本**: v2.14（2026-03-24 16:25:00 小沈修正第3.2.2节：确认sse.ts实际保留obs_前缀）
 **适用范围**: 前端 MessageItem.tsx 步骤显示字段修正
 
 ---
@@ -94,64 +94,70 @@ data: {"type": "observation", "obs_execution_status": "success", "obs_summary": 
 
 #### 3.2.2 问题描述
 
-前端 SSE 解析 observation 步骤时，对字段前缀处理不一致：
+~~前端 SSE 解析 observation 步骤时，对字段前缀处理不一致：~~
+
+**已确认：sse.ts 实际保留 obs_ 前缀保存，不是去掉前缀！**
 
 **后端返回字段（带 obs_ 前缀）**：
 ```
 obs_execution_status, obs_summary, obs_raw_data, obs_reasoning, obs_action_tool, obs_params
 ```
 
-**前端 sse.ts 解析后保存的字段（去掉 obs_ 前缀）**：
+**前端 sse.ts 解析后保存的字段（保留 obs_ 前缀）**：
 ```
-execution_status, summary, raw_data, reasoning, action_tool, params
+obs_execution_status, obs_summary, obs_raw_data, obs_reasoning, obs_action_tool, obs_params
 ```
 
 #### 3.2.2 根因分析
 
-sse.ts 第823行（代码从826行开始）解析 observation 时，把 `obs_` 前缀去掉了：
+~~sse.ts 解析 observation 时，把 `obs_` 前缀去掉了~~
+
+**已确认：sse.ts 实际保留 obs_ 前缀保存**（frontend/src/utils/sse.ts 第834-861行）：
 ```typescript
 case "observation": {
-  step.raw_data = rawData.obs_raw_data ?? null;        // obs_raw_data → raw_data
-  step.execution_status = rawData.obs_execution_status ?? 'success';
-  step.summary = rawData.obs_summary ?? '';
-  step.reasoning = rawData.obs_reasoning ?? '';
-  step.action_tool = rawData.obs_action_tool ?? '';
-  step.params = rawData.obs_params ?? {};
+  step.is_finished = rawData.is_finished ?? false;
+  step.obs_raw_data = rawData.obs_raw_data ?? null;        // ✅ 保留 obs_ 前缀
+  step.obs_execution_status = rawData.obs_execution_status ?? 'success';  // ✅ 保留 obs_ 前缀
+  step.obs_summary = rawData.obs_summary ?? '';                    // ✅ 保留 obs_ 前缀
+  step.content = rawData.content ?? '';
+  step.obs_reasoning = rawData.obs_reasoning ?? '';              // ✅ 保留 obs_ 前缀
+  step.obs_action_tool = rawData.obs_action_tool ?? '';        // ✅ 保留 obs_ 前缀
+  step.obs_params = rawData.obs_params ?? {};                  // ✅ 保留 obs_ 前缀
 }
 ```
 
 #### 3.2.3 导出代码读取问题
 
-MessageItem.tsx 第589行导出时使用了 `obs_` 前缀读取：
+~~MessageItem.tsx 第589行导出时使用了 `obs_` 前缀读取~~
+
+**已确认：导出代码是正确的**，因为 sse.ts 保存的就是 obs_ 前缀字段：
+
 ```typescript
 case 'observation':
   return { 
-    obs_execution_status: (step as any).obs_execution_status,  // ❌ 应该是 execution_status
-    obs_summary: (step as any).obs_summary,                    // ❌ 应该是 summary
-    obs_raw_data: (step as any).obs_raw_data,                  // ❌ 应该是 raw_data
-  };
-```
-
-**问题**：导出代码读取 `obs_execution_status`，但 sse.ts 保存的是 `execution_status`，导致数据为 undefined！
-
-#### 3.2.4 修复方案
-
-修改导出代码，使用正确字段名：
-```typescript
-case 'observation':
-  return { 
-    ...baseExport, 
-    step: step.step, 
-    execution_status: step.execution_status,    // ✅ 正确
-    summary: step.summary,                        // ✅ 正确
-    raw_data: step.raw_data,                    // ✅ 正确
-    content: step.content,                       // ✅ 正确
-    reasoning: step.reasoning,                  // ✅ 正确
-    action_tool: step.action_tool,              // ✅ 正确
-    params: step.params,                         // ✅ 正确
+    obs_execution_status: step.obs_execution_status,  // ✅ 正确（sse.ts保存的就是obs_前缀）
+    obs_summary: step.obs_summary,                    // ✅ 正确
+    obs_raw_data: step.obs_raw_data,                  // ✅ 正确
+    content: step.content,
+    obs_reasoning: step.obs_reasoning,
+    obs_action_tool: step.obs_action_tool,
+    obs_params: step.obs_params,
     is_finished: step.is_finished 
   };
 ```
+
+**结论**：导出代码和 sse.ts 保存的字段一致，无需修改。
+
+#### 3.2.4 修复方案
+
+~~修改导出代码，使用正确字段名~~
+
+**已确认：无需修复！** 字段使用是一致的：
+- sse.ts 保存：obs_ 前缀
+- MessageItem.tsx 显示：obs_ 前缀
+- 导出：obs_ 前缀
+
+三者一致，代码正常工作。
 
 ### 3.3 前端显示问题
 
@@ -1171,4 +1177,5 @@ function convertToTree(entries, rootPath) {
 | v2.11 | 2026-03-23 20:45:00 | 小强 | 修正错误：前8章全部P1级，无后续优化项，必须全部实施 |
 | v2.12 | 2026-03-23 20:50:00 | 小强 | 补充第2章问题到修改清单（第410行 step.thinking_prompt） |
 | v2.13 | 2026-03-23 20:55:00 | 小强 | 对照第8章完善第9.5节Map方案，补充isExpanded定义 |
+| v2.14 | 2026-03-24 16:25:00 | 小沈 | 修正第3.2.2节：确认sse.ts实际保留obs_前缀，非去掉前缀；删除错误的修复方案描述 |
 | v2.14 | 2026-03-23 21:00:00 | 小沈 | 补充3.2.1节：说明为什么要加obs_前缀（SSE传输设计原因） |

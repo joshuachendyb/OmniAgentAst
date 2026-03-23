@@ -212,8 +212,6 @@ const VirtualFileList: React.FC<VirtualFileListProps> = ({ entries }) => {
     fontSize: "0.9em",
     lineHeight: 1.8,
     whiteSpace: "pre-wrap",
-    maxHeight: 300,
-    overflow: "auto",
     boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
   };
 
@@ -233,7 +231,7 @@ const VirtualFileList: React.FC<VirtualFileListProps> = ({ entries }) => {
         <List
           dataSource={filteredEntries}
           size="small"
-          style={{ maxHeight: 280, overflow: 'auto' }}
+          style={{ maxHeight: 300, overflow: 'auto' }}
           renderItem={(entry: Entry, index: number) => (
             <List.Item
               key={`${entry.path}-${index}`}
@@ -347,6 +345,8 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
             style={{
               background: "transparent",
               fontSize: 13,
+              maxHeight: 300,
+              overflow: "auto",
             }}
             icon={({ data }: any) =>
               data.type === "directory" ? (
