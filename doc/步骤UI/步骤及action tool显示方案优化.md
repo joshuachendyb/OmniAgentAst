@@ -73,7 +73,26 @@ content, obs_reasoning, obs_action_tool, obs_params, is_finished
 
 ### 3.2 字段接收解析问题（核心问题）
 
-#### 3.2.1 问题描述
+#### 3.2.1 为什么要加 `obs_` 前缀？
+
+**SSE传输设计**：
+- action_tool 和 observation 会交替发送
+- 两者的字段名有重复（如 `execution_status`, `summary`）
+- 加 `obs_` 前缀是为了**区分来源**，避免字段混淆
+
+```
+SSE传输示例：
+data: {"type": "action_tool", "execution_status": "success", "summary": "..."}
+data: {"type": "observation", "obs_execution_status": "success", "obs_summary": "..."}
+                                          ↑ 区分来源
+```
+
+**保存数据库时去前缀**：
+- 数据库存储不需要区分来源
+- 直接保存为 `execution_status`, `summary`
+- 前端显示/导出直接用这些字段，更简洁
+
+#### 3.2.2 问题描述
 
 前端 SSE 解析 observation 步骤时，对字段前缀处理不一致：
 
@@ -1152,3 +1171,4 @@ function convertToTree(entries, rootPath) {
 | v2.11 | 2026-03-23 20:45:00 | 小强 | 修正错误：前8章全部P1级，无后续优化项，必须全部实施 |
 | v2.12 | 2026-03-23 20:50:00 | 小强 | 补充第2章问题到修改清单（第410行 step.thinking_prompt） |
 | v2.13 | 2026-03-23 20:55:00 | 小强 | 对照第8章完善第9.5节Map方案，补充isExpanded定义 |
+| v2.14 | 2026-03-23 21:00:00 | 小沈 | 补充3.2.1节：说明为什么要加obs_前缀（SSE传输设计原因） |
