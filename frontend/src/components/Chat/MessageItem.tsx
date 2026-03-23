@@ -286,7 +286,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
               );
             })()}
             {/* 【小新重构 2026-03-09】显示分页信息 */}
-            {step.raw_data && (
+            {/* 【小沈修复 2026-03-24】对于list_directory，总数由ListDirectoryView内部显示，避免重复 */}
+            {step.raw_data && step.tool_name !== "list_directory" && (
               <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
                 {step.raw_data.total && (
                   <span style={{ 
