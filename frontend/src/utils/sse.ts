@@ -95,6 +95,15 @@ export interface ExecutionStep {
   raw_data?: Record<string, any> | null; // 原始数据（新）
   action_retry_count?: number;  // 重试次数（新）
   
+  // === type=observation 新字段（obs_前缀，与SSE后端保持一致） ===
+  // 【小沈修复2026-03-23】添加obs_前缀字段，observation步骤使用，与SSE后端字段名保持一致
+  obs_raw_data?: Record<string, any> | null;       // 原始数据
+  obs_execution_status?: 'success' | 'error' | 'warning'; // 执行状态
+  obs_summary?: string;                            // 执行摘要
+  obs_reasoning?: string;                         // 推理内容
+  obs_action_tool?: string;                       // 动作工具
+  obs_params?: Record<string, any>;                // 动作参数
+  
   // === type=action 旧字段（兼容） ===
   action_input?: Record<string, any>;  // 工具调用参数（旧）
   
@@ -821,15 +830,15 @@ const processSSEData = (
       }
 
       case "observation": {
-        // 【2026-03-11 重命名】observation字段加 obs_ 前缀
+        // 【小沈修正 2026-03-23】前端保存字段名必须和SSE后端定义一模一样
         step.is_finished = rawData.is_finished ?? false;
-        step.raw_data = rawData.obs_raw_data ?? null;
-        step.execution_status = rawData.obs_execution_status ?? 'success';
-        step.summary = rawData.obs_summary ?? '';
+        step.obs_raw_data = rawData.obs_raw_data ?? null;
+        step.obs_execution_status = rawData.obs_execution_status ?? 'success';
+        step.obs_summary = rawData.obs_summary ?? '';
         step.content = rawData.content ?? '';
-        step.reasoning = rawData.obs_reasoning ?? '';
-        step.action_tool = rawData.obs_action_tool ?? '';
-        step.params = rawData.obs_params ?? {};
+        step.obs_reasoning = rawData.obs_reasoning ?? '';
+        step.obs_action_tool = rawData.obs_action_tool ?? '';
+        step.obs_params = rawData.obs_params ?? {};
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
         // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current

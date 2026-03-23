@@ -319,8 +319,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
         )}
         {step.type === "observation" && (
           <>
-            {/* 【小沈修复 2026-03-23】显示 Agent 的思考过程 - 使用 step.reasoning 而非 step.thought */}
-            {step.reasoning && (
+            {/* 【小沈修正 2026-03-23】显示 Agent 的思考过程 - 使用 step.obs_reasoning（和SSE后端字段名一致） */}
+            {step.obs_reasoning && (
               <div style={{ 
                 ...getThoughtBackground(),
                 color: "#888",
@@ -328,7 +328,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 marginBottom: 8,
                 fontSize: "0.95em",
               }}>
-                💭 {step.reasoning}
+                💭 {step.obs_reasoning}
               </div>
             )}
             {/* 【小沈修复2026-03-23】显示 observation 的 content 字段 */}
@@ -347,12 +347,12 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 📋 {step.content}
               </div>
             )}
-            {/* 显示执行结果 - 只有当没有 content 时才显示 */}
+              {/* 显示执行结果 - 只有当没有 content 时才显示 */}
             {!step.content && (
               <div>
-                {/* 【小沈修复 2026-03-23】文件列表框框 - 使用 step.raw_data 而非 step.observation?.result */}
+                {/* 【小沈修正 2026-03-23】文件列表框框 - 使用 step.obs_raw_data（和SSE后端字段名一致） */}
                 {(() => {
-                  const obsRawData = step.raw_data;
+                  const obsRawData = step.obs_raw_data;
                   const hasEntries = obsRawData?.entries && Array.isArray(obsRawData.entries);
                   const entryCount = hasEntries ? obsRawData.entries.length : 0;
                   
@@ -609,8 +609,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
             case 'action_tool':
               return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, action_retry_count: step.action_retry_count };
             case 'observation':
-              // 【小沈修复 2026-03-23】修正字段名（去掉obs_前缀）+ 补充缺少的字段
-              return { ...baseExport, step: step.step, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, content: step.content, reasoning: step.reasoning, action_tool: step.action_tool, params: step.params, is_finished: step.is_finished };
+              // 【小沈修正 2026-03-23】导出字段名必须和SSE后端定义一模一样（带obs_前缀）
+              return { ...baseExport, step: step.step, obs_execution_status: step.obs_execution_status, obs_summary: step.obs_summary, obs_raw_data: step.obs_raw_data, content: step.content, obs_reasoning: step.obs_reasoning, obs_action_tool: step.obs_action_tool, obs_params: step.obs_params, is_finished: step.is_finished };
             case 'chunk':
               return { ...baseExport, step: step.step, is_reasoning: step.is_reasoning };
             case 'final':
