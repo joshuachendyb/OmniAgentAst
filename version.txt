@@ -1,3 +1,39 @@
+v0.7.63
+
+更新时间：2026-03-23 22:08:22
+
+更新内容：
+
+## 1. sse.ts和MessageItem.tsx修复obs_前缀保留问题 - 小沈-2026-03-23
+
+### 1.1 问题描述
+
+前端sse.ts错误地去掉了SSE后端发送的obs_前缀字段（obs_execution_status、obs_summary、obs_raw_data等），导致字段名与后端定义不一致。
+
+### 1.2 修复内容
+
+| 文件 | 修改 |
+|------|------|
+| sse.ts | observation处理逻辑保留obs_前缀字段 |
+| MessageItem.tsx | 显示和导出使用obs_reasoning、obs_raw_data等 |
+| ExecutionStep类型 | 添加obs_前缀字段定义 |
+
+### 1.3 小健审查发现
+
+字段注释区分不明确，加强了action_tool和obs_action_tool字段的注释说明。
+
+### 1.4 Git提交
+
+```
+9d34b699 fix: MessageItem.tsx和sse.ts修复obs_前缀保留问题-小沈-2026-03-23
+80e25f77 docs: sse.ts加强action_tool和obs_action_tool字段注释-小沈-2026-03-23
+```
+
+参与开发：小沈、小健
+完成时间：2026-03-23 22:08:22
+
+---
+
 v0.7.62
 
 更新时间：2026-03-23 21:18:48
