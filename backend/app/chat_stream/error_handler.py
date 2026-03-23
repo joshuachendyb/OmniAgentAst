@@ -13,6 +13,40 @@ from typing import Dict, Any, Optional
 from app.chat_stream.chat_helpers import create_timestamp
 
 
+def create_error_step(
+    code: str,
+    message: str,
+    error_type: str,
+    step_num: int,
+    model: Optional[str] = None,
+    provider: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    创建保存到数据库的 error_step
+
+    Args:
+        code: 错误码（如 TIMEOUT, SECURITY_BLOCKED）
+        message: 错误信息
+        error_type: 错误类型（如 timeout, security, server）
+        step_num: 步骤序号
+        model: 模型名称（可选）
+        provider: 提供商（可选）
+
+    Returns:
+        error_step 字典
+    """
+    return {
+        'type': 'error',
+        'step': step_num,
+        'code': code,
+        'message': message,
+        'error_type': error_type,
+        'timestamp': create_timestamp(),
+        'model': model,
+        'provider': provider
+    }
+
+
 def create_error_response(
     error_type: str,
     message: str,
