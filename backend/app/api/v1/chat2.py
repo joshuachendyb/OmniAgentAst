@@ -418,6 +418,11 @@ async def chat_stream(request: ChatRequest):
             thought_data = {'type': 'thought', 'step': next_step(), 'timestamp': create_timestamp(), 'thinking_prompt': '正在分析任务...'}
             logger.info(f"[Step thought] 发送thought步骤 - step={thought_data['step']}")
             yield f"data: {json.dumps(thought_data)}\n\n"
+            
+            # 【小沈修复 2026-03-23】将 thought 添加到 execution_steps 并保存到数据库
+            current_execution_steps.append(thought_data)
+            await save_execution_steps_to_db(request.session_id, current_execution_steps, "")
+            
             await asyncio.sleep(0.3)
             
             # ⭐ 修复：只检查一次中断（删除 4 次重复代码）
@@ -448,10 +453,13 @@ async def chat_stream(request: ChatRequest):
                 
                 try:
                     # 【Phase4重构】使用 ver1_run_stream 直接返回 SSE 字符串
+                    # 【小沈修复 2026-03-23】传递 step_start 参数，让 ver1_run_stream 使用与 chat2.py 统一的 step 编号
+                    step_start = next_step() + 1  # ver1_run_stream 内部会从 step_start 开始计数
                     async for sse_data in agent.ver1_run_stream(
                         task=last_message,
                         model=ai_service.model,
-                        provider=ai_service.provider
+                        provider=ai_service.provider,
+                        step_start=step_start  # 【小沈修复 2026-03-23】传递 step_start
                     ):
                         # 每步检查是否被中断
                         async with running_tasks_lock:
@@ -488,6 +496,7 @@ async def chat_stream(request: ChatRequest):
                     )
             else:
                 # 普通对话：调用 chat_stream_query（复用公共逻辑）
+                # 【小沈修复 2026-03-23】添加 session_id 参数
                 async for chunk in chat_stream_query(
                     request=request,
                     ai_service=ai_service,
@@ -501,6 +510,7 @@ async def chat_stream(request: ChatRequest):
                     running_tasks_lock=running_tasks_lock,
                     next_step=next_step,
                     display_name=display_name,
+                    session_id=request.session_id,  # 【小沈修复 2026-03-23】传递 session_id
                     save_execution_steps_to_db=wrapped_save_steps,
                     add_step_and_save=wrapped_add_step,
                 ):
