@@ -375,6 +375,10 @@ async def chat_stream(request: ChatRequest):
         
         yield f"data: {json.dumps(start_data)}\n\n"
         
+        # 【小沈修复 2026-03-23】将 start 添加到 execution_steps 并保存到数据库
+        # 注意：current_execution_steps 在后面才初始化，这里先保存
+        await save_execution_steps_to_db(request.session_id, [start_data], "")
+        
         # 如果安全检查未通过，直接返回错误
         if not security_check_result.get('is_safe', True):
             risk = security_check_result.get('risk', '未知风险')

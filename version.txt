@@ -1,3 +1,53 @@
+v0.7.46
+
+更新时间：2026-03-23 10:07:00
+
+更新内容：
+
+## 1. 修复文件操作 start 步骤未保存的问题 - 小沈-2026-03-23
+
+### 1.1 问题描述
+
+在分析代码流程时发现：文件操作分支中，start 步骤发送后没有保存到数据库。
+
+### 1.2 根因分析
+
+```python
+# chat2.py 第376行
+yield f"data: {json.dumps(start_data)}\n\n"
+# start 被发送了，但没有被添加到 current_execution_steps
+
+# 第405行
+current_execution_steps: List[Dict] = []  # 初始化在 start 之后
+# current_execution_steps = [] 是空列表，没有包含 start
+```
+
+### 1.3 影响
+
+| 对话类型 | start 保存 | 说明 |
+|----------|-----------|------|
+| 普通对话 | ✅ 正常 | chat_stream_query 内部处理 |
+| 文件操作 | ❌ 未保存 | 需要修复 |
+
+### 1.4 修复方案
+
+在发送 start 步骤后，立即保存到数据库：
+```python
+yield f"data: {json.dumps(start_data)}\n\n"
+
+# 【小沈修复 2026-03-23】将 start 添加到 execution_steps 并保存到数据库
+await save_execution_steps_to_db(request.session_id, [start_data], "")
+```
+
+### 1.5 验证
+
+- Python 语法检查：✅ 通过
+
+参与开发：小沈
+完成时间：2026-03-23 10:07:00
+
+---
+
 v0.7.45
 
 更新时间：2026-03-23 09:58:09
