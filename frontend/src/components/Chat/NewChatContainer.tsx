@@ -2225,7 +2225,12 @@ const NewChatContainer: React.FC = () => {
                       width: "100%",
                     }}
                   >
-                    <MessageItem message={item} showExecution={showExecution} />
+                    <MessageItem 
+                      message={item} 
+                      showExecution={showExecution}
+                      sessionId={sessionId}
+                      sessionTitle={sessionTitle}
+                    />
                   </List.Item>
                 );
               }
