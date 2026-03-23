@@ -2,7 +2,7 @@
 
 **创建时间**: 2026-03-23 16:07:56  
 **编写人**: 小沈  
-**版本**: v2.10（2026-03-23 20:35:00 小强添加第9章修复范围说明）
+**版本**: v2.12（2026-03-23 20:50:00 小强补充第2章问题）
 **适用范围**: 前端 MessageItem.tsx 步骤显示字段修正
 
 ---
@@ -700,19 +700,21 @@ const isExpanded = expandedSteps.get(stepIndex) ?? false;
 
 ### 9.1 第9章修复范围说明
 
-**本章修复范围**：**字段错误修复**（16处）
+**⚠️ 重要更正**：之前我把第6章、第7章归为"后续优化"是错误的。
 
-| 章节 | 内容 | 状态 | 说明 |
-|------|------|------|------|
-| 第5章 5.2 | 文件列表折叠功能 | ✅ **已完成** | 代码已实现 `entriesExpanded` 状态 |
-| 第5章 5.5 | Map 状态管理方案 | ✅ **已完成** | 使用简单方案 `entriesExpanded` |
-| 第6章 | 分支处理（7个工具） | 📋 后续优化 | 不在本次修复范围（P3） |
-| 第7章 | 虚拟列表/树形结构 | 📋 后续优化 | 不在本次修复范围（P4/P5） |
+**本章修复范围**：**前8章所有P1问题**
 
-**⚠️ 重要说明**：
-- 第5章5.2和5.5的文件列表折叠功能**已经实现**，不需要再修改
-- 第9章只修复**字段名错误**和**缺少字段**问题
-- 第6章、第7章是后续优化，不在本次实施范围内
+| 章节 | 内容 | 优先级 | 状态 |
+|------|------|--------|------|
+| 第3章 | observation 导出字段错误 | P1 | 待修复 |
+| 第5章 5.5 | Map 状态管理方案 | P1 | 待修复 |
+| 第6章 | 分支处理（7个工具） | P1 | 待修复 |
+| 第7章 | 虚拟列表/树形结构 | P1 | 待修复 |
+
+**⚠️ 必须按照小沈的方法来修改**：
+- 第5章5.5节：必须使用 Map 方案，不是简单方案
+- 第6章：必须实现7个工具的分支处理
+- 第7章：必须实现虚拟列表和树形结构
 
 ---
 
@@ -927,55 +929,176 @@ const entryCount = hasEntries ? obsRawData.entries.length : 0;
 
 ---
 
-### 9.5 折叠状态管理方案评估
+### 9.5 Map 状态管理方案（第5章 5.5节）
 
-小沈提出的 Map 方案（8.1.4节）理论上是正确的，但**当前代码已使用简单方案**。
+**⚠️ 必须修改**：当前代码使用简单方案，必须改为小沈的 Map 方案
 
-**当前方案**（简单有效）：
+**当前代码**：
 ```tsx
 const [entriesExpanded, setEntriesExpanded] = useState(true); // 默认展开
 ```
 
-**优点**：简单，适合当前场景  
-**缺点**：所有步骤共用一个折叠状态
-
-**小沈 Map 方案**（更完善）：
+**必须改为**：
 ```tsx
 const [expandedSteps, setExpandedSteps] = useState<Map<number, boolean>>(
-  new Map([[0, true]])
+  new Map([[0, true]]) // 默认第0步展开
 );
+
+// 切换展开状态
+const toggleExpand = (stepIndex: number) => {
+  setExpandedSteps(prev => {
+    const newMap = new Map(prev);
+    newMap.set(stepIndex, !newMap.get(stepIndex));
+    return newMap;
+  });
+};
 ```
 
-**优点**：每个步骤独立控制  
-**缺点**：实现复杂
+---
 
-**建议**：当前简单方案已经够用，Map 方案作为后续优化项（P3）。
+### 9.6 分支处理方案（第6章）
+
+**必须实现**：根据 tool_name 分支处理，渲染不同的视图组件
+
+#### 9.6.1 需要创建的组件
+
+| 组件 | 用途 | 优先级 |
+|------|------|--------|
+| ListDirectoryView | list_directory 工具结果渲染 | P1 |
+| ReadFileView | read_file 工具结果渲染 | P1 |
+| WriteFileView | write_file 工具结果渲染 | P1 |
+| DeleteFileView | delete_file 工具结果渲染 | P1 |
+| MoveFileView | move_file 工具结果渲染 | P1 |
+| SearchFilesView | search_files 工具结果渲染 | P1 |
+| GenerateReportView | generate_report 工具结果渲染 | P1 |
+
+#### 9.6.2 分支处理代码
+
+```tsx
+const renderToolResult = (step: any) => {
+  const data = step.raw_data?.data;
+  if (!data) return null;
+  
+  switch (step.tool_name) {
+    case 'list_directory':
+      return <ListDirectoryView data={data} />;
+    case 'read_file':
+      return <ReadFileView data={data} />;
+    case 'write_file':
+      return <WriteFileView data={data} />;
+    case 'delete_file':
+      return <DeleteFileView data={data} />;
+    case 'move_file':
+      return <MoveFileView data={data} />;
+    case 'search_files':
+      return <SearchFilesView data={data} />;
+    case 'generate_report':
+      return <GenerateReportView data={data} />;
+    default:
+      return <pre>{JSON.stringify(data, null, 2)}</pre>;
+  }
+};
+```
 
 ---
 
-### 9.6 执行计划
+### 9.7 显示方案（第7章）
 
-| 阶段 | 任务 | 优先级 | 预计时间 |
-|------|------|--------|---------|
-| **阶段1** | 修复 P1 问题（13处修改） | P1 | 20分钟 |
-| 1.1 | 修复导出字段名（3处：第589行 obs_ 前缀） | P1 | 3分钟 |
-| 1.2 | 补充导出缺少字段（4处：第589行 content/reasoning/action_tool/params） | P1 | 2分钟 |
-| 1.3 | 修复 observation 内显示字段（2处：第312、320行） | P1 | 3分钟 |
-| 1.4 | 修复 observation raw_data 引用（4处：第344、346、370、374行） | P1 | 5分钟 |
-| **阶段2** | 修复 P2 问题（3个） | P2 | 5分钟 |
-| 2.1 | 修复 thinking_prompt（第410行） | P2 | 2分钟 |
-| 2.2 | 修复 step.result（第385行） | P2 | 2分钟 |
-| 2.3 | 修复 step.result（第386行） | P2 | 1分钟 |
-| **阶段3** | 验证测试 | P1 | 5分钟 |
-| 3.1 | TypeScript 编译 | P1 | - |
-| 3.2 | 生产构建 | P1 | - |
-| 3.3 | 功能测试 | P1 | - |
-| **后续优化** | 根据 tool_name 分支处理 | P3 | 待定 |
-| **后续优化** | Map 折叠状态管理 | P3 | 待定 |
+**必须实现**：根据 recursive 参数选择不同的显示方案
+
+#### 9.7.1 非递归模式：虚拟列表
+
+**使用 Ant Design 的虚拟列表**：
+- 使用 `List` 组件 + `virtual` 属性
+- 支持大量数据高性能渲染
+- 添加搜索框过滤功能
+
+#### 9.7.2 递归模式：树形结构
+
+**使用 Ant Design 的 Tree 组件**：
+- 将扁平 entries 转换为树形结构
+- 支持展开/收起子目录
+- 根据 `step.tool_params?.recursive === true` 判断
+
+**数据转换逻辑**：
+```javascript
+function convertToTree(entries, rootPath) {
+  // 1. 构建 path -> node 的映射
+  // 2. 遍历entries，根据path解析父子关系
+  // 3. 返回树形数据给 Tree 组件
+}
+```
 
 ---
 
-### 9.7 验证清单
+### 9.8 完整修改清单
+
+#### 9.8.1 字段错误修复（第2章 thought + 第3章 observation）
+
+| 序号 | 章节 | 位置 | 原代码 | 修改后 | 状态 |
+|------|------|------|--------|--------|------|
+| 1 | 第3章 | 第589行 | `obs_execution_status` | `execution_status` | 待修复 |
+| 2 | 第3章 | 第589行 | `obs_summary` | `summary` | 待修复 |
+| 3 | 第3章 | 第589行 | `obs_raw_data` | `raw_data` | 待修复 |
+| 4 | 第3章 | 第589行 | （缺少字段） | 添加 `content` | 待修复 |
+| 5 | 第3章 | 第589行 | （缺少字段） | 添加 `reasoning` | 待修复 |
+| 6 | 第3章 | 第589行 | （缺少字段） | 添加 `action_tool` | 待修复 |
+| 7 | 第3章 | 第589行 | （缺少字段） | 添加 `params` | 待修复 |
+| 8 | 第3章 | 第312行 | `step.thought` | `step.reasoning` | 待修复 |
+| 9 | 第3章 | 第320行 | `💭 {step.thought}` | `💭 {step.reasoning}` | 待修复 |
+| 10 | 第3章 | 第344行 | `step.observation?.result` | `step.raw_data` | 待修复 |
+| 11 | 第3章 | 第346行 | `obsResult?.entries` | `obsRawData?.entries` | 待修复 |
+| 12 | 第3章 | 第370行 | `obsResult.entries.map` | `obsRawData.entries.map` | 待修复 |
+| 13 | 第3章 | 第374行 | `obsResult.entries.length` | `obsRawData.entries.length` | 待修复 |
+| 14 | 第3章 | 第385行 | `step.result` | `step.summary` | 待修复 |
+| 15 | 第3章 | 第386行 | `{step.result}` | `{step.summary}` | 待修复 |
+| 16 | 第2章 | 第410行 | `step.thinking_prompt` | `step.reasoning` | 待修复 |
+
+#### 9.8.2 Map 状态管理（第5章 5.5节）
+
+| 序号 | 位置 | 原代码 | 修改后 | 状态 |
+|------|------|--------|--------|------|
+| 17 | 第41行 | `const [entriesExpanded, setEntriesExpanded] = useState(true);` | `const [expandedSteps, setExpandedSteps] = useState<Map<number, boolean>>(new Map([[0, true]]));` | 待修复 |
+| 18 | - | （新增函数） | 添加 `toggleExpand` 函数 | 待修复 |
+| 19 | - | `setEntriesExpanded(!entriesExpanded)` | `toggleExpand(stepIndex)` | 待修复 |
+
+#### 9.8.3 分支处理（第6章）
+
+| 序号 | 任务 | 状态 |
+|------|------|------|
+| 20 | 创建 ListDirectoryView 组件 | 待实现 |
+| 21 | 创建 ReadFileView 组件 | 待实现 |
+| 22 | 创建 WriteFileView 组件 | 待实现 |
+| 23 | 创建 DeleteFileView 组件 | 待实现 |
+| 24 | 创建 MoveFileView 组件 | 待实现 |
+| 25 | 创建 SearchFilesView 组件 | 待实现 |
+| 26 | 创建 GenerateReportView 组件 | 待实现 |
+| 27 | 实现 renderToolResult 分支函数 | 待实现 |
+
+#### 9.8.4 显示方案（第7章）
+
+| 序号 | 任务 | 状态 |
+|------|------|------|
+| 28 | 实现非递归模式虚拟列表 | 待实现 |
+| 29 | 实现递归模式树形结构 | 待实现 |
+| 30 | 实现 convertToTree 数据转换 | 待实现 |
+| 31 | 实现 isRecursive 判断逻辑 | 待实现 |
+
+---
+
+### 9.9 执行计划
+
+| 阶段 | 任务 | 预计时间 |
+|------|------|---------|
+| **阶段1** | 字段错误修复（16处） | 30分钟 |
+| **阶段2** | Map 状态管理（3处） | 15分钟 |
+| **阶段3** | 分支处理（8个组件+1个函数） | 60分钟 |
+| **阶段4** | 显示方案（4个功能） | 45分钟 |
+| **阶段5** | 验证测试 | 15分钟 |
+
+---
+
+### 9.10 验证清单
 
 修改完成后必须验证：
 
@@ -1020,4 +1143,6 @@ const [expandedSteps, setExpandedSteps] = useState<Map<number, boolean>>(
 | v2.7 | 2026-03-23 16:30:00 | 小强 | 修正第9章：补充遗漏的 obsResult 引用修改（3处），完善描述说明 |
 | v2.8 | 2026-03-23 17:00:00 | 小强 | 补充第9章：发现并修正遗漏的 step.result 问题（2处）；合并版本历史表格 |
 | v2.9 | 2026-03-23 17:10:00 | 小强 | 补充第9章：发现导出缺少字段问题，补充4个缺少字段的修改 |
-| v2.10 | 2026-03-23 20:35:00 | 小强 | 检查第5、6、7章与第9章对应关系，添加修复范围说明，明确已完成的和后续优化的内容 |
+| v2.10 | 2026-03-23 20:35:00 | 小强 | 检查第5、6、7章与第9章对应关系，添加修复范围说明 |
+| v2.11 | 2026-03-23 20:45:00 | 小强 | 修正错误：前8章全部P1级，无后续优化项，必须全部实施 |
+| v2.12 | 2026-03-23 20:50:00 | 小强 | 补充第2章问题到修改清单（第410行 step.thinking_prompt） |
