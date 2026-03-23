@@ -35,6 +35,15 @@ import { formatTimestamp } from "../../utils/timestamp";
 import { } from "../../utils/markdown";
 import ErrorDetail from "./ErrorDetail";
 
+// 【小强实现 2026-03-24】阶段3：导入7个工具视图组件
+import ListDirectoryView from "./views/ListDirectoryView";
+import ReadFileView from "./views/ReadFileView";
+import WriteFileView from "./views/WriteFileView";
+import DeleteFileView from "./views/DeleteFileView";
+import MoveFileView from "./views/MoveFileView";
+import SearchFilesView from "./views/SearchFilesView";
+import GenerateReportView from "./views/GenerateReportView";
+
 /**
  * 树形节点类型 - 用于 convertEntriesToTree 函数
  */
@@ -526,6 +535,9 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                       />
                     )
                   )}
+
+                  {/* 【小强实现 2026-03-24】阶段3：使用 renderToolResult 渲染工具结果视图 */}
+                  {isExpanded && renderToolResult(step)}
                 </div>
               );
             })()}
@@ -696,6 +708,48 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
       </div>
     </div>
   );
+};
+
+/**
+ * 【小强实现 2026-03-24】阶段3：renderToolResult 分支函数
+ * 根据 tool_name 渲染不同的工具结果视图组件
+ */
+const renderToolResult = (step: ExecutionStep) => {
+  // 从 raw_data 中获取 data
+  const data = (step as any).raw_data?.data || (step as any).raw_data;
+  if (!data) return null;
+
+  // 根据 tool_name 分支处理
+  switch (step.tool_name) {
+    case "list_directory":
+      return <ListDirectoryView data={data} />;
+    case "read_file":
+      return <ReadFileView data={data} />;
+    case "write_file":
+      return <WriteFileView data={data} />;
+    case "delete_file":
+      return <DeleteFileView data={data} />;
+    case "move_file":
+      return <MoveFileView data={data} />;
+    case "search_files":
+      return <SearchFilesView data={data} />;
+    case "generate_report":
+      return <GenerateReportView data={data} />;
+    default:
+      // 未知工具，显示原始JSON
+      return (
+        <pre style={{
+          background: "#f5f5f5",
+          padding: "10px",
+          borderRadius: 4,
+          fontSize: 12,
+          maxHeight: 300,
+          overflow: "auto",
+        }}>
+          {JSON.stringify(data, null, 2)}
+        </pre>
+      );
+  }
 };
 
 interface MessageItemProps {
