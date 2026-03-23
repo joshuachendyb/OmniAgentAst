@@ -18,7 +18,7 @@ Author: 小沈 - 2026-03-21
 
 import asyncio
 import json
-from typing import Dict, Any, List, Optional, AsyncGenerator
+from typing import Dict, Any, List, Optional, AsyncGenerator, Callable
 
 from app.services.agent.base import BaseAgent
 from app.services.agent.tool_executor import ToolExecutor
@@ -147,6 +147,7 @@ class IntentAgent(BaseAgent):
         self.tools = tools or []
         
         # LLMAdapter 自适应探测
+        self.adapter = None  # 【小沈修复 2026-03-23】确保 adapter 属性存在
         if api_base and api_key and model:
             self.adapter = LLMAdapter(
                 api_base=api_base,
@@ -717,7 +718,7 @@ class IntentAgent(BaseAgent):
         context: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
         max_steps: int = 100,
-        step_start: int = 1  # 【小沈修复 2026-03-23】添加 step_start 参数，让调用方控制起始编号
+        get_next_step: Optional[Callable[[], int]] = None  # 【小沈修复 2026-03-23】传入统一的 step 计数函数
     ) -> AsyncGenerator[str, None]:
         """
         【Phase4新增】异步流式执行 Agent，直接返回 SSE 格式字符串
@@ -732,12 +733,14 @@ class IntentAgent(BaseAgent):
             context: 额外上下文
             system_prompt: 自定义系统 prompt（可选）
             max_steps: 最大迭代次数
-            step_start: 步骤起始编号（默认1），用于与调用方的 next_step() 统一编号
+            get_next_step: 统一的 step 计数函数（与调用方共用）
         
         Yields:
             SSE 格式的字符串
         """
-        step_count = step_start - 1  # 【小沈修复 2026-03-23】使用 step_start 作为起始值
+        # 【小沈修复 2026-03-23】使用调用方传入的 get_next_step 函数
+        if get_next_step is None:
+            raise ValueError("get_next_step function is required")
         
         async for event in self.run_stream(
             task=task,
@@ -746,11 +749,11 @@ class IntentAgent(BaseAgent):
             max_steps=max_steps
         ):
             event_type = event.get('type')
-            step_count += 1
+            step = get_next_step()  # 【小沈修复 2026-03-23】使用统一计数器
             
             if event_type == 'thought':
                 yield format_thought_sse(
-                    step=step_count,
+                    step=step,
                     content=event.get('content', ''),
                     reasoning=event.get('reasoning', ''),
                     action_tool=event.get('action_tool', ''),
@@ -759,7 +762,7 @@ class IntentAgent(BaseAgent):
             
             elif event_type == 'action_tool':
                 yield format_action_tool_sse(
-                    step=step_count,
+                    step=step,
                     tool_name=event.get('tool_name', ''),
                     tool_params=event.get('tool_params', {}),
                     execution_status=event.get('execution_status', 'success'),
@@ -770,7 +773,7 @@ class IntentAgent(BaseAgent):
             
             elif event_type == 'observation':
                 yield format_observation_sse(
-                    step=step_count,
+                    step=step,
                     execution_status=event.get('execution_status', 'success'),
                     summary=event.get('summary', ''),
                     content=event.get('content', ''),
@@ -782,17 +785,15 @@ class IntentAgent(BaseAgent):
                 )
             
             elif event_type == 'final':
-                # 【小沈修复 2026-03-23】添加 step 参数，确保 final 也有 step 编号
                 yield create_final_response(
                     content=event.get('content', ''),
                     model=model,
                     provider=provider,
                     display_name=f"{provider} ({model})",
-                    step=step_count  # 【小沈修复 2026-03-23】添加 step 参数
+                    step=step
                 )
             
             elif event_type == 'error':
-                # 【小沈修复 2026-03-23】添加 step 参数，确保 error 也有 step 编号
                 yield create_error_response(
                     error_type="agent",
                     message=event.get('message', '未知错误'),
@@ -800,5 +801,5 @@ class IntentAgent(BaseAgent):
                     model=model,
                     provider=provider,
                     retryable=event.get('retryable', False),
-                    step=step_count  # 【小沈修复 2026-03-23】添加 step 参数
+                    step=step
                 )

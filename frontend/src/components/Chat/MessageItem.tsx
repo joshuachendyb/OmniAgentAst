@@ -284,35 +284,55 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
                 💭 {step.thought}
               </div>
             )}
-            {/* 显示执行结果 */}
-            {(() => {
-              const obsResult = step.observation?.result;
-              const hasEntries = obsResult?.entries && Array.isArray(obsResult.entries);
-              
-              return (
-                <div>
-                  {/* 文件列表框框 */}
-                  {hasEntries && (
-                    <div style={getFileListBackground()}>
-                      {obsResult.entries.map((entry: any, idx: number) => (
-                        <React.Fragment key={`entry-${idx}`}>
-                          <div style={{ 
-                            padding: "4px 0",
-                            borderBottom: idx < obsResult.entries.length - 1 ? "1px solid #e8e8e8" : "none",
-                          }}>
-                            {entry.type === "directory" ? "📁" : "📄"} {entry.name}
-                          </div>
-                        </React.Fragment>
-                      ))}
+            {/* 【小沈修复2026-03-23】显示 observation 的 content 字段 */}
+            {step.content && typeof step.content === "string" && (
+              <div style={{ 
+                background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
+                border: "1px solid #b7eb8f",
+                borderRadius: 8,
+                padding: "10px 14px",
+                marginTop: 6,
+                fontSize: 13,
+                lineHeight: 1.8,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}>
+                📋 {step.content}
+              </div>
+            )}
+            {/* 显示执行结果 - 只有当没有 content 时才显示 */}
+            {!step.content && (
+              <div>
+                {/* 文件列表框框 */}
+                {(() => {
+                  const obsResult = step.observation?.result;
+                  const hasEntries = obsResult?.entries && Array.isArray(obsResult.entries);
+                  
+                  return (
+                    <div>
+                      {hasEntries && (
+                        <div style={getFileListBackground()}>
+                          {obsResult.entries.map((entry: any, idx: number) => (
+                            <React.Fragment key={`entry-${idx}`}>
+                              <div style={{ 
+                                padding: "4px 0",
+                                borderBottom: idx < obsResult.entries.length - 1 ? "1px solid #e8e8e8" : "none",
+                              }}>
+                                {entry.type === "directory" ? "📁" : "📄"} {entry.name}
+                              </div>
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      )}
+                      {/* summary 字符串 */}
+                      {typeof step.result === "string" && (
+                        <div style={{ marginTop: 6 }}>{step.result}</div>
+                      )}
                     </div>
-                  )}
-                  {/* summary 字符串 */}
-                  {typeof step.result === "string" && (
-                    <div style={{ marginTop: 6 }}>{step.result}</div>
-                  )}
-                </div>
-              );
-            })()}
+                  );
+                })()}
+              </div>
+            )}
           </>
         )}
         {step.type === "start" && (
