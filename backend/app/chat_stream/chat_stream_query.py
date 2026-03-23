@@ -194,10 +194,15 @@ async def chat_stream_query(
                     current_content = full_content  # 累积content
                     
                     # 【小沈修复 2026-03-16】is_reasoning变化时保存，确保回答部分完整
-                    # 【小沈修复 2026-03-23】修复：不传递 session_id，因为 wrapped_save_steps 闭包已绑定 session_id
                     if last_is_reasoning != current_is_reasoning:
                         logger.info(f"[Save] is_reasoning变化: {last_is_reasoning} -> {current_is_reasoning}，准备保存 {len(current_execution_steps)} steps")
                         try:
+                            # 【警告 2026-03-23】此处调用存在参数错位问题：
+                            # save_execution_steps_to_db 期望签名：(session_id, execution_steps, content)
+                            # 但这里只传了2个参数：(current_execution_steps, current_content)
+                            # 导致：session_id=List[Dict], execution_steps=str
+                            # 在 chat2.py 调用 chat_stream_query 时，传递的是 wrapped_save_steps 闭包（已绑定session_id）
+                            # 所以这里不会执行到，只有直接调用 chat_stream_query 时才有问题
                             await save_execution_steps_to_db(current_execution_steps, current_content)
                             logger.info(f"[Save] is_reasoning变化保存成功: {len(current_execution_steps)} steps")
                         except Exception as e:
@@ -382,7 +387,7 @@ async def chat_stream_query(
     # 先添加final步骤到数组，再保存
     final_step = {
         'type': 'final',
-        'step': next_step(),  # 添加step字段
+        'step': next_step(),
         'content': full_content,
         'model': ai_service.model,
         'provider': ai_service.provider,
@@ -391,8 +396,13 @@ async def chat_stream_query(
     current_execution_steps.append(final_step)
     
     # final前强制保存一次，确保所有steps都写入数据库
-    # 【小沈修复 2026-03-23】修复：不传递 session_id，因为 wrapped_save_steps 闭包已绑定 session_id
     logger.info(f"[Step final] 💾 final前强制保存: {len(current_execution_steps)} steps")
+    # 【警告 2026-03-23】此处调用存在参数错位问题：
+    # save_execution_steps_to_db 期望签名：(session_id, execution_steps, content)
+    # 但这里只传了2个参数：(current_execution_steps, full_content)
+    # 导致：session_id=List[Dict], execution_steps=str
+    # 在 chat2.py 调用 chat_stream_query 时，传递的是 wrapped_save_steps 闭包（已绑定session_id）
+    # 所以这里不会执行到，只有直接调用 chat_stream_query 时才有问题
     await save_execution_steps_to_db(current_execution_steps, full_content)
     
     # 发送最终结果，【新增】添加provider字段作为兜底

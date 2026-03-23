@@ -716,7 +716,8 @@ class IntentAgent(BaseAgent):
         provider: str,
         context: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
-        max_steps: int = 100
+        max_steps: int = 100,
+        step_start: int = 1  # 【小沈修复 2026-03-23】添加 step_start 参数，让调用方控制起始编号
     ) -> AsyncGenerator[str, None]:
         """
         【Phase4新增】异步流式执行 Agent，直接返回 SSE 格式字符串
@@ -731,11 +732,12 @@ class IntentAgent(BaseAgent):
             context: 额外上下文
             system_prompt: 自定义系统 prompt（可选）
             max_steps: 最大迭代次数
+            step_start: 步骤起始编号（默认1），用于与调用方的 next_step() 统一编号
         
         Yields:
             SSE 格式的字符串
         """
-        step_count = 0
+        step_count = step_start - 1  # 【小沈修复 2026-03-23】使用 step_start 作为起始值
         
         async for event in self.run_stream(
             task=task,
@@ -780,19 +782,23 @@ class IntentAgent(BaseAgent):
                 )
             
             elif event_type == 'final':
+                # 【小沈修复 2026-03-23】添加 step 参数，确保 final 也有 step 编号
                 yield create_final_response(
                     content=event.get('content', ''),
                     model=model,
                     provider=provider,
-                    display_name=f"{provider} ({model})"
+                    display_name=f"{provider} ({model})",
+                    step=step_count  # 【小沈修复 2026-03-23】添加 step 参数
                 )
             
             elif event_type == 'error':
+                # 【小沈修复 2026-03-23】添加 step 参数，确保 error 也有 step 编号
                 yield create_error_response(
                     error_type="agent",
                     message=event.get('message', '未知错误'),
                     code=event.get('code', 'AGENT_ERROR'),
                     model=model,
                     provider=provider,
-                    retryable=event.get('retryable', False)
+                    retryable=event.get('retryable', False),
+                    step=step_count  # 【小沈修复 2026-03-23】添加 step 参数
                 )
