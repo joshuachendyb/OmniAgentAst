@@ -414,16 +414,10 @@ async def chat_stream(request: ChatRequest):
             async def wrapped_add_step(step: Dict, content: Optional[str] = None):
                 await add_step_and_save(current_execution_steps, step, request.session_id, content)
             
-            # 1. 发送思考
-            thought_data = {'type': 'thought', 'step': next_step(), 'timestamp': create_timestamp(), 'thinking_prompt': '正在分析任务...'}
-            logger.info(f"[Step thought] 发送thought步骤 - step={thought_data['step']}")
-            yield f"data: {json.dumps(thought_data)}\n\n"
-            
-            # 【小沈修复 2026-03-23】将 thought 添加到 execution_steps 并保存到数据库
-            current_execution_steps.append(thought_data)
-            await save_execution_steps_to_db(request.session_id, current_execution_steps, "")
-            
-            await asyncio.sleep(0.3)
+            # 【小沈删除 2026-03-23】删除了重复发送 thought 的逻辑
+            # 原因：ver1_run_stream 内部已经包含完整的 ReAct 处理逻辑（thought → action_tool → observation → final）
+            # 如果这里再发送 thought，会导致重复的 thought 步骤，step 编号也会跳跃
+            # 正确流程：start → ver1_run_stream(完整ReAct) → final
             
             # ⭐ 修复：只检查一次中断（删除 4 次重复代码）
             is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
