@@ -379,6 +379,8 @@ interface MessageItemProps {
     errorTimestamp?: string;  // timestamp
   };
   showExecution?: boolean;
+  sessionId?: string | null;  // 【小强添加 2026-03-23】会话ID，用于导出
+  sessionTitle?: string | null;  // 【小强添加 2026-03-23】会话标题，用于导出
 }
 
 /**
@@ -396,6 +398,8 @@ interface MessageItemProps {
 const MessageItem: React.FC<MessageItemProps> = ({
   message,
   showExecution: _showExecution = false,
+  sessionId,
+  sessionTitle,
 }) => {
   const [copied, setCopied] = useState(false);
 
@@ -439,6 +443,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
        
       // 统一的导出数据结构
       const exportData: Record<string, any> = {
+        sessionId: sessionId || undefined,  // 【小强添加 2026-03-23】会话ID
+        sessionTitle: sessionTitle || undefined,  // 【小强添加 2026-03-23】会话标题
         timestamp: formatTimestamp(message.timestamp instanceof Date ? message.timestamp.getTime() : message.timestamp),
         messageId: message.id,
         role: message.role,
