@@ -72,8 +72,9 @@ export interface ExecutionStep {
   action_description?: string; // action_tool 类型的描述文本
   
   // 【小新重构2026-03-09】thought类型需要的字段
-  action_tool?: string;        // thought类型的下一步动作
-  params?: Record<string, any>; // thought类型的参数
+  // 【小健建议2026-03-23】明确用途：LLM思考后决定的下一步动作
+  action_tool?: string;        // 【thought类型】LLM思考后决定的下一步动作
+  params?: Record<string, any>; // 【thought类型】LLM思考后决定的参数
   
   // === 保留字段（不变）===
   
@@ -97,12 +98,13 @@ export interface ExecutionStep {
   
   // === type=observation 新字段（obs_前缀，与SSE后端保持一致） ===
   // 【小沈修复2026-03-23】添加obs_前缀字段，observation步骤使用，与SSE后端字段名保持一致
-  obs_raw_data?: Record<string, any> | null;       // 原始数据
-  obs_execution_status?: 'success' | 'error' | 'warning'; // 执行状态
-  obs_summary?: string;                            // 执行摘要
-  obs_reasoning?: string;                         // 推理内容
-  obs_action_tool?: string;                       // 动作工具
-  obs_params?: Record<string, any>;                // 动作参数
+  // 【小健建议2026-03-23】明确用途：observation是工具执行后的观察结果
+  obs_raw_data?: Record<string, any> | null;       // 【observation类型】工具执行的原始结果
+  obs_execution_status?: 'success' | 'error' | 'warning'; // 【observation类型】执行状态
+  obs_summary?: string;                            // 【observation类型】执行摘要
+  obs_reasoning?: string;                         // 【observation类型】推理内容
+  obs_action_tool?: string;                       // 【observation类型】记录的动作工具
+  obs_params?: Record<string, any>;                // 【observation类型】记录的动作参数
   
   // === type=action 旧字段（兼容） ===
   action_input?: Record<string, any>;  // 工具调用参数（旧）
