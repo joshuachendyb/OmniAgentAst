@@ -1,3 +1,23 @@
+v0.7.68
+
+更新时间：2026-03-24 07:10:55
+
+更新内容：
+
+## 1. ListDirectoryView递归模式判断逻辑修复 - 小强-2026-03-24
+
+### 1.1 问题描述
+isRecursive判断从data.tool_params获取，但tool_params实际在step上，导致递归模式永远不生效。
+
+### 1.2 修复内容
+- ListDirectoryView新增toolParams参数接收step.tool_params
+- renderToolResult传递step.tool_params给ListDirectoryView
+- isRecursive改为从toolParams?.recursive获取
+
+### 1.3 修改文件
+- frontend/src/components/Chat/views/ListDirectoryView.tsx
+- frontend/src/components/Chat/MessageItem.tsx
+
 v0.7.67
 
 更新时间：2026-03-24 05:45:20
