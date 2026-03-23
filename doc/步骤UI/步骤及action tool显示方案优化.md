@@ -88,7 +88,7 @@ execution_status, summary, raw_data, reasoning, action_tool, params
 
 #### 3.2.2 根因分析
 
-sse.ts 第826-832行解析 observation 时，把 `obs_` 前缀去掉了：
+sse.ts 第823行（代码从826行开始）解析 observation 时，把 `obs_` 前缀去掉了：
 ```typescript
 case "observation": {
   step.raw_data = rawData.obs_raw_data ?? null;        // obs_raw_data → raw_data
@@ -373,9 +373,20 @@ action_tool 步骤的渲染代码只显示了：
 
 **文件**: `frontend/src/components/Chat/MessageItem.tsx`
 
-**修改1**: 添加状态
+**修改1**: 添加Map状态（支持多步骤独立折叠）
 ```tsx
-const [entriesExpanded, setEntriesExpanded] = useState(true); // 默认展开
+const [expandedSteps, setExpandedSteps] = useState<Map<number, boolean>>(
+  new Map([[0, true]]) // 默认第0步展开
+);
+
+// 切换展开状态
+const toggleExpand = (stepIndex: number) => {
+  setExpandedSteps(prev => {
+    const newMap = new Map(prev);
+    newMap.set(stepIndex, !newMap.get(stepIndex));
+    return newMap;
+  });
+};
 ```
 
 **修改2**: action_tool 显示逻辑
@@ -386,14 +397,14 @@ const [entriesExpanded, setEntriesExpanded] = useState(true); // 默认展开
     {/* 折叠按钮和文件计数 */}
     <div style={{ marginBottom: 6 }}>
       <span 
-        onClick={() => setEntriesExpanded(!entriesExpanded)}
+        onClick={() => toggleExpand(stepIndex)}
         style={{ cursor: "pointer", color: "#1890ff", fontSize: 12, fontWeight: 500 }}
       >
-        {entriesExpanded ? "▼ 收起" : "▶ 展开"} 文件列表 ({step.raw_data.entries.length}个)
+        {(expandedSteps.get(stepIndex) ?? false) ? "▼ 收起" : "▶ 展开"} 文件列表 ({step.raw_data.entries.length}个)
       </span>
     </div>
     {/* 文件列表内容 */}
-    {entriesExpanded && step.raw_data?.entries && (
+    {(expandedSteps.get(stepIndex) ?? false) && step.raw_data?.entries && (
       <div style={getFileListBackground()}>
         {step.raw_data.entries.map((entry: any, idx: number) => (...))}
       </div>
@@ -684,9 +695,9 @@ const isExpanded = expandedSteps.get(stepIndex) ?? false;
 
 ---
 
-**更新时间**: 2026-03-23 20:30:00
-**版本**: v2.4
-**更新内容**: 确认后端path格式（混合格式）；简化7.5节为两种模式；更新8.1.3树形转换算法说明
+**更新时间**: 2026-03-23 20:40:00
+**版本**: v2.5
+**更新内容**: 修正sse.ts行号描述；修正5.5.2节代码示例，统一使用Map方案
 
 ---
 
@@ -702,3 +713,4 @@ const isExpanded = expandedSteps.get(stepIndex) ?? false;
 | v2.2 | 2026-03-23 20:05:00 | 小沈 | 修正行号错误；新增7.5节区分数据量方法 |
 | v2.3 | 2026-03-23 20:20:00 | 小沈 | 简化7.5节；新增8.1.3树形转换算法；新增8.1.4多步骤折叠状态管理 |
 | v2.4 | 2026-03-23 20:30:00 | 小沈 | 确认后端path格式；简化7.5为两种模式；更新树形转换算法说明 |
+| v2.5 | 2026-03-23 20:40:00 | 小沈 | 修正sse.ts行号；修正5.5.2节代码示例统一使用Map方案 |
