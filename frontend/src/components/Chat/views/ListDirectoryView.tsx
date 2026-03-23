@@ -42,10 +42,10 @@ interface ListDirectoryViewProps {
     total?: number;
     has_more?: boolean;
     directory?: string;
-    tool_params?: {
-      recursive?: boolean;
-      path?: string;
-    };
+  };
+  toolParams?: {
+    recursive?: boolean;
+    path?: string;
   };
 }
 
@@ -280,11 +280,11 @@ function formatFileSize(bytes: number): string {
 /**
  * ListDirectoryView 主组件
  */
-const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data }) => {
-  const { entries = [], total = 0, directory = "", tool_params } = data;
+const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams }) => {
+  const { entries = [], total = 0, directory = "" } = data;
 
-  // 判断是否为递归模式
-  const isRecursive = tool_params?.recursive === true;
+  // 【小强修复 2026-03-24】使用 toolParams 判断递归模式（从 step 传入，非从 data）
+  const isRecursive = toolParams?.recursive === true;
 
   // 计算树形数据
   const treeData = useMemo(

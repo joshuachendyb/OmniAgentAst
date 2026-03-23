@@ -722,7 +722,7 @@ const renderToolResult = (step: ExecutionStep) => {
   // 根据 tool_name 分支处理
   switch (step.tool_name) {
     case "list_directory":
-      return <ListDirectoryView data={data} />;
+      return <ListDirectoryView data={data} toolParams={step.tool_params} />;
     case "read_file":
       return <ReadFileView data={data} />;
     case "write_file":
