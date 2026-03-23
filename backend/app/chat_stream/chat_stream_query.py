@@ -289,8 +289,10 @@ async def chat_stream_query(
                     continue
                 else:
                     # 已达最大重试次数，发送error步骤
+                    # 【小沈修复 2026-03-23】只调用一次 next_step()，避免 step 多 1
                     logger.error(f"[AI Call] 空响应重试失败，已达最大重试次数{max_retries}")
                     error_message = "模型未能生成有效回复，请尝试更换问题或稍后重试"
+                    error_step_value = next_step()
                     yield create_error_response(
                         error_type="empty_response",
                         message=error_message,
@@ -298,13 +300,13 @@ async def chat_stream_query(
                         provider=ai_service.provider,
                         retryable=True,
                         retry_after=3,
-                        step=next_step()
+                        step=error_step_value
                     )
                     
                     # 保存error步骤到数据库
                     error_step = {
                         'type': 'error',
-                        'step': next_step(),  # 添加step字段
+                        'step': error_step_value,  # 复用变量
                         'error_type': 'empty_response',
                         'message': error_message,
                         'code': 'EMPTY_RESPONSE',
@@ -341,7 +343,9 @@ async def chat_stream_query(
             error_type, error_message = "empty_response", "模型未能生成有效回复，请尝试更换问题或稍后重试"
         
         # 发送error步骤而不是final步骤
+        # 【小沈修复 2026-03-23】只调用一次 next_step()，避免 step 多 1
         logger.info(f"[Step error] 发送error步骤: error_type={error_type}, message={error_message}")
+        error_step_value = next_step()
         yield create_error_response(
             error_type=error_type,
             message=error_message,
@@ -349,13 +353,13 @@ async def chat_stream_query(
             provider=ai_service.provider,
             retryable=True,
             retry_after=3,
-            step=next_step()
+            step=error_step_value
         )
         
         # 保存error步骤到数据库
         error_step = {
             'type': 'error',
-            'step': next_step(),  # 添加step字段
+            'step': error_step_value,  # 复用变量
             'error_type': error_type,
             'message': error_message,
             'code': 'AI_CALL_ERROR',
@@ -385,9 +389,11 @@ async def chat_stream_query(
     # ═══════════════════════════════════════════════════════════════════════════════
     
     # 先添加final步骤到数组，再保存
+    # 【小沈修复 2026-03-23】只调用一次 next_step()，避免 final 步骤的 step 多 1
+    final_step_value = next_step()
     final_step = {
         'type': 'final',
-        'step': next_step(),
+        'step': final_step_value,
         'content': full_content,
         'model': ai_service.model,
         'provider': ai_service.provider,
@@ -408,10 +414,11 @@ async def chat_stream_query(
     # 发送最终结果，【新增】添加provider字段作为兜底
     content_preview = full_content[:200] + "..." if len(full_content) > 200 else full_content
     logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={content_preview}")
+    # 【小沈修复 2026-03-23】复用 final_step_value，避免 step 多 1
     yield create_final_response(
         content=full_content,
         model=ai_service.model,
         provider=ai_service.provider,
         display_name=display_name,
-        step=next_step()
+        step=final_step_value
     )
