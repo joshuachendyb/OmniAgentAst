@@ -1,3 +1,80 @@
+v0.7.64
+
+更新时间：2026-03-23 22:43:51
+
+更新内容：
+
+## 1. MessageItem.tsx 阶段4显示方案优化 - 小强-2026-03-23
+
+### 1.1 问题描述
+
+根据小沈文档《步骤及action tool显示方案优化》第9.8.4节，实现4个任务优化步骤显示方案。
+
+### 1.2 完成的任务
+
+| 序号 | 任务 | 状态 | 说明 |
+|------|------|------|------|
+| 1 | isRecursive判断逻辑 | ✅ | 根据tool_params.recursive判断显示模式 |
+| 2 | convertToTree数据转换 | ✅ | 扁平entries转换为树形结构 |
+| 3 | 非递归模式虚拟列表 | ✅ | VirtualFileList组件+搜索功能 |
+| 4 | 递归模式树形结构 | ✅ | Ant Design Tree组件 |
+
+### 1.3 核心实现
+
+**isRecursive判断逻辑**（第450-452行）：
+```typescript
+const isRecursive = step.tool_params?.recursive === true;
+```
+
+**convertEntriesToTree数据转换函数**（第64-173行）：
+- 将扁平的entries数组转换为Tree组件需要的树形结构
+- 支持目录和文件排序
+- 支持相对路径和绝对路径解析
+
+**VirtualFileList组件**（第184-236行）：
+- 非递归模式使用搜索框过滤
+- 显示文件大小
+- 最大高度300px滚动
+
+**Tree组件**（第486-499行）：
+- 递归模式使用Ant Design Tree展示目录结构
+- 支持展开/收起子目录
+- 根据type显示不同图标（目录/文件）
+
+### 1.4 新增导入
+
+| 组件 | 来源 |
+|------|------|
+| Tree, Input | antd |
+| FolderOutlined, FileOutlined, SearchOutlined | @ant-design/icons |
+
+### 1.5 验证结果
+
+| 验证项 | 状态 | 结果 |
+|--------|------|------|
+| ESLint检查 | ✅ | 0错误 |
+| TypeScript编译 | ✅ | 通过 |
+| 单元测试 | ✅ | 219/219通过 |
+| 生产构建 | ✅ | 成功 |
+
+### 1.6 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/components/Chat/MessageItem.tsx | 阶段4实现（isRecursive判断+convertEntriesToTree+VirtualFileList+Tree组件） |
+| frontend/src/tests/components/MessageItem-fields.test.tsx | 更新测试 |
+
+### 1.7 待完成
+
+| 阶段 | 任务 | 预计时间 |
+|------|------|---------|
+| 阶段3 | 分支处理（7个工具组件+1个函数） | 60分钟 |
+
+参与开发：小强
+完成时间：2026-03-23 22:43:51
+
+---
+
 v0.7.63
 
 更新时间：2026-03-23 22:08:22
