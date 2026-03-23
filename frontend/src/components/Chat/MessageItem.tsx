@@ -461,8 +461,11 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 borderRadius: 6,
                 fontFamily: "Consolas, Monaco, 'Courier New', monospace",
                 lineHeight: 1.6,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
               }}>
-                参数：{JSON.stringify(step.tool_params, null, 2)}
+                参数：{JSON.stringify(step.tool_params)}
               </div>
             )}
             {/* 【小强实现 2026-03-23】阶段4任务1：isRecursive判断逻辑 */}
