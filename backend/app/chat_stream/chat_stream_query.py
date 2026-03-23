@@ -38,6 +38,7 @@ async def chat_stream_query(
     running_tasks_lock: asyncio.Lock,
     next_step: Callable[[], int],
     display_name: str,
+    session_id: Optional[str],  # 【小沈修复 2026-03-23】添加 session_id 参数
     save_execution_steps_to_db: Callable,
     add_step_and_save: Callable,
 ) -> AsyncGenerator[str, None]:
@@ -193,6 +194,7 @@ async def chat_stream_query(
                     current_content = full_content  # 累积content
                     
                     # 【小沈修复 2026-03-16】is_reasoning变化时保存，确保回答部分完整
+                    # 【小沈修复 2026-03-23】修复：不传递 session_id，因为 wrapped_save_steps 闭包已绑定 session_id
                     if last_is_reasoning != current_is_reasoning:
                         logger.info(f"[Save] is_reasoning变化: {last_is_reasoning} -> {current_is_reasoning}，准备保存 {len(current_execution_steps)} steps")
                         try:
@@ -389,6 +391,7 @@ async def chat_stream_query(
     current_execution_steps.append(final_step)
     
     # final前强制保存一次，确保所有steps都写入数据库
+    # 【小沈修复 2026-03-23】修复：不传递 session_id，因为 wrapped_save_steps 闭包已绑定 session_id
     logger.info(f"[Step final] 💾 final前强制保存: {len(current_execution_steps)} steps")
     await save_execution_steps_to_db(current_execution_steps, full_content)
     
