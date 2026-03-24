@@ -47,7 +47,8 @@ interface ListDirectoryViewProps {
     recursive?: boolean;
     path?: string;
   };
-  isExpanded?: boolean;  // 【小沈添加 2026-03-24】控制列表内容折叠，目录信息始终可见
+  isExpanded?: boolean;
+  onToggle?: () => void;  // 【小强添加 2026-03-24】折叠切换回调
 }
 
 /**
@@ -256,8 +257,9 @@ function formatFileSize(bytes: number): string {
 /**
  * ListDirectoryView 主组件
  * 【小沈修改 2026-03-24】添加 isExpanded 参数，控制列表内容折叠，目录信息始终可见
+ * 【小强修改 2026-03-24】添加 onToggle 回调，在目录信息行显示折叠按钮
  */
-const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams, isExpanded = true }) => {
+const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams, isExpanded = true, onToggle }) => {
   const { entries = [], total = 0, directory = "" } = data;
 
   // 【小强修复 2026-03-24】使用 toolParams 判断递归模式（从 step 传入，非从 data）
@@ -308,42 +310,52 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
     );
   }
 
+  // 【小强修改 2026-03-24】目录信息行：始终显示，包含文件数量和折叠按钮
+  const directoryInfo = directory && (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+        fontSize: 12,
+        color: "#666",
+        background: "#f5f5f5",
+        padding: "4px 8px",
+        borderRadius: 4,
+        cursor: "pointer",
+      }}
+      onClick={onToggle}
+    >
+      <div>
+        <span style={{ marginRight: 8 }}>📂 {directory}</span>
+        {isRecursive ? "🌲 目录树" : "📁 文件列表"}
+        ({total}个)
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {/* 搜索框 - 折叠按钮右侧显示，仅在展开时显示 */}
+        {entries.length > 10 && isExpanded && (
+          <Input
+            prefix={<SearchOutlined />}
+            placeholder="搜索文件/文件夹..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            style={{ width: 200, fontSize: 12 }}
+            allowClear
+            onClick={(e) => e.stopPropagation()}
+          />
+        )}
+        <span style={{ color: "#1890ff", fontWeight: 500 }}>
+          {isExpanded ? "▼ 收起" : "▶ 展开"}
+        </span>
+      </div>
+    </div>
+  );
+
   return (
     <div>
-      {/* 目录路径信息和搜索框 - 在同一行显示 */}
-      {directory && (
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: 8,
-            fontSize: 12,
-            color: "#666",
-            background: "#f5f5f5",
-            padding: "4px 8px",
-            borderRadius: 4,
-          }}
-        >
-          <div>
-            📂 目录：{directory}
-            {isRecursive && (
-              <span style={{ marginLeft: 8, color: "#52c41a" }}>🌲 递归模式</span>
-            )}
-          </div>
-          {/* 搜索框 - 在目录信息右侧显示，递归和非递归模式样式完全一致 */}
-          {entries.length > 10 && (
-            <Input
-              prefix={<SearchOutlined />}
-              placeholder="搜索文件/文件夹..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              style={{ width: 200, fontSize: 12 }}
-              allowClear
-            />
-          )}
-        </div>
-      )}
+      {/* 目录信息行 - 始终显示，包含文件数量和折叠按钮 */}
+      {directoryInfo}
 
       {/* 【小沈修改 2026-03-24】列表内容根据 isExpanded 控制，目录信息始终可见 */}
       {isExpanded && (
