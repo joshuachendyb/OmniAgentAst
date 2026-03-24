@@ -11,6 +11,7 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 import { message } from "antd";
+import type { SecurityCheck } from "../types/chat";
 
 // 【小强修复 2026-03-18】sessionStorage key - 用于长时间隐藏页面时备份数据
 // 场景：用户切换到其他应用→页面隐藏→SSE 连接不断开→后端数据持续发送
@@ -138,6 +139,9 @@ export interface ExecutionStep {
   timestamp: number;      // 前端生成的时间戳
   contentStart?: number;  // content起始位置（用于流式定位）
   contentEnd?: number;    // content结束位置
+  
+  // === 安全检查字段 ===
+  security_check?: SecurityCheck;
 }
 
 /**
@@ -757,13 +761,13 @@ const processSSEData = (
           user_message: rawData.user_message || "",
           // 【小强修复 2026-03-18】添加step字段映射，后端已返回step值
           step: rawData.step || 1,
-          // 【小查修复2026-03-10】添加security_check字段处理
-          raw_data: rawData.security_check ? {
-            is_safe: rawData.security_check.is_safe,
-            risk_level: rawData.security_check.risk_level,
-            risk: rawData.security_check.risk,
-            blocked: rawData.security_check.blocked,
-          } : undefined,
+           // 【小查修复2026-03-10】添加security_check字段处理
+           security_check: rawData.security_check ? {
+             is_safe: rawData.security_check.is_safe,
+             risk_level: rawData.security_check.risk_level,
+             risk: rawData.security_check.risk,
+             blocked: rawData.security_check.blocked,
+           } : undefined,
         };
 
         // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current

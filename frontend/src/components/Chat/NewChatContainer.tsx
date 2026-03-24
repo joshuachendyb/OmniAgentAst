@@ -61,6 +61,7 @@ import {
 
 // 【新增 2026-03-13】从独立文件导入日志和消息提示函数
 import { logAIComplete, logUserSend } from "../../utils/chatLogger";
+import { getClientInfo } from "../../utils/clientInfo";  // 【小沈 2026-03-24】获取客户端信息
 import {
   showSaveError,
   showLoadSuccess,
@@ -1547,10 +1548,19 @@ const NewChatContainer: React.FC = () => {
     
     if (currentSessionId) {
       try {
+        // 【小沈 2026-03-24】获取客户端信息
+        const clientInfo = getClientInfo();
+        console.log("🔍 客户端信息:", clientInfo);
+        
         console.log("🔍 在调用AI之前先保存用户消息:", userMessage);
         const saveResult = await sessionApi.saveMessage(currentSessionId, {
           role: "user",
           content: userMessage.content,
+          // 【小沈 2026-03-24】传递客户端信息
+          client_os: clientInfo.client_os,
+          browser: clientInfo.browser,
+          device: clientInfo.device,
+          network: clientInfo.network,
         });
         // 保存用户消息ID，用于AI消息关联
         backendUserMessageId = saveResult?.message_id || null;

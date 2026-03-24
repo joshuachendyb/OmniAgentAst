@@ -4,6 +4,7 @@
 【重构日期】2026-03-19 小强
 【迁移】2026-03-21 小沈 - 从 agent/prompts.py 迁移到 prompts/file/
 【重构】2026-03-21 小沈 - 继承 BasePrompts 基类
+【增强】2026-03-24 小沈 - 嵌入Prompt中间层（服务器OS信息）
 
 改进点：
 1. 添加参数命名规则（全局约束）
@@ -11,16 +12,19 @@
 3. 添加input_examples示例
 4. 统一中英文提示
 5. 继承 BasePrompts 基类
+6. 嵌入服务器OS信息（Prompt中间层）- 2026-03-24
 
 更新时间: 2026-03-19 23:55:00
 迁移时间: 2026-03-21
 重构时间: 2026-03-21
+增强时间: 2026-03-24
 """
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 import json
 
 from app.services.prompts.base import BasePrompts
+from app.services.prompts.middle import get_system_prompt as get_system_info
 
 
 class FileOperationPrompts(BasePrompts):
@@ -28,7 +32,15 @@ class FileOperationPrompts(BasePrompts):
     
     def get_system_prompt(self) -> str:
         """获取增强版系统Prompt"""
-        return """You are a professional file management assistant. You help users organize, analyze, and manage files and directories.
+        # 获取系统信息（来自中间层）
+        system_info = get_system_info()
+        
+        # 直接字符串拼接，避免f-string解析问题
+        return system_info + """
+
+---
+
+You are a professional file management assistant. You help users organize, analyze, and manage files and directories.
 
 You have access to the following tools:
 

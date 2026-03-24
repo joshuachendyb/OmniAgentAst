@@ -433,23 +433,23 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 <span style={{ fontFamily: "monospace" }}>{step.task_id?.slice(0, 8) || "无"}</span>
               </span>
               
-              {/* 安全检查状态 */}
-              {(step as any).security_check && (
-                <span style={{ marginRight: 16 }}>
-                  <span style={{ color: "#999" }}>安全：</span>
-                  <span style={{ 
-                    color: (step as any).security_check.is_safe ? "#52c41a" : "#ff4d4f",
-                    fontWeight: 500
-                  }}>
-                    {(step as any).security_check.is_safe ? "✅ 通过" : "⚠️ 拦截"}
-                  </span>
-                  {!(step as any).security_check.is_safe && (step as any).security_check.risk && (
-                    <span style={{ color: "#ff4d4f", marginLeft: 4 }}>
-                      ({(step as any).security_check.risk})
-                    </span>
-                  )}
-                </span>
-              )}
+               {/* 安全检查状态 */}
+               {step.security_check && (
+                 <span style={{ marginRight: 16 }}>
+                   <span style={{ color: "#999" }}>安全：</span>
+                   <span style={{ 
+                     color: step.security_check.is_safe ? "#52c41a" : "#ff4d4f",
+                     fontWeight: 500
+                   }}>
+                     {step.security_check.is_safe ? "✅ 通过" : "⚠️ 拦截"}
+                   </span>
+                   {!step.security_check.is_safe && step.security_check.risk && (
+                     <span style={{ color: "#ff4d4f", marginLeft: 4 }}>
+                       ({step.security_check.risk})
+                     </span>
+                   )}
+                 </span>
+               )}
               
               {/* 时间戳 */}
               {step.timestamp && (
@@ -783,7 +783,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
               return { ...baseExport, step: step.step, incident_value: (step as any).incident_value || step.type, wait_time: (step as any).wait_time };
             case 'start':
               // 【小强修复 2026-03-18】添加 step 字段
-              return { ...baseExport, task_id: step.task_id, step: step.step };
+              return { 
+                ...baseExport, 
+                task_id: step.task_id, 
+                step: step.step,
+                security_check: step.security_check,
+                user_message: step.user_message
+              };
             default:
               return baseExport;
           }
