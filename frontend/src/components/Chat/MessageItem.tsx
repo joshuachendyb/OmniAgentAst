@@ -718,7 +718,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
       const exportData: Record<string, any> = {
         sessionId: sessionId || undefined,  // 【小强添加 2026-03-23】会话ID
         sessionTitle: sessionTitle || undefined,  // 【小强添加 2026-03-23】会话标题
-        timestamp: formatTimestamp(message.timestamp instanceof Date ? message.timestamp.getTime() : message.timestamp),
+         timestamp: formatTimestamp(
+           message.timestamp instanceof Date 
+             ? message.timestamp.getTime() 
+             : (typeof message.timestamp === 'number' && message.timestamp < 1000000000000) 
+               ? undefined 
+               : message.timestamp
+         ),
         messageId: message.id,
         role: message.role,
         content: message.content,
@@ -772,7 +778,11 @@ const MessageItem: React.FC<MessageItemProps> = ({
           const baseExport: Record<string, any> = {
             type: step.type,
             content: step.content,
-            timestamp: formatTimestamp(step.timestamp),  // 转换为可读格式
+            timestamp: formatTimestamp(
+             typeof step.timestamp === 'number' && step.timestamp < 1000000000000 
+               ? undefined 
+               : step.timestamp
+           ),  // 转换为可读格式
           };
           
           // 根据不同type添加对应字段
