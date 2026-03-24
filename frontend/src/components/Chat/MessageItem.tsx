@@ -272,9 +272,9 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                       }}
                     >
                       {isExpanded 
-                        ? "▼ 收起" 
-                        : "▶ 展开"} 
-                      {isRecursive ? "目录树" : "文件列表"} 
+                        ? "▼ 收起 " 
+                        : "▶ 展开 "} 
+                      {isRecursive ? "目录树" : "文件列表"}
                       ({entries.length}个)
                       {isRecursive && <span style={{ marginLeft: 8, color: '#888' }}>🌲 递归模式</span>}
                     </span>
