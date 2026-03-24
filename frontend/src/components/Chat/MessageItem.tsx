@@ -394,13 +394,17 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
           </>
         )}
         {step.type === "start" && (
-          <span style={{ 
+          <div style={{ 
+            background: "linear-gradient(135deg, #e6f7ff 0%, #f0f8ff 100%)",
+            border: "1px solid #91d5ff",
+            borderRadius: 8,
+            padding: "10px 14px",
             color: "#1890ff",
             fontWeight: 600,
             fontSize: 14,
           }}>
-            🚀 {step.task_id || "任务开始"}
-          </span>
+            {step.task_id || "任务开始"}
+          </div>
         )}
         {step.type === "thought" && (
           <div style={{ 
@@ -413,22 +417,30 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
           </div>
         )}
         {step.type === "final" && (
-          <span style={{ 
+          <div style={{ 
+            background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
+            border: "1px solid #b7eb8f",
+            borderRadius: 8,
+            padding: "10px 14px",
             color: "#52c41a",
             fontWeight: 600,
             fontSize: 14,
           }}>
-            ✅ {step.content || ""}
-          </span>
+            {step.content || ""}
+          </div>
         )}
         {step.type === "error" && (
-          <span style={{ 
-            color: "#ff4d4f",
+          <div style={{ 
+            background: "linear-gradient(135deg, #fff1f0 0%, #fff 100%)",
+            border: "1px solid #ffa39e",
+            borderRadius: 8,
+            padding: "10px 14px",
+            color: "#cf1322",
             fontWeight: 600,
             fontSize: 13,
           }}>
-            ❌ 错误：{step.error_message || ""}
-          </span>
+            {step.error_message || "未知错误"}
+          </div>
         )}
         {/* 【小强添加 2026-03-24】interrupted/paused/resumed/retrying渲染逻辑 - TDD */}
         {step.type === "interrupted" && (

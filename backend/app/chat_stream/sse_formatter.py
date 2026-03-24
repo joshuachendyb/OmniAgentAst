@@ -10,6 +10,8 @@ import json
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from app.chat_stream.chat_helpers import create_timestamp
+
 
 def format_sse_event(event_type: str, step: int, data: Dict[str, Any]) -> str:
     """
@@ -25,9 +27,13 @@ def format_sse_event(event_type: str, step: int, data: Dict[str, Any]) -> str:
     """
     base = {
         'type': event_type,
-        'step': step,
-        'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        'step': step
     }
+    # 【小沈修复 2026-03-24】如果 data 已经有 timestamp，保留它；否则生成毫秒时间戳
+    if 'timestamp' in data:
+        base['timestamp'] = data['timestamp']
+    else:
+        base['timestamp'] = create_timestamp()
     base.update(data)
     return f"data: {json.dumps(base, ensure_ascii=False)}\n\n"
 
