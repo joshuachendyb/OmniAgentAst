@@ -255,45 +255,14 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             )}
             {/* 【小强实现 2026-03-23】阶段4任务1：isRecursive判断逻辑 */}
             {(() => {
-              const isRecursive = step.tool_params?.recursive === true;
-              const entries = step.raw_data?.entries || [];
-              
-               return (
-                 <div style={{ marginTop: 8 }}>
-                   {/* 标题行 - 折叠图标和类型在左侧，收起/展开状态在右侧 */}
-                   <div 
-                     onClick={() => toggleExpand(stepIndex)}
-                     style={{ 
-                       display: 'flex',
-                       justifyContent: 'space-between',
-                       alignItems: 'center',
-                       cursor: "pointer", 
-                       padding: '4px 0',
-                       marginBottom: 6,
-                     }}
-                   >
-                     <span style={{ 
-                       color: isRecursive ? "#52c41a" : "#1890ff",
-                       fontSize: 13,
-                       fontWeight: 500,
-                     }}>
-                       {isExpanded ? "▼ " : "▶ "}
-                       {isRecursive ? "🌲 目录树" : "📁 文件列表"}
-                       ({entries.length}个)
-                     </span>
-                     <span style={{ 
-                       fontSize: 11, 
-                       color: '#888',
-                       cursor: "pointer",
-                     }}>
-                       {isExpanded ? "收起" : "展开"}
-                     </span>
-                   </div>
-                   
-                    {/* 【小强实现 2026-03-24】阶段3：使用 renderToolResult 渲染工具结果视图 */}
-                    {/* 【小沈修改 2026-03-24】传递 isExpanded 参数，让 ListDirectoryView 内部控制列表折叠，目录信息始终可见 */}
-                    {renderToolResult(step, isExpanded)}
-                 </div>
+                return (
+                  <div style={{ marginTop: 8 }}>
+                    {/* 【小强修改 2026-03-24】折叠功能已移到 ListDirectoryView 内部，这里不再显示 */}
+                     {/* 【小强实现 2026-03-24】阶段3：使用 renderToolResult 渲染工具结果视图 */}
+                    {/* 【小沈修改 2026-03-24】传递 isExpanded 参数，让 ListDirectoryView 内部控制列表折叠 */}
+                    {/* 【小强修改 2026-03-24】传递 toggleExpand 和 stepIndex，用于 list_directory 折叠按钮 */}
+                    {renderToolResult(step, isExpanded, toggleExpand, stepIndex)}
+                  </div>
                );
             })()}
             {/* 【小新重构 2026-03-09】显示分页信息 */}
@@ -470,16 +439,20 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
  * 【小强实现 2026-03-24】阶段3：renderToolResult 分支函数
  * 根据 tool_name 渲染不同的工具结果视图组件
  * 【小沈修改 2026-03-24】添加 isExpanded 参数，让 ListDirectoryView 内部控制列表折叠
+ * 【小强修改 2026-03-24】添加 toggleExpand 和 stepIndex 参数，用于 list_directory 折叠功能
  */
-const renderToolResult = (step: ExecutionStep, isExpanded: boolean = true) => {
+const renderToolResult = (step: ExecutionStep, isExpanded: boolean = true, toggleExpand?: (index: number) => void, stepIndex?: number) => {
   // 从 raw_data 中获取 data
   const data = (step as any).raw_data?.data || (step as any).raw_data;
   if (!data) return null;
 
+  // 【小强修复 2026-03-24】处理可能的 undefined
+  const handleToggle = toggleExpand && stepIndex !== undefined ? () => toggleExpand(stepIndex) : undefined;
+
   // 根据 tool_name 分支处理
   switch (step.tool_name) {
     case "list_directory":
-      return <ListDirectoryView data={data} toolParams={step.tool_params} isExpanded={isExpanded} />;
+      return <ListDirectoryView data={data} toolParams={step.tool_params} isExpanded={isExpanded} onToggle={handleToggle} />;
     case "read_file":
       return <ReadFileView data={data} />;
     case "write_file":
@@ -491,7 +464,7 @@ const renderToolResult = (step: ExecutionStep, isExpanded: boolean = true) => {
     case "search_files":
       return <SearchFilesView data={data} />;
     case "generate_report":
-      return <GenerateReportView data={data} />;
+      return <GenerateReportView data={data} isExpanded={isExpanded} onToggle={handleToggle} />;
     default:
       // 未知工具，显示原始JSON
       return (
