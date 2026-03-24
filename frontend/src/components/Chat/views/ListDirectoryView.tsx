@@ -183,26 +183,13 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
 
 /**
  * 非递归模式虚拟列表组件
+ * 注意：搜索功能已移到父组件 ListDirectoryView 中
  */
 interface VirtualFileListProps {
-  entries: Entry[];
+  filteredEntries: Entry[];
 }
 
-const VirtualFileList: React.FC<VirtualFileListProps> = ({ entries }) => {
-  const [searchText, setSearchText] = useState("");
-
-  const filteredEntries = useMemo(() => {
-    if (!searchText.trim()) {
-      return entries;
-    }
-    const lowerSearch = searchText.toLowerCase();
-    return entries.filter(
-      (entry) =>
-        entry.name.toLowerCase().includes(lowerSearch) ||
-        entry.path.toLowerCase().includes(lowerSearch)
-    );
-  }, [entries, searchText]);
-
+const VirtualFileList: React.FC<VirtualFileListProps> = ({ filteredEntries }) => {
   const fileListBackground = {
     background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
     border: "1px solid #b7eb8f",
@@ -217,16 +204,6 @@ const VirtualFileList: React.FC<VirtualFileListProps> = ({ entries }) => {
 
   return (
     <div>
-      {entries.length > 10 && (
-        <Input
-          prefix={<SearchOutlined />}
-          placeholder="搜索文件/文件夹..."
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          style={{ marginBottom: 8 }}
-          allowClear
-        />
-      )}
       <div style={fileListBackground}>
         <List
           dataSource={filteredEntries}
@@ -305,6 +282,22 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
     boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
   };
 
+  // 【重要】Hooks 必须在顶层无条件调用，不能在 if 之后
+  const [searchText, setSearchText] = useState("");
+  
+  // 过滤后的文件列表（用于非递归模式）
+  const filteredEntries = useMemo(() => {
+    if (!searchText.trim()) {
+      return entries;
+    }
+    const lowerSearch = searchText.toLowerCase();
+    return entries.filter(
+      (entry) =>
+        entry.name.toLowerCase().includes(lowerSearch) ||
+        entry.path.toLowerCase().includes(lowerSearch)
+    );
+  }, [entries, searchText]);
+
   if (entries.length === 0) {
     return (
       <div style={{ color: "#888", fontStyle: "italic" }}>
@@ -315,10 +308,13 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
 
   return (
     <div>
-      {/* 目录路径信息 */}
+      {/* 目录路径信息和搜索框 - 在同一行显示 */}
       {directory && (
         <div
           style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
             marginBottom: 8,
             fontSize: 12,
             color: "#666",
@@ -327,9 +323,22 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
             borderRadius: 4,
           }}
         >
-          📂 目录：{directory}
-          {isRecursive && (
-            <span style={{ marginLeft: 8, color: "#52c41a" }}>🌲 递归模式</span>
+          <div>
+            📂 目录：{directory}
+            {isRecursive && (
+              <span style={{ marginLeft: 8, color: "#52c41a" }}>🌲 递归模式</span>
+            )}
+          </div>
+          {/* 搜索框 - 在目录信息右侧显示 */}
+          {entries.length > 10 && !isRecursive && (
+            <Input
+              prefix={<SearchOutlined />}
+              placeholder="搜索..."
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{ width: 200, fontSize: 11 }}
+              allowClear
+            />
           )}
         </div>
       )}
@@ -357,7 +366,7 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
         </div>
       ) : (
         /* 非递归模式：虚拟列表 - List自身管理滚动，外层div不限制 */
-        <VirtualFileList entries={entries} />
+        <VirtualFileList filteredEntries={filteredEntries} />
       )}
 
       {/* 总数信息 */}
