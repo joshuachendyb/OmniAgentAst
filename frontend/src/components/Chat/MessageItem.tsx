@@ -418,32 +418,46 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             borderRadius: 8,
             padding: "10px 14px",
             color: "#1890ff",
-            fontWeight: 600,
             fontSize: 13,
           }}>
             {/* 【小强优化 2026-03-24】显示更有意义的信息 */}
-            🚀 <span style={{ fontWeight: 400 }}>开始：</span>
-            {/* 用户消息前40字 */}
-            {(step as any).user_message && (
-              <span style={{ fontWeight: 500, marginLeft: 8 }}>
-                {(step as any).user_message}
+            <div style={{ fontWeight: 600, marginBottom: 8 }}>
+              🚀 用户消息：{(step as any).user_message || "(无)"}
+            </div>
+            
+            {/* 详细信息行 */}
+            <div style={{ fontSize: 11, color: "#666" }}>
+              {/* 任务ID */}
+              <span style={{ marginRight: 16 }}>
+                <span style={{ color: "#999" }}>任务ID：</span>
+                <span style={{ fontFamily: "monospace" }}>{step.task_id?.slice(0, 8) || "无"}</span>
               </span>
-            )}
-            {/* task_id */}
-            <span style={{ display: "block", marginTop: 6, fontSize: 11, color: "#888" }}>
-              任务ID：{step.task_id || "无"}
-            </span>
-            {/* 安全检查状态 */}
-            {(step as any).security_check && (
-              <span style={{ 
-                display: "inline-block", 
-                marginLeft: 8, 
-                fontSize: 11,
-                color: (step as any).security_check.is_safe ? "#52c41a" : "#ff4d4f"
-              }}>
-                {(step as any).security_check.is_safe ? "🔒 安全" : "⚠️ 拦截"}
-              </span>
-            )}
+              
+              {/* 安全检查状态 */}
+              {(step as any).security_check && (
+                <span style={{ marginRight: 16 }}>
+                  <span style={{ color: "#999" }}>安全：</span>
+                  <span style={{ 
+                    color: (step as any).security_check.is_safe ? "#52c41a" : "#ff4d4f",
+                    fontWeight: 500
+                  }}>
+                    {(step as any).security_check.is_safe ? "✅ 通过" : "⚠️ 拦截"}
+                  </span>
+                  {!(step as any).security_check.is_safe && (step as any).security_check.risk && (
+                    <span style={{ color: "#ff4d4f", marginLeft: 4 }}>
+                      ({(step as any).security_check.risk})
+                    </span>
+                  )}
+                </span>
+              )}
+              
+              {/* 时间戳 */}
+              {step.timestamp && (
+                <span style={{ color: "#999" }}>
+                  {formatTimestamp(step.timestamp)}
+                </span>
+              )}
+            </div>
           </div>
         )}
         {step.type === "thought" && (
