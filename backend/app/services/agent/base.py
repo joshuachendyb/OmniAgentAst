@@ -18,6 +18,7 @@ from app.services.agent.types import Step, AgentResult, AgentStatus
 from app.services.agent.tool_parser import ToolParser
 from app.services.agent.tool_executor import ToolExecutor
 from app.utils.logger import logger
+from app.chat_stream.chat_helpers import create_timestamp
 
 
 class BaseAgent(ABC):
@@ -254,10 +255,12 @@ class BaseAgent(ABC):
                 reasoning = parsed.get("reasoning")
                 action_tool = parsed.get("action_tool", "finish")
                 params = parsed.get("params", {})
+                current_time = create_timestamp()
                 
                 yield {
                     "type": "thought",
                     "step": step_count,
+                    "timestamp": current_time,
                     "content": thought_content,
                     "reasoning": reasoning,
                     "action_tool": action_tool,
@@ -267,6 +270,7 @@ class BaseAgent(ABC):
                 if action_tool == "finish":
                     yield {
                         "type": "final",
+                        "timestamp": current_time,
                         "content": params.get("result", thought_content)
                     }
                     break
@@ -277,6 +281,7 @@ class BaseAgent(ABC):
                 yield {
                     "type": "action_tool",
                     "step": step_count,
+                    "timestamp": current_time,
                     "tool_name": action_tool,
                     "tool_params": params,
                     "execution_status": execution_result.get("status", "success"),
@@ -302,6 +307,7 @@ class BaseAgent(ABC):
                 yield {
                     "type": "observation",
                     "step": step_count,
+                    "timestamp": current_time,
                     "obs_execution_status": execution_result.get("status", "success"),
                     "obs_summary": execution_result.get("summary", ""),
                     "obs_raw_data": execution_result.get("data"),
@@ -317,6 +323,7 @@ class BaseAgent(ABC):
                 if is_finished:
                     yield {
                         "type": "final",
+                        "timestamp": current_time,
                         "content": parsed_obs.get("content", "任务已完成")
                     }
                     break
@@ -324,6 +331,7 @@ class BaseAgent(ABC):
             if step_count >= max_steps:
                 yield {
                     "type": "error",
+                    "timestamp": create_timestamp(),
                     "code": "MAX_STEPS_EXCEEDED",
                     "message": f"已达到最大迭代次数 {max_steps}"
                 }
@@ -332,6 +340,7 @@ class BaseAgent(ABC):
             logger.error(f"Agent run_stream error: {e}", exc_info=True)
             yield {
                 "type": "error",
+                "timestamp": create_timestamp(),
                 "code": "INTERNAL_ERROR",
                 "message": str(e)
             }

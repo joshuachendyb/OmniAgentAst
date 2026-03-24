@@ -1,3 +1,101 @@
+v0.7.71
+
+
+
+更新时间：2026-03-24 11:39:49
+
+更新内容：
+
+## 1. 修复ListDirectoryView递归模式搜索行为不一致问题 - 小强-2026-03-24
+
+### 1.1 问题描述
+
+递归模式下搜索时，Ant Design Tree 的 `filterTreeNode` 会**隐藏**不匹配节点，导致如果父节点不匹配，所有子节点都会被隐藏，搜索结果不完整。
+
+### 1.2 修复方案
+
+移除 `filterTreeNode` prop，改用自定义过滤逻辑：
+
+| 新增逻辑 | 说明 |
+|---------|------|
+| `filteredTreeData` | 自定义过滤：匹配到子节点时保留完整父节点链 |
+| `expandedKeys` | 自动展开到匹配位置：收集所有匹配节点的父节点路径 |
+
+### 1.3 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/components/Chat/views/ListDirectoryView.tsx | 移除filterTreeNode，新增filteredTreeData和expandedKeys |
+
+### 1.4 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| TypeScript编译 | ✅ 通过 |
+| 生产构建 | ✅ 成功 |
+
+参与开发：小强
+完成时间：2026-03-24 11:39:49
+
+---
+
+v0.7.70
+
+更新时间：2026-03-24 11:19:03
+
+更新内容：
+
+## 1. 修复agent.py和base.py yield事件缺少timestamp问题 - 小沈-2026-03-24
+
+### 1.1 问题描述
+
+前端导出的消息中，部分execution_steps的timestamp显示为1970-01-01，原因是后端agent.py和base.py的run_stream方法yield事件时没有添加timestamp字段。
+
+### 1.2 根因分析
+
+| 文件 | yield位置 | 问题 |
+|------|-----------|------|
+| agent.py:565 | thought | 缺少timestamp字段 |
+| agent.py:576 | final (action_tool==finish) | 缺少timestamp字段 |
+| agent.py:587 | action_tool | 缺少timestamp字段 |
+| agent.py:619 | observation | 缺少timestamp字段 |
+| agent.py:641 | final | 缺少timestamp字段 |
+| agent.py:650 | error (MAX_STEPS) | 缺少timestamp字段 |
+| agent.py:659 | error (INTERNAL) | 缺少timestamp字段 |
+| base.py:259 | thought | 缺少timestamp字段 |
+| base.py:269 | final | 缺少timestamp字段 |
+| base.py:278 | action_tool | 缺少timestamp字段 |
+| base.py:303 | observation | 缺少timestamp字段 |
+| base.py:320 | final | 缺少timestamp字段 |
+| base.py:327 | error | 缺少timestamp字段 |
+| base.py:335 | error | 缺少timestamp字段 |
+
+### 1.3 修复方案
+
+1. 在agent.py导入create_timestamp
+2. 在base.py导入create_timestamp
+3. 在所有yield事件前调用create_timestamp()获取当前时间
+4. 在yield事件中添加timestamp字段
+
+### 1.4 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| backend/app/services/agent/agent.py | 导入create_timestamp，所有yield事件添加timestamp |
+| backend/app/services/agent/base.py | 导入create_timestamp，所有yield事件添加timestamp |
+
+### 1.5 验证结果
+
+| 验证项 | 状态 | 结果 |
+|--------|------|------|
+| Python语法检查 | ✅ | agent.py和base.py通过 |
+| 单元测试 | ✅ | 32 passed |
+
+参与开发：小沈
+完成时间：2026-03-24 11:19:03
+
+---
+
 v0.7.69
 
 更新时间：2026-03-24 10:55:00
