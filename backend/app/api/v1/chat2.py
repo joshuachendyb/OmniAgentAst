@@ -359,7 +359,8 @@ async def chat_stream(request: ChatRequest):
         last_message = request.messages[-1].content if request.messages else ""
         security_check_result = check_command_safety(last_message)
         
-        # 发送 start 步骤（包含security_check）
+        # 发送 start 步骤（包含security_check和用户消息）
+        user_message_preview = last_message[:40] if last_message else ""
         start_data = {
             'type': 'start',
             'step': next_step(),
@@ -368,6 +369,7 @@ async def chat_stream(request: ChatRequest):
             'provider': ai_service.provider,
             'model': ai_service.model,
             'task_id': task_id,
+            'user_message': user_message_preview,  # 【小强添加 2026-03-24】用户消息前40字
             'security_check': {
                 'is_safe': security_check_result.get('is_safe', True),
                 'risk_level': security_check_result.get('risk_level'),
