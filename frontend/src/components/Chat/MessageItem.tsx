@@ -290,8 +290,9 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                      </span>
                    </div>
                    
-                   {/* 【小强实现 2026-03-24】阶段3：使用 renderToolResult 渲染工具结果视图 */}
-                   {isExpanded && renderToolResult(step)}
+                    {/* 【小强实现 2026-03-24】阶段3：使用 renderToolResult 渲染工具结果视图 */}
+                    {/* 【小沈修改 2026-03-24】传递 isExpanded 参数，让 ListDirectoryView 内部控制列表折叠，目录信息始终可见 */}
+                    {renderToolResult(step, isExpanded)}
                  </div>
                );
             })()}
@@ -468,8 +469,9 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
 /**
  * 【小强实现 2026-03-24】阶段3：renderToolResult 分支函数
  * 根据 tool_name 渲染不同的工具结果视图组件
+ * 【小沈修改 2026-03-24】添加 isExpanded 参数，让 ListDirectoryView 内部控制列表折叠
  */
-const renderToolResult = (step: ExecutionStep) => {
+const renderToolResult = (step: ExecutionStep, isExpanded: boolean = true) => {
   // 从 raw_data 中获取 data
   const data = (step as any).raw_data?.data || (step as any).raw_data;
   if (!data) return null;
@@ -477,7 +479,7 @@ const renderToolResult = (step: ExecutionStep) => {
   // 根据 tool_name 分支处理
   switch (step.tool_name) {
     case "list_directory":
-      return <ListDirectoryView data={data} toolParams={step.tool_params} />;
+      return <ListDirectoryView data={data} toolParams={step.tool_params} isExpanded={isExpanded} />;
     case "read_file":
       return <ReadFileView data={data} />;
     case "write_file":
