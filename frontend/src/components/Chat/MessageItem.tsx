@@ -258,32 +258,42 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
               const isRecursive = step.tool_params?.recursive === true;
               const entries = step.raw_data?.entries || [];
               
-              return (
-                <div style={{ marginTop: 8 }}>
-                  {/* 折叠按钮和文件计数 */}
-                  <div style={{ marginBottom: 6 }}>
-                    <span 
-                      onClick={() => toggleExpand(stepIndex)}
-                      style={{ 
-                        cursor: "pointer", 
-                        color: isRecursive ? "#52c41a" : "#1890ff",
-                        fontSize: 12,
-                        fontWeight: 500,
-                      }}
-                    >
-                      {isExpanded 
-                        ? "▼ 收起 " 
-                        : "▶ 展开 "} 
-                      {isRecursive ? "目录树" : "文件列表"}
-                      ({entries.length}个)
-                      {isRecursive && <span style={{ marginLeft: 8, color: '#888' }}>🌲 递归模式</span>}
-                    </span>
-                  </div>
-                  
-                  {/* 【小强实现 2026-03-24】阶段3：使用 renderToolResult 渲染工具结果视图 */}
-                  {isExpanded && renderToolResult(step)}
-                </div>
-              );
+               return (
+                 <div style={{ marginTop: 8 }}>
+                   {/* 标题行 - 折叠图标和类型在左侧，收起/展开状态在右侧 */}
+                   <div 
+                     onClick={() => toggleExpand(stepIndex)}
+                     style={{ 
+                       display: 'flex',
+                       justifyContent: 'space-between',
+                       alignItems: 'center',
+                       cursor: "pointer", 
+                       padding: '4px 0',
+                       marginBottom: 6,
+                     }}
+                   >
+                     <span style={{ 
+                       color: isRecursive ? "#52c41a" : "#1890ff",
+                       fontSize: 13,
+                       fontWeight: 500,
+                     }}>
+                       {isExpanded ? "▼ " : "▶ "}
+                       {isRecursive ? "🌲 目录树" : "📁 文件列表"}
+                       ({entries.length}个)
+                     </span>
+                     <span style={{ 
+                       fontSize: 11, 
+                       color: '#888',
+                       cursor: "pointer",
+                     }}>
+                       {isExpanded ? "收起" : "展开"}
+                     </span>
+                   </div>
+                   
+                   {/* 【小强实现 2026-03-24】阶段3：使用 renderToolResult 渲染工具结果视图 */}
+                   {isExpanded && renderToolResult(step)}
+                 </div>
+               );
             })()}
             {/* 【小新重构 2026-03-09】显示分页信息 */}
             {/* 【小沈修复 2026-03-24】对于list_directory，总数由ListDirectoryView内部显示，避免重复 */}
