@@ -67,6 +67,9 @@ export interface ExecutionStep {
   // 【6-03-09】添加task_id字段，用于分页请求
   task_id?: string;      // 任务ID，用于分页请求
   
+  // 【小强添加 2026-03-24】用户消息前40字
+  user_message?: string;  // 用户发送的消息内容预览
+  
   // === 思考/动作提示字段（后端字段拆分） ===
   thinking_prompt?: string;    // thought 类型的提示文本
   action_description?: string; // action_tool 类型的描述文本
@@ -750,6 +753,8 @@ const processSSEData = (
           display_name: displayName,
           // 【小新修复2026-03-10】添加task_id字段映射
           task_id: rawData.task_id,
+          // 【小强添加 2026-03-24】添加user_message字段映射
+          user_message: rawData.user_message || "",
           // 【小强修复 2026-03-18】添加step字段映射，后端已返回step值
           step: rawData.step || 1,
           // 【小查修复2026-03-10】添加security_check字段处理
