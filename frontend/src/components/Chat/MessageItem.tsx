@@ -29,7 +29,15 @@ import { taskControlApi } from "../../services/api";
 import { formatTimestamp } from "../../utils/timestamp";
 import { } from "../../utils/markdown";
 import ErrorDetail from "./ErrorDetail";
-import { getStepStyle, type StepType } from "../../utils/stepStyles";
+import { 
+  getStepStyle, 
+  getStepTitleStyle,
+  getStepContentStyle,
+  FontSize,
+  FontWeight,
+  Colors,
+  type StepType 
+} from "../../utils/stepStyles";
 
 // 【小强实现 2026-03-24】阶段3：导入7个工具视图组件
 import ListDirectoryView from "./views/ListDirectoryView";
@@ -399,60 +407,52 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
         )}
         {step.type === "start" && (
           <div style={getStepStyle("start" as StepType)}>
-            {/* 【小强优化 2026-03-24】显示更有意义的信息 */}
-            <div style={{ fontWeight: 600, marginBottom: 8 }}>
+            {/* 标题行：用户消息 - 使用inline-with-details布局 */}
+            <div style={getStepTitleStyle("start" as StepType)}>
               🚀 用户消息：{(step as any).user_message || "(无)"}
             </div>
             
-            {/* 详细信息行 */}
-            <div style={{ fontSize: 12, color: "#333", lineHeight: 1.6 }}>
-              {/* 任务ID */}
-              <span style={{ marginRight: 20 }}>
-                <span style={{ color: "#444", fontWeight: 500 }}>任务ID：</span>
-                <span style={{ 
-                  fontFamily: "monospace", 
-                  backgroundColor: "rgba(0,0,0,0.05)",
-                  padding: "2px 6px",
-                  borderRadius: 4,
-                  fontSize: 11
-                }}>
+            {/* 详细信息行：任务ID、安全检查、时间戳 */}
+            <div style={getStepContentStyle("start" as StepType, "secondary")}>
+              <span style={{ marginRight: 16 }}>
+                <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>任务ID：</span>
+                <span style={getStepBadgeStyle("start" as StepType, "outline")}>
                   {step.task_id?.slice(0, 8) || "无"}
                 </span>
               </span>
               
-                   {/* 安全检查状态 */}
-                   {step.security_check && (
-                     <span style={{ marginRight: 20 }}>
-                       <span style={{ color: "#444", fontWeight: 500 }}>安全：</span>
-                   <span style={{ 
-                     color: step.security_check.is_safe ? "#389e0d" : "#cf1322",
-                     fontWeight: 600,
-                     backgroundColor: step.security_check.is_safe ? "rgba(82,196,26,0.1)" : "rgba(255,77,79,0.1)",
-                     padding: "2px 8px",
-                     borderRadius: 4
-                   }}>
-                     {step.security_check.is_safe ? "✅ 通过" : "⚠️ 拦截"}
-                   </span>
-                   {!step.security_check.is_safe && step.security_check.risk && (
-                     <span style={{ color: "#cf1322", marginLeft: 6, fontSize: 11 }}>
-                       ({step.security_check.risk})
-                     </span>
-                   )}
-                 </span>
-               )}
-               
-               {/* 时间戳 */}
-               {step.timestamp && (
-                 <span style={{ 
-                   color: "#444",
-                   backgroundColor: "rgba(0,0,0,0.05)",
-                   padding: "2px 8px",
-                   borderRadius: 4,
-                   fontSize: 11
-                 }}>
-                   {formatTimestamp(step.timestamp)}
-                 </span>
-               )}
+              {step.security_check && (
+                <span style={{ marginRight: 16 }}>
+                  <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>安全：</span>
+                  <span style={{ 
+                    color: step.security_check.is_safe ? Colors.SUCCESS : Colors.ERROR,
+                    fontWeight: FontWeight.BOLD,
+                    backgroundColor: step.security_check.is_safe ? "rgba(82,196,26,0.1)" : "rgba(255,77,79,0.1)",
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    fontSize: FontSize.SMALL,
+                  }}>
+                    {step.security_check.is_safe ? "✅ 通过" : "⚠️ 拦截"}
+                  </span>
+                  {!step.security_check.is_safe && step.security_check.risk && (
+                    <span style={{ color: Colors.ERROR, marginLeft: 6, fontSize: FontSize.TERTIARY }}>
+                      ({step.security_check.risk})
+                    </span>
+                  )}
+                </span>
+              )}
+              
+              {step.timestamp && (
+                <span style={{ 
+                  color: Colors.TEXT.TERTIARY,
+                  backgroundColor: Colors.BG.SECONDARY,
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  fontSize: FontSize.TERTIARY,
+                }}>
+                  {formatTimestamp(step.timestamp)}
+                </span>
+              )}
             </div>
           </div>
         )}
@@ -462,39 +462,52 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}>
-            {/* 【小沈修复 2026-03-23】使用 step.reasoning 而非 step.thinking_prompt */}
-            💭 {step.reasoning || step.content || ""}
+            <span style={getStepContentStyle("thought" as StepType, "primary")}>
+              {step.reasoning || step.content || ""}
+            </span>
           </div>
         )}
         {step.type === "final" && (
           <div style={getStepStyle("final" as StepType)}>
-            {step.content || ""}
+            <span style={getStepContentStyle("final" as StepType, "primary")}>
+              {step.content || ""}
+            </span>
           </div>
         )}
         {step.type === "error" && (
           <div style={getStepStyle("error" as StepType)}>
-            {step.error_message || "未知错误"}
+            <span style={getStepContentStyle("error" as StepType, "primary")}>
+              {step.error_message || "未知错误"}
+            </span>
           </div>
         )}
         {/* 【小强添加 2026-03-24】interrupted/paused/resumed/retrying渲染逻辑 - TDD */}
         {step.type === "interrupted" && (
           <div style={getStepStyle("interrupted" as StepType)}>
-            ⚠️ {step.content || "客户端断开连接，任务中断"}
+            <span style={getStepContentStyle("interrupted" as StepType, "primary")}>
+              {step.content || "客户端断开连接，任务中断"}
+            </span>
           </div>
         )}
         {step.type === "paused" && (
           <div style={getStepStyle("paused" as StepType)}>
-            ⏸️ {step.content || "任务已暂停，可恢复继续"}
+            <span style={getStepContentStyle("paused" as StepType, "primary")}>
+              {step.content || "任务已暂停，可恢复继续"}
+            </span>
           </div>
         )}
         {step.type === "resumed" && (
           <div style={getStepStyle("resumed" as StepType)}>
-            ▶️ {step.content || "任务已恢复"}
+            <span style={getStepContentStyle("resumed" as StepType, "primary")}>
+              {step.content || "任务已恢复"}
+            </span>
           </div>
         )}
         {step.type === "retrying" && (
           <div style={getStepStyle("retrying" as StepType)}>
-            🔄 {step.content || "正在重试..."}
+            <span style={getStepContentStyle("retrying" as StepType, "primary")}>
+              {step.content || "正在重试..."}
+            </span>
           </div>
         )}
       </div>
