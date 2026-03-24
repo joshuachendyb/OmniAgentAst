@@ -237,20 +237,36 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
           <>
             {step.action_description || step.tool_name || "执行中..."}
             {step.tool_params && (
-              <div style={{ 
-                marginTop: 6, 
-                fontSize: 12, 
-                color: "#666",
-                background: "#f5f5f5",
-                padding: "8px 12px",
-                borderRadius: 6,
-                fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-                lineHeight: 1.6,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}>
-                参数：{JSON.stringify(step.tool_params)}
+              <div>
+                {/* 默认显示1行 */}
+                <div 
+                  onClick={() => toggleExpand(stepIndex + 1000)} // +1000避免和文件列表折叠冲突
+                  style={{ 
+                    marginTop: 6, 
+                    fontSize: 12, 
+                    color: "#666",
+                    background: "#f5f5f5",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+                    lineHeight: 1.6,
+                    whiteSpace: expandedSteps.get(stepIndex + 1000) ? "pre-wrap" : "nowrap",
+                    overflow: "hidden",
+                    textOverflow: expandedSteps.get(stepIndex + 1000) ? "clip" : "ellipsis",
+                    cursor: "pointer",
+                    maxHeight: expandedSteps.get(stepIndex + 1000) ? "none" : "36px",
+                  }}
+                >
+                  参数：{JSON.stringify(step.tool_params, null, expandedSteps.get(stepIndex + 1000) ? 2 : 0)}
+                  <span style={{ 
+                    marginLeft: 8, 
+                    color: "#1890ff", 
+                    fontSize: 11,
+                    fontWeight: 500,
+                  }}>
+                    {expandedSteps.get(stepIndex + 1000) ? "▲ 收起" : "▼ 展开"}
+                  </span>
+                </div>
               </div>
             )}
             {/* 【小强实现 2026-03-23】阶段4任务1：isRecursive判断逻辑 */}
@@ -382,9 +398,11 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                           )}
                         </div>
                       )}
-                      {/* 【小强修正 2026-03-23】summary 字符串 - 使用 step.obs_summary（和SSE后端字段名一致） */}
-                      {typeof step.obs_summary === "string" && (
-                        <div style={{ marginTop: 6 }}>{step.obs_summary}</div>
+                      {/* 【小强优化 2026-03-24】summary 始终显示 */}
+                      {typeof step.obs_summary === "string" && step.obs_summary && (
+                        <div style={{ marginTop: 6, color: "#666", fontSize: 12 }}>
+                          📊 {step.obs_summary}
+                        </div>
                       )}
                     </div>
                   );
