@@ -426,37 +426,54 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             </div>
             
             {/* 详细信息行 */}
-            <div style={{ fontSize: 11, color: "#666" }}>
+            <div style={{ fontSize: 12, color: "#555", lineHeight: 1.6 }}>
               {/* 任务ID */}
-              <span style={{ marginRight: 16 }}>
-                <span style={{ color: "#999" }}>任务ID：</span>
-                <span style={{ fontFamily: "monospace" }}>{step.task_id?.slice(0, 8) || "无"}</span>
+              <span style={{ marginRight: 20 }}>
+                <span style={{ color: "#777", fontWeight: 500 }}>任务ID：</span>
+                <span style={{ 
+                  fontFamily: "monospace", 
+                  backgroundColor: "rgba(0,0,0,0.05)",
+                  padding: "2px 6px",
+                  borderRadius: 4,
+                  fontSize: 11
+                }}>
+                  {step.task_id?.slice(0, 8) || "无"}
+                </span>
               </span>
               
                {/* 安全检查状态 */}
                {step.security_check && (
-                 <span style={{ marginRight: 16 }}>
-                   <span style={{ color: "#999" }}>安全：</span>
+                 <span style={{ marginRight: 20 }}>
+                   <span style={{ color: "#777", fontWeight: 500 }}>安全：</span>
                    <span style={{ 
-                     color: step.security_check.is_safe ? "#52c41a" : "#ff4d4f",
-                     fontWeight: 500
+                     color: step.security_check.is_safe ? "#389e0d" : "#cf1322",
+                     fontWeight: 600,
+                     backgroundColor: step.security_check.is_safe ? "rgba(82,196,26,0.1)" : "rgba(255,77,79,0.1)",
+                     padding: "2px 8px",
+                     borderRadius: 4
                    }}>
                      {step.security_check.is_safe ? "✅ 通过" : "⚠️ 拦截"}
                    </span>
                    {!step.security_check.is_safe && step.security_check.risk && (
-                     <span style={{ color: "#ff4d4f", marginLeft: 4 }}>
+                     <span style={{ color: "#cf1322", marginLeft: 6, fontSize: 11 }}>
                        ({step.security_check.risk})
                      </span>
                    )}
                  </span>
                )}
-              
-              {/* 时间戳 */}
-              {step.timestamp && (
-                <span style={{ color: "#999" }}>
-                  {formatTimestamp(step.timestamp)}
-                </span>
-              )}
+               
+               {/* 时间戳 */}
+               {step.timestamp && (
+                 <span style={{ 
+                   color: "#777",
+                   backgroundColor: "rgba(0,0,0,0.05)",
+                   padding: "2px 8px",
+                   borderRadius: 4,
+                   fontSize: 11
+                 }}>
+                   {formatTimestamp(step.timestamp)}
+                 </span>
+               )}
             </div>
           </div>
         )}
