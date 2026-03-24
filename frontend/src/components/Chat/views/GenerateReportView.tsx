@@ -4,14 +4,22 @@
  * 显示报告生成结果
  *
  * @author 小强
- * @version 1.0.0
+ * @version 2.0.0
  * @since 2026-03-24
  */
 
 import React from "react";
-import { Card, Tag } from "antd";
-import { FileTextOutlined, CheckCircleOutlined } from "@ant-design/icons";
-import { getStepStyle, type StepType } from "../../../utils/stepStyles";
+import { Tag } from "antd";
+import { CheckCircleOutlined, FileTextOutlined } from "@ant-design/icons";
+import { 
+  getStepStyle, 
+  getStepLabelStyle,
+  getStepContentStyle,
+  FontSize,
+  FontWeight,
+  Colors,
+  type StepType 
+} from "../../../utils/stepStyles";
 
 interface GenerateReportViewProps {
   data: {
@@ -21,12 +29,9 @@ interface GenerateReportViewProps {
   onToggle?: () => void;
 }
 
-
-
 /**
  * GenerateReportView 主组件
- * 【小强修改 2026-03-24】添加 isExpanded 和 onToggle 支持折叠功能
- * 【小强修改 2026-03-24】使用统一的getStepStyle函数，保持视觉风格一致
+ * 【小强修改 2026-03-24】使用inline布局，标签和路径一行显示
  */
 const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpanded = true, onToggle }) => {
   const { reports = {} } = data;
@@ -35,79 +40,82 @@ const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpande
 
   if (reportEntries.length === 0) {
     return (
-      <div style={{ color: "#888", fontStyle: "italic" }}>
+      <div style={{ 
+        color: Colors.TEXT.TERTIARY, 
+        fontStyle: "italic",
+        fontSize: FontSize.TERTIARY,
+      }}>
         📊 无报告数据
       </div>
     );
   }
 
-  // 使用统一的样式函数，与气泡内其他元素保持视觉一致
-  const cardStyle = getStepStyle("report" as StepType);
-
-  // 【小强修改 2026-03-24】标题行：始终显示报告数量和折叠按钮
-  const reportHeader = (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        cursor: "pointer",
-      }}
-      onClick={onToggle}
-    >
-      <div>
-        <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 18, marginRight: 8 }} />
-        <span style={{ color: "#52c41a", fontWeight: 600 }}>报告生成完成</span>
-        <Tag color="green" style={{ marginLeft: 8 }}>{reportEntries.length} 个报告</Tag>
-      </div>
-      <span style={{ color: "#1890ff", fontWeight: 500 }}>
-        {isExpanded ? "▼ 收起" : "▶ 展开"}
-      </span>
-    </div>
-  );
-
   return (
-    <div>
-      {/* 标题行 - 始终显示 */}
-      {reportHeader}
+    <div style={getStepStyle("report" as StepType)}>
+      {/* 标题行：报告状态 - 始终显示，inline布局 */}
+      <div style={{ 
+        display: "flex", 
+        alignItems: "center", 
+        justifyContent: "space-between",
+        cursor: onToggle ? "pointer" : "default",
+      }} onClick={onToggle}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <CheckCircleOutlined style={{ color: Colors.SUCCESS, fontSize: 16 }} />
+          <span style={getStepContentStyle("report" as StepType, "primary")}>
+            报告生成完成
+          </span>
+          <Tag color="green" style={{ margin: 0, fontSize: FontSize.SMALL }}>
+            {reportEntries.length} 个报告
+          </Tag>
+        </div>
+        {onToggle && (
+          <span style={{ 
+            color: Colors.INFO, 
+            fontWeight: FontWeight.MEDIUM,
+            fontSize: FontSize.TERTIARY,
+          }}>
+            {isExpanded ? "▼ 收起" : "▶ 展开"}
+          </span>
+        )}
+      </div>
 
       {/* 报告列表 - 仅在展开时显示 */}
       {isExpanded && (
-        <>
+        <div style={{ marginTop: 8 }}>
           {reportEntries.map(([key, report]) => (
-            <Card
+            <div 
               key={key}
-              size="small"
-              style={cardStyle}
-              title={
-                <div style={{ display: "flex", alignItems: "center" }}>
-                  <FileTextOutlined
-                    style={{ color: "#1890ff", marginRight: 8 }}
-                  />
-                  <span style={{ fontWeight: 500 }}>{key}</span>
-                </div>
-              }
+              style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                gap: 8,
+                padding: "4px 0",
+                borderBottom: reportEntries.indexOf([key, report]) < reportEntries.length - 1 
+                  ? `1px solid ${Colors.BORDER.LIGHT}` 
+                  : "none",
+              }}
             >
-              {/* 文件路径 - 现在 report 就是字符串路径 */}
+              {/* 报告类型标签 */}
+              <span style={getStepLabelStyle("report" as StepType)}>
+                <FileTextOutlined style={{ fontSize: 12 }} />
+                {key}
+              </span>
+              
+              {/* 文件路径 - 一行显示，不分行 */}
               {report && (
-                <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
-                  <span>📝 保存路径：</span>
-                  <code
-                    style={{
-                      background: "#f5f5f5",
-                      padding: "2px 6px",
-                      borderRadius: 4,
-                      fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-                      fontSize: 12,
-                    }}
-                  >
-                    {report}
-                  </code>
-                </div>
+                <span style={{ 
+                  ...getStepContentStyle("report" as StepType, "secondary"),
+                  fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+                  fontSize: FontSize.CODE,
+                  wordBreak: "break-all",
+                  flex: 1,
+                }}>
+                  {report}
+                </span>
               )}
-            </Card>
+            </div>
           ))}
-        </>
+        </div>
       )}
     </div>
   );
