@@ -329,11 +329,11 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
               <span style={{ marginLeft: 8, color: "#52c41a" }}>🌲 递归模式</span>
             )}
           </div>
-          {/* 搜索框 - 在目录信息右侧显示 */}
-          {entries.length > 10 && !isRecursive && (
+          {/* 搜索框 - 在目录信息右侧显示，递归和非递归模式都显示 */}
+          {entries.length > 10 && (
             <Input
               prefix={<SearchOutlined />}
-              placeholder="搜索..."
+              placeholder={isRecursive ? "搜索目录树..." : "搜索文件..."}
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
               style={{ width: 200, fontSize: 11 }}
@@ -362,6 +362,13 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
                 <FileOutlined style={{ color: "#1890ff" }} />
               )
             }
+            filterTreeNode={(node: any) => {
+              if (!searchText) return true;
+              const title = node.title?.toString().toLowerCase() || "";
+              const path = node.key?.toString().toLowerCase() || "";
+              const search = searchText.toLowerCase();
+              return title.includes(search) || path.includes(search);
+            }}
           />
         </div>
       ) : (
