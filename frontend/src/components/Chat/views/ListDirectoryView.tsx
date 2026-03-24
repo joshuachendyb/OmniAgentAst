@@ -258,6 +258,7 @@ function formatFileSize(bytes: number): string {
  * ListDirectoryView 主组件
  * 【小沈修改 2026-03-24】添加 isExpanded 参数，控制列表内容折叠，目录信息始终可见
  * 【小强修改 2026-03-24】添加 onToggle 回调，在目录信息行显示折叠按钮
+ * 【小强修复 2026-03-25】递归模式搜索：匹配到子节点时父节点链也要显示
  */
 const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams, isExpanded = true, onToggle }) => {
   const { entries = [], total = 0, directory = "" } = data;
@@ -265,11 +266,96 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
   // 【小强修复 2026-03-24】使用 toolParams 判断递归模式（从 step 传入，非从 data）
   const isRecursive = toolParams?.recursive === true;
 
+  // 【小强修复 2026-03-25】Hooks 必须在顶层无条件调用
+  const [searchText, setSearchText] = useState("");
+
   // 计算树形数据
   const treeData = useMemo(
     () => convertEntriesToTree(entries, directory),
     [entries, directory]
   );
+
+  // 【小强新增 2026-03-25】计算需要展开的父节点路径（递归模式搜索用）
+  const expandedKeys = useMemo(() => {
+    if (!searchText.trim()) return [];
+    const lowerSearch = searchText.toLowerCase();
+    const keysToExpand = new Set<string>();
+
+    // 遍历树，找到所有匹配的节点，收集它们的父节点路径
+    const traverse = (nodes: TreeNode[], parentPath: string[]) => {
+      for (const node of nodes) {
+        const currentPath = [...parentPath, node.key];
+        const title = node.title?.toString().toLowerCase() || "";
+        const path = node.key?.toString().toLowerCase() || "";
+
+        if (title.includes(lowerSearch) || path.includes(lowerSearch)) {
+          // 匹配到了，收集所有父节点
+          parentPath.forEach(p => keysToExpand.add(p));
+        }
+
+        // 继续遍历子节点
+        if (node.children) {
+          traverse(node.children, currentPath);
+        }
+      }
+    };
+
+    traverse(treeData, []);
+    return Array.from(keysToExpand);
+  }, [treeData, searchText]);
+
+  // 【小强修改 2026-03-25】递归模式：过滤后的树结构，匹配到子节点时保留父节点链
+  const filteredTreeData = useMemo(() => {
+    if (!searchText.trim()) return treeData;
+
+    const lowerSearch = searchText.toLowerCase();
+    const matchedKeys = new Set<string>();
+
+    // 第一遍：收集所有匹配的节点 key
+    const collectMatches = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        const title = node.title?.toString().toLowerCase() || "";
+        const path = node.key?.toString().toLowerCase() || "";
+
+        if (title.includes(lowerSearch) || path.includes(lowerSearch)) {
+          matchedKeys.add(node.key);
+        }
+
+        if (node.children) {
+          collectMatches(node.children);
+        }
+      }
+    };
+
+    collectMatches(treeData);
+
+    // 第二遍：过滤树，只保留匹配的节点及其父节点链
+    const filterTree = (nodes: TreeNode[]): TreeNode[] => {
+      const result: TreeNode[] = [];
+      
+      for (const node of nodes) {
+        // 检查当前节点是否匹配
+        const title = node.title?.toString().toLowerCase() || "";
+        const path = node.key?.toString().toLowerCase() || "";
+        const isMatch = title.includes(lowerSearch) || path.includes(lowerSearch);
+
+        // 递归过滤子节点
+        const filteredChildren = node.children ? filterTree(node.children) : undefined;
+
+        // 如果当前节点匹配，或者有子节点匹配（children 被保留），则保留当前节点
+        if (isMatch || (filteredChildren && filteredChildren.length > 0)) {
+          result.push({
+            ...node,
+            children: filteredChildren,
+          });
+        }
+      }
+
+      return result;
+    };
+
+    return filterTree(treeData);
+  }, [treeData, searchText]);
 
   // 文件列表背景样式
   const fileListBackground = {
@@ -286,9 +372,6 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
     boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
   };
 
-  // 【重要】Hooks 必须在顶层无条件调用，不能在 if 之后
-  const [searchText, setSearchText] = useState("");
-  
   // 过滤后的文件列表（用于非递归模式）
   const filteredEntries = useMemo(() => {
     if (!searchText.trim()) {
@@ -331,6 +414,12 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
         <span style={{ marginRight: 8 }}>📂 {directory}</span>
         {isRecursive ? "🌲 目录树" : "📁 文件列表"}
         ({total}个)
+        {/* 【小强新增 2026-03-25】显示搜索匹配数量 */}
+        {searchText && filteredEntries.length !== total && (
+          <span style={{ color: "#faad14", marginLeft: 8 }}>
+            (匹配 {isRecursive ? filteredTreeData.length : filteredEntries.length} 个)
+          </span>
+        )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {/* 搜索框 - 折叠按钮右侧显示，仅在展开时显示 */}
@@ -362,11 +451,12 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
         <>
           {/* 根据 recursive 参数选择显示方案 */}
           {isRecursive ? (
-            /* 递归模式：树形结构 - 外层div统一管理滚动，DirectoryTree不设置滚动属性 */
+            /* 递归模式：树形结构 - 使用 filteredTreeData 和 expandedKeys */
             <div style={fileListBackground}>
               <DirectoryTree
                 showLine={{ showLeafIcon: true }}
-                treeData={treeData}
+                treeData={filteredTreeData}
+                expandedKeys={expandedKeys}
                 defaultExpandAll={false}
                 style={{
                   background: "transparent",
@@ -379,13 +469,6 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
                     <FileOutlined style={{ color: "#1890ff" }} />
                   )
                 }
-                filterTreeNode={(node: any) => {
-                  if (!searchText) return true;
-                  const title = node.title?.toString().toLowerCase() || "";
-                  const path = node.key?.toString().toLowerCase() || "";
-                  const search = searchText.toLowerCase();
-                  return title.includes(search) || path.includes(search);
-                }}
               />
             </div>
           ) : (
