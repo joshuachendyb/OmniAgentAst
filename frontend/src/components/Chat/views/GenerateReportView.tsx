@@ -12,16 +12,9 @@ import React from "react";
 import { Card, Tag } from "antd";
 import { FileTextOutlined, CheckCircleOutlined } from "@ant-design/icons";
 
-interface ReportItem {
-  report_type: string;
-  content?: string;
-  file_path?: string;
-  message?: string;
-}
-
 interface GenerateReportViewProps {
   data: {
-    reports?: Record<string, ReportItem>;
+    reports?: Record<string, string>;
   };
   isExpanded?: boolean;
   onToggle?: () => void;
@@ -51,20 +44,6 @@ const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpande
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 8,
-  };
-
-  // 报告内容样式
-  const contentStyle = {
-    background: "#f5f5f5",
-    padding: "10px 14px",
-    borderRadius: 6,
-    marginTop: 8,
-    fontSize: 13,
-    lineHeight: 1.8,
-    whiteSpace: "pre-wrap" as const,
-    wordBreak: "break-word" as const,
-    maxHeight: 300,
-    overflow: "auto" as const,
   };
 
   // 【小强修改 2026-03-24】标题行：始终显示报告数量和折叠按钮
@@ -108,21 +87,11 @@ const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpande
                     style={{ color: "#1890ff", marginRight: 8 }}
                   />
                   <span style={{ fontWeight: 500 }}>{key}</span>
-                  {report.report_type && (
-                    <Tag color="blue" style={{ marginLeft: 8 }}>
-                      {report.report_type}
-                    </Tag>
-                  )}
                 </div>
               }
             >
-              {/* 报告内容 */}
-              {report.content && (
-                <div style={contentStyle}>{report.content}</div>
-              )}
-
-              {/* 文件路径 */}
-              {report.file_path && (
+              {/* 文件路径 - 现在 report 就是字符串路径 */}
+              {report && (
                 <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
                   <span>📝 保存路径：</span>
                   <code
@@ -134,15 +103,8 @@ const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpande
                       fontSize: 12,
                     }}
                   >
-                    {report.file_path}
+                    {report}
                   </code>
-                </div>
-              )}
-
-              {/* 消息 */}
-              {report.message && (
-                <div style={{ marginTop: 8, color: "#666" }}>
-                  {report.message}
                 </div>
               )}
             </Card>
