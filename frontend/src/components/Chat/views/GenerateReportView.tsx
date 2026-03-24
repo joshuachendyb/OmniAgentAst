@@ -21,8 +21,45 @@ interface GenerateReportViewProps {
 }
 
 /**
+ * 统一的步骤样式函数 - 与MessageItem.tsx中的getStepStyle保持一致
+ */
+const getStepStyle = (stepType: string) => {
+  const baseStyle = {
+    borderRadius: 8,
+    padding: "10px 14px",
+    marginTop: 6,
+    fontSize: 13,
+    lineHeight: 1.8,
+  };
+
+  const colorSchemes: Record<string, { bg1: string; bg2: string; border: string; text: string }> = {
+    thought: { bg1: "#fff7e6", bg2: "#fffbe6", border: "#ffd591", text: "#d46b08" },
+    start: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
+    final: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+    error: { bg1: "#fff1f0", bg2: "#fff", border: "#ffa39e", text: "#cf1322" },
+    interrupted: { bg1: "#fff7e6", bg2: "#fff", border: "#ffd591", text: "#d46b08" },
+    paused: { bg1: "#fffbe6", bg2: "#fff", border: "#ffe58f", text: "#d46b08" },
+    resumed: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+    retrying: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
+    observation: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+    action_tool: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
+    report: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+  };
+
+  const scheme = colorSchemes[stepType] || colorSchemes.final;
+  
+  return {
+    ...baseStyle,
+    background: `linear-gradient(135deg, ${scheme.bg1} 0%, ${scheme.bg2} 100%)`,
+    border: `1px solid ${scheme.border}`,
+    color: scheme.text,
+  };
+};
+
+/**
  * GenerateReportView 主组件
  * 【小强修改 2026-03-24】添加 isExpanded 和 onToggle 支持折叠功能
+ * 【小强修改 2026-03-24】使用统一的getStepStyle函数，保持视觉风格一致
  */
 const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpanded = true, onToggle }) => {
   const { reports = {} } = data;
@@ -37,14 +74,8 @@ const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpande
     );
   }
 
-  // 报告卡片样式
-  const cardStyle = {
-    background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
-    border: "1px solid #b7eb8f",
-    borderRadius: 8,
-    padding: "12px 16px",
-    marginTop: 8,
-  };
+  // 使用统一的样式函数，与气泡内其他元素保持视觉一致
+  const cardStyle = getStepStyle("report");
 
   // 【小强修改 2026-03-24】标题行：始终显示报告数量和折叠按钮
   const reportHeader = (
@@ -92,7 +123,7 @@ const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpande
             >
               {/* 文件路径 - 现在 report 就是字符串路径 */}
               {report && (
-                <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                <div style={{ marginTop: 6, fontSize: 12, color: "#666" }}>
                   <span>📝 保存路径：</span>
                   <code
                     style={{
