@@ -426,10 +426,10 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             </div>
             
             {/* 详细信息行 */}
-            <div style={{ fontSize: 12, color: "#555", lineHeight: 1.6 }}>
+            <div style={{ fontSize: 12, color: "#333", lineHeight: 1.6 }}>
               {/* 任务ID */}
               <span style={{ marginRight: 20 }}>
-                <span style={{ color: "#777", fontWeight: 500 }}>任务ID：</span>
+                <span style={{ color: "#444", fontWeight: 500 }}>任务ID：</span>
                 <span style={{ 
                   fontFamily: "monospace", 
                   backgroundColor: "rgba(0,0,0,0.05)",
@@ -441,10 +441,10 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 </span>
               </span>
               
-               {/* 安全检查状态 */}
-               {step.security_check && (
-                 <span style={{ marginRight: 20 }}>
-                   <span style={{ color: "#777", fontWeight: 500 }}>安全：</span>
+                   {/* 安全检查状态 */}
+                   {step.security_check && (
+                     <span style={{ marginRight: 20 }}>
+                       <span style={{ color: "#444", fontWeight: 500 }}>安全：</span>
                    <span style={{ 
                      color: step.security_check.is_safe ? "#389e0d" : "#cf1322",
                      fontWeight: 600,
@@ -465,7 +465,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                {/* 时间戳 */}
                {step.timestamp && (
                  <span style={{ 
-                   color: "#777",
+                   color: "#444",
                    backgroundColor: "rgba(0,0,0,0.05)",
                    padding: "2px 8px",
                    borderRadius: 4,
