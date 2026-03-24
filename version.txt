@@ -1,3 +1,89 @@
+v0.7.82
+
+更新时间：2026-03-24 23:20:00
+
+更新内容：
+
+## 1. 气泡内元素UI视觉风格统一 - 小强-2026-03-24
+
+### 1.1 问题描述
+
+气泡内各步骤的视觉风格不一致：
+- marginTop不一致（有些有，有些没有）
+- fontSize不一致（13px vs 14px）
+- fontWeight不一致（normal vs 600）
+- lineHeight不一致（有些有1.8，有些没有）
+
+### 1.2 解决方案
+
+创建统一的样式函数 `getStepStyle`，所有步骤共享同一套视觉规范：
+
+```typescript
+// 基础样式（所有步骤共享）
+const baseStyle = {
+  borderRadius: 8,
+  padding: "10px 14px",
+  marginTop: 6,
+  fontSize: 13,
+  lineHeight: 1.8,
+};
+
+// 颜色方案映射
+const colorSchemes = {
+  thought: { bg1: "#fff7e6", bg2: "#fffbe6", border: "#ffd591", text: "#d46b08" },
+  start: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
+  final: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+  error: { bg1: "#fff1f0", bg2: "#fff", border: "#ffa39e", text: "#cf1322" },
+  interrupted: { bg1: "#fff7e6", bg2: "#fff", border: "#ffd591", text: "#d46b08" },
+  paused: { bg1: "#fffbe6", bg2: "#fff", border: "#ffe58f", text: "#d46b08" },
+  resumed: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+  retrying: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
+  observation: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+  action_tool: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
+  report: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+};
+```
+
+### 1.3 修改的步骤
+
+| 步骤类型 | 修改内容 |
+|----------|----------|
+| start | 使用getStepStyle("start") |
+| thought | 使用getStepStyle("thought") |
+| action_tool | 使用getStepStyle("action_tool") |
+| observation | 使用getStepStyle("observation") |
+| final | 使用getStepStyle("final") |
+| error | 使用getStepStyle("error") |
+| interrupted | 使用getStepStyle("interrupted") |
+| paused | 使用getStepStyle("paused") |
+| resumed | 使用getStepStyle("resumed") |
+| retrying | 使用getStepStyle("retrying") |
+
+### 1.4 GenerateReportView同步更新
+
+- 使用相同的getStepStyle函数
+- 保持与气泡内其他元素的视觉一致性
+
+### 1.5 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| 单元测试 | ✅ 238/238通过 |
+| Lint检查 | ✅ 通过 |
+| 视觉一致性 | ✅ 所有步骤共享统一的布局属性 |
+
+### 1.6 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/components/Chat/MessageItem.tsx | 添加getStepStyle函数，替换所有步骤样式 |
+| frontend/src/components/Chat/views/GenerateReportView.tsx | 使用统一的getStepStyle函数 |
+
+参与开发：小强
+完成时间：2026-03-24 23:20:00
+
+---
+
 v0.7.81
 
 更新时间：2026-03-24 20:35:00

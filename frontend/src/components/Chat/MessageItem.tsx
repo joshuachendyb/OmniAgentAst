@@ -144,18 +144,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
     return baseStyle;
   };
 
-  // 【小强优化 2026-03-18】思考内容背景
-  const getThoughtBackground = () => {
-    return {
-      background: "linear-gradient(135deg, #fff7e6 0%, #fffbe6 100%)",
-      border: "1px solid #ffd591",
-      borderRadius: 8,
-      padding: "10px 14px",
-      marginTop: 6,
-      lineHeight: 1.8,
-      fontSize: 13,
-    };
-  };
+
 
   // 【小强优化 2026-03-18】文件列表背景
   const getFileListBackground = () => {
@@ -171,6 +160,42 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
       maxHeight: 300,
       overflow: "auto",
       boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
+    };
+  };
+
+  // 【小强优化 2026-03-24】统一的步骤样式函数
+  const getStepStyle = (stepType: string) => {
+    // 基础样式（所有步骤共享）
+    const baseStyle = {
+      borderRadius: 8,
+      padding: "10px 14px",
+      marginTop: 6,
+      fontSize: 13,
+      lineHeight: 1.8,
+    };
+
+    // 颜色方案映射
+    const colorSchemes: Record<string, { bg1: string; bg2: string; border: string; text: string }> = {
+      thought: { bg1: "#fff7e6", bg2: "#fffbe6", border: "#ffd591", text: "#d46b08" },
+      start: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
+      final: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+      error: { bg1: "#fff1f0", bg2: "#fff", border: "#ffa39e", text: "#cf1322" },
+      interrupted: { bg1: "#fff7e6", bg2: "#fff", border: "#ffd591", text: "#d46b08" },
+      paused: { bg1: "#fffbe6", bg2: "#fff", border: "#ffe58f", text: "#d46b08" },
+      resumed: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+      retrying: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
+      observation: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+      action_tool: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
+      chunk: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
+    };
+
+    const scheme = colorSchemes[stepType] || colorSchemes.start;
+    
+    return {
+      ...baseStyle,
+      background: `linear-gradient(135deg, ${scheme.bg1} 0%, ${scheme.bg2} 100%)`,
+      border: `1px solid ${scheme.border}`,
+      color: scheme.text,
     };
   };
 
@@ -328,7 +353,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             {/* 【小沈修正 2026-03-23】显示 Agent 的思考过程 - 使用 step.obs_reasoning（和SSE后端字段名一致） */}
             {step.obs_reasoning && (
               <div style={{ 
-                ...getThoughtBackground(),
+                ...getStepStyle("thought"),
                 color: "#888",
                 fontStyle: "italic",
                 marginBottom: 8,
@@ -340,13 +365,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             {/* 【小沈修复2026-03-23】显示 observation 的 content 字段 */}
             {step.content && typeof step.content === "string" && (
               <div style={{ 
-                background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
-                border: "1px solid #b7eb8f",
-                borderRadius: 8,
-                padding: "10px 14px",
-                marginTop: 6,
-                fontSize: 13,
-                lineHeight: 1.8,
+                ...getStepStyle("observation"),
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}>
@@ -412,14 +431,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
           </>
         )}
         {step.type === "start" && (
-          <div style={{ 
-            background: "linear-gradient(135deg, #e6f7ff 0%, #f0f8ff 100%)",
-            border: "1px solid #91d5ff",
-            borderRadius: 8,
-            padding: "10px 14px",
-            color: "#1890ff",
-            fontSize: 13,
-          }}>
+          <div style={getStepStyle("start")}>
             {/* 【小强优化 2026-03-24】显示更有意义的信息 */}
             <div style={{ fontWeight: 600, marginBottom: 8 }}>
               🚀 用户消息：{(step as any).user_message || "(无)"}
@@ -479,7 +491,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
         )}
         {step.type === "thought" && (
           <div style={{ 
-            ...getThoughtBackground(),
+            ...getStepStyle("thought"),
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}>
@@ -488,81 +500,33 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
           </div>
         )}
         {step.type === "final" && (
-          <div style={{ 
-            background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
-            border: "1px solid #b7eb8f",
-            borderRadius: 8,
-            padding: "10px 14px",
-            color: "#52c41a",
-            fontWeight: 600,
-            fontSize: 14,
-          }}>
+          <div style={getStepStyle("final")}>
             {step.content || ""}
           </div>
         )}
         {step.type === "error" && (
-          <div style={{ 
-            background: "linear-gradient(135deg, #fff1f0 0%, #fff 100%)",
-            border: "1px solid #ffa39e",
-            borderRadius: 8,
-            padding: "10px 14px",
-            color: "#cf1322",
-            fontWeight: 600,
-            fontSize: 13,
-          }}>
+          <div style={getStepStyle("error")}>
             {step.error_message || "未知错误"}
           </div>
         )}
         {/* 【小强添加 2026-03-24】interrupted/paused/resumed/retrying渲染逻辑 - TDD */}
         {step.type === "interrupted" && (
-          <div style={{ 
-            background: "linear-gradient(135deg, #fff7e6 0%, #fff 100%)",
-            border: "1px solid #ffd591",
-            borderRadius: 8,
-            padding: "10px 14px",
-            color: "#d46b08",
-            fontWeight: 600,
-            fontSize: 13,
-          }}>
+          <div style={getStepStyle("interrupted")}>
             ⚠️ {step.content || "客户端断开连接，任务中断"}
           </div>
         )}
         {step.type === "paused" && (
-          <div style={{ 
-            background: "linear-gradient(135deg, #fffbe6 0%, #fff 100%)",
-            border: "1px solid #ffe58f",
-            borderRadius: 8,
-            padding: "10px 14px",
-            color: "#d46b08",
-            fontWeight: 600,
-            fontSize: 13,
-          }}>
+          <div style={getStepStyle("paused")}>
             ⏸️ {step.content || "任务已暂停，可恢复继续"}
           </div>
         )}
         {step.type === "resumed" && (
-          <div style={{ 
-            background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
-            border: "1px solid #b7eb8f",
-            borderRadius: 8,
-            padding: "10px 14px",
-            color: "#52c41a",
-            fontWeight: 600,
-            fontSize: 13,
-          }}>
+          <div style={getStepStyle("resumed")}>
             ▶️ {step.content || "任务已恢复"}
           </div>
         )}
         {step.type === "retrying" && (
-          <div style={{ 
-            background: "linear-gradient(135deg, #e6f7ff 0%, #f0f8ff 100%)",
-            border: "1px solid #91d5ff",
-            borderRadius: 8,
-            padding: "10px 14px",
-            color: "#1890ff",
-            fontWeight: 600,
-            fontSize: 13,
-          }}>
+          <div style={getStepStyle("retrying")}>
             🔄 {step.content || "正在重试..."}
           </div>
         )}
