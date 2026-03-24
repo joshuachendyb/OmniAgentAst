@@ -29,6 +29,7 @@ import { taskControlApi } from "../../services/api";
 import { formatTimestamp } from "../../utils/timestamp";
 import { } from "../../utils/markdown";
 import ErrorDetail from "./ErrorDetail";
+import { getStepStyle, type StepType } from "../../utils/stepStyles";
 
 // 【小强实现 2026-03-24】阶段3：导入7个工具视图组件
 import ListDirectoryView from "./views/ListDirectoryView";
@@ -163,41 +164,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
     };
   };
 
-  // 【小强优化 2026-03-24】统一的步骤样式函数
-  const getStepStyle = (stepType: string) => {
-    // 基础样式（所有步骤共享）
-    const baseStyle = {
-      borderRadius: 8,
-      padding: "10px 14px",
-      marginTop: 6,
-      fontSize: 13,
-      lineHeight: 1.8,
-    };
 
-    // 颜色方案映射
-    const colorSchemes: Record<string, { bg1: string; bg2: string; border: string; text: string }> = {
-      thought: { bg1: "#fff7e6", bg2: "#fffbe6", border: "#ffd591", text: "#d46b08" },
-      start: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
-      final: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
-      error: { bg1: "#fff1f0", bg2: "#fff", border: "#ffa39e", text: "#cf1322" },
-      interrupted: { bg1: "#fff7e6", bg2: "#fff", border: "#ffd591", text: "#d46b08" },
-      paused: { bg1: "#fffbe6", bg2: "#fff", border: "#ffe58f", text: "#d46b08" },
-      resumed: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
-      retrying: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
-      observation: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
-      action_tool: { bg1: "#e6f7ff", bg2: "#f0f8ff", border: "#91d5ff", text: "#1890ff" },
-      chunk: { bg1: "#f6ffed", bg2: "#f5f5f5", border: "#b7eb8f", text: "#52c41a" },
-    };
-
-    const scheme = colorSchemes[stepType] || colorSchemes.start;
-    
-    return {
-      ...baseStyle,
-      background: `linear-gradient(135deg, ${scheme.bg1} 0%, ${scheme.bg2} 100%)`,
-      border: `1px solid ${scheme.border}`,
-      color: scheme.text,
-    };
-  };
 
   // 【小新重构 2026-03-09】处理加载更多
   const handleLoadMore = async () => {
@@ -353,7 +320,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             {/* 【小沈修正 2026-03-23】显示 Agent 的思考过程 - 使用 step.obs_reasoning（和SSE后端字段名一致） */}
             {step.obs_reasoning && (
               <div style={{ 
-                ...getStepStyle("thought"),
+                ...getStepStyle("thought" as StepType),
                 color: "#888",
                 fontStyle: "italic",
                 marginBottom: 8,
@@ -365,7 +332,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             {/* 【小沈修复2026-03-23】显示 observation 的 content 字段 */}
             {step.content && typeof step.content === "string" && (
               <div style={{ 
-                ...getStepStyle("observation"),
+                ...getStepStyle("observation" as StepType),
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}>
@@ -431,7 +398,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
           </>
         )}
         {step.type === "start" && (
-          <div style={getStepStyle("start")}>
+          <div style={getStepStyle("start" as StepType)}>
             {/* 【小强优化 2026-03-24】显示更有意义的信息 */}
             <div style={{ fontWeight: 600, marginBottom: 8 }}>
               🚀 用户消息：{(step as any).user_message || "(无)"}
@@ -491,7 +458,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
         )}
         {step.type === "thought" && (
           <div style={{ 
-            ...getStepStyle("thought"),
+            ...getStepStyle("thought" as StepType),
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}>
@@ -500,33 +467,33 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
           </div>
         )}
         {step.type === "final" && (
-          <div style={getStepStyle("final")}>
+          <div style={getStepStyle("final" as StepType)}>
             {step.content || ""}
           </div>
         )}
         {step.type === "error" && (
-          <div style={getStepStyle("error")}>
+          <div style={getStepStyle("error" as StepType)}>
             {step.error_message || "未知错误"}
           </div>
         )}
         {/* 【小强添加 2026-03-24】interrupted/paused/resumed/retrying渲染逻辑 - TDD */}
         {step.type === "interrupted" && (
-          <div style={getStepStyle("interrupted")}>
+          <div style={getStepStyle("interrupted" as StepType)}>
             ⚠️ {step.content || "客户端断开连接，任务中断"}
           </div>
         )}
         {step.type === "paused" && (
-          <div style={getStepStyle("paused")}>
+          <div style={getStepStyle("paused" as StepType)}>
             ⏸️ {step.content || "任务已暂停，可恢复继续"}
           </div>
         )}
         {step.type === "resumed" && (
-          <div style={getStepStyle("resumed")}>
+          <div style={getStepStyle("resumed" as StepType)}>
             ▶️ {step.content || "任务已恢复"}
           </div>
         )}
         {step.type === "retrying" && (
-          <div style={getStepStyle("retrying")}>
+          <div style={getStepStyle("retrying" as StepType)}>
             🔄 {step.content || "正在重试..."}
           </div>
         )}
