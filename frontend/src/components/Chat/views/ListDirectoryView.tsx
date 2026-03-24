@@ -47,6 +47,7 @@ interface ListDirectoryViewProps {
     recursive?: boolean;
     path?: string;
   };
+  isExpanded?: boolean;  // 【小沈添加 2026-03-24】控制列表内容折叠，目录信息始终可见
 }
 
 /**
@@ -254,8 +255,9 @@ function formatFileSize(bytes: number): string {
 
 /**
  * ListDirectoryView 主组件
+ * 【小沈修改 2026-03-24】添加 isExpanded 参数，控制列表内容折叠，目录信息始终可见
  */
-const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams }) => {
+const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams, isExpanded = true }) => {
   const { entries = [], total = 0, directory = "" } = data;
 
   // 【小强修复 2026-03-24】使用 toolParams 判断递归模式（从 step 传入，非从 data）
@@ -343,60 +345,65 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
         </div>
       )}
 
-      {/* 根据 recursive 参数选择显示方案 */}
-      {isRecursive ? (
-        /* 递归模式：树形结构 - 外层div统一管理滚动，DirectoryTree不设置滚动属性 */
-        <div style={fileListBackground}>
-          <DirectoryTree
-            showLine={{ showLeafIcon: true }}
-            treeData={treeData}
-            defaultExpandAll={false}
-            style={{
-              background: "transparent",
-              fontSize: 13,
-            }}
-            icon={({ data }: any) =>
-              data.type === "directory" ? (
-                <FolderOutlined style={{ color: "#faad14" }} />
-              ) : (
-                <FileOutlined style={{ color: "#1890ff" }} />
-              )
-            }
-            filterTreeNode={(node: any) => {
-              if (!searchText) return true;
-              const title = node.title?.toString().toLowerCase() || "";
-              const path = node.key?.toString().toLowerCase() || "";
-              const search = searchText.toLowerCase();
-              return title.includes(search) || path.includes(search);
-            }}
-          />
-        </div>
-      ) : (
-        /* 非递归模式：虚拟列表 - List自身管理滚动，外层div不限制 */
-        <VirtualFileList filteredEntries={filteredEntries} />
-      )}
+      {/* 【小沈修改 2026-03-24】列表内容根据 isExpanded 控制，目录信息始终可见 */}
+      {isExpanded && (
+        <>
+          {/* 根据 recursive 参数选择显示方案 */}
+          {isRecursive ? (
+            /* 递归模式：树形结构 - 外层div统一管理滚动，DirectoryTree不设置滚动属性 */
+            <div style={fileListBackground}>
+              <DirectoryTree
+                showLine={{ showLeafIcon: true }}
+                treeData={treeData}
+                defaultExpandAll={false}
+                style={{
+                  background: "transparent",
+                  fontSize: 13,
+                }}
+                icon={({ data }: any) =>
+                  data.type === "directory" ? (
+                    <FolderOutlined style={{ color: "#faad14" }} />
+                  ) : (
+                    <FileOutlined style={{ color: "#1890ff" }} />
+                  )
+                }
+                filterTreeNode={(node: any) => {
+                  if (!searchText) return true;
+                  const title = node.title?.toString().toLowerCase() || "";
+                  const path = node.key?.toString().toLowerCase() || "";
+                  const search = searchText.toLowerCase();
+                  return title.includes(search) || path.includes(search);
+                }}
+              />
+            </div>
+          ) : (
+            /* 非递归模式：虚拟列表 - List自身管理滚动，外层div不限制 */
+            <VirtualFileList filteredEntries={filteredEntries} />
+          )}
 
-      {/* 总数信息 */}
-      {total > 0 && (
-        <div
-          style={{
-            marginTop: 8,
-            fontSize: 12,
-            color: "#666",
-          }}
-        >
-          <span
-            style={{
-              background: "#e6f7ff",
-              padding: "2px 8px",
-              borderRadius: 4,
-              color: "#1890ff",
-              fontWeight: 500,
-            }}
-          >
-            📊 共 {total} 个项目
-          </span>
-        </div>
+          {/* 总数信息 - 也根据 isExpanded 控制 */}
+          {total > 0 && (
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 12,
+                color: "#666",
+              }}
+            >
+              <span
+                style={{
+                  background: "#e6f7ff",
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                  color: "#1890ff",
+                  fontWeight: 500,
+                }}
+              >
+                📊 共 {total} 个项目
+              </span>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
