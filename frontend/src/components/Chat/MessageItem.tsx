@@ -761,14 +761,22 @@ const MessageItem: React.FC<MessageItemProps> = ({
           stack: message.errorStack,
           retryable: message.errorRetryable,
           retry_after: message.errorRetryAfter,
-          timestamp: formatTimestamp(message.errorTimestamp),
+           timestamp: formatTimestamp(
+             typeof message.errorTimestamp === 'number' && message.errorTimestamp < 1000000000000 
+               ? undefined 
+               : message.errorTimestamp
+           ),
           model: message.model,
           provider: message.provider,
         };
         // 【小强修复 2026-03-17】executionSteps 也要转换 timestamp
         exportData.executionSteps = message.executionSteps?.map(step => ({
           ...step,
-          timestamp: formatTimestamp(step.timestamp),
+           timestamp: formatTimestamp(
+             typeof step.timestamp === 'number' && step.timestamp < 1000000000000 
+               ? undefined 
+               : step.timestamp
+           ),
         }));
         filename = `error_${message.id}_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
       } else if (hasSteps) {
