@@ -430,6 +430,59 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             ❌ 错误：{step.error_message || ""}
           </span>
         )}
+        {/* 【小强添加 2026-03-24】interrupted/paused/resumed/retrying渲染逻辑 - TDD */}
+        {step.type === "interrupted" && (
+          <div style={{ 
+            background: "linear-gradient(135deg, #fff7e6 0%, #fff 100%)",
+            border: "1px solid #ffd591",
+            borderRadius: 8,
+            padding: "10px 14px",
+            color: "#d46b08",
+            fontWeight: 600,
+            fontSize: 13,
+          }}>
+            ⚠️ {step.content || "客户端断开连接，任务中断"}
+          </div>
+        )}
+        {step.type === "paused" && (
+          <div style={{ 
+            background: "linear-gradient(135deg, #fffbe6 0%, #fff 100%)",
+            border: "1px solid #ffe58f",
+            borderRadius: 8,
+            padding: "10px 14px",
+            color: "#d46b08",
+            fontWeight: 600,
+            fontSize: 13,
+          }}>
+            ⏸️ {step.content || "任务已暂停，可恢复继续"}
+          </div>
+        )}
+        {step.type === "resumed" && (
+          <div style={{ 
+            background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
+            border: "1px solid #b7eb8f",
+            borderRadius: 8,
+            padding: "10px 14px",
+            color: "#52c41a",
+            fontWeight: 600,
+            fontSize: 13,
+          }}>
+            ▶️ {step.content || "任务已恢复"}
+          </div>
+        )}
+        {step.type === "retrying" && (
+          <div style={{ 
+            background: "linear-gradient(135deg, #e6f7ff 0%, #f0f8ff 100%)",
+            border: "1px solid #91d5ff",
+            borderRadius: 8,
+            padding: "10px 14px",
+            color: "#1890ff",
+            fontWeight: 600,
+            fontSize: 13,
+          }}>
+            🔄 {step.content || "正在重试..."}
+          </div>
+        )}
       </div>
     </div>
   );
