@@ -419,9 +419,31 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             padding: "10px 14px",
             color: "#1890ff",
             fontWeight: 600,
-            fontSize: 14,
+            fontSize: 13,
           }}>
-            {step.task_id || "任务开始"}
+            {/* 【小强优化 2026-03-24】显示更有意义的信息 */}
+            🚀 <span style={{ fontWeight: 400 }}>开始：</span>
+            {/* 用户消息前40字 */}
+            {(step as any).user_message && (
+              <span style={{ fontWeight: 500, marginLeft: 8 }}>
+                {(step as any).user_message}
+              </span>
+            )}
+            {/* task_id */}
+            <span style={{ display: "block", marginTop: 6, fontSize: 11, color: "#888" }}>
+              任务ID：{step.task_id || "无"}
+            </span>
+            {/* 安全检查状态 */}
+            {(step as any).security_check && (
+              <span style={{ 
+                display: "inline-block", 
+                marginLeft: 8, 
+                fontSize: 11,
+                color: (step as any).security_check.is_safe ? "#52c41a" : "#ff4d4f"
+              }}>
+                {(step as any).security_check.is_safe ? "🔒 安全" : "⚠️ 拦截"}
+              </span>
+            )}
           </div>
         )}
         {step.type === "thought" && (
