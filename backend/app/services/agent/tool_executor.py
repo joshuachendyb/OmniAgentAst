@@ -80,6 +80,11 @@ class ToolExecutor:
         """
         参数规范化：处理不同参数名
         
+        【2026-03-24 小沈修改】
+        采用方案3：删除参数映射代码，添加日志监控
+        如果LLM返回非标准参数名，记录日志但不自动转换
+        根据日志数据分析是否可以完全删除此逻辑
+        
         Args:
             action: 工具名称
             action_input: 原始参数
@@ -89,38 +94,33 @@ class ToolExecutor:
         """
         params = action_input.copy()
         
-        if action in ["read_file", "write_file", "delete_file"]:
-            if "path" in params and "file_path" not in params:
-                params["file_path"] = params.pop("path")
-            elif "path" in params and "file_path" in params:
-                del params["path"]
+        # 定义每个工具的标准参数名
+        STANDARD_PARAMS = {
+            "read_file": ["file_path", "offset", "limit", "encoding"],
+            "write_file": ["file_path", "content", "encoding"],
+            "delete_file": ["file_path", "recursive"],
+            "list_directory": ["dir_path", "recursive", "max_depth", "page_token", "page_size"],
+            "move_file": ["source_path", "destination_path"],
+            "search_files": ["pattern", "path", "file_pattern", "use_regex", "max_results"],
+            "generate_report": ["output_dir"],
+        }
         
-        elif action == "list_directory":
-            if "path" in params and "dir_path" not in params:
-                params["dir_path"] = params.pop("path")
-            elif "path" in params and "dir_path" in params:
-                del params["path"]
+        # 检查是否有非标准参数名
+        if action in STANDARD_PARAMS:
+            standard = STANDARD_PARAMS[action]
+            for key in list(params.keys()):
+                if key not in standard:
+                    # 参数值截断，避免日志过长
+                    val = params[key]
+                    val_str = str(val)[:50] + "..." if len(str(val)) > 50 else str(val)
+                    logger.warning(
+                        f"[参数监控] LLM返回非标准参数名: action={action}, "
+                        f"param={key}={val_str}, 期望参数={standard}"
+                    )
         
-        elif action == "move_file":
-            if "source" in params and "source_path" not in params:
-                params["source_path"] = params.pop("source")
-            if "src" in params and "source_path" not in params:
-                params["source_path"] = params.pop("src")
-            
-            if "destination" in params and "destination_path" not in params:
-                params["destination_path"] = params.pop("destination")
-            if "dest" in params and "destination_path" not in params:
-                params["destination_path"] = params.pop("dest")
-            if "target" in params and "destination_path" not in params:
-                params["destination_path"] = params.pop("target")
-        
-        elif action == "search_files":
-            if "path" not in params:
-                params["path"] = "."
-        
-        elif action == "generate_report":
-            if "output" in params and "output_dir" not in params:
-                params["output_dir"] = params.pop("output")
+        # search_files: 默认 path 为当前目录（这是合理默认值，保留）
+        if action == "search_files" and "path" not in params:
+            params["path"] = "."
         
         return params
     

@@ -1,3 +1,88 @@
+v0.7.75
+
+更新时间：2026-03-24 15:05:00
+
+更新内容：
+
+## 1. 删除tool_executor.py参数映射代码，添加日志监控 - 小沈-2026-03-24
+
+### 1.1 问题描述
+
+tool_executor.py 第93-123行存在大量参数映射代码，这是小强文档第1.2节批评的"头疼医头，脚疼医脚"问题。
+
+### 1.2 修复方案
+
+采用方案3：删除参数映射代码，添加日志监控
+
+| 工具 | 删除的映射 |
+|------|-----------|
+| read_file/write_file/delete_file | path → file_path |
+| list_directory | path → dir_path |
+| move_file | source/src → source_path |
+| move_file | destination/dest/target → destination_path |
+| generate_report | output → output_dir |
+
+### 1.3 添加的监控逻辑
+
+当LLM返回非标准参数名时，记录警告日志：
+```
+[参数监控] LLM返回非标准参数名: action=list_directory, param=directory_path=..., 期望参数=[...]
+```
+
+### 1.4 保留的逻辑
+
+- search_files 的默认 path = "."（合理默认值）
+
+### 1.5 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| backend/app/services/agent/tool_executor.py | 删除8处参数映射，添加监控逻辑 |
+| backend/tests/test_tools.py | 修复导入路径 |
+
+### 1.6 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| Python语法检查 | ✅ 通过 |
+| 单元测试 | ✅ 28/28 通过 |
+
+### 1.7 下一步
+
+运行系统，观察日志中是否有非标准参数名出现，根据结果决定后续处理。
+
+参与开发：小沈
+完成时间：2026-03-24 15:05:00
+
+---
+
+v0.7.74
+
+更新时间：2026-03-24 13:56:19
+
+更新内容：
+
+## 1. 统一Pydantic模型定义，避免重复 - 小沈-2026-03-24
+
+### 问题
+file_tools.py 和 file_schema.py 存在重复的Pydantic模型定义
+
+### 修复
+- 删除 file_tools.py 中的重复模型定义（约110行）
+- 统一从 file_schema.py 导入使用
+
+### 修改文件
+- backend/app/services/tools/file/file_tools.py
+
+### 验证
+- Python语法检查：✅ 通过
+- 导入测试：✅ 通过
+
+参与开发：小沈
+完成时间：2026-03-24 13:56:19
+
+---
+
 v0.7.73
 
 更新时间：2026-03-24 12:00:00
