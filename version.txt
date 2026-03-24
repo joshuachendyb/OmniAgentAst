@@ -1,10 +1,109 @@
-v0.7.71
+v0.7.73
 
-更新时间：2026-03-24 12:52:26
+更新时间：2026-03-24 12:00:00
 
 更新内容：
 
-- 修复sse_formatter.py用字符串覆盖毫秒timestamp问题（1970年BUG）- 小沈
+## 1. StepRow UI视觉和布局优化 - 小强-2026-03-24
+
+### 1.1 完成的任务
+
+| 序号 | 任务 | 状态 | 说明 |
+|------|------|------|------|
+| 1 | 添加4种异常状态渲染 | ✅ | interrupted/paused/resumed/retrying |
+| 2 | start/final/error添加背景框 | ✅ | 视觉区分 |
+| 3 | action_tool参数展开功能 | ✅ | 使用stepIndex+1000避免冲突 |
+| 4 | summary始终显示 | ✅ | 添加📊图标 |
+| 5 | 去掉emoji重复 | ✅ | start/final/error内容里 |
+| 6 | obs_reasoning保持现状 | ✅ | 在observation中显示 |
+
+### 1.2 TDD测试
+
+- 创建 StepRow-visual.test.tsx（10个测试用例）
+- 所有238个测试通过
+
+### 1.3 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/components/Chat/MessageItem.tsx | StepRow UI优化 |
+| frontend/src/tests/components/StepRow-visual.test.tsx | 新增测试文件 |
+| frontend/src/components/Chat/views/ListDirectoryView.tsx | 递归搜索修复 |
+
+### 1.4 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| TypeScript编译 | ✅ 通过 |
+| 生产构建 | ✅ 成功（26.30秒） |
+| 单元测试 | ✅ 238个通过 |
+
+参与开发：小强
+完成时间：2026-03-24 12:00:00
+
+---
+
+v0.7.72
+
+更新时间：2026-03-24 11:25:00
+
+更新内容：
+
+## 1. 修复sse_formatter.py覆盖timestamp为字符串的问题 - 小沈-2026-03-24
+
+### 问题描述
+前端导出的消息中，部分execution_steps的timestamp显示为1970-01-01，原因是sse_formatter.py的format_sse_event函数用字符串格式覆盖了毫秒时间戳。
+
+### 根因分析
+sse_formatter.py第29行使用datetime.now().strftime('%Y-%m-%d %H:%M:%S')生成字符串格式，覆盖了agent.py传过来的毫秒时间戳。
+
+### 修复方案
+修改format_sse_event函数：如果data中已经有timestamp，保留它；否则生成毫秒时间戳。
+
+### 修改文件
+- backend/app/chat_stream/sse_formatter.py
+
+参与开发：小沈
+完成时间：2026-03-24 11:25:00
+
+---
+
+v0.7.71
+
+更新时间：2026-03-24 11:39:49
+
+更新内容：
+
+## 1. 修复ListDirectoryView递归模式搜索行为不一致问题 - 小强-2026-03-24
+
+### 1.1 问题描述
+
+递归模式下搜索时，Ant Design Tree 的 `filterTreeNode` 会**隐藏**不匹配节点，导致如果父节点不匹配，所有子节点都会被隐藏，搜索结果不完整。
+
+### 1.2 修复方案
+
+移除 `filterTreeNode` prop，改用自定义过滤逻辑：
+
+| 新增逻辑 | 说明 |
+|---------|------|
+| `filteredTreeData` | 自定义过滤：匹配到子节点时保留完整父节点链 |
+| `expandedKeys` | 自动展开到匹配位置：收集所有匹配节点的父节点路径 |
+
+### 1.3 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/components/Chat/views/ListDirectoryView.tsx | 移除filterTreeNode，新增filteredTreeData和expandedKeys |
+
+### 1.4 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| TypeScript编译 | ✅ 通过 |
+| 生产构建 | ✅ 成功 |
+
+参与开发：小强
+完成时间：2026-03-24 11:39:49
 
 ---
 
