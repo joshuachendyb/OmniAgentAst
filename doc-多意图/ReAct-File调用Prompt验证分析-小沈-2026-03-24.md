@@ -355,7 +355,203 @@ if "output" in params and "output_dir" not in params:
 
 ---
 
-## 8. 参考文档
+## 8. 小强第5章（prompts.py增强）实现检查
+
+### 8.1 文件结构
+
+| 小强建议 | 当前代码 | 状态 |
+|---------|---------|------|
+| FileOperationPrompts类 | file_prompts.py 第26行 | ✅ |
+| get_system_prompt() | 第29行 | ✅ |
+| get_task_prompt() | 第176行 | ✅ |
+| get_observation_prompt() | 第207行 | ✅ |
+| get_available_tools_prompt() | 第241行 | ✅ |
+| get_rollback_instructions() | 第301行 | ✅ |
+| get_safety_reminder() | 第316行 | ✅ |
+| get_parameter_reminder() | 第326行 | ✅ |
+| TaskTemplates类 | 第346行 | ✅ |
+
+### 8.2 增强版System Prompt
+
+| 小强建议 | 当前代码 | 状态 |
+|---------|---------|------|
+| 参数命名规则（全局约束） | 第35-47行 | ✅ |
+| 详细工具描述 | 第51-97行 | ✅ |
+| Tool Call Examples | 第101-165行 | ✅ |
+
+### 8.3 get_available_tools_prompt
+
+| 小强建议 | 当前代码 | 状态 |
+|---------|---------|------|
+| 动态生成工具列表 | 第241-300行 | ✅ |
+| 支持input_examples | 第266行 | ✅ |
+
+### 8.4 get_parameter_reminder
+
+| 小强建议 | 当前代码 | 状态 |
+|---------|---------|------|
+| 独立的参数命名提醒 | 第326-342行 | ✅ |
+
+### 8.5 检查结论
+
+✅ **第5章完全实现**
+
+---
+
+## 10. 第6章检查结果 - 工具定义示例
+
+### 10.1 检查内容
+
+对照小强文档第6章，检查生成的list_directory工具定义是否完整实现。
+
+### 10.2 检查结果
+
+| 检查项 | 小强文档要求 | 实际实现 | 状态 |
+|--------|-------------|---------|------|
+| **name** | list_directory | list_directory | ✅ |
+| **description** | 3-5句话详细描述+使用场景 | ✅ 完整实现（第515-532行） | ✅ |
+| **参数说明** | dir_path, recursive, max_depth, page_token, page_size | ✅ 完整实现 | ✅ |
+| **【重要】约束** | 必须使用dir_path | ✅ 第530行明确约束 | ✅ |
+| **错误示例** | directory_path, path | ✅ 第531行明确标注 | ✅ |
+| **正确示例** | dir_path: "D:/项目代码" | ✅ 第532行 | ✅ |
+| **input_schema** | 完整JSON Schema | ✅ ListDirectoryInput生成 | ✅ |
+| **input_examples** | 3个示例 | ✅ 第534-551行 | ✅ |
+
+### 10.3 list_directory实现验证
+
+**代码位置**: `backend/app/services/tools/file/file_tools.py` 第513-560行
+
+**实现要点**:
+```python
+@register_tool(
+    name="list_directory",
+    description="""列出指定目录中的所有文件和子目录。
+
+使用场景：...（4个场景）
+参数说明：...（5个参数）
+【重要】必须使用 dir_path 作为参数名，不要使用 directory_path、path 或其他名称。
+错误示例: {"directory_path": "..."} 或 {"path": "..."}
+正确示例: {"dir_path": "D:/项目代码"}""",
+    input_model=ListDirectoryInput,
+    examples=[
+        {"dir_path": "C:/Users/用户名/Documents", "recursive": False},
+        {"dir_path": "D:/项目代码", "recursive": True, "max_depth": 3, "page_size": 100},
+        {"dir_path": "C:/Users/用户名/Desktop", "recursive": False, "page_token": None, "page_size": 50}
+    ]
+)
+```
+
+### 10.4 结论
+
+✅ **第6章检查通过** - list_directory工具定义与文档要求完全一致。
+
+---
+
+## 11. 第7章检查结果 - 测试验证
+
+### 11.1 检查内容
+
+对照小强文档第7章，检查单元测试实现情况。
+
+### 11.2 测试文件分析
+
+**测试文件**: `backend/tests/test_tools.py`
+
+| 测试用例 | 数量 | 说明 |
+|---------|------|------|
+| TestReadFile | 5个 | TC001-TC005 |
+| TestWriteFile | 3个 | TC006-TC008 |
+| TestListDirectory | 4个 | TC009-TC012 |
+| TestDeleteFile | 4个 | TC013-TC016 |
+| TestMoveFile | 3个 | TC017-TC019 |
+| TestSearchFiles | 5个 | TC020-TC024 |
+| TestGenerateReport | 2个 | TC025-TC026 |
+| TestFileToolsIntegration | 2个 | TC027-TC028 |
+
+**总计**: 28个测试用例（TC001-TC028）
+
+### 11.3 测试运行问题
+
+**问题**: 测试文件导入路径错误
+
+```
+from app.services.agent.tools import FileTools  # ❌ 错误路径
+```
+
+**实际路径**:
+```
+class FileTools 位于: app/services/tools/file/file_tools.py
+```
+
+**影响**: 无法直接运行pytest，需要修复导入路径或使用正确的运行方式。
+
+### 11.4 结论
+
+| 检查项 | 状态 | 说明 |
+|--------|------|------|
+| 测试用例数量 | ✅ | 28个测试用例（小强文档要求28个） |
+| 工具覆盖 | ✅ | 7个工具全覆盖 |
+| 测试可运行性 | ✅ | 28/28 通过 |
+
+### 11.5 修复记录
+
+**修复内容**: test_tools.py 导入路径修复
+
+**修复前**:
+```python
+from app.services.agent.tools import FileTools  # ❌ 错误路径
+```
+
+**修复后**:
+```python
+from app.services.tools.file.file_tools import FileTools  # ✅ 正确
+```
+
+**测试结果**:
+```
+======================= 28 passed, 21 warnings in 1.85s =======================
+```
+
+---
+
+## 12. 代码架构优化 - 小沈
+
+### 12.1 优化内容
+
+小沈对原始代码进行了架构优化，将Pydantic模型从tools.py独立到file_schema.py：
+
+| 文件 | 职责 | 说明 |
+|------|------|------|
+| file_schema.py | Schema定义 | 唯一Pydantic模型定义位置 |
+| file_tools.py | 工具实现 | 导入并使用file_schema的模型 |
+| file_prompts.py | Prompt模板 | 提供增强的Prompt |
+
+### 12.2 修复的问题
+
+**问题**: 之前file_tools.py中存在约110行Pydantic模型重复定义
+
+**修复**: 删除重复定义，统一从file_schema.py导入
+
+```python
+# 修复后的导入（第29-37行）
+from app.services.tools.file.file_schema import (
+    ReadFileInput,
+    WriteFileInput,
+    ListDirectoryInput,
+    DeleteFileInput,
+    MoveFileInput,
+    SearchFilesInput,
+    GenerateReportInput,
+)
+```
+
+### 12.3 结论
+
+✅ 代码架构更清晰，避免了重复定义问题。
+
+---
+
+## 9. 参考文档
 
 - 《LLM工具调用参数-prompt约束设计报告》- 小强-2026-03-20
 - 《LLM工具调用参数-prompt约束-实现说明文档》- 小强-2026-03-20
@@ -366,6 +562,9 @@ if "output" in params and "output_dir" not in params:
 
 | 版本 | 时间 | 更新人 | 更新内容 |
 |------|------|--------|---------|
+| v1.5 | 2026-03-24 15:00:00 | 小沈 | 修复第7章测试导入路径问题，测试28/28通过 |
+| v1.4 | 2026-03-24 14:30:00 | 小沈 | 新增第10章：第6章工具定义示例检查 + 第11章：第7章测试验证检查 + 第12章：代码架构优化 |
+| v1.3 | 2026-03-24 13:58:00 | 小沈 | 新增第8章：小强第5章prompts.py增强检查 |
 | v1.2 | 2026-03-24 13:36:17 | 小沈 | 新增第7章：执行层参数映射问题解决方案 |
 | v1.1 | 2026-03-24 13:25:00 | 小沈 | 新增第4章：小强第4章解决方案设计检查 |
 | v1.0 | 2026-03-24 13:22:40 | 小沈 | 初始版本：基于第3章的现状检查 |
@@ -376,4 +575,4 @@ if "output" in params and "output_dir" not in params:
 
 **创建时间**: 2026-03-24 13:22:40
 **编写人**: 小沈
-**版本**: v1.1
+**版本**: v1.5
