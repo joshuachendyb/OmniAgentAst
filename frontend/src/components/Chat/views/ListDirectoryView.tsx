@@ -329,14 +329,14 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams 
               <span style={{ marginLeft: 8, color: "#52c41a" }}>🌲 递归模式</span>
             )}
           </div>
-          {/* 搜索框 - 在目录信息右侧显示，递归和非递归模式都显示 */}
+          {/* 搜索框 - 在目录信息右侧显示，递归和非递归模式样式完全一致 */}
           {entries.length > 10 && (
             <Input
               prefix={<SearchOutlined />}
-              placeholder={isRecursive ? "搜索目录树..." : "搜索文件..."}
+              placeholder="搜索文件/文件夹..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              style={{ width: 200, fontSize: 11 }}
+              style={{ width: 200, fontSize: 12 }}
               allowClear
             />
           )}
