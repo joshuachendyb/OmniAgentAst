@@ -652,9 +652,9 @@ export const sessionApi = {
   /**
    * 保存消息到会话
    * @author 小新
-   * @update 2026-03-11: 添加 execution_steps 参数
-   * @update 2026-03-14: 添加错误相关字段（使用API文档字段名 - snake_case）
-   */
+    * @update 2026-03-16: 添加 display_name 字段
+    * @update 2026-03-24: 添加 client_os 等客户端信息（小沈）
+    */
   saveMessage: async (
     sessionId: string,
     message: {
@@ -673,7 +673,12 @@ export const sessionApi = {
       timestamp?: string;
       model?: string;
       provider?: string;
-      display_name?: string;  // 【小新修改 2026-03-16】添加display_name字段，支持流式开始时保存metadata
+      display_name?: string;  // 【小新修改 2026-03-16】添加display_name字段
+      // 客户端信息（小沈 2026-03-24）
+      client_os?: string;
+      browser?: string;
+      device?: string;
+      network?: string;
     }
   ): Promise<{ success: boolean; message_id?: number; message_count?: number }> => {
     const response = await api.post<{ success: boolean; message_id?: number; message_count?: number }>(

@@ -1,3 +1,228 @@
+v0.7.79
+
+更新时间：2026-03-24 18:20:00
+
+更新内容：
+
+## 1. 新增Prompt中间层 + 前端客户端信息收集 + 小健检查修复 - 小沈-2026-03-24
+
+### 1.1 P0阶段：Prompt中间层（服务器OS）
+
+创建的文件：
+| 文件 | 说明 |
+|------|------|
+| backend/app/services/prompts/middle/__init__.py | 导出接口 |
+| backend/app/services/prompts/middle/system_adapter.py | 系统信息适配器（使用platform.system()） |
+
+修改的文件：
+| 文件 | 修改内容 |
+|------|---------|
+| backend/app/services/prompts/file/file_prompts.py | 嵌入中间层系统信息 |
+
+工作原理：
+```
+platform.system() → 获取服务器OS → 中间层生成系统Prompt → 嵌入file_prompts → 传递给LLM
+```
+
+### 1.2 P1阶段：前端客户端信息收集
+
+创建的文件：
+| 文件 | 说明 |
+|------|------|
+| frontend/src/utils/clientInfo.ts | 获取客户端信息工具函数 |
+
+修改的文件：
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/services/api.ts | saveMessage添加client_os/browser/device/network字段 |
+| frontend/src/components/Chat/NewChatContainer.tsx | 调用getClientInfo()并传递 |
+
+### 1.3 小健检查修复
+
+发现并修复的问题：
+- 后端MessageCreate类缺少client_os/browser/device/network字段
+- 添加后端字段定义
+
+### 1.4 重要说明
+
+- 服务器OS → 用于Prompt（决定路径格式和命令）
+- 客户端OS → 只保存在数据库，不用于Prompt
+
+### 1.5 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| 前端TypeScript编译 | ✅ 通过 |
+| 前端单元测试 | ✅ 238/238通过 |
+| 后端Python语法 | ✅ 通过 |
+| 后端file_prompts测试 | ✅ 19/19通过 |
+
+参与开发：小沈、小健
+完成时间：2026-03-24 18:20:00
+
+---
+
+v0.7.78
+
+更新时间：2026-03-24 18:15:00
+
+更新内容：
+
+## 1. 小健代码检查修复：后端接收客户端信息字段 - 小沈-2026-03-24
+
+### 1.1 问题描述
+
+小健检查发现：前端传递了 client_os/browser/device/network 字段，但后端 MessageCreate 类没有定义这些字段，导致无法接收。
+
+### 1.2 修复内容
+
+修改 backend/app/api/v1/sessions.py 的 MessageCreate 类，添加客户端信息字段：
+
+```python
+class MessageCreate(BaseModel):
+    role: str
+    content: str
+    display_name: Optional[str]
+    execution_steps: Optional[list]
+    # 客户端信息（小沈 2026-03-24）
+    client_os: Optional[str]
+    browser: Optional[str]
+    device: Optional[str]
+    network: Optional[str]
+```
+
+### 1.3 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| 后端接收测试 | ✅ 通过 |
+| file_prompts测试 | ✅ 19/19通过 |
+
+参与开发：小沈
+完成时间：2026-03-24 18:15:00
+
+---
+
+v0.7.77
+
+更新时间：2026-03-24 18:05:00
+
+更新内容：
+
+## 1. P1阶段：前端获取并传递客户端信息 - 小沈-2026-03-24
+
+### 1.1 背景
+
+P0阶段完成了服务器OS信息的嵌入，现在实现P1阶段：前端获取客户端信息作为辅助上下文。
+
+### 1.2 创建的文件
+
+| 文件 | 说明 |
+|------|------|
+| frontend/src/utils/clientInfo.ts | 获取客户端信息工具函数 |
+
+### 1.3 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/services/api.ts | saveMessage 添加 client_os/browser/device/network 字段 |
+| frontend/src/components/Chat/NewChatContainer.tsx | 调用 getClientInfo() 并传递给 saveMessage |
+
+### 1.4 功能说明
+
+```typescript
+// 获取客户端信息
+const clientInfo = getClientInfo();
+// { client_os: "Windows", browser: "Chrome", device: "desktop", network: "4g" }
+
+// 保存用户消息时传递
+await sessionApi.saveMessage(sessionId, {
+  role: "user",
+  content: userMessage.content,
+  client_os: clientInfo.client_os,
+  browser: clientInfo.browser,
+  device: clientInfo.device,
+  network: clientInfo.network,
+});
+```
+
+### 1.5 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| TypeScript编译 | ✅ 通过 |
+| 单元测试 | ✅ 238/238 通过 |
+| ESLint检查 | ✅ 0错误 |
+
+参与开发：小沈
+完成时间：2026-03-24 18:05:00
+
+---
+
+v0.7.76
+
+更新时间：2026-03-24 17:30:00
+
+更新内容：
+
+## 1. 新增Prompt中间层 - 服务器OS信息嵌入 - 小沈-2026-03-24
+
+### 1.1 背景
+
+根据《LLM调用Prompt中间层设计方案》文档（小强意见修正）：
+- 文件操作在**服务器**上执行
+- 需要服务器OS决定路径格式和命令格式
+- 服务器OS通过后端 `platform.system()` 获取
+
+### 1.2 创建的文件
+
+| 文件 | 说明 |
+|------|------|
+| backend/app/services/prompts/middle/__init__.py | 导出接口 |
+| backend/app/services/prompts/middle/system_adapter.py | 系统信息适配器（核心） |
+
+### 1.3 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| backend/app/services/prompts/file/file_prompts.py | 嵌入中间层系统信息 |
+
+### 1.4 工作原理
+
+```
+platform.system() → 获取服务器OS → 中间层生成系统Prompt → 嵌入file_prompts → 传递给LLM
+```
+
+生成的系统Prompt示例：
+```
+【当前系统】
+Windows
+
+【路径格式】
+- Windows: C:\Users\xxx\file.txt 或 C:/Users/xxx/file.txt
+- Linux/Mac: /home/xxx/file.txt 或 /Users/xxx/file.txt
+
+【命令格式】
+- list: dir
+- copy: copy
+- delete: del
+- read: type
+- create_dir: mkdir
+```
+
+### 1.5 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| 中间层测试 | ✅ 通过（Windows系统，dir命令） |
+| file_prompts测试 | ✅ 19/19通过 |
+| 运行时使用 | ✅ agent.py:374和534调用get_system_prompt() |
+
+参与开发：小沈
+完成时间：2026-03-24 17:30:00
+
+---
+
 v0.7.75
 
 更新时间：2026-03-24 15:05:00

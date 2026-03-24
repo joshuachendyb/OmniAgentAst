@@ -637,6 +637,11 @@ class MessageCreate(BaseModel):
     content: str = Field(..., description="消息内容")
     display_name: Optional[str] = Field(None, description="模型显示名称（可选，记录消息收发时使用的模型）")
     execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
+    # 客户端信息（小沈 2026-03-24）
+    client_os: Optional[str] = Field(None, description="客户端操作系统")
+    browser: Optional[str] = Field(None, description="浏览器类型")
+    device: Optional[str] = Field(None, description="设备类型")
+    network: Optional[str] = Field(None, description="网络类型")
 
 class SessionUpdate(BaseModel):
     """会话更新请求"""
