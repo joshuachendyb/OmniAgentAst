@@ -25,6 +25,7 @@ import json
 
 from app.services.prompts.base import BasePrompts
 from app.services.prompts.middle import get_system_prompt as get_system_info
+from app.utils.logger import logger
 
 
 class FileOperationPrompts(BasePrompts):
@@ -34,6 +35,20 @@ class FileOperationPrompts(BasePrompts):
         """获取增强版系统Prompt"""
         # 获取系统信息（来自中间层）
         system_info = get_system_info()
+        logger.info(f"[FileOperationPrompts] get_system_prompt() 被调用，中间层已注入系统信息，长度: {len(system_info)}")
+        
+        # ========== Prompt 日志记录 ==========
+        from app.utils.prompt_logger import get_prompt_logger
+        prompt_logger = get_prompt_logger()
+        prompt_logger.log_system_prompt(
+            step_name="中间层注入-服务器OS信息",
+            prompt_content=system_info,
+            source="system_adapter.py:generate_system_prompt()",
+            details={
+                "系统信息长度": len(system_info),
+                "包含内容": "服务器OS、路径格式、命令格式"
+            }
+        )
         
         # 直接字符串拼接，避免f-string解析问题
         return system_info + """

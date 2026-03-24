@@ -10,6 +10,7 @@
 """
 import platform
 from typing import Dict, Any
+from app.utils.logger import logger
 
 
 class SystemAdapter:
@@ -117,6 +118,7 @@ def get_system_adapter() -> SystemAdapter:
 def get_system_prompt() -> str:
     """快捷函数：获取系统Prompt字符串"""
     adapter = get_system_adapter()
+    logger.info(f"[Prompt中间层] get_system_prompt() 被调用, 服务器OS: {adapter.get_system_name()}")
     return adapter.generate_system_prompt()
 
 

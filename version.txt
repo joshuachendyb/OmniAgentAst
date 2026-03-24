@@ -1,3 +1,64 @@
+v0.7.81
+
+更新时间：2026-03-24 20:30:00
+
+更新内容：
+
+## 1. 新增Prompt日志记录系统 + 设计文档 - 小沈-2026-03-24
+
+### 1.1 背景
+
+调试和优化 LLM 应用时，需要知道最终发给 LLM 的 Prompt 是什么，以及 Prompt 是如何组装的。
+
+### 1.2 创建的文件
+
+| 文件 | 说明 |
+|------|------|
+| backend/app/utils/prompt_logger.py | Prompt 日志记录器（使用线程局部存储，支持并发） |
+
+### 1.3 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| backend/app/services/agent/agent.py | 添加 Prompt 日志记录（系统Prompt、任务Prompt、LLM调用） |
+| backend/app/services/prompts/file/file_prompts.py | 添加中间层注入日志 |
+| backend/app/services/prompts/middle/system_adapter.py | 添加系统适配器日志 |
+| doc-多意图/OMNI-LLM的Prompt组建流程及记录的方法设计.md | 新增设计文档 |
+
+### 1.4 功能说明
+
+**PromptLogger**：
+- 记录每次请求的 Prompt 组装过程
+- 支持并发安全（使用 threading.local）
+- 日志文件存放在 backend/logs/prompt-logs/
+- JSON 格式，便于调试和分析
+
+**日志内容**：
+- 基本信息（会话ID、用户消息、时间戳）
+- Prompt 组装过程（系统Prompt、任务Prompt）
+- LLM 调用记录（完整消息列表）
+
+### 1.5 设计文档
+
+新增《OMNI-LLM的Prompt组建流程及记录的方法设计.md》，包含：
+- Prompt 完整流程分析（从用户输入到 LLM 调用）
+- PromptLogger 设计说明
+- 日志格式规范
+- 日志记录位置
+
+### 1.6 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| Python语法检查 | ✅ 通过 |
+| 并发安全 | ✅ 使用 threading.local |
+| 日志文件生成 | ✅ 正常 |
+
+参与开发：小沈、小健
+完成时间：2026-03-24 20:30:00
+
+---
+
 v0.7.80
 
 更新时间：2026-03-24 20:05:00
