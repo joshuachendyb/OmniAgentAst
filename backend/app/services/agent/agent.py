@@ -32,6 +32,7 @@ from app.services.intent import IntentRegistry, Intent
 from app.services.preprocessing import PreprocessingPipeline
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
 from app.utils.logger import logger
+from app.utils.prompt_logger import get_prompt_logger
 from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse
 from app.chat_stream.chat_helpers import create_final_response, create_timestamp
 from app.chat_stream.error_handler import create_error_response
@@ -194,6 +195,21 @@ class IntentAgent(BaseAgent):
         """获取 LLM 响应的统一入口（重写，添加 adapter 策略选择）"""
         self.llm_call_count += 1
         logger.info(f"[LLM Counter] >>> LLM called, count: {self.llm_call_count}")
+        
+        # ========== LLM 调用日志记录 ==========
+        from datetime import datetime
+        prompt_logger = get_prompt_logger()
+        prompt_logger.log_llm_call(
+            round_number=self.llm_call_count,
+            messages=self.conversation_history.copy(),
+            model=getattr(self, 'model', 'unknown'),
+            provider=getattr(self, 'provider', 'unknown'),
+            call_type="text",
+            extra_params={
+                "max_steps": self.max_steps,
+                "use_function_calling": self.use_function_calling
+            }
+        )
         
         try:
             last_message = self.conversation_history[-1]["content"]
@@ -538,6 +554,24 @@ class IntentAgent(BaseAgent):
         self.conversation_history.append({"role": "system", "content": sys_prompt})
         self.conversation_history.append({"role": "user", "content": task_prompt})
         
+        # ========== Prompt 日志记录 ==========
+        from datetime import datetime
+        prompt_logger = get_prompt_logger()
+        prompt_logger.start_request(
+            user_message=task,
+            user_message_id=f"msg_{session_id}_{datetime.now().strftime('%H%M%S')}",
+            session_id=session_id
+        )
+        prompt_logger.log_system_prompt(
+            step_name="系统Prompt生成",
+            prompt_content=sys_prompt,
+            source="file_prompts.py:get_system_prompt()"
+        )
+        prompt_logger.log_task_prompt(
+            task_content=task_prompt,
+            context=context
+        )
+        
         step_count = 0
         
         try:
@@ -661,6 +695,13 @@ class IntentAgent(BaseAgent):
                 "message": str(e)
             }
         finally:
+            # ========== 保存 Prompt 日志 ==========
+            try:
+                prompt_logger = get_prompt_logger()
+                prompt_logger.save()
+            except Exception as e:
+                logger.error(f"保存 Prompt 日志失败: {e}")
+            
             # 关闭 session
             if self._session_created_by_agent and session_id and self.session_service:
                 try:

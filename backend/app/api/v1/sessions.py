@@ -195,6 +195,15 @@ def _init_database():
         conn.commit()
         print("数据库已添加 display_name 字段")
     
+    # 【小沈添加 2026-03-24】添加客户端信息字段（如果不存在）
+    for field in ['client_os', 'browser', 'device', 'network']:
+        try:
+            cursor.execute(f'SELECT {field} FROM chat_messages LIMIT 1')
+        except:
+            cursor.execute(f'ALTER TABLE chat_messages ADD COLUMN {field} TEXT')
+            conn.commit()
+            print(f"数据库已添加 {field} 字段")
+    
     # 创建标题历史表（P2-中优先级）
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS chat_session_title_history (
@@ -715,8 +724,9 @@ async def save_message(session_id: str, message: MessageCreate):
         # 插入消息（添加 display_name 和 execution_steps 字段）
         execution_steps_json = json.dumps(message.execution_steps) if message.execution_steps else None
         cursor.execute(
-            'INSERT INTO chat_messages (session_id, role, content, timestamp, display_name, execution_steps) VALUES (?, ?, ?, ?, ?, ?)',
-            (session_id, message.role, message.content, utc_time, display_name_to_save, execution_steps_json)
+            'INSERT INTO chat_messages (session_id, role, content, timestamp, display_name, execution_steps, client_os, browser, device, network) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (session_id, message.role, message.content, utc_time, display_name_to_save, execution_steps_json, 
+             message.client_os, message.browser, message.device, message.network)
         )
         message_id = cursor.lastrowid
         
