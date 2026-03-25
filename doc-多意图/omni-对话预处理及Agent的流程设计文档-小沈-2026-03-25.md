@@ -59,6 +59,13 @@
 | v2.26 | 2026-03-25 22:17:08 | 修正章节编号：附录2.4改为附录2.3，各子章节同步更新 |
 | v2.27 | 2026-03-25 22:20:36 | 新增附录2.4：base.py改名base-react.py，理由和同步更新说明 |
 | v2.28 | 2026-03-25 22:28:07 | 完成base.py→base_react.py改名，同步更新所有导入，测试通过20个 |
+| v2.29 | 2026-03-25 22:36:38 | 新增附录2.5：chat_router.py架构决策（放置位置、意图检测方式、职责、与chat2.py关系澄清） |
+| v2.30 | 2026-03-25 22:45:00 | 重组附录2.5-2.8：按四层架构重组（附录2.5路由层、2.6意图特定层、2.7流式包装层、2.8文件清单） |
+| v2.31 | 2026-03-25 22:50:00 | 删除附录2.5.4：与chat2.py关系澄清（构建router时不会与chat2有任何牵涉） |
+| v2.32 | 2026-03-25 23:05:00 | 废除detect_file_operation_intent()任务移至附录2.7（chat2.py改造），补充说明函数位置和引用情况 |
+| v2.33 | 2026-03-25 23:12:00 | 附录2.7重命名为react_sse_wrapper.py，文件名和类名更新 |
+| v2.34 | 2026-03-25 23:15:00 | 附录2.7.3改为"需要抽取的内容"：明确从chat2.py抽取SSE/中断/调用base_react的逻辑，废弃chat2.py |
+| v2.35 | 2026-03-25 23:18:00 | 删除附录2.7.4中废除detect_file_operation_intent()任务（废弃chat2.py时自然废除，无需单独处理） |
 
 ---
 
@@ -1186,6 +1193,156 @@ agent = FileOperationAgent(
 
 影响：较小，只需更新导入语句
 ```
+
+---
+
+### 附录2.5 路由层 - chat_router.py
+
+> **整理时间**: 2026-03-25 22:36:38
+> **整理人**: 小沈
+>
+> **对应架构层**: 第一层：路由层
+
+#### 附录2.5.1 文件位置
+
+| 项目 | 说明 |
+|------|------|
+| 文件路径 | `backend/app/services/chat_router.py` |
+| 目录选择 | `app/services/` 而非 `app/api/v1/` |
+
+**理由**：API层应保持轻薄，业务路由逻辑放在服务层
+
+#### 附录2.5.2 核心职责
+
+```
+chat_router.py
+├── 接收用户消息
+├── 调用 PreprocessingPipeline 进行意图检测
+│   └── 返回 intent_type 和参数
+├── 根据 intent_type 分发到对应执行层
+│   ├── chat → chat_stream_query()
+│   ├── file → intent-file-ReactAgent (file_react.py)
+│   ├── network → intent-network-ReactAgent
+│   └── desktop → intent-desktop-ReactAgent
+└── 返回统一的 SSE 流
+```
+
+#### 附录2.5.3 意图检测方式
+
+| 候选方式 | 结论 | 理由 |
+|---------|------|------|
+| `detect_file_operation_intent()` | ❌ 废除 | 简陋的字符串匹配 |
+| `PreprocessingPipeline` | ✅ 必须使用 | 完整的预处理流程 |
+
+#### 附录2.5.4 待实现任务
+
+| 序号 | 任务 | 状态 |
+|------|------|------|
+| 1 | 创建 `chat_router.py` | 待实现 |
+| 2 | 调用 `PreprocessingPipeline` | 待实现 |
+| 3 | 实现意图分发逻辑 | 待实现 |
+
+---
+
+### 附录2.6 意图特定层 - file_react.py
+
+> **整理时间**: 2026-03-25 22:36:38
+> **整理人**: 小沈
+>
+> **对应架构层**: 第二层：意图特定 React
+
+#### 附录2.6.1 文件位置
+
+| 项目 | 说明 |
+|------|------|
+| 原文件 | `backend/app/services/agent/agent.py` |
+| 新文件 | `backend/app/services/agent/file_react.py` |
+| 类名 | `intent-file-ReactAgent` → 简化为 `FileReactAgent` |
+
+#### 附录2.6.2 改造内容
+
+| 原内容 | 改造后 | 说明 |
+|--------|--------|------|
+| `agent.py` | `file_react.py` | 文件重命名 |
+| `class intent-file-ReactAgent` | `class FileReactAgent` | 类名简化 |
+| 函数名 `ver1_run_stream` | 保留或简化为 `run_stream` | 待定 |
+| 其他 intent-type 分支 | 拆分到 network_react.py / desktop_react.py | 另行处理 |
+
+#### 附录2.6.3 保留的职责
+
+- 文件操作相关逻辑（工具/prompt/安全检查）
+- 调用 chat2.py（流式包装器）
+- 调用 base_react.py（底层ReAct循环）
+
+#### 附录2.6.4 待实现任务
+
+| 序号 | 任务 | 状态 |
+|------|------|------|
+| 1 | `agent.py` → `file_react.py` 重命名 | 待实现 |
+| 2 | 类名 `intent-file-ReactAgent` → `FileReactAgent` | 待实现 |
+| 3 | 函数名整理（简化） | 待实现 |
+| 4 | 更新所有导入引用 | 待实现 |
+
+---
+
+### 附录2.7 React SSE 包装层 - react_sse_wrapper.py
+
+> **整理时间**: 2026-03-25 23:10:00
+> **整理人**: 小沈
+>
+> **对应架构层**: 第三层：从 chat2.py 抽取流式 SSE 包装函数
+
+#### 附录2.7.1 新文件名
+
+| 项目 | 说明 |
+|------|------|
+| 新文件名 | `react_sse_wrapper.py` |
+| 新类名 | `SSEReactWrapper` |
+| 位置 | `backend/app/services/react_sse_wrapper.py` |
+
+#### 附录2.7.2 职责
+
+| 职责 | 说明 |
+|------|------|
+| 流式输出 SSE | 将 ReAct 循环的事件流式输出给前端 |
+| 中断/暂停处理 | 响应用户中断请求 |
+| 调用 base_react.py | 底层 ReAct 循环 |
+
+#### 附录2.7.3 需要抽取的内容
+
+| 从 chat2.py 抽取 | 抽取到 react_sse_wrapper.py | 说明 |
+|-----------------|---------------------------|------|
+| SSE 流式输出逻辑 | SSE 输出函数 | 核心价值 |
+| 中断/暂停处理逻辑 | 中断控制函数 | 核心价值 |
+| 调用 base_react.py 的逻辑 | 封装为通用函数 | 核心价值 |
+
+**说明**：chat2.py 中用不上的内容（如路由判断、意图检测）不管它，直接废弃整个 chat2.py。
+
+#### 附录2.7.4 待实现任务
+
+| 序号 | 任务 | 状态 |
+|------|------|------|
+| 1 | 从 chat2.py 抽取 SSE 包装函数到 `react_sse_wrapper.py` | 待实现 |
+| 2 | 保留流式输出职责 | 待实现 |
+| 3 | 保留中断/暂停处理 | 待实现 |
+| 4 | 验证调用链完整 | 待验证 |
+
+**说明**：chat2.py 废弃后，其中的 `detect_file_operation_intent()` 引用自然废除，无需单独处理。
+
+---
+
+### 附录2.8 待创建/改造文件清单
+
+> **更新时间**: 2026-03-25 22:36:38
+
+| 序号 | 文件 | 操作 | 对应层 | 状态 |
+|------|------|------|--------|------|
+| 1 | `app/services/chat_router.py` | 创建 | 第一层 | 待实现 |
+| 2 | `app/services/agent/file_react.py` | 重命名 | 第二层 | 待实现 |
+| 3 | `app/services/agent/network_react.py` | 创建 | 第二层 | 待实现 |
+| 4 | `app/services/agent/desktop_react.py` | 创建 | 第二层 | 待实现 |
+| 5 | `app/services/chat2.py` | 改造 | 第三层 | 待改造 |
+| 6 | `app/services/agent/base_react.py` | 已完成 | 第四层 | ✅ 已完成 |
 
 ---
 
