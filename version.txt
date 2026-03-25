@@ -17,6 +17,10 @@ v0.8.1
 - 删除 `IntentReactAgent` 类中的 intent-type 分支（desktop/network）
 - 重命名类：`IntentReactAgent` → `FileReactAgent`
 
+**修复遗留问题（小健检查发现）**：
+- 删除第160-168行的 network 意图注册
+- 添加 else 分支，拒绝非 file 的 intent_type
+
 **修改的文件**：
 | 文件 | 修改内容 |
 |------|---------|
@@ -29,7 +33,7 @@ v0.8.1
 | 验证项 | 状态 | 结果 |
 |--------|------|------|
 | Python语法检查 | ✅ | 通过 |
-| 单元测试 | ✅ | 32 passed |
+| 单元测试 | ✅ | 20 passed |
 
 ### 1.4 后续任务
 
@@ -38,7 +42,7 @@ v0.8.1
 - 创建 network_react.py、desktop_react.py（第二层其他意图）
 - 废弃 agent.py（等用户指令）
 
-参与开发：小沈
+参与开发：小沈、小健（检查发现遗留问题）
 完成时间：2026-03-26 12:00:00
 
 ---
