@@ -52,7 +52,8 @@ class TestGenerateJsonReport:
             mock_conn.cursor.return_value = mock_cursor
             
             with patch.object(visualizer, '_get_connection', return_value=mock_conn):
-                result = visualizer.generate_json_report("sess-001")
+                # 【小沈修改 2026-03-25】添加 task_description 参数
+                result = visualizer.generate_json_report("sess-001", "测试任务")
                 
                 # 验证返回的是JSON字符串
                 assert isinstance(result, str)
@@ -88,7 +89,8 @@ class TestGenerateJsonReport:
             mock_conn.cursor.return_value = mock_cursor
             
             with patch.object(visualizer, '_get_connection', return_value=mock_conn):
-                result = visualizer.generate_json_report("sess-001")
+                # 【小沈修改 2026-03-25】添加 task_description 参数
+                result = visualizer.generate_json_report("sess-001", "测试任务")
                 data = json.loads(result)
                 
                 # 验证顶层字段
@@ -131,10 +133,9 @@ class TestGenerateJsonReport:
             mock_conn.cursor.return_value = mock_cursor
             
             with patch.object(visualizer, '_get_connection', return_value=mock_conn):
-                result = visualizer.generate_json_report("sess-001")
-                data = json.loads(result)
-                
-                assert data["operations"] == []
+                # 【小沈修改 2026-03-25】添加 task_description 参数，空操作返回空字符串
+                result = visualizer.generate_json_report("sess-001", "测试任务")
+                assert result == ""
 
     def test_json_report_handles_session_not_found(self):
         """JSON报告处理session不存在的情况"""
@@ -142,14 +143,16 @@ class TestGenerateJsonReport:
         
         visualizer = FileOperationVisualizer()
         
-        with patch('app.utils.visualization.file_visualization.get_session_service') as mock_get_service:
-            mock_service = MagicMock()
-            mock_service.get_session.return_value = None
-            mock_get_service.return_value = mock_service
+        # 【小沈修改 2026-03-25】不再依赖 session，空操作返回空字符串
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value = mock_cursor
+        
+        with patch.object(visualizer, '_get_connection', return_value=mock_conn):
+            result = visualizer.generate_json_report("nonexistent-session", "测试任务")
             
-            result = visualizer.generate_json_report("nonexistent-session")
-            
-            # session不存在时返回空字符串
+            # 空操作返回空字符串
             assert result == ""
 
     def test_json_report_saves_to_file(self):
@@ -179,7 +182,8 @@ class TestGenerateJsonReport:
                 output_path = Path(tmpdir) / "test_report.json"
                 
                 with patch.object(visualizer, '_get_connection', return_value=mock_conn):
-                    result = visualizer.generate_json_report("sess-001", output_path)
+                    # 【小沈修改 2026-03-25】添加 task_description 参数
+                    result = visualizer.generate_json_report("sess-001", "测试任务", output_path)
                     
                     # 验证返回的是文件路径
                     assert result == str(output_path)
@@ -206,29 +210,21 @@ class TestGenerateHtmlReport:
         
         visualizer = FileOperationVisualizer()
         
-        mock_session = MagicMock()
-        mock_session.agent_id = "agent-001"
-        mock_session.task_description = "测试任务"
-        mock_session.created_at = "2026-03-21 10:00:00"
+        # 【小沈修改 2026-03-25】去掉 session mock，直接 mock 数据库
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("read", "D:/test.txt", None, "success", 1024, 0, "2026-03-21 10:01:00", None),
+        ]
+        mock_conn.cursor.return_value = mock_cursor
         
-        with patch('app.utils.visualization.file_visualization.get_session_service') as mock_get_service:
-            mock_service = MagicMock()
-            mock_service.get_session.return_value = mock_session
-            mock_get_service.return_value = mock_service
+        with patch.object(visualizer, '_get_connection', return_value=mock_conn):
+            # 【小沈修改 2026-03-25】添加 task_description 参数
+            result = visualizer.generate_html_report("sess-001", "测试任务")
             
-            mock_conn = MagicMock()
-            mock_cursor = MagicMock()
-            mock_cursor.fetchall.return_value = [
-                ("read", "D:/test.txt", None, "success", 1024, 0, "2026-03-21 10:01:00", None),
-            ]
-            mock_conn.cursor.return_value = mock_cursor
-            
-            with patch.object(visualizer, '_get_connection', return_value=mock_conn):
-                result = visualizer.generate_html_report("sess-001")
-                
-                assert isinstance(result, str)
-                assert "<!DOCTYPE html>" in result
-                assert "<html" in result
+            assert isinstance(result, str)
+            assert "<!DOCTYPE html>" in result
+            assert "<html" in result
 
     def test_html_report_contains_session_info(self):
         """HTML报告包含会话信息"""
@@ -236,27 +232,21 @@ class TestGenerateHtmlReport:
         
         visualizer = FileOperationVisualizer()
         
-        mock_session = MagicMock()
-        mock_session.agent_id = "agent-001"
-        mock_session.task_description = "测试任务"
-        mock_session.created_at = "2026-03-21 10:00:00"
+        # 【小沈修改 2026-03-25】去掉 session mock，直接 mock 数据库
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("read", "D:/test.txt", None, "success", 1024, 0, "2026-03-21 10:01:00", None),
+        ]
+        mock_conn.cursor.return_value = mock_cursor
         
-        with patch('app.utils.visualization.file_visualization.get_session_service') as mock_get_service:
-            mock_service = MagicMock()
-            mock_service.get_session.return_value = mock_session
-            mock_get_service.return_value = mock_service
+        with patch.object(visualizer, '_get_connection', return_value=mock_conn):
+            # 【小沈修改 2026-03-25】添加 task_description 参数
+            result = visualizer.generate_html_report("sess-001", "测试任务")
             
-            mock_conn = MagicMock()
-            mock_cursor = MagicMock()
-            mock_cursor.fetchall.return_value = []
-            mock_conn.cursor.return_value = mock_cursor
-            
-            with patch.object(visualizer, '_get_connection', return_value=mock_conn):
-                result = visualizer.generate_html_report("sess-001")
-                
-                assert "sess-001" in result
-                assert "agent-001" in result
-                assert "测试任务" in result
+            assert "sess-001" in result
+            assert "file-operation-agent" in result
+            assert "测试任务" in result
 
     def test_html_report_contains_statistics(self):
         """HTML报告包含统计数据"""
@@ -264,32 +254,24 @@ class TestGenerateHtmlReport:
         
         visualizer = FileOperationVisualizer()
         
-        mock_session = MagicMock()
-        mock_session.agent_id = "agent-001"
-        mock_session.task_description = "测试任务"
-        mock_session.created_at = "2026-03-21 10:00:00"
+        # 【小沈修改 2026-03-25】去掉 session mock，直接 mock 数据库
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("read", "D:/test.txt", None, "success", 1024, 0, "2026-03-21 10:01:00", None),
+            ("write", "D:/test.txt", None, "success", 2048, 0, "2026-03-21 10:02:00", None),
+            ("delete", "D:/test.txt", None, "failed", 0, 0, "2026-03-21 10:03:00", "权限不足"),
+        ]
+        mock_conn.cursor.return_value = mock_cursor
         
-        with patch('app.utils.visualization.file_visualization.get_session_service') as mock_get_service:
-            mock_service = MagicMock()
-            mock_service.get_session.return_value = mock_session
-            mock_get_service.return_value = mock_service
+        with patch.object(visualizer, '_get_connection', return_value=mock_conn):
+            # 【小沈修改 2026-03-25】添加 task_description 参数
+            result = visualizer.generate_html_report("sess-001", "测试任务")
             
-            mock_conn = MagicMock()
-            mock_cursor = MagicMock()
-            mock_cursor.fetchall.return_value = [
-                ("read", "D:/test.txt", None, "success", 1024, 0, "2026-03-21 10:01:00", None),
-                ("write", "D:/test.txt", None, "success", 2048, 0, "2026-03-21 10:02:00", None),
-                ("delete", "D:/test.txt", None, "failed", 0, 0, "2026-03-21 10:03:00", "权限不足"),
-            ]
-            mock_conn.cursor.return_value = mock_cursor
-            
-            with patch.object(visualizer, '_get_connection', return_value=mock_conn):
-                result = visualizer.generate_html_report("sess-001")
-                
-                # 验证包含操作类型统计
-                assert "read" in result or "操作类型统计" in result
-                assert "成功" in result
-                assert "失败" in result
+            # 验证包含操作类型统计
+            assert "read" in result or "操作类型统计" in result
+            assert "成功" in result
+            assert "失败" in result
 
     def test_html_report_handles_session_not_found(self):
         """HTML报告处理session不存在的情况"""
@@ -297,13 +279,16 @@ class TestGenerateHtmlReport:
         
         visualizer = FileOperationVisualizer()
         
-        with patch('app.utils.visualization.file_visualization.get_session_service') as mock_get_service:
-            mock_service = MagicMock()
-            mock_service.get_session.return_value = None
-            mock_get_service.return_value = mock_service
+        # 【小沈修改 2026-03-25】不再依赖 session，空操作返回空字符串
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = []
+        mock_conn.cursor.return_value = mock_cursor
+        
+        with patch.object(visualizer, '_get_connection', return_value=mock_conn):
+            result = visualizer.generate_html_report("nonexistent-session", "测试任务")
             
-            result = visualizer.generate_html_report("nonexistent-session")
-            
+            # 空操作返回空字符串
             assert result == ""
 
     def test_html_report_saves_to_file(self):
@@ -312,33 +297,27 @@ class TestGenerateHtmlReport:
         
         visualizer = FileOperationVisualizer()
         
-        mock_session = MagicMock()
-        mock_session.agent_id = "agent-001"
-        mock_session.task_description = "测试任务"
-        mock_session.created_at = "2026-03-21 10:00:00"
+        # 【小沈修改 2026-03-25】去掉 session mock，直接 mock 数据库
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.fetchall.return_value = [
+            ("read", "D:/test.txt", None, "success", 1024, 0, "2026-03-21 10:01:00", None),
+        ]
+        mock_conn.cursor.return_value = mock_cursor
         
-        with patch('app.utils.visualization.file_visualization.get_session_service') as mock_get_service:
-            mock_service = MagicMock()
-            mock_service.get_session.return_value = mock_session
-            mock_get_service.return_value = mock_service
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "test_report.html"
             
-            mock_conn = MagicMock()
-            mock_cursor = MagicMock()
-            mock_cursor.fetchall.return_value = []
-            mock_conn.cursor.return_value = mock_cursor
-            
-            with tempfile.TemporaryDirectory() as tmpdir:
-                output_path = Path(tmpdir) / "test_report.html"
+            with patch.object(visualizer, '_get_connection', return_value=mock_conn):
+                # 【小沈修改 2026-03-25】添加 task_description 参数
+                result = visualizer.generate_html_report("sess-001", "测试任务", output_path)
                 
-                with patch.object(visualizer, '_get_connection', return_value=mock_conn):
-                    result = visualizer.generate_html_report("sess-001", output_path)
-                    
-                    assert result == str(output_path)
-                    assert output_path.exists()
-                    
-                    with open(output_path, 'r', encoding='utf-8') as f:
-                        content = f.read()
-                        assert "<!DOCTYPE html>" in content
+                assert result == str(output_path)
+                assert output_path.exists()
+                
+                with open(output_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    assert "<!DOCTYPE html>" in content
 
 
 # ============================================================================
