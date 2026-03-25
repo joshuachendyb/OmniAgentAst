@@ -30,8 +30,8 @@
 | v1.3 | 2026-03-25 14:18:02 | 补充文件引用、history处理、实际参数核对 |
 | v1.4 | 2026-03-25 14:22:49 | 补充agent创建、意图判断逻辑、函数引入路径 |
 | v1.5 | 2026-03-25 15:33:27 | 新增1.1.1问题发现过程，详细记录问题发现步骤 |
-| v2.0 | 2026-03-25 16:06:11 | 合并对话预处理流程设计 + Agent分层重构设计方案，成为完整设计文档 |
-| v2.1 | 2026-03-25 16:30:00 | 添加未来统一名称计划备注 + 添加参考文档章节 |
+| v2.0 | 2026-03-25 16:00:00 | 合并对话预处理流程设计 + Agent分层重构设计方案，成为完整设计文档 |
+| v2.1 | 2026-03-25 17:10:00 | 添加参考文档章节 |
 
 ---
 
@@ -176,11 +176,6 @@ chat2.py 是**入口+执行**，负责：
 | cache_display_name | `from app.utils.display_name_cache import cache_display_name` |
 | check_command_safety | `from app.services.shell_security import check_command_safety` |
 
-> **📝 未来统一名称计划**：当前使用 `IntentAgent` 是为了向后兼容（见 agent.py:719 别名定义），**后续应在合适的时间统一命名为 `IntentReactAgent`**，包括：
-> - 文档中的导入语句
-> - 代码中的别名定义
-> - 所有引用位置
-
 ### 2.5 历史消息处理
 
 | 消息类型 | 处理方式 |
@@ -241,7 +236,7 @@ async def handle_request(request: ChatRequest):
 #### 2.7.2 chat2.py（入口+执行）
 
 ```python
-from app.services.agent import IntentAgent as FileOperationAgent  # TODO: 未来统一为 IntentReactAgent
+from app.services.agent import IntentAgent as FileOperationAgent
 from app.services import AIServiceFactory
 
 async def handle_stream(
@@ -426,9 +421,17 @@ chat_stream_query(
 
 ## 四、Agent分层架构设计
 
-### 4.1 BaseAgent 重构设计
+### 4.1 设计原则
 
-#### 4.1.1 核心方法定义
+| 原则 | 说明 |
+|------|------|
+| **生产代码是基准** | 以 agent.py 的 run_stream 为准 |
+| **base.py 向生产代码看齐** | 用正确的逻辑更新 base.py |
+| **agent.py 继承 base.py** | 而不是重写 |
+
+### 4.2 BaseAgent 重构设计
+
+#### 4.2.1 核心方法定义
 
 ```python
 class BaseAgent(ABC):
@@ -475,10 +478,7 @@ class BaseAgent(ABC):
         # 初始化
         self._init_session(task, context)
         
-        step_count = 0
         while step_count < max_steps:
-            step_count += 1
-            
             # ==== Thought 阶段 ====
             yield await self._step_thought()
             
@@ -507,7 +507,7 @@ class BaseAgent(ABC):
         pass
 ```
 
-#### 4.1.2 核心循环逻辑（基于base.py实现）
+#### 4.2.2 核心循环逻辑（直接复用 agent.py）
 
 ```python
 async def _step_observation(self) -> Dict:
@@ -542,12 +542,12 @@ async def _step_observation(self) -> Dict:
     }
 ```
 
-### 4.2 IntentReactAgent 重构设计
+### 4.3 IntentReactAgent 重构设计
 
 #### 4.3.1 继承结构
 
 ```python
-class IntentReactAgent(BaseAgent):
+class IntentAgent(BaseAgent):
     """文件操作 Agent"""
     
     def __init__(self, ...):
