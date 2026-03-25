@@ -902,11 +902,17 @@ chat_router.py（新路由入口）
 
 **架构**（参考整合架构设计2.1节）：
 ```
-chat_router.py
-    ├── intent=file → chat2.py (ReAct流式loop)
-    ├── intent=network → chat2.py (ReAct流式loop)
+chat_router.py（新路由入口）
+    ├── intent=file → FileReactAgent (file_react.py) - ReAct流式loop
+    ├── intent=network → NetworkReactAgent (network_react.py) - ReAct流式loop
     └── intent=query → chat_stream_query.py (简单对话流式)
 ```
+
+**过渡策略**：旧代码逐步取代，不能完全删除
+- 当前：api/chat2.py → agent.py → base.py
+- 目标：chat_router.py → FileReactAgent (file_react.py) → base_react.py
+- 方式：先创建 chat_router.py 作为新入口，验证通过后逐步替换旧调用链
+- chat2.py 和 agent.py 暂时保留，待新架构稳定后再废弃
 
 **改造要点**：
 - [ ] 新建 `chat_router.py` 作为统一路由入口
@@ -926,19 +932,24 @@ async def chat_stream(request: ChatRequest):
     
     # 2. 根据 intent 分发
     if intent_type == "file":
-        # ReAct 流式loop
-        async for event in chat2.react_stream(...):
+        # 文件操作 ReAct 流式loop（调用 FileReactAgent）
+        from app.services.agent.file_react import FileReactAgent
+        agent = FileReactAgent(llm_client=..., session_id=request.session_id)
+        async for event in agent.run_stream(preprocessed.get("corrected")):
             yield event
     elif intent_type == "network":
-        # ReAct 流式loop
-        async for event in chat2.react_stream(...):
+        # 网络操作 ReAct 流式loop（待实现 NetworkReactAgent）
+        from app.services.agent.network_react import NetworkReactAgent
+        agent = NetworkReactAgent(llm_client=..., session_id=request.session_id)
+        async for event in agent.run_stream(preprocessed.get("corrected")):
             yield event
     else:
         # 简单对话流式
         async for event in chat_stream_query(...):
             yield event
 
-# 3. chat2.py 只负责流式loop（改造后）
+# 3. FileReactAgent.run_stream() 包含完整 ReAct 循环 + SSE 处理
+```
 # - 不包含预处理逻辑
 # - 不包含意图识别
 # - 只负责 ReAct 循环或普通对话流
