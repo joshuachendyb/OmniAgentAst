@@ -113,6 +113,9 @@ class FileReactAgent(BaseAgent):
             self.prompts = FileOperationPrompts()
             
             logger.info(f"FileReactAgent initialized (session: {session_id})")
+        else:
+            # FileReactAgent 只支持 file 意图
+            raise ValueError(f"FileReactAgent only supports intent_type='file', got: {intent_type}")
         
         # 【新增】意图注册表（多意图支持）
         self.intent_registry = IntentRegistry()
@@ -147,7 +150,7 @@ class FileReactAgent(BaseAgent):
     
     def _register_default_intents(self):
         """注册默认意图类型"""
-        # file 意图
+        # file 意图（FileReactAgent 只支持 file 意图）
         file_intent = Intent(
             name="file",
             description="文件读写、目录管理、文件搜索",
@@ -156,16 +159,6 @@ class FileReactAgent(BaseAgent):
             safety_checker="file_safety"
         )
         self.intent_registry.register(file_intent)
-        
-        # network 意图（预留）
-        network_intent = Intent(
-            name="network",
-            description="网络搜索、网页访问、API调用",
-            keywords=["搜索", "网络", "网页", "API", "http", "https"],
-            tools=[],  # 待实现
-            safety_checker=None
-        )
-        self.intent_registry.register(network_intent)
         
         logger.info(f"Registered {len(self.intent_registry.list_all())} intents")
     
