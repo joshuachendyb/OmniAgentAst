@@ -1489,8 +1489,8 @@ chat2.py (688行)
 1. cp chat2.py react_sse_wrapper.py
 2. 删除路由判断（if is_file_op）
 3. 删除意图检测代码
-4. 修改调用：agent.ver1_run_stream() → agent.run_stream()
-5. 添加 SSE 转换逻辑（从 file_react.py.ver1_run_stream 抽取）
+4. 添加 SSE 转换逻辑（从 file_react.py.ver1_run_stream 抽取）
+5. 修改调用：agent.ver1_run_stream() → agent.run_stream()
 6. 重命名类：Chat2 → SSEReactWrapper
 7. 清理 docstring
 8. 编译验证
