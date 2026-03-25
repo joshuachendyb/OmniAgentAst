@@ -43,8 +43,27 @@ session_id = request.session_id or str(uuid.uuid4())  # 复用聊天session_id
 | backend/app/api/v1/chat2.py | 统一session_id = request.session_id or str(uuid.uuid4()) |
 | backend/app/utils/visualization/file_visualization.py | 6个generate方法新增task_description参数 |
 | backend/app/api/v1/file_operations.py | generate_report API新增task_description参数 |
+| backend/app/services/safety/file/file_safety.py | 报告目录改为项目根目录下reports |
 | backend/tests/test_visualization_new_methods.py | 更新测试参数传递 |
 | doc-多意图/LLM-文件操作历史过程报告设计方案V2版-小沈-20260325.md | 新增设计文档 |
+
+### 1.6 报告目录修改
+
+**Debug阶段改为项目目录下**：
+
+| 项目 | 修改前 | 修改后 |
+|------|--------|--------|
+| 路径 | ~/.omniagent/reports/ | D:\OmniAgentAs-desk\reports\ |
+| 用途 | 生产环境 | Debug阶段 |
+
+**代码修改**：
+```python
+# file_safety.py:33
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent
+REPORT_PATH: Path = PROJECT_ROOT / "reports"
+```
+
+**备注**：生产环境可改回 `~/.omniagent/reports/`，只需修改一行代码
 
 ### 1.4 验证结果
 
