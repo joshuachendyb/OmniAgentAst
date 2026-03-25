@@ -1405,23 +1405,31 @@ chat_router.py
 | 任务管理 | running_tasks / interrupted_sessions 注册和管理 |
 | start 步骤发送 | 包含 security_check |
 | 数据库保存 | save_execution_steps_to_db |
+| **SSE 转换** | 从 file_react.py.ver1_run_stream 抽取的 SSE 格式化逻辑 |
 | API 端点 | cancel/pause/resume 三个接口 |
 | 中断/暂停检查 | check_and_yield_if_interrupted/paused |
 
-#### 附录2.7.3 从 chat2.py 抽取的内容（完整清单）
+#### 附录2.7.3 抽取内容
 
-| 抽取项 | 代码位置 | 抽取目标 |
-|--------|---------|----------|
-| running_tasks / interrupted_sessions / 超时常量 | 第246-255行 | react_sse_wrapper.py |
-| cleanup_expired_tasks() | 第257-268行 | react_sse_wrapper.py |
-| start 步骤发送（含 security_check） | 第362-382行 | react_sse_wrapper.py |
-| 数据库保存 (save_execution_steps_to_db) | 第385-386行 | react_sse_wrapper.py |
-| 中断/暂停检查 | 第441-448行 | react_sse_wrapper.py |
-| cancel_stream_task() API | 第604-641行 | react_sse_wrapper.py |
-| pause_stream_task() API | 第647-666行 | react_sse_wrapper.py |
-| resume_stream_task() API | 第669-688行 | react_sse_wrapper.py |
+**从 chat2.py 抽取**：
 
-**说明**：chat2.py 中用不上的内容（如路由判断、意图检测）不管它，直接废弃整个 chat2.py。
+| 抽取项 | 代码位置 | 说明 |
+|--------|---------|------|
+| running_tasks / interrupted_sessions / 超时常量 | 第246-255行 | 任务状态管理 |
+| cleanup_expired_tasks() | 第257-268行 | 清理过期任务 |
+| start 步骤发送（含 security_check） | 第362-382行 | 初始化步骤 |
+| 数据库保存 (save_execution_steps_to_db) | 第385-386行 | 持久化 |
+| 中断/暂停检查 | 第441-448行 | 状态检查 |
+| cancel_stream_task() API | 第604-641行 | 取消任务 |
+| pause_stream_task() API | 第647-666行 | 暂停任务 |
+| resume_stream_task() API | 第669-688行 | 恢复任务 |
+
+**从 file_react.py.ver1_run_stream 抽取**：
+
+| 抽取项 | 说明 |
+|--------|------|
+| SSE 格式化逻辑 | format_thought_sse, format_action_tool_sse, format_observation_sse 等调用 |
+| 事件转换 | 将 BaseAgent.run_stream() 的 event dict 转为 SSE 字符串 |
 
 #### 附录2.7.4 待实现任务
 
@@ -1430,26 +1438,29 @@ chat_router.py
 | 1 | 抽取任务管理状态（running_tasks / interrupted_sessions） | 待实现 |
 | 2 | 封装 start 步骤发送（含 security_check） | 待实现 |
 | 3 | 封装数据库保存逻辑 | 待实现 |
-| 4 | 封装中断/暂停检查 | 待实现 |
-| 5 | 实现 cancel/pause/resume API 端点 | 待实现 |
-| 6 | 验证调用链完整 | 待验证 |
+| 4 | 封装 SSE 转换逻辑（从 ver1_run_stream 抽取） | 待实现 |
+| 5 | 封装中断/暂停检查 | 待实现 |
+| 6 | 实现 cancel/pause/resume API 端点 | 待实现 |
+| 7 | 改造 FileReactAgent：删除 ver1_run_stream，保留 run_stream | 待实现 |
+| 8 | 验证调用链完整 | 待验证 |
 
 ---
 
 ### 附录2.8 待创建/改造文件清单
 
-> **更新时间**: 2026-03-25 22:36:38
+> **更新时间**: 2026-03-26 06:20:00
+> **更新说明**: 确认第三层 react_sse_wrapper.py 价值，更新设计内容
 
 | 序号 | 文件 | 操作 | 对应层 | 状态 |
 |------|------|------|--------|------|
 | 1 | `app/services/chat_router.py` | 创建 | 第一层 | 待实现 |
-| 2 | `app/services/agent/file_react.py` | 抽取 | 第二层 | 待实现 |
+| 2 | `app/services/agent/file_react.py` | 抽取 | 第二层 | ✅ 已完成 |
 | 3 | `app/services/agent/network_react.py` | 创建 | 第二层 | 待实现 |
 | 4 | `app/services/agent/desktop_react.py` | 创建 | 第二层 | 待实现 |
-| 5 | `app/services/react_sse_wrapper.py` | 创建 | 第三层 | 待创建 |
+| 5 | `app/services/react_sse_wrapper.py` | 创建 | 第三层 | 待实现 |
 | 6 | `app/services/agent/base_react.py` | 已完成 | 第四层 | ✅ 已完成 |
 | 7 | `app/services/agent/agent.py` | 废弃 | - | 待废弃 |
-| 8 | `app/api/v1/chat2.py` | 废弃 | - | 待废弃 |
+| 8 | `app/api/v1/chat2.py` | 改造 | - | 待改造（调用react_sse_wrapper） |
 
 ---
 
