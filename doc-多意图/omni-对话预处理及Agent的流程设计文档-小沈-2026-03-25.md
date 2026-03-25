@@ -1469,9 +1469,8 @@ chat2.py (688行)
 ├── start 步骤发送（含 security_check）✅ → 保留
 ├── 数据库保存 ✅ → 保留
 ├── 中断/暂停检查 ✅ → 保留
-├── 调用 agent.ver1_run_stream() ❌ → 改为调用 agent.run_stream()
-├── SSE 转换（在 ver1_run_stream 中）✅ → 保留
-└── cancel/pause/resume API ✅ → 保留
+├── 调用 agent.run_stream() → 返回 event dict
+└── SSE 转换 → 自己实现（从 file_react.py.ver1_run_stream 抽取的 SSE 格式化逻辑）
 ```
 
 **具体步骤**：
@@ -1480,9 +1479,10 @@ chat2.py (688行)
 2. 删除路由判断（if is_file_op）
 3. 删除意图检测代码
 4. 修改调用：agent.ver1_run_stream() → agent.run_stream()
-5. 重命名类：Chat2 → SSEReactWrapper
-6. 清理 docstring
-7. 编译验证
+5. 添加 SSE 转换逻辑（从 file_react.py.ver1_run_stream 抽取）
+6. 重命名类：Chat2 → SSEReactWrapper
+7. 清理 docstring
+8. 编译验证
 ```
 
 **要删除的代码**：
