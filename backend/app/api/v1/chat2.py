@@ -452,7 +452,8 @@ async def chat_stream(request: ChatRequest):
             
             if is_file_op and confidence >= 0.3:
                 # 文件操作：直接流式执行（使用已有的 ai_service）
-                session_id = str(uuid.uuid4())
+                # 【小沈修复 2026-03-25】复用 request.session_id，统一 session_id
+                session_id = request.session_id or str(uuid.uuid4())
                 
                 async def llm_client(message, history=None):
                     response = await ai_service.chat(message, history)

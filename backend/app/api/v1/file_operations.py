@@ -427,10 +427,15 @@ async def get_animation_data(
 @router.get("/operations/report")
 async def generate_report(
     session_id: str = Query(..., description="会话ID"),
-    format: Literal["txt", "json", "html", "mmd"] = Query("json", description="报告格式")
+    format: Literal["txt", "json", "html", "mmd"] = Query("json", description="报告格式"),
+    task_description: str = Query(..., description="任务描述（用户消息）")  # 【小沈修改 2026-03-25】新增参数
 ) -> ReportResponse:
     """
     生成操作报告
+    
+    【小沈修改 2026-03-25】
+    - 去掉 file_operation_sessions 表的依赖
+    - 新增 task_description 参数
     
     - **session_id**: 会话ID
     - **format**: 报告格式
@@ -438,6 +443,7 @@ async def generate_report(
         - json: JSON格式数据
         - html: HTML可视化报告（独立文件）
         - mmd: Mermaid流程图
+    - **task_description**: 任务描述（用户消息）
     
     返回报告内容或下载链接
     """
@@ -445,7 +451,8 @@ async def generate_report(
         visualizer = get_visualizer()
         
         if format == "txt":
-            content = visualizer.generate_text_report(session_id)
+            # 【小沈修改 2026-03-25】传递 task_description
+            content = visualizer.generate_text_report(session_id, task_description)
             if content:
                 return ReportResponse(
                     success=True,
@@ -461,7 +468,8 @@ async def generate_report(
                 )
         
         elif format == "json":
-            content = visualizer.generate_json_report(session_id)
+            # 【小沈修改 2026-03-25】传递 task_description
+            content = visualizer.generate_json_report(session_id, task_description)
             if content:
                 import json
                 try:
@@ -482,7 +490,8 @@ async def generate_report(
                 )
         
         elif format == "html":
-            content = visualizer.generate_html_report(session_id)
+            # 【小沈修改 2026-03-25】传递 task_description
+            content = visualizer.generate_html_report(session_id, task_description)
             if content:
                 return ReportResponse(
                     success=True,
@@ -498,6 +507,7 @@ async def generate_report(
                 )
         
         elif format == "mmd":
+            # Mermaid报告不需要 task_description
             report_path = visualizer.generate_mermaid_report(session_id)
             if report_path and Path(report_path).exists():
                 content = Path(report_path).read_text(encoding="utf-8")

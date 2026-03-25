@@ -58,25 +58,24 @@ class FileOperationVisualizer:
         """获取数据库连接"""
         return sqlite3.connect(str(self.config.DB_PATH))
     
-    def generate_text_report(self, session_id: str, output_path: Optional[Path] = None) -> str:
+    def generate_text_report(self, session_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
         """
         生成文本格式报告
         
+        【小沈修改 2026-03-25】
+        - 去掉 file_operation_sessions 表的依赖
+        - task_description 作为参数传入
+        - 统计数据从 file_operations 表计算
+        
         Args:
             session_id: 会话ID
+            task_description: 任务描述（用户消息）
             output_path: 输出路径（可选）
             
         Returns:
             报告文本内容
         """
-        session_service = get_session_service()
-        session = session_service.get_session(session_id)
-        
-        if not session:
-            logger.error(f"Session not found: {session_id}")
-            return ""
-        
-        # 获取操作记录
+        # 【小沈修改 2026-03-25】直接获取操作记录，不依赖 file_operation_sessions 表
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
@@ -89,6 +88,17 @@ class FileOperationVisualizer:
         operations = cursor.fetchall()
         conn.close()
         
+        if not operations:
+            logger.warning(f"No operations found for session: {session_id}")
+            return ""
+        
+        # 【小沈修改 2026-03-25】统计数据从 file_operations 表计算
+        total = len(operations)
+        success_count = sum(1 for op in operations if op[3] == 'success')
+        failed_count = sum(1 for op in operations if op[3] == 'failed')
+        rolled_back_count = sum(1 for op in operations if 'rollback' in str(op[3]))
+        created_at = operations[0][6] if operations else None
+        
         # 生成报告
         lines = []
         lines.append("=" * 80)
@@ -96,17 +106,17 @@ class FileOperationVisualizer:
         lines.append("=" * 80)
         lines.append(f"")
         lines.append(f"会话ID: {session_id}")
-        lines.append(f"Agent: {session.agent_id}")
-        lines.append(f"任务描述: {session.task_description}")
-        lines.append(f"开始时间: {session.created_at}")
-        lines.append(f"完成时间: {session.completed_at or '未完成'}")
+        lines.append(f"Agent: file-operation-agent")  # 【小沈修改 2026-03-25】固定值
+        lines.append(f"任务描述: {task_description}")  # 【小沈修改 2026-03-25】参数传入
+        lines.append(f"开始时间: {created_at}")
+        lines.append(f"完成时间: 未完成")  # 【小沈修改 2026-03-25】简化处理
         lines.append(f"")
         lines.append("-" * 80)
         lines.append(f"操作统计:")
-        lines.append(f"  - 总操作数: {session.total_operations}")
-        lines.append(f"  - 成功: {session.success_count}")
-        lines.append(f"  - 失败: {session.failed_count}")
-        lines.append(f"  - 已回滚: {session.rolled_back_count}")
+        lines.append(f"  - 总操作数: {total}")
+        lines.append(f"  - 成功: {success_count}")
+        lines.append(f"  - 失败: {failed_count}")
+        lines.append(f"  - 已回滚: {rolled_back_count}")
         lines.append("-" * 80)
         lines.append(f"")
         
@@ -160,31 +170,22 @@ class FileOperationVisualizer:
             size_bytes /= 1024.0
         return f"{size_bytes:.2f} TB"
     
-    def generate_tree_structure(self, session_id: str) -> OperationNode:
+    def generate_tree_structure(self, session_id: str, task_description: str) -> OperationNode:
         """
         生成操作树形结构
         
+        【小沈修改 2026-03-25】
+        - 去掉 file_operation_sessions 表的依赖
+        - task_description 作为参数传入
+        
         Args:
             session_id: 会话ID
+            task_description: 任务描述（用户消息）
             
         Returns:
             根节点
         """
-        session_service = get_session_service()
-        session = session_service.get_session(session_id)
-        
-        if not session:
-            return None
-        
-        # 创建根节点
-        root = OperationNode(
-            id=session_id,
-            type="session",
-            name=session.task_description,
-            status=session.status.value
-        )
-        
-        # 获取操作记录
+        # 【小沈修改 2026-03-25】直接获取操作记录，不依赖 file_operation_sessions 表
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
@@ -195,6 +196,17 @@ class FileOperationVisualizer:
         
         operations = cursor.fetchall()
         conn.close()
+        
+        if not operations:
+            return None
+        
+        # 创建根节点（使用 task_description 参数）
+        root = OperationNode(
+            id=session_id,
+            type="session",
+            name=task_description,  # 【小沈修改 2026-03-25】参数传入
+            status="completed"  # 【小沈修改 2026-03-25】固定值，因为有操作记录
+        )
         
         # 构建树形结构
         for op_id, op_type, src, dst, status in operations:
@@ -210,18 +222,23 @@ class FileOperationVisualizer:
         
         return root
     
-    def export_tree_to_json(self, session_id: str, output_path: Optional[Path] = None) -> str:
+    def export_tree_to_json(self, session_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
         """
         导出树形结构为JSON
         
+        【小沈修改 2026-03-25】
+        - 新增 task_description 参数
+        
         Args:
             session_id: 会话ID
+            task_description: 任务描述（用户消息）
             output_path: 输出路径
             
         Returns:
             JSON字符串
         """
-        root = self.generate_tree_structure(session_id)
+        # 【小沈修改 2026-03-25】传递 task_description 给 generate_tree_structure
+        root = self.generate_tree_structure(session_id, task_description)
         if not root:
             return "{}"
         
@@ -304,24 +321,23 @@ class FileOperationVisualizer:
         
         return flows
     
-    def generate_animation_script(self, session_id: str, output_path: Optional[Path] = None) -> str:
+    def generate_animation_script(self, session_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
         """
         生成动画展示脚本（HTML + JavaScript）
         
+        【小沈修改 2026-03-25】
+        - 去掉 file_operation_sessions 表的依赖
+        - task_description 作为参数传入
+        
         Args:
             session_id: 会话ID
+            task_description: 任务描述（用户消息）
             output_path: 输出路径
             
         Returns:
             HTML内容
         """
-        session_service = get_session_service()
-        session = session_service.get_session(session_id)
-        
-        if not session:
-            return ""
-        
-        # 获取操作记录
+        # 【小沈修改 2026-03-25】直接获取操作记录，不依赖 file_operation_sessions 表
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
@@ -332,6 +348,10 @@ class FileOperationVisualizer:
         
         operations = cursor.fetchall()
         conn.close()
+        
+        if not operations:
+            logger.warning(f"No operations found for session: {session_id}")
+            return ""
         
         # 构建操作序列数据
         operations_data = []
@@ -350,7 +370,7 @@ class FileOperationVisualizer:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>文件操作动画报告 - {session.task_description}</title>
+    <title>文件操作动画报告 - {task_description}</title>
     <style>
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
@@ -469,7 +489,7 @@ class FileOperationVisualizer:
     <div class="container">
         <div class="header">
             <h1>📁 文件操作执行动画</h1>
-            <p>{session.task_description}</p>
+            <p>{task_description}</p>
             <p style="margin-top: 10px; font-size: 12px;">会话ID: {session_id}</p>
         </div>
         
@@ -490,15 +510,15 @@ class FileOperationVisualizer:
         
         <div class="stats">
             <div class="stat-card">
-                <div class="stat-value">{session.total_operations}</div>
+                <div class="stat-value">{len(operations)}</div>
                 <div class="stat-label">总操作数</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value">{session.success_count}</div>
+                <div class="stat-value">{sum(1 for op in operations if op[3] == 'success')}</div>
                 <div class="stat-label">成功</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value">{session.failed_count}</div>
+                <div class="stat-value">{sum(1 for op in operations if op[3] == 'failed')}</div>
                 <div class="stat-label">失败</div>
             </div>
         </div>
@@ -621,24 +641,23 @@ class FileOperationVisualizer:
         
         return html_content
     
-    def generate_json_report(self, session_id: str, output_path: Optional[Path] = None) -> str:
+    def generate_json_report(self, session_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
         """
         生成JSON格式报告
         
+        【小沈修改 2026-03-25】
+        - 去掉 file_operation_sessions 表的依赖
+        - task_description 作为参数传入
+        
         Args:
             session_id: 会话ID
+            task_description: 任务描述（用户消息）
             output_path: 输出路径
             
         Returns:
             JSON报告文件路径
         """
-        session_service = get_session_service()
-        session = session_service.get_session(session_id)
-        
-        if not session:
-            logger.error(f"Session not found: {session_id}")
-            return ""
-        
+        # 【小沈修改 2026-03-25】直接获取操作记录，不依赖 file_operation_sessions 表
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
@@ -651,11 +670,18 @@ class FileOperationVisualizer:
         operations = cursor.fetchall()
         conn.close()
         
+        if not operations:
+            logger.warning(f"No operations found for session: {session_id}")
+            return ""
+        
+        # 【小沈修改 2026-03-25】统计数据从 operations 计算
+        created_at = operations[0][6] if operations else None
+        
         report_data = {
             "session_id": session_id,
-            "agent_id": session.agent_id,
-            "task_description": session.task_description,
-            "created_at": str(session.created_at) if session.created_at else None,
+            "agent_id": "file-operation-agent",  # 【小沈修改 2026-03-25】固定值
+            "task_description": task_description,  # 【小沈修改 2026-03-25】参数传入
+            "created_at": str(created_at) if created_at else None,
             "operations": []
         }
         
@@ -681,24 +707,23 @@ class FileOperationVisualizer:
         
         return json.dumps(report_data, ensure_ascii=False, indent=2)
     
-    def generate_html_report(self, session_id: str, output_path: Optional[Path] = None) -> str:
+    def generate_html_report(self, session_id: str, task_description: str, output_path: Optional[Path] = None) -> str:
         """
         生成HTML格式报告（含图表）
         
+        【小沈修改 2026-03-25】
+        - 去掉 file_operation_sessions 表的依赖
+        - task_description 作为参数传入
+        
         Args:
             session_id: 会话ID
+            task_description: 任务描述（用户消息）
             output_path: 输出路径
             
         Returns:
             HTML报告文件路径
         """
-        session_service = get_session_service()
-        session = session_service.get_session(session_id)
-        
-        if not session:
-            logger.error(f"Session not found: {session_id}")
-            return ""
-        
+        # 【小沈修改 2026-03-25】直接获取操作记录，不依赖 file_operation_sessions 表
         conn = self._get_connection()
         cursor = conn.cursor()
         cursor.execute('''
@@ -710,6 +735,10 @@ class FileOperationVisualizer:
         
         operations = cursor.fetchall()
         conn.close()
+        
+        if not operations:
+            logger.warning(f"No operations found for session: {session_id}")
+            return ""
         
         # 统计数据
         op_types = {}
@@ -739,8 +768,8 @@ class FileOperationVisualizer:
     <div class="header">
         <h1>文件操作执行报告</h1>
         <p>会话ID: {session_id}</p>
-        <p>Agent: {session.agent_id}</p>
-        <p>任务: {session.task_description}</p>
+        <p>Agent: file-operation-agent</p>
+        <p>任务: {task_description}</p>
     </div>
     
     <div class="chart">
@@ -845,12 +874,17 @@ class FileOperationVisualizer:
         
         return mermaid_content
     
-    def generate_all_reports(self, session_id: str, output_dir: Optional[Path] = None) -> Dict[str, Path]:
+    def generate_all_reports(self, session_id: str, task_description: str, output_dir: Optional[Path] = None) -> Dict[str, Path]:
         """
         生成所有类型的报告
         
+        【小沈修改 2026-03-25】
+        - 去掉 file_operation_sessions 表的依赖
+        - task_description 作为参数传入
+        
         Args:
             session_id: 会话ID
+            task_description: 任务描述（用户消息）
             output_dir: 输出目录
             
         Returns:
@@ -866,14 +900,15 @@ class FileOperationVisualizer:
         
         reports = {}
         
+        # 【小沈修改 2026-03-25】传递 task_description 给各个方法
         # 文本报告
         text_path = output_dir / f"report_text_{timestamp}.txt"
-        self.generate_text_report(session_id, text_path)
+        self.generate_text_report(session_id, task_description, text_path)
         reports['text'] = text_path
         
         # 树形结构JSON
         tree_path = output_dir / f"report_tree_{timestamp}.json"
-        self.export_tree_to_json(session_id, tree_path)
+        self.export_tree_to_json(session_id, task_description, tree_path)
         reports['tree'] = tree_path
         
         # Sankey数据
@@ -883,19 +918,11 @@ class FileOperationVisualizer:
         
         # 动画报告
         animation_path = output_dir / f"report_animation_{timestamp}.html"
-        self.generate_animation_script(session_id, animation_path)
+        self.generate_animation_script(session_id, task_description, animation_path)
         reports['animation'] = animation_path
         
-        # 更新会话记录
-        conn = self._get_connection()
-        cursor = conn.cursor()
-        cursor.execute('''
-            UPDATE file_operation_sessions 
-            SET report_generated = 1, report_path = ?
-            WHERE session_id = ?
-        ''', (str(output_dir), session_id))
-        conn.commit()
-        conn.close()
+        # 【小沈修改 2026-03-25】去掉 file_operation_sessions 表的更新
+        # 因为不再依赖 file_operation_sessions 表
         
         logger.info(f"All reports generated for session {session_id}: {reports}")
         return reports
