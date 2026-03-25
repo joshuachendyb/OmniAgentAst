@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-25 22:28:07
-**版本**: v2.28
+**更新时间**: 2026-03-26 11:30:00
+**版本**: v2.40
 **编写人**: 小沈
 
 ---
@@ -70,6 +70,7 @@
 | v2.37 | 2026-03-25 23:35:00 | 附录2.6.3/2.6.4补充：从agent.py和chat2.py抽取的完整内容清单（基于代码深入分析） |
 | v2.38 | 2026-03-25 23:50:00 | 附录2.3更新：四层架构图按2.6/2.7讨论更新（file_react.py/FileReactAgent/react_sse_wrapper.py） |
 | v2.39 | 2026-03-26 00:10:00 | 小健检查修复：附录2.6.4移到2.7、更新2.7职责/抽取内容/待实现任务、修正2.3.4描述、更新2.8文件清单 |
+| v2.40 | 2026-03-26 11:30:00 | 附录2.6.2改造思路优化：改"抽取法"为"复制+删除法"，补充SSE依赖模块说明，更新待实现任务清单 |
 
 ---
 
@@ -1278,14 +1279,34 @@ chat_router.py
 
 #### 附录2.6.2 改造思路
 
-**逐步抽取 + 废弃原文件**（与附录2.7的 chat2.py 处理方式一致）：
+**复制 + 删除法**（2026-03-26 小沈优化）
 
-1. 从 `agent.py` 抽取有价值的内容到 `file_react.py`
-   - 文件操作相关逻辑（工具/prompt/安全检查）
-   - 调用 `react_sse_wrapper.py`（流式包装器）
-   - 调用 `base_react.py`（底层ReAct循环）
+**方法选择理由**：
+| 方法 | 优点 | 缺点 |
+|------|------|------|
+| 抽取法 | 代码干净，无冗余 | 容易漏依赖，复杂易错 |
+| **复制+删除法** | 保留完整依赖，简单可靠 | 可能有些冗余代码 |
 
-2. 废弃 `agent.py`（用不上的内容不管它）
+**采用复制+删除法**：
+- agent.py 只有 719 行，复制一份不大
+- 只需要删除几处代码，依赖完整保留
+- 简单可靠，不易出错
+
+**具体步骤**：
+```
+1. cp agent.py file_react.py
+2. 删除 intent-type 分支（第121-134行）
+3. 重命名类 IntentReactAgent → FileReactAgent
+4. 清理 docstring
+5. 编译验证
+```
+
+**要删除的代码**：
+| 删除项 | 代码位置 | 说明 |
+|--------|---------|------|
+| intent-type 分支 | 第121-134行 | desktop/network 分支，file_react.py 不需要 |
+| 类名 | 第41行 | IntentReactAgent → FileReactAgent |
+| docstring | 第2-16行 | 更新为文件专用描述 |
 
 #### 附录2.6.3 从 agent.py 抽取的内容（完整清单）
 
@@ -1303,14 +1324,26 @@ chat_router.py
 
 **说明**：agent.py 中的 `ver1_run_stream()` 已经封装了完整的 ReAct 循环 + SSE 转换，被 chat2.py 调用。抽取时保留此函数。
 
-#### 附录2.6.4 待实现任务
+#### 附录2.6.4 依赖的辅助模块
 
-| 序号 | 任务 | 状态 |
-|------|------|------|
-| 1 | 从 `agent.py` 抽取文件操作逻辑到 `file_react.py` | 待实现 |
-| 2 | 类名 `intent-file-ReactAgent` → `FileReactAgent` | 待实现 |
-| 3 | 抽取其他 intent-type 到 network_react.py / desktop_react.py | 待实现 |
-| 4 | 废弃 `agent.py` | 待废弃 |
+**ver1_run_stream() 依赖以下模块**（已存在，无需移动）：
+
+| 依赖模块 | 说明 | 位置 |
+|---------|------|------|
+| `sse_formatter.py` | SSE 事件格式化 | `app/chat_stream/sse_formatter.py` |
+| `chat_helpers.py` | final 响应和 timestamp | `app/chat_stream/chat_helpers.py` |
+| `error_handler.py` | 错误响应 | `app/chat_stream/error_handler.py` |
+
+#### 附录2.6.5 待实现任务
+
+| 序号 | 任务 | 状态 | 备注 |
+|------|------|------|------|
+| 1 | 复制 agent.py → file_react.py | ✅ 已复制 | 2026-03-26 |
+| 2 | 删除 intent-type 分支 | 待实现 | 第121-134行 |
+| 3 | 重命名类 IntentReactAgent → FileReactAgent | 待实现 | |
+| 4 | 清理 docstring | 待实现 | |
+| 5 | 编译验证 | 待实现 | |
+| 6 | 废弃 `agent.py` | 待废弃 | file_react.py 验证通过后 |
 
 ---
 
