@@ -1,6 +1,436 @@
-v0.7.82
+v0.7.90
 
-更新时间：2026-03-24 23:20:00
+更新时间：2026-03-25 10:00:00
+
+更新内容：
+
+## 1. 统一文件操作系统session_id - 小沈-2026-03-25
+
+### 1.1 问题描述
+
+文件操作系统session_id与聊天session_id不一致：
+- chat2.py每次创建新UUID
+- generate_report查询时找不到数据
+- 4个报告文件只有1个生成
+
+### 1.2 修复内容
+
+**修改chat2.py:455**：
+```python
+# 修复前
+session_id = str(uuid.uuid4())  # 每次创建新UUID
+
+# 修复后
+session_id = request.session_id or str(uuid.uuid4())  # 复用聊天session_id
+```
+
+**修改file_visualization.py**：
+- 6个generate方法新增task_description参数
+- 去掉file_operation_sessions表依赖
+- 直接从file_operations表查询和统计数据
+
+**修改file_operations.py**：
+- generate_report API新增task_description参数
+- 调用generate方法时传递task_description
+
+**修改测试文件**：
+- test_visualization_new_methods.py更新参数传递
+
+### 1.3 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| backend/app/api/v1/chat2.py | 统一session_id = request.session_id or str(uuid.uuid4()) |
+| backend/app/utils/visualization/file_visualization.py | 6个generate方法新增task_description参数 |
+| backend/app/api/v1/file_operations.py | generate_report API新增task_description参数 |
+| backend/tests/test_visualization_new_methods.py | 更新测试参数传递 |
+| doc-多意图/LLM-文件操作历史过程报告设计方案V2版-小沈-20260325.md | 新增设计文档 |
+
+### 1.4 验证结果
+
+| 验证项 | 状态 | 说明 |
+|--------|------|------|
+| 单元测试 | ✅ 17/17通过 | 所有测试通过 |
+| session_id统一 | ✅ 正确 | 文件操作和聊天使用同一个ID |
+| report生成 | ✅ 正确 | 不再依赖file_operation_sessions表 |
+
+### 1.5 设计文档
+
+新增《LLM-文件操作历史过程报告设计方案V2版-小沈-20260325.md》：
+- 问题本质分析
+- 架构对比（错误vs正确）
+- 完整修改清单（10处）
+- 验证方案和风险评估
+
+参与开发：小沈、小健（审查）
+完成时间：2026-03-25 10:00:00
+
+---
+
+v0.7.89
+
+更新时间：2026-03-25 09:30:00
+
+更新内容：
+
+## 1. frontend目录清理整理 - 小强-2026-03-25
+
+### 1.1 问题描述
+
+frontend目录根目录杂乱，临时文件、调试文件、报告文件混在根目录。
+
+### 1.2 清理内容
+
+**移动到docs/目录（报告文件）**：
+- 测试报告-标题管理功能升级.md
+- 测试报告-流式界面优化-2026-03-06.md
+- 代码深度审查报告-标题管理功能升级.md
+- 开发总结-标题管理功能升级.md
+- 问题修复报告-P2问题修复.md
+- SESSION_API_USAGE-2026-03-01-小沈+小新.md
+
+**删除临时文件（15个）**：
+- 日志文件：dev.log, frontend.log, server.log
+- 调试HTML：check-frontend-state.html, debug-frontend.html, diagnose-frontend.html, test-*.html (6个)
+- 临时文件：vite.config.ts.timestamp-*.mjs (2个)
+- 其他：ts_errors.txt
+
+**删除多余目录（2个）**：
+- frontend/frontend/（空的重复目录）
+- frontend/backup/（过期备份文件）
+
+### 1.3 清理结果
+
+| 项目 | 清理前 | 清理后 |
+|------|--------|--------|
+| 根目录条目 | 41个 | 21个 |
+| 删除文件 | - | 15个 |
+| 移动文件 | - | 6个 |
+| 删除目录 | - | 2个 |
+
+### 1.4 验证结果
+
+| 验证项 | 状态 | 说明 |
+|--------|------|------|
+| ESLint检查 | ✅ 通过 | 无新增错误 |
+| 单元测试 | ✅ 238/238通过 | 所有测试通过 |
+
+参与开发：小强
+完成时间：2026-03-25 09:30:00
+
+---
+
+v0.7.88
+
+更新时间：2026-03-25 09:22:00
+
+更新内容：
+
+## 1. 工具参数JSON语法高亮 - 小强-2026-03-25
+
+### 1.1 问题描述
+
+工具参数显示为纯文本JSON，难以阅读，没有颜色区分不同类型值。
+
+### 1.2 修复内容
+
+**新增 JsonHighlight 组件**（MessageItem.tsx 第71-132行）：
+- null → 灰色(#8c8c8c)
+- boolean → 橙色(#cf7301)
+- number → 绿色(#389e0d)
+- string → 蓝色(#0050b3)
+- object key → 深蓝(#003a8c)
+- 支持展开/折叠状态切换
+
+**替换原生JSON.stringify**：
+- 第238行：使用 JsonHighlight 组件替代
+
+### 1.3 验证结果
+
+| 验证项 | 状态 | 说明 |
+|--------|------|------|
+| ESLint检查 | ✅ 通过 | 0 errors |
+| 单元测试 | ✅ 238/238通过 | 所有测试通过 |
+
+### 1.4 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/components/Chat/views/JsonHighlight.tsx | **新建**：JSON语法高亮独立组件 |
+| frontend/src/components/Chat/MessageItem.tsx | 导入JsonHighlight组件；修复任务ID显示（移除slice(0,8)截断，显示完整ID） |
+
+参与开发：小强（基于老杨分析）
+完成时间：2026-03-25 09:22:00
+
+---
+
+v0.7.87
+
+更新时间：2026-03-25 09:18:00
+
+更新内容：
+
+## 1. 老杨P1问题修复：步骤UI优化+交互改进 - 小强-2026-03-25
+
+### 1.1 修复内容（基于老杨分析报告P1问题）
+
+**1. 步骤间距优化**（MessageItem.tsx 第175、177行）：
+- marginBottom: 8 → 6（步骤间距紧凑化）
+- padding: "8px 12px" → "6px 10px"（步骤内边距紧凑化）
+
+**2. 步骤流程线添加**（MessageItem.tsx 第1114-1127行）：
+- 步骤之间添加"↓"箭头连接线
+- 最后一步不显示箭头
+- 使用React.Fragment包裹，避免key冲突
+
+**3. AI消息气泡视觉分隔**（MessageItem.tsx 第1131-1139行）：
+- 在执行步骤面板与AI回复之间添加渐变分隔线
+- 只在有步骤且有AI回复时显示
+- 分隔线样式：linear-gradient(90deg, transparent, #d9d9d9, transparent)
+
+**4. 工具参数展开交互改进**（MessageItem.tsx 第213-230行）：
+- 添加hover反馈：鼠标悬停时背景变蓝色(#e6f7ff)，边框变蓝色(#91d5ff)
+- 添加transition动画，平滑过渡
+- 保持原有cursor: pointer和展开/收起提示
+
+### 1.2 验证结果
+
+| 验证项 | 状态 | 说明 |
+|--------|------|------|
+| ESLint检查 | ✅ 通过 | 无新增错误 |
+| 单元测试 | ✅ 238/238通过 | 所有测试通过 |
+| 功能完整性 | ✅ 保持 | 无功能丢失 |
+
+### 1.3 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/components/Chat/MessageItem.tsx | 步骤间距、流程线、分隔带、hover反馈 |
+
+参与开发：小强（基于老杨分析）
+完成时间：2026-03-25 09:18:00
+
+---
+
+v0.7.86
+
+更新时间：2026-03-25 09:12:00
+
+更新内容：
+
+## 1. 老杨分析报告修复：字体对比度+颜色方案同步 - 小强-2026-03-25
+
+### 1.1 问题描述
+
+根据老杨《前端问题整合分析报告-老杨-2026-03-25.md》分析：
+- P0：字体对比度不足，影响可读性
+- P2：MessageItem.tsx的colorSchemes缺少textSecondary属性
+
+### 1.2 修复内容
+
+**stepStyles.ts 字体对比度修复**：
+| 类型 | 原色值 | 新色值 | 对比度提升 |
+|------|--------|--------|-----------|
+| resumed.textSecondary | #73d13d | #237804 | 2.3:1 → 4.6:1 |
+| report.textSecondary | #73d13d | #237804 | 2.3:1 → 4.6:1 |
+| error.textSecondary | #ff6b6b | #a8071a | 2.5:1 → 6.2:1 |
+| chunk.textSecondary | #b37feb | #531dab | 2.1:1 → 5.8:1 |
+
+**MessageItem.tsx 颜色方案同步**：
+- 给所有12个步骤类型添加textSecondary属性
+- 确保与stepStyles.ts保持一致
+
+### 1.3 验证结果
+
+| 验证项 | 状态 | 说明 |
+|--------|------|------|
+| ESLint检查 | ✅ 通过 | 无新增错误 |
+| 单元测试 | ✅ 238/238通过 | 所有测试通过 |
+
+### 1.4 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/utils/stepStyles.ts | 修复4个字体对比度颜色值 |
+| frontend/src/components/Chat/MessageItem.tsx | 添加textSecondary属性同步颜色方案 |
+
+参与开发：小强（基于老杨分析）
+完成时间：2026-03-25 09:12:00
+
+---
+
+v0.7.85
+
+更新时间：2026-03-25 07:42:00
+
+更新内容：
+
+## 1. 修复目录递归展开+搜索功能 - 小强-2026-03-25
+
+### 1.1 问题描述
+
+前端0.7.84版本经过UI优化后：
+1. 递归目录树的子目录无法展开
+2. 递归模式搜索时展开逻辑混乱
+
+### 1.2 根因分析
+
+**问题1：无法展开**
+- DirectoryTree 组件缺少用户交互的展开/折叠处理
+- 只有搜索时自动展开（searchExpandedKeys）
+- 没有 onExpand 回调处理用户点击
+
+**问题2：搜索展开混乱**
+- 搜索时 expandedKeys 混合了 searchExpandedKeys 和 userExpandedKeys
+- 但 filteredTreeData 是过滤后的树，导致key不匹配
+
+### 1.3 修复内容
+
+修改 ListDirectoryView.tsx：
+1. 新增 userExpandedKeys 状态管理用户手动展开的keys
+2. 新增 allExpandedKeys 统一管理展开状态
+3. 添加 onExpand 回调处理用户点击展开/折叠
+4. 修复搜索逻辑：有搜索时只用 searchExpandedKeys，无搜索时用 userExpandedKeys
+
+### 1.4 验证结果
+
+| 验证项 | 状态 | 说明 |
+|--------|------|------|
+| ESLint检查 | ✅ 通过 | 无新增错误 |
+| 单元测试 | ✅ 238/238通过 | 所有测试通过 |
+
+### 1.5 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/components/Chat/views/ListDirectoryView.tsx | 修复展开+搜索功能 |
+
+参与开发：小强
+完成时间：2026-03-25 07:42:00
+
+---
+
+v0.7.84
+
+更新时间：2026-03-24 23:55:26
+
+更新内容：
+
+## 1. 代码质量修复：修复前端视觉优化遗留问题 - 小强-2026-03-24
+
+### 1.1 问题修复
+
+#### 1.1.1 P0严重问题修复
+- **修复MessageItem.tsx重复getStepBadgeStyle函数**：删除重复定义，保留带渐变背景的版本
+- **修复未定义变量问题**：修复第203行`getLabelStyle()`、`icon`、`label`未定义问题，改用`getStepLabelStyle`和`getStepLabel`函数
+
+#### 1.1.2 P1问题修复
+- **统一字体大小常量使用**：将MessageItem.tsx中8处硬编码字体大小（12、11）替换为`FontSize.TERTIARY`、`FontSize.CODE`、`FontSize.SMALL`常量
+- **修复stepStyles.ts未使用变量警告**：修复`getStepDetailStyle`函数中`scheme`变量未使用的警告，改为使用步骤类型颜色
+- **修复TypeScript编译错误**：添加缺失的`chunk`和`report`类型到本地colorSchemes对象，移除未使用的`StepType`导入
+
+#### 1.1.3 视觉可读性优化
+- **修复步骤编号徽章文字看不见**：将"步骤1"、"步骤2"等徽章文字从白色改为深色，增加对比度
+- **加深蓝色系文字颜色**：将start类型文字从`#1890ff`改为`#0050b3`，action_tool从`#096dd9`改为`#003a8c`，提高对比度
+- **加深橙色系文字颜色**：将thought类型文字从`#d46b08`改为`#ad4e00`，增强可读性
+- **增大标签字体大小**：将`getStepLabelStyle`中的字体从`FontSize.SMALL`(11px)改为`FontSize.TERTIARY`(12px)
+- **加粗步骤编号文字**：将`getStepNumberBadgeStyle`中的字体加粗，提高可见性
+- **添加边框增强可见性**：为步骤编号徽章添加边框，增强与背景的对比
+- **同步本地colorSchemes颜色**：更新MessageItem.tsx中的本地colorSchemes对象，使用与stepStyles.ts一致的深色文字
+
+### 1.2 验证结果
+
+| 验证项 | 状态 | 说明 |
+|--------|------|------|
+| 单元测试 | ✅ 238/238通过 | 所有测试通过 |
+| ESLint检查 | ✅ 通过 | 无新增错误，仅保留原有警告 |
+| TypeScript编译 | ✅ 通过 | 无编译错误 |
+
+### 1.3 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/components/Chat/MessageItem.tsx | 删除重复函数，修复未定义变量，替换硬编码字体大小 |
+| frontend/src/utils/stepStyles.ts | 修复getStepDetailStyle函数中未使用变量警告 |
+| version.txt | 更新版本号和更新日志 |
+
+参与开发：小强
+完成时间：2026-03-24 23:55:26
+
+---
+
+## 2. 精细化视觉设计：字体大小规范+分行规则 - 小强-2026-03-24
+
+### 1.1 背景
+
+根据小资（视觉专家）的分析建议，对视觉设计进行精细化优化：
+1. 提取公共样式工具文件，消除代码重复
+2. 精细化颜色方案，区分不同步骤语义
+3. 定义完整的字体大小规范
+4. 定义标签和信息的分行规则
+
+### 1.2 核心改进
+
+#### 1.2.1 公共样式工具文件
+创建 `frontend/src/utils/stepStyles.ts`，统一管理所有步骤样式。
+
+#### 1.2.2 字体大小规范
+
+```typescript
+export const FontSize = {
+  PRIMARY: 14,          // 主标题、重要信息
+  SECONDARY: 13,        // 普通内容
+  TERTIARY: 12,         // 辅助信息
+  SMALL: 11,            // 微小信息
+  CAPTION: 10,          // 注释文字
+  CODE: 12,             // 代码/路径
+} as const;
+```
+
+#### 1.2.3 分行规则配置
+
+| 步骤类型 | 布局模式 | 说明 |
+|----------|---------|------|
+| thought | block | 思考内容需要换行显示 |
+| start | inline-with-details | 标题一行，详情可以展开 |
+| retrying | inline | 简短信息，一行显示 |
+| action_tool | inline-with-details | 工具名一行，参数可展开 |
+| final | block | 完成信息可能较长，需要换行 |
+| resumed | inline | 恢复信息简短，一行显示 |
+| observation | inline-with-details | 观察摘要一行，详细可展开 |
+| **report** | **inline** | **报告标签和路径一行显示，不分行** |
+| error | block | 错误信息需要醒目显示 |
+| paused | inline | 暂停信息简短，一行显示 |
+| chunk | block | 内容片段需要换行显示 |
+
+#### 1.2.4 GenerateReportView重构
+
+根据小资建议，报告标签和路径应该一行显示：
+- 使用inline布局
+- 报告类型标签 + 文件路径在同一行
+- 不使用Card组件，简化结构
+
+### 1.3 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/utils/stepStyles.ts | 新建：公共样式工具文件 |
+| frontend/src/components/Chat/MessageItem.tsx | 使用新的样式函数和字体规范 |
+| frontend/src/components/Chat/views/GenerateReportView.tsx | 重写：使用inline布局 |
+
+### 1.4 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| 单元测试 | ✅ 238/238通过 |
+| Lint检查 | ✅ 通过 |
+
+参与开发：小强
+完成时间：2026-03-24 23:40:00
+
+---
+
+v0.7.82
 
 更新内容：
 
