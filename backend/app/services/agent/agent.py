@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-IntentAgent - 通用意图 Agent
+ReactAgent - ReAct Agent
 
 继承 BaseAgent，实现 ReAct 循环的通用意图智能体，
 通过 intent_type 参数决定加载哪套工具/安全检查/Prompt，
@@ -11,7 +11,7 @@ IntentAgent - 通用意图 Agent
 - 继承 BaseAgent，实现抽象方法
 - 保留文件专用逻辑（session管理、prompts、rollback）
 
-【重命名】2026-03-21 小沈 - FileOperationAgent → IntentAgent
+【重命名】2026-03-25 小健 - IntentAgent → IntentReactAgent
 
 Author: 小沈 - 2026-03-21
 """
@@ -38,9 +38,9 @@ from app.chat_stream.chat_helpers import create_final_response, create_timestamp
 from app.chat_stream.error_handler import create_error_response
 
 
-class IntentAgent(BaseAgent):
+class IntentReactAgent(BaseAgent):
     """
-    通用意图 Agent，继承 BaseAgent
+    Intent+ReAct Agent，继承 BaseAgent
     
     实现完整的 Thought-Action-Observation 循环，
     通过 intent_type 参数决定加载哪套工具/安全检查/Prompt，
@@ -714,3 +714,6 @@ class IntentAgent(BaseAgent):
                     retryable=event.get('retryable', False),
                     step=step
                 )
+
+# 向后兼容别名
+IntentAgent = IntentReactAgent

@@ -1,3 +1,38 @@
+v0.7.92
+
+更新时间：2026-03-25 13:05:00
+
+更新内容：
+
+## 1. Agent重命名：IntentAgent → IntentReactAgent - 小健-2026-03-25
+
+### 1.1 背景
+
+- agent.py 主要处理 ReAct 循环（文件操作场景）
+- 普通对话不走这个程序
+- 原名称 IntentAgent 不够直观
+
+### 1.2 修改内容
+
+**agent.py**：
+- 类名：IntentAgent → IntentReactAgent
+- 添加向后兼容别名：`IntentAgent = IntentReactAgent`
+
+**__init__.py**：
+- 新增 IntentReactAgent 导出
+- 保持 IntentAgent 别名兼容
+
+### 1.3 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| 单元测试 | ✅ 20 passed |
+
+参与开发：小健
+完成时间：2026-03-25 13:05:00
+
+---
+
 v0.7.91
 
 更新时间：2026-03-25 12:54:45
