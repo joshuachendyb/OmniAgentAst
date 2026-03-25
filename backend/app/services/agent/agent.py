@@ -83,7 +83,10 @@ class IntentAgent(BaseAgent):
         self.intent_type = intent_type
         
         # 【修复】调用父类初始化
-        super().__init__(max_steps=max_steps, use_function_calling=use_function_calling)
+        super().__init__(max_steps=max_steps)
+        
+        # 【扩展】保存 use_function_calling（父类不需要，但子类需要）
+        self.use_function_calling = use_function_calling
         
         # 会话ID
         self.llm_client = llm_client
@@ -296,14 +299,72 @@ class IntentAgent(BaseAgent):
     async def _execute_tool(
         self,
         action: str,
-        action_input: Dict[str, Any]
+        params: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         执行工具的抽象方法实现
         
         代理到 ToolExecutor.execute
         """
-        return await self.executor.execute(action, action_input)
+        return await self.executor.execute(action, params)
+    
+    # ===== 实现父类抽象方法 =====
+    
+    def _get_system_prompt(self) -> str:
+        """获取系统 Prompt"""
+        # 如果有自定义的 system_prompt，先使用它
+        if hasattr(self, '_custom_system_prompt') and self._custom_system_prompt:
+            return self._custom_system_prompt
+        return self.prompts.get_system_prompt()
+    
+    def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
+        """获取任务 Prompt"""
+        return self.prompts.get_task_prompt(task, context)
+    
+    # ===== 实现父类 Hook 方法 =====
+    
+    def _on_session_init(self, task: str, context: Optional[Dict[str, Any]]):
+        """Session 初始化 Hook"""
+        # 确保 session 存在
+        session_id = self.session_id
+        if not session_id:
+            session_id = self.session_service.create_session(
+                agent_id="file-operation-agent",
+                task_description=task
+            )
+            self._session_created_by_agent = True
+            if hasattr(self.file_tools, 'set_session'):
+                self.file_tools.set_session(session_id)
+            logger.info(f"Session created in run_stream(): {session_id}")
+    
+    def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
+        """循环开始前 Hook - 记录 Prompt 日志"""
+        from datetime import datetime
+        prompt_logger = get_prompt_logger()
+        prompt_logger.start_request(
+            user_message=task_prompt,
+            user_message_id=f"msg_{self.session_id}_{datetime.now().strftime('%H%M%S')}",
+            session_id=self.session_id
+        )
+        prompt_logger.log_system_prompt(
+            step_name="系统Prompt生成",
+            prompt_content=sys_prompt,
+            source="file_prompts.py:get_system_prompt()"
+        )
+        prompt_logger.log_task_prompt(
+            task_content=task_prompt,
+            context=context
+        )
+    
+    def _on_after_loop(self):
+        """循环结束后 Hook - 关闭 Session"""
+        if self._session_created_by_agent and self.session_id and self.session_service:
+            try:
+                self.session_service.complete_session(self.session_id, success=True)
+                logger.info(f"Session completed in run_stream: {self.session_id}")
+                self._session_created_by_agent = False
+            except Exception as e:
+                logger.error(f"Failed to complete session {self.session_id}: {e}")
     
     # ========== 文件专用方法 ==========
     
@@ -509,208 +570,6 @@ class IntentAgent(BaseAgent):
                 except Exception as e:
                     logger.error(f"Failed to complete session {session_id}: {e}")
     
-    async def run_stream(
-        self,
-        task: str,
-        context: Optional[Dict[str, Any]] = None,
-        system_prompt: Optional[str] = None,
-        max_steps: int = 100
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        【Phase2新增】异步流式执行 Agent，每轮循环完成后立即 yield 输出
-        
-        Args:
-            task: 任务描述
-            context: 额外上下文
-            system_prompt: 自定义系统 prompt（可选）
-            max_steps: 最大迭代次数
-        
-        Yields:
-            各个阶段的输出字典
-        """
-        # 重置状态
-        self.steps = []
-        self.conversation_history = []
-        self.status = AgentStatus.THINKING
-        self.llm_call_count = 0
-        
-        # 确保 session 存在
-        session_id = self.session_id
-        if not session_id:
-            session_id = self.session_service.create_session(
-                agent_id="file-operation-agent",
-                task_description=task
-            )
-            self._session_created_by_agent = True
-            if hasattr(self.file_tools, 'set_session'):
-                self.file_tools.set_session(session_id)
-            logger.info(f"Session created in run_stream(): {session_id}")
-        
-        # 构建初始 prompt
-        sys_prompt = system_prompt or self.prompts.get_system_prompt()
-        task_prompt = self.prompts.get_task_prompt(task, context)
-        
-        # 添加到对话历史
-        self.conversation_history.append({"role": "system", "content": sys_prompt})
-        self.conversation_history.append({"role": "user", "content": task_prompt})
-        
-        # ========== Prompt 日志记录 ==========
-        from datetime import datetime
-        prompt_logger = get_prompt_logger()
-        prompt_logger.start_request(
-            user_message=task,
-            user_message_id=f"msg_{session_id}_{datetime.now().strftime('%H%M%S')}",
-            session_id=session_id
-        )
-        prompt_logger.log_system_prompt(
-            step_name="系统Prompt生成",
-            prompt_content=sys_prompt,
-            source="file_prompts.py:get_system_prompt()"
-        )
-        prompt_logger.log_task_prompt(
-            task_content=task_prompt,
-            context=context
-        )
-        
-        step_count = 0
-        
-        try:
-            while step_count < max_steps:
-                step_count += 1
-                
-                # ========== Thought 阶段 ==========
-                self.status = AgentStatus.THINKING
-                response = await self._get_llm_response()
-                
-                # 解析响应
-                try:
-                    parsed = self.parser.parse_response(response)
-                except ValueError as e:
-                    logger.error(f"Failed to parse LLM response: {e}")
-                    self._add_observation_to_history(f"Parse error: {e}. Please respond with valid JSON format.")
-                    continue
-                
-                thought_content = parsed.get("content", "")
-                reasoning = parsed.get("reasoning")
-                action_tool = parsed.get("action_tool", "finish")
-                params = parsed.get("params", {})
-                
-                # 立即 yield thought
-                current_time = create_timestamp()
-                yield {
-                    "type": "thought",
-                    "step": step_count,
-                    "timestamp": current_time,
-                    "content": thought_content,
-                    "reasoning": reasoning,
-                    "action_tool": action_tool,
-                    "params": params
-                }
-                
-                # 判断是否结束
-                if action_tool == "finish":
-                    yield {
-                        "type": "final",
-                        "timestamp": current_time,
-                        "content": params.get("result", thought_content)
-                    }
-                    break
-                
-                # ========== Action 阶段 ==========
-                self.status = AgentStatus.EXECUTING
-                execution_result = await self.executor.execute(action_tool, params)
-                
-                # 立即 yield action_tool 结果
-                yield {
-                    "type": "action_tool",
-                    "step": step_count,
-                    "timestamp": current_time,
-                    "tool_name": action_tool,
-                    "tool_params": params,
-                    "execution_status": execution_result.get("status", "success"),
-                    "summary": execution_result.get("summary", ""),
-                    "raw_data": execution_result.get("data"),
-                    "action_retry_count": execution_result.get("retry_count", 0)
-                }
-                
-                # ========== Observation 阶段 ==========
-                observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}"
-                self._add_observation_to_history(observation_text)
-                
-                # 调用 LLM 获取下一个决策
-                self.status = AgentStatus.OBSERVING
-                llm_response = await self._get_llm_response()
-                
-                try:
-                    parsed_obs = self.parser.parse_response(llm_response)
-                except ValueError as e:
-                    logger.error(f"Failed to parse observation LLM response: {e}")
-                    parsed_obs = {"content": "无法解析LLM响应", "action_tool": "finish", "params": {}}
-                
-                is_finished = parsed_obs.get("action_tool") == "finish"
-                
-                # 立即 yield observation
-                current_time = create_timestamp()
-                yield {
-                    "type": "observation",
-                    "step": step_count,
-                    "timestamp": current_time,
-                    "obs_execution_status": execution_result.get("status", "success"),
-                    "obs_summary": execution_result.get("summary", ""),
-                    "obs_raw_data": execution_result.get("data"),
-                    "content": parsed_obs.get("content", ""),
-                    "obs_reasoning": parsed_obs.get("reasoning"),
-                    "obs_action_tool": parsed_obs.get("action_tool", "finish"),
-                    "obs_params": parsed_obs.get("params", {}),
-                    "is_finished": is_finished
-                }
-                
-                # 更新消息历史
-                self.conversation_history.append({"role": "assistant", "content": thought_content})
-                
-                # 判断是否结束
-                if is_finished:
-                    yield {
-                        "type": "final",
-                        "timestamp": current_time,
-                        "content": parsed_obs.get("content", "任务已完成")
-                    }
-                    break
-            
-            # 超过最大步数
-            if step_count >= max_steps:
-                yield {
-                    "type": "error",
-                    "timestamp": create_timestamp(),
-                    "code": "MAX_STEPS_EXCEEDED",
-                    "message": f"已达到最大迭代次数 {max_steps}"
-                }
-                
-        except Exception as e:
-            logger.error(f"Agent run_stream error: {e}", exc_info=True)
-            yield {
-                "type": "error",
-                "timestamp": create_timestamp(),
-                "code": "INTERNAL_ERROR",
-                "message": str(e)
-            }
-        finally:
-            # ========== 保存 Prompt 日志 ==========
-            try:
-                prompt_logger = get_prompt_logger()
-                prompt_logger.save()
-            except Exception as e:
-                logger.error(f"保存 Prompt 日志失败: {e}")
-            
-            # 关闭 session
-            if self._session_created_by_agent and session_id and self.session_service:
-                try:
-                    self.session_service.complete_session(session_id, success=True)
-                    logger.info(f"Session completed in run_stream: {session_id}")
-                    self._session_created_by_agent = False
-                except Exception as e:
-                    logger.error(f"Failed to complete session {session_id}: {e}")
-    
     async def rollback(self, step_number: Optional[int] = None) -> bool:
         """
         回滚操作
@@ -792,10 +651,12 @@ class IntentAgent(BaseAgent):
         if get_next_step is None:
             raise ValueError("get_next_step function is required")
         
+        # 将 system_prompt 存入 self，供父类 hook 使用
+        self._custom_system_prompt = system_prompt
+        
         async for event in self.run_stream(
             task=task,
             context=context,
-            system_prompt=system_prompt,
             max_steps=max_steps
         ):
             event_type = event.get('type')
