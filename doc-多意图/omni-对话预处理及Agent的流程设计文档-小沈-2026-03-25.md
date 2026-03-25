@@ -914,6 +914,12 @@ chat_router.py（新路由入口）
 - 方式：先创建 chat_router.py 作为新入口，验证通过后逐步替换旧调用链
 - chat2.py 和 agent.py 暂时保留，待新架构稳定后再废弃
 
+**关键说明 - 为什么不需要第三层**：
+- FileReactAgent.ver1_run_stream() 方法已经封装了完整的 SSE 处理逻辑
+- 直接返回 SSE 格式字符串（"data: {...}\n\n"）
+- 不需要额外的 react_sse_wrapper.py 中间层
+- 附录2.7 的 react_sse_wrapper.py 设计是冗余的，可以跳过（后续文档待删除）
+
 **改造要点**：
 - [ ] 新建 `chat_router.py` 作为统一路由入口
 - [ ] **废除** `detect_file_operation_intent`（预处理阶段已有意图识别）
