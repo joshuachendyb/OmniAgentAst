@@ -1105,6 +1105,10 @@ agent = FileOperationAgent(
 
 #### 附录2.3.1 四层架构
 
+> **更新说明 2026-03-26**：确认调用链后更新架构图
+> - react_sse_wrapper 是第二层
+> - file_react 是第三层
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  第一层：路由层                                                  │
@@ -1112,40 +1116,39 @@ agent = FileOperationAgent(
 │                                                                 │
 │  ├── 调用 PreprocessingPipeline 进行意图检测                      │
 │  ├── 根据 intent_type 分发到对应执行层：                         │
-│  │   ├── file → FileReactAgent (file_react.py)                 │
-│  │   ├── network → NetworkReactAgent (network_react.py)          │
-│  │   ├── desktop → DesktopReactAgent (desktop_react.py)         │
+│  │   ├── file → react_sse_wrapper                              │
+│  │   ├── network → react_sse_wrapper                           │
+│  │   ├── desktop → react_sse_wrapper                          │
 │  │   └── query → chat_stream_query()                            │
 │  └── 废除 detect_file_operation_intent()                          │
 └─────────────────────────────────────────────────────────────────┘
                                ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  第二层：意图特定 React                                          │
+│  第二层：React SSE 包装层                                       │
+│  文件：react_sse_wrapper.py                                     │
 │                                                                 │
-│  ├── FileReactAgent (file_react.py)                            │
-│  │   ├── 文件操作工具 (FileTools)                               │
-│  │   ├── Prompt 模板 (FileOperationPrompts)                     │
-│  │   ├── 意图注册表 (IntentRegistry)                            │
-│  │   ├── LLM 调用策略 (TextStrategy/ToolsStrategy/LLMAdapter)    │
-│  │   └── ver1_run_stream() - SSE 流式执行                      │
-│  │                                                             │
-│  ├── NetworkReactAgent (network_react.py) ← 待实现              │
-│  │                                                             │
-│  └── DesktopReactAgent (desktop_react.py) ← 待实现              │
-│                                                                 │
-│  【说明】这些层共同调用 react_sse_wrapper.py                      │
+│  ├── 任务管理 (running_tasks / interrupted_sessions)            │
+│  ├── start 步骤发送（含 security_check）                        │
+│  ├── 数据库保存 (save_execution_steps_to_db)                    │
+│  ├── 中断/暂停处理                                             │
+│  ├── SSE 转换（event dict → SSE 字符串）                       │
+│  └── 调用 file_react.run_stream()                              │
 └─────────────────────────────────────────────────────────────────┘
                                ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  第三层：React SSE 包装层                                       │
-│  文件：react_sse_wrapper.py                                     │
-│  【来源】从 chat2.py 抽取有价值内容后废弃                       │
+│  第三层：意图特定 React                                          │
 │                                                                 │
-│  ├── 流式输出 SSE（start 步骤 + security_check）                │
-│  ├── 中断/暂停处理 (check_and_yield_if_interrupted/paused)      │
-│  ├── 数据库保存 (save_execution_steps_to_db)                     │
-│  ├── 任务管理状态 (running_tasks / interrupted_sessions)         │
-│  └── 调用 base_react.py 的 run_stream()                          │
+│  ├── FileReactAgent (file_react.py)                            │
+│  │   ├── 文件操作工具 (FileTools)                               │
+│  │   ├── Prompt 模板 (FileOperationPrompts)                    │
+│  │   ├── LLM 调用策略                                           │
+│  │   └── run_stream() → 返回 event dict                        │
+│  │                                                             │
+│  ├── NetworkReactAgent (network_react.py) ← 待实现            │
+│  │                                                             │
+│  └── DesktopReactAgent (desktop_react.py) ← 待实现            │
+│                                                                 │
+│  【说明】file_react 只返回 event dict，不做 SSE 转换           │
 └─────────────────────────────────────────────────────────────────┘
                                ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1157,7 +1160,15 @@ agent = FileOperationAgent(
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-#### 附录2.3.2 改造前后对应关系
+#### 附录2.3.2 调用链说明
+
+```
+chat_router → react_sse_wrapper → file_react.run_stream() → base_react.run_stream()
+     ↓              ↓                    ↓                       ↓
+   第一层        第二层               第三层                  第四层
+```
+
+#### 附录2.3.3 改造前后对应关系
 
 | 改造前 | 改造后 | 状态 |
 |--------|---------|------|
