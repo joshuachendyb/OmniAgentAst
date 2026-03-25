@@ -30,7 +30,10 @@ class FileSafetyConfig:
     # 备份保留天数
     BACKUP_RETENTION_DAYS: int = 30
     # 报告输出路径
-    REPORT_PATH: Path = Path.home() / ".omniagent" / "reports"
+    # 【小沈修改 2026-03-25】Debug阶段改为项目目录下，方便查看
+    # 生产环境可改为 Path.home() / ".omniagent" / "reports"
+    PROJECT_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent  # 项目根目录
+    REPORT_PATH: Path = PROJECT_ROOT / "reports"
     
     @classmethod
     def ensure_directories(cls):
