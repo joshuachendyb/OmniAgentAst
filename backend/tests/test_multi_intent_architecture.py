@@ -468,12 +468,12 @@ class TestReActIntentIntegration:
 
     def test_base_agent_exists(self):
         """BaseAgent 通用基类存在"""
-        from app.services.agent.base import BaseAgent
+        from app.services.agent.base_react import BaseAgent
         assert BaseAgent is not None
 
     def test_base_agent_is_abstract(self):
         """BaseAgent 是抽象基类"""
-        from app.services.agent.base import BaseAgent
+        from app.services.agent.base_react import BaseAgent
         import inspect
         # 检查是否有抽象方法
         has_abstract = any(

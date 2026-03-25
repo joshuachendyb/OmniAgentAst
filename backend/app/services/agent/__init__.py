@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 # ============================================================================
 from app.services.preprocessing import PreprocessingPipeline, TextCorrector, IntentClassifier
 from app.services.intent import Intent, IntentRegistry
-from .base import BaseAgent
+from .base_react import BaseAgent
 from .tool_parser import ToolParser
 from .tool_executor import ToolExecutor
 from .session_base import SessionServiceBase, SessionStatsMixin

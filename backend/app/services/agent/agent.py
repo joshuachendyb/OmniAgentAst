@@ -20,7 +20,7 @@ import asyncio
 import json
 from typing import Dict, Any, List, Optional, AsyncGenerator, Callable
 
-from app.services.agent.base import BaseAgent
+from app.services.agent.base_react import BaseAgent
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.types import Step, AgentResult, AgentStatus
 from app.services.tools.file.file_tools import FileTools
