@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-25 19:20:00
-**版本**: v2.13
+**更新时间**: 2026-03-25 20:19:07
+**版本**: v2.21
 **编写人**: 小沈
 
 ---
@@ -44,6 +44,14 @@
 | v2.11 | 2026-03-25 19:10:00 | 删除末尾重复Session内容，修正第四章标题层级，删除7.6回归验证移至附录 |
 | v2.12 | 2026-03-25 19:15:00 | 修正2.7.1预处理代码示例：预处理不调用chat2，由路由层串联调用 |
 | v2.13 | 2026-03-25 19:20:00 | 修正6.1文件位置（PreprocessingPipeline/IntentRegistry正确路径），修正6.2.1预处理职责（不调用chat2） |
+| v2.14 | 2026-03-25 19:29:45 | 修正6.3 Session管理：补充两层Session管理（chat2.py任务管理 + session.py文件操作会话），删除不准确的Session生命周期描述，补充代码位置和实际状态值 |
+| v2.15 | 2026-03-25 19:38:24 | 新增6.3.4节：添加6.3 Session管理与报告设计方案的逻辑关系图，说明两者是架构层与实现层的关系 |
+| v2.16 | 2026-03-25 19:42:42 | 新增7.1.1核心教训：明确本次梳理的目的是"正确整合已有功能到主流程"，强调"单元重构完成≠重构目的达到" |
+| v2.17 | 2026-03-25 19:46:12 | 新增7.3遗留问题修复：补充 `2.预处理与多意图代码目录说明-小沈-2026-03-22.md` 7.7节的遗留问题（agent.py:452应用preprocessed['corrected']替代原始task） |
+| v2.18 | 2026-03-25 19:59:02 | 修正7.4路由改造：引用整合架构设计，新增chat_router.py设计，强调chat2不能作为路由层，废除detect_file_operation_intent |
+| v2.19 | 2026-03-25 20:09:30 | 整合两个文档的2.1节：合并整合架构设计的chat_router.py架构图，替换OMNI的2.1节，明确chat_router/预处理/IntentReactAgent职责分工 |
+| v2.20 | 2026-03-25 20:15:07 | 新增Agent命名规范（7.5节）：IntentReactAgent统一改名为intent-file-ReactAgent，避免与BaseAgent混淆 |
+| v2.21 | 2026-03-25 20:19:07 | 全面替换文档中所有IntentReactAgent为intent-file-ReactAgent（1.3/2.1/2.3/2.7/3.3/4.2/4.3/4.5/5.1/6.1/6.2节） |
 
 ---
 
@@ -91,7 +99,7 @@
 
 ```
 BaseAgent (base.py) - 定义了一套循环逻辑
-IntentAgent (agent.py) - 完全重写了另一套循环逻辑 ← 问题！
+intent-file-ReactAgent (agent.py) - 完全重写了另一套循环逻辑 ← 问题！
 ```
 
 - agent.py 没有继承/调用 base.py 的核心逻辑
@@ -103,7 +111,7 @@ IntentAgent (agent.py) - 完全重写了另一套循环逻辑 ← 问题！
 ```
 BaseAgent (base.py) 
     ↓ 定义核心逻辑（base = 基础）
-IntentAgent (agent.py)
+intent-file-ReactAgent (agent.py)
     ↓ 继承并调用 base 的方法
 chat2.py
 ```
@@ -124,42 +132,71 @@ chat2.py
 
 ## 二、整体架构设计
 
-### 2.1 外部调用架构（预处理 → chat2 → Agent）
+### 2.1 外部调用架构
 
-> **📝 说明**：本节提到的 **Agent** 特指 `IntentReactAgent`（agent.py），是文件操作/网络操作的智能代理，基于 ReAct 循环实现。
+> **📝 说明**：整合自 `多意图系统与现有代码整合架构设计-2026-03-22.md` 2.1节
+>
+> **核心原则**：
+> - chat_router.py **独立作为路由入口**
+> - 预处理模块**独立**，不在chat2内部
+> - chat2.py **只负责流式loop**，不包含路由/预处理/意图识别
+> - **Agent** 特指 `intent-file-ReactAgent`（agent.py），基于 ReAct 循环实现
 
 ```
-用户请求
-    ↓
-┌─────────────────────────────────────────┐
-│          预处理模块 (preprocessing.py)   │
-│  1. preprocessor.process()             │
-│  2. intent_registry.get()              │
-│  3. 完整预处理与意图识别              │
-└─────────────────────────────────────────┘
-    ↓
-返回: intent_type + intent_def + 处理后的 task
-    ↓
-调用 chat2.handle_stream()
-    ↓
-┌─────────────────────────────────────────┐
-│            chat2.py（入口+执行）         │
-│  1. Session 创建/管理                   │
-│  2. 根据 intent_type 决定分支           │
-│  3. 流式输出具体工作                   │
-└─────────────────────────────────────────┘
-    ↓
-    ├──────────────┴──────────────┐
-    ↓                              ↓
- 无动作                          有动作
- (普通对话)                     (文件操作/网络操作)
-    ↓                              ↓
- chat_stream_query             IntentReactAgent
- (流式chunk发送)               (ReAct循环)
-    ↓                              ↓
- 流式yield                    流式yield事件
- chunk/final                 + _on_before_loop()
+前端请求
+    │
+    ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  chat_router.py (新路由入口)                                      │
+│                                                                 │
+│  职责：                                                          │
+│  1. 调用 PreprocessingPipeline 进行意图检测                       │
+│  2. 根据 intent 类型分发到对应处理流程                            │
+│                                                                 │
+│  输出：intent, confidence, corrected_text                        │
+└─────────────────────────────────────────────────────────────────┘
+               │
+         ┌─────┼─────┐
+         │     │     │
+         ▼     ▼     ▼
+     intent= intent= intent=
+     file   network query
+          │     │     │
+          ▼     ▼     ▼
+      ┌─────────────┐ ┌─────────────────┐ ┌────────────┐
+      │intent-file- │ │intent-network- │ │chat_       │
+      │ReactAgent    │ │ReactAgent      │ │stream_     │
+      │(ReAct)       │ │(ReAct)         │ │query.py    │
+      │              │ │                │ │(简单对话)  │
+      └─────────────┘ └─────────────────┘ └────────────┘
+     
+     ┌──────────────┐
+     │error_handler │ ← 统一的错误处理
+     │.py           │
+     └──────────────┘
+     ┌──────────────┐
+     │incident_han- │ ← 统一的中断/暂停处理
+     │dler.py       │
+     └──────────────┘
 ```
+
+**流程说明**：
+
+| 阶段 | 文件 | 说明 |
+|------|------|------|
+| **入口** | chat_router.py | 意图检测 + 分发 |
+| **预处理** | preprocessing/pipeline.py | 语句校对 + 意图识别 |
+| **ReAct流程** | intent-*-ReactAgent (agent.py) | start → thought → action → observation → final |
+| **简单对话** | chat_stream_query.py | start → chunk → final |
+| **错误处理** | error_handler.py | 统一的错误响应 |
+| **中断处理** | incident_handler.py | 统一的中断/暂停响应 |
+
+**chat_router.py 与 chat2.py 的职责分工**：
+
+| 文件 | 职责 | 不做 |
+|------|------|------|
+| **chat_router.py** | 路由入口、调用预处理、根据intent分发 | 流式loop、具体执行 |
+| **chat2.py / intent-file-ReactAgent** | 流式loop（ReAct循环或普通对话） | 路由、预处理、意图识别 |
 
 ### 2.2 预处理模块职责
 
@@ -175,7 +212,7 @@ chat2.py
 
 > **📝 chat2.py 与 Agent 的关系说明**：
 > - **chat2.py** 是**入口调度层**，负责接收预处理结果，根据 `intent_type` 决定走哪条分支
-> - **IntentReactAgent** 是**执行层**，在需要文件操作/网络操作时调用，实现 ReAct 循环
+> - **intent-file-ReactAgent** 是**执行层**，在需要文件操作/网络操作时调用，实现 ReAct 循环
 > - chat2 调用 Agent，而不是包含 Agent，两者职责分离
 
 chat2.py 是**入口+执行**，负责：
@@ -185,7 +222,7 @@ chat2.py 是**入口+执行**，负责：
 | 1 | Session 创建/管理 |
 | 2 | 根据 intent_type 决定分支 |
 | 3 | 流式输出具体工作 |
-| 4 | 有动作时：调用 IntentReactAgent.ver1_run_stream() |
+| 4 | 有动作时：调用 intent-file-ReactAgent.ver1_run_stream() |
 | 5 | 无动作时：调用 chat_stream_query() |
 
 ### 2.4 文件引用关系
@@ -194,7 +231,7 @@ chat2.py 是**入口+执行**，负责：
 |-----------|---------|
 | PreprocessingPipeline | `from app.services.preprocessing import PreprocessingPipeline` |
 | IntentRegistry | `from app.services.intent import IntentRegistry, Intent` |
-| IntentReactAgent | `from app.services.agent import IntentAgent as FileOperationAgent` |
+| intent-file-ReactAgent | `from app.services.agent import intent_file_ReactAgent` |
 | AIServiceFactory | `from app.services import AIServiceFactory` |
 | cache_display_name | `from app.utils.display_name_cache import cache_display_name` |
 | check_command_safety | `from app.services.shell_security import check_command_safety` |
@@ -260,7 +297,7 @@ async def execute_preprocessing(request: ChatRequest) -> dict:
 #### 2.7.2 chat2.py（入口+执行）
 
 ```python
-from app.services.agent import IntentAgent as FileOperationAgent
+from app.services.agent import intent_file_ReactAgent  # 文件操作专用Agent
 from app.services import AIServiceFactory
 
 async def handle_stream(
@@ -347,12 +384,12 @@ async def handle_stream(
 | step_counter | 步骤计数器 | 局部变量 |
 | next_step | 计数函数 | chat2 内定义的局部函数 |
 
-### 3.3 chat2 → IntentReactAgent.ver1_run_stream()
+### 3.3 chat2 → intent-file-ReactAgent.ver1_run_stream()
 
 **实际参数（已核对代码）**：
 
 ```python
-agent = FileOperationAgent(
+agent = intent_file_ReactAgent(
     llm_client=llm_client,
     session_id=session_id
 )
@@ -410,7 +447,7 @@ chat_stream_query(
 
 ```
 ┌─────────────────────────────────────────┐
-│     IntentReactAgent (agent.py) (扩展层) │
+│     intent-file-ReactAgent (agent.py) (扩展层) │
 │  - 继承 BaseAgent                       │
 │  - 添加扩展功能:                        │
 │    • session 管理                        │
@@ -433,7 +470,7 @@ chat_stream_query(
 ```
 chat2.ver1_run_stream()
     ↓ 调用
-agent.ver1_run_stream() ← IntentReactAgent
+agent.ver1_run_stream() ← intent-file-ReactAgent
     ↓ 调用
 run_stream() ← 父类 BaseAgent
     ↓
@@ -511,7 +548,7 @@ class BaseAgent(ABC):
 
 | 项目 | 说明 | 代码位置 |
 |------|------|---------|
-| agent.py 继承 BaseAgent | 继承关系已建立 | agent.py:41 `class IntentReactAgent(BaseAgent)` |
+| agent.py 继承 BaseAgent | 继承关系已建立 | agent.py:41 `class intent-file-ReactAgent(BaseAgent)` |
 | 实现4个抽象方法 | 子类必须实现的方法 | agent.py:197/299/313/320 |
 | ver1_run_stream 调用 run_stream | 调用父类核心方法 | agent.py:657 `async for event in self.run_stream(...)` |
 | base.py 核心循环逻辑 | 完整的 ReAct 循环 | base.py:108-270 |
@@ -539,7 +576,7 @@ class BaseAgent(ABC):
 
 ## 五、事件类型定义
 
-### 5.1 ReAct 循环事件（IntentReactAgent）
+### 5.1 ReAct 循环事件（intent-file-ReactAgent）
 
 | 事件类型 | 说明 | 包含字段 |
 |----------|------|---------|
@@ -567,7 +604,7 @@ class BaseAgent(ABC):
 | 文件 | 说明 |
 |------|------|
 | `backend/app/api/v1/chat2.py` | 路由层/chat2入口（含预处理调用） |
-| `backend/app/services/agent/agent.py` | IntentReactAgent (ver1_run_stream) |
+| `backend/app/services/agent/agent.py` | intent-file-ReactAgent (ver1_run_stream) |
 | `backend/app/services/agent/base.py` | BaseAgent 基类（需补充可扩展方法） |
 | `backend/app/services/preprocessing/pipeline.py` | PreprocessingPipeline（已存在） |
 | `backend/app/services/intent/registry.py` | IntentRegistry（已存在） |
@@ -589,31 +626,107 @@ class BaseAgent(ABC):
 | 模块 | 职责 | 不做 |
 |------|------|------|
 | **BaseAgent (base.py)** | 定义ReAct循环核心逻辑，提供抽象方法，定义可扩展方法 | 包含具体实现细节 |
-| **IntentReactAgent (agent.py)** | 继承BaseAgent，实现抽象方法，添加扩展功能（session、prompt等） | 重写循环逻辑 |
+| **intent-file-ReactAgent (agent.py)** | 继承BaseAgent，实现抽象方法，添加扩展功能（session、prompt等） | 重写循环逻辑 |
 
 ### 6.3 Session 管理
 
-#### 6.3.1 Session 生命周期
+> **📝 说明**：代码中存在**两层Session管理**，职责不同：
+
+#### 6.3.1 两层Session管理
+
+| 层级 | 文件 | 职责 | Session ID |
+|------|------|------|------------|
+| **第一层** | chat2.py | task_id任务管理、中断/暂停控制 | task_id（路由参数） |
+| **第二层** | session.py | 文件操作会话记录、统计 | session_id（业务参数） |
+
+#### 6.3.2 chat2.py中的任务管理
+
+**文件位置**：`backend/app/api/v1/chat2.py`
+
+**数据结构**：
+```python
+# task_id → 任务信息
+running_tasks: dict[str, dict] = {
+    "task-uuid": {
+        "status": "running",    # running/cancelled/paused
+        "cancelled": False,
+        "paused": False,
+        "created_at": datetime,
+        "ai_service": ai_service
+    }
+}
+
+# session_id → 中断时间（防止5分钟内重连）
+interrupted_sessions: dict[str, datetime] = {}
+```
+
+**Session生命周期**：
+```
+request.session_id 或生成新 session_id
+    ↓
+running_tasks[task_id] = {status: "running", ...}
+    ↓
+根据 intent_type 分支（有动作/无动作）
+    ↓
+finally: del running_tasks[task_id]
+```
+
+#### 6.3.3 FileOperationSessionService（文件操作会话）
+
+**文件位置**：`backend/app/services/agent/session.py`
+
+**数据库表**：`file_operation_sessions`
+
+**状态**：`pending` / `active` / `completed` / `paused` / `failed`
+
+**主要方法**：
+- `create_session(agent_id, task_description)` → session_id
+- `complete_session(session_id, success)`
+- `get_session(session_id)` → SessionRecord
+
+> **⚠️ 注意**：两层Session的ID可能不同：
+> - chat2用的是task_id（路由级别）
+> - session.py用的是session_id（业务级别）
+> - 需要在Agent内部统一为session_id
+
+#### 6.3.4 与报告设计方案的逻辑关系
+
+> **📝 说明**：本节描述架构现状，报告设计方案（`LLM-文件操作历史过程报告设计方案V2版-小沈-20260325.md`）是基于本节架构的**具体实现方案**。
 
 ```
-预处理阶段（可选）创建 Session
-    ↓
-chat2 入口创建/复用 Session
-    ↓
-根据 intent_type 分支（保持 session_id 一致）
-    ↓
-对话结束显式关闭
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    6.3 Session管理（架构层）                              │
+│                                                                         │
+│  chat2.py                           session.py                          │
+│  ┌─────────────────┐               ┌─────────────────┐                  │
+│  │ task_id 任务管理 │               │ file_operation  │                  │
+│  │ + session_id    │               │ _sessions 表    │                  │
+│  └────────┬────────┘               └────────┬────────┘                  │
+│           │                                 │                            │
+│           │ 统一使用 request.session_id      │                            │
+│           └───────────────┬─────────────────┘                            │
+│                           ↓                                              │
+│                  file_operations 表                                       │
+│                  (session_id 关联操作记录)                                │
+└─────────────────────────────────────────────────────────────────────────┘
+                           │
+                           ↓ 具体实现
+┌─────────────────────────────────────────────────────────────────────────┐
+│           报告设计方案（实现层）- 已实现 ✅                                │
+│                                                                         │
+│  chat2.py:456                                                           │
+│  session_id = request.session_id or str(uuid.uuid4())  ← 统一session_id  │
+│                           ↓                                              │
+│  file_operations.session_id = request.session_id  ← 可被报告生成找到     │
+│                           ↓                                              │
+│  generate_report API (带 task_description 参数)  ← 报告正确生成        │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### 6.3.2 Session 状态
-
-| 状态 | 说明 |
-|------|------|
-| creating | 创建中 |
-| active | 活跃 |
-| completed | 已完成 |
-| interrupted | 已中断 |
-| error | 错误 |
+**逻辑关系**：
+1. **6.3 Session管理** = 描述架构现状（有哪些Session、职责是什么）
+2. **报告设计方案** = 基于架构的具体实现方案（解决Session ID不统一导致报告找不到数据的问题）
+3. **关系**：报告设计方案是6.3架构的**落地实现**
 
 ---
 
@@ -633,9 +746,29 @@ chat2 入口创建/复用 Session
 | 6 | **复用原则** | 重组的代码要**尽可能使用基础版本已有功能**，可以将已有功能**函数化/文件化**，被引用 |
 | 7 | **核心原则** | 引用基础版本的**各个小功能模块**的代码和功能，**不能丢失/破坏**已有的功能和小逻辑 |
 
-#### 7.1.1 核心要点解读
+#### 7.1.1 核心教训（本次梳理的目的）
 
-**关于基础版本 v0.7.92**：
+> **⚠️ 教训来源**：上次 Agent 重构时，preprocessor、intent_registry、Session管理等单元功能都实现了，单元测试通过，但整合到主流程时失败——功能放到了废弃的支流代码中，主干流程反而没有这些功能。
+
+**核心问题**：
+- 单元重构完成 ≠ 重构目的达到
+- 功能实现 ≠ 功能被主流程调用
+- 单元测试通过 ≠ 主流程能工作
+
+**本次梳理的目的**：
+- 不是重新实现功能
+- 而是**正确地把已有功能整合到主流程**
+- 确保：preprocessor、intent_registry 等 → 被 chat2.py 主流程调用
+
+**每次修改必须思考**：
+```
+这个修改能不能整合到主流程？
+如果不能，怎么改才能整合？
+```
+
+---
+
+#### 7.1.2 关于基础版本 v0.7.92
 - 所有改造以 v0.7.92 为基准
 - 不能脱离这个版本进行"全新设计"
 - 只能在原有基础上进行调整和优化
@@ -713,37 +846,82 @@ chat2.handle_stream() ← 只接收预处理结果，不执行预处理
 - [ ] 无动作：调用 chat_stream_query()
 - [ ] 保留原有功能（中断检查、暂停检查、数据库保存）
 
-### 7.4 路由改造
+**遗留问题修复**（来自 `2.预处理与多意图代码目录说明-小沈-2026-03-22.md` 7.7节）：
+> **问题**：agent.py:452 使用原始 `task` 而不是 `preprocessed['corrected']`
+> 
+> **当前代码**：
+> ```python
+> task_prompt = self.prompts.get_task_prompt(task, context)  # 用原始task ❌
+> ```
+> 
+> **应改为**：
+> ```python
+> task_prompt = self.prompts.get_task_prompt(preprocessed['corrected'], context)  # 用修正后的 ✅
+> ```
+> 
+> **改造要点**：
+> - [ ] 修改 agent.py 第452行，使用 `preprocessed['corrected']` 替代原始 `task`
 
-> **📝 说明**：根据2.1架构，路由层是整个流程的入口，负责调用预处理模块。
+### 7.4 路由改造（创建 chat_router.py）
 
-**路由层职责**（根据2.1）：
+> **📝 设计依据**：`多意图系统与现有代码整合架构设计-2026-03-22.md` 3.1节
+> 
+> **核心原则**：chat2 **不能作为路由层**，chat2只负责流式loop
+
+**问题**：当前 chat2.py 混合了路由和流式loop职责，职责不清
+
+**目标**：创建独立的 chat_router.py 作为路由入口
+
+**chat_router.py 职责**（参考整合架构设计3.1节）：
 ```
-用户请求 → 路由层 → 预处理模块 → chat2 → Agent/chat_stream_query
+chat_router.py（新路由入口）
+    ├── 调用 PreprocessingPipeline 进行意图检测
+    ├── 根据 intent 类型分发到对应处理流程
+    └── 输出：intent, confidence, corrected_text
+```
+
+**架构**（参考整合架构设计2.1节）：
+```
+chat_router.py
+    ├── intent=file → chat2.py (ReAct流式loop)
+    ├── intent=network → chat2.py (ReAct流式loop)
+    └── intent=query → chat_stream_query.py (简单对话流式)
 ```
 
 **改造要点**：
-- [ ] 修改 `/chat/stream` 路由入口
-- [ ] 在路由层**先调用预处理模块**，获取intent_type + intent_def + corrected_task + history
-- [ ] 再调用chat2.chat_stream()，传入预处理结果
-- [ ] **注意**：不是直接调用chat2，是"预处理 → chat2"的串联调用
+- [ ] 新建 `chat_router.py` 作为统一路由入口
+- [ ] **废除** `detect_file_operation_intent`（预处理阶段已有意图识别）
+- [ ] chat_router.py 调用 PreprocessingPipeline 获取意图
+- [ ] chat_router.py 根据 intent 分发到对应流程
+- [ ] chat2.py **只负责流式loop**，不包含任何预处理/意图识别
 
-**代码结构示例**：
+**chat_router.py 代码结构示例**：
 ```python
+# chat_router.py
 @router.post("/chat/stream")
 async def chat_stream(request: ChatRequest):
-    # 1. 调用预处理模块
+    # 1. 调用预处理模块（包含意图识别）
     preprocessed = await execute_preprocessing(request)
+    intent_type = preprocessed.get("intent")
     
-    # 2. 调用chat2，传入预处理结果
-    async for event in chat2.chat_stream(
-        last_message=preprocessed["corrected"],
-        intent_type=preprocessed.get("intent"),  # preprocessor返回的key是"intent"
-        intent_def=preprocessed["intent_def"],
-        history=preprocessed["history"],
-        request=request,
-    ):
-        yield event
+    # 2. 根据 intent 分发
+    if intent_type == "file":
+        # ReAct 流式loop
+        async for event in chat2.react_stream(...):
+            yield event
+    elif intent_type == "network":
+        # ReAct 流式loop
+        async for event in chat2.react_stream(...):
+            yield event
+    else:
+        # 简单对话流式
+        async for event in chat_stream_query(...):
+            yield event
+
+# 3. chat2.py 只负责流式loop（改造后）
+# - 不包含预处理逻辑
+# - 不包含意图识别
+# - 只负责 ReAct 循环或普通对话流
 ```
 
 ### 7.5 Agent分层重构
@@ -754,7 +932,18 @@ async def chat_stream(request: ChatRequest):
 
 **4.5.2待实现** ❌：可扩展方法拆分
 
+**Agent命名规范**（必须遵守）：
+> **⚠️ 命名原则**：IntentReactAgent 是**文件操作专用**的Agent，应统一命名为 `intent-file-ReactAgent`
+>
+> | 当前命名 | 应改为 | 说明 |
+> |---------|--------|------|
+> | IntentReactAgent | intent-file-ReactAgent | 文件操作专用 |
+> | IntentReactAgent (network) | intent-network-ReactAgent | 网络操作专用（未来） |
+>
+> **原因**：避免与 BaseAgent 混淆，明确每个Agent的职责范围
+
 **改造要点**：
+- [ ] 将 `IntentReactAgent` 重命名为 `intent-file-ReactAgent`
 - [ ] base.py 拆分 `_step_thought()` 可扩展方法
 - [ ] base.py 拆分 `_step_action()` 可扩展方法
 - [ ] base.py 拆分 `_step_observation()` 可扩展方法
