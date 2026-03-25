@@ -1527,6 +1527,32 @@ async for event in agent.run_stream(
 | agent.ver1_run_stream() | 改为 agent.run_stream() |
 | 类名 | Chat2 → SSEReactWrapper |
 
+**分阶段实施方案（推荐）**：
+
+```
+阶段1：chat_router → FileReactAgent.ver1_run_stream()（直接调用）
+       ├── 实现 chat_router.py（第一层）
+       └── 直接调用 file_react.ver1_run_stream()（现有方法）
+       验证：路由 + 文件操作正常工作
+
+阶段2：创建 react_sse_wrapper.py（第二层）
+       ├── 从 chat2.py 复制为 react_sse_wrapper.py
+       ├── 保留 SSE 转换逻辑（暂时不抽）
+       └── 保留任务管理、DB保存等
+       验证：原有功能不变
+
+阶段3：最终架构（chat_router → react_sse_wrapper → file_react）
+       ├── react_sse_wrapper 添加 SSE 转换逻辑（从 ver1_run_stream 抽取）
+       ├── 修改调用链：react_sse_wrapper → file_react.run_stream()
+       ├── file_react 删除 ver1_run_stream，只保留 run_stream()
+       └── 验证：完整调用链正常工作
+```
+
+**分阶段优势**：
+- 每阶段可独立验证，降低风险
+- 不影响现有功能
+- 逐步演进，最终达到目标架构
+
 ---
 
 ### 附录2.8 待创建/改造文件清单
