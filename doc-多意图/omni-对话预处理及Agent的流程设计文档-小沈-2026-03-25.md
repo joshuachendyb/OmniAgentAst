@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-25 19:15:00
-**版本**: v2.12
+**更新时间**: 2026-03-25 19:20:00
+**版本**: v2.13
 **编写人**: 小沈
 
 ---
@@ -43,6 +43,7 @@
 | v2.10 | 2026-03-25 19:00:00 | 修正7.5 Agent分层重构，整合4.5.2未完成项，不是清空重写 |
 | v2.11 | 2026-03-25 19:10:00 | 删除末尾重复Session内容，修正第四章标题层级，删除7.6回归验证移至附录 |
 | v2.12 | 2026-03-25 19:15:00 | 修正2.7.1预处理代码示例：预处理不调用chat2，由路由层串联调用 |
+| v2.13 | 2026-03-25 19:20:00 | 修正6.1文件位置（PreprocessingPipeline/IntentRegistry正确路径），修正6.2.1预处理职责（不调用chat2） |
 
 ---
 
@@ -565,13 +566,11 @@ class BaseAgent(ABC):
 
 | 文件 | 说明 |
 |------|------|
-| `backend/app/chat_stream/preprocessing.py` | 预处理入口模块（新建） |
-| `backend/app/api/v1/chat2.py` | 改为被调用方，含Session管理 |
-| `backend/app/api/v1/chat.py` 或新路由 | API 入口调用 preprocessing |
+| `backend/app/api/v1/chat2.py` | 路由层/chat2入口（含预处理调用） |
 | `backend/app/services/agent/agent.py` | IntentReactAgent (ver1_run_stream) |
-| `backend/app/services/agent/base.py` | BaseAgent 基类（需重构） |
-| `backend/app/services/preprocessing.py` | PreprocessingPipeline（已存在） |
-| `backend/app/services/intent.py` | IntentRegistry（已存在） |
+| `backend/app/services/agent/base.py` | BaseAgent 基类（需补充可扩展方法） |
+| `backend/app/services/preprocessing/pipeline.py` | PreprocessingPipeline（已存在） |
+| `backend/app/services/intent/registry.py` | IntentRegistry（已存在） |
 | `backend/app/chat_stream/chat_stream_query.py` | 普通对话流式输出 |
 
 ### 6.2 职责划分原则
@@ -580,8 +579,10 @@ class BaseAgent(ABC):
 
 | 模块 | 职责 | 不做 |
 |------|------|------|
-| **preprocessing.py** | 预处理+意图识别+history处理+调用chat2 | Session管理，流式输出 |
+| **预处理模块** | 预处理+意图识别，返回intent_type+intent_def+corrected_task+history | Session管理，调用chat2 |
 | **chat2.py** | Session管理+ai_service创建+根据intent_type分支+流式输出 | 预处理、意图识别 |
+
+> **📝 说明**：预处理不调用chat2，由路由层负责串联调用（见2.1架构）
 
 #### 6.2.2 Agent内部职责
 
