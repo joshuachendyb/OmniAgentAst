@@ -1347,6 +1347,12 @@ chat_router.py
 | 6 | 单元测试 | ✅ 32个全部通过 | 2026-03-26 | - |
 | 7 | 废弃 `agent.py` | 待废弃 | - | - |
 
+> **TODO 待清理（小健检查发现 - 2026-03-26）**：
+> - `intent_registry` 和 `preprocessor` 对象仍保留在代码中（第121-125行）
+> - `run_stream` 方法中仍有意图识别调用（第389-404行）
+> - FileReactAgent 是专用 Agent，这些逻辑应该在路由层（chat_router.py）处理
+> - 后续应删除这些冗余代码
+
 ---
 
 ### 附录2.7 React SSE 包装层 - react_sse_wrapper.py

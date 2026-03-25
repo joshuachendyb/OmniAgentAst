@@ -10,6 +10,12 @@ FileReactAgent - 文件操作 ReAct Agent
 - 删除 intent-type 分支（network/desktop）
 - 保留文件操作专用逻辑（session管理、prompts、rollback）
 
+【TODO 待清理 - 2026-03-26 小健检查发现】：
+- intent_registry 和 preprocessor 对象仍保留在代码中（第121-125行）
+- run_stream 方法中仍有意图识别调用（第389-404行）
+- FileReactAgent 是专用 Agent，这些逻辑应该在路由层处理
+- 后续应删除这些冗余代码（待实现）
+
 Author: 小沈 - 2026-03-21
 """
 
@@ -117,11 +123,11 @@ class FileReactAgent(BaseAgent):
             # FileReactAgent 只支持 file 意图
             raise ValueError(f"FileReactAgent only supports intent_type='file', got: {intent_type}")
         
-        # 【新增】意图注册表（多意图支持）
+        # 意图注册表（用于意图识别）
         self.intent_registry = IntentRegistry()
         self._register_default_intents()
         
-        # 【新增】预处理流水线（多意图支持）
+        # 预处理流水线（用于意图识别）
         self.preprocessor = PreprocessingPipeline()
         
         # 【新增】LLM调用策略
