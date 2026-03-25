@@ -1485,6 +1485,10 @@ chat2.py (688行)
 8. 编译验证
 ```
 
+**file_react.py 同步改造**：
+- 删除 ver1_run_stream 方法（SSE 转换逻辑已被抽走）
+- 保留 run_stream 方法（返回 event dict，供 react_sse_wrapper 调用）
+
 **要删除的代码**：
 | 删除项 | 代码位置 | 说明 |
 |--------|---------|------|
