@@ -1395,6 +1395,15 @@ chat_router.py
 | 类名 | `SSEReactWrapper` |
 | 位置 | `backend/app/services/react_sse_wrapper.py` |
 
+**React_sse_wrapper 结构**（新第三层）：
+```
+react_sse_wrapper (新第三层)
+├── running_tasks 管理 ← 从 chat2.py 抽
+├── DB 保存 save_execution_steps_to_db ← 从 chat2.py 抽
+├── SSE 转换 ← 从 file_react.py.ver1_run_stream 抽
+└── 调用 Agent.run_stream() ← 只做 ReAct 循环
+```
+
 **来源**：从 chat2.py 抽取有价值内容后废弃
 
 #### 附录2.7.2 职责
