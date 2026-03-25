@@ -1,10 +1,10 @@
 v0.8.1
 
-更新时间：2026-03-26 12:00:00
+更新时间：2026-03-26 05:41:49
 
 更新内容：
 
-## 1. file_react.py创建 + intent-type分支删除 - 小沈-2026-03-26
+## 1. file_react.py创建 + intent-type分支删除 + 小健检查修复 - 小沈-2026-03-26
 
 ### 1.1 背景
 
@@ -13,7 +13,7 @@ v0.8.1
 ### 1.2 实施内容
 
 **复制agent.py → file_react.py（采用复制+删除法）**：
-- 复制 `agent.py` → `file_react.py`（695行）
+- 复制 `agent.py` → `file_react.py`（695行 → 688行）
 - 删除 `IntentReactAgent` 类中的 intent-type 分支（desktop/network）
 - 重命名类：`IntentReactAgent` → `FileReactAgent`
 
@@ -21,29 +21,45 @@ v0.8.1
 - 删除第160-168行的 network 意图注册
 - 添加 else 分支，拒绝非 file 的 intent_type
 
-**修改的文件**：
+### 1.3 小健检查发现的问题
+
+**P0 - intent-type 分支未完全删除**：
+- 原 agent.py 第121-136行有 desktop/network 分支
+- file_react.py 删除了分支代码，但遗留了 network 意图注册
+- 已修复：删除 network 意图注册（第160-168行）
+
+**TODO 待清理（小健检查发现）**：
+- `intent_registry` 和 `preprocessor` 对象仍保留在代码中（第121-125行）
+- `run_stream` 方法中仍有意图识别调用（第389-404行）
+- FileReactAgent 是专用 Agent，这些逻辑应该在路由层处理
+- 已在代码和文档中记录，后续清理
+
+### 1.4 修改的文件
+
 | 文件 | 修改内容 |
 |------|---------|
 | backend/app/services/agent/file_react.py | **新建**：从agent.py复制，删除intent-type分支 |
 | backend/app/services/agent/agent.py | 保留（待废弃） |
 | backend/app/services/agent/__init__.py | 添加 FileReactAgent 导出 |
+| doc-多意图/omni-...设计文档.md | 添加TODO待清理说明 |
 
-### 1.3 验证结果
+### 1.5 验证结果
 
 | 验证项 | 状态 | 结果 |
 |--------|------|------|
 | Python语法检查 | ✅ | 通过 |
 | 单元测试 | ✅ | 20 passed |
 
-### 1.4 后续任务
+### 1.6 后续任务
 
 - 创建 chat_router.py（第一层路由）
 - 创建 react_sse_wrapper.py（第三层SSE包装）
 - 创建 network_react.py、desktop_react.py（第二层其他意图）
 - 废弃 agent.py（等用户指令）
+- **清理 file_react.py 中的冗余 intent_registry/preprocessor 代码**（记录在TODO）
 
 参与开发：小沈、小健（检查发现遗留问题）
-完成时间：2026-03-26 12:00:00
+完成时间：2026-03-26 05:41:49
 
 ---
 
