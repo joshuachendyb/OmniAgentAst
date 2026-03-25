@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-25 16:00:00
-**版本**: v2.0
+**更新时间**: 2026-03-25 18:50:00
+**版本**: v2.9
 **编写人**: 小沈
 
 ---
@@ -38,6 +38,8 @@
 | v2.5 | 2026-03-25 17:50:00 | 第二章2.3节添加chat2与Agent关系详细说明 |
 | v2.6 | 2026-03-25 17:55:00 | 第四章标题改为Agent分层架构设计与实现说明，删除4.6实施步骤移到第七章 |
 | v2.7 | 2026-03-25 18:00:00 | 确认7.4节已包含Agent分层重构待实现项 |
+| v2.8 | 2026-03-25 18:40:00 | 新增7.1本次代码重组原则 |
+| v2.9 | 2026-03-25 18:50:00 | 修正7.2/7.3/7.4，严格按照2.1架构：预处理是独立模块在路由层调用，禁止在chat2内部调用预处理 |
 
 ---
 
@@ -612,19 +614,92 @@ chat2 入口创建/复用 Session
 
 ## 七、待实现清单
 
-### 7.1 预处理模块
+### 7.1 本次代码重组原则
 
-- [ ] 创建 `preprocessing.py`
+> **📝 说明**：本次代码重组的核心指导思想，所有待实现任务都应遵循以下原则。
+
+| 序号 | 原则 | 说明 |
+|------|------|------|
+| 1 | **基础版本** | 改造的代码基础版本是 **v0.7.92** |
+| 2 | **重构范围** | 本次重构的是系统**主流程**的不合理和错乱的部分代码 |
+| 3 | **实现目标** | 通过部分代码的重构，和部分函数/代码文件的逻辑关系重组，实现**合理的OMNI系统运行逻辑**（流程图参考 2.1 节） |
+| 4 | **改造对象** | 改造的函数、代码文件的**错乱功能** |
+| 5 | **关联调用** | 重组把已经实现的功能正确的函数和代码，按照OMNI系统的流程进行**正确的关联和调用** |
+| 6 | **复用原则** | 重组的代码要**尽可能使用基础版本已有功能**，可以将已有功能**函数化/文件化**，被引用 |
+| 7 | **核心原则** | 引用基础版本的**各个小功能模块**的代码和功能，**不能丢失/破坏**已有的功能和小逻辑 |
+
+#### 7.1.1 核心要点解读
+
+**关于基础版本 v0.7.92**：
+- 所有改造以 v0.7.92 为基准
+- 不能脱离这个版本进行"全新设计"
+- 只能在原有基础上进行调整和优化
+
+**关于主流程重构**：
+- 问题：预处理功能在废弃的支流代码中，主干流程缺失
+- 目标：让主干流程具备完整的预处理功能
+- 方法：参考 2.1 节的流程图，将预处理功能正确关联到主流程
+
+**关于复用已有功能**：
+- v0.7.92 中已有许多小功能模块（preprocessor, intent_registry, session管理等）
+- 本次重组不是重新发明轮子
+- 而是**正确地调用**这些已有模块
+
+**关于不破坏已有功能**：
+- 重组时不能影响那些已经正常工作的功能
+- 只能修复错乱的部分
+- 保持其他功能不受影响
+
+### 7.2 预处理模块（独立入口）
+
+> **📝 说明**：根据2.1架构要求，预处理是**独立模块**，在路由层调用，不是放在chat2内部
+当前代码（v0.7.92）：
+用户请求 → 路由 @router.post("/chat/stream") → chat2.chat_stream() → detect_file_operation_intent()
+
+改造后：
+用户请求 → 路由 @router.post("/chat/stream") → 预处理模块 → chat2.chat_stream() → Agent分支
+**当前代码现状**：
+- 路由层 `/chat/stream` → chat2.chat_stream() → detect_file_operation_intent()（简单函数）
+- 缺少完整的预处理流程（preprocessor.process + intent_registry.get）
+
+**2.1架构要求**（必须遵守）：
+```
+用户请求
+    ↓
+预处理模块 (preprocessing.py) ← 独立入口，在路由层调用
+    ↓
+返回: intent_type + intent_def + 处理后的 task
+    ↓
+chat2.handle_stream() ← 只接收预处理结果，不执行预处理
+```
+
+> **📝 路由层说明**：路由层 = API入口，即 `@router.post("/chat/stream")` 函数。预处理在此调用，不是chat2内部。
+
+**改造方案**（根据2.1架构）：
+- [ ] 创建/使用 `preprocessing.py` 作为预处理入口模块（参考2.1）
 - [ ] 引入 PreprocessingPipeline (`from app.services.preprocessing import PreprocessingPipeline`)
 - [ ] 引入 IntentRegistry (`from app.services.intent import IntentRegistry, Intent`)
-- [ ] 实现 `handle_request()` 入口函数
-- [ ] 整合 preprocessor.process() + intent_registry.get()
-- [ ] 处理 history（历史消息不经过预处理）
-- [ ] 调用 chat2.handle_stream() 传入预处理结果和意图定义
+- [ ] 实现预处理入口函数（如 `handle_preprocessing()`）
+- [ ] 预处理入口在路由层调用，不是chat2内部
+- [ ] 返回预处理结果：intent_type + intent_def + corrected_task + history
 
-### 7.2 chat2.py 改造
+**关键约束**：
+- **禁止在chat2内部调用预处理**（违反2.1架构）
+- 预处理必须是独立模块，在路由层调用
+- chat2只接收预处理结果，负责Session管理和分支
 
-- [ ] 接收预处理结果作为参数（last_message, intent_type, intent_def, history）
+### 7.3 chat2.py 改造
+
+> **📝 说明**：根据2.1架构，chat2**不执行预处理**，只负责Session管理和分支决策。
+
+**chat2职责**（根据2.1）：
+- 只接收预处理结果作为参数
+- 负责Session创建/管理
+- 根据intent_type决定分支（有动作/无动作）
+
+**改造要点**：
+- [ ] 修改chat2.chat_stream()接收预处理结果参数（last_message, intent_type, intent_def, history）
+- [ ] **删除**chat2内部的预处理调用（detect_file_operation_intent等）
 - [ ] Session 创建/管理（复用现有逻辑）
 - [ ] ai_service 创建（AIServiceFactory）
 - [ ] next_step 计数函数定义
@@ -633,19 +708,47 @@ chat2 入口创建/复用 Session
 - [ ] 无动作：调用 chat_stream_query()
 - [ ] 保留原有功能（中断检查、暂停检查、数据库保存）
 
-### 7.3 路由改造
+### 7.4 路由改造
 
-- [ ] 修改 API 路由入口（`/api/v1/chat` 或 `/api/v1/chat2`）
-- [ ] 从直接调用 chat2 改为调用 preprocessing.handle_request()
+> **📝 说明**：根据2.1架构，路由层是整个流程的入口，负责调用预处理模块。
 
-### 7.4 Agent分层重构
+**路由层职责**（根据2.1）：
+```
+用户请求 → 路由层 → 预处理模块 → chat2 → Agent/chat_stream_query
+```
+
+**改造要点**：
+- [ ] 修改 `/chat/stream` 路由入口
+- [ ] 在路由层**先调用预处理模块**，获取intent_type + intent_def + corrected_task + history
+- [ ] 再调用chat2.chat_stream()，传入预处理结果
+- [ ] **注意**：不是直接调用chat2，是"预处理 → chat2"的串联调用
+
+**代码结构示例**：
+```python
+@router.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    # 1. 调用预处理模块
+    preprocessed = await execute_preprocessing(request)
+    
+    # 2. 调用chat2，传入预处理结果
+    async for event in chat2.chat_stream(
+        last_message=preprocessed["corrected"],
+        intent_type=preprocessed.get("intent"),  # preprocessor返回的key是"intent"
+        intent_def=preprocessed["intent_def"],
+        history=preprocessed["history"],
+        request=request,
+    ):
+        yield event
+```
+
+### 7.5 Agent分层重构
 
 - [ ] 清空 base.py（保留导入、类型定义、抽象方法）
 - [ ] 重写 base.py（核心循环逻辑 + 可扩展方法定义）
 - [ ] 重构 agent.py（删除重写，调用父类方法）
 - [ ] 验证（生产功能正常 + 测试通过）
 
-### 7.5 回归验证
+### 7.6 回归验证
 
 - [ ] 流式对话正常（chat_stream_query 事件正确）
 - [ ] 文件操作正常（ver1_run_stream 事件正确）
