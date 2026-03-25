@@ -938,23 +938,31 @@ async def chat_stream(request: ChatRequest):
     
     # 2. 根据 intent 分发
     if intent_type == "file":
-        # 文件操作 ReAct 流式loop（调用 FileReactAgent）
+        # 文件操作 ReAct 流式loop（调用 FileReactAgent.ver1_run_stream）
         from app.services.agent.file_react import FileReactAgent
         agent = FileReactAgent(llm_client=..., session_id=request.session_id)
-        async for event in agent.run_stream(preprocessed.get("corrected")):
+        async for event in agent.ver1_run_stream(
+            task=preprocessed.get("corrected"),
+            model=...,
+            provider=...
+        ):
             yield event
     elif intent_type == "network":
         # 网络操作 ReAct 流式loop（待实现 NetworkReactAgent）
         from app.services.agent.network_react import NetworkReactAgent
         agent = NetworkReactAgent(llm_client=..., session_id=request.session_id)
-        async for event in agent.run_stream(preprocessed.get("corrected")):
+        async for event in agent.ver1_run_stream(
+            task=preprocessed.get("corrected"),
+            model=...,
+            provider=...
+        ):
             yield event
     else:
         # 简单对话流式
         async for event in chat_stream_query(...):
             yield event
 
-# 3. FileReactAgent.run_stream() 包含完整 ReAct 循环 + SSE 处理
+# 3. FileReactAgent.ver1_run_stream() 包含完整 ReAct 循环 + SSE 处理
 ```
 # - 不包含预处理逻辑
 # - 不包含意图识别
