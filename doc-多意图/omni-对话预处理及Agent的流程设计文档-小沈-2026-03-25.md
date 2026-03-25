@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-25 22:17:08
-**版本**: v2.26
+**更新时间**: 2026-03-25 22:28:07
+**版本**: v2.28
 **编写人**: 小沈
 
 ---
@@ -57,6 +57,8 @@
 | v2.24 | 2026-03-25 22:09:19 | 替换附录2.4为四层架构：路由层→意图特定React→chat2流式包装→base.py通用ReAct；明确agent.py约等于intent-file-ReactAgent |
 | v2.25 | 2026-03-25 22:12:52 | 删除冗余的附录2.3（中间状态），保留完整的附录2.3（四层架构最终版） |
 | v2.26 | 2026-03-25 22:17:08 | 修正章节编号：附录2.4改为附录2.3，各子章节同步更新 |
+| v2.27 | 2026-03-25 22:20:36 | 新增附录2.4：base.py改名base-react.py，理由和同步更新说明 |
+| v2.28 | 2026-03-25 22:28:07 | 完成base.py→base_react.py改名，同步更新所有导入，测试通过20个 |
 
 ---
 
@@ -1142,6 +1144,48 @@ agent = FileOperationAgent(
 3. **不再需要现有的 agent.py 作为独立文件**
    - 其逻辑拆分到各 intent-*-ReactAgent
    - chat_router 负责路由分发
+
+### 附录2.4 文件命名规范
+
+> **整理时间**: 2026-03-25 22:20:00
+> **整理人**: 小沈
+>
+> **更新时间**: 2026-03-25 22:25:00
+> **更新说明**: 已完成改名，文件位置和实际命名为 base_react.py
+
+#### 附录2.4.1 底层ReAct文件命名
+
+| 原文件名 | 新文件名 | 文件位置 | 说明 |
+|---------|---------|---------|------|
+| base.py | **base_react.py** | `backend/app/services/agent/base_react.py` | 明确表示"底层ReAct"职责 |
+
+**改名理由**：
+- `base.py` 含义模糊
+- `base_react.py` 明确表达是"底层ReAct循环"
+- 与四层架构名称对齐
+
+**注意**：Python模块名必须使用下划线，不能用连字符
+
+#### 附录2.4.2 改名后同步更新 ✅ 已完成
+
+| 文件 | 更新内容 |
+|------|---------|
+| `backend/app/services/agent/base_react.py` | 重命名文件 |
+| `backend/app/services/agent/agent.py` | 更新导入：`from app.services.agent.base_react import BaseAgent` |
+| `backend/app/services/agent/__init__.py` | 更新导入 |
+| `backend/tests/test_agent.py` | 更新导入 |
+| `backend/tests/test_multi_intent_architecture.py` | 更新导入 |
+
+#### 附录2.4.3 改名影响范围
+
+```
+引用 base.py 的文件：
+├── agent.py
+├── test_agent.py
+└── test_multi_intent_architecture.py
+
+影响：较小，只需更新导入语句
+```
 
 ---
 
