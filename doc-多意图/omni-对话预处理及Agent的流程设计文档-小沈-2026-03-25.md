@@ -66,6 +66,9 @@
 | v2.33 | 2026-03-25 23:12:00 | 附录2.7重命名为react_sse_wrapper.py，文件名和类名更新 |
 | v2.34 | 2026-03-25 23:15:00 | 附录2.7.3改为"需要抽取的内容"：明确从chat2.py抽取SSE/中断/调用base_react的逻辑，废弃chat2.py |
 | v2.35 | 2026-03-25 23:18:00 | 删除附录2.7.4中废除detect_file_operation_intent()任务（废弃chat2.py时自然废除，无需单独处理） |
+| v2.36 | 2026-03-25 23:25:00 | 附录2.6更新：文件命名为file_react.py+FileReactAgent，明确逐步抽取+废弃原文件的改造思路 |
+| v2.37 | 2026-03-25 23:35:00 | 附录2.6.3/2.6.4补充：从agent.py和chat2.py抽取的完整内容清单（基于代码深入分析） |
+| v2.38 | 2026-03-25 23:50:00 | 附录2.3更新：四层架构图按2.6/2.7讨论更新（file_react.py/FileReactAgent/react_sse_wrapper.py） |
 
 ---
 
@@ -1072,70 +1075,79 @@ agent = FileOperationAgent(
 > **整理时间**: 2026-03-25 21:50:00
 > **整理人**: 小沈
 
-#### 附录2.3.1 改造后的四层架构
+#### 附录2.3.1 四层架构
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  第一层：路由层 chat_router.py                                    │
+│  第一层：路由层                                                  │
+│  文件：chat_router.py                                            │
 │                                                                 │
 │  ├── 调用 PreprocessingPipeline 进行意图检测                      │
-│  ├── 判断 intent 类型                                            │
-│  └── 分发到对应执行层：                                         │
-│      ├── intent=file → intent-file-ReactAgent                   │
-│      ├── intent=network → intent-network-ReactAgent              │
-│      ├── intent=desktop → intent-desktop-ReactAgent              │
-│      └── intent=query → chat_stream_query()                      │
+│  ├── 根据 intent_type 分发到对应执行层：                         │
+│  │   ├── file → FileReactAgent (file_react.py)                 │
+│  │   ├── network → NetworkReactAgent (network_react.py)          │
+│  │   ├── desktop → DesktopReactAgent (desktop_react.py)         │
+│  │   └── query → chat_stream_query()                            │
+│  └── 废除 detect_file_operation_intent()                          │
 └─────────────────────────────────────────────────────────────────┘
-                              ↓
+                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  第二层：意图特定 React (intent-*-React)                         │
+│  第二层：意图特定 React                                          │
 │                                                                 │
-│  ├── intent-file-ReactAgent (file-react.py)                      │
-│  │   └── 文件操作相关逻辑（工具/prompt/安全检查）                │
-│  │                                                            │
-│  ├── intent-network-ReactAgent (network-react.py)                 │
-│  │   └── 网络操作相关逻辑                                       │
-│  │                                                            │
-│  └── intent-desktop-ReactAgent (desktop-react.py)                │
-│      └── 桌面操作相关逻辑                                       │
+│  ├── FileReactAgent (file_react.py)                            │
+│  │   ├── 文件操作工具 (FileTools)                               │
+│  │   ├── Prompt 模板 (FileOperationPrompts)                     │
+│  │   ├── 意图注册表 (IntentRegistry)                            │
+│  │   ├── LLM 调用策略 (TextStrategy/ToolsStrategy/LLMAdapter)    │
+│  │   └── ver1_run_stream() - SSE 流式执行                      │
+│  │                                                             │
+│  ├── NetworkReactAgent (network_react.py) ← 待实现              │
+│  │                                                             │
+│  └── DesktopReactAgent (desktop_react.py) ← 待实现              │
 │                                                                 │
-│  【说明】这些层共同调用 chat2.py (改造后)                       │
+│  【说明】这些层共同调用 react_sse_wrapper.py                      │
 └─────────────────────────────────────────────────────────────────┘
-                              ↓
+                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  第三层：chat2.py (改造后)                                       │
+│  第三层：React SSE 包装层                                       │
+│  文件：react_sse_wrapper.py                                     │
+│  【来源】从 chat2.py 抽取有价值内容后废弃                       │
 │                                                                 │
-│  ├── 流式输出 SSE                                               │
-│  ├── 中断/暂停处理                                              │
-│  └── 不做路由判断                                                │
+│  ├── 流式输出 SSE（start 步骤 + security_check）                │
+│  ├── 中断/暂停处理 (check_and_yield_if_interrupted/paused)      │
+│  ├── 数据库保存 (save_execution_steps_to_db)                     │
+│  ├── 任务管理状态 (running_tasks / interrupted_sessions)         │
+│  └── 调用 base_react.py 的 run_stream()                          │
 └─────────────────────────────────────────────────────────────────┘
-                              ↓
+                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  第四层：底层 base.py                                            │
+│  第四层：底层 ReAct                                              │
+│  文件：base_react.py                                            │
 │                                                                 │
-│  └── run_stream() - 通用 ReAct 循环                            │
+│  └── run_stream() - 通用 ReAct 循环                           │
 │      与意图无关，通用                                            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 #### 附录2.3.2 改造前后对应关系
 
-| 改造前 | 改造后 | 说明 |
+| 改造前 | 改造后 | 状态 |
 |--------|---------|------|
-| agent.py | intent-file-ReactAgent (file-react.py) | 当前 agent.py 约等于 intent-file-ReactAgent |
-| agent.py (intent_type=network) | intent-network-ReactAgent (network-react.py) | 待实现 |
-| agent.py (intent_type=desktop) | intent-desktop-ReactAgent (desktop-react.py) | 待实现 |
-| chat2.py (混合体) | chat2.py (流式SSE输出包装) | 剥离路由职责 |
-| 无 | chat_router.py (路由层) | 新增 |
+| agent.py | file_react.py (FileReactAgent) | 待抽取 |
+| agent.py (intent_type=network) | network_react.py (NetworkReactAgent) | 待实现 |
+| agent.py (intent_type=desktop) | desktop_react.py (DesktopReactAgent) | 待实现 |
+| chat2.py (混合体) | react_sse_wrapper.py | 待抽取 |
+| 无 | chat_router.py | 待创建 |
+| detect_file_operation_intent() | 废除 | 待废除 |
 
 #### 附录2.3.3 各层职责总结
 
 | 层 | 文件 | 职责 | 特点 |
 |---|------|------|------|
-| **路由层** | chat_router.py | 意图检测 + 分发 | 新增 |
-| **意图特定React** | intent-*-ReactAgent | 意图相关逻辑（工具/prompt/安全） | 拆分自 agent.py |
-| **流式包装** | chat2.py | SSE输出 + 中断/暂停处理 | 剥离路由 |
-| **通用ReAct** | base.py | 标准ReAct循环 | 与意图无关 |
+| **路由层** | chat_router.py | 意图检测（PreprocessingPipeline）+ 分发 | 新增 |
+| **意图特定React** | file_react.py | 意图相关逻辑（工具/prompt/LLM策略/SSE流式） | 拆分自 agent.py |
+| **React SSE 包装** | react_sse_wrapper.py | SSE框架 + 中断/暂停 + 数据库保存 | 抽取自 chat2.py |
+| **通用ReAct** | base_react.py | 标准 ReAct 循环 | 与意图无关 |
 
 #### 附录2.3.4 关键理解
 
@@ -1152,7 +1164,7 @@ agent = FileOperationAgent(
    - 其逻辑拆分到各 intent-*-ReactAgent
    - chat_router 负责路由分发
 
-### 附录2.4 文件命名规范
+### 附录2.4 base.py更名base_react.py规范
 
 > **整理时间**: 2026-03-25 22:20:00
 > **整理人**: 小沈
@@ -1251,37 +1263,64 @@ chat_router.py
 >
 > **对应架构层**: 第二层：意图特定 React
 
-#### 附录2.6.1 文件位置
+#### 附录2.6.1 文件命名
 
 | 项目 | 说明 |
 |------|------|
-| 原文件 | `backend/app/services/agent/agent.py` |
-| 新文件 | `backend/app/services/agent/file_react.py` |
-| 类名 | `intent-file-ReactAgent` → 简化为 `FileReactAgent` |
+| 文件名 | `file_react.py` |
+| 类名 | `FileReactAgent` |
+| 位置 | `backend/app/services/agent/file_react.py` |
 
-#### 附录2.6.2 改造内容
+**命名理由**：
+- 文件名 `file_react.py` 与 `base_react.py` 风格一致
+- 类名 `FileReactAgent` 简洁明了
 
-| 原内容 | 改造后 | 说明 |
-|--------|--------|------|
-| `agent.py` | `file_react.py` | 文件重命名 |
-| `class intent-file-ReactAgent` | `class FileReactAgent` | 类名简化 |
-| 函数名 `ver1_run_stream` | 保留或简化为 `run_stream` | 待定 |
-| 其他 intent-type 分支 | 拆分到 network_react.py / desktop_react.py | 另行处理 |
+#### 附录2.6.2 改造思路
 
-#### 附录2.6.3 保留的职责
+**逐步抽取 + 废弃原文件**（与附录2.7的 chat2.py 处理方式一致）：
 
-- 文件操作相关逻辑（工具/prompt/安全检查）
-- 调用 chat2.py（流式包装器）
-- 调用 base_react.py（底层ReAct循环）
+1. 从 `agent.py` 抽取有价值的内容到 `file_react.py`
+   - 文件操作相关逻辑（工具/prompt/安全检查）
+   - 调用 `react_sse_wrapper.py`（流式包装器）
+   - 调用 `base_react.py`（底层ReAct循环）
+
+2. 废弃 `agent.py`（用不上的内容不管它）
+
+#### 附录2.6.3 从 agent.py 抽取的内容（完整清单）
+
+| 抽取项 | 代码位置 | 说明 | 抽取目标 |
+|--------|---------|------|----------|
+| FileTools 初始化 | 第104行 | 文件操作工具 | file_react.py |
+| ToolExecutor 初始化 | 第107-116行 | 工具执行器 | file_react.py |
+| FileOperationPrompts | 第118行 | Prompt 模板 | file_react.py |
+| IntentRegistry + _register_default_intents | 第138-191行 | 意图注册表 | file_react.py |
+| LLM 调用策略 | 第145-161行 | TextStrategy/ToolsStrategy/LLMAdapter | file_react.py |
+| ver1_run_stream | 第622-716行 | SSE 流式执行 | file_react.py |
+| run / _run_with_session | 第371-559行 | 非流式执行 + Session 管理 | file_react.py |
+| rollback | 第573-620行 | 回滚操作 | file_react.py |
+| intent-type 分支（network/desktop） | 第121-134行 | 预留意图 | network_react.py / desktop_react.py |
+
+**说明**：agent.py 中的 `ver1_run_stream()` 已经封装了完整的 ReAct 循环 + SSE 转换，被 chat2.py 调用。抽取时保留此函数。
+
+#### 附录2.6.4 从 chat2.py 需要保留/抽取的内容
+
+| 抽取项 | 代码位置 | 说明 | 抽取目标 |
+|--------|---------|------|----------|
+| start 步骤发送（含 security_check） | 第357-382行 | 流式开始事件 | react_sse_wrapper.py |
+| 数据库保存逻辑 | 第385-386行 | save_execution_steps_to_db | react_sse_wrapper.py |
+| 任务管理状态 | 第246-254行 | running_tasks / interrupted_sessions | react_sse_wrapper.py |
+| 中断/暂停检查 | 第441-448行 | check_and_yield_if_interrupted/paused | react_sse_wrapper.py |
+
+**说明**：chat2.py 废弃后，其中的任务管理、中断处理逻辑需要抽取到 `react_sse_wrapper.py`。
 
 #### 附录2.6.4 待实现任务
 
 | 序号 | 任务 | 状态 |
 |------|------|------|
-| 1 | `agent.py` → `file_react.py` 重命名 | 待实现 |
+| 1 | 从 `agent.py` 抽取文件操作逻辑到 `file_react.py` | 待实现 |
 | 2 | 类名 `intent-file-ReactAgent` → `FileReactAgent` | 待实现 |
-| 3 | 函数名整理（简化） | 待实现 |
-| 4 | 更新所有导入引用 | 待实现 |
+| 3 | 抽取其他 intent-type 到 network_react.py / desktop_react.py | 待实现 |
+| 4 | 废弃 `agent.py` | 待废弃 |
 
 ---
 
