@@ -1,3 +1,57 @@
+v0.7.91
+
+更新时间：2026-03-25 12:54:45
+
+更新内容：
+
+## 1. Agent分层重构：BaseAgent提取核心逻辑 - 小健-2026-03-25
+
+### 1.1 问题描述
+
+- agent.py 完全重写了 run_stream，没有复用 base.py 的逻辑
+- 测试和生产代码不一致
+- 维护困难
+
+### 1.2 修复内容
+
+**删除错误添加的方法**：
+- 删除 agent.py 中错误添加的 run_with_tools 方法（生产代码适配测试的错误做法）
+
+**重写测试用例**：
+- 完全重写 test_agent.py，适配新的 BaseAgent → IntentAgent 继承结构
+- 测试覆盖：
+  - 抽象方法实现
+  - 初始化属性
+  - run_stream 核心循环
+  - 三阶段循环 (thought → action_tool → observation)
+  - 事件结构
+  - observation 包含 raw_data（核心修复）
+  - 状态管理
+  - LLM 调用计数
+  - 继承结构
+  - 向后兼容性
+
+### 1.3 测试结果
+
+| 文件 | 结果 |
+|------|------|
+| tests/test_agent.py | 20 passed |
+| tests/test_adapter.py | 32 passed |
+| 总计 | 52 passed |
+
+### 1.4 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| backend/app/services/agent/agent.py | 删除错误添加的 run_with_tools 方法 |
+| backend/tests/test_agent.py | 完全重写测试用例 |
+| backend/tests/test_agent_llm_adapter.py | 修复导入路径 |
+
+参与开发：小健（测试+代码检查）
+完成时间：2026-03-25 12:54:45
+
+---
+
 v0.7.90
 
 更新时间：2026-03-25 10:00:00

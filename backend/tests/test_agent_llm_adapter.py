@@ -30,7 +30,7 @@ from app.services.agent.agent import IntentAgent
 from app.services.agent.tool_parser import ToolParser
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.types import AgentStatus, Step, AgentResult
-from app.services.agent.tools import FileTools
+from app.services.tools.file.file_tools import FileTools
 from app.services.agent.capability import LLMCapability
 from app.services.agent.strategy_selector import SelectedStrategy
 
