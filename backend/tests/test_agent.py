@@ -468,4 +468,4 @@ class TestBackwardCompatibility:
             file_tools=MagicMock(spec=FileTools)
         )
         
-        assert agent.__class__.__name__ == "IntentAgent"
+        assert agent.__class__.__name__ == "IntentReactAgent"
