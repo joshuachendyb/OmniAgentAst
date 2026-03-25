@@ -32,6 +32,7 @@
 | v1.5 | 2026-03-25 15:33:27 | 新增1.1.1问题发现过程，详细记录问题发现步骤 |
 | v2.0 | 2026-03-25 16:00:00 | 合并对话预处理流程设计 + Agent分层重构设计方案，成为完整设计文档 |
 | v2.1 | 2026-03-25 17:10:00 | 添加参考文档章节 |
+| v2.2 | 2026-03-25 17:30:00 | 优化章节布局：整合Agent分层设计到第四章，合并文件位置与职责划分到第六章，统一待实现清单到第七章 |
 
 ---
 
@@ -300,55 +301,6 @@ async def handle_stream(
             yield event
 ```
 
-### 2.8 Agent内部继承架构（BaseAgent → IntentReactAgent）
-
-```
-┌─────────────────────────────────────────┐
-│     IntentReactAgent (agent.py) (扩展层) │
-│  - 继承 BaseAgent                       │
-│  - 添加扩展功能:                        │
-│    • session 管理                        │
-│    • prompt 日志                        │
-│    • preprocessor                       │
-│    • intent_registry                    │
-│  - 调用父类核心方法                     │
-└─────────────────────────────────────────┘
-                    ↓ 继承
-┌─────────────────────────────────────────┐
-│     BaseAgent (base.py) (核心层)       │
-│  - 定义 ReAct 循环核心逻辑               │
-│  - 提供抽象方法供子类实现                │
-│  - 不包含任何具体实现细节                │
-└─────────────────────────────────────────┘
-```
-
-#### 2.8.1 设计原则
-
-| 原则 | 说明 |
-|------|------|
-| **生产代码是基准** | 以 agent.py 的 run_stream 为准 |
-| **base.py 向生产代码看齐** | 用正确的逻辑更新 base.py |
-| **agent.py 继承 base.py** | 而不是重写 |
-
-#### 2.8.2 调用关系
-
-```
-chat2.ver1_run_stream()
-    ↓ 调用
-agent.ver1_run_stream() ← IntentReactAgent
-    ↓ 调用
-run_stream() ← 父类 BaseAgent
-    ↓
-    ├── _step_thought() ← 可扩展
-    ├── _step_action() ← 可扩展  
-    └── _step_observation() ← 核心逻辑在父类
-            ↓
-            内部调用:
-            ├── _get_llm_response() ← 子类实现
-            ├── _execute_tool() ← 子类实现
-            └── _add_observation_to_history() ← 父类实现
-```
-
 ---
 
 ## 三、参数传递设计
@@ -421,6 +373,8 @@ chat_stream_query(
 
 ## 四、Agent分层架构设计
 
+> **📝 说明**：本节整合自参考文档 `Agent分层重构设计方案-小沈-2026-03-25.md`，以实际代码为参考标注实现状态。
+
 ### 4.1 设计原则
 
 | 原则 | 说明 |
@@ -429,9 +383,48 @@ chat_stream_query(
 | **base.py 向生产代码看齐** | 用正确的逻辑更新 base.py |
 | **agent.py 继承 base.py** | 而不是重写 |
 
-### 4.2 BaseAgent 重构设计
+### 4.2 继承架构图
 
-#### 4.2.1 核心方法定义
+```
+┌─────────────────────────────────────────┐
+│     IntentReactAgent (agent.py) (扩展层) │
+│  - 继承 BaseAgent                       │
+│  - 添加扩展功能:                        │
+│    • session 管理                        │
+│    • prompt 日志                        │
+│    • preprocessor                       │
+│    • intent_registry                    │
+│  - 调用父类核心方法                     │
+└─────────────────────────────────────────┘
+                    ↓ 继承
+┌─────────────────────────────────────────┐
+│     BaseAgent (base.py) (核心层)       │
+│  - 定义 ReAct 循环核心逻辑               │
+│  - 提供抽象方法供子类实现                │
+│  - 不包含任何具体实现细节                │
+└─────────────────────────────────────────┘
+```
+
+### 4.3 调用关系
+
+```
+chat2.ver1_run_stream()
+    ↓ 调用
+agent.ver1_run_stream() ← IntentReactAgent
+    ↓ 调用
+run_stream() ← 父类 BaseAgent
+    ↓
+    ├── _step_thought() ← 可扩展
+    ├── _step_action() ← 可扩展  
+    └── _step_observation() ← 核心逻辑在父类
+            ↓
+            内部调用:
+            ├── _get_llm_response() ← 子类实现
+            ├── _execute_tool() ← 子类实现
+            └── _add_observation_to_history() ← 父类实现
+```
+
+### 4.4 BaseAgent 抽象方法定义（参考文档）
 
 ```python
 class BaseAgent(ABC):
@@ -461,183 +454,32 @@ class BaseAgent(ABC):
     
     # ===== 核心方法（子类调用）=====
     
-    async def run_stream(
-        self,
-        task: str,
-        context: Optional[Dict] = None,
-        max_steps: int = 100
-    ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        ReAct 核心循环（生产环境正确逻辑）
-        
-        特点：
-        - 每次循环包含 3 个阶段: thought → action_tool → observation
-        - observation 包含实际执行数据（2026-03-25 修复）
-        - LLM 根据 observation 更新 thought
-        """
-        # 初始化
+    async def run_stream(self, task: str, context: Optional[Dict] = None, max_steps: int = 100):
+        """ReAct 核心循环"""
         self._init_session(task, context)
-        
+        step_count = 0
         while step_count < max_steps:
-            # ==== Thought 阶段 ====
+            step_count += 1
             yield await self._step_thought()
-            
-            # ==== Action 阶段 ====
             yield await self._step_action()
-            
-            # ==== Observation 阶段 ====
             yield await self._step_observation()
     
     # ===== 可扩展方法（子类可覆盖）=====
     
     def _init_session(self, task: str, context: Optional[Dict]):
-        """初始化 session（可选覆盖）"""
         pass
     
     async def _step_thought(self) -> Dict:
-        """执行 thought 阶段（可扩展）"""
         pass
     
     async def _step_action(self) -> Dict:
-        """执行 action 阶段（可扩展）"""
         pass
     
     async def _step_observation(self) -> Dict:
-        """执行 observation 阶段（可扩展）"""
         pass
 ```
 
-#### 4.2.2 核心循环逻辑（直接复用 agent.py）
-
-```python
-async def _step_observation(self) -> Dict:
-    """Observation 阶段 - 核心逻辑"""
-    
-    # 1. 构建 observation_text（包含实际数据）
-    raw_data = execution_result.get('data')
-    if raw_data:
-        observation_text = f"Observation: {status} - {summary}\n实际数据: {raw_data}"
-    else:
-        observation_text = f"Observation: {status} - {summary}"
-    
-    # 2. 添加到历史
-    self._add_observation_to_history(observation_text)
-    
-    # 3. 再次调用 LLM 获取下一个决策
-    llm_response = await self._get_llm_response()
-    
-    # 4. 解析响应
-    try:
-        parsed_obs = self.parser.parse_response(llm_response)
-    except ValueError as e:
-        parsed_obs = {"content": "无法解析LLM响应", "action_tool": "finish", "params": {}}
-    
-    # 5. 返回 observation
-    return {
-        "type": "observation",
-        "content": parsed_obs.get("content", ""),
-        "obs_action_tool": parsed_obs.get("action_tool", "finish"),
-        "is_finished": parsed_obs.get("action_tool") == "finish",
-        ...
-    }
-```
-
-### 4.3 IntentReactAgent 重构设计
-
-#### 4.3.1 继承结构
-
-```python
-class IntentAgent(BaseAgent):
-    """文件操作 Agent"""
-    
-    def __init__(self, ...):
-        # 调用父类初始化
-        super().__init__(max_steps=max_steps)
-        
-        # 添加扩展功能
-        self.session_service = ...
-        self.preprocessor = ...
-        self.intent_registry = ...
-        self.prompts = ...
-        self.executor = ...
-    
-    # ===== 实现抽象方法 =====
-    
-    def _get_system_prompt(self) -> str:
-        return self.prompts.get_system_prompt()
-    
-    def _get_task_prompt(self, task: str, context: Optional[Dict]) -> str:
-        return self.prompts.get_task_prompt(task, context)
-    
-    async def _execute_tool(self, action: str, params: Dict) -> Dict:
-        return await self.executor.execute(action, params)
-    
-    # ===== 覆盖扩展方法 =====
-    
-    def _init_session(self, task: str, context: Optional[Dict]):
-        """扩展：session 管理"""
-        # 确保 session 存在
-        if not self.session_id:
-            self.session_id = self.session_service.create_session(...)
-    
-    # ===== 调用父类核心方法 =====
-    
-    async def ver1_run_stream(self, ...):
-        """入口方法"""
-        # 使用父类的 run_stream
-        async for event in self.run_stream(task, context, max_steps):
-            # 转换为 SSE 格式
-            yield self._to_sse(event)
-```
-
-#### 4.3.2 调用关系
-
-```
-ver1_run_stream()
-    ↓ 调用
-run_stream() ← 父类 BaseAgent
-    ↓
-    ├── _step_thought() ← 可扩展
-    ├── _step_action() ← 可扩展  
-    └── _step_observation() ← 核心逻辑在父类
-            ↓
-            内部调用:
-            ├── _get_llm_response() ← 子类实现
-            ├── _execute_tool() ← 子类实现
-            └── _add_observation_to_history() ← 父类实现
-```
-
-### 4.4 实施步骤
-
-#### 4.4.1 第一步：清空 base.py
-
-**操作**：删除 base.py 内部所有实现代码，只保留：
-- 导入语句
-- 类型定义
-- 抽象方法声明
-- 核心方法实现
-
-#### 4.4.2 第二步：重写 base.py
-
-**操作**：用 agent.py 的正确逻辑重写 base.py：
-- 核心循环逻辑
-- 抽象方法定义
-- 可扩展方法定义
-
-#### 4.4.3 第三步：重构 agent.py
-
-**操作**：让 agent.py 继承 base.py：
-- 删除重写的循环逻辑
-- 调用父类方法
-- 只保留扩展功能
-
-#### 4.4.4 第四步：验证
-
-**操作**：运行测试，确保：
-- 生产功能正常
-- 测试通过
-
-### 4.5 完成情况检查
+### 4.5 当前实现状态
 
 **检查时间**: 2026-03-25 15:30:20  
 **检查人**: 小沈
@@ -654,13 +496,13 @@ run_stream() ← 父类 BaseAgent
 
 #### 4.5.2 未完成项目 ❌
 
-| 序号 | 未完成项 | 文档位置 | 当前状态 |
-|------|---------|---------|---------|
-| 1 | **_step_thought 可扩展方法** | 4.2.1 | ❌ base.py 未实现 |
-| 2 | **_step_action 可扩展方法** | 4.2.1 | ❌ base.py 未实现 |
-| 3 | **_step_observation 可扩展方法** | 4.2.1 | ❌ base.py 未实现 |
-| 4 | **_init_session Hook** | 4.2.1 | ❌ base.py 有 _on_session_init，但不是 _init_session |
-| 5 | **_on_before_loop Hook** | 4.2.1 | ⚠️ base.py 有调用但没有实现 |
+| 序号 | 未完成项 | 当前状态 |
+|------|---------|---------|
+| 1 | **_step_thought 可扩展方法** | base.py 未实现拆分 |
+| 2 | **_step_action 可扩展方法** | base.py 未实现拆分 |
+| 3 | **_step_observation 可扩展方法** | base.py 未实现拆分 |
+| 4 | **_init_session Hook** | base.py 有 _on_session_init，但不是 _init_session |
+| 5 | **_on_before_loop Hook** | base.py 有调用但没有实现 |
 
 #### 4.5.3 差距分析
 
@@ -669,6 +511,15 @@ run_stream() ← 父类 BaseAgent
 **实际情况**：base.py 的 run_stream 是一个完整的函数，所有逻辑都在里面，没有拆分成可扩展的子方法。
 
 **影响**：当前架构可扩展性不足，子类无法针对特定阶段进行定制。
+
+### 4.6 实施步骤
+
+| 步骤 | 操作 | 状态 |
+|------|------|------|
+| 第一步 | 清空 base.py（保留导入、类型定义、抽象方法） | 待执行 |
+| 第二步 | 重写 base.py（核心循环+可扩展方法） | 待执行 |
+| 第三步 | 重构 agent.py（删除重写，调用父类） | 待执行 |
+| 第四步 | 验证（生产功能+测试） | 待执行 |
 
 ---
 
@@ -695,9 +546,40 @@ run_stream() ← 父类 BaseAgent
 
 ---
 
-## 六、Session 管理
+## 六、文件位置与职责划分
 
-### 6.1 Session 生命周期
+### 6.1 文件位置
+
+| 文件 | 说明 |
+|------|------|
+| `backend/app/chat_stream/preprocessing.py` | 预处理入口模块（新建） |
+| `backend/app/api/v1/chat2.py` | 改为被调用方，含Session管理 |
+| `backend/app/api/v1/chat.py` 或新路由 | API 入口调用 preprocessing |
+| `backend/app/services/agent/agent.py` | IntentReactAgent (ver1_run_stream) |
+| `backend/app/services/agent/base.py` | BaseAgent 基类（需重构） |
+| `backend/app/services/preprocessing.py` | PreprocessingPipeline（已存在） |
+| `backend/app/services/intent.py` | IntentRegistry（已存在） |
+| `backend/app/chat_stream/chat_stream_query.py` | 普通对话流式输出 |
+
+### 6.2 职责划分原则
+
+#### 6.2.1 外部流程职责
+
+| 模块 | 职责 | 不做 |
+|------|------|------|
+| **preprocessing.py** | 预处理+意图识别+history处理+调用chat2 | Session管理，流式输出 |
+| **chat2.py** | Session管理+ai_service创建+根据intent_type分支+流式输出 | 预处理、意图识别 |
+
+#### 6.2.2 Agent内部职责
+
+| 模块 | 职责 | 不做 |
+|------|------|------|
+| **BaseAgent (base.py)** | 定义ReAct循环核心逻辑，提供抽象方法，定义可扩展方法 | 包含具体实现细节 |
+| **IntentReactAgent (agent.py)** | 继承BaseAgent，实现抽象方法，添加扩展功能（session、prompt等） | 重写循环逻辑 |
+
+### 6.3 Session 管理
+
+#### 6.3.1 Session 生命周期
 
 ```
 预处理阶段（可选）创建 Session
@@ -709,7 +591,7 @@ chat2 入口创建/复用 Session
 对话结束显式关闭
 ```
 
-### 6.2 Session 状态
+#### 6.3.2 Session 状态
 
 | 状态 | 说明 |
 |------|------|
@@ -749,7 +631,14 @@ chat2 入口创建/复用 Session
 - [ ] 修改 API 路由入口（`/api/v1/chat` 或 `/api/v1/chat2`）
 - [ ] 从直接调用 chat2 改为调用 preprocessing.handle_request()
 
-### 7.4 回归验证
+### 7.4 Agent分层重构
+
+- [ ] 清空 base.py（保留导入、类型定义、抽象方法）
+- [ ] 重写 base.py（核心循环逻辑 + 可扩展方法定义）
+- [ ] 重构 agent.py（删除重写，调用父类方法）
+- [ ] 验证（生产功能正常 + 测试通过）
+
+### 7.5 回归验证
 
 - [ ] 流式对话正常（chat_stream_query 事件正确）
 - [ ] 文件操作正常（ver1_run_stream 事件正确）
@@ -760,74 +649,11 @@ chat2 入口创建/复用 Session
 - [ ] 中断/暂停功能正常
 - [ ] 数据库保存正常
 
-### 7.5 Agent分层重构实施步骤
-
-#### 7.5.1 第一步：清空 base.py
-
-**操作**：删除 base.py 内部所有实现代码，只保留：
-- 导入语句
-- 类型定义
-- 抽象方法声明
-- 核心方法实现
-
-#### 7.5.2 第二步：重写 base.py
-
-**操作**：用 agent.py 的正确逻辑重写 base.py：
-- 核心循环逻辑
-- 抽象方法定义
-- 可扩展方法定义
-
-#### 7.5.3 第三步：重构 agent.py
-
-**操作**：让 agent.py 继承 base.py：
-- 删除重写的循环逻辑
-- 调用父类方法
-- 只保留扩展功能
-
-#### 7.5.4 第四步：验证
-
-**操作**：运行测试，确保：
-- 生产功能正常
-- 测试通过
-
 ---
 
-## 八、文件位置
+## 八、关键实现细节
 
-| 文件 | 说明 |
-|------|------|
-| `backend/app/chat_stream/preprocessing.py` | 预处理入口模块（新建） |
-| `backend/app/api/v1/chat2.py` | 改为被调用方，含Session管理 |
-| `backend/app/api/v1/chat.py` 或新路由 | API 入口调用 preprocessing |
-| `backend/app/services/agent/agent.py` | IntentReactAgent (ver1_run_stream) |
-| `backend/app/services/agent/base.py` | BaseAgent 基类（需重构） |
-| `backend/app/services/preprocessing.py` | PreprocessingPipeline（已存在） |
-| `backend/app/services/intent.py` | IntentRegistry（已存在） |
-| `backend/app/chat_stream/chat_stream_query.py` | 普通对话流式输出 |
-
----
-
-## 九、职责划分原则
-
-### 9.1 外部流程职责
-
-| 模块 | 职责 | 不做 |
-|------|------|------|
-| **preprocessing.py** | 预处理+意图识别+history处理+调用chat2 | Session管理、流式输出 |
-| **chat2.py** | Session管理+ai_service创建+根据intent_type分支+流式输出 | 预处理、意图识别 |
-
-### 9.2 Agent内部职责
-
-| 模块 | 职责 | 不做 |
-|------|------|------|
-| **BaseAgent (base.py)** | 定义ReAct循环核心逻辑，提供抽象方法，定义可扩展方法 | 包含具体实现细节 |
-| **IntentReactAgent (agent.py)** | 继承BaseAgent，实现抽象方法，添加扩展功能（session、prompt等） | 重写循环逻辑 |
-
----
-
-## 十、关键实现细节
-
-### 10.1 next_step 函数定义
+### 8.1 next_step 函数定义
 
 ```python
 # 必须在使用前定义
@@ -839,7 +665,7 @@ def next_step():
     return step_counter
 ```
 
-### 10.2 LLM 客户端适配器
+### 8.2 LLM 客户端适配器
 
 ```python
 async def llm_client(message, history=None):
@@ -847,7 +673,7 @@ async def llm_client(message, history=None):
     return type('obj', (object,), {'content': response.content})()
 ```
 
-### 10.3 Agent 实例创建
+### 8.3 Agent 实例创建
 
 ```python
 agent = FileOperationAgent(
@@ -855,6 +681,32 @@ agent = FileOperationAgent(
     session_id=session_id
 )
 ```
+
+---
+
+**文档结束**
+
+### 6.1 Session 生命周期
+
+```
+预处理阶段（可选）创建 Session
+    ↓
+chat2 入口创建/复用 Session
+    ↓
+根据 intent_type 分支（保持 session_id 一致）
+    ↓
+对话结束显式关闭
+```
+
+### 6.2 Session 状态
+
+| 状态 | 说明 |
+|------|------|
+| creating | 创建中 |
+| active | 活跃 |
+| completed | 已完成 |
+| interrupted | 已中断 |
+| error | 错误 |
 
 ---
 
