@@ -268,6 +268,9 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
 
   // 【小强修复 2026-03-25】Hooks 必须在顶层无条件调用
   const [searchText, setSearchText] = useState("");
+  
+  // 【小强修复】用户点击展开/折叠时的keys状态管理
+  const [userExpandedKeys, setUserExpandedKeys] = useState<string[]>([]);
 
   // 计算树形数据
   const treeData = useMemo(
@@ -276,7 +279,7 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
   );
 
   // 【小强新增 2026-03-25】计算需要展开的父节点路径（递归模式搜索用）
-  const expandedKeys = useMemo(() => {
+  const searchExpandedKeys = useMemo(() => {
     if (!searchText.trim()) return [];
     const lowerSearch = searchText.toLowerCase();
     const keysToExpand = new Set<string>();
@@ -303,6 +306,14 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
     traverse(treeData, []);
     return Array.from(keysToExpand);
   }, [treeData, searchText]);
+
+  // 【小强修复】合并展开的keys：搜索时只用searchExpandedKeys，无搜索时用userExpandedKeys
+  const allExpandedKeys = useMemo(() => {
+    if (!searchText.trim()) {
+      return userExpandedKeys;
+    }
+    return searchExpandedKeys;
+  }, [searchExpandedKeys, userExpandedKeys, searchText]);
 
   // 【小强修改 2026-03-25】递归模式：过滤后的树结构，匹配到子节点时保留父节点链
   const filteredTreeData = useMemo(() => {
@@ -451,13 +462,19 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
         <>
           {/* 根据 recursive 参数选择显示方案 */}
           {isRecursive ? (
-            /* 递归模式：树形结构 - 使用 filteredTreeData 和 expandedKeys */
+            /* 递归模式：树形结构 - 支持搜索展开+用户手动展开 */
             <div style={fileListBackground}>
               <DirectoryTree
                 showLine={{ showLeafIcon: true }}
                 treeData={filteredTreeData}
-                expandedKeys={expandedKeys}
+                // 【小强修复】使用allExpandedKeys：搜索时只用searchExpandedKeys，无搜索时用userExpandedKeys
+                expandedKeys={allExpandedKeys}
                 defaultExpandAll={false}
+                // 【小强修复】允许用户点击展开/折叠
+                selectable={false}
+                onExpand={(keys: string[]) => {
+                  setUserExpandedKeys(keys);
+                }}
                 style={{
                   background: "transparent",
                   fontSize: 13,

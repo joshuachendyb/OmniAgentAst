@@ -47,6 +47,7 @@ import DeleteFileView from "./views/DeleteFileView";
 import MoveFileView from "./views/MoveFileView";
 import SearchFilesView from "./views/SearchFilesView";
 import GenerateReportView from "./views/GenerateReportView";
+import JsonHighlight from "./views/JsonHighlight";
 
 /**
  * 步骤行组件 - 单行步骤显示（优化后新增）
@@ -257,7 +258,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                     maxHeight: expandedSteps.get(stepIndex + 1000) ? "none" : "36px",
                   }}
                 >
-                  参数：{JSON.stringify(step.tool_params, null, expandedSteps.get(stepIndex + 1000) ? 2 : 0)}
+                  <JsonHighlight data={step.tool_params} isExpanded={!!expandedSteps.get(stepIndex + 1000)} />
                   <span style={{ 
                     marginLeft: 8, 
                     color: "#1890ff", 
@@ -417,7 +418,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
               <span style={{ marginRight: 16 }}>
                 <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>任务ID：</span>
                 <span style={getStepBadgeStyle("start" as StepType, "outline")}>
-                  {step.task_id?.slice(0, 8) || "无"}
+                  {step.task_id || "无"}
                 </span>
               </span>
               

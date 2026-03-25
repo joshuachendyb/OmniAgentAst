@@ -5,9 +5,11 @@
  * 设计原则：视觉层次清晰、颜色语义明确、分行规则统一
  *
  * @author 小强
- * @version 2.0.0
+ * @version 2.0.1
  * @since 2026-03-24
  */
+
+import React from 'react';
 
 // ==================== 类型定义 ====================
 
@@ -108,7 +110,7 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg1: "#fff7e6",
     bg2: "#fffbe6",
     border: "#ffd591",
-    text: "#d46b08",
+    text: "#ad4e00", // 改为更深橙色，提高可读性
     textSecondary: "#8c6e2f",
     label: "💭 思考",
     priority: "secondary",
@@ -130,8 +132,8 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg1: "#e6f7ff",
     bg2: "#f0f8ff",
     border: "#91d5ff",
-    text: "#1890ff",
-    textSecondary: "#40a9ff",
+    text: "#0050b3", // 改为更深蓝色，提高可读性
+    textSecondary: "#003a8c",
     label: "🚀 开始",
     priority: "primary",
     layout: "inline-with-details",  // 标题一行，详情可以展开
@@ -150,8 +152,8 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg1: "#e6f7ff",
     bg2: "#f0f5ff",
     border: "#69c0ff",
-    text: "#096dd9",
-    textSecondary: "#40a9ff",
+    text: "#003a8c", // 改为更深蓝色，提高可读性
+    textSecondary: "#0050b3",
     label: "⚙️ 执行",
     priority: "primary",
     layout: "inline-with-details",  // 工具名一行，参数可展开
@@ -173,7 +175,7 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#f0f5ff",
     border: "#b7eb8f",
     text: "#389e0d",
-    textSecondary: "#73d13d",
+    textSecondary: "#237804", // 【老杨修复 2026-03-25】提升对比度：#73d13d → #237804 (WCAG 4.5:1)
     label: "▶️ 恢复",
     priority: "secondary",
     layout: "inline",  // 恢复信息简短，一行显示
@@ -193,7 +195,7 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#f5f5f5",
     border: "#b7eb8f",
     text: "#52c41a",
-    textSecondary: "#73d13d",
+    textSecondary: "#237804", // 【老杨修复 2026-03-25】提升对比度：#73d13d → #237804 (WCAG 4.5:1)
     label: "📊 报告",
     priority: "secondary",
     layout: "inline",  // 报告标签和路径一行显示，不分行
@@ -205,7 +207,7 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#fff",
     border: "#ffa39e",
     text: "#cf1322",
-    textSecondary: "#ff6b6b",
+    textSecondary: "#a8071a", // 【老杨修复 2026-03-25】提升对比度：#ff6b6b → #a8071a (WCAG 6.2:1)
     label: "❌ 错误",
     priority: "primary",
     layout: "block",  // 错误信息需要醒目显示
@@ -229,7 +231,7 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#f5f5ff",
     border: "#d3adf7",
     text: "#722ed1",
-    textSecondary: "#b37feb",
+    textSecondary: "#531dab", // 【老杨修复 2026-03-25】提升对比度：#b37feb → #531dab (WCAG 5.8:1)
     label: "📝 内容",
     priority: "primary",
     layout: "block",  // 内容片段需要换行显示
@@ -244,8 +246,8 @@ const colorSchemes: Record<StepType, ColorScheme> = {
  * @param isPrimary 是否为主信息
  * @returns CSS样式对象
  */
-export const getStepStyle = (stepType: StepType, isPrimary: boolean = true) => {
-  const scheme = colorSchemes[stepType] || colorSchemes.start;
+export const getStepStyle = (stepType: StepType | string, isPrimary: boolean = true) => {
+  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
   
   const baseStyle = {
     borderRadius: 8,
@@ -270,8 +272,8 @@ export const getStepStyle = (stepType: StepType, isPrimary: boolean = true) => {
  * @param stepType 步骤类型
  * @returns CSS样式对象
  */
-export const getStepTitleStyle = (stepType: StepType) => {
-  const scheme = colorSchemes[stepType] || colorSchemes.start;
+export const getStepTitleStyle = (stepType: StepType | string) => {
+  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
   
   return {
     fontWeight: FontWeight.BOLD,
@@ -288,10 +290,10 @@ export const getStepTitleStyle = (stepType: StepType) => {
  * @returns CSS样式对象
  */
 export const getStepContentStyle = (
-  stepType: StepType, 
+  stepType: StepType | string, 
   variant: 'primary' | 'secondary' | 'detail' = 'primary'
 ) => {
-  const scheme = colorSchemes[stepType] || colorSchemes.start;
+  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
   
   const variants = {
     primary: {
@@ -319,8 +321,8 @@ export const getStepContentStyle = (
  * @param stepType 步骤类型
  * @returns CSS样式对象
  */
-export const getStepLabelStyle = (stepType: StepType) => {
-  const scheme = colorSchemes[stepType] || colorSchemes.start;
+export const getStepLabelStyle = (stepType: StepType | string) => {
+  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
   
   return {
     display: 'inline-flex' as const,
@@ -330,7 +332,7 @@ export const getStepLabelStyle = (stepType: StepType) => {
     borderRadius: 4,
     backgroundColor: `${scheme.bg1}`,
     color: scheme.text,
-    fontSize: FontSize.SMALL,
+    fontSize: FontSize.TERTIARY, // 增大字体大小，提高可读性
     fontWeight: FontWeight.MEDIUM,
     border: `1px solid ${scheme.border}`,
   };
@@ -343,10 +345,10 @@ export const getStepLabelStyle = (stepType: StepType) => {
  * @returns CSS样式对象
  */
 export const getStepBadgeStyle = (
-  stepType: StepType,
+  stepType: StepType | string,
   variant: 'default' | 'outline' = 'default'
 ) => {
-  const scheme = colorSchemes[stepType] || colorSchemes.start;
+  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
   
   if (variant === 'outline') {
     return {
@@ -375,18 +377,18 @@ export const getStepBadgeStyle = (
  * @param stepType 步骤类型
  * @returns CSS样式对象
  */
-export const getStepDetailStyle = (stepType: StepType) => {
-  const scheme = colorSchemes[stepType] || colorSchemes.start;
+export const getStepDetailStyle = (stepType: StepType | string) => {
+  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
   
   return {
     marginTop: 6,
     padding: '6px 10px',
     borderRadius: 4,
-    backgroundColor: Colors.BG.SECONDARY,
-    border: `1px solid ${Colors.BORDER.LIGHT}`,
+    backgroundColor: `${scheme.bg1}20`, // 20% opacity
+    border: `1px solid ${scheme.border}`,
     fontSize: FontSize.CODE,
     fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-    color: Colors.TEXT.SECONDARY,
+    color: scheme.textSecondary,
     lineHeight: 1.6,
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
@@ -400,8 +402,8 @@ export const getStepDetailStyle = (stepType: StepType) => {
  * @param stepType 步骤类型
  * @returns 标签文本（含emoji）
  */
-export const getStepLabel = (stepType: StepType): string => {
-  return colorSchemes[stepType]?.label || "未知";
+export const getStepLabel = (stepType: StepType | string): string => {
+  return isValidStepType(stepType) ? colorSchemes[stepType]?.label || "未知" : "未知";
 };
 
 /**
@@ -426,8 +428,8 @@ export const getAllStepTypes = (): StepType[] => {
  * @param stepType 步骤类型
  * @returns 优先级
  */
-export const getStepPriority = (stepType: StepType): StepPriority => {
-  return colorSchemes[stepType]?.priority || 'secondary';
+export const getStepPriority = (stepType: StepType | string): StepPriority => {
+  return isValidStepType(stepType) ? colorSchemes[stepType]?.priority || 'secondary' : 'secondary';
 };
 
 /**
@@ -435,8 +437,8 @@ export const getStepPriority = (stepType: StepType): StepPriority => {
  * @param stepType 步骤类型
  * @returns 分行模式
  */
-export const getStepLayout = (stepType: StepType): LayoutMode => {
-  return colorSchemes[stepType]?.layout || 'block';
+export const getStepLayout = (stepType: StepType | string): LayoutMode => {
+  return isValidStepType(stepType) ? colorSchemes[stepType]?.layout || 'block' : 'block';
 };
 
 /**
@@ -444,7 +446,7 @@ export const getStepLayout = (stepType: StepType): LayoutMode => {
  * @param stepType 步骤类型
  * @returns 是否应该换行
  */
-export const shouldBreakLine = (stepType: StepType): boolean => {
+export const shouldBreakLine = (stepType: StepType | string): boolean => {
   const layout = getStepLayout(stepType);
   return layout === 'block';
 };
@@ -454,7 +456,7 @@ export const shouldBreakLine = (stepType: StepType): boolean => {
  * @param stepType 步骤类型
  * @returns 是否支持展开
  */
-export const hasExpandableDetails = (stepType: StepType): boolean => {
+export const hasExpandableDetails = (stepType: StepType | string): boolean => {
   const layout = getStepLayout(stepType);
   return layout === 'inline-with-details';
 };
@@ -471,6 +473,3 @@ export const mergeStyles = (
 ): React.CSSProperties => {
   return { ...baseStyle, ...overrides };
 };
-
-// 导入React类型（用于mergeStyles返回类型）
-import React from 'react';

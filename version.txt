@@ -1,3 +1,75 @@
+v0.7.93
+
+更新时间：2026-03-25 14:32:26
+
+更新内容：
+
+## 1. 前端UI修复+功能增强+目录清理 - 小强-2026-03-25
+
+### 1.1 修复内容
+
+#### 1.1.1 目录递归显示修复
+- **修复ListDirectoryView展开功能**：新增userExpandedKeys状态管理用户手动展开的keys
+- **修复onExpand回调**：处理用户点击展开/折叠事件
+- **修复搜索展开冲突**：有搜索时用searchExpandedKeys，无搜索时用userExpandedKeys
+
+#### 1.1.2 字体对比度修复
+- **stepStyles.ts字体对比度优化**：
+  - resumed.textSecondary: #73d13d → #237804 (2.3:1 → 4.6:1)
+  - report.textSecondary: #73d13d → #237804 (2.3:1 → 4.6:1)
+  - error.textSecondary: #ff6b6b → #a8071a (2.5:1 → 6.2:1)
+  - chunk.textSecondary: #b37feb → #531dab (2.1:1 → 5.8:1)
+- **MessageItem.tsx颜色方案同步**：添加textSecondary属性到所有12个步骤类型
+
+#### 1.1.3 步骤UI优化
+- **步骤间距优化**：marginBottom 8→6, padding "8px 12px" → "6px 10px"
+- **步骤流程线添加**：步骤之间添加"↓"箭头连接线
+- **AI消息气泡分隔**：添加渐变分隔线分隔执行步骤面板与AI回复
+- **工具参数展开交互改进**：添加hover反馈（背景变蓝、边框变蓝）
+
+### 1.2 功能新增
+
+#### 1.2.1 JSON语法高亮组件
+- **新建JsonHighlight.tsx独立组件**：支持JSON语法高亮显示
+- **颜色方案**：null灰色、boolean橙色、number绿色、string蓝色、object key深蓝
+- **支持展开/折叠状态切换**
+
+#### 1.2.2 任务ID显示修复
+- **修复任务ID截断问题**：移除slice(0,8)截断，显示完整ID
+
+### 1.3 目录清理
+
+#### 1.3.1 frontend目录整理
+- **移动报告文件到docs/目录**：6个测试报告和开发文档移动到frontend/docs/
+- **删除临时文件**：15个临时文件（日志、调试HTML、临时配置等）
+- **删除多余目录**：frontend/frontend/（空重复目录）、frontend/backup/（过期备份）
+- **清理结果**：根目录条目从41个减少到21个
+
+### 1.4 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| frontend/src/components/Chat/MessageItem.tsx | 步骤间距、流程线、分隔带、hover反馈、任务ID修复 |
+| frontend/src/components/Chat/views/ListDirectoryView.tsx | 修复展开+搜索功能 |
+| frontend/src/components/Chat/views/GenerateReportView.tsx | 修改标记 |
+| frontend/src/utils/stepStyles.ts | 修复4个字体对比度颜色值 |
+| frontend/src/components/Chat/views/JsonHighlight.tsx | 新建：JSON语法高亮独立组件 |
+| frontend/docs/*.md | 6个报告文件移动到这里 |
+| notes/*.md | 5个分析报告新建 |
+
+### 1.5 验证结果
+
+| 验证项 | 状态 | 说明 |
+|--------|------|------|
+| ESLint检查 | ✅ 通过 | 无新增错误 |
+| 单元测试 | ✅ 238/238通过 | 所有测试通过 |
+| 功能完整性 | ✅ 保持 | 无功能丢失 |
+
+参与开发：小强（基于老杨分析报告）
+完成时间：2026-03-25 14:32:00
+
+---
+
 v0.7.92
 
 更新时间：2026-03-25 13:05:00

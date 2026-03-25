@@ -18,7 +18,6 @@ import {
   FontSize,
   FontWeight,
   Colors,
-  type StepType 
 } from "../../../utils/stepStyles";
 
 interface GenerateReportViewProps {
@@ -51,7 +50,7 @@ const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpande
   }
 
   return (
-    <div style={getStepStyle("report" as StepType)}>
+    <div style={getStepStyle("report")}>
       {/* 标题行：报告状态 - 始终显示，inline布局 */}
       <div style={{ 
         display: "flex", 
@@ -61,7 +60,7 @@ const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpande
       }} onClick={onToggle}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <CheckCircleOutlined style={{ color: Colors.SUCCESS, fontSize: 16 }} />
-          <span style={getStepContentStyle("report" as StepType, "primary")}>
+          <span style={getStepContentStyle("report", "primary")}>
             报告生成完成
           </span>
           <Tag color="green" style={{ margin: 0, fontSize: FontSize.SMALL }}>
@@ -96,7 +95,7 @@ const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpande
               }}
             >
               {/* 报告类型标签 */}
-              <span style={getStepLabelStyle("report" as StepType)}>
+              <span style={getStepLabelStyle("report")}>
                 <FileTextOutlined style={{ fontSize: 12 }} />
                 {key}
               </span>
@@ -104,7 +103,7 @@ const GenerateReportView: React.FC<GenerateReportViewProps> = ({ data, isExpande
               {/* 文件路径 - 一行显示，不分行 */}
               {report && (
                 <span style={{ 
-                  ...getStepContentStyle("report" as StepType, "secondary"),
+                  ...getStepContentStyle("report", "secondary"),
                   fontFamily: "Consolas, Monaco, 'Courier New', monospace",
                   fontSize: FontSize.CODE,
                   wordBreak: "break-all",
