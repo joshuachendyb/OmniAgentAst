@@ -1444,6 +1444,51 @@ chat_router.py
 | 7 | 改造 FileReactAgent：删除 ver1_run_stream，保留 run_stream | 待实现 |
 | 8 | 验证调用链完整 | 待验证 |
 
+#### 附录2.7.5 实施方法（复制+删除法）
+
+**采用与 file_react.py 相同的"复制+删除法"**：
+- 复制 `chat2.py` → `react_sse_wrapper.py`
+- 删除不应该在第三层的内容
+- 保留通用职责
+
+**chat2.py 当前结构**：
+```
+chat2.py (688行)
+├── 路由判断（if is_file_op）❌ → 应该在 chat_router.py
+├── 意图检测 ❌ → 应该在 chat_router.py
+├── 任务管理 running_tasks ✅ → 保留
+├── start 步骤发送（含 security_check）✅ → 保留
+├── 数据库保存 ✅ → 保留
+├── 中断/暂停检查 ✅ → 保留
+├── 调用 agent.ver1_run_stream() ❌ → 改为调用 agent.run_stream()
+├── SSE 转换（在 ver1_run_stream 中）✅ → 保留
+└── cancel/pause/resume API ✅ → 保留
+```
+
+**具体步骤**：
+```
+1. cp chat2.py react_sse_wrapper.py
+2. 删除路由判断（if is_file_op）
+3. 删除意图检测代码
+4. 修改调用：agent.ver1_run_stream() → agent.run_stream()
+5. 重命名类：Chat2 → SSEReactWrapper
+6. 清理 docstring
+7. 编译验证
+```
+
+**要删除的代码**：
+| 删除项 | 代码位置 | 说明 |
+|--------|---------|------|
+| 路由判断 | 第300-330行 | is_file_op 判断，应在 chat_router.py |
+| 意图检测 | 第350-360行 | 应在 chat_router.py |
+| detect_file_operation_intent 调用 | - | 废除 |
+
+**要修改的代码**：
+| 修改项 | 说明 |
+|--------|------|
+| agent.ver1_run_stream() | 改为 agent.run_stream() |
+| 类名 | Chat2 → SSEReactWrapper |
+
 ---
 
 ### 附录2.8 待创建/改造文件清单
