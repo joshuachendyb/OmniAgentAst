@@ -1500,6 +1500,20 @@ chat2.py (688行)
 - 删除 ver1_run_stream 方法（SSE 转换逻辑已被抽走）
 - 保留 run_stream 方法（返回 event dict，供 react_sse_wrapper 调用）
 
+**react_sse_wrapper 调用 file_react.run_stream() 参数说明**：
+```python
+# react_sse_wrapper 调用 file_react
+agent = FileReactAgent(llm_client=..., session_id=...)
+async for event in agent.run_stream(
+    task=task,          # 用户输入
+    model=model,        # 模型名称
+    provider=provider,   # 模型提供商
+    ...
+):
+    # event 是 dict，转为 SSE 字符串
+    yield format_sse(event)
+```
+
 **要删除的代码**：
 | 删除项 | 代码位置 | 说明 |
 |--------|---------|------|
