@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-25 19:00:00
-**版本**: v2.10
+**更新时间**: 2026-03-25 19:15:00
+**版本**: v2.12
 **编写人**: 小沈
 
 ---
@@ -41,6 +41,8 @@
 | v2.8 | 2026-03-25 18:40:00 | 新增7.1本次代码重组原则 |
 | v2.9 | 2026-03-25 18:50:00 | 修正7.2/7.3/7.4，严格按照2.1架构：预处理是独立模块在路由层调用，禁止在chat2内部调用预处理 |
 | v2.10 | 2026-03-25 19:00:00 | 修正7.5 Agent分层重构，整合4.5.2未完成项，不是清空重写 |
+| v2.11 | 2026-03-25 19:10:00 | 删除末尾重复Session内容，修正第四章标题层级，删除7.6回归验证移至附录 |
+| v2.12 | 2026-03-25 19:15:00 | 修正2.7.1预处理代码示例：预处理不调用chat2，由路由层串联调用 |
 
 ---
 
@@ -215,7 +217,7 @@ chat2.py 是**入口+执行**，负责：
 
 ### 2.7 函数调用关系
 
-#### 2.7.1 preprocessing.py（入口）
+#### 2.7.1 preprocessing.py（预处理入口）
 
 ```python
 from app.services.preprocessing import PreprocessingPipeline
@@ -225,10 +227,11 @@ from app.services.intent import IntentRegistry, Intent
 _preprocessor = PreprocessingPipeline()
 _intent_registry = IntentRegistry()
 
-async def handle_request(request: ChatRequest):
+async def execute_preprocessing(request: ChatRequest) -> dict:
     """
     预处理入口函数
-    职责：预处理 → 意图识别 → 调用chat2
+    职责：预处理 → 意图识别 → 返回预处理结果
+    注意：不调用chat2，由路由层决定后续调用
     """
     # 1. 预处理
     task = request.messages[-1].content
@@ -237,21 +240,21 @@ async def handle_request(request: ChatRequest):
     
     # 2. 意图识别
     intent_type = preprocessed.get("intent", "unknown")
-    intent_def = _intent_registry.get(intent_type)  # 获取意图定义
+    intent_def = _intent_registry.get(intent_type)
     
     # 3. 历史消息（不经过预处理）
     history = request.messages[:-1]
     
-    # 4. 调用 chat2.py（传入预处理结果和意图定义）
-    async for event in chat2.handle_stream(
-        last_message=preprocessed["corrected"],
-        intent_type=intent_type,
-        intent_def=intent_def,  # 意图定义传给 chat2
-        history=history,
-        request=request,
-    ):
-        yield event
+    # 4. 返回预处理结果（由路由层决定后续调用）
+    return {
+        "corrected": preprocessed["corrected"],
+        "intent_type": intent_type,
+        "intent_def": intent_def,
+        "history": history,
+    }
 ```
+
+> **📝 说明**：预处理模块只返回预处理结果，不直接调用chat2。由路由层（7.4节）负责串联调用。
 
 #### 2.7.2 chat2.py（入口+执行）
 
@@ -390,7 +393,7 @@ chat_stream_query(
 
 ---
 
-# 四、Agent分层架构设计与实现说明
+## 四、Agent分层架构设计与实现说明
 
 > **📝 说明**：本节整合自参考文档 `Agent分层重构设计方案-小沈-2026-03-25.md`，以实际代码为参考标注实现状态。
 
@@ -758,20 +761,9 @@ async def chat_stream(request: ChatRequest):
 - [ ] base.py 实现 `_on_before_loop()` Hook
 - [ ] 验证（生产功能正常 + 测试通过）
 
-### 7.6 回归验证
-
-- [ ] 流式对话正常（chat_stream_query 事件正确）
-- [ ] 文件操作正常（ver1_run_stream 事件正确）
-- [ ] 网络操作正常（ver1_run_stream 事件正确）
-- [ ] Session 管理正常（创建/传递/关闭）
-- [ ] 预处理正确识别意图（intent_type 正确）
-- [ ] 历史消息正确传递（history 不经过预处理）
-- [ ] 中断/暂停功能正常
-- [ ] 数据库保存正常
-
 ---
 
-## 八、关键实现细节
+## 八、关键实现细节（代码示例）
 
 ### 8.1 next_step 函数定义
 
@@ -804,29 +796,20 @@ agent = FileOperationAgent(
 
 ---
 
-**文档结束**
+## 附录：回归验证检查清单
 
-### 6.1 Session 生命周期
+> **📝 说明**：以下检查清单用于待实现任务完成后的验证，确保功能正常。
 
-```
-预处理阶段（可选）创建 Session
-    ↓
-chat2 入口创建/复用 Session
-    ↓
-根据 intent_type 分支（保持 session_id 一致）
-    ↓
-对话结束显式关闭
-```
-
-### 6.2 Session 状态
-
-| 状态 | 说明 |
-|------|------|
-| creating | 创建中 |
-| active | 活跃 |
-| completed | 已完成 |
-| interrupted | 已中断 |
-| error | 错误 |
+| 序号 | 验证项 | 验证方法 |
+|------|--------|---------|
+| 1 | 流式对话正常 | 触发 chat 意图，检查 chunk/final 事件正确 |
+| 2 | 文件操作正常 | 触发文件操作，检查 ReAct 循环事件正确 |
+| 3 | 网络操作正常 | 触发网络操作，检查 ReAct 循环事件正确 |
+| 4 | Session 管理正常 | 检查创建/传递/关闭流程 |
+| 5 | 预处理识别意图 | 检查 intent_type 正确识别 |
+| 6 | 历史消息传递 | 检查 history 不经过预处理 |
+| 7 | 中断/暂停功能 | 触发中断，检查状态正确 |
+| 8 | 数据库保存 | 检查 execution_steps 正确保存 |
 
 ---
 
