@@ -904,10 +904,14 @@ export const taskControlApi = {
    * POST /api/v1/chat/stream/cancel/{task_id}
    * 
    * @param taskId 任务ID
+   * @param sessionId 会话ID（可选）
    * @returns 取消结果
    */
-  cancel: async (taskId: string): Promise<TaskControlResponse> => {
-    const response = await api.post<TaskControlResponse>(`/chat/stream/cancel/${taskId}`);
+  cancel: async (taskId: string, sessionId?: string): Promise<TaskControlResponse> => {
+    const url = sessionId 
+      ? `/chat/stream/cancel/${taskId}?session_id=${sessionId}`
+      : `/chat/stream/cancel/${taskId}`;
+    const response = await api.post<TaskControlResponse>(url);
     return response.data;
   },
 
@@ -916,10 +920,14 @@ export const taskControlApi = {
    * POST /api/v1/chat/stream/pause/{task_id}
    * 
    * @param taskId 任务ID
+   * @param sessionId 会话ID（可选）
    * @returns 暂停结果
    */
-  pause: async (taskId: string): Promise<TaskControlResponse> => {
-    const response = await api.post<TaskControlResponse>(`/chat/stream/pause/${taskId}`);
+  pause: async (taskId: string, sessionId?: string): Promise<TaskControlResponse> => {
+    const url = sessionId 
+      ? `/chat/stream/pause/${taskId}?session_id=${sessionId}`
+      : `/chat/stream/pause/${taskId}`;
+    const response = await api.post<TaskControlResponse>(url);
     return response.data;
   },
 
@@ -928,10 +936,14 @@ export const taskControlApi = {
    * POST /api/v1/chat/stream/resume/{task_id}
    * 
    * @param taskId 任务ID
+   * @param sessionId 会话ID（可选）
    * @returns 恢复结果
    */
-  resume: async (taskId: string): Promise<TaskControlResponse> => {
-    const response = await api.post<TaskControlResponse>(`/chat/stream/resume/${taskId}`);
+  resume: async (taskId: string, sessionId?: string): Promise<TaskControlResponse> => {
+    const url = sessionId 
+      ? `/chat/stream/resume/${taskId}?session_id=${sessionId}`
+      : `/chat/stream/resume/${taskId}`;
+    const response = await api.post<TaskControlResponse>(url);
     return response.data;
   },
 
