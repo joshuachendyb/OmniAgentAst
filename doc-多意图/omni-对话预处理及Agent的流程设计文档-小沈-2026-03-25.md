@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 11:05:00
-**版本**: v2.56
+**更新时间**: 2026-03-26 11:15:00
+**版本**: v2.57
 **编写人**: 小沈
 
 ---
@@ -87,6 +87,7 @@
 | v2.54 | 2026-03-26 10:25:00 | 附录2.5对照检查标注：文件位置✅、核心职责✅（部分）、意图检测✅、任务✅ |
 | v2.55 | 2026-03-26 10:40:00 | 附录2.8阶段1补充：chat_router统一准备环境参数方案分析 |
 | v2.56 | 2026-03-26 11:05:00 | 修正环境参数分析：让FileReactAgent增加参数与chat_stream_query保持一致 |
+| v2.57 | 2026-03-26 11:15:00 | 新增start函数独立设计分析：start数据传递后续、创建独立start_step()函数 |
 
 ---
 
@@ -1675,6 +1676,60 @@ save_execution_steps_to_db, add_step_and_save
    - display_name
    - llm_client
    - wrapped_save_steps / wrapped_add_step
+
+#### 附录：start 函数独立设计（2026-03-26 11:15:00 小沈）
+
+> 💡 **问题发现**：start 步骤的数据会传递到后续流程，不能简单忽略
+
+**当前 start 步骤数据（chat2.py 第365行）**：
+```python
+start_data = {
+    'type': 'start',
+    'step': next_step(),
+    'timestamp': create_timestamp(),
+    'display_name': display_name,      # → final 步骤用到
+    'provider': ai_service.provider,   # → final/error 步骤用到
+    'model': ai_service.model,        # → final/error 步骤用到
+    'task_id': task_id,              # → 中断检查用到
+    'user_message': user_message_preview,
+    'security_check': {...}           # → 可能影响后续流程
+}
+```
+
+**start 数据的后续使用**：
+| 数据 | 用途 |
+|------|------|
+| display_name | final 步骤发送 |
+| provider/model | final/error 步骤发送 |
+| task_id | 中断检查 |
+| security_check | 安全检查结果 |
+
+**start 函数独立的方案**：
+
+1. **创建独立 start_step() 函数**
+   - 位置：`app/chat_stream/start_step.py`
+   - 职责：发送 start 步骤，返回 start 数据
+
+2. **start 返回的数据传给 Agent**
+   - Agent 内部使用 start 返回的数据
+   - 避免重复创建 display_name/provider/model
+
+3. **Agent 调用 start**：
+```
+FileReactAgent:
+  → start_step() → 获取 start_data
+  → 使用 start_data 继续 thought → action_tool → final
+
+chat_stream_query:
+  → start_step() → 获取 start_data  
+  → 使用 start_data 继续 chunk → final
+```
+
+**独立 start 函数的价值**：
+- 统一 start 步骤发送逻辑
+- 避免代码重复
+- start 数据在 Agent 内部使用，参数传递更清晰
+- 两个 Agent 调用方式一致
 
 2. **Agent 统一参数结构**：
 
