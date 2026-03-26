@@ -866,15 +866,8 @@ finally: del running_tasks[task_id]
 ### 7.2 预处理模块（独立入口）
 
 > **📝 说明**：根据2.1架构要求，预处理是**独立模块**，在路由层调用，不是放在chat2内部
-当前代码（v0.7.92）：
-用户请求 → 路由 @router.post("/chat/stream") → chat2.chat_stream() → detect_file_operation_intent()
-
-改造后：
-用户请求 → chat_router_api → chat_router.route() → 6步流程 → Agent
-
-**当前代码现状**：
-- 路由层 `/chat/stream` → chat2.chat_stream() → detect_file_operation_intent()（简单函数）
-- 缺少完整的6步流程
+> 
+> **详细实现**：见附录 **阶段5：Router的更新**（第1943行起）
 
 **2.1架构要求**（必须遵守）：
 ```
@@ -891,21 +884,10 @@ chat_router.py (API端点) - 6步完整流程
 Agent (FileReactAgent / chat_stream_query)
 ```
 
-> **📝 路由层说明**：chat_router.py作为API端点，包含完整6步流程，直接处理请求。
-
-**改造方案**（根据2.1架构 - 6步流程）：
-- [ ] 修改 chat_router.py 作为API端点
-- [ ] 步骤1: 预处理 (PreprocessingPipeline)
-- [ ] 步骤2: 意图检测 (IntentRegistry)
-- [ ] 步骤3: 初始化 + 参数准备 (ai_service/next_step/task_id等)
-- [ ] 步骤4: 安全检测 (security_check)
-- [ ] 步骤5: start步骤 (start_step)
-- [ ] 步骤6: 根据intent_type分发到Agent
-
 **关键约束**：
 - **禁止在chat2内部调用预处理**（违反2.1架构）
 - chat_router.py 包含完整6步流程
-- chat2只接收Agent执行结果，负责Session管理和后续处理
+- chat2只接收Agent执行结果
 
 ### 7.3 chat2.py 废弃计划
 
@@ -916,28 +898,13 @@ Agent (FileReactAgent / chat_stream_query)
 - 包含预处理调用（违反2.1架构）
 - 职责不清
 
-**废弃后功能转移**：
-- 6步流程 → chat_router.py
-- Session管理 → chat_router.py
-- Agent分发 → chat_router.py
-- [ ] 无动作：调用 chat_stream_query()
-- [ ] 保留原有功能（中断检查、暂停检查、数据库保存）
-
 **遗留问题修复**（来自 `2.预处理与多意图代码目录说明-小沈-2026-03-22.md` 7.7节）：
 > **问题**：agent.py:452 使用原始 `task` 而不是 `preprocessed['corrected']`
-> 
-> **当前代码**：
-> ```python
-> task_prompt = self.prompts.get_task_prompt(task, context)  # 用原始task ❌
-> ```
 > 
 > **应改为**：
 > ```python
 > task_prompt = self.prompts.get_task_prompt(preprocessed['corrected'], context)  # 用修正后的 ✅
 > ```
-> 
-> **改造要点**：
-> - [ ] 修改 agent.py 第452行，使用 `preprocessed['corrected']` 替代原始 `task`
 
 ### 7.4 路由改造（创建 chat_router.py）
 
@@ -978,54 +945,11 @@ chat_router.py（API端点）
 - FileReactAgent.ver1_run_stream() 方法已经封装了完整的 SSE 处理逻辑
 - 直接返回 SSE 格式字符串（"data: {...}\n\n"）
 - 不需要额外的 react_sse_wrapper.py 中间层
-- 附录2.7 的 react_sse_wrapper.py 设计是冗余的，可以跳过（后续文档待删除）
+- 附录2.7 的 react_sse_wrapper.py 设计是冗余的，可以跳过
 
-**chat_router.py 6步改造要点**：
-- [ ] 新建 `chat_router.py` 作为Router服务层
-- [ ] 步骤1：预处理 (PreprocessingPipeline)
-- [ ] 步骤2：意图检测 (IntentRegistry)
-- [ ] 步骤3：初始化 + 参数准备 (ai_service/next_step/task_id等)
-- [ ] 步骤4：安全检测 (security_check)
-- [ ] 步骤5：start步骤 (start_step)
-- [ ] 步骤6：根据intent_type分发到对应Agent
-- [ ] chat2.py **只负责流式loop**，不包含任何预处理/意图识别
+> **📝 详细代码实现**：见附录 **阶段5：Router的更新**（第1943行起）
 
-**chat_router.py 代码结构示例（6步流程）**：
-```python
-# chat_router.py
-class ChatRouter:
-    async def route(self, request: ChatRequest, ...):
-        # 步骤1: 预处理
-        preprocessed = await self.preprocessing_pipeline.process(request)
-        
-        # 步骤2: 意图检测
-        intent_type = self.intent_registry.detect(preprocessed)
-        
-        # 步骤3: 安全检测
-        security_check_result = check_command_safety(last_message)
-        
-        # 步骤4: start步骤
-        start_data = await start_step(
-            ai_service=ai_service,
-            display_name=display_name,
-            ...
-        )
-        
-        # 步骤5: 分发到Agent
-        if intent_type == "file":
-            agent = FileReactAgent(llm_client=..., session_id=...)
-            async for event in agent.ver1_run_stream(...):
-                yield event
-        elif intent_type == "network":
-            agent = NetworkReactAgent(llm_client=..., session_id=...)
-            async for event in agent.ver1_run_stream(...):
-                yield event
-        else:
-            async for event in chat_stream_query(...):
-                yield event
-```
-# - 只负责 ReAct 循环或普通对话流
-```
+---
 
 ### 7.5 Agent分层重构
 
