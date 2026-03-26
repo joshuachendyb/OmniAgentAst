@@ -1024,50 +1024,43 @@ agent = FileOperationAgent(
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  底层 ReAct：base.py 的 run_stream()                              │
+│  第一层：路由层 (chat_router.py) - 6步完整流程                    │
 │                                                                 │
-│  实现标准的 ReAct 循环：                                         │
-│    Thought → Action → Observation → (循环直到 finish)              │
+│  1. 预处理 (PreprocessingPipeline)                             │
+│  2. 意图检测 (IntentRegistry)                                  │
+│  3. 初始化 + 参数准备                                           │
+│  4. 安全检测 (security_check)                                  │
+│  5. start步骤 (start_step)                                     │
+│  6. 分发到Agent (根据intent_type)                               │
 │                                                                 │
-│  返回通用 dict 事件：                                           │
-│    {"type": "thought", "content": ...}                          │
-│    {"type": "action_tool", "tool_name": ...}                   │
-│    {"type": "observation", "obs_summary": ...}                   │
-│                                                                 │
-│  ✅ 与意图无关，是通用的                                         │
-└─────────────────────────────────────────────────────────────────┘
-                           ↑
-                           │ agent.py 调用
-┌─────────────────────────────────────────────────────────────────┐
-│  上层 Intent-*-React：agent.py 的 ver1_run_stream()             │
-│                                                                 │
-│  - 继承 BaseAgent                                               │
-│  - 调用 self.run_stream()（底层）                               │
-│  - 在底层事件基础上，格式化成 SSE 字符串                         │
-│                                                                 │
-│  根据意图不同调用不同的意图特定的react函数代码：                  │
-│  ├── intent-file-ReactAgent  (file-react)                       │
-│  │   └── 文件操作相关逻辑（工具/prompt/安全检查）                │
-│  ├── intent-network-ReactAgent  (network-react)                │
-│  │   └── 网络操作相关逻辑                                       │
-│  ├── intent-desktop-ReactAgent  (desktop-react)                 │
-│  │   └── 桌面操作相关逻辑                                       │
-│  └── chat_stream_query()                                       │
-│      └── 流式普通对话过程                                       │
-│                                                                 │
-│  ✅ 与具体意图相关（intent-file-react）                          │
+│  ✅ 路由入口，统一入口处理                                        │
 └─────────────────────────────────────────────────────────────────┘
                             ↑
-                            │ chat2.py 调用
+                            │ 调用
 ┌─────────────────────────────────────────────────────────────────┐
-│  chat2.py 是什么层？                                            │
+│  第二层：意图特定React层 (file_react.py / network_react.py)      │
 │                                                                 │
-│  ❌ 混合体：                                                   │
-│    - 有路由判断（if is_file_op）—— 应该是 chat_router 的职责     │
-│    - 调用 agent.ver1_run_stream() —— 上层 Intent-*-React        │
-│    - 调用 chat_stream_query() —— 普通对话流式                    │
+│  - 继承 BaseReActAgent                                          │
+│  - 调用 self.run_stream()（底层通用ReAct）                       │
+│  - 格式化SSE字符串                                              │
+│  - 意图特定逻辑（工具/prompt/LLM策略）                          │
 │                                                                 │
-│  结论：chat2 不是任何一层，它是混合了多层的职责                   │
+│  ✅ 与具体意图相关（file/network/desktop）                       │
+└─────────────────────────────────────────────────────────────────┘
+                            ↑
+                            │ 调用
+┌─────────────────────────────────────────────────────────────────┐
+│  第三层：通用ReAct层 (base_react.py)                            │
+│                                                                 │
+│  实现标准的 ReAct 循环：                                        │
+│     Thought → Action → Observation → (循环直到 finish)          │
+│                                                                 │
+│  返回通用 dict 事件：                                           │
+│     {"type": "thought", "content": ...}                        │
+│     {"type": "action_tool", "tool_name": ...}                   │
+│     {"type": "observation", "obs_summary": ...}                 │
+│                                                                 │
+│  ✅ 与意图无关，是通用的                                         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -1075,10 +1068,9 @@ agent = FileOperationAgent(
 
 | 层次 | 文件 | 职责 | 特点 |
 |------|------|------|------|
-| **底层 ReAct** | base.py | 实现标准ReAct循环 | 与意图无关，通用 |
-| **上层 Intent-*-React** | agent.py | 格式化SSE + 意图相关逻辑 | 与具体意图相关 |
-| **路由层** | chat_router.py（待创建） | 6步：预处理→意图检测→初始化→安全检测→start→分发Agent | 路由职责 |
-| **chat2（当前）** | chat2.py | 混合体 | ❌ 职责不清 |
+| **路由层** | chat_router.py | 6步完整流程 | 路由入口 |
+| **意图特定React** | file_react.py / network_react.py | SSE格式化 + 意图相关逻辑 | 与具体意图相关 |
+| **通用ReAct** | base_react.py | 标准ReAct循环 | 与意图无关，通用 |
 
 ### 附录2.3 四层架构与意图分发
 
@@ -1086,10 +1078,6 @@ agent = FileOperationAgent(
 > **整理人**: 小沈
 
 #### 附录2.3.1 四层架构
-
-> **更新说明 2026-03-26**：确认调用链后更新架构图
-> - react_sse_wrapper 是第二层
-> - file_react 是第三层
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1104,82 +1092,71 @@ agent = FileOperationAgent(
 └─────────────────────────────────────────────────────────────────┘
                                ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  第二层：React SSE 包装层                                       │
-│  文件：react_sse_wrapper.py                                     │
-│                                                                 │
-│  ├── 任务管理 (running_tasks / interrupted_sessions)            │
-│  ├── 数据库保存 (save_execution_steps_to_db)                    │
-│  ├── 中断/暂停处理                                             │
-│  ├── SSE 转换（event dict → SSE 字符串）                       │
-│  └── 调用 file_react.run_stream()                              │
-└─────────────────────────────────────────────────────────────────┘
-                               ↓
-┌─────────────────────────────────────────────────────────────────┐
-│  第三层：意图特定 React                                          │
+│  第二层：意图特定React层                                         │
 │                                                                 │
 │  ├── FileReactAgent (file_react.py)                            │
 │  │   ├── 文件操作工具 (FileTools)                               │
 │  │   ├── Prompt 模板 (FileOperationPrompts)                    │
-│  │   ├── LLM 调用策略                                           │
 │  │   └── run_stream() → 返回 event dict                        │
 │  │                                                             │
-│  ├── NetworkReactAgent (network_react.py) ← 待实现            │
+│  ├── NetworkReactAgent (network_react.py) ← 待实现             │
 │  │                                                             │
 │  └── DesktopReactAgent (desktop_react.py) ← 待实现            │
-│                                                                 │
-│  【说明】file_react 只返回 event dict，不做 SSE 转换           │
 └─────────────────────────────────────────────────────────────────┘
                                ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  第四层：底层 ReAct                                              │
-│  文件：base_react.py                                            │
+│  第三层：通用ReAct层 (base_react.py)                            │
 │                                                                 │
-│  └── run_stream() - 通用 ReAct 循环                           │
-│      与意图无关，通用                                            │
+│  实现标准的 ReAct 循环：                                        │
+│     Thought → Action → Observation → (循环直到 finish)          │
+│                                                                 │
+│  返回通用 dict 事件：                                           │
+│     {"type": "thought", "content": ...}                        │
+│     {"type": "action_tool", "tool_name": ...}                  │
+│     {"type": "observation", "obs_summary": ...}                 │
+│                                                                 │
+│  ✅ 与意图无关，是通用的                                         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 #### 附录2.3.2 调用链说明
 
 ```
-chat_router → react_sse_wrapper → file_react.run_stream() → base_react.run_stream()
-     ↓              ↓                    ↓                       ↓
-   第一层        第二层               第三层                  第四层
+chat_router → file_react.run_stream() → base_react.run_stream()
+     ↓              ↓                       ↓
+   第一层        第二层                  第三层
 ```
 
 #### 附录2.3.3 改造前后对应关系
 
 | 改造前 | 改造后 | 状态 |
 |--------|---------|------|
-| agent.py | file_react.py (FileReactAgent) | 待抽取 |
+| agent.py | file_react.py (FileReactAgent) | ✅ 已完成 |
 | agent.py (intent_type=network) | network_react.py (NetworkReactAgent) | 待实现 |
 | agent.py (intent_type=desktop) | desktop_react.py (DesktopReactAgent) | 待实现 |
-| chat2.py (混合体) | react_sse_wrapper.py | 待抽取 |
-| 无 | chat_router.py | 待创建 |
-| detect_file_operation_intent() | 废除 | 待废除 |
+| chat2.py (混合体) | 整合到 chat_router.py | 待改造 |
+| 无 | chat_router.py | ✅ 已完成 |
 
-#### 附录2.3.3 各层职责总结
+#### 附录2.3.4 各层职责总结
 
 | 层 | 文件 | 职责 | 特点 |
 |---|------|------|------|
-| **路由层** | chat_router.py | 6步：预处理→意图检测→初始化→安全检测→start→分发Agent | 新增 |
-| **意图特定React** | file_react.py | 意图相关逻辑（工具/prompt/LLM策略/SSE流式） | 拆分自 agent.py |
-| **React SSE 包装** | react_sse_wrapper.py | SSE框架 + 中断/暂停 + 数据库保存 | 抽取自 chat2.py |
+| **路由层** | chat_router.py | 6步完整流程：预处理→意图检测→初始化→安全检测→start→分发Agent | 新增 |
+| **意图特定React** | file_react.py / network_react.py / desktop_react.py | 意图相关逻辑（工具/prompt/LLM策略/SSE流式） | 拆分自 agent.py |
 | **通用ReAct** | base_react.py | 标准 ReAct 循环 | 与意图无关 |
 
 #### 附录2.3.4 关键理解
 
 1. **agent.py = FileReactAgent 的前身**
    - 当前 agent.py 有 intent_type 参数，但只完整实现了 file
-   - 改造就是把 agent.py 拆分重命名
+   - file_react.py 拆分自 agent.py
 
-2. **意图特定 React 层共同调用 react_sse_wrapper.py**
+2. **意图特定 React 层直接调用 base_react.py**
    - FileReactAgent、NetworkReactAgent 等
-   - 都调用 react_sse_wrapper.py（流式包装器）
-   - react_sse_wrapper.py 再调用 base_react.py
+   - 都直接调用 base_react.py 的 run_stream() 方法
 
 3. **不再需要现有的 agent.py 作为独立文件**
-   - 其逻辑拆分到 file_react.py
+   - 其逻辑拆分到 file_react.py / network_react.py / desktop_react.py
    - chat_router 负责路由分发
 
 ### 附录2.4 base.py更名base_react.py规范
