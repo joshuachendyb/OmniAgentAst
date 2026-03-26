@@ -49,6 +49,30 @@ v0.8.12
 
 ---
 
+## 2. chat_router API 参数对比 - 小沈-2026-03-26
+
+### 2.1 ChatRequest 参数对比
+
+| 参数 | chat2.py (旧) | chat_router.py (新) | 结论 |
+|------|---------------|---------------------|------|
+| messages | ✅ List[ChatMessage] | ✅ List[ChatMessage] | 一致 |
+| stream | ✅ bool | ✅ bool | 一致 |
+| temperature | ✅ Optional[float] | ✅ Optional[float] | 一致 |
+| provider | ✅ Optional[str] | ✅ Optional[str] | 一致 |
+| model | ✅ Optional[str] | ✅ Optional[str] | 一致 |
+| task_id | ✅ Optional[str] | ✅ Optional[str] | 一致 |
+| session_id | ✅ Optional[str] | ✅ Optional[str] | 一致 |
+
+### 2.2 结论
+
+- ✅ 新旧 API 参数**完全一致**
+- ✅ 前端无需修改请求体格式，只需修改URL
+
+参与开发：小沈
+完成时间：2026-03-26 16:48:36
+
+---
+
 v0.8.11
 
 更新时间：2026-03-26 16:10:00
