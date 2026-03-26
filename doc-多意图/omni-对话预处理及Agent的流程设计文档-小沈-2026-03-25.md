@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 12:35:00
-**版本**: v2.68
+**更新时间**: 2026-03-26 12:40:00
+**版本**: v2.69
 **编写人**: 小沈
 
 ---
@@ -99,6 +99,7 @@
 | v2.66 | 2026-03-26 12:25:00 | 修正4.4流程为6步：步骤1初始化(	next_step/running_tasks/ai_service)，步骤2-6对应原5步 |
 | v2.67 | 2026-03-26 12:30:00 | 调整6步顺序：步骤1预处理，步骤2意图检测，步骤3初始化，步骤4安全检测，步骤5 start，步骤6分发 |
 | v2.68 | 2026-03-26 12:35:00 | 修正4.5架构图：删除chat_router_api.py，改为6步流程 |
+| v2.69 | 2026-03-26 12:40:00 | 4.5节改为代码改造方案，包含6步流程完整代码 |
 
 ---
 
@@ -1989,32 +1990,79 @@ class ChatRouter:
 
 ---
 
-##### 4.5 修正后的架构图
+##### 4.5 代码改造方案
 
-**完整架构流程**：
+**chat_router.py 当前流程（只有2步）**：
+```python
+# 步骤1: 意图检测 (已有)
+intent_result = self.preprocessing.process(...)
+
+# 步骤2: 分发到Agent (已有)
+if intent_type == "file":
+    ...
 ```
-前端请求
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  chat_router.py (API端点) - 6步完整流程                          │
-│                                                                 │
-│  步骤1: 预处理                                                  │
-│  步骤2: 意图检测                                                │
-│  步骤3: 初始化                                                  │
-│  步骤4: 安全检测                                                │
-│  步骤5: start步骤                                              │
-│  步骤6: 分发到Agent                                             │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│  Agent 层 (FileReactAgent / chat_stream_query)                  │
-├─────────────────────────────────────────────────────────────────┤
-│  - 只负责执行 thought → action_tool → observation 循环          │
-│  - 不需要知道 start 数据                                         │
-│  - 不关心 display_name/provider/model                           │
-│  - 简洁的接口：llm_client + session_id                          │
-└─────────────────────────────────────────────────────────────────┘
+
+**改造为6步流程**：
+```python
+async def route(self, ...):
+    
+    # ===== 步骤1: 预处理 =====
+    # 【已有】第71-76行
+    intent_result = self.preprocessing.process(
+        user_input=user_input,
+        intent_labels=INTENT_LABELS,
+        session_id=session_id
+    )
+    
+    # ===== 步骤2: 意图检测 =====
+    # 【已有】第78-84行
+    intent_type = intent_result.get("intent", "chat")
+    confidence = intent_result.get("confidence", 0.0)
+    
+    # ===== 步骤3: 初始化 ===== 【新增】
+    # ai_service创建
+    from app.services import AIServiceFactory
+    ai_service = AIServiceFactory.create(
+        provider=provider,
+        model=model,
+        session_id=session_id
+    )
+    
+    # next_step计数器
+    step_counter = 0
+    def next_step():
+        nonlocal step_counter
+        step_counter += 1
+        return step_counter
+    
+    # running_tasks (Session管理)
+    running_tasks: Dict[str, Any] = {}
+    
+    # current_execution_steps
+    current_execution_steps: List[Dict] = []
+    
+    # ===== 步骤4: 安全检测 ===== 【新增】
+    from app.services.shell_security import check_command_safety
+    security_check_result = check_command_safety(user_input)
+    
+    # ===== 步骤5: start步骤 ===== 【新增】
+    start_data = {
+        'type': 'start',
+        'step': next_step(),
+        'timestamp': create_timestamp(),
+        'display_name': f"{ai_service.provider} ({ai_service.model})",
+        'provider': ai_service.provider,
+        'model': ai_service.model,
+        'task_id': task_id,
+        'security_check': security_check_result
+    }
+    yield f"data: {json.dumps(start_data)}\n\n"
+    current_execution_steps.append(start_data)
+    
+    # ===== 步骤6: 分发到Agent ===== 【修改】
+    if intent_type == "file" and confidence >= 0.3:
+        ...
+```
 ```
 
 ---
