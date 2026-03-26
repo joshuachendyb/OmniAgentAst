@@ -1,3 +1,114 @@
+v0.8.7
+
+更新时间：2026-03-26 15:30:00
+
+更新内容：
+
+## 1. 阶段5：chat_router.py 6步完整流程 + API端点注册 - 小沈-2026-03-26
+
+### 1.1 背景
+
+根据设计文档阶段5要求，实现完整的6步流程并注册API端点。
+
+### 1.2 问题根因（来自文档1.1）
+
+**上一次问题**：router写了但没被系统用起来
+- chat_router.py 已创建但没有在 main.py 中注册
+- API端点仍然是 chat2.py，旧流程未被替换
+
+### 1.3 实施内容
+
+**修改 chat_router.py**：
+1. 添加 FastAPI 路由装饰器，创建新端点 `/chat/stream/v2`
+2. 实现完整的6步流程：
+   - 步骤1: 预处理 (PreprocessingPipeline)
+   - 步骤2: 意图检测 (IntentRegistry)
+   - 步骤3: 初始化 (ai_service/next_step/running_tasks/current_execution_steps)
+   - 步骤4: 安全检测 (security_check)
+   - 步骤5: start步骤 (start_step)
+   - 步骤6: 分发到Agent
+3. 添加 `_handle_chat_operation()` 处理简单对话
+4. 添加 `_handle_file_operation()` 处理文件操作
+
+**修改 main.py**：
+- 注册 chat_router 的 router
+
+### 1.4 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| backend/app/services/chat_router.py | 添加FastAPI路由 + 6步完整流程实现 |
+| backend/app/main.py | 注册 chat_router router |
+
+### 1.5 验证结果
+
+| 验证项 | 状态 | 结果 |
+|--------|------|------|
+| Python语法检查 (chat_router.py) | ✅ | 通过 |
+| Python语法检查 (main.py) | ✅ | 通过 |
+
+### 1.6 后续任务
+
+- 前端调用新端点 `/api/v1/chat/stream/v2` 验证功能
+- 回归测试确保功能正常
+
+参与开发：小沈
+完成时间：2026-03-26 15:30:00
+
+---
+
+v0.8.6
+
+更新时间：2026-03-26 14:05:00
+
+更新内容：
+
+## 1. 阶段4：创建start_step.py统一发送start步骤函数 - 小沈-2026-03-26
+
+### 1.1 背景
+
+根据设计文档阶段4要求，创建独立的 start_step.py 文件，统一发送 start 步骤的方法。
+
+### 1.2 实施内容
+
+**创建文件**：`backend/app/chat_stream/start_step.py`
+
+**函数**：`send_start_step()`
+
+**功能**：
+- 构建 start_data
+- 通过 SSE 发送 start 步骤（格式：data: {json}\n\n）
+- 保存到 current_execution_steps
+- 保存到数据库
+- 返回 start_data（供后续 final/error 步骤使用）
+
+### 1.3 小健检查发现的问题
+
+**问题1：SSE格式不一致**
+- 原代码：`yield_func(start_data)`
+- 修复为：`yield_func(f"data: {json.dumps(start_data)}\n\n")`
+
+**问题2：没有保存到数据库**
+- 添加：`await save_execution_steps_to_db(session_id, current_execution_steps, "")`
+
+### 1.4 修改的文件
+
+| 文件 | 修改内容 |
+|------|---------|
+| backend/app/chat_stream/start_step.py | **新建**：统一发送start步骤函数 |
+
+### 1.5 验证结果
+
+| 验证项 | 状态 | 结果 |
+|--------|------|------|
+| Python语法检查 | ✅ | 通过 |
+| 模块导入验证 | ✅ | 成功 |
+
+参与开发：小沈、小健（检查发现）
+完成时间：2026-03-26 14:05:00
+
+---
+
 v0.8.5
 
 更新时间：2026-03-26 08:57:53
