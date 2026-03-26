@@ -260,7 +260,7 @@ chat2.py
 
 | 阶段 | 文件 | 说明 |
 |------|------|------|
-| **入口** | chat_router_api.py | API端点，接收请求 |
+| **入口** | chat_router.py | API端点，接收请求 |
 | **路由** | chat_router.py | 6步完整流程 |
 | **预处理** | preprocessing/pipeline.py | 语句校对 + 意图识别 |
 | **ReAct流程** | intent-*-ReactAgent (agent.py) | start → thought → action → observation → final |
