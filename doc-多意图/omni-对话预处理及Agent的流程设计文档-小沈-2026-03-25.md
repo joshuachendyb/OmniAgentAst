@@ -1705,21 +1705,133 @@ async for event in agent.run_stream(user_input):
 
 阶段3：最终架构（chat_router → react_sse_wrapper → file_react）
 
-**ver1_run_stream 分析（约94行）**：
-- 将 event dict 转换为 SSE 字符串
-- 包含：thought/action_tool/observation/final/error 的格式化逻辑
+> **更新时间**: 2026-03-26 16:10:00
+> **更新说明**: 修正阶段3实施步骤，基于当前实际代码结构
 
-**采用复制+删除法**（更稳妥）：
-1. 复制 ver1_run_stream 整体逻辑到 react_sse_wrapper.py
-2. 删除调用 self.run_stream() 部分（改为调用方传入 event）
-3. 保留 SSE 格式化逻辑（约70行）
+**当前状态**（2026-03-26 16:10）：
+- chat_router.py 已实现6步流程 ✅
+- file_react.ver1_run_stream() 已包含 SSE 格式化逻辑（调用 sse_formatter.py）✅
+- react_sse_wrapper.py 已创建但未被调用 ⚠️
 
-**实施步骤**：
-       ├── react_sse_wrapper 添加 SSE 转换逻辑（复制 ver1_run_stream，删除 run_stream 调用）
-       ├── 修改调用链：react_sse_wrapper → file_react.run_stream()
-       ├── file_react 删除 ver1_run_stream，只保留 run_stream()
-       └── 验证：完整调用链正常工作
+---
 
+#### 3.1 当前调用链 vs 目标调用链
+
+```
+【当前调用链】（简化版，3层）
+chat_router.py
+  → FileReactAgent.ver1_run_stream()  [包含 SSE 格式化]
+  → BaseAgent.run_stream() [返回 event dict]
+  → BaseReAct.run_stream()
+
+【目标调用链】（完整版，4层）
+chat_router.py
+  → react_sse_wrapper.generate_sse_stream()  [SSE 格式化]
+  → FileReactAgent.run_stream()  [返回 event dict]
+  → BaseAgent.run_stream()
+  → BaseReAct.run_stream()
+```
+
+---
+
+#### 3.2 实施步骤（详细说明）
+
+**第一步：修改 file_react.py**
+- 删除 `ver1_run_stream()` 方法
+- 保留 `run_stream()` 方法（返回 event dict）
+- SSE 格式化逻辑移到 react_sse_wrapper
+
+```python
+# 删除 ver1_run_stream() 方法（约100行）
+# 保留 run_stream() 方法（返回 event dict）
+class FileReactAgent(BaseAgent):
+    async def run_stream(self, task, context, max_steps):
+        # 返回 event dict，不是 SSE 字符串
+        yield {"type": "thought", "content": ...}
+        yield {"type": "action_tool", "tool_name": ...}
+        ...
+```
+
+**第二步：修改 react_sse_wrapper.py**
+- 添加 SSE 格式化逻辑（从 file_react.ver1_run_stream 复制）
+- 添加调用 file_react.run_stream() 的函数
+
+```python
+# react_sse_wrapper.py 新增
+async def process_file_operation(
+    user_input: str,
+    model: str,
+    provider: str,
+    llm_client: Callable,
+    session_id: str,
+    next_step: Callable
+):
+    from app.services.agent.file_react import FileReactAgent
+    
+    agent = FileReactAgent(llm_client=llm_client, session_id=session_id)
+    
+    # 调用 run_stream()，获取 event dict
+    async for event in agent.run_stream(task=user_input, context=None, max_steps=100):
+        step = next_step()
+        
+        # SSE 格式化（从 ver1_run_stream 复制）
+        if event.get("type") == "thought":
+            yield format_thought_sse(step=step, content=event.get("content", ""))
+        elif event.get("type") == "action_tool":
+            yield format_action_tool_sse(...)
+        elif event.get("type") == "observation":
+            yield format_observation_sse(...)
+        elif event.get("type") == "final":
+            yield create_final_response(...)
+        # ... 其他类型
+```
+
+**第三步：修改 chat_router.py**
+- 将 `_handle_file_operation` 改为调用 `react_sse_wrapper.process_file_operation()`
+
+```python
+# chat_router.py 当前
+async for event in agent.ver1_run_stream(...):
+    yield event
+
+# 改为
+async for event in react_sse_wrapper.process_file_operation(...):
+    yield event
+```
+
+**第四步：验证**
+- 单元测试通过
+- 端到端测试正常
+- 前后功能一致
+
+---
+
+#### 3.3 为什么需要阶段3
+
+| 原因 | 说明 |
+|------|------|
+| **架构一致性** | 统一使用 react_sse_wrapper 处理 SSE 格式化 |
+| **代码复用** | 网络操作、桌面操作可以用相同的 SSE 格式化逻辑 |
+| **职责分离** | Agent 负责执行，SSE 包装负责输出格式 |
+
+---
+
+#### 3.4 不实施阶段3也可以工作
+
+> ⚠️ **说明**：当前实现（3层）已经可以正常工作，阶段3是**可选优化**。
+
+**当前实现**：
+- file_react.ver1_run_stream() 自己完成 SSE 格式化
+- 优点：简单直接
+- 缺点：每个 Agent 都要重复 SSE 格式化代码
+
+**实施后的优点**：
+- 统一 SSE 格式化逻辑
+- 易于维护和扩展
+
+**结论**：可以先不实施阶段3，等需要添加 network_react / desktop_react 时再考虑。
+
+---
 
 #### 阶段4：start 函数独立设计（2026-03-26 11:29:40 小沈）
 
