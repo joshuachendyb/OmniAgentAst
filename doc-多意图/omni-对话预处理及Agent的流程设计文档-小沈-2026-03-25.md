@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 10:40:00
-**版本**: v2.55
+**更新时间**: 2026-03-26 11:05:00
+**版本**: v2.56
 **编写人**: 小沈
 
 ---
@@ -86,6 +86,7 @@
 | v2.53 | 2026-03-26 10:10:55 | 附录2.8阶段1后补充：启用chat_router的步骤说明（创建chat_router_api.py新端点） |
 | v2.54 | 2026-03-26 10:25:00 | 附录2.5对照检查标注：文件位置✅、核心职责✅（部分）、意图检测✅、任务✅ |
 | v2.55 | 2026-03-26 10:40:00 | 附录2.8阶段1补充：chat_router统一准备环境参数方案分析 |
+| v2.56 | 2026-03-26 11:05:00 | 修正环境参数分析：让FileReactAgent增加参数与chat_stream_query保持一致 |
 
 ---
 
@@ -1639,7 +1640,7 @@ async def chat_stream_v2(request: Request):
 
 #### 问题分析
 
-chat2.py 中为 chat_stream_query 准备的参数（15个）：
+chat2.py 中为 chat_stream_query.py中的chat_stream_query 准备的参数（15个）：
 ```
 request, ai_service, task_id, llm_call_count, current_execution_steps,
 current_content, last_is_reasoning, last_message, running_tasks,
@@ -1661,7 +1662,9 @@ save_execution_steps_to_db, add_step_and_save
 | wrapped_add_step | 第432行 | ✅ |
 | llm_client | 第458-460行 | ✅ |
 
-#### 方案优势
+#### 方案优势（修正版）
+
+**思路**：让 FileReactAgent 增加参数，和 chat_stream_query 保持一致，便于统一管理
 
 1. **chat_router 统一准备环境参数**：
    - ai_service（根据 model/provider 创建）
@@ -1673,18 +1676,41 @@ save_execution_steps_to_db, add_step_and_save
    - llm_client
    - wrapped_save_steps / wrapped_add_step
 
-2. **Agent 精简参数**：
-   - FileReactAgent：只需 llm_client, session_id
-   - chat_stream_query：只需 user_input, ai_service, task_id, session_id, next_step, display_name
+2. **Agent 统一参数结构**：
+
+   **chat_stream_query 需要的参数**：
+   | 参数 | 说明 |
+   |------|------|
+   | request | 获取messages构建history |
+   | ai_service | LLM调用 |
+   | task_id | 中断检查 |
+   | running_tasks | 任务管理 |
+   | running_tasks_lock | 锁 |
+   | next_step | step编号 |
+   | display_name | 显示名称 |
+   | last_message | 用户消息 |
+
+   **FileReactAgent 改造为相同参数结构**：
+   | 参数 | 说明 |
+   |------|------|
+   | request | 获取messages构建history |
+   | ai_service | LLM调用 |
+   | task_id | 中断检查 |
+   | running_tasks | 任务管理 |
+   | running_tasks_lock | 锁 |
+   | next_step | step编号 |
+   | display_name | 显示名称 |
+   | user_input | 用户消息 |
 
 3. **复用性**：
    - 所有 Agent 共用相同的准备逻辑
    - chat_router 是统一的入口
+   - 代码更清晰、更易维护
 
 #### 实施方向
 
 1. 在 chat_router 中统一准备环境参数
-2. 简化 FileReactAgent 调用（只传必要参数）
+2. **改造 FileReactAgent**：增加 request, ai_service, task_id, running_tasks, running_tasks_lock, next_step, display_name, user_input 参数
 3. 简化 chat_stream_query 调用（只传必要参数）
 4. 逐步从 chat2.py 迁移到 chat_router
 
