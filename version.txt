@@ -1,3 +1,54 @@
+v0.8.12
+
+更新时间：2026-03-26 16:48:36
+
+更新内容：
+
+## 1. 设计文档调用链修正 + FileReactAgent冗余代码清理 - 小沈-2026-03-26
+
+### 1.1 背景
+
+用户要求标注1727行目标调用链中各函数所在文件，并清理FileReactAgent中冗余的intent_registry/preprocessor代码。
+
+### 1.2 设计文档1727行调用链修正
+
+**修改文件**：doc-多意图/omni-对话预处理及Agent的流程设计文档-小沈-2026-03-25.md
+
+**修正内容**：
+- 标注各函数对应的文件路径（chat_router.py、react_sse_wrapper.py等）
+- 删除不存在的 BaseReAct 类说明
+- 修正 FileReactAgent.run_stream() 为 ver1_run_stream()
+- 更新说明：FileReactAgent 冗余代码已清理完成
+
+### 1.3 FileReactAgent冗余代码清理
+
+**删除内容**：
+- ✅ 删除 intent_registry 对象（第121-125行）
+- ✅ 删除 preprocessor 对象（第121-125行）
+- ✅ 删除 _register_default_intents() 方法
+- ✅ 删除 run_stream 方法中的预处理和意图识别调用
+- ✅ 删除相关 import 语句（IntentRegistry、Intent、PreprocessingPipeline）
+- ✅ 更新 _run_with_session 注释为"意图识别已移至路由层"
+
+**修改文件**：
+| 文件 | 修改内容 |
+|------|---------|
+| backend/app/services/agent/file_react.py | 删除冗余代码和import |
+| doc-多意图/...设计文档.md | 更新调用链说明 |
+
+### 1.4 验证结果
+
+| 验证项 | 状态 | 结果 |
+|--------|------|------|
+| 预处理模块测试 | ✅ | 13 passed |
+| Stage4/Stage5测试 | ✅ | 23 passed |
+| 总计 | ✅ | 36 passed |
+
+参与开发：小沈
+完成时间：2026-03-26 16:48:36
+
+---
+
 v0.8.11
 
 更新时间：2026-03-26 16:10:00
