@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 08:57:53
-**版本**: v2.52
+**更新时间**: 2026-03-26 10:25:00
+**版本**: v2.54
 **编写人**: 小沈
 
 ---
@@ -83,6 +83,8 @@
 | v2.50 | 2026-03-26 08:38:42 | 附录2.7阶段2实施完成：react_sse_wrapper.py创建完成，删除FastAPI代码，转换为服务层函数，语法验证通过 |
 | v2.51 | 2026-03-26 08:53:33 | 补充阶段2当前实施状态说明：file_react.ver1_run_stream尚未删除，chat_router尚未集成react_sse_wrapper |
 | v2.52 | 2026-03-26 08:57:53 | 阶段3采用复制+删除法：复制ver1_run_stream整体逻辑，删除run_stream调用，保留SSE格式化 |
+| v2.53 | 2026-03-26 10:10:55 | 附录2.8阶段1后补充：启用chat_router的步骤说明（创建chat_router_api.py新端点） |
+| v2.54 | 2026-03-26 10:25:00 | 附录2.5对照检查标注：文件位置✅、核心职责✅（部分）、意图检测✅、任务✅ |
 
 ---
 
@@ -1265,44 +1267,44 @@ chat_router → react_sse_wrapper → file_react.run_stream() → base_react.run
 >
 > **对应架构层**: 第一层：路由层
 
-#### 附录2.5.1 文件位置
+#### 附录2.5.1 文件位置 ✅
 
-| 项目 | 说明 |
-|------|------|
-| 文件路径 | `backend/app/services/chat_router.py` |
-| 目录选择 | `app/services/` 而非 `app/api/v1/` |
+| 项目 | 说明 | 状态 |
+|------|------|------|
+| 文件路径 | `backend/app/services/chat_router.py` | ✅ 已实现 |
+| 目录选择 | `app/services/` 而非 `app/api/v1/` | ✅ 符合 |
 
 **理由**：API层应保持轻薄，业务路由逻辑放在服务层
 
-#### 附录2.5.2 核心职责
+#### 附录2.5.2 核心职责 ✅（部分）
 
-```
-chat_router.py
-├── 接收用户消息
-├── 调用 PreprocessingPipeline 进行意图检测
-│   └── 返回 intent_type 和参数
-├── 根据 intent_type 分发到对应执行层
-│   ├── chat → chat_stream_query()
-│   ├── file → intent-file-ReactAgent (file_react.py)
-│   ├── network → intent-network-ReactAgent
-│   └── desktop → intent-desktop-ReactAgent
-└── 返回统一的 SSE 流
-```
+| 设计要求 | 实际代码位置 | 状态 |
+|---------|-------------|------|
+| 接收用户消息 | 第44行 user_input 参数 | ✅ |
+| 调用 PreprocessingPipeline 进行意图检测 | 第72行 `self.preprocessing.process()` | ✅ |
+| 返回 intent_type 和参数 | 第78-79行 | ✅ |
+| 分发到 file → FileReactAgent | 第87-100行 `_handle_file_operation()` | ✅ |
+| 分发到 chat → chat_stream_query() | 第101-110行 | ⚠️ 暂返回提示信息 |
+| 分发到 network → NetworkReactAgent | 第111-117行 | ❌ 返回"暂不支持"错误 |
+| 分发到 desktop → DesktopReactAgent | 第111-117行 | ❌ 返回"暂不支持"错误 |
+| 返回统一的 SSE 流 | yield sse_data | ✅ |
 
-#### 附录2.5.3 意图检测方式
+#### 附录2.5.3 意图检测方式 ✅
 
 | 候选方式 | 结论 | 理由 |
 |---------|------|------|
 | `detect_file_operation_intent()` | ❌ 废除 | 简陋的字符串匹配 |
 | `PreprocessingPipeline` | ✅ 必须使用 | 完整的预处理流程 |
 
-#### 附录2.5.4 待实现任务
+**实际实现**：第25行导入 `PreprocessingPipeline`，第72行调用 `self.preprocessing.process()`
+
+#### 附录2.5.4 待实现任务 ✅
 
 | 序号 | 任务 | 状态 |
 |------|------|------|
 | 1 | 创建 `chat_router.py` | ✅ 已完成 |
 | 2 | 调用 `PreprocessingPipeline` | ✅ 已完成 |
-| 3 | 实现意图分发逻辑 | ✅ 已完成 |
+| 3 | 实现意图分发逻辑 | ✅ 已完成（file已实现，其他待后续） |
 
 #### 附录2.5.5 实施记录
 
@@ -1576,6 +1578,59 @@ async for event in agent.run_stream(
        ├── 实现 chat_router.py（第一层）
        └── 直接调用 file_react.ver1_run_stream()（现有方法）
        验证：路由 + 文件操作正常工作
+
+**阶段1完成后：启用 chat_router**（2026-03-26 10:10:55 小沈补充）
+
+> ⚠️ **重要说明**：chat_router.py 是服务层类，不是 API 端点。阶段1完成后需要创建新的 API 端点来调用 chat_router。
+
+**启用步骤**：
+1. 创建新的 API 文件：`app/api/v1/chat_router_api.py`
+2. 定义 FastAPI router，在端点中调用 `chat_router.route()`
+3. 在 `app/api/v1/__init__.py` 或 `app/main.py` 中注册新 router
+4. 验证新端点正常工作后，逐步迁移流量
+
+**chat_router_api.py 代码示例**：
+```python
+# app/api/v1/chat_router_api.py
+from fastapi import APIRouter, Request
+from app.services.chat_router import create_chat_router
+
+router = APIRouter()
+
+@router.post("/chat/stream/v2")
+async def chat_stream_v2(request: Request):
+    """新版本流式API，使用 chat_router 进行意图路由"""
+    router = create_chat_router()
+    
+    # 从 request 中获取参数
+    body = await request.json()
+    user_input = body.get("messages", [{}])[-1].get("content", "")
+    session_id = body.get("session_id")
+    model = body.get("model")
+    provider = body.get("provider")
+    
+    async def llm_client(message, history=None):
+        # 实现 LLM 调用
+        ...
+    
+    async def generate():
+        async for sse_data in router.route(
+            user_input=user_input,
+            model=model,
+            provider=provider,
+            llm_client=llm_client,
+            session_id=session_id
+        ):
+            yield sse_data
+    
+    return StreamingResponse(generate(), media_type="text/event-stream")
+```
+
+**新端点与旧端点并行**：
+- 旧端点：`/chat/stream` → chat2.py（待废除）
+- 新端点：`/chat/stream/v2` → chat_router（阶段1启用）
+
+**验证通过后**：将前端请求切换到新端点，旧端点废弃
 
 阶段2：创建 react_sse_wrapper.py（第二层）【参考附录2.7章节操作说明】
        ├── 从 chat2.py 复制为 react_sse_wrapper.py
