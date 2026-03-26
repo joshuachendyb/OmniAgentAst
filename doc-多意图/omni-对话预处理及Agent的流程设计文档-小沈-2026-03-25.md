@@ -937,15 +937,9 @@ chat_router.py（API端点）
 
 **过渡策略**：旧代码逐步取代，不能完全删除
 - 当前：api/chat2.py → agent.py → base.py
-- 目标：chat_router.py (API端点) → FileReactAgent (file_react.py) → base_react.py
+- 目标：chat_router.py → react_sse_wrapper.py → FileReactAgent (file_react.py) → base_react.py
 - 方式：直接修改 chat_router.py 作为新入口，验证通过后逐步替换旧调用链
 - chat2.py 暂时保留，待新架构稳定后再废弃
-
-**关键说明 - 为什么不需要第三层**：
-- FileReactAgent.ver1_run_stream() 方法已经封装了完整的 SSE 处理逻辑
-- 直接返回 SSE 格式字符串（"data: {...}\n\n"）
-- 不需要额外的 react_sse_wrapper.py 中间层
-- 附录2.7 的 react_sse_wrapper.py 设计是冗余的，可以跳过
 
 > **📝 详细代码实现**：见附录 **阶段5：Router的更新**（第1943行起）
 
