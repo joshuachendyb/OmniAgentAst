@@ -109,6 +109,9 @@ app.include_router(chat_non_stream.router, prefix="/api/v1", tags=["chat"])
 # 【暂时禁用】使用 chat2 替代 chat_stream（待验证后决定是否删除）
 # app.include_router(chat_stream.router, prefix="/api/v1", tags=["chat"])
 app.include_router(chat2.router, prefix="/api/v1", tags=["chat"])
+# 【Stage 5 新增】chat_router - 6步完整流程版本
+from app.services.chat_router import router as chat_router_router
+app.include_router(chat_router_router, prefix="/api/v1", tags=["chat"])
 app.include_router(init_model_select.router, prefix="/api/v1", tags=["chat"])
 app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operations"])
 app.include_router(config.router, prefix="/api/v1", tags=["config"])
