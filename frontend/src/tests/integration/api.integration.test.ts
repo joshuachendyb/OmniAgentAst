@@ -42,9 +42,10 @@ describe('API Integration Tests', () => {
   });
 
   describe('Chat API', () => {
-    it('should have sendMessage method', () => {
-      expect(typeof chatApi.sendMessage).toBe('function');
-    });
+    // sendMessage 已废弃，非流式聊天使用 sse.ts 的 sendMessage
+    // it('should have sendMessage method', () => {
+    //   expect(typeof chatApi.sendMessage).toBe('function');
+    // });
 
     it('should have validateService method', () => {
       expect(typeof chatApi.validateService).toBe('function');
