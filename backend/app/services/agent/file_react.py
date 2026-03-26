@@ -495,9 +495,12 @@ class FileReactAgent(BaseAgent):
                     )
                     return result
                 
-                # 4. Observation - 执行动作（使用重试机制）
+                # 4. Observation - 执行动作
+                # 【修复 2026-03-26】原错误调用 _execute_with_retry（不存在），改为 _execute_tool
+                # 说明：_execute_tool 执行一次失败就失败，_execute_with_retry 会自动重试
+                # 当前统一使用 _execute_tool，简单可靠
                 self.status = AgentStatus.EXECUTING
-                observation = await self._execute_with_retry(
+                observation = await self._execute_tool(
                     action_tool,
                     params
                 )
