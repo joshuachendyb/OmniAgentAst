@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 12:40:00
-**版本**: v2.69
+**更新时间**: 2026-03-26 15:00:00
+**版本**: v2.78
 **编写人**: 小沈
 
 ---
@@ -100,6 +100,15 @@
 | v2.67 | 2026-03-26 12:30:00 | 调整6步顺序：步骤1预处理，步骤2意图检测，步骤3初始化，步骤4安全检测，步骤5 start，步骤6分发 |
 | v2.68 | 2026-03-26 12:35:00 | 修正4.5架构图：删除chat_router_api.py，改为6步流程 |
 | v2.69 | 2026-03-26 12:40:00 | 4.5节改为代码改造方案，包含6步流程完整代码 |
+| v2.70 | 2026-03-26 14:00:00 | 补充6.1步骤6分发示例：添加chat/query、file、network、desktop四种Agent调用示例 |
+| v2.71 | 2026-03-26 14:10:00 | 补充步骤6前提取llm_client代码：从ai_service.chat包装为llm_client函数 |
+| v2.72 | 2026-03-26 14:20:00 | 补充chat_stream_query需要的11个参数准备代码：task_id/running_tasks_lock/llm_call_count等 |
+| v2.73 | 2026-03-26 14:30:00 | 补全步骤6调用示例：chat_stream_query传15个参数，FileReactAgent等传llm_client |
+| v2.74 | 2026-03-26 14:35:00 | 更新1661-1772节分析：修正为最终方案（chat_stream_query用ai_service，Agent用llm_client） |
+| v2.75 | 2026-03-26 14:45:00 | 重新梳理1661-1762节：清晰展示两种调用方式的参数准备方案 |
+| v2.76 | 2026-03-26 14:50:00 | 修复阶段5代码问题：删除重复代码，补全默认回退参数 |
+| v2.77 | 2026-03-26 14:55:00 | 统一使用start_step()函数：更新阶段4函数设计和阶段5调用方式 |
+| v2.78 | 2026-03-26 15:00:00 | 小健检查修复：调整task_id定义顺序到步骤5之前 |
 
 ---
 
@@ -1654,123 +1663,86 @@ async def chat_stream_v2(request: Request):
 
 **验证通过后**：将前端请求切换到新端点，旧端点废弃
 
-**阶段1补充：chat_router 统一准备环境参数方案**（2026-03-26 10:40:00 小沈）
+**阶段1补充：chat_router 调用 Agent 的参数准备方案**（2026-03-26 10:40:00 小沈）
 
-> 💡 **核心问题**：如何在 router 里面正确正常的调用 chat_stream_query 和 FileReactAgent？
+> 💡 **核心问题**：chat_router 需要调用两种不同的处理函数，需要分别准备不同的参数
 
-#### 需要解决的问题
+---
 
-1. 需要准备：给调用的两个函数准备足够的参数
-2. 独立 start 阶段函数分别被 chat_stream_query 和 FileReactAgent 调用，为后续的步骤准备数据和信息
-3. 由此我们需要确定 chat_router 为 chat_stream_query 和 FileReactAgent 各自准备哪些参数呢？合计起来一共是多少参数呢？
+#### 背景
 
-#### 1. FileReactAgent 实际需要的参数
+chat_router 在步骤6需要根据 intent_type 分发到不同的处理函数：
 
-| 参数 | 说明 | 状态 |
-|------|------|------|
-| llm_client | 外部传入 | ✅ |
-| session_id | 外部传入 | ✅ |
+| intent_type | 调用的函数 | LLM调用方式 |
+|-------------|-----------|-------------|
+| chat / confidence < 0.3 | chat_stream_query | 使用 `ai_service` |
+| file / network / desktop | FileReactAgent 等 | 使用 `llm_client` |
 
-#### 2. chat_stream_query 实际使用的参数
+---
 
-| 参数 | 使用位置 | 必须外部传入？ |
-|------|---------|-------------|
-| request | 第84-86行：获取messages构建history | ✅ 关键：获取历史消息 |
-| ai_service | 第128行：调用chat_stream | ✅ 必须 |
-| task_id | 第72、152行：检查中断 | ✅ 必须 |
-| running_tasks | 第72、153、164行：检查中断/暂停 | ✅ 必须 |
-| running_tasks_lock | 第71、152、164行：锁 | ✅ 必须 |
-| next_step | 多处：生成step编号 | ✅ 必须 |
-| display_name | 第422行：发送给前端 | ✅ 必须 |
-| last_message | 第128行：发送给LLM | ✅ 必须 |
-| llm_call_count | 第122行：计数+1 | ⚠️ 内部可初始化 |
-| current_execution_steps | 第189、402行：append | ⚠️ 内部可初始化 |
-| current_content | 第194行：累积 | ⚠️ 内部可初始化 |
-| last_is_reasoning | 第197、210行：状态 | ⚠️ 内部可初始化 |
-| session_id | 通过闭包 | ⚠️ 可闭包 |
-| save_execution_steps_to_db | 第206、412行 | ⚠️ 可内部创建 |
-| add_step_and_save | 第315、368行 | ⚠️ 可内部创建 |
+#### 参数准备方案
 
+##### 方案一：chat_stream_query 需要的参数（15个）
 
-> 💡 **发现**：chat_stream_query 需要15个参数，其中大部分是"环境参数"，可以由 chat_router 统一准备。
-
-#### 问题分析
-
-chat2.py 中为 chat_stream_query.py中的chat_stream_query 准备的参数（15个）：
-```
-request, ai_service, task_id, llm_call_count, current_execution_steps,
-current_content, last_is_reasoning, last_message, running_tasks,
-running_tasks_lock, next_step, display_name, session_id,
-save_execution_steps_to_db, add_step_and_save
+```python
+async for event in chat_stream_query(
+    request=request,                      # 获取history
+    ai_service=ai_service,                # AI服务（使用 ai_service.chat_stream）
+    task_id=task_id,                      # 任务ID（中断检查）
+    llm_call_count=0,                     # LLM调用计数器
+    current_execution_steps=[],            # 执行步骤列表
+    current_content="",                    # 当前累积内容
+    last_is_reasoning=None,                # 上一个is_reasoning状态
+    last_message=user_input,               # 用户消息
+    running_tasks={},                      # 运行中的任务
+    running_tasks_lock=asyncio.Lock(),     # 任务锁
+    next_step=next_step,                   # 获取步骤号函数
+    display_name=display_name,             # 显示名称
+    session_id=session_id,                # 会话ID
+    save_execution_steps_to_db=wrapped_save_steps,   # 保存到DB函数
+    add_step_and_save=wrapped_add_step     # 添加步骤并保存函数
+):
 ```
 
-#### chat_router 统一准备的参数（可复用）
+##### 方案二：FileReactAgent 需要的参数（4个）
 
-| 参数 | chat2.py 位置 | 可移到 chat_router? |
-|------|--------------|---------------------|
-| ai_service | 第318-324行 | ✅ |
-| task_id | 第286行 | ✅ |
-| running_tasks 注册 | 第327-334行 | ✅ |
-| step_counter / next_step | 第338-344行 | ✅ |
-| display_name | 第351行 | ✅ |
-| session_id | 第456行 | ✅ |
-| wrapped_save_steps | 第429行 | ✅ |
-| wrapped_add_step | 第432行 | ✅ |
-| llm_client | 第458-460行 | ✅ |
+```python
+agent = FileReactAgent(
+    llm_client=llm_client,                # LLM客户端（从 ai_service.chat 包装）
+    session_id=session_id,                # 会话ID
+    intent_type=intent_type,              # 意图类型
+    max_steps=100                         # 最大步数（默认100）
+)
+async for event in agent.run_stream(user_input):
+```
 
-#### 方案优势（修正版）
+---
 
-**思路**：让 FileReactAgent 增加参数，和 chat_stream_query 保持一致，便于统一管理
+#### chat_router 统一准备的公共参数
 
-1. **chat_router 统一准备环境参数**：
-   - ai_service（根据 model/provider 创建）
-   - task_id（生成）
-   - session_id（获取/生成）
-   - running_tasks（管理）
-   - next_step（计数器）
-   - display_name
-   - llm_client
-   - wrapped_save_steps / wrapped_add_step
+在步骤6之前（步骤1-5），需要准备以下公共参数：
 
+| 参数 | 准备方式 | 说明 |
+|------|---------|------|
+| ai_service | AIServiceFactory.create() | AI服务实例 |
+| llm_client | 从 ai_service.chat 包装 | LLM客户端函数 |
+| task_id | request.task_id or uuid.uuid4() | 任务ID |
+| running_tasks | {} | 任务字典 |
+| running_tasks_lock | asyncio.Lock() | 任务锁 |
+| next_step | 闭包函数 | 步骤计数器 |
+| session_id | 已有 | 会话ID |
+| wrapped_save_steps | 包装函数 | 保存到DB |
+| wrapped_add_step | 包装函数 | 添加步骤并保存 |
 
+---
 
-2. **Agent 统一参数结构**：
+#### 总结
 
-   **chat_stream_query 需要的参数**：
-   | 参数 | 说明 |
-   |------|------|
-   | request | 获取messages构建history |
-   | ai_service | LLM调用 |
-   | task_id | 中断检查 |
-   | running_tasks | 任务管理 |
-   | running_tasks_lock | 锁 |
-   | next_step | step编号 |
-   | display_name | 显示名称 |
-   | last_message | 用户消息 |
+| 函数 | LLM调用方式 | 需要准备的参数数量 |
+|------|------------|------------------|
+| chat_stream_query | ai_service | 15个（router准备13个 + 2个初始值） |
+| FileReactAgent | llm_client | 4个（router准备） |
 
-   **FileReactAgent 改造为相同参数结构**：
-   | 参数 | 说明 |
-   |------|------|
-   | request | 获取messages构建history |
-   | ai_service | LLM调用 |
-   | task_id | 中断检查 |
-   | running_tasks | 任务管理 |
-   | running_tasks_lock | 锁 |
-   | next_step | step编号 |
-   | display_name | 显示名称 |
-   | user_input | 用户消息 |
-
-3. **复用性**：
-   - 所有 Agent 共用相同的准备逻辑
-   - chat_router 是统一的入口
-   - 代码更清晰、更易维护
-
-#### 实施方向
-
-1. 在 chat_router 中统一准备环境参数
-2. **改造 FileReactAgent**：增加 request, ai_service, task_id, running_tasks, running_tasks_lock, next_step, display_name, user_input 参数
-3. 简化 chat_stream_query 调用（只传必要参数）
-4. 逐步从 chat2.py 迁移到 chat_router
 
 阶段2：创建 react_sse_wrapper.py（第二层）【参考附录2.7章节操作说明】
        ├── 从 chat2.py 复制为 react_sse_wrapper.py
@@ -1802,7 +1774,7 @@ save_execution_steps_to_db, add_step_and_save
        ├── 修改调用链：react_sse_wrapper → file_react.run_stream()
        ├── file_react 删除 ver1_run_stream，只保留 run_stream()
        └── 验证：完整调用链正常工作
-```
+
 
 #### 阶段4：start 函数独立设计（2026-03-26 11:29:40 小沈）
 
@@ -1859,21 +1831,23 @@ save_execution_steps_to_db, add_step_and_save
 
 **函数签名**：
 ```python
-async def start_step(
-    ai_service,           # AI 服务实例（用于获取 provider/model）
-    display_name: str,    # 显示名称
-    task_id: str,         # 任务ID
-    next_step: Callable,  # 获取步骤号函数
-    user_message: str,   # 用户消息（用于预览）
-    security_check_result: dict,  # 安全检查结果
+async def send_start_step(
+    ai_service,                    # AI 服务实例（用于获取 provider/model）
+    task_id: str,                 # 任务ID
+    next_step: Callable,           # 获取步骤号函数
+    user_message: str,            # 用户消息（用于预览）
+    security_check_result: dict,   # 安全检查结果
+    current_execution_steps: List, # 执行步骤列表
+    yield_func: Callable          # SSE发送回调函数
 ) -> Dict:
     """
-    发送 start 步骤的独立函数
+    发送 start 步骤的独立函数（统一方法）
     
     职责：
     1. 构建 start_data
     2. 通过 SSE 发送 start 步骤
-    3. 返回 start_data（供后续 final/error 步骤使用）
+    3. 保存到 current_execution_steps
+    4. 返回 start_data（供后续 final/error 步骤使用）
     
     返回：
     - start_data 字典（包含 display_name/provider/model 等）
@@ -1882,26 +1856,40 @@ async def start_step(
 
 **函数实现要点**：
 ```python
-async def start_step(...):
+async def send_start_step(
+    ai_service,
+    task_id,
+    next_step,
+    user_message,
+    security_check_result,
+    current_execution_steps,
+    yield_func
+):
+    from app.chat_stream.utils import create_timestamp
+    
     # 1. 构建 start_data
     start_data = {
         'type': 'start',
         'step': next_step(),
         'timestamp': create_timestamp(),
-        'display_name': display_name,
+        'display_name': f"{ai_service.provider} ({ai_service.model})",
         'provider': ai_service.provider,
         'model': ai_service.model,
         'task_id': task_id,
-        'user_message': user_message[:40],
-        'security_check': {...}
+        'user_message': user_message[:40] if user_message else "",
+        'security_check': {
+            'is_safe': security_check_result.get('is_safe', True),
+            'risk_level': security_check_result.get('risk_level'),
+            'risk': security_check_result.get('risk'),
+            'blocked': security_check_result.get('blocked', False)
+        }
     }
     
-    # 2. 发送 SSE（通过 yield）
-    yield f"data: {json.dumps(start_data)}\n\n"
+    # 2. 发送 SSE（通过回调函数）
+    yield_func(start_data)
     
-    # 3. 保存到数据库
+    # 3. 保存到 current_execution_steps
     current_execution_steps.append(start_data)
-    await save_execution_steps_to_db(...)
     
     # 4. 返回 start_data
     return start_data
@@ -1909,7 +1897,43 @@ async def start_step(...):
 
 ---
 
-##### 4.4 Router层的完整流程
+##### 4.4 start函数独立的价值
+
+| 价值 | 说明 |
+|------|------|
+| **职责清晰** | start 是 API 层职责，不是 Agent 职责 |
+| **SSE 发送** | API 层负责发送 SSE，Agent 是纯逻辑 |
+| **数据分离** | API 层管理 start_data，Agent 专注业务逻辑 |
+| **接口简洁** | Agent 只需要 llm_client + session_id |
+| **统一逻辑** | 避免在多个 API 文件中重复 start 发送逻辑 |
+
+---
+
+##### 4.5 分阶段实施
+
+**阶段4.1**：创建 start_step.py
+- 文件位置：`app/chat_stream/start_step.py`
+- 定义函数签名和参数
+- 实现基本功能
+
+**阶段4.2**：修改 chat_router.py 调用 start_step
+- 调用 start_step()
+- 处理 security_check 逻辑
+
+**阶段4.3**：修改 final/error 发送逻辑
+- 从 start_data 获取 display_name/provider/model
+- 统一发送方式
+
+**分阶段优势**：
+- 每阶段可独立验证，降低风险
+- 不影响现有功能
+- 逐步演进，最终达到目标架构
+
+---
+
+#### 阶段5：Router的更新（2026-03-26 小沈）
+
+##### 5.1 Router的完整流程（6步）
 
 **chat_router.py 完整流程（6步）**：
 ```
@@ -1938,59 +1962,9 @@ async def start_step(...):
         - Agent执行完成后发送 final/error
 ```
 
-**chat_router.py 调用流程**：
-```python
-class ChatRouter:
-    async def route(self, request, ...):
-        # 步骤1: 预处理
-        preprocessed = await self.preprocessing_pipeline.process(request)
-        
-        # 步骤2: 意图检测
-        intent_type = self.intent_registry.detect(preprocessed)
-        
-        # 步骤3: 初始化
-        ai_service = AIServiceFactory.create(...)
-        step_counter = 0
-        def next_step():
-            nonlocal step_counter
-            step_counter += 1
-            return step_counter
-        running_tasks = {}
-        current_execution_steps = []
-        
-        # 步骤4: 安全检测
-        last_message = request.messages[-1].content
-        security_check_result = check_command_safety(last_message)
-        
-        # 步骤5: start步骤
-        start_data = await start_step(
-            ai_service=ai_service,
-            display_name=display_name,
-            task_id=task_id,
-            next_step=next_step,
-            user_message=last_message,
-            security_check_result=security_check_result
-        )
-        
-        # 步骤6: 分发到Agent
-        if intent_type == "file":
-            agent = FileReactAgent(llm_client=llm_client, session_id=session_id)
-            async for event in agent.run_stream(user_message):
-                yield event
-        elif intent_type == "chat":
-            async for event in chat_stream_query(...):
-                yield event
-        # ... 其他意图
-```
-
-**说明**：
-- chat_router.py 完整执行6步：预处理→意图检测→初始化→安全检测→start→分发Agent
-- start_step() 发送SSE并返回start_data
-- 安全检查未通过时，由start_step()内部处理返回error
-
 ---
 
-##### 4.5 代码改造方案
+##### 5.2 代码改造方案
 
 **chat_router.py 当前流程（只有2步）**：
 ```python
@@ -2007,7 +1981,6 @@ if intent_type == "file":
 async def route(self, ...):
     
     # ===== 步骤1: 预处理 =====
-    # 【已有】第71-76行
     intent_result = self.preprocessing.process(
         user_input=user_input,
         intent_labels=INTENT_LABELS,
@@ -2015,30 +1988,38 @@ async def route(self, ...):
     )
     
     # ===== 步骤2: 意图检测 =====
-    # 【已有】第78-84行
     intent_type = intent_result.get("intent", "chat")
     confidence = intent_result.get("confidence", 0.0)
     
     # ===== 步骤3: 初始化 ===== 【新增】
-    # ai_service创建
+    import uuid
+    import asyncio
+    from typing import Optional
     from app.services import AIServiceFactory
+    from app.chat_stream.start_step import send_start_step
+    from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save
+    
+    # task_id: 任务ID（必须在步骤5之前定义）
+    task_id = request.task_id if request.task_id else str(uuid.uuid4())
+    
+    # ai_service: AI服务实例
     ai_service = AIServiceFactory.create(
         provider=provider,
         model=model,
         session_id=session_id
     )
     
-    # next_step计数器
+    # next_step: 步骤计数器
     step_counter = 0
     def next_step():
         nonlocal step_counter
         step_counter += 1
         return step_counter
     
-    # running_tasks (Session管理)
+    # running_tasks: 任务字典
     running_tasks: Dict[str, Any] = {}
     
-    # current_execution_steps
+    # current_execution_steps: 执行步骤列表
     current_execution_steps: List[Dict] = []
     
     # ===== 步骤4: 安全检测 ===== 【新增】
@@ -2046,57 +2027,153 @@ async def route(self, ...):
     security_check_result = check_command_safety(user_input)
     
     # ===== 步骤5: start步骤 ===== 【新增】
-    start_data = {
-        'type': 'start',
-        'step': next_step(),
-        'timestamp': create_timestamp(),
-        'display_name': f"{ai_service.provider} ({ai_service.model})",
-        'provider': ai_service.provider,
-        'model': ai_service.model,
-        'task_id': task_id,
-        'security_check': security_check_result
-    }
-    yield f"data: {json.dumps(start_data)}\n\n"
-    current_execution_steps.append(start_data)
+    # 调用独立的 send_start_step() 函数（统一方法）
+    start_data = await send_start_step(
+        ai_service=ai_service,
+        task_id=task_id,
+        next_step=next_step,
+        user_message=user_input,
+        security_check_result=security_check_result,
+        current_execution_steps=current_execution_steps,
+        yield_func=lambda data: yield f"data: {json.dumps(data)}\n\n"
+    )
+    
+    # ===== 提取 llm_client ===== 【新增】
+    # FileReactAgent 需要 llm_client 函数，从 ai_service.chat 包装
+    async def llm_client(message, history=None):
+        response = await ai_service.chat(message, history)
+        return type('obj', (object,), {'content': response.content})()
+    
+    # ===== 准备 chat_stream_query 需要的参数 ===== 【新增】
+    # task_id 已在步骤3定义
+    
+    # running_tasks_lock: 任务锁
+    running_tasks_lock = asyncio.Lock()
+    
+    # llm_call_count: LLM调用计数器
+    llm_call_count = 0
+    
+    # current_content: 当前累积内容
+    current_content = ""
+    
+    # last_is_reasoning: 上一个is_reasoning状态
+    last_is_reasoning = None
+    
+    # last_message: 用户消息
+    last_message = user_input
+    
+    # 包装 save_execution_steps_to_db 函数
+    async def wrapped_save_steps(execution_steps, content=None):
+        await save_execution_steps_to_db(session_id, execution_steps, content)
+    
+    # 包装 add_step_and_save 函数
+    async def wrapped_add_step(step, content=None):
+        await add_step_and_save(current_execution_steps, step, session_id, content)
     
     # ===== 步骤6: 分发到Agent ===== 【修改】
-    if intent_type == "file" and confidence >= 0.3:
-        ...
-```
+    
+    # 6.1 简单对话 (chat/query)
+    if intent_type == "chat" or confidence < 0.3:
+        from app.services.chat_stream import chat_stream_query
+        async for event in chat_stream_query(
+            request=request,                    # 获取history
+            ai_service=ai_service,              # AI服务
+            task_id=task_id,                    # 任务ID（中断检查）
+            llm_call_count=llm_call_count,      # LLM调用计数器
+            current_execution_steps=current_execution_steps,  # 执行步骤列表
+            current_content=current_content,    # 当前累积内容
+            last_is_reasoning=last_is_reasoning,  # 上一个is_reasoning状态
+            last_message=last_message,          # 用户消息
+            running_tasks=running_tasks,        # 运行中的任务
+            running_tasks_lock=running_tasks_lock,  # 任务锁
+            next_step=next_step,                # 获取步骤号函数
+            display_name=start_data['display_name'],  # 显示名称
+            session_id=session_id,              # 会话ID
+            save_execution_steps_to_db=wrapped_save_steps,  # 保存到DB函数
+            add_step_and_save=wrapped_add_step  # 添加步骤并保存函数
+        ):
+            yield event
+    
+    # 6.2 文件操作 (FileReactAgent)
+    elif intent_type == "file" and confidence >= 0.3:
+        from app.services.agent.file_react import FileReactAgent
+        agent = FileReactAgent(
+            llm_client=llm_client,              # LLM客户端函数
+            session_id=session_id,             # 会话ID
+            intent_type=intent_type,           # 意图类型
+            file_tools=None,                    # 可选，默认自动创建
+            max_steps=100                       # 最大步数（默认100）
+        )
+        async for event in agent.run_stream(user_input):
+            yield event
+    
+    # 6.3 网络操作 (NetworkReactAgent)
+    elif intent_type == "network" and confidence >= 0.3:
+        from app.services.agent.network_react import NetworkReactAgent
+        agent = NetworkReactAgent(
+            llm_client=llm_client,              # LLM客户端函数
+            session_id=session_id,             # 会话ID
+            intent_type=intent_type,           # 意图类型
+            max_steps=100                       # 最大步数
+        )
+        async for event in agent.run_stream(user_input):
+            yield event
+    
+    # 6.4 桌面操作 (DesktopReactAgent)
+    elif intent_type == "desktop" and confidence >= 0.3:
+        from app.services.agent.desktop_react import DesktopReactAgent
+        agent = DesktopReactAgent(
+            llm_client=llm_client,              # LLM客户端函数
+            session_id=session_id,             # 会话ID
+            intent_type=intent_type,           # 意图类型
+            max_steps=100                       # 最大步数
+        )
+        async for event in agent.run_stream(user_input):
+            yield event
+    
+    # 6.5 默认回退到 chat（使用 chat_stream_query）
+    else:
+        from app.services.chat_stream import chat_stream_query
+        async for event in chat_stream_query(
+            request=request,                      # 获取history
+            ai_service=ai_service,                # AI服务
+            task_id=task_id,                      # 任务ID（中断检查）
+            llm_call_count=llm_call_count,        # LLM调用计数器
+            current_execution_steps=current_execution_steps,  # 执行步骤列表
+            current_content=current_content,       # 当前累积内容
+            last_is_reasoning=last_is_reasoning,  # 上一个is_reasoning状态
+            last_message=last_message,            # 用户消息
+            running_tasks=running_tasks,          # 运行中的任务
+            running_tasks_lock=running_tasks_lock,  # 任务锁
+            next_step=next_step,                  # 获取步骤号函数
+            display_name=start_data['display_name'],  # 显示名称
+            session_id=session_id,                # 会话ID
+            save_execution_steps_to_db=wrapped_save_steps,   # 保存到DB函数
+            add_step_and_save=wrapped_add_step    # 添加步骤并保存函数
+        ):
+            yield event
 ```
 
 ---
 
-##### 4.6 独立 start 函数的价值
+##### 5.3 分阶段实施
 
-| 价值 | 说明 |
-|------|------|
-| **职责清晰** | start 是 API 层职责，不是 Agent 职责 |
-| **SSE 发送** | API 层负责发送 SSE，Agent 是纯逻辑 |
-| **数据分离** | API 层管理 start_data，Agent 专注业务逻辑 |
-| **接口简洁** | Agent 只需要 llm_client + session_id |
-| **统一逻辑** | 避免在多个 API 文件中重复 start 发送逻辑 |
+**阶段5.1**：添加初始化步骤3
+- ai_service创建 (AIServiceFactory)
+- next_step计数器定义
+- running_tasks初始化
+- current_execution_steps初始化
 
----
+**阶段5.2**：添加安全检测步骤4
+- 从chat2.py迁移security_check逻辑
 
-##### 4.7 分阶段实施
+**阶段5.3**：添加start步骤步骤5
+- 调用start_step()函数
+- 发送SSE
 
-**阶段4.1**：创建 start_step.py
-- 定义函数签名和参数
-- 实现基本功能
-
-**阶段4.2**：修改 chat_router_api.py
-- 调用 start_step()
-- 处理 security_check 逻辑
-
-**阶段4.3**：修改 final/error 发送逻辑
-- 从 start_data 获取 display_name/provider/model
-- 统一发送方式
-
-**分阶段优势**：
-- 每阶段可独立验证，降低风险
-- 不影响现有功能
-- 逐步演进，最终达到目标架构
+**阶段5.4**：修改分发逻辑步骤6
+- 根据intent_type分发到不同Agent
+- 使用running_tasks管理Session
 
 ---
 
