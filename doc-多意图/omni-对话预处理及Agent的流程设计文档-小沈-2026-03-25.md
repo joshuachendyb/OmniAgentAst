@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 12:25:00
-**版本**: v2.66
+**更新时间**: 2026-03-26 12:30:00
+**版本**: v2.67
 **编写人**: 小沈
 
 ---
@@ -97,6 +97,7 @@
 | v2.64 | 2026-03-26 12:15:00 | 全文检查修正：修正路由层架构图(start在chat_router不在react_sse_wrapper)，修正6.1职责分工表 |
 | v2.65 | 2026-03-26 12:20:00 | 修正架构：chat_router.py直接作为API端点，删除chat_router_api.py两层结构 |
 | v2.66 | 2026-03-26 12:25:00 | 修正4.4流程为6步：步骤1初始化(	next_step/running_tasks/ai_service)，步骤2-6对应原5步 |
+| v2.67 | 2026-03-26 12:30:00 | 调整6步顺序：步骤1预处理，步骤2意图检测，步骤3初始化，步骤4安全检测，步骤5 start，步骤6分发 |
 
 ---
 
@@ -1910,21 +1911,22 @@ async def start_step(...):
 
 **chat_router.py 完整流程（6步）**：
 ```
-步骤1: 初始化
+步骤1: 预处理 (PreprocessingPipeline)
+
+步骤2: 意图检测 (IntentRegistry)
+
+步骤3: 初始化
+        - ai_service创建 (AIServiceFactory)
         - next_step计数器
         - running_tasks (Session管理)
         - current_execution_steps
-        - ai_service创建 (AIServiceFactory)
-
-步骤2: 预处理 (PreprocessingPipeline)
-
-步骤3: 意图检测 (IntentRegistry)
 
 步骤4: 安全检测 (security_check)
+        - 使用 ai_service 的 provider/model
 
 步骤5: start步骤 (start_step)
         - 使用 next_step 计数器
-        - 使用 ai_service 的 provider/model
+        - 使用 ai_service
         - 发送 SSE
         - 保存 current_execution_steps
 
@@ -1938,7 +1940,14 @@ async def start_step(...):
 ```python
 class ChatRouter:
     async def route(self, request, ...):
-        # 步骤1: 初始化
+        # 步骤1: 预处理
+        preprocessed = await self.preprocessing_pipeline.process(request)
+        
+        # 步骤2: 意图检测
+        intent_type = self.intent_registry.detect(preprocessed)
+        
+        # 步骤3: 初始化
+        ai_service = AIServiceFactory.create(...)
         step_counter = 0
         def next_step():
             nonlocal step_counter
@@ -1946,13 +1955,6 @@ class ChatRouter:
             return step_counter
         running_tasks = {}
         current_execution_steps = []
-        ai_service = AIServiceFactory.create(...)
-        
-        # 步骤2: 预处理
-        preprocessed = await self.preprocessing_pipeline.process(request)
-        
-        # 步骤3: 意图检测
-        intent_type = self.intent_registry.detect(preprocessed)
         
         # 步骤4: 安全检测
         last_message = request.messages[-1].content
