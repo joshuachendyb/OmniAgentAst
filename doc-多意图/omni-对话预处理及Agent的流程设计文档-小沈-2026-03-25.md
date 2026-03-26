@@ -72,6 +72,10 @@
 | v2.39 | 2026-03-26 00:10:00 | 小健检查修复：附录2.6.4移到2.7、更新2.7职责/抽取内容/待实现任务、修正2.3.4描述、更新2.8文件清单 |
 | v2.40 | 2026-03-26 11:30:00 | 附录2.6.2改造思路优化：改"抽取法"为"复制+删除法"，补充SSE依赖模块说明，更新待实现任务清单 |
 | v2.41 | 2026-03-26 11:50:00 | 附录2.6.5实施记录：file_react.py创建完成，删除intent-type分支，32个测试全部通过，commit e15abcbe |
+| v2.42 | 2026-03-26 07:56:05 | 附录2.7分阶段实施方案标题改为附录2.8，原附录2.8文件清单改为附录2.9 |
+| v2.43 | 2026-03-26 07:56:05 | 附录2.9文件清单更新：按四层架构重新排序，修正各文件对应层级 |
+| v2.44 | 2026-03-26 07:58:00 | 附录2.7层级修正：第三层改为第二层（react_sse_wrapper） |
+| v2.45 | 2026-03-26 07:58:00 | 附录2.5阶段1实施完成：chat_router.py创建完成，调用PreprocessingPipeline实现意图分发 |
 
 ---
 
@@ -1289,9 +1293,32 @@ chat_router.py
 
 | 序号 | 任务 | 状态 |
 |------|------|------|
-| 1 | 创建 `chat_router.py` | 待实现 |
-| 2 | 调用 `PreprocessingPipeline` | 待实现 |
-| 3 | 实现意图分发逻辑 | 待实现 |
+| 1 | 创建 `chat_router.py` | ✅ 已完成 |
+| 2 | 调用 `PreprocessingPipeline` | ✅ 已完成 |
+| 3 | 实现意图分发逻辑 | ✅ 已完成 |
+
+#### 附录2.5.5 实施记录
+
+> **更新时间**: 2026-03-26 07:58:00
+> **实施人**: 小沈
+
+**阶段1实施完成**（2026-03-26）：
+- ✅ 创建 `backend/app/services/chat_router.py`
+- ✅ 实现 `ChatRouter` 类
+- ✅ 调用 `PreprocessingPipeline.process()` 进行意图检测
+- ✅ 实现意图分发：file → FileReactAgent.ver1_run_stream()
+- ✅ 语法检查通过
+- ✅ 32个测试全部通过
+
+**实现细节**：
+- 文件位置：`app/services/chat_router.py`（符合附录2.5.1）
+- 意图检测：使用 `PreprocessingPipeline`（符合附录2.5.3）
+- 分发逻辑：file 意图调用 FileReactAgent，其他意图返回错误
+
+**待后续阶段处理**：
+- chat 意图 → chat_stream_query()（阶段2/3）
+- network 意图 → NetworkReactAgent（阶段2/3）
+- desktop 意图 → DesktopReactAgent（阶段2/3）
 
 ---
 
@@ -1396,7 +1423,7 @@ chat_router.py
 > **整理时间**: 2026-03-25 23:10:00
 > **整理人**: 小沈
 >
-> **对应架构层**: 第三层：从 chat2.py 抽取流式 SSE 包装函数
+> **对应架构层**: 第二层：从 chat2.py 抽取流式 SSE 包装函数
 
 #### 附录2.7.1 文件命名
 
@@ -1406,7 +1433,7 @@ chat_router.py
 | 类名 | `SSEReactWrapper` |
 | 位置 | `backend/app/services/react_sse_wrapper.py` |
 
-**React_sse_wrapper 结构**（新第三层）：
+**React_sse_wrapper 结构**（第二层）：
 ```
 react_sse_wrapper (新第三层)
 ├── running_tasks 管理 ← 从 chat2.py 抽
@@ -1527,7 +1554,10 @@ async for event in agent.run_stream(
 | agent.ver1_run_stream() | 改为 agent.run_stream() |
 | 类名 | Chat2 → SSEReactWrapper |
 
-**分阶段实施方案（推荐）**：
+### 附录2.8 分阶段实施方案（推荐）
+
+> **更新时间**: 2026-03-26 06:20:00
+> **更新说明**: 新增分阶段实施方案，降低重构风险
 
 ```
 阶段1：chat_router → FileReactAgent.ver1_run_stream()（直接调用）
@@ -1555,7 +1585,7 @@ async for event in agent.run_stream(
 
 ---
 
-### 附录2.8 待创建/改造文件清单
+### 附录2.9 待创建/改造文件清单
 
 > **更新时间**: 2026-03-26 06:20:00
 > **更新说明**: 确认第三层 react_sse_wrapper.py 价值，更新设计内容
@@ -1563,10 +1593,10 @@ async for event in agent.run_stream(
 | 序号 | 文件 | 操作 | 对应层 | 状态 |
 |------|------|------|--------|------|
 | 1 | `app/services/chat_router.py` | 创建 | 第一层 | 待实现 |
-| 2 | `app/services/agent/file_react.py` | 抽取 | 第二层 | ✅ 已完成 |
-| 3 | `app/services/agent/network_react.py` | 创建 | 第二层 | 待实现 |
-| 4 | `app/services/agent/desktop_react.py` | 创建 | 第二层 | 待实现 |
-| 5 | `app/services/react_sse_wrapper.py` | 创建 | 第三层 | 待实现 |
+| 2 | `app/services/react_sse_wrapper.py` | 创建 | 第二层 | 待实现 |
+| 3 | `app/services/agent/file_react.py` | 抽取 | 第三层 | ✅ 已完成 |
+| 4 | `app/services/agent/network_react.py` | 创建 | 第三层 | 待实现 |
+| 5 | `app/services/agent/desktop_react.py` | 创建 | 第三层 | 待实现 |
 | 6 | `app/services/agent/base_react.py` | 已完成 | 第四层 | ✅ 已完成 |
 | 7 | `app/services/agent/agent.py` | 废弃 | - | 待废弃 |
 | 8 | `app/api/v1/chat2.py` | 改造 | - | 待改造（调用react_sse_wrapper） |
