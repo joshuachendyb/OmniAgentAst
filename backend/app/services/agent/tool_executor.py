@@ -118,9 +118,12 @@ class ToolExecutor:
                         f"param={key}={val_str}, 期望参数={standard}"
                     )
         
-        # search_files: 默认 path 为当前目录（这是合理默认值，保留）
-        if action == "search_files" and "path" not in params:
-            params["path"] = "."
+        # search_files: 默认 path 和 pattern 为合理值
+        if action == "search_files":
+            if "path" not in params:
+                params["path"] = "."
+            if "pattern" not in params:
+                params["pattern"] = ""  # 默认搜索空字符串（即搜索所有文件）
         
         return params
     

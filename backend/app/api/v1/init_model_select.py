@@ -217,7 +217,9 @@ async def validate_ai_service():
             import httpx
             test_response = None
             try:
-                async with httpx.AsyncClient(timeout=10) as client:
+                # 使用 ai_service 的 timeout 配置（从 config.yaml 读取）
+                timeout = ai_service.timeout if hasattr(ai_service, 'timeout') else 30
+                async with httpx.AsyncClient(timeout=timeout) as client:
                     test_response = await client.post(
                         f"{ai_service.api_base}/chat/completions",
                         headers={
