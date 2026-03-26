@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 10:25:00
-**版本**: v2.54
+**更新时间**: 2026-03-26 10:40:00
+**版本**: v2.55
 **编写人**: 小沈
 
 ---
@@ -85,6 +85,7 @@
 | v2.52 | 2026-03-26 08:57:53 | 阶段3采用复制+删除法：复制ver1_run_stream整体逻辑，删除run_stream调用，保留SSE格式化 |
 | v2.53 | 2026-03-26 10:10:55 | 附录2.8阶段1后补充：启用chat_router的步骤说明（创建chat_router_api.py新端点） |
 | v2.54 | 2026-03-26 10:25:00 | 附录2.5对照检查标注：文件位置✅、核心职责✅（部分）、意图检测✅、任务✅ |
+| v2.55 | 2026-03-26 10:40:00 | 附录2.8阶段1补充：chat_router统一准备环境参数方案分析 |
 
 ---
 
@@ -1631,6 +1632,61 @@ async def chat_stream_v2(request: Request):
 - 新端点：`/chat/stream/v2` → chat_router（阶段1启用）
 
 **验证通过后**：将前端请求切换到新端点，旧端点废弃
+
+**阶段1补充：chat_router 统一准备环境参数方案**（2026-03-26 10:40:00 小沈）
+
+> 💡 **发现**：chat_stream_query 需要15个参数，其中大部分是"环境参数"，可以由 chat_router 统一准备。
+
+#### 问题分析
+
+chat2.py 中为 chat_stream_query 准备的参数（15个）：
+```
+request, ai_service, task_id, llm_call_count, current_execution_steps,
+current_content, last_is_reasoning, last_message, running_tasks,
+running_tasks_lock, next_step, display_name, session_id,
+save_execution_steps_to_db, add_step_and_save
+```
+
+#### chat_router 统一准备的参数（可复用）
+
+| 参数 | chat2.py 位置 | 可移到 chat_router? |
+|------|--------------|---------------------|
+| ai_service | 第318-324行 | ✅ |
+| task_id | 第286行 | ✅ |
+| running_tasks 注册 | 第327-334行 | ✅ |
+| step_counter / next_step | 第338-344行 | ✅ |
+| display_name | 第351行 | ✅ |
+| session_id | 第456行 | ✅ |
+| wrapped_save_steps | 第429行 | ✅ |
+| wrapped_add_step | 第432行 | ✅ |
+| llm_client | 第458-460行 | ✅ |
+
+#### 方案优势
+
+1. **chat_router 统一准备环境参数**：
+   - ai_service（根据 model/provider 创建）
+   - task_id（生成）
+   - session_id（获取/生成）
+   - running_tasks（管理）
+   - next_step（计数器）
+   - display_name
+   - llm_client
+   - wrapped_save_steps / wrapped_add_step
+
+2. **Agent 精简参数**：
+   - FileReactAgent：只需 llm_client, session_id
+   - chat_stream_query：只需 user_input, ai_service, task_id, session_id, next_step, display_name
+
+3. **复用性**：
+   - 所有 Agent 共用相同的准备逻辑
+   - chat_router 是统一的入口
+
+#### 实施方向
+
+1. 在 chat_router 中统一准备环境参数
+2. 简化 FileReactAgent 调用（只传必要参数）
+3. 简化 chat_stream_query 调用（只传必要参数）
+4. 逐步从 chat2.py 迁移到 chat_router
 
 阶段2：创建 react_sse_wrapper.py（第二层）【参考附录2.7章节操作说明】
        ├── 从 chat2.py 复制为 react_sse_wrapper.py
