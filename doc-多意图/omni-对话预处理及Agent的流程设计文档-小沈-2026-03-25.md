@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 15:00:00
-**版本**: v2.78
+**更新时间**: 2026-03-26 15:47:58
+**版本**: v2.80
 **编写人**: 小沈
 
 ---
@@ -109,6 +109,8 @@
 | v2.76 | 2026-03-26 14:50:00 | 修复阶段5代码问题：删除重复代码，补全默认回退参数 |
 | v2.77 | 2026-03-26 14:55:00 | 统一使用start_step()函数：更新阶段4函数设计和阶段5调用方式 |
 | v2.78 | 2026-03-26 15:00:00 | 小健检查修复：调整task_id定义顺序到步骤5之前 |
+| v2.79 | 2026-03-26 15:36:57 | 阶段5步骤3拆分为3.1基础初始化+3.2 Agent参数准备，删除重复代码 |
+| v2.80 | 2026-03-26 15:47:58 | 全文中5步改为6步：步骤3增加初始化+参数准备，修正所有描述（小强检查） |
 
 ---
 
@@ -204,13 +206,14 @@ chat2.py
     │
     ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  chat_router.py (API端点 + 5步完整流程)                          │
+│  chat_router.py (API端点 + 6步完整流程)                          │
 │                                                                 │
 │  1. 预处理 (PreprocessingPipeline)                              │
 │  2. 意图检测 (IntentRegistry)                                  │
-│  3. 安全检测 (security_check)                                   │
-│  4. start步骤 (start_step)                                     │
-│  5. 分发到Agent (根据intent_type)                              │
+│  3. 初始化 + 参数准备                                           │
+│  4. 安全检测 (security_check)                                   │
+│  5. start步骤 (start_step)                                     │
+│  6. 分发到Agent (根据intent_type)                              │
 │                                                                 │
 │  输出：intent, start_data, agent_events                         │
 └─────────────────────────────────────────────────────────────────┘
@@ -241,22 +244,23 @@ chat2.py
       └──────────────┘
 ```
 
-**chat_router.py (Router服务层) 5步流程**：
+**chat_router.py (Router服务层) 6步流程**：
 
 | 步骤 | 功能 | 说明 |
 |------|------|------|
 | 1 | 预处理 | PreprocessingPipeline 语句校对 |
 | 2 | 意图检测 | IntentRegistry 识别意图类型 |
-| 3 | 安全检测 | security_check 安全检查 |
-| 4 | start步骤 | start_step 发送start事件 |
-| 5 | 分发Agent | 根据intent_type调用不同Agent |
+| 3 | 初始化 + 参数准备 | ai_service/next_step/task_id等 |
+| 4 | 安全检测 | security_check 安全检查 |
+| 5 | start步骤 | start_step 发送start事件 |
+| 6 | 分发Agent | 根据intent_type调用不同Agent |
 
 **流程说明**：
 
 | 阶段 | 文件 | 说明 |
 |------|------|------|
 | **入口** | chat_router_api.py | API端点，接收请求 |
-| **路由** | chat_router.py | 5步完整流程 |
+| **路由** | chat_router.py | 6步完整流程 |
 | **预处理** | preprocessing/pipeline.py | 语句校对 + 意图识别 |
 | **ReAct流程** | intent-*-ReactAgent (agent.py) | start → thought → action → observation → final |
 | **简单对话** | chat_stream_query.py | start → chunk → final |
@@ -267,7 +271,7 @@ chat2.py
 
 | 文件 | 职责 | 不做 |
 |------|------|------|
-| **chat_router.py** | API端点 + 5步流程：预处理→意图检测→安全检测→start→分发Agent | 具体执行 |
+| **chat_router.py** | API端点 + 6步流程：预处理→意图检测→初始化→安全检测→start→分发Agent | 具体执行 |
 | **FileReactAgent** | ReAct循环：thought→action→observation→final | 路由、预处理 |
 | **NetworkReactAgent** | ReAct循环：thought→action→observation→final | 路由、预处理 |
 | **chat_stream_query** | 简单对话流：chunk→final | 路由、预处理 |
@@ -687,7 +691,7 @@ class BaseAgent(ABC):
 
 | 模块 | 职责 | 不做 |
 |------|------|------|
-| **chat_router.py** | 5步：预处理→意图检测→安全检测→start→分发Agent | 具体执行 |
+| **chat_router.py** | 6步：预处理→意图检测→初始化→安全检测→start→分发Agent | 具体执行 |
 | **具体Agent** | ReAct循环或简单对话流 | 路由、预处理 |
 
 > **📝 说明**：预处理不调用chat2，由路由层负责串联调用（见2.1架构）
@@ -866,44 +870,46 @@ finally: del running_tasks[task_id]
 用户请求 → 路由 @router.post("/chat/stream") → chat2.chat_stream() → detect_file_operation_intent()
 
 改造后：
-用户请求 → chat_router_api → chat_router.route() → 5步流程 → Agent
+用户请求 → chat_router_api → chat_router.route() → 6步流程 → Agent
 
 **当前代码现状**：
 - 路由层 `/chat/stream` → chat2.chat_stream() → detect_file_operation_intent()（简单函数）
-- 缺少完整的5步流程
+- 缺少完整的6步流程
 
 **2.1架构要求**（必须遵守）：
 ```
 用户请求
     ↓
-chat_router.py (API端点) - 5步完整流程
+chat_router.py (API端点) - 6步完整流程
     1. 预处理 (PreprocessingPipeline)
     2. 意图检测 (IntentRegistry)
-    3. 安全检测 (security_check)
-    4. start步骤 (start_step)
-    5. 分发到Agent
+    3. 初始化 + 参数准备
+    4. 安全检测 (security_check)
+    5. start步骤 (start_step)
+    6. 分发到Agent
     ↓
 Agent (FileReactAgent / chat_stream_query)
 ```
 
-> **📝 路由层说明**：chat_router.py作为API端点，包含完整5步流程，直接处理请求。
+> **📝 路由层说明**：chat_router.py作为API端点，包含完整6步流程，直接处理请求。
 
-**改造方案**（根据2.1架构 - 5步流程）：
+**改造方案**（根据2.1架构 - 6步流程）：
 - [ ] 修改 chat_router.py 作为API端点
 - [ ] 步骤1: 预处理 (PreprocessingPipeline)
 - [ ] 步骤2: 意图检测 (IntentRegistry)
-- [ ] 步骤3: 安全检测 (security_check)
-- [ ] 步骤4: start步骤 (start_step)
-- [ ] 步骤5: 根据intent_type分发到Agent
+- [ ] 步骤3: 初始化 + 参数准备 (ai_service/next_step/task_id等)
+- [ ] 步骤4: 安全检测 (security_check)
+- [ ] 步骤5: start步骤 (start_step)
+- [ ] 步骤6: 根据intent_type分发到Agent
 
 **关键约束**：
 - **禁止在chat2内部调用预处理**（违反2.1架构）
-- chat_router.py 包含完整5步流程
+- chat_router.py 包含完整6步流程
 - chat2只接收Agent执行结果，负责Session管理和后续处理
 
 ### 7.3 chat2.py 废弃计划
 
-> **📝 说明**：chat2.py 逐步废弃，其功能整合到 chat_router.py 的5步流程中
+> **📝 说明**：chat2.py 逐步废弃，其功能整合到 chat_router.py 的6步流程中
 
 **chat2废弃原因**：
 - 混合了路由和流式loop职责
@@ -911,7 +917,7 @@ Agent (FileReactAgent / chat_stream_query)
 - 职责不清
 
 **废弃后功能转移**：
-- 5步流程 → chat_router.py
+- 6步流程 → chat_router.py
 - Session管理 → chat_router.py
 - Agent分发 → chat_router.py
 - [ ] 无动作：调用 chat_stream_query()
@@ -943,14 +949,15 @@ Agent (FileReactAgent / chat_stream_query)
 
 **目标**：创建独立的 chat_router.py 作为路由入口
 
-**chat_router.py (API端点) 职责**（5步完整流程）：
+**chat_router.py (API端点) 职责**（6步完整流程）：
 ```
 chat_router.py（API端点）
     1. 预处理 (PreprocessingPipeline)
     2. 意图检测 (IntentRegistry)
-    3. 安全检测 (security_check)
-    4. start步骤 (start_step)
-    5. 分发到Agent (根据intent_type)
+    3. 初始化 + 参数准备
+    4. 安全检测 (security_check)
+    5. start步骤 (start_step)
+    6. 分发到Agent (根据intent_type)
 ```
 
 **架构**（参考整合架构设计2.1节）：
@@ -973,16 +980,17 @@ chat_router.py（API端点）
 - 不需要额外的 react_sse_wrapper.py 中间层
 - 附录2.7 的 react_sse_wrapper.py 设计是冗余的，可以跳过（后续文档待删除）
 
-**chat_router.py 5步改造要点**：
+**chat_router.py 6步改造要点**：
 - [ ] 新建 `chat_router.py` 作为Router服务层
 - [ ] 步骤1：预处理 (PreprocessingPipeline)
 - [ ] 步骤2：意图检测 (IntentRegistry)
-- [ ] 步骤3：安全检测 (security_check)
-- [ ] 步骤4：start步骤 (start_step)
-- [ ] 步骤5：根据intent_type分发到对应Agent
+- [ ] 步骤3：初始化 + 参数准备 (ai_service/next_step/task_id等)
+- [ ] 步骤4：安全检测 (security_check)
+- [ ] 步骤5：start步骤 (start_step)
+- [ ] 步骤6：根据intent_type分发到对应Agent
 - [ ] chat2.py **只负责流式loop**，不包含任何预处理/意图识别
 
-**chat_router.py 代码结构示例（5步流程）**：
+**chat_router.py 代码结构示例（6步流程）**：
 ```python
 # chat_router.py
 class ChatRouter:
@@ -1145,7 +1153,7 @@ agent = FileOperationAgent(
 |------|------|------|------|
 | **底层 ReAct** | base.py | 实现标准ReAct循环 | 与意图无关，通用 |
 | **上层 Intent-*-React** | agent.py | 格式化SSE + 意图相关逻辑 | 与具体意图相关 |
-| **路由层** | chat_router.py（待创建） | 5步：预处理→意图检测→安全检测→start→分发Agent | 路由职责 |
+| **路由层** | chat_router.py（待创建） | 6步：预处理→意图检测→初始化→安全检测→start→分发Agent | 路由职责 |
 | **chat2（当前）** | chat2.py | 混合体 | ❌ 职责不清 |
 
 ### 附录2.3 四层架构与意图分发
@@ -1161,13 +1169,14 @@ agent = FileOperationAgent(
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  第一层：路由层 (chat_router.py) - 5步完整流程                    │
+│  第一层：路由层 (chat_router.py) - 6步完整流程                    │
 │                                                                 │
 │  1. 预处理 (PreprocessingPipeline)                             │
 │  2. 意图检测 (IntentRegistry)                                  │
-│  3. 安全检测 (security_check)                                  │
-│  4. start步骤 (start_step)                                     │
-│  5. 分发到Agent (根据intent_type)                               │
+│  3. 初始化 + 参数准备                                           │
+│  4. 安全检测 (security_check)                                  │
+│  5. start步骤 (start_step)                                     │
+│  6. 分发到Agent (根据intent_type)                               │
 └─────────────────────────────────────────────────────────────────┘
                                ↓
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1229,7 +1238,7 @@ chat_router → react_sse_wrapper → file_react.run_stream() → base_react.run
 
 | 层 | 文件 | 职责 | 特点 |
 |---|------|------|------|
-| **路由层** | chat_router.py | 5步：预处理→意图检测→安全检测→start→分发Agent | 新增 |
+| **路由层** | chat_router.py | 6步：预处理→意图检测→初始化→安全检测→start→分发Agent | 新增 |
 | **意图特定React** | file_react.py | 意图相关逻辑（工具/prompt/LLM策略/SSE流式） | 拆分自 agent.py |
 | **React SSE 包装** | react_sse_wrapper.py | SSE框架 + 中断/暂停 + 数据库保存 | 抽取自 chat2.py |
 | **通用ReAct** | base_react.py | 标准 ReAct 循环 | 与意图无关 |
@@ -1941,11 +1950,11 @@ async def send_start_step(
 
 步骤2: 意图检测 (IntentRegistry)
 
-步骤3: 初始化
+步骤3: 初始化 + 参数准备
         - ai_service创建 (AIServiceFactory)
         - next_step计数器
-        - running_tasks (Session管理)
-        - current_execution_steps
+        - task_id、running_tasks、current_execution_steps
+        - llm_client（Agent用）、running_tasks_lock（chat用）
 
 步骤4: 安全检测 (security_check)
         - 使用 ai_service 的 provider/model
@@ -1991,7 +2000,7 @@ async def route(self, ...):
     intent_type = intent_result.get("intent", "chat")
     confidence = intent_result.get("confidence", 0.0)
     
-    # ===== 步骤3: 初始化 ===== 【新增】
+    # ===== 步骤3: 初始化 + 参数准备 =====
     import uuid
     import asyncio
     from typing import Optional
@@ -1999,6 +2008,7 @@ async def route(self, ...):
     from app.chat_stream.start_step import send_start_step
     from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save
     
+    # ===== 步骤3.1: 基础初始化 =====
     # task_id: 任务ID（必须在步骤5之前定义）
     task_id = request.task_id if request.task_id else str(uuid.uuid4())
     
@@ -2022,6 +2032,35 @@ async def route(self, ...):
     # current_execution_steps: 执行步骤列表
     current_execution_steps: List[Dict] = []
     
+    # ===== 步骤3.2: Agent参数准备 =====
+    # llm_client: 从ai_service.chat包装的LLM客户端函数
+    async def llm_client(message, history=None):
+        response = await ai_service.chat(message, history)
+        return type('obj', (object,), {'content': response.content})()
+    
+    # running_tasks_lock: 任务锁（用于chat_stream_query）
+    running_tasks_lock = asyncio.Lock()
+    
+    # llm_call_count: LLM调用计数器
+    llm_call_count = 0
+    
+    # current_content: 当前累积内容（用于chat_stream_query）
+    current_content = ""
+    
+    # last_is_reasoning: 上一个is_reasoning状态
+    last_is_reasoning = None
+    
+    # last_message: 用户消息
+    last_message = user_input
+    
+    # wrapped_save_steps: 包装的保存到DB函数
+    async def wrapped_save_steps(execution_steps, content=None):
+        await save_execution_steps_to_db(session_id, execution_steps, content)
+    
+    # wrapped_add_step: 包装的添加步骤并保存函数
+    async def wrapped_add_step(step, content=None):
+        await add_step_and_save(current_execution_steps, step, session_id, content)
+    
     # ===== 步骤4: 安全检测 ===== 【新增】
     from app.services.shell_security import check_command_safety
     security_check_result = check_command_safety(user_input)
@@ -2037,38 +2076,6 @@ async def route(self, ...):
         current_execution_steps=current_execution_steps,
         yield_func=lambda data: yield f"data: {json.dumps(data)}\n\n"
     )
-    
-    # ===== 提取 llm_client ===== 【新增】
-    # FileReactAgent 需要 llm_client 函数，从 ai_service.chat 包装
-    async def llm_client(message, history=None):
-        response = await ai_service.chat(message, history)
-        return type('obj', (object,), {'content': response.content})()
-    
-    # ===== 准备 chat_stream_query 需要的参数 ===== 【新增】
-    # task_id 已在步骤3定义
-    
-    # running_tasks_lock: 任务锁
-    running_tasks_lock = asyncio.Lock()
-    
-    # llm_call_count: LLM调用计数器
-    llm_call_count = 0
-    
-    # current_content: 当前累积内容
-    current_content = ""
-    
-    # last_is_reasoning: 上一个is_reasoning状态
-    last_is_reasoning = None
-    
-    # last_message: 用户消息
-    last_message = user_input
-    
-    # 包装 save_execution_steps_to_db 函数
-    async def wrapped_save_steps(execution_steps, content=None):
-        await save_execution_steps_to_db(session_id, execution_steps, content)
-    
-    # 包装 add_step_and_save 函数
-    async def wrapped_add_step(step, content=None):
-        await add_step_and_save(current_execution_steps, step, session_id, content)
     
     # ===== 步骤6: 分发到Agent ===== 【修改】
     
@@ -2158,11 +2165,9 @@ async def route(self, ...):
 
 ##### 5.3 分阶段实施
 
-**阶段5.1**：添加初始化步骤3
-- ai_service创建 (AIServiceFactory)
-- next_step计数器定义
-- running_tasks初始化
-- current_execution_steps初始化
+**阶段5.1**：添加初始化+参数准备步骤3
+- 步骤3.1 基础初始化：ai_service创建、next_step计数器、running_tasks、current_execution_steps
+- 步骤3.2 Agent参数准备：llm_client、running_tasks_lock、llm_call_count、current_content、last_is_reasoning、last_message、wrapped_save_steps、wrapped_add_step
 
 **阶段5.2**：添加安全检测步骤4
 - 从chat2.py迁移security_check逻辑
