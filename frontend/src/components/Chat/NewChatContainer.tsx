@@ -235,7 +235,7 @@ const NewChatContainer: React.FC = () => {
               id: (Date.now() + 1).toString(),
               role: "assistant",
               content: step.content || "🤔 AI 正在思考...",
-              timestamp: new Date(),
+              timestamp: step.timestamp ? new Date(step.timestamp) : new Date(), // 【小沈修复 2026-03-26】使用后端返回的时间戳
               executionSteps: [step],
               isStreaming: true,  // 确保是 true
               model: step.model,
@@ -262,6 +262,8 @@ const NewChatContainer: React.FC = () => {
               model: step.model || lastMessage.model,
               provider: step.provider || lastMessage.provider,
               // 【小沈修复 2026-03-17】将start步骤添加到executionSteps
+              // 【小沈修复 2026-03-26】同时更新timestamp，使用后端返回的时间戳
+              timestamp: step.timestamp ? new Date(step.timestamp) : lastMessage.timestamp,
               executionSteps: [...(lastMessage.executionSteps || []), step],
             };
             // 第219行已打印日志，这里不再重复
@@ -1599,11 +1601,12 @@ const NewChatContainer: React.FC = () => {
     console.log("🔍 assistant消息ID:", assistantId, "(后端ID:", backendUserMessageId, "+1)");
 
     // 【关键修复】用后端返回的ID创建assistant消息
+    // 【小沈修复 2026-03-26】timestamp会在SSE回调的onStep中更新为后端返回的正确时间戳
     const assistantMessage: Message = {
       id: assistantId,
       role: "assistant",
       content: "🤔 AI 正在思考...", // 【修复问题 2】显示占位文本，避免空白气泡
-      timestamp: new Date(),
+      timestamp: new Date(), // 临时值，会被onStep回调中的正确时间戳覆盖
       executionSteps: [],
       isStreaming: true,
       model: undefined, // 前端小新代修改：明确设置可选属性
