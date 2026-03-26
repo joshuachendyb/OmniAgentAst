@@ -437,10 +437,11 @@ export const useSSE = (
     setReconnectStatus("connecting");
 
     try {
-      // 方式A: 使用新端点（多意图重构）
-      const url = `${config.baseURL}/chat/stream/v2`;
-      // 方式B: 保留旧端点（等后续任务控制也迁移后再改）
-      // const url = `${config.baseURL}/chat/stream`;
+      // 多意图重构配置: 0=旧端点, 1=新端点(v2)
+      const USE_NEW_ROUTER = 1; // 可配置：0 或 1
+      const url = USE_NEW_ROUTER 
+        ? `${config.baseURL}/chat/stream/v2`
+        : `${config.baseURL}/chat/stream`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
