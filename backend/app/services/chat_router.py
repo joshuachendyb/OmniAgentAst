@@ -94,17 +94,21 @@ async def chat_stream_v2(request: ChatRequest):
     config = get_config()
     ai_config = config.get('ai', {})
     
-    # 确定 provider 和 model
+    # 排除顶层键 'provider' 和 'model'，获取有效的 provider 列表
+    valid_providers = [k for k in ai_config.keys() if k not in ('provider', 'model')]
+    
+    # 确定 provider
     provider = request.provider
+    if not provider or provider not in valid_providers:
+        # 默认用第一个有效的 provider
+        provider = valid_providers[0] if valid_providers else "zhipuai"
+    
+    # 确定 model
     model = request.model
-    
-    if not provider or provider not in ai_config:
-        # 默认使用第一个可用的 provider
-        provider = list(ai_config.keys())[0] if ai_config else "openai"
-    
     if not model:
-        # 默认模型
-        model = ai_config.get(provider, {}).get('default_model', 'gpt-4')
+        # 默认用第一个 provider 的第一个 model
+        provider_models = ai_config.get(provider, {}).get('models', [])
+        model = provider_models[0] if provider_models else 'gpt-4'
     
     # session_id
     session_id = request.session_id or str(uuid.uuid4())
@@ -234,6 +238,8 @@ class ChatRouter:
                 session_id=session_id,
                 yield_func=yield_sse
             )
+            # 将 start_data yield 给前端（和 chat2.py 保持一致）
+            yield f"data: {json.dumps(start_data)}\n\n"
         except Exception as e:
             logger.error(f"[ChatRouter] send_start_step failed: {e}", exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'message': f'start步骤失败: {str(e)}'})}\n\n"

@@ -66,10 +66,9 @@ async def send_start_step(
         }
     }
     
-    # 2. 发送 SSE（通过回调函数，格式：data: {json}\n\n）
-    # 【修复 2026-03-26 小健检查】需要 json.dumps 和 \n\n 后缀，与 chat2.py 保持一致
-    import json
-    yield_func(f"data: {json.dumps(start_data)}\n\n")
+    # 2. 发送 SSE（通过回调函数）
+    # 【修复 2026-03-26 小健检查】yield_func 只需要传 dict，会自动包装成 SSE 格式
+    yield_func(start_data)
     
     # 3. 保存到 current_execution_steps
     current_execution_steps.append(start_data)

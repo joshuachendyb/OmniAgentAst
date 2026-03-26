@@ -130,17 +130,22 @@ export interface ValidateResponse {
 }
 
 export const chatApi = {
-  sendMessage: async (
-    messages: ChatMessage[],
-    temperature: number = 0.7
-  ): Promise<ChatResponse> => {
-    const response = await api.post<ChatResponse>("/chat", {
-      messages,
-      stream: false,
-      temperature,
-    });
-    return response.data;
-  },
+  /**
+   * 【已废弃 2026-03-26】非流式聊天 - 未被使用
+   * 流式聊天使用 sse.ts 的 sendMessage
+   * 保留代码供参考，已移至 backup/api废弃代码.ts
+   */
+  // sendMessage: async (
+  //   messages: ChatMessage[],
+  //   temperature: number = 0.7
+  // ): Promise<ChatResponse> => {
+  //   const response = await api.post<ChatResponse>("/chat", {
+  //     messages,
+  //     stream: false,
+  //     temperature,
+  //   });
+  //   return response.data;
+  // },
 
   /**
    * 验证AI服务配置 - 已存在API
