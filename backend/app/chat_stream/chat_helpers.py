@@ -6,12 +6,35 @@
 
 from datetime import datetime
 import json
-from typing import Optional
+from typing import Optional, Callable
 
 
 def create_timestamp() -> int:
     """生成统一的时间戳（毫秒）"""
     return int(datetime.now().timestamp() * 1000)
+
+
+def create_step_counter() -> Callable[[], int]:
+    """
+    创建统一的步骤计数器函数
+    
+    Returns:
+        返回一个闭包函数，每次调用返回递增的步骤号（从1开始）
+    
+    Example:
+        counter = create_step_counter()
+        counter()  # 返回 1
+        counter()  # 返回 2
+        counter()  # 返回 3
+    """
+    step_counter = 0
+    
+    def next_step() -> int:
+        nonlocal step_counter
+        step_counter += 1
+        return step_counter
+    
+    return next_step
 
 
 def get_provider_display_name(provider: str) -> str:

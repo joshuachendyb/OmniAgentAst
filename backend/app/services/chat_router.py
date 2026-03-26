@@ -36,6 +36,7 @@ from app.services.preprocessing.pipeline import PreprocessingPipeline
 from app.services.agent.file_react import FileReactAgent
 from app.services import AIServiceFactory
 from app.utils.logger import logger
+from app.chat_stream.chat_helpers import create_step_counter
 
 
 # 意图标签列表（用于 PreprocessingPipeline）
@@ -191,12 +192,8 @@ class ChatRouter:
         # ai_service: AI服务实例
         ai_service = AIServiceFactory.get_service_for_model(provider, model)
         
-        # next_step: 步骤计数器
-        step_counter = 0
-        def next_step():
-            nonlocal step_counter
-            step_counter += 1
-            return step_counter
+        # next_step: 步骤计数器（使用统一函数）
+        next_step = create_step_counter()
         
         # running_tasks: 任务字典
         running_tasks: Dict[str, Any] = {}
