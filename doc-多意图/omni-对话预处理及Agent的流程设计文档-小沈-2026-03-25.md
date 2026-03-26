@@ -111,6 +111,7 @@
 | v2.78 | 2026-03-26 15:00:00 | 小健检查修复：调整task_id定义顺序到步骤5之前 |
 | v2.79 | 2026-03-26 15:36:57 | 阶段5步骤3拆分为3.1基础初始化+3.2 Agent参数准备，删除重复代码 |
 | v2.80 | 2026-03-26 15:47:58 | 全文中5步改为6步：步骤3增加初始化+参数准备，修正所有描述（小强检查） |
+| v2.81 | 2026-03-26 16:00:00 | 修正架构图为四层：路由层→React SSE包装层→意图特定React→通用ReAct，明确react_sse_wrapper是第二层（小强修正） |
 
 ---
 
@@ -1313,7 +1314,7 @@ chat_router → react_sse_wrapper.generate_sse_stream() → file_react.run_strea
 > **整理时间**: 2026-03-25 22:36:38
 > **整理人**: 小沈
 >
-> **对应架构层**: 第二层：意图特定 React
+> **对应架构层**: 第三层：意图特定 React
 
 #### 附录2.6.1 文件命名
 
@@ -1408,6 +1409,9 @@ chat_router → react_sse_wrapper.generate_sse_stream() → file_react.run_strea
 
 > **整理时间**: 2026-03-25 23:10:00
 > **整理人**: 小沈
+>
+> **更新时间**: 2026-03-26
+> **更新说明**: 确认第二层react_sse_wrapper.py价值，作为SSE流式输出包装层
 >
 > **对应架构层**: 第二层：从 chat2.py 抽取流式 SSE 包装函数
 
@@ -2122,7 +2126,7 @@ async def route(self, ...):
 | 序号 | 文件 | 操作 | 对应层 | 状态 |
 |------|------|------|--------|------|
 | 1 | `app/services/chat_router.py` | 创建 | 第一层 | ✅ 已完成 |
-| 2 | `app/services/react_sse_wrapper.py` | 创建 | 第二层 | ✅ 已完成（框架） |
+| 2 | `app/services/react_sse_wrapper.py` | 创建 | 第二层 | ✅ 已完成 |
 | 3 | `app/services/agent/file_react.py` | 抽取 | 第三层 | ✅ 已完成 |
 | 4 | `app/services/agent/network_react.py` | 创建 | 第三层 | 待实现 |
 | 5 | `app/services/agent/desktop_react.py` | 创建 | 第三层 | 待实现 |
