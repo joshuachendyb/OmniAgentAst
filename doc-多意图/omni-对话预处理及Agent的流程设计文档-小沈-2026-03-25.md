@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 08:38:42
-**版本**: v2.50
+**更新时间**: 2026-03-26 08:53:33
+**版本**: v2.51
 **编写人**: 小沈
 
 ---
@@ -81,6 +81,7 @@
 | v2.48 | 2026-03-26 08:20:00 | 附录2.7.4添加说明：任务为对照检查项，实际操作在2.7.5 |
 | v2.49 | 2026-03-26 08:22:00 | 修复：附录2.7层级错误（新第三层改为第二层），附录2.9文件清单更新chat_router状态 |
 | v2.50 | 2026-03-26 08:38:42 | 附录2.7阶段2实施完成：react_sse_wrapper.py创建完成，删除FastAPI代码，转换为服务层函数，语法验证通过 |
+| v2.51 | 2026-03-26 08:53:33 | 补充阶段2当前实施状态说明：file_react.ver1_run_stream尚未删除，chat_router尚未集成react_sse_wrapper |
 
 ---
 
@@ -1581,6 +1582,13 @@ async for event in agent.run_stream(
        └── 保留任务管理、DB保存等
        验证：原有功能不变
 
+**阶段2当前实施状态（2026-03-26 08:40）**：
+- ✅ react_sse_wrapper.py 已创建（354行）
+- ✅ 删除 FastAPI 代码，转换为服务层函数
+- ⚠️ file_react.ver1_run_stream 尚未删除（仍被 chat_router 调用）
+- ⚠️ chat_router 尚未集成 react_sse_wrapper（直接调用 file_react.ver1_run_stream）
+- **结论**：阶段2框架已创建，需要阶段3完成集成
+
 阶段3：最终架构（chat_router → react_sse_wrapper → file_react）
        ├── react_sse_wrapper 添加 SSE 转换逻辑（从 ver1_run_stream 抽取）
        ├── 修改调用链：react_sse_wrapper → file_react.run_stream()
@@ -1603,7 +1611,7 @@ async for event in agent.run_stream(
 | 序号 | 文件 | 操作 | 对应层 | 状态 |
 |------|------|------|--------|------|
 | 1 | `app/services/chat_router.py` | 创建 | 第一层 | ✅ 已完成 |
-| 2 | `app/services/react_sse_wrapper.py` | 创建 | 第二层 | 待实现 |
+| 2 | `app/services/react_sse_wrapper.py` | 创建 | 第二层 | ✅ 已完成（框架） |
 | 3 | `app/services/agent/file_react.py` | 抽取 | 第三层 | ✅ 已完成 |
 | 4 | `app/services/agent/network_react.py` | 创建 | 第三层 | 待实现 |
 | 5 | `app/services/agent/desktop_react.py` | 创建 | 第三层 | 待实现 |
