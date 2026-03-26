@@ -10,11 +10,10 @@ FileReactAgent - 文件操作 ReAct Agent
 - 删除 intent-type 分支（network/desktop）
 - 保留文件操作专用逻辑（session管理、prompts、rollback）
 
-【TODO 待清理 - 2026-03-26 小健检查发现】：
-- intent_registry 和 preprocessor 对象仍保留在代码中（第121-125行）
-- run_stream 方法中仍有意图识别调用（第389-404行）
-- FileReactAgent 是专用 Agent，这些逻辑应该在路由层处理
-- 后续应删除这些冗余代码（待实现）
+【2026-03-26 小沈完成】：
+- ✅ 已删除 intent_registry 和 preprocessor 对象
+- ✅ 已删除 run_stream 方法中的意图识别调用
+- FileReactAgent 现在是纯文件操作专用 Agent，意图识别由路由层处理
 
 Author: 小沈 - 2026-03-21
 """
@@ -31,8 +30,6 @@ from app.services.prompts.file.file_prompts import FileOperationPrompts
 from app.services.agent.session import get_session_service
 from app.services.agent.llm_adapter import LLMAdapter
 from app.services.agent.adapter import dict_list_to_messages
-from app.services.intent import IntentRegistry, Intent
-from app.services.preprocessing import PreprocessingPipeline
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
@@ -123,13 +120,6 @@ class FileReactAgent(BaseAgent):
             # FileReactAgent 只支持 file 意图
             raise ValueError(f"FileReactAgent only supports intent_type='file', got: {intent_type}")
         
-        # 意图注册表（用于意图识别）
-        self.intent_registry = IntentRegistry()
-        self._register_default_intents()
-        
-        # 预处理流水线（用于意图识别）
-        self.preprocessor = PreprocessingPipeline()
-        
         # 【新增】LLM调用策略
         self.text_strategy = TextStrategy()
         self.tools_strategy = ToolsStrategy(tools=tools or [])
@@ -153,20 +143,6 @@ class FileReactAgent(BaseAgent):
                 logger.info(f"IntentAgent initialized (session: {session_id}, function_calling=True, tools_count={len(self.tools)})")
             else:
                 logger.info(f"IntentAgent initialized (session: {session_id})")
-    
-    def _register_default_intents(self):
-        """注册默认意图类型"""
-        # file 意图（FileReactAgent 只支持 file 意图）
-        file_intent = Intent(
-            name="file",
-            description="文件读写、目录管理、文件搜索",
-            keywords=["文件", "读取", "写入", "删除", "移动", "目录", "搜索", "创建"],
-            tools=["read_file", "write_file", "list_directory", "delete_file", "move_file", "search_files", "generate_report"],
-            safety_checker="file_safety"
-        )
-        self.intent_registry.register(file_intent)
-        
-        logger.info(f"Registered {len(self.intent_registry.list_all())} intents")
     
     # ========== 抽象方法实现 ==========
     
@@ -378,7 +354,7 @@ class FileReactAgent(BaseAgent):
         """
         内部运行方法（带 session 管理）
         
-        【设计要求】使用预处理流水线和意图注册表
+        【说明】意图识别已移至路由层（chat_router.py），此处只做文件操作
         """
         # 重置状态
         self.steps = []
@@ -389,25 +365,6 @@ class FileReactAgent(BaseAgent):
         
         # 获取 session_id 用于日志追踪
         session_id = self.session_id or ""
-        
-        # 【设计要求】使用预处理流水线预处理用户输入
-        try:
-            preprocessed = self.preprocessor.process(
-                task,
-                list(self.intent_registry.get_all_names()),
-                session_id=session_id
-            )
-            logger.info(f"[Agent] Preprocessed: intent={preprocessed.get('intent')}, confidence={preprocessed.get('confidence')}")
-        except Exception as e:
-            logger.warning(f"[Agent] Preprocessing failed: {e}, using original input")
-            preprocessed = {"corrected": task, "intent": "unknown", "confidence": 0.0}
-        
-        # 【设计要求】使用意图注册表获取意图定义
-        intent_def = self.intent_registry.get(self.intent_type)
-        if intent_def:
-            logger.info(f"[Agent] Using intent: {intent_def.name} ({intent_def.description})")
-        else:
-            logger.warning(f"[Agent] Intent definition not found for: {self.intent_type}")
         
         # 使用局部变量管理 session（session_id 在预处理前已获取）
         session_created_by_this_run = False

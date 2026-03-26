@@ -1719,17 +1719,20 @@ async for event in agent.run_stream(user_input):
 
 ```
 【当前调用链】（简化版，3层）
-chat_router.py
-  → FileReactAgent.ver1_run_stream()  [包含 SSE 格式化]
-  → BaseAgent.run_stream() [返回 event dict]
-  → BaseReAct.run_stream()
+chat_router.py (backend/app/services/chat_router.py)
+  → FileReactAgent.ver1_run_stream()  [包含 SSE 格式化] (backend/app/services/agent/file_react.py)
+  → BaseAgent.run_stream() [返回 event dict] (backend/app/services/agent/base_react.py)
 
 【目标调用链】（完整版，4层）
-chat_router.py
-  → react_sse_wrapper.generate_sse_stream()  [SSE 格式化]
-  → FileReactAgent.run_stream()  [返回 event dict]
-  → BaseAgent.run_stream()
-  → BaseReAct.run_stream()
+chat_router.py (backend/app/services/chat_router.py)
+  → react_sse_wrapper.generate_sse_stream()  [SSE 格式化] (backend/app/services/react_sse_wrapper.py)
+  → FileReactAgent.ver1_run_stream()  [返回 event dict] (backend/app/services/agent/file_react.py)
+  → BaseAgent.run_stream() (backend/app/services/agent/base_react.py)
+
+【说明】
+- BaseReAct 类在实际代码中不存在，已删除
+- react_sse_wrapper.generate_sse_stream() 已创建但目前未被调用（待集成）
+- FileReactAgent 冗余代码已清理完成（intent_registry 和 preprocessor 已删除）
 ```
 
 ---
