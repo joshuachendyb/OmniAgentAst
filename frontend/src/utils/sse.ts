@@ -437,7 +437,10 @@ export const useSSE = (
     setReconnectStatus("connecting");
 
     try {
-      const url = `${config.baseURL}/chat/stream`;
+      // 方式A: 使用新端点（多意图重构）
+      const url = `${config.baseURL}/chat/stream/v2`;
+      // 方式B: 保留旧端点（等后续任务控制也迁移后再改）
+      // const url = `${config.baseURL}/chat/stream`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
