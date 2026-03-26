@@ -322,6 +322,13 @@ class ChatRouter:
         try:
             from app.chat_stream.chat_stream_query import chat_stream_query
             
+            # 修复：如果 request 为 None，创建一个只包含当前消息的请求对象
+            if request is None:
+                request = ChatRequest(
+                    messages=[ChatMessage(role="user", content=user_input)],
+                    session_id=session_id
+                )
+            
             # 准备 chat_stream_query 需要的参数
             llm_call_count = 0
             current_content = ""
