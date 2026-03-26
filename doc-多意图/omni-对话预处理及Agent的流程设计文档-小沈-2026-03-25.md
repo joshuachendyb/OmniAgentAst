@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 08:53:33
-**版本**: v2.51
+**更新时间**: 2026-03-26 08:57:53
+**版本**: v2.52
 **编写人**: 小沈
 
 ---
@@ -82,6 +82,7 @@
 | v2.49 | 2026-03-26 08:22:00 | 修复：附录2.7层级错误（新第三层改为第二层），附录2.9文件清单更新chat_router状态 |
 | v2.50 | 2026-03-26 08:38:42 | 附录2.7阶段2实施完成：react_sse_wrapper.py创建完成，删除FastAPI代码，转换为服务层函数，语法验证通过 |
 | v2.51 | 2026-03-26 08:53:33 | 补充阶段2当前实施状态说明：file_react.ver1_run_stream尚未删除，chat_router尚未集成react_sse_wrapper |
+| v2.52 | 2026-03-26 08:57:53 | 阶段3采用复制+删除法：复制ver1_run_stream整体逻辑，删除run_stream调用，保留SSE格式化 |
 
 ---
 
@@ -1590,7 +1591,18 @@ async for event in agent.run_stream(
 - **结论**：阶段2框架已创建，需要阶段3完成集成
 
 阶段3：最终架构（chat_router → react_sse_wrapper → file_react）
-       ├── react_sse_wrapper 添加 SSE 转换逻辑（从 ver1_run_stream 抽取）
+
+**ver1_run_stream 分析（约94行）**：
+- 将 event dict 转换为 SSE 字符串
+- 包含：thought/action_tool/observation/final/error 的格式化逻辑
+
+**采用复制+删除法**（更稳妥）：
+1. 复制 ver1_run_stream 整体逻辑到 react_sse_wrapper.py
+2. 删除调用 self.run_stream() 部分（改为调用方传入 event）
+3. 保留 SSE 格式化逻辑（约70行）
+
+**实施步骤**：
+       ├── react_sse_wrapper 添加 SSE 转换逻辑（复制 ver1_run_stream，删除 run_stream 调用）
        ├── 修改调用链：react_sse_wrapper → file_react.run_stream()
        ├── file_react 删除 ver1_run_stream，只保留 run_stream()
        └── 验证：完整调用链正常工作
