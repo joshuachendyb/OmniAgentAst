@@ -19,7 +19,7 @@ Chat Router - 路由层
 Author: 小沈 - 2026-03-26
 """
 
-import uuid
+import json
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 
 from app.services.preprocessing.pipeline import PreprocessingPipeline
@@ -98,11 +98,21 @@ class ChatRouter:
                 get_next_step=get_next_step
             ):
                 yield sse_data
-        else:
-            # 默认：普通对话（第一阶段暂不实现）
-            logger.warning(f"[ChatRouter] Unsupported intent: {intent_type}, falling back to chat")
+        elif intent_type == "chat" or confidence < 0.3:
+            # 【TODO 第一阶段暂不实现】【小沈-2026-03-26】
+            # chat_stream_query 已实现：backend/app/chat_stream/chat_stream_query.py
+            # 需要传递 request、ai_service、running_tasks 等参数才能调用
+            # 后续阶段实现：elif 分支改为调用 self._handle_chat_operation()
+            logger.info(f"[ChatRouter] Chat intent not implemented yet")
             yield self._create_error_sse(
-                message=f"暂不支持 {intent_type} 意图，当前仅支持 file 意图",
+                message="chat功能正在开发中，当前仅支持 file 意图",
+                step=get_next_step() if get_next_step else 0
+            )
+        else:
+            # 其他意图（network/desktop等）
+            logger.warning(f"[ChatRouter] Unsupported intent: {intent_type}")
+            yield self._create_error_sse(
+                message=f"暂不支持 {intent_type} 意图，当前仅支持 file 和 chat",
                 step=get_next_step() if get_next_step else 0
             )
 
@@ -163,7 +173,6 @@ class ChatRouter:
 
     def _create_error_sse(self, message: str, step: int) -> str:
         """创建错误 SSE 响应"""
-        import json
         error_data = {
             "type": "error",
             "step": step,

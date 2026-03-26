@@ -76,6 +76,8 @@
 | v2.43 | 2026-03-26 07:56:05 | 附录2.9文件清单更新：按四层架构重新排序，修正各文件对应层级 |
 | v2.44 | 2026-03-26 07:58:00 | 附录2.7层级修正：第三层改为第二层（react_sse_wrapper） |
 | v2.45 | 2026-03-26 07:58:00 | 附录2.5阶段1实施完成：chat_router.py创建完成，调用PreprocessingPipeline实现意图分发 |
+| v2.46 | 2026-03-26 08:10:00 | 小健检查修复：删除未使用uuid导入，区分chat/其他意图提示，文档补充chat_stream_query已实现说明 |
+| v2.47 | 2026-03-26 08:15:00 | 新增附录：TODO待处理清单，汇总2个TODO项 |
 
 ---
 
@@ -1320,6 +1322,9 @@ chat_router.py
 - network 意图 → NetworkReactAgent（阶段2/3）
 - desktop 意图 → DesktopReactAgent（阶段2/3）
 
+> **TODO**：
+> - chat_stream_query 已实现（`backend/app/chat_stream/chat_stream_query.py`），需传递 request、ai_service、running_tasks 等参数才能调用，第一阶段先返回提示信息，后续阶段实现真正调用
+
 ---
 
 ### 附录2.6 意图特定层 - file_react.py
@@ -1600,6 +1605,17 @@ async for event in agent.run_stream(
 | 6 | `app/services/agent/base_react.py` | 已完成 | 第四层 | ✅ 已完成 |
 | 7 | `app/services/agent/agent.py` | 废弃 | - | 待废弃 |
 | 8 | `app/api/v1/chat2.py` | 改造 | - | 待改造（调用react_sse_wrapper） |
+
+---
+
+## 附录：TODO 待处理清单
+
+> **📝 说明**：记录待完成的改进项，便于追踪和清理。
+
+| 序号 | TODO | 位置 | 概要 |
+|------|------|------|------|
+| 1 | chat_stream_query 调用 | 附录2.5.5（第1324行） | chat_stream_query 已实现，需传递 request/ai_service/running_tasks 等参数才能调用，第一阶段先返回提示信息 |
+| 2 | file_react.py 清理 | 附录2.6（第1417行） | intent_registry/preprocessor 对象仍保留，run_stream 仍有意图识别调用，需删除冗余代码 |
 
 ---
 
