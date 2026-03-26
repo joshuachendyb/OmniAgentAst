@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 11:15:00
-**版本**: v2.57
+**更新时间**: 2026-03-26 11:30:00
+**版本**: v2.58
 **编写人**: 小沈
 
 ---
@@ -88,6 +88,7 @@
 | v2.55 | 2026-03-26 10:40:00 | 附录2.8阶段1补充：chat_router统一准备环境参数方案分析 |
 | v2.56 | 2026-03-26 11:05:00 | 修正环境参数分析：让FileReactAgent增加参数与chat_stream_query保持一致 |
 | v2.57 | 2026-03-26 11:15:00 | 新增start函数独立设计分析：start数据传递后续、创建独立start_step()函数 |
+| v2.58 | 2026-03-26 11:30:00 | 整理阶段1补充参数分析格式+start函数独立设计格式 |
 
 ---
 
@@ -1637,6 +1638,42 @@ async def chat_stream_v2(request: Request):
 
 **阶段1补充：chat_router 统一准备环境参数方案**（2026-03-26 10:40:00 小沈）
 
+> 💡 **核心问题**：如何在 router 里面正确正常的调用 chat_stream_query 和 FileReactAgent？
+
+#### 需要解决的问题
+
+1. 需要准备：给调用的两个函数准备足够的参数
+2. 独立 start 阶段函数分别被 chat_stream_query 和 FileReactAgent 调用，为后续的步骤准备数据和信息
+3. 由此我们需要确定 chat_router 为 chat_stream_query 和 FileReactAgent 各自准备哪些参数呢？合计起来一共是多少参数呢？
+
+#### 1. FileReactAgent 实际需要的参数
+
+| 参数 | 说明 | 状态 |
+|------|------|------|
+| llm_client | 外部传入 | ✅ |
+| session_id | 外部传入 | ✅ |
+
+#### 2. chat_stream_query 实际使用的参数
+
+| 参数 | 使用位置 | 必须外部传入？ |
+|------|---------|-------------|
+| request | 第84-86行：获取messages构建history | ✅ 关键：获取历史消息 |
+| ai_service | 第128行：调用chat_stream | ✅ 必须 |
+| task_id | 第72、152行：检查中断 | ✅ 必须 |
+| running_tasks | 第72、153、164行：检查中断/暂停 | ✅ 必须 |
+| running_tasks_lock | 第71、152、164行：锁 | ✅ 必须 |
+| next_step | 多处：生成step编号 | ✅ 必须 |
+| display_name | 第422行：发送给前端 | ✅ 必须 |
+| last_message | 第128行：发送给LLM | ✅ 必须 |
+| llm_call_count | 第122行：计数+1 | ⚠️ 内部可初始化 |
+| current_execution_steps | 第189、402行：append | ⚠️ 内部可初始化 |
+| current_content | 第194行：累积 | ⚠️ 内部可初始化 |
+| last_is_reasoning | 第197、210行：状态 | ⚠️ 内部可初始化 |
+| session_id | 通过闭包 | ⚠️ 可闭包 |
+| save_execution_steps_to_db | 第206、412行 | ⚠️ 可内部创建 |
+| add_step_and_save | 第315、368行 | ⚠️ 可内部创建 |
+
+
 > 💡 **发现**：chat_stream_query 需要15个参数，其中大部分是"环境参数"，可以由 chat_router 统一准备。
 
 #### 问题分析
@@ -1677,59 +1714,7 @@ save_execution_steps_to_db, add_step_and_save
    - llm_client
    - wrapped_save_steps / wrapped_add_step
 
-#### 附录：start 函数独立设计（2026-03-26 11:15:00 小沈）
 
-> 💡 **问题发现**：start 步骤的数据会传递到后续流程，不能简单忽略
-
-**当前 start 步骤数据（chat2.py 第365行）**：
-```python
-start_data = {
-    'type': 'start',
-    'step': next_step(),
-    'timestamp': create_timestamp(),
-    'display_name': display_name,      # → final 步骤用到
-    'provider': ai_service.provider,   # → final/error 步骤用到
-    'model': ai_service.model,        # → final/error 步骤用到
-    'task_id': task_id,              # → 中断检查用到
-    'user_message': user_message_preview,
-    'security_check': {...}           # → 可能影响后续流程
-}
-```
-
-**start 数据的后续使用**：
-| 数据 | 用途 |
-|------|------|
-| display_name | final 步骤发送 |
-| provider/model | final/error 步骤发送 |
-| task_id | 中断检查 |
-| security_check | 安全检查结果 |
-
-**start 函数独立的方案**：
-
-1. **创建独立 start_step() 函数**
-   - 位置：`app/chat_stream/start_step.py`
-   - 职责：发送 start 步骤，返回 start 数据
-
-2. **start 返回的数据传给 Agent**
-   - Agent 内部使用 start 返回的数据
-   - 避免重复创建 display_name/provider/model
-
-3. **Agent 调用 start**：
-```
-FileReactAgent:
-  → start_step() → 获取 start_data
-  → 使用 start_data 继续 thought → action_tool → final
-
-chat_stream_query:
-  → start_step() → 获取 start_data  
-  → 使用 start_data 继续 chunk → final
-```
-
-**独立 start 函数的价值**：
-- 统一 start 步骤发送逻辑
-- 避免代码重复
-- start 数据在 Agent 内部使用，参数传递更清晰
-- 两个 Agent 调用方式一致
 
 2. **Agent 统一参数结构**：
 
@@ -1782,6 +1767,7 @@ chat_stream_query:
 - ⚠️ chat_router 尚未集成 react_sse_wrapper（直接调用 file_react.ver1_run_stream）
 - **结论**：阶段2框架已创建，需要阶段3完成集成
 
+
 阶段3：最终架构（chat_router → react_sse_wrapper → file_react）
 
 **ver1_run_stream 分析（约94行）**：
@@ -1800,6 +1786,61 @@ chat_stream_query:
        └── 验证：完整调用链正常工作
 ```
 
+#### 阶段4：start 函数独立设计（2026-03-26 11:15:00 小沈）
+
+> 💡 **问题发现**：start 步骤的数据会传递到后续流程，不能简单忽略
+
+**当前 start 步骤数据（chat2.py 第365行）**：
+```python
+start_data = {
+    'type': 'start',
+    'step': next_step(),
+    'timestamp': create_timestamp(),
+    'display_name': display_name,      # → final 步骤用到
+    'provider': ai_service.provider,   # → final/error 步骤用到
+    'model': ai_service.model,        # → final/error 步骤用到
+    'task_id': task_id,              # → 中断检查用到
+    'user_message': user_message_preview,
+    'security_check': {...}           # → 可能影响后续流程
+}
+```
+
+**start 数据的后续使用**：
+
+| 数据 | 用途 |
+|------|------|
+| display_name | final 步骤发送 |
+| provider/model | final/error 步骤发送 |
+| task_id | 中断检查 |
+| security_check | 安全检查结果 |
+
+**start 函数独立的方案**：
+
+1. **创建独立 start_step() 函数**
+   - 位置：`app/chat_stream/start_step.py`
+   - 职责：发送 start 步骤，返回 start 数据
+
+2. **start 返回的数据传给 Agent**
+   - Agent 内部使用 start 返回的数据
+   - 避免重复创建 display_name/provider/model
+
+3. **Agent 调用 start**：
+
+```
+FileReactAgent:
+  → start_step() → 获取 start_data
+  → 使用 start_data 继续 thought → action_tool → final
+
+chat_stream_query:
+  → start_step() → 获取 start_data  
+  → 使用 start_data 继续 chunk → final
+```
+
+**独立 start 函数的价值**：
+- 统一 start 步骤发送逻辑
+- 避免代码重复
+- start 数据在 Agent 内部使用，参数传递更清晰
+- 两个 Agent 调用方式一致
 **分阶段优势**：
 - 每阶段可独立验证，降低风险
 - 不影响现有功能
