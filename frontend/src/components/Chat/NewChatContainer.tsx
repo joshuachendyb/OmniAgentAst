@@ -40,7 +40,7 @@ import {
   LockOutlined,
 } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
-import { sessionApi, API_BASE_URL } from "../../services/api";
+import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
 import { securityApi } from "../../services/api";
 import MessageItem from "./MessageItem";
 import DangerConfirmModal from "../DangerConfirmModal";
@@ -1636,15 +1636,8 @@ const NewChatContainer: React.FC = () => {
         // ✅ 先断开连接，停止自动重连！传递true表示手动中断
         disconnect(true);
         
-        // 【小查修复2026-03-14】传递session_id参数，阻止5分钟内重连（按API文档要求）
-        const cancelUrl = sessionId 
-          ? `${API_BASE_URL}/chat/stream/cancel/${taskIdToCancel}?session_id=${sessionId}`
-          : `${API_BASE_URL}/chat/stream/cancel/${taskIdToCancel}`;
-        
-        await fetch(cancelUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
+        // 使用统一的 taskControlApi
+        await taskControlApi.cancel(taskIdToCancel, sessionId);
         message.success("任务中断请求已发送");
       } catch (error) {
         message.error("发送中断请求失败: " + (error as Error).message);
@@ -1662,31 +1655,14 @@ const NewChatContainer: React.FC = () => {
     }
 
     try {
-      // 【小查修复2026-03-14】按API文档要求传递session_id参数
-      const sessionParam = sessionId ? `?session_id=${sessionId}` : '';
-      
       if (!isPaused) {
         // 暂停：发送暂停请求
-        const response = await fetch(
-          `${API_BASE_URL}/chat/stream/pause/${serverTaskId}${sessionParam}`,
-          { method: "POST" }
-        );
-        if (response.ok) {
-          console.log("⏸️ 已发送暂停请求");
-        } else {
-          message.error("暂停请求失败");
-        }
+        await taskControlApi.pause(serverTaskId, sessionId);
+        console.log("⏸️ 已发送暂停请求");
       } else {
         // 继续：发送恢复请求
-        const response = await fetch(
-          `${API_BASE_URL}/chat/stream/resume/${serverTaskId}${sessionParam}`,
-          { method: "POST" }
-        );
-        if (response.ok) {
-          console.log("▶️ 已发送恢复请求");
-        } else {
-          message.error("恢复请求失败");
-        }
+        await taskControlApi.resume(serverTaskId, sessionId);
+        console.log("▶️ 已发送恢复请求");
       }
     } catch (error) {
       console.error("❌ 暂停/继续请求失败:", error);
