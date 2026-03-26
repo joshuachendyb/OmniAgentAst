@@ -115,13 +115,6 @@ export interface ChatRequest {
   temperature?: number;
 }
 
-export interface ChatResponse {
-  success: boolean;
-  content: string;
-  model: string;
-  error?: string;
-}
-
 export interface ValidateResponse {
   success: boolean;
   provider: string;

@@ -1640,7 +1640,7 @@ const NewChatContainer: React.FC = () => {
         await taskControlApi.cancel(taskIdToCancel, sessionId);
         message.success("任务中断请求已发送");
       } catch (error) {
-        message.error("发送中断请求失败: " + (error as Error).message);
+        message.error("发送中断请求失败: " + (error instanceof Error ? error.message : String(error)));
       }
     }
   };
@@ -1666,7 +1666,7 @@ const NewChatContainer: React.FC = () => {
       }
     } catch (error) {
       console.error("❌ 暂停/继续请求失败:", error);
-      message.error("暂停/继续请求失败: " + (error as Error).message);
+      message.error("暂停/继续请求失败: " + (error instanceof Error ? error.message : String(error)));
     }
   };
 
