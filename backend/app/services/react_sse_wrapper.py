@@ -37,7 +37,7 @@ from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data
 from app.chat_stream.error_handler import create_error_response, get_user_friendly_error, create_error_step
-from app.chat_stream.chat_helpers import create_final_response, create_timestamp
+from app.chat_stream.chat_helpers import create_final_response, create_timestamp, create_step_counter
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
 
 
@@ -141,13 +141,8 @@ async def generate_sse_stream(
     
     logger.info(f"[LLM Total Counter] ====== New conversation started, counter reset to 0 ======")
     
-    # 步骤计数器
-    step_counter = 0
-    
-    def next_step():
-        nonlocal step_counter
-        step_counter += 1
-        return step_counter
+    # 步骤计数器（使用统一函数）
+    next_step = create_step_counter()
     
     # 初始化 execution_steps 列表
     current_execution_steps: List[Dict] = []

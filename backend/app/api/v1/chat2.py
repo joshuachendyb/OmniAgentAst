@@ -45,7 +45,7 @@ from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError  # 【�
 from app.chat_stream.chat_stream_query import chat_stream_query  # 【重构优化】复用 chat_stream_query 模块
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data  # 【重构优化】复用 incident_handler 模块
 from app.chat_stream.error_handler import create_error_response, get_user_friendly_error, create_error_step  # 【重构优化】复用 error_handler 模块
-from app.chat_stream.chat_helpers import create_final_response, create_timestamp  # 【重构优化】复用 chat_helpers 模块
+from app.chat_stream.chat_helpers import create_final_response, create_timestamp, create_step_counter  # 【重构优化】复用 chat_helpers 模块
 from app.api.v1.intent_classifier import detect_file_operation_intent  # 【小沈修复 2026-03-23】使用子串匹配版本，支持"给我查看一下 D盘有什么文件"
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse  # 【小沈重构 2026-03-23】统一消息保存模块
 from pathlib import Path
@@ -335,13 +335,8 @@ async def chat_stream(request: ChatRequest):
         
         logger.info(f"[LLM Total Counter] ====== New conversation started, counter reset to 0 ======")
         
-        # 步骤计数器（必须在使用前定义）
-        step_counter = 0
-        
-        def next_step():
-            nonlocal step_counter
-            step_counter += 1
-            return step_counter
+        # 步骤计数器（使用统一函数）
+        next_step = create_step_counter()
         
         # 【小沈修复 2026-03-23】先初始化 execution_steps 列表，后续 start 会添加到这里
         current_execution_steps: List[Dict] = []  # 执行步骤列表
