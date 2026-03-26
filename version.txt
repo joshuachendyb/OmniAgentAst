@@ -1,12 +1,68 @@
-v0.8.12
+v0.8.13
 
-更新时间：2026-03-26 16:48:36
+更新时间：2026-03-26 17:05:00
 
 更新内容：
 
-## 1. 设计文档调用链修正 + FileReactAgent冗余代码清理 - 小沈-2026-03-26
+## 1. 前端V2端点统一 + 后端chat_non_stream清理 - 小沈-2026-03-26
 
 ### 1.1 背景
+前端调用端点分散在3个文件共10处，后端chat_non_stream.py已废弃但main.py仍在注册。
+
+### 1.2 实施内容
+
+#### 1.2.1 前端端点统一（USE_NEW_ROUTER=1）
+- sse.ts: 流式聊天使用 `/chat/stream/v2` (V2) ✅
+- api.ts: 删除废弃的sendMessage非流式聊天
+- NewChatContainer.tsx: 统一使用api.ts的cancel/pause/resume，删除重复代码
+- api.integration.test.ts: 修复测试，废弃sendMessage测试
+
+#### 1.2.2 后端清理
+- main.py: 删除chat_non_stream.router注册（第108行）
+- main.py: 删除chat_non_stream导入（第10行）
+- 添加废弃说明注释
+
+#### 1.2.3 设计文档更新
+- 文档 `omni-对话预处理及Agent的流程设计文档-小沈-2026-03-25.md` 更新到v2.81
+- 新增TODO 6: 后端控制API移植到V2清单（7个待移植）
+- 新增不需要移植的API说明（7个独立系统API）
+
+### 1.3 本次Commit汇总
+
+| Commit | 作者 | 说明 |
+|--------|------|------|
+| 32f308ae | 小沈 | feat: 前端V2端点统一+后端chat_non_stream清理 |
+| d824ea3a | 小强 | fix: 修复error类型断言+清理ChatResponse死代码 |
+| a0805b0d | 小强 | test: 修复api集成测试-废弃sendMessage测试 |
+| bc32e51d | 小强 | refactor: 统一任务控制API到api.ts-删除NewChatContainer重复代码 |
+| b64870ae | 小强 | docs: 废弃chatApi.sendMessage-移至backup目录 |
+| 7effc0c5 | 小沈 | fix: 修复request为None时导致的500错误 |
+| e5f53652 | 小沈 | feat: 前端添加USE_NEW_ROUTER配置开关 |
+| 179ca6ca | 小沈 | feat: 前端调用新端点/chat/stream/v2 |
+
+### 1.4 待移植API清单
+
+| 序号 | 功能 | 当前端点 | 当前位置 |
+|------|------|---------|---------|
+| 1 | 取消任务 | `/chat/stream/cancel/{task_id}` | chat2.py:599 |
+| 2 | 暂停任务 | `/chat/stream/pause/{task_id}` | chat2.py:642 |
+| 3 | 恢复任务 | `/chat/stream/resume/{task_id}` | chat2.py:664 |
+| 4 | 用户确认 | `/chat/stream/confirm` | chat2.py |
+| 5 | 分页请求 | `/chat/stream/next-page` | file_operations.py:633 |
+| 6 | 验证服务 | `/chat/validate` | init_model_select.py:127 |
+| 7 | 切换提供商 | `/chat/switch/{provider}` | init_model_select.py:309 |
+
+### 1.4 版本变更
+- 前端：USE_NEW_ROUTER=1，使用V2端点
+- 后端：chat_router.py 处理聊天，chat2.py等保留控制API（待移植）
+
+---
+
+## 2. v0.8.12版本内容（参考）
+
+### 2.1 设计文档调用链修正 - 小沈
+
+### 2.2 FileReactAgent冗余代码清理 - 小沈
 
 用户要求标注1727行目标调用链中各函数所在文件，并清理FileReactAgent中冗余的intent_registry/preprocessor代码。
 
