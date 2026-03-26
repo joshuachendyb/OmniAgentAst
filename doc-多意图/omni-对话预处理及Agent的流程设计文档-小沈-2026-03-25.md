@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 12:15:00
-**版本**: v2.64
+**更新时间**: 2026-03-26 12:20:00
+**版本**: v2.65
 **编写人**: 小沈
 
 ---
@@ -95,6 +95,7 @@
 | v2.62 | 2026-03-26 12:00:00 | 整合阶段4.5架构图到第2.1章节，更新chat_router.py为5步完整流程 |
 | v2.63 | 2026-03-26 12:10:00 | 修正职责分工错误：chat2改为具体Agent(FileReactAgent/NetworkReactAgent/chat_stream_query)，删除chat2废弃计划 |
 | v2.64 | 2026-03-26 12:15:00 | 全文检查修正：修正路由层架构图(start在chat_router不在react_sse_wrapper)，修正6.1职责分工表 |
+| v2.65 | 2026-03-26 12:20:00 | 修正架构：chat_router.py直接作为API端点，删除chat_router_api.py两层结构 |
 
 ---
 
@@ -190,19 +191,13 @@ chat2.py
     │
     ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  chat_router_api.py (API端点)                                    │
-│  - 接收请求                                                     │
-│  - 调用 chat_router.route()                                      │
-└─────────────────────────────────────────────────────────────────┘
-                              ↓
-┌─────────────────────────────────────────────────────────────────┐
-│  chat_router.py (Router服务层) - 5步完整流程                      │
+│  chat_router.py (API端点 + 5步完整流程)                          │
 │                                                                 │
 │  1. 预处理 (PreprocessingPipeline)                              │
 │  2. 意图检测 (IntentRegistry)                                  │
 │  3. 安全检测 (security_check)                                   │
 │  4. start步骤 (start_step)                                     │
-│  5. 分发到Agent (根据intent_type)                               │
+│  5. 分发到Agent (根据intent_type)                              │
 │                                                                 │
 │  输出：intent, start_data, agent_events                         │
 └─────────────────────────────────────────────────────────────────┘
@@ -255,16 +250,16 @@ chat2.py
 | **错误处理** | error_handler.py | 统一的错误响应 |
 | **中断处理** | incident_handler.py | 统一的中断/暂停响应 |
 
-**chat_router.py 与 具体Agent的职责分工**：
+**chat_router.py (API端点) 与 具体Agent的职责分工**：
 
 | 文件 | 职责 | 不做 |
 |------|------|------|
-| **chat_router.py** | 5步：预处理→意图检测→安全检测→start→分发Agent | 具体执行 |
+| **chat_router.py** | API端点 + 5步流程：预处理→意图检测→安全检测→start→分发Agent | 具体执行 |
 | **FileReactAgent** | ReAct循环：thought→action→observation→final | 路由、预处理 |
 | **NetworkReactAgent** | ReAct循环：thought→action→observation→final | 路由、预处理 |
 | **chat_stream_query** | 简单对话流：chunk→final | 路由、预处理 |
 
-> **📝 说明**：chat2.py 逐步废弃，其功能整合到 chat_router.py
+> **📝 说明**：chat2.py 逐步废弃，其功能整合到 chat_router.py (API端点)
 
 ### 2.2 预处理模块职责
 
@@ -868,9 +863,7 @@ finally: del running_tasks[task_id]
 ```
 用户请求
     ↓
-chat_router_api.py (API端点)
-    ↓
-chat_router.py (Router服务层) - 5步完整流程
+chat_router.py (API端点) - 5步完整流程
     1. 预处理 (PreprocessingPipeline)
     2. 意图检测 (IntentRegistry)
     3. 安全检测 (security_check)
@@ -880,10 +873,10 @@ chat_router.py (Router服务层) - 5步完整流程
 Agent (FileReactAgent / chat_stream_query)
 ```
 
-> **📝 路由层说明**：Router服务层(chatrobotsy.py)包含完整5步流程，不是chat2内部。
+> **📝 路由层说明**：chat_router.py作为API端点，包含完整5步流程，直接处理请求。
 
 **改造方案**（根据2.1架构 - 5步流程）：
-- [ ] 创建 chat_router.py 作为Router服务层
+- [ ] 修改 chat_router.py 作为API端点
 - [ ] 步骤1: 预处理 (PreprocessingPipeline)
 - [ ] 步骤2: 意图检测 (IntentRegistry)
 - [ ] 步骤3: 安全检测 (security_check)
@@ -937,9 +930,9 @@ Agent (FileReactAgent / chat_stream_query)
 
 **目标**：创建独立的 chat_router.py 作为路由入口
 
-**chat_router.py 职责**（5步完整流程）：
+**chat_router.py (API端点) 职责**（5步完整流程）：
 ```
-chat_router.py（Router服务层）
+chat_router.py（API端点）
     1. 预处理 (PreprocessingPipeline)
     2. 意图检测 (IntentRegistry)
     3. 安全检测 (security_check)
@@ -949,7 +942,7 @@ chat_router.py（Router服务层）
 
 **架构**（参考整合架构设计2.1节）：
 ```
-chat_router.py（新路由入口）
+chat_router.py（API端点）
     ├── intent=file → FileReactAgent (file_react.py) - ReAct流式loop
     ├── intent=network → NetworkReactAgent (network_react.py) - ReAct流式loop
     └── intent=query → chat_stream_query.py (简单对话流式)
@@ -957,9 +950,9 @@ chat_router.py（新路由入口）
 
 **过渡策略**：旧代码逐步取代，不能完全删除
 - 当前：api/chat2.py → agent.py → base.py
-- 目标：chat_router.py → FileReactAgent (file_react.py) → base_react.py
-- 方式：先创建 chat_router.py 作为新入口，验证通过后逐步替换旧调用链
-- chat2.py 和 agent.py 暂时保留，待新架构稳定后再废弃
+- 目标：chat_router.py (API端点) → FileReactAgent (file_react.py) → base_react.py
+- 方式：直接修改 chat_router.py 作为新入口，验证通过后逐步替换旧调用链
+- chat2.py 暂时保留，待新架构稳定后再废弃
 
 **关键说明 - 为什么不需要第三层**：
 - FileReactAgent.ver1_run_stream() 方法已经封装了完整的 SSE 处理逻辑
@@ -1606,29 +1599,25 @@ async for event in agent.run_stream(
        └── 直接调用 file_react.ver1_run_stream()（现有方法）
        验证：路由 + 文件操作正常工作
 
-**阶段1完成后：启用 chat_router**（2026-03-26 10:10:55 小沈补充）
+**阶段1完成后：启用 chat_router**（2026-03-26 10:10:55 小沈补充，已修正）
 
-> ⚠️ **重要说明**：chat_router.py 是服务层类，不是 API 端点。阶段1完成后需要创建新的 API 端点来调用 chat_router。
+> **修正说明**：chat_router.py 直接作为 API 端点，不需要单独的 chat_router_api.py
 
 **启用步骤**：
-1. 创建新的 API 文件：`app/api/v1/chat_router_api.py`
-2. 定义 FastAPI router，在端点中调用 `chat_router.route()`
-3. 在 `app/api/v1/__init__.py` 或 `app/main.py` 中注册新 router
-4. 验证新端点正常工作后，逐步迁移流量
+1. 修改 `app/services/chat_router.py` 添加 FastAPI 路由装饰器
+2. 在 `app/main.py` 中注册 chat_router
+3. 验证新端点正常工作后，逐步迁移流量
 
-**chat_router_api.py 代码示例**：
+**chat_router.py 作为API端点代码示例**：
 ```python
-# app/api/v1/chat_router_api.py
+# app/services/chat_router.py
 from fastapi import APIRouter, Request
-from app.services.chat_router import create_chat_router
 
 router = APIRouter()
 
 @router.post("/chat/stream/v2")
 async def chat_stream_v2(request: Request):
     """新版本流式API，使用 chat_router 进行意图路由"""
-    router = create_chat_router()
-    
     # 从 request 中获取参数
     body = await request.json()
     user_input = body.get("messages", [{}])[-1].get("content", "")
@@ -1636,12 +1625,14 @@ async def chat_stream_v2(request: Request):
     model = body.get("model")
     provider = body.get("provider")
     
+    chat_router = ChatRouter()
+    
     async def llm_client(message, history=None):
         # 实现 LLM 调用
         ...
     
     async def generate():
-        async for sse_data in router.route(
+        async for sse_data in chat_router.route(
             user_input=user_input,
             model=model,
             provider=provider,
@@ -1977,11 +1968,11 @@ class ChatRouter:
 ┌─────────────────────────────────────────────────────────────────┐
 │  chat_router_api.py (API端点)                                    │
 │  - 接收请求                                                     │
-│  - 调用 chat_router.route()                                     │
+│  - 直接调用 chat_router.route()                               │
 └─────────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
-│  chat_router.py (Router服务层) - 5步完整流程                      │
+│  chat_router.py (API端点) - 5步完整流程                          │
 │  1. 预处理 (PreprocessingPipeline)                              │
 │  2. 意图检测 (IntentRegistry)                                  │
 │  3. 安全检测 (security_check)                                  │
