@@ -2255,13 +2255,40 @@ async def route(self, ...):
 
 > **📝 说明**：记录待完成的改进项，便于追踪和清理。
 
+### 历史记录（已完成或已变更）
+
 | 序号 | TODO | 位置 | 概要 | 状态 |
 |------|------|------|------|------|
 | 1 | chat_stream_query 调用 | 附录2.5.5（第1324行） | chat_stream_query 已实现，需传递 request/ai_service/running_tasks 等参数才能调用，第一阶段先返回提示信息 | ⏸️ 等待前端调用 |
-| 2 | file_react.py 清理 | 附录2.6（第1417行） | intent_registry/preprocessor 对象仍保留，run_stream 仍有意图识别调用，需删除冗余代码 | ✅ 已完成 |
-| 3 | 前端调用新端点 | sse.ts:440 | 修改前端 URL 从 `/chat/stream` 改为 `/chat/stream/v2` | ⏸️ 待实施 |
-| 4 | cancel/pause/resume 集成 | chat_router.py | 任务控制功能仍用 chat2.py 旧端点，后续可集成到 react_sse_wrapper | ⏸️ 暂不优先 |
-| 5 | react_sse_wrapper 集成 | chat_router.py:404 | 当前直接调用 file_react.ver1_run_stream，未经过 react_sse_wrapper 包装 | ⏸️ 可选优化 |
+| ~~2~~ | ~~file_react.py 清理~~ | ~~附录2.6（第1417行）~~ | ~~intent_registry/preprocessor 对象仍保留，run_stream 仍有意图识别调用~~ | ~~✅ 已完成~~ |
+
+> **2026-03-26 更新**：TODO 2 已完成，已删除 file_react.py 中冗余的 intent_registry/preprocessor 代码。
+
+### 当前待办
+
+| 序号 | TODO | 概要 | 优先级 |
+|------|------|------|--------|
+| 3 | 前端调用新端点 | 修改前端 URL 从 `/chat/stream` 改为 `/chat/stream/v2`（见下方详细说明） | 高 |
+| 4 | cancel/pause/resume 集成 | 任务控制功能仍用 chat2.py 旧端点，后续可集成到 react_sse_wrapper | 低 |
+| 5 | react_sse_wrapper 集成 | 当前直接调用 file_react.ver1_run_stream，未经过 react_sse_wrapper 包装，可选优化 | 低 |
+
+#### TODO 3 详细说明
+
+**前端修改位置**：`frontend/src/utils/sse.ts` 第440行
+
+```typescript
+// 修改前
+const url = `${config.baseURL}/chat/stream`;
+
+// 修改后（选择以下之一）
+// 方式A: 直接使用新端点
+const url = `${config.baseURL}/chat/stream/v2`;
+
+// 方式B: 保留旧端点（等后续任务控制也迁移后再改）
+// const url = `${config.baseURL}/chat/stream`;
+```
+
+**API参数对比**：新旧 API 参数完全一致，前端只需修改 URL，无需修改请求体。
 
 ---
 
