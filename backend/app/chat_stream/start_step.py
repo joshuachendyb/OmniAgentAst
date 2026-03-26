@@ -20,16 +20,18 @@ async def send_start_step(
     user_message: str,
     security_check_result: Dict[str, Any],
     current_execution_steps: List[Dict[str, Any]],
-    yield_func: Callable[[Dict[str, Any]], None]
+    session_id: str,
+    yield_func: Callable
 ) -> Dict[str, Any]:
     """
     发送 start 步骤的独立函数（统一方法）
     
     职责：
     1. 构建 start_data
-    2. 通过 SSE 发送 start 步骤
+    2. 通过 SSE 发送 start 步骤（格式：data: {json}\n\n）
     3. 保存到 current_execution_steps
-    4. 返回 start_data（供后续 final/error 步骤使用）
+    4. 保存到数据库
+    5. 返回 start_data（供后续 final/error 步骤使用）
     
     参数：
     - ai_service: AI 服务实例（用于获取 provider/model）
@@ -38,7 +40,8 @@ async def send_start_step(
     - user_message: 用户消息（用于预览，取前40字）
     - security_check_result: 安全检查结果
     - current_execution_steps: 执行步骤列表
-    - yield_func: SSE 发送回调函数
+    - session_id: 会话ID（用于保存到数据库）
+    - yield_func: SSE 发送回调函数（只需要传 start_data dict）
     
     返回：
     - start_data 字典（包含 display_name/provider/model 等）
@@ -63,11 +66,18 @@ async def send_start_step(
         }
     }
     
-    # 2. 发送 SSE（通过回调函数）
-    yield_func(start_data)
+    # 2. 发送 SSE（通过回调函数，格式：data: {json}\n\n）
+    # 【修复 2026-03-26 小健检查】需要 json.dumps 和 \n\n 后缀，与 chat2.py 保持一致
+    import json
+    yield_func(f"data: {json.dumps(start_data)}\n\n")
     
     # 3. 保存到 current_execution_steps
     current_execution_steps.append(start_data)
     
-    # 4. 返回 start_data
+    # 4. 保存到数据库
+    # 【修复 2026-03-26 小健检查】缺少保存数据库逻辑，与 chat2.py 保持一致
+    from app.chat_stream.message_saver import save_execution_steps_to_db
+    await save_execution_steps_to_db(session_id, current_execution_steps, "")
+    
+    # 5. 返回 start_data
     return start_data
