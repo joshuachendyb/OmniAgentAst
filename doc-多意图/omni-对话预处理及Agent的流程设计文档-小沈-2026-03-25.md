@@ -78,6 +78,8 @@
 | v2.45 | 2026-03-26 07:58:00 | 附录2.5阶段1实施完成：chat_router.py创建完成，调用PreprocessingPipeline实现意图分发 |
 | v2.46 | 2026-03-26 08:10:00 | 小健检查修复：删除未使用uuid导入，区分chat/其他意图提示，文档补充chat_stream_query已实现说明 |
 | v2.47 | 2026-03-26 08:15:00 | 新增附录：TODO待处理清单，汇总2个TODO项 |
+| v2.48 | 2026-03-26 08:20:00 | 附录2.7.4添加说明：任务为对照检查项，实际操作在2.7.5 |
+| v2.49 | 2026-03-26 08:22:00 | 修复：附录2.7层级错误（新第三层改为第二层），附录2.9文件清单更新chat_router状态 |
 
 ---
 
@@ -1440,7 +1442,7 @@ chat_router.py
 
 **React_sse_wrapper 结构**（第二层）：
 ```
-react_sse_wrapper (新第三层)
+react_sse_wrapper (第二层)
 ├── running_tasks 管理 ← 从 chat2.py 抽
 ├── DB 保存 save_execution_steps_to_db ← 从 chat2.py 抽
 ├── SSE 转换 ← 从 file_react.py.ver1_run_stream 抽
@@ -1484,6 +1486,8 @@ react_sse_wrapper (新第三层)
 | 事件转换 | 将 BaseAgent.run_stream() 的 event dict 转为 SSE 字符串 |
 
 #### 附录2.7.4 待实现任务
+
+> **📝 说明**：以下任务为对照检查项，实际操作过程详见 2.7.5 实施方法。
 
 | 序号 | 任务 | 状态 |
 |------|------|------|
@@ -1597,7 +1601,7 @@ async for event in agent.run_stream(
 
 | 序号 | 文件 | 操作 | 对应层 | 状态 |
 |------|------|------|--------|------|
-| 1 | `app/services/chat_router.py` | 创建 | 第一层 | 待实现 |
+| 1 | `app/services/chat_router.py` | 创建 | 第一层 | ✅ 已完成 |
 | 2 | `app/services/react_sse_wrapper.py` | 创建 | 第二层 | 待实现 |
 | 3 | `app/services/agent/file_react.py` | 抽取 | 第三层 | ✅ 已完成 |
 | 4 | `app/services/agent/network_react.py` | 创建 | 第三层 | 待实现 |
