@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 15:47:58
-**版本**: v2.80
+**更新时间**: 2026-03-26 17:00:00
+**版本**: v2.81
 **编写人**: 小沈
 
 ---
@@ -2271,6 +2271,43 @@ async def route(self, ...):
 | 3 | 前端调用新端点 | 修改前端 URL 从 `/chat/stream` 改为 `/chat/stream/v2`（见下方详细说明） | 高 |
 | 4 | cancel/pause/resume 集成 | 任务控制功能仍用 chat2.py 旧端点，后续可集成到 react_sse_wrapper | 低 |
 | 5 | react_sse_wrapper 集成 | 当前直接调用 file_react.ver1_run_stream，未经过 react_sse_wrapper 包装，可选优化 | 低 |
+
+#### TODO 6 后端控制API移植到V2（新）
+
+**问题**：chat2.py 中的控制API尚未移植到 chat_router.py（V2）
+
+**待移植清单**（需要移植到V2）：
+
+| 序号 | 功能 | 当前端点 | 当前位置 | 状态 |
+|------|------|---------|---------|------|
+| 1 | 取消任务 | `/chat/stream/cancel/{task_id}` | chat2.py:599 | 待移植 |
+| 2 | 暂停任务 | `/chat/stream/pause/{task_id}` | chat2.py:642 | 待移植 |
+| 3 | 恢复任务 | `/chat/stream/resume/{task_id}` | chat2.py:664 | 待移植 |
+| 4 | 用户确认 | `/chat/stream/confirm` | chat2.py (待确认) | 待移植 |
+| 5 | 分页请求 | `/chat/stream/next-page` | file_operations.py:633 | 待移植 |
+| 6 | 验证服务 | `/chat/validate` | init_model_select.py:127 | 待移植 |
+| 7 | 切换提供商 | `/chat/switch/{provider}` | init_model_select.py:309 | 待移植 |
+
+**说明**：
+- chat_router.py（V2）目前只有 `/chat/stream/v2` 聊天端点
+- 控制类API（cancel/pause/resume等）与端点无关，但需要统一迁移到 V2
+- 前端已统一使用 `/chat/stream/v2` 进行聊天，后端控制API需要同步迁移
+
+#### 不需要移植的API（与V2端点无关）
+
+以下API与聊天端点无关，保持现有位置，不需要移植到chat_router.py：
+
+| 序号 | 功能 | 当前端点 | 当前位置 | 说明 |
+|------|------|---------|---------|------|
+| 1 | 配置验证 | `/config/validate` | config.py:524 | 配置管理API，职责独立 |
+| 2 | 完整配置验证 | `/config/validate-full` | config.py:1493 | 配置管理API，职责独立 |
+| 3 | 健康检查 | `/health` | health.py | 系统监控API |
+| 4 | 指标监控 | `/metrics` | metrics.py | 系统监控API |
+| 5 | 会话管理 | `/sessions/*` | sessions.py | Session管理API |
+| 6 | 文件操作 | `/operations/*` | file_operations.py:633以下 | 文件操作管理API |
+| 7 | 安全检测 | `/security/*` | security.py | 安全检测API |
+
+**说明**：这些API是独立的系统功能，不依赖于聊天端点，可以保留在原位置。
 
 #### TODO 3 详细说明
 

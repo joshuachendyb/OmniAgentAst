@@ -7,7 +7,9 @@ from datetime import datetime
 import traceback
 from pathlib import Path
 
-from app.api.v1 import health, chat_non_stream, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
+# 【已废弃】chat_non_stream 已不使用，前端已改用 sse.ts 流式聊天 V2
+# from app.api.v1 import health, chat_non_stream, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
+from app.api.v1 import health, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
 # chat_stream 暂时禁用，使用 chat2 替代
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
@@ -105,7 +107,8 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
-app.include_router(chat_non_stream.router, prefix="/api/v1", tags=["chat"])
+# 【已废弃】chat_non_stream.py 已不使用，前端已改用 sse.ts 流式聊天 V2
+# app.include_router(chat_non_stream.router, prefix="/api/v1", tags=["chat"])
 # 【暂时禁用】使用 chat2 替代 chat_stream（待验证后决定是否删除）
 # app.include_router(chat_stream.router, prefix="/api/v1", tags=["chat"])
 app.include_router(chat2.router, prefix="/api/v1", tags=["chat"])
