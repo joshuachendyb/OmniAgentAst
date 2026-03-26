@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 11:50:00
-**版本**: v2.41
+**更新时间**: 2026-03-26 08:38:42
+**版本**: v2.50
 **编写人**: 小沈
 
 ---
@@ -80,6 +80,7 @@
 | v2.47 | 2026-03-26 08:15:00 | 新增附录：TODO待处理清单，汇总2个TODO项 |
 | v2.48 | 2026-03-26 08:20:00 | 附录2.7.4添加说明：任务为对照检查项，实际操作在2.7.5 |
 | v2.49 | 2026-03-26 08:22:00 | 修复：附录2.7层级错误（新第三层改为第二层），附录2.9文件清单更新chat_router状态 |
+| v2.50 | 2026-03-26 08:38:42 | 附录2.7阶段2实施完成：react_sse_wrapper.py创建完成，删除FastAPI代码，转换为服务层函数，语法验证通过 |
 
 ---
 
@@ -1491,12 +1492,12 @@ react_sse_wrapper (第二层)
 
 | 序号 | 任务 | 状态 |
 |------|------|------|
-| 1 | 抽取任务管理状态（running_tasks / interrupted_sessions） | 待实现 |
-| 2 | 封装 start 步骤发送（含 security_check） | 待实现 |
-| 3 | 封装数据库保存逻辑 | 待实现 |
-| 4 | 封装 SSE 转换逻辑（从 ver1_run_stream 抽取） | 待实现 |
-| 5 | 封装中断/暂停检查 | 待实现 |
-| 6 | 实现 cancel/pause/resume API 端点 | 待实现 |
+| 1 | 抽取任务管理状态（running_tasks / interrupted_sessions） | ✅ 已完成 |
+| 2 | 封装 start 步骤发送（含 security_check） | ✅ 已完成 |
+| 3 | 封装数据库保存逻辑 | ✅ 已完成 |
+| 4 | 封装 SSE 转换逻辑（从 ver1_run_stream 抽取） | ✅ 已完成 |
+| 5 | 封装中断/暂停检查 | ✅ 已完成 |
+| 6 | 实现 cancel/pause/resume API 端点 | ✅ 已完成（转为服务层函数） |
 | 7 | 改造 FileReactAgent：删除 ver1_run_stream，保留 run_stream | 待实现 |
 | 8 | 验证调用链完整 | 待验证 |
 
@@ -1569,12 +1570,12 @@ async for event in agent.run_stream(
 > **更新说明**: 新增分阶段实施方案，降低重构风险
 
 ```
-阶段1：chat_router → FileReactAgent.ver1_run_stream()（直接调用）
+阶段1：chat_router → FileReactAgent.ver1_run_stream()（直接调用）【参考附录2.5章节操作说明】
        ├── 实现 chat_router.py（第一层）
        └── 直接调用 file_react.ver1_run_stream()（现有方法）
        验证：路由 + 文件操作正常工作
 
-阶段2：创建 react_sse_wrapper.py（第二层）
+阶段2：创建 react_sse_wrapper.py（第二层）【参考附录2.7章节操作说明】
        ├── 从 chat2.py 复制为 react_sse_wrapper.py
        ├── 保留 SSE 转换逻辑（暂时不抽）
        └── 保留任务管理、DB保存等
