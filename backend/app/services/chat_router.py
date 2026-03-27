@@ -179,7 +179,7 @@ class ChatRouter:
             SSE 格式字符串
         """
         # ===== 步骤1: 预处理 =====
-        intent_result = self.preprocessing.process(
+        intent_result = await self.preprocessing.process(
             user_input=user_input,
             intent_labels=INTENT_LABELS,
             session_id=session_id
