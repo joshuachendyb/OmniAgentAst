@@ -4,11 +4,11 @@ Chat Router - 路由层
 
 【第一阶段实现 - 2026-03-26 小沈】
 【Stage 5 更新 - 2026-03-26】
-根据用户意图类型，将请求分发到对应的执行层。
+【阶段6更新 - 2026-03-27】简化分发逻辑，统一调用 react_sse_wrapper
 
 架构：
 - 第一层：chat_router.py - 路由入口 + 6步完整流程
-- 第二层：react_sse_wrapper.py - SSE 包装（待实现）
+- 第二层：react_sse_wrapper.py - SSE 包装（本文件调用）
 - 第三层：file_react.py / network_react.py / desktop_react.py - 意图特定 Agent
 - 第四层：base_react.py - 通用 ReAct 逻辑
 
@@ -18,7 +18,12 @@ Chat Router - 路由层
 步骤3: 初始化 (ai_service/next_step/running_tasks/current_execution_steps)
 步骤4: 安全检测 (security_check)
 步骤5: start步骤 (start_step)
-步骤6: 分发到Agent
+步骤6: 调用 react_sse_wrapper（由第二层内部根据intent_type分发）
+
+【阶段6修改】
+- 步骤6改为调用 react_sse_wrapper.generate_sse_stream()
+- 删除 _handle_file_operation 和 _handle_chat_operation 方法（已移至 react_sse_wrapper）
+- intent_type 和 confidence 参数传递给 react_sse_wrapper
 
 Author: 小沈 - 2026-03-26
 """
@@ -251,65 +256,26 @@ class ChatRouter:
             response = await ai_service.chat(message, history)
             return type('obj', (object,), {'content': response.content})()
         
-        # ===== 步骤6: 分发到Agent =====
-        if intent_type == "chat" or confidence < 0.3:
-            # 简单对话
-            async for event in self._handle_chat_operation(
-                request=request,
-                user_input=user_input,
-                ai_service=ai_service,
-                task_id=task_id,
-                session_id=session_id,
-                current_execution_steps=current_execution_steps,
-                running_tasks=running_tasks,
-                running_tasks_lock=running_tasks_lock,
-                next_step=next_step,
-                display_name=start_data['display_name']
-            ):
-                yield event
-        elif intent_type == "file" and confidence >= 0.3:
-            # 文件操作
-            async for event in self._handle_file_operation(
-                user_input=user_input,
-                model=model,
-                provider=provider,
-                llm_client=llm_client,
-                session_id=session_id,
-                context=context,
-                system_prompt=system_prompt,
-                max_steps=max_steps,
-                next_step=next_step
-            ):
-                yield event
-        elif intent_type == "network" and confidence >= 0.3:
-            # 网络操作 - 暂不支持
-            logger.warning(f"[ChatRouter] Network intent not implemented yet")
-            yield self._create_error_sse(
-                message="network功能正在开发中",
-                step=next_step()
-            )
-        elif intent_type == "desktop" and confidence >= 0.3:
-            # 桌面操作 - 暂不支持
-            logger.warning(f"[ChatRouter] Desktop intent not implemented yet")
-            yield self._create_error_sse(
-                message="desktop功能正在开发中",
-                step=next_step()
-            )
-        else:
-            # 默认回退到 chat
-            async for event in self._handle_chat_operation(
-                request=request,
-                user_input=user_input,
-                ai_service=ai_service,
-                task_id=task_id,
-                session_id=session_id,
-                current_execution_steps=current_execution_steps,
-                running_tasks=running_tasks,
-                running_tasks_lock=running_tasks_lock,
-                next_step=next_step,
-                display_name=start_data['display_name']
-            ):
-                yield event
+        # ===== 步骤6: 调用 react_sse_wrapper =====
+        # react_sse_wrapper 内部根据 intent_type 分发到不同 Agent
+        # 注意：start 步骤已由 chat_router 发送，react_sse_wrapper 不重复发送
+        from app.services.react_sse_wrapper import generate_sse_stream
+        
+        # 准备 messages 列表
+        messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+        
+        async for event in generate_sse_stream(
+            messages=messages,
+            intent_type=intent_type,
+            confidence=confidence,
+            provider=provider,
+            model=model,
+            task_id=task_id,
+            session_id=session_id,
+            ai_service=ai_service,
+            next_step=next_step
+        ):
+            yield event
 
     async def _handle_chat_operation(
         self,
@@ -375,61 +341,6 @@ class ChatRouter:
             yield self._create_error_sse(
                 message=f"对话执行失败: {str(e)}",
                 step=next_step()
-            )
-
-    async def _handle_file_operation(
-        self,
-        user_input: str,
-        model: str,
-        provider: str,
-        llm_client: Any,
-        session_id: str,
-        context: Optional[Dict[str, Any]] = None,
-        system_prompt: Optional[str] = None,
-        max_steps: int = 100,
-        next_step: Optional[Callable[[], int]] = None
-    ) -> AsyncGenerator[str, None]:
-        """
-        处理文件操作意图
-
-        Args:
-            user_input: 用户输入
-            model: 模型名称
-            provider: 提供商
-            llm_client: LLM 客户端函数
-            session_id: 会话ID
-            context: 额外上下文
-            system_prompt: 自定义系统提示
-            max_steps: 最大步数
-            next_step: step 计数函数
-
-        Yields:
-            SSE 格式字符串
-        """
-        try:
-            # 创建 FileReactAgent 实例
-            agent = FileReactAgent(
-                llm_client=llm_client,
-                session_id=session_id
-            )
-
-            # 调用 ver1_run_stream（返回 SSE 字符串）
-            async for sse_data in agent.ver1_run_stream(
-                task=user_input,
-                model=model,
-                provider=provider,
-                context=context,
-                system_prompt=system_prompt,
-                max_steps=max_steps,
-                get_next_step=next_step
-            ):
-                yield sse_data
-
-        except Exception as e:
-            logger.error(f"[ChatRouter] File operation failed: {e}", exc_info=True)
-            yield self._create_error_sse(
-                message=f"文件操作执行失败: {str(e)}",
-                step=next_step() if next_step else 0
             )
 
     def _create_error_sse(self, message: str, step: int) -> str:
