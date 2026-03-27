@@ -2,20 +2,21 @@
 """
 React SSE Wrapper - SSE 流式包装层
 
-【第二阶段实现 - 2026-03-26 小沈】
+【阶段6实现 - 2026-03-27 小沈】
 从 chat2.py 复制，删除路由判断，保留通用职责。
 
 架构：
-- 第一层：chat_router.py - 路由入口
-- 第二层：react_sse_wrapper.py - SSE 包装（本文件）
+- 第一层：chat_router.py - 路由入口（发送start步骤）
+- 第二层：react_sse_wrapper.py - SSE 包装（本文件，根据intent_type分发）
 - 第三层：file_react.py / network_react.py / desktop_react.py - 意图特定 Agent
 - 第四层：base_react.py - 通用 ReAct 逻辑
 
-【阶段2目标】
-- 从 chat2.py 复制为 react_sse_wrapper.py
-- 删除路由判断（if is_file_op）
-- 删除意图检测代码
-- 保留任务管理、DB保存等通用职责
+【阶段6目标】
+- 添加 intent_type 和 confidence 参数
+- 根据 intent_type 分发到不同 Agent
+- 使用 agent.run_stream() 返回 event dict
+- 添加 SSE 格式化逻辑
+- 注意：start 步骤由 chat_router 发送，本层不重复发送
 
 【本文件说明】
 - 作为服务层，不包含 FastAPI 路由
@@ -39,6 +40,79 @@ from app.chat_stream.incident_handler import check_and_yield_if_interrupted, che
 from app.chat_stream.error_handler import create_error_response, get_user_friendly_error, create_error_step
 from app.chat_stream.chat_helpers import create_final_response, create_timestamp, create_step_counter
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
+from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse
+
+
+# ============================================================
+# SSE 格式化函数
+# ============================================================
+
+def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: str) -> str:
+    """
+    将 event dict 格式化为 SSE 字符串
+    
+    Args:
+        event: event dict from agent.run_stream()
+        step: 步骤编号
+        model: 模型名称（用于 final/error 响应）
+        provider: 提供商（用于 final/error 响应）
+    
+    Returns:
+        SSE 格式的字符串
+    """
+    event_type = event.get('type', '')
+    
+    if event_type == 'thought':
+        return format_thought_sse(
+            step=step,
+            content=event.get('content', ''),
+            reasoning=event.get('reasoning', ''),
+            action_tool=event.get('action_tool', ''),
+            params=event.get('params', {})
+        )
+    elif event_type == 'action_tool':
+        return format_action_tool_sse(
+            step=step,
+            tool_name=event.get('tool_name', ''),
+            tool_params=event.get('tool_params', {}),
+            execution_status=event.get('execution_status', 'success'),
+            summary=event.get('summary', ''),
+            raw_data=event.get('raw_data'),
+            action_retry_count=event.get('action_retry_count', 0)
+        )
+    elif event_type == 'observation':
+        return format_observation_sse(
+            step=step,
+            execution_status=event.get('execution_status', 'success'),
+            summary=event.get('summary', ''),
+            content=event.get('content', ''),
+            reasoning=event.get('reasoning', ''),
+            action_tool=event.get('action_tool', ''),
+            params=event.get('params', {}),
+            is_finished=event.get('is_finished', False),
+            raw_data=event.get('raw_data')
+        )
+    elif event_type == 'final':
+        return create_final_response(
+            content=event.get('content', ''),
+            model=model,
+            provider=provider,
+            display_name=f"{provider} ({model})",
+            step=step
+        )
+    elif event_type == 'error':
+        return create_error_response(
+            error_type="agent",
+            message=event.get('message', '未知错误'),
+            code=event.get('code', 'AGENT_ERROR'),
+            model=model,
+            provider=provider,
+            retryable=event.get('retryable', False),
+            step=step
+        )
+    else:
+        # 未知类型，返回空字符串
+        return ""
 
 
 # ============================================================
@@ -75,24 +149,35 @@ async def cleanup_expired_tasks():
 
 async def generate_sse_stream(
     messages: List[Dict[str, str]],
+    intent_type: str = "chat",
+    confidence: float = 0.0,
     provider: Optional[str] = None,
     model: Optional[str] = None,
     temperature: float = 0.7,
     task_id: Optional[str] = None,
-    session_id: Optional[str] = None
+    session_id: Optional[str] = None,
+    ai_service: Optional[Any] = None,
+    next_step: Optional[Callable[[], int]] = None
 ) -> AsyncGenerator[str, None]:
     """
     SSE 流式生成器 - 实时展示ReAct执行步骤
     
     供 chat_router.py 调用，返回 AsyncGenerator 用于 SSE 流式输出。
     
+    【阶段6修改】添加 intent_type 和 confidence 参数，实现分发逻辑。
+    注意：start 步骤由 chat_router 发送，本层只处理分发后的逻辑。
+    
     Args:
         messages: 消息列表 [{"role": "user", "content": "..."}]
+        intent_type: 意图类型 (chat/file/network/desktop)
+        confidence: 意图置信度 (0.0-1.0)
         provider: AI 服务提供商
         model: AI 模型
         temperature: 创造性参数
         task_id: 任务ID（可选）
         session_id: 会话ID（可选）
+        ai_service: AI服务实例（可选，由chat_router传入）
+        next_step: 步骤计数器函数（可选，由chat_router传入）
     
     Yields:
         SSE 格式的数据字符串
@@ -226,61 +311,99 @@ async def generate_sse_stream(
         async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
             yield pause_event
         
-        # 【阶段2】直接使用 FileReactAgent（意图检测已移至 chat_router.py）
+        # 【阶段6】根据 intent_type 分发到不同 Agent
         session_id = session_id or str(uuid.uuid4())
         
         async def llm_client(message, history=None):
             response = await ai_service.chat(message, history)
             return type('obj', (object,), {'content': response.content})()
         
-        from app.services.agent import FileReactAgent
-        agent = FileReactAgent(
-            llm_client=llm_client,
-            session_id=session_id
-        )
+        # 分发逻辑
+        if intent_type == "file" and confidence >= 0.3:
+            # 文件操作：FileReactAgent.run_stream() 返回 event dict
+            from app.services.agent.file_react import FileReactAgent
+            agent = FileReactAgent(
+                llm_client=llm_client,
+                session_id=session_id,
+                intent_type="file"
+            )
+            
+            try:
+                async for event in agent.run_stream(task=last_message, context=None, max_steps=100):
+                    # 检查中断
+                    async with running_tasks_lock:
+                        if running_tasks.get(task_id, {}).get("cancelled", False):
+                            interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
+                            logger.info(f"[Step incident] 发送incident步骤(interrupted)")
+                            yield f"data: {json.dumps(interrupted_data)}\n\n"
+                            break
+                    
+                    # SSE 格式化
+                    sse_data = _format_sse_event(event, next_step(), ai_service.model, ai_service.provider)
+                    if sse_data:
+                        # 保存到数据库
+                        if sse_data.startswith("data: "):
+                            step_data = json.loads(sse_data[6:])
+                            current_execution_steps.append(step_data)
+                            if step_data.get('type') == 'final':
+                                current_content = step_data.get('content', '')
+                            await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+                        
+                        logger.info(f"[FileOp SSE] 发送数据")
+                        yield sse_data
+                        await asyncio.sleep(0.05)
+            
+            except Exception as e:
+                logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
+                error_step = create_error_step(
+                    code='FILE_OPERATION_ERROR',
+                    message="文件操作执行失败",
+                    error_type='file_operation_error',
+                    step_num=next_step(),
+                    model=ai_service.model,
+                    provider=ai_service.provider
+                )
+                current_execution_steps.append(error_step)
+                await save_execution_steps_to_db(session_id, current_execution_steps, "文件操作执行失败")
+                yield create_error_response(
+                    error_type="file_operation_error",
+                    message="文件操作执行失败",
+                    model=ai_service.model,
+                    provider=ai_service.provider,
+                    retryable=False
+                )
         
-        try:
-            async for sse_data in agent.ver1_run_stream(
-                task=last_message,
+        elif intent_type == "network" and confidence >= 0.3:
+            # 网络操作：待实现 NetworkReactAgent
+            logger.warning(f"[NetworkOp] NetworkReactAgent 待实现，使用回退逻辑")
+            yield create_error_response(
+                error_type="not_implemented",
+                message="网络操作功能正在开发中",
+                code="NETWORK_NOT_IMPLEMENTED",
                 model=ai_service.model,
                 provider=ai_service.provider,
-                get_next_step=next_step
-            ):
-                async with running_tasks_lock:
-                    if running_tasks.get(task_id, {}).get("cancelled", False):
-                        interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
-                        logger.info(f"[Step incident] 发送incident步骤(interrupted)")
-                        yield f"data: {json.dumps(interrupted_data)}\n\n"
-                        break
-                
-                if sse_data.startswith("data: "):
-                    step_data = json.loads(sse_data[6:])
-                    current_execution_steps.append(step_data)
-                    if step_data.get('type') == 'final':
-                        current_content = step_data.get('content', '')
-                    elif step_data.get('type') == 'chunk':
-                        current_content = (current_content or '') + (step_data.get('content', '') or '')
-                    await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
-                
-                logger.info(f"[FileOp SSE] 发送数据")
-                yield sse_data
-                await asyncio.sleep(0.05)
-        
-        except Exception as e:
-            logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
-            error_step = create_error_step(
-                code='FILE_OPERATION_ERROR',
-                message="文件操作执行失败",
-                error_type='file_operation_error',
-                step_num=next_step(),
-                model=ai_service.model,
-                provider=ai_service.provider
+                retryable=False
             )
-            current_execution_steps.append(error_step)
-            await save_execution_steps_to_db(session_id, current_execution_steps, "文件操作执行失败")
+        
+        elif intent_type == "desktop" and confidence >= 0.3:
+            # 桌面操作：待实现 DesktopReactAgent
+            logger.warning(f"[DesktopOp] DesktopReactAgent 待实现，使用回退逻辑")
             yield create_error_response(
-                error_type="file_operation_error",
-                message="文件操作执行失败",
+                error_type="not_implemented",
+                message="桌面操作功能正在开发中",
+                code="DESKTOP_NOT_IMPLEMENTED",
+                model=ai_service.model,
+                provider=ai_service.provider,
+                retryable=False
+            )
+        
+        else:
+            # chat 或 confidence < 0.3：简单对话（暂时返回错误，后续阶段实现 chat_stream_query 集成）
+            logger.warning(f"[ChatOp] chat_stream_query 待集成，暂时返回提示")
+            yield create_error_response(
+                error_type="not_implemented",
+                message="简单对话功能正在开发中",
+                code="CHAT_NOT_IMPLEMENTED",
                 model=ai_service.model,
                 provider=ai_service.provider,
                 retryable=False
