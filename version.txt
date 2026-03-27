@@ -1,3 +1,50 @@
+v0.8.20
+
+更新时间：2026-03-27 23:12:04
+
+更新内容：
+
+## 1. 修复start步骤重复+action_tool缺少content+reasoning为None - 小沈-2026-03-27
+
+### 1.1 问题描述
+
+用户验收发现：
+1. start步骤重复发送（step=1和step=2都是start）
+2. action_tool步骤缺少content字段
+3. thought步骤的reasoning字段为None而非空字符串
+
+### 1.2 修复内容
+
+#### 1.2.1 修复start步骤重复
+
+**修改文件**: `react_sse_wrapper.py`
+
+- 删除 react_sse_wrapper.py 中重复的 start 步骤发送代码
+- start 步骤已在 chat_router.py 中发送
+
+#### 1.2.2 修复action_tool缺少content
+
+**修改文件**: `base_react.py`
+
+- 在 action_tool 步骤添加 `content` 字段，值为工具名称
+
+#### 1.2.3 修复reasoning为None
+
+**修改文件**: `base_react.py`
+
+- 修改 `reasoning = parsed.get("reasoning") or ""` 确保不是None
+
+### 1.3 本次Commit汇总
+
+| Commit | 作者 | 说明 |
+|--------|------|------|
+| b7cc5fc6 | 小沈 | fix: 修复start步骤重复+action_tool缺少content+reasoning为None-小沈-2026-03-27 |
+
+参与开发：小沈
+完成时间：2026-03-27 23:12:04
+
+---
+
 v0.8.19
 
 更新时间：2026-03-27 22:30:00
