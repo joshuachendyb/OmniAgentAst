@@ -46,13 +46,15 @@ def get_version() -> str:
         print(f"[Version] Failed to read version.txt: {e}")
     return "0.4.14"
 
+app_version = get_version()
+
 app = FastAPI(
     title="OmniAgentAst API",
     description="OmniAgentAst 桌面版后端API",
-    version=get_version()
+    version=app_version
 )
 
-print("OmniAgentAst Backend v" + get_version() + " started")
+print("OmniAgentAst Backend v" + app_version + " started")
 
 # CORS配置
 app.add_middleware(
