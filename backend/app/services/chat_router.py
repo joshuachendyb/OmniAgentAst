@@ -250,32 +250,52 @@ class ChatRouter:
             yield f"data: {json.dumps({'type': 'error', 'message': f'start步骤失败: {str(e)}'})}\n\n"
             return
         
-        # ===== 提取 llm_client =====
-        # FileReactAgent 需要 llm_client 函数，从 ai_service.chat 包装
-        async def llm_client(message, history=None):
-            response = await ai_service.chat(message, history)
-            return type('obj', (object,), {'content': response.content})()
+        # ===== 步骤6: 根据意图类型分发 =====
+        # 简单对话（chat 且 confidence >= 0.3）：在 router 里调用 chat_stream_query
+        # 动作意图（file/network/desktop 或 confidence < 0.3）：调用 react_sse_wrapper
         
-        # ===== 步骤6: 调用 react_sse_wrapper =====
-        # react_sse_wrapper 内部根据 intent_type 分发到不同 Agent
-        # 注意：start 步骤已由 chat_router 发送，react_sse_wrapper 不重复发送
-        from app.services.react_sse_wrapper import generate_sse_stream
+        # display_name 用于 chat_stream_query
+        display_name = f"{ai_service.provider} ({ai_service.model})"
         
-        # 准备 messages 列表
-        messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-        
-        async for event in generate_sse_stream(
-            messages=messages,
-            intent_type=intent_type,
-            confidence=confidence,
-            provider=provider,
-            model=model,
-            task_id=task_id,
-            session_id=session_id,
-            ai_service=ai_service,
-            next_step=next_step
-        ):
-            yield event
+        if intent_type == "chat" and confidence >= 0.3:
+            # 简单对话：直接调用 chat_stream_query
+            logger.info(f"[ChatRouter] 简单对话意图，分发到 chat_stream_query")
+            async for event in self._handle_chat_operation(
+                request=request,
+                user_input=user_input,
+                ai_service=ai_service,
+                task_id=task_id,
+                session_id=session_id,
+                current_execution_steps=current_execution_steps,
+                running_tasks=running_tasks,
+                running_tasks_lock=running_tasks_lock,
+                next_step=next_step,
+                display_name=display_name
+            ):
+                yield event
+        else:
+            # 动作意图：调用 react_sse_wrapper 处理
+            logger.info(f"[ChatRouter] 动作意图 (type={intent_type}, conf={confidence:.2f})，分发到 react_sse_wrapper")
+            from app.services.react_sse_wrapper import generate_sse_stream
+            
+            # 准备 messages 列表
+            messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+            
+            async for event in generate_sse_stream(
+                messages=messages,
+                intent_type=intent_type,
+                confidence=confidence,
+                provider=provider,
+                model=model,
+                task_id=task_id,
+                session_id=session_id,
+                ai_service=ai_service,
+                next_step=next_step,
+                running_tasks=running_tasks,
+                running_tasks_lock=running_tasks_lock,
+                current_execution_steps=current_execution_steps
+            ):
+                yield event
 
     async def _handle_chat_operation(
         self,

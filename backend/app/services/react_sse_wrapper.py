@@ -157,7 +157,10 @@ async def generate_sse_stream(
     task_id: Optional[str] = None,
     session_id: Optional[str] = None,
     ai_service: Optional[Any] = None,
-    next_step: Optional[Callable[[], int]] = None
+    next_step: Optional[Callable[[], int]] = None,
+    running_tasks: Optional[Dict[str, Any]] = None,
+    running_tasks_lock: Optional[asyncio.Lock] = None,
+    current_execution_steps: Optional[List[Dict]] = None
 ) -> AsyncGenerator[str, None]:
     """
     SSE 流式生成器 - 实时展示ReAct执行步骤
@@ -178,10 +181,23 @@ async def generate_sse_stream(
         session_id: 会话ID（可选）
         ai_service: AI服务实例（可选，由chat_router传入）
         next_step: 步骤计数器函数（可选，由chat_router传入）
+        running_tasks: 任务字典（可选，由chat_router传入）
+        running_tasks_lock: 任务锁（可选，由chat_router传入）
+        current_execution_steps: 执行步骤列表（可选，由chat_router传入）
     
     Yields:
         SSE 格式的数据字符串
     """
+    # 如果没传入，使用默认值
+    if running_tasks is None:
+        running_tasks = {}
+    if running_tasks_lock is None:
+        running_tasks_lock = asyncio.Lock()
+    if current_execution_steps is None:
+        current_execution_steps = []
+    if next_step is None:
+        next_step = create_step_counter()
+    
     # 生成 task_id
     if not task_id:
         task_id = str(uuid.uuid4())
@@ -226,11 +242,8 @@ async def generate_sse_stream(
     
     logger.info(f"[LLM Total Counter] ====== New conversation started, counter reset to 0 ======")
     
-    # 步骤计数器（使用统一函数）
-    next_step = create_step_counter()
-    
-    # 初始化 execution_steps 列表
-    current_execution_steps: List[Dict] = []
+    # 注意：不重复创建 next_step 和 current_execution_steps
+    # 因为 router 已经创建并传入，如果没传入才使用默认值（在函数开头已处理）
     current_content: str = ""
     
     # 获取 display_name
