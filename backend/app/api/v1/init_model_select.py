@@ -154,7 +154,7 @@ async def validate_ai_service():
         # 获取当前模型名称
         current_model = ai_service.model
         
-        logger.info(f"[检查服务] 加载配置完成 - provider: {provider}, model: {current_model}")
+        logger.info(f"[检查服务] 加载配置完成 - provider={provider}, model={current_model}")
         
         # ⭐ 从全局状态获取 backup_path（由 update_config 设置）
         backup_path, config_path = AIServiceFactory.get_backup_paths()
@@ -178,9 +178,26 @@ async def validate_ai_service():
                 message=error_msg + "。请在 config/config.yaml 中配置。（配置已恢复到更新前的状态）"  # ⭐ 添加说明
             )
         
-        # 验证服务
+        # 验证服务 - 【小沈-2026-03-27修复】直接在接口中验证，添加30秒超时
         logger.info(f"[检查服务] 开始调用 API 验证...")
-        is_valid = await ai_service.validate()
+        import httpx
+        is_valid = False
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{ai_service.api_base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {ai_service.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": ai_service.model,
+                        "messages": [{"role": "user", "content": "test"}]
+                    }
+                )
+                is_valid = response.status_code == 200
+        except Exception as e:
+            logger.warning(f"[检查服务] API验证失败: {e}")
         
         if is_valid:
             # ⭐ 验证成功：删除备份
@@ -211,7 +228,7 @@ async def validate_ai_service():
             end_time = datetime.now()
             elapsed = (end_time - start_time).total_seconds()
             end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
-            logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(验证返回False), provider: {provider}, model: {current_model}")
+            logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(验证返回False), provider={provider}, model={current_model}")
             # 验证失败，尝试获取详细错误信息，并明确说明配置已恢复
             # 通过发送一个实际请求来获取错误详情
             import httpx
@@ -345,8 +362,25 @@ async def switch_ai_provider(provider: str):
         # 获取新模型名称
         new_model = ai_service.model
         
-        # 验证新服务
-        is_valid = await ai_service.validate()
+        # 验证新服务 - 【小沈-2026-03-27修复】直接在接口中验证，添加30秒超时
+        import httpx
+        is_valid = False
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{ai_service.api_base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {ai_service.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": ai_service.model,
+                        "messages": [{"role": "user", "content": "test"}]
+                    }
+                )
+                is_valid = response.status_code == 200
+        except Exception as e:
+            logger.warning(f"[切换提供商] API验证失败: {e}")
         
         if is_valid:
             return ValidateResponse(

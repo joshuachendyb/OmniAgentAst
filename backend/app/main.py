@@ -9,10 +9,10 @@ from pathlib import Path
 
 # 【已废弃】chat_non_stream 已不使用，前端已改用 sse.ts 流式聊天 V2
 # from app.api.v1 import health, chat_non_stream, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
-# 【阶段6废弃端点但保留代码】chat2.py 代码保留，但端点已废弃（使用 chat_router 替代）
+# 【阶段6废弃端点但保留代码】chat2.py 已移至 backup/chat2.py
 # cleanup_expired_tasks 已迁移到 react_sse_wrapper.py
-from app.api.v1 import health, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
-# chat_stream 暂时禁用，使用 chat2 替代
+from app.api.v1 import health, init_model_select, file_operations, config, sessions, security, execution, metrics
+# chat_stream 暂时禁用，使用 chat_router 替代
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
 
@@ -116,8 +116,9 @@ app.include_router(health.router, prefix="/api/v1", tags=["health"])
 # 【阶段6废弃】chat2.py 端点已废弃，使用 chat_router (V2) 替代
 # app.include_router(chat2.router, prefix="/api/v1", tags=["chat"])
 # 【Stage 5 新增】chat_router - 6步完整流程版本
-from app.services.chat_router import router as chat_router_router
+from app.services.chat_router import router as chat_router_router, task_router
 app.include_router(chat_router_router, prefix="/api/v1", tags=["chat"])
+app.include_router(task_router, prefix="/api/v1", tags=["chat"])
 app.include_router(init_model_select.router, prefix="/api/v1", tags=["chat"])
 app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operations"])
 app.include_router(config.router, prefix="/api/v1", tags=["config"])

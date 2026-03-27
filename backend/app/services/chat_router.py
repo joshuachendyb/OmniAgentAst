@@ -378,3 +378,64 @@ class ChatRouter:
 def create_chat_router() -> ChatRouter:
     """创建 ChatRouter 实例"""
     return ChatRouter()
+
+
+# ============================================================================
+# 任务控制 API 端点（附录7.1）
+# 从 react_sse_wrapper 导入任务控制函数
+# ============================================================================
+from app.services.react_sse_wrapper import (
+    cancel_task as wrapper_cancel_task,
+    pause_task as wrapper_pause_task,
+    resume_task as wrapper_resume_task,
+)
+
+task_router = APIRouter()
+
+
+@task_router.post("/chat/stream/cancel/{task_id}")
+async def cancel_stream_task(task_id: str, session_id: Optional[str] = None):
+    """
+    取消任务
+    """
+    logger.info(f"[TaskControl] 取消任务: task_id={task_id}")
+    result = await wrapper_cancel_task(task_id, session_id)
+    return result
+
+
+@task_router.post("/chat/stream/pause/{task_id}")
+async def pause_stream_task(task_id: str, session_id: Optional[str] = None):
+    """
+    暂停任务
+    """
+    logger.info(f"[TaskControl] 暂停任务: task_id={task_id}")
+    result = await wrapper_pause_task(task_id, session_id)
+    return result
+
+
+@task_router.post("/chat/stream/resume/{task_id}")
+async def resume_stream_task(task_id: str, session_id: Optional[str] = None):
+    """
+    恢复任务
+    """
+    logger.info(f"[TaskControl] 恢复任务: task_id={task_id}")
+    result = await wrapper_resume_task(task_id, session_id)
+    return result
+
+
+@task_router.post("/chat/stream/confirm")
+async def confirm_operation(request: Request):
+    """
+    用户确认继续操作
+    """
+    body = await request.json()
+    task_id = body.get("task_id")
+    confirmed = body.get("confirmed", True)
+    
+    logger.info(f"[TaskControl] 用户确认: task_id={task_id}, confirmed={confirmed}")
+    
+    # TODO: 实现用户确认逻辑
+    return {
+        "success": True,
+        "message": "确认已收到"
+    }
