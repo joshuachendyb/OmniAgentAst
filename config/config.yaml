@@ -1,22 +1,4 @@
 ai:
-  qiniu:
-    api_base: https://api.qnaigc.com/v1
-    api_key: sk-ee99b1ccb7495fd4fab4114697e69984846e5884059ae108ce0dda350a1ed9d6
-    max_retries: 3
-    models:
-      # DeepSeek（首选）
-      - deepseek-v3.1
-      - deepseek-v3
-      - deepseek-r1
-      # GLM（智谱）
-      - z-ai/glm-4.7
-      - z-ai/glm-4.6
-      # Kimi（月之暗面）
-      - moonshotai/kimi-k2.5
-      - moonshotai/kimi-k2
-      # MiniMax
-      - minimax/minimax-m2.5
-    timeout: 90
   longcat:
     api_base: https://api.longcat.chat/openai/v1
     api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
@@ -40,6 +22,20 @@ ai:
     - kimi-k2.5-free
     timeout: 150
   provider: zhipuai
+  qiniu:
+    api_base: https://api.qnaigc.com/v1
+    api_key: sk-ee99b1ccb7495fd4fab4114697e69984846e5884059ae108ce0dda350a1ed9d6
+    max_retries: 3
+    models:
+    - deepseek-v3.1
+    - deepseek-v3
+    - deepseek-r1
+    - z-ai/glm-4.7
+    - z-ai/glm-4.6
+    - moonshotai/kimi-k2.5
+    - moonshotai/kimi-k2
+    - minimax/minimax-m2.5
+    timeout: 90
   zhipuai:
     api_base: https://open.bigmodel.cn/api/paas/v4/
     api_key: 5790cd6d8981471da11dda7523da11ad.VT36xKqyrpQKVR8C
