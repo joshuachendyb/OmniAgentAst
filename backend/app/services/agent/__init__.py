@@ -68,11 +68,14 @@ def __getattr__(name: str):
         from app.services.tools.file.file_tools import FileTools, get_file_tools
         return locals()[name]
     if name == "IntentAgent":
-        from .agent import IntentReactAgent
-        return IntentReactAgent
+        from .file_react import FileReactAgent
+        return FileReactAgent
     if name == "IntentReactAgent":
-        from .agent import IntentReactAgent
-        return IntentReactAgent
+        from .file_react import FileReactAgent
+        return FileReactAgent
+    if name == "FileReactAgent":
+        from .file_react import FileReactAgent
+        return FileReactAgent
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -98,4 +101,5 @@ __all__ = [
     "get_file_tools",
     "IntentAgent",
     "IntentReactAgent",
+    "FileReactAgent",
 ]

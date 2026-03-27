@@ -1,3 +1,68 @@
+v0.8.19
+
+更新时间：2026-03-27 22:30:00
+
+更新内容：
+
+## 1. 意图分类LLM化：文本矫正+意图分类合并 - 小沈-2026-03-27
+
+### 1.1 背景
+
+原意图分类使用GLiClass模型（需要从HuggingFace下载，网络不通），fallback关键词匹配不准确（"查看D盘目录"无法识别为file）。
+
+### 1.2 实施内容
+
+#### 1.2.1 创建独立LLM意图分类模块
+
+**修改文件**：`backend/app/services/preprocessing/intent_classifier.py`
+
+- 删除GLiClass依赖和关键词匹配fallback
+- 添加独立的LLM调用函数 `classify_intent()`
+- 同时处理文本矫正和意图分类
+- 使用七牛 `deepseek-v3.1` 模型（响应快）
+
+#### 1.2.2 配置文件更新
+
+**修改文件**：`config/config.yaml`
+
+添加七牛AI配置：
+```yaml
+qiniu:
+  api_base: https://api.qnaigc.com/v1
+  api_key: sk-ee99b1ccb7495fd4fab4114697e69984846e5884059ae108ce0dda350a1ed9d6
+  models:
+    - deepseek-v3.1  # 默认
+    - deepseek-v3
+    - deepseek-r1
+    - z-ai/glm-4.7
+    - z-ai/glm-4.6
+    - moonshotai/kimi-k2.5
+    - moonshotai/kimi-k2
+    - minimax/minimax-m2.5
+```
+
+### 1.3 测试结果
+
+| 输入 | 意图 | 置信度 | 耗时 |
+|------|------|--------|------|
+| 查看D盘目录 | file | 0.95 | 2s |
+| 检查一下 D盘有几个目录啊 | file | 0.95 | 2s |
+| 你好，帮我算个数 | chat | 0.95 | 2.5s |
+| 帮我打开C盘 | file | 0.95 | 2s |
+| 帮我截个图 | desktop | 0.95 | 2s |
+
+### 1.4 本次Commit汇总
+
+| Commit | 作者 | 说明 |
+|--------|------|------|
+| xxx | 小沈 | feat: 创建独立LLM意图分类模块-小沈-2026-03-27 |
+| xxx | 小沈 | feat: 添加七牛配置+多模型支持-小沈-2026-03-27 |
+
+参与开发：小沈
+完成时间：2026-03-27 22:30:00
+
+---
+
 v0.8.18
 
 更新时间：2026-03-27 21:01:39

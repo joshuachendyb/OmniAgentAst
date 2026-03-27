@@ -26,7 +26,7 @@ from typing import Dict, Any, List
 from unittest.mock import Mock, AsyncMock, MagicMock, patch, PropertyMock
 
 # 导入被测试模块
-from app.services.agent.agent import IntentAgent
+from app.services.agent import IntentAgent
 from app.services.agent.tool_parser import ToolParser
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.types import AgentStatus, Step, AgentResult

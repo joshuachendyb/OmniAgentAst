@@ -16,7 +16,7 @@ from typing import Dict, Any, List
 from unittest.mock import Mock, AsyncMock, MagicMock, patch
 
 from app.services.agent.base_react import BaseAgent
-from app.services.agent.agent import IntentAgent
+from app.services.agent import IntentAgent
 from app.services.agent.types import AgentStatus
 from app.services.tools.file.file_tools import FileTools
 
