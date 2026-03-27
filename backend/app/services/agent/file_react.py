@@ -172,6 +172,14 @@ class FileReactAgent(BaseAgent):
             last_message = self.conversation_history[-1]["content"]
             history_dicts = self.conversation_history[:-1]
             
+            # 【调试】记录发送给LLM的messages
+            logger.info(f"[Debug] _get_llm_response - conversation_history长度: {len(self.conversation_history)}")
+            logger.info(f"[Debug] _get_llm_response - history_dicts长度: {len(history_dicts)}")
+            for i, h in enumerate(history_dicts):
+                logger.info(f"[Debug] history[{i}] role={h.get('role')}, content长度={len(h.get('content', ''))}")
+            logger.info(f"[Debug] _get_llm_response - last_message长度: {len(last_message)}")
+            logger.info(f"[Debug] _get_llm_response - last_message内容: {last_message[:200]}")
+            
             # 【修改】使用 LLMAdapter 自适应策略
             if self.adapter:
                 strategy = await self.adapter.ensure_capability()
