@@ -941,6 +941,11 @@ const processSSEData = (
           }
         }
 
+        // 设置 display_name、model、provider 字段
+        step.display_name = rawData.display_name;
+        step.model = rawData.model;
+        step.provider = rawData.provider;
+
         const displayName = rawData.display_name;
         
         // 【小查修复】保存final到executionSteps，以便导出功能能获取到
