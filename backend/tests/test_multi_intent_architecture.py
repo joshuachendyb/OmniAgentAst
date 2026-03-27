@@ -683,7 +683,7 @@ class TestBasePrompts:
 
     def test_base_prompts_is_abstract(self):
         """BasePrompts 是抽象基类"""
-        from app.services.prompts.base import BasePrompts
+        from app.services.prompts.BasePromptTemplate import BasePrompts
         import inspect
         abstract_methods = [
             name for name, method in inspect.getmembers(BasePrompts, predicate=inspect.isfunction)
@@ -693,17 +693,17 @@ class TestBasePrompts:
 
     def test_base_prompts_has_get_system_prompt(self):
         """BasePrompts 定义 get_system_prompt 抽象方法"""
-        from app.services.prompts.base import BasePrompts
+        from app.services.prompts.BasePromptTemplate import BasePrompts
         assert hasattr(BasePrompts, 'get_system_prompt')
 
     def test_base_prompts_has_get_available_tools_prompt(self):
         """BasePrompts 定义 get_available_tools_prompt 抽象方法"""
-        from app.services.prompts.base import BasePrompts
+        from app.services.prompts.BasePromptTemplate import BasePrompts
         assert hasattr(BasePrompts, 'get_available_tools_prompt')
 
     def test_base_prompts_has_default_get_task_prompt(self):
         """BasePrompts 提供 get_task_prompt 默认实现"""
-        from app.services.prompts.base import BasePrompts
+        from app.services.prompts.BasePromptTemplate import BasePrompts
         # 创建具体子类
         class Concrete(BasePrompts):
             def get_system_prompt(self): return "system"
@@ -714,7 +714,7 @@ class TestBasePrompts:
 
     def test_base_prompts_has_default_get_observation_prompt(self):
         """BasePrompts 提供 get_observation_prompt 默认实现"""
-        from app.services.prompts.base import BasePrompts
+        from app.services.prompts.BasePromptTemplate import BasePrompts
         class Concrete(BasePrompts):
             def get_system_prompt(self): return "system"
             def get_available_tools_prompt(self): return "tools"
@@ -724,7 +724,7 @@ class TestBasePrompts:
 
     def test_base_prompts_build_full_system_prompt(self):
         """build_full_system_prompt 组合各部分"""
-        from app.services.prompts.base import BasePrompts
+        from app.services.prompts.BasePromptTemplate import BasePrompts
         class Concrete(BasePrompts):
             def get_system_prompt(self): return "System"
             def get_available_tools_prompt(self): return "Tools"
@@ -1279,7 +1279,7 @@ class TestImportPathCorrectness:
 
     def test_import_base_prompts(self):
         """导入BasePrompts"""
-        from app.services.prompts.base import BasePrompts
+        from app.services.prompts.BasePromptTemplate import BasePrompts
         assert BasePrompts is not None
 
     def test_import_session_service_base(self):

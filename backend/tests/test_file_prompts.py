@@ -9,7 +9,7 @@ Author: 小沈 - 2026-03-21
 import pytest
 
 from app.services.prompts.file.file_prompts import FileOperationPrompts
-from app.services.prompts.base import BasePrompts
+from app.services.prompts.BasePromptTemplate import BasePrompts
 
 
 class TestFilePromptsInheritance:

@@ -353,7 +353,7 @@ class TestFileContentValidation:
 
     def test_base_prompts_is_abstract(self):
         """BasePrompts 必须是抽象基类"""
-        from app.services.prompts.base import BasePrompts
+        from app.services.prompts.BasePromptTemplate import BasePrompts
         import inspect
         abstract_methods = [
             name for name, method in inspect.getmembers(BasePrompts, predicate=inspect.isfunction)
