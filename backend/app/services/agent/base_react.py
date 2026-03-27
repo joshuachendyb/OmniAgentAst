@@ -242,8 +242,8 @@ class BaseAgent(ABC):
                 
                 # 更新消息历史
                 self.conversation_history.append({"role": "assistant", "content": thought_content})
-                # 裁剪过长的历史
-                self._trim_history()
+                # [小沈 2026-03-28] 注释掉 trim_history - 不一定是真正原因，先去掉
+                # self._trim_history()
                 
                 # 判断是否结束
                 if is_finished:
@@ -274,29 +274,31 @@ class BaseAgent(ABC):
     
     # ===== 对话历史管理 =====
 
-    MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话（每轮 = thought + observation）
+    # [小沈 2026-03-28] 注释掉 - 不一定是真正原因，先去掉
+    # MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话（每轮 = thought + observation）
 
-    def _trim_history(self) -> None:
-        """限制对话历史长度，避免 token 爆炸导致 LLM 输出被截断"""
-        if len(self.conversation_history) <= 2:
-            return  # 少于 system + user，不需要裁剪
-        
-        # 保留 system message 和最近的 N 轮对话
-        # 每轮 = 1 thought (assistant) + 1 observation (user)
-        # 加上原始的 user message (task_prompt)
-        max_messages = 1 + 1 + (self.MAX_HISTORY_TURNS * 2)  # system + task + N*(thought+obs)
-        
-        if len(self.conversation_history) > max_messages:
-            # 保留 system message 和最近的消息
-            system_msg = self.conversation_history[0]
-            recent_msgs = self.conversation_history[-max_messages + 1:]
-            self.conversation_history = [system_msg] + recent_msgs
-            logger.info(f"[History] Trimmed conversation history from {len(self.conversation_history) + max_messages - 1} to {len(self.conversation_history)} messages")
+    # [小沈 2026-03-28] 注释掉 - 不一定是真正原因，先去掉
+    # def _trim_history(self) -> None:
+    #     """限制对话历史长度，避免 token 爆炸导致 LLM 输出被截断"""
+    #     if len(self.conversation_history) <= 2:
+    #         return  # 少于 system + user，不需要裁剪
+    #     
+    #     # 保留 system message 和最近的 N 轮对话
+    #     # 每轮 = 1 thought (assistant) + 1 observation (user)
+    #     # 加上原始的 user message (task_prompt)
+    #     max_messages = 1 + 1 + (self.MAX_HISTORY_TURNS * 2)  # system + task + N*(thought+obs)
+    #     
+    #     if len(self.conversation_history) > max_messages:
+    #         # 保留 system message 和最近的消息
+    #         system_msg = self.conversation_history[0]
+    #         recent_msgs = self.conversation_history[-max_messages + 1:]
+    #         self.conversation_history = [system_msg] + recent_msgs
+    #         logger.info(f"[History] Trimmed conversation history from {len(self.conversation_history) + max_messages - 1} to {len(self.conversation_history)} messages")
 
     # ===== 通用方法 =====
 
     def _add_observation_to_history(self, observation: str) -> None:
         """添加观察结果到对话历史"""
         self.conversation_history.append({"role": "user", "content": observation})
-        # 裁剪过长的历史
-        self._trim_history()
+        # [小沈 2026-03-28] 注释掉 trim_history - 不一定是真正原因，先去掉
+        # self._trim_history()
