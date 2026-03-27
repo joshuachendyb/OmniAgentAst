@@ -733,7 +733,13 @@ const MessageItem: React.FC<MessageItemProps> = ({
               return { ...baseExport, step: step.step, is_reasoning: step.is_reasoning };
             case 'final':
               // 【小强修复 2026-03-18】添加 step 字段
-              return { ...baseExport, step: step.step };
+              return { 
+                ...baseExport, 
+                step: step.step,
+                display_name: step.display_name,
+                model: step.model,
+                provider: step.provider
+              };
             case 'error':
               // 【小强修复 2026-03-18】添加 step 字段
               return { ...baseExport, step: step.step, code: (step as any).code, error_type: (step as any).error_type, details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider };
@@ -750,7 +756,10 @@ const MessageItem: React.FC<MessageItemProps> = ({
                 task_id: step.task_id, 
                 step: step.step,
                 security_check: step.security_check,
-                user_message: step.user_message
+                user_message: step.user_message,
+                display_name: step.display_name,
+                model: step.model,
+                provider: step.provider
               };
             default:
               return baseExport;

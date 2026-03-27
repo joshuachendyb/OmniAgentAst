@@ -73,10 +73,19 @@ def create_final_response(
     Returns:
     SSE 格式的 final 响应字符串
     """
+    # 构建 display_name
+    final_display_name = display_name
+    if not final_display_name and provider and model:
+        final_display_name = f"{provider} ({model})"
+    elif not final_display_name and provider:
+        final_display_name = provider
+    elif not final_display_name and model:
+        final_display_name = model
+    
     response = {
         'type': 'final',
         'content': content,
-        'display_name': display_name if display_name else f"{provider} ({model})" or None,
+        'display_name': final_display_name,
         'timestamp': create_timestamp(),
     }
     if step is not None:
