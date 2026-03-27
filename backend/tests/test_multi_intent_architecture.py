@@ -463,7 +463,7 @@ class TestReActIntentIntegration:
 
     def test_agent_exists(self):
         """Agent 主循环模块存在"""
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         assert IntentAgent is not None
 
     def test_base_agent_exists(self):
@@ -1057,7 +1057,7 @@ class TestIntentAgentIntegration:
 
     def test_intent_agent_has_intent_type(self):
         """IntentAgent有intent_type属性"""
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         import inspect
         sig = inspect.signature(IntentAgent.__init__)
         assert 'intent_type' in sig.parameters
@@ -1065,7 +1065,7 @@ class TestIntentAgentIntegration:
     def test_intent_agent_default_intent_type_is_file(self):
         """IntentAgent默认intent_type为file"""
         import inspect
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         sig = inspect.signature(IntentAgent.__init__)
         intent_type_param = sig.parameters['intent_type']
         assert intent_type_param.default == "file"
@@ -1073,7 +1073,7 @@ class TestIntentAgentIntegration:
     def test_intent_agent_has_preprocessor(self):
         """IntentAgent有preprocessor属性"""
         from unittest.mock import MagicMock, patch
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         mock_llm = MagicMock()
         mock_tools = MagicMock()
         with patch('app.services.agent.agent.get_session_service'):
@@ -1083,7 +1083,7 @@ class TestIntentAgentIntegration:
     def test_intent_agent_has_intent_registry(self):
         """IntentAgent有intent_registry属性"""
         from unittest.mock import MagicMock, patch
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         mock_llm = MagicMock()
         mock_tools = MagicMock()
         with patch('app.services.agent.agent.get_session_service'):
@@ -1093,7 +1093,7 @@ class TestIntentAgentIntegration:
     def test_intent_agent_registers_file_intent(self):
         """IntentAgent注册file意图"""
         from unittest.mock import MagicMock, patch
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         mock_llm = MagicMock()
         mock_tools = MagicMock()
         with patch('app.services.agent.agent.get_session_service'):
@@ -1103,7 +1103,7 @@ class TestIntentAgentIntegration:
     def test_intent_agent_registers_network_intent(self):
         """IntentAgent注册network意图"""
         from unittest.mock import MagicMock, patch
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         mock_llm = MagicMock()
         mock_tools = MagicMock()
         with patch('app.services.agent.agent.get_session_service'):
@@ -1113,7 +1113,7 @@ class TestIntentAgentIntegration:
     def test_intent_agent_unsupported_intent_type_raises(self):
         """不支持的intent_type抛出异常"""
         from unittest.mock import MagicMock, patch
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         mock_llm = MagicMock()
         mock_tools = MagicMock()
         with patch('app.services.agent.agent.get_session_service'):
@@ -1123,7 +1123,7 @@ class TestIntentAgentIntegration:
     def test_intent_agent_desktop_type_warning(self):
         """desktop意图类型记录警告日志"""
         from unittest.mock import MagicMock, patch
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         mock_llm = MagicMock()
         mock_tools = MagicMock()
         with patch('app.services.agent.agent.get_session_service'):
@@ -1134,7 +1134,7 @@ class TestIntentAgentIntegration:
     def test_intent_agent_network_type_warning(self):
         """network意图类型记录警告日志"""
         from unittest.mock import MagicMock, patch
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         mock_llm = MagicMock()
         mock_tools = MagicMock()
         with patch('app.services.agent.agent.get_session_service'):
@@ -1425,7 +1425,7 @@ class TestAgentPreprocessorParameterPassing:
     def test_agent_passes_session_id_to_preprocessor(self):
         """验证 Agent.run() 调用 preprocessor.process() 时传入 session_id"""
         from unittest.mock import MagicMock, patch, AsyncMock
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         
         mock_llm = MagicMock()
         mock_tools = MagicMock()
@@ -1471,7 +1471,7 @@ class TestAgentPreprocessorParameterPassing:
     def test_agent_passes_intent_labels_to_preprocessor(self):
         """验证 Agent.run() 调用 preprocessor.process() 时传入 intent_labels"""
         from unittest.mock import MagicMock, patch, AsyncMock
-        from app.services.agent.agent import IntentAgent
+        from app.services.agent import IntentAgent
         
         mock_llm = MagicMock()
         mock_tools = MagicMock()
