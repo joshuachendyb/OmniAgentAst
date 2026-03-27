@@ -10,7 +10,7 @@ from pathlib import Path
 # 【已废弃】chat_non_stream 已不使用，前端已改用 sse.ts 流式聊天 V2
 # from app.api.v1 import health, chat_non_stream, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
 # 【阶段6废弃端点但保留代码】chat2.py 代码保留，但端点已废弃（使用 chat_router 替代）
-# cleanup_expired_tasks 函数仍需从 chat2.py 导入
+# cleanup_expired_tasks 已迁移到 react_sse_wrapper.py
 from app.api.v1 import health, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
 # chat_stream 暂时禁用，使用 chat2 替代
 from app.utils.logger import logger
