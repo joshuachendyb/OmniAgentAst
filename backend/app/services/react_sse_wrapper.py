@@ -253,35 +253,12 @@ async def generate_sse_stream(
     if session_id:
         cache_display_name(session_id, display_name)
     
-    # 安全检查
+    # 安全检查（注意：chat_router.py 已经做过安全检测，这里是冗余检查，保留以防直接调用）
     last_message = messages[-1]["content"] if messages else ""
     security_check_result = check_command_safety(last_message)
     
-    # 发送 start 步骤
-    user_message_preview = last_message[:40] if last_message else ""
-    start_data = {
-        'type': 'start',
-        'step': next_step(),
-        'timestamp': create_timestamp(),
-        'display_name': display_name,
-        'provider': ai_service.provider,
-        'model': ai_service.model,
-        'task_id': task_id,
-        'user_message': user_message_preview,
-        'security_check': {
-            'is_safe': security_check_result.get('is_safe', True),
-            'risk_level': security_check_result.get('risk_level'),
-            'risk': security_check_result.get('risk'),
-            'blocked': security_check_result.get('blocked', False)
-        }
-    }
-    logger.info(f"[Step start] 发送start步骤 - step={start_data['step']}")
-    
-    yield f"data: {json.dumps(start_data)}\n\n"
-    
-    # 将 start 添加到 execution_steps 并保存到数据库
-    current_execution_steps.append(start_data)
-    await save_execution_steps_to_db(session_id, current_execution_steps, "")
+    # 注意：start 步骤已在 chat_router.py 中发送，这里不再重复发送
+    # 避免导致 start 步骤重复 (step=1 和 step=2 都是 start)
     
     # 安全检查未通过，返回错误
     if not security_check_result.get('is_safe', True):
