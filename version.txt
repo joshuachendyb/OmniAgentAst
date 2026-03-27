@@ -1,3 +1,121 @@
+v0.8.16
+
+更新时间：2026-03-27
+
+更新内容：
+
+## 1. 阶段6实施完成：四层架构集成 - 小沈-2026-03-27
+
+### 1.1 背景
+
+根据设计文档阶段6要求，实现完整的4层架构：
+- chat_router.py（第一层）→ react_sse_wrapper.py（第二层）→ file_react.py（第三层）→ base_react.py（第四层）
+
+### 1.2 实施内容
+
+#### 1.2.1 第一步：修改 file_react.py
+- 删除 ver1_run_stream() 方法（约95行）
+- 保留 run_stream() 方法（返回 event dict）
+- SSE 格式化逻辑移到 react_sse_wrapper
+
+#### 1.2.2 第二步：修改 react_sse_wrapper.py
+- 添加 intent_type 和 confidence 参数
+- 添加分发逻辑：根据 intent_type 分发到不同 Agent
+- 添加 SSE 格式化函数 _format_sse_event()
+- 使用 agent.run_stream() 返回 event dict
+
+#### 1.2.3 第三步：修改 chat_router.py
+- 步骤6改为调用 react_sse_wrapper.generate_sse_stream()
+- 删除内部意图分发方法（_handle_file_operation, _handle_chat_operation）
+- 统一传递 intent_type 和 confidence 参数
+
+### 1.3 架构说明
+
+```
+chat_router (第一层)
+     ↓ 调用
+react_sse_wrapper (第二层) - 根据 intent_type 分发
+     ↓ 分发到
+FileReactAgent.run_stream() (第三层) - 返回 event dict
+     ↓
+base_react.run_stream() (第四层) - 通用 ReAct 循环
+```
+
+### 1.4 本次Commit汇总
+
+| Commit | 作者 | 说明 |
+|--------|------|------|
+| 6c97bec8 | 小沈 | fix: 删除file_react.py中ver1_run_stream-小沈-2026-03-27 |
+| c3b25455 | 小沈 | feat: react_sse_wrapper添加分发逻辑-小沈-2026-03-27 |
+| 74924d76 | 小沈 | feat: chat_router简化分发逻辑-调用react_sse_wrapper-小沈-2026-03-27 |
+
+### 1.5 验证结果
+
+| 验证项 | 状态 | 结果 |
+|--------|------|------|
+| 单元测试 | ✅ | 52 passed |
+
+参与开发：小沈
+完成时间：2026-03-27
+
+---
+
+v0.8.15
+
+更新时间：2026-03-27 14:30:18
+
+更新内容：
+
+## 1. 设计文档阶段6/7完整化 - 小沈-2026-03-27
+
+### 1.1 背景
+
+根据用户要求，检查并完善设计文档中阶段6和阶段7的说明，确保与附录6-3.2实施步骤保持一致。
+
+### 1.2 实施内容
+
+#### 1.2.1 全文一致性修正
+- 修正附录6-3.4节错误引用：阶段3改为阶段6，ver1_run_stream改为run_stream
+- 修正阶段1描述：chat_router → react_sse_wrapper（不是直接调用ver1_run_stream）
+- 修正附录6-3.1当前调用链：描述与实施步骤不一致
+- 删除旧TODO 3（cancel/pause/resume），引用到附录7
+
+#### 1.2.2 API端点代码示例恢复
+- 恢复被误删的 chat_router.py 作为API端点代码示例
+- 添加 @router.post("/chat/stream/v2") 代码
+- 添加启用步骤说明
+
+#### 1.2.3 新旧端点关系修正
+- "新端点与旧端点并行" → "新端点逐步替换旧端点"
+- "待废除" → "逐步废弃"
+
+#### 1.2.4 阶段7扩展任务完整化
+- 7.1 任务控制集成 - 添加4个功能的代码示例
+- 7.2 创建 network_react.py - 添加实现代码示例
+- 7.3 创建 desktop_react.py - 添加实现代码示例
+- 删除 7.4 废弃 agent.py（用户要求删除）
+
+### 1.3 本次Commit汇总
+
+| Commit | 作者 | 说明 |
+|--------|------|------|
+| ab8a7534 | 小沈 | docs: 恢复API端点代码示例-小沈-2026-03-27 |
+| 8749a252 | 小沈 | docs: 阶段6/7完整化-补充实现代码-小沈-2026-03-27 |
+| 54f75e4c | 小沈 | docs: 删除旧TODO3-引用到附录7-小沈-2026-03-27 |
+| 7698b780 | 小沈 | docs: 修正阶段7扩展任务-只保留Agent扩展-小沈-2026-03-27 |
+| c81b256d | 小沈 | docs: 阶段7新增任务控制集成-小沈-2026-03-27 |
+
+### 1.4 版本变更
+
+- 设计文档更新至 v2.88
+- 阶段6：完整4步实施步骤 + 代码示例
+- 阶段7：3个扩展任务 + 实现代码示例
+
+参与开发：小沈
+完成时间：2026-03-27 14:30:18
+
+---
+
 v0.8.14
 
 更新时间：2026-03-27 10:49:18
