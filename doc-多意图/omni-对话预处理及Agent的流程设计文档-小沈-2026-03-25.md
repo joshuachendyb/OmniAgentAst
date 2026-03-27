@@ -1,8 +1,8 @@
 # OmniAgent对话预处理及Agent的流程设计文档
 
 **创建时间**: 2026-03-25 13:51:48
-**更新时间**: 2026-03-26 17:00:00
-**版本**: v2.81
+**更新时间**: 2026-03-27 08:21:14
+**版本**: v2.82
 **编写人**: 小沈
 
 ---
@@ -112,6 +112,7 @@
 | v2.79 | 2026-03-26 15:36:57 | 阶段5步骤3拆分为3.1基础初始化+3.2 Agent参数准备，删除重复代码 |
 | v2.80 | 2026-03-26 15:47:58 | 全文中5步改为6步：步骤3增加初始化+参数准备，修正所有描述（小强检查） |
 | v2.81 | 2026-03-26 16:00:00 | 修正架构图为四层：路由层→React SSE包装层→意图特定React→通用ReAct，明确react_sse_wrapper是第二层（小强修正） |
+| v2.82 | 2026-03-27 08:21:14 | 附录6.3.2补充数据库保存说明：react_sse_wrapper.py已包含9处数据库保存逻辑，集成后可解决附录5问题，补充完整关键代码示例；修正2380行BaseReAct为BaseAgent；补充完整功能模块说明表 |
 
 ---
 
@@ -204,848 +205,21 @@ chat2.py
 
 ```
 前端请求
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  chat_router.py (API端点 + 6步完整流程)                          │
-│                                                                 │
-│  1. 预处理 (PreprocessingPipeline)                              │
-│  2. 意图检测 (IntentRegistry)                                  │
-│  3. 初始化 + 参数准备                                           │
-│  4. 安全检测 (security_check)                                   │
-│  5. start步骤 (start_step)                                     │
-│  6. 分发到Agent (根据intent_type)                              │
-│                                                                 │
-│  输出：intent, start_data, agent_events                         │
-└─────────────────────────────────────────────────────────────────┘
-               │
-          ┌─────┼─────┐
-          │     │     │
-          ▼     ▼     ▼
-      intent= intent= intent=
-      file   network query
-           │     │     │
-           ▼     ▼     ▼
-       ┌─────────────┐ ┌─────────────────┐ ┌────────────┐
-       │intent-file- │ │intent-network- │ │chat_       │
-       │ReactAgent    │ │ReactAgent      │ │stream_     │
-       │(ReAct)       │ │(ReAct)         │ │query.py    │
-       │              │ │                │ │(简单对话)  │
-       └─────────────┘ └─────────────────┘ └────────────┘
-       
-       start → thought → action → observation → final
-       
-      ┌──────────────┐
-      │error_handler │ ← 统一的错误处理
-      │.py           │
-      └──────────────┘
-      ┌──────────────┐
-      │incident_han- │ ← 统一的中断/暂停处理
-      │dler.py       │
-      └──────────────┘
-```
-
-**chat_router.py (Router服务层) 6步流程**：
-
-| 步骤 | 功能 | 说明 |
-|------|------|------|
-| 1 | 预处理 | PreprocessingPipeline 语句校对 |
-| 2 | 意图检测 | IntentRegistry 识别意图类型 |
-| 3 | 初始化 + 参数准备 | ai_service/next_step/task_id等 |
-| 4 | 安全检测 | security_check 安全检查 |
-| 5 | start步骤 | start_step 发送start事件 |
-| 6 | 分发Agent | 根据intent_type调用不同Agent |
-
-**流程说明**：
-
-| 阶段 | 文件 | 说明 |
-|------|------|------|
-| **入口** | chat_router.py | API端点，接收请求 |
-| **路由** | chat_router.py | 6步完整流程 |
-| **预处理** | preprocessing/pipeline.py | 语句校对 + 意图识别 |
-| **ReAct流程** | intent-*-ReactAgent (agent.py) | start → thought → action → observation → final |
-| **简单对话** | chat_stream_query.py | start → chunk → final |
-| **错误处理** | error_handler.py | 统一的错误响应 |
-| **中断处理** | incident_handler.py | 统一的中断/暂停响应 |
-
-**chat_router.py (API端点) 与 具体Agent的职责分工**：
-
-| 文件 | 职责 | 不做 |
-|------|------|------|
-| **chat_router.py** | API端点 + 6步流程：预处理→意图检测→初始化→安全检测→start→分发Agent | 具体执行 |
-| **FileReactAgent** | ReAct循环：thought→action→observation→final | 路由、预处理 |
-| **NetworkReactAgent** | ReAct循环：thought→action→observation→final | 路由、预处理 |
-| **chat_stream_query** | 简单对话流：chunk→final | 路由、预处理 |
-
-> **📝 说明**：chat2.py 逐步废弃，其功能整合到 chat_router.py (API端点)
-
-### 2.2 预处理模块职责
-
-预处理模块（`preprocessing.py`）是**入口**，负责：
-
-| 步骤 | 功能 | 输出 |
-|------|------|------|
-| 1 | preprocessor.process() | 意图类型、置信度、处理后的文本 |
-| 2 | intent_registry.get() | 意图定义（name, description） |
-| 3 | 返回决策数据 | intent_type + intent_def + task |
-
-### 2.3 具体Agent职责
-
-> **📝 说明**：chat2.py 逐步废弃，其功能整合到 chat_router.py
-
-**具体Agent职责**：
-
-| Agent | 职责 | 说明 |
-|-------|------|------|
-| **FileReactAgent** | 文件操作ReAct循环 | thought→action→observation→final |
-| **NetworkReactAgent** | 网络操作ReAct循环 | thought→action→observation→final |
-| **chat_stream_query** | 简单对话流 | chunk→final |
-
-### 2.4 文件引用关系
-
-| 模块/函数 | 引用路径 |
-|-----------|---------|
-| PreprocessingPipeline | `from app.services.preprocessing import PreprocessingPipeline` |
-| IntentRegistry | `from app.services.intent import IntentRegistry, Intent` |
-| intent-file-ReactAgent | `from app.services.agent import intent_file_ReactAgent` |
-| AIServiceFactory | `from app.services import AIServiceFactory` |
-| cache_display_name | `from app.utils.display_name_cache import cache_display_name` |
-| check_command_safety | `from app.services.shell_security import check_command_safety` |
-
-### 2.5 历史消息处理
-
-| 消息类型 | 处理方式 |
-|----------|---------|
-| 最后一条用户消息 | 经过 preprocessor.process() 处理后传入 chat2 |
-| 历史消息（messages[:-1]） | 直接传给 chat2，由 chat2 传给 chat_stream_query |
-
-### 2.6 意图判断逻辑
-
-预处理返回的 intent_type 可能有以下值：
-
-| intent_type | 处理方式 |
-|-------------|---------|
-| file_operation | 有动作 → ReAct 循环 |
-| network_operation | 有动作 → ReAct 循环 |
-| chat / unknown / 其他 | 无动作 → 普通对话 |
-
-### 2.7 函数调用关系
-
-#### 2.7.1 preprocessing.py（预处理入口）
-
-```python
-from app.services.preprocessing import PreprocessingPipeline
-from app.services.intent import IntentRegistry, Intent
-
-# 全局实例
-_preprocessor = PreprocessingPipeline()
-_intent_registry = IntentRegistry()
-
-async def execute_preprocessing(request: ChatRequest) -> dict:
-    """
-    预处理入口函数
-    职责：预处理 → 意图识别 → 返回预处理结果
-    注意：不调用chat2，由路由层决定后续调用
-    """
-    # 1. 预处理
-    task = request.messages[-1].content
-    intent_names = _intent_registry.get_all_names()
-    preprocessed = _preprocessor.process(task, intent_names, session_id=None)
-    
-    # 2. 意图识别
-    intent_type = preprocessed.get("intent", "unknown")
-    intent_def = _intent_registry.get(intent_type)
-    
-    # 3. 历史消息（不经过预处理）
-    history = request.messages[:-1]
-    
-    # 4. 返回预处理结果（由路由层决定后续调用）
-    return {
-        "corrected": preprocessed["corrected"],
-        "intent_type": intent_type,
-        "intent_def": intent_def,
-        "history": history,
-    }
-```
-
-> **📝 说明**：预处理模块只返回预处理结果，不直接调用chat2。由路由层（7.4节）负责串联调用。
-
-#### 2.7.2 chat2.py（入口+执行）
-
-```python
-from app.services.agent import intent_file_ReactAgent  # 文件操作专用Agent
-from app.services import AIServiceFactory
-
-async def handle_stream(
-    last_message: str,        # 预处理后的用户消息
-    intent_type: str,         # 意图类型
-    intent_def,               # 意图定义
-    history: List[Message],   # 历史消息（不经过预处理）
-    request: ChatRequest,     # 原始请求
-):
-    """
-    chat2.py 入口+执行函数
-    
-    职责：
-    1. Session 创建/管理
-    2. 根据 intent_type 决定分支
-    3. 流式输出具体工作
-    """
-    # ========== 1. 初始化（Session、AI服务、计数器） ==========
-    session_id = request.session_id or create_session(...)
-    ai_service = AIServiceFactory.get_service_for_model(request.provider, request.model)
-    
-    # 步骤计数器
-    step_counter = 0
-    def next_step():
-        nonlocal step_counter
-        step_counter += 1
-        return step_counter
-    
-    # ========== 2. 根据 intent_type 决定分支 ==========
-    if intent_type in ["file_operation", "network_operation"]:
-        # 有动作 → 走 ReAct 循环
-        
-        # 创建 LLM 客户端适配器
-        async def llm_client(message, history=None):
-            response = await ai_service.chat(message, history)
-            return type('obj', (object,), {'content': response.content})()
-        
-        # 创建 Agent 实例
-        agent = FileOperationAgent(
-            llm_client=llm_client,
-            session_id=session_id
-        )
-        
-        async for event in agent.ver1_run_stream(
-            task=last_message,
-            model=ai_service.model,
-            provider=ai_service.provider,
-            context={"session_id": session_id, "intent_def": intent_def},
-            get_next_step=next_step,
-        ):
-            yield event
-    else:
-        # 无动作 → 走普通对话
-        async for event in chat_stream_query(
-            request=request,
-            ai_service=ai_service,
-            last_message=last_message,
-            history=history,
-            ...
-        ):
-            yield event
-```
-
----
-
-## 三、参数传递设计
-
-### 3.1 预处理 → chat2
-
-| 参数 | 说明 | 来源 |
-|------|------|------|
-| last_message | 预处理后的用户消息 | preprocessor.process() 返回的 corrected |
-| intent_type | 意图类型 | preprocessor.process() 返回的 intent |
-| intent_def | 意图定义 | intent_registry.get() 返回 |
-| history | 历史消息（不含最后一条） | request.messages[:-1] |
-| request | 原始请求对象 | API 传入 |
-
-### 3.2 chat2 内部准备
-
-| 参数 | 说明 | 准备方式 |
-|------|------|---------|
-| session_id | Session ID | request.session_id 或创建新 session |
-| ai_service | AI 服务实例 | AIServiceFactory.get_service_for_model() |
-| step_counter | 步骤计数器 | 局部变量 |
-| next_step | 计数函数 | chat2 内定义的局部函数 |
-
-### 3.3 chat2 → intent-file-ReactAgent.ver1_run_stream()
-
-**实际参数（已核对代码）**：
-
-```python
-agent = intent_file_ReactAgent(
-    llm_client=llm_client,
-    session_id=session_id
-)
-
-agent.ver1_run_stream(
-    task=last_message,                    # 预处理后的用户消息
-    model=ai_service.model,                # 模型名称
-    provider=ai_service.provider,           # Provider 名称
-    context={"session_id": session_id, "intent_def": intent_def},  # 上下文（含意图定义）
-    system_prompt=None,                    # 可选自定义 prompt
-    max_steps=100,                         # 最大迭代次数
-    get_next_step=next_step,               # step 计数函数
-)
-```
-
-### 3.4 chat2 → chat_stream_query()
-
-**实际参数（已核对代码）**：
-
-```python
-chat_stream_query(
-    request=request,                       # 原始请求
-    ai_service=ai_service,                  # AI 服务实例
-    task_id=task_id,                       # 任务 ID
-    llm_call_count=llm_call_count,         # LLM 计数器
-    current_execution_steps=[],            # 执行步骤列表
-    current_content="",                    # 当前累积内容
-    last_is_reasoning=None,                # 上一个 reasoning 状态
-    last_message=last_message,              # 预处理后的用户消息
-    running_tasks=running_tasks,            # 运行任务字典
-    running_tasks_lock=running_tasks_lock, # 锁
-    next_step=next_step,                   # step 计数函数
-    display_name=display_name,             # 显示名称
-    session_id=session_id,                 # Session ID
-    save_execution_steps_to_db=save_fn,   # 保存函数
-    add_step_and_save=add_step_fn,         # 添加步骤函数
-)
-```
-
----
-
-## 四、Agent分层架构设计与实现说明
-
-> **📝 说明**：本节整合自参考文档 `Agent分层重构设计方案-小沈-2026-03-25.md`，以实际代码为参考标注实现状态。
-
-### 4.1 设计原则
-
-| 原则 | 说明 |
-|------|------|
-| **生产代码是基准** | 以 agent.py 的 run_stream 为准 |
-| **base.py 向生产代码看齐** | 用正确的逻辑更新 base.py |
-| **agent.py 继承 base.py** | 而不是重写 |
-
-### 4.2 继承架构图
-
-```
-┌─────────────────────────────────────────┐
-│     intent-file-ReactAgent (agent.py) (扩展层) │
-│  - 继承 BaseAgent                       │
-│  - 添加扩展功能:                        │
-│    • session 管理                        │
-│    • prompt 日志                        │
-│    • preprocessor                       │
-│    • intent_registry                    │
-│  - 调用父类核心方法                     │
-└─────────────────────────────────────────┘
-                    ↓ 继承
-┌─────────────────────────────────────────┐
-│     BaseAgent (base.py) (核心层)       │
-│  - 定义 ReAct 循环核心逻辑               │
-│  - 提供抽象方法供子类实现                │
-│  - 不包含任何具体实现细节                │
-└─────────────────────────────────────────┘
-```
-
-### 4.3 调用关系
-
-```
-chat2.ver1_run_stream()
-    ↓ 调用
-agent.ver1_run_stream() ← intent-file-ReactAgent
-    ↓ 调用
-run_stream() ← 父类 BaseAgent
-    ↓
-    ├── _step_thought() ← 可扩展
-    ├── _step_action() ← 可扩展  
-    └── _step_observation() ← 核心逻辑在父类
-            ↓
-            内部调用:
-            ├── _get_llm_response() ← 子类实现
-            ├── _execute_tool() ← 子类实现
-            └── _add_observation_to_history() ← 父类实现
-```
-
-### 4.4 BaseAgent 抽象方法定义（参考文档）
-
-```python
-class BaseAgent(ABC):
-    """Agent 核心基类"""
-    
-    # ===== 抽象方法（子类必须实现）=====
-    
-    @abstractmethod
-    async def _get_llm_response(self) -> str:
-        """获取 LLM 响应"""
-        pass
-    
-    @abstractmethod
-    async def _execute_tool(self, action: str, params: Dict) -> Dict:
-        """执行工具"""
-        pass
-    
-    @abstractmethod
-    def _get_system_prompt(self) -> str:
-        """获取系统 Prompt"""
-        pass
-    
-    @abstractmethod
-    def _get_task_prompt(self, task: str, context: Optional[Dict]) -> str:
-        """获取任务 Prompt"""
-        pass
-    
-    # ===== 核心方法（子类调用）=====
-    
-    async def run_stream(self, task: str, context: Optional[Dict] = None, max_steps: int = 100):
-        """ReAct 核心循环"""
-        self._init_session(task, context)
-        step_count = 0
-        while step_count < max_steps:
-            step_count += 1
-            yield await self._step_thought()
-            yield await self._step_action()
-            yield await self._step_observation()
-    
-    # ===== 可扩展方法（子类可覆盖）=====
-    
-    def _init_session(self, task: str, context: Optional[Dict]):
-        pass
-    
-    async def _step_thought(self) -> Dict:
-        pass
-    
-    async def _step_action(self) -> Dict:
-        pass
-    
-    async def _step_observation(self) -> Dict:
-        pass
-```
-
-### 4.5 当前实现状态
-
-**检查时间**: 2026-03-25 15:30:20  
-**检查人**: 小沈
-
-#### 4.5.1 已完成项目 ✅
-
-| 项目 | 说明 | 代码位置 |
-|------|------|---------|
-| agent.py 继承 BaseAgent | 继承关系已建立 | agent.py:41 `class intent-file-ReactAgent(BaseAgent)` |
-| 实现4个抽象方法 | 子类必须实现的方法 | agent.py:197/299/313/320 |
-| ver1_run_stream 调用 run_stream | 调用父类核心方法 | agent.py:657 `async for event in self.run_stream(...)` |
-| base.py 核心循环逻辑 | 完整的 ReAct 循环 | base.py:108-270 |
-| observation 包含实际数据 | 2026-03-25 修复 | base.py:206-212 raw_data 传递给 LLM |
-
-#### 4.5.2 未完成项目 ❌
-
-| 序号 | 未完成项 | 当前状态 |
-|------|---------|---------|
-| 1 | **_step_thought 可扩展方法** | base.py 未实现拆分 |
-| 2 | **_step_action 可扩展方法** | base.py 未实现拆分 |
-| 3 | **_step_observation 可扩展方法** | base.py 未实现拆分 |
-| 4 | **_init_session Hook** | base.py 有 _on_session_init，但不是 _init_session |
-| 5 | **_on_before_loop Hook** | base.py 有调用但没有实现 |
-
-#### 4.5.3 差距分析
-
-**文档设计**：base.py 应该有可扩展的 `_step_thought()`、`_step_action()`、`_step_observation()` 方法，run_stream 调用这些方法，子类可以覆盖。
-
-**实际情况**：base.py 的 run_stream 是一个完整的函数，所有逻辑都在里面，没有拆分成可扩展的子方法。
-
-**影响**：当前架构可扩展性不足，子类无法针对特定阶段进行定制。
-
----
-
-## 五、事件类型定义
-
-### 5.1 ReAct 循环事件（intent-file-ReactAgent）
-
-| 事件类型 | 说明 | 包含字段 |
-|----------|------|---------|
-| start | 会话开始 | task, session_id |
-| thought | LLM 思考过程 | step, content, reasoning, action_tool, params |
-| action_tool | 工具执行 | step, action_tool, params |
-| observation | 执行结果 | step, result |
-| final | 最终回复 | content |
-| error | 错误信息 | code, message |
-
-### 5.2 普通对话事件（chat_stream_query）
-
-| 事件类型 | 说明 | 包含字段 |
-|----------|------|---------|
-| start | 会话开始 | task |
-| chunk | 流式输出 | content |
-| final | 完成信号 | content |
-
----
-
-## 六、文件位置与职责划分
-
-### 6.1 文件位置
-
-| 文件 | 说明 |
-|------|------|
-| `backend/app/api/v1/chat2.py` | 路由层/chat2入口（含预处理调用） |
-| `backend/app/services/agent/agent.py` | intent-file-ReactAgent (ver1_run_stream) |
-| `backend/app/services/agent/base.py` | BaseAgent 基类（需补充可扩展方法） |
-| `backend/app/services/preprocessing/pipeline.py` | PreprocessingPipeline（已存在） |
-| `backend/app/services/intent/registry.py` | IntentRegistry（已存在） |
-| `backend/app/chat_stream/chat_stream_query.py` | 普通对话流式输出 |
-
-### 6.2 职责划分原则
-
-#### 6.2.1 外部流程职责
-
-| 模块 | 职责 | 不做 |
-|------|------|------|
-| **chat_router.py** | 6步：预处理→意图检测→初始化→安全检测→start→分发Agent | 具体执行 |
-| **具体Agent** | ReAct循环或简单对话流 | 路由、预处理 |
-
-> **📝 说明**：预处理不调用chat2，由路由层负责串联调用（见2.1架构）
-
-#### 6.2.2 Agent内部职责
-
-| 模块 | 职责 | 不做 |
-|------|------|------|
-| **BaseAgent (base.py)** | 定义ReAct循环核心逻辑，提供抽象方法，定义可扩展方法 | 包含具体实现细节 |
-| **intent-file-ReactAgent (agent.py)** | 继承BaseAgent，实现抽象方法，添加扩展功能（session、prompt等） | 重写循环逻辑 |
-
-### 6.3 Session 管理
-
-> **📝 说明**：代码中存在**两层Session管理**，职责不同：
-
-#### 6.3.1 两层Session管理
-
-| 层级 | 文件 | 职责 | Session ID |
-|------|------|------|------------|
-| **第一层** | chat2.py | task_id任务管理、中断/暂停控制 | task_id（路由参数） |
-| **第二层** | session.py | 文件操作会话记录、统计 | session_id（业务参数） |
-
-#### 6.3.2 chat2.py中的任务管理
-
-**文件位置**：`backend/app/api/v1/chat2.py`
-
-**数据结构**：
-```python
-# task_id → 任务信息
-running_tasks: dict[str, dict] = {
-    "task-uuid": {
-        "status": "running",    # running/cancelled/paused
-        "cancelled": False,
-        "paused": False,
-        "created_at": datetime,
-        "ai_service": ai_service
-    }
-}
-
-# session_id → 中断时间（防止5分钟内重连）
-interrupted_sessions: dict[str, datetime] = {}
-```
-
-**Session生命周期**：
-```
-request.session_id 或生成新 session_id
-    ↓
-running_tasks[task_id] = {status: "running", ...}
-    ↓
-根据 intent_type 分支（有动作/无动作）
-    ↓
-finally: del running_tasks[task_id]
-```
-
-#### 6.3.3 FileOperationSessionService（文件操作会话）
-
-**文件位置**：`backend/app/services/agent/session.py`
-
-**数据库表**：`file_operation_sessions`
-
-**状态**：`pending` / `active` / `completed` / `paused` / `failed`
-
-**主要方法**：
-- `create_session(agent_id, task_description)` → session_id
-- `complete_session(session_id, success)`
-- `get_session(session_id)` → SessionRecord
-
-> **⚠️ 注意**：两层Session的ID可能不同：
-> - chat2用的是task_id（路由级别）
-> - session.py用的是session_id（业务级别）
-> - 需要在Agent内部统一为session_id
-
-#### 6.3.4 与报告设计方案的逻辑关系
-
-> **📝 说明**：本节描述架构现状，报告设计方案（`LLM-文件操作历史过程报告设计方案V2版-小沈-20260325.md`）是基于本节架构的**具体实现方案**。
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                    6.3 Session管理（架构层）                              │
-│                                                                         │
-│  chat2.py                           session.py                          │
-│  ┌─────────────────┐               ┌─────────────────┐                  │
-│  │ task_id 任务管理 │               │ file_operation  │                  │
-│  │ + session_id    │               │ _sessions 表    │                  │
-│  └────────┬────────┘               └────────┬────────┘                  │
-│           │                                 │                            │
-│           │ 统一使用 request.session_id      │                            │
-│           └───────────────┬─────────────────┘                            │
-│                           ↓                                              │
-│                  file_operations 表                                       │
-│                  (session_id 关联操作记录)                                │
-└─────────────────────────────────────────────────────────────────────────┘
-                           │
-                           ↓ 具体实现
-┌─────────────────────────────────────────────────────────────────────────┐
-│           报告设计方案（实现层）- 已实现 ✅                                │
-│                                                                         │
-│  chat2.py:456                                                           │
-│  session_id = request.session_id or str(uuid.uuid4())  ← 统一session_id  │
-│                           ↓                                              │
-│  file_operations.session_id = request.session_id  ← 可被报告生成找到     │
-│                           ↓                                              │
-│  generate_report API (带 task_description 参数)  ← 报告正确生成        │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-**逻辑关系**：
-1. **6.3 Session管理** = 描述架构现状（有哪些Session、职责是什么）
-2. **报告设计方案** = 基于架构的具体实现方案（解决Session ID不统一导致报告找不到数据的问题）
-3. **关系**：报告设计方案是6.3架构的**落地实现**
-
----
-
-## 七、待实现清单
-
-### 7.1 本次代码重组原则
-
-> **📝 说明**：本次代码重组的核心指导思想，所有待实现任务都应遵循以下原则。
-
-| 序号 | 原则 | 说明 |
-|------|------|------|
-| 1 | **基础版本** | 改造的代码基础版本是 **v0.7.92** |
-| 2 | **重构范围** | 本次重构的是系统**主流程**的不合理和错乱的部分代码 |
-| 3 | **实现目标** | 通过部分代码的重构，和部分函数/代码文件的逻辑关系重组，实现**合理的OMNI系统运行逻辑**（流程图参考 2.1 节） |
-| 4 | **改造对象** | 改造的函数、代码文件的**错乱功能** |
-| 5 | **关联调用** | 重组把已经实现的功能正确的函数和代码，按照OMNI系统的流程进行**正确的关联和调用** |
-| 6 | **复用原则** | 重组的代码要**尽可能使用基础版本已有功能**，可以将已有功能**函数化/文件化**，被引用 |
-| 7 | **核心原则** | 引用基础版本的**各个小功能模块**的代码和功能，**不能丢失/破坏**已有的功能和小逻辑 |
-
-#### 7.1.1 核心教训（本次梳理的目的）
-
-> **⚠️ 教训来源**：上次 Agent 重构时，preprocessor、intent_registry、Session管理等单元功能都实现了，单元测试通过，但整合到主流程时失败——功能放到了废弃的支流代码中，主干流程反而没有这些功能。
-
-**核心问题**：
-- 单元重构完成 ≠ 重构目的达到
-- 功能实现 ≠ 功能被主流程调用
-- 单元测试通过 ≠ 主流程能工作
-
-**本次梳理的目的**：
-- 不是重新实现功能
-- 而是**正确地把已有功能整合到主流程**
-- 确保：preprocessor、intent_registry 等 → 被 chat2.py 主流程调用
-
-**每次修改必须思考**：
-```
-这个修改能不能整合到主流程？
-如果不能，怎么改才能整合？
-```
-
----
-
-#### 7.1.2 关于基础版本 v0.7.92
-- 所有改造以 v0.7.92 为基准
-- 不能脱离这个版本进行"全新设计"
-- 只能在原有基础上进行调整和优化
-
-**关于主流程重构**：
-- 问题：预处理功能在废弃的支流代码中，主干流程缺失
-- 目标：让主干流程具备完整的预处理功能
-- 方法：参考 2.1 节的流程图，将预处理功能正确关联到主流程
-
-**关于复用已有功能**：
-- v0.7.92 中已有许多小功能模块（preprocessor, intent_registry, session管理等）
-- 本次重组不是重新发明轮子
-- 而是**正确地调用**这些已有模块
-
-**关于不破坏已有功能**：
-- 重组时不能影响那些已经正常工作的功能
-- 只能修复错乱的部分
-- 保持其他功能不受影响
-
-### 7.2 预处理模块（独立入口）
-
-> **📝 说明**：根据2.1架构要求，预处理是**独立模块**，在路由层调用，不是放在chat2内部
-> 
-> **详细实现**：见附录 **阶段5：Router的更新**（第1943行起）
-
-**2.1架构要求**（必须遵守）：
-```
-用户请求
-    ↓
-chat_router.py (API端点) - 6步完整流程
-    1. 预处理 (PreprocessingPipeline)
-    2. 意图检测 (IntentRegistry)
-    3. 初始化 + 参数准备
-    4. 安全检测 (security_check)
-    5. start步骤 (start_step)
-    6. 分发到Agent
-    ↓
-Agent (FileReactAgent / chat_stream_query)
-```
-
-**关键约束**：
-- **禁止在chat2内部调用预处理**（违反2.1架构）
-- chat_router.py 包含完整6步流程
-- chat2只接收Agent执行结果
-
-### 7.3 chat2.py 废弃计划
-
-> **📝 说明**：chat2.py 逐步废弃，其功能整合到 chat_router.py 的6步流程中
-
-**chat2废弃原因**：
-- 混合了路由和流式loop职责
-- 包含预处理调用（违反2.1架构）
-- 职责不清
-
-**遗留问题修复**（来自 `2.预处理与多意图代码目录说明-小沈-2026-03-22.md` 7.7节）：
-> **问题**：agent.py:452 使用原始 `task` 而不是 `preprocessed['corrected']`
-> 
-> **应改为**：
-> ```python
-> task_prompt = self.prompts.get_task_prompt(preprocessed['corrected'], context)  # 用修正后的 ✅
-> ```
-
-### 7.4 路由改造（创建 chat_router.py）
-
-> **📝 设计依据**：`多意图系统与现有代码整合架构设计-2026-03-22.md` 3.1节
-> 
-> **核心原则**：chat2 **不能作为路由层**，chat2只负责流式loop
-
-**问题**：当前 chat2.py 混合了路由和流式loop职责，职责不清
-
-**目标**：创建独立的 chat_router.py 作为路由入口
-
-**chat_router.py (API端点) 职责**（6步完整流程）：
-```
-chat_router.py（API端点）
-    1. 预处理 (PreprocessingPipeline)
-    2. 意图检测 (IntentRegistry)
-    3. 初始化 + 参数准备
-    4. 安全检测 (security_check)
-    5. start步骤 (start_step)
-    6. 分发到Agent (根据intent_type)
-```
-
-**架构**（参考整合架构设计2.1节）：
-```
-chat_router.py（API端点）
-    ├── intent=file → FileReactAgent (file_react.py) - ReAct流式loop
-    ├── intent=network → NetworkReactAgent (network_react.py) - ReAct流式loop
-    └── intent=query → chat_stream_query.py (简单对话流式)
-```
-
-**过渡策略**：旧代码逐步取代，不能完全删除
-- 当前：api/chat2.py → agent.py → base.py
-- 目标：chat_router.py → react_sse_wrapper.py → FileReactAgent (file_react.py) → base_react.py
-- 方式：直接修改 chat_router.py 作为新入口，验证通过后逐步替换旧调用链
-- chat2.py 暂时保留，待新架构稳定后再废弃
-
-> **📝 详细代码实现**：见附录 **阶段5：Router的更新**（第1943行起）
-
----
-
-### 7.5 Agent分层重构
-
-> **📝 说明**：基于4.5.2的未完成项，补充base.py的可扩展方法。
-
-**4.5.1已完成** ✅：继承关系、调用run_stream、核心循环逻辑
-
-**4.5.2待实现** ❌：可扩展方法拆分
-
-**Agent命名规范**（必须遵守）：
-> **⚠️ 命名原则**：IntentReactAgent 是**文件操作专用**的Agent，应统一命名为 `intent-file-ReactAgent`
->
-> | 当前命名 | 应改为 | 说明 |
-> |---------|--------|------|
-> | IntentReactAgent | intent-file-ReactAgent | 文件操作专用 |
-> | IntentReactAgent (network) | intent-network-ReactAgent | 网络操作专用（未来） |
->
-> **原因**：避免与 BaseAgent 混淆，明确每个Agent的职责范围
-
-**改造要点**：
-- [ ] 将 `IntentReactAgent` 重命名为 `intent-file-ReactAgent`
-- [ ] base.py 拆分 `_step_thought()` 可扩展方法
-- [ ] base.py 拆分 `_step_action()` 可扩展方法
-- [ ] base.py 拆分 `_step_observation()` 可扩展方法
-- [ ] base.py 实现 `_init_session()` Hook（替代 `_on_session_init`）
-- [ ] base.py 实现 `_on_before_loop()` Hook
-- [ ] 验证（生产功能正常 + 测试通过）
-
----
-
-## 八、关键实现细节（代码示例）
-
-### 8.1 next_step 函数定义
-
-```python
-# 必须在使用前定义
-step_counter = 0
-
-def next_step():
-    nonlocal step_counter
-    step_counter += 1
-    return step_counter
-```
-
-### 8.2 LLM 客户端适配器
-
-```python
-async def llm_client(message, history=None):
-    response = await ai_service.chat(message, history)
-    return type('obj', (object,), {'content': response.content})()
-```
-
-### 8.3 Agent 实例创建
-
-```python
-agent = FileOperationAgent(
-    llm_client=llm_client,
-    session_id=session_id
-)
-```
-
----
-
-## 附录2：ReAct架构层次说明
-
-> **📝 说明**：整理ReAct架构的层次关系，明确各层职责
->
-> **更新时间**: 2026-03-25 21:18:40
-> **更新人**: 小沈
-
-### 附录2.1 架构层次总览
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  第一层：路由层 (chat_router.py) - 6步完整流程                    │
-│                                                                 │
-│  1. 预处理 (PreprocessingPipeline)                             │
-│  2. 意图检测 (IntentRegistry)                                  │
-│  3. 初始化 + 参数准备                                           │
-│  4. 安全检测 (security_check)                                  │
-│  5. start步骤 (start_step)                                     │
-│  6. 分发到Agent (根据intent_type)                               │
-│                                                                 │
-│  ✅ 路由入口，统一入口处理                                        │
-└─────────────────────────────────────────────────────────────────┘
-                            ↑
-                            │ 调用
+                             │
 ┌─────────────────────────────────────────────────────────────────┐
 │  第二层：React SSE 包装层 (react_sse_wrapper.py)                 │
 │                                                                 │
 │  - SSE 框架搭建                                                 │
 │  - 任务管理 (running_tasks)                                     │
-│  - start 步骤发送                                               │
 │  - 数据库保存 (save_execution_steps_to_db)                     │
 │  - SSE 格式化转换 (dict → SSE 字符串)                           │
-│  - 中断/暂停检查                                                 │
+│  - 中断/暂停检查                                               │
+│  - ⚠️ start步骤由第一层发送，本层不重复发送                     │
 │                                                                 │
 │  ✅ 流式输出包装，与具体意图无关                                  │
 └─────────────────────────────────────────────────────────────────┘
-                            ↑
-                            │ 调用
+                             ↑
+                             │
 ┌─────────────────────────────────────────────────────────────────┐
 │  第三层：意图特定React层 (file_react.py / network_react.py)      │
 │                                                                 │
@@ -1108,10 +282,10 @@ agent = FileOperationAgent(
 │                                                                 │
 │  - SSE 框架搭建                                                 │
 │  - 任务管理 (running_tasks)                                     │
-│  - start 步骤发送                                               │
 │  - 数据库保存 (save_execution_steps_to_db)                     │
 │  - SSE 格式化转换 (dict → SSE 字符串)                           │
-│  - 中断/暂停检查                                                 │
+│  - 中断/暂停检查                                               │
+│  - ⚠️ start步骤由第一层发送，本层不重复发送                     │
 │                                                                 │
 │  ✅ 流式输出包装，与具体意图无关                                  │
 └─────────────────────────────────────────────────────────────────┘
@@ -1703,138 +877,7 @@ async for event in agent.run_stream(user_input):
 - **结论**：阶段2框架已创建，需要阶段3完成集成
 
 
-阶段3：最终架构（chat_router → react_sse_wrapper → file_react）
 
-> **更新时间**: 2026-03-26 16:10:00
-> **更新说明**: 修正阶段3实施步骤，基于当前实际代码结构
-
-**当前状态**（2026-03-26 16:10）：
-- chat_router.py 已实现6步流程 ✅
-- file_react.ver1_run_stream() 已包含 SSE 格式化逻辑（调用 sse_formatter.py）✅
-- react_sse_wrapper.py 已创建但未被调用 ⚠️
-
----
-
-#### 3.1 当前调用链 vs 目标调用链
-
-```
-【当前调用链】（简化版，3层）
-chat_router.py (backend/app/services/chat_router.py)
-  → FileReactAgent.ver1_run_stream()  [包含 SSE 格式化] (backend/app/services/agent/file_react.py)
-  → BaseAgent.run_stream() [返回 event dict] (backend/app/services/agent/base_react.py)
-
-【目标调用链】（完整版，4层）
-chat_router.py (backend/app/services/chat_router.py)
-  → react_sse_wrapper.generate_sse_stream()  [SSE 格式化] (backend/app/services/react_sse_wrapper.py)
-  → FileReactAgent.ver1_run_stream()  [返回 event dict] (backend/app/services/agent/file_react.py)
-  → BaseAgent.run_stream() (backend/app/services/agent/base_react.py)
-
-【说明】
-- BaseReAct 类在实际代码中不存在，已删除
-- react_sse_wrapper.generate_sse_stream() 已创建但目前未被调用（待集成）
-- FileReactAgent 冗余代码已清理完成（intent_registry 和 preprocessor 已删除）
-```
-
----
-
-#### 3.2 实施步骤（详细说明）
-
-**第一步：修改 file_react.py**
-- 删除 `ver1_run_stream()` 方法
-- 保留 `run_stream()` 方法（返回 event dict）
-- SSE 格式化逻辑移到 react_sse_wrapper
-
-```python
-# 删除 ver1_run_stream() 方法（约100行）
-# 保留 run_stream() 方法（返回 event dict）
-class FileReactAgent(BaseAgent):
-    async def run_stream(self, task, context, max_steps):
-        # 返回 event dict，不是 SSE 字符串
-        yield {"type": "thought", "content": ...}
-        yield {"type": "action_tool", "tool_name": ...}
-        ...
-```
-
-**第二步：修改 react_sse_wrapper.py**
-- 添加 SSE 格式化逻辑（从 file_react.ver1_run_stream 复制）
-- 添加调用 file_react.run_stream() 的函数
-
-```python
-# react_sse_wrapper.py 新增
-async def process_file_operation(
-    user_input: str,
-    model: str,
-    provider: str,
-    llm_client: Callable,
-    session_id: str,
-    next_step: Callable
-):
-    from app.services.agent.file_react import FileReactAgent
-    
-    agent = FileReactAgent(llm_client=llm_client, session_id=session_id)
-    
-    # 调用 run_stream()，获取 event dict
-    async for event in agent.run_stream(task=user_input, context=None, max_steps=100):
-        step = next_step()
-        
-        # SSE 格式化（从 ver1_run_stream 复制）
-        if event.get("type") == "thought":
-            yield format_thought_sse(step=step, content=event.get("content", ""))
-        elif event.get("type") == "action_tool":
-            yield format_action_tool_sse(...)
-        elif event.get("type") == "observation":
-            yield format_observation_sse(...)
-        elif event.get("type") == "final":
-            yield create_final_response(...)
-        # ... 其他类型
-```
-
-**第三步：修改 chat_router.py**
-- 将 `_handle_file_operation` 改为调用 `react_sse_wrapper.process_file_operation()`
-
-```python
-# chat_router.py 当前
-async for event in agent.ver1_run_stream(...):
-    yield event
-
-# 改为
-async for event in react_sse_wrapper.process_file_operation(...):
-    yield event
-```
-
-**第四步：验证**
-- 单元测试通过
-- 端到端测试正常
-- 前后功能一致
-
----
-
-#### 3.3 为什么需要阶段3
-
-| 原因 | 说明 |
-|------|------|
-| **架构一致性** | 统一使用 react_sse_wrapper 处理 SSE 格式化 |
-| **代码复用** | 网络操作、桌面操作可以用相同的 SSE 格式化逻辑 |
-| **职责分离** | Agent 负责执行，SSE 包装负责输出格式 |
-
----
-
-#### 3.4 不实施阶段3也可以工作
-
-> ⚠️ **说明**：当前实现（3层）已经可以正常工作，阶段3是**可选优化**。
-
-**当前实现**：
-- file_react.ver1_run_stream() 自己完成 SSE 格式化
-- 优点：简单直接
-- 缺点：每个 Agent 都要重复 SSE 格式化代码
-
-**实施后的优点**：
-- 统一 SSE 格式化逻辑
-- 易于维护和扩展
-
-**结论**：可以先不实施阶段3，等需要添加 network_react / desktop_react 时再考虑。
-
----
 
 #### 阶段4：start 函数独立设计（2026-03-26 11:29:40 小沈）
 
@@ -2344,6 +1387,308 @@ const url = `${config.baseURL}/chat/stream/v2`;
 | 7 | 中断/暂停功能 | 触发中断，检查状态正确 |
 | 8 | 数据库保存 | 检查 execution_steps 正确保存 |
 
+---
+## 附录4：七章实现状态总览（2026-03-27 更新）
+
+### 实现状态总览
+
+| 章节 | 任务 | 状态 | 问题 |
+|------|------|------|------|
+| 7.1 | 本次代码重组原则 | ✅ | - |
+| 7.2 | 预处理模块（独立入口） | ✅ | - |
+| 7.3 | chat2.py 废弃计划 | ⚠️ | 旧端点仍在用 |
+| 7.4 | 路由改造（创建chat_router.py） | ⚠️ | **❌ 漏了数据库保存** |
+| 7.5 | Agent分层重构 | ❌ | 未实现 |
+
+### 7.1 本次代码重组原则（详情）
+
+| 序号 | 原则 | 说明 |
+|------|------|------|
+| 1 | **基础版本** | 改造的代码基础版本是 **v0.7.92** |
+| 2 | **重构范围** | 本次重构的是系统**主流程**的不合理和错乱的部分代码 |
+| 3 | **实现目标** | 通过部分代码的重构，和部分函数/代码文件的逻辑关系重组，实现**合理的OMNI系统运行逻辑**（流程图参考 2.1 节） |
+| 4 | **改造对象** | 改造的函数、代码文件的**错乱功能** |
+| 5 | **关联调用** | 重组把已经实现的功能正确的函数和代码，按照OMNI系统的流程进行**正确的关联和调用** |
+| 6 | **复用原则** | 重组的代码要**尽可能使用基础版本已有功能**，可以将已有功能**函数化/文件化**，被引用 |
+| 7 | **核心原则** | 引用基础版本的**各个小功能模块**的代码和功能，**不能丢失/破坏**已有的功能和小逻辑 |
+---
+## 附录5：SSE调用链分析（2026-03-27 新增）
+
+> **问题背景**：2026-03-26 18:56 用户导出消息发现数据库中只有1个step（start），但前端导出有完整步骤（17个step）。根因：chat_router.py 调用链缺少数据库保存逻辑。
+
+### 一、调用链对比分析
+
+#### 1.1 chat2.py 完整调用链（✅ 数据库保存正常）
+IntentAgent = IntentReactAgent（同一个类）
+FileOperationAgent 是这个类的别名
+chat2.py:39
+    → import IntentAgent as FileOperationAgent
+        → __init__.py:70-72
+            → from .agent import IntentReactAgent
+                → agent.py:41 class IntentReactAgent(BaseAgent)
+```
+chat2.py (API入口)                                        【chat2.py:457-488】
+    │
+    ├── 创建Agent: FileOperationAgent (IntentReactAgent)    【chat2.py:457】
+    │       ↓ 来自 __init__.py 懒加载
+    │       from app.services.agent import IntentAgent as FileOperationAgent  【__init__.py:70-72】
+    │       IntentReactAgent 类定义在 agent.py             【agent.py:41】
+    │
+    ├── wrapped_save_steps → save_execution_steps_to_db()  【chat2.py:424-425 保存整个列表】
+    ├── wrapped_add_step → add_step_and_save()              【chat2.py:427-428 添加单个step】
+    │
+    ├── 调用 agent.ver1_run_stream()                        【chat2.py:464, agent.py:622】
+    │       ↓ 封装层
+    │       self.run_stream()                               【base_react.py:108 核心层】
+    │               ↓ 生成SSE事件
+    │               yield format_xxx_sse()                  【agent.py:内部调用sse_formatter】
+    │
+    ├── ⭐ chat2.py 解析SSE并保存到数据库                    【chat2.py:479-488 关键！不要漏掉】
+    │       if sse_data.startswith("data: "):
+    │           step_data = json.loads(sse_data[6:])
+    │           current_execution_steps.append(step_data)
+    │           await save_execution_steps_to_db(request.session_id, current_execution_steps, current_content)
+    │
+    └── ✅ 每个事件生成后立即调用保存函数 → 数据库完整
+```
+
+**关键**：chat2.py 自己在循环里解析SSE并保存（第479-488行），不是agent负责保存。
+
+#### 1.2 chat_router.py 当前调用链（❌ 数据库保存缺失）
+
+```
+chat_router.py (API入口)                                  【chat_router.py:410-426】
+    │
+    ├── 创建 FileReactAgent 实例                           【chat_router.py:411】
+    │       └── class FileReactAgent(BaseAgent)            【file_react.py:41】
+    │
+    ├── ❌ 没有创建 wrapped_save_steps 函数
+    │       （chat2.py 有，chat_router.py漏掉了）
+    │
+    ├── 调用 agent.ver1_run_stream()                        【chat_router.py:417, file_react.py:560】
+    │       ↓ 封装层 (不处理保存)
+    │       self.run_stream()                               【base_react.py:108】
+    │               ↓ 核心层
+    │               ├── thought → yield format_xxx_sse()    【file_react.py:603-610】
+    │               ├── action_tool → yield format_xxx_sse()【file_react.py:612-621】
+    │               ├── observation → yield format_xxx_sse()【file_react.py:623-634】
+    │               └── final → yield create_final_response()【file_react.py:636-643】
+    │
+    ├── 直接 yield sse_data                                 【chat_router.py:426】
+    │       ↓ 发送给前端
+    │
+    └── ❌ 缺少：解析SSE并保存到数据库的代码
+            （chat2.py:479-488 的逻辑完全没有）
+```
+
+**遗漏的具体代码**：
+```python
+# chat_router.py 缺少这部分：
+if sse_data.startswith("data: "):
+    step_data = json.loads(sse_data[6:])
+    current_execution_steps.append(step_data)
+    await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+```
+
+#### 1.3 重构前 vs 重构后对比
+
+| 阶段 | API入口 | Agent类 | 保存逻辑位置 | 状态 |
+|------|---------|---------|-------------|------|
+| **重构前** | chat2.py | IntentReactAgent (agent.py) | chat2.py 内部 | ✅ 正常 |
+| **重构后** | chat_router.py | FileReactAgent (file_react.py) | 缺失 | ❌ 不正常 |
+
+### 二、移植遗漏点分析
+
+#### 2.1 遗漏原因
+
+| 对比项 | chat2.py | chat_router.py |
+|--------|-----------|----------------|
+| 调用的函数 | `chat_stream_query()` | `agent.ver1_run_stream()` |
+| 函数设计 | 直接接受保存参数 | 不接受保存参数 |
+| 保存逻辑 | ✅ 内部有保存调用 | ❌ 没有保存调用 |
+| 移植状态 | 完整移植 | 部分移植（只移植了调用，漏了保存） |
+
+#### 2.2 移植过程中的问题
+
+1. **只看表面调用**：复制了 `agent.ver1_run_stream()` 调用，但没分析这个函数是否需要额外参数
+2. **依赖链断裂**：`ver1_run_stream` 是**封装层**，内部调用的 `run_stream` 是**核心层**，保存逻辑原本在 `chat_stream_query`（它调用LLM，不是agent）
+3. **架构差异**：chat2.py 用 `chat_stream_query` 处理LLM流式输出，chat_router.py 直接用 `agent.run_stream` 处理，保存逻辑位置不同
+
+**更新时间**: 2026-03-27 05:59:51
+**编写人**: 小沈
+**更新说明**: 新增SSE调用链分析，记录chat_router.py数据库保存缺失问题及修复方案
+
+---
+
+## 附录6：阶段3：最终架构（构建：react_sse_wrapper）
+   
+   实现chat_router → react_sse_wrapper → file_react → base_react）
+
+**当前状态**（2026-03-26 16:10）：
+- chat_router.py 已实现6步流程 ✅
+- file_react.ver1_run_stream() 已包含 SSE 格式化逻辑（调用 sse_formatter.py）✅
+- react_sse_wrapper.py 已创建但未被调用 ⚠️
+
+---
+
+#### 3.1 当前调用链 vs 目标调用链
+
+```
+【当前调用链】（简化版，3层）
+chat_router.py (backend/app/services/chat_router.py)
+  → FileReactAgent.ver1_run_stream()  [包含 SSE 格式化] (backend/app/services/agent/file_react.py)
+  → BaseAgent.run_stream() [返回 event dict] (backend/app/services/agent/base_react.py)
+
+【目标调用链】（完整版，4层）
+chat_router.py (backend/app/services/chat_router.py)
+  → react_sse_wrapper.generate_sse_stream()  [SSE 格式化] (backend/app/services/react_sse_wrapper.py)
+  → FileReactAgent.ver1_run_stream()  [返回 event dict] (backend/app/services/agent/file_react.py)
+  → BaseAgent.run_stream() (backend/app/services/agent/base_react.py)
+
+【说明】
+- BaseAgent 类存在于 base_react.py（不是 BaseReAct）
+- react_sse_wrapper.generate_sse_stream() 已创建但目前未被调用（待集成）
+- FileReactAgent 冗余代码已清理完成（intent_registry 和 preprocessor 已删除）
+```
+
+---
+
+#### 3.2 实施步骤（详细说明）
+
+**核心说明**：react_sse_wrapper.py 已包含完整的通用职责（任务管理、会话管理、数据库保存、流程控制、SSE输出、异常处理），集成后可解决附录5问题。
+
+| 功能模块 | 说明 | 核心行号 |
+|---------|------|---------|
+| **主入口** | generate_sse_stream() SSE流式生成器 | 76-334 |
+| **任务管理** | running_tasks字典、cancel/pause/resume任务控制 | 48-55, 340-422 |
+| **会话管理** | interrupted_sessions防止重连循环 | 52-54, 104-121 |
+| **数据库保存** | 7处save_execution_steps_to_db调用 | 185-317 |
+| **流程控制** | next_step计数器、安全检查、中断/暂停检查 | 145, 159-160, 219-227 |
+| **SSE输出** | 格式化start/thought/action_tool/observation/final/error | 贯穿全文 |
+| **异常处理** | 各种异常场景的错误响应 | 269-327 |
+
+**关键代码**（第256-263行）：
+```python
+# 解析 SSE 数据并保存到数据库
+if sse_data.startswith("data: "):
+    step_data = json.loads(sse_data[6:])
+    current_execution_steps.append(step_data)
+    
+    # 更新 current_content（用于最终保存的内容）
+    if step_data.get('type') == 'final':
+        current_content = step_data.get('content', '')
+    elif step_data.get('type') == 'chunk':
+        current_content = (current_content or '') + (step_data.get('content', '') or '')
+    
+    # 保存到数据库（核心保存逻辑）
+    await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+```
+**基于现有的file_react.py和react_sse_wrapper.py的继续完善的步骤
+
+**第一步：修改 file_react.py**
+- 删除 `ver1_run_stream()` 方法（约100行，第560-654行）
+- 保留 `run_stream()` 方法（返回 event dict）
+- SSE 格式化逻辑移到 react_sse_wrapper
+- ⚠️ **此步需与第二步配套操作**
+
+```python
+# 删除 ver1_run_stream() 方法（约100行）
+# 保留 run_stream() 方法（返回 event dict）
+class FileReactAgent(BaseAgent):
+    async def run_stream(self, task, context, max_steps):
+        # 返回 event dict，不是 SSE 字符串
+        yield {"type": "thought", "content": ...}
+        yield {"type": "action_tool", "tool_name": ...}
+        ...
+```
+
+**第二步：修改 react_sse_wrapper.py**（需要补充或者完善的内容）
+- 删除 start 步骤发送逻辑（第162-186行），因为start步骤已由第一层chat_router发送
+- 将 `generate_sse_stream()` 改造成 `process_file_operation()`
+  - 内部调用 `file_react.run_stream()`（event dict）而不是 `ver1_run_stream()`（SSE字符串）
+  - SSE格式化逻辑从第一步的删除中获得
+- **SSE输出**添加 SSE 格式化逻辑（从 file_react.ver1_run_stream 复制）
+- **数据库保存**  7处save_execution_steps_to_db调用（已有）
+- **主入口** 添加调用 file_react.run_stream() 的函数
+
+
+```python
+# react_sse_wrapper.py 新增
+async def process_file_operation(
+    user_input: str,
+    model: str,
+    provider: str,
+    llm_client: Callable,
+    session_id: str,
+    next_step: Callable
+):
+    from app.services.agent.file_react import FileReactAgent
+    
+    agent = FileReactAgent(llm_client=llm_client, session_id=session_id)
+    
+    # 调用 run_stream()，获取 event dict
+    async for event in agent.run_stream(task=user_input, context=None, max_steps=100):
+        step = next_step()
+        
+        # SSE 格式化（从 ver1_run_stream 复制）
+        if event.get("type") == "thought":
+            yield format_thought_sse(step=step, content=event.get("content", ""))
+        elif event.get("type") == "action_tool":
+            yield format_action_tool_sse(...)
+        elif event.get("type") == "observation":
+            yield format_observation_sse(...)
+        elif event.get("type") == "final":
+            yield create_final_response(...)
+        # ... 其他类型
+```
+
+**第三步：修改 chat_router.py**
+- 将 `_handle_file_operation` 改为调用 `react_sse_wrapper.process_file_operation()`
+- `process_file_operation` 等同于 `generate_sse_stream()`，调用它就自动包含所有功能（任务管理、数据库保存、中断检查、SSE格式化、异常处理）
+
+```python
+# chat_router.py 当前
+async for event in agent.ver1_run_stream(...):
+    yield event
+
+# 改为（调用process_file_operation自动包含所有功能）
+async for event in react_sse_wrapper.process_file_operation(...):
+    yield event
+```
+
+**第四步：验证**
+- 单元测试通过
+- 端到端测试正常
+- 前后功能一致
+
+---
+
+#### 3.3 为什么需要阶段3
+
+| 原因 | 说明 |
+|------|------|
+| **架构一致性** | 统一使用 react_sse_wrapper 处理 SSE 格式化 |
+| **代码复用** | 网络操作、桌面操作可以用相同的 SSE 格式化逻辑 |
+| **职责分离** | Agent 负责执行，SSE 包装负责输出格式 |
+
+---
+
+#### 3.4 不实施阶段3也可以工作
+
+> ⚠️ **说明**：当前实现（3层）已经可以正常工作，阶段3是**可选优化**。
+
+**当前实现**：
+- file_react.ver1_run_stream() 自己完成 SSE 格式化
+- 优点：简单直接
+- 缺点：每个 Agent 都要重复 SSE 格式化代码
+
+**实施后的优点**：
+- 统一 SSE 格式化逻辑
+- 易于维护和扩展
+
+**结论**：可以先不实施阶段3，等需要添加 network_react / desktop_react 时再考虑。
+
+---
 ---
 
 **文档结束**
