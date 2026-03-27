@@ -127,9 +127,9 @@ app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 
 
-# 【小沈修复 2026-03-14】启动后台清理任务，定期清理过期任务
+# 【阶段6更新】cleanup_expired_tasks 改为从 react_sse_wrapper 导入
 import asyncio
-from app.api.v1.chat2 import cleanup_expired_tasks  # 从 chat2 导入（chat_stream 已暂时禁用）
+from app.services.react_sse_wrapper import cleanup_expired_tasks
 
 @app.on_event("startup")
 async def startup_event():
