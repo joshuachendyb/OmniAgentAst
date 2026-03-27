@@ -1,3 +1,134 @@
+v0.8.18
+
+更新时间：2026-03-27 21:01:39
+
+更新内容：
+
+## 1. LLM核心模块重构：废弃文件处理 + llm_core.py创建 - 小沈-2026-03-27
+
+### 1.1 背景
+
+用户要求将废弃文件（agent.py、chat2.py、chat_non_stream.py、base.py）处理，并创建独立的LLM核心模块。
+
+### 1.2 实施内容
+
+#### 1.2.1 废弃文件移动到backup目录并添加.bak后缀
+
+| 废弃文件 | 新位置 | 状态 |
+|---------|--------|------|
+| agent.py | backend/backup/agent.py.bak | ✅ 已废弃 |
+| chat2.py | backend/backup/chat2.py.bak | ✅ 已废弃 |
+| chat_non_stream.py | backend/backup/chat_non_stream.py.bak | ✅ 已废弃 |
+| base.py | backend/app/services/backup/base.py.bak | ✅ 已废弃 |
+
+#### 1.2.2 创建 llm_core.py 核心模块
+
+**新建文件**：`backend/app/services/llm_core.py`（585行）
+
+包含4个类：
+- Message：消息类
+- ChatResponse：非流式响应类
+- StreamChunk：流式响应片段类
+- BaseAIService：通用AI服务
+
+#### 1.2.3 更新引用
+
+| 文件 | 修改内容 |
+|------|---------|
+| services/__init__.py | 从llm_core导入BaseAIService |
+| react_sse_wrapper.py | 从llm_core导入Message |
+| chat_stream_query.py | 从llm_core导入Message |
+| adapter.py | 从llm_core导入Message |
+| config.py | 删除未使用的BaseAIService import |
+
+#### 1.2.4 代码对比验证
+
+✅ 所有4个类（Message、ChatResponse、StreamChunk、BaseAIService）与原base.py完全一致
+
+### 1.3 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| 废弃文件引用检查 | ✅ 无引用 |
+| 代码语法检查 | ✅ 通过 |
+
+### 1.4 本次Commit汇总
+
+| Commit | 作者 | 说明 |
+|--------|------|------|
+| xxx | 小沈 | feat: 创建llm_core.py核心模块-小沈-2026-03-27 |
+| xxx | 小沈 | feat: 废弃文件移至backup添加.bak后缀-小沈-2026-03-27 |
+| xxx | 小沈 | fix: 更新所有引用指向llm_core-小沈-2026-03-27 |
+
+参与开发：小沈
+完成时间：2026-03-27 21:01:39
+
+---
+
+v0.8.17
+
+更新时间：2026-03-27 15:57:01
+
+更新内容：
+
+## 1. chat_router意图分发+react_sse_wrapper参数优化 - 小沈-2026-03-27
+
+### 1.1 背景
+
+用户要求：
+- 简单对话（intent_type=="chat" 且 confidence>=0.3）：保留在router里调用chat_stream_query
+- 动作意图：调用react_sse_wrapper处理
+- 传递router准备的所有参数
+
+### 1.2 实施内容
+
+#### 1.2.1 chat_router.py 修改
+- 删除无用的llm_client代码（第253-257行）
+- 添加意图分发逻辑：
+  - intent_type=="chat" 且 confidence>=0.3 → 调用_handle_chat_operation → chat_stream_query
+  - 其他 → 调用generate_sse_stream → react_sse_wrapper
+- 传递3个新参数：running_tasks, running_tasks_lock, current_execution_steps
+
+#### 1.2.2 react_sse_wrapper.py 修改
+- 添加3个参数：running_tasks, running_tasks_lock, current_execution_steps
+- 删除内部重复创建代码（next_step, current_execution_steps）
+- 添加默认值处理：如果没传入使用默认值
+
+### 1.3 架构说明
+
+```
+user_input
+    ↓
+preprocessing (意图识别)
+    ↓
+intent_type + confidence
+    ↓
+    ├─ intent_type == "chat" 且 confidence >= 0.3
+    │   └── router → _handle_chat_operation → chat_stream_query
+    │
+    └─ 其他
+        └── router → generate_sse_stream → react_sse_wrapper 处理动作意图
+```
+
+### 1.4 本次Commit汇总
+
+| Commit | 作者 | 说明 |
+|--------|------|------|
+| 3e18f8c2 | 小沈 | feat: chat_router意图分发+react_sse_wrapper参数优化-小沈-2026-03-27 |
+
+### 1.5 验证结果
+
+| 验证项 | 状态 | 结果 |
+|--------|------|------|
+| Python语法检查 | ✅ | 通过 |
+| test_agent.py | ✅ | 20 passed |
+| test_adapter.py | ✅ | 32 passed |
+
+参与开发：小沈
+完成时间：2026-03-27 15:57:01
+
+---
+
 v0.8.16
 
 更新时间：2026-03-27

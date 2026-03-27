@@ -374,6 +374,7 @@ async def update_config(config_update: ConfigUpdate):
                     detail=f"不支持的提供商: {config_update.ai_provider}"
                 )
             config_data['ai']['provider'] = config_update.ai_provider
+            logger.info(f"[update_config] 写入 provider={config_update.ai_provider}")
             
             # 【修复】不再调用switch_provider，直接清空缓存让get_service重新加载
             # 统一由updateConfig处理provider和model的更新
@@ -388,7 +389,7 @@ async def update_config(config_update: ConfigUpdate):
             if provider in config_data['ai']:
                 # 【修正】只更新顶层 ai.model
                 config_data['ai']['model'] = config_update.ai_model
-                logger.info(f"切换AI模型成功: provider={provider}, model={config_update.ai_model}")
+                logger.info(f"[update_config] 写入 model={config_update.ai_model} (provider={provider})")
                 # 【修复】清空AIServiceFactory缓存，强制重新读取配置
                 AIServiceFactory._instance = None
                 AIServiceFactory._config = None
@@ -468,8 +469,15 @@ async def update_config(config_update: ConfigUpdate):
             }
         
         # 6. 写回配置文件
+        logger.info(f"[update_config] 准备写入配置文件...")
         with open(config_path, 'w', encoding='utf-8') as f:
             write_yaml_with_order(str(config_path), config_data)
+        logger.info(f"[update_config] 配置文件已写入")
+        
+        # 验证写入结果
+        with open(config_path, 'r', encoding='utf-8') as f:
+            verify_data = yaml.safe_load(f)
+            logger.info(f"[update_config] 验证写入: provider={verify_data['ai'].get('provider')}, model={verify_data['ai'].get('model')}")
         
         # 7. 重新加载
         config = get_config_instance()
@@ -547,9 +555,6 @@ async def validate_config(request: ConfigValidateRequest):
                 model=None
             )
         
-        # 使用通用BaseAIService验证
-        from app.services.base import BaseAIService
-        
         # 【修复】优先用用户指定的provider，只有当指定provider无效时才fallback
         ai_config = config.get('ai', {})
         current_model_provider = request.provider
@@ -581,34 +586,40 @@ async def validate_config(request: ConfigValidateRequest):
         provider_config = ai_config.get(current_model_provider, {})
         api_base = provider_config.get('api_base', 'https://api.openai.com/v1')
         
-        temp_service = BaseAIService(
-            api_key=request.api_key,
-            model=model_name,
-            api_base=api_base,
-            timeout=30
-        )
-        
+        # 【小沈-2026-03-27修复】直接在接口中验证，添加30秒超时
+        import httpx
+        is_valid = False
         try:
-            # 验证服务
-            is_valid = await temp_service.validate()
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{api_base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {request.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": model_name,
+                        "messages": [{"role": "user", "content": "test"}]
+                    }
+                )
+                is_valid = response.status_code == 200
+        except Exception as e:
+            logger.warning(f"配置验证请求失败: {e}")
             
             if is_valid:
-                logger.info(f"配置验证成功: provider={request.provider}")
+                logger.info(f"配置验证成功: provider={request.provider}, model={model_name}")
                 return ConfigValidateResponse(
                     valid=True,
-                    message=f"API Key验证成功，当前使用 {request.provider}",
+                    message=f"API Key验证成功，当前使用 {request.provider} ({model_name})",
                     model=model_name
                 )
             else:
-                logger.warning(f"配置验证失败: provider={request.provider}")
+                logger.warning(f"配置验证失败: provider={request.provider}, model={model_name}")
                 return ConfigValidateResponse(
                     valid=False,
                     message=f"API Key无效，请检查是否正确",
                     model=None
                 )
-        finally:
-            # 确保客户端关闭（异常时也会执行）
-            await temp_service.close()
             
     except Exception as e:
         logger.error(f"配置验证异常: {e}")

@@ -3,13 +3,13 @@
 解决chat.py与FileOperationAgent之间的参数类型不匹配问题
 
 问题背景:
-- chat.py使用: List[Message] (来自app.services.base.Message)
+- chat.py使用: List[Message] (来自app.services.llm_core.Message)
 - FileOperationAgent使用: List[Dict[str, str]]
 - 本模块提供类型转换适配器
 
 使用示例:
     from app.services.agent.adapter import messages_to_dict_list
-    from app.services.base import Message
+    from app.services.llm_core import Message
     
     # chat.py中的Message列表
     history = [Message(role="user", content="你好")]
@@ -19,8 +19,7 @@
 """
 
 from typing import List, Dict, Optional, Any
-
-from app.services.base import Message
+from app.services.llm_core import Message
 
 # 使用统一的日志配置
 from app.utils.logger import logger
@@ -39,7 +38,7 @@ def messages_to_dict_list(messages: Optional[List[Message]]) -> List[Dict[str, s
         字典列表，格式为 [{"role": "user", "content": "消息内容"}, ...]
         
     Example:
-        >>> from app.services.base import Message
+        >>> from app.services.llm_core import Message
         >>> messages = [
         ...     Message(role="system", content="你是助手"),
         ...     Message(role="user", content="你好")

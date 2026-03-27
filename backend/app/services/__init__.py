@@ -67,7 +67,7 @@ from typing import Optional
 
 import yaml
 
-from .base import BaseAIService
+from .llm_core import BaseAIService
 
 
 # 支持的provider列表（动态从配置文件读取，不硬编码）
@@ -501,6 +501,11 @@ class AIServiceFactory:
                 model in ai_config[provider]['models']
             )
             
+            print(f"[get_service_for_model] 请求: provider={provider}, model={model}")
+            print(f"[get_service_for_model] 配置文件: ai.provider={ai_config.get('provider')}, ai.model={ai_config.get('model')}")
+            print(f"[get_service_for_model] fallback: {fallback_provider}, {fallback_model}")
+            print(f"[get_service_for_model] is_valid={is_valid}")
+            
             # 3. 有效则使用指定值，否则使用fallback
             if is_valid:
                 final_provider = provider
@@ -517,11 +522,14 @@ class AIServiceFactory:
                     config_data = yaml.safe_load(f)
                 
                 if config_data and 'ai' in config_data:
+                    old_provider = config_data['ai'].get('provider')
+                    old_model = config_data['ai'].get('model')
                     config_data['ai']['provider'] = final_provider
                     config_data['ai']['model'] = final_model
                     
                     with open(actual_path, 'w', encoding='utf-8') as f:
                         yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
+                    print(f"[AIServiceFactory] 已更新配置文件: provider {old_provider}->{final_provider}, model {old_model}->{final_model}")
             except Exception as e:
                 print(f"[AIServiceFactory] 警告: 无法更新配置文件: {e}")
             

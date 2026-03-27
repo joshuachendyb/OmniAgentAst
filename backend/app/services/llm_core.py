@@ -1,10 +1,18 @@
 """
-AI服务通用实现
-支持所有OpenAI兼容API - 一个类，无限provider支持
+LLM 核心模块 - 提供通用的 LLM API 调用能力
+
+包含：
+- Message: 消息类
+- ChatResponse: 非流式响应类
+- StreamChunk: 流式响应片段类
+- BaseAIService: 通用AI服务（支持所有OpenAI兼容API）
 
 使用方式：
 1. 只需在 config.yaml 配置 api_base、model、api_key
 2. 新增provider无需修改任何代码
+
+作者：小沈
+创建时间：2026-03-27
 """
 
 import json
@@ -12,12 +20,11 @@ import httpx
 import httpcore
 from typing import List, Dict, Optional, AsyncGenerator, Any
 
-# 使用统一的日志配置
 from app.utils.logger import logger
 
 
 class Message:
-    """消息类"""
+    """消息类 - 用于构建 LLM 调用时的消息列表"""
     def __init__(self, role: str, content: str):
         self.role = role
         self.content = content
@@ -27,27 +34,27 @@ class Message:
 
 
 class ChatResponse:
-    """聊天响应类"""
+    """聊天响应类 - 非流式响应"""
     def __init__(self, content: str, model: str, provider: str = "", error: Optional[str] = None):
         self.content = content
         self.model = model
-        self.provider = provider  # 新增
+        self.provider = provider
         self.error = error
         self.success = error is None
 
 
 class StreamChunk:
-    """流式响应片段 - 小沈代修改【修复问题 7】"""
+    """流式响应片段"""
     def __init__(self, content: str, model: str, is_done: bool = False, 
                  stream_error: Optional[str] = None, stream_error_type: Optional[str] = None,
                  reasoning: Optional[str] = None, is_reasoning: bool = False):
         self.content = content
         self.model = model
         self.is_done = is_done
-        self.stream_error = stream_error  # 流式请求错误信息
-        self.stream_error_type = stream_error_type  # 流式请求错误类型
-        self.reasoning = reasoning  # 新增：思考过程内容
-        self.is_reasoning = is_reasoning  # 新增：是否是思考过程
+        self.stream_error = stream_error
+        self.stream_error_type = stream_error_type
+        self.reasoning = reasoning
+        self.is_reasoning = is_reasoning
 
 
 class BaseAIService:
@@ -70,28 +77,24 @@ class BaseAIService:
         self.api_key = api_key
         self.model = model
         self.api_base = api_base
-        self.provider = provider  # 新增：记录当前使用的provider
+        self.provider = provider
         
-        # 安全转换 timeout，处理非法字符串、None、空值等情况
         try:
             timeout_value = float(timeout) if timeout else 60.0
         except (ValueError, TypeError):
             timeout_value = 60.0
         self.timeout = int(timeout_value)
         
-        # 【小沈-2026-03-14修复】流式读取不设总超时，由 RetryController 统一管理空闲超时
-        # 原理：连接阶段10秒超时，读取阶段不超时，空闲检测由调用方控制
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(
-                connect=10.0,      # 连接超时10秒
-                read=None,         # 读取不超时（流式请求可能很长）
-                write=10.0,        # 写入超时10秒
-                pool=10.0,         # 连接池超时10秒
+                connect=10.0,
+                read=None,
+                write=10.0,
+                pool=10.0,
             ),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5)
         )
         
-        # 【小沈-2026-03-13修复】添加取消机制
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
     
@@ -99,7 +102,6 @@ class BaseAIService:
         """强制取消当前请求"""
         logger.info(f"[BaseAIService.cancel] 正在强制取消请求, model={self.model}")
         self._cancelled = True
-        # 【关键】关闭当前HTTP响应，强制中断aiter_lines
         if self._current_response:
             try:
                 self._current_response.close()
@@ -136,13 +138,9 @@ class BaseAIService:
     
     async def chat_stream(self, message: str, history: Optional[List[Message]] = None) -> AsyncGenerator[StreamChunk, None]:
         """发送对话请求（流式返回）"""
-        
-        # 【小沈-2026-03-13修复】重置取消状态
         self.reset_cancel()
-        
         messages = self._build_messages(message, history)
         
-        # 【调试日志】记录发送给LLM的原始信息
         logger.info(f"[LLM Request] model={self.model}, messages数量={len(messages)}, 首条消息={messages[0] if messages else '无'}")
         
         try:
@@ -159,7 +157,6 @@ class BaseAIService:
                     "stream": True
                 }
             ) as response:
-                # 【小沈-2026-03-13修复】保存当前响应，用于强制取消
                 self._current_response = response
                 
                 if response.status_code != 200:
@@ -167,7 +164,6 @@ class BaseAIService:
                     return
                 
                 async for line in response.aiter_lines():
-                    # 【小沈-2026-03-13修复】检查是否被取消
                     if self._cancelled:
                         logger.info("[chat_stream] 检测到取消标志，中断流式响应")
                         yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
@@ -175,8 +171,6 @@ class BaseAIService:
                     if not line or line.strip() == "":
                         continue
                     
-                    # 【重要修复】API返回的是 "data:{" 而不是 "data: {"
-                    # 需要同时处理两种情况
                     if line.startswith("data: "):
                         data_str = line[6:]
                     elif line.startswith("data:"):
@@ -190,8 +184,6 @@ class BaseAIService:
                     
                     try:
                         data = json.loads(data_str)
-                        
-                        # 【调试日志】记录LLM返回的原始信息（精简版）
                         choices = data.get("choices", [])
                         if choices:
                             delta = choices[0].get("delta", {})
@@ -208,32 +200,22 @@ class BaseAIService:
                                 ""
                             )
                             
-                            # 【修复】保持 reasoning_content 和 content 独立，不要混在一起
-                            # reasoning_content 是思考过程，content 是正式回答
-                            # LongCat 等模型在流式模式下使用 reasoning_content
-                            # 不再将 reasoning_content 赋给 content
-                            
-                            # 注意：不再使用 outer_content，避免重复累积问题
-                            
                             finish_reason = choices[0].get("finish_reason", "")
                             
-                            # 【小沈修复】分别返回思考过程和最终内容
-                            # 统一使用 content 字段，is_reasoning 区分类型
                             if reasoning_content:
                                 yield StreamChunk(
                                     content=reasoning_content, 
                                     model=self.model, 
                                     is_done=False,
-                                    reasoning="",  # 清空，不冗余
+                                    reasoning="",
                                     is_reasoning=True
                                 )
-                            # 再返回实际内容（如果有）
                             if content:
                                 yield StreamChunk(
                                     content=content, 
                                     model=self.model, 
                                     is_done=False,
-                                    reasoning="",  # 清空，不冗余
+                                    reasoning="",
                                     is_reasoning=False
                                 )
                         else:
@@ -301,7 +283,6 @@ class BaseAIService:
                 stream_error_type="network_error"
             )
         except Exception as e:
-            # 【小沈代修改 - 修复问题 7】记录日志，返回用户友好错误
             import traceback
             error_type_name = type(e).__name__
             logger.error(f"[BaseAIService] 流式调用失败：{str(e)}, 异常类型: {error_type_name}, 堆栈: {traceback.format_exc()}")
@@ -313,26 +294,11 @@ class BaseAIService:
                 stream_error_type="unknown_error"
             )
         finally:
-            # 【小沈-2026-03-13修复】清理当前响应引用
             self._current_response = None
     
     async def validate(self) -> bool:
-        """验证API Key是否有效"""
-        try:
-            response = await self.client.post(
-                f"{self.api_base}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "model": self.model,
-                    "messages": [{"role": "user", "content": "test"}]
-                }
-            )
-            return response.status_code == 200
-        except Exception:
-            return False
+        """验证API Key是否有效 - 已废弃，请使用 init_model_select.py 中的接口实现"""
+        raise NotImplementedError("validate() 已废弃，请使用 /api/v1/chat/validate 接口")
     
     async def close(self):
         """关闭HTTP客户端"""
@@ -345,25 +311,7 @@ class BaseAIService:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto"
     ) -> ChatResponse:
-        """
-        发送对话请求（使用 Function Calling）
-        
-        适用于 LongCat 等支持 tools 参数的 LLM
-        通过 tools Schema 强制约束参数名，确保参数正确性
-        
-        Args:
-            message: 当前用户消息
-            history: 对话历史（可选）
-            tools: OpenAI 格式的工具 Schema 列表
-            tool_choice: 工具选择模式 ("auto", "required", {"type": "function", "function": {"name": "xxx"}})
-        
-        Returns:
-            ChatResponse:
-            - content: 工具调用的 JSON 字符串（包含 tool_calls）
-            - model: 使用的模型
-            - provider: 提供商
-            - error: 错误信息（如果有）
-        """
+        """发送对话请求（使用 Function Calling）"""
         try:
             messages = self._build_messages(message, history)
             
@@ -372,7 +320,6 @@ class BaseAIService:
                 "messages": messages
             }
             
-            # 如果提供了 tools，添加到请求中
             if tools:
                 request_json["tools"] = tools
                 request_json["tool_choice"] = tool_choice
@@ -414,24 +361,18 @@ class BaseAIService:
                 )
             
             msg = choices[0].get("message", {})
-            
-            # 检查是否有 tool_calls
             tool_calls = msg.get("tool_calls", [])
             if tool_calls:
-                # 返回工具调用信息（序列化为 JSON）
                 return ChatResponse(
                     content=json.dumps(tool_calls, ensure_ascii=False),
                     model=self.model,
                     provider=self.provider
                 )
             else:
-                # 普通文本响应（LLM 选择不调用工具）
                 content = msg.get("content", "")
                 if not content:
-                    # 检查 finish_reason
                     finish_reason = choices[0].get("finish_reason", "")
                     if finish_reason == "tool_calls":
-                        # 有 tool_calls 但解析失败
                         return ChatResponse(
                             content="",
                             model=self.model,
@@ -467,21 +408,7 @@ class BaseAIService:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto"
     ) -> AsyncGenerator[StreamChunk, None]:
-        """
-        发送对话请求（使用 Function Calling，流式返回）
-        
-        适用于需要实时显示 LLM 响应和工具调用结果的场景
-        
-        Args:
-            message: 当前用户消息
-            history: 对话历史（可选）
-            tools: OpenAI 格式的工具 Schema 列表
-            tool_choice: 工具选择模式
-        
-        Yields:
-            StreamChunk: 流式响应片段
-        """
-        # 重置取消状态
+        """发送对话请求（使用 Function Calling，流式返回）"""
         self.reset_cancel()
         
         try:
@@ -537,7 +464,6 @@ class BaseAIService:
                     if not line or line.strip() == "":
                         continue
                     
-                    # 处理 data: 前缀
                     if line.startswith("data: "):
                         data_str = line[6:]
                     elif line.startswith("data:"):
@@ -587,19 +513,7 @@ class BaseAIService:
         history: Optional[List[Message]] = None,
         response_format: Optional[Dict[str, Any]] = None
     ) -> ChatResponse:
-        """
-        发送对话请求（使用 Structured Outputs response_format）
-        
-        适用于支持 response_format 参数的 LLM
-        
-        Args:
-            message: 当前用户消息
-            history: 对话历史（可选）
-            response_format: OpenAI response_format 参数
-        
-        Returns:
-            ChatResponse: 响应内容
-        """
+        """发送对话请求（使用 Structured Outputs response_format）"""
         try:
             messages = self._build_messages(message, history)
             
