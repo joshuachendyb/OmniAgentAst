@@ -160,7 +160,7 @@ class BaseAgent(ABC):
                     continue
                 
                 thought_content = parsed.get("content", "")
-                reasoning = parsed.get("reasoning")
+                reasoning = parsed.get("reasoning") or ""  # 确保不是None
                 action_tool = parsed.get("action_tool", "finish")
                 params = parsed.get("params", {})
                 
@@ -192,6 +192,7 @@ class BaseAgent(ABC):
                 # yield action_tool
                 yield {
                     "type": "action_tool",
+                    "content": action_tool,  # 工具名称作为content
                     "step": step_count,
                     "timestamp": current_time,
                     "tool_name": action_tool,
