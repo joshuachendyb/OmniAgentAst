@@ -75,7 +75,7 @@ async def chat_stream_query(
                 '任务已被中断', 
                 step=next_step()
             )
-            logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
+            # logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
             yield f"data: {json.dumps(interrupted_data)}\n\n"
             return
     
@@ -109,7 +109,7 @@ async def chat_stream_query(
                 step=next_step()
             )
             yield f"data: {json.dumps(retry_data)}\n\n"
-            logger.info(f"[Retry] 开始第{retry_attempt + 1}次AI调用（共{max_retries + 1}次）")
+            # logger.info(f"[Retry] 开始第{retry_attempt + 1}次AI调用（共{max_retries + 1}次）")
         
         # 使用流式API，逐token返回
         full_content = ""
@@ -120,7 +120,7 @@ async def chat_stream_query(
         
         try:
             llm_call_count += 1
-            logger.info(f"[LLM Total Counter] >>> Stream AI called, count: {llm_call_count}")
+            # logger.info(f"[LLM Total Counter] >>> Stream AI called, count: {llm_call_count}")
             
             # 【小沈修复】使用 IdleTimeoutIterator 包装流式迭代器，实现实时空闲超时检测
             # 超时时间从120秒调整为60秒（每次），3次重试合计3分钟
@@ -156,7 +156,7 @@ async def chat_stream_query(
                             '任务已被中断', 
                             step=next_step()
                         )
-                        logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
+                        # logger.info(f"[Step incident] 发送incident步骤 - incident_type=interrupted, message=任务已被中断")
                         yield f"data: {json.dumps(interrupted_data)}\n\n"
                         return
                 
@@ -195,7 +195,7 @@ async def chat_stream_query(
                     
                     # 【小沈修复 2026-03-16】is_reasoning变化时保存，确保回答部分完整
                     if last_is_reasoning != current_is_reasoning:
-                        logger.info(f"[Save] is_reasoning变化: {last_is_reasoning} -> {current_is_reasoning}，准备保存 {len(current_execution_steps)} steps")
+                        # logger.info(f"[Save] is_reasoning变化: {last_is_reasoning} -> {current_is_reasoning}，准备保存 {len(current_execution_steps)} steps")
                         try:
                             # 【警告 2026-03-23】此处调用存在参数错位问题：
                             # save_execution_steps_to_db 期望签名：(session_id, execution_steps, content)
@@ -204,13 +204,13 @@ async def chat_stream_query(
                             # 在 chat2.py 调用 chat_stream_query 时，传递的是 wrapped_save_steps 闭包（已绑定session_id）
                             # 所以这里不会执行到，只有直接调用 chat_stream_query 时才有问题
                             await save_execution_steps_to_db(current_execution_steps, current_content)
-                            logger.info(f"[Save] is_reasoning变化保存成功: {len(current_execution_steps)} steps")
+                            # logger.info(f"[Save] is_reasoning变化保存成功: {len(current_execution_steps)} steps")
                         except Exception as e:
                             logger.error(f"[Save] is_reasoning变化保存失败: {e}", exc_info=True)
                         last_is_reasoning = current_is_reasoning
                 
                 # 发送chunk给前端
-                logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content or '')}, is_reasoning={chunk_data['is_reasoning']}")
+                # logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content or '')}, is_reasoning={chunk_data['is_reasoning']}")
                 yield f"data: {json.dumps(chunk_data)}\n\n"
                 if chunk.is_done:
                     break
@@ -235,7 +235,7 @@ async def chat_stream_query(
         if has_received_content:
             # ✅ 已经收到过内容，说明模型在工作
             ai_call_successful = True
-            logger.info(f"[AI Call] 第{retry_attempt + 1}次调用成功（已收到内容）")
+            # logger.info(f"[AI Call] 第{retry_attempt + 1}次调用成功（已收到内容）")
             break  # 【关键】成功后立即退出重试循环
         
         elif last_error_type == 'idle_timeout':
@@ -277,7 +277,7 @@ async def chat_stream_query(
             if has_received_content and full_content.strip():
                 # 收到了有效内容，判断为成功
                 ai_call_successful = True
-                logger.info(f"[AI Call] 第{retry_attempt + 1}次调用完成，收到内容长度={len(full_content)}")
+                # logger.info(f"[AI Call] 第{retry_attempt + 1}次调用完成，收到内容长度={len(full_content)}")
                 break
             else:
                 # 【修复】未收到内容，视为错误，发送error步骤
@@ -285,7 +285,7 @@ async def chat_stream_query(
                 if retry_controller.can_retry():
                     # 还能重试
                     retry_controller.increment_retry()
-                    logger.info(f"[AI Call] 空响应，准备第{retry_controller.get_retry_count() + 1}次重试...")
+                    # logger.info(f"[AI Call] 空响应，准备第{retry_controller.get_retry_count() + 1}次重试...")
                     continue
                 else:
                     # 已达最大重试次数，发送error步骤
@@ -344,7 +344,7 @@ async def chat_stream_query(
         
         # 发送error步骤而不是final步骤
         # 【小沈修复 2026-03-23】只调用一次 next_step()，避免 step 多 1
-        logger.info(f"[Step error] 发送error步骤: error_type={error_type}, message={error_message}")
+        # logger.info(f"[Step error] 发送error步骤: error_type={error_type}, message={error_message}")
         error_step_value = next_step()
         yield create_error_response(
             error_type=error_type,
@@ -402,7 +402,7 @@ async def chat_stream_query(
     current_execution_steps.append(final_step)
     
     # final前强制保存一次，确保所有steps都写入数据库
-    logger.info(f"[Step final] 💾 final前强制保存: {len(current_execution_steps)} steps")
+    # logger.info(f"[Step final] 💾 final前强制保存: {len(current_execution_steps)} steps")
     # 【警告 2026-03-23】此处调用存在参数错位问题：
     # save_execution_steps_to_db 期望签名：(session_id, execution_steps, content)
     # 但这里只传了2个参数：(current_execution_steps, full_content)
@@ -413,7 +413,7 @@ async def chat_stream_query(
     
     # 发送最终结果，【新增】添加provider字段作为兜底
     content_preview = full_content[:200] + "..." if len(full_content) > 200 else full_content
-    logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={content_preview}")
+    # logger.info(f"[Step final] 🚀 发送final步骤, content长度={len(full_content)}, content预览={content_preview}")
     # 【小沈修复 2026-03-23】复用 final_step_value，避免 step 多 1
     yield create_final_response(
         content=full_content,
