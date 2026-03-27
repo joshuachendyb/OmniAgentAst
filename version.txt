@@ -1,3 +1,59 @@
+v0.8.21
+
+更新时间：2026-03-28 06:53:02
+
+更新内容：
+
+## 1. 修复"无法解析LLM响应"问题 - 小沈-2026-03-28
+
+### 1.1 问题描述
+
+用户验收发现"无法解析LLM响应"错误，任务陷入无限循环：
+1. 对话历史无限增长（23轮后 token 爆炸）
+2. LLM 输出被截断，无法返回完整 JSON
+3. LLM 不断列出目录，从不结束
+
+### 1.2 根因分析
+
+| 问题 | 原因 | 后果 |
+|------|------|------|
+| 对话历史无限增长 | 每步添加 thought + observation，从不清理 | 23轮后 token 爆炸 |
+| LLM 输出被截断 | 历史太长，单次响应输出不完整 JSON | JSON 解析失败 |
+| LLM 陷入循环 | 没有明确 finish 指示 | 重复操作不结束 |
+
+### 1.3 修复内容
+
+#### 1.3.1 添加对话历史裁剪机制
+
+**修改文件**: `base_react.py`
+
+- 添加 `_trim_history()` 方法，保留最近 5 轮对话
+- 每次添加 thought 或 observation 后自动裁剪
+- 最多保留 13 条消息（1 system + 1 task + 5×2 thought/obs）
+
+#### 1.3.2 增强 prompt 明确 finish 时机
+
+**修改文件**: `file_prompts.py`
+
+- 添加明确 finish 指示：
+```
+IMPORTANT - When to finish:
+- When the user's task is COMPLETED, use action_tool="finish"
+- Do NOT keep calling tools after the task is done
+```
+
+### 1.4 本次Commit汇总
+
+| Commit | 作者 | 说明 |
+|--------|------|------|
+| xxx | 小沈 | fix: 添加对话历史裁剪机制-小沈-2026-03-28 |
+| xxx | 小沈 | fix: 增强prompt明确finish时机-小沈-2026-03-28 |
+
+参与开发：小沈
+完成时间：2026-03-28 06:53:02
+
+---
+
 v0.8.20
 
 更新时间：2026-03-27 23:12:04

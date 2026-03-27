@@ -220,6 +220,11 @@ Please help me complete this file management task. Follow these steps:
 2. Use the appropriate tools to accomplish the task
 3. Provide a summary when finished
 
+IMPORTANT - When to finish:
+- When the user's task is COMPLETED, use action_tool="finish" with a summary of what was done
+- Do NOT keep calling tools after the task is done
+- Example finish: {{"thought": "任务已完成，我已查看E盘内容...", "action_tool": "finish", "params": {{"result": "完成了..."}}}}
+
 Remember:
 - You can use multiple tools in sequence
 - Each tool call should be well-reasoned
