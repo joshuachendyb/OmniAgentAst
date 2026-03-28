@@ -1,3 +1,87 @@
+v0.8.26
+
+更新时间：2026-03-28 15:32:46
+
+更新内容：
+
+## 1. 修复前端模型切换显示不一致 + 深度代码检查 - 小沈-2026-03-28
+
+### 1.1 问题描述
+
+前端切换模型后显示不正确，刷新页面后才能正常显示。
+
+### 1.2 根因分析
+
+1. **时序问题**：`refreshAll()` 使用 `Promise.all` 并行执行 `/config/models` 和 `/chat/validate`，导致显示不一致
+2. **后端缓存**：代码中有大量多余的缓存清除代码
+3. **API 适配**：后端删除了 `GET /config/validate-full` 和 `GET /config/read` 接口，前端需要适配
+
+### 1.3 修复内容
+
+#### 1.3.1 前端串行刷新方法
+
+**修改文件**: `frontend/src/contexts/AppContext.tsx`
+
+- 新增 `refreshAfterModelChange` 串行刷新方法
+- 修复闭包问题：让 `refreshServiceStatus` 直接返回验证结果，不再依赖外部状态
+
+#### 1.3.2 前端适配新 API
+
+**修改文件**: `frontend/src/components/Layout/index.tsx`
+
+- 切换模型使用串行刷新
+
+**修改文件**: `frontend/src/services/api.ts`
+
+- 删除 `validateFullConfig` 和 `readConfigFile` 函数
+
+**修改文件**: `frontend/src/pages/Settings/index.tsx`
+
+- 删除废弃接口调用
+
+#### 1.3.3 后端清理多余代码
+
+**修改文件**: `backend/app/config.py`
+
+- 删除 reload 中的多余缓存清除代码
+
+**修改文件**: `backend/app/services/__init__.py`
+
+- 删除多余的 `cls._config = None` 代码
+
+#### 1.3.4 测试用例更新
+
+**修改文件**: `frontend/src/tests/app-context.spec.ts`
+
+- 更新测试用例
+
+### 1.4 深度代码检查发现
+
+**闭包问题**：
+- `refreshAfterModelChange` 依赖外部 `serviceStatus` 状态，可能是旧值
+- 修复：让 `refreshServiceStatus` 直接返回验证结果，不再依赖外部状态
+
+### 1.5 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| 前端测试 | ✅ 236 passed |
+| TypeScript 编译 | ✅ 通过 |
+| ESLint 检查 | ✅ 通过 |
+
+### 1.6 本次 Commit 汇总
+
+| Commit | 作者 | 说明 |
+|--------|------|------|
+| xxx | 小沈 | fix: 新增串行刷新方法+修复闭包问题-小沈-2026-03-28 |
+| xxx | 小沈 | fix: 适配后端API变更+删除废弃接口-小沈-2026-03-28 |
+| xxx | 小沈 | fix: 删除后端多余缓存清除代码-小沈-2026-03-28 |
+
+参与开发：小沈
+完成时间：2026-03-28 15:32:46
+
+---
+
 v0.8.25
 
 更新时间：2026-03-28 12:10:00

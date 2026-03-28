@@ -36,7 +36,11 @@ class Config:
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 self._config_data = yaml.safe_load(f)
-        except Exception as e:
+            
+            # 配置文件不能为空
+            if not self._config_data:
+                raise ValueError("配置文件为空，请检查 config/config.yaml")
+        except (yaml.YAMLError, ValueError) as e:
             raise RuntimeError(
                 f"加载配置文件失败: {e}。"
                 "请检查 config/config.yaml 格式是否正确"
@@ -59,19 +63,22 @@ class Config:
     
     def _apply_env_overrides(self):
         """应用环境变量覆盖"""
-        # AI配置
-        if os.getenv('ZHIPUAI_API_KEY'):
-            self._config_data['ai']['zhipuai']['api_key'] = os.getenv('ZHIPUAI_API_KEY')
+        # AI配置 - 只在对应的provider配置存在时才覆盖
+        ai_config = self._config_data.get('ai', {})
         
-        if os.getenv('OPENCODE_API_KEY'):
-            self._config_data['ai']['opencode']['api_key'] = os.getenv('OPENCODE_API_KEY')
+        if os.getenv('ZHIPUAI_API_KEY') and 'zhipuai' in ai_config:
+            ai_config['zhipuai']['api_key'] = os.getenv('ZHIPUAI_API_KEY')
+        
+        if os.getenv('OPENCODE_API_KEY') and 'opencode' in ai_config:
+            ai_config['opencode']['api_key'] = os.getenv('OPENCODE_API_KEY')
         
         if os.getenv('AI_PROVIDER'):
-            self._config_data['ai']['provider'] = os.getenv('AI_PROVIDER')
+            ai_config['provider'] = os.getenv('AI_PROVIDER')
         
         # 日志级别
+        logging_config = self._config_data.get('logging', {})
         if os.getenv('LOG_LEVEL'):
-            self._config_data['logging']['level'] = os.getenv('LOG_LEVEL')
+            logging_config['level'] = os.getenv('LOG_LEVEL')
     
     def get(self, key: str, default: Any = None) -> Any:
         """
