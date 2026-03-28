@@ -312,6 +312,7 @@ async def get_system_config():
 
 
 @router.put("/config")
+@router.post("/config")
 async def update_config(config_update: ConfigUpdate):
     """
     更新系统配置（带备份恢复机制）
