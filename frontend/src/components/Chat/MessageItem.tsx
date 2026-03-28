@@ -669,21 +669,19 @@ const MessageItem: React.FC<MessageItemProps> = ({
         content: message.content,
       };
       
-      // 检查是否包含incident类型的步骤（incident对应的是interrupted/paused/resumed/retrying）
+      // 检查是否包含incident类型的步骤（后端type固定为'incident'，通过incident_value区分具体类型）
       const hasIncident = hasSteps && message.executionSteps?.some(
-        (step) => step.type === 'interrupted' || step.type === 'paused' || 
-                  step.type === 'resumed' || step.type === 'retrying'
+        (step) => step.type === 'incident'
       );
       
       if (hasIncident) {
-        // 【小查修复2026-03-13】包含incident类型：导出JSON格式（包含完整的incident字段）
+        // 【小沈修复2026-03-28】后端type固定为'incident'，通过incident_value区分具体类型
         exportData.incidentSteps = message.executionSteps?.filter(
-          (step) => step.type === 'interrupted' || step.type === 'paused' || 
-                    step.type === 'resumed' || step.type === 'retrying'
+          (step) => step.type === 'incident'
         ).map(step => ({
-          type: step.type,
-          incident_value: (step as any).incident_value || step.content,
-          message: step.content,
+          type: (step as any).incident_value || 'incident',  // 使用incident_value作为type
+          incident_value: (step as any).incident_value,
+          message: step.content || (step as any).message,
           timestamp: formatTimestamp((step as any).timestamp),
           wait_time: (step as any).wait_time,
         }));
@@ -749,6 +747,16 @@ const MessageItem: React.FC<MessageItemProps> = ({
             case 'retrying':
               // 【小强修复 2026-03-18】添加 step 字段
               return { ...baseExport, step: step.step, incident_value: (step as any).incident_value || step.type, wait_time: (step as any).wait_time };
+            case 'incident':
+              // 【小沈修复 2026-03-28】后端type固定为'incident'，通过incident_value区分具体类型
+              return { 
+                ...baseExport, 
+                step: step.step, 
+                type: (step as any).incident_value || 'incident',  // 导出时还原为具体类型
+                incident_value: (step as any).incident_value,
+                message: step.content || (step as any).message,
+                wait_time: (step as any).wait_time 
+              };
             case 'start':
               // 【小强修复 2026-03-18】添加 step 字段
               return { 

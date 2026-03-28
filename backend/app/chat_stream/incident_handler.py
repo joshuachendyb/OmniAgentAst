@@ -27,7 +27,7 @@ def create_incident_data(incident_value: str, message: str, step: Optional[int] 
         dict: incident数据
     """
     data = {
-        'type': 'incident',
+        'type': 'incident',  # 固定为incident
         'incident_value': incident_value,
         'message': message,
         'timestamp': create_timestamp()

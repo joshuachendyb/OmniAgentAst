@@ -1,3 +1,65 @@
+v0.8.24
+
+更新时间：2026-03-28 11:25:00
+
+更新内容：
+
+## 1. 修复前端导出incident + 空chunk过滤 + error缺少model/provider - 小沈-2026-03-28
+
+### 1.1 问题描述
+
+用户导出数据发现：
+- SSE导出的executionSteps有retrying，但数据库存的是incident，导出时丢失
+- error步骤缺少model/provider信息
+- 空chunk既发给前端又保存数据库，没有意义
+
+### 1.2 根因分析
+
+| 问题 | 原因 |
+|------|------|
+| incident步骤导出丢失 | 后端type固定为'incident'，但前端只检查'type === retrying/interrupted' |
+| error缺model/provider | chat_stream_query.py保存error步骤时没加model/provider字段 |
+| 空chunk问题 | LLM在超时重试时确实没返回内容，空chunk发给前端不显示，保存数据库也浪费 |
+
+### 1.3 修复内容
+
+#### 1.3.1 修复前端incident导出
+
+**修改文件**: `MessageItem.tsx`
+
+- 后端type固定为'incident'是正确的
+- 前端正确处理type='incident'：
+  1. hasIncident检查：改为 `step.type === 'incident'`
+  2. incidentSteps导出：过滤 `step.type === 'incident'`
+  3. executionSteps导出：添加case 'incident'处理
+
+#### 1.3.2 修复error步骤缺少model/provider
+
+**修改文件**: `chat_stream_query.py` (第313-320行)
+
+- 保存error步骤时添加model和provider字段
+
+#### 1.3.3 过滤空chunk
+
+**修改文件**: `chat_stream_query.py` (第183-212行)
+
+- 只处理有内容的chunk
+- 空chunk：不发给前端，也不保存到数据库
+- 保持SSE和数据库一致性
+
+### 1.4 本次Commit汇总
+
+| Commit | 作者 | 说明 |
+|--------|------|------|
+| xxx | 小沈 | fix: 修复前端incident导出-小沈-2026-03-28 |
+| xxx | 小沈 | fix: 修复error步骤缺少model/provider-小沈-2026-03-28 |
+| xxx | 小沈 | fix: 过滤空chunk保持SSE和数据库一致-小沈-2026-03-28 |
+
+参与开发：小沈
+完成时间：2026-03-28 11:25:00
+
+---
+
 v0.8.23
 
 更新时间：2026-03-28 09:35:30
