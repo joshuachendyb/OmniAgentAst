@@ -366,7 +366,11 @@ async def chat_stream_query(
             'error_type': error_type,
             'message': error_message,
             'code': 'AI_CALL_ERROR',
-            'timestamp': create_timestamp()
+            'timestamp': create_timestamp(),
+            'model': ai_service.model,
+            'provider': ai_service.provider,
+            'retryable': True,
+            'retry_after': 3
         }
         await add_step_and_save(error_step, f"错误: {error_message}")
         return  # 直接返回，不再发送final步骤
