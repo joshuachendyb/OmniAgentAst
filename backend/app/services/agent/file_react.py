@@ -345,13 +345,6 @@ class FileReactAgent(BaseAgent):
                 self._session_created_by_agent = False
             except Exception as e:
                 logger.error(f"Failed to complete session {self.session_id}: {e}")
-        
-        # 保存 prompt logger 日志到文件
-        try:
-            prompt_logger = get_prompt_logger()
-            prompt_logger.save()
-        except Exception as e:
-            logger.error(f"[PromptLogger] 保存日志失败: {e}")
     
     # ========== 文件专用方法 ==========
     
