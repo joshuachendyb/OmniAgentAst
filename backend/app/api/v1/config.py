@@ -312,7 +312,6 @@ async def get_system_config():
 
 
 @router.put("/config")
-@router.post("/config")
 async def update_config(config_update: ConfigUpdate):
     """
     更新系统配置（带备份恢复机制）
@@ -532,7 +531,7 @@ async def update_config(config_update: ConfigUpdate):
         raise HTTPException(status_code=500, detail="更新配置失败，请稍后重试")
 
 
-@router.post("/config/validate", response_model=ConfigValidateResponse)
+@router.put("/config/validate", response_model=ConfigValidateResponse)
 async def validate_config(request: ConfigValidateRequest):
     """
     验证配置是否有效
