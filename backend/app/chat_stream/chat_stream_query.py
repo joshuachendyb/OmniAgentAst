@@ -16,7 +16,7 @@ from app.services.llm_core import Message
 from app.utils.retry_controller import RetryController
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
 from app.chat_stream.chat_helpers import create_timestamp, create_final_response
-from app.chat_stream.error_handler import create_error_response
+from app.chat_stream.error_handler import create_error_response, create_error_step
 from app.chat_stream.incident_handler import (
     create_incident_data,
     check_and_yield_if_paused,
@@ -301,19 +301,17 @@ async def chat_stream_query(
                         step=error_step_value
                     )
                     
-                    # 保存error步骤到数据库【小沈修复 2026-03-28】添加model和provider字段
-                    error_step = {
-                        'type': 'error',
-                        'step': error_step_value,
-                        'error_type': 'empty_response',
-                        'message': error_message,
-                        'code': 'EMPTY_RESPONSE',
-                        'timestamp': create_timestamp(),
-                        'model': ai_service.model,
-                        'provider': ai_service.provider,
-                        'retryable': True,
-                        'retry_after': 3
-                    }
+                    # 保存error步骤到数据库【小沈修复 2026-03-28】使用create_error_step函数确保字段完整
+                    error_step = create_error_step(
+                        code='EMPTY_RESPONSE',
+                        message=error_message,
+                        error_type='empty_response',
+                        step_num=error_step_value,
+                        model=ai_service.model,
+                        provider=ai_service.provider,
+                        retryable=True,
+                        retry_after=3
+                    )
                     await add_step_and_save(error_step, f"错误: {error_message}")
                     return  # 直接返回，不再发送final步骤
     
@@ -359,19 +357,17 @@ async def chat_stream_query(
             step=error_step_value
         )
         
-        # 保存error步骤到数据库
-        error_step = {
-            'type': 'error',
-            'step': error_step_value,  # 复用变量
-            'error_type': error_type,
-            'message': error_message,
-            'code': 'AI_CALL_ERROR',
-            'timestamp': create_timestamp(),
-            'model': ai_service.model,
-            'provider': ai_service.provider,
-            'retryable': True,
-            'retry_after': 3
-        }
+        # 保存error步骤到数据库【小沈修复 2026-03-28】使用create_error_step函数确保字段完整
+        error_step = create_error_step(
+            code='AI_CALL_ERROR',
+            message=error_message,
+            error_type=error_type,
+            step_num=error_step_value,
+            model=ai_service.model,
+            provider=ai_service.provider,
+            retryable=True,
+            retry_after=3
+        )
         await add_step_and_save(error_step, f"错误: {error_message}")
         return  # 直接返回，不再发送final步骤
     
