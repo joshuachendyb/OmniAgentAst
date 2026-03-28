@@ -55,23 +55,24 @@ def get_provider_display_name(provider: str) -> str:
 
 def create_final_response(
     content: str,
-    model: str,
-    provider: str,
+    step: Optional[int] = None,
     display_name: Optional[str] = None,
-    step: Optional[int] = None
+    provider: Optional[str] = None,
+    model: Optional[str] = None
 ) -> str:
     """
-    创建统一的 final 响应格式
+    创建最终的SSE响应【小沈修复2026-03-28】
+    - 添加model和provider字段，和数据库保存一致
     
     Args:
-        content: 最终内容
-        model: 模型名称
-        provider: 提供商
-        display_name: 显示名称（可选）
-        step: 步骤号
+        content: 最终回复内容
+        step: 步骤序号（可选）
+        display_name: 模型显示名称（可选）
+        provider: 模型提供商（可选）
+        model: 模型名称（可选）
     
     Returns:
-    SSE 格式的 final 响应字符串
+        SSE格式的响应字符串
     """
     # 构建 display_name
     final_display_name = display_name
@@ -87,6 +88,8 @@ def create_final_response(
         'content': content,
         'display_name': final_display_name,
         'timestamp': create_timestamp(),
+        'model': model,  # 和数据库保存一致
+        'provider': provider,  # 和数据库保存一致
     }
     if step is not None:
         response['step'] = step
