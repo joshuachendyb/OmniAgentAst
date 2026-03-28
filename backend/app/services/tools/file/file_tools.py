@@ -999,23 +999,18 @@ class FileTools:
                             if after_file and file_str <= after_file:
                                 continue
                             
-                            # 读取文件内容 - 限制单文件大小，避免内存溢出
+                            # 读取文件内容
                             try:
                                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                    # 最多读取10MB，超过则截断
-                                    MAX_FILE_SIZE = 10 * 1024 * 1024
-                                    content = f.read(MAX_FILE_SIZE)
+                                    content = f.read()
                             except:
                                 continue
                             
-                            # 搜索内容 - 限制单文件最大匹配数
+                            # 搜索内容
                             matches = []
-                            MAX_MATCHES_PER_FILE = 100  # 单文件最多100个匹配
                             
                             if use_regex and regex is not None:
                                 for match in regex.finditer(content):
-                                    if len(matches) >= MAX_MATCHES_PER_FILE:
-                                        break
                                     start = max(0, match.start() - 50)
                                     end = min(len(content), match.end() + 50)
                                     context = content[start:end]
@@ -1029,8 +1024,6 @@ class FileTools:
                             else:
                                 idx = content.find(search_term)
                                 while idx != -1:
-                                    if len(matches) >= MAX_MATCHES_PER_FILE:
-                                        break
                                     start = max(0, idx - 50)
                                     end = min(len(content), idx + len(search_term) + 50)
                                     context = content[start:end]
