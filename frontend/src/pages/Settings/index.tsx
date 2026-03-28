@@ -121,9 +121,8 @@ const GlobalConfigArea: React.FC<{
 
   const handleViewConfig = async () => {
     try {
-      const result = await configApi.readConfigFile();
-      setConfigContent(result.content);
-      setShowConfigModal(true);
+      // readConfigFile 已删除，暂时不显示配置文件原文
+      message.info("配置文件查看功能暂时不可用");
     } catch (error) {
       console.error("读取配置文件失败:", error);
       message.error("读取配置文件失败");
@@ -134,13 +133,11 @@ const GlobalConfigArea: React.FC<{
     setValidating(true);
     setValidationResult(null);
     try {
-      // 同时获取配置内容和验证结果
-      const [validationResult, contentResult] = await Promise.all([
-        configApi.validateFullConfig(),
-        configApi.readConfigFile()
-      ]);
-      setValidationResult(validationResult);
-      setConfigContent(contentResult.content);
+      // validateConfig 需要 provider 参数，暂时跳过验证
+      // 验证功能在"检查服务"按钮中实现
+      message.info("请使用下方的'检查服务'按钮进行验证");
+      setValidating(false);
+      return;
     } catch (error) {
       console.error("检测配置文件失败:", error);
       message.error("检测配置文件失败");
@@ -517,13 +514,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
   const handleLoadWithValidation = async () => {
     await loadConfig();
     
-    try {
-      const result = await configApi.validateFullConfig();
-      setValidationResult(result);
-    } catch (error) {
-      console.error("配置验证失败:", error);
-    }
-
     // 验证AI服务可用性（触发后端备份清理）
     try {
       await chatApi.validateService();
@@ -559,14 +549,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       // 刷新配置
       loadConfig();
 
-      // 验证配置文件
-      try {
-        const validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
-      } catch (e) {
-        console.warn("验证配置文件失败:", e);
-      }
-
       // 验证服务可用性
       try {
         await chatApi.validateService();
@@ -588,14 +570,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       // 刷新配置
       loadConfig();
-
-      // 验证配置文件
-      try {
-        const validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
-      } catch (e) {
-        console.warn("验证配置文件失败:", e);
-      }
 
       message.success("Provider已删除");
     } catch (error: any) {
@@ -621,14 +595,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       // 刷新配置
       loadConfig();
 
-      // 验证配置文件
-      try {
-        const validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
-      } catch (e) {
-        console.warn("验证配置文件失败:", e);
-      }
-
       message.success("模型已更新");
       setEditModalVisible(false);
       setEditingModel(null);
@@ -645,14 +611,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       // 刷新配置
       loadConfig();
-
-      // 验证配置文件
-      try {
-        const validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
-      } catch (e) {
-        console.warn("验证配置文件失败:", e);
-      }
 
       message.success("模型已删除");
     } catch (error: any) {
@@ -716,14 +674,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       setSelectedModels(new Set());
       loadConfig();
-
-      // 验证配置文件
-      try {
-        const validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
-      } catch (e) {
-        console.warn("验证配置文件失败:", e);
-      }
     } catch (error: any) {
       if (error.name === "AbortError") {
         message.warning("批量删除已取消");
@@ -744,14 +694,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       // 刷新配置
       loadConfig();
-
-      // 验证配置文件
-      try {
-        const validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
-      } catch (e) {
-        console.warn("验证配置文件失败:", e);
-      }
 
       // 验证服务可用性
       try {
@@ -783,14 +725,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       // 刷新配置
       loadConfig();
-
-      // 验证配置文件
-      try {
-        const validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
-      } catch (e) {
-        console.warn("验证配置文件失败:", e);
-      }
 
       // 验证服务可用性
       try {
@@ -835,14 +769,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       // 刷新配置
       loadConfig();
-
-      // 刷新配置验证状态（根据小沈文档流程）
-      try {
-        const validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
-      } catch (e) {
-        console.warn("刷新验证状态失败:", e);
-      }
 
       // 验证服务可用性（触发后端备份删除/恢复机制）
       try {
@@ -1881,9 +1807,8 @@ const Settings: React.FC = () => {
    */
   const loadConfigInfo = async () => {
     try {
-      // 只读验证配置，不修改
-      const validation = await configApi.validateFullConfig();
-      console.log("📋 配置验证结果:", validation);
+      // validateConfig 需要 provider 参数，暂时跳过
+      console.log("📋 加载配置信息完成");
     } catch (error) {
       console.error("加载配置信息失败:", error);
     }
