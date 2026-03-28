@@ -94,26 +94,11 @@ async def chat_stream_v2(request: ChatRequest):
 
     user_input = request.messages[-1].content
     
-    # 获取配置
-    from app.config import get_config
-    config = get_config()
-    ai_config = config.get('ai', {})
-    
-    # 排除顶层键 'provider' 和 'model'，获取有效的 provider 列表
-    valid_providers = [k for k in ai_config.keys() if k not in ('provider', 'model')]
-    
-    # 确定 provider
-    provider = request.provider
-    if not provider or provider not in valid_providers:
-        # 默认用第一个有效的 provider
-        provider = valid_providers[0] if valid_providers else "zhipuai"
-    
-    # 确定 model
-    model = request.model
-    if not model:
-        # 默认用第一个 provider 的第一个 model
-        provider_models = ai_config.get(provider, {}).get('models', [])
-        model = provider_models[0] if provider_models else 'gpt-4'
+    # 获取配置 - 使用 AIServiceFactory 的统一逻辑
+    from app.services import AIServiceFactory
+    ai_service = AIServiceFactory.get_service()
+    provider = ai_service.provider
+    model = ai_service.model
     
     # session_id
     session_id = request.session_id or str(uuid.uuid4())
