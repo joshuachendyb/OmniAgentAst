@@ -1,3 +1,89 @@
+v0.8.25
+
+更新时间：2026-03-28 12:10:00
+
+更新内容：
+
+## 1. SSE和数据库字段一致性全面修复 - 小沈-2026-03-28
+
+### 1.1 问题描述
+
+用户要求：SSE显示的和数据库导出的必须完全一致。
+
+经过全面检查发现以下问题：
+- incident类型：缺少content/is_reasoning/reasoning字段
+- error类型：缺少content/error_message/reasoning/is_reasoning字段
+- final类型：SSE返回缺少model/provider字段
+- 前端渲染：没有处理type='incident'的情况
+- 数据库：缺少title_locked等新字段
+
+### 1.2 修复内容
+
+#### 1.2.1 incident字段修复
+
+**修改文件**: `backend/app/chat_stream/incident_handler.py`
+
+- 添加content字段（和message相同）
+- 添加is_reasoning和reasoning字段
+
+#### 1.2.2 error字段修复
+
+**修改文件**: `backend/app/chat_stream/error_handler.py`
+
+- 添加content、error_message、reasoning、is_reasoning字段
+
+**修改文件**: `backend/app/chat_stream/chat_stream_query.py`
+
+- 使用create_error_step()函数确保字段完整
+
+#### 1.2.3 final SSE字段修复
+
+**修改文件**: `backend/app/chat_stream/chat_helpers.py`
+
+- SSE返回final时添加model和provider字段
+
+#### 1.2.4 前端incident处理
+
+**修改文件**: `frontend/src/utils/sse.ts`
+
+- 添加'incident'类型到ExecutionStep定义
+- 添加incident_value字段
+
+**修改文件**: `frontend/src/components/Chat/MessageItem.tsx`
+
+- gradientMap、labelMap、iconMap添加incident类型
+- 渲染时同时处理step.type === 'incident'和具体incident_value
+
+#### 1.2.5 数据库字段修复
+
+**修改文件**: `backend/app/api/v1/sessions.py`
+
+- 代码建表添加title_locked、title_updated_at、version字段
+- 执行数据库迁移脚本添加这些字段
+
+### 1.3 字段对比（修复后）
+
+| 类型 | SSE字段 | 数据库字段 | 状态 |
+|------|---------|-----------|------|
+| incident | type, incident_value, content, message, timestamp, is_reasoning, reasoning | 同SSE | ✅ 一致 |
+| error | type, code, message, error_type, step, model, provider, details, stack, retryable, retry_after, timestamp | 同SSE + content, error_message, reasoning, is_reasoning | ✅ 一致 |
+| chunk | type, step, timestamp, content, is_reasoning | 同SSE | ✅ 一致 |
+| final | type, content, display_name, timestamp, step, model, provider | type, step, content, model, provider, timestamp | ✅ 一致 |
+
+### 1.4 本次Commit汇总
+
+| Commit | 作者 | 说明 |
+|--------|------|------|
+| 0201ff15 | 小沈 | fix: 代码建表添加title_locked等字段+执行数据库迁移 |
+| 0bf145ee | 小沈 | fix: 使用create_error_step函数确保error字段完整 |
+| 6f5a7d13 | 小沈 | fix: SSE返回final添加model+provider确保与数据库一致 |
+| f914f79d | 小沈 | fix: 前端处理incident类型+修复类型定义 |
+
+参与开发：小沈
+完成时间：2026-03-28 12:10:00
+
+---
+
 v0.8.24
 
 更新时间：2026-03-28 11:25:00
@@ -51,9 +137,10 @@ v0.8.24
 
 | Commit | 作者 | 说明 |
 |--------|------|------|
-| xxx | 小沈 | fix: 修复前端incident导出-小沈-2026-03-28 |
-| xxx | 小沈 | fix: 修复error步骤缺少model/provider-小沈-2026-03-28 |
-| xxx | 小沈 | fix: 过滤空chunk保持SSE和数据库一致-小沈-2026-03-28 |
+| 07f1dbd0 | 小沈 | fix: 修复前端incident导出-小沈-2026-03-28 |
+| 280536e4 | 小沈 | fix: incident添加content字段确保SSE和数据库一致-小沈-2026-03-28 |
+| 30cfff8a | 小沈 | fix: 修复error_step保存数据库时缺少字段-小沈-2026-03-28 |
+| 189e195c | 小沈 | fix: incident添加is_reasoning+reasoning字段-小沈-2026-03-28 |
 
 参与开发：小沈
 完成时间：2026-03-28 11:25:00
