@@ -101,7 +101,8 @@ class ToolExecutor:
             "delete_file": ["file_path", "recursive"],
             "list_directory": ["dir_path", "recursive", "max_depth", "page_token", "page_size"],
             "move_file": ["source_path", "destination_path"],
-            "search_files": ["pattern", "path", "file_pattern", "use_regex", "max_results"],
+            "search_files": ["file_pattern", "path", "recursive", "max_depth", "max_results", "after"],
+            "search_file_content": ["pattern", "path", "file_pattern", "recursive"],
             "generate_report": ["output_dir"],
         }
         
@@ -118,12 +119,24 @@ class ToolExecutor:
                         f"param={key}={val_str}, 期望参数={standard}"
                     )
         
-        # search_files: 默认 path 和 pattern 为合理值
+        # search_files: 默认 path 和 recursive 为合理值
         if action == "search_files":
             if "path" not in params:
                 params["path"] = "."
-            if "pattern" not in params:
-                params["pattern"] = ""  # 默认搜索空字符串（即搜索所有文件）
+            if "recursive" not in params:
+                params["recursive"] = True
+            if "max_depth" not in params:
+                params["max_depth"] = 10
+            if "max_results" not in params:
+                params["max_results"] = 1000
+        
+        # search_file_content: 默认 path 和 recursive 为合理值
+        if action == "search_file_content":
+            if "path" not in params:
+                params["path"] = "."
+            if "recursive" not in params:
+                params["recursive"] = True
+            # pattern 必填，不再提供默认值
         
         return params
     

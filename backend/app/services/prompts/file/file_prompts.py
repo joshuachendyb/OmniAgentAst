@@ -65,7 +65,8 @@ You have access to the following tools:
 - write_file → use file_path (NOT filepath, NOT path)
 - delete_file → use file_path (NOT filepath, NOT path)
 - move_file → use source_path AND destination_path (NOT src, NOT dst, NOT source, NOT destination)
-- search_files → use pattern AND path
+ - search_files → use file_pattern (NOT pattern)
+ - search_file_content → use pattern AND path
 
 【FORBIDDEN parameter names - DO NOT use】:
 - ❌ directory_path (correct: dir_path)
@@ -110,13 +111,20 @@ Available Tools:
    - destination_path: Target path (MUST use destination_path)
    Example: {"source_path": "C:/old/file.txt", "destination_path": "D:/new/file.txt"}
 
-6. search_files(pattern, path=".", file_pattern="*", use_regex=False, max_results=1000)
-   Search files by content pattern.
-   - pattern: Search keyword or regex pattern
+5. search_files(file_pattern, path=".", recursive=True)
+   Search files by file name pattern.
+   - file_pattern: File name pattern with wildcard (e.g., "*.py", "config*") (REQUIRED)
    - path: Starting directory for search, default "."
-   - file_pattern: File name pattern (e.g., "*.py"), default "*"
-   - use_regex: Whether to use regex, default False
-   Example: {"pattern": "TODO", "path": "D:/project", "file_pattern": "*.py", "max_results": 100}
+   - recursive: Whether to search subdirectories, default True
+   Example: {"file_pattern": "*.py", "path": "D:/project", "recursive": True}
+
+6. search_file_content(pattern, path=".", file_pattern="*", recursive=True)
+   Search files by content pattern.
+   - pattern: Search keyword (REQUIRED, CANNOT be empty)
+   - path: Starting directory for search, default "."
+   - file_pattern: File name filter (e.g., "*.py"), default "*"
+   - recursive: Whether to search subdirectories, default True
+   Example: {"pattern": "TODO", "path": "D:/project", "file_pattern": "*.py", "recursive": True}
 
 7. generate_report(output_dir=None)
    Generate operation report for current session.
@@ -147,10 +155,10 @@ Example 2: Read file
 }
 // ❌ WRONG: {"filepath": "..."} or {"path": "..."}
 
-Example 3: Search files
+Example 3: Search file content
 {
     "thought": "User wants to search for TODO comments in Python files",
-    "action": "search_files",
+    "action": "search_file_content",
     "action_input": {
         "pattern": "TODO",
         "path": "D:/project",
@@ -365,7 +373,7 @@ Correct parameter names to use:
 - write_file: file_path
 - delete_file: file_path
 - move_file: source_path, destination_path
-- search_files: pattern, path
+- search_file_content: pattern, path
 
 Common mistakes to avoid:
 - ❌ directory_path (use: dir_path)

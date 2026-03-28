@@ -9,7 +9,7 @@ MCP文件操作工具集 - 重写版本
 2. 动态白名单（自动添加存在的盘符）
 3. 自动生成JSON Schema
 4. 添加input_examples示例
-5. 修复search_files安全漏洞
+5. 修复search_file_content空pattern安全漏洞
 
 统一返回格式：{status, summary, data, retry_count}
 """
@@ -32,7 +32,8 @@ from app.services.tools.file.file_schema import (
     ListDirectoryInput,
     DeleteFileInput,
     MoveFileInput,
-    SearchFilesInput,
+    SearchFileContentInput,
+    SearchFilesByNameInput,
     GenerateReportInput,
 )
 
@@ -878,63 +879,300 @@ class FileTools:
             }, "move_file")
     
     @register_tool(
-        name="search_files",
-        description="""搜索文件名匹配特定模式的文件。
+        name="search_file_content",
+        description="""搜索文件内容中的关键字。
 
 使用场景：
-- 当用户想要在目录中搜索包含特定关键字的文件时使用此工具
-- 当用户想要查找特定类型的文件时使用
-- 当用户说"搜索文件"、"查找包含xxx的文件"时使用
+- 当用户想要在文件内容中搜索特定关键字时使用此工具
+- 当用户说"搜索文件内容"、"在文件中查找xxx"、"搜索包含xxx的文件"时使用
 
 参数说明：
-- pattern: 搜索内容的关键字或正则表达式
+- pattern: 搜索内容的关键字（必填，不能为空）
 - path: 搜索的起始目录，默认为当前目录 "."
-- file_pattern: 文件名匹配模式，支持通配符（* 匹配任意字符），默认为 "*"（匹配所有文件）
-- use_regex: 是否使用正则表达式搜索，默认为False（使用简单字符串搜索）
-- max_results: 最大搜索结果数量，默认为1000
+- file_pattern: 文件类型过滤，支持通配符（* 匹配任意字符），默认为 "*"（搜索所有文件）
+- recursive: 是否递归搜索子目录，默认为True
 
 【重要】必须使用 pattern 和 path 作为参数名。
-示例: {"pattern": "TODO", "path": "D:/项目代码"}""",
-        input_model=SearchFilesInput,
+示例: {"pattern": "TODO", "path": "D:/项目代码", "file_pattern": "*.py", "recursive": True}""",
+        input_model=SearchFileContentInput,
         examples=[
             {
                 "pattern": "TODO",
                 "path": "D:/项目代码",
                 "file_pattern": "*.py",
-                "use_regex": False,
-                "max_results": 100
+                "recursive": True
             },
             {
                 "pattern": "config",
                 "path": "C:/Users/用户名",
                 "file_pattern": "*.json",
-                "use_regex": False,
-                "max_results": 50
-            },
-            {
-                "pattern": "^class\\s+\\w+",
-                "path": "D:/项目代码",
-                "file_pattern": "*.py",
-                "use_regex": True,
-                "max_results": 200
+                "recursive": True
             }
         ]
     )
-    async def search_files(
+    async def search_file_content(
         self,
         pattern: str,
         path: str = ".",
         file_pattern: str = "*",
-        use_regex: bool = False,
-        max_results: int = 1000
+        recursive: bool = True
     ) -> Dict[str, Any]:
-        """搜索文件内容"""
-        # 【安全修复】验证搜索路径 - 2026-03-19 小强
+        """搜索文件内容中的关键字"""
+        # 【修复】验证搜索路径 - 2026-03-19 小强
         is_valid, error_msg = self._validate_path(path)
         if not is_valid:
             return _to_unified_format({
                 "success": False,
                 "error": error_msg,
+                "matches": []
+            }, "search_file_content")
+        
+        # 【修复】空pattern校验 - 2026-03-28 小沈
+        if not pattern or not pattern.strip():
+            return _to_unified_format({
+                "success": False,
+                "error": "搜索关键字不能为空，请提供有效的搜索内容",
+                "matches": []
+            }, "search_file_content")
+        
+        search_path = Path(path)
+        
+        try:
+            if not search_path.exists():
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"Path not found: {path}",
+                    "matches": []
+                }, "search_file_content")
+            
+            # 编译正则表达式
+            regex = None
+            if use_regex:
+                try:
+                    regex = re.compile(pattern)
+                except re.error as e:
+                    return _to_unified_format({
+                        "success": False,
+                        "error": f"Invalid regex pattern: {e}",
+                        "matches": []
+                    }, "search_file_content")
+            
+            # 搜索文件内容 - 支持循环搜索获取全部结果
+            def _search_sync():
+                import os
+                
+                all_results = []
+                
+                # 每次搜索最大获取数量
+                BATCH_SIZE = max_results if max_results > 0 else 1000
+                
+                # 去除pattern首尾空白
+                search_term = pattern.strip()
+                
+                # 循环搜索，直到获取全部结果
+                after_file = None
+                while True:
+                    batch_results = []
+                    
+                    # 逐步遍历目录
+                    for root, dirs, files in os.walk(search_path):
+                        # 遍历当前目录的文件
+                        for filename in files:
+                            # 用 file_pattern 过滤文件名
+                            if file_pattern and file_pattern != "*":
+                                import re
+                                fp = file_pattern.replace(".", r"\.").replace("*", ".*").replace("?", ".")
+                                fp = f"^{fp}$"
+                                try:
+                                    if not re.match(fp, filename):
+                                        continue
+                                except:
+                                    pass
+                            
+                            file_path = Path(root) / filename
+                            file_str = str(file_path.relative_to(search_path))
+                            
+                            # 跳过 after 之前的文件
+                            if after_file and file_str <= after_file:
+                                continue
+                            
+                            # 读取文件内容
+                            try:
+                                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                                    content = f.read()
+                            except:
+                                continue
+                            
+                            # 搜索内容
+                            matches = []
+                            
+                            if use_regex and regex is not None:
+                                for match in regex.finditer(content):
+                                    start = max(0, match.start() - 50)
+                                    end = min(len(content), match.end() + 50)
+                                    context = content[start:end]
+                                    
+                                    matches.append({
+                                        "start": match.start(),
+                                        "end": match.end(),
+                                        "matched": match.group(),
+                                        "context": context
+                                    })
+                            else:
+                                idx = content.find(search_term)
+                                while idx != -1:
+                                    start = max(0, idx - 50)
+                                    end = min(len(content), idx + len(search_term) + 50)
+                                    context = content[start:end]
+                                    
+                                    matches.append({
+                                        "start": idx,
+                                        "end": idx + len(search_term),
+                                        "matched": search_term,
+                                        "context": context
+                                    })
+                                    
+                                    idx = content.find(search_term, idx + 1)
+                            
+                            if matches:
+                                batch_results.append({
+                                    "file": file_str,
+                                    "matches": matches,
+                                    "match_count": len(matches)
+                                })
+                            
+                            # 达到本次限制，停止收集
+                            if len(batch_results) >= BATCH_SIZE:
+                                break
+                    
+                    # 添加本批次结果
+                    all_results.extend(batch_results)
+                    
+                    # 获取本批次最后一个文件名
+                    last_file = batch_results[-1]["file"] if batch_results else None
+                    
+                    if not last_file:
+                        break  # 搜索完成
+                    
+                    # 设置下一次继续的位置
+                    after_file = last_file
+                    
+                    # 检查是否需要继续获取
+                    if max_results > 0 and len(all_results) >= max_results:
+                        break
+                
+                # 排序：匹配多的文件在前
+                all_results.sort(key=lambda x: x["match_count"], reverse=True)
+                
+                return all_results
+            
+            # 执行搜索
+            all_results = await asyncio.to_thread(_search_sync)
+            
+            # 计算总匹配数
+            total_matches = sum(r["match_count"] for r in all_results)
+            
+            # 搜索完成后，根据结果数量决定如何返回前端
+            total = len(all_results)
+            
+            # 前端分页配置
+            FRONTEND_PAGE_SIZE = 200  # 每页200个文件
+            
+            if total > FRONTEND_PAGE_SIZE:
+                # 结果多，分页返回
+                total_pages = (total + FRONTEND_PAGE_SIZE - 1) // FRONTEND_PAGE_SIZE
+                page_results = all_results[:FRONTEND_PAGE_SIZE]
+                has_more = True
+                last_file = all_results[FRONTEND_PAGE_SIZE - 1]["file"] if total > FRONTEND_PAGE_SIZE else None
+            else:
+                # 结果少，一次返回
+                page_results = all_results
+                total_pages = 1
+                has_more = False
+                last_file = all_results[-1]["file"] if all_results else None
+            
+            return _to_unified_format({
+                "success": True,
+                "pattern": pattern,
+                "path": str(search_path),
+                "file_pattern": file_pattern,
+                "matches": page_results,
+                "total": total,
+                "total_matches": total_matches,
+                "page": 1,
+                "total_pages": total_pages,
+                "page_size": FRONTEND_PAGE_SIZE,
+                "last_file": last_file,
+                "has_more": has_more
+            }, "search_file_content")
+            
+        except Exception as e:
+            logger.error(f"Failed to search file content: {e}")
+            return _to_unified_format({
+                "success": False,
+                "error": str(e),
+                "matches": []
+            }, "search_file_content")
+    
+    @register_tool(
+        name="search_files",
+        description="""搜索文件名（按文件名匹配）。
+
+使用场景：
+- 当用户想要根据文件名查找文件时使用此工具
+- 当用户说"搜索文件"、"查找名为xxx的文件"、"按文件名找文件"时使用
+
+参数说明：
+- file_pattern: 文件名匹配模式，支持通配符（* 匹配任意字符，? 匹配单个字符）（必填）
+- path: 搜索的起始目录，默认为当前目录 "."
+- recursive: 是否递归搜索子目录，默认为True
+
+【重要】必须使用 file_pattern 作为参数名，不要使用 pattern。
+示例: {"file_pattern": "*.py", "path": "D:/项目代码", "recursive": True}""",
+        input_model=SearchFilesByNameInput,
+        examples=[
+            {
+                "file_pattern": "*.py",
+                "path": "D:/项目代码",
+                "recursive": True
+            },
+            {
+                "file_pattern": "config*",
+                "path": "C:/Users/用户名",
+                "recursive": False
+            },
+            {
+                "file_pattern": "readme*",
+                "path": "D:/项目代码",
+                "recursive": True,
+                "max_results": 100
+            }
+        ]
+    )
+    async def search_files(
+        self,
+        file_pattern: str,
+        path: str = ".",
+        recursive: bool = True,
+        max_depth: int = 10,
+        max_results: int = 1000,
+        after: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """搜索文件名（按文件名匹配）"""
+        # 验证搜索路径
+        is_valid, error_msg = self._validate_path(path)
+        if not is_valid:
+            return _to_unified_format({
+                "success": False,
+                "error": error_msg,
+                "matches": []
+            }, "search_files")
+        
+        # 验证 file_pattern 不为空
+        if not file_pattern or not file_pattern.strip():
+            return _to_unified_format({
+                "success": False,
+                "error": "文件名匹配模式不能为空，请提供有效的文件名模式",
                 "matches": []
             }, "search_files")
         
@@ -948,86 +1186,130 @@ class FileTools:
                     "matches": []
                 }, "search_files")
             
-            # 编译正则表达式
-            regex = None
-            if use_regex:
-                try:
-                    regex = re.compile(pattern)
-                except re.error as e:
-                    return _to_unified_format({
-                        "success": False,
-                        "error": f"Invalid regex pattern: {e}",
-                        "matches": []
-                    }, "search_files")
-            
-            # 搜索文件
+            # 搜索文件名 - 支持循环搜索获取全部结果
             def _search_sync():
-                files_to_search = list(search_path.rglob(file_pattern))[:max_results]
-                search_results = []
+                import os
                 
-                for file_path in files_to_search:
-                    if not file_path.is_file():
-                        continue
+                all_matches = []
+                seen_files = set()
+                
+                # 每次搜索最大获取数量
+                BATCH_SIZE = max_results if max_results > 0 else 1000
+                
+                # 循环搜索，直到获取全部结果
+                after = None
+                while True:
+                    batch_matches = []
+                    batch_seen = set()
                     
+                    # 转换通配符为正则
+                    import re
+                    regex_pattern = file_pattern.replace(".", r"\.").replace("*", ".*").replace("?", ".")
+                    regex_pattern = f"^{regex_pattern}$"
                     try:
-                        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                            content = f.read()
-                    except:
-                        continue
+                        file_regex = re.compile(regex_pattern)
+                    except re.error:
+                        file_regex = None
                     
-                    matches = []
-                    
-                    if use_regex and regex is not None:
-                        for match in regex.finditer(content):
-                            start = max(0, match.start() - 50)
-                            end = min(len(content), match.end() + 50)
-                            context = content[start:end]
+                    # 逐步遍历目录
+                    for root, dirs, files in os.walk(search_path):
+                        # 检查深度限制
+                        if recursive:
+                            rel_root = Path(root).relative_to(search_path)
+                            depth = len(rel_root.parts) if str(rel_root) != "." else 0
+                            if depth >= max_depth:
+                                continue
+                        
+                        # 遍历当前目录的文件
+                        for filename in files:
+                            # 正则匹配文件名
+                            if file_regex and not file_regex.match(filename):
+                                continue
                             
-                            matches.append({
-                                "start": match.start(),
-                                "end": match.end(),
-                                "matched": match.group(),
-                                "context": context
+                            file_path = Path(root) / filename
+                            file_str = str(file_path.relative_to(search_path))
+                            
+                            # 跳过已存在的
+                            if file_str in seen_files:
+                                continue
+                            
+                            # 跳过 after 之前的
+                            if after and file_str <= after:
+                                continue
+                            
+                            seen_files.add(file_str)
+                            
+                            try:
+                                size = file_path.stat().st_size
+                            except:
+                                size = 0
+                            
+                            batch_matches.append({
+                                "name": filename,
+                                "path": file_str,
+                                "size": size
                             })
-                    else:
-                        idx = content.find(pattern)
-                        while idx != -1:
-                            start = max(0, idx - 50)
-                            end = min(len(content), idx + len(pattern) + 50)
-                            context = content[start:end]
                             
-                            matches.append({
-                                "start": idx,
-                                "end": idx + len(pattern),
-                                "matched": pattern,
-                                "context": context
-                            })
-                            
-                            idx = content.find(pattern, idx + 1)
+                            # 达到本次限制，停止收集
+                            if len(batch_matches) >= BATCH_SIZE:
+                                break
+                        
+                        # 达到本次限制，停止遍历
+                        if len(batch_matches) >= BATCH_SIZE:
+                            break
                     
-                    if matches:
-                        search_results.append({
-                            "file": str(file_path.relative_to(search_path)),
-                            "matches": matches,
-                            "match_count": len(matches)
-                        })
+                    # 添加本批次结果
+                    all_matches.extend(batch_matches)
+                    
+                    # 获取本批次最后一个文件名，用于下一次继续
+                    last_file = batch_matches[-1]["path"] if batch_matches else None
+                    
+                    # 如果没有更多结果了，或者已经达到总限制，停止循环
+                    if not last_file:
+                        break  # 搜索完成
+                    
+                    # 设置下一次继续的位置
+                    after = last_file
+                    
+                    # 检查是否需要继续获取
+                    if max_results > 0 and len(all_matches) >= max_results:
+                        break  # 已达到总限制
                 
-                search_results.sort(key=lambda x: x["match_count"], reverse=True)
-                
-                return {
-                    "files_searched": len(files_to_search),
-                    "files_matched": len(search_results),
-                    "total_matches": sum(r["match_count"] for r in search_results),
-                    "matches": search_results[:50]
-                }
+                return all_matches
             
-            search_result = await asyncio.to_thread(_search_sync)
+            # 执行搜索
+            all_matches = await asyncio.to_thread(_search_sync)
+            
+            # 搜索完成后，根据结果数量决定如何返回前端
+            total = len(all_matches)
+            
+            # 前端分页配置
+            FRONTEND_PAGE_SIZE = 200  # 每页200个
+            
+            if total > FRONTEND_PAGE_SIZE:
+                # 结果多，分页返回
+                total_pages = (total + FRONTEND_PAGE_SIZE - 1) // FRONTEND_PAGE_SIZE
+                page_matches = all_matches[:FRONTEND_PAGE_SIZE]
+                has_more = True
+                last_file = all_matches[FRONTEND_PAGE_SIZE - 1]["path"] if total > FRONTEND_PAGE_SIZE else None
+            else:
+                # 结果少，一次返回
+                page_matches = all_matches
+                total_pages = 1
+                has_more = False
+                last_file = all_matches[-1]["path"] if all_matches else None
             
             return _to_unified_format({
                 "success": True,
-                "pattern": pattern,
+                "file_pattern": file_pattern,
                 "path": str(search_path),
-                **search_result
+                "matches": page_matches,
+                "total": total,
+                "page": 1,
+                "total_pages": total_pages,
+                "page_size": FRONTEND_PAGE_SIZE,
+                "last_file": last_file,
+                "has_more": has_more
             }, "search_files")
             
         except Exception as e:
@@ -1144,12 +1426,12 @@ def _generate_summary(tool_name: str, result: Any) -> str:
         destination = result.get("destination", "")
         return f"成功移动文件：{source} -> {destination}"
     
-    elif tool_name == "search_files":
+    elif tool_name == "search_file_content":
         if result.get("success") is False:
-            return f"搜索失败：{result.get('error', '未知错误')}"
+            return f"搜索内容失败：{result.get('error', '未知错误')}"
         files_matched = result.get("files_matched", 0)
         total_matches = result.get("total_matches", 0)
-        return f"搜索完成，找到 {files_matched} 个文件，共 {total_matches} 处匹配"
+        return f"搜索内容完成，找到 {files_matched} 个文件，共 {total_matches} 处匹配"
     
     elif tool_name == "generate_report":
         if result.get("success") is False:
