@@ -1,6 +1,6 @@
 ai:
-  provider: qiniu
-  model: deepseek-v3.1
+  provider: longcat
+  model: LongCat-Flash-Thinking-2601
   longcat:
     api_base: https://api.longcat.chat/openai/v1
     api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
