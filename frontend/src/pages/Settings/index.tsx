@@ -93,7 +93,7 @@ const GlobalConfigArea: React.FC<{
   onDisplayNameChange: (option: ModelOption) => void;
 }> = ({ modelList, currentDisplayName, onDisplayNameChange }) => {
   const [configPath, setConfigPath] = useState<any>(null);
-  const [configContent, setConfigContent] = useState<string>("");
+  const [configContent] = useState<string>("");
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [validationResult, setValidationResult] = useState<any>(null);
   const [validating, setValidating] = useState(false);
@@ -439,7 +439,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
     null
   );
   const [loading, setLoading] = useState(false);
-  const [validationResult, setValidationResult] = useState<any>(null);
+  const [validationResult] = useState<any>(null);
   const [validationModalVisible, setValidationModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [addModelModalVisible, setAddModelModalVisible] = useState(false);
