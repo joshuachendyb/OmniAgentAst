@@ -122,15 +122,32 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
 
   // 【修复问题2】当前选中的模型ID（格式: provider-modelname）
   // 根据serviceStatus自动设置默认值
-  const [_currentProvider, setCurrentProvider] = useState<string>("");
+  // 直接从serviceStatus获取当前模型，始终保持最新
+  const currentProvider = serviceStatus?.provider && serviceStatus?.model 
+    ? `${serviceStatus.provider}-${serviceStatus.model}` 
+    : "";
 
-  // 监听serviceStatus变化，自动设置下拉框默认值
-  useEffect(() => {
-    if (serviceStatus?.provider && serviceStatus?.model) {
-      const defaultProvider = `${serviceStatus.provider}-${serviceStatus.model}`;
-      setCurrentProvider(defaultProvider);
+  // 切换模型后刷新serviceStatus
+  const handleModelChange = async (value: string) => {
+    try {
+      const selectedModel = modelList.find(
+        (m) => `${m.provider}-${m.model}` === value
+      );
+      if (!selectedModel) {
+        message.error("未找到对应的模型");
+        return;
+      }
+      await configApi.updateConfig({
+        ai_provider: selectedModel.provider,
+        ai_model: selectedModel.model,
+      });
+      message.success(`已切换到 ${selectedModel.display_name}`);
+      // 刷新serviceStatus以更新下拉框
+      await refreshAll();
+    } catch (error) {
+      message.error("切换模型失败");
     }
-  }, [serviceStatus]);
+  };
 
   // 【新增】验证详情弹框
   const [validationModalVisible, setValidationModalVisible] = useState(false);
@@ -474,7 +491,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
             {/* 模型选择下拉框 */}
             {modelList.length > 0 ? (
               <Select
-                value={_currentProvider}
+                value={currentProvider}
                 style={{ minWidth: 350 }}
                 styles={{ popup: { root: { minWidth: 350 } } }}
                 size="small"
@@ -484,39 +501,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                     await refreshModelList();
                   }
                 }}
-                onChange={async (value: string) => {
-                  try {
-                    // 从modelList中找到对应的模型，获取完整的provider和model
-                    const selectedModel = modelList.find(
-                      (m) => `${m.provider}-${m.model}` === value
-                    );
-                    if (!selectedModel) {
-                      message.error("未找到对应的模型");
-                      return;
-                    }
-
-                    // ⭐⭐⭐ 重要：provider 和 model 必须成对使用！⭐⭐⭐
-                    // 从 selectedModel 中同时获取 provider 和 model
-                    // 原因：同一个 model 名称可能属于多个 provider
-                    // 只有 provider+model 组合才能唯一确定一个模型
-                    const modelName = selectedModel.model; // 直接使用 selectedModel.model
-
-                    // 调用API切换provider和model
-                    await configApi.updateConfig({
-                      ai_provider: selectedModel.provider, // ⭐ 删除类型断言，使用字符串
-                      ai_model: modelName,
-                    });
-                    message.success(`已切换到 ${selectedModel.display_name}`);
-
-                    // 切换后更新当前选中的模型ID
-                    setCurrentProvider(value);
-
-                    // 切换后自动检查服务
-                    handleCheckService();
-                  } catch (error) {
-                    message.error("切换失败");
-                  }
-                }}
+onChange={handleModelChange}
               >
                 {modelList.map((model) => (
                   <Option
