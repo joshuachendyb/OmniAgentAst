@@ -202,7 +202,7 @@ const HistoryPage: React.FC = () => {
       // 清空会话时应该删除所有会话（包括有效和无效）
       const allSessions: any[] = [];
       let page = 1;
-      const pageSize = 100;  // 后端最大支持100
+      const pageSize = 500;
       while (true) {
         const response = await sessionApi.listSessions(page, pageSize, undefined, undefined);
         if (response.sessions.length === 0) break;
