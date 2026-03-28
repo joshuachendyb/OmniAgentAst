@@ -15,7 +15,8 @@ from app.services.tools.file.file_schema import (
     ListDirectoryInput,
     DeleteFileInput,
     MoveFileInput,
-    SearchFilesInput,
+    SearchFileContentInput,
+    SearchFilesByNameInput,
     GenerateReportInput,
 )
 from app.services.tools.file.file_tools import (
@@ -35,7 +36,8 @@ from app.services.tools.file.file_tools import (
     ListDirectoryInput,
     DeleteFileInput,
     MoveFileInput,
-    SearchFilesInput,
+    SearchFileContentInput,
+    SearchFilesByNameInput,
     GenerateReportInput,
     # 工具函数
     get_registered_tools,
@@ -54,7 +56,8 @@ __all__ = [
     "ListDirectoryInput",
     "DeleteFileInput",
     "MoveFileInput",
-    "SearchFilesInput",
+    "SearchFileContentInput",
+    "SearchFilesByNameInput",
     "GenerateReportInput",
     # 常量
     "PAGE_SIZE",

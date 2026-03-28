@@ -105,10 +105,10 @@ class MoveFileInput(BaseModel):
     )
 
 
-class SearchFilesInput(BaseModel):
-    """search_files 工具的输入参数"""
+class SearchFileContentInput(BaseModel):
+    """search_file_content 工具的输入参数"""
     pattern: str = Field(
-        description="搜索内容的关键字或正则表达式"
+        description="搜索内容的关键字（必填，不能为空）"
     )
     path: str = Field(
         default=".",
@@ -118,15 +118,39 @@ class SearchFilesInput(BaseModel):
         default="*",
         description="文件名匹配模式，支持通配符（* 匹配任意字符），默认为*（所有文件）"
     )
-    use_regex: bool = Field(
-        default=False,
-        description="是否使用正则表达式搜索，默认为False（使用简单字符串搜索）"
+    recursive: bool = Field(
+        default=True,
+        description="是否递归搜索子目录，默认为True"
+    )
+
+
+class SearchFilesByNameInput(BaseModel):
+    """search_files 工具的输入参数（搜索文件名）"""
+    file_pattern: str = Field(
+        description="文件名匹配模式，支持通配符（* 匹配任意字符，? 匹配单个字符）"
+    )
+    path: str = Field(
+        default=".",
+        description="搜索的起始目录，默认为当前目录"
+    )
+    recursive: bool = Field(
+        default=True,
+        description="是否递归搜索子目录，默认为True"
+    )
+    max_depth: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        description="最大递归深度，仅当recursive=True时有效，默认为10"
     )
     max_results: int = Field(
         default=1000,
         ge=1,
-        le=10000,
-        description="最大搜索结果数量，默认为1000"
+        description="限制每次最多获取结果数量，如果设置则会循环获取全部结果"
+    )
+    after: Optional[str] = Field(
+        default=None,
+        description="上次搜索结束的文件名，用于继续搜索（分页）"
     )
 
 
@@ -144,6 +168,7 @@ __all__ = [
     "ListDirectoryInput",
     "DeleteFileInput",
     "MoveFileInput",
-    "SearchFilesInput",
+    "SearchFileContentInput",
+    "SearchFilesByNameInput",
     "GenerateReportInput",
 ]

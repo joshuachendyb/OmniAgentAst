@@ -57,6 +57,7 @@ class FileIntent(BaseModel):
             "delete_file",
             "move_file",
             "search_files",
+            "search_file_content",
             "generate_report"
         ],
         description="关联的文件操作工具名称列表"
@@ -76,7 +77,7 @@ class FileIntent(BaseModel):
                 "name": "file",
                 "description": "文件读写、目录管理、文件搜索等文件操作",
                 "keywords": ["文件", "读取", "写入", "删除", "移动", "搜索"],
-                "tools": ["read_file", "write_file", "list_directory", "delete_file", "move_file", "search_files", "generate_report"],
+                "tools": ["read_file", "write_file", "list_directory", "delete_file", "move_file", "search_files", "search_file_content", "generate_report"],
                 "safety_checker": "file_safety"
             }
         }

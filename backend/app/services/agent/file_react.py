@@ -109,6 +109,7 @@ class FileReactAgent(BaseAgent):
                 "delete_file": self.file_tools.delete_file,
                 "move_file": self.file_tools.move_file,
                 "search_files": self.file_tools.search_files,
+                "search_file_content": self.file_tools.search_file_content,
                 "generate_report": self.file_tools.generate_report,
             }
             self.executor = ToolExecutor(self._tools_dict)
