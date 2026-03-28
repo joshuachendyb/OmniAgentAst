@@ -1,4 +1,6 @@
 ai:
+  provider: qiniu
+  model: deepseek-v3.1
   longcat:
     api_base: https://api.longcat.chat/openai/v1
     api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
@@ -11,7 +13,6 @@ ai:
     - 222-2233
     - 12123-121
     timeout: 120
-  model: glm-4.7-flash
   opencode:
     api_base: https://opencode.ai/zen/v1
     api_key: sk-6rMee9Ez89iRCEvDayPq2hdTrMGKyPesy5K88uZKVAqOrc7tg6sVqRI5T1pP2LXb
@@ -21,7 +22,6 @@ ai:
     - glm-5-free
     - kimi-k2.5-free
     timeout: 150
-  provider: zhipuai
   qiniu:
     api_base: https://api.qnaigc.com/v1
     api_key: sk-ee99b1ccb7495fd4fab4114697e69984846e5884059ae108ce0dda350a1ed9d6
@@ -50,7 +50,7 @@ app:
   language: zh-CN
   max_history_length: 10
   max_steps: 100
-  theme: dark
+  theme: light
 logging:
   backup_count: 5
   level: INFO
