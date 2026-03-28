@@ -83,7 +83,7 @@ const HistoryPage: React.FC = () => {
         page,
         pagination.pageSize,
         searchKeyword,
-        true  // ⭐ 只显示有效会话
+        undefined  // ⭐ 显示所有会话（包括有效和无效）
       );
       setSessions(response.sessions);
       setPagination({
@@ -133,7 +133,7 @@ const HistoryPage: React.FC = () => {
         pagination.current,
         pagination.pageSize,
         keyword,
-        true  // ⭐ 只显示有效会话
+        undefined  // ⭐ 显示所有会话（包括有效和无效）
       );
       setSessions(response.sessions);
       setPagination({
