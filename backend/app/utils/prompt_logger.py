@@ -230,6 +230,50 @@ class PromptLogger:
         
         current_log["LLM调用记录"].append(entry)
     
+    def log_llm_response(
+        self,
+        round_number: int,
+        response_content: str,
+        response_type: str = "text",
+        finish_reason: str = "",
+        extra_info: Optional[Dict[str, Any]] = None
+    ):
+        """
+        记录 LLM 返回结果
+        
+        Args:
+            round_number: 调用轮次
+            response_content: LLM返回的内容
+            response_type: 返回类型（text/tools/thought/action_tool等）
+            finish_reason: 结束原因
+            extra_info: 额外信息
+        """
+        current_log = self._get_current_log()
+        if not current_log:
+            return
+        
+        entry = {
+            "轮次": round_number,
+            "类型": "LLM返回",
+            "返回类型": response_type,
+            "内容": response_content[:500] if response_content else "",  # 截断避免日志过大
+            "内容长度": len(response_content) if response_content else 0,
+            "结束原因": finish_reason,
+        }
+        
+        if extra_info:
+            entry["额外信息"] = extra_info
+        
+        # 查找对应的LLM调用记录，更新其返回信息
+        for call_entry in reversed(current_log.get("LLM调用记录", [])):
+            if call_entry.get("轮次") == round_number:
+                call_entry["返回内容"] = response_content[:1000] if response_content else ""
+                call_entry["返回类型"] = response_type
+                call_entry["结束原因"] = finish_reason
+                break
+        
+        current_log["LLM调用记录"].append(entry)
+    
     def log_observation(
         self,
         step_name: str,

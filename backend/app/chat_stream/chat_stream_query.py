@@ -23,6 +23,7 @@ from app.chat_stream.incident_handler import (
     check_and_yield_if_interrupted,
 )
 from app.utils.logger import logger
+from app.config import get_config
 
 
 async def chat_stream_query(
@@ -87,7 +88,10 @@ async def chat_stream_query(
     
     # 统一的空闲超时和重试机制
     # 空闲超时由 IdleTimeoutIterator 实时检测，重试次数由 RetryController 管理
-    max_retries = 3  # 最大重试次数：3次（总共4次调用）
+    config = get_config()
+    chat_config = config.get("chat", {})
+    chat_timeout = chat_config.get("timeout", 60)  # 默认60秒
+    max_retries = chat_config.get("max_retries", 3)  # 默认3次
     retry_controller = RetryController(max_retries=max_retries)
     ai_call_successful = False
     last_error = None
@@ -109,6 +113,8 @@ async def chat_stream_query(
                 step=next_step()
             )
             yield f"data: {json.dumps(retry_data)}\n\n"
+            # 保存 retrying 步骤到数据库
+            await add_step_and_save(retry_data, None)
             # logger.info(f"[Retry] 开始第{retry_attempt + 1}次AI调用（共{max_retries + 1}次）")
         
         # 使用流式API，逐token返回
@@ -123,10 +129,10 @@ async def chat_stream_query(
             # logger.info(f"[LLM Total Counter] >>> Stream AI called, count: {llm_call_count}")
             
             # 【小沈修复】使用 IdleTimeoutIterator 包装流式迭代器，实现实时空闲超时检测
-            # 超时时间从120秒调整为60秒（每次），3次重试合计3分钟
+            # 超时时间从配置读取
             idle_timeout_stream = IdleTimeoutIterator(
                 ai_service.chat_stream(message=last_message, history=history),
-                timeout_seconds=60.0,
+                timeout_seconds=float(chat_timeout),
                 name=f"AI-Stream-{retry_attempt + 1}"
             )
             
@@ -322,8 +328,9 @@ async def chat_stream_query(
         if last_error:
             logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}, 类型: {last_error_type}")
             # 使用之前保存的 error_type
+            total_timeout = chat_timeout * max_retries
             error_type_map = {
-                'idle_timeout': ('timeout', '请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试'),
+                'idle_timeout': ('timeout', f'请求超时：AI模型({display_name}) {chat_timeout}秒内未返回任何内容，已重试{max_retries}次，合计{total_timeout}秒，请更换问题或稍后重试'),
                 'timeout_error': ('timeout', '请求超时，请重试'),
                 'read_error': ('server', '读取响应失败，请重试'),
                 'connect_error': ('network', '连接失败，请检查网络'),
