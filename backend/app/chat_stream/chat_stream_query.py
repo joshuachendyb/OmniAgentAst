@@ -180,44 +180,36 @@ async def chat_stream_query(
                     ai_call_successful = False
                     break
                 
-                # 【小沈修复 2026-03-16】无论content是否为空，都处理chunk并添加到列表
-                # 避免某些chunk被跳过导致steps不完整
+                # 【小沈修复 2026-03-28】只处理有内容的chunk，空chunk不需要保存和发送
+                # 空chunk：LLM在超时重试时确实没返回内容，既不显示也不需要保存
                 current_is_reasoning = getattr(chunk, 'is_reasoning', False)
                 
-                # 无论content是否为空，都创建chunk_data并添加到列表
-                chunk_data = {
-                    'type': 'chunk', 
-                    'step': next_step(),  # 添加step字段
-                    'timestamp': create_timestamp(),
-                    'content': chunk.content or '',  # 确保content不为None
-                    'is_reasoning': current_is_reasoning
-                }
-                current_execution_steps.append(chunk_data)
-                
+                # 只处理有内容的chunk
                 if chunk.content:
+                    chunk_data = {
+                        'type': 'chunk', 
+                        'step': next_step(),  # 添加step字段
+                        'timestamp': create_timestamp(),
+                        'content': chunk.content,
+                        'is_reasoning': current_is_reasoning
+                    }
+                    current_execution_steps.append(chunk_data)
+                    
                     has_received_content = True
                     full_content += chunk.content
                     current_content = full_content  # 累积content
                     
                     # 【小沈修复 2026-03-16】is_reasoning变化时保存，确保回答部分完整
                     if last_is_reasoning != current_is_reasoning:
-                        # logger.info(f"[Save] is_reasoning变化: {last_is_reasoning} -> {current_is_reasoning}，准备保存 {len(current_execution_steps)} steps")
                         try:
-                            # 【警告 2026-03-23】此处调用存在参数错位问题：
-                            # save_execution_steps_to_db 期望签名：(session_id, execution_steps, content)
-                            # 但这里只传了2个参数：(current_execution_steps, current_content)
-                            # 导致：session_id=List[Dict], execution_steps=str
-                            # 在 chat2.py 调用 chat_stream_query 时，传递的是 wrapped_save_steps 闭包（已绑定session_id）
-                            # 所以这里不会执行到，只有直接调用 chat_stream_query 时才有问题
                             await save_execution_steps_to_db(current_execution_steps, current_content)
-                            # logger.info(f"[Save] is_reasoning变化保存成功: {len(current_execution_steps)} steps")
                         except Exception as e:
                             logger.error(f"[Save] is_reasoning变化保存失败: {e}", exc_info=True)
                         last_is_reasoning = current_is_reasoning
-                
-                # 发送chunk给前端
-                # logger.info(f"[Step chunk] 发送chunk步骤#{chunk_count}: content长度={len(chunk.content or '')}, is_reasoning={chunk_data['is_reasoning']}")
-                yield f"data: {json.dumps(chunk_data)}\n\n"
+                    
+                    # 发送chunk给前端
+                    yield f"data: {json.dumps(chunk_data)}\n\n"
+                    
                 if chunk.is_done:
                     break
             
@@ -309,14 +301,18 @@ async def chat_stream_query(
                         step=error_step_value
                     )
                     
-                    # 保存error步骤到数据库
+                    # 保存error步骤到数据库【小沈修复 2026-03-28】添加model和provider字段
                     error_step = {
                         'type': 'error',
-                        'step': error_step_value,  # 复用变量
+                        'step': error_step_value,
                         'error_type': 'empty_response',
                         'message': error_message,
                         'code': 'EMPTY_RESPONSE',
-                        'timestamp': create_timestamp()
+                        'timestamp': create_timestamp(),
+                        'model': ai_service.model,
+                        'provider': ai_service.provider,
+                        'retryable': True,
+                        'retry_after': 3
                     }
                     await add_step_and_save(error_step, f"错误: {error_message}")
                     return  # 直接返回，不再发送final步骤
