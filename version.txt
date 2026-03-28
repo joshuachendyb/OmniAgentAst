@@ -1,3 +1,28 @@
+v0.8.29
+
+更新时间：2026-03-28 20:10:00
+
+更新内容：
+
+## 1. 修复prompt_logger：所有非chat意图都记录 - 小沈-2026-03-28
+
+### 1.1 问题
+
+之前只有 file 意图会记录 prompt logger，network/desktop 意图没有记录。
+
+### 1.2 修复
+
+在 react_sse_wrapper.py 的 generate_sse_stream 函数中添加 prompt_logger 调用，所有非 chat 意图都会记录。
+
+### 1.3 修改文件
+
+- react_sse_wrapper.py
+
+参与开发：小沈
+完成时间：2026-03-28 20:10:00
+
+---
+
 v0.8.28
 
 更新时间：2026-03-28 20:00:00
