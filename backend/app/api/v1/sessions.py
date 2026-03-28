@@ -384,7 +384,7 @@ async def create_session(session_create: Optional[SessionCreate] = None):
 @router.get("/sessions", response_model=SessionListResponse)
 async def list_sessions(
     page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    page_size: int = Query(20, ge=1, le=1000, description="每页数量"),
     keyword: Optional[str] = Query(None, description="搜索关键词"),
     is_valid: Optional[bool] = Query(None, description="过滤有效会话（True=有效，False=无效，None=全部）")
 ):
