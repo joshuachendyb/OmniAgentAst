@@ -201,7 +201,7 @@ const HistoryPage: React.FC = () => {
       // 清空会话时获取所有会话（包括有效和无效）
       const allSessionsResponse = await sessionApi.listSessions(
         1,
-        pagination.total > 500 ? 500 : pagination.total,
+        pagination.total,
         undefined,
         undefined
       );
