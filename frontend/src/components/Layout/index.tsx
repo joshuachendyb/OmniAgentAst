@@ -137,15 +137,24 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         message.error("未找到对应的模型");
         return;
       }
-      await configApi.updateConfig({
+      console.log("[切换模型] 开始切换:", selectedModel.provider, selectedModel.model);
+      const result = await configApi.updateConfig({
         ai_provider: selectedModel.provider,
         ai_model: selectedModel.model,
       });
+      console.log("[切换模型] API返回:", result);
+      if (!result.success) {
+        message.error(result.message || "切换失败");
+        return;
+      }
       message.success(`已切换到 ${selectedModel.display_name}`);
+      console.log("[切换模型] 开始刷新...");
       // 刷新serviceStatus以更新下拉框
       await refreshAll();
-    } catch (error) {
-      message.error("切换模型失败");
+      console.log("[切换模型] 刷新完成, serviceStatus:", serviceStatus);
+    } catch (error: any) {
+      console.error("[切换模型] 失败:", error);
+      message.error(error?.response?.data?.detail || error?.message || "切换模型失败");
     }
   };
 
