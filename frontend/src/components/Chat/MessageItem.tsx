@@ -71,6 +71,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
   const isExpanded = expandedSteps.get(stepIndex) ?? true;
   
   // 【小强优化 2026-03-18】渐变色方案
+  // 【小沈修复 2026-03-28】后端type固定为'incident'，通过incident_value区分具体类型
   const gradientMap: Record<string, string> = {
     start: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
     thought: "linear-gradient(135deg, #faad14 0%, #d48806 100%)",
@@ -82,6 +83,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
     resumed: "linear-gradient(135deg, #52c41a 0%, #389e0d 100%)",
     interrupted: "linear-gradient(135deg, #ff4d4f 0%, #cf1322 100%)",
     retrying: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
+    incident: "linear-gradient(135deg, #fa8c16 0%, #d46b08 100%)",  // incident默认样式
   };
 
   const labelMap: Record<string, string> = {
@@ -95,6 +97,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
     resumed: "恢复",
     interrupted: "中断",
     retrying: "重试",
+    incident: "事件",  // incident默认标签
   };
 
   const iconMap: Record<string, string> = {
@@ -108,11 +111,14 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
     resumed: "▶️",
     interrupted: "⚠️",
     retrying: "🔄",
+    incident: "⚡",  // incident默认图标
   };
 
-  const gradient = gradientMap[step.type] || "#666";
-  const label = labelMap[step.type] || "步骤";
-  const icon = iconMap[step.type] || "";
+  // 【小沈修复 2026-03-28】处理incident类型：优先使用incident_value，否则用type
+  const effectiveType = step.type === 'incident' ? (step as any).incident_value || 'incident' : step.type;
+  const gradient = gradientMap[effectiveType] || gradientMap[step.type] || "#666";
+  const label = labelMap[effectiveType] || labelMap[step.type] || "步骤";
+  const icon = iconMap[effectiveType] || iconMap[step.type] || "";
 
   // 【小强优化 2026-03-18】步骤编号颜色随类型变化
   const getStepBadgeStyle = () => {
@@ -417,7 +423,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             <div style={getStepContentStyle("start" as StepType, "secondary")}>
               <span style={{ marginRight: 16 }}>
                 <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>任务ID：</span>
-                <span style={getStepBadgeStyle("start" as StepType, "outline")}>
+                <span style={getStepBadgeStyle()}>
                   {step.task_id || "无"}
                 </span>
               </span>
@@ -482,29 +488,29 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             </span>
           </div>
         )}
-        {/* 【小强添加 2026-03-24】interrupted/paused/resumed/retrying渲染逻辑 - TDD */}
-        {step.type === "interrupted" && (
+        {/* 【小沈修复 2026-03-28】后端type固定为'incident'，通过incident_value区分，需要同时处理新旧两种格式 */}
+        {(step.type === "interrupted" || (step.type === "incident" && (step as any).incident_value === "interrupted")) && (
           <div style={getStepStyle("interrupted" as StepType)}>
             <span style={getStepContentStyle("interrupted" as StepType, "primary")}>
               {step.content || "客户端断开连接，任务中断"}
             </span>
           </div>
         )}
-        {step.type === "paused" && (
+        {(step.type === "paused" || (step.type === "incident" && (step as any).incident_value === "paused")) && (
           <div style={getStepStyle("paused" as StepType)}>
             <span style={getStepContentStyle("paused" as StepType, "primary")}>
               {step.content || "任务已暂停，可恢复继续"}
             </span>
           </div>
         )}
-        {step.type === "resumed" && (
+        {(step.type === "resumed" || (step.type === "incident" && (step as any).incident_value === "resumed")) && (
           <div style={getStepStyle("resumed" as StepType)}>
             <span style={getStepContentStyle("resumed" as StepType, "primary")}>
               {step.content || "任务已恢复"}
             </span>
           </div>
         )}
-        {step.type === "retrying" && (
+        {(step.type === "retrying" || (step.type === "incident" && (step as any).incident_value === "retrying")) && (
           <div style={getStepStyle("retrying" as StepType)}>
             <span style={getStepContentStyle("retrying" as StepType, "primary")}>
               {step.content || "正在重试..."}

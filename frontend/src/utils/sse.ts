@@ -62,7 +62,8 @@ export interface SSEMetadata {
 export interface ExecutionStep {
   // === 通用字段 ===
   // ⭐ 新增action_tool类型，替换原来的action
-  type: "thought" | "action_tool" | "observation" | "chunk" | "final" | "error" | "interrupted" | "start" | "paused" | "resumed" | "retrying";
+  // 【小沈修复2026-03-28】后端type固定为'incident'，通过incident_value区分具体类型
+  type: "thought" | "action_tool" | "observation" | "chunk" | "final" | "error" | "incident" | "interrupted" | "start" | "paused" | "resumed" | "retrying";
   content?: string;        // 前端显示用：根据type使用不同字段填充小查修复202
   
   // 【6-03-09】添加task_id字段，用于分页请求
@@ -123,6 +124,8 @@ export interface ExecutionStep {
   reasoning?: string;       // 思考过程内容（当 is_reasoning=true 时使用）
   
   // === 错误/中断字段 ===
+  // 【小沈修复2026-03-28】后端incident类型使用incident_value区分具体类型
+  incident_value?: string;    // incident 类型的具体值（interrupted/paused/resumed/retrying）
   error_message?: string;      // error 类型的错误信息
   message?: string;           // interrupted 类型的中断信息
   
