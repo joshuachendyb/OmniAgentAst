@@ -915,7 +915,10 @@ class FileTools:
         pattern: str,
         path: str = ".",
         file_pattern: str = "*",
-        recursive: bool = True
+        recursive: bool = True,
+        # 内部参数，不暴露给 LLM
+        use_regex: bool = False,
+        max_results: int = 1000
     ) -> Dict[str, Any]:
         """搜索文件内容中的关键字"""
         # 【修复】验证搜索路径 - 2026-03-19 小强
@@ -996,18 +999,23 @@ class FileTools:
                             if after_file and file_str <= after_file:
                                 continue
                             
-                            # 读取文件内容
+                            # 读取文件内容 - 限制单文件大小，避免内存溢出
                             try:
                                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                    content = f.read()
+                                    # 最多读取10MB，超过则截断
+                                    MAX_FILE_SIZE = 10 * 1024 * 1024
+                                    content = f.read(MAX_FILE_SIZE)
                             except:
                                 continue
                             
-                            # 搜索内容
+                            # 搜索内容 - 限制单文件最大匹配数
                             matches = []
+                            MAX_MATCHES_PER_FILE = 100  # 单文件最多100个匹配
                             
                             if use_regex and regex is not None:
                                 for match in regex.finditer(content):
+                                    if len(matches) >= MAX_MATCHES_PER_FILE:
+                                        break
                                     start = max(0, match.start() - 50)
                                     end = min(len(content), match.end() + 50)
                                     context = content[start:end]
@@ -1021,6 +1029,8 @@ class FileTools:
                             else:
                                 idx = content.find(search_term)
                                 while idx != -1:
+                                    if len(matches) >= MAX_MATCHES_PER_FILE:
+                                        break
                                     start = max(0, idx - 50)
                                     end = min(len(content), idx + len(search_term) + 50)
                                     context = content[start:end]
