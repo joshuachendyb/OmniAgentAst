@@ -202,11 +202,18 @@ const HistoryPage: React.FC = () => {
       const allSessions: any[] = [];
       let page = 1;
       const pageSize = 100;
-      while (true) {
+      let hasMore = true;
+      while (hasMore) {
         const response = await sessionApi.listSessions(page, pageSize, undefined, undefined);
-        if (response.sessions.length === 0) break;
+        if (response.sessions.length === 0) {
+          hasMore = false;
+          break;
+        }
         allSessions.push(...response.sessions);
-        if (response.sessions.length < pageSize) break;
+        if (response.sessions.length < pageSize) {
+          hasMore = false;
+          break;
+        }
         page++;
       }
 
