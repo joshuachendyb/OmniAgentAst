@@ -213,13 +213,16 @@ const HistoryPage: React.FC = () => {
         return;
       }
 
-      // 批量删除所有会话（并行执行）
-      const deletePromises = allSessions.map((session) =>
-        sessionApi.deleteSession(session.session_id)
+      // 批量删除所有会话（并行执行，忽略失败）
+      const deleteResults = await Promise.allSettled(
+        allSessions.map((session) =>
+          sessionApi.deleteSession(session.session_id)
+        )
       );
 
-      await Promise.all(deletePromises);
-      message.success(`已清空 ${allSessions.length} 个会话`);
+      // 统计成功数量
+      const successCount = deleteResults.filter(r => r.status === 'fulfilled').length;
+      message.success(`已清空 ${successCount} 个会话`);
       setSelectedSessions(new Set());
       setKeyword("");
       // 刷新列表（直接重置状态，不需要等待 API）
