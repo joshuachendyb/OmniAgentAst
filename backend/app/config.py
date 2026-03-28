@@ -84,6 +84,10 @@ class Config:
             },
             "app": {
                 "max_steps": 100
+            },
+            "chat": {
+                "timeout": 60,
+                "max_retries": 3
             }
         }
     

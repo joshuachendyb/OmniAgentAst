@@ -295,11 +295,21 @@ async def generate_sse_stream(
         is_interrupted, interrupt_msg = await check_and_yield_if_interrupted(task_id, running_tasks, running_tasks_lock)
         if is_interrupted:
             yield interrupt_msg
+            # 保存 interrupted 步骤到数据库
+            if interrupt_msg.startswith("data: "):
+                step_data = json.loads(interrupt_msg[6:])
+                current_execution_steps.append(step_data)
+                await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
             return
         
         # 暂停检查
         async for pause_event in check_and_yield_if_paused(task_id, running_tasks, running_tasks_lock):
             yield pause_event
+            # 保存 paused 步骤到数据库
+            if pause_event.startswith("data: "):
+                step_data = json.loads(pause_event[6:])
+                current_execution_steps.append(step_data)
+                await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
         
         # 【阶段6】根据 intent_type 分发到不同 Agent
         session_id = session_id or str(uuid.uuid4())
@@ -326,6 +336,9 @@ async def generate_sse_stream(
                             interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
                             logger.info(f"[Step incident] 发送incident步骤(interrupted)")
                             yield f"data: {json.dumps(interrupted_data)}\n\n"
+                            # 保存 interrupted 步骤到数据库
+                            current_execution_steps.append(interrupted_data)
+                            await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
                             break
                     
                     # SSE 格式化
@@ -366,6 +379,16 @@ async def generate_sse_stream(
         elif intent_type == "network" and confidence >= 0.3:
             # 网络操作：待实现 NetworkReactAgent
             logger.warning(f"[NetworkOp] NetworkReactAgent 待实现，使用回退逻辑")
+            error_step = create_error_step(
+                code='NETWORK_NOT_IMPLEMENTED',
+                message="网络操作功能正在开发中",
+                error_type='not_implemented',
+                step_num=next_step(),
+                model=ai_service.model,
+                provider=ai_service.provider
+            )
+            current_execution_steps.append(error_step)
+            await save_execution_steps_to_db(session_id, current_execution_steps, "网络操作功能正在开发中")
             yield create_error_response(
                 error_type="not_implemented",
                 message="网络操作功能正在开发中",
@@ -378,6 +401,16 @@ async def generate_sse_stream(
         elif intent_type == "desktop" and confidence >= 0.3:
             # 桌面操作：待实现 DesktopReactAgent
             logger.warning(f"[DesktopOp] DesktopReactAgent 待实现，使用回退逻辑")
+            error_step = create_error_step(
+                code='DESKTOP_NOT_IMPLEMENTED',
+                message="桌面操作功能正在开发中",
+                error_type='not_implemented',
+                step_num=next_step(),
+                model=ai_service.model,
+                provider=ai_service.provider
+            )
+            current_execution_steps.append(error_step)
+            await save_execution_steps_to_db(session_id, current_execution_steps, "桌面操作功能正在开发中")
             yield create_error_response(
                 error_type="not_implemented",
                 message="桌面操作功能正在开发中",
@@ -390,6 +423,16 @@ async def generate_sse_stream(
         else:
             # chat 或 confidence < 0.3：简单对话（暂时返回错误，后续阶段实现 chat_stream_query 集成）
             logger.warning(f"[ChatOp] chat_stream_query 待集成，暂时返回提示")
+            error_step = create_error_step(
+                code='CHAT_NOT_IMPLEMENTED',
+                message="简单对话功能正在开发中",
+                error_type='not_implemented',
+                step_num=next_step(),
+                model=ai_service.model,
+                provider=ai_service.provider
+            )
+            current_execution_steps.append(error_step)
+            await save_execution_steps_to_db(session_id, current_execution_steps, "简单对话功能正在开发中")
             yield create_error_response(
                 error_type="not_implemented",
                 message="简单对话功能正在开发中",

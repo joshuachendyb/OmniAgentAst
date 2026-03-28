@@ -190,7 +190,8 @@ class BaseAIService:
                             content_val = delta.get("content", "") or ""
                             reasoning_val = delta.get("reasoning_content") or delta.get("reasoning") or ""
                             finish_reason = choices[0].get("finish_reason", "")
-                            logger.info(f"[LLM Response] content长度={len(content_val)}, reasoning长度={len(reasoning_val)}, finish_reason={finish_reason}")
+                            # 每个chunk都打印，太频繁，注释掉
+                            # logger.info(f"[LLM Response] content长度={len(content_val)}, reasoning长度={len(reasoning_val)}, finish_reason={finish_reason}")
                             
                             content = delta.get("content", "")
                             reasoning_content = (

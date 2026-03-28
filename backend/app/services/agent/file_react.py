@@ -225,6 +225,23 @@ class FileReactAgent(BaseAgent):
                     conversation_history=self.conversation_history
                 )
             
+            # 记录 LLM 返回结果到 prompt_logger
+            response_type = "text"
+            if response:
+                if "action_tool" in response:
+                    response_type = "action_tool"
+                elif "thought" in response:
+                    response_type = "thought"
+                elif "observation" in response:
+                    response_type = "observation"
+            
+            prompt_logger.log_llm_response(
+                round_number=self.llm_call_count,
+                response_content=response,
+                response_type=response_type,
+                finish_reason="stop"
+            )
+            
             return response
             
         except Exception as e:
