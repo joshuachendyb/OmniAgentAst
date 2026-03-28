@@ -169,7 +169,10 @@ def _init_database():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             message_count INTEGER DEFAULT 0,
             is_deleted BOOLEAN DEFAULT FALSE,
-            is_valid BOOLEAN DEFAULT FALSE
+            is_valid BOOLEAN DEFAULT FALSE,
+            title_locked BOOLEAN DEFAULT FALSE,
+            title_updated_at TIMESTAMP,
+            version INTEGER DEFAULT 1
         )
     ''')
     # 注意：现在所有会话都已具有 is_valid 字段，无需额外的检查或更新操作
