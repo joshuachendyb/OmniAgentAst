@@ -222,16 +222,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     // 1. 先刷新服务状态（会验证新配置是否有效）
     await refreshServiceStatus();
     
-    // 2. 获取当前服务状态，判断验证是否成功
-    // 如果验证失败，serviceStatus 会是 null 或者 success=false
+    // 2. 根据验证结果决定是否刷新列表
+    // 如果验证成功，serviceStatus 不为 null
+    // 如果验证失败，serviceStatus 为 null，此时不刷新列表
     
-    // 3. 再刷新模型列表（获取最新的 current_model 标记）
-    await Promise.all([
-      refreshModelList(),
-      refreshSessionCount(),
-      refreshValidation(),
-    ]);
-  }, [refreshServiceStatus, refreshModelList, refreshSessionCount, refreshValidation]);
+    // 3. 只有验证成功才刷新模型列表（获取最新的 current_model 标记）
+    if (serviceStatus) {
+      await Promise.all([
+        refreshModelList(),
+        refreshSessionCount(),
+      ]);
+    }
+  }, [refreshServiceStatus, refreshModelList, refreshSessionCount, serviceStatus]);
 
   /**
    * 初始化应用（只在首次加载时调用）
