@@ -74,7 +74,7 @@ interface AppContextType extends AppState {
   // Actions
   refreshSessionCount: () => Promise<void>;
   refreshModelList: () => Promise<void>;
-  refreshServiceStatus: () => Promise<void>;
+  refreshServiceStatus: () => Promise<ValidateResponse | null>;
   refreshAll: () => Promise<void>;
   refreshAfterModelChange: () => Promise<void>;
   initializeApp: () => Promise<void>;
@@ -168,14 +168,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
    * 刷新服务状态
    * @author 小新
    */
-  const refreshServiceStatus = useCallback(async () => {
+  const refreshServiceStatus = useCallback(async (): Promise<ValidateResponse | null> => {
     setServiceStatusLoading(true);
     try {
       const status = await chatApi.validateService();
       setServiceStatus(status);
+      return status;
     } catch (error) {
       console.warn("刷新服务状态失败:", error);
       setServiceStatus(null);
+      return null;
     } finally {
       setServiceStatusLoading(false);
     }
@@ -220,20 +222,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
    */
   const refreshAfterModelChange = useCallback(async () => {
     // 1. 先刷新服务状态（会验证新配置是否有效）
-    await refreshServiceStatus();
+    const status = await refreshServiceStatus();
     
     // 2. 根据验证结果决定是否刷新列表
-    // 如果验证成功，serviceStatus 不为 null
-    // 如果验证失败，serviceStatus 为 null，此时不刷新列表
+    // refreshServiceStatus 返回验证后的 status
+    // 如果验证成功，status 不为 null
+    // 如果验证失败，status 为 null，此时不刷新列表
     
     // 3. 只有验证成功才刷新模型列表（获取最新的 current_model 标记）
-    if (serviceStatus) {
+    if (status) {
       await Promise.all([
         refreshModelList(),
         refreshSessionCount(),
       ]);
     }
-  }, [refreshServiceStatus, refreshModelList, refreshSessionCount, serviceStatus]);
+  }, [refreshServiceStatus, refreshModelList, refreshSessionCount]);
 
   /**
    * 初始化应用（只在首次加载时调用）
