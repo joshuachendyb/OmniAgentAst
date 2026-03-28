@@ -208,9 +208,9 @@ class ConfigValidateResponse(BaseModel):
 
 def _get_config_path() -> Path:
     """获取配置文件路径"""
-    # 【小沈修复2026-03-28】向上查找4层到达项目根目录
     # backend/app/api/v1/config.py → backend/app/api/v1 → backend/app → backend → 项目根目录
-    base_dir = Path(__file__).parent.parent.parent.parent
+    # 需要5层parent到达项目根目录
+    base_dir = Path(__file__).parent.parent.parent.parent.parent
     return base_dir / "config" / "config.yaml"
 
 
