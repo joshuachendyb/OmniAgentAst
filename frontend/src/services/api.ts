@@ -317,7 +317,7 @@ export const configApi = {
   validateConfig: async (
     data: ConfigValidateRequest
   ): Promise<ConfigValidateResponse> => {
-    const response = await api.post<ConfigValidateResponse>(
+    const response = await api.put<ConfigValidateResponse>(
       "/config/validate",
       data
     );
