@@ -67,6 +67,7 @@ from typing import Optional
 
 import yaml
 
+from app.config import get_config
 from .llm_core import BaseAIService
 
 
@@ -130,26 +131,6 @@ class AIServiceFactory:
         return fallback_provider, fallback_model
     
     @classmethod
-    def load_config(cls, config_path: Optional[str] = None) -> dict:
-        """加载配置文件"""
-        if cls._config is not None:
-            return cls._config
-            
-        actual_path = cls.get_config_path(config_path)
-        
-        try:
-            with open(actual_path, 'r', encoding='utf-8') as f:
-                loaded_config = yaml.safe_load(f)
-                config = loaded_config if loaded_config is not None else {}
-        except Exception as e:
-            print(f"[AIServiceFactory] 警告: 无法加载配置文件 {actual_path}: {e}")
-            config = {
-                "ai": {}
-            }
-        
-        return config
-    
-    @classmethod
     def validate_config(cls, config_path: Optional[str] = None) -> ConfigValidationResult:
         """
         完整配置验证
@@ -186,7 +167,7 @@ class AIServiceFactory:
         
         # 2. 加载配置
         try:
-            config = cls.load_config(config_path)
+            config = get_config().raw_config
         except Exception as e:
             errors.append(f"配置文件加载失败: {str(e)}")
             return ConfigValidationResult(
@@ -364,7 +345,7 @@ class AIServiceFactory:
         with cls._lock:
             cls._instance = None
             cls._config = None  # 清除配置缓存，确保读取最新配置文件
-            config = cls.load_config(config_path)
+            config = get_config().raw_config
             ai_config = config.get("ai", {})
             
             # ====================================================================
@@ -448,7 +429,7 @@ class AIServiceFactory:
             return cls._current_provider
         
         try:
-            config = cls.load_config()
+            config = get_config().raw_config
             return config.get("ai", {}).get("provider", "unknown")
         except:
             return "unknown"
@@ -484,7 +465,7 @@ class AIServiceFactory:
         
         with cls._lock:
             actual_path = cls.get_config_path(config_path)
-            config = cls.load_config(config_path)
+            config = get_config().raw_config
             ai_config = config.get("ai", {})
             
             # ====================================================================

@@ -36,25 +36,18 @@ LOG_DIR.mkdir(exist_ok=True)
 class LogConfig:
     """日志配置管理"""
     
-    _config = None
-    
     @classmethod
     def load_config(cls) -> dict:
-        """从配置文件加载日志配置"""
-        if cls._config is not None:
-            return cls._config
-        
+        """从配置文件加载日志配置（不使用缓存）"""
         # 【修复】项目根目录是backend的父目录，需要再退一级
         config_path = Path(__file__).parent.parent.parent.parent / "config" / "config.yaml"
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f) or {}
-                cls._config = config.get("logging", {})
+                return config.get("logging", {})
         except Exception as e:
             print(f"[Logger] 无法加载配置文件，使用默认配置: {e}")
-            cls._config = {}
-        
-        return cls._config
+            return {}
     
     @classmethod
     def is_debug_mode(cls) -> bool:

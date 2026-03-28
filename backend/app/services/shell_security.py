@@ -83,16 +83,9 @@ def load_security_config() -> dict:
         return {}
 
 
-# 缓存加载的配置
-_cached_config: Optional[dict] = None
-
-
 def get_security_config() -> dict:
-    """获取安全配置（带缓存）"""
-    global _cached_config
-    if _cached_config is None:
-        _cached_config = load_security_config()
-    return _cached_config
+    """获取安全配置（不使用缓存，每次读取最新）"""
+    return load_security_config()
 
 
 # ============================================================
