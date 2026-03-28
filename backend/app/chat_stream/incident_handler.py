@@ -17,7 +17,7 @@ from app.chat_stream.chat_helpers import create_timestamp
 def create_incident_data(incident_value: str, message: str, step: Optional[int] = None) -> dict:
     """
     创建统一的incident数据【小沈修复2026-03-28】
-    - 同时保存content和message，确保SSE和数据库一致
+    - 同时保存content和message，确保SSE和数据库完全一致
     
     Args:
         incident_value: incident类型（interrupted/paused/resumed/retrying）
@@ -30,9 +30,11 @@ def create_incident_data(incident_value: str, message: str, step: Optional[int] 
     data = {
         'type': 'incident',  # 固定为incident
         'incident_value': incident_value,
-        'content': message,  # 【修复】同时保存content，和SSE一致
+        'content': message,  # 和SSE一致
         'message': message,
-        'timestamp': create_timestamp()
+        'timestamp': create_timestamp(),
+        'is_reasoning': False,  # 和SSE一致
+        'reasoning': ''  # 和SSE一致
     }
     if step is not None:
         data['step'] = step

@@ -270,7 +270,8 @@ async def generate_sse_stream(
             error_type='security',
             step_num=next_step(),
             model=ai_service.model,
-            provider=ai_service.provider
+            provider=ai_service.provider,
+            retryable=False
         )
         current_execution_steps.append(error_step)
         await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {risk}")
