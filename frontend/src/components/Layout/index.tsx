@@ -98,6 +98,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     validationResult,
     initializeApp,
     refreshAll,
+    refreshAfterModelChange,
     isInitialized,
   } = useApp();
 
@@ -149,8 +150,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       }
       message.success(`已切换到 ${selectedModel.display_name}`);
       console.log("[切换模型] 开始刷新...");
-      // 刷新serviceStatus以更新下拉框
-      await refreshAll();
+      // 使用串行刷新，确保验证成功后再刷新列表
+      await refreshAfterModelChange();
       console.log("[切换模型] 刷新完成, serviceStatus:", serviceStatus);
     } catch (error: any) {
       console.error("[切换模型] 失败:", error);

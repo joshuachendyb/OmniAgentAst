@@ -329,13 +329,9 @@ export const configApi = {
    * 用于启动时全面检查所有Provider和Model配置
    * @author 小欧
    * @update 2026-02-23 新增
+   * @deprecated 后端已删除 GET /config/validate-full，使用 validateConfig 替代
    */
-  validateFullConfig: async (): Promise<FullConfigValidationResponse> => {
-    const response = await api.get<FullConfigValidationResponse>(
-      "/config/validate-full"
-    );
-    return response.data;
-  },
+  // validateFullConfig 已删除
 
   /**
    * 获取可用模型列表
@@ -492,11 +488,9 @@ export const configApi = {
    * 读取配置文件原文内容
    * @author 小新
    * @update 2026-03-04 新增
+   * @deprecated 后端已删除 GET /config/read
    */
-  readConfigFile: async (): Promise<{ success: boolean; config_path: string; content: string }> => {
-    const response = await api.get<{ success: boolean; config_path: string; content: string }>("/config/read");
-    return response.data;
-  },
+  // readConfigFile 已删除
 };
 
 // ============================================

@@ -23,20 +23,24 @@ class Config:
     
     def _load_config(self):
         """加载配置文件"""
-        # 默认配置
-        self._config_data = self._get_default_config()
-        
-        # 尝试从文件加载
         config_path = self._get_config_path()
-        if config_path.exists():
-            try:
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    file_config = yaml.safe_load(f)
-                    if file_config:
-                        # 合并配置（文件配置覆盖默认配置）
-                        self._merge_config(self._config_data, file_config)
-            except Exception as e:
-                print(f"[Config] 警告: 加载配置文件失败: {e}，使用默认配置")
+        
+        # 配置文件必须存在，否则抛出异常
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"配置文件不存在: {config_path}。"
+                "请在前端创建配置文件或手动创建 config/config.yaml"
+            )
+        
+        # 从文件加载配置
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                self._config_data = yaml.safe_load(f)
+        except Exception as e:
+            raise RuntimeError(
+                f"加载配置文件失败: {e}。"
+                "请检查 config/config.yaml 格式是否正确"
+            )
         
         # 环境变量覆盖
         self._apply_env_overrides()
@@ -52,52 +56,6 @@ class Config:
         # backend/app/config.py -> .parent=app -> .parent=backend -> .parent=项目根目录
         base_dir = Path(__file__).parent.parent.parent
         return base_dir / "config" / "config.yaml"
-    
-    def _get_default_config(self) -> Dict[str, Any]:
-        """获取默认配置"""
-        return {
-            "ai": {
-                "provider": "zhipuai",
-                "zhipuai": {
-                    "model": "glm-4.7-flash",
-                    "api_key": "",
-                    "api_base": "https://open.bigmodel.cn/api/paas/v4",
-                    "timeout": 60
-                },
-                "opencode": {
-                    "model": "kimi-k2.5-free",
-                    "api_key": "",
-                    "api_base": "https://opencode.ai/zen/v1",
-                    "timeout": 60
-                }
-            },
-            "file_operations": {
-                "workspace_dir": "./workspace",
-                "safe_mode": True,
-                "max_file_size": 10
-            },
-            "logging": {
-                "level": "INFO",
-                "file": "logs/app.log",
-                "max_size": "10MB",
-                "backup_count": 5
-            },
-            "app": {
-                "max_steps": 100
-            },
-            "chat": {
-                "timeout": 60,
-                "max_retries": 3
-            }
-        }
-    
-    def _merge_config(self, base: Dict[str, Any], override: Dict[str, Any]):
-        """递归合并配置"""
-        for key, value in override.items():
-            if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-                self._merge_config(base[key], value)
-            else:
-                base[key] = value
     
     def _apply_env_overrides(self):
         """应用环境变量覆盖"""
@@ -168,12 +126,6 @@ class Config:
     def reload(self):
         """重新加载配置"""
         self._load_config()
-        # 清除 AIServiceFactory 的配置缓存，确保同步
-        try:
-            from app.services import AIServiceFactory
-            AIServiceFactory.clear_config_cache()
-        except Exception:
-            pass
     
     @property
     def raw_config(self) -> Dict[str, Any]:
