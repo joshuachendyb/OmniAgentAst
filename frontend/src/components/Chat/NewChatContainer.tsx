@@ -1637,7 +1637,7 @@ const NewChatContainer: React.FC = () => {
         disconnect(true);
         
         // 使用统一的 taskControlApi
-        await taskControlApi.cancel(taskIdToCancel, sessionId);
+        await taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined);
         message.success("任务中断请求已发送");
       } catch (error) {
         message.error("发送中断请求失败: " + (error instanceof Error ? error.message : String(error)));
@@ -1657,11 +1657,11 @@ const NewChatContainer: React.FC = () => {
     try {
       if (!isPaused) {
         // 暂停：发送暂停请求
-        await taskControlApi.pause(serverTaskId, sessionId);
+        await taskControlApi.pause(serverTaskId ?? undefined, sessionId ?? undefined);
         console.log("⏸️ 已发送暂停请求");
       } else {
         // 继续：发送恢复请求
-        await taskControlApi.resume(serverTaskId, sessionId);
+        await taskControlApi.resume(serverTaskId ?? undefined, sessionId ?? undefined);
         console.log("▶️ 已发送恢复请求");
       }
     } catch (error) {

@@ -472,8 +472,8 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
                 defaultExpandAll={false}
                 // 【小强修复】允许用户点击展开/折叠
                 selectable={false}
-                onExpand={(keys: string[]) => {
-                  setUserExpandedKeys(keys);
+                onExpand={(keys) => {
+                  setUserExpandedKeys(keys as string[]);
                 }}
                 style={{
                   background: "transparent",
