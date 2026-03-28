@@ -198,14 +198,17 @@ const HistoryPage: React.FC = () => {
         return;
       }
 
-      // 清空会话时获取所有会话（包括有效和无效）
-      const allSessionsResponse = await sessionApi.listSessions(
-        1,
-        pagination.total,
-        undefined,
-        undefined
-      );
-      const allSessions = allSessionsResponse.sessions;
+      // 清空会话时分页获取所有会话（包括有效和无效）
+      const allSessions: any[] = [];
+      let page = 1;
+      const pageSize = 100;
+      while (true) {
+        const response = await sessionApi.listSessions(page, pageSize, undefined, undefined);
+        if (response.sessions.length === 0) break;
+        allSessions.push(...response.sessions);
+        if (response.sessions.length < pageSize) break;
+        page++;
+      }
 
       if (allSessions.length === 0) {
         message.warning("没有会话需要清空");
