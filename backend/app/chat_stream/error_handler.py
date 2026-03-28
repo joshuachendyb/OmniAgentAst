@@ -19,10 +19,13 @@ def create_error_step(
     error_type: str,
     step_num: int,
     model: Optional[str] = None,
-    provider: Optional[str] = None
+    provider: Optional[str] = None,
+    retryable: bool = False,
+    retry_after: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    创建保存到数据库的 error_step
+    创建保存到数据库的 error_step【小沈修复2026-03-28】
+    - 添加更多字段，和SSE返回保持一致
 
     Args:
         code: 错误码（如 TIMEOUT, SECURITY_BLOCKED）
@@ -31,6 +34,8 @@ def create_error_step(
         step_num: 步骤序号
         model: 模型名称（可选）
         provider: 提供商（可选）
+        retryable: 是否可重试
+        retry_after: 重试等待秒数
 
     Returns:
         error_step 字典
@@ -40,10 +45,16 @@ def create_error_step(
         'step': step_num,
         'code': code,
         'message': message,
+        'content': message,  # 和SSE一致
+        'error_message': message,  # 和SSE一致
         'error_type': error_type,
         'timestamp': create_timestamp(),
         'model': model,
-        'provider': provider
+        'provider': provider,
+        'reasoning': '',  # 和SSE一致
+        'is_reasoning': False,  # 和SSE一致
+        'retryable': retryable,
+        'retry_after': retry_after
     }
 
 
