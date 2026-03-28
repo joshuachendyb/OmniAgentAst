@@ -202,37 +202,6 @@ async def generate_sse_stream(
     if not task_id:
         task_id = str(uuid.uuid4())
     
-    # ===== Prompt Logger 记录 =====
-    # 获取用户消息
-    user_message = ""
-    for msg in messages:
-        if msg.get("role") == "user":
-            user_message = msg.get("content", "")
-            break
-    
-    # 启动 prompt logger（只记录非 chat 意图）
-    from app.utils.prompt_logger import get_prompt_logger
-    prompt_logger = get_prompt_logger()
-    if intent_type != "chat":
-        prompt_logger.start_request(
-            user_message=user_message,
-            user_message_id=f"msg_{task_id}",
-            session_id=session_id or task_id
-        )
-        # 记录系统 prompt
-        from app.services.prompts.file import file_prompts
-        sys_prompt = file_prompts.get_system_prompt()
-        prompt_logger.log_system_prompt(
-            step_name="系统Prompt生成",
-            prompt_content=sys_prompt,
-            source="file_prompts.py:get_system_prompt()"
-        )
-        # 记录任务 prompt
-        prompt_logger.log_task_prompt(
-            task_content=user_message,
-            context={"intent_type": intent_type, "confidence": confidence}
-        )
-    
     # 【小沈-2026-03-13修复】检查会话是否已中断（防止重连循环）
     if session_id and session_id in interrupted_sessions:
         last_interrupt = interrupted_sessions[session_id]
