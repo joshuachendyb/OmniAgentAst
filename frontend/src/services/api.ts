@@ -619,7 +619,8 @@ export const sessionApi = {
   ): Promise<SessionListResponse> => {
     const params: any = { page, page_size: pageSize };
     if (keyword) params.keyword = keyword;
-    if (isValid !== undefined) params.is_valid = isValid;  // ⭐ 新增
+    // 只有明确传入 true 或 false 时才添加 is_valid 参数
+    if (isValid === true || isValid === false) params.is_valid = isValid;
     const response = await api.get<SessionListResponse>("/sessions", {
       params,
     });
