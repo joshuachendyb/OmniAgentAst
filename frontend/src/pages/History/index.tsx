@@ -199,11 +199,12 @@ const HistoryPage: React.FC = () => {
       }
 
       // ⭐ 修复：获取所有会话（不分页），确保删除全部
+      // 清空会话时应该删除所有会话（包括有效和无效），不传isValid参数
       const allSessionsResponse = await sessionApi.listSessions(
         1,
         pagination.total,
         undefined,
-        true  // ⭐ 只显示有效会话
+        undefined  // 不限制有效/无效，删除全部会话
       );
       const allSessions = allSessionsResponse.sessions;
 
