@@ -13,9 +13,12 @@ LLM 能力探测器实现
 
 import json
 import httpx
+import logging
 from typing import Optional
 
 from app.services.agent.capability import LLMFeature, LLMProbeResult, LLMCapability
+
+logger = logging.getLogger(__name__)
 
 
 class CapabilityDetector:
@@ -58,18 +61,23 @@ class CapabilityDetector:
         result = LLMProbeResult(success=False, feature=LLMFeature())
         
         try:
+            logger.info(f"[CapabilityDetector] 开始探测模型: {self.model}")
+            
             # 【修复P1-004】Step 1: 探测 tools（优先级最高）
             tools_result = await self._probe_tools()
             result.tools_tested = True
             result.tools_works = tools_result["works"]
+            logger.info(f"[CapabilityDetector] tools探测结果: works={tools_result['works']}, reason={tools_result.get('reason', 'N/A')}")
             
             # 【修复P1-004】Step 2: 探测 response_format（记录能力，策略选择由StrategySelector决定）
             rf_result = await self._probe_response_format()
             result.response_format_tested = True
             result.response_format_works = rf_result["works"]
+            logger.info(f"[CapabilityDetector] response_format探测结果: works={rf_result['works']}, reason={rf_result.get('reason', 'N/A')}")
             
             # Step 3: 探测 reasoning 特征
             reasoning_result = await self._probe_reasoning()
+            logger.info(f"[CapabilityDetector] reasoning探测结果: has_reasoning={reasoning_result['has_reasoning']}")
             
             # Step 4: 构建能力特征
             capability = LLMCapability.NONE
@@ -96,9 +104,12 @@ class CapabilityDetector:
             # 缓存结果
             self._capability_cache = feature
             
+            logger.info(f"[CapabilityDetector] 探测完成: supports_tools={feature.supports_tools}, supports_response_format={feature.supports_response_format}")
+            
             return result
             
         except Exception as e:
+            logger.error(f"[CapabilityDetector] 探测异常: {e}")
             result.error = str(e)
             return result
     
@@ -188,6 +199,8 @@ class CapabilityDetector:
             }
         ]
         
+        logger.info(f"[CapabilityDetector] _probe_tools: model={self.model}, api_base={self.api_base}")
+        
         try:
             async with httpx.AsyncClient(timeout=30) as client:
                 response = await client.post(
@@ -205,19 +218,27 @@ class CapabilityDetector:
                     }
                 )
                 
+                logger.info(f"[CapabilityDetector] _probe_tools: HTTP {response.status_code}")
+                
                 if response.status_code != 200:
                     return {"works": False, "reason": f"HTTP {response.status_code}"}
                 
                 data = response.json()
+                logger.info(f"[CapabilityDetector] _probe_tools: response data keys = {list(data.keys())}")
+                
                 message = data.get("choices", [{}])[0].get("message", {})
+                logger.info(f"[CapabilityDetector] _probe_tools: message keys = {list(message.keys())}")
                 
                 # 检查是否有 tool_calls
                 tool_calls = message.get("tool_calls", [])
                 if tool_calls:
+                    logger.info(f"[CapabilityDetector] _probe_tools: tool_calls found = {len(tool_calls)}")
                     return {"works": True, "tool_calls": tool_calls}
+                logger.info(f"[CapabilityDetector] _probe_tools: No tool_calls in response, content preview = {str(message.get('content', ''))[:200]}")
                 return {"works": False, "reason": "No tool_calls returned"}
                 
         except Exception as e:
+            logger.error(f"[CapabilityDetector] _probe_tools: exception = {e}")
             return {"works": False, "reason": str(e)}
     
     async def _probe_reasoning(self) -> dict:
