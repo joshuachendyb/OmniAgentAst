@@ -59,62 +59,100 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
     return [];
   }
 
-  const pathToNode = new Map<string, TreeNode>();
-  const rootNodes: TreeNode[] = [];
-
-  // 标准化 rootPath，移除末尾斜杠
+  // 标准化 rootPath，移除末尾斜杠，统一使用正斜杠
   const normalizedRoot = rootPath.replace(/\\/g, "/").replace(/\/$/, "");
 
-  // 【小沈修复 2026-03-29】预处理：过滤掉相对路径条目
-  // 问题：后端数据中同时存在相对路径（如 "11.联想GRX"）和绝对路径（如 "D:\10-旧项目库\11.联想GRX\..."）
-  // 这导致同一个目录以两种形式出现在树中，显示为重复
-  // 解决：过滤掉有对应绝对路径的相对路径条目，为没有绝对路径的目录创建虚拟条目
+  // 【小沈修复 2026-03-30】完全重写树构建逻辑
+  // 问题：路径标准化不一致导致重复节点
+  // 解决：统一使用标准化路径，确保所有节点key唯一
+
+  // 第一步：标准化所有条目路径，并过滤相对路径
+  const normalizedEntries: Entry[] = [];
   const relativeEntries: Entry[] = [];
-  const absoluteEntries: Entry[] = [];
   
   for (const entry of entries) {
+    // 标准化路径：统一使用正斜杠
     const normalizedPath = entry.path.replace(/\\/g, "/");
+    
+    // 检查是否为绝对路径（以rootPath开头）
     if (normalizedPath.startsWith(normalizedRoot + "/")) {
-      // 绝对路径条目
-      absoluteEntries.push(entry);
+      // 绝对路径条目：使用标准化路径
+      normalizedEntries.push({
+        ...entry,
+        path: normalizedPath
+      });
+    } else if (normalizedPath === normalizedRoot) {
+      // rootPath本身
+      normalizedEntries.push({
+        ...entry,
+        path: normalizedPath
+      });
     } else {
       // 相对路径条目
-      relativeEntries.push(entry);
+      relativeEntries.push({
+        ...entry,
+        path: normalizedPath
+      });
     }
   }
   
-  // 找出没有对应绝对路径的相对路径条目（如 6.沈阳资管项目）
+  // 第二步：为没有对应绝对路径的相对路径条目创建虚拟条目
   const missingFromAbsolute = relativeEntries.filter(rel => {
     const relName = rel.name;
-    // 检查是否有同名的第一级绝对路径条目
-    return !absoluteEntries.some(abs => {
-      const normalizedPath = abs.path.replace(/\\/g, "/");
-      // absoluteEntries 中的条目都已经以 normalizedRoot + "/" 开头，无需再次检查
-      const firstPart = normalizedPath.substring(normalizedRoot.length + 1).split("/")[0];
+    return !normalizedEntries.some(abs => {
+      // 检查是否有同名的第一级目录
+      const pathAfterRoot = abs.path.substring(normalizedRoot.length + 1);
+      if (!pathAfterRoot) return false;
+      const firstPart = pathAfterRoot.split("/")[0];
       return firstPart === relName;
     });
   });
   
-  // 为这些条目创建绝对路径条目
-  const createdEntries = missingFromAbsolute.map(rel => ({
+  // 创建虚拟条目
+  const virtualEntries = missingFromAbsolute.map(rel => ({
     name: rel.name,
     path: normalizedRoot + "/" + rel.name,
     type: rel.type,
     size: rel.size
   }));
   
-  // 合并：绝对路径条目 + 创建的条目
-  const processedEntries = [...absoluteEntries, ...createdEntries];
-
-  // 按 type 排序：目录在前，文件在后
-  const sortedEntries = [...processedEntries].sort((a, b) => {
+  // 合并所有条目
+  const allEntries = [...normalizedEntries, ...virtualEntries];
+  
+  // 第三步：去重 - 按标准化路径去重
+  const uniqueEntries: Entry[] = [];
+  const seenPaths = new Set<string>();
+  
+  for (const entry of allEntries) {
+    const normalizedPath = entry.path.replace(/\\/g, "/");
+    if (!seenPaths.has(normalizedPath)) {
+      seenPaths.add(normalizedPath);
+      uniqueEntries.push({
+        ...entry,
+        path: normalizedPath
+      });
+    }
+  }
+  
+  // 第四步：按路径排序，确保父目录在前
+  uniqueEntries.sort((a, b) => {
+    // 先按类型排序：目录在前
     if (a.type === "directory" && b.type === "file") return -1;
     if (a.type === "file" && b.type === "directory") return 1;
+    // 然后按路径深度排序
+    const aDepth = a.path.split("/").length;
+    const bDepth = b.path.split("/").length;
+    if (aDepth !== bDepth) return aDepth - bDepth;
+    // 最后按名称排序
     return a.name.localeCompare(b.name);
   });
-
-  // 第一遍：创建所有节点
-  for (const entry of sortedEntries) {
+  
+  // 第五步：构建树结构
+  const pathToNode = new Map<string, TreeNode>();
+  const rootNodes: TreeNode[] = [];
+  
+  // 创建所有节点
+  for (const entry of uniqueEntries) {
     const node: TreeNode = {
       key: entry.path,
       title: entry.name,
@@ -125,92 +163,96 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
     };
     pathToNode.set(entry.path, node);
   }
-
-  // 第二遍：构建父子关系
-  for (const entry of sortedEntries) {
+  
+  // 构建父子关系
+  for (const entry of uniqueEntries) {
     const node = pathToNode.get(entry.path);
     if (!node) continue;
-
-    // 标准化当前路径
-    const normalizedPath = entry.path.replace(/\\/g, "/");
-
-    // 计算相对路径：从 rootPath 之后的部分
+    
+    // 计算相对路径
+    const normalizedPath = entry.path;
     let relativePath: string;
-    if (normalizedPath.startsWith(normalizedRoot + "/")) {
-      relativePath = normalizedPath.substring(normalizedRoot.length + 1);
-    } else if (normalizedPath.startsWith(normalizedRoot)) {
-      relativePath = normalizedPath.substring(normalizedRoot.length);
-    } else {
-      // 相对路径情况
-      relativePath = normalizedPath;
-    }
-
-    const parts = relativePath.split("/").filter(Boolean);
-
-    if (parts.length === 0) {
-      // 根路径本身就是节点
+    
+    if (normalizedPath === normalizedRoot) {
+      // rootPath本身，添加到根节点
       rootNodes.push(node);
       continue;
+    } else if (normalizedPath.startsWith(normalizedRoot + "/")) {
+      relativePath = normalizedPath.substring(normalizedRoot.length + 1);
+    } else {
+      // 虚拟条目，相对路径
+      relativePath = normalizedPath;
     }
-
-    if (parts.length === 1) {
-      // 直接子项，父级是 rootPath
-      const parentNode = pathToNode.get(normalizedRoot);
-      if (parentNode?.children) {
-        parentNode.children.push(node);
-      } else {
-        rootNodes.push(node);
-      }
+    
+    const parts = relativePath.split("/").filter(Boolean);
+    
+    if (parts.length === 0) {
+      // 这种情况不应该发生
       continue;
     }
-
-    // 多层嵌套：构建虚拟目录链
-    let currentParentPath = normalizedRoot;
-
+    
+    // 找到或创建父节点
+    let parentPath = normalizedRoot;
+    let parent = pathToNode.get(parentPath);
+    
+    // 如果没有父节点，创建虚拟父节点
+    if (!parent) {
+      // 创建根节点虚拟目录
+      parent = {
+        key: normalizedRoot,
+        title: normalizedRoot.split("/").pop() || normalizedRoot,
+        type: "directory",
+        path: normalizedRoot,
+        size: null,
+        children: [],
+      };
+      pathToNode.set(normalizedRoot, parent);
+      rootNodes.push(parent);
+    }
+    
+    // 处理路径中的每一部分
     for (let i = 0; i < parts.length - 1; i++) {
       const part = parts[i];
-      const fullPath = currentParentPath + "/" + part;
-
-      if (!pathToNode.has(fullPath)) {
-        // 创建虚拟目录
+      const childPath = parentPath + "/" + part;
+      
+      // 检查子节点是否存在
+      if (!pathToNode.has(childPath)) {
+        // 创建虚拟目录节点
         const virtualNode: TreeNode = {
-          key: fullPath,
+          key: childPath,
           title: part,
           type: "directory",
-          path: fullPath,
+          path: childPath,
           size: null,
           children: [],
         };
-        pathToNode.set(fullPath, virtualNode);
-
-        // 链接到父级
-        const parentNode = pathToNode.get(currentParentPath);
-        if (parentNode?.children) {
-          parentNode.children.push(virtualNode);
-        } else if (currentParentPath === normalizedRoot) {
-          // 第一层虚拟目录
-          rootNodes.push(virtualNode);
+        pathToNode.set(childPath, virtualNode);
+        
+        // 添加到父节点
+        if (parent?.children) {
+          parent.children.push(virtualNode);
         }
       }
-
-      currentParentPath = fullPath;
+      
+      parentPath = childPath;
+      parent = pathToNode.get(childPath);
     }
-
-    // 最后一项添加到其父级
-    const finalParentNode = pathToNode.get(currentParentPath);
-    if (finalParentNode?.children) {
-      finalParentNode.children.push(node);
+    
+    // 添加当前节点到其父节点
+    if (parent?.children) {
+      parent.children.push(node);
     } else {
+      // 没有父节点，添加到根节点
       rootNodes.push(node);
     }
   }
-
-  // 清理空目录的 children 并排序
-  const cleanEmptyChildren = (nodes: TreeNode[]): TreeNode[] => {
+  
+  // 第六步：清理和排序
+  const cleanAndSort = (nodes: TreeNode[]): TreeNode[] => {
     return nodes
       .map((node) => {
         if (node.type === "directory" && node.children) {
-          node.children = cleanEmptyChildren(node.children);
+          node.children = cleanAndSort(node.children);
         }
         return node;
       })
@@ -220,20 +262,19 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
         return a.title.localeCompare(b.title);
       });
   };
-
-  // 【小沈修复 2026-03-29】第一级目录去重：按 key 去重
-  // 如果有重复的 key，只保留第一个
-  const seenFirstLevelKeys = new Set<string>();
-  const dedupRootNodes: TreeNode[] = [];
+  
+  // 第七步：去重根节点
+  const seenRootKeys = new Set<string>();
+  const dedupedRootNodes: TreeNode[] = [];
+  
   for (const node of rootNodes) {
-    if (seenFirstLevelKeys.has(node.key)) {
-      continue; // 跳过重复的 key
+    if (!seenRootKeys.has(node.key)) {
+      seenRootKeys.add(node.key);
+      dedupedRootNodes.push(node);
     }
-    seenFirstLevelKeys.add(node.key);
-    dedupRootNodes.push(node);
   }
-
-  return cleanEmptyChildren(dedupRootNodes);
+  
+  return cleanAndSort(dedupedRootNodes);
 }
 
 /**
