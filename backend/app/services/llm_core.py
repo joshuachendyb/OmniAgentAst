@@ -127,11 +127,16 @@ class BaseAIService:
         """发送对话请求（一次性返回）"""
         try:
             full_content = ""
+            stream_error = None
             async for chunk in self.chat_stream(message, history):
                 if chunk.content:
                     full_content += chunk.content
+                if chunk.stream_error:
+                    stream_error = chunk.stream_error
                 if chunk.is_done:
                     break
+            if stream_error:
+                return ChatResponse(content="", model=self.model, provider=self.provider, error=stream_error)
             return ChatResponse(content=full_content, model=self.model, provider=self.provider)
         except Exception as e:
             return ChatResponse(content="", model=self.model, provider=self.provider, error=str(e))
