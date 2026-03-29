@@ -93,8 +93,14 @@ class TextStrategy(LLMStrategy):
         if not content:
             logger.warning("[LLM Response] Warning: LLM returned empty content!")
         
-        conversation_history.append({"role": "assistant", "content": content})
-        return content
+        # 注意：不在这里添加assistant消息，由base_react.py统一添加（步骤11修复）
+        # 返回JSON格式，符合parser期望
+        return json.dumps({
+            "content": content,
+            "action_tool": "finish",  # TextStrategy默认是finish
+            "params": {},
+            "reasoning": None
+        }, ensure_ascii=False)
 
 
 class ToolsStrategy(LLMStrategy):
@@ -174,7 +180,7 @@ class ToolsStrategy(LLMStrategy):
             content = ""
             logger.warning("[Function Calling] Empty response from LLM")
         
-        conversation_history.append({"role": "assistant", "content": content})
+        # 注意：不在这里添加assistant消息，由base_react.py统一添加（步骤11修复）
         return content
     
     def _format_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> str:
@@ -327,8 +333,6 @@ class ResponseFormatStrategy(LLMStrategy):
                 logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={repr(content)[:200]}")
                 raise Exception(f"Invalid JSON from LLM: {content}")
             
-            conversation_history.append({"role": "assistant", "content": content})
-            return content
             
         except Exception as e:
             logger.error(f"[Agent] _get_llm_response_with_response_format failed: {e}")

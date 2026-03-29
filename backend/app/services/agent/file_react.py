@@ -168,6 +168,11 @@ class FileReactAgent(BaseAgent):
                 "use_function_calling": self.use_function_calling
             }
         )
+        # 保存日志到文件，确保JSON文件生成
+        try:
+            prompt_logger.save()
+        except Exception as e:
+            logger.warning(f"Failed to save prompt log: {e}")
         
         try:
             last_message = self.conversation_history[-1]["content"]
@@ -321,11 +326,7 @@ class FileReactAgent(BaseAgent):
         """循环开始前 Hook - 记录 Prompt 日志"""
         from datetime import datetime
         prompt_logger = get_prompt_logger()
-        prompt_logger.start_request(
-            user_message=task_prompt,
-            user_message_id=f"msg_{self.session_id}_{datetime.now().strftime('%H%M%S')}",
-            session_id=self.session_id
-        )
+
         prompt_logger.log_system_prompt(
             step_name="系统Prompt生成",
             prompt_content=sys_prompt,
