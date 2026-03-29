@@ -266,13 +266,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       // validateConfig 需要 provider 参数，暂时跳过验证
       setValidationResult(null);
 
-      // 2. 验证成功才获取模型列表
-      // 由于暂时跳过验证，这里直接获取模型列表
-      setModelList([]);
-      setServiceStatus(null);
-      setSessionCount(0);
+      // 2. 并行获取所有数据
+      await Promise.all([
+        refreshModelList(),
+        refreshServiceStatus(),
+        refreshSessionCount(),
+      ]);
+      
       setIsInitialized(true);
-      return;
+      console.log("[AppContext] 初始化完成");
     } catch (error) {
       console.error("[AppContext] 初始化失败:", error);
     } finally {

@@ -68,6 +68,13 @@ class LLMClientWrapper:
     async def chat_with_response_format(self, message, history, response_format):
         """带响应格式的聊天方法"""
         return await self.ai_service.chat_with_response_format(message, history, response_format)
+    
+    async def __call__(self, message, history=None):
+        """使对象可被调用（实现 Callable 接口）
+        
+        用于兼容 llm_strategies.py 中 llm_client() 的调用方式
+        """
+        return await self.chat(message, history)
 
 
 # ============================================================
