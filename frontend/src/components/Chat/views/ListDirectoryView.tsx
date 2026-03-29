@@ -180,7 +180,17 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
       });
   };
 
-  return cleanEmptyChildren(rootNodes);
+  // 【小沈修复 2026-03-29】第一级目录去重：按 key 去重，避免重复
+  const seenFirstLevelKeys = new Set<string>();
+  const dedupRootNodes = rootNodes.filter(node => {
+    if (seenFirstLevelKeys.has(node.key)) {
+      return false;
+    }
+    seenFirstLevelKeys.add(node.key);
+    return true;
+  });
+
+  return cleanEmptyChildren(dedupRootNodes);
 }
 
 /**
