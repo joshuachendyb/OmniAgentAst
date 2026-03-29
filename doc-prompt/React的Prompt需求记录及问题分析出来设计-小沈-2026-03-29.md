@@ -1,6 +1,6 @@
 # React的Prompt需求记录及问题分析出来设计
 
-**创建时间**: 2026-03-29 05:08:14 **版本**: v1.16 **编写人**: 小沈 **更新时间**: 2026-03-29 13:50:24
+**创建时间**: 2026-03-29 05:08:14 **版本**: v1.17 **编写人**: 小沈 **更新时间**: 2026-03-29 14:05:47
 
 ---
 
@@ -1091,166 +1091,6 @@ response = llm.generate(history, stop=["\nObservation:"])
 
 ---
 
-### 7.2 Type字段定义（前端）
-
-根据 `frontend/src/utils/sse.ts` 第66行：
-
-```typescript
-type: "thought" | "action_tool" | "observation" | "chunk" | "final" | "error" | "incident" | "interrupted" | "start" | "paused" | "resumed" | "retrying";
-```
-
-### 7.3 Type字段分类
-
-| 类别 | Type | 用途 |
-|------|------|------|
-| **内容步骤** | `start` | 开始步骤，记录模型信息 |
-| | `chunk` | AI流式回复的内容片段 |
-| | `final` | 最终回答 |
-| **执行步骤** | `thought` | AI思考过程 |
-| | `action_tool` | 工具调用 |
-| | `observation` | 工具执行结果 |
-| **异常步骤** | `error` | 错误 |
-| | `incident` | 中断（包含interrupted/paused/resumed/retrying） |
-
-### 7.4 Type字段生成时机分析
-
-#### ✅ LLM调用**前**准备的数据（框架生成）
-
-| Type | 生成位置 | 时机 | 数据来源 |
-|------|---------|------|---------|
-| **start** | `start_step.py:53` | 用户发送消息后，LLM调用前 | 框架生成，记录model/provider等信息 |
-
-#### ✅ LLM调用**后**填充的数据
-
-| Type | 生成位置 | 时机 | 数据来源 |
-|------|---------|------|---------|
-| **thought** | `base_react.py:170` | 第1次LLM调用后，解析响应时 | LLM返回的content+action_tool+params |
-| **action_tool** | `base_react.py:194` | thought之后，工具执行后 | 工具执行结果+LLM决定的action |
-| **observation** | `base_react.py:230` | 工具执行后，第2次LLM调用后 | 工具执行结果+第2次LLM返回的content |
-| **chunk** | `chat_stream_query.py:190` | LLM流式返回时 | LLM返回的文本片段 |
-| **final** | `base_react.py:182/251` | LLM返回finish时 | LLM返回的最终内容 |
-| **error** | `base_react.py:260/269` | 发生错误时 | 错误信息 |
-
-### 7.5 ReAct循环的时序图
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                      ReAct 循环时序图                            │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ① [框架] start 步骤                                            │
-│     type='start'                                                │
-│     时机：用户消息→LLM调用前                                     │
-│     来源：框架生成                                               │
-│                                                                 │
-│  ② [LLM调用1] 第1次LLM调用                                      │
-│     ↓                                                           │
-│  ③ [LLM响应] type='thought'                                     │
-│     时机：第1次LLM调用完成后                                     │
-│     来源：LLM返回的content+action_tool+params                   │
-│     ⭐ 这是【LLM调用后】填充的数据！                              │
-│                                                                 │
-│  ④ [工具执行] type='action_tool'                                │
-│     时机：工具执行完成后                                         │
-│     来源：工具执行结果+LLM决定的action                           │
-│                                                                 │
-│  ⑤ [LLM调用2] 第2次LLM调用（观察阶段）                           │
-│     ↓                                                           │
-│  ⑥ [LLM响应] type='observation'                                 │
-│     时机：第2次LLM调用完成后                                     │
-│     来源：工具执行结果+LLM返回的content                          │
-│     ⭐ 这是【LLM调用后】填充的数据！                              │
-│                                                                 │
-│  ⑦ [流式输出] type='chunk'                                      │
-│     时机：LLM流式返回时                                          │
-│     来源：LLM返回的文本片段                                      │
-│     ⭐ 这是【LLM调用后】填充的数据！                              │
-│                                                                 │
-│  ⑧ [结束] type='final'                                          │
-│     时机：LLM返回finish时                                        │
-│     来源：LLM返回的最终内容                                      │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### 7.6 关键结论
-
-#### 结论1：thought 是 LLM调用后填充
-
-```python
-# base_react.py:152-177
-response = await self._get_llm_response()  # LLM调用
-parsed = self.parser.parse_response(response)  # 解析响应
-
-yield {
-    "type": "thought",
-    "content": parsed.get("content", ""),     # ← 来自LLM响应
-    "action_tool": parsed.get("action_tool"), # ← 来自LLM响应
-    "params": parsed.get("params", {})        # ← 来自LLM响应
-}
-```
-
-**结论**：thought 的 content、action_tool、params 都来自 LLM 响应，不是调用前准备的。
-
-#### 结论2：action_tool 是工具执行后填充
-
-```python
-# base_react.py:189-204
-execution_result = await self._execute_tool(action_tool, params)  # 工具执行
-
-yield {
-    "type": "action_tool",
-    "content": action_tool,
-    "execution_status": execution_result.get("status"),  # ← 工具执行结果
-    "summary": execution_result.get("summary", ""),      # ← 工具执行结果
-    "raw_data": execution_result.get("data")             # ← 工具执行结果
-}
-```
-
-**结论**：action_tool 的 execution_status、summary、raw_data 来自工具执行结果。
-
-#### 结论3：observation 是第2次LLM调用后填充
-
-```python
-# base_react.py:216-241
-llm_response = await self._get_llm_response()  # 第2次LLM调用
-parsed_obs = self.parser.parse_response(llm_response)  # 解析响应
-
-yield {
-    "type": "observation",
-    "content": parsed_obs.get("content", ""),      # ← 来自第2次LLM响应
-    "obs_action_tool": parsed_obs.get("action_tool"),  # ← 来自第2次LLM响应
-    "obs_params": parsed_obs.get("params", {})     # ← 来自第2次LLM响应
-}
-```
-
-**结论**：observation 的 content 来自第2次LLM响应，不是工具执行结果本身。
-
-### 7.7 参考依据
-
-| 来源 | 内容 | 链接 |
-|------|------|------|
-| **ReAct论文** | Yao et al., 2022 - Thought=推理过程, Action=执行动作, Observation=执行结果+更新思考 | https://arxiv.org/abs/2210.03629 |
-| **Prompt Engineering Guide** | ReAct框架的官方解释和示例 | https://www.promptingguide.ai/techniques/react |
-| **后端代码** | base_react.py:170-241 - Type字段生成位置 | backend/app/services/agent/base_react.py |
-| **前端代码** | sse.ts:66 - Type字段定义 | frontend/src/utils/sse.ts |
-
-### 7.8 总结表
-
-| Type | 生成时机 | 数据来源 | LLM调用前/后 |
-|------|---------|---------|-------------|
-| **start** | LLM调用前 | 框架生成 | ⏱️ 调用前 |
-| **thought** | 第1次LLM调用后 | LLM响应 | ✅ 调用后 |
-| **action_tool** | 工具执行后 | 工具结果 | ✅ 调用后 |
-| **observation** | 第2次LLM调用后 | LLM响应 | ✅ 调用后 |
-| **chunk** | LLM流式返回时 | LLM响应 | ✅ 调用后 |
-| **final** | LLM返回finish时 | LLM响应 | ✅ 调用后 |
-| **error** | 发生错误时 | 错误信息 | - |
-
-**核心结论**：除 `start` 外，所有Type字段都是 **LLM调用后** 填充的数据，不是调用前准备的。
-
----
-
 ## 八、Type字段核心字段总结（基于通用ReAct框架研究）
 
 ### 8.1 研究背景
@@ -1494,7 +1334,169 @@ error_type 可能的值：
 
 ---
 
-## 九、版本历史
+## 九、Type字段在当前系统的具体实现分析
+
+> **说明**：本章分析Type字段在**当前系统**的具体实现，包括代码位置、数据来源等。之前的第7章为通用理论分析章节。
+
+### 9.1 Type字段定义（前端）
+
+根据 `frontend/src/utils/sse.ts` 第66行：
+
+```typescript
+type: "thought" | "action_tool" | "observation" | "chunk" | "final" | "error" | "incident" | "interrupted" | "start" | "paused" | "resumed" | "retrying";
+```
+
+### 9.2 Type字段分类
+
+| 类别 | Type | 用途 |
+|------|------|------|
+| **内容步骤** | `start` | 开始步骤，记录模型信息 |
+| | `chunk` | AI流式回复的内容片段 |
+| | `final` | 最终回答 |
+| **执行步骤** | `thought` | AI思考过程 |
+| | `action_tool` | 工具调用 |
+| | `observation` | 工具执行结果 |
+| **异常步骤** | `error` | 错误 |
+| | `incident` | 中断（包含interrupted/paused/resumed/retrying） |
+
+### 9.3 Type字段生成时机分析（当前系统）
+
+#### ✅ LLM调用**前**准备的数据（框架生成）
+
+| Type | 生成位置 | 时机 | 数据来源 |
+|------|---------|------|---------|
+| **start** | `start_step.py:53` | 用户发送消息后，LLM调用前 | 框架生成，记录model/provider等信息 |
+
+#### ✅ LLM调用**后**填充的数据
+
+| Type | 生成位置 | 时机 | 数据来源 |
+|------|---------|------|---------|
+| **thought** | `base_react.py:170` | 第1次LLM调用后，解析响应时 | LLM返回的content+action_tool+params |
+| **action_tool** | `base_react.py:194` | thought之后，工具执行后 | 工具执行结果+LLM决定的action |
+| **observation** | `base_react.py:230` | 工具执行后，第2次LLM调用后 | 工具执行结果+第2次LLM返回的content |
+| **chunk** | `chat_stream_query.py:190` | LLM流式返回时 | LLM返回的文本片段 |
+| **final** | `base_react.py:182/251` | LLM返回finish时 | LLM返回的最终内容 |
+| **error** | `base_react.py:260/269` | 发生错误时 | 错误信息 |
+
+### 9.4 ReAct循环的时序图（当前系统）
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      ReAct 循环时序图                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ① [框架] start 步骤                                            │
+│     type='start'                                                │
+│     时机：用户消息→LLM调用前                                     │
+│     来源：框架生成                                               │
+│                                                                 │
+│  ② [LLM调用1] 第1次LLM调用                                      │
+│     ↓                                                           │
+│  ③ [LLM响应] type='thought'                                     │
+│     时机：第1次LLM调用完成后                                     │
+│     来源：LLM返回的content+action_tool+params                   │
+│     ⭐ 这是【LLM调用后】填充的数据！                              │
+│                                                                 │
+│  ④ [工具执行] type='action_tool'                                │
+│     时机：工具执行完成后                                         │
+│     来源：工具执行结果+LLM决定的action                           │
+│                                                                 │
+│  ⑤ [LLM调用2] 第2次LLM调用（观察阶段）                           │
+│     ↓                                                           │
+│  ⑥ [LLM响应] type='observation'                                 │
+│     时机：第2次LLM调用完成后                                     │
+│     来源：工具执行结果+LLM返回的content                          │
+│     ⭐ 这是【LLM调用后】填充的数据！                              │
+│                                                                 │
+│  ⑦ [流式输出] type='chunk'                                      │
+│     时机：LLM流式返回时                                          │
+│     来源：LLM返回的文本片段                                      │
+│     ⭐ 这是【LLM调用后】填充的数据！                              │
+│                                                                 │
+│  ⑧ [结束] type='final'                                          │
+│     时机：LLM返回finish时                                        │
+│     来源：LLM返回的最终内容                                      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 9.5 关键结论（当前系统）
+
+#### 结论1：thought 是 LLM调用后填充
+
+```python
+# base_react.py:152-177
+response = await self._get_llm_response()  # LLM调用
+parsed = self.parser.parse_response(response)  # 解析响应
+
+yield {
+    "type": "thought",
+    "content": parsed.get("content", ""),     # ← 来自LLM响应
+    "action_tool": parsed.get("action_tool"), # ← 来自LLM响应
+    "params": parsed.get("params", {})        # ← 来自LLM响应
+}
+```
+
+**结论**：thought 的 content、action_tool、params 都来自 LLM 响应，不是调用前准备的。
+
+#### 结论2：action_tool 是工具执行后填充
+
+```python
+# base_react.py:189-204
+execution_result = await self._execute_tool(action_tool, params)  # 工具执行
+
+yield {
+    "type": "action_tool",
+    "content": action_tool,
+    "execution_status": execution_result.get("status"),  # ← 工具执行结果
+    "summary": execution_result.get("summary", ""),      # ← 工具执行结果
+    "raw_data": execution_result.get("data")             # ← 工具执行结果
+}
+```
+
+**结论**：action_tool 的 execution_status、summary、raw_data 来自工具执行结果。
+
+#### 结论3：observation 是第2次LLM调用后填充
+
+```python
+# base_react.py:216-241
+llm_response = await self._get_llm_response()  # 第2次LLM调用
+parsed_obs = self.parser.parse_response(llm_response)  # 解析响应
+
+yield {
+    "type": "observation",
+    "content": parsed_obs.get("content", ""),      # ← 来自第2次LLM响应
+    "obs_action_tool": parsed_obs.get("action_tool"),  # ← 来自第2次LLM响应
+    "obs_params": parsed_obs.get("params", {})     # ← 来自第2次LLM响应
+}
+```
+
+**结论**：observation 的 content 来自第2次LLM响应，不是工具执行结果本身。
+
+### 9.6 参考依据
+
+| 来源 | 内容 | 链接 |
+|------|------|------|
+| **后端代码** | base_react.py:170-241 - Type字段生成位置 | backend/app/services/agent/base_react.py |
+| **前端代码** | sse.ts:66 - Type字段定义 | frontend/src/utils/sse.ts |
+
+### 9.7 总结表（当前系统）
+
+| Type | 生成时机 | 数据来源 | LLM调用前/后 |
+|------|---------|---------|-------------|
+| **start** | LLM调用前 | 框架生成 | ⏱️ 调用前 |
+| **thought** | 第1次LLM调用后 | LLM响应 | ✅ 调用后 |
+| **action_tool** | 工具执行后 | 工具结果 | ✅ 调用后 |
+| **observation** | 第2次LLM调用后 | LLM响应 | ✅ 调用后 |
+| **chunk** | LLM流式返回时 | LLM响应 | ✅ 调用后 |
+| **final** | LLM返回finish时 | LLM响应 | ✅ 调用后 |
+| **error** | 发生错误时 | 错误信息 | - |
+
+**核心结论**：除 `start` 外，所有Type字段都是 **LLM调用后** 填充的数据，不是调用前准备的。
+
+---
+
+## 十、版本历史
 
 | 版本 | 时间 | 签名 | 更新内容 |
 |------|------|------|---------|
@@ -1515,5 +1517,6 @@ error_type 可能的值：
 | v1.14 | 2026-03-29 13:25:29 | 小沈 | 北京老陈提供数据流向图，加入文档（7.1.1.1节）；更新7.1.4节ReAct循环流程图，明确标注"程序"就是Agent程序 |
 | v1.15 | 2026-03-29 13:42:04 | 小沈 | 新增第九章：Type字段核心字段总结（基于通用ReAct框架研究），总结每个Type字段必须的核心字段 |
 | v1.16 | 2026-03-29 13:50:24 | 小沈 | 修复章节顺序问题：删除重复的"八、版本历史"，重新编号章节（第八章改为Type字段总结，第九章改为版本历史） |
+| v1.17 | 2026-03-29 14:05:47 | 小沈 | 重新组织文档逻辑：将7.2-7.8节（当前系统代码分析）移到文档最后（第九章），保持第七章为通用理论分析章节 |
 
 **文档结束**

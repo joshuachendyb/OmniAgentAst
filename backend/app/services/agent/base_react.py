@@ -156,6 +156,18 @@ class BaseAgent(ABC):
                     parsed = self.parser.parse_response(response)
                 except ValueError as e:
                     logger.error(f"Failed to parse LLM response: {e}")
+                    # 保存原始response到conversation_history，避免丢弃LLM的content
+                    self.conversation_history.append({"role": "assistant", "content": response})
+                    # 发送thought事件（使用原始response）- 步骤12修复
+                    yield {
+                        "type": "thought",
+                        "step": step_count,
+                        "timestamp": create_timestamp(),
+                        "content": f"[解析失败] {response}",  # 显示原始response
+                        "reasoning": "",
+                        "action_tool": "finish",
+                        "params": {}
+                    }
                     self._add_observation_to_history(f"Parse error: {e}. Please respond with valid JSON format.")
                     continue
                 
@@ -191,7 +203,7 @@ class BaseAgent(ABC):
                 
                 # yield action_tool
                 yield {
-                    "type": "action_tool",
+                    "type": "action",  # 步骤13：统一SSE事件type命名
                     "content": action_tool,  # 工具名称作为content
                     "step": step_count,
                     "timestamp": current_time,
@@ -210,6 +222,8 @@ class BaseAgent(ABC):
                     observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}\n实际数据: {raw_data}"
                 else:
                     observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}"
+                
+                # 更新消息历史：先添加 assistant (thought)，后添加 observation (user)
                 self._add_observation_to_history(observation_text)
                 
                 # 再次调用 LLM 获取下一个决策
@@ -224,6 +238,9 @@ class BaseAgent(ABC):
                 
                 is_finished = parsed_obs.get("action_tool") == "finish"
                 
+                # 保存第2次LLM的响应到conversation_history（步骤8修复）
+                self.conversation_history.append({"role": "assistant", "content": parsed_obs.get("content", "")})
+                
                 # yield observation
                 current_time = create_timestamp()
                 yield {
@@ -234,16 +251,13 @@ class BaseAgent(ABC):
                     "obs_summary": execution_result.get("summary", ""),
                     "obs_raw_data": execution_result.get("data"),
                     "content": parsed_obs.get("content", ""),
-                    "obs_reasoning": parsed_obs.get("reasoning"),
-                    "obs_action_tool": parsed_obs.get("action_tool", "finish"),
-                    "obs_params": parsed_obs.get("params", {}),
+                    "reasoning": parsed_obs.get("reasoning"),
+                    "action_tool": parsed_obs.get("action_tool", "finish"),
+                    "params": parsed_obs.get("params", {}),
                     "is_finished": is_finished
                 }
                 
-                # 更新消息历史
-                self.conversation_history.append({"role": "assistant", "content": thought_content})
-                # [小沈 2026-03-28] 注释掉 trim_history - 不一定是真正原因，先去掉
-                # self._trim_history()
+                self._trim_history()
                 
                 # 判断是否结束
                 if is_finished:
@@ -271,34 +285,34 @@ class BaseAgent(ABC):
                 "code": "INTERNAL_ERROR",
                 "message": str(e)
             }
+        finally:
+            # Hook: 循环结束后调用
+            self._on_after_loop()
     
     # ===== 对话历史管理 =====
 
-    # [小沈 2026-03-28] 注释掉 - 不一定是真正原因，先去掉
-    # MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话（每轮 = thought + observation）
+    MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话（每轮 = thought + observation）
 
-    # [小沈 2026-03-28] 注释掉 - 不一定是真正原因，先去掉
-    # def _trim_history(self) -> None:
-    #     """限制对话历史长度，避免 token 爆炸导致 LLM 输出被截断"""
-    #     if len(self.conversation_history) <= 2:
-    #         return  # 少于 system + user，不需要裁剪
-    #     
-    #     # 保留 system message 和最近的 N 轮对话
-    #     # 每轮 = 1 thought (assistant) + 1 observation (user)
-    #     # 加上原始的 user message (task_prompt)
-    #     max_messages = 1 + 1 + (self.MAX_HISTORY_TURNS * 2)  # system + task + N*(thought+obs)
-    #     
-    #     if len(self.conversation_history) > max_messages:
-    #         # 保留 system message 和最近的消息
-    #         system_msg = self.conversation_history[0]
-    #         recent_msgs = self.conversation_history[-max_messages + 1:]
-    #         self.conversation_history = [system_msg] + recent_msgs
-    #         logger.info(f"[History] Trimmed conversation history from {len(self.conversation_history) + max_messages - 1} to {len(self.conversation_history)} messages")
+    def _trim_history(self) -> None:
+        """限制对话历史长度，避免 token 爆炸导致 LLM 输出被截断"""
+        if len(self.conversation_history) <= 2:
+            return  # 少于 system + user，不需要裁剪
+        
+        # 保留 system message 和最近的 N 轮对话
+        # 每轮 = 1 thought (assistant) + 1 observation (user)
+        # 加上原始的 user message (task_prompt)
+        max_messages = 1 + 1 + (self.MAX_HISTORY_TURNS * 2)  # system + task + N*(thought+obs)
+        
+        if len(self.conversation_history) > max_messages:
+            # 保留 system message 和最近的消息
+            system_msg = self.conversation_history[0]
+            recent_msgs = self.conversation_history[-max_messages + 1:]
+            self.conversation_history = [system_msg] + recent_msgs
+            logger.info(f"[History] Trimmed conversation history from {len(self.conversation_history) + max_messages - 1} to {len(self.conversation_history)} messages")
 
     # ===== 通用方法 =====
 
     def _add_observation_to_history(self, observation: str) -> None:
         """添加观察结果到对话历史"""
         self.conversation_history.append({"role": "user", "content": observation})
-        # [小沈 2026-03-28] 注释掉 trim_history - 不一定是真正原因，先去掉
-        # self._trim_history()
+        self._trim_history()

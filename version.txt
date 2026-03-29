@@ -1,3 +1,37 @@
+v0.8.30
+
+更新时间：2026-03-29 16:32:30
+
+更新内容：
+
+## 1. 完成React Prompt需求文档第六章所有步骤 - 小沈-2026-03-29
+
+### 1.1 实施步骤
+
+完成步骤5-13的实现：
+- 步骤5：统一SSE事件结构 - 去掉obs_前缀
+- 步骤6：修复llm_client定义 - 添加LLMClientWrapper类
+- 步骤7：TextStrategy返回JSON格式
+- 步骤8：修复parsed_obs.content保存问题
+- 步骤9：修复parse失败后的处理
+- 步骤10：恢复_trim_history函数
+- 步骤11：检查strategy内部是否重复添加assistant
+- 步骤12：parse失败时也发送thought事件
+- 步骤13：统一SSE事件type命名（action_tool → action）
+
+### 1.2 修改文件
+
+- backend/app/services/agent/base_react.py
+- backend/app/services/agent/file_react.py
+- backend/app/services/agent/llm_strategies.py
+- backend/app/services/react_sse_wrapper.py
+- doc-prompt/React的Prompt需求记录及问题分析出来设计-小沈-2026-03-29.md
+
+参与开发：小沈
+完成时间：2026-03-29 16:32:30
+
+---
+
 v0.8.29
 
 更新时间：2026-03-28 20:10:00
