@@ -1,6 +1,6 @@
 # React的Prompt需求记录及问题分析出来设计
 
-**创建时间**: 2026-03-29 05:08:14 **版本**: v2.4 **编写人**: 小沈 **更新时间**: 2026-03-29 11:19:45
+**创建时间**: 2026-03-29 05:08:14 **版本**: v2.5 **编写人**: 小沈 **更新时间**: 2026-03-29 12:26:25
 
 ---
 
@@ -390,7 +390,87 @@ return content  # ← 返回纯文本
 - 可能提取不到 action_tool，默认返回 `"finish"`
 - **LLM 返回的完整 content 被丢弃！**
 
-#### 4.2.9 P14: parsed_obs.content（第2次LLM响应）从未保存到conversation_history（严重）
+#### 4.2.9 P10: SSE事件type命名混乱（低）
+
+**问题描述**
+
+SSE 事件 type 命名不规范：
+- thought：正确
+- action_tool：应该改为 action（与 ReAct 框架一致）
+- observation：正确
+- chunk：正确
+
+**影响**：不影响功能，只影响代码可读性。**可选修复**。
+
+#### 4.2.10 P11: 错误处理导致LLM的content被丢弃（中等）
+
+**问题位置**：`base_react.py` 第156-160行
+
+```python
+try:
+    parsed = self.parser.parse_response(response)
+except ValueError as e:
+    logger.error(f"Failed to parse LLM response: {e}")
+    self._add_observation_to_history(f"Parse error: {e}. Please respond with valid JSON format.")
+    continue  # ← 跳过当前循环，LLM返回的content被丢弃！
+```
+
+**问题**：
+- 如果 LLM 返回了有效的 content，但不是 JSON 格式
+- parser 解析失败后，直接 continue
+- **LLM 返回的完整 content 被丢弃，前端看不到 AI 的思考内容！**
+
+**解决方案**：
+```python
+except ValueError as e:
+    logger.error(f"Failed to parse LLM response: {e}")
+    # 保存原始 response 到 conversation_history，避免丢弃
+    self.conversation_history.append({"role": "assistant", "content": response})
+    self._add_observation_to_history(f"Parse error: {e}. Please respond with valid JSON format.")
+    continue
+```
+
+#### 4.2.11 P12: 历史消息裁剪_trim_history被注释（严重）
+
+**问题位置**：`base_react.py` 第277-296行
+
+```python
+# [小沈 2026-03-28] 注释掉 - 不一定是真正原因，先去掉
+# MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话
+
+# [小沈 2026-03-28] 注释掉 - 不一定是真正原因，先去掉
+# def _trim_history(self) -> None:
+#     """限制对话历史长度，避免 token 爆炸导致 LLM 输出被截断"""
+```
+
+**问题**：
+- `_trim_history()` 被注释掉，对话历史无限增长
+- 多次循环后，conversation_history 可能包含几十条消息
+- **LLM token 消耗爆炸，可能导致 LLM 输出被截断**
+- **前端显示可能出现异常**
+
+**解决方案**：
+- 恢复 `_trim_history()` 函数
+- 合理设置 `MAX_HISTORY_TURNS`（建议 5-10 轮）
+
+#### 4.2.12 P13: 重复添加 assistant 到 conversation_history（中等）
+
+**问题描述**
+
+assistant 消息被重复添加：
+1. **strategy 内部**：`llm_strategies.py` 可能添加一次
+2. **base_react.py:244**：又添加一次
+
+**后果**：
+- conversation_history 中有重复的 assistant 消息
+- LLM 可能看到重复的上下文
+- token 消耗增加
+
+**解决方案**：
+- 确保只在一处添加 assistant
+- 检查 strategy 内部是否重复添加
+
+#### 4.2.13 P14: parsed_obs.content（第2次LLM响应）从未保存到conversation_history（严重）
 
 **问题描述**
 
@@ -456,6 +536,43 @@ self.conversation_history.append({"role": "assistant", "content": thought_conten
 ```python
 # 保存本次循环中第2次LLM的响应（而不是第1次的）
 self.conversation_history.append({"role": "assistant", "content": parsed_obs.get("content", "")})
+```
+
+#### 4.2.14 P16: parse错误后 continue 导致 SSE 事件不完整（中等）
+
+**问题位置**：`base_react.py` 第158-160行
+
+```python
+try:
+    parsed = self.parser.parse_response(response)
+except ValueError as e:
+    logger.error(f"Failed to parse LLM response: {e}")
+    self._add_observation_to_history(f"Parse error: {e}. Please respond with valid JSON format.")
+    continue  # ← 直接跳过，前端不会收到 thought 事件！
+```
+
+**问题**：
+- parser 解析失败后，直接 continue
+- **前端收不到 thought 事件（只有 observation 事件）**
+- 用户看到的步骤列表不完整
+
+**解决方案**：
+```python
+except ValueError as e:
+    logger.error(f"Failed to parse LLM response: {e}")
+    # 即使解析失败，也发送 thought 事件（使用原始 response）
+    yield {
+        "type": "thought",
+        "step": step_count,
+        "timestamp": create_timestamp(),
+        "content": f"[解析失败] {response}",  # 显示原始 response
+        "reasoning": "",
+        "action_tool": "finish",
+        "params": {}
+    }
+    self.conversation_history.append({"role": "assistant", "content": response})
+    self._add_observation_to_history(f"Parse error: {e}. Please respond with valid JSON format.")
+    continue
 ```
 
 ### 4.3 问题流程图
@@ -536,17 +653,24 @@ file_react.py: _on_before_loop()
 file_react.py: _on_after_loop()
 ```
 
-### 5.2 记录点分析
+### 5.2 记录点分析（修正版）
 
-| 文件 | 方法 | 状态 |
-|------|------|------|
-| react_sse_wrapper.py | start_request() | ✅ 创建日志，但被覆盖 |
-| react_sse_wrapper.py | log_system_prompt() | ✅ 记录，但被覆盖 |
-| react_sse_wrapper.py | log_task_prompt() | ✅ 记录，但被覆盖 |
-| file_react.py | start_request() | ❌ 覆盖上面数据 |
-| file_react.py | log_llm_call() | ✅ 从 _local 获取并追加 |
-| file_react.py | log_llm_response() | ✅ 从 _local 获取并追加 |
-| file_react.py | save() | ❌ 从未被调用 |
+| 文件 | 方法 | 问题 | 修复状态 |
+|------|------|------|----------|
+| react_sse_wrapper.py | start_request() | 创建日志，但被 file_react.py 覆盖 | ❌ P3 问题 |
+| react_sse_wrapper.py | log_system_prompt() | 记录，但被覆盖 | ❌ P3 问题 |
+| react_sse_wrapper.py | log_task_prompt() | 记录，但被覆盖 | ❌ P3 问题 |
+| file_react.py | start_request() | 覆盖上面数据 | ❌ P3 问题，需删除 |
+| file_react.py | _on_before_loop() | 调用 start_request()，导致数据覆盖 | ❌ P3 问题，需修复 |
+| file_react.py | log_llm_call() | ✅ 从 _local 获取并追加 | ✅ 正常 |
+| file_react.py | log_llm_response() | ✅ 从 _local 获取并追加 | ✅ 正常 |
+| file_react.py | save() | 从未被调用，JSON 文件不生成 | ❌ P4 问题 |
+| base_react.py | run_stream() 第213行 | 添加 Observation 顺序错误 | ❌ P1 问题 |
+| base_react.py | run_stream() 第217行 | 第2次LLM调用时缺少 assistant | ❌ P1 问题 |
+| base_react.py | run_stream() 第244行 | 保存 thought_content 而不是 parsed_obs.content | ❌ P14 问题 |
+| base_react.py | run_stream() 第156-160行 | parse 失败后 continue，content 被丢弃 | ❌ P11/P16 问题 |
+| base_react.py | _trim_history() | 被注释掉，对话历史无限增长 | ❌ P12 问题 |
+| base_react.py | _on_after_loop() | 循环结束后未调用 | ❌ P5 问题 |
 
 ### 5.3 时序图（含设计实现说明）
 
@@ -656,18 +780,23 @@ file_react.py: _on_after_loop()
 
 ## 六、实施计划
 
-### 6.1 修复步骤
+### 6.1 修复步骤（完整版）
 
-| 步骤 | 修复内容 | 对应问题 |
-|------|---------|---------|
-| 步骤1 | 删除 file_react.py:_on_before_loop() 中的 start_request() 调用 | P3 |
-| 步骤2 | 在 file_react.py 的 log_llm_call() 后立即调用 save() | P4 |
-| 步骤3 | 在 base_react.py:run_stream() 添加 finally 块调用 _on_after_loop() | P5 |
-| 步骤4 | 调整 conversation_history 累积顺序：先添加 assistant，后添加 Observation | P1 |
-| 步骤5 | 统一 SSE 事件结构：去掉 obs_ 前缀 | P2 |
-| 步骤6 | 修复 llm_client 定义或修改策略调用方式 | P6, P7 |
-| 步骤7 | TextStrategy 返回 JSON 格式 | P8 |
-| 步骤8 | 修复 parsed_obs.content 保存问题：第244行应保存第2次LLM响应，不是第1次 | P14 |
+| 步骤 | 修复内容 | 对应问题 | 优先级 |
+|------|---------|---------|--------|
+| **步骤1** | 删除 file_react.py:_on_before_loop() 中的 start_request() 调用 | P3 | P1 |
+| **步骤2** | 在 file_react.py 的 log_llm_call() 后立即调用 save() | P4 | P1 |
+| **步骤3** | 在 base_react.py:run_stream() 添加 finally 块调用 _on_after_loop() | P5 | P2 |
+| **步骤4** | 调整 conversation_history 累积顺序：先添加 assistant，后添加 Observation | P1 | P0 |
+| **步骤5** | 统一 SSE 事件结构：去掉 obs_ 前缀 | P2 | P1 |
+| **步骤6** | 修复 llm_client 定义或修改策略调用方式 | P6, P7 | P0 |
+| **步骤7** | TextStrategy 返回 JSON 格式 | P8 | P0 |
+| **步骤8** | 修复 parsed_obs.content 保存问题：第244行应保存第2次LLM响应 | P14 | P0 |
+| **步骤9** | 修复 parse 失败后的处理：保存原始 response 到 conversation_history | P11 | P1 |
+| **步骤10** | 恢复 _trim_history() 函数，设置 MAX_HISTORY_TURNS=5 | P12 | P0 |
+| **步骤11** | 检查 strategy 内部是否重复添加 assistant，确保只添加一次 | P13 | P1 |
+| **步骤12** | parse 失败时也发送 thought 事件（使用原始 response） | P16 | P1 |
+| **步骤13**（可选） | 统一 SSE 事件 type 命名：action_tool → action | P10 | P2 |
 
 ### 6.2 P6+P7+P8 综合修复方案
 
@@ -734,5 +863,6 @@ elif strategy.method == "response_format":
 | v2.2 | 2026-03-29 15:45:00 | 小沈 | 验证小强补充的P9-P12问题：确认P9代码逻辑正确无需修复，P10风格问题，P11/P12确认有问题并更新优先级 |
 | v2.3 | 2026-03-29 16:00:00 | 小沈 | 验证小强深度分析P13-P15：确认P13重复添加assistant、P14已排除、P15确认；修正P1描述为"重复添加assistant" |
 | v2.4 | 2026-03-29 11:12:44 | 小沈 | 验证小健深度分析：确认P14问题存在（parsed_obs.content从未保存）；补充P14详细分析到4.2.9节 |
+| v2.5 | 2026-03-29 12:26:25 | 小沈 | 全面修正文档：补全P10-P13/P16详细分析到4.2.9-4.2.14节；修正第五章记录点分析；补全第六章修复步骤（步骤9-13） |
 
 **文档结束**
