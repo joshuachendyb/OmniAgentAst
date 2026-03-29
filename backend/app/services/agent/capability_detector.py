@@ -13,12 +13,10 @@ LLM 能力探测器实现
 
 import json
 import httpx
-import logging
 from typing import Optional
 
 from app.services.agent.capability import LLMFeature, LLMProbeResult, LLMCapability
-
-logger = logging.getLogger(__name__)
+from app.utils.logger import logger
 
 
 class CapabilityDetector:
