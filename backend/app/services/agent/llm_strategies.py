@@ -52,7 +52,17 @@ class TextStrategy(LLMStrategy):
     
     直接返回响应文本，不使用任何约束
     适用于简单对话或流式输出
+    
+    【分层处理架构 C + A + B】
+    - 方案C: 复用 ToolParser.parse_response() 解析 JSON
+    - 方案A: ToolParser._extract_from_text() 支持中文提取
+    - 方案B: 工具名保底匹配
     """
+    
+    KNOWN_TOOLS = [
+        "list_directory", "read_file", "write_file", "delete_file",
+        "move_file", "search_files", "search_file_content", "generate_report"
+    ]
     
     async def call(
         self,
@@ -72,7 +82,7 @@ class TextStrategy(LLMStrategy):
             conversation_history: 对话历史（用于追加）
         
         Returns:
-            响应文本
+            响应文本（JSON 格式）
         """
         history_messages = dict_list_to_messages(history_dicts)
         
@@ -90,82 +100,86 @@ class TextStrategy(LLMStrategy):
         
         logger.info(f"[LLM Response Raw (text)] content={repr(content)[:500]}")
         
-        # 情况1：LLM 返回空内容
+        # ===== 情况0: 空内容 =====
         if not content:
             logger.warning("[LLM Response] Warning: LLM returned empty content!")
-            return json.dumps({
-                "content": "",
-                "action_tool": "finish",
-                "params": {},
-                "reasoning": None
-            }, ensure_ascii=False)
+            return self._make_result(content="", action_tool="finish", params={})
         
-        # 情况2：尝试解析 JSON 格式（可能是 LLM 按 Prompt 输出了 JSON）
-        try:
-            parsed = json.loads(content)
-            if isinstance(parsed, dict):
-                # 检查是否有 action_tool 或 action 字段
-                action = parsed.get("action_tool") or parsed.get("action")
-                if action:
-                    # 统一格式，转换为 action_tool
-                    thought = parsed.get("content") or parsed.get("thought") or content
-                    params = parsed.get("params") or parsed.get("action_input") or parsed.get("actionInput") or {}
-                    reasoning = parsed.get("reasoning")
-                    logger.info(f"[TextStrategy] LLM returned valid JSON with action: {action}")
-                    return json.dumps({
-                        "content": thought,
-                        "action_tool": action,
-                        "params": params,
-                        "reasoning": reasoning
-                    }, ensure_ascii=False)
-                else:
-                    # JSON 但没有 action 字段，视为 finish
-                    logger.info(f"[TextStrategy] LLM returned JSON but no action, treating as finish")
-                    return json.dumps({
-                        "content": parsed.get("content") or parsed.get("thought") or content,
-                        "action_tool": "finish",
-                        "params": {},
-                        "reasoning": None
-                    }, ensure_ascii=False)
-            elif isinstance(parsed, list) and len(parsed) > 0:
-                # 数组格式，提取第一个元素的 action
-                first = parsed[0]
-                if isinstance(first, dict):
-                    action = first.get("action_tool") or first.get("action")
-                    if action:
-                        logger.info(f"[TextStrategy] LLM returned JSON array, using first element action: {action}")
-                        return json.dumps({
-                            "content": first.get("content") or first.get("thought") or content,
-                            "action_tool": action,
-                            "params": first.get("params") or first.get("action_input") or {},
-                            "reasoning": first.get("reasoning")
-                        }, ensure_ascii=False)
-        except (json.JSONDecodeError, TypeError):
-            pass
-        
-        # 情况3：非 JSON 格式，尝试从纯文本中提取工具调用
+        # ===== 方案C: 尝试 ToolParser.parse_response() =====
         from app.services.agent.tool_parser import ToolParser
-        extracted = ToolParser._extract_from_text(content)
-        if extracted and extracted.get("action"):
-            action = extracted.get("action", "finish")
-            thought = extracted.get("thought") or content
-            params = extracted.get("action_input") or {}
-            logger.info(f"[TextStrategy] Extracted from text: action={action}, thought={str(thought)[:50]}...")
-            return json.dumps({
-                "content": thought,
-                "action_tool": action,
-                "params": params,
-                "reasoning": None
-            }, ensure_ascii=False)
+        try:
+            parsed = ToolParser.parse_response(content)
+            action = parsed.get("action_tool", "finish")
+            thought = parsed.get("content", "")
+            params = parsed.get("params", {})
+            reasoning = parsed.get("reasoning")
+            logger.info(f"[TextStrategy] ToolParser success: action={action}")
+            return self._make_result(content=thought, action_tool=action, params=params, reasoning=reasoning)
+        except ValueError:
+            pass  # ToolParser 无法解析，继续方案A/B
         
-        # 情况4：无法提取工具调用，返回带有完整 content 的 finish
+        # ===== 方案B: 工具名保底匹配 =====
+        tool_result = self._extract_by_known_tools(content)
+        if tool_result:
+            logger.info(f"[TextStrategy] Tool match found: {tool_result['action_tool']}")
+            return self._make_result(
+                content=tool_result.get("content", content),
+                action_tool=tool_result["action_tool"],
+                params=tool_result.get("params", {})
+            )
+        
+        # ===== 无法提取工具调用，返回 finish =====
         logger.info(f"[TextStrategy] No action extracted, returning finish with full content")
+        return self._make_result(content=content, action_tool="finish", params={})
+    
+    def _make_result(self, content: str, action_tool: str, params: dict, reasoning: Any = None) -> str:
+        """构建返回结果"""
         return json.dumps({
             "content": content,
-            "action_tool": "finish",
-            "params": {},
-            "reasoning": None
+            "action_tool": action_tool,
+            "params": params,
+            "reasoning": reasoning
         }, ensure_ascii=False)
+    
+    def _extract_by_known_tools(self, content: str) -> Optional[dict]:
+        """
+        【方案B】通过已知工具名匹配提取 action
+        
+        当 ToolParser 无法解析时，尝试在 content 中查找已知工具名
+        """
+        import re
+        
+        content_lower = content.lower()
+        
+        for tool in self.KNOWN_TOOLS:
+            # 查找工具名出现位置
+            pattern = rf'\b{re.escape(tool)}\b'
+            if re.search(pattern, content_lower, re.IGNORECASE):
+                logger.info(f"[TextStrategy] Found known tool: {tool}")
+                
+                # 尝试提取参数（简化版：查找引号内的内容）
+                params = {}
+                
+                # 查找路径参数
+                path_patterns = [
+                    r'["\']?([A-Za-z]:\\[^"\'\s]+)["\']?',  # Windows 路径 C:\path
+                    r'["\']?(/[^\s"\'<>]+)["\']?',  # Unix 路径 /path
+                    r'["\']?([^"\'\s]+)["\']?',  # 一般字符串
+                ]
+                
+                for p in path_patterns:
+                    matches = re.findall(p, content)
+                    if matches:
+                        params["path"] = matches[0]
+                        break
+                
+                return {
+                    "action_tool": tool,
+                    "content": content,
+                    "params": params
+                }
+        
+        return None
 
 
 class ToolsStrategy(LLMStrategy):
