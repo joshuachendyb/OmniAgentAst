@@ -123,11 +123,50 @@ class FileReactAgent(BaseAgent):
         
         # 【新增】LLM调用策略
         self.text_strategy = TextStrategy()
-        self.tools_strategy = ToolsStrategy(tools=tools or [])
+        
+        # 构建OpenAI格式的tools列表（如果未提供）
+        openai_tools = tools or []
+        if not openai_tools and use_function_calling:
+            # 从注册表获取工具定义并转换为OpenAI格式
+            from app.services.tools.file import get_registered_tools
+            from app.services.agent.types.react_schema import _process_description, _clean_properties
+            
+            mcp_tools = get_registered_tools(category="file")
+            openai_tools = []
+            for tool in mcp_tools:
+                # 转换逻辑（参考react_schema.py）
+                properties = tool.get("input_schema", {}).get("properties", {})
+                required = tool.get("input_schema", {}).get("required", [])
+                cleaned_properties = _clean_properties(properties)
+                
+                openai_tool = {
+                    "type": "function",
+                    "function": {
+                        "name": tool.get("name", ""),
+                        "description": _process_description(tool.get("description", "")),
+                        "parameters": {
+                            "type": "object",
+                            "properties": cleaned_properties,
+                            "required": required
+                        }
+                    }
+                }
+                openai_tools.append(openai_tool)
+            
+            # 记录工具Prompt日志
+            prompt_logger = get_prompt_logger()
+            for tool_def in openai_tools:
+                prompt_logger.log_tool_prompt(
+                    tool_name=tool_def["function"]["name"],
+                    prompt_content=json.dumps(tool_def, ensure_ascii=False, indent=2),
+                    source="file_tools.py:register_tool"
+                )
+        
+        self.tools_strategy = ToolsStrategy(tools=openai_tools)
         self.response_format_strategy = ResponseFormatStrategy()
         
         # Function Calling 支持
-        self.tools = tools or []
+        self.tools = openai_tools
         
         # LLMAdapter 自适应探测
         self.adapter = None  # 【小沈修复 2026-03-23】确保 adapter 属性存在
@@ -323,19 +362,8 @@ class FileReactAgent(BaseAgent):
             logger.info(f"Session created in run_stream(): {session_id}")
     
     def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
-        """循环开始前 Hook - 记录 Prompt 日志"""
-        from datetime import datetime
-        prompt_logger = get_prompt_logger()
-
-        prompt_logger.log_system_prompt(
-            step_name="系统Prompt生成",
-            prompt_content=sys_prompt,
-            source="file_prompts.py:get_system_prompt()"
-        )
-        prompt_logger.log_task_prompt(
-            task_content=task_prompt,
-            context=context
-        )
+        """循环开始前 Hook - 无操作，日志记录已由上层处理"""
+        pass
     
     def _on_after_loop(self):
         """循环结束后 Hook - 关闭 Session"""

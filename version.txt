@@ -1,3 +1,30 @@
+v0.8.31
+
+更新时间：2026-03-29 17:24:01
+
+更新内容：
+
+## 1. 修复React Prompt重复记录+工具Prompt记录缺失 - 小沈-2026-03-29
+
+### 1.1 修复内容
+
+1. 优化Prompt记录流程：移除重复的系统prompt和任务prompt记录
+2. 添加观察结果（observation）的prompt记录
+3. 修复工具Prompt记录：确保OpenAI格式的tools列表不为空，记录工具定义到日志
+4. 在file_react.py中构建OpenAI格式的tools列表并调用log_tool_prompt
+
+### 1.2 修改文件
+
+- backend/app/services/agent/base_react.py
+- backend/app/services/agent/file_react.py
+- backend/app/services/react_sse_wrapper.py
+- doc-prompt/React的Prompt需求记录及问题分析出来设计-小沈-2026-03-29.md
+
+参与开发：小沈
+完成时间：2026-03-29 17:24:01
+
+---
+
 v0.8.30
 
 更新时间：2026-03-29 16:32:30
