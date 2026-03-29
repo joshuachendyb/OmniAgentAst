@@ -65,8 +65,47 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
   // 标准化 rootPath，移除末尾斜杠
   const normalizedRoot = rootPath.replace(/\\/g, "/").replace(/\/$/, "");
 
+  // 【小沈修复 2026-03-29】第一级目录去重：按 name 去重，同一名字只保留一个（directory 优先）
+  const firstLevelDedup = new Map<string, Entry>();
+  for (const entry of entries) {
+    // 只处理第一级目录（path 以 normalizedRoot 开头，后面只有一层）
+    const normalizedPath = entry.path.replace(/\\/g, "/");
+    if (!normalizedPath.startsWith(normalizedRoot + "/")) continue;
+    
+    const relative = normalizedPath.substring(normalizedRoot.length + 1);
+    if (!relative.includes("/")) {
+      // 第一级目录/文件
+      if (!firstLevelDedup.has(entry.name)) {
+        firstLevelDedup.set(entry.name, entry);
+      } else {
+        // 如果已有且当前是 directory 而已有是 file，更新
+        const existing = firstLevelDedup.get(entry.name)!;
+        if (existing.type === "file" && entry.type === "directory") {
+          firstLevelDedup.set(entry.name, entry);
+        }
+      }
+    }
+  }
+
+  // 合并去重后的第一级和其他条目
+  const filteredEntries = entries.filter((entry) => {
+    const normalizedPath = entry.path.replace(/\\/g, "/");
+    const relative = normalizedPath.startsWith(normalizedRoot + "/") 
+      ? normalizedPath.substring(normalizedRoot.length + 1)
+      : "";
+    const isFirstLevel = !relative.includes("/");
+    
+    if (isFirstLevel) {
+      // 第一级：使用去重后的结果
+      const dedupEntry = firstLevelDedup.get(entry.name);
+      return dedupEntry === entry;
+    }
+    // 非第一级：全部保留
+    return true;
+  });
+
   // 按 type 排序：目录在前，文件在后
-  const sortedEntries = [...entries].sort((a, b) => {
+  const sortedEntries = [...filteredEntries].sort((a, b) => {
     if (a.type === "directory" && b.type === "file") return -1;
     if (a.type === "file" && b.type === "directory") return 1;
     return a.name.localeCompare(b.name);
