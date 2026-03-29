@@ -136,11 +136,18 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
 
     if (parts.length === 1) {
       // 直接子项，父级是 rootPath
+      // 【小沈修复】检查是否已存在，避免重复
       const parentNode = pathToNode.get(normalizedRoot);
       if (parentNode?.children) {
-        parentNode.children.push(node);
+        const exists = parentNode.children.some((c: TreeNode) => c.key === node.key);
+        if (!exists) {
+          parentNode.children.push(node);
+        }
       } else {
-        rootNodes.push(node);
+        const exists = rootNodes.some((c: TreeNode) => c.key === node.key);
+        if (!exists) {
+          rootNodes.push(node);
+        }
       }
       continue;
     }
@@ -165,12 +172,19 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
         pathToNode.set(fullPath, virtualNode);
 
         // 链接到父级
+        // 【小沈修复】检查是否已存在，避免重复添加
         const parentNode = pathToNode.get(currentParentPath);
         if (parentNode?.children) {
-          parentNode.children.push(virtualNode);
+          const exists = parentNode.children.some((c: TreeNode) => c.key === virtualNode.key);
+          if (!exists) {
+            parentNode.children.push(virtualNode);
+          }
         } else if (currentParentPath === normalizedRoot) {
           // 第一层虚拟目录
-          rootNodes.push(virtualNode);
+          const exists = rootNodes.some((c: TreeNode) => c.key === virtualNode.key);
+          if (!exists) {
+            rootNodes.push(virtualNode);
+          }
         }
       }
 
@@ -178,11 +192,18 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
     }
 
     // 最后一项添加到其父级
+    // 【小沈修复】检查是否已存在，避免重复添加
     const finalParentNode = pathToNode.get(currentParentPath);
     if (finalParentNode?.children) {
-      finalParentNode.children.push(node);
+      const exists = finalParentNode.children.some((c: TreeNode) => c.key === node.key);
+      if (!exists) {
+        finalParentNode.children.push(node);
+      }
     } else {
-      rootNodes.push(node);
+      const exists = rootNodes.some((c: TreeNode) => c.key === node.key);
+      if (!exists) {
+        rootNodes.push(node);
+      }
     }
   }
 
