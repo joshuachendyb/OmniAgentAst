@@ -125,8 +125,12 @@ class FileReactAgent(BaseAgent):
         self.text_strategy = TextStrategy()
         
         # 构建OpenAI格式的tools列表（如果未提供）
+        # 【修复】当有 api 参数时（使用 adapter），默认启用 tools
+        has_api_params = bool(api_base and api_key and model)
+        should_use_function_calling = use_function_calling or has_api_params
+        
         openai_tools = tools or []
-        if not openai_tools and use_function_calling:
+        if not openai_tools and should_use_function_calling:
             # 从注册表获取工具定义并转换为OpenAI格式
             from app.services.tools.file import get_registered_tools
             from app.services.agent.types.react_schema import _process_description, _clean_properties
