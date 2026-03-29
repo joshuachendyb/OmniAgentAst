@@ -65,8 +65,49 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
   // 标准化 rootPath，移除末尾斜杠
   const normalizedRoot = rootPath.replace(/\\/g, "/").replace(/\/$/, "");
 
+  // 【小沈修复 2026-03-29】预处理：过滤掉相对路径条目
+  // 问题：后端数据中同时存在相对路径（如 "11.联想GRX"）和绝对路径（如 "D:\10-旧项目库\11.联想GRX\..."）
+  // 这导致同一个目录以两种形式出现在树中，显示为重复
+  // 解决：过滤掉有对应绝对路径的相对路径条目，为没有绝对路径的目录创建虚拟条目
+  const relativeEntries: Entry[] = [];
+  const absoluteEntries: Entry[] = [];
+  
+  for (const entry of entries) {
+    const normalizedPath = entry.path.replace(/\\/g, "/");
+    if (normalizedPath.startsWith(normalizedRoot + "/")) {
+      // 绝对路径条目
+      absoluteEntries.push(entry);
+    } else {
+      // 相对路径条目
+      relativeEntries.push(entry);
+    }
+  }
+  
+  // 找出没有对应绝对路径的相对路径条目（如 6.沈阳资管项目）
+  const missingFromAbsolute = relativeEntries.filter(rel => {
+    const relName = rel.name;
+    // 检查是否有同名的第一级绝对路径条目
+    return !absoluteEntries.some(abs => {
+      const normalizedPath = abs.path.replace(/\\/g, "/");
+      if (!normalizedPath.startsWith(normalizedRoot + "/")) return false;
+      const firstPart = normalizedPath.substring(normalizedRoot.length + 1).split("/")[0];
+      return firstPart === relName;
+    });
+  });
+  
+  // 为这些条目创建绝对路径条目
+  const createdEntries = missingFromAbsolute.map(rel => ({
+    name: rel.name,
+    path: normalizedRoot + "/" + rel.name,
+    type: rel.type,
+    size: rel.size
+  }));
+  
+  // 合并：绝对路径条目 + 创建的条目
+  const processedEntries = [...absoluteEntries, ...createdEntries];
+
   // 按 type 排序：目录在前，文件在后
-  const sortedEntries = [...entries].sort((a, b) => {
+  const sortedEntries = [...processedEntries].sort((a, b) => {
     if (a.type === "directory" && b.type === "file") return -1;
     if (a.type === "file" && b.type === "directory") return 1;
     return a.name.localeCompare(b.name);
