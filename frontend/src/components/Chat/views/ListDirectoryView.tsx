@@ -180,15 +180,17 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
       });
   };
 
-  // 【小沈修复 2026-03-29】第一级目录去重：按 title 去重，避免重复显示
-  const seenFirstLevelTitles = new Set<string>();
-  const dedupRootNodes = rootNodes.filter(node => {
-    if (seenFirstLevelTitles.has(node.title)) {
-      return false;
+  // 【小沈修复 2026-03-29】第一级目录去重：按 key 去重
+  // 如果有重复的 key，只保留第一个
+  const seenFirstLevelKeys = new Set<string>();
+  const dedupRootNodes: TreeNode[] = [];
+  for (const node of rootNodes) {
+    if (seenFirstLevelKeys.has(node.key)) {
+      continue; // 跳过重复的 key
     }
-    seenFirstLevelTitles.add(node.title);
-    return true;
-  });
+    seenFirstLevelKeys.add(node.key);
+    dedupRootNodes.push(node);
+  }
 
   return cleanEmptyChildren(dedupRootNodes);
 }
