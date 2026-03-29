@@ -91,6 +91,11 @@ class TextStrategy(LLMStrategy):
             history=history_messages
         )
         
+        error_info = None
+        if hasattr(response, 'error') and response.error:
+            error_info = response.error
+            logger.warning(f"[LLM Response] LLM returned error: {error_info}")
+        
         if hasattr(response, 'content'):
             content = response.content
         elif isinstance(response, dict):
@@ -103,6 +108,15 @@ class TextStrategy(LLMStrategy):
         # ===== 情况0: 空内容 =====
         if not content:
             logger.warning("[LLM Response] Warning: LLM returned empty content!")
+            # 如果有错误信息，生成更详细的错误提示
+            if error_info:
+                error_hint = self._format_error_hint(error_info)
+                logger.warning(f"[LLM Response] Error hint: {error_hint}")
+                return self._make_result(
+                    content=f"[错误] {error_hint}",
+                    action_tool="finish",
+                    params={"result": f"[错误] {error_hint}"}
+                )
             return self._make_result(content="", action_tool="finish", params={})
         
         # ===== 方案C: 尝试 ToolParser.parse_response() =====
@@ -140,6 +154,41 @@ class TextStrategy(LLMStrategy):
             "params": params,
             "reasoning": reasoning
         }, ensure_ascii=False)
+    
+    def _format_error_hint(self, error: str) -> str:
+        """
+        格式化错误提示信息，让用户更清楚地了解错误原因
+        
+        Args:
+            error: 原始错误信息
+        
+        Returns:
+            格式化后的错误提示
+        """
+        error_str = str(error).lower()
+        
+        # 限流错误
+        if "429" in error_str or "1305" in error_str or "访问量过大" in error_str or "rate limit" in error_str:
+            return "模型访问量过大（429限流），请稍后再试或更换模型"
+        
+        # 超时错误
+        if "timeout" in error_str or "超时" in error_str:
+            return "请求超时，请检查网络后重试"
+        
+        # 连接错误
+        if "connect" in error_str or "连接" in error_str:
+            return "网络连接失败，请检查网络后重试"
+        
+        # 认证错误
+        if "401" in error_str or "403" in error_str or "认证" in error_str or "auth" in error_str:
+            return "API认证失败，请检查API密钥是否有效"
+        
+        # 余额不足
+        if "余额" in error_str or "quota" in error_str or "credit" in error_str:
+            return "API额度或余额不足，请充值后重试"
+        
+        # 默认错误
+        return f"服务暂时不可用（{error}），请稍后重试"
     
     def _extract_by_known_tools(self, content: str) -> Optional[dict]:
         """
@@ -190,6 +239,9 @@ class ToolsStrategy(LLMStrategy):
     适用于需要精确工具调用的场景
     """
     
+    MAX_RETRIES = 3  # 最大重试次数
+    RETRY_DELAY = 2  # 重试等待时间（秒）
+    
     def __init__(self, tools: Optional[List[Dict[str, Any]]] = None):
         """
         初始化 Function Calling 策略
@@ -219,17 +271,12 @@ class ToolsStrategy(LLMStrategy):
         Returns:
             格式化的响应文本
         """
+        import asyncio
+        
         history_messages = dict_list_to_messages(history_dicts)
         
         # 检查 llm_client 是否有 chat_with_tools 方法
-        if hasattr(llm_client, 'chat_with_tools'):
-            response = await llm_client.chat_with_tools(
-                message=message,
-                history=history_messages,
-                tools=self.tools
-            )
-        else:
-            # 如果没有 chat_with_tools 方法，回退到文本模式
+        if not hasattr(llm_client, 'chat_with_tools'):
             logger.warning("[Function Calling] llm_client has no chat_with_tools method, falling back to text mode")
             text_strategy = TextStrategy()
             return await text_strategy.call(
@@ -240,27 +287,82 @@ class ToolsStrategy(LLMStrategy):
                 **kwargs
             )
         
-        # 解析 tool_calls
-        if hasattr(response, 'content') and response.content:
+        # 重试机制
+        last_error = None
+        for attempt in range(self.MAX_RETRIES):
             try:
-                tool_calls = json.loads(response.content)
+                response = await llm_client.chat_with_tools(
+                    message=message,
+                    history=history_messages,
+                    tools=self.tools
+                )
                 
-                if isinstance(tool_calls, list) and len(tool_calls) > 0:
-                    content = self._format_tool_calls(tool_calls)
-                    logger.info(f"[Function Calling] Received tool_calls: {len(tool_calls)} calls")
-                else:
-                    content = response.content
-                    logger.info(f"[Function Calling] LLM returned text (no tool call): {repr(content)[:200]}")
+                # 检查是否有错误
+                if hasattr(response, 'error') and response.error:
+                    error_msg = response.error
+                    last_error = error_msg
                     
-            except (json.JSONDecodeError, TypeError) as e:
-                content = response.content
-                logger.info(f"[Function Calling] Non-JSON response: {repr(content)[:200]}")
-        else:
-            content = ""
-            logger.warning("[Function Calling] Empty response from LLM")
+                    # 检查是否是限流错误
+                    if "429" in str(error_msg) or "1305" in str(error_msg):
+                        if attempt < self.MAX_RETRIES - 1:
+                            logger.warning(f"[Function Calling] Rate limit detected (attempt {attempt + 1}/{self.MAX_RETRIES}), retrying in {self.RETRY_DELAY}s...")
+                            await asyncio.sleep(self.RETRY_DELAY)
+                            continue
+                        else:
+                            logger.error(f"[Function Calling] Rate limit persists after {self.MAX_RETRIES} attempts, falling back to text mode")
+                            break
+                    else:
+                        logger.error(f"[Function Calling] API Error: {error_msg}")
+                        break
+                
+                # 解析 tool_calls
+                if hasattr(response, 'content') and response.content:
+                    try:
+                        tool_calls = json.loads(response.content)
+                        
+                        if isinstance(tool_calls, list) and len(tool_calls) > 0:
+                            content = self._format_tool_calls(tool_calls)
+                            logger.info(f"[Function Calling] Received tool_calls: {len(tool_calls)} calls")
+                            return content
+                        else:
+                            content = response.content
+                            logger.info(f"[Function Calling] LLM returned text (no tool call): {repr(content)[:200]}")
+                            return content
+                            
+                    except (json.JSONDecodeError, TypeError) as e:
+                        content = response.content
+                        logger.info(f"[Function Calling] Non-JSON response: {repr(content)[:200]}")
+                        return content
+                else:
+                    # 空响应，重试
+                    last_error = "Empty response"
+                    if attempt < self.MAX_RETRIES - 1:
+                        logger.warning(f"[Function Calling] Empty response (attempt {attempt + 1}/{self.MAX_RETRIES}), retrying in {self.RETRY_DELAY}s...")
+                        await asyncio.sleep(self.RETRY_DELAY)
+                        continue
+                    else:
+                        logger.error(f"[Function Calling] Empty response persists after {self.MAX_RETRIES} attempts, falling back to text mode")
+                        break
+                        
+            except Exception as e:
+                last_error = str(e)
+                logger.error(f"[Function Calling] Exception (attempt {attempt + 1}/{self.MAX_RETRIES}): {e}")
+                if attempt < self.MAX_RETRIES - 1:
+                    await asyncio.sleep(self.RETRY_DELAY)
+                    continue
+                else:
+                    break
         
-        # 注意：不在这里添加assistant消息，由base_react.py统一添加（步骤11修复）
-        return content
+        # 降级到 TextStrategy
+        logger.warning(f"[Function Calling] Falling back to TextStrategy (last error: {last_error})")
+        text_strategy = TextStrategy()
+        return await text_strategy.call(
+            llm_client=llm_client,
+            message=message,
+            history_dicts=history_dicts,
+            conversation_history=conversation_history,
+            **kwargs
+        )
     
     def _format_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> str:
         """
