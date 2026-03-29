@@ -244,13 +244,19 @@ async def generate_sse_stream(
             user_message = msg.get("content", "")
             break
     
+    # 从 sessions.py 获取 AI 消息 ID（user_message_id + 1）
+    from app.api.v1.sessions import _assistant_message_ids, _user_message_ids
+    ai_message_id = _assistant_message_ids.get(session_id)
+    if not ai_message_id and session_id in _user_message_ids:
+        ai_message_id = _user_message_ids[session_id] + 1
+    
     # 启动 prompt logger（只记录非 chat 意图）
     from app.utils.prompt_logger import get_prompt_logger
     prompt_logger = get_prompt_logger()
-    if intent_type != "chat":
+    if intent_type != "chat" and ai_message_id:
         prompt_logger.start_request(
             user_message=user_message,
-            user_message_id=f"msg_{task_id}",
+            user_message_id=str(ai_message_id),
             session_id=session_id or task_id
         )
         # 记录系统 prompt
