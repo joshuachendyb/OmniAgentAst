@@ -130,4 +130,18 @@ class ToolParser:
         if "thought" in result and "action" in result:
             return result
         
+        # 【修复 2026-03-29】处理 LLM 返回纯文本（如 "I will now summarize..."）的情况
+        # 当无法提取出结构化 action 时，检查是否是总结性文本，如果是则返回 finish
+        summarize_patterns = [
+            r'(?:summarize|summary|总结|I have found|I will)',
+            r'(?:已完成|任务完成|完成了)',
+            r'(?:根据.*?结果|基于.*?内容)',
+        ]
+        for pattern in summarize_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                result["thought"] = text.strip()
+                result["action"] = "finish"
+                result["action_input"] = {}
+                return result
+        
         return None

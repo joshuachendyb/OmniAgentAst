@@ -1,3 +1,56 @@
+v0.8.34
+
+更新时间：2026-03-29 21:22:21
+
+更新内容：
+
+## 1. 修复ToolParser无法处理LLM返回纯文本 - 小沈-2026-03-29
+
+### 1.1 问题背景
+
+用户验收发现：当 LLM 在 Function Calling 模式下返回纯文本（如 "I will now summarize..."）时，解析失败导致"无法解析LLM响应"错误。
+
+### 1.2 问题分析
+
+| 问题 | 原因 |
+|------|------|
+| Function Calling 返回纯文本 | LLM 没有调用工具，而是直接返回总结内容 |
+| 解析失败 | ToolParser._extract_from_text() 无法从纯文本中提取 action |
+| 降级失败 | 即使降级到 TextStrategy 仍然无法处理纯文本 |
+
+### 1.3 修复内容
+
+**修改文件**: `backend/app/services/agent/tool_parser.py`
+
+在 `_extract_from_text()` 方法末尾添加对总结性文本的检测：
+
+```python
+# 【修复 2026-03-29】处理 LLM 返回纯文本（如 "I will now summarize..."）的情况
+# 当无法提取出结构化 action 时，检查是否是总结性文本，如果是则返回 finish
+summarize_patterns = [
+    r'(?:summarize|summary|总结|I have found|I will)',
+    r'(?:已完成|任务完成|完成了)',
+    r'(?:根据.*?结果|基于.*?内容)',
+]
+for pattern in summarize_patterns:
+    if re.search(pattern, text, re.IGNORECASE):
+        result["thought"] = text.strip()
+        result["action"] = "finish"
+        result["action_input"] = {}
+        return result
+```
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| - | fix: ToolParser无法处理LLM返回纯文本-小沈-2026-03-29 |
+
+参与开发：小沈
+完成时间：2026-03-29 21:22:21
+
+---
+
 v0.8.33
 
 更新时间：2026-03-29 20:58:45
