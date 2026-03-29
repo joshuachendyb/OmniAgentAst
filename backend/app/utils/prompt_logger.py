@@ -75,9 +75,8 @@ class PromptLogger:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         file_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
-        # 生成唯一文件名：prompt_时间戳_随机ID.json
-        unique_id = str(uuid.uuid4())[:8]
-        filename = f"prompt_{file_timestamp}_{unique_id}.json"
+        # 生成文件名：prompt_{message_id}+{YYYYMMDD_HHMMSS}.json
+        filename = f"prompt_{user_message_id}+{file_timestamp}.json"
         log_file_path = self.log_dir / filename
         
         # 初始化日志数据
