@@ -89,7 +89,7 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
     // 检查是否有同名的第一级绝对路径条目
     return !absoluteEntries.some(abs => {
       const normalizedPath = abs.path.replace(/\\/g, "/");
-      if (!normalizedPath.startsWith(normalizedRoot + "/")) return false;
+      // absoluteEntries 中的条目都已经以 normalizedRoot + "/" 开头，无需再次检查
       const firstPart = normalizedPath.substring(normalizedRoot.length + 1).split("/")[0];
       return firstPart === relName;
     });
