@@ -61,19 +61,73 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
 
   const pathToNode = new Map<string, TreeNode>();
   const rootNodes: TreeNode[] = [];
+  const processedPaths = new Set<string>();  // 【小强修复 2026-03-29】追踪已处理的路径，避免重复
 
   // 标准化 rootPath，移除末尾斜杠
   const normalizedRoot = rootPath.replace(/\\/g, "/").replace(/\/$/, "");
 
+  // 【小强修复 2026-03-29】过滤逻辑：
+  // 1. 过滤掉相对路径条目
+  // 2. 标准化路径后去重（按 path 去重）
+  // 3. 同一路径有 file 和 directory 时，优先保留 directory
+  const pathToType = new Map<string, "directory" | "file">();
+  const pathToEntry = new Map<string, Entry>();
+  
+  for (const entry of entries) {
+    const normalizedEntryPath = entry.path.replace(/\\/g, "/");
+    
+    // 跳过相对路径
+    if (!normalizedEntryPath.startsWith(normalizedRoot)) {
+      continue;
+    }
+
+    // 记录路径类型，directory 优先于 file
+    if (pathToType.has(normalizedEntryPath)) {
+      const existingType = pathToType.get(normalizedEntryPath)!;
+      if (existingType === "file" && entry.type === "directory") {
+        pathToType.set(normalizedEntryPath, "directory");
+        pathToEntry.set(normalizedEntryPath, entry);
+      }
+    } else {
+      pathToType.set(normalizedEntryPath, entry.type);
+      pathToEntry.set(normalizedEntryPath, entry);
+    }
+  }
+
+  // 生成过滤后的 entries
+  const filteredEntries = Array.from(pathToEntry.values());
+
+  // 【小强修复 2026-03-29】创建根节点，确保 rootPath 存在于 pathToNode 中
+  const rootNode: TreeNode = {
+    key: normalizedRoot,
+    title: normalizedRoot.split("/").pop() || normalizedRoot,
+    type: "directory",
+    path: normalizedRoot,
+    size: null,
+    children: [],
+  };
+  pathToNode.set(normalizedRoot, rootNode);
+  rootNodes.push(rootNode);
+
   // 按 type 排序：目录在前，文件在后
-  const sortedEntries = [...entries].sort((a, b) => {
+  const sortedEntries = [...filteredEntries].sort((a, b) => {
     if (a.type === "directory" && b.type === "file") return -1;
     if (a.type === "file" && b.type === "directory") return 1;
     return a.name.localeCompare(b.name);
   });
 
-  // 第一遍：创建所有节点
+  // 第一遍：创建所有节点，跳过已处理的路径
   for (const entry of sortedEntries) {
+    const normalizedEntryPath = entry.path.replace(/\\/g, "/");
+    
+    // 【小强修复】跳过已处理的路径，避免重复
+    // 检查标准化后的路径和原路径是否已处理
+    if (processedPaths.has(normalizedEntryPath) || processedPaths.has(entry.path)) {
+      continue;
+    }
+    processedPaths.add(normalizedEntryPath);
+    processedPaths.add(entry.path);
+
     const node: TreeNode = {
       key: entry.path,
       title: entry.name,
@@ -87,6 +141,11 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
 
   // 第二遍：构建父子关系
   for (const entry of sortedEntries) {
+    // 【小强修复】跳过已处理的路径（没有创建节点的entry）
+    if (!pathToNode.has(entry.path)) {
+      continue;
+    }
+
     const node = pathToNode.get(entry.path);
     if (!node) continue;
 
@@ -114,17 +173,23 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
 
     if (parts.length === 1) {
       // 直接子项，父级是 rootPath
+      // 【小沈修复】检查是否已添加，避免重复
       const parentNode = pathToNode.get(normalizedRoot);
       if (parentNode?.children) {
-        parentNode.children.push(node);
+        if (!parentNode.children.find((c: TreeNode) => c.key === node.key)) {
+          parentNode.children.push(node);
+        }
       } else {
-        rootNodes.push(node);
+        if (!rootNodes.find((c: TreeNode) => c.key === node.key)) {
+          rootNodes.push(node);
+        }
       }
       continue;
     }
 
     // 多层嵌套：构建虚拟目录链
     let currentParentPath = normalizedRoot;
+    const addedNodeKeys = new Set<string>();  // 【小沈修复 2026-03-29】追踪已添加的节点 key，避免重复
 
     for (let i = 0; i < parts.length - 1; i++) {
       const part = parts[i];
@@ -145,42 +210,69 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
         // 链接到父级
         const parentNode = pathToNode.get(currentParentPath);
         if (parentNode?.children) {
-          parentNode.children.push(virtualNode);
+          // 检查虚拟目录是否已添加到父节点
+          if (!parentNode.children.find((c: TreeNode) => c.key === virtualNode.key)) {
+            parentNode.children.push(virtualNode);
+          }
         } else if (currentParentPath === normalizedRoot) {
-          // 第一层虚拟目录
-          rootNodes.push(virtualNode);
+          // 第一层虚拟目录添加到 rootNodes
+          if (!rootNodes.find((c: TreeNode) => c.key === virtualNode.key)) {
+            rootNodes.push(virtualNode);
+          }
         }
       }
 
       currentParentPath = fullPath;
     }
 
-    // 最后一项添加到其父级
+    // 最后一项添加到其父级（避免重复添加）
+    // 【小沈修复】检查当前节点是否已经被添加过（作为虚拟目录的子节点）
     const finalParentNode = pathToNode.get(currentParentPath);
     if (finalParentNode?.children) {
-      finalParentNode.children.push(node);
+      // 检查是否已在父节点的 children 中
+      if (!finalParentNode.children.find((c: TreeNode) => c.key === node.key)) {
+        finalParentNode.children.push(node);
+        addedNodeKeys.add(node.key);
+      }
     } else {
-      rootNodes.push(node);
+      // 添加到 rootNodes（检查是否已存在）
+      if (!rootNodes.find((c: TreeNode) => c.key === node.key)) {
+        rootNodes.push(node);
+        addedNodeKeys.add(node.key);
+      }
     }
   }
 
-  // 清理空目录的 children 并排序
-  const cleanEmptyChildren = (nodes: TreeNode[]): TreeNode[] => {
-    return nodes
-      .map((node) => {
-        if (node.type === "directory" && node.children) {
-          node.children = cleanEmptyChildren(node.children);
-        }
-        return node;
-      })
-      .sort((a, b) => {
-        if (a.type === "directory" && b.type === "file") return -1;
-        if (a.type === "file" && b.type === "directory") return 1;
-        return a.title.localeCompare(b.title);
-      });
+  // 清理空目录的 children、排序，并彻底去重
+  // 【小沈修复 2026-03-29】使用 key 去重，但在最后对整个树进行深度遍历去重
+  
+  const finalDeduplicate = (nodes: TreeNode[]): TreeNode[] => {
+    const seenKeys = new Set<string>();
+    const result: TreeNode[] = [];
+    
+    for (const node of nodes) {
+      // 如果 key 已出现过，跳过
+      if (seenKeys.has(node.key)) {
+        continue;
+      }
+      seenKeys.add(node.key);
+      
+      const processedNode = { ...node };
+      if (processedNode.type === "directory" && processedNode.children) {
+        processedNode.children = finalDeduplicate(processedNode.children);
+      }
+      result.push(processedNode);
+    }
+    
+    // 排序
+    return result.sort((a, b) => {
+      if (a.type === "directory" && b.type === "file") return -1;
+      if (a.type === "file" && b.type === "directory") return 1;
+      return a.title.localeCompare(b.title);
+    });
   };
 
-  return cleanEmptyChildren(rootNodes);
+  return finalDeduplicate(rootNodes);
 }
 
 /**
