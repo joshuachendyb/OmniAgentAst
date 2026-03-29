@@ -1251,28 +1251,44 @@ const isUser = message.role === "user";
                 }
               }
               
-              // ==================== 步骤 2：根据 hasAction 判断是否执行 content 回退 ====================
-              // 只有当 hasAction !== 1（即没有 action_tool）时，才执行 content 回退逻辑
-              if (hasAction !== 1) {
-                // ==================== 步骤 3：执行原来的 content 回退判断逻辑（原 974-986 行） ====================
-                // 过滤出所有 type 为 chunk 的步骤
-                const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
-                // 检查是否存在 is_reasoning=false 的 chunk（表示有非思考过程的内容）
-                const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
-                
-                // 情况 A：SSE 实时模式（isStreaming=true）
-                // 触发条件：只有当没有 chunk 时才显示 content（作为备用）
-                if (message.isStreaming) {
-                  return chunks.length === 0;
-                }
-                
-                // 情况 B：历史消息模式（isStreaming=false）
-                // 触发条件：当没有 is_reasoning=false 的 chunk 时，显示 content（补充不完整的 chunk 数据）
-                return !hasFalseReasoning;
-              }
-              
-              // 如果 hasAction === 1（有 action_tool），返回 false，不执行 content 回退
-              return false;
+               // ==================== 步骤 2：根据 hasAction 判断是否执行 content 回退 ====================
+               // 只有当 hasAction !== 1（即没有 action_tool）时，才执行 content 回退逻辑
+               if (hasAction !== 1) {
+                 // ==================== 步骤 3：执行原来的 content 回退判断逻辑（原 974-986 行） ====================
+                 // 过滤出所有 type 为 chunk 的步骤
+                 const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
+                 // 检查是否存在 is_reasoning=false 的 chunk（表示有非思考过程的内容）
+                 const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
+                 
+                 // 【小强修复 2026-03-29】错误情况下不重复显示content，只在final步骤中显示
+                 // 检查是否有错误步骤（error、thought中的错误、final中的错误）
+                 const hasErrorStep = message.executionSteps?.some(step => {
+                   const content = step.content || '';
+                   return step.type === 'error' || 
+                          content.includes('[错误]') || 
+                          content.includes('429') || 
+                          content.includes('限流');
+                 });
+                 
+                 // 如果有错误步骤，不在底部content区域重复显示
+                 if (hasErrorStep) {
+                   return false;  // 不执行content回退，错误信息已在final步骤中显示
+                 }
+                 
+                 // 没有错误时，按原逻辑显示
+                 // 情况 A：SSE 实时模式（isStreaming=true）
+                 // 触发条件：只有当没有 chunk 时才显示 content（作为备用）
+                 if (message.isStreaming) {
+                   return chunks.length === 0;
+                 }
+                 
+                 // 情况 B：历史消息模式（isStreaming=false）
+                 // 触发条件：当没有 is_reasoning=false 的 chunk 时，显示 content（补充不完整的 chunk 数据）
+                 return !hasFalseReasoning;
+               }
+               
+               // 如果 hasAction === 1（有 action_tool），返回 false，不执行 content 回退
+               return false;
             })() && (
               // ==================== 步骤 4：渲染 content 的 div（原 987-1017 行） ====================
               // 只有当上面的 IIFE 返回 true 时，才会渲染这个 div
