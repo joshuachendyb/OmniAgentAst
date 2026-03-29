@@ -170,6 +170,7 @@ class FileReactAgent(BaseAgent):
         
         # LLMAdapter 自适应探测
         self.adapter = None  # 【小沈修复 2026-03-23】确保 adapter 属性存在
+        logger.info(f"[FileReactAgent] init - api_base={api_base}, api_key={'***' if api_key else None}, model={model}")
         if api_base and api_key and model:
             self.adapter = LLMAdapter(
                 api_base=api_base,
@@ -177,12 +178,13 @@ class FileReactAgent(BaseAgent):
                 model=model,
                 auto_detect=True
             )
-            logger.info(f"IntentAgent initialized (session: {session_id}, adapter=LLMAdapter, model={model})")
+            logger.info(f"FileReactAgent initialized (session: {session_id}, adapter=LLMAdapter, model={model})")
         else:
+            logger.warning(f"FileReactAgent initialized (session: {session_id}, adapter=None - 缺少api参数)")
             if use_function_calling and tools:
-                logger.info(f"IntentAgent initialized (session: {session_id}, function_calling=True, tools_count={len(self.tools)})")
+                logger.info(f"FileReactAgent initialized (session: {session_id}, function_calling=True, tools_count={len(self.tools)})")
             else:
-                logger.info(f"IntentAgent initialized (session: {session_id})")
+                logger.info(f"FileReactAgent initialized (session: {session_id})")
     
     # ========== 抽象方法实现 ==========
     
