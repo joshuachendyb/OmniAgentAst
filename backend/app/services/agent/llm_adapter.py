@@ -11,12 +11,15 @@ LLM 适配器统一入口实现
 """
 
 import copy
+import logging
 from typing import Optional
 
 from app.services.agent.capability import LLMFeature, LLMCapability
 from app.services.agent.capability_detector import CapabilityDetector
 from app.services.agent.strategy_selector import StrategySelector, SelectedStrategy
 from app.services.agent.os_adapter import OSAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class LLMAdapter:
@@ -61,14 +64,18 @@ class LLMAdapter:
             SelectedStrategy: 选中的策略
         """
         if self._strategy is None:
+            logger.info(f"[LLMAdapter] 开始探测模型能力: model={self.model}")
+            
             # 探测能力
             result = await self._detector.detect()
             
             if result.success:
                 self._feature = result.feature
                 self._strategy = StrategySelector.select(self._feature)
+                logger.info(f"[LLMAdapter] 探测成功: method={self._strategy.method}, description={self._strategy.description}")
             else:
                 # 探测失败，默认降级
+                logger.warning(f"[LLMAdapter] 探测失败: {result.error}")
                 self._strategy = SelectedStrategy(
                     method="prompt",
                     capability=LLMCapability.NONE,
