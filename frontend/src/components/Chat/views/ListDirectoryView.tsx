@@ -27,6 +27,7 @@ interface TreeNode {
   children?: TreeNode[];
   path: string;
   size: number | null;
+  isLeaf?: boolean; // 添加isLeaf属性，用于Ant Design Tree组件
 }
 
 interface Entry {
@@ -160,6 +161,7 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
       path: entry.path,
       size: entry.size,
       children: entry.type === "directory" ? [] : undefined,
+      isLeaf: entry.type === "file", // 添加isLeaf属性
     };
     pathToNode.set(entry.path, node);
   }
@@ -205,6 +207,7 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
         path: normalizedRoot,
         size: null,
         children: [],
+        isLeaf: false, // 目录不是叶子节点
       };
       pathToNode.set(normalizedRoot, parent);
       rootNodes.push(parent);
@@ -225,6 +228,7 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
           path: childPath,
           size: null,
           children: [],
+          isLeaf: false, // 目录不是叶子节点
         };
         pathToNode.set(childPath, virtualNode);
         
@@ -573,13 +577,18 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
                   background: "transparent",
                   fontSize: 13,
                 }}
-                icon={({ data }: any) =>
-                  data.type === "directory" ? (
-                    <FolderOutlined style={{ color: "#faad14" }} />
-                  ) : (
-                    <FileOutlined style={{ color: "#1890ff" }} />
-                  )
-                }
+                icon={({ data }: any) => {
+                  // 优先使用isLeaf属性判断
+                  if (data.isLeaf === true) {
+                    return <FileOutlined style={{ color: "#1890ff" }} />;
+                  }
+                  // 如果isLeaf为false或未定义，则判断是否有children
+                  if (data.children && data.children.length > 0) {
+                    return <FolderOutlined style={{ color: "#faad14" }} />;
+                  }
+                  // 如果没有children，可能是文件
+                  return <FileOutlined style={{ color: "#1890ff" }} />;
+                }}
               />
             </div>
           ) : (
