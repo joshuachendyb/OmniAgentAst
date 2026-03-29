@@ -1,3 +1,159 @@
+v0.8.33
+
+更新时间：2026-03-29 20:58:45
+
+更新内容：
+
+## 1. ToolsStrategy重试逻辑+TextStrategy错误提示增强 - 小沈-2026-03-29
+
+### 1.1 问题背景
+
+用户反馈：模型限流返回429错误时，前端显示"模型未能生成有效回复"，没有说明具体原因，不够友好。
+
+### 1.2 修改内容
+
+#### 1.2.1 ToolsStrategy 添加重试逻辑
+
+**修改文件**: `backend/app/services/agent/llm_strategies.py`
+
+- 添加 MAX_RETRIES = 3（最大重试次数）
+- 添加 RETRY_DELAY = 2（重试等待时间秒）
+- 检测到429/1305限流错误时自动重试
+- 检测到空响应时自动重试
+- 重试3次仍失败后降级到 TextStrategy
+
+#### 1.2.2 TextStrategy 错误提示增强
+
+**修改文件**: `backend/app/services/agent/llm_strategies.py`
+
+- 调用 LLM 后检查 response.error 字段
+- 添加 `_format_error_hint()` 方法，根据错误类型生成友好提示：
+  - 429限流：显示"模型访问量过大（429限流），请稍后再试或更换模型"
+  - 超时：显示"请求超时，请检查网络后重试"
+  - 连接错误：显示"网络连接失败，请检查网络后重试"
+  - 认证错误：显示"API认证失败，请检查API密钥是否有效"
+  - 余额不足：显示"API额度或余额不足，请充值后重试"
+- 空内容时在 content 和 result 中包含具体错误提示
+
+### 1.3 处理流程
+
+```
+ToolsStrategy 调用 LLM
+    ↓
+收到 429 限流错误
+    ↓
+重试 1/3，等待 2 秒
+    ↓
+收到 429 限流错误
+    ↓
+重试 2/3，等待 2 秒
+    ↓
+收到 429 限流错误
+    ↓
+重试 3/3，等待 2 秒
+    ↓
+仍然失败 → 降级到 TextStrategy
+    ↓
+TextStrategy 调用 LLM
+    ↓
+返回空内容 + error="429"
+    ↓
+生成友好提示："[错误] 模型访问量过大（429限流），请稍后再试或更换模型"
+```
+
+### 1.4 修改文件
+
+- backend/app/services/agent/llm_strategies.py
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| - | fix: ToolsStrategy添加重试逻辑+TextStrategy错误提示增强-小沈-2026-03-29 |
+
+参与开发：小沈
+完成时间：2026-03-29 20:58:45
+
+---
+
+v0.8.32
+
+更新时间：2026-03-29 19:56:06
+
+更新内容：
+
+## 1. TextStrategy分层处理架构C+A+B+增强中文提取 - 小沈-2026-03-29
+
+### 1.1 问题背景
+
+早期版本P8的修复错误：TextStrategy无论LLM返回什么，都包装成 `action_tool: "finish"`，导致LLM返回的工具调用意图被丢弃。
+
+### 1.2 分层处理架构（C+A+B）
+
+| 方案 | 作用 | 必要性 |
+|------|------|--------|
+| 方案C | 预处理层：ToolParser.parse_response() | ⭐⭐⭐ 必须 |
+| 方案A | 正则提取层：增强_extract_from_text中文支持 | ⭐⭐ 推荐 |
+| 方案B | 保底层：工具名匹配 | ⭐ 可选 |
+
+### 1.3 处理流程
+
+```
+LLM 返回 content
+    ↓
+情况0: 空内容 → 返回 finish, content=""
+    ↓
+方案C: ToolParser.parse_response()
+    ├─ JSON 解析成功 → 返回 action
+    └─ 失败 → _extract_from_text()
+        ├─ 提取成功 → 返回 action
+        └─ 失败 → ValueError
+    ↓
+方案A: _extract_from_text() 增强版
+    ├─ 英文纯文本含 action → ✅ 提取
+    └─ 中文纯文本含 action → ✅ 提取
+    ↓
+方案B: _extract_by_known_tools()
+    ├─ 找到已知工具名 → 返回匹配工具
+    └─ 未找到 → 继续
+    ↓
+无法提取 → 返回 finish，保留完整 content
+```
+
+### 1.4 支持的场景
+
+| 场景 | 处理方式 |
+|------|---------|
+| JSON 标准格式 | 方案C: ToolParser 解析 |
+| Markdown JSON | 方案C: ToolParser 解析 |
+| 英文纯文本含 action | 方案C: _extract_from_text |
+| 中文纯文本含 action | 方案A: 增强正则提取 |
+| 工具名直接出现 | 方案B: 已知工具名匹配 |
+| 纯文本不含 action | 返回 finish，保留 content |
+| JSON 数组格式 | 方案C: ToolParser 解析 |
+
+### 1.5 修改文件
+
+- backend/app/services/agent/llm_strategies.py
+- backend/app/services/agent/tool_parser.py
+- doc-prompt/React的Prompt需求记录及问题分析出来设计-小沈-2026-03-29.md
+
+### 1.6 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 807a3a79 | fix: LLMClientWrapper添加__call__方法修复callable错误 |
+| 72529d7f | fix: FileReactAgent缺少api参数导致adapter为None |
+| 6facd4a6 | fix: 修复Prompt日志文件名使用AI消息ID+添加adapter调试日志 |
+| a101a516 | fix: TextStrategy返回JSON格式支持多种情况 |
+| ceef1e8c | fix: TextStrategy分层处理架构C+A+B+增强中文提取 |
+| 79a8423f | docs: 更新React文档v1.18新增TextStrategy分层处理架构 |
+
+参与开发：小沈
+完成时间：2026-03-29 19:56:06
+
+---
+
 v0.8.31
 
 更新时间：2026-03-29 17:24:01
