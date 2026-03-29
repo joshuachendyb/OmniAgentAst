@@ -919,7 +919,7 @@ elif strategy.method == "response_format":
 
 ## 七、React的Type字段完整分析
 
-### 8.1 Type字段定义（前端）
+### 7.1 Type字段定义（前端）
 
 根据 `frontend/src/utils/sse.ts` 第66行：
 
@@ -927,7 +927,7 @@ elif strategy.method == "response_format":
 type: "thought" | "action_tool" | "observation" | "chunk" | "final" | "error" | "incident" | "interrupted" | "start" | "paused" | "resumed" | "retrying";
 ```
 
-### 8.2 Type字段分类
+### 7.2 Type字段分类
 
 | 类别 | Type | 用途 |
 |------|------|------|
@@ -940,7 +940,7 @@ type: "thought" | "action_tool" | "observation" | "chunk" | "final" | "error" | 
 | **异常步骤** | `error` | 错误 |
 | | `incident` | 中断（包含interrupted/paused/resumed/retrying） |
 
-### 8.3 Type字段生成时机分析
+### 7.3 Type字段生成时机分析
 
 #### ✅ LLM调用**前**准备的数据（框架生成）
 
@@ -959,7 +959,7 @@ type: "thought" | "action_tool" | "observation" | "chunk" | "final" | "error" | 
 | **final** | `base_react.py:182/251` | LLM返回finish时 | LLM返回的最终内容 |
 | **error** | `base_react.py:260/269` | 发生错误时 | 错误信息 |
 
-### 8.4 ReAct循环的时序图
+### 7.4 ReAct循环的时序图
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -1001,7 +1001,7 @@ type: "thought" | "action_tool" | "observation" | "chunk" | "final" | "error" | 
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 8.5 关键结论
+### 7.5 关键结论
 
 #### 结论1：thought 是 LLM调用后填充
 
@@ -1054,7 +1054,7 @@ yield {
 
 **结论**：observation 的 content 来自第2次LLM响应，不是工具执行结果本身。
 
-### 8.6 参考依据
+### 7.6 参考依据
 
 | 来源 | 内容 | 链接 |
 |------|------|------|
@@ -1063,7 +1063,7 @@ yield {
 | **后端代码** | base_react.py:170-241 - Type字段生成位置 | backend/app/services/agent/base_react.py |
 | **前端代码** | sse.ts:66 - Type字段定义 | frontend/src/utils/sse.ts |
 
-### 8.7 总结表
+### 7.7 总结表
 
 | Type | 生成时机 | 数据来源 | LLM调用前/后 |
 |------|---------|---------|-------------|
