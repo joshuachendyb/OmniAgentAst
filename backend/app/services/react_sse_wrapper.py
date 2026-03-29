@@ -247,12 +247,14 @@ async def generate_sse_stream(
             session_id=session_id or task_id
         )
         # 记录系统 prompt
-        from app.services.prompts.file import file_prompts
-        sys_prompt = file_prompts.get_system_prompt()
+        from app.services.prompts.file import FileOperationPrompts
+        file_prompts_instance = FileOperationPrompts()
+        sys_prompt = file_prompts_instance.get_system_prompt()
         prompt_logger.log_system_prompt(
             step_name="系统Prompt生成",
             prompt_content=sys_prompt,
-            source="file_prompts.py:get_system_prompt()"
+            source="file_prompts.py:get_system_prompt()",
+            details={"intent_type": intent_type, "confidence": confidence}
         )
         # 记录任务 prompt
         prompt_logger.log_task_prompt(

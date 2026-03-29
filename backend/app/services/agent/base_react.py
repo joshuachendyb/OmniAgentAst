@@ -20,6 +20,7 @@ from app.services.agent.types import AgentStatus
 from app.services.agent.tool_parser import ToolParser
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
+from app.utils.prompt_logger import get_prompt_logger
 
 
 class BaseAgent(ABC):
@@ -225,6 +226,15 @@ class BaseAgent(ABC):
                 
                 # 更新消息历史：先添加 assistant (thought)，后添加 observation (user)
                 self._add_observation_to_history(observation_text)
+                
+                # 记录观察结果到prompt日志
+                prompt_logger = get_prompt_logger()
+                prompt_logger.log_observation(
+                    step_name="工具执行结果",
+                    observation_content=observation_text,
+                    tool_name=action_tool,
+                    tool_params=params
+                )
                 
                 # 再次调用 LLM 获取下一个决策
                 self.status = AgentStatus.OBSERVING

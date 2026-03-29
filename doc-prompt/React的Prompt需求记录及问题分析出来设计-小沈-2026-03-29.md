@@ -782,21 +782,132 @@ file_react.py: _on_after_loop()
 
 ### 6.1 修复步骤（完整版）
 
-| 步骤 | 修复内容 | 对应问题 | 优先级 |
-|------|---------|---------|--------|
-| **步骤1** | 删除 file_react.py:_on_before_loop() 中的 start_request() 调用 | P3 | P1 |
-| **步骤2** | 在 file_react.py 的 log_llm_call() 后立即调用 save() | P4 | P1 |
-| **步骤3** | 在 base_react.py:run_stream() 添加 finally 块调用 _on_after_loop() | P5 | P2 |
-| **步骤4** | 调整 conversation_history 累积顺序：先添加 assistant，后添加 Observation | P1 | P0 |
-| **步骤5** | 统一 SSE 事件结构：去掉 obs_ 前缀 | P2 | P1 |
-| **步骤6** | 修复 llm_client 定义或修改策略调用方式 | P6, P7 | P0 |
-| **步骤7** | TextStrategy 返回 JSON 格式 | P8 | P0 |
-| **步骤8** | 修复 parsed_obs.content 保存问题：第244行应保存第2次LLM响应 | P14 | P0 |
-| **步骤9** | 修复 parse 失败后的处理：保存原始 response 到 conversation_history | P11 | P1 |
-| **步骤10** | 恢复 _trim_history() 函数，设置 MAX_HISTORY_TURNS=5 | P12 | P0 |
-| **步骤11** | 检查 strategy 内部是否重复添加 assistant，确保只添加一次 | P13 | P1 |
-| **步骤12** | parse 失败时也发送 thought 事件（使用原始 response） | P16 | P1 |
-| **步骤13**（可选） | 统一 SSE 事件 type 命名：action_tool → action | P10 | P2 |
+| 步骤 | 修复内容 | 对应问题 | 优先级 | 完成状态 |
+|------|---------|---------|--------|---------|
+| **步骤1** | 删除 file_react.py:_on_before_loop() 中的 start_request() 调用 | P3 | P1 | ✅ 已完成 |
+| **步骤2** | 在 file_react.py 的 log_llm_call() 后立即调用 save() | P4 | P1 | ✅ 已完成 |
+| **步骤3** | 在 base_react.py:run_stream() 添加 finally 块调用 _on_after_loop() | P5 | P2 | ✅ 已完成 |
+| **步骤4** | 调整 conversation_history 累积顺序：先添加 assistant，后添加 Observation | P1 | P0 | ✅ 已完成 |
+| **步骤5** | 统一 SSE 事件结构：去掉 obs_ 前缀 | P2 | P1 | ✅ 已完成 |
+| **步骤6** | 修复 llm_client 定义或修改策略调用方式 | P6, P7 | P0 | ✅ 已完成 |
+| **步骤7** | TextStrategy 返回 JSON 格式 | P8 | P0 | ✅ 已完成 |
+| **步骤8** | 修复 parsed_obs.content 保存问题：第244行应保存第2次LLM响应 | P14 | P0 | ✅ 已完成 |
+| **步骤9** | 修复 parse 失败后的处理：保存原始 response 到 conversation_history | P11 | P1 | ✅ 已完成 |
+| **步骤10** | 恢复 _trim_history() 函数，设置 MAX_HISTORY_TURNS=5 | P12 | P0 | ✅ 已完成 |
+| **步骤11** | 检查 strategy 内部是否重复添加 assistant，确保只添加一次 | P13 | P1 | ✅ 已完成 |
+| **步骤12** | parse 失败时也发送 thought 事件（使用原始 response） | P16 | P1 | ✅ 已完成 |
+| **步骤13**（可选） | 统一 SSE 事件 type 命名：action_tool → action | P10 | P2 | ✅ 已完成 |
+
+#### 6.1.1 深度检查结果（小健检查）
+
+**检查时间**: 2026-03-29 16:42:40  
+**检查人**: 小健  
+**检查范围**: 步骤1-13的全部实现正确性和深度风险分析
+
+| 步骤 | 检查项目 | 检查结果 | 风险分析 |
+|------|---------|---------|---------|
+| 步骤1 | 删除start_request()调用 | ✅ 正确 | 无风险，已完全移除 |
+| 步骤2 | log_llm_call()后立即save() | ✅ 正确 | 确保JSON文件及时生成，无性能问题 |
+| 步骤3 | finally块调用_on_after_loop() | ✅ 正确 | 确保session正确关闭，无资源泄漏 |
+| 步骤4 | conversation_history顺序调整 | ✅ 正确 | 符合LLM期望的对话格式，提高上下文连贯性 |
+| 步骤5 | 去掉obs_前缀 | ✅ 正确 | SSE事件结构统一，前端解析正常 |
+| 步骤6 | LLMClientWrapper实现 | ✅ 正确 | 统一接口，扩展性好，无兼容性问题 |
+| 步骤7 | TextStrategy返回JSON格式 | ✅ 正确 | 符合parser期望，避免解析错误 |
+| 步骤8 | parsed_obs.content保存第2次LLM响应 | ✅ 正确 | 确保LLM看到完整对话历史，提高上下文理解 |
+| 步骤9 | parse失败保存原始response | ✅ 正确 | 防止LLM内容丢失，保持对话连贯性 |
+| 步骤10 | 恢复_trim_history()函数 | ✅ 正确 | 防止对话历史无限增长，避免token爆炸 |
+| 步骤11 | strategy内部不重复添加assistant | ✅ 正确 | 消除重复添加，确保conversation_history正确 |
+| 步骤12 | parse失败发送thought事件 | ✅ 正确 | 保持SSE事件完整性，前端可显示错误 |
+| 步骤13 | SSE事件type统一为action | ✅ 正确 | 前端解析统一，代码一致性提升 |
+
+**结论**: 步骤1-13全部实现正确，无重大风险，代码质量符合预期。所有修复均按设计文档要求完成。
+
+### 6.1.2 Prompt记录流程示意图
+
+**绘制时间**: 2026-03-29 16:53:49  
+**绘制人**: 小沈  
+**说明**: 根据优化后的代码逻辑，绘制Prompt记录的完整流程示意图
+
+#### 流程示意图（ASCII简化版）
+
+```
+用户消息
+    ↓
+[react_sse_wrapper.py] ──→ intent_type != 'chat'? ──→ 是 ──→ start_request() 创建日志文件
+    │                                              │
+    │                                              ↓
+    │                                        log_system_prompt(系统prompt + intent_type + confidence)
+    │                                              ↓
+    │                                        log_task_prompt(任务prompt + context)
+    │
+    └──→ 否 ──→ 跳过日志记录
+    ↓
+[分发到 FileReactAgent]
+    ↓
+[FileReactAgent.run_stream]
+    ↓
+[BaseAgent.run_stream] ──→ _on_before_loop() (空操作)
+    ↓
+┌─────────────────────────────────────────┐
+│             ReAct 循环                   │
+├─────────────────────────────────────────┤
+│ Thought 阶段:                           │
+│   _get_llm_response()                   │
+│   │                                     │
+│   ├──→ log_llm_call() 记录LLM调用        │
+│   ├──→ save() 立即保存日志               │
+│   ├──→ 调用LLM                          │
+│   └──→ log_llm_response() 记录LLM返回    │
+│                                         │
+│ Action 阶段:                            │
+│   执行工具                               │
+│                                         │
+│ Observation 阶段:                       │
+│   生成observation_text                  │
+│   │                                     │
+│   └──→ log_observation() 记录观察结果    │
+│                                         │
+│ 循环判断:                               │
+│   ├─ 未结束 → 继续循环                   │
+│   └─ 结束 → 输出最终结果                 │
+└─────────────────────────────────────────┘
+```
+
+#### 记录点说明
+
+| 步骤 | 位置 | 记录内容 | 方法 | 说明 |
+|------|------|---------|------|------|
+| **1. 开始请求** | react_sse_wrapper.py:244-248 | 创建日志文件，基本信息 | `start_request()` | 仅当intent_type != "chat"时 |
+| **2. 系统prompt** | react_sse_wrapper.py:252-257 | 系统prompt内容，intent_type，confidence | `log_system_prompt()` | 带details参数 |
+| **3. 任务prompt** | react_sse_wrapper.py:258-261 | 任务prompt内容，context | `log_task_prompt()` | 包含intent_type和confidence |
+| **4. LLM调用** | file_react.py:160-170 | 调用轮次，messages列表，模型，提供商，调用类型 | `log_llm_call()` | 记录完整的messages列表 |
+| **5. 立即保存** | file_react.py:173 | 保存当前日志到文件 | `save()` | 每次LLM调用前保存 |
+| **6. LLM返回** | file_react.py:244-249 | 调用轮次，返回内容，返回类型，结束原因 | `log_llm_response()` | 更新对应调用记录 |
+| **7. 观察结果** | base_react.py:228-235 | 工具执行结果，工具名称，工具参数 | `log_observation()` | **新增记录点** |
+
+#### 数据流向
+
+```
+用户消息 → 创建日志文件 → 记录系统prompt → 记录任务prompt
+    ↓
+进入ReAct循环
+    ↓
+记录LLM调用 → 保存日志 → 调用LLM → 记录LLM返回
+    ↓
+执行工具 → 记录观察结果 → 添加到对话历史
+    ↓
+循环结束 → 输出结果
+```
+
+#### 日志文件内容结构
+
+每次请求生成一个JSON文件（`prompt_{message_id}+{timestamp}.json`），包含：
+
+1. **基本信息**：时间戳、会话ID、用户消息ID、AI消息ID、用户消息、日志文件路径
+2. **Prompt组装过程**：系统prompt、任务prompt、观察结果等步骤记录
+3. **LLM调用记录**：每次LLM调用的详细记录（消息列表、返回结果等）
+
+---
 
 ### 6.2 P6+P7+P8 综合修复方案
 
@@ -836,9 +947,6 @@ elif strategy.method == "response_format":
         response_format=self.response_format
     )
 ```
-
----
-
 ### 6.2.1 方案对比分析
 
 | 维度 | 方案A：修改 llm_client 定义 | 方案B：修改策略调用方式 |
@@ -848,61 +956,6 @@ elif strategy.method == "response_format":
 | **侵入性** | 中等：新增中间层 | 低：直接修改调用点 |
 | **可维护性** | ✅ 好：统一接口，易于扩展 | ⚠️ 一般：策略逻辑分散 |
 | **向后兼容** | ✅ 好：保留 llm_client 接口 | ❌ 差：直接依赖 ai_service |
-
-#### 方案A 优缺点
-
-**优点**：
-1. ✅ **架构清晰**：新增 LLMClientWrapper 统一接口，职责分明
-2. ✅ **易于扩展**：后续新增 LLM 方法只需在 Wrapper 中添加
-3. ✅ **向后兼容**：保留 llm_client 接口，不破坏现有代码
-4. ✅ **测试方便**：Wrapper 可独立测试
-
-**缺点**：
-1. ❌ **新增代码**：需要新增一个类
-2. ❌ **间接调用**：多一层封装，性能略有影响（可忽略）
-
-#### 方案B 优缺点
-
-**优点**：
-1. ✅ **改动小**：只需修改 _get_llm_response() 函数
-2. ✅ **直接调用**：少一层封装，性能略好
-3. ✅ **快速实现**：代码量少，实现快
-
-**缺点**：
-1. ❌ **架构分散**：策略逻辑分散在 file_react.py 中
-2. ❌ **扩展性差**：后续新增 LLM 方法需要再次修改 file_react.py
-3. ❌ **向后破坏**：直接依赖 ai_service，llm_client 接口废弃
-4. ❌ **测试困难**：需要 mock ai_service，测试复杂度增加
-
----
-
-### 6.2.2 决策建议
-
-**推荐方案A**，原因如下：
-
-| 决策因素 | 权重 | 方案A得分 | 方案B得分 |
-|---------|------|----------|----------|
-| 架构清晰度 | 高 | 5 | 3 |
-| 可维护性 | 高 | 5 | 3 |
-| 扩展性 | 中 | 5 | 2 |
-| 向后兼容 | 中 | 5 | 1 |
-| 改动量 | 低 | 3 | 5 |
-| **总分** | - | **23** | **14** |
-
-**决策规则**：
-1. **如果追求架构清晰** → 选方案A
-2. **如果追求快速修复** → 选方案B
-3. **如果有后续扩展计划** → 必须选方案A
-4. **如果只是临时修复** → 可以选方案B
-
-**最终决策**：✅ **采用方案A**
-
-| 决策项 | 内容 |
-|--------|------|
-| 决策时间 | 2026-03-29 12:32:45 |
-| 决策人 | 北京老陈 |
-| 决策方案 | 方案A：修改 llm_client 定义 |
-| 决策理由 | 架构清晰、可维护性好、便于后续扩展 |
 
 ### 6.3 预期效果
 
