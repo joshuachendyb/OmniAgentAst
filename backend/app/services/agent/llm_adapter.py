@@ -11,15 +11,13 @@ LLM 适配器统一入口实现
 """
 
 import copy
-import logging
 from typing import Optional
 
 from app.services.agent.capability import LLMFeature, LLMCapability
 from app.services.agent.capability_detector import CapabilityDetector
 from app.services.agent.strategy_selector import StrategySelector, SelectedStrategy
 from app.services.agent.os_adapter import OSAdapter
-
-logger = logging.getLogger(__name__)
+from app.utils.logger import logger
 
 
 class LLMAdapter:
