@@ -139,8 +139,25 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
     pathToNode.set(entry.path, node);
   }
 
-  // 第二遍：构建父子关系
+  // 【小沈修复 2026-03-29】在构建父子关系之前，先对 entries 按 path 去重
+  // 避免同一个条目被多次处理导致重复显示
+  const uniqueEntriesMap = new Map<string, Entry>();
   for (const entry of sortedEntries) {
+    const normalizedPath = entry.path.replace(/\\/g, "/");
+    // 如果已存在且当前是 directory 而已有是 file，则更新
+    if (uniqueEntriesMap.has(normalizedPath)) {
+      const existing = uniqueEntriesMap.get(normalizedPath)!;
+      if (existing.type === "file" && entry.type === "directory") {
+        uniqueEntriesMap.set(normalizedPath, entry);
+      }
+    } else {
+      uniqueEntriesMap.set(normalizedPath, entry);
+    }
+  }
+  const uniqueEntries = Array.from(uniqueEntriesMap.values());
+
+  // 第二遍：构建父子关系
+  for (const entry of uniqueEntries) {
     // 【小强修复】跳过已处理的路径（没有创建节点的entry）
     if (!pathToNode.has(entry.path)) {
       continue;
@@ -243,15 +260,13 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
     }
   }
 
-  // 清理空目录的 children、排序，并彻底去重
-  // 【小沈修复 2026-03-29】使用 key 去重，但在最后对整个树进行深度遍历去重
-  
-  const finalDeduplicate = (nodes: TreeNode[]): TreeNode[] => {
+  // 清理空目录的 children 并排序，同时在同级去重
+  const cleanAndSort = (nodes: TreeNode[]): TreeNode[] => {
     const seenKeys = new Set<string>();
     const result: TreeNode[] = [];
     
     for (const node of nodes) {
-      // 如果 key 已出现过，跳过
+      // 同级去重：同一 key 只保留一个
       if (seenKeys.has(node.key)) {
         continue;
       }
@@ -259,12 +274,11 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
       
       const processedNode = { ...node };
       if (processedNode.type === "directory" && processedNode.children) {
-        processedNode.children = finalDeduplicate(processedNode.children);
+        processedNode.children = cleanAndSort(processedNode.children);
       }
       result.push(processedNode);
     }
     
-    // 排序
     return result.sort((a, b) => {
       if (a.type === "directory" && b.type === "file") return -1;
       if (a.type === "file" && b.type === "directory") return 1;
@@ -272,7 +286,7 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
     });
   };
 
-  return finalDeduplicate(rootNodes);
+  return cleanAndSort(rootNodes);
 }
 
 /**
