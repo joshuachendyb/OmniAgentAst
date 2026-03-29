@@ -48,7 +48,7 @@ interface ListDirectoryViewProps {
     path?: string;
   };
   isExpanded?: boolean;
-  onToggle?: () => void;  // 【小强添加 2026-03-24】折叠切换回调
+  onToggle?: () => void;
 }
 
 /**
@@ -61,53 +61,31 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
 
   const pathToNode = new Map<string, TreeNode>();
   const rootNodes: TreeNode[] = [];
-  const processedPaths = new Set<string>();  // 【小强修复 2026-03-29】追踪已处理的路径，避免重复
 
   // 标准化 rootPath，移除末尾斜杠
   const normalizedRoot = rootPath.replace(/\\/g, "/").replace(/\/$/, "");
 
-  // 【小强修复 2026-03-29】过滤逻辑：
-  // 1. 过滤掉相对路径条目
-  // 2. 标准化路径后去重（按 path 去重）
-  // 3. 同一路径有 file 和 directory 时，优先保留 directory
-  const pathToType = new Map<string, "directory" | "file">();
-  const pathToEntry = new Map<string, Entry>();
+  // 【小沈修复 2026-03-29】过滤掉相对路径，只保留以 normalizedRoot 开头的绝对路径
+  // 后端返回的递归数据中，部分条目使用相对路径（如 "11.联想GRX"），这些会导致重复显示
+  const filteredEntries: Entry[] = [];
+  const seenPaths = new Set<string>();  // 用 Set 追踪已处理过的路径
   
   for (const entry of entries) {
-    const normalizedEntryPath = entry.path.replace(/\\/g, "/");
+    const normalizedPath = entry.path.replace(/\\/g, "/");
     
-    // 跳过相对路径
-    if (!normalizedEntryPath.startsWith(normalizedRoot)) {
+    // 跳过不以 normalizedRoot 开头的相对路径
+    if (!normalizedPath.startsWith(normalizedRoot)) {
       continue;
     }
-
-    // 记录路径类型，directory 优先于 file
-    if (pathToType.has(normalizedEntryPath)) {
-      const existingType = pathToType.get(normalizedEntryPath)!;
-      if (existingType === "file" && entry.type === "directory") {
-        pathToType.set(normalizedEntryPath, "directory");
-        pathToEntry.set(normalizedEntryPath, entry);
-      }
-    } else {
-      pathToType.set(normalizedEntryPath, entry.type);
-      pathToEntry.set(normalizedEntryPath, entry);
+    
+    // 跳过已处理过的路径
+    if (seenPaths.has(normalizedPath)) {
+      continue;
     }
+    seenPaths.add(normalizedPath);
+    
+    filteredEntries.push(entry);
   }
-
-  // 生成过滤后的 entries
-  const filteredEntries = Array.from(pathToEntry.values());
-
-  // 【小强修复 2026-03-29】创建根节点，确保 rootPath 存在于 pathToNode 中
-  const rootNode: TreeNode = {
-    key: normalizedRoot,
-    title: normalizedRoot.split("/").pop() || normalizedRoot,
-    type: "directory",
-    path: normalizedRoot,
-    size: null,
-    children: [],
-  };
-  pathToNode.set(normalizedRoot, rootNode);
-  rootNodes.push(rootNode);
 
   // 按 type 排序：目录在前，文件在后
   const sortedEntries = [...filteredEntries].sort((a, b) => {
@@ -116,18 +94,8 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
     return a.name.localeCompare(b.name);
   });
 
-  // 第一遍：创建所有节点，跳过已处理的路径
+  // 第一遍：创建所有节点
   for (const entry of sortedEntries) {
-    const normalizedEntryPath = entry.path.replace(/\\/g, "/");
-    
-    // 【小强修复】跳过已处理的路径，避免重复
-    // 检查标准化后的路径和原路径是否已处理
-    if (processedPaths.has(normalizedEntryPath) || processedPaths.has(entry.path)) {
-      continue;
-    }
-    processedPaths.add(normalizedEntryPath);
-    processedPaths.add(entry.path);
-
     const node: TreeNode = {
       key: entry.path,
       title: entry.name,
@@ -139,30 +107,8 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
     pathToNode.set(entry.path, node);
   }
 
-  // 【小沈修复 2026-03-29】在构建父子关系之前，先对 entries 按 path 去重
-  // 避免同一个条目被多次处理导致重复显示
-  const uniqueEntriesMap = new Map<string, Entry>();
-  for (const entry of sortedEntries) {
-    const normalizedPath = entry.path.replace(/\\/g, "/");
-    // 如果已存在且当前是 directory 而已有是 file，则更新
-    if (uniqueEntriesMap.has(normalizedPath)) {
-      const existing = uniqueEntriesMap.get(normalizedPath)!;
-      if (existing.type === "file" && entry.type === "directory") {
-        uniqueEntriesMap.set(normalizedPath, entry);
-      }
-    } else {
-      uniqueEntriesMap.set(normalizedPath, entry);
-    }
-  }
-  const uniqueEntries = Array.from(uniqueEntriesMap.values());
-
   // 第二遍：构建父子关系
-  for (const entry of uniqueEntries) {
-    // 【小强修复】跳过已处理的路径（没有创建节点的entry）
-    if (!pathToNode.has(entry.path)) {
-      continue;
-    }
-
+  for (const entry of sortedEntries) {
     const node = pathToNode.get(entry.path);
     if (!node) continue;
 
@@ -190,23 +136,17 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
 
     if (parts.length === 1) {
       // 直接子项，父级是 rootPath
-      // 【小沈修复】检查是否已添加，避免重复
       const parentNode = pathToNode.get(normalizedRoot);
       if (parentNode?.children) {
-        if (!parentNode.children.find((c: TreeNode) => c.key === node.key)) {
-          parentNode.children.push(node);
-        }
+        parentNode.children.push(node);
       } else {
-        if (!rootNodes.find((c: TreeNode) => c.key === node.key)) {
-          rootNodes.push(node);
-        }
+        rootNodes.push(node);
       }
       continue;
     }
 
     // 多层嵌套：构建虚拟目录链
     let currentParentPath = normalizedRoot;
-    const addedNodeKeys = new Set<string>();  // 【小沈修复 2026-03-29】追踪已添加的节点 key，避免重复
 
     for (let i = 0; i < parts.length - 1; i++) {
       const part = parts[i];
@@ -227,66 +167,42 @@ function convertEntriesToTree(entries: Entry[], rootPath: string): TreeNode[] {
         // 链接到父级
         const parentNode = pathToNode.get(currentParentPath);
         if (parentNode?.children) {
-          // 检查虚拟目录是否已添加到父节点
-          if (!parentNode.children.find((c: TreeNode) => c.key === virtualNode.key)) {
-            parentNode.children.push(virtualNode);
-          }
+          parentNode.children.push(virtualNode);
         } else if (currentParentPath === normalizedRoot) {
-          // 第一层虚拟目录添加到 rootNodes
-          if (!rootNodes.find((c: TreeNode) => c.key === virtualNode.key)) {
-            rootNodes.push(virtualNode);
-          }
+          // 第一层虚拟目录
+          rootNodes.push(virtualNode);
         }
       }
 
       currentParentPath = fullPath;
     }
 
-    // 最后一项添加到其父级（避免重复添加）
-    // 【小沈修复】检查当前节点是否已经被添加过（作为虚拟目录的子节点）
+    // 最后一项添加到其父级
     const finalParentNode = pathToNode.get(currentParentPath);
     if (finalParentNode?.children) {
-      // 检查是否已在父节点的 children 中
-      if (!finalParentNode.children.find((c: TreeNode) => c.key === node.key)) {
-        finalParentNode.children.push(node);
-        addedNodeKeys.add(node.key);
-      }
+      finalParentNode.children.push(node);
     } else {
-      // 添加到 rootNodes（检查是否已存在）
-      if (!rootNodes.find((c: TreeNode) => c.key === node.key)) {
-        rootNodes.push(node);
-        addedNodeKeys.add(node.key);
-      }
+      rootNodes.push(node);
     }
   }
 
-  // 清理空目录的 children 并排序，同时在同级去重
-  const cleanAndSort = (nodes: TreeNode[]): TreeNode[] => {
-    const seenKeys = new Set<string>();
-    const result: TreeNode[] = [];
-    
-    for (const node of nodes) {
-      // 同级去重：同一 key 只保留一个
-      if (seenKeys.has(node.key)) {
-        continue;
-      }
-      seenKeys.add(node.key);
-      
-      const processedNode = { ...node };
-      if (processedNode.type === "directory" && processedNode.children) {
-        processedNode.children = cleanAndSort(processedNode.children);
-      }
-      result.push(processedNode);
-    }
-    
-    return result.sort((a, b) => {
-      if (a.type === "directory" && b.type === "file") return -1;
-      if (a.type === "file" && b.type === "directory") return 1;
-      return a.title.localeCompare(b.title);
-    });
+  // 清理空目录的 children 并排序
+  const cleanEmptyChildren = (nodes: TreeNode[]): TreeNode[] => {
+    return nodes
+      .map((node) => {
+        if (node.type === "directory" && node.children) {
+          node.children = cleanEmptyChildren(node.children);
+        }
+        return node;
+      })
+      .sort((a, b) => {
+        if (a.type === "directory" && b.type === "file") return -1;
+        if (a.type === "file" && b.type === "directory") return 1;
+        return a.title.localeCompare(b.title);
+      });
   };
 
-  return cleanAndSort(rootNodes);
+  return cleanEmptyChildren(rootNodes);
 }
 
 /**
@@ -362,117 +278,18 @@ function formatFileSize(bytes: number): string {
 
 /**
  * ListDirectoryView 主组件
- * 【小沈修改 2026-03-24】添加 isExpanded 参数，控制列表内容折叠，目录信息始终可见
- * 【小强修改 2026-03-24】添加 onToggle 回调，在目录信息行显示折叠按钮
- * 【小强修复 2026-03-25】递归模式搜索：匹配到子节点时父节点链也要显示
  */
-const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams, isExpanded = true, onToggle }) => {
+const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams }) => {
   const { entries = [], total = 0, directory = "" } = data;
 
   // 【小强修复 2026-03-24】使用 toolParams 判断递归模式（从 step 传入，非从 data）
   const isRecursive = toolParams?.recursive === true;
-
-  // 【小强修复 2026-03-25】Hooks 必须在顶层无条件调用
-  const [searchText, setSearchText] = useState("");
-  
-  // 【小强修复】用户点击展开/折叠时的keys状态管理
-  const [userExpandedKeys, setUserExpandedKeys] = useState<string[]>([]);
 
   // 计算树形数据
   const treeData = useMemo(
     () => convertEntriesToTree(entries, directory),
     [entries, directory]
   );
-
-  // 【小强新增 2026-03-25】计算需要展开的父节点路径（递归模式搜索用）
-  const searchExpandedKeys = useMemo(() => {
-    if (!searchText.trim()) return [];
-    const lowerSearch = searchText.toLowerCase();
-    const keysToExpand = new Set<string>();
-
-    // 遍历树，找到所有匹配的节点，收集它们的父节点路径
-    const traverse = (nodes: TreeNode[], parentPath: string[]) => {
-      for (const node of nodes) {
-        const currentPath = [...parentPath, node.key];
-        const title = node.title?.toString().toLowerCase() || "";
-        const path = node.key?.toString().toLowerCase() || "";
-
-        if (title.includes(lowerSearch) || path.includes(lowerSearch)) {
-          // 匹配到了，收集所有父节点
-          parentPath.forEach(p => keysToExpand.add(p));
-        }
-
-        // 继续遍历子节点
-        if (node.children) {
-          traverse(node.children, currentPath);
-        }
-      }
-    };
-
-    traverse(treeData, []);
-    return Array.from(keysToExpand);
-  }, [treeData, searchText]);
-
-  // 【小强修复】合并展开的keys：搜索时只用searchExpandedKeys，无搜索时用userExpandedKeys
-  const allExpandedKeys = useMemo(() => {
-    if (!searchText.trim()) {
-      return userExpandedKeys;
-    }
-    return searchExpandedKeys;
-  }, [searchExpandedKeys, userExpandedKeys, searchText]);
-
-  // 【小强修改 2026-03-25】递归模式：过滤后的树结构，匹配到子节点时保留父节点链
-  const filteredTreeData = useMemo(() => {
-    if (!searchText.trim()) return treeData;
-
-    const lowerSearch = searchText.toLowerCase();
-    const matchedKeys = new Set<string>();
-
-    // 第一遍：收集所有匹配的节点 key
-    const collectMatches = (nodes: TreeNode[]) => {
-      for (const node of nodes) {
-        const title = node.title?.toString().toLowerCase() || "";
-        const path = node.key?.toString().toLowerCase() || "";
-
-        if (title.includes(lowerSearch) || path.includes(lowerSearch)) {
-          matchedKeys.add(node.key);
-        }
-
-        if (node.children) {
-          collectMatches(node.children);
-        }
-      }
-    };
-
-    collectMatches(treeData);
-
-    // 第二遍：过滤树，只保留匹配的节点及其父节点链
-    const filterTree = (nodes: TreeNode[]): TreeNode[] => {
-      const result: TreeNode[] = [];
-      
-      for (const node of nodes) {
-        // 检查当前节点是否匹配
-        const title = node.title?.toString().toLowerCase() || "";
-        const path = node.key?.toString().toLowerCase() || "";
-        const isMatch = title.includes(lowerSearch) || path.includes(lowerSearch);
-
-        // 递归过滤子节点
-        const filteredChildren = node.children ? filterTree(node.children) : undefined;
-
-        // 如果当前节点匹配，或者有子节点匹配（children 被保留），则保留当前节点
-        if (isMatch || (filteredChildren && filteredChildren.length > 0)) {
-          result.push({
-            ...node,
-            children: filteredChildren,
-          });
-        }
-      }
-
-      return result;
-    };
-
-    return filterTree(treeData);
-  }, [treeData, searchText]);
 
   // 文件列表背景样式
   const fileListBackground = {
@@ -489,6 +306,9 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
     boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
   };
 
+  // 【重要】Hooks 必须在顶层无条件调用，不能在 if 之后
+  const [searchText, setSearchText] = useState("");
+  
   // 过滤后的文件列表（用于非递归模式）
   const filteredEntries = useMemo(() => {
     if (!searchText.trim()) {
@@ -510,118 +330,97 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
     );
   }
 
-  // 【小强修改 2026-03-24】目录信息行：始终显示，包含文件数量和折叠按钮
-  const directoryInfo = directory && (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 8,
-        fontSize: 12,
-        color: "#666",
-        background: "#f5f5f5",
-        padding: "4px 8px",
-        borderRadius: 4,
-        cursor: "pointer",
-      }}
-      onClick={onToggle}
-    >
-      <div>
-        <span style={{ marginRight: 8 }}>📂 {directory}</span>
-        {isRecursive ? "🌲 目录树" : "📁 文件列表"}
-        ({total}个)
-        {/* 【小强新增 2026-03-25】显示搜索匹配数量 */}
-        {searchText && filteredEntries.length !== total && (
-          <span style={{ color: "#faad14", marginLeft: 8 }}>
-            (匹配 {isRecursive ? filteredTreeData.length : filteredEntries.length} 个)
-          </span>
-        )}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {/* 搜索框 - 折叠按钮右侧显示，仅在展开时显示 */}
-        {entries.length > 10 && isExpanded && (
-          <Input
-            prefix={<SearchOutlined />}
-            placeholder="搜索文件/文件夹..."
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            style={{ width: 200, fontSize: 12 }}
-            allowClear
-            onClick={(e) => e.stopPropagation()}
-          />
-        )}
-        <span style={{ color: "#1890ff", fontWeight: 500 }}>
-          {isExpanded ? "▼ 收起" : "▶ 展开"}
-        </span>
-      </div>
-    </div>
-  );
-
   return (
     <div>
-      {/* 目录信息行 - 始终显示，包含文件数量和折叠按钮 */}
-      {directoryInfo}
-
-      {/* 【小沈修改 2026-03-24】列表内容根据 isExpanded 控制，目录信息始终可见 */}
-      {isExpanded && (
-        <>
-          {/* 根据 recursive 参数选择显示方案 */}
-          {isRecursive ? (
-            /* 递归模式：树形结构 - 支持搜索展开+用户手动展开 */
-            <div style={fileListBackground}>
-              <DirectoryTree
-                showLine={{ showLeafIcon: true }}
-                treeData={filteredTreeData}
-                // 【小强修复】使用allExpandedKeys：搜索时只用searchExpandedKeys，无搜索时用userExpandedKeys
-                expandedKeys={allExpandedKeys}
-                defaultExpandAll={false}
-                // 【小强修复】允许用户点击展开/折叠
-                selectable={false}
-                onExpand={(keys) => {
-                  setUserExpandedKeys(keys as string[]);
-                }}
-                style={{
-                  background: "transparent",
-                  fontSize: 13,
-                }}
-                icon={({ data }: any) =>
-                  data.type === "directory" ? (
-                    <FolderOutlined style={{ color: "#faad14" }} />
-                  ) : (
-                    <FileOutlined style={{ color: "#1890ff" }} />
-                  )
-                }
-              />
-            </div>
-          ) : (
-            /* 非递归模式：虚拟列表 - List自身管理滚动，外层div不限制 */
-            <VirtualFileList filteredEntries={filteredEntries} />
+      {/* 目录路径信息和搜索框 - 在同一行显示 */}
+      {directory && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 8,
+            fontSize: 12,
+            color: "#666",
+            background: "#f5f5f5",
+            padding: "4px 8px",
+            borderRadius: 4,
+          }}
+        >
+          <div>
+            📂 目录：{directory}
+            {isRecursive && (
+              <span style={{ marginLeft: 8, color: "#52c41a" }}>🌲 递归模式</span>
+            )}
+          </div>
+          {/* 搜索框 - 在目录信息右侧显示，递归和非递归模式都显示 */}
+          {entries.length > 10 && (
+            <Input
+              prefix={<SearchOutlined />}
+              placeholder={isRecursive ? "搜索目录树..." : "搜索文件..."}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{ width: 200, fontSize: 11 }}
+              allowClear
+            />
           )}
+        </div>
+      )}
 
-          {/* 总数信息 - 也根据 isExpanded 控制 */}
-          {total > 0 && (
-            <div
-              style={{
-                marginTop: 8,
-                fontSize: 12,
-                color: "#666",
-              }}
-            >
-              <span
-                style={{
-                  background: "#e6f7ff",
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  color: "#1890ff",
-                  fontWeight: 500,
-                }}
-              >
-                📊 共 {total} 个项目
-              </span>
-            </div>
-          )}
-        </>
+      {/* 根据 recursive 参数选择显示方案 */}
+      {isRecursive ? (
+        /* 递归模式：树形结构 - 外层div统一管理滚动，DirectoryTree不设置滚动属性 */
+        <div style={fileListBackground}>
+          <DirectoryTree
+            showLine={{ showLeafIcon: true }}
+            treeData={treeData}
+            defaultExpandAll={false}
+            style={{
+              background: "transparent",
+              fontSize: 13,
+            }}
+            icon={({ data }: any) =>
+              data.type === "directory" ? (
+                <FolderOutlined style={{ color: "#faad14" }} />
+              ) : (
+                <FileOutlined style={{ color: "#1890ff" }} />
+              )
+            }
+            filterTreeNode={(node: any) => {
+              if (!searchText) return true;
+              const title = node.title?.toString().toLowerCase() || "";
+              const path = node.key?.toString().toLowerCase() || "";
+              const search = searchText.toLowerCase();
+              return title.includes(search) || path.includes(search);
+            }}
+          />
+        </div>
+      ) : (
+        /* 非递归模式：虚拟列表 - List自身管理滚动，外层div不限制 */
+        <VirtualFileList filteredEntries={filteredEntries} />
+      )}
+
+      {/* 总数信息 */}
+      {total > 0 && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 12,
+            color: "#666",
+          }}
+        >
+          <span
+            style={{
+              background: "#e6f7ff",
+              padding: "2px 8px",
+              borderRadius: 4,
+              color: "#1890ff",
+              fontWeight: 500,
+            }}
+          >
+            📊 共 {total} 个项目
+          </span>
+        </div>
       )}
     </div>
   );
