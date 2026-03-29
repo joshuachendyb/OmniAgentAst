@@ -391,7 +391,10 @@ async def generate_sse_stream(
             agent = FileReactAgent(
                 llm_client=llm_client,
                 session_id=session_id,
-                intent_type="file"
+                intent_type="file",
+                api_base=ai_service.api_base,
+                api_key=ai_service.api_key,
+                model=ai_service.model
             )
             
             try:
