@@ -1,6 +1,6 @@
 # React的Prompt需求记录及问题分析出来设计
 
-**创建时间**: 2026-03-29 05:08:14 **版本**: v1.18 **编写人**: 小沈 **更新时间**: 2026-03-29 20:30:00
+**创建时间**: 2026-03-29 05:08:14 **版本**: v1.19 **编写人**: 小沈 **更新时间**: 2026-03-29 21:25:00
 
 ---
 
@@ -1068,6 +1068,7 @@ LLM 返回 content
 | 英文纯文本含 action | `I need to use list_directory tool` | 方案C: _extract_from_text |
 | 中文纯文本含 action | `我会调用 list_directory 工具` | 方案A: 增强正则提取 |
 | 工具名直接出现 | `我会用 list_directory 查看文件` | 方案B: 已知工具名匹配 |
+| **LLM总结性文本【2026-03-29】** | `I will now summarize what I have found` | 返回 finish，保留 content |
 | 纯文本不含 action | `文件已整理完成` | 返回 finish，保留 content |
 | JSON 数组格式 | `[{"action_tool": "..."}]` | 方案C: ToolParser 解析 |
 | 空内容 | `""` | 返回 finish, content="" |
@@ -1129,6 +1130,36 @@ action_patterns = [
     r'(?:使用|调用)\s+([\w]+)',
 ]
 ```
+
+#### 6.4.7.1 总结性文本检测【2026-03-29 小沈 新增】
+
+**问题**：LLM 在 Function Calling 模式下返回纯文本（如 "I will now summarize..."）时，解析失败导致"无法解析LLM响应"错误。
+
+**解决方案**：在 `_extract_from_text()` 末尾添加对总结性文本的检测：
+
+```python
+# 【修复 2026-03-29】处理 LLM 返回纯文本（如 "I will now summarize..."）的情况
+# 当无法提取出结构化 action 时，检查是否是总结性文本，如果是则返回 finish
+summarize_patterns = [
+    r'(?:summarize|summary|总结|I have found|I will)',
+    r'(?:已完成|任务完成|完成了)',
+    r'(?:根据.*?结果|基于.*?内容)',
+]
+for pattern in summarize_patterns:
+    if re.search(pattern, text, re.IGNORECASE):
+        result["thought"] = text.strip()
+        result["action"] = "finish"
+        result["action_input"] = {}
+        return result
+```
+
+**匹配模式说明**：
+
+| 模式 | 含义 | 示例 |
+|------|------|------|
+| `summarize\|summary` | 总结 | `I will now summarize what I found` |
+| `总结\|已完成` | 中文总结 | `根据以上结果，我已完成任务` |
+| `I have found\|I will` | 英文习惯 | `I have found the files` |
 
 #### 6.4.8 修改文件清单
 
@@ -1761,5 +1792,6 @@ yield {
 | v1.16 | 2026-03-29 13:50:24 | 小沈 | 修复章节顺序问题：删除重复的"八、版本历史"，重新编号章节（第八章改为Type字段总结，第九章改为版本历史） |
 | v1.17 | 2026-03-29 14:05:47 | 小沈 | 重新组织文档逻辑：将7.2-7.8节（当前系统代码分析）移到文档最后（第九章），保持第七章为通用理论分析章节 |
 | v1.18 | 2026-03-29 20:30:00 | 小沈 | 新增6.4节：TextStrategy分层处理架构（C+A+B），修复P8问题的错误修复，实现完整的分层处理支持多种输入场景 |
+| v1.19 | 2026-03-29 21:25:00 | 小沈 | 新增6.4.7.1节：LLM总结性文本检测（Function Calling模式下返回纯文本的处理）；更新6.4.5支持场景表格新增"LLM总结性文本"场景 |
 
 **文档结束**
