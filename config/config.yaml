@@ -46,7 +46,7 @@ ai:
     - cogview-3-flash
     timeout: 90
 app:
-  debug: false
+  debug: true
   language: zh-CN
   max_history_length: 10
   max_steps: 100
