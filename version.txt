@@ -1,3 +1,77 @@
+v0.8.35
+
+更新时间：2026-03-29 21:45:00
+
+更新内容：
+
+## 1. 修复chat_stream()方法429错误处理 - 小沈-2026-03-29
+
+### 1.1 问题背景
+
+用户验收发现：当429限流发生时，TextStrategy返回空内容，错误提示没有显示。
+
+### 1.2 问题根因
+
+在 `llm_core.py` 的 `chat_stream()` 方法中，当 HTTP 状态码不是 200 时（第167-169行）：
+```python
+if response.status_code != 200:
+    yield StreamChunk(content="", model=self.model, is_done=True)
+    return
+```
+
+**问题**：没有从响应体中提取错误信息并设置 `stream_error`！
+
+### 1.3 修复内容
+
+**修改文件**: `backend/app/services/llm_core.py`
+
+在 `response.status_code != 200` 时，从响应体中提取错误信息：
+```python
+if response.status_code != 200:
+    error_body = ""
+    try:
+        error_body = await response.aread()
+        error_text = error_body.decode("utf-8", errors="ignore")
+        logger.error(f"[chat_stream] HTTP {response.status_code} error response: {error_text[:500]}")
+        try:
+            error_json = json.loads(error_text)
+            error_msg = error_json.get("error", {}).get("message", "")
+            if error_msg:
+                yield StreamChunk(content="", model=self.model, is_done=True, 
+                    stream_error=f"API Error: {response.status_code}, {error_msg}",
+                    stream_error_type="api_error")
+                return
+        except json.JSONDecodeError:
+            pass
+        yield StreamChunk(content="", model=self.model, is_done=True,
+            stream_error=f"HTTP {response.status_code}: {error_text[:200]}",
+            stream_error_type="http_error")
+    except Exception as e:
+        logger.error(f"[chat_stream] Failed to read error response: {e}")
+        yield StreamChunk(content="", model=self.model, is_done=True,
+            stream_error=f"HTTP {response.status_code} error",
+            stream_error_type="http_error")
+    return
+```
+
+### 1.4 验证结果
+
+| 验证项 | 状态 |
+|--------|------|
+| adapter测试 | ✅ 32 passed |
+| 语法检查 | ✅ 通过 |
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| - | fix: chat_stream()方法429错误处理-小沈-2026-03-29 |
+
+参与开发：小沈
+完成时间：2026-03-29 21:45:00
+
+---
+
 v0.8.34
 
 更新时间：2026-03-29 21:22:21

@@ -165,7 +165,29 @@ class BaseAIService:
                 self._current_response = response
                 
                 if response.status_code != 200:
-                    yield StreamChunk(content="", model=self.model, is_done=True)
+                    error_body = ""
+                    try:
+                        error_body = await response.aread()
+                        error_text = error_body.decode("utf-8", errors="ignore")
+                        logger.error(f"[chat_stream] HTTP {response.status_code} error response: {error_text[:500]}")
+                        try:
+                            error_json = json.loads(error_text)
+                            error_msg = error_json.get("error", {}).get("message", "")
+                            if error_msg:
+                                yield StreamChunk(content="", model=self.model, is_done=True, 
+                                    stream_error=f"API Error: {response.status_code}, {error_msg}",
+                                    stream_error_type="api_error")
+                                return
+                        except json.JSONDecodeError:
+                            pass
+                        yield StreamChunk(content="", model=self.model, is_done=True,
+                            stream_error=f"HTTP {response.status_code}: {error_text[:200]}",
+                            stream_error_type="http_error")
+                    except Exception as e:
+                        logger.error(f"[chat_stream] Failed to read error response: {e}")
+                        yield StreamChunk(content="", model=self.model, is_done=True,
+                            stream_error=f"HTTP {response.status_code} error",
+                            stream_error_type="http_error")
                     return
                 
                 async for line in response.aiter_lines():
