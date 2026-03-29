@@ -90,14 +90,79 @@ class TextStrategy(LLMStrategy):
         
         logger.info(f"[LLM Response Raw (text)] content={repr(content)[:500]}")
         
+        # 情况1：LLM 返回空内容
         if not content:
             logger.warning("[LLM Response] Warning: LLM returned empty content!")
+            return json.dumps({
+                "content": "",
+                "action_tool": "finish",
+                "params": {},
+                "reasoning": None
+            }, ensure_ascii=False)
         
-        # 注意：不在这里添加assistant消息，由base_react.py统一添加（步骤11修复）
-        # 返回JSON格式，符合parser期望
+        # 情况2：尝试解析 JSON 格式（可能是 LLM 按 Prompt 输出了 JSON）
+        try:
+            parsed = json.loads(content)
+            if isinstance(parsed, dict):
+                # 检查是否有 action_tool 或 action 字段
+                action = parsed.get("action_tool") or parsed.get("action")
+                if action:
+                    # 统一格式，转换为 action_tool
+                    thought = parsed.get("content") or parsed.get("thought") or content
+                    params = parsed.get("params") or parsed.get("action_input") or parsed.get("actionInput") or {}
+                    reasoning = parsed.get("reasoning")
+                    logger.info(f"[TextStrategy] LLM returned valid JSON with action: {action}")
+                    return json.dumps({
+                        "content": thought,
+                        "action_tool": action,
+                        "params": params,
+                        "reasoning": reasoning
+                    }, ensure_ascii=False)
+                else:
+                    # JSON 但没有 action 字段，视为 finish
+                    logger.info(f"[TextStrategy] LLM returned JSON but no action, treating as finish")
+                    return json.dumps({
+                        "content": parsed.get("content") or parsed.get("thought") or content,
+                        "action_tool": "finish",
+                        "params": {},
+                        "reasoning": None
+                    }, ensure_ascii=False)
+            elif isinstance(parsed, list) and len(parsed) > 0:
+                # 数组格式，提取第一个元素的 action
+                first = parsed[0]
+                if isinstance(first, dict):
+                    action = first.get("action_tool") or first.get("action")
+                    if action:
+                        logger.info(f"[TextStrategy] LLM returned JSON array, using first element action: {action}")
+                        return json.dumps({
+                            "content": first.get("content") or first.get("thought") or content,
+                            "action_tool": action,
+                            "params": first.get("params") or first.get("action_input") or {},
+                            "reasoning": first.get("reasoning")
+                        }, ensure_ascii=False)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        
+        # 情况3：非 JSON 格式，尝试从纯文本中提取工具调用
+        from app.services.agent.tool_parser import ToolParser
+        extracted = ToolParser._extract_from_text(content)
+        if extracted and extracted.get("action"):
+            action = extracted.get("action", "finish")
+            thought = extracted.get("thought") or content
+            params = extracted.get("action_input") or {}
+            logger.info(f"[TextStrategy] Extracted from text: action={action}, thought={str(thought)[:50]}...")
+            return json.dumps({
+                "content": thought,
+                "action_tool": action,
+                "params": params,
+                "reasoning": None
+            }, ensure_ascii=False)
+        
+        # 情况4：无法提取工具调用，返回带有完整 content 的 finish
+        logger.info(f"[TextStrategy] No action extracted, returning finish with full content")
         return json.dumps({
             "content": content,
-            "action_tool": "finish",  # TextStrategy默认是finish
+            "action_tool": "finish",
             "params": {},
             "reasoning": None
         }, ensure_ascii=False)
