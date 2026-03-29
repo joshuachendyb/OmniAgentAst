@@ -1,6 +1,6 @@
 # React的Prompt需求记录及问题分析出来设计
 
-**创建时间**: 2026-03-29 05:08:14 **版本**: v1.17 **编写人**: 小沈 **更新时间**: 2026-03-29 14:05:47
+**创建时间**: 2026-03-29 05:08:14 **版本**: v1.18 **编写人**: 小沈 **更新时间**: 2026-03-29 20:30:00
 
 ---
 
@@ -970,6 +970,195 @@ elif strategy.method == "response_format":
 
 ---
 
+### 6.4 TextStrategy 分层处理架构（C+A+B）【2026-03-29 小沈】
+
+#### 6.4.1 问题背景
+
+**P8 问题的错误修复**（早期版本）：
+
+```python
+# 错误的修复：无论LLM返回什么，都包装成 finish
+return json.dumps({
+    "content": content,
+    "action_tool": "finish",  # 永远都是 finish！
+    "params": {},
+    "reasoning": None
+}, ensure_ascii=False)
+```
+
+**问题**：
+1. 无论 LLM 返回什么，都被包装成 `action_tool: "finish"`
+2. LLM 返回的工具调用意图被完全丢弃
+3. 无法提取纯文本中的工具调用
+
+#### 6.4.2 三种策略的定位
+
+| 策略 | 触发条件 | LLM 输出格式 | 返回处理 |
+|------|---------|------------|---------|
+| **ToolsStrategy** | LLM 支持 tools | `{tool_calls: [...]}` | 从 tool_calls 提取 |
+| **ResponseFormatStrategy** | LLM 支持 response_format | JSON Schema 格式 | 解析 JSON |
+| **TextStrategy** | 不支持上述两种 | **纯文本** | 需要**提取** action |
+
+#### 6.4.3 分层处理架构设计
+
+**方案关系分析**：
+
+| 方案 | 作用 | 必要性 | 复杂度 |
+|------|------|--------|--------|
+| **方案C** | 预处理层：先用 ToolParser 尝试 | ⭐⭐⭐ 必须 | 低 |
+| **方案A** | 正则提取层：增强中文支持 | ⭐⭐ 推荐 | 中 |
+| **方案B** | 保底层：工具名匹配 | ⭐ 可选 | 高 |
+
+**推荐方案**：综合使用 **方案C + 方案A + 方案B**
+
+**执行顺序**：
+```
+方案C: ToolParser.parse_response()     → JSON 解析 + _extract_from_text
+    ↓ 失败
+方案A: _extract_from_text() 增强版   → 中文纯文本提取
+    ↓ 失败
+方案B: _extract_by_known_tools()     → 工具名保底匹配
+    ↓ 失败
+返回 finish，保留完整 content
+```
+
+#### 6.4.4 分层处理流程图
+
+```
+LLM 返回 content
+       ↓
+┌─────────────────────────────────────┐
+│ 情况0: content 为空                 │
+│   → 返回 finish, content=""        │
+└─────────────────────────────────────┘
+       ↓
+┌─────────────────────────────────────┐
+│ 方案C: ToolParser.parse_response()  │
+│   ├─ JSON 解析成功 → 返回 action   │
+│   └─ JSON 解析失败                 │
+│       → 调用 _extract_from_text()   │
+│           ├─ 提取成功 → 返回 action │
+│           └─ 提取失败 → ValueError │
+└─────────────────────────────────────┘
+       ↓
+┌─────────────────────────────────────┐
+│ 方案A: _extract_from_text() 增强版  │
+│   ├─ 英文纯文本含 action → ✅ 提取  │
+│   └─ 中文纯文本含 action → ✅ 提取  │
+└─────────────────────────────────────┘
+       ↓
+┌─────────────────────────────────────┐
+│ 方案B: _extract_by_known_tools()    │
+│   ├─ 找到已知工具名 → 返回匹配工具 │
+│   └─ 未找到 → 继续               │
+└─────────────────────────────────────┘
+       ↓
+┌─────────────────────────────────────┐
+│ 无法提取                            │
+│   → 返回 finish，保留完整 content   │
+└─────────────────────────────────────┘
+```
+
+#### 6.4.5 支持的场景
+
+| 场景 | 示例输入 | 处理方式 |
+|------|---------|---------|
+| JSON 标准格式 | `{"action_tool": "list_directory"}` | 方案C: ToolParser 解析 |
+| Markdown JSON | `` ```json {"action_tool": ...} ``` `` | 方案C: ToolParser 解析 |
+| 英文纯文本含 action | `I need to use list_directory tool` | 方案C: _extract_from_text |
+| 中文纯文本含 action | `我会调用 list_directory 工具` | 方案A: 增强正则提取 |
+| 工具名直接出现 | `我会用 list_directory 查看文件` | 方案B: 已知工具名匹配 |
+| 纯文本不含 action | `文件已整理完成` | 返回 finish，保留 content |
+| JSON 数组格式 | `[{"action_tool": "..."}]` | 方案C: ToolParser 解析 |
+| 空内容 | `""` | 返回 finish, content="" |
+
+#### 6.4.6 代码实现
+
+**TextStrategy.call() 核心逻辑**：
+
+```python
+async def call(self, llm_client, message, history_dicts, conversation_history, **kwargs):
+    # ... 调用 LLM 获取 content ...
+    
+    # 情况0: 空内容
+    if not content:
+        return self._make_result(content="", action_tool="finish", params={})
+    
+    # 方案C: 尝试 ToolParser.parse_response()
+    from app.services.agent.tool_parser import ToolParser
+    try:
+        parsed = ToolParser.parse_response(content)
+        return self._make_result(
+            content=parsed.get("content", ""),
+            action_tool=parsed.get("action_tool", "finish"),
+            params=parsed.get("params", {})
+        )
+    except ValueError:
+        pass  # 继续方案A/B
+    
+    # 方案B: 工具名保底匹配
+    tool_result = self._extract_by_known_tools(content)
+    if tool_result:
+        return self._make_result(
+            content=tool_result.get("content", content),
+            action_tool=tool_result["action_tool"],
+            params=tool_result.get("params", {})
+        )
+    
+    # 无法提取，返回 finish
+    return self._make_result(content=content, action_tool="finish", params={})
+```
+
+#### 6.4.7 ToolParser._extract_from_text() 增强（方案A）
+
+**新增中文支持的正则**：
+
+```python
+action_patterns = [
+    # 英文标准格式
+    r'(?:action)["\']?\s*[:=]\s*["\']?([\w]+)["\']?',
+    r'(?:use|call|execute)\s+(?:the\s+)?([\w]+)\s+(?:tool|function)?',
+    # 英文格式变体
+    r'(?:tool|function)\s*[:=]\s*["\']?([\w]+)["\']?',
+    # 【方案A】中文纯文本支持
+    r'(?:调用|使用|执行)\s+[\w]+',
+    r'(?:工具\s*为|函数\s*为)([\w]+)',
+    r'([\w]+)\s*(?:工具|函数|操作)',
+    r'(?:先)?(?:列出|读取|搜索|创建|删除|移动)\s+([\w]+)',
+    r'(?:我\s*(?:需要|要|会))?\s*调用\s+([\w]+)',
+    r'(?:使用|调用)\s+([\w]+)',
+]
+```
+
+#### 6.4.8 修改文件清单
+
+| 文件 | 修改内容 | 提交信息 |
+|------|---------|---------|
+| `llm_strategies.py` | TextStrategy 重构为 C+A+B 分层处理 | `fix: TextStrategy分层处理架构C+A+B+增强中文提取-小沈-2026-03-29` |
+| `tool_parser.py` | `_extract_from_text()` 添加中文支持 | 同上 |
+
+#### 6.4.9 测试验证
+
+```bash
+# 单元测试
+pytest tests/test_tool_parser.py -v
+# 结果：17 passed
+
+pytest tests/test_adapter.py -v
+# 结果：49 passed
+```
+
+#### 6.4.10 结论
+
+| 项目 | 结论 |
+|------|------|
+| **分层架构** | C + A + B 分层处理，每层有明确职责 |
+| **中文支持** | 方案A增强了 `_extract_from_text()` 的中文提取能力 |
+| **工具名保底** | 方案B提供已知工具名匹配作为最后保底 |
+| **覆盖率** | 支持 8+ 种输入场景，无遗漏 |
+
+---
+
 ## 七、React的Type字段完整分析
 
 ### 7.1 网络深度学习成果：Type字段的生成时机（LLM调用前还是调用后）
@@ -1571,5 +1760,6 @@ yield {
 | v1.15 | 2026-03-29 13:42:04 | 小沈 | 新增第九章：Type字段核心字段总结（基于通用ReAct框架研究），总结每个Type字段必须的核心字段 |
 | v1.16 | 2026-03-29 13:50:24 | 小沈 | 修复章节顺序问题：删除重复的"八、版本历史"，重新编号章节（第八章改为Type字段总结，第九章改为版本历史） |
 | v1.17 | 2026-03-29 14:05:47 | 小沈 | 重新组织文档逻辑：将7.2-7.8节（当前系统代码分析）移到文档最后（第九章），保持第七章为通用理论分析章节 |
+| v1.18 | 2026-03-29 20:30:00 | 小沈 | 新增6.4节：TextStrategy分层处理架构（C+A+B），修复P8问题的错误修复，实现完整的分层处理支持多种输入场景 |
 
 **文档结束**
