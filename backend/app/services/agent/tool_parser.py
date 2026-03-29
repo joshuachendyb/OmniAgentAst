@@ -93,8 +93,15 @@ class ToolParser:
                 break
         
         action_patterns = [
-            r'(?:action)["\']?\s*[:=]\s*["\']?(\w+)["\']?',
-            r'(?:use|call|execute)\s+(?:the\s+)?(\w+)\s+(?:tool|function)?',
+            r'(?:action)["\']?\s*[:=]\s*["\']?([\w]+)["\']?',
+            r'(?:use|call|execute)\s+(?:the\s+)?([\w]+)\s+(?:tool|function)?',
+            r'(?:tool|function)\s*[:=]\s*["\']?([\w]+)["\']?',
+            r'(?:调用|使用|执行)\s+[\w]+',
+            r'(?:工具\s*为|函数\s*为)([\w]+)',
+            r'([\w]+)\s*(?:工具|函数|操作)',
+            r'(?:先)?(?:列出|读取|搜索|创建|删除|移动)\s+([\w]+)',
+            r'(?:我\s*(?:需要|要|会))?\s*调用\s+([\w]+)',
+            r'(?:使用|调用)\s+([\w]+)',
         ]
         
         for pattern in action_patterns:
