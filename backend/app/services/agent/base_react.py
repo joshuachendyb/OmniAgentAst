@@ -212,7 +212,7 @@ class BaseAgent(ABC):
                 
                 # yield action_tool
                 yield {
-                    "type": "action",  # 步骤13：统一SSE事件type命名
+                    "type": "action_tool",
                     "content": action_tool,  # 工具名称作为content
                     "step": step_count,
                     "timestamp": current_time,
@@ -272,7 +272,7 @@ class BaseAgent(ABC):
                     "obs_summary": execution_result.get("summary", ""),
                     "obs_raw_data": execution_result.get("data"),
                     "content": parsed_obs.get("content", ""),
-                    "reasoning": parsed_obs.get("reasoning"),
+                    "obs_reasoning": parsed_obs.get("reasoning"),
                     "action_tool": parsed_obs.get("action_tool", "finish"),
                     "params": parsed_obs.get("params", {}),
                     "is_finished": is_finished
