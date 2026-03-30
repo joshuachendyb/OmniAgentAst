@@ -1,7 +1,7 @@
 # LLM调用问题与解决策略分析
 
 **创建时间**: 2026-03-30 08:50:38  
-**版本**: v1.1  
+**版本**: v1.3  
 **存放位置**: D:\OmniAgentAs-desk\notes\  
 **数据来源**: 
 1. 后端日志分析（`backend/logs/app_2026-03-29.log`）
@@ -14,6 +14,7 @@
 | v1.0 | 2026-03-30 08:50:38 | 初始版本：汇总所有LLM调用问题及解决策略（8个问题） | AI助手小欧 |
 | v1.1 | 2026-03-30 09:01:00 | 新增问题9：LLM返回多工具调用声明但实际单工具执行 | AI助手小欧 |
 | v1.2 | 2026-03-30 09:13:54 | 深度分析问题9：系统设计与LLM行为不匹配的深度分析 | AI助手小欧 |
+| v1.3 | 2026-03-30 11:30:00 | 问题1实际修改：统一LLM响应解析错误处理 | 小沈 |
 
 ---
 
@@ -154,6 +155,43 @@ except ValueError as e:
         }
 ```
 
+#### 实际修改（2026-03-30）
+
+**修改说明**：
+- 方案A（增强解析器）：**不需要** - 现有parse_response已实现方案A所有能力
+- 方案B（错误处理）：**已完成** - 添加统一错误处理方法
+
+**修改内容**：
+
+1. **在 tool_parser.py 添加统一错误处理方法**（第153-216行）
+   ```python
+   @staticmethod
+   def handle_parse_error(llm_response, error, logger):
+       """
+       统一处理LLM响应解析错误
+       - 记录详细日志（包含LLM原始返回内容）
+       - 分类错误类型（empty_response/json_parse_error/unknown）
+       - 生成用户友好的错误消息
+       - 返回统一格式的错误结果
+       """
+   ```
+
+2. **修改 base_react.py 两处解析错误处理**
+   - Thought阶段：使用ToolParser统一方法
+   - Observation阶段：使用ToolParser统一方法
+
+**统一效果**：
+- ✅ 日志记录格式一致
+- ✅ 错误消息格式一致
+- ✅ 保存到history的内容一致
+- ✅ 前端显示的信息一致
+
+**Commit汇总**：
+| Commit | 说明 |
+|--------|------|
+| 7ab05ed7 | fix: 统一LLM响应解析错误处理-小沈-2026-03-30 |
+| 2ee5bfaf | fix: 修复ToolParser统一错误处理的3个问题-小沈-2026-03-30 |
+
 ---
 
 ### 问题2：429 API限流错误频繁发生
@@ -233,6 +271,70 @@ class RequestQueue:
                 await asyncio.sleep(self.min_interval - elapsed)
             self.last_request_time = time.time()
 ```
+
+---
+
+### 问题2实际修改实现（v0.8.38 + v0.8.39）
+
+#### v0.8.38 修改内容
+
+**修改文件**: `backend/app/services/agent/llm_strategies.py`
+
+1. **添加重试机制**：
+   - `MAX_RETRIES = 3`（最大重试次数）
+   - `RETRY_DELAY = 2`（重试等待时间秒）
+
+2. **检测限流错误**：429/1305
+
+3. **降级策略**：重试3次仍失败后降级到 TextStrategy
+
+4. **错误提示增强**：`_format_error_hint()` 方法，根据错误类型生成友好提示：
+   - 429限流 → "模型访问量过大（429限流），请稍后再试或更换模型"
+   - 超时 → "请求超时，请检查网络后重试"
+   - 连接错误 → "网络连接失败，请检查网络后重试"
+   - 认证错误 → "API认证失败，请检查API密钥是否有效"
+   - 余额不足 → "API额度或余额不足，请充值后重试"
+
+#### v0.8.39 修改内容（指数退避）
+
+**修改文件**: `backend/app/services/agent/llm_strategies.py`（第306-312行）
+
+将固定2秒延迟改为指数退避：
+```python
+# 修改前
+await asyncio.sleep(self.RETRY_DELAY)  # 始终2秒
+
+# 修改后
+retry_delay = self.RETRY_DELAY * (2 ** attempt)  # 2, 4, 8 秒递增
+await asyncio.sleep(retry_delay)
+```
+
+#### 处理流程
+
+```
+ToolsStrategy 调用 LLM
+    ↓
+收到 429 限流错误
+    ↓
+重试 1/3，等待 2 秒 (2×2^0)
+    ↓
+收到 429 限流错误
+    ↓
+重试 2/3，等待 4 秒 (2×2^1)
+    ↓
+收到 429 限流错误
+    ↓
+重试 3/3，等待 8 秒 (2×2^2)
+    ↓
+仍然失败 → 降级到 TextStrategy
+```
+
+#### Commit汇总
+
+| 版本 | Commit | 说明 |
+|------|--------|------|
+| v0.8.38 | - | fix: ToolsStrategy重试逻辑+TextStrategy错误提示增强-小沈-2026-03-29 |
+| v0.8.39 | ad0df369 | fix: ToolsStrategy重试逻辑实现指数退避-小沈-2026-03-30 |
 
 ---
 
