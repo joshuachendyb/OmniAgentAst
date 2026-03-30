@@ -322,8 +322,13 @@ class AIServiceFactory:
     @classmethod
     def get_service(cls, config_path: Optional[str] = None) -> BaseAIService:
         """获取AI服务实例 - 直接读取配置文件"""
-        config = get_config().raw_config
-        ai_config = config.get("ai", {})
+        # ⭐ 修复：每次调用都重新加载配置，确保获取最新配置
+        from app.config import get_config as get_config_instance
+        config = get_config_instance()
+        config.reload()
+        raw_config = config.raw_config
+        
+        ai_config = raw_config.get("ai", {})
         
         # 直接使用配置文件的 provider 和 model，不 fallback
         final_provider = ai_config.get('provider', '')

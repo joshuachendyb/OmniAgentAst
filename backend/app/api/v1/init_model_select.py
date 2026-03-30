@@ -13,11 +13,18 @@ router = APIRouter()
 
 
 class ValidateResponse(BaseModel):
-    """验证响应"""
+    """验证响应
+    
+    三种状态：
+    - success: true  → 验证成功
+    - success: false → 失败（API Key为空/无效/连接失败）
+    - success: warning → 警告（速率限制/欠费/信用不够等暂时性问题）
+    """
     success: bool = Field(..., description="验证是否通过")
     provider: str = Field(..., description="当前使用的提供商")
     model: str = Field(default="", description="当前使用的模型")
     message: str = Field(default="", description="验证消息")
+    status: str = Field(default="success", description="详细状态: success/failed/warning")
 
 
 # ============================================================
@@ -161,21 +168,22 @@ async def validate_ai_service():
         
         # 检查 API Key 是否为空
         if not ai_service.api_key or ai_service.api_key.strip() == "":
-            # ⭐ 验证失败：恢复备份
+            # ❌ 验证失败：恢复备份
             if backup_path and config_path:
                 await _restore_backup_and_delete_by_path(backup_path, config_path)
             
             end_time = datetime.now()
             elapsed = (end_time - start_time).total_seconds()
             end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
-            error_msg = f"AI 服务未配置：{provider} ({current_model}) 的 API Key 为空"
+            error_msg = f"API Key为空：{provider} ({current_model}) 的 API Key 未配置"
             logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(API Key为空), 消息: {error_msg}")
             
             return ValidateResponse(
                 success=False,
+                status="failed",
                 provider=provider,
                 model=current_model,
-                message=error_msg + "。请在 config/config.yaml 中配置。（配置已恢复到更新前的状态）"  # ⭐ 添加说明
+                message=error_msg + "。请在 config/config.yaml 中配置。（配置已恢复到更新前的状态）"
             )
         
         # 验证服务 - 【小沈-2026-03-27修复】直接在接口中验证，添加30秒超时
@@ -214,15 +222,16 @@ async def validate_ai_service():
             
             return ValidateResponse(
                 success=True,
+                status="success",
                 provider=provider,
                 model=current_model,
                 message=success_msg
             )
         else:
-            # ⭐ 验证失败：恢复备份
+            # ❌ 验证失败：恢复备份
             if backup_path and config_path:
                 await _restore_backup_and_delete_by_path(backup_path, config_path)
-            # ⭐ 清除全局状态
+            # ❌ 清除全局状态
             AIServiceFactory.clear_backup_paths()
             
             end_time = datetime.now()
@@ -259,6 +268,7 @@ async def validate_ai_service():
             # 根据状态码返回不同的错误信息
             if test_response:
                 if test_response.status_code == 401:
+                    # ❌ 失败：API Key无效
                     end_time = datetime.now()
                     elapsed = (end_time - start_time).total_seconds()
                     end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -267,37 +277,58 @@ async def validate_ai_service():
                     
                     return ValidateResponse(
                         success=False,
+                        status="failed",
                         provider=provider,
                         model=current_model,
                         message=error_msg + "，请检查Key是否正确"
                     )
                 elif test_response.status_code == 429:
+                    # 🚨 警告：速率限制（暂时性问题，配置本身有效）
                     end_time = datetime.now()
                     elapsed = (end_time - start_time).total_seconds()
                     end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
                     error_msg = f"速率限制：{provider} ({current_model}) API请求太频繁"
-                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(HTTP 429), 消息: {error_msg}")
+                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 警告(HTTP 429), 消息: {error_msg}")
                     
                     return ValidateResponse(
-                        success=False,
+                        success=True,  # 🚨 暂时可用
+                        status="warning",
                         provider=provider,
                         model=current_model,
-                        message=error_msg + "，请等待几分钟后重试"
+                        message=error_msg + "，请稍后重试"
                     )
-                else:
+                elif test_response.status_code == 402 or test_response.status_code == 403:
+                    # 🚨 警告：欠费/信用不够（暂时性问题）
                     end_time = datetime.now()
                     elapsed = (end_time - start_time).total_seconds()
                     end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
-                    error_msg = f"API错误：{provider} ({current_model}) 返回HTTP {test_response.status_code}"
-                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 失败(HTTP {test_response.status_code}), 消息: {error_msg}")
+                    error_msg = f"信用不足：{provider} ({current_model}) 账户余额或信用不够"
+                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 警告(HTTP {test_response.status_code}), 消息: {error_msg}")
                     
                     return ValidateResponse(
-                        success=False,
+                        success=True,  # 🚨 暂时可用
+                        status="warning",
                         provider=provider,
                         model=current_model,
-                        message=error_msg + "，请检查配置"
+                        message=error_msg + "，请检查账户"
+                    )
+                else:
+                    # 🚨 警告：其他HTTP错误（可能是暂时性问题）
+                    end_time = datetime.now()
+                    elapsed = (end_time - start_time).total_seconds()
+                    end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+                    error_msg = f"API提示：{provider} ({current_model}) 返回HTTP {test_response.status_code}"
+                    logger.info(f"[检查服务] 结束 - 时间: {end_str}, 耗时: {elapsed:.2f}秒, 结果: 警告(HTTP {test_response.status_code}), 消息: {error_msg}")
+                    
+                    return ValidateResponse(
+                        success=True,  # 🚨 暂时可用
+                        status="warning",
+                        provider=provider,
+                        model=current_model,
+                        message=error_msg + "，请留意"
                     )
             else:
+                # ❌ 失败：连接失败（配置或网络问题）
                 end_time = datetime.now()
                 elapsed = (end_time - start_time).total_seconds()
                 end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -306,12 +337,22 @@ async def validate_ai_service():
                 
                 return ValidateResponse(
                     success=False,
+                    status="failed",
                     provider=provider,
                     model=current_model,
                     message=error_msg + "，请检查网络或API地址配置"
                 )
             
     except Exception as e:
+        # 尝试获取当前配置信息
+        try:
+            provider = AIServiceFactory.get_current_provider()
+            ai_service = AIServiceFactory.get_service()
+            current_model = ai_service.model
+        except Exception:
+            provider = "unknown"
+            current_model = "unknown"
+        
         end_time = datetime.now()
         elapsed = (end_time - start_time).total_seconds()
         end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -319,7 +360,9 @@ async def validate_ai_service():
         
         return ValidateResponse(
             success=False,
-            provider="unknown",
+            status="failed",
+            provider=provider,
+            model=current_model,
             message=f"验证过程出错: {str(e)}"
         )
 

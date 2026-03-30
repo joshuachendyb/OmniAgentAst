@@ -9,7 +9,7 @@
  * @update 2026-02-18 添加移动端响应式支持
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Layout,
@@ -40,6 +40,7 @@ import {
   ReloadOutlined,
 } from "@ant-design/icons";
 import { configApi } from "../../services/api";
+import type { ValidateResponse } from "../../services/api";
 import type { MenuProps } from "antd";
 const { Option } = Select;
 import ShortcutPanel from "../ShortcutPanel";
@@ -113,6 +114,19 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   const [checkingStatus, setCheckingStatus] = useState(false);
   // 【新增】手动刷新标志，避免自动重置
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  // 【新增】验证错误弹框状态
+  const [validationErrorModal, setValidationErrorModal] = useState<{
+    visible: boolean;
+    message: string;
+    attemptedModel?: string; // 用户尝试切换的模型名称
+  }>({ visible: false, message: "" });
+  
+  // 【新增】当前尝试切换的模型
+  const [attemptedModel, setAttemptedModel] = useState<{
+    provider: string;
+    model: string;
+    display_name: string;
+  } | null>(null);
 
   // 初始化时同步设置checkingStatus
   useEffect(() => {
@@ -127,14 +141,36 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   }, [isInitialized, isManualRefreshing]);
 
   // 【修复问题2】当前选中的模型ID（格式: provider-modelname）
-  // 根据serviceStatus自动设置默认值
-  // 【新增】用户选择的临时模型（当serviceStatus为null时使用）
-  const [selectedModelTemp, setSelectedModelTemp] = useState<string>("");
-  
-  // 直接从serviceStatus获取当前模型，如果没有则使用临时选择的模型
+  // 直接从serviceStatus获取当前模型，始终保持最新
+  // 【修复】serviceStatus为null时，显示空字符串，让下拉框显示占位符
   const currentProvider = serviceStatus?.provider && serviceStatus?.model 
     ? `${serviceStatus.provider}-${serviceStatus.model}` 
-    : selectedModelTemp;
+    : "";
+
+  // 【新增】监听 serviceStatus 变化，当验证失败时显示弹框
+  const lastServiceStatusRef = useRef<ValidateResponse | null>(null);
+  
+  useEffect(() => {
+    // 检查 serviceStatus 是否发生变化
+    const statusChanged = lastServiceStatusRef.current !== serviceStatus;
+    lastServiceStatusRef.current = serviceStatus;
+    
+    // 只有当 serviceStatus 发生变化且验证失败时才显示弹框
+    if (statusChanged && serviceStatus && !serviceStatus.success && serviceStatus.message) {
+      // 显示验证错误弹框，包含尝试切换的新模型信息
+      setValidationErrorModal({
+        visible: true,
+        message: serviceStatus.message,
+        attemptedModel: attemptedModel ? `${attemptedModel.provider} (${attemptedModel.model})` : undefined,
+      });
+      // 2秒后自动关闭弹框
+      const timer = setTimeout(() => {
+        setValidationErrorModal({ visible: false, message: "" });
+        setAttemptedModel(null); // 清除尝试切换的模型
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [serviceStatus, attemptedModel]);
 
   // 切换模型后刷新serviceStatus
   const handleModelChange = async (value: string) => {
@@ -147,8 +183,13 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         return;
       }
       console.log("[切换模型] 开始切换:", selectedModel.provider, selectedModel.model);
-      // 【新增】立即更新临时选择的模型，避免UI回退
-      setSelectedModelTemp(value);
+      // 【新增】记录尝试切换的模型
+      setAttemptedModel({
+        provider: selectedModel.provider,
+        model: selectedModel.model,
+        display_name: selectedModel.display_name,
+      });
+      
       const result = await configApi.updateConfig({
         ai_provider: selectedModel.provider,
         ai_model: selectedModel.model,
@@ -156,8 +197,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       console.log("[切换模型] API返回:", result);
       if (!result.success) {
         message.error(result.message || "切换失败");
-        // 【新增】切换失败时清除临时选择
-        setSelectedModelTemp("");
         return;
       }
       message.success(`已切换到 ${selectedModel.display_name}`);
@@ -165,15 +204,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       // 使用串行刷新，确保验证成功后再刷新列表
       await refreshAfterModelChange();
       console.log("[切换模型] 刷新完成, serviceStatus:", serviceStatus);
-      // 【新增】如果验证成功，清除临时选择（使用serviceStatus的值）
-      if (serviceStatus) {
-        setSelectedModelTemp("");
-      }
     } catch (error: any) {
       console.error("[切换模型] 失败:", error);
       message.error(error?.response?.data?.detail || error?.message || "切换模型失败");
-      // 【新增】切换失败时清除临时选择
-      setSelectedModelTemp("");
     }
   };
 
@@ -472,24 +505,22 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
             {checkingStatus ? (
               <span style={{ color: "#999" }}>检查中...</span>
             ) : serviceStatus?.success ? (
-              <Tag color="success">
+              // ✅ 成功 或 🚨 警告（暂时可用）
+              <Tag color={serviceStatus.status === "warning" ? "warning" : "success"}>
                 <CheckCircleOutlined /> {serviceStatus.provider}{" "}
                 {serviceStatus.model && `(${serviceStatus.model})`}
+                {serviceStatus.status === "warning" && <span style={{ marginLeft: 4, fontSize: 11 }}>⚠️</span>}
               </Tag>
-            ) : serviceStatus?.message ? (
-              // 【小新修复 2026-03-14】后端message已包含provider/model，直接显示不再重复拼接
+            ) : serviceStatus && !serviceStatus.success ? (
+              // ❌ 失败时，显示配置文件中的模型名称（错误信息通过弹框显示）
               <Tag
-                color={
-                  serviceStatus.message.includes("限速") ||
-                  serviceStatus.message.includes("欠费") ||
-                  serviceStatus.message.includes("额度")
-                    ? "warning"
-                    : "error"
-                }
+                color="error"
                 onClick={handleCheckService}
                 style={{ cursor: "pointer" }}
               >
-                {serviceStatus.message} (点击重试)
+                <CheckCircleOutlined /> {serviceStatus.provider}{" "}
+                {serviceStatus.model && `(${serviceStatus.model})`}
+                <span style={{ marginLeft: 8, fontSize: 12 }}>(已失效)</span>
               </Tag>
             ) : (
               // 未配置或初始状态，可点击检查
@@ -642,6 +673,37 @@ onChange={handleModelChange}
               )}
           </div>
         )}
+      </Modal>
+
+      {/* 【新增】验证错误弹框 - 2秒后自动关闭 */}
+      <Modal
+        title="模型验证失败"
+        open={validationErrorModal.visible}
+        onCancel={() => setValidationErrorModal({ visible: false, message: "" })}
+        footer={[
+          <Button
+            key="close"
+            type="primary"
+            onClick={() => setValidationErrorModal({ visible: false, message: "" })}
+          >
+            关闭
+          </Button>,
+        ]}
+        width={500}
+      >
+        <Alert
+          message={validationErrorModal.attemptedModel 
+            ? `尝试切换到 ${validationErrorModal.attemptedModel} 失败` 
+            : "模型验证失败"}
+          description={validationErrorModal.message}
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+        />
+        <p>配置文件中的模型可能无法正常工作，请检查配置或稍后重试。</p>
+        <p style={{ marginTop: 8, color: '#666' }}>
+          注意：系统已自动回退到配置文件中的可用模型。
+        </p>
       </Modal>
     </Layout>
   );
