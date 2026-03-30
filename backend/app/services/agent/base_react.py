@@ -316,9 +316,11 @@ class BaseAgent(ABC):
 
     def _trim_history(self) -> None:
         """
-        分层保留对话历史（方案B）
-        - 保留最近5条消息（最新工具调用上下文）
-        - 保留重要消息（用户需求、工具调用结果等）
+        分层保留对话历史
+        - 保留 system message
+        - 保留用户消息
+        - 保留重要消息（工具调用结果等）
+        - 保留最近5条消息
         """
         if len(self.conversation_history) <= 2:
             return  # 少于 system + user，不需要裁剪
@@ -327,13 +329,16 @@ class BaseAgent(ABC):
         if len(self.conversation_history) <= 15:
             return
         
-        # 第一层：保留最近5条消息（包含最新的工具调用上下文）
+        # 保留 system message
+        system_msg = self.conversation_history[0]
+        
+        # 保留最近5条消息（最新工具调用上下文）
         recent = self.conversation_history[-5:]
         
-        # 第二层：保留重要消息（包含用户需求、工具调用结果等）
-        important_keywords = ["task", "需求", "目录", "查看", "搜索", "tool", "action", "observation", "执行", "结果"]
+        # 保留重要消息（用户需求、工具调用结果等）
+        important_keywords = ["task", "需求", "目录", "查看", "搜索", "tool", "action", "observation", "error", "执行", "错误", "结果"]
         important = []
-        for msg in self.conversation_history[:-5]:  # 排除最近5条
+        for msg in self.conversation_history[1:-5]:  # 排除system和recent
             content = msg.get("content", "")
             role = msg.get("role", "")
             
@@ -347,8 +352,8 @@ class BaseAgent(ABC):
         if len(important) > 10:
             important = important[-10:]
         
-        # 重建对话历史
-        self.conversation_history = important + recent
+        # 重建对话历史：system + user + important + recent
+        self.conversation_history = [system_msg] + important + recent
         
         logger.info(f"[History] Trimmed from {len(self.conversation_history) + 5} to {len(self.conversation_history)} messages (important={len(important)}, recent={len(recent)})")
 
