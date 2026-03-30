@@ -127,8 +127,7 @@ class ToolExecutor:
                 params["recursive"] = True
             if "max_depth" not in params:
                 params["max_depth"] = 10
-            if "max_results" not in params:
-                params["max_results"] = 10000
+            # 不设置默认限制，搜索全部结果
         
         # search_file_content: 默认 path 和 recursive 为合理值
         if action == "search_file_content":

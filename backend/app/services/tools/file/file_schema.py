@@ -144,9 +144,9 @@ class SearchFilesByNameInput(BaseModel):
         description="最大递归深度，仅当recursive=True时有效，默认为10"
     )
     max_results: int = Field(
-        default=10000,
+        default=None,
         ge=1,
-        description="限制每次最多获取结果数量，如果设置则会循环获取全部结果"
+        description="限制每次最多获取结果数量，不设置则搜索全部结果"
     )
     after: Optional[str] = Field(
         default=None,
