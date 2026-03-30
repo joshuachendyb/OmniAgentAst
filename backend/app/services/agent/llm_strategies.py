@@ -13,6 +13,7 @@ Author: 小沈 - 2026-03-21
 import json
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, List, Optional
+from datetime import datetime
 
 from app.services.agent.adapter import dict_list_to_messages
 from app.utils.logger import logger
@@ -103,7 +104,7 @@ class TextStrategy(LLMStrategy):
         else:
             content = str(response)
         
-        logger.info(f"[LLM Response Raw (text)] content={repr(content)[:500]}")
+        logger.info(f"[LLM Response Raw (text)] content={content}")
         
         # ===== 情况0: 空内容 =====
         if not content:
@@ -317,6 +318,15 @@ class ToolsStrategy(LLMStrategy):
                 
                 # 解析 tool_calls
                 if hasattr(response, 'content') and response.content:
+                    # 第一时间记录LLM返回的原始全部信息 - 必须满足用户要求
+                    raw_content = response.content
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                    content_length = len(raw_content) if raw_content else 0
+                    
+                    # 记录完整的原始信息，不截断，不解析，原封不动
+                    logger.info(f"[LLM Response Raw] timestamp={timestamp}, length={content_length}")
+                    logger.info(f"[LLM Response Content] {raw_content}")
+                    
                     try:
                         tool_calls = json.loads(response.content)
                         
@@ -326,12 +336,12 @@ class ToolsStrategy(LLMStrategy):
                             return content
                         else:
                             content = response.content
-                            logger.info(f"[Function Calling] LLM returned text (no tool call): {repr(content)[:200]}")
+                            logger.info(f"[Function Calling] LLM returned text (no tool call): {content}")
                             return content
                             
                     except (json.JSONDecodeError, TypeError) as e:
                         content = response.content
-                        logger.info(f"[Function Calling] Non-JSON response: {repr(content)[:200]}")
+                        logger.info(f"[Function Calling] Non-JSON response: {content}")
                         return content
                 else:
                     # 空响应，重试
@@ -490,7 +500,7 @@ class ResponseFormatStrategy(LLMStrategy):
             else:
                 content = str(response)
             
-            logger.info(f"[Agent] response_format raw content: {repr(content)[:500]}")
+            logger.info(f"[Agent] response_format raw content: {content}")
             
             # 解析 JSON 响应
             try:
@@ -511,7 +521,7 @@ class ResponseFormatStrategy(LLMStrategy):
                 logger.info(f"[Agent] response_format parsed: action={action}")
                 
             except json.JSONDecodeError as e:
-                logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={repr(content)[:200]}")
+                logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={content}")
                 raise Exception(f"Invalid JSON from LLM: {content}")
             
             
