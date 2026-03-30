@@ -141,11 +141,21 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   }, [isInitialized, isManualRefreshing]);
 
   // 【修复问题2】当前选中的模型ID（格式: provider-modelname）
-  // 直接从serviceStatus获取当前模型，始终保持最新
-  // 【修复】serviceStatus为null时，显示空字符串，让下拉框显示占位符
-  const currentProvider = serviceStatus?.provider && serviceStatus?.model 
-    ? `${serviceStatus.provider}-${serviceStatus.model}` 
-    : "";
+  // 优先从 serviceStatus 获取（验证后的当前模型），如果没有则从 modelList 获取 current_model === true 的模型
+  // 这样页面加载时也能正确显示当前配置的模型
+  const currentProvider = (() => {
+    // 如果有验证后的 serviceStatus，使用它
+    if (serviceStatus?.provider && serviceStatus?.model) {
+      return `${serviceStatus.provider}-${serviceStatus.model}`;
+    }
+    // 否则从 modelList 中找 current_model === true 的模型
+    const currentModel = modelList.find(m => m.current_model === true);
+    if (currentModel) {
+      return `${currentModel.provider}-${currentModel.model}`;
+    }
+    // 如果都没有，返回空字符串
+    return "";
+  })();
 
   // 【新增】监听 serviceStatus 变化，当验证失败时显示弹框
   const lastServiceStatusRef = useRef<ValidateResponse | null>(null);
@@ -523,14 +533,32 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                 <span style={{ marginLeft: 8, fontSize: 12 }}>(已失效)</span>
               </Tag>
             ) : (
-              // 未配置或初始状态，可点击检查
-              <Tag
-                color="error"
-                onClick={handleCheckService}
-                style={{ cursor: "pointer" }}
-              >
-                未配置 (点击检查)
-              </Tag>
+              // serviceStatus为null时，显示配置文件中的当前模型（未验证状态）
+              (() => {
+                const currentModel = modelList.find(m => m.current_model === true);
+                if (currentModel) {
+                  return (
+                    <Tag
+                      color="default"
+                      onClick={handleCheckService}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <CheckCircleOutlined /> {currentModel.provider}{" "}
+                      ({currentModel.model})
+                      <span style={{ marginLeft: 8, fontSize: 12 }}>(未验证)</span>
+                    </Tag>
+                  );
+                }
+                return (
+                  <Tag
+                    color="error"
+                    onClick={handleCheckService}
+                    style={{ cursor: "pointer" }}
+                  >
+                    未配置 (点击检查)
+                  </Tag>
+                );
+              })()
             )}
             {/* 【新增】配置验证警告 - 当validationResult有错误或警告时显示 */}
             {validationResult &&
