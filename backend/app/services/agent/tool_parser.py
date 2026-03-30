@@ -162,26 +162,28 @@ class ToolParser:
         Args:
             llm_response: LLM原始返回内容
             error: 解析异常
-            logger: 日志对象
+            logger: 日志对象（必须传入有效的logger，不能为None）
         
         Returns:
             统一的错误结果字典，包含：
             - parsed_obs: 解析结果（用于后续处理）
             - save_to_history: 是否保存原始response到history
-            - should_continue: 是否继续循环
             - error_type: 错误类型
         """
-        from app.utils.logger import logger as app_logger
-        if logger is None:
-            logger = app_logger
-        
         # 记录详细错误日志
         error_msg = str(error)
-        response_preview = llm_response[:500] if llm_response else "(空响应)"
+        
+        # 安全处理 llm_response
+        if llm_response:
+            response_preview = llm_response[:500]
+            response_length = len(llm_response)
+        else:
+            response_preview = "(空响应)"
+            response_length = 0
         
         logger.error(f"[ToolParser] 解析失败: {error_msg}")
         logger.error(f"[ToolParser] LLM原始返回 (前500字符): {response_preview}")
-        logger.error(f"[ToolParser] LLM返回长度: {len(llm_response) if llm_response else 0} 字符")
+        logger.error(f"[ToolParser] LLM返回长度: {response_length} 字符")
         
         # 分类错误类型
         if not llm_response or llm_response.strip() == "":
@@ -210,7 +212,6 @@ class ToolParser:
                 "raw_response": llm_response  # 保留原始响应，供调用方使用
             },
             "save_to_history": True,  # 保存原始response到history
-            "should_continue": False,  # 解析失败是否继续循环
             "error_type": error_type,
             "error_message": user_message
         }
