@@ -138,10 +138,9 @@ class SearchFilesByNameInput(BaseModel):
         description="是否递归搜索子目录，默认为True"
     )
     max_depth: int = Field(
-        default=10,
+        default=100000,
         ge=1,
-        le=50,
-        description="最大递归深度，仅当recursive=True时有效，默认为10"
+        description="最大递归深度，仅当recursive=True时有效，默认为100000"
     )
     # 【删除 max_results 字段】
     # 原因：小沈之前的知识浅薄，错误的要求给工具设置数量限制
