@@ -150,6 +150,53 @@ class ToolParser:
         
         return None
     
+    # ===== 方案A：分级错误信息类 =====
+    ERROR_TYPES = {
+        "empty_response": {
+            "title": "AI返回了空响应",
+            "description": "可能是网络问题或模型暂时不可用",
+            "suggestion": "请稍后再试，或尝试重新提问"
+        },
+        "json_parse_error": {
+            "title": "AI响应格式异常",
+            "description": "AI返回了非标准JSON格式的内容",
+            "suggestion": "请尝试简化问题，或重新组织语言"
+        },
+        "api_limit": {
+            "title": "API调用频繁",
+            "description": "模型访问量过大，已被限流",
+            "suggestion": "请稍后再试，或更换其他模型"
+        },
+        "data_too_large": {
+            "title": "数据量过大",
+            "description": "查询结果超出了AI的处理能力",
+            "suggestion": "请缩小查询范围，或分多次查询"
+        },
+        "context_lost": {
+            "title": "上下文丢失",
+            "description": "对话历史过长，部分上下文已被裁剪",
+            "suggestion": "请重新描述任务，或开始新对话"
+        },
+        "unknown": {
+            "title": "未知错误",
+            "description": "发生了未知错误",
+            "suggestion": "请重新尝试"
+        }
+    }
+    
+    @classmethod
+    def format_error(cls, error_type: str, details: str = "") -> dict:
+        """方案A：格式化错误信息"""
+        error_info = cls.ERROR_TYPES.get(error_type, cls.ERROR_TYPES["unknown"])
+        
+        return {
+            "title": error_info["title"],
+            "description": error_info["description"],
+            "details": details,
+            "suggestion": error_info["suggestion"]
+        }
+    
+    # ===== 方案B：增强错误日志和用户反馈 =====
     @staticmethod
     def handle_parse_error(llm_response: str, error: Exception, logger) -> Dict[str, Any]:
         """
@@ -157,7 +204,8 @@ class ToolParser:
         
         保证所有解析失败的地方使用一致的错误处理逻辑：
         1. 记录详细日志（包含LLM原始返回内容）
-        2. 返回统一的错误结果字典
+        2. 分类错误类型
+        3. 返回结构化错误信息
         
         Args:
             llm_response: LLM原始返回内容
@@ -165,10 +213,7 @@ class ToolParser:
             logger: 日志对象（必须传入有效的logger，不能为None）
         
         Returns:
-            统一的错误结果字典，包含：
-            - parsed_obs: 解析结果（用于后续处理）
-            - save_to_history: 是否保存原始response到history
-            - error_type: 错误类型
+            统一的错误结果字典
         """
         # 记录详细错误日志
         error_msg = str(error)
@@ -185,33 +230,35 @@ class ToolParser:
         logger.error(f"[ToolParser] LLM原始返回 (前500字符): {response_preview}")
         logger.error(f"[ToolParser] LLM返回长度: {response_length} 字符")
         
-        # 分类错误类型
+        # 方案B：分析错误类型
         if not llm_response or llm_response.strip() == "":
             error_type = "empty_response"
         elif "json" in error_msg.lower() or "decode" in error_msg.lower():
             error_type = "json_parse_error"
+        elif "429" in llm_response or "1305" in llm_response or "rate limit" in llm_response.lower():
+            error_type = "api_limit"
+        elif response_length > 10000:
+            error_type = "data_too_large"
         else:
             error_type = "unknown"
         
-        # 生成用户友好的错误消息
-        error_messages = {
-            "empty_response": "AI返回了空响应，可能是网络问题或模型限流",
-            "json_parse_error": "AI返回了非标准JSON格式，无法解析",
-            "unknown": "无法解析AI响应"
-        }
+        # 方案A：生成分级错误信息
+        error_info = ToolParser.format_error(error_type, error_msg)
         
-        user_message = error_messages.get(error_type, "无法解析AI响应")
+        # 生成返回给用户的完整错误消息
+        user_content = f"⚠️ {error_info['title']}\n\n{error_info['description']}\n\n建议：{error_info['suggestion']}"
         
         # 返回统一格式的错误结果
         return {
             "parsed_obs": {
-                "content": f"[解析失败] {user_message}。原始内容: {response_preview}",
+                "content": user_content,
                 "action_tool": "finish",
                 "params": {},
                 "reasoning": None,
-                "raw_response": llm_response  # 保留原始响应，供调用方使用
+                "raw_response": llm_response,
+                "error_details": error_info
             },
-            "save_to_history": True,  # 保存原始response到history
+            "save_to_history": True,
             "error_type": error_type,
-            "error_message": user_message
+            "error_message": f"{error_info['title']}: {error_info['description']}"
         }

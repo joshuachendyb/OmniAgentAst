@@ -156,40 +156,78 @@ class TextStrategy(LLMStrategy):
             "reasoning": reasoning
         }, ensure_ascii=False)
     
+    # ===== 方案A：分级错误信息 =====
+    ERROR_HINTS = {
+        "api_limit": {
+            "title": "API调用频繁",
+            "description": "模型访问量过大，已被限流",
+            "suggestion": "请稍后再试，或更换其他模型"
+        },
+        "timeout": {
+            "title": "请求超时",
+            "description": "AI响应时间过长",
+            "suggestion": "请检查网络后重试"
+        },
+        "connect": {
+            "title": "网络连接失败",
+            "description": "无法连接到AI服务",
+            "suggestion": "请检查网络后重试"
+        },
+        "auth": {
+            "title": "API认证失败",
+            "description": "API密钥无效或已过期",
+            "suggestion": "请检查API密钥是否有效"
+        },
+        "quota": {
+            "title": "API额度不足",
+            "description": "账户余额或调用配额已用尽",
+            "suggestion": "请充值后重试"
+        },
+        "unknown": {
+            "title": "服务暂时不可用",
+            "description": "发生了未知错误",
+            "suggestion": "请稍后重试"
+        }
+    }
+    
     def _format_error_hint(self, error: str) -> str:
         """
-        格式化错误提示信息，让用户更清楚地了解错误原因
+        方案A：格式化错误提示信息，生成分级错误信息
         
         Args:
             error: 原始错误信息
         
         Returns:
-            格式化后的错误提示
+            格式化后的错误提示（包含title/description/suggestion）
         """
         error_str = str(error).lower()
         
         # 限流错误
         if "429" in error_str or "1305" in error_str or "访问量过大" in error_str or "rate limit" in error_str:
-            return "模型访问量过大（429限流），请稍后再试或更换模型"
+            error_info = self.ERROR_HINTS["api_limit"]
         
         # 超时错误
-        if "timeout" in error_str or "超时" in error_str:
-            return "请求超时，请检查网络后重试"
+        elif "timeout" in error_str or "超时" in error_str:
+            error_info = self.ERROR_HINTS["timeout"]
         
         # 连接错误
-        if "connect" in error_str or "连接" in error_str:
-            return "网络连接失败，请检查网络后重试"
+        elif "connect" in error_str or "连接" in error_str:
+            error_info = self.ERROR_HINTS["connect"]
         
         # 认证错误
-        if "401" in error_str or "403" in error_str or "认证" in error_str or "auth" in error_str:
-            return "API认证失败，请检查API密钥是否有效"
+        elif "401" in error_str or "403" in error_str or "认证" in error_str or "auth" in error_str:
+            error_info = self.ERROR_HINTS["auth"]
         
         # 余额不足
-        if "余额" in error_str or "quota" in error_str or "credit" in error_str:
-            return "API额度或余额不足，请充值后重试"
+        elif "余额" in error_str or "quota" in error_str or "credit" in error_str:
+            error_info = self.ERROR_HINTS["quota"]
         
         # 默认错误
-        return f"服务暂时不可用（{error}），请稍后重试"
+        else:
+            error_info = self.ERROR_HINTS["unknown"]
+        
+        # 返回分级错误信息
+        return f"⚠️ {error_info['title']}\n\n{error_info['description']}\n\n建议：{error_info['suggestion']}"
     
     def _extract_by_known_tools(self, content: str) -> Optional[dict]:
         """
