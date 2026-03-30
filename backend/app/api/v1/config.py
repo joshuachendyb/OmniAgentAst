@@ -482,6 +482,14 @@ async def update_config(config_update: ConfigUpdate):
                 logger.warning(f"配置验证失败，恢复备份：{backup_path}")
                 shutil.copy2(str(backup_path), str(config_path))  # type: ignore
                 backup_restored = True  # ⭐ 标记已恢复
+            
+            # 恢复后重新加载，获取回滚后的真正模型
+            config = get_config_instance()
+            config.reload()
+            original_ai = original_config_data.get('ai', {})
+            current_provider = original_ai.get('provider', 'unknown')
+            current_model = original_ai.get('model', 'unknown')
+            
             # 删除备份文件
             backup_path.unlink(missing_ok=True)
             return {
@@ -489,7 +497,9 @@ async def update_config(config_update: ConfigUpdate):
                 "message": "配置验证失败",
                 "errors": errors,
                 "warnings": warnings,
-                "backup_path": str(backup_path)
+                "backup_path": str(backup_path),
+                "current_provider": current_provider,
+                "current_model": current_model
             }
         
         # 6. 【修复】确保 ai.provider 和 ai.model 在最前面
@@ -518,12 +528,18 @@ async def update_config(config_update: ConfigUpdate):
         # ⭐ 保留备份（不删除），等待 validate_ai_service 处理
         logger.info(f"配置更新成功，备份文件保留：{backup_path}，等待服务验证")
         
+        # 返回当前配置模型，供前端更新下拉框
+        current_provider = config_data.get('ai', {}).get('provider', '')
+        current_model = config_data.get('ai', {}).get('model', '')
+        
         return {
             "success": True,
             "message": "配置更新成功，请验证服务可用性",
             "updated_fields": config_update.dict(exclude_none=True),
             "warnings": warnings,
-            "backup_path": str(backup_path)  # 保留备份路径，供 validateService 使用
+            "backup_path": str(backup_path),
+            "current_provider": current_provider,
+            "current_model": current_model
         }
         
     except HTTPException:
