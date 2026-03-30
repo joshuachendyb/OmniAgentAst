@@ -1,3 +1,24 @@
+v0.8.44
+
+更新时间：2026-03-30
+
+更新内容：
+
+## 1. 修复前端React步骤显示字段名 - 小沈-2026-03-30
+
+### 1.1 问题
+
+- action步骤type原为"action"，改为"action_tool"
+- observation步骤reasoning改为obs_reasoning
+
+### 1.2 修改文件
+
+- backend/app/services/agent/base_react.py
+
+参与开发：小沈
+
+---
+
 v0.8.43
 
 更新时间：2026-03-30 18:53:12
