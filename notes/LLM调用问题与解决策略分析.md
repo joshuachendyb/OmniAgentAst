@@ -850,6 +850,16 @@ class ToolHealthChecker:
         return fallbacks.get(tool_name, tool_name)
 ```
 
+### 问题5分析结论（2026-03-30）
+
+**结论：❌ 无效问题**
+
+经过详细代码分析，发现：
+
+1. **grep工具不存在**：系统中只有`search_file_content`工具，没有独立的grep工具
+2. **错误信息来源不明**："Unable to connect"错误可能是LLM幻觉或外部服务错误
+3. **不需要实现任何代码修改**
+
 ---
 
 ### 问题6：工具调用策略不合理
@@ -941,7 +951,7 @@ class SmartToolSelector:
 
 ---
 
-### 问题7：数据量过大导致处理失败
+### 问题7：数据量过大导致处理失败 ⚠️ 待评估
 
 #### 现象
 各目录返回的数据量过大：
@@ -1106,7 +1116,7 @@ class HierarchicalDataFetcher:
 
 ---
 
-### 问题8：数据分页处理不完整
+### 问题8：数据分页处理不完整 ❌ 已评估（工具已有分页功能，LLM不会用，非问题）
 
 #### 现象
 在导出文件中，`has_more: true`，`next_page_token: "MTAw"`，说明还有更多数据未显示。
@@ -1213,7 +1223,7 @@ def smart_list_directory(dir_path: str, user_request: str = "") -> dict:
 
 ---
 
-### 问题9：LLM返回多工具调用声明但实际单工具执行
+### 问题9：LLM返回多工具调用声明但实际单工具执行 ⚠️ 待评估（与问题6重复）
 
 #### 现象
 从导出文件中发现，LLM返回了声称调用多个工具的声明，但实际只执行了一个工具调用。
