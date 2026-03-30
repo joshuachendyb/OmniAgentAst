@@ -227,7 +227,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
       e.currentTarget.style.boxShadow = "none";
     }}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", flexWrap: "wrap" as const }}>
+        <div style={{ display: "flex", alignItems: "flex-start", flexWrap: "wrap" as const }}>
         {/* 【小强优化 2026-03-18】步骤编号徽章 */}
         {step.step && (
           <span style={getStepBadgeStyle()}>
@@ -472,6 +472,36 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             <span style={getStepContentStyle("thought" as StepType, "primary")}>
               {step.reasoning || step.content || ""}
             </span>
+            {/* 【小沈优化 2026-03-30】显示timestamp */}
+            {step.timestamp && (
+              <span style={{ 
+                marginLeft: 12,
+                color: "#999",
+                fontSize: 11,
+              }}>
+                {formatTimestamp(step.timestamp)}
+              </span>
+            )}
+            {/* 显示下一步action_tool */}
+            {(step as any).action_tool && (
+              <div style={{ marginTop: 6, fontSize: 12, color: "#1890ff" }}>
+                ⬇️ 下一步：{(step as any).action_tool}
+              </div>
+            )}
+            {/* 显示params */}
+            {(step as any).params && Object.keys((step as any).params).length > 0 && (
+              <div style={{ 
+                marginTop: 4, 
+                fontSize: 11, 
+                color: "#666",
+                background: "#f5f5f5",
+                padding: "6px 10px",
+                borderRadius: 4,
+                fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+              }}>
+                {JSON.stringify((step as any).params)}
+              </div>
+            )}
           </div>
         )}
         {step.type === "final" && (
