@@ -315,21 +315,52 @@ class BaseAgent(ABC):
     MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话（每轮 = thought + observation）
 
     def _trim_history(self) -> None:
-        """限制对话历史长度，避免 token 爆炸导致 LLM 输出被截断"""
+        """
+        分层保留对话历史
+        - 保留 system message
+        - 保留用户原始需求（第1-2条用户消息）
+        - 保留最近5条消息
+        - 保留重要消息（工具调用、错误等）
+        """
         if len(self.conversation_history) <= 2:
             return  # 少于 system + user，不需要裁剪
         
-        # 保留 system message 和最近的 N 轮对话
-        # 每轮 = 1 thought (assistant) + 1 observation (user)
-        # 加上原始的 user message (task_prompt)
-        max_messages = 1 + 1 + (self.MAX_HISTORY_TURNS * 2)  # system + task + N*(thought+obs)
+        # 不需要裁剪
+        if len(self.conversation_history) <= 15:
+            return
         
-        if len(self.conversation_history) > max_messages:
-            # 保留 system message 和最近的消息
-            system_msg = self.conversation_history[0]
-            recent_msgs = self.conversation_history[-max_messages + 1:]
-            self.conversation_history = [system_msg] + recent_msgs
-            logger.info(f"[History] Trimmed conversation history from {len(self.conversation_history) + max_messages - 1} to {len(self.conversation_history)} messages")
+        # 第一层：保留 system message
+        system_msg = self.conversation_history[0]
+        
+        # 第二层：保留用户原始需求（第1-2条用户消息）
+        user_messages = []
+        for msg in self.conversation_history[1:]:
+            if msg.get("role") == "user" and len(user_messages) < 2:
+                user_messages.append(msg)
+        
+        # 第三层：保留最近5条消息（包含最新的工具调用上下文）
+        recent_messages = self.conversation_history[-5:]
+        
+        # 第四层：保留重要消息（包含工具调用结果、错误信息）
+        important_keywords = ["tool", "action", "observation", "error", "执行", "错误", "结果"]
+        important_messages = []
+        for msg in self.conversation_history[1:-5]:  # 中间部分
+            if any(keyword in str(msg.get("content", "")).lower() for keyword in important_keywords):
+                important_messages.append(msg)
+        
+        # 如果重要消息太多，只保留最新的10条
+        if len(important_messages) > 10:
+            important_messages = important_messages[-10:]
+        
+        # 重建对话历史：system + 用户需求 + 重要消息 + 最近消息
+        new_history = [system_msg]
+        new_history.extend(user_messages)
+        new_history.extend(important_messages)
+        new_history.extend(recent_messages)
+        
+        old_len = len(self.conversation_history)
+        self.conversation_history = new_history
+        logger.info(f"[History] Trimmed conversation history from {old_len} to {len(self.conversation_history)} messages (user_req={len(user_messages)}, important={len(important_messages)}, recent={len(recent_messages)})")
 
     # ===== 通用方法 =====
 
