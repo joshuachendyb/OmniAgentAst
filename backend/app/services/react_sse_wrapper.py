@@ -104,7 +104,7 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
             action_tool=event.get('action_tool', ''),
             params=event.get('params', {})
         )
-    elif event_type == 'action':  # 步骤13：统一SSE事件type命名
+    elif event_type == 'action_tool':
         return format_action_tool_sse(
             step=step,
             tool_name=event.get('tool_name', ''),
@@ -117,14 +117,14 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
     elif event_type == 'observation':
         return format_observation_sse(
             step=step,
-            execution_status=event.get('execution_status', 'success'),
-            summary=event.get('summary', ''),
+            execution_status=event.get('obs_execution_status', 'success'),
+            summary=event.get('obs_summary', ''),
             content=event.get('content', ''),
-            reasoning=event.get('reasoning', ''),
-            action_tool=event.get('action_tool', ''),
-            params=event.get('params', {}),
+            reasoning=event.get('obs_reasoning', ''),
+            action_tool=event.get('obs_action_tool', ''),
+            params=event.get('obs_params', {}),
             is_finished=event.get('is_finished', False),
-            raw_data=event.get('raw_data')
+            raw_data=event.get('obs_raw_data')
         )
     elif event_type == 'final':
         return create_final_response(
