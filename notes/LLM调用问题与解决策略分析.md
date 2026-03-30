@@ -276,7 +276,20 @@ class RequestQueue:
 
 ### 问题2实际修改实现（v0.8.39）
 
-**修改文件**: `backend/app/services/agent/llm_strategies.py`（第306-312行）
+**修改文件**: `backend/app/services/agent/llm_strategies.py`
+
+#### 实际修改的功能列表
+
+| 功能 | 状态 | 证据 |
+|------|------|------|
+| **指数退避** | ✅ 已实现 | 第310行 `retry_delay = RETRY_DELAY * (2 ** attempt)` |
+| **按需等待** | ✅ 已实现 | 检测到429才等待，不是固定等待 |
+| **重试3次** | ✅ 已实现 | 第243行 `MAX_RETRIES = 3` |
+| **降级TextStrategy** | ✅ 已实现 | 第368-377行 |
+| **错误提示增强** | ✅ 已实现 | 第159-192行 `_format_error_hint()` |
+| **模型降级** | ❌ 未实现 | 无模型切换代码 |
+
+#### 修改内容（第306-312行）
 
 将固定2秒延迟改为指数退避：
 ```python
