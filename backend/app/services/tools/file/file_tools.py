@@ -1158,7 +1158,7 @@ class FileTools:
         path: str = ".",
         recursive: bool = True,
         max_depth: int = 10,
-        max_results: int = 10000,
+        max_results: int = None,
         after: Optional[str] = None
     ) -> Dict[str, Any]:
         """搜索文件名（按文件名匹配）"""
