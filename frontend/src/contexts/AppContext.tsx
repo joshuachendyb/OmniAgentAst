@@ -289,10 +289,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       // validateConfig 需要 provider 参数，暂时跳过验证
       setValidationResult(null);
 
-      // 2. 并行获取所有数据
+      // 2. 只获取模型列表和会话数，不调用验证服务（由用户手动点击"检查服务"按钮）
       await Promise.all([
         refreshModelList(),
-        refreshServiceStatus(),
         refreshSessionCount(),
       ]);
       
