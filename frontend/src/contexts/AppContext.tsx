@@ -172,6 +172,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     setServiceStatusLoading(true);
     try {
       const status = await chatApi.validateService();
+      console.log("[refreshServiceStatus] validateService 返回:", status);
       setServiceStatus(status);
       return status;
     } catch (error) {
@@ -219,24 +220,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
    * 先验证服务，成功后再刷新列表
    * 用于切换模型后的状态刷新
    * @author 小新
+   * @update 2026-03-30 修复：当验证失败时，也应该刷新模型列表，以获取配置文件中的模型
+   * @update 2026-03-30 修复：当验证失败时，从模型列表获取配置文件中的模型信息，并更新 serviceStatus
    */
   const refreshAfterModelChange = useCallback(async () => {
     // 1. 先刷新服务状态（会验证新配置是否有效）
     const status = await refreshServiceStatus();
+    console.log("[refreshAfterModelChange] status:", status);
+    console.log("[refreshAfterModelChange] status.success:", status?.success);
     
-    // 2. 根据验证结果决定是否刷新列表
-    // refreshServiceStatus 返回验证后的 status
-    // 如果验证成功，status 不为 null
-    // 如果验证失败，status 为 null，此时不刷新列表
+    // 2. 无论验证成功还是失败，都应该刷新模型列表
+    // 验证失败时，后端可能回退到原来的配置，但配置文件可能仍显示用户尝试切换的模型
+    await refreshModelList();
+    await refreshSessionCount();
     
-    // 3. 只有验证成功才刷新模型列表（获取最新的 current_model 标记）
-    if (status) {
-      await Promise.all([
-        refreshModelList(),
-        refreshSessionCount(),
-      ]);
+    // 3. 如果验证失败，从模型列表获取配置文件中的模型信息，并更新 serviceStatus
+    if (!status || !status.success) {
+      console.warn("[refreshAfterModelChange] 模型验证失败，尝试从模型列表获取配置文件中的模型");
+      
+      try {
+        // 直接调用 API 获取最新的模型列表，而不是依赖状态更新
+        const modelData = await configApi.getModelList();
+        if (modelData?.models && Array.isArray(modelData.models)) {
+          // 从模型列表中找 current_model: true 的模型
+          const currentModel = modelData.models.find((m: any) => m.current_model === true);
+          if (currentModel) {
+            console.log("[refreshAfterModelChange] 从 API 获取到当前模型:", currentModel);
+            // 更新 serviceStatus，显示配置文件中的模型
+            setServiceStatus({
+              success: false, // 验证失败
+              provider: currentModel.provider,
+              model: currentModel.model,
+              message: `验证失败，但配置文件中当前模型为: ${currentModel.display_name}`,
+            });
+          }
+        }
+      } catch (error) {
+        console.error("[refreshAfterModelChange] 获取模型列表失败:", error);
+      }
     }
-  }, [refreshServiceStatus, refreshModelList, refreshSessionCount]);
+  }, [refreshServiceStatus, refreshModelList, refreshSessionCount, setServiceStatus]);
 
   /**
    * 初始化应用（只在首次加载时调用）

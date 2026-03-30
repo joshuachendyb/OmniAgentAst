@@ -120,6 +120,7 @@ export interface ValidateResponse {
   provider: string;
   model: string;
   message: string;
+  status?: 'success' | 'failed' | 'warning';
 }
 
 export const chatApi = {
