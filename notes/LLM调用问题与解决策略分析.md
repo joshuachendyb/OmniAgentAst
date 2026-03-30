@@ -429,6 +429,63 @@ def _trim_history_layered(self, max_messages: int = 20):
 
 ---
 
+### 问题3实际修改实现
+
+**修改文件**: `backend/app/services/agent/base_react.py`
+
+#### 实际修改的方法
+
+```python
+def _trim_history(self) -> None:
+    """
+    分层保留对话历史
+    - 保留 system message
+    - 保留用户消息
+    - 保留重要消息（工具调用结果等）
+    - 保留最近5条消息
+    """
+    if len(self.conversation_history) <= 2:
+        return
+    
+    # 不需要裁剪
+    if len(self.conversation_history) <= 15:
+        return
+    
+    # 保留 system message
+    system_msg = self.conversation_history[0]
+    
+    # 保留最近5条消息（最新工具调用上下文）
+    recent = self.conversation_history[-5:]
+    
+    # 保留重要消息（用户需求、工具调用结果等）
+    important_keywords = ["task", "需求", "目录", "查看", "搜索", "tool", "action", "observation", "error", "执行", "错误", "结果"]
+    important = []
+    for msg in self.conversation_history[1:-5]:  # 排除system和recent
+        content = msg.get("content", "")
+        role = msg.get("role", "")
+        
+        # 保留条件：
+        # 1. 用户消息
+        # 2. 包含关键词
+        if role == "user" or any(keyword in str(content).lower() for keyword in important_keywords):
+            important.append(msg)
+    
+    # 如果重要消息太多，只保留最新的10条
+    if len(important) > 10:
+        important = important[-10:]
+    
+    # 重建对话历史：system + user + important + recent
+    self.conversation_history = [system_msg] + important + recent
+```
+
+#### Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| f467dad4 | fix: 问题3-修正保留顺序+关键词列表-小沈-2026-03-30 |
+
+---
+
 ### 问题4：错误信息不完整
 
 #### 现象
