@@ -19,7 +19,60 @@ logging.raiseExceptions = False
 class SafeRotatingFileHandler(logging.handlers.RotatingFileHandler):
     """安全的轮转文件处理器，捕获轮转错误避免程序崩溃"""
     
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._current_date = datetime.now().strftime('%Y-%m-%d')
+        self._logger_name = None
+    
+    def set_logger_name(self, name: str):
+        """设置logger名称，用于获取对应的logger进行Handler替换"""
+        self._logger_name = name
+    
+    def _check_and_rotate_by_date(self):
+        """检查日期变化，必要时轮转日志文件"""
+        global _current_log_date
+        
+        today = datetime.now().strftime('%Y-%m-%d')
+        
+        # 如果日期变了，需要切换到新的日志文件
+        if self._current_date != today:
+            # 记录轮转信息
+            old_date = self._current_date
+            self._current_date = today
+            _current_log_date = today
+            
+            # 输出轮转信息到控制台
+            print(f"[Logger] 日志文件轮转: {old_date} -> {today}")
+            
+            # 【关键修复】关闭当前Handler，创建新的Handler使用新的日期文件名
+            if self._logger_name:
+                try:
+                    # 获取对应的logger
+                    logger = logging.getLogger(self._logger_name)
+                    
+                    # 移除当前Handler
+                    self.close()
+                    if self in logger.handlers:
+                        logger.removeHandler(self)
+                    
+                    # 创建新的Handler（使用新的日期文件名）
+                    new_handler = _create_handler_for_logger(
+                        self._logger_name, 
+                        logger.level,
+                        logger.handlers[0].formatter if logger.handlers else None
+                    )
+                    
+                    # 添加新Handler到logger
+                    if new_handler:
+                        logger.addHandler(new_handler)
+                        
+                except Exception as e:
+                    print(f"[Logger] 日志文件切换失败: {e}")
+    
     def emit(self, record):
+        # 先检查日期变化
+        self._check_and_rotate_by_date()
+        
         try:
             super().emit(record)
         except PermissionError:
@@ -100,6 +153,40 @@ def _setup_file_handler() -> SafeRotatingFileHandler:
         encoding='utf-8'
     )
     return _file_handler
+
+def _create_handler_for_logger(logger_name: str, level: int = None, formatter: logging.Formatter = None) -> Optional[SafeRotatingFileHandler]:
+    """
+    为指定logger创建新的文件处理器（使用当前日期的文件名）
+    
+    Args:
+        logger_name: logger名称
+        level: 日志级别（可选）
+        formatter: 日志格式（可选）
+        
+    Returns:
+        SafeRotatingFileHandler: 新的文件处理器，失败返回None
+    """
+    try:
+        log_file = _get_log_file_path()
+        handler = SafeRotatingFileHandler(
+            log_file,
+            maxBytes=LogConfig.get_max_bytes(),
+            backupCount=LogConfig.get_backup_count(),
+            encoding='utf-8'
+        )
+        # 设置logger名称，用于日期变化时替换Handler
+        handler.set_logger_name(logger_name)
+        
+        if formatter:
+            handler.setFormatter(formatter)
+        
+        if level:
+            handler.setLevel(level)
+        
+        return handler
+    except Exception as e:
+        print(f"[Logger] 创建文件处理器失败: {e}")
+        return None
 
 def _check_and_rotate_log_file(logger: logging.Logger):
     """检查是否需要切换到新的日志文件（日期变化时）"""
@@ -183,25 +270,17 @@ def setup_logger(name: str) -> logging.Logger:
     
     # 为每个logger添加处理器（创建新的实例以避免共享问题）
     if _file_handler and _console_handler:
-        # 为每个logger创建处理器副本，使用当天的日志文件
-        log_file = _get_log_file_path()
+        # 使用新函数创建文件处理器，并设置logger名称
+        file_handler = _create_handler_for_logger(name, log_level, formatter)
         
-        # 【修复】添加轮转失败时的错误处理
-        try:
-            file_handler = SafeRotatingFileHandler(
-                log_file,
-                maxBytes=LogConfig.get_max_bytes(),
-                backupCount=LogConfig.get_backup_count(),
-                encoding='utf-8'
-            )
-        except Exception as e:
-            # 轮转失败时，使用不带轮转的 FileHandler
+        if not file_handler:
+            # 失败时使用不带轮转的FileHandler
+            log_file = _get_log_file_path()
             import warnings
-            warnings.warn(f"RotatingFileHandler创建失败: {e}，使用普通FileHandler")
+            warnings.warn(f"创建SafeRotatingFileHandler失败，使用普通FileHandler")
             file_handler = logging.FileHandler(log_file, encoding='utf-8')
-        
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(log_level)
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(log_level)
         
         console_handler = logging.StreamHandler()
         console_handler.setFormatter(formatter)
