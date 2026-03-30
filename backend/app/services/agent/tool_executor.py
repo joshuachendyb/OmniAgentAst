@@ -119,23 +119,7 @@ class ToolExecutor:
                         f"param={key}={val_str}, 期望参数={standard}"
                     )
         
-        # search_files: 默认 path 和 recursive 为合理值
-        if action == "search_files":
-            if "path" not in params:
-                params["path"] = "."
-            if "recursive" not in params:
-                params["recursive"] = True
-            if "max_depth" not in params:
-                params["max_depth"] = 10
-            # 不设置默认限制，搜索全部结果
-        
-        # search_file_content: 默认 path 和 recursive 为合理值
-        if action == "search_file_content":
-            if "path" not in params:
-                params["path"] = "."
-            if "recursive" not in params:
-                params["recursive"] = True
-            # pattern 必填，不再提供默认值
+        # 参数由LLM返回，tool_executor不做默认设置
         
         return params
     
