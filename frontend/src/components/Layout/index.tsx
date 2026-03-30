@@ -205,8 +205,22 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         ai_model: selectedModel.model,
       });
       console.log("[切换模型] API返回:", result);
+      
+      // 无论成功或失败，都使用后端返回的 current_provider 和 current_model
+      if (result.current_provider && result.current_model) {
+        setServiceStatus({
+          success: result.success,
+          provider: result.current_provider,
+          model: result.current_model,
+          message: result.message || "",
+          status: result.success ? "success" : "failed"
+        });
+      }
+      
       if (!result.success) {
         message.error(result.message || "切换失败");
+        // 刷新模型列表获取最新配置
+        await refreshModelList();
         return;
       }
       message.success(`已切换到 ${selectedModel.display_name}`);
