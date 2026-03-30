@@ -111,22 +111,30 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   // 【修复问题1】检查服务状态 - 使用AppContext
   // 监听初始化状态，在初始化过程中显示loading
   const [checkingStatus, setCheckingStatus] = useState(false);
+  // 【新增】手动刷新标志，避免自动重置
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
 
   // 初始化时同步设置checkingStatus
   useEffect(() => {
-    if (!isInitialized) {
-      setCheckingStatus(true);
-    } else {
-      setCheckingStatus(false);
+    // 【修复】只有在非手动刷新时才自动重置
+    if (!isManualRefreshing) {
+      if (!isInitialized) {
+        setCheckingStatus(true);
+      } else {
+        setCheckingStatus(false);
+      }
     }
-  }, [isInitialized]);
+  }, [isInitialized, isManualRefreshing]);
 
   // 【修复问题2】当前选中的模型ID（格式: provider-modelname）
   // 根据serviceStatus自动设置默认值
-  // 直接从serviceStatus获取当前模型，始终保持最新
+  // 【新增】用户选择的临时模型（当serviceStatus为null时使用）
+  const [selectedModelTemp, setSelectedModelTemp] = useState<string>("");
+  
+  // 直接从serviceStatus获取当前模型，如果没有则使用临时选择的模型
   const currentProvider = serviceStatus?.provider && serviceStatus?.model 
     ? `${serviceStatus.provider}-${serviceStatus.model}` 
-    : "";
+    : selectedModelTemp;
 
   // 切换模型后刷新serviceStatus
   const handleModelChange = async (value: string) => {
@@ -139,6 +147,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         return;
       }
       console.log("[切换模型] 开始切换:", selectedModel.provider, selectedModel.model);
+      // 【新增】立即更新临时选择的模型，避免UI回退
+      setSelectedModelTemp(value);
       const result = await configApi.updateConfig({
         ai_provider: selectedModel.provider,
         ai_model: selectedModel.model,
@@ -146,6 +156,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       console.log("[切换模型] API返回:", result);
       if (!result.success) {
         message.error(result.message || "切换失败");
+        // 【新增】切换失败时清除临时选择
+        setSelectedModelTemp("");
         return;
       }
       message.success(`已切换到 ${selectedModel.display_name}`);
@@ -153,9 +165,15 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       // 使用串行刷新，确保验证成功后再刷新列表
       await refreshAfterModelChange();
       console.log("[切换模型] 刷新完成, serviceStatus:", serviceStatus);
+      // 【新增】如果验证成功，清除临时选择（使用serviceStatus的值）
+      if (serviceStatus) {
+        setSelectedModelTemp("");
+      }
     } catch (error: any) {
       console.error("[切换模型] 失败:", error);
       message.error(error?.response?.data?.detail || error?.message || "切换模型失败");
+      // 【新增】切换失败时清除临时选择
+      setSelectedModelTemp("");
     }
   };
 
@@ -170,10 +188,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   // 手动检查服务 - 使用AppContext刷新数据
   const handleCheckService = async () => {
     setCheckingStatus(true);
+    setIsManualRefreshing(true);  // 设置手动刷新标志
     try {
       await refreshAll();
     } finally {
       setCheckingStatus(false);
+      setIsManualRefreshing(false);  // 重置手动刷新标志
     }
   };
 
