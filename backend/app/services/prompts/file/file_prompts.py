@@ -234,11 +234,7 @@ IMPORTANT - When to finish:
 - Example finish: {{"thought": "任务已完成，我已查看E盘内容...", "action_tool": "finish", "params": {{"result": "完成了..."}}}}
 
 Remember:
-- 【Important】Layer-by-layer exploration strategy:
-  1. First list the root directory (D:/, E:/) to get level-1 directory listing
-  2. Only dive into subdirectories that the user explicitly mentions
-  3. After viewing results, first report the statistics, then decide whether to explore deeper
-  4. Wait for user confirmation before proceeding to the next step, do NOT call multiple tools in sequence
+- You can use multiple tools in sequence
 - Each tool call should be well-reasoned
 - If an operation fails, explain why and suggest alternatives
 - All file operations are tracked for safety"""
