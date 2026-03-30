@@ -614,7 +614,7 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
                   fontWeight: 500,
                 }}
               >
-                📊 共 {total} 个项目
+                {/* 【小沈删除 2026-03-30】用户要求删除"📊 共 XX 个项目" */}
               </span>
             </div>
           )}

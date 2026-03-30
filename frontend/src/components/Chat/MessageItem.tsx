@@ -243,6 +243,12 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
         {step.type === "action_tool" && (
           <>
             {step.action_description || step.tool_name || "执行中..."}
+            {/* 【小沈优化 2026-03-30】显示timestamp */}
+            {step.timestamp && (
+              <span style={{ marginLeft: "auto", color: "#333", fontSize: 11 }}>
+                {formatTimestamp(step.timestamp)}
+              </span>
+            )}
             {step.tool_params && (
               <div>
                 {/* 默认显示1行 */}
@@ -292,18 +298,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             {/* 【小沈修复 2026-03-24】对于list_directory，总数由ListDirectoryView内部显示，避免重复 */}
             {step.raw_data && step.tool_name !== "list_directory" && (
               <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
-                {step.raw_data.total && (
-                  <span style={{ 
-                    marginRight: 12,
-                    background: "#e6f7ff",
-                    padding: "2px 8px",
-                    borderRadius: 4,
-                    color: "#1890ff",
-                    fontWeight: 500,
-                  }}>
-                    📊 共 {step.raw_data.total} 个项目
-                  </span>
-                )}
+                {/* 【小沈删除 2026-03-30】用户要求删除"📊 共 XX 个项目"显示 */}
                 {hasMore && (
                   <span 
                     onClick={handleLoadMore}
@@ -328,33 +323,44 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 )}
               </div>
             )}
+            {/* 【小沈优化 2026-03-30】显示execution_status和summary */}
+            {(step as any).execution_status && (
+              <div style={{ marginTop: 6, fontSize: 12 }}>
+                <span style={{ 
+                  color: (step as any).execution_status === "success" ? "#52c41a" : "#ff4d4f",
+                  fontWeight: 500,
+                  marginRight: 8,
+                }}>
+                  📊 状态：{(step as any).execution_status}
+                </span>
+                {(step as any).summary && (
+                  <span style={{ color: "#666" }}>
+                    | 摘要：{(step as any).summary}
+                  </span>
+                )}
+              </div>
+            )}
           </>
         )}
         {step.type === "observation" && (
           <>
-            {/* 【小沈修正 2026-03-23】显示 Agent 的思考过程 - 使用 step.obs_reasoning（和SSE后端字段名一致） */}
-            {step.obs_reasoning && (
-              <div style={{ 
-                ...getStepStyle("thought" as StepType),
-                color: "#888",
-                fontStyle: "italic",
-                marginBottom: 8,
-                fontSize: "0.95em",
-              }}>
-                💭 {step.obs_reasoning}
-              </div>
-            )}
-            {/* 【小沈修复2026-03-23】显示 observation 的 content 字段 */}
+            {/* 【小沈优化 2026-03-30】按文档优化：content + timestamp */}
             {step.content && typeof step.content === "string" && (
               <div style={{ 
                 ...getStepStyle("observation" as StepType),
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}>
-                📋 {step.content}
+                {step.content}
+                {/* 显示timestamp - 行末黑色 */}
+                {step.timestamp && (
+                  <span style={{ marginLeft: "auto", color: "#333", fontSize: 11 }}>
+                    {formatTimestamp(step.timestamp)}
+                  </span>
+                )}
               </div>
             )}
-              {/* 显示执行结果 - 只有当没有 content 时才显示 */}
+            {/* 显示执行结果 - 只有当没有 content 时才显示 */}
             {!step.content && (
               <div>
                 {/* 【小沈修正 2026-03-23】文件列表框框 - 使用 step.obs_raw_data（和SSE后端字段名一致） */}
@@ -408,6 +414,30 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                     </div>
                   );
                 })()}
+              </div>
+            )}
+            {/* 【小沈优化 2026-03-30】显示下一步action_tool */}
+            {(step as any).obs_action_tool && (
+              <div style={{ marginTop: 6, fontSize: 12, color: "#1890ff" }}>
+                ⬇️ 下一步：{(step as any).obs_action_tool}
+              </div>
+            )}
+            {/* 【小沈优化 2026-03-30】显示params - 用JsonHighlight格式化 */}
+            {(step as any).obs_params && Object.keys((step as any).obs_params).length > 0 && (
+              <div style={{ 
+                marginTop: 4, 
+                fontSize: 12, 
+                background: "#f5f5f5",
+                padding: "6px 10px",
+                borderRadius: 4,
+              }}>
+                <JsonHighlight data={(step as any).obs_params} isExpanded={true} />
+              </div>
+            )}
+            {/* 显示is_finished */}
+            {step.is_finished === true && (
+              <div style={{ marginTop: 6, fontSize: 12, color: "#52c41a", fontWeight: 500 }}>
+                ✅ 结束
               </div>
             )}
           </>
@@ -472,13 +502,9 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             <span style={getStepContentStyle("thought" as StepType, "primary")}>
               {step.reasoning || step.content || ""}
             </span>
-            {/* 【小沈优化 2026-03-30】显示timestamp */}
+            {/* 【小沈优化 2026-03-30】显示timestamp - 行末黑色 */}
             {step.timestamp && (
-              <span style={{ 
-                marginLeft: 12,
-                color: "#999",
-                fontSize: 11,
-              }}>
+              <span style={{ marginLeft: "auto", color: "#333", fontSize: 11 }}>
                 {formatTimestamp(step.timestamp)}
               </span>
             )}
