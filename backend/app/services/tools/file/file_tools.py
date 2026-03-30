@@ -555,7 +555,7 @@ class FileTools:
         self,
         dir_path: str,
         recursive: bool = False,
-        max_depth: int = 10,
+        max_depth: int = 100000,
         page_token: Optional[str] = None,
         page_size: int = 100
     ) -> Dict[str, Any]:
@@ -1163,7 +1163,7 @@ class FileTools:
         file_pattern: str,
         path: str = ".",
         recursive: bool = True,
-        max_depth: int = 10,
+        max_depth: int = 100000,
         # 【删除 max_results 参数】
         # 原因：小沈之前的知识浅薄，错误的要求给工具设置数量限制
         # 现在导致了工具执行错误，反馈的结果隐藏了真实的数据
