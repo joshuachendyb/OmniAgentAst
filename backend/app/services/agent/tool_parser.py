@@ -149,3 +149,68 @@ class ToolParser:
                 return result
         
         return None
+    
+    @staticmethod
+    def handle_parse_error(llm_response: str, error: Exception, logger) -> Dict[str, Any]:
+        """
+        统一处理LLM响应解析错误
+        
+        保证所有解析失败的地方使用一致的错误处理逻辑：
+        1. 记录详细日志（包含LLM原始返回内容）
+        2. 返回统一的错误结果字典
+        
+        Args:
+            llm_response: LLM原始返回内容
+            error: 解析异常
+            logger: 日志对象
+        
+        Returns:
+            统一的错误结果字典，包含：
+            - parsed_obs: 解析结果（用于后续处理）
+            - save_to_history: 是否保存原始response到history
+            - should_continue: 是否继续循环
+            - error_type: 错误类型
+        """
+        from app.utils.logger import logger as app_logger
+        if logger is None:
+            logger = app_logger
+        
+        # 记录详细错误日志
+        error_msg = str(error)
+        response_preview = llm_response[:500] if llm_response else "(空响应)"
+        
+        logger.error(f"[ToolParser] 解析失败: {error_msg}")
+        logger.error(f"[ToolParser] LLM原始返回 (前500字符): {response_preview}")
+        logger.error(f"[ToolParser] LLM返回长度: {len(llm_response) if llm_response else 0} 字符")
+        
+        # 分类错误类型
+        if not llm_response or llm_response.strip() == "":
+            error_type = "empty_response"
+        elif "json" in error_msg.lower() or "decode" in error_msg.lower():
+            error_type = "json_parse_error"
+        else:
+            error_type = "unknown"
+        
+        # 生成用户友好的错误消息
+        error_messages = {
+            "empty_response": "AI返回了空响应，可能是网络问题或模型限流",
+            "json_parse_error": "AI返回了非标准JSON格式，无法解析",
+            "unknown": "无法解析AI响应"
+        }
+        
+        user_message = error_messages.get(error_type, "无法解析AI响应")
+        
+        # 返回统一格式的错误结果
+        return {
+            "parsed_obs": {
+                "content": f"[解析失败] {user_message}。原始内容: {response_preview}",
+                "action_tool": "finish",
+                "params": {},
+                "reasoning": None,
+                "raw_response": llm_response  # 保留原始响应，供调用方使用
+            },
+            "save_to_history": True,  # 保存原始response到history
+            "should_continue": False,  # 解析失败是否继续循环
+            "error_type": error_type,
+            "error_message": user_message
+        }

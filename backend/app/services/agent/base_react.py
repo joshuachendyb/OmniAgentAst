@@ -152,24 +152,32 @@ class BaseAgent(ABC):
                 self.status = AgentStatus.THINKING
                 response = await self._get_llm_response()
                 
-                # 解析响应
+                # 解析响应 - 使用统一的错误处理方法
                 try:
                     parsed = self.parser.parse_response(response)
                 except ValueError as e:
-                    logger.error(f"Failed to parse LLM response: {e}")
-                    # 保存原始response到conversation_history，避免丢弃LLM的content
-                    self.conversation_history.append({"role": "assistant", "content": response})
-                    # 发送thought事件（使用原始response）- 步骤12修复
+                    # 使用ToolParser统一处理解析错误
+                    error_result = ToolParser.handle_parse_error(response, e, logger)
+                    error_info = error_result["parsed_obs"]
+                    
+                    # 保存原始response到conversation_history
+                    if error_result["save_to_history"]:
+                        self.conversation_history.append({"role": "assistant", "content": response})
+                    
+                    # 发送thought事件（显示错误信息）
                     yield {
                         "type": "thought",
                         "step": step_count,
                         "timestamp": create_timestamp(),
-                        "content": f"[解析失败] {response}",  # 显示原始response
-                        "reasoning": "",
-                        "action_tool": "finish",
-                        "params": {}
+                        "content": error_info["content"],
+                        "reasoning": error_info.get("reasoning", ""),
+                        "action_tool": error_info["action_tool"],
+                        "params": error_info.get("params", {}),
+                        "parse_error": error_result["error_type"]  # 添加错误类型标记
                     }
-                    self._add_observation_to_history(f"Parse error: {e}. Please respond with valid JSON format.")
+                    
+                    # 添加observation提示，让LLM可以重新响应
+                    self._add_observation_to_history(f"Parse error: {error_result['error_message']}. Please respond with valid JSON format.")
                     continue
                 
                 thought_content = parsed.get("content", "")
@@ -243,13 +251,16 @@ class BaseAgent(ABC):
                 try:
                     parsed_obs = self.parser.parse_response(llm_response)
                 except ValueError as e:
-                    logger.error(f"Failed to parse observation LLM response: {e}")
-                    parsed_obs = {"content": "无法解析LLM响应", "action_tool": "finish", "params": {}}
+                    # 使用ToolParser统一处理解析错误（与Thought阶段保持一致）
+                    error_result = ToolParser.handle_parse_error(llm_response, e, logger)
+                    parsed_obs = error_result["parsed_obs"]
                 
                 is_finished = parsed_obs.get("action_tool") == "finish"
                 
-                # 保存第2次LLM的响应到conversation_history（步骤8修复）
-                self.conversation_history.append({"role": "assistant", "content": parsed_obs.get("content", "")})
+                # 保存第2次LLM的响应到conversation_history
+                # 优先保存原始响应，保留完整信息
+                history_content = parsed_obs.get("raw_response") or parsed_obs.get("content", "")
+                self.conversation_history.append({"role": "assistant", "content": history_content})
                 
                 # yield observation
                 current_time = create_timestamp()
