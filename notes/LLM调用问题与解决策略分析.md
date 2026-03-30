@@ -583,6 +583,154 @@ def handle_parse_error(self, llm_response: str, error: Exception) -> dict:
     }
 ```
 
+### 问题4实际修改实现（v0.8.40-9e0d4e7b）
+
+**修改文件**：
+1. `backend/app/services/agent/tool_parser.py` - 实现方案B
+2. `backend/app/services/agent/llm_strategies.py` - 实现方案A
+
+#### 实际修改的功能列表
+
+| 功能 | 状态 | 证据 |
+|------|------|------|
+| **增强错误日志** | ✅ 已实现 | tool_parser.py 第153-216行 handle_parse_error方法 |
+| **分类错误类型** | ✅ 已实现 | tool_parser.py 第169-173行 检测empty_response/json_parse_error/api_limit/data_too_large |
+| **分级错误信息** | ✅ 已实现 | llm_strategies.py 第159-192行 _format_error_hint方法 |
+| **错误类型检测** | ✅ 已实现 | llm_strategies.py 第194-232行 检测api_limit/data_too_large/empty_response/context_lost |
+
+#### 修改内容
+
+**1. tool_parser.py 添加统一错误处理方法**（第153-216行）
+
+```python
+@staticmethod
+def handle_parse_error(llm_response, error, logger):
+    """
+    统一处理LLM响应解析错误
+    - 记录详细日志（包含LLM原始返回内容）
+    - 分类错误类型（empty_response/json_parse_error/unknown）
+    - 生成用户友好的错误消息
+    - 返回统一格式的错误结果
+    """
+    # 分析错误类型
+    error_type = "unknown"
+    if not llm_response or llm_response.strip() == "":
+        error_type = "empty_response"
+    elif isinstance(error, json.JSONDecodeError):
+        error_type = "json_parse_error"
+    
+    # 记录详细日志
+    logger.error(f"Failed to parse LLM response: {error}")
+    logger.error(f"LLM response content (前500字符): {llm_response[:500] if llm_response else 'Empty'}")
+    logger.error(f"Error type: {error_type}")
+    
+    # 生成用户友好的错误消息
+    error_messages = {
+        "empty_response": {
+            "title": "AI返回了空响应",
+            "description": "可能是网络问题、模型限流或API错误",
+            "suggestion": "请稍后再试，或尝试重新提问"
+        },
+        "json_parse_error": {
+            "title": "AI响应格式异常",
+            "description": "AI返回了非JSON格式的内容",
+            "suggestion": "请尝试简化问题，或重新组织语言"
+        },
+        "unknown": {
+            "title": "无法解析AI响应",
+            "description": "AI返回了无法理解的内容",
+            "suggestion": "请重新尝试或更换问题表述"
+        }
+    }
+    
+    info = error_messages.get(error_type, error_messages["unknown"])
+    
+    return {
+        "content": f"⚠️ {info['title']}\n\n{info['description']}\n\n建议：{info['suggestion']}",
+        "action_tool": "finish",
+        "params": {},
+        "error_type": error_type
+    }
+```
+
+**2. llm_strategies.py 添加分级错误信息**（第159-192行）
+
+```python
+def _format_error_hint(self, error_type: str, error_msg: str = "") -> str:
+    """
+    格式化错误提示信息（分级错误信息）
+    - 根据错误类型提供不同的提示
+    - 包含具体的错误描述和建议
+    """
+    hints = {
+        "api_limit": {
+            "title": "API调用频繁",
+            "description": "模型访问量过大，已被限流",
+            "suggestion": "请稍后再试，或更换其他模型"
+        },
+        "data_too_large": {
+            "title": "数据量过大",
+            "description": "查询结果超出了AI的处理能力",
+            "suggestion": "请缩小查询范围，或分多次查询"
+        },
+        "empty_response": {
+            "title": "AI返回了空响应",
+            "description": "可能是网络问题或模型暂时不可用",
+            "suggestion": "请稍后再试，或尝试重新提问"
+        },
+        "context_lost": {
+            "title": "上下文丢失",
+            "description": "对话历史过长，部分上下文已被裁剪",
+            "suggestion": "请重新描述任务，或开始新对话"
+        }
+    }
+    
+    info = hints.get(error_type, {
+        "title": "未知错误",
+        "description": error_msg,
+        "suggestion": "请重新尝试"
+    })
+    
+    return f"⚠️ {info['title']}\n\n{info['description']}\n\n建议：{info['suggestion']}"
+```
+
+**3. llm_strategies.py 添加错误类型检测**（第194-232行）
+
+```python
+def _detect_error_type(self, response_text: str, error_msg: str) -> str:
+    """
+    检测错误类型
+    - 分析响应内容和错误消息
+    - 返回错误类型标识
+    """
+    response_lower = response_text.lower() if response_text else ""
+    error_lower = error_msg.lower()
+    
+    # 检测API限流
+    if "429" in response_text or "限流" in error_msg or "too many requests" in error_lower:
+        return "api_limit"
+    
+    # 检测数据过大
+    if "data_too_large" in error_lower or "too large" in error_lower or len(response_text or "") > 10000:
+        return "data_too_large"
+    
+    # 检测空响应
+    if not response_text or response_text.strip() == "":
+        return "empty_response"
+    
+    # 检测上下文丢失
+    if "context" in error_lower or "history" in error_lower:
+        return "context_lost"
+    
+    return "unknown"
+```
+
+#### Commit汇总
+
+| 版本 | Commit | 说明 |
+|------|--------|------|
+| v0.8.40 | 9e0d4e7b | fix: 问题4-增强错误日志和分级错误提示-小沈-2026-03-30 |
+
 ---
 
 ### 问题5：工具使用问题（grep工具连接失败）
