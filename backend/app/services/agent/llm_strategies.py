@@ -303,11 +303,13 @@ class ToolsStrategy(LLMStrategy):
                     error_msg = response.error
                     last_error = error_msg
                     
-                    # 检查是否是限流错误
+                    # 检查是否是限流错误，使用指数退避
                     if "429" in str(error_msg) or "1305" in str(error_msg):
                         if attempt < self.MAX_RETRIES - 1:
-                            logger.warning(f"[Function Calling] Rate limit detected (attempt {attempt + 1}/{self.MAX_RETRIES}), retrying in {self.RETRY_DELAY}s...")
-                            await asyncio.sleep(self.RETRY_DELAY)
+                            # 指数退避: 2, 4, 8 秒递增
+                            retry_delay = self.RETRY_DELAY * (2 ** attempt)
+                            logger.warning(f"[Function Calling] Rate limit detected (attempt {attempt + 1}/{self.MAX_RETRIES}), retrying in {retry_delay}s...")
+                            await asyncio.sleep(retry_delay)
                             continue
                         else:
                             logger.error(f"[Function Calling] Rate limit persists after {self.MAX_RETRIES} attempts, falling back to text mode")
