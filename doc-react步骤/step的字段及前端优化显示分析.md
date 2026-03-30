@@ -215,7 +215,10 @@ ReAct (Reasoning + Acting) 模式的核心流程：
 | obs_summary | 执行摘要 | 0/47 | 删除 |
 | obs_raw_data | 原始数据 | 0/47 | 删除 |
 | obs_reasoning | 推理过程 | 0/47 | 删除 |
+前端使用情况：
 
+obs_raw_data（366-417行）：只有当没有content时才显示 → 用于显示文件列表
+obs_summary（409-413行）：只有当没有content时才显示 → 用于显示摘要
 ### 6. ReAct标准说明
 
 ```
