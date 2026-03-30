@@ -210,9 +210,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         return;
       }
       message.success(`已切换到 ${selectedModel.display_name}`);
-      console.log("[切换模型] 开始刷新...");
-      // 使用串行刷新，确保验证成功后再刷新列表
-      await refreshAfterModelChange();
+      console.log("[切换模型] 开始刷新模型列表...");
+      // 只刷新模型列表，不调用验证（验证由用户手动点击"检查服务"按钮）
+      await refreshModelList();
+      await refreshSessionCount();
       console.log("[切换模型] 刷新完成, serviceStatus:", serviceStatus);
     } catch (error: any) {
       console.error("[切换模型] 失败:", error);

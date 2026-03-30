@@ -7,6 +7,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from app.services import AIServiceFactory
+from app.config import get_config as get_config_instance
 from app.utils.logger import logger
 
 router = APIRouter()
@@ -172,6 +173,14 @@ async def validate_ai_service():
             if backup_path and config_path:
                 await _restore_backup_and_delete_by_path(backup_path, config_path)
             
+            # 🚨 重要：恢复备份后，重新加载配置获取回滚后的真正当前模型
+            config = get_config_instance()
+            config.reload()
+            ai_config = config.get('ai', {})
+            provider = ai_config.get('provider', 'unknown')
+            current_model = ai_config.get('model', 'unknown')
+            logger.info(f"[检查服务] 验证失败已回滚，当前配置: provider={provider}, model={current_model}")
+            
             end_time = datetime.now()
             elapsed = (end_time - start_time).total_seconds()
             end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -234,6 +243,14 @@ async def validate_ai_service():
             # ❌ 清除全局状态
             AIServiceFactory.clear_backup_paths()
             
+            # 🚨 重要：恢复备份后，重新加载配置获取回滚后的真正当前模型
+            config = get_config_instance()
+            config.reload()
+            ai_config = config.get('ai', {})
+            provider = ai_config.get('provider', 'unknown')
+            current_model = ai_config.get('model', 'unknown')
+            logger.info(f"[检查服务] 验证失败已回滚，当前配置: provider={provider}, model={current_model}")
+            
             end_time = datetime.now()
             elapsed = (end_time - start_time).total_seconds()
             end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -268,7 +285,18 @@ async def validate_ai_service():
             # 根据状态码返回不同的错误信息
             if test_response:
                 if test_response.status_code == 401:
-                    # ❌ 失败：API Key无效
+                    # ❌ 失败：API Key无效，恢复备份
+                    if backup_path and config_path:
+                        await _restore_backup_and_delete_by_path(backup_path, config_path)
+                    
+                    # 🚨 重要：恢复备份后，重新加载配置获取回滚后的真正当前模型
+                    config = get_config_instance()
+                    config.reload()
+                    ai_config = config.get('ai', {})
+                    provider = ai_config.get('provider', 'unknown')
+                    current_model = ai_config.get('model', 'unknown')
+                    logger.info(f"[检查服务] 验证失败已回滚，当前配置: provider={provider}, model={current_model}")
+                    
                     end_time = datetime.now()
                     elapsed = (end_time - start_time).total_seconds()
                     end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -328,7 +356,18 @@ async def validate_ai_service():
                         message=error_msg + "，请留意"
                     )
             else:
-                # ❌ 失败：连接失败（配置或网络问题）
+                # ❌ 失败：连接失败（配置或网络问题），恢复备份
+                if backup_path and config_path:
+                    await _restore_backup_and_delete_by_path(backup_path, config_path)
+                
+                # 🚨 重要：恢复备份后，重新加载配置获取回滚后的真正当前模型
+                config = get_config_instance()
+                config.reload()
+                ai_config = config.get('ai', {})
+                provider = ai_config.get('provider', 'unknown')
+                current_model = ai_config.get('model', 'unknown')
+                logger.info(f"[检查服务] 验证失败已回滚，当前配置: provider={provider}, model={current_model}")
+                
                 end_time = datetime.now()
                 elapsed = (end_time - start_time).total_seconds()
                 end_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
