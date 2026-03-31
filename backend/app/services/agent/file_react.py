@@ -392,8 +392,11 @@ class FileReactAgent(BaseAgent):
         """
         运行 Agent 完成任务
         
-        【修复】使用锁保护确保并发安全
-        【修复】每次 run 独立管理状态和 session
+        【重构 2026-03-31 小沈】：
+        - 删除重复的 ReAct 循环实现
+        - 统一调用父类 run_stream() 方法
+        - 消除 run() 和 run_stream() 的行为不一致问题
+        - 保留 session 管理和锁保护逻辑
         
         Args:
             task: 任务描述
@@ -415,15 +418,14 @@ class FileReactAgent(BaseAgent):
         """
         内部运行方法（带 session 管理）
         
+        【重构 2026-03-31 小沈】：
+        - 删除重复的 ReAct 循环实现（原第457-533行）
+        - 统一调用父类 run_stream() 方法
+        - 消除与 base_react.py run_stream() 的行为不一致
+        - 保留 session 管理、锁保护、结果收集逻辑
+        
         【说明】意图识别已移至路由层（chat_router.py），此处只做文件操作
         """
-        # 重置状态
-        self.steps = []
-        self.conversation_history = []
-        self.status = AgentStatus.THINKING
-        self.llm_call_count = 0
-        logger.info(f"[LLM Counter] Agent run started, LLM counter reset to 0")
-        
         # 获取 session_id 用于日志追踪
         session_id = self.session_id or ""
         
@@ -443,115 +445,54 @@ class FileReactAgent(BaseAgent):
                 self.file_tools.set_session(session_id)
             logger.info(f"Session created in run(): {session_id}")
         
-        # 构建初始 prompt
-        sys_prompt = system_prompt or self.prompts.get_system_prompt()
-        task_prompt = self.prompts.get_task_prompt(task, context)
-        
-        # 添加到对话历史
-        self.conversation_history.append({"role": "system", "content": sys_prompt})
-        self.conversation_history.append({"role": "user", "content": task_prompt})
-        
-        current_step = 0
+        # 【重构 2026-03-31】调用父类 run_stream() 统一执行 ReAct 循环
+        # 消除与 base_react.py 的重复实现，确保行为一致
         result = None
-        
         try:
-            while current_step < self.max_steps:
-                current_step += 1
+            async for event in self.run_stream(task, context):
+                event_type = event.get("type")
                 
-                # 1. Thought - 获取 LLM 响应
-                self.status = AgentStatus.THINKING
-                response = await self._get_llm_response()
-                
-                # 2. Action - 解析响应
-                try:
-                    parsed = self.parser.parse_response(response)
-                except ValueError as e:
-                    logger.error(f"Failed to parse LLM response: {e}")
-                    self._add_observation_to_history(
-                        f"Parse error: {e}. Please respond with valid JSON format."
-                    )
-                    continue
-                
-                # 使用新字段名（兼容旧字段）
-                thought_content = parsed.get("content", parsed.get("thought", ""))
-                action_tool = parsed.get("action_tool", parsed.get("action", "finish"))
-                params = parsed.get("params", parsed.get("action_input", {}))
-                
-                # 创建步骤记录
-                step = Step(
-                    step_number=current_step,
-                    thought=thought_content,
-                    action=action_tool,
-                    action_input=params
-                )
-                
-                logger.info(
-                    f"Step {current_step}: {action_tool} - {thought_content[:50]}..."
-                )
-                
-                # 3. 检查是否完成
-                if action_tool == "finish":
-                    if isinstance(params, dict):
-                        final_result = params
-                    else:
-                        final_result = {"result": str(params)}
-                    
-                    step.observation = {
-                        "success": True,
-                        "result": final_result
-                    }
-                    self.steps.append(step)
-                    self.status = AgentStatus.COMPLETED
-                    
+                if event_type == "final":
+                    # 任务完成
                     result = AgentResult(
                         success=True,
-                        message="Task completed successfully",
+                        message=event.get("content", "Task completed successfully"),
                         steps=self.steps,
-                        total_steps=current_step,
+                        total_steps=len(self.steps),
                         session_id=session_id,
-                        final_result=final_result
+                        final_result=event.get("content")
                     )
-                    return result
-                
-                # 4. Observation - 执行动作
-                # 【修复 2026-03-26】原错误调用 _execute_with_retry（不存在），改为 _execute_tool
-                # 说明：_execute_tool 执行一次失败就失败，_execute_with_retry 会自动重试
-                # 当前统一使用 _execute_tool，简单可靠
-                self.status = AgentStatus.EXECUTING
-                observation = await self._execute_tool(
-                    action_tool,
-                    params
-                )
-                
-                step.observation = observation
-                self.steps.append(step)
-                
-                # 5. 添加观察结果到对话历史
-                obs_text = self._format_observation(observation)
-                self._add_observation_to_history(obs_text)
-                
-                self.status = AgentStatus.OBSERVING
+                elif event_type == "error":
+                    # 任务出错
+                    result = AgentResult(
+                        success=False,
+                        message=event.get("message", "Execution failed"),
+                        steps=self.steps,
+                        total_steps=len(self.steps),
+                        session_id=session_id,
+                        error=event.get("message")
+                    )
             
-            # 超过最大步数
-            self.status = AgentStatus.FAILED
-            result = AgentResult(
-                success=False,
-                message=f"Exceeded maximum steps ({self.max_steps})",
-                steps=self.steps,
-                total_steps=current_step,
-                session_id=session_id,
-                error="Maximum steps exceeded"
-            )
+            # 如果没有收到 final 或 error 事件（例如 max_steps 耗尽）
+            if result is None:
+                result = AgentResult(
+                    success=False,
+                    message=f"Exceeded maximum steps ({self.max_steps})",
+                    steps=self.steps,
+                    total_steps=len(self.steps),
+                    session_id=session_id,
+                    error="Maximum steps exceeded"
+                )
+            
             return result
             
         except Exception as e:
             logger.error(f"Agent execution error: {e}", exc_info=True)
-            self.status = AgentStatus.FAILED
             result = AgentResult(
                 success=False,
                 message=f"Execution failed: {str(e)}",
                 steps=self.steps,
-                total_steps=current_step,
+                total_steps=len(self.steps),
                 session_id=session_id,
                 error=str(e)
             )
