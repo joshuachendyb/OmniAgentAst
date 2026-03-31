@@ -27,12 +27,8 @@ import {
   Tooltip,
 } from "antd";
 import {
-  SendOutlined,
   RobotOutlined,
   PlusOutlined,
-  CloseCircleOutlined,
-  PauseCircleOutlined,
-  PlayCircleOutlined,
   ThunderboltOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
@@ -69,7 +65,8 @@ import {
   showSessionConflict,
 } from "../../utils/chatMessages";
 
-const { TextArea } = Input;
+// 【小强修复 2026-03-31】独立输入框组件，隔离inputValue状态避免父组件重渲染
+import ChatInput from "./ChatInput";
 
 // 【小新 2026-03-13 代码拆分】类型和工具函数已提取到独立文件
 // - 类型定义: src/types/chat.ts
@@ -90,7 +87,7 @@ const { TextArea } = Input;
 const NewChatContainer: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputValue, setInputValue] = useState("");
+  // 【小强修复 2026-03-31】inputValue状态已移至ChatInput组件，避免每次按键触发整个组件重渲染
   const [loading, setLoading] = useState(false);
   // ⭐ 新增：等待时间计时器（正计时）
   const [waitTime, setWaitTime] = useState(0);
@@ -136,7 +133,7 @@ const NewChatContainer: React.FC = () => {
   const [dangerScore, setDangerScore] = useState(0);
   const [dangerMessage, setDangerMessage] = useState("");
   const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
-  const [checkingDanger, setCheckingDanger] = useState(false);
+  const [_checkingDanger, setCheckingDanger] = useState(false);
   const [blockedCommand, setBlockedCommand] = useState<{
     command: string;
     score: number;
@@ -1092,13 +1089,9 @@ const NewChatContainer: React.FC = () => {
   }, [sessionId, sessionTitle, messages, isInitialized]);
 
   // 全局快捷键 - 前端小新代修改 UX-G02: 全局快捷键
+  // 【小强修复 2026-03-31】Ctrl+Enter快捷键已移至ChatInput组件内部处理
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + Enter 发送消息
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        handleSend();
-      }
       // Ctrl/Cmd + K 清空对话
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
@@ -1115,7 +1108,7 @@ const NewChatContainer: React.FC = () => {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [loading]);
+  }, []);
 
   // ============================================
   // 网络连接检查
@@ -1672,19 +1665,20 @@ const NewChatContainer: React.FC = () => {
 
   /**
     * 发送消息（带安全检测v2.0）
-     */
-    const handleSend = async () => {
+    * 【小强修复 2026-03-31】改为接收messageContent参数，不再依赖inputValue状态
+      */
+    const handleSend = async (messageContent: string) => {
       console.log("🔍 [handleSend] 函数开始执行");
-      console.log("  inputValue:", inputValue);
+      console.log("  messageContent:", messageContent);
       console.log("  loading:", loading);
       
-      if (!inputValue.trim() || loading) return;
+      if (!messageContent.trim() || loading) return;
 
       // 【小新修复 2026-03-16】删除hasSavedStartMessageRef，不再需要防止重复保存
       // 后端已自动处理assistant消息创建
       
       // 🔴 修复：添加输入长度限制和验证
-     if (inputValue.trim().length > 5000) {
+     if (messageContent.trim().length > 5000) {
        message.warning("消息过长，请精简到5000字符以内");
        return;
      }
@@ -1715,7 +1709,7 @@ const NewChatContainer: React.FC = () => {
     if (!currentSessionId) {
       try {
         const newSession = await sessionApi.createSession(
-          inputValue.trim().substring(0, 50)
+          messageContent.trim().substring(0, 50)
         );
         currentSessionId = newSession.session_id;
         setSessionId(currentSessionId);
@@ -1736,12 +1730,11 @@ const NewChatContainer: React.FC = () => {
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: inputValue.trim(),
+      content: messageContent.trim(),
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInputValue("");
     setBlockedCommand(null);
 
     // ========== 红色开始标志 ==========
@@ -2231,76 +2224,18 @@ const NewChatContainer: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 输入区域 */}
-      <Space direction="vertical" style={{ width: "100%" }}>
-        {/* ⭐ 等待时间显示（正计时） */}
-        {loading && waitTime > 0 && (
-          <div style={{ marginTop: 8, marginBottom: 4 }}>
-            <Tag color={waitTime > 30 ? "error" : waitTime > 15 ? "warning" : "processing"}>
-              {isRetrying ? "🔄 正在重试..." : `⏱️ 已等待 ${waitTime} 秒`}
-            </Tag>
-          </div>
-        )}
-        {/* 中断和暂停按钮 */}
-        {loading && (
-          <Space style={{ marginTop: 8, marginBottom: 8 }}>
-            <Button
-              danger
-              icon={<CloseCircleOutlined />}
-              onClick={handleInterrupt}
-            >
-              中断
-            </Button>
-            <Button
-              icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
-              onClick={handleTogglePause}
-            >
-              {isPaused ? "继续" : "暂停"}
-            </Button>
-          </Space>
-        )}
-        <TextArea
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          placeholder={
-            useStream
-              ? "输入消息... (流式模式可实时查看思考过程)"
-              : "输入消息..."
-          }
-          autoSize={{ minRows: 2, maxRows: 4 }}
-          onPressEnter={(e) => {
-            if (!e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          disabled={loading || isReceiving}
-          style={{
-            borderColor: '#a8a8a8', // 加深输入框边框颜色
-            boxShadow: 'none',
-          }}
-        />
-        <Button
-          type="primary"
-          icon={<SendOutlined />}
-          onClick={handleSend}
-          loading={loading || isReceiving || checkingDanger}
-          disabled={!inputValue.trim()}
-          block
-          style={{
-            backgroundColor: !inputValue.trim() ? '#e6e6e6' : '#0066cc', // disabled 时加深，active 时柔和蓝
-            borderColor: !inputValue.trim() ? '#d0d0d0' : '#0066cc',
-            color: !inputValue.trim() ? 'rgba(0,0,0,0.4)' : '#fff',
-            fontWeight: 500,
-          }}
-        >
-          {isReceiving
-            ? "接收中..."
-            : checkingDanger
-            ? "安全检查中..."
-            : "发送消息"}
-        </Button>
-      </Space>
+      {/* 输入区域 - 【小强修复 2026-03-31】使用独立ChatInput组件隔离inputValue状态 */}
+      <ChatInput
+        loading={loading}
+        isReceiving={isReceiving}
+        isPaused={isPaused}
+        isRetrying={isRetrying}
+        waitTime={waitTime}
+        useStream={useStream}
+        onSend={handleSend}
+        onInterrupt={handleInterrupt}
+        onTogglePause={handleTogglePause}
+      />
 
       {/* 被拦截的命令警告 */}
       {blockedCommand && (
