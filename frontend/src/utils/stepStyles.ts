@@ -405,12 +405,24 @@ export const getStepDetailStyle = (stepType: StepType | string) => {
  */
 export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
   const scheme = colorSchemes[stepType] || colorSchemes.start;
+  
+  // 转换十六进制颜色为rgba格式，添加透明度
+  const hexToRgba = (hex: string, alpha: number): string => {
+    // 移除#号
+    const cleanHex = hex.replace('#', '');
+    // 解析RGB值
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+  
   return {
     marginLeft: "auto",              // 靠右对齐
     padding: '3px 10px',             // 增加内边距
     borderRadius: 6,                 // 圆角
     backgroundColor: scheme.bg1,     // 步骤类型的浅色背景（保持各类型特色）
-    border: `1px solid ${scheme.border}60`,  // 步骤类型的边框
+    border: `1px solid ${hexToRgba(scheme.border, 0.38)}`,  // 步骤类型的边框，带透明度
     color: '#333333',                // 统一深灰色字体，对比强烈
     fontSize: FontSize.TERTIARY,     // 12px
     fontWeight: FontWeight.BOLD,     // 加粗
@@ -428,12 +440,22 @@ export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
  */
 export const getNextStepStyle = (stepType: StepType): React.CSSProperties => {
   const scheme = colorSchemes[stepType] || colorSchemes.start;
+  
+  // 转换十六进制颜色为rgba格式，添加透明度
+  const hexToRgba = (hex: string, alpha: number): string => {
+    const cleanHex = hex.replace('#', '');
+    const r = parseInt(cleanHex.substring(0, 2), 16);
+    const g = parseInt(cleanHex.substring(2, 4), 16);
+    const b = parseInt(cleanHex.substring(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  };
+  
   return {
     marginTop: 6,
     padding: '6px 10px',
     borderRadius: 4,
-    backgroundColor: `${scheme.bg1}30`,
-    border: `1px solid ${scheme.border}40`,
+    backgroundColor: hexToRgba(scheme.bg1, 0.19),  // 约30%透明度
+    border: `1px solid ${hexToRgba(scheme.border, 0.25)}`,  // 约40%透明度
     fontSize: FontSize.TERTIARY,
     color: scheme.text,
     fontWeight: FontWeight.MEDIUM,
