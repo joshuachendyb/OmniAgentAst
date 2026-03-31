@@ -1,20 +1,57 @@
 v0.8.54
 
-更新时间：2026-03-31 17:45:00
+更新时间：2026-03-31 21:35:00
 
 更新内容：
 
-## 1. 修复sessions.py的updated_at返回格式兼容毫秒时间戳 - 小沈-2026-03-31
+## 1. 修复sessions.py排序+error步骤显示优化 - 小沈/小强-2026-03-31
 
-### 1.1 问题
-- 2026-03-31修改后，chat_sessions.updated_at字段存储为毫秒int格式
-- 但list_sessions返回时未正确处理，导致前端解析失败
-- 影响：从浏览器启动时无法加载最近会话（updated_at无法解析）
+### 1.1 sessions.py排序优化 - 小沈-2026-03-31
 
-### 1.2 修复
-- sessions.py第499-511行：添加对int/float类型毫秒时间戳的转换
-- 使用datetime.fromtimestamp()将毫秒转换为ISO格式字符串
-- 同时处理created_at和updated_at字段
+#### 1.1.1 问题
+- 浏览器关闭重新打开时加载最近会话失败
+- 空会话（message_count=0）排在有消息的会话前面
+- 原因：空会话的updated_at等于created_at，导致排序靠前
+
+#### 1.1.2 修复
+- 修改4处SQL排序：`ORDER BY message_count DESC, updated_at DESC, created_at DESC`
+- 有消息的会话（message_count > 0）优先于空会话返回
+
+### 1.2 error步骤显示优化 - 小强-2026-03-31
+
+#### 1.2.1 问题
+- error类型的错误详情在message外层和step内容区重复显示
+- 用户体验：看到两处相同的错误信息
+
+#### 1.2.2 修复
+- 删除message级别的ErrorDetail组件
+- ErrorDetail只在step内容区显示一次
+- 传递step内的error_type、retryable等字段到ErrorDetail组件
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| dab70c1d | fix: MessageItem.tsx - error步骤显示ErrorDetail详情，删除外层重复ErrorDetail组件 - 小强-2026-03-31 |
+| 4e1eed04 | fix: 修复sessions.py的updated_at返回格式兼容毫秒时间戳-小沈-2026-03-31 |
+| f884f214 | fix: 修复问题2-Thought加入conversation_history-删除重复assistant消息-base_react.py-小沈-2026-03-31 |
+| b1c2df5d | docs: version.txt 补充v0.8.53完整commit记录-合并5个前端commit信息 - 小强-2026-03-31 |
+
+参与开发：小沈、小强
+测试验证：303个测试全部通过
+
+---
+
+## 2. 撤销sessions.py的排序SQL修改 - 小沈-2026-03-31
+
+### 2.1 问题
+- 小强之前修改了ORDER BY排序规则，添加了message_count DESC
+- 这导致有消息的会话永远排在前面，改变了原有的会话排序逻辑
+- 用户反馈：这会改变之前会话的顺序，是不应该的
+
+### 2.2 修复
+- 撤销4处ORDER BY修改
+- 恢复为原有的排序逻辑：`ORDER BY updated_at DESC, created_at DESC`
 
 参与开发：小沈
 
