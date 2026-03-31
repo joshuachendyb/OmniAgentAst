@@ -1,3 +1,74 @@
+v0.8.53
+
+更新时间：2026-03-31 16:35:00
+
+更新内容：
+
+## 1. 前端输入框性能优化 - 小强-2026-03-31
+
+### 1.1 问题
+- 键盘输入信息后显示缓慢，输入时有阻力感
+- 每次按键触发整个NewChatContainer组件（2328行）重新渲染
+
+### 1.2 修复
+- 创建独立ChatInput组件，隔离inputValue状态
+- 使用React.memo避免父组件重渲染时不必要的子组件重渲染
+- 使用useMemo缓存样式对象，避免每次渲染创建新对象
+- 修改handleSend接收messageContent参数，不再依赖父组件inputValue状态
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 8bc3770e | perf: ChatInput.tsx NewChatContainer.tsx 输入框性能优化-隔离inputValue状态避免父组件重渲染 - 小强-2026-03-31 |
+
+参与开发：小强
+测试验证：303个测试全部通过
+
+---
+
+## 2. 修复切换模型setServiceStatus未定义错误 - 小强-2026-03-31
+
+### 2.1 问题
+- 切换模型下拉框时弹出错误：setServiceStatus is not defined
+- 根因：Layout/index.tsx直接调用AppContext内部的setServiceStatus，但未从context中解构获取
+
+### 2.2 修复
+- 删除错误的setServiceStatus手动调用
+- 改用refreshAfterModelChange()串行刷新（验证→刷新模型→刷新会话）
+- 删除重复的refreshModelList和refreshSessionCount调用
+
+### 2.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 76323d0b | fix: Layout/index.tsx 修复切换模型setServiceStatus未定义错误-改用refreshAfterModelChange串行刷新 - 小强-2026-03-31 |
+
+参与开发：小强
+
+---
+
+## 3. 补充checkingDanger状态传递 - 小强-2026-03-31
+
+### 3.1 问题
+- 安全检测期间按钮不显示loading状态和"安全检查中..."文字
+- 用户可能重复点击发送按钮
+
+### 3.2 修复
+- ChatInput.tsx添加checkingDanger prop
+- 按钮loading属性改为loading={loading || isReceiving || checkingDanger}
+- 按钮文字添加checkingDanger状态判断
+
+### 3.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| ab662cd8 | fix: ChatInput.tsx NewChatContainer.tsx 补充checkingDanger状态传递-修复安全检测期间按钮状态显示异常 - 小强-2026-03-31 |
+
+参与开发：小强、小资（代码检查）
+
+---
+
 v0.8.52
 
 更新时间：2026-03-31 16:00:00
