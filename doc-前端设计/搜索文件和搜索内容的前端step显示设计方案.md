@@ -998,7 +998,7 @@ const shouldUseVirtualList = data.matches && data.matches.length > 100;
 | 步骤标签 | 类型色 | 13px | 类型主色 | 左侧 |
 | 主要内容 | 无 | 13px | 类型主色 | 左侧 |
 | 次要信息 | 浅灰背景 | 12px | 次要色 | 左侧 |
-| 时间戳 | **类型浅色背景** | **12px加粗** | **类型次色调** | **右侧（醒目）** |
+| 时间戳 | **类型浅色背景** | **12px加粗** | **#333333（统一深灰）** | **右侧（醒目）** |
 
 #### 4.3.2 thought步骤UI优化
 
@@ -1019,7 +1019,7 @@ timestamp、action_tool、params三个信息视觉上没有层次
 **timestamp视觉特点**：
 - 位于标题行最右侧，与右侧边框挨着
 - 使用thought的浅橙色背景（#fff7e6）
-- 使用thought的次色调文字（#8c6e2f）
+- **统一深灰色字体（#333333）**，对比强烈，更清晰
 - 加粗字体，更醒目
 
 **具体实现**：
@@ -1046,7 +1046,7 @@ timestamp和状态信息视觉上没有层次
 **timestamp视觉特点**：
 - 位于标题行最右侧，与右侧边框挨着
 - 使用action_tool的浅蓝色背景（#e6f7ff）
-- 使用action_tool的次色调文字（#0050b3）
+- **统一深灰色字体（#333333）**，对比强烈，更清晰
 - 加粗字体，更醒目
 
 **具体实现**：
@@ -1074,7 +1074,7 @@ timestamp、下一步、参数、结束标志视觉上没有层次
 **timestamp视觉特点**：
 - 位于标题行最右侧，与右侧边框挨着
 - 使用observation的浅绿色背景（#e6ffed）
-- 使用observation的次色调文字（#389e0d）
+- **统一深灰色字体（#333333）**，对比强烈，更清晰
 - 加粗字体，更醒目
 
 **具体实现**：
@@ -1089,15 +1089,16 @@ timestamp、下一步、参数、结束标志视觉上没有层次
 
 ```typescript
 // 时间戳样式 - 醒目版本，放在行右侧
+// 统一使用深灰色字体，浅色背景，对比强烈
 export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
   const scheme = colorSchemes[stepType] || colorSchemes.start;
   return {
     marginLeft: "auto",              // 靠右对齐
     padding: '3px 10px',             // 增加内边距
     borderRadius: 6,                 // 圆角
-    backgroundColor: scheme.bg1,     // 步骤类型的浅色背景
+    backgroundColor: scheme.bg1,     // 步骤类型的浅色背景（保持各类型特色）
     border: `1px solid ${scheme.border}60`,  // 步骤类型的边框
-    color: scheme.textSecondary,     // 步骤类型的次色调
+    color: '#333333',                // 统一深灰色字体，对比强烈
     fontSize: FontSize.TERTIARY,     // 12px
     fontWeight: FontWeight.BOLD,     // 加粗
     display: 'inline-flex',
@@ -1262,7 +1263,8 @@ export const getFinishedBadgeStyle = (): React.CSSProperties => {
 
 **timestamp视觉特点**：
 - ✅ 位于行最右侧，与右侧边框挨着
-- ✅ 使用步骤类型的浅色背景，更醒目
+- ✅ 使用步骤类型的浅色背景（各类型有特色）
+- ✅ **统一深灰色字体（#333333）**，对比强烈，更清晰
 - ✅ 加粗字体（fontWeight: 600）
 - ✅ 添加时钟图标（⏰）
 - ✅ 轻微阴影增加层次感
