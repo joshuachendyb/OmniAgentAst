@@ -265,7 +265,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                     marginTop: 6, 
                     fontSize: 12, 
                     color: "#666",
-                    background: "#f5f5f5",
+                    background: "#e6f7ff", // action_tool的bg1颜色，保持一致性
                     padding: "8px 12px",
                     borderRadius: 6,
                     fontFamily: "Consolas, Monaco, 'Courier New', monospace",
@@ -354,17 +354,25 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}>
-                {/* 第一行：观察内容 + timestamp */}
-                <div style={{ display: "flex", alignItems: "flex-start" }}>
-                  <span style={{ flex: 1 }}>
-                    {step.content}
+                {/* 标题行：步骤标签 + timestamp */}
+                <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+                  <span style={getStepLabelStyle("observation")}>
+                    📋 观察：
                   </span>
-                  {/* timestamp放在行右侧，与右侧边框挨着，更醒目 */}
+                  <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
+                  {/* timestamp放在标题行右侧 */}
                   {step.timestamp && (
                     <span style={getTimestampStyle("observation")}>
                       ⏰ {formatTimestamp(step.timestamp)}
                     </span>
                   )}
+                </div>
+                
+                {/* 观察内容 */}
+                <div>
+                  <span style={getStepContentStyle("observation" as StepType, "primary")}>
+                    {step.content}
+                  </span>
                 </div>
               </div>
             )}
@@ -443,7 +451,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 <div style={{ 
                   marginTop: 4, 
                   fontSize: 12, 
-                  background: "#f5f5f5",
+                  background: "#e6ffed", // observation的bg1颜色，保持一致性
                   padding: "6px 10px",
                   borderRadius: 4,
                 }}>
@@ -464,8 +472,17 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
         {step.type === "start" && (
           <div style={getStepStyle("start" as StepType)}>
             {/* 标题行：用户消息 - 使用inline-with-details布局 */}
-            <div style={getStepTitleStyle("start" as StepType)}>
-              🚀 用户消息：{(step as any).user_message || "(无)"}
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+              <span style={getStepTitleStyle("start" as StepType)}>
+                🚀 用户消息：{(step as any).user_message || "(无)"}
+              </span>
+              <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
+              {/* timestamp放在标题行右侧 */}
+              {step.timestamp && (
+                <span style={getTimestampStyle("start")}>
+                  ⏰ {formatTimestamp(step.timestamp)}
+                </span>
+              )}
             </div>
             
             {/* 详细信息行：任务ID、安全检查、时间戳 */}
@@ -505,12 +522,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
               )}
               
               <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
-              {/* timestamp放在行右侧，与右侧边框挨着，更醒目 */}
-              {step.timestamp && (
-                <span style={getTimestampStyle("start")}>
-                  ⏰ {formatTimestamp(step.timestamp)}
-                </span>
-              )}
+              {/* timestamp已移到标题行右侧，此处不再显示 */}
             </div>
           </div>
         )}
@@ -520,17 +532,25 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}>
-            {/* 第一行：思考内容 + timestamp */}
-            <div style={{ display: "flex", alignItems: "flex-start" }}>
-              <span style={{ ...getStepContentStyle("thought" as StepType, "primary"), flex: 1 }}>
-                {step.reasoning || step.content || ""}
+            {/* 标题行：步骤标签 + timestamp */}
+            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
+              <span style={getStepLabelStyle("thought")}>
+                💭 分析：
               </span>
-              {/* timestamp放在行右侧，与右侧边框挨着，更醒目 */}
+              <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
+              {/* timestamp放在标题行右侧 */}
               {step.timestamp && (
                 <span style={getTimestampStyle("thought")}>
                   ⏰ {formatTimestamp(step.timestamp)}
                 </span>
               )}
+            </div>
+            
+            {/* 思考内容 */}
+            <div>
+              <span style={getStepContentStyle("thought" as StepType, "primary")}>
+                {step.reasoning || step.content || ""}
+              </span>
             </div>
             
             {/* 信息区域：下一步、参数 */}
@@ -552,7 +572,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 <div style={{ 
                   marginTop: 4, 
                   fontSize: 12, 
-                  background: "#f5f5f5",
+                  background: "#fff7e6", // thought的bg1颜色，保持一致性
                   padding: "6px 10px",
                   borderRadius: 4,
                 }}>
