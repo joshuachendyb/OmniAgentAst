@@ -20,52 +20,14 @@ v0.8.53
 
 | Commit | 说明 |
 |--------|------|
+| e7bad71a | fix: MessageItem恢复start步骤用户消息显示功能-小强-2026-03-31 |
+| 93f2928f | fix: NewChatContainer优化useEffect依赖-修复输入框卡顿-小强-2026-03-31 |
 | 8bc3770e | perf: ChatInput.tsx NewChatContainer.tsx 输入框性能优化-隔离inputValue状态避免父组件重渲染 - 小强-2026-03-31 |
-
-参与开发：小强
-测试验证：303个测试全部通过
-
----
-
-## 2. 修复切换模型setServiceStatus未定义错误 - 小强-2026-03-31
-
-### 2.1 问题
-- 切换模型下拉框时弹出错误：setServiceStatus is not defined
-- 根因：Layout/index.tsx直接调用AppContext内部的setServiceStatus，但未从context中解构获取
-
-### 2.2 修复
-- 删除错误的setServiceStatus手动调用
-- 改用refreshAfterModelChange()串行刷新（验证→刷新模型→刷新会话）
-- 删除重复的refreshModelList和refreshSessionCount调用
-
-### 2.3 Commit汇总
-
-| Commit | 说明 |
-|--------|------|
 | 76323d0b | fix: Layout/index.tsx 修复切换模型setServiceStatus未定义错误-改用refreshAfterModelChange串行刷新 - 小强-2026-03-31 |
-
-参与开发：小强
-
----
-
-## 3. 补充checkingDanger状态传递 - 小强-2026-03-31
-
-### 3.1 问题
-- 安全检测期间按钮不显示loading状态和"安全检查中..."文字
-- 用户可能重复点击发送按钮
-
-### 3.2 修复
-- ChatInput.tsx添加checkingDanger prop
-- 按钮loading属性改为loading={loading || isReceiving || checkingDanger}
-- 按钮文字添加checkingDanger状态判断
-
-### 3.3 Commit汇总
-
-| Commit | 说明 |
-|--------|------|
 | ab662cd8 | fix: ChatInput.tsx NewChatContainer.tsx 补充checkingDanger状态传递-修复安全检测期间按钮状态显示异常 - 小强-2026-03-31 |
 
 参与开发：小强、小资（代码检查）
+测试验证：303个测试全部通过
 
 ---
 
