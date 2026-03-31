@@ -395,6 +395,92 @@ export const getStepDetailStyle = (stepType: StepType | string) => {
   };
 };
 
+// ==================== 新增样式函数（设计文档第4章要求） ====================
+
+/**
+ * 时间戳样式 - 醒目版本，放在行右侧
+ * 统一使用深灰色字体，浅色背景，对比强烈
+ * @param stepType 步骤类型
+ * @returns CSS样式对象
+ */
+export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
+  const scheme = colorSchemes[stepType] || colorSchemes.start;
+  return {
+    marginLeft: "auto",              // 靠右对齐
+    padding: '3px 10px',             // 增加内边距
+    borderRadius: 6,                 // 圆角
+    backgroundColor: scheme.bg1,     // 步骤类型的浅色背景（保持各类型特色）
+    border: `1px solid ${scheme.border}60`,  // 步骤类型的边框
+    color: '#333333',                // 统一深灰色字体，对比强烈
+    fontSize: FontSize.TERTIARY,     // 12px
+    fontWeight: FontWeight.BOLD,     // 加粗
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',  // 轻微阴影
+  };
+};
+
+/**
+ * 下一步信息样式
+ * @param stepType 步骤类型
+ * @returns CSS样式对象
+ */
+export const getNextStepStyle = (stepType: StepType): React.CSSProperties => {
+  const scheme = colorSchemes[stepType] || colorSchemes.start;
+  return {
+    marginTop: 6,
+    padding: '6px 10px',
+    borderRadius: 4,
+    backgroundColor: `${scheme.bg1}30`,
+    border: `1px solid ${scheme.border}40`,
+    fontSize: FontSize.TERTIARY,
+    color: scheme.text,
+    fontWeight: FontWeight.MEDIUM,
+  };
+};
+
+/**
+ * 状态徽章样式
+ * @param status 成功或失败状态
+ * @returns CSS样式对象
+ */
+export const getStatusBadgeStyle = (status: 'success' | 'error'): React.CSSProperties => {
+  const isSuccess = status === 'success';
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '2px 8px',
+    borderRadius: 4,
+    backgroundColor: isSuccess ? '#f6ffed' : '#fff1f0',
+    color: isSuccess ? '#52c41a' : '#ff4d4f',
+    fontSize: FontSize.TERTIARY,
+    fontWeight: FontWeight.MEDIUM,
+    border: `1px solid ${isSuccess ? '#b7eb8f' : '#ffa39e'}`,
+  };
+};
+
+/**
+ * 结束徽章样式
+ * @returns CSS样式对象
+ */
+export const getFinishedBadgeStyle = (): React.CSSProperties => {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '4px 12px',
+    borderRadius: 6,
+    backgroundColor: '#f6ffed',
+    color: '#52c41a',
+    fontSize: FontSize.TERTIARY,
+    fontWeight: FontWeight.BOLD,
+    border: '1px solid #b7eb8f',
+    boxShadow: '0 2px 4px rgba(82,196,26,0.1)',
+  };
+};
+
 // ==================== 辅助函数 ====================
 
 /**
