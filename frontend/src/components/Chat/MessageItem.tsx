@@ -33,6 +33,12 @@ import {
   getStepStyle, 
   getStepTitleStyle,
   getStepContentStyle,
+  getStepBadgeStyle,
+  getStepLabelStyle,
+  getTimestampStyle,
+  getNextStepStyle,
+  getStatusBadgeStyle,
+  getFinishedBadgeStyle,
   FontSize,
   FontWeight,
   Colors,
@@ -227,28 +233,29 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
       e.currentTarget.style.boxShadow = "none";
     }}
     >
-        <div style={{ display: "flex", alignItems: "flex-start", flexWrap: "wrap" as const }}>
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
         {/* 【小强优化 2026-03-18】步骤编号徽章 */}
         {step.step && (
-          <span style={getStepBadgeStyle()}>
+          <span style={getStepBadgeStyle("action_tool")}>
             步骤{step.step}
           </span>
         )}
         {/* 【小强优化 2026-03-18】标签带图标 */}
-        <span style={getLabelStyle()}>
+        <span style={getStepLabelStyle("action_tool")}>
           {icon} {label}：
         </span>
+        <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
+        {/* timestamp放在行右侧，与右侧边框挨着，更醒目 */}
+        {step.timestamp && (
+          <span style={getTimestampStyle("action_tool")}>
+            ⏰ {formatTimestamp(step.timestamp)}
+          </span>
+        )}
       </div>
       <div style={{ ...getContentStyle(), marginTop: 4, marginLeft: 66 }}>
         {step.type === "action_tool" && (
           <>
             {step.action_description || step.tool_name || "执行中..."}
-            {/* 【小沈优化 2026-03-30】显示timestamp */}
-            {step.timestamp && (
-              <span style={{ marginLeft: "auto", color: "#333", fontSize: 11 }}>
-                {formatTimestamp(step.timestamp)}
-              </span>
-            )}
             {step.tool_params && (
               <div>
                 {/* 默认显示1行 */}
@@ -323,18 +330,14 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 )}
               </div>
             )}
-            {/* 【小沈优化 2026-03-30】显示execution_status和summary */}
+            {/* 【小沈优化 2026-03-30】显示execution_status和summary - 使用徽章样式 */}
             {(step as any).execution_status && (
               <div style={{ marginTop: 6, fontSize: 12 }}>
-                <span style={{ 
-                  color: (step as any).execution_status === "success" ? "#52c41a" : "#ff4d4f",
-                  fontWeight: 500,
-                  marginRight: 8,
-                }}>
+                <span style={getStatusBadgeStyle((step as any).execution_status === "success" ? "success" : "error")}>
                   📊 状态：{(step as any).execution_status}
                 </span>
                 {(step as any).summary && (
-                  <span style={{ color: "#666" }}>
+                  <span style={{ color: "#666", marginLeft: 8 }}>
                     | 摘要：{(step as any).summary}
                   </span>
                 )}
@@ -351,13 +354,18 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}>
-                {step.content}
-                {/* 显示timestamp - 行末黑色 */}
-                {step.timestamp && (
-                  <span style={{ marginLeft: "auto", color: "#333", fontSize: 11 }}>
-                    {formatTimestamp(step.timestamp)}
+                {/* 第一行：观察内容 + timestamp */}
+                <div style={{ display: "flex", alignItems: "flex-start" }}>
+                  <span style={{ flex: 1 }}>
+                    {step.content}
                   </span>
-                )}
+                  {/* timestamp放在行右侧，与右侧边框挨着，更醒目 */}
+                  {step.timestamp && (
+                    <span style={getTimestampStyle("observation")}>
+                      ⏰ {formatTimestamp(step.timestamp)}
+                    </span>
+                  )}
+                </div>
               </div>
             )}
             {/* 显示执行结果 - 只有当没有 content 时才显示 */}
@@ -416,30 +424,41 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 })()}
               </div>
             )}
-            {/* 【小沈优化 2026-03-30】显示下一步action_tool */}
-            {(step as any).obs_action_tool && (
-              <div style={{ marginTop: 6, fontSize: 12, color: "#1890ff" }}>
-                ⬇️ 下一步：{(step as any).obs_action_tool}
-              </div>
-            )}
-            {/* 【小沈优化 2026-03-30】显示params - 用JsonHighlight格式化 */}
-            {(step as any).obs_params && Object.keys((step as any).obs_params).length > 0 && (
-              <div style={{ 
-                marginTop: 4, 
-                fontSize: 12, 
-                background: "#f5f5f5",
-                padding: "6px 10px",
-                borderRadius: 4,
-              }}>
-                <JsonHighlight data={(step as any).obs_params} isExpanded={true} />
-              </div>
-            )}
-            {/* 显示is_finished */}
-            {step.is_finished === true && (
-              <div style={{ marginTop: 6, fontSize: 12, color: "#52c41a", fontWeight: 500 }}>
-                ✅ 结束
-              </div>
-            )}
+            {/* 信息区域：下一步、参数、结束标志 */}
+            <div style={{
+              marginTop: 6,
+              padding: '8px 12px',
+              borderRadius: 6,
+              background: 'linear-gradient(135deg, rgba(82,196,26,0.08) 0%, rgba(56,158,13,0.08) 100%)',
+              border: '1px solid rgba(115,209,61,0.3)',
+            }}>
+              {/* 【小沈优化 2026-03-30】显示下一步action_tool */}
+              {(step as any).obs_action_tool && (
+                <div style={getNextStepStyle("observation")}>
+                  <span style={{ fontWeight: FontWeight.MEDIUM }}>⬇️ 下一步：{(step as any).obs_action_tool}</span>
+                </div>
+              )}
+              {/* 【小沈优化 2026-03-30】显示params - 用JsonHighlight格式化 */}
+              {(step as any).obs_params && Object.keys((step as any).obs_params).length > 0 && (
+                <div style={{ 
+                  marginTop: 4, 
+                  fontSize: 12, 
+                  background: "#f5f5f5",
+                  padding: "6px 10px",
+                  borderRadius: 4,
+                }}>
+                  <JsonHighlight data={(step as any).obs_params} isExpanded={true} />
+                </div>
+              )}
+              {/* 显示is_finished - 使用徽章样式 */}
+              {step.is_finished === true && (
+                <div style={{ marginTop: 6 }}>
+                  <span style={getFinishedBadgeStyle()}>
+                    ✅ 结束
+                  </span>
+                </div>
+              )}
+            </div>
           </>
         )}
         {step.type === "start" && (
@@ -450,10 +469,16 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             </div>
             
             {/* 详细信息行：任务ID、安全检查、时间戳 */}
-            <div style={getStepContentStyle("start" as StepType, "secondary")}>
+            <div style={{ 
+              ...getStepContentStyle("start" as StepType, "secondary"),
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 8,
+            }}>
               <span style={{ marginRight: 16 }}>
                 <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>任务ID：</span>
-                <span style={getStepBadgeStyle()}>
+                <span style={getStepBadgeStyle("start")}>
                   {step.task_id || "无"}
                 </span>
               </span>
@@ -479,15 +504,11 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 </span>
               )}
               
+              <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
+              {/* timestamp放在行右侧，与右侧边框挨着，更醒目 */}
               {step.timestamp && (
-                <span style={{ 
-                  color: Colors.TEXT.TERTIARY,
-                  backgroundColor: Colors.BG.SECONDARY,
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  fontSize: FontSize.TERTIARY,
-                }}>
-                  {formatTimestamp(step.timestamp)}
+                <span style={getTimestampStyle("start")}>
+                  ⏰ {formatTimestamp(step.timestamp)}
                 </span>
               )}
             </div>
@@ -499,35 +520,46 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}>
-            <span style={getStepContentStyle("thought" as StepType, "primary")}>
-              {step.reasoning || step.content || ""}
-            </span>
-            {/* 【小沈优化 2026-03-30】显示timestamp - 行末黑色 */}
-            {step.timestamp && (
-              <span style={{ marginLeft: "auto", color: "#333", fontSize: 11 }}>
-                {formatTimestamp(step.timestamp)}
+            {/* 第一行：思考内容 + timestamp */}
+            <div style={{ display: "flex", alignItems: "flex-start" }}>
+              <span style={{ ...getStepContentStyle("thought" as StepType, "primary"), flex: 1 }}>
+                {step.reasoning || step.content || ""}
               </span>
-            )}
-            {/* 显示下一步action_tool */}
-            {(step as any).action_tool && (
-              <div style={{ marginTop: 6, fontSize: 12, color: "#1890ff" }}>
-                ⬇️ 下一步：{(step as any).action_tool}
-              </div>
-            )}
-            {/* 显示params */}
-            {(step as any).params && Object.keys((step as any).params).length > 0 && (
-              <div style={{ 
-                marginTop: 4, 
-                fontSize: 11, 
-                color: "#666",
-                background: "#f5f5f5",
-                padding: "6px 10px",
-                borderRadius: 4,
-                fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-              }}>
-                {JSON.stringify((step as any).params)}
-              </div>
-            )}
+              {/* timestamp放在行右侧，与右侧边框挨着，更醒目 */}
+              {step.timestamp && (
+                <span style={getTimestampStyle("thought")}>
+                  ⏰ {formatTimestamp(step.timestamp)}
+                </span>
+              )}
+            </div>
+            
+            {/* 信息区域：下一步、参数 */}
+            <div style={{
+              marginTop: 6,
+              padding: '8px 12px',
+              borderRadius: 6,
+              background: 'linear-gradient(135deg, rgba(250,173,20,0.08) 0%, rgba(212,136,6,0.08) 100%)',
+              border: '1px solid rgba(255,213,145,0.3)',
+            }}>
+              {/* 显示下一步action_tool */}
+              {(step as any).action_tool && (
+                <div style={getNextStepStyle("thought")}>
+                  <span style={{ fontWeight: FontWeight.MEDIUM }}>⬇️ 下一步：{(step as any).action_tool}</span>
+                </div>
+              )}
+              {/* 显示params - 使用JsonHighlight组件统一格式 */}
+              {(step as any).params && Object.keys((step as any).params).length > 0 && (
+                <div style={{ 
+                  marginTop: 4, 
+                  fontSize: 12, 
+                  background: "#f5f5f5",
+                  padding: "6px 10px",
+                  borderRadius: 4,
+                }}>
+                  <JsonHighlight data={(step as any).params} isExpanded={true} />
+                </div>
+              )}
+            </div>
           </div>
         )}
         {step.type === "final" && (
