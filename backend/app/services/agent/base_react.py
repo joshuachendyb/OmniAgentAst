@@ -197,6 +197,11 @@ class BaseAgent(ABC):
                     "params": params
                 }
                 
+                # 【修复 2026-03-31 小沈】将 LLM 的 thought 响应加入 conversation_history
+                # 问题：LLM 下一轮看不到自己的思考过程，导致上下文丢失
+                # 修复：在 yield thought 后立即添加 assistant 响应到历史
+                self.conversation_history.append({"role": "assistant", "content": response})
+                
                 # 判断是否结束
                 if action_tool == "finish":
                     yield {
@@ -257,10 +262,10 @@ class BaseAgent(ABC):
                 
                 is_finished = parsed_obs.get("action_tool") == "finish"
                 
-                # 保存第2次LLM的响应到conversation_history
-                # 优先保存原始响应，保留完整信息
-                history_content = parsed_obs.get("raw_response") or parsed_obs.get("content", "")
-                self.conversation_history.append({"role": "assistant", "content": history_content})
+                # 【删除 2026-03-31 小沈】删除第二次LLM响应加入history
+                # 原因：第203行已添加第一次LLM的thought到history
+                # 下一轮循环会再次添加新的thought，避免连续两条assistant消息
+                # 正确对话流：assistant(thought) → user(observation) → assistant(thought_next)
                 
                 # yield observation
                 current_time = create_timestamp()
