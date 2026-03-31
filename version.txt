@@ -1,3 +1,25 @@
+v0.8.54
+
+更新时间：2026-03-31 17:45:00
+
+更新内容：
+
+## 1. 修复sessions.py的updated_at返回格式兼容毫秒时间戳 - 小沈-2026-03-31
+
+### 1.1 问题
+- 2026-03-31修改后，chat_sessions.updated_at字段存储为毫秒int格式
+- 但list_sessions返回时未正确处理，导致前端解析失败
+- 影响：从浏览器启动时无法加载最近会话（updated_at无法解析）
+
+### 1.2 修复
+- sessions.py第499-511行：添加对int/float类型毫秒时间戳的转换
+- 使用datetime.fromtimestamp()将毫秒转换为ISO格式字符串
+- 同时处理created_at和updated_at字段
+
+参与开发：小沈
+
+---
+
 v0.8.53
 
 更新时间：2026-03-31 16:35:00
