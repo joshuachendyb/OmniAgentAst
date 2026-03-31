@@ -188,9 +188,9 @@ def _init_database():
             session_id TEXT NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
             execution_steps TEXT,
-            display_name TEXT  -- 记录消息收发时使用的模型显示名称
+            display_name TEXT
         )
     ''')
     
