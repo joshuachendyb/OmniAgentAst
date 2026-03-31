@@ -183,6 +183,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   }, [serviceStatus, attemptedModel]);
 
   // 切换模型后刷新serviceStatus
+  // 【小强修复 2026-03-31】修复setServiceStatus未定义错误，改用AppContext的action函数
   const handleModelChange = async (value: string) => {
     try {
       const selectedModel = modelList.find(
@@ -206,28 +207,17 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       });
       console.log("[切换模型] API返回:", result);
       
-      // 无论成功或失败，都使用后端返回的 current_provider 和 current_model
-      if (result.current_provider && result.current_model) {
-        setServiceStatus({
-          success: result.success,
-          provider: result.current_provider,
-          model: result.current_model,
-          message: result.message || "",
-          status: result.success ? "success" : "failed"
-        });
-      }
-      
       if (!result.success) {
         message.error(result.message || "切换失败");
-        // 刷新模型列表获取最新配置
+        // 切换失败时后端已回滚配置，刷新模型列表获取回滚后的模型
         await refreshModelList();
         return;
       }
       message.success(`已切换到 ${selectedModel.display_name}`);
-      console.log("[切换模型] 开始刷新模型列表...");
-      // 只刷新模型列表，不调用验证（验证由用户手动点击"检查服务"按钮）
-      await refreshModelList();
-      await refreshSessionCount();
+      console.log("[切换模型] 开始刷新状态...");
+      // 【修复】使用refreshAfterModelChange串行刷新：验证新配置→刷新模型列表→刷新会话数
+      // 替代之前错误的setServiceStatus手动调用和分散的refreshModelList/refreshSessionCount
+      await refreshAfterModelChange();
       console.log("[切换模型] 刷新完成, serviceStatus:", serviceStatus);
     } catch (error: any) {
       console.error("[切换模型] 失败:", error);
