@@ -23,7 +23,9 @@ export interface SearchFilesData {
   pagination: {
     page: number;
     total_pages: number;
+    page_size: number;
     has_more: boolean;
+    last_file?: string; // 用于分页标记的最后一个文件路径
   };
 }
 
@@ -69,7 +71,9 @@ export function transformSearchFilesData(rawData: any): SearchFilesData {
     pagination: {
       page: rawData?.page || 1,
       total_pages: rawData?.total_pages || 1,
+      page_size: rawData?.page_size || 200,
       has_more: rawData?.has_more || false,
+      last_file: rawData?.last_file, // 最后一个文件的路径，用于分页标记
     },
   };
 }

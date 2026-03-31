@@ -1,8 +1,8 @@
 # 搜索文件和搜索内容的前端step显示设计方案
 
 **创建时间**: 2026-03-31 09:59:11  
-**更新时间**: 2026-03-31 10:25:00  
-**版本**: v2.0  
+**更新时间**: 2026-03-31 10:40:00  
+**版本**: v2.1  
 **作者**: 小强  
 **状态**: 设计完善，待审查
 
@@ -91,6 +91,7 @@
   "page": 1,
   "total_pages": 16,
   "page_size": 200,
+  "last_file": "1WTCB\\CBtrail\\node_modules\\set-blocking\\LICENSE.txt",
   "has_more": true
 }
 ```
@@ -123,7 +124,9 @@
 | `path` | `search_path` | 搜索路径 |
 | `page` | `pagination.page` | 当前页码 |
 | `total_pages` | `pagination.total_pages` | 总页数 |
+| `page_size` | `pagination.page_size` | 每页大小 |
 | `has_more` | `pagination.has_more` | 是否有更多 |
+| `last_file` | `pagination.last_file` | 最后一个文件路径（分页标记） |
 
 ### 2.2 转换函数设计
 
@@ -163,7 +166,9 @@ export function transformSearchFilesData(rawData: any) {
     pagination: {
       page: rawData?.page || 1,
       total_pages: rawData?.total_pages || 1,
+      page_size: rawData?.page_size || 200,
       has_more: rawData?.has_more || false,
+      last_file: rawData?.last_file, // 最后一个文件的路径，用于分页标记
     },
   };
 }
@@ -212,7 +217,9 @@ interface SearchFilesViewProps {
     pagination?: {
       page?: number;
       total_pages?: number;
+      page_size?: number;
       has_more?: boolean;
+      last_file?: string; // 用于分页标记的最后一个文件路径
     };
   };
 }
@@ -267,7 +274,9 @@ interface SearchFilesViewProps {
     pagination?: {
       page?: number;
       total_pages?: number;
+      page_size?: number;
       has_more?: boolean;
+      last_file?: string;
     };
   };
 }
