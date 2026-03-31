@@ -1115,7 +1115,7 @@ const NewChatContainer: React.FC = () => {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [inputValue, loading]);
+  }, [loading]);
 
   // ============================================
   // 网络连接检查
