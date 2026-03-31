@@ -909,6 +909,8 @@ const shouldUseVirtualList = data.matches && data.matches.length > 100;
 **修改方案**：
 保持右侧对齐（`marginLeft: "auto"`），同时让它更醒目——添加步骤类型的背景色、边框、加粗字体。
 
+**注意**：start步骤的timestamp也需要一起优化，保持一致的视觉风格。
+
 #### 4.2.2 问题2：下一步信息显示混乱
 
 **当前实现**：
@@ -1164,22 +1166,67 @@ export const getFinishedBadgeStyle = (): React.CSSProperties => {
 
 #### 4.4.1 MessageItem.tsx修改计划
 
-**1. thought步骤优化**：
+**1. start步骤优化**：
+- 将timestamp移到详细信息行右侧
+- 使用start的浅蓝色背景（#e6f7ff）
+- 统一深灰色字体（#333333）
+- 添加时钟图标（⏰）
+
+**2. thought步骤优化**：
 - 将timestamp移入步骤信息区域
 - 添加"下一步"和"参数"信息区域
 - 使用统一的JsonHighlight组件显示参数
 
-**2. action_tool步骤优化**：
+**3. action_tool步骤优化**：
 - 将timestamp移入步骤标题行
 - 将状态信息改为徽章样式
 - 统一参数显示格式
 
-**3. observation步骤优化**：
+**4. observation步骤优化**：
 - 将timestamp移入观察内容行末
 - 统一"下一步"和"参数"显示样式
 - 将结束标志改为徽章样式
 
-#### 4.4.2 步骤标题行优化
+#### 4.4.2 start步骤timestamp优化
+
+**当前实现**（第482-492行）：
+```tsx
+{step.timestamp && (
+  <span style={{ 
+    color: Colors.TEXT.TERTIARY,     // #8c8cc 不够醒目
+    backgroundColor: Colors.BG.SECONDARY,  // 浅灰背景
+    padding: "2px 8px",
+    borderRadius: 4,
+    fontSize: FontSize.TERTIARY,
+  }}>
+    {formatTimestamp(step.timestamp)}
+  </span>
+)}
+```
+
+**优化后实现**：
+```tsx
+{step.timestamp && (
+  <span style={{ 
+    marginLeft: "auto",              // 靠右对齐
+    padding: '3px 10px',
+    borderRadius: 6,
+    backgroundColor: '#e6f7ff',      // start的浅蓝色背景
+    border: '1px solid #91d5ff60',
+    color: '#333333',                // 统一深灰色，对比强烈
+    fontSize: 12,
+    fontWeight: 600,                 // 加粗
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+  }}>
+    ⏰ {formatTimestamp(step.timestamp)}
+  </span>
+)}
+```
+
+#### 4.4.3 thought/action_tool/observation步骤标题行优化
 
 **当前实现**：
 ```tsx
@@ -1268,6 +1315,22 @@ export const getFinishedBadgeStyle = (): React.CSSProperties => {
 - ✅ 加粗字体（fontWeight: 600）
 - ✅ 添加时钟图标（⏰）
 - ✅ 轻微阴影增加层次感
+
+---
+
+**start步骤timestamp优化**：
+```
+┌────────────────────────────────────────────────────────────────┐
+│ 🚀 用户消息：查看我的磁盘D盘有什么                               │
+│ 任务ID：abc123  安全：✅ 通过                  [⏰ 07:26:42]   │
+└────────────────────────────────────────────────────────────────┘
+```
+
+**timestamp视觉特点**：
+- 位于详细信息行最右侧，与右侧边框挨着
+- 使用start的浅蓝色背景（#e6f7ff）
+- **统一深灰色字体（#333333）**，对比强烈，更清晰
+- 加粗字体，更醒目
 
 **功能特性**：
 - ✅ timestamp使用步骤类型的次色调，视觉协调
