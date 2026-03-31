@@ -1,6 +1,24 @@
 ai:
-  provider: longcat
-  model: LongCat-Flash-Thinking
+  provider: qiniu
+  model: z-ai/glm-4.7
+  dmxapi:
+    api_base: https://www.dmxapi.cn/v1
+    api_key: sk-N2cFYdEXiCRQ2gKUCBTwnP3arxfwesLHBGntk1tk8X3m2gS1
+    max_retries: 3
+    models:
+    - Baichuan-M3-Plus-free
+    - DMXAPI-Code-Free
+    - DMXAPI-CodeX-Free
+    - MiniMax-M2.5-free
+    - MiniMax-M2.7-free
+    - doubao-seed-2.0-code-free
+    - doubao-seed-2.0-lite-free
+    - doubao-seed-2.0-pro-free
+    - kimi-k2.5-free
+    - qwen3-coder-plus-free
+    - qwen3-max-2026-01-23-free
+    - qwen3.5-plus-free
+    timeout: 90
   longcat:
     api_base: https://api.longcat.chat/openai/v1
     api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
