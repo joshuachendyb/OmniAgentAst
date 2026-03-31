@@ -1,8 +1,8 @@
 # 搜索文件和搜索内容的前端step显示设计方案
 
 **创建时间**: 2026-03-31 09:59:11  
-**更新时间**: 2026-03-31 10:50:00  
-**版本**: v2.2  
+**更新时间**: 2026-03-31 11:00:00  
+**版本**: v2.3  
 **作者**: 小强  
 **状态**: 设计完善，待审查
 
@@ -29,7 +29,13 @@
    - 3.6 性能优化考虑
    - 3.7 实施计划
    - 3.8 预期效果
-4. [总结](#4-总结)
+4. [现有 step的问题 优化整改](#4-现有-step的问题-优化整改)
+   - 4.1 现有step显示风格分析
+   - 4.2 UI布局及视觉问题分析
+   - 4.3 修改方案详细设计
+   - 4.4 具体修改实施计划
+   - 4.5 预期优化效果
+5. [总结](#5-总结)
 
 ---
 
@@ -67,6 +73,33 @@
 2. **类型安全**：完整的TypeScript类型定义
 3. **可维护性**：模块化设计，易于维护和扩展
 4. **用户体验**：友好的错误提示和加载状态
+
+**search files（文件搜索）**：
+- ✅ 转换函数独立（`transformSearchFilesData`）
+- ✅ SearchFilesView组件改进（向后兼容）
+- ✅ 文件大小显示（字节）
+- ✅ 搜索路径显示
+- ✅ 分页功能（加载更多按钮）
+- ✅ 性能优化（虚拟滚动）
+- ✅ 错误处理（数据验证和优雅降级）
+
+**search file content（文件内容搜索）**：
+- ✅ 转换函数独立（`transformSearchFileContentData`）
+- ✅ SearchFileContentView组件（新建）
+- ✅ 嵌套数据结构处理
+- ✅ 文件匹配详情显示
+- ✅ 分页功能（加载更多按钮）
+- ✅ 性能优化（虚拟滚动）
+- ✅ 错误处理（数据验证和优雅降级）
+
+### 技术优势
+
+1. **数据转换分离**：转换逻辑与UI组件解耦，易于维护
+2. **类型安全**：完整的TypeScript类型定义
+3. **向后兼容**：保持现有接口的兼容性
+4. **错误处理**：完善的错误处理和优雅降级
+5. **性能优化**：支持大量数据的高效显示
+6. **用户体验**：友好的错误提示和加载状态
 
 ---
 
@@ -796,9 +829,430 @@ const shouldUseVirtualList = data.matches && data.matches.length > 100;
 
 ---
 
-## 4. 总结
+## 4. 现有 step的问题 优化整改
 
-### 4.1 核心设计点
+### 4.1 现有step显示风格分析
+
+#### 4.1.1 整体视觉风格总结
+
+**颜色体系**：
+| 步骤类型 | 颜色系 | 主色调 | 用途 |
+|----------|--------|--------|------|
+| **thought** | 橙色系 | #faad14 | 思考、分析 |
+| **action_tool** | 蓝色系 | #1890ff | 执行、操作 |
+| **observation** | 绿色系 | #52c41a | 观察、检查 |
+| **final** | 绿色系 | #52c41a | 完成、总结 |
+| **error** | 红色系 | #ff4d4f | 错误、失败 |
+| **start** | 蓝色系 | #1890ff | 开始、启动 |
+
+**设计语言**：
+- 渐变背景色（linear-gradient）
+- 圆角边框（borderRadius: 8px）
+- 轻度阴影（boxShadow）
+- 分层字体大小（14px/13px/12px/11px）
+- Emoji图标系统
+
+**布局模式**：
+| 布局模式 | 说明 | 适用步骤 |
+|----------|------|----------|
+| `inline` | 单行显示 | 简短状态（paused, resumed） |
+| `block` | 多行换行显示 | 主要内容（thought, final, error） |
+| `inline-with-details` | 标题行+可展开详情 | 复杂内容（start, action_tool, observation） |
+
+#### 4.1.2 小沈优化内容分析
+
+**小沈昨天加的三个优化内容**：
+
+1. **thought步骤优化**：
+   ```
+   步骤{step} 💭 分析：{reasoning或content} ⏰ {timestamp}
+             ⬇️ 下一步：{action_tool}
+                参数：{params关键字段摘要}
+   ```
+
+2. **action_tool步骤优化**：
+   ```
+   步骤{step} ⚙️ 执行：{tool_name} ⏰ {timestamp}
+             📦 结果：{raw_data渲染}
+             📊 状态：{success/error} | 摘要：{summary}
+   ```
+
+3. **observation步骤优化**：
+   ```
+   步骤{step} 🔍 观察结果：{content} ⏰ {timestamp}
+                ⬇️ 下一步：{obs_action_tool}
+                参数：{obs_params}
+                ✅ 结束（仅当is_finished=true时显示）
+   ```
+
+---
+
+### 4.2 UI布局及视觉问题分析
+
+#### 4.2.1 问题1：timestamp显示位置不当
+
+**当前实现**：
+```tsx
+{step.timestamp && (
+  <span style={{ marginLeft: "auto", color: "#333", fontSize: 11 }}>
+    {formatTimestamp(step.timestamp)}
+  </span>
+)}
+```
+
+**问题**：
+- ❌ 使用`marginLeft: "auto"`将timestamp推到最右边，视觉上与内容分离
+- ❌ 颜色为固定黑色（#333），与步骤的主色调不协调
+- ❌ 没有视觉边界，看起来像是附加内容
+
+**修改方案**：
+使用步骤类型的次色调，放在步骤信息区域内，与内容保持视觉连续性。
+
+#### 4.2.2 问题2：下一步信息显示混乱
+
+**当前实现**：
+```tsx
+{(step as any).action_tool && (
+  <div style={{ marginTop: 6, fontSize: 12, color: "#1890ff" }}>
+    ⬇️ 下一步：{(step as any).action_tool}
+  </div>
+)}
+```
+
+**问题**：
+- ❌ 固定使用#1890ff蓝色，不区分thought和observation的"下一步"
+- ❌ 没有视觉层次，与timestamp、参数等信息混在一起
+- ❌ 参数显示没有统一格式
+
+**修改方案**：
+统一"下一步"信息的样式，使用步骤类型的主色调，添加视觉层次。
+
+#### 4.2.3 问题3：状态信息显示过于简单
+
+**当前实现**：
+```tsx
+{(step as any).execution_status && (
+  <div style={{ marginTop: 6, fontSize: 12 }}>
+    <span style={{ 
+      color: (step as any).execution_status === "success" ? "#52c41a" : "#ff4d4f",
+      fontWeight: 500,
+    }}>
+      📊 状态：{(step as any).execution_status}
+    </span>
+  </div>
+)}
+```
+
+**问题**：
+- ❌ 只用颜色区分状态，没有视觉边界
+- ❌ 与整体设计语言不一致（缺少背景、圆角）
+
+**修改方案**：
+使用状态徽章样式，与步骤徽章风格一致，添加成功/失败的视觉区分。
+
+#### 4.2.4 问题4：参数显示格式不统一
+
+**当前问题**：
+- thought的params使用`JSON.stringify()`直接输出
+- action_tool的params使用`JsonHighlight`组件
+- observation的params使用`JsonHighlight`组件
+
+**修改方案**：
+统一使用`JsonHighlight`组件，保持一致的视觉格式。
+
+#### 4.2.5 问题5：结束标志（is_finished）过于简单
+
+**当前实现**：
+```tsx
+{step.is_finished === true && (
+  <div style={{ marginTop: 6, fontSize: 12, color: "#52c41a", fontWeight: 500 }}>
+    ✅ 结束
+  </div>
+)}
+```
+
+**问题**：
+- ❌ 只是简单的绿色文字，没有视觉强调
+- ❌ 与整体设计语言不一致
+
+**修改方案**：
+使用完成类的绿色系样式，添加徽章效果，增强视觉存在感。
+
+---
+
+### 4.3 修改方案详细设计
+
+#### 4.3.1 通用原则
+
+**设计原则**：
+1. **颜色一致**：使用步骤类型的主色调和次色调
+2. **布局统一**：使用现有的布局模式（inline/block/inline-with-details）
+3. **视觉层次**：通过字体大小、字重、颜色深浅区分信息层次
+4. **边界清晰**：使用背景色、边框、圆角创建视觉边界
+
+**样式统一**：
+| 元素 | 背景色 | 字体大小 | 颜色 |
+|------|--------|----------|------|
+| 步骤徽章 | 渐变色 | 11px | 白色 |
+| 步骤标签 | 类型色 | 13px | 类型主色 |
+| 主要内容 | 无 | 13px | 类型主色 |
+| 次要信息 | 浅灰背景 | 12px | 次要色 |
+| 时间戳 | 浅灰背景 | 11px | 辅助色 |
+
+#### 4.3.2 thought步骤UI优化
+
+**当前问题**：
+timestamp、action_tool、params三个信息视觉上没有层次
+
+**修改方案**：
+```
+┌─────────────────────────────────────────────────┐
+│ 步骤1 💭 分析：我需要读取这个文件的内容...      │
+│  ┌──────────────────────────────────────────────┐ │
+│  │ ⏰ 13:25:30                                  │ │
+│  │ ⬇️ 下一步：read_file                         │ │
+│  │ 📦 参数：{"path": "/home/user/test.txt"}     │ │
+│  └──────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+**具体实现**：
+1. **timestamp**：放在步骤信息区域，使用thought的次色调背景
+2. **下一步**：使用thought的主色调，添加下箭头图标
+3. **参数**：使用JsonHighlight组件，统一背景和字体
+
+#### 4.3.3 action_tool步骤UI优化
+
+**当前问题**：
+timestamp和状态信息视觉上没有层次
+
+**修改方案**：
+```
+┌─────────────────────────────────────────────────┐
+│ 步骤2 ⚙️ 执行：read_file ⏰ 13:25:31           │
+│  ┌──────────────────────────────────────────────┐ │
+│  │ 📦 结果：[文件内容...]                       │ │
+│  │ 📊 状态：[success徽章] | 摘要：成功读取文件  │ │
+│  └──────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+**具体实现**：
+1. **timestamp**：放在步骤标题行，与tool_name同行显示
+2. **状态徽章**：使用成功/失败的徽章样式（绿色/红色背景）
+3. **摘要**：使用次要文字样式
+
+#### 4.3.4 observation步骤UI优化
+
+**当前问题**：
+timestamp、下一步、参数、结束标志视觉上没有层次
+
+**修改方案**：
+```
+┌─────────────────────────────────────────────────┐
+│ 步骤3 🔍 观察结果：文件读取成功 ⏰ 13:25:32    │
+│  ┌──────────────────────────────────────────────┐ │
+│  │ ⬇️ 下一步：search_files                      │ │
+│  │ 📦 参数：{"keyword": "error"}                │ │
+│  │ [✅ 结束徽章]                                │ │
+│  └──────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+**具体实现**：
+1. **timestamp**：放在观察内容行末，使用observation的次色调
+2. **下一步**：使用observation的主色调，添加下箭头图标
+3. **参数**：使用JsonHighlight组件，统一背景和字体
+4. **结束标志**：使用成功徽章样式，添加✅图标
+
+#### 4.3.5 新增样式函数设计
+
+**在stepStyles.ts中新增**：
+
+```typescript
+// 时间戳样式
+export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
+  const scheme = colorSchemes[stepType] || colorSchemes.start;
+  return {
+    marginLeft: 8,
+    padding: '2px 8px',
+    borderRadius: 4,
+    backgroundColor: `${scheme.bg1}`,
+    color: scheme.textSecondary,
+    fontSize: FontSize.CAPTION,
+    fontWeight: FontWeight.MEDIUM,
+    border: `1px solid ${scheme.border}40`,
+  };
+};
+
+// 下一步信息样式
+export const getNextStepStyle = (stepType: StepType): React.CSSProperties => {
+  const scheme = colorSchemes[stepType] || colorSchemes.start;
+  return {
+    marginTop: 6,
+    padding: '6px 10px',
+    borderRadius: 4,
+    backgroundColor: `${scheme.bg1}30`,
+    border: `1px solid ${scheme.border}40`,
+    fontSize: FontSize.TERTIARY,
+    color: scheme.text,
+    fontWeight: FontWeight.MEDIUM,
+  };
+};
+
+// 状态徽章样式
+export const getStatusBadgeStyle = (status: 'success' | 'error'): React.CSSProperties => {
+  const isSuccess = status === 'success';
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '2px 8px',
+    borderRadius: 4,
+    backgroundColor: isSuccess ? '#f6ffed' : '#fff1f0',
+    color: isSuccess ? '#52c41a' : '#ff4d4f',
+    fontSize: FontSize.TERTIARY,
+    fontWeight: FontWeight.MEDIUM,
+    border: `1px solid ${isSuccess ? '#b7eb8f' : '#ffa39e'}`,
+  };
+};
+
+// 结束徽章样式
+export const getFinishedBadgeStyle = (): React.CSSProperties => {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    padding: '4px 12px',
+    borderRadius: 6,
+    backgroundColor: '#f6ffed',
+    color: '#52c41a',
+    fontSize: FontSize.TERTIARY,
+    fontWeight: FontWeight.BOLD,
+    border: '1px solid #b7eb8f',
+    boxShadow: '0 2px 4px rgba(82,196,26,0.1)',
+  };
+};
+```
+
+---
+
+### 4.4 具体修改实施计划
+
+#### 4.4.1 MessageItem.tsx修改计划
+
+**1. thought步骤优化**：
+- 将timestamp移入步骤信息区域
+- 添加"下一步"和"参数"信息区域
+- 使用统一的JsonHighlight组件显示参数
+
+**2. action_tool步骤优化**：
+- 将timestamp移入步骤标题行
+- 将状态信息改为徽章样式
+- 统一参数显示格式
+
+**3. observation步骤优化**：
+- 将timestamp移入观察内容行末
+- 统一"下一步"和"参数"显示样式
+- 将结束标志改为徽章样式
+
+#### 4.4.2 步骤标题行优化
+
+**当前实现**：
+```tsx
+<div style={{ display: "flex", alignItems: "flex-start", flexWrap: "wrap" as const }}>
+  <span style={getStepBadgeStyle()}>步骤{step.step}</span>
+  <span style={getLabelStyle()}>{icon} {label}：</span>
+</div>
+```
+
+**优化后实现**：
+```tsx
+<div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+  <span style={getStepBadgeStyle()}>步骤{step.step}</span>
+  <span style={getLabelStyle()}>{icon} {label}：</span>
+  {/* timestamp放在标题行末尾 */}
+  {step.timestamp && (
+    <span style={getTimestampStyle(effectiveType)}>
+      ⏰ {formatTimestamp(step.timestamp)}
+    </span>
+  )}
+</div>
+```
+
+#### 4.4.3 信息区域优化
+
+**新增信息区域容器**：
+```tsx
+{/* 信息区域：timestamp、下一步、参数、状态、结束标志 */}
+<div style={{
+  marginTop: 6,
+  padding: '8px 12px',
+  borderRadius: 6,
+  background: `${gradient}08`, // 使用步骤颜色的8%透明度
+  border: `1px solid ${gradient}20`, // 使用步骤颜色的20%透明度
+}}>
+  {/* 下一步信息 */}
+  {/* 参数信息 */}
+  {/* 状态信息 */}
+  {/* 结束标志 */}
+</div>
+```
+
+---
+
+### 4.5 预期优化效果
+
+**thought步骤优化后**：
+```
+┌─────────────────────────────────────────────────┐
+│ [步骤1] 💭 分析：我需要读取这个文件... [⏰ 13:25] │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ ⬇️ 下一步：read_file                        │ │
+│ │ 📦 参数：{ "path": "/home/user/test.txt" }  │ │
+│ └─────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+**action_tool步骤优化后**：
+```
+┌─────────────────────────────────────────────────┐
+│ [步骤2] ⚙️ 执行：read_file [⏰ 13:25:31]       │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ 📦 结果：[文件内容...]                      │ │
+│ │ 📊 [success徽章] | 摘要：成功读取文件       │ │
+│ └─────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+**observation步骤优化后**：
+```
+┌─────────────────────────────────────────────────┐
+│ [步骤3] 🔍 观察结果：文件读取成功 [⏰ 13:25]    │
+│ ┌─────────────────────────────────────────────┐ │
+│ │ ⬇️ 下一步：search_files                     │ │
+│ │ 📦 参数：{ "keyword": "error" }             │ │
+│ │ [✅ 结束徽章]                               │ │
+│ └─────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────┘
+```
+
+**功能特性**：
+- ✅ timestamp使用步骤类型的次色调，视觉协调
+- ✅ "下一步"信息使用步骤类型的主色调，层次分明
+- ✅ 参数显示统一使用JsonHighlight组件
+- ✅ 状态信息使用徽章样式，与步骤徽章风格一致
+- ✅ 结束标志使用成功徽章，视觉存在感强
+- ✅ 整体风格与现有设计语言保持一致
+
+---
+
+
+---
+
+## 5. 总结
+
+### 5.1 核心设计点
 
 **search files（文件搜索）**：
 - ✅ 转换函数独立（`transformSearchFilesData`）
@@ -818,7 +1272,14 @@ const shouldUseVirtualList = data.matches && data.matches.length > 100;
 - ✅ 性能优化（虚拟滚动）
 - ✅ 错误处理（数据验证和优雅降级）
 
-### 4.2 技术优势
+**step显示优化**：
+- ✅ timestamp显示优化（使用步骤类型色调）
+- ✅ "下一步"信息统一（视觉层次分明）
+- ✅ 状态信息徽章化（与整体风格一致）
+- ✅ 参数显示统一（JsonHighlight组件）
+- ✅ 结束标志徽章化（视觉存在感强）
+
+### 5.2 技术优势
 
 1. **数据转换分离**：转换逻辑与UI组件解耦，易于维护
 2. **类型安全**：完整的TypeScript类型定义
@@ -826,21 +1287,23 @@ const shouldUseVirtualList = data.matches && data.matches.length > 100;
 4. **错误处理**：完善的错误处理和优雅降级
 5. **性能优化**：支持大量数据的高效显示
 6. **用户体验**：友好的错误提示和加载状态
+7. **视觉一致性**：所有优化与现有设计语言保持一致
 
-### 4.3 下一步
+### 5.3 下一步
 
 **实施计划**：
 1. 按照第2章的实施计划，完成search files的改进
 2. 按照第3章的实施计划，完成search file content的开发
-3. 进行全面的测试和优化
-4. 部署上线
+3. 按照第4章的实施计划，完成step显示的视觉优化
+4. 进行全面的测试和优化
+5. 部署上线
 
 **等待用户审查设计文档，确认后开始代码开发。**
 
 ---
 
-**文档版本**: v2.0  
+**文档版本**: v2.3  
 **创建时间**: 2026-03-31 09:59:11  
-**更新时间**: 2026-03-31 10:25:00  
+**更新时间**: 2026-03-31 11:00:00  
 **作者**: 小强  
 **状态**: 设计完善，待审查
