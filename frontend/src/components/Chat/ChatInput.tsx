@@ -16,6 +16,7 @@ import {
   PauseCircleOutlined,
   PlayCircleOutlined,
 } from "@ant-design/icons";
+import PropTypes from "prop-types";
 
 const { TextArea } = Input;
 
@@ -145,5 +146,18 @@ const ChatInput: React.FC<ChatInputProps> = React.memo(({
 });
 
 ChatInput.displayName = "ChatInput";
+
+ChatInput.propTypes = {
+  loading: PropTypes.bool.isRequired,
+  isReceiving: PropTypes.bool.isRequired,
+  isPaused: PropTypes.bool.isRequired,
+  isRetrying: PropTypes.bool.isRequired,
+  waitTime: PropTypes.number.isRequired,
+  useStream: PropTypes.bool.isRequired,
+  checkingDanger: PropTypes.bool.isRequired,
+  onSend: PropTypes.func.isRequired,
+  onInterrupt: PropTypes.func.isRequired,
+  onTogglePause: PropTypes.func.isRequired,
+};
 
 export default ChatInput;
