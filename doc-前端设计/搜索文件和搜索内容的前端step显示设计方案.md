@@ -1,8 +1,8 @@
 # 搜索文件和搜索内容的前端step显示设计方案
 
 **创建时间**: 2026-03-31 09:59:11  
-**更新时间**: 2026-03-31 10:40:00  
-**版本**: v2.1  
+**更新时间**: 2026-03-31 10:50:00  
+**版本**: v2.2  
 **作者**: 小强  
 **状态**: 设计完善，待审查
 
@@ -463,28 +463,30 @@ const shouldUseVirtualList = data.matches && data.matches.length > 500;
 ```json
 {
   "success": true,
-  "pattern": "函数",
-  "path": "D:\\项目",
-  "file_pattern": "*.ts",
+  "pattern": "安全",
+  "path": "D:\\1WTCB",
+  "file_pattern": "*",
   "matches": [
     {
-      "file": "src/utils.ts",
+      "file": "0个律云系统\\00-原始需求\\应用CB开发构建技术说明书V1.2.md",
       "matches": [
         {
-          "start": 100,
-          "end": 110,
-          "matched": "function",
-          "context": "...一些代码 function 其他代码..."
+          "start": 1312,
+          "end": 1314,
+          "matched": "安全",
+          "context": "...一些文本内容..."
         }
       ],
       "match_count": 5
     }
   ],
-  "total": 100,
-  "total_matches": 500,
+  "total": 91,
+  "total_matches": 668,
   "page": 1,
-  "total_pages": 5,
-  "has_more": true
+  "total_pages": 1,
+  "page_size": 200,
+  "last_file": "RuleTool\\工具\\Graphviz-14.1.1-win64\\bin\\brotlicommon.dll",
+  "has_more": false
 }
 ```
 
@@ -501,7 +503,9 @@ const shouldUseVirtualList = data.matches && data.matches.length > 500;
 | `total_matches` | `total_matches` | 内容匹配总数 |
 | `page` | `pagination.page` | 当前页码 |
 | `total_pages` | `pagination.total_pages` | 总页数 |
+| `page_size` | `pagination.page_size` | 每页大小 |
 | `has_more` | `pagination.has_more` | 是否有更多 |
+| `last_file` | `pagination.last_file` | 最后一个文件路径（分页标记） |
 
 ### 3.2 转换函数设计
 
@@ -521,7 +525,9 @@ export function transformSearchFileContentData(rawData: any) {
     pagination: {
       page: rawData?.page || 1,
       total_pages: rawData?.total_pages || 1,
+      page_size: rawData?.page_size || 200,
       has_more: rawData?.has_more || false,
+      last_file: rawData?.last_file, // 最后一个文件的路径，用于分页标记
     },
   };
 }
