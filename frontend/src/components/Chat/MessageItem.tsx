@@ -31,6 +31,7 @@ import { } from "../../utils/markdown";
 import ErrorDetail from "./ErrorDetail";
 import { 
   getStepStyle, 
+  getStepTitleStyle,
   getStepContentStyle,
   getStepLabelStyle,
   getStepBadgeStyle,
@@ -420,6 +421,10 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
         {step.type === "start" && (
           <div style={getStepStyle("start" as StepType)}>
             {/* 【小强修复 2026-03-31】删除内容框内重复的标题行和时间戳，标题行已在StepRow外层显示 */}
+            {/* 【小强修复 2026-03-31】恢复用户消息显示功能 */}
+            <div style={getStepTitleStyle("start" as StepType)}>
+              🚀 用户消息：{(step as any).user_message || "(无)"}
+            </div>
             {/* 详细信息行：任务ID、安全检查 */}
             <div style={{ 
               ...getStepContentStyle("start" as StepType, "secondary"),
