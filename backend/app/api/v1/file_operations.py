@@ -59,9 +59,10 @@ class StatsData(BaseModel):
 
 
 class AnimationFrame(BaseModel):
-    """动画帧数据"""
+    """动画帧数据【修改 2026-03-31】timestamp改为毫秒int类型"""
     frame_index: int = Field(..., description="帧序号")
-    timestamp: str = Field(..., description="时间戳")
+    # 【修改 2026-03-31】从 str 改为 int，使用毫秒时间戳
+    timestamp: int = Field(..., description="时间戳（毫秒）")
     operation: Dict[str, Any] = Field(..., description="操作信息")
     current_state: Dict[str, Any] = Field(..., description="当前状态")
 
@@ -384,9 +385,13 @@ async def get_animation_data(
             frame_duration = op.duration_ms or frame_interval_ms
             cumulative_time += frame_duration
             
+            # 【修改 2026-03-31】转换为毫秒时间戳
+            op_time = op.executed_at or op.created_at
+            timestamp_ms = int(op_time.timestamp() * 1000) if op_time else 0
+            
             frame = AnimationFrame(
                 frame_index=idx,
-                timestamp=(op.executed_at or op.created_at).isoformat() if op.executed_at or op.created_at else "",
+                timestamp=timestamp_ms,
                 operation={
                     "operation_id": op.operation_id,
                     "type": op.operation_type.value,

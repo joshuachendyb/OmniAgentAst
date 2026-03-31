@@ -3,11 +3,15 @@
 ReAct 步骤类型定义
 
 Author: 小沈 - 2026-03-21
+
+【修改 2026-03-31】
+- Step.timestamp 改为 int 类型，存储毫秒时间戳
+- to_dict() 返回毫秒时间戳，而非 isoformat()
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any, Dict, Optional
+from app.chat_stream.chat_helpers import create_timestamp
 
 
 @dataclass
@@ -81,13 +85,14 @@ class ObservationStep:
 
 @dataclass
 class Step:
-    """ReAct步骤（兼容旧版本）"""
+    """ReAct步骤（兼容旧版本）【修改 2026-03-31】timestamp改为毫秒int类型"""
     step_number: int
     thought: str
     action: str
     action_input: Dict[str, Any]
     observation: Optional[Dict[str, Any]] = None
-    timestamp: datetime = field(default_factory=datetime.now)
+    # 【修改 2026-03-31】从 datetime 改为 int，使用毫秒时间戳
+    timestamp: int = field(default_factory=create_timestamp)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -96,5 +101,6 @@ class Step:
             "action": self.action,
             "action_input": self.action_input,
             "observation": self.observation,
-            "timestamp": self.timestamp.isoformat()
+            # 【修改 2026-03-31】直接返回毫秒时间戳，不再转换
+            "timestamp": self.timestamp
         }
