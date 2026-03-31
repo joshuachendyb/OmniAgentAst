@@ -52,7 +52,6 @@ class FileReactAgent(BaseAgent):
         session_id: str,
         intent_type: str = "file",  # 【新增】意图类型参数
         file_tools: Optional[FileTools] = None,
-        max_steps: int = 20,
         use_function_calling: bool = False,
         tools: Optional[List[Dict[str, Any]]] = None,
         api_base: Optional[str] = None,
@@ -66,7 +65,6 @@ class FileReactAgent(BaseAgent):
             llm_client: LLM 客户端函数
             session_id: 会话 ID（必需）- 用于操作安全追踪和审计
             file_tools: 文件工具实例（可选，默认创建新实例）
-            max_steps: 最大执行步数
             use_function_calling: 是否使用 Function Calling 模式
             tools: 工具定义列表
             api_base: LLM API 地址（可选，用于自适应探测）
@@ -80,8 +78,11 @@ class FileReactAgent(BaseAgent):
         # 【新增】保存 intent_type 参数
         self.intent_type = intent_type
         
-        # 【修复】调用父类初始化
-        super().__init__(max_steps=max_steps)
+        # 【修复】调用父类初始化（max_steps由调用方传入，本类不重复定义）
+        # 历史：之前在file_react.py定义了max_steps=20，但被react_sse_wrapper硬编码覆盖
+        # 修复：删除本类max_steps参数，统一由react_sse_wrapper从配置读取后传入
+        # Author: 小沈 - 2026-04-01
+        super().__init__()
         
         # 【扩展】保存 use_function_calling（父类不需要，但子类需要）
         self.use_function_calling = use_function_calling

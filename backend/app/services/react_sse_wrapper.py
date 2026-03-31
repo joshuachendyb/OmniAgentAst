@@ -34,6 +34,7 @@ from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 from app.services import AIServiceFactory
 from app.services.llm_core import Message
 from app.services.shell_security import check_command_safety
+from app.config import get_config
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data
@@ -403,8 +404,16 @@ async def generate_sse_stream(
                 model=ai_service.model
             )
             
+            # 【修复BUG】从配置文件读取 max_steps
+            # 之前硬编码 max_steps=100 导致 config.yaml 中的配置无效
+            # 调用链路：config.yaml -> get_config() -> react_sse_wrapper -> agent.run_stream()
+            # 相关文件：config/config.yaml (max_steps配置)
+            # Author: 小沈 - 2026-04-01
+            config = get_config()
+            max_steps = config.get('app', {}).get('max_steps', 100)
+            
             try:
-                async for event in agent.run_stream(task=last_message, context=None, max_steps=100):
+                async for event in agent.run_stream(task=last_message, context=None, max_steps=max_steps):
                     # 检查中断
                     async with running_tasks_lock:
                         if running_tasks.get(task_id, {}).get("cancelled", False):
