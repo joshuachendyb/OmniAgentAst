@@ -65,6 +65,10 @@ def get_utc_timestamp() -> str:
     """获取UTC时间戳，ISO格式"""
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
+def get_timestamp_ms() -> int:
+    """【小沈修复 2026-03-31】获取毫秒时间戳，避免时间戳存储为ISO字符串导致前端解析错误"""
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
+
 
 def check_db_fields_exist(conn) -> dict:
     """
@@ -601,14 +605,24 @@ async def get_session_messages(session_id: str):
             if not display_name and execution_steps_data:
                 display_name = extract_display_name_from_steps(execution_steps_data)
 
+            # 【小沈修复 2026-03-31】返回毫秒时间戳给前端
+            ts_value = row['timestamp']
+            if isinstance(ts_value, (int, float)):
+                timestamp_ms = str(int(ts_value))
+            else:
+                try:
+                    timestamp_ms = str(int(datetime.fromisoformat(str(ts_value).replace(' ', 'T')).timestamp() * 1000))
+                except:
+                    timestamp_ms = str(int(datetime.now(timezone.utc).timestamp() * 1000))
+            
             messages.append(MessageResponse(
                 id=row['id'],
                 session_id=row['session_id'],
                 role=row['role'],
                 content=row['content'],
-                timestamp=_convert_to_utc(row['timestamp']),
+                timestamp=timestamp_ms,
                 execution_steps=execution_steps_data,
-                display_name=display_name  # 添加 display_name 字段
+                display_name=display_name
             ))
         
         logger.info(f"获取会话消息: session_id={session_id}, count={len(messages)}")
@@ -715,8 +729,8 @@ async def save_message(session_id: str, message: MessageCreate):
             conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
-        # 开始事务处理
-        utc_time = get_utc_timestamp()
+        # 【小沈修复 2026-03-31】使用毫秒时间戳
+        utc_time = get_timestamp_ms()
         
         # ⭐ 【小沈添加 2026-03-03】从缓存获取 display_name（如果是AI回复且前端未提供）
         display_name_to_save = message.display_name
@@ -986,8 +1000,9 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
                     break
         
         # 如果需要创建新消息
+        # 【小沈修复 2026-03-31】使用毫秒时间戳，避免前端解析错误
         if should_create_new:
-            utc_time = get_utc_timestamp()
+            utc_time = get_timestamp_ms()
             initial_content = update_data.content if update_data.content else ''
             
             # 保存metadata到数据库
@@ -1057,7 +1072,8 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
         
         # 【修复缺陷4】只在首次创建消息时更新message_count，避免重复
         # @update 2026-03-16：使用is_new_message标记，只在首次创建时+1
-        utc_time = get_utc_timestamp()
+        # 【小沈修复 2026-03-31】updated_at保持ISO格式（显示用），但message timestamp用毫秒
+        utc_time = get_timestamp_ms()
         message_id = last_message['id']
         
         # ⭐ 【调试】记录保存的消息ID和时间
