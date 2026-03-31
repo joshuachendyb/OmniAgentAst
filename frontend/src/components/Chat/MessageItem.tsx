@@ -31,10 +31,9 @@ import { } from "../../utils/markdown";
 import ErrorDetail from "./ErrorDetail";
 import { 
   getStepStyle, 
-  getStepTitleStyle,
   getStepContentStyle,
-  getStepBadgeStyle,
   getStepLabelStyle,
+  getStepBadgeStyle,
   getTimestampStyle,
   getNextStepStyle,
   getStatusBadgeStyle,
@@ -52,8 +51,11 @@ import WriteFileView from "./views/WriteFileView";
 import DeleteFileView from "./views/DeleteFileView";
 import MoveFileView from "./views/MoveFileView";
 import SearchFilesView from "./views/SearchFilesView";
+import SearchFileContentView from "./views/SearchFileContentView";
 import GenerateReportView from "./views/GenerateReportView";
 import JsonHighlight from "./views/JsonHighlight";
+// 【小强实现 2026-03-31】导入搜索工具数据转换函数
+import { transformSearchFilesData, transformSearchFileContentData } from "../../utils/searchTransformers";
 
 /**
  * 步骤行组件 - 单行步骤显示（优化后新增）
@@ -76,22 +78,6 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
   // 【小资修复 2026-03-23】从全局Map读取展开状态（未设置的key默认展开）
   const isExpanded = expandedSteps.get(stepIndex) ?? true;
   
-  // 【小强优化 2026-03-18】渐变色方案
-  // 【小沈修复 2026-03-28】后端type固定为'incident'，通过incident_value区分具体类型
-  const gradientMap: Record<string, string> = {
-    start: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
-    thought: "linear-gradient(135deg, #faad14 0%, #d48806 100%)",
-    action_tool: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
-    observation: "linear-gradient(135deg, #52c41a 0%, #389e0d 100%)",
-    final: "linear-gradient(135deg, #52c41a 0%, #389e0d 100%)",
-    error: "linear-gradient(135deg, #ff4d4f 0%, #cf1322 100%)",
-    paused: "linear-gradient(135deg, #fa8c16 0%, #d46b08 100%)",
-    resumed: "linear-gradient(135deg, #52c41a 0%, #389e0d 100%)",
-    interrupted: "linear-gradient(135deg, #ff4d4f 0%, #cf1322 100%)",
-    retrying: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
-    incident: "linear-gradient(135deg, #fa8c16 0%, #d46b08 100%)",  // incident默认样式
-  };
-
   const labelMap: Record<string, string> = {
     start: "开始",
     thought: "分析",
@@ -122,37 +108,12 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
 
   // 【小沈修复 2026-03-28】处理incident类型：优先使用incident_value，否则用type
   const effectiveType = step.type === 'incident' ? (step as any).incident_value || 'incident' : step.type;
-  const gradient = gradientMap[effectiveType] || gradientMap[step.type] || "#666";
   const label = labelMap[effectiveType] || labelMap[step.type] || "步骤";
   const icon = iconMap[effectiveType] || iconMap[step.type] || "";
-
-  // 【小强优化 2026-03-18】步骤编号颜色随类型变化
-  const getStepBadgeStyle = () => {
-    const baseStyle: React.CSSProperties = {
-      background: gradient,
-      color: "white",
-      padding: "2px 8px",
-      borderRadius: 6,
-      fontSize: 11,
-      marginRight: 8,
-      fontWeight: 600,
-      display: "inline-block",
-      minWidth: 50,
-      textAlign: "center",
-      boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-    };
-    return baseStyle;
-  };
-
-  // 【小强优化 2026-03-18】标签样式
-  const getLabelStyle = () => {
-    return {
-      color: gradient,
-      fontWeight: 600,
-      marginRight: 8,
-      fontSize: 13,
-    };
-  };
+  
+  // 【小强优化 2026-03-18】步骤编号颜色随类型变化 - 使用stepStyles的函数
+  const badgeStyle = getStepBadgeStyle(effectiveType as StepType);
+  const labelStyle = getStepLabelStyle(effectiveType as StepType);
 
   // 【小强优化 2026-03-18】内容区域样式
   const getContentStyle = () => {
@@ -236,12 +197,12 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
         {/* 【小强优化 2026-03-18】步骤编号徽章 */}
         {step.step && (
-          <span style={getStepBadgeStyle("action_tool")}>
+          <span style={badgeStyle}>
             步骤{step.step}
           </span>
         )}
         {/* 【小强优化 2026-03-18】标签带图标 */}
-        <span style={getStepLabelStyle("action_tool")}>
+        <span style={labelStyle}>
           {icon} {label}：
         </span>
         <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
@@ -348,30 +309,17 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
         {step.type === "observation" && (
           <>
             {/* 【小沈优化 2026-03-30】按文档优化：content + timestamp */}
-            {step.content && typeof step.content === "string" && (
+            {/* 【小强修复 2026-03-31】删除内容框内重复的标题行和时间戳，标题行已在StepRow外层显示 */}
+            {(step.content || (step as any).obs_reasoning || step.reasoning) && (
               <div style={{ 
                 ...getStepStyle("observation" as StepType),
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}>
-                {/* 标题行：步骤标签 + timestamp */}
-                <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
-                  <span style={getStepLabelStyle("observation")}>
-                    📋 观察：
-                  </span>
-                  <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
-                  {/* timestamp放在标题行右侧 */}
-                  {step.timestamp && (
-                    <span style={getTimestampStyle("observation")}>
-                      ⏰ {formatTimestamp(step.timestamp)}
-                    </span>
-                  )}
-                </div>
-                
-                {/* 观察内容 */}
+                {/* 观察内容 - 优先显示obs_reasoning/reasoning，其次显示content */}
                 <div>
                   <span style={getStepContentStyle("observation" as StepType, "primary")}>
-                    {step.content}
+                    {(step as any).obs_reasoning || step.reasoning || step.content}
                   </span>
                 </div>
               </div>
@@ -471,21 +419,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
         )}
         {step.type === "start" && (
           <div style={getStepStyle("start" as StepType)}>
-            {/* 标题行：用户消息 - 使用inline-with-details布局 */}
-            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
-              <span style={getStepTitleStyle("start" as StepType)}>
-                🚀 用户消息：{(step as any).user_message || "(无)"}
-              </span>
-              <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
-              {/* timestamp放在标题行右侧 */}
-              {step.timestamp && (
-                <span style={getTimestampStyle("start")}>
-                  ⏰ {formatTimestamp(step.timestamp)}
-                </span>
-              )}
-            </div>
-            
-            {/* 详细信息行：任务ID、安全检查、时间戳 */}
+            {/* 【小强修复 2026-03-31】删除内容框内重复的标题行和时间戳，标题行已在StepRow外层显示 */}
+            {/* 详细信息行：任务ID、安全检查 */}
             <div style={{ 
               ...getStepContentStyle("start" as StepType, "secondary"),
               display: 'flex',
@@ -532,20 +467,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
           }}>
-            {/* 标题行：步骤标签 + timestamp */}
-            <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", marginBottom: 8 }}>
-              <span style={getStepLabelStyle("thought")}>
-                💭 分析：
-              </span>
-              <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
-              {/* timestamp放在标题行右侧 */}
-              {step.timestamp && (
-                <span style={getTimestampStyle("thought")}>
-                  ⏰ {formatTimestamp(step.timestamp)}
-                </span>
-              )}
-            </div>
-            
+            {/* 【小强修复 2026-03-31】删除内容框内重复的标题行和时间戳，标题行已在StepRow外层显示 */}
             {/* 思考内容 */}
             <div>
               <span style={getStepContentStyle("thought" as StepType, "primary")}>
@@ -656,8 +578,16 @@ const renderToolResult = (step: ExecutionStep, isExpanded: boolean = true, toggl
       return <DeleteFileView data={data} />;
     case "move_file":
       return <MoveFileView data={data} />;
-    case "search_files":
-      return <SearchFilesView data={data} />;
+    case "search_files": {
+      // 【小强实现 2026-03-31】使用转换函数处理后端数据
+      const transformedSearchFilesData = transformSearchFilesData(data);
+      return <SearchFilesView data={transformedSearchFilesData} />;
+    }
+    case "search_file_content": {
+      // 【小强实现 2026-03-31】使用转换函数处理后端数据
+      const transformedSearchFileContentData = transformSearchFileContentData(data);
+      return <SearchFileContentView data={transformedSearchFileContentData} />;
+    }
     case "generate_report":
       return <GenerateReportView data={data} isExpanded={isExpanded} onToggle={handleToggle} />;
     default:
