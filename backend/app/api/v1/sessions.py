@@ -442,8 +442,12 @@ async def list_sessions(
         # 构建查询
         offset = (page - 1) * page_size
         
-        # 优化：复合排序策略，优先按创建时间，再按更新时间
-        # 这样新创建的会话会排在前面，同时活跃的会话也能保持较高位置
+        # 【小强修复 2026-03-31】优化排序策略：
+        # 1. 优先返回有消息的会话（message_count > 0）
+        # 2. 再按更新时间降序排列
+        # 3. 最后按创建时间降序
+        # 原因：空会话（message_count=0）会排在有消息的会话后面
+        # 效果：加载最近会话时，会优先返回有消息的会话
         if keyword:
             # 搜索标题
             if is_valid is not None:
@@ -451,7 +455,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND title LIKE ? AND is_valid = ?
-                       ORDER BY updated_at DESC, created_at DESC 
+                       ORDER BY message_count DESC, updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (f'%{keyword}%', is_valid, page_size, offset)
                 )
@@ -460,7 +464,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND title LIKE ?
-                       ORDER BY updated_at DESC, created_at DESC 
+                       ORDER BY message_count DESC, updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (f'%{keyword}%', page_size, offset)
                 )
@@ -470,7 +474,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND is_valid = ?
-                       ORDER BY updated_at DESC, created_at DESC 
+                       ORDER BY message_count DESC, updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (is_valid, page_size, offset)
                 )
@@ -479,7 +483,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE
-                       ORDER BY updated_at DESC, created_at DESC 
+                       ORDER BY message_count DESC, updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (page_size, offset)
                 )
@@ -495,13 +499,22 @@ async def list_sessions(
             created_at = row['created_at']
             updated_at = row['updated_at']
             
-            # 简单的时间格式转换（假设存储已经是UTC格式）
-            if isinstance(created_at, str):
+            # 【小沈修复 2026-03-31】统一转换为ISO格式字符串返回给前端
+            # 处理两种情况：1. ISO格式字符串 2. 毫秒时间戳（int/float）
+            if isinstance(created_at, (int, float)):
+                # 毫秒时间戳转换为ISO格式
+                created_at_str = datetime.fromtimestamp(created_at / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
+            elif isinstance(created_at, str):
                 created_at_str = created_at.replace('+00:00', 'Z') if '+00:00' in created_at else created_at + 'Z' if not created_at.endswith('Z') else created_at
             else:
                 created_at_str = _convert_to_utc(created_at)
                 
-            if isinstance(updated_at, str):
+            # 【小沈修复 2026-03-31】统一转换为ISO格式字符串返回给前端
+            # 处理两种情况：1. ISO格式字符串 2. 毫秒时间戳（int/float）
+            if isinstance(updated_at, (int, float)):
+                # 毫秒时间戳转换为ISO格式
+                updated_at_str = datetime.fromtimestamp(updated_at / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
+            elif isinstance(updated_at, str):
                 updated_at_str = updated_at.replace('+00:00', 'Z') if '+00:00' in updated_at else updated_at + 'Z' if not updated_at.endswith('Z') else updated_at
             else:
                 updated_at_str = _convert_to_utc(updated_at)
