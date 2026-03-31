@@ -1664,10 +1664,10 @@ const NewChatContainer: React.FC = () => {
   };
 
   /**
-    * 发送消息（带安全检测v2.0）
-    * 【小强修复 2026-03-31】改为接收messageContent参数，不再依赖inputValue状态
-      */
-    const handleSend = async (messageContent: string) => {
+   * 发送消息（带安全检测v2.0）
+   * 【小强修复 2026-03-31】改为接收messageContent参数，不再依赖inputValue状态
+   */
+  const handleSend = async (messageContent: string) => {
       console.log("🔍 [handleSend] 函数开始执行");
       console.log("  messageContent:", messageContent);
       console.log("  loading:", loading);
@@ -2232,6 +2232,7 @@ const NewChatContainer: React.FC = () => {
         isRetrying={isRetrying}
         waitTime={waitTime}
         useStream={useStream}
+        checkingDanger={_checkingDanger}
         onSend={handleSend}
         onInterrupt={handleInterrupt}
         onTogglePause={handleTogglePause}
