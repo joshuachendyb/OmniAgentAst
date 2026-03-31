@@ -828,7 +828,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
               return baseExport;
           }
         });
-        filename = `execution_steps_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
+        filename = `execution_steps_${new Date().toLocaleString("zh-CN").replace(/[/:]/g, "-").replace(/ /g, "T")}.json`;
       } else {
         // 无执行步骤：导出TXT格式
         const content = message.content || "";
