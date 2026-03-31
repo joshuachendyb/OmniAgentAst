@@ -517,11 +517,17 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
           </div>
         )}
         {step.type === "error" && (
-          <div style={getStepStyle("error" as StepType)}>
-            <span style={getStepContentStyle("error" as StepType, "primary")}>
-              {step.error_message || "未知错误"}
-            </span>
-          </div>
+          <ErrorDetail
+            errorType={(step as any).error_type}
+            errorMessage={step.error_message || (step as any).message}
+            errorTimestamp={typeof step.timestamp === 'number' ? new Date(step.timestamp).toISOString() : String(step.timestamp)}
+            errorDetails={(step as any).details}
+            errorStack={(step as any).stack}
+            errorRetryable={(step as any).retryable}
+            errorRetryAfter={(step as any).retry_after}
+            model={(step as any).model}
+            provider={(step as any).provider}
+          />
         )}
         {/* 【小沈修复 2026-03-28】后端type固定为'incident'，通过incident_value区分，需要同时处理新旧两种格式 */}
         {(step.type === "interrupted" || (step.type === "incident" && (step as any).incident_value === "interrupted")) && (
@@ -1366,22 +1372,6 @@ const isUser = message.role === "user";
                   <span className="thinking-cursor" style={{ marginLeft: 2 }}>▌</span>
                 )}
               </div>
-            )}
-            
-            {/* 【小新重构2026-03-13】使用独立ErrorDetail组件 */}
-            {message.isError && (
-              <ErrorDetail
-                errorType={message.errorType}
-                errorCode={message.errorCode}
-                errorMessage={message.errorMessage}
-                errorTimestamp={message.errorTimestamp}
-                errorDetails={message.errorDetails}
-                errorStack={message.errorStack}
-                errorRetryable={message.errorRetryable}
-                errorRetryAfter={message.errorRetryAfter}
-                model={message.model}
-                provider={message.provider}
-              />
             )}
           </>
 
