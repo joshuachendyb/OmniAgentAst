@@ -298,16 +298,10 @@ async def generate_sse_stream(
     # 每次对话开始，重置LLM调用计数器
     llm_call_count = 0
     
-    # 【重要】优先使用 chat_router 传入的 ai_service，避免重复创建
+    # 【重要】严格规则：ai_service 必须由 chat_router 传入，禁止在此处创建
     if ai_service is None:
-        # 只有在 chat_router 没有传入时才创建新的服务实例
-        if provider and model:
-            ai_service = AIServiceFactory.get_service_for_model(provider, model)
-        else:
-            ai_service = AIServiceFactory.get_service()
-        logger.info(f"[AIServiceFactory] react_sse_wrapper 创建新实例（router未传入）")
-    else:
-        logger.info(f"[AIServiceFactory] 使用 router 传入的 ai_service（复用）")
+        raise ValueError("[AIServiceFactory] react_sse_wrapper 禁止创建 ai_service，必须由 chat_router 传入")
+    logger.info(f"[AIServiceFactory] 使用 router 传入的 ai_service（复用）")
     
     # 注册任务（包含ai_service引用，用于强制中断）
     async with running_tasks_lock:
