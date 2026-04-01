@@ -324,8 +324,12 @@ class BaseAgent(ABC):
         分层保留对话历史
         - 保留 system message
         - 保留用户消息
-        - 保留重要消息（工具调用结果等）
+        - 保留所有 observation 消息（工具执行结果）
         - 保留最近5条消息
+
+        【修复 2026-04-01 小沈】
+        - 问题：关键词匹配可能丢失工具执行结果（如代码、JSON数据）
+        - 修复：直接识别 observation 消息（以 "Observation:" 开头），不再依赖关键词
         """
         if len(self.conversation_history) <= 2:
             return  # 少于 system + user，不需要裁剪
@@ -341,16 +345,15 @@ class BaseAgent(ABC):
         recent = self.conversation_history[-5:]
         
         # 保留重要消息（用户需求、工具调用结果等）
-        important_keywords = ["task", "需求", "目录", "查看", "搜索", "tool", "action", "observation", "error", "执行", "错误", "结果"]
         important = []
         for msg in self.conversation_history[1:-5]:  # 排除system和recent
             content = msg.get("content", "")
             role = msg.get("role", "")
             
             # 保留条件：
-            # 1. 用户消息
-            # 2. 包含关键词
-            if role == "user" or any(keyword in str(content).lower() for keyword in important_keywords):
+            # 1. 用户消息（任务需求）
+            # 2. observation 消息（工具执行结果，以 "Observation:" 开头）
+            if role == "user" or content.startswith("Observation:"):
                 important.append(msg)
         
         # 如果重要消息太多，只保留最新的10条

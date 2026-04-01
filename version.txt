@@ -1,10 +1,120 @@
-v0.8.56
+v0.8.58
 
-更新时间：2026-04-01 15:12:17
+更新时间：2026-04-01 19:00:00
 
 更新内容：
 
-## 1. 错误类型分类细化：从2种扩展为5种 - 小沈-2026-04-01
+## 1. ReAct模式问题修复汇总 - 小沈-2026-04-01
+
+### 1.1 问题2修复：Thought加入conversation_history
+
+**问题**：LLM的thought响应没有加入conversation_history，下一轮看不到自己的思考过程
+
+**修复**：base_react.py 第200-203行
+```python
+# 【修复 2026-03-31 小沈】将 LLM 的 thought 响应加入 conversation_history
+self.conversation_history.append({"role": "assistant", "content": response})
+```
+
+**效果**：LLM下一轮可以查看之前的思考过程，保持上下文连贯性
+
+### 1.2 问题4修复：History裁剪策略改进
+
+**问题**：关键词匹配可能丢失工具执行结果（如代码、JSON数据）
+
+**修复**：base_react.py 第322-363行
+- 移除硬编码关键词列表
+- 改为直接识别observation消息（以 "Observation:" 开头）
+- 保留所有用户消息 + 所有observation消息
+
+**效果**：不再依赖关键词匹配，避免工具执行结果被丢失
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| - | fix: 问题2-Thought加入conversation_history-base_react.py-小沈-2026-04-01 |
+| - | fix: 问题4-History裁剪改进为直接识别observation消息-base_react.py-小沈-2026-04-01 |
+
+参与开发：小沈
+
+---
+
+v0.8.57
+
+更新时间：2026-04-01 18:15:00
+
+更新内容：
+
+## 1. AI服务实例创建优化 + 错误处理统一 - 小沈-2026-04-01
+
+### 1.1 问题背景
+
+- AIServiceFactory 创建服务实例出现多次重复
+- llm_strategies.py 使用硬编码 ERROR_HINTS，不统一
+- 中断功能没有反馈信息
+
+### 1.2 修复内容
+
+#### 1.2.1 AIServiceFactory 创建优化
+
+**修改文件**: `backend/app/services/__init__.py`
+
+- 添加时间戳到 print 日志
+- 添加 logger.info 记录到日志文件
+
+**修改文件**: `backend/app/services/react_sse_wrapper.py`
+
+- 移除 fallback 创建逻辑，强制要求传入 ai_service
+- 复用 router 传入的 ai_service
+
+**修改文件**: `backend/app/services/chat_router.py`
+
+- 第99行创建 ai_service 后传递给 ChatRouter.route()
+- route() 复用传入的 ai_service，不再重复创建
+
+#### 1.2.2 错误处理统一
+
+**修改文件**: `backend/app/chat_stream/error_handler.py`
+
+- 新增 classify_llm_error() 函数
+- 新增 unknown 和 empty_response 错误类型
+
+**修改文件**: `backend/app/services/agent/llm_strategies.py`
+
+- _format_error_hint() 改为调用 error_handler
+- 空内容时使用统一的错误提示
+
+#### 1.2.3 中断功能调试
+
+**修改文件**: `backend/app/services/react_sse_wrapper.py`
+
+- 添加更详细的日志输出
+- 添加 task 存在性检查
+
+**修改文件**: `frontend/src/components/Chat/NewChatContainer.tsx`
+
+- 添加 console.log 调试日志
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 623df3ab | fix: chat_router复用ai_service避免重复创建-小沈-2026-04-01 |
+| 97647554 | fix: 统一llm_strategies错误处理使用error_handler-小沈-2026-04-01 |
+| 517cbea0 | fix: react_sse_wrapper强制要求传入ai_service，禁止自行创建-小沈-2026-04-01 |
+| 47d49411 | fix: 复用router传入的ai_service避免重复创建-小沈-2026-04-01 |
+| 123c90e5 | fix: 增加中断功能调试日志和task存在性检查-小沈-2026-04-01 |
+| e912d5fb | feat: 为AIServiceFactory添加时间戳和logger记录-小沈-2026-04-01 |
+| 1c683628 | fix: 修正ERROR_TYPE_MAP错误分类+get_user_friendly_error动态化-error_handler.py-小沈-2026-04-01 |
+| a6924f38 | fix: 动态超时错误提示-使用ai_service.timeout-chat_stream_query.py-小沈-2026-04-01 |
+
+参与开发：小沈
+测试验证：25个测试全部通过
+
+---
+
+## 2. 历史版本记录
 
 ### 1.1 问题背景
 
