@@ -1622,19 +1622,28 @@ const NewChatContainer: React.FC = () => {
    */
   const handleInterrupt = async () => {
     const taskIdToCancel = serverTaskId || currentTaskId;
+    console.log(`[中断] serverTaskId=${serverTaskId}, currentTaskId=${currentTaskId}, taskIdToCancel=${taskIdToCancel}`);
     if (taskIdToCancel) {
       try {
         message.info("正在中断任务...");
+        console.log("[中断] 已显示 '正在中断任务...' 提示");
         
         // ✅ 先断开连接，停止自动重连！传递true表示手动中断
         disconnect(true);
+        console.log("[中断] 已调用 disconnect(true)");
         
         // 使用统一的 taskControlApi
-        await taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined);
+        const result = await taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined);
+        console.log("[中断] cancel API 返回:", result);
         message.success("任务中断请求已发送");
+        console.log("[中断] 已显示 '任务中断请求已发送' 提示");
       } catch (error) {
+        console.error("[中断] 错误:", error);
         message.error("发送中断请求失败: " + (error instanceof Error ? error.message : String(error)));
       }
+    } else {
+      console.warn("[中断] 没有有效的 taskId，无法中断");
+      message.warning("当前没有进行中的任务");
     }
   };
 
