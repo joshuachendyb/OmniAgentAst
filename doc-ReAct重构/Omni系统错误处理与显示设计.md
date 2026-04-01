@@ -1,9 +1,9 @@
 # Omni系统错误处理与显示设计
 
-**版本**: v2.1
+**版本**: v2.2
 **创建时间**: 2026-04-01 13:07:28
 **作者**: 小沈
-**更新时间**: 2026-04-01 15:05:30
+**更新时间**: 2026-04-01 15:16:08
 
 ---
 
@@ -236,8 +236,13 @@ error_type_map = {
 
 ### 4.2 需要修改的文件
 
-1. **error_handler.py** - 修改ERROR_TYPE_MAP
-2. **chat_stream_query.py** - 修改error_type_map
+1. **error_handler.py** - 3处修改
+   - ERROR_TYPE_MAP：修正 connect/protocol 映射
+   - get_user_friendly_error()：改为调用 ERROR_TYPE_MAP
+   - get_error_info_by_type()：**新增**辅助函数
+
+2. **chat_stream_query.py** - 1处修改
+   - 调用 get_error_info_by_type() 获取错误信息
 
 **不需要修改的文件**：
 - **react_sse_wrapper.py** - react loop 中已经调用 `get_user_friendly_error(e)`，会自动使用更新后的 error_type
@@ -510,25 +515,6 @@ error_type_map = {
 }
 ```
 
-**方案A：直接引用 ERROR_TYPE_MAP（推荐）**
-
-```python
-# 在文件顶部添加导入
-from app.chat_stream.error_handler import ERROR_TYPE_MAP
-
-# 修改 error_type_map 的定义（第326-335行）
-# 直接使用 ERROR_TYPE_MAP，但需要特殊处理 idle_timeout 的个性化消息
-error_type_map = ERROR_TYPE_MAP.copy()
-
-# idle_timeout 需要个性化消息（包含模型名称和重试次数）
-if last_error_type == 'idle_timeout':
-    total_timeout = chat_timeout * max_retries
-    error_type_map['idle_timeout'] = (
-        'timeout', 
-        f'请求超时：AI模型({display_name}) {chat_timeout}秒内未返回任何内容，已重试{max_retries}次，合计{total_timeout}秒，请更换问题或稍后重试'
-    )
-```
-
 **方案C：调用 error_handler 辅助函数（最佳 - 与 react_sse_wrapper 一致）**
 
 参考 react_sse_wrapper.py 的做法，创建一个辅助函数，根据 error_type 字符串返回 error_info：
@@ -663,8 +649,9 @@ git checkout -- backend/app/chat_stream/chat_stream_query.py
 | v1.9 | 2026-04-01 15:30:00 | 小沈 | 补充react_sse_wrapper.py不需要修改的说明，解释原因 |
 | v2.0 | 2026-04-01 15:40:00 | 小沈 | 增加方案C：调用error_handler辅助函数，与react_sse_wrapper一致 |
 | v2.1 | 2026-04-01 15:05:30 | 小沈 | 删除重复的方案A和方案B，删除多余的620-647行，文档逻辑更清晰 |
+| v2.2 | 2026-04-01 15:16:08 | 小沈 | 删除方案A代码残留+统一4.2节与7.2节描述 |
 
 ---
 
 **创建时间**: 2026-04-01 13:07:28
-**更新时间**: 2026-04-01 15:05:30
+**更新时间**: 2026-04-01 15:16:08
