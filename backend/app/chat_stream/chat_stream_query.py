@@ -16,7 +16,7 @@ from app.services.llm_core import Message
 from app.utils.retry_controller import RetryController
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
 from app.chat_stream.chat_helpers import create_timestamp, create_final_response
-from app.chat_stream.error_handler import create_error_response, create_error_step
+from app.chat_stream.error_handler import create_error_response, create_error_step, get_error_info_by_type
 from app.chat_stream.incident_handler import (
     create_incident_data,
     check_and_yield_if_paused,
@@ -88,10 +88,9 @@ async def chat_stream_query(
     
     # 统一的空闲超时和重试机制
     # 空闲超时由 IdleTimeoutIterator 实时检测，重试次数由 RetryController 管理
-    config = get_config()
-    chat_config = config.get("chat", {})
-    chat_timeout = chat_config.get("timeout", 60)  # 默认60秒
-    max_retries = chat_config.get("max_retries", 3)  # 默认3次
+    # 使用 AI 服务提供商的超时配置（更准确）
+    chat_timeout = ai_service.timeout if hasattr(ai_service, 'timeout') and ai_service.timeout else 60
+    max_retries = 3  # 默认3次
     retry_controller = RetryController(max_retries=max_retries)
     ai_call_successful = False
     last_error = None
@@ -214,10 +213,10 @@ async def chat_stream_query(
                     break
             
         except IdleTimeoutError as e:
-            # 【关键】空闲超时异常 - 30秒无内容（由 IdleTimeoutIterator 实时检测）
+            # 【关键】空闲超时异常 - 由 IdleTimeoutIterator 实时检测
             last_error = str(e)
             last_error_type = 'idle_timeout'
-            elapsed = idle_timeout_stream.get_elapsed_time() if idle_timeout_stream else 30.0
+            elapsed = idle_timeout_stream.get_elapsed_time() if idle_timeout_stream else chat_timeout
             logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时：{elapsed:.1f}秒无内容")
             # 空闲超时进入后面的重试判断逻辑
         
@@ -237,16 +236,16 @@ async def chat_stream_query(
             break  # 【关键】成功后立即退出重试循环
         
         elif last_error_type == 'idle_timeout':
-            # ⚠️ 空闲超时（30秒无内容）
+            # ⚠️ 空闲超时（无内容）
             if retry_controller.can_retry():
                 # 还能重试
                 retry_controller.increment_retry()
-                logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时30秒，准备第{retry_controller.get_retry_count() + 1}次重试...")
+                logger.warning(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时{elapsed:.0f}秒，准备第{retry_controller.get_retry_count() + 1}次重试...")
                 continue
             else:
                 # 已达最大重试次数
                 logger.error(f"[AI Call] 第{retry_attempt + 1}次调用空闲超时，已达最大重试次数{max_retries}")
-                last_error = "空闲超时：模型30秒未响应"
+                last_error = f"空闲超时：模型{elapsed:.0f}秒未响应"
                 ai_call_successful = False
                 break
         
@@ -321,23 +320,13 @@ async def chat_stream_query(
         # 根据错误原因返回不同的错误提示
         if last_error:
             logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}, 类型: {last_error_type}")
-            # 使用之前保存的 error_type
-            total_timeout = chat_timeout * max_retries
-            error_type_map = {
-                'idle_timeout': ('timeout', f'请求超时：AI模型({display_name}) {chat_timeout}秒内未返回任何内容，已重试{max_retries}次，合计{total_timeout}秒，请更换问题或稍后重试'),
-                'timeout_error': ('timeout', '请求超时，请重试'),
-                'read_error': ('server', '读取响应失败，请重试'),
-                'connect_error': ('network', '连接失败，请检查网络'),
-                'protocol_error': ('server', '协议错误，请重试'),
-                'proxy_error': ('network', '代理错误，请检查网络配置'),
-                'write_error': ('server', '发送请求失败'),
-                'network_error': ('network', '网络错误，请检查网络连接'),
-            }
-            if last_error_type in error_type_map:
-                code, error_message = error_type_map[last_error_type]
-            else:
-                code, error_message = 'server', f"服务调用失败: {last_error}"
-            error_type = code
+            # 使用 get_error_info_by_type() 获取错误信息
+            error_type, error_message = get_error_info_by_type(last_error_type)
+            # idle_timeout 需要动态显示实际超时值和重试次数
+            if last_error_type == 'idle_timeout':
+                total_timeout = chat_timeout * max_retries
+                error_type = 'timeout'
+                error_message = f"请求超时：AI模型({display_name}) {chat_timeout}秒内未返回任何内容，已重试{max_retries}次，合计{total_timeout}秒，请更换问题或稍后重试"
         else:
             # 没有错误但也没有收到有效内容，可能是模型返回空响应
             logger.error(f"[AI Call] 所有重试失败，无有效响应（模型返回空内容）")
