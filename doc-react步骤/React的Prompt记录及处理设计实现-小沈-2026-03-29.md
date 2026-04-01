@@ -1207,3 +1207,29 @@ pytest tests/test_adapter.py -v
 
 
 **文档结束**
+
+#### 2.2.5 **chunk** - 流式输出步骤
+
+**生成时机**：LLM流式返回**时**（LLM响应）
+
+**必须的核心字段**：
+| 字段 | 类型 | 说明 | 必需性 |
+|------|------|------|--------|
+| `content` | string | 文本片段内容 | ✅ 必须 |
+| `delta` | string | 增量内容（相对于前一个chunk的增量） | ✅ 必须 |
+| `is_final` | boolean | 是否是最后一个chunk | ✅ 必须 |
+| `timestamp` | string/number | 时间戳 | ✅ 必须 |
+
+**可选字段**：
+- `index`: chunk序号
+- `role`: 角色（assistant）
+- `model`: 使用的模型
+- `finish_reason`: 完成原因（stop/length/tool_calls等）
+
+**字段关系**：
+```
+流式输出的逻辑：
+1. 第一个chunk：content = delta
+2. 后续chunk：content = 前一个content + delta
+3. 最后一个chunk：is_final = true
+```
