@@ -255,6 +255,7 @@ class BaseAIService:
                 yield StreamChunk(content="", model=self.model, is_done=True)
                 
         except httpx.TimeoutException:
+            # 【小沈修复 2026-04-01】细化错误分类：超时
             yield StreamChunk(
                 content="", 
                 model=self.model, 

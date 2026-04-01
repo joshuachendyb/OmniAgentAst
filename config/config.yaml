@@ -1,6 +1,6 @@
 ai:
-  provider: qiniu
-  model: z-ai/glm-4.7
+  provider: longcat
+  model: LongCat-Flash-Thinking-2601
   dmxapi:
     api_base: https://www.dmxapi.cn/v1
     api_key: sk-N2cFYdEXiCRQ2gKUCBTwnP3arxfwesLHBGntk1tk8X3m2gS1

@@ -139,20 +139,44 @@ def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
     except ImportError:
         pass
     
-    # 根据错误类型返回用户友好的错误信息
+    # httpx 异常类型映射到 ERROR_TYPE_MAP 键名
+    httpx_type_map = {
+        'ConnectError': 'connect_error',
+        'ProtocolError': 'protocol_error',
+        'ProxyError': 'proxy_error',
+        'TimeoutException': 'timeout_error',
+        'ReadError': 'read_error',
+        'WriteError': 'write_error',
+        'NetworkError': 'network_error',
+    }
+    
+    # 如果是 httpx 异常，使用 ERROR_TYPE_MAP
+    if error_type in httpx_type_map:
+        map_key = httpx_type_map[error_type]
+        if map_key in ERROR_TYPE_MAP:
+            error_code, error_message = ERROR_TYPE_MAP[map_key]
+            return {
+                "code": error_type.upper(),
+                "message": error_message,
+                "error_type": error_code,
+                "retryable": True,
+                "retry_after": 10 if error_code in ['connect', 'network', 'protocol'] else 5
+            }
+    
+    # 其他错误类型继续使用原有逻辑
     if error_type == "TimeoutError" or "timeout" in error_msg:
         return {
             "code": "TIMEOUT",
             "message": "请求超时，请重试",
-            "error_type": "network",
+            "error_type": "timeout",
             "retryable": True,
             "retry_after": 5
         }
     elif error_type == "ConnectionError" or "connection" in error_msg:
         return {
             "code": "CONNECTION_ERROR",
-            "message": "网络连接失败，请检查网络",
-            "error_type": "network",
+            "message": "连接失败，请检查网络",
+            "error_type": "connect",
             "retryable": True,
             "retry_after": 10
         }
@@ -160,7 +184,7 @@ def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
         return {
             "code": "HTTP_ERROR",
             "message": "服务器响应异常，请稍后重试",
-            "error_type": "network",
+            "error_type": "server",
             "retryable": True,
             "retry_after": 10
         }
@@ -200,9 +224,9 @@ ERROR_TYPE_MAP = {
     'idle_timeout': ('timeout', '请求超时：AI模型30秒内未返回任何内容，已重试3次，请更换问题或稍后重试'),
     'timeout_error': ('timeout', '请求超时，请重试'),
     'read_error': ('server', '读取响应失败，请重试'),
-    'connect_error': ('network', '连接失败，请检查网络'),
-    'protocol_error': ('server', '协议错误，请重试'),
-    'proxy_error': ('network', '代理错误，请检查网络配置'),
+    'connect_error': ('connect', '连接失败，请检查网络'),
+    'protocol_error': ('protocol', '协议错误，请重试'),
+    'proxy_error': ('protocol', '代理错误，请检查网络配置'),
     'write_error': ('server', '发送请求失败'),
     'network_error': ('network', '网络错误，请检查网络连接'),
 }
@@ -223,3 +247,25 @@ def classify_error(error_type: str, error_message: str = "") -> tuple[str, str]:
         return ERROR_TYPE_MAP[error_type]
     else:
         return 'server', f"服务调用失败: {error_message}"
+
+
+def get_error_info_by_type(error_type: str) -> tuple[str, str]:
+    """
+    根据错误类型获取错误码和用户友好的错误信息
+    
+    【新增 2026-04-01 小沈】
+    用于 chat_stream_query.py 中从 ERROR_TYPE_MAP 获取错误信息
+    
+    Args:
+        error_type: 错误类型标识（如 connect_error, protocol_error, timeout_error 等）
+    
+    Returns:
+        (error_code, message) 元组
+        - error_code: 5种类型之一（timeout/connect/protocol/server/network）
+        - message: 用户友好的错误提示
+    """
+    if error_type in ERROR_TYPE_MAP:
+        return ERROR_TYPE_MAP[error_type]
+    else:
+        # 默认返回 server 类型
+        return 'server', f"服务调用失败，请稍后重试"
