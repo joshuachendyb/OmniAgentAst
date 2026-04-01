@@ -1,8 +1,69 @@
-v0.8.55
+v0.8.56
 
-更新时间：2026-04-01 07:30:00
+更新时间：2026-04-01 15:12:17
 
 更新内容：
+
+## 1. 错误类型分类细化：从2种扩展为5种 - 小沈-2026-04-01
+
+### 1.1 问题背景
+
+用户发现错误提示"连接失败，请检查网络"出现频繁，但实际网络是联通的，问题在于错误分类不准确。
+
+### 1.2 错误分类扩展
+
+| 原分类 | 新分类 | 说明 |
+|--------|--------|------|
+| network | timeout | 超时（ReadTimeout + ConnectTimeout） |
+| network | connect | 连接失败（ConnectError） |
+| server | protocol | 协议错误（ProtocolError + ProxyError） |
+| server | server | 服务器问题（ReadError + WriteError） |
+| network | network | 网络不通（DNS失败、路由不可达） |
+
+### 1.3 修改内容
+
+#### 1.3.1 新增设计文档
+
+**创建文件**: `doc-ReAct重构/Omni系统错误处理与显示设计.md` (v2.1)
+
+包含内容：
+- 原始设计分析
+- 代码架构说明
+- 错误处理流程
+- 问题分析
+- 错误分类设计（5种类型）
+- 前端显示设计
+- 代码更新方案
+
+#### 1.3.2 需要修改的文件
+
+| 序号 | 文件 | 说明 |
+|------|------|------|
+| 1 | error_handler.py | ERROR_TYPE_MAP（修正connect/protocol映射） |
+| 2 | error_handler.py | get_user_friendly_error()（改为调用ERROR_TYPE_MAP） |
+| 3 | error_handler.py | get_error_info_by_type()（新增辅助函数） |
+| 4 | chat_stream_query.py | 调用get_error_info_by_type()获取错误信息 |
+
+#### 1.3.3 react_sse_wrapper.py不需要修改
+
+react_sse_wrapper.py已调用get_user_friendly_error(e)，只需修改该函数即可自动使用正确的error_type。
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 4c4b46be | fix: 修复历史消息导出timestamp为空bug-sessions.py-小沈-2026-04-01 |
+| 63d41824 | fix: 修复ToolExecutor返回格式不一致bug-tool_executor.py+test_tool_executor.py-小沈-2026-04-01 |
+| 19188dd0 | fix: 修复timestamp导出1970年错误 - 小强-2026-04-01 |
+
+参与开发：小沈、小强
+测试验证：待执行
+
+---
+
+## 2. 历史版本记录
+
+v0.8.55
 
 ## 1. 修复max_steps配置不生效bug - 小沈-2026-04-01
 
