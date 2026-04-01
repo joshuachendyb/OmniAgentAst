@@ -593,6 +593,8 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
         logger.info(f"[Session Interrupted] 会话 {session_id} 已标记为中断，5分钟内禁止重连")
     
     async with running_tasks_lock:
+        logger.info(f"[TaskControl] 当前running_tasks数量: {len(running_tasks)}, keys: {list(running_tasks.keys())}")
+        
         if task_id in running_tasks:
             task_info = running_tasks[task_id]
             task_info["cancelled"] = True
@@ -609,6 +611,8 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
             
             logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为中断")
             return {"success": True, "message": f"任务 {task_id} 已中断"}
+        else:
+            logger.warning(f"[TaskControl] 任务 {task_id} 不在running_tasks中，可能已结束")
     
     if session_id:
         return {"success": True, "message": f"会话 {session_id} 已标记为中断（任务可能已完成）"}
