@@ -17,6 +17,7 @@ from datetime import datetime
 
 from app.services.agent.adapter import dict_list_to_messages
 from app.utils.logger import logger
+from app.chat_stream.error_handler import classify_llm_error, get_error_info_by_type
 
 
 class LLMStrategy(ABC):
@@ -118,7 +119,13 @@ class TextStrategy(LLMStrategy):
                     action_tool="finish",
                     params={"result": f"[错误] {error_hint}"}
                 )
-            return self._make_result(content="", action_tool="finish", params={})
+            # 没有具体错误信息时，使用统一的 empty_response 错误提示
+            _, user_message = get_error_info_by_type('empty_response')
+            return self._make_result(
+                content=f"⚠️ {user_message}",
+                action_tool="finish",
+                params={"result": f"⚠️ {user_message}"}
+            )
         
         # ===== 方案C: 尝试 ToolParser.parse_response() =====
         from app.services.agent.tool_parser import ToolParser
@@ -192,42 +199,25 @@ class TextStrategy(LLMStrategy):
     
     def _format_error_hint(self, error: str) -> str:
         """
-        方案A：格式化错误提示信息，生成分级错误信息
+        【2026-04-01 小沈重构】
+        格式化错误提示信息，使用统一的 error_handler.py 分类
         
         Args:
-            error: 原始错误信息
+            error: 原始错误信息（如 "ReadTimeout", "ConnectError" 等）
         
         Returns:
-            格式化后的错误提示（包含title/description/suggestion）
+            格式化后的错误提示（用户友好的中文提示）
         """
-        error_str = str(error).lower()
+        # 使用 error_handler 的分类函数
+        error_type = classify_llm_error(str(error))
         
-        # 限流错误
-        if "429" in error_str or "1305" in error_str or "访问量过大" in error_str or "rate limit" in error_str:
-            error_info = self.ERROR_HINTS["api_limit"]
+        # 获取用户友好的错误信息
+        error_code, user_message = get_error_info_by_type(error_type)
         
-        # 超时错误
-        elif "timeout" in error_str or "超时" in error_str:
-            error_info = self.ERROR_HINTS["timeout"]
+        logger.info(f"[LLM Error] 原始错误: {error}, 分类: {error_type}, 提示: {user_message}")
         
-        # 连接错误
-        elif "connect" in error_str or "连接" in error_str:
-            error_info = self.ERROR_HINTS["connect"]
-        
-        # 认证错误
-        elif "401" in error_str or "403" in error_str or "认证" in error_str or "auth" in error_str:
-            error_info = self.ERROR_HINTS["auth"]
-        
-        # 余额不足
-        elif "余额" in error_str or "quota" in error_str or "credit" in error_str:
-            error_info = self.ERROR_HINTS["quota"]
-        
-        # 默认错误
-        else:
-            error_info = self.ERROR_HINTS["unknown"]
-        
-        # 返回分级错误信息
-        return f"⚠️ {error_info['title']}\n\n{error_info['description']}\n\n建议：{error_info['suggestion']}"
+        # 返回统一格式的错误提示
+        return f"⚠️ {user_message}"
     
     def _extract_by_known_tools(self, content: str) -> Optional[dict]:
         """
