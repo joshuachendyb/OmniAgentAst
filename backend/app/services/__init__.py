@@ -68,7 +68,11 @@ from typing import Optional
 import yaml
 
 from app.config import get_config
+from app.utils.logger import setup_logger
 from .llm_core import BaseAIService
+
+# 创建logger
+logger = setup_logger("OmniAgentAst.AIServiceFactory")
 
 
 # 支持的provider列表（动态从配置文件读取，不硬编码）
@@ -348,7 +352,10 @@ class AIServiceFactory:
         
         cls._current_provider = final_provider
         
-        print(f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}")
+        from datetime import datetime
+        log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
+        logger.info(log_msg)
         
         provider_config = ai_config.get(final_provider, {})
         if not provider_config:
@@ -445,12 +452,17 @@ class AIServiceFactory:
             cls._instance = None
             cls._current_provider = final_provider
             
-            print(f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}")
+            from datetime import datetime
+            log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
+            logger.info(log_msg)
             
             provider_config = ai_config.get(final_provider, {})
             
             if not provider_config:
-                print(f"[AIServiceFactory] 错误: 未找到任何有效的provider配置")
+                log_msg = f"[AIServiceFactory] 错误: 未找到任何有效的provider配置"
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
+                logger.error(log_msg)
                 provider_config = {}
             
             cls._instance = BaseAIService(
