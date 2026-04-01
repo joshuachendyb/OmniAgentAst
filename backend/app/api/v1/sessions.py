@@ -293,7 +293,7 @@ class MessageResponse(BaseModel):
     session_id: str = Field(..., description="会话 ID")
     role: str = Field(..., description="角色")
     content: str = Field(..., description="消息内容")
-    timestamp: str = Field(..., description="时间戳")
+    timestamp: int = Field(..., description="时间戳（毫秒，int类型）")  # 【修复 2026-04-01 小沈】从str改为int
     execution_steps: Optional[list] = Field(None, description="执行步骤（数组格式）")
     display_name: Optional[str] = Field(None, description="模型显示名称（记录消息收发时使用的模型）")
 
@@ -455,7 +455,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND title LIKE ? AND is_valid = ?
-                       ORDER BY message_count DESC, updated_at DESC, created_at DESC
+                        ORDER BY updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (f'%{keyword}%', is_valid, page_size, offset)
                 )
@@ -464,7 +464,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND title LIKE ?
-                       ORDER BY message_count DESC, updated_at DESC, created_at DESC
+                        ORDER BY updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (f'%{keyword}%', page_size, offset)
                 )
@@ -474,7 +474,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND is_valid = ?
-                       ORDER BY message_count DESC, updated_at DESC, created_at DESC
+                        ORDER BY updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (is_valid, page_size, offset)
                 )
@@ -483,7 +483,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE
-                       ORDER BY message_count DESC, updated_at DESC, created_at DESC
+                        ORDER BY updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (page_size, offset)
                 )
@@ -604,6 +604,10 @@ async def get_session_messages(session_id: str):
         conn.close()
         
         # 解析 execution_steps JSON字符串为数组
+        # 【重要 2026-04-01 小沈】execution_steps中的timestamp是int类型
+        # json.loads() 反序列化后，step.timestamp 保持为 int（如 1774971788504）
+        # 前端 new Date(1774971788504) 能正确解析，导出时 formatTimestamp() 正常工作
+        # 注意：message.timestamp 之前被转为字符串（第629行），导致前端 new Date("...") 返回 Invalid Date
         messages = []
         for row in rows:
             execution_steps_data = None
@@ -618,15 +622,19 @@ async def get_session_messages(session_id: str):
             if not display_name and execution_steps_data:
                 display_name = extract_display_name_from_steps(execution_steps_data)
 
-            # 【小沈修复 2026-03-31】返回毫秒时间戳给前端
+            # 【修复 2026-04-01 小沈】返回毫秒时间戳给前端
+            # 根因：之前使用 str(int(ts_value)) 将时间戳转为字符串，导致前端 new Date("1774971788505") 返回 Invalid Date
+            # 修复：直接返回 int 类型，前端 new Date(1774971788505) 能正确解析
+            # 对比：execution_steps 中的 timestamp 通过 json.loads() 返回 int，导出正常
+            #      message.timestamp 之前被转为字符串，导出为空
             ts_value = row['timestamp']
             if isinstance(ts_value, (int, float)):
-                timestamp_ms = str(int(ts_value))
+                timestamp_ms = int(ts_value)  # 保持 int 类型
             else:
                 try:
-                    timestamp_ms = str(int(datetime.fromisoformat(str(ts_value).replace(' ', 'T')).timestamp() * 1000))
+                    timestamp_ms = int(datetime.fromisoformat(str(ts_value).replace(' ', 'T')).timestamp() * 1000)
                 except:
-                    timestamp_ms = str(int(datetime.now(timezone.utc).timestamp() * 1000))
+                    timestamp_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
             
             messages.append(MessageResponse(
                 id=row['id'],
@@ -1039,7 +1047,10 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
             cursor.execute('SELECT id FROM chat_messages WHERE id = ?', (expected_assistant_id,))
             if not cursor.fetchone():
                 # 消息不存在，创建新消息
-                utc_time = get_utc_timestamp()
+                # 【小沈修复 2026-04-01】修复 message.timestamp 显示 1970 年的问题
+                # 根因：之前使用 get_utc_timestamp() 返回 ISO 字符串，前端解析时只取前导数字导致显示 1970 年
+                # 修复：改为 get_timestamp_ms() 返回毫秒数，与前端期望的格式一致
+                utc_time = get_timestamp_ms()
                 initial_content = update_data.content if update_data.content else ''
                 
                 # 保存metadata到数据库
