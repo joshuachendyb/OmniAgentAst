@@ -114,7 +114,8 @@ async def chat_stream_v2(request: ChatRequest):
                 provider=provider,
                 model=model,
                 session_id=session_id,
-                request=request  # 传递原始请求用于获取 history
+                request=request,  # 传递原始请求用于获取 history
+                ai_service=ai_service  # 【新增】传递已创建的 ai_service
             ):
                 yield sse_data
         except Exception as e:
@@ -137,13 +138,14 @@ class ChatRouter:
     async def route(
         self,
         user_input: str,
-        model: str,
         provider: str,
+        model: str,
         session_id: str,
         request: Optional[ChatRequest] = None,
         context: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
-        max_steps: int = 100
+        max_steps: int = 100,
+        ai_service: Optional[Any] = None  # 【新增】接收外部传入的 ai_service
     ) -> AsyncGenerator[str, None]:
         """
         根据用户意图路由到对应的执行层
@@ -183,8 +185,12 @@ class ChatRouter:
         # task_id: 任务ID
         task_id = str(uuid.uuid4())
         
-        # ai_service: AI服务实例
-        ai_service = AIServiceFactory.get_service_for_model(provider, model)
+        # ai_service: AI服务实例（优先使用传入的，复用而非重建）
+        if ai_service is None:
+            ai_service = AIServiceFactory.get_service_for_model(provider, model)
+            logger.info(f"[ChatRouter] route() 自行创建 ai_service")
+        else:
+            logger.info(f"[ChatRouter] route() 复用传入的 ai_service")
         
         # next_step: 步骤计数器（使用统一函数）
         next_step = create_step_counter()
