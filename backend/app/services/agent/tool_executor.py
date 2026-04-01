@@ -43,20 +43,28 @@ class ToolExecutor:
             执行结果，包含success标志和结果数据
         """
         if action == "finish":
+            # 【修复 2026-04-01 小沈】统一返回格式
+            # 之前：返回success字段，与普通工具返回的status字段不一致
+            # 修复：改为返回status字段，与_format_result保持一致
+            # 影响：base_react.py第226行execution_result.get("status", "success")能正确获取
             return {
-                "success": True,
+                "status": "success",
+                "summary": "Task completed",
                 "result": {
                     "operation_type": "finish",
                     "message": action_input.get("result", "Task completed"),
                     "data": action_input
-                }
+                },
+                "data": action_input.get("result"),
+                "retry_count": 0
             }
         
         if action not in self.available_tools:
             return {
-                "success": False,
-                "error": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
-                "result": None
+                "status": "error",
+                "summary": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
+                "data": None,
+                "retry_count": 0
             }
         
         tool = self.available_tools[action]
