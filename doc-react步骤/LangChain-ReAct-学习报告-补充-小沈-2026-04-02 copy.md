@@ -1496,21 +1496,21 @@ Parameters:
 
 ## 16 LangChain 相关的前端显示逻辑与代码
 
-### 16.1 LangChain 的前端架构概览
+### 16.1 LangChain 前端架构概览
 
-**LangChain 本身不直接提供前端 UI 组件**，它专注于后端逻辑（Agent、Tool、LLM 调用等）。但 LangChain 提供了以下前端相关的接口和机制：
+**LangChain 本身不直接提供前端 UI 组件**，它专注于后端逻辑（Agent、Tool、LLM 调用等）。LangChain 通过以下机制将数据推送到前端：
 
-| 接口/机制 | 说明 | 用途 |
-|----------|------|------|
+| 机制 | 说明 | 用途 |
+|------|------|------|
 | **Callbacks** | 回调系统 | 实时推送事件到前端 |
-| **Streaming** | 流式输出 | 逐 chunk 发送到前端 |
+| **Streaming (astream_events)** | 流式事件输出 | 逐 token 发送到前端 |
 | **AgentAction/AgentFinish** | 结构化输出 | 前端可解析的类型 |
 | **intermediate_steps** | 中间步骤列表 | 前端可显示执行过程 |
 | **LangSmith** | 调试平台 | 可视化 Agent 执行路径 |
 
 ### 16.2 LangChain Callbacks 机制
 
-**核心回调接口**：
+**核心回调接口**（来源：LangChain 官方文档）：
 
 ```python
 from langchain_core.callbacks import BaseCallbackHandler
@@ -1582,83 +1582,168 @@ executor = AgentExecutor(
 result = executor.invoke({"input": "天气怎么样？"})
 ```
 
-### 16.3 LangChain 流式输出（Streaming）
+### 16.3 LangChain 流式输出（astream_events）
 
-**流式输出机制**：
+**LangGraph 流式事件机制**（来源：LangGraph 官方文档 2026-03-10）：
+
+LangGraph 提供三种流式模式：
+
+| 模式 | 说明 | 适用场景 |
+|------|------|---------|
+| `astream()` | 每个节点完成后输出完整结果 | 查看中间状态 |
+| `astream_events()` | 节点内部的 token 级事件 | **实时 token 流式输出** |
+| `astream_log()` | 完整运行日志 | 调试 |
+
+**核心代码**（来源：LangGraph 官方示例）：
 
 ```python
-# LangChain 0.2+ 流式输出
-from langchain.agents import create_agent
+from langgraph.graph import StateGraph, END
+from langchain_openai import ChatOpenAI
+from typing import TypedDict
 
-agent = create_agent(
-    model="gpt-4",
-    tools=[get_weather],
-    system_prompt="You are a helpful assistant",
-)
+class AgentState(TypedDict):
+    messages: list
+    response: str
 
-# 流式执行
-async for event in agent.astream_events(
-    {"messages": [{"role": "user", "content": "天气怎么样？"}]},
-    version="v2",
-):
-    kind = event["event"]
+# streaming=True 是必须的！
+llm = ChatOpenAI(model="gpt-4o", streaming=True)
+
+def chat_node(state: AgentState) -> AgentState:
+    response = llm.invoke(state["messages"])
+    return {"response": response.content}
+
+builder = StateGraph(AgentState)
+builder.add_node("chat", chat_node)
+builder.set_entry_point("chat")
+builder.add_edge("chat", END)
+graph = builder.compile()
+
+# 流式输出
+async def stream_tokens(user_input: str):
+    inputs = {"messages": [{"role": "user", "content": user_input}]}
     
-    if kind == "on_chat_model_stream":
-        # LLM 流式输出 chunk
-        chunk = event["data"]["chunk"]
-        print(f"chunk: {chunk.content}")
-        # 前端可实时显示 chunk.content
-    
-    elif kind == "on_tool_start":
-        # 工具开始执行
-        tool_name = event["name"]
-        tool_input = event["data"].get("input")
-        print(f"工具开始: {tool_name}, 输入: {tool_input}")
-        # 前端可显示"正在调用工具: xxx"
-    
-    elif kind == "on_tool_end":
-        # 工具执行结束
-        tool_output = event["data"].get("output")
-        print(f"工具结束: {tool_output}")
-        # 前端可显示工具结果
-    
-    elif kind == "on_chat_model_end":
-        # LLM 生成结束
-        print("LLM 生成结束")
-        # 前端可显示完成标志
+    async for event in graph.astream_events(inputs, version="v2"):
+        kind = event["event"]
+        
+        # 只过滤 token 级事件
+        if kind == "on_chat_model_stream":
+            chunk = event["data"]["chunk"]
+            token = chunk.content  # 单个 token
+            if token:
+                yield token
 ```
 
-**前端接收流式数据的方式**（SSE 示例）：
+**事件字段说明**：
 
-```javascript
-// 前端使用 EventSource 接收 SSE 流
-const eventSource = new EventSource('/api/chat/stream');
+| 字段 | 值 | 含义 |
+|------|-----|------|
+| `event` | `on_chat_model_stream` | Token 到达 |
+| `name` | 节点名称（如 `"chat"`） | 哪个节点发出的 |
+| `data["chunk"].content` | `"Hello"` | 实际的 token 文本 |
 
-eventSource.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  
-  switch (data.type) {
-    case 'chunk':
-      // 追加 LLM 输出的文本
-      appendToChat(data.content);
-      break;
-    case 'tool_start':
-      // 显示工具执行中
-      showToolStatus(data.tool_name, 'running');
-      break;
-    case 'tool_end':
-      // 显示工具结果
-      showToolResult(data.tool_name, data.output);
-      break;
-    case 'end':
-      // 对话结束
-      eventSource.close();
-      break;
+### 16.4 FastAPI + SSE 推送到前端
+
+**后端 SSE 端点**（来源：LangGraph 官方教程）：
+
+```python
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class ChatRequest(BaseModel):
+    message: str
+
+@app.post("/stream")
+async def stream_chat(request: ChatRequest):
+    async def event_generator():
+        async for token in stream_tokens(request.message):
+            # SSE 格式：每行必须以 "data: " 开头，以 "\n\n" 结尾
+            yield f"data: {token}\n\n"
+        # 通知前端流结束
+        yield "data: [DONE]\n\n"
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # 禁用 Nginx 缓冲——关键！
+        },
+    )
+```
+
+**关键注意事项**：
+- `X-Accel-Buffering: no` 是必须的，否则 Nginx 会缓冲整个响应
+- `streaming=True` 必须在 LLM 实例上设置
+- `version="v2"` 是 LangGraph 0.2+ 必须的参数
+
+### 16.5 React 前端消费流式数据
+
+**React 组件**（来源：LangGraph + React 官方教程 2026-01-14）：
+
+```tsx
+// components/StreamingChat.tsx
+import { useState } from "react"
+
+export default function StreamingChat() {
+  const [output, setOutput] = useState("")
+  const [loading, setLoading] = useState(false)
+
+  async function sendMessage(userInput: string) {
+    setOutput("")
+    setLoading(true)
+
+    const response = await fetch("http://localhost:8000/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: userInput }),
+    })
+
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      const chunk = decoder.decode(value, { stream: true })
+
+      // 每个 SSE chunk 可能包含多行
+      for (const line of chunk.split("\n")) {
+        if (line.startsWith("data: ")) {
+          const token = line.slice(6)  // 移除 "data: " 前缀
+          if (token === "[DONE]") {
+            setLoading(false)
+            return
+          }
+          // 逐 token 追加
+          setOutput((prev) => prev + token)
+        }
+      }
+    }
+
+    setLoading(false)
   }
-};
+
+  return (
+    <div>
+      <button onClick={() => sendMessage("天气怎么样？")} disabled={loading}>
+        {loading ? "流式输出中…" : "提问"}
+      </button>
+      <pre style={{ whiteSpace: "pre-wrap" }}>{output}</pre>
+    </div>
+  )
+}
 ```
 
-### 16.4 LangChain AgentAction/AgentFinish 前端显示
+**关键注意事项**：
+- `{ stream: true }` 处理跨 chunk 的多字节字符
+- 使用 `fetch` + `ReadableStream` 不需要外部库
+- SSE 是单向的，如需双向通信需用 WebSocket
+
+### 16.6 LangChain AgentAction/AgentFinish 前端显示
 
 **AgentAction 前端显示**：
 
@@ -1713,7 +1798,39 @@ function renderAgentFinish(finish: AgentFinish) {
 }
 ```
 
-### 16.5 LangSmith 可视化调试
+### 16.7 config.writer 自定义事件（LangGraph 2026-01-16）
+
+**config.writer 函数**允许在工具执行期间发送自定义事件到前端：
+
+```python
+from langgraph.config import get_config
+
+def long_running_tool(query: str):
+    """执行耗时查询"""
+    config = get_config()
+    writer = config.get("writer")
+    
+    if writer:
+        writer({"type": "progress", "step": "connecting"})
+        # 执行查询...
+        writer({"type": "progress", "step": "fetching"})
+        # 处理结果...
+        writer({"type": "progress", "step": "processing"})
+    
+    return result
+```
+
+**前端接收**：
+```typescript
+// 前端通过 astream_events 接收自定义事件
+async for event in graph.astream_events(inputs, version="v2"):
+    if event["event"] == "on_custom_event":
+        progress = event["data"]
+        # 显示进度：connecting → fetching → processing
+        updateUI(progress)
+```
+
+### 16.8 LangSmith 可视化调试
 
 **LangSmith 是 LangChain 官方的调试平台**，提供 Agent 执行的可视化界面。
 
@@ -1740,7 +1857,7 @@ result = executor.invoke({"input": "天气怎么样？"})
 # https://smith.langchain.com/
 ```
 
-### 16.6 LangChain 前端显示方法总结
+### 16.9 LangChain 前端显示方法总结
 
 | Type | LangChain 后端输出 | 前端显示方式 | 数据来源 |
 |------|------------------|------------|---------|
@@ -1756,6 +1873,9 @@ result = executor.invoke({"input": "天气怎么样？"})
 - 前端需要自行实现 UI 组件来显示 Agent 执行过程
 - `intermediate_steps` 是后端数据结构，前端通过 Callbacks 实时接收数据
 - LangSmith 是官方调试平台，提供可视化但不用于生产环境
+- **SSE + ReadableStream** 是 LangChain 官方推荐的前端流式方案
+- `streaming=True` 是 LLM 必须的设置，否则 token 会一次性到达
+- `X-Accel-Buffering: no` 是生产环境必须的 Nginx 配置
 
 ---
 
