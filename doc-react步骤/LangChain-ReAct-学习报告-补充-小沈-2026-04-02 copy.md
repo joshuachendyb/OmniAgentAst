@@ -1494,7 +1494,272 @@ Parameters:
 
 ---
 
-## 16 各 Type 前端显示方法详解
+## 16 LangChain 相关的前端显示逻辑与代码
+
+### 16.1 LangChain 的前端架构概览
+
+**LangChain 本身不直接提供前端 UI 组件**，它专注于后端逻辑（Agent、Tool、LLM 调用等）。但 LangChain 提供了以下前端相关的接口和机制：
+
+| 接口/机制 | 说明 | 用途 |
+|----------|------|------|
+| **Callbacks** | 回调系统 | 实时推送事件到前端 |
+| **Streaming** | 流式输出 | 逐 chunk 发送到前端 |
+| **AgentAction/AgentFinish** | 结构化输出 | 前端可解析的类型 |
+| **intermediate_steps** | 中间步骤列表 | 前端可显示执行过程 |
+| **LangSmith** | 调试平台 | 可视化 Agent 执行路径 |
+
+### 16.2 LangChain Callbacks 机制
+
+**核心回调接口**：
+
+```python
+from langchain_core.callbacks import BaseCallbackHandler
+
+class AgentCallbackHandler(BaseCallbackHandler):
+    """Agent 执行回调处理器"""
+    
+    def on_llm_start(self, serialized, prompts, **kwargs):
+        """LLM 开始生成"""
+        # 可推送到前端：显示"思考中..."
+        print(f"LLM 开始生成: {prompts}")
+    
+    def on_llm_new_token(self, token: str, **kwargs):
+        """LLM 生成新的 token（流式）"""
+        # 可推送到前端：逐字显示
+        print(f"新 token: {token}")
+    
+    def on_llm_end(self, response, **kwargs):
+        """LLM 生成结束"""
+        # 可推送到前端：显示完整回答
+        print(f"LLM 生成结束: {response}")
+    
+    def on_tool_start(self, serialized, input_str, **kwargs):
+        """工具开始执行"""
+        # 可推送到前端：显示"执行工具: xxx"
+        print(f"工具开始: {serialized['name']}, 输入: {input_str}")
+    
+    def on_tool_end(self, output, **kwargs):
+        """工具执行结束"""
+        # 可推送到前端：显示工具结果
+        print(f"工具结束: {output}")
+    
+    def on_tool_error(self, error, **kwargs):
+        """工具执行错误"""
+        # 可推送到前端：显示错误信息
+        print(f"工具错误: {error}")
+    
+    def on_agent_action(self, action, **kwargs):
+        """Agent 决定执行动作"""
+        # 可推送到前端：显示 Thought + Action
+        print(f"Agent 动作: {action.tool}, 输入: {action.tool_input}")
+        print(f"Thought: {action.log}")
+    
+    def on_agent_finish(self, finish, **kwargs):
+        """Agent 执行完成"""
+        # 可推送到前端：显示最终回答
+        print(f"Agent 完成: {finish.return_values}")
+```
+
+**使用方式**：
+
+```python
+from langchain.agents import AgentExecutor, create_react_agent
+
+# 创建回调处理器
+callback_handler = AgentCallbackHandler()
+
+# 创建 Agent
+agent = create_react_agent(llm, tools, prompt)
+
+# 执行时传入回调
+executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    callbacks=[callback_handler],  # 关键：传入回调
+    verbose=True,
+)
+
+result = executor.invoke({"input": "天气怎么样？"})
+```
+
+### 16.3 LangChain 流式输出（Streaming）
+
+**流式输出机制**：
+
+```python
+# LangChain 0.2+ 流式输出
+from langchain.agents import create_agent
+
+agent = create_agent(
+    model="gpt-4",
+    tools=[get_weather],
+    system_prompt="You are a helpful assistant",
+)
+
+# 流式执行
+async for event in agent.astream_events(
+    {"messages": [{"role": "user", "content": "天气怎么样？"}]},
+    version="v2",
+):
+    kind = event["event"]
+    
+    if kind == "on_chat_model_stream":
+        # LLM 流式输出 chunk
+        chunk = event["data"]["chunk"]
+        print(f"chunk: {chunk.content}")
+        # 前端可实时显示 chunk.content
+    
+    elif kind == "on_tool_start":
+        # 工具开始执行
+        tool_name = event["name"]
+        tool_input = event["data"].get("input")
+        print(f"工具开始: {tool_name}, 输入: {tool_input}")
+        # 前端可显示"正在调用工具: xxx"
+    
+    elif kind == "on_tool_end":
+        # 工具执行结束
+        tool_output = event["data"].get("output")
+        print(f"工具结束: {tool_output}")
+        # 前端可显示工具结果
+    
+    elif kind == "on_chat_model_end":
+        # LLM 生成结束
+        print("LLM 生成结束")
+        # 前端可显示完成标志
+```
+
+**前端接收流式数据的方式**（SSE 示例）：
+
+```javascript
+// 前端使用 EventSource 接收 SSE 流
+const eventSource = new EventSource('/api/chat/stream');
+
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  
+  switch (data.type) {
+    case 'chunk':
+      // 追加 LLM 输出的文本
+      appendToChat(data.content);
+      break;
+    case 'tool_start':
+      // 显示工具执行中
+      showToolStatus(data.tool_name, 'running');
+      break;
+    case 'tool_end':
+      // 显示工具结果
+      showToolResult(data.tool_name, data.output);
+      break;
+    case 'end':
+      // 对话结束
+      eventSource.close();
+      break;
+  }
+};
+```
+
+### 16.4 LangChain AgentAction/AgentFinish 前端显示
+
+**AgentAction 前端显示**：
+
+```typescript
+// TypeScript 类型定义
+interface AgentAction {
+  tool: string;           // 工具名称
+  tool_input: string | object;  // 工具参数
+  log: string;            // LLM 完整输出（含 Thought）
+}
+
+// 前端渲染示例
+function renderAgentAction(action: AgentAction) {
+  return (
+    <div className="agent-action">
+      <div className="thought">
+        <Icon name="thinking" />
+        {/* 从 log 中提取 Thought */}
+        {extractThought(action.log)}
+      </div>
+      <div className="tool-call">
+        <Icon name="tool" />
+        调用工具: {action.tool}
+        {typeof action.tool_input === 'object' && (
+          <pre>{JSON.stringify(action.tool_input, null, 2)}</pre>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+**AgentFinish 前端显示**：
+
+```typescript
+// TypeScript 类型定义
+interface AgentFinish {
+  return_values: { output: string };  // 最终回答
+  log: string;                        // 完整 LLM 输出
+}
+
+// 前端渲染示例
+function renderAgentFinish(finish: AgentFinish) {
+  return (
+    <div className="agent-finish">
+      <Icon name="check" />
+      <div className="final-answer">
+        {finish.return_values.output}
+      </div>
+    </div>
+  );
+}
+```
+
+### 16.5 LangSmith 可视化调试
+
+**LangSmith 是 LangChain 官方的调试平台**，提供 Agent 执行的可视化界面。
+
+**主要功能**：
+
+| 功能 | 说明 |
+|------|------|
+| **Trace 视图** | 显示完整的执行路径（LLM → Tool → LLM） |
+| **Step 详情** | 每个步骤的输入/输出、耗时 |
+| **Token 统计** | 每次 LLM 调用的 token 消耗 |
+| **错误追踪** | 工具执行错误、解析错误 |
+
+**配置方式**：
+
+```python
+import os
+os.environ["LANGSMITH_TRACING"] = "true"
+os.environ["LANGSMITH_API_KEY"] = "your-api-key"
+
+# 执行 Agent
+result = executor.invoke({"input": "天气怎么样？"})
+
+# 在 LangSmith 平台查看执行轨迹
+# https://smith.langchain.com/
+```
+
+### 16.6 LangChain 前端显示方法总结
+
+| Type | LangChain 后端输出 | 前端显示方式 | 数据来源 |
+|------|------------------|------------|---------|
+| **thought** | `AgentAction.log` 中的 Thought 部分 | 从 log 提取显示 | Callbacks / Streaming |
+| **action** | `AgentAction.tool` + `tool_input` | 工具调用卡片 | `on_agent_action` |
+| **observation** | `on_tool_end` 的 output | 工具结果卡片 | `on_tool_end` |
+| **final** | `AgentFinish.return_values.output` | 最终回答卡片 | `on_agent_finish` |
+| **error** | `on_tool_error` 的 error | 错误提示卡片 | `on_tool_error` |
+| **chunk** | `on_llm_new_token` 的 token | 流式文本追加 | `on_llm_new_token` |
+
+**关键理解**：
+- LangChain **不直接提供前端组件**，而是通过 Callbacks 和 Streaming 提供数据
+- 前端需要自行实现 UI 组件来显示 Agent 执行过程
+- `intermediate_steps` 是后端数据结构，前端通过 Callbacks 实时接收数据
+- LangSmith 是官方调试平台，提供可视化但不用于生产环境
+
+---
+
+## 17 omni系统的前端各 Type 前端显示方法改进建议
 
 ### 16.1 前端架构概览
 
