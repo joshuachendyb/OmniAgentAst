@@ -1,5 +1,5 @@
 # OmniAgentAs-desk 桌面版智能助手
-
+**铁规** 收到用的批评的时候必须主动背诵专家戒律
 **版本**: v0.4.9 (2026-02-26)  
 **状态**: 生产就绪（已完成全面测试和质量保证）  
 **最后更新**: 2026-02-26 20:51:45
@@ -118,12 +118,10 @@ logging:
   max_size: 10MB              # 日志文件最大大小
   backup_count: 5             # 备份文件数量
 ```
-
-### 支持的AI提供商
-1. **OpenCode** - 默认提供商，支持多个免费模型
-2. **智谱AI (zhipuai)** - 支持GLM系列模型
-3. **LongCat** - 支持长上下文模型
-4. **自定义提供商** - 可扩展添加其他AI服务
+## 数据库目录
+C:\Users\40968\.omniagent
+"C:\Users\40968\.omniagent\chat_history.db"
+"C:\Users\40968\.omniagent\operations.db"
 
 ## 🏃 运行应用
 
