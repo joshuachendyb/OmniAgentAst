@@ -178,7 +178,6 @@ export interface UseSSEReturn {
   sendMessage: (content: string, sessionId?: string) => void;
   disconnect: (manualDisconnect?: boolean) => void;
   clearSteps: () => void;
-  setTaskId: (taskId: string) => void;
   serverTaskId?: string | null;
   setServerTaskId?: (taskId: string | null) => void;
   /** 重连状态 */
@@ -277,7 +276,6 @@ export const useSSE = (
   const eventSourceRef = useRef<EventSource | null>(null);
   const responseBufferRef = useRef("");
   const isProcessingRef = useRef(false);
-  const [taskId, setTaskId] = useState<string | null>(null);
   const [serverTaskId, setServerTaskId] = useState<string | null>(null);
   
   // 重连相关
@@ -457,7 +455,7 @@ export const useSSE = (
         body: JSON.stringify({
           messages: [{ role: "user", content: content }],
           stream: true,
-          task_id: taskId || undefined,
+          task_id: undefined,
           session_id: sessionId || undefined,
         }),
         signal: controller.signal,
@@ -640,7 +638,6 @@ export const useSSE = (
     sendMessage,
     disconnect,
     clearSteps,
-    setTaskId,
     serverTaskId,
     setServerTaskId,
     reconnectStatus,
