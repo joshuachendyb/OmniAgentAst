@@ -1373,8 +1373,8 @@ const isUser = message.role === "user";
              )}
 
              {/* ==================== 步骤 5：渲染动态状态提示 ==================== */}
-             {/* 使用 DynamicStatusDisplay 组件，根据 step type 动态显示状态 */}
-             {message.isStreaming && (
+             {/* 只在 AI 助手消息的气泡底部显示，用户消息不显示 */}
+             {!isUser && !isSystem && message.isStreaming && (
                <DynamicStatusDisplay 
                  executionSteps={message.executionSteps || []}
                  isStreaming={message.isStreaming}
