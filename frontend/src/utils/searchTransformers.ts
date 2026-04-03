@@ -58,11 +58,14 @@ export interface SearchFileContentData {
 /**
  * search_files（文件搜索）转换函数
  * 将后端返回的文件搜索数据转换为前端组件期望的格式
+ * 
+ * 后端返回: total=3023 (文件数量), matches=[...]
+ * 前端期望: files_matched=3023, total_matches=0 (不使用)
  */
 export function transformSearchFilesData(rawData: any): SearchFilesData {
   return {
-    files_matched: rawData?.matches ? rawData.matches.length : 0,
-    total_matches: rawData?.total || 0,
+    files_matched: rawData?.total || 0,  // 后端返回total=文件数量
+    total_matches: 0,  // search_files是文件搜索，不应该有"匹配数"概念
     matches: (rawData?.matches || []).map((match: any) => ({
       name: match.name || "",
       path: match.path || "",
