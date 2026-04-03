@@ -76,6 +76,7 @@ interface StepRowProps {
 
 const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expandedSteps, toggleExpand }) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [showAllData, setShowAllData] = useState(false);  // 【小强新增 2026-04-03】前端分页控制
 
   // 【小资修复 2026-03-23】从全局Map读取展开状态（未设置的key默认展开）
   const isExpanded = expandedSteps.get(stepIndex) ?? true;
@@ -150,34 +151,27 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
 
 
 
-  // 【小新重构 2026-03-09】处理加载更多
-  const handleLoadMore = async () => {
-    if (!step.raw_data?.has_more || !step.raw_data?.next_page_token || !taskId) {
-      return;
-    }
-    
-    setIsLoadingMore(true);
-    try {
-      const result = await taskControlApi.nextPage(
-        taskId,
-        step.tool_name || "",
-        step.tool_params || {},
-        step.raw_data.next_page_token
-      );
-      
-      if (result.success && result.data) {
-        console.log("✅ 加载更多成功:", result.data);
-        // TODO: 追加新数据到列表（需要状态管理）
-      }
-    } catch (error) {
-      console.error("❌ 加载更多失败:", error);
-    } finally {
-      setIsLoadingMore(false);
-    }
+  // 【小强修改 2026-04-03】前端分页：后端返回全部数据，前端自己控制显示
+  const handleLoadMore = () => {
+    setShowAllData(true);  // 前端直接显示全部数据，不调用后端API
   };
 
-  // 检查是否有分页数据
-  const hasMore = step.raw_data?.has_more === true && !!step.raw_data?.next_page_token;
+  // 获取分页数据：前端切片
+  const getPageData = () => {
+    const rawData = step.raw_data as any;
+    const allData = rawData?.matches || rawData?.entries || rawData?.results || [];
+    const FRONTEND_PAGE_SIZE = 100;  // 前端每页显示100条
+    
+    if (showAllData) {
+      return { displayData: allData, hasMore: false };
+    }
+    
+    if (allData.length > FRONTEND_PAGE_SIZE) {
+      return { displayData: allData.slice(0, FRONTEND_PAGE_SIZE), hasMore: true };
+    }
+    
+    return { displayData: allData, hasMore: false };
+  };
 
   return (
     <div style={{ 
@@ -265,35 +259,33 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                   </div>
                );
             })()}
-            {/* 【小新重构 2026-03-09】显示分页信息 */}
+            {/* 【小强修改 2026-04-03】前端分页：后端返回全部数据，前端自己控制显示 */}
             {/* 【小沈修复 2026-03-24】对于list_directory，总数由ListDirectoryView内部显示，避免重复 */}
-            {step.raw_data && step.tool_name !== "list_directory" && (
-              <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
-                {/* 【小沈删除 2026-03-30】用户要求删除"📊 共 XX 个项目"显示 */}
-                {hasMore && (
+            {step.raw_data && step.tool_name !== "list_directory" && (() => {
+              const { hasMore } = getPageData();
+              return hasMore && (
+                <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
                   <span 
                     onClick={handleLoadMore}
                     style={{ 
-                      cursor: isLoadingMore ? "not-allowed" : "pointer", 
-                      color: isLoadingMore ? "#999" : "#1890ff",
-                      textDecoration: isLoadingMore ? "none" : "underline",
+                      cursor: "pointer", 
+                      color: "#1890ff",
+                      textDecoration: "underline",
                       fontWeight: 500,
                       transition: "all 0.2s ease",
                     }}
                     onMouseEnter={(e) => {
-                      if (!isLoadingMore) {
-                        e.currentTarget.style.color = "#096dd9";
-                      }
+                      e.currentTarget.style.color = "#096dd9";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.color = isLoadingMore ? "#999" : "#1890ff";
+                      e.currentTarget.style.color = "#1890ff";
                     }}
                   >
-                    {isLoadingMore ? "⏳ 加载中..." : "📄 加载更多"}
+                    加载更多
                   </span>
-                )}
-              </div>
-            )}
+                </div>
+              );
+            })()}
             {/* 【小沈优化 2026-03-30】显示execution_status和summary - 使用徽章样式 */}
             {(step as any).execution_status && (
               <div style={{ marginTop: 6, fontSize: 12 }}>
