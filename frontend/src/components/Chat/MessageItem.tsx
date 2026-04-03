@@ -27,6 +27,7 @@ import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
 import { taskControlApi } from "../../services/api";
 import { formatTimestamp } from "../../utils/timestamp";
+import { DynamicStatusDisplay } from "../../utils/dynamicStatus";
 import { } from "../../utils/markdown";
 import ErrorDetail from "./ErrorDetail";
 import { 
@@ -1338,41 +1339,47 @@ const isUser = message.role === "user";
                
                // 如果 hasAction === 1（有 action_tool），返回 false，不执行 content 回退
                return false;
-            })() && (
-              // ==================== 步骤 4：渲染 content 的 div（原 987-1017 行） ====================
-              // 只有当上面的 IIFE 返回 true 时，才会渲染这个 div
-              <div
-                style={{
-                  wordBreak: "break-word",
-                  overflowWrap: "break-word",
-                  paddingRight: 32,
-                  // 【小沈修复】思考过程使用灰色斜体样式，与正式回答区分
-                  ...(message.is_reasoning ? {
-                    color: '#888',
-                    fontStyle: 'italic',
-                    fontSize: '0.95em',
-                  } : {}),
-                }}
-                className={
-                  message.content === "🤔 AI 正在思考..." && message.isStreaming
-                    ? "thinking-message"
-                    : message.isError
-                    ? "error-message"
-                    : message.is_reasoning
-                    ? "reasoning-message"
-                    : ""
-                }
-              >
-                {/* 【小查修复】已移除回退显示"思考中"标签，统一用 chunk 渲染 */}
-                {/* 显示 content 内容：将双换行符\n\n替换为单换行符\n */}
-                {message.content && typeof message.content === 'string' 
-                  ? message.content.replace(/\n\n/g, '\n')
-                  : String(message.content || '').replace(/\n\n/g, '\n')}
-                {(message.isStreaming ?? false) && (
-                  <span className="thinking-cursor" style={{ marginLeft: 2 }}>▌</span>
-                )}
-              </div>
-            )}
+              })() && (
+               // ==================== 步骤 4：渲染 content 回退区域 ====================
+               // 当没有 chunk 时，显示 message.content 作为备用（如 "🤔 AI 正在思考..."）
+               <div
+                 style={{
+                   wordBreak: "break-word",
+                   overflowWrap: "break-word",
+                   paddingRight: 32,
+                   ...(message.is_reasoning ? {
+                     color: '#888',
+                     fontStyle: 'italic',
+                     fontSize: '0.95em',
+                   } : {}),
+                 }}
+                 className={
+                   message.content === "🤔 AI 正在思考..." && message.isStreaming
+                     ? "thinking-message"
+                     : message.isError
+                     ? "error-message"
+                     : message.is_reasoning
+                     ? "reasoning-message"
+                     : ""
+                 }
+               >
+                 {message.content && typeof message.content === 'string' 
+                   ? message.content.replace(/\n\n/g, '\n')
+                   : String(message.content || '').replace(/\n\n/g, '\n')}
+                 {(message.isStreaming ?? false) && (
+                   <span className="thinking-cursor" style={{ marginLeft: 2 }}>▌</span>
+                 )}
+               </div>
+             )}
+
+             {/* ==================== 步骤 5：渲染动态状态提示 ==================== */}
+             {/* 使用 DynamicStatusDisplay 组件，根据 step type 动态显示状态 */}
+             {message.isStreaming && (
+               <DynamicStatusDisplay 
+                 executionSteps={message.executionSteps || []}
+                 isStreaming={message.isStreaming}
+               />
+             )}
           </>
 
           {/* CSS 动画 */}
