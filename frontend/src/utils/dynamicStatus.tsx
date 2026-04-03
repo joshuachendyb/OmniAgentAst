@@ -9,7 +9,7 @@
  * @since 2026-04-03
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // 状态配置表
 const statusConfig: Record<string, { icon: string; text: string; animate: boolean }> = {
@@ -61,7 +61,6 @@ interface DynamicStatusDisplayProps {
 // 动态状态提示组件
 export const DynamicStatusDisplay: React.FC<DynamicStatusDisplayProps> = ({
   executionSteps,
-  isStreaming,
   isDisconnected = false,
 }) => {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
