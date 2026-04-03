@@ -161,6 +161,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
       const result = await taskControlApi.nextPage(
         taskId,
         step.tool_name || "",
+        step.tool_params || {},
         step.raw_data.next_page_token
       );
       
