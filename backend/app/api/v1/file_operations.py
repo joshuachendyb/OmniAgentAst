@@ -660,9 +660,18 @@ async def get_next_page(request: NextPageRequest):
         if not tool_func:
             raise HTTPException(status_code=400, detail=f"Tool {request.tool_name} not found")
         
-        # 添加 page_token 参数
+        # 【修改】根据工具类型区分处理分页参数
         params = request.tool_params.copy()
-        params["page_token"] = request.next_page_token
+        
+        if request.tool_name == "read_file":
+            # read_file: 把 next_page_token 转换为 offset 参数
+            from app.services.tools.file.file_tools import decode_page_token
+            offset = decode_page_token(request.next_page_token) if request.next_page_token else 1
+            params["offset"] = offset
+            params["limit"] = 500  # 固定每页500行
+        else:
+            # 其他工具: 直接用 page_token
+            params["page_token"] = request.next_page_token
         
         # 执行工具
         result = await tool_func(**params)
