@@ -91,6 +91,24 @@ export const DynamicStatusDisplay: React.FC<DynamicStatusDisplayProps> = ({
   if (config.animate) {
     return (
       <div className="status-display">
+        <style>{`
+          @keyframes status-text-breathe {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+          }
+          @keyframes status-cursor-spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          .status-text {
+            animation: status-text-breathe 1.5s ease-in-out infinite;
+          }
+          .status-cursor {
+            display: inline-block;
+            animation: status-cursor-spin 1s linear infinite;
+            opacity: 0.7;
+          }
+        `}</style>
         <span className="status-text">
           {config.icon} {config.text}{' '}
           <span className="status-timer">{formatTime(elapsedSeconds)}</span>
