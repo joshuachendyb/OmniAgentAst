@@ -1,3 +1,45 @@
+v0.8.59
+
+更新时间：2026-04-03 09:45:00
+
+更新内容：
+
+## 1. 动态状态提示组件 - 小强-2026-04-03
+
+### 1.1 新增功能
+
+- 根据 executionSteps 动态显示当前 AI 执行状态
+- 支持 8 种状态：waiting/start/thought/action_tool/observation/chunk/final/disconnected
+- 每个状态独立计时（MM:SS 格式，切换自动重置）
+- 旋转竖线 + 呼吸闪烁动画
+- 状态从 executionSteps 派生（永不不同步）
+- 组件卸载自动清理计时器
+
+### 1.2 新增文件
+
+| 文件 | 说明 |
+|------|------|
+| frontend/src/utils/dynamicStatus.tsx | 动态状态提示组件 |
+| frontend/src/tests/utils/dynamicStatus.test.tsx | 14 个测试用例 |
+
+### 1.3 新增文档
+
+| 文件 | 说明 |
+|------|------|
+| doc-react步骤/AI思考提示位置变化与消失流程-2026-04-03-小强.md | 完整流程分析文档 v1.4 |
+
+### 1.4 Commit 汇总
+
+| Commit | 说明 |
+|--------|------|
+| 40ab645c | feat: 动态状态提示组件 - dynamicStatus.tsx + dynamicStatus.test.tsx - 小强-2026-04-03 |
+| 74705f36 | docs: 更新AI思考提示位置变化与消失流程文档v1.4 - 小强-2026-04-03 |
+
+参与开发：小强
+测试验证：334个测试全部通过
+
+---
+
 v0.8.58
 
 更新时间：2026-04-01 19:00:00
