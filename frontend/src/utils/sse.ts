@@ -1016,6 +1016,13 @@ const processSSEData = (
         }
         // 【小沈修复 2026-03-17】先调用onStep，将error步骤添加到executionSteps
         // 问题：之前只调用onError，没有调用onStep，导致error步骤丢失
+        // 【小强修复 2026-04-03】error步骤也需要保存到sessionStorage，否则页面切换后丢失
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          saveStepsToStorage?.(newSteps);
+          return newSteps;
+        });
         onStep?.(step);
         // 【小新修复2026-03-13】传递完整的错误对象，保留error_type等字段
         onError?.({
@@ -1046,6 +1053,13 @@ const processSSEData = (
         step.content = statusMessage;
         
         // 统一调用onStep（所有incident类型都需要添加到executionSteps）
+        // 【小强修复 2026-04-03】incident步骤也需要保存到sessionStorage，否则页面切换后丢失
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          saveStepsToStorage?.(newSteps);
+          return newSteps;
+        });
         onStep?.(step);
         
         // 根据incident_value调用对应的回调

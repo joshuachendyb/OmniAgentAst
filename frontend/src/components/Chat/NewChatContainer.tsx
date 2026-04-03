@@ -167,6 +167,7 @@ const NewChatContainer: React.FC = () => {
     disconnect,
     clearSteps,
     setTaskId,
+    taskId,
     serverTaskId,
   } = useSSE(
     {
@@ -1621,22 +1622,28 @@ const NewChatContainer: React.FC = () => {
    * 【小查修复2026-03-14】传递true参数，阻止重连
    */
   const handleInterrupt = async () => {
-    const taskIdToCancel = serverTaskId || currentTaskId;
-    console.log(`[中断] serverTaskId=${serverTaskId}, currentTaskId=${currentTaskId}, taskIdToCancel=${taskIdToCancel}`);
+    const taskIdToCancel = serverTaskId || taskId;
+    console.log(`[中断] serverTaskId=${serverTaskId}, taskId=${taskId}, taskIdToCancel=${taskIdToCancel}`);
     if (taskIdToCancel) {
       try {
         message.info("正在中断任务...");
         console.log("[中断] 已显示 '正在中断任务...' 提示");
         
+        // 使用统一的 taskControlApi
+        const result = await taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined);
+        console.log("[中断] cancel API 返回:", result);
+        
         // ✅ 先断开连接，停止自动重连！传递true表示手动中断
         disconnect(true);
         console.log("[中断] 已调用 disconnect(true)");
         
-        // 使用统一的 taskControlApi
-        const result = await taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined);
-        console.log("[中断] cancel API 返回:", result);
-        message.success("任务中断请求已发送");
-        console.log("[中断] 已显示 '任务中断请求已发送' 提示");
+        // 显示后端返回的具体消息
+        if (result.message) {
+          message.success(result.message);
+        } else {
+          message.success("任务中断请求已发送");
+        }
+        console.log("[中断] 已显示中断成功提示");
       } catch (error) {
         console.error("[中断] 错误:", error);
         message.error("发送中断请求失败: " + (error instanceof Error ? error.message : String(error)));
