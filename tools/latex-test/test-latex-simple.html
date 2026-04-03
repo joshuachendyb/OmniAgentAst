@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LaTeX 解析测试 - 兼容双/单反斜杠</title>
+  
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+    h1 { color: #333; border-bottom: 2px solid #1890ff; padding-bottom: 10px; }
+    .section { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .title { font-size: 18px; font-weight: bold; color: #1890ff; margin-bottom: 15px; }
+    .result-box { background: #f6ffed; border: 1px solid #b7eb8f; border-radius: 4px; padding: 20px; margin-top: 15px; line-height: 2; font-size: 15px; }
+    .success { color: #52c41a; font-weight: bold; }
+    .katex-display { margin: 1em 0; }
+    .katex { font-size: 1.2em; }
+    input[type="file"] { margin: 20px 0; padding: 15px; border: 2px dashed #1890ff; border-radius: 8px; width: 100%; max-width: 600px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>🔬 LaTeX 解析测试 - 兼容双/单反斜杠</h1>
+  
+  <div class="section">
+    <h2>选择 JSON 文件</h2>
+    <input type="file" id="fileInput" accept=".json" />
+    <div id="status"></div>
+  </div>
+  
+  <div class="section" id="sec4" style="display:none;">
+    <div class="title">渲染结果</div>
+    <div class="result-box" id="rendered"></div>
+  </div>
+
+  <script>
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        try {
+          const json = JSON.parse(event.target.result);
+          const content = json.content || '';
+          if (!content) throw new Error('没有找到 content 字段');
+          
+          console.log('原始内容前 500 字符:');
+          console.log(content.substring(0, 500));
+          console.log('---');
+          
+          renderContent(content);
+          document.getElementById('sec4').style.display = 'block';
+          
+        } catch(err) {
+          document.getElementById('status').innerHTML = '<span class="error-text">错误：' + err.message + '</span>';
+        }
+      };
+      reader.readAsText(file, 'utf-8');
+    });
+    
+    function renderContent(content) {
+      let processed = content;
+      
+      // 关键：同时处理单反斜杠 \ 和双反斜杠 \\
+      // JSON 解析后，\\ 变成 \，但有些地方可能本来就是 \
+      
+      // 1. 处理 \[ ... \] 或 \\[ ... \\]
+      processed = processed.replace(/\\\\?\[([\s\S]*?)\\\\?\]/g, (m, f) => {
+        console.log('找到 \\[...\\]:', m.substring(0, 50));
+        try { return katex.renderToString(f.trim(), { displayMode: true, throwOnError: false, strict: false }); }
+        catch(e) { return m; }
+      });
+      
+      // 2. 处理 \( ... \) 或 \\( ... \\)
+      processed = processed.replace(/\\\\?\(([\s\S]*?)\\\\?\)/g, (m, f) => {
+        try { return katex.renderToString(f.trim(), { displayMode: false, throwOnError: false, strict: false }); }
+        catch(e) { return m; }
+      });
+      
+      // 3. 处理 \begin{aligned}...\end{aligned}
+      processed = processed.replace(/\\begin\{aligned\}([\s\S]*?)\\end\{aligned\}/g, (m, inner) => {
+        console.log('找到 aligned');
+        try {
+          return katex.renderToString('\\begin{aligned}' + inner + '\\end{aligned}', { displayMode: true, throwOnError: false, strict: false });
+        } catch(e) { return m; }
+      });
+      
+      // 4. 处理 \\ (LaTeX 换行)
+      processed = processed.replace(/\\\\/g, '\\\\');
+      
+      // 5. 处理 \cdot
+      processed = processed.replace(/\\cdot/g, '\\cdot');
+      
+      // 6. 处理 \overline{}
+      processed = processed.replace(/\\overline\{([^}]+)\}/g, (m, a) => {
+        try { return katex.renderToString('\\overline{' + a + '}', { displayMode: false, throwOnError: false, strict: false }); }
+        catch(e) { return m; }
+      });
+      
+      // 7. 处理 \dfrac{}{}
+      processed = processed.replace(/\\dfrac\{([^}]+)\}\{([^}]+)\}/g, (m, a, b) => {
+        try { return katex.renderToString('\\dfrac{' + a + '}{' + b + '}', { displayMode: false, throwOnError: false, strict: false }); }
+        catch(e) { return m; }
+      });
+      
+      // 8. 处理 \frac{}{}
+      processed = processed.replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, (m, a, b) => {
+        console.log('找到 \\frac:', a + '/' + b);
+        try { return katex.renderToString('\\frac{' + a + '}{' + b + '}', { displayMode: false, throwOnError: false, strict: false }); }
+        catch(e) { return m; }
+      });
+      
+      // 9. 处理 \boxed{} - 使用智能括号匹配
+      processed = processBoxed(processed);
+      
+      // Markdown 解析
+      marked.setOptions({ breaks: true, gfm: true, headerIds: false });
+      const html = marked.parse(processed);
+      
+      document.getElementById('rendered').innerHTML = html;
+      document.getElementById('status').innerHTML = '<span class="success">✅ 解析完成！</span>';
+    }
+    
+    // 智能处理 \boxed{}，支持嵌套括号
+    function processBoxed(text) {
+      let result = text;
+      let iterations = 0;
+      const maxIterations = 100;
+      
+      // 匹配 \boxed{ 或 \\boxed{
+      while (result.match(/\\\\?boxed\{/) && iterations < maxIterations) {
+        iterations++;
+        
+        const match = result.match(/(\\\\?)boxed\{/);
+        if (!match) break;
+        
+        const isDoubleSlash = match[1] === '\\\\';
+        const startIndex = result.indexOf(match[0]);
+        const braceStart = startIndex + match[0].length;
+        
+        let depth = 1;
+        let i = braceStart;
+        
+        while (i < result.length && depth > 0) {
+          if (result[i] === '{') depth++;
+          else if (result[i] === '}') depth--;
+          i++;
+        }
+        
+        if (depth === 0) {
+          const inner = result.substring(braceStart, i - 1);
+          console.log('找到 \\boxed:', inner.substring(0, 40), '...');
+          try {
+            const rendered = katex.renderToString('\\boxed{' + inner + '}', { 
+              displayMode: false, 
+              throwOnError: false, 
+              strict: false 
+            });
+            result = result.substring(0, startIndex) + rendered + result.substring(i);
+          } catch(e) {
+            console.error('\\boxed 解析失败:', e.message, '内容:', inner);
+            break;
+          }
+        } else {
+          break;
+        }
+      }
+      
+      return result;
+    }
+  </script>
+</body>
+</html>

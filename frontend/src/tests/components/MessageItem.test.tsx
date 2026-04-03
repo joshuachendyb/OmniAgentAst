@@ -72,9 +72,9 @@ describe('MessageItem Component', () => {
 
     render(<MessageItem message={messageWithSteps} showExecution={true} />);
 
-    expect(screen.getByText('Test message content')).toBeInTheDocument();
-    // 检查思考步骤直接显示（不折叠）
-    expect(screen.getByText('思考：')).toBeInTheDocument();
+    // 有 executionSteps 时渲染步骤内容，不渲染 message.content
+    // 检查思考步骤显示（💭 图标 + 思考内容）
+    expect(screen.getByText(/Thinking\.\.\./)).toBeInTheDocument();
   });
 
   it('should format timestamp correctly', () => {

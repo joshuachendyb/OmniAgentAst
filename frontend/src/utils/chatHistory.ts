@@ -68,6 +68,7 @@ export const parseMessage = (rawMessage: any): Message => {
     model: rawMessage.model || undefined,
     provider: rawMessage.provider || undefined,
     is_reasoning: rawMessage.is_reasoning,
+    isStreaming: rawMessage.is_streaming ?? rawMessage.isStreaming ?? false,
     // 错误相关字段（使用API文档的字段名 - snake_case）
     isError: rawMessage.is_error || false,
     errorType: rawMessage.error_type || undefined,
@@ -88,7 +89,7 @@ export const loadHistoryMessages = async (
   sessionId: string,
   options?: { useCache?: boolean }
 ): Promise<HistoryLoadResult | null> => {
-  console.log("%c┌───── 历史消息加载 START ─────", "color: blue; font-weight: bold; font-size: 14px;");
+  console.log("%c┌───── 历史消息加载 START", "color: blue; font-weight: bold; font-size: 14px;");
 
   try {
     // 先尝试从缓存读取（如果启用且不在DEBUG模式）
@@ -106,7 +107,7 @@ export const loadHistoryMessages = async (
               state.sessionId === sessionId && 
               state.messages?.length > 0) {
             console.log("%c│ 从缓存恢复: " + state.messages.length + " 条消息", "color: blue; font-size: 12px;");
-            console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
+            console.log("%c└───── 历史消息加载 END", "color: blue; font-weight: bold; font-size: 14px;");
             return {
               messages: state.messages,
               title: state.sessionTitle || "会话",
@@ -122,10 +123,21 @@ export const loadHistoryMessages = async (
     // 从数据库读取
     const sessionData = await sessionApi.getSessionMessages(sessionId);
 
-    // 检查是否有消息
+    // 检查是否有消息 - 空会话（无消息但有标题）也要返回有效结果
     if (!sessionData.messages || sessionData.messages.length === 0) {
+      // 有标题的空会话，返回有效结果（不返回null）
+      if (sessionData.title) {
+        console.log("%c│ 无历史消息（空会话），但有标题: " + sessionData.title, "color: blue; font-size: 12px;");
+console.log("%c└───── 历史消息加载 END", "color: blue; font-weight: bold; font-size: 14px;");
+        return {
+          messages: [],
+          title: sessionData.title,
+          sessionId: sessionData.session_id,
+          version: sessionData.version,
+        };
+      }
       console.log("%c│ 无历史消息", "color: blue; font-size: 12px;");
-      console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
+      console.log("%c└───── 历史消息加载 END", "color: blue; font-weight: bold; font-size: 14px;");
       return null;
     }
 
@@ -151,7 +163,7 @@ export const loadHistoryMessages = async (
 
     // 日志结束
     console.log("%c│ 共 " + messages.length + " 条消息", "color: blue; font-size: 12px;");
-    console.log("%c└───── 历史消息加载 END ─────", "color: blue; font-weight: bold; font-size: 14px;");
+    console.log("%c└───── 历史消息加载 END", "color: blue; font-weight: bold; font-size: 14px;");
 
     // 返回统一格式
     return {

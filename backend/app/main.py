@@ -7,9 +7,18 @@ from datetime import datetime
 import traceback
 from pathlib import Path
 
-from app.api.v1 import health, chat, file_operations, config, sessions, security, execution, metrics
+# 【已废弃】chat_non_stream 已不使用，前端已改用 sse.ts 流式聊天 V2
+# from app.api.v1 import health, chat_non_stream, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
+# 【阶段6废弃端点但保留代码】chat2.py 已移至 backup/chat2.py
+# cleanup_expired_tasks 已迁移到 react_sse_wrapper.py
+from app.api.v1 import health, init_model_select, file_operations, config, sessions, security, execution, metrics
+# chat_stream 暂时禁用，使用 chat_router 替代
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring
+
+# 只过滤uvicorn的访问日志，不影响应用日志
+import logging
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 # 配置日志 - 使用统一的 logger 配置，不再使用 basicConfig
 # 日志统一在 app/utils/logger.py 中配置
@@ -37,13 +46,15 @@ def get_version() -> str:
         print(f"[Version] Failed to read version.txt: {e}")
     return "0.4.14"
 
+app_version = get_version()
+
 app = FastAPI(
     title="OmniAgentAst API",
     description="OmniAgentAst 桌面版后端API",
-    version=get_version()
+    version=app_version
 )
 
-print("OmniAgentAst Backend v" + get_version() + " started")
+print("OmniAgentAst Backend v" + app_version + " started")
 
 # CORS配置
 app.add_middleware(
@@ -100,7 +111,17 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 app.include_router(health.router, prefix="/api/v1", tags=["health"])
-app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
+# 【已废弃】chat_non_stream.py 已不使用，前端已改用 sse.ts 流式聊天 V2
+# app.include_router(chat_non_stream.router, prefix="/api/v1", tags=["chat"])
+# 【暂时禁用】使用 chat2 替代 chat_stream（待验证后决定是否删除）
+# app.include_router(chat_stream.router, prefix="/api/v1", tags=["chat"])
+# 【阶段6废弃】chat2.py 端点已废弃，使用 chat_router (V2) 替代
+# app.include_router(chat2.router, prefix="/api/v1", tags=["chat"])
+# 【Stage 5 新增】chat_router - 6步完整流程版本
+from app.services.chat_router import router as chat_router_router, task_router
+app.include_router(chat_router_router, prefix="/api/v1", tags=["chat"])
+app.include_router(task_router, prefix="/api/v1", tags=["chat"])
+app.include_router(init_model_select.router, prefix="/api/v1", tags=["chat"])
 app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operations"])
 app.include_router(config.router, prefix="/api/v1", tags=["config"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
@@ -109,9 +130,9 @@ app.include_router(execution.router, prefix="/api/v1", tags=["execution"])
 app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 
 
-# 【小沈修复 2026-03-14】启动后台清理任务，定期清理过期任务
+# 【阶段6更新】cleanup_expired_tasks 改为从 react_sse_wrapper 导入
 import asyncio
-from app.api.v1.chat import cleanup_expired_tasks
+from app.services.react_sse_wrapper import cleanup_expired_tasks
 
 @app.on_event("startup")
 async def startup_event():

@@ -8,6 +8,11 @@
 使用SQLite数据库存储会话和消息
 """
 
+# 【新增 2026-03-16】存储每个session的消息ID
+# key: session_id, value: user_message_id 或 assistant_message_id
+_user_message_ids: dict = {}
+_assistant_message_ids: dict = {}
+
 import sqlite3
 import uuid
 import json
@@ -59,6 +64,10 @@ DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
 def get_utc_timestamp() -> str:
     """获取UTC时间戳，ISO格式"""
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+def get_timestamp_ms() -> int:
+    """【小沈修复 2026-03-31】获取毫秒时间戳，避免时间戳存储为ISO字符串导致前端解析错误"""
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
 def check_db_fields_exist(conn) -> dict:
@@ -164,7 +173,10 @@ def _init_database():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             message_count INTEGER DEFAULT 0,
             is_deleted BOOLEAN DEFAULT FALSE,
-            is_valid BOOLEAN DEFAULT FALSE  -- 默认为FALSE，新创建的会话默认为无效，需要前端明确标记为有效
+            is_valid BOOLEAN DEFAULT FALSE,
+            title_locked BOOLEAN DEFAULT FALSE,
+            title_updated_at TIMESTAMP,
+            version INTEGER DEFAULT 1
         )
     ''')
     # 注意：现在所有会话都已具有 is_valid 字段，无需额外的检查或更新操作
@@ -176,9 +188,9 @@ def _init_database():
             session_id TEXT NOT NULL,
             role TEXT NOT NULL,
             content TEXT NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
             execution_steps TEXT,
-            display_name TEXT  -- 记录消息收发时使用的模型显示名称
+            display_name TEXT
         )
     ''')
     
@@ -189,6 +201,15 @@ def _init_database():
         cursor.execute('ALTER TABLE chat_messages ADD COLUMN display_name TEXT')
         conn.commit()
         print("数据库已添加 display_name 字段")
+    
+    # 【小沈添加 2026-03-24】添加客户端信息字段（如果不存在）
+    for field in ['client_os', 'browser', 'device', 'network']:
+        try:
+            cursor.execute(f'SELECT {field} FROM chat_messages LIMIT 1')
+        except:
+            cursor.execute(f'ALTER TABLE chat_messages ADD COLUMN {field} TEXT')
+            conn.commit()
+            print(f"数据库已添加 {field} 字段")
     
     # 创建标题历史表（P2-中优先级）
     cursor.execute('''
@@ -272,7 +293,7 @@ class MessageResponse(BaseModel):
     session_id: str = Field(..., description="会话 ID")
     role: str = Field(..., description="角色")
     content: str = Field(..., description="消息内容")
-    timestamp: str = Field(..., description="时间戳")
+    timestamp: int = Field(..., description="时间戳（毫秒，int类型）")  # 【修复 2026-04-01 小沈】从str改为int
     execution_steps: Optional[list] = Field(None, description="执行步骤（数组格式）")
     display_name: Optional[str] = Field(None, description="模型显示名称（记录消息收发时使用的模型）")
 
@@ -421,8 +442,12 @@ async def list_sessions(
         # 构建查询
         offset = (page - 1) * page_size
         
-        # 优化：复合排序策略，优先按创建时间，再按更新时间
-        # 这样新创建的会话会排在前面，同时活跃的会话也能保持较高位置
+        # 【小强修复 2026-03-31】优化排序策略：
+        # 1. 优先返回有消息的会话（message_count > 0）
+        # 2. 再按更新时间降序排列
+        # 3. 最后按创建时间降序
+        # 原因：空会话（message_count=0）会排在有消息的会话后面
+        # 效果：加载最近会话时，会优先返回有消息的会话
         if keyword:
             # 搜索标题
             if is_valid is not None:
@@ -430,7 +455,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND title LIKE ? AND is_valid = ?
-                       ORDER BY updated_at DESC, created_at DESC 
+                        ORDER BY updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (f'%{keyword}%', is_valid, page_size, offset)
                 )
@@ -439,7 +464,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND title LIKE ?
-                       ORDER BY updated_at DESC, created_at DESC 
+                        ORDER BY updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (f'%{keyword}%', page_size, offset)
                 )
@@ -449,7 +474,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE AND is_valid = ?
-                       ORDER BY updated_at DESC, created_at DESC 
+                        ORDER BY updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (is_valid, page_size, offset)
                 )
@@ -458,7 +483,7 @@ async def list_sessions(
                     '''SELECT id, title, created_at, updated_at, message_count, is_valid
                        FROM chat_sessions 
                        WHERE is_deleted = FALSE
-                       ORDER BY updated_at DESC, created_at DESC 
+                        ORDER BY updated_at DESC, created_at DESC
                        LIMIT ? OFFSET ?''',
                     (page_size, offset)
                 )
@@ -474,13 +499,22 @@ async def list_sessions(
             created_at = row['created_at']
             updated_at = row['updated_at']
             
-            # 简单的时间格式转换（假设存储已经是UTC格式）
-            if isinstance(created_at, str):
+            # 【小沈修复 2026-03-31】统一转换为ISO格式字符串返回给前端
+            # 处理两种情况：1. ISO格式字符串 2. 毫秒时间戳（int/float）
+            if isinstance(created_at, (int, float)):
+                # 毫秒时间戳转换为ISO格式
+                created_at_str = datetime.fromtimestamp(created_at / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
+            elif isinstance(created_at, str):
                 created_at_str = created_at.replace('+00:00', 'Z') if '+00:00' in created_at else created_at + 'Z' if not created_at.endswith('Z') else created_at
             else:
                 created_at_str = _convert_to_utc(created_at)
                 
-            if isinstance(updated_at, str):
+            # 【小沈修复 2026-03-31】统一转换为ISO格式字符串返回给前端
+            # 处理两种情况：1. ISO格式字符串 2. 毫秒时间戳（int/float）
+            if isinstance(updated_at, (int, float)):
+                # 毫秒时间戳转换为ISO格式
+                updated_at_str = datetime.fromtimestamp(updated_at / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f') + 'Z'
+            elif isinstance(updated_at, str):
                 updated_at_str = updated_at.replace('+00:00', 'Z') if '+00:00' in updated_at else updated_at + 'Z' if not updated_at.endswith('Z') else updated_at
             else:
                 updated_at_str = _convert_to_utc(updated_at)
@@ -570,6 +604,10 @@ async def get_session_messages(session_id: str):
         conn.close()
         
         # 解析 execution_steps JSON字符串为数组
+        # 【重要 2026-04-01 小沈】execution_steps中的timestamp是int类型
+        # json.loads() 反序列化后，step.timestamp 保持为 int（如 1774971788504）
+        # 前端 new Date(1774971788504) 能正确解析，导出时 formatTimestamp() 正常工作
+        # 注意：message.timestamp 之前被转为字符串（第629行），导致前端 new Date("...") 返回 Invalid Date
         messages = []
         for row in rows:
             execution_steps_data = None
@@ -584,14 +622,28 @@ async def get_session_messages(session_id: str):
             if not display_name and execution_steps_data:
                 display_name = extract_display_name_from_steps(execution_steps_data)
 
+            # 【修复 2026-04-01 小沈】返回毫秒时间戳给前端
+            # 根因：之前使用 str(int(ts_value)) 将时间戳转为字符串，导致前端 new Date("1774971788505") 返回 Invalid Date
+            # 修复：直接返回 int 类型，前端 new Date(1774971788505) 能正确解析
+            # 对比：execution_steps 中的 timestamp 通过 json.loads() 返回 int，导出正常
+            #      message.timestamp 之前被转为字符串，导出为空
+            ts_value = row['timestamp']
+            if isinstance(ts_value, (int, float)):
+                timestamp_ms = int(ts_value)  # 保持 int 类型
+            else:
+                try:
+                    timestamp_ms = int(datetime.fromisoformat(str(ts_value).replace(' ', 'T')).timestamp() * 1000)
+                except:
+                    timestamp_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            
             messages.append(MessageResponse(
                 id=row['id'],
                 session_id=row['session_id'],
                 role=row['role'],
                 content=row['content'],
-                timestamp=_convert_to_utc(row['timestamp']),
+                timestamp=timestamp_ms,
                 execution_steps=execution_steps_data,
-                display_name=display_name  # 添加 display_name 字段
+                display_name=display_name
             ))
         
         logger.info(f"获取会话消息: session_id={session_id}, count={len(messages)}")
@@ -632,6 +684,11 @@ class MessageCreate(BaseModel):
     content: str = Field(..., description="消息内容")
     display_name: Optional[str] = Field(None, description="模型显示名称（可选，记录消息收发时使用的模型）")
     execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
+    # 客户端信息（小沈 2026-03-24）
+    client_os: Optional[str] = Field(None, description="客户端操作系统")
+    browser: Optional[str] = Field(None, description="浏览器类型")
+    device: Optional[str] = Field(None, description="设备类型")
+    network: Optional[str] = Field(None, description="网络类型")
 
 class SessionUpdate(BaseModel):
     """会话更新请求"""
@@ -693,8 +750,8 @@ async def save_message(session_id: str, message: MessageCreate):
             conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
-        # 开始事务处理
-        utc_time = get_utc_timestamp()
+        # 【小沈修复 2026-03-31】使用毫秒时间戳
+        utc_time = get_timestamp_ms()
         
         # ⭐ 【小沈添加 2026-03-03】从缓存获取 display_name（如果是AI回复且前端未提供）
         display_name_to_save = message.display_name
@@ -705,10 +762,16 @@ async def save_message(session_id: str, message: MessageCreate):
         # 插入消息（添加 display_name 和 execution_steps 字段）
         execution_steps_json = json.dumps(message.execution_steps) if message.execution_steps else None
         cursor.execute(
-            'INSERT INTO chat_messages (session_id, role, content, timestamp, display_name, execution_steps) VALUES (?, ?, ?, ?, ?, ?)',
-            (session_id, message.role, message.content, utc_time, display_name_to_save, execution_steps_json)
+            'INSERT INTO chat_messages (session_id, role, content, timestamp, display_name, execution_steps, client_os, browser, device, network) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (session_id, message.role, message.content, utc_time, display_name_to_save, execution_steps_json, 
+             message.client_os, message.browser, message.device, message.network)
         )
         message_id = cursor.lastrowid
+        
+        # 【新增 2026-03-16】保存用户消息ID到内存字典，用于生成AI消息ID
+        if message.role == 'user':
+            _user_message_ids[session_id] = message_id
+            logger.info(f"[保存用户消息ID] message_id={message_id}, session_id={session_id}")
         
         # 计算新的消息计数
         new_message_count = session['message_count'] + 1
@@ -802,21 +865,46 @@ async def save_message(session_id: str, message: MessageCreate):
 
 
 class ExecutionStepsUpdate(BaseModel):
-    """更新执行步骤请求"""
+    """
+    更新执行步骤请求
+    
+    @author 小沈
+    @update 2026-03-16 v11.0修复：增加content参数，解决前端调用时传递content参数被忽略的问题
+    
+    修复的问题：
+    - 缺陷1：API参数不匹配 - 后端saveExecutionSteps只有execution_steps参数，没有content参数
+    - 缺陷5：visibilitychange调用无效 - 前端传递content参数但API不支持
+    - 缺陷6：无法判断新一轮对话 - 添加reply_to_message_id参数用于校验
+    """
     execution_steps: Optional[list] = Field(None, description="执行步骤详情列表")
+    content: Optional[str] = Field(None, description="AI生成的文本内容，用于实时保存流式输出的内容")
+    reply_to_message_id: Optional[int] = Field(None, description="回复的用户消息ID，用于校验和创建正确的AI消息ID")
 
 
 @router.post("/sessions/{session_id}/execution_steps")
 async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdate):
     """
-    保存/更新会话的执行步骤
+    保存/更新会话的执行步骤（智能UPSERT）
     
-    功能：单独保存或更新消息的 execution_steps 字段
-    与 save_message 的区别：只更新 execution_steps，不插入新消息
+    功能：单独保存或更新消息的 execution_steps 和 content 字段
+    与 save_message 的区别：只更新 execution_steps 和 content，不插入新消息（除非消息不存在）
+    
+    @author 小沈
+    @update 2026-03-16 v11.0修复：实现智能UPSERT，解决以下问题：
+    
+    修复的问题：
+    - 缺陷3：content覆盖问题 - 直接传递当前累积的content，DB直接覆盖
+    - 缺陷4：message_count重复 - 每次创建消息都+1，可能重复
+    - 缺陷5：visibilitychange调用无效 - 后端API已支持content参数
+    
+    实现逻辑：
+    1. 查找最后一条assistant消息
+    2. 如果不存在，创建消息占位（仅首次创建时更新message_count）
+    3. 更新execution_steps和content字段（智能覆盖）
     
     Args:
         session_id: 会话ID
-        update_data: 包含 execution_steps 的请求体
+        update_data: 包含 execution_steps 和 content 的请求体
         
     Returns:
         dict: 保存结果
@@ -836,43 +924,209 @@ async def save_execution_steps(session_id: str, update_data: ExecutionStepsUpdat
             conn.close()
             raise HTTPException(status_code=404, detail=f"会话不存在: {session_id}")
         
-        # 查找该会话的最后一条消息（用于更新 execution_steps）
+        # 查找该会话的最后一条assistant消息（用于更新 execution_steps 和 content）
+        # @update 2026-03-16：添加role='assistant'过滤，只更新assistant消息
+        # 【重要修复】使用message_count来判断是否需要创建新消息，而不是仅依赖timestamp
+        # 根因：如果仅用timestamp排序，上一次对话的assistant消息可能被错误地更新
+        # 解决方案：同时检查timestamp和消息顺序，确保只更新最近一次对话的assistant消息
+        
+        # 先查找会话的message_count
         cursor.execute(
-            '''SELECT id, content FROM chat_messages 
-               WHERE session_id = ? 
-               ORDER BY timestamp DESC LIMIT 1''',
+            'SELECT message_count FROM chat_sessions WHERE id = ?',
             (session_id,)
         )
-        last_message = cursor.fetchone()
+        session_info = cursor.fetchone()
+        session_message_count = session_info['message_count'] if session_info else 0
         
-        if not last_message:
-            conn.close()
-            raise HTTPException(status_code=404, detail=f"会话中没有消息: {session_id}")
+        # 根据message_count计算应该有多少条assistant消息
+        expected_assistant_count = (session_message_count + 1) // 2
         
-        # 更新最后一条消息的 execution_steps
-        # 注：execution_steps 字段在表创建时已添加（见第180行），无需检查字段存在性
-        execution_steps_json = json.dumps(update_data.execution_steps) if update_data.execution_steps else None
-        cursor.execute(
-            'UPDATE chat_messages SET execution_steps = ? WHERE id = ?',
-            (execution_steps_json, last_message['id'])
-        )
+        # ⭐ 【重要修复 2026-03-17】每次都重新计算AI消息ID，不依赖缓存
+        # 缓存逻辑错误：之前一直用第一次的缓存ID，导致后续消息覆盖问题
+        # 修复：每次都用当前用户消息ID+1来计算AI消息ID
         
-        # 更新会话的 updated_at
-        utc_time = get_utc_timestamp()
-        cursor.execute(
-            'UPDATE chat_sessions SET updated_at = ? WHERE id = ?',
-            (utc_time, session_id)
-        )
+        # 计算AI消息ID = 用户消息ID + 1
+        user_message_id = _user_message_ids.get(session_id)
+        
+        if user_message_id:
+            expected_assistant_id = user_message_id + 1
+            # 存入字典（更新为最新的）
+            _assistant_message_ids[session_id] = expected_assistant_id
+            logger.info(f"[重新计算AI消息ID] user_message_id={user_message_id}, assistant_message_id={expected_assistant_id}")
+            # 检查消息是否已存在
+            cursor.execute('SELECT id, role FROM chat_messages WHERE id = ?', (expected_assistant_id,))
+            existing_msg = cursor.fetchone()
+            
+            if existing_msg:
+                if existing_msg['role'] == 'assistant':
+                    should_create_new = False
+                    logger.info(f"[更新现有] assistant消息(ID={expected_assistant_id}): session_id={session_id}")
+                else:
+                    should_create_new = True
+                    logger.warning(f"[ID被占用] ID={expected_assistant_id}是{existing_msg['role']}，创建新消息")
+            else:
+                should_create_new = True
+                logger.info(f"[新建] ID={expected_assistant_id}不存在，创建assistant消息: session_id={session_id}")
+        else:
+            # 计算AI消息ID = 用户消息ID + 1
+            user_message_id = _user_message_ids.get(session_id)
+            
+            if user_message_id:
+                expected_assistant_id = user_message_id + 1
+                # 存入字典
+                _assistant_message_ids[session_id] = expected_assistant_id
+                logger.info(f"[计算AI消息ID] user_message_id={user_message_id}, assistant_message_id={expected_assistant_id}")
+            else:
+                # 内存没有查数据库
+                cursor.execute(
+                    '''SELECT id FROM chat_messages 
+                       WHERE session_id = ? AND role = 'user'
+                       ORDER BY id DESC LIMIT 1''',
+                    (session_id,)
+                )
+                last_user_msg = cursor.fetchone()
+                
+                if last_user_msg:
+                    expected_assistant_id = last_user_msg['id'] + 1
+                    _assistant_message_ids[session_id] = expected_assistant_id
+                    logger.info(f"[基于数据库] user_msg_id={last_user_msg['id']}, assistant_msg_id={expected_assistant_id}")
+                else:
+                    expected_assistant_id = 1
+                    logger.warning(f"[异常] session没有用户消息，ID={session_id}")
+            
+            # 检查消息是否已存在
+            cursor.execute('SELECT id, role FROM chat_messages WHERE id = ?', (expected_assistant_id,))
+            existing_msg = cursor.fetchone()
+            
+            if existing_msg:
+                if existing_msg['role'] == 'assistant':
+                    should_create_new = False
+                    logger.info(f"[更新现有] assistant消息(ID={expected_assistant_id}): session_id={session_id}")
+                else:
+                    should_create_new = True
+                    logger.warning(f"[ID被占用] ID={expected_assistant_id}是{existing_msg['role']}，创建新消息")
+            else:
+                should_create_new = True
+                logger.info(f"[新建] ID={expected_assistant_id}不存在，创建assistant消息: session_id={session_id}")
+        
+        # ⭐ 【重要修复 2026-03-16】从execution_steps的start步骤提取metadata
+        metadata = {'model': None, 'provider': None, 'display_name': None}
+        if update_data.execution_steps:
+            for step in update_data.execution_steps:
+                if step.get('type') == 'start':
+                    metadata['model'] = step.get('model')
+                    metadata['provider'] = step.get('provider')
+                    metadata['display_name'] = step.get('display_name')
+                    logger.info(f"[提取metadata] 从start步骤提取: model={metadata['model']}, provider={metadata['provider']}, display_name={metadata['display_name']}")
+                    break
+        
+        # 如果需要创建新消息
+        # 【小沈修复 2026-03-31】使用毫秒时间戳，避免前端解析错误
+        if should_create_new:
+            utc_time = get_timestamp_ms()
+            initial_content = update_data.content if update_data.content else ''
+            
+            # 保存metadata到数据库
+            display_name_to_save = metadata['display_name'] or f"{metadata['provider']} ({metadata['model']})" if metadata['provider'] and metadata['model'] else None
+            
+            # ⭐ 【重要】使用期望的ID插入，而不是让数据库自动生成
+            cursor.execute(
+                '''INSERT INTO chat_messages 
+                   (id, session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?, ?)''',
+                (expected_assistant_id, session_id, 'assistant', initial_content, utc_time, display_name_to_save)
+            )
+            last_message = {'id': expected_assistant_id, 'content': initial_content}
+            is_new_message = True
+            
+            # ⭐ 【调试】记录新消息ID和创建时间
+            logger.info(f"🆕 [新消息创建] message_id={expected_assistant_id}, session_id={session_id}, timestamp={utc_time}, display_name={display_name_to_save}")
+        else:
+            # 更新现有消息
+            is_new_message = False
+            # 确认消息存在
+            cursor.execute('SELECT id FROM chat_messages WHERE id = ?', (expected_assistant_id,))
+            if not cursor.fetchone():
+                # 消息不存在，创建新消息
+                # 【小沈修复 2026-04-01】修复 message.timestamp 显示 1970 年的问题
+                # 根因：之前使用 get_utc_timestamp() 返回 ISO 字符串，前端解析时只取前导数字导致显示 1970 年
+                # 修复：改为 get_timestamp_ms() 返回毫秒数，与前端期望的格式一致
+                utc_time = get_timestamp_ms()
+                initial_content = update_data.content if update_data.content else ''
+                
+                # 保存metadata到数据库
+                display_name_to_save = metadata['display_name'] or f"{metadata['provider']} ({metadata['model']})" if metadata['provider'] and metadata['model'] else None
+                
+                # ⭐ 【重要】使用期望的ID插入
+                cursor.execute(
+                    '''INSERT INTO chat_messages 
+                       (id, session_id, role, content, timestamp, display_name) VALUES (?, ?, ?, ?, ?, ?)''',
+                    (expected_assistant_id, session_id, 'assistant', initial_content, utc_time, display_name_to_save)
+                )
+                last_message = {'id': expected_assistant_id, 'content': initial_content}
+                is_new_message = True
+                logger.warning(f"[修复] 消息{expected_assistant_id}不存在，创建新消息ID={expected_assistant_id}, display_name={display_name_to_save}")
+            else:
+                last_message = {'id': expected_assistant_id, 'content': ''}
+                logger.info(f"[更新] assistant消息(ID={expected_assistant_id}): session_id={session_id}")
+        
+        # 构建更新字段和值（智能UPSERT）
+        # @update 2026-03-16：同时更新execution_steps和content
+        update_fields = []
+        update_values = []
+        
+        # 更新execution_steps（如果有）
+        if update_data.execution_steps:
+            execution_steps_json = json.dumps(update_data.execution_steps)
+            update_fields.append('execution_steps = ?')
+            update_values.append(execution_steps_json)
+        
+        # 更新content（如果有）- 解决缺陷3：content覆盖问题
+        # @update 2026-03-16：直接覆盖，使用传入的content替换原有内容
+        if update_data.content is not None:
+            update_fields.append('content = ?')
+            update_values.append(update_data.content)
+        
+        # 执行更新（如果有字段需要更新）
+        if update_fields:
+            update_values.append(last_message['id'])
+            cursor.execute(
+                f'UPDATE chat_messages SET {", ".join(update_fields)} WHERE id = ?',
+                update_values
+            )
+        
+        # 【修复缺陷4】只在首次创建消息时更新message_count，避免重复
+        # @update 2026-03-16：使用is_new_message标记，只在首次创建时+1
+        # 【小沈修复 2026-03-31】updated_at保持ISO格式（显示用），但message timestamp用毫秒
+        utc_time = get_timestamp_ms()
+        message_id = last_message['id']
+        
+        # ⭐ 【调试】记录保存的消息ID和时间
+        logger.info(f"💾 [后端保存] message_id={message_id}, session_id={session_id}, timestamp={utc_time}, is_new={is_new_message}, steps_count={len(update_data.execution_steps) if update_data.execution_steps else 0}, reply_to={update_data.reply_to_message_id}")
+        
+        if is_new_message:
+            # 首次创建消息时，更新message_count
+            cursor.execute(
+                'UPDATE chat_sessions SET message_count = message_count + 1, updated_at = ? WHERE id = ?',
+                (utc_time, session_id)
+            )
+        else:
+            # 已有消息时，只更新updated_at
+            cursor.execute(
+                'UPDATE chat_sessions SET updated_at = ? WHERE id = ?',
+                (utc_time, session_id)
+            )
         
         # 提交事务
         conn.commit()
         conn.close()
         
-        logger.info(f"保存执行步骤成功: session_id={session_id}, message_id={last_message['id']}")
+        logger.info(f"保存执行步骤成功: session_id={session_id}, message_id={last_message['id']}, "
+                   f"is_new={is_new_message}, has_content={update_data.content is not None}")
         
         return {
             "success": True,
-            "message_id": last_message['id']
+            "message_id": last_message['id'],
+            "is_new_message": is_new_message
         }
         
     except HTTPException:

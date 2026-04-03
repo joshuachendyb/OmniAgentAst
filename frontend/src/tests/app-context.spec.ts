@@ -50,9 +50,7 @@ describe('AppContext API Mock 验证', () => {
       expect(typeof configApi.getModelList).toBe('function');
     });
 
-    it('configApi.validateFullConfig should exist', () => {
-      expect(typeof configApi.validateFullConfig).toBe('function');
-    });
+    // validateFullConfig 已删除，后端已删除对应API
 
     it('chatApi.validateService should exist', () => {
       expect(typeof chatApi.validateService).toBe('function');

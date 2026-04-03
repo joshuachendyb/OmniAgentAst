@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.models.file_operations import OperationRecord, OperationType, OperationStatus
-from app.services.file_operations import (
+from app.services.agent import (
     get_file_safety_service,
     get_session_service,
     FileTools
@@ -59,9 +59,10 @@ class StatsData(BaseModel):
 
 
 class AnimationFrame(BaseModel):
-    """动画帧数据"""
+    """动画帧数据【修改 2026-03-31】timestamp改为毫秒int类型"""
     frame_index: int = Field(..., description="帧序号")
-    timestamp: str = Field(..., description="时间戳")
+    # 【修改 2026-03-31】从 str 改为 int，使用毫秒时间戳
+    timestamp: int = Field(..., description="时间戳（毫秒）")
     operation: Dict[str, Any] = Field(..., description="操作信息")
     current_state: Dict[str, Any] = Field(..., description="当前状态")
 
@@ -384,9 +385,13 @@ async def get_animation_data(
             frame_duration = op.duration_ms or frame_interval_ms
             cumulative_time += frame_duration
             
+            # 【修改 2026-03-31】转换为毫秒时间戳
+            op_time = op.executed_at or op.created_at
+            timestamp_ms = int(op_time.timestamp() * 1000) if op_time else 0
+            
             frame = AnimationFrame(
                 frame_index=idx,
-                timestamp=(op.executed_at or op.created_at).isoformat() if op.executed_at or op.created_at else "",
+                timestamp=timestamp_ms,
                 operation={
                     "operation_id": op.operation_id,
                     "type": op.operation_type.value,
@@ -427,10 +432,15 @@ async def get_animation_data(
 @router.get("/operations/report")
 async def generate_report(
     session_id: str = Query(..., description="会话ID"),
-    format: Literal["txt", "json", "html", "mmd"] = Query("json", description="报告格式")
+    format: Literal["txt", "json", "html", "mmd"] = Query("json", description="报告格式"),
+    task_description: str = Query(..., description="任务描述（用户消息）")  # 【小沈修改 2026-03-25】新增参数
 ) -> ReportResponse:
     """
     生成操作报告
+    
+    【小沈修改 2026-03-25】
+    - 去掉 file_operation_sessions 表的依赖
+    - 新增 task_description 参数
     
     - **session_id**: 会话ID
     - **format**: 报告格式
@@ -438,6 +448,7 @@ async def generate_report(
         - json: JSON格式数据
         - html: HTML可视化报告（独立文件）
         - mmd: Mermaid流程图
+    - **task_description**: 任务描述（用户消息）
     
     返回报告内容或下载链接
     """
@@ -445,9 +456,9 @@ async def generate_report(
         visualizer = get_visualizer()
         
         if format == "txt":
-            report_path = visualizer.generate_text_report(session_id)
-            if report_path and Path(report_path).exists():
-                content = Path(report_path).read_text(encoding="utf-8")
+            # 【小沈修改 2026-03-25】传递 task_description
+            content = visualizer.generate_text_report(session_id, task_description)
+            if content:
                 return ReportResponse(
                     success=True,
                     format="txt",
@@ -462,10 +473,14 @@ async def generate_report(
                 )
         
         elif format == "json":
-            report_path = visualizer.generate_json_report(session_id)
-            if report_path and Path(report_path).exists():
+            # 【小沈修改 2026-03-25】传递 task_description
+            content = visualizer.generate_json_report(session_id, task_description)
+            if content:
                 import json
-                data = json.loads(Path(report_path).read_text(encoding="utf-8"))
+                try:
+                    data = json.loads(content)
+                except json.JSONDecodeError:
+                    data = {"raw_content": content}
                 return ReportResponse(
                     success=True,
                     format="json",
@@ -480,14 +495,13 @@ async def generate_report(
                 )
         
         elif format == "html":
-            report_path = visualizer.generate_html_report(session_id)
-            if report_path and Path(report_path).exists():
-                # 返回文件URL（相对于报告目录）
-                relative_path = Path(report_path).name
+            # 【小沈修改 2026-03-25】传递 task_description
+            content = visualizer.generate_html_report(session_id, task_description)
+            if content:
                 return ReportResponse(
                     success=True,
                     format="html",
-                    download_url=f"/static/reports/{relative_path}",
+                    content=content,
                     message="HTML report generated successfully"
                 )
             else:
@@ -498,6 +512,7 @@ async def generate_report(
                 )
         
         elif format == "mmd":
+            # Mermaid报告不需要 task_description
             report_path = visualizer.generate_mermaid_report(session_id)
             if report_path and Path(report_path).exists():
                 content = Path(report_path).read_text(encoding="utf-8")
@@ -636,12 +651,9 @@ async def get_next_page(request: NextPageRequest):
     - next_page_token: 从action_tool响应中获取的令牌
     """
     try:
-        from app.services.file_operations import FileTools
-        from app.services.file_operations.tools import FileOperationTools
-        
-        # 创建 FileTools 实例
-        file_tools = FileTools(session_id=request.task_id)
-        tools = FileOperationTools(file_tools=file_tools)
+        from app.services.agent import FileTools
+        # FileOperationTools 已废弃，直接使用 FileTools
+        tools = FileTools(session_id=request.task_id)
         
         # 调用对应工具的分页方法
         tool_func = getattr(tools, request.tool_name, None)
