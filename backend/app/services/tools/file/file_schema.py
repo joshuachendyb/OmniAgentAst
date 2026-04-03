@@ -72,16 +72,6 @@ class ListDirectoryInput(BaseModel):
         le=50,
         description="最大递归深度，仅当 recursive=True 时有效，默认为10"
     )
-    page_token: Optional[str] = Field(
-        default=None,
-        description="分页令牌，用于获取下一页结果，默认为None"
-    )
-    page_size: int = Field(
-        default=100,
-        ge=1,
-        le=500,
-        description="每页返回数量，默认为100，最大500"
-    )
 
 
 class DeleteFileInput(BaseModel):

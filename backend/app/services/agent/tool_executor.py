@@ -107,7 +107,7 @@ class ToolExecutor:
             "read_file": ["file_path", "offset", "limit", "encoding"],
             "write_file": ["file_path", "content", "encoding"],
             "delete_file": ["file_path", "recursive"],
-            "list_directory": ["dir_path", "recursive", "max_depth", "page_token", "page_size"],
+            "list_directory": ["dir_path", "recursive", "max_depth"],
             "move_file": ["source_path", "destination_path"],
             "search_files": ["file_pattern", "path", "recursive", "max_depth", "max_results", "after"],
             "search_file_content": ["pattern", "path", "file_pattern", "recursive"],
