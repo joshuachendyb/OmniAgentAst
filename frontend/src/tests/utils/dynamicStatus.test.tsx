@@ -173,15 +173,15 @@ describe('DynamicStatusDisplay', () => {
   });
 
   describe('动画测试', () => {
-    it('应该在非 final 状态显示竖线光标', () => {
+    it('应该在非 final 状态显示动画光标', () => {
       const { container } = render(
         <DynamicStatusDisplay executionSteps={[]} isStreaming={true} />
       );
       
-      expect(container.textContent).toContain('|');
+      expect(container.textContent).toContain('▌');
     });
 
-    it('应该在 final 状态不显示竖线光标', () => {
+    it('应该在 final 状态不显示动画光标', () => {
       const { container } = render(
         <DynamicStatusDisplay executionSteps={[{ type: 'final' }]} isStreaming={false} />
       );
