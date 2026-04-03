@@ -1274,57 +1274,61 @@ const isUser = message.role === "user";
               });
             })()}
 
-            {/* 【小新修改 2026-03-18】content 回退逻辑：当没有 chunk 时显示 message.content */}
-            {/* 【小强修改 2026-04-03】删除状态提示部分（已用 DynamicStatusDisplay 替代），只保留 content 回退 */}
-            {(() => {
-              let hasAction = 0;
-              for (const step of (message.executionSteps || [])) {
-                if (step.type === 'action_tool') {
-                  hasAction = 1;
-                  break;
-                }
-                if (step.type === 'chunk') {
-                  hasAction = 0;
-                }
-              }
-              
-              if (hasAction !== 1) {
-                const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
-                const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
-                
-                const hasErrorStep = message.executionSteps?.some(step => {
-                  const content = step.content || '';
-                  return step.type === 'error' || 
-                         content.includes('[错误]') || 
-                         content.includes('429') || 
-                         content.includes('限流');
-                });
-                
-                if (hasErrorStep) {
-                  return false;
-                }
-                
-                if (message.isStreaming) {
-                  return chunks.length === 0;
-                }
-                
-                return !hasFalseReasoning;
-              }
-              
-              return false;
-             })() && (
-              <div
-                style={{
-                  wordBreak: "break-word",
-                  overflowWrap: "break-word",
-                  paddingRight: 32,
-                }}
-              >
-                {message.content && typeof message.content === 'string' 
-                  ? message.content.replace(/\n\n/g, '\n')
-                  : String(message.content || '').replace(/\n\n/g, '\n')}
-              </div>
-            )}
+             {/* 【小新修改 2026-03-18】content 回退逻辑：当没有 chunk 时显示 message.content */}
+             {/* 【小强修改 2026-04-03】跳过 "🤔 AI 正在思考..." 占位文本（已由 DynamicStatusDisplay 处理） */}
+             {(() => {
+               let hasAction = 0;
+               for (const step of (message.executionSteps || [])) {
+                 if (step.type === 'action_tool') {
+                   hasAction = 1;
+                   break;
+                 }
+                 if (step.type === 'chunk') {
+                   hasAction = 0;
+                 }
+               }
+               
+               if (hasAction !== 1) {
+                 const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
+                 const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
+                 
+                 const hasErrorStep = message.executionSteps?.some(step => {
+                   const content = step.content || '';
+                   return step.type === 'error' || 
+                          content.includes('[错误]') || 
+                          content.includes('429') || 
+                          content.includes('限流');
+                 });
+                 
+                 if (hasErrorStep) {
+                   return false;
+                 }
+                 
+                 if (message.isStreaming) {
+                   // 【小强修改】跳过占位文本，由 DynamicStatusDisplay 处理
+                   if (message.content === "🤔 AI 正在思考...") {
+                     return false;
+                   }
+                   return chunks.length === 0;
+                 }
+                 
+                 return !hasFalseReasoning;
+               }
+               
+               return false;
+              })() && (
+               <div
+                 style={{
+                   wordBreak: "break-word",
+                   overflowWrap: "break-word",
+                   paddingRight: 32,
+                 }}
+               >
+                 {message.content && typeof message.content === 'string' 
+                   ? message.content.replace(/\n\n/g, '\n')
+                   : String(message.content || '').replace(/\n\n/g, '\n')}
+               </div>
+             )}
 
             {/* 【小强新增 2026-04-03】动态状态提示：根据 step type 显示对应状态 */}
             {/* 只在 AI 助手消息的气泡底部显示，用户消息不显示 */}

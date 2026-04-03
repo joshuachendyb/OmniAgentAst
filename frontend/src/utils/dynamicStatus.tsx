@@ -94,25 +94,38 @@ export const DynamicStatusDisplay: React.FC<DynamicStatusDisplayProps> = ({
         <style>{`
           @keyframes status-text-breathe {
             0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+            50% { opacity: 0.6; }
           }
-          @keyframes status-cursor-spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+          @keyframes status-cursor-pulse {
+            0%, 100% { 
+              opacity: 1;
+              transform: scaleY(1);
+            }
+            50% { 
+              opacity: 0.3;
+              transform: scaleY(0.6);
+            }
           }
           .status-text {
+            color: #333;
+            font-weight: 500;
             animation: status-text-breathe 1.5s ease-in-out infinite;
+          }
+          .status-timer {
+            color: #666;
+            font-variant-numeric: tabular-nums;
           }
           .status-cursor {
             display: inline-block;
-            animation: status-cursor-spin 1s linear infinite;
-            opacity: 0.7;
+            font-size: 0.85em;
+            color: #1890ff;
+            animation: status-cursor-pulse 1s ease-in-out infinite;
           }
         `}</style>
         <span className="status-text">
           {config.icon} {config.text}{' '}
           <span className="status-timer">{formatTime(elapsedSeconds)}</span>
-          <span className="status-cursor" style={{ marginLeft: '2em' }}>▌</span>
+          <span className="status-cursor" style={{ marginLeft: '2em' }}>|</span>
         </span>
       </div>
     );
