@@ -68,12 +68,13 @@ import { transformSearchFilesData, transformSearchFileContentData } from "../../
 // 【小资修复 2026-03-23】StepRow props：接收全局Map状态
 interface StepRowProps {
   step: ExecutionStep;
+  taskId?: string;
   stepIndex?: number;
   expandedSteps: Map<number, boolean>;
   toggleExpand: (index: number) => void;
 }
 
-const StepRow: React.FC<StepRowProps> = ({ step, stepIndex = 0, expandedSteps, toggleExpand }) => {
+const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expandedSteps, toggleExpand }) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   // 【小资修复 2026-03-23】从全局Map读取展开状态（未设置的key默认展开）
@@ -151,14 +152,14 @@ const StepRow: React.FC<StepRowProps> = ({ step, stepIndex = 0, expandedSteps, t
 
   // 【小新重构 2026-03-09】处理加载更多
   const handleLoadMore = async () => {
-    if (!step.raw_data?.has_more || !step.raw_data?.next_page_token || !message.task_id) {
+    if (!step.raw_data?.has_more || !step.raw_data?.next_page_token || !taskId) {
       return;
     }
     
     setIsLoadingMore(true);
     try {
       const result = await taskControlApi.nextPage(
-        message.task_id,
+        taskId,
         step.tool_name || "",
         step.raw_data.next_page_token
       );
@@ -1247,7 +1248,7 @@ const isUser = message.role === "user";
                 return 0;
               });
               return sortedSteps.map((step, index) => (
-                <StepRow key={`step-${index}`} step={step} stepIndex={index} expandedSteps={expandedSteps} toggleExpand={toggleExpand} />
+                <StepRow key={`step-${index}`} step={step} taskId={message.task_id} stepIndex={index} expandedSteps={expandedSteps} toggleExpand={toggleExpand} />
               ));
             })()}
               
