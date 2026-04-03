@@ -94,7 +94,6 @@ const NewChatContainer: React.FC = () => {
   const waitTimerRef = useRef<number | null>(null);
   const [isRetrying, setIsRetrying] = useState(false);  // ⭐ 新增：重试状态
   const [isPaused, setIsPaused] = useState(false);
-  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string>("新会话");
   const [sessionVersion, setSessionVersion] = useState<number>(1); // ⭐ 新增：会话版本号
@@ -166,8 +165,6 @@ const NewChatContainer: React.FC = () => {
     sendMessage: sendStreamMessage,
     disconnect,
     clearSteps,
-    setTaskId,
-    taskId,
     serverTaskId,
   } = useSSE(
     {
@@ -1525,12 +1522,6 @@ const NewChatContainer: React.FC = () => {
     }, 1000);
     clearSteps();
 
-    // 【修复问题2】生成taskId用于中断功能
-    const taskId = crypto.randomUUID();
-    console.log("🔍 [executeStreamSend] 生成的taskId:", taskId);
-    setCurrentTaskId(taskId);
-    setTaskId(taskId);
-
     // 保存待发送消息到ref（同步）和state（异步）
     pendingMessageRef.current = userMessage; // 同步更新，立即生效 ✅
     setPendingMessage(userMessage);
@@ -1622,8 +1613,8 @@ const NewChatContainer: React.FC = () => {
    * 【小查修复2026-03-14】传递true参数，阻止重连
    */
   const handleInterrupt = async () => {
-    const taskIdToCancel = serverTaskId || taskId;
-    console.log(`[中断] serverTaskId=${serverTaskId}, taskId=${taskId}, taskIdToCancel=${taskIdToCancel}`);
+    const taskIdToCancel = serverTaskId;
+    console.log(`[中断] serverTaskId=${serverTaskId}, taskIdToCancel=${taskIdToCancel}`);
     if (taskIdToCancel) {
       try {
         message.info("正在中断任务...");
