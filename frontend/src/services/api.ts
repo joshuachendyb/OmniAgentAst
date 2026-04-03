@@ -881,6 +881,7 @@ interface ConfirmRequest {
 interface NextPageRequest {
   task_id: string;
   tool_name: string;
+  tool_params?: Record<string, any>;
   next_page_token: string;
 }
 
@@ -969,17 +970,20 @@ export const taskControlApi = {
    * 
    * @param taskId 任务ID
    * @param toolName 工具名称
+   * @param toolParams 工具参数（如 dir_path）
    * @param nextPageToken 分页令牌
    * @returns 分页数据结果
    */
   nextPage: async (
     taskId: string, 
     toolName: string, 
+    toolParams: Record<string, any>,
     nextPageToken: string
   ): Promise<NextPageResponse> => {
     const body: NextPageRequest = {
       task_id: taskId,
       tool_name: toolName,
+      tool_params: toolParams,
       next_page_token: nextPageToken,
     };
     
