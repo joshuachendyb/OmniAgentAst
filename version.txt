@@ -1,3 +1,66 @@
+v0.8.61
+
+更新时间：2026-04-03 13:41:32
+
+更新内容：
+
+## 1. 动态状态提示组件 - 小强-2026-04-03
+
+### 1.1 新增功能
+
+- 根据 executionSteps 动态显示当前 AI 执行状态
+- 支持 8 种状态：waiting/start/thought/action_tool/observation/chunk/final/disconnected
+- 每个状态独立计时（MM:SS 格式，切换自动重置）
+- 4 种动画对比展示：旋转竖线 + 脉冲圆点 + 波浪线 + 三点跳动
+- 竖线字符换回 ▌ + 旋转+脉冲组合动画
+- 文字颜色加深为 #333 + font-weight: 500 加粗
+- 状态从 executionSteps 派生（永不不同步）
+- 组件卸载自动清理计时器
+
+### 1.2 修复问题
+
+- 修复 content 回退逻辑重复显示 "🤔 AI 正在思考..." 的问题
+- 修复 DynamicStatusDisplay 在用户消息中也显示的问题
+- 修复 TypeScript 编译错误（message 未定义、useMemo 未使用、isStreaming 未使用）
+- 修复中断功能：taskId 解构错误、error/incident 不保存到 sessionStorage
+- 修复暂停/继续功能：isPaused 状态未更新、后端返回消息未显示
+
+## 2. start 步骤新增模型信息显示行 - 小强-2026-04-03
+
+- start 步骤新增 provider + model + display_name 信息行
+- 浅蓝色背景 + 蓝色文字，与整体风格一致
+
+## 3. taskId 统一清理 - 小强-2026-04-03
+
+- 删除前端生成的冗余 taskId（crypto.randomUUID()）
+- 统一使用后端返回的 serverTaskId
+- 中断/暂停/恢复全部使用 serverTaskId
+
+## 4. 分页功能修复 - 小强-2026-04-03
+
+- 从 start 步骤获取 task_id（executionSteps.find(s => s.type === 'start')?.task_id）
+- nextPage 方法添加 tool_params 参数
+- 调用时传入 step.tool_params
+
+### 4.1 Commit 汇总
+
+| Commit | 说明 |
+|--------|------|
+| 4705b3e9 | fix: 分页功能修复-nextPage添加tool_params参数-api.ts+MessageItem.tsx-小强-2026-04-03 |
+| e9f7ff9a | fix: 分页功能修复-从start步骤获取task_id-MessageItem.tsx-小强-2026-04-03 |
+| e37671d3 | fix: 暂停/继续功能修复-更新isPaused状态+显示后端返回消息-NewChatContainer.tsx-小强-2026-04-03 |
+| f98e0ee6 | fix: 修复TypeScript编译错误-message未定义+useMemo未使用+isStreaming未使用-MessageItem.tsx+dynamicStatus.tsx-小强-2026-04-03 |
+| d519858d | refactor: 统一taskId为serverTaskId-删除前端生成的冗余taskId-sse.ts+NewChatContainer.tsx+MessageItem.tsx-小强-2026-04-03 |
+| 659386d7 | fix: 中断功能修复-taskId解构+error/incident保存sessionStorage+显示后端返回消息-NewChatContainer.tsx+sse.ts-小强-2026-04-03 |
+| 2dd6f099 | feat: 新增4种动画对比展示-旋转竖线+脉冲圆点+波浪线+三点跳动-dynamicStatus.tsx-小强-2026-04-03 |
+| d49b8577 | fix: 竖线字符换回▌使旋转动画更明显-dynamicStatus.tsx-小强-2026-04-03 |
+| 477d265b | feat: start步骤新增模型信息显示行-provider+model+display_name-MessageItem.tsx-小强-2026-04-03 |
+
+参与开发：小强
+测试验证：334个测试全部通过
+
+---
+
 v0.8.60
 
 更新时间：2026-04-03 10:25:00
