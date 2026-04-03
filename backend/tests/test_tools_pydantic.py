@@ -120,34 +120,22 @@ class TestPydanticModels:
             dir_path="D:/项目代码",
             recursive=True,
             max_depth=5,
-            page_token="abc123",
-            page_size=100
         )
         assert model.dir_path == "D:/项目代码"
         assert model.recursive is True
         assert model.max_depth == 5
-        assert model.page_token == "abc123"
-        assert model.page_size == 100
 
     def test_list_directory_input_defaults(self):
         """PMC008: ListDirectoryInput - 默认值"""
         model = ListDirectoryInput(dir_path="C:/test")
         assert model.recursive is False
         assert model.max_depth == 10
-        assert model.page_token is None
-        assert model.page_size == 100
 
     def test_list_directory_input_max_depth_constraint(self):
         """PMC009: ListDirectoryInput - max_depth约束"""
         # max_depth必须 <= 50
         with pytest.raises(Exception):
             ListDirectoryInput(dir_path="test", max_depth=100)
-
-    def test_list_directory_input_page_size_constraint(self):
-        """PMC010: ListDirectoryInput - page_size约束"""
-        # page_size必须 <= 500
-        with pytest.raises(Exception):
-            ListDirectoryInput(dir_path="test", page_size=1000)
 
     def test_delete_file_input_valid(self):
         """PMC011: DeleteFileInput - 有效参数"""
@@ -341,11 +329,6 @@ class TestToolDefinition:
         max_depth = schema["properties"]["max_depth"]
         assert max_depth.get("minimum") == 1
         assert max_depth.get("maximum") == 50
-        
-        # 检查page_size的约束
-        page_size = schema["properties"]["page_size"]
-        assert page_size.get("minimum") == 1
-        assert page_size.get("maximum") == 500
 
 
 # ============================================================

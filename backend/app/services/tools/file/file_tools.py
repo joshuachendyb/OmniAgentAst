@@ -542,8 +542,6 @@ class FileTools:
 - dir_path: 目录的完整路径（必须是绝对路径，如 D:/项目代码 或 C:/Users/用户名/Documents）
 - recursive: 是否递归列出子目录内容，默认为False（不递归）
 - max_depth: 最大递归深度，仅当 recursive=True 时有效，默认为10
-- page_token: 分页令牌，用于获取下一页结果
-- page_size: 每页返回数量，默认为100
 
 【重要】必须使用 dir_path 作为参数名，不要使用 directory_path、path 或其他名称。
 错误示例: {"directory_path": "..."} 或 {"path": "..."}
@@ -557,14 +555,7 @@ class FileTools:
             {
                 "dir_path": "D:/项目代码",
                 "recursive": True,
-                "max_depth": 3,
-                "page_size": 100
-            },
-            {
-                "dir_path": "C:/Users/用户名/Desktop",
-                "recursive": False,
-                "page_token": None,
-                "page_size": 50
+                "max_depth": 3
             }
         ]
     )
@@ -579,8 +570,6 @@ class FileTools:
         # 工具必须原原本本返回用户需要的结果，不应该限制数量
         # 如果限制数量会丢失真实数据，这是错误的
         # 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
-        # 【修改】用 page_token 替换 after，统一使用位置编码分页
-        page_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """列出目录内容"""
         # 验证路径合法性
@@ -650,25 +639,11 @@ class FileTools:
             
             total = len(all_entries)
             
-            # 分页处理
-            start_idx = 0
-            if page_token:
-                start_idx = decode_page_token(page_token)
-            
-            page_size = min(page_size, MAX_PAGE_SIZE)
-            
-            end_idx = min(start_idx + page_size, total)
-            page_entries = all_entries[start_idx:end_idx]
-            
-            has_more = end_idx < total
-            next_page_token = encode_page_token(end_idx) if has_more else None
-            
+            # 直接返回全部数据，不分页
             return _to_unified_format({
                 "success": True,
-                "entries": page_entries,
+                "entries": all_entries,
                 "total": total,
-                "has_more": has_more,
-                "next_page_token": next_page_token,
                 "directory": str(path)
             }, "list_directory")
             
