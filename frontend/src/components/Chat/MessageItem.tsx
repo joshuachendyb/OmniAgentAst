@@ -1233,10 +1233,12 @@ const isUser = message.role === "user";
            * - chunk：永远不在步骤列表显示（是AI回复内容，在AI回复区域显示）
            * - final：普通对话模式（有chunk）时不显示，ReAct模式时显示
            */}
-          {(() => {
-              const allSteps = message.executionSteps || [];
-              // 判断是否是普通对话模式（有 chunk）
-              const hasChunk = allSteps.some(step => step.type === 'chunk');
+           {(() => {
+               const allSteps = message.executionSteps || [];
+               // 【小强修复 2026-04-03】从 start 步骤获取 task_id（SSE 流式时保存在 executionSteps 中）
+               const taskId = allSteps.find(s => s.type === 'start')?.task_id;
+               // 判断是否是普通对话模式（有 chunk）
+               const hasChunk = allSteps.some(step => step.type === 'chunk');
               // 过滤：普通对话模式下过滤 chunk 和 final
               const filteredSteps = allSteps.filter(step => {
                 if (step.type === 'chunk') return false;
@@ -1248,7 +1250,7 @@ const isUser = message.role === "user";
                 return 0;
               });
               return sortedSteps.map((step, index) => (
-                <StepRow key={`step-${index}`} step={step} taskId={message.task_id} stepIndex={index} expandedSteps={expandedSteps} toggleExpand={toggleExpand} />
+                <StepRow key={`step-${index}`} step={step} taskId={taskId} stepIndex={index} expandedSteps={expandedSteps} toggleExpand={toggleExpand} />
               ));
             })()}
               
