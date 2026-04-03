@@ -465,6 +465,40 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
               <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
               {/* timestamp已移到标题行右侧，此处不再显示 */}
             </div>
+            
+            {/* 【小强新增 2026-04-03】模型信息行：provider + model + display_name */}
+            {(step as any).provider || (step as any).model || (step as any).display_name ? (
+              <div style={{ 
+                marginTop: 4,
+                padding: '6px 10px',
+                borderRadius: 6,
+                background: 'rgba(24,144,255,0.06)',
+                border: '1px solid rgba(24,144,255,0.15)',
+                fontSize: FontSize.SMALL,
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 12,
+              }}>
+                {(step as any).provider && (
+                  <span>
+                    <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>provider：</span>
+                    <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as any).provider}</span>
+                  </span>
+                )}
+                {(step as any).model && (
+                  <span>
+                    <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>model：</span>
+                    <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as any).model}</span>
+                  </span>
+                )}
+                {(step as any).display_name && (
+                  <span>
+                    <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>display_name：</span>
+                    <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as any).display_name}</span>
+                  </span>
+                )}
+              </div>
+            ) : null}
           </div>
         )}
         {step.type === "thought" && (
