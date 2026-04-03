@@ -118,6 +118,36 @@ export const DynamicStatusDisplay: React.FC<DynamicStatusDisplayProps> = ({
               transform: rotate(360deg) scaleY(1);
             }
           }
+          /* 方案A：脉冲圆点 */
+          @keyframes status-dot-pulse {
+            0%, 100% { 
+              opacity: 1;
+              transform: scale(1);
+            }
+            50% { 
+              opacity: 0.4;
+              transform: scale(0.6);
+            }
+          }
+          /* 方案B：波浪线 */
+          @keyframes status-wave {
+            0%, 100% { transform: translateY(0); opacity: 0.6; }
+            25% { transform: translateY(-3px); opacity: 1; }
+            75% { transform: translateY(3px); opacity: 1; }
+          }
+          /* 方案C：三点跳动 */
+          @keyframes status-dot-bounce-1 {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            30% { transform: translateY(-6px); opacity: 1; }
+          }
+          @keyframes status-dot-bounce-2 {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            40% { transform: translateY(-6px); opacity: 1; }
+          }
+          @keyframes status-dot-bounce-3 {
+            0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+            50% { transform: translateY(-6px); opacity: 1; }
+          }
           .status-text {
             color: #333;
             font-weight: 500;
@@ -127,17 +157,64 @@ export const DynamicStatusDisplay: React.FC<DynamicStatusDisplayProps> = ({
             color: #666;
             font-variant-numeric: tabular-nums;
           }
+          /* 旋转竖线 */
           .status-cursor {
             display: inline-block;
             font-size: 0.85em;
             color: #1890ff;
             animation: status-cursor-combo 1.2s ease-in-out infinite;
           }
+          /* 脉冲圆点 */
+          .status-dot-pulse {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #1890ff;
+            animation: status-dot-pulse 1s ease-in-out infinite;
+          }
+          /* 波浪线 */
+          .status-wave {
+            display: inline-block;
+            color: #1890ff;
+            font-weight: bold;
+            animation: status-wave 1s ease-in-out infinite;
+          }
+          /* 三点跳动 */
+          .status-dot-bounce {
+            display: inline-flex;
+            align-items: center;
+            gap: 2px;
+          }
+          .status-dot-bounce span {
+            display: inline-block;
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: #1890ff;
+          }
+          .status-dot-bounce span:nth-child(1) {
+            animation: status-dot-bounce-1 1.4s ease-in-out infinite;
+          }
+          .status-dot-bounce span:nth-child(2) {
+            animation: status-dot-bounce-2 1.4s ease-in-out infinite;
+          }
+          .status-dot-bounce span:nth-child(3) {
+            animation: status-dot-bounce-3 1.4s ease-in-out infinite;
+          }
         `}</style>
         <span className="status-text">
           {config.icon} {config.text}{' '}
           <span className="status-timer">{formatTime(elapsedSeconds)}</span>
-          <span className="status-cursor" style={{ marginLeft: '2em' }}>▌</span>
+          {/* 四种动画对比展示 */}
+          <span style={{ marginLeft: '1em', display: 'inline-flex', alignItems: 'center', gap: '1.5em' }}>
+            <span className="status-cursor">▌</span>
+            <span className="status-dot-pulse" />
+            <span className="status-wave">〜</span>
+            <span className="status-dot-bounce">
+              <span /><span /><span />
+            </span>
+          </span>
         </span>
       </div>
     );
