@@ -74,8 +74,9 @@ interface AppContextType extends AppState {
   // Actions
   refreshSessionCount: () => Promise<void>;
   refreshModelList: () => Promise<void>;
-  refreshServiceStatus: () => Promise<void>;
+  refreshServiceStatus: () => Promise<ValidateResponse | null>;
   refreshAll: () => Promise<void>;
+  refreshAfterModelChange: () => Promise<void>;
   initializeApp: () => Promise<void>;
 }
 
@@ -167,14 +168,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
    * 刷新服务状态
    * @author 小新
    */
-  const refreshServiceStatus = useCallback(async () => {
+  const refreshServiceStatus = useCallback(async (): Promise<ValidateResponse | null> => {
     setServiceStatusLoading(true);
     try {
       const status = await chatApi.validateService();
+      console.log("[refreshServiceStatus] validateService 返回:", status);
       setServiceStatus(status);
+      return status;
     } catch (error) {
       console.warn("刷新服务状态失败:", error);
       setServiceStatus(null);
+      return null;
     } finally {
       setServiceStatusLoading(false);
     }
@@ -187,8 +191,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   const refreshValidation = useCallback(async () => {
     setValidationLoading(true);
     try {
-      const validation = await configApi.validateFullConfig();
-      setValidationResult(validation);
+      // validateConfig 需要 provider 参数，暂时跳过验证
+      // 验证功能在 Settings 页面使用单独的 validateConfig 调用
+      setValidationResult(null);
     } catch (error) {
       console.warn("刷新验证结果失败:", error);
       setValidationResult(null);
@@ -198,7 +203,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   }, []);
 
   /**
-   * 刷新所有数据（组合方法）
+   * 刷新所有数据（并行方法）
    * @author 小新
    */
   const refreshAll = useCallback(async () => {
@@ -209,6 +214,52 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       refreshValidation(),
     ]);
   }, [refreshSessionCount, refreshModelList, refreshServiceStatus, refreshValidation]);
+
+  /**
+   * 串行刷新方法（解决时序问题）
+   * 先验证服务，成功后再刷新列表
+   * 用于切换模型后的状态刷新
+   * @author 小新
+   * @update 2026-03-30 修复：当验证失败时，也应该刷新模型列表，以获取配置文件中的模型
+   * @update 2026-03-30 修复：当验证失败时，从模型列表获取配置文件中的模型信息，并更新 serviceStatus
+   */
+  const refreshAfterModelChange = useCallback(async () => {
+    // 1. 先刷新服务状态（会验证新配置是否有效）
+    const status = await refreshServiceStatus();
+    console.log("[refreshAfterModelChange] status:", status);
+    console.log("[refreshAfterModelChange] status.success:", status?.success);
+    
+    // 2. 无论验证成功还是失败，都应该刷新模型列表
+    // 验证失败时，后端可能回退到原来的配置，但配置文件可能仍显示用户尝试切换的模型
+    await refreshModelList();
+    await refreshSessionCount();
+    
+    // 3. 如果验证失败，从模型列表获取配置文件中的模型信息，并更新 serviceStatus
+    if (!status || !status.success) {
+      console.warn("[refreshAfterModelChange] 模型验证失败，尝试从模型列表获取配置文件中的模型");
+      
+      try {
+        // 直接调用 API 获取最新的模型列表，而不是依赖状态更新
+        const modelData = await configApi.getModelList();
+        if (modelData?.models && Array.isArray(modelData.models)) {
+          // 从模型列表中找 current_model: true 的模型
+          const currentModel = modelData.models.find((m: any) => m.current_model === true);
+          if (currentModel) {
+            console.log("[refreshAfterModelChange] 从 API 获取到当前模型:", currentModel);
+            // 更新 serviceStatus，显示配置文件中的模型
+            setServiceStatus({
+              success: false, // 验证失败
+              provider: currentModel.provider,
+              model: currentModel.model,
+              message: `验证失败，但配置文件中当前模型为: ${currentModel.display_name}`,
+            });
+          }
+        }
+      } catch (error) {
+        console.error("[refreshAfterModelChange] 获取模型列表失败:", error);
+      }
+    }
+  }, [refreshServiceStatus, refreshModelList, refreshSessionCount, setServiceStatus]);
 
   /**
    * 初始化应用（只在首次加载时调用）
@@ -235,52 +286,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
 
     try {
       // 1. 先验证完整配置
-      let validation: ValidationResult;
-      try {
-        validation = await configApi.validateFullConfig();
-        setValidationResult(validation);
-      } catch (err) {
-        console.warn("配置验证失败:", err);
-        validation = {
-          success: false,
-          provider: "",
-          model: "",
-          message: "配置验证接口调用失败",
-          errors: ["配置验证接口调用失败"],
-          warnings: [],
-        };
-        setValidationResult(validation);
-      }
+      // validateConfig 需要 provider 参数，暂时跳过验证
+      setValidationResult(null);
 
-      // 2. 验证成功才获取模型列表
-      if (!validation || !validation.success) {
-        setModelList([]);
-        setServiceStatus(null);
-        setSessionCount(0);
-        setIsInitialized(true);
-        return;
-      }
-
-      // 3. 并行获取模型列表和服务状态
-      const [modelData, status] = await Promise.all([
-        configApi.getModelList(),
-        chatApi.validateService(),
+      // 2. 只获取模型列表和会话数，不调用验证服务（由用户手动点击"检查服务"按钮）
+      await Promise.all([
+        refreshModelList(),
+        refreshSessionCount(),
       ]);
-
-      if (modelData.models) {
-        setModelList(modelData.models);
-      }
-      setServiceStatus(status);
-
-      // 4. 获取会话数量
-      try {
-        const sessionData = await sessionApi.listSessions(1, 1, undefined, true);
-        setSessionCount(sessionData.total);
-      } catch (err) {
-        console.warn("获取会话数量失败:", err);
-        setSessionCount(0);
-      }
-
+      
       setIsInitialized(true);
       console.log("[AppContext] 初始化完成");
     } catch (error) {
@@ -312,6 +326,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     refreshModelList,
     refreshServiceStatus,
     refreshAll,
+    refreshAfterModelChange,
     initializeApp,
   };
 

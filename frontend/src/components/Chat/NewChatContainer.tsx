@@ -27,12 +27,8 @@ import {
   Tooltip,
 } from "antd";
 import {
-  SendOutlined,
   RobotOutlined,
   PlusOutlined,
-  CloseCircleOutlined,
-  PauseCircleOutlined,
-  PlayCircleOutlined,
   ThunderboltOutlined,
   EyeOutlined,
   EyeInvisibleOutlined,
@@ -40,7 +36,7 @@ import {
   LockOutlined,
 } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
-import { sessionApi, API_BASE_URL } from "../../services/api";
+import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
 import { securityApi } from "../../services/api";
 import MessageItem from "./MessageItem";
 import DangerConfirmModal from "../DangerConfirmModal";
@@ -57,20 +53,20 @@ import {
   loadLatestHistoryMessages,
   SESSION_EXPIRY_TIME,
   STORAGE_KEY,
-  DEBUG_LOAD_FROM_API,
 } from "../../utils/chatHistory";
 
 // 【新增 2026-03-13】从独立文件导入日志和消息提示函数
 import { logAIComplete, logUserSend } from "../../utils/chatLogger";
+import { getClientInfo } from "../../utils/clientInfo";  // 【小沈 2026-03-24】获取客户端信息
 import {
-  showSaveSuccess,
   showSaveError,
   showLoadSuccess,
   showNetworkError,
   showSessionConflict,
 } from "../../utils/chatMessages";
 
-const { TextArea } = Input;
+// 【小强修复 2026-03-31】独立输入框组件，隔离inputValue状态避免父组件重渲染
+import ChatInput from "./ChatInput";
 
 // 【小新 2026-03-13 代码拆分】类型和工具函数已提取到独立文件
 // - 类型定义: src/types/chat.ts
@@ -91,7 +87,7 @@ const { TextArea } = Input;
 const NewChatContainer: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputValue, setInputValue] = useState("");
+  // 【小强修复 2026-03-31】inputValue状态已移至ChatInput组件，避免每次按键触发整个组件重渲染
   const [loading, setLoading] = useState(false);
   // ⭐ 新增：等待时间计时器（正计时）
   const [waitTime, setWaitTime] = useState(0);
@@ -117,6 +113,8 @@ const NewChatContainer: React.FC = () => {
   const pendingMessageRef = useRef<Message | null>(null);
   // 【小查修复2026-03-14】添加messagesRef避免visibilitychange useEffect频繁重新注册
   const messagesRef = useRef<Message[]>([]);
+  // 【小新修复 2026-03-16】保存用户消息ID，用于AI消息关联
+  const replyUserMessageIdRef = useRef<number | null>(null);
 
   // ⭐ 暂停功能缓冲区：暂存暂停期间接收的数据
   const displayBufferRef = useRef<any[]>([]);
@@ -135,7 +133,7 @@ const NewChatContainer: React.FC = () => {
   const [dangerScore, setDangerScore] = useState(0);
   const [dangerMessage, setDangerMessage] = useState("");
   const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
-  const [checkingDanger, setCheckingDanger] = useState(false);
+  const [_checkingDanger, setCheckingDanger] = useState(false);
   const [blockedCommand, setBlockedCommand] = useState<{
     command: string;
     score: number;
@@ -211,12 +209,30 @@ const NewChatContainer: React.FC = () => {
               finalDisplay_name = `${step.provider} (${step.model})`;
               console.log("🔍 从model/provider构建display_name:", finalDisplay_name);
             }
+
+            /**
+             * 【小新修改 2026-03-16】
+             * 保存metadata到数据库 - 解决流式数据丢失问题
+             * 
+             * 问题背景：SSE数据保存方案-综合版第18章要求
+             * - 页面切换/刷新时，SSE断开，onComplete不触发，导致数据丢失
+             * - metadata（model/provider/display_name）需要在流式开始时保存
+             * 
+             * 解决方案：
+             * - 后端在流式开始时自动创建assistant消息并保存metadata
+             * - 后续由后端自动保存execution_steps和content
+             * - 前端不再调用saveMessage
+             * 
+             * 修改位置：step.type === "start" 时
+             * 修改原因：saveMessage是INSERT，会创建新消息，后端已自动处理
+             */
+            // 【小新修复 2026-03-16】删除saveMessage调用，由后端自动创建assistant消息
             
             const newAssistantMessage: Message = {
               id: (Date.now() + 1).toString(),
               role: "assistant",
               content: step.content || "🤔 AI 正在思考...",
-              timestamp: new Date(),
+              timestamp: step.timestamp ? new Date(step.timestamp) : new Date(), // 【小沈修复 2026-03-26】使用后端返回的时间戳
               executionSteps: [step],
               isStreaming: true,  // 确保是 true
               model: step.model,
@@ -227,7 +243,7 @@ const NewChatContainer: React.FC = () => {
             console.log("🔍 完整消息对象:", JSON.stringify(newAssistantMessage, null, 2));
             return [...prev, newAssistantMessage];
           } else {
-            // 已有assistant消息，更新display_name
+            // 已有assistant消息，更新display_name和executionSteps
             console.log("🔍 已有assistant消息，更新display_name:", step.display_name || `${step.provider} (${step.model})`, "| isStreaming=", lastMessage.isStreaming);
             // 提取display_name
             const extractedDisplay_name = step.display_name;
@@ -235,13 +251,17 @@ const NewChatContainer: React.FC = () => {
             if (!finalDisplay_name && step.model && step.provider) {
               finalDisplay_name = `${step.provider} (${step.model})`;
             }
-            // 更新最后一条消息的display_name
+            // 更新最后一条消息的display_name和executionSteps
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...lastMessage,
               display_name: finalDisplay_name || lastMessage.display_name,
               model: step.model || lastMessage.model,
               provider: step.provider || lastMessage.provider,
+              // 【小沈修复 2026-03-17】将start步骤添加到executionSteps
+              // 【小沈修复 2026-03-26】同时更新timestamp，使用后端返回的时间戳
+              timestamp: step.timestamp ? new Date(step.timestamp) : lastMessage.timestamp,
+              executionSteps: [...(lastMessage.executionSteps || []), step],
             };
             // 第219行已打印日志，这里不再重复
             return updated;
@@ -336,20 +356,40 @@ const NewChatContainer: React.FC = () => {
           const lastMessage = prev[prev.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
             const updated = [...prev];
+            // 【小强修复 2026-03-18】修复竞争条件导致的final/steps丢失问题
+            // 问题：onStep异步更新message.executionSteps，onComplete可能在其完成前执行，导致覆盖
+            // 解决：优先使用message中已有的executionSteps（如果更长），否则使用SSE传递的
+            const sseSteps = executionStepsFromSSE || executionStepsRef.current || [];
+            const msgSteps = lastMessage.executionSteps || [];
+            // 选择更长的那个，避免覆盖已存在的数据
+            const latestSteps = msgSteps.length >= sseSteps.length ? msgSteps : sseSteps;
+            
+            // 【调试日志】说明：为什么有两个steps数量？
+            // - SSE传递的steps：本次对话实时收到的步骤数量（比如：start → thought → chunk → final）
+            // - message已有的steps：这个消息之前保存的步骤数量（比如：历史会话加载进来的）
+            // - 最终选择：取两者中更多的那个来保存（确保不丢失数据）
+            console.log("📊 [AI回答完成] 正在决定保存哪些步骤数据:");
+            console.log("  ├─ 本次收到的步骤数（实时流式）:", sseSteps.length, "个");
+            console.log("  ├─ 历史已有步骤数:", msgSteps.length, "个");
+            console.log("  └─ 最终保存步骤数:", latestSteps.length, "个", 
+              msgSteps.length >= sseSteps.length ? "← 用了历史的（更多）" : "← 用了本次的（更多）");
+            console.log("  最后5个步骤类型:", latestSteps?.slice(-5).map((s: any) => s.type));
+            
             updated[updated.length - 1] = {
               ...lastMessage,
               content: finalResponse,
               isStreaming: false,
-              is_reasoning: false, // 【小查修复】流式完成后重置为false，确保思考中标签消失
-              isError: isError, // 传递错误标记
-              // 【小新修复 2026-03-14】补充错误字段，与onError保持一致
+              is_reasoning: false,
+              isError: isError,
               errorType: errorType,
               errorCode: errorCode,
               errorMessage: errorMessage,
               model: metadataObj.model || lastMessage.model,
               provider: metadataObj.provider || lastMessage.provider,
               display_name: metadataObj.display_name || lastMessage.display_name,
+              executionSteps: latestSteps,
             };
+            console.log("  └─ ✅ 已更新消息的步骤数量:", latestSteps.length);
             return updated;
           }
           return prev;
@@ -359,7 +399,6 @@ const NewChatContainer: React.FC = () => {
         // 【小沈修复2026-03-03】现在只保存AI回复消息，用户消息已在发送前保存
         // 这样更加健壮，即使AI响应失败，用户消息也已保存
         const currentSessionId = currentSessionIdRef.current || sessionId;
-        const currentPending = pendingMessageRef.current || pendingMessage;
         // 【小查修复 2026-03-14】恢复使用executionStepsFromSSE参数
         // 历史教训：2026-03-12 小沈提交commit 800f0fd27时，将参数从ExecutionStep[]改为{sseData?: {execution_steps?: ExecutionStep[]}}
         // 但调用方sse.ts第716行仍然传递ExecutionStep[]数组，导致类型不匹配
@@ -367,152 +406,75 @@ const NewChatContainer: React.FC = () => {
         // 症状：AI回复完成后刷新页面，"思考"部分的详细内容丢失，只剩下"正在分析任务..."
         // 教训：修改函数签名时必须同步修改所有调用方，不能单方面改变参数结构！
         const stepsFromSSE = executionStepsFromSSE;
-        const stepsToSave = stepsFromSSE || executionStepsRef.current || [];
         if (currentSessionId && finalResponse && finalResponse.trim()) {
           // 🔴 修复：添加详细的调试日志
-          console.log("🔍 保存AI回复:");
-          console.log("  ref中的sessionId:", currentSessionIdRef.current);
-          console.log("  state中的sessionId:", sessionId);
-          console.log("  最终使用的sessionId:", currentSessionId);
-          console.log("  currentPending:", currentPending);
-          console.log("  finalResponse length:", finalResponse.length);
-          console.log("  onComplete参数传递的steps:", stepsFromSSE?.length);
-          console.log("  fallback ref中的steps:", executionStepsRef.current?.length);
+          console.log("💾 [保存AI回复] 正在保存到数据库:");
+          console.log("  ├─ 会话ID:", currentSessionId);
+          console.log("  ├─ 回复长度:", finalResponse.length, "字符");
+          console.log("  ├─ SSE传递的步骤数:", stepsFromSSE?.length, "个");
+          console.log("  └─ ref中的步骤数:", executionStepsRef.current?.length, "个");
 
           try {
-            // 【小新修复 2026-03-11】分开保存：
-            // 1. saveMessage 只保存消息内容（消息已在流式开始时创建）
-            // 2. saveExecutionSteps 更新最后一条消息的 execution_steps
-            // 【小查修复2026-03-14】空响应时也要保存错误字段
-            await sessionApi.saveMessage(currentSessionId, {
-              role: "assistant",
-              content: finalResponse,
-              execution_steps: stepsToSave,
-              // 空响应错误字段
-              is_error: isError || undefined,
-              error_type: errorType,
-              code: errorCode,
-              message: errorMessage,
-            });
-
-            // 保存 execution_steps 到最后一条消息（保留兼容）
-            if (stepsToSave && stepsToSave.length > 0) {
-              await sessionApi.saveExecutionSteps(currentSessionId, stepsToSave);
-              console.log("✅ 执行步骤保存成功，共", stepsToSave.length, "步");
-            }
+            // ═══════════════════════════════════════════════════════════════════════════════
+            // ⭐ 【小沈修复 2026-03-17 前因后果说明】
+            // 问题：AI消息的execution_steps数据丢失（112条→99条）
+            // 根因：前后端重复保存，后端保存的数据被前端覆盖
+            //   1. 后端chat_stream.py在流式结束时自动保存完整数据（112条）
+            //   2. 前端onComplete也调用saveExecutionSteps，传99条覆盖后端数据
+            // 修复：删除前端saveExecutionSteps调用，后端数据自己知道完整数据
+            // 
+            // 【待小强检查确认】2026-03-17:
+            // 1. 确认此修改不影响其他功能（页面切换、刷新等场景）
+            // 2. 确认后端saveExecutionSteps在所有流程中都正确保存了数据
+            // 3. 如有新问题，可考虑恢复前端保存，但需确保不覆盖后端数据
+            // ═══════════════════════════════════════════════════════════════════════════════
+            console.log("✅ [保存AI回复] 后端已自动保存完整数据，前端无需重复保存");
 
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
             // 原因：标题应该在用户修改时立即保存，避免版本冲突
             // 如果需要同步最新数据，应该在用户修改标题时处理
-            console.log("✅ AI回复保存成功");
+            console.log("✅ [保存AI回复] 保存成功！");
           } catch (saveError: any) {
-            console.error("保存AI回复或标题失败:", saveError);
-            console.error("使用的sessionId:", currentSessionId);
+            console.error("❌ [保存AI回复] 保存失败:", saveError?.message || saveError);
+            console.error("   └─ 保存时使用的会话ID:", currentSessionId);
             
             // 【小新修复 2026-03-14】分类处理不同错误类型
             const errorCode = saveError?.response?.status;
             const errorDetail = saveError?.response?.data?.detail;
             
             // 情况1：409版本冲突 - 不重试，直接提示
+            // 情况1：409版本冲突 - 数据被别人改了
             if (errorCode === 409) {
+              console.error("   └─ 错误类型: 版本冲突（409），数据已被其他修改");
               message.error("会话数据冲突，请刷新页面");
               // 尝试从服务器获取最新数据
               try {
                 const sessionData = await sessionApi.getSessionMessages(currentSessionId);
                 if (sessionData.title) setSessionTitle(sessionData.title);
               } catch (syncError) {
-                console.error("同步失败:", syncError);
+                console.error("   └─ 同步最新数据失败:", syncError);
               }
               return;
             }
             
-            // 情况2：业务错误（404会话不存在, 400参数错误等）- 不重试
+            // 情况2：业务错误（404会话不存在, 400参数错误等）
             if (errorCode === 404 || errorCode === 400) {
+              console.error("   └─ 错误类型: 业务错误（", errorCode, "）:", errorDetail);
               message.error(errorDetail || "保存失败，请刷新页面");
               return;
             }
             
-            // 情况3：网络或服务器错误 - 重试
-            let retryCount = 0;
-            const maxRetries = 3;
-
-            const retrySave = async () => {
-              while (retryCount < maxRetries) {
-                retryCount++;
-                message.warning({
-                  content: `保存AI回复失败，正在重试 (${retryCount}/${maxRetries})...`,
-                  duration: 2,
-                });
-                await new Promise(resolve => setTimeout(resolve, 1000));
-
-                try {
-                  // 保存AI回复
-                  await sessionApi.saveMessage(currentSessionId, {
-                    role: "assistant",
-                    content: finalResponse,
-                    // 不传递 message_count，让后端自动处理
-                  });
-
-                  // ⭐ 【小新修复 2026-03-04】重试保存AI回复时也不再调用 ensureTitlePersisted
-                  // 原因：标题应该在用户修改时立即保存，避免版本冲突
-                  showSaveSuccess("AI回复保存成功");
-                  return;
-                  } catch (error: any) {
-                    // 检查是否是409版本冲突
-                   if (error?.response?.status === 409) {
-                     message.error("会话数据冲突，请刷新页面");
-                     break; // 版本冲突不重试
-                   } else if (retryCount === maxRetries) {
-                     message.error({
-                       content: "AI回复保存失败，请刷新页面重试",
-                       duration: 5,
-                     });
-                     // 本地缓存AI回复（防止丢失）
-                     try {
-                       const cacheKey = `unsaved_ai_responses_${currentSessionId}`;
-                       const cached = JSON.parse(
-                         localStorage.getItem(cacheKey) || "[]"
-                       );
-                       //避免重复缓存
-                        const exists = cached.some(
-                         (msg: any) =>
-                           msg.assistant === finalResponse
-                       );
-                       if (!exists) {
-                         cached.push({
-                           assistant: finalResponse,
-                           timestamp: Date.now(),
-                         });
-                         localStorage.setItem(cacheKey, JSON.stringify(cached));
-                         message.info("AI回复已暂存到本地");
-                       }
-                      } catch (cacheError) {
-                        console.error("本地缓存失败:", cacheError);
-                      }
-                      break; // 达到最大重试次数
-                    }
-                  }
-                }
-            };
-            
-            // 【小查修复2026-03-14】重试完成后必须设置loading=false
-            retrySave().finally(() => {
-              setLoading(false);
-              setWaitTime(0);
-              setIsRetrying(false);
-              if (waitTimerRef.current) {
-                clearInterval(waitTimerRef.current);
-                waitTimerRef.current = null;
-              }
-            });
+            // 情况3：网络或服务器错误
+            console.error("   └─ 错误类型: 网络或服务器错误（", errorCode || "unknown", "）");
+            message.error("网络或服务器错误，请检查网络");
           }
         } else {
-          console.warn("⚠️ 无法保存AI回复：缺少sessionId或fullResponse");
-          console.log("  currentSessionId:", currentSessionId);
-          console.log("  fullResponse exists:", !!fullResponse);
+          console.warn("⚠️ [保存AI回复] 跳过保存：缺少必要数据");
+          console.log("   ├─ 会话ID是否为空:", !currentSessionId ? "是（跳过保存）" : "否");
+          console.log("   └─ 回复内容是否为空:", !fullResponse ? "是（跳过保存）" : "否");
         }
 
-         console.log("🔍 [onComplete] SSE流完成，设置loading=false");
+           console.log("📡 [onComplete] AI回答流式传输完成，开始保存数据...");
          
           // ========== 黄色结束标志 ==========
           logAIComplete(fullResponse?.length || 0);
@@ -529,7 +491,7 @@ const NewChatContainer: React.FC = () => {
          // 【小新第三修复 2026-03-02】清理ref和state
          pendingMessageRef.current = null; // 同步清理
          setPendingMessage(null); // 异步清理
-          console.log("✅ [onComplete] 处理完成");
+           console.log("✅ [onComplete] AI回答保存完成！");
         },
        [] // 依赖数组为空，因为使用 ref 而不是 state
      ),
@@ -572,9 +534,14 @@ const NewChatContainer: React.FC = () => {
           // 【小新修改 2026-03-14】移除重复弹框，ErrorDetail 气泡已完整显示错误信息
           // 不再显示 message.error 弹框，避免与 ErrorDetail 重复
 
- setMessages((prev) => {
+  setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
           if (lastMessage && lastMessage.role === "assistant") {
+            // 【小强修复 2026-03-18】修复竞争条件 - 选择更长的executionSteps
+            const refSteps = executionStepsRef.current || [];
+            const msgSteps = lastMessage.executionSteps || [];
+            const latestSteps = msgSteps.length >= refSteps.length ? msgSteps : refSteps;
+            
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...lastMessage,
@@ -582,6 +549,7 @@ const NewChatContainer: React.FC = () => {
               content: errorObj.message,
               isError: true,
               isStreaming: false,
+              executionSteps: latestSteps,
               // 【小查修复2026-03-13】保存完整的error 11个字段
               errorType: errorObj.error_type,      // error_type
               errorCode: errorObj.code,            // code
@@ -597,35 +565,13 @@ const NewChatContainer: React.FC = () => {
             };
             return updated;
           }
-           return prev;
-         });
+         return prev;
+       });
 
-         // 【小查修复2026-03-14】错误消息也需要保存到数据库
-         const currentSessionId = currentSessionIdRef.current || sessionId;
-         if (currentSessionId) {
-            sessionApi.saveMessage(currentSessionId, {
-              role: "assistant",
-              content: errorObj.message,
-              execution_steps: executionStepsRef.current || [],
-              // 使用API文档字段名（snake_case）
-              is_error: true,
-              error_type: errorObj.error_type,
-              code: errorObj.code,
-              message: errorObj.message,
-              details: errorObj.details,
-              stack: errorObj.stack,
-              retryable: errorObj.retryable,
-              retry_after: errorObj.retry_after,
-              timestamp: errorObj.timestamp,
-               // 如果 errorObj 中没有 model/provider，使用消息中已有的值
-               model: errorObj.model || messagesRef.current[messagesRef.current.length - 1]?.model,
-               provider: errorObj.provider || messagesRef.current[messagesRef.current.length - 1]?.provider,
-            }).catch((saveErr) => {
-             console.error("❌ 保存错误消息失败:", saveErr);
-           });
-         }
-
-          console.log("🔍 [onError] 错误处理完成，设置loading=false");
+         // 【小新修复 2026-03-16】删除错误消息saveMessage调用
+         // 后端会在error步骤时自动保存错误信息到execution_steps
+         
+         console.log("🔍 [onError] 错误处理完成，设置loading=false");
         setLoading(false);
         // ⭐ 停止等待计时器
         if (waitTimerRef.current) {
@@ -674,8 +620,19 @@ const NewChatContainer: React.FC = () => {
             return prev;
           });
         } else if (data.type === "step" && data.step) {
-          // 处理 step 类型 - 这里简单处理，实际可能需要更复杂的逻辑
-          console.log("📦 [onResumed] 处理 step 数据:", data.step.type);
+          // 【关键修复】恢复时要把step添加到executionSteps
+          setMessages((prev) => {
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage && lastMessage.role === "assistant" && lastMessage.isStreaming) {
+              const updated = [...prev];
+              updated[updated.length - 1] = {
+                ...lastMessage,
+                executionSteps: [...(lastMessage.executionSteps || []), data.step],
+              };
+              return updated;
+            }
+            return prev;
+          });
         }
       });
       
@@ -733,9 +690,25 @@ const NewChatContainer: React.FC = () => {
 
   // 【小新第二修复 2026-03-02】同步跟踪消息数量，用于保存消息时获取准确的值
   // 【小查修复2026-03-14】同时同步messagesRef，避免visibilitychange useEffect频繁重新注册
+  // 【问题2修复 2026-03-18】当正在接收SSE数据时，持续保存到sessionStorage（页面隐藏期间也能保存）
   useEffect(() => {
     messagesCountRef.current = messages.length;
     messagesRef.current = messages;
+    
+    // 当正在接收SSE数据时，每次messages更新都保存到sessionStorage
+    // 这样即使页面隐藏，也能持续保存最新steps
+    if (isReceiving && sessionId) {
+      const state = {
+        messages: messages,
+        sessionId,
+        sessionTitle,
+        timestamp: Date.now(),
+        scrollPosition: messagesEndRef.current?.parentElement?.scrollTop || 0,
+        isPaused,
+        isReceiving,
+      };
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
   }, [messages]);
 
   // 当页面从隐藏状态变为显示时也自动滚动到底部
@@ -752,19 +725,58 @@ const NewChatContainer: React.FC = () => {
     };
   }, [messages, currentResponse, executionSteps]);
 
-  // 组件卸载前保存状态（用于路由切换场景）
-  // 【小查修复】移除组件卸载时的保存，因为页面隐藏时已经保存，避免重复
+  // 组件卸载前保存状态（用于路由切换/F5刷新/Ctrl+F5强制刷新场景）
+  // 【问题2修复 2026-03-18】增加beforeunload事件监听，刷新时也能保存数据
   useEffect(() => {
+    // beforeunload：页面刷新/关闭前触发
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // 当正在接收SSE数据时，同步保存最新状态
+      if (isReceiving && sessionId) {
+        console.log("💾 [beforeunload] 刷新前保存状态, steps:", executionStepsRef.current.length);
+        
+        // 同步保存最新数据（从executionStepsRef获取最新steps）
+        // 【修复 2026-03-18】使用messagesRef.current获取最新messages，而不是闭包中的messages
+        let messagesToSave = messagesRef.current;
+        if (executionStepsRef.current.length > 0) {
+          messagesToSave = messagesRef.current.map((msg, idx) => {
+            if (msg.role === 'assistant' && msg.isStreaming && idx === messagesRef.current.length - 1) {
+              return {
+                ...msg,
+                executionSteps: executionStepsRef.current,
+              };
+            }
+            return msg;
+          });
+        }
+        
+        const state = {
+          messages: messagesToSave,
+          sessionId,
+          sessionTitle,
+          timestamp: Date.now(),
+          scrollPosition: 0,
+          isPaused,
+          isReceiving,
+        };
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        
+        // 提示浏览器不要关闭（可选）
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    
+    // 添加事件监听
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
     return () => {
-      // 【小新修复 2026-03-14】组件卸载时销毁所有可能残留的message
+      // 销毁可能残留的loading消息
       message.destroy("session-load");
       
-      // 组件卸载时不再单独保存状态
-      // 原因：页面隐藏时会触发saveState，组件卸载前页面必定先隐藏
-      // 如果需要保存，saveState() 会在页面隐藏时被调用
-      console.log(
-        "🔄 组件卸载（页面即将跳转或关闭）"
-      );
+      // 移除事件监听
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      
+      console.log("🔄 组件卸载（页面即将跳转或关闭）");
     };
   }, []);
 
@@ -772,11 +784,49 @@ const NewChatContainer: React.FC = () => {
   // 会话状态持久化
   // ============================================
   
+  // 【小强修复 2026-03-17】保存状态前确保 SSE 数据已处理完成
+  // 问题：页面隐藏时 saveState() 可能还在接收 final 步骤，导致缓存中缺少 final
+  // 修复：在 onComplete 回调中 SSE 完成时立即保存，确保 final 步骤已包含
+  const saveStateWithSSECheck = () => {
+    if (isReceiving) {
+      console.log("⚠️ [saveState] SSE 正在接收数据，延迟保存...");
+      // 延迟 300ms 后再保存，给 SSE 时间处理 final 步骤
+      setTimeout(() => {
+        console.log("⚠️ [saveState] 延迟后执行保存...");
+        saveState();
+      }, 300);
+    } else {
+      // SSE 已完成，直接保存
+      saveState();
+    }
+  };
+  
   const saveState = () => {
-    // 🔴 修复：只要有会话ID就保存，即使消息为空
+    // 【小沈修复 2026-03-17】直接使用 messages 状态，而不是 messagesRef.current
+    // 根因：messagesRef.current 是通过 useEffect 异步同步的，当页面隐藏时可能还没更新完成
+    //      导致 sessionStorage 保存的消息缺少 start 步骤
+    // 修复：直接使用 messages 状态，确保获取最新数据
     if (sessionId) {
+      // 【问题2修复 2026-03-18】当正在接收SSE数据时，messages状态可能是异步更新未完成的
+      // 需要从executionStepsRef获取最新steps并更新到messages中保存
+      // 【修复 2026-03-18】使用messagesRef.current获取最新messages，而不是闭包中的messages
+      let messagesToSave = messagesRef.current;
+      if (isReceiving && executionStepsRef.current.length > 0) {
+        console.log("🔧 [saveState] SSE正在接收，合并最新steps到messages保存:", executionStepsRef.current.length);
+        messagesToSave = messagesRef.current.map((msg, idx) => {
+          // 找到最后一条assistant消息（正在流式输出的）
+          if (msg.role === 'assistant' && msg.isStreaming && idx === messagesRef.current.length - 1) {
+            return {
+              ...msg,
+              executionSteps: executionStepsRef.current,
+            };
+          }
+          return msg;
+        });
+      }
+      
       const state = {
-        messages,
+        messages: messagesToSave,  // ← 使用合并后的messages
         sessionId,
         sessionTitle,
         timestamp: Date.now(),
@@ -786,7 +836,12 @@ const NewChatContainer: React.FC = () => {
         isReceiving,
       };
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      console.log("💾 保存会话状态:", sessionId, sessionTitle, { isPaused, isReceiving });
+      console.log("💾 保存会话状态:", sessionId, sessionTitle, { 
+        messageCount: messagesToSave.length,
+        isPaused, 
+        isReceiving,
+        latestStepsCount: executionStepsRef.current.length,
+      });
     }
   };
 
@@ -799,6 +854,7 @@ const NewChatContainer: React.FC = () => {
         const currentTime = Date.now();
         const savedTime = state.timestamp || 0;
         const timeDiff = currentTime - savedTime;
+              console.log("🕒 距离上次保存: " + (timeDiff/1000).toFixed(1) + "秒", "| 过期时间: 5分钟");
 
         // 只恢复5分钟内的状态
         if (timeDiff > SESSION_EXPIRY_TIME) {
@@ -869,14 +925,44 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        // 页面隐藏时：保存当前状态并断开SSE连接
-        saveState();
-        // 断开SSE连接，避免后台持续消耗资源
-        if (isReceiving) {
-          disconnect();
-          console.log("🔌 页面隐藏，断开SSE连接");
-        }
+        /**
+         * 【小新修改 2026-03-16】
+         * 页面隐藏时保存数据 - 解决SSE断开导致数据丢失问题
+         * 
+         * 问题背景：
+         * - 页面切换（最小化/切换标签页）时，SSE可能断开，onComplete不触发
+         * - 导致execution_steps和content丢失
+         * 
+         * 解决方案：
+         * 1. 保存到sessionStorage
+         * 2. 不断开SSE连接，让fetch自然进行
+         * 
+         * 【小强修复 2026-03-18】删除数据库保存，因为sessionStorage已经足够
+         * 
+         * 注意：页面刷新（F5/Ctrl+F5）由beforeunload处理（见第726行）
+         */
+        
+        // 保存到sessionStorage（带 SSE 检查）
+        saveStateWithSSECheck();
+        
+        // 不断开SSE连接，让fetch自然进行
+        //   disconnect();
+        // }
       } else {
+        /**
+         * 【小新修改 2026-03-16】
+         * 页面恢复时强制从sessionStorage恢复 - 解决Debug模式下数据丢失问题
+         * 
+         * 问题背景：
+         * - 第971行有 `!DEBUG_LOAD_FROM_API` 判断
+         * - Debug模式开启时（DEBUG_LOAD_FROM_API = true），不会从sessionStorage恢复
+         * - 直接从API加载，导致页面隐藏时的数据丢失
+         * 
+         * 解决方案：
+         * - 移除 `!DEBUG_LOAD_FROM_API` 检查
+         * - 强制从sessionStorage恢复，确保数据不丢失
+         * - 只有在sessionStorage无效时才从API加载
+         */
         // 页面重新可见时：不再重新请求API，避免覆盖当前消息
         // 改为从sessionStorage恢复状态，如果缓存有效的话
         
@@ -887,8 +973,9 @@ const NewChatContainer: React.FC = () => {
         const urlSessionId = new URLSearchParams(window.location.search).get(
           "session_id"
         );
-        if (urlSessionId && urlSessionId === sessionId && !DEBUG_LOAD_FROM_API) {
-          // 先尝试从缓存恢复
+        // 修复：移除 !DEBUG_LOAD_FROM_API 检查，强制从sessionStorage恢复
+        if (urlSessionId && urlSessionId === sessionId) {
+          // 先尝试从缓存恢复（忽略Debug模式检查）
           const saved = sessionStorage.getItem(STORAGE_KEY);
           if (saved) {
             try {
@@ -896,10 +983,15 @@ const NewChatContainer: React.FC = () => {
               const currentTime = Date.now();
               const savedTime = state.timestamp || 0;
               const timeDiff = currentTime - savedTime;
+        console.log("🕒 距离上次保存: " + (timeDiff/1000).toFixed(1) + "秒", "| 过期时间: 5分钟");
               
               // 缓存有效（5分钟内），且当前有消息，则恢复缓存状态
               if (timeDiff <= SESSION_EXPIRY_TIME && state.messages && state.messages.length > 0) {
-                console.log("🔄 从缓存恢复会话状态，消息数:", state.messages.length);
+                console.log("🔄 从缓存恢复会话状态，消息数:", state.messages.length, "isReceiving:", state.isReceiving);
+                
+                // 【问题2修复 2026-03-18】如果页面隐藏时SSE还在接收数据（state.isReceiving=true）
+                // sessionStorage保存的可能不是最新steps，需要从API获取最新数据
+                // 正常恢复（页面隐藏时SSE已完成）
                 setMessages(state.messages);
                 if (state.sessionTitle) {
                   setSessionTitle(state.sessionTitle);
@@ -997,13 +1089,9 @@ const NewChatContainer: React.FC = () => {
   }, [sessionId, sessionTitle, messages, isInitialized]);
 
   // 全局快捷键 - 前端小新代修改 UX-G02: 全局快捷键
+  // 【小强修复 2026-03-31】Ctrl+Enter快捷键已移至ChatInput组件内部处理
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + Enter 发送消息
-      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
-        e.preventDefault();
-        handleSend();
-      }
       // Ctrl/Cmd + K 清空对话
       if ((e.ctrlKey || e.metaKey) && e.key === "k") {
         e.preventDefault();
@@ -1020,7 +1108,7 @@ const NewChatContainer: React.FC = () => {
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [inputValue, loading]);
+  }, []);
 
   // ============================================
   // 网络连接检查
@@ -1207,6 +1295,17 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     const loadSession = async () => {
       const urlSessionId = searchParams.get("session_id");
+
+      // 检测是否是强制刷新（Ctrl+F5或Cmd+Shift+R）
+      // 使用最新的PerformanceNavigationTiming API（Navigation Timing Level 2标准）
+      // 兼容性：Chrome/Edge/Firefox/Safari均支持（2021年10月起Baseline）
+      const navigationEntry = performance.getEntriesByType("navigation")?.[0] as PerformanceNavigationTiming | undefined;
+      const isReload = navigationEntry?.type === "reload";
+      
+      if (isReload) {
+        console.log("🔄 检测到刷新操作，清除sessionStorage缓存");
+        sessionStorage.removeItem(STORAGE_KEY);
+      }
 
       // 🔴 修复1: URL参数绝对优先 - 清除旧的sessionStorage
       if (urlSessionId) {
@@ -1431,19 +1530,6 @@ const NewChatContainer: React.FC = () => {
     setCurrentTaskId(taskId);
     setTaskId(taskId);
 
-    // 【关键修复】先创建assistant消息占位，设置isStreaming=true
-    const assistantMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: "assistant",
-      content: "🤔 AI 正在思考...", // 【修复问题 2】显示占位文本，避免空白气泡
-      timestamp: new Date(),
-      executionSteps: [],
-      isStreaming: true,
-      model: undefined, // 前端小新代修改：明确设置可选属性
-    };
-    console.log("🔍 [executeStreamSend] 创建assistant占位消息:", assistantMessage);
-    setMessages((prev) => [...prev, assistantMessage]);
-
     // 保存待发送消息到ref（同步）和state（异步）
     pendingMessageRef.current = userMessage; // 同步更新，立即生效 ✅
     setPendingMessage(userMessage);
@@ -1453,14 +1539,46 @@ const NewChatContainer: React.FC = () => {
     const currentSessionId = currentSessionIdRef.current || sessionId;
     console.log("🔍 [executeStreamSend] 使用的sessionId:", currentSessionId);
     
+    let backendUserMessageId: number | null = null;
+    
     if (currentSessionId) {
       try {
+        // 【小沈 2026-03-24】获取客户端信息
+        const clientInfo = getClientInfo();
+        console.log("🔍 客户端信息:", clientInfo);
+        
         console.log("🔍 在调用AI之前先保存用户消息:", userMessage);
-        await sessionApi.saveMessage(currentSessionId, {
+        const saveResult = await sessionApi.saveMessage(currentSessionId, {
           role: "user",
           content: userMessage.content,
+          // 【小沈 2026-03-24】传递客户端信息
+          client_os: clientInfo.client_os,
+          browser: clientInfo.browser,
+          device: clientInfo.device,
+          network: clientInfo.network,
         });
-        console.log("✅ 用户消息保存成功");
+        // 保存用户消息ID，用于AI消息关联
+        backendUserMessageId = saveResult?.message_id || null;
+        replyUserMessageIdRef.current = backendUserMessageId;
+        
+        // 【关键修复】用后端返回的ID更新用户消息ID
+        if (backendUserMessageId) {
+          setMessages((prev) => {
+            const newMessages = [...prev];
+            // 找到用户消息，用后端ID更新
+            const userMsgIndex = newMessages.findIndex(m => m.id === userMessage.id);
+            if (userMsgIndex !== -1) {
+              newMessages[userMsgIndex] = {
+                ...newMessages[userMsgIndex],
+                id: backendUserMessageId!.toString()
+              };
+              console.log("✅ 用户消息ID已更新:", backendUserMessageId);
+            }
+            return newMessages;
+          });
+        }
+        
+        console.log("✅ 用户消息保存成功, message_id:", saveResult?.message_id);
       } catch (error) {
         console.error("❌ 保存用户消息失败:", error);
         message.error("用户消息保存失败，但AI请求将继续发送");
@@ -1468,6 +1586,26 @@ const NewChatContainer: React.FC = () => {
     } else {
       console.warn("⚠️ 未找到sessionId，无法保存用户消息:", userMessage.id);
     }
+
+    // 【关键修复】用后端返回的message_id生成assistant消息ID（后端逻辑：user_id + 1 = assistant_id）
+    const assistantId = backendUserMessageId 
+      ? (backendUserMessageId + 1).toString() 
+      : (Date.now() + 1).toString();
+    console.log("🔍 assistant消息ID:", assistantId, "(后端ID:", backendUserMessageId, "+1)");
+
+    // 【关键修复】用后端返回的ID创建assistant消息
+    // 【小沈修复 2026-03-26】timestamp会在SSE回调的onStep中更新为后端返回的正确时间戳
+    const assistantMessage: Message = {
+      id: assistantId,
+      role: "assistant",
+      content: "🤔 AI 正在思考...", // 【修复问题 2】显示占位文本，避免空白气泡
+      timestamp: new Date(), // 临时值，会被onStep回调中的正确时间戳覆盖
+      executionSteps: [],
+      isStreaming: true,
+      model: undefined, // 前端小新代修改：明确设置可选属性
+    };
+    console.log("🔍 [executeStreamSend] 创建assistant占位消息:", assistantMessage);
+    setMessages((prev) => [...prev, assistantMessage]);
 
     console.log("🔍 [executeStreamSend] 准备调用sendStreamMessage...");
     console.log("  content:", userMessage.content);
@@ -1484,26 +1622,28 @@ const NewChatContainer: React.FC = () => {
    */
   const handleInterrupt = async () => {
     const taskIdToCancel = serverTaskId || currentTaskId;
+    console.log(`[中断] serverTaskId=${serverTaskId}, currentTaskId=${currentTaskId}, taskIdToCancel=${taskIdToCancel}`);
     if (taskIdToCancel) {
       try {
         message.info("正在中断任务...");
+        console.log("[中断] 已显示 '正在中断任务...' 提示");
         
         // ✅ 先断开连接，停止自动重连！传递true表示手动中断
         disconnect(true);
+        console.log("[中断] 已调用 disconnect(true)");
         
-        // 【小查修复2026-03-14】传递session_id参数，阻止5分钟内重连（按API文档要求）
-        const cancelUrl = sessionId 
-          ? `${API_BASE_URL}/chat/stream/cancel/${taskIdToCancel}?session_id=${sessionId}`
-          : `${API_BASE_URL}/chat/stream/cancel/${taskIdToCancel}`;
-        
-        await fetch(cancelUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
+        // 使用统一的 taskControlApi
+        const result = await taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined);
+        console.log("[中断] cancel API 返回:", result);
         message.success("任务中断请求已发送");
+        console.log("[中断] 已显示 '任务中断请求已发送' 提示");
       } catch (error) {
-        message.error("发送中断请求失败: " + (error as Error).message);
+        console.error("[中断] 错误:", error);
+        message.error("发送中断请求失败: " + (error instanceof Error ? error.message : String(error)));
       }
+    } else {
+      console.warn("[中断] 没有有效的 taskId，无法中断");
+      message.warning("当前没有进行中的任务");
     }
   };
 
@@ -1517,50 +1657,37 @@ const NewChatContainer: React.FC = () => {
     }
 
     try {
-      // 【小查修复2026-03-14】按API文档要求传递session_id参数
-      const sessionParam = sessionId ? `?session_id=${sessionId}` : '';
-      
       if (!isPaused) {
         // 暂停：发送暂停请求
-        const response = await fetch(
-          `${API_BASE_URL}/chat/stream/pause/${serverTaskId}${sessionParam}`,
-          { method: "POST" }
-        );
-        if (response.ok) {
-          console.log("⏸️ 已发送暂停请求");
-        } else {
-          message.error("暂停请求失败");
-        }
+        await taskControlApi.pause(serverTaskId ?? undefined, sessionId ?? undefined);
+        console.log("⏸️ 已发送暂停请求");
       } else {
         // 继续：发送恢复请求
-        const response = await fetch(
-          `${API_BASE_URL}/chat/stream/resume/${serverTaskId}${sessionParam}`,
-          { method: "POST" }
-        );
-        if (response.ok) {
-          console.log("▶️ 已发送恢复请求");
-        } else {
-          message.error("恢复请求失败");
-        }
+        await taskControlApi.resume(serverTaskId ?? undefined, sessionId ?? undefined);
+        console.log("▶️ 已发送恢复请求");
       }
     } catch (error) {
       console.error("❌ 暂停/继续请求失败:", error);
-      message.error("暂停/继续请求失败: " + (error as Error).message);
+      message.error("暂停/继续请求失败: " + (error instanceof Error ? error.message : String(error)));
     }
   };
 
   /**
    * 发送消息（带安全检测v2.0）
-    */
-   const handleSend = async () => {
-     console.log("🔍 [handleSend] 函数开始执行");
-     console.log("  inputValue:", inputValue);
-     console.log("  loading:", loading);
-     
-     if (!inputValue.trim() || loading) return;
+   * 【小强修复 2026-03-31】改为接收messageContent参数，不再依赖inputValue状态
+   */
+  const handleSend = async (messageContent: string) => {
+      console.log("🔍 [handleSend] 函数开始执行");
+      console.log("  messageContent:", messageContent);
+      console.log("  loading:", loading);
+      
+      if (!messageContent.trim() || loading) return;
 
-     // 🔴 修复：添加输入长度限制和验证
-     if (inputValue.trim().length > 5000) {
+      // 【小新修复 2026-03-16】删除hasSavedStartMessageRef，不再需要防止重复保存
+      // 后端已自动处理assistant消息创建
+      
+      // 🔴 修复：添加输入长度限制和验证
+     if (messageContent.trim().length > 5000) {
        message.warning("消息过长，请精简到5000字符以内");
        return;
      }
@@ -1591,7 +1718,7 @@ const NewChatContainer: React.FC = () => {
     if (!currentSessionId) {
       try {
         const newSession = await sessionApi.createSession(
-          inputValue.trim().substring(0, 50)
+          messageContent.trim().substring(0, 50)
         );
         currentSessionId = newSession.session_id;
         setSessionId(currentSessionId);
@@ -1612,12 +1739,11 @@ const NewChatContainer: React.FC = () => {
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: inputValue.trim(),
+      content: messageContent.trim(),
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setInputValue("");
     setBlockedCommand(null);
 
     // ========== 红色开始标志 ==========
@@ -2090,7 +2216,12 @@ const NewChatContainer: React.FC = () => {
                       width: "100%",
                     }}
                   >
-                    <MessageItem message={item} showExecution={showExecution} />
+                    <MessageItem 
+                      message={item} 
+                      showExecution={showExecution}
+                      sessionId={sessionId}
+                      sessionTitle={sessionTitle}
+                    />
                   </List.Item>
                 );
               }
@@ -2102,76 +2233,19 @@ const NewChatContainer: React.FC = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 输入区域 */}
-      <Space direction="vertical" style={{ width: "100%" }}>
-        {/* ⭐ 等待时间显示（正计时） */}
-        {loading && waitTime > 0 && (
-          <div style={{ marginTop: 8, marginBottom: 4 }}>
-            <Tag color={waitTime > 30 ? "error" : waitTime > 15 ? "warning" : "processing"}>
-              {isRetrying ? "🔄 正在重试..." : `⏱️ 已等待 ${waitTime} 秒`}
-            </Tag>
-          </div>
-        )}
-        {/* 中断和暂停按钮 */}
-        {loading && (
-          <Space style={{ marginTop: 8, marginBottom: 8 }}>
-            <Button
-              danger
-              icon={<CloseCircleOutlined />}
-              onClick={handleInterrupt}
-            >
-              中断
-            </Button>
-            <Button
-              icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
-              onClick={handleTogglePause}
-            >
-              {isPaused ? "继续" : "暂停"}
-            </Button>
-          </Space>
-        )}
-        <TextArea
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          placeholder={
-            useStream
-              ? "输入消息... (流式模式可实时查看思考过程)"
-              : "输入消息..."
-          }
-          autoSize={{ minRows: 2, maxRows: 4 }}
-          onPressEnter={(e) => {
-            if (!e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          disabled={loading || isReceiving}
-          style={{
-            borderColor: '#a8a8a8', // 加深输入框边框颜色
-            boxShadow: 'none',
-          }}
-        />
-        <Button
-          type="primary"
-          icon={<SendOutlined />}
-          onClick={handleSend}
-          loading={loading || isReceiving || checkingDanger}
-          disabled={!inputValue.trim()}
-          block
-          style={{
-            backgroundColor: !inputValue.trim() ? '#e6e6e6' : '#0066cc', // disabled 时加深，active 时柔和蓝
-            borderColor: !inputValue.trim() ? '#d0d0d0' : '#0066cc',
-            color: !inputValue.trim() ? 'rgba(0,0,0,0.4)' : '#fff',
-            fontWeight: 500,
-          }}
-        >
-          {isReceiving
-            ? "接收中..."
-            : checkingDanger
-            ? "安全检查中..."
-            : "发送消息"}
-        </Button>
-      </Space>
+      {/* 输入区域 - 【小强修复 2026-03-31】使用独立ChatInput组件隔离inputValue状态 */}
+      <ChatInput
+        loading={loading}
+        isReceiving={isReceiving}
+        isPaused={isPaused}
+        isRetrying={isRetrying}
+        waitTime={waitTime}
+        useStream={useStream}
+        checkingDanger={_checkingDanger}
+        onSend={handleSend}
+        onInterrupt={handleInterrupt}
+        onTogglePause={handleTogglePause}
+      />
 
       {/* 被拦截的命令警告 */}
       {blockedCommand && (

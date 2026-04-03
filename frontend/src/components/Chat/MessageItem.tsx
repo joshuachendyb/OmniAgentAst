@@ -14,8 +14,6 @@ import {
   Tooltip,
   Button,
   message as antMessage,
-  Collapse,
-  Space,
 } from "antd";
 import {
   UserOutlined,
@@ -23,52 +21,136 @@ import {
   InfoCircleOutlined,
   CopyOutlined,
   CheckOutlined,
-  ThunderboltOutlined,
-  LoadingOutlined,
   DownloadOutlined,
 } from "@ant-design/icons";
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
 import { taskControlApi } from "../../services/api";
+import { formatTimestamp } from "../../utils/timestamp";
+import { DynamicStatusDisplay } from "../../utils/dynamicStatus";
 import { } from "../../utils/markdown";
 import ErrorDetail from "./ErrorDetail";
+import { 
+  getStepStyle, 
+  getStepTitleStyle,
+  getStepContentStyle,
+  getStepLabelStyle,
+  getStepBadgeStyle,
+  getTimestampStyle,
+  getNextStepStyle,
+  getStatusBadgeStyle,
+  getFinishedBadgeStyle,
+  FontSize,
+  FontWeight,
+  Colors,
+  type StepType 
+} from "../../utils/stepStyles";
+
+// 【小强实现 2026-03-24】阶段3：导入7个工具视图组件
+import ListDirectoryView from "./views/ListDirectoryView";
+import ReadFileView from "./views/ReadFileView";
+import WriteFileView from "./views/WriteFileView";
+import DeleteFileView from "./views/DeleteFileView";
+import MoveFileView from "./views/MoveFileView";
+import SearchFilesView from "./views/SearchFilesView";
+import SearchFileContentView from "./views/SearchFileContentView";
+import GenerateReportView from "./views/GenerateReportView";
+import JsonHighlight from "./views/JsonHighlight";
+// 【小强实现 2026-03-31】导入搜索工具数据转换函数
+import { transformSearchFilesData, transformSearchFileContentData } from "../../utils/searchTransformers";
 
 /**
  * 步骤行组件 - 单行步骤显示（优化后新增）
  * 思考和执行分开渲染，用颜色区分类型
- * 【小新重构2026-03-09】添加分页支持
+ * 【小强优化 2026-03-18】UX 视觉升级：渐变徽章、柔和背景、精致阴影
+ * 【小新重构 2026-03-09】添加分页支持
  */
-const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, taskId }) => {
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  
-  const colorMap: Record<string, string> = {
-    thought: "#faad14",
-    action_tool: "#1890ff",
-    observation: "#52c41a",
-    final: "#52c41a",
-    error: "#cf1322",
-    paused: "#fa8c16",
-    resumed: "#52c41a",
-    interrupted: "#cf1322",
-    retrying: "#1890ff",
-  };
+// 【小资修复 2026-03-23】StepRow props：接收全局Map状态
+interface StepRowProps {
+  step: ExecutionStep;
+  taskId?: string;
+  stepIndex?: number;
+  expandedSteps: Map<number, boolean>;
+  toggleExpand: (index: number) => void;
+}
 
+const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expandedSteps, toggleExpand }) => {
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // 【小资修复 2026-03-23】从全局Map读取展开状态（未设置的key默认展开）
+  const isExpanded = expandedSteps.get(stepIndex) ?? true;
+  
   const labelMap: Record<string, string> = {
-    thought: "思考",
-    action_tool: "工具",
-    observation: "结果",
-    final: "答案",
+    start: "开始",
+    thought: "分析",
+    action_tool: "执行",
+    observation: "检查",
+    final: "总结",
     error: "错误",
     paused: "暂停",
     resumed: "恢复",
     interrupted: "中断",
     retrying: "重试",
+    incident: "事件",  // incident默认标签
   };
 
-  const color = colorMap[step.type] || "#666";
-  const label = labelMap[step.type] || "步骤";
+  const iconMap: Record<string, string> = {
+    start: "🚀",
+    thought: "💭",
+    action_tool: "⚙️",
+    observation: "🔍",
+    final: "✅",
+    error: "❌",
+    paused: "⏸️",
+    resumed: "▶️",
+    interrupted: "⚠️",
+    retrying: "🔄",
+    incident: "⚡",  // incident默认图标
+  };
 
-  // 【小新重构2026-03-09】处理加载更多
+  // 【小沈修复 2026-03-28】处理incident类型：优先使用incident_value，否则用type
+  const effectiveType = step.type === 'incident' ? (step as any).incident_value || 'incident' : step.type;
+  const label = labelMap[effectiveType] || labelMap[step.type] || "步骤";
+  const icon = iconMap[effectiveType] || iconMap[step.type] || "";
+  
+  // 【小强优化 2026-03-18】步骤编号颜色随类型变化 - 使用stepStyles的函数
+  const badgeStyle = getStepBadgeStyle(effectiveType as StepType);
+  const labelStyle = getStepLabelStyle(effectiveType as StepType);
+
+  // 【小强优化 2026-03-18】内容区域样式
+  const getContentStyle = () => {
+    const baseStyle: React.CSSProperties = {
+      color: "#333",
+      wordBreak: "break-word",
+      fontSize: 13,
+      lineHeight: 1.8,
+      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
+    };
+    return baseStyle;
+  };
+
+
+
+  // 【小强优化 2026-03-18】文件列表背景
+  const getFileListBackground = () => {
+    return {
+      background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
+      border: "1px solid #b7eb8f",
+      borderRadius: 8,
+      padding: "10px 14px",
+      marginTop: 6,
+      fontSize: "0.9em",
+      lineHeight: 1.8,
+      whiteSpace: "pre-wrap",
+      maxHeight: 300,
+      overflow: "auto",
+      boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
+    };
+  };
+
+
+
+  // 【小新重构 2026-03-09】处理加载更多
   const handleLoadMore = async () => {
     if (!step.raw_data?.has_more || !step.raw_data?.next_page_token || !taskId) {
       return;
@@ -97,37 +179,129 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
   const hasMore = step.raw_data?.has_more === true && !!step.raw_data?.next_page_token;
 
   return (
-    <div style={{ marginBottom: 4, marginRight: 30 }}>
-      <span style={{ color, fontWeight: 500, marginRight: 8 }}>
-        {label}：
-      </span>
-      <span style={{ color: "#333", wordBreak: "break-word" }}>
+    <div style={{ 
+      marginBottom: 8, 
+      marginRight: 30,
+      padding: "8px 12px",
+      borderRadius: 8,
+      background: "rgba(0,0,0,0.02)",
+      transition: "all 0.2s ease",
+    }}
+    onMouseEnter={(e) => {
+      e.currentTarget.style.background = "rgba(0,0,0,0.04)";
+      e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
+    }}
+    onMouseLeave={(e) => {
+      e.currentTarget.style.background = "rgba(0,0,0,0.02)";
+      e.currentTarget.style.boxShadow = "none";
+    }}
+    >
+        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+        {/* 【小强优化 2026-03-18】步骤编号徽章 */}
+        {step.step && (
+          <span style={badgeStyle}>
+            步骤{step.step}
+          </span>
+        )}
+        {/* 【小强优化 2026-03-18】标签带图标 */}
+        <span style={labelStyle}>
+          {icon} {label}：
+        </span>
+        <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
+        {/* timestamp放在行右侧，与右侧边框挨着，更醒目 */}
+        {step.timestamp && (
+          <span style={getTimestampStyle("action_tool")}>
+            ⏰ {formatTimestamp(step.timestamp)}
+          </span>
+        )}
+      </div>
+      <div style={{ ...getContentStyle(), marginTop: 4, marginLeft: 66 }}>
         {step.type === "action_tool" && (
           <>
             {step.action_description || step.tool_name || "执行中..."}
             {step.tool_params && (
-              <span style={{ color: "#999", marginLeft: 8, fontSize: 12 }}>
-              参数：{JSON.stringify(step.tool_params)}
-              </span>
-            )}
-            {/* 【小新重构2026-03-09】显示分页信息 */}
-            {step.raw_data && (
-              <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
-                {step.raw_data.total && (
-                  <span style={{ marginRight: 12 }}>
-                    共 {step.raw_data.total} 个项目
+              <div>
+                {/* 默认显示1行 */}
+                <div 
+                  onClick={() => toggleExpand(stepIndex + 1000)} // +1000避免和文件列表折叠冲突
+                  style={{ 
+                    marginTop: 6, 
+                    fontSize: 12, 
+                    color: "#666",
+                    background: "#e6f7ff", // action_tool的bg1颜色，保持一致性
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+                    lineHeight: 1.6,
+                    whiteSpace: expandedSteps.get(stepIndex + 1000) ? "pre-wrap" : "nowrap",
+                    overflow: "hidden",
+                    textOverflow: expandedSteps.get(stepIndex + 1000) ? "clip" : "ellipsis",
+                    cursor: "pointer",
+                    maxHeight: expandedSteps.get(stepIndex + 1000) ? "none" : "36px",
+                  }}
+                >
+                  <JsonHighlight data={step.tool_params} isExpanded={!!expandedSteps.get(stepIndex + 1000)} />
+                  <span style={{ 
+                    marginLeft: 8, 
+                    color: "#1890ff", 
+                    fontSize: 11,
+                    fontWeight: 500,
+                  }}>
+                    {expandedSteps.get(stepIndex + 1000) ? "▲ 收起" : "▼ 展开"}
                   </span>
-                )}
+                </div>
+              </div>
+            )}
+            {/* 【小强实现 2026-03-23】阶段4任务1：isRecursive判断逻辑 */}
+            {(() => {
+                return (
+                  <div style={{ marginTop: 8 }}>
+                    {/* 【小强修改 2026-03-24】折叠功能已移到 ListDirectoryView 内部，这里不再显示 */}
+                     {/* 【小强实现 2026-03-24】阶段3：使用 renderToolResult 渲染工具结果视图 */}
+                    {/* 【小沈修改 2026-03-24】传递 isExpanded 参数，让 ListDirectoryView 内部控制列表折叠 */}
+                    {/* 【小强修改 2026-03-24】传递 toggleExpand 和 stepIndex，用于 list_directory 折叠按钮 */}
+                    {renderToolResult(step, isExpanded, toggleExpand, stepIndex)}
+                  </div>
+               );
+            })()}
+            {/* 【小新重构 2026-03-09】显示分页信息 */}
+            {/* 【小沈修复 2026-03-24】对于list_directory，总数由ListDirectoryView内部显示，避免重复 */}
+            {step.raw_data && step.tool_name !== "list_directory" && (
+              <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                {/* 【小沈删除 2026-03-30】用户要求删除"📊 共 XX 个项目"显示 */}
                 {hasMore && (
                   <span 
                     onClick={handleLoadMore}
                     style={{ 
-                      cursor: "pointer", 
+                      cursor: isLoadingMore ? "not-allowed" : "pointer", 
                       color: isLoadingMore ? "#999" : "#1890ff",
-                      textDecoration: "underline"
+                      textDecoration: isLoadingMore ? "none" : "underline",
+                      fontWeight: 500,
+                      transition: "all 0.2s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!isLoadingMore) {
+                        e.currentTarget.style.color = "#096dd9";
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = isLoadingMore ? "#999" : "#1890ff";
                     }}
                   >
-                    {isLoadingMore ? "加载中..." : "加载更多"}
+                    {isLoadingMore ? "⏳ 加载中..." : "📄 加载更多"}
+                  </span>
+                )}
+              </div>
+            )}
+            {/* 【小沈优化 2026-03-30】显示execution_status和summary - 使用徽章样式 */}
+            {(step as any).execution_status && (
+              <div style={{ marginTop: 6, fontSize: 12 }}>
+                <span style={getStatusBadgeStyle((step as any).execution_status === "success" ? "success" : "error")}>
+                  📊 状态：{(step as any).execution_status}
+                </span>
+                {(step as any).summary && (
+                  <span style={{ color: "#666", marginLeft: 8 }}>
+                    | 摘要：{(step as any).summary}
                   </span>
                 )}
               </div>
@@ -136,66 +310,348 @@ const StepRow: React.FC<{ step: ExecutionStep; taskId?: string }> = ({ step, tas
         )}
         {step.type === "observation" && (
           <>
-            {/* 显示 Agent 的思考过程 */}
-            {step.thought && (
-              <div style={{ color: "#888", fontStyle: "italic", marginBottom: 4, fontSize: "0.95em" }}>
-                💭 {step.thought}
+            {/* 【小沈优化 2026-03-30】按文档优化：content + timestamp */}
+            {/* 【小强修复 2026-03-31】删除内容框内重复的标题行和时间戳，标题行已在StepRow外层显示 */}
+            {(step.content || (step as any).obs_reasoning || step.reasoning) && (
+              <div style={{ 
+                ...getStepStyle("observation" as StepType),
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+              }}>
+                {/* 观察内容 - 优先显示obs_reasoning/reasoning，其次显示content */}
+                <div>
+                  <span style={getStepContentStyle("observation" as StepType, "primary")}>
+                    {(step as any).obs_reasoning || step.reasoning || step.content}
+                  </span>
+                </div>
               </div>
             )}
-            {/* 显示执行结果 */}
-            {(() => {
-              const obsResult = step.observation?.result;
-              const hasEntries = obsResult?.entries && Array.isArray(obsResult.entries);
-              
-              return (
-                <div>
-                  {/* 文件列表框框 */}
-                  {hasEntries && (
-                    <div style={{ 
-                      background: "#f5f5f5", 
-                      borderRadius: 6, 
-                      padding: "8px 12px", 
-                      marginBottom: 8,
-                      fontSize: "0.9em",
-                      whiteSpace: "pre-wrap",
-                      maxHeight: 300,
-                      overflow: "auto"
-                    }}>
-                      {obsResult.entries.map((entry: any) => 
-                        `${entry.type === "directory" ? "📁" : "📄"} ${entry.name}`
-                      ).join("\n")}
+            {/* 显示执行结果 - 只有当没有 content 时才显示 */}
+            {!step.content && (
+              <div>
+                {/* 【小沈修正 2026-03-23】文件列表框框 - 使用 step.obs_raw_data（和SSE后端字段名一致） */}
+                {(() => {
+                  const obsRawData = step.obs_raw_data;
+                  const hasEntries = obsRawData?.entries && Array.isArray(obsRawData.entries);
+                  const entryCount = hasEntries ? obsRawData.entries.length : 0;
+                  
+                  return (
+                    <div>
+                      {hasEntries && (
+                        <div>
+                          {/* 折叠按钮和文件计数 */}
+                          <div style={{ marginBottom: 6 }}>
+                            <span 
+                              onClick={() => toggleExpand(stepIndex)}
+                              style={{ 
+                                cursor: "pointer", 
+                                color: "#52c41a",
+                                fontSize: 12,
+                                fontWeight: 500,
+                              }}
+                            >
+                              {isExpanded ? "▼ 收起" : "▶ 展开"} 文件列表 
+                              ({entryCount}个)
+                            </span>
+                          </div>
+                          {/* 文件列表内容 */}
+                          {isExpanded && obsRawData?.entries && (
+                            <div style={getFileListBackground()}>
+                              {obsRawData.entries.map((entry: any, idx: number) => (
+                                <React.Fragment key={`obs-entry-${idx}`}>
+                                  <div style={{ 
+                                    padding: "4px 0",
+                                    borderBottom: idx < obsRawData.entries.length - 1 ? "1px solid #e8e8e8" : "none",
+                                  }}>
+                                    {entry.type === "directory" ? "📁" : "📄"} {entry.name}
+                                  </div>
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {/* 【小强优化 2026-03-24】summary 始终显示 */}
+                      {typeof step.obs_summary === "string" && step.obs_summary && (
+                        <div style={{ marginTop: 6, color: "#666", fontSize: 12 }}>
+                          📊 {step.obs_summary}
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {/* summary 字符串 */}
-                  {typeof step.result === "string" && (
-                    <div>{step.result}</div>
-                  )}
+                  );
+                })()}
+              </div>
+            )}
+            {/* 信息区域：下一步、参数、结束标志 */}
+            <div style={{
+              marginTop: 6,
+              padding: '8px 12px',
+              borderRadius: 6,
+              background: 'linear-gradient(135deg, rgba(82,196,26,0.08) 0%, rgba(56,158,13,0.08) 100%)',
+              border: '1px solid rgba(115,209,61,0.3)',
+            }}>
+              {/* 【小沈优化 2026-03-30】显示下一步action_tool */}
+              {(step as any).obs_action_tool && (
+                <div style={getNextStepStyle("observation")}>
+                  <span style={{ fontWeight: FontWeight.MEDIUM }}>⬇️ 下一步：{(step as any).obs_action_tool}</span>
                 </div>
-              );
-            })()}
+              )}
+              {/* 【小沈优化 2026-03-30】显示params - 用JsonHighlight格式化 */}
+              {(step as any).obs_params && Object.keys((step as any).obs_params).length > 0 && (
+                <div style={{ 
+                  marginTop: 4, 
+                  fontSize: 12, 
+                  background: "#e6ffed", // observation的bg1颜色，保持一致性
+                  padding: "6px 10px",
+                  borderRadius: 4,
+                }}>
+                  <JsonHighlight data={(step as any).obs_params} isExpanded={true} />
+                </div>
+              )}
+              {/* 显示is_finished - 使用徽章样式 */}
+              {step.is_finished === true && (
+                <div style={{ marginTop: 6 }}>
+                  <span style={getFinishedBadgeStyle()}>
+                    ✅ 结束
+                  </span>
+                </div>
+              )}
+            </div>
           </>
         )}
-        {step.type === "thought" && (step.thinking_prompt || step.content || "")}
-        {/* 【小查修复2026-03-10】添加status类型渲染 */}
-        {["paused", "resumed", "interrupted", "retrying"].includes(step.type) && (
-          <span style={{ 
-            color: colorMap[step.type] || "#666", 
-            fontWeight: 500,
-            padding: "4px 8px",
-            borderRadius: 4,
-            background: `${colorMap[step.type] || "#666"}15`,
-          }}>
-            {labelMap[step.type] || "状态"}: {step.content || step.message || ""}
-          </span>
+        {step.type === "start" && (
+          <div style={getStepStyle("start" as StepType)}>
+            {/* 【小强修复 2026-03-31】删除内容框内重复的标题行和时间戳，标题行已在StepRow外层显示 */}
+            {/* 【小强修复 2026-03-31】恢复用户消息显示功能 */}
+            <div style={getStepTitleStyle("start" as StepType)}>
+              🚀 用户消息：{(step as any).user_message || "(无)"}
+            </div>
+            {/* 详细信息行：任务ID、安全检查 */}
+            <div style={{ 
+              ...getStepContentStyle("start" as StepType, "secondary"),
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 8,
+            }}>
+              <span style={{ marginRight: 16 }}>
+                <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>任务ID：</span>
+                <span style={getStepBadgeStyle("start")}>
+                  {step.task_id || "无"}
+                </span>
+              </span>
+              
+              {step.security_check && (
+                <span style={{ marginRight: 16 }}>
+                  <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>安全：</span>
+                  <span style={{ 
+                    color: step.security_check.is_safe ? Colors.SUCCESS : Colors.ERROR,
+                    fontWeight: FontWeight.BOLD,
+                    backgroundColor: step.security_check.is_safe ? "rgba(82,196,26,0.1)" : "rgba(255,77,79,0.1)",
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    fontSize: FontSize.SMALL,
+                  }}>
+                    {step.security_check.is_safe ? "✅ 通过" : "⚠️ 拦截"}
+                  </span>
+                  {!step.security_check.is_safe && step.security_check.risk && (
+                    <span style={{ color: Colors.ERROR, marginLeft: 6, fontSize: FontSize.TERTIARY }}>
+                      ({step.security_check.risk})
+                    </span>
+                  )}
+                </span>
+              )}
+              
+              <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
+              {/* timestamp已移到标题行右侧，此处不再显示 */}
+            </div>
+            
+            {/* 【小强新增 2026-04-03】模型信息行：provider + model + display_name */}
+            {(step as any).provider || (step as any).model || (step as any).display_name ? (
+              <div style={{ 
+                marginTop: 4,
+                padding: '6px 10px',
+                borderRadius: 6,
+                background: 'rgba(24,144,255,0.06)',
+                border: '1px solid rgba(24,144,255,0.15)',
+                fontSize: FontSize.SMALL,
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: 12,
+              }}>
+                {(step as any).provider && (
+                  <span>
+                    <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>provider：</span>
+                    <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as any).provider}</span>
+                  </span>
+                )}
+                {(step as any).model && (
+                  <span>
+                    <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>model：</span>
+                    <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as any).model}</span>
+                  </span>
+                )}
+                {(step as any).display_name && (
+                  <span>
+                    <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>display_name：</span>
+                    <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as any).display_name}</span>
+                  </span>
+                )}
+              </div>
+            ) : null}
+          </div>
         )}
-        {step.type === "final" && (step.content || "")}
-        {step.type === "error" && (step.error_message || "")}
-      </span>
+        {step.type === "thought" && (
+          <div style={{ 
+            ...getStepStyle("thought" as StepType),
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}>
+            {/* 【小强修复 2026-03-31】删除内容框内重复的标题行和时间戳，标题行已在StepRow外层显示 */}
+            {/* 思考内容 */}
+            <div>
+              <span style={getStepContentStyle("thought" as StepType, "primary")}>
+                {step.reasoning || step.content || ""}
+              </span>
+            </div>
+            
+            {/* 信息区域：下一步、参数 */}
+            <div style={{
+              marginTop: 6,
+              padding: '8px 12px',
+              borderRadius: 6,
+              background: 'linear-gradient(135deg, rgba(250,173,20,0.08) 0%, rgba(212,136,6,0.08) 100%)',
+              border: '1px solid rgba(255,213,145,0.3)',
+            }}>
+              {/* 显示下一步action_tool */}
+              {(step as any).action_tool && (
+                <div style={getNextStepStyle("thought")}>
+                  <span style={{ fontWeight: FontWeight.MEDIUM }}>⬇️ 下一步：{(step as any).action_tool}</span>
+                </div>
+              )}
+              {/* 显示params - 使用JsonHighlight组件统一格式 */}
+              {(step as any).params && Object.keys((step as any).params).length > 0 && (
+                <div style={{ 
+                  marginTop: 4, 
+                  fontSize: 12, 
+                  background: "#fff7e6", // thought的bg1颜色，保持一致性
+                  padding: "6px 10px",
+                  borderRadius: 4,
+                }}>
+                  <JsonHighlight data={(step as any).params} isExpanded={true} />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        {step.type === "final" && (
+          <div style={getStepStyle("final" as StepType)}>
+            <span style={getStepContentStyle("final" as StepType, "primary")}>
+              {step.content || ""}
+            </span>
+          </div>
+        )}
+        {step.type === "error" && (
+          <ErrorDetail
+            errorType={(step as any).error_type}
+            errorMessage={step.error_message || (step as any).message}
+            errorTimestamp={typeof step.timestamp === 'number' ? new Date(step.timestamp).toISOString() : String(step.timestamp)}
+            errorDetails={(step as any).details}
+            errorStack={(step as any).stack}
+            errorRetryable={(step as any).retryable}
+            errorRetryAfter={(step as any).retry_after}
+            model={(step as any).model}
+            provider={(step as any).provider}
+          />
+        )}
+        {/* 【小沈修复 2026-03-28】后端type固定为'incident'，通过incident_value区分，需要同时处理新旧两种格式 */}
+        {(step.type === "interrupted" || (step.type === "incident" && (step as any).incident_value === "interrupted")) && (
+          <div style={getStepStyle("interrupted" as StepType)}>
+            <span style={getStepContentStyle("interrupted" as StepType, "primary")}>
+              {step.content || "客户端断开连接，任务中断"}
+            </span>
+          </div>
+        )}
+        {(step.type === "paused" || (step.type === "incident" && (step as any).incident_value === "paused")) && (
+          <div style={getStepStyle("paused" as StepType)}>
+            <span style={getStepContentStyle("paused" as StepType, "primary")}>
+              {step.content || "任务已暂停，可恢复继续"}
+            </span>
+          </div>
+        )}
+        {(step.type === "resumed" || (step.type === "incident" && (step as any).incident_value === "resumed")) && (
+          <div style={getStepStyle("resumed" as StepType)}>
+            <span style={getStepContentStyle("resumed" as StepType, "primary")}>
+              {step.content || "任务已恢复"}
+            </span>
+          </div>
+        )}
+        {(step.type === "retrying" || (step.type === "incident" && (step as any).incident_value === "retrying")) && (
+          <div style={getStepStyle("retrying" as StepType)}>
+            <span style={getStepContentStyle("retrying" as StepType, "primary")}>
+              {step.content || "正在重试..."}
+            </span>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
 
-const { Panel } = Collapse;
+/**
+ * 【小强实现 2026-03-24】阶段3：renderToolResult 分支函数
+ * 根据 tool_name 渲染不同的工具结果视图组件
+ * 【小沈修改 2026-03-24】添加 isExpanded 参数，让 ListDirectoryView 内部控制列表折叠
+ * 【小强修改 2026-03-24】添加 toggleExpand 和 stepIndex 参数，用于 list_directory 折叠功能
+ */
+const renderToolResult = (step: ExecutionStep, isExpanded: boolean = true, toggleExpand?: (index: number) => void, stepIndex?: number) => {
+  // 从 raw_data 中获取 data
+  const data = (step as any).raw_data?.data || (step as any).raw_data;
+  if (!data) return null;
+
+  // 【小强修复 2026-03-24】处理可能的 undefined
+  const handleToggle = toggleExpand && stepIndex !== undefined ? () => toggleExpand(stepIndex) : undefined;
+
+  // 根据 tool_name 分支处理
+  switch (step.tool_name) {
+    case "list_directory":
+      return <ListDirectoryView data={data} toolParams={step.tool_params} isExpanded={isExpanded} onToggle={handleToggle} />;
+    case "read_file":
+      return <ReadFileView data={data} />;
+    case "write_file":
+      return <WriteFileView data={data} />;
+    case "delete_file":
+      return <DeleteFileView data={data} />;
+    case "move_file":
+      return <MoveFileView data={data} />;
+    case "search_files": {
+      // 【小强实现 2026-03-31】使用转换函数处理后端数据
+      const transformedSearchFilesData = transformSearchFilesData(data);
+      return <SearchFilesView data={transformedSearchFilesData} />;
+    }
+    case "search_file_content": {
+      // 【小强实现 2026-03-31】使用转换函数处理后端数据
+      const transformedSearchFileContentData = transformSearchFileContentData(data);
+      return <SearchFileContentView data={transformedSearchFileContentData} />;
+    }
+    case "generate_report":
+      return <GenerateReportView data={data} isExpanded={isExpanded} onToggle={handleToggle} />;
+    default:
+      // 未知工具，显示原始JSON
+      return (
+        <pre style={{
+          background: "#f5f5f5",
+          padding: "10px",
+          borderRadius: 4,
+          fontSize: 12,
+          maxHeight: 300,
+          overflow: "auto",
+        }}>
+          {JSON.stringify(data, null, 2)}
+        </pre>
+      );
+  }
+};
 
 interface MessageItemProps {
   message: ChatMessage & {
@@ -220,6 +676,8 @@ interface MessageItemProps {
     errorTimestamp?: string;  // timestamp
   };
   showExecution?: boolean;
+  sessionId?: string | null;  // 【小强添加 2026-03-23】会话ID，用于导出
+  sessionTitle?: string | null;  // 【小强添加 2026-03-23】会话标题，用于导出
 }
 
 /**
@@ -237,8 +695,21 @@ interface MessageItemProps {
 const MessageItem: React.FC<MessageItemProps> = ({
   message,
   showExecution: _showExecution = false,
+  sessionId,
+  sessionTitle,
 }) => {
   const [copied, setCopied] = useState(false);
+  // 【小强修复 2026-03-23】使用Map存储每个步骤的展开状态，支持多步骤独立折叠
+  const [expandedSteps, setExpandedSteps] = useState<Map<number, boolean>>(new Map([[0, true]]));
+
+  // 【小强修复 2026-03-23】切换展开状态
+  const toggleExpand = (index: number) => {
+    setExpandedSteps(prev => {
+      const newMap = new Map(prev);
+      newMap.set(index, !newMap.get(index));
+      return newMap;
+    });
+  };
 
   /**
    * 复制消息内容
@@ -260,7 +731,12 @@ const MessageItem: React.FC<MessageItemProps> = ({
    * - 有执行步骤：导出JSON格式（包含所有8种type的完整字段）
    * - 是错误消息：导出JSON格式（包含完整error信息）
    * - 是incident消息：导出JSON格式（包含完整incident信息）
-   * 8种type: start, thought, action_tool, observation, chunk, final, error, incident
+   * 
+   * 【重要】8种type说明：
+   * - 内容步骤：start（开始）、chunk（AI回复内容片段）、final（最终回答）
+   *   【chunk是AI流式输出的内容片段，不是执行步骤，显示在AI回复区域，不在步骤列表】
+   * - 执行步骤：thought（思考）、action_tool（工具调用）、observation（工具结果）
+   * - 异常步骤：error（错误）、incident（中断）
    */
   const handleExport = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -272,35 +748,35 @@ const MessageItem: React.FC<MessageItemProps> = ({
       
       let blob: Blob;
       let filename: string;
-      
+       
       // 统一的导出数据结构
       const exportData: Record<string, any> = {
-        timestamp: new Date().toLocaleString("zh-CN"),
+        sessionId: sessionId || undefined,  // 【小强添加 2026-03-23】会话ID
+        sessionTitle: sessionTitle || undefined,  // 【小强添加 2026-03-23】会话标题
+        timestamp: formatTimestamp(message.timestamp instanceof Date ? message.timestamp.getTime() : message.timestamp),
         messageId: message.id,
         role: message.role,
         content: message.content,
       };
       
-      // 检查是否包含incident类型的步骤（incident对应的是interrupted/paused/resumed/retrying）
+      // 检查是否包含incident类型的步骤（后端type固定为'incident'，通过incident_value区分具体类型）
       const hasIncident = hasSteps && message.executionSteps?.some(
-        (step) => step.type === 'interrupted' || step.type === 'paused' || 
-                  step.type === 'resumed' || step.type === 'retrying'
+        (step) => step.type === 'incident'
       );
       
       if (hasIncident) {
-        // 【小查修复2026-03-13】包含incident类型：导出JSON格式（包含完整的incident字段）
+        // 【小沈修复2026-03-28】后端type固定为'incident'，通过incident_value区分具体类型
         exportData.incidentSteps = message.executionSteps?.filter(
-          (step) => step.type === 'interrupted' || step.type === 'paused' || 
-                    step.type === 'resumed' || step.type === 'retrying'
+          (step) => step.type === 'incident'
         ).map(step => ({
-          type: step.type,
-          incident_value: (step as any).incident_value || step.content,
-          message: step.content,
-          timestamp: (step as any).timestamp,
+          type: (step as any).incident_value || 'incident',  // 使用incident_value作为type
+          incident_value: (step as any).incident_value,
+          message: step.content || (step as any).message,
+          timestamp: formatTimestamp((step as any).timestamp),
           wait_time: (step as any).wait_time,
         }));
       }
-      
+       
       if (isError) {
         // 错误消息：导出JSON格式（使用API文档字段名）
         exportData.error = {
@@ -312,11 +788,15 @@ const MessageItem: React.FC<MessageItemProps> = ({
           stack: message.errorStack,
           retryable: message.errorRetryable,
           retry_after: message.errorRetryAfter,
-          timestamp: message.errorTimestamp,
+          timestamp: formatTimestamp(message.errorTimestamp),
           model: message.model,
           provider: message.provider,
         };
-        exportData.executionSteps = message.executionSteps;
+        // 【小强修复 2026-03-17】executionSteps 也要转换 timestamp
+        exportData.executionSteps = message.executionSteps?.map(step => ({
+          ...step,
+          timestamp: formatTimestamp(step.timestamp),
+        }));
         filename = `error_${message.id}_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
       } else if (hasSteps) {
         // 有执行步骤：导出JSON格式（包含所有8种type的完整字段）
@@ -325,7 +805,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           const baseExport: Record<string, any> = {
             type: step.type,
             content: step.content,
-            timestamp: step.timestamp,
+            timestamp: formatTimestamp(step.timestamp),  // 转换为可读格式
           };
           
           // 根据不同type添加对应字段
@@ -335,25 +815,55 @@ const MessageItem: React.FC<MessageItemProps> = ({
             case 'action_tool':
               return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, action_retry_count: step.action_retry_count };
             case 'observation':
-              return { ...baseExport, step: step.step, obs_execution_status: (step as any).obs_execution_status, obs_summary: (step as any).obs_summary, obs_raw_data: (step as any).obs_raw_data, is_finished: step.is_finished };
+              // 【小沈修正 2026-03-23】导出字段名必须和SSE后端定义一模一样（带obs_前缀）
+              return { ...baseExport, step: step.step, obs_execution_status: step.obs_execution_status, obs_summary: step.obs_summary, obs_raw_data: step.obs_raw_data, content: step.content, obs_reasoning: step.obs_reasoning, obs_action_tool: step.obs_action_tool, obs_params: step.obs_params, is_finished: step.is_finished };
             case 'chunk':
-              return { ...baseExport, is_reasoning: step.is_reasoning };
+              return { ...baseExport, step: step.step, is_reasoning: step.is_reasoning };
             case 'final':
-              return baseExport;
+              // 【小强修复 2026-03-18】添加 step 字段
+              return { 
+                ...baseExport, 
+                step: step.step,
+                display_name: step.display_name,
+                model: step.model,
+                provider: step.provider
+              };
             case 'error':
-              return { ...baseExport, code: (step as any).code, error_type: (step as any).error_type, details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider };
+              // 【小强修复 2026-03-18】添加 step 字段
+              return { ...baseExport, step: step.step, code: (step as any).code, error_type: (step as any).error_type, details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider };
             case 'interrupted':
             case 'paused':
             case 'resumed':
             case 'retrying':
-              return { ...baseExport, incident_value: (step as any).incident_value || step.type, wait_time: (step as any).wait_time };
+              // 【小强修复 2026-03-18】添加 step 字段
+              return { ...baseExport, step: step.step, incident_value: (step as any).incident_value || step.type, wait_time: (step as any).wait_time };
+            case 'incident':
+              // 【小沈修复 2026-03-28】后端type固定为'incident'，通过incident_value区分具体类型
+              return { 
+                ...baseExport, 
+                step: step.step, 
+                type: (step as any).incident_value || 'incident',  // 导出时还原为具体类型
+                incident_value: (step as any).incident_value,
+                message: step.content || (step as any).message,
+                wait_time: (step as any).wait_time 
+              };
             case 'start':
-              return { ...baseExport, task_id: step.task_id };
+              // 【小强修复 2026-03-18】添加 step 字段
+              return { 
+                ...baseExport, 
+                task_id: step.task_id, 
+                step: step.step,
+                security_check: step.security_check,
+                user_message: step.user_message,
+                display_name: step.display_name,
+                model: step.model,
+                provider: step.provider
+              };
             default:
               return baseExport;
           }
         });
-        filename = `execution_steps_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
+        filename = `execution_steps_${new Date().toLocaleString("zh-CN").replace(/[/:]/g, "-").replace(/ /g, "T")}.json`;
       } else {
         // 无执行步骤：导出TXT格式
         const content = message.content || "";
@@ -590,16 +1100,6 @@ const MessageItem: React.FC<MessageItemProps> = ({
 const isUser = message.role === "user";
   const isSystem = message.role === "system";
 
-  // 判断是否有执行步骤（action_tool/observation）
-  const hasExecution = message.executionSteps?.some(
-    step => step.type === "action_tool" || step.type === "observation"
-  ) ?? false;
-
-  // 【小查修复2026-03-10】判断是否有status类型步骤
-  const hasStatus = message.executionSteps?.some(
-    step => ["paused", "resumed", "interrupted", "retrying"].includes(step.type)
-  ) ?? false;
-
   return (
     <div
       style={{
@@ -727,90 +1227,32 @@ const isUser = message.role === "user";
             />
           </Tooltip>
 
-          {/* 优化后的消息气泡结构 - 按照文档6.6.5节：按时间顺序线性渲染 */}
           <>
-            {/* 1. 思考步骤 - 直接显示在最前面，不折叠 */}
-            {message.executionSteps
-              ?.filter(step => step.type === "thought")
-              .map((step, index) => (
-                <StepRow key={`thought-${index}`} step={step} taskId={message.task_id} />
-              ))}
-
-            {/* 【小新重构2026-03-09】按 action_tool 分组，每组一个折叠面板 */}
-            {/* 【小查修复2026-03-10】兼容旧类型 action */}
-            {hasExecution && message.role === "assistant" && (
-              <div>
-                {(() => {
-                  const actionObservationSteps = message.executionSteps?.filter(
-                    step => step.type === "action_tool" || step.type === "observation"
-                  ) || [];
-                  
-                  // 将 action_tool 和后续的 observation 分组
-                  const groups: ExecutionStep[][] = [];
-                  let currentGroup: ExecutionStep[] = [];
-                  
-                  for (const step of actionObservationSteps) {
-                    if (step.type === "action_tool") {
-                      // 如果当前组有内容，先保存
-                      if (currentGroup.length > 0) {
-                        groups.push(currentGroup);
-                      }
-                      // 开始新组
-                      currentGroup = [step];
-                    } else if (step.type === "observation") {
-                      // observation 加入当前组
-                      currentGroup.push(step);
-                    }
-                  }
-                  // 保存最后一个组
-                  if (currentGroup.length > 0) {
-                    groups.push(currentGroup);
-                  }
-                   
-                  // 渲染每个组（折叠面板）
-                  return groups.map((group, groupIndex) => {
-                    return (
-                    <Collapse
-                      key={`execution-${groupIndex}-${group.length}`}
-                      defaultActiveKey={
-                        message.isStreaming ?? false ? [`execution-${groupIndex}`] : []
-                      }
-                      size="small"
-                      style={{ marginBottom: 8 }}
-                    >
-                      <Panel
-                        header={
-                          <Space>
-                            <ThunderboltOutlined />
-                            <span>执行详情 {groupIndex + 1}</span>
-                            {(message.isStreaming ?? false) && groupIndex === groups.length - 1 && <LoadingOutlined />}
-                          </Space>
-                        }
-                        key={`execution-${groupIndex}`}
-                      >
-                        {group.map((step, stepIndex) => (
-                          <StepRow key={stepIndex} step={step} taskId={message.task_id} />
-                        ))}
-                      </Panel>
-                    </Collapse>
-                    );
-                  });
-                })()}
-              </div>
-            )}
-
-            {/* 【小查修复2026-03-10】渲染status类型步骤 */}
-            {hasStatus && (
-              <div style={{ marginBottom: 8 }}>
-                {message.executionSteps
-                  ?.filter(step => ["paused", "resumed", "interrupted", "retrying"].includes(step.type))
-                  .map((step, index) => (
-                    <StepRow key={`status-${index}`} step={step} taskId={message.task_id} />
-                  ))}
-              </div>
-            )}
-
-            {/* 【小新修复】在推理过程中显示"💭 思考中:"标签，推理完成后自动隐藏 */}
+          {/* 【小强简化2026-03-18】按step顺序显示 - 用StepRow渲染 */}
+          {/* 【重要】过滤逻辑：
+           * - chunk：永远不在步骤列表显示（是AI回复内容，在AI回复区域显示）
+           * - final：普通对话模式（有chunk）时不显示，ReAct模式时显示
+           */}
+          {(() => {
+              const allSteps = message.executionSteps || [];
+              // 判断是否是普通对话模式（有 chunk）
+              const hasChunk = allSteps.some(step => step.type === 'chunk');
+              // 过滤：普通对话模式下过滤 chunk 和 final
+              const filteredSteps = allSteps.filter(step => {
+                if (step.type === 'chunk') return false;
+                if (step.type === 'final' && hasChunk) return false;
+                return true;
+              });
+              const sortedSteps = [...filteredSteps].sort((a, b) => {
+                if (a.step && b.step) return a.step - b.step;
+                return 0;
+              });
+              return sortedSteps.map((step, index) => (
+                <StepRow key={`step-${index}`} step={step} taskId={message.task_id} stepIndex={index} expandedSteps={expandedSteps} toggleExpand={toggleExpand} />
+              ));
+            })()}
+              
+              {/* 【小新修复】在推理过程中显示"💭 思考中:"标签 */}
             {message.is_reasoning && (
               <span style={{ color: '#888', fontSize: '0.85em', marginRight: 4, fontWeight: 500 }}>
                 💭 思考中:
@@ -819,6 +1261,12 @@ const isUser = message.role === "user";
 
             {/* 【小查修复】4. AI回复chunk - 逐个渲染 */}
             {/* 【小新修复 2026-03-14】is_reasoning切换时自动添加换行 */}
+            {/* 
+             * 【重要】chunk 显示逻辑分两种情况：
+             * 1. SSE实时模式（isStreaming=true）：逐个渲染chunk，message.content作为备用
+             * 2. 历史模式（isStreaming=false）：逐个渲染chunk，数据不完整时用message.content补充
+             * 【chunk是AI流式输出的内容片段，不是执行步骤，显示在AI回复区域，不在步骤列表】
+             */ }
             {(() => {
               const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
               
@@ -860,65 +1308,68 @@ const isUser = message.role === "user";
               });
             })()}
 
-            {/* 5. 最终答案content - 兼容历史消息不完整的情况 */}
-            {(() => {
-              const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
-              // 判断是否有 is_reasoning=false 的chunk
-              const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
-              
-              // SSE实时（isStreaming=true）：按原来逻辑，只有没有chunk时才显示content
-              if (message.isStreaming) {
-                return chunks.length === 0;
-              }
-              
-              // 历史消息：没有 is_reasoning=false 的chunk时，显示content（补充不完整的chunk）
-              return !hasFalseReasoning;
-            })() && (
-              <div
-                style={{
-                  wordBreak: "break-word",
-                  overflowWrap: "break-word",
-                  paddingRight: 32,
-                  // 【小沈修复】思考过程使用灰色斜体样式，与正式回答区分
-                  ...(message.is_reasoning ? {
-                    color: '#888',
-                    fontStyle: 'italic',
-                    fontSize: '0.95em',
-                  } : {}),
-                }}
-                className={
-                  message.content === "🤔 AI 正在思考..." && message.isStreaming
-                    ? "thinking-message"
-                    : message.isError
-                    ? "error-message"
-                    : message.is_reasoning
-                    ? "reasoning-message"
-                    : ""
-                }
-              >
-                {/* 【小查修复】已移除回退显示"思考中"标签，统一用chunk渲染 */}
-                {message.content && typeof message.content === 'string' 
-                  ? message.content.replace(/\n\n/g, '\n')
-                  : String(message.content || '').replace(/\n\n/g, '\n')}
-                {(message.isStreaming ?? false) && (
-                  <span className="thinking-cursor" style={{ marginLeft: 2 }}>▌</span>
-                )}
-              </div>
-            )}
-            
-            {/* 【小新重构2026-03-13】使用独立ErrorDetail组件 */}
-            {message.isError && (
-              <ErrorDetail
-                errorType={message.errorType}
-                errorCode={message.errorCode}
-                errorMessage={message.errorMessage}
-                errorTimestamp={message.errorTimestamp}
-                errorDetails={message.errorDetails}
-                errorStack={message.errorStack}
-                errorRetryable={message.errorRetryable}
-                errorRetryAfter={message.errorRetryAfter}
-                model={message.model}
-                provider={message.provider}
+             {/* 【小新修改 2026-03-18】content 回退逻辑：当没有 chunk 时显示 message.content */}
+             {/* 【小强修改 2026-04-03】跳过 "🤔 AI 正在思考..." 占位文本（已由 DynamicStatusDisplay 处理） */}
+             {(() => {
+               let hasAction = 0;
+               for (const step of (message.executionSteps || [])) {
+                 if (step.type === 'action_tool') {
+                   hasAction = 1;
+                   break;
+                 }
+                 if (step.type === 'chunk') {
+                   hasAction = 0;
+                 }
+               }
+               
+               if (hasAction !== 1) {
+                 const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
+                 const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
+                 
+                 const hasErrorStep = message.executionSteps?.some(step => {
+                   const content = step.content || '';
+                   return step.type === 'error' || 
+                          content.includes('[错误]') || 
+                          content.includes('429') || 
+                          content.includes('限流');
+                 });
+                 
+                 if (hasErrorStep) {
+                   return false;
+                 }
+                 
+                 if (message.isStreaming) {
+                   // 【小强修改】跳过占位文本，由 DynamicStatusDisplay 处理
+                   if (message.content === "🤔 AI 正在思考...") {
+                     return false;
+                   }
+                   return chunks.length === 0;
+                 }
+                 
+                 return !hasFalseReasoning;
+               }
+               
+               return false;
+              })() && (
+               <div
+                 style={{
+                   wordBreak: "break-word",
+                   overflowWrap: "break-word",
+                   paddingRight: 32,
+                 }}
+               >
+                 {message.content && typeof message.content === 'string' 
+                   ? message.content.replace(/\n\n/g, '\n')
+                   : String(message.content || '').replace(/\n\n/g, '\n')}
+               </div>
+             )}
+
+            {/* 【小强新增 2026-04-03】动态状态提示：根据 step type 显示对应状态 */}
+            {/* 只在 AI 助手消息的气泡底部显示，用户消息不显示 */}
+            {!isUser && !isSystem && message.isStreaming && (
+              <DynamicStatusDisplay 
+                executionSteps={message.executionSteps || []}
+                isStreaming={message.isStreaming}
               />
             )}
           </>

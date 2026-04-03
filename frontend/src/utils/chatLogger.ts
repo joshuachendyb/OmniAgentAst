@@ -10,9 +10,9 @@
 
 // 日志样式常量
 export const LOG_STYLES = {
-  // 成功/完成的黄色样式
-  success: "color: #FFD700; font-weight: bold; font-size: 14px;",
-  successSmall: "color: #FFD700; font-size: 12px;",
+  // 成功/完成的蓝色样式（原来黄色看不清楚，改成蓝色）
+  success: "color: #0066CC; font-weight: bold; font-size: 14px;",
+  successSmall: "color: #0066CC; font-size: 12px;",
   
   // 调试/信息的蓝色样式
   debug: "color: blue; font-weight: bold; font-size: 14px;",

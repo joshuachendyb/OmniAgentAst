@@ -67,7 +67,12 @@ from typing import Optional
 
 import yaml
 
-from .base import BaseAIService
+from app.config import get_config
+from app.utils.logger import setup_logger
+from .llm_core import BaseAIService
+
+# 创建logger
+logger = setup_logger("OmniAgentAst.AIServiceFactory")
 
 
 # 支持的provider列表（动态从配置文件读取，不硬编码）
@@ -130,26 +135,6 @@ class AIServiceFactory:
         return fallback_provider, fallback_model
     
     @classmethod
-    def load_config(cls, config_path: Optional[str] = None) -> dict:
-        """加载配置文件"""
-        if cls._config is not None:
-            return cls._config
-            
-        actual_path = cls.get_config_path(config_path)
-        
-        try:
-            with open(actual_path, 'r', encoding='utf-8') as f:
-                loaded_config = yaml.safe_load(f)
-                config = loaded_config if loaded_config is not None else {}
-        except Exception as e:
-            print(f"[AIServiceFactory] 警告: 无法加载配置文件 {actual_path}: {e}")
-            config = {
-                "ai": {}
-            }
-        
-        return config
-    
-    @classmethod
     def validate_config(cls, config_path: Optional[str] = None) -> ConfigValidationResult:
         """
         完整配置验证
@@ -186,7 +171,7 @@ class AIServiceFactory:
         
         # 2. 加载配置
         try:
-            config = cls.load_config(config_path)
+            config = get_config().raw_config
         except Exception as e:
             errors.append(f"配置文件加载失败: {str(e)}")
             return ConfigValidationResult(
@@ -340,88 +325,49 @@ class AIServiceFactory:
     
     @classmethod
     def get_service(cls, config_path: Optional[str] = None) -> BaseAIService:
-        """获取AI服务实例 - 带完整配置验证"""
-        # 先清除配置缓存，确保验证和创建服务使用最新配置
-        with cls._lock:
-            cls._config = None
+        """获取AI服务实例 - 直接读取配置文件"""
+        # ⭐ 修复：每次调用都重新加载配置，确保获取最新配置
+        from app.config import get_config as get_config_instance
+        config = get_config_instance()
+        config.reload()
+        raw_config = config.raw_config
         
-        # 再进行配置验证
-        validation = cls.validate_config(config_path)
+        ai_config = raw_config.get("ai", {})
         
-        if not validation.success:
-            print(f"[AIServiceFactory] 配置验证失败:")
-            for error in validation.errors:
-                print(f"  ❌ {error}")
-            for warning in validation.warnings:
-                print(f"  ⚠️ {warning}")
-            # 仍然创建实例，但会记录错误
-            cls._current_provider = validation.provider
-        else:
-            print(f"[AIServiceFactory] {validation.message}")
-            for warning in validation.warnings:
-                print(f"  ⚠️ {warning}")
+        # 直接使用配置文件的 provider 和 model，不 fallback
+        final_provider = ai_config.get('provider', '')
+        final_model = ai_config.get('model', '')
         
-        with cls._lock:
-            cls._instance = None
-            cls._config = None  # 清除配置缓存，确保读取最新配置文件
-            config = cls.load_config(config_path)
-            ai_config = config.get("ai", {})
-            
-            # ====================================================================
-            # 【统一Fallback逻辑 - 必须遵守！】
-            # 1. 找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
-            fallback_provider, fallback_model = cls._get_fallback_provider_and_model(ai_config)
-            
-            # 如果没有找到任何provider，保持空值
-            # 不再硬编码默认provider，让配置文件完全控制
-            
-            # 2. 检查 ai.provider 和 ai.model 是否有效
-            selected_provider = ai_config.get('provider', '')
-            selected_model = ai_config.get('model', '')
-            
-            is_valid = (
-                selected_provider and 
-                selected_provider in ai_config and 
-                'models' in ai_config[selected_provider] and 
-                selected_model and 
-                selected_model in ai_config[selected_provider]['models']
-            )
-            
-            # 3. 使用有效配置或fallback
-            if is_valid:
-                final_provider = selected_provider
-                final_model = selected_model
-            else:
-                final_provider = fallback_provider
-                final_model = fallback_model
-            # ====================================================================
-            
-            cls._current_provider = final_provider
-            
-            print(f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}")
-            
-            provider_config = ai_config.get(final_provider, {})
-            
-            # 只有当provider配置完全不存在时才fallback
-            if not provider_config:
-                for key, val in ai_config.items():
-                    if key != "provider" and isinstance(val, dict) and val.get("api_key"):
-                        print(f"[AIServiceFactory] 警告: provider={final_provider} 配置不存在，使用 {key}")
-                        final_provider = key
-                        provider_config = val
-                        break
-            
-            if not provider_config:
-                print(f"[AIServiceFactory] 错误: 未找到任何有效的provider配置")
-                provider_config = {}
-            
-            cls._instance = BaseAIService(
-                api_key=provider_config.get("api_key", ""),
-                model=final_model,
-                api_base=provider_config.get("api_base", "https://api.openai.com/v1"),
-                provider=final_provider,  # 新增：传递provider
-                timeout=provider_config.get("timeout", 30)
-            )
+        # 验证配置是否有效，无效则报错
+        if not final_provider:
+            raise ValueError("配置文件缺少 ai.provider，请检查 config.yaml")
+        if not final_model:
+            raise ValueError("配置文件缺少 ai.model，请检查 config.yaml")
+        if final_provider not in ai_config:
+            raise ValueError(f"配置文件中不存在 provider: {final_provider}")
+        if 'models' not in ai_config.get(final_provider, {}):
+            raise ValueError(f"provider {final_provider} 缺少 models 配置")
+        if final_model not in ai_config[final_provider].get('models', []):
+            raise ValueError(f"model {final_model} 不在 provider {final_provider} 的 models 列表中")
+        
+        cls._current_provider = final_provider
+        
+        from datetime import datetime
+        log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
+        logger.info(log_msg)
+        
+        provider_config = ai_config.get(final_provider, {})
+        if not provider_config:
+            raise ValueError(f"provider {final_provider} 的配置为空，请检查 config.yaml")
+        
+        cls._instance = BaseAIService(
+            api_key=provider_config.get("api_key", ""),
+            model=final_model,
+            api_base=provider_config.get("api_base", "https://api.openai.com/v1"),
+            provider=final_provider,  # 新增：传递provider
+            timeout=provider_config.get("timeout", 30)
+        )
         
         return cls._instance
     
@@ -448,7 +394,7 @@ class AIServiceFactory:
             return cls._current_provider
         
         try:
-            config = cls.load_config()
+            config = get_config().raw_config
             return config.get("ai", {}).get("provider", "unknown")
         except:
             return "unknown"
@@ -459,7 +405,6 @@ class AIServiceFactory:
         with cls._lock:
             cls._instance = None
             cls._current_provider = ""
-            cls._config = None
             print("[AIServiceFactory] 工厂状态已重置")
     
     @classmethod
@@ -478,52 +423,24 @@ class AIServiceFactory:
         Returns:
             BaseAIService: AI服务实例
         """
-        # 先清除配置缓存，确保读取最新配置文件
         with cls._lock:
-            cls._config = None
-        
-        with cls._lock:
-            actual_path = cls.get_config_path(config_path)
-            config = cls.load_config(config_path)
+            config = get_config().raw_config
             ai_config = config.get("ai", {})
             
-            # ====================================================================
-            # 【统一Fallback逻辑 - 必须遵守！】
-            # 1. 先找第一个有models的provider作为fallback
-            fallback_provider, fallback_model = cls._get_fallback_provider_and_model(ai_config)
+            # 验证前端指定的 provider 和 model 是否有效
+            if not provider:
+                raise ValueError("provider 不能为空")
+            if not model:
+                raise ValueError("model 不能为空")
+            if provider not in ai_config:
+                raise ValueError(f"配置文件中不存在 provider: {provider}")
+            if 'models' not in ai_config.get(provider, {}):
+                raise ValueError(f"provider {provider} 缺少 models 配置")
+            if model not in ai_config[provider].get('models', []):
+                raise ValueError(f"model {model} 不在 provider {provider} 的 models 列表中")
             
-            # 2. 检查指定的 provider + model 是否有效
-            is_valid = (
-                provider and 
-                provider in ai_config and 
-                'models' in ai_config[provider] and 
-                model and 
-                model in ai_config[provider]['models']
-            )
-            
-            # 3. 有效则使用指定值，否则使用fallback
-            if is_valid:
-                final_provider = provider
-                final_model = model
-            else:
-                final_provider = fallback_provider
-                final_model = fallback_model
-                print(f"[AIServiceFactory] 警告: 指定的 provider={provider}, model={model} 无效，使用 fallback: {final_provider}, {final_model}")
-            # ====================================================================
-            
-            # 更新配置文件中的 provider 和 model
-            try:
-                with open(actual_path, 'r', encoding='utf-8') as f:
-                    config_data = yaml.safe_load(f)
-                
-                if config_data and 'ai' in config_data:
-                    config_data['ai']['provider'] = final_provider
-                    config_data['ai']['model'] = final_model
-                    
-                    with open(actual_path, 'w', encoding='utf-8') as f:
-                        yaml.dump(config_data, f, allow_unicode=True, default_flow_style=False)
-            except Exception as e:
-                print(f"[AIServiceFactory] 警告: 无法更新配置文件: {e}")
+            final_provider = provider
+            final_model = model
             
             # 关闭旧实例
             if cls._instance is not None:
@@ -533,23 +450,19 @@ class AIServiceFactory:
                     print(f"[AIServiceFactory] 关闭旧实例出错: {e}")
             
             cls._instance = None
-            cls._config = None  # 清除配置缓存，确保读取最新配置文件
             cls._current_provider = final_provider
             
-            print(f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}")
+            from datetime import datetime
+            log_msg = f"[AIServiceFactory] 创建服务实例: provider={final_provider}, model={final_model}"
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
+            logger.info(log_msg)
             
             provider_config = ai_config.get(final_provider, {})
             
             if not provider_config:
-                for key, val in ai_config.items():
-                    if key != "provider" and isinstance(val, dict) and val.get("api_key"):
-                        print(f"[AIServiceFactory] 警告: provider={final_provider} 配置不存在，使用 {key}")
-                        final_provider = key
-                        provider_config = val
-                        break
-            
-            if not provider_config:
-                print(f"[AIServiceFactory] 错误: 未找到任何有效的provider配置")
+                log_msg = f"[AIServiceFactory] 错误: 未找到任何有效的provider配置"
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] {log_msg}")
+                logger.error(log_msg)
                 provider_config = {}
             
             cls._instance = BaseAIService(
@@ -583,8 +496,4 @@ class AIServiceFactory:
             cls._backup_path = None
             cls._config_path = None
     
-    @classmethod
-    def clear_config_cache(cls):
-        """清除配置缓存（供 Config.reload() 调用）⭐ 带锁保护"""
-        with cls._lock:
-            cls._config = None
+

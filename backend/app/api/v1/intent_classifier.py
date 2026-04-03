@@ -49,6 +49,27 @@ class IntentClassifier:
                 # 通用动词
                 '写入', '创建', '保存', '写', '修改', '更新', '编辑', '删除', '复制', '移动', '重命名', '列出',
                 'write', 'create', 'save', 'edit', 'update', 'delete', 'copy', 'move', 'rename', 'list',
+                # 【新增】通用文件操作相关词
+                '查看', '浏览', '搜索', '找文件', '看目录', '看文件夹',
+                '桌面', '文件夹', '目录', '文件列表', '有什么文件', '类型', '整理',
+                # 【新增】口语化表达
+                '看看有啥', '都有啥', '有啥', '帮我看看', '帮我找找',
+                '里面有什么', '看看都有啥', '看看有什么', '分析分析',
+                # 【新增】分析整理类
+                '分析', '分析一下', '文件类型', '按类型整理', '分类整理', '整理文件', '帮我整理', '按类型分', '都有什么类型',
+                # 【新增】目录操作
+                '打开目录', '进入目录', '遍历目录', '切换目录',
+                # 【新增】文件传输
+                '压缩', '解压', '导出', '导入', '上传', '下载',
+                # 【新增】盘符关键词（通用匹配，自动与动作词组合）【小强添加 2026-03-19】
+                'A盘', 'B盘', 'C盘', 'D盘', 'E盘', 'F盘', 'G盘', 'H盘', 'I盘', 'J盘',
+                'a盘', 'b盘', 'c盘', 'd盘', 'e盘', 'f盘', 'g盘', 'h盘', 'i盘', 'j盘',
+                # 【新增】通用文件相关词（与动作词自动组合）
+                '文件有哪些', '有哪些文件', '文件有什么', '有什么文件', '文件列表', '查看文件', '列出文件', '查看文件夹',
+                # 【新增】"文件"关键词（非常通用，自动与其他词组合）
+                '文件',
+                # 【新增】通用"有什么"系列（自动与盘符/目录组合）
+                '看看有什么', '有什么', '有什么东西', '东西有什么',
             ],
             "file_extensions": ['.txt', '.md', '.py', '.js', '.ts', '.json', '.yaml', '.yml', '.xml', '.csv'],
         },
@@ -98,7 +119,7 @@ class IntentClassifier:
         # 检查是否是动作类
         action_type, action_confidence = cls._detect_action_intent(message_lower)
         
-        if action_type and action_confidence > 0.5:
+        if action_type and action_confidence > 0.4:
             # 是动作类
             return IntentType.ACTION, action_type, action_confidence
         else:
@@ -187,3 +208,32 @@ def classify_intent(message: str) -> Tuple[IntentType, Optional[ActionType], flo
         (意图类型，动作类型，置信度)
     """
     return IntentClassifier.classify(message)
+
+
+def detect_file_operation_intent(message: str) -> Tuple[bool, str, float]:
+    """
+    检测用户消息是否包含文件操作意图
+    
+    引用 classify_intent 函数，使用子串匹配逻辑
+    
+    Args:
+        message: 用户输入消息
+        
+    Returns:
+        (是否文件操作, 操作类型, 置信度0-1)
+    """
+    from app.utils.logger import logger
+    
+    intent_type, action_type, confidence = classify_intent(message)
+    
+    # 【小沈添加日志 2026-03-22】记录输入输出
+    logger.info(
+        f"[IntentClassifier] detect_file_operation_intent - "
+        f"input: '{message}' -> "
+        f"intent_type: '{intent_type}', action_type: '{action_type}', confidence: {confidence:.4f}"
+    )
+    
+    if intent_type == IntentType.ACTION and action_type == ActionType.FILE_OPERATION:
+        return True, "file", confidence
+    
+    return False, "", 0.0

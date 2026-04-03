@@ -83,16 +83,9 @@ def load_security_config() -> dict:
         return {}
 
 
-# 缓存加载的配置
-_cached_config: Optional[dict] = None
-
-
 def get_security_config() -> dict:
-    """获取安全配置（带缓存）"""
-    global _cached_config
-    if _cached_config is None:
-        _cached_config = load_security_config()
-    return _cached_config
+    """获取安全配置（不使用缓存，每次读取最新）"""
+    return load_security_config()
 
 
 # ============================================================
@@ -659,11 +652,15 @@ def check_command_safety(command: str) -> Dict[str, Any]:
     # 确定是否被拦截（高风险直接拦截）
     blocked = not is_safe and risk_level in ["high", "critical"]
     
+    # 确定是否需要用户确认（中风险需要确认，低风险直接通过）
+    is_need_confirm = not is_safe and risk_level in ["medium"]
+    
     return {
         "is_safe": is_safe,
         "risk_level": risk_level,
         "risk": risk if risk else None,
         "blocked": blocked,
+        "is_need_confirm": is_need_confirm,
         "rule_matched": risk if not is_safe else None
     }
 

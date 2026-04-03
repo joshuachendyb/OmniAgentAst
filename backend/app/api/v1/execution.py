@@ -8,9 +8,9 @@ import asyncio
 from typing import Optional, Any, Dict
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from datetime import datetime
 import sqlite3
 from pathlib import Path
+from app.chat_stream.chat_helpers import create_timestamp
 
 router = APIRouter()
 
@@ -106,7 +106,7 @@ async def generate_execution_stream(session_id: str):
                                     tool=step.get('tool', ''),
                                     params=step.get('params', {}),
                                     result=step.get('result'),
-                                    timestamp=step.get('timestamp', int(datetime.now().timestamp() * 1000))
+                                    timestamp=step.get('timestamp', create_timestamp())
                                 ).to_dict()
                                 yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
                                 # 添加小延迟，模拟流式输出
@@ -119,7 +119,7 @@ async def generate_execution_stream(session_id: str):
                                 tool=steps.get('tool', ''),
                                 params=steps.get('params', {}),
                                 result=steps.get('result'),
-                                timestamp=int(datetime.now().timestamp() * 1000)
+                                timestamp=create_timestamp()
                             ).to_dict()
                             yield f"event: step\ndata: {json.dumps(step_data, ensure_ascii=False)}\n\n"
                     except json.JSONDecodeError:

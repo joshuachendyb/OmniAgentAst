@@ -1,6 +1,24 @@
 ai:
-  provider: zhipuai
-  model: glm-4.7-flash
+  provider: longcat
+  model: LongCat-Flash-Thinking-2601
+  dmxapi:
+    api_base: https://www.dmxapi.cn/v1
+    api_key: sk-N2cFYdEXiCRQ2gKUCBTwnP3arxfwesLHBGntk1tk8X3m2gS1
+    max_retries: 3
+    models:
+    - Baichuan-M3-Plus-free
+    - DMXAPI-Code-Free
+    - DMXAPI-CodeX-Free
+    - MiniMax-M2.5-free
+    - MiniMax-M2.7-free
+    - doubao-seed-2.0-code-free
+    - doubao-seed-2.0-lite-free
+    - doubao-seed-2.0-pro-free
+    - kimi-k2.5-free
+    - qwen3-coder-plus-free
+    - qwen3-max-2026-01-23-free
+    - qwen3.5-plus-free
+    timeout: 90
   longcat:
     api_base: https://api.longcat.chat/openai/v1
     api_key: ak_2yt5nN61V36y88L7t21rF48K7ID4c
@@ -22,6 +40,20 @@ ai:
     - glm-5-free
     - kimi-k2.5-free
     timeout: 150
+  qiniu:
+    api_base: https://api.qnaigc.com/v1
+    api_key: sk-ee99b1ccb7495fd4fab4114697e69984846e5884059ae108ce0dda350a1ed9d6
+    max_retries: 3
+    models:
+    - deepseek-v3.1
+    - deepseek-v3
+    - deepseek-r1
+    - z-ai/glm-4.7
+    - z-ai/glm-4.6
+    - moonshotai/kimi-k2.5
+    - moonshotai/kimi-k2
+    - minimax/minimax-m2.5
+    timeout: 90
   zhipuai:
     api_base: https://open.bigmodel.cn/api/paas/v4/
     api_key: 5790cd6d8981471da11dda7523da11ad.VT36xKqyrpQKVR8C
@@ -32,10 +64,11 @@ ai:
     - cogview-3-flash
     timeout: 90
 app:
-  debug: false
+  debug: true
   language: zh-CN
   max_history_length: 10
-  theme: dark
+  max_steps: 100
+  theme: light
 logging:
   backup_count: 5
   level: INFO

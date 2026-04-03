@@ -14,7 +14,7 @@ import { message } from "antd";
 import type { ExecutionStep } from "../utils/sse";
 
 // 【小新修复 2026-03-14】统一API地址配置，支持环境变量
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api/v1";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
 
 /**
  * Axios实例配置
@@ -115,32 +115,31 @@ export interface ChatRequest {
   temperature?: number;
 }
 
-export interface ChatResponse {
-  success: boolean;
-  content: string;
-  model: string;
-  error?: string;
-}
-
 export interface ValidateResponse {
   success: boolean;
   provider: string;
   model: string;
   message: string;
+  status?: 'success' | 'failed' | 'warning';
 }
 
 export const chatApi = {
-  sendMessage: async (
-    messages: ChatMessage[],
-    temperature: number = 0.7
-  ): Promise<ChatResponse> => {
-    const response = await api.post<ChatResponse>("/chat", {
-      messages,
-      stream: false,
-      temperature,
-    });
-    return response.data;
-  },
+  /**
+   * 【已废弃 2026-03-26】非流式聊天 - 未被使用
+   * 流式聊天使用 sse.ts 的 sendMessage
+   * 保留代码供参考，已移至 backup/api废弃代码.ts
+   */
+  // sendMessage: async (
+  //   messages: ChatMessage[],
+  //   temperature: number = 0.7
+  // ): Promise<ChatResponse> => {
+  //   const response = await api.post<ChatResponse>("/chat", {
+  //     messages,
+  //     stream: false,
+  //     temperature,
+  //   });
+  //   return response.data;
+  // },
 
   /**
    * 验证AI服务配置 - 已存在API
@@ -319,7 +318,7 @@ export const configApi = {
   validateConfig: async (
     data: ConfigValidateRequest
   ): Promise<ConfigValidateResponse> => {
-    const response = await api.post<ConfigValidateResponse>(
+    const response = await api.put<ConfigValidateResponse>(
       "/config/validate",
       data
     );
@@ -331,13 +330,9 @@ export const configApi = {
    * 用于启动时全面检查所有Provider和Model配置
    * @author 小欧
    * @update 2026-02-23 新增
+   * @deprecated 后端已删除 GET /config/validate-full，使用 validateConfig 替代
    */
-  validateFullConfig: async (): Promise<FullConfigValidationResponse> => {
-    const response = await api.get<FullConfigValidationResponse>(
-      "/config/validate-full"
-    );
-    return response.data;
-  },
+  // validateFullConfig 已删除
 
   /**
    * 获取可用模型列表
@@ -494,11 +489,9 @@ export const configApi = {
    * 读取配置文件原文内容
    * @author 小新
    * @update 2026-03-04 新增
+   * @deprecated 后端已删除 GET /config/read
    */
-  readConfigFile: async (): Promise<{ success: boolean; config_path: string; content: string }> => {
-    const response = await api.get<{ success: boolean; config_path: string; content: string }>("/config/read");
-    return response.data;
-  },
+  // readConfigFile 已删除
 };
 
 // ============================================
@@ -621,7 +614,8 @@ export const sessionApi = {
   ): Promise<SessionListResponse> => {
     const params: any = { page, page_size: pageSize };
     if (keyword) params.keyword = keyword;
-    if (isValid !== undefined) params.is_valid = isValid;  // ⭐ 新增
+    // 只有明确传入 true 或 false 时才添加 is_valid 参数
+    if (isValid === true || isValid === false) params.is_valid = isValid;
     const response = await api.get<SessionListResponse>("/sessions", {
       params,
     });
@@ -652,9 +646,9 @@ export const sessionApi = {
   /**
    * 保存消息到会话
    * @author 小新
-   * @update 2026-03-11: 添加 execution_steps 参数
-   * @update 2026-03-14: 添加错误相关字段（使用API文档字段名 - snake_case）
-   */
+    * @update 2026-03-16: 添加 display_name 字段
+    * @update 2026-03-24: 添加 client_os 等客户端信息（小沈）
+    */
   saveMessage: async (
     sessionId: string,
     message: {
@@ -673,9 +667,15 @@ export const sessionApi = {
       timestamp?: string;
       model?: string;
       provider?: string;
+      display_name?: string;  // 【小新修改 2026-03-16】添加display_name字段
+      // 客户端信息（小沈 2026-03-24）
+      client_os?: string;
+      browser?: string;
+      device?: string;
+      network?: string;
     }
-  ): Promise<{ success: boolean }> => {
-    const response = await api.post<{ success: boolean }>(
+  ): Promise<{ success: boolean; message_id?: number; message_count?: number }> => {
+    const response = await api.post<{ success: boolean; message_id?: number; message_count?: number }>(
       `/sessions/${sessionId}/messages`,
       message
     );
@@ -686,14 +686,27 @@ export const sessionApi = {
    * 保存执行步骤到会话
    * @author 小新
    * @update 2026-03-06 新增：用于保存AI思考过程的执行步骤
+   * @update 2026-03-16 修正：增加content参数，支持在visibilitychange时同时保存content
+   * @update 2026-03-16 修正：增加reply_to_message_id参数，用于校验AI消息ID
+   * 修正原因：SSE数据保存方案-综合版第18章要求，visibilitychange时需要同时保存
+   *          execution_steps和content，后端API需要支持content参数
    */
   saveExecutionSteps: async (
     sessionId: string,
-    executionSteps: any[]
-  ): Promise<{ success: boolean }> => {
-    const response = await api.post<{ success: boolean }>(
+    executionSteps: any[],
+    content?: string,
+    replyUserMessageId?: number  // 新增：回复的用户消息ID
+  ): Promise<{ success: boolean; message_id?: number; is_new_message?: boolean }> => {
+    // ⭐ 【调试】记录前端保存
+    console.log(`💾 [前端保存] sessionId=${sessionId}, stepsCount=${executionSteps.length}, contentLen=${content?.length || 0}, replyUserMessageId=${replyUserMessageId}`);
+    
+    const response = await api.post<{ success: boolean; message_id?: number; is_new_message?: boolean }>(
       `/sessions/${sessionId}/execution_steps`,
-      { execution_steps: executionSteps }
+      { 
+        execution_steps: executionSteps,
+        ...(content !== undefined && { content }),
+        ...(replyUserMessageId !== undefined && { reply_to_message_id: replyUserMessageId })
+      }
     );
     return response.data;
   },
@@ -880,10 +893,14 @@ export const taskControlApi = {
    * POST /api/v1/chat/stream/cancel/{task_id}
    * 
    * @param taskId 任务ID
+   * @param sessionId 会话ID（可选）
    * @returns 取消结果
    */
-  cancel: async (taskId: string): Promise<TaskControlResponse> => {
-    const response = await api.post<TaskControlResponse>(`/chat/stream/cancel/${taskId}`);
+  cancel: async (taskId: string, sessionId?: string): Promise<TaskControlResponse> => {
+    const url = sessionId 
+      ? `/chat/stream/cancel/${taskId}?session_id=${sessionId}`
+      : `/chat/stream/cancel/${taskId}`;
+    const response = await api.post<TaskControlResponse>(url);
     return response.data;
   },
 
@@ -892,10 +909,14 @@ export const taskControlApi = {
    * POST /api/v1/chat/stream/pause/{task_id}
    * 
    * @param taskId 任务ID
+   * @param sessionId 会话ID（可选）
    * @returns 暂停结果
    */
-  pause: async (taskId: string): Promise<TaskControlResponse> => {
-    const response = await api.post<TaskControlResponse>(`/chat/stream/pause/${taskId}`);
+  pause: async (taskId: string, sessionId?: string): Promise<TaskControlResponse> => {
+    const url = sessionId 
+      ? `/chat/stream/pause/${taskId}?session_id=${sessionId}`
+      : `/chat/stream/pause/${taskId}`;
+    const response = await api.post<TaskControlResponse>(url);
     return response.data;
   },
 
@@ -904,10 +925,14 @@ export const taskControlApi = {
    * POST /api/v1/chat/stream/resume/{task_id}
    * 
    * @param taskId 任务ID
+   * @param sessionId 会话ID（可选）
    * @returns 恢复结果
    */
-  resume: async (taskId: string): Promise<TaskControlResponse> => {
-    const response = await api.post<TaskControlResponse>(`/chat/stream/resume/${taskId}`);
+  resume: async (taskId: string, sessionId?: string): Promise<TaskControlResponse> => {
+    const url = sessionId 
+      ? `/chat/stream/resume/${taskId}?session_id=${sessionId}`
+      : `/chat/stream/resume/${taskId}`;
+    const response = await api.post<TaskControlResponse>(url);
     return response.data;
   },
 
