@@ -173,12 +173,12 @@ describe("SearchFilesView 基本渲染测试", () => {
     expect(screen.getByText((content) => content.includes("个文件"))).toBeTruthy();
   });
 
-  it("应该渲染匹配数量统计", () => {
+  it("不应该渲染匹配数量统计（文件搜索无匹配数概念）", () => {
     const props = createProps();
     render(<SearchFilesView {...props} />);
 
-    expect(screen.getByText((content) => content.includes("🔎"))).toBeTruthy();
-    expect(screen.getByText((content) => content.includes("处匹配"))).toBeTruthy();
+    expect(screen.queryByText((content) => content.includes("🔎"))).toBeNull();
+    expect(screen.queryByText((content) => content.includes("处匹配"))).toBeNull();
   });
 
   it("应该渲染分页信息", () => {

@@ -246,19 +246,6 @@ const SearchFilesView: React.FC<SearchFilesViewProps> = ({ data, onLoadMore, isL
           📁 {files_matched} 个文件
         </span>
         
-        {/* 匹配数量 */}
-        <span
-          style={{
-            background: "#e6f7ff",
-            padding: "2px 8px",
-            borderRadius: 4,
-            color: "#003a8c",
-            fontWeight: 500,
-          }}
-        >
-          🔎 {total_matches} 处匹配
-        </span>
-        
         {/* 分页信息（新增） */}
         {pagination && (
           <span
