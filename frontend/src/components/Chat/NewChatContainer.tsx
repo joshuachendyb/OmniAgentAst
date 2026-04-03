@@ -1647,7 +1647,7 @@ const NewChatContainer: React.FC = () => {
 
   /**
    * 任务暂停/继续
-    */
+     */
   const handleTogglePause = async () => {
     if (!serverTaskId) {
       message.warning("当前没有进行中的任务");
@@ -1657,12 +1657,34 @@ const NewChatContainer: React.FC = () => {
     try {
       if (!isPaused) {
         // 暂停：发送暂停请求
-        await taskControlApi.pause(serverTaskId ?? undefined, sessionId ?? undefined);
-        console.log("⏸️ 已发送暂停请求");
+        const result = await taskControlApi.pause(serverTaskId ?? undefined, sessionId ?? undefined);
+        console.log("⏸️ 已发送暂停请求，后端返回:", result);
+        
+        // 更新前端暂停状态
+        setIsPaused(true);
+        isPausedRef.current = true;
+        
+        // 显示后端返回的具体消息
+        if (result.message) {
+          message.success(result.message);
+        } else {
+          message.success("任务已暂停");
+        }
       } else {
         // 继续：发送恢复请求
-        await taskControlApi.resume(serverTaskId ?? undefined, sessionId ?? undefined);
-        console.log("▶️ 已发送恢复请求");
+        const result = await taskControlApi.resume(serverTaskId ?? undefined, sessionId ?? undefined);
+        console.log("▶️ 已发送恢复请求，后端返回:", result);
+        
+        // 更新前端暂停状态
+        setIsPaused(false);
+        isPausedRef.current = false;
+        
+        // 显示后端返回的具体消息
+        if (result.message) {
+          message.success(result.message);
+        } else {
+          message.success("任务已继续");
+        }
       }
     } catch (error) {
       console.error("❌ 暂停/继续请求失败:", error);
