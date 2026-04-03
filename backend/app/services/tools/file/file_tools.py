@@ -12,6 +12,10 @@ MCP文件操作工具集 - 重写版本
 5. 修复search_file_content空pattern安全漏洞
 
 统一返回格式：{status, summary, data, retry_count}
+
+【分页方案更新】2026-04-03 小沈
+- read_file: 默认读取500行（READ_FILE_DEFAULT_LIMIT = 500）
+- 其他工具: 返回全部数据（DEFAULT_PAGE_SIZE = 999999999）
 """
 
 import asyncio
@@ -23,6 +27,16 @@ import shutil
 import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, get_type_hints
+
+# 【修改】移除分页限制，2026-04-03 小沈
+# 原因：后端必须返回全部真实数据，前端自己控制显示方式（分页/滚动）
+# 前端不再依赖 next-page 接口，后端不再做分页处理
+
+# read_file 特殊处理：默认限制500行（因为大文件不能一次性读取到内存）
+READ_FILE_DEFAULT_LIMIT = 500
+
+# 其他工具返回全部数据
+DEFAULT_PAGE_SIZE = 999999999  # 远超实际数据量，保证返回全部
 
 from pydantic import BaseModel, Field
 
@@ -342,7 +356,7 @@ class FileTools:
         self,
         file_path: str,
         offset: int = 1,
-        limit: int = 2000,
+        limit: int = READ_FILE_DEFAULT_LIMIT,
         encoding: str = "utf-8"
     ) -> Dict[str, Any]:
         """读取文件内容"""
@@ -392,6 +406,8 @@ class FileTools:
                 content += f"{i}: {line}"
             
             has_more = end_idx < total_lines
+            # 【新增】返回 next_page_token（位置编码）
+            next_page_token = encode_page_token(end_idx) if has_more else None
             
             return _to_unified_format({
                 "success": True,
@@ -400,6 +416,7 @@ class FileTools:
                 "start_line": offset,
                 "end_line": end_idx,
                 "has_more": has_more,
+                "next_page_token": next_page_token,
                 "file_size": path.stat().st_size,
                 "encoding": encoding
             }, "read_file")
@@ -562,9 +579,8 @@ class FileTools:
         # 工具必须原原本本返回用户需要的结果，不应该限制数量
         # 如果限制数量会丢失真实数据，这是错误的
         # 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
-        max_depth: int = 100000,
-        page_token: Optional[str] = None,
-        page_size: int = 100
+        # 【修改】用 page_token 替换 after，统一使用位置编码分页
+        page_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """列出目录内容"""
         # 验证路径合法性
@@ -925,14 +941,8 @@ class FileTools:
         recursive: bool = True,
         # 内部参数，不暴露给 LLM
         use_regex: bool = False,
-        # 【删除 max_results 参数】
-        # 原因：小沈之前的知识浅薄，错误的要求给工具设置数量限制
-        # 现在导致了工具执行错误，反馈的结果隐藏了真实的数据
-        # 小沈是一个大混蛋，几次纠正都死不悔改
-        # 工具必须原原本本返回用户需要的结果，不应该限制数量
-        # 如果限制数量会丢失真实数据，这是错误的
-        # 如果工具有问题应该修工具代码，而不是用限制来掩盖问题
-        # 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
+        # 【修改】添加 page_token 参数用于分页，统一使用位置编码
+        page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """搜索文件内容中的关键字"""
         # 【修复】验证搜索路径 - 2026-03-19 小强
@@ -986,8 +996,11 @@ class FileTools:
                 # 去除pattern首尾空白
                 search_term = pattern.strip()
                 
+                # 【修改】用 page_token 统一分页
+                start_offset = decode_page_token(page_token) if page_token else 0
+                
                 # 循环搜索，直到获取全部结果
-                after_file = None
+                seen_count = 0
                 while True:
                     batch_results = []
                     
@@ -1009,8 +1022,9 @@ class FileTools:
                             file_path = Path(root) / filename
                             file_str = str(file_path.relative_to(search_path))
                             
-                            # 跳过 after 之前的文件
-                            if after_file and file_str <= after_file:
+                            # 【修改】用位置偏移跳过已处理的文件
+                            if seen_count < start_offset:
+                                seen_count += 1
                                 continue
                             
                             # 读取文件内容
@@ -1065,14 +1079,8 @@ class FileTools:
                     # 添加本批次结果
                     all_results.extend(batch_results)
                     
-                    # 获取本批次最后一个文件名
-                    last_file = batch_results[-1]["file"] if batch_results else None
-                    
-                    if not last_file:
+                    if not batch_results:
                         break  # 搜索完成
-                    
-                    # 设置下一次继续的位置
-                    after_file = last_file
                     
                     # 【删除 max_results 限制判断】
                     # 原因：工具必须原原本本返回用户需要的结果，不应该限制数量
@@ -1091,21 +1099,19 @@ class FileTools:
             # 搜索完成后，根据结果数量决定如何返回前端
             total = len(all_results)
             
-            # 前端分页配置
-            FRONTEND_PAGE_SIZE = 200  # 每页200个文件
-            
-            if total > FRONTEND_PAGE_SIZE:
+            # 前端分页配置（使用全局统一常量）
+            if total > DEFAULT_PAGE_SIZE:
                 # 结果多，分页返回
-                total_pages = (total + FRONTEND_PAGE_SIZE - 1) // FRONTEND_PAGE_SIZE
-                page_results = all_results[:FRONTEND_PAGE_SIZE]
+                total_pages = (total + DEFAULT_PAGE_SIZE - 1) // DEFAULT_PAGE_SIZE
+                page_results = all_results[:DEFAULT_PAGE_SIZE]
                 has_more = True
-                last_file = all_results[FRONTEND_PAGE_SIZE - 1]["file"] if total > FRONTEND_PAGE_SIZE else None
+                next_page_token = encode_page_token(DEFAULT_PAGE_SIZE) if has_more else None
             else:
                 # 结果少，一次返回
                 page_results = all_results
                 total_pages = 1
                 has_more = False
-                last_file = all_results[-1]["file"] if all_results else None
+                next_page_token = None
             
             return _to_unified_format({
                 "success": True,
@@ -1117,8 +1123,8 @@ class FileTools:
                 "total_matches": total_matches,
                 "page": 1,
                 "total_pages": total_pages,
-                "page_size": FRONTEND_PAGE_SIZE,
-                "last_file": last_file,
+                "page_size": DEFAULT_PAGE_SIZE,
+                "next_page_token": next_page_token,
                 "has_more": has_more
             }, "search_file_content")
             
@@ -1186,7 +1192,8 @@ class FileTools:
         # 如果限制数量会丢失真实数据，这是错误的
         # 如果工具有问题应该修工具代码，而不是用限制来掩盖问题
         # 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
-        after: Optional[str] = None
+        # 【修改】用 page_token 替换 after，统一使用位置编码分页
+        page_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """搜索文件名（按文件名匹配）"""
         # 验证搜索路径
@@ -1226,8 +1233,10 @@ class FileTools:
                 # 每次搜索最大获取数量（内部循环用，不限制最终结果）
                 BATCH_SIZE = 10000
                 
+                # 【修改】用 page_token 统一分页
+                start_offset = decode_page_token(page_token) if page_token else 0
+                
                 # 循环搜索，直到获取全部结果
-                after = None
                 while True:
                     batch_matches = []
                     batch_seen = set()
@@ -1263,8 +1272,10 @@ class FileTools:
                             if file_str in seen_files:
                                 continue
                             
-                            # 跳过 after 之前的
-                            if after and file_str <= after:
+                            # 【修改】用位置偏移跳过已处理的文件
+                            current_idx = len(seen_files)
+                            if current_idx < start_offset:
+                                seen_files.add(file_str)
                                 continue
                             
                             seen_files.add(file_str)
@@ -1312,21 +1323,19 @@ class FileTools:
             # 搜索完成后，根据结果数量决定如何返回前端
             total = len(all_matches)
             
-            # 前端分页配置
-            FRONTEND_PAGE_SIZE = 200  # 每页200个
-            
-            if total > FRONTEND_PAGE_SIZE:
+            # 前端分页配置（使用全局统一常量）
+            if total > DEFAULT_PAGE_SIZE:
                 # 结果多，分页返回
-                total_pages = (total + FRONTEND_PAGE_SIZE - 1) // FRONTEND_PAGE_SIZE
-                page_matches = all_matches[:FRONTEND_PAGE_SIZE]
+                total_pages = (total + DEFAULT_PAGE_SIZE - 1) // DEFAULT_PAGE_SIZE
+                page_matches = all_matches[:DEFAULT_PAGE_SIZE]
                 has_more = True
-                last_file = all_matches[FRONTEND_PAGE_SIZE - 1]["path"] if total > FRONTEND_PAGE_SIZE else None
+                next_page_token = encode_page_token(DEFAULT_PAGE_SIZE) if has_more else None
             else:
                 # 结果少，一次返回
                 page_matches = all_matches
                 total_pages = 1
                 has_more = False
-                last_file = all_matches[-1]["path"] if all_matches else None
+                next_page_token = None
             
             return _to_unified_format({
                 "success": True,
@@ -1336,8 +1345,8 @@ class FileTools:
                 "total": total,
                 "page": 1,
                 "total_pages": total_pages,
-                "page_size": FRONTEND_PAGE_SIZE,
-                "last_file": last_file,
+                "page_size": DEFAULT_PAGE_SIZE,
+                "next_page_token": next_page_token,
                 "has_more": has_more
             }, "search_files")
             

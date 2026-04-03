@@ -122,6 +122,11 @@ class SearchFileContentInput(BaseModel):
         default=True,
         description="是否递归搜索子目录，默认为True"
     )
+    # 【新增】分页令牌，用于获取下一页结果
+    page_token: Optional[str] = Field(
+        default=None,
+        description="分页令牌（位置编码），用于获取下一页结果"
+    )
 
 
 class SearchFilesByNameInput(BaseModel):
@@ -157,9 +162,11 @@ class SearchFilesByNameInput(BaseModel):
     # 如果限制数量会丢失真实数据，这是错误的
     # 如果工具有问题应该修工具代码，而不是用限制来掩盖问题
     # 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
-    after: Optional[str] = Field(
+    # 【修改】用 page_token 替换 after
+    # 原因：统一使用位置编码分页，更规范可靠
+    page_token: Optional[str] = Field(
         default=None,
-        description="上次搜索结束的文件名，用于继续搜索（分页）"
+        description="分页令牌（位置编码），用于获取下一页结果"
     )
 
 
