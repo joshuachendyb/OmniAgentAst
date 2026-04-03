@@ -94,7 +94,7 @@ export const DynamicStatusDisplay: React.FC<DynamicStatusDisplayProps> = ({
         <span className="status-text">
           {config.icon} {config.text}{' '}
           <span className="status-timer">{formatTime(elapsedSeconds)}</span>
-          <span className="status-cursor">▌</span>
+          <span className="status-cursor" style={{ marginLeft: '2em' }}>▌</span>
         </span>
       </div>
     );
