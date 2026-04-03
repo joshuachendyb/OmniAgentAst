@@ -1274,112 +1274,66 @@ const isUser = message.role === "user";
               });
             })()}
 
-            {/* 【小新修改 2026-03-18】在执行 content 回退前，先判断是否有 action_tool */}
-            {/* 设计思路：
-              * 1. 遍历 executionSteps，检查是否有 action_tool 类型的步骤
-              * 2. 如果有 action_tool（hasAction=1），则不执行 content 回退
-              * 3. 如果没有 action_tool（hasAction=0），则执行原来的 content 回退逻辑
-              * 目的：区分 ReAct 模式（有 action_tool）和普通对话模式（无 action_tool）
-              */}
+            {/* 【小新修改 2026-03-18】content 回退逻辑：当没有 chunk 时显示 message.content */}
+            {/* 【小强修改 2026-04-03】删除状态提示部分（已用 DynamicStatusDisplay 替代），只保留 content 回退 */}
             {(() => {
-              // ==================== 步骤 1：计算 hasAction 变量 ====================
-              // hasAction = 0：默认值，表示没有 action_tool
-              // hasAction = 1：表示有 action_tool（ReAct 模式）
               let hasAction = 0;
-              
-              // 遍历 message.executionSteps 数组，检查每个 step 的 type
               for (const step of (message.executionSteps || [])) {
-                // 如果当前 step 的类型是 action_tool（工具调用）
                 if (step.type === 'action_tool') {
-                  hasAction = 1;  // 标记为 ReAct 模式
-                  break;  // 找到 action_tool 后立即停止遍历（不需要继续检查）
+                  hasAction = 1;
+                  break;
                 }
-                // 如果当前 step 的类型是 chunk（AI 回复内容片段）
                 if (step.type === 'chunk') {
-                  hasAction = 0;  // 标记为普通对话模式
-                  // 不 break，继续遍历（后面可能还有 action_tool）
+                  hasAction = 0;
                 }
               }
               
-               // ==================== 步骤 2：根据 hasAction 判断是否执行 content 回退 ====================
-               // 只有当 hasAction !== 1（即没有 action_tool）时，才执行 content 回退逻辑
-               if (hasAction !== 1) {
-                 // ==================== 步骤 3：执行原来的 content 回退判断逻辑（原 974-986 行） ====================
-                 // 过滤出所有 type 为 chunk 的步骤
-                 const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
-                 // 检查是否存在 is_reasoning=false 的 chunk（表示有非思考过程的内容）
-                 const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
-                 
-                 // 【小强修复 2026-03-29】错误情况下不重复显示content，只在final步骤中显示
-                 // 检查是否有错误步骤（error、thought中的错误、final中的错误）
-                 const hasErrorStep = message.executionSteps?.some(step => {
-                   const content = step.content || '';
-                   return step.type === 'error' || 
-                          content.includes('[错误]') || 
-                          content.includes('429') || 
-                          content.includes('限流');
-                 });
-                 
-                 // 如果有错误步骤，不在底部content区域重复显示
-                 if (hasErrorStep) {
-                   return false;  // 不执行content回退，错误信息已在final步骤中显示
-                 }
-                 
-                 // 没有错误时，按原逻辑显示
-                 // 情况 A：SSE 实时模式（isStreaming=true）
-                 // 触发条件：只有当没有 chunk 时才显示 content（作为备用）
-                 if (message.isStreaming) {
-                   return chunks.length === 0;
-                 }
-                 
-                 // 情况 B：历史消息模式（isStreaming=false）
-                 // 触发条件：当没有 is_reasoning=false 的 chunk 时，显示 content（补充不完整的 chunk 数据）
-                 return !hasFalseReasoning;
-               }
-               
-               // 如果 hasAction === 1（有 action_tool），返回 false，不执行 content 回退
-               return false;
-              })() && (
-               // ==================== 步骤 4：渲染 content 回退区域 ====================
-               // 当没有 chunk 时，显示 message.content 作为备用（如 "🤔 AI 正在思考..."）
-               <div
-                 style={{
-                   wordBreak: "break-word",
-                   overflowWrap: "break-word",
-                   paddingRight: 32,
-                   ...(message.is_reasoning ? {
-                     color: '#888',
-                     fontStyle: 'italic',
-                     fontSize: '0.95em',
-                   } : {}),
-                 }}
-                 className={
-                   message.content === "🤔 AI 正在思考..." && message.isStreaming
-                     ? "thinking-message"
-                     : message.isError
-                     ? "error-message"
-                     : message.is_reasoning
-                     ? "reasoning-message"
-                     : ""
-                 }
-               >
-                 {message.content && typeof message.content === 'string' 
-                   ? message.content.replace(/\n\n/g, '\n')
-                   : String(message.content || '').replace(/\n\n/g, '\n')}
-                 {(message.isStreaming ?? false) && (
-                   <span className="thinking-cursor" style={{ marginLeft: 2 }}>▌</span>
-                 )}
-               </div>
-             )}
+              if (hasAction !== 1) {
+                const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
+                const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
+                
+                const hasErrorStep = message.executionSteps?.some(step => {
+                  const content = step.content || '';
+                  return step.type === 'error' || 
+                         content.includes('[错误]') || 
+                         content.includes('429') || 
+                         content.includes('限流');
+                });
+                
+                if (hasErrorStep) {
+                  return false;
+                }
+                
+                if (message.isStreaming) {
+                  return chunks.length === 0;
+                }
+                
+                return !hasFalseReasoning;
+              }
+              
+              return false;
+             })() && (
+              <div
+                style={{
+                  wordBreak: "break-word",
+                  overflowWrap: "break-word",
+                  paddingRight: 32,
+                }}
+              >
+                {message.content && typeof message.content === 'string' 
+                  ? message.content.replace(/\n\n/g, '\n')
+                  : String(message.content || '').replace(/\n\n/g, '\n')}
+              </div>
+            )}
 
-             {/* ==================== 步骤 5：渲染动态状态提示 ==================== */}
-             {/* 只在 AI 助手消息的气泡底部显示，用户消息不显示 */}
-             {!isUser && !isSystem && message.isStreaming && (
-               <DynamicStatusDisplay 
-                 executionSteps={message.executionSteps || []}
-                 isStreaming={message.isStreaming}
-               />
-             )}
+            {/* 【小强新增 2026-04-03】动态状态提示：根据 step type 显示对应状态 */}
+            {/* 只在 AI 助手消息的气泡底部显示，用户消息不显示 */}
+            {!isUser && !isSystem && message.isStreaming && (
+              <DynamicStatusDisplay 
+                executionSteps={message.executionSteps || []}
+                isStreaming={message.isStreaming}
+              />
+            )}
           </>
 
           {/* CSS 动画 */}
