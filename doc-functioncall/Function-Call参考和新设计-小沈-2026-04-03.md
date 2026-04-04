@@ -2553,8 +2553,8 @@ class DirectoryListingInput(BaseModel):
 | encoding | string | ❌ 否 | 文件编码，默认 utf-8 |
 | indent | number | ❌ 否 | 缩进空格数，默认 2 |
 
-#### 46. 读取 CSV 文件（read_csv）
-**描述**: 读取 CSV 文件，返回结构化数据
+#### 46. 读取 CSV 文件（read_csv_basic）
+**描述**: 使用 Python 标准库 csv 读取 CSV 文件，零依赖，轻量级读取
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
@@ -2686,7 +2686,7 @@ class DirectoryListingInput(BaseModel):
 | 11类：数据库访问 | 3 | query_sql, execute_sql, query_nosql |
 | 12类：注册表操作 | 3 | reg_read, reg_write, reg_delete |
 | 13类：日志记录 | 2 | log_message, get_logs |
-| 14类：数据序列化 | 3 | read_json, write_json, read_csv |
+| 14类：数据序列化 | 3 | read_json, write_json, read_csv_basic |
 | 15类：进程管理 | 2 | list_processes, kill_process |
 | 16类：服务管理 | 3 | service_list, service_start, service_stop |
 | 17类：计划任务 | 3 | task_list, task_create, task_delete |
@@ -2807,8 +2807,8 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `pandas` 和 `matplotlib` 库（`pip install pandas matplotlib`）。
 
-#### 66. 读取 CSV 文件（read_csv）
-**描述**: 读取 CSV 文件并进行数据分析
+#### 66. 读取 CSV 文件（read_csv_dataframe）
+**描述**: 使用 pandas 读取 CSV 文件并进行数据分析，返回 DataFrame 格式支持后续统计分析
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
@@ -2877,7 +2877,7 @@ class DirectoryListingInput(BaseModel):
 | 三级3类 | 总数 | 说明 |
 |--------|------|------|
 | 19类：代码执行 | 2 | execute_python, execute_javascript |
-| 20类：数据分析 | 3 | read_csv, generate_chart, analyze_data |
+| 20类：数据分析 | 3 | read_csv_dataframe, generate_chart, analyze_data |
 | 21类：文档处理 | 3 | read_pdf, read_docx, read_xlsx |
 | **总计** | **8** | 三级实现工具总数 |
 
@@ -3145,7 +3145,15 @@ class DirectoryListingInput(BaseModel):
 ---
 
 **编写人**: 小沈
-**更新时间**: 2026-04-04 19:45:00
+**更新时间**: 2026-04-04 19:51:07
+**更新说明**: 
+- 修正第22.5节 read_csv → read_csv_basic（标准库csv，零依赖）
+- 修正第23.3节 read_csv → read_csv_dataframe（pandas库，数据分析）
+- 更新对应章节的汇总表
+
+---
+
+**编写人**: 小沈
 **更新说明**: 
 - 新增第23章：三级实现工具（第19-21类）定义8个工具
 - 新增第24章：可选扩展工具（第22-28类）定义16个工具
