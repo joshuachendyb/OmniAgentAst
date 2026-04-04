@@ -1818,7 +1818,7 @@ class DirectoryListingInput(BaseModel):
 
 | 类型 | 包含工具 | 实现方式 | 说明 |
 |------|---------|---------|------|
-| **1. 文件操作** | read_text_file, read_media_file, read_multiple_files, write_file, edit_file, copy_file, move_file, delete_file, search_files, list_directory, list_allowed_directories, create_directory, get_file_info, directory_tree, rename_file | `os`, `shutil`, `pathlib`, `glob` | 基础文件读写、编辑、搜索、目录管理、重命名、媒体读取 |
+| **1. 文件操作** | read_text_file, read_media_file, read_batch_file, read_file, write_append_file, precise_replace_in_file, edit_file, copy_file, move_file, rename_file, delete_file, search_files, glob_files, grep_file_content, create_directory, list_directory_with_sizes, get_directory_tree, get_file_info, list_allowed_directories | `os`, `shutil`, `pathlib`, `glob` | 基础文件读写、编辑、搜索、目录管理、重命名、媒体读取 |
 | **2. Shell 命令执行** | execute_shell_command, get_shell_output, terminate_shell | `subprocess` | PowerShell/CMD 命令执行、后台任务管理 |
 | **3. API/HTTP 调用** | http_request | `urllib`, `http.client` | Agent 调用外部 REST API、Webhook、微服务（通用方法覆盖 GET/POST/PUT/DELETE） |
 | **4. 网络通信** | fetch_webpage, search_web | `urllib`, `http.client` | 网页内容获取、网络搜索 |
@@ -2173,7 +2173,7 @@ class DirectoryListingInput(BaseModel):
 
 | 一级10类 | 总数 | 已有数 | 缺少数 |
 |---------|------|--------|--------|
-| 1类：文件操作 | 15 | 19 | 0 |
+| 1类：文件操作 | 19 | 19 | 0 |
 | 2类：Shell命令执行 | 3 | 3 | 0 |
 | 3类：API/HTTP调用 | 1 | 0 | 1 |
 | 4类：网络通信 | 2 | 2 | 0 |
@@ -2183,11 +2183,11 @@ class DirectoryListingInput(BaseModel):
 | 8类：网络连接 | 2 | 0 | 2 |
 | 9类：压缩/解压 | 2 | 0 | 2 |
 | 10类：文件哈希 | 1 | 0 | 1 |
-| **总计** | **31** | **23** | **8** |
+| **总计** | **35** | **24** | **11** |
 
 **说明**:
-- **总数**: 20.8章定义的每个一级类的工具总数
-- **已有数**: 21章中网上学习已收集的工具数量（1类文件操作有19个，超过定义的15个，说明网上学习有更多工具）
+- **总数**: 20.8章定义的每个一级类的工具总数（1类更新为19个）
+- **已有数**: 21章中网上学习已收集的工具数量
 - **缺少数**: 还需要通过网上学习补充的工具数量
 
 **备注**: 21章仅汇总网上学习的工具，不包括Omni系统自身的工具定义。
