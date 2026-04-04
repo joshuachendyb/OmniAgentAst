@@ -2430,7 +2430,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：用于 Agent 查询/写入 SQLite、MySQL 等数据库。SQLite 为 Python 内置库，MySQL/PostgreSQL 需要 `sqlalchemy` 或对应驱动。
 
-#### 36. 查询 SQL 数据库（query_sql）
+#### 47. 查询 SQL 数据库（query_sql）
 **描述**: 执行 SQL SELECT 查询并返回结果集，支持 SQLite、MySQL、PostgreSQL 等主流关系型数据库
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2443,7 +2443,7 @@ class DirectoryListingInput(BaseModel):
 | limit | number | ❌ 否 | 返回行数限制，默认 100 |
 | offset | number | ❌ 否 | 返回起始偏移，默认 0 |
 
-#### 37. 执行 SQL 命令（execute_sql）
+#### 48. 执行 SQL 命令（execute_sql）
 **描述**: 执行 INSERT、UPDATE、DELETE 等 SQL 语句，返回影响的行数
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2455,7 +2455,7 @@ class DirectoryListingInput(BaseModel):
 | params | object | ❌ 否 | 语句参数（用于参数化查询） |
 | commit | boolean | ❌ 否 | 是否立即提交，默认 true |
 
-#### 38. 查询 NoSQL 数据库（query_nosql）
+#### 49. 查询 NoSQL 数据库（query_nosql）
 **描述**: 查询 MongoDB 等 NoSQL 数据库（需要安装 pymongo）
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2473,7 +2473,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 Python 内置库 `winreg`，仅限 Windows 平台，零依赖。
 
-#### 39. 读取注册表（reg_read）
+#### 50. 读取注册表（reg_read）
 **描述**: 读取 Windows 注册表指定键的值
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2482,7 +2482,7 @@ class DirectoryListingInput(BaseModel):
 | value_name | string | ❌ 否 | 值名称（不填则返回键的默认值） |
 | hive | string | ❌ 否 | 注册表根键：HKCU（默认）/ HKLM / HKCR / HKU / HKCC |
 
-#### 40. 写入注册表（reg_write）
+#### 51. 写入注册表（reg_write）
 **描述**: 写入或创建 Windows 注册表键值
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2493,7 +2493,7 @@ class DirectoryListingInput(BaseModel):
 | value_type | string | ❌ 否 | 值类型：REG_SZ（默认）/ REG_DWORD / REG_BINARY / REG_MULTI_SZ |
 | hive | string | ❌ 否 | 注册表根键：HKCU（默认）/ HKLM / HKCR / HKU / HKCC |
 
-#### 41. 删除注册表（reg_delete）
+#### 52. 删除注册表（reg_delete）
 **描述**: 删除 Windows 注册表键或值
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2508,7 +2508,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 Python 内置库 `logging`，零依赖。用于 Agent 操作日志、审计追踪。
 
-#### 42. 记录日志消息（log_message）
+#### 53. 记录日志消息（log_message）
 **描述**: 记录日志消息到指定日志文件或日志系统
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2518,7 +2518,7 @@ class DirectoryListingInput(BaseModel):
 | logger_name | string | ❌ 否 | 日志记录器名称（默认 root） |
 | log_file | string | ❌ 否 | 日志文件路径（若不填则只输出到控制台） |
 
-#### 43. 获取日志内容（get_logs）
+#### 54. 获取日志内容（get_logs）
 **描述**: 读取指定日志文件的内容
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2535,7 +2535,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 Python 内置库 `json` 和 `csv`，零依赖。
 
-#### 44. 读取 JSON 文件（read_json）
+#### 55. 读取 JSON 文件（read_json）
 **描述**: 读取并解析 JSON 文件，返回 Python 对象
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2543,7 +2543,7 @@ class DirectoryListingInput(BaseModel):
 | file_path | string | ✅ 是 | JSON 文件路径 |
 | encoding | string | ❌ 否 | 文件编码，默认 utf-8 |
 
-#### 45. 写入 JSON 文件（write_json）
+#### 56. 写入 JSON 文件（write_json）
 **描述**: 将 Python 对象写入 JSON 文件
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2553,7 +2553,7 @@ class DirectoryListingInput(BaseModel):
 | encoding | string | ❌ 否 | 文件编码，默认 utf-8 |
 | indent | number | ❌ 否 | 缩进空格数，默认 2 |
 
-#### 46. 读取 CSV 文件（read_csv_basic）
+#### 57. 读取 CSV 文件（read_csv_basic）
 **描述**: 使用 Python 标准库 csv 读取 CSV 文件，零依赖，轻量级读取
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2570,7 +2570,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：需要 `psutil` 库（`pip install psutil`）。
 
-#### 47. 列出进程（list_processes）
+#### 58. 列出进程（list_processes）
 **描述**: 获取当前运行的进程列表，支持过滤和排序
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2581,7 +2581,7 @@ class DirectoryListingInput(BaseModel):
 | limit | number | ❌ 否 | 返回进程数量限制，默认 100 |
 | sort_by | string | ❌ 否 | 排序方式：pid / name / cpu / memory（默认 pid） |
 
-#### 48. 终止进程（kill_process）
+#### 59. 终止进程（kill_process）
 **描述**: 终止指定进程
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2596,7 +2596,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：Windows 服务管理，使用 `subprocess` 执行 `sc` 命令，零依赖。
 
-#### 49. 列出服务（service_list）
+#### 60. 列出服务（service_list）
 **描述**: 获取 Windows 服务列表
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2604,14 +2604,14 @@ class DirectoryListingInput(BaseModel):
 | state | string | ❌ 否 | 服务状态过滤：running / stopped / all（默认 all） |
 | name | string | ❌ 否 | 服务名称过滤 |
 
-#### 50. 启动服务（service_start）
+#### 61. 启动服务（service_start）
 **描述**: 启动指定的 Windows 服务
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | service_name | string | ✅ 是 | 服务名称 |
 
-#### 51. 停止服务（service_stop）
+#### 62. 停止服务（service_stop）
 **描述**: 停止指定的 Windows 服务
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2625,7 +2625,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `subprocess` 执行 `schtasks` 命令，零依赖。
 
-#### 52. 列出计划任务（task_list）
+#### 63. 列出计划任务（task_list）
 **描述**: 获取 Windows 计划任务列表
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2633,7 +2633,7 @@ class DirectoryListingInput(BaseModel):
 | folder | string | ❌ 否 | 任务文件夹（如 \\Microsoft） |
 | state | string | ❌ 否 | 状态过滤：ready / running / disabled |
 
-#### 53. 创建计划任务（task_create）
+#### 64. 创建计划任务（task_create）
 **描述**: 创建新的 Windows 计划任务
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2645,7 +2645,7 @@ class DirectoryListingInput(BaseModel):
 | start_date | string | ❌ 否 | 开始日期（格式：YYYY-MM-DD） |
 | interval | number | ❌ 否 | 重复间隔（分钟） |
 
-#### 54. 删除计划任务（task_delete）
+#### 65. 删除计划任务（task_delete）
 **描述**: 删除指定的计划任务
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2659,7 +2659,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `subprocess` 执行 `ping` 命令或 `socket` 库，零依赖。
 
-#### 55. Ping 主机（ping）
+#### 66. Ping 主机（ping）
 **描述**: Ping 指定主机或 IP 地址，检测网络连通性
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2668,7 +2668,7 @@ class DirectoryListingInput(BaseModel):
 | count | number | ❌ 否 | Ping 次数，默认 4 |
 | timeout | number | ❌ 否 | 超时时间（秒），默认 5 |
 
-#### 56. 检查端口（port_check）
+#### 67. 检查端口（port_check）
 **描述**: 检查指定主机端口是否开放
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2699,7 +2699,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：第20.8章第5类"Agent辅助/配套工具"中，属于二级实现（需要pip install）的工具。
 
-#### 57. 确认数据库存在（check_db_exists）
+#### 68. 确认数据库存在（check_db_exists）
 **描述**: 确认数据库文件或连接是否存在
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2707,7 +2707,7 @@ class DirectoryListingInput(BaseModel):
 | db_path | string | ❌ 否 | SQLite数据库文件路径 |
 | connection_string | string | ❌ 否 | 数据库连接字符串 |
 
-#### 58. 获取表结构（get_table_schema）
+#### 69. 获取表结构（get_table_schema）
 **描述**: 获取数据库表结构，Agent知道有哪些字段
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2716,28 +2716,28 @@ class DirectoryListingInput(BaseModel):
 | connection_string | string | ❌ 否 | 数据库连接字符串 |
 | table_name | string | ✅ 是 | 表名称 |
 
-#### 59. 开启事务（begin_transaction）
+#### 70. 开启事务（begin_transaction）
 **描述**: 开启数据库事务，保证数据一致性
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | connection_string | string | ✅ 是 | 数据库连接字符串 |
 
-#### 60. 提交事务（commit_transaction）
+#### 71. 提交事务（commit_transaction）
 **描述**: 提交数据库事务
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | connection_string | string | ✅ 是 | 数据库连接字符串 |
 
-#### 61. 回滚事务（rollback_transaction）
+#### 72. 回滚事务（rollback_transaction）
 **描述**: 回滚数据库事务
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | connection_string | string | ✅ 是 | 数据库连接字符串 |
 
-#### 62. 检查网络连通性（check_network_connectivity）
+#### 73. 检查网络连通性（check_network_connectivity）
 **描述**: 检查网络是否连通
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2745,7 +2745,7 @@ class DirectoryListingInput(BaseModel):
 | host | string | ✅ 是 | 目标主机 |
 | timeout | number | ❌ 否 | 超时秒数，默认5 |
 
-#### 63. 验证URL（validate_url）
+#### 74. 验证URL（validate_url）
 **描述**: 验证URL格式是否合法
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2783,7 +2783,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `subprocess` 实现，需要沙箱隔离确保安全，零依赖。
 
-#### 64. 执行 Python 代码（execute_python）
+#### 75. 执行 Python 代码（execute_python）
 **描述**: 在沙箱环境中执行 Python 代码并返回结果
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2792,7 +2792,7 @@ class DirectoryListingInput(BaseModel):
 | timeout | number | ❌ 否 | 超时时间（秒），默认 30 |
 | imports | string[] | ❌ 否 | 预先导入的模块（如 ["json", "os"]） |
 
-#### 65. 执行 JavaScript 代码（execute_javascript）
+#### 76. 执行 JavaScript 代码（execute_javascript）
 **描述**: 使用 Node.js 执行 JavaScript 代码并返回结果
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2807,7 +2807,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `pandas` 和 `matplotlib` 库（`pip install pandas matplotlib`）。
 
-#### 66. 读取 CSV 文件（read_csv_dataframe）
+#### 77. 读取 CSV 文件（read_csv_dataframe）
 **描述**: 使用 pandas 读取 CSV 文件并进行数据分析，返回 DataFrame 格式支持后续统计分析
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2818,7 +2818,7 @@ class DirectoryListingInput(BaseModel):
 | has_header | boolean | ❌ 否 | 是否有表头，默认 true |
 | max_rows | number | ❌ 否 | 最大读取行数，默认 1000 |
 
-#### 67. 生成图表（generate_chart）
+#### 78. 生成图表（generate_chart）
 **描述**: 使用 matplotlib 生成数据可视化图表
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2830,7 +2830,7 @@ class DirectoryListingInput(BaseModel):
 | y_label | string | ❌ 否 | Y轴标签 |
 | output_path | string | ❌ 否 | 输出图片路径（默认 temp.png） |
 
-#### 68. 分析数据（analyze_data）
+#### 79. 分析数据（analyze_data）
 **描述**: 对数据集进行统计分析，返回描述性统计信息
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2845,7 +2845,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `pdfplumber`、`python-docx`、`openpyxl` 库。
 
-#### 69. 读取 PDF 文件（read_pdf）
+#### 80. 读取 PDF 文件（read_pdf）
 **描述**: 读取 PDF 文件并提取文本内容
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2854,14 +2854,14 @@ class DirectoryListingInput(BaseModel):
 | pages | string | ❌ 否 | 要读取的页面（如 "1-5" 或 "1,3,5"） |
 | extract_images | boolean | ❌ 否 | 是否提取图片，默认 false |
 
-#### 70. 读取 Word 文件（read_docx）
+#### 81. 读取 Word 文件（read_docx）
 **描述**: 读取 Word 文档并提取文本内容
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | file_path | string | ✅ 是 | Word 文件路径 |
 
-#### 71. 读取 Excel 文件（read_xlsx）
+#### 82. 读取 Excel 文件（read_xlsx）
 **描述**: 读取 Excel 文件并提取表格数据
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2887,57 +2887,57 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：第20.8章第5类"Agent辅助/配套工具"中，属于三级实现（需要pip install）的工具。
 
-#### 72. 检查Python环境（check_python_available）
+#### 83. 检查Python环境（check_python_available）
 **描述**: 检查Python环境是否可用
 **参数**: 无参数
 
-#### 73. 验证代码安全性（validate_code_safety）
+#### 84. 验证代码安全性（validate_code_safety）
 **描述**: 验证代码安全性，防止危险操作
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | code | string | ✅ 是 | 要验证的代码 |
 
-#### 74. 检查Node.js环境（check_node_available）
+#### 85. 检查Node.js环境（check_node_available）
 **描述**: 检查Node.js环境是否可用
 **参数**: 无参数
 
-#### 75. 检查Python模块（check_module_available）
+#### 86. 检查Python模块（check_module_available）
 **描述**: 检查Python模块是否已安装
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | module_name | string | ✅ 是 | 模块名称 |
 
-#### 76. 验证CSV格式（validate_csv_format）
+#### 87. 验证CSV格式（validate_csv_format）
 **描述**: 验证CSV文件格式是否正确
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | file_path | string | ✅ 是 | CSV文件路径 |
 
-#### 77. 验证图表数据（validate_chart_data）
+#### 88. 验证图表数据（validate_chart_data）
 **描述**: 验证图表数据格式是否正确
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | data | object | ✅ 是 | 图表数据（JSON格式） |
 
-#### 78. 检查PDF可读性（check_pdf_readable）
+#### 89. 检查PDF可读性（check_pdf_readable）
 **描述**: 检查PDF文件是否可读
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | file_path | string | ✅ 是 | PDF文件路径 |
 
-#### 79. 检查Word可读性（check_docx_readable）
+#### 90. 检查Word可读性（check_docx_readable）
 **描述**: 检查Word文件是否可读
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | file_path | string | ✅ 是 | Word文件路径 |
 
-#### 80. 检查Excel可读性（check_xlsx_readable）
+#### 91. 检查Excel可读性（check_xlsx_readable）
 **描述**: 检查Excel文件是否可读
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2966,7 +2966,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `pyautogui` 库（`pip install pyautogui`）。
 
-#### 72. 鼠标点击（click）
+#### 92. 鼠标点击（click）
 **描述**: 模拟鼠标点击操作
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2976,7 +2976,7 @@ class DirectoryListingInput(BaseModel):
 | button | string | ❌ 否 | 鼠标按钮：left/right/middle（默认 left） |
 | click_type | string | ❌ 否 | 点击类型：single/double（默认 single） |
 
-#### 73. 鼠标移动（move）
+#### 93. 鼠标移动（move）
 **描述**: 移动鼠标到指定位置
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2985,7 +2985,7 @@ class DirectoryListingInput(BaseModel):
 | y | number | ✅ 是 | 目标 Y 坐标 |
 | duration | number | ❌ 否 | 移动持续时间（秒），默认 0 |
 
-#### 74. 鼠标滚动（scroll）
+#### 94. 鼠标滚动（scroll）
 **描述**: 模拟鼠标滚轮滚动
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2999,7 +2999,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `pyautogui` 或 `keyboard` 库。
 
-#### 75. 输入文本（type_text）
+#### 95. 输入文本（type_text）
 **描述**: 模拟键盘输入文本
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -3007,14 +3007,14 @@ class DirectoryListingInput(BaseModel):
 | text | string | ✅ 是 | 要输入的文本 |
 | interval | number | ❌ 否 | 每个字符间隔（秒），默认 0 |
 
-#### 76. 快捷键（shortcut）
+#### 96. 快捷键（shortcut）
 **描述**: 执行键盘快捷键组合
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | keys | string | ✅ 是 | 快捷键组合（如 "ctrl+c", "alt+tab"） |
 
-#### 77. 组合键（key_combo）
+#### 97. 组合键（key_combo）
 **描述**: 按住多个键后释放
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -3028,7 +3028,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `mss` 或 `PIL` 库。
 
-#### 78. 截取屏幕（screenshot）
+#### 98. 截取屏幕（screenshot）
 **描述**: 截取屏幕截图
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -3036,14 +3036,14 @@ class DirectoryListingInput(BaseModel):
 | output_path | string | ❌ 否 | 输出文件路径（默认 temp.png） |
 | region | object | ❌ 否 | 截取区域 {x, y, width, height} |
 
-#### 79. 桌面快照（snapshot）
+#### 99. 桌面快照（snapshot）
 **描述**: 获取完整桌面状态快照
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | display | number | ❌ 否 | 显示器编号，默认 1 |
 
-#### 80. 屏幕录制（screen_record）
+#### 100. 屏幕录制（screen_record）
 **描述**: 录制屏幕视频
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -3058,7 +3058,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `pytesseract` 库（`pip install pytesseract`），需要安装 Tesseract 引擎。
 
-#### 81. OCR 文字识别（ocr）
+#### 101. OCR 文字识别（ocr）
 **描述**: 从图片中识别文字
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -3072,21 +3072,21 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `pywin32` 库（`pip install pywin32`）。
 
-#### 82. 列出窗口（list_windows）
+#### 102. 列出窗口（list_windows）
 **描述**: 获取所有打开的窗口列表
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | filter | string | ❌ 否 | 窗口标题过滤 |
 
-#### 83. 聚焦窗口（focus_window）
+#### 103. 聚焦窗口（focus_window）
 **描述**: 聚焦指定窗口
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | title | string | ✅ 是 | 窗口标题 |
 
-#### 84. 调整窗口大小（resize_window）
+#### 104. 调整窗口大小（resize_window）
 **描述**: 调整窗口大小
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -3101,11 +3101,11 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `pyperclip` 库（`pip install pyperclip`）或零依赖的 `ctypes`。
 
-#### 85. 读取剪贴板（read_clipboard）
+#### 105. 读取剪贴板（read_clipboard）
 **描述**: 读取剪贴板内容
 **参数**: 无参数
 
-#### 86. 写入剪贴板（write_clipboard）
+#### 106. 写入剪贴板（write_clipboard）
 **描述**: 写入内容到剪贴板
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -3118,7 +3118,7 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：使用 `win10toast` 库（`pip install win10toast`）。
 
-#### 87. 发送通知（send_notification）
+#### 107. 发送通知（send_notification）
 **描述**: 发送 Windows 系统通知
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -3148,37 +3148,37 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：第20.8章第5类"Agent辅助/配套工具"中，属于可选扩展（需要pip install）的工具。
 
-#### 88. 获取鼠标位置（get_mouse_position）
+#### 108. 获取鼠标位置（get_mouse_position）
 **描述**: 获取当前鼠标位置
 **参数**: 无参数
 
-#### 89. 检查屏幕分辨率（check_screen_size）
+#### 109. 检查屏幕分辨率（check_screen_size）
 **描述**: 检查屏幕分辨率
 **参数**: 无参数
 
-#### 90. 检查窗口是否存在（check_window_exists）
+#### 110. 检查窗口是否存在（check_window_exists）
 **描述**: 检查窗口是否存在
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | title | string | ✅ 是 | 窗口标题 |
 
-#### 91. 获取窗口位置和大小（get_window_position）
+#### 111. 获取窗口位置和大小（get_window_position）
 **描述**: 获取窗口位置和大小
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | title | string | ✅ 是 | 窗口标题 |
 
-#### 92. 检查屏幕捕获权限（check_screen_capture_permission）
+#### 112. 检查屏幕捕获权限（check_screen_capture_permission）
 **描述**: 检查屏幕捕获权限
 **参数**: 无参数
 
-#### 93. 检查Tesseract OCR引擎（check_tesseract_available）
+#### 113. 检查Tesseract OCR引擎（check_tesseract_available）
 **描述**: 检查Tesseract OCR引擎是否可用
 **参数**: 无参数
 
-#### 94. 检查系统通知权限（check_notification_permission）
+#### 114. 检查系统通知权限（check_notification_permission）
 **描述**: 检查系统通知权限
 **参数**: 无参数
 
