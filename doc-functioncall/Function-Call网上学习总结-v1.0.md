@@ -1842,7 +1842,7 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.2 文件读取类
 
-#### 1. read_text_file（MCP）
+#### 1. 读取文本文件（read_text_file）
 **描述**: 读取文本文件完整内容，始终以 UTF-8 格式处理文件
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1851,21 +1851,21 @@ class DirectoryListingInput(BaseModel):
 | head | number | ❌ 否 | 读取前 N 行（不能与 tail 同时使用） |
 | tail | number | ❌ 否 | 读取后 N 行 |
 
-#### 2. read_media_file（MCP）
+#### 2. 读取媒体文件（read_media_file）
 **描述**: 读取图片或音频文件，返回 base64 编码数据和对应的 MIME 类型
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | path | string | ✅ 是 | 媒体文件的完整路径 |
 
-#### 3. read_multiple_files（MCP）
+#### 3. 批量读文件（read_batch_file）
 **描述**: 同时读取多个文件，单个文件读取失败不会中断整个操作
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | paths | string[] | ✅ 是 | 文件路径数组 |
 
-#### 4. Read（Claude Code）
+#### 4. 读取多格式文件（read_file）
 **描述**: 从文件系统读取文件，支持文本、图片、PDF、Jupyter notebook
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1878,15 +1878,7 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.3 文件写入类
 
-#### 6. write_file（MCP）
-**描述**: 创建新文件或覆盖已有文件（谨慎使用，会覆盖）
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| path | string | ✅ 是 | 文件路径 |
-| content | string | ✅ 是 | 文件内容 |
-
-#### 7. WriteFileTool（LangChain）
+#### 5. 写入或追加文件（write_append_file）
 **描述**: 写入或追加到文件
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1899,7 +1891,7 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.4 文件编辑类
 
-#### 9. edit_file（MCP）
+#### 7. 编辑文件（edit_file）
 **描述**: 使用高级模式匹配进行选择性编辑，支持多同时编辑、缩进保留、dryRun 预览
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1908,7 +1900,7 @@ class DirectoryListingInput(BaseModel):
 | edits | array | ✅ 是 | 编辑操作数组，每个元素包含 oldText 和 newText |
 | dryRun | boolean | ❌ 否 | 预览模式不实际修改，默认 false |
 
-#### 10. Edit（Claude Code）
+#### 7. 精准替换文件内容（precise_replace_in_file）
 **描述**: 执行精确的字符串替换
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1918,7 +1910,7 @@ class DirectoryListingInput(BaseModel):
 | new_string | string | ✅ 是 | 替换后的文本 |
 | replace_all | boolean | ❌ 否 | 替换所有匹配项，默认 false |
 
-#### 11. CopyFileTool（LangChain）
+#### 8. 复制文件（copy_file）
 **描述**: 复制文件
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1926,7 +1918,7 @@ class DirectoryListingInput(BaseModel):
 | source_path | string | ✅ 是 | 源文件路径 |
 | destination_path | string | ✅ 是 | 目标文件路径 |
 
-#### 12. MoveFileTool（LangChain）
+#### 9. 移动或重命名文件（move_file）
 **描述**: 移动或重命名文件
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1934,7 +1926,7 @@ class DirectoryListingInput(BaseModel):
 | source_path | string | ✅ 是 | 源文件路径 |
 | destination_path | string | ✅ 是 | 目标文件路径 |
 
-#### 13. DeleteFileTool（LangChain）
+#### 10. 删除文件（delete_file）
 **描述**: 删除文件
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1945,7 +1937,7 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.5 文件搜索类（文件名）
 
-#### 14. search_files（MCP）
+#### 11. 搜索文件按模式（search_files）
 **描述**: 递归搜索匹配或排除模式的文件/目录，返回完整路径
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1954,7 +1946,7 @@ class DirectoryListingInput(BaseModel):
 | pattern | string | ✅ 是 | 搜索模式（glob 风格） |
 | excludePatterns | string[] | ❌ 否 | 排除模式 |
 
-#### 15. Glob（Claude Code）
+#### 12. 文件名模式匹配（glob_files）
 **描述**: 快速的文件名模式匹配，按修改时间排序返回结果
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1966,7 +1958,7 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.6 文件搜索类（内容）
 
-#### 16. Grep（Claude Code）
+#### 13. 搜索文件内容（grep_file_content）
 **描述**: 基于 ripgrep 的强大内容搜索，支持正则表达式和多选项
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1988,14 +1980,14 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.7 目录操作类
 
-#### 17. create_directory（MCP）
+#### 14. 创建目录（create_directory）
 **描述**: 创建新目录，如需要会创建父目录，目录已存在则静默成功
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | path | string | ✅ 是 | 目录路径 |
 
-#### 18. list_directory_with_sizes（MCP）
+#### 15. 列出目录含大小（list_directory_with_sizes）
 **描述**: 列出目录内容，包含文件大小，按 name 或 size 排序，返回统计信息
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2003,7 +1995,7 @@ class DirectoryListingInput(BaseModel):
 | path | string | ✅ 是 | 目录路径 |
 | sortBy | string | ❌ 否 | 排序方式：name 或 size，默认 name |
 
-#### 19. directory_tree（MCP）
+#### 16. 获取目录树结构（get_directory_tree）
 **描述**: 获取目录的递归 JSON 树结构，每个条目包含 name、type（file/directory）、children
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2011,25 +2003,19 @@ class DirectoryListingInput(BaseModel):
 | path | string | ✅ 是 | 起始目录 |
 | excludePatterns | string[] | ❌ 否 | 排除模式（glob 格式） |
 
-#### 20. ListDirectoryTool（LangChain）
-**描述**: 列出目录内容
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| dir_path | string | ❌ 否 | 列出目录，默认 "." |
 
 ---
 
 ### 21.8 元数据/信息类
 
-#### 21. get_file_info（MCP）
+#### 17. 获取文件信息（get_file_info）
 **描述**: 获取文件/目录的详细元数据，包括大小、创建/修改/访问时间、类型、权限
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | path | string | ✅ 是 | 文件或目录路径 |
 
-#### 22. list_allowed_directories（MCP）
+#### 18. 列出允许访问的目录（list_allowed_directories）
 **描述**: 列出服务器允许访问的所有目录
 **参数**: 无参数
 
@@ -2037,7 +2023,7 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.9 系统操作类
 
-#### 23. Bash（Claude Code）
+#### 19. 执行 Shell 命令（execute_shell_command）
 **描述**: 在持久 bash 会话中执行 shell 命令
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2047,7 +2033,7 @@ class DirectoryListingInput(BaseModel):
 | timeout | number | ❌ 否 | 超时毫秒数，默认120000，最大600000 |
 | run_in_background | boolean | ❌ 否 | 后台运行命令 |
 
-#### 24. BashOutput（Claude Code）
+#### 20. 获取 Shell 输出（get_shell_output）
 **描述**: 获取后台运行的 bash 命令输出
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2055,7 +2041,7 @@ class DirectoryListingInput(BaseModel):
 | bash_id | string | ✅ 是 | 后台 shell 的 ID |
 | filter | string | ❌ 否 | 过滤输出的正则表达式 |
 
-#### 25. KillShell（Claude Code）
+#### 21. 终止 Shell 会话（terminate_shell）
 **描述**: 终止运行中的后台 bash shell
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2066,7 +2052,7 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.10 网络/通信类
 
-#### 26. WebFetch（Claude Code）
+#### 22. 获取网页内容（fetch_webpage）
 **描述**: 获取和处理网页内容，带 AI 分析功能
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2074,7 +2060,7 @@ class DirectoryListingInput(BaseModel):
 | url | string | ✅ 是 | 完全有效的 URL |
 | prompt | string | ✅ 是 | 要从页面提取的信息 |
 
-#### 27. WebSearch（Claude Code）
+#### 23. 网络搜索（search_web）
 **描述**: 搜索网络获取最新信息（仅美国可用）
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2087,7 +2073,7 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.11 任务管理类
 
-#### 28. Task（Claude Code）
+#### 24. 启动子 Agent（launch_subagent）
 **描述**: 启动专门的子 agent 处理复杂的多步骤任务
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2098,25 +2084,25 @@ class DirectoryListingInput(BaseModel):
 | model | string | ❌ 否 | 使用的模型 |
 | resume | boolean | ❌ 否 | 恢复之前的任务 |
 
-#### 29. TodoWrite（Claude Code）
+#### 25. 管理任务列表（manage_todos）
 **描述**: 创建和管理结构化任务列表跟踪进度
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | todos | array | ✅ 是 | todo 对象数组，每个包含 content、activeForm、status |
 
-#### 30. ExitPlanMode（Claude Code）
+#### 26. 退出计划模式（exit_plan_mode）
 **描述**: 展示实现计划后退出计划模式
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | plan | string | ✅ 是 | 实现计划（支持 markdown） |
 
-#### 31. EnterPlanMode（Claude Code）
+#### 27. 进入计划模式（enter_plan_mode）
 **描述**: 进入计划模式
 **参数**: 无参数
 
-#### 32. NotebookEdit（Claude Code）
+#### 28. 编辑 Notebook 单元格（edit_notebook_cell）
 **描述**: 编辑 Jupyter notebook 单元格
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2127,14 +2113,14 @@ class DirectoryListingInput(BaseModel):
 | cell_type | string | ❌ 否 | 单元格类型：code 或 markdown |
 | edit_mode | string | ❌ 否 | 编辑模式：replace/insert/delete |
 
-#### 33. SlashCommand（Claude Code）
+#### 29. 执行斜杠命令（execute_slash_command）
 **描述**: 执行斜杠命令
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | command | string | ✅ 是 | 斜杠命令及参数 |
 
-#### 34. AskUserQuestion（Claude Code）
+#### 30. 向用户提问（ask_user_question）
 **描述**: 向用户提问获取交互
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2142,7 +2128,7 @@ class DirectoryListingInput(BaseModel):
 | questions | array | ✅ 是 | 问题数组 |
 | answers | array | ❌ 否 | 答案数组 |
 
-#### 35. Skill（Claude Code）
+#### 31. 执行 Skill（execute_skill）
 **描述**: 执行 skill
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2156,29 +2142,30 @@ class DirectoryListingInput(BaseModel):
 | 类别 | MCP | LangChain | Claude Code | 总计 |
 |------|-----|-----------|------------|------|
 | 文件读取 | 3 | 0 | 1 | 4 |
-| 文件写入 | 1 | 1 | 0 | 2 |
+| 文件写入 | 0 | 1 | 0 | 1 |
 | 文件编辑 | 0 | 3 | 1 | 4 |
 | 文件搜索(文件名) | 1 | 0 | 1 | 2 |
 | 文件搜索(内容) | 0 | 0 | 1 | 1 |
-| 目录操作 | 3 | 1 | 0 | 4 |
+| 目录操作 | 3 | 0 | 0 | 3 |
 | 元数据 | 2 | 0 | 0 | 2 |
 | 系统操作 | 0 | 0 | 3 | 3 |
 | 网络/通信 | 0 | 0 | 2 | 2 |
 | 任务管理 | 0 | 0 | 7 | 7 |
-| **总计** | **10** | **5** | **16** | **31** |
+| **总计** | **9** | **4** | **16** | **29** |
 
 **说明**:
-- MCP: 10 个工具
-- LangChain: 5 个工具
+- MCP: 9 个工具
+- LangChain: 4 个工具
 - Claude Code: 16 个工具
-- 总计: 31 个工具
+- 总计: 29 个工具
 
 ---
 
 **编写人**: 小沈
-**更新时间**: 2026-04-04 10:00:00
+**更新时间**: 2026-04-04 11:00:00
 **更新说明**: 
-- 第21章以tool功能为主键去重合并
-- 删除重复工具：ReadFileTool（LangChain）、Write（Claude Code）、FileSearchTool（LangChain）
-- 合并重复工具：move_file（MCP）合并到 MoveFileTool，list_directory（MCP）合并到 ListDirectoryTool
-- 从 37 个工具精简为 31 个工具
+- 删除 write_file（MCP），保留 write_append_file（LangChain），功能完全覆盖
+- 删除 list_directory（LangChain），功能被 list_directory_with_sizes 完全覆盖
+- rename: append_to_file → write_append_file, replace_in_file → precise_replace_in_file
+- 所有 tool 标题改为中文名称+英文名称格式
+- 从 31 个工具精简为 29 个工具，序号 1-31 重新连续编号
