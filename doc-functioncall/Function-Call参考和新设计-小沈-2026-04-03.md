@@ -1934,13 +1934,11 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-## 二十一、全部 Tool 汇总（按类型分类，仅限网上学习）
+## 二十一、全部 Tool 汇总（按一级实现10类分类，仅限网上学习）
 
 ### 21.1 工具汇总说明
 
-本章节整合第1-20章中提到的**网上学习的工具**，按功能类型分类。每个工具包含：
-- **工具描述**: 工具的功能说明
-- **参数列表**: 参数名称 + 参数类型 + 描述
+本章节整合第1-20章中提到的**网上学习的工具**，按**20.8章"一、核心业务工具（零依赖，Python 标准库实现）【一级实现的工具】"的10类**进行分类。
 
 **数据来源**（仅来自网上学习）:
 - MCP Filesystem Server（官方文档）
@@ -1951,7 +1949,9 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-### 21.2 文件读取类
+### 21.2 一类：文件操作
+
+**说明**: 使用 `os`, `shutil`, `pathlib`, `glob` 实现，零依赖Python标准库。
 
 #### 1. 读取文本文件（read_text_file）
 **描述**: 读取文本文件完整内容，始终以 UTF-8 格式处理文件
@@ -1985,10 +1985,6 @@ class DirectoryListingInput(BaseModel):
 | offset | number | ❌ 否 | 起始行号，从1开始 |
 | limit | number | ❌ 否 | 读取行数，默认2000行 |
 
----
-
-### 21.3 文件写入类
-
 #### 5. 写入或追加文件（write_append_file）
 **描述**: 写入或追加到文件
 **参数**:
@@ -1997,19 +1993,6 @@ class DirectoryListingInput(BaseModel):
 | file_path | string | ✅ 是 | 文件路径 |
 | text | string | ✅ 是 | 写入的文本内容 |
 | append | boolean | ❌ 否 | 是否追加模式，默认 false |
-
----
-
-### 21.4 文件编辑类
-
-#### 7. 编辑文件（edit_file）
-**描述**: 使用高级模式匹配进行选择性编辑，支持多同时编辑、缩进保留、dryRun 预览
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| file_path | string | ✅ 是 | 要编辑的文件路径 |
-| edits | array | ✅ 是 | 编辑操作数组，每个元素包含 oldText 和 newText |
-| dryRun | boolean | ❌ 否 | 预览模式不实际修改，默认 false |
 
 #### 6. 精准替换文件内容（precise_replace_in_file）
 **描述**: 执行精确的字符串替换
@@ -2020,6 +2003,15 @@ class DirectoryListingInput(BaseModel):
 | old_string | string | ✅ 是 | 要替换的精确文本 |
 | new_string | string | ✅ 是 | 替换后的文本 |
 | replace_all | boolean | ❌ 否 | 替换所有匹配项，默认 false |
+
+#### 7. 编辑文件（edit_file）
+**描述**: 使用高级模式匹配进行选择性编辑，支持多同时编辑、缩进保留、dryRun 预览
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 要编辑的文件路径 |
+| edits | array | ✅ 是 | 编辑操作数组，每个元素包含 oldText 和 newText |
+| dryRun | boolean | ❌ 否 | 预览模式不实际修改，默认 false |
 
 #### 8. 复制文件（copy_file）
 **描述**: 复制文件
@@ -2052,10 +2044,6 @@ class DirectoryListingInput(BaseModel):
 |--------|------|------|------|
 | file_path | string | ✅ 是 | 要删除的文件路径 |
 
----
-
-### 21.5 文件搜索类（文件名）
-
 #### 12. 搜索文件按模式（search_files）
 **描述**: 递归搜索匹配或排除模式的文件/目录，返回完整路径
 **参数**:
@@ -2072,10 +2060,6 @@ class DirectoryListingInput(BaseModel):
 |--------|------|------|------|
 | pattern | string | ✅ 是 | Glob 模式（如 **/*.js, src/**/*.ts） |
 | search_dir | string | ❌ 否 | 搜索目录，默认当前工作目录 |
-
----
-
-### 21.6 文件搜索类（内容）
 
 #### 14. 搜索文件内容（grep_file_content）
 **描述**: 基于 ripgrep 的强大内容搜索，支持正则表达式和多选项
@@ -2094,10 +2078,6 @@ class DirectoryListingInput(BaseModel):
 | -n | boolean | ❌ 否 | 显示行号 |
 | multiline | boolean | ❌ 否 | 启用多行匹配（. 匹配换行符） |
 | head_limit | number | ❌ 否 | 限制输出结果数量 |
-
----
-
-### 21.7 目录操作类
 
 #### 15. 创建目录（create_directory）
 **描述**: 创建新目录，如需要会创建父目录，目录已存在则静默成功
@@ -2122,11 +2102,6 @@ class DirectoryListingInput(BaseModel):
 | dir_path | string | ✅ 是 | 起始目录 |
 | excludePatterns | string[] | ❌ 否 | 排除模式（glob 格式） |
 
-
----
-
-### 21.8 元数据/信息类
-
 #### 18. 获取文件信息（get_file_info）
 **描述**: 获取文件/目录的详细元数据，包括大小、创建/修改/访问时间、类型、权限
 **参数**:
@@ -2140,7 +2115,9 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-### 21.9 系统操作类
+### 21.3 二类：Shell 命令执行
+
+**说明**: 使用 `subprocess` 实现，零依赖Python标准库。
 
 #### 20. 执行 Shell 命令（execute_shell_command）
 **描述**: 在指定 shell 环境中执行命令。Windows 原生默认 PowerShell，可选 CMD；bash 需额外安装（未来扩展）。
@@ -2169,9 +2146,11 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-### 21.10 网络/通信类
+### 21.4 三类：网络通信
 
-#### 22. 获取网页内容（fetch_webpage）
+**说明**: 使用 `urllib`, `http.client` 实现，零依赖Python标准库。
+
+#### 23. 获取网页内容（fetch_webpage）
 **描述**: 获取和处理网页内容，带 AI 分析功能
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2179,7 +2158,7 @@ class DirectoryListingInput(BaseModel):
 | url | string | ✅ 是 | 完全有效的 URL |
 | prompt | string | ✅ 是 | 要从页面提取的信息 |
 
-#### 23. 网络搜索（search_web）
+#### 24. 网络搜索（search_web）
 **描述**: 搜索网络获取最新信息（仅美国可用）
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2190,99 +2169,38 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-### 21.11 任务管理类【此次不加这里 的tool】
+### 21.5 工具总数汇总
 
-#### 24. 启动子 Agent（launch_subagent）
-**描述**: 启动专门的子 agent 处理复杂的多步骤任务
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| subagent_type | string | ✅ 是 | 使用的 agent 类型（general-purpose/statusline-setup/output-style-setup） |
-| prompt | string | ✅ 是 | 任务的详细描述 |
-| description | string | ✅ 是 | 任务的简短3-5字描述 |
-| model | string | ❌ 否 | 使用的模型 |
-| resume | boolean | ❌ 否 | 恢复之前的任务 |
-
-#### 25. 管理任务列表（manage_todos）
-**描述**: 创建和管理结构化任务列表跟踪进度
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| todos | array | ✅ 是 | todo 对象数组，每个包含 content、activeForm、status |
-
-#### 26. 退出计划模式（exit_plan_mode）
-**描述**: 展示实现计划后退出计划模式
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| plan | string | ✅ 是 | 实现计划（支持 markdown） |
-
-#### 27. 进入计划模式（enter_plan_mode）
-**描述**: 进入计划模式
-**参数**: 无参数
-
-#### 28. 编辑 Notebook 单元格（edit_notebook_cell）
-**描述**: 编辑 Jupyter notebook 单元格
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| notebook_path | string | ✅ 是 | notebook 绝对路径 |
-| new_source | string | ✅ 是 | 新的单元格内容 |
-| cell_id | string | ❌ 否 | 要编辑的单元格 ID |
-| cell_type | string | ❌ 否 | 单元格类型：code 或 markdown |
-| edit_mode | string | ❌ 否 | 编辑模式：replace/insert/delete |
-
-#### 29. 执行斜杠命令（execute_slash_command）
-**描述**: 执行斜杠命令
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| command | string | ✅ 是 | 斜杠命令及参数 |
-
-#### 30. 向用户提问（ask_user_question）
-**描述**: 向用户提问获取交互
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| questions | array | ✅ 是 | 问题数组 |
-| answers | array | ❌ 否 | 答案数组 |
-
-#### 31. 执行 Skill（execute_skill）
-**描述**: 执行 skill
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| skill | string | ✅ 是 | skill 名称 |
-
----
-
-### 21.12 工具总数汇总
-
-| 类别 | MCP | LangChain | Claude Code | 总计 |
-|------|-----|-----------|------------|------|
-| 文件读取 | 3 | 0 | 1 | 4 |
-| 文件写入 | 0 | 1 | 0 | 1 |
-| 文件编辑 | 1 | 3 | 1 | 5 |
-| 文件搜索(文件名) | 1 | 0 | 1 | 2 |
-| 文件搜索(内容) | 0 | 0 | 1 | 1 |
-| 目录操作 | 3 | 0 | 0 | 3 |
-| 元数据 | 2 | 0 | 0 | 2 |
-| 系统操作 | 0 | 0 | 3 | 3 |
-| 网络/通信 | 0 | 0 | 2 | 2 |
-| 任务管理 | 0 | 0 | 7 | 7 |
-| **总计** | **10** | **4** | **16** | **30** |
+| 一级10类 | 对应工具数 | MCP | LangChain | Claude Code |
+|---------|-----------|-----|-----------|-------------|
+| 一类：文件操作 | 19 | 10 | 4 | 5 |
+| 二类：Shell命令执行 | 3 | 0 | 0 | 3 |
+| 三类：网络通信 | 2 | 0 | 0 | 2 |
+| 四类：API/HTTP调用 | 0 | 0 | 0 | 0 |
+| 五类：时间/日期 | 0 | 0 | 0 | 0 |
+| 六类：环境变量 | 0 | 0 | 0 | 0 |
+| 七类：系统信息 | 0 | 0 | 0 | 0 |
+| 八类：网络连接 | 0 | 0 | 0 | 0 |
+| 九类：压缩/解压 | 0 | 0 | 0 | 0 |
+| 十类：文件哈希 | 0 | 0 | 0 | 0 |
+| **总计** | **23** | **10** | **4** | **9** |
 
 **说明**:
 - MCP: 10 个工具
 - LangChain: 4 个工具
-- Claude Code: 16 个工具
-- 总计: 30 个工具
+- Claude Code: 9 个工具
+- 总计: 23 个工具
+
+**备注**: 21章仅汇总网上学习的工具，不包括Omni系统自身的工具定义。
 
 ---
 
 **编写人**: 小沈
-**更新时间**: 2026-04-04 10:31:01
+**更新时间**: 2026-04-04 17:40:00
 **更新说明**: 
-- 统一所有 tool 参数命名：path→file_path/dir_path/search_dir，paths→file_paths，bash_id→shell_id
-- 消除参数名歧义，LLM 调用时不会混淆
-- 新增 rename_file 工具，从 29 个工具增加为 30 个工具
+- 按20.8章一级实现的10类重新分类21章工具
+- 一类：文件操作（19个工具）
+- 二类：Shell命令执行（3个工具）
+- 三类：网络通信（2个工具）
+- 删除任务管理类7个工具（不属于一级实现）
+- 工具总数保持23个
