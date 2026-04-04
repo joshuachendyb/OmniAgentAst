@@ -1,58 +1,52 @@
-# Function Call 网上学习总结
+﻿# Function Call 缃戜笂瀛︿範鎬荤粨
 
-**学习时间**: 2026-04-04 05:08:51
-**编写人**: 小沈
-**版本**: v1.1
-**更新说明**: 
-- 2026-04-04 06:56:00 - 修正第16-17章内容，补充准确的模型工具限制数据
-- 2026-04-04 09:00:00 - 修正第20章：MCP Filesystem Server 工具数量 14→13 个，修正搜索标记错误，同步修正第21章汇总数据
+**瀛︿範鏃堕棿**: 2026-04-04 05:08:51
+**缂栧啓浜?*: 灏忔矆
+**鐗堟湰**: v1.1
+**鏇存柊璇存槑**: 
+- 2026-04-04 06:56:00 - 淇绗?6-17绔犲唴瀹癸紝琛ュ厖鍑嗙‘鐨勬ā鍨嬪伐鍏烽檺鍒舵暟鎹?- 2026-04-04 09:00:00 - 淇绗?0绔狅細MCP Filesystem Server 宸ュ叿鏁伴噺 14鈫?3 涓紝淇鎼滅储鏍囪閿欒锛屽悓姝ヤ慨姝ｇ21绔犳眹鎬绘暟鎹?
+---
+
+## 涓€銆丗unction Calling 鏄粈涔?
+Function Calling 璁?LLM 鑳藉璋冪敤澶栭儴鍑芥暟/宸ュ叿锛屽畬鎴愯濡傦細
+- 鏌ヨ鏁版嵁搴?- 璋冪敤 API
+- 璇诲啓鏂囦欢
+- 鎵ц璁＄畻
+
+**鏍稿績娴佺▼**:
+```
+鐢ㄦ埛杈撳叆 鈫?LLM 鍒ゆ柇闇€瑕佽皟鐢ㄥ伐鍏?鈫?杩斿洖宸ュ叿鍚?鍙傛暟 鈫?鎵ц鍑芥暟 鈫?杩斿洖缁撴灉 鈫?LLM 鐢熸垚鏈€缁堝洖绛?```
 
 ---
 
-## 一、Function Calling 是什么
-
-Function Calling 让 LLM 能够调用外部函数/工具，完成诸如：
-- 查询数据库
-- 调用 API
-- 读写文件
-- 执行计算
-
-**核心流程**:
-```
-用户输入 → LLM 判断需要调用工具 → 返回工具名+参数 → 执行函数 → 返回结果 → LLM 生成最终回答
-```
-
----
-
-## 二、主流 LLM 平台的实现
-
+## 浜屻€佷富娴?LLM 骞冲彴鐨勫疄鐜?
 ### 2.1 OpenAI Function Calling
 
-**官方文档**: https://developers.openai.com/api/docs/guides/function-calling/
+**瀹樻柟鏂囨。**: https://developers.openai.com/api/docs/guides/function-calling/
 
-#### 工具定义 JSON Schema 完整示例
+#### 宸ュ叿瀹氫箟 JSON Schema 瀹屾暣绀轰緥
 
 ```python
-# 来源: OpenAI 官方示例
+# 鏉ユ簮: OpenAI 瀹樻柟绀轰緥
 tools = [
     {
         "type": "function",
         "function": {
             "name": "get_current_weather",
-            "description": "获取指定位置的当前天气",
-            "strict": True,  # 2024年后新增严格模式
+            "description": "鑾峰彇鎸囧畾浣嶇疆鐨勫綋鍓嶅ぉ姘?,
+            "strict": True,  # 2024骞村悗鏂板涓ユ牸妯″紡
             "parameters": {
                 "type": "object",
                 "required": ["location"],
                 "properties": {
                     "location": {
                         "type": "string",
-                        "description": "城市名称，格式：城市+省，如 北京、上海"
+                        "description": "鍩庡競鍚嶇О锛屾牸寮忥細鍩庡競+鐪侊紝濡?鍖椾含銆佷笂娴?
                     },
                     "unit": {
                         "type": "string",
                         "enum": ["celsius", "fahrenheit"],
-                        "description": "温度单位",
+                        "description": "娓╁害鍗曚綅",
                         "default": "celsius"
                     }
                 },
@@ -63,16 +57,16 @@ tools = [
 ]
 ```
 
-#### 完整调用代码（来自网上教程）
+#### 瀹屾暣璋冪敤浠ｇ爜锛堟潵鑷綉涓婃暀绋嬶級
 
 ```python
-# 来源: reintech.io 教程
+# 鏉ユ簮: reintech.io 鏁欑▼
 from openai import OpenAI
 import json
 
 client = OpenAI(api_key="your-api-key")
 
-# 定义工具
+# 瀹氫箟宸ュ叿
 tools = [
     {
         "type": "function",
@@ -98,7 +92,7 @@ tools = [
     }
 ]
 
-# 实际天气函数
+# 瀹為檯澶╂皵鍑芥暟
 def get_current_weather(location, unit="fahrenheit"):
     weather_data = {
         "location": location,
@@ -108,11 +102,11 @@ def get_current_weather(location, unit="fahrenheit"):
     }
     return json.dumps(weather_data)
 
-# 执行对话
+# 鎵ц瀵硅瘽
 def run_conversation(user_message):
     messages = [{"role": "user", "content": user_message}]
     
-    # 第一次调用 - LLM 决定是否调用工具
+    # 绗竴娆¤皟鐢?- LLM 鍐冲畾鏄惁璋冪敤宸ュ叿
     response = client.chat.completions.create(
         model="gpt-4-turbo-preview",
         messages=messages,
@@ -126,7 +120,7 @@ def run_conversation(user_message):
     if tool_calls:
         messages.append(response_message)
         
-        # 执行工具调用
+        # 鎵ц宸ュ叿璋冪敤
         available_functions = {"get_current_weather": get_current_weather}
         
         for tool_call in tool_calls:
@@ -134,13 +128,12 @@ def run_conversation(user_message):
             function_to_call = available_functions[function_name]
             function_args = json.loads(tool_call.function.arguments)
             
-            # 调用函数并获取结果
-            function_response = function_to_call(
+            # 璋冪敤鍑芥暟骞惰幏鍙栫粨鏋?            function_response = function_to_call(
                 location=function_args.get("location"),
                 unit=function_args.get("unit", "fahrenheit")
             )
             
-            # 将结果返回给 LLM
+            # 灏嗙粨鏋滆繑鍥炵粰 LLM
             messages.append({
                 "tool_call_id": tool_call.id,
                 "role": "tool",
@@ -148,8 +141,7 @@ def run_conversation(user_message):
                 "content": function_response,
             })
         
-        # 第二次调用 - LLM 生成最终回复
-        second_response = client.chat.completions.create(
+        # 绗簩娆¤皟鐢?- LLM 鐢熸垚鏈€缁堝洖澶?        second_response = client.chat.completions.create(
             model="gpt-4-turbo-preview",
             messages=messages
         )
@@ -158,7 +150,7 @@ def run_conversation(user_message):
     
     return response_message.content
 
-# 使用
+# 浣跨敤
 result = run_conversation("What's the weather like in Boston?")
 print(result)
 ```
@@ -167,12 +159,12 @@ print(result)
 
 ### 2.2 Claude Tool Use (Anthropic)
 
-**官方文档**: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview
+**瀹樻柟鏂囨。**: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview
 
-#### 工具定义格式
+#### 宸ュ叿瀹氫箟鏍煎紡
 
 ```python
-# 来源: Claude 官方文档
+# 鏉ユ簮: Claude 瀹樻柟鏂囨。
 tools = [
     {
         "name": "web_search",
@@ -196,48 +188,43 @@ tools = [
 ]
 ```
 
-#### 关键特性
-- **Strict Tool Use**: 使用 grammar-constrained sampling 保证输入符合 schema
-- **Tool Search Tool**: 支持动态发现工具（适用于大量工具场景）
+#### 鍏抽敭鐗规€?- **Strict Tool Use**: 浣跨敤 grammar-constrained sampling 淇濊瘉杈撳叆绗﹀悎 schema
+- **Tool Search Tool**: 鏀寔鍔ㄦ€佸彂鐜板伐鍏凤紙閫傜敤浜庡ぇ閲忓伐鍏峰満鏅級
 
 ---
 
-### 2.3 Pydantic AI 的工具定义
+### 2.3 Pydantic AI 鐨勫伐鍏峰畾涔?
+**瀹樻柟鏂囨。**: https://ai.pydantic.dev/tools/
 
-**官方文档**: https://ai.pydantic.dev/tools/
-
-#### 使用装饰器定义工具（来自官方示例）
-
+#### 浣跨敤瑁呴グ鍣ㄥ畾涔夊伐鍏凤紙鏉ヨ嚜瀹樻柟绀轰緥锛?
 ```python
-# 来源: Pydantic AI 官方示例
+# 鏉ユ簮: Pydantic AI 瀹樻柟绀轰緥
 import random
 from pydantic_ai import Agent, RunContext
 
 agent = Agent(
     'gemini-2.0-flash',
     deps_type=str,
-    instructions="你是掷骰子游戏"
+    instructions="浣犳槸鎺烽瀛愭父鎴?
 )
 
-@agent.tool_plain  # 不需要 context 的工具
-def roll_dice() -> str:
+@agent.tool_plain  # 涓嶉渶瑕?context 鐨勫伐鍏?def roll_dice() -> str:
     """Roll a six-sided die and return the result."""
     return str(random.randint(1, 6))
 
-@agent.tool  # 需要 context 的工具
-def get_player_name(ctx: RunContext[str]) -> str:
+@agent.tool  # 闇€瑕?context 鐨勫伐鍏?def get_player_name(ctx: RunContext[str]) -> str:
     """Get the player's name."""
     return ctx.deps
 
-# 运行
+# 杩愯
 result = agent.run_sync('My guess is 4', deps='Anne')
 print(result.output)
 ```
 
-#### 自动生成 Schema（来自官方示例）
+#### 鑷姩鐢熸垚 Schema锛堟潵鑷畼鏂圭ず渚嬶級
 
 ```python
-# 来源: Pydantic AI 官方示例 - 自动从 docstring 提取参数描述
+# 鏉ユ簮: Pydantic AI 瀹樻柟绀轰緥 - 鑷姩浠?docstring 鎻愬彇鍙傛暟鎻忚堪
 @agent.tool_plain(docstring_format='google', require_parameter_descriptions=True)
 def foobar(a: int, b: str, c: dict[str, list[float]]) -> str:
     """Get me foobar.
@@ -249,7 +236,7 @@ def foobar(a: int, b: str, c: dict[str, list[float]]) -> str:
     """
     return f'{a} {b} {c}'
 
-# 生成的 schema:
+# 鐢熸垚鐨?schema:
 {
     'additionalProperties': False,
     'properties': {
@@ -270,21 +257,21 @@ def foobar(a: int, b: str, c: dict[str, list[float]]) -> str:
 
 ### 2.4 MCP (Model Context Protocol)
 
-**官方文档**: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+**瀹樻柟鏂囨。**: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
 
-#### 工具定义格式（来自官方示例）
+#### 宸ュ叿瀹氫箟鏍煎紡锛堟潵鑷畼鏂圭ず渚嬶級
 
 ```json
 {
   "name": "get_weather",
-  "title": "天气信息查询",
-  "description": "获取指定位置的当前天气信息",
+  "title": "澶╂皵淇℃伅鏌ヨ",
+  "description": "鑾峰彇鎸囧畾浣嶇疆鐨勫綋鍓嶅ぉ姘斾俊鎭?,
   "inputSchema": {
     "type": "object",
     "properties": {
       "location": {
         "type": "string",
-        "description": "城市名称或邮编"
+        "description": "鍩庡競鍚嶇О鎴栭偖缂?
       }
     },
     "required": ["location"]
@@ -292,8 +279,8 @@ def foobar(a: int, b: str, c: dict[str, list[float]]) -> str:
   "outputSchema": {
     "type": "object",
     "properties": {
-      "temperature": {"type": "number", "description": "温度（摄氏度）"},
-      "conditions": {"type": "string", "description": "天气状况"}
+      "temperature": {"type": "number", "description": "娓╁害锛堟憚姘忓害锛?},
+      "conditions": {"type": "string", "description": "澶╂皵鐘跺喌"}
     }
   }
 }
@@ -301,12 +288,10 @@ def foobar(a: int, b: str, c: dict[str, list[float]]) -> str:
 
 ---
 
-## 三、Python 函数转 JSON Schema 的方法
-
-### 3.1 方法1：纯 Python + inspect（来自 amitness.com）
-
+## 涓夈€丳ython 鍑芥暟杞?JSON Schema 鐨勬柟娉?
+### 3.1 鏂规硶1锛氱函 Python + inspect锛堟潵鑷?amitness.com锛?
 ```python
-# 来源: https://amitness.com/posts/function-calling-schema/
+# 鏉ユ簮: https://amitness.com/posts/function-calling-schema/
 import inspect
 
 type_map = {
@@ -329,7 +314,7 @@ def function_to_json(func):
         param_type = type_map.get(param.annotation, "string")
         parameters[name] = {"type": param_type}
         
-        # 必填参数判断
+        # 蹇呭～鍙傛暟鍒ゆ柇
         if param.default == inspect._empty:
             required.append(name)
     
@@ -346,13 +331,13 @@ def function_to_json(func):
         }
     }
 
-# 使用
+# 浣跨敤
 def add(a: int, b: int) -> int:
     """Adds two integers together"""
     return a + b
 
 print(function_to_json(add))
-# 输出:
+# 杈撳嚭:
 # {
 #     'type': 'function',
 #     'function': {
@@ -367,10 +352,9 @@ print(function_to_json(add))
 # }
 ```
 
-### 3.2 方法2：使用 Pydantic 动态模型（来自 amitness.com）
-
+### 3.2 鏂规硶2锛氫娇鐢?Pydantic 鍔ㄦ€佹ā鍨嬶紙鏉ヨ嚜 amitness.com锛?
 ```python
-# 来源: https://amitness.com/posts/function-calling-schema/
+# 鏉ユ簮: https://amitness.com/posts/function-calling-schema/
 import inspect
 from pydantic import create_model
 
@@ -383,7 +367,7 @@ def schema(f):
         for name, param in inspect.signature(f).parameters.items()
     }
     
-    # 创建 Pydantic 模型
+    # 鍒涘缓 Pydantic 妯″瀷
     p = create_model(f"`{f.__name__}`", **kws)
     
     return {
@@ -395,7 +379,7 @@ def schema(f):
         },
     }
 
-# 使用
+# 浣跨敤
 def add(a: int, b: int) -> int:
     """Adds two integers together"""
     return a + b
@@ -403,10 +387,9 @@ def add(a: int, b: int) -> int:
 print(schema(add))
 ```
 
-### 3.3 方法3：使用 Pydantic TypeAdapter（来自 amitness.com）
-
+### 3.3 鏂规硶3锛氫娇鐢?Pydantic TypeAdapter锛堟潵鑷?amitness.com锛?
 ```python
-# 来源: https://amitness.com/posts/function-calling-schema/
+# 鏉ユ簮: https://amitness.com/posts/function-calling-schema/
 from pydantic import TypeAdapter
 
 def schema(f):
@@ -420,7 +403,7 @@ def schema(f):
         },
     }
 
-# 使用
+# 浣跨敤
 def add(a: int, b: int) -> int:
     """Adds two integers together"""
     return a + b
@@ -428,12 +411,11 @@ def add(a: int, b: int) -> int:
 print(schema(add))
 ```
 
-### 3.4 方法4：使用装饰器模式（来自 amitness.com）
-
+### 3.4 鏂规硶4锛氫娇鐢ㄨ楗板櫒妯″紡锛堟潵鑷?amitness.com锛?
 ```python
-# 来源: https://amitness.com/posts/function-calling-schema/
+# 鏉ユ簮: https://amitness.com/posts/function-calling-schema/
 def tool(func):
-    """装饰器：自动添加 json_schema 方法"""
+    """瑁呴グ鍣細鑷姩娣诲姞 json_schema 鏂规硶"""
     def json_schema():
         return function_to_json(func)
     func.json_schema = json_schema
@@ -444,27 +426,26 @@ def add(a: int, b: int) -> int:
     """Adds two numbers"""
     return a + b
 
-# 使用
+# 浣跨敤
 print(add.json_schema())
 ```
 
 ---
 
-## 四、JSON Schema 参数类型详解
+## 鍥涖€丣SON Schema 鍙傛暟绫诲瀷璇﹁В
 
-### 4.1 基本类型（来自 jsonindenter.com）
-
-| JSON Schema | 说明 |
+### 4.1 鍩烘湰绫诲瀷锛堟潵鑷?jsonindenter.com锛?
+| JSON Schema | 璇存槑 |
 |-------------|------|
-| `string` | 字符串 |
-| `integer` | 整数 |
-| `number` | 数字（整数或浮点） |
-| `boolean` | 布尔值 |
-| `array` | 数组 |
-| `object` | 对象 |
-| `null` | 空值 |
+| `string` | 瀛楃涓?|
+| `integer` | 鏁存暟 |
+| `number` | 鏁板瓧锛堟暣鏁版垨娴偣锛?|
+| `boolean` | 甯冨皵鍊?|
+| `array` | 鏁扮粍 |
+| `object` | 瀵硅薄 |
+| `null` | 绌哄€?|
 
-### 4.2 参数约束示例
+### 4.2 鍙傛暟绾︽潫绀轰緥
 
 ```json
 {
@@ -472,7 +453,7 @@ print(add.json_schema())
     "properties": {
         "name": {
             "type": "string",
-            "description": "用户名称"
+            "description": "鐢ㄦ埛鍚嶇О"
         },
         "age": {
             "type": "integer",
@@ -505,51 +486,45 @@ print(add.json_schema())
 
 ---
 
-## 五、常见错误和最佳实践
+## 浜斻€佸父瑙侀敊璇拰鏈€浣冲疄璺?
+### 5.1 甯歌閿欒锛堟潵鑷?jsonindenter.com锛?
+1. **缂哄皯 `type: "object"`**: parameters 蹇呴』浠?object 绫诲瀷涓烘牴
+2. **灏鹃殢閫楀彿**: JSON 涓嶅厑璁稿熬闅忛€楀彿
+3. **鍙傛暟鍚嶉敊璇?*: LLM 璋冪敤鏃跺繀椤讳娇鐢?schema 涓畾涔夌殑鍙傛暟鍚?4. **required 閬楁紡**: 蹇呭～鍙傛暟蹇呴』娣诲姞鍒?required 鏁扮粍
+5. **鎻忚堪涓虹┖**: description 甯姪 LLM 鐞嗚В浣曟椂璋冪敤宸ュ叿
 
-### 5.1 常见错误（来自 jsonindenter.com）
-
-1. **缺少 `type: "object"`**: parameters 必须以 object 类型为根
-2. **尾随逗号**: JSON 不允许尾随逗号
-3. **参数名错误**: LLM 调用时必须使用 schema 中定义的参数名
-4. **required 遗漏**: 必填参数必须添加到 required 数组
-5. **描述为空**: description 帮助 LLM 理解何时调用工具
-
-### 5.2 最佳实践
-
-**好的描述**:
+### 5.2 鏈€浣冲疄璺?
+**濂界殑鎻忚堪**:
 ```python
-description="获取指定位置的当前天气信息，包括温度、湿度、风力等"
+description="鑾峰彇鎸囧畾浣嶇疆鐨勫綋鍓嶅ぉ姘斾俊鎭紝鍖呮嫭娓╁害銆佹箍搴︺€侀鍔涚瓑"
 ```
 
-**差的描述**:
+**宸殑鎻忚堪**:
 ```python
-description="这是一个天气函数"
+description="杩欐槸涓€涓ぉ姘斿嚱鏁?
 ```
 
 ---
 
-## 六、参考资料
-
+## 鍏€佸弬鑰冭祫鏂?
 1. OpenAI Function Calling: https://developers.openai.com/api/docs/guides/function-calling/
-2. OpenAI 教程: https://reintech.io/blog/openai-function-calling-complete-tutorial-with-examples
-3. JSON Schema 指南: https://jsonindenter.com/blog/json-for-ai-function-calling
+2. OpenAI 鏁欑▼: https://reintech.io/blog/openai-function-calling-complete-tutorial-with-examples
+3. JSON Schema 鎸囧崡: https://jsonindenter.com/blog/json-for-ai-function-calling
 4. Claude Tool Use: https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/overview
 5. DeepSeek Tool Calls: https://api-docs.deepseek.com/guides/tool_calls
-6. MCP 规范: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
+6. MCP 瑙勮寖: https://modelcontextprotocol.io/specification/2025-11-25/server/tools
 7. Pydantic AI: https://ai.pydantic.dev/tools/
-8. 函数转 Schema: https://amitness.com/posts/function-calling-schema/
+8. 鍑芥暟杞?Schema: https://amitness.com/posts/function-calling-schema/
 
 ---
 
-## 七、MCP Filesystem Server 文件操作工具（来自官方）
+## 涓冦€丮CP Filesystem Server 鏂囦欢鎿嶄綔宸ュ叿锛堟潵鑷畼鏂癸級
 
-**官方仓库**: https://github.com/modelcontextprotocol/servers
-**官方文档**: https://mcprepository.com/modelcontextprotocol/filesystem
+**瀹樻柟浠撳簱**: https://github.com/modelcontextprotocol/servers
+**瀹樻柟鏂囨。**: https://mcprepository.com/modelcontextprotocol/filesystem
 
-MCP Filesystem Server 提供了 11 个文件操作工具，是最完整的文件操作参考实现。
-
-### 7.1 read_file - 读取文件
+MCP Filesystem Server 鎻愪緵浜?11 涓枃浠舵搷浣滃伐鍏凤紝鏄渶瀹屾暣鐨勬枃浠舵搷浣滃弬鑰冨疄鐜般€?
+### 7.1 read_file - 璇诲彇鏂囦欢
 
 ```json
 {
@@ -568,10 +543,10 @@ MCP Filesystem Server 提供了 11 个文件操作工具，是最完整的文件
 }
 ```
 
-**参数**:
-- `path` (string, required): 文件路径
+**鍙傛暟**:
+- `path` (string, required): 鏂囦欢璺緞
 
-**实现示例**:
+**瀹炵幇绀轰緥**:
 ```python
 def read_file(path: str) -> str:
     """Read complete contents of a file"""
@@ -579,7 +554,7 @@ def read_file(path: str) -> str:
         return f.read()
 ```
 
-### 7.2 read_multiple_files - 读取多个文件
+### 7.2 read_multiple_files - 璇诲彇澶氫釜鏂囦欢
 
 ```json
 {
@@ -599,10 +574,10 @@ def read_file(path: str) -> str:
 }
 ```
 
-**参数**:
-- `paths` (string[], required): 文件路径数组
+**鍙傛暟**:
+- `paths` (string[], required): 鏂囦欢璺緞鏁扮粍
 
-### 7.3 write_file - 写入文件
+### 7.3 write_file - 鍐欏叆鏂囦欢
 
 ```json
 {
@@ -625,11 +600,11 @@ def read_file(path: str) -> str:
 }
 ```
 
-**参数**:
-- `path` (string, required): 文件路径
-- `content` (string, required): 文件内容
+**鍙傛暟**:
+- `path` (string, required): 鏂囦欢璺緞
+- `content` (string, required): 鏂囦欢鍐呭
 
-**实现示例**:
+**瀹炵幇绀轰緥**:
 ```python
 def write_file(path: str, content: str) -> str:
     """Create or overwrite a file"""
@@ -638,7 +613,7 @@ def write_file(path: str, content: str) -> str:
     return f"File written successfully: {path}"
 ```
 
-### 7.4 edit_file - 编辑文件
+### 7.4 edit_file - 缂栬緫鏂囦欢
 
 ```json
 {
@@ -679,14 +654,14 @@ def write_file(path: str, content: str) -> str:
 }
 ```
 
-**参数**:
-- `path` (string, required): 文件路径
-- `edits` (array, required): 编辑操作数组
-  - `oldText` (string): 要替换的文本
-  - `newText` (string): 替换后的文本
-- `dryRun` (boolean, optional): 预览模式，默认 false
+**鍙傛暟**:
+- `path` (string, required): 鏂囦欢璺緞
+- `edits` (array, required): 缂栬緫鎿嶄綔鏁扮粍
+  - `oldText` (string): 瑕佹浛鎹㈢殑鏂囨湰
+  - `newText` (string): 鏇挎崲鍚庣殑鏂囨湰
+- `dryRun` (boolean, optional): 棰勮妯″紡锛岄粯璁?false
 
-### 7.5 create_directory - 创建目录
+### 7.5 create_directory - 鍒涘缓鐩綍
 
 ```json
 {
@@ -705,10 +680,10 @@ def write_file(path: str, content: str) -> str:
 }
 ```
 
-**参数**:
-- `path` (string, required): 目录路径
+**鍙傛暟**:
+- `path` (string, required): 鐩綍璺緞
 
-### 7.6 list_directory - 列出目录
+### 7.6 list_directory - 鍒楀嚭鐩綍
 
 ```json
 {
@@ -727,11 +702,10 @@ def write_file(path: str, content: str) -> str:
 }
 ```
 
-**参数**:
-- `path` (string, required): 目录路径
+**鍙傛暟**:
+- `path` (string, required): 鐩綍璺緞
 
-### 7.7 directory_tree - 目录树
-
+### 7.7 directory_tree - 鐩綍鏍?
 ```json
 {
   "name": "directory_tree",
@@ -749,11 +723,10 @@ def write_file(path: str, content: str) -> str:
 }
 ```
 
-**参数**:
-- `path` (string, required): 目录路径
+**鍙傛暟**:
+- `path` (string, required): 鐩綍璺緞
 
-### 7.8 move_file - 移动/重命名文件
-
+### 7.8 move_file - 绉诲姩/閲嶅懡鍚嶆枃浠?
 ```json
 {
   "name": "move_file",
@@ -775,11 +748,10 @@ def write_file(path: str, content: str) -> str:
 }
 ```
 
-**参数**:
-- `source` (string, required): 源路径
-- `destination` (string, required): 目标路径
+**鍙傛暟**:
+- `source` (string, required): 婧愯矾寰?- `destination` (string, required): 鐩爣璺緞
 
-### 7.9 search_files - 搜索文件
+### 7.9 search_files - 鎼滅储鏂囦欢
 
 ```json
 {
@@ -808,12 +780,12 @@ def write_file(path: str, content: str) -> str:
 }
 ```
 
-**参数**:
-- `path` (string, required): 搜索起始目录
-- `pattern` (string, required): 搜索模式
-- `excludePatterns` (string[], optional): 排除模式
+**鍙傛暟**:
+- `path` (string, required): 鎼滅储璧峰鐩綍
+- `pattern` (string, required): 鎼滅储妯″紡
+- `excludePatterns` (string[], optional): 鎺掗櫎妯″紡
 
-### 7.10 get_file_info - 获取文件信息
+### 7.10 get_file_info - 鑾峰彇鏂囦欢淇℃伅
 
 ```json
 {
@@ -832,19 +804,18 @@ def write_file(path: str, content: str) -> str:
 }
 ```
 
-**参数**:
-- `path` (string, required): 文件/目录路径
+**鍙傛暟**:
+- `path` (string, required): 鏂囦欢/鐩綍璺緞
 
-**返回**:
-- size (number): 文件大小
-- creationTime (string): 创建时间
-- lastModifiedTime (string): 修改时间
-- accessTime (string): 访问时间
-- type (string): 类型 (file/directory)
-- permissions (string): 权限
+**杩斿洖**:
+- size (number): 鏂囦欢澶у皬
+- creationTime (string): 鍒涘缓鏃堕棿
+- lastModifiedTime (string): 淇敼鏃堕棿
+- accessTime (string): 璁块棶鏃堕棿
+- type (string): 绫诲瀷 (file/directory)
+- permissions (string): 鏉冮檺
 
-### 7.11 list_allowed_directories - 列出允许的目录
-
+### 7.11 list_allowed_directories - 鍒楀嚭鍏佽鐨勭洰褰?
 ```json
 {
   "name": "list_allowed_directories",
@@ -856,13 +827,12 @@ def write_file(path: str, content: str) -> str:
 }
 ```
 
-**参数**: 无
-
+**鍙傛暟**: 鏃?
 ---
 
-## 八、文件操作工具参数对比总结
+## 鍏€佹枃浠舵搷浣滃伐鍏峰弬鏁板姣旀€荤粨
 
-| 工具 | 核心参数 | 来源 |
+| 宸ュ叿 | 鏍稿績鍙傛暟 | 鏉ユ簮 |
 |-----|---------|------|
 | read_file | path: string | MCP |
 | read_multiple_files | paths: string[] | MCP |
@@ -874,22 +844,22 @@ def write_file(path: str, content: str) -> str:
 | move_file | source, destination: string | MCP |
 | search_files | path, pattern, excludePatterns?: string[] | MCP |
 | get_file_info | path: string | MCP |
-| list_allowed_directories | (无) | MCP |
+| list_allowed_directories | (鏃? | MCP |
 
 ---
 
-## 九、DeepSeek Function Calling
+## 涔濄€丏eepSeek Function Calling
 
-**官方文档**: https://api-docs.deepseek.com/guides/tool_calls
+**瀹樻柟鏂囨。**: https://api-docs.deepseek.com/guides/tool_calls
 
-DeepSeek 兼容 OpenAI 的 function calling 格式，支持以下模型：
-- DeepSeek V3 系列
-- DeepSeek R1 系列
+DeepSeek 鍏煎 OpenAI 鐨?function calling 鏍煎紡锛屾敮鎸佷互涓嬫ā鍨嬶細
+- DeepSeek V3 绯诲垪
+- DeepSeek R1 绯诲垪
 
-**调用示例**（来自官方）:
+**璋冪敤绀轰緥**锛堟潵鑷畼鏂癸級:
 
 ```python
-# 来源: DeepSeek 官方文档
+# 鏉ユ簮: DeepSeek 瀹樻柟鏂囨。
 from openai import OpenAI
 
 client = OpenAI(api_key="sk-xxx", base_url="https://api.deepseek.com")
@@ -919,11 +889,10 @@ response = client.chat.completions.create(
 )
 ```
 
-**注意**: 需要添加 `"strict": true` 到 tool definitions（来自 GitHub issue #910）
-
+**娉ㄦ剰**: 闇€瑕佹坊鍔?`"strict": true` 鍒?tool definitions锛堟潵鑷?GitHub issue #910锛?
 ---
 
-## 十、参考资料（续）
+## 鍗併€佸弬鑰冭祫鏂欙紙缁級
 
 9. MCP Filesystem Server: https://mcprepository.com/modelcontextprotocol/filesystem
 10. MCP GitHub: https://github.com/modelcontextprotocol/servers
@@ -931,28 +900,27 @@ response = client.chat.completions.create(
 
 ---
 
-**编写人**: 小沈
-**更新时间**: 2026-04-04 05:24:55
+**缂栧啓浜?*: 灏忔矆
+**鏇存柊鏃堕棿**: 2026-04-04 05:24:55
 
 ---
 
-## 十一、LangChain 文件管理工具
+## 鍗佷竴銆丩angChain 鏂囦欢绠＄悊宸ュ叿
 
-**官方文档**: https://python.langchain.com/docs/how_to/tool_calling
+**瀹樻柟鏂囨。**: https://python.langchain.com/docs/how_to/tool_calling
 
-LangChain 提供了完整的文件管理工具集，基于 Pydantic 模型定义参数。
+LangChain 鎻愪緵浜嗗畬鏁寸殑鏂囦欢绠＄悊宸ュ叿闆嗭紝鍩轰簬 Pydantic 妯″瀷瀹氫箟鍙傛暟銆?
+### 11.1 ReadFileTool - 璇诲彇鏂囦欢
 
-### 11.1 ReadFileTool - 读取文件
-
-**来源**: LangChain 官方 API 文档
+**鏉ユ簮**: LangChain 瀹樻柟 API 鏂囨。
 
 ```python
-# LangChain ReadFileInput (Pydantic 模型)
+# LangChain ReadFileInput (Pydantic 妯″瀷)
 class ReadFileInput(BaseModel):
     file_path: str = Field(..., description='name of file')
 ```
 
-**JSON Schema 参数**:
+**JSON Schema 鍙傛暟**:
 ```json
 {
   "type": "object",
@@ -966,27 +934,27 @@ class ReadFileInput(BaseModel):
 }
 ```
 
-**实现示例**:
+**瀹炵幇绀轰緥**:
 ```python
 from langchain_community.tools.file_management import ReadFileTool
 
 tool = ReadFileTool()
-# 调用时参数: file_path (string, required)
+# 璋冪敤鏃跺弬鏁? file_path (string, required)
 ```
 
-### 11.2 WriteFileTool - 写入文件
+### 11.2 WriteFileTool - 鍐欏叆鏂囦欢
 
-**来源**: LangChain 官方 API 文档
+**鏉ユ簮**: LangChain 瀹樻柟 API 鏂囨。
 
 ```python
-# LangChain WriteFileInput (Pydantic 模型)
+# LangChain WriteFileInput (Pydantic 妯″瀷)
 class WriteFileInput(BaseModel):
     file_path: str = Field(..., description='name of file')
     text: str = Field(..., description='text to write to file')
     append: bool = Field(False, description='whether to append to file')
 ```
 
-**JSON Schema 参数**:
+**JSON Schema 鍙傛暟**:
 ```json
 {
   "type": "object",
@@ -1009,32 +977,31 @@ class WriteFileInput(BaseModel):
 }
 ```
 
-**实现示例**:
+**瀹炵幇绀轰緥**:
 ```python
 from langchain_community.tools.file_management import WriteFileTool
 
 tool = WriteFileTool()
-# 调用时参数: file_path (string), text (string), append (boolean, optional)
+# 璋冪敤鏃跺弬鏁? file_path (string), text (string), append (boolean, optional)
 ```
 
-### 11.3 LangChain 工具特点
+### 11.3 LangChain 宸ュ叿鐗圭偣
 
-1. **Pydantic 模型定义**: 使用 Pydantic BaseModel 自动生成 JSON Schema
-2. **args_schema 属性**: 每个工具都有 `args_schema` 属性指向 Pydantic 模型
-3. **类型安全**: 自动验证参数类型
-4. **与 LangChain Agent 集成**: 可以直接传递给 agent
+1. **Pydantic 妯″瀷瀹氫箟**: 浣跨敤 Pydantic BaseModel 鑷姩鐢熸垚 JSON Schema
+2. **args_schema 灞炴€?*: 姣忎釜宸ュ叿閮芥湁 `args_schema` 灞炴€ф寚鍚?Pydantic 妯″瀷
+3. **绫诲瀷瀹夊叏**: 鑷姩楠岃瘉鍙傛暟绫诲瀷
+4. **涓?LangChain Agent 闆嗘垚**: 鍙互鐩存帴浼犻€掔粰 agent
 
 ---
 
-## 十二、LlamaIndex Function Calling
+## 鍗佷簩銆丩lamaIndex Function Calling
 
-**官方文档**: https://docs.llamaindex.ai/en/stable/examples/workflow/function_calling_agent/
+**瀹樻柟鏂囨。**: https://docs.llamaindex.ai/en/stable/examples/workflow/function_calling_agent/
 
-LlamaIndex 使用 `FunctionTool` 来定义工具。
+LlamaIndex 浣跨敤 `FunctionTool` 鏉ュ畾涔夊伐鍏枫€?
+### 12.1 FunctionTool 瀹氫箟
 
-### 12.1 FunctionTool 定义
-
-**来源**: LlamaIndex 官方教程
+**鏉ユ簮**: LlamaIndex 瀹樻柟鏁欑▼
 
 ```python
 from llama_index.core.tools import FunctionTool
@@ -1053,90 +1020,83 @@ tools = [
 ]
 ```
 
-### 12.2 LlamaIndex 工具特点
+### 12.2 LlamaIndex 宸ュ叿鐗圭偣
 
-1. **自动生成 Schema**: `FunctionTool.from_defaults()` 自动从函数签名生成 JSON Schema
-2. **Docstring 提取**: 使用函数的 docstring 作为工具描述
-3. **类型提示**: 使用 Python 类型提示定义参数类型
-4. **Workflow 集成**: 可以与 LlamaIndex Workflow 深度集成
+1. **鑷姩鐢熸垚 Schema**: `FunctionTool.from_defaults()` 鑷姩浠庡嚱鏁扮鍚嶇敓鎴?JSON Schema
+2. **Docstring 鎻愬彇**: 浣跨敤鍑芥暟鐨?docstring 浣滀负宸ュ叿鎻忚堪
+3. **绫诲瀷鎻愮ず**: 浣跨敤 Python 绫诲瀷鎻愮ず瀹氫箟鍙傛暟绫诲瀷
+4. **Workflow 闆嗘垚**: 鍙互涓?LlamaIndex Workflow 娣卞害闆嗘垚
 
 ---
 
-## 十三、AutoGen Function Calling
+## 鍗佷笁銆丄utoGen Function Calling
 
-**官方文档**: https://microsoft.github.io/autogen/stable/user-guide/core-user-guide/components/tools.html
+**瀹樻柟鏂囨。**: https://microsoft.github.io/autogen/stable/user-guide/core-user-guide/components/tools.html
 
-AutoGen 是微软的开源多智能体框架。
+AutoGen 鏄井杞殑寮€婧愬鏅鸿兘浣撴鏋躲€?
+### 13.1 AutoGen 宸ュ叿鐗圭偣
 
-### 13.1 AutoGen 工具特点
+1. **MCP 闆嗘垚**: 鏀寔杩炴帴 MCP (Model Context Protocol) 鏈嶅姟鍣?2. **浠ｇ爜鎵ц宸ュ叿**: 鍐呯疆浠ｇ爜鎵ц宸ュ叿
+3. **绫诲瀷瀹夊叏**: 鏀寔寮虹被鍨嬪嚱鏁板畾涔?
+### 13.2 AutoGen 鏂囦欢鎿嶄綔
 
-1. **MCP 集成**: 支持连接 MCP (Model Context Protocol) 服务器
-2. **代码执行工具**: 内置代码执行工具
-3. **类型安全**: 支持强类型函数定义
-
-### 13.2 AutoGen 文件操作
-
-**来源**: AutoGen 官方文档
+**鏉ユ簮**: AutoGen 瀹樻柟鏂囨。
 
 ```python
 from autogen_core import CancellationToken
 from autogen_ext.code_executors.docker import DockerCommandLineCodeExecutor
 from autogen_ext.tools.code_execution import PythonCodeExecutionTool
 
-# 创建代码执行工具
+# 鍒涘缓浠ｇ爜鎵ц宸ュ叿
 code_executor = DockerCommandLineCodeExecutor()
 await code_executor.start()
 ```
 
 ---
 
-## 十四、CrewAI 文件工具
+## 鍗佸洓銆丆rewAI 鏂囦欢宸ュ叿
 
-**官方文档**: https://docs.crewai.com/en/tools/file-document/jsonsearchtool
+**瀹樻柟鏂囨。**: https://docs.crewai.com/en/tools/file-document/jsonsearchtool
 
-CrewAI 提供了多种文件操作工具。
-
+CrewAI 鎻愪緵浜嗗绉嶆枃浠舵搷浣滃伐鍏枫€?
 ### 14.1 JSONSearchTool
 
-**来源**: CrewAI 官方文档
+**鏉ユ簮**: CrewAI 瀹樻柟鏂囨。
 
 ```python
 from crewai_tools import JSONSearchTool
 
-# 通用 JSON 搜索
+# 閫氱敤 JSON 鎼滅储
 tool = JSONSearchTool()
 
-# 限制搜索特定 JSON 文件
+# 闄愬埗鎼滅储鐗瑰畾 JSON 鏂囦欢
 tool = JSONSearchTool(json_path='./path/to/your/file.json')
 ```
 
-**参数**:
-- `json_path` (str, optional): 指定要搜索的 JSON 文件路径
+**鍙傛暟**:
+- `json_path` (str, optional): 鎸囧畾瑕佹悳绱㈢殑 JSON 鏂囦欢璺緞
 
-### 14.2 CrewAI 工具特点
+### 14.2 CrewAI 宸ュ叿鐗圭偣
 
-1. **RAG 搜索**: 使用 RAG (Retrieve and Generate) 机制搜索
-2. **可配置**: 支持配置不同的 LLM 和 embedding 模型
-3. **实验性**: 部分工具标记为实验阶段
-
+1. **RAG 鎼滅储**: 浣跨敤 RAG (Retrieve and Generate) 鏈哄埗鎼滅储
+2. **鍙厤缃?*: 鏀寔閰嶇疆涓嶅悓鐨?LLM 鍜?embedding 妯″瀷
+3. **瀹為獙鎬?*: 閮ㄥ垎宸ュ叿鏍囪涓哄疄楠岄樁娈?
 ---
 
-## 十五、Azure OpenAI Function Calling
+## 鍗佷簲銆丄zure OpenAI Function Calling
 
-**官方文档**: https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/function-calling
+**瀹樻柟鏂囨。**: https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/function-calling
 
-Azure OpenAI 兼容 OpenAI 的 function calling 格式。
+Azure OpenAI 鍏煎 OpenAI 鐨?function calling 鏍煎紡銆?
+### 15.1 Azure OpenAI 鐗圭偣
 
-### 15.1 Azure OpenAI 特点
+1. **鍏煎 OpenAI**: 浣跨敤涓?OpenAI 鐩稿悓鐨?JSON Schema 鏍煎紡
+2. **浼佷笟绾?*: 鏀寔 Azure 鐨勫畨鍏ㄥ拰鍚堣鐗规€?3. **閮ㄧ讲閫夐」**: 鏀寔澶氱妯″瀷閮ㄧ讲
 
-1. **兼容 OpenAI**: 使用与 OpenAI 相同的 JSON Schema 格式
-2. **企业级**: 支持 Azure 的安全和合规特性
-3. **部署选项**: 支持多种模型部署
-
-### 15.2 调用示例
+### 15.2 璋冪敤绀轰緥
 
 ```python
-# 来源: Azure OpenAI 官方示例
+# 鏉ユ簮: Azure OpenAI 瀹樻柟绀轰緥
 from openai import AzureOpenAI
 
 client = AzureOpenAI(
@@ -1148,515 +1108,485 @@ client = AzureOpenAI(
 response = client.chat.completions.create(
     model="gpt-4",
     messages=[{"role": "user", "content": "What's the weather like?"}],
-    tools=tools  # 与 OpenAI 格式相同
+    tools=tools  # 涓?OpenAI 鏍煎紡鐩稿悓
 )
 ```
 
 ---
 
-## 十六、各主流模型 Function Calling 工具数量限制（准确数据）
+## 鍗佸叚銆佸悇涓绘祦妯″瀷 Function Calling 宸ュ叿鏁伴噺闄愬埗锛堝噯纭暟鎹級
 
-### 16.1 OpenAI 模型工具数量限制
+### 16.1 OpenAI 妯″瀷宸ュ叿鏁伴噺闄愬埗
 
-**官方文档**: https://platform.openai.com/docs/guides/function-calling
+**瀹樻柟鏂囨。**: https://platform.openai.com/docs/guides/function-calling
 
-**关键发现**:
-- **工具数量限制**: 最大 **128 个**工具（2023年12月确认）
-- **来源**: OpenAI 开发者社区讨论（https://community.openai.com/t/limit-on-the-number-of-functions-definitions-for-assistant/537992）
-- **说明**: 每个工具定义的平均 token 消耗约 123 tokens，128个工具约消耗 15.7k tokens，接近 128k 上下文窗口的限制
+**鍏抽敭鍙戠幇**:
+- **宸ュ叿鏁伴噺闄愬埗**: 鏈€澶?**128 涓?*宸ュ叿锛?023骞?2鏈堢‘璁わ級
+- **鏉ユ簮**: OpenAI 寮€鍙戣€呯ぞ鍖鸿璁猴紙https://community.openai.com/t/limit-on-the-number-of-functions-definitions-for-assistant/537992锛?- **璇存槑**: 姣忎釜宸ュ叿瀹氫箟鐨勫钩鍧?token 娑堣€楃害 123 tokens锛?28涓伐鍏风害娑堣€?15.7k tokens锛屾帴杩?128k 涓婁笅鏂囩獥鍙ｇ殑闄愬埗
 
-**实际建议**:
-- 工具数量超过 128 个时，模型选择工具的准确率会显著下降
-- 解决方案：使用**工具分组**或**微调模型**
+**瀹為檯寤鸿**:
+- 宸ュ叿鏁伴噺瓒呰繃 128 涓椂锛屾ā鍨嬮€夋嫨宸ュ叿鐨勫噯纭巼浼氭樉钁椾笅闄?- 瑙ｅ喅鏂规锛氫娇鐢?*宸ュ叿鍒嗙粍**鎴?*寰皟妯″瀷**
 
 ---
 
-### 16.2 Claude Code 内置工具（2025年12月数据）
+### 16.2 Claude Code 鍐呯疆宸ュ叿锛?025骞?2鏈堟暟鎹級
 
-**数据来源**: https://blog.thepete.net/claude-code-tools/（2025年12月9日更新）
+**鏁版嵁鏉ユ簮**: https://blog.thepete.net/claude-code-tools/锛?025骞?2鏈?鏃ユ洿鏂帮級
 
-**内置工具总数**: **18 个**
+**鍐呯疆宸ュ叿鎬绘暟**: **18 涓?*
 
-| 工具名称 | 功能描述 | 参数 |
+| 宸ュ叿鍚嶇О | 鍔熻兘鎻忚堪 | 鍙傛暟 |
 |---------|---------|------|
-| **Task** | 启动子 agent 处理复杂任务 | description, prompt, subagent_type, model, resume |
-| **Bash** | 执行终端命令 | command, timeout, description, run_in_background, dangerouslyDisableSandbox |
-| **Glob** | 文件名模式匹配 | pattern, path |
-| **Grep** | 文件内容搜索 | pattern, path, glob, output_mode, -B, -A, -C, -n, -i, type, head_limit, offset, multiline |
-| **ExitPlanMode** | 退出计划模式 | (无参数) |
-| **Read** | 读取文件 | file_path, offset, limit |
-| **Edit** | 编辑文件 | file_path, old_string, new_string, replace_all |
-| **Write** | 写入文件 | file_path, content |
-| **NotebookEdit** | 编辑 Jupyter notebook | notebook_path, cell_id, new_source, cell_type, edit_mode |
-| **WebFetch** | 获取网页内容 | url, prompt |
-| **TodoWrite** | 任务列表管理 | todos |
-| **WebSearch** | 网络搜索 | query, allowed_domains, blocked_domains |
-| **BashOutput** | 获取后台命令输出 | bash_id, filter |
-| **KillShell** | 终止后台命令 | shell_id |
-| **AskUserQuestion** | 向用户提问 | questions, answers |
-| **Skill** | 执行 skill | skill |
-| **SlashCommand** | 执行斜杠命令 | command |
-| **EnterPlanMode** | 进入计划模式 | (无参数) |
+| **Task** | 鍚姩瀛?agent 澶勭悊澶嶆潅浠诲姟 | description, prompt, subagent_type, model, resume |
+| **Bash** | 鎵ц缁堢鍛戒护 | command, timeout, description, run_in_background, dangerouslyDisableSandbox |
+| **Glob** | 鏂囦欢鍚嶆ā寮忓尮閰?| pattern, path |
+| **Grep** | 鏂囦欢鍐呭鎼滅储 | pattern, path, glob, output_mode, -B, -A, -C, -n, -i, type, head_limit, offset, multiline |
+| **ExitPlanMode** | 閫€鍑鸿鍒掓ā寮?| (鏃犲弬鏁? |
+| **Read** | 璇诲彇鏂囦欢 | file_path, offset, limit |
+| **Edit** | 缂栬緫鏂囦欢 | file_path, old_string, new_string, replace_all |
+| **Write** | 鍐欏叆鏂囦欢 | file_path, content |
+| **NotebookEdit** | 缂栬緫 Jupyter notebook | notebook_path, cell_id, new_source, cell_type, edit_mode |
+| **WebFetch** | 鑾峰彇缃戦〉鍐呭 | url, prompt |
+| **TodoWrite** | 浠诲姟鍒楄〃绠＄悊 | todos |
+| **WebSearch** | 缃戠粶鎼滅储 | query, allowed_domains, blocked_domains |
+| **BashOutput** | 鑾峰彇鍚庡彴鍛戒护杈撳嚭 | bash_id, filter |
+| **KillShell** | 缁堟鍚庡彴鍛戒护 | shell_id |
+| **AskUserQuestion** | 鍚戠敤鎴锋彁闂?| questions, answers |
+| **Skill** | 鎵ц skill | skill |
+| **SlashCommand** | 鎵ц鏂滄潬鍛戒护 | command |
+| **EnterPlanMode** | 杩涘叆璁″垝妯″紡 | (鏃犲弬鏁? |
 
-**特点**:
-- Claude Code 内置工具是固定的，**不支持自定义工具**（与 MCP 集成时可通过 MCP 添加外部工具）
-- 工具按功能分类：文件操作（Read/Edit/Write/Glob/Grep）、命令执行（Bash）、网络（WebFetch/WebSearch）、任务管理（Task/TodoWrite）、用户交互（AskUserQuestion）
-
+**鐗圭偣**:
+- Claude Code 鍐呯疆宸ュ叿鏄浐瀹氱殑锛?*涓嶆敮鎸佽嚜瀹氫箟宸ュ叿**锛堜笌 MCP 闆嗘垚鏃跺彲閫氳繃 MCP 娣诲姞澶栭儴宸ュ叿锛?- 宸ュ叿鎸夊姛鑳藉垎绫伙細鏂囦欢鎿嶄綔锛圧ead/Edit/Write/Glob/Grep锛夈€佸懡浠ゆ墽琛岋紙Bash锛夈€佺綉缁滐紙WebFetch/WebSearch锛夈€佷换鍔＄鐞嗭紙Task/TodoWrite锛夈€佺敤鎴蜂氦浜掞紙AskUserQuestion锛?
 ---
 
-### 16.3 MCP Filesystem Server 工具（官方最新）
+### 16.3 MCP Filesystem Server 宸ュ叿锛堝畼鏂规渶鏂帮級
 
-**数据来源**: https://github.com/modelcontextprotocol/servers（2025年最新）
+**鏁版嵁鏉ユ簮**: https://github.com/modelcontextprotocol/servers锛?025骞存渶鏂帮級
 
-**工具总数**: **14 个**（注意：比早期文档中的 11 个多了 2 个）
+**宸ュ叿鎬绘暟**: **14 涓?*锛堟敞鎰忥細姣旀棭鏈熸枃妗ｄ腑鐨?11 涓浜?2 涓級
 
-| 工具名称 | 功能 | 参数 |
+| 宸ュ叿鍚嶇О | 鍔熻兘 | 鍙傛暟 |
 |---------|------|------|
-| **read_text_file** | 读取文本文件 | path (string), head (number, optional), tail (number, optional) |
-| **read_media_file** | 读取图片/音频文件 | path (string) |
-| **read_multiple_files** | 读取多个文件 | paths (string[]) |
-| **write_file** | 写入/覆盖文件 | path (string), content (string) |
-| **edit_file** | 编辑文件 | path (string), edits (array), dryRun (boolean, optional) |
-| **create_directory** | 创建目录 | path (string) |
-| **list_directory** | 列出目录内容 | path (string) |
-| **list_directory_with_sizes** | 列出目录内容（含文件大小） | path (string), sortBy (string, optional) |
-| **move_file** | 移动/重命名文件 | source (string), destination (string) |
-| **search_files** | 递归搜索文件 | path (string), pattern (string), excludePatterns (string[], optional) |
-| **directory_tree** | 获取目录树结构 | path (string), excludePatterns (string[], optional) |
-| **get_file_info** | 获取文件/目录元数据 | path (string) |
-| **list_allowed_directories** | 列出允许访问的目录 | (无参数) |
-| **resource_templates** | 资源模板（新增） | (无参数) |
-| **read_resource** | 读取资源（新增） | uri (string) |
+| **read_text_file** | 璇诲彇鏂囨湰鏂囦欢 | path (string), head (number, optional), tail (number, optional) |
+| **read_media_file** | 璇诲彇鍥剧墖/闊抽鏂囦欢 | path (string) |
+| **read_multiple_files** | 璇诲彇澶氫釜鏂囦欢 | paths (string[]) |
+| **write_file** | 鍐欏叆/瑕嗙洊鏂囦欢 | path (string), content (string) |
+| **edit_file** | 缂栬緫鏂囦欢 | path (string), edits (array), dryRun (boolean, optional) |
+| **create_directory** | 鍒涘缓鐩綍 | path (string) |
+| **list_directory** | 鍒楀嚭鐩綍鍐呭 | path (string) |
+| **list_directory_with_sizes** | 鍒楀嚭鐩綍鍐呭锛堝惈鏂囦欢澶у皬锛?| path (string), sortBy (string, optional) |
+| **move_file** | 绉诲姩/閲嶅懡鍚嶆枃浠?| source (string), destination (string) |
+| **search_files** | 閫掑綊鎼滅储鏂囦欢 | path (string), pattern (string), excludePatterns (string[], optional) |
+| **directory_tree** | 鑾峰彇鐩綍鏍戠粨鏋?| path (string), excludePatterns (string[], optional) |
+| **get_file_info** | 鑾峰彇鏂囦欢/鐩綍鍏冩暟鎹?| path (string) |
+| **list_allowed_directories** | 鍒楀嚭鍏佽璁块棶鐨勭洰褰?| (鏃犲弬鏁? |
+| **resource_templates** | 璧勬簮妯℃澘锛堟柊澧烇級 | (鏃犲弬鏁? |
+| **read_resource** | 璇诲彇璧勬簮锛堟柊澧烇級 | uri (string) |
 
-**注意**: 
-- 官方 README 显示 14 个工具，之前的文档可能只记录了 11 个
-- 新增了 `read_media_file`（读取媒体文件）和 `list_directory_with_sizes`（带大小的目录列表）
-- 详细参数见官方文档：https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem
+**娉ㄦ剰**: 
+- 瀹樻柟 README 鏄剧ず 14 涓伐鍏凤紝涔嬪墠鐨勬枃妗ｅ彲鑳藉彧璁板綍浜?11 涓?- 鏂板浜?`read_media_file`锛堣鍙栧獟浣撴枃浠讹級鍜?`list_directory_with_sizes`锛堝甫澶у皬鐨勭洰褰曞垪琛級
+- 璇︾粏鍙傛暟瑙佸畼鏂规枃妗ｏ細https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem
 
 ---
 
-### 16.4 通义千问 (Qwen) Function Calling
+### 16.4 閫氫箟鍗冮棶 (Qwen) Function Calling
 
-**官方文档**: 
+**瀹樻柟鏂囨。**: 
 - https://help.aliyun.com/zh/model-studio/qwen-function-calling
 - https://qwen.readthedocs.io/en/stable/framework/function_call.html
 
-**支持的模型**:
-- 通义千问-Max
-- 通义千问-Plus
-- 通义千问-Turbo
-- Qwen2.5 系列
-- Qwen2 系列
-- Qwen1.5 系列
+**鏀寔鐨勬ā鍨?*:
+- 閫氫箟鍗冮棶-Max
+- 閫氫箟鍗冮棶-Plus
+- 閫氫箟鍗冮棶-Turbo
+- Qwen2.5 绯诲垪
+- Qwen2 绯诲垪
+- Qwen1.5 绯诲垪
 
-**工具定义格式**: 兼容 OpenAI 格式
+**宸ュ叿瀹氫箟鏍煎紡**: 鍏煎 OpenAI 鏍煎紡
 
-**工具数量限制**: 
-- 官方未明确公布具体数量限制
-- 推测与 OpenAI 类似，受限于上下文窗口大小
-- 建议控制在 128 个以内以获得最佳效果
-
+**宸ュ叿鏁伴噺闄愬埗**: 
+- 瀹樻柟鏈槑纭叕甯冨叿浣撴暟閲忛檺鍒?- 鎺ㄦ祴涓?OpenAI 绫讳技锛屽彈闄愪簬涓婁笅鏂囩獥鍙ｅぇ灏?- 寤鸿鎺у埗鍦?128 涓互鍐呬互鑾峰緱鏈€浣虫晥鏋?
 ---
 
-### 16.5 其他国内大模型
-
-| 模型 | Function Calling 支持 | 工具数量限制 | 格式 |
+### 16.5 鍏朵粬鍥藉唴澶фā鍨?
+| 妯″瀷 | Function Calling 鏀寔 | 宸ュ叿鏁伴噺闄愬埗 | 鏍煎紡 |
 |-----|----------------------|-------------|------|
-| **百度文心** | 支持 | 未公开 | 兼容 OpenAI |
-| **讯飞星火** | 部分支持 | 未公开 | 部分兼容 |
-| **智谱清言** | 支持 | 未公开 | 兼容 OpenAI |
-| **DeepSeek** | 支持 | 未公开 | 兼容 OpenAI，需添加 strict: true |
+| **鐧惧害鏂囧績** | 鏀寔 | 鏈叕寮€ | 鍏煎 OpenAI |
+| **璁鏄熺伀** | 閮ㄥ垎鏀寔 | 鏈叕寮€ | 閮ㄥ垎鍏煎 |
+| **鏅鸿氨娓呰█** | 鏀寔 | 鏈叕寮€ | 鍏煎 OpenAI |
+| **DeepSeek** | 鏀寔 | 鏈叕寮€ | 鍏煎 OpenAI锛岄渶娣诲姞 strict: true |
 
 ---
 
-### 16.6 关键数据汇总表
+### 16.6 鍏抽敭鏁版嵁姹囨€昏〃
 
-| 平台/模型 | 工具数量 | 数据来源 | 备注 |
+| 骞冲彴/妯″瀷 | 宸ュ叿鏁伴噺 | 鏁版嵁鏉ユ簮 | 澶囨敞 |
 |----------|---------|---------|------|
-| **OpenAI (GPT-4)** | 最大 128 | 社区讨论 2023-12 | 超过后准确率下降 |
-| **Claude Code** | 18 个内置 | 博客 2025-12 | 固定工具集 |
-| **MCP Filesystem** | 14 个 | 官方 GitHub 2025 | 官方最新数据 |
-| **通义千问** | 未公开 | 官方文档 | 建议 <128 |
-| **百度/讯飞/智谱** | 未公开 | 官方文档 | 兼容 OpenAI 格式 |
+| **OpenAI (GPT-4)** | 鏈€澶?128 | 绀惧尯璁ㄨ 2023-12 | 瓒呰繃鍚庡噯纭巼涓嬮檷 |
+| **Claude Code** | 18 涓唴缃?| 鍗氬 2025-12 | 鍥哄畾宸ュ叿闆?|
+| **MCP Filesystem** | 14 涓?| 瀹樻柟 GitHub 2025 | 瀹樻柟鏈€鏂版暟鎹?|
+| **閫氫箟鍗冮棶** | 鏈叕寮€ | 瀹樻柟鏂囨。 | 寤鸿 <128 |
+| **鐧惧害/璁/鏅鸿氨** | 鏈叕寮€ | 瀹樻柟鏂囨。 | 鍏煎 OpenAI 鏍煎紡 |
 
 ---
 
-### 16.7 重要结论
+### 16.7 閲嶈缁撹
 
-1. **工具数量不是越多越好**：超过 128 个工具后，模型选择准确率会显著下降
-2. **MCP 是最完整的文件操作方案**：14 个工具，覆盖读、写、编辑、搜索、元数据等
-3. **Claude Code 工具固定**：内置 18 个工具，不支持自定义（需通过 MCP 扩展）
-4. **国内大模型兼容 OpenAI**：工具定义格式与 OpenAI 相同
+1. **宸ュ叿鏁伴噺涓嶆槸瓒婂瓒婂ソ**锛氳秴杩?128 涓伐鍏峰悗锛屾ā鍨嬮€夋嫨鍑嗙‘鐜囦細鏄捐憲涓嬮檷
+2. **MCP 鏄渶瀹屾暣鐨勬枃浠舵搷浣滄柟妗?*锛?4 涓伐鍏凤紝瑕嗙洊璇汇€佸啓銆佺紪杈戙€佹悳绱€佸厓鏁版嵁绛?3. **Claude Code 宸ュ叿鍥哄畾**锛氬唴缃?18 涓伐鍏凤紝涓嶆敮鎸佽嚜瀹氫箟锛堥渶閫氳繃 MCP 鎵╁睍锛?4. **鍥藉唴澶фā鍨嬪吋瀹?OpenAI**锛氬伐鍏峰畾涔夋牸寮忎笌 OpenAI 鐩稿悓
 
 ---
 
-## 十七、Windows 平台 MCP 工具汇总（重点！）
+## 鍗佷竷銆乄indows 骞冲彴 MCP 宸ュ叿姹囨€伙紙閲嶇偣锛侊級
 
-### 17.1 Windows 专用 MCP 服务器概览
-
-| 服务器 | 工具数量 | Stars | 核心功能 |
+### 17.1 Windows 涓撶敤 MCP 鏈嶅姟鍣ㄦ瑙?
+| 鏈嶅姟鍣?| 宸ュ叿鏁伴噺 | Stars | 鏍稿績鍔熻兘 |
 |--------|---------|-------|---------|
-| **Windows-MCP** (CursorTouch) | 15+ | 5000+ | 鼠标/键盘/截图/窗口/Shell/注册表 |
-| **MCPControl** | 10+ | 307 | 鼠标/键盘/窗口/屏幕/剪贴板 |
-| **WinRemote-MCP** | 40+ | 89 | 桌面控制/进程/服务/注册表/网络/OCR |
+| **Windows-MCP** (CursorTouch) | 15+ | 5000+ | 榧犳爣/閿洏/鎴浘/绐楀彛/Shell/娉ㄥ唽琛?|
+| **MCPControl** | 10+ | 307 | 榧犳爣/閿洏/绐楀彛/灞忓箷/鍓创鏉?|
+| **WinRemote-MCP** | 40+ | 89 | 妗岄潰鎺у埗/杩涚▼/鏈嶅姟/娉ㄥ唽琛?缃戠粶/OCR |
 
 ---
 
-### 17.2 Windows-MCP (CursorTouch) - 最流行的 Windows MCP
+### 17.2 Windows-MCP (CursorTouch) - 鏈€娴佽鐨?Windows MCP
 
-**GitHub**: https://github.com/CursorTouch/Windows-MCP（5000+ stars）
+**GitHub**: https://github.com/CursorTouch/Windows-MCP锛?000+ stars锛?
+**鏀寔鐨勫鎴风**: Claude Desktop, Claude Code, Cursor, Perplexity, Gemini CLI, Codex, Qwen Code
 
-**支持的客户端**: Claude Desktop, Claude Code, Cursor, Perplexity, Gemini CLI, Codex, Qwen Code
+**宸ュ叿鍒楄〃**:
 
-**工具列表**:
-
-| 工具 | 功能描述 | 核心参数 |
+| 宸ュ叿 | 鍔熻兘鎻忚堪 | 鏍稿績鍙傛暟 |
 |-----|---------|----------|
-| **Click** | 鼠标点击 | x, y, button (left/right/middle), click_type (single/double) |
-| **Type** | 键盘输入 | text, clear (可选清除现有文本) |
-| **Scroll** | 滚动 | direction (up/down/left/right), amount |
-| **Move** | 鼠标移动/拖拽 | x, y, drag (布尔值) |
-| **Shortcut** | 快捷键 | keys (如 Ctrl+c, Alt+Tab) |
-| **Wait** | 暂停等待 | duration (秒) |
-| **Screenshot** | 快速截图 | display (可选屏幕编号), scale (缩放) |
-| **Snapshot** | 完整桌面状态 | use_vision, use_dom, display |
-| **App** | 应用操作 | action (launch/switch/resize), name, args |
-| **Shell** | PowerShell执行 | command, cwd (可选工作目录) |
-| **Scrape** | 网页抓取 | url |
-| **MultiSelect** | 多选 | coordinates[], ctrl (是否按Ctrl) |
-| **MultiEdit** | 多处编辑 | fields [{x, y, text}] |
-| **Clipboard** | 剪贴板 | action (read/write), content |
-| **Process** | 进程管理 | action (list/kill), pid, name |
-| **Notification** | Windows通知 | title, message |
-| **Registry** | 注册表 | action (read/write/delete/list), path, name, value |
+| **Click** | 榧犳爣鐐瑰嚮 | x, y, button (left/right/middle), click_type (single/double) |
+| **Type** | 閿洏杈撳叆 | text, clear (鍙€夋竻闄ょ幇鏈夋枃鏈? |
+| **Scroll** | 婊氬姩 | direction (up/down/left/right), amount |
+| **Move** | 榧犳爣绉诲姩/鎷栨嫿 | x, y, drag (甯冨皵鍊? |
+| **Shortcut** | 蹇嵎閿?| keys (濡?Ctrl+c, Alt+Tab) |
+| **Wait** | 鏆傚仠绛夊緟 | duration (绉? |
+| **Screenshot** | 蹇€熸埅鍥?| display (鍙€夊睆骞曠紪鍙?, scale (缂╂斁) |
+| **Snapshot** | 瀹屾暣妗岄潰鐘舵€?| use_vision, use_dom, display |
+| **App** | 搴旂敤鎿嶄綔 | action (launch/switch/resize), name, args |
+| **Shell** | PowerShell鎵ц | command, cwd (鍙€夊伐浣滅洰褰? |
+| **Scrape** | 缃戦〉鎶撳彇 | url |
+| **MultiSelect** | 澶氶€?| coordinates[], ctrl (鏄惁鎸塁trl) |
+| **MultiEdit** | 澶氬缂栬緫 | fields [{x, y, text}] |
+| **Clipboard** | 鍓创鏉?| action (read/write), content |
+| **Process** | 杩涚▼绠＄悊 | action (list/kill), pid, name |
+| **Notification** | Windows閫氱煡 | title, message |
+| **Registry** | 娉ㄥ唽琛?| action (read/write/delete/list), path, name, value |
 
-**安装方式**:
+**瀹夎鏂瑰紡**:
 ```bash
-# 推荐使用 uvx
+# 鎺ㄨ崘浣跨敤 uvx
 uvx windows-mcp
 
-# 或通过 Claude Code
+# 鎴栭€氳繃 Claude Code
 claude mcp add --transport stdio windows-mcp -- uvx windows-mcp
 ```
 
-**特点**:
-- ✅ 支持任何 LLM（不依赖特定视觉模型）
-- ✅ 轻量级开源
-- ✅ 延迟 0.2-0.9 秒
-- ✅ 支持本地/远程模式
+**鐗圭偣**:
+- 鉁?鏀寔浠讳綍 LLM锛堜笉渚濊禆鐗瑰畾瑙嗚妯″瀷锛?- 鉁?杞婚噺绾у紑婧?- 鉁?寤惰繜 0.2-0.9 绉?- 鉁?鏀寔鏈湴/杩滅▼妯″紡
 
 ---
 
-### 17.3 MCPControl - Windows OS 自动化
+### 17.3 MCPControl - Windows OS 鑷姩鍖?
+**GitHub**: https://github.com/claude-did-this/MCPControl锛?07 stars锛?
+**宸ュ叿鍒楄〃**:
 
-**GitHub**: https://github.com/claude-did-this/MCPControl（307 stars）
-
-**工具列表**:
-
-| 工具 | 功能描述 | 核心参数 |
+| 宸ュ叿 | 鍔熻兘鎻忚堪 | 鏍稿績鍙傛暟 |
 |-----|---------|----------|
-| **Window Management** | 窗口管理 | list_windows, get_active_window, focus_window, resize_window |
-| **Mouse Control** | 鼠标控制 | move, click, drag, scroll, position |
-| **Keyboard Control** | 键盘控制 | type_text, key_combo, press_key, hold_key |
-| **Screen Capture** | 屏幕截图 | screenshot, capture_window, screen_size |
-| **Clipboard** | 剪贴板 | read, write |
+| **Window Management** | 绐楀彛绠＄悊 | list_windows, get_active_window, focus_window, resize_window |
+| **Mouse Control** | 榧犳爣鎺у埗 | move, click, drag, scroll, position |
+| **Keyboard Control** | 閿洏鎺у埗 | type_text, key_combo, press_key, hold_key |
+| **Screen Capture** | 灞忓箷鎴浘 | screenshot, capture_window, screen_size |
+| **Clipboard** | 鍓创鏉?| read, write |
 
-**安装方式**:
+**瀹夎鏂瑰紡**:
 ```bash
 npm install -g mcp-control
 mcp-control --sse
 ```
 
-**安全提示**: 实验性软件，有风险
-
+**瀹夊叏鎻愮ず**: 瀹為獙鎬ц蒋浠讹紝鏈夐闄?
 ---
 
-### 17.4 WinRemote-MCP - 40+ 工具的企业级方案
+### 17.4 WinRemote-MCP - 40+ 宸ュ叿鐨勪紒涓氱骇鏂规
 
-**GitHub**: https://github.com/dddabtc/winremote-mcp（89 stars）
+**GitHub**: https://github.com/dddabtc/winremote-mcp锛?9 stars锛?
+**璇︾粏宸ュ叿鍒楄〃**:
 
-**详细工具列表**:
-
-**桌面控制**:
-| 工具 | 功能 | 参数 |
+**妗岄潰鎺у埗**:
+| 宸ュ叿 | 鍔熻兘 | 鍙傛暟 |
 |-----|------|------|
-| Snapshot | 截图 | quality, max_width, monitor |
-| AnnotatedSnapshot | 标注截图 | - |
-| OCR | 文字识别 | - |
-| ScreenRecord | 屏幕录制 | - |
+| Snapshot | 鎴浘 | quality, max_width, monitor |
+| AnnotatedSnapshot | 鏍囨敞鎴浘 | - |
+| OCR | 鏂囧瓧璇嗗埆 | - |
+| ScreenRecord | 灞忓箷褰曞埗 | - |
 
-**输入控制**:
-| 工具 | 功能 | 参数 |
+**杈撳叆鎺у埗**:
+| 宸ュ叿 | 鍔熻兘 | 鍙傛暟 |
 |-----|------|------|
-| Click | 点击 | x, y, button, click_type |
-| Type | 输入 | text, x, y |
-| Scroll | 滚动 | direction, amount |
-| Move | 移动 | x, y, drag |
-| Shortcut | 快捷键 | keys |
-| Wait | 等待 | duration |
+| Click | 鐐瑰嚮 | x, y, button, click_type |
+| Type | 杈撳叆 | text, x, y |
+| Scroll | 婊氬姩 | direction, amount |
+| Move | 绉诲姩 | x, y, drag |
+| Shortcut | 蹇嵎閿?| keys |
+| Wait | 绛夊緟 | duration |
 
-**窗口管理**:
-| 工具 | 功能 | 参数 |
+**绐楀彛绠＄悊**:
+| 宸ュ叿 | 鍔熻兘 | 鍙傛暟 |
 |-----|------|------|
-| FocusWindow | 聚焦窗口 | title |
-| MinimizeAll | 最小化全部 | - |
-| App | 应用操作 | action, name, args |
+| FocusWindow | 鑱氱劍绐楀彛 | title |
+| MinimizeAll | 鏈€灏忓寲鍏ㄩ儴 | - |
+| App | 搴旂敤鎿嶄綔 | action, name, args |
 
-**系统操作**:
-| 工具 | 功能 | 参数 |
+**绯荤粺鎿嶄綔**:
+| 宸ュ叿 | 鍔熻兘 | 鍙傛暟 |
 |-----|------|------|
 | Shell | PowerShell | command, cwd |
-| GetClipboard | 读剪贴板 | - |
-| SetClipboard | 写剪贴板 | content |
-| ListProcesses | 进程列表 | - |
-| KillProcess | 终止进程 | pid, name |
-| GetSystemInfo | 系统信息 | - |
-| Notification | 通知 | title, message |
-| LockScreen | 锁屏 | - |
+| GetClipboard | 璇诲壀璐存澘 | - |
+| SetClipboard | 鍐欏壀璐存澘 | content |
+| ListProcesses | 杩涚▼鍒楄〃 | - |
+| KillProcess | 缁堟杩涚▼ | pid, name |
+| GetSystemInfo | 绯荤粺淇℃伅 | - |
+| Notification | 閫氱煡 | title, message |
+| LockScreen | 閿佸睆 | - |
 
-**文件操作**:
-| 工具 | 功能 | 参数 |
+**鏂囦欢鎿嶄綔**:
+| 宸ュ叿 | 鍔熻兘 | 鍙傛暟 |
 |-----|------|------|
-| FileRead | 读取 | path |
-| FileWrite | 写入 | path, content |
-| FileList | 列表 | path |
-| FileSearch | 搜索 | path, pattern |
-| FileDownload | 下载 | path |
-| FileUpload | 上传 | content, path |
+| FileRead | 璇诲彇 | path |
+| FileWrite | 鍐欏叆 | path, content |
+| FileList | 鍒楄〃 | path |
+| FileSearch | 鎼滅储 | path, pattern |
+| FileDownload | 涓嬭浇 | path |
+| FileUpload | 涓婁紶 | content, path |
 
-**注册表/服务**:
-| 工具 | 功能 | 参数 |
+**娉ㄥ唽琛?鏈嶅姟**:
+| 宸ュ叿 | 鍔熻兘 | 鍙傛暟 |
 |-----|------|------|
-| RegRead | 读注册表 | path, name |
-| RegWrite | 写注册表 | path, name, value |
-| ServiceList | 服务列表 | - |
-| ServiceStart | 启动服务 | name |
-| ServiceStop | 停止服务 | name |
+| RegRead | 璇绘敞鍐岃〃 | path, name |
+| RegWrite | 鍐欐敞鍐岃〃 | path, name, value |
+| ServiceList | 鏈嶅姟鍒楄〃 | - |
+| ServiceStart | 鍚姩鏈嶅姟 | name |
+| ServiceStop | 鍋滄鏈嶅姟 | name |
 
-**计划任务**:
-| 工具 | 功能 | 参数 |
+**璁″垝浠诲姟**:
+| 宸ュ叿 | 鍔熻兘 | 鍙傛暟 |
 |-----|------|------|
-| TaskList | 任务列表 | - |
-| TaskCreate | 创建任务 | name, command, schedule |
-| TaskDelete | 删除任务 | name |
+| TaskList | 浠诲姟鍒楄〃 | - |
+| TaskCreate | 鍒涘缓浠诲姟 | name, command, schedule |
+| TaskDelete | 鍒犻櫎浠诲姟 | name |
 
-**网络工具**:
-| 工具 | 功能 | 参数 |
+**缃戠粶宸ュ叿**:
+| 宸ュ叿 | 鍔熻兘 | 鍙傛暟 |
 |-----|------|------|
-| Scrape | 网页抓取 | url |
+| Scrape | 缃戦〉鎶撳彇 | url |
 | Ping | Ping | host |
-| PortCheck | 端口检查 | host, port |
-| NetConnections | 网络连接 | - |
-| EventLog | 事件日志 | - |
+| PortCheck | 绔彛妫€鏌?| host, port |
+| NetConnections | 缃戠粶杩炴帴 | - |
+| EventLog | 浜嬩欢鏃ュ織 | - |
 
-**安全层级**:
-- **Tier 1** (只读): Snapshot, GetSystemInfo, ListProcesses - 默认启用
-- **Tier 2** (交互): Click, Type, Shortcut, App - 默认启用
-- **Tier 3** (危险): Shell, FileWrite, KillProcess, RegWrite - 默认禁用
+**瀹夊叏灞傜骇**:
+- **Tier 1** (鍙): Snapshot, GetSystemInfo, ListProcesses - 榛樿鍚敤
+- **Tier 2** (浜や簰): Click, Type, Shortcut, App - 榛樿鍚敤
+- **Tier 3** (鍗遍櫓): Shell, FileWrite, KillProcess, RegWrite - 榛樿绂佺敤
 
 ---
 
-### 17.5 Windows 特有工具对比
+### 17.5 Windows 鐗规湁宸ュ叿瀵规瘮
 
-| 功能 | Windows-MCP | MCPControl | WinRemote-MCP |
+| 鍔熻兘 | Windows-MCP | MCPControl | WinRemote-MCP |
 |-----|------------|------------|---------------|
-| 鼠标控制 | ✅ | ✅ | ✅ |
-| 键盘输入 | ✅ | ✅ | ✅ |
-| 截图 | ✅ | ✅ | ✅ |
-| 窗口管理 | ✅ | ✅ | ✅ |
-| Shell/PowerShell | ✅ | ❌ | ✅ |
-| 进程管理 | ✅ | ❌ | ✅ |
-| 注册表 | ✅ | ❌ | ✅ |
-| 服务管理 | ❌ | ❌ | ✅ |
-| 剪贴板 | ✅ | ✅ | ✅ |
-| OCR | ❌ | ❌ | ✅ |
-| 屏幕录制 | ❌ | ❌ | ✅ |
-| 网络工具 | ❌ | ❌ | ✅ |
+| 榧犳爣鎺у埗 | 鉁?| 鉁?| 鉁?|
+| 閿洏杈撳叆 | 鉁?| 鉁?| 鉁?|
+| 鎴浘 | 鉁?| 鉁?| 鉁?|
+| 绐楀彛绠＄悊 | 鉁?| 鉁?| 鉁?|
+| Shell/PowerShell | 鉁?| 鉂?| 鉁?|
+| 杩涚▼绠＄悊 | 鉁?| 鉂?| 鉁?|
+| 娉ㄥ唽琛?| 鉁?| 鉂?| 鉁?|
+| 鏈嶅姟绠＄悊 | 鉂?| 鉂?| 鉁?|
+| 鍓创鏉?| 鉁?| 鉁?| 鉁?|
+| OCR | 鉂?| 鉂?| 鉁?|
+| 灞忓箷褰曞埗 | 鉂?| 鉂?| 鉁?|
+| 缃戠粶宸ュ叿 | 鉂?| 鉂?| 鉁?|
 
 ---
 
-### 17.6 Windows MCP 工具参数命名规范
+### 17.6 Windows MCP 宸ュ叿鍙傛暟鍛藉悕瑙勮寖
 
-**路径类**:
-- `path` - 文件/目录路径
-- `cwd` - 当前工作目录
+**璺緞绫?*:
+- `path` - 鏂囦欢/鐩綍璺緞
+- `cwd` - 褰撳墠宸ヤ綔鐩綍
 
-**坐标类**:
-- `x`, `y` - 屏幕坐标
-- `display` - 显示器编号
+**鍧愭爣绫?*:
+- `x`, `y` - 灞忓箷鍧愭爣
+- `display` - 鏄剧ず鍣ㄧ紪鍙?
+**鎿嶄綔绫?*:
+- `action` - 鎿嶄綔绫诲瀷 (list/kill/read/write 绛?
+- `button` - 榧犳爣鎸夐挳 (left/right/middle)
+- `click_type` - 鐐瑰嚮绫诲瀷 (single/double)
 
-**操作类**:
-- `action` - 操作类型 (list/kill/read/write 等)
-- `button` - 鼠标按钮 (left/right/middle)
-- `click_type` - 点击类型 (single/double)
-
-**内容类**:
-- `text` / `content` - 文本内容
-- `command` - 命令字符串
-
-**控制类**:
-- `drag` - 是否拖拽
-- `scale` - 缩放比例
+**鍐呭绫?*:
+- `text` / `content` - 鏂囨湰鍐呭
+- `command` - 鍛戒护瀛楃涓?
+**鎺у埗绫?*:
+- `drag` - 鏄惁鎷栨嫿
+- `scale` - 缂╂斁姣斾緥
 
 ---
 
-## 十八、主流 Agent 工具数量对比与选择建议
+## 鍗佸叓銆佷富娴?Agent 宸ュ叿鏁伴噺瀵规瘮涓庨€夋嫨寤鸿
 
-### 18.1 各平台工具数量总览
+### 18.1 鍚勫钩鍙板伐鍏锋暟閲忔€昏
 
-| 平台/模型 | 文件操作 | Windows 特有 | 总计约 |
+| 骞冲彴/妯″瀷 | 鏂囦欢鎿嶄綔 | Windows 鐗规湁 | 鎬昏绾?|
 |---------|---------|-------------|-------|
 | **MCP Filesystem** | 14 | 0 | 14 |
 | **LangChain** | 7 | 0 | 7 |
 | **Claude Code** | 4 | 14 | 18 |
 | **Windows-MCP** | 0 | 15+ | 15+ |
 | **WinRemote-MCP** | 6 | 40+ | 40+ |
-| **OpenAI (GPT-4)** | 自定义 | 自定义 | ≤128 |
+| **OpenAI (GPT-4)** | 鑷畾涔?| 鑷畾涔?| 鈮?28 |
 
-### 18.2 选择建议
+### 18.2 閫夋嫨寤鸿
 
-**文件操作为主**:
-- 推荐 MCP Filesystem (14个工具) - 官方维护，最稳定
+**鏂囦欢鎿嶄綔涓轰富**:
+- 鎺ㄨ崘 MCP Filesystem (14涓伐鍏? - 瀹樻柟缁存姢锛屾渶绋冲畾
 
-**Windows 桌面自动化**:
-- 推荐 Windows-MCP (15+工具) - 5000+ stars，最流行
-- 或 WinRemote-MCP (40+工具) - 功能最全，企业级
-
-**综合应用**:
-- OpenAI + MCP Filesystem + Windows-MCP 组合
-
----
-
-### 18.3 重要结论
-
-1. **Windows MCP 工具生态丰富**: 有多种开源方案可选
-2. **工具数量与复杂度正相关**: WinRemote 有 40+ 工具，但配置更复杂
-3. **安全层级很重要**: WinRemote 的 Tier 系统值得借鉴
-4. **远程访问是趋势**: Windows-MCP 支持本地/远程模式
+**Windows 妗岄潰鑷姩鍖?*:
+- 鎺ㄨ崘 Windows-MCP (15+宸ュ叿) - 5000+ stars锛屾渶娴佽
+- 鎴?WinRemote-MCP (40+宸ュ叿) - 鍔熻兘鏈€鍏紝浼佷笟绾?
+**缁煎悎搴旂敤**:
+- OpenAI + MCP Filesystem + Windows-MCP 缁勫悎
 
 ---
 
-### 18.4 参考价值排名
+### 18.3 閲嶈缁撹
 
-| 来源 | 价值 | 适用场景 |
+1. **Windows MCP 宸ュ叿鐢熸€佷赴瀵?*: 鏈夊绉嶅紑婧愭柟妗堝彲閫?2. **宸ュ叿鏁伴噺涓庡鏉傚害姝ｇ浉鍏?*: WinRemote 鏈?40+ 宸ュ叿锛屼絾閰嶇疆鏇村鏉?3. **瀹夊叏灞傜骇寰堥噸瑕?*: WinRemote 鐨?Tier 绯荤粺鍊煎緱鍊熼壌
+4. **杩滅▼璁块棶鏄秼鍔?*: Windows-MCP 鏀寔鏈湴/杩滅▼妯″紡
+
+---
+
+### 18.4 鍙傝€冧环鍊兼帓鍚?
+| 鏉ユ簮 | 浠峰€?| 閫傜敤鍦烘櫙 |
 |-----|------|---------|
-| Windows-MCP (CursorTouch) | ★★★★★ | Windows 桌面自动化首选 |
-| WinRemote-MCP | ★★★★★ | 企业级 Windows 控制 |
-| MCPControl | ★★★★☆ | 轻量级自动化 |
-| MCP Filesystem | ★★★★★ | 跨平台文件操作 |
-| OpenAI Function Calling | ★★★★★ | 通用工具定义标准 |
+| Windows-MCP (CursorTouch) | 鈽呪槄鈽呪槄鈽?| Windows 妗岄潰鑷姩鍖栭閫?|
+| WinRemote-MCP | 鈽呪槄鈽呪槄鈽?| 浼佷笟绾?Windows 鎺у埗 |
+| MCPControl | 鈽呪槄鈽呪槄鈽?| 杞婚噺绾ц嚜鍔ㄥ寲 |
+| MCP Filesystem | 鈽呪槄鈽呪槄鈽?| 璺ㄥ钩鍙版枃浠舵搷浣?|
+| OpenAI Function Calling | 鈽呪槄鈽呪槄鈽?| 閫氱敤宸ュ叿瀹氫箟鏍囧噯 |
 
 ---
 
-## 十九、参考资料（续2）
-
+## 鍗佷節銆佸弬鑰冭祫鏂欙紙缁?锛?
 12. LangChain Tools: https://python.langchain.com/docs/how_to/tool_calling
 13. LangChain File Management: https://docs.langchain.com/oss/python/integrations/tools/filesystem
 14. LlamaIndex Workflow: https://docs.llamaindex.ai/en/stable/examples/workflow/function_calling_agent/
 15. AutoGen Tools: https://microsoft.github.io/autogen/stable/user-guide/core-user-guide/components/tools.html
 16. CrewAI Tools: https://docs.crewai.com/en/concepts/tools
 17. Azure OpenAI: https://learn.microsoft.com/en-us/azure/ai-foundry/openai/how-to/function-calling
-18. 通义千问 Function Calling: https://help.aliyun.com/zh/model-studio/qwen-function-calling
+18. 閫氫箟鍗冮棶 Function Calling: https://help.aliyun.com/zh/model-studio/qwen-function-calling
 19. Qwen Framework: https://qwen.readthedocs.io/en/stable/framework/function_call.html
 
 ---
 
-**编写人**: 小沈
-**更新时间**: 2026-04-04 07:15:00
-**更新说明**: 
-- 修正第16-17章内容，补充准确的模型工具限制数据（OpenAI 128个限制、Claude Code 18个、MCP 14个）
-- 新增第17章：Windows 平台 MCP 工具汇总（Windows-MCP 5000+ stars、MCPControl 307 stars、WinRemote-MCP 40+ tools）
-- 新增第18章：主流 Agent 工具数量对比与选择建议
+**缂栧啓浜?*: 灏忔矆
+**鏇存柊鏃堕棿**: 2026-04-04 07:15:00
+**鏇存柊璇存槑**: 
+- 淇绗?6-17绔犲唴瀹癸紝琛ュ厖鍑嗙‘鐨勬ā鍨嬪伐鍏烽檺鍒舵暟鎹紙OpenAI 128涓檺鍒躲€丆laude Code 18涓€丮CP 14涓級
+- 鏂板绗?7绔狅細Windows 骞冲彴 MCP 宸ュ叿姹囨€伙紙Windows-MCP 5000+ stars銆丮CPControl 307 stars銆乄inRemote-MCP 40+ tools锛?- 鏂板绗?8绔狅細涓绘祦 Agent 宸ュ叿鏁伴噺瀵规瘮涓庨€夋嫨寤鸿
 
 ---
 
-## 二十、所有 File Tool 完整参数总结（必读）
+## 浜屽崄銆佹墍鏈?File Tool 瀹屾暣鍙傛暟鎬荤粨锛堝繀璇伙級
 
-### 20.1 MCP Filesystem Server (13个工具) - 官方最新数据
+### 20.1 MCP Filesystem Server (13涓伐鍏? - 瀹樻柟鏈€鏂版暟鎹?
+**鏉ユ簮**: 瀹樻柟 GitHub 浠撳簱 https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem锛?026骞?鏈堟洿鏂帮級
 
-**来源**: 官方 GitHub 仓库 https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem（2026年1月更新）
+**閲嶈璇存槑**: 
+- 瀹樻柟鏈€鏂版樉绀?**13 涓?*宸ュ叿
+- 鏂板宸ュ叿锛歚read_media_file`銆乣list_directory_with_sizes`
+- 娉ㄦ剰锛歚resource_templates` 鍜?`read_resource` 灞炰簬 MCP Resources 鑳藉姏锛屼笉灞炰簬 Tools
+- 浠ヤ笅鏄缁嗗弬鏁帮紙鏉ヨ嚜瀹樻柟 README锛夛細
 
-**重要说明**: 
-- 官方最新显示 **13 个**工具
-- 新增工具：`read_media_file`、`list_directory_with_sizes`
-- 注意：`resource_templates` 和 `read_resource` 属于 MCP Resources 能力，不属于 Tools
-- 以下是详细参数（来自官方 README）：
-
-| 工具名称 | 参数 | 参数类型 | 必填 | 说明 |
+| 宸ュ叿鍚嶇О | 鍙傛暟 | 鍙傛暟绫诲瀷 | 蹇呭～ | 璇存槑 |
 |---------|------|---------|-----|------|
-| **read_text_file** | path | string | ✅ 是 | 文件路径 |
-| | head | number | ❌ 否 | 读取前 N 行（不能与 tail 同时用） |
-| | tail | number | ❌ 否 | 读取后 N 行 |
-| **read_media_file** | path | string | ✅ 是 | 图片/音频文件路径，返回 base64 + MIME 类型 |
-| **read_multiple_files** | paths | string[] | ✅ 是 | 文件路径数组，单个失败不会中断 |
-| **write_file** | path | string | ✅ 是 | 文件路径 |
-| | content | string | ✅ 是 | 文件内容 |
-| **edit_file** | path | string | ✅ 是 | 文件路径 |
-| | edits | array | ✅ 是 | 编辑操作数组 [{oldText, newText}] |
-| | dryRun | boolean | ❌ 否 | 预览模式，默认 false |
-| **create_directory** | path | string | ✅ 是 | 目录路径，会创建父目录 |
-| **list_directory** | path | string | ✅ 是 | 目录路径，带 [FILE]/[DIR] 前缀 |
-| **list_directory_with_sizes** | path | string | ✅ 是 | 目录路径 |
-| | sortBy | string | ❌ 否 | 排序方式 (name/size)，默认 name |
-| **move_file** | source | string | ✅ 是 | 源路径 |
-| | destination | string | ✅ 是 | 目标路径，目标存在会失败 |
-| **search_files** | path | string | ✅ 是 | 搜索起始目录 |
-| | pattern | string | ✅ 是 | 搜索模式（glob 风格） |
-| | excludePatterns | string[] | ❌ 否 | 排除模式 |
-| **directory_tree** | path | string | ✅ 是 | 目录路径，返回 JSON 树结构 |
-| | excludePatterns | string[] | ❌ 否 | 排除模式 |
-| **get_file_info** | path | string | ✅ 是 | 文件/目录路径，返回大小、创建/修改/访问时间、类型、权限 |
-| **list_allowed_directories** | (无) | - | - | 无参数，返回允许访问的目录列表 |
+| **read_text_file** | path | string | 鉁?鏄?| 鏂囦欢璺緞 |
+| | head | number | 鉂?鍚?| 璇诲彇鍓?N 琛岋紙涓嶈兘涓?tail 鍚屾椂鐢級 |
+| | tail | number | 鉂?鍚?| 璇诲彇鍚?N 琛?|
+| **read_media_file** | path | string | 鉁?鏄?| 鍥剧墖/闊抽鏂囦欢璺緞锛岃繑鍥?base64 + MIME 绫诲瀷 |
+| **read_multiple_files** | paths | string[] | 鉁?鏄?| 鏂囦欢璺緞鏁扮粍锛屽崟涓け璐ヤ笉浼氫腑鏂?|
+| **write_file** | path | string | 鉁?鏄?| 鏂囦欢璺緞 |
+| | content | string | 鉁?鏄?| 鏂囦欢鍐呭 |
+| **edit_file** | path | string | 鉁?鏄?| 鏂囦欢璺緞 |
+| | edits | array | 鉁?鏄?| 缂栬緫鎿嶄綔鏁扮粍 [{oldText, newText}] |
+| | dryRun | boolean | 鉂?鍚?| 棰勮妯″紡锛岄粯璁?false |
+| **create_directory** | path | string | 鉁?鏄?| 鐩綍璺緞锛屼細鍒涘缓鐖剁洰褰?|
+| **list_directory** | path | string | 鉁?鏄?| 鐩綍璺緞锛屽甫 [FILE]/[DIR] 鍓嶇紑 |
+| **list_directory_with_sizes** | path | string | 鉁?鏄?| 鐩綍璺緞 |
+| | sortBy | string | 鉂?鍚?| 鎺掑簭鏂瑰紡 (name/size)锛岄粯璁?name |
+| **move_file** | source | string | 鉁?鏄?| 婧愯矾寰?|
+| | destination | string | 鉁?鏄?| 鐩爣璺緞锛岀洰鏍囧瓨鍦ㄤ細澶辫触 |
+| **search_files** | path | string | 鉁?鏄?| 鎼滅储璧峰鐩綍 |
+| | pattern | string | 鉁?鏄?| 鎼滅储妯″紡锛坓lob 椋庢牸锛?|
+| | excludePatterns | string[] | 鉂?鍚?| 鎺掗櫎妯″紡 |
+| **directory_tree** | path | string | 鉁?鏄?| 鐩綍璺緞锛岃繑鍥?JSON 鏍戠粨鏋?|
+| | excludePatterns | string[] | 鉂?鍚?| 鎺掗櫎妯″紡 |
+| **get_file_info** | path | string | 鉁?鏄?| 鏂囦欢/鐩綍璺緞锛岃繑鍥炲ぇ灏忋€佸垱寤?淇敼/璁块棶鏃堕棿銆佺被鍨嬨€佹潈闄?|
+| **list_allowed_directories** | (鏃? | - | - | 鏃犲弬鏁帮紝杩斿洖鍏佽璁块棶鐨勭洰褰曞垪琛?|
 
 ---
 
-### 20.1.1 MCP ToolAnnotations（重要安全提示）
+### 20.1.1 MCP ToolAnnotations锛堥噸瑕佸畨鍏ㄦ彁绀猴級
 
-MCP 官方定义了工具的**只读**、**幂等**、**破坏性**属性，帮助客户端正确处理工具：
+MCP 瀹樻柟瀹氫箟浜嗗伐鍏风殑**鍙**銆?*骞傜瓑**銆?*鐮村潖鎬?*灞炴€э紝甯姪瀹㈡埛绔纭鐞嗗伐鍏凤細
 
-| 工具 | readOnly | idempotent | destructive | 说明 |
+| 宸ュ叿 | readOnly | idempotent | destructive | 璇存槑 |
 |-----|----------|------------|-------------|------|
-| read_text_file | ✅ true | - | - | 纯读操作 |
-| read_media_file | ✅ true | - | - | 纯读操作 |
-| read_multiple_files | ✅ true | - | - | 纯读操作 |
-| list_directory | ✅ true | - | - | 纯读操作 |
-| list_directory_with_sizes | ✅ true | - | - | 纯读操作 |
-| directory_tree | ✅ true | - | - | 纯读操作 |
-| search_files | ✅ true | - | - | 纯读操作 |
-| get_file_info | ✅ true | - | - | 纯读操作 |
-| list_allowed_directories | ✅ true | - | - | 纯读操作 |
-| **create_directory** | ❌ false | ✅ true | ❌ false | 重复创建是空操作 |
-| **write_file** | ❌ false | ✅ true | ✅ true | 覆盖已有文件 |
-| **edit_file** | ❌ false | ❌ false | ✅ true | 重复编辑可能失败或重复应用 |
-| **move_file** | ❌ false | ❌ false | ✅ true | 删除源文件 |
+| read_text_file | 鉁?true | - | - | 绾鎿嶄綔 |
+| read_media_file | 鉁?true | - | - | 绾鎿嶄綔 |
+| read_multiple_files | 鉁?true | - | - | 绾鎿嶄綔 |
+| list_directory | 鉁?true | - | - | 绾鎿嶄綔 |
+| list_directory_with_sizes | 鉁?true | - | - | 绾鎿嶄綔 |
+| directory_tree | 鉁?true | - | - | 绾鎿嶄綔 |
+| search_files | 鉁?true | - | - | 绾鎿嶄綔 |
+| get_file_info | 鉁?true | - | - | 绾鎿嶄綔 |
+| list_allowed_directories | 鉁?true | - | - | 绾鎿嶄綔 |
+| **create_directory** | 鉂?false | 鉁?true | 鉂?false | 閲嶅鍒涘缓鏄┖鎿嶄綔 |
+| **write_file** | 鉂?false | 鉁?true | 鉁?true | 瑕嗙洊宸叉湁鏂囦欢 |
+| **edit_file** | 鉂?false | 鉂?false | 鉁?true | 閲嶅缂栬緫鍙兘澶辫触鎴栭噸澶嶅簲鐢?|
+| **move_file** | 鉂?false | 鉂?false | 鉁?true | 鍒犻櫎婧愭枃浠?|
 
-**安全建议**:
-- `readOnly=false` 且 `destructive=true` 的工具（write_file, edit_file, move_file）需谨慎使用
-- `edit_file` 建议始终先用 `dryRun=true` 预览
-- `move_file` 目标存在会失败
-
+**瀹夊叏寤鸿**:
+- `readOnly=false` 涓?`destructive=true` 鐨勫伐鍏凤紙write_file, edit_file, move_file锛夐渶璋ㄦ厧浣跨敤
+- `edit_file` 寤鸿濮嬬粓鍏堢敤 `dryRun=true` 棰勮
+- `move_file` 鐩爣瀛樺湪浼氬け璐?
 ---
 
-### 20.2 LangChain FileManagementToolkit (7个工具)
+### 20.2 LangChain FileManagementToolkit (7涓伐鍏?
 
-**来源**: 官方 GitHub 仓库 https://github.com/langchain-ai/langchain-community
+**鏉ユ簮**: 瀹樻柟 GitHub 浠撳簱 https://github.com/langchain-ai/langchain-community
 
-| 工具名称 | 参数 | 参数类型 | 必填 | 说明 |
+| 宸ュ叿鍚嶇О | 鍙傛暟 | 鍙傛暟绫诲瀷 | 蹇呭～ | 璇存槑 |
 |---------|------|---------|-----|------|
-| **ReadFileTool** | file_path | string | ✅ 是 | 文件路径 |
-| **WriteFileTool** | file_path | string | ✅ 是 | 文件路径 |
-| | text | string | ✅ 是 | 写入文本 |
-| | append | boolean | ❌ 否 | 是否追加，默认 false |
-| **CopyFileTool** | source_path | string | ✅ 是 | 源文件路径 |
-| | destination_path | string | ✅ 是 | 目标文件路径 |
-| **MoveFileTool** | source_path | string | ✅ 是 | 源文件路径 |
-| | destination_path | string | ✅ 是 | 目标文件路径 |
-| **DeleteFileTool** | file_path | string | ✅ 是 | 要删除的文件路径 |
-| **FileSearchTool** | pattern | string | ✅ 是 | Unix shell 匹配模式 |
-| | dir_path | string | ❌ 否 | 搜索目录，默认 "." |
-| **ListDirectoryTool** | dir_path | string | ❌ 否 | 列出目录，默认 "." |
+| **ReadFileTool** | file_path | string | 鉁?鏄?| 鏂囦欢璺緞 |
+| **WriteFileTool** | file_path | string | 鉁?鏄?| 鏂囦欢璺緞 |
+| | text | string | 鉁?鏄?| 鍐欏叆鏂囨湰 |
+| | append | boolean | 鉂?鍚?| 鏄惁杩藉姞锛岄粯璁?false |
+| **CopyFileTool** | source_path | string | 鉁?鏄?| 婧愭枃浠惰矾寰?|
+| | destination_path | string | 鉁?鏄?| 鐩爣鏂囦欢璺緞 |
+| **MoveFileTool** | source_path | string | 鉁?鏄?| 婧愭枃浠惰矾寰?|
+| | destination_path | string | 鉁?鏄?| 鐩爣鏂囦欢璺緞 |
+| **DeleteFileTool** | file_path | string | 鉁?鏄?| 瑕佸垹闄ょ殑鏂囦欢璺緞 |
+| **FileSearchTool** | pattern | string | 鉁?鏄?| Unix shell 鍖归厤妯″紡 |
+| | dir_path | string | 鉂?鍚?| 鎼滅储鐩綍锛岄粯璁?"." |
+| **ListDirectoryTool** | dir_path | string | 鉂?鍚?| 鍒楀嚭鐩綍锛岄粯璁?"." |
 
-**LangChain JSON Schema 示例**:
+**LangChain JSON Schema 绀轰緥**:
 ```python
 # ReadFileTool
 class ReadFileInput(BaseModel):
@@ -1694,484 +1624,407 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-### 20.3 参数类型汇总
-
-| 参数类型 | 说明 | 示例 |
+### 20.3 鍙傛暟绫诲瀷姹囨€?
+| 鍙傛暟绫诲瀷 | 璇存槑 | 绀轰緥 |
 |---------|------|------|
-| **string** | 字符串 | path, file_path, source_path |
-| **string[]** | 字符串数组 | paths, excludePatterns |
-| **boolean** | 布尔值 | append, dryRun |
-| **array** | 数组 | edits (包含 oldText, newText) |
-| **无参数** | 不需要参数 | list_allowed_directories |
+| **string** | 瀛楃涓?| path, file_path, source_path |
+| **string[]** | 瀛楃涓叉暟缁?| paths, excludePatterns |
+| **boolean** | 甯冨皵鍊?| append, dryRun |
+| **array** | 鏁扮粍 | edits (鍖呭惈 oldText, newText) |
+| **鏃犲弬鏁?* | 涓嶉渶瑕佸弬鏁?| list_allowed_directories |
 
 ---
 
-### 20.4 参数命名对比（MCP vs LangChain）
-
-| 功能 | MCP 参数名 | LangChain 参数名 |
+### 20.4 鍙傛暟鍛藉悕瀵规瘮锛圡CP vs LangChain锛?
+| 鍔熻兘 | MCP 鍙傛暟鍚?| LangChain 鍙傛暟鍚?|
 |-----|-----------|-----------------|
-| 读取文件 | path | file_path |
-| 写入文件 | path, content | file_path, text |
-| 复制文件 | - | source_path, destination_path |
-| 移动文件 | source, destination | source_path, destination_path |
-| 删除文件 | - | file_path |
-| 列出目录 | path | dir_path |
-| 搜索文件 | path, pattern | pattern, dir_path |
+| 璇诲彇鏂囦欢 | path | file_path |
+| 鍐欏叆鏂囦欢 | path, content | file_path, text |
+| 澶嶅埗鏂囦欢 | - | source_path, destination_path |
+| 绉诲姩鏂囦欢 | source, destination | source_path, destination_path |
+| 鍒犻櫎鏂囦欢 | - | file_path |
+| 鍒楀嚭鐩綍 | path | dir_path |
+| 鎼滅储鏂囦欢 | path, pattern | pattern, dir_path |
 
 ---
 
-### 20.5 所有平台 File Tool 完整对比表
-
-| 工具功能 | MCP (14个) | LangChain (7个) | 备注 |
+### 20.5 鎵€鏈夊钩鍙?File Tool 瀹屾暣瀵规瘮琛?
+| 宸ュ叿鍔熻兘 | MCP (14涓? | LangChain (7涓? | 澶囨敞 |
 |---------|-----------|-----------------|------|
-| **读取单个文件** | read_text_file (path, head, tail) | ReadFileTool (file_path) | MCP 支持 head/tail |
-| **读取多个文件** | read_multiple_files (paths) | ❌ | MCP 独有 |
-| **读取媒体文件** | read_media_file (path) | ❌ | MCP 独有，返回 base64 |
-| **写入文件** | write_file (path, content) | WriteFileTool (file_path, text, append) | LangChain 支持 append |
-| **编辑文件** | edit_file (path, edits, dryRun) | ❌ | MCP 独有，diff 预览 |
-| **复制文件** | ❌ | CopyFileTool (source_path, destination_path) | LangChain 独有 |
-| **移动/重命名** | move_file (source, destination) | MoveFileTool (source_path, destination_path) | 参数名不同 |
-| **删除文件** | ❌ | DeleteFileTool (file_path) | LangChain 独有 |
-| **创建目录** | create_directory (path) | ❌ | MCP 独有 |
-| **列出目录** | list_directory (path) | ListDirectoryTool (dir_path) | 参数名不同 |
-| **列出目录(含大小)** | list_directory_with_sizes (path, sortBy) | ❌ | MCP 独有 |
-| **搜索文件(内容)** | search_files (path, pattern, excludePatterns) | FileSearchTool (pattern, dir_path) | MCP 支持 excludePatterns |
-| **搜索文件(名称)** | ✅ search_files | ✅ FileSearchTool | 两者都有文件名搜索 |
-| **目录树** | directory_tree (path, excludePatterns) | ❌ | MCP 独有 |
-| **文件信息** | get_file_info (path) | ❌ | MCP 独有，返回元数据 |
-| **允许目录列表** | list_allowed_directories | ❌ | MCP 独有，安全控制 |
-| **资源模板** | ❌ | ❌ | 属于 MCP Resources 能力，不是 Tool |
-| **读取资源** | ❌ | ❌ | 属于 MCP Resources 能力，不是 Tool |
+| **璇诲彇鍗曚釜鏂囦欢** | read_text_file (path, head, tail) | ReadFileTool (file_path) | MCP 鏀寔 head/tail |
+| **璇诲彇澶氫釜鏂囦欢** | read_multiple_files (paths) | 鉂?| MCP 鐙湁 |
+| **璇诲彇濯掍綋鏂囦欢** | read_media_file (path) | 鉂?| MCP 鐙湁锛岃繑鍥?base64 |
+| **鍐欏叆鏂囦欢** | write_file (path, content) | WriteFileTool (file_path, text, append) | LangChain 鏀寔 append |
+| **缂栬緫鏂囦欢** | edit_file (path, edits, dryRun) | 鉂?| MCP 鐙湁锛宒iff 棰勮 |
+| **澶嶅埗鏂囦欢** | 鉂?| CopyFileTool (source_path, destination_path) | LangChain 鐙湁 |
+| **绉诲姩/閲嶅懡鍚?* | move_file (source, destination) | MoveFileTool (source_path, destination_path) | 鍙傛暟鍚嶄笉鍚?|
+| **鍒犻櫎鏂囦欢** | 鉂?| DeleteFileTool (file_path) | LangChain 鐙湁 |
+| **鍒涘缓鐩綍** | create_directory (path) | 鉂?| MCP 鐙湁 |
+| **鍒楀嚭鐩綍** | list_directory (path) | ListDirectoryTool (dir_path) | 鍙傛暟鍚嶄笉鍚?|
+| **鍒楀嚭鐩綍(鍚ぇ灏?** | list_directory_with_sizes (path, sortBy) | 鉂?| MCP 鐙湁 |
+| **鎼滅储鏂囦欢(鍐呭)** | search_files (path, pattern, excludePatterns) | FileSearchTool (pattern, dir_path) | MCP 鏀寔 excludePatterns |
+| **鎼滅储鏂囦欢(鍚嶇О)** | 鉁?search_files | 鉁?FileSearchTool | 涓よ€呴兘鏈夋枃浠跺悕鎼滅储 |
+| **鐩綍鏍?* | directory_tree (path, excludePatterns) | 鉂?| MCP 鐙湁 |
+| **鏂囦欢淇℃伅** | get_file_info (path) | 鉂?| MCP 鐙湁锛岃繑鍥炲厓鏁版嵁 |
+| **鍏佽鐩綍鍒楄〃** | list_allowed_directories | 鉂?| MCP 鐙湁锛屽畨鍏ㄦ帶鍒?|
+| **璧勬簮妯℃澘** | 鉂?| 鉂?| 灞炰簬 MCP Resources 鑳藉姏锛屼笉鏄?Tool |
+| **璇诲彇璧勬簮** | 鉂?| 鉂?| 灞炰簬 MCP Resources 鑳藉姏锛屼笉鏄?Tool |
 
 ---
 
-### 20.6 Claude Code 内置工具（18个）- 完整参数
+### 20.6 Claude Code 鍐呯疆宸ュ叿锛?8涓級- 瀹屾暣鍙傛暟
 
-**数据来源**: https://vtrivedy.com/posts/claudecode-tools-reference/（2025年10月更新）
+**鏁版嵁鏉ユ簮**: https://vtrivedy.com/posts/claudecode-tools-reference/锛?025骞?0鏈堟洿鏂帮級
 
-**重要说明**: Claude Code 有 18 个内置工具，与 MCP/LangChain 不同，这些是 Claude Code 固定提供的，不能自定义。
-
-| 序号 | 工具名称 | 功能描述 | 核心参数 |
+**閲嶈璇存槑**: Claude Code 鏈?18 涓唴缃伐鍏凤紝涓?MCP/LangChain 涓嶅悓锛岃繖浜涙槸 Claude Code 鍥哄畾鎻愪緵鐨勶紝涓嶈兘鑷畾涔夈€?
+| 搴忓彿 | 宸ュ叿鍚嶇О | 鍔熻兘鎻忚堪 | 鏍稿績鍙傛暟 |
 |-----|---------|---------|----------|
-| 1 | **Task** | 启动子 agent 处理复杂任务 | subagent_type, prompt, description, model, resume |
-| 2 | **Bash** | 执行 shell 命令 | command, description, timeout, run_in_background |
-| 3 | **Glob** | 文件名模式匹配（快） | pattern, path |
-| 4 | **Grep** | 文件内容搜索（基于 ripgrep） | pattern, path, output_mode, glob, type, -A, -B, -C, -n, -i, multiline, head_limit |
-| 5 | **Read** | 读取文件 | file_path, offset, limit |
-| 6 | **Edit** | 编辑文件 | file_path, old_string, new_string, replace_all |
-| 7 | **Write** | 写入/覆盖文件 | file_path, content |
-| 8 | **NotebookEdit** | 编辑 Jupyter notebook | notebook_path, cell_id, new_source, cell_type, edit_mode |
-| 9 | **WebFetch** | 获取网页内容（带 AI 分析） | url, prompt |
-| 10 | **WebSearch** | 网络搜索（仅 US） | query, allowed_domains, blocked_domains |
-| 11 | **TodoWrite** | 任务列表管理 | todos [{content, activeForm, status}] |
-| 12 | **ExitPlanMode** | 退出计划模式 | plan |
-| 13 | **BashOutput** | 获取后台命令输出 | bash_id, filter |
-| 14 | **KillShell** | 终止后台命令 | shell_id |
-| 15 | **SlashCommand** | 执行斜杠命令 | command |
-| 16 | **AskUserQuestion** | 向用户提问 | questions, answers |
-| 17 | **Skill** | 执行 skill | skill |
-| 18 | **EnterPlanMode** | 进入计划模式 | (无参数) |
+| 1 | **Task** | 鍚姩瀛?agent 澶勭悊澶嶆潅浠诲姟 | subagent_type, prompt, description, model, resume |
+| 2 | **Bash** | 鎵ц shell 鍛戒护 | command, description, timeout, run_in_background |
+| 3 | **Glob** | 鏂囦欢鍚嶆ā寮忓尮閰嶏紙蹇級 | pattern, path |
+| 4 | **Grep** | 鏂囦欢鍐呭鎼滅储锛堝熀浜?ripgrep锛?| pattern, path, output_mode, glob, type, -A, -B, -C, -n, -i, multiline, head_limit |
+| 5 | **Read** | 璇诲彇鏂囦欢 | file_path, offset, limit |
+| 6 | **Edit** | 缂栬緫鏂囦欢 | file_path, old_string, new_string, replace_all |
+| 7 | **Write** | 鍐欏叆/瑕嗙洊鏂囦欢 | file_path, content |
+| 8 | **NotebookEdit** | 缂栬緫 Jupyter notebook | notebook_path, cell_id, new_source, cell_type, edit_mode |
+| 9 | **WebFetch** | 鑾峰彇缃戦〉鍐呭锛堝甫 AI 鍒嗘瀽锛?| url, prompt |
+| 10 | **WebSearch** | 缃戠粶鎼滅储锛堜粎 US锛?| query, allowed_domains, blocked_domains |
+| 11 | **TodoWrite** | 浠诲姟鍒楄〃绠＄悊 | todos [{content, activeForm, status}] |
+| 12 | **ExitPlanMode** | 閫€鍑鸿鍒掓ā寮?| plan |
+| 13 | **BashOutput** | 鑾峰彇鍚庡彴鍛戒护杈撳嚭 | bash_id, filter |
+| 14 | **KillShell** | 缁堟鍚庡彴鍛戒护 | shell_id |
+| 15 | **SlashCommand** | 鎵ц鏂滄潬鍛戒护 | command |
+| 16 | **AskUserQuestion** | 鍚戠敤鎴锋彁闂?| questions, answers |
+| 17 | **Skill** | 鎵ц skill | skill |
+| 18 | **EnterPlanMode** | 杩涘叆璁″垝妯″紡 | (鏃犲弬鏁? |
 
-**Glob 参数详解**:
-- `pattern`: Glob 模式（`**/*.js`, `src/**/*.ts`, `*.{json,yaml}`）
-- `path`: 搜索目录（可选，默认当前目录）
-- 返回按修改时间排序的文件列表
+**Glob 鍙傛暟璇﹁В**:
+- `pattern`: Glob 妯″紡锛坄**/*.js`, `src/**/*.ts`, `*.{json,yaml}`锛?- `path`: 鎼滅储鐩綍锛堝彲閫夛紝榛樿褰撳墠鐩綍锛?- 杩斿洖鎸変慨鏀规椂闂存帓搴忕殑鏂囦欢鍒楄〃
 
-**Grep 参数详解**:
-- `pattern`: 正则表达式（使用 ripgrep）
-- `path`: 搜索路径
-- `output_mode`: "content"（行）、"files_with_matches"（文件）、"count"（计数）
-- `glob`: 文件类型过滤（如 "*.ts"）
-- `type`: 语言类型（如 "js", "py"）
-- `-A/-B/-C`: 匹配后/前/前后行数
-- `-i`: 不区分大小写
-- `-n`: 显示行号
-- `multiline`: 多行匹配
-- `head_limit`: 限制结果数量
+**Grep 鍙傛暟璇﹁В**:
+- `pattern`: 姝ｅ垯琛ㄨ揪寮忥紙浣跨敤 ripgrep锛?- `path`: 鎼滅储璺緞
+- `output_mode`: "content"锛堣锛夈€?files_with_matches"锛堟枃浠讹級銆?count"锛堣鏁帮級
+- `glob`: 鏂囦欢绫诲瀷杩囨护锛堝 "*.ts"锛?- `type`: 璇█绫诲瀷锛堝 "js", "py"锛?- `-A/-B/-C`: 鍖归厤鍚?鍓?鍓嶅悗琛屾暟
+- `-i`: 涓嶅尯鍒嗗ぇ灏忓啓
+- `-n`: 鏄剧ず琛屽彿
+- `multiline`: 澶氳鍖归厤
+- `head_limit`: 闄愬埗缁撴灉鏁伴噺
 
-**Claude Code 搜索策略**:
-| 场景 | 推荐工具 |
+**Claude Code 鎼滅储绛栫暐**:
+| 鍦烘櫙 | 鎺ㄨ崘宸ュ叿 |
 |-----|---------|
-| 按文件名搜索 | Glob |
-| 按文件内容搜索 | Grep |
-| 搜索特定文件再读内容 | Read + Grep |
-| 复杂多轮搜索 | Task（general-purpose agent）|
+| 鎸夋枃浠跺悕鎼滅储 | Glob |
+| 鎸夋枃浠跺唴瀹规悳绱?| Grep |
+| 鎼滅储鐗瑰畾鏂囦欢鍐嶈鍐呭 | Read + Grep |
+| 澶嶆潅澶氳疆鎼滅储 | Task锛坓eneral-purpose agent锛墊
 
 ---
 
-### 20.7 搜索工具对比总结
+### 20.7 鎼滅储宸ュ叿瀵规瘮鎬荤粨
 
-| 搜索类型 | Claude Code | MCP Filesystem | LangChain | 我们 Omni |
+| 鎼滅储绫诲瀷 | Claude Code | MCP Filesystem | LangChain | 鎴戜滑 Omni |
 |---------|-------------|----------------|-----------|-----------|
-| **文件名搜索** | Glob (pattern, path) | search_files | FileSearchTool | search_files |
-| **文件内容搜索** | Grep (pattern, path, output_mode) | ❌ 无 | ❌ 无 | search_file_content |
-| **备注** | 两者分开，最清晰 | 只有一个 search_files | 只有一个 FileSearchTool | 分开的两个工具 |
+| **鏂囦欢鍚嶆悳绱?* | Glob (pattern, path) | search_files | FileSearchTool | search_files |
+| **鏂囦欢鍐呭鎼滅储** | Grep (pattern, path, output_mode) | 鉂?鏃?| 鉂?鏃?| search_file_content |
+| **澶囨敞** | 涓よ€呭垎寮€锛屾渶娓呮櫚 | 鍙湁涓€涓?search_files | 鍙湁涓€涓?FileSearchTool | 鍒嗗紑鐨勪袱涓伐鍏?|
 
-**关键发现**:
-- **Claude Code 最完善**: 明确区分 Glob（文件名）和 Grep（内容）
-- **MCP/LangChain 不足**: 只有文件名搜索，没有内容搜索
-- **我们 Omni 系统**: 有 search_files 和 search_file_content 两个工具
-
----
-
-**编写人**: 小沈
-**更新时间**: 2026-04-04 07:50:00
-**更新说明**: 
-- 补充 Claude Code 18 个内置工具完整参数（20.6）
-- 新增搜索工具对比总结（20.7）
-- 明确文件名搜索 vs 内容搜索的区别
+**鍏抽敭鍙戠幇**:
+- **Claude Code 鏈€瀹屽杽**: 鏄庣‘鍖哄垎 Glob锛堟枃浠跺悕锛夊拰 Grep锛堝唴瀹癸級
+- **MCP/LangChain 涓嶈冻**: 鍙湁鏂囦欢鍚嶆悳绱紝娌℃湁鍐呭鎼滅储
+- **鎴戜滑 Omni 绯荤粺**: 鏈?search_files 鍜?search_file_content 涓や釜宸ュ叿
 
 ---
 
-## 二十一、全部 Tool 汇总（按类型分类，仅限网上学习）
+**缂栧啓浜?*: 灏忔矆
+**鏇存柊鏃堕棿**: 2026-04-04 07:50:00
+**鏇存柊璇存槑**: 
+- 琛ュ厖 Claude Code 18 涓唴缃伐鍏峰畬鏁村弬鏁帮紙20.6锛?- 鏂板鎼滅储宸ュ叿瀵规瘮鎬荤粨锛?0.7锛?- 鏄庣‘鏂囦欢鍚嶆悳绱?vs 鍐呭鎼滅储鐨勫尯鍒?
+---
 
-### 21.1 工具汇总说明
+## 浜屽崄涓€銆佸叏閮?Tool 姹囨€伙紙鎸夌被鍨嬪垎绫伙紝浠呴檺缃戜笂瀛︿範锛?
+### 21.1 宸ュ叿姹囨€昏鏄?
+鏈珷鑺傛暣鍚堢1-20绔犱腑鎻愬埌鐨?*缃戜笂瀛︿範鐨勫伐鍏?*锛屾寜鍔熻兘绫诲瀷鍒嗙被銆傛瘡涓伐鍏峰寘鍚細
+- **宸ュ叿鎻忚堪**: 宸ュ叿鐨勫姛鑳借鏄?- **鍙傛暟鍒楄〃**: 鍙傛暟鍚嶇О + 鍙傛暟绫诲瀷 + 鎻忚堪
 
-本章节整合第1-20章中提到的**网上学习的工具**，按功能类型分类。每个工具包含：
-- **工具描述**: 工具的功能说明
-- **参数列表**: 参数名称 + 参数类型 + 描述
+**鏁版嵁鏉ユ簮**锛堜粎鏉ヨ嚜缃戜笂瀛︿範锛?
+- MCP Filesystem Server锛堝畼鏂规枃妗ｏ級
+- LangChain FileManagementToolkit锛堝畼鏂?GitHub锛?- Claude Code 鍐呯疆宸ュ叿锛堝弬鑰冩枃妗ｏ級
 
-**数据来源**（仅来自网上学习）:
-- MCP Filesystem Server（官方文档）
-- LangChain FileManagementToolkit（官方 GitHub）
-- Claude Code 内置工具（参考文档）
+**涓嶅寘鎷?*: 鎴戜滑 Omni 绯荤粺鐨勫伐鍏?
+---
 
-**不包括**: 我们 Omni 系统的工具
+### 21.2 鏂囦欢璇诲彇绫?
+#### 1. 璇诲彇鏂囨湰鏂囦欢锛坮ead_text_file锛?**鎻忚堪**: 璇诲彇鏂囨湰鏂囦欢瀹屾暣鍐呭锛屽缁堜互 UTF-8 鏍煎紡澶勭悊鏂囦欢
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| file_path | string | 鉁?鏄?| 鏂囦欢鐨勫畬鏁磋矾寰?|
+| head | number | 鉂?鍚?| 璇诲彇鍓?N 琛岋紙涓嶈兘涓?tail 鍚屾椂浣跨敤锛?|
+| tail | number | 鉂?鍚?| 璇诲彇鍚?N 琛?|
+
+#### 2. 璇诲彇濯掍綋鏂囦欢锛坮ead_media_file锛?**鎻忚堪**: 璇诲彇鍥剧墖鎴栭煶棰戞枃浠讹紝杩斿洖 base64 缂栫爜鏁版嵁鍜屽搴旂殑 MIME 绫诲瀷
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| file_path | string | 鉁?鏄?| 濯掍綋鏂囦欢鐨勫畬鏁磋矾寰?|
+
+#### 3. 鎵归噺璇绘枃浠讹紙read_batch_file锛?**鎻忚堪**: 鍚屾椂璇诲彇澶氫釜鏂囦欢锛屽崟涓枃浠惰鍙栧け璐ヤ笉浼氫腑鏂暣涓搷浣?**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| file_paths | string[] | 鉁?鏄?| 鏂囦欢璺緞鏁扮粍 |
+
+#### 4. 璇诲彇澶氭牸寮忔枃浠讹紙read_file锛?**鎻忚堪**: 浠庢枃浠剁郴缁熻鍙栨枃浠讹紝鏀寔鏂囨湰銆佸浘鐗囥€丳DF銆丣upyter notebook
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| file_path | string | 鉁?鏄?| 鏂囦欢鐨勭粷瀵硅矾寰?|
+| offset | number | 鉂?鍚?| 璧峰琛屽彿锛屼粠1寮€濮?|
+| limit | number | 鉂?鍚?| 璇诲彇琛屾暟锛岄粯璁?000琛?|
 
 ---
 
-### 21.2 文件读取类
-
-#### 1. 读取文本文件（read_text_file）
-**描述**: 读取文本文件完整内容，始终以 UTF-8 格式处理文件
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+### 21.3 鏂囦欢鍐欏叆绫?
+#### 5. 鍐欏叆鎴栬拷鍔犳枃浠讹紙write_append_file锛?**鎻忚堪**: 鍐欏叆鎴栬拷鍔犲埌鏂囦欢
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| file_path | string | ✅ 是 | 文件的完整路径 |
-| head | number | ❌ 否 | 读取前 N 行（不能与 tail 同时使用） |
-| tail | number | ❌ 否 | 读取后 N 行 |
-
-#### 2. 读取媒体文件（read_media_file）
-**描述**: 读取图片或音频文件，返回 base64 编码数据和对应的 MIME 类型
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| file_path | string | ✅ 是 | 媒体文件的完整路径 |
-
-#### 3. 批量读文件（read_batch_file）
-**描述**: 同时读取多个文件，单个文件读取失败不会中断整个操作
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| file_paths | string[] | ✅ 是 | 文件路径数组 |
-
-#### 4. 读取多格式文件（read_file）
-**描述**: 从文件系统读取文件，支持文本、图片、PDF、Jupyter notebook
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| file_path | string | ✅ 是 | 文件的绝对路径 |
-| offset | number | ❌ 否 | 起始行号，从1开始 |
-| limit | number | ❌ 否 | 读取行数，默认2000行 |
+| file_path | string | 鉁?鏄?| 鏂囦欢璺緞 |
+| text | string | 鉁?鏄?| 鍐欏叆鐨勬枃鏈唴瀹?|
+| append | boolean | 鉂?鍚?| 鏄惁杩藉姞妯″紡锛岄粯璁?false |
 
 ---
 
-### 21.3 文件写入类
-
-#### 5. 写入或追加文件（write_append_file）
-**描述**: 写入或追加到文件
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+### 21.4 鏂囦欢缂栬緫绫?
+#### 7. 缂栬緫鏂囦欢锛坋dit_file锛?**鎻忚堪**: 浣跨敤楂樼骇妯″紡鍖归厤杩涜閫夋嫨鎬х紪杈戯紝鏀寔澶氬悓鏃剁紪杈戙€佺缉杩涗繚鐣欍€乨ryRun 棰勮
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| file_path | string | ✅ 是 | 文件路径 |
-| text | string | ✅ 是 | 写入的文本内容 |
-| append | boolean | ❌ 否 | 是否追加模式，默认 false |
+| file_path | string | 鉁?鏄?| 瑕佺紪杈戠殑鏂囦欢璺緞 |
+| edits | array | 鉁?鏄?| 缂栬緫鎿嶄綔鏁扮粍锛屾瘡涓厓绱犲寘鍚?oldText 鍜?newText |
+| dryRun | boolean | 鉂?鍚?| 棰勮妯″紡涓嶅疄闄呬慨鏀癸紝榛樿 false |
+
+#### 6. 绮惧噯鏇挎崲鏂囦欢鍐呭锛坧recise_replace_in_file锛?**鎻忚堪**: 鎵ц绮剧‘鐨勫瓧绗︿覆鏇挎崲
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| file_path | string | 鉁?鏄?| 鏂囦欢缁濆璺緞 |
+| old_string | string | 鉁?鏄?| 瑕佹浛鎹㈢殑绮剧‘鏂囨湰 |
+| new_string | string | 鉁?鏄?| 鏇挎崲鍚庣殑鏂囨湰 |
+| replace_all | boolean | 鉂?鍚?| 鏇挎崲鎵€鏈夊尮閰嶉」锛岄粯璁?false |
+
+#### 8. 澶嶅埗鏂囦欢锛坈opy_file锛?**鎻忚堪**: 澶嶅埗鏂囦欢
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| source_path | string | 鉁?鏄?| 婧愭枃浠惰矾寰?|
+| destination_path | string | 鉁?鏄?| 鐩爣鏂囦欢璺緞 |
+
+#### 9. 绉诲姩鎴栭噸鍛藉悕鏂囦欢锛坢ove_file锛?**鎻忚堪**: 绉诲姩鎴栭噸鍛藉悕鏂囦欢
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| source_path | string | 鉁?鏄?| 婧愭枃浠惰矾寰?|
+| destination_path | string | 鉁?鏄?| 鐩爣鏂囦欢璺緞 |
+
+#### 10. 閲嶅懡鍚嶆枃浠讹紙rename_file锛?**鎻忚堪**: 閲嶅懡鍚嶆枃浠舵垨鐩綍锛屼笉鏀瑰彉鎵€鍦ㄧ洰褰?**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| file_path | string | 鉁?鏄?| 褰撳墠鏂囦欢璺緞 |
+| new_name | string | 鉁?鏄?| 鏂版枃浠跺悕 |
+
+#### 11. 鍒犻櫎鏂囦欢锛坉elete_file锛?**鎻忚堪**: 鍒犻櫎鏂囦欢
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| file_path | string | 鉁?鏄?| 瑕佸垹闄ょ殑鏂囦欢璺緞 |
 
 ---
 
-### 21.4 文件编辑类
+### 21.5 鏂囦欢鎼滅储绫伙紙鏂囦欢鍚嶏級
 
-#### 7. 编辑文件（edit_file）
-**描述**: 使用高级模式匹配进行选择性编辑，支持多同时编辑、缩进保留、dryRun 预览
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+#### 12. 鎼滅储鏂囦欢鎸夋ā寮忥紙search_files锛?**鎻忚堪**: 閫掑綊鎼滅储鍖归厤鎴栨帓闄ゆā寮忕殑鏂囦欢/鐩綍锛岃繑鍥炲畬鏁磋矾寰?**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| file_path | string | ✅ 是 | 要编辑的文件路径 |
-| edits | array | ✅ 是 | 编辑操作数组，每个元素包含 oldText 和 newText |
-| dryRun | boolean | ❌ 否 | 预览模式不实际修改，默认 false |
+| search_dir | string | 鉁?鏄?| 鎼滅储璧峰鐩綍 |
+| pattern | string | 鉁?鏄?| 鎼滅储妯″紡锛坓lob 椋庢牸锛?|
+| excludePatterns | string[] | 鉂?鍚?| 鎺掗櫎妯″紡 |
 
-#### 6. 精准替换文件内容（precise_replace_in_file）
-**描述**: 执行精确的字符串替换
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+#### 13. 鏂囦欢鍚嶆ā寮忓尮閰嶏紙glob_files锛?**鎻忚堪**: 蹇€熺殑鏂囦欢鍚嶆ā寮忓尮閰嶏紝鎸変慨鏀规椂闂存帓搴忚繑鍥炵粨鏋?**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| file_path | string | ✅ 是 | 文件绝对路径 |
-| old_string | string | ✅ 是 | 要替换的精确文本 |
-| new_string | string | ✅ 是 | 替换后的文本 |
-| replace_all | boolean | ❌ 否 | 替换所有匹配项，默认 false |
-
-#### 8. 复制文件（copy_file）
-**描述**: 复制文件
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| source_path | string | ✅ 是 | 源文件路径 |
-| destination_path | string | ✅ 是 | 目标文件路径 |
-
-#### 9. 移动或重命名文件（move_file）
-**描述**: 移动或重命名文件
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| source_path | string | ✅ 是 | 源文件路径 |
-| destination_path | string | ✅ 是 | 目标文件路径 |
-
-#### 10. 重命名文件（rename_file）
-**描述**: 重命名文件或目录，不改变所在目录
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| file_path | string | ✅ 是 | 当前文件路径 |
-| new_name | string | ✅ 是 | 新文件名 |
-
-#### 11. 删除文件（delete_file）
-**描述**: 删除文件
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| file_path | string | ✅ 是 | 要删除的文件路径 |
+| pattern | string | 鉁?鏄?| Glob 妯″紡锛堝 **/*.js, src/**/*.ts锛?|
+| search_dir | string | 鉂?鍚?| 鎼滅储鐩綍锛岄粯璁ゅ綋鍓嶅伐浣滅洰褰?|
 
 ---
 
-### 21.5 文件搜索类（文件名）
-
-#### 12. 搜索文件按模式（search_files）
-**描述**: 递归搜索匹配或排除模式的文件/目录，返回完整路径
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+### 21.6 鏂囦欢鎼滅储绫伙紙鍐呭锛?
+#### 14. 鎼滅储鏂囦欢鍐呭锛坓rep_file_content锛?**鎻忚堪**: 鍩轰簬 ripgrep 鐨勫己澶у唴瀹规悳绱紝鏀寔姝ｅ垯琛ㄨ揪寮忓拰澶氶€夐」
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| search_dir | string | ✅ 是 | 搜索起始目录 |
-| pattern | string | ✅ 是 | 搜索模式（glob 风格） |
-| excludePatterns | string[] | ❌ 否 | 排除模式 |
-
-#### 13. 文件名模式匹配（glob_files）
-**描述**: 快速的文件名模式匹配，按修改时间排序返回结果
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| pattern | string | ✅ 是 | Glob 模式（如 **/*.js, src/**/*.ts） |
-| search_dir | string | ❌ 否 | 搜索目录，默认当前工作目录 |
+| pattern | string | 鉁?鏄?| 姝ｅ垯琛ㄨ揪寮忔悳绱㈡ā寮?|
+| search_dir | string | 鉂?鍚?| 鎼滅储璺緞锛岄粯璁ゅ綋鍓嶇洰褰?|
+| output_mode | string | 鉂?鍚?| 杈撳嚭妯″紡锛歝ontent/files_with_matches/count |
+| glob | string | 鉂?鍚?| 鏂囦欢绫诲瀷杩囨护锛堝 "*.ts"锛?|
+| type | string | 鉂?鍚?| 璇█绫诲瀷锛堝 js, py, rust锛?|
+| -A | number | 鉂?鍚?| 鍖归厤鍚庢樉绀鸿鏁?|
+| -B | number | 鉂?鍚?| 鍖归厤鍓嶆樉绀鸿鏁?|
+| -C | number | 鉂?鍚?| 鍖归厤鍓嶅悗鏄剧ず琛屾暟 |
+| -i | boolean | 鉂?鍚?| 涓嶅尯鍒嗗ぇ灏忓啓 |
+| -n | boolean | 鉂?鍚?| 鏄剧ず琛屽彿 |
+| multiline | boolean | 鉂?鍚?| 鍚敤澶氳鍖归厤锛? 鍖归厤鎹㈣绗︼級 |
+| head_limit | number | 鉂?鍚?| 闄愬埗杈撳嚭缁撴灉鏁伴噺 |
 
 ---
 
-### 21.6 文件搜索类（内容）
-
-#### 14. 搜索文件内容（grep_file_content）
-**描述**: 基于 ripgrep 的强大内容搜索，支持正则表达式和多选项
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+### 21.7 鐩綍鎿嶄綔绫?
+#### 15. 鍒涘缓鐩綍锛坈reate_directory锛?**鎻忚堪**: 鍒涘缓鏂扮洰褰曪紝濡傞渶瑕佷細鍒涘缓鐖剁洰褰曪紝鐩綍宸插瓨鍦ㄥ垯闈欓粯鎴愬姛
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| pattern | string | ✅ 是 | 正则表达式搜索模式 |
-| search_dir | string | ❌ 否 | 搜索路径，默认当前目录 |
-| output_mode | string | ❌ 否 | 输出模式：content/files_with_matches/count |
-| glob | string | ❌ 否 | 文件类型过滤（如 "*.ts"） |
-| type | string | ❌ 否 | 语言类型（如 js, py, rust） |
-| -A | number | ❌ 否 | 匹配后显示行数 |
-| -B | number | ❌ 否 | 匹配前显示行数 |
-| -C | number | ❌ 否 | 匹配前后显示行数 |
-| -i | boolean | ❌ 否 | 不区分大小写 |
-| -n | boolean | ❌ 否 | 显示行号 |
-| multiline | boolean | ❌ 否 | 启用多行匹配（. 匹配换行符） |
-| head_limit | number | ❌ 否 | 限制输出结果数量 |
+| dir_path | string | 鉁?鏄?| 鐩綍璺緞 |
 
----
-
-### 21.7 目录操作类
-
-#### 15. 创建目录（create_directory）
-**描述**: 创建新目录，如需要会创建父目录，目录已存在则静默成功
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+#### 16. 鍒楀嚭鐩綍鍚ぇ灏忥紙list_directory_with_sizes锛?**鎻忚堪**: 鍒楀嚭鐩綍鍐呭锛屽寘鍚枃浠跺ぇ灏忥紝鎸?name 鎴?size 鎺掑簭锛岃繑鍥炵粺璁′俊鎭?**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| dir_path | string | ✅ 是 | 目录路径 |
+| dir_path | string | 鉁?鏄?| 鐩綍璺緞 |
+| sortBy | string | 鉂?鍚?| 鎺掑簭鏂瑰紡锛歯ame 鎴?size锛岄粯璁?name |
 
-#### 16. 列出目录含大小（list_directory_with_sizes）
-**描述**: 列出目录内容，包含文件大小，按 name 或 size 排序，返回统计信息
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+#### 17. 鑾峰彇鐩綍鏍戠粨鏋勶紙get_directory_tree锛?**鎻忚堪**: 鑾峰彇鐩綍鐨勯€掑綊 JSON 鏍戠粨鏋勶紝姣忎釜鏉＄洰鍖呭惈 name銆乼ype锛坒ile/directory锛夈€乧hildren
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| dir_path | string | ✅ 是 | 目录路径 |
-| sortBy | string | ❌ 否 | 排序方式：name 或 size，默认 name |
-
-#### 17. 获取目录树结构（get_directory_tree）
-**描述**: 获取目录的递归 JSON 树结构，每个条目包含 name、type（file/directory）、children
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| dir_path | string | ✅ 是 | 起始目录 |
-| excludePatterns | string[] | ❌ 否 | 排除模式（glob 格式） |
+| dir_path | string | 鉁?鏄?| 璧峰鐩綍 |
+| excludePatterns | string[] | 鉂?鍚?| 鎺掗櫎妯″紡锛坓lob 鏍煎紡锛?|
 
 
 ---
 
-### 21.8 元数据/信息类
-
-#### 18. 获取文件信息（get_file_info）
-**描述**: 获取文件/目录的详细元数据，包括大小、创建/修改/访问时间、类型、权限
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+### 21.8 鍏冩暟鎹?淇℃伅绫?
+#### 18. 鑾峰彇鏂囦欢淇℃伅锛坓et_file_info锛?**鎻忚堪**: 鑾峰彇鏂囦欢/鐩綍鐨勮缁嗗厓鏁版嵁锛屽寘鎷ぇ灏忋€佸垱寤?淇敼/璁块棶鏃堕棿銆佺被鍨嬨€佹潈闄?**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| file_path | string | ✅ 是 | 文件或目录路径 |
+| file_path | string | 鉁?鏄?| 鏂囦欢鎴栫洰褰曡矾寰?|
 
-#### 19. 列出允许访问的目录（list_allowed_directories）
-**描述**: 列出服务器允许访问的所有目录
-**参数**: 无参数
+#### 19. 鍒楀嚭鍏佽璁块棶鐨勭洰褰曪紙list_allowed_directories锛?**鎻忚堪**: 鍒楀嚭鏈嶅姟鍣ㄥ厑璁歌闂殑鎵€鏈夌洰褰?**鍙傛暟**: 鏃犲弬鏁?
+---
+
+### 21.9 绯荤粺鎿嶄綔绫?
+#### 20. 鎵ц Shell 鍛戒护锛坋xecute_shell_command锛?**鎻忚堪**: 鍦ㄦ寚瀹?shell 鐜涓墽琛屽懡浠ゃ€俉indows 鍘熺敓榛樿 PowerShell锛屽彲閫?CMD锛沚ash 闇€棰濆瀹夎锛堟湭鏉ユ墿灞曪級銆?**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| command | string | 鉁?鏄?| 瑕佹墽琛岀殑鍛戒护 |
+| shell_type | string | 鉂?鍚?| 鎵ц鐜锛歱owershell锛堥粯璁わ級/ cmd / bash锛堟湭鏉ユ墿灞曪級 |
+| timeout | number | 鉂?鍚?| 瓒呮椂姣鏁帮紝榛樿120000锛屾渶澶?00000 |
+| run_in_background | boolean | 鉂?鍚?| 鍚庡彴杩愯鍛戒护 |
+
+#### 21. 鑾峰彇 Shell 杈撳嚭锛坓et_shell_output锛?**鎻忚堪**: 鑾峰彇鍚庡彴杩愯鐨?bash 鍛戒护杈撳嚭
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| shell_id | string | 鉁?鏄?| 鍚庡彴 shell 鐨?ID |
+| filter | string | 鉂?鍚?| 杩囨护杈撳嚭鐨勬鍒欒〃杈惧紡 |
+
+#### 22. 缁堟 Shell 浼氳瘽锛坱erminate_shell锛?**鎻忚堪**: 缁堟杩愯涓殑鍚庡彴 bash shell
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| shell_id | string | 鉁?鏄?| 瑕佺粓姝㈢殑 shell ID |
 
 ---
 
-### 21.9 系统操作类
-
-#### 20. 执行 Shell 命令（execute_shell_command）
-**描述**: 在指定 shell 环境中执行命令。Windows 原生默认 PowerShell，可选 CMD；bash 需额外安装（未来扩展）。
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+### 21.10 缃戠粶/閫氫俊绫?
+#### 22. 鑾峰彇缃戦〉鍐呭锛坒etch_webpage锛?**鎻忚堪**: 鑾峰彇鍜屽鐞嗙綉椤靛唴瀹癸紝甯?AI 鍒嗘瀽鍔熻兘
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| command | string | ✅ 是 | 要执行的命令 |
-| shell_type | string | ❌ 否 | 执行环境：powershell（默认）/ cmd / bash（未来扩展） |
-| timeout | number | ❌ 否 | 超时毫秒数，默认120000，最大600000 |
-| run_in_background | boolean | ❌ 否 | 后台运行命令 |
+| url | string | 鉁?鏄?| 瀹屽叏鏈夋晥鐨?URL |
+| prompt | string | 鉁?鏄?| 瑕佷粠椤甸潰鎻愬彇鐨勪俊鎭?|
 
-#### 21. 获取 Shell 输出（get_shell_output）
-**描述**: 获取后台运行的 bash 命令输出
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+#### 23. 缃戠粶鎼滅储锛坰earch_web锛?**鎻忚堪**: 鎼滅储缃戠粶鑾峰彇鏈€鏂颁俊鎭紙浠呯編鍥藉彲鐢級
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| shell_id | string | ✅ 是 | 后台 shell 的 ID |
-| filter | string | ❌ 否 | 过滤输出的正则表达式 |
-
-#### 22. 终止 Shell 会话（terminate_shell）
-**描述**: 终止运行中的后台 bash shell
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| shell_id | string | ✅ 是 | 要终止的 shell ID |
+| query | string | 鉁?鏄?| 鎼滅储鏌ヨ瀛楃涓诧紙鑷冲皯2瀛楃锛?|
+| allowed_domains | string[] | 鉂?鍚?| 鍖呭惈鐨勫煙鍚嶆暟缁?|
+| blocked_domains | string[] | 鉂?鍚?| 鎺掗櫎鐨勫煙鍚嶆暟缁?|
 
 ---
 
-### 21.10 网络/通信类
-
-#### 22. 获取网页内容（fetch_webpage）
-**描述**: 获取和处理网页内容，带 AI 分析功能
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+### 21.11 浠诲姟绠＄悊绫汇€愭娆′笉鍔犺繖閲?鐨則ool銆?
+#### 24. 鍚姩瀛?Agent锛坙aunch_subagent锛?**鎻忚堪**: 鍚姩涓撻棬鐨勫瓙 agent 澶勭悊澶嶆潅鐨勫姝ラ浠诲姟
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| url | string | ✅ 是 | 完全有效的 URL |
-| prompt | string | ✅ 是 | 要从页面提取的信息 |
+| subagent_type | string | 鉁?鏄?| 浣跨敤鐨?agent 绫诲瀷锛坓eneral-purpose/statusline-setup/output-style-setup锛?|
+| prompt | string | 鉁?鏄?| 浠诲姟鐨勮缁嗘弿杩?|
+| description | string | 鉁?鏄?| 浠诲姟鐨勭畝鐭?-5瀛楁弿杩?|
+| model | string | 鉂?鍚?| 浣跨敤鐨勬ā鍨?|
+| resume | boolean | 鉂?鍚?| 鎭㈠涔嬪墠鐨勪换鍔?|
 
-#### 23. 网络搜索（search_web）
-**描述**: 搜索网络获取最新信息（仅美国可用）
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
+#### 25. 绠＄悊浠诲姟鍒楄〃锛坢anage_todos锛?**鎻忚堪**: 鍒涘缓鍜岀鐞嗙粨鏋勫寲浠诲姟鍒楄〃璺熻釜杩涘害
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
 |--------|------|------|------|
-| query | string | ✅ 是 | 搜索查询字符串（至少2字符） |
-| allowed_domains | string[] | ❌ 否 | 包含的域名数组 |
-| blocked_domains | string[] | ❌ 否 | 排除的域名数组 |
+| todos | array | 鉁?鏄?| todo 瀵硅薄鏁扮粍锛屾瘡涓寘鍚?content銆乤ctiveForm銆乻tatus |
+
+#### 26. 閫€鍑鸿鍒掓ā寮忥紙exit_plan_mode锛?**鎻忚堪**: 灞曠ず瀹炵幇璁″垝鍚庨€€鍑鸿鍒掓ā寮?**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| plan | string | 鉁?鏄?| 瀹炵幇璁″垝锛堟敮鎸?markdown锛?|
+
+#### 27. 杩涘叆璁″垝妯″紡锛坋nter_plan_mode锛?**鎻忚堪**: 杩涘叆璁″垝妯″紡
+**鍙傛暟**: 鏃犲弬鏁?
+#### 28. 缂栬緫 Notebook 鍗曞厓鏍硷紙edit_notebook_cell锛?**鎻忚堪**: 缂栬緫 Jupyter notebook 鍗曞厓鏍?**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| notebook_path | string | 鉁?鏄?| notebook 缁濆璺緞 |
+| new_source | string | 鉁?鏄?| 鏂扮殑鍗曞厓鏍煎唴瀹?|
+| cell_id | string | 鉂?鍚?| 瑕佺紪杈戠殑鍗曞厓鏍?ID |
+| cell_type | string | 鉂?鍚?| 鍗曞厓鏍肩被鍨嬶細code 鎴?markdown |
+| edit_mode | string | 鉂?鍚?| 缂栬緫妯″紡锛歳eplace/insert/delete |
+
+#### 29. 鎵ц鏂滄潬鍛戒护锛坋xecute_slash_command锛?**鎻忚堪**: 鎵ц鏂滄潬鍛戒护
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| command | string | 鉁?鏄?| 鏂滄潬鍛戒护鍙婂弬鏁?|
+
+#### 30. 鍚戠敤鎴锋彁闂紙ask_user_question锛?**鎻忚堪**: 鍚戠敤鎴锋彁闂幏鍙栦氦浜?**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| questions | array | 鉁?鏄?| 闂鏁扮粍 |
+| answers | array | 鉂?鍚?| 绛旀鏁扮粍 |
+
+#### 31. 鎵ц Skill锛坋xecute_skill锛?**鎻忚堪**: 鎵ц skill
+**鍙傛暟**:
+| 鍙傛暟鍚?| 绫诲瀷 | 蹇呭～ | 鎻忚堪 |
+|--------|------|------|------|
+| skill | string | 鉁?鏄?| skill 鍚嶇О |
 
 ---
 
-### 21.11 任务管理类【此次不加这里 的tool】
-
-#### 24. 启动子 Agent（launch_subagent）
-**描述**: 启动专门的子 agent 处理复杂的多步骤任务
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| subagent_type | string | ✅ 是 | 使用的 agent 类型（general-purpose/statusline-setup/output-style-setup） |
-| prompt | string | ✅ 是 | 任务的详细描述 |
-| description | string | ✅ 是 | 任务的简短3-5字描述 |
-| model | string | ❌ 否 | 使用的模型 |
-| resume | boolean | ❌ 否 | 恢复之前的任务 |
-
-#### 25. 管理任务列表（manage_todos）
-**描述**: 创建和管理结构化任务列表跟踪进度
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| todos | array | ✅ 是 | todo 对象数组，每个包含 content、activeForm、status |
-
-#### 26. 退出计划模式（exit_plan_mode）
-**描述**: 展示实现计划后退出计划模式
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| plan | string | ✅ 是 | 实现计划（支持 markdown） |
-
-#### 27. 进入计划模式（enter_plan_mode）
-**描述**: 进入计划模式
-**参数**: 无参数
-
-#### 28. 编辑 Notebook 单元格（edit_notebook_cell）
-**描述**: 编辑 Jupyter notebook 单元格
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| notebook_path | string | ✅ 是 | notebook 绝对路径 |
-| new_source | string | ✅ 是 | 新的单元格内容 |
-| cell_id | string | ❌ 否 | 要编辑的单元格 ID |
-| cell_type | string | ❌ 否 | 单元格类型：code 或 markdown |
-| edit_mode | string | ❌ 否 | 编辑模式：replace/insert/delete |
-
-#### 29. 执行斜杠命令（execute_slash_command）
-**描述**: 执行斜杠命令
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| command | string | ✅ 是 | 斜杠命令及参数 |
-
-#### 30. 向用户提问（ask_user_question）
-**描述**: 向用户提问获取交互
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| questions | array | ✅ 是 | 问题数组 |
-| answers | array | ❌ 否 | 答案数组 |
-
-#### 31. 执行 Skill（execute_skill）
-**描述**: 执行 skill
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| skill | string | ✅ 是 | skill 名称 |
-
----
-
-### 21.12 工具总数汇总
-
-| 类别 | MCP | LangChain | Claude Code | 总计 |
+### 21.12 宸ュ叿鎬绘暟姹囨€?
+| 绫诲埆 | MCP | LangChain | Claude Code | 鎬昏 |
 |------|-----|-----------|------------|------|
-| 文件读取 | 3 | 0 | 1 | 4 |
-| 文件写入 | 0 | 1 | 0 | 1 |
-| 文件编辑 | 1 | 3 | 1 | 5 |
-| 文件搜索(文件名) | 1 | 0 | 1 | 2 |
-| 文件搜索(内容) | 0 | 0 | 1 | 1 |
-| 目录操作 | 3 | 0 | 0 | 3 |
-| 元数据 | 2 | 0 | 0 | 2 |
-| 系统操作 | 0 | 0 | 3 | 3 |
-| 网络/通信 | 0 | 0 | 2 | 2 |
-| 任务管理 | 0 | 0 | 7 | 7 |
-| **总计** | **10** | **4** | **16** | **30** |
+| 鏂囦欢璇诲彇 | 3 | 0 | 1 | 4 |
+| 鏂囦欢鍐欏叆 | 0 | 1 | 0 | 1 |
+| 鏂囦欢缂栬緫 | 1 | 3 | 1 | 5 |
+| 鏂囦欢鎼滅储(鏂囦欢鍚? | 1 | 0 | 1 | 2 |
+| 鏂囦欢鎼滅储(鍐呭) | 0 | 0 | 1 | 1 |
+| 鐩綍鎿嶄綔 | 3 | 0 | 0 | 3 |
+| 鍏冩暟鎹?| 2 | 0 | 0 | 2 |
+| 绯荤粺鎿嶄綔 | 0 | 0 | 3 | 3 |
+| 缃戠粶/閫氫俊 | 0 | 0 | 2 | 2 |
+| 浠诲姟绠＄悊 | 0 | 0 | 7 | 7 |
+| **鎬昏** | **10** | **4** | **16** | **30** |
 
-**说明**:
-- MCP: 10 个工具
-- LangChain: 4 个工具
-- Claude Code: 16 个工具
-- 总计: 30 个工具
-
+**璇存槑**:
+- MCP: 10 涓伐鍏?- LangChain: 4 涓伐鍏?- Claude Code: 16 涓伐鍏?- 鎬昏: 30 涓伐鍏?
 ---
 
-**编写人**: 小沈
-**更新时间**: 2026-04-04 10:31:01
-**更新说明**: 
-- 统一所有 tool 参数命名：path→file_path/dir_path/search_dir，paths→file_paths，bash_id→shell_id
-- 消除参数名歧义，LLM 调用时不会混淆
-- 新增 rename_file 工具，从 29 个工具增加为 30 个工具
+**缂栧啓浜?*: 灏忔矆
+**鏇存柊鏃堕棿**: 2026-04-04 10:31:01
+**鏇存柊璇存槑**: 
+- 缁熶竴鎵€鏈?tool 鍙傛暟鍛藉悕锛歱ath鈫抐ile_path/dir_path/search_dir锛宲aths鈫抐ile_paths锛宐ash_id鈫抯hell_id
+- 娑堥櫎鍙傛暟鍚嶆涔夛紝LLM 璋冪敤鏃朵笉浼氭贩娣?- 鏂板 rename_file 宸ュ叿锛屼粠 29 涓伐鍏峰鍔犱负 30 涓伐鍏?
