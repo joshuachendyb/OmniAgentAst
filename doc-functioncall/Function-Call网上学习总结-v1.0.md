@@ -1900,7 +1900,7 @@ class DirectoryListingInput(BaseModel):
 | edits | array | ✅ 是 | 编辑操作数组，每个元素包含 oldText 和 newText |
 | dryRun | boolean | ❌ 否 | 预览模式不实际修改，默认 false |
 
-#### 7. 精准替换文件内容（precise_replace_in_file）
+#### 6. 精准替换文件内容（precise_replace_in_file）
 **描述**: 执行精确的字符串替换
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2032,12 +2032,12 @@ class DirectoryListingInput(BaseModel):
 ### 21.9 系统操作类
 
 #### 20. 执行 Shell 命令（execute_shell_command）
-**描述**: 在持久 bash 会话中执行 shell 命令
+**描述**: 在指定 shell 环境中执行命令。Windows 原生默认 PowerShell，可选 CMD；bash 需额外安装（未来扩展）。
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| command | string | ✅ 是 | 要执行的 shell 命令 |
-| description | string | ❌ 否 | 清晰的5-10字描述 |
+| command | string | ✅ 是 | 要执行的命令 |
+| shell_type | string | ❌ 否 | 执行环境：powershell（默认）/ cmd / bash（未来扩展） |
 | timeout | number | ❌ 否 | 超时毫秒数，默认120000，最大600000 |
 | run_in_background | boolean | ❌ 否 | 后台运行命令 |
 
@@ -2079,7 +2079,7 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-### 21.11 任务管理类
+### 21.11 任务管理类【此次不加这里 的tool】
 
 #### 24. 启动子 Agent（launch_subagent）
 **描述**: 启动专门的子 agent 处理复杂的多步骤任务
@@ -2170,7 +2170,7 @@ class DirectoryListingInput(BaseModel):
 ---
 
 **编写人**: 小沈
-**更新时间**: 2026-04-04 12:00:00
+**更新时间**: 2026-04-04 10:31:01
 **更新说明**: 
 - 统一所有 tool 参数命名：path→file_path/dir_path/search_dir，paths→file_paths，bash_id→shell_id
 - 消除参数名歧义，LLM 调用时不会混淆
