@@ -1847,7 +1847,7 @@ class DirectoryListingInput(BaseModel):
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| path | string | ✅ 是 | 文件的完整路径 |
+| file_path | string | ✅ 是 | 文件的完整路径 |
 | head | number | ❌ 否 | 读取前 N 行（不能与 tail 同时使用） |
 | tail | number | ❌ 否 | 读取后 N 行 |
 
@@ -1856,14 +1856,14 @@ class DirectoryListingInput(BaseModel):
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| path | string | ✅ 是 | 媒体文件的完整路径 |
+| file_path | string | ✅ 是 | 媒体文件的完整路径 |
 
 #### 3. 批量读文件（read_batch_file）
 **描述**: 同时读取多个文件，单个文件读取失败不会中断整个操作
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| paths | string[] | ✅ 是 | 文件路径数组 |
+| file_paths | string[] | ✅ 是 | 文件路径数组 |
 
 #### 4. 读取多格式文件（read_file）
 **描述**: 从文件系统读取文件，支持文本、图片、PDF、Jupyter notebook
@@ -1896,7 +1896,7 @@ class DirectoryListingInput(BaseModel):
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| path | string | ✅ 是 | 要编辑的文件路径 |
+| file_path | string | ✅ 是 | 要编辑的文件路径 |
 | edits | array | ✅ 是 | 编辑操作数组，每个元素包含 oldText 和 newText |
 | dryRun | boolean | ❌ 否 | 预览模式不实际修改，默认 false |
 
@@ -1950,7 +1950,7 @@ class DirectoryListingInput(BaseModel):
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| path | string | ✅ 是 | 搜索起始目录 |
+| search_dir | string | ✅ 是 | 搜索起始目录 |
 | pattern | string | ✅ 是 | 搜索模式（glob 风格） |
 | excludePatterns | string[] | ❌ 否 | 排除模式 |
 
@@ -1960,7 +1960,7 @@ class DirectoryListingInput(BaseModel):
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | pattern | string | ✅ 是 | Glob 模式（如 **/*.js, src/**/*.ts） |
-| path | string | ❌ 否 | 搜索目录，默认当前工作目录 |
+| search_dir | string | ❌ 否 | 搜索目录，默认当前工作目录 |
 
 ---
 
@@ -1972,7 +1972,7 @@ class DirectoryListingInput(BaseModel):
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | pattern | string | ✅ 是 | 正则表达式搜索模式 |
-| path | string | ❌ 否 | 搜索路径，默认当前目录 |
+| search_dir | string | ❌ 否 | 搜索路径，默认当前目录 |
 | output_mode | string | ❌ 否 | 输出模式：content/files_with_matches/count |
 | glob | string | ❌ 否 | 文件类型过滤（如 "*.ts"） |
 | type | string | ❌ 否 | 语言类型（如 js, py, rust） |
@@ -1993,14 +1993,14 @@ class DirectoryListingInput(BaseModel):
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| path | string | ✅ 是 | 目录路径 |
+| dir_path | string | ✅ 是 | 目录路径 |
 
 #### 16. 列出目录含大小（list_directory_with_sizes）
 **描述**: 列出目录内容，包含文件大小，按 name 或 size 排序，返回统计信息
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| path | string | ✅ 是 | 目录路径 |
+| dir_path | string | ✅ 是 | 目录路径 |
 | sortBy | string | ❌ 否 | 排序方式：name 或 size，默认 name |
 
 #### 17. 获取目录树结构（get_directory_tree）
@@ -2008,7 +2008,7 @@ class DirectoryListingInput(BaseModel):
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| path | string | ✅ 是 | 起始目录 |
+| dir_path | string | ✅ 是 | 起始目录 |
 | excludePatterns | string[] | ❌ 否 | 排除模式（glob 格式） |
 
 
@@ -2021,7 +2021,7 @@ class DirectoryListingInput(BaseModel):
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| path | string | ✅ 是 | 文件或目录路径 |
+| file_path | string | ✅ 是 | 文件或目录路径 |
 
 #### 19. 列出允许访问的目录（list_allowed_directories）
 **描述**: 列出服务器允许访问的所有目录
@@ -2046,7 +2046,7 @@ class DirectoryListingInput(BaseModel):
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| bash_id | string | ✅ 是 | 后台 shell 的 ID |
+| shell_id | string | ✅ 是 | 后台 shell 的 ID |
 | filter | string | ❌ 否 | 过滤输出的正则表达式 |
 
 #### 22. 终止 Shell 会话（terminate_shell）
@@ -2170,8 +2170,8 @@ class DirectoryListingInput(BaseModel):
 ---
 
 **编写人**: 小沈
-**更新时间**: 2026-04-04 11:30:00
+**更新时间**: 2026-04-04 12:00:00
 **更新说明**: 
-- 新增 rename_file（重命名文件）工具，放在 move_file 之后
-- 从 29 个工具增加为 30 个工具，序号 1-32 重新连续编号
-- 中文名称+英文名称格式，所有 tool 名称准确反映功能
+- 统一所有 tool 参数命名：path→file_path/dir_path/search_dir，paths→file_paths，bash_id→shell_id
+- 消除参数名歧义，LLM 调用时不会混淆
+- 新增 rename_file 工具，从 29 个工具增加为 30 个工具
