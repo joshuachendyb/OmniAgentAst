@@ -2068,16 +2068,16 @@ class DirectoryListingInput(BaseModel):
 |--------|------|------|------|
 | pattern | string | ✅ 是 | 正则表达式搜索模式 |
 | search_dir | string | ❌ 否 | 搜索路径，默认当前目录 |
-| output_mode | string | ❌ 否 | 输出模式：content/files_with_matches/count |
-| glob | string | ❌ 否 | 文件类型过滤（如 "*.ts"） |
-| type | string | ❌ 否 | 语言类型（如 js, py, rust） |
-| after_lines | number | ❌ 否 | 匹配后显示行数 |
-| before_lines | number | ❌ 否 | 匹配前显示行数 |
-| context_lines | number | ❌ 否 | 匹配前后显示行数 |
-| ignore_case | boolean | ❌ 否 | 不区分大小写 |
-| show_line_no | boolean | ❌ 否 | 显示行号 |
-| multiline | boolean | ❌ 否 | 启用多行匹配（. 匹配换行符） |
-| head_limit | number | ❌ 否 | 限制输出结果数量 |
+| output_mode | string | ❌ 否 | 输出模式：content（显示行内容）/files_with_matches（只显示文件名）/count（显示匹配数量） |
+| glob | string | ❌ 否 | 文件类型过滤，使用glob通配符（如 "*.ts" 或 "*.{js,py}"） |
+| type | string | ❌ 否 | 语言类型，简化glob匹配（如 js, py, rust, html, json） |
+| after_lines | number | ❌ 否 | 匹配行之后额外显示的行数（用于查看上下文） |
+| before_lines | number | ❌ 否 | 匹配行之前额外显示的行数（用于查看上下文） |
+| context_lines | number | ❌ 否 | 匹配行前后各显示的行数（同时设置before和after） |
+| ignore_case | boolean | ❌ 否 | 搜索时忽略大小写，例如 "test" 会匹配 "Test" 和 "TEST" |
+| show_line_no | boolean | ❌ 否 | 是否在输出中显示行号，便于定位 |
+| multiline | boolean | ❌ 否 | 启用多行匹配模式，允许正则表达式中的 . 匹配换行符 |
+| head_limit | number | ❌ 否 | 限制返回的匹配结果数量，用于大文件搜索避免输出过多 |
 
 #### 15. 创建目录（create_directory）
 **描述**: 创建新目录，如需要会创建父目录，目录已存在则静默成功
