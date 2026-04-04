@@ -2887,29 +2887,62 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：第20.8章第5类"Agent辅助/配套工具"中，属于三级实现（需要pip install）的工具。
 
-#### 1. 代码执行保障
+#### 72. 检查Python环境（check_python_available）
+**描述**: 检查Python环境是否可用
+**参数**: 无参数
 
-| 工具 | 功能描述 | 核心参数 |
-|------|---------|----------|
-| **check_python_available** | 检查Python环境是否可用 | (无参数) |
-| **validate_code_safety** | 验证代码安全性，防止危险操作 | code (string) |
-| **check_node_available** | 检查Node.js环境是否可用 | (无参数) |
-| **check_module_available** | 检查Python模块是否已安装 | module_name (string) |
+#### 73. 验证代码安全性（validate_code_safety）
+**描述**: 验证代码安全性，防止危险操作
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| code | string | ✅ 是 | 要验证的代码 |
 
-#### 2. 数据分析保障
+#### 74. 检查Node.js环境（check_node_available）
+**描述**: 检查Node.js环境是否可用
+**参数**: 无参数
 
-| 工具 | 功能描述 | 核心参数 |
-|------|---------|----------|
-| **validate_csv_format** | 验证CSV文件格式是否正确 | file_path (string) |
-| **validate_chart_data** | 验证图表数据格式是否正确 | data (object) |
+#### 75. 检查Python模块（check_module_available）
+**描述**: 检查Python模块是否已安装
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| module_name | string | ✅ 是 | 模块名称 |
 
-#### 3. 文档处理保障
+#### 76. 验证CSV格式（validate_csv_format）
+**描述**: 验证CSV文件格式是否正确
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | CSV文件路径 |
 
-| 工具 | 功能描述 | 核心参数 |
-|------|---------|----------|
-| **check_pdf_readable** | 检查PDF文件是否可读 | file_path (string) |
-| **check_docx_readable** | 检查Word文件是否可读 | file_path (string) |
-| **check_xlsx_readable** | 检查Excel文件是否可读 | file_path (string) |
+#### 77. 验证图表数据（validate_chart_data）
+**描述**: 验证图表数据格式是否正确
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| data | object | ✅ 是 | 图表数据（JSON格式） |
+
+#### 78. 检查PDF可读性（check_pdf_readable）
+**描述**: 检查PDF文件是否可读
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | PDF文件路径 |
+
+#### 79. 检查Word可读性（check_docx_readable）
+**描述**: 检查Word文件是否可读
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | Word文件路径 |
+
+#### 80. 检查Excel可读性（check_xlsx_readable）
+**描述**: 检查Excel文件是否可读
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | Excel文件路径 |
 
 ---
 
@@ -3115,51 +3148,42 @@ class DirectoryListingInput(BaseModel):
 
 **说明**：第20.8章第5类"Agent辅助/配套工具"中，属于可选扩展（需要pip install）的工具。
 
-#### 1. 鼠标/键盘操作保障
+#### 88. 获取鼠标位置（get_mouse_position）
+**描述**: 获取当前鼠标位置
+**参数**: 无参数
 
-| 工具 | 功能描述 | 核心参数 |
-|------|---------|----------|
-| **get_mouse_position** | 获取当前鼠标位置 | (无参数) |
-| **check_screen_size** | 检查屏幕分辨率 | (无参数) |
+#### 89. 检查屏幕分辨率（check_screen_size）
+**描述**: 检查屏幕分辨率
+**参数**: 无参数
 
-#### 2. 窗口管理保障
+#### 90. 检查窗口是否存在（check_window_exists）
+**描述**: 检查窗口是否存在
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| title | string | ✅ 是 | 窗口标题 |
 
-| 工具 | 功能描述 | 核心参数 |
-|------|---------|----------|
-| **check_window_exists** | 检查窗口是否存在 | title (string) |
-| **get_window_position** | 获取窗口位置和大小 | title (string) |
+#### 91. 获取窗口位置和大小（get_window_position）
+**描述**: 获取窗口位置和大小
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| title | string | ✅ 是 | 窗口标题 |
 
-#### 3. 截图/OCR保障
+#### 92. 检查屏幕捕获权限（check_screen_capture_permission）
+**描述**: 检查屏幕捕获权限
+**参数**: 无参数
 
-| 工具 | 功能描述 | 核心参数 |
-|------|---------|----------|
-| **check_screen_capture_permission** | 检查屏幕捕获权限 | (无参数) |
-| **check_tesseract_available** | 检查Tesseract OCR引擎是否可用 | (无参数) |
+#### 93. 检查Tesseract OCR引擎（check_tesseract_available）
+**描述**: 检查Tesseract OCR引擎是否可用
+**参数**: 无参数
 
-#### 4. 系统通知保障
-
-| 工具 | 功能描述 | 核心参数 |
-|------|---------|----------|
-| **check_notification_permission** | 检查系统通知权限 | (无参数) |
-
----
-
-**编写人**: 小沈
-**更新时间**: 2026-04-04 19:51:07
-**更新说明**: 
-- 修正第22.5节 read_csv → read_csv_basic（标准库csv，零依赖）
-- 修正第23.3节 read_csv → read_csv_dataframe（pandas库，数据分析）
-- 更新对应章节的汇总表
+#### 94. 检查系统通知权限（check_notification_permission）
+**描述**: 检查系统通知权限
+**参数**: 无参数
 
 ---
 
-**编写人**: 小沈
-**更新说明**: 
-- 新增第23章：三级实现工具（第19-21类）定义8个工具
-- 新增第24章：可选扩展工具（第22-28类）定义16个工具
-- 参考PyAutoGUI、pandas、matplotlib、python-docx官方文档
-
----
 
 **编写人**: 小沈
 **更新时间**: 2026-04-04 18:40:12
