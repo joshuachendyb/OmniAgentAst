@@ -1954,11 +1954,11 @@ class DirectoryListingInput(BaseModel):
 **说明**: 使用 `os`, `shutil`, `pathlib`, `glob` 实现，零依赖Python标准库。
 
 #### 1. 读取文本文件（read_text_file）
-**描述**: 读取文本文件完整内容，始终以 UTF-8 格式处理文件
+**描述**: 读取文本文件完整内容，始终以 UTF-8 格式处理文件，支持中文等多字节字符
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| file_path | string | ✅ 是 | 文件的完整路径 |
+| file_path | string | ✅ 是 | 文件的完整路径，支持中文路径 |
 | head | number | ❌ 否 | 读取前 N 行（不能与 tail 同时使用） |
 | tail | number | ❌ 否 | 读取后 N 行 |
 
@@ -1977,16 +1977,16 @@ class DirectoryListingInput(BaseModel):
 | file_paths | string[] | ✅ 是 | 文件路径数组 |
 
 #### 4. 读取多格式文件（read_file）
-**描述**: 从文件系统读取文件，支持文本、图片、PDF、Jupyter notebook
+**描述**: 从文件系统读取文件，支持文本、图片、PDF、Jupyter notebook，自动处理UTF-8/GBK编码
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| file_path | string | ✅ 是 | 文件的绝对路径 |
+| file_path | string | ✅ 是 | 文件的绝对路径，支持中文路径 |
 | offset | number | ❌ 否 | 起始行号，从1开始 |
 | limit | number | ❌ 否 | 读取行数，默认2000行 |
 
 #### 5. 写入或追加文件（write_append_file）
-**描述**: 写入或追加到文件
+**描述**: 写入或追加到文件，使用UTF-8编码，支持中文内容写入
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
@@ -1995,13 +1995,13 @@ class DirectoryListingInput(BaseModel):
 | append | boolean | ❌ 否 | 是否追加模式，默认 false |
 
 #### 6. 精准替换文件内容（precise_replace_in_file）
-**描述**: 执行精确的字符串替换
+**描述**: 执行精确的字符串替换，支持中文内容精确匹配和替换
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| file_path | string | ✅ 是 | 文件绝对路径 |
-| old_string | string | ✅ 是 | 要替换的精确文本 |
-| new_string | string | ✅ 是 | 替换后的文本 |
+| file_path | string | ✅ 是 | 文件绝对路径，支持中文路径 |
+| old_string | string | ✅ 是 | 要替换的精确文本，支持中文 |
+| new_string | string | ✅ 是 | 替换后的文本，支持中文 |
 | replace_all | boolean | ❌ 否 | 替换所有匹配项，默认 false |
 
 #### 7. 编辑文件（edit_file）
@@ -2045,16 +2045,16 @@ class DirectoryListingInput(BaseModel):
 | file_path | string | ✅ 是 | 要删除的文件路径 |
 
 #### 12. 搜索文件按模式（search_files）
-**描述**: 递归搜索匹配或排除模式的文件/目录，返回完整路径
+**描述**: 递归搜索匹配或排除模式的文件/目录，返回完整路径，支持中文文件名搜索
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| search_dir | string | ✅ 是 | 搜索起始目录 |
-| pattern | string | ✅ 是 | 搜索模式（glob 风格） |
+| search_dir | string | ✅ 是 | 搜索起始目录，支持中文目录名 |
+| pattern | string | ✅ 是 | 搜索模式（glob 风格），支持中文（如 "*.txt" 或 "测试*"） |
 | excludePatterns | string[] | ❌ 否 | 排除模式 |
 
 #### 13. 文件名模式匹配（glob_files）
-**描述**: 快速的文件名模式匹配，按修改时间排序返回结果
+**描述**: 快速的文件名模式匹配，按修改时间排序返回结果，支持中文文件名
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
@@ -2062,11 +2062,11 @@ class DirectoryListingInput(BaseModel):
 | search_dir | string | ❌ 否 | 搜索目录，默认当前工作目录 |
 
 #### 14. 搜索文件内容（grep_file_content）
-**描述**: 基于 ripgrep 的强大内容搜索，支持正则表达式和多选项
+**描述**: 基于 ripgrep 的强大内容搜索，支持正则表达式和多选项，支持Unicode中文字符搜索
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| pattern | string | ✅ 是 | 正则表达式搜索模式 |
+| pattern | string | ✅ 是 | 正则表达式搜索模式，支持中文（如搜索"函数定义"或"class.*方法"） |
 | search_dir | string | ❌ 否 | 搜索路径，默认当前目录 |
 | output_mode | string | ❌ 否 | 输出模式：content（显示行内容）/files_with_matches（只显示文件名）/count（显示匹配数量） |
 | glob | string | ❌ 否 | 文件类型过滤，使用glob通配符（如 "*.ts" 或 "*.{js,py}"） |
