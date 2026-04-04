@@ -2,8 +2,10 @@
 
 **学习时间**: 2026-04-04 05:08:51
 **编写人**: 小沈
-**版本**: v1.0
-**更新说明**: 2026-04-04 06:56:00 - 修正第16-17章内容，补充准确的模型工具限制数据
+**版本**: v1.1
+**更新说明**: 
+- 2026-04-04 06:56:00 - 修正第16-17章内容，补充准确的模型工具限制数据
+- 2026-04-04 09:00:00 - 修正第20章：MCP Filesystem Server 工具数量 14→13 个，修正搜索标记错误，同步修正第21章汇总数据
 
 ---
 
@@ -1570,13 +1572,14 @@ mcp-control --sse
 
 ## 二十、所有 File Tool 完整参数总结（必读）
 
-### 20.1 MCP Filesystem Server (14个工具) - 官方最新数据
+### 20.1 MCP Filesystem Server (13个工具) - 官方最新数据
 
 **来源**: 官方 GitHub 仓库 https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem（2026年1月更新）
 
 **重要说明**: 
-- 官方最新显示 **14 个**工具
-- 新增工具：`read_media_file`、`list_directory_with_sizes`、`resource_templates`、`read_resource`
+- 官方最新显示 **13 个**工具
+- 新增工具：`read_media_file`、`list_directory_with_sizes`
+- 注意：`resource_templates` 和 `read_resource` 属于 MCP Resources 能力，不属于 Tools
 - 以下是详细参数（来自官方 README）：
 
 | 工具名称 | 参数 | 参数类型 | 必填 | 说明 |
@@ -1604,8 +1607,6 @@ mcp-control --sse
 | | excludePatterns | string[] | ❌ 否 | 排除模式 |
 | **get_file_info** | path | string | ✅ 是 | 文件/目录路径，返回大小、创建/修改/访问时间、类型、权限 |
 | **list_allowed_directories** | (无) | - | - | 无参数，返回允许访问的目录列表 |
-| **resource_templates** | (无) | - | - | 无参数，资源模板 |
-| **read_resource** | uri | string | ✅ 是 | 资源 URI |
 
 ---
 
@@ -1735,12 +1736,12 @@ class DirectoryListingInput(BaseModel):
 | **列出目录** | list_directory (path) | ListDirectoryTool (dir_path) | 参数名不同 |
 | **列出目录(含大小)** | list_directory_with_sizes (path, sortBy) | ❌ | MCP 独有 |
 | **搜索文件(内容)** | search_files (path, pattern, excludePatterns) | FileSearchTool (pattern, dir_path) | MCP 支持 excludePatterns |
-| **搜索文件(名称)** | ❌ | ❌ | 需使用 search_files |
+| **搜索文件(名称)** | ✅ search_files | ✅ FileSearchTool | 两者都有文件名搜索 |
 | **目录树** | directory_tree (path, excludePatterns) | ❌ | MCP 独有 |
 | **文件信息** | get_file_info (path) | ❌ | MCP 独有，返回元数据 |
 | **允许目录列表** | list_allowed_directories | ❌ | MCP 独有，安全控制 |
-| **资源模板** | resource_templates | ❌ | MCP 独有 |
-| **读取资源** | read_resource (uri) | ❌ | MCP 独有 |
+| **资源模板** | ❌ | ❌ | 属于 MCP Resources 能力，不是 Tool |
+| **读取资源** | ❌ | ❌ | 属于 MCP Resources 能力，不是 Tool |
 
 ---
 
@@ -2070,17 +2071,6 @@ class DirectoryListingInput(BaseModel):
 **描述**: 列出服务器允许访问的所有目录
 **参数**: 无参数
 
-#### 26. resource_templates（MCP）
-**描述**: 资源模板
-**参数**: 无参数
-
-#### 27. read_resource（MCP）
-**描述**: 读取资源
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| uri | string | ✅ 是 | 资源 URI |
-
 ---
 
 ### 21.9 系统操作类
@@ -2213,13 +2203,13 @@ class DirectoryListingInput(BaseModel):
 | 系统操作 | 0 | 0 | 3 | 3 |
 | 网络/通信 | 0 | 0 | 2 | 2 |
 | 任务管理 | 0 | 0 | 7 | 7 |
-| **总计** | **14** | **7** | **17** | **38** |
+| **总计** | **13** | **7** | **17** | **37** |
 
 **说明**:
-- MCP: 14 个工具
+- MCP: 13 个工具
 - LangChain: 7 个工具
 - Claude Code: 17 个工具（不含 EnterPlanMode 的无参数工具）
-- 总计: 38 个工具
+- 总计: 37 个工具
 
 ---
 
