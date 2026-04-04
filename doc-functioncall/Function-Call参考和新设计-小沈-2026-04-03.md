@@ -1810,49 +1810,127 @@ class DirectoryListingInput(BaseModel):
 
 ### 20.8 工具类型分类（按系统执行能力）
 
-#### 一、系统原生可执行工具（无需 MCP）
+**核心结论**：没有任何工具必须依赖 MCP。MCP 只是可选的跨进程通信协议。我们的系统用 Python 直接实现所有功能即可。分类依据 2026 年 Q1 最新 Agentic AI 工具生态标准。
+
+#### 一、核心业务工具（零依赖，Python 标准库实现）【一级实现的工具】
+
+**说明**：Agent 最基础、最高频使用的能力，Python 标准库即可实现，无需安装任何第三方包。
+
+| 类型 | 包含工具 | 实现方式 | 说明 |
+|------|---------|---------|------|
+| **1. 文件操作** | read_text_file, read_media_file, read_multiple_files, write_file, edit_file, copy_file, move_file, delete_file, search_files, list_directory, list_allowed_directories, create_directory, get_file_info, directory_tree, rename_file | `os`, `shutil`, `pathlib`, `glob` | 基础文件读写、编辑、搜索、目录管理、重命名、媒体读取 |
+| **2. Shell 命令执行** | execute_shell_command, get_shell_output, terminate_shell | `subprocess` | PowerShell/CMD 命令执行、后台任务管理 |
+| **3. API/HTTP 调用** | http_request | `urllib`, `http.client` | Agent 调用外部 REST API、Webhook、微服务（通用方法覆盖 GET/POST/PUT/DELETE） |
+| **4. 网络通信** | fetch_webpage, search_web | `urllib`, `http.client` | 网页内容获取、网络搜索 |
+| **5. 时间/日期** | get_current_time, calculate_date | `datetime`, `time` | Agent 获取当前时间、计算日期差、定时任务 |
+| **6. 环境变量** | get_env, set_env | `os.environ` | 读取/设置系统环境变量 |
+| **7. 系统信息** | get_system_info | `psutil` 或 `wmi` | `pip install psutil` |
+| **8. 网络连接** | net_connections, event_log | `psutil` | `pip install psutil` |
+| **9. 压缩/解压** | compress_archive, extract_archive | `shutil.make_archive` / `zipfile` | Python 标准库，零依赖 |
+| **10. 文件哈希** | get_file_hash | `hashlib` | Python 标准库，零依赖 |
+
+#### 二、系统管理工具（轻量第三方，pip install）【二级实现工具】
+
+**说明**：用于更高级的系统管理功能，需要安装少量第三方库。
+
+| 类型 | 包含工具 | 实现方式 | 依赖 |
+|------|---------|---------|------|
+| **11. 数据库访问** | query_sql, execute_sql, query_nosql | `sqlite3`（内置）/ `sqlalchemy` | Agent 查询/写入 SQLite、MySQL 等数据库，2026 年 Agent 标配 |
+| **12. 注册表操作** | reg_read, reg_write, reg_delete | `winreg` | Python 内置库（Windows 专用），零依赖 |
+| **13. 日志记录** | log_message, get_logs | `logging` | Agent 操作日志、审计追踪、错误记录 |
+| **14. 数据序列化** | read_json, write_json, read_csv | `json`, `csv` | Agent 读写 JSON/CSV 数据文件 |
+| **15. 进程管理** | list_processes, kill_process | `psutil` | `pip install psutil` |
+| **16. 服务管理** | service_list, service_start, service_stop | `subprocess` 执行 `sc` 或 `pywin32` | 零依赖 或 `pip install pywin32` |
+| **17. 计划任务** | task_list, task_create, task_delete | `subprocess` 执行 `schtasks` | 零依赖 |
+| **18. 网络诊断** | ping, port_check | `subprocess` 执行 `ping` / `socket` | 零依赖 |
+
+#### 三、数据处理与代码执行工具（2026 年 Agent 标配）【三级实现工具】
+
+**说明**：2026 年 Agent 的核心能力，用于数据分析、代码验证、图表生成。
+
+| 类型 | 包含工具 | 实现方式 | 依赖 |
+|------|---------|---------|------|
+| **19. 代码执行** | execute_python, execute_javascript | `subprocess` + 沙箱 | 零依赖（需沙箱隔离） |
+| **20. 数据分析** | read_csv, generate_chart, analyze_data | `pandas`, `matplotlib` | `pip install pandas matplotlib` |
+| **21. 文档处理** | read_pdf, read_docx, read_xlsx | `pdfplumber`, `python-docx`, `openpyxl` | `pip install` 对应库 |
+
+#### 四、GUI 交互与桌面自动化工具（可选扩展）
+
+**说明**：用于控制桌面 GUI（鼠标、键盘、窗口），属于**可选扩展能力**，不是 Agent 核心需求。
+
+| 类型 | 包含工具 | 实现方式 | 依赖 |
+|------|---------|---------|------|
+| **22. 鼠标控制** | click, move, scroll | `pyautogui` 或 `ctypes` + `user32.dll` | `pip install pyautogui` 或零依赖 |
+| **23. 键盘输入** | type_text, shortcut, key_combo | `pyautogui` 或 `keyboard` | `pip install pyautogui` |
+| **24. 截图/屏幕** | screenshot, snapshot, screen_record | `mss` 或 `PIL.ImageGrab` | `pip install mss` 或 `Pillow` |
+| **25. OCR 识别** | ocr | `pytesseract` + Tesseract 引擎 | `pip install pytesseract` |
+| **26. 窗口管理** | list_windows, focus_window, resize_window | `pywin32` 或 `ctypes` | `pip install pywin32` 或零依赖 |
+| **27. 剪贴板操作** | read_clipboard, write_clipboard | `pyperclip` 或 `ctypes` | `pip install pyperclip` 或零依赖 |
+| **28. 通知** | send_notification | `win10toast` | `pip install win10toast` |
+
+#### 五、Agent 辅助/配套工具（任务执行保障）
+
+**说明**：这类工具不直接完成核心业务，而是为 Agent 执行主任务提供**环境确认**、**状态检查**、**安全验证**和**异常处理**支持，防止 Agent 盲目操作报错。
+
+**1. 文件操作保障**
+
+| 工具 | 服务对象 | 作用 | 优先级 |
+|------|---------|------|--------|
+| **check_path_exists** | 所有文件工具 | 确认路径是否存在，避免"找不到文件" | **高** |
+| **ensure_directory_exists** | write_file, copy, move | 确保目标目录存在，不存在则创建 | **高** |
+| **check_write_permission** | write_file, edit, delete | 确认文件/目录有写入权限 | **高** |
+| **check_read_permission** | search, list, tree | 确认目录有读取权限 | 中 |
+| **get_file_encoding** | read_text_file | 确认文件编码（UTF-8/GBK），避免乱码 | 中 |
+| **get_mime_type** | read_media_file | 确认文件 MIME 类型（image/png 等） | 中 |
+| **backup_file** | edit_file, write_file | 编辑/覆盖前自动备份原文件 | 中 |
+| **move_to_trash** | delete_file | 删除时进回收站而非永久删除，可恢复 | **高** |
+
+**2. Shell 命令执行保障**
+
+| 工具 | 服务对象 | 作用 | 优先级 |
+|------|---------|------|--------|
+| **get_current_working_dir** | execute_shell_command | 获取当前工作目录 | 中 |
+| **validate_command** | execute_shell_command | 检查命令安全性，防止危险操作（如 rm -rf /） | **高** |
+| **check_shell_running** | get_shell_output | 检查后台 Shell 是否还在运行 | 中 |
+
+**3. 数据库访问保障**
+
+| 工具 | 服务对象 | 作用 | 优先级 |
+|------|---------|------|--------|
+| **check_db_exists** | query_sql, execute_sql | 确认数据库文件/连接是否存在 | **高** |
+| **get_table_schema** | query_sql, execute_sql | 获取表结构，Agent 知道有哪些字段 | **高** |
+| **begin_transaction** | execute_sql | 开启事务，保证数据一致性 | 中 |
+| **commit_transaction** | execute_sql | 提交事务 | 中 |
+| **rollback_transaction** | execute_sql | 回滚事务 | 中 |
+
+**4. API/HTTP 调用保障**
+
+| 工具 | 服务对象 | 作用 | 优先级 |
+|------|---------|------|--------|
+| **check_network_connectivity** | http_request | 检查网络是否连通 | 中 |
+| **validate_url** | http_request | 验证 URL 格式是否合法 | 低 |
+
+**设计原则说明**：
+- **文件属性操作（get/set_file_attributes）不暴露给 Agent**：这些属于底层实现细节，应内化到 `write_file` 等工具中。例如 `write_file` 内部应自动检测只读属性并尝试解除，而不是让 Agent 手动调用属性修改工具。
+
+#### 六、Agent 框架内置工具（由框架提供）
+
+**说明**：这些工具由 Agent 框架（如 LangChain, AutoGen, Claude Agent SDK 等）提供，用于 Agent 自身的任务调度和交互。2026 年主流框架均内置这些能力。
 
 | 类型 | 包含工具 | 说明 |
 |------|---------|------|
-| **1. 文件操作** | read_text_file, write_file, edit_file, copy_file, move_file, delete_file, search_files, list_directory, create_directory, get_file_info, directory_tree | 基础文件读写、编辑、搜索、目录管理 |
-| **2. Shell 命令执行** | execute_shell_command, get_shell_output, terminate_shell | PowerShell/CMD 命令执行、后台任务管理 |
-| **3. 网络/通信** | fetch_webpage, search_web | 网页内容获取、网络搜索 |
-| **4. 进程管理** | list_processes, kill_process | 进程列表查看、终止进程 |
-| **5. 剪贴板操作** | read_clipboard, write_clipboard | 读写系统剪贴板 |
-| **6. 系统信息** | get_system_info | 获取系统基本信息（CPU、内存、磁盘等） |
-| **7. 窗口管理** | list_windows, focus_window, resize_window | 窗口列表、聚焦、调整大小 |
-| **8. 通知** | send_notification | 发送 Windows 通知 |
-| **9. 任务管理** | launch_subagent, manage_todos, exit_plan_mode, enter_plan_mode | Agent 任务调度、待办管理、计划模式 |
-| **10. 用户交互** | ask_user_question | 向用户提问获取输入 |
-| **11. Notebook 编辑** | edit_notebook_cell | Jupyter notebook 单元格编辑 |
-| **12. 斜杠命令** | execute_slash_command | 执行系统内置斜杠命令 |
-| **13. Skill 执行** | execute_skill | 执行已安装的 skill |
+| **31. 任务管理** | launch_subagent, manage_todos | Agent 启动子任务、管理待办进度，需框架支持 |
+| **32. 用户交互** | ask_user_question | Agent 向用户提问获取输入，需框架支持 |
+| **33. Skill 执行** | execute_skill | Agent 执行预定义技能流程，需框架支持 |
 
-#### 二、需要 MCP 支持的工具（需额外安装）
+#### 七、非工具说明（UI/CLI 逻辑）
 
-| 类型 | 包含工具 | 依赖 | 说明 |
+**说明**：以下功能属于**用户界面层**（如 CLI 界面、Web 前端）的控制逻辑，**不应作为工具暴露给 LLM**。LLM 不需要调用它们，它们由用户在界面上触发。
+
+| 功能 | 包含命令 | 归属 | 说明 |
 |------|---------|------|------|
-| **MCP-1. 鼠标控制** | click, move, scroll | Windows-MCP / MCPControl | 鼠标点击、移动、拖拽、滚动 |
-| **MCP-2. 键盘输入** | type_text, shortcut, key_combo | Windows-MCP / MCPControl | 键盘输入、快捷键组合 |
-| **MCP-3. 截图/屏幕** | screenshot, snapshot, ocr, screen_record | Windows-MCP / WinRemote-MCP | 屏幕截图、标注截图、OCR 识别、录屏 |
-| **MCP-4. 注册表操作** | reg_read, reg_write, reg_delete | Windows-MCP / WinRemote-MCP | Windows 注册表读写 |
-| **MCP-5. 服务管理** | service_list, service_start, service_stop | WinRemote-MCP | Windows 服务管理 |
-| **MCP-6. 计划任务** | task_list, task_create, task_delete | WinRemote-MCP | Windows 计划任务管理 |
-| **MCP-7. 网络诊断** | ping, port_check, net_connections, event_log | WinRemote-MCP | 网络连通性检测、端口检查 |
-| **MCP-8. 文件下载/上传** | file_download, file_upload | WinRemote-MCP | 远程文件传输 |
-
-#### 三、可补充的工具类型
-
-| 类型 | 说明 | 优先级 |
-|------|------|--------|
-| **压缩/解压** | compress_archive, extract_archive | 中 |
-| **文件哈希** | get_file_hash（MD5/SHA256） | 中 |
-| **符号链接** | create_symlink | 低 |
-| **路径解析** | resolve_path, check_path_exists | 中 |
-| **文件属性** | get_file_attributes, set_file_attributes | 低 |
-| **环境变量** | get_env, set_env | 中 |
-
----
+| **CLI 命令** | execute_slash_command | 前端/CLI | 用户输入 `/help`, `/clear` 等命令，由界面解析执行 |
+| **模式切换** | enter_plan_mode, exit_plan_mode | 前端/CLI | 用户切换"计划模式"，由界面控制状态，LLM 只需配合展示 |
 
 ---
 
