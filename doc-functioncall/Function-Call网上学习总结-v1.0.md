@@ -1926,7 +1926,15 @@ class DirectoryListingInput(BaseModel):
 | source_path | string | ✅ 是 | 源文件路径 |
 | destination_path | string | ✅ 是 | 目标文件路径 |
 
-#### 10. 删除文件（delete_file）
+#### 10. 重命名文件（rename_file）
+**描述**: 重命名文件或目录，不改变所在目录
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 当前文件路径 |
+| new_name | string | ✅ 是 | 新文件名 |
+
+#### 11. 删除文件（delete_file）
 **描述**: 删除文件
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1937,7 +1945,7 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.5 文件搜索类（文件名）
 
-#### 11. 搜索文件按模式（search_files）
+#### 12. 搜索文件按模式（search_files）
 **描述**: 递归搜索匹配或排除模式的文件/目录，返回完整路径
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1946,7 +1954,7 @@ class DirectoryListingInput(BaseModel):
 | pattern | string | ✅ 是 | 搜索模式（glob 风格） |
 | excludePatterns | string[] | ❌ 否 | 排除模式 |
 
-#### 12. 文件名模式匹配（glob_files）
+#### 13. 文件名模式匹配（glob_files）
 **描述**: 快速的文件名模式匹配，按修改时间排序返回结果
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1958,7 +1966,7 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.6 文件搜索类（内容）
 
-#### 13. 搜索文件内容（grep_file_content）
+#### 14. 搜索文件内容（grep_file_content）
 **描述**: 基于 ripgrep 的强大内容搜索，支持正则表达式和多选项
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1980,14 +1988,14 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.7 目录操作类
 
-#### 14. 创建目录（create_directory）
+#### 15. 创建目录（create_directory）
 **描述**: 创建新目录，如需要会创建父目录，目录已存在则静默成功
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | path | string | ✅ 是 | 目录路径 |
 
-#### 15. 列出目录含大小（list_directory_with_sizes）
+#### 16. 列出目录含大小（list_directory_with_sizes）
 **描述**: 列出目录内容，包含文件大小，按 name 或 size 排序，返回统计信息
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -1995,7 +2003,7 @@ class DirectoryListingInput(BaseModel):
 | path | string | ✅ 是 | 目录路径 |
 | sortBy | string | ❌ 否 | 排序方式：name 或 size，默认 name |
 
-#### 16. 获取目录树结构（get_directory_tree）
+#### 17. 获取目录树结构（get_directory_tree）
 **描述**: 获取目录的递归 JSON 树结构，每个条目包含 name、type（file/directory）、children
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2008,14 +2016,14 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.8 元数据/信息类
 
-#### 17. 获取文件信息（get_file_info）
+#### 18. 获取文件信息（get_file_info）
 **描述**: 获取文件/目录的详细元数据，包括大小、创建/修改/访问时间、类型、权限
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | path | string | ✅ 是 | 文件或目录路径 |
 
-#### 18. 列出允许访问的目录（list_allowed_directories）
+#### 19. 列出允许访问的目录（list_allowed_directories）
 **描述**: 列出服务器允许访问的所有目录
 **参数**: 无参数
 
@@ -2023,7 +2031,7 @@ class DirectoryListingInput(BaseModel):
 
 ### 21.9 系统操作类
 
-#### 19. 执行 Shell 命令（execute_shell_command）
+#### 20. 执行 Shell 命令（execute_shell_command）
 **描述**: 在持久 bash 会话中执行 shell 命令
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2033,7 +2041,7 @@ class DirectoryListingInput(BaseModel):
 | timeout | number | ❌ 否 | 超时毫秒数，默认120000，最大600000 |
 | run_in_background | boolean | ❌ 否 | 后台运行命令 |
 
-#### 20. 获取 Shell 输出（get_shell_output）
+#### 21. 获取 Shell 输出（get_shell_output）
 **描述**: 获取后台运行的 bash 命令输出
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2041,7 +2049,7 @@ class DirectoryListingInput(BaseModel):
 | bash_id | string | ✅ 是 | 后台 shell 的 ID |
 | filter | string | ❌ 否 | 过滤输出的正则表达式 |
 
-#### 21. 终止 Shell 会话（terminate_shell）
+#### 22. 终止 Shell 会话（terminate_shell）
 **描述**: 终止运行中的后台 bash shell
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2143,7 +2151,7 @@ class DirectoryListingInput(BaseModel):
 |------|-----|-----------|------------|------|
 | 文件读取 | 3 | 0 | 1 | 4 |
 | 文件写入 | 0 | 1 | 0 | 1 |
-| 文件编辑 | 0 | 3 | 1 | 4 |
+| 文件编辑 | 1 | 3 | 1 | 5 |
 | 文件搜索(文件名) | 1 | 0 | 1 | 2 |
 | 文件搜索(内容) | 0 | 0 | 1 | 1 |
 | 目录操作 | 3 | 0 | 0 | 3 |
@@ -2151,21 +2159,19 @@ class DirectoryListingInput(BaseModel):
 | 系统操作 | 0 | 0 | 3 | 3 |
 | 网络/通信 | 0 | 0 | 2 | 2 |
 | 任务管理 | 0 | 0 | 7 | 7 |
-| **总计** | **9** | **4** | **16** | **29** |
+| **总计** | **10** | **4** | **16** | **30** |
 
 **说明**:
-- MCP: 9 个工具
+- MCP: 10 个工具
 - LangChain: 4 个工具
 - Claude Code: 16 个工具
-- 总计: 29 个工具
+- 总计: 30 个工具
 
 ---
 
 **编写人**: 小沈
-**更新时间**: 2026-04-04 11:00:00
+**更新时间**: 2026-04-04 11:30:00
 **更新说明**: 
-- 删除 write_file（MCP），保留 write_append_file（LangChain），功能完全覆盖
-- 删除 list_directory（LangChain），功能被 list_directory_with_sizes 完全覆盖
-- rename: append_to_file → write_append_file, replace_in_file → precise_replace_in_file
-- 所有 tool 标题改为中文名称+英文名称格式
-- 从 31 个工具精简为 29 个工具，序号 1-31 重新连续编号
+- 新增 rename_file（重命名文件）工具，放在 move_file 之后
+- 从 29 个工具增加为 30 个工具，序号 1-32 重新连续编号
+- 中文名称+英文名称格式，所有 tool 名称准确反映功能
