@@ -2,10 +2,13 @@
 
 **学习时间**: 2026-04-04 05:08:51
 **编写人**: 小沈
-**版本**: v1.1
+**版本**: v1.3
 **更新说明**: 
 - 2026-04-04 06:56:00 - 修正第16-17章内容，补充准确的模型工具限制数据
 - 2026-04-04 09:00:00 - 修正第20章：MCP Filesystem Server 工具数量 14→13 个，修正搜索标记错误，同步修正第21章汇总数据
+- 2026-04-04 19:30:00 - 新增第22章：二级实现工具（第11-18类）定义21个工具
+- 2026-04-04 19:45:00 - 新增第23章：三级实现工具（第19-21类）定义8个工具
+- 2026-04-04 19:50:00 - 新增第24章：可选扩展工具（第22-28类）定义16个工具
 
 ---
 
@@ -1934,7 +1937,7 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-## 二十一、全部 Tool 汇总（按一级实现10类分类，仅限网上学习）
+## 二十一、全部按一级实现10类分类的Tool-基本定义
 
 ### 21.1 工具汇总说明
 
@@ -2302,7 +2305,88 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-### 21.12 工具总数汇总
+### 21.13 附录：一级工具配套保障（文件操作+Shell命令）
+
+**说明**：第20.8章第5类"Agent辅助/配套工具"中，属于一级实现（零依赖）的工具。
+
+#### 36. 确认路径存在（check_path_exists）
+**描述**: 确认指定路径是否存在
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| path | string | ✅ 是 | 要检查的路径 |
+
+#### 37. 确保目录存在（ensure_directory_exists）
+**描述**: 确保目标目录存在，不存在则创建
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| dir_path | string | ✅ 是 | 目录路径 |
+
+#### 38. 检查写入权限（check_write_permission）
+**描述**: 确认文件/目录有写入权限
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| path | string | ✅ 是 | 文件或目录路径 |
+
+#### 39. 检查读取权限（check_read_permission）
+**描述**: 确认目录有读取权限
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| path | string | ✅ 是 | 目录路径 |
+
+#### 40. 获取文件编码（get_file_encoding）
+**描述**: 确认文件编码（UTF-8/GBK），避免乱码
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 文件路径 |
+
+#### 41. 获取MIME类型（get_mime_type）
+**描述**: 确认文件MIME类型
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 文件路径 |
+
+#### 42. 备份文件（backup_file）
+**描述**: 编辑/覆盖前自动备份原文件
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 要备份的文件路径 |
+| backup_dir | string | ❌ 否 | 备份目录（默认同目录） |
+
+#### 43. 移动到回收站（move_to_trash）
+**描述**: 删除到回收站而非永久删除，可恢复
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 要删除的文件路径 |
+
+#### 44. 获取当前工作目录（get_current_working_dir）
+**描述**: 获取当前Shell工作目录
+**参数**: 无参数
+
+#### 45. 验证命令安全性（validate_command）
+**描述**: 检查命令安全性，防止危险操作
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| command | string | ✅ 是 | 要验证的命令 |
+
+#### 46. 检查Shell运行状态（check_shell_running）
+**描述**: 检查后台Shell是否还在运行
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| shell_id | string | ✅ 是 | Shell ID |
+
+---
+
+### 21.14 工具总数汇总
 
 | 一级10类 | 总数 | 已有数 | 缺少数 |
 |---------|------|--------|--------|
@@ -2324,6 +2408,685 @@ class DirectoryListingInput(BaseModel):
 - **缺少数**: 还需要通过网上学习补充的工具数量
 
 **备注**: 21章仅汇总网上学习的工具，不包括Omni系统自身的工具定义。
+
+---
+
+## 二十二、二级实现工具（第11-18类）
+
+### 22.1 工具汇总说明
+
+本章节整合第20.8章"二、系统管理工具（轻量第三方，pip install）【二级实现工具】"中定义的8类工具。
+
+**数据来源**：
+- Python 官方文档（winreg, sqlite3, logging）
+- LangChain 官方工具
+- 主流 Agent 工具生态
+
+**说明**：这些工具需要安装少量第三方库（pip install），但都是轻量级、易于集成的库。
+
+---
+
+### 22.2 11类：数据库访问
+
+**说明**：用于 Agent 查询/写入 SQLite、MySQL 等数据库。SQLite 为 Python 内置库，MySQL/PostgreSQL 需要 `sqlalchemy` 或对应驱动。
+
+#### 36. 查询 SQL 数据库（query_sql）
+**描述**: 执行 SQL SELECT 查询并返回结果集，支持 SQLite、MySQL、PostgreSQL 等主流关系型数据库
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| db_path | string | ❌ 否 | SQLite 数据库文件路径（若不填则使用默认数据库） |
+| db_type | string | ❌ 否 | 数据库类型：sqlite（默认）/ mysql / postgresql |
+| connection_string | string | ❌ 否 | 数据库连接字符串（如 MySQL/PostgreSQL） |
+| query | string | ✅ 是 | SQL SELECT 查询语句 |
+| params | object | ❌ 否 | 查询参数（用于参数化查询，防止 SQL 注入） |
+| limit | number | ❌ 否 | 返回行数限制，默认 100 |
+| offset | number | ❌ 否 | 返回起始偏移，默认 0 |
+
+#### 37. 执行 SQL 命令（execute_sql）
+**描述**: 执行 INSERT、UPDATE、DELETE 等 SQL 语句，返回影响的行数
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| db_path | string | ❌ 否 | SQLite 数据库文件路径 |
+| db_type | string | ❌ 否 | 数据库类型：sqlite / mysql / postgresql |
+| connection_string | string | ❌ 否 | 数据库连接字符串 |
+| statement | string | ✅ 是 | SQL INSERT/UPDATE/DELETE 语句 |
+| params | object | ❌ 否 | 语句参数（用于参数化查询） |
+| commit | boolean | ❌ 否 | 是否立即提交，默认 true |
+
+#### 38. 查询 NoSQL 数据库（query_nosql）
+**描述**: 查询 MongoDB 等 NoSQL 数据库（需要安装 pymongo）
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| connection_string | string | ✅ 是 | MongoDB 连接字符串（如 mongodb://localhost:27017） |
+| database | string | ✅ 是 | 数据库名称 |
+| collection | string | ✅ 是 | 集合名称 |
+| filter | object | ❌ 否 | 查询过滤条件（MongoDB 查询语法） |
+| projection | object | ❌ 否 | 返回字段过滤 |
+| limit | number | ❌ 否 | 返回文档数量限制，默认 100 |
+
+---
+
+### 22.3 12类：注册表操作
+
+**说明**：使用 Python 内置库 `winreg`，仅限 Windows 平台，零依赖。
+
+#### 39. 读取注册表（reg_read）
+**描述**: 读取 Windows 注册表指定键的值
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| key_path | string | ✅ 是 | 注册表键路径（如 HKEY_CURRENT_USER\\Software\\Microsoft） |
+| value_name | string | ❌ 否 | 值名称（不填则返回键的默认值） |
+| hive | string | ❌ 否 | 注册表根键：HKCU（默认）/ HKLM / HKCR / HKU / HKCC |
+
+#### 40. 写入注册表（reg_write）
+**描述**: 写入或创建 Windows 注册表键值
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| key_path | string | ✅ 是 | 注册表键路径 |
+| value_name | string | ✅ 是 | 值名称 |
+| value | string | ✅ 是 | 值数据 |
+| value_type | string | ❌ 否 | 值类型：REG_SZ（默认）/ REG_DWORD / REG_BINARY / REG_MULTI_SZ |
+| hive | string | ❌ 否 | 注册表根键：HKCU（默认）/ HKLM / HKCR / HKU / HKCC |
+
+#### 41. 删除注册表（reg_delete）
+**描述**: 删除 Windows 注册表键或值
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| key_path | string | ✅ 是 | 注册表键路径 |
+| value_name | string | ❌ 否 | 值名称（不填则删除整个键） |
+| hive | string | ❌ 否 | 注册表根键：HKCU（默认）/ HKLM / HKCR / HKU / HKCC |
+
+---
+
+### 22.4 13类：日志记录
+
+**说明**：使用 Python 内置库 `logging`，零依赖。用于 Agent 操作日志、审计追踪。
+
+#### 42. 记录日志消息（log_message）
+**描述**: 记录日志消息到指定日志文件或日志系统
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| message | string | ✅ 是 | 日志消息内容 |
+| level | string | ❌ 否 | 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL（默认 INFO） |
+| logger_name | string | ❌ 否 | 日志记录器名称（默认 root） |
+| log_file | string | ❌ 否 | 日志文件路径（若不填则只输出到控制台） |
+
+#### 43. 获取日志内容（get_logs）
+**描述**: 读取指定日志文件的内容
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| log_file | string | ✅ 是 | 日志文件路径 |
+| level | string | ❌ 否 | 日志级别过滤：DEBUG / INFO / WARNING / ERROR |
+| start_time | string | ❌ 否 | 起始时间过滤（格式：YYYY-MM-DD HH:mm:ss） |
+| end_time | string | ❌ 否 | 结束时间过滤 |
+| max_lines | number | ❌ 否 | 返回最大行数，默认 500 |
+
+---
+
+### 22.5 14类：数据序列化
+
+**说明**：使用 Python 内置库 `json` 和 `csv`，零依赖。
+
+#### 44. 读取 JSON 文件（read_json）
+**描述**: 读取并解析 JSON 文件，返回 Python 对象
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | JSON 文件路径 |
+| encoding | string | ❌ 否 | 文件编码，默认 utf-8 |
+
+#### 45. 写入 JSON 文件（write_json）
+**描述**: 将 Python 对象写入 JSON 文件
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | JSON 文件路径 |
+| data | object | ✅ 是 | 要写入的数据（Python 对象） |
+| encoding | string | ❌ 否 | 文件编码，默认 utf-8 |
+| indent | number | ❌ 否 | 缩进空格数，默认 2 |
+
+#### 46. 读取 CSV 文件（read_csv）
+**描述**: 读取 CSV 文件，返回结构化数据
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | CSV 文件路径 |
+| encoding | string | ❌ 否 | 文件编码，默认 utf-8 |
+| delimiter | string | ❌ 否 | 分隔符，默认逗号 , |
+| has_header | boolean | ❌ 否 | 是否有表头，默认 true |
+| max_rows | number | ❌ 否 | 最大读取行数，默认 1000 |
+
+---
+
+### 22.6 15类：进程管理
+
+**说明**：需要 `psutil` 库（`pip install psutil`）。
+
+#### 47. 列出进程（list_processes）
+**描述**: 获取当前运行的进程列表，支持过滤和排序
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| name | string | ❌ 否 | 进程名称过滤（如 "python.exe"） |
+| user | string | ❌ 否 | 用户名过滤 |
+| status | string | ❌ 否 | 状态过滤：running / sleeping |
+| limit | number | ❌ 否 | 返回进程数量限制，默认 100 |
+| sort_by | string | ❌ 否 | 排序方式：pid / name / cpu / memory（默认 pid） |
+
+#### 48. 终止进程（kill_process）
+**描述**: 终止指定进程
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| pid | number | ❌ 否 | 进程 ID |
+| name | string | ❌ 否 | 进程名称（可批量终止） |
+| force | boolean | ❌ 否 | 是否强制终止，默认 false |
+
+---
+
+### 22.7 16类：服务管理
+
+**说明**：Windows 服务管理，使用 `subprocess` 执行 `sc` 命令，零依赖。
+
+#### 49. 列出服务（service_list）
+**描述**: 获取 Windows 服务列表
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| state | string | ❌ 否 | 服务状态过滤：running / stopped / all（默认 all） |
+| name | string | ❌ 否 | 服务名称过滤 |
+
+#### 50. 启动服务（service_start）
+**描述**: 启动指定的 Windows 服务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| service_name | string | ✅ 是 | 服务名称 |
+
+#### 51. 停止服务（service_stop）
+**描述**: 停止指定的 Windows 服务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| service_name | string | ✅ 是 | 服务名称 |
+| force | boolean | ❌ 否 | 是否强制停止，默认 false |
+
+---
+
+### 22.8 17类：计划任务
+
+**说明**：使用 `subprocess` 执行 `schtasks` 命令，零依赖。
+
+#### 52. 列出计划任务（task_list）
+**描述**: 获取 Windows 计划任务列表
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| folder | string | ❌ 否 | 任务文件夹（如 \\Microsoft） |
+| state | string | ❌ 否 | 状态过滤：ready / running / disabled |
+
+#### 53. 创建计划任务（task_create）
+**描述**: 创建新的 Windows 计划任务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| task_name | string | ✅ 是 | 任务名称 |
+| command | string | ✅ 是 | 要执行的命令 |
+| schedule | string | ✅ 是 | 计划类型：DAILY / WEEKLY / MONTHLY / ONCE / ONSTART / ONLOGON |
+| start_time | string | ❌ 否 | 开始时间（格式：HH:MM） |
+| start_date | string | ❌ 否 | 开始日期（格式：YYYY-MM-DD） |
+| interval | number | ❌ 否 | 重复间隔（分钟） |
+
+#### 54. 删除计划任务（task_delete）
+**描述**: 删除指定的计划任务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| task_name | string | ✅ 是 | 任务名称 |
+| folder | string | ❌ 否 | 任务文件夹 |
+
+---
+
+### 22.9 18类：网络诊断
+
+**说明**：使用 `subprocess` 执行 `ping` 命令或 `socket` 库，零依赖。
+
+#### 55. Ping 主机（ping）
+**描述**: Ping 指定主机或 IP 地址，检测网络连通性
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| host | string | ✅ 是 | 目标主机或 IP 地址 |
+| count | number | ❌ 否 | Ping 次数，默认 4 |
+| timeout | number | ❌ 否 | 超时时间（秒），默认 5 |
+
+#### 56. 检查端口（port_check）
+**描述**: 检查指定主机端口是否开放
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| host | string | ✅ 是 | 目标主机或 IP 地址 |
+| port | number | ✅ 是 | 端口号（1-65535） |
+| timeout | number | ❌ 否 | 超时时间（秒），默认 3 |
+
+---
+
+### 22.10 工具总数汇总
+
+| 二级8类 | 总数 | 说明 |
+|--------|------|------|
+| 11类：数据库访问 | 3 | query_sql, execute_sql, query_nosql |
+| 12类：注册表操作 | 3 | reg_read, reg_write, reg_delete |
+| 13类：日志记录 | 2 | log_message, get_logs |
+| 14类：数据序列化 | 3 | read_json, write_json, read_csv |
+| 15类：进程管理 | 2 | list_processes, kill_process |
+| 16类：服务管理 | 3 | service_list, service_start, service_stop |
+| 17类：计划任务 | 3 | task_list, task_create, task_delete |
+| 18类：网络诊断 | 2 | ping, port_check |
+| **总计** | **21** | 二级实现工具总数 |
+
+---
+
+### 22.11 附录：二级工具配套保障（数据库+API）
+
+**说明**：第20.8章第5类"Agent辅助/配套工具"中，属于二级实现（需要pip install）的工具。
+
+#### 57. 确认数据库存在（check_db_exists）
+**描述**: 确认数据库文件或连接是否存在
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| db_path | string | ❌ 否 | SQLite数据库文件路径 |
+| connection_string | string | ❌ 否 | 数据库连接字符串 |
+
+#### 58. 获取表结构（get_table_schema）
+**描述**: 获取数据库表结构，Agent知道有哪些字段
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| db_path | string | ❌ 否 | SQLite数据库文件路径 |
+| connection_string | string | ❌ 否 | 数据库连接字符串 |
+| table_name | string | ✅ 是 | 表名称 |
+
+#### 59. 开启事务（begin_transaction）
+**描述**: 开启数据库事务，保证数据一致性
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| connection_string | string | ✅ 是 | 数据库连接字符串 |
+
+#### 60. 提交事务（commit_transaction）
+**描述**: 提交数据库事务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| connection_string | string | ✅ 是 | 数据库连接字符串 |
+
+#### 61. 回滚事务（rollback_transaction）
+**描述**: 回滚数据库事务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| connection_string | string | ✅ 是 | 数据库连接字符串 |
+
+#### 62. 检查网络连通性（check_network_connectivity）
+**描述**: 检查网络是否连通
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| host | string | ✅ 是 | 目标主机 |
+| timeout | number | ❌ 否 | 超时秒数，默认5 |
+
+#### 63. 验证URL（validate_url）
+**描述**: 验证URL格式是否合法
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| url | string | ✅ 是 | 要验证的URL |
+
+---
+
+**编写人**: 小沈
+**更新时间**: 2026-04-04 19:30:00
+**更新说明**: 
+- 新增第22章：二级实现工具（第11-18类）
+- 共定义21个工具（11-18类）
+- 参考Python官方文档（winreg, sqlite3, logging）和LangChain工具生态
+
+---
+
+## 二十三，三级实现工具（第19-21类）
+
+### 23.1 工具汇总说明
+
+本章节整合第20.8章"三、数据处理与代码执行工具（2026 年 Agent 标配）【三级实现工具】"中定义的3类工具。
+
+**数据来源**：
+- Python 官方文档（subprocess, json）
+- PyAutoGUI 官方文档
+- pandas/matplotlib 官方文档
+- python-docx, openpyxl, pdfplumber 官方文档
+
+**说明**：这些工具用于数据分析、代码验证、图表生成，是2026年Agent的核心能力。
+
+---
+
+### 23.2 19类：代码执行
+
+**说明**：使用 `subprocess` 实现，需要沙箱隔离确保安全，零依赖。
+
+#### 64. 执行 Python 代码（execute_python）
+**描述**: 在沙箱环境中执行 Python 代码并返回结果
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| code | string | ✅ 是 | 要执行的 Python 代码 |
+| timeout | number | ❌ 否 | 超时时间（秒），默认 30 |
+| imports | string[] | ❌ 否 | 预先导入的模块（如 ["json", "os"]） |
+
+#### 65. 执行 JavaScript 代码（execute_javascript）
+**描述**: 使用 Node.js 执行 JavaScript 代码并返回结果
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| code | string | ✅ 是 | 要执行的 JavaScript 代码 |
+| timeout | number | ❌ 否 | 超时时间（秒），默认 30 |
+| node_modules | string[] | ❌ 否 | 预先安装的 npm 包 |
+
+---
+
+### 23.3 20类：数据分析
+
+**说明**：使用 `pandas` 和 `matplotlib` 库（`pip install pandas matplotlib`）。
+
+#### 66. 读取 CSV 文件（read_csv）
+**描述**: 读取 CSV 文件并进行数据分析
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | CSV 文件路径 |
+| encoding | string | ❌ 否 | 文件编码，默认 utf-8 |
+| delimiter | string | ❌ 否 | 分隔符，默认 , |
+| has_header | boolean | ❌ 否 | 是否有表头，默认 true |
+| max_rows | number | ❌ 否 | 最大读取行数，默认 1000 |
+
+#### 67. 生成图表（generate_chart）
+**描述**: 使用 matplotlib 生成数据可视化图表
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| data | object | ✅ 是 | 图表数据（JSON 格式） |
+| chart_type | string | ❌ 否 | 图表类型：bar/line/pie/scatter（默认 bar） |
+| title | string | ❌ 否 | 图表标题 |
+| x_label | string | ❌ 否 | X轴标签 |
+| y_label | string | ❌ 否 | Y轴标签 |
+| output_path | string | ❌ 否 | 输出图片路径（默认 temp.png） |
+
+#### 68. 分析数据（analyze_data）
+**描述**: 对数据集进行统计分析，返回描述性统计信息
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| data | object | ✅ 是 | 要分析的数据（数组或 CSV 文件路径） |
+| operations | string[] | ❌ 否 | 分析操作：mean/sum/count/min/max/std（默认全部） |
+| group_by | string | ❌ 否 | 分组字段 |
+
+---
+
+### 23.4 21类：文档处理
+
+**说明**：使用 `pdfplumber`、`python-docx`、`openpyxl` 库。
+
+#### 69. 读取 PDF 文件（read_pdf）
+**描述**: 读取 PDF 文件并提取文本内容
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | PDF 文件路径 |
+| pages | string | ❌ 否 | 要读取的页面（如 "1-5" 或 "1,3,5"） |
+| extract_images | boolean | ❌ 否 | 是否提取图片，默认 false |
+
+#### 70. 读取 Word 文件（read_docx）
+**描述**: 读取 Word 文档并提取文本内容
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | Word 文件路径 |
+
+#### 71. 读取 Excel 文件（read_xlsx）
+**描述**: 读取 Excel 文件并提取表格数据
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | Excel 文件路径 |
+| sheet_name | string | ❌ 否 | 工作表名称（默认第一个） |
+| max_rows | number | ❌ 否 | 最大读取行数，默认 1000 |
+
+---
+
+### 23.5 工具总数汇总
+
+| 三级3类 | 总数 | 说明 |
+|--------|------|------|
+| 19类：代码执行 | 2 | execute_python, execute_javascript |
+| 20类：数据分析 | 3 | read_csv, generate_chart, analyze_data |
+| 21类：文档处理 | 3 | read_pdf, read_docx, read_xlsx |
+| **总计** | **8** | 三级实现工具总数 |
+
+---
+
+## 二十四，可选扩展工具（第22-28类）
+
+### 24.1 工具汇总说明
+
+本章节整合第20.8章"四、GUI 交互与桌面自动化工具（可选扩展）"中定义的7类工具。
+
+**数据来源**：
+- PyAutoGUI 官方文档
+- pytesseract 官方文档
+- pywin32 官方文档
+- Windows MCP 工具生态
+
+**说明**：这些工具用于控制桌面 GUI（鼠标、键盘、窗口），属于**可选扩展能力**，需要安装对应依赖库。
+
+---
+
+### 24.2 22类：鼠标控制
+
+**说明**：使用 `pyautogui` 库（`pip install pyautogui`）。
+
+#### 72. 鼠标点击（click）
+**描述**: 模拟鼠标点击操作
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| x | number | ❌ 否 | 点击的 X 坐标 |
+| y | number | ❌ 否 | 点击的 Y 坐标 |
+| button | string | ❌ 否 | 鼠标按钮：left/right/middle（默认 left） |
+| click_type | string | ❌ 否 | 点击类型：single/double（默认 single） |
+
+#### 73. 鼠标移动（move）
+**描述**: 移动鼠标到指定位置
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| x | number | ✅ 是 | 目标 X 坐标 |
+| y | number | ✅ 是 | 目标 Y 坐标 |
+| duration | number | ❌ 否 | 移动持续时间（秒），默认 0 |
+
+#### 74. 鼠标滚动（scroll）
+**描述**: 模拟鼠标滚轮滚动
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| direction | string | ✅ 是 | 滚动方向：up/down |
+| amount | number | ❌ 否 | 滚动单位数量，默认 3 |
+
+---
+
+### 24.3 23类：键盘输入
+
+**说明**：使用 `pyautogui` 或 `keyboard` 库。
+
+#### 75. 输入文本（type_text）
+**描述**: 模拟键盘输入文本
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| text | string | ✅ 是 | 要输入的文本 |
+| interval | number | ❌ 否 | 每个字符间隔（秒），默认 0 |
+
+#### 76. 快捷键（shortcut）
+**描述**: 执行键盘快捷键组合
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| keys | string | ✅ 是 | 快捷键组合（如 "ctrl+c", "alt+tab"） |
+
+#### 77. 组合键（key_combo）
+**描述**: 按住多个键后释放
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| keys | string[] | ✅ 是 | 要按住的键数组 |
+| action | string | ❌ 否 | 操作：press（按下）/hold（按住）/release（释放） |
+
+---
+
+### 24.4 24类：截图/屏幕
+
+**说明**：使用 `mss` 或 `PIL` 库。
+
+#### 78. 截取屏幕（screenshot）
+**描述**: 截取屏幕截图
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| output_path | string | ❌ 否 | 输出文件路径（默认 temp.png） |
+| region | object | ❌ 否 | 截取区域 {x, y, width, height} |
+
+#### 79. 桌面快照（snapshot）
+**描述**: 获取完整桌面状态快照
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| display | number | ❌ 否 | 显示器编号，默认 1 |
+
+#### 80. 屏幕录制（screen_record）
+**描述**: 录制屏幕视频
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| duration | number | ✅ 是 | 录制时长（秒） |
+| output_path | string | ❌ 否 | 输出文件路径（默认 temp.mp4） |
+| fps | number | ❌ 否 | 帧率，默认 15 |
+
+---
+
+### 24.5 25类：OCR 识别
+
+**说明**：使用 `pytesseract` 库（`pip install pytesseract`），需要安装 Tesseract 引擎。
+
+#### 81. OCR 文字识别（ocr）
+**描述**: 从图片中识别文字
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| image_path | string | ✅ 是 | 图片文件路径 |
+| language | string | ❌ 否 | 识别语言：eng+chi_sim（默认 eng） |
+
+---
+
+### 24.6 26类：窗口管理
+
+**说明**：使用 `pywin32` 库（`pip install pywin32`）。
+
+#### 82. 列出窗口（list_windows）
+**描述**: 获取所有打开的窗口列表
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| filter | string | ❌ 否 | 窗口标题过滤 |
+
+#### 83. 聚焦窗口（focus_window）
+**描述**: 聚焦指定窗口
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| title | string | ✅ 是 | 窗口标题 |
+
+#### 84. 调整窗口大小（resize_window）
+**描述**: 调整窗口大小
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| title | string | ✅ 是 | 窗口标题 |
+| width | number | ✅ 是 | 宽度 |
+| height | number | ✅ 是 | 高度 |
+
+---
+
+### 24.7 27类：剪贴板操作
+
+**说明**：使用 `pyperclip` 库（`pip install pyperclip`）或零依赖的 `ctypes`。
+
+#### 85. 读取剪贴板（read_clipboard）
+**描述**: 读取剪贴板内容
+**参数**: 无参数
+
+#### 86. 写入剪贴板（write_clipboard）
+**描述**: 写入内容到剪贴板
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| content | string | ✅ 是 | 要写入的内容 |
+
+---
+
+### 24.8 28类：通知
+
+**说明**：使用 `win10toast` 库（`pip install win10toast`）。
+
+#### 87. 发送通知（send_notification）
+**描述**: 发送 Windows 系统通知
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| title | string | ✅ 是 | 通知标题 |
+| message | string | ✅ 是 | 通知内容 |
+| duration | number | ❌ 否 | 显示时长（秒），默认 5 |
+
+---
+
+### 24.9 工具总数汇总
+
+| 可选扩展7类 | 总数 | 说明 |
+|-------------|------|------|
+| 22类：鼠标控制 | 3 | click, move, scroll |
+| 23类：键盘输入 | 3 | type_text, shortcut, key_combo |
+| 24类：截图/屏幕 | 3 | screenshot, snapshot, screen_record |
+| 25类：OCR识别 | 1 | ocr |
+| 26类：窗口管理 | 3 | list_windows, focus_window, resize_window |
+| 27类：剪贴板操作 | 2 | read_clipboard, write_clipboard |
+| 28类：通知 | 1 | send_notification |
+| **总计** | **16** | 可选扩展工具总数 |
+
+---
+
+**编写人**: 小沈
+**更新时间**: 2026-04-04 19:45:00
+**更新说明**: 
+- 新增第23章：三级实现工具（第19-21类）定义8个工具
+- 新增第24章：可选扩展工具（第22-28类）定义16个工具
+- 参考PyAutoGUI、pandas、matplotlib、python-docx官方文档
 
 ---
 
