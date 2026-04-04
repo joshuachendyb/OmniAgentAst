@@ -2071,11 +2071,11 @@ class DirectoryListingInput(BaseModel):
 | output_mode | string | ❌ 否 | 输出模式：content/files_with_matches/count |
 | glob | string | ❌ 否 | 文件类型过滤（如 "*.ts"） |
 | type | string | ❌ 否 | 语言类型（如 js, py, rust） |
-| -A | number | ❌ 否 | 匹配后显示行数 |
-| -B | number | ❌ 否 | 匹配前显示行数 |
-| -C | number | ❌ 否 | 匹配前后显示行数 |
-| -i | boolean | ❌ 否 | 不区分大小写 |
-| -n | boolean | ❌ 否 | 显示行号 |
+| after_lines | number | ❌ 否 | 匹配后显示行数 |
+| before_lines | number | ❌ 否 | 匹配前显示行数 |
+| context_lines | number | ❌ 否 | 匹配前后显示行数 |
+| ignore_case | boolean | ❌ 否 | 不区分大小写 |
+| show_line_no | boolean | ❌ 否 | 显示行号 |
 | multiline | boolean | ❌ 否 | 启用多行匹配（. 匹配换行符） |
 | head_limit | number | ❌ 否 | 限制输出结果数量 |
 
@@ -2328,7 +2328,7 @@ class DirectoryListingInput(BaseModel):
 ---
 
 **编写人**: 小沈
-**更新时间**: 2026-04-04 17:50:00
+**更新时间**: 2026-04-04 18:40:12
 **更新说明**: 
 - 按20.8章一级实现的10类序号重新分类21章工具
 - 21.2 → 1类：文件操作（19个工具）
@@ -2336,3 +2336,4 @@ class DirectoryListingInput(BaseModel):
 - 21.4 → 4类：网络通信（2个工具）
 - 序号与20.8章标准保持一致
 - 删除任务管理类7个工具
+- 修正grep_file_content的5个参数名（-A/-B/-C/-i/-n改为完整英文单词）
