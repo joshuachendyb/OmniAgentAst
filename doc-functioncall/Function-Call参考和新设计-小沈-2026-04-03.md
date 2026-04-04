@@ -2883,6 +2883,36 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
+### 23.6 附录：三级工具配套保障（代码执行+文档处理）
+
+**说明**：第20.8章第5类"Agent辅助/配套工具"中，属于三级实现（需要pip install）的工具。
+
+#### 1. 代码执行保障
+
+| 工具 | 功能描述 | 核心参数 |
+|------|---------|----------|
+| **check_python_available** | 检查Python环境是否可用 | (无参数) |
+| **validate_code_safety** | 验证代码安全性，防止危险操作 | code (string) |
+| **check_node_available** | 检查Node.js环境是否可用 | (无参数) |
+| **check_module_available** | 检查Python模块是否已安装 | module_name (string) |
+
+#### 2. 数据分析保障
+
+| 工具 | 功能描述 | 核心参数 |
+|------|---------|----------|
+| **validate_csv_format** | 验证CSV文件格式是否正确 | file_path (string) |
+| **validate_chart_data** | 验证图表数据格式是否正确 | data (object) |
+
+#### 3. 文档处理保障
+
+| 工具 | 功能描述 | 核心参数 |
+|------|---------|----------|
+| **check_pdf_readable** | 检查PDF文件是否可读 | file_path (string) |
+| **check_docx_readable** | 检查Word文件是否可读 | file_path (string) |
+| **check_xlsx_readable** | 检查Excel文件是否可读 | file_path (string) |
+
+---
+
 ## 二十四，可选扩展工具（第22-28类）
 
 ### 24.1 工具汇总说明
@@ -3078,6 +3108,39 @@ class DirectoryListingInput(BaseModel):
 | 27类：剪贴板操作 | 2 | read_clipboard, write_clipboard |
 | 28类：通知 | 1 | send_notification |
 | **总计** | **16** | 可选扩展工具总数 |
+
+---
+
+### 24.10 附录：可选扩展工具配套保障（GUI自动化）
+
+**说明**：第20.8章第5类"Agent辅助/配套工具"中，属于可选扩展（需要pip install）的工具。
+
+#### 1. 鼠标/键盘操作保障
+
+| 工具 | 功能描述 | 核心参数 |
+|------|---------|----------|
+| **get_mouse_position** | 获取当前鼠标位置 | (无参数) |
+| **check_screen_size** | 检查屏幕分辨率 | (无参数) |
+
+#### 2. 窗口管理保障
+
+| 工具 | 功能描述 | 核心参数 |
+|------|---------|----------|
+| **check_window_exists** | 检查窗口是否存在 | title (string) |
+| **get_window_position** | 获取窗口位置和大小 | title (string) |
+
+#### 3. 截图/OCR保障
+
+| 工具 | 功能描述 | 核心参数 |
+|------|---------|----------|
+| **check_screen_capture_permission** | 检查屏幕捕获权限 | (无参数) |
+| **check_tesseract_available** | 检查Tesseract OCR引擎是否可用 | (无参数) |
+
+#### 4. 系统通知保障
+
+| 工具 | 功能描述 | 核心参数 |
+|------|---------|----------|
+| **check_notification_permission** | 检查系统通知权限 | (无参数) |
 
 ---
 
