@@ -1292,6 +1292,9 @@ class FileTools:
             # 搜索完成后，根据结果数量决定如何返回前端
             total = len(all_matches)
             
+            # 【调试】记录搜索结果数量
+            logger.info(f"[search_files] 搜索完成: file_pattern={file_pattern}, path={path}, total={total}, matches数量={len(all_matches)}")
+            
             # 前端分页配置（使用全局统一常量）
             if total > DEFAULT_PAGE_SIZE:
                 # 结果多，分页返回
