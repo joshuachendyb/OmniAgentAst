@@ -1871,7 +1871,7 @@ class DirectoryListingInput(BaseModel):
 | **27. 剪贴板操作** | read_clipboard, write_clipboard | `pyperclip` 或 `ctypes` | `pip install pyperclip` 或零依赖 |
 | **28. 通知** | send_notification | `win10toast` | `pip install win10toast` |
 
-#### 五、Agent 辅助/配套工具（任务执行保障）
+#### 五、Agent 辅助/配套工具（任务执行保障）-不需要通知LLM的是Agent内部使用的辅助函数
 
 **说明**：这类工具不直接完成核心业务，而是为 Agent 执行主任务提供**环境确认**、**状态检查**、**安全验证**和**异常处理**支持，防止 Agent 盲目操作报错。
 
