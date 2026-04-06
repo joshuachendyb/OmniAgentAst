@@ -2,9 +2,9 @@
 
 **创建时间**: 2026-04-05 07:30:00  
 **编写人**: 小沈  
-**版本**: v2.1  
-**更新时间**: 2026-04-05 08:45:00  
-**更新说明**: 重写15个核心场景，增加条件分支、错误处理、完整调用链；每个场景末尾增加工具编号对照表  
+**版本**: v2.2  
+**更新时间**: 2026-04-06 10:56:02  
+**更新说明**: 补充4个未定义工具的处理方法  
 **存放位置**: D:\OmniAgentAs-desk\doc-functioncall
 
 ---
@@ -678,6 +678,64 @@
 
 **缺口统计**：15 个场景共使用 34 个不同工具，其中 30 个已定义 ✅，4 个未定义 ⚠️
 
+#### 6.2.1 未定义工具详细处理方法
+
+**1. restore_backup（恢复备份）的处理方法**
+
+```
+场景：场景2 改内容 - 修改失败时从备份恢复原文件
+
+处理方法：
+- 使用 copy_file（Tool 8）将备份文件复制回原位置
+- 备份文件名格式：原文件名 + "_backup" + 时间戳
+- 调用示例：
+  copy_file(source="文档路径_backup_20260405.bak", destination="文档路径")
+```
+
+**2. test_archive（验证压缩包）的处理方法**
+
+```
+场景：场景7 打包文件 - 验证压缩包完整性
+
+处理方法：
+- 使用 execute_shell_command（Tool 20）执行验证命令
+- Windows: 执行 PowerShell Test-Archive 或 unzip -t
+- 调用示例：
+  execute_shell_command(command='powershell -Command "Expand-Archive -Path test.zip -DestinationPath temp -Force -ErrorAction Stop"')
+  execute_shell_command(command='powershell -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; try { [System.IO.Compression.ZipFile]::OpenRead('test.zip'); Write-Output 'OK' } catch { Write-Output 'ERROR' }"')
+```
+
+**3. get_disk_usage（获取磁盘使用情况）的处理方法**
+
+```
+场景：场景10 清理磁盘 - 分析C盘空间使用情况
+
+处理方法：
+- 使用 execute_shell_command（Tool 20）执行 wmic 命令
+- 调用示例：
+  execute_shell_command(command='wmic logicaldisk where "DeviceID='C:'" get Size,FreeSpace /format:list')
+- 返回结果解析：
+  - FreeSpace=可用空间（字节）
+  - Size=总空间（字节）
+  - 计算已用空间：Size - FreeSpace
+```
+
+**4. wait_for_condition（等待条件达成）的处理方法**
+
+```
+场景：场景15 查看服务 - 等待服务启动完成
+
+处理方法：
+- 使用 execute_shell_command（Tool 20）循环执行 sc query 命令
+- 调用示例：
+  # 循环检查服务状态，最多等待30秒
+  execute_shell_command(command='powershell -Command "$i=0; do { $s = Get-Service -Name MySQL -ErrorAction SilentlyContinue; if($s.Status -eq 'Running') { Write-Output 'OK'; break }; Start-Sleep -Seconds 2; $i++ } while($i -lt 15); if($i -ge 15) { Write-Output 'TIMEOUT' }"')
+- LLM内部处理：
+  - 返回"OK"表示服务已启动
+  - 返回"TIMEOUT"表示等待超时
+  - 可在此之后再次调用 service_list 确认状态
+```
+
 ---
 
 ## 七、总结
@@ -701,4 +759,4 @@
 
 ---
 
-**更新时间**: 2026-04-05 08:45:00
+**更新时间**: 2026-04-06 10:56:02
