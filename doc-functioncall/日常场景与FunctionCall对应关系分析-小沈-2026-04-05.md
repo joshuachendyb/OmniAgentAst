@@ -2,9 +2,9 @@
 
 **创建时间**: 2026-04-05 07:30:00  
 **编写人**: 小沈  
-**版本**: v2.2  
-**更新时间**: 2026-04-06 11:15:00
-**更新说明**: 补充4个未定义工具的处理方法  
+**版本**: v2.3  
+**更新时间**: 2026-04-06 11:25:00
+**更新说明**: 补充4个未定义工具的处理方法；补充OCR和kill_process工具；丰富4个场景  
 **存放位置**: D:\OmniAgentAs-desk\doc-functioncall
 
 ---
@@ -226,11 +226,10 @@
     4.  **条件分支**：无。
     5.  **异常处理**：无。
 *   **对应 Function Call 序列（跨类别，完整链）**：
-    1.  `get_current_time(format="YYYY-MM-DD HH:mm:ss")` → **【Tool 26】**获取当前精确时间
-    2.  `get_current_time(format="YYYY-MM-DD HH:mm:ss")` → **【Tool 26】**获取当前精确时间和日期
-    3.  `calculate_date(date="计算出的日期", days=30)` → **【Tool 27】**计算 30 天后的日期
-    4.  *(LLM 内部处理：根据当前日期计算30天后是星期几)*
-    5.  `send_notification(title="时间查询", message="现在时间：2026-04-05 14:30:00\n30 天后：2026-05-05（星期二）")` → **【Tool 107】**通知用户结果
+    1.  `get_current_time(format="YYYY-MM-DD HH:mm:ss")` → **【Tool 26】**获取当前精确时间和日期
+    2.  `calculate_date(date="计算出的日期", days=30)` → **【Tool 27】**计算 30 天后的日期
+    3.  *(LLM 内部处理：根据当前日期计算30天后是星期几)*
+    4.  `send_notification(title="时间查询", message="现在时间：2026-04-05 14:30:00\n30 天后：2026-05-05（星期二）")` → **【Tool 107】**通知用户结果
 
 #### 场景 5 使用工具对照表
 
@@ -240,7 +239,7 @@
 | 2 | `calculate_date` | Tool 27 | ✅ 已定义 | 5 类：时间/日期 |
 | 3 | `send_notification` | Tool 107 | ✅ 已定义 | 28 类：通知 |
 
-**场景 5 统计**：共 3 个不同工具，全部已定义 ✅
+**场景 5 统计**：共 3 个不同工具，全部已定义 ✅（优化：减少1次重复调用）
 
 ---
 
@@ -336,11 +335,10 @@
     4.  *(LLM 内部处理：解析数据，找到"销售额"列，计算每月总和)*
         *   **if 无销售额列**: `send_notification(title="数据格式问题", message="Excel 中未找到'销售额'列，请确认列名")` → **【Tool 107】**结束
         *   **if 数据为空**: `send_notification(title="数据为空", message="Excel 中没有数据行")` → **【Tool 107】**结束
-    5.  `read_csv_dataframe(file_path="销售数据.csv")` → **【Tool 77】**如已导出为 CSV，进行深度分析
-    6.  *(LLM 内部处理：找出销售额最高的月份，计算具体数值)*
-    7.  `generate_chart(data={"labels": ["1月", "2月", "3月", ...], "values": [100, 200, 150, ...]}, chart_type="bar", title="月度销售额对比")` → **【Tool 78】**生成柱状图
-    8.  `write_append_file(file_path="销售分析结果.txt", text="销售额最高月份：X 月\n销售额：XXX 万元\n详细数据见图表", append=false)` → **【Tool 5】**保存分析结果
-    9.  `send_notification(title="分析完成", message="销售额最高的是 X 月，销售额 XXX 万元\n图表和分析结果已保存")` → **【Tool 107】**通知用户结果
+    5.  *(LLM 内部处理：找出销售额最高的月份，计算具体数值)*
+    6.  `generate_chart(data={"labels": ["1月", "2月", "3月", ...], "values": [100, 200, 150, ...]}, chart_type="bar", title="月度销售额对比")` → **【Tool 78】**生成柱状图
+    7.  `write_append_file(file_path="销售分析结果.txt", text="销售额最高月份：X 月\n销售额：XXX 万元\n详细数据见图表", append=false)` → **【Tool 5】**保存分析结果
+    8.  `send_notification(title="分析完成", message="销售额最高的是 X 月，销售额 XXX 万元\n图表和分析结果已保存")` → **【Tool 107】**通知用户结果
 
 #### 场景 8 使用工具对照表
 
@@ -349,12 +347,11 @@
 | 1 | `check_path_exists` | Tool 36 | ✅ 已定义 | 附录：配套保障 |
 | 2 | `get_file_info` | Tool 18 | ✅ 已定义 | 1 类：文件操作 |
 | 3 | `read_xlsx` | Tool 82 | ✅ 已定义 | 21 类：文档处理 |
-| 4 | `read_csv_dataframe` | Tool 77 | ✅ 已定义 | 20 类：数据分析 |
-| 5 | `generate_chart` | Tool 78 | ✅ 已定义 | 20 类：数据分析 |
-| 6 | `write_append_file` | Tool 5 | ✅ 已定义 | 1 类：文件操作 |
-| 7 | `send_notification` | Tool 107 | ✅ 已定义 | 28 类：通知 |
+| 4 | `generate_chart` | Tool 78 | ✅ 已定义 | 20 类：数据分析 |
+| 5 | `write_append_file` | Tool 5 | ✅ 已定义 | 1 类：文件操作 |
+| 6 | `send_notification` | Tool 107 | ✅ 已定义 | 28 类：通知 |
 
-**场景 8 统计**：共 7 个不同工具，全部已定义 ✅
+**场景 8 统计**：共 6 个不同工具，全部已定义 ✅（优化：删除跳跃的CSV读取步骤）
 
 ---
 
@@ -625,10 +622,10 @@
 | 2 | 改内容 | 7 | 6 | 1 | 10 步 | ✅ 是 | ✅ 是 |
 | 3 | 整理文件 | 7 | 7 | 0 | 10 步 | ✅ 是 | ✅ 是 |
 | 4 | 看文档 | 7 | 7 | 0 | 10 步 | ✅ 是 | ✅ 是 |
-| 5 | 查信息 | 3 | 3 | 0 | 5 步 | ❌ 否 | ❌ 否 |
+| 5 | 查信息 | 3 | 3 | 0 | 4 步 | ❌ 否 | ❌ 否 |
 | 6 | 网络诊断 | 3 | 3 | 0 | 8 步 | ✅ 是 | ✅ 是 |
 | 7 | 打包文件 | 6 | 5 | 1 | 8 步 | ✅ 是 | ✅ 是 |
-| 8 | Excel 分析 | 7 | 7 | 0 | 9 步 | ✅ 是 | ✅ 是 |
+| 8 | Excel 分析 | 6 | 6 | 0 | 8 步 | ✅ 是 | ✅ 是 |
 | 9 | 批量重命名 | 5 | 5 | 0 | 9 步 | ✅ 是 | ✅ 是 |
 | 10 | 清理磁盘 | 5 | 4 | 1 | 9 步 | ✅ 是 | ✅ 是 |
 | 11 | 搜索网络 | 5 | 5 | 0 | 9 步 | ✅ 是 | ✅ 是 |
@@ -665,7 +662,6 @@
 | `delete_file` | Tool 11 | 1 个场景 | ✅ 已定义 |
 | `compress_archive` | Tool 33 | 1 个场景 | ✅ 已定义 |
 | `read_xlsx` | Tool 82 | 1 个场景 | ✅ 已定义 |
-| `read_csv_dataframe` | Tool 77 | 1 个场景 | ✅ 已定义 |
 | `generate_chart` | Tool 78 | 1 个场景 | ✅ 已定义 |
 | `rename_file` | Tool 10 | 1 个场景 | ✅ 已定义 |
 | `list_directory_with_sizes` | Tool 16 | 1 个场景 | ✅ 已定义 |
