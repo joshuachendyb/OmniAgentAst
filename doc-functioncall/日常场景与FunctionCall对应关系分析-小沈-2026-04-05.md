@@ -3,7 +3,7 @@
 **创建时间**: 2026-04-05 07:30:00  
 **编写人**: 小沈  
 **版本**: v2.2  
-**更新时间**: 2026-04-06 10:56:02  
+**更新时间**: 2026-04-06 11:15:00
 **更新说明**: 补充4个未定义工具的处理方法  
 **存放位置**: D:\OmniAgentAs-desk\doc-functioncall
 
@@ -182,7 +182,7 @@
     2.  **拆解**：检查文件 → 读取 PDF → 提取文本 → LLM 分析提取金额 → 保存摘要 → 通知用户。
     3.  **参数**：文件=`合同.pdf`，关注点=`金额`。
     4.  **条件分支**：PDF 加密 → 提示用户需要密码；PDF 为扫描件 → 尝试 OCR。
-    5.  **异常处理**：文件损坏 → 提示用户；提取失败 → 尝试其他方式。
+    5.  **异常处理**：文件损坏 → 提示用户；提取失败 → 尝试其他方式；OCR失败 → 提示用户。
 *   **对应 Function Call 序列（跨类别，完整链）**：
     1.  `check_path_exists(path="合同.pdf")` → **【Tool 36】**检查文件是否存在
         *   **if 不存在**: `send_notification(title="文件不存在", message="找不到指定的 PDF 文件")` → **【Tool 107】**结束
@@ -190,7 +190,10 @@
         *   **if 文件大小为 0**: `send_notification(title="文件为空", message="该 PDF 文件大小为 0，无法读取")` → **【Tool 107】**结束
     3.  `read_pdf(file_path="合同.pdf")` → **【Tool 80】**读取 PDF 文本内容
         *   **if 读取失败（加密）**: `send_notification(title="PDF 加密", message="该 PDF 文件已加密，需要提供密码才能读取")` → **【Tool 107】**结束
-        *   **if 读取失败（扫描件）**: `send_notification(title="扫描件", message="该 PDF 为扫描图片，无法直接提取文字，需要 OCR 处理")` → **【Tool 107】**结束
+        *   **if 读取失败（扫描件/无文字）**:
+            4.  `ocr_image(file_path="合同.pdf", language="chi_sim+eng")` → **【Tool 101】**使用 OCR 识别扫描件文字
+                *   **if OCR 失败**: `send_notification(title="OCR 失败", message="无法识别 PDF 中的文字，请尝试手动输入或提供清晰的图片")` → **【Tool 107】**结束
+                *   **if OCR 成功**: 返回识别的文本内容，继续下一步
     4.  *(LLM 内部处理：分析文本，提取金额、日期、签约方等关键信息)*
     5.  `get_current_time()` → **【Tool 26】**获取当前时间，用于摘要文件名
     6.  `write_append_file(file_path="合同摘要_20260405.txt", text="合同金额：XXX 元\n签约方：XXX\n日期：XXX", append=false)` → **【Tool 5】**保存摘要到文件
@@ -204,11 +207,12 @@
 | 1 | `check_path_exists` | Tool 36 | ✅ 已定义 | 附录：配套保障 |
 | 2 | `get_file_info` | Tool 18 | ✅ 已定义 | 1 类：文件操作 |
 | 3 | `read_pdf` | Tool 80 | ✅ 已定义 | 21 类：文档处理 |
-| 4 | `get_current_time` | Tool 26 | ✅ 已定义 | 5 类：时间/日期 |
-| 5 | `write_append_file` | Tool 5 | ✅ 已定义 | 1 类：文件操作 |
-| 6 | `send_notification` | Tool 107 | ✅ 已定义 | 28 类：通知 |
+| 4 | `ocr_image` | Tool 101 | ✅ 已定义 | 22 类：图像识别 |
+| 5 | `get_current_time` | Tool 26 | ✅ 已定义 | 5 类：时间/日期 |
+| 6 | `write_append_file` | Tool 5 | ✅ 已定义 | 1 类：文件操作 |
+| 7 | `send_notification` | Tool 107 | ✅ 已定义 | 28 类：通知 |
 
-**场景 4 统计**：共 6 个不同工具，全部已定义 ✅
+**场景 4 统计**：共 7 个不同工具，全部已定义 ✅
 
 ---
 
@@ -223,9 +227,9 @@
     5.  **异常处理**：无。
 *   **对应 Function Call 序列（跨类别，完整链）**：
     1.  `get_current_time(format="YYYY-MM-DD HH:mm:ss")` → **【Tool 26】**获取当前精确时间
-    2.  `get_current_time(format="YYYY-MM-DD")` → **【Tool 26】**获取当前日期
-    3.  `calculate_date(date="2026-04-05", days=30)` → **【Tool 27】**计算 30 天后的日期
-    4.  `calculate_date(date="2026-04-05", days=30, format="weekday")` → **【Tool 27】**计算那天是星期几
+    2.  `get_current_time(format="YYYY-MM-DD HH:mm:ss")` → **【Tool 26】**获取当前精确时间和日期
+    3.  `calculate_date(date="计算出的日期", days=30)` → **【Tool 27】**计算 30 天后的日期
+    4.  *(LLM 内部处理：根据当前日期计算30天后是星期几)*
     5.  `send_notification(title="时间查询", message="现在时间：2026-04-05 14:30:00\n30 天后：2026-05-05（星期二）")` → **【Tool 107】**通知用户结果
 
 #### 场景 5 使用工具对照表
@@ -547,6 +551,10 @@
     4.  *(LLM 内部处理：判断是否有异常进程)*
         *   **if 发现异常高占用进程**:
             5.  `send_notification(title="进程分析", message="发现异常进程：\n1. XXX.exe - CPU 占用 XX%\n2. XXX.exe - 内存占用 XX MB\n\n是否需要结束这些进程？")` → **【Tool 107】**通知用户并询问操作
+            6.  *(用户确认后)*: `kill_process(pid=XXX)` → **【Tool 59】**结束指定进程
+                *   **if 结束失败**: `send_notification(title="结束失败", message="无法结束进程 XXX，可能需要管理员权限")` → **【Tool 107】**结束
+            7.  `list_processes(limit=10, sort_by="cpu")` → **【Tool 58】**重新获取进程列表，确认进程已结束
+            8.  `send_notification(title="进程已结束", message="已结束异常进程 XXX，CPU 占用恢复正常")` → **【Tool 107】**通知用户
         *   **if 无异常**:
             5.  `send_notification(title="进程分析", message="当前进程运行正常\nCPU 最高：XXX（XX%）\n内存最高：XXX（XX MB）\n无异常进程")` → **【Tool 107】**通知用户
 
@@ -555,9 +563,10 @@
 | 序号 | 工具名称 | 说明书编号 | 状态 | 所属类别 |
 |------|---------|-----------|------|---------|
 | 1 | `list_processes` | Tool 58 | ✅ 已定义 | 15 类：进程管理 |
-| 2 | `send_notification` | Tool 107 | ✅ 已定义 | 28 类：通知 |
+| 2 | `kill_process` | Tool 59 | ✅ 已定义 | 15 类：进程管理 |
+| 3 | `send_notification` | Tool 107 | ✅ 已定义 | 28 类：通知 |
 
-**场景 14 统计**：共 2 个不同工具，全部已定义 ✅
+**场景 14 统计**：共 3 个不同工具，全部已定义 ✅
 
 ---
 
@@ -615,7 +624,7 @@
 | 1 | 找文件 | 7 | 7 | 0 | 11 步 | ✅ 是 | ✅ 是 |
 | 2 | 改内容 | 7 | 6 | 1 | 10 步 | ✅ 是 | ✅ 是 |
 | 3 | 整理文件 | 7 | 7 | 0 | 10 步 | ✅ 是 | ✅ 是 |
-| 4 | 看文档 | 6 | 6 | 0 | 8 步 | ✅ 是 | ✅ 是 |
+| 4 | 看文档 | 7 | 7 | 0 | 10 步 | ✅ 是 | ✅ 是 |
 | 5 | 查信息 | 3 | 3 | 0 | 5 步 | ❌ 否 | ❌ 否 |
 | 6 | 网络诊断 | 3 | 3 | 0 | 8 步 | ✅ 是 | ✅ 是 |
 | 7 | 打包文件 | 6 | 5 | 1 | 8 步 | ✅ 是 | ✅ 是 |
@@ -625,7 +634,7 @@
 | 11 | 搜索网络 | 5 | 5 | 0 | 9 步 | ✅ 是 | ✅ 是 |
 | 12 | 翻译内容 | 5 | 5 | 0 | 7 步 | ✅ 是 | ✅ 是 |
 | 13 | 查看系统信息 | 3 | 3 | 0 | 8 步 | ✅ 是 | ✅ 是 |
-| 14 | 查看进程 | 2 | 2 | 0 | 5 步 | ✅ 是 | ✅ 是 |
+| 14 | 查看进程 | 3 | 3 | 0 | 8 步 | ✅ 是 | ✅ 是 |
 | 15 | 查看服务 | 4 | 3 | 1 | 5 步 | ✅ 是 | ✅ 是 |
 
 ---
@@ -650,6 +659,7 @@
 | `create_directory` | Tool 15 | 1 个场景 | ✅ 已定义 |
 | `move_file` | Tool 9 | 1 个场景 | ✅ 已定义 |
 | `read_pdf` | Tool 80 | 1 个场景 | ✅ 已定义 |
+| `ocr_image` | Tool 101 | 1 个场景 | ✅ 已定义 |
 | `calculate_date` | Tool 27 | 1 个场景 | ✅ 已定义 |
 | `ping` | Tool 66 | 1 个场景 | ✅ 已定义 |
 | `delete_file` | Tool 11 | 1 个场景 | ✅ 已定义 |
@@ -664,6 +674,7 @@
 | `fetch_webpage` | Tool 23 | 1 个场景 | ✅ 已定义 |
 | `get_system_info` | Tool 30 | 1 个场景 | ✅ 已定义 |
 | `list_processes` | Tool 58 | 1 个场景 | ✅ 已定义 |
+| `kill_process` | Tool 59 | 1 个场景 | ✅ 已定义 |
 | `service_list` | Tool 60 | 1 个场景 | ✅ 已定义 |
 | `service_start` | Tool 61 | 1 个场景 | ✅ 已定义 |
 
