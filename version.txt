@@ -1,3 +1,53 @@
+v0.8.73
+
+更新时间：2026-04-07 16:51:26
+
+更新内容：
+
+## 1. 前端ReAct步骤字段优化 + 模型切换流程分析 - 小强-2026-04-07
+
+### 1.1 前端ReAct步骤字段优化
+
+| Commit | 说明 |
+|--------|------|
+| - | fix: 前端ReAct步骤字段优化 - MessageItem.tsx/sse.ts/chat.ts - 小强 2026-04-07 |
+
+**修改文件**:
+- `frontend/src/components/Chat/MessageItem.tsx` - 精简observation显示逻辑
+- `frontend/src/utils/sse.ts` - 精简observation处理逻辑
+- `frontend/src/types/chat.ts` - 精简接口定义
+- `frontend/src/tests/components/MessageItem-fields.test.tsx` - 更新测试用例
+
+**效果**: 与后端字段同步，简化前端处理
+
+### 1.2 模型切换流程分析文档
+
+| Commit | 说明 |
+|--------|------|
+| ee2b5159 | feat: 前端ReAct步骤字段优化+模型切换流程分析 小强 2026-04-07 |
+
+**新增文档**: `doc-react步骤/前端首次进入系统模型显示流程分析-小强-2026-0407.md`
+
+**分析内容**:
+- 首次进入系统模型显示流程
+- **下拉框选取不同模型流程详细分析**（第六章新增）
+  - 后端有调用服务验证（GET /chat/validate）
+  - 验证失败会恢复备份文件，配置回滚
+  - 前端设置当前模型及打*时机详解
+
+### 1.3 配置修改
+
+| Commit | 说明 |
+|--------|------|
+| - | config: 更新config.yaml测试模型 - 小强 2026-04-07 |
+
+**修改文件**: `config/config.yaml`
+- 更新ai.provider和ai.model为测试用模型
+
+参与开发：小强
+
+---
+
 v0.8.72
 
 更新时间：2026-04-07 16:30:00
