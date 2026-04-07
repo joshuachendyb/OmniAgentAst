@@ -153,6 +153,7 @@ const NewChatContainer: React.FC = () => {
   type SaveStatus = "idle" | "saving" | "saved" | "error";
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [_sessionJumpLoading, setSessionJumpLoading] = useState(false);
+  const [isRenderingMessages, setIsRenderingMessages] = useState(false); // 渲染大量消息时的loading
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
   const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
   const [_isSavingTitle, setIsSavingTitle] = useState(false);
@@ -833,13 +834,47 @@ const NewChatContainer: React.FC = () => {
         isPaused,
         isReceiving,
       };
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      console.log("💾 保存会话状态:", sessionId, sessionTitle, { 
-        messageCount: messagesToSave.length,
-        isPaused, 
-        isReceiving,
-        latestStepsCount: executionStepsRef.current.length,
-      });
+      
+      // 【2026-04-08修复】sessionStorage容量满时不崩溃
+      try {
+        const stateStr = JSON.stringify(state);
+        // 检查大小（sessionStorage限制约5-10MB）
+        const sizeInMB = (stateStr.length / 1024 / 1024).toFixed(2);
+        if (stateStr.length > 4 * 1024 * 1024) {
+          // 超过4MB，只保存消息摘要
+          console.warn(`⚠️ 会话数据过大(${sizeInMB}MB)，只保存摘要`);
+          const lightState = {
+            sessionId,
+            sessionTitle,
+            timestamp: Date.now(),
+            messageCount: messagesToSave.length,
+            isPaused,
+            isReceiving,
+          };
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
+        } else {
+          sessionStorage.setItem(STORAGE_KEY, stateStr);
+        }
+        console.log("💾 保存会话状态:", sessionId, sessionTitle, { 
+          messageCount: messagesToSave.length,
+          isPaused, 
+          isReceiving,
+          latestStepsCount: executionStepsRef.current.length,
+          sizeMB: sizeInMB,
+        });
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+          console.warn("⚠️ sessionStorage容量满，只保存会话ID和标题");
+          // 保存最小信息，下次打开时从API重新加载
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+            sessionId,
+            sessionTitle,
+            timestamp: Date.now(),
+          }));
+        } else {
+          console.error("保存会话状态失败:", e);
+        }
+      }
     }
   };
 
@@ -863,6 +898,12 @@ const NewChatContainer: React.FC = () => {
 
         if (state.sessionId) {
           // ⭐ 小新修复 2026-03-07：检查缓存消息是否缺少 display_name，如果是则跳过恢复，从 API 重新加载
+          // 【2026-04-08修复】如果缓存中没有messages（容量满时只保存了摘要），也从API重新加载
+          if (!state.messages || state.messages.length === 0) {
+            console.log("🕒 缓存中没有messages（可能容量满），从 API 重新加载");
+            return false;
+          }
+          
           const hasDisplayName = state.messages?.some((m: any) => m.display_name);
           if (!hasDisplayName) {
             console.log("🕒 缓存消息缺少 display_name，跳过恢复，从 API 重新加载");
@@ -1460,7 +1501,25 @@ const NewChatContainer: React.FC = () => {
           if (result.title_locked !== undefined) {
             setTitleLocked(result.title_locked);
           }
+          
+          // 【2026-04-08修复】大数据量渲染前显示Loading，避免用户以为死机
+          const estimatedSize = JSON.stringify(result.messages).length;
+          const isLargeData = estimatedSize > 5 * 1024 * 1024; // 超过5MB显示Loading
+          
+          if (isLargeData) {
+            const sizeMB = (estimatedSize / 1024 / 1024).toFixed(1);
+            console.log(`⏳ 数据量较大(${sizeMB}MB)，显示Loading后渲染...`);
+            setIsRenderingMessages(true);
+            // 让Loading先渲染出来
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          
           setMessages(result.messages);
+          
+          if (isLargeData) {
+            // 渲染完成后关闭Loading
+            setIsRenderingMessages(false);
+          }
           
           console.log(
             "🟡 加载最近会话:",
@@ -2163,8 +2222,29 @@ const NewChatContainer: React.FC = () => {
           padding: "0 2px 2px 0",
           marginBottom: 0,
           backgroundColor: "#fafafa",
+          position: "relative",
         }}
       >
+        {/* 【2026-04-08修复】大数据量渲染Loading提示 */}
+        {isRenderingMessages && (
+          <div style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 40,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "rgba(24, 160, 88, 0.1)",
+            borderBottom: "1px solid #e8e8e8",
+            zIndex: 100,
+          }}>
+            <span style={{ marginRight: 8, fontSize: 14 }}>⏳</span>
+            <span style={{ fontSize: 13, color: "#666" }}>正在加载会话数据...</span>
+          </div>
+        )}
+        
         {messages.length === 0 ? (
           <div style={{ textAlign: "center", color: "#999", marginTop: 50 }}>
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
