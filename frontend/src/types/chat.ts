@@ -76,12 +76,14 @@ export interface ActionToolMessage {
  * 发送时机：ReAct第3阶段，工具执行完成后
  * 【2026-04-07 小资精简】后端删除第二次LLM调用后，observation只保留基础字段
  * 工具执行结果已在 action_tool 阶段完整显示，本阶段仅作轻量提示
+ * 【2026-04-07 小沈新增】添加tool_name字段，显示工具名称
  */
 export interface ObservationMessage {
   type: 'observation';
   step: number;
   timestamp: number;
   content: string;
+  tool_name?: string;  // 工具名称（可选）
 }
 
 /**

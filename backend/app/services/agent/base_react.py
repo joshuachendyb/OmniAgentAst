@@ -258,6 +258,7 @@ class BaseAgent(ABC):
                     "type": "observation",
                     "step": step_count,
                     "timestamp": current_time,
+                    "tool_name": action_tool,
                     "content": f"Tool '{action_tool}' executed: {execution_result.get('summary', 'completed')}"
                 }
 

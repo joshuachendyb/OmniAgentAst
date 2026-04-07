@@ -105,6 +105,8 @@ export interface ExecutionStep {
   // 后端删除第二次LLM调用后，observation只保留基础字段
   // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/raw_data）
   // 【注意】obs_* 字段已删除，如需使用工具结果请从 action_tool 阶段获取
+  // 【2026-04-07 小沈新增】添加tool_name字段，显示工具名称
+  tool_name?: string;
   
   // === type=action 旧字段（兼容） ===
   action_input?: Record<string, any>;  // 工具调用参数（旧）
