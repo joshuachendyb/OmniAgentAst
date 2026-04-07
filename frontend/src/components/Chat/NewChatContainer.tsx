@@ -1056,18 +1056,27 @@ const NewChatContainer: React.FC = () => {
           if (messagesRef.current.length === 0 && !isInitialized && !isLoadingHistoryRef.current) {
             console.log("🔄 首次加载，从API获取会话数据");
             isLoadingHistoryRef.current = true; // 加锁
+            // 【小强优化 2026-04-08】API请求前显示Loading
+            setIsRenderingMessages(true);
             setTimeout(async () => {
-              // 调用统一的历史消息加载函数
-              const result = await loadHistoryMessages(sessionId);
-              if (result) {
-                setMessages(result.messages);
-                setSessionTitle(result.title);
-                if (result.version !== undefined) {
-                  setSessionVersion(result.version);
+              try {
+                // 调用统一的历史消息加载函数
+                const result = await loadHistoryMessages(sessionId);
+                if (result) {
+                  setMessages(result.messages);
+                  setSessionTitle(result.title);
+                  if (result.version !== undefined) {
+                    setSessionVersion(result.version);
+                  }
+                  if (result.title_locked !== undefined) {
+                    setTitleLocked(result.title_locked);
+                  }
+                  // 渲染完成后关闭Loading
+                  requestAnimationFrame(() => setIsRenderingMessages(false));
                 }
-                if (result.title_locked !== undefined) {
-                  setTitleLocked(result.title_locked);
-                }
+              } catch (e) {
+                console.warn("从API加载会话失败:", e);
+                setIsRenderingMessages(false); // 关闭Loading
               }
               isLoadingHistoryRef.current = false; // 解锁
             }, 100);
@@ -1376,6 +1385,8 @@ const NewChatContainer: React.FC = () => {
         }
 
         isLoadingHistoryRef.current = true; // 加锁
+        // 【小强优化 2026-04-08】API请求前显示Loading，避免空白等待
+        setIsRenderingMessages(true);
         try {
           // 调用统一的历史消息加载函数
           const result = await loadHistoryMessages(urlSessionId);
@@ -1397,6 +1408,8 @@ const NewChatContainer: React.FC = () => {
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
             // 【小新修复 2026-03-14】销毁loading消息，避免一直显示
             message.destroy("session-load");
+            // 渲染完成后关闭Loading
+            requestAnimationFrame(() => setIsRenderingMessages(false));
 
             console.log(
               "🔵 从URL加载会话:",
@@ -1422,11 +1435,13 @@ const NewChatContainer: React.FC = () => {
             setTitleLocked(false);
             setSessionJumpLoading(false);
             message.destroy("session-load");
+            setIsRenderingMessages(false); // 关闭Loading
             isLoadingHistoryRef.current = false; // 解锁
             return;
           }
         } catch (error) {
           console.warn("加载URL会话失败:", error);
+          setIsRenderingMessages(false); // 关闭Loading
           isLoadingHistoryRef.current = false; // 解锁
 
           // 重试机制 - 最多3次
@@ -1488,6 +1503,8 @@ const NewChatContainer: React.FC = () => {
       }
       
       isLoadingHistoryRef.current = true; // 加锁
+      // 【小强优化 2026-04-08】API请求前显示Loading
+      setIsRenderingMessages(true);
       try {
         const result = await loadLatestHistoryMessages();
         if (result) {
@@ -1502,24 +1519,9 @@ const NewChatContainer: React.FC = () => {
             setTitleLocked(result.title_locked);
           }
           
-          // 【2026-04-08修复】大数据量渲染前显示Loading，避免用户以为死机
-          const estimatedSize = JSON.stringify(result.messages).length;
-          const isLargeData = estimatedSize > 5 * 1024 * 1024; // 超过5MB显示Loading
-          
-          if (isLargeData) {
-            const sizeMB = (estimatedSize / 1024 / 1024).toFixed(1);
-            console.log(`⏳ 数据量较大(${sizeMB}MB)，显示Loading后渲染...`);
-            setIsRenderingMessages(true);
-            // 让Loading先渲染出来
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
-          
           setMessages(result.messages);
-          
-          if (isLargeData) {
-            // 渲染完成后关闭Loading
-            setIsRenderingMessages(false);
-          }
+          // 渲染完成后关闭Loading
+          requestAnimationFrame(() => setIsRenderingMessages(false));
           
           console.log(
             "🟡 加载最近会话:",
@@ -1535,6 +1537,7 @@ const NewChatContainer: React.FC = () => {
           setSessionTitle("新会话");
           setMessages([]);
           setSessionId(null);
+          setIsRenderingMessages(false); // 关闭Loading
         }
 
         // 关闭加载状态
@@ -1543,6 +1546,7 @@ const NewChatContainer: React.FC = () => {
         message.destroy("session-load");
       } catch (error) {
         console.warn("加载最近会话失败:", error);
+        setIsRenderingMessages(false); // 关闭Loading
         // 即使失败也关闭加载状态
         setSessionJumpLoading(false);
         isLoadingHistoryRef.current = false; // 解锁
