@@ -101,15 +101,10 @@ export interface ExecutionStep {
   raw_data?: Record<string, any> | null; // 原始数据（新）
   action_retry_count?: number;  // 重试次数（新）
   
-  // === type=observation 新字段（obs_前缀，与SSE后端保持一致） ===
-  // 【小沈修复2026-03-23】添加obs_前缀字段，observation步骤使用，与SSE后端字段名保持一致
-  // 【小健建议2026-03-23】明确用途：observation是工具执行后的观察结果
-  obs_raw_data?: Record<string, any> | null;       // 【observation类型】工具执行的原始结果
-  obs_execution_status?: 'success' | 'error' | 'warning'; // 【observation类型】执行状态
-  obs_summary?: string;                            // 【observation类型】执行摘要
-  obs_reasoning?: string;                         // 【observation类型】推理内容
-  obs_action_tool?: string;                       // 【observation类型】记录的动作工具
-  obs_params?: Record<string, any>;                // 【observation类型】记录的动作参数
+  // === type=observation 字段（精简版，2026-04-07 小资修改） ===
+  // 后端删除第二次LLM调用后，observation只保留基础字段
+  // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/raw_data）
+  // 【注意】obs_* 字段已删除，如需使用工具结果请从 action_tool 阶段获取
   
   // === type=action 旧字段（兼容） ===
   action_input?: Record<string, any>;  // 工具调用参数（旧）
@@ -845,15 +840,9 @@ const processSSEData = (
       }
 
       case "observation": {
-        // 【小沈修正 2026-03-23】前端保存字段名必须和SSE后端定义一模一样
-        step.is_finished = rawData.is_finished ?? false;
-        step.obs_raw_data = rawData.obs_raw_data ?? null;
-        step.obs_execution_status = rawData.obs_execution_status ?? 'success';
-        step.obs_summary = rawData.obs_summary ?? '';
+        // 【小资精简 2026-04-07】后端删除第二次LLM调用后，observation只保留content
+        // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/raw_data）
         step.content = rawData.content ?? '';
-        step.obs_reasoning = rawData.obs_reasoning ?? '';
-        step.obs_action_tool = rawData.obs_action_tool ?? '';
-        step.obs_params = rawData.obs_params ?? {};
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
         // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
