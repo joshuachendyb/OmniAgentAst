@@ -232,7 +232,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     // 2. 无论验证成功还是失败，都应该刷新模型列表
     // 验证失败时，后端可能回退到原来的配置，但配置文件可能仍显示用户尝试切换的模型
     await refreshModelList();
-    await refreshSessionCount();
+    // 【小强修复 2026-04-07】删除 refreshSessionCount()，因为切换模型不会改变会话数量
     
     // 3. 如果验证失败，从模型列表获取配置文件中的模型信息，并更新 serviceStatus
     if (!status || !status.success) {
@@ -259,7 +259,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
         console.error("[refreshAfterModelChange] 获取模型列表失败:", error);
       }
     }
-  }, [refreshServiceStatus, refreshModelList, refreshSessionCount, setServiceStatus]);
+  }, [refreshServiceStatus, refreshModelList, setServiceStatus]);
 
   /**
    * 初始化应用（只在首次加载时调用）
