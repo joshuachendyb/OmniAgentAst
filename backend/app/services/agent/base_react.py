@@ -249,50 +249,19 @@ class BaseAgent(ABC):
                     tool_params=params
                 )
                 
-                # 再次调用 LLM 获取下一个决策
-                self.status = AgentStatus.OBSERVING
-                llm_response = await self._get_llm_response()
-                
-                try:
-                    parsed_obs = self.parser.parse_response(llm_response)
-                except ValueError as e:
-                    # 使用ToolParser统一处理解析错误（与Thought阶段保持一致）
-                    error_result = ToolParser.handle_parse_error(llm_response, e, logger)
-                    parsed_obs = error_result["parsed_obs"]
-                
-                is_finished = parsed_obs.get("action_tool") == "finish"
-                
-                # 【删除 2026-03-31 小沈】删除第二次LLM响应加入history
-                # 原因：第203行已添加第一次LLM的thought到history
-                # 下一轮循环会再次添加新的thought，避免连续两条assistant消息
-                # 正确对话流：assistant(thought) → user(observation) → assistant(thought_next)
-                
-                # yield observation
+                # ========== Observation 阶段（简化版）==========
+                # 【修复 2026-04-07 小沈】删除第二次LLM调用
+                # 问题：每step调用2次LLM，token消耗翻倍
+                # 修复：直接使用工具执行结果作为observation，下一轮循环自动调用LLM
                 current_time = create_timestamp()
                 yield {
                     "type": "observation",
                     "step": step_count,
                     "timestamp": current_time,
-                    "obs_execution_status": execution_result.get("status", "success"),
-                    "obs_summary": execution_result.get("summary", ""),
-                    "obs_raw_data": execution_result.get("data"),
-                    "content": parsed_obs.get("content", ""),
-                    "obs_reasoning": parsed_obs.get("reasoning"),
-                    "action_tool": parsed_obs.get("action_tool", "finish"),
-                    "params": parsed_obs.get("params", {}),
-                    "is_finished": is_finished
+                    "content": f"Tool '{action_tool}' executed: {execution_result.get('summary', 'completed')}"
                 }
-                
+
                 self._trim_history()
-                
-                # 判断是否结束
-                if is_finished:
-                    yield {
-                        "type": "final",
-                        "timestamp": current_time,
-                        "content": parsed_obs.get("content", "任务已完成")
-                    }
-                    break
             
             # 超过最大步数
             if step_count >= max_steps:
