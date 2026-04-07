@@ -1062,18 +1062,21 @@ const NewChatContainer: React.FC = () => {
               try {
                 // 调用统一的历史消息加载函数
                 const result = await loadHistoryMessages(sessionId);
-                if (result) {
-                  setMessages(result.messages);
-                  setSessionTitle(result.title);
-                  if (result.version !== undefined) {
-                    setSessionVersion(result.version);
-                  }
-                  if (result.title_locked !== undefined) {
-                    setTitleLocked(result.title_locked);
-                  }
-                  // 渲染完成后关闭Loading
-                  requestAnimationFrame(() => setIsRenderingMessages(false));
+              if (result) {
+                setMessages(result.messages);
+                // 【小强修复 2026-04-08】补充sessionId设置，与其他位置保持一致
+                setSessionId(result.sessionId);
+                currentSessionIdRef.current = result.sessionId;
+                setSessionTitle(result.title);
+                if (result.version !== undefined) {
+                  setSessionVersion(result.version);
                 }
+                if (result.title_locked !== undefined) {
+                  setTitleLocked(result.title_locked);
+                }
+                // 渲染完成后关闭Loading
+                requestAnimationFrame(() => setIsRenderingMessages(false));
+              }
               } catch (e) {
                 console.warn("从API加载会话失败:", e);
                 setIsRenderingMessages(false); // 关闭Loading
