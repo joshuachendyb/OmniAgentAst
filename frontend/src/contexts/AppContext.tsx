@@ -217,49 +217,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
 
   /**
    * 串行刷新方法（解决时序问题）
-   * 先验证服务，成功后再刷新列表
    * 用于切换模型后的状态刷新
    * @author 小新
-   * @update 2026-03-30 修复：当验证失败时，也应该刷新模型列表，以获取配置文件中的模型
-   * @update 2026-03-30 修复：当验证失败时，从模型列表获取配置文件中的模型信息，并更新 serviceStatus
+   * @update 2026-04-07 小强修复：不再调用 refreshServiceStatus() 实际调用AI API验证
+   *         直接用 _validate_config_integrity 结果（后端已处理），只刷新模型列表获取打*信息
    */
   const refreshAfterModelChange = useCallback(async () => {
-    // 1. 先刷新服务状态（会验证新配置是否有效）
-    const status = await refreshServiceStatus();
-    console.log("[refreshAfterModelChange] status:", status);
-    console.log("[refreshAfterModelChange] status.success:", status?.success);
+    // ============================================================
+    // 【小强修复 2026-04-07】
+    // 修改说明：
+    // 之前：先调用 refreshServiceStatus() 实际调用AI API验证新配置
+    // 现在：不再调用AI API验证，直接刷新模型列表
+    //
+    // 原因：用户要求切换模型时不再调用外部AI API做验证，
+    //       后端 update_config 已使用 _validate_config_integrity 结果
+    //       决定是否删除备份，前端只需刷新模型列表获取打*信息
+    // ============================================================
     
-    // 2. 无论验证成功还是失败，都应该刷新模型列表
-    // 验证失败时，后端可能回退到原来的配置，但配置文件可能仍显示用户尝试切换的模型
+    // 1. 直接刷新模型列表（后端已验证配置文件完整性）
     await refreshModelList();
     // 【小强修复 2026-04-07】删除 refreshSessionCount()，因为切换模型不会改变会话数量
-    
-    // 3. 如果验证失败，从模型列表获取配置文件中的模型信息，并更新 serviceStatus
-    if (!status || !status.success) {
-      console.warn("[refreshAfterModelChange] 模型验证失败，尝试从模型列表获取配置文件中的模型");
-      
-      try {
-        // 直接调用 API 获取最新的模型列表，而不是依赖状态更新
-        const modelData = await configApi.getModelList();
-        if (modelData?.models && Array.isArray(modelData.models)) {
-          // 从模型列表中找 current_model: true 的模型
-          const currentModel = modelData.models.find((m: any) => m.current_model === true);
-          if (currentModel) {
-            console.log("[refreshAfterModelChange] 从 API 获取到当前模型:", currentModel);
-            // 更新 serviceStatus，显示配置文件中的模型
-            setServiceStatus({
-              success: false, // 验证失败
-              provider: currentModel.provider,
-              model: currentModel.model,
-              message: `验证失败，但配置文件中当前模型为: ${currentModel.display_name}`,
-            });
-          }
-        }
-      } catch (error) {
-        console.error("[refreshAfterModelChange] 获取模型列表失败:", error);
-      }
-    }
-  }, [refreshServiceStatus, refreshModelList, setServiceStatus]);
+    // 【小强修复 2026-04-07】删除 refreshServiceStatus()，不再调用AI API验证
+  }, [refreshModelList]);
 
   /**
    * 初始化应用（只在首次加载时调用）
