@@ -303,113 +303,19 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
         )}
         {step.type === "observation" && (
           <>
-            {/* 【小沈优化 2026-03-30】按文档优化：content + timestamp */}
-            {/* 【小强修复 2026-03-31】删除内容框内重复的标题行和时间戳，标题行已在StepRow外层显示 */}
-            {(step.content || (step as any).obs_reasoning || step.reasoning) && (
+            {/* 【小资精简 2026-04-07】后端删除第二次LLM后，observation只显示content */}
+            {/* 工具执行结果已在 action_tool 阶段完整显示，本阶段仅作轻量提示 */}
+            {step.content && (
               <div style={{ 
                 ...getStepStyle("observation" as StepType),
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}>
-                {/* 观察内容 - 优先显示obs_reasoning/reasoning，其次显示content */}
-                <div>
-                  <span style={getStepContentStyle("observation" as StepType, "primary")}>
-                    {(step as any).obs_reasoning || step.reasoning || step.content}
-                  </span>
-                </div>
+                <span style={getStepContentStyle("observation" as StepType, "primary")}>
+                  {step.content}
+                </span>
               </div>
             )}
-            {/* 显示执行结果 - 只有当没有 content 时才显示 */}
-            {!step.content && (
-              <div>
-                {/* 【小沈修正 2026-03-23】文件列表框框 - 使用 step.obs_raw_data（和SSE后端字段名一致） */}
-                {(() => {
-                  const obsRawData = step.obs_raw_data;
-                  const hasEntries = obsRawData?.entries && Array.isArray(obsRawData.entries);
-                  const entryCount = hasEntries ? obsRawData.entries.length : 0;
-                  
-                  return (
-                    <div>
-                      {hasEntries && (
-                        <div>
-                          {/* 折叠按钮和文件计数 */}
-                          <div style={{ marginBottom: 6 }}>
-                            <span 
-                              onClick={() => toggleExpand(stepIndex)}
-                              style={{ 
-                                cursor: "pointer", 
-                                color: "#52c41a",
-                                fontSize: 12,
-                                fontWeight: 500,
-                              }}
-                            >
-                              {isExpanded ? "▼ 收起" : "▶ 展开"} 文件列表 
-                              ({entryCount}个)
-                            </span>
-                          </div>
-                          {/* 文件列表内容 */}
-                          {isExpanded && obsRawData?.entries && (
-                            <div style={getFileListBackground()}>
-                              {obsRawData.entries.map((entry: any, idx: number) => (
-                                <React.Fragment key={`obs-entry-${idx}`}>
-                                  <div style={{ 
-                                    padding: "4px 0",
-                                    borderBottom: idx < obsRawData.entries.length - 1 ? "1px solid #e8e8e8" : "none",
-                                  }}>
-                                    {entry.type === "directory" ? "📁" : "📄"} {entry.name}
-                                  </div>
-                                </React.Fragment>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                      {/* 【小强优化 2026-03-24】summary 始终显示 */}
-                      {typeof step.obs_summary === "string" && step.obs_summary && (
-                        <div style={{ marginTop: 6, color: "#666", fontSize: 12 }}>
-                          📊 {step.obs_summary}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-            {/* 信息区域：下一步、参数、结束标志 */}
-            <div style={{
-              marginTop: 6,
-              padding: '8px 12px',
-              borderRadius: 6,
-              background: 'linear-gradient(135deg, rgba(82,196,26,0.08) 0%, rgba(56,158,13,0.08) 100%)',
-              border: '1px solid rgba(115,209,61,0.3)',
-            }}>
-              {/* 【小沈优化 2026-03-30】显示下一步action_tool */}
-              {(step as any).obs_action_tool && (
-                <div style={getNextStepStyle("observation")}>
-                  <span style={{ fontWeight: FontWeight.MEDIUM }}>⬇️ 下一步：{(step as any).obs_action_tool}</span>
-                </div>
-              )}
-              {/* 【小沈优化 2026-03-30】显示params - 用JsonHighlight格式化 */}
-              {(step as any).obs_params && Object.keys((step as any).obs_params).length > 0 && (
-                <div style={{ 
-                  marginTop: 4, 
-                  fontSize: 12, 
-                  background: "#e6ffed", // observation的bg1颜色，保持一致性
-                  padding: "6px 10px",
-                  borderRadius: 4,
-                }}>
-                  <JsonHighlight data={(step as any).obs_params} isExpanded={true} />
-                </div>
-              )}
-              {/* 显示is_finished - 使用徽章样式 */}
-              {step.is_finished === true && (
-                <div style={{ marginTop: 6 }}>
-                  <span style={getFinishedBadgeStyle()}>
-                    ✅ 结束
-                  </span>
-                </div>
-              )}
-            </div>
           </>
         )}
         {step.type === "start" && (
@@ -808,8 +714,9 @@ const MessageItem: React.FC<MessageItemProps> = ({
             case 'action_tool':
               return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, action_retry_count: step.action_retry_count };
             case 'observation':
-              // 【小沈修正 2026-03-23】导出字段名必须和SSE后端定义一模一样（带obs_前缀）
-              return { ...baseExport, step: step.step, obs_execution_status: step.obs_execution_status, obs_summary: step.obs_summary, obs_raw_data: step.obs_raw_data, content: step.content, obs_reasoning: step.obs_reasoning, obs_action_tool: step.obs_action_tool, obs_params: step.obs_params, is_finished: step.is_finished };
+              // 【小资精简 2026-04-07】后端删除第二次LLM调用后，observation只保留基础字段
+              // 工具执行结果已在 action_tool 阶段完整显示
+              return { ...baseExport, step: step.step, content: step.content };
             case 'chunk':
               return { ...baseExport, step: step.step, is_reasoning: step.is_reasoning };
             case 'final':
