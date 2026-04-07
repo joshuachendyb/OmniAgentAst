@@ -116,6 +116,8 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   const [checkingStatus, setCheckingStatus] = useState(false);
   // 【新增】手动刷新标志，避免自动重置
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  // 【新增】是否为首次初始化（首次不显示弹框）
+  const isInitialLoadRef = useRef(true);
   // 【修改】验证错误弹框状态 - 支持三种状态
   const [validationErrorModal, setValidationErrorModal] = useState<{
     visible: boolean;
@@ -165,6 +167,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   const lastServiceStatusRef = useRef<ValidateResponse | null>(null);
   
   useEffect(() => {
+    // 【修复】首次初始化时不显示弹框（避免初始化和手动刷新重复弹框）
+    if (isInitialLoadRef.current) {
+      isInitialLoadRef.current = false;
+      return;
+    }
+    
     // 检查 serviceStatus 是否发生变化
     const statusChanged = lastServiceStatusRef.current !== serviceStatus;
     lastServiceStatusRef.current = serviceStatus;
