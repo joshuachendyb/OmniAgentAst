@@ -1,6 +1,6 @@
 v0.8.74
 
-更新时间：2026-04-07 17:35:00
+更新时间：2026-04-07 19:47:42
 
 更新内容：
 
@@ -30,7 +30,32 @@ v0.8.74
 - 之前：先调用 refreshServiceStatus() 实际调用AI API验证新配置
 - 现在：不再调用AI API验证，直接刷新模型列表获取打*信息
 
-### 1.3 验证方式变化
+### 1.3 手动检查服务弹框优化 - 显示三种状态 - 小强-2026-04-07
+
+#### 1.3.1 问题
+
+用户要求：手动点击"检查服务"按钮时，显示三种状态（success/warning/failed）的弹框说明，包含模型名称和provider名称。
+
+#### 1.3.2 修改内容
+
+**修改文件**: `frontend/src/components/Layout/index.tsx`
+
+**修改内容**:
+- 扩展 validationErrorModal 状态：添加 status 和 modelInfo 字段
+- 更新监听逻辑：根据 serviceStatus.status 显示不同弹框
+  - ✅ success：绿色成功弹框，显示 "模型验证通过"
+  - 🚨 warning：黄色警告弹框，显示 "模型验证警告"
+  - ❌ failed：红色失败弹框，显示 "模型验证失败"
+- 弹框内容包含模型信息：provider (model)
+- 导入缺失图标：ExclamationCircleOutlined、CloseCircleOutlined
+
+#### 1.3.3 UI风格
+
+- 弹框标题动态显示图标和状态文字
+- 根据状态显示不同颜色的 Alert 组件
+- 成功状态1.5秒自动关闭，失败/警告状态2秒自动关闭
+
+### 1.4 验证方式变化
 
 | 验证方式 | 修改前 | 修改后 |
 |---------|-------|-------|
@@ -39,16 +64,17 @@ v0.8.74
 | 优点 | 验证更准确 | 速度快、不产生额外API调用 |
 | 缺点 | 每次切换有额外API开销 | 配置正确但API Key可能无效时不报错 |
 
-### 1.4 Commit汇总
+### 1.5 Commit汇总
 
 | Commit | 说明 |
 |--------|------|
+| 474060ab | feat: 切换模型弹框支持三种状态显示-success/warning/failed-小强-2026-04-07 |
 | - | fix: update_config验证成功后立即删除备份-不再等待AI API验证-小强 2026-04-07 |
 | - | fix: refreshAfterModelChange删除refreshServiceStatus调用-小强 2026-04-07 |
 | - | docs: 更新模型切换流程分析文档v1.3-说明新的验证方式-小强 2026-04-07 |
 
 参与开发：小强
-测试验证：ESLint 0个错误，301个警告（全是warning）
+测试验证：构建通过
 
 ---
 
