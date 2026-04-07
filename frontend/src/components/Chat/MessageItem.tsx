@@ -311,6 +311,12 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}>
+                {/* 【小沈新增 2026-04-07】显示工具名称，提升可读性 */}
+                {step.tool_name && (
+                  <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>
+                    🔧 工具：{step.tool_name}
+                  </div>
+                )}
                 <span style={getStepContentStyle("observation" as StepType, "primary")}>
                   {step.content}
                 </span>
