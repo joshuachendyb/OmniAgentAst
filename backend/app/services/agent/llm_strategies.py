@@ -478,13 +478,13 @@ class ResponseFormatStrategy(LLMStrategy):
                 "type": "object",
                 "properties": {
                     "thought": {"type": "string", "description": "思考过程"},
-                    "action": {"type": "string", "description": "工具名称"},
-                    "action_input": {
+                    "action_tool": {"type": "string", "description": "工具名称"},
+                    "params": {
                         "type": "object",
                         "description": "工具参数"
                     }
                 },
-                "required": ["thought", "action", "action_input"]
+                "required": ["thought", "action_tool", "params"]
             }
         }
     
@@ -537,18 +537,18 @@ class ResponseFormatStrategy(LLMStrategy):
                 result = json.loads(content)
                 
                 thought = result.get("thought", "")
-                action = result.get("action", "")
-                action_input = result.get("action_input", {})
+                action_tool = result.get("action_tool", "")
+                params = result.get("params", {})
                 
                 # 转换为 Agent 的 ToolParser 可以理解的格式
                 formatted = {
                     "thought": thought,
-                    "action_tool": action,
-                    "params": action_input
+                    "action_tool": action_tool,
+                    "params": params
                 }
                 
                 content = json.dumps(formatted, ensure_ascii=False)
-                logger.info(f"[Agent] response_format parsed: action={action}")
+                logger.info(f"[Agent] response_format parsed: action_tool={action_tool}")
                 
             except json.JSONDecodeError as e:
                 logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={content}")
