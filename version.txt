@@ -1,3 +1,123 @@
+v0.8.72
+
+更新时间：2026-04-07 16:30:00
+
+更新内容：
+
+## 1. ReAct模式问题1和问题7修复 - 小沈/小资/小健-2026-04-07
+
+### 1.1 后端修改：删除第二次LLM调用
+
+| Commit | 说明 |
+|--------|------|
+| 17de09c2 | fix: 删除第二次LLM调用，简化observation字段 - 小沈 2026-04-07 |
+
+**修改文件**: `backend/app/services/agent/base_react.py` 第252-262行
+
+**修改内容**:
+- 删除第二次LLM调用（原第252-254行）
+- 简化observation yield字段，只保留type/step/timestamp/content四个字段
+- 工具执行结果通过conversation_history注入下一轮LLM
+
+**效果**: 
+- 每step只调用1次LLM（节省50% token和延迟）
+- observation简化为只显示工具执行简述
+
+### 1.2 前端修改：同步精简obs_*字段
+
+| Commit | 说明 |
+|--------|------|
+| - | fix: 精简前端ObservationMessage接口 - 小资 2026-04-07 |
+| - | fix: 精简sse.ts中observation处理逻辑 - 小资 2026-04-07 |
+| - | fix: 精简MessageItem.tsx中observation显示和导出逻辑 - 小资 2026-04-07 |
+
+**修改文件**:
+- `frontend/src/types/chat.ts` - 删除ObservationMessage中7个obs_*字段
+- `frontend/src/utils/sse.ts` - 删除SseRawData接口中6个obs_*字段定义，精简observation处理
+- `frontend/src/components/Chat/MessageItem.tsx` - 精简observation显示逻辑和导出逻辑
+- `frontend/src/tests/components/MessageItem-fields.test.tsx` - 更新测试用例
+
+**效果**: 前端与后端字段同步，不再接收/存储/显示已废弃的obs_*字段
+
+### 1.3 测试验证
+
+| 测试项 | 结果 |
+|-------|------|
+| 单元测试 | ✅ 337 passed |
+| MessageItem-fields.test.tsx | ✅ 6 passed |
+| ESLint | ✅ 无新增错误 |
+
+### 1.4 文档整理
+
+| Commit | 说明 |
+|--------|------|
+| af327893 | docs: 更新问题汇总表，标注问题1和问题7已修复 - 小沈 2026-04-07 |
+| 1b1181c2 | docs: 补充4.4节测试用例更新建议 - 小健 2026-04-07 |
+| 9092b407 | docs: 补充问题1修改遗漏项及前端影响分析 - 小健 2026-04-07 |
+| 7124183d | docs: 最终版-修复建议章完整准确 - 小沈 2026-04-07 |
+| 49d090c1 | docs: 修正第4章标题时间-删除冗余第5章 - 小沈 2026-04-07 |
+| aa75f1a3 | docs: 修正4.1/4.2节问题1和问题7修改方法 - 小沈 2026-04-07 |
+| 4e1b0cef | docs: 文件重命名-0401改为0407 - 小沈 2026-04-07 |
+
+**修改文件**: `doc-react步骤/ReAct模式标准及修改当前实现的改进-小沈-2026-0407.md`
+
+**修改内容**:
+- 修正4.2节标题：问题１和问题２ → 问题1和问题7
+- 整理章节编号：4.2a→4.2, 4.2b→4.3, 4.4→4.4(移位置), 4.3→4.5
+- 更新4.2b内部编号：4.2b.1~4.2b.4 → 4.4.1~4.4.5
+- 统一版本号：v1.11 → v2.1
+- 合并版本历史表
+
+参与开发：小沈（后端修改+文档整理）、小资（前端修改）、小健（审查+测试建议）
+
+---
+
+## 2. 修复5.5.1原则违规问题 + 9.4-9.7参数分析修正 - 小沈/小健-2026-04-06
+
+### 2.1 修复Function定义中写死的默认值描述（违反5.5.1原则）
+
+| Commit | 说明 |
+|--------|------|
+| 6217d316 | fix: remove hardcoded defaults in tool definitions - xiaoshen |
+| a31ad130 | fix: 修正8.1-8.3 Function定义中的默认值描述 |
+
+修复以下章节Function定义properties的description中写死的"默认值X"描述：
+- 9.4节：ocr的language参数（移除"默认值eng"）
+- 9.7节：send_notification的duration参数（移除"默认5"）
+- 8.1-8.3节：多个Tool的默认值描述
+
+### 2.2 修复参数命名不一致问题
+
+| Commit | 说明 |
+|--------|------|
+| - | 修复9.5节：分析表window_title vs Function定义title |
+| - | 修复9.6节：分析表text vs Function定义content |
+
+### 2.3 补充遗漏的参数分析
+
+| Commit | 说明 |
+|--------|------|
+| b350618d | feat: 添加9.1-9.7章节的参数分析表 |
+
+补充9.5节Tool 103(focus_window)和104(resize_window)的参数分析
+
+### 2.4 修正可选/必填参数错误
+
+**严重错误**：Tool 104 resize_window的width/height应该是**可选**参数，不是必填
+- 用户说"把窗口调大"时，LLM无法提供具体像素值
+- 修改为可选参数，由Agent智能推断
+
+### 2.5 小健审查发现的问题
+
+小健审查发现小沈漏了的问题：
+1. duration的Function定义也写了"默认5"（和language一样违反5.5.1）
+2. Tool 104的width/height应该是可选不是必填（严重）
+3. 分析表完全缺少Tool 103/104的参数
+
+参与开发：小沈（编写/修改）、小健（审查）
+
+---
+
 v0.8.71
 
 更新时间：2026-04-06 10:44:30
