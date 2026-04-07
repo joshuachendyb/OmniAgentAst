@@ -138,8 +138,8 @@ Available Tools:
 Example 1: List directory
 {
     "thought": "User wants to see files in D drive root",
-    "action": "list_directory",
-    "action_input": {
+    "action_tool": "list_directory",
+    "params": {
         "dir_path": "D:/"  // ✅ CORRECT: uses dir_path
     }
 }
@@ -148,8 +148,8 @@ Example 1: List directory
 Example 2: Read file
 {
     "thought": "User wants to read a config file",
-    "action": "read_file",
-    "action_input": {
+    "action_tool": "read_file",
+    "params": {
         "file_path": "C:/Users/username/config.json"  // ✅ CORRECT: uses file_path
     }
 }
@@ -158,8 +158,8 @@ Example 2: Read file
 Example 3: Search file content
 {
     "thought": "User wants to search for TODO comments in Python files",
-    "action": "search_file_content",
-    "action_input": {
+    "action_tool": "search_file_content",
+    "params": {
         "pattern": "TODO",
         "path": "D:/project",
         "file_pattern": "*.py"
@@ -169,8 +169,8 @@ Example 3: Search file content
 Example 4: Move file
 {
     "thought": "User wants to move file to new location",
-    "action": "move_file",
-    "action_input": {
+    "action_tool": "move_file",
+    "params": {
         "source_path": "C:/old/file.txt",  // ✅ CORRECT
         "destination_path": "D:/new/file.txt"  // ✅ CORRECT
     }
@@ -199,14 +199,14 @@ Example 4: Move file
 Always format responses as JSON:
 {
     "thought": "Your reasoning about what to do next",
-    "action": "tool_name",
-    "action_input": {
+    "action_tool": "tool_name",
+    "params": {
         "param1": "value1",
         "param2": "value2"
     }
 }
 
-If task is complete: {"thought": "...", "action": "finish", "action_input": {"result": "summary"}}"""
+If task is complete: {"thought": "...", "action_tool": "finish", "params": {"result": "summary"}}"""
 
     def get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
