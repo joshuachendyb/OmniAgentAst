@@ -102,6 +102,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     initializeApp,
     refreshAll,
     refreshAfterModelChange,
+    refreshModelList: appRefreshModelList,  // 获取AppContext的refreshModelList
     isInitialized,
   } = useApp();
 
@@ -267,9 +268,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   // 【新增】验证详情弹框
   const [validationModalVisible, setValidationModalVisible] = useState(false);
 
-  // 【修复】刷新模型列表 - 使用AppContext的refreshAll
+  // 【修复】刷新模型列表 - 只调用AppContext的refreshModelList（不调用AI API验证）
+  // 注意：切换模型时不能调用refreshAll（会调用refreshServiceStatus），只刷新模型列表
   const refreshModelList = async () => {
-    await refreshAll();
+    await appRefreshModelList();
   };
 
   // 手动检查服务 - 使用AppContext刷新数据
