@@ -219,8 +219,8 @@ class BaseAgent(ABC):
                     # "content": action_tool,  # 【小强删除 2026-04-08】content与tool_name重复，后端已删除
                     "step": step_count,
                     "timestamp": current_time,
-                    "tool_name": action_tool,
-                    "tool_params": params,
+                    "tool_name": tool_name,
+                    "tool_params": tool_params,
                     "execution_status": execution_result.get("status", "success"),
                     "summary": execution_result.get("summary", ""),
                     "raw_data": execution_result.get("data"),
