@@ -1,3 +1,115 @@
+v0.8.79
+
+更新时间：2026-04-08 19:00:22
+
+更新内容：
+
+## 1. ReAct字段统一化 - tool_name/tool_params 字段名统一 - 小沈/小强/小资/小健-2026-04-08
+
+### 1.1 背景
+
+- 问题修复：将 `action_name/action_params` 统一改为 `tool_name/tool_params`
+- 后端和前端字段名保持一致
+
+### 1.2 后端修改
+
+| Commit | 说明 |
+|--------|------|
+| 87b01987 | refactor: 统一tool_name/tool_params字段名-小沈-2026-04-08 |
+
+**修改文件**:
+- `backend/app/services/agent/base_react.py` - thought yield使用tool_name/tool_params
+- `backend/app/chat_stream/sse_formatter.py` - format_thought_sse参数改为tool_name/tool_params
+- `backend/app/services/react_sse_wrapper.py` - 调用时传入新字段名
+- `backend/app/services/agent/types/step_types.py` - ThoughtStep/ObservationStep类使用tool_name/tool_params
+- `backend/app/services/agent/tool_parser.py` - 解析返回tool_name/tool_params
+- `backend/app/services/agent/llm_strategies.py` - JSON Schema和解析逻辑统一
+- `backend/app/services/prompts/file/file_prompts.py` - System Prompt示例改为tool_name/tool_params
+
+### 1.3 前端修改
+
+| Commit | 说明 |
+|--------|------|
+| 873db084 | feat: 统一tool字段名 thought类型 action_tool→tool_name 小强 2026-04-08 |
+| e4d5afc5 | test: 统一tool字段名 action_tool→tool_name 小资 2026-04-08 |
+| 32e73b0c | test: 统一tool字段名 action_tool→tool_name 小健 2026-04-08 |
+| c22a7d50 | test: 继续统一tool字段名 action_tool→tool_name 小健 2026-04-08 |
+| 276e2b64 | test: 统一tool字段名 action_tool→tool_name 小健 2026-04-08 |
+
+**修改文件**:
+- `frontend/src/components/Chat/MessageItem.tsx` - 字段名更新
+- `frontend/src/utils/sse.ts` - 解析逻辑更新
+- `frontend/src/utils/dynamicStatus.tsx` - 状态类型更新
+- `frontend/tests/test_react_refactor.py` - 测试用例更新
+
+### 1.4 测试验证
+
+| 测试项 | 结果 |
+|-------|------|
+| 后端测试 | ✅ 28 passed, 4 skipped |
+| 前端测试 | ✅ 337 passed |
+| ESLint | ✅ 无新增错误 |
+
+参与开发：小沈（后端修改+协调）、小强（前端修改+审查）、小资（前端修改+审查）、小健（前端修改+审查）
+
+测试验证：全部通过
+
+---
+
+## 2. ReAct字段清理 - 删除thought的reasoning字段 - 小沈/小强-2026-04-08
+
+### 2.1 背景
+
+- 4.8节分析决策：reasoning与content重复，应删除
+- 前端使用`step.reasoning || step.content`向后兼容
+
+### 2.2 后端修改
+
+| Commit | 说明 |
+|--------|------|
+| 80a2a921 | fix: remove reasoning field from thought |
+
+**修改文件**:
+- `backend/app/services/agent/base_react.py` - 删除thought的reasoning字段
+
+### 2.3 前端修改
+
+**修改文件**:
+- `frontend/src/utils/sse.ts` - 删除reasoning解析
+- `frontend/src/types/chat.ts` - 注释reasoning字段定义
+- `frontend/src/components/Chat/MessageItem.tsx` - 导出逻辑删除reasoning
+
+参与开发：小沈（后端修改）、小强（前端修改）
+
+---
+
+## 3. Observation字段优化 - 精简obs_*字段 - 小沈/小资/小健-2026-04-08
+
+### 3.1 问题
+
+observation阶段返回的7个obs_*字段与type/step重复，前端精简处理。
+
+### 3.2 后端修改
+
+| Commit | 说明 |
+|--------|------|
+| c8981ee1 | fix: clean obs fields in observation |
+
+### 3.3 前端修改
+
+| Commit | 说明 |
+|--------|------|
+| 07bab0c0 | fix: observation步骤解析tool_name字段(obs_action_tool) 小强 2026-04-08 |
+| eac5dce0 | fix: action_tool步骤显示🔧工具名称前缀 小强 2026-04-08 |
+
+**修改文件**:
+- `frontend/src/utils/sse.ts` - 精简observation处理逻辑
+- `frontend/src/components/Chat/MessageItem.tsx` - 显示"🔧 工具：{tool_name}"
+
+参与开发：小沈（后端修改）、小强（前端修改）、小资（审查）、小健（审查）
+
+---
+
 v0.8.78
 
 更新时间：2026-04-08 11:21:43
