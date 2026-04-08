@@ -196,19 +196,26 @@ export interface PerformanceMetrics {
 
 /**
  * 错误类型分类
+ * - idle_timeout: 空闲超时（长时间无数据）
+ * - request_timeout: 请求等待超时（等待服务器响应）
+ * - network: 网络连接失败
+ * - server: 服务器错误
+ * - empty_response: 空响应
  */
-type ErrorType = "network" | "timeout" | "server" | "unknown" | "empty_response";
+type ErrorType = "idle_timeout" | "request_timeout" | "network" | "server" | "unknown" | "empty_response";
 
 /**
  * 分类错误类型
+ * 【小强修复 2026-04-09】细分超时类型
  */
 const classifyError = (error: any): ErrorType => {
-  if (error.name === "AbortError") return "timeout";
+  if (error.name === "AbortError") return "request_timeout";
+  if (error.message?.includes("空闲") || error.message?.includes("idle")) return "idle_timeout";
   if (error.message?.includes("fetch") || error.message?.includes("network")) return "network";
   if (error.message?.includes("HTTP")) return "server";
   // 后端返回的error_type直接使用
   if (error.error_type === "empty_response") return "empty_response";
-  if (error.error_type === "timeout") return "timeout";
+  if (error.error_type === "timeout") return "request_timeout";
   if (error.error_type === "network") return "network";
   if (error.error_type === "server") return "server";
   return "unknown";
@@ -216,15 +223,17 @@ const classifyError = (error: any): ErrorType => {
 
 /**
  * 获取友好的错误消息
- * 【小强修复 2026-04-09】统一加 "SSE连接" 前缀
+ * 【小强修复 2026-04-09】区分空闲超时和请求等待超时
  */
 const getFriendlyErrorMessage = (errorType: ErrorType, originalMessage: string): string => {
   const prefix = "SSE连接:";
   switch (errorType) {
-    case "timeout":
-      return `${prefix}超时，请检查网络或稍后重试`;
+    case "idle_timeout":
+      return `${prefix}空闲超时（长时间无数据），连接可能已断开`;
+    case "request_timeout":
+      return `${prefix}请求等待超时，服务器响应过慢，请稍后重试`;
     case "network":
-      return `${prefix}网络失败，请检查网络后重试`;
+      return `${prefix}网络连接失败，请检查网络后重试`;
     case "server":
       return `${prefix}服务器错误: ${originalMessage}`;
     case "empty_response":
@@ -457,9 +466,9 @@ export const useSSE = (
         heartbeatTimeoutRef.current = window.setTimeout(() => {
           const timeSinceLastData = Date.now() - lastDataTimeRef.current;
           if (timeSinceLastData > HEARTBEAT_TIMEOUT && isReceiving) {
-            console.warn(`[SSE] 心跳超时：已经${timeSinceLastData/1000}秒未收到数据，判定连接断开`);
-            // 触发超时错误
-            throw new Error("SSE 连接超时：长时间未收到数据");
+            console.warn(`[SSE] 空闲超时：已经${timeSinceLastData/1000}秒未收到数据，判定连接断开`);
+            // 触发空闲超时错误
+            throw new Error("SSE 空闲超时：长时间未收到数据");
           }
         }, HEARTBEAT_TIMEOUT);
         
