@@ -845,8 +845,8 @@ const processSSEData = (
         // 【小资精简 2026-04-07】后端删除第二次LLM调用后，observation只保留content
         // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/raw_data）
         step.content = rawData.content ?? '';
-        // 【小强修复 2026-04-08】提取工具名称（后端字段名为obs_action_tool）
-        step.tool_name = rawData.obs_action_tool || "";
+        // 【小强修复 2026-04-08】后端已不再使用obs_action_tool，改为tool_name
+        step.tool_name = rawData.tool_name || "";
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
         // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current

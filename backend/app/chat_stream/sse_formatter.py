@@ -102,41 +102,27 @@ def format_action_tool_sse(
 
 def format_observation_sse(
     step: int,
-    execution_status: str = 'success',
-    summary: str = '',
     content: str = '',
-    reasoning: str = '',
-    action_tool: str = '',
-    params: Optional[Dict] = None,
-    is_finished: bool = False,
-    raw_data: Any = None
+    tool_name: str = '',
+    timestamp: str = ''
 ) -> str:
     """
     格式化 observation 事件
 
     Args:
         step: 步骤编号
-        execution_status: 执行状态
-        summary: 观察摘要
-        content: 内容
-        reasoning: 推理
-        action_tool: 工具名称
-        params: 工具参数
-        is_finished: 是否完成
-        raw_data: 原始数据
+        content: 内容（工具执行结果简述）
+        tool_name: 工具名称
 
     Returns:
         SSE 格式字符串
     """
     return format_sse_event('observation', step, {
-        'obs_execution_status': execution_status,
-        'obs_summary': summary,
-        'obs_raw_data': raw_data,
-        'content': content,
-        'obs_reasoning': reasoning,
-        'obs_action_tool': action_tool,
-        'obs_params': params or {},
-        'is_finished': is_finished
+        'type': 'observation',
+        'step': step,
+        'timestamp': timestamp,
+        'tool_name': tool_name,
+        'content': content
     })
 
 

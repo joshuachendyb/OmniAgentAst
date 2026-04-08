@@ -118,14 +118,9 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
     elif event_type == 'observation':
         return format_observation_sse(
             step=step,
-            execution_status=event.get('obs_execution_status', 'success'),
-            summary=event.get('obs_summary', ''),
             content=event.get('content', ''),
-            reasoning=event.get('obs_reasoning', ''),
-            action_tool=event.get('obs_action_tool', ''),
-            params=event.get('obs_params', {}),
-            is_finished=event.get('is_finished', False),
-            raw_data=event.get('obs_raw_data')
+            tool_name=event.get('tool_name', ''),
+            timestamp=event.get('timestamp', '')
         )
     elif event_type == 'final':
         return create_final_response(
