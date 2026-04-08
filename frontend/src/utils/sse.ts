@@ -216,19 +216,21 @@ const classifyError = (error: any): ErrorType => {
 
 /**
  * 获取友好的错误消息
+ * 【小强修复 2026-04-09】统一加 "SSE连接" 前缀
  */
 const getFriendlyErrorMessage = (errorType: ErrorType, originalMessage: string): string => {
+  const prefix = "SSE连接";
   switch (errorType) {
     case "timeout":
-      return "请求超时，请检查网络或稍后重试";
+      return `${prefix}超时，请检查网络或稍后重试`;
     case "network":
-      return "网络连接失败，请检查网络后重试";
+      return `${prefix}网络失败，请检查网络后重试`;
     case "server":
-      return `服务器错误: ${originalMessage}`;
+      return `${prefix}服务器错误: ${originalMessage}`;
     case "empty_response":
-      return "模型未能生成有效回复，请尝试更换问题或稍后重试";
+      return `${prefix}模型未能生成有效回复，请尝试更换问题或稍后重试`;
     default:
-      return `连接异常: ${originalMessage}`;
+      return `${prefix}异常: ${originalMessage}`;
   }
 };
 
@@ -567,7 +569,7 @@ export const useSSE = (
       // 【修复小查问题】防止并发调用
       if (isProcessingRef.current) {
         console.warn("[SSE] 已有进行中的请求，等待完成后重试");
-        message.warning("请求处理中，请稍后再试");
+        message.warning("SSE请求处理中，请稍后再试");
         return;
       }
       isProcessingRef.current = true;
