@@ -116,50 +116,50 @@ class TextStrategy(LLMStrategy):
                 logger.warning(f"[LLM Response] Error hint: {error_hint}")
                 return self._make_result(
                     content=f"[错误] {error_hint}",
-                    action_tool="finish",
-                    params={"result": f"[错误] {error_hint}"}
+                    tool_name="finish",
+                    tool_params={"result": f"[错误] {error_hint}"}
                 )
             # 没有具体错误信息时，使用统一的 empty_response 错误提示
             _, user_message = get_error_info_by_type('empty_response')
             return self._make_result(
                 content=f"⚠️ {user_message}",
-                action_tool="finish",
-                params={"result": f"⚠️ {user_message}"}
+                tool_name="finish",
+                tool_params={"result": f"⚠️ {user_message}"}
             )
         
         # ===== 方案C: 尝试 ToolParser.parse_response() =====
         from app.services.agent.tool_parser import ToolParser
         try:
             parsed = ToolParser.parse_response(content)
-            action = parsed.get("action_tool", "finish")
+            tool_name = parsed.get("tool_name", "finish")
             thought = parsed.get("content", "")
-            params = parsed.get("params", {})
+            tool_params = parsed.get("tool_params", {})
             reasoning = parsed.get("reasoning")
-            logger.info(f"[TextStrategy] ToolParser success: action={action}")
-            return self._make_result(content=thought, action_tool=action, params=params, reasoning=reasoning)
+            logger.info(f"[TextStrategy] ToolParser success: tool_name={tool_name}")
+            return self._make_result(content=thought, tool_name=tool_name, tool_params=tool_params, reasoning=reasoning)
         except ValueError:
             pass  # ToolParser 无法解析，继续方案A/B
         
         # ===== 方案B: 工具名保底匹配 =====
         tool_result = self._extract_by_known_tools(content)
         if tool_result:
-            logger.info(f"[TextStrategy] Tool match found: {tool_result['action_tool']}")
+            logger.info(f"[TextStrategy] Tool match found: {tool_result['tool_name']}")
             return self._make_result(
                 content=tool_result.get("content", content),
-                action_tool=tool_result["action_tool"],
-                params=tool_result.get("params", {})
+                tool_name=tool_result.get("tool_name", "finish"),
+                tool_params=tool_result.get("tool_params", {})
             )
         
         # ===== 无法提取工具调用，返回 finish =====
         logger.info(f"[TextStrategy] No action extracted, returning finish with full content")
-        return self._make_result(content=content, action_tool="finish", params={})
+        return self._make_result(content=content, tool_name="finish", tool_params={})
     
-    def _make_result(self, content: str, action_tool: str, params: dict, reasoning: Any = None) -> str:
+    def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None) -> str:
         """构建返回结果"""
         return json.dumps({
             "content": content,
-            "action_tool": action_tool,
-            "params": params,
+            "tool_name": tool_name,
+            "tool_params": tool_params,
             "reasoning": reasoning
         }, ensure_ascii=False)
     
@@ -252,9 +252,9 @@ class TextStrategy(LLMStrategy):
                         break
                 
                 return {
-                    "action_tool": tool,
+                    "tool_name": tool,
                     "content": content,
-                    "params": params
+                    "tool_params": params
                 }
         
         return None
@@ -428,8 +428,8 @@ class ToolsStrategy(LLMStrategy):
             
             formatted = {
                 "thought": f"Calling tool: {func_name}",
-                "action_tool": func_name,
-                "params": args
+                "tool_name": func_name,
+                "tool_params": args
             }
         else:
             # 多个工具调用（合并为一个）
@@ -450,8 +450,8 @@ class ToolsStrategy(LLMStrategy):
             first_call = calls_info[0]
             formatted = {
                 "thought": f"Calling {len(tool_calls)} tools: {[c['name'] for c in calls_info]}",
-                "action_tool": first_call["name"],
-                "params": first_call["args"]
+                "tool_name": first_call["name"],
+                "tool_params": first_call["args"]
             }
         
         return json.dumps(formatted, ensure_ascii=False)
@@ -478,13 +478,13 @@ class ResponseFormatStrategy(LLMStrategy):
                 "type": "object",
                 "properties": {
                     "thought": {"type": "string", "description": "思考过程"},
-                    "action_tool": {"type": "string", "description": "工具名称"},
-                    "params": {
+                    "tool_name": {"type": "string", "description": "工具名称"},
+                    "tool_params": {
                         "type": "object",
                         "description": "工具参数"
                     }
                 },
-                "required": ["thought", "action_tool", "params"]
+                "required": ["thought", "tool_name", "tool_params"]
             }
         }
     
@@ -537,18 +537,18 @@ class ResponseFormatStrategy(LLMStrategy):
                 result = json.loads(content)
                 
                 thought = result.get("thought", "")
-                action_tool = result.get("action_tool", "")
-                params = result.get("params", {})
+                tool_name = result.get("tool_name", result.get("action_tool", ""))
+                tool_params = result.get("tool_params", result.get("params", {}))
                 
                 # 转换为 Agent 的 ToolParser 可以理解的格式
                 formatted = {
                     "thought": thought,
-                    "action_tool": action_tool,
-                    "params": params
+                    "tool_name": tool_name,
+                    "tool_params": tool_params
                 }
                 
                 content = json.dumps(formatted, ensure_ascii=False)
-                logger.info(f"[Agent] response_format parsed: action_tool={action_tool}")
+                logger.info(f"[Agent] response_format parsed: tool_name={tool_name}")
                 
             except json.JSONDecodeError as e:
                 logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={content}")

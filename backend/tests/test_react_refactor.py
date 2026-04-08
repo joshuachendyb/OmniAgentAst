@@ -403,7 +403,7 @@ class TestReActFlow:
         """测试Observation阶段同时包含输入和输出（设计文档5.4节）"""
         # Observation阶段特点：
         # - 输入：来自Action的 execution_status, summary, raw_data
-        # - 输出：LLM新的 content, reasoning, action_tool, params
+        # - 输出：LLM新的 content, reasoning, tool_name, tool_params
         
         from app.services.agent.types import ObservationStep
         
@@ -413,19 +413,19 @@ class TestReActFlow:
             execution_status="success",
             summary="成功读取目录",
             raw_data={"entries": ["file1.txt"]},
-        # 输出（LLM决策）
-        content="已获取文件列表，可以回复用户",
-        reasoning="文件列表已完整",
-        tool_name="finish",
-        tool_params={},
-        is_finished=True
-    )
-    
-    # 验证同时包含输入和输出
-    assert observation.execution_status == "success"  # 输入
-    assert observation.raw_data is not None  # 输入
-    assert observation.content is not None  # 输出
-    assert observation.tool_name is not None  # 输出
+            # 输出（LLM决策）
+            content="已获取文件列表，可以回复用户",
+            reasoning="文件列表已完整",
+            tool_name="finish",
+            tool_params={},
+            is_finished=True
+        )
+        
+        # 验证同时包含输入和输出
+        assert observation.execution_status == "success"  # 输入
+        assert observation.raw_data is not None  # 输入
+        assert observation.content is not None  # 输出
+        assert observation.tool_name is not None  # 输出
 
 
 class TestFieldNaming:

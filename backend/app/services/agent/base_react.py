@@ -171,8 +171,8 @@ class BaseAgent(ABC):
                         "timestamp": create_timestamp(),
                         "content": error_info["content"],
                         "reasoning": error_info.get("reasoning", ""),
-                        "action_tool": error_info["action_tool"],
-                        "params": error_info.get("params", {}),
+                        "tool_name": error_info.get("tool_name", "finish"),
+                        "tool_params": error_info.get("tool_params", {}),
                         "parse_error": error_result["error_type"]  # 添加错误类型标记
                     }
                     
@@ -181,8 +181,8 @@ class BaseAgent(ABC):
                     continue
                 
                 thought_content = parsed.get("content", "")
-                action_tool = parsed.get("action_tool", "finish")
-                params = parsed.get("params", {})
+                tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
+                tool_params = parsed.get("tool_params", parsed.get("params", {}))
                 
                 # yield thought
                 current_time = create_timestamp()
@@ -191,8 +191,8 @@ class BaseAgent(ABC):
                     "step": step_count,
                     "timestamp": current_time,
                     "content": thought_content,
-                    "action_tool": action_tool,
-                    "params": params
+                    "tool_name": tool_name,
+                    "tool_params": tool_params
                 }
                 
                 # 【修复 2026-03-31 小沈】将 LLM 的 thought 响应加入 conversation_history
@@ -201,17 +201,17 @@ class BaseAgent(ABC):
                 self.conversation_history.append({"role": "assistant", "content": response})
                 
                 # 判断是否结束
-                if action_tool == "finish":
+                if tool_name == "finish":
                     yield {
                         "type": "final",
                         "timestamp": current_time,
-                        "content": params.get("result", thought_content)
+                        "content": tool_params.get("result", thought_content)
                     }
                     break
                 
                 # ========== Action 阶段 ==========
                 self.status = AgentStatus.EXECUTING
-                execution_result = await self._execute_tool(action_tool, params)
+                execution_result = await self._execute_tool(tool_name, tool_params)
                 
                 # yield action_tool
                 yield {
@@ -243,8 +243,8 @@ class BaseAgent(ABC):
                 prompt_logger.log_observation(
                     step_name="工具执行结果",
                     observation_content=observation_text,
-                    tool_name=action_tool,
-                    tool_params=params
+                    tool_name=tool_name,
+                    tool_params=tool_params
                 )
                 
                 # ========== Observation 阶段（简化版）==========
@@ -256,8 +256,8 @@ class BaseAgent(ABC):
                     "type": "observation",
                     "step": step_count,
                     "timestamp": current_time,
-                    "tool_name": action_tool,
-                    "content": f"Tool '{action_tool}' executed: {execution_result.get('summary', 'completed')}"
+                    "tool_name": tool_name,
+                    "content": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}"
                 }
 
                 self._trim_history()

@@ -20,16 +20,16 @@ class ThoughtStep:
     step_number: int
     content: str
     reasoning: Optional[str] = None
-    action_tool: str = ""
-    params: Dict[str, Any] = field(default_factory=dict)
+    tool_name: str = ""
+    tool_params: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
             "step_number": self.step_number,
             "content": self.content,
             "reasoning": self.reasoning,
-            "action_tool": self.action_tool,
-            "params": self.params
+            "tool_name": self.tool_name,
+            "tool_params": self.tool_params
         }
 
 
@@ -65,8 +65,8 @@ class ObservationStep:
     raw_data: Optional[Dict[str, Any]] = None
     content: str = ""
     reasoning: Optional[str] = None
-    action_tool: str = ""
-    params: Dict[str, Any] = field(default_factory=dict)
+    tool_name: str = ""
+    tool_params: Dict[str, Any] = field(default_factory=dict)
     is_finished: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
@@ -77,8 +77,8 @@ class ObservationStep:
             "raw_data": self.raw_data,
             "content": self.content,
             "reasoning": self.reasoning,
-            "action_tool": self.action_tool,
-            "params": self.params,
+            "tool_name": self.tool_name,
+            "tool_params": self.tool_params,
             "is_finished": self.is_finished
         }
 

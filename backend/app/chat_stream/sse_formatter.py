@@ -42,8 +42,8 @@ def format_thought_sse(
     step: int,
     content: str,
     reasoning: str = '',
-    action_tool: str = '',
-    params: Optional[Dict] = None
+    tool_name: str = '',
+    tool_params: Optional[Dict] = None
 ) -> str:
     """
     格式化 thought 事件
@@ -52,8 +52,8 @@ def format_thought_sse(
         step: 步骤编号
         content: 思考内容
         reasoning: 推理过程
-        action_tool: 目标工具
-        params: 工具参数
+        tool_name: 目标工具
+        tool_params: 工具参数
 
     Returns:
         SSE 格式字符串
@@ -61,8 +61,8 @@ def format_thought_sse(
     return format_sse_event('thought', step, {
         'content': content,
         'reasoning': reasoning,
-        'action_tool': action_tool,
-        'params': params or {}
+        'tool_name': tool_name,
+        'tool_params': tool_params or {}
     })
 
 

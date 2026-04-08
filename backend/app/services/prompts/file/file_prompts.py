@@ -138,8 +138,8 @@ Available Tools:
 Example 1: List directory
 {
     "thought": "User wants to see files in D drive root",
-    "action_tool": "list_directory",
-    "params": {
+    "tool_name": "list_directory",
+    "tool_params": {
         "dir_path": "D:/"  // ✅ CORRECT: uses dir_path
     }
 }
@@ -148,8 +148,8 @@ Example 1: List directory
 Example 2: Read file
 {
     "thought": "User wants to read a config file",
-    "action_tool": "read_file",
-    "params": {
+    "tool_name": "read_file",
+    "tool_params": {
         "file_path": "C:/Users/username/config.json"  // ✅ CORRECT: uses file_path
     }
 }
@@ -158,8 +158,8 @@ Example 2: Read file
 Example 3: Search file content
 {
     "thought": "User wants to search for TODO comments in Python files",
-    "action_tool": "search_file_content",
-    "params": {
+    "tool_name": "search_file_content",
+    "tool_params": {
         "pattern": "TODO",
         "path": "D:/project",
         "file_pattern": "*.py"
@@ -169,8 +169,8 @@ Example 3: Search file content
 Example 4: Move file
 {
     "thought": "User wants to move file to new location",
-    "action_tool": "move_file",
-    "params": {
+    "tool_name": "move_file",
+    "tool_params": {
         "source_path": "C:/old/file.txt",  // ✅ CORRECT
         "destination_path": "D:/new/file.txt"  // ✅ CORRECT
     }
@@ -199,14 +199,14 @@ Example 4: Move file
 Always format responses as JSON:
 {
     "thought": "Your reasoning about what to do next",
-    "action_tool": "tool_name",
-    "params": {
+    "tool_name": "tool_name",
+    "tool_params": {
         "param1": "value1",
         "param2": "value2"
     }
 }
 
-If task is complete: {"thought": "...", "action_tool": "finish", "params": {"result": "summary"}}"""
+If task is complete: {"thought": "...", "tool_name": "finish", "tool_params": {"result": "summary"}}"""
 
     def get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
@@ -229,9 +229,9 @@ Please help me complete this file management task. Follow these steps:
 3. Provide a summary when finished
 
 IMPORTANT - When to finish:
-- When the user's task is COMPLETED, use action_tool="finish" with a summary of what was done
+- When the user's task is COMPLETED, use tool_name="finish" with a summary of what was done
 - Do NOT keep calling tools after the task is done
-- Example finish: {{"thought": "任务已完成，我已查看E盘内容...", "action_tool": "finish", "params": {{"result": "完成了..."}}}}
+- Example finish: {{"thought": "任务已完成，我已查看E盘内容...", "tool_name": "finish", "tool_params": {{"result": "完成了..."}}}}
 
 Remember:
 - You can use multiple tools in sequence

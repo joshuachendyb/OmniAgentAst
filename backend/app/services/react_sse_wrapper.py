@@ -102,8 +102,8 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
             step=step,
             content=event.get('content', ''),
             reasoning=event.get('reasoning', ''),
-            action_tool=event.get('action_tool', ''),
-            params=event.get('params', {})
+            tool_name=event.get('tool_name', event.get('action_tool', '')),
+            tool_params=event.get('tool_params', event.get('params', {}))
         )
     elif event_type == 'action_tool':
         return format_action_tool_sse(
