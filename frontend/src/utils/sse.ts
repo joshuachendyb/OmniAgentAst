@@ -300,10 +300,11 @@ export const useSSE = (
   const requestStartTimeRef = useRef<number>(0);
   const chunkCountRef = useRef<number>(0);
   
-  // 【小强修复 2026-03-18】SSE 超时检测 - 解决页面隐藏后连接断开问题
+  // 【小强修复 2026-03-18】SSE 空闲超时检测 - 解决页面隐藏后连接断开问题
+  // 【小强修复 2026-04-09】重命名为 IDLE_TIMEOUT，更准确反映语义
   const lastDataTimeRef = useRef<number>(0);  // 最后收到数据的时间
-  const heartbeatTimeoutRef = useRef<number | null>(null);  // 心跳超时检测
-  const HEARTBEAT_TIMEOUT = 60000;  // 60 秒无数据判定为断开
+  const idleTimeoutRef = useRef<number | null>(null);  // 空闲超时检测
+  const IDLE_TIMEOUT = 60000;  // 60 秒无数据判定为断开
 
   // 【小强添加 2026-03-18】sessionStorage 备份相关
   // 恢复：组件初始化时检查是否有备份数据
@@ -399,40 +400,6 @@ export const useSSE = (
   }, [clearStepsFromStorage]);
 
   /**
-   * 重连函数
-   * 【小强修复 2026-04-09】重新添加缺失的 reconnect 函数
-   */
-  const reconnect = useCallback(() => {
-    if (!pendingMessageRef.current) {
-      console.warn("[SSE] 没有待重连的消息");
-      return;
-    }
-
-    const { content, sessionId } = pendingMessageRef.current;
-    const config = reconnectConfigRef.current;
-    
-    if (reconnectAttemptsRef.current >= config.maxAttempts) {
-      console.error("[SSE] 超过最大重连次数");
-      setReconnectStatus("failed");
-      message.error("SSE连接: 连接失败，请刷新页面重试");
-      return;
-    }
-
-    const attempt = reconnectAttemptsRef.current;
-    const delay = calculateReconnectDelay(attempt, config.baseDelay, config.maxDelay);
-    
-    setReconnectStatus("reconnecting");
-    message.warning(`正在重新连接 (${attempt + 1}/${config.maxAttempts})...`);
-    
-    console.log(`[SSE] 准备重连，attempt=${attempt + 1}, delay=${delay}ms`);
-
-    reconnectTimeoutRef.current = setTimeout(() => {
-      reconnectAttemptsRef.current++;
-      sendMessageInternal(content, sessionId);
-    }, delay);
-  }, []);
-
-  /**
    * 内部发送消息函数（用于重连）
    * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
    */
@@ -493,43 +460,42 @@ export const useSSE = (
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
-        // 【小强修复 2026-03-18】添加超时检测 - 解决页面隐藏后连接断开问题
-        if (heartbeatTimeoutRef.current) {
-          clearTimeout(heartbeatTimeoutRef.current);
+        // 【小强修复 2026-04-09】使用 IDLE_TIMEOUT，更准确的命名
+        if (idleTimeoutRef.current) {
+          clearTimeout(idleTimeoutRef.current);
         }
-        heartbeatTimeoutRef.current = window.setTimeout(() => {
+        idleTimeoutRef.current = window.setTimeout(() => {
           const timeSinceLastData = Date.now() - lastDataTimeRef.current;
-          if (timeSinceLastData > HEARTBEAT_TIMEOUT && isReceiving) {
+          if (timeSinceLastData > IDLE_TIMEOUT && isReceiving) {
             console.warn(`[SSE] 空闲超时：已经${timeSinceLastData/1000}秒未收到数据，判定连接断开`);
-            // 触发空闲超时错误
             throw new Error("SSE 空闲超时：长时间未收到数据");
           }
-        }, HEARTBEAT_TIMEOUT);
+        }, IDLE_TIMEOUT);
         
         const { done, value } = await reader.read();
 
         if (done) {
           if (buffer.trim()) {
-        processSSEData(buffer, {
-          setExecutionSteps,
-          getCurrentExecutionSteps: () => executionStepsRef.current,
-          executionStepsRef,  // 【小新添加 2026-03-15】传递 ref 以便在 processSSEData 内部同步更新
-          saveStepsToStorage,  // 【小强添加 2026-03-18】传递 sessionStorage 保存函数
-          onStep,
-          onChunk,
-          onComplete,
-          onError,
-          onPaused,
-          onResumed,
-          onShowSteps,
-          onRetry,
-          setCurrentResponse,
-          responseBufferRef,
-          setIsReceiving,
-          setIsConnected,
-          disconnect,
-          setServerTaskId,
-        }, isProcessingRef);
+            processSSEData(buffer, {
+              setExecutionSteps,
+              getCurrentExecutionSteps: () => executionStepsRef.current,
+              executionStepsRef,
+              saveStepsToStorage,
+              onStep,
+              onChunk,
+              onComplete,
+              onError,
+              onPaused,
+              onResumed,
+              onShowSteps,
+              onRetry,
+              setCurrentResponse,
+              responseBufferRef,
+              setIsReceiving,
+              setIsConnected,
+              disconnect,
+              setServerTaskId,
+            }, isProcessingRef);
           }
           break;
         }
@@ -545,8 +511,8 @@ export const useSSE = (
           processSSEData(line, {
             setExecutionSteps,
             getCurrentExecutionSteps: () => executionStepsRef.current,
-            executionStepsRef,  // 【小新添加 2026-03-15】传递 ref 以便在 processSSEData 内部同步更新
-            saveStepsToStorage,  // 【小强添加 2026-03-18】传递 sessionStorage 保存函数
+            executionStepsRef,
+            saveStepsToStorage,
             onStep,
             onChunk,
             onComplete,
@@ -583,19 +549,16 @@ export const useSSE = (
         const delay = calculateReconnectDelay(attempt, config.baseDelay, config.maxDelay);
         
         message.warning(friendlyMessage + `，${delay/1000}秒后尝试重连...`);
-        // 保存待重连的消息
         pendingMessageRef.current = { content, sessionId };
-        // 触发重连，使用指数退避延迟
         reconnectTimeoutRef.current = setTimeout(() => {
           reconnect();
         }, delay);
       } else {
         setReconnectStatus("failed");
         message.error(friendlyMessage);
-        // 【小新修复2026-03-13】传递完整的错误对象
         onError?.({
           type: "error",
-          error_type: "connection_error",
+          error_type: errorType,
           message: friendlyMessage,
           code: "CONNECTION_FAILED",
           timestamp: new Date().toISOString()
@@ -603,6 +566,40 @@ export const useSSE = (
       }
     }
   };
+
+  /**
+   * 重连函数
+   * 【小强修复 2026-04-09】重新添加缺失的 reconnect 函数，移到 sendMessageInternal 之后避免变量未定义问题
+   */
+  const reconnect = useCallback(() => {
+    if (!pendingMessageRef.current) {
+      console.warn("[SSE] 没有待重连的消息");
+      return;
+    }
+
+    const { content, sessionId } = pendingMessageRef.current;
+    const config = reconnectConfigRef.current;
+    
+    if (reconnectAttemptsRef.current >= config.maxAttempts) {
+      console.error("[SSE] 超过最大重连次数");
+      setReconnectStatus("failed");
+      message.error("SSE连接: 连接失败，请刷新页面重试");
+      return;
+    }
+
+    const attempt = reconnectAttemptsRef.current;
+    const delay = calculateReconnectDelay(attempt, config.baseDelay, config.maxDelay);
+    
+    setReconnectStatus("reconnecting");
+    message.warning(`正在重新连接 (${attempt + 1}/${config.maxAttempts})...`);
+    
+    console.log(`[SSE] 准备重连，attempt=${attempt + 1}, delay=${delay}ms`);
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      reconnectAttemptsRef.current++;
+      sendMessageInternal(content, sessionId);
+    }, delay);
+  }, [sendMessageInternal]);
 
   /**
    * 发送消息建立SSE连接
@@ -622,7 +619,7 @@ export const useSSE = (
       reconnectAttemptsRef.current = 0;
       
       await sendMessageInternal(content, sessionId);
-      
+
       // 请求结束后重置
       isProcessingRef.current = false;
     },
