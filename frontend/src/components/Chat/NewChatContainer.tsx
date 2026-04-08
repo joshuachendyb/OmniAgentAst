@@ -273,6 +273,10 @@ const NewChatContainer: React.FC = () => {
           lastMessage.role === "assistant" &&
           lastMessage.isStreaming
         ) {
+          // 只打印非chunk步骤，减少日志
+          if (step.type !== 'chunk') {
+            console.log("🔍 [onStep] 步骤被添加, type=", step.type);
+          }
           const updatedSteps = [...(lastMessage.executionSteps || []), step];
           const updated = [...prev];
           updated[updated.length - 1] = {
@@ -281,6 +285,7 @@ const NewChatContainer: React.FC = () => {
           };
           return updated;
         }
+        console.log("🔍 [onStep] 步骤被丢弃, type=", step.type, "lastMessage.role=", lastMessage?.role, "isStreaming=", lastMessage?.isStreaming);
         return prev;
       });
     }, []),
@@ -641,12 +646,12 @@ const NewChatContainer: React.FC = () => {
     }, []),
     // onShowSteps - 控制步骤显示/隐藏（收到chunk时关闭步骤UI）
     useCallback((show: boolean) => {
-      // 打印所有调用，不跳过（方便调试）
-      if (show) {
-        console.log("👁️ [onShowSteps] 设置步骤显示状态: true");
-      } else {
-        console.log("👁️ [onShowSteps] 设置步骤显示状态: false");
-      }
+      // 只在状态变化时打印
+      // if (show) {
+      //   console.log("👁️ [onShowSteps] 设置步骤显示状态: true");
+      // } else {
+      //   console.log("👁️ [onShowSteps] 设置步骤显示状态: false");
+      // }
       setShowExecution(show);
     }, []),
     // ⭐ onRetry - 重试事件 - 【小查修复2026-03-13】添加waitTime参数
