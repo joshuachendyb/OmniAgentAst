@@ -4,12 +4,14 @@ ReAct流式重构测试用例
 
 测试范围：
 1. 流式推送：thought → action_tool → observation → final
-2. 字段格式：新字段 action_tool, params, execution_status, summary
+2. 字段格式：新字段 tool_name, tool_params, execution_status, summary
 3. 分页功能：next-page接口
 4. tools.py统一返回格式：status代替success
 
 创建时间：2026-03-09 22:00:00
 创建人：小沈
+更新时间：2026-04-08 16:30:00
+更新人：小健（根据第8章文档修改）
 """
 import pytest
 import json
@@ -147,19 +149,19 @@ class TestAgentNewFields:
         )
     
     @pytest.mark.asyncio
-    async def test_parse_response_returns_action_tool(self, agent):
-        """测试parse_response返回新字段action_tool"""
+    async def test_parse_response_returns_tool_name(self, agent):
+        """测试parse_response返回新字段tool_name"""
         response = json.dumps({
             "content": "用户想要查看桌面",
-            "action_tool": "list_directory",
-            "params": {"path": "C:\\Users\\test"}
+            "tool_name": "list_directory",
+            "tool_params": {"path": "C:\\Users\\test"}
         })
         
         result = agent.parser.parse_response(response)
         
-        assert "action_tool" in result, "应包含action_tool字段"
-        assert result["action_tool"] == "list_directory"
-        assert result["params"] == {"path": "C:\\Users\\test"}
+        assert "tool_name" in result, "应包含tool_name字段"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"] == {"path": "C:\\Users\\test"}
     
     @pytest.mark.asyncio
     async def test_parse_response_backward_compatible(self, agent):
@@ -173,8 +175,8 @@ class TestAgentNewFields:
         result = agent.parser.parse_response(response)
         
         # 新字段应该从旧字段转换而来
-        assert result["action_tool"] == "list_directory"
-        assert result["params"] == {"path": "C:\\Users\\test"}
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"] == {"path": "C:\\Users\\test"}
     
     @pytest.mark.asyncio
     @pytest.mark.skip(reason="run_stream测试需要更完善的mock设置")
@@ -184,8 +186,8 @@ class TestAgentNewFields:
         mock_llm_client.chat = AsyncMock(return_value=Mock(
             content=json.dumps({
                 "content": "用户想要查看桌面",
-                "action_tool": "finish",
-                "params": {"result": "任务完成"}
+                "tool_name": "finish",
+                "tool_params": {"result": "任务完成"}
             })
         ))
         
@@ -211,8 +213,8 @@ class TestAgentNewFields:
         mock_llm_client.chat = AsyncMock(return_value=Mock(
             content=json.dumps({
                 "content": "思考内容",
-                "action_tool": "list_directory",
-                "params": {"path": "C:\\test"}
+                "tool_name": "list_directory",
+                "tool_params": {"path": "C:\\test"}
             })
         ))
         
@@ -229,8 +231,8 @@ class TestAgentNewFields:
         thought_event = events[0]
         assert thought_event["type"] == "thought"
         assert "content" in thought_event
-        assert "action_tool" in thought_event
-        assert "params" in thought_event
+        assert "tool_name" in thought_event
+        assert "tool_params" in thought_event
 
 
 class TestActionToolFields:
@@ -363,12 +365,12 @@ class TestReActFlow:
         thought = ThoughtStep(
             step_number=1,
             content="用户想要查看桌面",
-            action_tool="list_directory",
-            params={"path": "C:\\Users\\test"}
+            tool_name="list_directory",
+            tool_params={"path": "C:\\Users\\test"}
         )
         
-        assert thought.action_tool == "list_directory"
-        assert thought.params == {"path": "C:\\Users\\test"}
+        assert thought.tool_name == "list_directory"
+        assert thought.tool_params == {"path": "C:\\Users\\test"}
         
         # Action阶段
         action = ActionToolStep(
@@ -388,13 +390,13 @@ class TestReActFlow:
             execution_status="success",
             summary="成功读取目录",
             content="已获取文件列表",
-            action_tool="finish",
-            params={},
+            tool_name="finish",
+            tool_params={},
             is_finished=True
         )
         
         assert observation.is_finished == True
-        assert observation.action_tool == "finish"
+        assert observation.tool_name == "finish"
     
     @pytest.mark.asyncio
     async def test_observation_contains_both_input_and_output(self):
@@ -411,19 +413,19 @@ class TestReActFlow:
             execution_status="success",
             summary="成功读取目录",
             raw_data={"entries": ["file1.txt"]},
-            # 输出（LLM决策）
-            content="已获取文件列表，可以回复用户",
-            reasoning="文件列表已完整",
-            action_tool="finish",
-            params={},
-            is_finished=True
-        )
-        
-        # 验证同时包含输入和输出
-        assert observation.execution_status == "success"  # 输入
-        assert observation.raw_data is not None  # 输入
-        assert observation.content is not None  # 输出
-        assert observation.action_tool is not None  # 输出
+        # 输出（LLM决策）
+        content="已获取文件列表，可以回复用户",
+        reasoning="文件列表已完整",
+        tool_name="finish",
+        tool_params={},
+        is_finished=True
+    )
+    
+    # 验证同时包含输入和输出
+    assert observation.execution_status == "success"  # 输入
+    assert observation.raw_data is not None  # 输入
+    assert observation.content is not None  # 输出
+    assert observation.tool_name is not None  # 输出
 
 
 class TestFieldNaming:
