@@ -335,10 +335,13 @@ export const useSSE = (
   /**
    * 断开连接
    * @param manualDisconnect - 是否是手动中断（手动中断不允许重连）
+   * @param clearStorage - 是否清空 sessionStorage（重连时设为 false，保留数据）
    */
-  const disconnect = useCallback((manualDisconnect: boolean = false) => {
-    // 清空 sessionStorage 备份
-    clearStepsFromStorage();
+  const disconnect = useCallback((manualDisconnect: boolean = false, clearStorage: boolean = true) => {
+    // 清空 sessionStorage 备份（除非重连时明确指定不清空）
+    if (clearStorage) {
+      clearStepsFromStorage();
+    }
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
@@ -363,8 +366,17 @@ export const useSSE = (
     }
   }, []);
 
+   /**
+    * 软清理执行步骤（用于重连时保留已有步骤）
+    * 只清理运行时状态，不清空已收到的 steps
+    */
+  const softClearSteps = useCallback(() => {
+    setCurrentResponse("");
+    responseBufferRef.current = "";
+  }, []);
+
   /**
-   * 清空执行步骤
+   * 清空执行步骤（完全重置，用于新对话）
    */
   const clearSteps = useCallback(() => {
     setExecutionSteps([]);
@@ -375,51 +387,13 @@ export const useSSE = (
     clearStepsFromStorage();
   }, [clearStepsFromStorage]);
 
-  // 同步 executionSteps 到 ref
-  useEffect(() => {
-    executionStepsRef.current = executionSteps;
-  }, [executionSteps]);
-
-  /**
-   * 执行重连
-   */
-  const reconnect = useCallback(() => {
-    if (!pendingMessageRef.current) {
-      console.warn("[SSE] 没有待重连的消息");
-      return;
-    }
-
-    const { content, sessionId } = pendingMessageRef.current;
-    const config = reconnectConfigRef.current;
-    
-    if (reconnectAttemptsRef.current >= config.maxAttempts) {
-      console.error("[SSE] 超过最大重连次数");
-      setReconnectStatus("failed");
-      message.error("连接失败，请刷新页面重试");
-      return;
-    }
-
-    const attempt = reconnectAttemptsRef.current;
-    const delay = calculateReconnectDelay(attempt, config.baseDelay, config.maxDelay);
-    
-    setReconnectStatus("reconnecting");
-    message.warning(`正在重新连接 (${attempt + 1}/${config.maxAttempts})...`);
-    
-    console.log(`[SSE] 准备重连，attempt=${attempt + 1}, delay=${delay}ms`);
-
-    reconnectTimeoutRef.current = setTimeout(() => {
-      reconnectAttemptsRef.current++;
-      // 调用 sendMessage 进行重连
-      sendMessageInternal(content, sessionId);
-    }, delay);
-  }, []);
-
   /**
    * 内部发送消息函数（用于重连）
+   * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
    */
   const sendMessageInternal = async (content: string, sessionId?: string) => {
-    disconnect();
-    clearSteps();
+    disconnect(false, false);  // 重连时：非手动断开 + 不清空 sessionStorage
+    softClearSteps();  // 软清理：保留 steps，只清理运行时状态
 
     // 【小强添加 2026-03-18】重置性能指标并记录开始时间
     requestStartTimeRef.current = Date.now();
@@ -1030,6 +1004,8 @@ const processSSEData = (
           retry_after: rawData.retry_after,
           timestamp: rawData.timestamp || timestampValue
         });
+        // 【小强修复 2026-04-08】error 也需要触发 onComplete，清理 UI 状态
+        onComplete?.(responseBufferRef.current, undefined);
         setIsReceiving(false);
         setIsConnected(false);
         break;
