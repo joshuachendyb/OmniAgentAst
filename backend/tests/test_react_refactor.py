@@ -440,8 +440,8 @@ class TestFieldNaming:
         thought_data = {
             "type": "thought",
             "content": "思考内容",
-            "action_tool": "list_directory",
-            "params": {}
+            "tool_name": "list_directory",
+            "tool_params": {}
         }
         
         assert "thought" not in thought_data or thought_data.get("type") == "thought"
@@ -450,9 +450,9 @@ class TestFieldNaming:
         assert "thought_content" not in thought_data
     
     def test_action_tool_fields_not_nested(self):
-        """测试action_tool结果不嵌套thought/action"""
-        # 错误：observation内部嵌套thought/action_tool
-        # 正确：observation直接包含execution_status/summary/content/action_tool/params
+        """测试tool_name结果不嵌套thought/action"""
+        # 错误：observation内部嵌套thought/tool_name
+        # 正确：observation直接包含execution_status/summary/content/tool_name/tool_params
         
         action_data = {
             "type": "action_tool",
@@ -465,7 +465,7 @@ class TestFieldNaming:
         
         # 验证不嵌套
         assert "thought" not in action_data
-        assert "action_tool" not in action_data or action_data.get("tool_name") == "list_directory"
+        assert "tool_name" in action_data
 
 
 class TestChatStreamFields:
@@ -478,14 +478,14 @@ class TestChatStreamFields:
             "type": "thought",
             "content": "用户想要查看桌面",
             "reasoning": "需要先列出目录",
-            "action_tool": "list_directory",
-            "params": {"path": "C:\\Users\\test"}
+            "tool_name": "list_directory",
+            "tool_params": {"path": "C:\\Users\\test"}
         }
         
         assert event["type"] == "thought"
         assert "content" in event
-        assert "action_tool" in event
-        assert "params" in event
+        assert "tool_name" in event
+        assert "tool_params" in event
     
     def test_action_event_fields(self):
         """测试action事件字段"""
@@ -513,15 +513,15 @@ class TestChatStreamFields:
             "execution_status": "success",
             "summary": "成功读取目录",
             "content": "已获取文件列表",
-            "action_tool": "finish",
-            "params": {},
+            "tool_name": "finish",
+            "tool_params": {},
             "is_finished": True
         }
         
         assert event["type"] == "observation"
         assert "execution_status" in event
         assert "content" in event
-        assert "action_tool" in event
+        assert "tool_name" in event
         assert "is_finished" in event
     
     def test_final_event_fields(self):
