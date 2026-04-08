@@ -73,7 +73,7 @@ describe('MessageItem Component', () => {
     render(<MessageItem message={messageWithSteps} showExecution={true} />);
 
     // 有 executionSteps 时渲染步骤内容，不渲染 message.content
-     // 检查思考步骤显示（💭 图标 + 分析内容）
+     // 检查思考步骤显示（💭 图标 + 思考内容）
     expect(screen.getByText(/Thinking\.\.\./)).toBeInTheDocument();
   });
 
