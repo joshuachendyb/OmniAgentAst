@@ -83,10 +83,10 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
   
   const labelMap: Record<string, string> = {
     start: "开始",
-    thought: "分析",
+    thought: "思考",
     action_tool: "执行",
-    observation: "检查",
-    final: "总结",
+    observation: "观察",
+    final: "完成",
     error: "错误",
     paused: "暂停",
     resumed: "恢复",
@@ -99,7 +99,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
     start: "🚀",
     thought: "💭",
     action_tool: "⚙️",
-    observation: "🔍",
+    observation: "📋",
     final: "✅",
     error: "❌",
     paused: "⏸️",
