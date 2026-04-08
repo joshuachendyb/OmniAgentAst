@@ -170,7 +170,6 @@ class BaseAgent(ABC):
                         "step": step_count,
                         "timestamp": create_timestamp(),
                         "content": error_info["content"],
-                        "reasoning": error_info.get("reasoning", ""),
                         "tool_name": error_info.get("tool_name", "finish"),
                         "tool_params": error_info.get("tool_params", {}),
                         "parse_error": error_result["error_type"]  # 添加错误类型标记
@@ -178,7 +177,15 @@ class BaseAgent(ABC):
                     
                     # 添加observation提示，让LLM可以重新响应
                     self._add_observation_to_history(f"Parse error: {error_result['error_message']}. Please respond with valid JSON format.")
-                    continue
+                    
+                    # 【修复2026-04-08 小沈】解析失败时yield error并退出，避免无限循环
+                    # 原：continue 会跳过第203行的 finish 判断，导致无限循环
+                    yield {
+                        "type": "final",
+                        "timestamp": create_timestamp(),
+                        "content": error_info["content"]
+                    }
+                    break
                 
                 thought_content = parsed.get("content", "")
                 tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))

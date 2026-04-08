@@ -1,10 +1,43 @@
-v0.8.79
+v0.8.80
 
-更新时间：2026-04-08 19:00:22
+更新时间：2026-04-08 20:35:00
 
 更新内容：
 
-## 1. ReAct字段统一化 - tool_name/tool_params 字段名统一 - 小沈/小强/小资/小健-2026-04-08
+## 1. 修复解析失败无限循环Bug - 小沈-2026-04-08
+
+### 1.1 问题
+
+- 当LLM响应解析失败时，`base_react.py`第180行执行`continue`
+- 导致跳过第203行的`if tool_name == "finish"`判断
+- 不会yield final，不会break，无限循环显示错误
+
+### 1.2 修复
+
+**修改文件**: `backend/app/services/agent/base_react.py` 第180-188行
+
+**修改内容**:
+- 原：`continue` 跳过 finish 判断，导致无限循环
+- 改：yield final 后 break，退出循环
+
+### 1.3 Commit
+
+| Commit | 说明 |
+|--------|------|
+| - | fix: 修复解析失败无限循环Bug-改为yield final并break-小沈-2026-04-08 |
+
+### 1.4 测试验证
+
+| 测试项 | 结果 |
+|-------|------|
+| 后端测试 | ✅ 28 passed, 4 skipped |
+
+参与开发：小沈
+测试验证：28 passed, 4 skipped
+
+---
+
+## 2. ReAct字段统一化 - tool_name/tool_params 字段名统一 - 小沈/小强/小资/小健-2026-04-08
 
 ### 1.1 背景
 
