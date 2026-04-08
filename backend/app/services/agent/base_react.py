@@ -181,7 +181,6 @@ class BaseAgent(ABC):
                     continue
                 
                 thought_content = parsed.get("content", "")
-                reasoning = parsed.get("reasoning") or ""  # 确保不是None
                 action_tool = parsed.get("action_tool", "finish")
                 params = parsed.get("params", {})
                 
@@ -192,7 +191,6 @@ class BaseAgent(ABC):
                     "step": step_count,
                     "timestamp": current_time,
                     "content": thought_content,
-                    "reasoning": reasoning,
                     "action_tool": action_tool,
                     "params": params
                 }

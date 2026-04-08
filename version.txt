@@ -1,6 +1,6 @@
 v0.8.77
 
-更新时间：2026-04-08 08:46:16
+更新时间：2026-04-08 09:40:41
 
 更新内容：
 
@@ -29,9 +29,10 @@ v0.8.77
 | Commit | 说明 |
 |--------|------|
 | b5254f25 | feat: observation阶段新增tool_name字段 - 小沈 2026-04-07 |
+| - | fix: sse.ts observation解析从obs_action_tool改为tool_name - 小强 2026-04-08 |
 
 **修改文件**:
-- `frontend/src/utils/sse.ts` - SSE解析添加tool_name字段
+- `frontend/src/utils/sse.ts` - SSE解析添加tool_name字段，修正obs_action_tool为tool_name
 - `frontend/src/types/chat.ts` - 添加tool_name类型定义
 - `frontend/src/components/Chat/MessageItem.tsx` - 前端显示"🔧 工具：{tool_name}"
 
@@ -57,8 +58,74 @@ v0.8.77
 - 新增7.4.5节：实际修改总结
 - 更新版本历史：v4.16
 
-参与开发：小沈（后端修改+文档）、小资（前端修改）、小健（审查）
+参与开发：小沈（后端修改+文档）、小强（前端修改）、小资（审查）
 测试验证：28 passed, 4 skipped
+
+---
+
+## 2. sessionStorage QuotaExceededError修复 - 小强/小资-2026-04-08
+
+### 2.1 问题
+
+- sessionStorage容量满时会导致QuotaExceededError崩溃
+- 之前3处直接调用sessionStorage.setItem没有try-catch保护
+
+### 2.2 修复
+
+**修改文件**: `frontend/src/components/Chat/NewChatContainer.tsx`
+
+**修复内容**:
+- messages更新时添加try-catch
+- beforeunload保存时添加try-catch
+- saveState函数添加try-catch
+
+### 2.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| - | fix: sessionStorage添加try-catch避免QuotaExceededError - 小强 2026-04-08 |
+
+参与开发：小强（前端修改）、小资（审查）
+
+---
+
+## 3. Loading提示优化 - 小强/小资-2026-04-08
+
+### 3.1 问题
+
+- 加载会话数据时，API请求期间显示"开始与AI助手对话"，用户体验差
+- 大数据量时需要等待较长时间才出现Loading提示
+
+### 3.2 修复
+
+**修改文件**: `frontend/src/components/Chat/NewChatContainer.tsx`
+
+**修改内容**:
+- API请求前就显示Loading（之前是返回后才显示）
+- 优化Loading阈值从10MB降到5MB
+- 补充页面切换加载时的sessionId设置
+
+### 3.3 Loading动画效果
+
+**修改文件**: `frontend/src/components/Chat/NewChatContainer.tsx` 第2235-2253行
+
+**新增效果**:
+- Ant Design Spin旋转图标
+- 背景呼吸动画（浅绿渐变）
+- 动态省略号动画（...闪烁）
+- 绿色主题风格统一
+
+### 3.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 9f775455 | fix: 优化大数据量加载Loading阈值和样式 小强 2026-04-08 |
+| 0c233519 | fix: API请求前显示Loading避免空白等待 小强 2026-04-08 |
+| 1a226569 | fix: 补充页面切换加载时sessionId设置 小强 2026-04-08 |
+| 2f0ccad4 | feat: Loading提示增加Spin图标+呼吸背景+省略号动画 小强 2026-04-08 |
+
+参与开发：小强（前端修改）、小资（代码审查）
+测试验证：编译通过
 
 ---
 

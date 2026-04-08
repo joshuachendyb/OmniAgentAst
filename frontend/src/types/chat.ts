@@ -51,7 +51,7 @@ export interface ThoughtMessage {
   type: 'thought';
   step: number;
   content: string;
-  reasoning?: string;
+  // reasoning?: string;  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
   action_tool?: string;  // 可选：某些thought可能不包含动作
   params?: Record<string, any>;  // 可选：某些thought可能不包含参数
 }

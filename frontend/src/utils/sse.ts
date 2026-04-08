@@ -105,9 +105,8 @@ export interface ExecutionStep {
   // 后端删除第二次LLM调用后，observation只保留基础字段
   // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/raw_data）
   // 【注意】obs_* 字段已删除，如需使用工具结果请从 action_tool 阶段获取
-  // 【2026-04-07 小沈新增】添加tool_name字段，显示工具名称
-  tool_name?: string;
-  
+  // tool_name 已在上面 action_tool 字段定义（第97行），此处不再重复
+
   // === type=action 旧字段（兼容） ===
   action_input?: Record<string, any>;  // 工具调用参数（旧）
   
@@ -791,7 +790,7 @@ const processSSEData = (
       case "thought": {
         console.log("🔍 [sse thought] 收到thought事件, rawData=", JSON.stringify(rawData));
         step.content = rawData.content || "";
-        step.reasoning = rawData.reasoning || "";
+        // step.reasoning = rawData.reasoning || "";  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
         step.action_tool = rawData.action_tool || "";
         step.params = rawData.params || {};
         console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
@@ -821,8 +820,8 @@ const processSSEData = (
         step.summary = rawData.summary || "";
         step.raw_data = rawData.raw_data || null;
         step.action_retry_count = rawData.action_retry_count || 0;
-        // 使用 action_description 填充 content
-        step.content = step.action_description || step.tool_name || "";
+        // 【小强删除 2026-04-08】action_tool类型不需要content字段，tool_name已足够
+        // step.content = step.action_description || step.tool_name || "";
         // 添加到步骤数组，显示执行动作
         // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
         // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
