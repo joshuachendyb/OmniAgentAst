@@ -841,7 +841,12 @@ const processSSEData = (
       case "observation": {
         // 【小资精简 2026-04-07】后端删除第二次LLM调用后，observation只保留content
         // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/raw_data）
-        step.content = rawData.content ?? '';
+        // 【小强调试 2026-04-08】添加日志排查 observation 不显示问题
+        console.log("🔍 [sse observation] 收到observation事件, rawData=", JSON.stringify(rawData));
+        step.content = rawData.content ?? rawData.observation ?? '';  // 兼容多种字段名
+        // 【小强调试】添加日志
+        console.log("🔍 [sse observation] 解析后的step.content=[", step.content, "]");
+        step.tool_name = rawData.tool_name || rawData.tool || "";
         // 【小强修复 2026-04-08】后端已不再使用obs_action_tool，改为tool_name
         step.tool_name = rawData.tool_name || "";
         step.contentStart = responseBufferRef.current.length;
