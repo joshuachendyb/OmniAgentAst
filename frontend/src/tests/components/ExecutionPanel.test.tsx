@@ -116,15 +116,15 @@ describe('ExecutionPanel Component', () => {
     expect(screen.getByText(/Failed to read file/)).toBeInTheDocument();
   });
 
-  it('should display step type labels for each step', () => {
+    it('should display step type labels for each step', () => {
     render(<ExecutionPanel steps={mockSteps} isActive={false} />);
 
     // Each step should have appropriate content
-    // 思考步骤显示"思考"标签
+    // 思考步骤显示"分析"标签
     // 行动步骤显示工具名称（如"read_file"）
     // 观察步骤显示观察结果
     // 完成步骤显示"完成"内容
-    expect(screen.getByText('思考')).toBeInTheDocument();
+    expect(screen.getByText('分析')).toBeInTheDocument();
     expect(screen.getByText('read_file')).toBeInTheDocument();
     expect(screen.getByText('File contents here')).toBeInTheDocument();
     expect(screen.getByText('Task completed')).toBeInTheDocument();
