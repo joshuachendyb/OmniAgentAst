@@ -707,7 +707,31 @@ const NewChatContainer: React.FC = () => {
         isPaused,
         isReceiving,
       };
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      // 【小强修复 2026-04-08】添加try-catch防止QuotaExceededError崩溃
+      try {
+        const stateStr = JSON.stringify(state);
+        const sizeInMB = (stateStr.length / 1024 / 1024).toFixed(2);
+        if (stateStr.length > 4 * 1024 * 1024) {
+          // 超过4MB，只保存摘要
+          const lightState = {
+            sessionId,
+            sessionTitle,
+            timestamp: Date.now(),
+            messageCount: messages.length,
+            isPaused,
+            isReceiving,
+          };
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
+        } else {
+          sessionStorage.setItem(STORAGE_KEY, stateStr);
+        }
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+          console.warn("⚠️ sessionStorage容量满，跳过保存");
+        } else {
+          console.error("保存会话状态失败:", e);
+        }
+      }
     }
   }, [messages]);
 
@@ -758,7 +782,29 @@ const NewChatContainer: React.FC = () => {
           isPaused,
           isReceiving,
         };
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        // 【小强修复 2026-04-08】添加try-catch防止QuotaExceededError崩溃
+        try {
+          const stateStr = JSON.stringify(state);
+          if (stateStr.length > 4 * 1024 * 1024) {
+            const lightState = {
+              sessionId,
+              sessionTitle,
+              timestamp: Date.now(),
+              messageCount: messagesToSave.length,
+              isPaused,
+              isReceiving,
+            };
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
+          } else {
+            sessionStorage.setItem(STORAGE_KEY, stateStr);
+          }
+        } catch (e) {
+          if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+            console.warn("⚠️ [beforeunload] sessionStorage容量满，跳过保存");
+          } else {
+            console.error("保存会话状态失败:", e);
+          }
+        }
         
         // 提示浏览器不要关闭（可选）
         e.preventDefault();
