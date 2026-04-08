@@ -216,7 +216,7 @@ class BaseAgent(ABC):
                 # yield action_tool
                 yield {
                     "type": "action_tool",
-                    "content": action_tool,  # 工具名称作为content
+                    # "content": action_tool,  # 【小强删除 2026-04-08】content与tool_name重复，后端已删除
                     "step": step_count,
                     "timestamp": current_time,
                     "tool_name": action_tool,
