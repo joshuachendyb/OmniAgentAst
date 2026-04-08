@@ -213,13 +213,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
       <div style={{ ...getContentStyle(), marginTop: 4, marginLeft: 66 }}>
         {step.type === "action_tool" && (
           <>
-            {/* 【小强修复 2026-04-08】显示工具名称前缀 */}
-            {step.tool_name && (
-              <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>
-                🔧 工具：{step.tool_name}
-              </div>
-            )}
-            {step.action_description || step.tool_name || "执行中..."}
+            {/* 显示工具名称 */}
+            🔧 {step.tool_name || "执行中..."}
             {step.tool_params && (
               <div>
                 {/* 默认显示1行 */}
@@ -422,7 +417,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
             {/* 思考内容 */}
             <div>
               <span style={getStepContentStyle("thought" as StepType, "primary")}>
-                {step.reasoning || step.content || ""}
+                {step.content || ""}
               </span>
             </div>
             
@@ -722,7 +717,8 @@ const MessageItem: React.FC<MessageItemProps> = ({
           // 根据不同type添加对应字段
           switch (step.type) {
             case 'thought':
-              return { ...baseExport, step: step.step, reasoning: step.reasoning, action_tool: step.action_tool, params: step.params };
+              // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
+              return { ...baseExport, step: step.step, action_tool: step.action_tool, params: step.params };
             case 'action_tool':
               return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, action_retry_count: step.action_retry_count };
             case 'observation':

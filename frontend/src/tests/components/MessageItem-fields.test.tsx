@@ -147,7 +147,7 @@ describe('【小资更新 2026-04-07】Observation 步骤精简测试', () => {
 });
 
 describe('Thought 步骤测试（无变化）', () => {
-  it('【P2-1】thought 步骤显示 reasoning 字段', () => {
+  it('【P2-1】thought 步骤显示 content 字段（reasoning已删除，与content合并）', () => {
     const messageWithThought = {
       id: 'msg-thought-test',
       role: 'assistant' as const,
@@ -158,8 +158,8 @@ describe('Thought 步骤测试（无变化）', () => {
           type: 'thought' as const,
           step: 1,
           timestamp: Date.now(),
-          content: 'Thinking...',
-          reasoning: 'Analyzing the request...',
+          content: 'Analyzing the request...',  // 现在只显示content
+          // reasoning 字段已删除（与content重复）
           action_tool: 'list_directory',
           params: { path: '/test' },
         },
@@ -168,7 +168,7 @@ describe('Thought 步骤测试（无变化）', () => {
 
     render(<MessageItem message={messageWithThought} showExecution={true} />);
     
-    // reasoning 在 thought 阶段显示
+    // 现在只显示content，不显示reasoning
     expect(screen.getByText(/Analyzing the request/)).toBeInTheDocument();
     expect(screen.getByText(/⬇️ 下一步：list_directory/)).toBeInTheDocument();
   });
