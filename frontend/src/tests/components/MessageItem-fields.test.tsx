@@ -4,7 +4,7 @@
  * 【小资更新 2026-04-07】
  * @description 更新测试：适配后端删除第二次LLM调用后的变化
  * - observation 阶段只保留 content 字段
- * - 工具执行结果（文件列表、摘要等）已在 action_tool 阶段显示
+ * - 工具执行结果（文件列表、摘要等）已在 tool_name 阶段显示
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -38,7 +38,7 @@ vi.mock('antd', async () => {
 describe('【小资更新 2026-04-07】Observation 步骤精简测试', () => {
   it('【P1-1】observation 只显示 content 字段', () => {
     // 后端删除第二次LLM调用后，observation只显示content
-    // 工具执行结果已在 action_tool 阶段显示
+    // 工具执行结果已在 tool_name 阶段显示
     const messageWithObservation = {
       id: 'msg-obs-test',
       role: 'assistant' as const,
@@ -84,8 +84,8 @@ describe('【小资更新 2026-04-07】Observation 步骤精简测试', () => {
     expect(screen.getByText('Observation completed')).toBeInTheDocument();
   });
 
-  it('【P1-3】工具执行结果在 action_tool 阶段显示（不是 observation）', () => {
-    // 验证工具执行结果（文件列表）在 action_tool 阶段显示
+  it('【P1-3】工具执行结果在 tool_name 阶段显示（不是 observation）', () => {
+    // 验证工具执行结果（文件列表）在 tool_name 阶段显示
     const messageWithActionTool = {
       id: 'msg-action-tool-test',
       role: 'assistant' as const,
@@ -118,8 +118,8 @@ describe('【小资更新 2026-04-07】Observation 步骤精简测试', () => {
     expect(screen.getByText(/Found 5 items/)).toBeInTheDocument();
   });
 
-  it('【P1-4】action_tool 阶段显示 summary（不是 observation）', () => {
-    // 验证执行摘要在 action_tool 阶段显示
+  it('【P1-4】tool_name 阶段显示 summary（不是 observation）', () => {
+    // 验证执行摘要在 tool_name 阶段显示
     const messageWithSummary = {
       id: 'msg-summary-test',
       role: 'assistant' as const,
@@ -160,8 +160,8 @@ describe('Thought 步骤测试（无变化）', () => {
           timestamp: Date.now(),
           content: 'Analyzing the request...',  // 现在只显示content
           // reasoning 字段已删除（与content重复）
-          action_tool: 'list_directory',
-          params: { path: '/test' },
+          tool_name: 'list_directory',
+          tool_params: { path: '/test' },
         },
       ],
     };
@@ -176,7 +176,7 @@ describe('Thought 步骤测试（无变化）', () => {
 
 describe('Map 状态管理测试（无变化）', () => {
   it('【Map-1】多个步骤应能独立管理展开/折叠状态', () => {
-    // action_tool 阶段的 raw_data（文件列表）可以独立折叠
+    // tool_name 阶段的 raw_data（文件列表）可以独立折叠
     const messageWithMultipleSteps = {
       id: 'msg-multi-steps',
       role: 'assistant' as const,

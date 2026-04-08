@@ -217,7 +217,7 @@ describe('StepRow UI视觉和布局', () => {
     });
   });
 
-  describe('action_tool步骤', () => {
+  describe('tool_name步骤', () => {
     it('应该显示工具名称', () => {
       const messageWithActionTool = {
         ...baseMessage,
