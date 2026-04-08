@@ -219,7 +219,7 @@ const classifyError = (error: any): ErrorType => {
  * 【小强修复 2026-04-09】统一加 "SSE连接" 前缀
  */
 const getFriendlyErrorMessage = (errorType: ErrorType, originalMessage: string): string => {
-  const prefix = "SSE连接";
+  const prefix = "SSE连接:";
   switch (errorType) {
     case "timeout":
       return `${prefix}超时，请检查网络或稍后重试`;
@@ -569,7 +569,7 @@ export const useSSE = (
       // 【修复小查问题】防止并发调用
       if (isProcessingRef.current) {
         console.warn("[SSE] 已有进行中的请求，等待完成后重试");
-        message.warning("SSE请求处理中，请稍后再试");
+        message.warning("SSE连接: 请求处理中，请稍后再试");
         return;
       }
       isProcessingRef.current = true;
