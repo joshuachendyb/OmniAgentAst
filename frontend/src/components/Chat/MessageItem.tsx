@@ -213,6 +213,12 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
       <div style={{ ...getContentStyle(), marginTop: 4, marginLeft: 66 }}>
         {step.type === "action_tool" && (
           <>
+            {/* 【小强修复 2026-04-08】显示工具名称前缀 */}
+            {step.tool_name && (
+              <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>
+                🔧 工具：{step.tool_name}
+              </div>
+            )}
             {step.action_description || step.tool_name || "执行中..."}
             {step.tool_params && (
               <div>
