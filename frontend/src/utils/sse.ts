@@ -731,8 +731,8 @@ const processSSEData = (
       // 【小沈修复】思考过程与正式内容区分字段
         // 【小查修复】统一使用 snake_case: is_reasoning
         is_reasoning: rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === 'true',
-        reasoning: rawData.reasoning || "",
-       
+        // reasoning: rawData.reasoning || "",  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
+        
       timestamp: timestampValue,
     };
 
