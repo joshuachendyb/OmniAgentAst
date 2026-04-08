@@ -25,6 +25,7 @@ import {
   message,
   Badge,
   Tooltip,
+  Spin,
 } from "antd";
 import {
   RobotOutlined,
@@ -2232,23 +2233,49 @@ const NewChatContainer: React.FC = () => {
           position: "relative",
         }}
       >
-        {/* 【2026-04-08修复】大数据量渲染Loading提示 */}
+        {/* 【2026-04-08修复】大数据量渲染Loading提示 - Spin图标+呼吸背景动画 */}
         {isRenderingMessages && (
           <div style={{
             position: "absolute",
             top: 0,
             left: 0,
             right: 0,
-            height: 40,
+            height: 44,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: "rgba(24, 160, 88, 0.1)",
-            borderBottom: "1px solid #e8e8e8",
+            backgroundColor: "rgba(24, 160, 88, 0.08)",
+            borderBottom: "1px solid rgba(24, 160, 88, 0.2)",
             zIndex: 100,
+            animation: "breathingBg 2s ease-in-out infinite",
           }}>
-            <span style={{ marginRight: 8, fontSize: 14 }}>⏳</span>
-            <span style={{ fontSize: 13, color: "#666" }}>正在加载会话数据...</span>
+            <style>{`
+              @keyframes breathingBg {
+                0%, 100% { backgroundColor: rgba(24, 160, 88, 0.08); }
+                50% { backgroundColor: rgba(24, 160, 88, 0.15); }
+              }
+            `}</style>
+            <Spin size="small" style={{ marginRight: 10 }} />
+            <span style={{ fontSize: 13, color: "#52c41a", fontWeight: 500 }}>正在加载会话数据</span>
+            <span className="loading-dots" style={{ marginLeft: 2, color: "#52c41a", fontWeight: 500 }}>
+              ...
+            </span>
+            <style>{`
+              .loading-dots::after {
+                content: '';
+                animation: dots 1.5s steps(4, end) infinite;
+                display: inline-block;
+                width: 18px;
+                text-align: left;
+              }
+              @keyframes dots {
+                0% { content: ''; }
+                25% { content: '.'; }
+                50% { content: '..'; }
+                75% { content: '...'; }
+                100% { content: ''; }
+              }
+            `}</style>
           </div>
         )}
         
