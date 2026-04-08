@@ -78,8 +78,8 @@ export interface ExecutionStep {
   
   // 【小新重构2026-03-09】thought类型需要的字段
   // 【小健建议2026-03-23】明确用途：LLM思考后决定的下一步动作
-  action_tool?: string;        // 【thought类型】LLM思考后决定的下一步动作
-  params?: Record<string, any>; // 【thought类型】LLM思考后决定的参数
+  tool_name?: string;        // 【thought类型】LLM思考后决定的下一步动作
+  tool_params?: Record<string, any>; // 【thought类型】LLM思考后决定的参数
   
   // === 保留字段（不变）===
   
@@ -93,9 +93,7 @@ export interface ExecutionStep {
   // 【小查修复2026-03-09】添加is_finished字段
   is_finished?: boolean;  // observation类型的是否完成标志
   
-  // === 【小新重构】type=action_tool 新字段 ===
-  tool_name?: string;           // 工具名称（新）
-  tool_params?: Record<string, any>; // 工具参数（新）
+  // === 【小新重构】type=action_tool 新字段（与thought类型共用tool_name/tool_params）===
   execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
   summary?: string;             // 执行摘要（新）
   raw_data?: Record<string, any> | null; // 原始数据（新）
@@ -791,8 +789,8 @@ const processSSEData = (
         console.log("🔍 [sse thought] 收到thought事件, rawData=", JSON.stringify(rawData));
         step.content = rawData.content || "";
         // step.reasoning = rawData.reasoning || "";  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
-        step.action_tool = rawData.action_tool || "";
-        step.params = rawData.params || {};
+        step.tool_name = rawData.tool_name || rawData.action_tool || "";  // 兼容旧字段
+        step.tool_params = rawData.tool_params || rawData.params || {};    // 兼容旧字段
         console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
         // 添加到步骤数组，显示思考过程
         // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
