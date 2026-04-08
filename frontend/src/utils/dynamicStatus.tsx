@@ -15,9 +15,9 @@ import React, { useState, useEffect } from 'react';
 const statusConfig: Record<string, { icon: string; text: string; animate: boolean }> = {
   waiting:     { icon: '🚀', text: 'AI开始执行任务', animate: true },
   start:       { icon: '🤔', text: 'AI 正在思考', animate: true },
-  thought:     { icon: '🛠️', text: 'Agent 正在执行"tool_name"', animate: true },
-  action_tool: { icon: '👁️', text: 'Agent 正在执行"observation"', animate: true },
-  observation: { icon: '🤔', text: 'AI 正在思考', animate: true },
+  thought:     { icon: '💭', text: 'AI 正在思考', animate: true },
+  action_tool: { icon: '⚙️', text: 'Agent 正在执行工具', animate: true },
+  observation: { icon: '📋', text: 'Agent 正在获取结果', animate: true },
   chunk:       { icon: '💬', text: 'AI 正在回复', animate: true },
   final:       { icon: '✅', text: 'AI任务执行完成', animate: false },
   error:       { icon: '✅', text: 'AI任务执行完成', animate: false },
