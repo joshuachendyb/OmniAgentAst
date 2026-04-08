@@ -286,6 +286,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   };
 
   // 页面加载时初始化 - 使用AppContext
+  // 【2026-04-08修复】页面加载不调用服务检查，与会话加载无关
   useEffect(() => {
     initializeApp();
   }, []);
