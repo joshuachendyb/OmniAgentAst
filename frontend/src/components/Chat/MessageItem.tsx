@@ -1149,6 +1149,7 @@ const isUser = message.role === "user";
                const hasChunk = allSteps.some(step => step.type === 'chunk');
               // 过滤：普通对话模式下过滤 chunk 和 final
               const filteredSteps = allSteps.filter(step => {
+                console.log("🔍 [StepRow] 步骤类型:", step.type, "是否显示=", !(step.type === 'chunk' || (step.type === 'final' && hasChunk)));
                 if (step.type === 'chunk') return false;
                 if (step.type === 'final' && hasChunk) return false;
                 return true;

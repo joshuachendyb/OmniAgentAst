@@ -112,7 +112,7 @@ const colorSchemes: Record<StepType, ColorScheme> = {
      border: "#ffd591",
      text: "#ad4e00", // 改为更深橙色，提高可读性
      textSecondary: "#8c6e2f",
-     label: "💭 分析",
+     label: "💭 思考",
      priority: "secondary",
      layout: "block",  // 思考内容需要换行显示
    },

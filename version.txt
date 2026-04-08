@@ -1,8 +1,38 @@
-v0.8.80
+v0.8.81
 
-更新时间：2026-04-08 20:35:00
+更新时间：2026-04-08 21:55:00
 
 更新内容：
+
+## 1. 修复LLM返回None导致崩溃 - 小沈-2026-04-08
+
+### 1.1 问题
+
+LLM返回None时，`tool_parser.py`的`parse_response`崩溃：
+```
+TypeError: expected string or bytes-like object, got 'NoneType'
+```
+
+### 1.2 修复
+
+**修改文件**: `backend/app/services/agent/base_react.py` 第153-160行
+
+**修改内容**:
+- 添加检查：response为None或空时，发送error类型并退出循环
+- 之前：直接传给parse_response导致崩溃
+- 现在：先检查response有效性，再处理
+
+### 1.3 测试验证
+
+| 测试项 | 结果 |
+|-------|------|
+| 后端测试 | ✅ 28 passed, 4 skipped |
+
+参与开发：小沈
+
+---
+
+v0.8.80
 
 ## 1. 修复解析失败无限循环Bug - 小沈-2026-04-08
 

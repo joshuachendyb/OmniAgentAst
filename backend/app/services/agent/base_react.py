@@ -152,6 +152,18 @@ class BaseAgent(ABC):
                 self.status = AgentStatus.THINKING
                 response = await self._get_llm_response()
                 
+                # 【修复2026-04-08 小沈】检查response是否为None或空
+                if not response:
+                    logger.error(f"LLM返回空响应: {response}")
+                    yield {
+                        "type": "error",
+                        "step": step_count,
+                        "timestamp": create_timestamp(),
+                        "code": "EMPTY_RESPONSE",
+                        "message": "AI服务返回空响应，请稍后重试"
+                    }
+                    break
+                
                 # 解析响应 - 使用统一的错误处理方法
                 try:
                     parsed = self.parser.parse_response(response)
