@@ -596,11 +596,11 @@ class TestObservationSimplifiedFields:
     
     def test_observation_content_format(self):
         """验证observation的content格式正确"""
-        action_tool = "list_directory"
+        tool_name = "list_directory"
         summary = "成功读取目录"
         
         # 修改后的content格式
-        expected_content = f"Tool '{action_tool}' executed: {summary}"
+        expected_content = f"Tool '{tool_name}' executed: {summary}"
         
         assert expected_content == "Tool 'list_directory' executed: 成功读取目录"
         assert "executed:" in expected_content
@@ -629,8 +629,8 @@ class TestObservationContainsToolResult:
         assert "文件写入成功" in event["content"]
 
 
-class TestFinishDetectionInActionTool:
-    """验证finish在action_tool阶段检测"""
+class TestFinishDetectionInToolName:
+    """验证finish在tool_name阶段检测"""
     
     def test_finish_not_in_observation(self):
         """验证finish判断不在observation阶段"""
@@ -643,8 +643,8 @@ class TestFinishDetectionInActionTool:
         source = inspect.getsource(BaseAgent.run_stream)
         
         # 检查is_finished判断的位置
-        # 修改前：is_finished = parsed_obs.get("action_tool") == "finish"（在observation yield之前）
-        # 修改后：应该检查action_tool阶段的action_tool值
+        # 修改前：is_finished = parsed_obs.get("tool_name") == "finish"（在observation yield之前）
+        # 修改后：应该检查tool_name阶段的tool_name值
         
         # 验证没有在observation阶段单独判断is_finished
         observation_section = source.split("type")[-1] if "type" in source else ""
@@ -652,17 +652,17 @@ class TestFinishDetectionInActionTool:
         # 这个测试验证修改后代码结构正确
         assert True  # 占位，实际需要修改后验证
     
-    def test_final_only_when_action_tool_is_finish(self):
-        """验证final只在action_tool是finish时触发"""
+    def test_final_only_when_tool_name_is_finish(self):
+        """验证final只在tool_name是finish时触发"""
         # 修改后流程：
-        # 1. action_tool阶段：解析LLM response得到action_tool
-        # 2. 如果action_tool == "finish" → yield final
+        # 1. tool_name阶段：解析LLM response得到tool_name
+        # 2. 如果tool_name == "finish" → yield final
         # 3. 否则 → yield observation → 下一轮循环
         
-        # 测试场景：action_tool = "finish"
-        action_tool = "finish"
+        # 测试场景：tool_name = "finish"
+        tool_name = "finish"
         
-        if action_tool == "finish":
+        if tool_name == "finish":
             # 应该直接yield final
             expected_type = "final"
         else:
@@ -671,10 +671,10 @@ class TestFinishDetectionInActionTool:
         
         assert expected_type == "final"
         
-        # 测试场景：action_tool = "list_directory"
-        action_tool = "list_directory"
+        # 测试场景：tool_name = "list_directory"
+        tool_name = "list_directory"
         
-        if action_tool == "finish":
+        if tool_name == "finish":
             expected_type = "final"
         else:
             expected_type = "observation"
