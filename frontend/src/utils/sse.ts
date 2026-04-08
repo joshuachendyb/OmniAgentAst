@@ -399,6 +399,40 @@ export const useSSE = (
   }, [clearStepsFromStorage]);
 
   /**
+   * 重连函数
+   * 【小强修复 2026-04-09】重新添加缺失的 reconnect 函数
+   */
+  const reconnect = useCallback(() => {
+    if (!pendingMessageRef.current) {
+      console.warn("[SSE] 没有待重连的消息");
+      return;
+    }
+
+    const { content, sessionId } = pendingMessageRef.current;
+    const config = reconnectConfigRef.current;
+    
+    if (reconnectAttemptsRef.current >= config.maxAttempts) {
+      console.error("[SSE] 超过最大重连次数");
+      setReconnectStatus("failed");
+      message.error("SSE连接: 连接失败，请刷新页面重试");
+      return;
+    }
+
+    const attempt = reconnectAttemptsRef.current;
+    const delay = calculateReconnectDelay(attempt, config.baseDelay, config.maxDelay);
+    
+    setReconnectStatus("reconnecting");
+    message.warning(`正在重新连接 (${attempt + 1}/${config.maxAttempts})...`);
+    
+    console.log(`[SSE] 准备重连，attempt=${attempt + 1}, delay=${delay}ms`);
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      reconnectAttemptsRef.current++;
+      sendMessageInternal(content, sessionId);
+    }, delay);
+  }, []);
+
+  /**
    * 内部发送消息函数（用于重连）
    * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
    */
