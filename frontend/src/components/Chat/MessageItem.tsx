@@ -429,14 +429,14 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
               background: 'linear-gradient(135deg, rgba(250,173,20,0.08) 0%, rgba(212,136,6,0.08) 100%)',
               border: '1px solid rgba(255,213,145,0.3)',
             }}>
-              {/* 显示下一步action_tool */}
-              {(step as any).action_tool && (
+              {/* 显示下一步tool_name */}
+              {(step as any).tool_name && (
                 <div style={getNextStepStyle("thought")}>
-                  <span style={{ fontWeight: FontWeight.MEDIUM }}>⬇️ 下一步：{(step as any).action_tool}</span>
+                  <span style={{ fontWeight: FontWeight.MEDIUM }}>⬇️ 下一步：{(step as any).tool_name}</span>
                 </div>
               )}
-              {/* 显示params - 使用JsonHighlight组件统一格式 */}
-              {(step as any).params && Object.keys((step as any).params).length > 0 && (
+              {/* 显示tool_params - 使用JsonHighlight组件统一格式 */}
+              {(step as any).tool_params && Object.keys((step as any).tool_params).length > 0 && (
                 <div style={{ 
                   marginTop: 4, 
                   fontSize: 12, 
@@ -444,7 +444,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
                   padding: "6px 10px",
                   borderRadius: 4,
                 }}>
-                  <JsonHighlight data={(step as any).params} isExpanded={true} />
+                  <JsonHighlight data={(step as any).tool_params} isExpanded={true} />
                 </div>
               )}
             </div>
@@ -718,7 +718,7 @@ const MessageItem: React.FC<MessageItemProps> = ({
           switch (step.type) {
             case 'thought':
               // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
-              return { ...baseExport, step: step.step, action_tool: step.action_tool, params: step.params };
+              return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params };
             case 'action_tool':
               return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, action_retry_count: step.action_retry_count };
             case 'observation':
