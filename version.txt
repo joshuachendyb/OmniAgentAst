@@ -1,3 +1,86 @@
+v0.8.82
+
+更新时间：2026-04-09
+
+更新内容：
+
+## 1. SSE连接修复 - 解决observation步骤实时显示问题 - 小强/小资/小健-2026-04-09
+
+### 1.1 问题
+
+- 工具执行时observation步骤不实时显示，内容只在页面刷新后才出现
+- 步骤统计显示1个步骤，而不是实际的6个步骤
+
+### 1.2 根因分析
+
+- SSE事件处理正确：数据已经正确接收（6个步骤）
+- 问题出在日志打印：代码读取了executionStepsRef.current（由于闭包问题，这是旧值）
+- 技术根因：React的useCallback创建了闭包，ref引用可能指向旧值；SSE在同一个数据块中发送多个事件，导致ref更新时序问题
+
+### 1.3 修复方案
+
+**修改文件**: `frontend/src/utils/sse.ts`
+
+- 将所有事件处理从`setExecutionSteps((prev)=>{...})`改为同步方式直接更新ref
+- 添加调试日志追踪每个事件处理前后ref的变化
+- 添加SSE连接建立和关闭的日志（带时间戳）
+
+**修改文件**: `frontend/src/components/Chat/NewChatContainer.tsx`
+
+- 修复日志打印，移除对executionStepsRef.current的读取
+- 添加计数器重置（每个会话从1开始）
+- 使用logFlagsRef标志精简重复日志
+
+### 1.4 日志含义
+
+| 日志标识 | 含义 |
+|---------|------|
+| [SSE事件处理] | SSE解析原始数据，识别type类型 |
+| [sse thought] | 处理对应type类型的步骤数据 |
+| [onStep回调] | SSE收到步骤数据后，触发NewChatContainer的onStep回调 |
+
+### 1.5 数据处理流程
+
+```
+后端发送SSE事件 → 前端接收数据 → 数据解析 → 类型分发 → 
+更新ref → 保存sessionStorage → 更新React state → 
+触发回调 → 渲染显示
+```
+
+### 1.6 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| - | fix: 修复SSE连接observation步骤实时显示-sse.ts+NewChatContainer.tsx-小强-2026-04-09 |
+| - | fix: 添加SSE连接建立和关闭日志-带时间戳-sse.ts-小强-2026-04-09 |
+| - | fix: 修复步骤统计显示1个而不是6个-移除executionStepsRef.current读取-小强-2026-04-09 |
+| - | fix: 修复计数器累积问题-每个会话从1开始-NewChatContainer.tsx-小强-2026-04-09 |
+| - | fix: 使用logFlagsRef标志精简重复日志-NewChatContainer.tsx-小强-2026-04-09 |
+
+参与开发：小强（前端修改）、小资（审查）、小健（审查）
+
+---
+
+## 2. 创建SSE数据处理流程分析文档 - 小强-2026-04-09
+
+### 2.1 新增文档
+
+| 文件 | 说明 |
+|------|------|
+| doc-react步骤/S前端-SSE数据处理流程分析-小强-2026-04-09.md | SSE数据处理流程分析文档 |
+
+### 2.2 分析内容
+
+- SSE事件处理流程详解
+- 闭包问题导致的ref更新时序分析
+- 修复方案的技术细节
+
+参与开发：小强（编写）
+
+测试验证：编译通过
+
+---
+
 v0.8.81
 
 更新时间：2026-04-08 21:55:00
