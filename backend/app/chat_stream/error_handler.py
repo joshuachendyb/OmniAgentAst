@@ -209,6 +209,67 @@ def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
             "error_type": "security",
             "retryable": False
         }
+    # 【新增 2026-04-09 小沈】HTTP错误码处理
+    elif "503" in error_msg or "无可用渠道" in error_msg:
+        return {
+            "code": "API_CHANNEL_UNAVAILABLE",
+            "message": "AI服务渠道不可用 (errorcode=503)，请检查API配置或更换模型",
+            "error_type": "api_error",
+            "retryable": False
+        }
+    elif "429" in error_msg or "rate limit" in error_msg.lower() or "配额" in error_msg:
+        return {
+            "code": "RATE_LIMIT_EXCEEDED",
+            "message": "API请求过于频繁 (errorcode=429)，请稍后再试或更换模型",
+            "error_type": "api_error",
+            "retryable": True,
+            "retry_after": 30
+        }
+    elif "401" in error_msg or "认证" in error_msg or "unauthorized" in error_msg.lower():
+        return {
+            "code": "AUTH_FAILED",
+            "message": "API认证失败 (errorcode=401)，请检查API密钥配置",
+            "error_type": "security",
+            "retryable": False
+        }
+    elif "403" in error_msg or "forbidden" in error_msg.lower():
+        return {
+            "code": "FORBIDDEN",
+            "message": "API访问被拒绝 (errorcode=403)，请检查API权限配置",
+            "error_type": "security",
+            "retryable": False
+        }
+    elif "400" in error_msg:
+        return {
+            "code": "BAD_REQUEST",
+            "message": "API请求参数错误 (errorcode=400)，请检查输入内容",
+            "error_type": "validation",
+            "retryable": False
+        }
+    elif "500" in error_msg:
+        return {
+            "code": "SERVER_ERROR",
+            "message": "AI服务内部错误 (errorcode=500)，请稍后重试或更换模型",
+            "error_type": "server",
+            "retryable": True,
+            "retry_after": 10
+        }
+    elif "502" in error_msg or "502" in error_msg:
+        return {
+            "code": "BAD_GATEWAY",
+            "message": "AI服务网关错误 (errorcode=502)，请稍后重试",
+            "error_type": "server",
+            "retryable": True,
+            "retry_after": 10
+        }
+    elif "504" in error_msg:
+        return {
+            "code": "GATEWAY_TIMEOUT",
+            "message": "AI服务响应超时 (errorcode=504)，请稍后重试",
+            "error_type": "timeout",
+            "retryable": True,
+            "retry_after": 15
+        }
     else:
         return {
             "code": "UNKNOWN_ERROR",
@@ -229,6 +290,15 @@ ERROR_TYPE_MAP = {
     'proxy_error': ('protocol', '代理错误，请检查网络配置'),
     'write_error': ('server', '发送请求失败'),
     'network_error': ('network', '网络错误，请检查网络连接'),
+    # 【新增 2026-04-09 小沈】HTTP错误码映射
+    'api_error_503': ('api_error', 'AI服务渠道不可用 (errorcode=503)，请检查API配置或更换模型'),
+    'api_error_429': ('api_error', 'API请求过于频繁 (errorcode=429)，请稍后再试或更换模型'),
+    'api_error_401': ('security', 'API认证失败 (errorcode=401)，请检查API密钥配置'),
+    'api_error_403': ('security', 'API访问被拒绝 (errorcode=403)，请检查API权限配置'),
+    'api_error_400': ('validation', 'API请求参数错误 (errorcode=400)，请检查输入内容'),
+    'api_error_500': ('server', 'AI服务内部错误 (errorcode=500)，请稍后重试或更换模型'),
+    'api_error_502': ('server', 'AI服务网关错误 (errorcode=502)，请稍后重试'),
+    'api_error_504': ('timeout', 'AI服务响应超时 (errorcode=504)，请稍后重试'),
     # 【新增 2026-04-01】LLM 返回空内容或未知错误
     'unknown': ('server', 'AI服务暂无响应，请稍后重试'),
     'empty_response': ('server', 'AI服务返回空响应，请稍后重试'),
