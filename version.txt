@@ -1,3 +1,54 @@
+v0.8.84
+
+更新时间：2026-04-10 07:45:00
+
+更新内容：
+
+## 1. SSE数据存储方式Bug修复 - 小强-2026-04-10
+
+### 1.1 问题描述
+
+根据 v0.8.83 版本的 SSE 分析文档，发现以下 bug：
+- chunk 类型使用错误的"直接同步更新"方式
+- final 类型缺少 onShowSteps?.(true) 调用
+- error 类型使用错误方式 + 缺少 onShowSteps 调用
+- incident(interrupted) 类型缺少 onShowSteps 调用
+
+### 1.2 修复内容
+
+**修改文件**: `frontend/src/utils/sse.ts`
+
+| type | 修复内容 | 行号 |
+|------|---------|------|
+| chunk | 改为回调函数模式 setExecutionSteps((prev)=>{...}) | ~929 |
+| final | 添加 onShowSteps?.(true) | ~975 |
+| error | 改为回调函数模式 + 添加 onShowSteps?.(true) | ~1028 |
+| incident(interrupted) | 添加 onShowSteps?.(true) | ~1083 |
+
+### 1.3 测试用例
+
+**新增文件**: `frontend/src/tests/utils/sse-storage-pattern.test.ts`
+
+测试内容：
+- chunk 类型回调函数模式验证
+- final 类型 onShowSteps 调用验证
+- error 类型回调函数模式 + onShowSteps 验证
+- incident(interrupted) onShowSteps 验证
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 96471924 | fix: 修复SSE数据存储方式-chunk/error用回调函数模式-final/interrupted添加onShowSteps-小强-2026-04-10 |
+
+参与开发：小强（代码修复 + 测试）、小资（审查）、小健（审查）
+
+测试验证：✅ sse-storage-pattern.test.ts 5 passed
+         ✅ sse_v2.test.ts 27 passed
+         ✅ formatTimestamp.test.ts 17 passed
+
+---
+
 v0.8.83
 
 更新时间：2026-04-10 07:22:28
