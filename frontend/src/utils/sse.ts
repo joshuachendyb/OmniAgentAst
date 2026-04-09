@@ -917,20 +917,16 @@ const processSSEData = (
         
         // 【小沈带小强修改 2026-03-17】
         // 问题描述：前端导出 JSON 时只有 3 个步骤（start, thought, chunk），但数据库有 55 个步骤
-        //          前端显示只看到 1 个 chunk "用户"，而不是 52 个真正的内容 chunk
-        // 根因分析：
-        //   1. setExecutionSteps 是异步更新 React state，虽然在回调中更新了 ref，但可能有时序问题
-        //   2. onComplete 调用 getCurrentExecutionSteps() 时，可能获取到的不是完整的 55 个 chunk
-        //   3. 现象：前端显示只看到 1 个 chunk "用户"，导出文件也只有 3 个步骤
-        //          实际上是前端只渲染了 1 个 chunk（message.content），而不是 52 个独立的 chunk
-        // 修复方案：
-        //   直接在处理每个 chunk 时同步更新 ref 和 state，确保 onComplete 能获取到完整的 chunk 列表
-        //   这样即使前端渲染只显示 message.content，导出功能也能获取到完整的 52 个 chunk 步骤
-        const newSteps = [...handlers.executionStepsRef.current, step];
-        handlers.executionStepsRef.current = newSteps;
-        // 【小强添加 2026-03-18】同时保存到 sessionStorage
-        saveStepsToStorage?.(newSteps);
-        setExecutionSteps(newSteps);
+        // 【小强修复 2026-04-10】使用回调函数模式，与 start/thought/action_tool/observation 保持一致
+        // 问题：之前使用直接同步更新，导致 ref 和 state 不同步
+        // 解决：在 setExecutionSteps 回调函数内部更新 ref，确保同步
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          // 【小强添加 2026-03-18】同时保存到 sessionStorage
+          saveStepsToStorage?.(newSteps);
+          return newSteps;
+        });
         onStep?.(step);
         // 【小查修复】收到 chunk 时关闭步骤 UI，开始显示回复内容（必须在 onStep 之后）
         // 【小强修复 2026-03-17】根据 is_reasoning 区分：true=显示步骤 UI，false=关闭步骤 UI
@@ -973,8 +969,10 @@ const processSSEData = (
           return newSteps;
         });
         onStep?.(step);
+        // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保直接返回 final 时步骤列表显示
+        onShowSteps?.(true);
 
-          onComplete?.(responseBufferRef.current, {
+           onComplete?.(responseBufferRef.current, {
           model: rawData.model,
           provider: rawData.provider,
           display_name: displayName,
@@ -1028,13 +1026,18 @@ const processSSEData = (
         // 【小沈修复 2026-03-17】先调用onStep，将error步骤添加到executionSteps
         // 问题：之前只调用onError，没有调用onStep，导致error步骤丢失
         // 【小强修复 2026-04-03】error步骤也需要保存到sessionStorage，否则页面切换后丢失
-        // 【小强修复 2026-04-09】问题：setExecutionSteps是异步的，onComplete立即调用会导致步骤丢失
-        // 解决：先同步更新ref（和v0.8.75一致），再调用onStep（不调用onComplete，和v0.8.75一致）
-        const newErrorSteps = [...handlers.executionStepsRef.current, step];
-        handlers.executionStepsRef.current = newErrorSteps;
-        saveStepsToStorage?.(newErrorSteps);
-        setExecutionSteps(newErrorSteps);  // 直接设置新数组（同步更新，和v0.8.75一致）
+        // 【小强修复 2026-04-10】使用回调函数模式 + 添加 onShowSteps?.(true)
+        // 问题：之前使用直接同步更新，导致 ref 和 state 不同步
+        // 解决：在 setExecutionSteps 回调函数内部更新 ref，确保同步
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          saveStepsToStorage?.(newSteps);
+          return newSteps;
+        });
         onStep?.(step);
+        // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保 error 步骤显示
+        onShowSteps?.(true);
         // 【小新修复2026-03-13】传递完整的错误对象，保留error_type等字段
         onError?.({
           type: "error",
@@ -1078,6 +1081,8 @@ const processSSEData = (
         // 根据incident_value调用对应的回调
         switch (statusValue) {
           case "interrupted":
+            // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保中断时步骤列表显示
+            onShowSteps?.(true);
             onComplete?.(responseBufferRef.current, undefined);
             setIsReceiving(false);
             setIsConnected(false);
