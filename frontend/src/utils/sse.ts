@@ -400,10 +400,11 @@ export const useSSE = (
   }, [clearStepsFromStorage]);
 
   /**
-   * 内部发送消息函数（用于重连）
-   * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
-   */
+    * 内部发送消息函数（用于重连）
+    * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
+    */
   const sendMessageInternal = async (content: string, sessionId?: string) => {
+    console.log("📡 [SSE] 连接开始", new Date().toLocaleTimeString());
     disconnect(false, false);  // 重连时：非手动断开 + 不清空 sessionStorage
     softClearSteps();  // 软清理：保留 steps，只清理运行时状态
 
@@ -802,12 +803,12 @@ const processSSEData = (
       }
 
       case "thought": {
-        console.log("🔍 [sse thought] 收到thought事件, rawData=", JSON.stringify(rawData));
+        // console.log("🔍 [sse thought] 收到thought事件, rawData=", JSON.stringify(rawData));
         step.content = rawData.content || "";
         // step.reasoning = rawData.reasoning || "";  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
         step.tool_name = rawData.tool_name || rawData.action_tool || "";  // 兼容旧字段
         step.tool_params = rawData.tool_params || rawData.params || {};    // 兼容旧字段
-        console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
+        // console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
         // 添加到步骤数组，显示思考过程
         // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
         // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
@@ -858,10 +859,10 @@ const processSSEData = (
         // 【小资精简 2026-04-07】后端删除第二次LLM调用后，observation只保留content
         // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/raw_data）
         // 【小强调试 2026-04-08】添加日志排查 observation 不显示问题
-        console.log("🔍 [sse observation] 收到observation事件, rawData=", JSON.stringify(rawData));
+        // console.log("🔍 [sse observation] 收到observation事件, rawData=", JSON.stringify(rawData));
         step.content = rawData.content ?? rawData.observation ?? '';  // 兼容多种字段名
         // 【小强调试】添加日志
-        console.log("🔍 [sse observation] 解析后的step.content=[", step.content, "]");
+        // console.log("🔍 [sse observation] 解析后的step.content=[", step.content, "]");
         step.tool_name = rawData.tool_name || rawData.tool || "";
         // 【小强修复 2026-04-08】后端已不再使用obs_action_tool，改为tool_name
         step.tool_name = rawData.tool_name || "";
@@ -973,12 +974,14 @@ const processSSEData = (
         });
         onStep?.(step);
 
-        onComplete?.(responseBufferRef.current, {
+          onComplete?.(responseBufferRef.current, {
           model: rawData.model,
           provider: rawData.provider,
           display_name: displayName,
         } as SSEMetadata, handlers.getCurrentExecutionSteps());  // 【小新修复 2026-03-15】ref已被同步更新，无需再手动加step
-
+        
+        console.log("📡 [SSE] 连接结束", new Date().toLocaleTimeString(), "| 收到steps:", handlers.getCurrentExecutionSteps().length);
+        
         setIsReceiving(false);
         setIsConnected(false);
         break;
