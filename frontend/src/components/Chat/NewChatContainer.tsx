@@ -57,7 +57,7 @@ import {
 } from "../../utils/chatHistory";
 
 // 【新增 2026-03-13】从独立文件导入日志和消息提示函数
-import { logAIComplete, logUserSend } from "../../utils/chatLogger";
+import { logAIComplete, logAIError, logUserSend } from "../../utils/chatLogger";
 import { getClientInfo } from "../../utils/clientInfo";  // 【小沈 2026-03-24】获取客户端信息
 import {
   showSaveError,
@@ -583,11 +583,15 @@ const NewChatContainer: React.FC = () => {
           clearInterval(waitTimerRef.current);
           waitTimerRef.current = null;
         }
-        setWaitTime(0);
-        setIsRetrying(false);
-        console.log("✅ [onError] 处理完成");
-        
-        // 【小查修复 2026-03-14】延迟检查确保状态已重置，防止按钮无法点击
+         setWaitTime(0);
+         setIsRetrying(false);
+         console.log("✅ [onError] 处理完成");
+         
+         // ========== 错误结束标志 ==========
+         logAIError(errorObj.message || "未知错误");
+         // ==================================
+         
+         // 【小查修复 2026-03-14】延迟检查确保状态已重置，防止按钮无法点击
         setTimeout(() => {
           console.log("🔍 [onError] 延迟检查状态 - loading:", loading, "isReceiving:", isReceiving);
           // 如果状态仍未重置，强制重置
