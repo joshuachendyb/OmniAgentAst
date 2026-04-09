@@ -1025,12 +1025,12 @@ const processSSEData = (
         // 【小沈修复 2026-03-17】先调用onStep，将error步骤添加到executionSteps
         // 问题：之前只调用onError，没有调用onStep，导致error步骤丢失
         // 【小强修复 2026-04-03】error步骤也需要保存到sessionStorage，否则页面切换后丢失
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
-          saveStepsToStorage?.(newSteps);
-          return newSteps;
-        });
+        // 【小强修复 2026-04-09】问题：setExecutionSteps是异步的，onComplete立即调用会导致步骤丢失
+        // 解决：先同步更新ref（和v0.8.75一致），再调用onStep（不调用onComplete，和v0.8.75一致）
+        const newErrorSteps = [...handlers.executionStepsRef.current, step];
+        handlers.executionStepsRef.current = newErrorSteps;
+        saveStepsToStorage?.(newErrorSteps);
+        setExecutionSteps(newErrorSteps);  // 直接设置新数组（同步更新，和v0.8.75一致）
         onStep?.(step);
         // 【小新修复2026-03-13】传递完整的错误对象，保留error_type等字段
         onError?.({
@@ -1046,8 +1046,8 @@ const processSSEData = (
           retry_after: rawData.retry_after,
           timestamp: rawData.timestamp || timestampValue
         });
-        // 【小强修复 2026-04-08】error 也需要触发 onComplete，清理 UI 状态
-        onComplete?.(responseBufferRef.current, undefined);
+        // 【小强修复 2026-04-09】关键：不再调用onComplete（和v0.8.75一致），error步骤由onError处理
+        // v0.8.75版本没有调用onComplete，UI显示正常
         setIsReceiving(false);
         setIsConnected(false);
         break;
