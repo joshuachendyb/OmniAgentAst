@@ -2,10 +2,13 @@
 
 **学习时间**: 2026-04-04 05:08:51
 **编写人**: 小沈
-**版本**: v1.1
+**版本**: v1.3
 **更新说明**: 
 - 2026-04-04 06:56:00 - 修正第16-17章内容，补充准确的模型工具限制数据
 - 2026-04-04 09:00:00 - 修正第20章：MCP Filesystem Server 工具数量 14→13 个，修正搜索标记错误，同步修正第21章汇总数据
+- 2026-04-04 19:30:00 - 新增第22章：二级实现工具（第11-18类）定义21个工具
+- 2026-04-04 19:45:00 - 新增第23章：三级实现工具（第19-21类）定义8个工具
+- 2026-04-04 19:50:00 - 新增第24章：可选扩展工具（第22-28类）定义16个工具
 
 ---
 
@@ -1818,7 +1821,7 @@ class DirectoryListingInput(BaseModel):
 
 | 类型 | 包含工具 | 实现方式 | 说明 |
 |------|---------|---------|------|
-| **1. 文件操作** | read_text_file, read_media_file, read_multiple_files, write_file, edit_file, copy_file, move_file, delete_file, search_files, list_directory, list_allowed_directories, create_directory, get_file_info, directory_tree, rename_file | `os`, `shutil`, `pathlib`, `glob` | 基础文件读写、编辑、搜索、目录管理、重命名、媒体读取 |
+| **1. 文件操作** | read_text_file, read_media_file, read_batch_file, read_file, write_append_file, precise_replace_in_file, edit_file, copy_file, move_file, rename_file, delete_file, search_files, glob_files, grep_file_content, create_directory, list_directory_with_sizes, get_directory_tree, get_file_info, list_allowed_directories | `os`, `shutil`, `pathlib`, `glob` | 基础文件读写、编辑、搜索、目录管理、重命名、媒体读取 |
 | **2. Shell 命令执行** | execute_shell_command, get_shell_output, terminate_shell | `subprocess` | PowerShell/CMD 命令执行、后台任务管理 |
 | **3. API/HTTP 调用** | http_request | `urllib`, `http.client` | Agent 调用外部 REST API、Webhook、微服务（通用方法覆盖 GET/POST/PUT/DELETE） |
 | **4. 网络通信** | fetch_webpage, search_web | `urllib`, `http.client` | 网页内容获取、网络搜索 |
@@ -1868,7 +1871,7 @@ class DirectoryListingInput(BaseModel):
 | **27. 剪贴板操作** | read_clipboard, write_clipboard | `pyperclip` 或 `ctypes` | `pip install pyperclip` 或零依赖 |
 | **28. 通知** | send_notification | `win10toast` | `pip install win10toast` |
 
-#### 五、Agent 辅助/配套工具（任务执行保障）
+#### 五、Agent 辅助/配套工具（任务执行保障）-不需要通知LLM的是Agent内部使用的辅助函数
 
 **说明**：这类工具不直接完成核心业务，而是为 Agent 执行主任务提供**环境确认**、**状态检查**、**安全验证**和**异常处理**支持，防止 Agent 盲目操作报错。
 
@@ -1934,13 +1937,11 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-## 二十一、全部 Tool 汇总（按类型分类，仅限网上学习）
+## 二十一、全部按一级实现10类分类的Tool-基本定义
 
 ### 21.1 工具汇总说明
 
-本章节整合第1-20章中提到的**网上学习的工具**，按功能类型分类。每个工具包含：
-- **工具描述**: 工具的功能说明
-- **参数列表**: 参数名称 + 参数类型 + 描述
+本章节整合第1-20章中提到的**网上学习的工具**，按**20.8章"一、核心业务工具（零依赖，Python 标准库实现）【一级实现的工具】"的10类**进行分类。
 
 **数据来源**（仅来自网上学习）:
 - MCP Filesystem Server（官方文档）
@@ -1951,14 +1952,16 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-### 21.2 文件读取类
+### 21.2 1类：文件操作
+
+**说明**: 使用 `os`, `shutil`, `pathlib`, `glob` 实现，零依赖Python标准库。
 
 #### 1. 读取文本文件（read_text_file）
-**描述**: 读取文本文件完整内容，始终以 UTF-8 格式处理文件
+**描述**: 读取文本文件完整内容，始终以 UTF-8 格式处理文件，支持中文等多字节字符
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| file_path | string | ✅ 是 | 文件的完整路径 |
+| file_path | string | ✅ 是 | 文件的完整路径，支持中文路径 |
 | head | number | ❌ 否 | 读取前 N 行（不能与 tail 同时使用） |
 | tail | number | ❌ 否 | 读取后 N 行 |
 
@@ -1977,20 +1980,16 @@ class DirectoryListingInput(BaseModel):
 | file_paths | string[] | ✅ 是 | 文件路径数组 |
 
 #### 4. 读取多格式文件（read_file）
-**描述**: 从文件系统读取文件，支持文本、图片、PDF、Jupyter notebook
+**描述**: 从文件系统读取文件，支持文本、图片、PDF、Jupyter notebook，自动处理UTF-8/GBK编码
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| file_path | string | ✅ 是 | 文件的绝对路径 |
+| file_path | string | ✅ 是 | 文件的绝对路径，支持中文路径 |
 | offset | number | ❌ 否 | 起始行号，从1开始 |
 | limit | number | ❌ 否 | 读取行数，默认2000行 |
 
----
-
-### 21.3 文件写入类
-
 #### 5. 写入或追加文件（write_append_file）
-**描述**: 写入或追加到文件
+**描述**: 写入或追加到文件，使用UTF-8编码，支持中文内容写入
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
@@ -1998,9 +1997,15 @@ class DirectoryListingInput(BaseModel):
 | text | string | ✅ 是 | 写入的文本内容 |
 | append | boolean | ❌ 否 | 是否追加模式，默认 false |
 
----
-
-### 21.4 文件编辑类
+#### 6. 精准替换文件内容（precise_replace_in_file）
+**描述**: 执行精确的字符串替换，支持中文内容精确匹配和替换
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 文件绝对路径，支持中文路径 |
+| old_string | string | ✅ 是 | 要替换的精确文本，支持中文 |
+| new_string | string | ✅ 是 | 替换后的文本，支持中文 |
+| replace_all | boolean | ❌ 否 | 替换所有匹配项，默认 false |
 
 #### 7. 编辑文件（edit_file）
 **描述**: 使用高级模式匹配进行选择性编辑，支持多同时编辑、缩进保留、dryRun 预览
@@ -2010,16 +2015,6 @@ class DirectoryListingInput(BaseModel):
 | file_path | string | ✅ 是 | 要编辑的文件路径 |
 | edits | array | ✅ 是 | 编辑操作数组，每个元素包含 oldText 和 newText |
 | dryRun | boolean | ❌ 否 | 预览模式不实际修改，默认 false |
-
-#### 6. 精准替换文件内容（precise_replace_in_file）
-**描述**: 执行精确的字符串替换
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| file_path | string | ✅ 是 | 文件绝对路径 |
-| old_string | string | ✅ 是 | 要替换的精确文本 |
-| new_string | string | ✅ 是 | 替换后的文本 |
-| replace_all | boolean | ❌ 否 | 替换所有匹配项，默认 false |
 
 #### 8. 复制文件（copy_file）
 **描述**: 复制文件
@@ -2052,52 +2047,40 @@ class DirectoryListingInput(BaseModel):
 |--------|------|------|------|
 | file_path | string | ✅ 是 | 要删除的文件路径 |
 
----
-
-### 21.5 文件搜索类（文件名）
-
 #### 12. 搜索文件按模式（search_files）
-**描述**: 递归搜索匹配或排除模式的文件/目录，返回完整路径
+**描述**: 递归搜索匹配或排除模式的文件/目录，返回完整路径，支持中文文件名搜索
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| search_dir | string | ✅ 是 | 搜索起始目录 |
-| pattern | string | ✅ 是 | 搜索模式（glob 风格） |
+| search_dir | string | ✅ 是 | 搜索起始目录，支持中文目录名 |
+| pattern | string | ✅ 是 | 搜索模式（glob 风格），支持中文（如 "*.txt" 或 "测试*"） |
 | excludePatterns | string[] | ❌ 否 | 排除模式 |
 
 #### 13. 文件名模式匹配（glob_files）
-**描述**: 快速的文件名模式匹配，按修改时间排序返回结果
+**描述**: 快速的文件名模式匹配，按修改时间排序返回结果，支持中文文件名
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
 | pattern | string | ✅ 是 | Glob 模式（如 **/*.js, src/**/*.ts） |
 | search_dir | string | ❌ 否 | 搜索目录，默认当前工作目录 |
 
----
-
-### 21.6 文件搜索类（内容）
-
 #### 14. 搜索文件内容（grep_file_content）
-**描述**: 基于 ripgrep 的强大内容搜索，支持正则表达式和多选项
+**描述**: 基于 ripgrep 的强大内容搜索，支持正则表达式和多选项，支持Unicode中文字符搜索
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| pattern | string | ✅ 是 | 正则表达式搜索模式 |
+| pattern | string | ✅ 是 | 正则表达式搜索模式，支持中文（如搜索"函数定义"或"class.*方法"） |
 | search_dir | string | ❌ 否 | 搜索路径，默认当前目录 |
-| output_mode | string | ❌ 否 | 输出模式：content/files_with_matches/count |
-| glob | string | ❌ 否 | 文件类型过滤（如 "*.ts"） |
-| type | string | ❌ 否 | 语言类型（如 js, py, rust） |
-| -A | number | ❌ 否 | 匹配后显示行数 |
-| -B | number | ❌ 否 | 匹配前显示行数 |
-| -C | number | ❌ 否 | 匹配前后显示行数 |
-| -i | boolean | ❌ 否 | 不区分大小写 |
-| -n | boolean | ❌ 否 | 显示行号 |
-| multiline | boolean | ❌ 否 | 启用多行匹配（. 匹配换行符） |
-| head_limit | number | ❌ 否 | 限制输出结果数量 |
-
----
-
-### 21.7 目录操作类
+| output_mode | string | ❌ 否 | 输出模式：content（显示行内容）/files_with_matches（只显示文件名）/count（显示匹配数量） |
+| glob | string | ❌ 否 | 文件类型过滤，使用glob通配符（如 "*.ts" 或 "*.{js,py}"） |
+| type | string | ❌ 否 | 语言类型，简化glob匹配（如 js, py, rust, html, json） |
+| after_lines | number | ❌ 否 | 匹配行之后额外显示的行数（用于查看上下文） |
+| before_lines | number | ❌ 否 | 匹配行之前额外显示的行数（用于查看上下文） |
+| context_lines | number | ❌ 否 | 匹配行前后各显示的行数（同时设置before和after） |
+| ignore_case | boolean | ❌ 否 | 搜索时忽略大小写，例如 "test" 会匹配 "Test" 和 "TEST" |
+| show_line_no | boolean | ❌ 否 | 是否在输出中显示行号，便于定位 |
+| multiline | boolean | ❌ 否 | 启用多行匹配模式，允许正则表达式中的 . 匹配换行符 |
+| head_limit | number | ❌ 否 | 限制返回的匹配结果数量，用于大文件搜索避免输出过多 |
 
 #### 15. 创建目录（create_directory）
 **描述**: 创建新目录，如需要会创建父目录，目录已存在则静默成功
@@ -2122,11 +2105,6 @@ class DirectoryListingInput(BaseModel):
 | dir_path | string | ✅ 是 | 起始目录 |
 | excludePatterns | string[] | ❌ 否 | 排除模式（glob 格式） |
 
-
----
-
-### 21.8 元数据/信息类
-
 #### 18. 获取文件信息（get_file_info）
 **描述**: 获取文件/目录的详细元数据，包括大小、创建/修改/访问时间、类型、权限
 **参数**:
@@ -2140,7 +2118,9 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-### 21.9 系统操作类
+### 21.3 2类：Shell 命令执行
+
+**说明**: 使用 `subprocess` 实现，零依赖Python标准库。
 
 #### 20. 执行 Shell 命令（execute_shell_command）
 **描述**: 在指定 shell 环境中执行命令。Windows 原生默认 PowerShell，可选 CMD；bash 需额外安装（未来扩展）。
@@ -2169,9 +2149,11 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-### 21.10 网络/通信类
+### 21.4 4类：网络通信
 
-#### 22. 获取网页内容（fetch_webpage）
+**说明**: 使用 `urllib`, `http.client` 实现，零依赖Python标准库。
+
+#### 23. 获取网页内容（fetch_webpage）
 **描述**: 获取和处理网页内容，带 AI 分析功能
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2179,7 +2161,7 @@ class DirectoryListingInput(BaseModel):
 | url | string | ✅ 是 | 完全有效的 URL |
 | prompt | string | ✅ 是 | 要从页面提取的信息 |
 
-#### 23. 网络搜索（search_web）
+#### 24. 网络搜索（search_web）
 **描述**: 搜索网络获取最新信息（仅美国可用）
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
@@ -2190,99 +2172,1026 @@ class DirectoryListingInput(BaseModel):
 
 ---
 
-### 21.11 任务管理类【此次不加这里 的tool】
+### 21.5 3类：API/HTTP 调用
 
-#### 24. 启动子 Agent（launch_subagent）
-**描述**: 启动专门的子 agent 处理复杂的多步骤任务
+**说明**: 使用 `urllib`, `http.client` 实现，零依赖Python标准库。
+
+#### 25. HTTP 请求（http_request）
+**描述**: 发送 HTTP 请求到指定的 URL，支持 GET、POST、PUT、DELETE 等方法
 **参数**:
 | 参数名 | 类型 | 必填 | 描述 |
 |--------|------|------|------|
-| subagent_type | string | ✅ 是 | 使用的 agent 类型（general-purpose/statusline-setup/output-style-setup） |
-| prompt | string | ✅ 是 | 任务的详细描述 |
-| description | string | ✅ 是 | 任务的简短3-5字描述 |
-| model | string | ❌ 否 | 使用的模型 |
-| resume | boolean | ❌ 否 | 恢复之前的任务 |
-
-#### 25. 管理任务列表（manage_todos）
-**描述**: 创建和管理结构化任务列表跟踪进度
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| todos | array | ✅ 是 | todo 对象数组，每个包含 content、activeForm、status |
-
-#### 26. 退出计划模式（exit_plan_mode）
-**描述**: 展示实现计划后退出计划模式
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| plan | string | ✅ 是 | 实现计划（支持 markdown） |
-
-#### 27. 进入计划模式（enter_plan_mode）
-**描述**: 进入计划模式
-**参数**: 无参数
-
-#### 28. 编辑 Notebook 单元格（edit_notebook_cell）
-**描述**: 编辑 Jupyter notebook 单元格
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| notebook_path | string | ✅ 是 | notebook 绝对路径 |
-| new_source | string | ✅ 是 | 新的单元格内容 |
-| cell_id | string | ❌ 否 | 要编辑的单元格 ID |
-| cell_type | string | ❌ 否 | 单元格类型：code 或 markdown |
-| edit_mode | string | ❌ 否 | 编辑模式：replace/insert/delete |
-
-#### 29. 执行斜杠命令（execute_slash_command）
-**描述**: 执行斜杠命令
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| command | string | ✅ 是 | 斜杠命令及参数 |
-
-#### 30. 向用户提问（ask_user_question）
-**描述**: 向用户提问获取交互
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| questions | array | ✅ 是 | 问题数组 |
-| answers | array | ❌ 否 | 答案数组 |
-
-#### 31. 执行 Skill（execute_skill）
-**描述**: 执行 skill
-**参数**:
-| 参数名 | 类型 | 必填 | 描述 |
-|--------|------|------|------|
-| skill | string | ✅ 是 | skill 名称 |
+| url | string | ✅ 是 | 请求的目标 URL |
+| method | string | ✅ 是 | HTTP 方法：GET、POST、PUT、DELETE、PATCH |
+| headers | object | ❌ 否 | 请求头（如 {"Content-Type": "application/json"}） |
+| body | string | ❌ 否 | 请求体（用于 POST、PUT、PATCH） |
+| timeout | number | ❌ 否 | 超时毫秒数，默认30000 |
 
 ---
 
-### 21.12 工具总数汇总
+### 21.6 5类：时间/日期
 
-| 类别 | MCP | LangChain | Claude Code | 总计 |
-|------|-----|-----------|------------|------|
-| 文件读取 | 3 | 0 | 1 | 4 |
-| 文件写入 | 0 | 1 | 0 | 1 |
-| 文件编辑 | 1 | 3 | 1 | 5 |
-| 文件搜索(文件名) | 1 | 0 | 1 | 2 |
-| 文件搜索(内容) | 0 | 0 | 1 | 1 |
-| 目录操作 | 3 | 0 | 0 | 3 |
-| 元数据 | 2 | 0 | 0 | 2 |
-| 系统操作 | 0 | 0 | 3 | 3 |
-| 网络/通信 | 0 | 0 | 2 | 2 |
-| 任务管理 | 0 | 0 | 7 | 7 |
-| **总计** | **10** | **4** | **16** | **30** |
+**说明**: 使用 `datetime`, `time` 实现，零依赖Python标准库。
+
+#### 26. 获取当前时间（get_current_time）
+**描述**: 获取当前系统时间，支持多种格式输出
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| timezone | string | ❌ 否 | 时区（如 "Asia/Shanghai"，默认本地时区） |
+| format | string | ❌ 否 | 输出格式（如 "YYYY-MM-DD HH:mm:ss"） |
+
+#### 27. 计算日期（calculate_date）
+**描述**: 计算指定日期偏移后的日期
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| date | string | ✅ 是 | 起始日期（如 "2024-01-01"） |
+| days | number | ❌ 否 | 偏移天数（正数为未来，负数为过去） |
+| format | string | ❌ 否 | 输出格式，默认 "YYYY-MM-DD" |
+
+---
+
+### 21.7 6类：环境变量
+
+**说明**: 使用 `os.environ` 实现，零依赖Python标准库。
+
+#### 28. 获取环境变量（get_env）
+**描述**: 获取指定的环境变量值
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| name | string | ✅ 是 | 环境变量名称 |
+| default | string | ❌ 否 | 默认值（如果环境变量不存在） |
+
+#### 29. 设置环境变量（set_env）
+**描述**: 设置指定的环境变量值
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| name | string | ✅ 是 | 环境变量名称 |
+| value | string | ✅ 是 | 环境变量值 |
+
+---
+
+### 21.8 7类：系统信息
+
+**说明**: 使用 `platform` 或 `wmi` 实现，零依赖Python标准库。
+
+#### 30. 获取系统信息（get_system_info）
+**描述**: 获取系统基本信息，包括操作系统、版本、架构等
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| info_type | string | ❌ 否 | 信息类型：all/cpu/memory/disk（默认 all） |
+
+---
+
+### 21.9 8类：网络连接
+
+**说明**: 使用 `socket` 或 `psutil` 实现。
+
+#### 31. 获取网络连接信息（net_connections）
+**描述**: 获取当前网络连接列表
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| kind | string | ❌ 否 | 连接类型：inet/tcp/udp（默认 inet） |
+
+#### 32. 获取系统日志（event_log）
+**描述**: 获取系统事件日志
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| log_name | string | ❌ 否 | 日志名称（如 System/Application） |
+| max_events | number | ❌ 否 | 最大返回事件数，默认100 |
+
+---
+
+### 21.10 9类：压缩/解压
+
+**说明**: 使用 `shutil`, `zipfile`, `tarfile` 实现，零依赖Python标准库。
+
+#### 33. 压缩文件或目录（compress_archive）
+**描述**: 将文件或目录压缩为 zip 或 tar 格式
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| source_path | string | ✅ 是 | 要压缩的文件或目录路径 |
+| output_path | string | ✅ 是 | 输出压缩文件路径 |
+| format | string | ❌ 否 | 压缩格式：zip/tar/gz（默认 zip） |
+
+#### 34. 解压压缩文件（extract_archive）
+**描述**: 解压 zip、tar、gz 等格式的压缩文件
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| archive_path | string | ✅ 是 | 压缩文件路径 |
+| output_dir | string | ❌ 否 | 解压目标目录（默认当前目录） |
+
+---
+
+### 21.11 10类：文件哈希
+
+**说明**: 使用 `hashlib` 实现，零依赖Python标准库。
+
+#### 35. 获取文件哈希值（get_file_hash）
+**描述**: 计算文件的哈希值（MD5、SHA1、SHA256 等）
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 文件路径 |
+| algorithm | string | ❌ 否 | 哈希算法：md5/sha1/sha256（默认 sha256） |
+
+---
+
+### 21.13 附录：一级工具配套保障（文件操作+Shell命令）
+
+**说明**：第20.8章第5类"Agent辅助/配套工具"中，属于一级实现（零依赖）的工具。
+
+#### 36. 确认路径存在（check_path_exists）
+**描述**: 确认指定路径是否存在
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| path | string | ✅ 是 | 要检查的路径 |
+
+#### 37. 确保目录存在（ensure_directory_exists）
+**描述**: 确保目标目录存在，不存在则创建
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| dir_path | string | ✅ 是 | 目录路径 |
+
+#### 38. 检查写入权限（check_write_permission）
+**描述**: 确认文件/目录有写入权限
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| path | string | ✅ 是 | 文件或目录路径 |
+
+#### 39. 检查读取权限（check_read_permission）
+**描述**: 确认目录有读取权限
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| path | string | ✅ 是 | 目录路径 |
+
+#### 40. 获取文件编码（get_file_encoding）
+**描述**: 确认文件编码（UTF-8/GBK），避免乱码
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 文件路径 |
+
+#### 41. 获取MIME类型（get_mime_type）
+**描述**: 确认文件MIME类型
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 文件路径 |
+
+#### 42. 备份文件（backup_file）
+**描述**: 编辑/覆盖前自动备份原文件
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 要备份的文件路径 |
+| backup_dir | string | ❌ 否 | 备份目录（默认同目录） |
+
+#### 43. 移动到回收站（move_to_trash）
+**描述**: 删除到回收站而非永久删除，可恢复
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | 要删除的文件路径 |
+
+#### 44. 获取当前工作目录（get_current_working_dir）
+**描述**: 获取当前Shell工作目录
+**参数**: 无参数
+
+#### 45. 验证命令安全性（validate_command）
+**描述**: 检查命令安全性，防止危险操作
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| command | string | ✅ 是 | 要验证的命令 |
+
+#### 46. 检查Shell运行状态（check_shell_running）
+**描述**: 检查后台Shell是否还在运行
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| shell_id | string | ✅ 是 | Shell ID |
+
+---
+
+### 21.14 工具总数汇总
+
+| 一级10类 | 总数 | 已有数 | 缺少数 |
+|---------|------|--------|--------|
+| 1类：文件操作 | 19 | 19 | 0 |
+| 2类：Shell命令执行 | 3 | 3 | 0 |
+| 3类：API/HTTP调用 | 1 | 1 | 0 |
+| 4类：网络通信 | 2 | 2 | 0 |
+| 5类：时间/日期 | 2 | 2 | 0 |
+| 6类：环境变量 | 2 | 2 | 0 |
+| 7类：系统信息 | 1 | 1 | 0 |
+| 8类：网络连接 | 2 | 2 | 0 |
+| 9类：压缩/解压 | 2 | 2 | 0 |
+| 10类：文件哈希 | 1 | 1 | 0 |
+| **总计** | **35** | **35** | **0** |
 
 **说明**:
-- MCP: 10 个工具
-- LangChain: 4 个工具
-- Claude Code: 16 个工具
-- 总计: 30 个工具
+- **总数**: 20.8章定义的每个一级类的工具总数（1类更新为19个）
+- **已有数**: 21章中网上学习已收集的工具数量
+- **缺少数**: 还需要通过网上学习补充的工具数量
+
+**备注**: 21章仅汇总网上学习的工具，不包括Omni系统自身的工具定义。
+
+---
+
+## 二十二、二级实现工具（第11-18类）
+
+### 22.1 工具汇总说明
+
+本章节整合第20.8章"二、系统管理工具（轻量第三方，pip install）【二级实现工具】"中定义的8类工具。
+
+**数据来源**：
+- Python 官方文档（winreg, sqlite3, logging）
+- LangChain 官方工具
+- 主流 Agent 工具生态
+
+**说明**：这些工具需要安装少量第三方库（pip install），但都是轻量级、易于集成的库。
+
+---
+
+### 22.2 11类：数据库访问
+
+**说明**：用于 Agent 查询/写入 SQLite、MySQL 等数据库。SQLite 为 Python 内置库，MySQL/PostgreSQL 需要 `sqlalchemy` 或对应驱动。
+
+#### 47. 查询 SQL 数据库（query_sql）
+**描述**: 执行 SQL SELECT 查询并返回结果集，支持 SQLite、MySQL、PostgreSQL 等主流关系型数据库
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| db_path | string | ❌ 否 | SQLite 数据库文件路径（若不填则使用默认数据库） |
+| db_type | string | ❌ 否 | 数据库类型：sqlite（默认）/ mysql / postgresql |
+| connection_string | string | ❌ 否 | 数据库连接字符串（如 MySQL/PostgreSQL） |
+| query | string | ✅ 是 | SQL SELECT 查询语句 |
+| params | object | ❌ 否 | 查询参数（用于参数化查询，防止 SQL 注入） |
+| limit | number | ❌ 否 | 返回行数限制，默认 100 |
+| offset | number | ❌ 否 | 返回起始偏移，默认 0 |
+
+#### 48. 执行 SQL 命令（execute_sql）
+**描述**: 执行 INSERT、UPDATE、DELETE 等 SQL 语句，返回影响的行数
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| db_path | string | ❌ 否 | SQLite 数据库文件路径 |
+| db_type | string | ❌ 否 | 数据库类型：sqlite / mysql / postgresql |
+| connection_string | string | ❌ 否 | 数据库连接字符串 |
+| statement | string | ✅ 是 | SQL INSERT/UPDATE/DELETE 语句 |
+| params | object | ❌ 否 | 语句参数（用于参数化查询） |
+| commit | boolean | ❌ 否 | 是否立即提交，默认 true |
+
+#### 49. 查询 NoSQL 数据库（query_nosql）
+**描述**: 查询 MongoDB 等 NoSQL 数据库（需要安装 pymongo）
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| connection_string | string | ✅ 是 | MongoDB 连接字符串（如 mongodb://localhost:27017） |
+| database | string | ✅ 是 | 数据库名称 |
+| collection | string | ✅ 是 | 集合名称 |
+| filter | object | ❌ 否 | 查询过滤条件（MongoDB 查询语法） |
+| projection | object | ❌ 否 | 返回字段过滤 |
+| limit | number | ❌ 否 | 返回文档数量限制，默认 100 |
+
+---
+
+### 22.3 12类：注册表操作
+
+**说明**：使用 Python 内置库 `winreg`，仅限 Windows 平台，零依赖。
+
+#### 50. 读取注册表（reg_read）
+**描述**: 读取 Windows 注册表指定键的值
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| key_path | string | ✅ 是 | 注册表键路径（如 HKEY_CURRENT_USER\\Software\\Microsoft） |
+| value_name | string | ❌ 否 | 值名称（不填则返回键的默认值） |
+| hive | string | ❌ 否 | 注册表根键：HKCU（默认）/ HKLM / HKCR / HKU / HKCC |
+
+#### 51. 写入注册表（reg_write）
+**描述**: 写入或创建 Windows 注册表键值
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| key_path | string | ✅ 是 | 注册表键路径 |
+| value_name | string | ✅ 是 | 值名称 |
+| value | string | ✅ 是 | 值数据 |
+| value_type | string | ❌ 否 | 值类型：REG_SZ（默认）/ REG_DWORD / REG_BINARY / REG_MULTI_SZ |
+| hive | string | ❌ 否 | 注册表根键：HKCU（默认）/ HKLM / HKCR / HKU / HKCC |
+
+#### 52. 删除注册表（reg_delete）
+**描述**: 删除 Windows 注册表键或值
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| key_path | string | ✅ 是 | 注册表键路径 |
+| value_name | string | ❌ 否 | 值名称（不填则删除整个键） |
+| hive | string | ❌ 否 | 注册表根键：HKCU（默认）/ HKLM / HKCR / HKU / HKCC |
+
+---
+
+### 22.4 13类：日志记录
+
+**说明**：使用 Python 内置库 `logging`，零依赖。用于 Agent 操作日志、审计追踪。
+
+#### 53. 记录日志消息（log_message）
+**描述**: 记录日志消息到指定日志文件或日志系统
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| message | string | ✅ 是 | 日志消息内容 |
+| level | string | ❌ 否 | 日志级别：DEBUG / INFO / WARNING / ERROR / CRITICAL（默认 INFO） |
+| logger_name | string | ❌ 否 | 日志记录器名称（默认 root） |
+| log_file | string | ❌ 否 | 日志文件路径（若不填则只输出到控制台） |
+
+#### 54. 获取日志内容（get_logs）
+**描述**: 读取指定日志文件的内容
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| log_file | string | ✅ 是 | 日志文件路径 |
+| level | string | ❌ 否 | 日志级别过滤：DEBUG / INFO / WARNING / ERROR |
+| start_time | string | ❌ 否 | 起始时间过滤（格式：YYYY-MM-DD HH:mm:ss） |
+| end_time | string | ❌ 否 | 结束时间过滤 |
+| max_lines | number | ❌ 否 | 返回最大行数，默认 500 |
+
+---
+
+### 22.5 14类：数据序列化
+
+**说明**：使用 Python 内置库 `json` 和 `csv`，零依赖。
+
+#### 55. 读取 JSON 文件（read_json）
+**描述**: 读取并解析 JSON 文件，返回 Python 对象
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | JSON 文件路径 |
+| encoding | string | ❌ 否 | 文件编码，默认 utf-8 |
+
+#### 56. 写入 JSON 文件（write_json）
+**描述**: 将 Python 对象写入 JSON 文件
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | JSON 文件路径 |
+| data | object | ✅ 是 | 要写入的数据（Python 对象） |
+| encoding | string | ❌ 否 | 文件编码，默认 utf-8 |
+| indent | number | ❌ 否 | 缩进空格数，默认 2 |
+
+#### 57. 读取 CSV 文件（read_csv_basic）
+**描述**: 使用 Python 标准库 csv 读取 CSV 文件，零依赖，轻量级读取
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | CSV 文件路径 |
+| encoding | string | ❌ 否 | 文件编码，默认 utf-8 |
+| delimiter | string | ❌ 否 | 分隔符，默认逗号 , |
+| has_header | boolean | ❌ 否 | 是否有表头，默认 true |
+| max_rows | number | ❌ 否 | 最大读取行数，默认 1000 |
+
+---
+
+### 22.6 15类：进程管理
+
+**说明**：需要 `psutil` 库（`pip install psutil`）。
+
+#### 58. 列出进程（list_processes）
+**描述**: 获取当前运行的进程列表，支持过滤和排序
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| name | string | ❌ 否 | 进程名称过滤（如 "python.exe"） |
+| user | string | ❌ 否 | 用户名过滤 |
+| status | string | ❌ 否 | 状态过滤：running / sleeping |
+| limit | number | ❌ 否 | 返回进程数量限制，默认 100 |
+| sort_by | string | ❌ 否 | 排序方式：pid / name / cpu / memory（默认 pid） |
+
+#### 59. 终止进程（kill_process）
+**描述**: 终止指定进程
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| pid | number | ❌ 否 | 进程 ID |
+| name | string | ❌ 否 | 进程名称（可批量终止） |
+| force | boolean | ❌ 否 | 是否强制终止，默认 false |
+
+---
+
+### 22.7 16类：服务管理
+
+**说明**：Windows 服务管理，使用 `subprocess` 执行 `sc` 命令，零依赖。
+
+#### 60. 列出服务（service_list）
+**描述**: 获取 Windows 服务列表
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| state | string | ❌ 否 | 服务状态过滤：running / stopped / all（默认 all） |
+| name | string | ❌ 否 | 服务名称过滤 |
+
+#### 61. 启动服务（service_start）
+**描述**: 启动指定的 Windows 服务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| service_name | string | ✅ 是 | 服务名称 |
+
+#### 62. 停止服务（service_stop）
+**描述**: 停止指定的 Windows 服务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| service_name | string | ✅ 是 | 服务名称 |
+| force | boolean | ❌ 否 | 是否强制停止，默认 false |
+
+---
+
+### 22.8 17类：计划任务
+
+**说明**：使用 `subprocess` 执行 `schtasks` 命令，零依赖。
+
+#### 63. 列出计划任务（task_list）
+**描述**: 获取 Windows 计划任务列表
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| folder | string | ❌ 否 | 任务文件夹（如 \\Microsoft） |
+| state | string | ❌ 否 | 状态过滤：ready / running / disabled |
+
+#### 64. 创建计划任务（task_create）
+**描述**: 创建新的 Windows 计划任务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| task_name | string | ✅ 是 | 任务名称 |
+| command | string | ✅ 是 | 要执行的命令 |
+| schedule | string | ✅ 是 | 计划类型：DAILY / WEEKLY / MONTHLY / ONCE / ONSTART / ONLOGON |
+| start_time | string | ❌ 否 | 开始时间（格式：HH:MM） |
+| start_date | string | ❌ 否 | 开始日期（格式：YYYY-MM-DD） |
+| interval | number | ❌ 否 | 重复间隔（分钟） |
+
+#### 65. 删除计划任务（task_delete）
+**描述**: 删除指定的计划任务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| task_name | string | ✅ 是 | 任务名称 |
+| folder | string | ❌ 否 | 任务文件夹 |
+
+---
+
+### 22.9 18类：网络诊断
+
+**说明**：使用 `subprocess` 执行 `ping` 命令或 `socket` 库，零依赖。
+
+#### 66. Ping 主机（ping）
+**描述**: Ping 指定主机或 IP 地址，检测网络连通性
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| host | string | ✅ 是 | 目标主机或 IP 地址 |
+| count | number | ❌ 否 | Ping 次数，默认 4 |
+| timeout | number | ❌ 否 | 超时时间（秒），默认 5 |
+
+#### 67. 检查端口（port_check）
+**描述**: 检查指定主机端口是否开放
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| host | string | ✅ 是 | 目标主机或 IP 地址 |
+| port | number | ✅ 是 | 端口号（1-65535） |
+| timeout | number | ❌ 否 | 超时时间（秒），默认 3 |
+
+---
+
+### 22.10 工具总数汇总
+
+| 二级8类 | 总数 | 说明 |
+|--------|------|------|
+| 11类：数据库访问 | 3 | query_sql, execute_sql, query_nosql |
+| 12类：注册表操作 | 3 | reg_read, reg_write, reg_delete |
+| 13类：日志记录 | 2 | log_message, get_logs |
+| 14类：数据序列化 | 3 | read_json, write_json, read_csv_basic |
+| 15类：进程管理 | 2 | list_processes, kill_process |
+| 16类：服务管理 | 3 | service_list, service_start, service_stop |
+| 17类：计划任务 | 3 | task_list, task_create, task_delete |
+| 18类：网络诊断 | 2 | ping, port_check |
+| **总计** | **21** | 二级实现工具总数 |
+
+---
+
+### 22.11 附录：二级工具配套保障（数据库+API）
+
+**说明**：第20.8章第5类"Agent辅助/配套工具"中，属于二级实现（需要pip install）的工具。
+
+#### 68. 确认数据库存在（check_db_exists）
+**描述**: 确认数据库文件或连接是否存在
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| db_path | string | ❌ 否 | SQLite数据库文件路径 |
+| connection_string | string | ❌ 否 | 数据库连接字符串 |
+
+#### 69. 获取表结构（get_table_schema）
+**描述**: 获取数据库表结构，Agent知道有哪些字段
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| db_path | string | ❌ 否 | SQLite数据库文件路径 |
+| connection_string | string | ❌ 否 | 数据库连接字符串 |
+| table_name | string | ✅ 是 | 表名称 |
+
+#### 70. 开启事务（begin_transaction）
+**描述**: 开启数据库事务，保证数据一致性
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| connection_string | string | ✅ 是 | 数据库连接字符串 |
+
+#### 71. 提交事务（commit_transaction）
+**描述**: 提交数据库事务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| connection_string | string | ✅ 是 | 数据库连接字符串 |
+
+#### 72. 回滚事务（rollback_transaction）
+**描述**: 回滚数据库事务
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| connection_string | string | ✅ 是 | 数据库连接字符串 |
+
+#### 73. 检查网络连通性（check_network_connectivity）
+**描述**: 检查网络是否连通
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| host | string | ✅ 是 | 目标主机 |
+| timeout | number | ❌ 否 | 超时秒数，默认5 |
+
+#### 74. 验证URL（validate_url）
+**描述**: 验证URL格式是否合法
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| url | string | ✅ 是 | 要验证的URL |
 
 ---
 
 **编写人**: 小沈
-**更新时间**: 2026-04-04 10:31:01
+**更新时间**: 2026-04-04 19:30:00
 **更新说明**: 
-- 统一所有 tool 参数命名：path→file_path/dir_path/search_dir，paths→file_paths，bash_id→shell_id
-- 消除参数名歧义，LLM 调用时不会混淆
-- 新增 rename_file 工具，从 29 个工具增加为 30 个工具
+- 新增第22章：二级实现工具（第11-18类）
+- 共定义21个工具（11-18类）
+- 参考Python官方文档（winreg, sqlite3, logging）和LangChain工具生态
+
+---
+
+## 二十三，三级实现工具（第19-21类）
+
+### 23.1 工具汇总说明
+
+本章节整合第20.8章"三、数据处理与代码执行工具（2026 年 Agent 标配）【三级实现工具】"中定义的3类工具。
+
+**数据来源**：
+- Python 官方文档（subprocess, json）
+- PyAutoGUI 官方文档
+- pandas/matplotlib 官方文档
+- python-docx, openpyxl, pdfplumber 官方文档
+
+**说明**：这些工具用于数据分析、代码验证、图表生成，是2026年Agent的核心能力。
+
+---
+
+### 23.2 19类：代码执行
+
+**说明**：使用 `subprocess` 实现，需要沙箱隔离确保安全，零依赖。
+
+#### 75. 执行 Python 代码（execute_python）
+**描述**: 在沙箱环境中执行 Python 代码并返回结果
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| code | string | ✅ 是 | 要执行的 Python 代码 |
+| timeout | number | ❌ 否 | 超时时间（秒），默认 30 |
+| imports | string[] | ❌ 否 | 预先导入的模块（如 ["json", "os"]） |
+
+#### 76. 执行 JavaScript 代码（execute_javascript）
+**描述**: 使用 Node.js 执行 JavaScript 代码并返回结果
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| code | string | ✅ 是 | 要执行的 JavaScript 代码 |
+| timeout | number | ❌ 否 | 超时时间（秒），默认 30 |
+| node_modules | string[] | ❌ 否 | 预先安装的 npm 包 |
+
+---
+
+### 23.3 20类：数据分析
+
+**说明**：使用 `pandas` 和 `matplotlib` 库（`pip install pandas matplotlib`）。
+
+#### 77. 读取 CSV 文件（read_csv_dataframe）
+**描述**: 使用 pandas 读取 CSV 文件并进行数据分析，返回 DataFrame 格式支持后续统计分析
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | CSV 文件路径 |
+| encoding | string | ❌ 否 | 文件编码，默认 utf-8 |
+| delimiter | string | ❌ 否 | 分隔符，默认 , |
+| has_header | boolean | ❌ 否 | 是否有表头，默认 true |
+| max_rows | number | ❌ 否 | 最大读取行数，默认 1000 |
+
+#### 78. 生成图表（generate_chart）
+**描述**: 使用 matplotlib 生成数据可视化图表
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| data | object | ✅ 是 | 图表数据（JSON 格式） |
+| chart_type | string | ❌ 否 | 图表类型：bar/line/pie/scatter（默认 bar） |
+| title | string | ❌ 否 | 图表标题 |
+| x_label | string | ❌ 否 | X轴标签 |
+| y_label | string | ❌ 否 | Y轴标签 |
+| output_path | string | ❌ 否 | 输出图片路径（默认 temp.png） |
+
+#### 79. 分析数据（analyze_data）
+**描述**: 对数据集进行统计分析，返回描述性统计信息
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| data | object | ✅ 是 | 要分析的数据（数组或 CSV 文件路径） |
+| operations | string[] | ❌ 否 | 分析操作：mean/sum/count/min/max/std（默认全部） |
+| group_by | string | ❌ 否 | 分组字段 |
+
+---
+
+### 23.4 21类：文档处理
+
+**说明**：使用 `pdfplumber`、`python-docx`、`openpyxl` 库。
+
+#### 80. 读取 PDF 文件（read_pdf）
+**描述**: 读取 PDF 文件并提取文本内容
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | PDF 文件路径 |
+| pages | string | ❌ 否 | 要读取的页面（如 "1-5" 或 "1,3,5"） |
+| extract_images | boolean | ❌ 否 | 是否提取图片，默认 false |
+
+#### 81. 读取 Word 文件（read_docx）
+**描述**: 读取 Word 文档并提取文本内容
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | Word 文件路径 |
+
+#### 82. 读取 Excel 文件（read_xlsx）
+**描述**: 读取 Excel 文件并提取表格数据
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | Excel 文件路径 |
+| sheet_name | string | ❌ 否 | 工作表名称（默认第一个） |
+| max_rows | number | ❌ 否 | 最大读取行数，默认 1000 |
+
+---
+
+### 23.5 工具总数汇总
+
+| 三级3类 | 总数 | 说明 |
+|--------|------|------|
+| 19类：代码执行 | 2 | execute_python, execute_javascript |
+| 20类：数据分析 | 3 | read_csv_dataframe, generate_chart, analyze_data |
+| 21类：文档处理 | 3 | read_pdf, read_docx, read_xlsx |
+| **总计** | **8** | 三级实现工具总数 |
+
+---
+
+### 23.6 附录：三级工具配套保障（代码执行+文档处理）
+
+**说明**：第20.8章第5类"Agent辅助/配套工具"中，属于三级实现（需要pip install）的工具。
+
+#### 83. 检查Python环境（check_python_available）
+**描述**: 检查Python环境是否可用
+**参数**: 无参数
+
+#### 84. 验证代码安全性（validate_code_safety）
+**描述**: 验证代码安全性，防止危险操作
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| code | string | ✅ 是 | 要验证的代码 |
+
+#### 85. 检查Node.js环境（check_node_available）
+**描述**: 检查Node.js环境是否可用
+**参数**: 无参数
+
+#### 86. 检查Python模块（check_module_available）
+**描述**: 检查Python模块是否已安装
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| module_name | string | ✅ 是 | 模块名称 |
+
+#### 87. 验证CSV格式（validate_csv_format）
+**描述**: 验证CSV文件格式是否正确
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | CSV文件路径 |
+
+#### 88. 验证图表数据（validate_chart_data）
+**描述**: 验证图表数据格式是否正确
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| data | object | ✅ 是 | 图表数据（JSON格式） |
+
+#### 89. 检查PDF可读性（check_pdf_readable）
+**描述**: 检查PDF文件是否可读
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | PDF文件路径 |
+
+#### 90. 检查Word可读性（check_docx_readable）
+**描述**: 检查Word文件是否可读
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | Word文件路径 |
+
+#### 91. 检查Excel可读性（check_xlsx_readable）
+**描述**: 检查Excel文件是否可读
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| file_path | string | ✅ 是 | Excel文件路径 |
+
+---
+
+## 二十四，可选扩展工具（第22-28类）
+
+### 24.1 工具汇总说明
+
+本章节整合第20.8章"四、GUI 交互与桌面自动化工具（可选扩展）"中定义的7类工具。
+
+**数据来源**：
+- PyAutoGUI 官方文档
+- pytesseract 官方文档
+- pywin32 官方文档
+- Windows MCP 工具生态
+
+**说明**：这些工具用于控制桌面 GUI（鼠标、键盘、窗口），属于**可选扩展能力**，需要安装对应依赖库。
+
+---
+
+### 24.2 22类：鼠标控制
+
+**说明**：使用 `pyautogui` 库（`pip install pyautogui`）。
+
+#### 92. 鼠标点击（click）
+**描述**: 模拟鼠标点击操作
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| x | number | ❌ 否 | 点击的 X 坐标 |
+| y | number | ❌ 否 | 点击的 Y 坐标 |
+| button | string | ❌ 否 | 鼠标按钮：left/right/middle（默认 left） |
+| click_type | string | ❌ 否 | 点击类型：single/double（默认 single） |
+
+#### 93. 鼠标移动（move）
+**描述**: 移动鼠标到指定位置
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| x | number | ✅ 是 | 目标 X 坐标 |
+| y | number | ✅ 是 | 目标 Y 坐标 |
+| duration | number | ❌ 否 | 移动持续时间（秒），默认 0 |
+
+#### 94. 鼠标滚动（scroll）
+**描述**: 模拟鼠标滚轮滚动
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| direction | string | ✅ 是 | 滚动方向：up/down |
+| amount | number | ❌ 否 | 滚动单位数量，默认 3 |
+
+---
+
+### 24.3 23类：键盘输入
+
+**说明**：使用 `pyautogui` 或 `keyboard` 库。
+
+#### 95. 输入文本（type_text）
+**描述**: 模拟键盘输入文本
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| text | string | ✅ 是 | 要输入的文本 |
+| interval | number | ❌ 否 | 每个字符间隔（秒），默认 0 |
+
+#### 96. 快捷键（shortcut）
+**描述**: 执行键盘快捷键组合
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| keys | string | ✅ 是 | 快捷键组合（如 "ctrl+c", "alt+tab"） |
+
+#### 97. 组合键（key_combo）
+**描述**: 按住多个键后释放
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| keys | string[] | ✅ 是 | 要按住的键数组 |
+| action | string | ❌ 否 | 操作：press（按下）/hold（按住）/release（释放） |
+
+---
+
+### 24.4 24类：截图/屏幕
+
+**说明**：使用 `mss` 或 `PIL` 库。
+
+#### 98. 截取屏幕（screenshot）
+**描述**: 截取屏幕截图
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| output_path | string | ❌ 否 | 输出文件路径（默认 temp.png） |
+| region | object | ❌ 否 | 截取区域 {x, y, width, height} |
+
+#### 99. 桌面快照（snapshot）
+**描述**: 获取完整桌面状态快照
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| display | number | ❌ 否 | 显示器编号，默认 1 |
+
+#### 100. 屏幕录制（screen_record）
+**描述**: 录制屏幕视频
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| duration | number | ✅ 是 | 录制时长（秒） |
+| output_path | string | ❌ 否 | 输出文件路径（默认 temp.mp4） |
+| fps | number | ❌ 否 | 帧率，默认 15 |
+
+---
+
+### 24.5 25类：OCR 识别
+
+**说明**：使用 `pytesseract` 库（`pip install pytesseract`），需要安装 Tesseract 引擎。
+
+#### 101. OCR 文字识别（ocr）
+**描述**: 从图片中识别文字
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| image_path | string | ✅ 是 | 图片文件路径 |
+| language | string | ❌ 否 | 识别语言：eng+chi_sim（默认 eng） |
+
+---
+
+### 24.6 26类：窗口管理
+
+**说明**：使用 `pywin32` 库（`pip install pywin32`）。
+
+#### 102. 列出窗口（list_windows）
+**描述**: 获取所有打开的窗口列表
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| filter | string | ❌ 否 | 窗口标题过滤 |
+
+#### 103. 聚焦窗口（focus_window）
+**描述**: 聚焦指定窗口
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| title | string | ✅ 是 | 窗口标题 |
+
+#### 104. 调整窗口大小（resize_window）
+**描述**: 调整窗口大小
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| title | string | ✅ 是 | 窗口标题 |
+| width | number | ✅ 是 | 宽度 |
+| height | number | ✅ 是 | 高度 |
+
+---
+
+### 24.7 27类：剪贴板操作
+
+**说明**：使用 `pyperclip` 库（`pip install pyperclip`）或零依赖的 `ctypes`。
+
+#### 105. 读取剪贴板（read_clipboard）
+**描述**: 读取剪贴板内容
+**参数**: 无参数
+
+#### 106. 写入剪贴板（write_clipboard）
+**描述**: 写入内容到剪贴板
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| content | string | ✅ 是 | 要写入的内容 |
+
+---
+
+### 24.8 28类：通知
+
+**说明**：使用 `win10toast` 库（`pip install win10toast`）。
+
+#### 107. 发送通知（send_notification）
+**描述**: 发送 Windows 系统通知
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| title | string | ✅ 是 | 通知标题 |
+| message | string | ✅ 是 | 通知内容 |
+| duration | number | ❌ 否 | 显示时长（秒），默认 5 |
+
+---
+
+### 24.9 工具总数汇总
+
+| 可选扩展7类 | 总数 | 说明 |
+|-------------|------|------|
+| 22类：鼠标控制 | 3 | click, move, scroll |
+| 23类：键盘输入 | 3 | type_text, shortcut, key_combo |
+| 24类：截图/屏幕 | 3 | screenshot, snapshot, screen_record |
+| 25类：OCR识别 | 1 | ocr |
+| 26类：窗口管理 | 3 | list_windows, focus_window, resize_window |
+| 27类：剪贴板操作 | 2 | read_clipboard, write_clipboard |
+| 28类：通知 | 1 | send_notification |
+| **总计** | **16** | 可选扩展工具总数 |
+
+---
+
+### 24.10 附录：可选扩展工具配套保障（GUI自动化）
+
+**说明**：第20.8章第5类"Agent辅助/配套工具"中，属于可选扩展（需要pip install）的工具。
+
+#### 108. 获取鼠标位置（get_mouse_position）
+**描述**: 获取当前鼠标位置
+**参数**: 无参数
+
+#### 109. 检查屏幕分辨率（check_screen_size）
+**描述**: 检查屏幕分辨率
+**参数**: 无参数
+
+#### 110. 检查窗口是否存在（check_window_exists）
+**描述**: 检查窗口是否存在
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| title | string | ✅ 是 | 窗口标题 |
+
+#### 111. 获取窗口位置和大小（get_window_position）
+**描述**: 获取窗口位置和大小
+**参数**:
+| 参数名 | 类型 | 必填 | 描述 |
+|--------|------|------|------|
+| title | string | ✅ 是 | 窗口标题 |
+
+#### 112. 检查屏幕捕获权限（check_screen_capture_permission）
+**描述**: 检查屏幕捕获权限
+**参数**: 无参数
+
+#### 113. 检查Tesseract OCR引擎（check_tesseract_available）
+**描述**: 检查Tesseract OCR引擎是否可用
+**参数**: 无参数
+
+#### 114. 检查系统通知权限（check_notification_permission）
+**描述**: 检查系统通知权限
+**参数**: 无参数
+
+---
+
+
+**编写人**: 小沈
+**更新时间**: 2026-04-04 18:40:12
+**更新说明**: 
+- 按20.8章一级实现的10类序号重新分类21章工具
+- 21.2 → 1类：文件操作（19个工具）
+- 21.3 → 2类：Shell命令执行（3个工具）
+- 21.4 → 4类：网络通信（2个工具）
+- 序号与20.8章标准保持一致
+- 删除任务管理类7个工具
+- 修正grep_file_content的5个参数名（-A/-B/-C/-i/-n改为完整英文单词）

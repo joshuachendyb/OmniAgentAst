@@ -175,7 +175,7 @@ class BaseAIService:
                             error_msg = error_json.get("error", {}).get("message", "")
                             if error_msg:
                                 yield StreamChunk(content="", model=self.model, is_done=True, 
-                                    stream_error=f"API Error: {response.status_code}, {error_msg}",
+                                    stream_error=f"API Error: {response.status_code}, {error_text}",  # 【修复 2026-04-10】传递完整错误信息
                                     stream_error_type="api_error")
                                 return
                         except json.JSONDecodeError:
@@ -375,7 +375,7 @@ class BaseAIService:
                     content="",
                     model=self.model,
                     provider=self.provider,
-                    error=f"API Error: {response.status_code}"
+                    error=f"API Error: {response.status_code}, {error_text}"  # 【修复 2026-04-10】传递完整错误信息
                 )
             
             data = response.json()

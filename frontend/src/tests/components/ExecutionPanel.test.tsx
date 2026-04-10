@@ -116,7 +116,7 @@ describe('ExecutionPanel Component', () => {
     expect(screen.getByText(/Failed to read file/)).toBeInTheDocument();
   });
 
-  it('should display step type labels for each step', () => {
+    it('should display step type labels for each step', () => {
     render(<ExecutionPanel steps={mockSteps} isActive={false} />);
 
     // Each step should have appropriate content

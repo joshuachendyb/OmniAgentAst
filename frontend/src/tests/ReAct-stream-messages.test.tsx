@@ -55,8 +55,8 @@ const TEST_MESSAGES = {
     step: 1,
     content: '需要先查明天深圳→海南的晚间航班',
     reasoning: '用户想要查看航班信息，需要先调用航班查询工具',
-    action_tool: 'search_flight',
-    params: {
+    tool_name: 'search_flight',
+    tool_params: {
       from: '深圳',
       to: '海南',
       date: '明天',
@@ -94,7 +94,7 @@ const TEST_MESSAGES = {
     content: '共找到2个文件',
     reasoning: '工具执行成功，返回了目录列表',
     action_tool: 'list_directory',
-    params: { path: 'C:\\Users\\test' },
+    tool_params: { path: 'C:\\Users\\test' },
     is_finished: false,
   },
 
@@ -217,13 +217,13 @@ describe('【小查测试】10.1 消息类型数据结构验证', () => {
       expect(TEST_MESSAGES.thought.reasoning).toBeDefined();
     });
 
-    it('应包含action_tool字段', () => {
-      expect(TEST_MESSAGES.thought.action_tool).toBe('search_flight');
+    it('应包含tool_name字段', () => {
+      expect(TEST_MESSAGES.thought.tool_name).toBe('search_flight');
     });
 
-    it('应包含params字段', () => {
-      expect(TEST_MESSAGES.thought.params).toBeDefined();
-      expect(TEST_MESSAGES.thought.params?.from).toBe('深圳');
+    it('应包含tool_params字段', () => {
+      expect(TEST_MESSAGES.thought.tool_params).toBeDefined();
+      expect(TEST_MESSAGES.thought.tool_params?.from).toBe('深圳');
     });
   });
 
@@ -349,7 +349,7 @@ describe('【小查测试】10.2 类型守卫函数', () => {
   });
 
   describe('isActionToolMessage', () => {
-    it('应正确识别action_tool类型消息', () => {
+    it('应正确识别tool_name类型消息', () => {
       expect(isActionToolMessage(TEST_MESSAGES.action_tool)).toBe(true);
     });
   });
@@ -595,7 +595,7 @@ describe('【小查测试】10.6 安全检查', () => {
 // ============================================================
 
 describe('【小查测试】10.7 字段名称映射', () => {
-  describe('action_tool字段', () => {
+  describe('tool_name字段', () => {
     it('新字段tool_name应存在', () => {
       expect(TEST_MESSAGES.action_tool.tool_name).toBe('list_directory');
     });
@@ -613,14 +613,14 @@ describe('【小查测试】10.7 字段名称映射', () => {
   });
 
   describe('thought字段可选性', () => {
-    it('action_tool应为可选', () => {
+    it('tool_name应为可选', () => {
       const thoughtWithoutAction = {
         type: 'thought' as const,
         step: 1,
         content: '这是一个纯思考，没有调用工具',
       };
       
-      expect(thoughtWithoutAction.action_tool).toBeUndefined();
+      expect(thoughtWithoutAction.tool_name).toBeUndefined();
     });
 
     it('params应为可选', () => {
@@ -670,7 +670,7 @@ describe('【小查测试】10.9 完整ReAct流程', () => {
     expect(completeReActFlow.length).toBe(5);
     expect(completeReActFlow[0].type).toBe('start');
     expect(completeReActFlow[1].type).toBe('thought');
-    expect(completeReActFlow[2].type).toBe('action_tool');
+    expect(completeReActFlow[2].type).toBe('tool_name');
     expect(completeReActFlow[3].type).toBe('observation');
     expect(completeReActFlow[4].type).toBe('final');
   });
