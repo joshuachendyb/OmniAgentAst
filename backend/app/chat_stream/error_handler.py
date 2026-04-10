@@ -349,11 +349,55 @@ def get_stream_error_info(error_type: str, original_message: str = None) -> tupl
     
     # 优先使用原始错误消息，保留API返回的真实信息
     if original_message and original_message.strip():
-        message = original_message
+        # 【新增 2026-04-10】提取 message 和 type 追加到用户友好提示后
+        original_info = _extract_message_and_type(original_message)
+        if original_info:
+            message = f"{default_message}\n原始信息: {original_info}"
+        else:
+            message = original_message
     else:
         message = default_message
     
     return error_code, message
+
+
+def _extract_message_and_type(error_message: str) -> str:
+    """
+    提取原始错误信息中的 message 和 type
+    
+    【新增 2026-04-10】
+    从原始错误（如 {"error":{"message":"...","type":"..."}}）中解析提取
+    
+    Args:
+        error_message: 原始错误消息字符串
+    
+    Returns:
+        格式化后的字符串，如 "message=..., type=..."
+        如果无法解析，返回空字符串
+    """
+    if not error_message:
+        return ""
+    
+    import re
+    # 匹配 {"error":{"message":"...","type":"..."...}}
+    json_match = re.search(r'\{["\']?error["\']?\s*:\s*\{([^}]+)\}', str(error_message), re.IGNORECASE)
+    if json_match:
+        inner = json_match.group(1)
+        # 提取 message
+        msg_match = re.search(r'["\']?message["\']?\s*:\s*["\']([^"\']+)["\']', inner, re.IGNORECASE)
+        # 提取 type
+        type_match = re.search(r'["\']?type["\']?\s*:\s*["\']([^"\']+)["\']', inner, re.IGNORECASE)
+        
+        parts = []
+        if msg_match:
+            parts.append(f"message={msg_match.group(1)}")
+        if type_match:
+            parts.append(f"type={type_match.group(1)}")
+        
+        if parts:
+            return ", ".join(parts)
+    
+    return ""
 
 
 def resolve_http_error_type(error_message: str) -> Optional[str]:

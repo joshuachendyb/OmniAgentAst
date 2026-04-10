@@ -217,57 +217,14 @@ class TextStrategy(LLMStrategy):
         if error_type is None:
             error_type = 'unknown'
         
-        # 获取用户友好的错误信息
-        error_code, user_message = get_stream_error_info(error_type)
-        
-        # 【新增 2026-04-10】追加原始错误信息（message和type）
-        original_info = self._extract_original_error_info(error)
-        if original_info:
-            user_message = f"{user_message}\n原始信息: {original_info}"
+        # 【修复 2026-04-10】使用带原始错误信息的 get_stream_error_info
+        # 在 error_handler.py 中统一处理 message 和 type 的追加
+        error_code, user_message = get_stream_error_info(error_type, original_message=str(error))
         
         logger.info(f"[LLM Error] 原始错误: {error}, 分类: {error_type}, 提示: {user_message}")
         
         # 返回统一格式的错误提示
         return f"⚠️ {user_message}"
-    
-    def _extract_original_error_info(self, error: str) -> str:
-        """
-        提取原始错误信息中的 message 和 type
-        
-        【新增 2026-04-10】
-        从原始错误中解析并提取 message 和 type，供用户查看
-        
-        Args:
-            error: 原始错误信息（如包含 JSON 的错误）
-        
-        Returns:
-            格式化后的原始信息字符串，如 "message=..., type=..."
-            如果无法解析，返回空字符串
-        """
-        if not error:
-            return ""
-        
-        # 尝试解析 JSON 格式的错误
-        import re
-        # 匹配 {"error":{"message":"...","type":"..."...}}
-        json_match = re.search(r'\{["\']?error["\']?\s*:\s*\{([^}]+)\}', str(error), re.IGNORECASE)
-        if json_match:
-            inner = json_match.group(1)
-            # 提取 message
-            msg_match = re.search(r'["\']?message["\']?\s*:\s*["\']([^"\']+)["\']', inner, re.IGNORECASE)
-            # 提取 type
-            type_match = re.search(r'["\']?type["\']?\s*:\s*["\']([^"\']+)["\']', inner, re.IGNORECASE)
-            
-            parts = []
-            if msg_match:
-                parts.append(f"message={msg_match.group(1)}")
-            if type_match:
-                parts.append(f"type={type_match.group(1)}")
-            
-            if parts:
-                return ", ".join(parts)
-        
-        return ""
     
     def _extract_by_known_tools(self, content: str) -> Optional[dict]:
         """
