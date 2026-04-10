@@ -365,23 +365,24 @@ def get_stream_error_info(error_type: str, original_message: str = None) -> tupl
 
 def _extract_message_and_type(error_message: str) -> str:
     """
-    提取原始错误信息中的 message 和 type
+    提取原始错误信息中的 message、type、param、code
     
     【新增 2026-04-10】
-    从原始错误（如 {"error":{"message":"...","type":"..."}}）中解析提取
+    【增强 2026-04-10】增加 param 和 code 字段
+    从原始错误（如 {"error":{"message":"...","type":"...","param":"...","code":"..."}}）中解析提取
     
     Args:
         error_message: 原始错误消息字符串
     
     Returns:
-        格式化后的字符串，如 "message=..., type=..."
+        格式化后的字符串，如 "message=..., type=..., param=..., code=..."
         如果无法解析，返回空字符串
     """
     if not error_message:
         return ""
     
     import re
-    # 匹配 {"error":{"message":"...","type":"..."...}}
+    # 匹配 {"error":{"message":"...","type":"...","param":"...","code":"..."...}}
     json_match = re.search(r'\{["\']?error["\']?\s*:\s*\{([^}]+)\}', str(error_message), re.IGNORECASE)
     if json_match:
         inner = json_match.group(1)
@@ -389,12 +390,20 @@ def _extract_message_and_type(error_message: str) -> str:
         msg_match = re.search(r'["\']?message["\']?\s*:\s*["\']([^"\']+)["\']', inner, re.IGNORECASE)
         # 提取 type
         type_match = re.search(r'["\']?type["\']?\s*:\s*["\']([^"\']+)["\']', inner, re.IGNORECASE)
+        # 提取 param
+        param_match = re.search(r'["\']?param["\']?\s*:\s*["\']([^"\']*)["\']', inner, re.IGNORECASE)
+        # 提取 code
+        code_match = re.search(r'["\']?code["\']?\s*:\s*["\']([^"\']+)["\']', inner, re.IGNORECASE)
         
         parts = []
         if msg_match:
             parts.append(f"message={msg_match.group(1)}")
         if type_match:
             parts.append(f"type={type_match.group(1)}")
+        if param_match and param_match.group(1):
+            parts.append(f"param={param_match.group(1)}")
+        if code_match:
+            parts.append(f"code={code_match.group(1)}")
         
         if parts:
             return ", ".join(parts)
