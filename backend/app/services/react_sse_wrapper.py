@@ -38,7 +38,7 @@ from app.config import get_config
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data
-from app.chat_stream.error_handler import create_error_response, get_user_friendly_error, create_error_step
+from app.chat_stream.error_handler import create_error_response, get_function_call_error_info, create_error_step
 from app.chat_stream.chat_helpers import create_final_response, create_timestamp, create_step_counter
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
 from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse
@@ -537,7 +537,7 @@ async def generate_sse_stream(
     
     except Exception as e:
         logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
-        error_info = get_user_friendly_error(e)
+        error_info = get_function_call_error_info(e)
         logger.info(f"[Step error] 发送error步骤")
         error_step = create_error_step(
             code=error_info.get("code", "INTERNAL_ERROR"),

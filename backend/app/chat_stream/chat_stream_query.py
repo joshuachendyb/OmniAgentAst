@@ -16,7 +16,7 @@ from app.services.llm_core import Message
 from app.utils.retry_controller import RetryController
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
 from app.chat_stream.chat_helpers import create_timestamp, create_final_response
-from app.chat_stream.error_handler import create_error_response, create_error_step, get_error_info_by_type
+from app.chat_stream.error_handler import create_error_response, create_error_step, get_stream_error_info
 from app.chat_stream.incident_handler import (
     create_incident_data,
     check_and_yield_if_paused,
@@ -320,8 +320,37 @@ async def chat_stream_query(
         # 根据错误原因返回不同的错误提示
         if last_error:
             logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}, 类型: {last_error_type}")
-            # 使用 get_error_info_by_type() 获取错误信息
-            error_type, error_message = get_error_info_by_type(last_error_type)
+            
+            # 【小沈修复 2026-04-10】优先从 last_error 字符串中解析真实错误码
+            # 而不是依赖 stream_error_type（可能不准确）
+            resolved_error_type = None
+            if last_error:
+                last_error_lower = last_error.lower()
+                # 按优先级匹配：先匹配具体错误，再匹配通用错误码
+                if "limit_error" in last_error_lower or "rate_limit" in last_error_lower:
+                    resolved_error_type = 'api_error_429'
+                elif "429" in last_error:
+                    resolved_error_type = 'api_error_429'
+                elif "503" in last_error:
+                    resolved_error_type = 'api_error_503'
+                elif "401" in last_error or "auth" in last_error_lower or "unauthorized" in last_error_lower:
+                    resolved_error_type = 'api_error_401'
+                elif "403" in last_error or "forbidden" in last_error_lower:
+                    resolved_error_type = 'api_error_403'
+                elif "400" in last_error:
+                    resolved_error_type = 'api_error_400'
+                elif "500" in last_error:
+                    resolved_error_type = 'api_error_500'
+                elif "502" in last_error:
+                    resolved_error_type = 'api_error_502'
+                elif "504" in last_error:
+                    resolved_error_type = 'api_error_504'
+            
+            # 如果解析到了具体错误类型，使用解析结果；否则使用 last_error_type
+            final_error_type = resolved_error_type if resolved_error_type else last_error_type
+            
+            # 使用 get_stream_error_info() 获取错误信息
+            error_type, error_message = get_stream_error_info(final_error_type)
             # idle_timeout 需要动态显示实际超时值和重试次数
             if last_error_type == 'idle_timeout':
                 total_timeout = chat_timeout * max_retries

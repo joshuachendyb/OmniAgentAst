@@ -17,7 +17,7 @@ from datetime import datetime
 
 from app.services.agent.adapter import dict_list_to_messages
 from app.utils.logger import logger
-from app.chat_stream.error_handler import classify_llm_error, get_error_info_by_type
+from app.chat_stream.error_handler import classify_llm_error, get_stream_error_info
 
 
 class LLMStrategy(ABC):
@@ -120,7 +120,7 @@ class TextStrategy(LLMStrategy):
                     tool_params={"result": f"[错误] {error_hint}"}
                 )
             # 没有具体错误信息时，使用统一的 empty_response 错误提示
-            _, user_message = get_error_info_by_type('empty_response')
+            _, user_message = get_stream_error_info('empty_response')
             return self._make_result(
                 content=f"⚠️ {user_message}",
                 tool_name="finish",
@@ -212,7 +212,7 @@ class TextStrategy(LLMStrategy):
         error_type = classify_llm_error(str(error))
         
         # 获取用户友好的错误信息
-        error_code, user_message = get_error_info_by_type(error_type)
+        error_code, user_message = get_stream_error_info(error_type)
         
         logger.info(f"[LLM Error] 原始错误: {error}, 分类: {error_type}, 提示: {user_message}")
         

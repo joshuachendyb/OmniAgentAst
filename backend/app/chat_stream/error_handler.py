@@ -109,10 +109,10 @@ def create_error_response(
     if retry_after is not None:
         response['retry_after'] = retry_after
     response['timestamp'] = create_timestamp()
-    return f"data: {json.dumps(response)}\n\n"
+    return f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
 
 
-def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
+def get_function_call_error_info(error: Exception) -> Dict[str, Any]:
     """
     获取用户友好的错误信息
     
@@ -217,7 +217,7 @@ def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
             "error_type": "api_error",
             "retryable": False
         }
-    elif "429" in error_msg or "rate limit" in error_msg.lower() or "配额" in error_msg:
+    elif "429" in error_msg or "rate limit" in error_msg.lower() or "limit_error" in error_msg or "配额" in error_msg:
         return {
             "code": "RATE_LIMIT_EXCEEDED",
             "message": "API请求过于频繁 (errorcode=429)，请稍后再试或更换模型",
@@ -322,7 +322,7 @@ def classify_error(error_type: str, error_message: str = "") -> tuple[str, str]:
         return 'server', f"服务调用失败: {error_message}"
 
 
-def get_error_info_by_type(error_type: str) -> tuple[str, str]:
+def get_stream_error_info(error_type: str) -> tuple[str, str]:
     """
     根据错误类型获取错误码和用户友好的错误信息
     
