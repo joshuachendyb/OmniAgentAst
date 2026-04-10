@@ -632,7 +632,8 @@ def create_tool_error_result(
     tool_params: Optional[Dict[str, Any]] = None,
     retry_count: int = 0,
     max_retries: int = 3,
-    raw_data: Any = None
+    raw_data: Any = None,
+    timestamp: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     统一的工具级错误处理函数
@@ -657,6 +658,7 @@ def create_tool_error_result(
         retry_count: 当前重试次数（后续扩展用）
         max_retries: 最大重试次数（后续扩展用）
         raw_data: 详细错误信息（可选）
+        timestamp: 时间戳（可选，不传则自动生成）
     
     Returns:
         可直接yield的action_tool格式字典，包含：
@@ -677,11 +679,14 @@ def create_tool_error_result(
     else:
         summary = f"[错误] {tool_name} 执行失败: {error_message}，已重试{max_retries}次"
     
+    # 使用传入的时间戳或自动生成
+    ts = timestamp if timestamp is not None else create_timestamp()
+    
     # 返回dict，可直接yield
     return {
         'type': 'action_tool',
         'step': step_num,
-        'timestamp': create_timestamp(),
+        'timestamp': ts,
         'tool_name': tool_name,
         'tool_params': tool_params or {},
         'execution_status': 'error',  # 标记为错误

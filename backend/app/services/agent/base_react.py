@@ -244,7 +244,8 @@ class BaseAgent(ABC):
                         step_num=step_count,
                         tool_params=tool_params,
                         retry_count=execution_result.get("retry_count", 0),
-                        raw_data=execution_result.get("data")
+                        raw_data=execution_result.get("data"),
+                        timestamp=current_time  # 使用统一的时间戳
                     )
                     yield action_tool_result
                 else:
