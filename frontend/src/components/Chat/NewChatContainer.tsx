@@ -176,7 +176,7 @@ const NewChatContainer: React.FC = () => {
     // onStep - 收到执行步骤
     useCallback((step: ExecutionStep) => {
       // type 处理流程日志（解析 -> 存储 -> 渲染）
-      console.log("📝 [type流程] 收到type=", step.type, new Date().toLocaleTimeString());
+      console.log("📝 type=%s timestamp=%s", step.type, step.timestamp ? new Date(step.timestamp).toLocaleTimeString() : 'N/A');
       // 只打印第一个chunk，减少日志
       if (step.type === "chunk") {
         if (!logFlagsRef.current.chunkFirstDone) {
@@ -277,7 +277,10 @@ const NewChatContainer: React.FC = () => {
           // if (step.type !== 'chunk') {
           //   console.log("🔍 [onStep] 步骤被添加, type=", step.type);
           // }
-          console.log("📝 [type流程] 存储到executionSteps:", step.type, "| 已有=", lastMessage.executionSteps?.length || 0);
+          // 只打印非chunk步骤，减少日志噪声
+          if (step.type !== 'chunk') {
+            console.log("📝 存储 type=%s 已有=%d", step.type, lastMessage.executionSteps?.length || 0);
+          }
           const updatedSteps = [...(lastMessage.executionSteps || []), step];
           const updated = [...prev];
           updated[updated.length - 1] = {
@@ -374,7 +377,7 @@ const NewChatContainer: React.FC = () => {
             // - SSE传递的steps：本次对话实时收到的步骤数量（比如：start → thought → chunk → final）
             // - message已有的steps：这个消息之前保存的步骤数量（比如：历史会话加载进来的）
             // - 最终选择：取两者中更多的那个来保存（确保不丢失数据）
-            console.log("📊 [type流程] AI回答完成", "| 实时=", sseSteps.length, "| 历史=", msgSteps.length, "| 保存=", latestSteps.length);
+            console.log("📊 type=%s AI完成 实时=%d 历史=%d 保存=%d", sseSteps.length, msgSteps.length, latestSteps.length);
             
             updated[updated.length - 1] = {
               ...lastMessage,
@@ -417,7 +420,7 @@ const NewChatContainer: React.FC = () => {
 
           try {
             // 后端在流式结束时自动保存steps到数据库，无需前端触发
-            // console.log("✅ [type流程] 后端已保存steps");
+            // console.log("✅ type=%s 后端已保存steps");
 
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
             // 原因：标题应该在用户修改时立即保存，避免版本冲突
@@ -463,7 +466,7 @@ const NewChatContainer: React.FC = () => {
           console.log("   └─ 回复内容是否为空:", !fullResponse ? "是（跳过保存）" : "否");
         }
 
-           console.log("✅ [type流程] AI回答流式传输完成", new Date().toLocaleTimeString());
+           console.log("✅ type=%s AI流式完成 %s", new Date().toLocaleTimeString());
          
           // ========== 黄色结束标志 ==========
           logAIComplete(fullResponse?.length || 0);
@@ -560,7 +563,7 @@ const NewChatContainer: React.FC = () => {
           // 【小新修复 2026-03-16】删除错误消息saveMessage调用
           // 后端会在error步骤时自动保存错误信息到execution_steps
           
-           console.log("❌ [type流程] onError完成", new Date().toLocaleTimeString());
+           console.log("❌ type=%s onError完成 %s", new Date().toLocaleTimeString());
          setLoading(false);
          // ⭐ 停止等待计时器
          if (waitTimerRef.current) {
@@ -895,7 +898,7 @@ const NewChatContainer: React.FC = () => {
         } else {
           sessionStorage.setItem(STORAGE_KEY, stateStr);
         }
-        console.log("💾 [type流程] 保存sessionStorage", new Date().toLocaleTimeString(), "| msg=", messagesToSave.length, "| steps=", executionStepsRef.current.length);
+        console.log("💾 type=%s 保存sessionStorage %s | msg=%d steps=%d", new Date().toLocaleTimeString(), messagesToSave.length, executionStepsRef.current.length);
       } catch (e) {
         if (e instanceof DOMException && e.name === 'QuotaExceededError') {
           console.warn("⚠️ sessionStorage容量满，只保存会话ID和标题");
@@ -977,7 +980,7 @@ const NewChatContainer: React.FC = () => {
             }, 100);
           }
 
-          console.log("🔄 [type流程] 恢复sessionStorage", new Date().toLocaleTimeString(), "| msg=", state.messages?.length);
+          console.log("🔄 type=%s 恢复sessionStorage %s | msg=%d", new Date().toLocaleTimeString(), state.messages?.length);
           return true;
         }
       } catch (e) {
@@ -1601,7 +1604,7 @@ const NewChatContainer: React.FC = () => {
     * @update 2026-02-23 修复：添加assistant消息占位，确保onStep/onChunk能正确更新
     */
   const executeStreamSend = async (userMessage: Message) => {
-    console.log("📡 [type流程] 开始发送消息");
+    console.log("📡 type=%s 开始发送消息");
     
     setLoading(true);
     // ⭐ 启动等待计时器
@@ -1698,7 +1701,7 @@ const NewChatContainer: React.FC = () => {
     
     // 发送流式请求 - 【小沈添加 2026-03-03】传递sessionId用于后端缓存display_name
     sendStreamMessage(userMessage.content, currentSessionIdRef.current ?? sessionId ?? undefined);
-    console.log("✅ [type流程] sendStreamMessage已调用");
+    console.log("✅ type=%s sendStreamMessage已调用");
   };
 
   /**
