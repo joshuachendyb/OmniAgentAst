@@ -25,6 +25,7 @@ import {
   message,
   Badge,
   Tooltip,
+  Spin,
 } from "antd";
 import {
   RobotOutlined,
@@ -56,7 +57,7 @@ import {
 } from "../../utils/chatHistory";
 
 // 【新增 2026-03-13】从独立文件导入日志和消息提示函数
-import { logAIComplete, logUserSend } from "../../utils/chatLogger";
+import { logAIComplete, logAIError, logUserSend } from "../../utils/chatLogger";
 import { getClientInfo } from "../../utils/clientInfo";  // 【小沈 2026-03-24】获取客户端信息
 import {
   showSaveError,
@@ -153,6 +154,7 @@ const NewChatContainer: React.FC = () => {
   type SaveStatus = "idle" | "saving" | "saved" | "error";
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [_sessionJumpLoading, setSessionJumpLoading] = useState(false);
+  const [isRenderingMessages, setIsRenderingMessages] = useState(false); // 渲染大量消息时的loading
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
   const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
   const [_isSavingTitle, setIsSavingTitle] = useState(false);
@@ -173,14 +175,14 @@ const NewChatContainer: React.FC = () => {
     },
     // onStep - 收到执行步骤
     useCallback((step: ExecutionStep) => {
+      // type 处理流程日志（解析 -> 存储 -> 渲染）
+      console.log("📝 type=%s timestamp=%s", step.type, step.timestamp ? new Date(step.timestamp).toLocaleTimeString() : 'N/A');
       // 只打印第一个chunk，减少日志
       if (step.type === "chunk") {
         if (!logFlagsRef.current.chunkFirstDone) {
           console.log("🔍 [onStep] 收到步骤, type= chunk (第一个)");
           logFlagsRef.current.chunkFirstDone = true;
         }
-      } else {
-        console.log("🔍 [onStep] 收到步骤, type=", step.type);
       }
       // ⭐ 暂停时存入缓冲区，不直接显示
       if (isPausedRef.current) {
@@ -199,13 +201,13 @@ const NewChatContainer: React.FC = () => {
           if (!lastMessage || lastMessage.role !== "assistant") {
             // 提取display_name
             const extractedDisplay_name = step.display_name;
-            console.log("🔍 提取的display_name:", extractedDisplay_name);
+            // console.log("🔍 提取的display_name:", extractedDisplay_name);
             
             // 如果 extractedDisplay_name 为空，尝试从其他字段构建
             let finalDisplay_name = extractedDisplay_name;
             if (!finalDisplay_name && step.model && step.provider) {
               finalDisplay_name = `${step.provider} (${step.model})`;
-              console.log("🔍 从model/provider构建display_name:", finalDisplay_name);
+              // console.log("🔍 从model/provider构建display_name:", finalDisplay_name);
             }
 
             /**
@@ -237,12 +239,12 @@ const NewChatContainer: React.FC = () => {
               provider: step.provider,
               display_name: finalDisplay_name, // 直接使用后端返回的 display_name
             };
-            console.log("🔍 创建新AI助手消息: display_name=", newAssistantMessage.display_name, "isStreaming=", newAssistantMessage.isStreaming);
-            console.log("🔍 完整消息对象:", JSON.stringify(newAssistantMessage, null, 2));
+            // console.log("🔍 创建新AI助手消息: display_name=", newAssistantMessage.display_name, "isStreaming=", newAssistantMessage.isStreaming);
+            // console.log("🔍 完整消息对象:", JSON.stringify(newAssistantMessage, null, 2));
             return [...prev, newAssistantMessage];
           } else {
             // 已有assistant消息，更新display_name和executionSteps
-            console.log("🔍 已有assistant消息，更新display_name:", step.display_name || `${step.provider} (${step.model})`, "| isStreaming=", lastMessage.isStreaming);
+            // console.log("🔍 已有assistant消息，更新display_name:", step.display_name || `${step.provider} (${step.model})`, "| isStreaming=", lastMessage.isStreaming);
             // 提取display_name
             const extractedDisplay_name = step.display_name;
             let finalDisplay_name = extractedDisplay_name;
@@ -271,6 +273,14 @@ const NewChatContainer: React.FC = () => {
           lastMessage.role === "assistant" &&
           lastMessage.isStreaming
         ) {
+          // 只打印非chunk步骤，减少日志
+          // if (step.type !== 'chunk') {
+          //   console.log("🔍 [onStep] 步骤被添加, type=", step.type);
+          // }
+          // 只打印非chunk步骤，减少日志噪声
+          if (step.type !== 'chunk') {
+            console.log("📝 存储 type=%s total = %d steps", step.type, (lastMessage.executionSteps?.length || 0) + 1);
+          }
           const updatedSteps = [...(lastMessage.executionSteps || []), step];
           const updated = [...prev];
           updated[updated.length - 1] = {
@@ -279,6 +289,7 @@ const NewChatContainer: React.FC = () => {
           };
           return updated;
         }
+        // console.log("🔍 [onStep] 步骤被丢弃, type=", step.type, "lastMessage.role=", lastMessage?.role, "isStreaming=", lastMessage?.isStreaming);
         return prev;
       });
     }, []),
@@ -366,12 +377,7 @@ const NewChatContainer: React.FC = () => {
             // - SSE传递的steps：本次对话实时收到的步骤数量（比如：start → thought → chunk → final）
             // - message已有的steps：这个消息之前保存的步骤数量（比如：历史会话加载进来的）
             // - 最终选择：取两者中更多的那个来保存（确保不丢失数据）
-            console.log("📊 [AI回答完成] 正在决定保存哪些步骤数据:");
-            console.log("  ├─ 本次收到的步骤数（实时流式）:", sseSteps.length, "个");
-            console.log("  ├─ 历史已有步骤数:", msgSteps.length, "个");
-            console.log("  └─ 最终保存步骤数:", latestSteps.length, "个", 
-              msgSteps.length >= sseSteps.length ? "← 用了历史的（更多）" : "← 用了本次的（更多）");
-            console.log("  最后5个步骤类型:", latestSteps?.slice(-5).map((s: any) => s.type));
+            console.log("📊 type=%s AI完成 实时=%d 历史=%d 保存=%d", sseSteps.length, msgSteps.length, latestSteps.length);
             
             updated[updated.length - 1] = {
               ...lastMessage,
@@ -387,7 +393,7 @@ const NewChatContainer: React.FC = () => {
               display_name: metadataObj.display_name || lastMessage.display_name,
               executionSteps: latestSteps,
             };
-            console.log("  └─ ✅ 已更新消息的步骤数量:", latestSteps.length);
+            console.log("  └─ ✅ 已更新 steps:", latestSteps.length, "| last3:", latestSteps.slice(-3).map((s: any) => s.type).join(","));
             return updated;
           }
           return prev;
@@ -403,35 +409,23 @@ const NewChatContainer: React.FC = () => {
         // 结果：sseData?.execution_steps永远是undefined，思考过程(execution_steps)无法保存到数据库
         // 症状：AI回复完成后刷新页面，"思考"部分的详细内容丢失，只剩下"正在分析任务..."
         // 教训：修改函数签名时必须同步修改所有调用方，不能单方面改变参数结构！
-        const stepsFromSSE = executionStepsFromSSE;
+        // const stepsFromSSE = executionStepsFromSSE;  // 已废弃，后端自动保存
         if (currentSessionId && finalResponse && finalResponse.trim()) {
           // 🔴 修复：添加详细的调试日志
-          console.log("💾 [保存AI回复] 正在保存到数据库:");
-          console.log("  ├─ 会话ID:", currentSessionId);
-          console.log("  ├─ 回复长度:", finalResponse.length, "字符");
-          console.log("  ├─ SSE传递的步骤数:", stepsFromSSE?.length, "个");
-          console.log("  └─ ref中的步骤数:", executionStepsRef.current?.length, "个");
+          // console.log("💾 [保存AI回复] 正在保存到数据库:");
+          // console.log("  ├─ 会话ID:", currentSessionId);
+          // console.log("  ├─ 回复长度:", finalResponse.length, "字符");
+          // console.log("  ├─ SSE传递的步骤数:", stepsFromSSE?.length, "个");
+          // console.log("  └─ ref中的步骤数:", executionStepsRef.current?.length, "个");
 
           try {
-            // ═══════════════════════════════════════════════════════════════════════════════
-            // ⭐ 【小沈修复 2026-03-17 前因后果说明】
-            // 问题：AI消息的execution_steps数据丢失（112条→99条）
-            // 根因：前后端重复保存，后端保存的数据被前端覆盖
-            //   1. 后端chat_stream.py在流式结束时自动保存完整数据（112条）
-            //   2. 前端onComplete也调用saveExecutionSteps，传99条覆盖后端数据
-            // 修复：删除前端saveExecutionSteps调用，后端数据自己知道完整数据
-            // 
-            // 【待小强检查确认】2026-03-17:
-            // 1. 确认此修改不影响其他功能（页面切换、刷新等场景）
-            // 2. 确认后端saveExecutionSteps在所有流程中都正确保存了数据
-            // 3. 如有新问题，可考虑恢复前端保存，但需确保不覆盖后端数据
-            // ═══════════════════════════════════════════════════════════════════════════════
-            console.log("✅ [保存AI回复] 后端已自动保存完整数据，前端无需重复保存");
+            // 后端在流式结束时自动保存steps到数据库，无需前端触发
+            // console.log("✅ type=%s 后端已保存steps");
 
             // ⭐ 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
             // 原因：标题应该在用户修改时立即保存，避免版本冲突
             // 如果需要同步最新数据，应该在用户修改标题时处理
-            console.log("✅ [保存AI回复] 保存成功！");
+            // console.log("✅ [保存AI回复] 保存成功！");
           } catch (saveError: any) {
             console.error("❌ [保存AI回复] 保存失败:", saveError?.message || saveError);
             console.error("   └─ 保存时使用的会话ID:", currentSessionId);
@@ -472,7 +466,7 @@ const NewChatContainer: React.FC = () => {
           console.log("   └─ 回复内容是否为空:", !fullResponse ? "是（跳过保存）" : "否");
         }
 
-           console.log("📡 [onComplete] AI回答流式传输完成，开始保存数据...");
+           console.log("✅ type=%s AI流式完成 %s", new Date().toLocaleTimeString());
          
           // ========== 黄色结束标志 ==========
           logAIComplete(fullResponse?.length || 0);
@@ -486,11 +480,11 @@ const NewChatContainer: React.FC = () => {
          }
          setWaitTime(0);
          setIsRetrying(false);
-         // 【小新第三修复 2026-03-02】清理ref和state
-         pendingMessageRef.current = null; // 同步清理
-         setPendingMessage(null); // 异步清理
-           console.log("✅ [onComplete] AI回答保存完成！");
-        },
+          // 【小新第三修复 2026-03-02】清理ref和state
+          pendingMessageRef.current = null; // 同步清理
+          setPendingMessage(null); // 异步清理
+            // console.log("✅ [onComplete] AI回答保存完成！");
+         },
        [] // 依赖数组为空，因为使用 ref 而不是 state
      ),
     // onError - 流式错误 - 前端小新代修改：适配后端新格式
@@ -566,29 +560,33 @@ const NewChatContainer: React.FC = () => {
          return prev;
        });
 
-         // 【小新修复 2026-03-16】删除错误消息saveMessage调用
-         // 后端会在error步骤时自动保存错误信息到execution_steps
-         
-         console.log("🔍 [onError] 错误处理完成，设置loading=false");
-        setLoading(false);
-        // ⭐ 停止等待计时器
-        if (waitTimerRef.current) {
-          clearInterval(waitTimerRef.current);
-          waitTimerRef.current = null;
-        }
-        setWaitTime(0);
-        setIsRetrying(false);
-        console.log("✅ [onError] 处理完成");
-        
-        // 【小查修复 2026-03-14】延迟检查确保状态已重置，防止按钮无法点击
-        setTimeout(() => {
-          console.log("🔍 [onError] 延迟检查状态 - loading:", loading, "isReceiving:", isReceiving);
-          // 如果状态仍未重置，强制重置
-          if (loading) {
-            console.warn("⚠️ [onError] loading 仍为 true，强制重置");
-            setLoading(false);
-          }
-        }, 100);
+          // 【小新修复 2026-03-16】删除错误消息saveMessage调用
+          // 后端会在error步骤时自动保存错误信息到execution_steps
+          
+           console.log("❌ type=%s onError完成 %s", new Date().toLocaleTimeString());
+         setLoading(false);
+         // ⭐ 停止等待计时器
+         if (waitTimerRef.current) {
+           clearInterval(waitTimerRef.current);
+           waitTimerRef.current = null;
+         }
+          setWaitTime(0);
+          setIsRetrying(false);
+          // console.log("✅ [onError] 处理完成");
+          
+          // ========== 错误结束标志 ==========
+          logAIError(errorObj.message || "未知错误");
+          // ==================================
+          
+          // 【小查修复 2026-03-14】延迟检查确保状态已重置，防止按钮无法点击
+         // setTimeout(() => {
+         //   console.log("🔍 [onError] 延迟检查状态 - loading:", loading, "isReceiving:", isReceiving);
+         //   // 如果状态仍未重置，强制重置
+         //   if (loading) {
+         //     console.warn("⚠️ [onError] loading 仍为 true，强制重置");
+         //     setLoading(false);
+         //   }
+         // }, 100);
        },
        []
     ),
@@ -639,12 +637,12 @@ const NewChatContainer: React.FC = () => {
     }, []),
     // onShowSteps - 控制步骤显示/隐藏（收到chunk时关闭步骤UI）
     useCallback((show: boolean) => {
-      // 打印所有调用，不跳过（方便调试）
-      if (show) {
-        console.log("👁️ [onShowSteps] 设置步骤显示状态: true");
-      } else {
-        console.log("👁️ [onShowSteps] 设置步骤显示状态: false");
-      }
+      // 只在状态变化时打印
+      // if (show) {
+      //   console.log("👁️ [onShowSteps] 设置步骤显示状态: true");
+      // } else {
+      //   console.log("👁️ [onShowSteps] 设置步骤显示状态: false");
+      // }
       setShowExecution(show);
     }, []),
     // ⭐ onRetry - 重试事件 - 【小查修复2026-03-13】添加waitTime参数
@@ -705,7 +703,31 @@ const NewChatContainer: React.FC = () => {
         isPaused,
         isReceiving,
       };
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      // 【小强修复 2026-04-08】添加try-catch防止QuotaExceededError崩溃
+      try {
+        const stateStr = JSON.stringify(state);
+        // const sizeInMB = (stateStr.length / 1024 / 1024).toFixed(2);  // 已废弃，不需要
+        if (stateStr.length > 4 * 1024 * 1024) {
+          // 超过4MB，只保存摘要
+          const lightState = {
+            sessionId,
+            sessionTitle,
+            timestamp: Date.now(),
+            messageCount: messages.length,
+            isPaused,
+            isReceiving,
+          };
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
+        } else {
+          sessionStorage.setItem(STORAGE_KEY, stateStr);
+        }
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+          console.warn("⚠️ sessionStorage容量满，跳过保存");
+        } else {
+          console.error("保存会话状态失败:", e);
+        }
+      }
     }
   }, [messages]);
 
@@ -756,7 +778,29 @@ const NewChatContainer: React.FC = () => {
           isPaused,
           isReceiving,
         };
-        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        // 【小强修复 2026-04-08】添加try-catch防止QuotaExceededError崩溃
+        try {
+          const stateStr = JSON.stringify(state);
+          if (stateStr.length > 4 * 1024 * 1024) {
+            const lightState = {
+              sessionId,
+              sessionTitle,
+              timestamp: Date.now(),
+              messageCount: messagesToSave.length,
+              isPaused,
+              isReceiving,
+            };
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
+          } else {
+            sessionStorage.setItem(STORAGE_KEY, stateStr);
+          }
+        } catch (e) {
+          if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+            console.warn("⚠️ [beforeunload] sessionStorage容量满，跳过保存");
+          } else {
+            console.error("保存会话状态失败:", e);
+          }
+        }
         
         // 提示浏览器不要关闭（可选）
         e.preventDefault();
@@ -833,13 +877,41 @@ const NewChatContainer: React.FC = () => {
         isPaused,
         isReceiving,
       };
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      console.log("💾 保存会话状态:", sessionId, sessionTitle, { 
-        messageCount: messagesToSave.length,
-        isPaused, 
-        isReceiving,
-        latestStepsCount: executionStepsRef.current.length,
-      });
+      
+      // 【2026-04-08修复】sessionStorage容量满时不崩溃
+      try {
+        const stateStr = JSON.stringify(state);
+        // 检查大小（sessionStorage限制约5-10MB）
+        const sizeInMB = (stateStr.length / 1024 / 1024).toFixed(2);
+        if (stateStr.length > 4 * 1024 * 1024) {
+          // 超过4MB，只保存消息摘要
+          console.warn(`⚠️ 会话数据过大(${sizeInMB}MB)，只保存摘要`);
+          const lightState = {
+            sessionId,
+            sessionTitle,
+            timestamp: Date.now(),
+            messageCount: messagesToSave.length,
+            isPaused,
+            isReceiving,
+          };
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
+        } else {
+          sessionStorage.setItem(STORAGE_KEY, stateStr);
+        }
+        console.log("💾 type=%s 保存sessionStorage %s | msg=%d steps=%d", new Date().toLocaleTimeString(), messagesToSave.length, executionStepsRef.current.length);
+      } catch (e) {
+        if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+          console.warn("⚠️ sessionStorage容量满，只保存会话ID和标题");
+          // 保存最小信息，下次打开时从API重新加载
+          sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+            sessionId,
+            sessionTitle,
+            timestamp: Date.now(),
+          }));
+        } else {
+          console.error("保存会话状态失败:", e);
+        }
+      }
     }
   };
 
@@ -852,17 +924,23 @@ const NewChatContainer: React.FC = () => {
         const currentTime = Date.now();
         const savedTime = state.timestamp || 0;
         const timeDiff = currentTime - savedTime;
-              console.log("🕒 距离上次保存: " + (timeDiff/1000).toFixed(1) + "秒", "| 过期时间: 5分钟");
+        // console.log("🕒 距离上次保存: " + (timeDiff/1000).toFixed(1) + "秒", "| 过期时间: 5分钟");
 
         // 只恢复5分钟内的状态
         if (timeDiff > SESSION_EXPIRY_TIME) {
-          console.log("🕒 会话状态已过期，跳过恢复");
+          // console.log("🕒 会话状态已过期，跳过恢复");
           sessionStorage.removeItem(STORAGE_KEY);
           return false;
         }
 
         if (state.sessionId) {
           // ⭐ 小新修复 2026-03-07：检查缓存消息是否缺少 display_name，如果是则跳过恢复，从 API 重新加载
+          // 【2026-04-08修复】如果缓存中没有messages（容量满时只保存了摘要），也从API重新加载
+          if (!state.messages || state.messages.length === 0) {
+            console.log("🕒 缓存中没有messages（可能容量满），从 API 重新加载");
+            return false;
+          }
+          
           const hasDisplayName = state.messages?.some((m: any) => m.display_name);
           if (!hasDisplayName) {
             console.log("🕒 缓存消息缺少 display_name，跳过恢复，从 API 重新加载");
@@ -902,13 +980,7 @@ const NewChatContainer: React.FC = () => {
             }, 100);
           }
 
-          console.log(
-            "🔄 恢复会话状态:",
-            state.sessionId,
-            state.sessionTitle,
-            "消息数:",
-            state.messages?.length
-          );
+          console.log("🔄 type=%s 恢复sessionStorage %s | msg=%d", new Date().toLocaleTimeString(), state.messages?.length);
           return true;
         }
       } catch (e) {
@@ -981,11 +1053,11 @@ const NewChatContainer: React.FC = () => {
               const currentTime = Date.now();
               const savedTime = state.timestamp || 0;
               const timeDiff = currentTime - savedTime;
-        console.log("🕒 距离上次保存: " + (timeDiff/1000).toFixed(1) + "秒", "| 过期时间: 5分钟");
+              // console.log("🕒 距离上次保存: " + (timeDiff/1000).toFixed(1) + "秒", "| 过期时间: 5分钟");
               
               // 缓存有效（5分钟内），且当前有消息，则恢复缓存状态
               if (timeDiff <= SESSION_EXPIRY_TIME && state.messages && state.messages.length > 0) {
-                console.log("🔄 从缓存恢复会话状态，消息数:", state.messages.length, "isReceiving:", state.isReceiving);
+                // console.log("🔄 从缓存恢复会话状态，消息数:", state.messages.length, "isReceiving:", state.isReceiving);
                 
                 // 【问题2修复 2026-03-18】如果页面隐藏时SSE还在接收数据（state.isReceiving=true）
                 // sessionStorage保存的可能不是最新steps，需要从API获取最新数据
@@ -1015,11 +1087,17 @@ const NewChatContainer: React.FC = () => {
           if (messagesRef.current.length === 0 && !isInitialized && !isLoadingHistoryRef.current) {
             console.log("🔄 首次加载，从API获取会话数据");
             isLoadingHistoryRef.current = true; // 加锁
+            // 【小强优化 2026-04-08】API请求前显示Loading
+            setIsRenderingMessages(true);
             setTimeout(async () => {
-              // 调用统一的历史消息加载函数
-              const result = await loadHistoryMessages(sessionId);
+              try {
+                // 调用统一的历史消息加载函数
+                const result = await loadHistoryMessages(sessionId);
               if (result) {
                 setMessages(result.messages);
+                // 【小强修复 2026-04-08】补充sessionId设置，与其他位置保持一致
+                setSessionId(result.sessionId);
+                currentSessionIdRef.current = result.sessionId;
                 setSessionTitle(result.title);
                 if (result.version !== undefined) {
                   setSessionVersion(result.version);
@@ -1027,6 +1105,12 @@ const NewChatContainer: React.FC = () => {
                 if (result.title_locked !== undefined) {
                   setTitleLocked(result.title_locked);
                 }
+                // 渲染完成后关闭Loading
+                requestAnimationFrame(() => setIsRenderingMessages(false));
+              }
+              } catch (e) {
+                console.warn("从API加载会话失败:", e);
+                setIsRenderingMessages(false); // 关闭Loading
               }
               isLoadingHistoryRef.current = false; // 解锁
             }, 100);
@@ -1335,6 +1419,8 @@ const NewChatContainer: React.FC = () => {
         }
 
         isLoadingHistoryRef.current = true; // 加锁
+        // 【小强优化 2026-04-08】API请求前显示Loading，避免空白等待
+        setIsRenderingMessages(true);
         try {
           // 调用统一的历史消息加载函数
           const result = await loadHistoryMessages(urlSessionId);
@@ -1356,6 +1442,8 @@ const NewChatContainer: React.FC = () => {
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
             // 【小新修复 2026-03-14】销毁loading消息，避免一直显示
             message.destroy("session-load");
+            // 渲染完成后关闭Loading
+            requestAnimationFrame(() => setIsRenderingMessages(false));
 
             console.log(
               "🔵 从URL加载会话:",
@@ -1381,11 +1469,13 @@ const NewChatContainer: React.FC = () => {
             setTitleLocked(false);
             setSessionJumpLoading(false);
             message.destroy("session-load");
+            setIsRenderingMessages(false); // 关闭Loading
             isLoadingHistoryRef.current = false; // 解锁
             return;
           }
         } catch (error) {
           console.warn("加载URL会话失败:", error);
+          setIsRenderingMessages(false); // 关闭Loading
           isLoadingHistoryRef.current = false; // 解锁
 
           // 重试机制 - 最多3次
@@ -1447,6 +1537,8 @@ const NewChatContainer: React.FC = () => {
       }
       
       isLoadingHistoryRef.current = true; // 加锁
+      // 【小强优化 2026-04-08】API请求前显示Loading
+      setIsRenderingMessages(true);
       try {
         const result = await loadLatestHistoryMessages();
         if (result) {
@@ -1460,7 +1552,10 @@ const NewChatContainer: React.FC = () => {
           if (result.title_locked !== undefined) {
             setTitleLocked(result.title_locked);
           }
+          
           setMessages(result.messages);
+          // 渲染完成后关闭Loading
+          requestAnimationFrame(() => setIsRenderingMessages(false));
           
           console.log(
             "🟡 加载最近会话:",
@@ -1476,6 +1571,7 @@ const NewChatContainer: React.FC = () => {
           setSessionTitle("新会话");
           setMessages([]);
           setSessionId(null);
+          setIsRenderingMessages(false); // 关闭Loading
         }
 
         // 关闭加载状态
@@ -1484,6 +1580,7 @@ const NewChatContainer: React.FC = () => {
         message.destroy("session-load");
       } catch (error) {
         console.warn("加载最近会话失败:", error);
+        setIsRenderingMessages(false); // 关闭Loading
         // 即使失败也关闭加载状态
         setSessionJumpLoading(false);
         isLoadingHistoryRef.current = false; // 解锁
@@ -1504,11 +1601,10 @@ const NewChatContainer: React.FC = () => {
   /**
    * 执行流式消息发送（使用useSSE hook）
    *
-   * @update 2026-02-23 修复：添加assistant消息占位，确保onStep/onChunk能正确更新
-   */
+    * @update 2026-02-23 修复：添加assistant消息占位，确保onStep/onChunk能正确更新
+    */
   const executeStreamSend = async (userMessage: Message) => {
-    console.log("🔍 [executeStreamSend] 开始执行流式发送");
-    console.log("  userMessage:", userMessage);
+    console.log("📡 type=%s 开始发送消息");
     
     setLoading(true);
     // ⭐ 启动等待计时器
@@ -1529,7 +1625,7 @@ const NewChatContainer: React.FC = () => {
     // 【小沈修复2026-03-03】在调用 /chat/stream 之前先保存用户消息
     // 这样即使AI响应失败，用户消息也不会丢失
     const currentSessionId = currentSessionIdRef.current || sessionId;
-    console.log("🔍 [executeStreamSend] 使用的sessionId:", currentSessionId);
+    // console.log("🔍 [executeStreamSend] 使用的sessionId:", currentSessionId);
     
     let backendUserMessageId: number | null = null;
     
@@ -1596,16 +1692,16 @@ const NewChatContainer: React.FC = () => {
       isStreaming: true,
       model: undefined, // 前端小新代修改：明确设置可选属性
     };
-    console.log("🔍 [executeStreamSend] 创建assistant占位消息:", assistantMessage);
+    // console.log("🔍 [executeStreamSend] 创建assistant占位消息:", assistantMessage);
     setMessages((prev) => [...prev, assistantMessage]);
 
-    console.log("🔍 [executeStreamSend] 准备调用sendStreamMessage...");
-    console.log("  content:", userMessage.content);
-    console.log("  sessionId:", currentSessionIdRef.current || sessionId);
+    // console.log("🔍 [executeStreamSend] 准备调用sendStreamMessage...");
+    // console.log("  content:", userMessage.content);
+    // console.log("  sessionId:", currentSessionIdRef.current || sessionId);
     
     // 发送流式请求 - 【小沈添加 2026-03-03】传递sessionId用于后端缓存display_name
     sendStreamMessage(userMessage.content, currentSessionIdRef.current ?? sessionId ?? undefined);
-    console.log("✅ [executeStreamSend] sendStreamMessage已调用");
+    console.log("✅ type=%s sendStreamMessage已调用");
   };
 
   /**
@@ -2163,8 +2259,55 @@ const NewChatContainer: React.FC = () => {
           padding: "0 2px 2px 0",
           marginBottom: 0,
           backgroundColor: "#fafafa",
+          position: "relative",
         }}
       >
+        {/* 【2026-04-08修复】大数据量渲染Loading提示 - Spin图标+呼吸背景动画 */}
+        {isRenderingMessages && (
+          <div style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 44,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor: "rgba(24, 160, 88, 0.08)",
+            borderBottom: "1px solid rgba(24, 160, 88, 0.2)",
+            zIndex: 100,
+            animation: "breathingBg 2s ease-in-out infinite",
+          }}>
+            <style>{`
+              @keyframes breathingBg {
+                0%, 100% { backgroundColor: rgba(24, 160, 88, 0.08); }
+                50% { backgroundColor: rgba(24, 160, 88, 0.15); }
+              }
+            `}</style>
+            <Spin size="small" style={{ marginRight: 10 }} />
+            <span style={{ fontSize: 13, color: "#52c41a", fontWeight: 500 }}>正在加载会话数据</span>
+            <span className="loading-dots" style={{ marginLeft: 2, color: "#52c41a", fontWeight: 500 }}>
+              ...
+            </span>
+            <style>{`
+              .loading-dots::after {
+                content: '';
+                animation: dots 1.5s steps(4, end) infinite;
+                display: inline-block;
+                width: 18px;
+                text-align: left;
+              }
+              @keyframes dots {
+                0% { content: ''; }
+                25% { content: '.'; }
+                50% { content: '..'; }
+                75% { content: '...'; }
+                100% { content: ''; }
+              }
+            `}</style>
+          </div>
+        )}
+        
         {messages.length === 0 ? (
           <div style={{ textAlign: "center", color: "#999", marginTop: 50 }}>
             <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />

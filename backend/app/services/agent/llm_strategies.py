@@ -17,7 +17,7 @@ from datetime import datetime
 
 from app.services.agent.adapter import dict_list_to_messages
 from app.utils.logger import logger
-from app.chat_stream.error_handler import classify_llm_error, get_error_info_by_type
+from app.chat_stream.error_handler import resolve_http_error_type, get_stream_error_info
 
 
 class LLMStrategy(ABC):
@@ -116,50 +116,50 @@ class TextStrategy(LLMStrategy):
                 logger.warning(f"[LLM Response] Error hint: {error_hint}")
                 return self._make_result(
                     content=f"[错误] {error_hint}",
-                    action_tool="finish",
-                    params={"result": f"[错误] {error_hint}"}
+                    tool_name="finish",
+                    tool_params={"result": f"[错误] {error_hint}"}
                 )
             # 没有具体错误信息时，使用统一的 empty_response 错误提示
-            _, user_message = get_error_info_by_type('empty_response')
+            _, user_message = get_stream_error_info('empty_response')
             return self._make_result(
                 content=f"⚠️ {user_message}",
-                action_tool="finish",
-                params={"result": f"⚠️ {user_message}"}
+                tool_name="finish",
+                tool_params={"result": f"⚠️ {user_message}"}
             )
         
         # ===== 方案C: 尝试 ToolParser.parse_response() =====
         from app.services.agent.tool_parser import ToolParser
         try:
             parsed = ToolParser.parse_response(content)
-            action = parsed.get("action_tool", "finish")
+            tool_name = parsed.get("tool_name", "finish")
             thought = parsed.get("content", "")
-            params = parsed.get("params", {})
+            tool_params = parsed.get("tool_params", {})
             reasoning = parsed.get("reasoning")
-            logger.info(f"[TextStrategy] ToolParser success: action={action}")
-            return self._make_result(content=thought, action_tool=action, params=params, reasoning=reasoning)
+            logger.info(f"[TextStrategy] ToolParser success: tool_name={tool_name}")
+            return self._make_result(content=thought, tool_name=tool_name, tool_params=tool_params, reasoning=reasoning)
         except ValueError:
             pass  # ToolParser 无法解析，继续方案A/B
         
         # ===== 方案B: 工具名保底匹配 =====
         tool_result = self._extract_by_known_tools(content)
         if tool_result:
-            logger.info(f"[TextStrategy] Tool match found: {tool_result['action_tool']}")
+            logger.info(f"[TextStrategy] Tool match found: {tool_result['tool_name']}")
             return self._make_result(
                 content=tool_result.get("content", content),
-                action_tool=tool_result["action_tool"],
-                params=tool_result.get("params", {})
+                tool_name=tool_result.get("tool_name", "finish"),
+                tool_params=tool_result.get("tool_params", {})
             )
         
         # ===== 无法提取工具调用，返回 finish =====
         logger.info(f"[TextStrategy] No action extracted, returning finish with full content")
-        return self._make_result(content=content, action_tool="finish", params={})
+        return self._make_result(content=content, tool_name="finish", tool_params={})
     
-    def _make_result(self, content: str, action_tool: str, params: dict, reasoning: Any = None) -> str:
+    def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None) -> str:
         """构建返回结果"""
         return json.dumps({
             "content": content,
-            "action_tool": action_tool,
-            "params": params,
+            "tool_name": tool_name,
+            "tool_params": tool_params,
             "reasoning": reasoning
         }, ensure_ascii=False)
     
@@ -199,20 +199,27 @@ class TextStrategy(LLMStrategy):
     
     def _format_error_hint(self, error: str) -> str:
         """
-        【2026-04-01 小沈重构】
+        【2026-04-10 小沈重构】
         格式化错误提示信息，使用统一的 error_handler.py 分类
+        复用 resolve_http_error_type 解析HTTP错误码，确保错误分类统一
         
         Args:
-            error: 原始错误信息（如 "ReadTimeout", "ConnectError" 等）
+            error: 原始错误信息（如 "limit_error", "HTTP 500" 等）
         
         Returns:
             格式化后的错误提示（用户友好的中文提示）
         """
-        # 使用 error_handler 的分类函数
-        error_type = classify_llm_error(str(error))
+        # 【修复 2026-04-10】使用 resolve_http_error_type 解析HTTP错误码
+        # 优先匹配数字错误码（429、500等），保留API返回的真实信息
+        error_type = resolve_http_error_type(str(error))
         
-        # 获取用户友好的错误信息
-        error_code, user_message = get_error_info_by_type(error_type)
+        # 如果无法解析HTTP错误码，使用 'unknown' 作为后备
+        if error_type is None:
+            error_type = 'unknown'
+        
+        # 【修复 2026-04-10】使用带原始错误信息的 get_stream_error_info
+        # 在 error_handler.py 中统一处理 message 和 type 的追加
+        error_code, user_message = get_stream_error_info(error_type, original_message=str(error))
         
         logger.info(f"[LLM Error] 原始错误: {error}, 分类: {error_type}, 提示: {user_message}")
         
@@ -252,9 +259,9 @@ class TextStrategy(LLMStrategy):
                         break
                 
                 return {
-                    "action_tool": tool,
+                    "tool_name": tool,
                     "content": content,
-                    "params": params
+                    "tool_params": params
                 }
         
         return None
@@ -428,8 +435,8 @@ class ToolsStrategy(LLMStrategy):
             
             formatted = {
                 "thought": f"Calling tool: {func_name}",
-                "action_tool": func_name,
-                "params": args
+                "tool_name": func_name,
+                "tool_params": args
             }
         else:
             # 多个工具调用（合并为一个）
@@ -450,8 +457,8 @@ class ToolsStrategy(LLMStrategy):
             first_call = calls_info[0]
             formatted = {
                 "thought": f"Calling {len(tool_calls)} tools: {[c['name'] for c in calls_info]}",
-                "action_tool": first_call["name"],
-                "params": first_call["args"]
+                "tool_name": first_call["name"],
+                "tool_params": first_call["args"]
             }
         
         return json.dumps(formatted, ensure_ascii=False)
@@ -478,13 +485,13 @@ class ResponseFormatStrategy(LLMStrategy):
                 "type": "object",
                 "properties": {
                     "thought": {"type": "string", "description": "思考过程"},
-                    "action": {"type": "string", "description": "工具名称"},
-                    "action_input": {
+                    "tool_name": {"type": "string", "description": "工具名称"},
+                    "tool_params": {
                         "type": "object",
                         "description": "工具参数"
                     }
                 },
-                "required": ["thought", "action", "action_input"]
+                "required": ["thought", "tool_name", "tool_params"]
             }
         }
     
@@ -537,18 +544,18 @@ class ResponseFormatStrategy(LLMStrategy):
                 result = json.loads(content)
                 
                 thought = result.get("thought", "")
-                action = result.get("action", "")
-                action_input = result.get("action_input", {})
+                tool_name = result.get("tool_name", result.get("action_tool", ""))
+                tool_params = result.get("tool_params", result.get("params", {}))
                 
                 # 转换为 Agent 的 ToolParser 可以理解的格式
                 formatted = {
                     "thought": thought,
-                    "action_tool": action,
-                    "params": action_input
+                    "tool_name": tool_name,
+                    "tool_params": tool_params
                 }
                 
                 content = json.dumps(formatted, ensure_ascii=False)
-                logger.info(f"[Agent] response_format parsed: action={action}")
+                logger.info(f"[Agent] response_format parsed: tool_name={tool_name}")
                 
             except json.JSONDecodeError as e:
                 logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={content}")

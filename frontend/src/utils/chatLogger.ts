@@ -24,6 +24,7 @@ export const LOG_STYLES = {
   
   // 错误样式
   error: "color: #cf1322; font-weight: bold; font-size: 14px;",
+  errorSmall: "color: #cf1322; font-size: 12px;",
   
   // 通用样式
   info: "color: #666; font-size: 12px;",
@@ -69,6 +70,16 @@ export const logAIComplete = (responseLength: number) => {
   console.log("%c│ ✅ AI响应完成 END", LOG_STYLES.success);
   console.log("%c│ 完整回复长度: " + responseLength, LOG_STYLES.successSmall);
   console.log("%c└─────", LOG_STYLES.success);
+};
+
+/**
+ * AI响应错误的日志
+ */
+export const logAIError = (errorMessage: string) => {
+  console.log("%c┌─────", LOG_STYLES.error);
+  console.log("%c│ ❌ AI响应错误 END", LOG_STYLES.error);
+  console.log("%c│ 错误信息: " + errorMessage, LOG_STYLES.errorSmall);
+  console.log("%c└─────", LOG_STYLES.error);
 };
 
 /**

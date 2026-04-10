@@ -106,16 +106,16 @@ export const Colors = {
 // 精细化颜色方案映射 - 每个步骤都有独特的视觉语义和分行规则
 const colorSchemes: Record<StepType, ColorScheme> = {
   // ===== 思考类（橙色系）- 表示思考和警告 =====
-  thought: {
-    bg1: "#fff7e6",
-    bg2: "#fffbe6",
-    border: "#ffd591",
-    text: "#ad4e00", // 改为更深橙色，提高可读性
-    textSecondary: "#8c6e2f",
-    label: "💭 思考",
-    priority: "secondary",
-    layout: "block",  // 思考内容需要换行显示
-  },
+   thought: {
+     bg1: "#fff7e6",
+     bg2: "#fffbe6",
+     border: "#ffd591",
+     text: "#ad4e00", // 改为更深橙色，提高可读性
+     textSecondary: "#8c6e2f",
+     label: "💭 思考",
+     priority: "secondary",
+     layout: "block",  // 思考内容需要换行显示
+   },
   interrupted: {
     bg1: "#fff2e8",
     bg2: "#fff",

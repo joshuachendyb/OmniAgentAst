@@ -52,24 +52,29 @@ class ToolParser:
                 raise ValueError(f"Failed to parse response as JSON: {e}")
         
         content = parsed.get("content", parsed.get("thought", ""))
-        action_tool = parsed.get("action_tool", parsed.get("action", "finish"))
+        tool_name = parsed.get("tool_name", parsed.get("action_tool", parsed.get("action", "finish")))
         
-        if "params" in parsed:
-            params = parsed.get("params", {})
+        if "tool_params" in parsed:
+            tool_params = parsed.get("tool_params", {})
+        elif "params" in parsed:
+            tool_params = parsed.get("params", {})
         elif "action_input" in parsed:
-            params = parsed.get("action_input", {})
+            tool_params = parsed.get("action_input", {})
         elif "actionInput" in parsed:
-            params = parsed.get("actionInput", {})
+            tool_params = parsed.get("actionInput", {})
         else:
-            params = {}
+            tool_params = {}
         
         reasoning = parsed.get("reasoning")
         
         return {
             "content": content,
-            "action_tool": action_tool,
-            "params": params,
-            "reasoning": reasoning
+            "tool_name": tool_name,
+            "tool_params": tool_params,
+            "reasoning": reasoning,
+            # 保持向后兼容
+            "action_tool": tool_name,
+            "params": tool_params
         }
     
     @staticmethod
@@ -252,8 +257,8 @@ class ToolParser:
         return {
             "parsed_obs": {
                 "content": user_content,
-                "action_tool": "finish",
-                "params": {},
+                "tool_name": "finish",
+                "tool_params": {},
                 "reasoning": None,
                 "raw_response": llm_response,
                 "error_details": error_info

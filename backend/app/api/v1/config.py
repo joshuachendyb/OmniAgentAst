@@ -520,13 +520,39 @@ async def update_config(config_update: ConfigUpdate):
         config = get_config_instance()
         config.reload()
         
+        # ============================================================
+        # 【小强修复 2026-04-07】
+        # 修改说明：
+        # 之前：验证成功后保留备份，等待 validate_ai_service 实际调用AI API后再删除
+        # 现在：验证成功后立即删除备份（使用 _validate_config_integrity 结果）
+        #
+        # 原因：用户要求切换模型时不再调用外部AI API做验证，
+        #       直接用配置文件完整性检查（_validate_config_integrity）的结果来决定
+        #       1）前端是否打* 2）后端是否删除/恢复备份
+        # ============================================================
+        
+        # 6. 【新增】验证成功，立即删除备份文件
+        #    不再等待 validate_ai_service 调用AI API验证
+        if backup_path and backup_path.exists():
+            try:
+                backup_path.unlink()
+                logger.info(f"验证成功，已删除备份文件：{backup_path}")
+            except Exception as e:
+                logger.warning(f"删除备份文件失败：{e}")
+        
+        # 清理全局备份路径（不再需要，供 validate_ai_service 使用）
+        AIServiceFactory.clear_backup_paths()
+        
         logger.info(f"配置更新成功：{config_update.dict(exclude_none=True)}")
         
-        # ⭐ 修改：设置全局备份路径，供 validate_ai_service 使用
-        AIServiceFactory.set_backup_paths(str(backup_path), str(config_path))
-        
-        # ⭐ 保留备份（不删除），等待 validate_ai_service 处理
-        logger.info(f"配置更新成功，备份文件保留：{backup_path}，等待服务验证")
+        # ============================================================
+        # 【旧逻辑 - 已注释】
+        # 之前是保留备份文件，等待 validate_ai_service 处理：
+        # 1. 设置全局备份路径，供 validate_ai_service 使用
+        # AIServiceFactory.set_backup_paths(str(backup_path), str(config_path))
+        # 2. 保留备份（不删除），等待 validate_ai_service 处理
+        # logger.info(f"配置更新成功，备份文件保留：{backup_path}，等待服务验证")
+        # ============================================================
         
         # 返回当前配置模型，供前端更新下拉框
         current_provider = config_data.get('ai', {}).get('provider', '')

@@ -109,10 +109,10 @@ def create_error_response(
     if retry_after is not None:
         response['retry_after'] = retry_after
     response['timestamp'] = create_timestamp()
-    return f"data: {json.dumps(response)}\n\n"
+    return f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
 
 
-def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
+def get_function_call_error_info(error: Exception) -> Dict[str, Any]:
     """
     获取用户友好的错误信息
     
@@ -209,6 +209,67 @@ def get_user_friendly_error(error: Exception) -> Dict[str, Any]:
             "error_type": "security",
             "retryable": False
         }
+    # 【新增 2026-04-09 小沈】HTTP错误码处理
+    elif "503" in error_msg or "无可用渠道" in error_msg:
+        return {
+            "code": "API_CHANNEL_UNAVAILABLE",
+            "message": "AI服务渠道不可用 (errorcode=503)，请检查API配置或更换模型",
+            "error_type": "api_error",
+            "retryable": False
+        }
+    elif "429" in error_msg or "rate limit" in error_msg.lower() or "limit_error" in error_msg or "配额" in error_msg:
+        return {
+            "code": "RATE_LIMIT_EXCEEDED",
+            "message": "API请求过于频繁 (errorcode=429)，请稍后再试或更换模型",
+            "error_type": "api_error",
+            "retryable": True,
+            "retry_after": 30
+        }
+    elif "401" in error_msg or "认证" in error_msg or "unauthorized" in error_msg.lower():
+        return {
+            "code": "AUTH_FAILED",
+            "message": "API认证失败 (errorcode=401)，请检查API密钥配置",
+            "error_type": "security",
+            "retryable": False
+        }
+    elif "403" in error_msg or "forbidden" in error_msg.lower():
+        return {
+            "code": "FORBIDDEN",
+            "message": "API访问被拒绝 (errorcode=403)，请检查API权限配置",
+            "error_type": "security",
+            "retryable": False
+        }
+    elif "400" in error_msg:
+        return {
+            "code": "BAD_REQUEST",
+            "message": "API请求参数错误 (errorcode=400)，请检查输入内容",
+            "error_type": "validation",
+            "retryable": False
+        }
+    elif "500" in error_msg:
+        return {
+            "code": "SERVER_ERROR",
+            "message": "AI服务内部错误 (errorcode=500)，请稍后重试或更换模型",
+            "error_type": "server",
+            "retryable": True,
+            "retry_after": 10
+        }
+    elif "502" in error_msg or "502" in error_msg:
+        return {
+            "code": "BAD_GATEWAY",
+            "message": "AI服务网关错误 (errorcode=502)，请稍后重试",
+            "error_type": "server",
+            "retryable": True,
+            "retry_after": 10
+        }
+    elif "504" in error_msg:
+        return {
+            "code": "GATEWAY_TIMEOUT",
+            "message": "AI服务响应超时 (errorcode=504)，请稍后重试",
+            "error_type": "timeout",
+            "retryable": True,
+            "retry_after": 15
+        }
     else:
         return {
             "code": "UNKNOWN_ERROR",
@@ -229,6 +290,16 @@ ERROR_TYPE_MAP = {
     'proxy_error': ('protocol', '代理错误，请检查网络配置'),
     'write_error': ('server', '发送请求失败'),
     'network_error': ('network', '网络错误，请检查网络连接'),
+    # 【新增 2026-04-09 小沈】HTTP错误码映射
+    'api_error_503': ('api_error', 'AI服务渠道不可用 (errorcode=503)，请检查API配置或更换模型'),
+    'api_error_524': ('api_error', 'AI服务已超载 (errorcode=524)，请更换模型或稍后重试'),
+    'api_error_429': ('api_error', 'API请求过于频繁 (errorcode=429)，请稍后再试或更换模型'),
+    'api_error_401': ('security', 'API认证失败 (errorcode=401)，请检查API密钥配置'),
+    'api_error_403': ('security', 'API访问被拒绝 (errorcode=403)，请检查API权限配置'),
+    'api_error_400': ('validation', 'API请求参数错误 (errorcode=400)，请检查输入内容'),
+    'api_error_500': ('server', 'AI服务内部错误 (errorcode=500)，请稍后重试或更换模型'),
+    'api_error_502': ('server', 'AI服务网关错误 (errorcode=502)，请稍后重试'),
+    'api_error_504': ('timeout', 'AI服务响应超时 (errorcode=504)，请稍后重试'),
     # 【新增 2026-04-01】LLM 返回空内容或未知错误
     'unknown': ('server', 'AI服务暂无响应，请稍后重试'),
     'empty_response': ('server', 'AI服务返回空响应，请稍后重试'),
@@ -252,61 +323,293 @@ def classify_error(error_type: str, error_message: str = "") -> tuple[str, str]:
         return 'server', f"服务调用失败: {error_message}"
 
 
-def get_error_info_by_type(error_type: str) -> tuple[str, str]:
+def get_stream_error_info(error_type: str, original_message: str = None) -> tuple[str, str]:
     """
     根据错误类型获取错误码和用户友好的错误信息
     
     【新增 2026-04-01 小沈】
     用于 chat_stream_query.py 中从 ERROR_TYPE_MAP 获取错误信息
     
+    【重构 2026-04-10 小沈】
+    增加 original_message 参数，优先使用原始错误消息
+    
     Args:
-        error_type: 错误类型标识（如 connect_error, protocol_error, timeout_error 等）
+        error_type: 错误类型标识（如 connect_error, protocol_error, api_error_429 等）
+        original_message: 原始错误消息，如果有则优先使用
     
     Returns:
         (error_code, message) 元组
-        - error_code: 5种类型之一（timeout/connect/protocol/server/network）
-        - message: 用户友好的错误提示
+        - error_code: 错误类型（timeout/connect/protocol/server/network）
+        - message: 错误消息，优先使用原始消息
     """
+    # 获取错误类型对应的错误码
     if error_type in ERROR_TYPE_MAP:
-        return ERROR_TYPE_MAP[error_type]
+        error_code, default_message = ERROR_TYPE_MAP[error_type]
     else:
-        # 默认返回 server 类型
-        return 'server', f"服务调用失败，请稍后重试"
-
-
-def classify_llm_error(error_info: str) -> str:
-    """
-    根据 LLM 返回的错误信息分类错误类型
+        error_code, default_message = 'server', f"服务调用失败，请稍后重试"
     
-    【新增 2026-04-01 小沈】
-    用于 llm_strategies.py 中分类 LLM 返回的错误
+    # 优先使用原始错误消息，保留API返回的真实信息
+    if original_message and original_message.strip():
+        # 【新增 2026-04-10】提取 message 和 type 追加到用户友好提示后
+        original_info = _extract_message_and_type(original_message)
+        if original_info:
+            message = f"{default_message}\n原始信息: {original_info}"
+        else:
+            # 【修复 2026-04-10】提取不到时仍用默认提示，不直接用原始消息
+            message = default_message
+    else:
+        message = default_message
+    
+    return error_code, message
+
+
+def _extract_message_and_type(error_message: str) -> str:
+    """
+    提取原始错误信息中的 message、type、param、code
+    
+    【新增 2026-04-10】
+    【增强 2026-04-10】增加 param 和 code 字段
+    从原始错误（如 {"error":{"message":"...","type":"...","param":"...","code":"..."}}）中解析提取
     
     Args:
-        error_info: LLM 返回的错误信息（如 "ReadTimeout", "ConnectError", ""）
+        error_message: 原始错误消息字符串
     
     Returns:
-        error_type: 错误类型标识，对应 ERROR_TYPE_MAP 的 key
+        格式化后的字符串，如 "message=..., type=..., param=..., code=..."
+        如果无法解析，返回空字符串
     """
-    if not error_info:
-        # 没有具体错误信息，按空响应处理
-        return 'empty_response'
+    if not error_message:
+        return ""
     
-    error_lower = error_info.lower()
+    import re
+    # 匹配 {"error":{"message":"...","type":"...","param":"...","code":"..."...}}
+    json_match = re.search(r'\{["\']?error["\']?\s*:\s*\{([^}]+)\}', str(error_message), re.IGNORECASE)
+    if json_match:
+        inner = json_match.group(1)
+        # 提取 message
+        msg_match = re.search(r'["\']?message["\']?\s*:\s*["\']([^"\']+)["\']', inner, re.IGNORECASE)
+        # 提取 type
+        type_match = re.search(r'["\']?type["\']?\s*:\s*["\']([^"\']+)["\']', inner, re.IGNORECASE)
+        # 提取 param
+        param_match = re.search(r'["\']?param["\']?\s*:\s*["\']([^"\']*)["\']', inner, re.IGNORECASE)
+        # 提取 code
+        code_match = re.search(r'["\']?code["\']?\s*:\s*["\']([^"\']+)["\']', inner, re.IGNORECASE)
+        
+        parts = []
+        if msg_match:
+            parts.append(f"message={msg_match.group(1)}")
+        if type_match:
+            parts.append(f"type={type_match.group(1)}")
+        if param_match and param_match.group(1):
+            parts.append(f"param={param_match.group(1)}")
+        if code_match:
+            parts.append(f"code={code_match.group(1)}")
+        
+        if parts:
+            return ", ".join(parts)
     
-    # 按优先级匹配
-    if 'timeout' in error_lower or 'timed out' in error_lower:
-        return 'timeout_error'
-    elif 'connect' in error_lower:
-        return 'connect_error'
-    elif 'read' in error_lower:
-        return 'read_error'
-    elif 'write' in error_lower:
-        return 'write_error'
-    elif 'protocol' in error_lower:
-        return 'protocol_error'
-    elif 'proxy' in error_lower:
-        return 'proxy_error'
-    elif 'network' in error_lower or 'dns' in error_lower or 'refused' in error_lower:
-        return 'network_error'
-    else:
-        return 'unknown'
+    return ""
+
+
+def resolve_http_error_type(error_message: str) -> Optional[str]:
+    """
+    从错误消息字符串中解析并返回 HTTP 错误类型标识
+    
+    【重构 2026-04-10 小沈】
+    从 chat_stream_query.py 迁移到此模块，符合单一职责原则
+    
+    优先级匹配原则：
+    1. 优先使用原始HTTP错误码（429、500等）- 保留API返回的真实信息
+    2. 没有错误码时，才从语义推断 - 作为备用方案
+    
+    Args:
+        error_message: 原始错误消息字符串
+    
+    Returns:
+        HTTP 错误类型标识（如 'api_error_429', 'api_error_500' 等）
+        如果无法解析，返回 None
+    """
+    if not error_message:
+        return None
+    
+    msg_lower = error_message.lower()
+    
+    # 1. 优先匹配数字错误码（原始HTTP状态码），保留API返回的真实信息
+    if "429" in error_message:
+        return 'api_error_429'
+    elif "503" in error_message:
+        return 'api_error_503'
+    elif "524" in error_message:
+        return 'api_error_524'
+    elif "500" in error_message:
+        return 'api_error_500'
+    elif "502" in error_message:
+        return 'api_error_502'
+    elif "504" in error_message:
+        return 'api_error_504'
+    elif "401" in error_message:
+        return 'api_error_401'
+    elif "403" in error_message:
+        return 'api_error_403'
+    elif "400" in error_message:
+        return 'api_error_400'
+    
+    # 2. 没有数字错误码时，才从语义推断
+    elif "rate limit" in msg_lower or "too many requests" in msg_lower:
+        return 'api_error_429'
+    elif "limit_error" in msg_lower:
+        return 'api_error_429'
+    elif "auth" in msg_lower or "unauthorized" in msg_lower:
+        return 'api_error_401'
+    elif "forbidden" in msg_lower:
+        return 'api_error_403'
+    
+    return None
+
+
+def create_error_result(
+    original_error: Optional[str],
+    error_step_type: str,
+    step_num: int,
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
+    display_name: Optional[str] = None,
+    chat_timeout: Optional[int] = None,
+    max_retries: Optional[int] = None,
+    retryable: bool = True,
+    retry_after: int = 3
+) -> tuple[str, Dict[str, Any]]:
+    """
+    统一的错误处理函数 - 解析错误码、组装错误信息、创建错误响应和步骤
+    
+    【新增 2026-04-10 小沈】
+    统一错误处理流程：
+    1. 解析错误码（调用 resolve_http_error_type）
+    2. 组装错误信息（调用 get_stream_error_info）
+    3. 处理特殊情况（如 idle_timeout）
+    4. 创建 error_response（yield给前端）
+    5. 创建 error_step（保存到数据库）
+    
+    Args:
+        original_error: 原始错误消息（来自API或异常）
+        error_step_type: 错误步骤类型（如 'idle_timeout', 'network_error' 等）
+        step_num: 步骤序号
+        model: 模型名称（可选）
+        provider: 提供商（可选）
+        display_name: 模型显示名称（用于idle_timeout提示）
+        chat_timeout: 单次超时时间秒数（用于idle_timeout提示）
+        max_retries: 最大重试次数（用于idle_timeout提示）
+        retryable: 是否可重试
+        retry_after: 重试等待秒数
+    
+    Returns:
+        (error_response, error_step) 元组
+        - error_response: SSE格式的错误响应字符串，用于yield给前端
+        - error_step: 错误步骤字典，用于保存到数据库
+    """
+    # 1. 解析错误码
+    resolved_error_type = resolve_http_error_type(original_error) if original_error else None
+    final_error_type = resolved_error_type if resolved_error_type else error_step_type
+    
+    # 2. 组装错误信息
+    error_type, error_message = get_stream_error_info(final_error_type, original_error)
+    
+    # 3. 处理特殊情况：idle_timeout 需要动态显示超时值和重试次数
+    if error_step_type == 'idle_timeout' and display_name and chat_timeout and max_retries:
+        error_type = 'timeout'
+        total_timeout = chat_timeout * max_retries
+        error_message = f"请求超时：AI模型({display_name}) {chat_timeout}秒内未返回任何内容，已重试{max_retries}次，合计{total_timeout}秒，请更换问题或稍后重试"
+    
+    # 4. 处理空响应情况
+    if not original_error:
+        error_type = 'empty_response'
+        error_message = "模型未能生成有效回复，请尝试更换问题或稍后重试"
+    
+    # 5. 创建 error_response（yield给前端）
+    error_response = create_error_response(
+        error_type=error_type,
+        message=error_message,
+        model=model,
+        provider=provider,
+        retryable=retryable,
+        retry_after=retry_after,
+        step=step_num
+    )
+    
+    # 6. 创建 error_step（保存到数据库）
+    error_step = create_error_step(
+        code='AI_CALL_ERROR',
+        message=error_message,
+        error_type=error_type,
+        step_num=step_num,
+        model=model,
+        provider=provider,
+        retryable=retryable,
+        retry_after=retry_after
+    )
+    
+    return error_response, error_step
+
+
+def create_error_from_exception(
+    error: Exception,
+    step_num: int,
+    model: Optional[str] = None,
+    provider: Optional[str] = None
+) -> tuple[str, Dict[str, Any]]:
+    """
+    统一的异常错误处理函数 - 解析异常、组装错误信息、创建错误响应和步骤
+    
+    【新增 2026-04-10 小沈】
+    用于 react_sse_wrapper.py 中处理 Exception 对象
+    
+    统一处理：
+    1. 解析异常（调用 get_function_call_error_info）
+    2. 创建 error_response（yield给前端）
+    3. 创建 error_step（保存到数据库）
+    
+    Args:
+        error: 异常对象
+        step_num: 步骤序号
+        model: 模型名称（可选）
+        provider: 提供商（可选）
+    
+    Returns:
+        (error_response, error_step) 元组
+        - error_response: SSE格式的错误响应字符串，用于yield给前端
+        - error_step: 错误步骤字典，用于保存到数据库
+    """
+    # 1. 解析异常
+    error_info = get_function_call_error_info(error)
+    
+    error_code = error_info.get("code", "INTERNAL_ERROR")
+    error_message = error_info.get("message", "服务调用失败")
+    error_type = error_info.get("error_type", "server")
+    retryable = error_info.get("retryable", False)
+    retry_after = error_info.get("retry_after")
+    
+    # 2. 创建 error_response（yield给前端）
+    error_response = create_error_response(
+        error_type=error_type,
+        message=error_message,
+        code=error_code,
+        model=model,
+        provider=provider,
+        retryable=retryable,
+        retry_after=retry_after,
+        step=step_num
+    )
+    
+    # 3. 创建 error_step（保存到数据库）
+    error_step = create_error_step(
+        code=error_code,
+        message=error_message,
+        error_type=error_type,
+        step_num=step_num,
+        model=model,
+        provider=provider,
+        retryable=retryable,
+        retry_after=retry_after
+    )
+    
+    return error_response, error_step

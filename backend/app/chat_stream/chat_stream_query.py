@@ -16,7 +16,7 @@ from app.services.llm_core import Message
 from app.utils.retry_controller import RetryController
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
 from app.chat_stream.chat_helpers import create_timestamp, create_final_response
-from app.chat_stream.error_handler import create_error_response, create_error_step, get_error_info_by_type
+from app.chat_stream.error_handler import create_error_result
 from app.chat_stream.incident_handler import (
     create_incident_data,
     check_and_yield_if_paused,
@@ -317,47 +317,35 @@ async def chat_stream_query(
     # 【重试机制】重试循环结束，检查最终结果
     if not ai_call_successful:
         logger.error(f"[AI Call] 重试失败，ai_call_successful={ai_call_successful}")
-        # 根据错误原因返回不同的错误提示
-        if last_error:
-            logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}, 类型: {last_error_type}")
-            # 使用 get_error_info_by_type() 获取错误信息
-            error_type, error_message = get_error_info_by_type(last_error_type)
-            # idle_timeout 需要动态显示实际超时值和重试次数
-            if last_error_type == 'idle_timeout':
-                total_timeout = chat_timeout * max_retries
-                error_type = 'timeout'
-                error_message = f"请求超时：AI模型({display_name}) {chat_timeout}秒内未返回任何内容，已重试{max_retries}次，合计{total_timeout}秒，请更换问题或稍后重试"
-        else:
-            # 没有错误但也没有收到有效内容，可能是模型返回空响应
-            logger.error(f"[AI Call] 所有重试失败，无有效响应（模型返回空内容）")
-            error_type, error_message = "empty_response", "模型未能生成有效回复，请尝试更换问题或稍后重试"
         
-        # 发送error步骤而不是final步骤
-        # 【小沈修复 2026-03-23】只调用一次 next_step()，避免 step 多 1
-        # logger.info(f"[Step error] 发送error步骤: error_type={error_type}, message={error_message}")
+        # 【小沈重构 2026-04-10】使用统一的错误处理函数
+        # 统一解析错误码、组装错误信息、创建error_response和error_step
         error_step_value = next_step()
-        yield create_error_response(
-            error_type=error_type,
-            message=error_message,
-            model=ai_service.model,
-            provider=ai_service.provider,
-            retryable=True,
-            retry_after=3,
-            step=error_step_value
-        )
-        
-        # 保存error步骤到数据库【小沈修复 2026-03-28】使用create_error_step函数确保字段完整
-        error_step = create_error_step(
-            code='AI_CALL_ERROR',
-            message=error_message,
-            error_type=error_type,
+        error_response, error_step = create_error_result(
+            original_error=last_error,
+            error_step_type=last_error_type,
             step_num=error_step_value,
             model=ai_service.model,
             provider=ai_service.provider,
+            display_name=display_name,
+            chat_timeout=chat_timeout,
+            max_retries=max_retries,
             retryable=True,
             retry_after=3
         )
-        await add_step_and_save(error_step, f"错误: {error_message}")
+        
+        # 记录日志
+        if last_error:
+            logger.error(f"[AI Call] 所有重试失败，最后错误: {last_error}, 类型: {last_error_type}")
+        else:
+            logger.error(f"[AI Call] 所有重试失败，无有效响应（模型返回空内容）")
+        
+        # yield给前端
+        yield error_response
+        
+        # 保存到数据库
+        await add_step_and_save(error_step, f"错误: {error_step['message']}")
+        
         return  # 直接返回，不再发送final步骤
     
     # ═══════════════════════════════════════════════════════════════════════════════

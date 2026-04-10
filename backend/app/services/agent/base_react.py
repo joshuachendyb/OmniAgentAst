@@ -152,6 +152,18 @@ class BaseAgent(ABC):
                 self.status = AgentStatus.THINKING
                 response = await self._get_llm_response()
                 
+                # 【修复2026-04-08 小沈】检查response是否为None或空
+                if not response:
+                    logger.error(f"LLM返回空响应: {response}")
+                    yield {
+                        "type": "error",
+                        "step": step_count,
+                        "timestamp": create_timestamp(),
+                        "code": "EMPTY_RESPONSE",
+                        "message": "AI服务返回空响应，请稍后重试"
+                    }
+                    break
+                
                 # 解析响应 - 使用统一的错误处理方法
                 try:
                     parsed = self.parser.parse_response(response)
@@ -170,20 +182,26 @@ class BaseAgent(ABC):
                         "step": step_count,
                         "timestamp": create_timestamp(),
                         "content": error_info["content"],
-                        "reasoning": error_info.get("reasoning", ""),
-                        "action_tool": error_info["action_tool"],
-                        "params": error_info.get("params", {}),
+                        "tool_name": error_info.get("tool_name", "finish"),
+                        "tool_params": error_info.get("tool_params", {}),
                         "parse_error": error_result["error_type"]  # 添加错误类型标记
                     }
                     
                     # 添加observation提示，让LLM可以重新响应
                     self._add_observation_to_history(f"Parse error: {error_result['error_message']}. Please respond with valid JSON format.")
-                    continue
+                    
+                    # 【修复2026-04-08 小沈】解析失败时yield error并退出，避免无限循环
+                    # 原：continue 会跳过第203行的 finish 判断，导致无限循环
+                    yield {
+                        "type": "final",
+                        "timestamp": create_timestamp(),
+                        "content": error_info["content"]
+                    }
+                    break
                 
                 thought_content = parsed.get("content", "")
-                reasoning = parsed.get("reasoning") or ""  # 确保不是None
-                action_tool = parsed.get("action_tool", "finish")
-                params = parsed.get("params", {})
+                tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
+                tool_params = parsed.get("tool_params", parsed.get("params", {}))
                 
                 # yield thought
                 current_time = create_timestamp()
@@ -192,9 +210,8 @@ class BaseAgent(ABC):
                     "step": step_count,
                     "timestamp": current_time,
                     "content": thought_content,
-                    "reasoning": reasoning,
-                    "action_tool": action_tool,
-                    "params": params
+                    "tool_name": tool_name,
+                    "tool_params": tool_params
                 }
                 
                 # 【修复 2026-03-31 小沈】将 LLM 的 thought 响应加入 conversation_history
@@ -203,26 +220,26 @@ class BaseAgent(ABC):
                 self.conversation_history.append({"role": "assistant", "content": response})
                 
                 # 判断是否结束
-                if action_tool == "finish":
+                if tool_name == "finish":
                     yield {
                         "type": "final",
                         "timestamp": current_time,
-                        "content": params.get("result", thought_content)
+                        "content": tool_params.get("result", thought_content)
                     }
                     break
                 
                 # ========== Action 阶段 ==========
                 self.status = AgentStatus.EXECUTING
-                execution_result = await self._execute_tool(action_tool, params)
+                execution_result = await self._execute_tool(tool_name, tool_params)
                 
                 # yield action_tool
                 yield {
                     "type": "action_tool",
-                    "content": action_tool,  # 工具名称作为content
+                    # "content": action_tool,  # 【小强删除 2026-04-08】content与tool_name重复，后端已删除
                     "step": step_count,
                     "timestamp": current_time,
-                    "tool_name": action_tool,
-                    "tool_params": params,
+                    "tool_name": tool_name,
+                    "tool_params": tool_params,
                     "execution_status": execution_result.get("status", "success"),
                     "summary": execution_result.get("summary", ""),
                     "raw_data": execution_result.get("data"),
@@ -245,54 +262,24 @@ class BaseAgent(ABC):
                 prompt_logger.log_observation(
                     step_name="工具执行结果",
                     observation_content=observation_text,
-                    tool_name=action_tool,
-                    tool_params=params
+                    tool_name=tool_name,
+                    tool_params=tool_params
                 )
                 
-                # 再次调用 LLM 获取下一个决策
-                self.status = AgentStatus.OBSERVING
-                llm_response = await self._get_llm_response()
-                
-                try:
-                    parsed_obs = self.parser.parse_response(llm_response)
-                except ValueError as e:
-                    # 使用ToolParser统一处理解析错误（与Thought阶段保持一致）
-                    error_result = ToolParser.handle_parse_error(llm_response, e, logger)
-                    parsed_obs = error_result["parsed_obs"]
-                
-                is_finished = parsed_obs.get("action_tool") == "finish"
-                
-                # 【删除 2026-03-31 小沈】删除第二次LLM响应加入history
-                # 原因：第203行已添加第一次LLM的thought到history
-                # 下一轮循环会再次添加新的thought，避免连续两条assistant消息
-                # 正确对话流：assistant(thought) → user(observation) → assistant(thought_next)
-                
-                # yield observation
+                # ========== Observation 阶段（简化版）==========
+                # 【修复 2026-04-07 小沈】删除第二次LLM调用
+                # 问题：每step调用2次LLM，token消耗翻倍
+                # 修复：直接使用工具执行结果作为observation，下一轮循环自动调用LLM
                 current_time = create_timestamp()
                 yield {
                     "type": "observation",
                     "step": step_count,
                     "timestamp": current_time,
-                    "obs_execution_status": execution_result.get("status", "success"),
-                    "obs_summary": execution_result.get("summary", ""),
-                    "obs_raw_data": execution_result.get("data"),
-                    "content": parsed_obs.get("content", ""),
-                    "obs_reasoning": parsed_obs.get("reasoning"),
-                    "action_tool": parsed_obs.get("action_tool", "finish"),
-                    "params": parsed_obs.get("params", {}),
-                    "is_finished": is_finished
+                    "tool_name": tool_name,
+                    "content": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}"
                 }
-                
+
                 self._trim_history()
-                
-                # 判断是否结束
-                if is_finished:
-                    yield {
-                        "type": "final",
-                        "timestamp": current_time,
-                        "content": parsed_obs.get("content", "任务已完成")
-                    }
-                    break
             
             # 超过最大步数
             if step_count >= max_steps:

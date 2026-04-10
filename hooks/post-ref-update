@@ -1,0 +1,5 @@
+@echo off
+REM Git hook to update .git/opencode after ref update
+for /f "delims=" %%h in ('git rev-parse HEAD 2^>nul') do (
+    echo %%h > "%~dp0..\.git\opencode"
+)

@@ -78,8 +78,8 @@ export interface ExecutionStep {
   
   // 【小新重构2026-03-09】thought类型需要的字段
   // 【小健建议2026-03-23】明确用途：LLM思考后决定的下一步动作
-  action_tool?: string;        // 【thought类型】LLM思考后决定的下一步动作
-  params?: Record<string, any>; // 【thought类型】LLM思考后决定的参数
+  tool_name?: string;        // 【thought类型】LLM思考后决定的下一步动作
+  tool_params?: Record<string, any>; // 【thought类型】LLM思考后决定的参数
   
   // === 保留字段（不变）===
   
@@ -93,24 +93,18 @@ export interface ExecutionStep {
   // 【小查修复2026-03-09】添加is_finished字段
   is_finished?: boolean;  // observation类型的是否完成标志
   
-  // === 【小新重构】type=action_tool 新字段 ===
-  tool_name?: string;           // 工具名称（新）
-  tool_params?: Record<string, any>; // 工具参数（新）
+  // === 【小新重构】type=action_tool 新字段（与thought类型共用tool_name/tool_params）===
   execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
   summary?: string;             // 执行摘要（新）
   raw_data?: Record<string, any> | null; // 原始数据（新）
   action_retry_count?: number;  // 重试次数（新）
   
-  // === type=observation 新字段（obs_前缀，与SSE后端保持一致） ===
-  // 【小沈修复2026-03-23】添加obs_前缀字段，observation步骤使用，与SSE后端字段名保持一致
-  // 【小健建议2026-03-23】明确用途：observation是工具执行后的观察结果
-  obs_raw_data?: Record<string, any> | null;       // 【observation类型】工具执行的原始结果
-  obs_execution_status?: 'success' | 'error' | 'warning'; // 【observation类型】执行状态
-  obs_summary?: string;                            // 【observation类型】执行摘要
-  obs_reasoning?: string;                         // 【observation类型】推理内容
-  obs_action_tool?: string;                       // 【observation类型】记录的动作工具
-  obs_params?: Record<string, any>;                // 【observation类型】记录的动作参数
-  
+  // === type=observation 字段（精简版，2026-04-07 小资修改） ===
+  // 后端删除第二次LLM调用后，observation只保留基础字段
+  // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/raw_data）
+  // 【注意】obs_* 字段已删除，如需使用工具结果请从 action_tool 阶段获取
+  // tool_name 已在上面 action_tool 字段定义（第97行），此处不再重复
+
   // === type=action 旧字段（兼容） ===
   action_input?: Record<string, any>;  // 工具调用参数（旧）
   
@@ -202,19 +196,26 @@ export interface PerformanceMetrics {
 
 /**
  * 错误类型分类
+ * - idle_timeout: 空闲超时（长时间无数据）
+ * - request_timeout: 请求等待超时（等待服务器响应）
+ * - network: 网络连接失败
+ * - server: 服务器错误
+ * - empty_response: 空响应
  */
-type ErrorType = "network" | "timeout" | "server" | "unknown" | "empty_response";
+type ErrorType = "idle_timeout" | "request_timeout" | "network" | "server" | "unknown" | "empty_response";
 
 /**
  * 分类错误类型
+ * 【小强修复 2026-04-09】细分超时类型
  */
 const classifyError = (error: any): ErrorType => {
-  if (error.name === "AbortError") return "timeout";
+  if (error.name === "AbortError") return "request_timeout";
+  if (error.message?.includes("空闲") || error.message?.includes("idle")) return "idle_timeout";
   if (error.message?.includes("fetch") || error.message?.includes("network")) return "network";
   if (error.message?.includes("HTTP")) return "server";
   // 后端返回的error_type直接使用
   if (error.error_type === "empty_response") return "empty_response";
-  if (error.error_type === "timeout") return "timeout";
+  if (error.error_type === "timeout") return "request_timeout";
   if (error.error_type === "network") return "network";
   if (error.error_type === "server") return "server";
   return "unknown";
@@ -222,19 +223,23 @@ const classifyError = (error: any): ErrorType => {
 
 /**
  * 获取友好的错误消息
+ * 【小强修复 2026-04-09】区分空闲超时和请求等待超时
  */
 const getFriendlyErrorMessage = (errorType: ErrorType, originalMessage: string): string => {
+  const prefix = "SSE连接:";
   switch (errorType) {
-    case "timeout":
-      return "请求超时，请检查网络或稍后重试";
+    case "idle_timeout":
+      return `${prefix}空闲超时（长时间无数据），连接可能已断开`;
+    case "request_timeout":
+      return `${prefix}请求等待超时，服务器响应过慢，请稍后重试`;
     case "network":
-      return "网络连接失败，请检查网络后重试";
+      return `${prefix}网络连接失败，请检查网络后重试`;
     case "server":
-      return `服务器错误: ${originalMessage}`;
+      return `${prefix}服务器错误: ${originalMessage}`;
     case "empty_response":
-      return "模型未能生成有效回复，请尝试更换问题或稍后重试";
+      return `${prefix}模型未能生成有效回复，请尝试更换问题或稍后重试`;
     default:
-      return `连接异常: ${originalMessage}`;
+      return `${prefix}异常: ${originalMessage}`;
   }
 };
 
@@ -295,10 +300,11 @@ export const useSSE = (
   const requestStartTimeRef = useRef<number>(0);
   const chunkCountRef = useRef<number>(0);
   
-  // 【小强修复 2026-03-18】SSE 超时检测 - 解决页面隐藏后连接断开问题
+  // 【小强修复 2026-03-18】SSE 空闲超时检测 - 解决页面隐藏后连接断开问题
+  // 【小强修复 2026-04-09】重命名为 IDLE_TIMEOUT，更准确反映语义
   const lastDataTimeRef = useRef<number>(0);  // 最后收到数据的时间
-  const heartbeatTimeoutRef = useRef<number | null>(null);  // 心跳超时检测
-  const HEARTBEAT_TIMEOUT = 60000;  // 60 秒无数据判定为断开
+  const idleTimeoutRef = useRef<number | null>(null);  // 空闲超时检测
+  const IDLE_TIMEOUT = 60000;  // 60 秒无数据判定为断开
 
   // 【小强添加 2026-03-18】sessionStorage 备份相关
   // 恢复：组件初始化时检查是否有备份数据
@@ -341,10 +347,13 @@ export const useSSE = (
   /**
    * 断开连接
    * @param manualDisconnect - 是否是手动中断（手动中断不允许重连）
+   * @param clearStorage - 是否清空 sessionStorage（重连时设为 false，保留数据）
    */
-  const disconnect = useCallback((manualDisconnect: boolean = false) => {
-    // 清空 sessionStorage 备份
-    clearStepsFromStorage();
+  const disconnect = useCallback((manualDisconnect: boolean = false, clearStorage: boolean = true) => {
+    // 清空 sessionStorage 备份（除非重连时明确指定不清空）
+    if (clearStorage) {
+      clearStepsFromStorage();
+    }
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
@@ -369,8 +378,17 @@ export const useSSE = (
     }
   }, []);
 
+   /**
+    * 软清理执行步骤（用于重连时保留已有步骤）
+    * 只清理运行时状态，不清空已收到的 steps
+    */
+  const softClearSteps = useCallback(() => {
+    setCurrentResponse("");
+    responseBufferRef.current = "";
+  }, []);
+
   /**
-   * 清空执行步骤
+   * 清空执行步骤（完全重置，用于新对话）
    */
   const clearSteps = useCallback(() => {
     setExecutionSteps([]);
@@ -381,51 +399,14 @@ export const useSSE = (
     clearStepsFromStorage();
   }, [clearStepsFromStorage]);
 
-  // 同步 executionSteps 到 ref
-  useEffect(() => {
-    executionStepsRef.current = executionSteps;
-  }, [executionSteps]);
-
   /**
-   * 执行重连
-   */
-  const reconnect = useCallback(() => {
-    if (!pendingMessageRef.current) {
-      console.warn("[SSE] 没有待重连的消息");
-      return;
-    }
-
-    const { content, sessionId } = pendingMessageRef.current;
-    const config = reconnectConfigRef.current;
-    
-    if (reconnectAttemptsRef.current >= config.maxAttempts) {
-      console.error("[SSE] 超过最大重连次数");
-      setReconnectStatus("failed");
-      message.error("连接失败，请刷新页面重试");
-      return;
-    }
-
-    const attempt = reconnectAttemptsRef.current;
-    const delay = calculateReconnectDelay(attempt, config.baseDelay, config.maxDelay);
-    
-    setReconnectStatus("reconnecting");
-    message.warning(`正在重新连接 (${attempt + 1}/${config.maxAttempts})...`);
-    
-    console.log(`[SSE] 准备重连，attempt=${attempt + 1}, delay=${delay}ms`);
-
-    reconnectTimeoutRef.current = setTimeout(() => {
-      reconnectAttemptsRef.current++;
-      // 调用 sendMessage 进行重连
-      sendMessageInternal(content, sessionId);
-    }, delay);
-  }, []);
-
-  /**
-   * 内部发送消息函数（用于重连）
-   */
+    * 内部发送消息函数（用于重连）
+    * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
+    */
   const sendMessageInternal = async (content: string, sessionId?: string) => {
-    disconnect();
-    clearSteps();
+    console.log("📡 [SSE] 连接开始", new Date().toLocaleTimeString());
+    disconnect(false, false);  // 重连时：非手动断开 + 不清空 sessionStorage
+    softClearSteps();  // 软清理：保留 steps，只清理运行时状态
 
     // 【小强添加 2026-03-18】重置性能指标并记录开始时间
     requestStartTimeRef.current = Date.now();
@@ -480,43 +461,42 @@ export const useSSE = (
 
       // eslint-disable-next-line no-constant-condition
       while (true) {
-        // 【小强修复 2026-03-18】添加超时检测 - 解决页面隐藏后连接断开问题
-        if (heartbeatTimeoutRef.current) {
-          clearTimeout(heartbeatTimeoutRef.current);
+        // 【小强修复 2026-04-09】使用 IDLE_TIMEOUT，更准确的命名
+        if (idleTimeoutRef.current) {
+          clearTimeout(idleTimeoutRef.current);
         }
-        heartbeatTimeoutRef.current = window.setTimeout(() => {
+        idleTimeoutRef.current = window.setTimeout(() => {
           const timeSinceLastData = Date.now() - lastDataTimeRef.current;
-          if (timeSinceLastData > HEARTBEAT_TIMEOUT && isReceiving) {
-            console.warn(`[SSE] 心跳超时：已经${timeSinceLastData/1000}秒未收到数据，判定连接断开`);
-            // 触发超时错误
-            throw new Error("SSE 连接超时：长时间未收到数据");
+          if (timeSinceLastData > IDLE_TIMEOUT && isReceiving) {
+            console.warn(`[SSE] 空闲超时：已经${timeSinceLastData/1000}秒未收到数据，判定连接断开`);
+            throw new Error("SSE 空闲超时：长时间未收到数据");
           }
-        }, HEARTBEAT_TIMEOUT);
+        }, IDLE_TIMEOUT);
         
         const { done, value } = await reader.read();
 
         if (done) {
           if (buffer.trim()) {
-        processSSEData(buffer, {
-          setExecutionSteps,
-          getCurrentExecutionSteps: () => executionStepsRef.current,
-          executionStepsRef,  // 【小新添加 2026-03-15】传递 ref 以便在 processSSEData 内部同步更新
-          saveStepsToStorage,  // 【小强添加 2026-03-18】传递 sessionStorage 保存函数
-          onStep,
-          onChunk,
-          onComplete,
-          onError,
-          onPaused,
-          onResumed,
-          onShowSteps,
-          onRetry,
-          setCurrentResponse,
-          responseBufferRef,
-          setIsReceiving,
-          setIsConnected,
-          disconnect,
-          setServerTaskId,
-        }, isProcessingRef);
+            processSSEData(buffer, {
+              setExecutionSteps,
+              getCurrentExecutionSteps: () => executionStepsRef.current,
+              executionStepsRef,
+              saveStepsToStorage,
+              onStep,
+              onChunk,
+              onComplete,
+              onError,
+              onPaused,
+              onResumed,
+              onShowSteps,
+              onRetry,
+              setCurrentResponse,
+              responseBufferRef,
+              setIsReceiving,
+              setIsConnected,
+              disconnect,
+              setServerTaskId,
+            }, isProcessingRef);
           }
           break;
         }
@@ -532,8 +512,8 @@ export const useSSE = (
           processSSEData(line, {
             setExecutionSteps,
             getCurrentExecutionSteps: () => executionStepsRef.current,
-            executionStepsRef,  // 【小新添加 2026-03-15】传递 ref 以便在 processSSEData 内部同步更新
-            saveStepsToStorage,  // 【小强添加 2026-03-18】传递 sessionStorage 保存函数
+            executionStepsRef,
+            saveStepsToStorage,
             onStep,
             onChunk,
             onComplete,
@@ -570,19 +550,16 @@ export const useSSE = (
         const delay = calculateReconnectDelay(attempt, config.baseDelay, config.maxDelay);
         
         message.warning(friendlyMessage + `，${delay/1000}秒后尝试重连...`);
-        // 保存待重连的消息
         pendingMessageRef.current = { content, sessionId };
-        // 触发重连，使用指数退避延迟
         reconnectTimeoutRef.current = setTimeout(() => {
           reconnect();
         }, delay);
       } else {
         setReconnectStatus("failed");
         message.error(friendlyMessage);
-        // 【小新修复2026-03-13】传递完整的错误对象
         onError?.({
           type: "error",
-          error_type: "connection_error",
+          error_type: errorType,
           message: friendlyMessage,
           code: "CONNECTION_FAILED",
           timestamp: new Date().toISOString()
@@ -592,6 +569,40 @@ export const useSSE = (
   };
 
   /**
+   * 重连函数
+   * 【小强修复 2026-04-09】重新添加缺失的 reconnect 函数，移到 sendMessageInternal 之后避免变量未定义问题
+   */
+  const reconnect = useCallback(() => {
+    if (!pendingMessageRef.current) {
+      console.warn("[SSE] 没有待重连的消息");
+      return;
+    }
+
+    const { content, sessionId } = pendingMessageRef.current;
+    const config = reconnectConfigRef.current;
+    
+    if (reconnectAttemptsRef.current >= config.maxAttempts) {
+      console.error("[SSE] 超过最大重连次数");
+      setReconnectStatus("failed");
+      message.error("SSE连接: 连接失败，请刷新页面重试");
+      return;
+    }
+
+    const attempt = reconnectAttemptsRef.current;
+    const delay = calculateReconnectDelay(attempt, config.baseDelay, config.maxDelay);
+    
+    setReconnectStatus("reconnecting");
+    message.warning(`正在重新连接 (${attempt + 1}/${config.maxAttempts})...`);
+    
+    console.log(`[SSE] 准备重连，attempt=${attempt + 1}, delay=${delay}ms`);
+
+    reconnectTimeoutRef.current = setTimeout(() => {
+      reconnectAttemptsRef.current++;
+      sendMessageInternal(content, sessionId);
+    }, delay);
+  }, [sendMessageInternal]);
+
+  /**
    * 发送消息建立SSE连接
    */
   const sendMessage = useCallback(
@@ -599,7 +610,7 @@ export const useSSE = (
       // 【修复小查问题】防止并发调用
       if (isProcessingRef.current) {
         console.warn("[SSE] 已有进行中的请求，等待完成后重试");
-        message.warning("请求处理中，请稍后再试");
+        message.warning("SSE连接: 请求处理中，请稍后再试");
         return;
       }
       isProcessingRef.current = true;
@@ -609,7 +620,7 @@ export const useSSE = (
       reconnectAttemptsRef.current = 0;
       
       await sendMessageInternal(content, sessionId);
-      
+
       // 请求结束后重置
       isProcessingRef.current = false;
     },
@@ -735,8 +746,8 @@ const processSSEData = (
       // 【小沈修复】思考过程与正式内容区分字段
         // 【小查修复】统一使用 snake_case: is_reasoning
         is_reasoning: rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === 'true',
-        reasoning: rawData.reasoning || "",
-       
+        // reasoning: rawData.reasoning || "",  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
+        
       timestamp: timestampValue,
     };
 
@@ -792,12 +803,12 @@ const processSSEData = (
       }
 
       case "thought": {
-        console.log("🔍 [sse thought] 收到thought事件, rawData=", JSON.stringify(rawData));
+        // console.log("🔍 [sse thought] 收到thought事件, rawData=", JSON.stringify(rawData));
         step.content = rawData.content || "";
-        step.reasoning = rawData.reasoning || "";
-        step.action_tool = rawData.action_tool || "";
-        step.params = rawData.params || {};
-        console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
+        // step.reasoning = rawData.reasoning || "";  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
+        step.tool_name = rawData.tool_name || rawData.action_tool || "";  // 兼容旧字段
+        step.tool_params = rawData.tool_params || rawData.params || {};    // 兼容旧字段
+        // console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
         // 添加到步骤数组，显示思考过程
         // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
         // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
@@ -824,8 +835,8 @@ const processSSEData = (
         step.summary = rawData.summary || "";
         step.raw_data = rawData.raw_data || null;
         step.action_retry_count = rawData.action_retry_count || 0;
-        // 使用 action_description 填充 content
-        step.content = step.action_description || step.tool_name || "";
+        // 【小强删除 2026-04-08】action_tool类型不需要content字段，tool_name已足够
+        // step.content = step.action_description || step.tool_name || "";
         // 添加到步骤数组，显示执行动作
         // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
         // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
@@ -845,15 +856,16 @@ const processSSEData = (
       }
 
       case "observation": {
-        // 【小沈修正 2026-03-23】前端保存字段名必须和SSE后端定义一模一样
-        step.is_finished = rawData.is_finished ?? false;
-        step.obs_raw_data = rawData.obs_raw_data ?? null;
-        step.obs_execution_status = rawData.obs_execution_status ?? 'success';
-        step.obs_summary = rawData.obs_summary ?? '';
-        step.content = rawData.content ?? '';
-        step.obs_reasoning = rawData.obs_reasoning ?? '';
-        step.obs_action_tool = rawData.obs_action_tool ?? '';
-        step.obs_params = rawData.obs_params ?? {};
+        // 【小资精简 2026-04-07】后端删除第二次LLM调用后，observation只保留content
+        // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/raw_data）
+        // 【小强调试 2026-04-08】添加日志排查 observation 不显示问题
+        // console.log("🔍 [sse observation] 收到observation事件, rawData=", JSON.stringify(rawData));
+        step.content = rawData.content ?? rawData.observation ?? '';  // 兼容多种字段名
+        // 【小强调试】添加日志
+        // console.log("🔍 [sse observation] 解析后的step.content=[", step.content, "]");
+        step.tool_name = rawData.tool_name || rawData.tool || "";
+        // 【小强修复 2026-04-08】后端已不再使用obs_action_tool，改为tool_name
+        step.tool_name = rawData.tool_name || "";
         step.contentStart = responseBufferRef.current.length;
         step.contentEnd = step.contentStart;
         // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
@@ -905,20 +917,16 @@ const processSSEData = (
         
         // 【小沈带小强修改 2026-03-17】
         // 问题描述：前端导出 JSON 时只有 3 个步骤（start, thought, chunk），但数据库有 55 个步骤
-        //          前端显示只看到 1 个 chunk "用户"，而不是 52 个真正的内容 chunk
-        // 根因分析：
-        //   1. setExecutionSteps 是异步更新 React state，虽然在回调中更新了 ref，但可能有时序问题
-        //   2. onComplete 调用 getCurrentExecutionSteps() 时，可能获取到的不是完整的 55 个 chunk
-        //   3. 现象：前端显示只看到 1 个 chunk "用户"，导出文件也只有 3 个步骤
-        //          实际上是前端只渲染了 1 个 chunk（message.content），而不是 52 个独立的 chunk
-        // 修复方案：
-        //   直接在处理每个 chunk 时同步更新 ref 和 state，确保 onComplete 能获取到完整的 chunk 列表
-        //   这样即使前端渲染只显示 message.content，导出功能也能获取到完整的 52 个 chunk 步骤
-        const newSteps = [...handlers.executionStepsRef.current, step];
-        handlers.executionStepsRef.current = newSteps;
-        // 【小强添加 2026-03-18】同时保存到 sessionStorage
-        saveStepsToStorage?.(newSteps);
-        setExecutionSteps(newSteps);
+        // 【小强修复 2026-04-10】使用回调函数模式，与 start/thought/action_tool/observation 保持一致
+        // 问题：之前使用直接同步更新，导致 ref 和 state 不同步
+        // 解决：在 setExecutionSteps 回调函数内部更新 ref，确保同步
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          // 【小强添加 2026-03-18】同时保存到 sessionStorage
+          saveStepsToStorage?.(newSteps);
+          return newSteps;
+        });
         onStep?.(step);
         // 【小查修复】收到 chunk 时关闭步骤 UI，开始显示回复内容（必须在 onStep 之后）
         // 【小强修复 2026-03-17】根据 is_reasoning 区分：true=显示步骤 UI，false=关闭步骤 UI
@@ -961,13 +969,17 @@ const processSSEData = (
           return newSteps;
         });
         onStep?.(step);
+        // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保直接返回 final 时步骤列表显示
+        onShowSteps?.(true);
 
-        onComplete?.(responseBufferRef.current, {
+           onComplete?.(responseBufferRef.current, {
           model: rawData.model,
           provider: rawData.provider,
           display_name: displayName,
         } as SSEMetadata, handlers.getCurrentExecutionSteps());  // 【小新修复 2026-03-15】ref已被同步更新，无需再手动加step
-
+        
+        console.log("📡 [SSE] 连接结束", new Date().toLocaleTimeString(), "| 收到steps:", handlers.getCurrentExecutionSteps().length);
+        
         setIsReceiving(false);
         setIsConnected(false);
         break;
@@ -1014,6 +1026,9 @@ const processSSEData = (
         // 【小沈修复 2026-03-17】先调用onStep，将error步骤添加到executionSteps
         // 问题：之前只调用onError，没有调用onStep，导致error步骤丢失
         // 【小强修复 2026-04-03】error步骤也需要保存到sessionStorage，否则页面切换后丢失
+        // 【小强修复 2026-04-10】使用回调函数模式 + 添加 onShowSteps?.(true)
+        // 问题：之前使用直接同步更新，导致 ref 和 state 不同步
+        // 解决：在 setExecutionSteps 回调函数内部更新 ref，确保同步
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
@@ -1021,6 +1036,8 @@ const processSSEData = (
           return newSteps;
         });
         onStep?.(step);
+        // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保 error 步骤显示
+        onShowSteps?.(true);
         // 【小新修复2026-03-13】传递完整的错误对象，保留error_type等字段
         onError?.({
           type: "error",
@@ -1035,6 +1052,8 @@ const processSSEData = (
           retry_after: rawData.retry_after,
           timestamp: rawData.timestamp || timestampValue
         });
+        // 【小强修复 2026-04-09】关键：不再调用onComplete（和v0.8.75一致），error步骤由onError处理
+        // v0.8.75版本没有调用onComplete，UI显示正常
         setIsReceiving(false);
         setIsConnected(false);
         break;
@@ -1062,6 +1081,8 @@ const processSSEData = (
         // 根据incident_value调用对应的回调
         switch (statusValue) {
           case "interrupted":
+            // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保中断时步骤列表显示
+            onShowSteps?.(true);
             onComplete?.(responseBufferRef.current, undefined);
             setIsReceiving(false);
             setIsConnected(false);

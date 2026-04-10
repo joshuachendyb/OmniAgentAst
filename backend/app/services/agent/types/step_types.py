@@ -20,16 +20,16 @@ class ThoughtStep:
     step_number: int
     content: str
     reasoning: Optional[str] = None
-    action_tool: str = ""
-    params: Dict[str, Any] = field(default_factory=dict)
+    tool_name: str = ""
+    tool_params: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
         return {
             "step_number": self.step_number,
             "content": self.content,
             "reasoning": self.reasoning,
-            "action_tool": self.action_tool,
-            "params": self.params
+            "tool_name": self.tool_name,
+            "tool_params": self.tool_params
         }
 
 
@@ -65,8 +65,8 @@ class ObservationStep:
     raw_data: Optional[Dict[str, Any]] = None
     content: str = ""
     reasoning: Optional[str] = None
-    action_tool: str = ""
-    params: Dict[str, Any] = field(default_factory=dict)
+    tool_name: str = ""
+    tool_params: Dict[str, Any] = field(default_factory=dict)
     is_finished: bool = False
     
     def to_dict(self) -> Dict[str, Any]:
@@ -77,19 +77,19 @@ class ObservationStep:
             "raw_data": self.raw_data,
             "content": self.content,
             "reasoning": self.reasoning,
-            "action_tool": self.action_tool,
-            "params": self.params,
+            "tool_name": self.tool_name,
+            "tool_params": self.tool_params,
             "is_finished": self.is_finished
         }
 
 
 @dataclass
 class Step:
-    """ReAct步骤（兼容旧版本）【修改 2026-03-31】timestamp改为毫秒int类型"""
+    """ReAct步骤（统一字段名）【修改 2026-04-08】action/action_input → tool_name/tool_params"""
     step_number: int
     thought: str
-    action: str
-    action_input: Dict[str, Any]
+    tool_name: str
+    tool_params: Dict[str, Any]
     observation: Optional[Dict[str, Any]] = None
     # 【修改 2026-03-31】从 datetime 改为 int，使用毫秒时间戳
     timestamp: int = field(default_factory=create_timestamp)
@@ -98,8 +98,8 @@ class Step:
         return {
             "step_number": self.step_number,
             "thought": self.thought,
-            "action": self.action,
-            "action_input": self.action_input,
+            "tool_name": self.tool_name,
+            "tool_params": self.tool_params,
             "observation": self.observation,
             # 【修改 2026-03-31】直接返回毫秒时间戳，不再转换
             "timestamp": self.timestamp

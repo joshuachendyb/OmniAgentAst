@@ -51,7 +51,7 @@ export interface ThoughtMessage {
   type: 'thought';
   step: number;
   content: string;
-  reasoning?: string;
+  // reasoning?: string;  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
   action_tool?: string;  // 可选：某些thought可能不包含动作
   params?: Record<string, any>;  // 可选：某些thought可能不包含参数
 }
@@ -72,21 +72,18 @@ export interface ActionToolMessage {
 }
 
 /**
- * observation类型 - 执行结果判断
+ * observation类型 - 工具执行完成提示
  * 发送时机：ReAct第3阶段，工具执行完成后
- * 【2026-03-11 重命名】字段加 obs_ 前缀，避免与其他type字段混淆
+ * 【2026-04-07 小资精简】后端删除第二次LLM调用后，observation只保留基础字段
+ * 工具执行结果已在 action_tool 阶段完整显示，本阶段仅作轻量提示
+ * 【2026-04-07 小沈新增】添加tool_name字段，显示工具名称
  */
 export interface ObservationMessage {
   type: 'observation';
   step: number;
-  obs_execution_status: 'success' | 'error' | 'warning';
-  obs_summary: string;
-  obs_raw_data?: Record<string, any> | null;
+  timestamp: number;
   content: string;
-  obs_reasoning?: string;
-  obs_action_tool: string;
-  obs_params: Record<string, any>;
-  is_finished: boolean;
+  tool_name?: string;  // 工具名称（可选）
 }
 
 /**

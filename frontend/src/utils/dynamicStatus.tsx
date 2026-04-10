@@ -4,6 +4,17 @@
  * 根据 executionSteps 动态显示当前 AI 执行状态
  * 支持：图标、文字、计时器、旋转竖线
  * 
+ * 【重要说明】
+ * 这个状态提示显示在 AI 气泡的底部，作用是提示"下一个步骤"的信息。
+ * 因为有时候从当前步骤到下一个步骤（比如调用LLM）需要较长时间，给用户一个心理预期。
+ * 
+ * 例如：
+ * - 当前是 thought（思考）步骤时，提示"Agent 正在执行工具" → 下一个是 action_tool
+ * - 当前是 action_tool（执行工具）步骤时，提示"Agent 正在执行观察" → 下一个是 observation
+ * - 当前是 observation（观察结果）步骤时，提示"AI 正在思考" → 下一个是 thought（再次调用LLM）
+ * 
+ * 所以这里的文字不是描述当前步骤，而是描述下一个步骤！不要改错了！
+ * 
  * @author 小强
  * @version 1.0.0
  * @since 2026-04-03
@@ -12,10 +23,12 @@
 import React, { useState, useEffect } from 'react';
 
 // 状态配置表
+// 【重要】这里的 text 描述的是"下一个步骤"，不是当前步骤！
+// 例如：thought 步骤时显示的是"下一个是 action_tool"，action_tool 步骤时显示的是"下一个是 observation"
 const statusConfig: Record<string, { icon: string; text: string; animate: boolean }> = {
   waiting:     { icon: '🚀', text: 'AI开始执行任务', animate: true },
   start:       { icon: '🤔', text: 'AI 正在思考', animate: true },
-  thought:     { icon: '🛠️', text: 'Agent 正在执行"action_tool"', animate: true },
+  thought:     { icon: '🛠️', text: 'Agent 正在执行"tool_name"', animate: true },
   action_tool: { icon: '👁️', text: 'Agent 正在执行"observation"', animate: true },
   observation: { icon: '🤔', text: 'AI 正在思考', animate: true },
   chunk:       { icon: '💬', text: 'AI 正在回复', animate: true },

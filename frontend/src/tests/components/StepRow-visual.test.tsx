@@ -55,7 +55,7 @@ describe('StepRow UI视觉和布局', () => {
         executionSteps: [
           {
             type: 'thought' as const,
-            reasoning: '我需要先查看目录',
+            content: '我需要先查看目录',  // 【小强修改 2026-04-08】reasoning已删除，改为content
             step: 1,
             timestamp: Date.now(),
           },
@@ -64,7 +64,7 @@ describe('StepRow UI视觉和布局', () => {
 
       render(<MessageItem message={messageWithThought} />);
 
-      // 应该显示推理内容
+      // 应该显示推理内容（现在从content读取）
       expect(screen.getByText(/我需要先查看目录/)).toBeInTheDocument();
       // 应该显示步骤编号
       expect(screen.getByText(/步骤1/)).toBeInTheDocument();
@@ -217,7 +217,7 @@ describe('StepRow UI视觉和布局', () => {
     });
   });
 
-  describe('action_tool步骤', () => {
+  describe('tool_name步骤', () => {
     it('应该显示工具名称', () => {
       const messageWithActionTool = {
         ...baseMessage,
