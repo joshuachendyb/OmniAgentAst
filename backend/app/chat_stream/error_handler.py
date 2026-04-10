@@ -292,6 +292,7 @@ ERROR_TYPE_MAP = {
     'network_error': ('network', '网络错误，请检查网络连接'),
     # 【新增 2026-04-09 小沈】HTTP错误码映射
     'api_error_503': ('api_error', 'AI服务渠道不可用 (errorcode=503)，请检查API配置或更换模型'),
+    'api_error_524': ('api_error', 'AI服务已超载 (errorcode=524)，请更换模型或稍后重试'),
     'api_error_429': ('api_error', 'API请求过于频繁 (errorcode=429)，请稍后再试或更换模型'),
     'api_error_401': ('security', 'API认证失败 (errorcode=401)，请检查API密钥配置'),
     'api_error_403': ('security', 'API访问被拒绝 (errorcode=403)，请检查API权限配置'),
@@ -429,6 +430,8 @@ def resolve_http_error_type(error_message: str) -> Optional[str]:
         return 'api_error_429'
     elif "503" in error_message:
         return 'api_error_503'
+    elif "524" in error_message:
+        return 'api_error_524'
     elif "500" in error_message:
         return 'api_error_500'
     elif "502" in error_message:
