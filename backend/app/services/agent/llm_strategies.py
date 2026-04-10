@@ -17,7 +17,7 @@ from datetime import datetime
 
 from app.services.agent.adapter import dict_list_to_messages
 from app.utils.logger import logger
-from app.chat_stream.error_handler import classify_llm_error, get_stream_error_info
+from app.chat_stream.error_handler import resolve_http_error_type, get_stream_error_info
 
 
 class LLMStrategy(ABC):
@@ -199,17 +199,23 @@ class TextStrategy(LLMStrategy):
     
     def _format_error_hint(self, error: str) -> str:
         """
-        【2026-04-01 小沈重构】
+        【2026-04-10 小沈重构】
         格式化错误提示信息，使用统一的 error_handler.py 分类
+        复用 resolve_http_error_type 解析HTTP错误码，确保错误分类统一
         
         Args:
-            error: 原始错误信息（如 "ReadTimeout", "ConnectError" 等）
+            error: 原始错误信息（如 "limit_error", "HTTP 500" 等）
         
         Returns:
             格式化后的错误提示（用户友好的中文提示）
         """
-        # 使用 error_handler 的分类函数
-        error_type = classify_llm_error(str(error))
+        # 【修复 2026-04-10】使用 resolve_http_error_type 解析HTTP错误码
+        # 优先匹配数字错误码（429、500等），保留API返回的真实信息
+        error_type = resolve_http_error_type(str(error))
+        
+        # 如果无法解析HTTP错误码，使用 'unknown' 作为后备
+        if error_type is None:
+            error_type = 'unknown'
         
         # 获取用户友好的错误信息
         error_code, user_message = get_stream_error_info(error_type)
