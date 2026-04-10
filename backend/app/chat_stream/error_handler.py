@@ -446,3 +446,87 @@ def resolve_http_error_type(error_message: str) -> Optional[str]:
         return 'api_error_403'
     
     return None
+
+
+def create_error_result(
+    original_error: Optional[str],
+    error_step_type: str,
+    step_num: int,
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
+    display_name: Optional[str] = None,
+    chat_timeout: Optional[int] = None,
+    max_retries: Optional[int] = None,
+    retryable: bool = True,
+    retry_after: int = 3
+) -> tuple[str, Dict[str, Any]]:
+    """
+    统一的错误处理函数 - 解析错误码、组装错误信息、创建错误响应和步骤
+    
+    【新增 2026-04-10 小沈】
+    统一错误处理流程：
+    1. 解析错误码（调用 resolve_http_error_type）
+    2. 组装错误信息（调用 get_stream_error_info）
+    3. 处理特殊情况（如 idle_timeout）
+    4. 创建 error_response（yield给前端）
+    5. 创建 error_step（保存到数据库）
+    
+    Args:
+        original_error: 原始错误消息（来自API或异常）
+        error_step_type: 错误步骤类型（如 'idle_timeout', 'network_error' 等）
+        step_num: 步骤序号
+        model: 模型名称（可选）
+        provider: 提供商（可选）
+        display_name: 模型显示名称（用于idle_timeout提示）
+        chat_timeout: 单次超时时间秒数（用于idle_timeout提示）
+        max_retries: 最大重试次数（用于idle_timeout提示）
+        retryable: 是否可重试
+        retry_after: 重试等待秒数
+    
+    Returns:
+        (error_response, error_step) 元组
+        - error_response: SSE格式的错误响应字符串，用于yield给前端
+        - error_step: 错误步骤字典，用于保存到数据库
+    """
+    # 1. 解析错误码
+    resolved_error_type = resolve_http_error_type(original_error) if original_error else None
+    final_error_type = resolved_error_type if resolved_error_type else error_step_type
+    
+    # 2. 组装错误信息
+    error_type, error_message = get_stream_error_info(final_error_type, original_error)
+    
+    # 3. 处理特殊情况：idle_timeout 需要动态显示超时值和重试次数
+    if error_step_type == 'idle_timeout' and display_name and chat_timeout and max_retries:
+        error_type = 'timeout'
+        total_timeout = chat_timeout * max_retries
+        error_message = f"请求超时：AI模型({display_name}) {chat_timeout}秒内未返回任何内容，已重试{max_retries}次，合计{total_timeout}秒，请更换问题或稍后重试"
+    
+    # 4. 处理空响应情况
+    if not original_error:
+        error_type = 'empty_response'
+        error_message = "模型未能生成有效回复，请尝试更换问题或稍后重试"
+    
+    # 5. 创建 error_response（yield给前端）
+    error_response = create_error_response(
+        error_type=error_type,
+        message=error_message,
+        model=model,
+        provider=provider,
+        retryable=retryable,
+        retry_after=retry_after,
+        step=step_num
+    )
+    
+    # 6. 创建 error_step（保存到数据库）
+    error_step = create_error_step(
+        code='AI_CALL_ERROR',
+        message=error_message,
+        error_type=error_type,
+        step_num=step_num,
+        model=model,
+        provider=provider,
+        retryable=retryable,
+        retry_after=retry_after
+    )
+    
+    return error_response, error_step
