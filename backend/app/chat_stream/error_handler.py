@@ -389,9 +389,9 @@ def resolve_http_error_type(error_message: str) -> Optional[str]:
     【重构 2026-04-10 小沈】
     从 chat_stream_query.py 迁移到此模块，符合单一职责原则
     
-    按优先级匹配：
-    1. 先匹配具体错误词（limit_error、rate_limit）
-    2. 再匹配 HTTP 错误码（429、500等）
+    优先级匹配原则：
+    1. 优先使用原始HTTP错误码（429、500等）- 保留API返回的真实信息
+    2. 没有错误码时，才从语义推断 - 作为备用方案
     
     Args:
         error_message: 原始错误消息字符串
@@ -405,24 +405,32 @@ def resolve_http_error_type(error_message: str) -> Optional[str]:
     
     msg_lower = error_message.lower()
     
-    # 按优先级匹配：先匹配具体错误词，再匹配错误码
-    if "limit_error" in msg_lower or "rate_limit" in msg_lower:
-        return 'api_error_429'
-    elif "429" in error_message:
+    # 1. 优先匹配数字错误码（原始HTTP状态码），保留API返回的真实信息
+    if "429" in error_message:
         return 'api_error_429'
     elif "503" in error_message:
         return 'api_error_503'
-    elif "401" in error_message or "auth" in msg_lower or "unauthorized" in msg_lower:
-        return 'api_error_401'
-    elif "403" in error_message or "forbidden" in msg_lower:
-        return 'api_error_403'
-    elif "400" in error_message:
-        return 'api_error_400'
     elif "500" in error_message:
         return 'api_error_500'
     elif "502" in error_message:
         return 'api_error_502'
     elif "504" in error_message:
         return 'api_error_504'
+    elif "401" in error_message:
+        return 'api_error_401'
+    elif "403" in error_message:
+        return 'api_error_403'
+    elif "400" in error_message:
+        return 'api_error_400'
+    
+    # 2. 没有数字错误码时，才从语义推断
+    elif "rate limit" in msg_lower or "too many requests" in msg_lower:
+        return 'api_error_429'
+    elif "limit_error" in msg_lower:
+        return 'api_error_429'
+    elif "auth" in msg_lower or "unauthorized" in msg_lower:
+        return 'api_error_401'
+    elif "forbidden" in msg_lower:
+        return 'api_error_403'
     
     return None
