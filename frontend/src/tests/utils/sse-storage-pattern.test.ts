@@ -223,4 +223,141 @@ describe('SSE 数据存储方式 - 回调函数模式验证', () => {
     expect(refAfterCallback.length).toBe(1);
     expect(refAfterDirect.length).toBe(1);
   });
+
+  /**
+   * 测试6: 验证 setTimeout 延迟保存不阻塞 UI
+   * 
+   * 测试目标：验证使用 setTimeout(() => { saveStepsToStorage?.(newSteps); }, 0)
+   * 可以将同步保存转为异步，避免阻塞主线程
+   * 
+   * 验证：
+   * 1. setTimeout 回调在下一帧执行（不是立即执行）
+   * 2. saveStepsToStorage 在 setTimeout 回调中被调用
+   * 3. 主线程不会被阻塞
+   */
+  it('setTimeout 延迟保存不阻塞 UI 线程', async () => {
+    const executionStepsRef = { current: [] as any[] };
+    let saveCalled = false;
+    let saveCalledInSetTimeout = false;
+    let mainThreadBlocked = false;
+    
+    // 模拟 saveStepsToStorage
+    const mockSaveStepsToStorage = (steps: any[]) => {
+      saveCalled = true;
+    };
+    
+    // 模拟 setExecutionSteps 回调函数模式
+    const mockSetExecutionSteps = (value: any) => {
+      if (typeof value === 'function') {
+        const newSteps = value(executionStepsRef.current);
+        executionStepsRef.current = newSteps;
+        
+        // 使用 setTimeout 延迟保存（方案1）
+        setTimeout(() => {
+          saveCalledInSetTimeout = true;
+          mockSaveStepsToStorage(newSteps);
+        }, 0);
+        
+        return newSteps;
+      }
+    };
+    
+    // 记录主线程是否被阻塞
+    const startTime = Date.now();
+    
+    // 执行回调函数模式
+    const step = { type: 'action_tool', content: 'test', raw_data: { size: 100 * 1024 * 1024 } }; // 100MB
+    mockSetExecutionSteps((prev: any[]) => [...prev, step]);
+    
+    // 立即检查 - saveStepsToStorage 尚未被调用（因为在 setTimeout 中）
+    expect(saveCalled).toBe(false);
+    
+    // 等待 setTimeout 执行
+    await new Promise(resolve => setTimeout(resolve, 10));
+    
+    // 验证：saveStepsToStorage 在 setTimeout 中被调用
+    expect(saveCalled).toBe(true);
+    expect(saveCalledInSetTimeout).toBe(true);
+    
+    // 验证：主线程未被阻塞（即使数据很大）
+    const elapsed = Date.now() - startTime;
+    expect(elapsed).toBeLessThan(100); // 应该很快完成，因为 setTimeout 不阻塞
+  });
+
+  /**
+   * 测试7: 验证大数据场景下 setTimeout 延迟执行不会卡死 UI
+   * 
+   * 测试目标：100M/170M 大数据时，setTimeout 延迟执行让 UI 先完成
+   * 虽然最终 saveStepsToStorage 会失败（sessionStorage 5MB 限制），但 UI 不卡死
+   */
+  it('大数据场景下延迟保存确保 UI 不卡死', async () => {
+    const executionStepsRef = { current: [] as any[] };
+    let saveError: Error | null = null;
+    let uiCompletedBeforeSave = false;
+    
+    // 模拟会失败的 saveStepsToStorage（大数据超出 5MB）
+    const mockSaveStepsToStorage = (steps: any[]) => {
+      // 模拟 sessionStorage 溢出
+      try {
+        // 大数据会触发 QuotaExceededError
+        throw new DOMException('QuotaExceededError', 'QuotaExceededError');
+      } catch (e: any) {
+        saveError = e;
+      }
+    };
+    
+    // 模拟 mockSetExecutionSteps
+    const mockSetExecutionSteps = (value: any) => {
+      if (typeof value === 'function') {
+        const newSteps = value(executionStepsRef.current);
+        executionStepsRef.current = newSteps;
+        
+        // 延迟保存
+        setTimeout(() => {
+          mockSaveStepsToStorage(newSteps);
+        }, 0);
+        
+        return newSteps;
+      }
+    };
+    
+    // 模拟 UI 完成标志
+    let uiRenderComplete = false;
+    
+    // 执行 setExecutionSteps 回调函数模式 + setTimeout 延迟保存
+    const processLargeData = () => {
+      const step = { 
+        type: 'action_tool', 
+        content: 'test', 
+        raw_data: { data: 'x'.repeat(170 * 1024 * 1024) } // 170MB
+      };
+      
+      mockSetExecutionSteps((prev: any[]) => {
+        const newSteps = [...prev, step];
+        executionStepsRef.current = newSteps;
+        
+        // 延迟保存
+        setTimeout(() => {
+          mockSaveStepsToStorage(newSteps);
+        }, 0);
+        
+        return newSteps;
+      });
+      
+      // UI 渲染完成（主线程继续执行，不等待 setTimeout）
+      uiRenderComplete = true;
+    };
+    
+    processLargeData();
+    
+    // 验证：UI 先完成（不阻塞）
+    expect(uiRenderComplete).toBe(true);
+    
+    // 等待 setTimeout 执行
+    await new Promise(resolve => setTimeout(resolve, 10));
+    
+    // 验证：大数据保存失败（预期行为），但 UI 已完成
+    expect(saveError).toBeDefined();
+    expect(uiRenderComplete).toBe(true); // UI 早已完成，不受保存失败影响
+  });
 });

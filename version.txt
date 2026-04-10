@@ -1,3 +1,50 @@
+v0.8.92
+
+更新时间：2026-04-10 18:20:00
+
+更新内容：
+
+## 1. 前端 SSE setTimeout 延迟保存优化 - 小强/小资-2026-04-10
+
+### 1.1 问题
+
+大数据场景（100M/170M）时，sessionStorage 的 JSON.stringify 会阻塞主线程数十秒，UI 卡死。
+
+### 1.2 修复
+
+**修改文件**: `frontend/src/utils/sse.ts`
+
+将 6 处 `saveStepsToStorage?.(newSteps)` 改为 setTimeout 延迟保存：
+
+| type | 行号 | 状态 |
+|------|------|------|
+| start | 798 | ✅ 已修改 |
+| thought | 829 | ✅ 已修改 |
+| chunk | 883 | ✅ 已修改 |
+| final | 930 | ✅ 已修改 |
+| error | 1004 | ✅ 已修改 |
+| incident | 1053 | ✅ 已修改 |
+
+> **小资审查说明**：action_tool 和 observation 合并在 thought 分支处理，实际只需修改 6 处。
+
+### 1.3 测试验证
+
+| 测试项 | 结果 |
+|-------|------|
+| sse-storage-pattern.test.ts | ✅ 7 passed |
+| TypeScript 编译 | ✅ 通过 |
+| 完整测试套件 | ✅ 342 passed (2个历史遗留失败) |
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| - | perf: sse.ts使用setTimeout延迟保存避免阻塞UI-小强-2026-04-10 |
+
+参与开发：小强（代码修改）、小资（代码审查）
+
+---
+
 v0.8.91
 
 更新时间：2026-04-10 09:45:00

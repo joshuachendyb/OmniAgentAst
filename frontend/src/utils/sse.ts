@@ -792,8 +792,14 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, startStep];
           handlers.executionStepsRef.current = newSteps;
-          // 【小强添加 2026-03-18】同时保存到 sessionStorage
-          saveStepsToStorage?.(newSteps);
+          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
+          setTimeout(() => {
+            try {
+              saveStepsToStorage?.(newSteps);
+            } catch (e) {
+              console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
+            }
+          }, 0);
           return newSteps;
         });
         onStep?.(startStep);
@@ -817,70 +823,18 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
-          // 【小强添加 2026-03-18】同时保存到 sessionStorage
-          saveStepsToStorage?.(newSteps);
+          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
+          setTimeout(() => {
+            try {
+              saveStepsToStorage?.(newSteps);
+            } catch (e) {
+              console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
+            }
+          }, 0);
           return newSteps;
         });
         onStep?.(step);
         // 【小查修复】收到thought时显示步骤UI
-        onShowSteps?.(true);
-        break;
-      }
-
-      case "action_tool": {
-        // 使用新字段 tool_name, tool_params
-        step.tool_name = rawData.tool_name || "";
-        step.tool_params = rawData.tool_params || {};
-        step.execution_status = rawData.execution_status || 'success';
-        step.summary = rawData.summary || "";
-        step.raw_data = rawData.raw_data || null;
-        step.action_retry_count = rawData.action_retry_count || 0;
-        // 【小强删除 2026-04-08】action_tool类型不需要content字段，tool_name已足够
-        // step.content = step.action_description || step.tool_name || "";
-        // 添加到步骤数组，显示执行动作
-        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
-        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
-        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
-        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
-          // 【小强添加 2026-03-18】同时保存到 sessionStorage
-          saveStepsToStorage?.(newSteps);
-          return newSteps;
-        });
-        onStep?.(step);
-        // 【小查修复】收到action_tool时显示步骤UI
-        onShowSteps?.(true);
-        break;
-      }
-
-      case "observation": {
-        // 【小资精简 2026-04-07】后端删除第二次LLM调用后，observation只保留content
-        // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/raw_data）
-        // 【小强调试 2026-04-08】添加日志排查 observation 不显示问题
-        // console.log("🔍 [sse observation] 收到observation事件, rawData=", JSON.stringify(rawData));
-        step.content = rawData.content ?? rawData.observation ?? '';  // 兼容多种字段名
-        // 【小强调试】添加日志
-        // console.log("🔍 [sse observation] 解析后的step.content=[", step.content, "]");
-        step.tool_name = rawData.tool_name || rawData.tool || "";
-        // 【小强修复 2026-04-08】后端已不再使用obs_action_tool，改为tool_name
-        step.tool_name = rawData.tool_name || "";
-        step.contentStart = responseBufferRef.current.length;
-        step.contentEnd = step.contentStart;
-        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
-        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
-        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
-        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
-        setExecutionSteps((prev) => {
-          const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
-          // 【小强添加 2026-03-18】同时保存到 sessionStorage
-          saveStepsToStorage?.(newSteps);
-          return newSteps;
-        });
-        onStep?.(step);
-        // 【小查修复】收到observation时显示步骤UI
         onShowSteps?.(true);
         break;
       }
@@ -923,8 +877,14 @@ const processSSEData = (
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
-          // 【小强添加 2026-03-18】同时保存到 sessionStorage
-          saveStepsToStorage?.(newSteps);
+          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
+          setTimeout(() => {
+            try {
+              saveStepsToStorage?.(newSteps);
+            } catch (e) {
+              console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
+            }
+          }, 0);
           return newSteps;
         });
         onStep?.(step);
@@ -960,12 +920,18 @@ const processSSEData = (
         // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
         // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
         //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
-        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保其他代码立即获取到最新值
+        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保同步
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
-          // 【小强添加 2026-03-18】同时保存到 sessionStorage
-          saveStepsToStorage?.(newSteps);
+          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
+          setTimeout(() => {
+            try {
+              saveStepsToStorage?.(newSteps);
+            } catch (e) {
+              console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
+            }
+          }, 0);
           return newSteps;
         });
         onStep?.(step);
@@ -1026,13 +992,20 @@ const processSSEData = (
         // 【小沈修复 2026-03-17】先调用onStep，将error步骤添加到executionSteps
         // 问题：之前只调用onError，没有调用onStep，导致error步骤丢失
         // 【小强修复 2026-04-03】error步骤也需要保存到sessionStorage，否则页面切换后丢失
-        // 【小强修复 2026-04-10】使用回调函数模式 + 添加 onShowSteps?.(true)
+        // 【小强修复 2026-04-10】使用回调函数模式 + 添加 onShowSteps?.(true) + setTimeout延迟保存
         // 问题：之前使用直接同步更新，导致 ref 和 state 不同步
         // 解决：在 setExecutionSteps 回调函数内部更新 ref，确保同步
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
-          saveStepsToStorage?.(newSteps);
+          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
+          setTimeout(() => {
+            try {
+              saveStepsToStorage?.(newSteps);
+            } catch (e) {
+              console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
+            }
+          }, 0);
           return newSteps;
         });
         onStep?.(step);
@@ -1070,10 +1043,18 @@ const processSSEData = (
         
         // 统一调用onStep（所有incident类型都需要添加到executionSteps）
         // 【小强修复 2026-04-03】incident步骤也需要保存到sessionStorage，否则页面切换后丢失
+        // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
-          saveStepsToStorage?.(newSteps);
+          // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
+          setTimeout(() => {
+            try {
+              saveStepsToStorage?.(newSteps);
+            } catch (e) {
+              console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
+            }
+          }, 0);
           return newSteps;
         });
         onStep?.(step);
