@@ -279,7 +279,7 @@ const NewChatContainer: React.FC = () => {
           // }
           // 只打印非chunk步骤，减少日志噪声
           if (step.type !== 'chunk') {
-            console.log("📝 存储 type=%s 已有=%d", step.type, lastMessage.executionSteps?.length || 0);
+            console.log("📝 存储 type=%s total = %d steps", step.type, (lastMessage.executionSteps?.length || 0) + 1);
           }
           const updatedSteps = [...(lastMessage.executionSteps || []), step];
           const updated = [...prev];
