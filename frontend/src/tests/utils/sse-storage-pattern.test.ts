@@ -55,7 +55,7 @@ describe('SSE 数据存储方式 - 回调函数模式验证', () => {
       }
     };
     
-    // 模拟 chunk 处理逻辑（当前代码是错误的直接同步更新）
+    // 模拟 chunk 处理逻辑
     const processChunkWithCallbackPattern = () => {
       const step = { type: 'chunk', content: 'test' };
       // 正确的回调函数模式
