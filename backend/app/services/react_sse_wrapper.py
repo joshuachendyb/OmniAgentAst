@@ -38,7 +38,7 @@ from app.config import get_config
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data
-from app.chat_stream.error_handler import create_error_response, get_function_call_error_info, create_error_step
+from app.chat_stream.error_handler import create_error_from_exception
 from app.chat_stream.chat_helpers import create_final_response, create_timestamp, create_step_counter
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
 from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse
@@ -537,27 +537,20 @@ async def generate_sse_stream(
     
     except Exception as e:
         logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
-        error_info = get_function_call_error_info(e)
-        logger.info(f"[Step error] 发送error步骤")
-        error_step = create_error_step(
-            code=error_info.get("code", "INTERNAL_ERROR"),
-            message=error_info.get("message", "服务调用失败"),
-            error_type=error_info.get("error_type", "server"),
-            step_num=next_step(),
+        
+        # 【小沈重构 2026-04-10】使用统一的异常错误处理函数
+        error_step_value = next_step()
+        error_response, error_step = create_error_from_exception(
+            error=e,
+            step_num=error_step_value,
             model=ai_service.model,
             provider=ai_service.provider
         )
+        
+        logger.info(f"[Step error] 发送error步骤")
         current_execution_steps.append(error_step)
-        await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {error_info.get('message', '服务调用失败')}")
-        yield create_error_response(
-            error_type=error_info.get("error_type", "server"),
-            message=error_info.get("message", "服务调用失败"),
-            code=error_info.get("code", "INTERNAL_ERROR"),
-            model=ai_service.model,
-            provider=ai_service.provider,
-            retryable=error_info.get("retryable", False),
-            retry_after=error_info.get("retry_after")
-        )
+        await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {error_step['message']}")
+        yield error_response
     
     finally:
         logger.info(f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {llm_call_count} ======")

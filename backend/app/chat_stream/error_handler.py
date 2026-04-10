@@ -530,3 +530,67 @@ def create_error_result(
     )
     
     return error_response, error_step
+
+
+def create_error_from_exception(
+    error: Exception,
+    step_num: int,
+    model: Optional[str] = None,
+    provider: Optional[str] = None
+) -> tuple[str, Dict[str, Any]]:
+    """
+    统一的异常错误处理函数 - 解析异常、组装错误信息、创建错误响应和步骤
+    
+    【新增 2026-04-10 小沈】
+    用于 react_sse_wrapper.py 中处理 Exception 对象
+    
+    统一处理：
+    1. 解析异常（调用 get_function_call_error_info）
+    2. 创建 error_response（yield给前端）
+    3. 创建 error_step（保存到数据库）
+    
+    Args:
+        error: 异常对象
+        step_num: 步骤序号
+        model: 模型名称（可选）
+        provider: 提供商（可选）
+    
+    Returns:
+        (error_response, error_step) 元组
+        - error_response: SSE格式的错误响应字符串，用于yield给前端
+        - error_step: 错误步骤字典，用于保存到数据库
+    """
+    # 1. 解析异常
+    error_info = get_function_call_error_info(error)
+    
+    error_code = error_info.get("code", "INTERNAL_ERROR")
+    error_message = error_info.get("message", "服务调用失败")
+    error_type = error_info.get("error_type", "server")
+    retryable = error_info.get("retryable", False)
+    retry_after = error_info.get("retry_after")
+    
+    # 2. 创建 error_response（yield给前端）
+    error_response = create_error_response(
+        error_type=error_type,
+        message=error_message,
+        code=error_code,
+        model=model,
+        provider=provider,
+        retryable=retryable,
+        retry_after=retry_after,
+        step=step_num
+    )
+    
+    # 3. 创建 error_step（保存到数据库）
+    error_step = create_error_step(
+        code=error_code,
+        message=error_message,
+        error_type=error_type,
+        step_num=step_num,
+        model=model,
+        provider=provider,
+        retryable=retryable,
+        retry_after=retry_after
+    )
+    
+    return error_response, error_step
