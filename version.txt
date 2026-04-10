@@ -1,3 +1,58 @@
+v0.8.86
+
+更新时间：2026-04-10 09:18:05
+
+更新内容：
+
+## 1. 修正HTTP错误码优先级 - 优先使用原始错误码 - 小沈-2026-04-10
+
+### 1.1 问题
+
+原代码先匹配语义关键词（limit_error），后匹配数字错误码（429），导致：
+- 抹掉API返回的真实错误码
+- 本末倒置
+
+### 1.2 修复
+
+**修改文件**: `backend/app/chat_stream/error_handler.py` `resolve_http_error_type()` 函数
+
+**优先级调整**：
+| 优先级 | 修复前 | 修复后 |
+|-------|--------|--------|
+| **第一优先** | limit_error | 429/503/500等数字错误码 |
+| **第二优先** | 429等数字错误码 | rate limit等语义关键词 |
+
+### 1.3 修复后的逻辑
+
+```python
+# 1. 优先匹配数字错误码（原始HTTP状态码）
+if "429" in error_message:
+    return 'api_error_429'
+elif "503" in error_message:
+    return 'api_error_503'
+# ... 其他数字错误码
+
+# 2. 没有数字错误码时，才从语义推断
+elif "rate limit" in msg_lower:
+    return 'api_error_429'
+```
+
+### 1.4 Commit
+
+| Commit | 说明 |
+|--------|------|
+| 487bc6ca | fix: 修正HTTP错误码优先级-优先使用原始错误码-小沈-2026-04-10 |
+
+### 1.5 测试验证
+
+| 测试项 | 结果 |
+|-------|------|
+| TestResolveHttpErrorType | ✅ 18 passed |
+
+参与开发：小沈
+
+---
+
 v0.8.85
 
 更新时间：2026-04-10 09:09:07
