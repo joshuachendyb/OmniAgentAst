@@ -324,27 +324,26 @@ async def chat_stream_query(
             # 【小沈修复 2026-04-10】优先从 last_error 字符串中解析真实错误码
             # 而不是依赖 stream_error_type（可能不准确）
             resolved_error_type = None
-            if last_error:
-                last_error_lower = last_error.lower()
-                # 按优先级匹配：先匹配具体错误，再匹配通用错误码
-                if "limit_error" in last_error_lower or "rate_limit" in last_error_lower:
-                    resolved_error_type = 'api_error_429'
-                elif "429" in last_error:
-                    resolved_error_type = 'api_error_429'
-                elif "503" in last_error:
-                    resolved_error_type = 'api_error_503'
-                elif "401" in last_error or "auth" in last_error_lower or "unauthorized" in last_error_lower:
-                    resolved_error_type = 'api_error_401'
-                elif "403" in last_error or "forbidden" in last_error_lower:
-                    resolved_error_type = 'api_error_403'
-                elif "400" in last_error:
-                    resolved_error_type = 'api_error_400'
-                elif "500" in last_error:
-                    resolved_error_type = 'api_error_500'
-                elif "502" in last_error:
-                    resolved_error_type = 'api_error_502'
-                elif "504" in last_error:
-                    resolved_error_type = 'api_error_504'
+            last_error_lower = last_error.lower()
+            # 按优先级匹配：先匹配具体错误，再匹配通用错误码
+            if "limit_error" in last_error_lower or "rate_limit" in last_error_lower:
+                resolved_error_type = 'api_error_429'
+            elif "429" in last_error:
+                resolved_error_type = 'api_error_429'
+            elif "503" in last_error:
+                resolved_error_type = 'api_error_503'
+            elif "401" in last_error or "auth" in last_error_lower or "unauthorized" in last_error_lower:
+                resolved_error_type = 'api_error_401'
+            elif "403" in last_error or "forbidden" in last_error_lower:
+                resolved_error_type = 'api_error_403'
+            elif "400" in last_error:
+                resolved_error_type = 'api_error_400'
+            elif "500" in last_error:
+                resolved_error_type = 'api_error_500'
+            elif "502" in last_error:
+                resolved_error_type = 'api_error_502'
+            elif "504" in last_error:
+                resolved_error_type = 'api_error_504'
             
             # 如果解析到了具体错误类型，使用解析结果；否则使用 last_error_type
             final_error_type = resolved_error_type if resolved_error_type else last_error_type
