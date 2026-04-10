@@ -322,26 +322,38 @@ def classify_error(error_type: str, error_message: str = "") -> tuple[str, str]:
         return 'server', f"服务调用失败: {error_message}"
 
 
-def get_stream_error_info(error_type: str) -> tuple[str, str]:
+def get_stream_error_info(error_type: str, original_message: str = None) -> tuple[str, str]:
     """
     根据错误类型获取错误码和用户友好的错误信息
     
     【新增 2026-04-01 小沈】
     用于 chat_stream_query.py 中从 ERROR_TYPE_MAP 获取错误信息
     
+    【重构 2026-04-10 小沈】
+    增加 original_message 参数，优先使用原始错误消息
+    
     Args:
-        error_type: 错误类型标识（如 connect_error, protocol_error, timeout_error 等）
+        error_type: 错误类型标识（如 connect_error, protocol_error, api_error_429 等）
+        original_message: 原始错误消息，如果有则优先使用
     
     Returns:
         (error_code, message) 元组
-        - error_code: 5种类型之一（timeout/connect/protocol/server/network）
-        - message: 用户友好的错误提示
+        - error_code: 错误类型（timeout/connect/protocol/server/network）
+        - message: 错误消息，优先使用原始消息
     """
+    # 获取错误类型对应的错误码
     if error_type in ERROR_TYPE_MAP:
-        return ERROR_TYPE_MAP[error_type]
+        error_code, default_message = ERROR_TYPE_MAP[error_type]
     else:
-        # 默认返回 server 类型
-        return 'server', f"服务调用失败，请稍后重试"
+        error_code, default_message = 'server', f"服务调用失败，请稍后重试"
+    
+    # 优先使用原始错误消息，保留API返回的真实信息
+    if original_message and original_message.strip():
+        message = original_message
+    else:
+        message = default_message
+    
+    return error_code, message
 
 
 def classify_llm_error(error_info: str) -> str:
