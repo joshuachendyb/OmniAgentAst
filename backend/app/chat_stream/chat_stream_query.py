@@ -16,7 +16,7 @@ from app.services.llm_core import Message
 from app.utils.retry_controller import RetryController
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
 from app.chat_stream.chat_helpers import create_timestamp, create_final_response
-from app.chat_stream.error_handler import create_error_result
+from app.chat_stream.error_handler import create_session_error_result
 from app.chat_stream.incident_handler import (
     create_incident_data,
     check_and_yield_if_paused,
@@ -321,7 +321,7 @@ async def chat_stream_query(
         # 【小沈重构 2026-04-10】使用统一的错误处理函数
         # 统一解析错误码、组装错误信息、创建error_response和error_step
         error_step_value = next_step()
-        error_response, error_step = create_error_result(
+        error_response, error_step = create_session_error_result(
             original_error=last_error,
             error_step_type=last_error_type,
             step_num=error_step_value,

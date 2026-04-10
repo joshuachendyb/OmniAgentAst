@@ -20,6 +20,7 @@ from app.services.agent.types import AgentStatus
 from app.services.agent.tool_parser import ToolParser
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
+from app.chat_stream.error_handler import create_tool_error_result
 from app.utils.prompt_logger import get_prompt_logger
 
 
@@ -232,19 +233,33 @@ class BaseAgent(ABC):
                 self.status = AgentStatus.EXECUTING
                 execution_result = await self._execute_tool(tool_name, tool_params)
                 
-                # yield action_tool
-                yield {
-                    "type": "action_tool",
-                    # "content": action_tool,  # 【小强删除 2026-04-08】content与tool_name重复，后端已删除
-                    "step": step_count,
-                    "timestamp": current_time,
-                    "tool_name": tool_name,
-                    "tool_params": tool_params,
-                    "execution_status": execution_result.get("status", "success"),
-                    "summary": execution_result.get("summary", ""),
-                    "raw_data": execution_result.get("data"),
-                    "action_retry_count": execution_result.get("retry_count", 0)
-                }
+                # 根据执行结果构建 action_tool
+                exec_status = execution_result.get("status", "success")
+                
+                if exec_status == "error":
+                    # 工具执行失败 - 使用统一函数 (【小沈重构 2026-04-10】)
+                    action_tool_result = create_tool_error_result(
+                        tool_name=tool_name,
+                        error_message=execution_result.get("summary", "执行失败"),
+                        step_num=step_count,
+                        tool_params=tool_params,
+                        retry_count=execution_result.get("retry_count", 0),
+                        raw_data=execution_result.get("data")
+                    )
+                    yield action_tool_result
+                else:
+                    # 工具执行成功 - 保持原有格式
+                    yield {
+                        "type": "action_tool",
+                        "step": step_count,
+                        "timestamp": current_time,
+                        "tool_name": tool_name,
+                        "tool_params": tool_params,
+                        "execution_status": "success",
+                        "summary": execution_result.get("summary", ""),
+                        "raw_data": execution_result.get("data"),
+                        "action_retry_count": 0
+                    }
                 
                 # ========== Observation 阶段 ==========
                 # 【修复 2026-03-25】把实际执行数据添加到 observation，让 LLM 能根据结果更新 thought

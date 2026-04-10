@@ -467,7 +467,7 @@ def resolve_http_error_type(error_message: str) -> Optional[str]:
     return None
 
 
-def create_error_result(
+def create_session_error_result(
     original_error: Optional[str],
     error_step_type: str,
     step_num: int,
@@ -480,15 +480,25 @@ def create_error_result(
     retry_after: int = 3
 ) -> tuple[str, Dict[str, Any]]:
     """
-    统一的错误处理函数 - 解析错误码、组装错误信息、创建错误响应和步骤
+    统一的会话级错误处理函数
     
-    【新增 2026-04-10 小沈】
-    统一错误处理流程：
+    【新增 2026-04-10 小沈】统一错误处理流程：
     1. 解析错误码（调用 resolve_http_error_type）
     2. 组装错误信息（调用 get_stream_error_info）
     3. 处理特殊情况（如 idle_timeout）
     4. 创建 error_response（yield给前端）
     5. 创建 error_step（保存到数据库）
+    
+    用于：
+    - 聊天API超时耗尽
+    - 认证/权限失败
+    - 安全拦截
+    - API完全不可用（429、500等）
+    - 功能未实现
+    
+    特点：
+    - 发生错误后就是最后一步
+    - yield给前端 + 保存到DB + 结束会话
     
     Args:
         original_error: 原始错误消息（来自API或异常）
@@ -613,3 +623,69 @@ def create_error_from_exception(
     )
     
     return error_response, error_step
+
+
+def create_tool_error_result(
+    tool_name: str,
+    error_message: str,
+    step_num: int,
+    tool_params: Optional[Dict[str, Any]] = None,
+    retry_count: int = 0,
+    max_retries: int = 3,
+    raw_data: Any = None
+) -> Dict[str, Any]:
+    """
+    统一的工具级错误处理函数
+    
+    【新增 2026-04-10 小沈】
+    
+    用途：文件操作失败、网络请求失败、命令执行错误
+    
+    特点：
+    - 发生错误 ≠ 最后一步
+    - LLM会收到这个作为 observation
+    - LLM决定：继续循环 or 进入final
+    - 复用 format_action_tool_sse() 的字段格式
+    
+    返回：可直接yield的action_tool格式字典
+    
+    Args:
+        tool_name: 工具名称
+        error_message: 错误消息
+        step_num: 步骤序号
+        tool_params: 工具参数（可选）
+        retry_count: 当前重试次数（后续扩展用）
+        max_retries: 最大重试次数（后续扩展用）
+        raw_data: 详细错误信息（可选）
+    
+    Returns:
+        可直接yield的action_tool格式字典，包含：
+        - type: 'action_tool'
+        - step: 步骤序号
+        - timestamp: 时间戳
+        - tool_name: 工具名称
+        - tool_params: 工具参数
+        - execution_status: 'error'
+        - summary: 错误摘要
+        - raw_data: 详细错误信息
+        - action_retry_count: 重试次数
+    """
+    # 构建错误摘要
+    can_retry = retry_count < max_retries
+    if can_retry:
+        summary = f"[错误] {tool_name} 执行失败: {error_message}，正在重试 ({retry_count + 1}/{max_retries})..."
+    else:
+        summary = f"[错误] {tool_name} 执行失败: {error_message}，已重试{max_retries}次"
+    
+    # 返回dict，可直接yield
+    return {
+        'type': 'action_tool',
+        'step': step_num,
+        'timestamp': create_timestamp(),
+        'tool_name': tool_name,
+        'tool_params': tool_params or {},
+        'execution_status': 'error',  # 标记为错误
+        'summary': summary,
+        'raw_data': raw_data or error_message,
+        'action_retry_count': retry_count
+    }
