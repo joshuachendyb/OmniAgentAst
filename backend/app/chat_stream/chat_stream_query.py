@@ -329,12 +329,8 @@ async def chat_stream_query(
             final_error_type = resolved_error_type if resolved_error_type else last_error_type
             
             # 使用 get_stream_error_info() 获取错误信息
-            error_type, error_message = get_stream_error_info(final_error_type)
-            
-            # 【小沈修复 2026-04-10】优先使用原始错误消息，保留API返回的真实信息
-            # 只有当原始错误消息为空时才使用我们的友好提示
-            if last_error and last_error.strip():
-                error_message = last_error
+            # 传入原始错误消息，由函数统一处理优先使用原始消息
+            error_type, error_message = get_stream_error_info(final_error_type, last_error)
             
             # idle_timeout 需要动态显示实际超时值和重试次数
             if last_error_type == 'idle_timeout':
