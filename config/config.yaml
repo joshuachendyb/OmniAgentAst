@@ -1,6 +1,6 @@
 ai:
   provider: dmxapi
-  model: kimi-k2.5-free
+  model: MiniMax-M2.7-free
   dmxapi:
     api_base: https://www.dmxapi.cn/v1
     api_key: sk-N2cFYdEXiCRQ2gKUCBTwnP3arxfwesLHBGntk1tk8X3m2gS1
