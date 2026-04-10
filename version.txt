@@ -1,3 +1,77 @@
+v0.8.89
+
+更新时间：2026-04-10 09:29:39
+
+更新内容：
+
+## 1. 创建create_error_result统一错误处理函数 - 小沈-2026-04-10
+
+### 1.1 问题
+
+之前错误处理流程分散在多处：
+- 错误码解析在第326行
+- 错误信息组装在第333行
+- idle_timeout特殊处理在第336-339行
+- yield给前端在第349-357行
+- 保存到数据库在第360-370行
+
+### 1.2 修复
+
+**新增函数**: `error_handler.py` 新增 `create_error_result()`
+
+统一处理：
+1. 解析错误码（调用 resolve_http_error_type）
+2. 组装错误信息（调用 get_stream_error_info）
+3. 处理特殊情况（idle_timeout动态消息）
+4. 创建 error_response（yield给前端）
+5. 创建 error_step（保存到数据库）
+
+### 1.3 使用方式
+
+**修改前**（分散处理，约45行）：
+```python
+resolved_error_type = resolve_http_error_type(last_error)
+final_error_type = resolved_error_type if resolved_error_type else last_error_type
+error_type, error_message = get_stream_error_info(final_error_type, last_error)
+if last_error_type == 'idle_timeout':
+    # 特殊处理...
+yield create_error_response(...)
+error_step = create_error_step(...)
+await add_step_and_save(error_step, ...)
+```
+
+**修改后**（统一调用，约10行）：
+```python
+error_response, error_step = create_error_result(
+    original_error=last_error,
+    error_step_type=last_error_type,
+    step_num=error_step_value,
+    model=ai_service.model,
+    provider=ai_service.provider,
+    display_name=display_name,
+    chat_timeout=chat_timeout,
+    max_retries=max_retries
+)
+yield error_response
+await add_step_and_save(error_step, ...)
+```
+
+### 1.4 Commit
+
+| Commit | 说明 |
+|--------|------|
+| 0829c023 | refactor: 创建create_error_result统一错误处理函数-小沈-2026-04-10 |
+
+### 1.5 测试验证
+
+| 测试项 | 结果 |
+|-------|------|
+| test_error_handler.py | ✅ 43 passed |
+
+参与开发：小沈
+
+---
+
 v0.8.88
 
 更新时间：2026-04-10 09:25:00
