@@ -354,7 +354,8 @@ def get_stream_error_info(error_type: str, original_message: str = None) -> tupl
         if original_info:
             message = f"{default_message}\n原始信息: {original_info}"
         else:
-            message = original_message
+            # 【修复 2026-04-10】提取不到时仍用默认提示，不直接用原始消息
+            message = default_message
     else:
         message = default_message
     
