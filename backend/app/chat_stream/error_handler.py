@@ -356,44 +356,6 @@ def get_stream_error_info(error_type: str, original_message: str = None) -> tupl
     return error_code, message
 
 
-def classify_llm_error(error_info: str) -> str:
-    """
-    根据 LLM 返回的错误信息分类错误类型
-    
-    【新增 2026-04-01 小沈】
-    用于 llm_strategies.py 中分类 LLM 返回的错误
-    
-    Args:
-        error_info: LLM 返回的错误信息（如 "ReadTimeout", "ConnectError", ""）
-    
-    Returns:
-        error_type: 错误类型标识，对应 ERROR_TYPE_MAP 的 key
-    """
-    if not error_info:
-        # 没有具体错误信息，按空响应处理
-        return 'empty_response'
-    
-    error_lower = error_info.lower()
-    
-    # 按优先级匹配
-    if 'timeout' in error_lower or 'timed out' in error_lower:
-        return 'timeout_error'
-    elif 'connect' in error_lower:
-        return 'connect_error'
-    elif 'read' in error_lower:
-        return 'read_error'
-    elif 'write' in error_lower:
-        return 'write_error'
-    elif 'protocol' in error_lower:
-        return 'protocol_error'
-    elif 'proxy' in error_lower:
-        return 'proxy_error'
-    elif 'network' in error_lower or 'dns' in error_lower or 'refused' in error_lower:
-        return 'network_error'
-    else:
-        return 'unknown'
-
-
 def resolve_http_error_type(error_message: str) -> Optional[str]:
     """
     从错误消息字符串中解析并返回 HTTP 错误类型标识
