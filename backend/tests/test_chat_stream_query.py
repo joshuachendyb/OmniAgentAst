@@ -30,9 +30,9 @@ class TestChatStreamQueryImport:
 
     def test_import_error_handler(self):
         """测试 error_handler 可以正确导入"""
-        from app.chat_stream.error_handler import create_error_response, get_user_friendly_error
+        from app.chat_stream.error_handler import create_error_response, get_function_call_error_info
         assert create_error_response is not None
-        assert get_user_friendly_error is not None
+        assert get_function_call_error_info is not None
 
     def test_import_incident_handler(self):
         """测试 incident_handler 可以正确导入"""
@@ -186,28 +186,28 @@ class TestCreateErrorResponse:
         assert "retryable" in result
 
 
-class TestGetUserFriendlyError:
-    """测试 get_user_friendly_error 函数"""
+class TestGetFunctionCallErrorInfo:
+    """测试 get_function_call_error_info 函数"""
 
     def test_timeout_error(self):
         """测试超时错误"""
-        from app.chat_stream.error_handler import get_user_friendly_error
+        from app.chat_stream.error_handler import get_function_call_error_info
         error = TimeoutError("连接超时")
-        result = get_user_friendly_error(error)
+        result = get_function_call_error_info(error)
         assert result['error_type'] == 'network'  # 根据实际实现
 
     def test_connection_error(self):
         """测试连接错误"""
-        from app.chat_stream.error_handler import get_user_friendly_error
+        from app.chat_stream.error_handler import get_function_call_error_info
         error = ConnectionError("连接失败")
-        result = get_user_friendly_error(error)
+        result = get_function_call_error_info(error)
         assert result['error_type'] == 'network'  # 根据实际实现
 
     def test_generic_exception(self):
         """测试通用异常"""
-        from app.chat_stream.error_handler import get_user_friendly_error
+        from app.chat_stream.error_handler import get_function_call_error_info
         error = ValueError("未知错误")
-        result = get_user_friendly_error(error)
+        result = get_function_call_error_info(error)
         assert 'message' in result
 
 
