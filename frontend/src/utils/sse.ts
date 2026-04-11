@@ -1043,8 +1043,9 @@ const processSSEData = (
 
       // 【小沈修复 2026-04-11】新增：action_tool类型处理
       case "action_tool": {
-        const receiveTime = Date.now();  // 【3】收到数据时间（开始点）
+        const receiveTime = Date.now();  // 【收到数据】时间
         const actionStepNum = step.step;  // step 序号
+        const stepLabel = ` [type=action_tool] [step=${actionStepNum}]`;
         
         step.tool_name = rawData.tool_name || "";
         step.tool_params = rawData.tool_params || {};
@@ -1053,29 +1054,32 @@ const processSSEData = (
         step.raw_data = rawData.raw_data;
         step.action_retry_count = rawData.action_retry_count;
         
-        // 【5】ExecutionSteps保存开始时间
+        // 【红色】收到数据
+        console.log(`%c[ACTION_TOOL]${stepLabel} [收到数据] 时间=${new Date(receiveTime).toLocaleTimeString()}`, 'color: red; font-weight: bold;');
+        
+        // 【蓝色】ExecutionSteps保存开始时间
         const execStepsStartTime = Date.now();
-        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [ExecutionSteps保存开始] 时间=${new Date(execStepsStartTime).toLocaleTimeString()}`);
+        console.log(`%c[ACTION_TOOL]${stepLabel} [ExecutionSteps保存开始] 时间=${new Date(execStepsStartTime).toLocaleTimeString()}`, 'color: blue;');
         
         setExecutionSteps((prev) => {
-          // 【5.1】ExecutionSteps保存完成
+          // 【蓝色】ExecutionSteps保存完成
           const execStepsDoneTime = Date.now();
           const execStepsDuration = execStepsDoneTime - execStepsStartTime;
-          console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [ExecutionSteps保存完成] 完成=${new Date(execStepsDoneTime).toLocaleTimeString()} 耗时=${execStepsDuration}ms`);
+          console.log(`%c[ACTION_TOOL]${stepLabel} [ExecutionSteps保存完成] 完成=${new Date(execStepsDoneTime).toLocaleTimeString()} 耗时=${execStepsDuration}ms`, 'color: blue;');
           
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
           
-          // 【4】sessionStorage保存开始时间
+          // 【紫色】sessionStorage保存开始时间
           const storageStartTime = Date.now();
-          console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [sessionStorage保存开始] 时间=${new Date(storageStartTime).toLocaleTimeString()}`);
+          console.log(`%c[ACTION_TOOL]${stepLabel} [sessionStorage保存开始] 时间=${new Date(storageStartTime).toLocaleTimeString()}`, 'color: purple;');
           
           setTimeout(() => {
             try {
-              // 【4.1】sessionStorage保存完成
+              // 【紫色】sessionStorage保存完成
               const storageDoneTime = Date.now();
               const storageDuration = storageDoneTime - storageStartTime;
-              console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [sessionStorage保存完成] 完成=${new Date(storageDoneTime).toLocaleTimeString()} 耗时=${storageDuration}ms`);
+              console.log(`%c[ACTION_TOOL]${stepLabel} [sessionStorage保存完成] 完成=${new Date(storageDoneTime).toLocaleTimeString()} 耗时=${storageDuration}ms`, 'color: purple;');
               saveStepsToStorage?.(newSteps);
             } catch (e) {
               console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
@@ -1084,20 +1088,17 @@ const processSSEData = (
           return newSteps;
         });
         
-        // 【3】渲染开始时间点
+        // 【青色】渲染开始时间点
         const renderStartTime = Date.now();
-        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [渲染开始] 时间=${new Date(renderStartTime).toLocaleTimeString()}`);
+        console.log(`%c[ACTION_TOOL]${stepLabel} [渲染开始] 时间=${new Date(renderStartTime).toLocaleTimeString()}`, 'color: cyan;');
         
         onStep?.(step);
         onShowSteps?.(true);
         
-        // 【3.1】渲染完成时间点
+        // 【青色】渲染完成时间点
         const renderDoneTime = Date.now();
         const renderDuration = renderDoneTime - renderStartTime;
-        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [渲染完成] 完成=${new Date(renderDoneTime).toLocaleTimeString()} 耗时=${renderDuration}ms`);
-        
-        // 记录收到数据时间
-        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [收到数据] 时间=${new Date(receiveTime).toLocaleTimeString()}`);
+        console.log(`%c[ACTION_TOOL]${stepLabel} [渲染完成] 完成=${new Date(renderDoneTime).toLocaleTimeString()} 耗时=${renderDuration}ms`, 'color: cyan; font-weight: bold;');
         
         break;
       }
