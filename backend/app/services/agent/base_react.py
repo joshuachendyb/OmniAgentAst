@@ -20,7 +20,7 @@ from app.services.agent.types import AgentStatus
 from app.services.agent.tool_parser import ToolParser
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
-from app.chat_stream.error_handler import create_tool_error_result
+from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
 from app.utils.prompt_logger import get_prompt_logger
 
 
@@ -43,6 +43,10 @@ class BaseAgent(ABC):
         self._lock = asyncio.Lock()
         
         self.parser = ToolParser()
+        
+        # 【重构 2026-04-11 小沈】解析重试相关参数
+        self.parse_retry_count = 0  # 解析重试计数器
+        self.max_parse_retries = 3   # 最大重试次数
     
     # ===== 抽象方法（子类必须实现）=====
     
@@ -121,7 +125,17 @@ class BaseAgent(ABC):
         2. Action - 执行工具
         3. Observation - LLM 根据结果更新思考
         
-        【修复 2026-03-25】：observation 包含实际执行数据，让 LLM 能根据结果更新 thought
+        【重构 2026-04-11 小沈】按照"先 break → 循环外 yield"原则重构：
+        - 场景1-4（错误场景）：循环内 break → 循环外 yield error
+        - 场景5（正常完成）：循环内 break → 循环外 yield final
+        - yield error/final 后就是最后一个 step，不需要额外的 final step
+        
+        场景编号：
+        1. 未捕获异常 - except块捕获
+        2. LLM返回空响应
+        3. 超过最大步数
+        4. 解析失败 - 重试3次
+        5. 正常完成（finish）
         """
         # 初始化状态
         self.steps = []
@@ -145,66 +159,67 @@ class BaseAgent(ABC):
         
         step_count = 0
         
+        # 循环外变量（用于保存需要循环外处理的值）
+        last_error = None
+        last_response = None
+        thought_content = ""
+        tool_name = "finish"
+        tool_params = {}
+        
+        # ===== 场景1：未捕获异常 (try...except包裹整个循环) =====
         try:
-            while step_count < max_steps:
+            while True:
+                # ===== 每次迭代开始时重置计数器 =====
+                self.parse_retry_count = 0
+                
+                # ===== 场景3：每次循环开始检查最大步数 =====
+                if step_count >= max_steps:
+                    last_error = "max_steps_exceeded"
+                    break  # 达到最大步数，退出
+                
                 step_count += 1
                 
-                # ========== Thought 阶段 ==========
+                # ===== 调用LLM =====
                 self.status = AgentStatus.THINKING
                 response = await self._get_llm_response()
                 
-                # 【修复2026-04-08 小沈】检查response是否为None或空
+                # ===== 场景2：LLM返回空响应 =====
                 if not response:
                     logger.error(f"LLM返回空响应: {response}")
-                    yield {
-                        "type": "error",
-                        "step": step_count,
-                        "timestamp": create_timestamp(),
-                        "code": "EMPTY_RESPONSE",
-                        "message": "AI服务返回空响应，请稍后重试"
-                    }
-                    break
+                    last_error = "empty_response"
+                    break  # 空响应，退出
                 
-                # 解析响应 - 使用统一的错误处理方法
+                # ===== 场景4：解析失败（重试3次机制）=====
                 try:
                     parsed = self.parser.parse_response(response)
                 except ValueError as e:
-                    # 使用ToolParser统一处理解析错误
-                    error_result = ToolParser.handle_parse_error(response, e, logger)
-                    error_info = error_result["parsed_obs"]
-                    
                     # 保存原始response到conversation_history
-                    if error_result["save_to_history"]:
-                        self.conversation_history.append({"role": "assistant", "content": response})
+                    self.conversation_history.append({"role": "assistant", "content": response})
                     
-                    # 发送thought事件（显示错误信息）
-                    yield {
-                        "type": "thought",
-                        "step": step_count,
-                        "timestamp": create_timestamp(),
-                        "content": error_info["content"],
-                        "tool_name": error_info.get("tool_name", "finish"),
-                        "tool_params": error_info.get("tool_params", {}),
-                        "parse_error": error_result["error_type"]  # 添加错误类型标记
-                    }
+                    # 添加错误提示到历史，让LLM重新尝试
+                    self._add_observation_to_history(f"Parse error: {str(e)}. Please respond with valid JSON format.")
                     
-                    # 添加observation提示，让LLM可以重新响应
-                    self._add_observation_to_history(f"Parse error: {error_result['error_message']}. Please respond with valid JSON format.")
+                    # 重试计数器+1
+                    self.parse_retry_count += 1
                     
-                    # 【修复2026-04-08 小沈】解析失败时yield error并退出，避免无限循环
-                    # 原：continue 会跳过第203行的 finish 判断，导致无限循环
-                    yield {
-                        "type": "final",
-                        "timestamp": create_timestamp(),
-                        "content": error_info["content"]
-                    }
-                    break
+                    # 重试次数 >= 3？退出循环；否则继续循环
+                    if self.parse_retry_count >= self.max_parse_retries:
+                        last_error = "parse_error"
+                        break  # 重试次数用尽，退出循环
+                    continue  # 继续循环，让LLM重新尝试
                 
+                # ===== 获取 parsed 结果 =====
                 thought_content = parsed.get("content", "")
                 tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
                 tool_params = parsed.get("tool_params", parsed.get("params", {}))
                 
-                # yield thought
+                # ===== 场景5：正常完成（finish）=====
+                # 发现 finish 时，不 yield thought，只 break
+                if tool_name == "finish":
+                    last_response = response  # 保存用于后续使用
+                    break  # 直接退出，不yield thought
+                
+                # ===== 正常流转：yield thought (非finish时) =====
                 current_time = create_timestamp()
                 yield {
                     "type": "thought",
@@ -215,19 +230,8 @@ class BaseAgent(ABC):
                     "tool_params": tool_params
                 }
                 
-                # 【修复 2026-03-31 小沈】将 LLM 的 thought 响应加入 conversation_history
-                # 问题：LLM 下一轮看不到自己的思考过程，导致上下文丢失
-                # 修复：在 yield thought 后立即添加 assistant 响应到历史
+                # 将 LLM 的 thought 响应加入 conversation_history
                 self.conversation_history.append({"role": "assistant", "content": response})
-                
-                # 判断是否结束
-                if tool_name == "finish":
-                    yield {
-                        "type": "final",
-                        "timestamp": current_time,
-                        "content": tool_params.get("result", thought_content)
-                    }
-                    break
                 
                 # ========== Action 阶段 ==========
                 self.status = AgentStatus.EXECUTING
@@ -237,7 +241,7 @@ class BaseAgent(ABC):
                 exec_status = execution_result.get("status", "success")
                 
                 if exec_status == "error":
-                    # 工具执行失败 - 使用统一函数 (【小沈重构 2026-04-10】)
+                    # 工具执行失败 - 使用统一函数
                     action_tool_result = create_tool_error_result(
                         tool_name=tool_name,
                         error_message=execution_result.get("summary", "执行失败"),
@@ -245,7 +249,7 @@ class BaseAgent(ABC):
                         tool_params=tool_params,
                         retry_count=execution_result.get("retry_count", 0),
                         raw_data=execution_result.get("data"),
-                        timestamp=current_time  # 使用统一的时间戳
+                        timestamp=current_time
                     )
                     yield action_tool_result
                 else:
@@ -263,14 +267,13 @@ class BaseAgent(ABC):
                     }
                 
                 # ========== Observation 阶段 ==========
-                # 【修复 2026-03-25】把实际执行数据添加到 observation，让 LLM 能根据结果更新 thought
                 raw_data = execution_result.get('data')
                 if raw_data:
                     observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}\n实际数据: {raw_data}"
                 else:
                     observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}"
                 
-                # 更新消息历史：先添加 assistant (thought)，后添加 observation (user)
+                # 更新消息历史
                 self._add_observation_to_history(observation_text)
                 
                 # 记录观察结果到prompt日志
@@ -282,41 +285,81 @@ class BaseAgent(ABC):
                     tool_params=tool_params
                 )
                 
-                # ========== Observation 阶段（简化版）==========
-                # 【修复 2026-04-07 小沈】删除第二次LLM调用
-                # 问题：每step调用2次LLM，token消耗翻倍
-                # 修复：直接使用工具执行结果作为observation，下一轮循环自动调用LLM
-                current_time = create_timestamp()
+                # yield observation
                 yield {
                     "type": "observation",
                     "step": step_count,
-                    "timestamp": current_time,
+                    "timestamp": create_timestamp(),
                     "tool_name": tool_name,
                     "content": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}"
                 }
 
                 self._trim_history()
+        
+            # ===== 循环外：统一处理退出场景 =====
             
-            # 超过最大步数
-            if step_count >= max_steps:
+            # 场景5：正常完成（发现finish时不yield thought，这里只需要yield final）
+            if tool_name == "finish":
                 yield {
-                    "type": "error",
+                    "type": "final",
                     "timestamp": create_timestamp(),
-                    "code": "MAX_STEPS_EXCEEDED",
-                    "message": f"已达到最大迭代次数 {max_steps}"
+                    "content": tool_params.get("result", thought_content)
                 }
-                
+                self._on_after_loop()
+                return
+            
+            # 场景2：LLM返回空响应错误
+            if last_error == "empty_response":
+                error_response, error_step = create_session_error_result(
+                    original_error="AI服务返回空响应",
+                    error_step_type='empty_response',
+                    step_num=step_count
+                )
+                yield error_response
+                self._on_after_loop()
+                return
+            
+            # 场景4：解析失败（重试3次后仍失败）
+            if last_error == "parse_error":
+                error_response, error_step = create_session_error_result(
+                    original_error=f"解析失败（已重试{self.max_parse_retries}次）",
+                    error_step_type='parse_error',
+                    step_num=step_count
+                )
+                yield error_response
+                self._on_after_loop()
+                return
+            
+            # 场景3：超过最大步数
+            if step_count >= max_steps:
+                error_response, error_step = create_session_error_result(
+                    original_error=f"已达到最大迭代次数 {max_steps}",
+                    error_step_type='max_steps_exceeded',
+                    step_num=step_count
+                )
+                yield error_response
+                self._on_after_loop()
+                return
+            
+            # 场景1：未捕获异常 - 正常情况下不会执行到这里
+            # 如果执行到这里，说明循环正常结束但没有处理任何退出场景
+            # 这是一个安全保护分支
+    
         except Exception as e:
+            # 【重构 2026-04-11 小沈】场景1：未捕获异常
+            # except块中只做记录日志和yield error
             logger.error(f"Agent run_stream error: {e}", exc_info=True)
-            yield {
-                "type": "error",
-                "timestamp": create_timestamp(),
-                "code": "INTERNAL_ERROR",
-                "message": str(e)
-            }
-        finally:
-            # Hook: 循环结束后调用
+            
+            error_response, error_step = create_error_from_exception(
+                error=e,
+                step_num=step_count,
+                model=None,
+                provider=None
+            )
+            yield error_response
+            
             self._on_after_loop()
+            return
     
     # ===== 对话历史管理 =====
 

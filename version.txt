@@ -1,3 +1,77 @@
+v0.8.93
+
+更新时间：2026-04-11 12:21:05
+
+更新内容：
+
+## 1. base_react.py P1级问题修复 - 变量初始化 + 退出标志 - 小沈-2026-04-11
+
+### 1.1 问题
+
+小健深度审查发现P1级问题：
+- 循环外变量未初始化：从场景2/3/4退出时，tool_name/tool_params/thought_content未定义
+- 场景3未设置last_error：max_steps检查break后没有设置退出标志
+
+### 1.2 修复
+
+**修改文件**: `backend/app/services/agent/base_react.py`
+
+| 修复项 | 位置 | 修复内容 |
+|--------|------|---------|
+| 变量初始化 | 第165-167行 | 添加`thought_content = ""`, `tool_name = "finish"`, `tool_params = {}` |
+| 场景3退出标志 | 第177行 | 添加`last_error = "max_steps_exceeded"` |
+| 场景4退出标志 | 第207行 | 确认已有`last_error = "parse_error"` |
+
+### 1.3 测试验证
+
+| 测试项 | 结果 |
+|-------|------|
+| test_react_refactor.py | ✅ 49 passed, 4 skipped |
+| 场景1测试 | ✅ 2 passed |
+| 场景2测试 | ✅ 2 passed |
+| 场景3测试 | ✅ 2 passed |
+| 场景4测试 | ✅ 4 passed |
+| 场景5测试 | ✅ 3 passed |
+
+### 1.4 Commit
+
+本次修复为内部代码重构，无新增commit
+
+参与开发：小沈（代码修复）、小健（代码审查）
+
+---
+
+## 2. Omni错误分类处理设计方案v1.37完善 - 小沈-2026-04-11
+
+### 2.1 文档更新
+
+**修改文件**: `doc-react步骤/Omni错误分类处理的设计方案-小沈-2026-04-10.md`
+
+**更新内容**:
+- v1.33-v1.37：统一场景编号、修正12.7节代码结构、修正场景5不yield thought
+- 新增12.7.1/12.7.2/12.7.3节详细代码示意
+
+### 2.2 核心原则
+
+"先 break → 循环外 yield"原则：
+- 场景1-4（错误场景）：循环内 break → 循环外 yield error
+- 场景5（正常完成）：循环内 break → 循环外 yield final
+- yield error/final 后就是最后一个 step
+
+### 2.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 05b6b2a0 | docs: fix 12.7.1/12.5.5/12.6 align with 12.7.2 |
+| de4aca96 | docs: update error classification v1.35-finish no yield thought |
+| 7e41de37 | docs: 更新错误分类设计方案v1.31-ReAct循环代码片段 |
+| 477556b3 | docs: 更新错误分类设计方案v1.29-修正小沈5个问题 |
+| 140327d5 | docs: 更新错误分类设计方案v1.25-彻底废除yield thought-final |
+
+参与开发：小沈、小资、小强
+
+---
+
 v0.8.92
 
 更新时间：2026-04-10 18:20:00
