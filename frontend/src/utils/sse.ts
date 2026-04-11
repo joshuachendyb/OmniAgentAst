@@ -1034,7 +1034,6 @@ const processSSEData = (
 
       // 【小沈修复 2026-04-11】新增：action_tool类型处理
       case "action_tool": {
-        step.content = rawData.content || "";
         step.tool_name = rawData.tool_name || "";
         step.tool_params = rawData.tool_params || {};
         step.execution_status = rawData.execution_status;
