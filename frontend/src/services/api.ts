@@ -3,6 +3,11 @@
  *
  * 功能：封装所有后端API调用，统一错误处理和类型定义
  *
+ * 错误处理说明：
+ * - 所有API错误统一使用 errorHandler.handleApiError() 处理
+ * - 禁止直接调用 message.error/warning/success/info
+ * - 错误去重、提示样式、重试逻辑由 errorHandler 统一管理
+ *
  * @author 小新
  * @version 2.0.0
  * @since 2026-02-17

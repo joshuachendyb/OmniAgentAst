@@ -8,6 +8,11 @@
  * - 任务中断控制
  * - 标题管理优化（版本控制、锁定状态、来源标记）
  *
+ * 错误处理说明：
+ * - 所有错误统一使用 errorHandler.handleError()/handleApiError() 处理
+ * - 禁止直接调用 message.error/warning/success/info
+ * - 危险操作拦截、安全降级、错误去重由 errorHandler 统一管理
+ *
  * @author 小新
  * @version 3.2.0
  * @since 2026-02-23

@@ -1,12 +1,17 @@
 /**
  * 聊天消息提示工具函数
- * 
+ *
  * 统一管理NewChatContainer中的message.success/error/warning调用
- * 【小强修复 2026-04-11】内部使用errorHandler处理错误
- * 
+ *
+ * 错误处理说明：
+ * - 所有错误提示统一使用 errorHandler 处理
+ * - 禁止直接调用 message.error/warning/success/info
+ * - 本文件是errorHandler的包装层，内部调用handleError/showSuccess
+ *
  * @author 小新
  * @version 1.2.0
  * @since 2026-03-13
+ * @update 2026-04-11 迁移到errorHandler统一处理 - by 小强
  */
 
 import { message } from "antd";
