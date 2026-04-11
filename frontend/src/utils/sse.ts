@@ -10,8 +10,9 @@
  */
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { message } from "antd";
+// import { message } from "antd";  // 已迁移到errorHandler统一处理
 import type { SecurityCheck } from "../types/chat";
+import { handleSSEError as errorHandlerHandleSSE, ErrorType } from "./errorHandler";
 
 // 【小强修复 2026-03-18】sessionStorage key - 用于长时间隐藏页面时备份数据
 // 场景：用户切换到其他应用→页面隐藏→SSE 连接不断开→后端数据持续发送
@@ -196,18 +197,48 @@ export interface PerformanceMetrics {
 
 /**
  * 错误类型分类
- * - idle_timeout: 空闲超时（长时间无数据）
- * - request_timeout: 请求等待超时（等待服务器响应）
- * - network: 网络连接失败
- * - server: 服务器错误
- * - empty_response: 空响应
- * - connection_refused: 连接被拒绝
- * - http_500: 服务器内部错误
+ * 【小强修复 2026-04-11】使用统一错误处理中心
  */
-type ErrorType = "idle_timeout" | "request_timeout" | "network" | "server" | "unknown" | "empty_response" | "connection_refused" | "http_500";
+type SSEErrorType = "idle_timeout" | "request_timeout" | "network" | "server" | "unknown" | "empty_response" | "connection_refused" | "http_500";
+
+/**
+ * 分类错误类型 - 适配errorHandler的分类结果
+ * 【小强修复 2026-04-09】细分超时类型
+ * 【小强修复 2026-04-11】增加 connection_refused 和 http_500，映射到统一ErrorType
+ */
+const classifyError = (error: any): SSEErrorType => {
+  // 使用errorHandler的分类结果进行映射
+  const unifiedType = errorHandlerHandleSSE(error, { reconnectAttempts: 0 }).errorType;
+  
+  // 映射到SSE本地错误类型
+  switch (unifiedType) {
+    case ErrorType.IDLE_TIMEOUT:
+      return "idle_timeout";
+    case ErrorType.REQUEST_TIMEOUT:
+      return "request_timeout";
+    case ErrorType.NETWORK_ERROR:
+    case ErrorType.WEAK_NETWORK:
+      return "network";
+    case ErrorType.CONNECTION_REFUSED:
+    case ErrorType.CONNECTION_RESET:
+      return "connection_refused";
+    case ErrorType.SERVER_500:
+      return "http_500";
+    case ErrorType.SERVER_502:
+    case ErrorType.SERVER_503:
+      return "server";
+    case ErrorType.BACKEND_ERROR:
+      return "empty_response";
+    case ErrorType.REQUEST_ABORT:
+      return "request_timeout";
+    default:
+      return "unknown";
+  }
+};
 
 /**
  * 错误配置 - 定义每种错误类型的处理方式
+ * 【小强修复 2026-04-11】使用统一错误处理中心errorHandler
  */
 interface ErrorConfig {
   retryable: boolean;        // 是否可重试
@@ -218,9 +249,77 @@ interface ErrorConfig {
 }
 
 /**
- * 错误配置映射 - 统一错误处理中心
+ * 统一错误处理函数
+ * 【小强添加 2026-04-11】使用统一错误处理中心errorHandler
+ * 【小强修复 2026-04-11】重构：使用errorHandler.handleSSEError
  */
-const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
+const handleSSEError = (params: {
+  error: any;
+  errorType: SSEErrorType;
+  reconnectAttempts: number;
+  reconnectConfig: ReconnectConfig;
+  pendingMessage: { content: string; sessionId?: string } | null;
+  onReconnect: () => void;
+  onSetReconnectStatus: (status: "idle" | "connecting" | "reconnecting" | "failed") => void;
+  onSetIsConnected: (connected: boolean) => void;
+  onSetIsReceiving: (receiving: boolean) => void;
+  onError: ((error: SSEError) => void) | undefined;
+  reconnectTimeoutRef: React.MutableRefObject<number | null>;
+}) => {
+  const {
+    error,
+    errorType,
+    reconnectAttempts,
+    reconnectConfig,
+    pendingMessage,
+    onReconnect,
+    onSetReconnectStatus,
+    onSetIsConnected,
+    onSetIsReceiving,
+    onError,
+    reconnectTimeoutRef,
+  } = params;
+
+  // 使用统一错误处理中心
+  const result = errorHandlerHandleSSE(error, {
+    reconnectAttempts,
+    maxRetries: reconnectConfig.maxAttempts,
+    onReconnect: () => {
+      onSetReconnectStatus("reconnecting");
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        onReconnect();
+      }, reconnectConfig.baseDelay);
+    },
+  });
+
+  if (!result.handled) {
+    return;
+  }
+
+  // 如果不可重试或已超过最大次数
+  const canRetry = reconnectAttempts < reconnectConfig.maxAttempts && pendingMessage;
+  
+  if (!canRetry) {
+    console.error(`[SSE] 超过最大重试次数(${reconnectConfig.maxAttempts})，停止重连`);
+    onSetReconnectStatus("failed");
+    onSetIsConnected(false);
+    onSetIsReceiving(false);
+    
+    // 调用错误回调
+    onError?.({
+      type: "error",
+      error_type: errorType,
+      message: result.errorType ? ERROR_CONFIG_MAP[errorType]?.showMessage || "连接失败" : "连接失败",
+      code: "CONNECTION_FAILED",
+      timestamp: new Date().toISOString()
+    });
+  }
+};
+
+/**
+ * 获取错误配置 - 兼容SSE本地类型
+ */
+const ERROR_CONFIG_MAP: Record<SSEErrorType, ErrorConfig> = {
   idle_timeout: {
     retryable: true,
     maxRetries: 3,
@@ -272,107 +371,10 @@ const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
 };
 
 /**
- * 统一错误处理函数
- * 【小强添加 2026-04-11】集中处理所有错误类型，统一显示风格和重试逻辑
- */
-const handleSSEError = (params: {
-  error: any;
-  errorType: ErrorType;
-  reconnectAttempts: number;
-  reconnectConfig: ReconnectConfig;
-  pendingMessage: { content: string; sessionId?: string } | null;
-  onReconnect: () => void;
-  onSetReconnectStatus: (status: "idle" | "connecting" | "reconnecting" | "failed") => void;
-  onSetIsConnected: (connected: boolean) => void;
-  onSetIsReceiving: (receiving: boolean) => void;
-  onError: ((error: SSEError) => void) | undefined;
-  reconnectTimeoutRef: React.MutableRefObject<number | null>;
-}) => {
-  const {
-    error,
-    errorType,
-    reconnectAttempts,
-    reconnectConfig,
-    pendingMessage,
-    onReconnect,
-    onSetReconnectStatus,
-    onSetIsConnected,
-    onSetIsReceiving,
-    onError,
-    reconnectTimeoutRef,
-  } = params;
-
-  const errorConfig = ERROR_CONFIG_MAP[errorType];
-  const prefix = "SSE连接:";
-  const fullMessage = `${prefix}${errorConfig.showMessage}`;
-
-  console.error(`[SSE] 错误类型=${errorType}, 已重试=${reconnectAttempts}次, 最大=${errorConfig.maxRetries}`);
-
-  // 检查是否可重试且未超过最大次数
-  if (errorConfig.retryable && reconnectAttempts < errorConfig.maxRetries && pendingMessage) {
-    // 显示警告消息
-    message.warning(`${fullMessage}，${errorConfig.retryDelay / 1000}秒后尝试重连...`);
-    
-    // 设置重连
-    onSetReconnectStatus("reconnecting");
-    reconnectTimeoutRef.current = window.setTimeout(() => {
-      onReconnect();
-    }, errorConfig.retryDelay);
-  } else {
-    // 超过最大重试次数，停止重连
-    console.error(`[SSE] 超过最大重试次数(${errorConfig.maxRetries})，停止重连`);
-    onSetReconnectStatus("failed");
-    onSetIsConnected(false);
-    onSetIsReceiving(false);
-    
-    // 显示错误消息
-    if (errorType === "http_500") {
-      message.error(fullMessage + "，请稍后刷新页面重试");
-    } else if (errorType === "connection_refused") {
-      message.error(fullMessage + "，请检查后端服务后刷新页面");
-    } else {
-      message.error(fullMessage + "，请刷新页面重试");
-    }
-    
-    // 调用错误回调
-    onError?.({
-      type: "error",
-      error_type: errorType,
-      message: fullMessage,
-      code: "CONNECTION_FAILED",
-      timestamp: new Date().toISOString()
-    });
-  }
-};
-
-/**
- * 分类错误类型
- * 【小强修复 2026-04-09】细分超时类型
- * 【小强修复 2026-04-11】增加 connection_refused 和 http_500
- */
-const classifyError = (error: any): ErrorType => {
-  if (error.name === "AbortError") return "request_timeout";
-  if (error.message?.includes("空闲") || error.message?.includes("idle")) return "idle_timeout";
-  if (error.message?.includes("fetch") || error.message?.includes("network")) return "network";
-  if (error.message?.includes("ERR_CONNECTION_REFUSED")) return "connection_refused";
-  if (error.message?.includes("ERR_CONNECTION_RESET")) return "connection_refused";
-  if (error.message?.includes("HTTP")) return "server";
-  // 后端返回的error_type直接使用
-  if (error.error_type === "empty_response") return "empty_response";
-  if (error.error_type === "timeout") return "request_timeout";
-  if (error.error_type === "network") return "network";
-  if (error.error_type === "server") return "server";
-  if (error.response?.status === 500) return "http_500";
-  return "unknown";
-};
-  return "unknown";
-};
-
-/**
  * 获取友好的错误消息
  * 【小强修复 2026-04-09】区分空闲超时和请求等待超时
  */
-const getFriendlyErrorMessage = (errorType: ErrorType, originalMessage: string): string => {
+const getFriendlyErrorMessage = (errorType: SSEErrorType, originalMessage: string): string => {
   const prefix = "SSE连接:";
   switch (errorType) {
     case "idle_timeout":
@@ -731,7 +733,9 @@ export const useSSE = (
     if (reconnectAttemptsRef.current >= config.maxAttempts) {
       console.error("[SSE] 超过最大重连次数");
       setReconnectStatus("failed");
-      message.error("SSE连接: 连接失败，请刷新页面重试");
+      // 使用errorHandler统一处理
+      const error = { message: "SSE连接失败，请刷新页面重试", name: "ConnectionError" };
+      errorHandlerHandleSSE(error, { reconnectAttempts: config.maxAttempts, maxRetries: config.maxAttempts, onReconnect: undefined });
       return;
     }
 
@@ -739,7 +743,9 @@ export const useSSE = (
     const delay = calculateReconnectDelay(attempt, config.baseDelay, config.maxDelay);
     
     setReconnectStatus("reconnecting");
-    message.warning(`正在重新连接 (${attempt + 1}/${config.maxAttempts})...`);
+    // 使用errorHandler统一处理（显示重试警告）
+    const retryWarningError = { message: `正在重新连接 (${attempt + 1}/${config.maxAttempts})...`, name: "RetryWarning" };
+    errorHandlerHandleSSE(retryWarningError, { reconnectAttempts: attempt, maxRetries: config.maxAttempts, onReconnect: undefined });
     
     console.log(`[SSE] 准备重连，attempt=${attempt + 1}, delay=${delay}ms`);
 
@@ -757,7 +763,9 @@ export const useSSE = (
       // 【修复小查问题】防止并发调用
       if (isProcessingRef.current) {
         console.warn("[SSE] 已有进行中的请求，等待完成后重试");
-        message.warning("SSE连接: 请求处理中，请稍后再试");
+        // 使用errorHandler统一处理
+        const error = { message: "请求处理中，请稍后再试", name: "DuplicateClick" };
+        errorHandlerHandleSSE(error, { reconnectAttempts: 0, maxRetries: 0, onReconnect: undefined });
         return;
       }
       isProcessingRef.current = true;

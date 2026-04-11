@@ -2,28 +2,30 @@
  * 聊天消息提示工具函数
  * 
  * 统一管理NewChatContainer中的message.success/error/warning调用
+ * 【小强修复 2026-04-11】内部使用errorHandler处理错误
  * 
  * @author 小新
- * @version 1.0.0
+ * @version 1.2.0
  * @since 2026-03-13
  */
 
 import { message } from "antd";
+import { ErrorType, showSuccess, handleError, classifyError, showMessage, UI_CONFIG } from "./errorHandler";
 
 // ============================================================
 // 成功提示
 // ============================================================
 
 export const showSaveSuccess = (content: string = "保存成功") => {
-  message.success(content);
+  message.success(content, UI_CONFIG.success.duration);
 };
 
 export const showLoadSuccess = (content: string = "加载成功") => {
-  message.success(content);
+  message.success(content, UI_CONFIG.success.duration);
 };
 
 export const showOperationSuccess = (content: string = "操作成功") => {
-  message.success(content);
+  message.success(content, UI_CONFIG.success.duration);
 };
 
 // ============================================================
@@ -31,33 +33,44 @@ export const showOperationSuccess = (content: string = "操作成功") => {
 // ============================================================
 
 export const showSaveError = (content: string = "保存失败，请重试") => {
-  message.error({
-    content,
-    duration: 5,
-  });
+  handleError({ message: content, error_type: ErrorType.SAVE_FAILED });
 };
 
 export const showLoadError = (content: string = "加载失败，请检查网络") => {
+  handleError({ message: content, error_type: ErrorType.LOAD_FAILED });
+};
+
+export const showLoadRetryWarning = (retry: number, maxRetries: number = 3, key?: string) => {
+  const content = `加载失败，正在重试 (${retry}/${maxRetries})...`;
+  message.warning({
+    content,
+    key,
+    duration: 0,
+  });
+};
+
+export const showLoadErrorWithKey = (content: string = "加载失败，请检查网络后重试", key?: string) => {
   message.error({
     content,
-    duration: 5,
+    key,
   });
 };
 
 export const showNetworkError = (content: string = "网络连接异常，请检查网络后重试") => {
-  message.error(content);
+  handleError({ message: content, error_type: ErrorType.NETWORK_ERROR });
 };
 
 export const showConflictError = (content: string = "数据冲突，请刷新页面") => {
-  message.error(content);
+  handleError({ message: content, error_type: ErrorType.SESSION_CONFLICT });
 };
 
 export const showSessionConflict = () => {
-  message.error("会话已被其他用户修改，请刷新页面");
+  handleError({ message: "会话已被其他用户修改，请刷新页面", error_type: ErrorType.SESSION_CONFLICT });
 };
 
 export const showError = (content: string) => {
-  message.error(content);
+  const errorType = classifyError({ message: content });
+  showMessage(errorType, content);
 };
 
 // ============================================================
@@ -65,18 +78,16 @@ export const showError = (content: string) => {
 // ============================================================
 
 export const showWarning = (content: string) => {
-  message.warning(content);
+  handleError({ message: content, error_type: ErrorType.WARNING });
 };
 
 export const showRetryWarning = (retry: number, maxRetries: number = 3) => {
-  message.warning(`保存失败，正在重试 (${retry}/${maxRetries})...`);
+  const content = `保存失败，正在重试 (${retry}/${maxRetries})...`;
+  handleError({ message: content, error_type: ErrorType.RETRY_WARNING });
 };
 
 export const showInputWarning = (content: string) => {
-  message.warning({
-    content,
-    duration: 3,
-  });
+  handleError({ message: content, error_type: ErrorType.WARNING });
 };
 
 // ============================================================
@@ -84,11 +95,11 @@ export const showInputWarning = (content: string) => {
 // ============================================================
 
 export const showInfo = (content: string) => {
-  message.info(content);
+  showMessage(ErrorType.INFO, content);
 };
 
 export const showCachedInfo = (content: string = "已暂存到本地") => {
-  message.info(content);
+  showMessage(ErrorType.INFO, content);
 };
 
 // ============================================================
@@ -152,21 +163,99 @@ export const showTaskControlMessage = (
 ) => {
   if (success) {
     if (action === "pause") {
-      message.success("暂停请求已发送");
+      showSuccess("暂停请求已发送");
     } else if (action === "resume") {
-      message.success("恢复请求已发送");
+      showSuccess("恢复请求已发送");
     } else if (action === "interrupt") {
-      message.success("任务中断请求已发送");
+      showSuccess("任务中断请求已发送");
     }
   } else {
     if (action === "pause") {
-      message.error("暂停请求失败" + (error ? `: ${error}` : ""));
+      handleError({ message: `暂停请求失败${error ? `: ${error}` : ""}`, error_type: ErrorType.TASK_CONTROL_FAILED });
     } else if (action === "resume") {
-      message.error("恢复请求失败" + (error ? `: ${error}` : ""));
+      handleError({ message: `恢复请求失败${error ? `: ${error}` : ""}`, error_type: ErrorType.TASK_CONTROL_FAILED });
     } else if (action === "interrupt") {
-      message.error("中断请求失败" + (error ? `: ${error}` : ""));
+      handleError({ message: `中断请求失败${error ? `: ${error}` : ""}`, error_type: ErrorType.TASK_CONTROL_FAILED });
     }
   }
+};
+
+/**
+ * 显示后端返回的任务控制消息（带动态内容）
+ */
+export const showTaskResultMessage = (action: "pause" | "resume" | "interrupt", resultMessage?: string) => {
+  const defaultMessages = {
+    pause: "任务已暂停",
+    resume: "任务已继续",
+    interrupt: "任务中断请求已发送",
+  };
+  showSuccess(resultMessage || defaultMessages[action]);
+};
+
+/**
+ * 显示任务控制中的信息提示
+ */
+export const showTaskControlInfo = (content: string) => {
+  showInfo(content);
+};
+
+/**
+ * 显示没有进行中任务的警告
+ */
+export const showNoActiveTaskWarning = () => {
+  showWarning("当前没有进行中的任务");
+};
+
+/**
+ * 危险命令取消提示
+ */
+export const showDangerCancelled = () => {
+  showInfo("已取消危险命令的执行");
+};
+
+/**
+ * 新建会话成功提示
+ */
+export const showNewSessionSuccess = (title: string) => {
+  message.success({
+    content: `已创建新会话: ${title}`,
+    duration: UI_CONFIG.success.duration,
+    style: { marginTop: "50vh" },
+  });
+};
+
+/**
+ * 新建会话重试警告
+ */
+export const showNewSessionRetryWarning = (retry: number, maxRetries: number = 3) => {
+  message.warning({
+    content: `创建会话失败，正在重试 (${retry}/${maxRetries})...`,
+    duration: 2,
+  });
+};
+
+/**
+ * 新建会话失败错误
+ */
+export const showNewSessionError = (errorMsg: string = "未知错误") => {
+  message.error({
+    content: `创建会话失败: ${errorMsg}`,
+    duration: UI_CONFIG.error.duration,
+  });
+};
+
+/**
+ * 标题保存成功提示
+ */
+export const showTitleSaved = () => {
+  showSuccess("标题已保存");
+};
+
+/**
+ * 标题更新成功提示
+ */
+export const showTitleUpdated = () => {
+  showSuccess("会话标题已更新");
 };
 
 /**
@@ -177,7 +266,7 @@ export const showTitleSaveResult = (
   isConflict: boolean = false
 ) => {
   if (success) {
-    message.success("标题已保存");
+    showSuccess("标题已保存");
   } else if (isConflict) {
     showSessionConflict();
   } else {
@@ -193,7 +282,7 @@ export const showTitleUpdateResult = (
   isConflict: boolean = false
 ) => {
   if (success) {
-    message.success("会话标题已更新");
+    showSuccess("会话标题已更新");
   } else if (isConflict) {
     showSessionConflict();
   } else {
@@ -211,15 +300,15 @@ export const showSessionResult = (
 ) => {
   if (success) {
     if (action === "create") {
-      message.success({ content: "会话创建成功", key: "session-create" });
+      showSuccess("会话创建成功");
     } else if (action === "load") {
-      message.success({ content: "会话加载成功", key: "session-load" });
+      showSuccess("会话加载成功");
     } else if (action === "refresh") {
-      message.success("会话刷新成功");
+      showSuccess("会话刷新成功");
     }
   } else {
     if (action === "create") {
-      message.error(`创建会话失败${error ? `: ${error}` : ""}`);
+      handleError({ message: `创建会话失败${error ? `: ${error}` : ""}`, error_type: ErrorType.CREATE_SESSION_FAILED });
     } else if (action === "load") {
       showLoadError();
     } else if (action === "refresh") {
