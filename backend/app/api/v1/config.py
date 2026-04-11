@@ -729,9 +729,8 @@ async def get_model_list():
         ModelListResponse: 可用模型列表
     """
     try:
-        # 每次请求时重新加载配置文件，确保获取最新配置
+        # 使用缓存，自动检测变更
         config = get_config_instance()
-        config.reload()
         
         ai_config = config.get('ai', {})
         
@@ -873,9 +872,8 @@ async def get_full_config():
         FullConfigResponse: 包含所有provider和model的完整配置
     """
     try:
-        # 每次请求时重新加载配置文件，确保获取最新配置
+        # 使用缓存，自动检测变更
         config = get_config_instance()
-        config.reload()
         ai_config = config.get('ai', {})
         
         # ====================================================================
