@@ -10,8 +10,8 @@
  */
 
 import axios from "axios";
-import { message } from "antd";
 import type { ExecutionStep } from "../utils/sse";
+import { handleApiError } from "../utils/errorHandler";
 
 // 【小新修复 2026-03-14】统一API地址配置，支持环境变量
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
@@ -45,6 +45,7 @@ api.interceptors.request.use(
 
 /**
  * 响应拦截器 - 统一错误处理
+ * 【小强修复 2026-04-11】使用统一错误处理中心
  */
 api.interceptors.response.use(
   (response) => {
@@ -54,18 +55,10 @@ api.interceptors.response.use(
   (error) => {
     console.error("[API Response Error]", error);
 
-    // 统一错误提示
-    if (error.response?.status === 401) {
-      message.error("API Key无效，请检查配置");
-    } else if (error.response?.status === 429) {
-      message.error("请求太频繁，请稍后再试");
-    } else if (error.code === "ECONNABORTED") {
-      message.error("请求超时，请检查网络");
-    } else {
-      message.error(
-        "操作失败：" + (error.response?.data?.detail || error.message)
-      );
-    }
+    // 使用统一错误处理中心
+    handleApiError(error, {
+      showError: true,
+    });
 
     return Promise.reject(error);
   }

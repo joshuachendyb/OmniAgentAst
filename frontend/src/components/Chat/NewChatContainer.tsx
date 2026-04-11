@@ -45,6 +45,7 @@ import SecurityAlert from "../SecurityAlert";
 import { showSecurityNotification } from "../SecurityNotification";
 import { getRiskLevel } from "../../types/security";
 import { useSSE, ExecutionStep } from "../../utils/sse";
+import { handleError, handleApiError, ErrorType } from "../../utils/errorHandler";
 
 // 【新增 2026-03-13】从独立文件导入类型和工具函数
 import type { Message } from "../../types/chat";
@@ -64,6 +65,21 @@ import {
   showLoadSuccess,
   showNetworkError,
   showSessionConflict,
+  showConflictError,
+  showInfo,
+  showRetryWarning,
+  showTaskControlMessage,
+  showTaskResultMessage,
+  showTaskControlInfo,
+  showNoActiveTaskWarning,
+  showLoadRetryWarning,
+  showLoadErrorWithKey,
+  showDangerCancelled,
+  showNewSessionSuccess,
+  showNewSessionRetryWarning,
+  showNewSessionError,
+  showTitleSaved,
+  showTitleUpdated,
 } from "../../utils/chatMessages";
 
 // 【小强修复 2026-03-31】独立输入框组件，隔离inputValue状态避免父组件重渲染
@@ -430,16 +446,12 @@ const NewChatContainer: React.FC = () => {
             console.error("❌ [保存AI回复] 保存失败:", saveError?.message || saveError);
             console.error("   └─ 保存时使用的会话ID:", currentSessionId);
             
-            // 【小新修复 2026-03-14】分类处理不同错误类型
-            const errorCode = saveError?.response?.status;
-            const errorDetail = saveError?.response?.data?.detail;
+            // 使用统一错误处理中心
+            const errorResult = handleApiError(saveError);
             
-            // 情况1：409版本冲突 - 不重试，直接提示
-            // 情况1：409版本冲突 - 数据被别人改了
-            if (errorCode === 409) {
-              console.error("   └─ 错误类型: 版本冲突（409），数据已被其他修改");
-              message.error("会话数据冲突，请刷新页面");
-              // 尝试从服务器获取最新数据
+            // 根据错误类型进行特殊处理
+            if (errorResult.errorType === ErrorType.SESSION_CONFLICT) {
+              // 409版本冲突 - 尝试从服务器获取最新数据
               try {
                 const sessionData = await sessionApi.getSessionMessages(currentSessionId);
                 if (sessionData.title) setSessionTitle(sessionData.title);
@@ -449,16 +461,14 @@ const NewChatContainer: React.FC = () => {
               return;
             }
             
-            // 情况2：业务错误（404会话不存在, 400参数错误等）
-            if (errorCode === 404 || errorCode === 400) {
-              console.error("   └─ 错误类型: 业务错误（", errorCode, "）:", errorDetail);
-              message.error(errorDetail || "保存失败，请刷新页面");
+            // 如果是需要继续执行的错误（如用户消息保存失败），不阻断流程
+            if (errorResult.shouldContinue) {
+              console.warn("   └─ 保存失败但继续执行:", errorResult.errorType);
               return;
             }
             
-            // 情况3：网络或服务器错误
-            console.error("   └─ 错误类型: 网络或服务器错误（", errorCode || "unknown", "）");
-            message.error("网络或服务器错误，请检查网络");
+            // 其他错误已经通过errorHandler显示提示
+            return;
           }
         } else {
           console.warn("⚠️ [保存AI回复] 跳过保存：缺少必要数据");
@@ -1312,11 +1322,14 @@ const NewChatContainer: React.FC = () => {
       } catch (error: any) {
         console.warn("标题持久化失败:", error);
 
-       // ⭐ 处理409版本冲突错误
-       if (error?.response?.status === 409) {
-        const errorMsg =
-          error.response.data?.detail || "版本冲突，该会话已被其他人修改";
-        message.error(errorMsg);
+        // ⭐ 处理409版本冲突错误
+        if (error?.response?.status === 409) {
+          // 使用统一错误处理中心
+          handleApiError(error, { showError: false });
+          
+          // 显示同步提示 - 使用 chatMessages 工具
+          const errorMsg = error.response.data?.detail || "版本冲突，该会话已被其他人修改";
+          showConflictError(errorMsg);
 
         // ⭐ 从服务器重新获取最新数据
         try {
@@ -1332,7 +1345,7 @@ const NewChatContainer: React.FC = () => {
           }
           // 【小新第二修复 2026-03-02】title_source 由后端动态计算，前端不需要读取
 
-          message.info("已自动同步最新数据，请重试");
+          showInfo("已自动同步最新数据，请重试");
         } catch (syncError) {
           console.error("同步最新数据失败:", syncError);
         }
@@ -1346,10 +1359,13 @@ const NewChatContainer: React.FC = () => {
       setSaveStatus("error");
       setIsSavingTitle(false);
 
+      // 使用统一错误处理中心处理错误
+      handleApiError(error);
+
       if (currentRetry < 3) {
         const newRetry = currentRetry + 1;
         setRetryCount((prev) => ({ ...prev, [retryKey]: newRetry }));
-        message.warning(`保存失败，正在重试 (${newRetry}/3)...`);
+        showRetryWarning(newRetry, 3);
 
         // 延迟1秒后重试
         setTimeout(() => {
@@ -1357,7 +1373,7 @@ const NewChatContainer: React.FC = () => {
         }, 1000);
       } else {
         // 超过重试次数，显示错误
-        message.error("保存失败，请检查网络后重试");
+        showSaveError("保存失败，请检查网络后重试");
         setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
       }
     }
@@ -1482,11 +1498,7 @@ const NewChatContainer: React.FC = () => {
           if (currentRetry < 3) {
             const newRetry = currentRetry + 1;
             setRetryCount((prev) => ({ ...prev, [retryKey]: newRetry }));
-            message.warning({
-              content: `加载失败，正在重试 (${newRetry}/3)...`,
-              key: "session-load",
-              duration: 0,
-            });
+            showLoadRetryWarning(newRetry, 3, "session-load");
 
             // 延迟1秒后重试
             setTimeout(() => {
@@ -1496,10 +1508,7 @@ const NewChatContainer: React.FC = () => {
             // 超过重试次数，显示错误
             setSessionJumpLoading(false);
             isLoadingHistoryRef.current = false; // 解锁
-            message.error({
-              content: "加载会话失败，请检查网络后重试",
-              key: "session-load",
-            });
+            showLoadErrorWithKey("加载会话失败，请检查网络后重试", "session-load");
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
           }
         }
@@ -1669,7 +1678,11 @@ const NewChatContainer: React.FC = () => {
         console.log("✅ 用户消息保存成功, message_id:", saveResult?.message_id);
       } catch (error) {
         console.error("❌ 保存用户消息失败:", error);
-        message.error("用户消息保存失败，但AI请求将继续发送");
+        // 使用统一错误处理中心 - 错误消息保存失败但继续发送AI
+        const result = handleError(error, { source: "api", continueOnError: true });
+        if (!result.shouldContinue) {
+          console.warn("   └─ 保存失败且不能继续");
+        }
       }
     } else {
       console.warn("⚠️ 未找到sessionId，无法保存用户消息:", userMessage.id);
@@ -1713,7 +1726,7 @@ const NewChatContainer: React.FC = () => {
     console.log(`[中断] serverTaskId=${serverTaskId}, taskIdToCancel=${taskIdToCancel}`);
     if (taskIdToCancel) {
       try {
-        message.info("正在中断任务...");
+        showTaskControlInfo("正在中断任务...");
         console.log("[中断] 已显示 '正在中断任务...' 提示");
         
         // 使用统一的 taskControlApi
@@ -1725,19 +1738,15 @@ const NewChatContainer: React.FC = () => {
         console.log("[中断] 已调用 disconnect(true)");
         
         // 显示后端返回的具体消息
-        if (result.message) {
-          message.success(result.message);
-        } else {
-          message.success("任务中断请求已发送");
-        }
+        showTaskResultMessage("interrupt", result.message);
         console.log("[中断] 已显示中断成功提示");
       } catch (error) {
         console.error("[中断] 错误:", error);
-        message.error("发送中断请求失败: " + (error instanceof Error ? error.message : String(error)));
+        showTaskControlMessage("interrupt", false, error instanceof Error ? error.message : String(error));
       }
     } else {
       console.warn("[中断] 没有有效的 taskId，无法中断");
-      message.warning("当前没有进行中的任务");
+      showNoActiveTaskWarning();
     }
   };
 
@@ -1746,7 +1755,7 @@ const NewChatContainer: React.FC = () => {
      */
   const handleTogglePause = async () => {
     if (!serverTaskId) {
-      message.warning("当前没有进行中的任务");
+      showNoActiveTaskWarning();
       return;
     }
 
@@ -1761,11 +1770,7 @@ const NewChatContainer: React.FC = () => {
         isPausedRef.current = true;
         
         // 显示后端返回的具体消息
-        if (result.message) {
-          message.success(result.message);
-        } else {
-          message.success("任务已暂停");
-        }
+        showTaskResultMessage("pause", result.message);
       } else {
         // 继续：发送恢复请求
         const result = await taskControlApi.resume(serverTaskId ?? undefined, sessionId ?? undefined);
@@ -1776,15 +1781,12 @@ const NewChatContainer: React.FC = () => {
         isPausedRef.current = false;
         
         // 显示后端返回的具体消息
-        if (result.message) {
-          message.success(result.message);
-        } else {
-          message.success("任务已继续");
-        }
+        showTaskResultMessage("resume", result.message);
       }
     } catch (error) {
       console.error("❌ 暂停/继续请求失败:", error);
-      message.error("暂停/继续请求失败: " + (error instanceof Error ? error.message : String(error)));
+      // 使用统一错误处理中心 - 任务控制失败
+      handleError(error, { source: "api" });
     }
   };
 
@@ -1804,7 +1806,8 @@ const NewChatContainer: React.FC = () => {
       
       // 🔴 修复：添加输入长度限制和验证
      if (messageContent.trim().length > 5000) {
-       message.warning("消息过长，请精简到5000字符以内");
+       // 使用统一错误处理中心
+       handleError({ message: "消息过长，请精简到5000字符以内", error_type: ErrorType.CONTENT_TOO_LONG });
        return;
      }
 
@@ -1842,8 +1845,8 @@ const NewChatContainer: React.FC = () => {
         currentSessionIdRef.current = currentSessionId;
         console.log("创建新会话:", currentSessionId);
       } catch (error) {
-        const errMsg = error instanceof Error ? error.message : "网络错误";
-        message.error(`创建会话失败: ${errMsg}`);
+        // 使用统一错误处理中心 - 创建会话失败
+        handleError(error, { source: "api" });
         console.error("创建会话失败:", error);
         return; // 🔴 修复：创建会话失败时停止发送
       }
@@ -1907,20 +1910,24 @@ const NewChatContainer: React.FC = () => {
           setMessages((prev) =>
             prev.filter((msg) => msg.id !== userMessage.id)
           );
-          message.error("危险操作已被系统拦截");
+          // 使用统一错误处理中心 - 危险操作拦截
+          handleError({ 
+            error_type: ErrorType.DANGEROUS_OPERATION,
+            message: "危险操作已被系统拦截"
+          }, { source: "api" });
           break;
+        }
+      } catch (error) {
+        console.warn("安全检测异常:", error);
+        setCheckingDanger(false);
+        // 使用统一错误处理中心 - 安全服务降级
+        handleError({
+          error_type: ErrorType.SECURITY_SERVICE_DOWN,
+          message: "安全检测服务暂时不可用，将以普通模式发送消息"
+        }, { source: "api" });
+        await executeStreamSend(userMessage);
       }
-    } catch (error) {
-      console.warn("安全检测异常:", error);
-      setCheckingDanger(false);
-      // 🔴 修复：更好的错误处理和用户反馈
-      message.warning({
-        content: "安全检测服务暂时不可用，将以普通模式发送消息",
-        duration: 3,
-      });
-      await executeStreamSend(userMessage);
-    }
-  };
+    };
 
   // ============================================================
   // TODO 【问题待解决】确认弹窗loading状态异常问题
@@ -1958,7 +1965,7 @@ const NewChatContainer: React.FC = () => {
       setMessages((prev) =>
         prev.filter((msg) => msg.id !== messageToCancel.id)
       );
-      message.info("已取消危险命令的执行");
+      showDangerCancelled();
     }
     // 【小新第五修复 2026-03-02】同步清理ref和state
     pendingMessageRef.current = null;
@@ -2007,11 +2014,7 @@ const NewChatContainer: React.FC = () => {
       window.history.pushState({}, "", `/?session_id=${newSession.session_id}`);
 
       // 🎨 优化：添加更丰富的反馈
-      message.success({
-        content: `已创建新会话: ${newTitle}`,
-        duration: 3,
-        style: { marginTop: "50vh" },
-      });
+      showNewSessionSuccess(newTitle);
 
       // 重置重试计数
       setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
@@ -2021,10 +2024,7 @@ const NewChatContainer: React.FC = () => {
         const newRetry = retry + 1;
         setRetryCount((prev) => ({ ...prev, [retryKey]: newRetry }));
 
-        message.warning({
-          content: `创建会话失败，正在重试 (${newRetry}/${maxRetries})...`,
-          duration: 2,
-        });
+        showNewSessionRetryWarning(newRetry, maxRetries);
 
         // 延迟1秒后重试
         setTimeout(() => {
@@ -2035,10 +2035,7 @@ const NewChatContainer: React.FC = () => {
 
       // 🔴 修复：更好的错误处理
       const errMsg = error instanceof Error ? error.message : "未知错误";
-      message.error({
-        content: `创建会话失败: ${errMsg}`,
-        duration: 5,
-      });
+      showNewSessionError(errMsg);
       console.error("创建会话失败:", error);
 
       // 重置重试计数
@@ -2097,9 +2094,9 @@ const NewChatContainer: React.FC = () => {
                           sessionVersion
                         );
                          setSessionTitle(titleInput.trim());
-                        setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
-                         message.success("标题已保存");
-                       } catch (error: any) {
+                         setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
+                         showTitleSaved();
+                        } catch (error: any) {
                          // ⭐ 处理 409 版本冲突
                         if (error?.response?.status === 409) {
                           showSessionConflict();
@@ -2134,9 +2131,9 @@ const NewChatContainer: React.FC = () => {
                           sessionVersion
                         );
                          setSessionTitle(titleInput.trim());
-                        setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
-                         message.success("会话标题已更新");
-                       } catch (error: any) {
+                         setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
+                         showTitleUpdated();
+                        } catch (error: any) {
                          // ⭐ 处理 409 版本冲突
                         if (error?.response?.status === 409) {
                           showSessionConflict();
