@@ -109,7 +109,9 @@ class ToolExecutor:
             "delete_file": ["file_path", "recursive"],
             "list_directory": ["dir_path", "recursive", "max_depth"],
             "move_file": ["source_path", "destination_path"],
-            "search_files": ["file_pattern", "path", "recursive", "max_depth", "max_results", "after"],
+            # 【修复 2026-04-11】用 page_token 替换 after（与 file_tools.py 第1164行保持一致）
+            # 【修复 2026-04-11】移除 max_results（已删除，与 file_tools.py 保持一致）
+            "search_files": ["file_pattern", "path", "recursive", "max_depth", "page_token"],
             "search_file_content": ["pattern", "path", "file_pattern", "recursive"],
             "generate_report": ["output_dir"],
         }

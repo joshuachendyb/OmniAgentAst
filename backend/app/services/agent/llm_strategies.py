@@ -400,8 +400,21 @@ class ToolsStrategy(LLMStrategy):
                 else:
                     break
         
-        # 降级到 TextStrategy
-        logger.warning(f"[Function Calling] Falling back to TextStrategy (last error: {last_error})")
+        # 【修复 2026-04-11 小沈】统一错误处理：不应该降级到 TextStrategy，应该调用 error_handler 统一处理
+        if last_error:
+            # 调用统一的错误处理函数
+            error_type = resolve_http_error_type(last_error) if last_error else None
+            error_code, error_message = get_stream_error_info(error_type, original_message=last_error)
+            logger.error(f"[Function Calling] 错误统一处理: error_type={error_type}, error_message={error_message}")
+            # 返回统一格式的错误响应
+            return self._make_result(
+                content=f"[错误] {error_message}",
+                tool_name="finish",
+                tool_params={"result": f"[错误] {error_message}"}
+            )
+        
+        # 没有错误但走到了这里，说明是意外情况，仍降级到 TextStrategy
+        logger.warning(f"[Function Calling] Falling back to TextStrategy (no error, unexpected)")
         text_strategy = TextStrategy()
         return await text_strategy.call(
             llm_client=llm_client,

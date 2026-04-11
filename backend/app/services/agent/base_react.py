@@ -376,9 +376,19 @@ class BaseAgent(ABC):
         【修复 2026-04-01 小沈】
         - 问题：关键词匹配可能丢失工具执行结果（如代码、JSON数据）
         - 修复：直接识别 observation 消息（以 "Observation:" 开头），不再依赖关键词
+
+        TODO [2026-04-11]: 当前只检查消息数量(<=15不触发清理)，没有检查消息总长度
+        问题：工具执行结果很长(如390627字符的observation)，导致API请求体过大触发429
+        思路：添加总长度检查，如 total_chars > 100000 时强制清理 observation 内容(可截断或只保留摘要)
         """
         if len(self.conversation_history) <= 2:
             return  # 少于 system + user，不需要裁剪
+        
+        # TODO [2026-04-11]: 还需要检查消息总长度，避免单个超长observation导致请求体过大
+        total_chars = sum(len(msg.get("content", "")) for msg in self.conversation_history)
+        if total_chars > 100000:
+            logger.warning(f"[History] Warning: total chars={total_chars} exceeds limit, should trim")
+            # TODO: 这里应该截断或压缩超长的 observation 内容
         
         # 不需要裁剪
         if len(self.conversation_history) <= 15:
