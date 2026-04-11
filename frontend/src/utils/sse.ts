@@ -1032,6 +1032,55 @@ const processSSEData = (
         break;
       }
 
+      // 【小沈修复 2026-04-11】新增：action_tool类型处理
+      case "action_tool": {
+        step.content = rawData.content || "";
+        step.tool_name = rawData.tool_name || "";
+        step.tool_params = rawData.tool_params || {};
+        step.execution_status = rawData.execution_status;
+        step.summary = rawData.summary;
+        step.raw_data = rawData.raw_data;
+        step.action_retry_count = rawData.action_retry_count;
+        
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          setTimeout(() => {
+            try {
+              saveStepsToStorage?.(newSteps);
+            } catch (e) {
+              console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
+            }
+          }, 0);
+          return newSteps;
+        });
+        onStep?.(step);
+        onShowSteps?.(true);
+        break;
+      }
+
+      // 【小沈修复 2026-04-11】新增：observation类型处理
+      case "observation": {
+        step.content = rawData.content || "";
+        step.tool_name = rawData.tool_name || "";
+        
+        setExecutionSteps((prev) => {
+          const newSteps = [...prev, step];
+          handlers.executionStepsRef.current = newSteps;
+          setTimeout(() => {
+            try {
+              saveStepsToStorage?.(newSteps);
+            } catch (e) {
+              console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
+            }
+          }, 0);
+          return newSteps;
+        });
+        onStep?.(step);
+        onShowSteps?.(true);
+        break;
+      }
+
       // 【小查修复2026-03-10】新增：incident类型处理（后端发送type='incident'，incident_value字段）
       // 【2026-03-11 重命名】status_value -> incident_value
       // 【小强优化 2026-03-18】统一调用onStep，避免重复
