@@ -404,7 +404,8 @@ export const useSSE = (
     * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
     */
   const sendMessageInternal = async (content: string, sessionId?: string) => {
-    console.log("📡 [SSE] 连接开始", new Date().toLocaleTimeString());
+    const connectStartTime = new Date().toLocaleTimeString();
+    console.log(`[SSE] [连接建立] 时间=${connectStartTime}`);
     disconnect(false, false);  // 重连时：非手动断开 + 不清空 sessionStorage
     softClearSteps();  // 软清理：保留 steps，只清理运行时状态
 
@@ -757,6 +758,8 @@ const processSSEData = (
 
     switch (rawData.type) {
       case "start": {
+        const stepNum = rawData.step || 1;
+        console.log(`[STEP] [type=start] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
         let displayName = rawData.display_name;
         if (!displayName && rawData.model && rawData.provider) {
           displayName = `${rawData.provider} (${rawData.model})`;
@@ -809,7 +812,8 @@ const processSSEData = (
       }
 
       case "thought": {
-        // console.log("🔍 [sse thought] 收到thought事件, rawData=", JSON.stringify(rawData));
+        const stepNum = rawData.step || 1;
+        console.log(`[STEP] [type=thought] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
         step.content = rawData.content || "";
         // step.reasoning = rawData.reasoning || "";  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
         step.tool_name = rawData.tool_name || rawData.action_tool || "";  // 兼容旧字段
@@ -840,8 +844,9 @@ const processSSEData = (
       }
 
       case "chunk": {
+        const stepNum = rawData.step || 1;
+        console.log(`[STEP] [type=chunk] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
         // 精简日志：只打印第一个 chunk
-        // console.log("🔍 [SSE chunk] rawData.is_reasoning =", rawData.is_reasoning, "type =", rawData.type);
         
         // 传递 is_reasoning 区分思考过程和最终答案
         const is_reasoning = rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1';
@@ -899,6 +904,8 @@ const processSSEData = (
       }
 
       case "final": {
+        const stepNum = rawData.step || 1;
+        console.log(`[STEP] [type=final] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
         // 后端实际返回 content 字段（根据设计文档9.4.6）
         step.content = rawData.content || "";
         if (step.content) {
@@ -944,7 +951,7 @@ const processSSEData = (
           display_name: displayName,
         } as SSEMetadata, handlers.getCurrentExecutionSteps());  // 【小新修复 2026-03-15】ref已被同步更新，无需再手动加step
         
-        console.log("📡 [SSE] 连接结束", new Date().toLocaleTimeString(), "| 收到steps:", handlers.getCurrentExecutionSteps().length);
+        console.log(`[SSE] [连接断开] 时间=${new Date().toLocaleTimeString()} 收到steps=${handlers.getCurrentExecutionSteps().length}`);
         
         setIsReceiving(false);
         setIsConnected(false);
@@ -952,6 +959,8 @@ const processSSEData = (
       }
 
       case "error": {
+        const stepNum = rawData.step || 1;
+        console.log(`[STEP] [type=error] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
         const errorMsg = rawData.message || "未知错误";
         step.content = errorMsg;
         step.error_message = errorMsg;
@@ -1034,6 +1043,9 @@ const processSSEData = (
 
       // 【小沈修复 2026-04-11】新增：action_tool类型处理
       case "action_tool": {
+        const actionStartTime = Date.now();  // 【时间监控】开始时间点
+        const actionStepNum = step.step;  // step 序号
+        
         step.tool_name = rawData.tool_name || "";
         step.tool_params = rawData.tool_params || {};
         step.execution_status = rawData.execution_status;
@@ -1041,11 +1053,27 @@ const processSSEData = (
         step.raw_data = rawData.raw_data;
         step.action_retry_count = rawData.action_retry_count;
         
+        // 【时间监控 5.1】保存到ExecutionSteps开始
+        const execStepsStartTime = Date.now();
+        
         setExecutionSteps((prev) => {
+          // 【时间监控 5】保存到ExecutionSteps完成
+          const execStepsDoneTime = Date.now();
+          const execStepsDuration = execStepsDoneTime - execStepsStartTime;
+          console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [ExecutionSteps保存完成] 开始=${new Date(execStepsStartTime).toLocaleTimeString()} 完成=${new Date(execStepsDoneTime).toLocaleTimeString()} 耗时=${execStepsDuration}ms`);
+          
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
+          
+          // 【时间监控 4.1】保存到sessionStorage开始
+          const storageStartTime = Date.now();
+          
           setTimeout(() => {
             try {
+              // 【时间监控 4】保存到sessionStorage完成
+              const storageDoneTime = Date.now();
+              const storageDuration = storageDoneTime - storageStartTime;
+              console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [sessionStorage保存完成] 开始=${new Date(storageStartTime).toLocaleTimeString()} 完成=${new Date(storageDoneTime).toLocaleTimeString()} 耗时=${storageDuration}ms`);
               saveStepsToStorage?.(newSteps);
             } catch (e) {
               console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
@@ -1053,13 +1081,24 @@ const processSSEData = (
           }, 0);
           return newSteps;
         });
+        
+        // 渲染开始
         onStep?.(step);
         onShowSteps?.(true);
+        
+        // 【时间监控 3】渲染完成时间点
+        const renderDoneTime = Date.now();
+        const renderDuration = renderDoneTime - actionStartTime;
+        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [收到数据] 时间=${new Date(actionStartTime).toLocaleTimeString()}`);
+        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [渲染完成] 渲染耗时=${renderDuration}ms`);
+        
         break;
       }
 
       // 【小沈修复 2026-04-11】新增：observation类型处理
       case "observation": {
+        const stepNum = rawData.step || 1;
+        console.log(`[STEP] [type=observation] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
         step.content = rawData.content || "";
         step.tool_name = rawData.tool_name || "";
         
@@ -1085,6 +1124,8 @@ const processSSEData = (
       // 【小强优化 2026-03-18】统一调用onStep，避免重复
       case "incident": {
         const statusValue = rawData.incident_value;
+        const stepNum = rawData.step || 1;
+        console.log(`[STEP] [type=incident] [incident_type=${statusValue}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
         const statusMessage = rawData.message || "";
         step.type = statusValue as ExecutionStep["type"];
         step.content = statusMessage;
