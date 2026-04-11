@@ -201,23 +201,170 @@ export interface PerformanceMetrics {
  * - network: 网络连接失败
  * - server: 服务器错误
  * - empty_response: 空响应
+ * - connection_refused: 连接被拒绝
+ * - http_500: 服务器内部错误
  */
-type ErrorType = "idle_timeout" | "request_timeout" | "network" | "server" | "unknown" | "empty_response";
+type ErrorType = "idle_timeout" | "request_timeout" | "network" | "server" | "unknown" | "empty_response" | "connection_refused" | "http_500";
+
+/**
+ * 错误配置 - 定义每种错误类型的处理方式
+ */
+interface ErrorConfig {
+  retryable: boolean;        // 是否可重试
+  maxRetries: number;         // 最大重试次数
+  retryDelay: number;         // 重试延迟(毫秒)
+  showMessage: string;        // 显示的消息
+  stopAction?: () => void;    // 停止后的操作
+}
+
+/**
+ * 错误配置映射 - 统一错误处理中心
+ */
+const ERROR_CONFIG_MAP: Record<ErrorType, ErrorConfig> = {
+  idle_timeout: {
+    retryable: true,
+    maxRetries: 3,
+    retryDelay: 1000,
+    showMessage: "空闲超时（长时间无数据），连接可能已断开",
+  },
+  request_timeout: {
+    retryable: true,
+    maxRetries: 3,
+    retryDelay: 1000,
+    showMessage: "请求等待超时，服务器响应过慢",
+  },
+  network: {
+    retryable: true,
+    maxRetries: 3,
+    retryDelay: 1000,
+    showMessage: "网络连接失败，请检查网络后重试",
+  },
+  server: {
+    retryable: true,
+    maxRetries: 3,
+    retryDelay: 1000,
+    showMessage: "服务器错误",
+  },
+  empty_response: {
+    retryable: true,
+    maxRetries: 3,
+    retryDelay: 1000,
+    showMessage: "模型未能生成有效回复，请尝试更换问题或稍后重试",
+  },
+  connection_refused: {
+    retryable: true,
+    maxRetries: 3,
+    retryDelay: 1000,
+    showMessage: "服务器连接被拒绝，请检查后端服务是否运行",
+  },
+  http_500: {
+    retryable: true,
+    maxRetries: 3,
+    retryDelay: 3000,  // 500错误等待3秒
+    showMessage: "服务器内部错误，请稍后重试",
+  },
+  unknown: {
+    retryable: false,
+    maxRetries: 0,
+    retryDelay: 0,
+    showMessage: "发生未知错误",
+  },
+};
+
+/**
+ * 统一错误处理函数
+ * 【小强添加 2026-04-11】集中处理所有错误类型，统一显示风格和重试逻辑
+ */
+const handleSSEError = (params: {
+  error: any;
+  errorType: ErrorType;
+  reconnectAttempts: number;
+  reconnectConfig: ReconnectConfig;
+  pendingMessage: { content: string; sessionId?: string } | null;
+  onReconnect: () => void;
+  onSetReconnectStatus: (status: "idle" | "connecting" | "reconnecting" | "failed") => void;
+  onSetIsConnected: (connected: boolean) => void;
+  onSetIsReceiving: (receiving: boolean) => void;
+  onError: ((error: SSEError) => void) | undefined;
+  reconnectTimeoutRef: React.MutableRefObject<number | null>;
+}) => {
+  const {
+    error,
+    errorType,
+    reconnectAttempts,
+    reconnectConfig,
+    pendingMessage,
+    onReconnect,
+    onSetReconnectStatus,
+    onSetIsConnected,
+    onSetIsReceiving,
+    onError,
+    reconnectTimeoutRef,
+  } = params;
+
+  const errorConfig = ERROR_CONFIG_MAP[errorType];
+  const prefix = "SSE连接:";
+  const fullMessage = `${prefix}${errorConfig.showMessage}`;
+
+  console.error(`[SSE] 错误类型=${errorType}, 已重试=${reconnectAttempts}次, 最大=${errorConfig.maxRetries}`);
+
+  // 检查是否可重试且未超过最大次数
+  if (errorConfig.retryable && reconnectAttempts < errorConfig.maxRetries && pendingMessage) {
+    // 显示警告消息
+    message.warning(`${fullMessage}，${errorConfig.retryDelay / 1000}秒后尝试重连...`);
+    
+    // 设置重连
+    onSetReconnectStatus("reconnecting");
+    reconnectTimeoutRef.current = window.setTimeout(() => {
+      onReconnect();
+    }, errorConfig.retryDelay);
+  } else {
+    // 超过最大重试次数，停止重连
+    console.error(`[SSE] 超过最大重试次数(${errorConfig.maxRetries})，停止重连`);
+    onSetReconnectStatus("failed");
+    onSetIsConnected(false);
+    onSetIsReceiving(false);
+    
+    // 显示错误消息
+    if (errorType === "http_500") {
+      message.error(fullMessage + "，请稍后刷新页面重试");
+    } else if (errorType === "connection_refused") {
+      message.error(fullMessage + "，请检查后端服务后刷新页面");
+    } else {
+      message.error(fullMessage + "，请刷新页面重试");
+    }
+    
+    // 调用错误回调
+    onError?.({
+      type: "error",
+      error_type: errorType,
+      message: fullMessage,
+      code: "CONNECTION_FAILED",
+      timestamp: new Date().toISOString()
+    });
+  }
+};
 
 /**
  * 分类错误类型
  * 【小强修复 2026-04-09】细分超时类型
+ * 【小强修复 2026-04-11】增加 connection_refused 和 http_500
  */
 const classifyError = (error: any): ErrorType => {
   if (error.name === "AbortError") return "request_timeout";
   if (error.message?.includes("空闲") || error.message?.includes("idle")) return "idle_timeout";
   if (error.message?.includes("fetch") || error.message?.includes("network")) return "network";
+  if (error.message?.includes("ERR_CONNECTION_REFUSED")) return "connection_refused";
+  if (error.message?.includes("ERR_CONNECTION_RESET")) return "connection_refused";
   if (error.message?.includes("HTTP")) return "server";
   // 后端返回的error_type直接使用
   if (error.error_type === "empty_response") return "empty_response";
   if (error.error_type === "timeout") return "request_timeout";
   if (error.error_type === "network") return "network";
   if (error.error_type === "server") return "server";
+  if (error.response?.status === 500) return "http_500";
+  return "unknown";
+};
   return "unknown";
 };
 
@@ -238,6 +385,10 @@ const getFriendlyErrorMessage = (errorType: ErrorType, originalMessage: string):
       return `${prefix}服务器错误: ${originalMessage}`;
     case "empty_response":
       return `${prefix}模型未能生成有效回复，请尝试更换问题或稍后重试`;
+    case "connection_refused":
+      return `${prefix}服务器连接被拒绝，请检查后端服务是否运行`;
+    case "http_500":
+      return `${prefix}服务器内部错误，请稍后重试`;
     default:
       return `${prefix}异常: ${originalMessage}`;
   }
@@ -538,33 +689,28 @@ export const useSSE = (
       reconnectAttemptsRef.current = 0;
     } catch (error: any) {
       console.error("[SSE] 请求错误:", error);
-      setIsConnected(false);
-      setIsReceiving(false);
       
-      const errorType = classifyError(error);
-      const friendlyMessage = getFriendlyErrorMessage(errorType, error.message);
+      // 使用统一的错误处理中心
+      handleSSEError({
+        error,
+        errorType: classifyError(error),
+        reconnectAttempts: reconnectAttemptsRef.current,
+        reconnectConfig: reconnectConfigRef.current,
+        pendingMessage: pendingMessageRef.current,
+        onReconnect: () => {
+          reconnectAttemptsRef.current++;
+          sendMessageInternal(content, sessionId);
+        },
+        onSetReconnectStatus: setReconnectStatus,
+        onSetIsConnected: setIsConnected,
+        onSetIsReceiving: setIsReceiving,
+        onError,
+        reconnectTimeoutRef,
+      });
       
-      // 检查是否需要重连
-      if (reconnectConfigRef.current.enabled && errorType !== "unknown") {
-        const config = reconnectConfigRef.current;
-        const attempt = reconnectAttemptsRef.current;
-        const delay = calculateReconnectDelay(attempt, config.baseDelay, config.maxDelay);
-        
-        message.warning(friendlyMessage + `，${delay/1000}秒后尝试重连...`);
-        pendingMessageRef.current = { content, sessionId };
-        reconnectTimeoutRef.current = setTimeout(() => {
-          reconnect();
-        }, delay);
-      } else {
-        setReconnectStatus("failed");
-        message.error(friendlyMessage);
-        onError?.({
-          type: "error",
-          error_type: errorType,
-          message: friendlyMessage,
-          code: "CONNECTION_FAILED",
-          timestamp: new Date().toISOString()
-        });
+      // 保存待重连的消息（用于下次重连）
+      if (pendingMessageRef.current) {
+        // 消息已由 handleSSEError 处理
       }
     }
   };
@@ -759,7 +905,7 @@ const processSSEData = (
     switch (rawData.type) {
       case "start": {
         const stepNum = rawData.step || 1;
-        console.log(`[STEP] [type=start] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
+        console.log(`%c[STEP] [type=start] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
         let displayName = rawData.display_name;
         if (!displayName && rawData.model && rawData.provider) {
           displayName = `${rawData.provider} (${rawData.model})`;
@@ -813,7 +959,7 @@ const processSSEData = (
 
       case "thought": {
         const stepNum = rawData.step || 1;
-        console.log(`[STEP] [type=thought] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
+        console.log(`%c[STEP] [type=thought] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
         step.content = rawData.content || "";
         // step.reasoning = rawData.reasoning || "";  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
         step.tool_name = rawData.tool_name || rawData.action_tool || "";  // 兼容旧字段
@@ -845,7 +991,6 @@ const processSSEData = (
 
       case "chunk": {
         const stepNum = rawData.step || 1;
-        console.log(`[STEP] [type=chunk] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
         // 精简日志：只打印第一个 chunk
         
         // 传递 is_reasoning 区分思考过程和最终答案
@@ -905,7 +1050,7 @@ const processSSEData = (
 
       case "final": {
         const stepNum = rawData.step || 1;
-        console.log(`[STEP] [type=final] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
+        console.log(`%c[STEP] [type=final] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
         // 后端实际返回 content 字段（根据设计文档9.4.6）
         step.content = rawData.content || "";
         if (step.content) {
@@ -960,7 +1105,7 @@ const processSSEData = (
 
       case "error": {
         const stepNum = rawData.step || 1;
-        console.log(`[STEP] [type=error] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
+        console.log(`%c[STEP] [type=error] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
         const errorMsg = rawData.message || "未知错误";
         step.content = errorMsg;
         step.error_message = errorMsg;
@@ -1072,14 +1217,14 @@ const processSSEData = (
           
           // 【紫色】sessionStorage保存开始时间
           const storageStartTime = Date.now();
-          console.log(`%c[ACTION_TOOL]${stepLabel} [sessionStorage保存开始] 时间=${new Date(storageStartTime).toLocaleTimeString()}`, 'color: purple;');
+          console.log(`%c[ACTION_TOOL]${stepLabel} [sessionStorage保存开始] 时间=${new Date(storageStartTime).toLocaleTimeString()}`, 'color: #006400; font-weight: bold;');
           
           setTimeout(() => {
             try {
               // 【紫色】sessionStorage保存完成
               const storageDoneTime = Date.now();
               const storageDuration = storageDoneTime - storageStartTime;
-              console.log(`%c[ACTION_TOOL]${stepLabel} [sessionStorage保存完成] 完成=${new Date(storageDoneTime).toLocaleTimeString()} 耗时=${storageDuration}ms`, 'color: purple;');
+              console.log(`%c[ACTION_TOOL]${stepLabel} [sessionStorage保存完成] 完成=${new Date(storageDoneTime).toLocaleTimeString()} 耗时=${storageDuration}ms`, 'color: #006400; font-weight: bold;');
               saveStepsToStorage?.(newSteps);
             } catch (e) {
               console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
@@ -1106,7 +1251,7 @@ const processSSEData = (
       // 【小沈修复 2026-04-11】新增：observation类型处理
       case "observation": {
         const stepNum = rawData.step || 1;
-        console.log(`[STEP] [type=observation] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
+        console.log(`%c[STEP] [type=observation] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
         step.content = rawData.content || "";
         step.tool_name = rawData.tool_name || "";
         
@@ -1133,7 +1278,7 @@ const processSSEData = (
       case "incident": {
         const statusValue = rawData.incident_value;
         const stepNum = rawData.step || 1;
-        console.log(`[STEP] [type=incident] [incident_type=${statusValue}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`);
+        console.log(`%c[STEP] [type=incident] [incident_type=${statusValue}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
         const statusMessage = rawData.message || "";
         step.type = statusValue as ExecutionStep["type"];
         step.content = statusMessage;
