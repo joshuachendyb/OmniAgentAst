@@ -1043,7 +1043,7 @@ const processSSEData = (
 
       // 【小沈修复 2026-04-11】新增：action_tool类型处理
       case "action_tool": {
-        const actionStartTime = Date.now();  // 【时间监控】开始时间点
+        const receiveTime = Date.now();  // 【3】收到数据时间（开始点）
         const actionStepNum = step.step;  // step 序号
         
         step.tool_name = rawData.tool_name || "";
@@ -1053,27 +1053,29 @@ const processSSEData = (
         step.raw_data = rawData.raw_data;
         step.action_retry_count = rawData.action_retry_count;
         
-        // 【时间监控 5.1】保存到ExecutionSteps开始
+        // 【5】ExecutionSteps保存开始时间
         const execStepsStartTime = Date.now();
+        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [ExecutionSteps保存开始] 时间=${new Date(execStepsStartTime).toLocaleTimeString()}`);
         
         setExecutionSteps((prev) => {
-          // 【时间监控 5】保存到ExecutionSteps完成
+          // 【5.1】ExecutionSteps保存完成
           const execStepsDoneTime = Date.now();
           const execStepsDuration = execStepsDoneTime - execStepsStartTime;
-          console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [ExecutionSteps保存完成] 开始=${new Date(execStepsStartTime).toLocaleTimeString()} 完成=${new Date(execStepsDoneTime).toLocaleTimeString()} 耗时=${execStepsDuration}ms`);
+          console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [ExecutionSteps保存完成] 完成=${new Date(execStepsDoneTime).toLocaleTimeString()} 耗时=${execStepsDuration}ms`);
           
           const newSteps = [...prev, step];
           handlers.executionStepsRef.current = newSteps;
           
-          // 【时间监控 4.1】保存到sessionStorage开始
+          // 【4】sessionStorage保存开始时间
           const storageStartTime = Date.now();
+          console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [sessionStorage保存开始] 时间=${new Date(storageStartTime).toLocaleTimeString()}`);
           
           setTimeout(() => {
             try {
-              // 【时间监控 4】保存到sessionStorage完成
+              // 【4.1】sessionStorage保存完成
               const storageDoneTime = Date.now();
               const storageDuration = storageDoneTime - storageStartTime;
-              console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [sessionStorage保存完成] 开始=${new Date(storageStartTime).toLocaleTimeString()} 完成=${new Date(storageDoneTime).toLocaleTimeString()} 耗时=${storageDuration}ms`);
+              console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [sessionStorage保存完成] 完成=${new Date(storageDoneTime).toLocaleTimeString()} 耗时=${storageDuration}ms`);
               saveStepsToStorage?.(newSteps);
             } catch (e) {
               console.warn("[SSE] sessionStorage 保存失败，可能容量不足:", e);
@@ -1082,15 +1084,20 @@ const processSSEData = (
           return newSteps;
         });
         
-        // 渲染开始
+        // 【3】渲染开始时间点
+        const renderStartTime = Date.now();
+        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [渲染开始] 时间=${new Date(renderStartTime).toLocaleTimeString()}`);
+        
         onStep?.(step);
         onShowSteps?.(true);
         
-        // 【时间监控 3】渲染完成时间点
+        // 【3.1】渲染完成时间点
         const renderDoneTime = Date.now();
-        const renderDuration = renderDoneTime - actionStartTime;
-        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [收到数据] 时间=${new Date(actionStartTime).toLocaleTimeString()}`);
-        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [渲染完成] 渲染耗时=${renderDuration}ms`);
+        const renderDuration = renderDoneTime - renderStartTime;
+        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [渲染完成] 完成=${new Date(renderDoneTime).toLocaleTimeString()} 耗时=${renderDuration}ms`);
+        
+        // 记录收到数据时间
+        console.log(`[ACTION_TOOL] [type=action_tool] [step=${actionStepNum}] [收到数据] 时间=${new Date(receiveTime).toLocaleTimeString()}`);
         
         break;
       }
