@@ -4,6 +4,11 @@
  * 功能：建立 SSE 连接、接收流式数据、处理执行步骤
  * 改进：增加自动重连、错误分类、友好提示
  *
+ * 错误处理说明：
+ * - 所有SSE错误统一使用 errorHandler.handleSSEError() 处理
+ * - 禁止直接调用 message.error/warning/success/info
+ * - 连接重连、错误去重、提示样式由 errorHandler 统一管理
+ *
  * @author 小新
  * @version 2.0.0
  * @since 2026-03-04

@@ -11,9 +11,14 @@
  * - 性能优化（React.memo）
  * - 交互增强（hover 效果、复制按钮）
  *
+ * 错误处理说明：
+ * - 所有提示统一使用 errorHandler.showSuccess()/handleError() 处理
+ * - 禁止直接调用 message.error/warning/success/info
+ *
  * @author 小新（专家级前端开发）
  * @version 2.0.0
  * @since 2026-02-17
+ * @update 2026-04-11 迁移到errorHandler统一处理 - by 小强
  */
 
 import React, { useState, useMemo, memo, useCallback } from "react";
@@ -25,8 +30,8 @@ import {
   Space,
   Tooltip,
   Typography,
-  message,
 } from "antd";
+import { showSuccess, handleError } from "../../utils/errorHandler";
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -245,10 +250,10 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
       try {
         await navigator.clipboard.writeText(text);
         setCopiedIndex(index);
-        message.success("已复制", 1);
+        showSuccess("已复制");
         setTimeout(() => setCopiedIndex(null), 2000);
       } catch (err) {
-        message.error("复制失败", 1);
+        handleError({ message: "复制失败", error_type: "COPY_FAILED" });
       }
     }, []);
 
