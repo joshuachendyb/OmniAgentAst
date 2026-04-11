@@ -13,6 +13,7 @@ class Config:
     
     _instance: Optional['Config'] = None
     _config_data: Optional[Dict[str, Any]] = None
+    _config_mtime: Optional[float] = None  # 配置文件修改时间，用于缓存检测
     
     def __new__(cls):
         """单例模式"""
@@ -22,15 +23,21 @@ class Config:
         return cls._instance
     
     def _load_config(self):
-        """加载配置文件"""
+        """加载配置文件 - 带缓存优化（双保险）"""
         config_path = self._get_config_path()
         
-        # 配置文件必须存在，否则抛出异常
+        # ⭐ 保险1：文件不存在时处理
         if not config_path.exists():
             raise FileNotFoundError(
                 f"配置文件不存在: {config_path}。"
                 "请在前端创建配置文件或手动创建 config/config.yaml"
             )
+        
+        # ⭐ 保险2：时间戳检查 - 如果缓存存在且mtime相同，使用缓存
+        new_mtime = config_path.stat().st_mtime
+        if self._config_data is not None and self._config_mtime == new_mtime:
+            # 配置文件未变更，使用缓存
+            return
         
         # 从文件加载配置
         try:
@@ -45,6 +52,9 @@ class Config:
                 f"加载配置文件失败: {e}。"
                 "请检查 config/config.yaml 格式是否正确"
             )
+        
+        # ⭐ 更新mtime
+        self._config_mtime = new_mtime
         
         # 环境变量覆盖
         self._apply_env_overrides()
@@ -131,7 +141,10 @@ class Config:
         return ai_config.get('api_key', '')
     
     def reload(self):
-        """重新加载配置"""
+        """重新加载配置 - 强制清空缓存"""
+        # 清空缓存，强制重新加载
+        self._config_data = None
+        self._config_mtime = None
         self._load_config()
     
     @property
