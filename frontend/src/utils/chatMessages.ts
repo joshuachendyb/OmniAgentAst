@@ -22,15 +22,15 @@ import { ErrorType, showSuccess, handleError, classifyError, showMessage, UI_CON
 // ============================================================
 
 export const showSaveSuccess = (content: string = "保存成功") => {
-  message.success(content, UI_CONFIG.success.duration);
+  showSuccess(content);
 };
 
 export const showLoadSuccess = (content: string = "加载成功") => {
-  message.success(content, UI_CONFIG.success.duration);
+  showSuccess(content);
 };
 
 export const showOperationSuccess = (content: string = "操作成功") => {
-  message.success(content, UI_CONFIG.success.duration);
+  showSuccess(content);
 };
 
 // ============================================================
@@ -47,18 +47,11 @@ export const showLoadError = (content: string = "加载失败，请检查网络"
 
 export const showLoadRetryWarning = (retry: number, maxRetries: number = 3, key?: string) => {
   const content = `加载失败，正在重试 (${retry}/${maxRetries})...`;
-  message.warning({
-    content,
-    key,
-    duration: 0,
-  });
+  handleError({ message: content, error_type: ErrorType.RETRY_WARNING });
 };
 
 export const showLoadErrorWithKey = (content: string = "加载失败，请检查网络后重试", key?: string) => {
-  message.error({
-    content,
-    key,
-  });
+  handleError({ message: content, error_type: ErrorType.LOAD_FAILED });
 };
 
 export const showNetworkError = (content: string = "网络连接异常，请检查网络后重试") => {
@@ -222,31 +215,22 @@ export const showDangerCancelled = () => {
  * 新建会话成功提示
  */
 export const showNewSessionSuccess = (title: string) => {
-  message.success({
-    content: `已创建新会话: ${title}`,
-    duration: UI_CONFIG.success.duration,
-    style: { marginTop: "50vh" },
-  });
+  showSuccess(`已创建新会话: ${title}`);
 };
 
 /**
  * 新建会话重试警告
  */
 export const showNewSessionRetryWarning = (retry: number, maxRetries: number = 3) => {
-  message.warning({
-    content: `创建会话失败，正在重试 (${retry}/${maxRetries})...`,
-    duration: 2,
-  });
+  const content = `创建会话失败，正在重试 (${retry}/${maxRetries})...`;
+  handleError({ message: content, error_type: ErrorType.RETRY_WARNING });
 };
 
 /**
  * 新建会话失败错误
  */
 export const showNewSessionError = (errorMsg: string = "未知错误") => {
-  message.error({
-    content: `创建会话失败: ${errorMsg}`,
-    duration: UI_CONFIG.error.duration,
-  });
+  handleError({ message: `创建会话失败: ${errorMsg}`, error_type: ErrorType.CREATE_SESSION_FAILED });
 };
 
 /**
