@@ -24,7 +24,6 @@ import {
   Input,
   Button,
   Card,
-  List,
   Tag,
   Space,
   message,
@@ -43,7 +42,6 @@ import {
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
 import { securityApi } from "../../services/api";
-import MessageItem from "./MessageItem";
 import DangerConfirmModal from "../DangerConfirmModal";
 import SecurityAlert from "../SecurityAlert";
 import { showSecurityNotification } from "../SecurityNotification";
@@ -194,7 +192,6 @@ const NewChatContainer: React.FC = () => {
   });
 
   const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
-  const [_isSavingTitle, setIsSavingTitle] = useState(false);
 
   // SSE Hook配置（用于流式输出）
   const {

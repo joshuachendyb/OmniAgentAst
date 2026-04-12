@@ -14,8 +14,7 @@
  * @update 2026-04-11 迁移到errorHandler统一处理 - by 小强
  */
 
-import { message } from "antd";
-import { ErrorType, showSuccess, handleError, classifyError, showMessage, UI_CONFIG } from "./errorHandler";
+import { ErrorType, showSuccess, handleError, classifyError, showMessage } from "./errorHandler";
 
 // ============================================================
 // 成功提示
@@ -45,12 +44,12 @@ export const showLoadError = (content: string = "加载失败，请检查网络"
   handleError({ message: content, error_type: ErrorType.LOAD_FAILED });
 };
 
-export const showLoadRetryWarning = (retry: number, maxRetries: number = 3, key?: string) => {
+export const showLoadRetryWarning = (retry: number, maxRetries: number = 3, _key?: string) => {
   const content = `加载失败，正在重试 (${retry}/${maxRetries})...`;
   handleError({ message: content, error_type: ErrorType.RETRY_WARNING });
 };
 
-export const showLoadErrorWithKey = (content: string = "加载失败，请检查网络后重试", key?: string) => {
+export const showLoadErrorWithKey = (content: string = "加载失败，请检查网络后重试", _key?: string) => {
   handleError({ message: content, error_type: ErrorType.LOAD_FAILED });
 };
 
