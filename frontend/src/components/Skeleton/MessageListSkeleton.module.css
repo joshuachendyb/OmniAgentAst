@@ -1,0 +1,25 @@
+.messageListSkeleton { padding: 16px 24px; }
+.skeletonMessageItem { display: flex; margin-bottom: 20px; align-items: flex-start; }
+.skeletonUser { flex-direction: row-reverse; }
+.skeletonAI { flex-direction: row; }
+.skeletonAvatar {
+  width: 40px; height: 40px; border-radius: 50%;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e6e6e6 50%, #f0f0f0 75%);
+  background-size: 200% 100%; animation: skeletonLoading 1.5s infinite; flex-shrink: 0;
+}
+.skeletonContent { max-width: 70%; margin: 0 12px; display: flex; flex-direction: column; }
+.skeletonLine {
+  height: 16px; margin-bottom: 8px; border-radius: 4px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e6e6e6 50%, #f0f0f0 75%);
+  background-size: 200% 100%; animation: skeletonLoading 1.5s infinite;
+}
+.skeletonLine:last-child { margin-bottom: 0; }
+.skeletonUser .skeletonContent { align-items: flex-end; }
+.skeletonAI .skeletonContent { align-items: flex-start; }
+.skeletonLineShort { width: 40%; }
+.skeletonLineMedium { width: 70%; }
+.skeletonLineLong { width: 100%; }
+@keyframes skeletonLoading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}

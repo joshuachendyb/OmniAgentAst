@@ -1,0 +1,177 @@
+/* Layout骨架屏样式 - 与现有Layout保持完全一致 */
+
+/* 骨架屏容器 */
+.layoutSkeleton {
+  display: flex;
+  height: 100vh;
+  background: #f5f5f5;
+}
+
+/* 左侧导航骨架 - 宽度180px与Layout Sider一致 */
+.skeletonSider {
+  width: 180px;
+  background: #fff;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
+  z-index: 100;
+}
+
+/* Logo区域 */
+.skeletonLogo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.skeletonLogoAvatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeletonLoading 1.5s infinite;
+}
+
+.skeletonLogoText {
+  width: 80px;
+  height: 20px;
+  margin-left: 12px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #1890ff 25%, #40a9ff 50%, #1890ff 75%);
+  background-size: 200% 100%;
+  animation: skeletonLoading 1.5s infinite;
+}
+
+/* 菜单项 */
+.skeletonMenuItem {
+  height: 40px;
+  margin: 6px 6px 10px 6px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeletonLoading 1.5s infinite;
+}
+
+.skeletonMenuItemActive {
+  height: 40px;
+  margin: 6px 6px 10px 6px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #e6f4ff 25%, #bae0ff 50%, #e6f4ff 75%);
+  background-size: 200% 100%;
+  animation: skeletonLoading 1.5s infinite;
+}
+
+/* 底部信息 */
+.skeletonFooter {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 52px;
+  padding: 16px 20px;
+  border-top: 1px solid #e8e8e8;
+  background: #fafafa;
+}
+
+/* 右侧内容区Header - 高度43px与Layout Header一致 */
+.skeletonHeader {
+  height: 43px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 99;
+}
+
+.skeletonHeaderTitle {
+  width: 150px;
+  height: 22px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeletonLoading 1.5s infinite;
+}
+
+.skeletonHeaderTag {
+  width: 100px;
+  height: 22px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: skeletonLoading 1.5s infinite;
+}
+
+/* 内容区 - 无margin与Layout一致 */
+.skeletonContent {
+  flex: 1;
+  background: #fff;
+  padding: 16px 24px;
+}
+
+/* 内容区加载提示 */
+.skeletonContentLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #999;
+  font-size: 14px;
+}
+
+@keyframes skeletonLoading {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 响应式：移动端隐藏Sider骨架屏 */
+@media (max-width: 768px) {
+  .skeletonSider {
+    display: none;
+  }
+  .layoutSkeleton {
+    flex-direction: column;
+  }
+}
+
+/* 错误状态样式 */
+.skeletonError {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 300px;
+  padding: 40px;
+}
+
+.skeletonErrorIcon {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: #fff1f0;
+  border: 2px solid #ff4d4f;
+  color: #ff4d4f;
+  font-size: 32px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.skeletonErrorText {
+  color: #595959;
+  font-size: 14px;
+  text-align: center;
+  margin-bottom: 24px;
+  max-width: 400px;
+  line-height: 1.6;
+}
+
+.skeletonRetryButton {
+  height: 36px;
+  padding: 0 24px;
+}

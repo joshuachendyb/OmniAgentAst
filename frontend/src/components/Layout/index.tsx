@@ -9,7 +9,7 @@
  * @update 2026-02-18 添加移动端响应式支持
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Layout,
@@ -47,6 +47,8 @@ import type { MenuProps } from "antd";
 const { Option } = Select;
 import ShortcutPanel from "../ShortcutPanel";
 import { useApp } from "../../contexts/AppContext";
+import { LayoutSkeleton } from "../Skeleton";
+import { handleError, ErrorType } from "../../utils/errorHandler";
 
 const { useBreakpoint } = Grid;
 
@@ -104,6 +106,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     refreshAfterModelChange,
     refreshModelList: appRefreshModelList,  // 获取AppContext的refreshModelList
     isInitialized,
+    initError,
   } = useApp();
 
   // 同步sessionCount到本地state（因为其他地方可能依赖sessionCount变量）
@@ -127,6 +130,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     status?: 'success' | 'failed' | 'warning'; // 验证状态
     modelInfo?: string; // 模型信息 provider (model)
   }>({ visible: false, message: "" });
+
+  // 【新增】骨架屏显示状态
+  const [skeletonState, setSkeletonState] = useState<{
+    visible: boolean;
+    error?: string;
+  }>({ visible: true });
   
   // 【新增】当前尝试切换的模型
   const [attemptedModel, setAttemptedModel] = useState<{
@@ -146,6 +155,37 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       }
     }
   }, [isInitialized, isManualRefreshing]);
+
+  // 【修正】骨架屏切换：监听isInitialized完成后延迟100ms切换
+  // 或监听initError使用errorHandler统一处理错误
+  useEffect(() => {
+    // 初始化成功，延迟切换到实际内容
+    if (isInitialized && skeletonState.visible && !initError) {
+      const timer = setTimeout(() => {
+        setSkeletonState({ visible: false });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+    
+    // 初始化失败，使用errorHandler统一处理错误
+    if (initError && skeletonState.visible) {
+      // 使用errorHandler统一错误处理中心显示错误提示+重试按钮
+      handleError({ 
+        message: initError, 
+        error_type: ErrorType.LOAD_FAILED 
+      }, { 
+        source: "manual",
+        onRetry: () => handleSkeletonRetry()
+      });
+      // 不在骨架屏显示错误，由errorHandler统一处理
+    }
+  }, [isInitialized, skeletonState.visible, initError]);
+
+  // 【新增】骨架屏重试函数 - 用于加载失败时重试
+  const handleSkeletonRetry = useCallback(async () => {
+    setSkeletonState({ visible: true, error: undefined });
+    await initializeApp();
+  }, [initializeApp]);
 
   // 【修复问题2】当前选中的模型ID（格式: provider-modelname）
   // 【2026-04-07修复】切换模型后不再调用refreshServiceStatus，所以必须优先从modelList获取
@@ -672,7 +712,12 @@ onChange={handleModelChange}
             overflow: "auto",
           }}
         >
-          {children}
+          {/* 【新增】骨架屏/实际内容切换 */}
+          {skeletonState.visible ? (
+            <LayoutSkeleton />
+          ) : (
+            children
+          )}
         </Content>
       </Layout>
 

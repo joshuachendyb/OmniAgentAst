@@ -40,6 +40,7 @@ import {
   EyeInvisibleOutlined,
   InfoCircleOutlined,
   LockOutlined,
+  LoadingOutlined,
 } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
@@ -89,6 +90,9 @@ import {
 
 // 【小强修复 2026-03-31】独立输入框组件，隔离inputValue状态避免父组件重渲染
 import ChatInput from "./ChatInput";
+
+// 【小强 2026-04-12】骨架屏组件
+import { MessageListSkeleton } from "../Skeleton";
 
 // 【小新 2026-03-13 代码拆分】类型和工具函数已提取到独立文件
 // - 类型定义: src/types/chat.ts
@@ -176,6 +180,7 @@ const NewChatContainer: React.FC = () => {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [_sessionJumpLoading, setSessionJumpLoading] = useState(false);
   const [isRenderingMessages, setIsRenderingMessages] = useState(false); // 渲染大量消息时的loading
+  const [isMessageListLoading, setIsMessageListLoading] = useState(true); // 消息列表骨架屏状态
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
   const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
   const [_isSavingTitle, setIsSavingTitle] = useState(false);
@@ -1120,8 +1125,11 @@ const NewChatContainer: React.FC = () => {
                 if (result.title_locked !== undefined) {
                   setTitleLocked(result.title_locked);
                 }
-                // 渲染完成后关闭Loading
-                requestAnimationFrame(() => setIsRenderingMessages(false));
+                // 渲染完成后关闭Loading和骨架屏
+                requestAnimationFrame(() => {
+                  setIsRenderingMessages(false);
+                  setIsMessageListLoading(false);
+                });
               }
               } catch (e) {
                 console.warn("从API加载会话失败:", e);
@@ -1463,8 +1471,11 @@ const NewChatContainer: React.FC = () => {
             setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
             // 【小新修复 2026-03-14】销毁loading消息，避免一直显示
             message.destroy("session-load");
-            // 渲染完成后关闭Loading
-            requestAnimationFrame(() => setIsRenderingMessages(false));
+            // 渲染完成后关闭Loading和骨架屏
+            requestAnimationFrame(() => {
+              setIsRenderingMessages(false);
+              setIsMessageListLoading(false);
+            });
 
             console.log(
               "🔵 从URL加载会话:",
@@ -1568,8 +1579,11 @@ const NewChatContainer: React.FC = () => {
           }
           
           setMessages(result.messages);
-          // 渲染完成后关闭Loading
-          requestAnimationFrame(() => setIsRenderingMessages(false));
+          // 渲染完成后关闭Loading和骨架屏
+          requestAnimationFrame(() => {
+            setIsRenderingMessages(false);
+            setIsMessageListLoading(false);
+          });
           
           console.log(
             "🟡 加载最近会话:",
@@ -2264,62 +2278,40 @@ const NewChatContainer: React.FC = () => {
           position: "relative",
         }}
       >
-        {/* 【2026-04-08修复】大数据量渲染Loading提示 - Spin图标+呼吸背景动画 */}
+        {/* 【小强优化 2026-04-12】Loading组件优化 - fixed定位，z-index确保最顶层 */}
         {isRenderingMessages && (
           <div style={{
-            position: "absolute",
+            position: "fixed",
             top: 0,
             left: 0,
             right: 0,
-            height: 44,
+            bottom: 0,
             display: "flex",
+            flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
-            backgroundColor: "rgba(24, 160, 88, 0.08)",
-            borderBottom: "1px solid rgba(24, 160, 88, 0.2)",
-            zIndex: 100,
-            animation: "breathingBg 2s ease-in-out infinite",
+            background: "rgba(255, 255, 255, 0.95)",
+            zIndex: 9999,
           }}>
-            <style>{`
-              @keyframes breathingBg {
-                0%, 100% { backgroundColor: rgba(24, 160, 88, 0.08); }
-                50% { backgroundColor: rgba(24, 160, 88, 0.15); }
-              }
-            `}</style>
-            <Spin size="small" style={{ marginRight: 10 }} />
-            <span style={{ fontSize: 13, color: "#52c41a", fontWeight: 500 }}>正在加载会话数据</span>
-            <span className="loading-dots" style={{ marginLeft: 2, color: "#52c41a", fontWeight: 500 }}>
-              ...
-            </span>
-            <style>{`
-              .loading-dots::after {
-                content: '';
-                animation: dots 1.5s steps(4, end) infinite;
-                display: inline-block;
-                width: 18px;
-                text-align: left;
-              }
-              @keyframes dots {
-                0% { content: ''; }
-                25% { content: '.'; }
-                50% { content: '..'; }
-                75% { content: '...'; }
-                100% { content: ''; }
-              }
-            `}</style>
+            <LoadingOutlined style={{ fontSize: 32, color: "#1890ff" }} spin />
+            <p style={{ marginTop: 16, color: "#666", fontSize: 14 }}>正在加载会话数据...</p>
           </div>
         )}
         
         {messages.length === 0 ? (
-          <div style={{ textAlign: "center", color: "#999", marginTop: 50 }}>
-            <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
-            <p>开始与 AI 助手对话</p>
-            <p style={{ fontSize: 12 }}>
-              {useStream
-                ? "流式模式已开启 - 可实时查看 AI 思考过程"
-                : "普通模式 - 一次性返回完整回复"}
-            </p>
-          </div>
+          isMessageListLoading ? (
+            <MessageListSkeleton count={4} />
+          ) : (
+            <div style={{ textAlign: "center", color: "#999", marginTop: 50 }}>
+              <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
+              <p>开始与 AI 助手对话</p>
+              <p style={{ fontSize: 12 }}>
+                {useStream
+                  ? "流式模式已开启 - 可实时查看 AI 思考过程"
+                  : "普通模式 - 一次性返回完整回复"}
+              </p>
+            </div>
+          )
         ) : (
           <div>
             {(() => {
