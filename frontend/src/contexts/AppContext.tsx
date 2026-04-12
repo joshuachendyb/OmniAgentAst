@@ -65,6 +65,9 @@ interface AppState {
 
   // 标记是否已初始化（防止重复加载）
   isInitialized: boolean;
+  
+  // 标记初始化错误
+  initError: string | null;
 }
 
 /**
@@ -118,6 +121,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
 
   // 标记是否已初始化
   const [isInitialized, setIsInitialized] = useState(false);
+  
+  // 标记初始化错误
+  const [initError, setInitError] = useState<string | null>(null);
 
   // 标记初始化是否正在进行中（防止React Strict Mode重复调用）
   const initInProgressRef = useRef(false);
@@ -251,13 +257,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       console.log("[AppContext] 初始化进行中，跳过");
       return;
     }
-    if (isInitialized) {
-      console.log("[AppContext] 已初始化，跳过");
+    // 如果有错误，允许重试初始化
+    if (isInitialized && !initError) {
+      console.log("[AppContext] 已初始化成功，跳过");
       return;
     }
 
+    // 如果是重试，先重置状态
+    if (initError) {
+      setIsInitialized(false);
+      setInitError(null);
+    }
+    
     initInProgressRef.current = true;
     console.log("[AppContext] 开始初始化...");
+    setInitError(null); // 重置错误状态
     setValidationLoading(true);
     setModelListLoading(true);
     setServiceStatusLoading(true);
@@ -278,6 +292,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       console.log("[AppContext] 初始化完成");
     } catch (error) {
       console.error("[AppContext] 初始化失败:", error);
+      const errorMsg = error instanceof Error ? error.message : "初始化失败，请检查网络连接";
+      setInitError(errorMsg);
     } finally {
       initInProgressRef.current = false;
       setValidationLoading(false);
@@ -299,6 +315,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     validationResult,
     validationLoading,
     isInitialized,
+    initError,
 
     // Actions
     refreshSessionCount,

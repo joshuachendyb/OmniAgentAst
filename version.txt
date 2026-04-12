@@ -1,4 +1,134 @@
-v0.8.98
+v0.9.0
+
+更新时间：2026-04-12 18:14:25
+
+更新内容：
+
+## 1. 前端性能优化 - Phase 1 骨架屏实现 - 小资-2026-04-12
+
+### 1.1 问题背景
+
+首屏加载时出现空白，用户体验差。需要实现骨架屏在Layout初始化完成前显示。
+
+### 1.2 解决方案
+
+根据优化方案文档：`doc-4月优化/版本V0.8.98前端性能问题分析与优化方案-小资-2026-0412.md`
+
+### 1.3 实现内容
+
+#### 1.3.1 创建骨架屏组件
+
+| 文件 | 说明 |
+|------|------|
+| frontend/src/components/Skeleton/LayoutSkeleton.tsx | Layout骨架屏组件 |
+| frontend/src/components/Skeleton/LayoutSkeleton.module.css | Layout骨架屏样式 |
+| frontend/src/components/Skeleton/MessageListSkeleton.tsx | 消息列表骨架屏 |
+| frontend/src/components/Skeleton/MessageListSkeleton.module.css | 消息列表骨架屏样式 |
+| frontend/src/components/Skeleton/index.ts | 组件导出 |
+
+#### 1.3.2 集成到 Layout
+
+**修改文件**: `frontend/src/components/Layout/index.tsx`
+
+- 集成 LayoutSkeleton 组件
+- 实现骨架屏/实际内容切换逻辑
+- 监听 isInitialized 完成后延迟100ms切换
+- 使用 errorHandler 统一处理初始化失败错误
+
+#### 1.3.3 集成到 NewChatContainer
+
+**修改文件**: `frontend/src/components/Chat/NewChatContainer.tsx`
+
+- 消息列表区域显示骨架屏
+- 加载完成后切换到实际内容
+
+#### 1.3.4 Loading组件优化
+
+**修改文件**: `frontend/src/components/Chat/NewChatContainer.tsx`
+
+- Loading 使用 fixed 定位
+- z-index 确保在最顶层 (9999)
+- 添加 Spin 图标 + 呼吸背景 + 省略号动画
+
+#### 1.3.5 AppContext 错误状态
+
+**修改文件**: `frontend/src/contexts/AppContext.tsx`
+
+- 添加 initError 状态追踪初始化错误
+- 初始化失败时设置错误信息
+- 重试时重置错误状态
+
+### 1.4 UI 参数（与 Layout 完全一致）
+
+| 参数 | 值 |
+|------|------|
+| Sider 宽度 | 180px |
+| Header 高度 | 43px |
+| Header padding | 0 20px |
+| Logo 区域高度 | 64px |
+| Content margin | 无 |
+| 动画时长 | 1.5s |
+
+### 1.6 测试用例
+
+| 文件 | 测试数 | 状态 |
+|------|--------|------|
+| LayoutSkeleton.test.tsx | 13 | ✅ 通过 |
+| MessageListSkeleton.test.tsx | 10 | ✅ 通过 |
+| skeleton-toggle.test.tsx | 6 | ✅ 通过 |
+| **总计** | **29** | **全部通过** |
+
+### 1.7 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| - | feat: 创建LayoutSkeleton骨架屏组件-小资-2026-04-12 |
+| - | feat: 创建MessageListSkeleton消息列表骨架屏-小资-2026-04-12 |
+| - | feat: 集成骨架屏到Layout-index.tsx-小资-2026-04-12 |
+| - | fix: 骨架屏切换时机修正为监听isInitialized+100ms-小资-2026-04-12 |
+| - | feat: 使用errorHandler统一处理初始化失败错误-小资-2026-04-12 |
+| - | test: 创建骨架屏测试用例-小资-2026-04-12 |
+
+参与开发：小资（实现）、小强（审查）、小健（审查）
+
+---
+
+## 2. 配置缓存优化 - 小沈-2026-04-12
+
+### 2.1 问题背景
+
+每次GET请求都调用config.reload()，导致每次都读YAML文件，启动慢的主要原因。
+
+### 2.2 解决方案
+
+**双保险保护设计**：配置文件mtime缓存检测
+
+### 2.3 修改内容
+
+| 文件 | 修改 |
+|------|------|
+| backend/app/config.py | 添加_config_mtime属性，_load_config()添加mtime缓存检测，reload()清空缓存 |
+| backend/app/api/v1/config.py:734 | 移除get_model_list不必要的reload() |
+| backend/app/api/v1/config.py:878 | 移除get_full_config不必要的reload() |
+
+### 2.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| - | perf: 配置缓存优化-小沈-2026-04-12 |
+
+### 2.5 预期效果
+
+| 指标 | 修改前 | 修改后 |
+|------|--------|--------|
+| 启动速度 | 慢（每次读YAML） | 快（首次读，后续用缓存） |
+| API响应 | 每次读文件 | 首次读，后续用缓存 |
+| 配置更新 | 正常 | 正常（自动检测变更） |
+
+参与开发：小沈
+
+---
+
 
 更新时间：2026-04-12 07:30:00
 
