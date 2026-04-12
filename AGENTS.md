@@ -2,7 +2,7 @@
 
 **Project**: OmniAgentAs-desk  
 **Type**: Full-stack web application (React + FastAPI)  
-**Version**: v0.5.4
+**Version**: v0.8.92
 
 ---
 
@@ -160,7 +160,47 @@ fix: resolve message display issue - 小新-2026-03-13
 
 ---
 
-## 6. Notes
+## 6. GSD Workflow (Recommended)
+
+### About GSD
+GSD (Get Shit Done) is a meta-prompting, context engineering and spec-driven development system that prevents "context rot" - the quality degradation that happens when AI context windows get filled.
+
+**Documentation**: https://github.com/gsd-build/get-shit-done  
+**Installed Version**: 1.34.2
+
+### Workflow Commands
+
+| Command | Description |
+|---------|-------------|
+| `/gsd-new-project` | Initialize new project with research + requirements + roadmap |
+| `/gsd-map-codebase` | Analyze existing codebase before adding features |
+| `/gsd-discuss-phase N` | Capture implementation decisions before planning |
+| `/gsd-plan-phase N` | Research + create atomic task plans for a phase |
+| `/gsd-execute-phase N` | Execute all plans with fresh context per task |
+| `/gsd-verify-work N` | Manual user acceptance testing |
+| `/gsd-quick` | Quick mode for ad-hoc tasks |
+| `/gsd-next` | Auto-detect and run next step |
+| `/gsd-help` | Show all commands |
+
+### When to Use GSD
+
+| Scenario | Recommended Command |
+|----------|---------------------|
+| New feature development | `/gsd-discuss-phase` → `/gsd-plan-phase` → `/gsd-execute-phase` |
+| Bug fix | `/gsd-debug` or `/gsd-quick` |
+| Code analysis | `/gsd-scan` or `/gsd-map-codebase` |
+| Quick task | `/gsd-quick` |
+
+### Benefits
+
+- **Fresh context per task**: Each task gets 200k tokens, no accumulated garbage
+- **Atomic commits**: Every task gets its own commit, easy to bisect/revert
+- **Wave execution**: Independent plans run in parallel, dependent plans wait
+- **Quality gates**: Plan checker + verifier ensure requirements are met
+
+---
+
+## 7. Notes
 
 - Backend runs on `http://127.0.0.1:8000`
 - Frontend runs on `http://localhost:5173`
