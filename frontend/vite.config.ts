@@ -37,6 +37,8 @@ export default defineConfig(({ command }) => {
     build: {
       // 生产环境压缩优化
       minify: 'esbuild',
+      // Tree-shaking 最 aggressive 配置，移除所有未使用的代码
+      treeshake: 'smallest',
       // 使用函数方式配置 manualChunks，避免循环依赖
       rollupOptions: {
         output: {
