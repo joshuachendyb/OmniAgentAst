@@ -48,6 +48,7 @@ import ShortcutPanel from "../ShortcutPanel";
 import { useApp } from "../../contexts/AppContext";
 import { LayoutSkeleton } from "../Skeleton";
 import { handleError, showSuccess, showMessage, ErrorType } from "../../utils/errorHandler";
+// import useInitializationProgress from "../../hooks/useInitializationProgress";
 
 const { useBreakpoint } = Grid;
 
@@ -107,6 +108,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     isInitialized,
     initError,
   } = useApp();
+
+  // ⭐ Phase 2 P2 优化：协调初始化时序 hook（预留，暂未完全集成）
+  // const { isReady, phase } = useInitializationProgress({
+  //   appInitialized: isInitialized,
+  //   sessionLoaded: true,
+  // });
 
   // 同步sessionCount到本地state（因为其他地方可能依赖sessionCount变量）
   const [_sessionCount, setSessionCount] = useState(0);

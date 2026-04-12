@@ -31,5 +31,18 @@ export default defineConfig(({ command }) => {
         },
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+            'antd-vendor': ['antd'],
+            'utils-vendor': ['axios', 'dayjs'],
+          },
+        },
+      },
+      cssCodeSplit: true,
+      chunkSizeWarningLimit: 500,
+    },
   };
 });
