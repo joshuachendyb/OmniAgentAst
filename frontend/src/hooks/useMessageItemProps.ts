@@ -65,8 +65,19 @@ export const areMessageItemPropsEqual = (
     return false;
   }
   
-  // 比较时间戳 - 使用getTime()比较，避免Date对象引用问题
-  if (prev.message.timestamp.getTime() !== next.message.timestamp.getTime()) {
+  // 比较时间戳 - 支持Date对象、数字或字符串类型
+  const getTimestamp = (ts: Date | string | number): number => {
+    if (ts instanceof Date) {
+      return ts.getTime();
+    }
+    if (typeof ts === 'string') {
+      return new Date(ts).getTime();
+    }
+    return Number(ts);
+  };
+  const prevTime = getTimestamp(prev.message.timestamp);
+  const nextTime = getTimestamp(next.message.timestamp);
+  if (prevTime !== nextTime) {
     return false;
   }
   
