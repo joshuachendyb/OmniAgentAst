@@ -42,7 +42,7 @@ interface Pagination {
 interface SearchFilesViewProps {
   data: {
     files_matched: number;
-    total_matches: number;
+    total_matches?: number;
     matches: FileMatch[];
     search_pattern: string;
     search_path?: string;
@@ -59,7 +59,6 @@ interface SearchFilesViewProps {
 const SearchFilesView: React.FC<SearchFilesViewProps> = ({ data, onLoadMore, isLoadingMore }) => {
   const {
     files_matched = 0,
-    // total_matches = 0, // TODO: 待后端返回后启用
     matches = [],
     search_pattern = "",
     search_path = "",

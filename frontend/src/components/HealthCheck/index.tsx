@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Card, Tag, Button, Input, message } from "antd";
+import { Card, Tag, Button, Input } from "antd";
 import { healthApi, EchoResponse } from "../../services/api";
+import { handleError, showSuccess, ErrorType } from "../../utils/errorHandler";
 
 const HealthCheck: React.FC = () => {
   const [status, setStatus] = useState<string>("checking");
@@ -25,16 +26,16 @@ const HealthCheck: React.FC = () => {
 
   const handleEchoTest = async () => {
     if (!testMessage.trim()) {
-      message.warning("请输入测试消息");
+      handleError({ message: "请输入测试消息", error_type: ErrorType.WARNING });
       return;
     }
 
     try {
       const response = await healthApi.echo(testMessage);
       setEchoResponse(response);
-      message.success("通信测试成功");
+      showSuccess("通信测试成功");
     } catch (error) {
-      message.error("通信测试失败");
+      handleError("通信测试失败");
       console.error("Echo test failed:", error);
     }
   };
