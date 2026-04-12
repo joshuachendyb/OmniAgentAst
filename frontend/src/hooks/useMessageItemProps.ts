@@ -65,8 +65,8 @@ export const areMessageItemPropsEqual = (
     return false;
   }
   
-  // 比较时间戳
-  if (prev.message.timestamp !== next.message.timestamp) {
+  // 比较时间戳 - 使用getTime()比较，避免Date对象引用问题
+  if (prev.message.timestamp.getTime() !== next.message.timestamp.getTime()) {
     return false;
   }
   
