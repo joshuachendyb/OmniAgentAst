@@ -30,7 +30,6 @@ import {
   message,
   Badge,
   Tooltip,
-  Spin,
 } from "antd";
 import {
   RobotOutlined,
@@ -40,7 +39,6 @@ import {
   EyeInvisibleOutlined,
   InfoCircleOutlined,
   LockOutlined,
-  LoadingOutlined,
 } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
@@ -179,7 +177,7 @@ const NewChatContainer: React.FC = () => {
   type SaveStatus = "idle" | "saving" | "saved" | "error";
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [_sessionJumpLoading, setSessionJumpLoading] = useState(false);
-  const [isRenderingMessages, setIsRenderingMessages] = useState(false); // 渲染大量消息时的loading
+  const [__isRenderingMessages, setIsRenderingMessages] = useState(false); // 渲染大量消息时的loading
   const [isMessageListLoading, setIsMessageListLoading] = useState(true); // 消息列表骨架屏状态
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
   const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
@@ -2277,26 +2275,7 @@ const NewChatContainer: React.FC = () => {
           backgroundColor: "#fafafa",
           position: "relative",
         }}
-      >
-        {/* 【小强优化 2026-04-12】Loading组件优化 - fixed定位，z-index确保最顶层 */}
-        {isRenderingMessages && (
-          <div style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "rgba(255, 255, 255, 0.95)",
-            zIndex: 9999,
-          }}>
-            <LoadingOutlined style={{ fontSize: 32, color: "#1890ff" }} spin />
-            <p style={{ marginTop: 16, color: "#666", fontSize: 14 }}>正在加载会话数据...</p>
-          </div>
-        )}
+        >
         
         {messages.length === 0 ? (
           isMessageListLoading ? (
