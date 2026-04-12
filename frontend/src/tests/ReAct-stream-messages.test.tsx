@@ -670,7 +670,7 @@ describe('【小查测试】10.9 完整ReAct流程', () => {
     expect(completeReActFlow.length).toBe(5);
     expect(completeReActFlow[0].type).toBe('start');
     expect(completeReActFlow[1].type).toBe('thought');
-    expect(completeReActFlow[2].type).toBe('tool_name');
+    expect(completeReActFlow[2].type).toBe('action_tool');
     expect(completeReActFlow[3].type).toBe('observation');
     expect(completeReActFlow[4].type).toBe('final');
   });
