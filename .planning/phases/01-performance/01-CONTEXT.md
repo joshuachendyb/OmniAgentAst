@@ -28,10 +28,18 @@
 ### 动画效果
 - **闪烁动画**：使用Ant Design默认的shimmer闪烁效果（Skeleton组件自带）
 
+### 切换时机
+-骨架屏切换时机：200ms（AppContext初始化完成后）
+
+### 失败处理
+- 会话数据加载失败时：显示错误提示 + 重试按钮
+
+### 动画参数
+- 骨架屏闪烁动画时长：1s
+
 ### Claude's Discretion
-- 具体的CSS动画参数（时长、缓动函数）
+- 具体的CSS缓动函数
 - 骨架屏颜色微调
-- 错误状态的处理方式
 
 </decisions>
 
@@ -80,8 +88,9 @@
 <deferred>
 ## Deferred Ideas
 
-- 问题2：标题编辑无反应 —  Future phase
+- 问题2：标题编辑无反应 — Future phase
 - 问题3：消息显示慢 — Future phase
+- Bundle代码分割(1.2MB→600KB) — P2级优化，第三阶段
 
 </deferred>
 
