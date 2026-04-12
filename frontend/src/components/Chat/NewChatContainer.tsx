@@ -92,6 +92,9 @@ import ChatInput from "./ChatInput";
 // 【小强 2026-04-12】骨架屏组件
 import { MessageListSkeleton } from "../Skeleton";
 
+// 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表useMemo优化（使用独立hook）
+import { useMessageListRender } from '../../hooks/useMessageListRender';
+
 // 【小新 2026-03-13 代码拆分】类型和工具函数已提取到独立文件
 // - 类型定义: src/types/chat.ts
 // - 工具函数: src/utils/chatHistory.ts
@@ -180,6 +183,16 @@ const NewChatContainer: React.FC = () => {
   const [__isRenderingMessages, setIsRenderingMessages] = useState(false); // 渲染大量消息时的loading
   const [isMessageListLoading, setIsMessageListLoading] = useState(true); // 消息列表骨架屏状态
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
+  const [_isSavingTitle, setIsSavingTitle] = useState(false);
+
+  // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表渲染hook
+  const messageElements = useMessageListRender({
+    messages,
+    showExecution,
+    sessionId,
+    sessionTitle,
+  });
+
   const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
   const [_isSavingTitle, setIsSavingTitle] = useState(false);
 
@@ -2293,77 +2306,8 @@ const NewChatContainer: React.FC = () => {
           )
         ) : (
           <div>
-            {(() => {
-              // 时间分隔线
-              const elements: React.ReactNode[] = [];
-              let lastDate: string | null = null;
-
-              for (let i = 0; i < messages.length; i++) {
-                const item = messages[i];
-                const currentDate = new Date(item.timestamp).toLocaleDateString(
-                  "zh-CN"
-                );
-
-                if (lastDate !== currentDate) {
-                  elements.push(
-                    <div
-                      key={`date-${i}`}
-                      style={{
-                        textAlign: "center",
-                        margin: "1px 0",
-                        position: "relative",
-                      }}
-                    >
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: "50%",
-                          left: 0,
-                          right: 0,
-                          height: 1,
-                          backgroundColor: "#e8e8e8",
-                        }}
-                      />
-                      <span
-                        style={{
-                          background: "#fafafa",
-                          padding: "0 16px",
-                          color: "#999",
-                          fontSize: 12,
-                          position: "relative",
-                          zIndex: 1,
-                        }}
-                      >
-                        {currentDate}
-                      </span>
-                    </div>
-                  );
-                  lastDate = currentDate;
-                }
-
-                elements.push(
-                  <List.Item
-                    key={item.id}
-                    style={{
-                      justifyContent:
-                        item.role === "user" ? "flex-end" : "flex-start",
-                      border: "none",
-                      padding: 0,
-                      width: "100%",
-                    }}
-                  >
-                    <MessageItem 
-                      message={item} 
-                      showExecution={showExecution}
-                      sessionId={sessionId}
-                      sessionTitle={sessionTitle}
-                    />
-                  </List.Item>
-                );
-              }
-
-              return elements;
-            })()}
+            {/* 【小强 2026-04-12】Phase 2 P1级优化：使用独立hook优化消息列表渲染 */}
+            {messageElements}
           </div>
         )}
         <div ref={messagesEndRef} />
