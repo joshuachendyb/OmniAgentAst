@@ -42,13 +42,13 @@ describe('DynamicStatusDisplay', () => {
       expect(container.textContent).toContain('🤔');
     });
 
-    it('应该显示"Agent 正在执行action_tool"当 thought step 到达时', () => {
+    it('应该显示"Agent 正在执行tool_name"当 thought step 到达时', () => {
       const executionSteps = [{ type: 'start' }, { type: 'thought' }];
       const { container } = render(
         <DynamicStatusDisplay executionSteps={executionSteps} isStreaming={true} />
       );
       
-      expect(container.textContent).toContain('action_tool');
+      expect(container.textContent).toContain('tool_name');
       expect(container.textContent).toContain('🛠️');
     });
 
