@@ -8,7 +8,7 @@
  * @since 2026-02-17
  */
 
-import React, { useState } from "react";
+import React, { useState, memo } from "react";
 import {
   Avatar,
   Tooltip,
@@ -25,7 +25,6 @@ import {
 } from "@ant-design/icons";
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
-import { taskControlApi } from "../../services/api";
 import { formatTimestamp } from "../../utils/timestamp";
 import { DynamicStatusDisplay } from "../../utils/dynamicStatus";
 import { } from "../../utils/markdown";
@@ -39,7 +38,6 @@ import {
   getTimestampStyle,
   getNextStepStyle,
   getStatusBadgeStyle,
-  getFinishedBadgeStyle,
   FontSize,
   FontWeight,
   Colors,
@@ -59,6 +57,9 @@ import JsonHighlight from "./views/JsonHighlight";
 // 【小强实现 2026-03-31】导入搜索工具数据转换函数
 import { transformSearchFilesData, transformSearchFileContentData } from "../../utils/searchTransformers";
 
+// 【小强 2026-04-12】Phase 2 P1级优化 - 导入自定义比较函数
+import { messageItemCompare } from '../../hooks/useMessageItemProps';
+
 /**
  * 步骤行组件 - 单行步骤显示（优化后新增）
  * 思考和执行分开渲染，用颜色区分类型
@@ -74,9 +75,9 @@ interface StepRowProps {
   toggleExpand: (index: number) => void;
 }
 
-const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expandedSteps, toggleExpand }) => {
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [showAllData, setShowAllData] = useState(false);  // 【小强新增 2026-04-03】前端分页控制
+const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0, expandedSteps, toggleExpand }) => {
+  const [_isLoadingMore, _setIsLoadingMore] = useState(false);
+  const [_showAllData, setShowAllData] = useState(false);  // 【小强新增 2026-04-03】前端分页控制
 
   // 【小资修复 2026-03-23】从全局Map读取展开状态（未设置的key默认展开）
   const isExpanded = expandedSteps.get(stepIndex) ?? true;
@@ -130,27 +131,6 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
     return baseStyle;
   };
 
-
-
-  // 【小强优化 2026-03-18】文件列表背景
-  const getFileListBackground = () => {
-    return {
-      background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
-      border: "1px solid #b7eb8f",
-      borderRadius: 8,
-      padding: "10px 14px",
-      marginTop: 6,
-      fontSize: "0.9em",
-      lineHeight: 1.8,
-      whiteSpace: "pre-wrap",
-      maxHeight: 300,
-      overflow: "auto",
-      boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
-    };
-  };
-
-
-
   // 【小强修改 2026-04-03】前端分页：后端返回全部数据，前端自己控制显示
   const handleLoadMore = () => {
     setShowAllData(true);  // 前端直接显示全部数据，不调用后端API
@@ -162,7 +142,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId, stepIndex = 0, expanded
     const allData = rawData?.matches || rawData?.entries || rawData?.results || [];
     const FRONTEND_PAGE_SIZE = 100;  // 前端每页显示100条
     
-    if (showAllData) {
+    if (_showAllData) {
       return { displayData: allData, hasMore: false };
     }
     
@@ -559,7 +539,9 @@ const renderToolResult = (step: ExecutionStep, isExpanded: boolean = true, toggl
   }
 };
 
-interface MessageItemProps {
+// 【小强 2026-04-12】Phase 2 P1级优化：使用React.memo包装组件，减少不必要的重渲染
+// MessageItemProps 类型已移至 useMessageItemProps.ts 中导出，供外部使用
+export interface MessageItemProps {
   message: ChatMessage & {
     id: string;
     timestamp: Date;
@@ -598,7 +580,9 @@ interface MessageItemProps {
  * @param message - 消息对象
  * @param showExecution - 是否显示执行过程
  */
-const MessageItem: React.FC<MessageItemProps> = ({
+// 【小强 2026-04-12】Phase 2 P1级优化：使用React.memo包装组件，减少不必要的重渲染
+// MessageItemProps 在 useMessageItemProps.ts 中导出使用
+const MessageItem = memo(({
   message,
   showExecution: _showExecution = false,
   sessionId,
@@ -1361,6 +1345,8 @@ const isUser = message.role === "user";
       `}</style>
     </div>
   );
-};
+}, messageItemCompare);
+
+// 【小强 2026-04-12】Phase 2 P1级优化：使用React.memo包装 + 自定义比较函数
 
 export default MessageItem;

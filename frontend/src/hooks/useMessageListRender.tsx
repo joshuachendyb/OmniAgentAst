@@ -13,7 +13,7 @@
 
 import { useMemo, ReactNode } from 'react';
 import { List } from 'antd';
-import type { Message } from '../services/api';
+import type { Message } from '../types/chat';
 import MessageItem from '../components/Chat/MessageItem';
 
 /**

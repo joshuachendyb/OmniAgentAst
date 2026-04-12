@@ -376,32 +376,6 @@ const ERROR_CONFIG_MAP: Record<SSEErrorType, ErrorConfig> = {
 };
 
 /**
- * 获取友好的错误消息
- * 【小强修复 2026-04-09】区分空闲超时和请求等待超时
- */
-const getFriendlyErrorMessage = (errorType: SSEErrorType, originalMessage: string): string => {
-  const prefix = "SSE连接:";
-  switch (errorType) {
-    case "idle_timeout":
-      return `${prefix}空闲超时（长时间无数据），连接可能已断开`;
-    case "request_timeout":
-      return `${prefix}请求等待超时，服务器响应过慢，请稍后重试`;
-    case "network":
-      return `${prefix}网络连接失败，请检查网络后重试`;
-    case "server":
-      return `${prefix}服务器错误: ${originalMessage}`;
-    case "empty_response":
-      return `${prefix}模型未能生成有效回复，请尝试更换问题或稍后重试`;
-    case "connection_refused":
-      return `${prefix}服务器连接被拒绝，请检查后端服务是否运行`;
-    case "http_500":
-      return `${prefix}服务器内部错误，请稍后重试`;
-    default:
-      return `${prefix}异常: ${originalMessage}`;
-  }
-};
-
-/**
  * 计算重连延迟（指数退避 + Full Jitter）
  * 【小强修复 2026-03-18】增强重试策略，使用Full Jitter算法
  * 
@@ -1003,8 +977,7 @@ const processSSEData = (
       }
 
       case "chunk": {
-        const stepNum = rawData.step || 1;
-        // 精简日志：只打印第一个 chunk
+        // 精简日志：chunk不打印，避免日志过多
         
         // 传递 is_reasoning 区分思考过程和最终答案
         const is_reasoning = rawData.is_reasoning === true || rawData.is_reasoning === 'true' || rawData.is_reasoning === 1 || rawData.is_reasoning === '1';
