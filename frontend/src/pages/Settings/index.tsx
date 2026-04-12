@@ -36,7 +36,6 @@ import {
   Tag,
   Space,
   Typography,
-  message,
   Divider,
   Popconfirm,
   Modal,
@@ -70,6 +69,7 @@ import {
 import { configApi, chatApi } from "../../services/api";
 import type { ProviderInfo } from "../../services/api";
 import HealthCheck from "../../components/HealthCheck";
+import { handleError, showSuccess, showMessage, ErrorType } from "../../utils/errorHandler";
 
 const { Text } = Typography;
 const { TabPane } = Tabs;
@@ -115,17 +115,17 @@ const GlobalConfigArea: React.FC<{
       await configApi.openConfigFolder();
     } catch (error) {
       console.error("打开配置目录失败:", error);
-      message.error("打开配置目录失败");
+      handleError("打开配置目录失败");
     }
   };
 
   const handleViewConfig = async () => {
     try {
       // readConfigFile 已删除，暂时不显示配置文件原文
-      message.info("配置文件查看功能暂时不可用");
+      showMessage(ErrorType.INFO, "配置文件查看功能暂时不可用");
     } catch (error) {
       console.error("读取配置文件失败:", error);
-      message.error("读取配置文件失败");
+      handleError("读取配置文件失败");
     }
   };
 
@@ -135,12 +135,12 @@ const GlobalConfigArea: React.FC<{
     try {
       // validateConfig 需要 provider 参数，暂时跳过验证
       // 验证功能在"检查服务"按钮中实现
-      message.info("请使用下方的'检查服务'按钮进行验证");
+      showMessage(ErrorType.INFO, "请使用下方的'检查服务'按钮进行验证");
       setValidating(false);
       return;
     } catch (error) {
       console.error("检测配置文件失败:", error);
-      message.error("检测配置文件失败");
+      handleError("检测配置文件失败");
     } finally {
       setValidating(false);
     }
@@ -495,7 +495,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
         (providerList.length > 0 ? providerList[0] : null);
       setSelectedProvider(current);
     } catch (error) {
-      message.error("加载配置失败");
+      handleError("加载配置失败");
       console.error("加载配置失败:", error);
     } finally {
       setLoading(false);
@@ -556,10 +556,10 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
         console.warn("验证服务失败:", e);
       }
 
-      message.success("Provider配置已更新");
+      showSuccess("Provider配置已更新");
       setEditModalVisible(false);
     } catch (error) {
-      message.error("更新失败");
+      handleError("更新失败");
     }
   };
 
@@ -571,9 +571,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       // 刷新配置
       loadConfig();
 
-      message.success("Provider已删除");
+      showSuccess("Provider已删除");
     } catch (error: any) {
-      message.error(error.response?.data?.detail || "删除失败");
+      handleError(error.response?.data?.detail || "删除失败");
     }
   };
 
@@ -595,12 +595,12 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       // 刷新配置
       loadConfig();
 
-      message.success("模型已更新");
+      showSuccess("模型已更新");
       setEditModalVisible(false);
       setEditingModel(null);
       modelEditForm.resetFields();
     } catch (error: any) {
-      message.error(error.response?.data?.detail || "更新失败");
+      handleError(error.response?.data?.detail || "更新失败");
     }
   };
 
@@ -612,9 +612,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       // 刷新配置
       loadConfig();
 
-      message.success("模型已删除");
+      showSuccess("模型已删除");
     } catch (error: any) {
-      message.error(error.response?.data?.detail || "删除失败");
+      handleError(error.response?.data?.detail || "删除失败");
     }
   };
 
@@ -661,24 +661,20 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       const cancelledCount = results.filter((r) => r.cancelled).length;
 
       if (controller.signal.aborted) {
-        message.warning(
-          `批量删除已取消：${successCount} 成功，${cancelledCount} 未执行`
-        );
+        handleError({ message: `批量删除已取消：${successCount} 成功，${cancelledCount} 未执行`, error_type: ErrorType.WARNING });
       } else if (failCount === 0) {
-        message.success(`批量删除完成：${successCount} 个模型`);
+        showSuccess(`批量删除完成：${successCount} 个模型`);
       } else {
-        message.warning(
-          `批量删除完成：${successCount} 成功，${failCount} 失败`
-        );
+        handleError({ message: `批量删除完成：${successCount} 成功，${failCount} 失败`, error_type: ErrorType.WARNING });
       }
 
       setSelectedModels(new Set());
       loadConfig();
     } catch (error: any) {
       if (error.name === "AbortError") {
-        message.warning("批量删除已取消");
+        handleError({ message: "批量删除已取消", error_type: ErrorType.WARNING });
       } else {
-        message.error("批量删除失败");
+        handleError("批量删除失败");
       }
     } finally {
       setDeleteProgress({ current: 0, total: 0 });
@@ -702,11 +698,11 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
         console.warn("验证服务失败:", e);
       }
 
-      message.success("模型已添加");
+      showSuccess("模型已添加");
       setAddModelModalVisible(false);
       modelForm.resetFields();
     } catch (error: any) {
-      message.error(error.response?.data?.detail || "添加失败");
+      handleError(error.response?.data?.detail || "添加失败");
     }
   };
 
@@ -733,11 +729,11 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
         console.warn("验证服务失败:", e);
       }
 
-      message.success("Provider已添加");
+      showSuccess("Provider已添加");
       setAddProviderModalVisible(false);
       providerForm.resetFields();
     } catch (error: any) {
-      message.error(error.response?.data?.detail || "添加失败");
+      handleError(error.response?.data?.detail || "添加失败");
     }
   };
 
@@ -778,9 +774,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
         console.warn("服务验证失败:", e);
       }
 
-      message.success(`已切换到 ${option.display_name}`);
+      showSuccess(`已切换到 ${option.display_name}`);
     } catch (error) {
-      message.error("切换模型失败");
+      handleError("切换模型失败");
       console.error("切换模型失败:", error);
     }
   };
@@ -1521,7 +1517,7 @@ const SecuritySettings: React.FC = () => {
       setSecurityConfig(security);
       securityForm.setFieldsValue(security);
     } catch (error) {
-      message.error("加载安全配置失败");
+      handleError("加载安全配置失败");
     }
   };
 
@@ -1538,10 +1534,10 @@ const SecuritySettings: React.FC = () => {
         security: values,
       };
       await configApi.updateConfig(updateData);
-      message.success("安全配置已保存");
+      showSuccess("安全配置已保存");
       setSecurityConfig(values);
     } catch (error) {
-      message.error("保存安全配置失败");
+      handleError("保存安全配置失败");
     } finally {
       setSavingSecurity(false);
     }
@@ -1765,30 +1761,14 @@ const SecuritySettings: React.FC = () => {
  * @update 2026-02-26 重构：提取子组件
  */
 /**
- * TODO: 配置文件路径功能待完善 [2026-02-28]
- *
- * 当前问题：
- * 1. configFilePath 相关的 UI 之前被从 Tabs 上方移除，但未完全迁移
- * 2. handleOpenConfigDir 和 handleShowFixModal 函数已定义但未被使用
- * 3. 配置文件路径信息目前只在 Modal（配置修复进度弹窗）中显示
- *
- * 建议解决方案：
- * 方案A：将配置文件路径相关功能迁移到"模型配置"Tab内部的 ProviderSettings 组件顶部
- * - 显示备份路径
- * - 添加"打开配置目录"按钮（调用后端 API 打开文件夹）
- * - 添加"修复配置"按钮（触发 handleFixConfig）
- *
- * 方案B：在 Tabs 上方（Card 内部、Tabs 外部）添加功能入口
- *
- * 相关变量和函数：
- * - configFilePath: 配置文件备份路径状态
- * - loadConfigFilePath(): 加载配置文件路径
- * - handleFixConfig(): 修复配置功能
- * - handleOpenConfigDir(): 打开配置目录（需完善实现）
- * - handleShowFixModal(): 显示修复弹窗（需绑定按钮）
- *
+ * 配置文件路径功能 [2026-02-28]
+ * 
+ * 当前状态：
+ * - handleOpenConfigDir 已实现并在第113行定义
+ * - 在第168行已绑定到按钮点击事件
+ * 
  * @author 小欧
- * @update 2026-02-28 添加待办说明
+ * @update 2026-04-12 更新状态
  */
 const Settings: React.FC = () => {
   // 注意：React 18 自动批处理状态更新，无需手动优化

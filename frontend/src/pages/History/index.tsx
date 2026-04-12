@@ -19,7 +19,6 @@ import {
   Typography,
   Popconfirm,
   Empty,
-  message,
   Spin,
   Badge,
   Tooltip,
@@ -37,6 +36,7 @@ import {
 } from "@ant-design/icons";
 import { sessionApi, Session } from "../../services/api";
 import { useNavigate } from "react-router-dom";
+import { handleError, showSuccess, ErrorType } from "../../utils/errorHandler";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import "dayjs/locale/zh-cn";
@@ -92,7 +92,7 @@ const HistoryPage: React.FC = () => {
         total: response.total,
       });
     } catch (error) {
-      message.error("加载会话列表失败");
+      handleError("加载会话列表失败");
       console.error("加载会话列表失败:", error);
     } finally {
       setLoading(false);
@@ -119,7 +119,7 @@ const HistoryPage: React.FC = () => {
    */
   const handleRefresh = () => {
     loadSessions(pagination.current, keyword);
-    message.success("列表已刷新");
+    showSuccess("列表已刷新");
   };
 
   /**
@@ -141,9 +141,9 @@ const HistoryPage: React.FC = () => {
         current: pagination.current,
         total: response.total,
       });
-      message.success("列表已强制刷新");
+      showSuccess("列表已强制刷新");
     } catch (error) {
-      message.error("刷新失败");
+      handleError("刷新失败");
       console.error("强制刷新失败:", error);
     } finally {
       setLoading(false);
@@ -156,11 +156,11 @@ const HistoryPage: React.FC = () => {
   const handleDelete = async (sessionId: string) => {
     try {
       await sessionApi.deleteSession(sessionId);
-      message.success("会话已删除");
+      showSuccess("会话已删除");
       // 刷新列表
       loadSessions(pagination.current, keyword);
     } catch (error) {
-      message.error("删除会话失败");
+      handleError("删除会话失败");
       console.error("删除会话失败:", error);
     }
   };
@@ -170,19 +170,19 @@ const HistoryPage: React.FC = () => {
    */
   const handleBatchDelete = async () => {
     if (selectedSessions.size === 0) {
-      message.warning("请先选择要删除的会话");
+      handleError({ message: "请先选择要删除的会话", error_type: ErrorType.WARNING });
       return;
     }
     try {
       for (const sessionId of selectedSessions) {
         await sessionApi.deleteSession(sessionId);
       }
-      message.success(`已删除 ${selectedSessions.size} 个会话`);
+      showSuccess(`已删除 ${selectedSessions.size} 个会话`);
       setSelectedSessions(new Set());
       // 刷新列表
       loadSessions(pagination.current, keyword);
     } catch (error) {
-      message.error("批量删除会话失败");
+      handleError("批量删除会话失败");
       console.error("批量删除会话失败:", error);
     }
   };
@@ -194,7 +194,7 @@ const HistoryPage: React.FC = () => {
     try {
       // 检查是否有会话
       if (pagination.total === 0) {
-        message.warning("当前没有会话可清空");
+        handleError({ message: "当前没有会话可清空", error_type: ErrorType.WARNING });
         return;
       }
 
@@ -218,7 +218,7 @@ const HistoryPage: React.FC = () => {
       }
 
       if (allSessions.length === 0) {
-        message.warning("没有会话需要清空");
+        handleError({ message: "没有会话需要清空", error_type: ErrorType.WARNING });
         return;
       }
 
@@ -231,7 +231,7 @@ const HistoryPage: React.FC = () => {
 
       // 统计成功数量
       const successCount = deleteResults.filter(r => r.status === 'fulfilled').length;
-      message.success(`已清空 ${successCount} 个会话`);
+      showSuccess(`已清空 ${successCount} 个会话`);
       setSelectedSessions(new Set());
       setKeyword("");
       // 刷新列表（直接重置状态，不需要等待 API）
@@ -240,7 +240,7 @@ const HistoryPage: React.FC = () => {
       // 重新加载列表确保数据一致性
       await loadSessions(1, "");
     } catch (error) {
-      message.error("清空会话失败");
+      handleError("清空会话失败");
       console.error("清空会话失败:", error);
       // 失败后刷新列表以恢复正确状态
       await loadSessions(pagination.current, keyword);
@@ -260,7 +260,7 @@ const HistoryPage: React.FC = () => {
       console.log("✅ 跳转成功:", sessionId);
     } catch (error) {
       console.error("❌ 跳转失败:", error);
-      message.error("跳转失败");
+      handleError("跳转失败");
     } finally {
       setLoadingSessionId(null);
     }

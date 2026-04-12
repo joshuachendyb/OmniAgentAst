@@ -580,6 +580,7 @@ export interface MessageItemProps {
  * @param message - 消息对象
  * @param showExecution - 是否显示执行过程
  */
+/* eslint-disable react/prop-types */
 // 【小强 2026-04-12】Phase 2 P1级优化：使用React.memo包装组件，减少不必要的重渲染
 // MessageItemProps 在 useMessageItemProps.ts 中导出使用
 const MessageItem = memo(({
@@ -1348,5 +1349,7 @@ const isUser = message.role === "user";
 }, messageItemCompare);
 
 // 【小强 2026-04-12】Phase 2 P1级优化：使用React.memo包装 + 自定义比较函数
+// eslint-disable-next-line react/display-name
+MessageItem.displayName = 'MessageItem';
 
 export default MessageItem;

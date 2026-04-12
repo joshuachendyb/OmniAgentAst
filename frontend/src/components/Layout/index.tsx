@@ -23,7 +23,6 @@ import {
   Grid,
   Tag,
   Select,
-  message,
   Modal,
   Alert,
 } from "antd";
@@ -48,7 +47,7 @@ const { Option } = Select;
 import ShortcutPanel from "../ShortcutPanel";
 import { useApp } from "../../contexts/AppContext";
 import { LayoutSkeleton } from "../Skeleton";
-import { handleError, ErrorType } from "../../utils/errorHandler";
+import { handleError, showSuccess, showMessage, ErrorType } from "../../utils/errorHandler";
 
 const { useBreakpoint } = Grid;
 
@@ -269,7 +268,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
         (m) => `${m.provider}-${m.model}` === value
       );
       if (!selectedModel) {
-        message.error("未找到对应的模型");
+        handleError({ message: "未找到对应的模型", error_type: ErrorType.LOAD_FAILED });
         return;
       }
       console.log("[切换模型] 开始切换:", selectedModel.provider, selectedModel.model);
@@ -287,12 +286,12 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       console.log("[切换模型] API返回:", result);
       
       if (!result.success) {
-        message.error(result.message || "切换失败");
+        handleError({ message: result.message || "切换失败", error_type: ErrorType.SWITCH_MODEL_FAILED });
         // 切换失败时后端已回滚配置，刷新模型列表获取回滚后的模型
         await refreshModelList();
         return;
       }
-      message.success(`已切换到 ${selectedModel.display_name}`);
+      showSuccess(`已切换到 ${selectedModel.display_name}`);
       console.log("[切换模型] 开始刷新状态...");
       // 【修复】使用refreshAfterModelChange串行刷新：验证新配置→刷新模型列表→刷新会话数
       // 替代之前错误的setServiceStatus手动调用和分散的refreshModelList/refreshSessionCount
@@ -300,7 +299,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       console.log("[切换模型] 刷新完成, serviceStatus:", serviceStatus);
     } catch (error: any) {
       console.error("[切换模型] 失败:", error);
-      message.error(error?.response?.data?.detail || error?.message || "切换模型失败");
+      handleError({ message: error?.response?.data?.detail || error?.message || "切换模型失败", error_type: ErrorType.SWITCH_MODEL_FAILED });
     }
   };
 
@@ -510,7 +509,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
           cursor: "pointer",
           transition: "background 0.3s ease",
         }}
-        onClick={() => message.info("OmniAgentAst v2.1.0 - 桌面版AI助手")}
+        onClick={() => showMessage(ErrorType.INFO, "OmniAgentAst v2.1.0 - 桌面版AI助手")}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = "#f0f0f0";
         }}
