@@ -1,3 +1,42 @@
+v0.9.4.2
+
+更新时间：2026-04-13 18:20:00
+
+更新内容：
+
+## 1. 修复react_sse_wrapper.py缺少create_error_response导入 - 小沈-2026-04-13
+
+### 1.1 问题
+
+前端收到错误："name 'create_error_response' is not defined"
+
+错误日志显示：
+- type=error, message="对话执行失败: name 'create_error_response' is not defined"
+
+### 1.2 根因
+
+react_sse_wrapper.py 第134行调用了 `create_error_response()` 函数，但没有从 error_handler 导入。
+
+### 1.3 修复
+
+**修改文件**: `backend/app/services/react_sse_wrapper.py` 第41行
+
+```python
+# 修改前
+from app.chat_stream.error_handler import create_error_from_exception
+
+# 修改后
+from app.chat_stream.error_handler import create_error_from_exception, create_error_response
+```
+
+### 1.4 测试验证
+
+| 测试项 | 结果 |
+|-------|------|
+| test_error_handler.py | ✅ 59 passed |
+
+---
+
 v0.9.4.1
 
 更新时间：2026-04-13 15:22:16

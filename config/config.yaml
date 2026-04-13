@@ -1,6 +1,6 @@
 ai:
   provider: dmxapi
-  model: DMXAPI-CodeX-Free
+  model: Baichuan-M3-Plus-free
   dmxapi:
     api_base: https://www.dmxapi.cn/v1
     api_key: sk-N2cFYdEXiCRQ2gKUCBTwnP3arxfwesLHBGntk1tk8X3m2gS1
