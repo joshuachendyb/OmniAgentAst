@@ -95,7 +95,32 @@ export const areMessageItemPropsEqual = (
   if (prev.sessionTitle !== next.sessionTitle) {
     return false;
   }
-  
+
+  // 【小沈修复 2026-04-13】比较 executionSteps - 支持实时显示AI步骤
+  // 当后端实时推送 step 时，executionSteps 会变化，需要触发组件重新渲染
+  const prevSteps = prev.message.executionSteps;
+  const nextSteps = next.message.executionSteps;
+
+  // 处理 undefined 和 null 情况
+  const prevStepsArray = prevSteps || [];
+  const nextStepsArray = nextSteps || [];
+
+  // 比较长度 - 最简单的变化检测
+  if (prevStepsArray.length !== nextStepsArray.length) {
+    return false;
+  }
+
+  // 如果长度相同，也可以比较最后一项的content来确保step内容变化
+  // （但实际上长度变化已经足够触发重新渲染）
+  if (prevStepsArray.length > 0 && nextStepsArray.length > 0) {
+    const prevLast = prevStepsArray[prevStepsArray.length - 1];
+    const nextLast = nextStepsArray[nextStepsArray.length - 1];
+    // 比较最后一步的content和type
+    if (prevLast?.content !== nextLast?.content || prevLast?.type !== nextLast?.type) {
+      return false;
+    }
+  }
+
   return true;
 };
 

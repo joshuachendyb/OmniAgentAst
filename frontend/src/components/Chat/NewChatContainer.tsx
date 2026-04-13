@@ -152,7 +152,7 @@ const NewChatContainer: React.FC = () => {
   const streamingContentRef = useRef('');           // 累积AI回复内容
   const streamingStepsRef = useRef<ExecutionStep[]>([]); // 累积执行步骤
   const lastUpdateTimeRef = useRef(0);              // 上次更新时间
-  const UPDATE_INTERVAL = 0;                        // 更新间隔0ms（立即更新，无throttle）
+  const UPDATE_INTERVAL = 5;                        // 更新间隔5ms（实时更新）
 
   // 2. 滚动控制ref
   const userScrolledUpRef = useRef(false);
@@ -294,6 +294,9 @@ const NewChatContainer: React.FC = () => {
       const shouldUpdate = now - lastUpdateTimeRef.current >= UPDATE_INTERVAL 
         || lastUpdateTimeRef.current === 0;  // 首次立即更新
       
+      console.log("📝 [onStep] type=%s shouldUpdate=%s now=%s last=%s interval=%s", 
+        step.type, shouldUpdate, now, lastUpdateTimeRef.current, UPDATE_INTERVAL);
+      
       if (shouldUpdate) {
         lastUpdateTimeRef.current = now;
         // 使用函数式更新，确保获取最新state
@@ -319,7 +322,7 @@ const NewChatContainer: React.FC = () => {
               provider: step.provider,
               display_name: finalDisplay_name,
             };
-            console.log("📝 [onStep] 创建新消息, isStreaming=", newAssistantMessage.isStreaming, "steps数=", currentSteps.length);
+            // console.log("📝 [onStep] 创建新消息, isStreaming=", newAssistantMessage.isStreaming, "steps数=", currentSteps.length);
             return [...prev, newAssistantMessage];
           }
           
