@@ -53,8 +53,8 @@ export interface ThoughtMessage {
   content: string;
   thought?: string;    // LLM的思考过程（来自JSON的thought字段）
   reasoning?: string;  // LLM的分析推理（来自JSON的reasoning字段）
-  action_tool?: string;  // 可选：某些thought可能不包含动作
-  params?: Record<string, any>;  // 可选：某些thought可能不包含参数
+  tool_name?: string;  // 工具名称（统一使用 tool_name）
+  tool_params?: Record<string, any>;  // 工具参数（统一使用 tool_params）
 }
 
 /**
