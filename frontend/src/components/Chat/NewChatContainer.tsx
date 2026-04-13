@@ -47,7 +47,7 @@ import SecurityAlert from "../SecurityAlert";
 import { showSecurityNotification } from "../SecurityNotification";
 import { getRiskLevel } from "../../types/security";
 import { useSSE, ExecutionStep } from "../../utils/sse";
-import { handleError, handleApiError, ErrorType } from "../../utils/errorHandler";
+import { handleError, handleApiError, handleSSEError, ErrorType } from "../../utils/errorHandler";
 
 // 【新增 2026-03-13】从独立文件导入类型和工具函数
 import type { Message } from "../../types/chat";
@@ -147,6 +147,61 @@ const NewChatContainer: React.FC = () => {
   // 【小查修复】用于在回调中获取最新的executionSteps
   const executionStepsRef = useRef<ExecutionStep[]>([]);
 
+  // ===== 【小资优化 2026-04-13】流式性能优化 =====
+  // 1. 流式累积ref - 不触发重渲染
+  const streamingContentRef = useRef('');           // 累积AI回复内容
+  const streamingStepsRef = useRef<ExecutionStep[]>([]); // 累积执行步骤
+  const lastUpdateTimeRef = useRef(0);              // 上次更新时间
+  const UPDATE_INTERVAL = 50;                       // 更新间隔50ms（Ant Design推荐值）
+
+  // 2. 滚动控制ref
+  const userScrolledUpRef = useRef(false);
+  const lastScrollTimeRef = useRef(0);
+  const SCROLL_THRESHOLD = 150;  // ChatGPT实践：超过150px认为用户主动滚动
+  const SCROLL_INTERVAL = 100;   // 滚动节流间隔
+
+  // 3. debounce保存函数ref - 使用chatHistory.ts已存在的debounce
+  const saveMessagesToStorage = useRef(
+    debounce((msgs: Message[], sid: string, title: string, paused: boolean, receiving: boolean) => {
+      if (receiving && sid) {
+        const state = {
+          messages: msgs,
+          sessionId: sid,
+          sessionTitle: title,
+          timestamp: Date.now(),
+          scrollPosition: messagesEndRef.current?.parentElement?.scrollTop || 0,
+          isPaused: paused,
+          isReceiving: receiving,
+        };
+        
+        try {
+          const stateStr = JSON.stringify(state);
+          // 原有4MB检查保留
+          if (stateStr.length > 4 * 1024 * 1024) {
+            const lightState = {
+              sessionId: sid,
+              sessionTitle: title,
+              timestamp: Date.now(),
+              messageCount: msgs.length,
+              isPaused: paused,
+              isReceiving: receiving,
+            };
+            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
+          } else {
+            sessionStorage.setItem(STORAGE_KEY, stateStr);
+          }
+        } catch (e) {
+          if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+            console.warn("⚠️ sessionStorage容量满，跳过保存");
+          } else {
+            console.error("保存会话状态失败:", e);
+          }
+        }
+      }
+    }, 500)  // 500ms防抖
+  );
+  // ===== 【小资优化 2026-04-13】结束 =====
+
   // 流式输出相关状态
   const [showExecution, setShowExecution] = useState(true);
   const [useStream, setUseStream] = useState(true); // 默认使用流式
@@ -218,147 +273,103 @@ const NewChatContainer: React.FC = () => {
           logFlagsRef.current.chunkFirstDone = true;
         }
       }
-      // ⭐ 暂停时存入缓冲区，不直接显示
+      
+      // ⭐ 暂停时存入缓冲区，不直接显示（原有逻辑保留）
       if (isPausedRef.current) {
         console.log("⏸️ [onStep] 暂停中，存入缓冲区, type:", step.type);
         displayBufferRef.current.push({ type: "step", step });
         return;
       }
       
-      setMessages((prev) => {
-        const lastMessage = prev[prev.length - 1];
-        // 【修复问题 7】如果是 start 步骤，创建占位消息
-        if (step.type === "start") {
-          // 171行已打印，这里不再重复打印
-          
-          // 检查是否已有消息
+      // ⭐ 累积到ref，不触发重渲染
+      streamingStepsRef.current = [...streamingStepsRef.current, step];
+      
+      // ⭐ 50ms间隔更新，使用leading+trailing策略
+      const now = Date.now();
+      const shouldUpdate = now - lastUpdateTimeRef.current >= UPDATE_INTERVAL 
+        || lastUpdateTimeRef.current === 0;  // 首次立即更新
+      
+      if (shouldUpdate) {
+        lastUpdateTimeRef.current = now;
+        // 使用函数式更新，确保获取最新state
+        setMessages((prev) => {
+          const lastMessage = prev[prev.length - 1];
           if (!lastMessage || lastMessage.role !== "assistant") {
-            // 提取display_name
-            const extractedDisplay_name = step.display_name;
-            // console.log("🔍 提取的display_name:", extractedDisplay_name);
-            
-            // 如果 extractedDisplay_name 为空，尝试从其他字段构建
-            let finalDisplay_name = extractedDisplay_name;
-            if (!finalDisplay_name && step.model && step.provider) {
-              finalDisplay_name = `${step.provider} (${step.model})`;
-              // console.log("🔍 从model/provider构建display_name:", finalDisplay_name);
+            // start步骤：创建新消息（保持原有逻辑）
+            if (step.type === "start") {
+              const extractedDisplay_name = step.display_name;
+              let finalDisplay_name = extractedDisplay_name;
+              if (!finalDisplay_name && step.model && step.provider) {
+                finalDisplay_name = `${step.provider} (${step.model})`;
+              }
+              
+              const newAssistantMessage: Message = {
+                id: (Date.now() + 1).toString(),
+                role: "assistant",
+                content: step.content || "🤔 AI 正在思考...",
+                timestamp: step.timestamp ? new Date(step.timestamp) : new Date(),
+                executionSteps: [...streamingStepsRef.current],
+                isStreaming: true,
+                model: step.model,
+                provider: step.provider,
+                display_name: finalDisplay_name,
+              };
+              return [...prev, newAssistantMessage];
             }
-
-            /**
-             * 【小新修改 2026-03-16】
-             * 保存metadata到数据库 - 解决流式数据丢失问题
-             * 
-             * 问题背景：SSE数据保存方案-综合版第18章要求
-             * - 页面切换/刷新时，SSE断开，onComplete不触发，导致数据丢失
-             * - metadata（model/provider/display_name）需要在流式开始时保存
-             * 
-             * 解决方案：
-             * - 后端在流式开始时自动创建assistant消息并保存metadata
-             * - 后续由后端自动保存execution_steps和content
-             * - 前端不再调用saveMessage
-             * 
-             * 修改位置：step.type === "start" 时
-             * 修改原因：saveMessage是INSERT，会创建新消息，后端已自动处理
-             */
-            // 【小新修复 2026-03-16】删除saveMessage调用，由后端自动创建assistant消息
-            
-            const newAssistantMessage: Message = {
-              id: (Date.now() + 1).toString(),
-              role: "assistant",
-              content: step.content || "🤔 AI 正在思考...",
-              timestamp: step.timestamp ? new Date(step.timestamp) : new Date(), // 【小沈修复 2026-03-26】使用后端返回的时间戳
-              executionSteps: [step],
-              isStreaming: true,  // 确保是 true
-              model: step.model,
-              provider: step.provider,
-              display_name: finalDisplay_name, // 直接使用后端返回的 display_name
-            };
-            // console.log("🔍 创建新AI助手消息: display_name=", newAssistantMessage.display_name, "isStreaming=", newAssistantMessage.isStreaming);
-            // console.log("🔍 完整消息对象:", JSON.stringify(newAssistantMessage, null, 2));
-            return [...prev, newAssistantMessage];
-          } else {
-            // 已有assistant消息，更新display_name和executionSteps
-            // console.log("🔍 已有assistant消息，更新display_name:", step.display_name || `${step.provider} (${step.model})`, "| isStreaming=", lastMessage.isStreaming);
-            // 提取display_name
-            const extractedDisplay_name = step.display_name;
-            let finalDisplay_name = extractedDisplay_name;
-            if (!finalDisplay_name && step.model && step.provider) {
-              finalDisplay_name = `${step.provider} (${step.model})`;
-            }
-            // 更新最后一条消息的display_name和executionSteps
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              ...lastMessage,
-              display_name: finalDisplay_name || lastMessage.display_name,
-              model: step.model || lastMessage.model,
-              provider: step.provider || lastMessage.provider,
-              // 【小沈修复 2026-03-17】将start步骤添加到executionSteps
-              // 【小沈修复 2026-03-26】同时更新timestamp，使用后端返回的时间戳
-              timestamp: step.timestamp ? new Date(step.timestamp) : lastMessage.timestamp,
-              executionSteps: [...(lastMessage.executionSteps || []), step],
-            };
-            // 第219行已打印日志，这里不再重复
-            return updated;
+            return prev;
           }
-        }
-        // 普通步骤：追加到 executionSteps
-        if (
-          lastMessage &&
-          lastMessage.role === "assistant" &&
-          lastMessage.isStreaming
-        ) {
-          // 只打印非chunk步骤，减少日志
-          // if (step.type !== 'chunk') {
-          //   console.log("🔍 [onStep] 步骤被添加, type=", step.type);
-          // }
-          // 只打印非chunk步骤，减少日志噪声
-          if (step.type !== 'chunk') {
-            console.log("📝 存储 type=%s total = %d steps", step.type, (lastMessage.executionSteps?.length || 0) + 1);
-          }
-          const updatedSteps = [...(lastMessage.executionSteps || []), step];
+          
+          // 更新最后一条消息的executionSteps
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...lastMessage,
-            executionSteps: updatedSteps,
+            executionSteps: [...streamingStepsRef.current],
           };
           return updated;
-        }
-        // console.log("🔍 [onStep] 步骤被丢弃, type=", step.type, "lastMessage.role=", lastMessage?.role, "isStreaming=", lastMessage?.isStreaming);
-        return prev;
-      });
+        });
+      }
     }, []),
 
-    // onChunk - 收到内容片段 【小查修复】统一使用 is_reasoning (snake_case)
+    // onChunk - 收到内容片段 【小资优化】使用50ms throttle
     useCallback((chunk: string, is_reasoning?: boolean) => {
       // 精简日志：调试通过，不再打印每个chunk
-      // console.log("🔍 [onChunk] 收到chunk, is_reasoning:", is_reasoning, "content前20字:", chunk.substring(0, 20));
       
-      // ⭐ 暂停时存入缓冲区，不直接显示
+      // ⭐ 暂停时存入缓冲区，不直接显示（原有逻辑保留）
       if (isPausedRef.current) {
         console.log("⏸️ [onChunk] 暂停中，存入缓冲区");
         displayBufferRef.current.push({ type: "chunk", content: chunk, is_reasoning });
         return;
       }
       
-      setMessages((prev) => {
-        const lastMessage = prev[prev.length - 1];
-        if (
-          lastMessage &&
-          lastMessage.role === "assistant" &&
-          lastMessage.isStreaming
-        ) {
-          const updated = [...prev];
-          // 【小查修复】直接使用传入的is_reasoning值，正确处理思考过程切换
-          const newIs_reasoning = is_reasoning ?? false;
-          updated[updated.length - 1] = {
-            ...lastMessage,
-            content: lastMessage.content + chunk,
-            is_reasoning: newIs_reasoning,
-          };
-          return updated;
-        }
-        return prev;
-      });
+      // ⭐ 累积到ref，不触发重渲染
+      streamingContentRef.current += chunk;
+      
+      // ⭐ 50ms间隔更新，leading+trailing策略
+      const now = Date.now();
+      const shouldUpdate = now - lastUpdateTimeRef.current >= UPDATE_INTERVAL 
+        || lastUpdateTimeRef.current === 0;  // 首次立即更新
+      
+      if (shouldUpdate) {
+        lastUpdateTimeRef.current = now;
+        setMessages((prev) => {
+          const lastMessage = prev[prev.length - 1];
+          if (
+            lastMessage &&
+            lastMessage.role === "assistant" &&
+            lastMessage.isStreaming
+          ) {
+            const updated = [...prev];
+            const newIs_reasoning = is_reasoning ?? false;
+            updated[updated.length - 1] = {
+              ...lastMessage,
+              content: streamingContentRef.current,
+              is_reasoning: newIs_reasoning,
+            };
+            return updated;
+          }
+          return prev;
+        });
+      }
     }, []),
     // onComplete - 流式完成 - 前端小新代修改：适配后端新格式
     // 【小新修复 2026-03-12】第三个参数改为接收完整的data对象
@@ -413,9 +424,19 @@ const NewChatContainer: React.FC = () => {
             // - 最终选择：取两者中更多的那个来保存（确保不丢失数据）
             console.log("📊 type=%s AI完成 实时=%d 历史=%d 保存=%d", sseSteps.length, msgSteps.length, latestSteps.length);
             
+            // 【小健修复 2026-04-13】优先使用streamingContentRef累积内容，确保不丢失
+            const finalContent = streamingContentRef.current || finalResponse;
+            
+            // 【小健修复 2026-04-13】优先使用streamingStepsRef累积步骤，再与SSE和message比较
+            const refSteps = streamingStepsRef.current || [];
+            // 取三者中最长的，确保不丢失任何数据
+            const allSteps = [refSteps, executionStepsFromSSE || [], msgSteps];
+            const finalSteps = allSteps.reduce((longest, curr) => 
+              curr.length > longest.length ? curr : longest, []);
+            
             updated[updated.length - 1] = {
               ...lastMessage,
-              content: finalResponse,
+              content: finalContent,
               isStreaming: false,
               is_reasoning: false,
               isError: isError,
@@ -425,8 +446,9 @@ const NewChatContainer: React.FC = () => {
               model: metadataObj.model || lastMessage.model,
               provider: metadataObj.provider || lastMessage.provider,
               display_name: metadataObj.display_name || lastMessage.display_name,
-              executionSteps: latestSteps,
+              executionSteps: finalSteps,
             };
+            console.log("  └─ ✅ 已更新 (ref累积+SSE+历史) steps:", finalSteps.length, "| last3:", finalSteps.slice(-3).map((s: any) => s.type).join(","));
             console.log("  └─ ✅ 已更新 steps:", latestSteps.length, "| last3:", latestSteps.slice(-3).map((s: any) => s.type).join(","));
             return updated;
           }
@@ -496,26 +518,72 @@ const NewChatContainer: React.FC = () => {
 
            console.log("✅ type=%s AI流式完成 %s", new Date().toLocaleTimeString());
          
-          // ========== 黄色结束标志 ==========
-          logAIComplete(fullResponse?.length || 0);
-          // ==================================
-         
-         setLoading(false);
-         // ⭐ 停止等待计时器
-         if (waitTimerRef.current) {
-           clearInterval(waitTimerRef.current);
-           waitTimerRef.current = null;
-         }
-         setWaitTime(0);
-         setIsRetrying(false);
-          // 【小新第三修复 2026-03-02】清理ref和state
-          pendingMessageRef.current = null; // 同步清理
-          setPendingMessage(null); // 异步清理
-            // console.log("✅ [onComplete] AI回答保存完成！");
-         },
-       [] // 依赖数组为空，因为使用 ref 而不是 state
-     ),
-    // onError - 流式错误 - 前端小新代修改：适配后端新格式
+           // ========== 黄色结束标志 ==========
+           logAIComplete(fullResponse?.length || 0);
+           // ==================================
+          
+          setLoading(false);
+          // ⭐ 停止等待计时器
+          if (waitTimerRef.current) {
+            clearInterval(waitTimerRef.current);
+            waitTimerRef.current = null;
+          }
+          setWaitTime(0);
+          setIsRetrying(false);
+           // 【小新第三修复 2026-03-02】清理ref和state
+           pendingMessageRef.current = null; // 同步清理
+           setPendingMessage(null); // 异步清理
+           
+           // ⭐ 【小资优化 2026-04-13】使用累积的ref内容一次性更新
+           setMessages((prev) => {
+             const lastMessage = prev[prev.length - 1];
+if (lastMessage && lastMessage.role === "assistant") {
+                const updated = [...prev];
+                // 【小健修复 2026-04-13】优先使用streamingContentRef累积内容
+                const finalContent = streamingContentRef.current || finalResponse;
+                
+                // 【小健修复 2026-04-13】优先使用streamingStepsRef累积步骤，再与SSE和message比较
+                const refSteps = streamingStepsRef.current || [];
+                const msgSteps = lastMessage.executionSteps || [];
+                const sseSteps = executionStepsFromSSE || [];
+                // 取三者中最长的，确保不丢失任何数据
+                const allSteps = [refSteps, sseSteps, msgSteps];
+                const finalSteps = allSteps.reduce((longest, curr) => 
+                  curr.length > longest.length ? curr : longest, []);
+                
+                console.log("📊 type=%s AI完成 ref=%d SSE=%d 历史=%d 保存=%d", 
+                  finalContent.length, refSteps.length, sseSteps.length, msgSteps.length, finalSteps.length);
+                
+                updated[updated.length - 1] = {
+                  ...lastMessage,
+                  content: finalContent,
+                  executionSteps: finalSteps,
+                  isStreaming: false,
+                  is_reasoning: false,
+                  isError: isError,
+                  errorType: errorType,
+                  errorCode: errorCode,
+                  errorMessage: errorMessage,
+                  model: metadataObj.model || lastMessage.model,
+                  provider: metadataObj.provider || lastMessage.provider,
+                  display_name: metadataObj.display_name || lastMessage.display_name,
+                };
+                console.log("  └─ ✅ 已更新 (ref累积+SSE+历史) steps:", finalSteps.length, "| last3:", finalSteps.slice(-3).map((s: any) => s.type).join(","));
+                return updated;
+             }
+             return prev;
+           });
+           
+           // ⭐ 【小资优化 2026-04-13】完成后清理ref，准备下一次对话
+           streamingContentRef.current = '';
+           streamingStepsRef.current = [];
+           lastUpdateTimeRef.current = 0;
+           
+             // console.log("✅ [onComplete] AI回答保存完成！");
+          },
+        [] // 依赖数组为空，因为使用 ref 而不是 state
+      ),
+    // onError - 流式错误 - 【小资优化】同步节流 + errorHandler统一处理
     // 【小查修复2026-03-13】适配API文档的11个字段
     useCallback(
       (
@@ -543,80 +611,85 @@ const NewChatContainer: React.FC = () => {
             ? { type: "error", error_type: "unknown_error", message: error, code: "UNKNOWN_ERROR", timestamp: new Date().toISOString() }
             : error;
 
-         console.error("🔴 [onError] SSE 流式错误:", errorObj);
-         console.error("  错误类型(error_type):", errorObj.error_type);
-         console.error("  错误码(code):", errorObj.code);
-         console.error("  错误消息:", errorObj.message);
-         console.error("  模型:", errorObj.model);
-         console.error("  提供商:", errorObj.provider);
-         console.error("  是否可重试:", errorObj.retryable);
+        console.error("🔴 [onError] SSE 流式错误:", errorObj);
+        
+        // ⭐ 使用统一错误处理中心errorHandler处理提示
+        const errorResult = handleSSEError(errorObj, { 
+          reconnectAttempts: 0, 
+          maxRetries: 0,
+          onReconnect: undefined 
+        });
+        
+        // 如果errorHandler认为不需要显示（如静默错误），则跳过
+        if (errorResult.handled === false) {
+          return;
+        }
+        
+        // ⭐ 暂停时存入缓冲区（原有逻辑保留）
+        if (isPausedRef.current) {
+          displayBufferRef.current.push({ type: "error", error: errorObj });
+          return;
+        }
 
-          // 【小新修改 2026-03-14】移除重复弹框，ErrorDetail 气泡已完整显示错误信息
-          // 不再显示 message.error 弹框，避免与 ErrorDetail 重复
-
-  setMessages((prev) => {
-          const lastMessage = prev[prev.length - 1];
-          if (lastMessage && lastMessage.role === "assistant") {
-            // 【小强修复 2026-03-18】修复竞争条件 - 选择更长的executionSteps
-            const refSteps = executionStepsRef.current || [];
-            const msgSteps = lastMessage.executionSteps || [];
-            const latestSteps = msgSteps.length >= refSteps.length ? msgSteps : refSteps;
-            
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              ...lastMessage,
-              // 错误时直接用错误消息替换内容，不保留"思考中"
-              content: errorObj.message,
-              isError: true,
-              isStreaming: false,
-              executionSteps: latestSteps,
-              // 【小查修复2026-03-13】保存完整的error 11个字段
-              errorType: errorObj.error_type,      // error_type
-              errorCode: errorObj.code,            // code
-              errorMessage: errorObj.message,      // message - 错误消息内容
-              errorDetails: errorObj.details,       // details
-              errorStack: errorObj.stack,         // stack
-              errorRetryable: errorObj.retryable,  // retryable
-              errorRetryAfter: errorObj.retry_after, // retry_after
-              errorTimestamp: errorObj.timestamp,   // timestamp
-              // 如果 errorObj 中没有 model/provider，使用消息中已有的值
-              model: errorObj.model || lastMessage.model,
-              provider: errorObj.provider || lastMessage.provider,
-            };
-            return updated;
-          }
-         return prev;
-       });
-
-          // 【小新修复 2026-03-16】删除错误消息saveMessage调用
-          // 后端会在error步骤时自动保存错误信息到execution_steps
-          
-           console.log("❌ type=%s onError完成 %s", new Date().toLocaleTimeString());
-         setLoading(false);
-         // ⭐ 停止等待计时器
-         if (waitTimerRef.current) {
-           clearInterval(waitTimerRef.current);
-           waitTimerRef.current = null;
-         }
-          setWaitTime(0);
-          setIsRetrying(false);
-          // console.log("✅ [onError] 处理完成");
-          
-          // ========== 错误结束标志 ==========
-          logAIError(errorObj.message || "未知错误");
-          // ==================================
-          
-          // 【小查修复 2026-03-14】延迟检查确保状态已重置，防止按钮无法点击
-         // setTimeout(() => {
-         //   console.log("🔍 [onError] 延迟检查状态 - loading:", loading, "isReceiving:", isReceiving);
-         //   // 如果状态仍未重置，强制重置
-         //   if (loading) {
-         //     console.warn("⚠️ [onError] loading 仍为 true，强制重置");
-         //     setLoading(false);
-         //   }
-         // }, 100);
-       },
-       []
+        // ⭐ 50ms间隔更新，leading+trailing策略
+        const now = Date.now();
+        const shouldUpdate = now - lastUpdateTimeRef.current >= UPDATE_INTERVAL 
+          || lastUpdateTimeRef.current === 0;
+        
+        if (shouldUpdate) {
+          lastUpdateTimeRef.current = now;
+          setMessages((prev) => {
+            const lastMessage = prev[prev.length - 1];
+            if (lastMessage && lastMessage.role === "assistant") {
+              // 【小强修复 2026-03-18】修复竞争条件 - 选择更长的executionSteps
+              const refSteps = executionStepsRef.current || [];
+              const msgSteps = lastMessage.executionSteps || [];
+              const latestSteps = msgSteps.length >= refSteps.length ? msgSteps : refSteps;
+              
+              const updated = [...prev];
+              updated[updated.length - 1] = {
+                ...lastMessage,
+                // 错误时直接用错误消息替换内容，不保留"思考中"
+                content: errorObj.message,
+                isError: true,
+                isStreaming: false,
+                executionSteps: latestSteps,
+                // 【小查修复2026-03-13】保存完整的error 11个字段
+                errorType: errorObj.error_type,      // error_type
+                errorCode: errorObj.code,            // code
+                errorMessage: errorObj.message,      // message - 错误消息内容
+                errorDetails: errorObj.details,       // details
+                errorStack: errorObj.stack,         // stack
+                errorRetryable: errorObj.retryable,  // retryable
+                errorRetryAfter: errorObj.retry_after, // retry_after
+                errorTimestamp: errorObj.timestamp,   // timestamp
+                // 如果 errorObj 中没有 model/provider，使用消息中已有的值
+                model: errorObj.model || lastMessage.model,
+                provider: errorObj.provider || lastMessage.provider,
+              };
+              return updated;
+            }
+            return prev;
+          });
+        }
+        
+        // 清理状态
+        setLoading(false);
+        if (waitTimerRef.current) {
+          clearInterval(waitTimerRef.current);
+          waitTimerRef.current = null;
+        }
+        setWaitTime(0);
+        setIsRetrying(false);
+        
+        logAIError(errorObj.message || "未知错误");
+        
+        // ⭐ 完成后清理ref
+        streamingContentRef.current = '';
+        streamingStepsRef.current = [];
+        lastUpdateTimeRef.current = 0;
+      },
+      []
     ),
     // onPaused - 暂停事件
     useCallback(() => {
@@ -691,6 +764,25 @@ const NewChatContainer: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  // ===== 【小资优化 2026-04-13】优化滚动函数 =====
+  const scrollToBottomIfNeeded = useCallback(() => {
+    const now = Date.now();
+    
+    // ⭐ 节流：100ms内只滚动一次
+    if (now - lastScrollTimeRef.current < SCROLL_INTERVAL) {
+      return;
+    }
+    
+    // ⭐ 检查：用户主动滚动时不自动滚动
+    if (userScrolledUpRef.current) {
+      return;
+    }
+    
+    lastScrollTimeRef.current = now;
+    scrollToBottom();
+  }, []);
+  // ===== 【小资优化 2026-04-13】结束 =====
+
   // 滚动到底部的增强版本，确保页面渲染完成后再滚动
   const scrollToBottomDelayed = () => {
     setTimeout(() => {
@@ -703,14 +795,32 @@ const NewChatContainer: React.FC = () => {
     isPausedRef.current = isPaused;
   }, [isPaused]);
 
+  // ===== 【小资优化 2026-04-13】使用节流滚动
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, currentResponse, executionSteps]);
+    scrollToBottomIfNeeded();
+  }, [messages, currentResponse, executionSteps, scrollToBottomIfNeeded]);
 
   // 【小查修复】同步executionSteps到ref，确保onComplete能获取最新值
   useEffect(() => {
     executionStepsRef.current = executionSteps;
   }, [executionSteps]);
+
+  // ===== 【小资优化 2026-04-13】滚动位置监听 =====
+  useEffect(() => {
+    const container = messagesEndRef.current?.parentElement;
+    if (!container) return;
+    
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      // 距离底部超过150px认为是用户主动滚动
+      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+      userScrolledUpRef.current = distanceFromBottom > SCROLL_THRESHOLD;
+    };
+    
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+  // ===== 【小资优化 2026-04-13】结束 =====
 
   // 【小新第二修复 2026-03-02】同步跟踪消息数量，用于保存消息时获取准确的值
   // 【小查修复2026-03-14】同时同步messagesRef，避免visibilitychange useEffect频繁重新注册
@@ -719,45 +829,11 @@ const NewChatContainer: React.FC = () => {
     messagesCountRef.current = messages.length;
     messagesRef.current = messages;
     
-    // 当正在接收SSE数据时，每次messages更新都保存到sessionStorage
-    // 这样即使页面隐藏，也能持续保存最新steps
-    if (isReceiving && sessionId) {
-      const state = {
-        messages: messages,
-        sessionId,
-        sessionTitle,
-        timestamp: Date.now(),
-        scrollPosition: messagesEndRef.current?.parentElement?.scrollTop || 0,
-        isPaused,
-        isReceiving,
-      };
-      // 【小强修复 2026-04-08】添加try-catch防止QuotaExceededError崩溃
-      try {
-        const stateStr = JSON.stringify(state);
-        // const sizeInMB = (stateStr.length / 1024 / 1024).toFixed(2);  // 已废弃，不需要
-        if (stateStr.length > 4 * 1024 * 1024) {
-          // 超过4MB，只保存摘要
-          const lightState = {
-            sessionId,
-            sessionTitle,
-            timestamp: Date.now(),
-            messageCount: messages.length,
-            isPaused,
-            isReceiving,
-          };
-          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
-        } else {
-          sessionStorage.setItem(STORAGE_KEY, stateStr);
-        }
-      } catch (e) {
-        if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-          console.warn("⚠️ sessionStorage容量满，跳过保存");
-        } else {
-          console.error("保存会话状态失败:", e);
-        }
-      }
+    if (sessionId) {
+      // ⭐ 使用debounce函数延迟保存（500ms）
+      saveMessagesToStorage.current(messages, sessionId, sessionTitle, isPaused, isReceiving);
     }
-  }, [messages]);
+  }, [messages, sessionId, sessionTitle, isPaused, isReceiving]);
 
   // 当页面从隐藏状态变为显示时也自动滚动到底部
   useEffect(() => {
