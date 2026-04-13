@@ -71,6 +71,24 @@ class ToolExecutor:
         
         try:
             normalized_input = self._normalize_params(action, action_input)
+            
+            # 【小沈修复 2026-04-13】验证必需参数
+            import inspect
+            sig = inspect.signature(tool)
+            required_params = [
+                p.name for p in sig.parameters.values()
+                if p.default == inspect.Parameter.empty and p.name != 'self'
+            ]
+            missing = [p for p in required_params if p not in normalized_input]
+            if missing:
+                logger.warning(f"[参数验证] action={action} 缺少必需参数: {missing}")
+                return {
+                    "status": "error",
+                    "summary": f"Missing required parameter(s): {', '.join(missing)}",
+                    "data": None,
+                    "retry_count": 0
+                }
+            
             result = await tool(**normalized_input)
             
             return self._format_result(result, action)
