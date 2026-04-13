@@ -223,11 +223,16 @@ class BaseAgent(ABC):
                 
                 # ===== 正常流转：yield thought (非finish时) =====
                 current_time = create_timestamp()
+                # 获取thought和reasoning字段
+                thought = parsed.get("thought", "")
+                reasoning = parsed.get("reasoning", "")
                 yield {
                     "type": "thought",
                     "step": step_count,
                     "timestamp": current_time,
                     "content": thought_content,
+                    "thought": thought,
+                    "reasoning": reasoning,
                     "tool_name": tool_name,
                     "tool_params": tool_params
                 }
