@@ -17,7 +17,15 @@ export default defineConfig(({ command }) => {
   
   return {
     plugins: [
-      react(),
+      react({
+        // 方法10：antd按需导入配置
+        babel: {
+          plugins: [
+            // antd按需导入 - 自动将 import { Button } from 'antd' 转为 import Button from 'antd/es/button'
+            ['import', { libraryName: 'antd', libraryDirectory: 'es', style: false }]
+          ]
+        }
+      }),
       shouldCheck && eslint(),
       shouldCheck && prettier({
         parser: "typescript",
@@ -41,10 +49,7 @@ export default defineConfig(({ command }) => {
     },
     build: {
       // 方法2：使用Vite自动分割
-      // 方法8：Tree-shaking - 改成 'recommended' 而非 'smallest'
       rollupOptions: {
-        // treeshake: 'smallest' 太aggressive，会删掉所有代码
-        // 改用 'recommended' 或直接删除（默认就是recommended）
         output: {
           manualChunks: {},  // 空对象，让Vite自动按node_modules分割
         },
