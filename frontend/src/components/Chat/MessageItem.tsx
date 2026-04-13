@@ -394,7 +394,84 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
             wordBreak: "break-word",
           }}>
             {/* 【小强修复 2026-03-31】删除内容框内重复的标题行和时间戳，标题行已在StepRow外层显示 */}
-            {/* 思考内容 */}
+            
+            {/* LLM思考过程和推理过程 - 如果有的话 */}
+            {(step as any).thought || (step as any).reasoning ? (
+              <div style={{
+                marginBottom: 10,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}>
+                {/* 思考过程 - 橙色主题 */}
+                {(step as any).thought && (
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: 'linear-gradient(135deg, rgba(250,173,20,0.12) 0%, rgba(255,165,0,0.08) 100%)',
+                    border: '1px solid rgba(255,170,0,0.25)',
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      marginBottom: 6,
+                    }}>
+                      <span style={{ fontSize: 14 }}>💭</span>
+                      <span style={{ 
+                        fontSize: 12, 
+                        fontWeight: 600,
+                        color: '#d97706',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}>思考</span>
+                    </div>
+                    <div style={{
+                      fontSize: 13,
+                      color: '#92400e',
+                      lineHeight: 1.5,
+                    }}>
+                      {(step as any).thought}
+                    </div>
+                  </div>
+                )}
+                
+                {/* 推理过程 - 紫色主题 */}
+                {(step as any).reasoning && (
+                  <div style={{
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: 'linear-gradient(135deg, rgba(139,92,246,0.1) 0%, rgba(167,139,250,0.06) 100%)',
+                    border: '1px solid rgba(167,139,250,0.2)',
+                  }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      marginBottom: 6,
+                    }}>
+                      <span style={{ fontSize: 14 }}>🧠</span>
+                      <span style={{ 
+                        fontSize: 12, 
+                        fontWeight: 600,
+                        color: '#7c3aed',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.5px',
+                      }}>推理</span>
+                    </div>
+                    <div style={{
+                      fontSize: 13,
+                      color: '#6d28d9',
+                      lineHeight: 1.5,
+                    }}>
+                      {(step as any).reasoning}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : null}
+            
+            {/* 思考内容 - JSON前面的纯文本 */}
             <div>
               <span style={getStepContentStyle("thought" as StepType, "primary")}>
                 {step.content || ""}
@@ -699,11 +776,18 @@ const MessageItem = memo(({
             timestamp: formatTimestamp(step.timestamp),  // 转换为可读格式
           };
           
-          // 根据不同type添加对应字段
+            // 根据不同type添加对应字段
           switch (step.type) {
             case 'thought':
-              // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
-              return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params };
+              // 【小强修复 2026-04-14】添加thought和reasoning字段导出
+              return { 
+                ...baseExport, 
+                step: step.step, 
+                thought: step.thought || "",     // LLM思考过程
+                reasoning: step.reasoning || "", // LLM推理过程
+                tool_name: step.tool_name, 
+                tool_params: step.tool_params 
+              };
             case 'action_tool':
               return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, action_retry_count: step.action_retry_count };
             case 'observation':
