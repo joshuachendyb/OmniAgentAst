@@ -201,7 +201,8 @@ class ToolParser:
         else:
             tool_params = {}
         
-        reasoning = parsed.get("reasoning")
+        # reasoning支持备用字段（和thought类似）
+        reasoning = parsed.get("reasoning", parsed.get("thinking", parsed.get("analysis", "")))
         
         return {
             "content": content,          # JSON前面的纯文本
