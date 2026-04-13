@@ -51,7 +51,8 @@ export interface ThoughtMessage {
   type: 'thought';
   step: number;
   content: string;
-  // reasoning?: string;  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
+  thought?: string;    // LLM的思考过程（来自JSON的thought字段）
+  reasoning?: string;  // LLM的分析推理（来自JSON的reasoning字段）
   action_tool?: string;  // 可选：某些thought可能不包含动作
   params?: Record<string, any>;  // 可选：某些thought可能不包含参数
 }
