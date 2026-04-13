@@ -1,3 +1,31 @@
+v0.9.3
+
+更新时间：2026-04-13 10:06:30
+
+更新内容：
+
+## 1. 前端代码分割优化 - 方法2 - 小沈-2026-04-13
+
+### 1.1 优化内容
+
+**修改文件**: `frontend/vite.config.ts`
+
+- 配置 manualChunks 分割 vendor 代码
+- 分割为：vendor-react, vendor-antd, vendor-utils
+
+### 1.2 构建结果
+
+| 文件 | 大小 | gzip |
+|------|------|------|
+| index.js | 160.95 KB | 50.83 KB |
+| vendor-react-*.js | 36.84 KB | 13.36 KB |
+| vendor-antd-*.js | 976.03 KB | 306.67 KB |
+| vendor-utils-*.js | 36.65 KB | 14.75 KB |
+
+主chunk从1137KB减少到161KB，减少约86%
+
+---
+
 v0.9.2
 
 更新时间：2026-04-12 21:27:00
