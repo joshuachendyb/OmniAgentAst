@@ -16,7 +16,7 @@ from app.services.llm_core import Message
 from app.utils.retry_controller import RetryController
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
 from app.chat_stream.chat_helpers import create_timestamp, create_final_response
-from app.chat_stream.error_handler import create_session_error_result
+from app.chat_stream.error_handler import create_session_error_result, create_error_response
 from app.chat_stream.incident_handler import (
     create_incident_data,
     check_and_yield_if_paused,
