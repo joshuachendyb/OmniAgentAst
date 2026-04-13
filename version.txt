@@ -1,3 +1,38 @@
+v0.9.4.3
+
+更新时间：2026-04-13 19:10:00
+
+更新内容：
+
+## 1. 修复final步骤导出缺失问题 - 小沈-2026-04-13
+
+### 1.1 问题
+
+导出的JSON文件缺少final步骤（113个step导出只有112个）。
+
+### 1.2 根因
+
+setExecutionSteps是异步回调，在onComplete调用时：
+- executionStepsRef.current还是旧值（112）
+- final step要等回调完成后才更新到ref
+- onComplete收到的是旧值
+
+### 1.3 修复
+
+**修改文件**: `frontend/src/utils/sse.ts`
+
+- 先手动更新executionStepsRef.current为完整值
+- 再调用setExecutionSteps（用于React state更新）
+- 最后调用onComplete时ref已是最新值
+
+### 1.4 Commit
+
+| 提交 | 说明 |
+|------|------|
+| ed283ed2 | fix: sse.ts final步骤导出缺失 |
+
+---
+
 v0.9.4.2
 
 更新时间：2026-04-13 18:45:00

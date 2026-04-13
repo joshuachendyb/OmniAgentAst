@@ -284,6 +284,11 @@ const NewChatContainer: React.FC = () => {
       // ⭐ 累积到ref，不触发重渲染
       streamingStepsRef.current = [...streamingStepsRef.current, step];
       
+      // 【修复】第一个step时streamingStepsRef还是空的，需要用当前step
+      const currentSteps = streamingStepsRef.current.length > 0 
+        ? streamingStepsRef.current 
+        : [step];
+      
       // ⭐ 50ms间隔更新，使用leading+trailing策略
       const now = Date.now();
       const shouldUpdate = now - lastUpdateTimeRef.current >= UPDATE_INTERVAL 
@@ -308,7 +313,7 @@ const NewChatContainer: React.FC = () => {
               role: "assistant",
               content: step.content || (step.type === "error" ? step.error_message || "执行出错" : "🤔 AI 正在思考..."),
               timestamp: step.timestamp ? new Date(step.timestamp) : new Date(),
-              executionSteps: [...streamingStepsRef.current],
+              executionSteps: currentSteps,
               isStreaming: step.type !== "error" && step.type !== "final",
               model: step.model,
               provider: step.provider,
@@ -321,7 +326,7 @@ const NewChatContainer: React.FC = () => {
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...lastMessage,
-            executionSteps: [...streamingStepsRef.current],
+            executionSteps: currentSteps,
           };
           return updated;
         });
