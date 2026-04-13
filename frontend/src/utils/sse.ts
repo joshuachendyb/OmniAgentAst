@@ -1076,11 +1076,17 @@ const processSSEData = (
         // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保直接返回 final 时步骤列表显示
         onShowSteps?.(true);
 
+        // 【关键修复 2026-04-13】在onComplete调用前手动构建完整的steps数组
+        // 问题：getCurrentExecutionSteps()是闭包旧值，因为setExecutionSteps是异步的
+        // 解决：直接追加final step到当前ref，确保onComplete能获取到完整数据
+        const currentSteps = handlers.executionStepsRef.current;
+        const finalStepsWithCurrent = [...currentSteps];
+
            onComplete?.(responseBufferRef.current, {
           model: rawData.model,
           provider: rawData.provider,
           display_name: displayName,
-        } as SSEMetadata, handlers.getCurrentExecutionSteps());  // 【小新修复 2026-03-15】ref已被同步更新，无需再手动加step
+        } as SSEMetadata, finalStepsWithCurrent);
         
         console.log(`[SSE] [连接断开] 时间=${new Date().toLocaleTimeString()} 收到steps=${handlers.getCurrentExecutionSteps().length}`);
         
