@@ -1,3 +1,37 @@
+v0.9.4.4
+
+更新时间：2026-04-13 20:10:00
+
+更新内容：
+
+## 1. 修复第一个step不实时显示问题 - 小沈-2026-04-13
+
+### 1.1 问题
+
+步骤没有实时显示，start也不显示，所有step收到完成后才显示。
+
+### 1.2 根因
+
+onStep回调执行时：
+1. step先到达
+2. 然后才执行 streamingStepsRef.current = [..., step]
+3. 然后检查 shouldUpdate
+4. 传给消息的 executionSteps 是空的（因为第285行还没执行）
+
+### 1.3 修复
+
+修改 onStep 回调：
+- 用当前step而非空的ref
+- 如果 streamingStepsRef.current 为空，直接用 [step]
+
+### 1.4 Commit
+
+| 提交 | 说明 |
+|------|------|
+| 5d466d8a | fix: 第一个step不显示-用当前step而非空ref |
+
+---
+
 v0.9.4.3
 
 更新时间：2026-04-13 19:10:00

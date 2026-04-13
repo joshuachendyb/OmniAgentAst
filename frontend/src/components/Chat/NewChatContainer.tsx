@@ -319,6 +319,7 @@ const NewChatContainer: React.FC = () => {
               provider: step.provider,
               display_name: finalDisplay_name,
             };
+            console.log("📝 [onStep] 创建新消息, isStreaming=", newAssistantMessage.isStreaming, "steps数=", currentSteps.length);
             return [...prev, newAssistantMessage];
           }
           
