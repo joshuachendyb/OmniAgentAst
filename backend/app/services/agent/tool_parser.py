@@ -20,6 +20,55 @@ class ToolParser:
     """
     
     @staticmethod
+    def _extract_json_with_balanced_braces(text: str) -> tuple:
+        """
+        Stage 1: 使用平衡括号匹配找到JSON，提取JSON前面的纯文本
+        
+        返回：(json_text, content_before_json)
+        - json_text: 找到的JSON文本（可能截断）
+        - content_before_json: JSON前面的纯文本
+        """
+        start = -1
+        brace_count = 0
+        in_string = False
+        escape_next = False
+        
+        for i, char in enumerate(text):
+            if escape_next:
+                escape_next = False
+                continue
+            
+            if char == '\\':
+                escape_next = True
+                continue
+            
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            
+            if in_string:
+                continue
+            
+            if char == '{':
+                if start == -1:
+                    start = i
+                brace_count += 1
+            elif char == '}':
+                brace_count -= 1
+                if brace_count == 0 and start != -1:
+                    # 找到完整的JSON
+                    json_text = text[start:i+1]
+                    content_before = text[:start].strip()
+                    return json_text, content_before
+        
+        # 如果JSON被截断，返回不完整JSON
+        if start != -1 and brace_count > 0:
+            return text[start:], text[:start].strip()
+        
+        # 没有找到JSON
+        return None, text.strip()
+    
+    @staticmethod
     def parse_response(response: str) -> Dict[str, Any]:
         """
         解析LLM响应
@@ -33,25 +82,112 @@ class ToolParser:
         Raises:
             ValueError: 如果解析失败
         """
+        # 初始化content_before
+        content_before = ""
+        
+        # Step 0: 先尝试用平衡括号在整个response上提取，得到JSON前的纯文本
+        json_text, content_before = ToolParser._extract_json_with_balanced_braces(response)
+        
+        # Step 1: 尝试去除Markdown代码块
         json_match = re.search(
             r'```(?:json)?\s*\n?(.*?)\n?```',
             response,
             re.DOTALL | re.IGNORECASE
         )
-        
+
         if json_match:
+            # 去除```后，提取JSON前面的纯文本
             json_str = json_match.group(1).strip()
+            json_without_backticks = json_str
+            # 获取Markdown代码块之前的文本（排除```标记）
+            # 找到markdown开始的```位置
+            md_start = response.find('```')
+            if md_start != -1:
+                content_before = response[:md_start].strip()
         else:
-            json_str = response.strip()
+            json_without_backticks = response.strip()
+            if not content_before:
+                content_before = ""
+
+        # Step 2: 用平衡括号提取JSON
+        if json_text:
+            json_str = json_text
+        else:
+            # 尝试在去除Markdown的文本上再提取一次
+            json_text_2, content_before_2 = ToolParser._extract_json_with_balanced_braces(json_without_backticks)
+            if json_text_2:
+                json_str = json_text_2
+                # 如果之前没有content_before，使用这次的
+                if not content_before:
+                    content_before = content_before_2
+            else:
+                json_str = json_without_backticks
         
+        # Step 3: 尝试直接解析，处理截断的JSON和格式错误
+        parsed = None
         try:
             parsed = json.loads(json_str)
-        except json.JSONDecodeError as e:
-            parsed = ToolParser._extract_from_text(response)
-            if not parsed:
-                raise ValueError(f"Failed to parse response as JSON: {e}")
+        except json.JSONDecodeError:
+            # 尝试修复：去除尾随逗号
+            try:
+                fixed = re.sub(r',(\s*[}\]])', r'\1', json_str)
+                parsed = json.loads(fixed)
+            except json.JSONDecodeError:
+                # 截断JSON情况：尝试从部分有效的JSON中提取字段
+                # 逐个字段尝试提取
+                parsed = {}
+                
+                # 尝试提取 tool_name
+                tool_name_match = re.search(r'"tool_name"\s*:\s*"([^"]*)"', json_str)
+                if tool_name_match:
+                    parsed["tool_name"] = tool_name_match.group(1)
+                
+                # 尝试提取 action (备用字段名)
+                action_match = re.search(r'"action"\s*:\s*"([^"]*)"', json_str)
+                if action_match:
+                    parsed["action"] = action_match.group(1)
+                
+                # 尝试提取 action_tool (备用字段名)
+                action_tool_match = re.search(r'"action_tool"\s*:\s*"([^"]*)"', json_str)
+                if action_tool_match:
+                    parsed["action_tool"] = action_tool_match.group(1)
+                
+                # 尝试提取 tool_params
+                tool_params_match = re.search(r'"tool_params"\s*:\s*(\{[^}]*\})', json_str)
+                if tool_params_match:
+                    try:
+                        parsed["tool_params"] = json.loads(tool_params_match.group(1))
+                    except:
+                        parsed["tool_params"] = {}
+                
+                # 尝试提取 params (备用字段名)
+                params_match = re.search(r'"params"\s*:\s*(\{[^}]*\})', json_str)
+                if params_match and "tool_params" not in parsed:
+                    try:
+                        parsed["params"] = json.loads(params_match.group(1))
+                    except:
+                        parsed["params"] = {}
+                
+                # 尝试提取 action_input (备用字段名)
+                action_input_match = re.search(r'"action_input"\s*:\s*(\{.*\})', json_str)
+                if action_input_match:
+                    try:
+                        parsed["action_input"] = json.loads(action_input_match.group(1))
+                    except:
+                        parsed["action_input"] = {}
+                
+                # 如果成功提取了工具名，就使用它
+                if not parsed.get("tool_name") and not parsed.get("action") and not parsed.get("action_tool"):
+                    # 回退到文本提取
+                    parsed = ToolParser._extract_from_text(response)
+                    if not parsed:
+                        raise ValueError(f"Failed to parse response as JSON: {json.JSONDecodeError}")
         
-        content = parsed.get("content", parsed.get("thought", ""))
+        # JSON前面的纯文本作为content（用于显示）
+        # 如果content为空但parsed(from _extract_from_text)有thought，则用thought作为content
+        content = content_before if content_before else parsed.get("thought", "")
+        # JSON里的thought单独提取
+        thought = parsed.get("thought", parsed.get("thinking", ""))
         tool_name = parsed.get("tool_name", parsed.get("action_tool", parsed.get("action", "finish")))
         
         if "tool_params" in parsed:
@@ -68,13 +204,11 @@ class ToolParser:
         reasoning = parsed.get("reasoning")
         
         return {
-            "content": content,
+            "content": content,          # JSON前面的纯文本
+            "thought": thought,          # JSON里的thought
             "tool_name": tool_name,
             "tool_params": tool_params,
             "reasoning": reasoning,
-            # 保持向后兼容
-            "action_tool": tool_name,
-            "params": tool_params
         }
     
     @staticmethod
@@ -135,16 +269,13 @@ class ToolParser:
         if "thought" in result and "action" in result:
             return result
         
-        # 【修复 2026-03-29】处理 LLM 返回纯文本（如 "I will now summarize..."）的情况
-        # 当无法提取出结构化 action 时，检查是否是总结性文本，如果是则返回 finish
+        # 【修复 2026-04-13】改进的finish判断
+        # 只匹配行首/句首的总结词，不匹配中间的内容
         summarize_patterns = [
-            # 英文总结
-            r'(?:summarize|summary|I have found|I will)',
-            # 中文总结
-            r'(?:总结|已完成|任务完成|结束了)',
-            r'(?:根据.*?结果|基于.*?内容|以上)',
-            # 磁盘目录描述
-            r'(?:D盘|E盘|C盘).*?(?:如下|目录|文件|内容|列表)',
+            # 英文总结 - 必须行首/句首
+            r'^(?:summarize|summary|I have found|I will)',
+            # 中文总结 - 必须行首/句首
+            r'^(?:总结|已完成|任务完成|结束了)',
         ]
         for pattern in summarize_patterns:
             if re.search(pattern, text, re.IGNORECASE):
