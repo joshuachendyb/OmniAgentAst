@@ -2093,14 +2093,14 @@ const NewChatContainer: React.FC = () => {
 
   return (
     <Card
-      styles={{ header: { padding: "4px 4px 2px 4px" }, body: { padding: "0 4px 4px 4px" } }}
+      styles={{ body: { padding: "0 4px 4px 4px" } }}
       title={
-        <Space 
+        <span 
+          style={{ cursor: "pointer", display: "inline-flex", alignItems: "center" }}
           onClick={() => setEditingTitle(true)}
-          style={{ cursor: "pointer", width: "100%" }}
         >
           <RobotOutlined />
-          <span>AI对话助手</span>
+          <span style={{ marginLeft: 8 }}>AI对话助手</span>
           {isReceiving && <Badge status="processing" text="接收中..." />}
           {sessionId && editingTitle ? (
               <Space>
@@ -2213,7 +2213,7 @@ const NewChatContainer: React.FC = () => {
                 )}
               </span>
             )}
-        </Space>
+        </span>
       }
       extra={
         <Space>
