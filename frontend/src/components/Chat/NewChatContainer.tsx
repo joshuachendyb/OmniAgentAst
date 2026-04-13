@@ -334,6 +334,12 @@ const NewChatContainer: React.FC = () => {
           };
           return updated;
         });
+
+        // 【小沈修复 2026-04-13】onStep更新后滚动到底部
+        // 使用setTimeout确保DOM更新完成后再滚动
+        setTimeout(() => {
+          messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        }, 50);
       }
     }, []),
 
