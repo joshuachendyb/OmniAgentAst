@@ -2095,12 +2095,14 @@ const NewChatContainer: React.FC = () => {
     <Card
       styles={{ header: { padding: "4px 4px 2px 4px" }, body: { padding: "0 4px 4px 4px" } }}
       title={
-        <Space>
+        <Space 
+          onClick={() => setEditingTitle(true)}
+          style={{ cursor: "pointer", width: "100%" }}
+        >
           <RobotOutlined />
           <span>AI对话助手</span>
           {isReceiving && <Badge status="processing" text="接收中..." />}
-          {sessionId &&
-            (editingTitle ? (
+          {sessionId && editingTitle ? (
               <Space>
                 <Input
                   value={titleInput}
@@ -2210,7 +2212,7 @@ const NewChatContainer: React.FC = () => {
                   </Tooltip>
                 )}
               </span>
-            ))}
+            )}
         </Space>
       }
       extra={
