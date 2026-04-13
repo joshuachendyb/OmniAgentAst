@@ -1,10 +1,35 @@
 v0.9.4.2
 
-更新时间：2026-04-13 18:20:00
+更新时间：2026-04-13 18:45:00
 
 更新内容：
 
-## 1. 修复react_sse_wrapper.py缺少create_error_response导入 - 小沈-2026-04-13
+## 1. 修复create_error_response缺少导入 - 小沈-2026-04-13
+
+### 1.1 问题
+
+前端报错："name 'create_error_response' is not defined"
+
+### 1.2 修复
+
+**修改文件**: 
+- `backend/app/services/react_sse_wrapper.py` - 已添加导入
+- `backend/app/chat_stream/chat_stream_query.py` - 添加导入（本次修复）
+
+### 1.3 Commit
+
+| 提交 | 说明 |
+|------|------|
+| 0759e522 | fix: react_sse_wrapper.py添加create_error_response导入 |
+| a8b2c06e | fix: chat_stream_query.py添加create_error_response导入 |
+
+---
+
+v0.9.4.1
+
+更新时间：2026-04-13 15:22:16
+
+更新内容：
 
 ### 1.1 问题
 

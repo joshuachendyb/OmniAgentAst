@@ -1054,14 +1054,15 @@ const processSSEData = (
 
         const displayName = rawData.display_name;
         
+        // 【关键修复 2026-04-13】在回调之前先更新ref，确保onComplete获取完整数据
+        // 问题：setExecutionSteps回调是异步的，导致onComplete拿到旧值
+        // 解决：先直接更新ref，再调用onComplete
+        const updatedSteps = [...handlers.executionStepsRef.current, step];
+        handlers.executionStepsRef.current = updatedSteps;
+        
         // 【小查修复】保存final到executionSteps，以便导出功能能获取到
-        // 【小新修复 2026-03-15 V2】在回调中同步更新 executionStepsRef.current
-        // 根因：setExecutionSteps 更新 React state 是异步的，useEffect 依赖 executionSteps 更新
-        //      但 useEffect 在 onComplete 调用时还未执行，导致 getCurrentExecutionSteps() 获取到旧值
-        // 修复：在 setExecutionSteps 回调中同步更新 ref，确保同步
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];
-          handlers.executionStepsRef.current = newSteps;
           // 【小强修改 2026-04-10】使用 setTimeout 延迟保存，不阻塞 UI
           setTimeout(() => {
             try {
@@ -1077,10 +1078,9 @@ const processSSEData = (
         onShowSteps?.(true);
 
         // 【关键修复 2026-04-13】在onComplete调用前手动构建完整的steps数组
-        // 问题：getCurrentExecutionSteps()是闭包旧值，因为setExecutionSteps是异步的
-        // 解决：直接追加final step到当前ref，确保onComplete能获取到完整数据
-        const currentSteps = handlers.executionStepsRef.current;
-        const finalStepsWithCurrent = [...currentSteps];
+        // 问题：setExecutionSteps回调是异步的，handlers.executionStepsRef.current已更新为最新值
+        // 解决：直接使用已更新的ref
+        const finalStepsWithCurrent = handlers.executionStepsRef.current;
 
            onComplete?.(responseBufferRef.current, {
           model: rawData.model,
