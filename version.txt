@@ -1,19 +1,162 @@
-v0.9.3
+v0.9.4.1
 
-更新时间：2026-04-13 10:06:30
+更新时间：2026-04-13 15:22:16
 
 更新内容：
 
-## 1. 前端代码分割优化 - 方法2 - 小沈-2026-04-13
+## 1. 问题3修复补充：onComplete使用streamingRef累积内容 - 小健-2026-04-13
 
-### 1.1 优化内容
+### 1.1 检查问题
+
+对照文档7.5和7.6要求，发现小强实施代码存在2个轻微问题：
+- onComplete应优先使用streamingContentRef.current更新content
+- onComplete应优先使用streamingStepsRef.current累积步骤
+
+### 1.2 修复内容
+
+修改onComplete回调，优先使用累积的ref内容：
+- finalContent = streamingContentRef.current || finalResponse
+- finalSteps = 取refSteps/SSE/message三者中最长的
+
+### 1.3 修复位置
+
+frontend/src/components/Chat/NewChatContainer.tsx 第540-571行
+
+---
+
+v0.9.4
+
+更新时间：2026-04-13 15:15:00
+
+更新内容：
+
+## 1. 问题3修复：消息显示慢优化实施 - 小资-2026-04-13
+
+### 1.1 问题背景
+
+SSE流式返回时，每个chunk/step都触发setMessages，导致：
+- setMessages调用55次/响应 → 优化后5-10次
+- JSON.stringify调用55次/响应 → 优化后1-2次
+- scrollToBottom调用55次/响应 → 优化后3-5次
+
+### 1.2 解决方案
+
+使用50ms throttle + ref累积 + leading edge策略
+
+### 1.3 实施内容
+
+**修改文件**: `frontend/src/components/Chat/NewChatContainer.tsx`
+
+| 步骤 | 修改内容 |
+|------|----------|
+| 第一步 | 导入handleSSEError + 添加性能优化ref和state |
+| 第二步 | 添加滚动位置监听useEffect |
+| 第三步 | 添加优化滚动函数scrollToBottomIfNeeded |
+| 第四步 | 修改onStep回调（添加50ms throttle） |
+| 第五步 | 修改onChunk回调（添加50ms throttle） |
+| 第六步 | 修改onComplete回调（清理ref） |
+| 第七步 | 优化滚动useEffect（使用节流） |
+| 第八步 | 优化sessionStorage保存useEffect（debounce 500ms） |
+| 第九步 | 优化onError回调（节流+errorHandler） |
+
+### 1.4 测试验证
+
+| 测试项 | 结果 |
+|-------|------|
+| 流式优化测试 | ✅ 25 passed |
+| 完整测试套件 | ✅ 通过 |
+| 构建验证 | ✅ 通过 |
+
+### 1.5 Commit汇总
+
+| 提交 | 说明 |
+|------|------|
+| - | perf: 实施问题3优化 - 50ms throttle+ref累积+leading edge - 小资-2026-0413 |
+
+参与开发：小资（实施+测试）
+
+---
+
+v0.9.3
+
+更新时间：2026-04-13 13:30:00
+
+更新内容：
+
+## 1. 问题2修复：标题点击无反应 - 小强-2026-04-13
+
+### 1.1 问题
+
+点击标题无反应，无法编辑。
+
+### 1.2 修复
+
+**修改文件**: `frontend/src/components/Chat/NewChatContainer.tsx`
+
+| 提交 | 说明 |
+|------|------|
+| bd2b7d18 | fix: 修复标题点击无反应问题 - Space添加onClick - 小强-2026-0413 |
+| d42d527c | fix: 修复标题点击无反应问题 - span替代div - 小强-2026-0413 |
+| 635d6bd6 | fix: 标题编辑时显示已有标题 - 小强-2026-0413 |
+
+---
+
+## 2. 问题3分析：消息显示慢优化方案 - 小强/小资/小健-2026-04-13
+
+### 2.1 问题背景
+
+SSE流式返回时，每个chunk/step都触发setMessages，导致：
+- setMessages调用55次/响应
+- JSON.stringify调用55次/响应
+- scrollToBottom调用55次/响应
+
+### 2.2 解决方案
+
+使用50ms throttle + ref累积 + leading edge策略
+
+### 2.3 文档更新
+
+**更新文件**: `doc-4月优化/前端V0.9.3版本性能问题分析与优化方案-小资-2026-0412.md`
+
+| 提交 | 说明 |
+|------|------|
+| 91a34965 | docs: 更新问题3分析到第七章 - 详细优化方案 - 小强-2026-04-13 |
+| 71fae9a1 | docs: 第七章补充更优化方案 - 50ms throttle分离ref和state - 小强-2026-04-13 |
+| 961f8020 | docs: 问题3完整优化方案整合 - 50ms throttle分离ref和state - 小沈-2026-0413 |
+| c458390c | docs: 补充用户关心的问题解答 - JSON.stringify不影响渲染 - 小资-2026-0413 |
+| 022ddcef | docs: 补充实施注意事项 - debounce引入 leading edge onError优化 - 小强-2026-0413 |
+| e4114c90 | docs: 补充详细实施步骤 - 9个具体修改步骤+验证清单+回滚方案 - 小资-2026-0413 |
+| 22e9864c | docs: 修复审查问题 - debounce导入确认 scrollToBottomIfNeeded依赖 onError完整代码 - 小强-2026-0413 |
+| 89cd7a27 | docs: 修复onError错误处理 - 必须使用errorHandler统一处理中心 - 小强-2026-0413 |
+| cf9c0ac7 | docs: 审查修正 - 第一步导入位置 第九步完整onError代码 - 小健-2026-0413 |
+| 4e9bb4a8 | docs: 补充先实施后抽取策略 - 后续抽取到hook说明 - 小健-2026-0413 |
+
+### 2.4 文档版本历史
+
+| 版本 | 时间 | 签名 | 更新内容 |
+|------|------|------|----------|
+| v2.2 | 2026-04-13 11:29:09 | 小强 | 新增第七章：问题3消息显示慢的详细分析和优化方案 |
+| v2.3 | 2026-04-13 11:40:00 | 小强 | 第七章补充：代码审查额外发现 |
+| v2.4 | 2026-04-13 11:50:00 | 小强 | 第七章补充：更优化方案 - 50ms throttle |
+| v2.5 | 2026-04-13 12:00:00 | 小强 | 第七章补充：实施注意事项 |
+| v2.6 | 2026-04-13 12:30:00 | 小资 | 第七章补充：详细实施步骤 - 9个具体修改步骤 |
+| v2.7 | 2026-04-13 13:00:00 | 小强 | 第七章审查修复 |
+| v2.8 | 2026-04-13 13:10:00 | 小强 | 第七章修复：onError必须使用errorHandler |
+| v2.9 | 2026-04-13 13:20:00 | 小健 | 第七章审查：修正导入位置 + 完整onError代码 |
+| v3.0 | 2026-04-13 13:30:00 | 小健 | 第七章补充：先实施后抽取策略 |
+
+---
+
+## 3. 前端代码分割优化 - 小沈-2026-04-13
+
+### 3.1 优化内容
 
 **修改文件**: `frontend/vite.config.ts`
 
 - 配置 manualChunks 分割 vendor 代码
 - 分割为：vendor-react, vendor-antd, vendor-utils
 
-### 1.2 构建结果
+### 3.2 构建结果
 
 | 文件 | 大小 | gzip |
 |------|------|------|
@@ -23,6 +166,17 @@ v0.9.3
 | vendor-utils-*.js | 36.65 KB | 14.75 KB |
 
 主chunk从1137KB减少到161KB，减少约86%
+
+### 3.3 Commit汇总
+
+| 提交 | 说明 |
+|------|------|
+| fcf265df | perf: 前端代码分割优化 - manualChunks + docs更新 - 小沈-2026-0413 |
+| 5600009e | docs: 更新优化方案文档5.4节处理结果 - 小沈-2026-0413 |
+
+---
+
+参与开发：小强（问题2修复+问题3分析+审查）、小资（问题3分析+文档）、小健（问题3审查）、小沈（代码分割优化）
 
 ---
 
