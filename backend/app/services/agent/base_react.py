@@ -181,7 +181,9 @@ class BaseAgent(ABC):
                 
                 # ===== 调用LLM =====
                 self.status = AgentStatus.THINKING
+                logger.info(f"[Debug] 调用LLM (第{self.llm_call_count}轮), history长度={len(self.conversation_history)}")
                 response = await self._get_llm_response()
+                logger.info(f"[Debug] LLM响应 (第{self.llm_call_count}轮): {response[:200]}...")
                 
                 # ===== 场景2：LLM返回空响应 =====
                 if not response:
@@ -274,6 +276,7 @@ class BaseAgent(ABC):
                     observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}"
                 
                 # 更新消息历史
+                logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
                 self._add_observation_to_history(observation_text)
                 
                 # 记录观察结果到prompt日志
