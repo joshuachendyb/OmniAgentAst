@@ -2097,7 +2097,12 @@ const NewChatContainer: React.FC = () => {
       title={
         <span 
           style={{ cursor: "pointer", display: "inline-flex", alignItems: "center" }}
-          onClick={() => setEditingTitle(true)}
+                onClick={() => {
+                  if (!editingTitle && sessionId) {
+                    setTitleInput(sessionTitle || "");
+                  }
+                  setEditingTitle(true);
+                }}
         >
           <RobotOutlined />
           <span style={{ marginLeft: 8 }}>AI对话助手</span>
@@ -2183,7 +2188,7 @@ const NewChatContainer: React.FC = () => {
                   }}
                   style={{ width: 200 }}
                   autoFocus
-                  placeholder="输入会话标题"
+                  placeholder={sessionTitle || "输入会话标题"}
                 />
               </Space>
             ) : (
@@ -2194,7 +2199,12 @@ const NewChatContainer: React.FC = () => {
                   fontSize: titleLocked ? "16px" : "14px",
                   fontWeight: titleLocked ? "bold" : "normal",
                 }}
-                onClick={() => setEditingTitle(true)}
+          onClick={() => {
+            if (!editingTitle && sessionId) {
+              setTitleInput(sessionTitle || "");
+            }
+            setEditingTitle(true);
+          }}
               >
                 {sessionTitle || "未命名会话"}
                 {!titleLocked && ( // 【小新第二修复 2026-03-02】使用 titleLocked 替代 titleSource
