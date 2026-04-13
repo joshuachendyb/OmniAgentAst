@@ -28,6 +28,7 @@
     "react-router-dom": "^7.13.0"
   },
   "devDependencies": {
+    "@bit-ocean/auto-import": "^0.0.54",
     "@playwright/test": "^1.40.0",
     "@testing-library/jest-dom": "^6.2.0",
     "@testing-library/react": "^14.1.2",
@@ -39,6 +40,7 @@
     "@vitejs/plugin-react": "^4.2.1",
     "@vitest/coverage-v8": "^1.1.0",
     "babel-plugin-import": "^1.13.8",
+    "consola": "^3.4.2",
     "eslint": "^8.57.0",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^4.6.2",
@@ -46,9 +48,12 @@
     "prettier": "^3.8.1",
     "rollup-plugin-visualizer": "^7.0.1",
     "typescript": "^5.2.2",
+    "unplugin-auto-import": "^21.0.0",
+    "unplugin-auto-import-antd": "^0.0.2",
     "vite": "^5.0.8",
     "vite-plugin-eslint": "^1.8.1",
     "vite-plugin-prettier": "^0.0.6",
+    "vite-plugin-style-import": "^2.0.0",
     "vitest": "^1.1.0"
   }
 }
