@@ -991,10 +991,12 @@ const MessageItem = memo(({
       case "user":
         return {
           ...baseStyle,
-          background: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
-          color: "#fff",
+          // 【小强优化2026-04-14】轻淡蓝色渐变方案B，更柔和
+          background: "linear-gradient(135deg, #f0f5ff 0%, #adc6ff 100%)",
+          color: "#262626",
           boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
-          paddingRight: 30, // 为右侧按钮留出空间
+          paddingRight: 30,
+          border: "1px solid #d6e4ff",
         };
       case "assistant":
         return {
@@ -1083,7 +1085,8 @@ const isUser = message.role === "user";
           ? "flex-end"
           : "flex-start",
         marginBottom: 12,
-        gap: 12,
+        // 【小强优化2026-04-14】用户消息无头像，gap为0
+        gap: isUser ? 0 : 12,
         width: "100%",
       }}
     >
@@ -1100,7 +1103,8 @@ const isUser = message.role === "user";
           display: "flex",
           flexDirection: "column",
           alignItems: isUser ? "flex-end" : "flex-start",
-          maxWidth: "calc(100% - 60px)",
+          // 【小强优化2026-04-14】用户消息无头像，可使用更大宽度
+          maxWidth: isUser ? "calc(100% - 0px)" : "calc(100% - 60px)",
         }}
       >
         {/* 角色名称和时间戳区域 */}
