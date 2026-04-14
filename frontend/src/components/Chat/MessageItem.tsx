@@ -36,7 +36,6 @@ import {
   getStepLabelStyle,
   getStepBadgeStyle,
   getTimestampStyle,
-  getNextStepStyle,
   getStatusBadgeStyle,
   FontSize,
   FontWeight,
@@ -53,7 +52,6 @@ import MoveFileView from "./views/MoveFileView";
 import SearchFilesView from "./views/SearchFilesView";
 import SearchFileContentView from "./views/SearchFileContentView";
 import GenerateReportView from "./views/GenerateReportView";
-import JsonHighlight from "./views/JsonHighlight";
 // 【小强实现 2026-03-31】导入搜索工具数据转换函数
 import { transformSearchFilesData, transformSearchFileContentData } from "../../utils/searchTransformers";
 
@@ -153,6 +151,49 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
     return { displayData: allData, hasMore: false };
   };
 
+  // 【小强添加 2026-04-14】通用工具信息渲染函数 - action_tool和thought共用
+  const renderToolInfo = (toolName: string | undefined, toolParams: Record<string, any> | undefined, options?: {
+    prefix?: string;      // 前缀文字，如"⬇️ 下一步："或"🔧 "
+    bgColor?: string;    // 背景色
+  }) => {
+    const prefix = options?.prefix || '';
+    const bgColor = options?.bgColor || 'rgba(0,0,0,0.03)';
+    
+    if (!toolName && !toolParams) return null;
+    
+    return (
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        flexWrap: 'wrap', 
+        gap: 10,
+      }}>
+        {toolName && (
+          <span style={{ fontWeight: FontWeight.MEDIUM }}>
+            {prefix}{toolName}
+          </span>
+        )}
+        {toolParams && Object.keys(toolParams).length > 0 && (
+          <span style={{ 
+            color: '#595959',
+            fontSize: 11,
+            fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+            background: bgColor,
+            padding: '2px 6px',
+            borderRadius: 4,
+            maxWidth: '60%',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            display: 'inline-block',
+          }}>
+            {JSON.stringify(toolParams)}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div style={{ 
       marginBottom: 8, 
@@ -193,41 +234,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
       <div style={{ ...getContentStyle(), marginTop: 4, marginLeft: 0 }}>
         {step.type === "action_tool" && (
           <>
-            {/* 显示工具名称 */}
-            🔧 {step.tool_name || "执行中..."}
-            {step.tool_params && (
-              <div>
-                {/* 默认显示1行 */}
-                <div 
-                  onClick={() => toggleExpand(stepIndex + 1000)} // +1000避免和文件列表折叠冲突
-                  style={{ 
-                    marginTop: 6, 
-                    fontSize: 12, 
-                    color: "#666",
-                    background: "#e6f7ff", // action_tool的bg1颜色，保持一致性
-                    padding: "8px 12px",
-                    borderRadius: 6,
-                    fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-                    lineHeight: 1.6,
-                    whiteSpace: expandedSteps.get(stepIndex + 1000) ? "pre-wrap" : "nowrap",
-                    overflow: "hidden",
-                    textOverflow: expandedSteps.get(stepIndex + 1000) ? "clip" : "ellipsis",
-                    cursor: "pointer",
-                    maxHeight: expandedSteps.get(stepIndex + 1000) ? "none" : "36px",
-                  }}
-                >
-                  <JsonHighlight data={step.tool_params} isExpanded={!!expandedSteps.get(stepIndex + 1000)} />
-                  <span style={{ 
-                    marginLeft: 8, 
-                    color: "#1890ff", 
-                    fontSize: 11,
-                    fontWeight: 500,
-                  }}>
-                    {expandedSteps.get(stepIndex + 1000) ? "▲ 收起" : "▼ 展开"}
-                  </span>
-                </div>
-              </div>
-            )}
+            {/* 【小强优化 2026-04-14】使用通用函数渲染工具信息 */}
+            {renderToolInfo(step.tool_name, step.tool_params as Record<string, any>, { prefix: '🔧 ' })}
             {/* 【小强实现 2026-03-23】阶段4任务1：isRecursive判断逻辑 */}
             {(() => {
                 return (
@@ -478,7 +486,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
               </span>
             </div>
             
-            {/* 信息区域：下一步、参数 */}
+            {/* 信息区域：下一步、参数 - 【小强优化 2026-04-14】使用通用函数 */}
             <div style={{
               marginTop: 6,
               padding: '8px 12px',
@@ -486,24 +494,11 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
               background: 'linear-gradient(135deg, rgba(250,173,20,0.08) 0%, rgba(212,136,6,0.08) 100%)',
               border: '1px solid rgba(255,213,145,0.3)',
             }}>
-              {/* 显示下一步tool_name */}
-              {(step as any).tool_name && (
-                <div style={getNextStepStyle("thought")}>
-                  <span style={{ fontWeight: FontWeight.MEDIUM }}>⬇️ 下一步：{(step as any).tool_name}</span>
-                </div>
-              )}
-              {/* 显示tool_params - 使用JsonHighlight组件统一格式 */}
-              {(step as any).tool_params && Object.keys((step as any).tool_params).length > 0 && (
-                <div style={{ 
-                  marginTop: 4, 
-                  fontSize: 12, 
-                  background: "#fff7e6", // thought的bg1颜色，保持一致性
-                  padding: "6px 10px",
-                  borderRadius: 4,
-                }}>
-                  <JsonHighlight data={(step as any).tool_params} isExpanded={true} />
-                </div>
-              )}
+              {/* 【小强优化 2026-04-14】使用通用函数渲染工具信息，带橙色系背景 */}
+              {renderToolInfo((step as any).tool_name, (step as any).tool_params as Record<string, any>, { 
+                prefix: '⬇️ 下一步：', 
+                bgColor: 'rgba(255,170,0,0.1)' 
+              })}
             </div>
           </div>
         )}
