@@ -4568,7 +4568,7 @@ execution_result = await self._execute_tool(tool_name, tool_params)
 
 ### 13.1 采纳内容总览
 
-**本次实施方案包含三个维度**：
+**本次实施方案包含四个维度**：
 
 #### 13.1.1 维度一：ReAct输出统一解析器（5.1.1节）
 
@@ -4594,55 +4594,92 @@ execution_result = await self._execute_tool(tool_name, tool_params)
 
 ---
 
-#### 13.1.2 维度二：Step封装与Agent主循环重构（5.1.3节）
+#### 13.1.2 维度二：Step封装（5.1.3节核心设计）
 
 **现有代码问题**：
 - 直接`yield`字典，无面向对象封装
-- 循环控制硬编码：`if tool_name == "finish"`
-- 步骤状态管理分散，无统一接口
-- 结束判断逻辑与业务逻辑耦合
+- 步骤字段分散，类型安全无保障
+- 无统一接口规范，新增步骤类型困难
+- 步骤数据与展示逻辑耦合
 
-**采纳5.1.3节设计（LlamaIndex ReasoningStep参考）**：
+**采纳5.1.3节Step封装设计（LlamaIndex ReasoningStep参考）**：
 
 | 序号 | 采纳内容 | 现有问题 | 改进说明 | 优先级 |
 |------|----------|----------|----------|--------|
-| 1 | **ReasoningStep基类** | 直接yield字典 | ABC抽象基类，定义`get_content()`/`is_done()`/`to_dict()`接口 | P1-高 |
-| 2 | **is_done()循环控制** | 硬编码finish判断 | 抽象方法控制循环结束，FinalStep返回True，ThoughtStep返回False | P1-高 |
-| 3 | **面向对象封装** | 字典字段分散 | ThoughtStep/ActionToolStep/ObservationStep/FinalStep具体类 | P2-中 |
-| 4 | **步骤状态管理** | 无统一状态追踪 | `steps: list[ReasoningStep]`统一管理，支持历史追溯 | P2-中 |
-| 5 | **职责分离** | 解析与步骤创建耦合 | 解析器输出结构化数据，Step类负责封装和循环控制 | P2-中 |
+| 1 | **ReasoningStep基类** | 直接yield字典 | ABC抽象基类，定义`get_content()`/`is_done()`/`to_dict()`统一接口 | P1-高 |
+| 2 | **面向对象封装** | 字典字段分散 | ThoughtStep/ActionToolStep/ObservationStep/FinalStep具体类 | P2-中 |
+| 3 | **步骤状态管理** | 无统一状态追踪 | `steps: list[ReasoningStep]`统一管理，支持历史追溯 | P2-中 |
+| 4 | **类型安全** | 无类型约束 | 每个Step类明确定义字段类型，编译期检查 | P2-中 |
+| 5 | **扩展性** | 新增步骤困难 | 继承基类即可实现新步骤类型，符合开闭原则 | P3-低 |
 
-**Step封装与Agent循环的关系**：
+**Step类设计一览**：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                  Step封装与Agent循环协作                      │
+│                    Step封装类层次结构                         │
 ├─────────────────────────────────────────────────────────────┤
-│  Step封装层（面向对象设计）                                    │
-│  ├─ ThoughtStep: is_done()=False → 继续执行工具               │
-│  ├─ ActionToolStep: is_done()=False → 生成observation         │
-│  ├─ ObservationStep: is_done()=return_direct → 判断是否继续   │
-│  ├─ FinalStep: is_done()=True → 结束循环                      │
-│  └─ ErrorStep: is_done()=True → 结束循环                      │
+│  ReasoningStep(ABC) - 抽象基类                                │
+│  ├─ get_content(): str      → 获取用户可见文本                 │
+│  ├─ is_done(): bool         → 判断是否结束（抽象方法）          │
+│  ├─ get_type(): str         → 获取type字段值                   │
+│  └─ to_dict(): dict         → 转换为前端格式                   │
 ├─────────────────────────────────────────────────────────────┤
-│  Agent主循环（控制流）                                         │
-│  ├─ 初始化: steps = []                                         │
-│  ├─ while True:                                                │
-│  │   ├─ llm_output = await call_llm()                          │
-│  │   ├─ parsed = parse_react_response(llm_output)  ← 统一解析   │
-│  │   ├─ step = create_step(parsed)  ← Step封装                 │
-│  │   ├─ steps.append(step)                                     │
-│  │   ├─ yield step.to_dict()                                   │
-│  │   └─ if step.is_done(): break  ← 循环控制                   │
-│  └─ 循环结束，返回steps历史                                    │
+│  具体实现类                                                   │
+│  ├─ ThoughtStep          is_done()=False                      │
+│  ├─ ActionToolStep       is_done()=False                      │
+│  ├─ ObservationStep      is_done()=return_direct              │
+│  ├─ FinalStep            is_done()=True                       │
+│  └─ ErrorStep            is_done()=True                       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**核心收益**：循环控制抽象化，步骤状态可追踪，代码可测试性提升，符合单一职责原则。
+**核心收益**：数据封装规范化，类型安全有保障，扩展性提升，符合面向对象设计原则。
 
 ---
 
-#### 13.1.3 维度三：ReAct Agent v2.0整体架构
+#### 13.1.3 维度三：Agent主循环重构（5.1.3节控制逻辑）
+
+**现有代码问题**：
+- 循环控制硬编码：`if tool_name == "finish"`
+- 结束判断逻辑与业务逻辑耦合
+- 循环状态管理混乱，break/return混用
+- 新增退出条件需修改多处代码
+
+**采纳5.1.3节循环控制设计**：
+
+| 序号 | 采纳内容 | 现有问题 | 改进说明 | 优先级 |
+|------|----------|----------|----------|--------|
+| 1 | **is_done()循环控制** | 硬编码finish判断 | Step对象自主决定循环是否结束，FinalStep返回True，ThoughtStep返回False | P1-高 |
+| 2 | **职责分离** | 解析与循环控制耦合 | 解析器只负责解析，Step负责封装，Agent只负责流程控制 | P1-高 |
+| 3 | **统一循环模式** | break/return混用 | 统一使用`while not step.is_done()`模式，逻辑清晰 | P2-中 |
+| 4 | **可测试性** | 循环逻辑难测试 | Step的is_done()可独立单元测试 | P2-中 |
+
+**Agent主循环重构对比**：
+
+```python
+# 【现有代码】循环控制硬编码
+while True:
+    parsed = self.parser.parse_response(response)
+    tool_name = parsed.get("tool_name", "finish")
+    if tool_name == "finish":  # ← 硬编码
+        break
+    # ... 执行工具 ...
+
+# 【新设计】is_done()抽象控制
+while True:
+    parsed = parse_react_response(llm_output)
+    step = create_step(parsed)
+    steps.append(step)
+    yield step.to_dict()
+    if step.is_done():  # ← 抽象方法，Step自主决定
+        break
+```
+
+**核心收益**：循环控制抽象化，结束判断去耦合，代码可测试性提升，符合单一职责原则。
+
+---
+
+#### 13.1.4 ReAct Agent v2.0整体架构
 
 **架构设计目标**：整合统一解析器与Step封装，构建职责清晰、易于维护的Agent v2.0架构。
 
@@ -4689,8 +4726,9 @@ execution_result = await self._execute_tool(tool_name, tool_params)
 | 阶段 | 实施内容 | 目标 | 风险 | 回滚策略 |
 |------|----------|------|------|----------|
 | **Phase 1** | 统一解析器（13.1.1） | 替换ToolParser，保持循环不变 | 低 | 恢复原有解析器 |
-| **Phase 2** | Step基类（13.1.2） | 引入ReasoningStep，重构循环控制 | 中 | 回退到yield字典 |
-| **Phase 3** | 完整v2.0 | 性能优化、缓存、配置化 | 低 | 逐步回退 |
+| **Phase 2** | Step基类（13.1.2） | 引入ReasoningStep封装，面向对象改造 | 中 | 回退到yield字典 |
+| **Phase 3** | 循环重构（13.1.3） | is_done()控制循环，职责分离 | 中 | 回退到硬编码判断 |
+| **Phase 4** | 完整v2.0（13.1.4） | 性能优化、缓存、配置化 | 低 | 逐步回退 |
 
 **明确不采纳**（需要讨论）：
 - 暂无（设计完整可直接实施）
