@@ -13,11 +13,15 @@
 4. 统一中英文提示
 5. 继承 BasePrompts 基类
 6. 嵌入服务器OS信息（Prompt中间层）- 2026-03-24
+7. 升级Examples添加reasoning字段 - 2026-04-14
+8. 新增finish示例和result字段 - 2026-04-14
+9. 新增get_llm_response_schema()方法 - 2026-04-14
 
 更新时间: 2026-03-19 23:55:00
 迁移时间: 2026-03-21
 重构时间: 2026-03-21
 增强时间: 2026-03-24
+升级reasoning时间: 2026-04-14
 """
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -138,6 +142,7 @@ Available Tools:
 Example 1: List directory
 {
     "thought": "User wants to see files in D drive root",
+    "reasoning": "list_directory是列出目录的唯一工具，需要设置dir_path参数为D:/",
     "tool_name": "list_directory",
     "tool_params": {
         "dir_path": "D:/"  // ✅ CORRECT: uses dir_path
@@ -148,6 +153,7 @@ Example 1: List directory
 Example 2: Read file
 {
     "thought": "User wants to read a config file",
+    "reasoning": "read_file是读取文件内容的唯一工具，需要设置file_path参数",
     "tool_name": "read_file",
     "tool_params": {
         "file_path": "C:/Users/username/config.json"  // ✅ CORRECT: uses file_path
@@ -158,6 +164,7 @@ Example 2: Read file
 Example 3: Search file content
 {
     "thought": "User wants to search for TODO comments in Python files",
+    "reasoning": "search_file_content支持关键词搜索和多路径筛选，是搜索文件内容的最佳工具",
     "tool_name": "search_file_content",
     "tool_params": {
         "pattern": "TODO",
@@ -169,6 +176,7 @@ Example 3: Search file content
 Example 4: Move file
 {
     "thought": "User wants to move file to new location",
+    "reasoning": "move_file支持文件和目录移动，需要source_path和destination_path两个参数",
     "tool_name": "move_file",
     "tool_params": {
         "source_path": "C:/old/file.txt",  // ✅ CORRECT
@@ -176,6 +184,14 @@ Example 4: Move file
     }
 }
 // ❌ WRONG: {"src": "...", "dst": "..."}
+
+Example 5: Task completed
+{
+    "thought": "用户的任务已完成，我已列出D盘文件列表",
+    "reasoning": "没有更多操作需要执行，任务结束",
+    "tool_name": "finish",
+    "tool_params": {"result": "已列出D盘根目录的文件：..."}
+}
 
 ---
 
@@ -380,6 +396,72 @@ Common mistakes to avoid:
 - ❌ filepath (use: file_path)
 - ❌ src/dst (use: source_path/destination_path)
 - ❌ path for read/write (use: file_path)"""
+
+    def get_llm_response_schema(self) -> Dict[str, Any]:
+        """
+        获取LLM响应的Function Calling Schema
+        用于强制LLM输出结构化响应（包含thought+reasoning）
+        
+        Returns:
+            OpenAI Function Calling格式的Schema
+            
+        示例返回：
+        {
+            "name": "execute_tool",
+            "description": "执行工具完成用户任务",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "thought": {
+                        "type": "string",
+                        "description": "思考过程，分析当前情况和用户需求"
+                    },
+                    "reasoning": {
+                        "type": "string",
+                        "description": "推理过程，解释为什么选择这个工具及其参数"
+                    },
+                    "tool_name": {
+                        "type": "string",
+                        "description": "工具名称，如list_directory, read_file, write_file, finish等"
+                    },
+                    "tool_params": {
+                        "type": "object",
+                        "description": "工具参数字典"
+                    }
+                },
+                "required": ["thought", "tool_name"]
+            }
+        }
+        
+        Returns:
+            Dict[str, Any]: Function Calling Schema
+        """
+        return {
+            "name": "execute_tool",
+            "description": "执行工具完成用户任务",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "thought": {
+                        "type": "string",
+                        "description": "思考过程，分析当前情况和用户需求"
+                    },
+                    "reasoning": {
+                        "type": "string",
+                        "description": "推理过程，解释为什么选择这个工具及其参数"
+                    },
+                    "tool_name": {
+                        "type": "string",
+                        "description": "工具名称，如list_directory, read_file, write_file, finish等"
+                    },
+                    "tool_params": {
+                        "type": "object",
+                        "description": "工具参数字典"
+                    }
+                },
+                "required": ["thought", "tool_name"]
+            }
+        }
 
 
 # 预定义的任务模板

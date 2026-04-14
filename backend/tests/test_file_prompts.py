@@ -194,5 +194,145 @@ class TestFilePromptsResponseFormat:
         
         assert "JSON" in result or "json" in result.lower()
         assert "thought" in result
-        assert "action" in result
-        assert "action_input" in result
+        assert "tool_name" in result
+        assert "tool_params" in result
+
+
+class TestLLMResponseSchema:
+    """测试LLM响应Schema - 2026-04-14 新增"""
+    
+    def test_get_llm_response_schema_exists(self):
+        """测试get_llm_response_schema方法存在"""
+        prompts = FileOperationPrompts()
+        assert hasattr(prompts, 'get_llm_response_schema')
+    
+    def test_get_llm_response_schema_returns_dict(self):
+        """测试返回字典类型"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_llm_response_schema()
+        
+        assert isinstance(result, dict)
+    
+    def test_get_llm_response_schema_name(self):
+        """测试Schema名称"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_llm_response_schema()
+        
+        assert result["name"] == "execute_tool"
+    
+    def test_get_llm_response_schema_description(self):
+        """测试Schema描述"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_llm_response_schema()
+        
+        assert "description" in result
+        assert len(result["description"]) > 0
+    
+    def test_get_llm_response_schema_has_thought(self):
+        """测试包含thought字段"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_llm_response_schema()
+        
+        props = result["parameters"]["properties"]
+        assert "thought" in props
+        assert props["thought"]["type"] == "string"
+    
+    def test_get_llm_response_schema_has_reasoning(self):
+        """测试包含reasoning字段"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_llm_response_schema()
+        
+        props = result["parameters"]["properties"]
+        assert "reasoning" in props
+        assert props["reasoning"]["type"] == "string"
+    
+    def test_get_llm_response_schema_has_tool_name(self):
+        """测试包含tool_name字段"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_llm_response_schema()
+        
+        props = result["parameters"]["properties"]
+        assert "tool_name" in props
+        assert props["tool_name"]["type"] == "string"
+    
+    def test_get_llm_response_schema_has_tool_params(self):
+        """测试包含tool_params字段"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_llm_response_schema()
+        
+        props = result["parameters"]["properties"]
+        assert "tool_params" in props
+        assert props["tool_params"]["type"] == "object"
+    
+    def test_get_llm_response_schema_required_fields(self):
+        """测试必填字段"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_llm_response_schema()
+        
+        required = result["parameters"]["required"]
+        assert "thought" in required
+        assert "tool_name" in required
+        # reasoning应该是可选的
+        assert "reasoning" not in required
+
+
+class TestExamplesWithReasoning:
+    """测试Examples升级reasoning字段 - 2026-04-14 新增"""
+    
+    def test_system_prompt_contains_example_1_with_reasoning(self):
+        """测试Example 1包含reasoning"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_system_prompt()
+        
+        # 示例1：List directory
+        assert "Example 1: List directory" in result
+        assert "reasoning" in result
+        assert "list_directory是列出目录的唯一工具" in result
+    
+    def test_system_prompt_contains_example_2_with_reasoning(self):
+        """测试Example 2包含reasoning"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_system_prompt()
+        
+        # 示例2：Read file
+        assert "Example 2: Read file" in result
+        assert "reasoning" in result
+        assert "read_file是读取文件内容的唯一工具" in result
+    
+    def test_system_prompt_contains_example_3_with_reasoning(self):
+        """测试Example 3包含reasoning"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_system_prompt()
+        
+        # 示例3：Search file content
+        assert "Example 3: Search file content" in result
+        assert "reasoning" in result
+        assert "search_file_content支持关键词搜索" in result
+    
+    def test_system_prompt_contains_example_4_with_reasoning(self):
+        """测试Example 4包含reasoning"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_system_prompt()
+        
+        # 示例4：Move file
+        assert "Example 4: Move file" in result
+        assert "reasoning" in result
+        assert "move_file支持文件和目录移动" in result
+    
+    def test_system_prompt_contains_example_5_finish_with_result(self):
+        """测试Example 5 finish包含result字段"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_system_prompt()
+        
+        # 示例5：Task completed - finish
+        assert "Example 5: Task completed" in result
+        assert "finish" in result
+        assert "result" in result
+    
+    def test_system_prompt_contains_finish_result_example(self):
+        """测试finish的result示例"""
+        prompts = FileOperationPrompts()
+        result = prompts.get_system_prompt()
+        
+        # 验证finish示例中tool_params包含result字段
+        assert '"tool_params": {"result":' in result or 'tool_params": {"result":' in result
