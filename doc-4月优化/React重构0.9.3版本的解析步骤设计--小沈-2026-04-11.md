@@ -3676,17 +3676,9 @@ execution_result = await self._execute_tool(tool_name, tool_params)
 | **Phase 1** | 短期 | Structured Output支持、Budget控制 | 4-6小时 |
 | **Phase 2** | 中期 | 带Jitter退避、熔断器、收敛检测 | 6-8小时 |
 | **Phase 3** | 长期 | 超长历史优化、前端字段完善 | 4-6小时 |
-
 ---
 
-**文档版本**: v4.27
-**汇总时间**: 2026-04-11 21:20:00
-**汇总人**: 小沈
-**汇总依据**: 基于文档第1-10章逐章对比分析后端代码实现
-
----
-
-## 十二、未实现项详细说明（补充版）
+## 十二、各type的补充字段详细说明及未实现功能项详细说明
 
 **补充时间**: 2026-04-14 11:12:27
 **补充人**: 小欧
@@ -3694,7 +3686,7 @@ execution_result = await self._execute_tool(tool_name, tool_params)
 
 ---
 
-### 12.1 未实现的字段详细说明
+### 12.1 各type的补充字段详细说明
 
 #### 12.1.1 action_tool 类型缺失字段
 
@@ -3717,10 +3709,7 @@ yield {
     ...
 }
 ```
-
----
-
-#### 12.1.3 observation 类型缺失字段
+#### 12.1.2 observation 类型缺失字段
 
 | 缺失字段 | 文档参考 | 当前实现 | 说明 |
 |----------|---------|---------|------|
@@ -3860,7 +3849,7 @@ if (stepData.type === "observation" && isReturnDirect) {
 - [ ] 前端适配：识别 `return_direct` 字段并显示完成提示
 - [ ] 测试：验证 `return_direct=true` 时 Agent 正确结束
 
-#### 12.1.4 final 类型缺失/不同字段
+#### 12.1.3 final 类型缺失/不同字段
 
 | 缺失字段 | 文档参考 | 当前实现 | 说明 |
 |----------|---------|---------|------|
@@ -4049,7 +4038,7 @@ if tool_name == "finish":
 - [ ] 前端适配：识别 `is_finished` 显示完成徽章
 - [ ] 测试：验证 final 步骤包含这3个新字段
 
-#### 12.1.5 error 类型字段名不同/缺失
+#### 12.1.4 error 类型字段名不同/缺失
 
 | 字段 | 文档参考 | 当前实现 | 说明 |
 |------|---------|---------|------|
@@ -4255,9 +4244,7 @@ def create_error_response(
 
 ### 12.2 未实现的功能改进项详细说明
 
-#### 12.2.1 高优先级未实现项（P0）
-
-##### (1) Structured Output 支持
+#### 12.2.1  Structured Output 支持
 
 **文档参考位置**: 7.6.1节
 
@@ -4291,7 +4278,7 @@ response = await llm_client.chat_with_response_format(
 
 ---
 
-##### (2) Budget 控制 + 成本追踪
+#### 12.2.2  Budget 控制 + 成本追踪
 
 **文档参考位置**: 7.6.1节
 
@@ -4325,7 +4312,7 @@ class BaseAgent:
 
 ---
 
-##### (3) 超长历史优化
+#### 12.2.3  超长历史优化
 
 **文档参考位置**: 7.6.1节、10.2.4节
 
@@ -4365,9 +4352,7 @@ def _trim_history(self) -> None:
 
 ---
 
-#### 12.2.2 中优先级未实现项（P1）
-
-##### (4) 带Jitter指数退避
+#### 12.2.4  带Jitter指数退避
 
 **文档参考位置**: 7.6.2节
 
@@ -4397,7 +4382,7 @@ def calculate_backoff_with_jitter(attempt: int, base_delay: float = 2.0, max_del
 
 ---
 
-##### (5) 熔断器
+#### 12.2.5 熔断器
 
 **文档参考位置**: 7.6.2节
 
@@ -4429,7 +4414,7 @@ class CircuitBreaker:
 
 ---
 
-##### (6) 收敛检测
+#### 12.2.6 收敛检测
 
 **文档参考位置**: 7.6.2节
 
@@ -4463,105 +4448,7 @@ class ConvergenceDetector:
         self.history.append(current)
         return consecutive >= self.max_consecutive
 ```
-
 ---
-
-##### (7) start添加task字段
-
-**文档参考位置**: 7.6.2节
-
-**文档描述**:
-```
-start添加task字段 - 显示用户原始任务
-前端可显示用户最初的任务描述
-```
-
----
-
-##### (8) error添加recoverable字段
-
-**文档参考位置**: 7.6.2节、7.1.6节
-
-**文档描述**:
-```
-error添加recoverable字段 - 前端显示"重试"按钮
-根据recoverable字段决定是否显示重试按钮
-```
-
----
-
-#### 12.2.3 低优先级未实现项（P2）
-
-##### (9) action_tool添加error_message字段
-
-**文档参考位置**: 7.6.3节
-
-**文档描述**:
-```
-action_tool添加error_message字段 - 记录工具执行错误
-```
-
----
-
-##### (10) return_direct机制
-
-**文档参考位置**: 7.6.3节、4.4节、7.1.4节
-
-**文档描述**:
-```
-return_direct机制 - 工具直接返回
-当return_direct=True时，跳过LLM分析，直接返回结果给用户
-```
-
----
-
-##### (11) tool_start事件
-
-**文档参考位置**: 6.4.1节
-
-**文档描述**:
-```
-增加tool_start事件 - 工具开始执行时立即yield
-让前端显示"正在调用xxx..."
-解决长时间执行工具时用户等待无反馈的问题
-```
-
-**当前代码状态**:
-- 工具执行后才yield action_tool
-- 用户等待期间没有任何反馈
-
-**建议实现方式**:
-```python
-# 在 _execute_tool 调用前立即yield
-yield {
-    "type": "tool_start",
-    "step": step_count,
-    "tool_name": tool_name,
-    "tool_params": tool_params,
-    "timestamp": create_timestamp()
-}
-
-# 然后执行工具
-execution_result = await self._execute_tool(tool_name, tool_params)
-```
-
----
-
-### 12.3 总结
-
-| 类别 | 总数 | 已实现 | 未实现 |
-|------|------|--------|--------|
-| **字段缺失** | 10 | 3 | 7 |
-| **字段名不同** | 3 | 0 | 3 |
-| **功能改进** | 11 | 1 | 10 |
-| **总计** | 24 | 4 | 20 |
-
-**建议优先级**:
-1. **第一优先级**: final添加is_finished/thought字段、start添加task字段
-2. **第二优先级**: observation添加tool_params、error添加recoverable
-3. **第三优先级**: Structured Output支持、Budget控制
-4. **第四优先级**: 带Jitter退避、熔断器、收敛检测
-
 
 ## 十三、ReAct的Agent，统一解析器与step封装的构建实施方案
 ---
@@ -5526,7 +5413,7 @@ step = StepFactory.create_thought_step(
 self.steps.append(step)  # 历史管理
 yield step.to_dict()      # 统一输出
 ```
-####  13.2.2.3 维度三Step封装构建的实施步骤建议
+####  13.2.2.3 维度二Step封装构建的实施步骤建议
 
 1. **步骤 2.1**: 创建ReasoningStep抽象基类（`backend/app/services/agent/reasoning_steps.py`），定义`step/timestamp`字段和抽象方法`get_type()`/`get_content()`/`is_done()`/`to_dict()`
 2. **步骤 2.2**: 创建ToolMixin混入类（解决S5重复问题），定义`tool_name`/`tool_params`字段，供ThoughtStep/ActionToolStep/ObservationStep复用
@@ -5931,64 +5818,9 @@ class BaseReactAgentV2:
 
 *
 
-### 13.3 详细实施步骤
+### 13.3 维度一：统一解析架构的详细实施步骤
 
----
-
-#### 13.3.1 步骤1：准备工作
-
-**步骤1.1：代码备份**
-
-```bash
-# 创建备份目录（带时间戳）
-mkdir backup/v0.8.93_before_unified_parser_$(date +%Y%m%d_%H%M)
-cp -r backend/app/services/agent/* backup/v0.8.93_before_unified_parser_$(date +%Y%m%d_%H%M)/
-cp -r backend/tests/test_tool_parser.py backup/v0.8.93_before_unified_parser_$(date +%Y%m%d_%H%M)/
-```
-
-**检查要点：**
-- [ ] 备份目录已创建且包含文件
-- [ ] 核心文件已备份：tool_parser.py、base_react.py、__init__.py
-- [ ] 测试文件已备份：test_tool_parser.py
-
----
-
-**步骤1.2：定位现有解析代码**
-
-```bash
-# 搜索现有解析器调用点
-grep -rn "parse_response\|self.parser" backend/app/services/agent/ --include="*.py"
-
-# 搜索结果应包含：
-# backend/app/services/agent/base_react.py:195: parsed = self.parser.parse_response(response)
-# backend/app/services/agent/base_react.py:219-222: 使用parsed结果
-```
-
-**检查要点：**
-- [ ] 找到所有调用ToolParser.parse_response()的位置
-- [ ] 记录每个调用点的上下文（函数名、行号、返回值使用方式）
-- [ ] 确认替换范围
-
----
-
-**步骤1.3：创建测试基线**
-
-```bash
-# 运行现有测试，记录基线
-cd backend
-pytest tests/test_tool_parser.py -v --tb=short > test_baseline_$(date +%Y%m%d).log
-
-# 记录当前测试通过率
-echo "当前测试基线: $(pytest tests/test_tool_parser.py --tb=no -q | tail -1)" >> test_baseline.log
-```
-
-**检查要点：**
-- [ ] 所有现有测试通过
-- [ ] 测试通过率已记录
-- [ ] 测试日志已保存
-
----
-
+-
 #### 13.3.2 步骤2：创建统一解析器模块
 
 **步骤2.1：新增文件 react_output_parser.py**
@@ -7214,12 +7046,6 @@ git push origin main --tags
 | P3 | 解析器配置化 | 支持自定义关键词 |
 
 ---
-
-**实施方案版本**: v1.0  
-**最后更新**: 2026-04-14 16:15:59  
-**编写人**: 小沈  
-**审核人**: 待填写  
-**审核状态**: 待审核  
 
 ---
 
