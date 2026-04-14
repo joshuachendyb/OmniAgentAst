@@ -192,14 +192,19 @@ class BaseAgent(ABC):
                     break  # 空响应，退出
                 
                 # ===== 场景4：解析失败（重试3次机制）=====
-                try:
-                    parsed = self.parser.parse_response(response)
-                except ValueError as e:
+                parsed = self.parser.parse_response(response)
+                
+                # 【修复】检查解析是否失败：parse_response现在返回错误结果而不是抛异常
+                # 通过检查content是否包含错误标识来判断
+                is_parse_error = "⚠️" in parsed.get("content", "") or parsed.get("tool_name") == "finish"
+                
+                if is_parse_error:
                     # 保存原始response到conversation_history
                     self.conversation_history.append({"role": "assistant", "content": response})
                     
                     # 添加错误提示到历史，让LLM重新尝试
-                    self._add_observation_to_history(f"Parse error: {str(e)}. Please respond with valid JSON format.")
+                    error_content = parsed.get("content", "Parse error")
+                    self._add_observation_to_history(f"{error_content}. Please respond with valid JSON format.")
                     
                     # 重试计数器+1
                     self.parse_retry_count += 1
