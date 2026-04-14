@@ -4774,10 +4774,10 @@ def parse_response(response: str) -> Dict[str, Any]
   - 代码冗长，难以维护
   - 没有清晰的降级层级
 
-问题4: 调用时机不明确
-  - 调用者不清楚什么时候该解析工具，什么时候该解析回答
-  - 需要检查tool_name是否为finish来判断
-  - 语义不清晰
+问题4: 完成状态判断语义不够直观
+  - 现有代码通过tool_name == "finish"判断是否完成
+  - 需要理解"finish"特殊值的含义，语义不够直观
+  - 不如显式的type="answer"直观清晰
 ```
 #### 13.2.1.2 新的统一解析器的架构概要设计
 
@@ -4872,15 +4872,33 @@ parse_react_response(output: str) -> Dict[str, Any]
 ```
 
 #### 返回值结构
+
+**【修正 2026-04-14 小沈】补充兼容性字段，确保与现有代码平滑迁移**
+
 ```python
 # 统一返回格式（所有情况）
 {
-    "type": str,           # "action" | "answer" | "implicit" | "thought_only"
-    "thought": str|None,   # 思考内容（所有情况都有）
+    # 核心字段（新架构设计）
+    "type": str,                # "action" | "answer" | "implicit" | "thought_only"
+    "thought": str|None,        # 思考内容（所有情况都有）
     "tool_name": str|None,      # 工具名（仅action）
     "tool_params": dict|None,   # 工具参数（仅action）
-    "response": str|None        # 回答内容（answer/implicit）
+    "response": str|None,       # 回答内容（answer/implicit）
+    
+    # 兼容性字段（用于base_react.py平滑迁移）
+    "content": str,             # 映射到thought，兼容旧代码第219行parsed.get("content", "")
+    "reasoning": str|None,      # 映射到thought，兼容旧代码第232行parsed.get("reasoning", "")
 }
+
+# 兼容性映射说明
+# base_react.py现有代码依赖的字段映射关系：
+# - parsed.get("content", "")  → 新架构使用 thought
+# - parsed.get("reasoning", "") → 新架构使用 thought（reasoning与thought语义合并）
+# 
+# 实施步骤1.6中提供两种兼容方案：
+# 方案A（推荐）：新架构直接返回content/reasoning字段，值为thought的映射
+# 方案B：在base_react.py中添加适配函数 _compat_parsed_result()
+```
 
 # 各类型返回值示例
 
@@ -5692,6 +5710,109 @@ class BaseReactAgentV2:
 | **类型安全** | 无 | 完整类型注解 | 新设计 |
 
 ---
+
+**【补充 2026-04-14 小沈】设计决策说明与重要变更**
+
+##### 设计决策1：关于finish/answer/implicit时的thought处理（对应问题7）
+
+**现有代码行为**（base_react.py第225-227行）：
+```python
+if tool_name == "finish":
+    last_response = response
+    break  # 不yield thought，直接退出循环
+```
+
+**新设计行为**（本方案第5660-5670行）：
+```python
+elif parsed["type"] in ("answer", "implicit"):
+    # 生成FinalStep（包含thought）
+    final_step = FinalStep(
+        step=step_counter,
+        timestamp=create_timestamp(),
+        response=parsed["response"],
+        thought=parsed.get("thought", "")  # 保留thought
+    )
+    steps.append(final_step)
+    yield final_step.to_dict()  # yield包含thought的final步骤
+    break
+```
+
+**决策理由**：
+1. **完整性**：保留完整的思考链路，便于调试和审计
+2. **一致性**：所有LLM响应都产生thought步骤，无特殊情况
+3. **前端友好**：前端可以完整展示"思考→结论"的流程
+4. **兼容性**：前端已有逻辑支持type="final"包含thought字段
+
+**特别注意**：这是**有意的设计变更**，不是实现缺陷。新设计会yield包含thought的final步骤，而旧代码不yield thought直接退出。
+
+---
+
+##### 设计决策2：关于parse_retry机制的移除（对应问题3）
+
+**现有代码机制**（base_react.py第199-216行）：
+```python
+is_parse_error = "⚠️" in parsed.get("content", "") or parsed.get("tool_name") == "finish"
+if is_parse_error:
+    # 保存原始response到conversation_history
+    self.conversation_history.append({"role": "assistant", "content": response})
+    # 添加错误提示，让LLM重新尝试
+    self._add_observation_to_history(f"{error_content}. Please respond with valid JSON format.")
+    self.parse_retry_count += 1
+    if self.parse_retry_count >= self.max_parse_retries:
+        last_error = "parse_error"
+        break
+    continue  # 继续循环，让LLM重新尝试
+```
+
+**新设计方案**：
+新架构的`parse_react_response()`返回明确的`type`字段（action/answer/implicit/thought_only），
+不再依赖"content包含⚠️"这种隐式错误判断，因此**无需parse_retry机制**。
+
+**实施时处理**（步骤1.6补充）：
+1. **移除parse_retry相关代码**：
+   - 第48-49行：`self.parse_retry_count`和`self.max_parse_retries`初始化
+   - 第199-216行：parse_error判断和重试逻辑
+2. **简化错误处理**：新架构通过type字段明确区分，解析异常直接走ErrorStep流程
+
+**决策理由**：
+1. 新架构的type字段使解析结果明确化，不再有二义性
+2. 移除复杂的重试逻辑，代码更清晰
+3. 错误处理统一走ErrorStep，逻辑更一致
+
+---
+
+##### 设计决策3：关于步骤1.6的补充说明（对应问题6）
+
+**步骤1.6原始描述**：
+> 改造`base_react.py`调用点（第195行替换`self.parser.parse_response()`为`parse_react_response()`，更新第219-222行结果提取逻辑）
+
+**补充说明**：
+除上述改造外，步骤1.6还需要完成以下修改：
+
+1. **移除parse_retry机制相关代码**（见设计决策2）
+2. **移除ToolParser实例化**（第45行`self.parser = ToolParser()`）
+3. **添加兼容性处理**（方案A或B）：
+   - 方案A（推荐）：新架构直接返回content/reasoning字段
+   - 方案B：在base_react.py第195行后添加适配：`parsed = _compat_parsed_result(parse_react_response(response))`
+4. **更新结果提取逻辑**（第219-222行）：
+   ```python
+   # 改造前
+   thought_content = parsed.get("content", "")
+   tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
+   tool_params = parsed.get("tool_params", parsed.get("params", {}))
+   
+   # 改造后
+   thought_content = parsed.get("content", "")  # content映射到thought
+   if parsed["type"] == "action":
+       tool_name = parsed["tool_name"]
+       tool_params = parsed["tool_params"]
+   elif parsed["type"] in ("answer", "implicit"):
+       # 处理最终回答
+       pass
+   ```
+
+---
+
 ####  13.2.3.3 维度三：重构Agent主循环2.0的实施步骤建议
 
 1. **步骤 3.1**: 创建新的主循环函数`run_stream_v2()`（保持`run_stream()`不变新增函数），初始化`steps: list[ReasoningStep]=[]`步骤历史列表和`step_counter=0`计数器
