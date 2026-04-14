@@ -4594,7 +4594,7 @@ execution_result = await self._execute_tool(tool_name, tool_params)
 
 ---
 
-#### 13.1.2 维度二：Step封装（5.1.3节核心设计）
+#### 13.1.2 维度二：Step封装采纳说明（5.1.3节核心设计）
 
 **现有代码问题**：
 - 直接`yield`字典，无面向对象封装
@@ -5083,14 +5083,447 @@ elif parsed["type"] == "thought_only":
 ---
 ###  13.2.2 维度二：step的处理封装概要设计
 
-###  13.2.2.1 现有系统的step处理的现状及问题分析
+###  13.2.2.1 现有系统的step构建及处理的现状及问题分析
 
+#### Step构建入口位置
+```
+文件: backend/app/services/agent/base_react.py
+函数: BaseAgent.run_stream()
+Step构建位置: 第234-308行（多处分散yield）
+```
 
+#### 现有Step构建方式
 
-###  13.2.2.2 维度二：step的处理封装概要设计说明
+**方式一：直接yield字典（thought步骤）**
+```python
+# 位置: 第234-243行
+yield {
+    "type": "thought",
+    "step": step_count,
+    "timestamp": current_time,
+    "content": thought_content,
+    "thought": thought,
+    "reasoning": reasoning,
+    "tool_name": tool_name,
+    "tool_params": tool_params
+}
+```
 
+**方式二：直接yield字典（action_tool成功）**
+```python
+# 位置: 第269-279行
+yield {
+    "type": "action_tool",
+    "step": step_count,
+    "timestamp": current_time,
+    "tool_name": tool_name,
+    "tool_params": tool_params,
+    "execution_status": "success",
+    "summary": execution_result.get("summary", ""),
+    "raw_data": execution_result.get("data"),
+    "action_retry_count": 0
+}
+```
 
+**方式三：函数封装但返回字典（action_tool失败）**
+```python
+# 位置: 第257-266行
+action_tool_result = create_tool_error_result(
+    tool_name=tool_name,
+    error_message=execution_result.get("summary", "执行失败"),
+    step_num=step_count,
+    tool_params=tool_params,
+    retry_count=execution_result.get("retry_count", 0),
+    raw_data=execution_result.get("data"),
+    timestamp=current_time
+)
+yield action_tool_result
+```
 
+**方式四：直接yield字典（observation步骤）**
+```python
+# 位置: 第302-308行
+yield {
+    "type": "observation",
+    "step": step_count,
+    "timestamp": create_timestamp(),
+    "tool_name": tool_name,
+    "content": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}"
+}
+```
+
+**方式五：直接yield字典（final/error步骤）**
+```python
+# 位置: 第316-320行（final）
+yield {
+    "type": "final",
+    "timestamp": create_timestamp(),
+    "content": tool_params.get("result", thought_content)
+}
+
+# 位置: 第326-331行, 第337-343行, 第348-355行（error）
+yield error_response  # 由create_session_error_result生成
+```
+
+#### Step构建核心问题清单
+
+| 问题编号 | 问题描述 | 代码位置 | 具体表现 | 严重程度 |
+|---------|---------|---------|---------|---------|
+| **S1** | **无面向对象封装** | 第234-308行 | 所有步骤直接yield字典，无Step类 | 🔴 高 |
+| **S2** | **字段命名不统一** | 多处 | action_tool成功用`raw_data`，失败用`raw_data`但结构不同 | 🟡 中 |
+| **S3** | **构建逻辑分散** | 第234-308行 | 5种步骤类型分布在不同代码位置，无统一入口 | 🔴 高 |
+| **S4** | **类型安全缺失** | 所有yield点 | 无类型注解，字段类型靠约定 | 🟡 中 |
+| **S5** | **重复代码** | 第234-279行 | thought和action_tool都包含tool_name/tool_params，重复设置 | 🟡 中 |
+| **S6** | **step字段不一致** | 第234行vs第302行 | thought有step字段，observation在部分场景缺失step | 🔴 高 |
+| **S7** | **错误处理不统一** | 第257-266行vs第326-331行 | 有的用create_tool_error_result，有的用create_session_error_result | 🟡 中 |
+| **S8** | **无步骤历史管理** | 整体 | 只有self.conversation_history，无steps列表记录所有Step | 🟡 中 |
+| **S9** | **扩展困难** | 整体 | 新增步骤类型需修改多处yield代码 | 🟡 中 |
+| **S10** | **数据与展示耦合** | 第307行 | content字段在yield时动态生成，无法复用 | 🟢 低 |
+
+#### 关键代码片段分析
+
+**问题S1+S3：分散的字典构建**
+```python
+# 【代码第234-308行】5个步骤类型分散在4个代码区域
+# thought: 第234-243行
+# action_tool(成功): 第269-279行
+# action_tool(失败): 第257-266行（通过函数封装）
+# observation: 第302-308行
+# final/error: 第316-355行（循环外处理）
+
+# 问题：无统一Step构建入口，修改字段需多处同步
+```
+
+**问题S6：step字段不一致**
+```python
+# thought步骤（第236行）
+"step": step_count,
+
+# action_tool步骤（第271行）
+"step": step_count,
+
+# observation步骤（第304行）
+"step": step_count,
+
+# final步骤（缺失step字段！）
+{
+    "type": "final",
+    "timestamp": create_timestamp(),  # 无step字段
+    ...
+}
+```
+
+**问题S2+S5：字段重复与不一致**
+```python
+# thought步骤已经包含tool_name/tool_params（第241-242行）
+yield {
+    "type": "thought",
+    ...
+    "tool_name": tool_name,
+    "tool_params": tool_params
+}
+
+# action_tool步骤又重复包含（第273-274行）
+yield {
+    "type": "action_tool",
+    ...
+    "tool_name": tool_name,
+    "tool_params": tool_params
+}
+
+# 问题：数据冗余，且observation步骤又从execution_result取tool_name（第306行）
+```
+
+#### 现有系统Step处理流程图
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    现有Step构建流程（分散式）                  │
+├─────────────────────────────────────────────────────────────┤
+│  1. 解析LLM响应                                               │
+│     └── parsed = self.parser.parse_response(response)        │
+│                                                              │
+│  2. 判断步骤类型（硬编码）                                     │
+│     └── if tool_name == "finish": → 构建final（循环外）       │
+│                                                              │
+│  3. 构建thought步骤（第234-243行）                            │
+│     └── yield { "type": "thought", ... } 字典                │
+│                                                              │
+│  4. 执行工具                                                  │
+│     └── result = await self._execute_tool(...)               │
+│                                                              │
+│  5. 构建action_tool步骤（第257-279行）                        │
+│     ├── 失败: yield create_tool_error_result(...)            │
+│     └── 成功: yield { "type": "action_tool", ... } 字典       │
+│                                                              │
+│  6. 构建observation步骤（第302-308行）                        │
+│     └── yield { "type": "observation", ... } 字典             │
+│                                                              │
+│  7. 循环外处理final/error（第316-372行）                      │
+│     └── 多个if分支，分别yield不同error类型                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**核心问题总结**：
+1. **无封装**：所有步骤都是裸字典，无Step类抽象
+2. **分散式**：5种步骤类型分布在6个代码位置
+3. **不一致**：字段命名、必填字段、step序号不统一
+4. **难扩展**：新增步骤类型需修改多处代码
+5. **无管理**：无steps列表统一管理所有步骤
+
+---
+
+###  13.2.2.2 新构建的step封装处理概要设计说明
+
+#### 设计目标
+基于13.2.2.1的问题分析，结合13.1.2维度二Step封装设计，构建面向对象的Step封装体系，解决现有系统的10个核心问题。
+
+#### 核心设计原则
+
+| 原则 | 说明 | 解决现有问题 |
+|------|------|-------------|
+| **单一职责** | 每个Step类只负责一种步骤类型的封装 | S1, S3 |
+| **统一接口** | 所有Step类实现ReasoningStep基类接口 | S1, S4, S9 |
+| **类型安全** | 使用Python类型注解，编译期检查 | S4 |
+| **历史管理** | 维护steps: list[ReasoningStep]统一管理 | S8 |
+| **去重复** | 公共字段通过继承或组合复用 | S5 |
+
+#### Step类层次结构设计
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    新Step封装类层次结构                        │
+├─────────────────────────────────────────────────────────────┤
+│  ReasoningStep(ABC) - 抽象基类                                │
+│  ├─ step: int              → 步骤序号（统一）                 │
+│  ├─ timestamp: int         → 时间戳（统一）                   │
+│  ├─ get_type(): str        → 获取type字段值                   │
+│  ├─ get_content(): str     → 获取用户可见文本                 │
+│  ├─ is_done(): bool        → 判断是否结束（抽象方法）          │
+│  └─ to_dict(): dict        → 转换为前端SSE格式                │
+├─────────────────────────────────────────────────────────────┤
+│  ToolMixin - 工具信息混入类（解决S5重复问题）                   │
+│  ├─ tool_name: str         → 工具名称                         │
+│  └─ tool_params: dict      → 工具参数                         │
+├─────────────────────────────────────────────────────────────┤
+│  具体实现类（解决S1无封装问题）                                │
+│  ├─ ThoughtStep(ToolMixin, ReasoningStep)                    │
+│  │   ├─ content: str       → 思考内容                         │
+│  │   ├─ thought: str       → 详细思考                         │
+│  │   ├─ reasoning: str     → 推理过程                         │
+│  │   └─ is_done() = False  → 不结束，继续执行工具              │
+│  │                                                           │
+│  ├─ ActionToolStep(ToolMixin, ReasoningStep)                 │
+│  │   ├─ execution_status: str → 执行状态                      │
+│  │   ├─ summary: str       → 执行摘要                         │
+│  │   ├─ raw_data: Any      → 原始数据                         │
+│  │   ├─ error_message: str → 错误信息（失败时）                │
+│  │   ├─ retry_count: int   → 重试次数                         │
+│  │   └─ is_done() = False  → 不结束，继续生成observation       │
+│  │                                                           │
+│  ├─ ObservationStep(ToolMixin, ReasoningStep)                │
+│  │   ├─ observation: str    → 观察结果                         │
+│  │   ├─ return_direct: bool → 是否直接返回                     │
+│  │   └─ is_done() = return_direct → 根据工具决定               │
+│  │                                                           │
+│  ├─ FinalStep(ReasoningStep)                                 │
+│  │   ├─ response: str       → 最终回答                        │
+│  │   ├─ thought: str        → 思考过程                        │
+│  │   ├─ is_finished: bool   → 业务完成标志                    │
+│  │   └─ is_done() = True    → 结束循环                        │
+│  │                                                           │
+│  └─ ErrorStep(ReasoningStep)                                 │
+│      ├─ error_type: str     → 错误类型                        │
+│      ├─ error_message: str  → 错误信息                        │
+│      ├─ recoverable: bool   → 是否可恢复                      │
+│      └─ is_done() = True    → 结束循环                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### Step构建统一入口设计
+
+**解决S3分散式问题：统一构建入口**
+
+```python
+# 新设计：Step构建工厂类（解决S1, S3, S7, S9）
+class StepFactory:
+    """Step构建工厂，统一入口创建各类Step"""
+    
+    @staticmethod
+    def create_thought_step(
+        step: int,
+        content: str,
+        tool_name: str,
+        tool_params: dict,
+        thought: str = "",
+        reasoning: str = ""
+    ) -> ThoughtStep:
+        """创建ThoughtStep（替代第234-243行）"""
+        return ThoughtStep(
+            step=step,
+            timestamp=create_timestamp(),
+            content=content,
+            tool_name=tool_name,
+            tool_params=tool_params,
+            thought=thought,
+            reasoning=reasoning
+        )
+    
+    @staticmethod
+    def create_action_tool_step(
+        step: int,
+        tool_name: str,
+        tool_params: dict,
+        execution_result: dict
+    ) -> ActionToolStep:
+        """创建ActionToolStep（替代第257-279行）"""
+        return ActionToolStep(
+            step=step,
+            timestamp=create_timestamp(),
+            tool_name=tool_name,
+            tool_params=tool_params,
+            execution_status=execution_result.get("status", "success"),
+            summary=execution_result.get("summary", ""),
+            raw_data=execution_result.get("data"),
+            error_message=execution_result.get("summary", "") if execution_result.get("status") == "error" else "",
+            retry_count=execution_result.get("retry_count", 0)
+        )
+    
+    @staticmethod
+    def create_observation_step(
+        step: int,
+        tool_name: str,
+        tool_params: dict,
+        execution_result: dict,
+        return_direct: bool = False
+    ) -> ObservationStep:
+        """创建ObservationStep（替代第302-308行）"""
+        return ObservationStep(
+            step=step,
+            timestamp=create_timestamp(),
+            tool_name=tool_name,
+            tool_params=tool_params,
+            observation=str(execution_result.get("data", "")),
+            return_direct=return_direct
+        )
+    
+    @staticmethod
+    def create_final_step(
+        step: int,
+        response: str,
+        thought: str = "",
+        is_finished: bool = True
+    ) -> FinalStep:
+        """创建FinalStep（替代第316-320行）"""
+        return FinalStep(
+            step=step,  # 【解决S6】统一添加step字段
+            timestamp=create_timestamp(),
+            response=response,
+            thought=thought,
+            is_finished=is_finished
+        )
+    
+    @staticmethod
+    def create_error_step(
+        step: int,
+        error_type: str,
+        error_message: str,
+        recoverable: bool = False
+    ) -> ErrorStep:
+        """创建ErrorStep（替代第326-372行）"""
+        return ErrorStep(
+            step=step,  # 【解决S6】统一添加step字段
+            timestamp=create_timestamp(),
+            error_type=error_type,
+            error_message=error_message,
+            recoverable=recoverable
+        )
+```
+
+#### Step构建流程新设计
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    新Step构建流程（统一入口式）                 │
+├─────────────────────────────────────────────────────────────┤
+│  1. 解析LLM响应                                               │
+│     └── parsed = parse_react_response(response)              │
+│                                                              │
+│  2. StepFactory统一构建（解决S3分散问题）                      │
+│     ├── if parsed["type"] == "action":                       │
+│     │   └── step = StepFactory.create_thought_step(...)      │
+│     │                                                          │
+│     ├── 执行工具                                               │
+│     │   └── result = await self._execute_tool(...)           │
+│     │                                                          │
+│     ├── step = StepFactory.create_action_tool_step(...)      │
+│     │                                                          │
+│     └── step = StepFactory.create_observation_step(...)      │
+│                                                              │
+│  3. 统一管理（解决S8无管理问题）                               │
+│     ├── self.steps.append(step)  # 维护steps历史列表          │
+│     └── yield step.to_dict()      # 统一输出格式              │
+│                                                              │
+│  4. 循环控制（与13.2.3协同）                                   │
+│     └── if step.is_done(): break  # 抽象结束判断              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 与现有系统对比
+
+| 对比维度 | 现有系统（问题） | 新设计（解决） |
+|---------|----------------|---------------|
+| **封装方式** | 直接yield字典（S1） | Step类封装，统一接口 |
+| **构建入口** | 6处分散yield（S3） | StepFactory统一工厂 |
+| **字段一致性** | 命名不统一，step字段缺失（S2, S6） | 基类统一定义，工厂确保完整 |
+| **类型安全** | 无类型注解（S4） | Python类型注解全覆盖 |
+| **历史管理** | 无steps列表（S8） | self.steps: list[ReasoningStep] |
+| **错误处理** | 函数混用，逻辑分散（S7） | ErrorStep统一封装 |
+| **扩展性** | 修改多处（S9） | 继承ReasoningStep即可 |
+| **代码复用** | tool_name重复（S5） | ToolMixin混入复用 |
+
+#### 核心代码改造示意
+
+**【改造前】分散的字典yield（第234-308行）**
+```python
+# 多处分散构建，字段易出错
+yield {
+    "type": "thought",
+    "step": step_count,
+    "timestamp": current_time,
+    "content": thought_content,
+    "thought": thought,
+    "reasoning": reasoning,
+    "tool_name": tool_name,
+    "tool_params": tool_params
+}
+# ... 其他4处类似代码 ...
+```
+
+**【改造后】统一Step封装**
+```python
+# 统一工厂构建，类型安全
+step = StepFactory.create_thought_step(
+    step=step_count,
+    content=thought_content,
+    tool_name=tool_name,
+    tool_params=tool_params,
+    thought=thought,
+    reasoning=reasoning
+)
+self.steps.append(step)  # 历史管理
+yield step.to_dict()      # 统一输出
+```
+
+#### 实施建议
+
+1. **Phase 2.1**: 创建ReasoningStep基类和ToolMixin混入类
+2. **Phase 2.2**: 实现5个具体Step类（ThoughtStep, ActionToolStep, ObservationStep, FinalStep, ErrorStep）
+3. **Phase 2.3**: 创建StepFactory工厂类
+4. **Phase 2.4**: 改造base_react.py，替换所有yield字典为StepFactory调用
+5. **Phase 2.5**: 添加steps列表管理，支持历史追溯
+
+---
 
 ### 13.2.3 维度三：Agent主循环设计对比与升级方案的概要设计
 
