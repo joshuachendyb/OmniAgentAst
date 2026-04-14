@@ -3696,25 +3696,7 @@ execution_result = await self._execute_tool(tool_name, tool_params)
 
 ### 12.1 未实现的字段详细说明
 
-#### 12.1.1 start 类型缺失字段
-
-| 缺失字段 | 文档参考 | 当前实现 | 说明 |
-|----------|---------|---------|------|
-| **task** | 4.1节 | ❌ 未实现 | 用户任务描述 |
-| **max_steps** | 4.1节 | ⚠️ 部分实现 | 最大迭代步数，前端可显示进度(X/Y) |
-
-**实现方式**: `max_steps`从run_stream参数传入，在start yield时添加
-
-```python
-yield {
-    'type': 'start',
-    ...
-}
-```
-
----
-
-#### 12.1.2 action_tool 类型缺失字段
+#### 12.1.1 action_tool 类型缺失字段
 
 | 缺失字段 | 文档参考 | 当前实现 | 说明 |
 |----------|---------|---------|------|
@@ -3742,9 +3724,141 @@ yield {
 
 | 缺失字段 | 文档参考 | 当前实现 | 说明 |
 |----------|---------|---------|------|
-| **return_direct** | 4.4节 | ❌ 未实现 | 工具直接返回(新功能) |
+| **return_direct** | 4.4节 | ❌ 未实现 | 工具直接返回给用户(新功能) |
 
 ---
+
+**字段说明：return_direct**
+
+`return_direct` 是 Agent 框架（如 LangChain）中的工具配置参数，控制工具执行后是否**跳过 LLM 推理，直接返回给用户**。
+
+| 值 | 行为 |
+|---|---|
+| `false`（默认） | 工具结果 → 返回给 LLM → LLM 继续推理决定下一步 |
+| `true` | 工具结果 → **直接返回给用户** → Agent 循环结束 |
+
+**使用场景**：
+1. **简单查询类工具**：计算器、天气查询、搜索结果——工具返回的就是最终答案
+2. **终止条件**：某些工具执行成功 = 任务完成，可以直接结束
+3. **Guardrails**：工具检测到违规内容时，直接返回错误给用户，不再继续
+
+---
+
+**代码修改方案**
+
+**1. 修改 base_react.py 中 observation 生成逻辑**
+
+```python
+# 文件: backend/app/services/agent/base_react.py
+# 位置: _run_single_iteration 方法中 yield observation 位置
+
+# 获取工具的 return_direct 配置
+return_direct = tool_schema.get("return_direct", False)
+
+# 当 return_direct=True 时，直接结束对话
+if return_direct and tool_name == "finish":
+    yield {
+        "type": "final",
+        "timestamp": create_timestamp(),
+        "content": tool_params.get("result", execution_result.get("summary", "")),
+        "return_direct": True,  # 标记为直接返回
+        "is_finished": True
+    }
+    self._on_after_loop()
+    return
+
+# 普通 observation
+yield {
+    "type": "observation",
+    "step": step_count,
+    "timestamp": create_timestamp(),
+    "tool_name": tool_name,
+    "content": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}",
+    "return_direct": return_direct,  # 新增字段
+    "tool_params": tool_params  # 保留工具参数
+}
+```
+
+**2. 在工具注册时添加 return_direct 配置**
+
+```python
+# 文件: backend/app/services/agent/tool_registry.py 或类似文件
+
+# 方式A: 静态配置（工具定义时指定）
+TOOL_SCHEMAS = {
+    "search": {
+        "name": "search",
+        "description": "Search the web for information",
+        "parameters": {...},
+        "return_direct": False  # 默认不直接返回
+    },
+    "finish": {
+        "name": "finish",
+        "description": "Finish the task and return result",
+        "parameters": {...},
+        "return_direct": True  # finish 工具直接返回
+    },
+    "calculator": {
+        "name": "calculator",
+        "description": "Calculate math expression",
+        "parameters": {...},
+        "return_direct": True  # 计算器结果直接返回
+    }
+}
+```
+
+**3. 动态判断 return_direct（高级用法）**
+
+```python
+# 在工具执行后，根据返回内容动态决定
+async def _execute_tool(self, tool_name: str, tool_params: dict) -> dict:
+    execution_result = await self._call_tool(tool_name, tool_params)
+    
+    # 动态判断是否直接返回
+    return_direct = False
+    
+    if tool_name == "search":
+        # 搜索无结果时直接返回
+        if not execution_result.get("results"):
+            return_direct = True
+            
+    if tool_name == "validate":
+        # 验证通过时直接返回
+        if execution_result.get("valid"):
+            return_direct = True
+            
+    execution_result["return_direct"] = return_direct
+    return execution_result
+```
+
+---
+
+**前端适配**
+
+当 `observation.return_direct=true` 时，前端显示"对话已结束"或"任务完成"提示：
+
+```typescript
+// frontend/src/components/MessageItem.tsx
+
+// 解析 observation 中的 return_direct
+const isReturnDirect = stepData.return_direct === true;
+
+// 显示处理
+if (stepData.type === "observation" && isReturnDirect) {
+    // 显示完成提示
+    showCompletionIndicator();
+}
+```
+
+---
+
+**实现检查清单**
+
+- [ ] 在工具注册表中为关键工具添加 `return_direct` 配置
+- [ ] 修改 `base_react.py` 中 observation 生成逻辑，添加 `return_direct` 字段
+- [ ] 添加 `return_direct=true` 时的特殊处理（直接 yield final 并结束）
+- [ ] 前端适配：识别 `return_direct` 字段并显示完成提示
+- [ ] 测试：验证 `return_direct=true` 时 Agent 正确结束
 
 #### 12.1.4 final 类型缺失/不同字段
 
