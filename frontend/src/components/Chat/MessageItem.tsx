@@ -190,7 +190,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
           </span>
         )}
       </div>
-      <div style={{ ...getContentStyle(), marginTop: 4, marginLeft: 66 }}>
+      <div style={{ ...getContentStyle(), marginTop: 4, marginLeft: 0 }}>
         {step.type === "action_tool" && (
           <>
             {/* 显示工具名称 */}
