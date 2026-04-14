@@ -4758,7 +4758,9 @@ while True:
 
 ---
 
-### 13.2.1 现有架构详细流程
+### 13.2.1 维度一：解析器的新重构概要设计
+
+#### 13.2.1.1 现有系统的解析器的架构分析
 
 #### 入口位置
 ```
@@ -4890,10 +4892,7 @@ def parse_response(response: str) -> Dict[str, Any]
   - 需要检查tool_name是否为finish来判断
   - 语义不清晰
 ```
-
----
-
-### 13.2.2 新架构详细流程
+#### 13.2.1.2 新的统一解析器的架构概要设计
 
 #### 入口位置
 ```
@@ -4907,7 +4906,6 @@ def parse_response(response: str) -> Dict[str, Any]
 调用位置: backend/app/services/agent/base_react.py
 调用方式: 替换第195行的 self.parser.parse_response()
 ```
-
 #### 统一解析器调用链
 ```
 BaseAgent.run_stream()
@@ -5083,14 +5081,22 @@ elif parsed["type"] == "thought_only":
 | **语义清晰度** | 需要推断finish含义 | type字段明确意图 |
 
 ---
+###  13.2.2 维度二：step的处理封装概要设计
 
-### 13.2.3 Agent主循环设计对比与升级方案
+###  13.2.2.1 现有系统的step处理的现状及问题分析
+
+
+
+###  13.2.2.2 维度二：step的处理封装概要设计说明
+
+
+
+
+### 13.2.3 维度三：Agent主循环设计对比与升级方案的概要设计
 
 > ⚠️ **专家戒律深度分析**：对比现有代码、5.1.1节、5.1.3节三种Agent主循环设计
 
----
-
-#### 1. 现有代码分析（backend/app/services/agent/base_react.py）
+#### 13.2.3.1. 现有代码分析（backend/app/services/agent/base_react.py）
 
 **当前实现的问题（第114-310行）：**
 
@@ -5128,7 +5134,7 @@ async def run_stream(self, task, context, max_steps):
 
 ---
 
-#### 2. 三种设计方案对比
+#### 13.2.3.2. 三种设计方案对比
 
 **设计方案对比表：**
 
@@ -5153,7 +5159,7 @@ async def run_stream(self, task, context, max_steps):
 
 ---
 
-#### 3. 新设计方案（吸收5.1.1 + 5.1.3优点）
+#### 13.2.3.3. 新设计方案（吸收5.1.1 + 5.1.3优点）
 
 **设计目标：**
 1. **Phase 1**: 使用5.1.1节统一解析器（已完成步骤2.1）
