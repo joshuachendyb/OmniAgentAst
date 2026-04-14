@@ -427,6 +427,12 @@ return None, text.strip()
 3. 实现四级JSON降级策略
 4. 通过type字段明确区分四种输出类型
 
+**【基于14.0分析补充的设计目标 - 2026-04-15】**:
+5. **P0-必须实现**: 工具名兜底匹配（_extract_by_known_tools），确保格式略不规范的LLM输出仍能正确解析
+6. **P1-高优先级**: 多字段名映射（action/action_tool/tool_name等），兼容不同LLM的输出格式
+7. **P1-高优先级**: 截断JSON检测，支持部分解析挽救
+8. **P2-中优先级**: Markdown代码块精准去除（仅在JSON参数部分处理）
+
 ---
 
 ### 14.2、新构建的文件清单
@@ -466,12 +472,23 @@ from typing import Dict, Any, Optional, Tuple
 # 步骤1.1：定义REACT_KEYWORDS中英文关键词映射表
 # =============================================================================
 
+# 【基于14.0分析增强】中文关键词模式来源：
+# - tool_parser.py action_patterns (行245-261) 中的中文模式提取
+# - 支持更灵活的中文动词+工具名匹配
 REACT_KEYWORDS = {
     "thought": r"(?:Thought|思考|推理):\s*",
-    "action": r"(?:Action|行动|工具调用):\s*",
-    "action_input": r"(?:Action Input|工具参数|输入):\s*",
-    "answer": r"(?:Answer|回答|最终答案):\s*",
+    "action": r"(?:Action|行动|工具调用|(?:调用|使用|执行)\s+|(?:工具|函数)\s*为):\s*",
+    "action_input": r"(?:Action Input|工具参数|输入|参数):\s*",
+    "answer": r"(?:Answer|回答|最终答案|结论):\s*",
 }
+
+# 【基于14.0分析新增】已知工具名列表（从配置或注册中心动态获取）
+# 来源：llm_strategies.py KNOWN_TOOLS (行62-67)
+KNOWN_TOOLS = [
+    "list_directory", "read_file", "write_file", "delete_file",
+    "move_file", "search_files", "search_file_content", "generate_report",
+    # 更多工具名从配置动态加载...
+]
 
 
 # =============================================================================
@@ -527,7 +544,26 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
         统一格式解析结果
         
     设计依据: LlamaIndex核心判断逻辑 - 关键词位置定位 + Action优先规则
+    
+    【基于14.0分析新增】P0-必须：工具名兜底匹配作为Pre-check
     """
+    # ==========================================================================
+    # 【P0-必须新增】Pre-check: 工具名兜底匹配（在关键词定位之前执行）
+    # 来源：llm_strategies.py _extract_by_known_tools() (行229-267)
+    # 重要性：无此功能时，格式略不规范的LLM输出将导致工具调用完全失败
+    # ==========================================================================
+    tool_result = _extract_by_known_tools(output)
+    if tool_result:
+        return {
+            "type": "action",
+            "thought": tool_result["content"],
+            "content": tool_result["content"],      # 兼容性字段
+            "reasoning": tool_result["content"],    # 兼容性字段
+            "tool_name": tool_result["tool_name"],
+            "tool_params": tool_result["tool_params"],
+            "response": None
+        }
+    
     # 定位关键词位置
     thought_match = re.search(REACT_KEYWORDS["thought"], output, re.IGNORECASE)
     action_match = re.search(REACT_KEYWORDS["action"], output, re.IGNORECASE)
@@ -569,6 +605,61 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
         "tool_params": None,
         "response": output.strip()
     }
+
+
+# =============================================================================
+# 【P0-必须新增】步骤1.2.1：实现工具名兜底匹配函数
+# =============================================================================
+
+def _extract_by_known_tools(content: str) -> Optional[Dict[str, Any]]:
+    """
+    【P0-必须新增】通过已知工具名匹配提取action
+    
+    来源：llm_strategies.py _extract_by_known_tools() (行229-267)
+    调用位置：_determine_parse_type() 入口处作为pre-check
+    
+    当关键词定位失败时，尝试在content中查找已知工具名作为兜底。
+    这是系统鲁棒性的关键保障，必须在关键词定位之前执行。
+    
+    Args:
+        content: LLM响应文本
+        
+    Returns:
+        工具信息字典（成功）或None（失败）
+        {
+            "tool_name": str,       # 匹配到的工具名
+            "content": str,         # 原始文本作为thought
+            "tool_params": dict     # 提取的参数（简化版）
+        }
+    """
+    content_lower = content.lower()
+    
+    for tool in KNOWN_TOOLS:
+        # 查找工具名出现位置（单词边界匹配）
+        pattern = rf'\b{re.escape(tool)}\b'
+        if re.search(pattern, content_lower, re.IGNORECASE):
+            # 尝试提取参数（简化版：查找引号内的内容）
+            params = {}
+            
+            # 查找路径参数（Windows/Unix路径）
+            path_patterns = [
+                r'["\']?([A-Za-z]:\\[^"\'\s]+)["\']?',  # Windows路径 C:\path
+                r'["\']?(/[^\s"\'<>]+)["\']?',          # Unix路径 /path
+            ]
+            
+            for p in path_patterns:
+                matches = re.findall(p, content)
+                if matches:
+                    params["path"] = matches[0]
+                    break
+            
+            return {
+                "tool_name": tool,
+                "content": content,
+                "tool_params": params
+            }
+    
+    return None
 
 
 # =============================================================================
@@ -632,6 +723,27 @@ def _parse_action(
         tool_params = _parse_action_input(input_section)
     else:
         tool_params = {}
+    
+    # ==========================================================================
+    # 【P1-高优先级新增】多字段名映射（兼容不同LLM输出格式）
+    # 来源：tool_parser.py (行200-215)
+    # 处理不同LLM可能使用的不同字段名
+    # ==========================================================================
+    # 如果解析到的tool_params中包含备用字段名，进行统一映射
+    if isinstance(tool_params, dict):
+        # 工具名映射：action -> action_tool -> tool_name
+        if not tool_name and "action" in tool_params:
+            tool_name = tool_params.pop("action")
+        if not tool_name and "action_tool" in tool_params:
+            tool_name = tool_params.pop("action_tool")
+        
+        # 参数映射：params -> action_input -> actionInput
+        if "params" in tool_params and "tool_params" not in tool_params:
+            tool_params["tool_params"] = tool_params.pop("params")
+        if "action_input" in tool_params and "tool_params" not in tool_params:
+            tool_params["tool_params"] = tool_params.pop("action_input")
+        if "actionInput" in tool_params and "tool_params" not in tool_params:
+            tool_params["tool_params"] = tool_params.pop("actionInput")
     
     return {
         "type": "action",
@@ -706,7 +818,7 @@ def _parse_action_input(input_section: str) -> Dict[str, Any]:
     """
     解析Action Input中的JSON参数
     
-    实现四级降级策略，确保最大限度解析成功
+    实现五级降级策略（原四级+Markdown去除），确保最大限度解析成功
     
     Args:
         input_section: Action Input之后的文本内容
@@ -714,25 +826,45 @@ def _parse_action_input(input_section: str) -> Dict[str, Any]:
     Returns:
         解析后的参数字典（失败返回空字典）
         
-    解析策略依据: LlamaIndex action_input_parser 实现
-    四级降级策略:
+    解析策略依据: LlamaIndex action_input_parser 实现 + 现有代码改进
+    五级降级策略:
+        第0级: Markdown代码块去除（【基于14.0分析修正位置】）
         第1级: 标准json.loads()解析
         第2级: 正则提取JSON片段（平衡括号匹配）- 额外改进
         第3级: 替换单引号为双引号后解析
-        第4级: 正则提取key:value对作为兜底
+        第4级: 截断JSON字段提取 + 正则提取key:value对作为兜底
     """
     if not input_section:
         return {}
     
+    # ==========================================================================
+    # 【基于14.0分析修正】第0级: Markdown代码块去除（在_parse_action_input内处理）
+    # 原建议位置：parse_react_response() 入口 ❌
+    # 修正位置：_parse_action_input() 第0级 ✅
+    # 理由：Markdown只包裹JSON参数部分，应在局部精准处理
+    # 来源：tool_parser.py (行92-106)
+    # ==========================================================================
+    json_str = input_section
+    
+    # 尝试去除Markdown代码块
+    md_match = re.search(
+        r'```(?:json)?\s*\n?(.*?)\n?```',
+        input_section,
+        re.DOTALL | re.IGNORECASE
+    )
+    if md_match:
+        json_str = md_match.group(1).strip()
+    
     # 第1级: 标准JSON解析
     try:
-        return json.loads(input_section)
+        return json.loads(json_str)
     except json.JSONDecodeError:
         pass
     
     # 第2级: 正则提取JSON片段（平衡括号匹配算法）- 额外改进
+    # 来源：tool_parser.py _extract_json_with_balanced_braces()
     try:
-        json_match = _extract_json_with_balanced_braces(input_section)
+        json_match, _ = _extract_json_with_balanced_braces(json_str)
         if json_match:
             return json.loads(json_match)
     except (json.JSONDecodeError, ValueError):
@@ -741,26 +873,57 @@ def _parse_action_input(input_section: str) -> Dict[str, Any]:
     # 第3级: 替换单引号为双引号
     try:
         # 替换单引号为双引号，但保留字符串内的单引号
-        normalized = input_section.replace("'", '"')
+        normalized = json_str.replace("'", '"')
         return json.loads(normalized)
     except json.JSONDecodeError:
         pass
     
-    # 第4级: 正则提取key:value对（最坏情况兜底）
-    return _extract_key_value_pairs(input_section)
+    # ==========================================================================
+    # 【基于14.0分析新增】第4级增强: 截断JSON字段提取 + key:value兜底
+    # 来源：tool_parser.py (行136-177)
+    # 处理JSON部分损坏的情况，尝试挽救性提取
+    # ==========================================================================
+    parsed_fallback = {}
+    
+    # 尝试提取 tool_name（多种字段名）
+    for field_pattern in [r'"tool_name"', r'"action_tool"', r'"action"']:
+        match = re.search(rf'{field_pattern}\s*:\s*"([^"]*)"', json_str)
+        if match:
+            parsed_fallback["tool_name"] = match.group(1)
+            break
+    
+    # 尝试提取 tool_params（多种字段名）
+    for field_pattern in [r'"tool_params"', r'"params"', r'"action_input"']:
+        match = re.search(rf'{field_pattern}\s*:\s*(\{{[^}}]*\}}', json_str)
+        if match:
+            try:
+                parsed_fallback["tool_params"] = json.loads(match.group(1))
+                break
+            except:
+                parsed_fallback["tool_params"] = {}
+                break
+    
+    # 如果成功提取到任何字段，返回挽救性结果
+    if parsed_fallback:
+        return parsed_fallback
+    
+    # 第5级: 正则提取key:value对（最坏情况兜底）
+    return _extract_key_value_pairs(json_str)
 
 
-def _extract_json_with_balanced_braces(text: str) -> Optional[str]:
+def _extract_json_with_balanced_braces(text: str) -> Tuple[Optional[str], str]:
     """
     从文本中提取JSON对象（使用平衡括号匹配算法）
     
-    额外改进: 处理LLM输出中JSON前后有额外文本的情况
+    【基于14.0分析增强】补充截断JSON检测（tool_parser.py行65-66）
     
     Args:
         text: 包含JSON的文本
         
     Returns:
-        提取的JSON字符串，失败返回None
+        (json_text, content_before_json)
+        - json_text: 提取的JSON文本（可能截断）
+        - content_before_json: JSON前面的纯文本
     """
     # 寻找第一个 { 或 [
     start_idx = None
@@ -770,7 +933,10 @@ def _extract_json_with_balanced_braces(text: str) -> Optional[str]:
             break
     
     if start_idx is None:
-        return None
+        return None, text.strip()
+    
+    # 记录JSON前的纯文本
+    content_before = text[:start_idx].strip()
     
     # 平衡括号匹配
     stack = []
@@ -792,8 +958,20 @@ def _extract_json_with_balanced_braces(text: str) -> Optional[str]:
                 break
     
     if end_idx:
-        return text[start_idx:end_idx]
-    return None
+        # 找到完整的JSON
+        return text[start_idx:end_idx], content_before
+    
+    # ==========================================================================
+    # 【基于14.0分析新增】截断JSON检测
+    # 来源：tool_parser.py (行65-66)
+    # 如果JSON被截断（brace_count > 0），返回不完整JSON和前面文本
+    # 这允许后续降级策略尝试挽救性解析
+    # ==========================================================================
+    if stack:  # 括号未闭合，JSON被截断
+        return text[start_idx:], content_before
+    
+    # 没有找到完整JSON
+    return None, content_before
 
 
 def _extract_key_value_pairs(text: str) -> Dict[str, Any]:
@@ -838,9 +1016,13 @@ def _extract_key_value_pairs(text: str) -> Dict[str, Any]:
 __all__ = [
     "parse_react_response",
     "_parse_action",
-    "_parse_answer", 
+    "_parse_answer",
     "_parse_action_input",
-    "REACT_KEYWORDS"
+    "_extract_by_known_tools",  # 【P0新增】工具名兜底匹配
+    "_extract_json_with_balanced_braces",
+    "_extract_key_value_pairs",
+    "REACT_KEYWORDS",
+    "KNOWN_TOOLS",  # 【新增】已知工具名列表
 ]
 ```
 
