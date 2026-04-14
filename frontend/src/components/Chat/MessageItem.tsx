@@ -1085,12 +1085,11 @@ const isUser = message.role === "user";
           ? "flex-end"
           : "flex-start",
         marginBottom: 12,
-        // 【小强优化2026-04-14】用户消息无头像，gap为0
-        gap: isUser ? 0 : 12,
+        gap: 12,
         width: "100%",
       }}
     >
-      {/* 左侧头像（AI 消息） */}
+      {/* 左侧头像（仅AI消息） */}
       {!isUser && !isSystem && (
         <div style={{ flexShrink: 0, marginTop: 8 }}>
           {getAvatar()}
@@ -1103,8 +1102,7 @@ const isUser = message.role === "user";
           display: "flex",
           flexDirection: "column",
           alignItems: isUser ? "flex-end" : "flex-start",
-          // 【小强优化2026-04-14】用户消息无头像，可使用更大宽度
-          maxWidth: isUser ? "calc(100% - 0px)" : "calc(100% - 60px)",
+          maxWidth: "calc(100% - 60px)",
         }}
       >
         {/* 角色名称和时间戳区域 */}
@@ -1413,9 +1411,11 @@ const isUser = message.role === "user";
         </div>
       </div>
 
-      {/* 右侧头像（用户消息） */}
+      {/* 右侧头像（仅用户消息） */}
       {isUser && (
-        <div style={{ flexShrink: 0, marginTop: 8 }}>{getAvatar()}</div>
+        <div style={{ flexShrink: 0, marginTop: 8 }}>
+          {getAvatar()}
+        </div>
       )}
 
       {/* CSS 样式 - 悬停显示复制按钮 */}
