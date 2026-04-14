@@ -328,13 +328,14 @@ export const getStepLabelStyle = (stepType: StepType | string) => {
     display: 'inline-flex' as const,
     alignItems: 'center' as const,
     gap: 4,
-    padding: '2px 8px',
-    borderRadius: 4,
+    padding: '3px 10px',     // 【小强修复 2026-04-14】与时间戳统一高度
+    borderRadius: 6,        // 【小强修复 2026-04-14】与时间戳统一圆角
     backgroundColor: `${scheme.bg1}`,
     color: scheme.text,
     fontSize: FontSize.TERTIARY, // 增大字体大小，提高可读性
     fontWeight: FontWeight.MEDIUM,
-    border: `1px solid ${scheme.border}`,
+    // 【小强修复 2026-04-14】去掉边框，更简洁
+    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',  // 【小强修复 2026-04-14】与时间戳统一阴影
   };
 };
 
@@ -406,23 +407,12 @@ export const getStepDetailStyle = (stepType: StepType | string) => {
 export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
   const scheme = colorSchemes[stepType] || colorSchemes.start;
   
-  // 转换十六进制颜色为rgba格式，添加透明度
-  const hexToRgba = (hex: string, alpha: number): string => {
-    // 移除#号
-    const cleanHex = hex.replace('#', '');
-    // 解析RGB值
-    const r = parseInt(cleanHex.substring(0, 2), 16);
-    const g = parseInt(cleanHex.substring(2, 4), 16);
-    const b = parseInt(cleanHex.substring(4, 6), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-  };
-  
   return {
     marginLeft: "auto",              // 靠右对齐
     padding: '3px 10px',             // 增加内边距
     borderRadius: 6,                 // 圆角
     backgroundColor: scheme.bg1,     // 步骤类型的浅色背景（保持各类型特色）
-    border: `1px solid ${hexToRgba(scheme.border, 0.38)}`,  // 步骤类型的边框，带透明度
+    // 【小强修复 2026-04-14】去掉边框，更简洁
     color: '#333333',                // 统一深灰色字体，对比强烈
     fontSize: FontSize.TERTIARY,     // 12px
     fontWeight: FontWeight.BOLD,     // 加粗
