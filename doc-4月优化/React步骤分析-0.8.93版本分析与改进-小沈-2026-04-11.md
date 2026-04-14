@@ -4954,6 +4954,303 @@ elif parsed["type"] == "thought_only":
 
 ---
 
+### 13.2.3 Agent主循环设计对比与升级方案
+
+> ⚠️ **专家戒律深度分析**：对比现有代码、5.1.1节、5.1.3节三种Agent主循环设计
+
+---
+
+#### 1. 现有代码分析（backend/app/services/agent/base_react.py）
+
+**当前实现的问题（第114-310行）：**
+
+```python
+# 现有代码核心问题
+async def run_stream(self, task, context, max_steps):
+    # 问题1: 使用旧解析器，非统一入口
+    parsed = self.parser.parse_response(response)  # 第195行
+    
+    # 问题2: 通过检查tool_name判断结束，语义不清晰
+    if tool_name == "finish":  # 第225行
+        break
+    
+    # 问题3: 直接yield字典，无Step类封装
+    yield {
+        "type": "thought",
+        "step": step_count,
+        ...
+    }
+    
+    # 问题4: 循环控制逻辑混杂在代码中，无is_done抽象
+    # 问题5: 无ReasoningStep基类，步骤间关系不明确
+```
+
+**现有代码缺陷清单：**
+
+| 缺陷 | 位置 | 影响 | 严重程度 |
+|------|------|------|---------|
+| 使用旧解析器 | 第195行 | 无法享受统一解析器优势 | 高 |
+| tool_name判断结束 | 第225行 | 语义不清晰，易出错 | 高 |
+| 直接yield字典 | 多处 | 无类型安全，无法扩展 | 中 |
+| 无Step类封装 | 整体 | 步骤逻辑分散，难维护 | 中 |
+| 无is_done抽象 | 整体 | 循环控制硬编码 | 中 |
+| 错误处理混杂 | 第197-216行 | 解析错误与逻辑错误混在一起 | 低 |
+
+---
+
+#### 2. 三种设计方案对比
+
+**设计方案对比表：**
+
+| 设计维度 | 现有代码 | 5.1.1节设计 | 5.1.3节设计 | 推荐方案 |
+|---------|---------|------------|------------|---------|
+| **解析器** | ToolParser.parse_response() | parse_react_response() | parse_react_response() | ✅ 统一解析器 |
+| **结束判断** | tool_name == "finish" | type in ("answer", "implicit") | step.is_done() | ✅ is_done()方法 |
+| **步骤封装** | 字典 | 字典 | ReasoningStep类 | ✅ Step类封装 |
+| **循环控制** | 硬编码 | type判断 | is_done()抽象 | ✅ 抽象方法 |
+| **扩展性** | 差 | 中 | 好 | ✅ 基类设计 |
+| **类型安全** | 无 | 无 | 有 | ✅ 类型注解 |
+
+**专家戒律分析结论：**
+
+> 🔴 **现有代码必须进行改造**
+> 
+> 原因：
+> 1. **5.1.1节的统一解析器优势** - 现有代码使用旧解析器，无法享受Action优先、中英文支持等优点
+> 2. **5.1.3节的面向对象设计** - 现有代码直接yield字典，无Step类封装，违背单一职责原则
+> 3. **可维护性** - 现有代码循环控制逻辑混杂，新增步骤类型需修改多处
+> 4. **可测试性** - 字典方式难以单元测试，Step类可独立测试
+
+---
+
+#### 3. 新设计方案（吸收5.1.1 + 5.1.3优点）
+
+**设计目标：**
+1. **Phase 1**: 使用5.1.1节统一解析器（已完成步骤2.1）
+2. **Phase 2**: 使用5.1.3节ReasoningStep基类（需实施）
+3. **Phase 3**: 重构Agent主循环（新设计）
+
+**新设计核心组件：**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    新Agent主循环架构                          │
+├─────────────────────────────────────────────────────────────┤
+│  1. 统一解析层 (5.1.1节)                                     │
+│     parse_react_response() → 返回结构化数据                  │
+├─────────────────────────────────────────────────────────────┤
+│  2. Step封装层 (5.1.3节)                                     │
+│     ReasoningStep (ABC)                                     │
+│       ├── ThoughtStep (action解析结果)                       │
+│       ├── ActionToolStep (工具执行结果)                      │
+│       ├── ObservationStep (观察结果)                         │
+│       ├── FinalStep (最终回答)                               │
+│       └── ErrorStep (错误处理)                               │
+├─────────────────────────────────────────────────────────────┤
+│  3. 循环控制层 (新设计)                                       │
+│     while not step.is_done():                               │
+│       step = create_step(parsed)                            │
+│       yield step.to_dict()                                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**新设计完整代码（base_react.py改造）：**
+
+```python
+# backend/app/services/agent/base_react_v2.py
+
+from typing import AsyncGenerator, Dict, Any, Optional
+from .react_output_parser import parse_react_response
+from .reasoning_steps import (
+    ReasoningStep, ThoughtStep, ActionToolStep,
+    ObservationStep, FinalStep, ErrorStep
+)
+
+class BaseReactAgentV2:
+    """
+    ReAct Agent v2.0 - 吸收5.1.1节和5.1.3节优点
+    
+    改进点：
+    1. 使用统一解析器 parse_react_response()
+    2. 使用ReasoningStep基类封装步骤
+    3. is_done()方法控制循环
+    4. 清晰的错误处理流程
+    """
+    
+    async def run_stream_v2(
+        self,
+        task: str,
+        context: Optional[Dict[str, Any]] = None,
+        max_steps: int = 100
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        ReAct主循环 v2.0
+        
+        参考：
+        - 5.1.1节统一解析器设计（第1330行）
+        - 5.1.3节ReasoningStep基类设计（第1617行）
+        """
+        # 初始化步骤列表（5.1.3节设计）
+        steps: list[ReasoningStep] = []
+        step_counter = 0
+        
+        # 生成start步骤
+        yield self._build_start_step(task)
+        
+        # 主循环（5.1.3节设计：使用is_done控制）
+        while step_counter < max_steps:
+            step_counter += 1
+            
+            try:
+                # 1. 调用LLM
+                llm_output = await self._get_llm_response()
+                
+                # 2. 统一解析（5.1.1节设计）
+                parsed = parse_react_response(llm_output)
+                
+                # 3. 创建Step对象（5.1.3节设计）
+                if parsed["type"] == "action":
+                    # 生成ThoughtStep
+                    thought_step = ThoughtStep(
+                        step=step_counter,
+                        timestamp=create_timestamp(),
+                        content=parsed["thought"],
+                        tool_name=parsed["tool_name"],
+                        tool_params=parsed["tool_params"]
+                    )
+                    steps.append(thought_step)
+                    yield thought_step.to_dict()
+                    
+                    # 执行工具
+                    result = await self._execute_tool(
+                        parsed["tool_name"],
+                        parsed["tool_params"]
+                    )
+                    
+                    # 生成ActionToolStep
+                    action_step = ActionToolStep(
+                        step=step_counter,
+                        timestamp=create_timestamp(),
+                        execution_status=result.get("status", "success"),
+                        execution_result=result.get("data"),
+                        error_message=result.get("error")
+                    )
+                    steps.append(action_step)
+                    yield action_step.to_dict()
+                    
+                    # 生成ObservationStep
+                    obs_step = ObservationStep(
+                        step=step_counter,
+                        timestamp=create_timestamp(),
+                        observation=str(result.get("data", "")),
+                        tool_name=parsed["tool_name"],
+                        tool_params=parsed["tool_params"],
+                        return_direct=result.get("return_direct", False)
+                    )
+                    steps.append(obs_step)
+                    yield obs_step.to_dict()
+                    
+                    # 检查is_done（5.1.3节设计）
+                    if obs_step.is_done():
+                        # 直接返回
+                        final_step = FinalStep(
+                            step=step_counter,
+                            timestamp=create_timestamp(),
+                            response=str(result.get("data", "")),
+                            thought=parsed["thought"]
+                        )
+                        steps.append(final_step)
+                        yield final_step.to_dict()
+                        break
+                    
+                    # 继续下一轮
+                    continue
+                    
+                elif parsed["type"] in ("answer", "implicit"):
+                    # 生成FinalStep
+                    final_step = FinalStep(
+                        step=step_counter,
+                        timestamp=create_timestamp(),
+                        response=parsed["response"],
+                        thought=parsed.get("thought", "")
+                    )
+                    steps.append(final_step)
+                    yield final_step.to_dict()
+                    break
+                    
+                elif parsed["type"] == "thought_only":
+                    # 纯思考，继续循环
+                    continue
+                    
+            except Exception as e:
+                # 生成ErrorStep
+                error_step = ErrorStep(
+                    step=step_counter,
+                    timestamp=create_timestamp(),
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    recoverable=False
+                )
+                steps.append(error_step)
+                yield error_step.to_dict()
+                break
+        
+        # 超过最大步数
+        if step_counter >= max_steps:
+            error_step = ErrorStep(
+                step=step_counter,
+                timestamp=create_timestamp(),
+                error_type="max_steps_exceeded",
+                error_message=f"超过最大步数限制: {max_steps}",
+                recoverable=False
+            )
+            yield error_step.to_dict()
+```
+
+**新设计关键改进：**
+
+| 改进点 | 现有代码 | 新设计 | 优点来源 |
+|--------|---------|--------|---------|
+| **解析器** | `self.parser.parse_response()` | `parse_react_response()` | 5.1.1节 |
+| **步骤封装** | 直接yield字典 | `ReasoningStep`子类 | 5.1.3节 |
+| **循环控制** | `if tool_name == "finish"` | `if step.is_done()` | 5.1.3节 |
+| **结束判断** | 硬编码 | 抽象方法 | 5.1.3节 |
+| **错误处理** | 混杂在代码中 | `ErrorStep`类 | 新设计 |
+| **类型安全** | 无 | 完整类型注解 | 新设计 |
+
+---
+
+#### 4. 实施建议
+
+**Phase 1（当前）**: 实施5.1.1节统一解析器
+- 步骤2.1：创建react_output_parser.py
+- 步骤4：改造base_react.py使用新解析器
+
+**Phase 2（后续）**: 实施5.1.3节ReasoningStep基类
+- 新增：reasoning_steps.py（5个Step类）
+- 改造：base_react.py使用Step类
+
+**Phase 3（最终）**: 重构Agent主循环
+- 创建：base_react_v2.py
+- 迁移：逐步从v1迁移到v2
+
+**专家戒律总结：**
+
+> ✅ **现有代码必须进行升级改造**
+> 
+> **必须吸收的优点：**
+> 1. **5.1.1节**：统一解析器入口（23条优点）
+> 2. **5.1.3节**：ReasoningStep基类设计（17条优点）
+> 
+> **总计40条关键优点，无一遗漏**
+> 
+> **新旧对比结果：**
+> - 现有代码：直接yield字典，循环控制硬编码
+> - 新设计：Step类封装，is_done()抽象控制
+> - 改进幅度：**高**（必须改造）
+
+---
+
 ### 13.3 详细实施步骤
 
 ---
