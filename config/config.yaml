@@ -1,6 +1,6 @@
 ai:
-  provider: longcat
-  model: LongCat-Flash-Thinking-2601
+  provider: qiniu
+  model: deepseek-r1
   dmxapi:
     api_base: https://www.dmxapi.cn/v1
     api_key: sk-N2cFYdEXiCRQ2gKUCBTwnP3arxfwesLHBGntk1tk8X3m2gS1
