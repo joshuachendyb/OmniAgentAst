@@ -881,7 +881,7 @@ const MessageItem = memo(({
       case "user":
         return (
           <Avatar
-            size={40}
+            size={32}
             icon={<UserOutlined />}
             style={{
               background: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
@@ -891,7 +891,7 @@ const MessageItem = memo(({
       case "assistant":
         return (
           <Avatar
-            size={40}
+            size={32}
             icon={<RobotOutlined />}
             style={{
               background: "linear-gradient(135deg, #52c41a 0%, #389e0d 100%)",
@@ -901,7 +901,7 @@ const MessageItem = memo(({
       case "system":
         return (
           <Avatar
-            size={40}
+            size={32}
             icon={<InfoCircleOutlined />}
             style={{ background: "#faad14" }}
           />
@@ -1085,13 +1085,13 @@ const isUser = message.role === "user";
           ? "flex-end"
           : "flex-start",
         marginBottom: 12,
-        gap: 12,
+        gap: 10,
         width: "100%",
       }}
     >
       {/* 左侧头像（仅AI消息） */}
       {!isUser && !isSystem && (
-        <div style={{ flexShrink: 0, marginTop: 8 }}>
+        <div style={{ flexShrink: 0, marginTop: 6 }}>
           {getAvatar()}
         </div>
       )}
@@ -1102,7 +1102,7 @@ const isUser = message.role === "user";
           display: "flex",
           flexDirection: "column",
           alignItems: isUser ? "flex-end" : "flex-start",
-          maxWidth: "calc(100% - 60px)",
+          maxWidth: "calc(100% - 50px)",
         }}
       >
         {/* 角色名称和时间戳区域 */}
@@ -1413,7 +1413,7 @@ const isUser = message.role === "user";
 
       {/* 右侧头像（仅用户消息） */}
       {isUser && (
-        <div style={{ flexShrink: 0, marginTop: 8 }}>
+        <div style={{ flexShrink: 0, marginTop: 6 }}>
           {getAvatar()}
         </div>
       )}
