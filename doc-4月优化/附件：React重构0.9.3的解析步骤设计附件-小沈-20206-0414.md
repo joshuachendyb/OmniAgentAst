@@ -85,13 +85,17 @@ def parse_react_response(output: str) -> Dict[str, Any]:
         
     Returns:
         统一格式字典，包含type/thought/tool_name/tool_params/response字段
+        【修正 2026-04-14】补充兼容性字段content/reasoning，确保与base_react.py平滑迁移
         
     设计依据: LlamaIndex ReActOutputParser.parse() 统一入口设计思想
     """
     if not output or not isinstance(output, str):
+        thought = "(Implicit) Empty response"
         return {
             "type": "implicit",
-            "thought": "(Implicit) Empty response",
+            "thought": thought,
+            "content": thought,           # 兼容性字段：映射到thought
+            "reasoning": thought,         # 兼容性字段：映射到thought
             "tool_name": None,
             "tool_params": None,
             "response": ""
@@ -142,15 +146,20 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
         return {
             "type": "thought_only",
             "thought": thought_content,
+            "content": thought_content,     # 兼容性字段
+            "reasoning": thought_content,   # 兼容性字段
             "tool_name": None,
             "tool_params": None,
             "response": None
         }
     
     # 情况A: 无关键词匹配 - 隐式回答
+    thought = "(Implicit) I can answer without any more tools!"
     return {
         "type": "implicit",
-        "thought": "(Implicit) I can answer without any more tools!",
+        "thought": thought,
+        "content": thought,             # 兼容性字段
+        "reasoning": thought,           # 兼容性字段
         "tool_name": None,
         "tool_params": None,
         "response": output.strip()
@@ -222,6 +231,8 @@ def _parse_action(
     return {
         "type": "action",
         "thought": thought,
+        "content": thought,             # 兼容性字段
+        "reasoning": thought,           # 兼容性字段
         "tool_name": tool_name,
         "tool_params": tool_params,
         "response": None
@@ -274,6 +285,8 @@ def _parse_answer(
     return {
         "type": "answer",
         "thought": thought,
+        "content": thought,             # 兼容性字段
+        "reasoning": thought,           # 兼容性字段
         "tool_name": None,
         "tool_params": None,
         "response": response
@@ -570,6 +583,8 @@ __all__ = [
 
 **完整文件路径**: `backend/app/services/agent/react_output_parser.py`
 
+**【修正 2026-04-14】补充兼容性字段**：所有return语句包含`content`和`reasoning`字段，映射到`thought`，确保与base_react.py平滑迁移
+
 包含以下函数（按步骤顺序排列）：
 1. `REACT_KEYWORDS` - 中英文关键词映射表（步骤1.1）
 2. `parse_react_response()` - 统一解析器入口（步骤1.1）
@@ -579,6 +594,21 @@ __all__ = [
 6. `_parse_action_input()` - JSON参数解析（步骤1.5）
 7. `_extract_json_with_balanced_braces()` - JSON片段提取（步骤1.5额外改进）
 8. `_extract_key_value_pairs()` - key:value提取（步骤1.5兜底）
+
+**返回值统一结构**（所有函数返回兼容性格式）：
+```python
+{
+    # 核心字段（新架构设计）
+    "type": str,                # "action" | "answer" | "implicit" | "thought_only"
+    "thought": str|None,        # 思考内容
+    "tool_name": str|None,      # 工具名（仅action）
+    "tool_params": dict|None,   # 工具参数（仅action）
+    "response": str|None,       # 回答内容（answer/implicit）
+    # 兼容性字段（用于base_react.py平滑迁移）
+    "content": str,             # 映射到thought，兼容旧代码parsed.get("content", "")
+    "reasoning": str|None,      # 映射到thought，兼容旧代码parsed.get("reasoning", "")
+}
+```
 
 ### 文件2: base_react.py（修改）
 
