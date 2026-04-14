@@ -27,7 +27,6 @@ import {
   Tag,
   Space,
   message,
-  Badge,
   Tooltip,
 } from "antd";
 import {
@@ -2194,8 +2193,16 @@ if (lastMessage && lastMessage.role === "assistant") {
                 }}
         >
           <RobotOutlined />
-          <span style={{ marginLeft: 8 }}>AI对话助手</span>
-          {isReceiving && <Badge status="processing" text="接收中..." />}
+          {/* 【小强优化2026-04-14】显示"会话"标签 + 分隔符 + 实际标题 */}
+          <span style={{ marginLeft: 8, color: "#666", fontSize: 14 }}>会话</span>
+          {/* 优雅的分隔符：带渐变效果的竖线 */}
+          <span style={{
+            marginLeft: 8,
+            marginRight: 8,
+            height: 16,
+            width: 1,
+            background: "linear-gradient(to bottom, transparent, #d9d9d9, transparent)",
+          }} />
           {sessionId && editingTitle ? (
               <Space>
                 <Input
