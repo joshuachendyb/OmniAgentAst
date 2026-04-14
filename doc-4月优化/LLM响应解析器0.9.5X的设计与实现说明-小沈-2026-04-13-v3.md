@@ -1,8 +1,8 @@
 # LLM响应解析器最终设计方案 v3
 
 **创建时间**: 2026-04-13
-**版本**: v3.4
-**更新说明**: 2026-04-14 新增第十四章：小健补充分析-解析失败处理机制修正
+**版本**: v3.5
+**更新说明**: 2026-04-15 修正5.1现有代码解析层次，新增5.1.1节验证实际代码，补充base_react.py调用层
 **整合人**: 小沈
 
 ---
@@ -398,6 +398,9 @@ TextStrategy._extract_by_known_tools() 【第四层】工具名匹配
 |------|-----------|------|
 | react_schema.py:304 | json.loads(arguments_str) | Function Calling的arguments解析 |
 | capability_detector.py:167 | json.loads(content) | 能力探测的JSON验证 |
+| base_react.py:195 | self.parser.parse_response() | ReAct主循环的解析调用 |
+| base_react.py:220 | parsed.get("tool_name") | 提取tool_name判断finish |
+
 
 ---
 
@@ -733,6 +736,7 @@ return {
 | v3.2 | 2026-04-14 | 修正Step执行顺序，添加reasoning字段 | 小沈 |
 | v3.3 | 2026-04-14 | 增加yield字段说明及前端配合处理 | 小沈 |
 | v3.4 | 2026-04-14 | 根据ReAct最佳实践完善LLM提示词建议 | 小沈 |
+| v3.5 | 2026-04-15 | 修正5.1现有代码解析层次，新增5.1.1节验证实际代码 | 小沈 |
 
 ---
 
@@ -1407,3 +1411,105 @@ if is_parse_error:
 | 1 | 解析失败重试机制是否工作正常？ | ✅ 已修复 |
 | 2 | content_before是否正确传递给错误处理？ | ✅ 已修复 |
 | 3 | 是否还有其他边界情况需要处理？ | 待验证 |
+
+---
+
+## 15.1 现有代码解析层次分析（更新版）2026-04-15
+
+**基于实际代码验证的完整LLM响应解析流程**（5层）：
+
+```
+【第1层】LLMStrategy主入口
+llm_strategies.py:69-129 TextStrategy.call()
+    ↓ 获取LLM响应
+    ↓ 110-128行 空响应检查
+    ↓ 130-141行 尝试ToolParser.parse_response()
+    ↓ 143-151行 _extract_by_known_tools()工具名匹配
+    ↓ 153-155行 return finish兜底
+
+【第2层】主解析器
+tool_parser.py:72-189 ToolParser.parse_response()
+    ↓ 89行 _extract_json_with_balanced_braces()提取JSON
+    ↓ 92-108行 正则提取Markdown代码块
+    ↓ 112-125行 平衡括号二次提取JSON
+    ↓ 127-189行 json.loads() + 多级降级策略
+
+【第3层】备选解析器
+tool_parser.py:191-230 ToolParser._extract_from_text()
+    ↓ 正则提取thought/action/params
+    ↓ summarize_patterns判断finish
+
+【第4层】工具名匹配
+llm_strategies.py:229-267 TextStrategy._extract_by_known_tools()
+    ↓ KNOWN_TOOLS列表匹配
+    ↓ 提取path参数
+
+【第5层】兜底返回
+llm_strategies.py:153-155 return finish
+    ↓ content字段作为结果
+    ↓ tool_name="finish"
+```
+
+**实际代码验证的各层文件位置和功能**：
+
+| 层 | 文件 | 方法/行号 | 功能 | 验证状态 |
+|----|------|-----------|------|----------|
+| 1 | llm_strategies.py | TextStrategy.call():69-155 | 主入口，空响应检查→解析→兜底 | ✅ 已验证 |
+| 2 | tool_parser.py | parse_response():72-189 | 主解析，Markdown→json→降级 | ✅ 已验证 |
+| 3 | tool_parser.py | _extract_from_text():191-230 | 备选解析，正则提取 | ✅ 已验证 |
+| 4 | llm_strategies.py | _extract_by_known_tools():229-267 | 工具名匹配 | ✅ 已验证 |
+| 5 | llm_strategies.py | return finish:153-155 | 兜底返回finish | ✅ 已验证 |
+| - | base_react.py | parse_response():195 | ReAct主循环解析调用 | ⚠️新增验证点 |
+| - | react_schema.py:304 | json.loads(arguments_str) | Function Calling | ✅ 同原文档 |
+
+**实际代码验证的完整调用链**：
+
+```
+base_react.py (ReAct主循环第195行)
+    ↓ parsed = self.parser.parse_response(response)
+    ↓ 199行解析失败判断
+    ↓ 220行提取tool_name
+    ↓ 225行判断tool_name=="finish"
+    ↓ 229-243行 yield thought
+    ↓ 250行执行tool
+    ↓ 265-310行 构建action_result
+
+llm_strategies.py (TextStrategy)
+    ↓ 89行获取LLM响应
+    ↓ 133行调用ToolParser.parse_response()
+    ↓ 134-139行提取字段
+    ↓ 144行备选_extract_by_known_tools()
+    ↓ 155行兜底return finish
+```
+***【2026-04-15的代码0.9.5.4版本】更新后的解析层次**：
+
+```
+【第0层】ReAct主循环层（新增）
+base_react.py:195-243
+    ↓ 解析调用
+    ↓ 解析失败重试(199)
+    ↓ tool_name提取(220)
+    ↓ finish判断(225)
+    ↓ yield thought(234)
+    ↓ 执行工具(250)
+
+【第1层】LLMStrategy主入口
+llm_strategies.py:69-155 TextStrategy.call()
+    ↓ 响应获取
+    ↓ 空响应检查
+    ↓ ToolParser调用
+    ↓ 工具名匹配
+    ↓ finish兜底
+
+【第2层】ToolParser主解析器
+tool_parser.py:72-189 parse_response()
+
+【第3层】备选解析器
+tool_parser.py:191-230 _extract_from_text()
+
+【第4层】工具名匹配
+llm_strategies.py:229-267 _extract_by_known_tools()
+
+【第5层】兜底返回
+llm_strategies.py:153-155 return finish
+```
