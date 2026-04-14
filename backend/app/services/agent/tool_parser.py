@@ -181,7 +181,17 @@ class ToolParser:
                     # 回退到文本提取
                     parsed = ToolParser._extract_from_text(response)
                     if not parsed:
-                        raise ValueError(f"Failed to parse response as JSON: {json.JSONDecodeError}")
+                        # 【专家方法】返回错误结果而不是抛出异常，复用已提取的content_before
+                        error_info = ToolParser.format_error("json_parse_error", "JSON解析失败")
+                        user_content = f"⚠️ {error_info['title']}\n\n{error_info['description']}"
+                        final_content = content_before if content_before else user_content
+                        return {
+                            "content": final_content,
+                            "thought": "",
+                            "tool_name": "finish",
+                            "tool_params": {},
+                            "reasoning": None,
+                        }
         
         # JSON前面的纯文本作为content（用于显示）
         # 如果content为空但parsed(from _extract_from_text)有thought，则用thought作为content
@@ -335,7 +345,7 @@ class ToolParser:
     
     # ===== 方案B：增强错误日志和用户反馈 =====
     @staticmethod
-    def handle_parse_error(llm_response: str, error: Exception, logger) -> Dict[str, Any]:
+    def handle_parse_error(llm_response: str, error: Exception, logger, content_before: str = None) -> Dict[str, Any]:
         """
         统一处理LLM响应解析错误
         
@@ -348,6 +358,7 @@ class ToolParser:
             llm_response: LLM原始返回内容
             error: 解析异常
             logger: 日志对象（必须传入有效的logger，不能为None）
+            content_before: （可选）JSON前面的纯文本，已在parse_response中提取好
         
         Returns:
             统一的错误结果字典
@@ -385,10 +396,14 @@ class ToolParser:
         # 生成返回给用户的完整错误消息
         user_content = f"⚠️ {error_info['title']}\n\n{error_info['description']}\n\n建议：{error_info['suggestion']}"
         
+        # 【专家方法】优先使用已提取的content_before，其次使用错误提示
+        # 复用在parse_response中已经提取好的JSON前面的纯文本
+        final_content = content_before if content_before else user_content
+        
         # 返回统一格式的错误结果
         return {
             "parsed_obs": {
-                "content": user_content,
+                "content": final_content,
                 "tool_name": "finish",
                 "tool_params": {},
                 "reasoning": None,
