@@ -5083,11 +5083,14 @@ elif parsed["type"] == "thought_only":
 
 ####  13.2.1.3 维度一：统一解析架构的实施步骤建议
 
-1. **步骤 1.1**: 创建统一解析器模块（`backend/app/services/agent/react_output_parser.py`），实现`parse_react_response()`统一入口
-2. **步骤 1.2**: 实现辅助解析函数（`_parse_action()`、`_parse_answer()`、`_parse_action_input()`四级降级）
-3. **步骤 1.3**: 编写单元测试（覆盖Action/Answer/Implicit/Thought_only四种格式，验证中英文关键词和JSON降级策略）
-4. **步骤 1.4**: 改造`base_react.py`调用点（第195行替换`self.parser.parse_response()`为`parse_react_response()`，第219-227行改造type字段判断逻辑）
-5. **步骤 1.5**: 验证与文档更新（对比测试确保向后兼容，更新API文档，标记ToolParser为废弃）
+1. **步骤 1.1**: 创建统一解析器模块（`backend/app/services/agent/react_output_parser.py`），定义`parse_react_response()`函数签名和`REACT_KEYWORDS`中英文关键词映射表
+2. **步骤 1.2**: 实现四种情况判断逻辑（无关键词返回type="implicit"、Action优先于Answer、Answer解析、纯思考type="thought_only"）
+3. **步骤 1.3**: 实现`_parse_action()`函数（支持中英文Thought/思考 + Action/行动 + Action Input/工具参数格式，工具名约束`[^\n\(\) ]+`）
+4. **步骤 1.4**: 实现`_parse_answer()`函数（支持中英文Thought/思考 + Answer/回答格式，非贪婪匹配确保Thought不包含Answer关键词）
+5. **步骤 1.5**: 实现`_parse_action_input()`函数（四级JSON降级：标准json.loads→正则提取JSON片段→单引号替换双引号→正则提取key:value对）
+6. **步骤 1.6**: 改造`base_react.py`调用点（第195行替换`self.parser.parse_response()`为`parse_react_response()`，更新第219-222行结果提取逻辑）
+7. **步骤 1.7**: 改造`base_react.py`判断逻辑（第219-227行将`tool_name == "finish"`改造为`parsed["type"] == "answer"/"implicit"`判断，新增`type == "action"`和`type == "thought_only"`分支处理）
+8. **步骤 1.8**: 清理旧解析器依赖（移除第45行`self.parser = ToolParser()`初始化，更新`__init__.py`导出`parse_react_response`，标记`tool_parser.py`为废弃保留兼容性）
 
 ---
 ###  13.2.2 维度二：step封装处理分析与概要设计
@@ -5525,11 +5528,17 @@ yield step.to_dict()      # 统一输出
 ```
 ####  13.2.2.3 维度三Step封装构建的实施步骤建议
 
-1. **步骤 2.1**: 创建ReasoningStep基类和ToolMixin混入类
-2. **步骤 2.2**: 实现5个具体Step类（ThoughtStep, ActionToolStep, ObservationStep, FinalStep, ErrorStep）
-3. **步骤 2.3**: 创建StepFactory工厂类
-4. **步骤 2.4**: 改造base_react.py，替换所有yield字典为StepFactory调用
-5. **步骤 2.5**: 添加steps列表管理，支持历史追溯
+1. **步骤 2.1**: 创建ReasoningStep抽象基类（`backend/app/services/agent/reasoning_steps.py`），定义`step/timestamp`字段和抽象方法`get_type()`/`get_content()`/`is_done()`/`to_dict()`
+2. **步骤 2.2**: 创建ToolMixin混入类（解决S5重复问题），定义`tool_name`/`tool_params`字段，供ThoughtStep/ActionToolStep/ObservationStep复用
+3. **步骤 2.3**: 实现ThoughtStep类（继承ToolMixin和ReasoningStep，包含`content/thought/reasoning`字段，`is_done()=False`）
+4. **步骤 2.4**: 实现ActionToolStep类（继承ToolMixin和ReasoningStep，包含`execution_status/summary/raw_data/error_message/retry_count`字段，`is_done()=False`）
+5. **步骤 2.5**: 实现ObservationStep类（继承ToolMixin和ReasoningStep，包含`observation/return_direct`字段，`is_done()=return_direct`）
+6. **步骤 2.6**: 实现FinalStep类（继承ReasoningStep，包含`response/thought/is_finished`字段，`is_done()=True`，解决S6缺失step字段问题）
+7. **步骤 2.7**: 实现ErrorStep类（继承ReasoningStep，包含`error_type/error_message/recoverable`字段，`is_done()=True`，解决S6缺失step字段问题）
+8. **步骤 2.8**: 创建StepFactory工厂类，实现5个静态方法`create_thought_step()`/`create_action_tool_step()`/`create_observation_step()`/`create_final_step()`/`create_error_step()`（统一构建入口，解决S3分散问题）
+9. **步骤 2.9**: 改造`base_react.py`步骤构建代码（第234-243行thought步骤、第257-279行action_tool步骤、第302-308行observation步骤、第316-320行final步骤、第326-355行error步骤，全部替换为StepFactory调用，解决S1无封装问题）
+10. **步骤 2.10**: 添加步骤历史管理（初始化`self.steps: list[ReasoningStep]=[]`，每个步骤构建后执行`self.steps.append(step)`和`yield step.to_dict()`，解决S8无管理问题）
+11. **步骤 2.11**: 清理旧字典构建代码（删除或标记`create_tool_error_result()`/`create_session_error_result()`等函数为废弃，统一使用ErrorStep封装，解决S7错误处理不统一问题）
 
 ---
 
