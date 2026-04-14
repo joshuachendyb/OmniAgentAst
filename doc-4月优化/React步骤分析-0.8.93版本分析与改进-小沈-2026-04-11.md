@@ -43,7 +43,8 @@
 | v4.23 | 2026-04-08 16:30:00 | 小健 | 修正8.2.2节：补充format_thought_sse函数的action_tool/params参数名修改 |
 | v4.24 | 2026-04-08 17:35:00 | 小沈 | 完成后端代码修改：base_react.py/sse_formatter.py/step_types.py/tool_parser.py/llm_strategies.py/file_prompts.py，统一为tool_name/tool_params，测试全部通过 |
 | v4.25 | 2026-04-11 21:02:42 | 小沈 | 文档修正：核对实际代码，修正4.8节字段定义、7.1.4节observation对比、7.6节改进建议；新增第10章：2026-04-11文档修正记录；新增429错误统一处理、超长历史TODO、search_files参数统一等说明 |
-| v4.26 | 2026-04-14 11:12:27 | 小欧 | 新增第12章：未实现项详细说明（补充版），详细列出文档设计与代码实现的差异，包含字段缺失、功能改进等20项未实现内容 |
+| v4.26 | 2026-04-14 11:12:27 | 小欧 | 新增第12章：未实现项详细说明，整合第13章可选字段分析，删除冗余章节 |
+| v4.27 | 2026-04-14 11:30:00 | 小欧 | 精简第12章内容，紧凑化字段说明，删除第13章 |
 
 
 ---
@@ -3697,38 +3698,18 @@ execution_result = await self._execute_tool(tool_name, tool_params)
 
 #### 12.1.1 start 类型缺失字段
 
-| 缺失字段 | 文档参考位置 | 当前实现 | 说明 |
-|----------|-------------|----------|------|
-| **task** | 4.1节、4.8.1节 | ❌ 未实现 | 用户原始任务描述字段缺失 |
+| 缺失字段 | 文档参考 | 当前实现 | 说明 |
+|----------|---------|---------|------|
+| **task** | 4.1节 | ❌ 未实现 | 用户任务描述 |
+| **max_steps** | 4.1节、13.2节 | ⚠️ 部分实现 | 最大迭代步数，前端可显示进度(X/Y) |
 
-**文档设计** (4.1节 start字段):
-```python
-start: {
-    step: number,
-    model: string,
-    provider: string,
-    display_name: string,
-    timestamp: number,
-    session_id: string,
-    task: string,           # ← 缺失：用户任务/问题
-    user_message: string,
-    security_check: object
-}
-```
+**实现方式**: `max_steps`从run_stream参数传入，在start yield时添加
 
-**当前实现** (file_react.py):
 ```python
-{
+yield {
     'type': 'start',
-    'step': next_step(),
-    'timestamp': create_timestamp(),
-    'display_name': f"{ai_service.provider} ({ai_service.model})",
-    'provider': ai_service.provider,
-    'model': ai_service.model,
-    'task_id': task_id,
-    'user_message': user_message[:40] if user_message else "",
-    'security_check': {...}
-    # ❌ 缺少 'task' 字段
+    'max_steps': max_steps,  # 添加此字段
+    ...
 }
 ```
 
@@ -3736,36 +3717,22 @@ start: {
 
 #### 12.1.2 action_tool 类型缺失字段
 
-| 缺失字段 | 文档参考位置 | 当前实现 | 说明 |
-|----------|-------------|----------|------|
-| **error_message** | 4.3节、5.2.3节、7.1.3节 | ⚠️ 在summary中 | 工具执行失败时的独立错误信息字段 |
-| **execution_result** | 4.3节 | ⚠️ 用raw_data | 语义化的执行结果字段 |
+| 缺失字段 | 文档参考 | 当前实现 | 说明 |
+|----------|---------|---------|------|
+| **error_message** | 4.3节 | ⚠️ 在summary中 | 独立错误信息 |
+| **execution_result** | 4.3节 | ⚠️ 用raw_data | 执行结果 |
+| **execution_time_ms** | 4.3节、13.3节 | ❌ 未实现 | 执行耗时(毫秒)，前端可显示性能 |
 
-**文档设计** (4.3节 action_tool字段):
+**实现方式**: 在_execute_tool调用前后计算耗时
+
 ```python
-action_tool: {
-    step: number,
-    execution_status: string,
-    execution_result: any,      # ← 当前用raw_data替代
-    error_message: string,        # ← 当前在summary中
-    timestamp: number
-}
-```
+start_time = time.time()
+execution_result = await self._execute_tool(tool_name, tool_params)
+execution_time_ms = int((time.time() - start_time) * 1000)
 
-**当前实现** (base_react.py:250-274):
-```python
-# 工具执行失败时
-action_tool_result = create_tool_error_result(
-    tool_name=tool_name,
-    error_message=execution_result.get("summary", "执行失败"),  # ⚠️ 用summary
-    ...
-)
-
-# 工具执行成功时
 yield {
     "type": "action_tool",
-    "execution_status": "success",
-    "raw_data": execution_result.get("data"),  # ⚠️ 用raw_data
+    "execution_time_ms": execution_time_ms,
     ...
 }
 ```
@@ -3774,33 +3741,19 @@ yield {
 
 #### 12.1.3 observation 类型缺失字段
 
-| 缺失字段 | 文档参考位置 | 当前实现 | 说明 |
-|----------|-------------|----------|------|
-| **tool_params** | 4.4节、5.2.4节、7.1.4节 | ❌ 未实现 | 从thought复制的工具参数 |
-| **return_direct** | 4.4节、5.2.4节、7.1.4节 | ❌ 未实现 | 工具直接返回标志，跳过后续LLM推理 |
+| 缺失字段 | 文档参考 | 当前实现 | 说明 |
+|----------|---------|---------|------|
+| **tool_params** | 4.4节 | ❌ 未实现 | 从thought复制工具参数 |
+| **return_direct** | 4.4节 | ❌ 未实现 | 工具直接返回(新功能) |
 
-**文档设计** (4.4节 observation字段):
-```python
-observation: {
-    step: number,
-    tool_name: string,
-    tool_params: object,        # ← 缺失：从thought复制
-    content: string,
-    return_direct: boolean,     # ← 缺失：新功能
-    timestamp: number
-}
-```
+**实现方式**: 从thought复制tool_params
 
-**当前实现** (base_react.py:296-303):
 ```python
 yield {
     "type": "observation",
-    "step": step_count,
-    "timestamp": create_timestamp(),
     "tool_name": tool_name,
-    # ❌ 缺少 "tool_params": tool_params
-    "content": f"Tool '{tool_name}' executed: ..."
-    # ❌ 缺少 "return_direct": ...
+    "tool_params": tool_params,  # 添加此字段
+    ...
 }
 ```
 
@@ -3808,67 +3761,44 @@ yield {
 
 #### 12.1.4 final 类型缺失/不同字段
 
-| 缺失字段 | 文档参考位置 | 当前实现 | 说明 |
-|----------|-------------|----------|------|
-| **response** | 4.5节、5.2.5节、7.1.5节 | ⚠️ 用content | 最终回答内容字段名不同 |
-| **is_finished** | 4.5节、5.2.5节、7.1.5节 | ❌ 未实现 | 业务完成标志，前端无法显示"✅ 结束"徽章 |
-| **thought** | 4.5节、5.2.5节、7.1.5节 | ❌ 未实现 | 最终推理总结字段 |
-| **is_streaming** | 4.5节、5.2.5节、7.1.5节 | ❌ 未实现 | 流式输出标志，前端无打字机效果 |
+| 缺失字段 | 文档参考 | 当前实现 | 说明 |
+|----------|---------|---------|------|
+| **response** | 4.5节 | ⚠️ 用content | 字段名不同 |
+| **is_finished** | 4.5节 | ❌ 未实现 | 业务完成标志 |
+| **thought** | 4.5节、13.5节 | ❌ 未实现 | 最终推理总结 |
+| **is_streaming** | 4.5节、13.5节 | ❌ 未实现 | 流式输出标志 |
 
-**文档设计** (4.5节 final字段):
-```python
-final: {
-    step: number,
-    response: string,             # ← 当前用content
-    is_finished: boolean,         # ← 缺失：业务完成标志
-    timestamp: number,
-    thought: string,             # ← 缺失：最终推理总结
-    is_streaming: boolean        # ← 缺失：流式输出标志
-}
-```
+**实现方式**: final生成时添加thought和is_finished
 
-**当前实现** (base_react.py:310-315):
 ```python
 yield {
     "type": "final",
-    "timestamp": create_timestamp(),
-    "content": tool_params.get("result", thought_content)  # ⚠️ 用content而非response
-    # ❌ 缺少 "is_finished": True
-    # ❌ 缺少 "thought": ...
-    # ❌ 缺少 "is_streaming": ...
+    "thought": thought_content,  # 添加最终推理
+    "is_finished": True,       # 添加完成标志
+    "is_streaming": False,
+    ...
 }
-```
-
-**前端实现** (MessageItem.tsx:505-511):
-```tsx
-{step.type === "final" && (
-  <div style={getStepStyle("final" as StepType)}>
-    <span style={getStepContentStyle("final" as StepType, "primary")}>
-      {step.content || ""}  {/* ⚠️ 用content而非response */}
-    </span>
-    {/* ❌ 没有显示 is_finished 徽章 */}
-    {/* ❌ 没有显示 thought 字段 */}
-  </div>
-)}
 ```
 
 ---
 
 #### 12.1.5 error 类型字段名不同
 
-| 字段 | 文档参考位置 | 当前实现 | 说明 |
-|------|-------------|----------|------|
-| **error_type** | 4.6节、7.1.6节 | ⚠️ 用code | 详细错误分类字段名不同 |
-| **recoverable** | 4.6节、7.1.6节、7.6.2节 | ❌ 未实现 | 是否可恢复字段缺失 |
+| 字段 | 文档参考 | 当前实现 | 说明 |
+|------|---------|---------|------|
+| **error_type** | 4.6节 | ⚠️ 用code | 字段名不同 |
+| **recoverable** | 4.6节、13.6节 | ❌ 未实现 | 是否可恢复 |
+| **context** | 4.6节、13.6节 | ❌ 未实现 | 错误上下文 |
 
-**文档设计** (4.6节 error字段):
+**实现方式**: 在error_handler中增加context字段
+
 ```python
-error: {
-    step: number,
-    error_type: string,          # ← 当前用code
-    error_message: string,
-    timestamp: number,
-    recoverable: boolean        # ← 缺失
+error_result = {
+    "type": "error",
+    "error_type": error_type,
+    "recoverable": can_retry,  # 添加可恢复标志
+    "context": {"step": step_count, "tool_name": tool_name},  # 添加上下文
+    ...
 }
 ```
 
@@ -4201,151 +4131,8 @@ execution_result = await self._execute_tool(tool_name, tool_params)
 
 ---
 
-## 十三、可选字段深入分析（2026-04-14）
-
-**分析时间**: 2026-04-14 11:25:08
-**分析人**: 小欧
-**分析方法**: 对照文档第4章设计与后端/前端代码实现，逐字段分析必要性
-
----
-
-### 13.1 start 可选字段分析
-
-**文档设计的可选字段**：
-- `agent_id`: Agent标识
-- `max_steps`: 最大迭代步数
-- `available_tools`: 可用工具列表
-
-| 可选字段 | 文档参考 | 当前实现 | 分析结果 | 建议 |
-|----------|---------|---------|---------|------|
-| **agent_id** | 4.1节 | ❌ 未实现 | ❌ 无必要 | 当前已有task_id和session_id足够区分任务，agent类型由子类(file_react)决定 |
-| **max_steps** | 4.1节 | ⚠️ 部分实现 | ⚠️ 可加 | **有价值** - 前端可显示"已执行X步/最多Y步"，当前代码已从参数传入但未传递给前端 |
-| **available_tools** | 4.1节 | ❌ 未实现 | ❌ 无必要 | System prompt中已有工具列表，前端不需要重复显示 |
-
-**建议添加**: `max_steps`（中优先级）
-
----
-
-### 13.2 action_tool 可选字段分析
-
-**文档设计的可选字段**：
-- `execution_time_ms`: 执行耗时（毫秒）
-- `summary`: 执行结果摘要
-- `raw_data`: 原始数据
-- `retry_count`: 重试次数
-
-| 可选字段 | 文档参考 | 当前实现 | 分析结果 | 建议 |
-|----------|---------|---------|---------|------|
-| **execution_time_ms** | 4.3节 | ❌ 未实现 | ⚠️ 可加 | **高优先级** - 可监控工具性能，前端显示执行耗时，只需在action_tool yield前计算耗时 |
-| **summary** | 4.3节 | ✅ 已实现 | ✅ 已有 | 当前已实现 |
-| **raw_data** | 4.3节 | ✅ 已实现 | ✅ 已有 | 当前已实现 |
-| **retry_count** | 4.3节 | ✅ 已实现(action_retry_count) | ✅ 已有 | 当前已实现(action_retry_count) |
-
-**实现方式**（参考代码）:
-```python
-# 在 _execute_tool 调用前后计算耗时
-start_time = time.time()
-execution_result = await self._execute_tool(tool_name, tool_params)
-execution_time_ms = int((time.time() - start_time) * 1000)
-
-yield {
-    "type": "action_tool",
-    "execution_time_ms": execution_time_ms,
-    ...
-}
-```
-
----
-
-### 13.3 observation 可选字段分析
-
-**文档设计的可选字段**：
-- `return_direct`: 是否直接返回结果给用户（跳过后续推理）
-
-| 可选字段 | 文档参考 | 当前实现 | 分析结果 | 建议 |
-|----------|---------|---------|---------|------|
-| **return_direct** | 4.4节、7.6.3节 | ❌ 未实现 | ⚠️ 可加但复杂 | **低优先级** - 需要工具层面支持return_direct，当前无此功能，属于新功能设计 |
-
----
-
-### 13.4 final 可选字段分析
-
-**文档设计的可选字段**：
-- `thought`: 最终推理总结
-- `is_streaming`: 是否流式输出
-- `total_steps`: 总执行步骤数（框架层面）
-- `total_tokens`: 总使用token数（框架层面）
-- `usage`: 使用统计（框架层面）
-
-| 可选字段 | 文档参考 | 当前实现 | 分析结果 | 建议 |
-|----------|---------|---------|---------|------|
-| **thought** | 4.5节、5.2.5节 | ❌ 未实现 | ✅ 非常有价值 | **高优先级** - 前端可显示最终推理过程，增强用户体验 |
-| **is_streaming** | 4.5节、5.2.5节 | ❌ 未实现 | ⚠️ 部分需要 | **中优先级** - 当前final不是流式，但为未来扩展预留有意义 |
-| **total_steps** | 4.5节 | ⚠️ 部分实现 | ✅ 已有 | file_react.py中已传递给final_result，但不在step中 |
-| **total_tokens** | 4.5节 | ❌ 未实现 | ⚠️ 可加 | **中优先级** - 需要LLM返回token统计 |
-| **usage** | 4.5节 | ❌ 未实现 | ❌ 暂无必要 | 当前没有token统计功能，暂不需要 |
-
-**实现方式**（参考代码）:
-```python
-# final生成时
-yield {
-    "type": "final",
-    "thought": thought_content,  # 最终推理
-    "is_finished": True,
-    "is_streaming": False,
-    ...
-}
-```
-
----
-
-### 13.5 error 可选字段分析
-
-**文档设计的可选字段**：
-- `stack_trace`: 堆栈跟踪
-- `context`: 错误上下文
-- `suggested_fix`: 建议修复
-- `retry_suggestion`: 重试建议
-
-| 可选字段 | 文档参考 | 当前实现 | 分析结果 | 建议 |
-|----------|---------|---------|---------|------|
-| **stack_trace** | 4.6节 | ⚠️ 部分实现(errorStack) | ✅ 已有 | ErrorDetail组件已有errorStack |
-| **context** | 4.6节 | ❌ 未实现 | ⚠️ 可加 | **中优先级** - 有价值，记录错误发生时的上下文(当前step、tool_name等) |
-| **suggested_fix** | 4.6节 | ❌ 未实现 | ⚠️ 可加 | **低优先级** - 根据错误类型生成修复建议 |
-| **retry_suggestion** | 4.6节 | ❌ 未实现 | ⚠️ 可加 | **低优先级** - 重试建议，当前errorHandler有retryable字段 |
-
----
-
-### 13.6 chunk 可选字段分析
-
-**文档设计的可选字段**：
-- `index`: chunk序号
-- `role`: 角色（assistant）
-- `model`: 使用的模型
-- `finish_reason`: 完成原因（stop/length/tool_calls等）
-
-| 可选字段 | 文档参考 | 当前实现 | 分析结果 | 建议 |
-|----------|---------|---------|---------|------|
-| **index** | 4.7节 | ❌ 未实现 | ❌ 暂无必要 | chunk主要用于流式显示，不需要序号 |
-| **role** | 4.7节 | ❌ 未实现 | ❌ 暂无必要 | 固定是assistant，前端已知 |
-| **model** | 4.7节 | ❌ 未实现 | ⚠️ 可加 | **低优先级** - 为完整性可以加，但当前message级别已有model |
-| **finish_reason** | 4.7节 | ❌ 未实现 | ⚠️ 可加 | **低优先级** - 有价值，可显示LLM为何停止(stop/length) |
-
----
-
-### 13.7 建议添加的可选字段汇总
-
-| 优先级 | 类型 | 字段 | 文档参考 | 理由 |
-|--------|------|------|---------|------|
-| **P0高** | final | `thought` | 4.5节、5.2.5节 | 前端显示最终推理，增强用户体验 |
-| **P1中** | action_tool | `execution_time_ms` | 4.3节 | 监控工具性能，前端显示执行耗时 |
-| **P1中** | final | `is_streaming` | 4.5节 | 为未来流式输出扩展预留 |
-| **P1中** | error | `context` | 4.6节 | 记录错误上下文，助于调试 |
-| **P2低** | start | `max_steps` | 4.1节 | 前端显示进度(X/Y步) |
-
----
-
-**分析版本**: v1.0
-**分析时间**: 2026-04-14 11:25:08
-**分析人**: 小欧
+**补充版本**: v1.0
+**补充时间**: 2026-04-14 11:12:27
+**补充人**: 小欧
+**补充依据**: 文档第4-7章、第10-11章与实际代码对照分析
 **分析方法**: 对照文档设计与后端/前端代码实现，逐字段分析必要性
