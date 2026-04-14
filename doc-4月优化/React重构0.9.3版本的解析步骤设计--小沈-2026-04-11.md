@@ -5807,7 +5807,17 @@ class BaseReactAgentV2:
 ---
 ####  13.2.3.3 维度三：重构Agent主循环2.0的实施步骤建议
 
-<补充维度一：统一解析架构的的实施步骤建议>
+1. **步骤 3.1**: 创建新的主循环函数`run_stream_v2()`（保持`run_stream()`不变新增函数），初始化`steps: list[ReasoningStep]=[]`步骤历史列表和`step_counter=0`计数器
+2. **步骤 3.2**: 实现start步骤构建（调用`_build_start_step(task)`生成start类型步骤并yield）
+3. **步骤 3.3**: 改造主循环结构（将原`while True:`改为`while step_counter < max_steps:`，添加`step_counter += 1`计数器递增）
+4. **步骤 3.4**: 实现统一解析调用（第195行替换为`parsed = parse_react_response(llm_output)`，使用5.1.1节统一解析器）
+5. **步骤 3.5**: 实现action类型处理分支（当`parsed["type"] == "action"`时，使用StepFactory创建ThoughtStep→执行工具→创建ActionToolStep→创建ObservationStep，每个步骤添加到`steps`列表并yield）
+6. **步骤 3.6**: 实现is_done循环控制（在ObservationStep后检查`if obs_step.is_done():`创建FinalStep并break退出，否则continue继续下一轮）
+7. **步骤 3.7**: 实现answer/implicit类型处理分支（当`parsed["type"] in ("answer", "implicit")`时，创建FinalStep添加到`steps`列表并yield，然后break退出循环）
+8. **步骤 3.8**: 实现thought_only类型处理分支（当`parsed["type"] == "thought_only"`时，直接continue继续下一轮循环）
+9. **步骤 3.9**: 改造异常处理（将原有try-except块改造为创建ErrorStep并添加到`steps`列表，yield后break退出）
+10. **步骤 3.10**: 实现max_steps超限处理（在循环外检查`if step_counter >= max_steps:`创建ErrorStep并yield）
+11. **步骤 3.11**: 清理旧主循环代码（移除原`run_stream()`函数中的旧解析器调用、tool_name判断逻辑、直接yield字典代码，或标记为废弃保留兼容性）
 
 
 ### 13.2.4  整体构建的实施步骤建议
