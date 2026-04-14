@@ -3701,14 +3701,13 @@ execution_result = await self._execute_tool(tool_name, tool_params)
 | 缺失字段 | 文档参考 | 当前实现 | 说明 |
 |----------|---------|---------|------|
 | **task** | 4.1节 | ❌ 未实现 | 用户任务描述 |
-| **max_steps** | 4.1节、13.2节 | ⚠️ 部分实现 | 最大迭代步数，前端可显示进度(X/Y) |
+| **max_steps** | 4.1节 | ⚠️ 部分实现 | 最大迭代步数，前端可显示进度(X/Y) |
 
 **实现方式**: `max_steps`从run_stream参数传入，在start yield时添加
 
 ```python
 yield {
     'type': 'start',
-    'max_steps': max_steps,  # 添加此字段
     ...
 }
 ```
@@ -3721,7 +3720,7 @@ yield {
 |----------|---------|---------|------|
 | **error_message** | 4.3节 | ⚠️ 在summary中 | 独立错误信息 |
 | **execution_result** | 4.3节 | ⚠️ 用raw_data | 执行结果 |
-| **execution_time_ms** | 4.3节、13.3节 | ❌ 未实现 | 执行耗时(毫秒)，前端可显示性能 |
+| **execution_time_ms** | 4.3节 | ❌ 未实现 | 执行耗时(毫秒)，前端可显示性能 |
 
 **实现方式**: 在_execute_tool调用前后计算耗时
 
@@ -3743,19 +3742,7 @@ yield {
 
 | 缺失字段 | 文档参考 | 当前实现 | 说明 |
 |----------|---------|---------|------|
-| **tool_params** | 4.4节 | ❌ 未实现 | 从thought复制工具参数 |
 | **return_direct** | 4.4节 | ❌ 未实现 | 工具直接返回(新功能) |
-
-**实现方式**: 从thought复制tool_params
-
-```python
-yield {
-    "type": "observation",
-    "tool_name": tool_name,
-    "tool_params": tool_params,  # 添加此字段
-    ...
-}
-```
 
 ---
 
@@ -3765,8 +3752,8 @@ yield {
 |----------|---------|---------|------|
 | **response** | 4.5节 | ⚠️ 用content | 字段名不同 |
 | **is_finished** | 4.5节 | ❌ 未实现 | 业务完成标志 |
-| **thought** | 4.5节、13.5节 | ❌ 未实现 | 最终推理总结 |
-| **is_streaming** | 4.5节、13.5节 | ❌ 未实现 | 流式输出标志 |
+| **thought** | 4.5节 | ❌ 未实现 | 最终推理总结 |
+| **is_streaming** | 4.5节 | ❌ 未实现 | 流式输出标志 |
 
 **实现方式**: final生成时添加thought和is_finished
 
@@ -3787,8 +3774,8 @@ yield {
 | 字段 | 文档参考 | 当前实现 | 说明 |
 |------|---------|---------|------|
 | **error_type** | 4.6节 | ⚠️ 用code | 字段名不同 |
-| **recoverable** | 4.6节、13.6节 | ❌ 未实现 | 是否可恢复 |
-| **context** | 4.6节、13.6节 | ❌ 未实现 | 错误上下文 |
+| **recoverable** | 4.6节 | ❌ 未实现 | 是否可恢复 |
+| **context** | 4.6节 | ❌ 未实现 | 错误上下文 |
 
 **实现方式**: 在error_handler中增加context字段
 
