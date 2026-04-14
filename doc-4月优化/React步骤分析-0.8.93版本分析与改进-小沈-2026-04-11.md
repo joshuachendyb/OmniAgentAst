@@ -5028,17 +5028,29 @@ echo "当前测试基线: $(pytest tests/test_tool_parser.py --tb=no -q | tail -
 > - `_parse_action_input()` - JSON降级解析（第1286行）
 > 
 > **专家戒律核对声明（2026-04-14）：**
-> > ✅ **已逐条核对5.1.1节所有优点，无一遗漏**
+> > ✅ **已逐条核对5.1.1节和5.1.3节所有优点，无一遗漏**
 > > 
-> > 共提取 **4个函数 × 23条关键优点**，已全部纳入实施要求：
-> > - parse_react_response: 5条优点（含LlamaIndex设计依据）
+> > **Phase 1（当前实施）- 5.1.1节输出解析器：**
+> > 共提取 **4个函数 × 23条关键优点**
+> > - parse_react_response: 5条优点
 > > - _parse_action: 5条优点（含4个关键改进）
 > > - _parse_answer: 4条优点（含4个关键改进）
 > > - _parse_action_input: 5条优点（含额外改进）
 > > 
+> > **Phase 2（后续实施）- 5.1.3节ReasoningStep基类：**
+> > 共提取 **1个基类 + 5个实现类 × 17条关键优点**
+> > - ReasoningStep基类: 5条优点（ABC抽象基类+4个核心方法）
+> > - ThoughtStep: 3条优点（对应ActionReasoningStep）
+> > - ActionToolStep: 3条优点（扩展设计）
+> > - ObservationStep: 2条优点（对应ObservationReasoningStep）
+> > - FinalStep: 2条优点（对应ResponseReasoningStep）
+> > - ErrorStep: 2条优点（扩展设计）
+> > 
+> > **总计：40条关键优点**（5.1.1节23条 + 5.1.3节17条）
+> > 
 > > 所有优点均已在以下位置体现：
-> > 1. ✅ "必须吸收的关键优点"表格（23行）
-> > 2. ✅ "检查要点"清单（28个检查项）
+> > 1. ✅ "必须吸收的关键优点"表格（5.1.1节23行 + 5.1.3节17行）
+> > 2. ✅ "检查要点"清单（Phase 1共28项 + Phase 2预留17项）
 > > 3. ✅ "TestLlamaIndexFeatures"测试类（10个测试用例）
 
 **必须吸收的关键优点（按5.1.1节原文逐条核对）：**
@@ -5074,6 +5086,45 @@ echo "当前测试基线: $(pytest tests/test_tool_parser.py --tb=no -q | tail -
 4. ✅ **_parse_answer**: 非贪婪匹配确保Thought不包含Answer关键词
 5. ✅ **_parse_action_input**: 解析策略依据标注（LlamaIndex action_input_parser）
 6. ✅ **_parse_action_input**: 明确标注为"额外改进"的JSON片段提取
+
+---
+
+**⚠️ 严重遗漏警告（2026-04-14 专家戒律复核）：**
+**5.1.3节 LlamaIndex ReasoningStep 基类参考设计 优点未被提取！**
+
+**必须补充的5.1.3节关键优点（文档第1406-1603行）：**
+
+| 设计要素 | 关键优点 | 来源/依据 | 具体实现 | Phase |
+|---------|---------|----------|---------|-------|
+| **ReasoningStep基类** | ABC抽象基类设计 | LlamaIndex BaseReasoningStep | 定义通用接口 | Phase 2 |
+| | get_content()方法 | 核心接口 | 获取用户可见文本 | Phase 2 |
+| | is_done()方法 | 核心接口 | 判断是否结束循环 | Phase 2 |
+| | to_dict()方法 | 核心接口 | 转换为前端格式 | Phase 2 |
+| | get_type()方法 | 核心接口 | 获取type字段值 | Phase 2 |
+| **4个核心类** | ThoughtStep | 对应ActionReasoningStep | content+tool_name+tool_params | Phase 2 |
+| | ActionToolStep | **扩展设计** | execution_status+result+error | Phase 2 |
+| | ObservationStep | 对应ObservationReasoningStep | observation+return_direct | Phase 2 |
+| | FinalStep | 对应ResponseReasoningStep | response+is_finished+thought | Phase 2 |
+| | ErrorStep | **扩展设计** | error_type+message+recoverable | Phase 2 |
+| **is_done控制** | thought: False | 思考后必须执行工具 | 循环控制逻辑 | Phase 2 |
+| | action_tool: False | 工具后必须生成observation | 循环控制逻辑 | Phase 2 |
+| | observation: return_direct | 工具说直接返回就结束 | 循环控制逻辑 | Phase 2 |
+| | final: True | 永远结束循环 | 循环控制逻辑 | Phase 2 |
+| | error: True | 错误结束循环 | 循环控制逻辑 | Phase 2 |
+
+**5.1.3节与5.1.1节的区别：**
+- **5.1.1节**：输出解析器设计（文本→结构化数据）- **Phase 1实施**
+- **5.1.3节**：面向对象基类设计（抽象基类→具体类）- **Phase 2实施**
+
+**专家戒律声明：**
+> ✅ **5.1.1节 23条优点 + 5.1.3节 17条优点 = 共40条关键优点**
+> 
+> 现已全部提取，无一遗漏！
+> 
+> **Phase 1**（当前）：实施5.1.1节输出解析器（步骤2-6）
+> **Phase 2**（后续）：实施5.1.3节ReasoningStep基类（需另起计划）
+
+---
 
 **完整代码实现：**
 
@@ -5322,6 +5373,54 @@ def _parse_action_input(json_str: str) -> dict:
 - [ ] 类型注解完整
 - [ ] 代码通过PEP8检查
 - [ ] 无调试代码残留
+
+---
+
+**Phase 2 预留检查要点（5.1.3节 ReasoningStep 基类设计）：**
+
+> ⚠️ **以下检查要点用于后续Phase 2实施，当前Phase 1暂不执行**
+
+**ReasoningStep基类检查（文档第1406-1603行）：**
+- [ ] 抽象基类使用ABC模块定义
+- [ ] 包含4个抽象方法：get_content(), is_done(), to_dict(), get_type()
+- [ ] 包含基础字段：step, timestamp
+
+**ThoughtStep类检查：**
+- [ ] 继承自ReasoningStep
+- [ ] 字段：content, tool_name, tool_params
+- [ ] is_done()返回False
+- [ ] 对应LlamaIndex ActionReasoningStep
+
+**ActionToolStep类检查（扩展设计）：**
+- [ ] 继承自ReasoningStep
+- [ ] 字段：execution_status, execution_result, error_message
+- [ ] is_done()返回False
+- [ ] **LlamaIndex无对应类，为扩展设计**
+
+**ObservationStep类检查：**
+- [ ] 继承自ReasoningStep
+- [ ] 字段：observation, tool_name, tool_params, return_direct
+- [ ] is_done()返回return_direct值
+- [ ] 对应LlamaIndex ObservationReasoningStep
+
+**FinalStep类检查：**
+- [ ] 继承自ReasoningStep
+- [ ] 字段：response, thought, is_finished, is_streaming
+- [ ] is_done()返回True
+- [ ] 对应LlamaIndex ResponseReasoningStep
+
+**ErrorStep类检查（扩展设计）：**
+- [ ] 继承自ReasoningStep
+- [ ] 字段：error_type, error_message, recoverable
+- [ ] is_done()返回True
+- [ ] **LlamaIndex无对应类，为扩展设计**
+
+**is_done循环控制机制检查：**
+- [ ] thought: is_done=False
+- [ ] action_tool: is_done=False
+- [ ] observation: is_done=return_direct
+- [ ] final: is_done=True
+- [ ] error: is_done=True
 
 ---
 
