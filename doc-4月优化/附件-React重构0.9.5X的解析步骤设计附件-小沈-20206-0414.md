@@ -134,14 +134,189 @@ React重构0.9.3版本的解析步骤设计附件-小沈-20206-0414.md
 | `_extract_by_known_tools()` | | | ✅建议新增 |
 
 ---
+#### 14.0.4 在新设计中采用现有代码中某些函数或者代码片段的详细说明
 
-#### 14.0.4 关键发现：新架构缺失的功能
+根据融合性分析，以下现有代码的函数或代码片段可以在新架构设计中采用或参考：
+
+##### 1. 平衡括号JSON提取算法（`_extract_json_with_balanced_braces`）
+
+**现有代码位置**: tool_parser.py:23-80
+
+**采用位置**: 新架构 `_parse_action_input()` 函数内（第2级降级策略）
+
+**采用原因**: 核心的平衡括号匹配算法，用于从文本中提取完整的JSON对象
+
+```python
+# 现有代码核心逻辑（新架构中需重新实现）
+def _extract_json_with_balanced_braces(text: str) -> tuple:
+    """从文本中提取JSON对象（使用平衡括号匹配算法）"""
+    start_idx = None
+    for i, char in enumerate(text):
+        if char in '{[':
+            start_idx = i
+            break
+    
+    if start_idx is None:
+        return None, ""
+    
+    stack = []
+    end_idx = None
+    
+    for i in range(start_idx, len(text)):
+        char = text[i]
+        if char in '{[':
+            stack.append(char)
+        elif char == '}' and stack and stack[-1] == '{':
+            stack.pop()
+            if not stack:
+                end_idx = i + 1
+                break
+        elif char == ']' and stack and stack[-1] == '[':
+            stack.pop()
+            if not stack:
+                end_idx = i + 1
+                break
+    
+    if end_idx:
+        return text[start_idx:end_idx], text[:start_idx]
+    return None, text
+```
+
+**新架构实现位置**: `react_output_parser.py` → `_parse_action_input()` 内第2级
+
+---
+
+##### 2. Markdown代码块去除逻辑
+
+**现有代码位置**: tool_parser.py:92-106
+
+**采用位置**: 新架构 `parse_react_response()` 入口预处理
+
+**采用原因**: LLM输出可能包含Markdown代码块包裹的JSON，需要先去除
+
+```python
+# 现有代码逻辑（新架构入口预处理）
+json_match = re.search(
+    r'```(?:json)?\s*\n?(.*?)\n?```',
+    response,
+    re.DOTALL | re.IGNORECASE
+)
+
+if json_match:
+    json_str = json_match.group(1).strip()
+    # 获取Markdown代码块之前的文本
+    md_start = response.find('```')
+    content_before = response[:md_start].strip()
+else:
+    json_str = response.strip()
+    content_before = ""
+```
+
+**新架构实现位置**: `react_output_parser.py` → `parse_react_response()` 入口第一步
+
+---
+
+##### 3. 多字段名映射逻辑
+
+**现有代码位置**: tool_parser.py:140-177
+
+**采用位置**: 新架构 `_parse_action()` 函数内
+
+**采用原因**: LLM可能在JSON中使用不同字段名（action/action_tool/tool_name），需要统一映射
+
+```python
+# 现有代码逻辑（新架构中需补充）
+# 工具名映射
+tool_name = parsed.get("tool_name", 
+              parsed.get("action_tool", 
+              parsed.get("action", "finish")))
+
+# 参数映射
+if "tool_params" in parsed:
+    tool_params = parsed.get("tool_params", {})
+elif "params" in parsed:
+    tool_params = parsed.get("params", {})
+elif "action_input" in parsed:
+    tool_params = parsed.get("action_input", {})
+else:
+    tool_params = {}
+
+# reasoning映射
+reasoning = parsed.get("reasoning", 
+              parsed.get("thinking", 
+              parsed.get("analysis", "")))
+```
+
+**新架构实现位置**: `react_output_parser.py` → `_parse_action()` 解析结果映射
+
+---
+
+##### 4. 截断JSON字段提取（降级策略）
+
+**现有代码位置**: tool_parser.py:136-177
+
+**采用位置**: 新架构 `_parse_action_input()` 函数内（第4级降级策略）
+
+**采用原因**: JSON部分损坏时尝试逐字段提取
+
+```python
+# 现有代码逻辑（新架构中需补充）
+parsed = {}
+
+# 尝试提取 tool_name
+tool_name_match = re.search(r'"tool_name"\s*:\s*"([^"]*)"', json_str)
+if tool_name_match:
+    parsed["tool_name"] = tool_name_match.group(1)
+
+# 尝试提取 action_input
+tool_params_match = re.search(r'"tool_params"\s*:\s*(\{[^}]*\})', json_str)
+if tool_params_match:
+    try:
+        parsed["tool_params"] = json.loads(tool_params_match.group(1))
+    except:
+        parsed["tool_params"] = {}
+```
+
+**新架构实现位置**: `react_output_parser.py` → `_parse_action_input()` 第4级降级
+
+---
+
+##### 5. 错误信息格式化（参考）
+
+**现有代码位置**: tool_parser.py:331-360
+
+**采用位置**: 新架构隐式回答处理（type="implicit"时）
+
+**采用原因**: 解析失败时返回结构化错误信息
+
+```python
+# 现有代码结构（新架构参考）
+ERROR_TYPES = {
+    "json_parse_error": {
+        "title": "AI响应格式异常",
+        "description": "AI返回了非标准JSON格式的内容",
+        "suggestion": "请尝试简化问题，或重新组织语言"
+    },
+    "empty_response": {
+        "title": "AI返回了空响应",
+        "description": "可能是网络问题或模型暂时不可用",
+        "suggestion": "请稍后再试，或尝试重新提问"
+    },
+}
+```
+
+**新架构实现位置**: 可选择在 `parse_react_response()` 内或单独错误处理模块
+
+---
+
+#### 14.0.5 关键发现：新架构缺失的功能
 
 | # | 缺失功能 | 现有代码位置 | 建议 |
 |---|---------|-------------|------|
 | 1 | 工具名兜底匹配 | llm_strategies.py:229 | 在隐式回答前新增 |
 | 2 | 多字段名映射（action/action_tool等） | tool_parser.py:140-177 | 在_parse_action()中补充 |
 | 3 | Markdown代码块去除 | tool_parser.py:92-106 | 在入口处预处理 |
+
 
 ---
 
