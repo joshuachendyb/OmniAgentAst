@@ -221,6 +221,13 @@ class CapabilityDetector:
                 if response.status_code != 200:
                     return {"works": False, "reason": f"HTTP {response.status_code}"}
                 
+                # 【新增修复】检测非JSON响应（如HTML错误页面）
+                content_type = response.headers.get("content-type", "")
+                if "application/json" not in content_type:
+                    preview = response.text[:200] if response.text else "empty"
+                    logger.warning(f"[CapabilityDetector] _probe_tools: Non-JSON response, content_type={content_type}, preview={preview}")
+                    return {"works": False, "reason": f"Non-JSON response: {content_type}"}
+                
                 data = response.json()
                 logger.info(f"[CapabilityDetector] _probe_tools: response data keys = {list(data.keys())}")
                 
