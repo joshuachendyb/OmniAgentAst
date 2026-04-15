@@ -793,10 +793,188 @@ action_tool: {
 - `"error"`: 执行失败
 - `"timeout"`: 执行超时
 - `"permission_denied"`: 权限不足
+- `"warning"`: 部分成功/警告
+
+#### 4.3.1 execution_status 详细实现说明（2026-04-16 新增）
+
+**说明**：以下 execution_status 值需要代码实现：
+- `"timeout"` - ❌ 未实现
+- `"permission_denied"` - ❌ 未实现
+- `"warning"` - ❌ 未实现
+
+##### 4.3.1.1 timeout 超时机制
+
+**超时时间来源**
+
+根据工具类型预设超时时间，配置在 `tool_executor.py` 中：
+
+```python
+# 工具超时配置（秒）
+TOOL_TIMEOUTS = {
+    "list_directory": 10,       # 简单目录操作
+    "read_file": 30,            # 文件读取
+    "write_file": 30,            # 文件写入
+    "delete_file": 30,          # 文件删除
+    "move_file": 30,            # 文件移动
+    "search_files": 30,         # 文件搜索
+    "search_file_content": 60,   # 全文搜索（耗时较长）
+    "generate_report": 60,       # 生成报告
+    "default": 30               # 默认超时
+}
+```
+
+**2. 超时 error_message 格式**
+
+**要求**：必须显示超时时间和工具名称
+
+```python
+{
+    "status": "timeout",
+    "summary": f"Tool '{action}' execution timed out after {timeout} seconds",
+    "data": None,
+    "retry_count": 0
+}
+```
+
+**示例**：
+- `search_file_content` 超时60秒：`"Tool 'search_file_content' execution timed out after 60 seconds"`
+- `read_file` 超时30秒：`"Tool 'read_file' execution timed out after 30 seconds"`
+
+---
+
+##### 4.3.1.2 permission_denied 机制
+
+**1. 异常类型捕获**
+
+捕获 Python 原生异常类型：
+
+```python
+except PermissionError as e:
+    return {
+        "status": "permission_denied",
+        "summary": f"Permission denied: {str(e)}",
+        "data": None,
+        "retry_count": 0
+    }
+```
+
+**2. 其他异常类型区分**
+
+| 异常 | execution_status |
+|-----|-----------------|
+| PermissionError | permission_denied |
+| FileNotFoundError | error |
+| asyncio.TimeoutError | timeout（需要新增） |
+| 其他Exception | error |
+
+---
+
+##### 4.3.1.3 warning 机制
+
+**1. 触发场景**
+
+warning 是"部分成功"的情况，由工具主动返回：
+
+| 场景 | 工具 | 说明 |
+|-----|------|------|
+| 文件截断 | `read_file` | 文件过大，超出 limit，返回截断内容 |
+| 结果超限 | `search_file_content` | 结果过多，限制返回数量 |
+| 格式警告 | `write_file` | 内容格式不规范但可写入 |
+
+**2. warning 返回格式**
+
+```python
+{
+    "status": "warning",
+    "summary": "File truncated, showing first 1000 lines",
+    "data": {...},
+    "retry_count": 0
+}
+```
+
+---
+
+##### 4.3.1.4 完整异常处理设计
+
+**tool_executor.py 异常处理结构**：
+
+```python
+async def execute(self, action, action_input):
+    # 1. 获取超时时间
+    timeout = TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"])
+    
+    # 2. 执行工具（带超时）
+    try:
+        result = await asyncio.wait_for(
+            self.available_tools[action](**params),
+            timeout=timeout
+        )
+        return self._format_result(result, action)
+    
+    # 3. 超时异常
+    except asyncio.TimeoutError:
+        return {
+            "status": "timeout",
+            "summary": f"Tool '{action}' execution timed out after {timeout} seconds",
+            "data": None,
+            "retry_count": 0
+        }
+    
+    # 4. 权限异常
+    except PermissionError as e:
+        return {
+            "status": "permission_denied",
+            "summary": f"Permission denied: {str(e)}",
+            "data": None,
+            "retry_count": 0
+        }
+    
+    # 5. 文件不存在异常
+    except FileNotFoundError as e:
+        return {
+            "status": "error",
+            "summary": f"File not found: {str(e)}",
+            "data": None,
+            "retry_count": 0
+        }
+    
+    # 6. 其他异常
+    except Exception as e:
+        return {
+            "status": "error",
+            "summary": f"Execution error: {str(e)}",
+            "data": None,
+            "retry_count": 0
+        }
+```
+
+---
+
+##### 4.3.1.5 execution_status 值完整定义
+
+| status | 说明 | 触发场景 | summary 示例 |
+|--------|------|---------|-------------|
+| `"success"` | 成功 | 工具正常执行完成 | - |
+| `"timeout"` | 执行超时 | asyncio.wait_for 超时 | `"Tool 'search_file_content' execution timed out after 60 seconds"` |
+| `"permission_denied"` | 权限不足 | PermissionError | `"Permission denied: [WinError 5] Access is denied"` |
+| `"error"` | 执行错误 | 其他异常 | `"Execution error: [具体错误信息]"` |
+| `"warning"` | 部分成功/警告 | 工具主动返回 | `"File truncated, showing first 1000 lines"` |
+
+---
+
+##### 4.3.1.6 修改文件清单
+
+| 文件 | 修改内容 |
+|------|---------|
+| `backend/app/services/agent/tool_executor.py` | 1. 新增 TOOL_TIMEOUTS 配置<br>2. 新增 asyncio.TimeoutError 捕获<br>3. 新增 PermissionError 捕获<br>4. 完善异常处理顺序 |
+| `backend/tests/test_tool_executor.py` | 新增测试用例：<br>1. test_execute_timeout<br>2. test_execute_permission_denied<br>3. test_timeout_message_format |
+
+---
 
 根据 execution_status 不同：
 - 如果 "success": execution_result 必须有值
-- 如果 "error": error_message 必须有值
+- 如果 "error"/"timeout"/"permission_denied": error_message 必须有值
+- 如果 "warning": summary 必须说明警告原因
 
 ### 4.4 observation（重构后）
 **基本字段**：
