@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.2  
+**文档版本**: v2.3  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-15 16:30:00  
+**更新时间**: 2026-04-15 17:10:00  
 **编写人**: 小沈  
 
 ## 版本历史
@@ -29,6 +29,7 @@
 | v2.0 | 2026-04-15 15:14:29 | 小沈 | 根据小健审查修正15.7.2：1)步骤1.3补充is_reasoning字段; 2)步骤4 context新增thought_content参数; 3)步骤5补充详细调用点; 4)15.7.1 context描述修正 |
 | v2.1 | 2026-04-15 15:25:00 | 小沈 | 修正context.thought_content获取方式：从conversation_history最后一条assistant消息获取，添加获取代码示例 |
 | v2.2 | 2026-04-15 16:30:00 | 小沈 | 新增15.7.3章节：前端修改建议，包含chat.ts类型修改、sse.ts字段映射、MessageItem.tsx字段引用修改、测试文件修改、完整字段对照表和验证清单 |
+| v2.3 | 2026-04-15 17:10:00 | 小沈 | 修正15.7.2步骤4.2/4.3：根据小健审查意见，context.thought_content改为直接使用thought_content变量而非从conversation_history遍历 |
 
 ---
 
@@ -3604,15 +3605,15 @@ def create_error_step(
 
 **步骤4.2：更新create_session_error_result中的create_error_step调用（第549-559行）**
 
-**获取最后一次LLM的thought_content方法**：从conversation_history中获取最后一条assistant消息的content
+**【重要修正2026-04-15】获取thought_content方法**：直接使用当前作用域的`thought_content`变量，而不是从conversation_history遍历
+
+- 原因：`conversation_history`保存的是原始LLM响应（JSON格式），而`thought_content`变量保存的是解析后的content（纯文本）
+- 优势：更准确（解析后的文本）、更简单（无需遍历）、更可靠
 
 ```python
-# 获取最后一次LLM的thought_content（从conversation_history最后一条assistant消息）
-last_thought = ""
-for msg in reversed(self.conversation_history):
-    if msg.get("role") == "assistant":
-        last_thought = msg.get("content", "")
-        break
+# 直接使用当前作用域的thought_content变量
+# 在各个错误场景中，thought_content变量保存的就是最后一次LLM解析后的content
+# 无需从conversation_history遍历获取
 ```
 
 当前代码：
@@ -3638,24 +3639,23 @@ error_step = create_error_step(
     model=model,
     provider=provider,
     recoverable=retryable,  # ← retryable替换为recoverable
-    context={"step": step_num, "model": model, "provider": provider, "thought_content": last_thought},  # ← 新增，保存最后一次LLM的thought_content
+    context={"step": step_num, "model": model, "provider": provider, "thought_content": thought_content},  # ← 新增，直接使用thought_content变量
     retryable=retryable,  # ← 保留（向后兼容）
     retry_after=retry_after,
-    thought_content=last_thought  # ← 从conversation_history获取最后一次LLM的thought_content
+    thought_content=thought_content  # ← 直接使用当前变量
 )
 ```
 
 **步骤4.3：更新create_error_from_exception中的create_error_step调用（第614-623行）**
 
-**获取最后一次LLM的thought_content方法**：从conversation_history中获取最后一条assistant消息的content
+**【重要修正2026-04-15】获取thought_content方法**：直接使用当前作用域的`thought_content`变量
+
+- 原因：同上，conversation_history保存原始LLM响应，thought_content变量保存解析后的content
+- 优势：更准确、更简单、更可靠
 
 ```python
-# 获取最后一次LLM的thought_content（从conversation_history最后一条assistant消息）
-last_thought = ""
-for msg in reversed(self.conversation_history):
-    if msg.get("role") == "assistant":
-        last_thought = msg.get("content", "")
-        break
+# 直接使用当前作用域的thought_content变量
+# 无需从conversation_history遍历获取
 ```
 
 当前代码：
@@ -3681,10 +3681,10 @@ error_step = create_error_step(
     model=model,
     provider=provider,
     recoverable=retryable,  # ← retryable替换为recoverable
-    context={"step": step_num, "model": model, "provider": provider, "thought_content": last_thought},  # ← 新增，保存最后一次LLM的thought_content
+    context={"step": step_num, "model": model, "provider": provider, "thought_content": thought_content},  # ← 新增，直接使用thought_content变量
     retryable=retryable,  # ← 保留（向后兼容）
     retry_after=retry_after,
-    thought_content=last_thought  # ← 从conversation_history获取最后一次LLM的thought_content
+    thought_content=thought_content  # ← 直接使用当前变量
 )
 ```
 
@@ -3826,7 +3826,7 @@ error_response = create_error_response(
 | error.error_type | error_type参数 | 错误类型 |
 | error.error_message | error_message参数 | 错误消息 |
 | error.recoverable | retryable参数 | 是否可恢复 |
-| error.context.thought_content | conversation_history | 从conversation_history最后一条assistant消息获取 |
+| error.context.thought_content | thought_content变量 | 直接使用当前变量thought_content（更准确、更简单、更可靠） |
 
 ---
 
