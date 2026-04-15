@@ -344,7 +344,7 @@ async def chat_stream_query(
         yield error_response
         
         # 保存到数据库
-        await add_step_and_save(error_step, f"错误: {error_step['message']}")
+        await add_step_and_save(error_step, f"错误: {error_step['error_message']}")
         
         return  # 直接返回，不再发送final步骤
     
