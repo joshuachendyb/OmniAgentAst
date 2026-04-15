@@ -639,12 +639,14 @@ def create_tool_error_result(
     retry_count: int = 0,
     max_retries: int = 3,
     raw_data: Any = None,
-    timestamp: Optional[int] = None
+    timestamp: Optional[int] = None,
+    status: str = "error"  # 新增参数，支持 warning/timeout/permission_denied 等状态
 ) -> Dict[str, Any]:
     """
     统一的工具级错误处理函数
     
     【新增 2026-04-10 小沈】
+    【2026-04-16 小沈修改】：新增 status 参数，支持 warning/timeout/permission_denied 等状态
     
     用途：文件操作失败、网络请求失败、命令执行错误
     
@@ -665,6 +667,7 @@ def create_tool_error_result(
         max_retries: 最大重试次数（后续扩展用）
         raw_data: 详细错误信息（可选）
         timestamp: 时间戳（可选，不传则自动生成）
+        status: 执行状态（默认 "error"，支持 warning/timeout/permission_denied 等）
     
     Returns:
         可直接yield的action_tool格式字典，包含：
@@ -673,7 +676,7 @@ def create_tool_error_result(
         - timestamp: 时间戳
         - tool_name: 工具名称
         - tool_params: 工具参数
-        - execution_status: 'error'
+        - execution_status: 执行状态（使用传入的status参数）
         - summary: 错误摘要
         - raw_data: 详细错误信息
         - action_retry_count: 重试次数
@@ -690,13 +693,14 @@ def create_tool_error_result(
     
     # 返回dict，可直接yield
     # 【2026-04-15 小沈修改15.7】：按15.7.1要求修改字段名
+    # 【2026-04-16 小沈修改】：使用传入的 status 参数而非固定 "error"
     return {
         'type': 'action_tool',
         'step': step_num,
         'timestamp': ts,
         'tool_name': tool_name,
         'tool_params': tool_params or {},
-        'execution_status': 'error',  # 标记为错误
+        'execution_status': status,  # 使用传入的 status 而非固定 "error"
         'summary': summary,
         'execution_result': raw_data or error_message,  # raw_data替换为execution_result
         'error_message': error_message,  # 新增字段
