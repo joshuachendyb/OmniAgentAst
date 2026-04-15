@@ -4262,11 +4262,306 @@ execution_result: {  // 【修改】raw_data → execution_result
 
 ---
 
+## 15.8 后端代码每一种type定义的全部字段（15.7.3版本）
 
+**分析时间**: 2026-04-15 20:16:40  
+**分析人**: 小沈  
+**数据来源**: 后端代码实际产生的数据结构
 
+### 15.8.1 start 类型
 
+**来源文件**: `backend/app/chat_stream/start_step.py` (第52-67行)
 
+**产生字段**:
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| type | string | 固定值 "start" |
+| step | int | 步骤序号 |
+| timestamp | int | 时间戳 |
+| display_name | string | 显示名称，格式如 "Anthropic (claude-sonnet-4-20250514)" |
+| provider | string | 模型提供商 |
+| model | string | 模型名称 |
+| task_id | string | 任务ID |
+| user_message | string | 用户消息（截取前40字符） |
+| security_check | dict | 安全检查结果，包含 is_safe, risk_level, risk, blocked |
 
+**代码示例**:
+```python
+start_data = {
+    'type': 'start',
+    'step': next_step(),
+    'timestamp': create_timestamp(),
+    'display_name': f"{ai_service.provider} ({ai_service.model})",
+    'provider': ai_service.provider,
+    'model': ai_service.model,
+    'task_id': task_id,
+    'user_message': user_message[:40] if user_message else "",
+    'security_check': {
+        'is_safe': security_check_result.get('is_safe', True),
+        'risk_level': security_check_result.get('risk_level'),
+        'risk': security_check_result.get('risk'),
+        'blocked': security_check_result.get('blocked', False)
+    }
+}
+```
+
+---
+
+### 15.8.2 thought 类型
+
+**来源文件**: `backend/app/services/agent/base_react.py` (第236-245行)
+
+**产生字段**:
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| type | string | 固定值 "thought" |
+| step | int | 步骤序号 |
+| timestamp | int | 时间戳 |
+| content | string | 思考内容（原始LLM响应） |
+| thought | string | 解析后的思考过程 |
+| reasoning | string | 推理过程 |
+| tool_name | string | 工具名称（如 read_file, list_directory） |
+| tool_params | dict | 工具参数字典 |
+
+**代码示例**:
+```python
+yield {
+    "type": "thought",
+    "step": step_count,
+    "timestamp": current_time,
+    "content": thought_content,
+    "thought": thought,
+    "reasoning": reasoning,
+    "tool_name": tool_name,
+    "tool_params": tool_params
+}
+```
+
+---
+
+### 15.8.3 action_tool 类型
+
+**来源文件**: 
+- 成功: `backend/app/services/agent/base_react.py` (第271-283行)
+- 失败: `backend/app/chat_stream/error_handler.py` (第693-705行)
+
+**产生字段**:
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| type | string | 固定值 "action_tool" |
+| step | int | 步骤序号 |
+| timestamp | int | 时间戳 |
+| tool_name | string | 工具名称 |
+| tool_params | dict | 工具参数字典 |
+| execution_status | string | 执行状态，"success" 或 "error" |
+| summary | string | 执行结果摘要 |
+| execution_result | dict/string | 执行结果数据（15.7新增，原raw_data） |
+| error_message | string | 错误信息（15.7新增，成功时为空） |
+| execution_time_ms | int | 执行耗时毫秒（15.7新增） |
+| action_retry_count | int | 重试次数 |
+
+**代码示例（成功）**:
+```python
+yield {
+    "type": "action_tool",
+    "step": step_count,
+    "timestamp": current_time,
+    "tool_name": tool_name,
+    "tool_params": tool_params,
+    "execution_status": "success",
+    "summary": execution_result.get("summary", ""),
+    "execution_result": execution_result.get("data"),
+    "error_message": "",
+    "execution_time_ms": execution_result.get("execution_time_ms", 0),
+    "action_retry_count": 0
+}
+```
+
+**代码示例（失败/错误）**:
+```python
+return {
+    'type': 'action_tool',
+    'step': step_num,
+    'timestamp': ts,
+    'tool_name': tool_name,
+    'tool_params': tool_params or {},
+    'execution_status': 'error',
+    'summary': summary,
+    'execution_result': raw_data or error_message,
+    'error_message': error_message,
+    'execution_time_ms': 0,
+    'action_retry_count': retry_count
+}
+```
+
+---
+
+### 15.8.4 observation 类型
+
+**来源文件**: `backend/app/services/agent/base_react.py` (第306-314行)
+
+**产生字段**:
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| type | string | 固定值 "observation" |
+| step | int | 步骤序号 |
+| timestamp | int | 时间戳 |
+| tool_name | string | 工具名称 |
+| tool_params | dict | 工具参数字典（15.7新增） |
+| observation | string | 观察结果文本（15.7新增，原content） |
+| return_direct | bool | 是否直接返回（15.7新增） |
+
+**代码示例**:
+```python
+yield {
+    "type": "observation",
+    "step": step_count,
+    "timestamp": create_timestamp(),
+    "tool_name": tool_name,
+    "tool_params": tool_params,
+    "observation": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}",
+    "return_direct": execution_result.get("return_direct", False),
+}
+```
+
+---
+
+### 15.8.5 final 类型
+
+**来源文件**: `backend/app/services/agent/base_react.py` (第322-331行)
+
+**产生字段**:
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| type | string | 固定值 "final" |
+| step | int | 步骤序号 |
+| timestamp | int | 时间戳 |
+| response | string | 最终响应（15.7新增，原content） |
+| is_finished | bool | 是否完成（15.7新增） |
+| thought | string | 思考内容（15.7新增） |
+| is_streaming | bool | 是否流式（15.7新增） |
+| is_reasoning | bool | 是否推理中（15.7新增） |
+
+**代码示例**:
+```python
+yield {
+    "type": "final",
+    "step": step_count,
+    "timestamp": create_timestamp(),
+    "response": tool_params.get("result", thought_content),
+    "is_finished": True,
+    "thought": thought_content,
+    "is_streaming": False,
+    "is_reasoning": False,
+}
+```
+
+---
+
+### 15.8.6 error 类型
+
+**来源文件**: `backend/app/chat_stream/error_handler.py` (第53-66行)
+
+**产生字段**:
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| type | string | 固定值 "error" |
+| step | int | 步骤序号 |
+| error_message | string | 错误信息（15.7新增，原message） |
+| error_type | string | 错误类型 |
+| timestamp | int | 时间戳 |
+| model | string | 模型名称 |
+| provider | string | 提供商 |
+| reasoning | string | 推理内容（空） |
+| is_reasoning | bool | 是否推理中（固定False） |
+| recoverable | bool | 是否可恢复（15.7新增） |
+| context | dict | 错误上下文（15.7新增，包含step/model/provider/thought_content） |
+| retry_after | int | 重试等待秒数 |
+
+**代码示例**:
+```python
+return {
+    'type': 'error',
+    'step': step_num,
+    'error_message': error_message,
+    'error_type': error_type,
+    'timestamp': create_timestamp(),
+    'model': model,
+    'provider': provider,
+    'reasoning': '',
+    'is_reasoning': False,
+    'recoverable': recoverable,
+    'context': context,
+    'retry_after': retry_after
+}
+```
+
+---
+
+### 15.8.7 chunk 类型
+
+**来源文件**: `backend/app/chat_stream/chat_stream_query.py` (第188-194行)
+
+**产生字段**:
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| type | string | 固定值 "chunk" |
+| step | int | 步骤序号 |
+| timestamp | int | 时间戳 |
+| content | string | 内容片段 |
+| is_reasoning | bool | 是否推理中 |
+
+**代码示例**:
+```python
+chunk_data = {
+    'type': 'chunk', 
+    'step': next_step(),
+    'timestamp': create_timestamp(),
+    'content': chunk.content,
+    'is_reasoning': current_is_reasoning
+}
+```
+
+---
+
+### 15.8.8 字段对照表（15.7版本）
+
+| type | 旧字段（15.7前） | 新字段（15.7） | 备注 |
+|------|-----------------|----------------|------|
+| start | - | - | 无变化 |
+| thought | - | - | 无变化 |
+| action_tool | raw_data | execution_result | 字段改名 |
+| action_tool | - | error_message | 新增字段 |
+| action_tool | - | execution_time_ms | 新增字段 |
+| observation | content | observation | 字段改名 |
+| observation | - | tool_params | 新增字段 |
+| observation | - | return_direct | 新增字段 |
+| final | content | response | 字段改名 |
+| final | - | is_finished | 新增字段 |
+| final | - | thought | 新增字段 |
+| final | - | is_streaming | 新增字段 |
+| final | - | is_reasoning | 新增字段 |
+| error | code | (已删除) | 字段删除 |
+| error | message | error_message | 字段改名 |
+| error | retryable | recoverable | 字段改名 |
+| error | - | context | 新增字段 |
+| chunk | - | - | 无变化 |
+
+---
+
+### 15.8.9 前端对应类型（chat.ts/sse.ts）
+
+| 后端type | 前端ExecutionStep.type | 前端接口 |
+|----------|----------------------|----------|
+| start | start | StartMessage |
+| thought | thought | ThoughtMessage |
+| action_tool | action_tool | ActionToolMessage |
+| observation | observation | ObservationMessage |
+| final | final | FinalMessage |
+| error | error | ErrorMessage |
+| chunk | chunk | ChunkMessage |
+
+---
 
 ## 附件16 维度三：重构Agent主循环2.0的详细设计及详细实施步骤
 
