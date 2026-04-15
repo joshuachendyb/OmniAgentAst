@@ -191,10 +191,23 @@ class BaseAgent(ABC):
                     last_error = "empty_response"
                     break  # 空响应，退出
                 
-                # ===== 场景4：解析失败（重试3次机制）=====
+                # ===== 场景4：解析响应并获取结果 =====  # 修复 2026-04-15 小沈
                 parsed = self.parser.parse_response(response)
                 
-                # 【修复】检查解析是否失败：parse_response现在返回错误结果而不是抛异常
+                # ===== 先获取 parsed 结果 =====
+                thought_content = parsed.get("content", "")
+                tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
+                tool_params = parsed.get("tool_params", parsed.get("params", {}))
+                
+                # ===== 场景5：正常完成（finish）=====
+                # 【修复 2026-04-15 小沈】先判断 finish，再判断解析错误
+                # 避免将合法的 finish 响应误判为解析错误
+                if tool_name == "finish":
+                    last_response = response  # 保存用于后续使用
+                    break  # 直接退出，不yield thought
+                
+                # ===== 检查解析是否失败 =====  # 修复 2026-04-15 小沈
+                # parse_response现在返回错误结果而不是抛异常
                 # 通过检查content是否包含错误标识来判断
                 is_parse_error = "⚠️" in parsed.get("content", "")
                 
@@ -214,17 +227,6 @@ class BaseAgent(ABC):
                         last_error = "parse_error"
                         break  # 重试次数用尽，退出循环
                     continue  # 继续循环，让LLM重新尝试
-                
-                # ===== 获取 parsed 结果 =====
-                thought_content = parsed.get("content", "")
-                tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
-                tool_params = parsed.get("tool_params", parsed.get("params", {}))
-                
-                # ===== 场景5：正常完成（finish）=====
-                # 发现 finish 时，不 yield thought，只 break
-                if tool_name == "finish":
-                    last_response = response  # 保存用于后续使用
-                    break  # 直接退出，不yield thought
                 
                 # ===== 正常流转：yield thought (非finish时) =====
                 current_time = create_timestamp()

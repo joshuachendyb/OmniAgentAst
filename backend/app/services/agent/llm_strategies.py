@@ -46,6 +46,15 @@ class LLMStrategy(ABC):
             LLM 响应内容（字符串）
         """
         pass
+    
+    def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None) -> str:
+        """构建返回结果（基类方法，供子类使用）"""
+        return json.dumps({
+            "content": content,
+            "tool_name": tool_name,
+            "tool_params": tool_params,
+            "reasoning": reasoning
+        }, ensure_ascii=False)
 
 
 class TextStrategy(LLMStrategy):
@@ -153,15 +162,6 @@ class TextStrategy(LLMStrategy):
         # ===== 无法提取工具调用，返回 finish =====
         logger.info(f"[TextStrategy] No action extracted, returning finish with full content")
         return self._make_result(content=content, tool_name="finish", tool_params={})
-    
-    def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None) -> str:
-        """构建返回结果"""
-        return json.dumps({
-            "content": content,
-            "tool_name": tool_name,
-            "tool_params": tool_params,
-            "reasoning": reasoning
-        }, ensure_ascii=False)
     
     # ===== 方案A：分级错误信息 =====
     ERROR_HINTS = {
