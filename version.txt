@@ -1,3 +1,60 @@
+v0.9.5.5
+
+更新时间：2026-04-15 17:35:00
+
+更新内容：
+
+## 1. 15.7章节系统type字段名称补齐处理 - 小沈-2026-04-15
+
+### 1.1 15.7.1 差异处理说明清单
+
+根据主文档4.1-4.7节设计要求，整理差异处理清单：
+- action_tool类型：raw_data→execution_result，新增error_message、execution_time_ms
+- observation类型：content→observation，新增return_direct、tool_params
+- final类型：content→response，新增is_finished、thought、is_streaming
+- error类型：删除code/message字段，保留error_message/error_type（已有），新增recoverable、context
+
+### 1.2 15.7.2 实施步骤
+
+编写详细后端实施步骤：
+- 步骤1：修改base_react.py中的yield字段
+- 步骤2：修改create_tool_error_result函数
+- 步骤3：修改sse_formatter.py函数参数
+- 步骤4：修改error_handler.py错误处理函数
+- 步骤5：修改create_error_response函数参数
+
+### 1.3 审查修正
+
+| 轮次 | 审查人 | 修正内容 |
+|------|--------|----------|
+| 第一轮 | 小健 | 审查15.7.2正确性：全部通过 |
+| 第二轮 | 小健 | 发现context.thought_content获取方式问题：应直接使用thought_content变量而非从conversation_history遍历 |
+| 第三轮 | 小强 | 发现error类型error_message和error_type字段已存在，只需删除code和message字段 |
+
+### 1.4 15.7.3 前端修改建议
+
+新增前端修改建议章节：
+- 字段对照表
+- chat.ts类型定义修改
+- sse.ts字段映射逻辑修改
+- MessageItem.tsx字段引用修改
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| c3319830 | docs: 新增15.7.2章节-系统type字段补齐实施步骤-小沈-2026-04-15 |
+| 4692de25 | docs: 根据小健审查修正15.7.2实施步骤-小沈-2026-04-15 |
+| faccd8aa | docs: 修正context.thought_content获取方式-小沈-2026-04-15 |
+| b711aa0f | docs: 新增15.7.3章节-前端修改建议-小沈-2026-04-15 |
+| fbee013c | docs: 修正15.7.2步骤4.2/4.3-thought_content获取方式-小沈-2026-04-15 |
+| 20b01679 | docs: 修正error类型字段处理-删除code和message-小沈-2026-04-15 |
+| c77bcf2b | docs: 同步修正15.7.3前端部分-删除code字段-小沈-2026-04-15 |
+
+参与开发：小沈（编写文档）、小健（审查）、小强（审查）
+
+---
+
 v0.9.5.4
 
 更新时间：2026-04-14 14:35:00
