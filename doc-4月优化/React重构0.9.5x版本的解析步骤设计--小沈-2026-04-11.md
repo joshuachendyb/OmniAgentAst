@@ -905,43 +905,38 @@ error: {
 step=next_step()
 
 ### 4.7 chunk（重构后）
-**基本字段**：
+**实际字段定义**（来自 chat_stream_query.py 第188-194行）：
 ```
 chunk: {
-    content: string,        // 累积的完整内容（delta累加）
-    delta: string,          // 增量内容（相对于前一个chunk）
-    is_final: boolean,      // 是否是最后一个chunk
-    timestamp: number       // 毫秒级时间戳
+    type: 'chunk',           // 类型标识
+    step: number,           // 步骤序号
+    timestamp: number,       // 毫秒级时间戳
+    content: string,        // 当前chunk的文本内容
+    is_reasoning: boolean    // 是否是推理过程
 }
 ```
 
 **说明**：
 - 用于LLM流式输出时的中间内容
 - 前端用于实时显示AI回复
+- is_reasoning=true 表示正在输出推理内容（<think>标签）
+- is_reasoning=false 表示正在输出正式回答
 
 **生成时机**：LLM流式返回**时**（LLM响应）
 
 **字段说明**：
-| 字段 | 说明 | 必需性 |
-|------|------|--------|
-| `content` | 累积的完整文本内容 | ✅ 必须 |
-| `delta` | 当前chunk相对于前一个的增量 | ✅ 必须 |
-| `is_final` | 是否是最后一个chunk（流式结束标志） | ✅ 必须 |
-| `timestamp` | 毫秒级时间戳 | ✅ 必须 |
+| 字段 | 说明 | 状态 |
+|------|------|------|
+| `type` | 类型标识 | ✅ 已实现 |
+| `step` | 步骤序号 | ✅ 已实现 |
+| `timestamp` | 毫秒级时间戳 | ✅ 已实现 |
+| `content` | 当前chunk的文本内容 | ✅ 已实现 |
+| `is_reasoning` | 是否是推理过程 | ✅ 已实现 |
 
-**可选字段**：
-- `index`: chunk序号
-- `role`: 角色（assistant）
-- `model`: 使用的模型
-- `finish_reason`: 完成原因（stop/length/tool_calls等）
-
-**字段关系**：
-```
-流式输出的逻辑：
-1. 第一个chunk：content = delta
-2. 后续chunk：content = 前一个content + delta
-3. 最后一个chunk：is_final = true
-```
+**⚠️ 注意**：
+- **文档早期版本中的 `delta`、`is_final`、`index`、`role`、`model`、`finish_reason` 字段在实际代码中不存在**
+- content 是当前chunk的内容，不是累积内容（累积在 full_content 变量中）
+- 没有 is_final 标志（用 chunk.is_done 判断流式结束）
 ---
 
 ## 4.8 当前代码字段定义（2026-04-11 修正版）
@@ -1074,19 +1069,48 @@ yield {
 
 ### 4.8.6 error 类型
 
-**后端实现** (base_react.py):
+**后端实现** (error_handler.py:99-119 create_error_response函数 - 15.7版本):
 ```python
-yield {
-    "type": "error",
-    "timestamp": create_timestamp(),
-    "code": "MAX_STEPS_EXCEEDED",
-    "message": f"已达到最大迭代次数 {max_steps}"
+response = {
+    'type': 'error',
+    'error_type': error_type,
+    'error_message': error_message,
 }
+if step is not None:
+    response['step'] = step
+if model is not None:
+    response['model'] = model
+if provider is not None:
+    response['provider'] = provider
+if details:
+    response['details'] = details
+if stack:
+    response['stack'] = stack
+if recoverable is not None:
+    response['recoverable'] = recoverable
+if retry_after is not None:
+    response['retry_after'] = retry_after
+response['timestamp'] = create_timestamp()
 ```
+
+**字段说明**：
+| 字段 | 说明 | 状态 |
+|------|------|------|
+| `type` | 类型标识 | ✅ 已实现 |
+| `error_type` | 错误类型 | ✅ 已实现（15.7新字段） |
+| `error_message` | 错误信息 | ✅ 已实现（15.7新字段，替换原message） |
+| `step` | 步骤序号 | ✅ 已实现 |
+| `model` | 模型名称 | ✅ 已实现 |
+| `provider` | 提供商 | ✅ 已实现 |
+| `details` | 详细错误信息 | ✅ 已实现（预留字段） |
+| `stack` | 堆栈信息 | ✅ 已实现（预留字段） |
+| `recoverable` | 是否可恢复 | ✅ 已实现 |
+| `retry_after` | 重试等待秒数 | ✅ 已实现 |
+| `timestamp` | 毫秒级时间戳 | ✅ 已实现 |
 
 ---
 
-### 4.8.7 字段说明（2026-04-11 修正版）
+### 4.8.7 字段说明（15.7版本）
 
 | type | 字段 | 说明 |
 |------|------|------|
@@ -1095,7 +1119,8 @@ yield {
 | action_tool | step, timestamp, content, tool_name, tool_params, execution_status, summary, raw_data, action_retry_count | 工具执行后生成 |
 | observation | step, timestamp, tool_name, content | 工具执行结果（包含原始数据） |
 | final | timestamp, content | action_tool=="finish"时生成 |
-| error | timestamp, code, message | 发生错误时生成 |
+| error | step, error_type, error_message, timestamp, model, provider, recoverable, retry_after, details, stack | 发生错误时生成（15.7版本） |
+| chunk | step, timestamp, content, is_reasoning | LLM流式返回时生成 |
 
 **说明**: step字段由sse_wrapper层自动添加，不需要在agent代码中手动设置
 
