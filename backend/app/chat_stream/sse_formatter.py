@@ -72,7 +72,9 @@ def format_action_tool_sse(
     tool_params: Optional[Dict] = None,
     execution_status: str = 'success',
     summary: str = '',
-    raw_data: Any = None,
+    execution_result: Any = None,  # raw_data替换为execution_result
+    error_message: str = '',  # 新增参数
+    execution_time_ms: int = 0,  # 新增参数
     action_retry_count: int = 0
 ) -> str:
     """
@@ -84,7 +86,9 @@ def format_action_tool_sse(
         tool_params: 工具参数字典
         execution_status: 执行状态 (success/failed/error)
         summary: 执行摘要
-        raw_data: 原始数据
+        execution_result: 执行结果数据（替换原raw_data）
+        error_message: 错误消息（新增）
+        execution_time_ms: 执行耗时（新增）
         action_retry_count: 重试次数
 
     Returns:
@@ -95,15 +99,19 @@ def format_action_tool_sse(
         'tool_params': tool_params or {},
         'execution_status': execution_status,
         'summary': summary,
-        'raw_data': raw_data,
+        'execution_result': execution_result,  # 替换raw_data
+        'error_message': error_message,  # 新增字段
+        'execution_time_ms': execution_time_ms,  # 新增字段
         'action_retry_count': action_retry_count
     })
 
 
 def format_observation_sse(
     step: int,
-    content: str = '',
+    observation: str = '',  # content替换为observation
     tool_name: str = '',
+    tool_params: Optional[Dict] = None,  # 新增参数
+    return_direct: bool = False,  # 新增参数
     timestamp: str = ''
 ) -> str:
     """
@@ -111,8 +119,11 @@ def format_observation_sse(
 
     Args:
         step: 步骤编号
-        content: 内容（工具执行结果简述）
+        observation: 观察结果内容（替换原content）
         tool_name: 工具名称
+        tool_params: 工具参数（新增）
+        return_direct: 是否直接返回（新增）
+        timestamp: 时间戳
 
     Returns:
         SSE 格式字符串
@@ -122,7 +133,9 @@ def format_observation_sse(
         'step': step,
         'timestamp': timestamp,
         'tool_name': tool_name,
-        'content': content
+        'tool_params': tool_params or {},  # 新增字段
+        'observation': observation,  # content替换为observation
+        'return_direct': return_direct  # 新增字段
     })
 
 

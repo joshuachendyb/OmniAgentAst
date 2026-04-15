@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.5  
+**文档版本**: v2.6  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-15 17:30:00  
+**更新时间**: 2026-04-15 17:55:00  
 **编写人**: 小沈  
 
 ## 版本历史
@@ -32,6 +32,7 @@
 | v2.3 | 2026-04-15 17:10:00 | 小沈 | 修正15.7.2步骤4.2/4.3：根据小健审查意见，context.thought_content改为直接使用thought_content变量而非从conversation_history遍历 |
 | v2.4 | 2026-04-15 17:20:00 | 小沈 | 修正15.7.1和15.7.2：根据小强审查意见，error类型error_message和error_type字段已存在，只需删除多余的code和message字段 |
 | v2.5 | 2026-04-15 17:30:00 | 小沈 | 同步修正15.7.3前端部分：根据后端删除code字段，修正SSE解析逻辑和字段对照表 |
+| v2.6 | 2026-04-15 17:55:00 | 小沈 | 根据北京老陈要求：删除ErrorMessage中的error_code字段，彻底移除code兼容性字段 |
 
 ---
 
@@ -3951,16 +3952,16 @@ export interface FinalMessage {
 /**
  * error类型 - 错误
  * 发送时机：发生错误时
- * 【2026-04-15 小沈修改】字段名更新：
+ * 【2026-04-15 小沈修改】字段名更新（2026-04-15 小强核实修正）：
  *   - code → error_type（已在chat.ts中定义为此名，无需修改）
- *   - message → error_message（已在chat.ts中定义为此名，无需修改）
+ *   - message → error_message 【注意：chat.ts当前是message不是error_message，需修改】
  *   - 新增 recoverable、context
+ * 【2026-04-15 北京老陈要求】：去掉code和error_code兼容性字段
  */
 export interface ErrorMessage {
   type: 'error';
   error_type: string;  // 【已是此名】错误类型
-  error_message: string;  // 【已是此名】错误消息
-  error_code: string;  // 【修改名称】原code改为error_code（可选）
+  error_message: string;  // 【修改】原为message，需改为error_message
   timestamp: string;
   model?: string;
   provider?: string;
@@ -4019,8 +4020,6 @@ export interface ExecutionStep {
   
   // === error 类型字段 ===
   error_type?: string;  // 【已有】
-  code?: string;  // 【保留兼容性】
-  error_code?: string;  // 【新增别名】
   error_message?: string;  // 【已有】
   details?: string;
   stack?: string;
@@ -4119,9 +4118,6 @@ case "error": {
   step.content = errorMsg;
   step.error_message = errorMsg;
   
-  // 【修改】code字段已删除，不再读取rawData.code
-  // step.code = rawData.code;  // 已删除
-  
   if (rawData.error_type) {
     step.error_type = rawData.error_type;
   }
@@ -4166,7 +4162,7 @@ const data = (step as any).execution_result?.data || (step as any).execution_res
 raw_data: step.execution_result,  // 【修改】raw_data → execution_result
 ```
 
-**3.2 添加向后兼容处理**
+**3.2 添加向后兼容处理并修改导出字段**
 
 在 MessageItem.tsx 开头添加兼容处理：
 
@@ -4175,6 +4171,31 @@ raw_data: step.execution_result,  // 【修改】raw_data → execution_result
 const getExecutionResult = (step: ExecutionStep) => {
   return step.execution_result || (step as any).raw_data;
 };
+
+// 【小沈添加 2026-04-15】导出时统一字段名
+const getExportErrorMessage = (step: ExecutionStep) => {
+  return (step as any).error_message || (step as any).message || "";
+};
+```
+
+然后进行以下修改：
+
+**修改1：第787行 - action_tool 导出字段**
+```typescript
+// 修改前
+return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, action_retry_count: step.action_retry_count };
+
+// 修改后
+return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, execution_result: getExecutionResult(step), error_message: step.error_message || "", execution_time_ms: step.execution_time_ms || 0, action_retry_count: step.action_retry_count };
+```
+
+**修改2：第805行 - error 导出字段**
+```typescript
+// 修改前
+return { ...baseExport, step: step.step, code: (step as any).code, error_type: (step as any).error_type, details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider };
+
+// 修改后（删除code，添加error_message/recoverable/context）
+return { ...baseExport, step: step.step, error_type: (step as any).error_type, error_message: getExportErrorMessage(step), details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, recoverable: (step as any).recoverable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider, context: (step as any).context };
 ```
 
 然后将所有 `step.raw_data` 替换为 `getExecutionResult(step)`。
@@ -4201,27 +4222,31 @@ execution_result: {  // 【修改】raw_data → execution_result
 
 | 后端字段 | 前端字段（修改后） | 前端字段（修改前） | 说明 |
 |----------|-------------------|-------------------|------|
-| action_tool.execution_result | execution_result | raw_data | 执行结果数据 |
-| action_tool.error_message | error_message | - | 错误消息 |
-| action_tool.execution_time_ms | execution_time_ms | - | 执行耗时 |
-| observation.observation | observation | content | 观察内容 |
-| observation.return_direct | return_direct | - | 是否直接返回 |
-| observation.tool_params | tool_params | - | 工具参数 |
-| final.response | response | content | 最终回复 |
-| final.is_finished | is_finished | - | 是否完成 |
-| final.thought | thought | - | 最终思考 |
-| final.is_streaming | is_streaming | - | 是否流式 |
+| action_tool.execution_result | execution_result | raw_data | 执行结果数据（导出也统一） |
+| action_tool.error_message | error_message | - | 错误消息（导出也统一） |
+| action_tool.execution_time_ms | execution_time_ms | - | 执行耗时（导出也统一） |
+| observation.observation | observation | content | 观察内容（导出也统一） |
+| observation.return_direct | return_direct | - | 是否直接返回（导出也统一） |
+| observation.tool_params | tool_params | - | 工具参数（导出也统一） |
+| final.response | response | content | 最终回复（导出也统一） |
+| final.is_finished | is_finished | - | 是否完成（导出也统一） |
+| final.thought | thought | - | 最终思考（导出也统一） |
+| final.is_streaming | is_streaming | - | 是否流式（导出也统一） |
 | error.error_type | error_type | error_type | 已是正确名称 |
-| error.error_message | error_message | message | 已是正确名称 |
-| error.recoverable | recoverable | - | 是否可恢复 |
-| error.context | context | - | 错误上下文 |
-| error.code | （已删除） | code | 后端已删除此字段 |
+| error.error_message | error_message | message | 已是正确名称（导出也统一） |
+| error.recoverable | recoverable | - | 是否可恢复（导出也统一） |
+| error.context | context | - | 错误上下文（导出也统一） |
+| error.code | （已删除） | code | 后端已删除此字段（导出也删除） |
 
 **【重要说明2026-04-15】后端error类型变更**：
 - 已删除 `code` 字段
 - 已删除 `message` 字段
 - 保留 `error_message` 和 `error_type` 字段（已有）
 - 新增 `recoverable` 和 `context` 字段
+
+**【重要说明2026-04-15 导出字段统一】**：
+- action_tool 导出：`raw_data` → `execution_result`，新增 `error_message`、`execution_time_ms`
+- error 导出：删除 `code`，新增 `error_message`、`recoverable`、`context`
 
 #### 15.7.3.4 验证清单
 

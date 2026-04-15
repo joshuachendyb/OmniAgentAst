@@ -265,7 +265,7 @@ class BaseAgent(ABC):
                     )
                     yield action_tool_result
                 else:
-                    # 工具执行成功 - 保持原有格式
+                    # 工具执行成功 - 按15.7.1要求修改字段
                     yield {
                         "type": "action_tool",
                         "step": step_count,
@@ -274,7 +274,9 @@ class BaseAgent(ABC):
                         "tool_params": tool_params,
                         "execution_status": "success",
                         "summary": execution_result.get("summary", ""),
-                        "raw_data": execution_result.get("data"),
+                        "execution_result": execution_result.get("data"),  # raw_data替换为execution_result
+                        "error_message": "",  # 新增字段（成功时为空）
+                        "execution_time_ms": execution_result.get("execution_time_ms", 0),  # 新增字段
                         "action_retry_count": 0
                     }
                 
@@ -298,13 +300,15 @@ class BaseAgent(ABC):
                     tool_params=tool_params
                 )
                 
-                # yield observation
+                # yield observation - 按15.7.1要求修改字段
                 yield {
                     "type": "observation",
                     "step": step_count,
                     "timestamp": create_timestamp(),
                     "tool_name": tool_name,
-                    "content": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}"
+                    "tool_params": tool_params,  # 新增字段
+                    "observation": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}",  # content替换为observation
+                    "return_direct": execution_result.get("return_direct", False),  # 新增字段（从execution_result获取）
                 }
 
                 self._trim_history()
@@ -315,8 +319,13 @@ class BaseAgent(ABC):
             if tool_name == "finish":
                 yield {
                     "type": "final",
+                    "step": step_count,  # 新增字段
                     "timestamp": create_timestamp(),
-                    "content": tool_params.get("result", thought_content)
+                    "response": tool_params.get("result", thought_content),  # content替换为response
+                    "is_finished": True,  # 新增字段
+                    "thought": thought_content,  # 新增字段
+                    "is_streaming": False,  # 新增字段
+                    "is_reasoning": False,  # 新增字段
                 }
                 self._on_after_loop()
                 return

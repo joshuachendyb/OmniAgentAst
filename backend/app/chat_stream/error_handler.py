@@ -14,46 +14,64 @@ from app.chat_stream.chat_helpers import create_timestamp
 
 
 def create_error_step(
-    code: str,
-    message: str,
-    error_type: str,
+    error_type: str,  # 修改：error_type作为第一个参数
+    error_message: str,  # 修改：message改为error_message
     step_num: int,
     model: Optional[str] = None,
     provider: Optional[str] = None,
-    retryable: bool = False,
-    retry_after: Optional[int] = None
+    recoverable: bool = False,  # 修改：retryable改为recoverable
+    context: Optional[Dict[str, Any]] = None,  # 新增参数
+    retryable: bool = False,  # 保留（向后兼容）
+    retry_after: Optional[int] = None,
+    code: str = "",  # 保留（向后兼容）
+    message: str = ""  # 保留（向后兼容）
 ) -> Dict[str, Any]:
     """
     创建保存到数据库的 error_step【小沈修复2026-03-28】
     - 添加更多字段，和SSE返回保持一致
+    【2026-04-15 小沈修改15.7】：按15.7.1要求修改字段
 
     Args:
-        code: 错误码（如 TIMEOUT, SECURITY_BLOCKED）
-        message: 错误信息
         error_type: 错误类型（如 timeout, security, server）
+        error_message: 错误信息（替换原message）
         step_num: 步骤序号
         model: 模型名称（可选）
         provider: 提供商（可选）
-        retryable: 是否可重试
+        recoverable: 是否可恢复（替换原retryable，新增）
+        context: 错误上下文（新增，包含step/model/provider/thought_content）
+        retryable: 是否可重试（保留，向后兼容）
         retry_after: 重试等待秒数
+        code: 错误码（保留，向后兼容）
+        message: 错误信息（保留，向后兼容）
 
     Returns:
         error_step 字典
     """
+    # 构建context字段
+    if context is None:
+        context = {
+            "step": step_num,
+            "model": model,
+            "provider": provider,
+            "thought_content": ""
+        }
+    
     return {
         'type': 'error',
         'step': step_num,
-        'code': code,
-        'message': message,
-        'content': message,  # 和SSE一致
-        'error_message': message,  # 和SSE一致
-        'error_type': error_type,
+        'code': code,  # 保留（向后兼容）
+        'message': message,  # 保留（向后兼容）
+        'content': error_message,  # 保持和SSE一致
+        'error_message': error_message,  # 修改：message改为error_message
+        'error_type': error_type,  # 已有，保留
         'timestamp': create_timestamp(),
         'model': model,
         'provider': provider,
         'reasoning': '',  # 和SSE一致
         'is_reasoning': False,  # 和SSE一致
-        'retryable': retryable,
+        'recoverable': recoverable,  # 新增字段（替换retryable）
+        'context': context,  # 新增字段
+        'retryable': retryable,  # 保留（向后兼容）
         'retry_after': retry_after
     }
 
@@ -548,14 +566,17 @@ def create_session_error_result(
     
     # 6. 创建 error_step（保存到数据库）
     error_step = create_error_step(
-        code='AI_CALL_ERROR',
-        message=error_message,
-        error_type=error_type,
+        error_type=error_type,  # 替换code
+        error_message=error_message,  # 替换message
         step_num=step_num,
         model=model,
         provider=provider,
-        retryable=retryable,
-        retry_after=retry_after
+        recoverable=retryable,  # retryable替换为recoverable
+        context={"step": step_num, "model": model, "provider": provider, "thought_content": ""},  # 新增context
+        retryable=retryable,  # 保留（向后兼容）
+        retry_after=retry_after,
+        code='AI_CALL_ERROR',  # 保留（向后兼容）
+        message=error_message  # 保留（向后兼容）
     )
     
     return error_response, error_step
@@ -612,14 +633,17 @@ def create_error_from_exception(
     
     # 3. 创建 error_step（保存到数据库）
     error_step = create_error_step(
-        code=error_code,
-        message=error_message,
-        error_type=error_type,
+        error_type=error_type,  # 替换code
+        error_message=error_message,  # 替换message
         step_num=step_num,
         model=model,
         provider=provider,
-        retryable=retryable,
-        retry_after=retry_after
+        recoverable=retryable,  # retryable替换为recoverable
+        context={"step": step_num, "model": model, "provider": provider, "thought_content": ""},  # 新增context
+        retryable=retryable,  # 保留（向后兼容）
+        retry_after=retry_after,
+        code=error_code,  # 保留（向后兼容）
+        message=error_message  # 保留（向后兼容）
     )
     
     return error_response, error_step
@@ -683,6 +707,7 @@ def create_tool_error_result(
     ts = timestamp if timestamp is not None else create_timestamp()
     
     # 返回dict，可直接yield
+    # 【2026-04-15 小沈修改15.7】：按15.7.1要求修改字段名
     return {
         'type': 'action_tool',
         'step': step_num,
@@ -691,6 +716,8 @@ def create_tool_error_result(
         'tool_params': tool_params or {},
         'execution_status': 'error',  # 标记为错误
         'summary': summary,
-        'raw_data': raw_data or error_message,
+        'execution_result': raw_data or error_message,  # raw_data替换为execution_result
+        'error_message': error_message,  # 新增字段
+        'execution_time_ms': 0,  # 新增字段（错误时为0）
         'action_retry_count': retry_count
     }
