@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.3  
+**文档版本**: v2.4  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-15 17:10:00  
+**更新时间**: 2026-04-15 17:20:00  
 **编写人**: 小沈  
 
 ## 版本历史
@@ -30,6 +30,7 @@
 | v2.1 | 2026-04-15 15:25:00 | 小沈 | 修正context.thought_content获取方式：从conversation_history最后一条assistant消息获取，添加获取代码示例 |
 | v2.2 | 2026-04-15 16:30:00 | 小沈 | 新增15.7.3章节：前端修改建议，包含chat.ts类型修改、sse.ts字段映射、MessageItem.tsx字段引用修改、测试文件修改、完整字段对照表和验证清单 |
 | v2.3 | 2026-04-15 17:10:00 | 小沈 | 修正15.7.2步骤4.2/4.3：根据小健审查意见，context.thought_content改为直接使用thought_content变量而非从conversation_history遍历 |
+| v2.4 | 2026-04-15 17:20:00 | 小沈 | 修正15.7.1和15.7.2：根据小强审查意见，error类型error_message和error_type字段已存在，只需删除多余的code和message字段 |
 
 ---
 
@@ -3275,10 +3276,14 @@ conversation_history存储原始文本response（保持不变）
 | final | is_finished | - | 需补充（=true） |
 | final | thought | - | 需补充（保存最后一次LLM的thought_content） |
 | final | is_streaming | - | 需补充（=false） |
-| error | error_type | code | error_type（替换code） |
-| error | error_message | message | message 字段名改为error_message |
-| error | recoverable | - | 需补充 |
+| error | error_type | code | code字段删除，error_type已有 |
+| error | error_message | message | message字段删除，error_message已有 |
+| error | recoverable | - | 需补充（替换retryable） |
 | error | context | - | 需补充（包含step/model/provider/保存最后一次LLM的thought_content） |
+
+**【重要说明2026-04-15】经小强审查发现**：
+- error类型的error_message和error_type字段后端已经存在，无需修改代码，只需删除多余的code和message字段
+- 需要新增recoverable和context字段
 
 要求：1. 基于现在的代码修改实现 15.7.1 的要求
 2. 必须有效与现有代码进行有机集成的修改，保证每一个字段的来源都合理。
@@ -3532,6 +3537,11 @@ def format_observation_sse(
 
 **步骤4.1：修改create_error_step函数（第16-58行）**
 
+**【重要说明2026-04-15】经小强审查发现**：
+- 后端代码已经输出 `error_message` 和 `error_type` 字段
+- 需要删除多余的 `code` 和 `message` 字段
+- 需要补充 `recoverable` 和 `context` 字段
+
 当前代码：
 ```python
 def create_error_step(
@@ -3547,11 +3557,11 @@ def create_error_step(
     return {
         'type': 'error',
         'step': step_num,
-        'code': code,  # ← 需替换为error_type
-        'message': message,  # ← 需替换为error_message
+        'code': code,  # ← 需删除
+        'message': message,  # ← 需删除
         'content': message,
-        'error_message': message,
-        'error_type': error_type,
+        'error_message': message,  # ← 已存在，保留
+        'error_type': error_type,  # ← 已存在，保留
         'timestamp': create_timestamp(),
         'model': model,
         'provider': provider,
@@ -3565,8 +3575,8 @@ def create_error_step(
 修改为：
 ```python
 def create_error_step(
-    error_type: str,  # ← code替换为error_type
-    error_message: str,  # ← message替换为error_message
+    error_type: str,  # 已有，保留
+    error_message: str,  # 已有，保留（参数名改为error_message更明确）
     step_num: int,
     model: Optional[str] = None,
     provider: Optional[str] = None,
@@ -3588,18 +3598,19 @@ def create_error_step(
     return {
         'type': 'error',
         'step': step_num,
-        'error_type': error_type,  # ← 替换code
-        'error_message': error_message,  # ← 替换message
+        'error_type': error_type,  # ← 已有，保留
+        'error_message': error_message,  # ← 已有，保留
         'content': error_message,  # ← 保留（向后兼容）
         'timestamp': create_timestamp(),
         'model': model,
         'provider': provider,
         'reasoning': '',
         'is_reasoning': False,
-        'recoverable': recoverable,  # ← 替换retryable
+        'recoverable': recoverable,  # ← 新增字段（替换retryable）
         'context': context,  # ← 新增字段
         'retryable': retryable,  # ← 保留（向后兼容）
         'retry_after': retry_after
+        # ← 已删除：code、message（不再需要）
     }
 ```
 
