@@ -3280,34 +3280,45 @@ conversation_history存储原始文本response（保持不变）
 
 **步骤1：修改base_react.py中的yield字段**
 
-| 位置 | 当前字段 | 修改为 |
-|------|---------|-------|
-| action_tool yield | raw_data | execution_result（新增字段，同时保留raw_data兼容） |
-| action_tool yield | - | error_message（新增） |
-| action_tool yield | - | execution_time_ms（新增，需在_execute_tool前后计时） |
-| observation yield | - | return_direct（新增，从工具配置获取） |
-| final yield | content | response（字段名改为response） |
-| final yield | - | is_finished（新增=true） |
-| final yield | - | thought（新增，保存最后一次LLM的thought_content） |
-| final yield | - | is_streaming（新增=false） |
-| error yield | code | error_type（字段名改为error_type） |
-| error yield | message | error_message（字段名改为error_message） |
-| error yield | - | recoverable（新增） |
-| error yield | - | context（新增，包含step/model/provider） |
+按15.7.1差异清单要求：
 
-**步骤2：修改sse_formatter.py中的action_tool格式化**
+| type | 主文档要求 | 当前字段 | 修改为 |
+|------|-----------|---------|-------|
+| action_tool | execution_result | raw_data | execution_result（替换raw_data） |
+| action_tool | error_message | - | 需补充 |
+| action_tool | execution_time_ms | - | 需补充（在_execute_tool前后计时） |
+| observation | observation | content | observation（字段名改为observation） |
+| observation | return_direct | - | 需补充（从工具配置获取） |
+| observation | tool_params | - | 需补充 |
+| final | response | content | response（字段名改为response） |
+| final | is_finished | - | 需补充（=true） |
+| final | thought | - | 需补充（保存最后一次LLM的thought_content） |
+| final | is_streaming | - | 需补充（=false） |
+| error | error_type | code | error_type（替换code） |
+| error | error_message | message | error_message（替换message） |
+| error | recoverable | - | 需补充 |
+| error | context | - | 需补充（包含step/model/provider） |
 
-位置：format_action_tool_sse()函数
+**步骤2：修改sse_formatter.py中的action_tool和observation格式化**
+
+位置：format_action_tool_sse()和format_observation_sse()函数
 
 ```python
-# 修改字段映射
-data["execution_result"] = data.pop("raw_data")  # 字段名从raw_data改为execution_result
-# 同时保留raw_data用于兼容
-data["raw_data"] = data.get("execution_result")
-# 新增error_message
+# ===== action_tool 修改 =====
+# 字段名从raw_data改为execution_result（按15.7.1差异清单）
+data["execution_result"] = data.pop("raw_data")
+# 新增error_message（按15.7.1差异清单）
 data["error_message"] = data.get("error_message", "")
-# 新增execution_time_ms
+# 新增execution_time_ms（按15.7.1差异清单）
 data["execution_time_ms"] = data.get("execution_time_ms", 0)
+
+# ===== observation 修改 =====
+# 字段名从content改为observation（按15.7.1差异清单）
+data["observation"] = data.pop("content", "")
+# 新增return_direct（按15.7.1差异清单）
+data["return_direct"] = data.get("return_direct", False)
+# 新增tool_params（按15.7.1差异清单）
+data["tool_params"] = data.get("tool_params", {})
 ```
 
 **步骤3：修改error_handler.py中的error格式化**
@@ -3315,11 +3326,13 @@ data["execution_time_ms"] = data.get("execution_time_ms", 0)
 位置：create_error_step()函数
 
 ```python
-# 字段名统一
-data["error_type"] = data.get("code")  # code改为error_type
-data["error_message"] = data.get("message")  # message改为error_message
-# 新增字段
+# 字段名从code改为error_type（按15.7.1差异清单）
+data["error_type"] = data.get("error_type") or data.pop("code", "UNKNOWN_ERROR")
+# 字段名从message改为error_message（按15.7.1差异清单）
+data["error_message"] = data.get("error_message") or data.pop("message", "未知错误")
+# 新增recoverable（按15.7.1差异清单）
 data["recoverable"] = data.get("recoverable", False)
+# 新增context（按15.7.1差异清单）
 data["context"] = data.get("context", {"step": step_num, "model": model, "provider": provider})
 ```
 
@@ -3330,24 +3343,66 @@ data["context"] = data.get("context", {"step": step_num, "model": model, "provid
 ```python
 def to_dict(self) -> Dict[str, Any]:
     base_dict = ReasoningStep.to_dict(self)
+    # 字段名从content改为response（按15.7.1差异清单）
     base_dict.update({
-        "response": self._response,  # 字段名从content改为response
-        "content": self._response,  # 保留用于兼容
-        "thought": self._thought,  # 新增
-        "is_finished": self._is_finished,  # 新增
-        "is_streaming": getattr(self, "_is_streaming", False),  # 新增
+        "response": self._response,
+        "observation": self._response,  # 保留用于兼容
+    })
+    # 新增is_finished（按15.7.1差异清单）
+    base_dict["is_finished"] = getattr(self, "_is_finished", True)
+    # 新增thought（按15.7.1差异清单）
+    base_dict["thought"] = getattr(self, "_thought", "")
+    # 新增is_streaming（按15.7.1差异清单）
+    base_dict["is_streaming"] = getattr(self, "_is_streaming", False)
+    return base_dict
+```
+
+**步骤5：修改ObservationStep的to_dict()方法**
+
+位置：attachment 15.2.6 ObservationStep类
+
+```python
+def to_dict(self) -> Dict[str, Any]:
+    base_dict = ReasoningStep.to_dict(self)
+    # 字段名从content改为observation（按15.7.1差异清单）
+    base_dict.update({
+        "observation": getattr(self, "_observation", ""),
+        "return_direct": getattr(self, "_return_direct", False),  # 新增
+        "tool_name": self._tool_name,
+        "tool_params": self._tool_params,  # 新增（按15.7.1差异清单）
     })
     return base_dict
 ```
 
-**步骤5：测试验证**
+**步骤6：修改ActionToolStep的to_dict()方法**
+
+位置：attachment 15.2.5 ActionToolStep类
+
+```python
+def to_dict(self) -> Dict[str, Any]:
+    base_dict = ReasoningStep.to_dict(self)
+    # 字段名从raw_data改为execution_result（按15.7.1差异清单）
+    base_dict.update({
+        "execution_result": getattr(self, "_raw_data", None),
+        "execution_status": self._execution_status,
+        "summary": self._summary,
+        "error_message": getattr(self, "_error_message", ""),  # 新增（按15.7.1差异清单）
+        "execution_time_ms": getattr(self, "_execution_time_ms", 0),  # 新增（按15.7.1差异清单）
+        "tool_name": self._tool_name,
+        "tool_params": self._tool_params,
+    })
+    return base_dict
+```
+
+**步骤7：测试验证**
 
 ```bash
 # 修改后验证
 pytest tests/test_base_react.py -v
-# 检查SSE输出字段
+
+# 检查SSE输出字段（按15.7.1差异清单）
 # action_tool应包含: execution_result, error_message, execution_time_ms
-# observation应包含: return_direct
+# observation应包含: observation, return_direct, tool_params
 # final应包含: response, thought, is_finished, is_streaming
 # error应包含: error_type, error_message, recoverable, context
 ```
