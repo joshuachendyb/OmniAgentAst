@@ -1346,6 +1346,9 @@ backend/app/services/agent/react_output_parser.py
 | 14.3 | _parse_action_input() | 五级降级JSON解析 |
 | 14.4 | _parse_answer() | 解析最终回答格式（Thought+Answer） |
 | 14.5 | _parse_thought_only() | 解析纯思考格式 |
+| **⚠️ 必选** | **ToolParser类** | **兼容旧接口，llm_strategies.py需要** |
+
+**⚠️ 必选实现**：ToolParser兼容层（见14.6.1.5节详细说明）- **必须集成**
 
 **本阶段只新增文件，不修改任何现有代码**
 
@@ -1514,13 +1517,18 @@ python -m uvicorn app.main:app --reload
 | __init__.py | 更新导出，移除ToolParser |
 | 标记废弃 | 使用warnings提示ToolParser已废弃 |
 
-**补充：ToolParser兼容层设计（可选保留）**
+**⚠️ 必选：ToolParser兼容层设计（阶段一就必须集成）**
 
-> 主文档6958-7001行包含完整的ToolParser兼容层代码，用于保持向后兼容。如果需要保留旧接口，可以在react_output_parser.py末尾添加：
+> **必须放在阶段一（14.6.1.1）实施**，原因：
+> 1. llm_strategies.py 等代码仍在调用 `ToolParser.parse_response()`
+> 2. 新模块创建时就需要完整功能，不能等阶段五
+> 3. 后续阶段三集成替换时需要这个兼容层
+> 
+> 以下代码必须加入 `react_output_parser.py` 末尾：
 
 ```python
 class ToolParser:
-    """兼容旧接口的包装器"""
+    """兼容旧接口的包装器（必须集成，阶段一必须加入）"""
     
     @staticmethod
     def parse_response(response: str) -> Dict[str, Any]:
@@ -1564,10 +1572,11 @@ class ToolParser:
             }
 ```
 
-**兼容性字段说明**：
-- 新解析器已内置`content`和`reasoning`字段，映射到`thought`
-- base_react.py的现有代码无需修改即可兼容
-- 如需完全移除旧接口，可跳过此步骤
+**⚠️ 重要说明**：
+- 这是**必选**，不是可选
+- llm_strategies.py 第130-141行调用 `ToolParser.parse_response()` 必须保持兼容
+- 兼容性字段 `content`/`reasoning` 已内置在新解析器中
+- 阶段五清理旧代码时可以保留此类作为废弃标记，但阶段一必须加入
 
 **阶段完成标准**：
 - [ ] base_react.py中无ToolParser引用
