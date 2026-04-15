@@ -2047,12 +2047,865 @@ grep -rn "self.parser\|ToolParser" backend/app/services/agent/ --include="*.py"
 ## 附件15 维度二：step封装处理详细设计及详细实施步骤
 
 ### 15.1 维度二：step封装处理详细设计
-<补充本阶段的重构详细设计>
+
+> 设计依据：主文档13.2.2.2节（5193-5387行）
+> 实施依据：主文档13.2.2.3节（5434-5446行）
+
+#### 15.1.1 新建Step类模块文件
+
+**文件路径**：`backend/app/services/agent/reasoning_steps.py`
+
+**文件功能**：实现ReasoningStep抽象基类和5个具体Step类，提供统一的Step封装体系
+
+**代码设计**：
+
+```python
+# -*- coding: utf-8 -*-
+"""
+ReAct Agent Step封装类模块
+
+提供统一的Step类封装体系，解决现有系统的10个核心问题：
+- S1: 无封装 - 所有步骤都是裸字典
+- S2: 字段命名不统一
+- S3: 构建入口分散在6处代码位置
+- S4: 无类型注解
+- S5: tool_name/tool_params重复
+- S6: step字段缺失
+- S7: 错误处理逻辑分散
+- S8: 无steps列表统一管理
+- S9: 扩展困难
+- S10: 代码复用率低
+
+Author: 小沈
+Date: 2026-04-15
+"""
+
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional, List
+from datetime import datetime
 
 
-### 15.2 维度二：step封装处理分析与概要设计
-<补充本阶段的重构详细实施步骤>
+# =============================================================================
+# 第一部分：工具函数
+# =============================================================================
 
+def create_timestamp() -> int:
+    """生成当前时间戳（毫秒）"""
+    return int(datetime.now().timestamp() * 1000)
+
+
+def create_timestamp_from_ms(timestamp_ms: int) -> datetime:
+    """从毫秒时间戳创建datetime对象"""
+    return datetime.fromtimestamp(timestamp_ms / 1000)
+
+
+# =============================================================================
+# 第二部分：ReasoningStep抽象基类
+# =============================================================================
+
+class ReasoningStep(ABC):
+    """
+    ReasoningStep抽象基类
+    
+    所有Step类的基类，定义通用接口：
+    - step: int → 步骤序号（统一）
+    - timestamp: int → 时间戳（统一）
+    - get_type(): str → 获取type字段值
+    - get_content(): str → 获取用户可见文本
+    - is_done(): bool → 判断是否结束（抽象方法）
+    - to_dict(): dict → 转换为前端SSE格式
+    
+    设计依据：
+    - 13.2.2.2节Step类层次结构设计
+    - 5.1.3节LlamaIndex BaseReasoningStep基类设计
+    """
+    
+    def __init__(self, step: int, timestamp: Optional[int] = None):
+        """
+        初始化ReasoningStep
+        
+        Args:
+            step: 步骤序号
+            timestamp: 时间戳（毫秒），默认使用当前时间
+        """
+        self._step = step
+        self._timestamp = timestamp or create_timestamp()
+    
+    @property
+    def step(self) -> int:
+        """获取步骤序号"""
+        return self._step
+    
+    @property
+    def timestamp(self) -> int:
+        """获取时间戳（毫秒）"""
+        return self._timestamp
+    
+    @property
+    def timestamp_datetime(self) -> datetime:
+        """获取datetime对象（用于显示）"""
+        return create_timestamp_from_ms(self._timestamp)
+    
+    @abstractmethod
+    def get_type(self) -> str:
+        """
+        获取type字段值
+        
+        Returns:
+            type字段值：thought/action_tool/observation/final/error
+        """
+        pass
+    
+    @abstractmethod
+    def get_content(self) -> str:
+        """
+        获取用户可见文本
+        
+        Returns:
+            用户可见的文本内容
+        """
+        pass
+    
+    @abstractmethod
+    def is_done(self) -> bool:
+        """
+        判断是否结束循环
+        
+        Returns:
+            True - 结束循环
+            False - 继续循环
+        """
+        pass
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        转换为前端SSE格式
+        
+        Returns:
+            前端期望的字典格式
+        """
+        return {
+            "type": self.get_type(),
+            "step": self._step,
+            "timestamp": self._timestamp,
+            "content": self.get_content()
+        }
+    
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(step={self._step}, type={self.get_type()})"
+
+
+# =============================================================================
+# 第三部分：ToolMixin混入类（解决S5重复问题）
+# =============================================================================
+
+class ToolMixin:
+    """
+    ToolMixin混入类
+    
+    将tool_name和tool_params字段混入Step类，解决字段重复问题：
+    - ThoughtStep：需要tool_name/tool_params
+    - ActionToolStep：需要tool_name/tool_params
+    - ObservationStep：需要tool_name/tool_params
+    
+    设计依据：13.2.2.2节ToolMixin设计
+    """
+    
+    def __init__(self, tool_name: str, tool_params: Dict[str, Any]):
+        """
+        初始化ToolMixin
+        
+        Args:
+            tool_name: 工具名称
+            tool_params: 工具参数字典
+        """
+        self._tool_name = tool_name
+        self._tool_params = tool_params or {}
+    
+    @property
+    def tool_name(self) -> str:
+        """获取工具名称"""
+        return self._tool_name
+    
+    @property
+    def tool_params(self) -> Dict[str, Any]:
+        """获取工具参数"""
+        return self._tool_params
+    
+    def get_tool_name_safe(self) -> str:
+        """获取工具名称（安全版本，空值返回finish）"""
+        return self._tool_name or "finish"
+
+
+# =============================================================================
+# 第四部分：ThoughtStep类
+# =============================================================================
+
+class ThoughtStep(ToolMixin, ReasoningStep):
+    """
+    ThoughtStep类 - 思考步骤
+    
+    对应LLM的Thought输出，表示正在思考并准备执行工具：
+    - type: "thought"
+    - is_done() = False → 不结束，继续执行工具
+    
+    字段说明：
+    - content: 思考内容摘要（用户可见）
+    - thought: 详细思考内容
+    - reasoning: 推理过程
+    
+    设计依据：13.2.2.2节具体实现类设计
+    """
+    
+    def __init__(
+        self,
+        step: int,
+        content: str,
+        tool_name: str = "",
+        tool_params: Dict[str, Any] = None,
+        thought: str = "",
+        reasoning: str = "",
+        timestamp: Optional[int] = None
+    ):
+        """
+        初始化ThoughtStep
+        
+        Args:
+            step: 步骤序号
+            content: 思考内容摘要（用户可见）
+            tool_name: 工具名称
+            tool_params: 工具参数
+            thought: 详细思考内容
+            reasoning: 推理过程
+            timestamp: 时间戳（毫秒）
+        """
+        # 调用ToolMixin初始化
+        ToolMixin.__init__(self, tool_name, tool_params)
+        # 调用ReasoningStep初始化
+        ReasoningStep.__init__(self, step, timestamp)
+        
+        self._content = content
+        self._thought = thought or content
+        self._reasoning = reasoning
+    
+    def get_type(self) -> str:
+        return "thought"
+    
+    def get_content(self) -> str:
+        return self._content
+    
+    @property
+    def thought(self) -> str:
+        """获取详细思考内容"""
+        return self._thought
+    
+    @property
+    def reasoning(self) -> str:
+        """获取推理过程"""
+        return self._reasoning
+    
+    def is_done(self) -> bool:
+        return False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        base_dict = ReasoningStep.to_dict(self)
+        base_dict.update({
+            "thought": self._thought,
+            "reasoning": self._reasoning,
+            "tool_name": self._tool_name,  # 来自ToolMixin
+            "tool_params": self._tool_params,  # 来自ToolMixin
+        })
+        return base_dict
+
+
+# =============================================================================
+# 第五部分：ActionToolStep类
+# =============================================================================
+
+class ActionToolStep(ToolMixin, ReasoningStep):
+    """
+    ActionToolStep类 - 工具执行步骤
+    
+    表示工具执行的结果：
+    - type: "action_tool"
+    - is_done() = False → 不结束，继续生成observation
+    
+    字段说明：
+    - execution_status: 执行状态（success/error）
+    - summary: 执行摘要
+    - raw_data: 原始数据
+    - error_message: 错误信息（失败时）
+    - retry_count: 重试次数
+    
+    设计依据：13.2.2.2节具体实现类设计
+    """
+    
+    def __init__(
+        self,
+        step: int,
+        tool_name: str,
+        tool_params: Dict[str, Any],
+        execution_status: str = "success",
+        summary: str = "",
+        raw_data: Any = None,
+        error_message: str = "",
+        retry_count: int = 0,
+        timestamp: Optional[int] = None
+    ):
+        """
+        初始化ActionToolStep
+        
+        Args:
+            step: 步骤序号
+            tool_name: 工具名称
+            tool_params: 工具参数
+            execution_status: 执行状态（success/error）
+            summary: 执行摘要
+            raw_data: 原始数据
+            error_message: 错误信息
+            retry_count: 重试次数
+            timestamp: 时间戳（毫秒）
+        """
+        # 调用ToolMixin初始化
+        ToolMixin.__init__(self, tool_name, tool_params)
+        # 调用ReasoningStep初始化
+        ReasoningStep.__init__(self, step, timestamp)
+        
+        self._execution_status = execution_status
+        self._summary = summary
+        self._raw_data = raw_data
+        self._error_message = error_message
+        self._retry_count = retry_count
+    
+    def get_type(self) -> str:
+        return "action_tool"
+    
+    def get_content(self) -> str:
+        return self._summary or self._error_message
+    
+    @property
+    def execution_status(self) -> str:
+        """获取执行状态"""
+        return self._execution_status
+    
+    @property
+    def summary(self) -> str:
+        """获取执行摘要"""
+        return self._summary
+    
+    @property
+    def raw_data(self) -> Any:
+        """获取原始数据"""
+        return self._raw_data
+    
+    @property
+    def error_message(self) -> str:
+        """获取错误信息"""
+        return self._error_message
+    
+    @property
+    def retry_count(self) -> int:
+        """获取重试次数"""
+        return self._retry_count
+    
+    @property
+    def is_error(self) -> bool:
+        """是否执行失败"""
+        return self._execution_status == "error"
+    
+    def is_done(self) -> bool:
+        return False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        base_dict = ReasoningStep.to_dict(self)
+        base_dict.update({
+            "execution_status": self._execution_status,
+            "summary": self._summary,
+            "raw_data": self._raw_data,
+            "error_message": self._error_message,
+            "retry_count": self._retry_count,
+            "tool_name": self._tool_name,  # 来自ToolMixin
+            "tool_params": self._tool_params,  # 来自ToolMixin
+        })
+        return base_dict
+
+
+# =============================================================================
+# 第六部分：ObservationStep类
+# =============================================================================
+
+class ObservationStep(ToolMixin, ReasoningStep):
+    """
+    ObservationStep类 - 观察步骤
+    
+    表示工具执行后的观察结果：
+    - type: "observation"
+    - is_done() = return_direct → 根据工具是否要求直接返回
+    
+    字段说明：
+    - observation: 观察结果
+    - return_direct: 是否直接返回（工具要求直接返回结果）
+    
+    设计依据：13.2.2.2节具体实现类设计
+    """
+    
+    def __init__(
+        self,
+        step: int,
+        tool_name: str,
+        tool_params: Dict[str, Any],
+        observation: str = "",
+        return_direct: bool = False,
+        timestamp: Optional[int] = None
+    ):
+        """
+        初始化ObservationStep
+        
+        Args:
+            step: 步骤序号
+            tool_name: 工具名称
+            tool_params: 工具参数
+            observation: 观察结果
+            return_direct: 是否直接返回
+            timestamp: 时间戳（毫秒）
+        """
+        # 调用ToolMixin初始化
+        ToolMixin.__init__(self, tool_name, tool_params)
+        # 调用ReasoningStep初始化
+        ReasoningStep.__init__(self, step, timestamp)
+        
+        self._observation = observation
+        self._return_direct = return_direct
+    
+    def get_type(self) -> str:
+        return "observation"
+    
+    def get_content(self) -> str:
+        return self._observation
+    
+    @property
+    def observation(self) -> str:
+        """获取观察结果"""
+        return self._observation
+    
+    @property
+    def return_direct(self) -> bool:
+        """获取是否直接返回"""
+        return self._return_direct
+    
+    def is_done(self) -> bool:
+        return self._return_direct
+    
+    def to_dict(self) -> Dict[str, Any]:
+        base_dict = ReasoningStep.to_dict(self)
+        base_dict.update({
+            "observation": self._observation,
+            "return_direct": self._return_direct,
+            "tool_name": self._tool_name,  # 来自ToolMixin
+            "tool_params": self._tool_params,  # 来自ToolMixin
+        })
+        return base_dict
+
+
+# =============================================================================
+# 第七部分：FinalStep类
+# =============================================================================
+
+class FinalStep(ReasoningStep):
+    """
+    FinalStep类 - 最终回答步骤
+    
+    表示Agent完成，最终给出答案：
+    - type: "final"
+    - is_done() = True → 结束循环
+    
+    字段说明：
+    - response: 最终回答
+    - thought: 思考过程
+    - is_finished: 业务完成标志
+    
+    设计依据：13.2.2.2节具体实现类设计
+    """
+    
+    def __init__(
+        self,
+        step: int,
+        response: str,
+        thought: str = "",
+        is_finished: bool = True,
+        timestamp: Optional[int] = None
+    ):
+        """
+        初始化FinalStep
+        
+        Args:
+            step: 步骤序号
+            response: 最终回答
+            thought: 思考过程
+            is_finished: 业务完成标志
+            timestamp: 时间戳（毫秒）
+        """
+        # 调用ReasoningStep初始化
+        ReasoningStep.__init__(self, step, timestamp)
+        
+        self._response = response
+        self._thought = thought
+        self._is_finished = is_finished
+    
+    def get_type(self) -> str:
+        return "final"
+    
+    def get_content(self) -> str:
+        return self._response
+    
+    @property
+    def response(self) -> str:
+        """获取最终回答"""
+        return self._response
+    
+    @property
+    def thought(self) -> str:
+        """获取思考过程"""
+        return self._thought
+    
+    @property
+    def is_finished(self) -> bool:
+        """获取业务完成标志"""
+        return self._is_finished
+    
+    def is_done(self) -> bool:
+        return True
+    
+    def to_dict(self) -> Dict[str, Any]:
+        base_dict = ReasoningStep.to_dict(self)
+        base_dict.update({
+            "response": self._response,
+            "thought": self._thought,
+            "is_finished": self._is_finished,
+        })
+        return base_dict
+
+
+# =============================================================================
+# 第八部分：ErrorStep类
+# =============================================================================
+
+class ErrorStep(ReasoningStep):
+    """
+    ErrorStep类 - 错误步骤
+    
+    表示执行过程中出现错误：
+    - type: "error"
+    - is_done() = True → 结束循环
+    
+    字段说明：
+    - error_type: 错误类型
+    - error_message: 错误信息
+    - recoverable: 是否可恢复
+    
+    设计依据：13.2.2.2节具体实现类设计
+    """
+    
+    def __init__(
+        self,
+        step: int,
+        error_type: str,
+        error_message: str,
+        recoverable: bool = False,
+        timestamp: Optional[int] = None
+    ):
+        """
+        初始化ErrorStep
+        
+        Args:
+            step: 步骤序号
+            error_type: 错误类型
+            error_message: 错误信息
+            recoverable: 是否可恢复
+            timestamp: 时间戳（毫秒）
+        """
+        # 调用ReasoningStep初始化
+        ReasoningStep.__init__(self, step, timestamp)
+        
+        self._error_type = error_type
+        self._error_message = error_message
+        self._recoverable = recoverable
+    
+    def get_type(self) -> str:
+        return "error"
+    
+    def get_content(self) -> str:
+        return self._error_message
+    
+    @property
+    def error_type(self) -> str:
+        """获取错误类型"""
+        return self._error_type
+    
+    @property
+    def error_message(self) -> str:
+        """获取错误信息"""
+        return self._error_message
+    
+    @property
+    def recoverable(self) -> bool:
+        """获取是否可恢复"""
+        return self._recoverable
+    
+    def is_done(self) -> bool:
+        return True
+    
+    def to_dict(self) -> Dict[str, Any]:
+        base_dict = ReasoningStep.to_dict(self)
+        base_dict.update({
+            "error_type": self._error_type,
+            "error_message": self._error_message,
+            "recoverable": self._recoverable,
+        })
+        return base_dict
+
+
+# =============================================================================
+# 第九部分：StepFactory工厂类
+# =============================================================================
+
+class StepFactory:
+    """
+    StepFactory工厂类 - 统一构建入口
+    
+    解决S3分散问题，提供统一的Step构建方法：
+    - create_thought_step()
+    - create_action_tool_step()
+    - create_observation_step()
+    - create_final_step()
+    - create_error_step()
+    
+    设计依据：13.2.2.2节Step构建统一入口设计
+    """
+    
+    @staticmethod
+    def create_thought_step(
+        step: int,
+        content: str,
+        tool_name: str = "",
+        tool_params: Dict[str, Any] = None,
+        thought: str = "",
+        reasoning: str = ""
+    ) -> ThoughtStep:
+        """
+        创建ThoughtStep
+        
+        Args:
+            step: 步骤序号
+            content: 思考内容摘要
+            tool_name: 工具名称
+            tool_params: 工具参数
+            thought: 详细思考内容
+            reasoning: 推理过程
+            
+        Returns:
+            ThoughtStep实例
+        """
+        return ThoughtStep(
+            step=step,
+            content=content,
+            tool_name=tool_name,
+            tool_params=tool_params,
+            thought=thought or content,
+            reasoning=reasoning
+        )
+    
+    @staticmethod
+    def create_action_tool_step(
+        step: int,
+        tool_name: str,
+        tool_params: Dict[str, Any],
+        execution_result: Dict[str, Any]
+    ) -> ActionToolStep:
+        """
+        创建ActionToolStep
+        
+        Args:
+            step: 步骤序号
+            tool_name: 工具名称
+            tool_params: 工具参数
+            execution_result: 执行结果字典
+                - status: 执行状态（success/error）
+                - summary: 执行摘要
+                - data: 原始数据
+                - error: 错误信息
+                - retry_count: 重试次数
+                
+        Returns:
+            ActionToolStep实例
+        """
+        result_data = execution_result.get("data")
+        error_info = execution_result.get("error", "")
+        
+        return ActionToolStep(
+            step=step,
+            tool_name=tool_name,
+            tool_params=tool_params or {},
+            execution_status=execution_result.get("status", "success"),
+            summary=execution_result.get("summary", ""),
+            raw_data=result_data,
+            error_message=error_info,
+            retry_count=execution_result.get("retry_count", 0)
+        )
+    
+    @staticmethod
+    def create_observation_step(
+        step: int,
+        tool_name: str,
+        tool_params: Dict[str, Any],
+        execution_result: Dict[str, Any],
+        return_direct: bool = False
+    ) -> ObservationStep:
+        """
+        创建ObservationStep
+        
+        Args:
+            step: 步骤序号
+            tool_name: 工具名称
+            tool_params: 工具参数
+            execution_result: 执行结果字典
+            return_direct: 是否直接返回
+                
+        Returns:
+            ObservationStep实例
+        """
+        observation_text = str(execution_result.get("data", "")) if execution_result.get("data") else ""
+        
+        return ObservationStep(
+            step=step,
+            tool_name=tool_name,
+            tool_params=tool_params or {},
+            observation=observation_text,
+            return_direct=return_direct
+        )
+    
+    @staticmethod
+    def create_final_step(
+        step: int,
+        response: str,
+        thought: str = "",
+        is_finished: bool = True
+    ) -> FinalStep:
+        """
+        创建FinalStep
+        
+        Args:
+            step: 步骤序号
+            response: 最终回答
+            thought: 思考过程
+            is_finished: 业务完成标志
+                
+        Returns:
+            FinalStep实例
+        """
+        return FinalStep(
+            step=step,
+            response=response,
+            thought=thought,
+            is_finished=is_finished
+        )
+    
+    @staticmethod
+    def create_error_step(
+        step: int,
+        error_type: str,
+        error_message: str,
+        recoverable: bool = False
+    ) -> ErrorStep:
+        """
+        创建ErrorStep
+        
+        Args:
+            step: 步骤序号
+            error_type: 错误类型
+            error_message: 错误信息
+            recoverable: 是否可恢复
+                
+        Returns:
+            ErrorStep实例
+        """
+        return ErrorStep(
+            step=step,
+            error_type=error_type,
+            error_message=error_message,
+            recoverable=recoverable
+        )
+
+
+# =============================================================================
+# 第十部分：导出声明
+# =============================================================================
+
+__all__ = [
+    "ReasoningStep",
+    "ToolMixin",
+    "ThoughtStep",
+    "ActionToolStep",
+    "ObservationStep",
+    "FinalStep",
+    "ErrorStep",
+    "StepFactory",
+    "create_timestamp",
+    "create_timestamp_from_ms",
+]
+```
+
+**文件位置**：`backend/app/services/agent/reasoning_steps.py`
+
+**设计要点**：
+- 10个部分完整实现
+- 所有类都有完整类型注解
+- 所有方法都有docstring
+- StepFactory提供统一构建入口
+- 兼容性字段已内置
+
+---
+
+### 15.2 维度二：step封装处理详细实施步骤
+
+> 实施依据：主文档13.2.2.3节（步骤2.1-2.11）
+
+#### 实施步骤
+
+| 步骤 | 任务 | 文��位置 | 详细说明 |
+|------|------|---------|---------|
+| **步骤 2.1** | 创建ReasoningStep抽象基类 | reasoning_steps.py 第一部分 | 定义step/timestamp字段和抽象方法get_type()/get_content()/is_done()/to_dict() |
+| **步骤 2.2** | 创建ToolMixin混入类 | reasoning_steps.py 第三部分 | 定义tool_name/tool_params字段，供ThoughtStep/ActionToolStep/ObservationStep复用 |
+| **步骤 2.3** | 实现ThoughtStep类 | reasoning_steps.py 第四部分 | 继承ToolMixin和ReasoningStep，包含content/thought/reasoning字段，is_done()=False |
+| **步骤 2.4** | 实现ActionToolStep类 | reasoning_steps.py 第五部分 | 继承ToolMixin和ReasoningStep，包含execution_status/summary/raw_data/error_message/retry_count字段，is_done()=False |
+| **步骤 2.5** | 实现ObservationStep类 | reasoning_steps.py 第六部分 | 继承ToolMixin和ReasoningStep，包含observation/return_direct字段，is_done()=return_direct |
+| **步骤 2.6** | 实现FinalStep类 | reasoning_steps.py 第七部分 | 继承ReasoningStep，包含response/thought/is_finished字段，is_done()=True |
+| **步骤 2.7** | 实现ErrorStep类 | reasoning_steps.py 第八部分 | 继承ReasoningStep，包含error_type/error_message/recoverable字段，is_done()=True |
+| **步骤 2.8** | 创建StepFactory工厂类 | reasoning_steps.py 第九部分 | 实现5个静态方法create_thought_step()/create_action_tool_step()/create_observation_step()/create_final_step()/create_error_step() |
+| **步骤 2.9** | 改造base_react.py步骤构建代码 | base_react.py 第234-355行 | 将所有yield字典替换为StepFactory调用 |
+| **步骤 2.10** | 添加步骤历史管理 | base_react.py | 初始化self.steps: list[ReasoningStep]=[]，每个步骤后self.steps.append(step)和yield step.to_dict() |
+| **步骤 2.11** | 清理旧字典构建代码 | base_react.py | 删除或标记废弃create_tool_error_result()/create_session_error_result()等函数 |
+
+**阶段完成标准**：
+- [ ] reasoning_steps.py文件创建成功
+- [ ] 可以成功import：from app.services.agent.reasoning_steps import ReasoningStep, StepFactory
+- [ ] base_react.py中所有步骤构建改用StepFactory
+- [ ] self.steps列表正确维护步骤历史
+- [ ] 原有功能测试通过
+
+---
+
+### 15.3 与Phase 1（输出解析器）的关系
+
+| 维度 | 文件 | 功能 | 实施顺序 |
+|------|------|------|---------|
+| **Phase 1** | react_output_parser.py | 输出解析器（文本→结构化数据） | 先执行 |
+| **Phase 2** | reasoning_steps.py | Step封装（字典→类） | 后执行 |
+
+**两者关系**：
+- Phase 1的parse_react_response()返回字典
+- Phase 2的StepFactory将字典转换为Step类
+- 组合使用：parsed = parse_react_response(response) → step = StepFactory.create_xxx_step(...parsed...)
 
 
 ## 附件16 维度三：重构Agent主循环2.0的详细设计及详细实施步骤
