@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.4  
+**文档版本**: v2.5  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-15 17:20:00  
+**更新时间**: 2026-04-15 17:30:00  
 **编写人**: 小沈  
 
 ## 版本历史
@@ -31,6 +31,7 @@
 | v2.2 | 2026-04-15 16:30:00 | 小沈 | 新增15.7.3章节：前端修改建议，包含chat.ts类型修改、sse.ts字段映射、MessageItem.tsx字段引用修改、测试文件修改、完整字段对照表和验证清单 |
 | v2.3 | 2026-04-15 17:10:00 | 小沈 | 修正15.7.2步骤4.2/4.3：根据小健审查意见，context.thought_content改为直接使用thought_content变量而非从conversation_history遍历 |
 | v2.4 | 2026-04-15 17:20:00 | 小沈 | 修正15.7.1和15.7.2：根据小强审查意见，error类型error_message和error_type字段已存在，只需删除多余的code和message字段 |
+| v2.5 | 2026-04-15 17:30:00 | 小沈 | 同步修正15.7.3前端部分：根据后端删除code字段，修正SSE解析逻辑和字段对照表 |
 
 ---
 
@@ -4114,17 +4115,23 @@ case "final": {
 
 ```typescript
 case "error": {
-  const errorMsg = rawData.error_message || rawData.message || "未知错误";
+  const errorMsg = rawData.error_message || rawData.message || "未知错误";  // 【修改】优先读取error_message
   step.content = errorMsg;
   step.error_message = errorMsg;
-  step.code = rawData.code || "";
-  step.error_code = rawData.error_code || rawData.code;  // 【新增】别名
-  step.error_type = rawData.error_type || "unknown_error";
   
-  // 【新增】recoverable
-  step.recoverable = rawData.recoverable;
+  // 【修改】code字段已删除，不再读取rawData.code
+  // step.code = rawData.code;  // 已删除
   
-  // 【新增】context
+  if (rawData.error_type) {
+    step.error_type = rawData.error_type;
+  }
+  
+  // 【新增】recoverable字段
+  if (rawData.recoverable !== undefined) {
+    step.recoverable = rawData.recoverable;
+  }
+  
+  // 【新增】context字段
   if (rawData.context) {
     step.context = {
       step: rawData.context.step,
@@ -4208,6 +4215,13 @@ execution_result: {  // 【修改】raw_data → execution_result
 | error.error_message | error_message | message | 已是正确名称 |
 | error.recoverable | recoverable | - | 是否可恢复 |
 | error.context | context | - | 错误上下文 |
+| error.code | （已删除） | code | 后端已删除此字段 |
+
+**【重要说明2026-04-15】后端error类型变更**：
+- 已删除 `code` 字段
+- 已删除 `message` 字段
+- 保留 `error_message` 和 `error_type` 字段（已有）
+- 新增 `recoverable` 和 `context` 字段
 
 #### 15.7.3.4 验证清单
 
