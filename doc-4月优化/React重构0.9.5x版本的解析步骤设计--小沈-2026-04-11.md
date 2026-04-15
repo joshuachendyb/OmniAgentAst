@@ -967,7 +967,158 @@ async def execute(self, action, action_input):
 | 文件 | 修改内容 |
 |------|---------|
 | `backend/app/services/agent/tool_executor.py` | 1. 新增 TOOL_TIMEOUTS 配置<br>2. 新增 asyncio.TimeoutError 捕获<br>3. 新增 PermissionError 捕获<br>4. 完善异常处理顺序 |
+| `backend/app/services/agent/base_react.py` | 1. 处理所有 execution_status（非只有 error）<br>2. 实现 timeout 重试逻辑<br>3. 实现 permission_denied 终止逻辑 |
 | `backend/tests/test_tool_executor.py` | 新增测试用例：<br>1. test_execute_timeout<br>2. test_execute_permission_denied<br>3. test_timeout_message_format |
+
+##### 4.3.1.7 系统集成注意事项（2026-04-16 新增）
+
+**⚠️ 注意**：以下系统集成问题需要在实现时处理
+
+###### 4.3.1.7.1 base_react.py 当前逻辑 bug
+
+**问题**：当前代码只处理 `"error"`，其他状态都当作 `"success"` 处理
+
+```python
+# 当前代码 - 有 bug ❌
+if exec_status == "error":
+    # 处理 error
+else:
+    # 其他情况都当作 success 处理 ❌
+    yield {..., "execution_status": "success", ...}
+```
+
+**修复方案**：
+
+```python
+# 修改后 - 处理所有状态
+if exec_status in ["error", "timeout", "permission_denied"]:
+    # 处理非成功状态 - 使用 create_tool_error_result
+    action_tool_result = create_tool_error_result(
+        tool_name=tool_name,
+        error_message=execution_result.get("summary", "执行失败"),
+        step_num=step_count,
+        tool_params=tool_params,
+        retry_count=execution_result.get("retry_count", 0),
+        raw_data=execution_result.get("data"),
+        timestamp=current_time
+    )
+    yield action_tool_result
+else:
+    # 只有 success 走这里
+    yield {..., "execution_status": "success", ...}
+```
+
+---
+
+###### 4.3.1.7.2 循环终止条件
+
+| execution_status | 是否继续循环 | 说明 |
+|-----------------|-------------|------|
+| `"success"` | ✅ 继续 | 正常流程，下一轮继续执行工具 |
+| `"warning"` | ✅ 继续 | 部分成功，继续下一轮 |
+| `"error"` | ✅ 继续 | 工具执行失败，将错误信息加入 observation，LLM决定下一步 |
+| `"timeout"` | ⚠️ 重试后终止 | 超时后重试一次，重试失败则终止循环 |
+| `"permission_denied"` | ❌ 终止 | 权限问题无法解决，直接终止循环 |
+
+**实现逻辑**：
+
+```python
+# 在 base_react.py 中
+if exec_status == "timeout":
+    # 重试一次
+    retry_result = await self._execute_tool(tool_name, tool_params)
+    if retry_result.get("status") == "timeout":
+        # 重试失败，终止循环
+        yield create_session_error_result(...)
+        self._on_after_loop()
+        return
+
+elif exec_status == "permission_denied":
+    # 权限问题，直接终止
+    yield create_session_error_result(
+        original_error=f"Permission denied: {tool_name}",
+        error_step_type='permission_denied',
+        step_num=step_count
+    )
+    self._on_after_loop()
+    return
+```
+
+---
+
+###### 4.3.1.7.3 Observation 阶段处理
+
+**问题**：不同 execution_status 在 Observation 阶段如何处理？
+
+| execution_status | Observation 处理 | 说明 |
+|-----------------|-----------------|------|
+| `"success"` | ✅ 发送 | 正常发送工具执行结果 |
+| `"warning"` | ✅ 发送 | 发送部分成功的结果 |
+| `"error"` | ✅ 发送 | 发送错误信息 |
+| `"timeout"` | ✅ 发送 | 发送超时信息 |
+| `"permission_denied"` | ✅ 发送 | 发送权限拒绝信息 |
+
+**关键点**：无论什么 execution_status，都需要发送 Observation 给 LLM，让 LLM 决定下一步（继续或终止）
+
+```python
+# Observation 阶段 - 统一处理
+observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}"
+if execution_result.get('data'):
+    observation_text += f"\n实际数据: {execution_result.get('data')}"
+
+# 更新消息历史
+self._add_observation_to_history(observation_text)
+```
+
+---
+
+###### 4.3.1.7.4 前端显示要求
+
+| execution_status | 前端显示 | 图标/颜色 |
+|-----------------|---------|----------|
+| `"success"` | 成功 | ✅ 绿色 |
+| `"warning"` | 警告 | ⚠️ 黄色 |
+| `"error"` | 错误 | ❌ 红色 |
+| `"timeout"` | 超时 | ⏱️ 橙色 |
+| `"permission_denied"` | 权限不足 | 🔒 灰色 |
+
+**前端代码示例**：
+
+```tsx
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case 'success':
+      return <CheckCircleIcon color="green" />;
+    case 'warning':
+      return <WarningIcon color="yellow" />;
+    case 'error':
+      return <ErrorIcon color="red" />;
+    case 'timeout':
+      return <TimerIcon color="orange" />;
+    case 'permission_denied':
+      return <LockIcon color="gray" />;
+    default:
+      return <HelpIcon />;
+  }
+};
+```
+
+---
+
+###### 4.3.1.7.5 日志记录
+
+**要求**：每种 execution_status 都需要记录详细日志
+
+```python
+# tool_executor.py 中
+import logging
+logger = logging.getLogger(__name__)
+
+if status == "timeout":
+    logger.warning(f"[ToolExecutor] {tool_name} timeout after {timeout}s")
+elif status == "permission_denied":
+    logger.error(f"[ToolExecutor] {tool_name} permission denied: {str(e)}")
+```
 
 ---
 
