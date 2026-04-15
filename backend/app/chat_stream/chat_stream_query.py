@@ -292,28 +292,24 @@ async def chat_stream_query(
                     error_step_value = next_step()
                     yield create_error_response(
                         error_type="empty_response",
-                        message=error_message,
+                        error_message=error_message,
                         model=ai_service.model,
                         provider=ai_service.provider,
-                        retryable=True,
+                        recoverable=True,
                         retry_after=3,
                         step=error_step_value
                     )
                     
-                    # 保存error步骤到数据库【小沈修复 2026-03-28】使用create_error_step函数确保字段完整
-                    # 【2026-04-15 小沈修改15.7】：按15.7.1要求修改参数名
+                    # 保存error步骤到数据库
                     error_step = create_error_step(
-                        error_type='empty_response',  # 替换code
-                        error_message=error_message,  # 替换message
+                        error_type='empty_response',
+                        error_message=error_message,
                         step_num=error_step_value,
                         model=ai_service.model,
                         provider=ai_service.provider,
-                        recoverable=True,  # retryable替换为recoverable
-                        context={"step": error_step_value, "model": ai_service.model, "provider": ai_service.provider, "thought_content": ""},  # 新增context
-                        retryable=True,  # 保留（向后兼容）
-                        retry_after=3,
-                        code='EMPTY_RESPONSE',  # 保留（向后兼容）
-                        message=error_message  # 保留（向后兼容）
+                        recoverable=True,
+                        context={"step": error_step_value, "model": ai_service.model, "provider": ai_service.provider, "thought_content": ""},
+                        retry_after=3
                     )
                     await add_step_and_save(error_step, f"错误: {error_message}")
                     return  # 直接返回，不再发送final步骤

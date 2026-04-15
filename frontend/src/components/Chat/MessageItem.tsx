@@ -113,8 +113,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   const label = labelMap[effectiveType] || labelMap[step.type] || "步骤";
   const icon = iconMap[effectiveType] || iconMap[step.type] || "";
 
-  // 【小沈添加2026-04-15】向后兼容：优先使用execution_result，兼容raw_data
-  const executionResult = step.execution_result || (step as any).raw_data;
+  // 【小强修改2026-04-15】直接使用execution_result，不再兼容raw_data
+  const executionResult = step.execution_result;
   
   // 【小强优化 2026-03-18】步骤编号颜色随类型变化 - 使用stepStyles的函数
   const badgeStyle = getStepBadgeStyle(effectiveType as StepType);
@@ -565,8 +565,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
  * 【小强修改 2026-03-24】添加 toggleExpand 和 stepIndex 参数，用于 list_directory 折叠功能
  */
 const renderToolResult = (step: ExecutionStep, isExpanded: boolean = true, toggleExpand?: (index: number) => void, stepIndex?: number) => {
-  // 【小沈修改2026-04-15】优先使用execution_result，兼容raw_data
-  const execResult = step.execution_result || (step as any).raw_data;
+  // 【小强修改2026-04-15】直接使用execution_result
+  const execResult = step.execution_result;
   // 从 execution_result 中获取 data
   const data = (execResult as any)?.data || execResult;
   if (!data) return null;
@@ -799,8 +799,8 @@ const MessageItem = memo(({
                 tool_params: step.tool_params 
               };
             case 'action_tool':
-              // 【小沈修改2026-04-15】raw_data → execution_result，添加error_message和execution_time_ms
-              return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, execution_result: step.execution_result || step.raw_data || null, error_message: step.error_message || "", execution_time_ms: step.execution_time_ms || 0, action_retry_count: step.action_retry_count };
+              // 【小强修改2026-04-15】raw_data → execution_result
+              return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, execution_result: step.execution_result || null, error_message: step.error_message || "", execution_time_ms: step.execution_time_ms || 0, action_retry_count: step.action_retry_count };
             case 'observation':
               // 【小资精简 2026-04-07】后端删除第二次LLM调用后，observation只保留基础字段
               // 工具执行结果已在 action_tool 阶段完整显示

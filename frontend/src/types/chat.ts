@@ -60,6 +60,7 @@ export interface ThoughtMessage {
 /**
  * action_tool类型 - 执行动作
  * 发送时机：ReAct第2阶段，工具执行时
+ * 【小强修改2026-04-15】删除raw_data，统一使用execution_result
  */
 export interface ActionToolMessage {
   type: 'action_tool';
@@ -68,7 +69,8 @@ export interface ActionToolMessage {
   tool_params: Record<string, any>;
   execution_status: 'success' | 'error' | 'warning';
   summary: string;
-  raw_data?: Record<string, any> | null;
+  execution_result?: Record<string, any> | null;  // 【修改2026-04-15】raw_data → execution_result
+  execution_time_ms?: number;  // 【新增2026-04-15】
   action_retry_count: number;
 }
 

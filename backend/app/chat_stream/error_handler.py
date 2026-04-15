@@ -14,35 +14,28 @@ from app.chat_stream.chat_helpers import create_timestamp
 
 
 def create_error_step(
-    error_type: str,  # 修改：error_type作为第一个参数
-    error_message: str,  # 修改：message改为error_message
+    error_type: str,
+    error_message: str,
     step_num: int,
     model: Optional[str] = None,
     provider: Optional[str] = None,
-    recoverable: bool = False,  # 修改：retryable改为recoverable
-    context: Optional[Dict[str, Any]] = None,  # 新增参数
-    retryable: bool = False,  # 保留（向后兼容）
-    retry_after: Optional[int] = None,
-    code: str = "",  # 保留（向后兼容）
-    message: str = ""  # 保留（向后兼容）
+    recoverable: bool = False,
+    context: Optional[Dict[str, Any]] = None,
+    retry_after: Optional[int] = None
 ) -> Dict[str, Any]:
     """
-    创建保存到数据库的 error_step【小沈修复2026-03-28】
-    - 添加更多字段，和SSE返回保持一致
-    【2026-04-15 小沈修改15.7】：按15.7.1要求修改字段
+    创建保存到数据库的 error_step
+    【2026-04-15 小沈修改15.7】：按15.7.1要求使用新字段，删除旧字段
 
     Args:
         error_type: 错误类型（如 timeout, security, server）
-        error_message: 错误信息（替换原message）
+        error_message: 错误信息
         step_num: 步骤序号
         model: 模型名称（可选）
         provider: 提供商（可选）
-        recoverable: 是否可恢复（替换原retryable，新增）
-        context: 错误上下文（新增，包含step/model/provider/thought_content）
-        retryable: 是否可重试（保留，向后兼容）
+        recoverable: 是否可恢复
+        context: 错误上下文（包含step/model/provider/thought_content）
         retry_after: 重试等待秒数
-        code: 错误码（保留，向后兼容）
-        message: 错误信息（保留，向后兼容）
 
     Returns:
         error_step 字典
@@ -56,61 +49,57 @@ def create_error_step(
             "thought_content": ""
         }
     
+    # 【15.7修改】只保留新字段，删除旧字段code/message/retryable
     return {
         'type': 'error',
         'step': step_num,
-        'code': code,  # 保留（向后兼容）
-        'message': message,  # 保留（向后兼容）
-        'content': error_message,  # 保持和SSE一致
-        'error_message': error_message,  # 修改：message改为error_message
-        'error_type': error_type,  # 已有，保留
+        'error_message': error_message,
+        'error_type': error_type,
         'timestamp': create_timestamp(),
         'model': model,
         'provider': provider,
-        'reasoning': '',  # 和SSE一致
-        'is_reasoning': False,  # 和SSE一致
-        'recoverable': recoverable,  # 新增字段（替换retryable）
-        'context': context,  # 新增字段
-        'retryable': retryable,  # 保留（向后兼容）
+        'reasoning': '',
+        'is_reasoning': False,
+        'recoverable': recoverable,
+        'context': context,
         'retry_after': retry_after
     }
 
 
 def create_error_response(
     error_type: str,
-    message: str,
-    code: str = "INTERNAL_ERROR",
+    error_message: str,
     model: Optional[str] = None,
     provider: Optional[str] = None,
     details: Optional[str] = None,
     stack: Optional[str] = None,
-    retryable: bool = False,
+    recoverable: Optional[bool] = None,
     retry_after: Optional[int] = None,
     step: Optional[int] = None
 ) -> str:
     """
     创建统一的错误响应格式
+    【2026-04-15 小沈修改15.7】：按15.7.1要求删除旧字段code和message
     
     Args:
-        error_type: 错误类型（如 timeout_error, connection_error 等）
-        message: 用户友好的错误信息
-        code: 错误码（如 TIMEOUT, NOT_FOUND, SECURITY_BLOCKED）
+        error_type: 错误类型
+        error_message: 错误信息
         model: 模型名称（可选）
         provider: 提供商（可选）
         details: 详细错误信息（可选）
-        stack: 堆栈信息（可选，仅用于调试）
-        retryable: 是否可重试（可选）
+        stack: 堆栈信息（可选）
+        recoverable: 是否可恢复
         retry_after: 重试等待秒数（可选）
         step: 步骤序号（可选）
     
     Returns:
         SSE 格式的错误响应字符串
     """
+    # 【15.7修改】只输出新字段，删除旧字段code和message
     response: Dict[str, Any] = {
         'type': 'error',
-        'code': code,
-        'message': message,
-        'error_type': error_type
+        'error_type': error_type,
+        'error_message': error_message,
     }
     if step is not None:
         response['step'] = step
@@ -122,8 +111,8 @@ def create_error_response(
         response['details'] = details
     if stack:
         response['stack'] = stack
-    if retryable:
-        response['retryable'] = retryable
+    if recoverable is not None:
+        response['recoverable'] = recoverable
     if retry_after is not None:
         response['retry_after'] = retry_after
     response['timestamp'] = create_timestamp()
@@ -556,27 +545,24 @@ def create_session_error_result(
     # 5. 创建 error_response（yield给前端）
     error_response = create_error_response(
         error_type=error_type,
-        message=error_message,
+        error_message=error_message,
         model=model,
         provider=provider,
-        retryable=retryable,
+        recoverable=retryable,
         retry_after=retry_after,
         step=step_num
     )
     
     # 6. 创建 error_step（保存到数据库）
     error_step = create_error_step(
-        error_type=error_type,  # 替换code
-        error_message=error_message,  # 替换message
+        error_type=error_type,
+        error_message=error_message,
         step_num=step_num,
         model=model,
         provider=provider,
-        recoverable=retryable,  # retryable替换为recoverable
-        context={"step": step_num, "model": model, "provider": provider, "thought_content": ""},  # 新增context
-        retryable=retryable,  # 保留（向后兼容）
-        retry_after=retry_after,
-        code='AI_CALL_ERROR',  # 保留（向后兼容）
-        message=error_message  # 保留（向后兼容）
+        recoverable=retryable,
+        context={"step": step_num, "model": model, "provider": provider, "thought_content": ""},
+        retry_after=retry_after
     )
     
     return error_response, error_step
@@ -622,28 +608,24 @@ def create_error_from_exception(
     # 2. 创建 error_response（yield给前端）
     error_response = create_error_response(
         error_type=error_type,
-        message=error_message,
-        code=error_code,
+        error_message=error_message,
         model=model,
         provider=provider,
-        retryable=retryable,
+        recoverable=retryable,
         retry_after=retry_after,
         step=step_num
     )
     
     # 3. 创建 error_step（保存到数据库）
     error_step = create_error_step(
-        error_type=error_type,  # 替换code
-        error_message=error_message,  # 替换message
+        error_type=error_type,
+        error_message=error_message,
         step_num=step_num,
         model=model,
         provider=provider,
-        recoverable=retryable,  # retryable替换为recoverable
-        context={"step": step_num, "model": model, "provider": provider, "thought_content": ""},  # 新增context
-        retryable=retryable,  # 保留（向后兼容）
-        retry_after=retry_after,
-        code=error_code,  # 保留（向后兼容）
-        message=error_message  # 保留（向后兼容）
+        recoverable=retryable,
+        context={"step": step_num, "model": model, "provider": provider, "thought_content": ""},
+        retry_after=retry_after
     )
     
     return error_response, error_step

@@ -58,11 +58,16 @@ def create_final_response(
     step: Optional[int] = None,
     display_name: Optional[str] = None,
     provider: Optional[str] = None,
-    model: Optional[str] = None
+    model: Optional[str] = None,
+    is_finished: bool = True,  # 【15.7新增】
+    thought: str = '',  # 【15.7新增】
+    is_streaming: bool = False,  # 【15.7新增】
+    is_reasoning: bool = False  # 【15.7新增】
 ) -> str:
     """
     创建最终的SSE响应【小沈修复2026-03-28】
     - 添加model和provider字段，和数据库保存一致
+    - 【2026-04-15 小沈修改15.7】：按15.7.1要求新增字段
     
     Args:
         content: 最终回复内容
@@ -70,6 +75,10 @@ def create_final_response(
         display_name: 模型显示名称（可选）
         provider: 模型提供商（可选）
         model: 模型名称（可选）
+        is_finished: 是否完成（新增）
+        thought: 思考内容（新增）
+        is_streaming: 是否流式输出（新增）
+        is_reasoning: 是否在推理中（新增）
     
     Returns:
         SSE格式的响应字符串
@@ -85,7 +94,11 @@ def create_final_response(
     
     response = {
         'type': 'final',
-        'content': content,
+        'response': content,  # 【15.7修改】content替换为response
+        'is_finished': is_finished,  # 【15.7新增】
+        'thought': thought,  # 【15.7新增】
+        'is_streaming': is_streaming,  # 【15.7新增】
+        'is_reasoning': is_reasoning,  # 【15.7新增】
         'display_name': final_display_name,
         'timestamp': create_timestamp(),
         'model': model,  # 和数据库保存一致
