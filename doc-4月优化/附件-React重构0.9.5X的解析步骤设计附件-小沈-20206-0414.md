@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.0  
+**文档版本**: v2.1  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-15 15:14:29  
+**更新时间**: 2026-04-15 15:25:00  
 **编写人**: 小沈  
 
 ## 版本历史
@@ -27,6 +27,7 @@
 | v1.8 | 2026-04-15 13:05:23 | 小沈 | 新增15.6章节：12.1章节type字段扩展与Step封装的关系分析 |
 | v1.9 | 2026-04-15 13:19:45 | 小沈 | 新增15.7章节：系统type字段名称补齐处理（字段名不同+需补充) |
 | v2.0 | 2026-04-15 15:14:29 | 小沈 | 根据小健审查修正15.7.2：1)步骤1.3补充is_reasoning字段; 2)步骤4 context新增thought_content参数; 3)步骤5补充详细调用点; 4)15.7.1 context描述修正 |
+| v2.1 | 2026-04-15 15:25:00 | 小沈 | 修正context.thought_content获取方式：从conversation_history最后一条assistant消息获取，添加获取代码示例 |
 
 ---
 
@@ -3275,7 +3276,7 @@ conversation_history存储原始文本response（保持不变）
 | error | error_type | code | error_type（替换code） |
 | error | error_message | message | message 字段名改为error_message |
 | error | recoverable | - | 需补充 |
-| error | context | - | 需补充（包含step/model/provider/thought_content） |
+| error | context | - | 需补充（包含step/model/provider/保存最后一次LLM的thought_content） |
 
 要求：1. 基于现在的代码修改实现 15.7.1 的要求
 2. 必须有效与现有代码进行有机集成的修改，保证每一个字段的来源都合理。
@@ -3602,6 +3603,17 @@ def create_error_step(
 
 **步骤4.2：更新create_session_error_result中的create_error_step调用（第549-559行）**
 
+**获取最后一次LLM的thought_content方法**：从conversation_history中获取最后一条assistant消息的content
+
+```python
+# 获取最后一次LLM的thought_content（从conversation_history最后一条assistant消息）
+last_thought = ""
+for msg in reversed(self.conversation_history):
+    if msg.get("role") == "assistant":
+        last_thought = msg.get("content", "")
+        break
+```
+
 当前代码：
 ```python
 error_step = create_error_step(
@@ -3625,14 +3637,25 @@ error_step = create_error_step(
     model=model,
     provider=provider,
     recoverable=retryable,  # ← retryable替换为recoverable
-    context={"step": step_num, "model": model, "provider": provider, "thought_content": thought_content},  # ← 新增
+    context={"step": step_num, "model": model, "provider": provider, "thought_content": last_thought},  # ← 新增，保存最后一次LLM的thought_content
     retryable=retryable,  # ← 保留（向后兼容）
     retry_after=retry_after,
-    thought_content=thought_content  # ← 新增参数
+    thought_content=last_thought  # ← 从conversation_history获取最后一次LLM的thought_content
 )
 ```
 
 **步骤4.3：更新create_error_from_exception中的create_error_step调用（第614-623行）**
+
+**获取最后一次LLM的thought_content方法**：从conversation_history中获取最后一条assistant消息的content
+
+```python
+# 获取最后一次LLM的thought_content（从conversation_history最后一条assistant消息）
+last_thought = ""
+for msg in reversed(self.conversation_history):
+    if msg.get("role") == "assistant":
+        last_thought = msg.get("content", "")
+        break
+```
 
 当前代码：
 ```python
@@ -3657,10 +3680,10 @@ error_step = create_error_step(
     model=model,
     provider=provider,
     recoverable=retryable,  # ← retryable替换为recoverable
-    context={"step": step_num, "model": model, "provider": provider, "thought_content": thought_content},  # ← 新增
+    context={"step": step_num, "model": model, "provider": provider, "thought_content": last_thought},  # ← 新增，保存最后一次LLM的thought_content
     retryable=retryable,  # ← 保留（向后兼容）
     retry_after=retry_after,
-    thought_content=thought_content  # ← 新增参数
+    thought_content=last_thought  # ← 从conversation_history获取最后一次LLM的thought_content
 )
 ```
 
@@ -3802,7 +3825,7 @@ error_response = create_error_response(
 | error.error_type | error_type参数 | 错误类型 |
 | error.error_message | error_message参数 | 错误消息 |
 | error.recoverable | retryable参数 | 是否可恢复 |
-| error.context | 固定字典 | 包含step/model/provider/thought_content |
+| error.context.thought_content | conversation_history | 从conversation_history最后一条assistant消息获取 |
 
 ---
 
