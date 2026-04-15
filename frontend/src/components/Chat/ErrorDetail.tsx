@@ -5,7 +5,9 @@ interface ErrorDetailProps {
   // 【小沈修改2026-04-15】删除errorCode，统一使用errorMessage
   errorMessage?: string;
   errorTimestamp?: string;
-  // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除这些字段
+  // 【小沈修改2026-04-16】添加details和stack字段
+  errorDetails?: string;
+  errorStack?: string;
   errorRetryAfter?: number;
   model?: string;
   provider?: string;
@@ -31,7 +33,9 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
   // 【小沈修改2026-04-15】删除errorCode
   errorMessage,
   errorTimestamp,
-  // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除
+  // 【小沈修改2026-04-16】添加details和stack字段
+  errorDetails,
+  errorStack,
   errorRetryAfter,
   model,
   provider,
@@ -248,6 +252,37 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
             {errorContext.model && <div style={{ color: "#666", fontSize: "13px" }}>模型: {errorContext.model}</div>}
             {errorContext.provider && <div style={{ color: "#666", fontSize: "13px" }}>提供商: {errorContext.provider}</div>}
           </div>
+        )}
+        {/* 【小沈添加2026-04-16】显示details字段 */}
+        {errorDetails && (
+          <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(255, 255, 255, 0.3)", borderRadius: 6 }}>
+            <div style={{ color: "#888", fontSize: "12px", marginBottom: 4 }}>详情:</div>
+            <div style={{ color: "#666", fontSize: "13px", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+              {errorDetails}
+            </div>
+          </div>
+        )}
+        {/* 【小沈添加2026-04-16】显示stack字段（折叠显示） */}
+        {errorStack && (
+          <details style={{ marginTop: 8 }}>
+            <summary style={{ color: "#888", fontSize: "13px", cursor: "pointer" }}>
+              查看堆栈信息
+            </summary>
+            <pre style={{
+              margin: "8px 0 0 0",
+              padding: "8px 12px",
+              background: "rgba(0, 0, 0, 0.03)",
+              borderRadius: 6,
+              color: "#888",
+              fontSize: "12px",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-all",
+              maxHeight: "150px",
+              overflow: "auto"
+            }}>
+              {errorStack}
+            </pre>
+          </details>
         )}
       </div>
     </div>

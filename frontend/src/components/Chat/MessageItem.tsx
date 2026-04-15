@@ -556,10 +556,13 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
             errorType={(step as any).error_type}
             errorMessage={step.error_message || (step as any).message}
             errorTimestamp={typeof step.timestamp === 'number' ? new Date(step.timestamp).toISOString() : String(step.timestamp)}
+            // 【小沈修改2026-04-16】添加details和stack字段
+            errorDetails={(step as any).details}
+            errorStack={(step as any).stack}
             errorRetryAfter={(step as any).retry_after}
             model={(step as any).model}
             provider={(step as any).provider}
-            // 【小沈修改2026-04-16】删除details/stack/retryable，添加recoverable和context
+            // 【小沈修改2026-04-16】添加recoverable和context
             errorRecoverable={(step as any).recoverable}
             errorContext={(step as any).context}
           />
@@ -864,8 +867,21 @@ const MessageItem = memo(({
                 is_reasoning: (step as any).is_reasoning
               };
             case 'error':
-              // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除
-              return { ...baseExport, step: step.step, error_type: (step as any).error_type, error_message: (step as any).error_message || (step as any).message || "", recoverable: (step as any).recoverable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider, context: (step as any).context };
+              // 【小沈修改2026-04-16】导出所有后端字段
+              return { 
+                ...baseExport, 
+                step: step.step, 
+                timestamp: formatTimestamp(step.timestamp),
+                error_type: (step as any).error_type, 
+                error_message: (step as any).error_message || "", 
+                details: (step as any).details,
+                stack: (step as any).stack,
+                recoverable: (step as any).recoverable, 
+                retry_after: (step as any).retry_after, 
+                model: (step as any).model, 
+                provider: (step as any).provider, 
+                context: (step as any).context 
+              };
             case 'interrupted':
             case 'paused':
             case 'resumed':

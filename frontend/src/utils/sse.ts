@@ -1156,6 +1156,12 @@ const processSSEData = (
         if (rawData.recoverable !== undefined) {
           step.recoverable = rawData.recoverable;
         }
+        if (rawData.details !== undefined) {
+          step.details = rawData.details;
+        }
+        if (rawData.stack !== undefined) {
+          step.stack = rawData.stack;
+        }
         if (rawData.context) {
           step.context = {
             step: rawData.context.step,
