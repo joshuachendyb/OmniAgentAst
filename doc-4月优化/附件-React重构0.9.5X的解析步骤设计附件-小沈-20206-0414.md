@@ -3257,50 +3257,524 @@ conversation_history存储原始文本response（保持不变）
 > 实施时间：2026-04-15  
 > 依据：主文档4.1-4.7节设计 vs 4.8节当前实现  
 
-#### 15.7.1 差异清单
-
-| 主文档要求 | 当前实现 | 处理方式 |
-|-----------|--------|---------|
-| action_tool.execution_result | raw_data | 字段名不同：改raw_data为execution_result |
-| action_tool.error_message | - | 需补充 |
-| action_tool.execution_time_ms | - | 需补充 |
-| observation.observation |content |字段名不同：把 content 名称替换为observation |
-| observation.return_direct | - | 需补充 |
-| observation.tool_params | - | 需补充 |
-| final.response | content | 字段名不同：content改为response |
-| final.is_finished | - | 需补充 |
-| final.thought | - | 需补充 |
-| final.is_streaming | - | 需补充 |
-| error.error_type | code | 字段名不同：code改为error_type |
-| error.error_message | message | 字段名不同：message改为error_message |
-| error.recoverable | - | 需补充 |
-| error.context | - | 需补充 |
-
-#### 15.7.2 实施步骤
-
-要求1. 基于现在的代码修改实现 15.7.1 的要求
-2. 必须有效与现有代码进行有机集成的修改，保证每一个字段的来源都合理。
-
-**步骤1：修改base_react.py中的yield字段**
-
-按15.7.1差异清单要求：
+#### 15.7.1 差异处理说明清单
 
 | type | 主文档要求 | 当前字段 | 修改为 |
 |------|-----------|---------|-------|
-| action_tool | execution_result | raw_data | execution_result（替换raw_data） |
+| action_tool | execution_result | raw_data | raw_data字段名改为execution_result（替换） |
 | action_tool | error_message | - | 需补充 |
 | action_tool | execution_time_ms | - | 需补充（在_execute_tool前后计时） |
-| observation | observation | content | observation（字段名改为observation） |
+| observation | observation | content | content 字段名改为observation） |
 | observation | return_direct | - | 需补充（从工具配置获取） |
 | observation | tool_params | - | 需补充 |
-| final | response | content | response（字段名改为response） |
+| final | response | content |  content（字段名改为response） |
 | final | is_finished | - | 需补充（=true） |
 | final | thought | - | 需补充（保存最后一次LLM的thought_content） |
 | final | is_streaming | - | 需补充（=false） |
 | error | error_type | code | error_type（替换code） |
-| error | error_message | message | error_message（替换message） |
+| error | error_message | message | message 字段名改为error_message |
 | error | recoverable | - | 需补充 |
 | error | context | - | 需补充（包含step/model/provider） |
+
+要求：1. 基于现在的代码修改实现 15.7.1 的要求
+2. 必须有效与现有代码进行有机集成的修改，保证每一个字段的来源都合理。
+
+#### 15.7.2 实施步骤
+
+> **编写时间**: 2026-04-15 14:53:43
+> **编写人**: 小沈
+> **依据**: 15.7.1差异处理说明清单 + 现有代码准确分析
+
+---
+
+##### 15.7.2.1 步骤1：修改base_react.py中的yield字段
+
+**文件位置**: `backend/app/services/agent/base_react.py`
+
+**步骤1.1：修改action_tool成功yield（第267-279行）**
+
+当前代码：
+```python
+# 工具执行成功 - 保持原有格式
+yield {
+    "type": "action_tool",
+    "step": step_count,
+    "timestamp": current_time,
+    "tool_name": tool_name,
+    "tool_params": tool_params,
+    "execution_status": "success",
+    "summary": execution_result.get("summary", ""),
+    "raw_data": execution_result.get("data"),  # ← 需替换为execution_result
+    "action_retry_count": 0
+}
+```
+
+修改为：
+```python
+# 工具执行成功 - 按15.7.1要求修改字段
+yield {
+    "type": "action_tool",
+    "step": step_count,
+    "timestamp": current_time,
+    "tool_name": tool_name,
+    "tool_params": tool_params,
+    "execution_status": "success",
+    "summary": execution_result.get("summary", ""),
+    "execution_result": execution_result.get("data"),  # ← raw_data替换为execution_result
+    "error_message": "",  # ← 新增字段（成功时为空）
+    "execution_time_ms": execution_result.get("execution_time_ms", 0),  # ← 新增字段
+    "action_retry_count": 0
+}
+```
+
+**步骤1.2：修改observation yield（第302-308行）**
+
+当前代码：
+```python
+# yield observation
+yield {
+    "type": "observation",
+    "step": step_count,
+    "timestamp": create_timestamp(),
+    "tool_name": tool_name,
+    "content": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}"  # ← content需替换为observation
+}
+```
+
+修改为：
+```python
+# yield observation
+yield {
+    "type": "observation",
+    "step": step_count,
+    "timestamp": create_timestamp(),
+    "tool_name": tool_name,
+    "tool_params": tool_params,  # ← 新增字段
+    "observation": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}",  # ← content替换为observation
+    "return_direct": execution_result.get("return_direct", False),  # ← 新增字段（从execution_result获取）
+}
+```
+
+**步骤1.3：修改final yield（第316-320行）**
+
+当前代码：
+```python
+if tool_name == "finish":
+    yield {
+        "type": "final",
+        "timestamp": create_timestamp(),
+        "content": tool_params.get("result", thought_content)  # ← content需替换为response
+    }
+```
+
+修改为：
+```python
+if tool_name == "finish":
+    yield {
+        "type": "final",
+        "step": step_count,  # ← 新增字段
+        "timestamp": create_timestamp(),
+        "response": tool_params.get("result", thought_content),  # ← content替换为response
+        "is_finished": True,  # ← 新增字段
+        "thought": thought_content,  # ← 新增字段
+        "is_streaming": False,  # ← 新增字段
+    }
+```
+
+---
+
+##### 15.7.2.2 步骤2：修改create_tool_error_result函数
+
+**文件位置**: `backend/app/chat_stream/error_handler.py`（第628-696行）
+
+**步骤2.1：修改action_tool错误返回字段**
+
+当前代码返回：
+```python
+return {
+    'type': 'action_tool',
+    'step': step_num,
+    'timestamp': ts,
+    'tool_name': tool_name,
+    'tool_params': tool_params or {},
+    'execution_status': 'error',
+    'summary': summary,
+    'raw_data': raw_data or error_message,  # ← 需替换为execution_result
+    'action_retry_count': retry_count
+}
+```
+
+修改为：
+```python
+return {
+    'type': 'action_tool',
+    'step': step_num,
+    'timestamp': ts,
+    'tool_name': tool_name,
+    'tool_params': tool_params or {},
+    'execution_status': 'error',
+    'summary': summary,
+    'execution_result': raw_data or error_message,  # ← raw_data替换为execution_result
+    'error_message': error_message,  # ← 新增字段
+    'execution_time_ms': 0,  # ← 新增字段（错误时为0）
+    'action_retry_count': retry_count
+}
+```
+
+**步骤2.2：更新create_tool_error_result函数签名（可选，保持向后兼容）**
+
+当前函数签名已足够，无需修改参数，但需要确保返回值按上述修改。
+
+---
+
+##### 15.7.2.3 步骤3：修改sse_formatter.py函数参数
+
+**文件位置**: `backend/app/chat_stream/sse_formatter.py`
+
+**步骤3.1：修改format_action_tool_sse函数（第69-100行）**
+
+当前代码：
+```python
+def format_action_tool_sse(
+    step: int,
+    tool_name: str,
+    tool_params: Optional[Dict] = None,
+    execution_status: str = 'success',
+    summary: str = '',
+    raw_data: Any = None,  # ← 需替换
+    action_retry_count: int = 0
+) -> str:
+    return format_sse_event('action_tool', step, {
+        'tool_name': tool_name,
+        'tool_params': tool_params or {},
+        'execution_status': execution_status,
+        'summary': summary,
+        'raw_data': raw_data,  # ← 需替换
+        'action_retry_count': action_retry_count
+    })
+```
+
+修改为：
+```python
+def format_action_tool_sse(
+    step: int,
+    tool_name: str,
+    tool_params: Optional[Dict] = None,
+    execution_status: str = 'success',
+    summary: str = '',
+    execution_result: Any = None,  # ← raw_data替换为execution_result
+    error_message: str = '',  # ← 新增参数
+    execution_time_ms: int = 0,  # ← 新增参数
+    action_retry_count: int = 0
+) -> str:
+    return format_sse_event('action_tool', step, {
+        'tool_name': tool_name,
+        'tool_params': tool_params or {},
+        'execution_status': execution_status,
+        'summary': summary,
+        'execution_result': execution_result,  # ← 替换raw_data
+        'error_message': error_message,  # ← 新增字段
+        'execution_time_ms': execution_time_ms,  # ← 新增字段
+        'action_retry_count': action_retry_count
+    })
+```
+
+**步骤3.2：修改format_observation_sse函数（第103-126行）**
+
+当前代码：
+```python
+def format_observation_sse(
+    step: int,
+    content: str = '',  # ← 需替换为observation
+    tool_name: str = '',
+    timestamp: str = ''
+) -> str:
+    return format_sse_event('observation', step, {
+        'type': 'observation',
+        'step': step,
+        'timestamp': timestamp,
+        'tool_name': tool_name,
+        'content': content  # ← 需替换为observation
+    })
+```
+
+修改为：
+```python
+def format_observation_sse(
+    step: int,
+    observation: str = '',  # ← content替换为observation
+    tool_name: str = '',
+    tool_params: Optional[Dict] = None,  # ← 新增参数
+    return_direct: bool = False,  # ← 新增参数
+    timestamp: str = ''
+) -> str:
+    return format_sse_event('observation', step, {
+        'type': 'observation',
+        'step': step,
+        'timestamp': timestamp,
+        'tool_name': tool_name,
+        'tool_params': tool_params or {},  # ← 新增字段
+        'observation': observation,  # ← content替换为observation
+        'return_direct': return_direct  # ← 新增字段
+    })
+```
+
+---
+
+##### 15.7.2.4 步骤4：修改error_handler.py错误处理函数
+
+**文件位置**: `backend/app/chat_stream/error_handler.py`
+
+**步骤4.1：修改create_error_step函数（第16-58行）**
+
+当前代码：
+```python
+def create_error_step(
+    code: str,
+    message: str,
+    error_type: str,
+    step_num: int,
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
+    retryable: bool = False,
+    retry_after: Optional[int] = None
+) -> Dict[str, Any]:
+    return {
+        'type': 'error',
+        'step': step_num,
+        'code': code,  # ← 需替换为error_type
+        'message': message,  # ← 需替换为error_message
+        'content': message,
+        'error_message': message,
+        'error_type': error_type,
+        'timestamp': create_timestamp(),
+        'model': model,
+        'provider': provider,
+        'reasoning': '',
+        'is_reasoning': False,
+        'retryable': retryable,  # ← 需替换为recoverable
+        'retry_after': retry_after
+    }
+```
+
+修改为：
+```python
+def create_error_step(
+    error_type: str,  # ← code替换为error_type
+    error_message: str,  # ← message替换为error_message
+    step_num: int,
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
+    recoverable: bool = False,  # ← retryable替换为recoverable
+    context: Optional[Dict[str, Any]] = None,  # ← 新增参数
+    retryable: bool = False,  # ← 保留（向后兼容）
+    retry_after: Optional[int] = None
+) -> Dict[str, Any]:
+    # 构建context字段
+    if context is None:
+        context = {
+            "step": step_num,
+            "model": model,
+            "provider": provider
+        }
+    
+    return {
+        'type': 'error',
+        'step': step_num,
+        'error_type': error_type,  # ← 替换code
+        'error_message': error_message,  # ← 替换message
+        'content': error_message,  # ← 保留（向后兼容）
+        'timestamp': create_timestamp(),
+        'model': model,
+        'provider': provider,
+        'reasoning': '',
+        'is_reasoning': False,
+        'recoverable': recoverable,  # ← 替换retryable
+        'context': context,  # ← 新增字段
+        'retryable': retryable,  # ← 保留（向后兼容）
+        'retry_after': retry_after
+    }
+```
+
+**步骤4.2：更新create_session_error_result中的create_error_step调用（第549-559行）**
+
+当前代码：
+```python
+error_step = create_error_step(
+    code='AI_CALL_ERROR',
+    message=error_message,
+    error_type=error_type,
+    step_num=step_num,
+    model=model,
+    provider=provider,
+    retryable=retryable,
+    retry_after=retry_after
+)
+```
+
+修改为：
+```python
+error_step = create_error_step(
+    error_type=error_type,  # ← 替换code
+    error_message=error_message,  # ← 替换message
+    step_num=step_num,
+    model=model,
+    provider=provider,
+    recoverable=retryable,  # ← retryable替换为recoverable
+    context={"step": step_num, "model": model, "provider": provider},  # ← 新增
+    retryable=retryable,  # ← 保留（向后兼容）
+    retry_after=retry_after
+)
+```
+
+**步骤4.3：更新create_error_from_exception中的create_error_step调用（第614-623行）**
+
+当前代码：
+```python
+error_step = create_error_step(
+    code=error_code,
+    message=error_message,
+    error_type=error_type,
+    step_num=step_num,
+    model=model,
+    provider=provider,
+    retryable=retryable,
+    retry_after=retry_after
+)
+```
+
+修改为：
+```python
+error_step = create_error_step(
+    error_type=error_type,  # ← 替换code
+    error_message=error_message,  # ← 替换message
+    step_num=step_num,
+    model=model,
+    provider=provider,
+    recoverable=retryable,  # ← retryable替换为recoverable
+    context={"step": step_num, "model": model, "provider": provider},  # ← 新增
+    retryable=retryable,  # ← 保留（向后兼容）
+    retry_after=retry_after
+)
+```
+
+---
+
+##### 15.7.2.5 步骤5：修改create_error_response函数参数
+
+**文件位置**: `backend/app/chat_stream/error_handler.py`（第61-112行）
+
+当前函数签名已包含error_type字段，但返回字典中需要调整字段名：
+
+**步骤5.1：修改create_error_response返回值**
+
+当前代码：
+```python
+def create_error_response(
+    error_type: str,
+    message: str,
+    code: str = "INTERNAL_ERROR",
+    ...
+) -> str:
+    response: Dict[str, Any] = {
+        'type': 'error',
+        'code': code,
+        'message': message,
+        'error_type': error_type
+    }
+    ...
+```
+
+修改为：
+```python
+def create_error_response(
+    error_type: str,
+    error_message: str,  # ← message替换为error_message
+    code: str = "INTERNAL_ERROR",
+    ...
+) -> str:
+    response: Dict[str, Any] = {
+        'type': 'error',
+        'error_type': error_type,
+        'error_message': error_message,  # ← message替换为error_message
+        'code': code,  # ← 保留（向后兼容）
+        'message': error_message,  # ← 保留（向后兼容）
+    }
+    ...
+```
+
+**注意**：需要同时更新所有调用create_error_response的地方，将message参数改为error_message。
+
+---
+
+##### 15.7.2.6 步骤6：更新调用点
+
+**需要更新以下调用点，将旧参数名替换为新参数名：**
+
+| 文件 | 函数 | 调用点 | 修改内容 |
+|------|------|--------|---------|
+| base_react.py | - | 第269-279行 | raw_data→execution_result, 新增error_message, execution_time_ms |
+| base_react.py | create_tool_error_result | 第257-266行 | 返回值已包含新字段 |
+| base_react.py | create_session_error_result | 第326-343行 | 参数名已统一 |
+| base_react.py | create_error_from_exception | 第366-371行 | 参数名已统一 |
+| sse_formatter.py | format_action_tool_sse | 需更新所有调用 | 参数名替换 |
+| sse_formatter.py | format_observation_sse | 需更新所有调用 | 参数名替换 |
+
+---
+
+##### 15.7.2.7 字段来源汇总
+
+| 字段 | 来源位置 | 获取方式 |
+|------|---------|---------|
+| action_tool.execution_result | execution_result.get("data") | 从_execute_tool返回结果获取 |
+| action_tool.error_message | error_message参数 | 成功时为空，错误时为错误消息 |
+| action_tool.execution_time_ms | execution_result.get("execution_time_ms") | 工具执行耗时，需在_execute_tool中计时 |
+| observation.observation | observation_text | 构建的观察文本 |
+| observation.return_direct | execution_result.get("return_direct") | 从工具返回结果获取 |
+| observation.tool_params | tool_params | 直接使用当前变量 |
+| final.response | tool_params.get("result")或thought_content | finish时的响应内容 |
+| final.is_finished | True | 固定值 |
+| final.thought | thought_content | 保存最后一次LLM的thought |
+| final.is_streaming | False | 固定值 |
+| error.error_type | error_type参数 | 错误类型 |
+| error.error_message | error_message参数 | 错误消息 |
+| error.recoverable | retryable参数 | 是否可恢复 |
+| error.context | 固定字典 | 包含step/model/provider |
+
+---
+
+##### 15.7.2.8 验证检查清单
+
+- [ ] base_react.py中action_tool yield字段修改完成
+- [ ] base_react.py中observation yield字段修改完成
+- [ ] base_react.py中final yield字段修改完成
+- [ ] sse_formatter.py中format_action_tool_sse参数修改完成
+- [ ] sse_formatter.py中format_observation_sse参数修改完成
+- [ ] error_handler.py中create_error_step参数修改完成
+- [ ] error_handler.py中create_error_response参数修改完成
+- [ ] 所有调用点参数替换完成
+- [ ] 运行pytest测试通过
+- [ ] 前端SSE解析验证通过
+
+---
+
+##### 15.7.2.9 风险与回滚
+
+| 风险 | 影响 | 应对措施 |
+|------|------|---------|
+| 前端依赖旧字段名 | 显示异常 | 保留旧字段（content等）作为兼容 |
+| 数据库存储旧字段名 | 数据不一致 | 迁移脚本处理 |
+| 第三方系统依赖旧字段 | 集成失败 | 同步修改或提供转换层 |
+
+**回滚方案**：
+- 使用git回滚修改的4个文件
+- 恢复旧字段名
+- 重新测试验证
+
+
+
+**步骤1：修改base_react.py中的yield字段**
+
 
 **步骤2：修改sse_formatter.py函数参数**
 
@@ -3351,50 +3825,7 @@ def create_error_step(
 )
 ```
 
-**步骤4：修改附件15.2的Step类当前输出字段**
 
-按15.7.1差异清单，修改以下Step类的to_dict()方法当前输出：
-
-位置1：FinalStep.to_dict()（附件15.2.7，第2666行）- 当前输出response,thought,is_finished
-- 需新增is_streaming字段
-
-位置2：ObservationStep.to_dict()（附件15.2.6，第2586行）- 当前输出observation,return_direct,tool_name,tool_params
-- 无需修改（content已在ObservationStep中）
-
-位置3：ActionToolStep.to_dict()（附件15.2.5，第2506行）- 当前输出raw_data,error_message,retry_count
-- 需将raw_data改为execution_result，新增execution_time_ms
-
-**步骤5：测试验证**
-
-```bash
-pytest tests/test_base_react.py -v
-```
-
-```bash
-# 修改后验证
-pytest tests/test_base_react.py -v
-
-# 检查SSE输出字段（按15.7.1差异清单）
-# action_tool应包含: execution_result, error_message, execution_time_ms
-# observation应包含: observation, return_direct, tool_params
-# final应包含: response, thought, is_finished, is_streaming
-# error应包含: error_type, error_message, recoverable, context
-```
-
-#### 15.7.3 优先级
-
-| 优先级 | 字段 | 说明 |
-|--------|------|------|
-| P0 | action_tool.error_message | 错误信息独立字段 |
-| P0 | error.error_type/message | 字段名统一 |
-| P1 | final.response | 最终回答字段名 |
-| P1 | final.is_finished | 业务完成标志 |
-| P1 | error.recoverable | 可恢复标志 |
-| P2 | action_tool.execution_time_ms | 执行耗时 |
-| P2 | observation.return_direct | 直接返回标志 |
-| P2 | final.thought | 最终推理 |
-| P2 | final.is_streaming | 流式标志 |
-| P2 | error.context | 错误上下文 |
 
 
 ## 附件16 维度三：重构Agent主循环2.0的详细设计及详细实施步骤
