@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v1.7  
+**文档版本**: v1.9  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-15 09:20:00  
+**更新时间**: 2026-04-15 13:19:45  
 **编写人**: 小沈  
 
 ## 版本历史
@@ -23,7 +23,9 @@
 | v1.4 | 2026-04-15 08:15:00 | 小沈 | 重写14.6章节，重点更新第四阶段调用者适配改造：1)精确分析base_react.py第45/195/219-243行; 2)详细说明parse_react_response替换self.parser.parse_response; 3)完整展示基于type字段的结果处理逻辑; 4)包含完整集成后的代码示例; 5)明确兼容性字段content/reasoning处理 |
 | v1.5 | 2026-04-15 09:00:00 | 小沈 | 14.6章节新增五个阶段划分：阶段一创建新模块、阶段二单元测试、阶段三集成替换、阶段四集成验证、阶段五清理旧代码；明确阶段依赖关系和与14.1-14.5的对应关系 |
 | v1.6 | 2026-04-15 09:10:00 | 小沈 | 14.6章节新增内容添加小章节号14.6.1-14.6.4，规范化章节编号 |
-| v1.7 | 2026-04-15 09:20:00 | 小沈 | 14.7章节重编小章节号14.7.1-14.7.7，规范化步骤编号 |
+| v1.7 | 2026-04-15 09:20:00 | 小沈 | 14.7章节重编小章节号14.7.1-14.7.7，规范化步骤编��� |
+| v1.8 | 2026-04-15 13:05:23 | 小沈 | 新增15.6章节：12.1章节type字段扩展与Step封装的关系分析 |
+| v1.9 | 2026-04-15 13:19:45 | 小沈 | 新增15.7章节：系统type字段名称补齐处理（字段名不同+需补充) |
 
 ---
 
@@ -3095,6 +3097,275 @@ conversation_history存储原始文本response（保持不变）
 | **数据结构** | 不变：yield输出的仍然是dict格式 |
 
 **核心影响**：位置不变，但代码组织方式变了（使用StepFactory+to_dict()）。
+
+
+---
+
+### 15.6 12.1章节type字段扩展与Step封装的关系分析
+
+> 分析时间：2026-04-15 13:05:23  
+> 分析人：小沈  
+> 分析依据：主文档12.1章节（3688-4243行）+ 附件15.2章节Step类设计
+
+#### 15.6.1 主文档12.1要求的type字段扩展
+
+**12.1.1 action_tool 类型缺失字段**：
+
+| 缺失字段 | 文档参考 | 说明 |
+|----------|---------|------|
+| execution_time_ms | 4.3节 | 执行耗时(毫秒)，前端可显示性能 |
+| error_message | 4.3节 | 独立错误信息 |
+| execution_result | 4.3节 | 执行结果 |
+
+**12.1.2 observation 类型缺失字段**：
+
+| 缺失字段 | 文档参考 | 说明 |
+|----------|---------|------|
+| return_direct | 4.4节 | 工具直接返回给用户(新功能) |
+
+**12.1.3 final 类型缺失字段**：
+
+| 缺失字段 | 文档参考 | 说明 |
+|----------|---------|------|
+| response | 4.5节 | 字段名不同（当前用content） |
+| is_finished | 4.5节 | 业务完成标志 |
+| thought | 4.5节 | 最终推理总结 |
+| is_streaming | 4.5节 | 流式输出标志 |
+
+**12.1.4 error 类型字段名不同/缺失**：
+
+| 字段 | 文档参考 | 说明 |
+|------|---------|------|
+| error_type | 4.6节 | 字段名不同（当前用code） |
+| recoverable | 4.6节 | 是否可恢复 |
+| context | 4.6节 | 错误上下文 |
+
+#### 15.6.2 Step封装现有字段对比
+
+**ThoughtStep 字段**（附件15.2.4）：
+
+| 字段 | Step实现 | 主文档要求 | 差异 |
+|------|---------|----------|------|
+| step | ✅ 有 | 4.2节-基本 | - |
+| timestamp | ✅ 有 | 4.2节-基本 | - |
+| type | ✅ 有 | - | - |
+| content | ✅ 有 | 4.2节-基本 | - |
+| tool_name | ✅ 有 | 4.2节-条件必需 | ⚠️ 主文档是条件必需 |
+| tool_params | ✅ 有 | 4.2节-条件必需 | ⚠️ 主文档是条件必需 |
+| thought | ✅ 有 | 无要求 | ⚠️ 超配 |
+| reasoning | ✅ 有 | 无要求 | ⚠️ 超配 |
+
+**ActionToolStep 字段**（实际代码yield）：
+
+当前代码yield字段（base_react.py + error_handler.py）：
+- type, step, timestamp, tool_name, tool_params, execution_status, summary, raw_data, action_retry_count
+
+| 文档要求的字段 | 代码实现 | 主文档要求 | 差异 |
+|------|---------|----------|------|
+| step | ✅ 有 | 4.3节-基本 | - |
+| timestamp | ✅ 有 | 4.3节-基本 | - |
+| type | ✅ 有 | - | - |
+| tool_name | ✅ 有 | 4.3节-基本 | - |
+| tool_params | ✅ 有 | 4.3节-条件必需 | ⚠️ 主文档条件必需 |
+| execution_status | ✅ 有 | 4.3节-基本 | - |
+| summary | ✅ 有 | 4.3节-可选 | ⚠️ 主文档是可选 |
+| action_retry_count | ✅ 有 | 4.3节-可选 | ⚠️ 主文档用retry_count |
+| **execution_result** | ❌ 无 | 4.3节-基本 | 吧rawdata 替换为这个字段|
+| **execution_time_ms** | ❌ 无 | 4.3节-可选 | **需补充** |
+| **error_message**| ❌ 无 | 4.3节-可选 | **需补充** |
+
+**ObservationStep 字段**（附件15.2.6）：
+
+| 字段 | Step实现 | 主文档要求 | 差异 |
+|------|---------|----------|------|
+| step | ✅ 有 | 4.4节-基本 | - |
+| timestamp | ✅ 有 | 4.4节-基本 | - |
+| type | ✅ 有 | - | - |
+| tool_name | ✅ 有 | 4.4节-基本 | ⚠️ 主文档有 |
+|**observation** | ⚠️ 有 | - | 替换现在的content |
+|** return_direct** | ✅ 有 | 4.4节-可选 | **需补充**|
+|**tool_params **| ✅ 有 | 4.4节-条件必需 | **需补充** |
+
+**FinalStep 字段**（附件15.2.7）：
+
+| 字段 | Step实现 | 主文档要求 | 差异 |
+|------|---------|----------|------|
+| step | ✅ 有 | 4.5节-基本 | - |
+| timestamp | ✅ 有 | 4.5节-基本 | - |
+| type | ✅ 有 | - | - |
+| **response** | ✅ 有 | 4.5节-基本 | **需补充**|
+| **is_finished** | ✅ 有 | 4.5节-基本 | **需补充** |
+| **thought** | ✅ 有 | 4.5节-可选 |  **需补充**|
+| **is_streaming** | ❌ 无 | 4.5节-可选 | **需补充** |
+
+**ErrorStep 字段**（附件15.2.8）：
+
+| 字段 | Step实现 | 主文档要求 | 差异 |
+|------|---------|----------|------|
+| step | ✅ 有 | 4.6节-基本 | - |
+| timestamp | ✅ 有 | 4.6节-基本 | - |
+| type | ✅ 有 | - | - |
+| error_message | ✅ 有 | 4.6节-基本 | ✅ 已实现 |
+| **error_type** | ✅ 有 | 4.6节-基本 | 当前用code ，把code替换为error_type|
+| **recoverable **| ✅ 有 | 4.6节-基本 | **需补充** |
+| **context** | ❌ 无 | 4.6节-可选 | **需补充** |
+
+#### 15.6.3 差异汇总与处理方法说明
+
+**ActionToolStep** 字段的变更处理说明**
+
+1.execution_result：处理方法：把现在的rawdata 替换为这个execution_result字段
+2.execution_time_ms 需补充
+3.error_message**  需补充
+
+**ObservationStep** 字段的变更处理说明*
+
+4.observation：处理方法，把现在的content 名称替换为observation
+5 return_direct. 需补充
+6 tool_params  需补充
+
+**FinalStep** 字段的变更处理说明**
+
+7.response  把content改为response 
+8 is_finished  需补充
+9  thought 需补充
+10 is_streaming  需补充
+
+**ErrorStep** 的字段变更处理说明
+
+11 error_type** 处理方法 把code替换为error_type|
+12 error_message ，message ，字段名不同：message改为error_message |
+13 recoverable 需补充
+14 context 需补充
+
+#### 15.6.5 与12.1章节的对应关系
+
+**需要修改的源代码位置**：
+
+| 主文档12.1位置 | Step类 | 需要修改 |
+|---------------|--------|----------|
+| 12.1.1（第3693-3711行） | ActionToolStep | 补充execution_time_ms字段 |
+| 12.1.3（第3900-4028行） | FinalStep | 补充is_streaming字段 |
+| 12.1.3（第3920-3963行） | FinalStep | 字段名统一（content→response） |
+| 12.1.4（第4041-4241行） | ErrorStep | 补充context字段 |
+
+
+---
+
+### 15.7 系统type字段名称补齐处理
+
+> 实施时间：2026-04-15  
+> 依据：主文档4.1-4.7节设计 vs 4.8节当前实现  
+
+#### 15.7.1 差异清单
+
+| 主文档要求 | 当前实现 | 处理方式 |
+|-----------|--------|---------|
+| action_tool.execution_result | raw_data | 字段名不同：改raw_data为execution_result |
+| action_tool.error_message | - | 需补充 |
+| action_tool.execution_time_ms | - | 需补充 |
+| observation.observation |content |字段名不同：把 content 名称替换为observation |
+| observation.return_direct | - | 需补充 |
+| observation.tool_params | - | 需补充 |
+| final.response | content | 字段名不同：content改为response |
+| final.is_finished | - | 需补充 |
+| final.thought | - | 需补充 |
+| final.is_streaming | - | 需补充 |
+| error.error_type | code | 字段名不同：code改为error_type |
+| error.error_message | message | 字段名不同：message改为error_message |
+| error.recoverable | - | 需补充 |
+| error.context | - | 需补充 |
+
+#### 15.7.2 实施步骤
+
+**步骤1：修改base_react.py中的yield字段**
+
+| 位置 | 当前字段 | 修改为 |
+|------|---------|-------|
+| action_tool yield | raw_data | execution_result（新增字段，同时保留raw_data兼容） |
+| action_tool yield | - | error_message（新增） |
+| action_tool yield | - | execution_time_ms（新增，需在_execute_tool前后计时） |
+| observation yield | - | return_direct（新增，从工具配置获取） |
+| final yield | content | response（字段名改为response） |
+| final yield | - | is_finished（新增=true） |
+| final yield | - | thought（新增，保存最后一次LLM的thought_content） |
+| final yield | - | is_streaming（新增=false） |
+| error yield | code | error_type（字段名改为error_type） |
+| error yield | message | error_message（字段名改为error_message） |
+| error yield | - | recoverable（新增） |
+| error yield | - | context（新增，包含step/model/provider） |
+
+**步骤2：修改sse_formatter.py中的action_tool格式化**
+
+位置：format_action_tool_sse()函数
+
+```python
+# 修改字段映射
+data["execution_result"] = data.pop("raw_data")  # 字段名从raw_data改为execution_result
+# 同时保留raw_data用于兼容
+data["raw_data"] = data.get("execution_result")
+# 新增error_message
+data["error_message"] = data.get("error_message", "")
+# 新增execution_time_ms
+data["execution_time_ms"] = data.get("execution_time_ms", 0)
+```
+
+**步骤3：修改error_handler.py中的error格式化**
+
+位置：create_error_step()函数
+
+```python
+# 字段名统一
+data["error_type"] = data.get("code")  # code改为error_type
+data["error_message"] = data.get("message")  # message改为error_message
+# 新增字段
+data["recoverable"] = data.get("recoverable", False)
+data["context"] = data.get("context", {"step": step_num, "model": model, "provider": provider})
+```
+
+**步骤4：修改final的to_dict()方法**
+
+位置：attachment 15.2.7 FinalStep类
+
+```python
+def to_dict(self) -> Dict[str, Any]:
+    base_dict = ReasoningStep.to_dict(self)
+    base_dict.update({
+        "response": self._response,  # 字段名从content改为response
+        "content": self._response,  # 保留用于兼容
+        "thought": self._thought,  # 新增
+        "is_finished": self._is_finished,  # 新增
+        "is_streaming": getattr(self, "_is_streaming", False),  # 新增
+    })
+    return base_dict
+```
+
+**步骤5：测试验证**
+
+```bash
+# 修改后验证
+pytest tests/test_base_react.py -v
+# 检查SSE输出字段
+# action_tool应包含: execution_result, error_message, execution_time_ms
+# observation应包含: return_direct
+# final应包含: response, thought, is_finished, is_streaming
+# error应包含: error_type, error_message, recoverable, context
+```
+
+#### 15.7.3 优先级
+
+| 优先级 | 字段 | 说明 |
+|--------|------|------|
+| P0 | action_tool.error_message | 错误信息独立字段 |
+| P0 | error.error_type/message | 字段名统一 |
+| P1 | final.response | 最终回答字段名 |
+| P1 | final.is_finished | 业务完成标志 |
+| P1 | error.recoverable | 可恢复标志 |
+| P2 | action_tool.execution_time_ms | 执行耗时 |
+| P2 | observation.return_direct | 直接返回标志 |
+| P2 | final.thought | 最终推理 |
+| P2 | final.is_streaming | 流式标志 |
+| P2 | error.context | 错误上下文 |
 
 
 ## 附件16 维度三：重构Agent主循环2.0的详细设计及详细实施步骤
