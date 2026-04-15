@@ -196,7 +196,7 @@ class BaseAgent(ABC):
                 
                 # 【修复】检查解析是否失败：parse_response现在返回错误结果而不是抛异常
                 # 通过检查content是否包含错误标识来判断
-                is_parse_error = "⚠️" in parsed.get("content", "") or parsed.get("tool_name") == "finish"
+                is_parse_error = "⚠️" in parsed.get("content", "")
                 
                 if is_parse_error:
                     # 保存原始response到conversation_history
