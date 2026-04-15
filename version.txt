@@ -1,3 +1,46 @@
+v0.9.5.8
+
+更新时间：2026-04-15 17:58:05
+
+更新内容：
+
+## 1. 15.7系统type字段补齐 - 审查确认与小强前端对齐 - 小沈-2026-04-15
+
+### 1.1 审查发现的问题
+
+小健审查发现react_sse_wrapper.py中存在问题：
+- _format_sse_event函数未使用新字段名
+- final类型数据库保存时用旧字段名
+
+### 1.2 修复内容
+
+| 文件 | 修改 |
+|------|------|
+| react_sse_wrapper.py | _format_sse_event函数使用新字段名 |
+| react_sse_wrapper.py:430 | final类型用response替代content |
+
+### 1.3 后端测试验证
+
+| 测试项 | 结果 |
+|--------|------|
+| test_type_fields_157.py | ✅ 16 passed |
+| test_error_handler.py | ✅ 59 passed |
+| **总计** | **75 passed** |
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 8842386b | release: 升级到v0.9.5.7-15.7.3前端字段统一-小强-2026-04-15 |
+| bec5d98c | feat: 彻底删除raw_data兼容代码-只使用execution_result-小强-2026-04-15 |
+| 55dbf32a | feat: 彻底删除raw_data/code兼容-统一使用error_message和execution_result-小沈-小强-2026-04-15 |
+| 18b2b7c3 | feat: 15.7.3前端字段统一-删除code字段使用error_message-小强-小资-2026-04-15 |
+| fa31ec02 | feat: 15.7系统type字段补齐后端实施-小沈-2026-04-15 |
+
+参与开发：小沈（后端实施+审查）、小强（前端实施）、小健（审查）、小资（审查）
+
+---
+
 v0.9.5.7
 
 更新时间：2026-04-15 17:49:41
