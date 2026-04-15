@@ -2082,28 +2082,22 @@ Date: 2026-04-15
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, List, Callable
-from datetime import datetime
 
 # 引用现有chat_helpers的辅助函数（避免重复定义）
 from app.chat_stream.chat_helpers import create_timestamp, create_step_counter
 
 
 # =============================================================================
-# 第一部分：step计数器工厂函数
+# 第一部分：step计数器使用说明
 # =============================================================================
 
-def create_step_counter() -> Callable[[], int]:
-    """
-    创建统一的步骤计数器
-    
-    使用方式：
-        step_counter = create_step_counter()
-        next_step = step_counter()  # 返回 1, 2, 3, ...
-    
-    Returns:
-        返回一个闭包函数，每次调用返回递增的步骤号（从1开始）
-    """
-    return create_step_counter
+# step计数器使用方式（引用现有chat_helpers）
+# 使用方式：
+#     step_counter = create_step_counter()  # 创建计数器
+#     next_step = step_counter()  # 返回 1
+#     next_step = step_counter()  # 返回 2
+#     next_step = step_counter()  # 返回 3
+# 直接引用chat_helpers.create_step_counter即可
 
 
 # =============================================================================
@@ -2147,12 +2141,6 @@ class ReasoningStep(ABC):
     def timestamp(self) -> int:
         """获取时间戳（毫秒）"""
         return self._timestamp
-    
-    @property
-    def timestamp_datetime(self) -> datetime:
-        """获取datetime对象（用于显示）- 前端formatTimestamp处理，不需要后端转换"""
-        # 注：前端formatTimestamp可直接处理毫秒数字，此方法保留但不使用
-        return datetime.fromtimestamp(self._timestamp / 1000)
     
     @abstractmethod
     def get_type(self) -> str:
