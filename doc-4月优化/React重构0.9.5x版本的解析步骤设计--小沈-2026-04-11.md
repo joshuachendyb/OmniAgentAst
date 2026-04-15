@@ -45,6 +45,10 @@
 | v4.25 | 2026-04-11 21:02:42 | 小沈 | 文档修正：核对实际代码，修正4.8节字段定义、7.1.4节observation对比、7.6节改进建议；新增第10章：2026-04-11文档修正记录；新增429错误统一处理、超长历史TODO、search_files参数统一等说明 |
 | v4.26 | 2026-04-14 11:12:27 | 小欧 | 新增第12章：未实现项详细说明，整合第13章可选字段分析，删除冗余章节 |
 | v4.27 | 2026-04-14 11:30:00 | 小欧 | 精简第12章内容，紧凑化字段说明，删除第13章 |
+| v4.28 | 2026-04-16 07:18:04 | 小沈 | 补充4.3.1.7.1和4.3.1.7.3完整代码修改方案：base_react.py Action阶段处理所有execution_status、Observation阶段区分状态生成不同observation_text |
+| v4.29 | 2026-04-16 07:18:04 | 小沈 | 补充4.3.1.4完整代码修改方案：tool_executor.py新增TOOL_TIMEOUTS配置、超时和权限异常处理、warning状态判断 |
+| v4.30 | 2026-04-16 07:22:00 | 小沈 | 修正4.3.1.7.2循环终止条件：删除自动重试逻辑，由LLM决定；修正TOOL_TIMEOUTS键名与实际工具名一致 |
+| v4.31 | 2026-04-16 07:25:00 | 小沈 | 修正4.3.1.7.4前端显示要求：说明前端已兼容，不需要修改 |
 
 
 ---
@@ -809,16 +813,18 @@ action_tool: {
 根据工具类型预设超时时间，配置在 `tool_executor.py` 中：
 
 ```python
-# 工具超时配置（秒）
+# 工具超时配置（秒）- 键名与实际工具函数名一致
 TOOL_TIMEOUTS = {
     "list_directory": 10,       # 简单目录操作
     "read_file": 30,            # 文件读取
-    "write_file": 30,            # 文件写入
-    "delete_file": 30,          # 文件删除
+    "write_file": 30,          # 文件写入
+    "delete_file": 30,         # 文件删除
     "move_file": 30,            # 文件移动
-    "search_files": 30,         # 文件搜索
+    "search_files": 30,         # 文件搜索（注：根据实际工具名调整）
     "search_file_content": 60,   # 全文搜索（耗时较长）
-    "generate_report": 60,       # 生成报告
+    "generate_report": 60,        # 生成报告
+    "get_current_time": 5,       # 快速查询
+    "get_system_info": 10,      # 系统信息
     "default": 30               # 默认超时
 }
 ```
@@ -939,56 +945,217 @@ def _format_result(self, result, action):
 
 ##### 4.3.1.4 完整异常处理设计
 
-**tool_executor.py 异常处理结构**：
+**tool_executor.py 完整代码修改方案**：
 
 ```python
-async def execute(self, action, action_input):
-    # 1. 获取超时时间
-    timeout = TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"])
+# -*- coding: utf-8 -*-
+"""
+工具执行器模块
+
+负责执行解析后的工具调用，处理错误和结果格式化
+Author: 小沈 - 2026-03-21
+【修改 2026-04-16 小沈】：新增超时和权限异常处理
+"""
+
+import asyncio
+from typing import Any, Callable, Dict
+
+from app.utils.logger import logger
+
+# 【新增 2026-04-16 小沈】工具超时配置（键名与实际工具函数名一致）
+TOOL_TIMEOUTS = {
+    # 文件操作类工具
+    "read_file": 30,
+    "read_file_content": 60,  # 注：如果有这个工具的话
+    "search_file_content": 60,  # 全文搜索（耗时较长）
+    "write_file": 30,
+    "delete_file": 30,
+    "move_file": 30,
+    "list_directory": 10,
     
-    # 2. 执行工具（带超时）
-    try:
-        result = await asyncio.wait_for(
-            self.available_tools[action](**params),
-            timeout=timeout
-        )
-        return self._format_result(result, action)
+    # 命令执行类工具
+    "execute_command": 120,
+    "run_command": 120,
     
-    # 3. 超时异常
-    except asyncio.TimeoutError:
+    # 快速工具
+    "get_current_time": 5,
+    "get_system_info": 10,
+    
+    # 默认超时
+    "default": 30
+}
+
+
+class ToolExecutor:
+    """
+    工具执行器
+    
+    负责执行解析后的工具调用，处理错误和结果格式化
+    """
+    
+    def __init__(self, tools: Dict[str, Callable]):
+        """
+        初始化工具执行器
+        
+        Args:
+            tools: 工具名称到工具函数的映射字典
+        """
+        self.available_tools = tools
+    
+    async def execute(
+        self,
+        action: str,
+        action_input: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        执行工具调用
+        
+        【修改 2026-04-16 小沈】：新增超时和权限异常处理
+        
+        Args:
+            action: 工具名称
+            action_input: 工具参数
+        
+        Returns:
+            执行结果，包含status标志和结果数据
+        """
+        if action == "finish":
+            return {
+                "status": "success",
+                "summary": "Task completed",
+                "result": {
+                    "operation_type": "finish",
+                    "message": action_input.get("result", "Task completed"),
+                    "data": action_input
+                },
+                "data": action_input.get("result"),
+                "retry_count": 0
+            }
+        
+        if action not in self.available_tools:
+            return {
+                "status": "error",
+                "summary": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
+                "data": None,
+                "retry_count": 0
+            }
+        
+        tool = self.available_tools[action]
+        
+        # 【新增 2026-04-16 小沈】获取超时时间
+        timeout = TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"])
+        
+        try:
+            normalized_input = self._normalize_params(action, action_input)
+            
+            # 参数验证
+            import inspect
+            sig = inspect.signature(tool)
+            required_params = [
+                p.name for p in sig.parameters.values()
+                if p.default == inspect.Parameter.empty and p.name != 'self'
+            ]
+            missing = [p for p in required_params if p not in normalized_input]
+            if missing:
+                logger.warning(f"[参数验证] action={action} 缺少必需参数: {missing}")
+                return {
+                    "status": "error",
+                    "summary": f"Missing required parameter(s): {', '.join(missing)}",
+                    "data": None,
+                    "retry_count": 0
+                }
+            
+            # 【修改 2026-04-16 小沈】带超时的工具执行
+            result = await asyncio.wait_for(
+                tool(**normalized_input),
+                timeout=timeout
+            )
+            
+            return self._format_result(result, action)
+        
+        # 【新增 2026-04-16 小沈】超时异常处理
+        except asyncio.TimeoutError:
+            logger.warning(f"[ToolExecutor] {action} timeout after {timeout}s")
+            return {
+                "status": "timeout",
+                "summary": f"Tool '{action}' execution timed out after {timeout} seconds",
+                "data": None,
+                "retry_count": 0
+            }
+        
+        # 【新增 2026-04-16 小沈】权限异常处理
+        except PermissionError as e:
+            logger.error(f"[ToolExecutor] {action} permission denied: {str(e)}")
+            return {
+                "status": "permission_denied",
+                "summary": f"Permission denied: {str(e)}",
+                "data": None,
+                "retry_count": 0
+            }
+        
+        # 文件不存在异常
+        except FileNotFoundError as e:
+            logger.error(f"[ToolExecutor] {action} file not found: {str(e)}")
+            return {
+                "status": "error",
+                "summary": f"File not found: {str(e)}",
+                "data": None,
+                "retry_count": 0
+            }
+        
+        # 其他异常
+        except Exception as e:
+            logger.error(f"[ToolExecutor] {action} execution error: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "summary": f"Execution error: {str(e)}",
+                "data": None,
+                "retry_count": 0
+            }
+    
+    def _format_result(self, result: Any, action: str) -> Dict[str, Any]:
+        """
+        格式化工具执行结果
+        
+        【修改 2026-04-16 小沈】：新增 warning 状态判断
+        """
+        # 【新增 2026-04-16 小沈】检查 warning 状态
+        if isinstance(result, dict):
+            if result.get("status") == "warning" or result.get("is_warning"):
+                return {
+                    "status": "warning",
+                    "summary": result.get("summary", "Partial success with warnings"),
+                    "data": result.get("data"),
+                    "retry_count": result.get("retry_count", 0)
+                }
+            
+            if result.get("success") == False:
+                return {
+                    "status": "error",
+                    "summary": result.get("error", str(result)),
+                    "data": None,
+                    "retry_count": result.get("retry_count", 0)
+                }
+            
+            return {
+                "status": "success",
+                "summary": result.get("summary", f"{action} completed"),
+                "data": result.get("data", result),
+                "retry_count": result.get("retry_count", 0)
+            }
+        
         return {
-            "status": "timeout",
-            "summary": f"Tool '{action}' execution timed out after {timeout} seconds",
-            "data": None,
+            "status": "success",
+            "summary": f"{action} completed",
+            "data": result,
             "retry_count": 0
         }
     
-    # 4. 权限异常
-    except PermissionError as e:
-        return {
-            "status": "permission_denied",
-            "summary": f"Permission denied: {str(e)}",
-            "data": None,
-            "retry_count": 0
-        }
-    
-    # 5. 文件不存在异常
-    except FileNotFoundError as e:
-        return {
-            "status": "error",
-            "summary": f"File not found: {str(e)}",
-            "data": None,
-            "retry_count": 0
-        }
-    
-    # 6. 其他异常
-    except Exception as e:
-        return {
-            "status": "error",
-            "summary": f"Execution error: {str(e)}",
-            "data": None,
-            "retry_count": 0
-        }
+    def _normalize_params(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        规范化参数格式
+        """
+        return params or {}
 ```
 
 ---
@@ -1023,20 +1190,63 @@ async def execute(self, action, action_input):
 **问题**：当前代码只处理 `"error"`，其他状态都当作 `"success"` 处理
 
 ```python
-# 当前代码 - 有 bug ❌
+# 当前代码 - 有 bug ❌ (第255-283行)
+exec_status = execution_result.get("status", "success")
+
 if exec_status == "error":
     # 处理 error
+    action_tool_result = create_tool_error_result(...)
+    yield action_tool_result
 else:
     # 其他情况都当作 success 处理 ❌
-    yield {..., "execution_status": "success", ...}
+    yield {
+        "type": "action_tool",
+        ...
+        "execution_status": "success",  # 错误！可能不是 success
+        ...
+    }
 ```
 
-**修复方案**：
+**修复方案**（完整代码替换第255-283行）：
 
 ```python
-# 修改后 - 处理所有状态
-if exec_status in ["error", "timeout", "permission_denied"]:
-    # 处理非成功状态 - 使用 create_tool_error_result
+# ========== Action 阶段 ==========
+self.status = AgentStatus.EXECUTING
+execution_result = await self._execute_tool(tool_name, tool_params)
+
+# 根据执行结果构建 action_tool
+exec_status = execution_result.get("status", "success")
+
+if exec_status == "success":
+    # 工具执行成功 - 按15.7.1要求修改字段
+    yield {
+        "type": "action_tool",
+        "step": step_count,
+        "timestamp": current_time,
+        "tool_name": tool_name,
+        "tool_params": tool_params,
+        "execution_status": "success",
+        "summary": execution_result.get("summary", ""),
+        "execution_result": execution_result.get("data"),
+        "error_message": "",
+        "execution_time_ms": execution_result.get("execution_time_ms", 0),
+        "action_retry_count": 0
+    }
+elif exec_status == "warning":
+    # 工具执行警告（部分成功）- 使用 create_tool_error_result 传递 warning 状态
+    action_tool_result = create_tool_error_result(
+        tool_name=tool_name,
+        error_message=execution_result.get("summary", "部分成功"),
+        step_num=step_count,
+        tool_params=tool_params,
+        retry_count=execution_result.get("retry_count", 0),
+        raw_data=execution_result.get("data"),
+        timestamp=current_time,
+        status="warning"  # 传递 warning 状态
+    )
+    yield action_tool_result
+else:
+    # error/timeout/permission_denied - 统一使用 create_tool_error_result
     action_tool_result = create_tool_error_result(
         tool_name=tool_name,
         error_message=execution_result.get("summary", "执行失败"),
@@ -1045,12 +1255,9 @@ if exec_status in ["error", "timeout", "permission_denied"]:
         retry_count=execution_result.get("retry_count", 0),
         raw_data=execution_result.get("data"),
         timestamp=current_time,
-        status=exec_status  # 新增参数：传递实际的 execution_status
+        status=exec_status  # 传递实际的 execution_status
     )
     yield action_tool_result
-else:
-    # 只有 success 走这里
-    yield {..., "execution_status": "success", ...}
 ```
 
 **⚠️ 注意**：`error_handler.py` 中的 `create_tool_error_result` 函数需要增加 `status` 参数：
@@ -1066,11 +1273,36 @@ def create_tool_error_result(
     timestamp: Optional[int] = None,
     status: str = "error"  # 新增参数
 ) -> Dict[str, Any]:
-    ...
+    """
+    统一的工具级错误处理函数
+    
+    【修改 2026-04-16 小沈】：增加 status 参数，支持 warning/timeout/permission_denied 等状态
+    
+    返回：可直接yield的action_tool格式字典
+    """
+    # 构建错误摘要
+    can_retry = retry_count < 3  # 假设 max_retries=3
+    if can_retry:
+        summary = f"[{status}] {tool_name} 执行{status}信息: {error_message}，正在重试 ({retry_count + 1}/3)..."
+    else:
+        summary = f"[{status}] {tool_name} 执行{status}信息: {error_message}，已重试3次"
+    
+    # 使用传入的时间戳或自动生成
+    ts = timestamp if timestamp is not None else create_timestamp()
+    
+    # 【2026-04-15 小沈修改15.7】：按15.7.1要求修改字段名
+    # 【2026-04-16 小沈修改】：使用传入的 status 参数
     return {
-        ...
+        'type': 'action_tool',
+        'step': step_num,
+        'timestamp': ts,
+        'tool_name': tool_name,
+        'tool_params': tool_params or {},
         'execution_status': status,  # 使用传入的 status 而非固定 "error"
-        ...
+        'summary': summary,
+        'execution_result': raw_data,
+        'error_message': error_message,
+        'action_retry_count': retry_count
     }
 ```
 
@@ -1083,31 +1315,22 @@ def create_tool_error_result(
 | `"success"` | ✅ 继续 | 正常流程，下一轮继续执行工具 |
 | `"warning"` | ✅ 继续 | 部分成功，继续下一轮 |
 | `"error"` | ✅ 继续 | 工具执行失败，将错误信息加入 observation，LLM决定下一步 |
-| `"timeout"` | ⚠️ 重试后终止 | 超时后重试一次，重试失败则终止循环 |
-| `"permission_denied"` | ❌ 终止 | 权限问题无法解决，直接终止循环 |
+| `"timeout"` | ✅ 继续 | 超时错误，LLM决定是否重试（不再自动重试） |
+| `"permission_denied"` | ✅ 继续 | 权限错误，将错误信息加入 observation，LLM决定下一步 |
 
-**实现逻辑**：
+**核心原则**：所有 execution_status 都继续循环，**由 LLM 决定下一步**（重试 / 换工具 / 放弃）
+
+**实现逻辑**（不需要自动重试代码）：
 
 ```python
-# 在 base_react.py 中
-if exec_status == "timeout":
-    # 重试一次
-    retry_result = await self._execute_tool(tool_name, tool_params)
-    if retry_result.get("status") == "timeout":
-        # 重试失败，终止循环
-        yield create_session_error_result(...)
-        self._on_after_loop()
-        return
+# 所有 execution_status 都会走到这里
+# 不需要特殊处理，LLM 会根据 observation 决定下一步
 
-elif exec_status == "permission_denied":
-    # 权限问题，直接终止
-    yield create_session_error_result(
-        original_error=f"Permission denied: {tool_name}",
-        error_step_type='permission_denied',
-        step_num=step_count
-    )
-    self._on_after_loop()
-    return
+# 如果 LLM 认为可以继续，会在下一次 thought 中返回相同的 action_tool
+# 如果 LLM 认为需要换工具，会返回新的 action_tool
+# 如果 LLM 认为无法继续，会返回 finish
+
+# 超时/权限错误时，action_tool 会包含错误信息，LLM 会看到并决定
 ```
 
 ---
@@ -1126,8 +1349,11 @@ elif exec_status == "permission_denied":
 
 **关键点**：无论什么 execution_status，都需要发送 Observation 给 LLM，让 LLM 决定下一步（继续或终止）
 
+**修复方案**（完整代码替换第285-316行）：
+
 ```python
-# Observation 阶段 - 区分成功/失败状态
+# ========== Observation 阶段 ==========
+# 区分不同 execution_status 生成不同的 observation_text
 exec_status = execution_result.get('status', 'unknown')
 
 if exec_status == 'success':
@@ -1145,38 +1371,93 @@ else:
     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
 
 # 更新消息历史
+logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
 self._add_observation_to_history(observation_text)
+
+# 记录观察结果到prompt日志
+prompt_logger = get_prompt_logger()
+prompt_logger.log_observation(
+    step_name="工具执行结果",
+    observation_content=observation_text,
+    tool_name=tool_name,
+    tool_params=tool_params
+)
+
+# yield observation - 按15.7.1要求修改字段
+yield {
+    "type": "observation",
+    "step": step_count,
+    "timestamp": create_timestamp(),
+    "tool_name": tool_name,
+    "tool_params": tool_params,
+    "observation": observation_text,  # 使用区分状态后的 observation_text
+    "execution_status": exec_status,  # 新增字段：传递实际的 execution_status
+    "return_direct": execution_result.get("return_direct", False),
+}
+
+self._trim_history()
 ```
 
 **⚠️ 注意**：
 - 当 `execution_status != 'success'` 时，`data` 通常为 `None`
 - 不应该显示"实际数据: None"，应该只显示错误摘要
+- 新增 `execution_status` 字段，方便前端显示不同状态的图标/颜色
 
 ---
 
-###### 4.3.1.7.4 前端显示要求
+###### 4.3.1.7.4 前端显示要求（保持现状，不需要修改）
 
-| execution_status | 前端显示 | 图标/颜色 |
-|-----------------|---------|----------|
-| `"success"` | 成功 | ✅ 绿色 |
-| `"warning"` | 警告 | ⚠️ 黄色 |
-| `"error"` | 错误 | ❌ 红色 |
-| `"timeout"` | 超时 | ⏱️ 橙色 |
-| `"permission_denied"` | 权限不足 | 🔒 灰色 |
-
-**前端代码示例**：
+**当前设计**：前端代码已经兼容，不需要修改。现有逻辑：
 
 ```tsx
-const getStatusIcon = (status: string) => {
+// MessageItem.tsx 中的当前代码
+const getStatusDisplay = (status: string) => {
+  // success → ✅ 成功（绿色）
+  // 其他 → ❌ 失败（红色）
+  return status === "success" 
+    ? { text: '✅ 成功', color: '#52c41a' }
+    : { text: '❌ 失败', color: '#ff4d4f' };
+};
+```
+
+**效果**：
+| execution_status | 前端显示 | 说明 |
+|-----------------|---------|------|
+| `"success"` | ✅ 成功 | 绿色 |
+| `"warning"` | ❌ 失败 | 红色（注：显示为失败，但不影响功能） |
+| `"error"` | ❌ 失败 | 红色 |
+| `"timeout"` | ❌ 失败 | 红色 |
+| `"permission_denied"` | ❌ 失败 | 红色 |
+
+**说明**：
+- 所有非 `success` 的状态统一显示为"❌ 失败"
+- 不影响后端逻辑，只是不够友好
+- 前端可以保持现状，不需要修改
+- 如需更友好显示，可参考以下代码自行添加：
+
+```tsx
+// 可选：更友好的显示方案（如需修改前端）
+const getStatusDisplay = (status: string) => {
   switch (status) {
     case 'success':
-      return <CheckCircleIcon color="green" />;
+      return { text: '✅ 成功', color: '#52c41a' };
     case 'warning':
-      return <WarningIcon color="yellow" />;
+      return { text: '⚠️ 警告', color: '#faad14' };
     case 'error':
-      return <ErrorIcon color="red" />;
+      return { text: '❌ 错误', color: '#ff4d4f' };
     case 'timeout':
-      return <TimerIcon color="orange" />;
+      return { text: '⏱️ 超时', color: '#fa8c16' };
+    case 'permission_denied':
+      return { text: '🔒 权限不足', color: '#8c8c8c' };
+    default:
+      return { text: '❌ 失败', color: '#ff4d4f' };
+  }
+};
+```
+
+---
+
+**更新历史**：
     case 'permission_denied':
       return <LockIcon color="gray" />;
     default:
