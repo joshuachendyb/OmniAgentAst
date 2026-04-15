@@ -2993,6 +2993,60 @@ __all__ = [
 - 组合使用：parsed = parse_react_response(response) → step = StepFactory.create_xxx_step(...parsed...)
 
 
+### 15.4 Step封装对conversation_history的影响分析
+
+> 分析时间：2026-04-15
+> 分析人：小沈
+
+#### 15.4.1 Step封装的流程
+
+```
+LLM响应(response原始文本)
+       ↓
+parse_react_response() 解析 → dict
+       ↓
+StepFactory.create_xxx_step() → Step类对象
+       ↓
+self.steps.append(step) → 存入steps列表（Step类对象）
+       ↓
+yield step.to_dict() → 转换为dict给前端
+       ↓
+conversation_history存储原始文本response（保持不变）
+```
+
+#### 15.4.2 关键区别
+
+| 操作 | 存储内容 | 类型 |
+|------|---------|------|
+| `yield step.to_dict()` | 给前端的dict | dict |
+| `conversation_history` | 原始文本response | 字符串 |
+| `self.steps.append(step)` | Step类对象列表 | object |
+
+#### 15.4.3 影响结论
+
+**附件15章Step封装对conversation_history没有影响**：
+
+| 影响项 | 分析 | 结论 |
+|--------|------|------|
+| to_dict() | 转换为dict给前端 | 不涉及history |
+| steps列表 | 存储Step类对象 | 不涉及history |
+| conversation_history | 存储原始文本response字符串 | 保持不变 |
+
+**原因**：
+- Step封装改变的只是**内部代码组织方式**（类vs字典）
+- 不改变**数据流向**
+- `yield step.to_dict()` 输出给前端的仍然是dict
+- conversation_history存储的仍然是**原始文本字符串response**
+
+**对比14章 vs 15章**：
+
+| 维度 | 14章（统一解析器） | 15章（Step封装） |
+|------|-------------------|-----------------|
+| 影响conversation_history | 无影响 | 无影响 |
+| 改变内容 | 解析方式 | 代码组织方式 |
+| 数据流向 | 保持不变 | 保持不变 |
+
+
 ## 附件16 维度三：重构Agent主循环2.0的详细设计及详细实施步骤
 
 ### 16.1 维度三：重构Agent主循环2.0的详细设计
