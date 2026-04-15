@@ -2044,6 +2044,95 @@ grep -rn "self.parser\|ToolParser" backend/app/services/agent/ --include="*.py"
 - [ ] 14.7.7 检查其他调用点
 
 
+### 14.8 统一解析架构对conversation_history机制的影响分析
+
+> 分析时间：2026-04-15
+> 分析人：小沈
+
+#### 14.8.1 conversation_history机制说明
+
+**conversation_history是给LLM调用的对话历史**，每一轮LLM调用时会读取这个历史来理解上下文。
+
+**现有系统的组装方式**：
+
+| 阶段 | 加入的格式 | 实际内容 | 代码位置 |
+|------|-----------|----------|---------|
+| 初始化 | `{"role": "system", "content": sys_prompt}` | 系统prompt | base_react.py:157 |
+| 初始化 | `{"role": "user", "content": task_prompt}` | 用户任务 | base_react.py:158 |
+| LLM响应 | `{"role": "assistant", "content": response}` | **原始文本字符串** | base_react.py:246 |
+| Observation | `{"role": "user", "content": observation_text}` | **原始文本字符串** | base_react.py:290 |
+
+**关键发现**：conversation_history存储的是原始文本，不是解析后的结构化数据。
+
+#### 14.8.2 什么是"原始文本"？
+
+**LLM响应原始文本**（base_react.py:246）：
+```python
+self.conversation_history.append({"role": "assistant", "content": response})
+```
+`response` 是LLM返回的原始文本，例如：
+```
+Thought: 我需要查询天气
+Action: get_weather
+Action Input: {"city": "北京"}
+```
+
+**Observation原始文本**（base_react.py:286）：
+```python
+observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}"
+```
+拼接后的文本，例如：
+```
+Observation: success - 查询结果：北京今天晴，气温20度
+```
+
+#### 14.8.3 adapter.py转换函数说明
+
+adapter.py有两个转换函数，但**现有系统没有使用**：
+
+| 函数 | 作用 | 现有状态 |
+|------|------|---------|
+| `thought_to_message()` | 将thought dict转为消息格式 | 未使用 |
+| `action_tool_to_message()` | 将action_tool dict转为消息格式 | 未使用 |
+| `observation_to_llm_input()` | 将observation转为LLM输入格式 | 未使用 |
+
+#### 14.8.4 统一解析架构的影响结论
+
+**结论：附件14章的统一解析架构对conversation_history机制没有影响。**
+
+| 影响项 | 分析结果 | 说明 |
+|--------|----------|------|
+| parse_react_response() | ✅ 无影响 | 只负责解析文本，不改变history组装 |
+| 解析结果parsed dict | ✅ 无影响 | 只用于yield给前端和执行工具 |
+| type字段判断 | ✅ 无影响 | 不涉及history组装 |
+| 原始文本存储 | ✅ 无影响 | 仍然存储原始字符串 |
+
+**原因**：
+- 统一解析器（parse_react_response）只负责解析LLM输出
+- 不改变conversation_history的组装方式
+- history仍然存储原始文本字符串
+
+#### 14.8.5 原始文本 vs 结构化数据对比
+
+| 方式 | 存储内容 | 例子 |
+|------|---------|------|
+| **原始文本** | 直接存字符串 | `{"role": "assistant", "content": "Thought: xxx\nAction: yyy"}` |
+| **结构化数据** | 存parsed后的dict | `{"role": "assistant", "content": {"type": "action", "thought": "xxx", ...}}` |
+
+**现有方式（原始文本）- 优点**：
+- ✅ LLM输入格式简单直接
+- ✅ 不需要额外转换
+- ✅ 兼容性好
+
+**结构化数据方式- 优点**：
+- ✅ 规范化输出
+- ✅ 方便提取信息
+- ✅ 更清晰
+
+**建议**：现有系统用原始文本方式可以继续工作，adapter.py的函数是预留的增强方案。
+
+---
+
 ## 附件15 维度二：step封装处理详细设计及详细实施步骤
 
 ### 15.1 维度二：step封装处理详细设计
