@@ -254,19 +254,7 @@ class BaseAgent(ABC):
                 # 根据执行结果构建 action_tool
                 exec_status = execution_result.get("status", "success")
                 
-                if exec_status == "error":
-                    # 工具执行失败 - 使用统一函数
-                    action_tool_result = create_tool_error_result(
-                        tool_name=tool_name,
-                        error_message=execution_result.get("summary", "执行失败"),
-                        step_num=step_count,
-                        tool_params=tool_params,
-                        retry_count=execution_result.get("retry_count", 0),
-                        raw_data=execution_result.get("data"),
-                        timestamp=current_time
-                    )
-                    yield action_tool_result
-                else:
+                if exec_status == "success":
                     # 工具执行成功 - 按15.7.1要求修改字段
                     yield {
                         "type": "action_tool",
@@ -276,18 +264,55 @@ class BaseAgent(ABC):
                         "tool_params": tool_params,
                         "execution_status": "success",
                         "summary": execution_result.get("summary", ""),
-                        "execution_result": execution_result.get("data"),  # raw_data替换为execution_result
-                        "error_message": "",  # 新增字段（成功时为空）
-                        "execution_time_ms": execution_result.get("execution_time_ms", 0),  # 新增字段
+                        "execution_result": execution_result.get("data"),
+                        "error_message": "",
+                        "execution_time_ms": execution_result.get("execution_time_ms", 0),
                         "action_retry_count": 0
                     }
+                elif exec_status == "warning":
+                    # 工具执行警告（部分成功）- 使用 create_tool_error_result 传递 warning 状态
+                    action_tool_result = create_tool_error_result(
+                        tool_name=tool_name,
+                        error_message=execution_result.get("summary", "部分成功"),
+                        step_num=step_count,
+                        tool_params=tool_params,
+                        retry_count=execution_result.get("retry_count", 0),
+                        raw_data=execution_result.get("data"),
+                        timestamp=current_time,
+                        status="warning"  # 传递 warning 状态
+                    )
+                    yield action_tool_result
+                else:
+                    # error/timeout/permission_denied - 统一使用 create_tool_error_result
+                    action_tool_result = create_tool_error_result(
+                        tool_name=tool_name,
+                        error_message=execution_result.get("summary", "执行失败"),
+                        step_num=step_count,
+                        tool_params=tool_params,
+                        retry_count=execution_result.get("retry_count", 0),
+                        raw_data=execution_result.get("data"),
+                        timestamp=current_time,
+                        status=exec_status  # 传递实际的 execution_status
+                    )
+                    yield action_tool_result
                 
                 # ========== Observation 阶段 ==========
-                raw_data = execution_result.get('data')
-                if raw_data:
-                    observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}\n实际数据: {raw_data}"
+                # 区分不同 execution_status 生成不同的 observation_text
+                exec_status = execution_result.get('status', 'unknown')
+                
+                if exec_status == 'success':
+                    # 成功状态：显示完整信息，包括实际数据
+                    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+                    if execution_result.get('data'):
+                        observation_text += f"\n实际数据: {execution_result.get('data')}"
+                elif exec_status == 'warning':
+                    # 警告状态：显示警告信息和部分数据
+                    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+                    if execution_result.get('data'):
+                        observation_text += f"\n部分数据: {execution_result.get('data')}"
                 else:
-                    observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}"
+                    # 失败状态（error/timeout/permission_denied）：只显示错误摘要，不显示数据
+                    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
                 
                 # 更新消息历史
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
@@ -308,9 +333,10 @@ class BaseAgent(ABC):
                     "step": step_count,
                     "timestamp": create_timestamp(),
                     "tool_name": tool_name,
-                    "tool_params": tool_params,  # 新增字段
-                    "observation": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}",  # content替换为observation
-                    "return_direct": execution_result.get("return_direct", False),  # 新增字段（从execution_result获取）
+                    "tool_params": tool_params,
+                    "observation": observation_text,  # 使用区分状态后的 observation_text
+                    "execution_status": exec_status,  # 新增字段：传递实际的 execution_status
+                    "return_direct": execution_result.get("return_direct", False),
                 }
 
                 self._trim_history()
