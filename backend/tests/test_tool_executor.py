@@ -7,6 +7,7 @@ Author: 小沈 - 2026-03-21
 """
 
 import pytest
+import asyncio
 from unittest.mock import MagicMock, AsyncMock
 
 from app.services.agent.tool_executor import ToolExecutor
@@ -190,3 +191,106 @@ class TestToolExecutorResultFormatting:
         
         assert result["status"] == "success"
         assert result["data"] == "simple result"
+
+
+class TestToolExecutorExecutionStatus:
+    """测试ToolExecutor execution_status 功能"""
+    
+    @pytest.mark.asyncio
+    async def test_execute_timeout(self):
+        """测试工具执行超时"""
+        from app.services.agent.tool_executor import TOOL_TIMEOUTS
+        
+        # 创建一个会超时的工具
+        async def slow_tool():
+            await asyncio.sleep(10)  # 睡眠10秒
+            return {"data": "done"}
+        
+        executor = ToolExecutor({"slow_tool": slow_tool})
+        
+        # 临时修改超时配置，设置极短的超时时间来触发超时
+        original_timeout = TOOL_TIMEOUTS.get("slow_tool")
+        TOOL_TIMEOUTS["slow_tool"] = 0.1  # 100ms超时
+        
+        try:
+            result = await executor.execute("slow_tool", {})
+            
+            assert result["status"] == "timeout"
+            assert "timeout" in result["summary"].lower()
+            assert result["data"] is None
+        finally:
+            # 恢复原始超时配置
+            if original_timeout is None:
+                TOOL_TIMEOUTS.pop("slow_tool", None)
+            else:
+                TOOL_TIMEOUTS["slow_tool"] = original_timeout
+    
+    @pytest.mark.asyncio
+    async def test_timeout_message_format(self):
+        """测试超时消息格式"""
+        from app.services.agent.tool_executor import TOOL_TIMEOUTS
+        
+        async def search_tool():
+            await asyncio.sleep(10)
+            return {"data": "results"}
+        
+        executor = ToolExecutor({"search_tool": search_tool})
+        
+        # 临时修改超时配置
+        original_timeout = TOOL_TIMEOUTS.get("search_tool")
+        TOOL_TIMEOUTS["search_tool"] = 0.1
+        
+        try:
+            result = await executor.execute("search_tool", {})
+            
+            # 验证消息格式 - 实际返回 "Tool execution timeout after 0.1 seconds"
+            assert result["status"] == "timeout"
+            assert "timeout" in result["summary"].lower()
+            assert "0.1" in result["summary"]  # 超时时间
+        finally:
+            # 恢复原始超时配置
+            if original_timeout is None:
+                TOOL_TIMEOUTS.pop("search_tool", None)
+            else:
+                TOOL_TIMEOUTS["search_tool"] = original_timeout
+    
+    @pytest.mark.asyncio
+    async def test_execute_permission_denied(self):
+        """测试权限拒绝"""
+        # 创建一个会抛出 PermissionError 的工具
+        async def protected_tool():
+            raise PermissionError("[WinError 5] Access is denied")
+        
+        executor = ToolExecutor({"protected_tool": protected_tool})
+        result = await executor.execute("protected_tool", {})
+        
+        assert result["status"] == "permission_denied"
+        assert "Permission denied" in result["summary"]
+        assert result["data"] is None
+    
+    @pytest.mark.asyncio
+    async def test_execute_warning(self):
+        """测试工具返回 warning 状态"""
+        async def truncated_tool():
+            return {
+                "status": "warning",
+                "summary": "File truncated, showing first 1000 lines",
+                "data": {"content": "...truncated..."}
+            }
+        
+        executor = ToolExecutor({"truncated_tool": truncated_tool})
+        result = await executor.execute("truncated_tool", {})
+        
+        assert result["status"] == "warning"
+        assert "truncated" in result["summary"].lower()
+        assert result["data"] is not None
+    
+    def test_tool_timeouts_config(self):
+        """测试工具超时配置"""
+        from app.services.agent.tool_executor import TOOL_TIMEOUTS
+        
+        # 验证关键工具超时配置
+        assert TOOL_TIMEOUTS.get("read_file") == 30
+        assert TOOL_TIMEOUTS.get("search_file_content") == 60
+        assert TOOL_TIMEOUTS.get("execute_command") == 120
+        assert TOOL_TIMEOUTS.get("default") == 30
