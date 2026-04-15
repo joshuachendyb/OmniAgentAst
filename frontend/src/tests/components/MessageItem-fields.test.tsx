@@ -100,7 +100,7 @@ describe('【小资更新 2026-04-07】Observation 步骤精简测试', () => {
           tool_params: { path: '/test' },
           execution_status: 'success' as const,
           summary: 'Found 5 items',
-          raw_data: {
+          execution_result: {  // 【小强修改2026-04-15】raw_data → execution_result
             entries: [
               { name: 'file1.txt', type: 'file', path: '/test/file1.txt' },
               { name: 'folder1', type: 'directory', path: '/test/folder1' },
@@ -134,7 +134,7 @@ describe('【小资更新 2026-04-07】Observation 步骤精简测试', () => {
           tool_params: { keyword: 'test' },
           execution_status: 'success' as const,
           summary: 'Search completed, found 10 results',
-          raw_data: null,
+          execution_result: null,  // 【小强修改2026-04-15】raw_data → execution_result
         },
       ],
     };
@@ -191,7 +191,7 @@ describe('Map 状态管理测试（无变化）', () => {
           tool_params: { path: '/test1' },
           execution_status: 'success' as const,
           summary: 'Found 1 item',
-          raw_data: {
+          execution_result: {  // 【小强修改2026-04-15】raw_data → execution_result
             entries: [
               { name: 'file1.txt', type: 'file', path: '/test1/file1.txt' },
             ],
@@ -205,7 +205,7 @@ describe('Map 状态管理测试（无变化）', () => {
           tool_params: { path: '/test2' },
           execution_status: 'success' as const,
           summary: 'Found 2 items',
-          raw_data: {
+          execution_result: {  // 【小强修改2026-04-15】raw_data → execution_result
             entries: [
               { name: 'file2.txt', type: 'file', path: '/test2/file2.txt' },
               { name: 'file3.txt', type: 'file', path: '/test2/file3.txt' },

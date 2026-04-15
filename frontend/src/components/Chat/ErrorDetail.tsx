@@ -2,8 +2,8 @@ import React from "react";
 
 interface ErrorDetailProps {
   errorType?: string;
-  errorCode?: string;
-  errorMessage?: string;  // message - 错误消息内容
+  // 【小沈修改2026-04-15】删除errorCode，统一使用errorMessage
+  errorMessage?: string;
   errorTimestamp?: string;
   errorDetails?: string;
   errorStack?: string;
@@ -11,6 +11,14 @@ interface ErrorDetailProps {
   errorRetryAfter?: number;
   model?: string;
   provider?: string;
+  // 【小沈添加2026-04-15】新增recoverable和context
+  errorRecoverable?: boolean;
+  errorContext?: {
+    step?: number;
+    model?: string;
+    provider?: string;
+    thought_content?: string;
+  };
 }
 
 /**
@@ -22,7 +30,7 @@ interface ErrorDetailProps {
  */
 const ErrorDetail: React.FC<ErrorDetailProps> = ({
   errorType,
-  errorCode: _errorCode,  // 【小新修复2026-03-14】保留但不使用（用户无需看到技术错误码）
+  // 【小沈修改2026-04-15】删除errorCode
   errorMessage,
   errorTimestamp,
   errorDetails,
@@ -31,6 +39,9 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
   errorRetryAfter,
   model,
   provider,
+  // 【小沈添加2026-04-15】新增recoverable和context
+  errorRecoverable,
+  errorContext,
 }) => {
   // 根据error_type显示不同颜色
   const getColors = () => {
@@ -231,6 +242,24 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
                 </span>
               )}
             </span>
+          </div>
+        )}
+        {/* 【小沈添加2026-04-15】显示recoverable字段 */}
+        {errorRecoverable !== undefined && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: "#888", whiteSpace: "nowrap", fontSize: "13px" }}>可恢复:</span>
+            <span style={{ color: errorRecoverable ? "#52c41a" : "#999", fontSize: "13px", fontWeight: 500 }}>
+              {errorRecoverable ? "是" : "否"}
+            </span>
+          </div>
+        )}
+        {/* 【小沈添加2026-04-15】显示context字段 */}
+        {errorContext && (
+          <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(255, 255, 255, 0.3)", borderRadius: 6 }}>
+            <div style={{ color: "#888", fontSize: "12px", marginBottom: 4 }}>上下文:</div>
+            {errorContext.step && <div style={{ color: "#666", fontSize: "13px" }}>步骤: {errorContext.step}</div>}
+            {errorContext.model && <div style={{ color: "#666", fontSize: "13px" }}>模型: {errorContext.model}</div>}
+            {errorContext.provider && <div style={{ color: "#666", fontSize: "13px" }}>提供商: {errorContext.provider}</div>}
           </div>
         )}
       </div>

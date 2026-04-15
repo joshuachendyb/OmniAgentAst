@@ -74,7 +74,7 @@ const TEST_MESSAGES = {
     },
     execution_status: 'success' as const,
     summary: '成功列出目录内容',
-    raw_data: {
+    execution_result: {  // 【小强修改2026-04-15】raw_data → execution_result
       files: ['file1.txt', 'file2.txt', 'file3.txt'],
       total: 3,
       has_more: false,
@@ -87,7 +87,7 @@ const TEST_MESSAGES = {
     step: 2,
     execution_status: 'success' as const,
     summary: '成功获取目录列表',
-    raw_data: {
+    execution_result: {  // 【小强修改2026-04-15】raw_data → execution_result
       files: ['file1.txt', 'file2.txt'],
       total: 2,
     },
@@ -117,20 +117,22 @@ const TEST_MESSAGES = {
 
   error: {
     type: 'error' as const,
-    code: 'FILE_NOT_FOUND',
-    message: '指定的文件不存在',
+    error_message: '指定的文件不存在',  // 【小强修改2026-04-15】message → error_message
     error_type: 'FileOperationError',
     details: '文件路径: C:\\nonexistent\\file.txt',
     stack: 'Error: FILE_NOT_FOUND\n    at FileOperation.execute...',
     retryable: true,
     retry_after: 5,
+    recoverable: true,  // 【小强添加2026-04-15】
+    context: { step: 1, model: 'gpt-4', provider: 'openai' },  // 【小强添加2026-04-15】
   },
 
   errorNonRetryable: {
     type: 'error' as const,
-    code: 'AUTH_FAILED',
-    message: '认证失败，请检查API Key配置',
+    error_message: '认证失败，请检查API Key配置',  // 【小强修改2026-04-15】message → error_message
+    error_type: 'AuthError',
     retryable: false,
+    recoverable: false,  // 【小强添加2026-04-15】
   },
 
   statusPaused: {
@@ -166,7 +168,7 @@ const TEST_MESSAGES = {
     },
     execution_status: 'success' as const,
     summary: '搜索完成',
-    raw_data: {
+    execution_result: {  // 【小强修改2026-04-15】raw_data → execution_result
       files: ['file1.txt', 'file2.txt', 'file3.txt', 'file4.txt', 'file5.txt'],
       total: 100,
       has_more: true,
@@ -282,12 +284,12 @@ describe('【小查测试】10.1 消息类型数据结构验证', () => {
   });
 
   describe('error类型结构', () => {
-    it('应包含code字段', () => {
-      expect(TEST_MESSAGES.error.code).toBe('FILE_NOT_FOUND');
+    it('应包含error_message字段', () => {  // 【小强修改2026-04-15】code → error_message
+      expect(TEST_MESSAGES.error.error_message).toBe('指定的文件不存在');
     });
 
-    it('应包含message字段', () => {
-      expect(TEST_MESSAGES.error.message).toBe('指定的文件不存在');
+    it('应包含error_type字段', () => {  // 【小强添加2026-04-15】
+      expect(TEST_MESSAGES.error.error_type).toBe('FileOperationError');
     });
 
     it('应包含retryable字段', () => {
@@ -297,6 +299,15 @@ describe('【小查测试】10.1 消息类型数据结构验证', () => {
 
     it('应包含retry_after字段', () => {
       expect(TEST_MESSAGES.error.retry_after).toBe(5);
+    });
+
+    it('应包含recoverable字段', () => {  // 【小强添加2026-04-15】
+      expect(TEST_MESSAGES.error.recoverable).toBe(true);
+      expect(TEST_MESSAGES.errorNonRetryable.recoverable).toBe(false);
+    });
+
+    it('应包含context字段', () => {  // 【小强添加2026-04-15】
+      expect(TEST_MESSAGES.error.context).toEqual({ step: 1, model: 'gpt-4', provider: 'openai' });
     });
   });
 
@@ -502,16 +513,16 @@ describe('【小查测试】10.3 任务控制API函数测试', () => {
 describe('【小查测试】10.4 分页功能', () => {
   describe('分页数据结构验证', () => {
     it('应正确识别has_more字段', () => {
-      expect(TEST_MESSAGES.action_tool.raw_data?.has_more).toBe(false);
-      expect(TEST_MESSAGES.actionToolWithPagination.raw_data?.has_more).toBe(true);
+      expect(TEST_MESSAGES.action_tool.execution_result?.has_more).toBe(false);  // 【小强修改2026-04-15】raw_data → execution_result
+      expect(TEST_MESSAGES.actionToolWithPagination.execution_result?.has_more).toBe(true);
     });
 
     it('应正确识别next_page_token', () => {
-      expect(TEST_MESSAGES.actionToolWithPagination.raw_data?.next_page_token).toBe('page-2-token');
+      expect(TEST_MESSAGES.actionToolWithPagination.execution_result?.next_page_token).toBe('page-2-token');
     });
 
     it('应正确识别total字段', () => {
-      expect(TEST_MESSAGES.actionToolWithPagination.raw_data?.total).toBe(100);
+      expect(TEST_MESSAGES.actionToolWithPagination.execution_result?.total).toBe(100);
     });
   });
 });
