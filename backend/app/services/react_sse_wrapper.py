@@ -552,7 +552,7 @@ async def generate_sse_stream(
         
         logger.info(f"[Step error] 发送error步骤")
         current_execution_steps.append(error_step)
-        await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {error_step['message']}")
+        await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {error_step['error_message']}")
         yield error_response
     
     finally:
