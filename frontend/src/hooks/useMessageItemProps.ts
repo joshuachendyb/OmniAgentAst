@@ -30,11 +30,8 @@ export interface MessageItemProps {
     is_reasoning?: boolean;
     task_id?: string;
     errorType?: string;
-    // 【小沈修改2026-04-15】删除errorCode，统一使用errorMessage
+    // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除
     errorMessage?: string;
-    errorDetails?: string;
-    errorStack?: string;
-    errorRetryable?: boolean;
     errorRetryAfter?: number;
     errorTimestamp?: string;
     // 【小沈添加2026-04-15】新增recoverable和context
