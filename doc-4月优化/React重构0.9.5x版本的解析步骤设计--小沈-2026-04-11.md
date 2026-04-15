@@ -881,7 +881,50 @@ warning 是"部分成功"的情况，由工具主动返回：
 | 结果超限 | `search_file_content` | 结果过多，限制返回数量 |
 | 格式警告 | `write_file` | 内容格式不规范但可写入 |
 
-**2. warning 返回格式**
+**2. tool_executor.py 中 _format_result 方法修改**
+
+需要增加 warning 判断逻辑：
+
+```python
+def _format_result(self, result, action):
+    """格式化工具执行结果"""
+    if result is None:
+        return {
+            "status": "success",
+            "summary": f"{action} completed",
+            "data": None,
+            "retry_count": 0
+        }
+    
+    # 检查是否是 warning 状态
+    if result.get("status") == "warning" or result.get("is_warning"):
+        return {
+            "status": "warning",
+            "summary": result.get("summary", "Partial success with warnings"),
+            "data": result.get("data"),
+            "retry_count": result.get("retry_count", 0)
+        }
+    
+    # 原有逻辑
+    if isinstance(result, dict):
+        if result.get("success") == False:
+            return {
+                "status": "error",
+                "summary": result.get("error", str(result)),
+                "data": None,
+                "retry_count": result.get("retry_count", 0)
+            }
+        # ... 其他逻辑
+    
+    return {
+        "status": "success",
+        "summary": result.get("summary", f"{action} completed"),
+        "data": result.get("data", result),
+        "retry_count": result.get("retry_count", 0)
+    }
+```
+
+**3. warning 返回格式**
 
 ```python
 {
@@ -966,8 +1009,9 @@ async def execute(self, action, action_input):
 
 | 文件 | 修改内容 |
 |------|---------|
-| `backend/app/services/agent/tool_executor.py` | 1. 新增 TOOL_TIMEOUTS 配置<br>2. 新增 asyncio.TimeoutError 捕获<br>3. 新增 PermissionError 捕获<br>4. 完善异常处理顺序 |
-| `backend/app/services/agent/base_react.py` | 1. 处理所有 execution_status（非只有 error）<br>2. 实现 timeout 重试逻辑<br>3. 实现 permission_denied 终止逻辑 |
+| `backend/app/services/agent/tool_executor.py` | 1. 新增 TOOL_TIMEOUTS 配置<br>2. 新增 asyncio.TimeoutError 捕获<br>3. 新增 PermissionError 捕获<br>4. 完善异常处理顺序<br>5. `_format_result` 增加 warning 判断逻辑 |
+| `backend/app/services/agent/base_react.py` | 1. 处理所有 execution_status（非只有 error）<br>2. 实现 timeout 重试逻辑<br>3. 实现 permission_denied 终止逻辑<br>4. Observation 阶段区分成功/失败状态 |
+| `backend/app/chat_stream/error_handler.py` | 1. `create_tool_error_result` 函数增加 `status` 参数 |
 | `backend/tests/test_tool_executor.py` | 新增测试用例：<br>1. test_execute_timeout<br>2. test_execute_permission_denied<br>3. test_timeout_message_format |
 
 ##### 4.3.1.7 系统集成注意事项（2026-04-16 新增）
@@ -1000,12 +1044,34 @@ if exec_status in ["error", "timeout", "permission_denied"]:
         tool_params=tool_params,
         retry_count=execution_result.get("retry_count", 0),
         raw_data=execution_result.get("data"),
-        timestamp=current_time
+        timestamp=current_time,
+        status=exec_status  # 新增参数：传递实际的 execution_status
     )
     yield action_tool_result
 else:
     # 只有 success 走这里
     yield {..., "execution_status": "success", ...}
+```
+
+**⚠️ 注意**：`error_handler.py` 中的 `create_tool_error_result` 函数需要增加 `status` 参数：
+
+```python
+def create_tool_error_result(
+    tool_name: str,
+    error_message: str,
+    step_num: int,
+    tool_params: Optional[Dict[str, Any]] = None,
+    retry_count: int = 0,
+    raw_data: Any = None,
+    timestamp: Optional[int] = None,
+    status: str = "error"  # 新增参数
+) -> Dict[str, Any]:
+    ...
+    return {
+        ...
+        'execution_status': status,  # 使用传入的 status 而非固定 "error"
+        ...
+    }
 ```
 
 ---
@@ -1061,14 +1127,30 @@ elif exec_status == "permission_denied":
 **关键点**：无论什么 execution_status，都需要发送 Observation 给 LLM，让 LLM 决定下一步（继续或终止）
 
 ```python
-# Observation 阶段 - 统一处理
-observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}"
-if execution_result.get('data'):
-    observation_text += f"\n实际数据: {execution_result.get('data')}"
+# Observation 阶段 - 区分成功/失败状态
+exec_status = execution_result.get('status', 'unknown')
+
+if exec_status == 'success':
+    # 成功状态：显示完整信息，包括实际数据
+    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+    if execution_result.get('data'):
+        observation_text += f"\n实际数据: {execution_result.get('data')}"
+elif exec_status == 'warning':
+    # 警告状态：显示警告信息和部分数据
+    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+    if execution_result.get('data'):
+        observation_text += f"\n部分数据: {execution_result.get('data')}"
+else:
+    # 失败状态（error/timeout/permission_denied）：只显示错误摘要，不显示数据（data 通常为 None）
+    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
 
 # 更新消息历史
 self._add_observation_to_history(observation_text)
 ```
+
+**⚠️ 注意**：
+- 当 `execution_status != 'success'` 时，`data` 通常为 `None`
+- 不应该显示"实际数据: None"，应该只显示错误摘要
 
 ---
 
