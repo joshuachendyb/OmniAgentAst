@@ -3351,9 +3351,19 @@ chunk_data = {
 
 ### 15.6.7 error 类型
 
-**来源文件**: `backend/app/chat_stream/error_handler.py` (第53-66行)
+**error 产生位置**:
 
-**产生字段**:
+| 文件 | 位置 | 说明 |
+|------|------|------|
+| `error_handler.py` | 第16-66行 | `create_error_step()` - 创建保存到数据库的error_step |
+| `error_handler.py` | 第69-119行 | `create_error_response()` - 创建yield给前端的SSE响应 |
+| `error_handler.py` | 第546-566行 | `create_session_error_result()` - 内部调用上述函数 |
+| `error_handler.py` | 第609-629行 | `create_error_from_exception()` - 内部调用上述函数 |
+| `react_sse_wrapper.py` | 第144,289,353,455,476,497,518行 | 调用`create_error_response()` |
+| `chat_stream_query.py` | 第293行 | 调用`create_error_response()` |
+| `chat_router.py` | 第88,127,248,362行 | 调用`create_error_response()` (✅已统一) |
+
+**字段**:
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
 | type | string | 固定值 "error" |
@@ -3368,9 +3378,8 @@ chunk_data = {
 | recoverable | bool | 是否可恢复（15.7新增） |
 | context | dict | 错误上下文（15.7新增，包含step/model/provider/thought_content） |
 | retry_after | int | 重试等待秒数 |
-
-details	if details:	✅ 符合
-stack	⚠️ 可选	if stack:	✅ 符合
+| details | string | 详细错误信息（⚠️预留字段，当前代码未使用） |
+| stack | string | 堆栈信息（⚠️预留字段，当前代码未使用） |
 
 **代码示例**:
 ```python
@@ -3449,16 +3458,14 @@ create_error_step函数（第16-58行）**
 
 ```python
 def create_error_step(
-    error_type: str,  # 已有，保留
-    error_message: str,  # 已有，保留（参数名改为error_message更明确）
+    error_type: str,
+    error_message: str,
     step_num: int,
     model: Optional[str] = None,
     provider: Optional[str] = None,
-    recoverable: bool = False,  # ← retryable替换为recoverable
-    context: Optional[Dict[str, Any]] = None,  # ← 新增参数
-    retryable: bool = False,  # ← 保留（向后兼容）
-    retry_after: Optional[int] = None,
-    thought_content: str = ""  # ← 新增参数（用于context）
+    recoverable: bool = False,
+    context: Optional[Dict[str, Any]] = None,
+    retry_after: Optional[int] = None
 ) -> Dict[str, Any]:
     # 构建context字段
     if context is None:
@@ -3466,64 +3473,52 @@ def create_error_step(
             "step": step_num,
             "model": model,
             "provider": provider,
-            "thought_content": thought_content  # ← 包含最后一次LLM的thought_content
+            "thought_content": ""
         }
     
     return {
         'type': 'error',
         'step': step_num,
-        'error_type': error_type,  # ← 已有，保留
-        'error_message': error_message,  # ← 已有，保留
-        'content': error_message,  # ← 保留（向后兼容）
+        'error_type': error_type,
+        'error_message': error_message,
         'timestamp': create_timestamp(),
         'model': model,
         'provider': provider,
         'reasoning': '',
         'is_reasoning': False,
-        'recoverable': recoverable,  # ← 新增字段（替换retryable）
-        'context': context,  # ← 新增字段
-        'retryable': retryable,  # ← 保留（向后兼容）
+        'recoverable': recoverable,
+        'context': context,
         'retry_after': retry_after
-        # ← 已删除：code、message（不再需要）
     }
 ```
 
-create_session_error_result中的create_error_step调用（第549-559行）**
+create_session_error_result中的create_error_step调用**
 
-
-修改为：
 ```python
 error_step = create_error_step(
-    error_type=error_type,  # ← 替换code
-    error_message=error_message,  # ← 替换message
+    error_type=error_type,
+    error_message=error_message,
     step_num=step_num,
     model=model,
     provider=provider,
-    recoverable=retryable,  # ← retryable替换为recoverable
-    context={"step": step_num, "model": model, "provider": provider, "thought_content": thought_content},  # ← 新增，直接使用thought_content变量
-    retryable=retryable,  # ← 保留（向后兼容）
-    retry_after=retry_after,
-    thought_content=thought_content  # ← 直接使用当前变量
+    recoverable=recoverable,
+    context={"step": step_num, "model": model, "provider": provider, "thought_content": ""},
+    retry_after=retry_after
 )
 ```
 
-create_error_from_exception中的create_error_step调用（第614-623行）**
+create_error_from_exception中的create_error_step调用**
 
-
-
-修改为：
 ```python
 error_step = create_error_step(
-    error_type=error_type,  # ← 替换code
-    error_message=error_message,  # ← 替换message
+    error_type=error_type,
+    error_message=error_message,
     step_num=step_num,
     model=model,
     provider=provider,
-    recoverable=retryable,  # ← retryable替换为recoverable
-    context={"step": step_num, "model": model, "provider": provider, "thought_content": thought_content},  # ← 新增，直接使用thought_content变量
-    retryable=retryable,  # ← 保留（向后兼容）
-    retry_after=retry_after,
-    thought_content=thought_content  # ← 直接使用当前变量
+    recoverable=retryable,
+    context={"step": step_num, "model": model, "provider": provider, "thought_content": ""},
+    retry_after=retry_after
 )
 ```
 
@@ -3538,18 +3533,36 @@ create_error_response返回值**
 ```python
 def create_error_response(
     error_type: str,
-    error_message: str,  # ← message替换为error_message
-    code: str = "INTERNAL_ERROR",
-    ...
+    error_message: str,
+    model: Optional[str] = None,
+    provider: Optional[str] = None,
+    details: Optional[str] = None,
+    stack: Optional[str] = None,
+    recoverable: Optional[bool] = None,
+    retry_after: Optional[int] = None,
+    step: Optional[int] = None
 ) -> str:
     response: Dict[str, Any] = {
         'type': 'error',
         'error_type': error_type,
-        'error_message': error_message,  # ← message替换为error_message
-        'code': code,  # ← 保留（向后兼容）
-        'message': error_message,  # ← 保留（向后兼容）
+        'error_message': error_message,
     }
-    ...
+    if step is not None:
+        response['step'] = step
+    if model is not None:
+        response['model'] = model
+    if provider is not None:
+        response['provider'] = provider
+    if details:
+        response['details'] = details
+    if stack:
+        response['stack'] = stack
+    if recoverable is not None:
+        response['recoverable'] = recoverable
+    if retry_after is not None:
+        response['retry_after'] = retry_after
+    response['timestamp'] = create_timestamp()
+    return f"data: {json.dumps(response, ensure_ascii=False)}\n\n"
 ```
 
 create_session_error_result中的调用（第539行）**
@@ -3561,7 +3574,7 @@ error_response = create_error_response(
     error_message=error_message,  # ← message替换为error_message
     model=model,
     provider=provider,
-    retryable=retryable,
+    recoverable=retryable,  # ← retryable替换为recoverable
     retry_after=retry_after,
     step=step_num
 )
@@ -3575,10 +3588,9 @@ create_error_from_exception中的调用（第602行）**
 error_response = create_error_response(
     error_type=error_type,
     error_message=error_message,  # ← message替换为error_message
-    code=error_code,
     model=model,
     provider=provider,
-    retryable=retryable,
+    recoverable=retryable,  # ← retryable替换为recoverable
     retry_after=retry_after,
     step=step_num
 )
