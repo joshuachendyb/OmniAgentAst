@@ -6,9 +6,34 @@
 Author: 小沈 - 2026-03-21
 """
 
+import asyncio
 from typing import Any, Callable, Dict
 
 from app.utils.logger import logger
+
+
+# 【新增 2026-04-16 小沈】工具超时配置
+TOOL_TIMEOUTS = {
+    # 文件操作类工具
+    "read_file": 30,
+    "search_file_content": 60,  # 全文搜索（耗时较长）
+    "write_file": 30,
+    "delete_file": 30,
+    "move_file": 30,
+    "list_directory": 10,
+    "search_files": 30,
+    
+    # 命令执行类工具
+    "execute_command": 120,
+    "run_command": 120,
+    
+    # 快速工具
+    "get_current_time": 5,
+    "get_system_info": 10,
+    
+    # 默认超时
+    "default": 30
+}
 
 
 class ToolExecutor:
@@ -89,10 +114,40 @@ class ToolExecutor:
                     "retry_count": 0
                 }
             
-            result = await tool(**normalized_input)
+            # 【新增 2026-04-16 小沈】使用asyncio.wait_for带超时执行工具
+            timeout = TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"])
+            result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
             
             return self._format_result(result, action)
-            
+        
+        # 【新增 2026-04-16 小沈】超时处理
+        except asyncio.TimeoutError:
+            logger.error(f"[超时] action={action} 执行超过{timeout}秒")
+            return {
+                "status": "timeout",
+                "summary": f"Tool execution timeout after {timeout} seconds",
+                "data": None,
+                "retry_count": 0
+            }
+        # 权限拒绝处理
+        except PermissionError as e:
+            logger.error(f"[权限拒绝] action={action}: {e}")
+            return {
+                "status": "permission_denied",
+                "summary": f"Permission denied: {str(e)}",
+                "data": None,
+                "retry_count": 0
+            }
+        # 文件未找到处理
+        except FileNotFoundError as e:
+            logger.error(f"[文件未找到] action={action}: {e}")
+            return {
+                "status": "error",
+                "summary": f"File not found: {str(e)}",
+                "data": None,
+                "retry_count": 0
+            }
+        # 其他异常
         except Exception as e:
             logger.error(f"Tool execution error: {e}", exc_info=True)
             return {
@@ -155,6 +210,8 @@ class ToolExecutor:
         """
         格式化工具执行结果
         
+        【2026-04-16 小沈修改】新增 warning 状态判断逻辑
+        
         Args:
             result: 原始执行结果
             action: 工具名称
@@ -163,7 +220,15 @@ class ToolExecutor:
             格式化后的结果
         """
         if isinstance(result, dict):
-            if "status" in result and "summary" in result:
+            # 【2026-04-16 小沈新增】处理工具返回的warning状态
+            if result.get("status") == "warning":
+                return {
+                    "status": "warning",
+                    "summary": result.get("summary", "Warning during execution"),
+                    "data": result.get("data"),
+                    "retry_count": result.get("retry_count", 0)
+                }
+            elif "status" in result and "summary" in result:
                 return {
                     "status": result.get("status", "success"),
                     "summary": result.get("summary", ""),
