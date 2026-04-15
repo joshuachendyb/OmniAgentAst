@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.1  
+**文档版本**: v2.2  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-15 15:25:00  
+**更新时间**: 2026-04-15 16:30:00  
 **编写人**: 小沈  
 
 ## 版本历史
@@ -23,11 +23,12 @@
 | v1.4 | 2026-04-15 08:15:00 | 小沈 | 重写14.6章节，重点更新第四阶段调用者适配改造：1)精确分析base_react.py第45/195/219-243行; 2)详细说明parse_react_response替换self.parser.parse_response; 3)完整展示基于type字段的结果处理逻辑; 4)包含完整集成后的代码示例; 5)明确兼容性字段content/reasoning处理 |
 | v1.5 | 2026-04-15 09:00:00 | 小沈 | 14.6章节新增五个阶段划分：阶段一创建新模块、阶段二单元测试、阶段三集成替换、阶段四集成验证、阶段五清理旧代码；明确阶段依赖关系和与14.1-14.5的对应关系 |
 | v1.6 | 2026-04-15 09:10:00 | 小沈 | 14.6章节新增内容添加小章节号14.6.1-14.6.4，规范化章节编号 |
-| v1.7 | 2026-04-15 09:20:00 | 小沈 | 14.7章节重编小章节号14.7.1-14.7.7，规范化步骤编��� |
+| v1.7 | 2026-04-15 09:20:00 | 小沈 | 14.7章节重编小章节号14.7.1-14.7.7，规范化步骤编号 |
 | v1.8 | 2026-04-15 13:05:23 | 小沈 | 新增15.6章节：12.1章节type字段扩展与Step封装的关系分析 |
 | v1.9 | 2026-04-15 13:19:45 | 小沈 | 新增15.7章节：系统type字段名称补齐处理（字段名不同+需补充) |
 | v2.0 | 2026-04-15 15:14:29 | 小沈 | 根据小健审查修正15.7.2：1)步骤1.3补充is_reasoning字段; 2)步骤4 context新增thought_content参数; 3)步骤5补充详细调用点; 4)15.7.1 context描述修正 |
 | v2.1 | 2026-04-15 15:25:00 | 小沈 | 修正context.thought_content获取方式：从conversation_history最后一条assistant消息获取，添加获取代码示例 |
+| v2.2 | 2026-04-15 16:30:00 | 小沈 | 新增15.7.3章节：前端修改建议，包含chat.ts类型修改、sse.ts字段映射、MessageItem.tsx字段引用修改、测试文件修改、完整字段对照表和验证清单 |
 
 ---
 
@@ -3844,72 +3845,375 @@ error_response = create_error_response(
 
 ---
 
-##### 15.7.2.9 风险与回滚
+### 15.7.3 前端修改建议
 
-| 风险 | 影响 | 应对措施 |
-|------|------|---------|
-| 前端依赖旧字段名 | 显示异常 | 保留旧字段（content等）作为兼容 |
-| 数据库存储旧字段名 | 数据不一致 | 迁移脚本处理 |
-| 第三方系统依赖旧字段 | 集成失败 | 同步修改或提供转换层 |
+**编写时间**: 2026-04-15 16:30:00
+**编写人**: 小沈
+**版本**: v1.0
 
-**回滚方案**：
-- 使用git回滚修改的4个文件
-- 恢复旧字段名
-- 重新测试验证
+#### 15.7.3.1 前端需要修改的文件清单
 
+| 序号 | 文件路径 | 修改类型 | 说明 |
+|------|----------|----------|------|
+| 1 | `frontend/src/types/chat.ts` | 类型定义修改 | 更新各消息类型的字段名 |
+| 2 | `frontend/src/utils/sse.ts` | SSE解析逻辑修改 | 更新ExecutionStep接口和字段映射 |
+| 3 | `frontend/src/components/Chat/MessageItem.tsx` | 显示逻辑修改 | 更新raw_data等字段引用 |
+| 4 | `frontend/src/components/Chat/NewChatContainer.tsx` | 容器逻辑修改 | 更新字段引用（如果有） |
+| 5 | `frontend/src/tests/ReAct-stream-messages.test.tsx` | 测试用例修改 | 更新测试数据字段名 |
+| 6 | `frontend/src/tests/components/MessageItem-fields.test.tsx` | 测试用例修改 | 更新测试数据字段名 |
 
+#### 15.7.3.2 详细修改步骤
 
-**步骤1：修改base_react.py中的yield字段**
+##### 步骤1：修改 `frontend/src/types/chat.ts`
 
+**1.1 修改 ActionToolMessage 类型定义**
 
-**步骤2：修改sse_formatter.py函数参数**
-
-位置1：format_action_tool_sse() - 当前参数（第69行）
-```python
-# 当前参数：raw_data, action_retry_count
-# 修改为（按15.7.1差异清单）：
-# raw_data → execution_result
-# 新增 error_message, execution_time_ms
-def format_action_tool_sse(
-    step, tool_name, tool_params, execution_status, summary,
-    execution_result=None,  # 替代raw_data
-    error_message="", 
-    execution_time_ms=0,
-    action_retry_count=0
-)
+```typescript
+/**
+ * action_tool类型 - 执行动作
+ * 发送时机：ReAct第2阶段，工具执行时
+ * 【2026-04-15 小沈修改】字段名更新：
+ *   - raw_data → execution_result
+ *   - 新增 error_message、execution_time_ms
+ */
+export interface ActionToolMessage {
+  type: 'action_tool';
+  step: number;
+  tool_name: string;
+  tool_params: Record<string, any>;
+  execution_status: 'success' | 'error' | 'warning';
+  summary: string;
+  execution_result?: Record<string, any> | null; // 【修改】raw_data → execution_result
+  error_message?: string;  // 【新增】错误消息
+  execution_time_ms?: number;  // 【新增】执行耗时（毫秒）
+  action_retry_count: number;
+}
 ```
 
-位置2：format_observation_sse() - 当前参数（第103行）
-```python
-# 当前参数：content, tool_name, timestamp
-# 修改为（按15.7.1差异清单）：
-# content → observation
-# 新增 return_direct, tool_params
-def format_observation_sse(
-    step, observation="",  # 替代content
-    tool_name="", tool_params={},  # 新增
-    return_direct=False,  # 新增
-    timestamp=""
-)
+**1.2 修改 ObservationMessage 类型定义**
+
+```typescript
+/**
+ * observation类型 - 工具执行完成提示
+ * 发送时机：ReAct第3阶段，工具执行完成后
+ * 【2026-04-15 小沈修改】字段名更新：
+ *   - content → observation（保留content但补充observation）
+ *   - 新增 return_direct、tool_params
+ */
+export interface ObservationMessage {
+  type: 'observation';
+  step: number;
+  timestamp: number;
+  content?: string;  // 【保留】兼容性字段
+  observation?: string;  // 【新增】工具执行结果（从action_tool的execution_result复制）
+  tool_name?: string;  // 工具名称（可选）
+  return_direct?: boolean;  // 【新增】是否直接返回（不需要再调用LLM）
+  tool_params?: Record<string, any>;  // 【新增】工具参数（从action_tool的tool_params复制）
+}
 ```
 
-**步骤3：修改error_handler.py函数**
+**1.3 修改 FinalMessage 类型定义**
 
-位置：create_error_step() - 当前参数（第16行）
-```python
-# 当前参数：code, message, error_type, step_num, model, provider, retryable, retry_after
-# 修改为（按15.7.1差异清单）：
-# code → error_type, message → error_message
-# 新增 recoverable, context
-def create_error_step(
-    error_type,  # 替代code
-    error_message,  # 替代message
-    step_num, model, provider,
-    recoverable=False,  # 新增
-    context={"step": step_num, "model": model, "provider": provider},  # 新增
-    retryable=False, retry_after=None
-)
+```typescript
+/**
+ * final类型 - 最终回复
+ * 发送时机：任务完成时
+ * 【2026-04-15 小沈修改】字段名更新：
+ *   - content → response
+ *   - 新增 is_finished、thought、is_streaming、is_reasoning
+ */
+export interface FinalMessage {
+  type: 'final';
+  content?: string;  // 【保留】兼容性字段
+  response?: string;  // 【新增】最终回复内容（从content复制）
+  is_finished?: boolean;  // 【新增】是否完成
+  thought?: string;  // 【新增】最终思考过程
+  is_streaming?: boolean;  // 【新增】是否流式输出
+  is_reasoning?: boolean;  // 【新增】是否包含思考过程
+}
 ```
+
+**1.4 修改 ErrorMessage 类型定义**
+
+```typescript
+/**
+ * error类型 - 错误
+ * 发送时机：发生错误时
+ * 【2026-04-15 小沈修改】字段名更新：
+ *   - code → error_type（已在chat.ts中定义为此名，无需修改）
+ *   - message → error_message（已在chat.ts中定义为此名，无需修改）
+ *   - 新增 recoverable、context
+ */
+export interface ErrorMessage {
+  type: 'error';
+  error_type: string;  // 【已是此名】错误类型
+  error_message: string;  // 【已是此名】错误消息
+  error_code: string;  // 【修改名称】原code改为error_code（可选）
+  timestamp: string;
+  model?: string;
+  provider?: string;
+  details?: string;
+  stack?: string;
+  retryable?: boolean;  // 【保留原名】
+  recoverable?: boolean;  // 【新增】是否可恢复
+  context?: {  // 【新增】错误上下文
+    step?: number;  // 发生错误的步骤
+    model?: string;  // 模型名称
+    provider?: string;  // 提供商
+    thought_content?: string;  // 最后一次LLM的thought_content
+  };
+  retry_after?: number;
+}
+```
+
+##### 步骤2：修改 `frontend/src/utils/sse.ts`
+
+**2.1 修改 ExecutionStep 接口（第68-148行）**
+
+```typescript
+export interface ExecutionStep {
+  // === 通用字段 ===
+  type: "thought" | "action_tool" | "observation" | "chunk" | "final" | "error" | "incident" | "interrupted" | "start" | "paused" | "resumed" | "retrying";
+  content?: string;
+  task_id?: string;
+  user_message?: string;
+  step?: number;
+  
+  // === action_tool 类型字段 ===
+  tool_name?: string;
+  tool_params?: Record<string, any>;
+  execution_status?: 'success' | 'error' | 'warning';
+  summary?: string;
+  execution_result?: Record<string, any> | null;  // 【修改】raw_data → execution_result
+  error_message?: string;  // 【新增】
+  execution_time_ms?: number;  // 【新增】
+  action_retry_count?: number;
+  
+  // === observation 类型字段 ===
+  observation?: string;  // 【新增】从action_tool的execution_result复制
+  return_direct?: boolean;  // 【新增】
+  
+  // === final 类型字段 ===
+  response?: string;  // 【新增】从content复制
+  is_finished?: boolean;  // 【新增】
+  thought?: string;  // 【新增】
+  is_streaming?: boolean;  // 【新增】
+  
+  // === chunk/final 字段 ===
+  is_reasoning?: boolean;
+  model?: string;
+  provider?: string;
+  display_name?: string;
+  
+  // === error 类型字段 ===
+  error_type?: string;  // 【已有】
+  code?: string;  // 【保留兼容性】
+  error_code?: string;  // 【新增别名】
+  error_message?: string;  // 【已有】
+  details?: string;
+  stack?: string;
+  retryable?: boolean;
+  recoverable?: boolean;  // 【新增】
+  context?: {  // 【新增】
+    step?: number;
+    model?: string;
+    provider?: string;
+    thought_content?: string;
+  };
+  retry_after?: number;
+  wait_time?: number;
+  
+  // === 其他字段 ===
+  timestamp: number;
+  contentStart?: number;
+  contentEnd?: number;
+  security_check?: SecurityCheck;
+  
+  // === 兼容旧字段（后续清理） ===
+  raw_data?: Record<string, any> | null;  // 【保留】向后兼容
+}
+```
+
+**2.2 修改 SSE解析逻辑 - action_tool处理（约第1182-1241行）**
+
+```typescript
+case "action_tool": {
+  // ... 日志代码省略 ...
+  
+  // 【修改】字段映射
+  step.tool_name = rawData.tool_name || "";
+  step.tool_params = rawData.tool_params || {};
+  step.execution_status = rawData.execution_status;
+  step.summary = rawData.summary;
+  
+  // 【修改】raw_data → execution_result
+  step.execution_result = rawData.execution_result || rawData.raw_data;  // 兼容旧字段
+  
+  // 【新增】error_message
+  step.error_message = rawData.error_message || "";
+  
+  // 【新增】execution_time_ms
+  step.execution_time_ms = rawData.execution_time_ms;
+  
+  step.action_retry_count = rawData.action_retry_count;
+  
+  // ... 其余代码省略 ...
+  break;
+}
+```
+
+**2.3 修改 SSE解析逻辑 - observation处理（约第1244-1265行）**
+
+```typescript
+case "observation": {
+  const stepNum = rawData.step || 1;
+  step.content = rawData.content || "";
+  step.observation = rawData.observation || rawData.content;  // 【新增】observation字段
+  step.tool_name = rawData.tool_name || "";
+  
+  // 【新增】
+  step.return_direct = rawData.return_direct;
+  step.tool_params = rawData.tool_params || rawData.tool_params || {};
+  
+  // ... 其余代码省略 ...
+  break;
+}
+```
+
+**2.4 修改 SSE解析逻辑 - final处理（约第1037-1096行）**
+
+```typescript
+case "final": {
+  const stepNum = rawData.step || 1;
+  step.content = rawData.content || "";
+  step.response = rawData.response || rawData.content;  // 【新增】response字段
+  
+  // 【新增】其他final字段
+  step.is_finished = rawData.is_finished !== undefined ? rawData.is_finished : true;
+  step.thought = rawData.thought || "";
+  step.is_streaming = rawData.is_streaming || false;
+  step.is_reasoning = rawData.is_reasoning || false;
+  
+  // ... 其余代码省略 ...
+  break;
+}
+```
+
+**2.5 修改 SSE解析逻辑 - error处理（约第1098-1179行）**
+
+```typescript
+case "error": {
+  const errorMsg = rawData.error_message || rawData.message || "未知错误";
+  step.content = errorMsg;
+  step.error_message = errorMsg;
+  step.code = rawData.code || "";
+  step.error_code = rawData.error_code || rawData.code;  // 【新增】别名
+  step.error_type = rawData.error_type || "unknown_error";
+  
+  // 【新增】recoverable
+  step.recoverable = rawData.recoverable;
+  
+  // 【新增】context
+  if (rawData.context) {
+    step.context = {
+      step: rawData.context.step,
+      model: rawData.context.model,
+      provider: rawData.context.provider,
+      thought_content: rawData.context.thought_content,
+    };
+  }
+  
+  // ... 其余代码省略 ...
+  break;
+}
+```
+
+##### 步骤3：修改 `frontend/src/components/Chat/MessageItem.tsx`
+
+**3.1 搜索并替换 raw_data 引用**
+
+在以下位置进行修改：
+
+```typescript
+// 第139行 - getPageData 函数
+const rawData = step.execution_result as any;  // 【修改】raw_data → execution_result
+
+// 第253行 - 工具结果显示条件
+{step.execution_result && step.tool_name !== "list_directory" && (() => {  // 【修改】
+
+// 第566-567行 - 获取数据
+const data = (step as any).execution_result?.data || (step as any).execution_result;  // 【修改】
+
+// 第787行 - 导出数据字段
+raw_data: step.execution_result,  // 【修改】raw_data → execution_result
+```
+
+**3.2 添加向后兼容处理**
+
+在 MessageItem.tsx 开头添加兼容处理：
+
+```typescript
+// 【小沈添加 2026-04-15】向后兼容：raw_data → execution_result
+const getExecutionResult = (step: ExecutionStep) => {
+  return step.execution_result || (step as any).raw_data;
+};
+```
+
+然后将所有 `step.raw_data` 替换为 `getExecutionResult(step)`。
+
+##### 步骤4：修改测试文件
+
+**4.1 修改 `frontend/src/tests/ReAct-stream-messages.test.tsx`**
+
+将所有 `raw_data` 字段替换为 `execution_result`：
+
+```typescript
+// 第77、90、169行等
+execution_result: {  // 【修改】raw_data → execution_result
+  data: [...],
+  has_more: false,
+}
+```
+
+**4.2 修改 `frontend/src/tests/components/MessageItem-fields.test.tsx`**
+
+同样将所有 `raw_data` 字段替换为 `execution_result`。
+
+#### 15.7.3.3 字段对照表
+
+| 后端字段 | 前端字段（修改后） | 前端字段（修改前） | 说明 |
+|----------|-------------------|-------------------|------|
+| action_tool.execution_result | execution_result | raw_data | 执行结果数据 |
+| action_tool.error_message | error_message | - | 错误消息 |
+| action_tool.execution_time_ms | execution_time_ms | - | 执行耗时 |
+| observation.observation | observation | content | 观察内容 |
+| observation.return_direct | return_direct | - | 是否直接返回 |
+| observation.tool_params | tool_params | - | 工具参数 |
+| final.response | response | content | 最终回复 |
+| final.is_finished | is_finished | - | 是否完成 |
+| final.thought | thought | - | 最终思考 |
+| final.is_streaming | is_streaming | - | 是否流式 |
+| error.error_type | error_type | error_type | 已是正确名称 |
+| error.error_message | error_message | message | 已是正确名称 |
+| error.recoverable | recoverable | - | 是否可恢复 |
+| error.context | context | - | 错误上下文 |
+
+#### 15.7.3.4 验证清单
+
+- [ ] chat.ts 类型定义修改完成
+- [ ] sse.ts ExecutionStep 接口修改完成
+- [ ] sse.ts 字段映射逻辑修改完成
+- [ ] MessageItem.tsx raw_data 引用修改完成
+- [ ] 测试文件字段名修改完成
+- [ ] npm run build 编译通过
+- [ ] npm run lint 检查通过
+- [ ] 前端单元测试通过
+- [ ] 前后端联调测试通过
+
+---
+
+
+
 
 
 
