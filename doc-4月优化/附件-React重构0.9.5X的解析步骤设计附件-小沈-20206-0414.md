@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v1.9  
+**文档版本**: v2.0  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-15 13:19:45  
+**更新时间**: 2026-04-15 15:14:29  
 **编写人**: 小沈  
 
 ## 版本历史
@@ -26,6 +26,7 @@
 | v1.7 | 2026-04-15 09:20:00 | 小沈 | 14.7章节重编小章节号14.7.1-14.7.7，规范化步骤编��� |
 | v1.8 | 2026-04-15 13:05:23 | 小沈 | 新增15.6章节：12.1章节type字段扩展与Step封装的关系分析 |
 | v1.9 | 2026-04-15 13:19:45 | 小沈 | 新增15.7章节：系统type字段名称补齐处理（字段名不同+需补充) |
+| v2.0 | 2026-04-15 15:14:29 | 小沈 | 根据小健审查修正15.7.2：1)步骤1.3补充is_reasoning字段; 2)步骤4 context新增thought_content参数; 3)步骤5补充详细调用点; 4)15.7.1 context描述修正 |
 
 ---
 
@@ -3274,7 +3275,7 @@ conversation_history存储原始文本response（保持不变）
 | error | error_type | code | error_type（替换code） |
 | error | error_message | message | message 字段名改为error_message |
 | error | recoverable | - | 需补充 |
-| error | context | - | 需补充（包含step/model/provider） |
+| error | context | - | 需补充（包含step/model/provider/thought_content） |
 
 要求：1. 基于现在的代码修改实现 15.7.1 的要求
 2. 必须有效与现有代码进行有机集成的修改，保证每一个字段的来源都合理。
@@ -3378,6 +3379,7 @@ if tool_name == "finish":
         "is_finished": True,  # ← 新增字段
         "thought": thought_content,  # ← 新增字段
         "is_streaming": False,  # ← 新增字段
+        "is_reasoning": False,  # ← 新增字段
     }
 ```
 
@@ -3568,14 +3570,16 @@ def create_error_step(
     recoverable: bool = False,  # ← retryable替换为recoverable
     context: Optional[Dict[str, Any]] = None,  # ← 新增参数
     retryable: bool = False,  # ← 保留（向后兼容）
-    retry_after: Optional[int] = None
+    retry_after: Optional[int] = None,
+    thought_content: str = ""  # ← 新增参数（用于context）
 ) -> Dict[str, Any]:
     # 构建context字段
     if context is None:
         context = {
             "step": step_num,
             "model": model,
-            "provider": provider
+            "provider": provider,
+            "thought_content": thought_content  # ← 包含最后一次LLM的thought_content
         }
     
     return {
@@ -3621,9 +3625,10 @@ error_step = create_error_step(
     model=model,
     provider=provider,
     recoverable=retryable,  # ← retryable替换为recoverable
-    context={"step": step_num, "model": model, "provider": provider},  # ← 新增
+    context={"step": step_num, "model": model, "provider": provider, "thought_content": thought_content},  # ← 新增
     retryable=retryable,  # ← 保留（向后兼容）
-    retry_after=retry_after
+    retry_after=retry_after,
+    thought_content=thought_content  # ← 新增参数
 )
 ```
 
@@ -3652,9 +3657,10 @@ error_step = create_error_step(
     model=model,
     provider=provider,
     recoverable=retryable,  # ← retryable替换为recoverable
-    context={"step": step_num, "model": model, "provider": provider},  # ← 新增
+    context={"step": step_num, "model": model, "provider": provider, "thought_content": thought_content},  # ← 新增
     retryable=retryable,  # ← 保留（向后兼容）
-    retry_after=retry_after
+    retry_after=retry_after,
+    thought_content=thought_content  # ← 新增参数
 )
 ```
 
@@ -3703,7 +3709,63 @@ def create_error_response(
     ...
 ```
 
-**注意**：需要同时更新所有调用create_error_response的地方，将message参数改为error_message。
+**步骤5.2：更新create_session_error_result中的调用（第539行）**
+
+当前代码：
+```python
+error_response = create_error_response(
+    error_type=error_type,
+    message=error_message,  # ← 需替换为error_message
+    model=model,
+    provider=provider,
+    retryable=retryable,
+    retry_after=retry_after,
+    step=step_num
+)
+```
+
+修改为：
+```python
+error_response = create_error_response(
+    error_type=error_type,
+    error_message=error_message,  # ← message替换为error_message
+    model=model,
+    provider=provider,
+    retryable=retryable,
+    retry_after=retry_after,
+    step=step_num
+)
+```
+
+**步骤5.3：更新create_error_from_exception中的调用（第602行）**
+
+当前代码：
+```python
+error_response = create_error_response(
+    error_type=error_type,
+    message=error_message,  # ← 需替换为error_message
+    code=error_code,
+    model=model,
+    provider=provider,
+    retryable=retryable,
+    retry_after=retry_after,
+    step=step_num
+)
+```
+
+修改为：
+```python
+error_response = create_error_response(
+    error_type=error_type,
+    error_message=error_message,  # ← message替换为error_message
+    code=error_code,
+    model=model,
+    provider=provider,
+    retryable=retryable,
+    retry_after=retry_after,
+    step=step_num
+)
+```
 
 ---
 
@@ -3736,10 +3798,11 @@ def create_error_response(
 | final.is_finished | True | 固定值 |
 | final.thought | thought_content | 保存最后一次LLM的thought |
 | final.is_streaming | False | 固定值 |
+| final.is_reasoning | False | 固定值 |
 | error.error_type | error_type参数 | 错误类型 |
 | error.error_message | error_message参数 | 错误消息 |
 | error.recoverable | retryable参数 | 是否可恢复 |
-| error.context | 固定字典 | 包含step/model/provider |
+| error.context | 固定字典 | 包含step/model/provider/thought_content |
 
 ---
 
