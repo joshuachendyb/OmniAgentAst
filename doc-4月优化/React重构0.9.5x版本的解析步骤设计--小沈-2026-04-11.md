@@ -702,246 +702,163 @@ LLM调用时机	✅ 完全实现
 
 ## 四、重构后的type字段值的设计方案
 
-### 4.1 start（重构后）
-**基本字段**：
+### 4.1 start（已实现）
+
+**实际代码字段** (start_step.py 第52-67行)：
 ```
 start: {
-    step: number,           // 步骤序号 = 1（标识对话开始）
-    model: string,          // 使用的LLM模型名称
-    provider: string,       // LLM提供商（openai、anthropic等）
-    display_name: string,   // 模型显示名称
-    timestamp: number,      // 毫秒级时间戳
-    session_id: string,     // 会话ID
-    task: string,           // 用户任务/问题
-    user_message: string,   // 用户消息
-    security_check: object  // 安全检查结果
+    type: "start",           // 固定值
+    step: number,             // 步骤序号
+    timestamp: number,        // 时间戳
+    display_name: string,     // "provider (model)"
+    provider: string,        // LLM提供商
+    model: string,           // 使用的LLM模型名称
+    task_id: string,         // 任务ID
+    user_message: string,     // 用户消息（截取前40字符）
+    security_check: object    // 安全检查结果
 }
 ```
 
-**step序号规则**：
-- start.step = 1（标识对话开始）
-- 后续步骤调用`next_step()`函数获得独立递增的step值
-- 整个对话过程中使用**一个**step计数器函数（`create_step_counter()`）
-- 每次调用`next_step()`返回递增1的值
-- 示例：thought→2, action_tool→3, observation→4, thought→5, action_tool→6, observation→7
-- 在**一次新的对话**中重新创建计数器，start=1，后续从2开始递增
-- **参考当前代码实现**：`chat_helpers.py` 中 `create_step_counter()` 返回闭包函数，每次调用递增1
+**security_check字段**：
+```
+security_check: {
+    is_safe: boolean,      // 是否安全
+    risk_level: string,    // 风险等级
+    risk: string,          // 风险描述
+    blocked: boolean       // 是否被拦截
+}
+```
 
+### 4.2 thought（已实现）
 
-**可选字段**：
-- `agent_id`: Agent标识
-- `max_steps`: 最大迭代步数
-- `available_tools`: 可用工具列表
-
-### 4.2 thought（重构后）
-**基本字段**：
+**实际代码字段** (base_react.py 第236-245行)：
 ```
 thought: {
-    step: number,          // 步骤序号
-    content: string,        // LLM的推理过程（纯自然语言）
-    timestamp: number       // 毫秒级时间戳
+    type: "thought",        // 固定值
+    step: number,           // 步骤序号
+    timestamp: number,       // 时间戳
+    content: string,         // LLM原始响应内容
+    thought: string,         // 解析后的思考过程
+    reasoning: string,        // 推理过程
+    tool_name: string,       // 工具名称（LLM决定调用）
+    tool_params: object      // 工具参数字典
 }
 ```
 
-**条件必需字段**（LLM决定调用工具时填写）：
-- `tool_name`: 工具名称（LLM决定调用的工具）
-- `tool_params`: 工具参数（调用工具时传递的参数）
+### 4.3 action_tool（已实现）
 
-step=next_step()
-
-**Thought特征**：
-1. **纯自然语言**：不包含结构化字段
-2. **状态跟踪**：记录已确定的信息
-3. **差距识别**：说明还需要什么信息
-4. **行动理由**：解释为什么要执行某个动作
-5. **错误确认**：当出现问题时承认并提议修正
-
-**tool_name/tool_params字段说明**：
-- `tool_name`：LLM决定调用的工具名称
-- `tool_params`：调用工具时传递的**原始参数**
-- 用于前端显示用户知道AI决定用什么工具和参数
-- 与action_tool的execution_status配合使用，thought决定→action_tool执行
-
-**Thought内容示例**：
-```
-正常情况："我需要先查看目录结构，然后才能决定如何整理文件。"
-多步推理："我已经确认了作者是海明威，现在需要找到他的出生地，最后查询该城市的人口。"
-错误处理："之前的搜索没有返回结果，我需要尝试更具体的关键词。"
-```
-
-### 4.3 action_tool（重构后）
-**基本字段**：
+**实际代码字段** (base_react.py 第271-283行)：
 ```
 action_tool: {
+    type: "action_tool",      // 固定值
     step: number,             // 步骤序号
-    execution_status: string, // 执行状态
-    execution_result: any,    // 执行结果
-    timestamp: number         // 毫秒级时间戳
+    timestamp: number,         // 时间戳
+    tool_name: string,        // 工具名称
+    tool_params: object,       // 工具参数字典
+    execution_status: string,  // 执行状态 "success" 或 "error"
+    summary: string,           // 执行结果摘要
+    execution_result: any,     // 执行结果数据
+    error_message: string,     // 错误信息（成功时为空）
+    execution_time_ms: number, // 执行耗时（毫秒）
+    action_retry_count: number // 重试次数
 }
 ```
-**条件必需字段**：
-- `error_message`: 错误信息（status="error"时必需）
 
-**可选字段**：
-- `execution_time_ms`: 执行耗时（毫秒）
-- `summary`: 执行结果摘要
-- `raw_data`: 原始数据
-- `retry_count`: 重试次数
+### 4.4 observation（已实现）
 
-**execution_status可能的值**：
-- `"success"`: 成功执行
-- `"error"`: 执行失败
-- `"timeout"`: 执行超时
-- `"permission_denied"`: 权限不足
-
-根据 execution_status 不同：
-- 如果 "success": execution_result 必须有值
-- 如果 "error": error_message 必须有值
-
-### 4.4 observation（重构后）
-**基本字段**：
+**实际代码字段** (base_react.py 第306-314行)：
 ```
 observation: {
+    type: "observation",      // 固定值
     step: number,             // 步骤序号
-    tool_name: string,        // 工具名称（与对应的thought保持一致）
-    content: string,      // 工具执行结果（原始数据）
-    timestamp: number         // 毫秒级时间戳
+    timestamp: number,         // 时间戳
+    tool_name: string,        // 工具名称
+    tool_params: object,        // 工具参数字典
+    observation: string,      // 观察结果文本
+    return_direct: boolean    // 是否直接返回
 }
 ```
 
-**可选字段**：
-- `return_direct`: 是否直接返回结果给用户（跳过后续推理）
+### 4.5 final（已实现）
 
-### 4.5 final（重构后）
-
-**生成时机**：LLM返回最终回答**时**（LLM响应）
-
-**标准ReAct的ResponseReasoningStep**：
-```python
-class ResponseReasoningStep(BaseReasoningStep):
-    thought: str      # 最终推理过程
-    response: str     # 最终回答
-    is_streaming: bool = False  # 是否流式输出
-```
-**基本字段**：
+**实际代码字段** (base_react.py 第322-331行)：
 ```
 final: {
-    step: number,           // 步骤序号
-    response: string,       // 最终回答内容
-    is_finished: boolean,   // 是否结束（业务完成标志）
-    timestamp: number       // 毫秒级时间戳
+    type: "final",           // 固定值
+    step: number,             // 步骤序号
+    timestamp: number,         // 时间戳
+    response: string,         // 最终回答内容
+    is_finished: boolean,    // 是否完成（固定为true）
+    thought: string,         // 思考内容
+    is_streaming: boolean,    // 是否流式（固定为false）
+    is_reasoning: boolean    // 是否推理中（固定为false）
 }
 ```
 
-**可选字段**：
-- `thought`: 最终推理总结
-- `is_streaming`: 是否流式输出
-
-**step序号规则**：
--step=next_step()
-
-**可选的统计字段**（框架层面，非Step必须）：
-- `total_steps`: 总执行步骤数
-- `total_tokens`: 总使用token数
-- `usage`: 使用统计
-
-**从loop到final的跳转机制**：
-
-**识别规则**：LLM返回的内容匹配最终答案模式（见5.1.1统一解析器）
-```
-格式1: Thought: <推理内容>\nAnswer: <最终回答>  → _parse_answer()
-格式2: 纯文本（无Thought/Action/Answer标记）   → 隐式回答兜底
-格式3: 纯文本包含完成关键词                    → 需Agent额外判断
-```
-
-**跳转流程**：
-```
-步骤N: LLM返回 → 解析
-  ↓
-判断是否是最终答案
-  ↓
-是 → 生成type='final'步骤
-  ↓
-结束循环
-```
-**ReAct循环的完整终止条件**：
-
-> ⚠️ **注意**：以下4种条件都会终止ReAct循环，但只有条件2生成type='final'步骤，其他条件生成type='error'或type='incident'步骤。
-
-| 条件 | 说明 | 生成的type | 触发时机 |
-|------|------|-----------|----------|
-| `LLM返回final` | LLM输出最终答案 | `final` | LLM响应包含Answer或完成关键词 |
-| `max_steps` | 超过最大步骤数 | `error` | step计数达到限制 |
-| `工具执行错误` | 不可恢复的工具错误 | `error` | 工具执行失败且无法重试 |
-| `用户中断` | 用户主动停止 | `incident` | 用户请求停止（interrupted/paused） |
+**生成时机**：LLM返回 `tool_name == "finish"` 时
 
 
 ### 4.6 error（重构后）
 **基本字段**：
 ```
 error: {
-    step: number,           // 步骤序号（在整个ReAct流程中的顺序）
+    step: number,           // 步骤序号
     error_type: string,     // 错误类型
-    error_message: string,  // 错误信息
+    error_message: string,   // 错误信息
     timestamp: number,      // 毫秒级时间戳
-    recoverable: boolean    // 是否可恢复
+    recoverable: boolean,   // 是否可恢复
+    reasoning: string,      // 推理内容（空字符串）
+    is_reasoning: boolean,  // 是否是推理过程（false）
+    model: string,          // 模型名称（可选）
+    provider: string,       // 提供商（可选）
+    context: object,        // 错误上下文（包含step/model/provider/thought_content）
+    retry_after: number     // 重试等待秒数（可选）
 }
 ```
 
-**可选字段**：
-- `stack_trace`: 堆栈跟踪
-- `context`: 错误上下文
-- `suggested_fix`: 建议修复
-- `retry_suggestion`: 重试建议
+**SSE额外字段**（仅SSE响应中使用，不存入数据库）：
+- `details`: 详细错误信息
+- `stack`: 堆栈信息
 
-**error_type可能的值**：
-- `"max_steps_exceeded"`: 超过最大步数
-- `"llm_error"`: LLM调用错误
-- `"tool_error"`: 工具执行错误
-- `"parsing_error"`: 解析错误
-- `"network_error"`: 网络错误
-- `"permission_error"`: 权限不足
-**step序号规则**：
-step=next_step()
+**error_type可能的值**（来自 ERROR_TYPE_MAP）：
+- `"timeout"`: 请求超时
+- `"connect"`: 连接失败
+- `"protocol"`: 协议错误
+- `"server"`: 服务器错误
+- `"network"`: 网络错误
+- `"api_error"`: API错误（含429/503/500等HTTP错误码）
+- `"security"`: 安全/认证错误（含401/403）
+- `"validation"`: 参数验证错误（含400）
+- `"file_system"`: 文件系统错误
+- `"idle_timeout"`: 空闲超时
+- `"empty_response"`: 空响应
+- `"unknown"`: 未知错误
 
 ### 4.7 chunk（重构后）
-**基本字段**：
+**实际字段定义**（来自 chat_stream_query.py 第188-194行）：
 ```
 chunk: {
-    content: string,        // 累积的完整内容（delta累加）
-    delta: string,          // 增量内容（相对于前一个chunk）
-    is_final: boolean,      // 是否是最后一个chunk
-    timestamp: number       // 毫秒级时间戳
+    type: 'chunk',           // 类型标识
+    step: number,           // 步骤序号
+    timestamp: number,       // 毫秒级时间戳
+    content: string,        // 当前chunk的文本内容
+    is_reasoning: boolean    // 是否是推理过程
 }
 ```
 
 **说明**：
 - 用于LLM流式输出时的中间内容
 - 前端用于实时显示AI回复
+- is_reasoning=true 表示正在输出推理内容（<think>标签）
+- is_reasoning=false 表示正在输出正式回答
 
 **生成时机**：LLM流式返回**时**（LLM响应）
 
-**字段说明**：
-| 字段 | 说明 | 必需性 |
-|------|------|--------|
-| `content` | 累积的完整文本内容 | ✅ 必须 |
-| `delta` | 当前chunk相对于前一个的增量 | ✅ 必须 |
-| `is_final` | 是否是最后一个chunk（流式结束标志） | ✅ 必须 |
-| `timestamp` | 毫秒级时间戳 | ✅ 必须 |
+**⚠️ 注意**：
+- **文档早期版本中的 `delta`、`is_final`、`index`、`role`、`model`、`finish_reason` 字段在实际代码中不存在**
+- content 是当前chunk的内容，不是累积内容（累积在 full_content 变量中）
+- 没有 is_final 标志（用 chunk.is_done 判断流式结束）
 
-**可选字段**：
-- `index`: chunk序号
-- `role`: 角色（assistant）
-- `model`: 使用的模型
-- `finish_reason`: 完成原因（stop/length/tool_calls等）
-
-**字段关系**：
-```
-流式输出的逻辑：
-1. 第一个chunk：content = delta
-2. 后续chunk：content = 前一个content + delta
-3. 最后一个chunk：is_final = true
-```
 ---
 
 ## 4.8 当前代码字段定义（2026-04-11 修正版）
@@ -1008,94 +925,129 @@ yield {
 
 ### 4.8.3 action_tool 类型
 
-**后端实现** (base_react.py):
+**后端实现** (base_react.py 第271-283行):
 ```python
 yield {
     "type": "action_tool",
-    "content": action_tool,
     "step": step_count,
     "timestamp": current_time,
-    "tool_name": action_tool,
-    "tool_params": params,
-    "execution_status": execution_result.get("status", "success"),
+    "tool_name": tool_name,
+    "tool_params": tool_params,
+    "execution_status": "success",
     "summary": execution_result.get("summary", ""),
-    "raw_data": execution_result.get("data"),
-    "action_retry_count": execution_result.get("retry_count", 0)
+    "execution_result": execution_result.get("data"),  # 替换原raw_data
+    "error_message": "",  # 新增字段（成功时为空）
+    "execution_time_ms": execution_result.get("execution_time_ms", 0),  # 新增字段
+    "action_retry_count": 0
 }
 ```
+
+**字段说明**：
+| 字段 | 说明 | 状态 |
+|------|------|------|
+| `execution_result` | 执行结果（替换原raw_data） | ✅ 15.7实现 |
+| `error_message` | 错误信息（成功时为空） | ✅ 15.7实现 |
+| `execution_time_ms` | 执行耗时(毫秒) | ✅ 15.7实现 |
 
 ---
 
 ### 4.8.4 observation 类型
 
-**后端实现** (base_react.py:270-295):
+**后端实现** (base_react.py 第306-314行):
 ```python
-# 构建 observation 文本（包含原始数据）
-raw_data = execution_result.get('data')
-if raw_data:
-    observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}\n实际数据: {raw_data}"
-else:
-    observation_text = f"Observation: {execution_result.get('status', 'unknown')} - {execution_result.get('summary', '')}"
-
 yield {
     "type": "observation",
     "step": step_count,
     "timestamp": create_timestamp(),
     "tool_name": tool_name,
-    "content": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}"
+    "tool_params": tool_params,  # 新增字段
+    "observation": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}",  # content替换为observation
+    "return_direct": execution_result.get("return_direct", False),  # 新增字段
 }
 ```
 
-**⚠️ 重要修正**：observation 的 content 字段包含"实际数据: {raw_data}"，会显示工具执行的原始结果。
+**字段说明**：
+| 字段 | 说明 | 状态 |
+|------|------|------|
+| `observation` | 观察结果（替换原content） | ✅ 15.7实现 |
+| `tool_params` | 工具参数字典 | ✅ 15.7实现 |
+| `return_direct` | 是否直接返回 | ✅ 15.7实现 |
 
 ---
 
 ### 4.8.5 final 类型
 
-**后端实现** (base_react.py):
+**后端实现** (base_react.py 第322-331行):
 ```python
 yield {
     "type": "final",
-    "timestamp": current_time,
-    "content": params.get("result", thought_content)
+    "step": step_count,
+    "timestamp": create_timestamp(),
+    "response": tool_params.get("result", thought_content),  # 替换原content
+    "is_finished": True,
+    "thought": thought_content,
+    "is_streaming": False,
+    "is_reasoning": False,
 }
 ```
-
-> ⚠️ **重要说明**：step字段由sse_wrapper层自动添加，final yield时不设置step，由框架统一处理。
 
 **字段说明**：
 | 字段 | 说明 | 状态 |
 |------|------|------|
-| `step` | 步骤序号（sse_wrapper自动添加） | ✅ 已实现 |
-| `timestamp` | 毫秒级时间戳 | ✅ 已实现 |
-| `content` | 最终回答内容 | ✅ 已实现 |
+| `step` | 步骤序号 | ✅ 15.7实现 |
+| `timestamp` | 时间戳 | ✅ 已实现 |
+| `response` | 最终回答（替换原content） | ✅ 15.7实现 |
+| `is_finished` | 是否完成 | ✅ 15.7实现 |
+| `thought` | 思考内容 | ✅ 15.7实现 |
+| `is_streaming` | 是否流式 | ✅ 15.7实现 |
+| `is_reasoning` | 是否推理中 | ✅ 15.7实现 |
 
 ---
 
 ### 4.8.6 error 类型
 
-**后端实现** (base_react.py):
+**后端实现** (error_handler.py 第53-66行 create_error_step函数):
 ```python
-yield {
-    "type": "error",
-    "timestamp": create_timestamp(),
-    "code": "MAX_STEPS_EXCEEDED",
-    "message": f"已达到最大迭代次数 {max_steps}"
+return {
+    'type': 'error',
+    'step': step_num,
+    'error_message': error_message,
+    'error_type': error_type,
+    'timestamp': create_timestamp(),
+    'model': model,
+    'provider': provider,
+    'reasoning': '',
+    'is_reasoning': False,
+    'recoverable': recoverable,
+    'context': context,
+    'retry_after': retry_after
 }
 ```
 
+**字段说明**：
+| 字段 | 说明 | 状态 |
+|------|------|------|
+| `error_type` | 错误类型 | ✅ 15.7实现 |
+| `error_message` | 错误信息（替换原message） | ✅ 15.7实现 |
+| `recoverable` | 是否可恢复 | ✅ 15.7实现 |
+| `context` | 错误上下文 | ✅ 15.7实现 |
+| `retry_after` | 重试等待秒数 | ✅ 15.7实现 |
+
+> ⚠️ 注意：已删除旧字段 `code`, `message`, `stack_trace`, `suggested_fix`, `retry_suggestion`
+
 ---
 
-### 4.8.7 字段说明（2026-04-11 修正版）
+### 4.8.7 字段说明（15.7版本）
 
 | type | 字段 | 说明 |
 |------|------|------|
 | start | step, timestamp, display_name, provider, model, task_id, user_message, security_check | 对话开始时生成 |
-| thought | step, timestamp, content, tool_name, tool_params, reasoning | LLM返回后解析生成 |
-| action_tool | step, timestamp, content, tool_name, tool_params, execution_status, summary, raw_data, action_retry_count | 工具执行后生成 |
-| observation | step, timestamp, tool_name, content | 工具执行结果（包含原始数据） |
-| final | timestamp, content | action_tool=="finish"时生成 |
-| error | timestamp, code, message | 发生错误时生成 |
+| thought | step, timestamp, content, thought, reasoning, tool_name, tool_params | LLM返回后解析生成 |
+| action_tool | step, timestamp, tool_name, tool_params, execution_status, summary, execution_result, error_message, execution_time_ms, action_retry_count | 工具执行后生成 |
+| observation | step, timestamp, tool_name, tool_params, observation, return_direct | 工具执行结果 |
+| final | step, timestamp, response, is_finished, thought, is_streaming, is_reasoning | action_tool=="finish"时生成 |
+| error | step, error_message, error_type, timestamp, model, provider, reasoning, is_reasoning, recoverable, context, retry_after | 发生错误时生成 |
+| chunk | step, timestamp, content, is_reasoning | LLM流式返回时生成 |
 
 **说明**: step字段由sse_wrapper层自动添加，不需要在agent代码中手动设置
 
@@ -3688,13 +3640,13 @@ execution_result = await self._execute_tool(tool_name, tool_params)
 
 ### 12.1 各type的补充字段详细说明
 
-#### 12.1.1 action_tool 类型缺失字段
+#### 12.1.1 action_tool 类型字段实现情况
 
-| 缺失字段 | 文档参考 | 当前实现 | 说明 |
-|----------|---------|---------|------|
-| **error_message** | 4.3节 | ⚠️ 在summary中 | 独立错误信息 |
-| **execution_result** | 4.3节 | ⚠️ 用raw_data | 执行结果 |
-| **execution_time_ms** | 4.3节 | ❌ 未实现 | 执行耗时(毫秒)，前端可显示性能 |
+| 字段 | 文档参考 | 实现状态 | 说明 |
+|------|---------|---------|------|
+| **error_message** | 4.3节 | ✅ 已实现 | base_react.py 第280行，成功时为空字符串 |
+| **execution_result** | 4.3节 | ✅ 已实现 | base_react.py 第279行，替换原raw_data |
+| **execution_time_ms** | 4.3节 | ✅ 已实现 | base_react.py 第281行，从execution_result获取 |
 
 **实现方式**: 在_execute_tool调用前后计算耗时
 
@@ -3709,11 +3661,11 @@ yield {
     ...
 }
 ```
-#### 12.1.2 observation 类型缺失字段
+#### 12.1.2 observation 类型字段实现情况
 
-| 缺失字段 | 文档参考 | 当前实现 | 说明 |
-|----------|---------|---------|------|
-| **return_direct** | 4.4节 | ❌ 未实现 | 工具直接返回给用户(新功能) |
+| 字段 | 文档参考 | 实现状态 | 说明 |
+|------|---------|---------|------|
+| **return_direct** | 4.4节 | ✅ 已实现 | base_react.py 第313行，从execution_result获取 |
 
 ---
 
@@ -3849,14 +3801,15 @@ if (stepData.type === "observation" && isReturnDirect) {
 - [ ] 前端适配：识别 `return_direct` 字段并显示完成提示
 - [ ] 测试：验证 `return_direct=true` 时 Agent 正确结束
 
-#### 12.1.3 final 类型缺失/不同字段
+#### 12.1.3 final 类型字段实现情况
 
-| 缺失字段 | 文档参考 | 当前实现 | 说明 |
-|----------|---------|---------|------|
-| **response** | 4.5节 | ⚠️ 用content | 字段名不同 |
-| **is_finished** | 4.5节 | ❌ 未实现 | 业务完成标志 |
-| **thought** | 4.5节 | ❌ 未实现 | 最终推理总结 |
-| **is_streaming** | 4.5节 | ❌ 未实现 | 流式输出标志 |
+| 字段 | 文档参考 | 实现状态 | 说明 |
+|------|---------|---------|------|
+| **response** | 4.5节 | ✅ 已实现 | base_react.py 第326行，替换原content |
+| **is_finished** | 4.5节 | ✅ 已实现 | base_react.py 第327行 |
+| **thought** | 4.5节 | ✅ 已实现 | base_react.py 第328行，保存thought_content |
+| **is_streaming** | 4.5节 | ✅ 已实现 | base_react.py 第329行 |
+| **is_reasoning** | 4.5节 | ✅ 已实现 | base_react.py 第330行 |
 
 ---
 
