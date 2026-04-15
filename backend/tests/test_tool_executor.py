@@ -216,7 +216,8 @@ class TestToolExecutorExecutionStatus:
             result = await executor.execute("slow_tool", {})
             
             assert result["status"] == "timeout"
-            assert "timeout" in result["summary"].lower()
+            assert "timed out" in result["summary"].lower() or "timeout" in result["summary"].lower()
+            assert "slow_tool" in result["summary"]  # 包含工具名称
             assert result["data"] is None
         finally:
             # 恢复原始超时配置
@@ -243,9 +244,10 @@ class TestToolExecutorExecutionStatus:
         try:
             result = await executor.execute("search_tool", {})
             
-            # 验证消息格式 - 实际返回 "Tool execution timeout after 0.1 seconds"
+            # 验证消息格式 - 实际返回 "Tool 'search_tool' execution timed out after 0.1 seconds"
             assert result["status"] == "timeout"
-            assert "timeout" in result["summary"].lower()
+            assert "timed out" in result["summary"].lower() or "timeout" in result["summary"].lower()
+            assert "search_tool" in result["summary"]  # 包含工具名称
             assert "0.1" in result["summary"]  # 超时时间
         finally:
             # 恢复原始超时配置

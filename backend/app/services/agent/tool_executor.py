@@ -125,7 +125,7 @@ class ToolExecutor:
             logger.error(f"[超时] action={action} 执行超过{timeout}秒")
             return {
                 "status": "timeout",
-                "summary": f"Tool execution timeout after {timeout} seconds",
+                "summary": f"Tool '{action}' execution timed out after {timeout} seconds",
                 "data": None,
                 "retry_count": 0
             }
