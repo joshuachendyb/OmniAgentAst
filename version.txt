@@ -1,6 +1,51 @@
-v0.9.5.8
+v0.9.5.9
 
-更新时间：2026-04-15 17:58:05
+更新时间：2026-04-15 20:06:56
+
+更新内容：
+
+## 1. Bug修复：base_react循环逻辑 + ToolsStrategy._make_result缺失 - 小沈-2026-04-15
+
+### 1.1 问题发现
+
+运行时错误日志发现3个bug：
+- `'ToolsStrategy' object has no attribute '_make_result'` - llm_strategies.py中调用了不存在的方法
+- `'str' object has no attribute 'get'` - 错误处理返回了字符串而不是字典
+- `name 'create_error_step' is not defined` - react_sse_wrapper.py缺少导入
+
+### 1.2 修复内容
+
+| 文件 | 修复 |
+|------|------|
+| base_react.py | 调整逻辑顺序：先判断finish，再判断parse error |
+| llm_strategies.py | 将_make_result从TextStrategy移到基类LLMStrategy |
+| react_sse_wrapper.py | 添加create_error_step到import语句 |
+
+### 1.3 代码审查
+
+| 审查项 | 结果 |
+|--------|------|
+| 审查结论 | ✅ 通过 |
+| Critical | 0 |
+| Warning | 0 |
+| Info | 1（代码风格建议，不影响功能） |
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| d8c3effd | fix: 修复base_react循环逻辑和ToolsStrategy._make_result缺失bug-小沈-2026-04-15 |
+
+### 1.5 测试验证
+
+| 测试项 | 结果 |
+|--------|------|
+| test_type_fields_157.py | ✅ 16 passed |
+| test_error_handler.py | ✅ 59 passed |
+| test_tool_parser.py | ✅ 17 passed |
+| **总计** | **92 passed** |
+
+参与开发：小沈（修复+审查）、小健（审查）
 
 更新内容：
 
