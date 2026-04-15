@@ -1213,8 +1213,8 @@ const processSSEData = (
         step.tool_params = rawData.tool_params || {};
         step.execution_status = rawData.execution_status;
         step.summary = rawData.summary;
-        // 【小沈修改2026-04-15】优先使用execution_result，兼容raw_data
-        step.execution_result = rawData.execution_result || rawData.raw_data || null;
+        // 【小强修改2026-04-15】直接使用execution_result
+        step.execution_result = rawData.execution_result || null;
         step.execution_time_ms = rawData.execution_time_ms;
         step.action_retry_count = rawData.action_retry_count;
         
