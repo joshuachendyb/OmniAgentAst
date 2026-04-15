@@ -327,9 +327,10 @@ class TestCreateSessionErrorResult:
             chat_timeout=30,
             max_retries=3
         )
-        error_message = error_step.get('message', '')
-        assert 'GPT-4' in error_message, f"Expected 'GPT-4' in message, got {error_message}"
-        assert '30秒' in error_message, f"Expected '30秒' in message, got {error_message}"
+        # 【15.7修改】message替换为error_message
+        error_message = error_step.get('error_message', '')
+        assert 'GPT-4' in error_message, f"Expected 'GPT-4' in error_message, got {error_message}"
+        assert '30秒' in error_message, f"Expected '30秒' in error_message, got {error_message}"
 
     def test_with_http_error_429(self):
         """429 错误应该正确解析"""

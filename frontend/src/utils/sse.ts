@@ -111,7 +111,6 @@ export interface ExecutionStep {
   summary?: string;             // 执行摘要（新）
   execution_result?: Record<string, any> | null; // 执行结果 【修改2026-04-15】raw_data → execution_result
   execution_time_ms?: number;   // 执行耗时 【新增2026-04-15】
-  raw_data?: Record<string, any> | null; // 原始数据（旧，兼容）
   action_retry_count?: number;  // 重试次数（新）
   
   // === type=observation 字段（精简版，2026-04-07 小资修改） ===
