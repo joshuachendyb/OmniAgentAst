@@ -1,3 +1,64 @@
+v0.9.5.7
+
+更新时间：2026-04-15 17:49:41
+
+更新内容：
+
+## 1. 15.7.3前端字段统一-删除code字段使用error_message - 小强-小资-2026-04-15
+
+### 1.1 实施内容
+
+按照15.7.3节要求，删除前端代码中的`code`兼容性字段，统一使用`error_message`字段，并彻底清理旧字段残留。
+
+### 1.2 修改文件
+
+| 文件 | 修改内容 |
+|------|----------|
+| frontend/src/types/chat.ts | ErrorMessage类型删除code字段，统一使用error_message，添加recoverable和context字段 |
+| frontend/src/types/chat.ts | Message接口删除errorCode字段，添加errorRecoverable和errorContext |
+| frontend/src/utils/sse.ts | ExecutionStep接口删除code字段，添加execution_result和execution_time_ms |
+| frontend/src/utils/sse.ts | SSEError接口删除code和message字段，统一使用error_message |
+| frontend/src/components/Chat/MessageItem.tsx | 导出字段修改 |
+| frontend/src/components/Chat/NewChatContainer.tsx | onError回调类型更新 |
+| frontend/src/components/Chat/ErrorDetail.tsx | 新增recoverable和context显示 |
+| frontend/src/hooks/useMessageItemProps.ts | Props接口更新 |
+| frontend/src/utils/chatHistory.ts | 历史消息字段映射更新 |
+
+### 1.3 后端配合修改
+
+| 文件 | 修改内容 |
+|------|----------|
+| backend/app/chat_stream/chat_helpers.py | 字段修改 |
+| backend/app/chat_stream/chat_stream_query.py | 字段修改 |
+| backend/app/chat_stream/error_handler.py | create_error_step函数删除code/message字段 |
+| backend/app/services/react_sse_wrapper.py | 字段修改 |
+| backend/tests/test_error_handler.py | 测试用例更新 |
+
+### 1.4 清理旧字段
+
+- 彻底删除raw_data兼容代码，统一使用execution_result
+- 删除errorCode字段
+- 删除MessageItem.tsx中的兼容代码
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 18b2b7c3 | feat: 15.7.3前端字段统一-删除code字段使用error_message-小强-小资-2026-04-15 |
+| 55dbf32a | feat: 彻底删除raw_data/code兼容-统一使用error_message和execution_result-小沈-小强-2026-04-15 |
+| bec5d98c | feat: 彻底删除raw_data兼容代码-只使用execution_result-小强-2026-04-15 |
+
+### 1.6 测试验证
+
+| 测试项 | 结果 |
+|--------|------|
+| npm run build | ✅ 0 errors |
+| 构建大小 | 163.23 KB (gzip: 51.53 KB) |
+
+参与开发：小强（前端实施）、小沈（后端配合）、小资（审查）
+
+---
+
 v0.9.5.6
 
 更新时间：2026-04-15 18:20:00
