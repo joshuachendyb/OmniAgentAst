@@ -3278,6 +3278,9 @@ conversation_history存储原始文本response（保持不变）
 
 #### 15.7.2 实施步骤
 
+要求1. 基于现在的代码修改实现 15.7.1 的要求
+2. 必须有效与现有代码进行有机集成的修改，保证每一个字段的来源都合理。
+
 **步骤1：修改base_react.py中的yield字段**
 
 按15.7.1差异清单要求：
@@ -3348,22 +3351,24 @@ def create_error_step(
 )
 ```
 
-**步骤4-6：修改附件15.2的Step类（to_dict()方法）**
+**步骤4：修改附件15.2的Step类当前输出字段**
 
-按15.7.1差异清单要求：
-- FinalStep.to_dict()：content → response，新增 is_streaming
-- ObservationStep.to_dict()：content → observation
-- ActionToolStep.to_dict()：raw_data → execution_result，新增 execution_time_ms
+按15.7.1差异清单，修改以下Step类的to_dict()方法当前输出：
 
-具体代码示例见附件15.2章节对应的Step类定义
+位置1：FinalStep.to_dict()（附件15.2.7，第2666行）- 当前输出response,thought,is_finished
+- 需新增is_streaming字段
 
-**步骤7：测试验证**
+位置2：ObservationStep.to_dict()（附件15.2.6，第2586行）- 当前输出observation,return_direct,tool_name,tool_params
+- 无需修改（content已在ObservationStep中）
+
+位置3：ActionToolStep.to_dict()（附件15.2.5，第2506行）- 当前输出raw_data,error_message,retry_count
+- 需将raw_data改为execution_result，新增execution_time_ms
+
+**步骤5：测试验证**
 
 ```bash
 pytest tests/test_base_react.py -v
 ```
-
-**步骤7：测试验证**
 
 ```bash
 # 修改后验证
