@@ -2081,22 +2081,29 @@ Date: 2026-04-15
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Callable
 from datetime import datetime
 
+# 引用现有chat_helpers的辅助函数（避免重复定义）
+from app.chat_stream.chat_helpers import create_timestamp, create_step_counter
+
 
 # =============================================================================
-# 第一部分：工具函数
+# 第一部分：step计数器工厂函数
 # =============================================================================
 
-def create_timestamp() -> int:
-    """生成当前时间戳（毫秒）"""
-    return int(datetime.now().timestamp() * 1000)
-
-
-def create_timestamp_from_ms(timestamp_ms: int) -> datetime:
-    """从毫秒时间戳创建datetime对象"""
-    return datetime.fromtimestamp(timestamp_ms / 1000)
+def create_step_counter() -> Callable[[], int]:
+    """
+    创建统一的步骤计数器
+    
+    使用方式：
+        step_counter = create_step_counter()
+        next_step = step_counter()  # 返回 1, 2, 3, ...
+    
+    Returns:
+        返回一个闭包函数，每次调用返回递增的步骤号（从1开始）
+    """
+    return create_step_counter
 
 
 # =============================================================================
@@ -2109,7 +2116,7 @@ class ReasoningStep(ABC):
     
     所有Step类的基类，定义通用接口：
     - step: int → 步骤序号（统一）
-    - timestamp: int → 时间戳（统一）
+    - timestamp: int → 时间戳（毫秒，统一）
     - get_type(): str → 获取type字段值
     - get_content(): str → 获取用户可见文本
     - is_done(): bool → 判断是否结束（抽象方法）
@@ -2143,8 +2150,9 @@ class ReasoningStep(ABC):
     
     @property
     def timestamp_datetime(self) -> datetime:
-        """获取datetime对象（用于显示）"""
-        return create_timestamp_from_ms(self._timestamp)
+        """获取datetime对象（用于显示）- 前端formatTimestamp处理，不需要后端转换"""
+        # 注：前端formatTimestamp可直接处理毫秒数字，此方法保留但不使用
+        return datetime.fromtimestamp(self._timestamp / 1000)
     
     @abstractmethod
     def get_type(self) -> str:
@@ -2850,8 +2858,8 @@ __all__ = [
     "FinalStep",
     "ErrorStep",
     "StepFactory",
-    "create_timestamp",
-    "create_timestamp_from_ms",
+    "create_timestamp",  # 引用现有chat_helpers
+    "create_step_counter",  # 引用现有chat_helpers
 ]
 ```
 
