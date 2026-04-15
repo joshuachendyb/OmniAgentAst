@@ -110,19 +110,26 @@ export interface FinalMessage {
  * error类型 - 错误
  * 发送时机：发生错误时
  * 【小查修复2026-03-13】补充完整11个字段，与API文档对齐
+ * 【小沈修改2026-04-15】删除code字段，统一使用error_message字段
  */
 export interface ErrorMessage {
   type: 'error';
-  error_type: string;  // 必填
-  message: string;      // 必填
-  code: string;         // 必填
-  timestamp: string;    // 必填
-  model?: string;       // 可选
-  provider?: string;    // 可选
-  details?: string;     // 可选
-  stack?: string;       // 可选
-  retryable?: boolean;  // 可选
-  retry_after?: number; // 可选
+  error_type: string;       // 必填
+  error_message: string;   // 必填 【修改2026-04-15】message → error_message
+  timestamp: string;       // 必填
+  model?: string;         // 可选
+  provider?: string;      // 可选
+  details?: string;       // 可选
+  stack?: string;         // 可选
+  retryable?: boolean;    // 可选
+  retry_after?: number;   // 可选
+  recoverable?: boolean;  // 可选 【新增2026-04-15】
+  context?: {             // 可选 【新增2026-04-15】
+    step?: number;
+    model?: string;
+    provider?: string;
+    thought_content?: string;
+  };
 }
 
 /**
@@ -267,14 +274,21 @@ export interface Message extends ChatMessage {
   isStreaming?: boolean;
   isError?: boolean;
   // 错误相关字段（与API文档对齐）
-  errorMessage?: string;     // message - 错误消息内容【小查添加2026-03-14】
+  // 【小沈修改2026-04-15】删除errorCode，添加errorRecoverable和errorContext
+  errorMessage?: string;     // error_message - 错误消息内容
   errorType?: string;        // error_type
-  errorCode?: string;       // code
-  errorDetails?: string;    // details
-  errorStack?: string;      // stack
-  errorRetryable?: boolean; // retryable
-  errorRetryAfter?: number; // retry_after
-  errorTimestamp?: string;  // timestamp
+  errorDetails?: string;     // details
+  errorStack?: string;       // stack
+  errorRetryable?: boolean;  // retryable
+  errorRetryAfter?: number;  // retry_after
+  errorTimestamp?: string;   // timestamp
+  errorRecoverable?: boolean; // recoverable 【新增2026-04-15】
+  errorContext?: {           // context 【新增2026-04-15】
+    step?: number;
+    model?: string;
+    provider?: string;
+    thought_content?: string;
+  };
   model?: string;
   provider?: string;
   display_name?: string;

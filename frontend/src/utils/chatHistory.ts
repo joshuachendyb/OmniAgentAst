@@ -69,16 +69,18 @@ export const parseMessage = (rawMessage: any): Message => {
     provider: rawMessage.provider || undefined,
     is_reasoning: rawMessage.is_reasoning,
     isStreaming: rawMessage.is_streaming ?? rawMessage.isStreaming ?? false,
-    // 错误相关字段（使用API文档的字段名 - snake_case）
+    // 【小沈修改2026-04-15】错误相关字段：删除code，统一使用error_message
     isError: rawMessage.is_error || false,
     errorType: rawMessage.error_type || undefined,
-    errorCode: rawMessage.code || undefined,
-    errorMessage: rawMessage.message || undefined,
+    errorMessage: rawMessage.error_message || rawMessage.message || undefined,  // 优先使用error_message
     errorDetails: rawMessage.details || undefined,
     errorStack: rawMessage.stack || undefined,
     errorRetryable: rawMessage.retryable || undefined,
     errorRetryAfter: rawMessage.retry_after || undefined,
     errorTimestamp: rawMessage.timestamp || undefined,
+    // 【小沈添加2026-04-15】新增recoverable和context字段
+    errorRecoverable: rawMessage.recoverable || undefined,
+    errorContext: rawMessage.context || undefined,
   };
 };
 

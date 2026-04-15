@@ -405,7 +405,7 @@ const NewChatContainer: React.FC = () => {
         let finalResponse = fullResponse;
         let isError = false;
         let errorType: string | undefined = undefined;
-        let errorCode: string | undefined = undefined;
+        // 【小沈修改2026-04-15】删除errorCode字段，统一使用errorMessage
         let errorMessage: string | undefined = undefined;
         
         if (!finalResponse || !finalResponse.trim()) {
@@ -413,7 +413,7 @@ const NewChatContainer: React.FC = () => {
           isError = true; // 标记为错误类型，以便显示红色样式
           // 【小新修复 2026-03-14】补充错误字段，与onError保持一致
           errorType = "empty_response";
-          errorCode = "EMPTY_RESPONSE";
+          // 【小沈修改2026-04-15】删除errorCode
           errorMessage = "模型未能生成有效回复，请尝试更换问题或稍后重试";
           console.warn("⚠️ AI 返回了空内容，已使用默认回复，errorType:", errorType);
         }
@@ -453,7 +453,7 @@ const NewChatContainer: React.FC = () => {
               is_reasoning: false,
               isError: isError,
               errorType: errorType,
-              errorCode: errorCode,
+              // 【小沈修改2026-04-15】删除errorCode
               errorMessage: errorMessage,
               model: metadataObj.model || lastMessage.model,
               provider: metadataObj.provider || lastMessage.provider,
@@ -574,7 +574,7 @@ if (lastMessage && lastMessage.role === "assistant") {
                   is_reasoning: false,
                   isError: isError,
                   errorType: errorType,
-                  errorCode: errorCode,
+                  // 【小沈修改2026-04-15】删除errorCode
                   errorMessage: errorMessage,
                   model: metadataObj.model || lastMessage.model,
                   provider: metadataObj.provider || lastMessage.provider,
@@ -596,31 +596,37 @@ if (lastMessage && lastMessage.role === "assistant") {
         [] // 依赖数组为空，因为使用 ref 而不是 state
       ),
     // onError - 流式错误 - 【小资优化】同步节流 + errorHandler统一处理
-    // 【小查修复2026-03-13】适配API文档的11个字段
+    // 【小沈修改2026-04-15】适配API文档的新字段：删除code，统一使用error_message
     useCallback(
       (
         error:
           | string
           | {
-              // 必填字段（5个）
+              // 必填字段（4个）
               type: string;
               error_type: string;
-              message: string;
-              code: string;
+              error_message: string;
               timestamp: string;
-              // 可选字段（6个）
+              // 可选字段（8个）
               model?: string;
               provider?: string;
               details?: string;
               stack?: string;
               retryable?: boolean;
               retry_after?: number;
+              recoverable?: boolean;
+              context?: {
+                step?: number;
+                model?: string;
+                provider?: string;
+                thought_content?: string;
+              };
             }
       ) => {
         // ✅ 支持字符串和对象两种格式
         const errorObj =
           typeof error === "string"
-            ? { type: "error", error_type: "unknown_error", message: error, code: "UNKNOWN_ERROR", timestamp: new Date().toISOString() }
+            ? { type: "error", error_type: "unknown_error", error_message: error, timestamp: new Date().toISOString() }  // 【小沈修改2026-04-15】message → error_message
             : error;
 
         console.error("🔴 [onError] SSE 流式错误:", errorObj);
@@ -662,19 +668,22 @@ if (lastMessage && lastMessage.role === "assistant") {
               updated[updated.length - 1] = {
                 ...lastMessage,
                 // 错误时直接用错误消息替换内容，不保留"思考中"
-                content: errorObj.message,
+                // 【小沈修改2026-04-15】优先使用error_message，兼容旧字段message
+                content: (errorObj as any).error_message || (errorObj as any).message || "未知错误",
                 isError: true,
                 isStreaming: false,
                 executionSteps: latestSteps,
-                // 【小查修复2026-03-13】保存完整的error 11个字段
-                errorType: errorObj.error_type,      // error_type
-                errorCode: errorObj.code,            // code
-                errorMessage: errorObj.message,      // message - 错误消息内容
-                errorDetails: errorObj.details,       // details
-                errorStack: errorObj.stack,         // stack
-                errorRetryable: errorObj.retryable,  // retryable
-                errorRetryAfter: errorObj.retry_after, // retry_after
-                errorTimestamp: errorObj.timestamp,   // timestamp
+                // 【小沈修改2026-04-15】删除code字段，统一使用error_message
+                errorType: errorObj.error_type,
+                errorMessage: (errorObj as any).error_message || (errorObj as any).message || "",  // 【小沈修改2026-04-15】优先使用error_message
+                errorDetails: errorObj.details,
+                errorStack: errorObj.stack,
+                errorRetryable: errorObj.retryable,
+                errorRetryAfter: errorObj.retry_after,
+                errorTimestamp: errorObj.timestamp,
+                // 【小沈添加2026-04-15】新增recoverable和context字段
+                errorRecoverable: (errorObj as any).recoverable,
+                errorContext: (errorObj as any).context,
                 // 如果 errorObj 中没有 model/provider，使用消息中已有的值
                 model: errorObj.model || lastMessage.model,
                 provider: errorObj.provider || lastMessage.provider,
@@ -694,7 +703,8 @@ if (lastMessage && lastMessage.role === "assistant") {
         setWaitTime(0);
         setIsRetrying(false);
         
-        logAIError(errorObj.message || "未知错误");
+        // 【小沈修改2026-04-15】优先使用error_message，兼容旧字段message
+        logAIError((errorObj as any).error_message || (errorObj as any).message || "未知错误");
         
         // ⭐ 完成后清理ref
         streamingContentRef.current = '';

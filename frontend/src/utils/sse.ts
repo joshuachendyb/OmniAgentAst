@@ -26,24 +26,31 @@ import { handleSSEError as errorHandlerHandleSSE, ErrorType } from "./errorHandl
 const SSE_STORAGE_KEY = "sse_execution_steps_backup";
 
 /**
- * SSE 错误对象 - 与后端API文档的11个字段完全对应
+ * SSE错误类型 - 用于 onError 回调函数参数
  * 文档：API-chat-stream.md
+ * 【小沈修改2026-04-15】删除code和message字段，统一使用error_message
  */
 export interface SSEError {
-  // 必填字段（4个）
+  // 必填字段（3个）
   type: string;           // 固定值: error
-  error_type: string;    // 错误类型
-  message: string;        // 用户友好的错误信息
-  code: string;          // 错误码
+  error_type: string;     // 错误类型
+  error_message: string; // 用户友好的错误信息 【修改2026-04-15】message → error_message
   // 必填字段（1个）
   timestamp: string;      // 时间戳
-  // 可选字段（6个）
-  model?: string;        // 模型名称
+  // 可选字段（8个）
+  model?: string;         // 模型名称
   provider?: string;      // 提供商名称
-  details?: string;      // 详细错误信息
+  details?: string;       // 详细错误信息
   stack?: string;        // 堆栈信息
   retryable?: boolean;   // 是否可重试
   retry_after?: number;  // 重试等待秒数
+  recoverable?: boolean; // 是否可恢复 【新增2026-04-15】
+  context?: {            // 错误上下文 【新增2026-04-15】
+    step?: number;
+    model?: string;
+    provider?: string;
+    thought_content?: string;
+  };
 }
 
 /**
@@ -102,12 +109,14 @@ export interface ExecutionStep {
   // === 【小新重构】type=action_tool 新字段（与thought类型共用tool_name/tool_params）===
   execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
   summary?: string;             // 执行摘要（新）
-  raw_data?: Record<string, any> | null; // 原始数据（新）
+  execution_result?: Record<string, any> | null; // 执行结果 【修改2026-04-15】raw_data → execution_result
+  execution_time_ms?: number;   // 执行耗时 【新增2026-04-15】
+  raw_data?: Record<string, any> | null; // 原始数据（旧，兼容）
   action_retry_count?: number;  // 重试次数（新）
   
   // === type=observation 字段（精简版，2026-04-07 小资修改） ===
   // 后端删除第二次LLM调用后，observation只保留基础字段
-  // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/raw_data）
+  // 工具执行结果已在 action_tool 阶段完整显示（execution_status/summary/execution_result）
   // 【注意】obs_* 字段已删除，如需使用工具结果请从 action_tool 阶段获取
   // tool_name 已在上面 action_tool 字段定义（第97行），此处不再重复
 
@@ -126,16 +135,23 @@ export interface ExecutionStep {
   // === 错误/中断字段 ===
   // 【小沈修复2026-03-28】后端incident类型使用incident_value区分具体类型
   incident_value?: string;    // incident 类型的具体值（interrupted/paused/resumed/retrying）
-  error_message?: string;      // error 类型的错误信息
+  error_message?: string;      // error 类型的错误信息 【修改2026-04-15】优先使用error_message
   message?: string;           // interrupted 类型的中断信息
-  
+
   // 【小新修复 2026-03-14】error类型完整字段（避免使用 as any）
-  code?: string;              // 技术错误码（如 INTERNAL_ERROR）
+  // 【小沈修改2026-04-15】删除code字段，统一使用error_message
   error_type?: string;        // 业务错误类型（如 empty_response）
   details?: string;           // 详细错误信息
   stack?: string;             // 堆栈信息
   retryable?: boolean;        // 是否可重试
   retry_after?: number;       // 重试等待秒数
+  recoverable?: boolean;       // 是否可恢复 【新增2026-04-15】
+  context?: {                 // 错误上下文 【新增2026-04-15】
+    step?: number;
+    model?: string;
+    provider?: string;
+    thought_content?: string;
+  };
   wait_time?: number;         // 等待时间（秒）
 
   // === 前端额外字段 ===
@@ -314,8 +330,7 @@ const handleSSEError = (params: {
     onError?.({
       type: "error",
       error_type: errorType,
-      message: result.errorType ? ERROR_CONFIG_MAP[errorType]?.showMessage || "连接失败" : "连接失败",
-      code: "CONNECTION_FAILED",
+      error_message: result.errorType ? ERROR_CONFIG_MAP[errorType]?.showMessage || "连接失败" : "连接失败",  // 【小沈修改2026-04-15】message → error_message
       timestamp: new Date().toISOString()
     });
   }
@@ -1098,13 +1113,11 @@ const processSSEData = (
       case "error": {
         const stepNum = rawData.step || 1;
         console.log(`%c[STEP] [type=error] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
-        const errorMsg = rawData.message || "未知错误";
+        // 【小沈修改2026-04-15】优先使用error_message，兼容旧字段message
+        const errorMsg = rawData.error_message || rawData.message || "未知错误";
         step.content = errorMsg;
         step.error_message = errorMsg;
-        // 【小新修复 2026-03-14】直接赋值，无需 as any（已在接口中定义字段）
-        if (rawData.code) {
-          step.code = rawData.code;
-        }
+        // 【小沈修改2026-04-15】删除code字段，统一使用error_message
         if (rawData.error_type) {
           step.error_type = rawData.error_type;
         }
@@ -1132,6 +1145,18 @@ const processSSEData = (
         if (rawData.retry_after !== undefined) {
           step.retry_after = rawData.retry_after;
         }
+        // 【小沈添加2026-04-15】新增recoverable和context字段
+        if (rawData.recoverable !== undefined) {
+          step.recoverable = rawData.recoverable;
+        }
+        if (rawData.context) {
+          step.context = {
+            step: rawData.context.step,
+            model: rawData.context.model,
+            provider: rawData.context.provider,
+            thought_content: rawData.context.thought_content,
+          };
+        }
         if (rawData.timestamp) {
           step.timestamp = rawData.timestamp;
         }
@@ -1157,18 +1182,19 @@ const processSSEData = (
         onStep?.(step);
         // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保 error 步骤显示
         onShowSteps?.(true);
-        // 【小新修复2026-03-13】传递完整的错误对象，保留error_type等字段
+        // 【小沈修改2026-04-15】传递完整的错误对象，统一使用error_message，删除code字段
         onError?.({
           type: "error",
           error_type: rawData.error_type || "unknown_error",
-          message: errorMsg,
-          code: rawData.code || "UNKNOWN_ERROR",
+          error_message: errorMsg,
           model: rawData.model,
           provider: rawData.provider,
           details: rawData.details,
           stack: rawData.stack,
           retryable: rawData.retryable,
           retry_after: rawData.retry_after,
+          recoverable: rawData.recoverable,
+          context: rawData.context,
           timestamp: rawData.timestamp || timestampValue
         });
         // 【小强修复 2026-04-09】关键：不再调用onComplete（和v0.8.75一致），error步骤由onError处理
@@ -1188,7 +1214,9 @@ const processSSEData = (
         step.tool_params = rawData.tool_params || {};
         step.execution_status = rawData.execution_status;
         step.summary = rawData.summary;
-        step.raw_data = rawData.raw_data;
+        // 【小沈修改2026-04-15】优先使用execution_result，兼容raw_data
+        step.execution_result = rawData.execution_result || rawData.raw_data || null;
+        step.execution_time_ms = rawData.execution_time_ms;
         step.action_retry_count = rawData.action_retry_count;
         
         // 【红色】收到数据

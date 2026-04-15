@@ -112,6 +112,9 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   const effectiveType = step.type === 'incident' ? (step as any).incident_value || 'incident' : step.type;
   const label = labelMap[effectiveType] || labelMap[step.type] || "步骤";
   const icon = iconMap[effectiveType] || iconMap[step.type] || "";
+
+  // 【小沈添加2026-04-15】向后兼容：优先使用execution_result，兼容raw_data
+  const executionResult = step.execution_result || (step as any).raw_data;
   
   // 【小强优化 2026-03-18】步骤编号颜色随类型变化 - 使用stepStyles的函数
   const badgeStyle = getStepBadgeStyle(effectiveType as StepType);
@@ -136,7 +139,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
 
   // 获取分页数据：前端切片
   const getPageData = () => {
-    const rawData = step.raw_data as any;
+    const rawData = executionResult as any;
     const allData = rawData?.matches || rawData?.entries || rawData?.results || [];
     const FRONTEND_PAGE_SIZE = 100;  // 前端每页显示100条
     
@@ -248,9 +251,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
                   </div>
                );
             })()}
-            {/* 【小强修改 2026-04-03】前端分页：后端返回全部数据，前端自己控制显示 */}
             {/* 【小沈修复 2026-03-24】对于list_directory，总数由ListDirectoryView内部显示，避免重复 */}
-            {step.raw_data && step.tool_name !== "list_directory" && (() => {
+            {executionResult && step.tool_name !== "list_directory" && (() => {
               const { hasMore } = getPageData();
               return hasMore && (
                 <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
@@ -563,8 +565,10 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
  * 【小强修改 2026-03-24】添加 toggleExpand 和 stepIndex 参数，用于 list_directory 折叠功能
  */
 const renderToolResult = (step: ExecutionStep, isExpanded: boolean = true, toggleExpand?: (index: number) => void, stepIndex?: number) => {
-  // 从 raw_data 中获取 data
-  const data = (step as any).raw_data?.data || (step as any).raw_data;
+  // 【小沈修改2026-04-15】优先使用execution_result，兼容raw_data
+  const execResult = step.execution_result || (step as any).raw_data;
+  // 从 execution_result 中获取 data
+  const data = (execResult as any)?.data || execResult;
   if (!data) return null;
 
   // 【小强修复 2026-03-24】处理可能的 undefined
@@ -625,15 +629,23 @@ export interface MessageItemProps {
     display_name?: string; // 前端小新代修改：显示名称
     is_reasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 snake_case）
     task_id?: string; // 【小新重构2026-03-09】任务ID，用于分页请求
-    // 【小查修复2026-03-13】error相关字段（与API文档11个字段对齐）
+    // 【小沈修改2026-04-15】error相关字段（与API文档对齐）
     errorType?: string;      // error_type
-    errorCode?: string;     // code
-    errorMessage?: string;  // message - 错误消息内容
+    // 【小沈修改2026-04-15】删除errorCode，统一使用errorMessage
+    errorMessage?: string;  // error_message - 错误消息内容 【小沈修改2026-04-15】message → error_message
     errorDetails?: string;   // details
-    errorStack?: string;    // stack
+    errorStack?: string;     // stack
     errorRetryable?: boolean; // retryable
     errorRetryAfter?: number; // retry_after
-    errorTimestamp?: string;  // timestamp
+errorTimestamp?: string;  // timestamp
+    // 【小沈添加2026-04-15】新增recoverable和context字段
+    errorRecoverable?: boolean;
+    errorContext?: {
+      step?: number;
+      model?: string;
+      provider?: string;
+      thought_content?: string;
+    };
   };
   showExecution?: boolean;
   sessionId?: string | null;  // 【小强添加 2026-03-23】会话ID，用于导出
@@ -742,11 +754,11 @@ const MessageItem = memo(({
        
       if (isError) {
         // 错误消息：导出JSON格式（使用API文档字段名）
+        // 【小沈修改2026-04-15】删除code，统一使用error_message
         exportData.error = {
           type: "error",
           error_type: message.errorType,
-          code: message.errorCode,
-          message: message.errorMessage,
+          error_message: message.errorMessage,  // 【小沈修改2026-04-15】message → error_message
           details: message.errorDetails,
           stack: message.errorStack,
           retryable: message.errorRetryable,
@@ -754,6 +766,9 @@ const MessageItem = memo(({
           timestamp: formatTimestamp(message.errorTimestamp),
           model: message.model,
           provider: message.provider,
+          // 【小沈添加2026-04-15】新增recoverable和context
+          recoverable: message.errorRecoverable,
+          context: message.errorContext,
         };
         // 【小强修复 2026-03-17】executionSteps 也要转换 timestamp
         exportData.executionSteps = message.executionSteps?.map(step => ({
@@ -784,7 +799,8 @@ const MessageItem = memo(({
                 tool_params: step.tool_params 
               };
             case 'action_tool':
-              return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, raw_data: step.raw_data, action_retry_count: step.action_retry_count };
+              // 【小沈修改2026-04-15】raw_data → execution_result，添加error_message和execution_time_ms
+              return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, execution_result: step.execution_result || step.raw_data || null, error_message: step.error_message || "", execution_time_ms: step.execution_time_ms || 0, action_retry_count: step.action_retry_count };
             case 'observation':
               // 【小资精简 2026-04-07】后端删除第二次LLM调用后，observation只保留基础字段
               // 工具执行结果已在 action_tool 阶段完整显示
@@ -801,8 +817,8 @@ const MessageItem = memo(({
                 provider: step.provider
               };
             case 'error':
-              // 【小强修复 2026-03-18】添加 step 字段
-              return { ...baseExport, step: step.step, code: (step as any).code, error_type: (step as any).error_type, details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider };
+              // 【小沈修改2026-04-15】删除code，添加error_message、recoverable、context
+              return { ...baseExport, step: step.step, error_type: (step as any).error_type, error_message: (step as any).error_message || (step as any).message || "", details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, recoverable: (step as any).recoverable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider, context: (step as any).context };
             case 'interrupted':
             case 'paused':
             case 'resumed':
