@@ -3047,6 +3047,56 @@ conversation_history存储原始文本response（保持不变）
 | 数据流向 | 保持不变 | 保持不变 |
 
 
+### 15.5 Step封装对yield给前端的影响分析
+
+> 分析时间：2026-04-15
+> 分析人：小沈
+
+#### 15.5.1 现有系统yield位置（base_react.py）
+
+| 步骤类型 | yield内容 | 代码位置 |
+|----------|---------|----------|
+| thought | `yield {dict直接构造}` | base_react.py:234-243行 |
+| action_tool(错误) | `yield action_tool_result` | base_react.py:266行 |
+| action_tool(成功) | `yield {dict直接构造}` | base_react.py:269-279行 |
+| observation | `yield {dict直接构造}` | base_react.py:302-308行 |
+| final | `yield {dict直接构造}` | base_react.py:316-320行 |
+| error | `yield error_response` | base_react.py:331/342行 |
+
+#### 15.5.2 Step封装后的变化
+
+**位置变化**：
+
+| 步骤类型 | 现有位置 | Step封装后 | 变化 |
+|----------|----------|-----------|------|
+| thought | 第234行 | 第234行 | **位置不变** |
+| action_tool | 第266/269行 | 第266/269行 | **位置不变** |
+| observation | 第302行 | 第302行 | **位置不变** |
+| final | 第316行 | 第316行 | **位置不变** |
+| error | 第331/342行 | 第331/342行 | **位置不变** |
+
+**内容变化**：
+
+| 步骤类型 | 现有方式 | Step封装后 |
+|----------|---------|-----------|
+| thought | `yield {dict直接构造}` | `step = StepFactory.create_thought_step(...); yield step.to_dict()` |
+| action_tool | `yield {dict直接构造}` | `step = StepFactory.create_action_tool_step(...); yield step.to_dict()` |
+| observation | `yield {dict直接构造}` | `step = StepFactory.create_observation_step(...); yield step.to_dict()` |
+| final | `yield {dict直接构造}` | `step = StepFactory.create_final_step(...); yield step.to_dict()` |
+| error | `yield error_response` | `step = StepFactory.create_error_step(...); yield step.to_dict()` |
+
+#### 15.5.3 影响结论
+
+| 影响项 | 分析结果 |
+|--------|----------|
+| **yield位置** | ✅ 不变，仍然在原代码行 |
+| **yield次数** | ✅ 不变，每轮仍然yield 3次（thought→action_tool→observation） |
+| **yield内容** | 变化：从直接构造dict → 调用step.to_dict() |
+| **数据结构** | 不变：yield输出的仍然是dict格式 |
+
+**核心影响**：位置不变，但代码组织方式变了（使用StepFactory+to_dict()）。
+
+
 ## 附件16 维度三：重构Agent主循环2.0的详细设计及详细实施步骤
 
 ### 16.1 维度三：重构Agent主循环2.0的详细设计
