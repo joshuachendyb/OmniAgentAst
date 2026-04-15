@@ -103,8 +103,6 @@ export interface ExecutionStep {
   action?: string;  // 兼容旧字段
   observation?: any;
   result?: string;
-  // 【小查修复2026-03-09】添加is_finished字段
-  is_finished?: boolean;  // observation类型的是否完成标志
   
   // === 【小新重构】type=action_tool 新字段（与thought类型共用tool_name/tool_params）===
   execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
@@ -126,6 +124,14 @@ export interface ExecutionStep {
   model?: string;         // AI模型
   provider?: string;      // AI提供商
   display_name?: string;  // 显示名称
+  
+  // === type=final 字段 【新增2026-04-15】===
+  response?: string;       // 最终回答内容
+  is_streaming?: boolean;  // 是否流式输出
+  is_finished?: boolean;   // 是否已完成
+  
+  // === type=observation 字段 【新增2026-04-15】===
+  return_direct?: boolean;  // 是否直接返回
   
   // === 思考过程与正式内容区分字段（统一使用 is_reasoning snake_case）===
   is_reasoning?: boolean;  // 是否为思考过程（true=思考过程，false=正式内容）
@@ -961,8 +967,14 @@ const processSSEData = (
       case "thought": {
         const stepNum = rawData.step || 1;
         console.log(`%c[STEP] [type=thought] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
-        step.content = rawData.content || "";
-        // step.reasoning = rawData.reasoning || "";  // 【小强删除 2026-04-08】reasoning与content重复，后端已删除
+        
+        // 【小沈修改2026-04-16】使用后端字段存储
+        step.step = rawData.step || 1;
+        step.timestamp = rawData.timestamp || Date.now();
+        // 后端有两个字段：content(完整思考内容)和thought(parsed获取的thought)
+        step.content = rawData.content || "";  // 完整思考内容
+        step.thought = rawData.thought || ""; // parsed的thought
+        step.reasoning = rawData.reasoning || "";
         step.tool_name = rawData.tool_name || rawData.action_tool || "";  // 兼容旧字段
         step.tool_params = rawData.tool_params || rawData.params || {};    // 兼容旧字段
         // console.log("🔍 [sse thought] step对象=", JSON.stringify(step));
@@ -1051,8 +1063,20 @@ const processSSEData = (
       case "final": {
         const stepNum = rawData.step || 1;
         console.log(`%c[STEP] [type=final] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
-        // 后端实际返回 content 字段（根据设计文档9.4.6）
-        step.content = rawData.content || "";
+        
+        // 【小沈修改2026-04-16】添加step和timestamp字段
+        step.step = rawData.step || 1;
+        step.timestamp = rawData.timestamp || Date.now();
+        
+        // 【小强修复 2026-04-15】后端final类型没有content字段，直接使用response
+        // 解析后端所有字段
+        step.response = rawData.response || "";
+        step.is_finished = rawData.is_finished;
+        step.thought = rawData.thought || "";
+        step.is_streaming = rawData.is_streaming;
+        step.is_reasoning = rawData.is_reasoning;
+        step.content = step.response;  // content只用于前端显示，使用response的值
+        
         if (step.content) {
           if (!responseBufferRef.current) {
             responseBufferRef.current = step.content;
@@ -1112,39 +1136,23 @@ const processSSEData = (
       case "error": {
         const stepNum = rawData.step || 1;
         console.log(`%c[STEP] [type=error] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
-        // 【小沈修改2026-04-15】优先使用error_message，兼容旧字段message
-        const errorMsg = rawData.error_message || rawData.message || "未知错误";
+        
+        // 【小强修复 2026-04-15】后端error类型只有以下字段，只解析后端存在的字段
+        const errorMsg = rawData.error_message || "未知错误";
         step.content = errorMsg;
         step.error_message = errorMsg;
-        // 【小沈修改2026-04-15】删除code字段，统一使用error_message
-        if (rawData.error_type) {
-          step.error_type = rawData.error_type;
-        }
-        // 【小强修复 2026-03-18】确保step字段被正确设置
+        step.error_type = rawData.error_type || "";
+        
+        // 解析后端存在的字段
         if (rawData.step) {
           step.step = rawData.step;
         }
-        // 【小查修复2026-03-13】补充缺失的model和provider字段（文档要求11个字段）
         if (rawData.model) {
           step.model = rawData.model;
         }
         if (rawData.provider) {
           step.provider = rawData.provider;
         }
-        // 【小查修复2026-03-10】添加设计文档要求的字段
-        if (rawData.details) {
-          step.details = rawData.details;
-        }
-        if (rawData.stack) {
-          step.stack = rawData.stack;
-        }
-        if (rawData.retryable !== undefined) {
-          step.retryable = rawData.retryable;
-        }
-        if (rawData.retry_after !== undefined) {
-          step.retry_after = rawData.retry_after;
-        }
-        // 【小沈添加2026-04-15】新增recoverable和context字段
         if (rawData.recoverable !== undefined) {
           step.recoverable = rawData.recoverable;
         }
@@ -1155,6 +1163,9 @@ const processSSEData = (
             provider: rawData.context.provider,
             thought_content: rawData.context.thought_content,
           };
+        }
+        if (rawData.retry_after !== undefined) {
+          step.retry_after = rawData.retry_after;
         }
         if (rawData.timestamp) {
           step.timestamp = rawData.timestamp;
@@ -1271,8 +1282,16 @@ const processSSEData = (
       case "observation": {
         const stepNum = rawData.step || 1;
         console.log(`%c[STEP] [type=observation] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
-        step.content = rawData.content || "";
+        
+        // 【小沈修改2026-04-16】使用后端字段存储，不再用content中转
+        step.step = rawData.step || 1;
+        step.timestamp = rawData.timestamp || Date.now();
         step.tool_name = rawData.tool_name || "";
+        step.tool_params = rawData.tool_params || {};
+        step.return_direct = rawData.return_direct;
+        // 观察内容存储在observation字段
+        step.observation = rawData.observation || "";
+        step.content = rawData.observation || "";  // 兼容旧代码
         
         setExecutionSteps((prev) => {
           const newSteps = [...prev, step];

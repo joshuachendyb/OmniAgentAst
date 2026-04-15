@@ -5,9 +5,7 @@ interface ErrorDetailProps {
   // 【小沈修改2026-04-15】删除errorCode，统一使用errorMessage
   errorMessage?: string;
   errorTimestamp?: string;
-  errorDetails?: string;
-  errorStack?: string;
-  errorRetryable?: boolean;
+  // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除这些字段
   errorRetryAfter?: number;
   model?: string;
   provider?: string;
@@ -33,9 +31,7 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
   // 【小沈修改2026-04-15】删除errorCode
   errorMessage,
   errorTimestamp,
-  errorDetails,
-  errorStack,
-  errorRetryable,
+  // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除
   errorRetryAfter,
   model,
   provider,
@@ -230,26 +226,17 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
           </div>
         )}
 
-        {/* 可重试 */}
-        {errorRetryable !== undefined && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ color: "#888", whiteSpace: "nowrap", fontSize: "13px" }}>可重试:</span>
-            <span style={{ color: errorRetryable ? "#52c41a" : "#999", fontSize: "13px", fontWeight: 500 }}>
-              {errorRetryable ? "是" : "否"}
-              {errorRetryable && errorRetryAfter !== undefined && (
-                <span style={{ color: "#666", marginLeft: 4 }}>
-                  ({errorRetryAfter}秒后)
-                </span>
-              )}
-            </span>
-          </div>
-        )}
-        {/* 【小沈添加2026-04-15】显示recoverable字段 */}
+        {/* 【小沈添加2026-04-15】显示recoverable字段（替代后端已删除的retryable） */}
         {errorRecoverable !== undefined && (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ color: "#888", whiteSpace: "nowrap", fontSize: "13px" }}>可恢复:</span>
             <span style={{ color: errorRecoverable ? "#52c41a" : "#999", fontSize: "13px", fontWeight: 500 }}>
               {errorRecoverable ? "是" : "否"}
+              {errorRecoverable && errorRetryAfter !== undefined && (
+                <span style={{ color: "#666", marginLeft: 4 }}>
+                  ({errorRetryAfter}秒后)
+                </span>
+              )}
             </span>
           </div>
         )}
@@ -263,53 +250,6 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
           </div>
         )}
       </div>
-
-      {/* 详情 - 全宽显示 */}
-      {errorDetails && (
-        <div style={{ marginTop: 12 }}>
-          <div style={{ color: "#888", fontSize: "13px", marginBottom: 4 }}>详情:</div>
-          <div
-            style={{
-              padding: "8px 12px",
-              background: "rgba(255, 255, 255, 0.3)",
-              borderRadius: 6,
-              color: "#666",
-              fontSize: "13px",
-              wordBreak: "break-all",
-              lineHeight: 1.5,
-            }}
-          >
-            {errorDetails}
-          </div>
-        </div>
-      )}
-
-      {/* 堆栈 - 折叠显示 */}
-      {errorStack && (
-        <div style={{ marginTop: 12 }}>
-          <details>
-            <summary style={{ color: "#888", fontSize: "13px", cursor: "pointer" }}>
-              查看堆栈信息
-            </summary>
-            <pre
-              style={{
-                margin: "8px 0 0 0",
-                padding: "8px 12px",
-                background: "rgba(0, 0, 0, 0.03)",
-                borderRadius: 6,
-                color: "#888",
-                fontSize: "12px",
-                wordBreak: "break-all",
-                maxHeight: "150px",
-                overflow: "auto",
-                lineHeight: 1.4,
-              }}
-            >
-              {errorStack}
-            </pre>
-          </details>
-        </div>
-      )}
     </div>
   );
 };

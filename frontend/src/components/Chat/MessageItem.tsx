@@ -36,7 +36,6 @@ import {
   getStepLabelStyle,
   getStepBadgeStyle,
   getTimestampStyle,
-  getStatusBadgeStyle,
   FontSize,
   FontWeight,
   Colors,
@@ -277,15 +276,43 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
                 </div>
               );
             })()}
-            {/* 【小沈优化 2026-03-30】显示execution_status和summary - 使用徽章样式 */}
+            {/* 【小沈优化 2026-03-30】显示execution_status和summary */}
+            {/* 【小沈修改2026-04-16】添加execution_time_ms、action_retry_count、error_message显示 */}
             {(step as any).execution_status && (
               <div style={{ marginTop: 6, fontSize: 12 }}>
-                <span style={getStatusBadgeStyle((step as any).execution_status === "success" ? "success" : "error")}>
-                  📊 状态：{(step as any).execution_status}
+                <span style={{ 
+                  color: (step as any).execution_status === "success" ? "#52c41a" : "#ff4d4f",
+                  fontWeight: 500 
+                }}>
+                  {(step as any).execution_status === "success" ? "✅ 成功" : "❌ 失败"}
                 </span>
+                {/* 执行耗时 */}
+                {(step as any).execution_time_ms !== undefined && (step as any).execution_time_ms > 0 && (
+                  <span style={{ color: "#666", marginLeft: 8 }}>
+                    | ⏱️ 耗时：{(() => {
+                      const ms = (step as any).execution_time_ms;
+                      if (!ms || ms <= 0) return "";
+                      if (ms < 1000) return `${ms}ms`;
+                      return `${(ms / 1000).toFixed(1)}s`;
+                    })()}
+                  </span>
+                )}
+                {/* 重试次数 */}
+                {(step as any).action_retry_count !== undefined && (step as any).action_retry_count > 0 && (
+                  <span style={{ color: "#faad14", marginLeft: 8 }}>
+                    | 🔄 重试：{(step as any).action_retry_count}次
+                  </span>
+                )}
+                {/* 摘要 */}
                 {(step as any).summary && (
                   <span style={{ color: "#666", marginLeft: 8 }}>
-                    | 摘要：{(step as any).summary}
+                    | 📝 {(step as any).summary}
+                  </span>
+                )}
+                {/* 错误信息（成功时为空，失败时显示） */}
+                {(step as any).error_message && (
+                  <span style={{ color: "#ff4d4f", marginLeft: 8 }}>
+                    | ❌ {(step as any).error_message}
                   </span>
                 )}
               </div>
@@ -294,22 +321,28 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
         )}
         {step.type === "observation" && (
           <>
-            {/* 【小资精简 2026-04-07】后端删除第二次LLM后，observation只显示content */}
-            {/* 工具执行结果已在 action_tool 阶段完整显示，本阶段仅作轻量提示 */}
-            {step.content && (
+            {/* 【小强修复 2026-04-15】后端observation使用observation字段，不是content */}
+            {(step as any).observation && (
               <div style={{ 
                 ...getStepStyle("observation" as StepType),
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
               }}>
-                {/* 【小沈新增 2026-04-07】显示工具名称，提升可读性 */}
-                {step.tool_name && (
+                {/* 显示工具名称和参数 */}
+                {(step as any).tool_name && (
                   <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>
-                    🔧 工具：{step.tool_name}
+                    🔧 工具：{(step as any).tool_name}
+                    {(step as any).tool_params && ` ${JSON.stringify((step as any).tool_params)}`}
+                  </div>
+                )}
+                {/* 显示return_direct */}
+                {(step as any).return_direct && (
+                  <div style={{ fontSize: "12px", color: "#52c41a", marginBottom: 4 }}>
+                    🏁 直接返回结果
                   </div>
                 )}
                 <span style={getStepContentStyle("observation" as StepType, "primary")}>
-                  {step.content}
+                  {(step as any).observation}
                 </span>
               </div>
             )}
@@ -483,6 +516,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
             
             {/* 思考内容 - JSON前面的纯文本 */}
             <div>
+              {/* 【小沈修改2026-04-16】使用后端content字段显示 */}
               <span style={getStepContentStyle("thought" as StepType, "primary")}>
                 {step.content || ""}
               </span>
@@ -504,10 +538,16 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
             </div>
           </div>
         )}
-        {step.type === "final" && (
+{step.type === "final" && (
           <div style={getStepStyle("final" as StepType)}>
+            {/* 【小沈修改2026-04-16】使用后端response字段显示，不再用content中转 */}
+            {(step as any).thought && (
+              <div style={{fontSize: "12px", color: "#888", marginBottom: "4px"}}>
+                思考: {(step as any).thought}
+              </div>
+            )}
             <span style={getStepContentStyle("final" as StepType, "primary")}>
-              {step.content || ""}
+              {(step as any).response || ""}
             </span>
           </div>
         )}
@@ -516,12 +556,12 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
             errorType={(step as any).error_type}
             errorMessage={step.error_message || (step as any).message}
             errorTimestamp={typeof step.timestamp === 'number' ? new Date(step.timestamp).toISOString() : String(step.timestamp)}
-            errorDetails={(step as any).details}
-            errorStack={(step as any).stack}
-            errorRetryable={(step as any).retryable}
             errorRetryAfter={(step as any).retry_after}
             model={(step as any).model}
             provider={(step as any).provider}
+            // 【小沈修改2026-04-16】删除details/stack/retryable，添加recoverable和context
+            errorRecoverable={(step as any).recoverable}
+            errorContext={(step as any).context}
           />
         )}
         {/* 【小沈修复 2026-03-28】后端type固定为'incident'，通过incident_value区分，需要同时处理新旧两种格式 */}
@@ -629,15 +669,12 @@ export interface MessageItemProps {
     display_name?: string; // 前端小新代修改：显示名称
     is_reasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 snake_case）
     task_id?: string; // 【小新重构2026-03-09】任务ID，用于分页请求
-    // 【小沈修改2026-04-15】error相关字段（与API文档对齐）
+    // 【小沈修改2026-04-16】error相关字段：删除details/stack/retryable，后端已删除
     errorType?: string;      // error_type
     // 【小沈修改2026-04-15】删除errorCode，统一使用errorMessage
     errorMessage?: string;  // error_message - 错误消息内容 【小沈修改2026-04-15】message → error_message
-    errorDetails?: string;   // details
-    errorStack?: string;     // stack
-    errorRetryable?: boolean; // retryable
     errorRetryAfter?: number; // retry_after
-errorTimestamp?: string;  // timestamp
+    errorTimestamp?: string;  // timestamp
     // 【小沈添加2026-04-15】新增recoverable和context字段
     errorRecoverable?: boolean;
     errorContext?: {
@@ -754,14 +791,11 @@ const MessageItem = memo(({
        
       if (isError) {
         // 错误消息：导出JSON格式（使用API文档字段名）
-        // 【小沈修改2026-04-15】删除code，统一使用error_message
+        // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除
         exportData.error = {
           type: "error",
           error_type: message.errorType,
           error_message: message.errorMessage,  // 【小沈修改2026-04-15】message → error_message
-          details: message.errorDetails,
-          stack: message.errorStack,
-          retryable: message.errorRetryable,
           retry_after: message.errorRetryAfter,
           timestamp: formatTimestamp(message.errorTimestamp),
           model: message.model,
@@ -802,23 +836,36 @@ const MessageItem = memo(({
               // 【小强修改2026-04-15】raw_data → execution_result
               return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, execution_result: step.execution_result || null, error_message: step.error_message || "", execution_time_ms: step.execution_time_ms || 0, action_retry_count: step.action_retry_count };
             case 'observation':
-              // 【小资精简 2026-04-07】后端删除第二次LLM调用后，observation只保留基础字段
-              // 工具执行结果已在 action_tool 阶段完整显示
-              return { ...baseExport, step: step.step, content: step.content };
+              // 【小沈修改2026-04-16】添加timestamp/tool_name/tool_params/observation/return_direct
+              return { 
+                ...baseExport, 
+                step: step.step, 
+                timestamp: formatTimestamp(step.timestamp),
+                tool_name: step.tool_name,
+                tool_params: step.tool_params,
+                observation: step.content,  // content字段实际存储的是observation内容
+                return_direct: (step as any).return_direct
+              };
             case 'chunk':
               return { ...baseExport, step: step.step, is_reasoning: step.is_reasoning };
             case 'final':
-              // 【小强修复 2026-03-18】添加 step 字段
+              // 【小沈修改2026-04-16】添加response/thought/is_finished/is_streaming/is_reasoning
               return { 
                 ...baseExport, 
                 step: step.step,
+                timestamp: formatTimestamp(step.timestamp),
                 display_name: step.display_name,
                 model: step.model,
-                provider: step.provider
+                provider: step.provider,
+                response: step.response,
+                thought: step.thought,
+                is_finished: (step as any).is_finished,
+                is_streaming: (step as any).is_streaming,
+                is_reasoning: (step as any).is_reasoning
               };
             case 'error':
-              // 【小沈修改2026-04-15】删除code，添加error_message、recoverable、context
-              return { ...baseExport, step: step.step, error_type: (step as any).error_type, error_message: (step as any).error_message || (step as any).message || "", details: (step as any).details, stack: (step as any).stack, retryable: (step as any).retryable, recoverable: (step as any).recoverable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider, context: (step as any).context };
+              // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除
+              return { ...baseExport, step: step.step, error_type: (step as any).error_type, error_message: (step as any).error_message || (step as any).message || "", recoverable: (step as any).recoverable, retry_after: (step as any).retry_after, model: (step as any).model, provider: (step as any).provider, context: (step as any).context };
             case 'interrupted':
             case 'paused':
             case 'resumed':
@@ -1059,7 +1106,7 @@ const MessageItem = memo(({
       return "刚刚";
     }
   };
-
+  
   /**
    * 格式化相对时间
    */

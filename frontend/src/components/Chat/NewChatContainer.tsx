@@ -673,12 +673,9 @@ if (lastMessage && lastMessage.role === "assistant") {
                 isError: true,
                 isStreaming: false,
                 executionSteps: latestSteps,
-                // 【小沈修改2026-04-15】删除code字段，统一使用error_message
+                // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除
                 errorType: errorObj.error_type,
                 errorMessage: (errorObj as any).error_message || (errorObj as any).message || "",  // 【小沈修改2026-04-15】优先使用error_message
-                errorDetails: errorObj.details,
-                errorStack: errorObj.stack,
-                errorRetryable: errorObj.retryable,
                 errorRetryAfter: errorObj.retry_after,
                 errorTimestamp: errorObj.timestamp,
                 // 【小沈添加2026-04-15】新增recoverable和context字段

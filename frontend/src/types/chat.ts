@@ -277,12 +277,9 @@ export interface Message extends ChatMessage {
   isError?: boolean;
   // 错误相关字段（与API文档对齐）
   // 【小沈修改2026-04-15】删除errorCode，添加errorRecoverable和errorContext
+  // 【小沈修改2026-04-16】删除errorDetails/errorStack/errorRetryable，后端已删除这些字段
   errorMessage?: string;     // error_message - 错误消息内容
   errorType?: string;        // error_type
-  errorDetails?: string;     // details
-  errorStack?: string;       // stack
-  errorRetryable?: boolean;  // retryable
-  errorRetryAfter?: number;  // retry_after
   errorTimestamp?: string;   // timestamp
   errorRecoverable?: boolean; // recoverable 【新增2026-04-15】
   errorContext?: {           // context 【新增2026-04-15】
@@ -291,6 +288,7 @@ export interface Message extends ChatMessage {
     provider?: string;
     thought_content?: string;
   };
+  errorRetryAfter?: number;  // retry_after
   model?: string;
   provider?: string;
   display_name?: string;
