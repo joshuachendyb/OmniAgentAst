@@ -42,6 +42,7 @@ from app.services.agent.file_react import FileReactAgent
 from app.services import AIServiceFactory
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_step_counter
+from app.chat_stream.error_handler import create_error_response
 
 
 # 意图标签列表（用于 PreprocessingPipeline）
@@ -85,10 +86,13 @@ async def chat_stream_v2(request: ChatRequest):
     """
     # 获取用户输入
     if not request.messages:
-        error_data = {"type": "error", "message": "消息列表不能为空"}
+        error_response = create_error_response(
+            error_type="invalid_request",
+            error_message="消息列表不能为空"
+        )
         from fastapi.responses import PlainTextResponse
         return PlainTextResponse(
-            content=f"data: {json.dumps(error_data)}\n\n",
+            content=error_response,
             media_type="text/event-stream"
         )
 
@@ -120,7 +124,10 @@ async def chat_stream_v2(request: ChatRequest):
                 yield sse_data
         except Exception as e:
             logger.error(f"[chat_stream_v2] Error: {e}", exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield create_error_response(
+                error_type="router_error",
+                error_message=f"路由异常: {str(e)}"
+            )
     
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -238,7 +245,10 @@ class ChatRouter:
             yield f"data: {json.dumps(start_data)}\n\n"
         except Exception as e:
             logger.error(f"[ChatRouter] send_start_step failed: {e}", exc_info=True)
-            yield f"data: {json.dumps({'type': 'error', 'message': f'start步骤失败: {str(e)}'})}\n\n"
+            yield create_error_response(
+                error_type="start_failed",
+                error_message=f"start步骤失败: {str(e)}"
+            )
             return
         
         # ===== 步骤6: 根据意图类型分发 =====
@@ -350,19 +360,18 @@ class ChatRouter:
         except Exception as e:
             logger.error(f"[ChatRouter] Chat operation failed: {e}", exc_info=True)
             yield self._create_error_sse(
-                message=f"对话执行失败: {str(e)}",
+                error_type="router_error",
+                error_message=f"对话执行失败: {str(e)}",
                 step=next_step()
             )
 
-    def _create_error_sse(self, message: str, step: int) -> str:
+    def _create_error_sse(self, error_type: str, error_message: str, step: int) -> str:
         """创建错误 SSE 响应"""
-        error_data = {
-            "type": "error",
-            "step": step,
-            "code": "ROUTER_ERROR",
-            "message": message
-        }
-        return f"data: {json.dumps(error_data)}\n\n"
+        return create_error_response(
+            error_type=error_type,
+            error_message=error_message,
+            step=step
+        )
 
 
 # 便捷函数：创建 router 实例
