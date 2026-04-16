@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, AsyncGenerator
 
 from app.services.agent.types import AgentStatus
-from app.services.agent.tool_parser import ToolParser
+from app.services.agent.react_output_parser import parse_react_response
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
 from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
@@ -43,7 +43,10 @@ class BaseAgent(ABC):
         self.llm_call_count = 0
         self._lock = asyncio.Lock()
         
-        self.parser = ToolParser()
+        # self.parser = ToolParser()  # 步骤1.8：标记为废弃，使用parse_react_response替代
+        # 【兼容 2026-04-16 小沈】保留 self.parser 别名供外部代码和测试使用
+        from .react_output_parser import ToolParser as _ToolParser
+        self.parser = _ToolParser()
         
         # 【重构 2026-04-11 小沈】解析重试相关参数
         self.parse_retry_count = 0  # 解析重试计数器
@@ -163,6 +166,7 @@ class BaseAgent(ABC):
         # 循环外变量（用于保存需要循环外处理的值）
         last_error = None
         last_response = None
+        last_parsed_type = None  # 跟踪退出时的解析类型
         thought_content = ""
         tool_name = "finish"
         tool_params = {}
@@ -193,19 +197,36 @@ class BaseAgent(ABC):
                     break  # 空响应，退出
                 
                 # ===== 场景4：解析响应并获取结果 =====  # 修复 2026-04-15 小沈
-                parsed = self.parser.parse_response(response)
+                parsed = parse_react_response(response)
                 
                 # ===== 先获取 parsed 结果 =====
                 thought_content = parsed.get("content", "")
                 tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
                 tool_params = parsed.get("tool_params", parsed.get("params", {}))
                 
-                # ===== 场景5：正常完成（finish）=====
-                # 【修复 2026-04-15 小沈】先判断 finish，再判断解析错误
-                # 避免将合法的 finish 响应误判为解析错误
-                if tool_name == "finish":
+                # ===== 场景5：正常完成（基于type字段判断）=====
+                # 【重构 2026-04-16 小沈】使用type字段判断，替代旧的tool_name=="finish"
+                if parsed["type"] in ["answer", "implicit"]:
                     last_response = response  # 保存用于后续使用
+                    last_parsed_type = parsed["type"]  # 记录退出类型
                     break  # 直接退出，不yield thought
+                
+                # 【新增】thought_only类型：纯思考分支，继续下一轮循环
+                if parsed["type"] == "thought_only":
+                    current_time = create_timestamp()
+                    thought = parsed.get("thought", "")
+                    yield {
+                        "type": "thought",
+                        "step": step_count,
+                        "timestamp": current_time,
+                        "content": thought_content,
+                        "thought": thought,
+                        "reasoning": parsed.get("reasoning", ""),
+                        "tool_name": None,
+                        "tool_params": None
+                    }
+                    self.conversation_history.append({"role": "assistant", "content": response})
+                    continue  # 继续下一轮循环
                 
                 # ===== 检查解析是否失败 =====  # 修复 2026-04-15 小沈
                 # parse_response现在返回错误结果而不是抛异常
@@ -371,13 +392,15 @@ class BaseAgent(ABC):
         
             # ===== 循环外：统一处理退出场景 =====
             
-            # 场景5：正常完成（发现finish时不yield thought，这里只需要yield final）
-            if tool_name == "finish":
+            # 场景5：正常完成（answer/implicit类型）
+            # 【修复 2026-04-16 小沈】使用 last_parsed_type 替代 last_response 判断
+            # 原因：last_response 是字符串，判断语义不清晰；用类型字段更明确
+            if last_parsed_type in ["answer", "implicit"]:
                 yield {
                     "type": "final",
                     "step": step_count,  # 新增字段
                     "timestamp": create_timestamp(),
-                    "response": tool_params.get("result", thought_content),  # content替换为response
+                    "response": (tool_params or {}).get("result", thought_content),  # content替换为response
                     "is_finished": True,  # 新增字段
                     "thought": thought_content,  # 新增字段
                     "is_streaming": False,  # 新增字段

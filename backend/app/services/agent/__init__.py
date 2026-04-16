@@ -15,6 +15,8 @@ Agent 模块 - 多意图处理架构 + 文件操作服务
 【重构 2026-03-22 小沈】
 - preprocessing 和 intent 已移至 services/ 下独立目录
 - 旧路径导入通过懒加载保持向后兼容
+
+【重构 2026-04-16 小沈】第14章：新增react_output_parser统一解析器
 """
 
 from __future__ import annotations
@@ -28,6 +30,12 @@ from app.services.intent import Intent, IntentRegistry
 from .base_react import BaseAgent
 from .tool_parser import ToolParser
 from .tool_executor import ToolExecutor
+from .react_output_parser import (
+    parse_react_response,
+    REACT_KEYWORDS,
+    KNOWN_TOOLS,
+    ToolParser as ReactToolParser,
+)
 from .session_base import SessionServiceBase, SessionStatsMixin
 
 # ============================================================================
@@ -91,6 +99,11 @@ __all__ = [
     "IntentRegistry",
     "SessionServiceBase",
     "SessionStatsMixin",
+    # 新解析器（第14章）
+    "parse_react_response",
+    "REACT_KEYWORDS",
+    "KNOWN_TOOLS",
+    "ReactToolParser",
     # 原 file_operations（通过__getattr__懒加载）
     "FileOperationSafety",
     "FileSafetyConfig",
