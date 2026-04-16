@@ -1,3 +1,52 @@
+v0.9.6.3
+
+更新时间：2026-04-16 13:31:32
+
+更新内容：
+
+## 1. 优化observation内容+修复streamingStepsRef为空问题 - 小沈-2026-04-16
+
+### 1.1 问题1：后端yield的observation内容过大
+
+**问题**：后端yield给前端的observation字段包含完整的LLM历史格式数据（如 `{'entries': [{'name': '...', 'path': '...', ...}]}`），导致前端收到大量冗余数据。
+
+**修复**：
+- `observation_text`：保持完整（给 LLM 历史消息）
+- yield 给前端：改为 `display_text`（精简摘要）
+
+**效果**：前端收到从 2499 字符 → 约 50 字符
+
+### 1.2 问题2：streamingStepsRef为空的根因分析
+
+**问题**：用户日志显示 `ref=0 SSE=5`，streamingStepsRef.current 为空
+
+**根因**：`isPausedRef.current = true` 导致步骤存入 `displayBufferRef` 而不是 `streamingStepsRef`
+
+**触发场景**：
+1. 用户先按暂停，再创建新会话
+2. 从 sessionStorage 恢复暂停状态
+3. 后端发送 paused 事件
+
+### 1.3 修复内容
+
+**修改1**：在 `onStep` 回调开始时重置暂停状态
+```javascript
+if (step.type !== "chunk" && step.type !== "error" && isPausedRef.current) {
+    console.log("⚠️ [onStep] 重置暂停状态 isPausedRef=true -> false");
+    setIsPaused(false);
+}
+```
+
+**修改2**：`handleNewSessionInternal` 和 `handleClear` 中添加重置
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| f864a3a0 | feat: 优化observation内容+修复streamingStepsRef为空问题-小沈-2026-04-16 |
+
+---
+
 v0.9.6.2
 
 更新时间：2026-04-16 07:50:00
