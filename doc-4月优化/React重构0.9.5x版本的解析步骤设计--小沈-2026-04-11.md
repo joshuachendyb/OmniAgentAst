@@ -4315,21 +4315,29 @@ class ConvergenceDetector:
 |----------|---------|---------|------|
 | **error_message** | 4.3节 | ⚠️ 在summary中 | 独立错误信息 |
 | **execution_result** | 4.3节 | ⚠️ 用raw_data | 执行结果 |
-| **execution_time_ms** | 4.3节 | ❌ 未实现 | 执行耗时(毫秒)，前端可显示性能 |
+| **execution_time_ms** | 4.3节 | ✅ 已实现 | 执行耗时(毫秒)，前端可显示性能 |
 
-**实现方式**: 在_execute_tool调用前后计算耗时
+**实现方式**: 使用 `time.perf_counter()` 高精度计时
 
 ```python
-start_time = time.time()
+import time
+
+# base_react.py 第253-256行
+start_time = time.perf_counter()
 execution_result = await self._execute_tool(tool_name, tool_params)
-execution_time_ms = int((time.time() - start_time) * 1000)
+execution_time_ms = int((time.perf_counter() - start_time) * 1000)
 
 yield {
     "type": "action_tool",
+    ...
     "execution_time_ms": execution_time_ms,
     ...
 }
 ```
+
+**更新记录**：
+- 2026-04-16 小沈：使用 perf_counter 替代 time.time()，提高计时精度
+
 #### 12.1.2 observation 类型缺失字段
 
 | 缺失字段 | 文档参考 | 当前实现 | 说明 |
@@ -4470,179 +4478,33 @@ if (stepData.type === "observation" && isReturnDirect) {
 - [ ] 前端适配：识别 `return_direct` 字段并显示完成提示
 - [ ] 测试：验证 `return_direct=true` 时 Agent 正确结束
 
-#### 12.1.3 final 类型缺失/不同字段
+#### 12.1.3 final 类型字段实现情况（已实现）
 
-| 缺失字段 | 文档参考 | 当前实现 | 说明 |
-|----------|---------|---------|------|
-| **response** | 4.5节 | ⚠️ 用content | 字段名不同 |
-| **is_finished** | 4.5节 | ❌ 未实现 | 业务完成标志 |
-| **thought** | 4.5节 | ❌ 未实现 | 最终推理总结 |
-| **is_streaming** | 4.5节 | ❌ 未实现 | 流式输出标志 |
-
----
-
-**字段来源分析与实现方案**
+| 字段 | 文档参考 | 当前实现 | 说明 |
+|------|---------|---------|------|
+| **response** | 4.5节 | ✅ 已实现 | 最终响应内容（finish的result或thought_content） |
+| **is_finished** | 4.5节 | ✅ 已实现 | 业务完成标志（finish时固定为True） |
+| **thought** | 4.5节 | ✅ 已实现 | 最终推理总结（复用thought_content变量） |
+| **is_streaming** | 4.5节 | ✅ 已实现 | 流式输出标志（当前固定为False） |
+| **is_reasoning** | 4.5节 | ✅ 已实现 | 推理过程标志（当前固定为False） |
+| **step** | 4.5节 | ✅ 已实现 | 步骤序号 |
 
 ---
 
-##### 1. thought 字段（最终推理总结）
-
-**来源分析**：
-- 在 `base_react.py` 第214行：`thought_content = parsed.get("content", "")`
-- 这是 LLM 响应中解析出来的 `content` 字段内容
-- 在第233行已经作为 `content` 字段在 thought 步骤中使用
-- 在第314行生成 final 时：`content: tool_params.get("result", thought_content)`
-
-**代码追踪**：
-```python
-# base_react.py 第160-165行：初始化
-thought_content = ""  # 用于保存最终的推理内容
-
-# base_react.py 第214行：每次循环解析后获取
-thought_content = parsed.get("content", "")
-
-# base_react.py 第229-238行：yield thought 时已有 content
-yield {
-    "type": "thought",
-    "content": thought_content,  # 就是这个内容
-    ...
-}
-
-# base_react.py 第314行：yield final 时使用
-"content": tool_params.get("result", thought_content)  # 回退使用 thought_content
-```
-
-**实现方案**：
-
-```python
-# 文件: backend/app/services/agent/base_react.py
-# 位置: 第310-317行，yield final 位置
-
-if tool_name == "finish":
-    yield {
-        "type": "final",
-        "timestamp": create_timestamp(),
-        "content": tool_params.get("result", thought_content),
-        "thought": thought_content,  # 新增：使用已保存的 thought_content
-        "is_finished": True,         # 新增：完成标志
-        "is_streaming": False        # 新增：非流式输出
-    }
-    self._on_after_loop()
-    return
-```
-
-**字段来源说明**：
-- `thought_content` 变量在循环中不断更新
-- 当 `tool_name == "finish"` 时，`thought_content` 包含最后一次 LLM 的推理内容
-- 这个内容直接赋值给 final 的 `thought` 字段
-
----
-
-##### 2. is_finished 字段（业务完成标志）
-
-**来源分析**：
-- 这是一个语义化的布尔标志，表示"任务是否正常完成"
-- 与技术性的循环终止不同（可能是错误终止），`is_finished=True` 表示**业务上的成功完成**
-
-**语义区分**：
-| 场景 | 类型 | is_finished |
-|------|------|--------------|
-| 用户调用 finish 工具 | final | `true` |
-| 达到最大步数 | error | `false` |
-| LLM 返回空响应 | error | `false` |
-| 解析失败 | error | `false` |
-| 工具执行异常 | error | `false` |
-
-**实现方案**：
-
-```python
-# 文件: backend/app/services/agent/base_react.py
-# 位置: 第310-317行
-
-if tool_name == "finish":
-    yield {
-        "type": "final",
-        "timestamp": create_timestamp(),
-        "content": tool_params.get("result", thought_content),
-        "thought": thought_content,
-        "is_finished": True,   # 固定为 True，表示业务完成
-        "is_streaming": False
-    }
-```
-
-**为什么是固定 `True`**：
-- 只有在 `tool_name == "finish"` 时才会生成 final
-- 这意味着用户明确表示任务已完成
-- 因此 `is_finished` 必然为 `True`
-
-**前端用途**：
-```typescript
-// 前端根据 is_finished 显示完成徽章
-if (stepData.type === "final" && stepData.is_finished === true) {
-    showCompletionBadge();  // 显示 "✅ 结束" 徽章
-}
-```
-
----
-
-##### 3. is_streaming 字段（流式输出标志）
-
-**来源分析**：
-- 表示当前输出是否为流式输出（打字机效果）
-- 当前系统使用 SSE 推送，本质是流式，但粒度是步骤级别
-
-**当前系统分析**：
-```
-前端 <-- SSE <-- 后端
-          ↓
-    每个步骤一个事件（如 thought、action_tool、observation、final）
-    每个事件内部是完整内容（非字符级流式）
-```
-
-**实现方案**：
-
-```python
-# 文件: backend/app/services/agent/base_react.py
-# 位置: 第310-317行
-
-if tool_name == "finish":
-    yield {
-        "type": "final",
-        ...
-        "is_streaming": False  # 固定为 False
-    }
-```
-
-**为什么是固定 `False`**：
-- 当前系统是步骤级别的 SSE 推送，不是字符级流式输出
-- 如果未来要实现字符级流式，需要在前端处理时动态设置
-- 文档设计保留此字段为未来扩展
-
-**前端用途**（未来扩展）：
-```typescript
-// 未来如果实现字符级流式
-if (stepData.type === "final" && stepData.is_streaming === true) {
-    enableTypingEffect(stepData.content);  // 启用打字机效果
-}
-```
-
----
-
-**整合修改方案**
-
-修改 `base_react.py` 中的 final 生成逻辑（第310-317行）：
+**当前实现代码**（base_react.py 第376-385行）
 
 ```python
 # ===== 场景5：正常完成（发现finish时不yield thought，这里只需要yield final）=====
 if tool_name == "finish":
     yield {
         "type": "final",
+        "step": step_count,  # 步骤序号
         "timestamp": create_timestamp(),
-        "content": tool_params.get("result", thought_content),
-        # 新增字段
-        "thought": thought_content,    # 最终推理总结 = 最后一次的 content
-        "is_finished": True,           # 业务完成标志 = True（只有 finish 才到这里）
-        "is_streaming": False          # 流式输出标志 = False（当前非字符级流式）
+        "response": tool_params.get("result", thought_content),  # 最终响应
+        "is_finished": True,  # 业务完成标志
+        "thought": thought_content,  # 最终推理总结
+        "is_streaming": False,  # 流式输出标志
+        "is_reasoning": False,  # 推理过程标志
     }
     self._on_after_loop()
     return
@@ -4650,216 +4512,89 @@ if tool_name == "finish":
 
 ---
 
-**实现检查清单**
+**实现要点说明**
 
-- [ ] 修改 `base_react.py` 第310-317行 final 生成逻辑
-- [ ] 添加 `thought` 字段：复用 `thought_content` 变量
-- [ ] 添加 `is_finished` 字段：固定为 `True`
-- [ ] 添加 `is_streaming` 字段：固定为 `False`
-- [ ] 前端适配：识别 `is_finished` 显示完成徽章
-- [ ] 测试：验证 final 步骤包含这3个新字段
+| 要点 | 说明 |
+|------|------|
+| **thought_content 来源** | 第199行 `thought_content = parsed.get("content", "")` 保存 LLM 响应内容 |
+| **is_finished 固定为 True** | 只有 `tool_name == "finish"` 时才生成 final，表示业务成功完成 |
+| **is_streaming 固定为 False** | 当前系统是步骤级 SSE，不是字符级流式 |
+| **response 优先使用 result** | 优先用 finish 工具的 result，fallback 为 thought_content |
 
-#### 12.1.4 error 类型字段名不同/缺失
+---
+
+**更新记录**：
+- 2026-04-16 小沈：确认所有字段已实现，更新文档
+
+#### 12.1.4 error 类型字段实现情况（已实现）
 
 | 字段 | 文档参考 | 当前实现 | 说明 |
 |------|---------|---------|------|
-| **error_type** | 4.6节 | ⚠️ 用code | 字段名不同 |
-| **recoverable** | 4.6节 | ❌ 未实现 | 是否可恢复 |
-| **context** | 4.6节 | ❌ 未实现 | 错误上下文 |
+| **error_type** | 4.6节 | ✅ 已实现 | 错误类型标识 |
+| **recoverable** | 4.6节 | ✅ 已实现 | 是否可恢复（复用retryable值） |
+| **context** | 4.6节 | ✅ 已实现 | 错误上下文（包含step/model/provider/thought_content） |
+| **error_message** | 4.6节 | ✅ 已实现 | 错误信息 |
+| **reasoning** | 4.6节 | ✅ 已实现 | 推理内容（当前为空） |
+| **is_reasoning** | 4.6节 | ✅ 已实现 | 推理过程标志 |
+| **retry_after** | 4.6节 | ✅ 已实现 | 重试等待时间（秒） |
 
 ---
 
-**字段来源分析与实现方案**
-
----
-
-##### 1. error_type 字段（字段名不同）
-
-**当前实现分析**：
-- 文档设计：`error_type = "max_steps_exceeded"`
-- 实际代码：使用 `code` 字段（如 `code = "AI_CALL_ERROR"`）
-
-**代码追踪**：
+**当前实现代码**（error_handler.py 第52-66行）
 
 ```python
-# error_handler.py 第549-559行
-error_step = create_error_step(
-    code='AI_CALL_ERROR',           # 使用 code 字段
-    message=error_message,
-    error_type=error_type,          # 同时也有 error_type 字段
-    step_num=step_num,
-    model=model,
-    provider=provider,
-    retryable=retryable,            # 这个就是 recoverable 的前身
-    retry_after=retry_after
-)
-```
-
-**当前字段映射**：
-| 文档字段 | 实际字段 | 说明 |
-|----------|----------|------|
-| error_type | code / error_type | 两套字段同时存在 |
-| - | retryable | 等同于文档的 recoverable |
-
-**实现方案**：统一字段命名
-
-```python
-# 在 create_error_step 或 create_error_response 中统一
-
-# 方案A：在返回前统一字段名
-error_response = create_error_response(...)
-error_step = create_error_step(...)
-
-# 统一字段名（向前兼容）
-if "code" in error_response and "error_type" not in error_response:
-    error_response["error_type"] = error_response.pop("code")
-```
-
----
-
-##### 2. recoverable 字段（是否可恢复）
-
-**来源分析**：
-- 当前代码中有 `retryable` 字段（`error_handler.py` 第479行参数）
-- 实际值通过 `retryable` 参数传递（第544行）
-
-**代码追踪**：
-
-```python
-# error_handler.py 第479行：函数参数
-def create_session_error_result(
-    ...
-    retryable: bool = True,  # 就是 recoverable
-    ...
-):
-
-# error_handler.py 第544行：传递给 create_error_response
-error_response = create_error_response(
-    ...
-    retryable=retryable,  # 传入 retryable
-    ...
-)
-
-# error_handler.py 第557行：传递给 create_error_step
-error_step = create_error_step(
-    ...
-    retryable=retryable,  # 传入 retryable
-    ...
-)
-```
-
-**实现方案**：
-
-```python
-# 在 create_error_response 中添加字段统一
-def create_error_response(...):
-    ...
-    return {
-        "type": "error",
-        "code": error_type,
-        "error_type": error_type,      # 新增：与文档一致
-        "message": message,
-        "retryable": retryable,
-        "recoverable": retryable,     # 新增：文档字段名
-        "step": step
-    }
-```
-
----
-
-##### 3. context 字段（错误上下文）
-
-**来源分析**：
-- 这是新增字段，用于记录错误发生的上下文信息
-- 可以包含：发生时的 step、tool_name、LLM 调用次数等
-
-**实现方案**：
-
-```python
-# 文件: backend/app/chat_stream/error_handler.py
-# 位置: create_session_error_result 函数中
-
-# 在创建 error_response 前构建 context
-error_context = {
-    "step": step_num,
-    "error_step_type": error_step_type,  # 错误步骤类型
-    "model": model,                       # 使用的模型
-    "provider": provider                  # 使用的提供商
+# 【15.7修改】只保留新字段，删除旧字段code/message/retryable
+return {
+    'type': 'error',
+    'step': step_num,
+    'error_message': error_message,
+    'error_type': error_type,
+    'timestamp': create_timestamp(),
+    'model': model,
+    'provider': provider,
+    'reasoning': '',
+    'is_reasoning': False,
+    'recoverable': recoverable,
+    'context': context,
+    'retry_after': retry_after
 }
-
-# 添加到 error_response
-error_response = create_error_response(
-    ...
-    context=error_context,  # 新增字段
-    step=step_num
-)
-
-# 同样添加到 error_step
-error_step = create_error_step(
-    ...
-    context=error_context,  # 新增字段
-    ...
-)
 ```
 
-**context 内容示例**：
+---
+
+**context 字段内容示例**：
+
 ```json
 {
   "type": "error",
   "error_type": "max_steps_exceeded",
-  "message": "已达到最大迭代次数 100",
+  "error_message": "已达到最大迭代次数 100",
   "recoverable": false,
   "context": {
     "step": 100,
-    "error_step_type": "max_steps_exceeded",
     "model": "gpt-4",
-    "provider": "openai"
-  }
+    "provider": "openai",
+    "thought_content": ""
+  },
+  "retry_after": 3
 }
 ```
 
 ---
 
-**整合修改方案**
+**实现要点说明**
 
-修改 `error_handler.py` 中的字段返回：
-
-```python
-# 文件: backend/app/chat_stream/error_handler.py
-# 修改 create_error_response 函数
-
-def create_error_response(
-    error_type: str,
-    message: str,
-    model: Optional[str] = None,
-    provider: Optional[str] = None,
-    retryable: bool = True,
-    retry_after: int = 3,
-    step: int = 0,
-    context: Optional[dict] = None  # 新增参数
-) -> Dict[str, Any]:
-    return {
-        "type": "error",
-        "code": error_type,              # 保留原字段
-        "error_type": error_type,        # 新增：文档标准字段名
-        "message": message,
-        "retryable": retryable,          # 保留原字段
-        "recoverable": retryable,        # 新增：文档标准字段名
-        "retry_after": retry_after,
-        "step": step,
-        "context": context or {}         # 新增：错误上下文
-    }
-```
+| 要点 | 说明 |
+|------|------|
+| **error_type** | 错误类型标识，如 timeout、connect、validation、security 等 |
+| **recoverable** | 复用 `retryable` 参数值，表示错误是否可重试恢复 |
+| **context** | 包含 step、model、provider、thought_content 等上下文信息 |
+| **删旧留新** | 按 15.7 要求删除旧字段 code/message/retryable |
 
 ---
 
-**实现检查清单**
-
-- [ ] 统一 error 响应中的字段名：`error_type` 与 `code` 共存
-- [ ] 添加 `recoverable` 字段：复用 `retryable` 值
-- [ ] 添加 `context` 字段：记录错误发生的上下文信息
-- [ ] 前端适配：识别 `recoverable` 和 `context` 字段
-- [ ] 测试：验证 error 步骤包含这3个字段
+**更新记录**：
+- 2026-04-16 小沈：确认所有字段已实现，更新文档
 
 ---
 

@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.6  
+**文档版本**: v2.7  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-15 17:55:00  
+**更新时间**: 2026-04-16 17:54:41  
 **编写人**: 小沈  
 
 ## 版本历史
@@ -33,6 +33,7 @@
 | v2.4 | 2026-04-15 17:20:00 | 小沈 | 修正15.7.1和15.7.2：根据小强审查意见，error类型error_message和error_type字段已存在，只需删除多余的code和message字段 |
 | v2.5 | 2026-04-15 17:30:00 | 小沈 | 同步修正15.7.3前端部分：根据后端删除code字段，修正SSE解析逻辑和字段对照表 |
 | v2.6 | 2026-04-15 17:55:00 | 小沈 | 根据北京老陈要求：删除ErrorMessage中的error_code字段，彻底移除code兼容性字段 |
+| v2.7 | 2026-04-16 17:54:41 | 小沈 | 修正15.6.3节execution_time_ms：改为使用time.perf_counter()本地计算，修正文档代码示例 |
 
 ---
 
@@ -3202,11 +3203,16 @@ yield {
 | summary | string | 执行结果摘要 |
 | execution_result | dict/string | 执行结果数据（15.7新增，原raw_data） |
 | error_message | string | 错误信息（15.7新增，成功时为空） |
-| execution_time_ms | int | 执行耗时毫秒（15.7新增） |
+| execution_time_ms | int | 执行耗时毫秒（使用time.perf_counter()计算） |
 | action_retry_count | int | 重试次数 |
 
 **代码示例（成功）**:
 ```python
+# 使用 perf_counter 计算工具执行耗时（高精度）
+start_time = time.perf_counter()
+execution_result = await self._execute_tool(tool_name, tool_params)
+execution_time_ms = int((time.perf_counter() - start_time) * 1000)
+
 yield {
     "type": "action_tool",
     "step": step_count,
@@ -3217,7 +3223,7 @@ yield {
     "summary": execution_result.get("summary", ""),
     "execution_result": execution_result.get("data"),
     "error_message": "",
-    "execution_time_ms": execution_result.get("execution_time_ms", 0),
+    "execution_time_ms": execution_time_ms,  # 使用本地计算的耗时
     "action_retry_count": 0
 }
 ```
@@ -3234,7 +3240,7 @@ return {
     'summary': summary,
     'execution_result': raw_data or error_message,
     'error_message': error_message,
-    'execution_time_ms': 0,
+    'execution_time_ms': execution_time_ms,  # 传入实际计算的耗时
     'action_retry_count': retry_count
 }
 ```
@@ -3403,19 +3409,23 @@ return {
 **文件位置**: `backend/app/chat_stream/error_handler.py`（第628-696行）
 create_tool_error_result函数
 ```python
-return {
-    'type': 'action_tool',
-    'step': step_num,
-    'timestamp': ts,
-    'tool_name': tool_name,
-    'tool_params': tool_params or {},
-    'execution_status': 'error',
-    'summary': summary,
-    'execution_result': raw_data or error_message,  # ← raw_data替换为execution_result
-    'error_message': error_message,  # ← 新增字段
-    'execution_time_ms': 0,  # ← 新增字段（错误时为0）
-    'action_retry_count': retry_count
-}
+def create_tool_error_result(
+    ...
+    execution_time_ms: int = 0  # ← 新增参数
+) -> Dict[str, Any]:
+    return {
+        'type': 'action_tool',
+        'step': step_num,
+        'timestamp': ts,
+        'tool_name': tool_name,
+        'tool_params': tool_params or {},
+        'execution_status': 'error',
+        'summary': summary,
+        'execution_result': raw_data or error_message,  # ← raw_data替换为execution_result
+        'error_message': error_message,  # ← 新增字段
+        'execution_time_ms': execution_time_ms,  # ← 传入实际计算的耗时
+        'action_retry_count': retry_count
+    }
 ```
 
 **文件位置**: `backend/app/chat_stream/sse_formatter.py`

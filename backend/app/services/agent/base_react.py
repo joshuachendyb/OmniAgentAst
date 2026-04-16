@@ -356,6 +356,7 @@ class BaseAgent(ABC):
                 )
                 
                 # yield observation - 【小沈修复 2026-04-16】使用 display_text 给前端
+                # 【修复 2026-04-16】移除 execution_status（工具执行状态在 action_tool 中已显示）
                 yield {
                     "type": "observation",
                     "step": step_count,
@@ -363,7 +364,6 @@ class BaseAgent(ABC):
                     "tool_name": tool_name,
                     "tool_params": tool_params,
                     "observation": display_text,  # 前端显示用精简摘要
-                    "execution_status": exec_status,
                     "return_direct": execution_result.get("return_direct", False),
                 }
 
