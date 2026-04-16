@@ -290,11 +290,15 @@ const NewChatContainer: React.FC = () => {
       
       // ⭐ 50ms间隔更新，使用leading+trailing策略
       const now = Date.now();
-      const shouldUpdate = now - lastUpdateTimeRef.current >= UPDATE_INTERVAL 
+      // 【修复 2026-04-16】当收到 final/error 步骤时，必须强制更新
+      // 否则 isStreaming 不会被更新为 false，DynamicStatusDisplay 继续显示 "AI正在思考"
+      const isFinalOrError = step.type === "final" || step.type === "error";
+      const shouldUpdate = isFinalOrError 
+        || now - lastUpdateTimeRef.current >= UPDATE_INTERVAL 
         || lastUpdateTimeRef.current === 0;  // 首次立即更新
       
-      console.log("📝 [onStep] type=%s shouldUpdate=%s now=%s last=%s interval=%s", 
-        step.type, shouldUpdate, now, lastUpdateTimeRef.current, UPDATE_INTERVAL);
+      console.log("📝 [onStep] type=%s shouldUpdate=%s now=%s last=%s interval=%s isFinalOrError=%s", 
+        step.type, shouldUpdate, now, lastUpdateTimeRef.current, UPDATE_INTERVAL, isFinalOrError);
       
       if (shouldUpdate) {
         lastUpdateTimeRef.current = now;
@@ -326,10 +330,15 @@ const NewChatContainer: React.FC = () => {
           }
           
           // 更新最后一条消息的executionSteps
+          // 【修复 2026-04-16】同时更新 isStreaming，确保 final/error 时显示正确状态
           const updated = [...prev];
           updated[updated.length - 1] = {
             ...lastMessage,
             executionSteps: currentSteps,
+            // final/error 时必须设置 isStreaming=false，停止 DynamicStatusDisplay
+            isStreaming: step.type !== "error" && step.type !== "final" 
+              ? lastMessage.isStreaming 
+              : false,
           };
           return updated;
         });
