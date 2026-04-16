@@ -1,3 +1,59 @@
+v0.9.6.4
+
+更新时间：2026-04-16 17:30:00
+
+更新内容：
+
+## 1. LLM历史entries优化 - 小沈-2026-04-16
+
+### 1.1 问题背景
+
+list_directory 返回的 entries 数据过大，导致 LLM 历史 observation 占用空间过大。
+
+**实际案例**：
+- 目录：E:\
+- entries 数量：492,335 个
+- entries JSON 大小：90.58 MB
+- 影响：API 请求体超过 100MB，触发 429 错误
+
+### 1.2 优化方案
+
+**组合方案 A（选择性字段）+ 方案 C（数量限制）**：
+
+| 优化项 | 修改前 | 修改后 |
+|--------|--------|--------|
+| entries.path | 完整路径 | 删除 |
+| entries.size | 目录为 None | 仅文件保留 |
+| 大目录截断 | 无 | 最多 200 项 |
+| 统计摘要 | 无 | truncated/dir_count/file_count |
+
+### 1.3 修改文件
+
+| 文件 | 修改内容 |
+|------|----------|
+| backend/app/services/tools/file/file_tools.py | entries 去 path + 大目录截断 200 项 |
+| backend/app/services/agent/base_react.py | observation_text 处理截断逻辑 |
+
+### 1.4 预期效果
+
+| 场景 | 原始 | 优化后 | 压缩率 |
+|------|------|--------|--------|
+| LLM 历史 | 90MB | ~20KB | ~99.98% |
+| entries 字段 | 含 path | 无 path | - |
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 18c7b43d | docs: 添加entries优化详细注释-小沈-2026-04-16 |
+| 7c7f126d | feat: 优化entries数据结构-去除path字段+大目录截断200项+统计摘要-小沈-2026-04-16 |
+| 30b3a2bc | refactor: 清除_trim_history废弃TODO注释+添加优化说明-小沈-2026-04-16 |
+| 1c73f780 | docs: 更新LLM历史entries优化分析文档v1.1-小沈-2026-04-16 |
+
+参与开发：小沈（分析+实施）、小健（审查）
+
+---
+
 v0.9.6.3
 
 更新时间：2026-04-16 13:31:32
