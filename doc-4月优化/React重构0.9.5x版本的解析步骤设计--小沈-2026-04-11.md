@@ -4338,11 +4338,39 @@ yield {
 **更新记录**：
 - 2026-04-16 小沈：使用 perf_counter 替代 time.time()，提高计时精度
 
-#### 12.1.2 observation 类型缺失字段
+#### 12.1.2 observation 类型字段实现情况（已实现）
 
-| 缺失字段 | 文档参考 | 当前实现 | 说明 |
-|----------|---------|---------|------|
-| **return_direct** | 4.4节 | ❌ 未实现 | 工具直接返回给用户(新功能) |
+| 字段 | 文档参考 | 当前实现 | 说明 |
+|------|---------|---------|------|
+| **type** | 4.4节 | ✅ 已实现 | 固定值 "observation" |
+| **step** | 4.4节 | ✅ 已实现 | 步骤序号 |
+| **timestamp** | 4.4节 | ✅ 已实现 | 时间戳 |
+| **tool_name** | 4.4节 | ✅ 已实现 | 工具名称 |
+| **tool_params** | 4.4节 | ✅ 已实现 | 工具参数字典 |
+| **observation** | 4.4节 | ✅ 已实现 | 观察结果文本（display_text精简摘要） |
+| **return_direct** | 4.4节 | ✅ 已实现 | 是否直接返回 |
+
+---
+
+**当前实现代码**（base_react.py 第359-368行）
+
+```python
+# yield observation - 使用 display_text 给前端
+# 注意：工具执行状态（execution_status/summary/execution_result）在 action_tool 中已显示
+yield {
+    "type": "observation",
+    "step": step_count,
+    "timestamp": create_timestamp(),
+    "tool_name": tool_name,
+    "tool_params": tool_params,
+    "observation": display_text,  # 前端显示用精简摘要
+    "return_direct": execution_result.get("return_direct", False),
+}
+```
+
+**重要说明**：
+- `execution_status`（工具执行状态）在 **action_tool** 类型中显示，不在 observation 中
+- observation 只显示精简的 `observation` 字段给前端
 
 ---
 
