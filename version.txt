@@ -1,10 +1,35 @@
-v0.9.6.7
+v0.9.7.0
 
-更新时间：2026-04-16 20:45:30
+更新时间：2026-04-16 20:50:00
 
 更新内容：
 
-## 1. 维度三详细设计v2.11修正完成 - 小沈-2026-04-16
+## 1. 统一解析英文名称分析 - 北京老陈-2026-04-16
+
+### 1.1 分析内容
+
+分析统一解析相关的中英文术语，为后续重命名做准备：
+
+| 中文术语 | 现有英文名称 |
+|---------|------------|
+| 统一解析 | unified parsing / parse_react_response |
+| 统一解析器 | UnifiedParser / parse_react_response() |
+| 维度一 | Dimension One / Phase 1 |
+| React输出解析器 | React Output Parser |
+
+### 1.2 候选方案
+
+- 方案A: UnifiedParser / parse_unified_response()
+- 方案B: ReActParser / parse_react_response()  
+- 方案C: AgentParser / parse_agent_response()
+
+### 1.3 待确认
+
+在feature/unified-parser-rename分支上继续分析
+
+---
+
+## 2. 维度三详细设计v2.11修正完成 - 小沈-2026-04-16
 
 ### 1.1 修正内容
 
