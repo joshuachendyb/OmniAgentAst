@@ -32,28 +32,6 @@ class BaseAgent(ABC):
     子类需要实现抽象方法
     """
     
-    @staticmethod
-    def _remove_path_from_data(data: Any) -> Any:
-        """
-        【优化 2026-04-16 小沈】去掉数据中的 path 字段
-        
-        用于生成给 LLM 的 observation_text 时去除 path 字段：
-        1. LLM 已在当前目录上下文，不需要完整路径
-        2. path 字段占用大量空间（大目录时可达 90MB+）
-        
-        Args:
-            data: 原始数据，可能是 dict/list/其他类型
-        
-        Returns:
-            去除 path 字段后的数据
-        """
-        if isinstance(data, dict):
-            return {k: BaseAgent._remove_path_from_data(v) for k, v in data.items() if k != 'path'}
-        elif isinstance(data, list):
-            return [BaseAgent._remove_path_from_data(item) for item in data]
-        else:
-            return data
-    
     def __init__(self, max_steps: int = 100):
         """初始化 BaseAgent"""
         self.max_steps = max_steps
@@ -338,18 +316,13 @@ class BaseAgent(ABC):
                             display_count = min(total, 200)
                             truncated_info = f"\n[目录包含 {total} 项: {dir_count} 目录, {file_count} 文件，显示前 {display_count} 项]"
                             observation_text += truncated_info
-                            # 【优化 2026-04-16 小沈】去掉 entries 中的 path 字段
-                            # 原因：LLM 已在当前目录上下文，不需要 path；去掉后可大幅减少数据量
+                            # 【修复 2026-04-16 小沈】保留 entries 中的 path 字段
+                            # 原因：LLM 需要 path 来定位文件/目录
                             if data.get('entries'):
-                                entries_for_llm = [
-                                    {k: v for k, v in entry.items() if k != 'path'}
-                                    for entry in data.get('entries', [])
-                                ]
-                                observation_text += f"\n实际数据: {entries_for_llm}"
+                                observation_text += f"\n实际数据: {data.get('entries')}"
                         else:
-                            # 【优化 2026-04-16 小沈】非截断数据同样去掉 path 字段
-                            data_for_llm = self._remove_path_from_data(data)
-                            observation_text += f"\n实际数据: {data_for_llm}"
+                            # 非截断数据：直接显示
+                            observation_text += f"\n实际数据: {data}"
                 elif exec_status == 'warning':
                     # 警告状态：显示警告信息和部分数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
