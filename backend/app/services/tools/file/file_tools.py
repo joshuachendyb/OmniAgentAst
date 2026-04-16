@@ -650,6 +650,13 @@ class FileTools:
                 # 只返回前 MAX_DISPLAY_ENTRIES 项（排序后目录在前、文件在后）
                 display_entries = all_entries[:MAX_DISPLAY_ENTRIES]
                 
+                # 记录截断日志，方便运维监控大目录场景
+                logger.warning(
+                    f"[list_directory] Large directory truncated: path={path}, "
+                    f"total={total}, dir_count={dir_count}, file_count={file_count}, "
+                    f"displayed={MAX_DISPLAY_ENTRIES}"
+                )
+                
                 return _to_unified_format({
                     "success": True,
                     "entries": display_entries,
