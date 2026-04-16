@@ -640,7 +640,8 @@ def create_tool_error_result(
     max_retries: int = 3,
     raw_data: Any = None,
     timestamp: Optional[int] = None,
-    status: str = "error"  # 新增参数，支持 warning/timeout/permission_denied 等状态
+    status: str = "error",  # 新增参数，支持 warning/timeout/permission_denied 等状态
+    execution_time_ms: int = 0  # 执行耗时（毫秒）
 ) -> Dict[str, Any]:
     """
     统一的工具级错误处理函数
@@ -668,6 +669,7 @@ def create_tool_error_result(
         raw_data: 详细错误信息（可选）
         timestamp: 时间戳（可选，不传则自动生成）
         status: 执行状态（默认 "error"，支持 warning/timeout/permission_denied 等）
+        execution_time_ms: 执行耗时（毫秒，默认0）
     
     Returns:
         可直接yield的action_tool格式字典，包含：
@@ -704,6 +706,6 @@ def create_tool_error_result(
         'summary': summary,
         'execution_result': raw_data or error_message,  # raw_data替换为execution_result
         'error_message': error_message,  # 新增字段
-        'execution_time_ms': 0,  # 新增字段（错误时为0）
+        'execution_time_ms': execution_time_ms,  # 新增字段（传入实际耗时）
         'action_retry_count': retry_count
     }

@@ -13,6 +13,7 @@ Author: 小沈 - 2026-03-25
 """
 
 import asyncio
+import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, AsyncGenerator
 
@@ -249,7 +250,10 @@ class BaseAgent(ABC):
                 
                 # ========== Action 阶段 ==========
                 self.status = AgentStatus.EXECUTING
+                # 使用 perf_counter 计算工具执行耗时（高精度）
+                start_time = time.perf_counter()
                 execution_result = await self._execute_tool(tool_name, tool_params)
+                execution_time_ms = int((time.perf_counter() - start_time) * 1000)
                 
                 # 根据执行结果构建 action_tool
                 exec_status = execution_result.get("status", "success")
@@ -266,7 +270,7 @@ class BaseAgent(ABC):
                         "summary": execution_result.get("summary", ""),
                         "execution_result": execution_result.get("data"),
                         "error_message": "",
-                        "execution_time_ms": execution_result.get("execution_time_ms", 0),
+                        "execution_time_ms": execution_time_ms,
                         "action_retry_count": 0
                     }
                 elif exec_status == "warning":
@@ -279,7 +283,8 @@ class BaseAgent(ABC):
                         retry_count=execution_result.get("retry_count", 0),
                         raw_data=execution_result.get("data"),
                         timestamp=current_time,
-                        status="warning"  # 传递 warning 状态
+                        status="warning",  # 传递 warning 状态
+                        execution_time_ms=execution_time_ms  # 传入实际耗时
                     )
                     yield action_tool_result
                 else:
@@ -292,7 +297,8 @@ class BaseAgent(ABC):
                         retry_count=execution_result.get("retry_count", 0),
                         raw_data=execution_result.get("data"),
                         timestamp=current_time,
-                        status=exec_status  # 传递实际的 execution_status
+                        status=exec_status,  # 传递实际的 execution_status
+                        execution_time_ms=execution_time_ms  # 传入实际耗时
                     )
                     yield action_tool_result
                 
