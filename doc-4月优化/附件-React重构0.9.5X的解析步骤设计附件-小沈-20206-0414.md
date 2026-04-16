@@ -9,7 +9,7 @@
 
 **文档版本**: v2.11  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-16 18:45:43  
+**更新时间**: 2026-04-16 19:05:42  
 **编写人**: 小沈
 
 ## 版本历史
@@ -37,6 +37,7 @@
 | v2.8 | 2026-04-16 18:30:00 | 小沈 | 修正15.1.4节ActionToolStep字段：raw_data→execution_result，retry_count→action_retry_count，新增execution_time_ms；修正StepFactory.create_action_tool_step方法 |
 | v2.9 | 2026-04-16 19:00:00 | 小沈 | 修正15.6.6/15.6.7：chunk类型字段核实一致；error类型：区分create_error_step（无details/stack）和create_error_response（有details/stack） |
 | v2.10 | 2026-04-16 19:15:00 | 小沈 | 修正14.0.1/14.0.2节：_extract_from_text行号191→226，format_error行号331→335；正则数量修正：thought_patterns 6→2种，总计17→15种 |
+| v2.11 | 2026-04-16 19:05:42 | 小沈 | 根据小健审查+北京老陈要求：1)步骤3.5添加tool_name空值检查; 2)补充_execute_tool返回格式说明; 3)引用15.5.1节StartStep字段定义; 4)详细补充历史构建逻辑(重点); 5)异常处理区分可恢复/不可恢复; 6)统一version参数设计(默认v1); 7)thought_only补充详细说明 |
 | v2.11 | 2026-04-16 18:45:43 | 小沈 | 新增第16章：维度三重构Agent主循环2.0的详细设计及详细实施步骤 |
 
 ---
@@ -4152,35 +4153,110 @@ def _build_messages(
     基于steps构建LLM消息列表
     
     【关键设计】：从steps列表提取历史，而非conversation_history
-    """
-    messages = []
     
-    # 系统prompt
+    消息构建规则：
+    1. system: 系统prompt
+    2. user: 用户任务
+    3. assistant: 从steps中提取的LLM历史
+    
+    Step类型与消息转换：
+    | Step类型 | 是否加入消息 | 消息role | 消息content |
+    |----------|-------------|----------|-------------|
+    | StartStep | ❌ 不加入 | - | - |
+    | ThoughtStep | ✅ 加入 | assistant | step.content |
+    | ActionToolStep | ❌ 不加入 | - | - |
+    | ObservationStep | ✅ 加入 | assistant | "Observation: {observation}" |
+    | FinalStep | ✅ 加入 | assistant | step.response |
+    | ErrorStep | ❌ 不加入 | - | - |
+    
+    【详细说明】：
+    1. ThoughtStep：LLM的思考内容，需要加入历史让LLM知道自己的推理过程
+    2. ActionToolStep：工具执行结果，不是LLM说的话，不加入历史
+    3. ObservationStep：工具执行结果需要以"Observation: xxx"格式加入
+       - LLM用它来获取工具执行反馈，继续推理
+    4. FinalStep：LLM的最终回答，需要加入历史
+    5. StartStep：任务开始信息，不是LLM说的话，不加入历史
+    6. ErrorStep：错误信息，不加入历史（错误会通过ErrorStep yield给前端）
+    
+    Returns:
+        list[Dict[str, str]]: 消息列表，格式为 [{"role": str, "content": str}, ...]
+    """
+    messages: list[Dict[str, str]] = []
+    
+    # 1. 系统prompt
     messages.append({"role": "system", "content": self.system_prompt})
     
-    # 用户消息
+    # 2. 用户消息
     messages.append({"role": "user", "content": task})
     
-    # 从steps构建assistant历史
+    # 3. 从steps构建assistant历史
     for step in steps:
         if isinstance(step, ThoughtStep):
+            # ThoughtStep：LLM的思考内容
             messages.append({
                 "role": "assistant",
                 "content": step.content
             })
         elif isinstance(step, ObservationStep):
+            # ObservationStep：工具执行结果
             messages.append({
                 "role": "assistant",
                 "content": f"Observation: {step.observation}"
             })
         elif isinstance(step, FinalStep):
+            # FinalStep：最终回答
             messages.append({
-                "role": "assistant", 
+                "role": "assistant",
                 "content": step.response
             })
+        # ActionToolStep、ErrorStep、StartStep 不加入历史
+        # - ActionToolStep是工具执行结果，不是LLM说的话
+        # - ErrorStep是错误信息，不应影响后续对话
+        # - StartStep是任务开始信息，不是LLM说的话
     
     return messages
 ```
+
+**历史构建流程图**：
+
+```
+steps列表输入
+     │
+     ▼
+┌────────────────────────────────────────────────────────────┐
+│  遍历steps列表（按顺序）                                    │
+│                                                            │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│  │ ThoughtStep  │  │ObservationStep│  │  FinalStep   │    │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘    │
+│         │                │                │              │
+│         ▼                ▼                ▼              │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐    │
+│  │ role:        │  │ role:        │  │ role:        │    │
+│  │  assistant   │  │  assistant   │  │  assistant   │    │
+│  ├──────────────┤  ├──────────────┤  ├──────────────┤    │
+│  │ content:     │  │ content:     │  │ content:     │    │
+│  │ step.content │  │Observation:  │  │ step.response│    │
+│  │              │  │ step.obs     │  │              │    │
+│  └──────────────┘  └──────────────┘  └──────────────┘    │
+│         │                │                │              │
+│         └────────────────┴────────────────┘              │
+│                          │                              │
+│                          ▼                              │
+│              messages列表（用于LLM调用）                  │
+└────────────────────────────────────────────────────────────┘
+```
+
+**与旧代码conversation_history对比**：
+
+| 对比点 | conversation_history（旧） | steps列表（新） |
+|--------|--------------------------|---------------|
+| **数据结构** | `list[Dict]` | `list[ReasoningStep]` |
+| **类型安全** | ❌ 无 | ✅ 有（ReasoningStep类） |
+| **内容** | 混合（user/assistant/tool） | 按Step类型分类 |
+| **构建方式** | 手动append | 自动从steps提取 |
+| **与UI同步** | ❌ 需额外同步 | ✅ steps就是UI展示数据 |
+| **可追溯性** | 差 | 好（每步都是ReasoningStep） |
 
 ---
 
@@ -4207,19 +4283,19 @@ async def run_stream(
     task: str,
     context: Optional[Dict[str, Any]] = None,
     max_steps: Optional[int] = None,
-    use_v2: bool = False  # 【新增】版本切换开关
+    version: str = "v1"  # 【修正】统一使用version参数，默认v1保持向后兼容
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
-    主入口，根据use_v2选择运行版本
+    主入口，选择运行版本
     
     Args:
-        use_v2: True使用新版本run_stream_v2，False使用旧版本run_stream
+        version: "v1"使用旧版本（默认），"v2"使用新版本
     """
-    if use_v2:
+    if version == "v2":
         async for step in self.run_stream_v2(task, context, max_steps):
             yield step
     else:
-        async for step in self.run_stream_original(task, context, max_steps):
+        async for step in self.run_stream_v1(task, context, max_steps):
             yield step
 ```
 
@@ -4285,6 +4361,20 @@ async def run_stream_v2(
 
 **位置**: run_stream_v2方法开头
 
+**StartStep字段定义**（引用15.5.1节）：
+
+根据15.5.1节start类型字段定义，StartStep应包含以下字段：
+
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| step | int | 步骤编号，固定为0 |
+| timestamp | str | 时间戳 |
+| task_id | str \| None | 任务ID |
+| user_message | str | 用户消息（前100字符） |
+| ai_service | str \| None | AI服务名称 |
+| task | str | 完整任务描述 |
+| context | dict \| None | 上下文信息 |
+
 **实现代码**：
 
 ```python
@@ -4305,20 +4395,27 @@ def create_start_step(
     task: str,
     context: Optional[Dict[str, Any]] = None
 ) -> ReasoningStep:
-    """创建start步骤"""
+    """
+    创建start步骤
+    
+    【字段对应】：StartStep字段与15.5.1节定义一致
+    """
     from .start_step import StartStep
     
     return StartStep(
         step=0,  # start步骤step为0
         timestamp=create_timestamp(),
         task_id=context.get("task_id") if context else None,
-        user_message=task[:100] if task else "",
-        ai_service=context.get("ai_service") if context else None
+        user_message=task[:100] if task else "",  # 截取前100字符
+        ai_service=context.get("ai_service") if context else None,
+        task=task,  # 完整任务描述
+        context=context  # 上下文信息
     )
 ```
 
 **完成标准**：
 - [ ] start步骤正确生成
+- [ ] 字段与15.5.1节定义一致
 - [ ] 包含task、context信息
 - [ ] step字段为0
 
@@ -4393,10 +4490,46 @@ parsed = parse_react_response(llm_output)
 
 **位置**: if parsed["type"] == "action"分支
 
+**_execute_tool返回格式**（补充说明）：
+
+```python
+def _execute_tool(self, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    执行工具并返回结果
+    
+    Returns:
+        Dict[str, Any]: 执行结果字典
+        - status: str, "success" | "error"
+        - data: Any, 工具执行结果数据
+        - display_text: str, 用于显示的文本
+        - return_direct: bool, 是否直接返回结果给用户
+        - error: str, 错误信息（仅status=error时存在）
+    """
+```
+
 **实现代码**：
 
 ```python
 if parsed["type"] == "action":
+    # 【修正】检查tool_name不为None
+    if not parsed.get("tool_name"):
+        # 解析异常：type为action但tool_name为空
+        error_step = StepFactory.create_error_step(
+            step=step_counter,
+            timestamp=create_timestamp(),
+            error_type="parse_error",
+            error_message="type='action' but tool_name is None",
+            recoverable=False,
+            context={
+                "step": step_counter,
+                "parsed": parsed,
+                "error_source": "_execute_tool_validation"
+            }
+        )
+        steps.append(error_step)
+        yield error_step.to_dict()
+        break
+    
     # 1. 创建ThoughtStep
     thought_step = StepFactory.create_thought_step(
         step=step_counter,
@@ -4447,6 +4580,7 @@ if parsed["type"] == "action":
 ```
 
 **完成标准**：
+- [ ] tool_name空值检查通过
 - [ ] ThoughtStep正确创建并yield
 - [ ] 工具执行正确计时
 - [ ] ActionToolStep包含execution_time_ms
@@ -4546,6 +4680,18 @@ elif parsed["type"] in ("answer", "implicit"):
 ```python
 elif parsed["type"] == "thought_only":
     # 纯思考：继续下一轮循环，不yield任何步骤
+    # 【补充说明】
+    # thought_only类型表示LLM只返回了思考内容（reasoning/thought），
+    # 但没有决定要执行什么工具。这是正常的LLM推理过程。
+    # 
+    # 不yield步骤的原因：
+    # 1. action类型会yield完整的ThoughtStep→ActionToolStep→ObservationStep链
+    # 2. thought_only只是中间推理步骤，yield会打乱步骤链结构
+    # 3. 前端可以通过is_answering状态感知当前正在推理
+    #
+    # 如果前端需要感知thought_only发生，可以：
+    # 1. 通过LLM调用计数（每次循环调用一次LLM）来感知
+    # 2. 或者在ThoughtStep中添加is_final字段区分最终推理和中间推理
     continue
 ```
 
@@ -4556,26 +4702,31 @@ elif parsed["type"] == "thought_only":
 **完成标准**：
 - [ ] 直接continue，不yield
 - [ ] 不增加step_counter（已在循环开始递增）
+- [ ] 补充说明清晰
 
 ---
 
-#### 16.2.9 步骤3.9：改造异常处理
+#### 16.2.9 改造异常处理
 
-**任务**: 使用ErrorStep统一封装异常处理
+**任务**: 使用ErrorStep统一封装异常处理，区分可恢复和不可恢复异常
 
-**位置**: except Exception as e块
+**位置**: except块
 
 **实现代码**：
 
 ```python
 except Exception as e:
-    # 【设计决策2】移除parse_retry机制，使用ErrorStep统一处理
+    # 【修正】区分可恢复和不可恢复异常
+    # 可恢复异常：网络超时、连接错误等临时性问题
+    # 不可恢复异常：代码逻辑错误、参数错误等
+    recoverable = isinstance(e, (TimeoutError, ConnectionError, asyncio.TimeoutError))
+    
     error_step = StepFactory.create_error_step(
         step=step_counter,
         timestamp=create_timestamp(),
         error_type=type(e).__name__,
         error_message=str(e),
-        recoverable=False,
+        recoverable=recoverable,
         context={
             "step": step_counter,
             "thought_content": self._get_last_thought(steps)
@@ -4583,7 +4734,7 @@ except Exception as e:
     )
     steps.append(error_step)
     yield error_step.to_dict()
-    break  # 退出循环
+    break
 ```
 
 **辅助方法**：
@@ -4674,13 +4825,13 @@ async def run_stream(
     task: str,
     context: Optional[Dict[str, Any]] = None,
     max_steps: Optional[int] = None,
-    version: str = "v2"  # 新增版本参数
+    version: str = "v1"  # 【修正】默认v1保持向后兼容
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     主入口，选择运行版本
     
     Args:
-        version: "v1"使用旧版本，"v2"使用新版本（默认v2）
+        version: "v1"使用旧版本（默认），"v2"使用新版本
     """
     if version == "v2":
         async for step in self.run_stream_v2(task, context, max_steps):
@@ -4767,9 +4918,18 @@ async def run_stream(
 
 ---
 
-**详细设计完成时间**: 2026-04-16 18:45:43  
+**详细设计完成时间**: 2026-04-16 19:05:42  
 **设计人**: 小沈  
-**审核状态**: 待审核
+**审核状态**: ✅ 已根据小健审查+北京老陈要求修正完成
+
+**修正内容**（v2.11）：
+1. 步骤3.5：添加tool_name空值检查
+2. 步骤3.5：补充_execute_tool返回格式说明
+3. 步骤3.2：引用15.5.1节StartStep字段定义
+4. 16.1.4节：详细补充历史构建逻辑（重点修正）
+5. 步骤3.9：异常处理区分可恢复/不可恢复
+6. 16.1.5节+步骤3.11：统一version参数设计（默认v1）
+7. 步骤3.8：thought_only补充详细说明
 
 
 -----------------------------------------------------
