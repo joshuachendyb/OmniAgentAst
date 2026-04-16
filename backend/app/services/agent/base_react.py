@@ -304,7 +304,21 @@ class BaseAgent(ABC):
                     # 成功状态：显示完整信息，包括实际数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
                     if execution_result.get('data'):
-                        observation_text += f"\n实际数据: {execution_result.get('data')}"
+                        data = execution_result.get('data')
+                        # 【优化 2026-04-16 小沈】检查是否截断
+                        if isinstance(data, dict) and data.get('truncated'):
+                            # 大目录截断：显示统计摘要
+                            total = data.get('total', 0)
+                            dir_count = data.get('dir_count', 0)
+                            file_count = data.get('file_count', 0)
+                            display_count = min(total, 200)
+                            truncated_info = f"\n[目录包含 {total} 项: {dir_count} 目录, {file_count} 文件，显示前 {display_count} 项]"
+                            observation_text += truncated_info
+                            # 添加截断后的 entries
+                            if data.get('entries'):
+                                observation_text += f"\n实际数据: {data.get('entries')}"
+                        else:
+                            observation_text += f"\n实际数据: {data}"
                 elif exec_status == 'warning':
                     # 警告状态：显示警告信息和部分数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"

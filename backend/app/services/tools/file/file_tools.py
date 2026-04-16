@@ -604,7 +604,6 @@ class FileTools:
                                 try:
                                     entries.append({
                                         "name": item.name,
-                                        "path": str(item.relative_to(path)) if item.parent == path else str(item),
                                         "type": "directory" if item.is_dir() else "file",
                                         "size": item.stat().st_size if item.is_file() else None
                                     })
@@ -620,7 +619,6 @@ class FileTools:
                     for item in path.iterdir():
                         entries.append({
                             "name": item.name,
-                            "path": str(item),
                             "type": "directory" if item.is_dir() else "file",
                             "size": item.stat().st_size if item.is_file() else None
                         })
@@ -633,7 +631,28 @@ class FileTools:
             
             total = len(all_entries)
             
-            # 直接返回全部数据，不分页
+            # 【优化 2026-04-16 小沈】大目录优化
+            MAX_DISPLAY_ENTRIES = 200  # 最多显示 200 项
+
+            if total > MAX_DISPLAY_ENTRIES:
+                # 大目录：计算统计信息
+                dir_count = sum(1 for e in all_entries if e.get("type") == "directory")
+                file_count = sum(1 for e in all_entries if e.get("type") == "file")
+                
+                # 只返回前 MAX_DISPLAY_ENTRIES 项
+                display_entries = all_entries[:MAX_DISPLAY_ENTRIES]
+                
+                return _to_unified_format({
+                    "success": True,
+                    "entries": display_entries,
+                    "total": total,
+                    "directory": str(path),
+                    "truncated": True,
+                    "dir_count": dir_count,
+                    "file_count": file_count
+                }, "list_directory")
+
+            # 小目录：直接返回全部数据
             return _to_unified_format({
                 "success": True,
                 "entries": all_entries,
