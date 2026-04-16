@@ -3249,7 +3249,7 @@ return {
 
 ### 15.6.4 observation 类型
 
-**来源文件**: `backend/app/services/agent/base_react.py` (第306-314行)
+**来源文件**: `backend/app/services/agent/base_react.py` (第358-368行)
 
 **产生字段**:
 | 字段名 | 类型 | 说明 |
@@ -3258,19 +3258,24 @@ return {
 | step | int | 步骤序号 |
 | timestamp | int | 时间戳 |
 | tool_name | string | 工具名称 |
-| tool_params | dict | 工具参数字典（15.7新增） |
-| observation | string | 观察结果文本（15.7新增，原content） |
-| return_direct | bool | 是否直接返回（15.7新增） |
+| tool_params | dict | 工具参数字典 |
+| observation | string | 观察结果文本（display_text精简摘要） |
+| return_direct | bool | 是否直接返回 |
+
+**重要说明**：
+- `execution_status`（工具执行状态）在 **action_tool** 类型中显示，不在 observation 中
+- observation 只显示精简的 `observation` 字段给前端
 
 **代码示例**:
 ```python
+# yield observation - 使用 display_text 给前端
 yield {
     "type": "observation",
     "step": step_count,
     "timestamp": create_timestamp(),
     "tool_name": tool_name,
     "tool_params": tool_params,
-    "observation": f"Tool '{tool_name}' executed: {execution_result.get('summary', 'completed')}",
+    "observation": display_text,  # 前端显示用精简摘要
     "return_direct": execution_result.get("return_direct", False),
 }
 ```
