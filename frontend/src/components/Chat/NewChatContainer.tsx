@@ -263,6 +263,15 @@ const NewChatContainer: React.FC = () => {
     },
     // onStep - 收到执行步骤
     useCallback((step: ExecutionStep) => {
+      // 【小沈修复 2026-04-16】在收到第一个步骤时重置暂停状态
+      // 问题原因：如果 isPausedRef.current = true，所有步骤会存入 displayBufferRef 而不是 streamingStepsRef
+      // 这发生在：1)用户先按暂停再创建新会话 2)从sessionStorage恢复暂停状态 3)后端发送paused事件
+      // 解决：当收到第一个非 chunk 步骤时，如果 isPausedRef.current = true，重置为 false
+      if (step.type !== "chunk" && step.type !== "error" && isPausedRef.current) {
+        console.log("⚠️ [onStep] 重置暂停状态 isPausedRef=true -> false");
+        setIsPaused(false);
+      }
+      
       // type 处理流程日志（解析 -> 存储 -> 渲染）
       console.log("📝 type=%s timestamp=%s", step.type, step.timestamp ? new Date(step.timestamp).toLocaleTimeString() : 'N/A');
       // 只打印第一个chunk，减少日志
@@ -2116,6 +2125,12 @@ if (lastMessage && lastMessage.role === "assistant") {
       setSessionTitle(newTitle);
       setMessages([]);
       
+      // 【小沈修复 2026-04-16】重置暂停状态，避免新会话被旧暂停状态影响
+      // 问题原因：如果用户之前按了暂停按钮，isPausedRef.current 会是 true，
+      // 导致新会话的步骤被存入 displayBufferRef 而不是 streamingStepsRef，
+      // 最终导致 onComplete 时 ref=0
+      setIsPaused(false);
+      
       // 重置日志标记
       logFlagsRef.current = {
         chunkFirstDone: false,
@@ -2191,6 +2206,9 @@ if (lastMessage && lastMessage.role === "assistant") {
   const handleClear = () => {
     console.log("🔍 [handleClear] 清空对话按钮被点击");
     setMessages([]);
+    // 【小沈修复 2026-04-16】重置暂停状态，避免清空后新数据丢失
+    // 同 handleNewSessionInternal 的修复原因
+    setIsPaused(false);
     clearSteps();
     disconnect();
   };

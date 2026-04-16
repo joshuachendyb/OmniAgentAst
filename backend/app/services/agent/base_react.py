@@ -297,7 +297,7 @@ class BaseAgent(ABC):
                     yield action_tool_result
                 
                 # ========== Observation 阶段 ==========
-                # 区分不同 execution_status 生成不同的 observation_text
+                # 区分不同 execution_status 生成 observation_text（给 LLM 历史）
                 exec_status = execution_result.get('status', 'unknown')
                 
                 if exec_status == 'success':
@@ -314,6 +314,10 @@ class BaseAgent(ABC):
                     # 失败状态（error/timeout/permission_denied）：只显示错误摘要，不显示数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
                 
+                # 【小沈修复 2026-04-16】生成 display_text（给前端 UI 显示）
+                # 只显示摘要，不包含冗余数据结构
+                display_text = execution_result.get('summary', '')
+                
                 # 更新消息历史
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
                 self._add_observation_to_history(observation_text)
@@ -327,15 +331,15 @@ class BaseAgent(ABC):
                     tool_params=tool_params
                 )
                 
-                # yield observation - 按15.7.1要求修改字段
+                # yield observation - 【小沈修复 2026-04-16】使用 display_text 给前端
                 yield {
                     "type": "observation",
                     "step": step_count,
                     "timestamp": create_timestamp(),
                     "tool_name": tool_name,
                     "tool_params": tool_params,
-                    "observation": observation_text,  # 使用区分状态后的 observation_text
-                    "execution_status": exec_status,  # 新增字段：传递实际的 execution_status
+                    "observation": display_text,  # 前端显示用精简摘要
+                    "execution_status": exec_status,
                     "return_direct": execution_result.get("return_direct", False),
                 }
 
