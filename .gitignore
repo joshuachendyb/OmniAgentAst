@@ -78,3 +78,7 @@ frontend/dist/
 docker-compose.override.yml
 # Windows special device names
 nul
+
+# Database files
+*.db
+!file_operations.db
