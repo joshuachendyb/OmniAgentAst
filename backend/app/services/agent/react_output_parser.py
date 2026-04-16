@@ -56,10 +56,14 @@ def parse_react_response(output: str) -> Dict[str, Any]:
         
     Returns:
         统一格式字典，包含type/thought/tool_name/tool_params/response字段
-        补充兼容性字段content/reasoning，确保与base_react.py平滑迁移
+        补充兼容性字段content/reasoning确保与base_react.py平滑迁移
         
     设计依据: LlamaIndex ReActOutputParser.parse() 统一入口设计思想
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[parse_react_response] 调用新统一解析器, output长度: {len(output) if output else 0}")
+    
     if not output or not isinstance(output, str):
         thought = "(Implicit) Empty response"
         return {
@@ -80,6 +84,7 @@ def parse_react_response(output: str) -> Dict[str, Any]:
         if isinstance(data, dict):
             # 新字段格式
             if "tool_name" in data:
+                logger.info(f"[parse_react_response] JSON预解析命中, type=action/answer")
                 return {
                     "type": "action" if data.get("tool_name") != "finish" else "answer",
                     "thought": data.get("content", data.get("thought", "")),
@@ -91,6 +96,7 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                 }
             # 旧字段格式（action/action_input → tool_name/tool_params）
             if "action" in data:
+                logger.info(f"[parse_react_response] JSON预解析命中(旧格式), type=action/answer")
                 return {
                     "type": "action" if data.get("action") != "finish" else "answer",
                     "thought": data.get("thought", ""),
@@ -104,6 +110,7 @@ def parse_react_response(output: str) -> Dict[str, Any]:
         pass  # 不是JSON格式，继续走关键词匹配流程
     
     # 步骤1.2：四种情况判断逻辑
+    logger.info(f"[parse_react_response] 走关键词匹配流程")
     return _determine_parse_type(output)
 
 
@@ -287,9 +294,9 @@ def _parse_action(
         type="action"的统一格式字典
         
     正则设计依据: LlamaIndex extract_tool_use() 实现
-    关键改进1: 工具名约束 `[^\n\(\) ]+` 禁止空格和括号
+    关键改进1: 工具名约束 ``[^\n() ]+`` 禁止空格和括号
     关键改进2: Thought可选前缀（无Thought标记时捕获整行）
-    关键改进3: 非贪婪匹配JSON `.*?` 确保正确捕获
+    关键改进3: 非贪婪匹配JSON ``.*?`` 确保正确捕获
     关键改进4: 中英文关键词完整支持
     """
     # 提取Thought内容
@@ -381,9 +388,9 @@ def _parse_answer(
         type="answer"的统一格式字典
         
     正则设计依据: LlamaIndex extract_final_response() 实现
-    关键改进1: 空格容忍 `\s*` 允许前面有空格或换行
-    关键改进2: 非贪婪匹配 `(.*?)` 确保Thought不包含Answer关键词
-    关键改进3: 多行回答支持 `(.*?)$` 匹配到末尾所有内容
+    关键改进1: 空格容忍 (允许前面有空格或换行)
+    关键改进2: 非贪婪匹配 (确保Thought不包含Answer关键词)
+    关键改进3: 多行回答支持 (匹配到末尾所有内容)
     关键改进4: 中英文关键词完整支持
     """
     # 提取Thought内容
