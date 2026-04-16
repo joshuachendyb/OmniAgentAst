@@ -7,10 +7,10 @@
 
 ---
 
-**文档版本**: v2.7  
+**文档版本**: v2.8  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-16 17:54:41  
-**编写人**: 小沈  
+**更新时间**: 2026-04-16 18:30:00  
+**编写人**: 小沈
 
 ## 版本历史
 
@@ -28,12 +28,13 @@
 | v1.9 | 2026-04-15 13:19:45 | 小沈 | 新增15.7章节：系统type字段名称补齐处理（字段名不同+需补充) |
 | v2.0 | 2026-04-15 15:14:29 | 小沈 | 根据小健审查修正15.7.2：1)步骤1.3补充is_reasoning字段; 2)步骤4 context新增thought_content参数; 3)步骤5补充详细调用点; 4)15.7.1 context描述修正 |
 | v2.1 | 2026-04-15 15:25:00 | 小沈 | 修正context.thought_content获取方式：从conversation_history最后一条assistant消息获取，添加获取代码示例 |
-| v2.2 | 2026-04-15 16:30:00 | 小沈 | 新增15.7.3章节：前端修改建议，包含chat.ts类型修改、sse.ts字段映射、MessageItem.tsx字段引用修改、测试文件修改、完整字段对照表和验证清单 |
-| v2.3 | 2026-04-15 17:10:00 | 小沈 | 修正15.7.2步骤4.2/4.3：根据小健审查意见，context.thought_content改为直接使用thought_content变量而非从conversation_history遍历 |
-| v2.4 | 2026-04-15 17:20:00 | 小沈 | 修正15.7.1和15.7.2：根据小强审查意见，error类型error_message和error_type字段已存在，只需删除多余的code和message字段 |
-| v2.5 | 2026-04-15 17:30:00 | 小沈 | 同步修正15.7.3前端部分：根据后端删除code字段，修正SSE解析逻辑和字段对照表 |
+| v2.2 | 2026-04-15 15:41:00 | 小沈 | 修正15.7.2 create_session_error_result参数列表：添加context参数（修复小健发现的遗漏） |
+| v2.3 | 2026-04-15 15:55:00 | 小沈 | 15.7.2节补充ErrorStep.to_dict()方法实现代码 |
+| v2.4 | 2026-04-15 16:10:00 | 小沈 | 15.6.7节error类型字段：补充create_error_step()返回字典的完整字段说明（新增error_message/reasoning/is_reasoning/recoverable/context字段） |
+| v2.5 | 2026-04-15 16:30:00 | 小沈 | 15.6.3节action_tool类型：补充15.7新增字段execution_result/error_message/execution_time_ms，说明来源 |
 | v2.6 | 2026-04-15 17:55:00 | 小沈 | 根据北京老陈要求：删除ErrorMessage中的error_code字段，彻底移除code兼容性字段 |
 | v2.7 | 2026-04-16 17:54:41 | 小沈 | 修正15.6.3节execution_time_ms：改为使用time.perf_counter()本地计算，修正文档代码示例 |
+| v2.8 | 2026-04-16 18:30:00 | 小沈 | 修正15.1.4节ActionToolStep字段：raw_data→execution_result，retry_count→action_retry_count，新增execution_time_ms；修正StepFactory.create_action_tool_step方法 |
 
 ---
 
@@ -2426,11 +2427,12 @@ class ActionToolStep(ToolMixin, ReasoningStep):
     - is_done() = False → 不结束，继续生成observation
     
     字段说明：
-    - execution_status: 执行状态（success/error）
+    - execution_status: 执行状态（success/error/warning）
     - summary: 执行摘要
-    - raw_data: 原始数据
-    - error_message: 错误信息（失败时）
-    - retry_count: 重试次数
+    - execution_result: 执行结果数据（原raw_data）
+    - error_message: 错误信息（成功时为空字符串）
+    - action_retry_count: 重试次数（原retry_count）
+    - execution_time_ms: 执行耗时（毫秒）
     
     设计依据：13.2.2.2节具体实现类设计
     """
@@ -2442,9 +2444,10 @@ class ActionToolStep(ToolMixin, ReasoningStep):
         tool_params: Dict[str, Any],
         execution_status: str = "success",
         summary: str = "",
-        raw_data: Any = None,
+        execution_result: Any = None,
         error_message: str = "",
-        retry_count: int = 0,
+        action_retry_count: int = 0,
+        execution_time_ms: int = 0,
         timestamp: Optional[int] = None
     ):
         """
@@ -2454,11 +2457,12 @@ class ActionToolStep(ToolMixin, ReasoningStep):
             step: 步骤序号
             tool_name: 工具名称
             tool_params: 工具参数
-            execution_status: 执行状态（success/error）
+            execution_status: 执行状态（success/error/warning）
             summary: 执行摘要
-            raw_data: 原始数据
-            error_message: 错误信息
-            retry_count: 重试次数
+            execution_result: 执行结果数据（原raw_data）
+            error_message: 错误信息（成功时为空）
+            action_retry_count: 重试次数（原retry_count）
+            execution_time_ms: 执行耗时（毫秒）
             timestamp: 时间戳（毫秒）
         """
         # 调用ToolMixin初始化
@@ -2468,9 +2472,10 @@ class ActionToolStep(ToolMixin, ReasoningStep):
         
         self._execution_status = execution_status
         self._summary = summary
-        self._raw_data = raw_data
+        self._execution_result = execution_result
         self._error_message = error_message
-        self._retry_count = retry_count
+        self._action_retry_count = action_retry_count
+        self._execution_time_ms = execution_time_ms
     
     def get_type(self) -> str:
         return "action_tool"
@@ -2489,9 +2494,9 @@ class ActionToolStep(ToolMixin, ReasoningStep):
         return self._summary
     
     @property
-    def raw_data(self) -> Any:
-        """获取原始数据"""
-        return self._raw_data
+    def execution_result(self) -> Any:
+        """获取执行结果数据"""
+        return self._execution_result
     
     @property
     def error_message(self) -> str:
@@ -2499,9 +2504,14 @@ class ActionToolStep(ToolMixin, ReasoningStep):
         return self._error_message
     
     @property
-    def retry_count(self) -> int:
+    def action_retry_count(self) -> int:
         """获取重试次数"""
-        return self._retry_count
+        return self._action_retry_count
+    
+    @property
+    def execution_time_ms(self) -> int:
+        """获取执行耗时"""
+        return self._execution_time_ms
     
     @property
     def is_error(self) -> bool:
@@ -2516,9 +2526,10 @@ class ActionToolStep(ToolMixin, ReasoningStep):
         base_dict.update({
             "execution_status": self._execution_status,
             "summary": self._summary,
-            "raw_data": self._raw_data,
+            "execution_result": self._execution_result,  # 原raw_data
             "error_message": self._error_message,
-            "retry_count": self._retry_count,
+            "action_retry_count": self._action_retry_count,  # 原retry_count
+            "execution_time_ms": self._execution_time_ms,
             "tool_name": self._tool_name,  # 来自ToolMixin
             "tool_params": self._tool_params,  # 来自ToolMixin
         })
@@ -2815,7 +2826,8 @@ class StepFactory:
         step: int,
         tool_name: str,
         tool_params: Dict[str, Any],
-        execution_result: Dict[str, Any]
+        execution_result: Dict[str, Any],
+        execution_time_ms: int = 0
     ) -> ActionToolStep:
         """
         创建ActionToolStep
@@ -2825,27 +2837,26 @@ class StepFactory:
             tool_name: 工具名称
             tool_params: 工具参数
             execution_result: 执行结果字典
-                - status: 执行状态（success/error）
+                - status: 执行状态（success/error/warning）
                 - summary: 执行摘要
-                - data: 原始数据
+                - data: 执行结果数据
                 - error: 错误信息
                 - retry_count: 重试次数
+            execution_time_ms: 执行耗时（毫秒，使用perf_counter计算）
                 
         Returns:
             ActionToolStep实例
         """
-        result_data = execution_result.get("data")
-        error_info = execution_result.get("error", "")
-        
         return ActionToolStep(
             step=step,
             tool_name=tool_name,
             tool_params=tool_params or {},
             execution_status=execution_result.get("status", "success"),
             summary=execution_result.get("summary", ""),
-            raw_data=result_data,
-            error_message=error_info,
-            retry_count=execution_result.get("retry_count", 0)
+            execution_result=execution_result.get("data"),  # 原result_data
+            error_message="",  # 成功时为空，失败时由create_tool_error_result处理
+            action_retry_count=execution_result.get("retry_count", 0),  # 原retry_count
+            execution_time_ms=execution_time_ms  # 使用perf_counter计算的耗时
         )
     
     @staticmethod
@@ -2972,7 +2983,7 @@ __all__ = [
 | **步骤 2.1** | 创建ReasoningStep抽象基类 | reasoning_steps.py 第一部分 | 定义step/timestamp字段和抽象方法get_type()/get_content()/is_done()/to_dict() |
 | **步骤 2.2** | 创建ToolMixin混入类 | reasoning_steps.py 第三部分 | 定义tool_name/tool_params字段，供ThoughtStep/ActionToolStep/ObservationStep复用 |
 | **步骤 2.3** | 实现ThoughtStep类 | reasoning_steps.py 第四部分 | 继承ToolMixin和ReasoningStep，包含content/thought/reasoning字段，is_done()=False |
-| **步骤 2.4** | 实现ActionToolStep类 | reasoning_steps.py 第五部分 | 继承ToolMixin和ReasoningStep，包含execution_status/summary/raw_data/error_message/retry_count字段，is_done()=False |
+| **步骤 2.4** | 实现ActionToolStep类 | reasoning_steps.py 第五部分 | 继承ToolMixin和ReasoningStep，包含execution_status/summary/execution_result/error_message/action_retry_count/execution_time_ms字段，is_done()=False |
 | **步骤 2.5** | 实现ObservationStep类 | reasoning_steps.py 第六部分 | 继承ToolMixin和ReasoningStep，包含observation/return_direct字段，is_done()=return_direct |
 | **步骤 2.6** | 实现FinalStep类 | reasoning_steps.py 第七部分 | 继承ReasoningStep，包含response/thought/is_finished字段，is_done()=True |
 | **步骤 2.7** | 实现ErrorStep类 | reasoning_steps.py 第八部分 | 继承ReasoningStep，包含error_type/error_message/recoverable字段，is_done()=True |
