@@ -839,14 +839,15 @@ const MessageItem = memo(({
               // 【小强修改2026-04-15】raw_data → execution_result
               return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, execution_result: step.execution_result || null, error_message: step.error_message || "", execution_time_ms: step.execution_time_ms || 0, action_retry_count: step.action_retry_count };
             case 'observation':
-              // 【小沈修改2026-04-16】添加timestamp/tool_name/tool_params/observation/return_direct
+              // 【修复 2026-04-16】移除冗余的content字段，只保留observation字段
+              // 后端发送的是observation字段，前端content是兼容旧代码
               return { 
-                ...baseExport, 
+                type: step.type,
                 step: step.step, 
                 timestamp: formatTimestamp(step.timestamp),
                 tool_name: step.tool_name,
                 tool_params: step.tool_params,
-                observation: step.content,  // content字段实际存储的是observation内容
+                observation: step.observation || step.content,  // 使用observation字段
                 return_direct: (step as any).return_direct
               };
             case 'chunk':
