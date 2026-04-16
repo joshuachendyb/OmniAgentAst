@@ -602,6 +602,10 @@ class FileTools:
                         try:
                             for item in current_path.iterdir():
                                 try:
+                                    # 【优化 2026-04-16 小沈】去除 path 字段：
+                                    # 1. LLM 已在当前目录上下文，不需要完整路径
+                                    # 2. path 字段占用大量空间（大目录时可达 90MB+）
+                                    # 3. 保留 name（文件名）、type（目录/文件）、size（文件大小）
                                     entries.append({
                                         "name": item.name,
                                         "type": "directory" if item.is_dir() else "file",
@@ -616,6 +620,7 @@ class FileTools:
                     
                     _scan_recursive(path, 1)
                 else:
+                    # 【优化 2026-04-16 小沈】非递归扫描同样去除 path 字段
                     for item in path.iterdir():
                         entries.append({
                             "name": item.name,
@@ -632,14 +637,17 @@ class FileTools:
             total = len(all_entries)
             
             # 【优化 2026-04-16 小沈】大目录优化
+            # 背景：E盘根目录有 492,335 个文件，entries JSON 大小达 90.58MB
+            # 问题：导致 API 请求体过大，触发 429 错误
+            # 解决：截断大目录，只返回前 200 项 + 统计摘要
             MAX_DISPLAY_ENTRIES = 200  # 最多显示 200 项
 
             if total > MAX_DISPLAY_ENTRIES:
-                # 大目录：计算统计信息
+                # 大目录处理：计算目录/文件统计，返回截断后的数据
                 dir_count = sum(1 for e in all_entries if e.get("type") == "directory")
                 file_count = sum(1 for e in all_entries if e.get("type") == "file")
                 
-                # 只返回前 MAX_DISPLAY_ENTRIES 项
+                # 只返回前 MAX_DISPLAY_ENTRIES 项（排序后目录在前、文件在后）
                 display_entries = all_entries[:MAX_DISPLAY_ENTRIES]
                 
                 return _to_unified_format({
@@ -647,12 +655,12 @@ class FileTools:
                     "entries": display_entries,
                     "total": total,
                     "directory": str(path),
-                    "truncated": True,
-                    "dir_count": dir_count,
-                    "file_count": file_count
+                    "truncated": True,  # 标记为截断状态
+                    "dir_count": dir_count,  # 目录总数
+                    "file_count": file_count  # 文件总数
                 }, "list_directory")
 
-            # 小目录：直接返回全部数据
+            # 小目录（<=200项）：直接返回全部数据
             return _to_unified_format({
                 "success": True,
                 "entries": all_entries,
