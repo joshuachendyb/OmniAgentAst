@@ -4109,61 +4109,6 @@ await asyncio.sleep(retry_delay)
 
 ---
 
-### 11.6 前端字段相关未实现项
-
-| 序号 | 字段项 | 文档位置 | 未实现说明 |
-|------|--------|----------|-----------|
-| 12 | **final添加is_finished字段** | 7.6.1/5.2.5 | 前端无法显示"✅ 结束"徽章 |
-| 13 | **observation添加tool_params字段** | 7.1.4 | observation缺少tool_params字段 |
-| 14 | **final添加thought字段** | 5.2.5 | 前端无法显示最终推理过程 |
-| 15 | **final添加is_streaming字段** | 5.2.5 | 前端没有实现打字机效果 |
-
-**文档依据**（5.2.5）：
-```markdown
-final字段生成规则：
-| thought | 从LLM响应中解析出最终推理总结（可选） |
-| is_streaming | 根据当前输出模式设置 |
-```
-
----
-
-### 11.7 ReasoningStep基类设计相关
-
-| 序号 | 设计项 | 文档位置 | 当前状态 |
-|------|--------|----------|----------|
-| 16 | **is_done机制** | 7.2.3 | 用if判断硬编码，没有引入is_done接口方法 |
-| 17 | **OOP基类** | 7.2.3 | 当前不需要引入ReasoningStep基类 |
-
-**文档结论**（7.2.3）：
-```
-| OOP基类 | ⭐ 一般 | 当前项目Step类型固定，引入6个类增加复杂度 |
-```
-
----
-
-### 11.8 未实现项汇总表
-
-| 类别 | 总数 | 已实现 | 未实现 |
-|------|------|--------|--------|
-| **已完成** | 4 | 4 | 0 |
-| **P0高优先级** | 3 | 0 | 3 |
-| **P1中优先级** | 5 | 1 | 4 |
-| **P2低优先级** | 3 | 0 | 3 |
-| **前端字段相关** | 4 | 0 | 4 |
-| **ReAct设计相关** | 2 | 0 | 2 |
-| **总计** | 21 | 5 | 16 |
-
----
-
-### 11.9 实施建议
-
-| Phase | 时间 | 改进项 | 预计工时 |
-|-------|------|--------|----------|
-| **Phase 1** | 短期 | Structured Output支持、Budget控制 | 4-6小时 |
-| **Phase 2** | 中期 | 带Jitter退避、熔断器、收敛检测 | 6-8小时 |
-| **Phase 3** | 长期 | 超长历史优化、前端字段完善 | 4-6小时 |
-
----
 
 ### 11.10 未实现项详细说明
 
@@ -4353,47 +4298,6 @@ class ConvergenceDetector:
         self.history.append(current)
         return consecutive >= self.max_consecutive
 ```
-
----
-
-#### 11.8.6 tool_start事件（P2）
-
-**文档描述**（6.4.1）：
-```
-增加tool_start事件 - 工具开始执行时立即yield
-让前端显示"正在调用xxx..."
-解决长时间执行工具时用户等待无反馈的问题
-```
-
-**当前代码状态**：
-- 工具执行后才yield action_tool
-- 用户等待期间没有任何反馈
-
-**建议实现方式**：
-```python
-# 在 _execute_tool 调用前立即yield
-yield {
-    "type": "tool_start",
-    "step": step_count,
-    "tool_name": tool_name,
-    "tool_params": tool_params,
-    "timestamp": create_timestamp()
-}
-
-# 然后执行工具
-execution_result = await self._execute_tool(tool_name, tool_params)
-```
-
----
-
-### 11.9 实施建议
-
-| Phase | 时间 | 改进项 | 预计工时 |
-|-------|------|--------|----------|
-| **Phase 1** | 短期 | Structured Output支持、Budget控制 | 4-6小时 |
-| **Phase 2** | 中期 | 带Jitter退避、熔断器、收敛检测 | 6-8小时 |
-| **Phase 3** | 长期 | 超长历史优化、前端字段完善 | 4-6小时 |
----
 
 ## 十二、各type的补充字段详细说明及未实现功能项详细说明
 
