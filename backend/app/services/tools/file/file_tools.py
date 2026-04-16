@@ -602,12 +602,12 @@ class FileTools:
                         try:
                             for item in current_path.iterdir():
                                 try:
-                                    # 【优化 2026-04-16 小沈】去除 path 字段：
-                                    # 1. LLM 已在当前目录上下文，不需要完整路径
-                                    # 2. path 字段占用大量空间（大目录时可达 90MB+）
-                                    # 3. 保留 name（文件名）、type（目录/文件）、size（文件大小）
+                                    # 【修复 2026-04-16】保留 path 字段，因为：
+                                    # 1. 前端 ListDirectoryView 需要 path 构建树形结构
+                                    # 2. 只在 base_react.py 生成 observation_text 时去掉 path
                                     entries.append({
                                         "name": item.name,
+                                        "path": str(item.absolute()),
                                         "type": "directory" if item.is_dir() else "file",
                                         "size": item.stat().st_size if item.is_file() else None
                                     })
@@ -620,10 +620,11 @@ class FileTools:
                     
                     _scan_recursive(path, 1)
                 else:
-                    # 【优化 2026-04-16 小沈】非递归扫描同样去除 path 字段
+                    # 【修复 2026-04-16】保留 path 字段
                     for item in path.iterdir():
                         entries.append({
                             "name": item.name,
+                            "path": str(item.absolute()),
                             "type": "directory" if item.is_dir() else "file",
                             "size": item.stat().st_size if item.is_file() else None
                         })
