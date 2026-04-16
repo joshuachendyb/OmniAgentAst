@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.8  
+**文档版本**: v2.11  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-16 18:30:00  
+**更新时间**: 2026-04-16 18:45:43  
 **编写人**: 小沈
 
 ## 版本历史
@@ -35,6 +35,9 @@
 | v2.6 | 2026-04-15 17:55:00 | 小沈 | 根据北京老陈要求：删除ErrorMessage中的error_code字段，彻底移除code兼容性字段 |
 | v2.7 | 2026-04-16 17:54:41 | 小沈 | 修正15.6.3节execution_time_ms：改为使用time.perf_counter()本地计算，修正文档代码示例 |
 | v2.8 | 2026-04-16 18:30:00 | 小沈 | 修正15.1.4节ActionToolStep字段：raw_data→execution_result，retry_count→action_retry_count，新增execution_time_ms；修正StepFactory.create_action_tool_step方法 |
+| v2.9 | 2026-04-16 19:00:00 | 小沈 | 修正15.6.6/15.6.7：chunk类型字段核实一致；error类型：区分create_error_step（无details/stack）和create_error_response（有details/stack） |
+| v2.10 | 2026-04-16 19:15:00 | 小沈 | 修正14.0.1/14.0.2节：_extract_from_text行号191→226，format_error行号331→335；正则数量修正：thought_patterns 6→2种，总计17→15种 |
+| v2.11 | 2026-04-16 18:45:43 | 小沈 | 新增第16章：维度三重构Agent主循环2.0的详细设计及详细实施步骤 |
 
 ---
 
@@ -67,12 +70,12 @@
 |------|--------|------|---------|
 | 1 | `ToolParser.parse_response()` | tool_parser.py:72 | **主解析入口** |
 | 2 | `ToolParser._extract_json_with_balanced_braces()` | tool_parser.py:23 | 平衡括号JSON提取 |
-| 3 | `ToolParser._extract_from_text()` | tool_parser.py:191 | **备选解析**（正则提取） |
-| 3.1 | ├─ thought_patterns | tool_parser.py:234-243 | thought多模式匹配（6种正则） |
-| 3.2 | ├─ action_patterns | tool_parser.py:245-261 | action多模式匹配（9种正则，含中文） |
-| 3.3 | ├─ input_patterns | tool_parser.py:263-278 | input多模式匹配（2种正则） |
+| 3 | `ToolParser._extract_from_text()` | tool_parser.py:226 | **备选解析**（正则提取） |
+| 3.1 | ├─ thought_patterns | tool_parser.py:234-237 | thought多模式匹配（2种正则） |
+| 3.2 | ├─ action_patterns | tool_parser.py:245-255 | action多模式匹配（9种正则，含中文） |
+| 3.3 | ├─ input_patterns | tool_parser.py:263-266 | input多模式匹配（2种正则） |
 | 3.4 | └─ summarize_patterns | tool_parser.py:285-296 | finish判断模式（2种正则） |
-| 4 | `ToolParser.format_error()` | tool_parser.py:331 | 错误信息格式化 |
+| 4 | `ToolParser.format_error()` | tool_parser.py:335 | 错误信息格式化 |
 | 5 | `TextStrategy._extract_by_known_tools()` | llm_strategies.py:229 | 工具名兜底匹配（**P0优先级**） |
 
 #### 14.0.2 逐函数融合性分析
@@ -115,7 +118,7 @@
 
 ---
 
-##### 3. `_extract_from_text()` - tool_parser.py:191
+##### 3. `_extract_from_text()` - tool_parser.py:226
 
 **功能**: 四层正则提取（thought_patterns → action_patterns → input_patterns → summarize_patterns）
 
@@ -123,8 +126,8 @@
 
 | 对比维度 | 现有函数 | 新架构设计 |
 |----------|---------|-----------|
-| 正则匹配 | 多模式优先级匹配（17种正则） | REACT_KEYWORDS单一正则 |
-| thought提取 | thought_patterns（6种模式） | 关键词定位 |
+| 正则匹配 | 多模式优先级匹配（15种正则） | REACT_KEYWORDS单一正则 |
+| thought提取 | thought_patterns（2种模式） | 关键词定位 |
 | action提取 | action_patterns（9种模式，含中文） | 关键词定位 |
 | finish判断 | summarize_patterns | type字段直接判断 |
 
@@ -3385,7 +3388,7 @@ chunk_data = {
 | `chat_stream_query.py` | 第293行 | 调用`create_error_response()` |
 | `chat_router.py` | 第88,127,248,362行 | 调用`create_error_response()` (✅已统一) |
 
-**字段**:
+**字段（create_error_step函数 - 数据库存储）**:
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
 | type | string | 固定值 "error" |
@@ -3400,10 +3403,10 @@ chunk_data = {
 | recoverable | bool | 是否可恢复（15.7新增） |
 | context | dict | 错误上下文（15.7新增，包含step/model/provider/thought_content） |
 | retry_after | int | 重试等待秒数 |
-| details | string | 详细错误信息（⚠️预留字段，当前代码未使用） |
-| stack | string | 堆栈信息（⚠️预留字段，当前代码未使用） |
 
-**代码示例**:
+**注意**：`details`和`stack`字段只在`create_error_response`函数（SSE响应）中存在，不在`create_error_step`（数据库存储）中。
+
+**代码示例（create_error_step）**:
 ```python
 return {
     'type': 'error',
@@ -3625,12 +3628,1148 @@ error_response = create_error_response(
 
 ## 附件16 维度三：重构Agent主循环2.0的详细设计及详细实施步骤
 
-### 16.1 维度三：重构Agent主循环2.0的详细设计
-<补充本阶段的重构详细设计>
+**设计时间**: 2026-04-16 18:45:43  
+**分析人**: 小沈  
+**依据文档**: 主文档13.2.3节维度三概要设计（第5834-6322行）
 
+---
+
+### 16.0 维度三概要设计与详细设计对照
+
+#### 16.0.1 概要设计回顾
+
+**设计目标**（主文档13.2.3节）：
+
+| 目标 | 说明 | 依赖 |
+|------|------|------|
+| Phase 1 | 使用5.1.1节统一解析器 | ✅ 已完成（维度一） |
+| Phase 2 | 使用5.1.3节ReasoningStep基类 | ✅ 已完成（维度二） |
+| Phase 3 | 重构Agent主循环 | 本章详细设计 |
+
+**三层架构设计**：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. 统一解析层 (维度一 - 已完成)                              │
+│     parse_react_response() → 返回type/action/answer等       │
+├─────────────────────────────────────────────────────────────┤
+│  2. Step封装层 (维度二 - 已完成)                              │
+│     ReasoningStep基类 + 5个具体Step类                       │
+│       ├── ThoughtStep      (思考步骤)                        │
+│       ├── ActionToolStep  (工具执行)                        │
+│       ├── ObservationStep  (观察结果)                        │
+│       ├── FinalStep       (最终回答)                        │
+│       └── ErrorStep       (错误处理)                        │
+├─────────────────────────────────────────────────────────────┤
+│  3. 循环控制层 (维度三 - 本章设计)                           │
+│     while step_counter < max_steps:                         │
+│       parsed = parse_react_response()                       │
+│       if step.is_done(): break                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**11个实施步骤概览**：
+
+| 步骤 | 内容 | 核心动作 |
+|------|------|---------|
+| 3.1 | 创建run_stream_v2() | 初始化steps列表、step_counter |
+| 3.2 | start步骤构建 | yield start类型步骤 |
+| 3.3 | 改造循环结构 | while step_counter < max_steps |
+| 3.4 | 统一解析调用 | `parsed = parse_react_response()` |
+| 3.5 | action类型处理 | Thought→工具执行→ActionTool→Observation |
+| 3.6 | is_done循环控制 | 检查obs_step.is_done()决定是否退出 |
+| 3.7 | answer/implicit处理 | 创建FinalStep，yield后break |
+| 3.8 | thought_only处理 | 直接continue |
+| 3.9 | 异常处理改造 | ErrorStep封装，yield后break |
+| 3.10 | max_steps处理 | 超限创建ErrorStep |
+| 3.11 | 清理旧代码 | 废弃run_stream() |
+
+---
+
+### 16.1 维度三：重构Agent主循环2.0的详细设计
+
+#### 16.1.1 现有代码问题分析
+
+**现有代码位置**: `backend/app/services/agent/base_react.py` (第114-310行)
+
+**现有代码核心缺陷**：
+
+| 缺陷 | 位置 | 影响 | 严重程度 |
+|------|------|------|---------|
+| 使用旧解析器 | 第195行 `self.parser.parse_response()` | 无法享受统一解析器优势 | 🔴 高 |
+| `tool_name == "finish"` 判断结束 | 第225行 | 语义不清晰，易出错 | 🔴 高 |
+| 直接yield字典 | 多处 | 无类型安全，无法扩展 | 🟡 中 |
+| 无Step类封装 | 整体 | 步骤逻辑分散，难维护 | 🟡 中 |
+| 无is_done抽象 | 整体 | 循环控制硬编码 | 🟡 中 |
+| parse_retry机制 | 第199-216行 | 依赖隐式"⚠️"判断 | 🟡 中 |
+| 错误处理混杂 | 多处 | 解析错误与逻辑错误混在一起 | 🟢 低 |
+
+**现有代码流程图**：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    现有Step构建流程（分散式）                  │
+├─────────────────────────────────────────────────────────────┤
+│  1. 解析LLM响应                                               │
+│     └── parsed = self.parser.parse_response(response)        │
+│                                                              │
+│  2. 判断步骤类型（硬编码）                                     │
+│     └── if tool_name == "finish": → 构建final（循环外）       │
+│                                                              │
+│  3. 构建thought步骤（第234-243行）                            │
+│     └── yield { "type": "thought", ... } 字典                │
+│                                                              │
+│  4. 执行工具                                                  │
+│     └── result = await self._execute_tool(...)               │
+│                                                              │
+│  5. 构建action_tool步骤（第257-279行）                        │
+│     ├── 失败: yield create_tool_error_result(...)            │
+│     └── 成功: yield { "type": "action_tool", ... } 字典     │
+│                                                              │
+│  6. 构建observation步骤（第302-308行）                        │
+│     └── yield { "type": "observation", ... } 字典             │
+│                                                              │
+│  7. 循环外处理final/error（第316-372行）                      │
+│     └── 多个if分支，分别yield不同error类型                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**现有代码缺陷详解**：
+
+```python
+# 问题1: 使用旧解析器（第195行）
+parsed = self.parser.parse_response(response)  # ❌ 非统一入口
+
+# 问题2: tool_name判断结束（第225行）
+if tool_name == "finish":  # ❌ 语义不清晰
+    last_response = response
+    break  # ❌ 不yield thought，直接退出
+
+# 问题3: 直接yield字典（多处）
+yield {
+    "type": "thought",
+    "step": step_count,
+    "timestamp": current_time,
+    "content": thought_content,
+    ...
+}  # ❌ 无类型安全
+
+# 问题4: parse_retry机制（第199-216行）
+is_parse_error = "⚠️" in parsed.get("content", "")  # ❌ 隐式判断
+if is_parse_error:
+    self.parse_retry_count += 1
+    if self.parse_retry_count >= self.max_parse_retries:
+        last_error = "parse_error"
+        break
+```
+
+---
+
+#### 16.1.2 新设计架构
+
+**新设计核心组件**：
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    新Agent主循环架构                          │
+├─────────────────────────────────────────────────────────────┤
+│  1. 统一解析层 (维度一)                                     │
+│     parse_react_response() → 返回结构化数据                  │
+│     ├── type: "action" | "answer" | "implicit" | "thought_only" │
+│     ├── thought/tool_name/tool_params                        │
+│     └── response/reasoning                                   │
+├─────────────────────────────────────────────────────────────┤
+│  2. Step封装层 (维度二)                                     │
+│     ReasoningStep (ABC)                                     │
+│       ├── ThoughtStep (action解析结果)                       │
+│       ├── ActionToolStep (工具执行结果)                      │
+│       ├── ObservationStep (观察结果)                         │
+│       ├── FinalStep (最终回答)                               │
+│       └── ErrorStep (错误处理)                               │
+│     StepFactory (工厂类)                                     │
+│       └── create_thought_step() / create_action_tool_step() │
+│           create_observation_step() / create_final_step()   │
+│           create_error_step()                                │
+├─────────────────────────────────────────────────────────────┤
+│  3. 循环控制层 (维度三 - 新设计)                             │
+│     while step_counter < max_steps:                         │
+│       step_counter += 1                                      │
+│       parsed = parse_react_response()                        │
+│       if parsed["type"] == "action":                         │
+│           → ThoughtStep → 执行工具 → ActionToolStep → ObservationStep │
+│           → if obs_step.is_done(): FinalStep → break        │
+│       elif parsed["type"] in ("answer", "implicit"):        │
+│           → FinalStep → break                                │
+│       elif parsed["type"] == "thought_only":                │
+│           → continue                                         │
+│       except Exception as e:                                 │
+│           → ErrorStep → break                               │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**新设计与现有代码对比**：
+
+| 对比点 | 现有代码 | 新设计 |
+|--------|---------|--------|
+| **解析器** | `self.parser.parse_response()` | `parse_react_response()` |
+| **结束判断** | `if tool_name == "finish"` | `if step.is_done()` |
+| **步骤封装** | 直接yield字典 | ReasoningStep类 |
+| **循环控制** | 硬编码if/break | is_done()抽象 |
+| **类型安全** | 无 | Python类型注解 |
+| **错误处理** | 混杂try-except | ErrorStep统一封装 |
+| **parse_retry** | 有（隐式判断） | 无（type字段明确） |
+| **thought保留** | finish时不yield | FinalStep包含thought |
+
+---
+
+#### 16.1.3 三个重要设计决策
+
+##### 决策1：finish/answer/implicit时的thought处理
+
+**现有代码行为**（第225-227行）：
+```python
+if tool_name == "finish":
+    last_response = response
+    break  # 不yield thought，直接退出循环
+```
+
+**新设计行为**：
+```python
+elif parsed["type"] in ("answer", "implicit"):
+    # 生成FinalStep（包含thought）
+    final_step = FinalStep(
+        step=step_counter,
+        timestamp=create_timestamp(),
+        response=parsed["response"],
+        thought=parsed.get("thought", "")  # 保留thought
+    )
+    steps.append(final_step)
+    yield final_step.to_dict()  # yield包含thought的final步骤
+    break
+```
+
+**决策理由**：
+1. **完整性**：保留完整的思考链路，便于调试和审计
+2. **一致性**：所有LLM响应都产生thought步骤，无特殊情况
+3. **前端友好**：前端可以完整展示"思考→结论"的流程
+4. **兼容性**：前端已有逻辑支持type="final"包含thought字段
+
+**⚠️ 特别注意**：这是**有意的设计变更**，不是实现缺陷。
+
+---
+
+##### 决策2：parse_retry机制的移除
+
+**现有代码机制**（第199-216行）：
+```python
+is_parse_error = "⚠️" in parsed.get("content", "") or parsed.get("tool_name") == "finish"
+if is_parse_error:
+    self.conversation_history.append({"role": "assistant", "content": response})
+    self._add_observation_to_history(f"{error_content}. Please respond with valid JSON format.")
+    self.parse_retry_count += 1
+    if self.parse_retry_count >= self.max_parse_retries:
+        last_error = "parse_error"
+        break
+    continue  # 继续循环，让LLM重新尝试
+```
+
+**新设计方案**：
+新架构的`parse_react_response()`返回明确的`type`字段（action/answer/implicit/thought_only），
+不再依赖"content包含⚠️"这种隐式错误判断，因此**无需parse_retry机制**。
+
+**决策理由**：
+1. 新架构的type字段使解析结果明确化，不再有二义性
+2. 移除复杂的重试逻辑，代码更清晰
+3. 错误处理统一走ErrorStep，逻辑更一致
+
+**实施时移除代码**：
+- 第48-49行：`self.parse_retry_count`和`self.max_parse_retries`初始化
+- 第199-216行：parse_error判断和重试逻辑
+
+---
+
+##### 决策3：ToolParser实例化的移除
+
+**现有代码**（第45行）：
+```python
+self.parser = ToolParser()  # 旧解析器实例
+```
+
+**新设计方案**：
+移除ToolParser实例化，直接使用`parse_react_response()`函数
+
+**决策理由**：
+1. 统一入口，不需要维护解析器实例
+2. 函数调用比实例方法更简洁
+3. 维度一的统一解析器已完全替代旧解析器
+
+---
+
+#### 16.1.4 完整代码设计
+
+**文件位置**: `backend/app/services/agent/base_react.py` (新增run_stream_v2方法)
+
+**完整代码**：
+
+```python
+# backend/app/services/agent/base_react.py
+
+# 【新增导入 - 步骤3.4】
+from typing import AsyncGenerator, Dict, Any, Optional
+from .react_output_parser import parse_react_response
+from .reasoning_steps import (
+    ReasoningStep, ThoughtStep, ActionToolStep,
+    ObservationStep, FinalStep, ErrorStep
+)
+from .step_factory import StepFactory
+
+
+class BaseReactAgent:
+    """
+    ReAct Agent - 主循环重构 v2.0
+    
+    吸收维度一（统一解析器）和维度二（Step封装）优点：
+    1. 使用 parse_react_response() 统一解析器
+    2. 使用 ReasoningStep 类封装步骤
+    3. 使用 is_done() 方法控制循环
+    4. 清晰的错误处理流程
+    """
+    
+    def __init__(
+        self,
+        llm_client: Any,
+        tools: Dict[str, Callable],
+        max_steps: int = 100
+    ):
+        # ... 现有初始化代码 ...
+        self.max_steps = max_steps
+        # 【移除 - 步骤3.9】self.parse_retry_count = 0
+        # 【移除 - 步骤3.9】self.max_parse_retries = 3
+    
+    # 【新增方法 - 步骤3.1-3.10】
+    async def run_stream_v2(
+        self,
+        task: str,
+        context: Optional[Dict[str, Any]] = None,
+        max_steps: Optional[int] = None
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        ReAct主循环 v2.0
+        
+        假设：
+        - 维度一（统一解析器）已完成：parse_react_response() 可用
+        - 维度二（Step封装）已完成：ReasoningStep类、StepFactory可用
+        
+        Args:
+            task: 用户任务
+            context: 上下文信息
+            max_steps: 最大步数限制（默认self.max_steps）
+        
+        Yields:
+            Dict[str, Any]: 步骤数据字典
+        """
+        # 【步骤3.1】初始化步骤历史列表
+        steps: list[ReasoningStep] = []
+        step_counter = 0
+        max_steps = max_steps or self.max_steps
+        
+        # 【步骤3.2】生成start步骤
+        start_step = StepFactory.create_start_step(
+            task=task,
+            context=context
+        )
+        steps.append(start_step)
+        yield start_step.to_dict()
+        
+        # 【步骤3.3】改造循环结构
+        while step_counter < max_steps:
+            step_counter += 1
+            
+            try:
+                # 【步骤3.4】调用LLM获取响应
+                llm_output = await self._get_llm_response(task, context, steps)
+                
+                # 【步骤3.4】统一解析（使用维度一解析器）
+                parsed = parse_react_response(llm_output)
+                
+                # 【步骤3.5-3.8】根据type处理不同分支
+                if parsed["type"] == "action":
+                    # === action类型处理 ===
+                    
+                    # 创建ThoughtStep
+                    thought_step = StepFactory.create_thought_step(
+                        step=step_counter,
+                        timestamp=create_timestamp(),
+                        content=parsed.get("content", ""),
+                        thought=parsed.get("thought", ""),
+                        reasoning=parsed.get("reasoning", ""),
+                        tool_name=parsed["tool_name"],
+                        tool_params=parsed.get("tool_params", {})
+                    )
+                    steps.append(thought_step)
+                    yield thought_step.to_dict()
+                    
+                    # 执行工具
+                    start_time = time.perf_counter()
+                    execution_result = await self._execute_tool(
+                        parsed["tool_name"],
+                        parsed.get("tool_params", {})
+                    )
+                    execution_time_ms = int((time.perf_counter() - start_time) * 1000)
+                    
+                    # 创建ActionToolStep
+                    action_step = StepFactory.create_action_tool_step(
+                        step=step_counter,
+                        timestamp=create_timestamp(),
+                        tool_name=parsed["tool_name"],
+                        tool_params=parsed.get("tool_params", {}),
+                        execution_status=execution_result.get("status", "success"),
+                        execution_result=execution_result.get("data"),
+                        error_message=execution_result.get("error", ""),
+                        execution_time_ms=execution_time_ms,
+                        action_retry_count=0
+                    )
+                    steps.append(action_step)
+                    yield action_step.to_dict()
+                    
+                    # 创建ObservationStep
+                    obs_step = StepFactory.create_observation_step(
+                        step=step_counter,
+                        timestamp=create_timestamp(),
+                        tool_name=parsed["tool_name"],
+                        tool_params=parsed.get("tool_params", {}),
+                        observation=execution_result.get("display_text", str(execution_result.get("data", ""))),
+                        return_direct=execution_result.get("return_direct", False)
+                    )
+                    steps.append(obs_step)
+                    yield obs_step.to_dict()
+                    
+                    # 【步骤3.6】is_done循环控制
+                    if obs_step.is_done():
+                        # 直接返回：创建FinalStep
+                        final_step = StepFactory.create_final_step(
+                            step=step_counter,
+                            timestamp=create_timestamp(),
+                            response=str(execution_result.get("data", "")),
+                            thought=parsed.get("thought", ""),
+                            is_finished=True
+                        )
+                        steps.append(final_step)
+                        yield final_step.to_dict()
+                        break  # 退出循环
+                    else:
+                        # 继续下一轮循环
+                        continue
+                
+                elif parsed["type"] in ("answer", "implicit"):
+                    # === answer/implicit类型处理（步骤3.7）===
+                    # 【设计决策1】yield包含thought的final步骤
+                    final_step = StepFactory.create_final_step(
+                        step=step_counter,
+                        timestamp=create_timestamp(),
+                        response=parsed.get("response", ""),
+                        thought=parsed.get("thought", ""),
+                        is_finished=True
+                    )
+                    steps.append(final_step)
+                    yield final_step.to_dict()
+                    break  # 退出循环
+                
+                elif parsed["type"] == "thought_only":
+                    # === thought_only类型处理（步骤3.8）===
+                    # 纯思考，继续下一轮循环
+                    continue
+                
+            except Exception as e:
+                # 【步骤3.9】异常处理：创建ErrorStep
+                error_step = StepFactory.create_error_step(
+                    step=step_counter,
+                    timestamp=create_timestamp(),
+                    error_type=type(e).__name__,
+                    error_message=str(e),
+                    recoverable=False,
+                    context={
+                        "step": step_counter,
+                        "thought_content": self._get_last_thought(steps)
+                    }
+                )
+                steps.append(error_step)
+                yield error_step.to_dict()
+                break  # 退出循环
+        
+        # 【步骤3.10】max_steps超限处理
+        if step_counter >= max_steps:
+            error_step = StepFactory.create_error_step(
+                step=step_counter,
+                timestamp=create_timestamp(),
+                error_type="max_steps_exceeded",
+                error_message=f"超过最大步数限制: {max_steps}",
+                recoverable=False,
+                context={
+                    "step": step_counter,
+                    "max_steps": max_steps
+                }
+            )
+            steps.append(error_step)
+            yield error_step.to_dict()
+    
+    # 【辅助方法】
+    def _get_last_thought(self, steps: list[ReasoningStep]) -> str:
+        """获取最后一条thought内容"""
+        for step in reversed(steps):
+            if isinstance(step, ThoughtStep):
+                return step.content
+        return ""
+```
+
+**关键方法实现**：
+
+```python
+async def _get_llm_response(
+    self,
+    task: str,
+    context: Optional[Dict[str, Any]],
+    steps: list[ReasoningStep]
+) -> str:
+    """
+    构建prompt并调用LLM获取响应
+    
+    【关键设计】：使用steps列表构建对话历史
+    """
+    # 构建prompt（使用steps列表而非conversation_history）
+    messages = self._build_messages(task, steps)
+    
+    # 调用LLM
+    response = await self.llm_client.chat(messages)
+    return response
+
+def _build_messages(
+    self,
+    task: str,
+    steps: list[ReasoningStep]
+) -> list[Dict[str, str]]:
+    """
+    基于steps构建LLM消息列表
+    
+    【关键设计】：从steps列表提取历史，而非conversation_history
+    """
+    messages = []
+    
+    # 系统prompt
+    messages.append({"role": "system", "content": self.system_prompt})
+    
+    # 用户消息
+    messages.append({"role": "user", "content": task})
+    
+    # 从steps构建assistant历史
+    for step in steps:
+        if isinstance(step, ThoughtStep):
+            messages.append({
+                "role": "assistant",
+                "content": step.content
+            })
+        elif isinstance(step, ObservationStep):
+            messages.append({
+                "role": "assistant",
+                "content": f"Observation: {step.observation}"
+            })
+        elif isinstance(step, FinalStep):
+            messages.append({
+                "role": "assistant", 
+                "content": step.response
+            })
+    
+    return messages
+```
+
+---
+
+#### 16.1.5 与现有run_stream方法的对比
+
+**改造对比表**：
+
+| 对比点 | run_stream (现有) | run_stream_v2 (新设计) |
+|--------|-------------------|------------------------|
+| **解析器** | `self.parser.parse_response()` | `parse_react_response()` |
+| **历史管理** | `self.conversation_history` | `steps: list[ReasoningStep]` |
+| **步骤封装** | 直接yield字典 | `StepFactory.create_*_step()` |
+| **循环控制** | `if tool_name == "finish"` | `if step.is_done()` |
+| **parse_retry** | 有（第199-216行） | ❌ 无（type字段明确） |
+| **thought保留** | finish时不yield | FinalStep包含thought |
+| **错误处理** | 多处分散 | `ErrorStep`统一封装 |
+| **类型安全** | 无 | Python类型注解 |
+
+**并行运行设计**：
+
+```python
+async def run_stream(
+    self,
+    task: str,
+    context: Optional[Dict[str, Any]] = None,
+    max_steps: Optional[int] = None,
+    use_v2: bool = False  # 【新增】版本切换开关
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    主入口，根据use_v2选择运行版本
+    
+    Args:
+        use_v2: True使用新版本run_stream_v2，False使用旧版本run_stream
+    """
+    if use_v2:
+        async for step in self.run_stream_v2(task, context, max_steps):
+            yield step
+    else:
+        async for step in self.run_stream_original(task, context, max_steps):
+            yield step
+```
+
+---
 
 ### 16.2 维度三重构Agent主循环2.0的详细实施步骤
-<补充本阶段的重构详细实施步骤>
+
+#### 16.2.1 步骤3.1：创建run_stream_v2()框架
+
+**任务**: 创建新的主循环函数，保持run_stream()不变
+
+**位置**: `backend/app/services/agent/base_react.py`
+
+**实现代码**：
+
+```python
+async def run_stream_v2(
+    self,
+    task: str,
+    context: Optional[Dict[str, Any]] = None,
+    max_steps: Optional[int] = None
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    ReAct主循环 v2.0
+    
+    依赖：
+    - 维度一：parse_react_response()
+    - 维度二：ReasoningStep, StepFactory
+    
+    Args:
+        task: 用户任务
+        context: 上下文信息
+        max_steps: 最大步数限制
+    
+    Yields:
+        Dict[str, Any]: 步骤数据字典
+    """
+    # 初始化步骤历史列表
+    steps: list[ReasoningStep] = []
+    step_counter = 0
+    max_steps = max_steps or self.max_steps
+    
+    # 主循环
+    while step_counter < max_steps:
+        step_counter += 1
+        # ... 后续步骤 ...
+    
+    # max_steps超限处理
+    if step_counter >= max_steps:
+        # ... 处理 ...
+```
+
+**完成标准**：
+- [ ] run_stream_v2方法可被调用
+- [ ] 循环结构正确：`while step_counter < max_steps`
+- [ ] step_counter正确递增
+
+---
+
+#### 16.2.2 步骤3.2：实现start步骤构建
+
+**任务**: 生成并yield start类型步骤
+
+**位置**: run_stream_v2方法开头
+
+**实现代码**：
+
+```python
+# 在while循环前添加
+start_step = StepFactory.create_start_step(
+    task=task,
+    context=context
+)
+steps.append(start_step)
+yield start_step.to_dict()
+```
+
+**create_start_step方法**（在StepFactory中）：
+
+```python
+@staticmethod
+def create_start_step(
+    task: str,
+    context: Optional[Dict[str, Any]] = None
+) -> ReasoningStep:
+    """创建start步骤"""
+    from .start_step import StartStep
+    
+    return StartStep(
+        step=0,  # start步骤step为0
+        timestamp=create_timestamp(),
+        task_id=context.get("task_id") if context else None,
+        user_message=task[:100] if task else "",
+        ai_service=context.get("ai_service") if context else None
+    )
+```
+
+**完成标准**：
+- [ ] start步骤正确生成
+- [ ] 包含task、context信息
+- [ ] step字段为0
+
+---
+
+#### 16.2.3 步骤3.3：改造循环结构
+
+**任务**: 确保循环结构正确
+
+**位置**: run_stream_v2方法
+
+**实现要求**：
+
+```python
+while step_counter < max_steps:
+    step_counter += 1
+    # 循环体...
+```
+
+**注意事项**：
+- step_counter在循环开始时递增
+- 循环内通过break退出，不是通过条件判断
+- max_steps作为兜底保护
+
+**完成标准**：
+- [ ] 循环正确递增step_counter
+- [ ] 可通过break退出循环
+- [ ] max_steps超限时退出
+
+---
+
+#### 16.2.4 步骤3.4：实现统一解析调用
+
+**任务**: 调用parse_react_response()解析LLM响应
+
+**位置**: 循环体内
+
+**实现代码**：
+
+```python
+# 1. 调用LLM获取响应
+llm_output = await self._get_llm_response(task, context, steps)
+
+# 2. 统一解析
+parsed = parse_react_response(llm_output)
+```
+
+**parse_react_response返回值**：
+
+```python
+{
+    "type": "action" | "answer" | "implicit" | "thought_only",
+    "thought": str | None,
+    "tool_name": str | None,  # 仅action
+    "tool_params": dict | None,  # 仅action
+    "response": str | None,  # 仅answer/implicit
+    "content": str,  # 兼容性字段
+    "reasoning": str | None  # 兼容性字段
+}
+```
+
+**完成标准**：
+- [ ] 调用parse_react_response()成功
+- [ ] 返回值包含明确的type字段
+- [ ] 无隐式错误判断
+
+---
+
+#### 16.2.5 步骤3.5：实现action类型处理分支
+
+**任务**: 处理type="action"的响应
+
+**位置**: if parsed["type"] == "action"分支
+
+**实现代码**：
+
+```python
+if parsed["type"] == "action":
+    # 1. 创建ThoughtStep
+    thought_step = StepFactory.create_thought_step(
+        step=step_counter,
+        timestamp=create_timestamp(),
+        content=parsed.get("content", ""),
+        thought=parsed.get("thought", ""),
+        reasoning=parsed.get("reasoning", ""),
+        tool_name=parsed["tool_name"],
+        tool_params=parsed.get("tool_params", {})
+    )
+    steps.append(thought_step)
+    yield thought_step.to_dict()
+    
+    # 2. 执行工具
+    start_time = time.perf_counter()
+    execution_result = await self._execute_tool(
+        parsed["tool_name"],
+        parsed.get("tool_params", {})
+    )
+    execution_time_ms = int((time.perf_counter() - start_time) * 1000)
+    
+    # 3. 创建ActionToolStep
+    action_step = StepFactory.create_action_tool_step(
+        step=step_counter,
+        timestamp=create_timestamp(),
+        tool_name=parsed["tool_name"],
+        tool_params=parsed.get("tool_params", {}),
+        execution_status=execution_result.get("status", "success"),
+        execution_result=execution_result.get("data"),
+        error_message=execution_result.get("error", ""),
+        execution_time_ms=execution_time_ms,
+        action_retry_count=0
+    )
+    steps.append(action_step)
+    yield action_step.to_dict()
+    
+    # 4. 创建ObservationStep
+    obs_step = StepFactory.create_observation_step(
+        step=step_counter,
+        timestamp=create_timestamp(),
+        tool_name=parsed["tool_name"],
+        tool_params=parsed.get("tool_params", {}),
+        observation=execution_result.get("display_text", str(execution_result.get("data", ""))),
+        return_direct=execution_result.get("return_direct", False)
+    )
+    steps.append(obs_step)
+    yield obs_step.to_dict()
+```
+
+**完成标准**：
+- [ ] ThoughtStep正确创建并yield
+- [ ] 工具执行正确计时
+- [ ] ActionToolStep包含execution_time_ms
+- [ ] ObservationStep正确创建
+
+---
+
+#### 16.2.6 步骤3.6：实现is_done循环控制
+
+**任务**: 使用is_done()方法控制循环退出
+
+**位置**: action类型处理后
+
+**实现代码**：
+
+```python
+# 在ObservationStep创建后添加
+if obs_step.is_done():
+    # 直接返回：创建FinalStep
+    final_step = StepFactory.create_final_step(
+        step=step_counter,
+        timestamp=create_timestamp(),
+        response=str(execution_result.get("data", "")),
+        thought=parsed.get("thought", ""),
+        is_finished=True
+    )
+    steps.append(final_step)
+    yield final_step.to_dict()
+    break  # 退出循环
+else:
+    # 非直接返回：继续下一轮循环
+    continue
+```
+
+**is_done()方法定义**（ObservationStep）：
+
+```python
+class ObservationStep(ReasoningStep):
+    def is_done(self) -> bool:
+        """观察步骤的结束条件：return_direct为True时结束"""
+        return self.return_direct
+```
+
+**完成标准**：
+- [ ] is_done()正确判断
+- [ ] return_direct=True时退出循环
+- [ ] return_direct=False时继续循环
+
+---
+
+#### 16.2.7 步骤3.7：实现answer/implicit类型处理
+
+**任务**: 处理type为"answer"或"implicit"的响应
+
+**位置**: elif parsed["type"] in ("answer", "implicit")
+
+**实现代码**：
+
+```python
+elif parsed["type"] in ("answer", "implicit"):
+    # 【设计决策1】yield包含thought的final步骤
+    final_step = StepFactory.create_final_step(
+        step=step_counter,
+        timestamp=create_timestamp(),
+        response=parsed.get("response", ""),
+        thought=parsed.get("thought", ""),  # 保留thought
+        is_finished=True
+    )
+    steps.append(final_step)
+    yield final_step.to_dict()
+    break  # 退出循环
+```
+
+**与旧代码对比**：
+
+| 对比点 | 旧代码 | 新设计 |
+|--------|--------|--------|
+| finish判断 | `if tool_name == "finish"` | `elif type in ("answer", "implicit")` |
+| thought处理 | 不yield，直接break | yield包含thought的FinalStep |
+| response来源 | `response`变量 | `parsed.get("response", "")` |
+
+**完成标准**：
+- [ ] FinalStep正确创建
+- [ ] 包含thought字段
+- [ ] 正确yield后break
+
+---
+
+#### 16.2.8 步骤3.8：实现thought_only类型处理
+
+**任务**: 处理type="thought_only"的响应
+
+**位置**: elif parsed["type"] == "thought_only"
+
+**实现代码**：
+
+```python
+elif parsed["type"] == "thought_only":
+    # 纯思考：继续下一轮循环，不yield任何步骤
+    continue
+```
+
+**使用场景**：
+- LLM只返回思考内容，不决定行动
+- 需要继续循环获取下一步响应
+
+**完成标准**：
+- [ ] 直接continue，不yield
+- [ ] 不增加step_counter（已在循环开始递增）
+
+---
+
+#### 16.2.9 步骤3.9：改造异常处理
+
+**任务**: 使用ErrorStep统一封装异常处理
+
+**位置**: except Exception as e块
+
+**实现代码**：
+
+```python
+except Exception as e:
+    # 【设计决策2】移除parse_retry机制，使用ErrorStep统一处理
+    error_step = StepFactory.create_error_step(
+        step=step_counter,
+        timestamp=create_timestamp(),
+        error_type=type(e).__name__,
+        error_message=str(e),
+        recoverable=False,
+        context={
+            "step": step_counter,
+            "thought_content": self._get_last_thought(steps)
+        }
+    )
+    steps.append(error_step)
+    yield error_step.to_dict()
+    break  # 退出循环
+```
+
+**辅助方法**：
+
+```python
+def _get_last_thought(self, steps: list[ReasoningStep]) -> str:
+    """获取最后一条thought内容用于错误上下文"""
+    for step in reversed(steps):
+        if isinstance(step, ThoughtStep):
+            return step.content
+    return ""
+```
+
+**移除的旧代码**：
+- 第48-49行：`self.parse_retry_count`和`self.max_parse_retries`初始化
+- 第199-216行：parse_error判断和重试逻辑
+
+**完成标准**：
+- [ ] ErrorStep正确创建
+- [ ] 包含错误上下文（step、thought_content）
+- [ ] 正确yield后break
+
+---
+
+#### 16.2.10 步骤3.10：实现max_steps超限处理
+
+**任务**: 处理步数超限情况
+
+**位置**: while循环外
+
+**实现代码**：
+
+```python
+# 在while循环后添加
+if step_counter >= max_steps:
+    error_step = StepFactory.create_error_step(
+        step=step_counter,
+        timestamp=create_timestamp(),
+        error_type="max_steps_exceeded",
+        error_message=f"超过最大步数限制: {max_steps}",
+        recoverable=False,
+        context={
+            "step": step_counter,
+            "max_steps": max_steps
+        }
+    )
+    steps.append(error_step)
+    yield error_step.to_dict()
+```
+
+**与旧代码对比**：
+
+| 对比点 | 旧代码 | 新设计 |
+|--------|--------|--------|
+| 超限处理 | 多个位置分散处理 | 统一在循环外处理 |
+| Error类型 | 多种error类型 | 统一"max_steps_exceeded" |
+| 兜底保障 | 无明确兜底 | max_steps强制退出 |
+
+**完成标准**：
+- [ ] 步数超限时ErrorStep正确创建
+- [ ] 错误消息包含max_steps信息
+- [ ] 作为最后一步正确yield
+
+---
+
+#### 16.2.11 步骤3.11：清理旧主循环代码
+
+**任务**: 废弃或移除旧的run_stream实现
+
+**位置**: base_react.py
+
+**清理内容**：
+
+| 需要清理 | 位置 | 处理方式 |
+|----------|------|---------|
+| `self.parser = ToolParser()` | 第45行 | 注释或删除 |
+| `self.parse_retry_count` | 第48行 | 注释或删除 |
+| `self.max_parse_retries` | 第49行 | 注释或删除 |
+| `self.conversation_history` | 多处 | 保留（其他功能用） |
+| 旧yield字典代码 | 第234-308行 | 注释或删除 |
+| 旧错误处理代码 | 第197-216行 | 注释或删除 |
+
+**并行运行设计**：
+
+```python
+async def run_stream(
+    self,
+    task: str,
+    context: Optional[Dict[str, Any]] = None,
+    max_steps: Optional[int] = None,
+    version: str = "v2"  # 新增版本参数
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """
+    主入口，选择运行版本
+    
+    Args:
+        version: "v1"使用旧版本，"v2"使用新版本（默认v2）
+    """
+    if version == "v2":
+        async for step in self.run_stream_v2(task, context, max_steps):
+            yield step
+    else:
+        async for step in self.run_stream_v1(task, context, max_steps):
+            yield step
+```
+
+**完成标准**：
+- [ ] 旧代码标记为废弃（加deprecated注释）
+- [ ] 新代码可正常切换运行
+- [ ] 向后兼容（可通过参数选择版本）
+
+---
+
+### 16.3 维度三设计检查清单
+
+#### 16.3.1 优点核对表
+
+| 设计要素 | 优点 | 实现位置 | 状态 |
+|----------|------|----------|------|
+| **统一解析层** | 使用parse_react_response() | 步骤3.4 | ✅ |
+| **Step封装** | 使用ReasoningStep类 | 步骤3.5 | ✅ |
+| **is_done控制** | step.is_done()判断 | 步骤3.6 | ✅ |
+| **类型安全** | Python类型注解 | 全方法 | ✅ |
+| **错误统一** | ErrorStep封装 | 步骤3.9 | ✅ |
+| **thought保留** | FinalStep包含thought | 步骤3.7 | ✅ |
+| **parse_retry移除** | 无隐式判断 | 步骤3.9 | ✅ |
+| **历史管理** | steps列表追踪 | 步骤3.1 | ✅ |
+| **并行设计** | 版本切换开关 | 步骤3.11 | ✅ |
+
+#### 16.3.2 与维度一、维度二的依赖核对
+
+| 依赖项 | 维度一输出 | 维度二输出 | 维度三使用 |
+|--------|-----------|-----------|------------|
+| 解析器 | `parse_react_response()` | - | 步骤3.4 |
+| Step基类 | - | `ReasoningStep` | 全方法 |
+| Step子类 | - | `ThoughtStep/ActionToolStep/...` | 步骤3.5-3.10 |
+| StepFactory | - | `StepFactory.create_*_step()` | 全方法 |
+| 统一type | `action/answer/implicit/thought_only` | - | 步骤3.5-3.8 |
+
+#### 16.3.3 代码完整性检查
+
+- [ ] 所有函数都有完整的类型注解
+- [ ] 所有函数都有详细的docstring
+- [ ] 包含必要的错误处理（try-except）
+- [ ] 包含空值检查（if not parsed）
+- [ ] 代码风格符合PEP 8规范
+- [ ] 与维度一、维度二接口匹配
+
+---
+
+### 16.4 文件变更清单
+
+#### 16.4.1 修改文件
+
+| 文件 | 位置 | 修改内容 |
+|------|------|----------|
+| `backend/app/services/agent/base_react.py` | 新增方法 | 添加run_stream_v2()方法 |
+| | 导入语句 | 添加parse_react_response、ReasoningStep等导入 |
+| | 初始化 | 注释parse_retry相关代码 |
+| | run_stream() | 添加版本切换参数 |
+
+#### 16.4.2 依赖文件（已存在）
+
+| 文件 | 来源 | 说明 |
+|------|------|------|
+| `react_output_parser.py` | 维度一 | 提供parse_react_response() |
+| `reasoning_steps.py` | 维度二 | 提供ReasoningStep基类和子类 |
+| `step_factory.py` | 维度二 | 提供StepFactory工厂类 |
+
+---
+
+### 16.5 实施风险与缓解
+
+| 风险点 | 影响 | 缓解措施 |
+|--------|------|----------|
+| 维度一/二未完成 | 维度三无法实现 | 确保维度一、二先完成并测试通过 |
+| 循环死循环 | 系统hang | max_steps兜底保护 |
+| 历史构建不一致 | LLM响应异常 | 对比测试steps vs conversation_history |
+| 性能下降 | 用户体验差 | 性能基准测试 |
+| 兼容性破坏 | 现有功能异常 | 版本切换开关，默认v1 |
+
+---
+
+**详细设计完成时间**: 2026-04-16 18:45:43  
+**设计人**: 小沈  
+**审核状态**: 待审核
 
 
 -----------------------------------------------------
