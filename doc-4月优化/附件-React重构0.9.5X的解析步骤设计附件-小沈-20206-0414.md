@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.11  
+**文档版本**: v2.14  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-16 19:05:42  
+**更新时间**: 2026-04-17 11:12:38  
 **编写人**: 小沈
 
 ## 版本历史
@@ -39,6 +39,13 @@
 | v2.10 | 2026-04-16 19:15:00 | 小沈 | 修正14.0.1/14.0.2节：_extract_from_text行号191→226，format_error行号331→335；正则数量修正：thought_patterns 6→2种，总计17→15种 |
 | v2.11 | 2026-04-16 19:05:42 | 小沈 | 根据小健审查+北京老陈要求：1)步骤3.5添加tool_name空值检查; 2)补充_execute_tool返回格式说明; 3)引用15.5.1节StartStep字段定义; 4)详细补充历史构建逻辑(重点); 5)异常处理区分可恢复/不可恢复; 6)统一version参数设计(默认v1); 7)thought_only补充详细说明 |
 | v2.11 | 2026-04-16 18:45:43 | 小沈 | 新增第16章：维度三重构Agent主循环2.0的详细设计及详细实施步骤 |
+| v2.12 | 2026-04-17 10:48:45 | 小沈 | 新增15.1.2-15.1.6章节：详细补充步骤2.9（改造base_react.py步骤构建代码）、步骤2.10（添加步骤历史管理）、步骤2.11（清理旧字典构建代码）的具体实施代码，包含12个修改位置的详细代码示例 |
+| v2.13 | 2026-04-17 11:05:22 | 小沈 | 15.1.3.1节：用12段完整代码替换原来的表格说明，展示步骤历史管理self.steps.append()的每个修改位置的详细代码 |
+| v2.14 | 2026-04-17 11:12:38 | 小沈 | 15.1.3.2节：新增conversation_history构建详细代码，包含7个修改位置的完整代码（修改13-19），补充_add_observation_to_history和_trim_history方法 |
+| v2.15 | 2026-04-17 11:25:00 | 小沈 | 15.2.0节：新增self.steps与conversation_history的核心区别分析，包含数据流向图、具体数据示例、代码执行顺序、一句话总结 |
+| v2.16 | 2026-04-17 11:32:00 | 小沈 | 15.3节：补充Phase 1/Phase 2的现有代码vs Step封装后的代码对比，明确Phase 1已实施、Phase 2待实施的关系 |
+| v2.17 | 2026-04-17 11:38:00 | 小沈 | 15.4.1节：修正流程图，补充"原始response加入conversation_history"这一关键步骤 |
+| v2.18 | 2026-04-17 11:45:00 | 小沈 | 15.5节：1)行号改为描述性位置；2)新增15.5.3节细化不同类型的yield次数；3)修正影响结论为：外部行为不变、内部变化、新增self.steps功能 |
 
 ---
 
@@ -3039,11 +3046,1427 @@ __all__ = [
 - StepFactory提供统一构建入口
 - 兼容性字段已内置
 
+
+# =============================================================================
+# 第十部分：base_react.py步骤2.9、2.10、2.11详细实施代码
+# =============================================================================
+
+## 15.1.2 步骤2.9：改造base_react.py步骤构建代码
+
+> **设计思想**：将所有yield字典替换为StepFactory调用，使代码统一、规范、易维护
+> **改造原则**：先创建Step对象，再yield step.to_dict()，两步分离，逻辑清晰
+
+### 15.1.2.1 新增导入语句
+
+**位置**：base_react.py 第20-26行区域
+
+```python
+# 修改前（第20-26行）
+from app.services.agent.types import AgentStatus
+from app.services.agent.react_output_parser import parse_react_response
+from app.utils.logger import logger
+from app.chat_stream.chat_helpers import create_timestamp
+from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
+from app.utils.prompt_logger import get_prompt_logger
+
+# 修改后
+from app.services.agent.types import AgentStatus
+from app.services.agent.react_output_parser import parse_react_response
+from app.services.agent.reasoning_steps import (
+    StepFactory,
+    ReasoningStep,
+    ThoughtStep,
+    ActionToolStep,
+    ObservationStep,
+    FinalStep,
+    ErrorStep,
+)
+from app.utils.logger import logger
+from app.chat_stream.chat_helpers import create_timestamp
+from app.utils.prompt_logger import get_prompt_logger
+```
+
+### 15.1.2.2 修改__init__方法（步骤2.10相关）
+
+**位置**：base_react.py 第36-44行
+
+```python
+# 修改前
+def __init__(self, max_steps: int = 100):
+    """初始化 BaseAgent"""
+    self.max_steps = max_steps
+    
+    self.steps: List[Any] = []
+    self.conversation_history: List[Dict[str, str]] = []
+    self.status = AgentStatus.IDLE
+    self.llm_call_count = 0
+    self._lock = asyncio.Lock()
+
+# 修改后
+def __init__(self, max_steps: int = 100):
+    """初始化 BaseAgent"""
+    self.max_steps = max_steps
+    
+    # 【步骤2.10】步骤历史管理：使用ReasoningStep类型
+    self.steps: List[ReasoningStep] = []
+    self.conversation_history: List[Dict[str, str]] = []
+    self.status = AgentStatus.IDLE
+    self.llm_call_count = 0
+    self._lock = asyncio.Lock()
+```
+
+### 15.1.2.3 修改thought_only类型yield（位置1）
+
+**位置**：base_react.py 第216-231行
+
+```python
+# 修改前
+# 【新增】thought_only类型：纯思考分支，继续下一轮循环
+if parsed["type"] == "thought_only":
+    logger.info(f"[parse_react_response] 情况3: type=thought_only, 纯思考继续")
+    current_time = create_timestamp()
+    thought = parsed.get("thought", "")
+    yield {
+        "type": "thought",
+        "step": step_count,
+        "timestamp": current_time,
+        "content": thought_content,
+        "thought": thought,
+        "reasoning": parsed.get("reasoning", ""),
+        "tool_name": None,
+        "tool_params": None
+    }
+    self.conversation_history.append({"role": "assistant", "content": response})
+    continue  # 继续下一轮循环
+
+# 修改后
+# 【步骤2.9】thought_only类型：纯思考分支，继续下一轮循环
+if parsed["type"] == "thought_only":
+    logger.info(f"[parse_react_response] 情况3: type=thought_only, 纯思考继续")
+    thought = parsed.get("thought", "")
+    
+    # 【步骤2.9】使用StepFactory创建ThoughtStep
+    thought_step = StepFactory.create_thought_step(
+        step=step_count,
+        content=thought_content,
+        tool_name="",  # 纯思考无工具
+        tool_params={},
+        thought=thought,
+        reasoning=parsed.get("reasoning", "")
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(thought_step)
+    
+    # yield Step字典
+    yield thought_step.to_dict()
+    
+    self.conversation_history.append({"role": "assistant", "content": response})
+    continue  # 继续下一轮循环
+```
+
+### 15.1.2.4 修改action类型yield（位置2）
+
+**位置**：base_react.py 第256-274行
+
+```python
+# 修改前
+# ===== 情况1：工具调用（Action）=====
+logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
+current_time = create_timestamp()
+# 获取thought和reasoning字段
+thought = parsed.get("thought", "")
+reasoning = parsed.get("reasoning", "")
+yield {
+    "type": "thought",
+    "step": step_count,
+    "timestamp": current_time,
+    "content": thought_content,
+    "thought": thought,
+    "reasoning": reasoning,
+    "tool_name": tool_name,
+    "tool_params": tool_params
+}
+
+# 修改后
+# ===== 【步骤2.9】情况1：工具调用（Action）=====
+logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
+thought = parsed.get("thought", "")
+reasoning = parsed.get("reasoning", "")
+
+# 【步骤2.9】使用StepFactory创建ThoughtStep
+thought_step = StepFactory.create_thought_step(
+    step=step_count,
+    content=thought_content,
+    tool_name=tool_name,
+    tool_params=tool_params,
+    thought=thought,
+    reasoning=reasoning
+)
+
+# 【步骤2.10】记录步骤历史
+self.steps.append(thought_step)
+
+# yield Step字典
+yield thought_step.to_dict()
+```
+
+### 15.1.2.5 修改action_tool成功yield（位置3）
+
+**位置**：base_react.py 第283-300行
+
+```python
+# 修改前
+# 根据执行结果构建 action_tool
+exec_status = execution_result.get("status", "success")
+
+if exec_status == "success":
+    # 工具执行成功 - 按15.7.1要求修改字段
+    yield {
+        "type": "action_tool",
+        "step": step_count,
+        "timestamp": current_time,
+        "tool_name": tool_name,
+        "tool_params": tool_params,
+        "execution_status": "success",
+        "summary": execution_result.get("summary", ""),
+        "execution_result": execution_result.get("data"),
+        "error_message": "",
+        "execution_time_ms": execution_time_ms,
+        "action_retry_count": 0
+    }
+
+# 修改后
+# ===== 【步骤2.9】根据执行结果构建 action_tool =====
+
+# 【步骤2.9】统一执行结果字典格式（供StepFactory使用）
+execution_result_dict = {
+    "status": execution_result.get("status", "success"),
+    "summary": execution_result.get("summary", ""),
+    "data": execution_result.get("data"),
+    "error": "",
+    "retry_count": 0
+}
+
+# 【步骤2.9】使用StepFactory创建ActionToolStep
+action_step = StepFactory.create_action_tool_step(
+    step=step_count,
+    tool_name=tool_name,
+    tool_params=tool_params,
+    execution_result=execution_result_dict,
+    execution_time_ms=execution_time_ms
+)
+
+# 【步骤2.10】记录步骤历史
+self.steps.append(action_step)
+
+# yield Step字典
+yield action_step.to_dict()
+```
+
+### 15.1.2.6 修改action_tool警告yield（位置4）
+
+**位置**：base_react.py 第301-314行
+
+```python
+# 修改前
+elif exec_status == "warning":
+    # 工具执行警告（部分成功）- 使用 create_tool_error_result 传递 warning 状态
+    action_tool_result = create_tool_error_result(
+        tool_name=tool_name,
+        error_message=execution_result.get("summary", "部分成功"),
+        step_num=step_count,
+        tool_params=tool_params,
+        retry_count=execution_result.get("retry_count", 0),
+        raw_data=execution_result.get("data"),
+        timestamp=current_time,
+        status="warning",  # 传递 warning 状态
+        execution_time_ms=execution_time_ms  # 传入实际耗时
+    )
+    yield action_tool_result
+
+# 修改后
+elif exec_status == "warning":
+    # 【步骤2.9】工具执行警告（部分成功）- 使用StepFactory
+    # 【步骤2.11】废弃create_tool_error_result，使用StepFactory.create_action_tool_step
+    
+    # 构造warning执行结果字典
+    execution_result_dict = {
+        "status": "warning",
+        "summary": execution_result.get("summary", "部分成功"),
+        "data": execution_result.get("data"),
+        "error": execution_result.get("summary", "部分成功"),
+        "retry_count": execution_result.get("retry_count", 0)
+    }
+    
+    # 【步骤2.9】使用StepFactory创建ActionToolStep
+    action_step = StepFactory.create_action_tool_step(
+        step=step_count,
+        tool_name=tool_name,
+        tool_params=tool_params,
+        execution_result=execution_result_dict,
+        execution_time_ms=execution_time_ms
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(action_step)
+    
+    # yield Step字典
+    yield action_step.to_dict()
+```
+
+### 15.1.2.7 修改action_tool错误yield（位置5）
+
+**位置**：base_react.py 第315-328行
+
+```python
+# 修改前
+else:
+    # error/timeout/permission_denied - 统一使用 create_tool_error_result
+    action_tool_result = create_tool_error_result(
+        tool_name=tool_name,
+        error_message=execution_result.get("summary", "执行失败"),
+        step_num=step_count,
+        tool_params=tool_params,
+        retry_count=execution_result.get("retry_count", 0),
+        raw_data=execution_result.get("data"),
+        timestamp=current_time,
+        status=exec_status,  # 传递实际的 execution_status
+        execution_time_ms=execution_time_ms  # 传入实际耗时
+    )
+    yield action_tool_result
+
+# 修改后
+else:
+    # 【步骤2.9】error/timeout/permission_denied - 使用StepFactory
+    # 【步骤2.11】废弃create_tool_error_result，使用StepFactory.create_action_tool_step
+    
+    # 构造error执行结果字典
+    execution_result_dict = {
+        "status": exec_status,
+        "summary": execution_result.get("summary", "执行失败"),
+        "data": execution_result.get("data"),
+        "error": execution_result.get("summary", "执行失败"),
+        "retry_count": execution_result.get("retry_count", 0)
+    }
+    
+    # 【步骤2.9】使用StepFactory创建ActionToolStep
+    action_step = StepFactory.create_action_tool_step(
+        step=step_count,
+        tool_name=tool_name,
+        tool_params=tool_params,
+        execution_result=execution_result_dict,
+        execution_time_ms=execution_time_ms
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(action_step)
+    
+    # yield Step字典
+    yield action_step.to_dict()
+```
+
+### 15.1.2.8 修改observation yield（位置6）
+
+**位置**：base_react.py 第383-393行
+
+```python
+# 修改前
+# yield observation - 【小沈修复 2026-04-16】使用 display_text 给前端
+# 【修复 2026-04-16】移除 execution_status（工具执行状态在 action_tool 中已显示）
+yield {
+    "type": "observation",
+    "step": step_count,
+    "timestamp": create_timestamp(),
+    "tool_name": tool_name,
+    "tool_params": tool_params,
+    "observation": display_text,  # 前端显示用精简摘要
+    "return_direct": execution_result.get("return_direct", False),
+}
+
+# 修改后
+# ===== 【步骤2.9】yield observation =====
+
+# 【步骤2.9】使用StepFactory创建ObservationStep
+observation_step = StepFactory.create_observation_step(
+    step=step_count,
+    tool_name=tool_name,
+    tool_params=tool_params,
+    execution_result=execution_result,
+    return_direct=execution_result.get("return_direct", False)
+)
+
+# 【步骤2.10】记录步骤历史
+self.steps.append(observation_step)
+
+# yield Step字典
+yield observation_step.to_dict()
+```
+
+### 15.1.2.9 修改final yield（位置7）
+
+**位置**：base_react.py 第399-414行
+
+```python
+# 修改前
+# 场景5：正常完成（answer/implicit类型）
+# 【修复 2026-04-16 小沈】使用 last_parsed_type 替代 last_response 判断
+# 原因：last_response 是字符串，判断语义不清晰；用类型字段更明确
+if last_parsed_type in ["answer", "implicit"]:
+    yield {
+        "type": "final",
+        "step": step_count,  # 新增字段
+        "timestamp": create_timestamp(),
+        "response": self.last_answer_response or thought_content,
+        "is_finished": True,  # 新增字段
+        "thought": thought_content,  # 新增字段
+        "is_streaming": False,  # 新增字段
+        "is_reasoning": False,  # 新增字段
+    }
+    self._on_after_loop()
+    return
+
+# 修改后
+# ===== 【步骤2.9】场景5：正常完成（answer/implicit类型）=====
+if last_parsed_type in ["answer", "implicit"]:
+    # 【步骤2.9】使用StepFactory创建FinalStep
+    final_step = StepFactory.create_final_step(
+        step=step_count,
+        response=self.last_answer_response or thought_content,
+        thought=thought_content,
+        is_finished=True
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(final_step)
+    
+    # yield Step字典
+    yield final_step.to_dict()
+    
+    self._on_after_loop()
+    return
+```
+
+### 15.1.2.10 修改error yield（位置8-11）
+
+**位置**：base_react.py 第416-447行
+
+```python
+# 修改前
+# 场景2：LLM返回空响应错误
+if last_error == "empty_response":
+    error_response, error_step = create_session_error_result(
+        original_error="AI服务返回空响应",
+        error_step_type='empty_response',
+        step_num=step_count
+    )
+    yield error_response
+    self._on_after_loop()
+    return
+
+# 场景4：解析失败（重试3次后仍失败）
+if last_error == "parse_error":
+    error_response, error_step = create_session_error_result(
+        original_error=f"解析失败（已重试{self.max_parse_retries}次）",
+        error_step_type='parse_error',
+        step_num=step_count
+    )
+    yield error_response
+    self._on_after_loop()
+    return
+
+# 场景3：超过最大步数
+if step_count >= max_steps:
+    error_response, error_step = create_session_error_result(
+        original_error=f"已达到最大迭代次数 {max_steps}",
+        error_step_type='max_steps_exceeded',
+        step_num=step_count
+    )
+    yield error_response
+    self._on_after_loop()
+    return
+
+# 修改后
+# ===== 【步骤2.9+2.11】场景2-4：统一错误处理 =====
+
+# 【步骤2.11】废弃create_session_error_result，使用StepFactory.create_error_step
+
+# 场景2：LLM返回空响应错误
+if last_error == "empty_response":
+    # 【步骤2.9】使用StepFactory创建ErrorStep
+    error_step = StepFactory.create_error_step(
+        step=step_count,
+        error_type="empty_response",
+        error_message="AI服务返回空响应",
+        recoverable=False
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(error_step)
+    
+    # yield Step字典
+    yield error_step.to_dict()
+    
+    self._on_after_loop()
+    return
+
+# 场景4：解析失败（重试3次后仍失败）
+if last_error == "parse_error":
+    # 【步骤2.9】使用StepFactory创建ErrorStep
+    error_step = StepFactory.create_error_step(
+        step=step_count,
+        error_type="parse_error",
+        error_message=f"解析失败（已重试{self.max_parse_retries}次）",
+        recoverable=False
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(error_step)
+    
+    # yield Step字典
+    yield error_step.to_dict()
+    
+    self._on_after_loop()
+    return
+
+# 场景3：超过最大步数
+if step_count >= max_steps:
+    # 【步骤2.9】使用StepFactory创建ErrorStep
+    error_step = StepFactory.create_error_step(
+        step=step_count,
+        error_type="max_steps_exceeded",
+        error_message=f"已达到最大迭代次数 {max_steps}",
+        recoverable=False
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(error_step)
+    
+    # yield Step字典
+    yield error_step.to_dict()
+    
+    self._on_after_loop()
+    return
+```
+
+### 15.1.2.11 修改异常处理error yield（位置12）
+
+**位置**：base_react.py 第453-467行
+
+```python
+# 修改前
+except Exception as e:
+    # 【重构 2026-04-11 小沈】场景1：未捕获异常
+    # except块中只做记录日志和yield error
+    logger.error(f"Agent run_stream error: {e}", exc_info=True)
+    
+    error_response, error_step = create_error_from_exception(
+        error=e,
+        step_num=step_count,
+        model=None,
+        provider=None
+    )
+    yield error_response
+    
+    self._on_after_loop()
+    return
+
+# 修改后
+except Exception as e:
+    # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
+    # 【步骤2.11】废弃create_error_from_exception，使用StepFactory.create_error_step
+    logger.error(f"Agent run_stream error: {e}", exc_info=True)
+    
+    # 【步骤2.9】使用StepFactory创建ErrorStep
+    error_step = StepFactory.create_error_step(
+        step=step_count,
+        error_type="unhandled_exception",
+        error_message=str(e),
+        recoverable=False
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(error_step)
+    
+    # yield Step字典
+    yield error_step.to_dict()
+    
+    self._on_after_loop()
+    return
+```
+
+
+## 15.1.3 步骤2.10：添加步骤历史管理
+
+### 15.1.3.1 步骤历史管理完整代码
+
+**设计思想**：
+- `self.steps`列表统一管理所有步骤历史
+- 每个步骤构建后立即append到列表
+- yield前先创建Step对象，保证数据一致性
+- 便于后续步骤查询、回溯、分析
+
+**修改1：__init__方法中初始化steps列表**
+
+```python
+# 位置：base_react.py 第36-44行
+# 修改前
+def __init__(self, max_steps: int = 100):
+    """初始化 BaseAgent"""
+    self.max_steps = max_steps
+    self.steps: List[Any] = []
+    self.conversation_history: List[Dict[str, str]] = []
+    self.status = AgentStatus.IDLE
+    self.llm_call_count = 0
+    self._lock = asyncio.Lock()
+
+# 修改后
+def __init__(self, max_steps: int = 100):
+    """初始化 BaseAgent"""
+    self.max_steps = max_steps
+    # 【步骤2.10】步骤历史管理：使用ReasoningStep类型
+    self.steps: List[ReasoningStep] = []
+    self.conversation_history: List[Dict[str, str]] = []
+    self.status = AgentStatus.IDLE
+    self.llm_call_count = 0
+    self._lock = asyncio.Lock()
+```
+
+**修改2：thought_only类型中添加步骤历史**
+
+```python
+# 位置：base_react.py 第216-231行
+# 修改后完整代码
+if parsed["type"] == "thought_only":
+    logger.info(f"[parse_react_response] 情况3: type=thought_only, 纯思考继续")
+    thought = parsed.get("thought", "")
+    
+    # 【步骤2.9】使用StepFactory创建ThoughtStep
+    thought_step = StepFactory.create_thought_step(
+        step=step_count,
+        content=thought_content,
+        tool_name="",  # 纯思考无工具
+        tool_params={},
+        thought=thought,
+        reasoning=parsed.get("reasoning", "")
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(thought_step)
+    
+    # yield Step字典
+    yield thought_step.to_dict()
+    
+    self.conversation_history.append({"role": "assistant", "content": response})
+    continue
+```
+
+**修改3：action类型thought中添加步骤历史**
+
+```python
+# 位置：base_react.py 第256-274行
+# 修改后完整代码
+# ===== 【步骤2.9】情况1：工具调用（Action）=====
+logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
+thought = parsed.get("thought", "")
+reasoning = parsed.get("reasoning", "")
+
+# 【步骤2.9】使用StepFactory创建ThoughtStep
+thought_step = StepFactory.create_thought_step(
+    step=step_count,
+    content=thought_content,
+    tool_name=tool_name,
+    tool_params=tool_params,
+    thought=thought,
+    reasoning=reasoning
+)
+
+# 【步骤2.10】记录步骤历史
+self.steps.append(thought_step)
+
+# yield Step字典
+yield thought_step.to_dict()
+
+# 将 LLM 的 thought 响应加入 conversation_history
+self.conversation_history.append({"role": "assistant", "content": response})
+```
+
+**修改4：action_tool成功中添加步骤历史**
+
+```python
+# 位置：base_react.py 第283-300行
+# 修改后完整代码
+# 【步骤2.9】使用StepFactory创建ActionToolStep
+action_step = StepFactory.create_action_tool_step(
+    step=step_count,
+    tool_name=tool_name,
+    tool_params=tool_params,
+    execution_result=execution_result,
+    execution_time_ms=execution_time_ms
+)
+
+# 【步骤2.10】记录步骤历史
+self.steps.append(action_step)
+
+# yield Step字典
+yield action_step.to_dict()
+```
+
+**修改5：action_tool警告中添加步骤历史**
+
+```python
+# 位置：base_react.py 第301-314行
+# 修改后完整代码
+elif exec_status == "warning":
+    # 【步骤2.9】工具执行警告（部分成功）- 使用StepFactory
+    execution_result_dict = {
+        "status": "warning",
+        "summary": execution_result.get("summary", "部分成功"),
+        "data": execution_result.get("data"),
+        "error": execution_result.get("summary", "部分成功"),
+        "retry_count": execution_result.get("retry_count", 0)
+    }
+    
+    # 【步骤2.9】使用StepFactory创建ActionToolStep
+    action_step = StepFactory.create_action_tool_step(
+        step=step_count,
+        tool_name=tool_name,
+        tool_params=tool_params,
+        execution_result=execution_result_dict,
+        execution_time_ms=execution_time_ms
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(action_step)
+    
+    # yield Step字典
+    yield action_step.to_dict()
+```
+
+**修改6：action_tool错误中添加步骤历史**
+
+```python
+# 位置：base_react.py 第315-328行
+# 修改后完整代码
+else:
+    # 【步骤2.9】error/timeout/permission_denied - 使用StepFactory
+    execution_result_dict = {
+        "status": exec_status,
+        "summary": execution_result.get("summary", "执行失败"),
+        "data": execution_result.get("data"),
+        "error": execution_result.get("summary", "执行失败"),
+        "retry_count": execution_result.get("retry_count", 0)
+    }
+    
+    # 【步骤2.9】使用StepFactory创建ActionToolStep
+    action_step = StepFactory.create_action_tool_step(
+        step=step_count,
+        tool_name=tool_name,
+        tool_params=tool_params,
+        execution_result=execution_result_dict,
+        execution_time_ms=execution_time_ms
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(action_step)
+    
+    # yield Step字典
+    yield action_step.to_dict()
+```
+
+**修改7：observation中添加步骤历史**
+
+```python
+# 位置：base_react.py 第383-393行
+# 修改后完整代码
+# 【步骤2.9】使用StepFactory创建ObservationStep
+observation_step = StepFactory.create_observation_step(
+    step=step_count,
+    tool_name=tool_name,
+    tool_params=tool_params,
+    execution_result=execution_result,
+    return_direct=execution_result.get("return_direct", False)
+)
+
+# 【步骤2.10】记录步骤历史
+self.steps.append(observation_step)
+
+# yield Step字典
+yield observation_step.to_dict()
+```
+
+**修改8：final中添加步骤历史**
+
+```python
+# 位置：base_react.py 第399-414行
+# 修改后完整代码
+if last_parsed_type in ["answer", "implicit"]:
+    # 【步骤2.9】使用StepFactory创建FinalStep
+    final_step = StepFactory.create_final_step(
+        step=step_count,
+        response=self.last_answer_response or thought_content,
+        thought=thought_content,
+        is_finished=True
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(final_step)
+    
+    # yield Step字典
+    yield final_step.to_dict()
+    
+    self._on_after_loop()
+    return
+```
+
+**修改9：error empty_response中添加步骤历史**
+
+```python
+# 位置：base_react.py 第416-425行
+# 修改后完整代码
+if last_error == "empty_response":
+    # 【步骤2.9】使用StepFactory创建ErrorStep
+    error_step = StepFactory.create_error_step(
+        step=step_count,
+        error_type="empty_response",
+        error_message="AI服务返回空响应",
+        recoverable=False
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(error_step)
+    
+    # yield Step字典
+    yield error_step.to_dict()
+    
+    self._on_after_loop()
+    return
+```
+
+**修改10：error parse_error中添加步骤历史**
+
+```python
+# 位置：base_react.py 第428-436行
+# 修改后完整代码
+if last_error == "parse_error":
+    # 【步骤2.9】使用StepFactory创建ErrorStep
+    error_step = StepFactory.create_error_step(
+        step=step_count,
+        error_type="parse_error",
+        error_message=f"解析失败（已重试{self.max_parse_retries}次）",
+        recoverable=False
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(error_step)
+    
+    # yield Step字典
+    yield error_step.to_dict()
+    
+    self._on_after_loop()
+    return
+```
+
+**修改11：error max_steps中添加步骤历史**
+
+```python
+# 位置：base_react.py 第439-447行
+# 修改后完整代码
+if step_count >= max_steps:
+    # 【步骤2.9】使用StepFactory创建ErrorStep
+    error_step = StepFactory.create_error_step(
+        step=step_count,
+        error_type="max_steps_exceeded",
+        error_message=f"已达到最大迭代次数 {max_steps}",
+        recoverable=False
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(error_step)
+    
+    # yield Step字典
+    yield error_step.to_dict()
+    
+    self._on_after_loop()
+    return
+```
+
+**修改12：exception中添加步骤历史**
+
+```python
+# 位置：base_react.py 第453-467行
+# 修改后完整代码
+except Exception as e:
+    # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
+    logger.error(f"Agent run_stream error: {e}", exc_info=True)
+    
+    # 【步骤2.9】使用StepFactory创建ErrorStep
+    error_step = StepFactory.create_error_step(
+        step=step_count,
+        error_type="unhandled_exception",
+        error_message=str(e),
+        recoverable=False
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(error_step)
+    
+    # yield Step字典
+    yield error_step.to_dict()
+    
+    self._on_after_loop()
+    return
+```
+
+### 15.1.3.2 conversation_history构建完整代码
+
+**设计思想**：
+- `conversation_history`列表存储LLM对话历史
+- 用于给LLM提供上下文
+- 包含system、user、assistant、observation消息
+- 需要在步骤构建时同步维护
+
+**修改13：run_stream初始化中添加conversation_history**
+
+```python
+# 位置：base_react.py 第142-161行
+# 修改后完整代码
+async def run_stream(
+    self,
+    task: str,
+    context: Optional[Dict[str, Any]] = None,
+    max_steps: int = 100
+) -> AsyncGenerator[Dict[str, Any], None]:
+    # 初始化状态
+    self.steps = []  # 【步骤2.10】步骤历史
+    self.conversation_history = []  # 【步骤2.10】对话历史
+    self.status = AgentStatus.THINKING
+    self.llm_call_count = 0
+    self.last_answer_response = ""  # 保存answer类型的真正答案
+    
+    # Hook: Session 初始化
+    self._on_session_init(task, context)
+    
+    # 获取 prompt
+    sys_prompt = self._get_system_prompt()
+    task_prompt = self._get_task_prompt(task, context)
+    
+    # Hook: 循环开始前
+    self._on_before_loop(sys_prompt, task_prompt)
+    
+    # 【步骤2.10】添加到对话历史（system + user）
+    self.conversation_history.append({"role": "system", "content": sys_prompt})
+    self.conversation_history.append({"role": "user", "content": task_prompt})
+```
+
+**修改14：thought_only中添加assistant消息**
+
+```python
+# 位置：base_react.py 第216-231行
+# 修改后完整代码
+if parsed["type"] == "thought_only":
+    logger.info(f"[parse_react_response] 情况3: type=thought_only, 纯思考继续")
+    thought = parsed.get("thought", "")
+    
+    # 【步骤2.9】使用StepFactory创建ThoughtStep
+    thought_step = StepFactory.create_thought_step(
+        step=step_count,
+        content=thought_content,
+        tool_name="",
+        tool_params={},
+        thought=thought,
+        reasoning=parsed.get("reasoning", "")
+    )
+    
+    # 【步骤2.10】记录步骤历史
+    self.steps.append(thought_step)
+    
+    # yield Step字典
+    yield thought_step.to_dict()
+    
+    # 【步骤2.10】将LLM响应加入conversation_history
+    self.conversation_history.append({"role": "assistant", "content": response})
+    continue
+```
+
+**修改15：action中添加assistant消息**
+
+```python
+# 位置：base_react.py 第256-274行
+# 修改后完整代码
+# ===== 【步骤2.9】情况1：工具调用（Action）=====
+logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
+thought = parsed.get("thought", "")
+reasoning = parsed.get("reasoning", "")
+
+# 【步骤2.9】使用StepFactory创建ThoughtStep
+thought_step = StepFactory.create_thought_step(
+    step=step_count,
+    content=thought_content,
+    tool_name=tool_name,
+    tool_params=tool_params,
+    thought=thought,
+    reasoning=reasoning
+)
+
+# 【步骤2.10】记录步骤历史
+self.steps.append(thought_step)
+
+# yield Step字典
+yield thought_step.to_dict()
+
+# 【步骤2.10】将LLM响应加入conversation_history
+self.conversation_history.append({"role": "assistant", "content": response})
+```
+
+**修改16：observation中添加用户消息**
+
+```python
+# 位置：base_react.py 第330-382行
+# 修改后完整代码
+# ========== Observation 阶段 ==========
+# 区分不同 execution_status 生成 observation_text（给 LLM 历史）
+exec_status = execution_result.get('status', 'unknown')
+
+if exec_status == 'success':
+    # 成功状态：显示完整信息，包括实际数据
+    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+    if execution_result.get('data'):
+        data = execution_result.get('data')
+        if isinstance(data, dict) and data.get('truncated'):
+            # 大目录截断：显示统计摘要
+            total = data.get('total', 0)
+            dir_count = data.get('dir_count', 0)
+            file_count = data.get('file_count', 0)
+            display_count = min(total, 200)
+            truncated_info = f"\n[目录包含 {total} 项: {dir_count} 目录, {file_count} 文件，显示前 {display_count} 项]"
+            observation_text += truncated_info
+            if data.get('entries'):
+                observation_text += f"\n实际数据: {data.get('entries')}"
+        else:
+            observation_text += f"\n实际数据: {data}"
+elif exec_status == 'warning':
+    # 警告状态：显示警告信息和部分数据
+    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+    if execution_result.get('data'):
+        observation_text += f"\n部分数据: {execution_result.get('data')}"
+else:
+    # 失败状态：只显示错误摘要，不显示数据
+    observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+
+# 生成 display_text（给前端 UI 显示）
+display_text = execution_result.get('summary', '')
+
+# 【步骤2.10】更新消息历史（_add_observation_to_history）
+logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
+self._add_observation_to_history(observation_text)
+
+# 记录观察结果到prompt日志
+prompt_logger = get_prompt_logger()
+prompt_logger.log_observation(
+    step_name="工具执行结果",
+    observation_content=observation_text,
+    tool_name=tool_name,
+    tool_params=tool_params
+)
+
+# 【步骤2.9】使用StepFactory创建ObservationStep
+observation_step = StepFactory.create_observation_step(
+    step=step_count,
+    tool_name=tool_name,
+    tool_params=tool_params,
+    execution_result=execution_result,
+    return_direct=execution_result.get("return_direct", False)
+)
+
+# 【步骤2.10】记录步骤历史
+self.steps.append(observation_step)
+
+# yield Step字典
+yield observation_step.to_dict()
+
+# 【步骤2.10】裁剪历史（保持对话长度控制）
+self._trim_history()
+```
+
+**修改17：parse_error中添加observation提示**
+
+```python
+# 位置：base_react.py 第233-254行
+# 修改后完整代码
+if is_parse_error:
+    logger.info(f"[parse_react_response] 情况4: 解析错误, 重试次数={self.parse_retry_count}")
+    
+    # 【步骤2.10】保存原始response到conversation_history
+    self.conversation_history.append({"role": "assistant", "content": response})
+    
+    # 【步骤2.10】添加错误提示到历史，让LLM重新尝试
+    error_content = parsed.get("content", "Parse error")
+    self._add_observation_to_history(f"{error_content}. Please respond with valid JSON format.")
+    
+    # 重试计数器+1
+    self.parse_retry_count += 1
+    
+    # 重试次数 >= 3？退出循环；否则继续循环
+    if self.parse_retry_count >= self.max_parse_retries:
+        last_error = "parse_error"
+        break
+    continue
+```
+
+**修改18：添加_add_observation_to_history方法**
+
+```python
+# 位置：base_react.py 新增方法（约第527-529行区域）
+# 修改后完整代码
+# 【步骤2.10】添加观察结果到对话历史
+def _add_observation_to_history(self, observation: str) -> None:
+    """添加观察结果到对话历史"""
+    self.conversation_history.append({"role": "user", "content": observation})
+    self._trim_history()
+```
+
+**修改19：添加_trim_history方法**
+
+```python
+# 位置：base_react.py 新增方法（约第471-523行区域）
+# 修改后完整代码
+# 【步骤2.10】对话历史管理
+MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话（每轮 = thought + observation）
+
+def _trim_history(self) -> None:
+    """
+    分层保留对话历史
+    - 保留 system message
+    - 保留用户消息
+    - 保留所有 observation 消息（工具执行结果）
+    - 保留最近5条消息
+    """
+    if len(self.conversation_history) <= 2:
+        return  # 少于 system + user，不需要裁剪
+    
+    # 不需要裁剪
+    if len(self.conversation_history) <= 15:
+        return
+    
+    # 保留 system message
+    system_msg = self.conversation_history[0]
+    
+    # 保留最近5条消息（最新工具调用上下文）
+    recent = self.conversation_history[-5:]
+    
+    # 保留重要消息（用户需求、工具调用结果等）
+    important = []
+    for msg in self.conversation_history[1:-5]:
+        content = msg.get("content", "")
+        role = msg.get("role", "")
+        
+        # 保留条件：
+        # 1. 用户消息（任务需求）
+        # 2. observation 消息（工具执行结果，以 "Observation:" 开头）
+        if role == "user" or content.startswith("Observation:"):
+            important.append(msg)
+    
+    # 如果重要消息太多，只保留最新的10条
+    if len(important) > 10:
+        important = important[-10:]
+    
+    # 重建对话历史：system + user + important + recent
+    self.conversation_history = [system_msg] + important + recent
+    
+    logger.info(f"[History] Trimmed from {len(self.conversation_history) + 5} to {len(self.conversation_history)} messages (important={len(important)}, recent={len(recent)})")
+```
+
+
+## 15.1.3.3 self.steps和conversation_history对比
+
+| 列表 | 用途 | 内容 | 使用场景 |
+|------|------|------|---------|
+| `self.steps` | 步骤历史 | ReasoningStep对象列表 | 前端SSE、调试、分析 |
+| `self.conversation_history` | 对话历史 | 消息字典列表 | LLM输入、上下文 |
+
+**两者的关系**：
+- `self.steps`：记录所有步骤的详细信息，用于前端展示
+- `self.conversation_history`：记录LLM对话历史，用于下一轮LLM调用
+- 每次yield前，先append到steps，再yield
+- observation阶段，先调用`_add_observation_to_history`加入历史，再yield
+
+
+## 15.1.4 步骤2.11：清理旧字典构建代码
+
+### 15.1.4.1 删除废弃导入
+
+**修改前**（第24行）：
+```python
+from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
+```
+
+**修改后**：
+```python
+# 【步骤2.11】已废弃以下函数，改用StepFactory：
+# - create_tool_error_result
+# - create_session_error_result
+# - create_error_from_exception
+# 这些函数的逻辑已整合到StepFactory.create_action_tool_step()和create_error_step()
+```
+
+### 15.1.4.2 清理废弃函数调用
+
+**清理清单**：
+
+| 废弃函数 | 位置 | 替代方案 |
+|---------|------|---------|
+| `create_tool_error_result()` | 第303-314行 | `StepFactory.create_action_tool_step()` |
+| `create_tool_error_result()` | 第317-328行 | `StepFactory.create_action_tool_step()` |
+| `create_session_error_result()` | 第417-425行 | `StepFactory.create_error_step()` |
+| `create_session_error_result()` | 第428-436行 | `StepFactory.create_error_step()` |
+| `create_session_error_result()` | 第439-447行 | `StepFactory.create_error_step()` |
+| `create_error_from_exception()` | 第458-463行 | `StepFactory.create_error_step()` |
+
+### 15.1.4.3 清理后完整import区域
+
+```python
+# -*- coding: utf-8 -*-
+"""
+Agent 核心基类
+
+定义 ReAct 循环的核心逻辑，供所有 Agent 实现类继承。
+
+【重构 2026-04-17】：
+- 步骤2.9：所有yield改为StepFactory调用
+- 步骤2.10：添加步骤历史管理self.steps
+- 步骤2.11：清理废弃的create_*_result函数
+
+Author: 小沈 - 2026-03-25
+Updated: 小沈 - 2026-04-17
+"""
+
+import asyncio
+import time
+from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Optional, AsyncGenerator
+
+from app.services.agent.types import AgentStatus
+from app.services.agent.react_output_parser import parse_react_response
+from app.services.agent.reasoning_steps import (
+    StepFactory,
+    ReasoningStep,
+    ThoughtStep,
+    ActionToolStep,
+    ObservationStep,
+    FinalStep,
+    ErrorStep,
+)
+from app.utils.logger import logger
+from app.chat_stream.chat_helpers import create_timestamp
+from app.utils.prompt_logger import get_prompt_logger
+
+# 【步骤2.11】已废弃以下导入，改用StepFactory：
+# from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
+```
+
+
+## 15.1.5 步骤2.9-2.11详细修改对照表（15.2步骤2.9-2.11的展开）
+
+> **说明**：本表是15.2章节中步骤2.9-2.11的**展开细化**，详细列出每个修改点的位置和内容。
+
+| 步骤 | 任务 | 修改类型 | 修改位置 | 核心修改 |
+|------|------|---------|---------|---------|
+| **2.9** | 改造步骤构建代码 | 新增导入 | 第20-26行 | 添加StepFactory和相关Step类导入 |
+| **2.9** | 改造步骤构建代码 | 修改yield | 第216-231行 | thought_only类型使用StepFactory |
+| **2.9** | 改造步骤构建代码 | 修改yield | 第256-274行 | action thought使用StepFactory |
+| **2.9** | 改造步骤构建代码 | 修改yield | 第283-300行 | action success使用StepFactory |
+| **2.9** | 改造步骤构建代码 | 修改yield | 第301-314行 | action warning使用StepFactory |
+| **2.9** | 改造步骤构建代码 | 修改yield | 第315-328行 | action error使用StepFactory |
+| **2.9** | 改造步骤构建代码 | 修改yield | 第383-393行 | observation使用StepFactory |
+| **2.9** | 改造步骤构建代码 | 修改yield | 第399-414行 | final使用StepFactory |
+| **2.9** | 改造步骤构建代码 | 修改yield | 第416-447行 | 3种error使用StepFactory |
+| **2.9** | 改造步骤构建代码 | 修改yield | 第453-467行 | exception使用StepFactory |
+| **2.10** | 添加步骤历史管理 | 修改类型 | 第40行 | `List[Any]` → `List[ReasoningStep]` |
+| **2.10** | 添加步骤历史管理 | 新增append | 所有yield前 | `self.steps.append(step)` |
+| **2.11** | 清理旧字典构建代码 | 删除导入 | 第24行 | 注释废弃的error_handler导入 |
+| **2.11** | 清理旧字典构建代码 | 删除函数调用 | 第303-328行 | 删除create_tool_error_result调用 |
+| **2.11** | 清理旧字典构建代码 | 删除函数调用 | 第417-447行 | 删除create_session_error_result调用 |
+| **2.11** | 清理旧字典构建代码 | 删除函数调用 | 第458-463行 | 删除create_error_from_exception调用 |
+
+
+## 15.1.6 改造后的完整run_stream方法结构
+
+```python
+async def run_stream(
+    self,
+    task: str,
+    context: Optional[Dict[str, Any]] = None,
+    max_steps: int = 100
+) -> AsyncGenerator[Dict[str, Any], None]:
+    """ReAct 核心循环"""
+    # 【步骤2.10】初始化步骤历史
+    self.steps: List[ReasoningStep] = []
+    self.conversation_history = []
+    self.status = AgentStatus.THINKING
+    self.llm_call_count = 0
+    self.last_answer_response = ""
+    
+    # ... 初始化代码 ...
+    
+    try:
+        while True:
+            # ... LLM调用和解析 ...
+            
+            # 【步骤2.9】thought_only类型
+            if parsed["type"] == "thought_only":
+                thought_step = StepFactory.create_thought_step(...)
+                self.steps.append(thought_step)  # 【步骤2.10】
+                yield thought_step.to_dict()
+                continue
+            
+            # 【步骤2.9】action类型
+            # ... thought yield ...
+            thought_step = StepFactory.create_thought_step(...)
+            self.steps.append(thought_step)  # 【步骤2.10】
+            yield thought_step.to_dict()
+            
+            # ... action yield ...
+            action_step = StepFactory.create_action_tool_step(...)
+            self.steps.append(action_step)  # 【步骤2.10】
+            yield action_step.to_dict()
+            
+            # 【步骤2.9】observation yield
+            observation_step = StepFactory.create_observation_step(...)
+            self.steps.append(observation_step)  # 【步骤2.10】
+            yield observation_step.to_dict()
+    
+    # 【步骤2.9】循环外统一退出处理
+    # 【步骤2.11】全部使用StepFactory.create_error_step()
+    if last_parsed_type in ["answer", "implicit"]:
+        final_step = StepFactory.create_final_step(...)
+        self.steps.append(final_step)  # 【步骤2.10】
+        yield final_step.to_dict()
+        return
+    
+    if last_error == "empty_response":
+        error_step = StepFactory.create_error_step(...)
+        self.steps.append(error_step)  # 【步骤2.10】
+        yield error_step.to_dict()
+        return
+    
+    # ... 其他错误处理 ...
+    
+    except Exception as e:
+        error_step = StepFactory.create_error_step(...)
+        self.steps.append(error_step)  # 【步骤2.10】
+        yield error_step.to_dict()
+        return
+```
+
 ---
 
 ### 15.2 维度二：step封装处理详细实施步骤
 
 > 实施依据：主文档13.2.2.3节（步骤2.1-2.11）
+
+#### 15.2.0 核心概念：self.steps 与 conversation_history 的区别
+
+**这是理解步骤2.9、2.10的关键，必须搞清楚！**
+
+##### 15.2.0.1 两个列表的本质区别
+
+| 属性 | `self.steps` | `self.conversation_history` |
+|------|---------------|---------------------------|
+| **类型** | `List[ReasoningStep]` | `List[Dict]` |
+| **用途** | **前端SSE展示** | **给LLM提供上下文** |
+| **内容** | Step对象（类实例） | 消息字典 |
+| **role字段** | 无 | system/user/assistant |
+| **数据格式** | `step.to_dict()` | `{"role": "xxx", "content": "xxx"}` |
+
+##### 15.2.0.2 数据流向图
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        run_stream() 循环                            │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+                    ┌───────────────────────────────────┐
+                    │  1. 调用 LLM                      │
+                    │     ↓                             │
+                    │  2. parse_react_response()       │
+                    │     ↓                             │
+                    │  3. 根据类型分支处理                │
+                    └───────────────────────────────────┘
+                                    │
+        ┌───────────────────────────┼───────────────────────────┐
+        │                           │                           │
+        ▼                           ▼                           ▼
+┌───────────────┐       ┌───────────────────┐       ┌───────────────────┐
+│ thought_only  │       │ action 类型        │       │ answer 类型       │
+│   纯思考       │       │   工具调用         │       │   正常完成        │
+└───────────────┘       └───────────────────┘       └───────────────────┘
+        │                       │                           │
+        ▼                       ▼                           ▼
+┌───────────────┐       ┌───────────────────┐       ┌───────────────────┐
+│  yield        │       │ yield thought      │       │ yield final        │
+│  thought       │       │ yield action_tool │       │                   │
+│                │       │ yield observation  │       │                   │
+└───────────────┘       └───────────────────┘       └───────────────────┘
+        │                       │                           │
+        │              ┌────────┴────────┐                  │
+        │              │                 │                  │
+        ▼              ▼                 ▼                  ▼
+┌─────────────────┐   ┌─────────────┐   ┌─────────────────┐
+│ self.steps      │   │ self.steps  │   │ self.steps      │
+│ append(thought) │   │ append(x3)  │   │ append(final)   │
+│                 │   │ thought/    │   │                 │
+│ 用于：前端展示    │   │ action/obs  │   │ 用于：前端展示   │
+└─────────────────┘   └─────────────┘   └─────────────────┘
+        │                       │                           │
+        ▼                       ▼                           ▼
+┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐
+│ conversation    │   │ conversation     │   │ (结束，不加)    │
+│ .append({      │   │ .append({       │   │                 │
+│   role: asst   │   │   role: asst    │   │                 │
+│   content: resp │   │   content: resp │   │                 │
+│ })              │   │ })              │   │                 │
+│                 │   │ .append({      │   │                 │
+│ 用于：LLM上下文  │   │   role: user   │   │ 用于：LLM上下文  │
+│                 │   │   content: obs  │   │                 │
+└─────────────────┘   │ })              │   └─────────────────┘
+                        └─────────────────┘
+```
+
+##### 15.2.0.3 具体数据示例
+
+**self.steps** 添加的内容（yield给前端）：
+```python
+# Step对象 → to_dict() → 前端SSE
+ThoughtStep(step=1, content="思考内容", tool_name="read_file")
+# yield {"type": "thought", "step": 1, "content": "思考内容", "tool_name": "read_file", ...}
+```
+
+**conversation_history** 添加的内容（给LLM）：
+```python
+# 消息字典 → LLM上下文
+{"role": "assistant", "content": "原始LLM响应（包含thought/action JSON）"}
+{"role": "user", "content": "Observation: success - 文件读取完成\n实际数据: ..."}
+```
+
+##### 15.2.0.4 代码执行顺序
+
+```python
+# action类型的完整处理流程：
+# 1. yield thought → self.steps.append(thought_step) → yield thought_step.to_dict()
+# 2. 执行工具 → execution_result
+# 3. yield action_tool → self.steps.append(action_step) → yield action_step.to_dict()
+# 4. 生成 observation_text
+# 5. conversation_history.append({"role": "assistant", "content": response})
+# 6. conversation_history.append({"role": "user", "content": observation_text})
+# 7. yield observation → self.steps.append(observation_step) → yield observation_step.to_dict()
+```
+
+##### 15.2.0.5 一句话总结
+
+- **`self.steps`** = **前端展示**，记录每个步骤的详细信息
+- **`self.conversation_history`** = **LLM记忆**，让LLM知道"之前发生了什么"
 
 #### 实施步骤
 
@@ -3072,15 +4495,41 @@ __all__ = [
 
 ### 15.3 与Phase 1（输出解析器）的关系
 
-| 维度 | 文件 | 功能 | 实施顺序 |
+| 维度 | 文件 | 功能 | 实施状态 |
 |------|------|------|---------|
-| **Phase 1** | react_output_parser.py | 输出解析器（文本→结构化数据） | 先执行 |
-| **Phase 2** | reasoning_steps.py | Step封装（字典→类） | 后执行 |
+| **Phase 1** | react_output_parser.py | 输出解析器（文本→结构化数据） | ✅ **已实施** |
+| **Phase 2** | reasoning_steps.py | Step封装（字典→类） | 🔄 **待实施（本章内容）** |
 
 **两者关系**：
 - Phase 1的parse_react_response()返回字典
 - Phase 2的StepFactory将字典转换为Step类
 - 组合使用：parsed = parse_react_response(response) → step = StepFactory.create_xxx_step(...parsed...)
+
+**现有代码vs Step封装后的代码对比**：
+
+```python
+# ========== 现有代码（已实施 Phase 1）==========
+# base_react.py 当前实现
+parsed = parse_react_response(response)  # Phase 1: 文本→字典
+yield parsed  # 直接yield字典给前端
+
+# ========== Step封装后（待实施 Phase 2）==========
+# base_react.py Step封装后实现
+parsed = parse_react_response(response)  # Phase 1: 文本→字典（已实施）
+step = StepFactory.create_xxx_step(      # Phase 2: 字典→类（待实施）
+    step=step_count,
+    content=parsed.get("content", ""),
+    tool_name=parsed.get("tool_name", ""),
+    ...
+)
+self.steps.append(step)                  # 记录步骤历史
+yield step.to_dict()                     # yield字典给前端
+```
+
+**总结**：
+- Phase 1（统一解析器）已完成，用于解析LLM输出
+- Phase 2（Step封装）是增强升级，用于规范化步骤构建
+- Phase 2依赖Phase 1，需要先实施Phase 1
 
 
 ### 15.4 Step封装对conversation_history的影响分析
@@ -3088,10 +4537,11 @@ __all__ = [
 > 分析时间：2026-04-15
 > 分析人：小沈
 
-#### 15.4.1 Step封装的流程
+#### 15.4.1 Step封装的完整流程
 
 ```
-LLM响应(response原始文本)
+LLM返回原始文本
+response = await self._get_llm_response()
        ↓
 parse_react_response() 解析 → dict
        ↓
@@ -3101,7 +4551,8 @@ self.steps.append(step) → 存入steps列表（Step类对象）
        ↓
 yield step.to_dict() → 转换为dict给前端
        ↓
-conversation_history存储原始文本response（保持不变）
+【关键】原始response加入conversation_history（保持不变）
+self.conversation_history.append({"role": "assistant", "content": response})
 ```
 
 #### 15.4.2 关键区别
@@ -3140,51 +4591,61 @@ conversation_history存储原始文本response（保持不变）
 ### 15.5 Step封装对yield给前端的影响分析
 
 > 分析时间：2026-04-15
+> 更新：2026-04-17
 > 分析人：小沈
 
 #### 15.5.1 现有系统yield位置（base_react.py）
 
-| 步骤类型 | yield内容 | 代码位置 |
-|----------|---------|----------|
-| thought | `yield {dict直接构造}` | base_react.py:234-243行 |
-| action_tool(错误) | `yield action_tool_result` | base_react.py:266行 |
-| action_tool(成功) | `yield {dict直接构造}` | base_react.py:269-279行 |
-| observation | `yield {dict直接构造}` | base_react.py:302-308行 |
-| final | `yield {dict直接构造}` | base_react.py:316-320行 |
-| error | `yield error_response` | base_react.py:331/342行 |
+| 步骤类型 | yield内容 | 描述性位置 |
+|----------|---------|------------|
+| thought | `yield {dict直接构造}` | thought_only分支yield |
+| thought | `yield {dict直接构造}` | action分支的thought yield |
+| action_tool(成功) | `yield {dict直接构造}` | action成功yield |
+| action_tool(警告) | `yield action_tool_result` | action警告yield |
+| action_tool(错误) | `yield action_tool_result` | action错误yield |
+| observation | `yield {dict直接构造}` | observation yield |
+| final | `yield {dict直接构造}` | final yield（answer/implicit退出时） |
+| error | `yield error_response` | error yield（各种错误退出时） |
 
 #### 15.5.2 Step封装后的变化
-
-**位置变化**：
-
-| 步骤类型 | 现有位置 | Step封装后 | 变化 |
-|----------|----------|-----------|------|
-| thought | 第234行 | 第234行 | **位置不变** |
-| action_tool | 第266/269行 | 第266/269行 | **位置不变** |
-| observation | 第302行 | 第302行 | **位置不变** |
-| final | 第316行 | 第316行 | **位置不变** |
-| error | 第331/342行 | 第331/342行 | **位置不变** |
 
 **内容变化**：
 
 | 步骤类型 | 现有方式 | Step封装后 |
 |----------|---------|-----------|
-| thought | `yield {dict直接构造}` | `step = StepFactory.create_thought_step(...); yield step.to_dict()` |
-| action_tool | `yield {dict直接构造}` | `step = StepFactory.create_action_tool_step(...); yield step.to_dict()` |
-| observation | `yield {dict直接构造}` | `step = StepFactory.create_observation_step(...); yield step.to_dict()` |
-| final | `yield {dict直接构造}` | `step = StepFactory.create_final_step(...); yield step.to_dict()` |
-| error | `yield error_response` | `step = StepFactory.create_error_step(...); yield step.to_dict()` |
+| thought | `yield {dict直接构造}` | `step = StepFactory.create_thought_step(...); self.steps.append(step); yield step.to_dict()` |
+| action_tool | `yield {dict直接构造}` 或 `yield action_tool_result` | `step = StepFactory.create_action_tool_step(...); self.steps.append(step); yield step.to_dict()` |
+| observation | `yield {dict直接构造}` | `step = StepFactory.create_observation_step(...); self.steps.append(step); yield step.to_dict()` |
+| final | `yield {dict直接构造}` | `step = StepFactory.create_final_step(...); self.steps.append(step); yield step.to_dict()` |
+| error | `yield error_response` | `step = StepFactory.create_error_step(...); self.steps.append(step); yield step.to_dict()` |
 
-#### 15.5.3 影响结论
+**核心变化**：代码组织方式变了，内部多了两步：
+1. `step = StepFactory.create_xxx_step(...)` 创建Step对象
+2. `self.steps.append(step)` 记录步骤历史
+
+#### 15.5.3 不同类型的yield次数
+
+| 退出类型 | yield次数 | yield内容 |
+|----------|----------|-----------|
+| **action类型**（工具调用） | **3次** | thought → action_tool → observation |
+| **thought_only类型**（纯思考） | **1次** | thought |
+| **answer/implicit类型**（正常完成） | **1次** | final |
+| **错误退出**（parse_error/empty_response/max_steps） | **1次** | error |
+
+#### 15.5.4 影响结论
 
 | 影响项 | 分析结果 |
 |--------|----------|
-| **yield位置** | ✅ 不变，仍然在原代码行 |
-| **yield次数** | ✅ 不变，每轮仍然yield 3次（thought→action_tool→observation） |
+| **yield位置** | ✅ 不变，仍然在各分支原位置yield |
+| **yield次数** | ✅ 不变，各类型保持原有yield次数 |
 | **yield内容** | 变化：从直接构造dict → 调用step.to_dict() |
-| **数据结构** | 不变：yield输出的仍然是dict格式 |
+| **yield输出格式** | ✅ 不变：yield输出的仍然是dict格式 |
+| **新增操作** | `self.steps.append(step)` 记录步骤历史 |
 
-**核心影响**：位置不变，但代码组织方式变了（使用StepFactory+to_dict()）。
+**核心影响**：
+- **外部行为不变**：yield输出的dict格式保持不变
+- **内部变化**：代码组织方式变化，使用StepFactory+to_dict()
+- **新增功能**：self.steps记录步骤历史
 
 ---
 

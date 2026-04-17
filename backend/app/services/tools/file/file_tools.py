@@ -48,6 +48,7 @@ from app.services.tools.file.file_schema import (
     MoveFileInput,
     SearchFileContentInput,
     SearchFilesByNameInput,
+    SearchFilesInput,
     GenerateReportInput,
 )
 
@@ -1177,9 +1178,11 @@ class FileTools:
     )
     async def search_files(
         self,
-        file_pattern: str,
+        file_pattern: Optional[str] = None,
         path: str = ".",
         recursive: bool = True,
+        # 兼容旧调用参数：pattern -> file_pattern
+        pattern: Optional[str] = None,
         # 【修改 max_depth 默认值 10→100000】
         # 原因：小沈之前的知识浅薄，错误的要求给工具设置数量限制
         # 现在导致了工具执行错误，反馈的结果隐藏了真实的数据
@@ -1197,9 +1200,14 @@ class FileTools:
         # 如果工具有问题应该修工具代码，而不是用限制来掩盖问题
         # 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
         # 【修改】用 page_token 替换 after，统一使用位置编码分页
-        page_token: Optional[str] = None
+        page_token: Optional[str] = None,
+        # 兼容旧调用参数：已废弃，仅保留入参避免报错
+        max_results: Optional[int] = None,
     ) -> Dict[str, Any]:
         """搜索文件名（按文件名匹配）"""
+        if not file_pattern:
+            file_pattern = pattern
+
         # 验证搜索路径
         is_valid, error_msg = self._validate_path(path)
         if not is_valid:

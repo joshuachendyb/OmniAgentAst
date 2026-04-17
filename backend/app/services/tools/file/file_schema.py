@@ -160,6 +160,30 @@ class SearchFilesByNameInput(BaseModel):
     )
 
 
+class SearchFilesInput(BaseModel):
+    """兼容旧测试：历史搜索参数模型。"""
+    pattern: str = Field(
+        description="搜索关键字"
+    )
+    path: str = Field(
+        default=".",
+        description="搜索起始目录"
+    )
+    file_pattern: str = Field(
+        default="*",
+        description="文件名匹配模式"
+    )
+    use_regex: bool = Field(
+        default=False,
+        description="是否按正则表达式搜索"
+    )
+    max_results: int = Field(
+        default=1000,
+        ge=1,
+        description="最大返回数量（兼容字段）"
+    )
+
+
 class GenerateReportInput(BaseModel):
     """generate_report 工具的输入参数"""
     output_dir: Optional[str] = Field(
@@ -176,5 +200,6 @@ __all__ = [
     "MoveFileInput",
     "SearchFileContentInput",
     "SearchFilesByNameInput",
+    "SearchFilesInput",
     "GenerateReportInput",
 ]
