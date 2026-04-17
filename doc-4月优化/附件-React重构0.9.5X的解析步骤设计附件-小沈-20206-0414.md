@@ -2054,9 +2054,10 @@ grep -rn "self.parser\|ToolParser" backend/app/services/agent/ --include="*.py"
 - [x] 基于type字段判断逻辑正确（第207行）- 小沈-2026-04-17
 - [x] 解析错误检查逻辑正确（第232行）- 小沈-2026-04-17
 
-**检查点**：
-- [ ] 确认所有self.parser引用已处理
-- [ ] 确认llm_strategies.py中的调用是否需要修改
+**14.7.7步骤7检查点**：- [x] 确认所有self.parser引用已处理（base_react.py第46-47行已移除）- 小沈-2026-04-17
+- [x] llm_strategies.py中的调用评估（TextStrategy的fallback，不冲突）- 小沈-2026-04-17
+- [x] tool_parser.py保留（旧解析器，兼容层）- 小沈-2026-04-17
+- [x] react_output_parser.py兼容层确认（第635-645行）- 小沈-2026-04-17
 
 ---
 
