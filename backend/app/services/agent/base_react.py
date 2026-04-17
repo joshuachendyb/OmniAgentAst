@@ -19,9 +19,17 @@ from typing import Any, Dict, List, Optional, AsyncGenerator
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.react_output_parser import parse_react_response
+from app.services.agent.reasoning_steps import (
+    StepFactory,
+    ReasoningStep,
+    ThoughtStep,
+    ActionToolStep,
+    ObservationStep,
+    FinalStep,
+    ErrorStep,
+)
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
-from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
 from app.utils.prompt_logger import get_prompt_logger
 
 
@@ -37,7 +45,8 @@ class BaseAgent(ABC):
         """初始化 BaseAgent"""
         self.max_steps = max_steps
         
-        self.steps: List[Any] = []
+        # 【步骤2.10】步骤历史管理：使用ReasoningStep类型
+        self.steps: List[ReasoningStep] = []
         self.conversation_history: List[Dict[str, str]] = []
         self.status = AgentStatus.IDLE
         self.llm_call_count = 0
@@ -215,18 +224,24 @@ class BaseAgent(ABC):
                 # 【新增】thought_only类型：纯思考分支，继续下一轮循环
                 if parsed["type"] == "thought_only":
                     logger.info(f"[parse_react_response] 情况3: type=thought_only, 纯思考继续")
-                    current_time = create_timestamp()
                     thought = parsed.get("thought", "")
-                    yield {
-                        "type": "thought",
-                        "step": step_count,
-                        "timestamp": current_time,
-                        "content": thought_content,
-                        "thought": thought,
-                        "reasoning": parsed.get("reasoning", ""),
-                        "tool_name": None,
-                        "tool_params": None
-                    }
+                    
+                    # 【步骤2.9】使用StepFactory创建ThoughtStep
+                    thought_step = StepFactory.create_thought_step(
+                        step=step_count,
+                        content=thought_content,
+                        tool_name="",
+                        tool_params={},
+                        thought=thought,
+                        reasoning=parsed.get("reasoning", "")
+                    )
+                    
+                    # 【步骤2.10】记录步骤历史
+                    self.steps.append(thought_step)
+                    
+                    # yield Step字典
+                    yield thought_step.to_dict()
+                    
                     self.conversation_history.append({"role": "assistant", "content": response})
                     continue  # 继续下一轮循环
                 
@@ -253,22 +268,27 @@ class BaseAgent(ABC):
                         break  # 重试次数用尽，退出循环
                     continue  # 继续循环，让LLM重新尝试
                 
-                # ===== 情况1：工具调用（Action）=====
+                # ===== 【步骤2.9】情况1：工具调用（Action）=====
                 logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
-                current_time = create_timestamp()
                 # 获取thought和reasoning字段
                 thought = parsed.get("thought", "")
                 reasoning = parsed.get("reasoning", "")
-                yield {
-                    "type": "thought",
-                    "step": step_count,
-                    "timestamp": current_time,
-                    "content": thought_content,
-                    "thought": thought,
-                    "reasoning": reasoning,
-                    "tool_name": tool_name,
-                    "tool_params": tool_params
-                }
+
+                # 【步骤2.9】使用StepFactory创建ThoughtStep
+                thought_step = StepFactory.create_thought_step(
+                    step=step_count,
+                    content=thought_content,
+                    tool_name=tool_name,
+                    tool_params=tool_params,
+                    thought=thought,
+                    reasoning=reasoning
+                )
+
+                # 【步骤2.10】记录步骤历史
+                self.steps.append(thought_step)
+
+                # yield Step字典
+                yield thought_step.to_dict()
                 
                 # 将 LLM 的 thought 响应加入 conversation_history
                 self.conversation_history.append({"role": "assistant", "content": response})
@@ -280,52 +300,31 @@ class BaseAgent(ABC):
                 execution_result = await self._execute_tool(tool_name, tool_params)
                 execution_time_ms = int((time.perf_counter() - start_time) * 1000)
                 
-                # 根据执行结果构建 action_tool
-                exec_status = execution_result.get("status", "success")
+                # 【步骤2.9】根据执行结果构建 action_tool
                 
-                if exec_status == "success":
-                    # 工具执行成功 - 按15.7.1要求修改字段
-                    yield {
-                        "type": "action_tool",
-                        "step": step_count,
-                        "timestamp": current_time,
-                        "tool_name": tool_name,
-                        "tool_params": tool_params,
-                        "execution_status": "success",
-                        "summary": execution_result.get("summary", ""),
-                        "execution_result": execution_result.get("data"),
-                        "error_message": "",
-                        "execution_time_ms": execution_time_ms,
-                        "action_retry_count": 0
-                    }
-                elif exec_status == "warning":
-                    # 工具执行警告（部分成功）- 使用 create_tool_error_result 传递 warning 状态
-                    action_tool_result = create_tool_error_result(
-                        tool_name=tool_name,
-                        error_message=execution_result.get("summary", "部分成功"),
-                        step_num=step_count,
-                        tool_params=tool_params,
-                        retry_count=execution_result.get("retry_count", 0),
-                        raw_data=execution_result.get("data"),
-                        timestamp=current_time,
-                        status="warning",  # 传递 warning 状态
-                        execution_time_ms=execution_time_ms  # 传入实际耗时
-                    )
-                    yield action_tool_result
-                else:
-                    # error/timeout/permission_denied - 统一使用 create_tool_error_result
-                    action_tool_result = create_tool_error_result(
-                        tool_name=tool_name,
-                        error_message=execution_result.get("summary", "执行失败"),
-                        step_num=step_count,
-                        tool_params=tool_params,
-                        retry_count=execution_result.get("retry_count", 0),
-                        raw_data=execution_result.get("data"),
-                        timestamp=current_time,
-                        status=exec_status,  # 传递实际的 execution_status
-                        execution_time_ms=execution_time_ms  # 传入实际耗时
-                    )
-                    yield action_tool_result
+                # 【步骤2.9】统一执行结果字典格式（供StepFactory使用）
+                execution_result_dict = {
+                    "status": execution_result.get("status", "success"),
+                    "summary": execution_result.get("summary", ""),
+                    "data": execution_result.get("data"),
+                    "error": "",
+                    "retry_count": 0
+                }
+
+                # 【步骤2.9】使用StepFactory创建ActionToolStep
+                action_step = StepFactory.create_action_tool_step(
+                    step=step_count,
+                    tool_name=tool_name,
+                    tool_params=tool_params,
+                    execution_result=execution_result_dict,
+                    execution_time_ms=execution_time_ms
+                )
+
+                # 【步骤2.10】记录步骤历史
+                self.steps.append(action_step)
+
+                # yield Step字典
+                yield action_step.to_dict()
                 
                 # ========== Observation 阶段 ==========
                 # 区分不同 execution_status 生成 observation_text（给 LLM 历史）
@@ -380,69 +379,100 @@ class BaseAgent(ABC):
                     tool_params=tool_params
                 )
                 
-                # yield observation - 【小沈修复 2026-04-16】使用 display_text 给前端
-                # 【修复 2026-04-16】移除 execution_status（工具执行状态在 action_tool 中已显示）
-                yield {
-                    "type": "observation",
-                    "step": step_count,
-                    "timestamp": create_timestamp(),
-                    "tool_name": tool_name,
-                    "tool_params": tool_params,
-                    "observation": display_text,  # 前端显示用精简摘要
-                    "return_direct": execution_result.get("return_direct", False),
-                }
+                # ===== 【步骤2.9】yield observation =====
+
+                # 【步骤2.9】使用StepFactory创建ObservationStep
+                observation_step = StepFactory.create_observation_step(
+                    step=step_count,
+                    tool_name=tool_name,
+                    tool_params=tool_params,
+                    execution_result=execution_result,
+                    return_direct=execution_result.get("return_direct", False)
+                )
+
+                # 【步骤2.10】记录步骤历史
+                self.steps.append(observation_step)
+
+                # yield Step字典
+                yield observation_step.to_dict()
 
                 self._trim_history()
         
             # ===== 循环外：统一处理退出场景 =====
             
-            # 场景5：正常完成（answer/implicit类型）
-            # 【修复 2026-04-16 小沈】使用 last_parsed_type 替代 last_response 判断
-            # 原因：last_response 是字符串，判断语义不清晰；用类型字段更明确
+            # ===== 【步骤2.9】场景5：正常完成（answer/implicit类型）=====
             if last_parsed_type in ["answer", "implicit"]:
-                yield {
-                    "type": "final",
-                    "step": step_count,  # 新增字段
-                    "timestamp": create_timestamp(),
-                    "response": self.last_answer_response or thought_content,
-                    "is_finished": True,  # 新增字段
-                    "thought": thought_content,  # 新增字段
-                    "is_streaming": False,  # 新增字段
-                    "is_reasoning": False,  # 新增字段
-                }
+                # 【步骤2.9】使用StepFactory创建FinalStep
+                final_step = StepFactory.create_final_step(
+                    step=step_count,
+                    response=self.last_answer_response or thought_content,
+                    thought=thought_content,
+                    is_finished=True
+                )
+                
+                # 【步骤2.10】记录步骤历史
+                self.steps.append(final_step)
+                
+                # yield Step字典
+                yield final_step.to_dict()
+                
                 self._on_after_loop()
                 return
             
-            # 场景2：LLM返回空响应错误
+            # ===== 【步骤2.9+2.11】场景2：LLM返回空响应错误 =====
             if last_error == "empty_response":
-                error_response, error_step = create_session_error_result(
-                    original_error="AI服务返回空响应",
-                    error_step_type='empty_response',
-                    step_num=step_count
+                # 【步骤2.9】使用StepFactory创建ErrorStep
+                error_step = StepFactory.create_error_step(
+                    step=step_count,
+                    error_type="empty_response",
+                    error_message="AI服务返回空响应",
+                    recoverable=False
                 )
-                yield error_response
+                
+                # 【步骤2.10】记录步骤历史
+                self.steps.append(error_step)
+                
+                # yield Step字典
+                yield error_step.to_dict()
+                
                 self._on_after_loop()
                 return
             
-            # 场景4：解析失败（重试3次后仍失败）
+            # ===== 【步骤2.9+2.11】场景4：解析失败（重试3次后仍失败）=====
             if last_error == "parse_error":
-                error_response, error_step = create_session_error_result(
-                    original_error=f"解析失败（已重试{self.max_parse_retries}次）",
-                    error_step_type='parse_error',
-                    step_num=step_count
+                # 【步骤2.9】使用StepFactory创建ErrorStep
+                error_step = StepFactory.create_error_step(
+                    step=step_count,
+                    error_type="parse_error",
+                    error_message=f"解析失败（已重试{self.max_parse_retries}次）",
+                    recoverable=False
                 )
-                yield error_response
+                
+                # 【步骤2.10】记录步骤历史
+                self.steps.append(error_step)
+                
+                # yield Step字典
+                yield error_step.to_dict()
+                
                 self._on_after_loop()
                 return
             
-            # 场景3：超过最大步数
+            # ===== 【步骤2.9+2.11】场景3：超过最大步数 =====
             if step_count >= max_steps:
-                error_response, error_step = create_session_error_result(
-                    original_error=f"已达到最大迭代次数 {max_steps}",
-                    error_step_type='max_steps_exceeded',
-                    step_num=step_count
+                # 【步骤2.9】使用StepFactory创建ErrorStep
+                error_step = StepFactory.create_error_step(
+                    step=step_count,
+                    error_type="max_steps_exceeded",
+                    error_message=f"已达到最大迭代次数 {max_steps}",
+                    recoverable=False
                 )
-                yield error_response
+                
+                # 【步骤2.10】记录步骤历史
+                self.steps.append(error_step)
+                
+                # yield Step字典
+                yield error_step.to_dict()
+                
                 self._on_after_loop()
                 return
             
@@ -451,17 +481,23 @@ class BaseAgent(ABC):
             # 这是一个安全保护分支
     
         except Exception as e:
-            # 【重构 2026-04-11 小沈】场景1：未捕获异常
-            # except块中只做记录日志和yield error
+            # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
+            # 【步骤2.11】废弃create_error_from_exception，使用StepFactory.create_error_step
             logger.error(f"Agent run_stream error: {e}", exc_info=True)
             
-            error_response, error_step = create_error_from_exception(
-                error=e,
-                step_num=step_count,
-                model=None,
-                provider=None
+            # 【步骤2.9】使用StepFactory创建ErrorStep
+            error_step = StepFactory.create_error_step(
+                step=step_count,
+                error_type="unhandled_exception",
+                error_message=str(e),
+                recoverable=False
             )
-            yield error_response
+            
+            # 【步骤2.10】记录步骤历史
+            self.steps.append(error_step)
+            
+            # yield Step字典
+            yield error_step.to_dict()
             
             self._on_after_loop()
             return
