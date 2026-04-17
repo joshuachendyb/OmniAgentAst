@@ -5832,13 +5832,9 @@ yield step.to_dict()      # 统一输出
 
 ---
 
-### 13.2.3 维度三：重构Agent主循环2.0的对比分析与升级方案的概要设计
+### 13.2.3 维度三：重构Agent主循环2.0的对比分析与升级方案的概要设计与详细设计
 
 > ⚠️ **专家戒律深度分析**：对比现有代码、5.1.1节、5.1.3节三种Agent主循环设计
-
-
-
-
 ==================================
 #### 13.2.3.1 专家戒律深度分析：三种主循环设计的对比与优劣势
 
@@ -5910,15 +5906,18 @@ yield step.to_dict()      # 统一输出
 **步骤 3.4：重构 answer/implicit (Final) 场景**
 *   **定位**：if parsed["type"] in ["answer", "implicit"]: 分支。
 *   **操作**：
-    *   1. 提取 thought。如果存在，调用 StepFactory.create_thought_step() 并 yield（保证前端先看到思考流）。
-    *   2. 调用 StepFactory.create_final_step() 创建 final_step。
+    *   1. 提取 thought_content 和 parsed 中的 thought。如果存在，调用 StepFactory.create_thought_step() 并 yield（保证前端先看到思考流）。
+    *   2. 调用 StepFactory.create_final_step() 创建 final_step，**传入 thought 参数**以保留完整思考链路。
     *   3. yield final_step.to_dict()。
-    *   4. 检查 if final_step.is_done(): (必然为True)，然后 self._on_after_loop() -> return。
+    *   4. 调用 self._on_after_loop() 后直接 return（final_step.is_done() 必然为 True，无需检查）。
     *   说明：彻底移除了将 last_parsed_type 赋值并 break 到循环外处理的冗长代码。
 
 **步骤 3.5：重构 thought_only 分支**
 *   **定位**：elif parsed["type"] == "thought_only": 分支。
-*   **操作**：保留当前实现，yield 出 ThoughtStep 后 continue。
+*   **操作**：
+    *   1. 提取 parsed 中的 thought 并保存到 thought_content，供后续使用。
+    *   2. 调用 StepFactory.create_thought_step() 创建 thought_step。
+    *   3. yield thought_step.to_dict() 后 continue 继续下一轮循环。
 
 **步骤 3.6：重构 action 工具调用与 return_direct 阻断**
 *   **定位**：action 执行工具的分支结尾（Observation生成后）。
