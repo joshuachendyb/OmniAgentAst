@@ -150,11 +150,9 @@ const NewChatContainer: React.FC = () => {
   // 1. 流式累积ref - 不触发重渲染
   const streamingContentRef = useRef('');           // 累积AI回复内容
   const streamingStepsRef = useRef<ExecutionStep[]>([]); // 累积执行步骤
-  const lastUpdateTimeRef = useRef(0);              // 上次更新时间
-  // 【小沈修复 2026-04-18】从5ms改为1ms，解决chunk更新被跳过的问题
-  // 问题原因：chunk到达间隔<5ms时，shouldUpdate=false导致setMessages被跳过
-  // 解决：1ms足够短，能跟上chunk的到达速度，同时仍有一定节流效果
-  const UPDATE_INTERVAL = 1;                        // 更新间隔1ms（实时更新）
+  // 【小沈注释 2026-04-18】去掉节流机制，每次都更新UI
+  // const UPDATE_INTERVAL = 1;
+  // const lastUpdateTimeRef = useRef(0);
 
   // 2. 滚动控制ref
   const userScrolledUpRef = useRef(false);
@@ -300,22 +298,12 @@ const NewChatContainer: React.FC = () => {
         ? streamingStepsRef.current 
         : [step];
       
-      // ⭐ 50ms间隔更新，使用leading+trailing策略
-      const now = Date.now();
-      // 【修复 2026-04-16】当收到 final/error 步骤时，必须强制更新
-      // 否则 isStreaming 不会被更新为 false，DynamicStatusDisplay 继续显示 "AI正在思考"
-      const isFinalOrError = step.type === "final" || step.type === "error";
-      const shouldUpdate = isFinalOrError 
-        || now - lastUpdateTimeRef.current >= UPDATE_INTERVAL 
-        || lastUpdateTimeRef.current === 0;  // 首次立即更新
+      // 【小沈注释 2026-04-18】去掉节流机制，每次收到step都直接更新UI
+      // const now = Date.now();
+      // const shouldUpdate = ...
       
-      console.log("📝 [onStep] type=%s shouldUpdate=%s now=%s last=%s interval=%s isFinalOrError=%s", 
-        step.type, shouldUpdate, now, lastUpdateTimeRef.current, UPDATE_INTERVAL, isFinalOrError);
-      
-      if (shouldUpdate) {
-        lastUpdateTimeRef.current = now;
-        // 使用函数式更新，确保获取最新state
-        setMessages((prev) => {
+      // 每次都更新UI，不跳过
+      setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
           if (!lastMessage || lastMessage.role !== "assistant") {
             // 【关键修复 2026-04-13】任何step都创建消息，不只是start
@@ -377,32 +365,29 @@ const NewChatContainer: React.FC = () => {
       // ⭐ 累积到ref，不触发重渲染
       streamingContentRef.current += chunk;
       
-      // ⭐ 50ms间隔更新，leading+trailing策略
-      const now = Date.now();
-      const shouldUpdate = now - lastUpdateTimeRef.current >= UPDATE_INTERVAL 
-        || lastUpdateTimeRef.current === 0;  // 首次立即更新
+      // 【小沈注释 2026-04-18】去掉节流机制，每次收到chunk都直接更新UI
+      // const now = Date.now();
+      // const shouldUpdate = ...
       
-      if (shouldUpdate) {
-        lastUpdateTimeRef.current = now;
-        setMessages((prev) => {
-          const lastMessage = prev[prev.length - 1];
-          if (
-            lastMessage &&
-            lastMessage.role === "assistant" &&
-            lastMessage.isStreaming
-          ) {
-            const updated = [...prev];
-            const newIs_reasoning = is_reasoning ?? false;
-            updated[updated.length - 1] = {
-              ...lastMessage,
-              content: streamingContentRef.current,
-              is_reasoning: newIs_reasoning,
-            };
-            return updated;
-          }
-          return prev;
-        });
-      }
+      // 每次都更新UI，不跳过
+      setMessages((prev) => {
+        const lastMessage = prev[prev.length - 1];
+        if (
+          lastMessage &&
+          lastMessage.role === "assistant" &&
+          lastMessage.isStreaming
+        ) {
+          const updated = [...prev];
+          const newIs_reasoning = is_reasoning ?? false;
+          updated[updated.length - 1] = {
+            ...lastMessage,
+            content: streamingContentRef.current,
+            is_reasoning: newIs_reasoning,
+          };
+          return updated;
+        }
+        return prev;
+      });
     }, []),
     // onComplete - 流式完成 - 前端小新代修改：适配后端新格式
     // 【小新修复 2026-03-12】第三个参数改为接收完整的data对象
@@ -607,12 +592,12 @@ if (lastMessage && lastMessage.role === "assistant") {
              return prev;
            });
            
-           // ⭐ 【小资优化 2026-04-13】完成后清理ref，准备下一次对话
-           streamingContentRef.current = '';
-           streamingStepsRef.current = [];
-           lastUpdateTimeRef.current = 0;
-           
-             // console.log("✅ [onComplete] AI回答保存完成！");
+// ⭐ 【小资优化 2026-04-13】完成后清理ref，准备下一次对话
+            streamingContentRef.current = '';
+            streamingStepsRef.current = [];
+            // lastUpdateTimeRef.current = 0;  // 【小沈注释 2026-04-18】已去掉节流
+            
+              // console.log("✅ [onComplete] AI回答保存完成！");
           },
         [] // 依赖数组为空，因为使用 ref 而不是 state
       ),
@@ -670,14 +655,12 @@ if (lastMessage && lastMessage.role === "assistant") {
           return;
         }
 
-        // ⭐ 50ms间隔更新，leading+trailing策略
-        const now = Date.now();
-        const shouldUpdate = now - lastUpdateTimeRef.current >= UPDATE_INTERVAL 
-          || lastUpdateTimeRef.current === 0;
+        // 【小沈注释 2026-04-18】去掉节流机制，每次都更新UI
+        // const now = Date.now();
+        // const shouldUpdate = ...
         
-        if (shouldUpdate) {
-          lastUpdateTimeRef.current = now;
-          setMessages((prev) => {
+        // 每次都更新UI，不跳过
+        setMessages((prev) => {
             const lastMessage = prev[prev.length - 1];
             if (lastMessage && lastMessage.role === "assistant") {
               // 【小强修复 2026-03-18】修复竞争条件 - 选择更长的executionSteps
@@ -727,7 +710,7 @@ if (lastMessage && lastMessage.role === "assistant") {
         // ⭐ 完成后清理ref
         streamingContentRef.current = '';
         streamingStepsRef.current = [];
-        lastUpdateTimeRef.current = 0;
+        // lastUpdateTimeRef.current = 0;  // 【小沈注释 2026-04-18】已去掉节流
       },
       []
     ),
