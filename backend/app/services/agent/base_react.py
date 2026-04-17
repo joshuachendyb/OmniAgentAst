@@ -144,6 +144,7 @@ class BaseAgent(ABC):
         self.conversation_history = []
         self.status = AgentStatus.THINKING
         self.llm_call_count = 0
+        self.last_answer_response = ""  # 保存answer类型的真正答案
         
         # Hook: Session 初始化
         self._on_session_init(task, context)
@@ -208,6 +209,7 @@ class BaseAgent(ABC):
                     logger.info(f"[parse_react_response] 情况2: type={parsed['type']}, answer/implicit完成")
                     last_response = response  # 保存用于后续使用
                     last_parsed_type = parsed["type"]  # 记录退出类型
+                    last_answer_response = parsed.get("response", "")  # 保存真正答案
                     break  # 直接退出，不yield thought
                 
                 # 【新增】thought_only类型：纯思考分支，继续下一轮循环
@@ -402,7 +404,7 @@ class BaseAgent(ABC):
                     "type": "final",
                     "step": step_count,  # 新增字段
                     "timestamp": create_timestamp(),
-                    "response": (tool_params or {}).get("result", thought_content),  # content替换为response
+                    "response": self.last_answer_response or thought_content,
                     "is_finished": True,  # 新增字段
                     "thought": thought_content,  # 新增字段
                     "is_streaming": False,  # 新增字段

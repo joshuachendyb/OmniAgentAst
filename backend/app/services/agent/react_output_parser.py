@@ -61,7 +61,8 @@ def parse_react_response(output: str) -> Dict[str, Any]:
     设计依据: LlamaIndex ReActOutputParser.parse() 统一入口设计思想
     """
     from app.utils.logger import logger
-    logger.info(f"[parse_react_response] 调用新统一解析器, output长度: {len(output) if output else 0}")
+    output_length = len(output) if isinstance(output, str) else 0
+    logger.info(f"[parse_react_response] 调用新统一解析器, output长度: {output_length}")
     
     if not output or not isinstance(output, str):
         thought = "(Implicit) Empty response"
@@ -321,7 +322,12 @@ def _parse_action(
     
     # 关键改进1: 工具名约束 - 禁止空格和括号
     tool_name_match = re.match(r'^([^\n\(\) ]+)', action_section)
-    tool_name = tool_name_match.group(1) if tool_name_match else action_section.split()[0]
+    if tool_name_match:
+        tool_name = tool_name_match.group(1)
+    else:
+        # Action 为空或格式异常时，避免 split()[0] 越界
+        parts = action_section.split()
+        tool_name = parts[0] if parts else ""
     
     # 提取工具参数
     if action_input_match:

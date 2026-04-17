@@ -54,6 +54,12 @@ class TestParseReactResponse:
         """非字符串输入应返回implicit类型"""
         result = parse_react_response(123)
         assert result["type"] == "implicit"
+
+    def test_non_string_list_input(self):
+        """list输入应安全返回implicit类型"""
+        result = parse_react_response(["not", "a", "string"])
+        assert result["type"] == "implicit"
+        assert result["tool_name"] is None
     
     def test_action_type_returns_all_fields(self):
         """action类型应返回完整字段"""
@@ -188,6 +194,13 @@ class TestParseAction:
         result = parse_react_response("Thought: Done\nAction: finish")
         assert result["type"] == "action"
         assert result["tool_name"] == "finish"
+        assert result["tool_params"] == {}
+
+    def test_action_empty_tool_name_not_crash(self):
+        """Action为空时不应抛异常"""
+        result = parse_react_response("Thought: Done\nAction:\nAction Input: {}")
+        assert result["type"] == "action"
+        assert result["tool_name"] == ""
         assert result["tool_params"] == {}
 
 
