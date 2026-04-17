@@ -9,7 +9,13 @@ Agent 核心基类
 - base.py 是核心基准
 - 子类继承并实现抽象方法
 
+【重构 2026-04-17】：
+- 步骤2.9：所有yield改为StepFactory调用
+- 步骤2.10：添加步骤历史管理self.steps
+- 步骤2.11：清理废弃的create_*_result函数
+
 Author: 小沈 - 2026-03-25
+Updated: 小沈 - 2026-04-17
 """
 
 import asyncio
@@ -31,6 +37,10 @@ from app.services.agent.reasoning_steps import (
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
 from app.utils.prompt_logger import get_prompt_logger
+
+# 【步骤2.11】已废弃以下导入，改用StepFactory：
+# from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
+# 这些函数的逻辑已整合到StepFactory.create_action_tool_step()和create_error_step()
 
 
 class BaseAgent(ABC):
