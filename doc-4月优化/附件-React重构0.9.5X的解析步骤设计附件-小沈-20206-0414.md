@@ -1940,9 +1940,30 @@ class BaseAgent(ABC):
     # ===== run() 方法中替换解析调用（第195行）=====
     async def run(self, task: str, context: Optional[Dict[str, Any]] = None) -> AsyncGenerator[Dict[str, Any], None]:
         """执行Agent核心循环"""
-        # ... (前置代码) ...
+        # ===== 实际前置代码（第175-198行）=====
+        # 每次迭代开始时重置计数器
+        self.parse_retry_count = 0
         
-        # ===== 解析LLM响应（新解析器）=====
+        # 场景3：每次循环开始检查最大步数
+        if step_count >= max_steps:
+            last_error = "max_steps_exceeded"
+            break
+        
+        step_count += 1
+        
+        # 调用LLM（第185-189行）
+        self.status = AgentStatus.THINKING
+        logger.info(f"[Debug] 调用LLM (第轮), history长度=...")
+        response = await self._get_llm_response()
+        logger.info(f"[Debug] LLM响应 (第轮): ...")
+        
+        # 场景2：LLM返回空响应
+        if not response:
+            logger.error(f"LLM返回空响应: {response}")
+            last_error = "empty_response"
+            break  # 空响应，退出
+        
+        # ===== 场景4：解析响应并获取结果 =====  # 第198行
         parsed = parse_react_response(response)  # 替换 self.parser.parse_response(response)
         
         # 解析错误检查（第232行，实际代码）
