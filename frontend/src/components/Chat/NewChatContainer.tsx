@@ -150,9 +150,7 @@ const NewChatContainer: React.FC = () => {
   // 1. 流式累积ref - 不触发重渲染
   const streamingContentRef = useRef('');           // 累积AI回复内容
   const streamingStepsRef = useRef<ExecutionStep[]>([]); // 累积执行步骤
-  // 【小沈注释 2026-04-18】去掉节流机制，每次都更新UI
-  // const UPDATE_INTERVAL = 1;
-  // const lastUpdateTimeRef = useRef(0);
+  // 【小沈注释 2026-04-18】已完全去掉节流机制，每次都实时更新UI
 
   // 2. 滚动控制ref
   const userScrolledUpRef = useRef(false);
@@ -298,11 +296,7 @@ const NewChatContainer: React.FC = () => {
         ? streamingStepsRef.current 
         : [step];
       
-      // 【小沈注释 2026-04-18】去掉节流机制，每次收到step都直接更新UI
-      // const now = Date.now();
-      // const shouldUpdate = ...
-      
-      // 每次都更新UI，不跳过
+      // 实时更新UI，每次都更新
       setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
           if (!lastMessage || lastMessage.role !== "assistant") {
@@ -343,15 +337,13 @@ const NewChatContainer: React.FC = () => {
           return updated;
         });
 
-        // 【小沈修复 2026-04-13】onStep更新后滚动到底部
-        // 使用setTimeout确保DOM更新完成后再滚动
+        // onStep更新后滚动到底部
         setTimeout(() => {
           messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
         }, 50);
-      }
     }, []),
 
-    // onChunk - 收到内容片段 【小资优化】使用50ms throttle
+    // onChunk - 收到内容片段（实时更新）
     useCallback((chunk: string, is_reasoning?: boolean) => {
       // 精简日志：调试通过，不再打印每个chunk
       
@@ -365,29 +357,25 @@ const NewChatContainer: React.FC = () => {
       // ⭐ 累积到ref，不触发重渲染
       streamingContentRef.current += chunk;
       
-      // 【小沈注释 2026-04-18】去掉节流机制，每次收到chunk都直接更新UI
-      // const now = Date.now();
-      // const shouldUpdate = ...
-      
-      // 每次都更新UI，不跳过
+      // 【小沈注释 2026-04-18】去掉节流机制，每次都更新UI
       setMessages((prev) => {
-        const lastMessage = prev[prev.length - 1];
-        if (
-          lastMessage &&
-          lastMessage.role === "assistant" &&
-          lastMessage.isStreaming
-        ) {
-          const updated = [...prev];
-          const newIs_reasoning = is_reasoning ?? false;
-          updated[updated.length - 1] = {
-            ...lastMessage,
-            content: streamingContentRef.current,
-            is_reasoning: newIs_reasoning,
-          };
-          return updated;
-        }
-        return prev;
-      });
+          const lastMessage = prev[prev.length - 1];
+          if (
+            lastMessage &&
+            lastMessage.role === "assistant" &&
+            lastMessage.isStreaming
+          ) {
+            const updated = [...prev];
+            const newIs_reasoning = is_reasoning ?? false;
+            updated[updated.length - 1] = {
+              ...lastMessage,
+              content: streamingContentRef.current,
+              is_reasoning: newIs_reasoning,
+            };
+            return updated;
+          }
+          return prev;
+        });
     }, []),
     // onComplete - 流式完成 - 前端小新代修改：适配后端新格式
     // 【小新修复 2026-03-12】第三个参数改为接收完整的data对象
@@ -589,19 +577,19 @@ if (lastMessage && lastMessage.role === "assistant") {
                 console.log("  └─ ✅ 已更新 (ref累积+SSE+历史) steps:", finalSteps.length, "| last3:", finalSteps.slice(-3).map((s: any) => s.type).join(","));
                 return updated;
              }
-             return prev;
-           });
-           
-// ⭐ 【小资优化 2026-04-13】完成后清理ref，准备下一次对话
+return prev;
+            });
+            
+            // ⭐ 【小资优化 2026-04-13】完成后清理ref，准备下一次对话
             streamingContentRef.current = '';
             streamingStepsRef.current = [];
-            // lastUpdateTimeRef.current = 0;  // 【小沈注释 2026-04-18】已去掉节流
+            // lastUpdateTimeRef.current = 0;
             
-              // console.log("✅ [onComplete] AI回答保存完成！");
+            // console.log("✅ [onComplete] AI回答保存完成！");
           },
         [] // 依赖数组为空，因为使用 ref 而不是 state
       ),
-    // onError - 流式错误 - 【小资优化】同步节流 + errorHandler统一处理
+    // onError - 流式错误 - errorHandler统一处理
     // 【小沈修改2026-04-15】适配API文档的新字段：删除code，统一使用error_message
     useCallback(
       (
@@ -656,10 +644,6 @@ if (lastMessage && lastMessage.role === "assistant") {
         }
 
         // 【小沈注释 2026-04-18】去掉节流机制，每次都更新UI
-        // const now = Date.now();
-        // const shouldUpdate = ...
-        
-        // 每次都更新UI，不跳过
         setMessages((prev) => {
             const lastMessage = prev[prev.length - 1];
             if (lastMessage && lastMessage.role === "assistant") {
@@ -693,7 +677,6 @@ if (lastMessage && lastMessage.role === "assistant") {
             }
             return prev;
           });
-        }
         
         // 清理状态
         setLoading(false);
@@ -710,7 +693,7 @@ if (lastMessage && lastMessage.role === "assistant") {
         // ⭐ 完成后清理ref
         streamingContentRef.current = '';
         streamingStepsRef.current = [];
-        // lastUpdateTimeRef.current = 0;  // 【小沈注释 2026-04-18】已去掉节流
+        // lastUpdateTimeRef.current = 0;
       },
       []
     ),
