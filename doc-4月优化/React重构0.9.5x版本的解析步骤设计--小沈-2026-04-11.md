@@ -6015,6 +6015,7 @@ yield step.to_dict()      # 统一输出
                     recoverable=False
                 )
                 yield error_step.to_dict()
+                self._on_after_loop()
                 return
             
             step_count += 1
@@ -6032,6 +6033,7 @@ yield step.to_dict()      # 统一输出
                         recoverable=False
                     )
                     yield error_step.to_dict()
+                    self._on_after_loop()
                     return
                 
                 # 步骤 2: 统一解析大模型响应
@@ -6043,7 +6045,7 @@ yield step.to_dict()      # 统一输出
                 if parsed["type"] in ["answer", "implicit"]:
                     # 【对齐现有代码】
                     thought_content = parsed.get("content", "")
-                    last_answer_response = parsed.get("response", "")
+                    answer_response = parsed.get("response", "")
                     
                     # 在退出前，如果存在thought内容，先yield一个ThoughtStep
                     if thought_content and thought_content.strip():
@@ -6060,11 +6062,12 @@ yield step.to_dict()      # 统一输出
                     # 【修正】创建final_step时传入thought参数
                     final_step = StepFactory.create_final_step(
                         step=step_count,
-                        response=last_answer_response or thought_content,
+                        response=answer_response or thought_content,
                         thought=parsed.get("thought", thought_content),
                         is_finished=True
                     )
                     yield final_step.to_dict()
+                    self._on_after_loop()
                     # FinalStep.is_done() 必然为 True，无需检查直接return
                     return
 
@@ -6150,6 +6153,15 @@ yield step.to_dict()      # 统一输出
 
                     # 核心设计: observation_step.is_done() 决定是否直接结束任务
                     if observation_step.is_done(): 
+                        # 【步骤3.6】return_direct 时生成 FinalStep 并退出
+                        final_step = StepFactory.create_final_step(
+                            step=step_count,
+                            response=str(execution_result.get("data", "")),
+                            thought="工具执行要求直接返回结果",
+                            is_finished=True
+                        )
+                        yield final_step.to_dict()
+                        self._on_after_loop()
                         return
 
                 # ==========================
@@ -6158,11 +6170,10 @@ yield step.to_dict()      # 统一输出
                 elif parsed["type"] == "parse_error":
                     error_msg = parsed.get("error", "Unknown parse error")
                     
-                    # 添加错误提示到历史，引导LLM修复
-                    self.conversation_history.append({
-                        "role": "user",
-                        "content": f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format."
-                    })
+                    # 【步骤3.3】添加错误提示到历史，引导LLM修复
+                    self._add_observation_to_history(
+                        f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format."
+                    )
                     
                     # 【补充】重试计数器+1
                     self.parse_retry_count += 1
@@ -6176,6 +6187,7 @@ yield step.to_dict()      # 统一输出
                             recoverable=False
                         )
                         yield error_step.to_dict()
+                        self._on_after_loop()
                         return
                     
                     # 否则继续下一次循环
