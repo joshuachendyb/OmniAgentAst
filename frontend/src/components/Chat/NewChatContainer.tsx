@@ -161,7 +161,9 @@ const NewChatContainer: React.FC = () => {
   // 3. debounce保存函数ref - 使用chatHistory.ts已存在的debounce
   const saveMessagesToStorage = useRef(
     debounce((msgs: Message[], sid: string, title: string, paused: boolean, receiving: boolean) => {
-      if (receiving && sid) {
+      // 【小强修复 2026-04-18】移除 receiving 限制，确保流式结束后的完整状态也能持久化
+      // 解决因最终状态未落盘，页面可见性变化时被读取出的旧缓存覆盖导致数据倒灌的问题
+      if (sid) {
         const state = {
           messages: msgs,
           sessionId: sid,
@@ -1171,10 +1173,37 @@ return prev;
                 
                 // 【问题2修复 2026-03-18】如果页面隐藏时SSE还在接收数据（state.isReceiving=true）
                 // sessionStorage保存的可能不是最新steps，需要从API获取最新数据
-                // 正常恢复（页面隐藏时SSE已完成）
-                setMessages(state.messages);
-                if (state.sessionTitle) {
-                  setSessionTitle(state.sessionTitle);
+                
+                // 【小强增强防御 2026-04-18】防止由于浏览器节流等原因导致旧缓存倒灌覆盖新内存
+                const memMsgs = messagesRef.current;
+                const cacheMsgs = state.messages;
+                
+                let shouldRestore = true;
+                if (memMsgs.length > 0 && cacheMsgs.length > 0) {
+                  const lastMemMsg = memMsgs[memMsgs.length - 1];
+                  const lastCacheMsg = cacheMsgs[cacheMsgs.length - 1];
+                  
+                  // 如果内存里的消息数更多，或者最后一条消息包含更多的执行步骤，则拒绝被旧缓存覆盖
+                  if (memMsgs.length > cacheMsgs.length) {
+                    shouldRestore = false;
+                  } else if (lastMemMsg.role === 'assistant' && lastCacheMsg.role === 'assistant') {
+                    const memSteps = lastMemMsg.executionSteps?.length || 0;
+                    const cacheSteps = lastCacheMsg.executionSteps?.length || 0;
+                    // 内存步骤比缓存多，或内存已结束流式而缓存还在流式中
+                    if (memSteps > cacheSteps || (!lastMemMsg.isStreaming && lastCacheMsg.isStreaming)) {
+                      shouldRestore = false;
+                    }
+                  }
+                }
+                
+                if (shouldRestore) {
+                  // 正常恢复
+                  setMessages(state.messages);
+                  if (state.sessionTitle) {
+                    setSessionTitle(state.sessionTitle);
+                  }
+                } else {
+                  console.log('🛡️ [restoreState] 内存数据比缓存更新，跳过恢复防止数据倒灌 (内存 steps=' + (memMsgs[memMsgs.length - 1]?.executionSteps?.length || 0) + ', 缓存 steps=' + (cacheMsgs[cacheMsgs.length - 1]?.executionSteps?.length || 0) + ')');
                 }
                 // 恢复暂停状态
                 if (state.isPaused !== undefined) {
