@@ -1,3 +1,40 @@
+v0.9.8.0
+
+更新时间：2026-04-18 00:14:49
+
+更新内容：
+
+## 1. 修复前端SSE流式实时显示问题 - 小沈-2026-04-18
+
+### 1.1 问题描述
+
+用户反馈：start 步骤能显示，但其他步骤（thought/action_tool/chunk/final）不能实时显示，中途停止。
+
+### 1.2 根因分析
+
+| 根因 | 说明 |
+|------|------|
+| **节流问题** | UPDATE_INTERVAL=5ms太短，chunk到达间隔<5ms时shouldUpdate=false，setMessages被跳过 |
+| **闭包问题** | streamingStepsRef.current捕获初始空数组，导致onComplete时ref=0 |
+
+### 1.3 修复内容
+
+**修改文件**: `frontend/src/components/Chat/NewChatContainer.tsx`
+
+| 修改 | 位置 | 说明 |
+|------|------|------|
+| 方案1 | 第154行 | UPDATE_INTERVAL从5ms改为1ms |
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 0798d2bd | fix: NewChatContainer.tsx UPDATE_INTERVAL 5ms改1ms 小沈-2026-04-18 |
+
+参与开发：小沈（分析+修复）
+
+---
+
 v0.9.7.9
 
 更新时间：2026-04-17 23:12:00
