@@ -16,7 +16,9 @@ from app.services.llm_core import Message
 from app.utils.retry_controller import RetryController
 from app.utils.idle_timeout import IdleTimeoutIterator, IdleTimeoutError
 from app.chat_stream.chat_helpers import create_timestamp, create_final_response
-from app.chat_stream.error_handler import create_session_error_result, create_error_response
+from app.chat_stream.error_handler import create_error_response
+from app.services.agent.reasoning_steps import StepFactory
+from app.chat_stream.sse_formatter import format_sse_event
 from app.chat_stream.incident_handler import (
     create_incident_data,
     check_and_yield_if_paused,
@@ -318,21 +320,20 @@ async def chat_stream_query(
     if not ai_call_successful:
         logger.error(f"[AI Call] 重试失败，ai_call_successful={ai_call_successful}")
         
-        # 【小沈重构 2026-04-10】使用统一的错误处理函数
-        # 统一解析错误码、组装错误信息、创建error_response和error_step
+        # 【改造 2026-04-17 小沈】使用StepFactory统一Step封装
+        # 错误解析逻辑保留，只替换Step创建部分
         error_step_value = next_step()
-        error_response, error_step = create_session_error_result(
-            original_error=last_error,
-            error_step_type=last_error_type,
-            step_num=error_step_value,
+        error_step_obj = StepFactory.create_error_step(
+            step=error_step_value,
+            error_type=last_error_type or "retry_failed",
+            error_message=last_error or "模型未能生成有效回复，请尝试更换问题或稍后重试",
+            recoverable=True,
             model=ai_service.model,
             provider=ai_service.provider,
-            display_name=display_name,
-            chat_timeout=chat_timeout,
-            max_retries=max_retries,
-            retryable=True,
             retry_after=3
         )
+        error_step_dict = error_step_obj.to_dict()
+        error_response = format_sse_event('error', error_step_value, error_step_dict)
         
         # 记录日志
         if last_error:
@@ -344,7 +345,7 @@ async def chat_stream_query(
         yield error_response
         
         # 保存到数据库
-        await add_step_and_save(error_step, f"错误: {error_step['error_message']}")
+        await add_step_and_save(error_step_dict, f"错误: {error_step_dict['error_message']}")
         
         return  # 直接返回，不再发送final步骤
     

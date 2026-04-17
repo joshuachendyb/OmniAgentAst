@@ -38,10 +38,11 @@ from app.config import get_config
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name
 from app.chat_stream.incident_handler import check_and_yield_if_interrupted, check_and_yield_if_paused, create_incident_data
-from app.chat_stream.error_handler import create_error_from_exception, create_error_response, create_error_step
+from app.chat_stream.error_handler import create_error_response
+from app.services.agent.reasoning_steps import StepFactory
 from app.chat_stream.chat_helpers import create_final_response, create_timestamp, create_step_counter
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
-from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse
+from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse, format_sse_event
 
 
 # ============================================================
@@ -541,18 +542,22 @@ async def generate_sse_stream(
     except Exception as e:
         logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
         
-        # 【小沈重构 2026-04-10】使用统一的异常错误处理函数
+        # 【改造 2026-04-17 小沈】使用StepFactory统一Step封装
         error_step_value = next_step()
-        error_response, error_step = create_error_from_exception(
-            error=e,
-            step_num=error_step_value,
+        error_step_obj = StepFactory.create_error_step(
+            step=error_step_value,
+            error_type="stream_error",
+            error_message=str(e),
+            recoverable=False,
             model=ai_service.model,
             provider=ai_service.provider
         )
+        error_step_dict = error_step_obj.to_dict()
+        error_response = format_sse_event('error', error_step_value, error_step_dict)
         
         logger.info(f"[Step error] 发送error步骤")
-        current_execution_steps.append(error_step)
-        await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {error_step['error_message']}")
+        current_execution_steps.append(error_step_dict)
+        await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {error_step_dict['error_message']}")
         yield error_response
     
     finally:
