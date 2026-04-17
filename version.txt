@@ -4,39 +4,9 @@ v0.9.7.2
 
 更新内容：
 
-## 1. 兼容旧代码/测试的代码修改 - 小沈-2026-04-17
+## 1. 15章Step封装设计文档补充详细实施代码 - 小沈-2026-04-17
 
-### 1.1 兼容旧导入路径
-
-为支持旧代码导入路径，新增兼容文件：
-
-| 文件 | 说明 |
-|------|------|
-| backend/app/api/v1/chat.py | 兼容旧导入：app.api.v1.chat → intent_detector |
-| backend/app/services/agent/prompts.py | 兼容旧导入：app.services.agent.prompts → file_prompts |
-
-### 1.2 兼容旧测试用例
-
-为支持旧测试用例，添加兼容参数和函数：
-
-| 文件 | 修改内容 |
-|------|---------|
-| backend/app/api/v1/config.py | 新增 `_get_config_path()` 函数 |
-| backend/app/services/tools/file/file_schema.py | 新增 `SearchFilesInput` 类 |
-| backend/app/services/tools/file/file_tools.py | `search_files` 函数添加 `pattern`/`max_results` 兼容参数 |
-| config/config.yaml | theme: light → dark |
-
-### 1.3 修改文件汇总
-
-| Commit | 说明 |
-|--------|------|
-| b68bb277 | 包含代码修改+设计文档更新 |
-
----
-
-## 2. 15章Step封装设计文档补充详细实施代码 - 小沈-2026-04-17
-
-### 2.1 补充内容
+### 1.1 补充内容
 
 根据北京老陈要求，核对并补充设计文档第15章"Step封装处理"的详细实施代码：
 
@@ -52,7 +22,7 @@ v0.9.7.2
 | 15.4.1节 | 修正流程图，补充原始response加入conversation_history |
 | 15.5节 | 修正yield次数和影响结论（action类型=3次，其他类型=1次） |
 
-### 2.2 核心发现
+### 1.2 核心发现
 
 **两个列表的核心区别**：
 - **self.steps** = 前端展示，记录每个步骤的详细信息（ReasoningStep对象）
@@ -62,7 +32,7 @@ v0.9.7.2
 - Phase 1（react_output_parser.py）已实施 ✅
 - Phase 2（reasoning_steps.py）待实施 🔄
 
-### 2.3 15.5节yield次数修正
+### 1.3 15.5节yield次数修正
 
 | action类型 | yield次数 | 说明 |
 |-----------|----------|------|
@@ -70,11 +40,14 @@ v0.9.7.2
 | thought_only | 1次 | start → final |
 | error | 1次 | error直接返回 |
 
-### 1.4 Commit汇总
+### 1.4 实际代码变更（相对于v0.9.7.1）
 
-| Commit | 说明 |
-|--------|------|
-| b68bb277 | docs: 15章Step封装设计文档补充详细实施代码 - 小沈-2026-04-17 |
+| 文件 | 变更 |
+|------|------|
+| base_react.py | 16行 |
+| react_output_parser.py | 26行 |
+| test_react_output_parser.py | 13行 |
+| config.yaml | 6行 |
 
 参与开发：小沈（文档补充）
 
