@@ -300,8 +300,8 @@ class BaseAgent(ABC):
                 # yield Step字典
                 yield thought_step.to_dict()
                 
-                # 将 LLM 的 thought 响应加入 conversation_history
-                self.conversation_history.append({"role": "assistant", "content": response})
+                # 【修正 2026-04-17 小沈】删除：response 提前加入 conversation_history
+                # 按照设计文档15.2.0.4，response 应该在 action_tool 之后才加入
                 
                 # ========== Action 阶段 ==========
                 self.status = AgentStatus.EXECUTING
@@ -335,6 +335,10 @@ class BaseAgent(ABC):
 
                 # yield Step字典
                 yield action_step.to_dict()
+                
+                # 【修正 2026-04-17 小沈】按照设计文档15.2.0.4执行顺序
+                # 步骤5：response 应该在 action_tool 之后再加入 conversation_history
+                self.conversation_history.append({"role": "assistant", "content": response})
                 
                 # ========== Observation 阶段 ==========
                 # 区分不同 execution_status 生成 observation_text（给 LLM 历史）
