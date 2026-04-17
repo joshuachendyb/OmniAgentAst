@@ -1963,8 +1963,112 @@ class BaseAgent(ABC):
             last_error = "empty_response"
             break  # 空响应，退出
         
-        # ===== 场景4：解析响应并获取结果 =====  # 第198行
+        # ===== 场景4：解析响应并获取结果（第198行）=====
         parsed = parse_react_response(response)  # 替换 self.parser.parse_response(response)
+        
+        # 先获取 parsed 结果（第200-203行）
+        thought_content = parsed.get("content", "")
+        tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
+        tool_params = parsed.get("tool_params", parsed.get("params", {}))
+        
+        # ===== 情况2：最终回答（Answer/Implicit）- 第207-211行 =====
+        if parsed["type"] in ["answer", "implicit"]:
+            logger.info(f"[parse_react_response] 情况2: type={parsed['type']}, answer/implicit完成")
+            last_response = response  # 保存用于后续使用
+            last_parsed_type = parsed["type"]  # 记录退出类型
+            break  # 直接退出，不yield thought
+        
+        # ===== 情况3：纯思考（Thought_only）- 第214-229行 =====
+        if parsed["type"] == "thought_only":
+            logger.info(f"[parse_react_response] 情况3: type=thought_only, 纯思考继续")
+            current_time = create_timestamp()
+            thought = parsed.get("thought", "")
+            yield {
+                "type": "thought",
+                "step": step_count,
+                "timestamp": current_time,
+                "content": thought_content,
+                "thought": thought,
+                "reasoning": parsed.get("reasoning", ""),
+                "tool_name": None,
+                "tool_params": None
+            }
+            self.conversation_history.append({"role": "assistant", "content": response})
+            continue  # 继续下一轮循环
+        
+        # ===== 情况4：解析错误检查 - 第234-252行 =====
+        is_parse_error = "⚠️" in parsed.get("content", "")
+        if is_parse_error:
+            logger.info(f"[parse_react_response] 情况4: 解析错误, 重试次数={self.parse_retry_count}")
+            # 保存原始response到conversation_history
+            self.conversation_history.append({"role": "assistant", "content": response})
+            # 添加错误提示到历史，让LLM重新尝试
+            error_content = parsed.get("content", "Parse error")
+            self._add_observation_to_history(f"{error_content}. Please respond with valid JSON format.")
+            # 重试计数器+1
+            self.parse_retry_count += 1
+            # 重试次数 >= 3？退出循环；否则继续循环
+            if self.parse_retry_count >= self.max_parse_retries:
+                last_error = "parse_error"
+                break  # 重试次数用尽，退出循环
+            continue  # 继续循环，让LLM重新尝试
+        
+        # ===== 情况1：工具调用（Action）- 第254-298行 =====
+        logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
+        current_time = create_timestamp()
+        # 获取thought和reasoning字段
+        thought = parsed.get("thought", "")
+        reasoning = parsed.get("reasoning", "")
+        yield {
+            "type": "thought",
+            "step": step_count,
+            "timestamp": current_time,
+            "content": thought_content,
+            "thought": thought,
+            "reasoning": reasoning,
+            "tool_name": tool_name,
+            "tool_params": tool_params
+        }
+        
+        # 将 LLM 的 thought 响应加入 conversation_history
+        self.conversation_history.append({"role": "assistant", "content": response})
+        
+        # ========== Action 阶段执行工具 ==========
+        self.status = AgentStatus.EXECUTING
+        start_time = time.perf_counter()
+        execution_result = await self._execute_tool(tool_name, tool_params)
+        execution_time_ms = int((time.perf_counter() - start_time) * 1000)
+        
+        # 根据执行结果构建 action_tool
+        exec_status = execution_result.get("status", "success")
+        
+        if exec_status == "success":
+            # 工具执行成功
+            yield {
+                "type": "action_tool",
+                "step": step_count,
+                "timestamp": current_time,
+                "tool_name": tool_name,
+                "tool_params": tool_params,
+                "execution_status": "success",
+                "summary": execution_result.get("summary", ""),
+                "execution_result": execution_result.get("data"),
+                "error_message": "",
+                "execution_time_ms": execution_time_ms,
+                "action_retry_count": 0
+            }
+        elif exec_status == "warning":
+            # 工具执行警告（部分成功）
+            action_tool_result = create_tool_error_result(
+                tool_name=tool_name,
+                error_message=execution_result.get("summary", "部分成功"),
+                step_num=step_count,
+                tool_params=tool_params,
+                retry_count=execution_result.get("retry_count", 0),
+                raw_data=execution_result.get("data"),
+                timestamp=current_time
+            )
+            yield {**action_tool_result}
         
         # 解析错误检查（第232行，实际代码）
         is_parse_error = "⚠️" in parsed.get("content", "")
