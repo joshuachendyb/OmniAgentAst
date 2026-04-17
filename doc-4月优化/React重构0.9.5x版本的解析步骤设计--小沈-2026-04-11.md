@@ -5862,21 +5862,23 @@ yield step.to_dict()      # 统一输出
 ```
 [LLM 响应] -> parse_react_response (5.1.1) -> 识别 Type
      |
-     +--> thought_only -> StepFactory(Thought) -> is_done? (False) -> 继续循环
+     +--> thought_only -> StepFactory(Thought) -> yield -> continue
      |
-     +--> answer/implicit -> StepFactory(Thought+Final) -> is_done? (True) -> return退出
+     +--> answer/implicit -> StepFactory(Thought+Final) -> yield -> return
      |
-     +--> parse_error -> StepFactory(Error) -> max_retries? -> is_done? (True) -> return退出
+     +--> parse_error -> max_retries?
+                            +--> 未超限 -> continue
+                            +--> 超限 -> ErrorStep -> yield -> return
      |
-     +--> action -> StepFactory(Thought) -> 执行工具 -> StepFactory(ActionTool) 
-                      -> StepFactory(Observation) -> 判断 obs_step.is_done()? 
-                           +--> True (return_direct) -> 生成 FinalStep -> return退出
-                           +--> False -> 继续循环
+     +--> action -> StepFactory(Thought) -> 执行工具 -> ActionTool 
+                      -> Observation -> obs_step.is_done()?
+                           +--> True -> FinalStep -> return
+                           +--> False -> continue
 ```
 
 **2. 核心逻辑重构设计：**
 
-*   **完全依赖 is_done() 退出**：不再在主循环中判断 answer，而是通过 final_step.is_done() 或 obs_step.is_done() 判断是否退出。
+*   **只依赖 obs_step.is_done() 退出**：answer/implicit 和 parse_error 分支直接 yield 后 return，无需 is_done() 判断。只有 action 分支的 observation 需要通过 obs_step.is_done() 判断是否 return_direct 退出。
 *   **消灭循环外状态暂存**：所有结束状态全部在当次循环内通过生成 FinalStep 或 ErrorStep 后直接 return 结束生成器。不再依赖将 break 留到循环体外处理。这种“发现终态即构建并退出”的模式大幅降低了认知复杂度。
 *   **错误状态内聚**：max_steps 超限、空响应、未捕获异常，直接在对应分支内部调用 StepFactory.create_error_step()，yield 后 return。
 *   **执行历史注入规范**：conversation_history 只有在明确需要传递给下一次 LLM 思考时才被更新。
