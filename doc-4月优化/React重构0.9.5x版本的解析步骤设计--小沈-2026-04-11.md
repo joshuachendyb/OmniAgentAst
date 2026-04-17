@@ -5902,8 +5902,10 @@ yield step.to_dict()      # 统一输出
 **步骤 3.3：重构 parse_error 重试逻辑**
 *   **定位**：parsed["type"] == "parse_error" 处理分支。
 *   **操作**：
-    *   保留 self._add_observation_to_history() 注入修正提示。
-    *   如果 self.parse_retry_count >= self.max_parse_retries，直接生成 ErrorStep("parse_error") -> yield -> return。取代旧版的 break 和 last_error 赋值。
+    *   保留 self._add_observation_to_history() 注入修正提示，引导LLM修复输出格式。
+    *   重试计数器 +1。
+    *   如果 self.parse_retry_count < self.max_parse_retries，直接 continue 继续下一轮循环（让LLM重新尝试）。
+    *   如果 self.parse_retry_count >= self.max_parse_retries，生成 ErrorStep("parse_error") -> yield -> self._on_after_loop() -> return。取代旧版的 break 和 last_error 赋值。
 
 **步骤 3.4：重构 answer/implicit (Final) 场景**
 *   **定位**：if parsed["type"] in ["answer", "implicit"]: 分支。
