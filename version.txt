@@ -1,3 +1,27 @@
+v0.9.7.9
+
+更新时间：2026-04-17 23:12:00
+
+更新内容：
+
+## 1. Agent主循环2.0测试用例补充 - 小健-2026-04-17
+
+### 1.1 测试内容
+
+- yield顺序验证：验证 ThoughtStep → ActionToolStep → ObservationStep 的 yield 顺序
+- parse_retry重置验证：验证每次循环开始时 parse_retry_count 重置为 0
+- on_after_loop调用验证：验证各类退出场景都调用 _on_after_loop()
+
+### 1.2 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 4b98a4fc | test: 补充Agent主循环2.0测试用例-yield顺序/parse_retry重置/on_after_loop调用验证 |
+
+参与开发：小健（测试+审查）
+
+---
+
 v0.9.7.8
 
 更新时间：2026-04-17 17:50:00
