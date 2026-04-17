@@ -1743,26 +1743,22 @@ if is_parse_error:
 
 ---
 
-##### 14.7.3 步骤3：改造结果处理逻辑（第219-243行）
+##### 14.7.3 步骤3：改造结果处理逻辑（第207-261行）
 
 这是最关键的适配点，需要将旧的tool_name=="finish"判断替换为新的type字段判断：
 
 ```python
-# ===== base_react.py 第219-243行：改造判断逻辑 =====
-# 旧代码（第219-227行）:
+# ===== base_react.py 第207-261行：改造判断逻辑 =====
+# 旧代码（设计文档原第219-227行）:
 thought_content = parsed.get("content", "")
 tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
-tool_params = parsed.get("tool_params", parsed.get("params", {}))
 
 if tool_name == "finish":
     # 处理完成
     last_response = response  # 保存用于后续使用
     break  # 直接退出，不yield thought
 
-# 旧代码（第229-243行）:
-current_time = create_timestamp()
-thought = parsed.get("thought", "")
-reasoning = parsed.get("reasoning", "")
+# 旧代码（设计文档原第229-243行）:
 yield {
     "type": "thought",
     "step": step_count,
@@ -1775,34 +1771,28 @@ yield {
 }
 ```
 
-**新代码（基于type字段判断）**：
+**新代码（基于type字段判断）** - 实际代码位置：
 
 ```python
-# ===== 获取 parsed 结果（新解析器返回格式）=====
-# 新解析器返回格式：
-# {
-#     "type": "action" | "answer" | "implicit" | "thought_only",
-#     "thought": str | None,
-#     "tool_name": str | None,      # type="action"时有值
-#     "tool_params": dict | None,   # type="action"时有值
-#     "response": str | None,       # type="answer"/"implicit"时有值
-#     # 兼容性字段（确保向后兼容）
-#     "content": str | None,        # 兼容旧代码
-#     "reasoning": str | None       # 兼容旧代码
-# }
-
-# 统一获取字段（兼容新旧格式）
-thought_content = parsed.get("content", parsed.get("thought", ""))
-tool_name = parsed.get("tool_name", parsed.get("action_tool", ""))
+# ===== 获取 parsed 结果（第202-205行）=====
+thought_content = parsed.get("content", "")
+tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
 tool_params = parsed.get("tool_params", parsed.get("params", {}))
-thought = parsed.get("thought", "")
-reasoning = parsed.get("reasoning", "")
 
-# ===== 基于type字段判断（新逻辑）=====
-if parsed.get("type") == "action":
-    # 场景：工具调用（Action）
-    # 继续执行工具调用流程
-    pass
+# ===== 基于type字段判断（新逻辑）第207-261行）=====
+if parsed["type"] in ["answer", "implicit"]:
+    # 场景：最终回答（Answer/Implicit）
+    last_response = response
+    last_parsed_type = parsed["type"]  # 记录退出类型
+    break
+
+elif parsed["type"] == "thought_only":
+    # 场景：纯思考（Thought_only）
+    yield { "type": "thought", ... }
+    continue
+
+# ===== 解析错误处理（第231-251行）=====
+is_parse_error = "⚠️" in parsed.get("content", "")
 
 elif parsed.get("type") in ["answer", "implicit"]:
     # 场景：最终回答（Answer/Implicit）
@@ -1848,6 +1838,12 @@ else:
 - [ ] 最终回答流程正确（不yield thought，直接break）
 - [ ] 纯思考流程正确（yield thought，不break）
 - [ ] 兼容性字段（content/reasoning）正确传递
+
+**检查点**：
+- [x] type字段判断逻辑正确（第209行）- 小沈-2026-04-17
+- [x] answer/implicit分支正确（第209-212行）- 小沈-2026-04-17
+- [x] thought_only分支正确（第215-229行）- 小沈-2026-04-17
+- [x] 解析错误处理正确（第231-251行）- 小沈-2026-04-17
 
 ---
 
