@@ -188,6 +188,7 @@ class BaseAgent(ABC):
         thought_content = ""
         tool_name = "finish"
         tool_params = {}
+        last_error_detail = ""  # 保存详细错误信息
         
         # ===== 场景1：未捕获异常 (try...except包裹整个循环) =====
         try:
@@ -226,10 +227,25 @@ class BaseAgent(ABC):
                 # 【重构 2026-04-16 小沈】使用type字段判断，替代旧的tool_name=="finish"
                 if parsed["type"] in ["answer", "implicit"]:
                     logger.info(f"[parse_react_response] 情况2: type={parsed['type']}, answer/implicit完成")
+                    
+                    # 【问题1优化】在退出前，如果存在thought内容，先yield一个ThoughtStep
+                    # 确保前端能即时显示AI的思考过程
+                    if thought_content and thought_content.strip():
+                        thought_step = StepFactory.create_thought_step(
+                            step=step_count,
+                            content=thought_content,
+                            tool_name="finish",
+                            tool_params={},
+                            thought=parsed.get("thought", thought_content),
+                            reasoning=parsed.get("reasoning", "")
+                        )
+                        self.steps.append(thought_step)
+                        yield thought_step.to_dict()
+
                     last_response = response  # 保存用于后续使用
                     last_parsed_type = parsed["type"]  # 记录退出类型
                     last_answer_response = parsed.get("response", "")  # 保存真正答案
-                    break  # 直接退出，不yield thought
+                    break  # 正常退出
                 
                 # 【新增】thought_only类型：纯思考分支，继续下一轮循环
                 if parsed["type"] == "thought_only":
@@ -255,28 +271,23 @@ class BaseAgent(ABC):
                     self.conversation_history.append({"role": "assistant", "content": response})
                     continue  # 继续下一轮循环
                 
-                # ===== 检查解析是否失败 =====  # 修复 2026-04-15 小沈
-                # parse_response现在返回错误结果而不是抛异常
-                # 通过检查content是否包含错误标识来判断
-                is_parse_error = "⚠️" in parsed.get("content", "")
-                
-                if is_parse_error:
-                    logger.info(f"[parse_react_response] 情况4: 解析错误, 重试次数={self.parse_retry_count}")
-                    # 【修正 2026-04-17 小沈】按照设计文档15.2.0.4修正顺序：不需要yield step，直接重试
-                    # 不添加到self.steps（重试场景不记录步骤）
-                    # 不添加到conversation_history（让LLM根据错误提示重试）
+                # ===== 【深度优化】问题3：检查解析是否失败 =====
+                # 不再依赖 "⚠️" 符号，改用显式的 type="error" 判断
+                if parsed["type"] == "error":
+                    error_msg = parsed.get("error", "Unknown parse error")
+                    logger.warning(f"[parse_react_response] 情况4: 解析错误: {error_msg}, 重试次数={self.parse_retry_count}")
                     
-                    # 添加错误提示到历史，让LLM重新尝试
-                    error_content = parsed.get("content", "Parse error")
-                    self._add_observation_to_history(f"{error_content}. Please respond with valid JSON format.")
+                    # 添加错误提示到历史，引导 LLM 修复
+                    self._add_observation_to_history(f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format (Thought -> Action -> Action Input).")
                     
                     # 重试计数器+1
                     self.parse_retry_count += 1
                     
-                    # 重试次数 >= 3？退出循环；否则继续循环
+                    # 重试次数 >= 3？退出循环
                     if self.parse_retry_count >= self.max_parse_retries:
                         last_error = "parse_error"
-                        break  # 重试次数用尽，退出循环
+                        last_error_detail = error_msg
+                        break  
                     continue  # 继续循环，让LLM重新尝试
                 
                 # ===== 【步骤2.9】情况1：工具调用（Action）=====
@@ -459,7 +470,7 @@ class BaseAgent(ABC):
                 error_step = StepFactory.create_error_step(
                     step=step_count,
                     error_type="parse_error",
-                    error_message=f"解析失败（已重试{self.max_parse_retries}次）",
+                    error_message=f"解析失败: {last_error_detail}（已重试{self.max_parse_retries}次）",
                     recoverable=False
                 )
                 

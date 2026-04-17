@@ -67,10 +67,11 @@ def parse_react_response(output: str) -> Dict[str, Any]:
     if not output or not isinstance(output, str):
         thought = "(Implicit) Empty response"
         return {
-            "type": "implicit",
+            "type": "error",
+            "error": "Empty or non-string response from LLM",
             "thought": thought,
-            "content": thought,           # 兼容性字段：映射到thought
-            "reasoning": thought,         # 兼容性字段：映射到thought
+            "content": thought,
+            "reasoning": thought,
             "tool_name": None,
             "tool_params": None,
             "response": ""
@@ -148,7 +149,8 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
             "reasoning": tool_result["content"],    # 兼容性字段
             "tool_name": tool_result["tool_name"],
             "tool_params": tool_result["tool_params"],
-            "response": None
+            "response": None,
+            "error": None
         }
     
     # 定位关键词位置
@@ -173,6 +175,20 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
         return _parse_thought_only(output, thought_match)
     
     # 情况A: 无关键词匹配 - 隐式回答
+    # 【深度分析】如果文本很长且没有关键词，可能是隐式回答；如果很短或乱码，可能是解析失败
+    if len(output.strip()) < 5:
+        thought = "Response too short to be meaningful"
+        return {
+            "type": "error",
+            "error": "LLM response is too short or malformed",
+            "thought": thought,
+            "content": thought,
+            "reasoning": thought,
+            "tool_name": None,
+            "tool_params": None,
+            "response": output.strip()
+        }
+
     thought = "(Implicit) I can answer without any more tools!"
     return {
         "type": "implicit",
@@ -181,7 +197,8 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
         "reasoning": thought,           # 兼容性字段
         "tool_name": None,
         "tool_params": None,
-        "response": output.strip()
+        "response": output.strip(),
+        "error": None
     }
 
 
@@ -358,14 +375,28 @@ def _parse_action(
         if "actionInput" in tool_params and "tool_params" not in tool_params:
             tool_params["tool_params"] = tool_params.pop("actionInput")
     
+    # 深度检查：如果工具名解析成功但参数解析彻底失败（返回None而非{}）
+    if tool_name and tool_params is None:
+        return {
+            "type": "error",
+            "error": f"Failed to parse parameters for tool '{tool_name}' after 5 levels of fallback",
+            "thought": thought,
+            "content": thought,
+            "reasoning": thought,
+            "tool_name": tool_name,
+            "tool_params": {},
+            "response": None
+        }
+
     return {
         "type": "action",
         "thought": thought,
         "content": thought,             # 兼容性字段
         "reasoning": thought,           # 兼容性字段
         "tool_name": tool_name,
-        "tool_params": tool_params,
-        "response": None
+        "tool_params": tool_params or {},
+        "response": None,
+        "error": None
     }
 
 
@@ -450,6 +481,8 @@ def _parse_action_input(input_section: str) -> Dict[str, Any]:
     if not input_section:
         return {}
     
+    # 记录原始输入用于错误分析
+    from app.utils.logger import logger
     # ==========================================================================
     # 【基于14.0分析修正】第0级: Markdown代码块去除（在_parse_action_input内处理）
     # 原建议位置：parse_react_response() 入口 ❌
@@ -521,7 +554,13 @@ def _parse_action_input(input_section: str) -> Dict[str, Any]:
         return parsed_fallback
     
     # 第5级: 正则提取key:value对（最坏情况兜底）
-    return _extract_key_value_pairs(json_str)
+    fallback_kv = _extract_key_value_pairs(json_str)
+    if fallback_kv:
+        return fallback_kv
+        
+    # 如果所有级别都失败，返回 None 触发上层的 type="error"
+    logger.error(f"[_parse_action_input] All 5 levels of JSON parsing failed for: {input_section[:100]}...")
+    return None
 
 
 def _extract_json_with_balanced_braces(text: str) -> Tuple[Optional[str], str]:

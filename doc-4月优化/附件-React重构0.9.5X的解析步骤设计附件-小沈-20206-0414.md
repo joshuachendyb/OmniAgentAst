@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.22  
+**文档版本**: v2.23  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-17 15:25:00  
+**更新时间**: 2026-04-17 15:30:00  
 **编写人**: 小沈
 
 ## 版本历史
@@ -50,6 +50,7 @@
 | v2.20 | 2026-04-17 15:15:00 | 小沈 | 15.6.3节：更新为StepFactory实现，添加统一result_dict格式说明 |
 | v2.21 | 2026-04-17 15:16:30 | 小沈 | 15.6.3节：补充完整to_dict字段说明（execution_status/summary/error_message/action_retry_count等11个字段） |
 | v2.22 | 2026-04-17 15:25:00 | 小沈 | 16章维度三设计更新：标注实现状态，不创建run_stream_v2()新方法，补充需完成步骤 |
+| v2.23 | 2026-04-17 15:30:00 | 小沈 | 16.1.1节更新：基于实际代码分析，移除循环条件待改进项，保留answer/yield问题 |
 
 ---
 
@@ -5454,9 +5455,8 @@ error_response = create_error_response(
 | 问题 | 位置 | 影响 | 严重程度 |
 |------|------|------|---------|
 | answer/implicit未yield | 第232行 | 需要补充yield FinalStep（含thought） | 🔴 高 |
-| max_steps检查 | 第199行 | 循环内检查，非独立ErrorStep | 🟡 中 |
 
-> **说明**：循环条件`while True`保持不变，当前实现合理。
+> **说明**：`while True`循环和`max_steps`检查保持不变，当前实现合理。
 
 **现有代码实际流程图**：
 
@@ -5521,7 +5521,7 @@ if obs_step.is_done():
 **仍需改进的代码**：
 
 ```python
-# ⚠️ 问题1: answer/implicit时直接break（第227-232行）
+# ⚠️ 问题: answer/implicit时直接break（第227-232行）
 if parsed["type"] in ["answer", "implicit"]:
     last_response = response
     break  # ❌ 未yield FinalStep（含thought）
@@ -5534,12 +5534,6 @@ if parsed["type"] in ["answer", "implicit"]:
     )
     yield final_step.to_dict()
     break
-
-# ⚠️ 问题2: max_steps在循环内检查（第199-201行）
-if step_count >= max_steps:
-    last_error = "max_steps_exceeded"
-    break  # ❌ 未创建独立ErrorStep
-    # 应改为在循环外独立处理
 ```
 
 ---
