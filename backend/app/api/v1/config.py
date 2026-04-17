@@ -99,11 +99,6 @@ from app.utils.logger import logger
 router = APIRouter()
 
 
-def _get_config_path() -> Path:
-    """兼容旧测试：返回配置文件路径。"""
-    return Path(AIServiceFactory.get_config_path())
-
-
 def ordered_dict(data: dict) -> OrderedDict:
     """
     将字典转换为OrderedDict，保持特定顺序
