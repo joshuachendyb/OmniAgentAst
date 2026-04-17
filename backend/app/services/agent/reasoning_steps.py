@@ -722,17 +722,36 @@ class StepFactory:
         """
         创建ObservationStep
         
+        【修复 2026-04-17 小沈】
+        - 原错误实现：使用 execution_result.get("data") 作为 observation 内容
+        - 修正为：使用 execution_result.get("summary") 作为 observation 内容
+        - 原因：遵循设计文档 15.6.4 的规范
+          - observation 只显示精简的 summary 字段给前端
+          - 不应该显示完整的 data 结构（会显示 {'success': True, 'entries': [...]} 等冗余数据）
+          - display_text = execution_result.get('summary', '') 是设计文档规定的格式
+        
         Args:
             step: 步骤序号
             tool_name: 工具名称
             tool_params: 工具参数
             execution_result: 执行结果字典
+                - status: 执行状态（success/error/warning）
+                - summary: 执行摘要（用于 observation 字段）
+                - data: 原始数据（不用于 observation）
             return_direct: 是否直接返回
-                
+            
         Returns:
             ObservationStep实例
+            
+        设计依据：
+        - 设计文档：15.6.4 observation 类型（第5006行）
+        - 原文："observation 只显示精简的 observation 字段给前端"
+        - 原文："observation: string 观察结果文本（display_text精简摘要）"
         """
-        observation_text = str(execution_result.get("data", "")) if execution_result.get("data") else ""
+        # 【修复 2026-04-17 小沈】使用 summary 而不是 data
+        # observation 字段只应包含精简摘要，不是完整的原始数据结构
+        # display_text 在 base_react.py 中定义为：execution_result.get('summary', '')
+        observation_text = execution_result.get("summary", "")
         
         return ObservationStep(
             step=step,
