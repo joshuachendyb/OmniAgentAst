@@ -262,8 +262,9 @@ class BaseAgent(ABC):
                 
                 if is_parse_error:
                     logger.info(f"[parse_react_response] 情况4: 解析错误, 重试次数={self.parse_retry_count}")
-                    # 保存原始response到conversation_history
-                    self.conversation_history.append({"role": "assistant", "content": response})
+                    # 【修正 2026-04-17 小沈】按照设计文档15.2.0.4修正顺序：不需要yield step，直接重试
+                    # 不添加到self.steps（重试场景不记录步骤）
+                    # 不添加到conversation_history（让LLM根据错误提示重试）
                     
                     # 添加错误提示到历史，让LLM重新尝试
                     error_content = parsed.get("content", "Parse error")
