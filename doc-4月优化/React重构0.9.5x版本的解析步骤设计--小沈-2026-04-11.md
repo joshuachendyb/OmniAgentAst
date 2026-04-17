@@ -6003,11 +6003,36 @@ yield step.to_dict()      # 统一输出
         step_count = 0
         
         while True:
+            # 【修正】每次循环开始时重置解析重试计数器
+            self.parse_retry_count = 0
+            
+            # 【补充】检查最大步数限制
+            if step_count >= max_steps:
+                error_step = StepFactory.create_error_step(
+                    step=step_count,
+                    error_type="max_steps_exceeded",
+                    error_message=f"已达到最大迭代次数 {max_steps}",
+                    recoverable=False
+                )
+                yield error_step.to_dict()
+                return
+            
             step_count += 1
 
             try:
                 # 步骤 1: 调用大模型并保存上下文
                 llm_response = await self._get_llm_response()
+                
+                # 【补充】检查LLM返回空响应
+                if not llm_response:
+                    error_step = StepFactory.create_error_step(
+                        step=step_count,
+                        error_type="empty_response",
+                        error_message="AI服务返回空响应",
+                        recoverable=False
+                    )
+                    yield error_step.to_dict()
+                    return
                 
                 # 步骤 2: 统一解析大模型响应
                 parsed = parse_react_response(llm_response)
@@ -6032,23 +6057,26 @@ yield step.to_dict()      # 统一输出
                         )
                         yield thought_step.to_dict()
 
+                    # 【修正】创建final_step时传入thought参数
                     final_step = StepFactory.create_final_step(
                         step=step_count,
                         response=last_answer_response or thought_content,
-                        thought=thought_content,
+                        thought=parsed.get("thought", thought_content),
                         is_finished=True
                     )
                     yield final_step.to_dict()
-                    if final_step.is_done():  # FinalStep.is_done() == True
-                        return
+                    # FinalStep.is_done() 必然为 True，无需检查直接return
+                    return
 
                 # ==========================
-                # 分支 2: 只有思考 (罕见情况)
+                # 分支 2: 只有思考 (thought_only)
                 # ==========================
                 elif parsed["type"] == "thought_only":
+                    # 【补充】保存parsed中的thought到thought_content，供后续使用
+                    thought_content = parsed.get("content", "")
                     thought_step = StepFactory.create_thought_step(
                         step=step_count,
-                        content=parsed.get("content", ""),
+                        content=thought_content,
                         tool_name="",
                         tool_params={},
                         thought=parsed.get("thought", ""),
@@ -6129,10 +6157,28 @@ yield step.to_dict()      # 统一输出
                 # ==========================
                 elif parsed["type"] == "parse_error":
                     error_msg = parsed.get("error", "Unknown parse error")
+                    
+                    # 添加错误提示到历史，引导LLM修复
                     self.conversation_history.append({
                         "role": "user",
                         "content": f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format."
                     })
+                    
+                    # 【补充】重试计数器+1
+                    self.parse_retry_count += 1
+                    
+                    # 如果重试次数超过限制，生成错误步骤并退出
+                    if self.parse_retry_count >= self.max_parse_retries:
+                        error_step = StepFactory.create_error_step(
+                            step=step_count,
+                            error_type="parse_error",
+                            error_message=f"解析失败: {error_msg}（已重试{self.max_parse_retries}次）",
+                            recoverable=False
+                        )
+                        yield error_step.to_dict()
+                        return
+                    
+                    # 否则继续下一次循环
                     continue
 
             except Exception as e:
