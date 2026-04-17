@@ -341,23 +341,19 @@ async def generate_sse_stream(
     if not security_check_result.get('is_safe', True):
         risk = security_check_result.get('risk', '未知风险')
         logger.info(f"[Step error] 发送error步骤(安全检测拦截)")
-        error_step = create_error_step(
-            error_type='security',
-            error_message=f'危险操作需确认: {risk}',
-            step_num=next_step(),
-            model=ai_service.model,
-            provider=ai_service.provider,
-            recoverable=False
-        )
-        current_execution_steps.append(error_step)
-        await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {risk}")
-        yield create_error_response(
+        error_step_obj = StepFactory.create_error_step(
+            step=next_step(),
             error_type="security",
-            error_message=f'危险操作需确认: {risk}',
+            error_message=f"危险操作需确认: {risk}",
+            recoverable=False,
             model=ai_service.model,
-            provider=ai_service.provider,
-            recoverable=False
+            provider=ai_service.provider
         )
+        error_step_dict = error_step_obj.to_dict()
+        error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
+        current_execution_steps.append(error_step_dict)
+        await save_execution_steps_to_db(session_id, current_execution_steps, f"错误: {risk}")
+        yield error_response
         return
     
     try:
@@ -443,15 +439,17 @@ async def generate_sse_stream(
             
             except Exception as e:
                 logger.error(f"文件操作执行出错：task_id={task_id}, error={e}", exc_info=True)
-                error_step = create_error_step(
+                error_step_obj = StepFactory.create_error_step(
+                    step=next_step(),
                     error_type='file_operation_error',
                     error_message="文件操作执行失败",
-                    step_num=next_step(),
+                    recoverable=False,
                     model=ai_service.model,
-                    provider=ai_service.provider,
-                    recoverable=False
+                    provider=ai_service.provider
                 )
-                current_execution_steps.append(error_step)
+                error_step_dict = error_step_obj.to_dict()
+                error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
+                current_execution_steps.append(error_step_dict)
                 await save_execution_steps_to_db(session_id, current_execution_steps, "文件操作执行失败")
                 yield create_error_response(
                     error_type="file_operation_error",
@@ -464,36 +462,34 @@ async def generate_sse_stream(
         elif intent_type == "network" and confidence >= 0.3:
             # 网络操作：待实现 NetworkReactAgent
             logger.warning(f"[NetworkOp] NetworkReactAgent 待实现，使用回退逻辑")
-            error_step = create_error_step(
-                error_type='not_implemented',
-                error_message="网络操作功能正在开发中",
-                step_num=next_step(),
-                model=ai_service.model,
-                provider=ai_service.provider,
-                recoverable=False
-            )
-            current_execution_steps.append(error_step)
-            await save_execution_steps_to_db(session_id, current_execution_steps, "网络操作功能正在开发中")
-            yield create_error_response(
+            error_step_obj = StepFactory.create_error_step(
+                step=next_step(),
                 error_type="not_implemented",
                 error_message="网络操作功能正在开发中",
+                recoverable=False,
                 model=ai_service.model,
-                provider=ai_service.provider,
-                recoverable=False
+                provider=ai_service.provider
             )
+            error_step_dict = error_step_obj.to_dict()
+            error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
+            current_execution_steps.append(error_step_dict)
+            await save_execution_steps_to_db(session_id, current_execution_steps, "网络操作功能正在开发中")
+            yield error_response
         
         elif intent_type == "desktop" and confidence >= 0.3:
             # 桌面操作：待实现 DesktopReactAgent
             logger.warning(f"[DesktopOp] DesktopReactAgent 待实现，使用回退逻辑")
-            error_step = create_error_step(
-                error_type='not_implemented',
+            error_step_obj = StepFactory.create_error_step(
+                step=next_step(),
+                error_type="not_implemented",
                 error_message="桌面操作功能正在开发中",
-                step_num=next_step(),
+                recoverable=False,
                 model=ai_service.model,
-                provider=ai_service.provider,
-                recoverable=False
+                provider=ai_service.provider
             )
-            current_execution_steps.append(error_step)
+            error_step_dict = error_step_obj.to_dict()
+            error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
+            current_execution_steps.append(error_step_dict)
             await save_execution_steps_to_db(session_id, current_execution_steps, "桌面操作功能正在开发中")
             yield create_error_response(
                 error_type="not_implemented",
@@ -506,17 +502,19 @@ async def generate_sse_stream(
         else:
             # chat 或 confidence < 0.3：简单对话（暂时返回错误，后续阶段实现 chat_stream_query 集成）
             logger.warning(f"[ChatOp] chat_stream_query 待集成，暂时返回提示")
-            error_step = create_error_step(
-                error_type='not_implemented',
+            error_step_obj = StepFactory.create_error_step(
+                step=next_step(),
+                error_type="not_implemented",
                 error_message="简单对话功能正在开发中",
-                step_num=next_step(),
+                recoverable=False,
                 model=ai_service.model,
-                provider=ai_service.provider,
-                recoverable=False
+                provider=ai_service.provider
             )
-            current_execution_steps.append(error_step)
+            error_step_dict = error_step_obj.to_dict()
+            error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
+            current_execution_steps.append(error_step_dict)
             await save_execution_steps_to_db(session_id, current_execution_steps, "简单对话功能正在开发中")
-            yield create_error_response(
+            yield error_response
                 error_type="not_implemented",
                 error_message="简单对话功能正在开发中",
                 model=ai_service.model,
