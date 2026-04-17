@@ -1,3 +1,49 @@
+v0.9.7.1
+
+更新时间：2026-04-16 22:49:01
+
+更新内容：
+
+## 1. 小健代码审查问题修复 - 小沈-2026-04-16
+
+### 1.1 问题修复
+
+| 问题 | 级别 | 修复内容 |
+|------|------|----------|
+| 问题1：last_response判断可读性 | Minor | 引入last_parsed_type变量，循环外用type字段判断 |
+| 问题5：ValueError死代码 | Important | 移除react_output_parser.py无效try/except分支 |
+| Minor A：test_action_keywords覆盖不全 | Minor | 补充5个中文action模式测试（调用/使用/执行/工具为/函数为） |
+| Minor B：缺少独立函数 | Minor | 抽取_parse_thought_only()独立函数，对齐设计文档14.5节 |
+
+### 1.2 额外修复
+
+- 兼容旧测试用例JSON dict输入（tool_name/action/action_input字段预解析）
+- 修复docstring中正则表达式的语法警告
+
+### 1.3 修改文件
+
+| 文件 | 变更 |
+|------|------|
+| backend/app/services/agent/base_react.py | 引入last_parsed_type + 循环外type判断 + self.parser别名 |
+| backend/app/services/agent/react_output_parser.py | 新增670行：统一解析器核心实现 |
+| backend/app/services/agent/__init__.py | 新增导出 |
+| backend/tests/test_react_output_parser.py | 新增491行：58个单元测试 |
+
+### 1.4 测试结果
+
+- 语法检查：✅ 通过
+- 单元测试：✅ 58 passed
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 04c40dec | fix: 修复小健代码审查问题 - 小沈-2026-04-16 |
+
+参与开发：小沈（分析+修复）、小健（审查）
+
+---
+
 v0.9.7.0
 
 更新时间：2026-04-16 21:40:00
