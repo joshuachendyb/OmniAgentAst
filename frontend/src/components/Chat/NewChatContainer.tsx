@@ -151,7 +151,10 @@ const NewChatContainer: React.FC = () => {
   const streamingContentRef = useRef('');           // 累积AI回复内容
   const streamingStepsRef = useRef<ExecutionStep[]>([]); // 累积执行步骤
   const lastUpdateTimeRef = useRef(0);              // 上次更新时间
-  const UPDATE_INTERVAL = 5;                        // 更新间隔5ms（实时更新）
+  // 【小沈修复 2026-04-18】从5ms改为1ms，解决chunk更新被跳过的问题
+  // 问题原因：chunk到达间隔<5ms时，shouldUpdate=false导致setMessages被跳过
+  // 解决：1ms足够短，能跟上chunk的到达速度，同时仍有一定节流效果
+  const UPDATE_INTERVAL = 1;                        // 更新间隔1ms（实时更新）
 
   // 2. 滚动控制ref
   const userScrolledUpRef = useRef(false);
