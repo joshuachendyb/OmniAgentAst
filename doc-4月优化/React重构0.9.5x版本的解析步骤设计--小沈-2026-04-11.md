@@ -6212,10 +6212,8 @@ yield step.to_dict()      # 统一输出
                     recoverable=False
                 )
                 yield error_step.to_dict()
-                
-                # 若错误不可恢复，则退出
-                if error_step.is_done():
-                    return
+                self._on_after_loop()
+                return
 ```
 
 -=================================
