@@ -272,8 +272,9 @@ class BaseAgent(ABC):
                     continue  # 继续下一轮循环
                 
                 # ===== 【深度优化】问题3：检查解析是否失败 =====
-                # 不再依赖 "⚠️" 符号，改用显式的 type="error" 判断
-                if parsed["type"] == "error":
+                # 不再依赖 "⚠️" 符号，改用显式的 type="parse_error" 判断
+                # parse_error表示解析失败，需要重试；error表示真实运行错误
+                if parsed["type"] == "parse_error":
                     error_msg = parsed.get("error", "Unknown parse error")
                     logger.warning(f"[parse_react_response] 情况4: 解析错误: {error_msg}, 重试次数={self.parse_retry_count}")
                     

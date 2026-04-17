@@ -451,13 +451,7 @@ async def generate_sse_stream(
                 error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
                 current_execution_steps.append(error_step_dict)
                 await save_execution_steps_to_db(session_id, current_execution_steps, "文件操作执行失败")
-                yield create_error_response(
-                    error_type="file_operation_error",
-                    error_message="文件操作执行失败",
-                    model=ai_service.model,
-                    provider=ai_service.provider,
-                    recoverable=False
-                )
+                yield error_response
         
         elif intent_type == "network" and confidence >= 0.3:
             # 网络操作：待实现 NetworkReactAgent
@@ -491,14 +485,6 @@ async def generate_sse_stream(
             error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
             current_execution_steps.append(error_step_dict)
             await save_execution_steps_to_db(session_id, current_execution_steps, "桌面操作功能正在开发中")
-            yield create_error_response(
-                error_type="not_implemented",
-                error_message="桌面操作功能正在开发中",
-                model=ai_service.model,
-                provider=ai_service.provider,
-                recoverable=False
-            )
-        
             yield error_response
         
         else:

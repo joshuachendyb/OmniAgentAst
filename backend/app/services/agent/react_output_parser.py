@@ -67,7 +67,7 @@ def parse_react_response(output: str) -> Dict[str, Any]:
     if not output or not isinstance(output, str):
         thought = "(Implicit) Empty response"
         return {
-            "type": "error",
+            "type": "parse_error",
             "error": "Empty or non-string response from LLM",
             "thought": thought,
             "content": thought,
@@ -179,7 +179,7 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
     if len(output.strip()) < 5:
         thought = "Response too short to be meaningful"
         return {
-            "type": "error",
+            "type": "parse_error",
             "error": "LLM response is too short or malformed",
             "thought": thought,
             "content": thought,
@@ -378,7 +378,7 @@ def _parse_action(
     # 深度检查：如果工具名解析成功但参数解析彻底失败（返回None而非{}）
     if tool_name and tool_params is None:
         return {
-            "type": "error",
+            "type": "parse_error",
             "error": f"Failed to parse parameters for tool '{tool_name}' after 5 levels of fallback",
             "thought": thought,
             "content": thought,
