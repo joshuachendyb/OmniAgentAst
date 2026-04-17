@@ -1960,71 +1960,37 @@ class BaseAgent(ABC):
                 break
             continue
         
-        # ===== 基于type字段判断处理（核心变化）=====
-        thought_content = parsed.get("content", parsed.get("thought", ""))
-        tool_name = parsed.get("tool_name", parsed.get("action_tool", ""))
-        tool_params = parsed.get("tool_params", parsed.get("params", {}))
-        thought = parsed.get("thought", "")
-        reasoning = parsed.get("reasoning", "")
+        # ===== 基于type字段判断处理（实际代码顺序第207-252行）=====
+        # 实际代码顺序：情况2 → 情况3 → 情况4 → 情况1
         
-        # 情况1：工具调用（Action）
-        if parsed.get("type") == "action":
-            current_time = create_timestamp()
-            yield {
-                "type": "thought",
-                "step": step_count,
-                "timestamp": current_time,
-                "content": thought_content,
-                "thought": thought,
-                "reasoning": reasoning,
-                "tool_name": tool_name,
-                "tool_params": tool_params
-            }
-            # 加入历史
-            self.conversation_history.append({"role": "assistant", "content": response})
-            
-            # 执行工具
-            self.status = AgentStatus.EXECUTING
-            execution_result = await self._execute_tool(tool_name, tool_params)
-            # ... (后续逻辑) ...
-        
-        # 情况2：最终回答（Answer/Implicit）
-        elif parsed.get("type") in ["answer", "implicit"]:
-            final_response = parsed.get("response", parsed.get("content", ""))
-            yield {
-                "type": "final",
-                "step": step_count,
-                "timestamp": create_timestamp(),
-                "content": final_response,
-                "thought": thought,
-                "reasoning": reasoning
-            }
+        # 情况2：最终回答（Answer/Implicit）- 直接退出
+        if parsed["type"] in ["answer", "implicit"]:
+            logger.info(f"[parse_react_response] 情况2: type={parsed['type']}, answer/implicit完成")
+            last_response = response
+            last_parsed_type = parsed["type"]
             break
         
-        # 情况3：纯思考（Thought_only）
-        elif parsed.get("type") == "thought_only":
-            current_time = create_timestamp()
-            yield {
-                "type": "thought",
-                "step": step_count,
-                "timestamp": current_time,
-                "content": thought_content,
-                "thought": thought,
-                "reasoning": reasoning,
-                "tool_name": None,
-                "tool_params": None
-            }
-            # 加入历史
-            self.conversation_history.append({"role": "assistant", "content": response})
-            # 不break，继续循环
+        # 情况3：纯思考（Thought_only）- 继续下一轮循环
+        if parsed["type"] == "thought_only":
+            logger.info(f"[parse_react_response] 情况3: type=thought_only, 纯思考继续")
+            # ...yield thought...
+            continue
         
-        # 情况4：旧兼容（无type字段，按旧逻辑）
-        else:
-            if tool_name == "finish" or not tool_name:
-                last_response = response
-                break
-            # 否则按工具调用处理...
+        # 情况4：解析错误检查 - 重试机制
+        is_parse_error = "⚠️" in parsed.get("content", "")
+        if is_parse_error:
+            logger.info(f"[parse_react_response] 情况4: 解析错误, 重试次数")
+            # ...错误处理...
+            if重试次数>=3: break
+            else: continue
+        
+        # 情况1：工具调用（Action）- 正常流转
+        logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
+        # ...yield thought...
+        # 执行工具
 ```
+
+**实际代码注释**：实际代码把action放最后是因为这是最常用的分支（else兜底），前面优先处理特殊情况（退出/继续/重试）
 
 ---
 
