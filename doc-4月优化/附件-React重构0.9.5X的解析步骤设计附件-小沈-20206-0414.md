@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.14  
+**文档版本**: v2.21  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-17 11:12:38  
+**更新时间**: 2026-04-17 15:16:30  
 **编写人**: 小沈
 
 ## 版本历史
@@ -46,6 +46,9 @@
 | v2.16 | 2026-04-17 11:32:00 | 小沈 | 15.3节：补充Phase 1/Phase 2的现有代码vs Step封装后的代码对比，明确Phase 1已实施、Phase 2待实施的关系 |
 | v2.17 | 2026-04-17 11:38:00 | 小沈 | 15.4.1节：修正流程图，补充"原始response加入conversation_history"这一关键步骤 |
 | v2.18 | 2026-04-17 11:45:00 | 小沈 | 15.5节：1)行号改为描述性位置；2)新增15.5.3节细化不同类型的yield次数；3)修正影响结论为：外部行为不变、内部变化、新增self.steps功能 |
+| v2.19 | 2026-04-17 15:12:01 | 小沈 | 15.6章节字段定义更新：1)15.6.4 observation修正为summary（不是data）；2)15.6.5 final补充StepFactory字段；3)15.6.6 chunk添加step字段 |
+| v2.20 | 2026-04-17 15:15:00 | 小沈 | 15.6.3节：更新为StepFactory实现，添加统一result_dict格式说明 |
+| v2.21 | 2026-04-17 15:16:30 | 小沈 | 15.6.3节：补充完整to_dict字段说明（execution_status/summary/error_message/action_retry_count等11个字段） |
 
 ---
 
@@ -4875,101 +4878,109 @@ start_data = {
 
 ### 15.6.2 thought 类型
 
-**来源文件**: `backend/app/services/agent/base_react.py` (第236-245行)
+**来源文件**: `reasoning_steps.py` 第187-253行ThoughtStep类 + base_react.py第239-247行
 
-**产生字段**:
+**StepFactory字段**:
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| step | int | 步骤序号 |
+| content | string | 思考内容摘要 |
+| tool_name | string | 工具名称 |
+| tool_params | dict | 工具参数字典 |
+| thought | string | 详细思考内容 |
+| reasoning | string | 推理过程 |
+
+**【15.6.2补充】ThoughtStep完整字段（to_dict输出）**:
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
 | type | string | 固定值 "thought" |
 | step | int | 步骤序号 |
 | timestamp | int | 时间戳 |
-| content | string | 思考内容（原始LLM响应） |
-| thought | string | 解析后的思考过程 |
+| content | string | 思考内容摘要 |
+| thought | string | 详细思考内容 |
 | reasoning | string | 推理过程 |
-| tool_name | string | 工具名称（如 read_file, list_directory） |
+| tool_name | string | 工具名称 |
 | tool_params | dict | 工具参数字典 |
 
 **代码示例**:
 ```python
-yield {
-    "type": "thought",
-    "step": step_count,
-    "timestamp": current_time,
-    "content": thought_content,
-    "thought": thought,
-    "reasoning": reasoning,
-    "tool_name": tool_name,
-    "tool_params": tool_params
-}
+# 【步骤2.9】使用StepFactory创建ThoughtStep
+thought_step = StepFactory.create_thought_step(
+    step=step_count,
+    content=thought_content,
+    tool_name="",
+    tool_params={},
+    thought=thought,
+    reasoning=parsed.get("reasoning", "")
+)
+# 【步骤2.10】记录步骤历史
+self.steps.append(thought_step)
+# yield Step字典
+yield thought_step.to_dict()
 ```
 
 ---
 
 ### 15.6.3 action_tool 类型
 
-**来源文件**: 
-- 成功: `backend/app/services/agent/base_react.py` (第271-283行)
-- 失败: `backend/app/chat_stream/error_handler.py` (第693-705行)
+**来源文件**: `reasoning_steps.py` 第270-389行ActionToolStep类 + base_react.py第316-338行
 
-**产生字段**:
+**StepFactory字段**:
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| step | int | 步骤序号 |
+| tool_name | string | 工具名称 |
+| tool_params | dict | 工具参数字典 |
+| execution_result | dict | 执行结果（status/summary/data/error/retry_count） |
+| execution_time_ms | int | 执行耗时毫秒 |
+
+**【15.6.3补充】ActionToolStep完整字段（to_dict输出）**:
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
 | type | string | 固定值 "action_tool" |
 | step | int | 步骤序号 |
 | timestamp | int | 时间戳 |
-| tool_name | string | 工具名称 |
-| tool_params | dict | 工具参数字典 |
-| execution_status | string | 执行状态，"success" 或 "error" |
+| execution_status | string | 执行状态，"success" 或 "warning" 或 "error" |
 | summary | string | 执行结果摘要 |
-| execution_result | dict/string | 执行结果数据（15.7新增，原raw_data） |
-| error_message | string | 错误信息（15.7新增，成功时为空） |
-| execution_time_ms | int | 执行耗时毫秒（使用time.perf_counter()计算） |
-| action_retry_count | int | 重试次数 |
+| execution_result | dict/string | 执行结果数据（data字段） |
+| error_message | string | 错误信息（成功时为空字符串） |
+| action_retry_count | int | 重试次数（默认0） |
+| execution_time_ms | int | 执行耗时毫秒 |
+| tool_name | string | 工具名称（来自ToolMixin） |
+| tool_params | dict | 工具参数字典（来自ToolMixin） |
 
-**代码示例（成功）**:
+**代码示例**:
 ```python
-# 使用 perf_counter 计算工具执行耗时（高精度）
-start_time = time.perf_counter()
-execution_result = await self._execute_tool(tool_name, tool_params)
-execution_time_ms = int((time.perf_counter() - start_time) * 1000)
-
-yield {
-    "type": "action_tool",
-    "step": step_count,
-    "timestamp": current_time,
-    "tool_name": tool_name,
-    "tool_params": tool_params,
-    "execution_status": "success",
+# 【步骤2.9】统一执行结果字典格式（供StepFactory使用）
+execution_result_dict = {
+    "status": execution_result.get("status", "success"),
     "summary": execution_result.get("summary", ""),
-    "execution_result": execution_result.get("data"),
-    "error_message": "",
-    "execution_time_ms": execution_time_ms,  # 使用本地计算的耗时
-    "action_retry_count": 0
+    "data": execution_result.get("data"),
+    "error": "",
+    "retry_count": 0
 }
-```
 
-**代码示例（失败/错误）**:
-```python
-return {
-    'type': 'action_tool',
-    'step': step_num,
-    'timestamp': ts,
-    'tool_name': tool_name,
-    'tool_params': tool_params or {},
-    'execution_status': 'error',
-    'summary': summary,
-    'execution_result': raw_data or error_message,
-    'error_message': error_message,
-    'execution_time_ms': execution_time_ms,  # 传入实际计算的耗时
-    'action_retry_count': retry_count
-}
+# 【步骤2.9】使用StepFactory创建ActionToolStep
+action_step = StepFactory.create_action_tool_step(
+    step=step_count,
+    tool_name=tool_name,
+    tool_params=tool_params,
+    execution_result=execution_result_dict,
+    execution_time_ms=execution_time_ms
+)
+
+# 【步骤2.10】记录步骤历史
+self.steps.append(action_step)
+
+# yield Step字典
+yield action_step.to_dict()
 ```
 
 ---
 
 ### 15.6.4 observation 类型
 
-**来源文件**: `backend/app/services/agent/base_react.py` (第358-368行)
+**来源文件**: `reasoning_steps.py` 第395-465行ObservationStep类 + base_react.py第399-406行
 
 **产生字段**:
 | 字段名 | 类型 | 说明 |
@@ -4979,84 +4990,76 @@ return {
 | timestamp | int | 时间戳 |
 | tool_name | string | 工具名称 |
 | tool_params | dict | 工具参数字典 |
-| observation | string | 观察结果文本（display_text精简摘要） |
+| observation | string | 观察结果文本（**15.6.4修正：使用summary而不是data**） |
 | return_direct | bool | 是否直接返回 |
 
-**重要说明**：
-- `execution_status`（工具执行状态）在 **action_tool** 类型中显示，不在 observation 中
-- observation 只显示精简的 `observation` 字段给前端
+**【2026-04-17 小沈修复】重要说明**：
+- 原错误实现：使用 execution_result.get("data") 作为 observation 内容
+- 修正为：使用 execution_result.get("summary") 作为 observation 内容
+- 原因：遵循设计文档 15.6.4 的规范
+  - observation 只显示精简的 summary 字段给前端
+  - 不应该显示完整的 data 结构（会显示 {'success': True, 'entries': [...]} 等冗余数据）
+  - display_text = execution_result.get('summary', '') 是设计文档规定的格式
 
 **代码示例**:
 ```python
-# yield observation - 使用 display_text 给前端
-yield {
-    "type": "observation",
-    "step": step_count,
-    "timestamp": create_timestamp(),
-    "tool_name": tool_name,
-    "tool_params": tool_params,
-    "observation": display_text,  # 前端显示用精简摘要
-    "return_direct": execution_result.get("return_direct", False),
-}
-```
+# 【2026-04-17 小沈修复】使用 summary 而不是 data
+observation_text = execution_result.get("summary", "")
 
-format_observation_sse函数（第103-126行）**
-
-```python
-def format_observation_sse(
-    step: int,
-    observation: str = '',  # ← content替换为observation
-    tool_name: str = '',
-    tool_params: Optional[Dict] = None,  # ← 新增参数
-    return_direct: bool = False,  # ← 新增参数
-    timestamp: str = ''
-) -> str:
-    return format_sse_event('observation', step, {
-        'type': 'observation',
-        'step': step,
-        'timestamp': timestamp,
-        'tool_name': tool_name,
-        'tool_params': tool_params or {},  # ← 新增字段
-        'observation': observation,  # ← content替换为observation
-        'return_direct': return_direct  # ← 新增字段
-    })
+observation_step = StepFactory.create_observation_step(
+    step=step_count,
+    tool_name=tool_name,
+    tool_params=tool_params,
+    execution_result=execution_result,
+    return_direct=execution_result.get("return_direct", False)
+)
+# yield Step字典
+yield observation_step.to_dict()
 ```
 ---
 
 ### 15.6.5 final 类型
 
-**来源文件**: `backend/app/services/agent/base_react.py` (第322-331行)
+**来源文件**: `reasoning_steps.py` 第472-562行FinalStep类 + base_react.py第420-426行
 
-**产生字段**:
+**StepFactory字段**:
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| step | int | 步骤序号 |
+| response | string | 最终响应 |
+| thought | string | 思考过程 |
+| is_finished | bool | 业务完成标志 |
+
+**【15.6.5补充】FinalStep完整字段（to_dict输出）**:
 | 字段名 | 类型 | 说明 |
 |--------|------|------|
 | type | string | 固定值 "final" |
 | step | int | 步骤序号 |
 | timestamp | int | 时间戳 |
-| response | string | 最终响应（15.7新增，原content） |
-| is_finished | bool | 是否完成（15.7新增） |
-| thought | string | 思考内容（15.7新增） |
-| is_streaming | bool | 是否流式（15.7新增） |
-| is_reasoning | bool | 是否推理中（15.7新增） |
+| response | string | 最终响应 |
+| is_finished | bool | 是否完成 |
+| thought | string | 思考内容 |
+| is_streaming | bool | 是否流式输出 |
+| is_reasoning | bool | 是否推理中 |
 
 **代码示例**:
 ```python
-yield {
-    "type": "final",
-    "step": step_count,
-    "timestamp": create_timestamp(),
-    "response": tool_params.get("result", thought_content),
-    "is_finished": True,
-    "thought": thought_content,
-    "is_streaming": False,
-    "is_reasoning": False,
-}
+# 【步骤2.9】使用StepFactory创建FinalStep
+final_step = StepFactory.create_final_step(
+    step=step_count,
+    response=self.last_answer_response or thought_content,
+    thought=thought_content,
+    is_finished=True
+)
+# yield Step字典
+yield final_step.to_dict()
+# 输出包含完整字段：type/step/timestamp/response/is_finished/thought/is_streaming/is_reasoning
 ```
 ---
 
 ### 15.6.6 chunk 类型
 
-**来源文件**: `backend/app/chat_stream/chat_stream_query.py` (第188-194行)
+**来源文件**: `backend/app/chat_stream/chat_stream_query.py` (第188-214行)
 
 **产生字段**:
 | 字段名 | 类型 | 说明 |
@@ -5069,9 +5072,10 @@ yield {
 
 **代码示例**:
 ```python
+# 使用 next_step() 生成步骤序号
 chunk_data = {
     'type': 'chunk', 
-    'step': next_step(),
+    'step': next_step(),  # 【15.6.6修正】添加step字段
     'timestamp': create_timestamp(),
     'content': chunk.content,
     'is_reasoning': current_is_reasoning
