@@ -1687,18 +1687,18 @@ self.max_parse_retries = 3   # 最大重试次数
 
 ---
 
-##### 14.7.2 步骤2：替换解析调用点（第195行）
+##### 14.7.2 步骤2：替换解析调用点（第200行）
 
 ```python
-# ===== base_react.py 第195行：替换解析调用 =====
-# 旧代码（第195行）:
+# ===== base_react.py 第200行：替换解析调用 =====
+# 旧代码（设计文档原第195行）:
 parsed = self.parser.parse_response(response)
 
-# 新代码（第195行）:
+# 新代码（第200行）:
 parsed = parse_react_response(response)
 ```
 
-**上下文理解**（第188-216行完整逻辑）：
+**上下文理解**（第193-210行完整逻辑）：
 
 ```python
 # ===== 场景2：LLM返回空响应 =====
@@ -1707,8 +1707,8 @@ if not response:
     last_error = "empty_response"
     break  # 空响应，退出
 
-# ===== 场景4：解析失败（重试3次机制）=====
-parsed = self.parser.parse_response(response)  # <-- 替换为新解析器
+# ===== 场景4：解析响应并获取结果 =====  # 修复 2026-04-15 小沈
+parsed = parse_react_response(response)  # <-- 第200行替换为新解析器
 
 # 【修复】检查解析是否失败：parse_response现在返回错误结果而不是抛异常
 # 通过检查content是否包含错误标识来判断
@@ -1737,9 +1737,9 @@ if is_parse_error:
 - 新解析器返回`parsed.get("tool_name")`与旧格式一致
 
 **检查点**：
-- [ ] 函数调用替换正确
-- [ ] 参数传递正确（response字符串）
-- [ ] 返回值接收正确（parsed变量）
+- [x] 函数调用替换正确（第200行）- 小沈-2026-04-17
+- [x] 参数传递正确（response字符串）- 小沈-2026-04-17
+- [x] 返回值接收正确（parsed变量）- 小沈-2026-04-17
 
 ---
 
