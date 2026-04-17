@@ -1,18 +1,46 @@
-v0.9.7.6
+v0.9.7.7
 
-更新时间：2026-04-17 14:33:10
+更新时间：2026-04-17 16:00:00
 
 更新内容：
 
-## 1. StepFactory统一封装ErrorStep - react_sse_wrapper和chat_stream_query改造 - 小沈-2026-04-17
+## 1. 修复react_sse_wrapper.py混用旧函数问题 - 小沈-2026-04-17
 
-### 1.1 改造背景
+### 1.1 问题描述
+- react_sse_wrapper.py文件中，部分代码使用StepFactory，部分代码使用旧的create_error_response
+- 混用导致代码风格不统一
+
+### 1.2 修复内容
+- 第454行：文件操作错误处理，统一使用error_response
+- 第482-502行：桌面操作错误处理，统一使用error_response
+
+---
+
+## 2. 新增parse_error类型 - 区分解析失败vs运行错误 - 小沈-2026-04-17
+
+### 2.1 设计变更
+- 新增`type="parse_error"`专门处理解析失败（空响应/过短/参数解析失败）
+- 保持`type="error"`用于真实运行错误
+
+### 2.2 修改位置
+- react_output_parser.py:70,182,381 - type改为parse_error
+- base_react.py:276 - 检查parse_error而非error
+
+### 2.3 区分后的类型
+- parse_error: 解析失败，需要重试
+- error: 真实运行错误，不重试
+
+---
+
+## 3. StepFactory统一封装ErrorStep - react_sse_wrapper和chat_stream_query改造 - 小沈-2026-04-17
+
+### 3.1 改造背景
 
 设计文档2.11章节要求清理旧字典构建代码，但react_sse_wrapper.py和chat_stream_query.py还在使用：
 - create_error_from_exception
 - create_session_error_result
 
-### 1.2 改造内容
+### 3.2 改造内容
 
 **react_sse_wrapper.py**：
 - 删除create_error_from_exception导入
@@ -26,7 +54,7 @@ v0.9.7.6
 - 改用StepFactory.create_error_step()创建ErrorStep
 - 用format_sse_event()生成SSE字符串
 
-### 1.3 改造后的代码模式
+### 3.3 改造后的代码模式
 
 ```python
 # 改造后
@@ -36,7 +64,7 @@ error_response = format_sse_event('error', step_value, error_step_dict)
 yield error_response
 ```
 
-### 1.4 测试验证
+### 3.4 测试验证
 
 | 测试项 | 结果 |
 |--------|------|
@@ -44,11 +72,11 @@ yield error_response
 | test_adapter.py | ✅ 32 passed |
 | test_agent.py | ✅ 20 passed |
 
-### 1.5 Commit汇总
+### 3.5 Commit汇总
 
 | Commit | 说明 |
 |--------|------|
-| [待提交] | feat: StepFactory统一封装ErrorStep-SSE生成改造-小沈-2026-04-17 |
+| 039e8fb2 | feat: StepFactory统一封装ErrorStep-SSE生成改造-小沈-2026-04-17 |
 
 参与开发：小沈
 
