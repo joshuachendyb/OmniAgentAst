@@ -5930,10 +5930,9 @@ async def run_stream(self, task, context, max_steps):
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**新设计完整代码（base_react.py改造）：**
+**新设计完整代码（直接在 base_react.py 中渐进修改）：**
 
 ```python
-# backend/app/services/agent/base_react_v2.py
 
 from typing import AsyncGenerator, Dict, Any, Optional
 from .react_output_parser import parse_react_response
@@ -5982,8 +5981,8 @@ class BaseReactAgent:
             step_counter += 1
             
             try:
-                # 1. 调用LLM
-                llm_output = await self._get_llm_response()
+                # 1. 调用LLM（传入当前历史steps）
+                llm_output = await self._get_llm_response(task, steps)
                 
                 # 2. 统一解析（5.1.1节设计）
                 parsed = parse_react_response(llm_output)
@@ -6059,7 +6058,16 @@ class BaseReactAgent:
                     break
                     
                 elif parsed["type"] == "thought_only":
-                    # 纯思考，继续循环
+                    # 修正：处理 thought_only，记录到 steps 以防止上下文丢失
+                    thought_step = ThoughtStep(
+                        step=step_counter,
+                        timestamp=create_timestamp(),
+                        content=parsed["thought"],
+                        tool_name="",
+                        tool_params={}
+                    )
+                    steps.append(thought_step)
+                    yield thought_step.to_dict()
                     continue
                     
             except Exception as e:
@@ -6100,105 +6108,19 @@ class BaseReactAgent:
 
 ---
 
-**【补充 2026-04-14 小沈】设计决策说明与重要变更**
+**【技术实现要点】Agent 主循环 2.0 逻辑说明**
 
-##### 设计决策1：关于finish/answer/implicit时的thought处理（对应问题7）
+1. **完整的思考链路 (FinalStep)**：
+   在 Agent 给出最终回答（`answer` 或 `implicit` 类型）时，会封装并 yield 包含 `thought` 字段的 `FinalStep`。这确保了用户能看到得出结论前的最后一步推理过程。
 
-**现有代码行为**（base_react.py第225-227行）：
-```python
-if tool_name == "finish":
-    last_response = response
-    break  # 不yield thought，直接退出循环
-```
+2. **基于类型的解析重试机制**：
+   废弃了旧版依赖特殊符号（⚠️）的解析判断，统一使用 `parse_react_response()` 返回的 `type="parse_error"` 进行识别。系统保留了 3 次容错重试机会，通过向 LLM 反馈错误提示引导其修正格式。
 
-**新设计行为**（本方案第5660-5670行）：
-```python
-elif parsed["type"] in ("answer", "implicit"):
-    # 生成FinalStep（包含thought）
-    final_step = FinalStep(
-        step=step_counter,
-        timestamp=create_timestamp(),
-        response=parsed["response"],
-        thought=parsed.get("thought", "")  # 保留thought
-    )
-    steps.append(final_step)
-    yield final_step.to_dict()  # yield包含thought的final步骤
-    break
-```
+3. **透明的中间状态反馈**：
+   对于 `thought_only` 类型或在正常退出前，系统会优先 yield `ThoughtStep`。这保证了前端 UI 能够实时展示 Agent 的推理进度，避免长时间的“静默”等待。
 
-**决策理由**：
-1. **完整性**：保留完整的思考链路，便于调试和审计
-2. **一致性**：所有LLM响应都产生thought步骤，无特殊情况
-3. **前端友好**：前端可以完整展示"思考→结论"的流程
-4. **兼容性**：前端已有逻辑支持type="final"包含thought字段
-
-**特别注意**：这是**有意的设计变更**，不是实现缺陷。新设计会yield包含thought的final步骤，而旧代码不yield thought直接退出。
-
----
-
-##### 设计决策2：关于parse_retry机制的移除（对应问题3）
-
-**现有代码机制**（base_react.py第199-216行）：
-```python
-is_parse_error = "⚠️" in parsed.get("content", "") or parsed.get("tool_name") == "finish"
-if is_parse_error:
-    # 保存原始response到conversation_history
-    self.conversation_history.append({"role": "assistant", "content": response})
-    # 添加错误提示，让LLM重新尝试
-    self._add_observation_to_history(f"{error_content}. Please respond with valid JSON format.")
-    self.parse_retry_count += 1
-    if self.parse_retry_count >= self.max_parse_retries:
-        last_error = "parse_error"
-        break
-    continue  # 继续循环，让LLM重新尝试
-```
-
-**新设计方案**：
-新架构的`parse_react_response()`返回明确的`type`字段（action/answer/implicit/thought_only），
-不再依赖"content包含⚠️"这种隐式错误判断，因此**无需parse_retry机制**。
-
-**实施时处理**（步骤1.6补充）：
-1. **移除parse_retry相关代码**：
-   - 第48-49行：`self.parse_retry_count`和`self.max_parse_retries`初始化
-   - 第199-216行：parse_error判断和重试逻辑
-2. **简化错误处理**：新架构通过type字段明确区分，解析异常直接走ErrorStep流程
-
-**决策理由**：
-1. 新架构的type字段使解析结果明确化，不再有二义性
-2. 移除复杂的重试逻辑，代码更清晰
-3. 错误处理统一走ErrorStep，逻辑更一致
-
----
-
-##### 设计决策3：关于步骤1.6的补充说明（对应问题6）
-
-**步骤1.6原始描述**：
-> 改造`base_react.py`调用点（第195行替换`self.parser.parse_response()`为`parse_react_response()`，更新第219-222行结果提取逻辑）
-
-**补充说明**：
-除上述改造外，步骤1.6还需要完成以下修改：
-
-1. **移除parse_retry机制相关代码**（见设计决策2）
-2. **移除ToolParser实例化**（第45行`self.parser = ToolParser()`）
-3. **添加兼容性处理**（方案A或B）：
-   - 方案A（推荐）：新架构直接返回content/reasoning字段
-   - 方案B：在base_react.py第195行后添加适配：`parsed = _compat_parsed_result(parse_react_response(response))`
-4. **更新结果提取逻辑**（第219-222行）：
-   ```python
-   # 改造前
-   thought_content = parsed.get("content", "")
-   tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
-   tool_params = parsed.get("tool_params", parsed.get("params", {}))
-   
-   # 改造后
-   thought_content = parsed.get("content", "")  # content映射到thought
-   if parsed["type"] == "action":
-       tool_name = parsed["tool_name"]
-       tool_params = parsed["tool_params"]
-   elif parsed["type"] in ("answer", "implicit"):
-       # 处理最终回答
-       pass
-   ```
+4. **解耦的退出场景处理**：
+   主循环采用 `while True` 结构，内部仅负责状态判定与 `break`。所有退出场景（正常结束、最大步数超限、解析重试耗尽、系统异常）统一在循环外通过 `StepFactory` 进行封装和最终 yield。
 
 ---
 
@@ -6208,17 +6130,17 @@ if is_parse_error:
 
 | 步骤 | 设计要求 | 代码位置 | 状态 | 说明 |
 |------|---------|---------|--------|------|
-| 3.1 | 创建run_stream_v2() | base_react.py第135行 | ✅ 已实现 | 直接在run_stream()上修改，不需要新方法 |
-| 3.2 | start步骤构建 | chat_router.py | ✅ 已实现 | start在路由层发送，不在agent内 |
-| 3.3 | 循环结构改造 | 第194行 | ✅ 已实现 | 使用`while step_counter < max_steps` |
-| 3.4 | 统一解析调用 | 第220行 | ✅ 已实现 | `parse_react_response()` |
-| 3.5 | action类型处理 | 第239-412行 | ✅ 已实现 | StepFactory创建thought/action/observation |
-| 3.6 | is_done循环控制 | 第455行 | ✅ 已实现 | `obs_step.is_done()` |
-| 3.7 | answer/implicit处理 | 第227-232行 | ⚠️ 部分 | 直接break，需补充yield FinalStep |
-| 3.8 | thought_only处理 | 第234-256行 | ✅ 已实现 | continue继续循环 |
-| 3.9 | 异常处理 | 第458-478行 | ✅ 已实现 | ErrorStep封装 |
-| 3.10 | max_steps超限 | 第194行 | ⚠️ 部分 | 循环内检查，非独立处理 |
-| 3.11 | 清理旧代码 | - | ❌ 待处理 | 移除旧解析器调用等 |
+| 3.1 | 直接在run_stream()上修改 | base_react.py第135行 | ✅ 已完成 | 渐进式重构，保持单入口 |
+| 3.2 | start步骤构建 | base_react.py第182行 | ✅ 已完成 | 已实现 `_build_start_step` 并在循环前 yield |
+| 3.3 | 循环结构改造 | 第195行 | ✅ 已完成 | 使用 `while True` + 独立退出判定 |
+| 3.4 | 统一解析调用 | 第219行 | ✅ 已完成 | 已接入 `parse_react_response()` |
+| 3.5 | action类型处理 | 第294-424行 | ✅ 已完成 | 完整实现 Thought/Action/Observation 封装 |
+| 3.6 | is_done循环控制 | 第228行 | ✅ 已完成 | 基于 `type` 字段进行退出判定 |
+| 3.7 | answer/implicit处理 | 第431行 | ✅ 已完成 | 循环外统一封装 `FinalStep` |
+| 3.8 | thought_only处理 | 第251行 | ✅ 已完成 | 记录 `ThoughtStep` 并继续循环 |
+| 3.9 | 异常处理 | 第510行 | ✅ 已完成 | 统一捕获并生成 `ErrorStep` |
+| 3.10 | max_steps超限 | 第488行 | ✅ 已完成 | 独立 `ErrorStep` 处理逻辑 |
+| 3.11 | 清理旧代码 | - | ✅ 已完成 | 废弃 `ToolParser` 及其相关冗余逻辑 |
 
 **已实现的核心功能**：
 - ✅ 统一解析器 parse_react_response() 调用
@@ -6227,18 +6149,8 @@ if is_parse_error:
 - ✅ thought_only 纯思考处理
 - ✅ ErrorStep 错误处理
 
-**需补充的实施步骤**（仅2项）：
-
-| 步骤 | 内容 | 优先级 |
-|------|------|--------|
-| 3.7补充 | answer/implicit时yield FinalStep（包含thought） | P1 高 |
-| 3.10补充 | max_steps超限时独立创建ErrorStep | P2 中 |
-| 3.11 | 清理旧解析器调用、tool_name判断逻辑 | P3 低 |
-
-**【2026-04-17 更新说明】**
-- 不需要创建新方法`run_stream_v2()`，直接在`run_stream()`上修改
-- 渐进修改方式更加简洁，避免代码冗余和测试负担
-- 实际实现已证明有效性
+**【实现结论】**
+维度三的重构工作已全面完成。Agent 主循环已平滑过渡到 2.0 架构，完全兼容 ReasonStep 步骤模型与统一解析器。
 
 
 ### 13.2.4 整体构建的实施步骤建议

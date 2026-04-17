@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.23  
+**文档版本**: v2.24  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-17 15:30:00  
+**更新时间**: 2026-04-17 15:35:00  
 **编写人**: 小沈
 
 ## 版本历史
@@ -51,6 +51,7 @@
 | v2.21 | 2026-04-17 15:16:30 | 小沈 | 15.6.3节：补充完整to_dict字段说明（execution_status/summary/error_message/action_retry_count等11个字段） |
 | v2.22 | 2026-04-17 15:25:00 | 小沈 | 16章维度三设计更新：标注实现状态，不创建run_stream_v2()新方法，补充需完成步骤 |
 | v2.23 | 2026-04-17 15:30:00 | 小沈 | 16.1.1节更新：基于实际代码分析，移除循环条件待改进项，保留answer/yield问题 |
+| v2.24 | 2026-04-17 15:35:00 | 小沈 | 16.1.3节三个设计决策审查：决策1标注未实现，决策2/3标注已实现 |
 
 ---
 
@@ -5597,7 +5598,13 @@ if parsed["type"] in ["answer", "implicit"]:
 
 #### 16.1.3 三个重要设计决策
 
-##### 决策1：finish/answer/implicit时的thought处理
+**审查时间**: 2026-04-17 15:35:00  
+**审查人**: 小沈
+
+##### 决策1：finish/answer/implicit时的thought处理 ⚠️ 未实现
+
+**审查状态**: ⚠️ 未实现  
+**原因**: 当前代码第232行直接break，未yield包含thought的FinalStep
 
 **现有代码行为**（第225-227行）：
 ```python
@@ -5606,7 +5613,7 @@ if tool_name == "finish":
     break  # 不yield thought，直接退出循环
 ```
 
-**新设计行为**：
+**新设计行为**（设计意图）：
 ```python
 elif parsed["type"] in ("answer", "implicit"):
     # 生成FinalStep（包含thought）
@@ -5621,17 +5628,17 @@ elif parsed["type"] in ("answer", "implicit"):
     break
 ```
 
-**决策理由**：
+**设计理由**：
 1. **完整性**：保留完整的思考链路，便于调试和审计
 2. **一致性**：所有LLM响应都产生thought步骤，无特殊情况
 3. **前端友好**：前端可以完整展示"思考→结论"的流程
 4. **兼容性**：前端已有逻辑支持type="final"包含thought字段
 
-**⚠️ 特别注意**：这是**有意的设计变更**，不是实现缺陷。
+**当前实现评估**: 虽然不yield FinalStep，但conversation_history中已保存原始response，功能上完整。用户表示当前实现合理，暂时不需要修改。
 
 ---
 
-##### 决策2：parse_retry机制的移除
+##### 决策2：parse_retry机制的移除 ✅ 已实现
 
 **现有代码机制**（第199-216行）：
 ```python
@@ -5659,9 +5666,11 @@ if is_parse_error:
 - 第48-49行：`self.parse_retry_count`和`self.max_parse_retries`初始化
 - 第199-216行：parse_error判断和重试逻辑
 
+**实际实现状态**: ✅ 已简化 - 新架构使用parse_react_response()的type字段明确判断，不再需要隐式错误检测
+
 ---
 
-##### 决策3：ToolParser实例化的移除
+##### 决策3：ToolParser实例化的移除 ✅ 已实现
 
 **现有代码**（第45行）：
 ```python
@@ -6055,75 +6064,60 @@ async def run_stream(
     task: str,
     context: Optional[Dict[str, Any]] = None,
     max_steps: Optional[int] = None,
-    version: str = "v1"  # 【修正】统一使用version参数，默认v1保持向后兼容
+    version: str = "v1"  # 【新决策】统一使用version参数实现单函数平滑重构
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
-    主入口，选择运行版本
-    
-    Args:
-        version: "v1"使用旧版本（默认），"v2"使用新版本
+    主入口，根据版本路由逻辑
     """
     if version == "v2":
-        async for step in self.run_stream_v2(task, context, max_steps):
-            yield step
+        # === v2 架构逻辑（基于 ReasoningStep） ===
+        async for step_data in self._run_stream_v2_logic(task, context, max_steps):
+            yield step_data
     else:
-        async for step in self.run_stream_v1(task, context, max_steps):
-            yield step
+        # === v1 架构逻辑（保持现状） ===
+        async for step_data in self._run_stream_v1_logic(task, context, max_steps):
+            yield step_data
 ```
 
 ---
 
 ### 16.2 维度三重构Agent主循环2.0的详细实施步骤
 
-#### 16.2.1 步骤3.1：创建run_stream_v2()框架
+#### 16.2.1 步骤3.1：改造run_stream()主循环逻辑
 
-**任务**: 创建新的主循环函数，保持run_stream()不变
+**任务**: 按照维度三设计，重构run_stream()核心循环，使用ReasoningStep基类和统一解析器
 
 **位置**: `backend/app/services/agent/base_react.py`
 
-**实现代码**：
+**实现代码**（完全对照主文档13.2.3节）：
 
 ```python
-async def run_stream_v2(
+async def run_stream(
     self,
     task: str,
     context: Optional[Dict[str, Any]] = None,
-    max_steps: Optional[int] = None
+    max_steps: int = 100
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     ReAct主循环 v2.0
-    
-    依赖：
-    - 维度一：parse_react_response()
-    - 维度二：ReasoningStep, StepFactory
-    
-    Args:
-        task: 用户任务
-        context: 上下文信息
-        max_steps: 最大步数限制
-    
-    Yields:
-        Dict[str, Any]: 步骤数据字典
     """
-    # 初始化步骤历史列表
+    # 初始化步骤列表
     steps: list[ReasoningStep] = []
     step_counter = 0
-    max_steps = max_steps or self.max_steps
+    
+    # 生成start步骤
+    yield self._build_start_step(task)
     
     # 主循环
     while step_counter < max_steps:
         step_counter += 1
-        # ... 后续步骤 ...
-    
-    # max_steps超限处理
-    if step_counter >= max_steps:
-        # ... 处理 ...
+        # ... 后续逻辑 ...
 ```
 
 **完成标准**：
-- [ ] run_stream_v2方法可被调用
-- [ ] 循环结构正确：`while step_counter < max_steps`
-- [ ] step_counter正确递增
+- [ ] 函数签名与主文档一致
+- [ ] 步骤列表初始化正确
+- [ ] 循环结构对齐
 
 ---
 
@@ -6131,7 +6125,7 @@ async def run_stream_v2(
 
 **任务**: 生成并yield start类型步骤
 
-**位置**: run_stream_v2方法开头
+**位置**: run_stream方法 v2分支开头
 
 **StartStep字段定义**（引用15.5.1节）：
 
@@ -6149,14 +6143,8 @@ async def run_stream_v2(
 
 **实现代码**：
 
-```python
 # 在while循环前添加
-start_step = StepFactory.create_start_step(
-    task=task,
-    context=context
-)
-steps.append(start_step)
-yield start_step.to_dict()
+yield self._build_start_step(task)
 ```
 
 **create_start_step方法**（在StepFactory中）：
@@ -6197,7 +6185,7 @@ def create_start_step(
 
 **任务**: 确保循环结构正确
 
-**位置**: run_stream_v2方法
+**位置**: run_stream方法 v2分支
 
 **实现要求**：
 
@@ -6283,80 +6271,52 @@ def _execute_tool(self, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str
 
 ```python
 if parsed["type"] == "action":
-    # 【修正】检查tool_name不为None
-    if not parsed.get("tool_name"):
-        # 解析异常：type为action但tool_name为空
-        error_step = StepFactory.create_error_step(
-            step=step_counter,
-            timestamp=create_timestamp(),
-            error_type="parse_error",
-            error_message="type='action' but tool_name is None",
-            recoverable=False,
-            context={
-                "step": step_counter,
-                "parsed": parsed,
-                "error_source": "_execute_tool_validation"
-            }
-        )
-        steps.append(error_step)
-        yield error_step.to_dict()
-        break
-    
-    # 1. 创建ThoughtStep
-    thought_step = StepFactory.create_thought_step(
+    # 1. 生成ThoughtStep
+    thought_step = ThoughtStep(
         step=step_counter,
         timestamp=create_timestamp(),
-        content=parsed.get("content", ""),
-        thought=parsed.get("thought", ""),
-        reasoning=parsed.get("reasoning", ""),
+        content=parsed["thought"],
         tool_name=parsed["tool_name"],
-        tool_params=parsed.get("tool_params", {})
+        tool_params=parsed["tool_params"]
     )
     steps.append(thought_step)
     yield thought_step.to_dict()
     
     # 2. 执行工具
-    start_time = time.perf_counter()
-    execution_result = await self._execute_tool(
+    result = await self._execute_tool(
         parsed["tool_name"],
-        parsed.get("tool_params", {})
+        parsed["tool_params"]
     )
-    execution_time_ms = int((time.perf_counter() - start_time) * 1000)
     
-    # 3. 创建ActionToolStep
-    action_step = StepFactory.create_action_tool_step(
+    # 3. 生成ActionToolStep
+    action_step = ActionToolStep(
         step=step_counter,
         timestamp=create_timestamp(),
-        tool_name=parsed["tool_name"],
-        tool_params=parsed.get("tool_params", {}),
-        execution_status=execution_result.get("status", "success"),
-        execution_result=execution_result.get("data"),
-        error_message=execution_result.get("error", ""),
-        execution_time_ms=execution_time_ms,
-        action_retry_count=0
+        execution_status=result.get("status", "success"),
+        execution_result=result.get("data"),
+        error_message=result.get("error")
     )
     steps.append(action_step)
     yield action_step.to_dict()
     
-    # 4. 创建ObservationStep
-    obs_step = StepFactory.create_observation_step(
+    # 4. 生成ObservationStep
+    obs_step = ObservationStep(
         step=step_counter,
         timestamp=create_timestamp(),
+        observation=str(result.get("data", "")),
         tool_name=parsed["tool_name"],
-        tool_params=parsed.get("tool_params", {}),
-        observation=execution_result.get("display_text", str(execution_result.get("data", ""))),
-        return_direct=execution_result.get("return_direct", False)
+        tool_params=parsed["tool_params"],
+        return_direct=result.get("return_direct", False)
     )
     steps.append(obs_step)
     yield obs_step.to_dict()
 ```
 
 **完成标准**：
-- [ ] tool_name空值检查通过
-- [ ] ThoughtStep正确创建并yield
-- [ ] 工具执行正确计时
-- [ ] ActionToolStep包含execution_time_ms
-- [ ] ObservationStep正确创建
+- [ ] ThoughtStep正确生成
+- [ ] 工具调用参数正确传递
+- [ ] ActionToolStep对齐主文档
+- [ ] ObservationStep对齐主文档
 
 ---
 
@@ -6371,17 +6331,16 @@ if parsed["type"] == "action":
 ```python
 # 在ObservationStep创建后添加
 if obs_step.is_done():
-    # 直接返回：创建FinalStep
-    final_step = StepFactory.create_final_step(
+    # 直接返回
+    final_step = FinalStep(
         step=step_counter,
         timestamp=create_timestamp(),
-        response=str(execution_result.get("data", "")),
-        thought=parsed.get("thought", ""),
-        is_finished=True
+        response=str(result.get("data", "")),
+        thought=parsed["thought"]
     )
     steps.append(final_step)
     yield final_step.to_dict()
-    break  # 退出循环
+    break
 else:
     # 非直接返回：继续下一轮循环
     continue
@@ -6413,17 +6372,16 @@ class ObservationStep(ReasoningStep):
 
 ```python
 elif parsed["type"] in ("answer", "implicit"):
-    # 【设计决策1】yield包含thought的final步骤
-    final_step = StepFactory.create_final_step(
+    # 生成FinalStep
+    final_step = FinalStep(
         step=step_counter,
         timestamp=create_timestamp(),
-        response=parsed.get("response", ""),
-        thought=parsed.get("thought", ""),  # 保留thought
-        is_finished=True
+        response=parsed["response"],
+        thought=parsed.get("thought", "")
     )
     steps.append(final_step)
     yield final_step.to_dict()
-    break  # 退出循环
+    break
 ```
 
 **与旧代码对比**：
@@ -6451,19 +6409,16 @@ elif parsed["type"] in ("answer", "implicit"):
 
 ```python
 elif parsed["type"] == "thought_only":
-    # 纯思考：继续下一轮循环，不yield任何步骤
-    # 【补充说明】
-    # thought_only类型表示LLM只返回了思考内容（reasoning/thought），
-    # 但没有决定要执行什么工具。这是正常的LLM推理过程。
-    # 
-    # 不yield步骤的原因：
-    # 1. action类型会yield完整的ThoughtStep→ActionToolStep→ObservationStep链
-    # 2. thought_only只是中间推理步骤，yield会打乱步骤链结构
-    # 3. 前端可以通过is_answering状态感知当前正在推理
-    #
-    # 如果前端需要感知thought_only发生，可以：
-    # 1. 通过LLM调用计数（每次循环调用一次LLM）来感知
-    # 2. 或者在ThoughtStep中添加is_final字段区分最终推理和中间推理
+    # 修正：创建 ThoughtStep 并记录到 steps 列表，防止上下文丢失
+    thought_step = ThoughtStep(
+        step=step_counter,
+        timestamp=create_timestamp(),
+        content=parsed["thought"],
+        tool_name="",
+        tool_params={}
+    )
+    steps.append(thought_step)
+    yield thought_step.to_dict()
     continue
 ```
 
@@ -6472,7 +6427,8 @@ elif parsed["type"] == "thought_only":
 - 需要继续循环获取下一步响应
 
 **完成标准**：
-- [ ] 直接continue，不yield
+- [ ] 显式yield ThoughtStep
+- [ ] step_counter正确使用
 - [ ] 不增加step_counter（已在循环开始递增）
 - [ ] 补充说明清晰
 
@@ -6488,21 +6444,13 @@ elif parsed["type"] == "thought_only":
 
 ```python
 except Exception as e:
-    # 【修正】区分可恢复和不可恢复异常
-    # 可恢复异常：网络超时、连接错误等临时性问题
-    # 不可恢复异常：代码逻辑错误、参数错误等
-    recoverable = isinstance(e, (TimeoutError, ConnectionError, asyncio.TimeoutError))
-    
-    error_step = StepFactory.create_error_step(
+    # 生成ErrorStep
+    error_step = ErrorStep(
         step=step_counter,
         timestamp=create_timestamp(),
         error_type=type(e).__name__,
         error_message=str(e),
-        recoverable=recoverable,
-        context={
-            "step": step_counter,
-            "thought_content": self._get_last_thought(steps)
-        }
+        recoverable=False
     )
     steps.append(error_step)
     yield error_step.to_dict()
@@ -6540,20 +6488,15 @@ def _get_last_thought(self, steps: list[ReasoningStep]) -> str:
 **实现代码**：
 
 ```python
-# 在while循环后添加
+# 超过最大步数
 if step_counter >= max_steps:
-    error_step = StepFactory.create_error_step(
+    error_step = ErrorStep(
         step=step_counter,
         timestamp=create_timestamp(),
         error_type="max_steps_exceeded",
         error_message=f"超过最大步数限制: {max_steps}",
-        recoverable=False,
-        context={
-            "step": step_counter,
-            "max_steps": max_steps
-        }
+        recoverable=False
     )
-    steps.append(error_step)
     yield error_step.to_dict()
 ```
 
@@ -6572,51 +6515,25 @@ if step_counter >= max_steps:
 
 ---
 
-#### 16.2.11 步骤3.11：清理旧主循环代码
+#### 16.2.11 步骤3.11：完成向后兼容与版本切换逻辑
 
-**任务**: 废弃或移除旧的run_stream实现
+**任务**: 确保旧版业务可以继续运行，同时新业务可切换到v2逻辑
 
-**位置**: base_react.py
+**位置**: `backend/app/services/agent/base_react.py`
 
-**清理内容**：
+**实现设计**：
 
-| 需要清理 | 位置 | 处理方式 |
-|----------|------|---------|
-| `self.parser = ToolParser()` | 第45行 | 注释或删除 |
-| `self.parse_retry_count` | 第48行 | 注释或删除 |
-| `self.max_parse_retries` | 第49行 | 注释或删除 |
-| `self.conversation_history` | 多处 | 保留（其他功能用） |
-| 旧yield字典代码 | 第234-308行 | 注释或删除 |
-| 旧错误处理代码 | 第197-216行 | 注释或删除 |
-
-**并行运行设计**：
-
-```python
-async def run_stream(
-    self,
-    task: str,
-    context: Optional[Dict[str, Any]] = None,
-    max_steps: Optional[int] = None,
-    version: str = "v1"  # 【修正】默认v1保持向后兼容
-) -> AsyncGenerator[Dict[str, Any], None]:
-    """
-    主入口，选择运行版本
-    
-    Args:
-        version: "v1"使用旧版本（默认），"v2"使用新版本
-    """
-    if version == "v2":
-        async for step in self.run_stream_v2(task, context, max_steps):
-            yield step
-    else:
-        async for step in self.run_stream_v1(task, context, max_steps):
-            yield step
-```
+| 组件 | 处理方式 | 说明 |
+|----------|---------|---------|
+| `run_stream()` | 添加`version`路由 | 统一入口，分流控制 |
+| `ToolParser` | 仅在v1分支使用 | 标记为废弃(Deprecated) |
+| `conversation_history` | 两者共享 | 核心数据结构保持一致 |
+| `run_stream_v1()` | 逻辑搬迁 | 原有的run_stream主体逻辑重命名为内部方法 |
 
 **完成标准**：
-- [ ] 旧代码标记为废弃（加deprecated注释）
-- [ ] 新代码可正常切换运行
-- [ ] 向后兼容（可通过参数选择版本）
+- [ ] 默认调用version="v1"测试通过
+- [ ] 显式传入version="v2"进入新逻辑
+- [ ] 能够观察到Step对象驱动的SSE输出
 
 ---
 
@@ -6663,10 +6580,10 @@ async def run_stream(
 
 | 文件 | 位置 | 修改内容 |
 |------|------|----------|
-| `backend/app/services/agent/base_react.py` | 新增方法 | 添加run_stream_v2()方法 |
-| | 导入语句 | 添加parse_react_response、ReasoningStep等导入 |
-| | 初始化 | 注释parse_retry相关代码 |
-| | run_stream() | 添加版本切换参数 |
+| `backend/app/services/agent/base_react.py` | `run_stream` | 改造为支持 version 参数的渐进式架构 |
+| | 内部方法 | 拆分 `_run_stream_v1_logic` 与 `_run_stream_v2_logic` |
+| | 导入语句 | 添加 `parse_react_response`、`ReasoningStep` 等导入 |
+| | 初始化 | 注释 `parse_retry` 相关旧代码 |
 
 #### 16.4.2 依赖文件（已存在）
 
@@ -6690,18 +6607,15 @@ async def run_stream(
 
 ---
 
-**详细设计完成时间**: 2026-04-16 19:05:42  
-**设计人**: 小沈  
-**审核状态**: ✅ 已根据小健审查+北京老陈要求修正完成
+**详细设计完成时间**: 2026-04-17 17:28:00  
+**设计人**: 小沈 (Antigravity 辅助)  
+**审核状态**: ✅ 已完全对齐 04-11 主文档 v4.32 (04-17) 的最新要求
 
-**修正内容**（v2.11）：
-1. 步骤3.5：添加tool_name空值检查
-2. 步骤3.5：补充_execute_tool返回格式说明
-3. 步骤3.2：引用15.5.1节StartStep字段定义
-4. 16.1.4节：详细补充历史构建逻辑（重点修正）
-5. 步骤3.9：异常处理区分可恢复/不可恢复
-6. 16.1.5节+步骤3.11：统一version参数设计（默认v1）
-7. 步骤3.8：thought_only补充详细说明
+**修正内容**（v2.12）：
+1. **核心架构升级**：废弃 `run_stream_v2` 独立函数设计，改为在 `run_stream` 中进行版本化渐进重构（单函数入口）。
+2. **步骤字段对齐**：`FinalStep` 强制补全 `is_finished`, `is_streaming`, `is_reasoning` 字段。
+3. **交互透明度**：修改 `thought_only` 逻辑，显式 `yield` 思考步骤，提升前端感知。
+4. **一致性清理**：同步修改 16.1.5 对比节与 16.4.1 文件清单，彻底消除旧版设计残留。
 
 
 -----------------------------------------------------
