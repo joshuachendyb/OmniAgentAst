@@ -2044,6 +2044,16 @@ grep -rn "self.parser\|ToolParser" backend/app/services/agent/ --include="*.py"
 - `llm_strategies.py`第130-141行：使用ToolParser.parse_response()
 - 这是TextStrategy内部逻辑，可能保留旧解析器作为fallback
 
+---
+
+**14.7.6步骤6检查点**：
+- [x] 导入语句完整正确 - 小沈-2026-04-17
+- [x] 初始化部分移除ToolParser - 小沈-2026-04-17
+- [x] 解析重试参数保留 - 小沈-2026-04-17
+- [x] parse_react_response调用正确（第198行）- 小沈-2026-04-17
+- [x] 基于type字段判断逻辑正确（第207行）- 小沈-2026-04-17
+- [x] 解析错误检查逻辑正确（第232行）- 小沈-2026-04-17
+
 **检查点**：
 - [ ] 确认所有self.parser引用已处理
 - [ ] 确认llm_strategies.py中的调用是否需要修改
