@@ -4292,6 +4292,9 @@ from app.utils.prompt_logger import get_prompt_logger
 
 ## 15.1.6 改造后的完整run_stream方法结构
 
+> **更新时间**: 2026-04-17 13:17:00
+> **更新说明**: 补充完整的中间检查步骤，与实际代码完全一致
+
 ```python
 async def run_stream(
     self,
@@ -4301,63 +4304,261 @@ async def run_stream(
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """ReAct 核心循环"""
     # 【步骤2.10】初始化步骤历史
-    self.steps: List[ReasoningStep] = []
+    self.steps = []
     self.conversation_history = []
     self.status = AgentStatus.THINKING
     self.llm_call_count = 0
     self.last_answer_response = ""
     
-    # ... 初始化代码 ...
+    # Hook: Session初始化
+    self._on_session_init(task, context)
+    
+    # 获取prompt
+    sys_prompt = self._get_system_prompt()
+    task_prompt = self._get_task_prompt(task, context)
+    
+    # Hook: 循环开始前
+    self._on_before_loop(sys_prompt, task_prompt)
+    
+    # 添加到对话历史
+    self.conversation_history.append({"role": "system", "content": sys_prompt})
+    self.conversation_history.append({"role": "user", "content": task_prompt})
+    
+    step_count = 0
+    last_error = None
+    last_parsed_type = None
+    thought_content = ""
+    tool_name = "finish"
+    tool_params = {}
     
     try:
         while True:
-            # ... LLM调用和解析 ...
+            # ===== 【步骤1】检查max_steps =====
+            if step_count >= max_steps:
+                last_error = "max_steps_exceeded"
+                break
             
-            # 【步骤2.9】thought_only类型
+            step_count += 1
+            
+            # ===== 【步骤2】调用LLM =====
+            self.status = AgentStatus.THINKING
+            response = await self._get_llm_response()
+            
+            # ===== 【步骤3】检查empty_response =====
+            if not response:
+                last_error = "empty_response"
+                break
+            
+            # ===== 【步骤4】解析响应 =====
+            parsed = parse_react_response(response)
+            thought_content = parsed.get("content", "")
+            tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
+            tool_params = parsed.get("tool_params", parsed.get("params", {}))
+            
+            # ===== 【步骤5】检查answer/implicit =====
+            if parsed["type"] in ["answer", "implicit"]:
+                last_parsed_type = parsed["type"]
+                last_answer_response = parsed.get("response", "")
+                break
+            
+            # ===== 【步骤6】thought_only类型 =====
             if parsed["type"] == "thought_only":
-                thought_step = StepFactory.create_thought_step(...)
-                self.steps.append(thought_step)  # 【步骤2.10】
+                thought = parsed.get("thought", "")
+                
+                # 【步骤2.9】使用StepFactory创建ThoughtStep
+                thought_step = StepFactory.create_thought_step(
+                    step=step_count,
+                    content=thought_content,
+                    tool_name="",
+                    tool_params={},
+                    thought=thought,
+                    reasoning=parsed.get("reasoning", "")
+                )
+                
+                # 【步骤2.10】记录步骤历史
+                self.steps.append(thought_step)
+                
+                # yield Step字典
                 yield thought_step.to_dict()
+                
+                self.conversation_history.append({"role": "assistant", "content": response})
                 continue
             
-            # 【步骤2.9】action类型
-            # ... thought yield ...
-            thought_step = StepFactory.create_thought_step(...)
-            self.steps.append(thought_step)  # 【步骤2.10】
+            # ===== 【步骤7】检查parse_error =====
+            is_parse_error = "⚠️" in parsed.get("content", "")
+            if is_parse_error:
+                self.conversation_history.append({"role": "assistant", "content": response})
+                error_content = parsed.get("content", "Parse error")
+                self._add_observation_to_history(f"{error_content}. Please respond with valid JSON format.")
+                self.parse_retry_count += 1
+                
+                if self.parse_retry_count >= self.max_parse_retries:
+                    last_error = "parse_error"
+                    break
+                continue
+            
+            # ===== 【步骤8】action类型 =====
+            thought = parsed.get("thought", "")
+            reasoning = parsed.get("reasoning", "")
+            
+            # 8.1 thought
+            thought_step = StepFactory.create_thought_step(
+                step=step_count,
+                content=thought_content,
+                tool_name=tool_name,
+                tool_params=tool_params,
+                thought=thought,
+                reasoning=reasoning
+            )
+            self.steps.append(thought_step)
             yield thought_step.to_dict()
             
-            # ... action yield ...
-            action_step = StepFactory.create_action_tool_step(...)
-            self.steps.append(action_step)  # 【步骤2.10】
+            self.conversation_history.append({"role": "assistant", "content": response})
+            
+            # 8.2 action_tool
+            self.status = AgentStatus.EXECUTING
+            start_time = time.perf_counter()
+            execution_result = await self._execute_tool(tool_name, tool_params)
+            execution_time_ms = int((time.perf_counter() - start_time) * 1000)
+            
+            execution_result_dict = {
+                "status": execution_result.get("status", "success"),
+                "summary": execution_result.get("summary", ""),
+                "data": execution_result.get("data"),
+                "error": "",
+                "retry_count": 0
+            }
+            
+            action_step = StepFactory.create_action_tool_step(
+                step=step_count,
+                tool_name=tool_name,
+                tool_params=tool_params,
+                execution_result=execution_result_dict,
+                execution_time_ms=execution_time_ms
+            )
+            self.steps.append(action_step)
             yield action_step.to_dict()
             
-            # 【步骤2.9】observation yield
-            observation_step = StepFactory.create_observation_step(...)
-            self.steps.append(observation_step)  # 【步骤2.10】
+            # 8.3 observation
+            exec_status = execution_result.get('status', 'unknown')
+            
+            if exec_status == 'success':
+                observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+                if execution_result.get('data'):
+                    data = execution_result.get('data')
+                    if isinstance(data, dict) and data.get('truncated'):
+                        total = data.get('total', 0)
+                        dir_count = data.get('dir_count', 0)
+                        file_count = data.get('file_count', 0)
+                        display_count = min(total, 200)
+                        observation_text += f"\n[目录包含 {total} 项: {dir_count} 目录, {file_count} 文件，显示前 {display_count} 项]"
+                        if data.get('entries'):
+                            observation_text += f"\n实际数据: {data.get('entries')}"
+                    else:
+                        observation_text += f"\n实际数据: {data}"
+            elif exec_status == 'warning':
+                observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+                if execution_result.get('data'):
+                    observation_text += f"\n部分数据: {execution_result.get('data')}"
+            else:
+                observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+            
+            self._add_observation_to_history(observation_text)
+            
+            observation_step = StepFactory.create_observation_step(
+                step=step_count,
+                tool_name=tool_name,
+                tool_params=tool_params,
+                execution_result=execution_result,
+                return_direct=execution_result.get("return_direct", False)
+            )
+            self.steps.append(observation_step)
             yield observation_step.to_dict()
-    
-    # 【步骤2.9】循环外统一退出处理
-    # 【步骤2.11】全部使用StepFactory.create_error_step()
-    if last_parsed_type in ["answer", "implicit"]:
-        final_step = StepFactory.create_final_step(...)
-        self.steps.append(final_step)  # 【步骤2.10】
-        yield final_step.to_dict()
-        return
-    
-    if last_error == "empty_response":
-        error_step = StepFactory.create_error_step(...)
-        self.steps.append(error_step)  # 【步骤2.10】
-        yield error_step.to_dict()
-        return
-    
-    # ... 其他错误处理 ...
-    
+            
+            self._trim_history()
+        
+        # ===== 【步骤9】循环外退出处理 =====
+        
+        # 9.1 final (answer/implicit)
+        if last_parsed_type in ["answer", "implicit"]:
+            final_step = StepFactory.create_final_step(
+                step=step_count,
+                response=self.last_answer_response or thought_content,
+                thought=thought_content,
+                is_finished=True
+            )
+            self.steps.append(final_step)
+            yield final_step.to_dict()
+            self._on_after_loop()
+            return
+        
+        # 9.2 empty_response error
+        if last_error == "empty_response":
+            error_step = StepFactory.create_error_step(
+                step=step_count,
+                error_type="empty_response",
+                error_message="AI服务返回空响应",
+                recoverable=False
+            )
+            self.steps.append(error_step)
+            yield error_step.to_dict()
+            self._on_after_loop()
+            return
+        
+        # 9.3 parse_error error
+        if last_error == "parse_error":
+            error_step = StepFactory.create_error_step(
+                step=step_count,
+                error_type="parse_error",
+                error_message=f"解析失败（已重试{self.max_parse_retries}次）",
+                recoverable=False
+            )
+            self.steps.append(error_step)
+            yield error_step.to_dict()
+            self._on_after_loop()
+            return
+        
+        # 9.4 max_steps error
+        if step_count >= max_steps:
+            error_step = StepFactory.create_error_step(
+                step=step_count,
+                error_type="max_steps_exceeded",
+                error_message=f"已达到最大迭代次数 {max_steps}",
+                recoverable=False
+            )
+            self.steps.append(error_step)
+            yield error_step.to_dict()
+            self._on_after_loop()
+            return
+        
     except Exception as e:
-        error_step = StepFactory.create_error_step(...)
-        self.steps.append(error_step)  # 【步骤2.10】
+        # ===== 【步骤10】未捕获异常 =====
+        error_step = StepFactory.create_error_step(
+            step=step_count,
+            error_type="unhandled_exception",
+            error_message=str(e),
+            recoverable=False
+        )
+        self.steps.append(error_step)
         yield error_step.to_dict()
+        self._on_after_loop()
         return
 ```
+
+### 15.1.6.1 代码流程总览
+
+| 步骤 | 名称 | 位置 | 说明 |
+|------|------|------|------|
+| 步骤1 | 检查max_steps | 循环开头 | 防止无限循环 |
+| 步骤2 | 调用LLM | 循环内 | 获取LLM响应 |
+| 步骤3 | 检查empty_response | 循环内 | 空响应处理 |
+| 步骤4 | 解析响应 | 循环内 | parse_react_response |
+| 步骤5 | 检查answer/implicit | 循环内 | 正常完成分支 |
+| 步骤6 | thought_only处理 | 循环内 | 纯思考分支 |
+| 步骤7 | 检查parse_error | 循环内 | 解析错误重试 |
+| 步骤8 | action处理 | 循环内 | thought+action_tool+observation |
+| 步骤9 | 循环外退出 | 循环外 | final/error处理 |
+| 步骤10 | 异常捕获 | except块 | 未捕获异常处理 |
 
 ---
 
