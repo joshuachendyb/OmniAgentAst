@@ -43,10 +43,8 @@ class BaseAgent(ABC):
         self.llm_call_count = 0
         self._lock = asyncio.Lock()
         
-        # self.parser = ToolParser()  # 步骤1.8：标记为废弃，使用parse_react_response替代
-        # 【兼容 2026-04-16 小沈】保留 self.parser 别名供外部代码和测试使用
-        from .react_output_parser import ToolParser as _ToolParser
-        self.parser = _ToolParser()
+        # 【步骤4】移除旧ToolParser初始化，使用parse_react_response函数调用
+        # self.parser = ToolParser()  # 已移除
         
         # 【重构 2026-04-11 小沈】解析重试相关参数
         self.parse_retry_count = 0  # 解析重试计数器

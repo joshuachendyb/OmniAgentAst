@@ -1847,25 +1847,26 @@ else:
 
 ---
 
-##### 14.7.4 步骤4：移除ToolParser初始化（第45行）
+##### 14.7.4 步骤4：移除ToolParser初始化（第46-49行）
 
 ```python
-# ===== base_react.py 第45行附近：移除旧解析器初始化 =====
+# ===== base_react.py 第46-49行附近：移除旧解析器初始化 =====
 # 旧代码:
 self.parser = ToolParser()
 
-# 新代码:
-# self.parser = ToolParser()  # 已移除，新解析器使用函数调用方式
+# 新代码（第46-49行，实际代码）:
+# 【步骤4】移除旧ToolParser初始化，使用parse_react_response函数调用
+# self.parser = ToolParser()  # 已移除
 
-# 注意：保留解析重试参数（第47-49行）
+# 注意：保留解析重试参数（第51-53行）
 self.parse_retry_count = 0
 self.max_parse_retries = 3
 ```
 
 **检查点**：
-- [ ] ToolParser初始化已移除
-- [ ] 解析重试参数保留
-- [ ] 无其他代码引用self.parser
+- [x] ToolParser初始化已移除（第46-49行）- 小沈-2026-04-17
+- [x] 解析重试参数保留（第51-53行）- 小沈-2026-04-17
+- [x] 无其他代码引用self.parser - 小沈-2026-04-17
 
 ---
 
