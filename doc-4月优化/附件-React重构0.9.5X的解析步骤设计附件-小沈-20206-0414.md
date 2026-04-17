@@ -1658,27 +1658,32 @@ git checkout backend/app/services/agent/tool_parser.py  # 保留旧解析器
 在动手修改前，必须先读取并理解现有的base_react.py代码结构：
 
 ```bash
-# 1.1 读取base_react.py第1-50行（初始化部分）
+# 1.1 读取base_react.py第1-60行（初始化部分）
 # 文件: backend/app/services/agent/base_react.py
 
-# 关键代码位置：
-# 第20行: from app.services.agent.tool_parser import ToolParser
-# 第45行: self.parser = ToolParser()  # ToolParser初始化
+# 关键代码位置（实际行号）：
+# 第21行: from app.services.agent.react_output_parser import parse_react_response
+# 第48-49行: from .react_output_parser import ToolParser as _ToolParser; self.parser = _ToolParser()
+# 第51-53行: self.parse_retry_count = 0; self.max_parse_retries = 3
 ```
 
 ```python
-# ===== base_react.py 现有代码（第45-50行）=====
-# 初始化部分
-self.parser = ToolParser()
+# ===== base_react.py 实际代码（第21行+第48-53行）=====
+# 导入语句（第21行）
+from app.services.agent.react_output_parser import parse_react_response
 
-# 【重构 2026-04-11 小沈】解析重试相关参数
+# 初始化部分（第48-49行）- 保留self.parser别名供测试使用
+from .react_output_parser import ToolParser as _ToolParser
+self.parser = _ToolParser()
+
+# 解析重试相关参数（第51-53行）
 self.parse_retry_count = 0  # 解析重试计数器
 self.max_parse_retries = 3   # 最大重试次数
 ```
 
 **检查点**：
-- [ ] 确认第45行是self.parser初始化位置
-- [ ] 确认第47-49行是重试参数（需要保留）
+- [x] 确认第45行是self.parser初始化位置（实际在第48-49行，添加了兼容处理）- 小沈-2026-04-17
+- [x] 确认第47-49行是重试参数（需要保留）- 小沈-2026-04-17
 
 ---
 
