@@ -60,8 +60,7 @@ def parse_react_response(output: str) -> Dict[str, Any]:
         
     设计依据: LlamaIndex ReActOutputParser.parse() 统一入口设计思想
     """
-    import logging
-    logger = logging.getLogger(__name__)
+    from app.utils.logger import logger
     logger.info(f"[parse_react_response] 调用新统一解析器, output长度: {len(output) if output else 0}")
     
     if not output or not isinstance(output, str):
