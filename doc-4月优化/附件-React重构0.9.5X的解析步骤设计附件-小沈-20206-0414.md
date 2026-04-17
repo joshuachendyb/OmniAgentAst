@@ -4669,30 +4669,6 @@ ThoughtStep(step=1, content="思考内容", tool_name="read_file")
 - **`self.steps`** = **前端展示**，记录每个步骤的详细信息
 - **`self.conversation_history`** = **LLM记忆**，让LLM知道"之前发生了什么"
 
-#### 实施步骤
-
-| 步骤 | 任务 | 文档位置 | 详细说明 |
-|------|------|---------|---------|
-| **步骤 2.1** | 创建ReasoningStep抽象基类 | reasoning_steps.py 第一部分 | 定义step/timestamp字段和抽象方法get_type()/get_content()/is_done()/to_dict() |
-| **步骤 2.2** | 创建ToolMixin混入类 | reasoning_steps.py 第三部分 | 定义tool_name/tool_params字段，供ThoughtStep/ActionToolStep/ObservationStep复用 |
-| **步骤 2.3** | 实现ThoughtStep类 | reasoning_steps.py 第四部分 | 继承ToolMixin和ReasoningStep，包含content/thought/reasoning字段，is_done()=False |
-| **步骤 2.4** | 实现ActionToolStep类 | reasoning_steps.py 第五部分 | 继承ToolMixin和ReasoningStep，包含execution_status/summary/execution_result/error_message/action_retry_count/execution_time_ms字段，is_done()=False |
-| **步骤 2.5** | 实现ObservationStep类 | reasoning_steps.py 第六部分 | 继承ToolMixin和ReasoningStep，包含observation/return_direct字段，is_done()=return_direct |
-| **步骤 2.6** | 实现FinalStep类 | reasoning_steps.py 第七部分 | 继承ReasoningStep，包含response/thought/is_finished字段，is_done()=True |
-| **步骤 2.7** | 实现ErrorStep类 | reasoning_steps.py 第八部分 | 继承ReasoningStep，包含error_type/error_message/recoverable字段，is_done()=True |
-| **步骤 2.8** | 创建StepFactory工厂类 | reasoning_steps.py 第九部分 | 实现5个静态方法create_thought_step()/create_action_tool_step()/create_observation_step()/create_final_step()/create_error_step() |
-| **步骤 2.9** | 改造base_react.py步骤构建代码 | base_react.py 第234-513行 | 将所有yield字典替换为StepFactory调用（10处） |
-| **步骤 2.10** | 添加步骤历史管理 | base_react.py | 初始化self.steps: list[ReasoningStep]=[]，每个步骤后self.steps.append(step)和yield step.to_dict() |
-| **步骤 2.11** | 清理旧字典构建代码 | base_react.py | 删除或标记废弃create_tool_error_result()/create_session_error_result()等函数 |
-
-**阶段完成标准**：
-- [x] reasoning_steps.py文件创建成功
-- [x] 可以成功import：from app.services.agent.reasoning_steps import ReasoningStep, StepFactory
-- [x] base_react.py中所有步骤构建改用StepFactory（10处）
-- [x] self.steps列表正确维护步骤历史（10处）
-- [x] 原有功能测试通过（91/91测试通过）
-
----
 
 ### 15.3 与Phase 1（输出解析器）的关系
 

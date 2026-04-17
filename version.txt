@@ -1,3 +1,100 @@
+v0.9.7.5
+
+更新时间：2026-04-17 14:18:50
+
+更新内容：
+
+## 1. 补全ErrorStep和FinalStep缺失字段 - 小沈-2026-04-17
+
+### 1.1 问题发现
+
+核对v0.9.7.1版本的完整代码，发现ErrorStep和FinalStep类缺失字段：
+
+**ErrorStep缺失字段**：
+- model: Optional[str] = None
+- provider: Optional[str] = None
+- reasoning: str = ""
+- is_reasoning: bool = False
+- context: Optional[Dict[str, Any]] = None
+- retry_after: Optional[int] = None
+
+**FinalStep缺失字段**：
+- is_streaming: bool = False
+- is_reasoning: bool = False
+
+### 1.2 修复内容
+
+| 类 | 修改内容 |
+|------|---------|
+| ErrorStep.__init__ | 添加6个新参数 |
+| ErrorStep | 添加6个新属性 |
+| ErrorStep.to_dict | 添加6个新字段 |
+| FinalStep.__init__ | 添加2个新参数 |
+| FinalStep | 添加2个新属性 |
+| FinalStep.to_dict | 添加2个新字段 |
+| StepFactory.create_error_step | 添加6个新参数 |
+
+### 1.3 测试验证
+
+| 测试项 | 结果 |
+|--------|------|
+| test_reasoning_steps.py | ✅ 39 passed |
+| test_adapter.py | ✅ 32 passed |
+| test_agent.py | ✅ 20 passed |
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| [待提交] | fix: 补全ErrorStep和FinalStep缺失字段-小沈-2026-04-17 |
+
+参与开发：小沈
+
+---
+
+v0.9.7.4
+
+更新时间：2026-04-17 13:53:14
+
+更新内容：
+
+## 1. 设计文档修正 - conversation_history顺序 + observation字段 - 小沈-2026-04-17
+
+### 1.1 问题发现
+
+按照设计文档15.2.0.4核对代码执行顺序，发现两个关键问题：
+
+**问题1：conversation_history 执行顺序错误**
+- 设计文档要求：response 应该在 action_tool 之后才加入 conversation_history
+- 原代码错误：response 在 thought 之后就加入了
+
+**问题2：observation 字段使用错误**
+- 设计文档要求：yield给前端只需要 summary（精简摘要）
+- 原代码错误：使用了 full data（包含 {'success': True, 'entries': [...]}）
+
+### 1.2 修复内容
+
+| 修复项 | 文件 | 修改 |
+|--------|------|------|
+| conversation_history顺序 | base_react.py | 删除thought后的提前加入，移到action_tool之后 |
+| observation使用summary | reasoning_steps.py | 改为 execution_result.get("summary") |
+
+### 1.3 设计精髓
+
+- **conversation_history**: 需要完整信息（含data），让LLM知道"发生了什么"
+- **yield给前端**: 只需要summary（精简摘要），不显示冗余数据
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|-------|------|
+| 96b68add | fix: base_react.py conversation_history顺序修正-遵循设计文档15.2.0.4-小沈-2026-04-17 |
+| 9b64686b | fix: reasoning_steps.py observation使用summary而非data-小沈-2026-04-17 |
+
+参与开发：小沈（发现+修复+验证）
+
+---
+
 v0.9.7.3
 
 更新时间：2026-04-17 13:29:07

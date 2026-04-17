@@ -491,6 +491,8 @@ class FinalStep(ReasoningStep):
         response: str,
         thought: str = "",
         is_finished: bool = True,
+        is_streaming: bool = False,
+        is_reasoning: bool = False,
         timestamp: Optional[int] = None
     ):
         """
@@ -501,6 +503,8 @@ class FinalStep(ReasoningStep):
             response: 最终回答
             thought: 思考过程
             is_finished: 业务完成标志
+            is_streaming: 是否流式输出
+            is_reasoning: 是否推理中
             timestamp: 时间戳（毫秒）
         """
         # 调用ReasoningStep初始化
@@ -509,6 +513,8 @@ class FinalStep(ReasoningStep):
         self._response = response
         self._thought = thought
         self._is_finished = is_finished
+        self._is_streaming = is_streaming
+        self._is_reasoning = is_reasoning
     
     def get_type(self) -> str:
         return "final"
@@ -531,6 +537,16 @@ class FinalStep(ReasoningStep):
         """获取业务完成标志"""
         return self._is_finished
     
+    @property
+    def is_streaming(self) -> bool:
+        """获取是否流式输出"""
+        return self._is_streaming
+    
+    @property
+    def is_reasoning(self) -> bool:
+        """获取是否推理中"""
+        return self._is_reasoning
+    
     def is_done(self) -> bool:
         return True
     
@@ -540,6 +556,8 @@ class FinalStep(ReasoningStep):
             "response": self._response,
             "thought": self._thought,
             "is_finished": self._is_finished,
+            "is_streaming": self._is_streaming,
+            "is_reasoning": self._is_reasoning,
         })
         return base_dict
 
@@ -570,6 +588,12 @@ class ErrorStep(ReasoningStep):
         error_type: str,
         error_message: str,
         recoverable: bool = False,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+        reasoning: str = "",
+        is_reasoning: bool = False,
+        context: Optional[Dict[str, Any]] = None,
+        retry_after: Optional[int] = None,
         timestamp: Optional[int] = None
     ):
         """
@@ -580,6 +604,12 @@ class ErrorStep(ReasoningStep):
             error_type: 错误类型
             error_message: 错误信息
             recoverable: 是否可恢复
+            model: 模型名称（可选）
+            provider: 提供商（可选）
+            reasoning: 思考过程（可选）
+            is_reasoning: 是否推理中（可选）
+            context: 错误上下文（可选）
+            retry_after: 重试等待秒数（可选）
             timestamp: 时间戳（毫秒）
         """
         # 调用ReasoningStep初始化
@@ -588,6 +618,12 @@ class ErrorStep(ReasoningStep):
         self._error_type = error_type
         self._error_message = error_message
         self._recoverable = recoverable
+        self._model = model
+        self._provider = provider
+        self._reasoning = reasoning
+        self._is_reasoning = is_reasoning
+        self._context = context
+        self._retry_after = retry_after
     
     def get_type(self) -> str:
         return "error"
@@ -610,6 +646,36 @@ class ErrorStep(ReasoningStep):
         """获取是否可恢复"""
         return self._recoverable
     
+    @property
+    def model(self) -> Optional[str]:
+        """获取模型名称"""
+        return self._model
+    
+    @property
+    def provider(self) -> Optional[str]:
+        """获取提供商"""
+        return self._provider
+    
+    @property
+    def reasoning(self) -> str:
+        """获取思考过程"""
+        return self._reasoning
+    
+    @property
+    def is_reasoning(self) -> bool:
+        """获取是否推理中"""
+        return self._is_reasoning
+    
+    @property
+    def context(self) -> Optional[Dict[str, Any]]:
+        """获取错误上下文"""
+        return self._context
+    
+    @property
+    def retry_after(self) -> Optional[int]:
+        """获取重试等待秒数"""
+        return self._retry_after
+    
     def is_done(self) -> bool:
         return True
     
@@ -619,6 +685,12 @@ class ErrorStep(ReasoningStep):
             "error_type": self._error_type,
             "error_message": self._error_message,
             "recoverable": self._recoverable,
+            "model": self._model,
+            "provider": self._provider,
+            "reasoning": self._reasoning,
+            "is_reasoning": self._is_reasoning,
+            "context": self._context,
+            "retry_after": self._retry_after,
         })
         return base_dict
 
@@ -792,16 +864,30 @@ class StepFactory:
         step: int,
         error_type: str,
         error_message: str,
-        recoverable: bool = False
+        recoverable: bool = False,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
+        reasoning: str = "",
+        is_reasoning: bool = False,
+        context: Optional[Dict[str, Any]] = None,
+        retry_after: Optional[int] = None
     ) -> ErrorStep:
         """
         创建ErrorStep
+        
+        【补充 2026-04-17 小沈】参考v0.9.7.1版本，补全所有字段
         
         Args:
             step: 步骤序号
             error_type: 错误类型
             error_message: 错误信息
             recoverable: 是否可恢复
+            model: 模型名称（可选）
+            provider: 提供商（可选）
+            reasoning: 思考过程（可选）
+            is_reasoning: 是否推理中（可选）
+            context: 错误上下文（可选）
+            retry_after: 重试等待秒数（可选）
                 
         Returns:
             ErrorStep实例
@@ -810,7 +896,13 @@ class StepFactory:
             step=step,
             error_type=error_type,
             error_message=error_message,
-            recoverable=recoverable
+            recoverable=recoverable,
+            model=model,
+            provider=provider,
+            reasoning=reasoning,
+            is_reasoning=is_reasoning,
+            context=context,
+            retry_after=retry_after
         )
 
 
