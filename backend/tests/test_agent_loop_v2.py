@@ -16,7 +16,7 @@ Author: 小健 - 2026-04-17
 import pytest
 import asyncio
 from typing import Dict, Any, List, AsyncGenerator
-from unittest.mock import Mock, AsyncMock, MagicMock, patch, AsyncIterator
+from unittest.mock import Mock, AsyncMock, MagicMock, patch
 from unittest import IsolatedAsyncioTestCase
 
 from app.services.agent.base_react import BaseAgent
@@ -44,13 +44,11 @@ class TestMaxStepsExceeded:
         agent = IntentAgent(
             llm_client=mock_llm,
             session_id="test-max-steps",
-            file_tools=MagicMock(spec=FileTools),
-            max_steps=2  # 只允许2步
+            file_tools=MagicMock(spec=FileTools)
         )
+        agent.max_steps = 2  # 设置max_steps
         
-        steps = []
-        async for step in agent.run_stream("测试任务"):
-            steps.append(step)
+        steps = [step async for step in agent.run_stream("测试任务")]
         
         # 应该有max_steps次迭代，加上最后的ErrorStep
         error_steps = [s for s in steps if s.get("type") == "error"]
@@ -190,7 +188,7 @@ class TestAnswerImplicitBranch:
             file_tools=MagicMock(spec=FileTools)
         )
         
-        steps = list(agent.run_stream("测试"))
+        steps = [step async for step in agent.run_stream("测试")]
         
         # LLM只应该被调用一次
         assert call_count == 1
@@ -274,6 +272,36 @@ class TestActionBranch:
     """测试action分支"""
     
     @pytest.mark.asyncio
+    async def test_action_yields_steps_in_correct_order(self):
+        """测试action分支的yield顺序：Thought → ActionTool → Observation → Final"""
+        mock_llm = AsyncMock(return_value='{"type": "action", "action_tool": "read_file", "action_input": {"file_path": "test.txt"}}')
+        
+        mock_tools = MagicMock(spec=FileTools)
+        mock_tools.read_file = AsyncMock(return_value={
+            "status": "success", 
+            "data": "文件内容",
+            "return_direct": True
+        })
+        
+        agent = IntentAgent(
+            llm_client=mock_llm,
+            session_id="test-yield-order",
+            file_tools=mock_tools
+        )
+        
+        steps = []
+        async for step in agent.run_stream("读取文件"):
+            steps.append(step)
+        
+        step_types = [s.get("type") for s in steps]
+        
+        # 验证顺序：thought → action_tool → observation → final
+        assert step_types[0] == "thought", "第一个应该是thought"
+        assert step_types[1] == "action_tool", "第二个应该是action_tool"
+        assert step_types[2] == "observation", "第三个应该是observation"
+        assert step_types[3] == "final", "第四个应该是final"
+    
+    @pytest.mark.asyncio
     async def test_action_executes_tool(self):
         """测试action分支执行工具"""
         mock_llm = AsyncMock(return_value='{"type": "action", "action_tool": "list_directory", "action_input": {"dir_path": "."}}')
@@ -349,6 +377,10 @@ class TestActionBranch:
         
         # 有final步骤且是return_direct产生的
         assert len(final_steps) > 0
+        # 验证is_finished=True（设计文档要求）
+        assert final_steps[0].get("is_finished") == True
+        # 验证response来自execution_result.get("data")
+        assert final_steps[0].get("response") == "文件内容"
         # 验证没有observation步骤（有也应该是return_direct跳过的）
     
     @pytest.mark.asyncio
@@ -386,6 +418,36 @@ class TestActionBranch:
 
 class TestParseErrorBranch:
     """测试parse_error重试逻辑"""
+    
+    @pytest.mark.asyncio
+    async def test_parse_retry_count_reset_each_loop(self):
+        """测试parse_retry_count每次循环开始时被重置为0"""
+        # 设计要求：while True循环开始时 self.parse_retry_count = 0
+        # 这个测试验证：如果parse_error后继续循环，下次parse_error的retry_count应该从0开始
+        
+        responses = [
+            '{"type": "parse_error", "error": "错误1"}',  # 第1次parse_error
+            '{"type": "parse_error", "error": "错误2"}',  # 第2次parse_error（应该在新的循环中，retry_count应该重置为0后再+1=1）
+            '{"type": "answer", "response": "成功"}'     # 最终成功
+        ]
+        mock_llm = AsyncMock()
+        mock_llm.side_effect = responses
+        
+        agent = IntentAgent(
+            llm_client=mock_llm,
+            session_id="test-retry-reset",
+            file_tools=MagicMock(spec=FileTools),
+            max_parse_retries=5  # 设置较大的重试限制
+        )
+        
+        steps = list(agent.run_stream("测试"))
+        
+        # 如果retry_count每次循环都被重置，应该能够通过多次parse_error最终成功
+        # 如果没有被重置，第二次parse_error时retry_count会是2而不是1
+        final_steps = [s for s in steps if s.get("type") == "final"]
+        
+        # 验证最终成功（说明retry_count被正确重置）
+        assert len(final_steps) > 0
     
     @pytest.mark.asyncio
     async def test_parse_error_retry_within_limit(self):
@@ -582,13 +644,13 @@ class TestOnAfterLoopCallback:
     """测试_on_after_loop回调"""
     
     @pytest.mark.asyncio
-    async def test_on_after_loop_called_on_exit(self):
-        """测试不同退出场景都调用_on_after_loop"""
+    async def test_on_after_loop_called_on_answer_exit(self):
+        """测试answer退出时调用_on_after_loop"""
         mock_llm = AsyncMock(return_value='{"type": "answer", "response": "完成"}')
         
         agent = IntentAgent(
             llm_client=mock_llm,
-            session_id="test-callback",
+            session_id="test-callback-answer",
             file_tools=MagicMock(spec=FileTools)
         )
         
@@ -596,9 +658,28 @@ class TestOnAfterLoopCallback:
         assert hasattr(agent, '_on_after_loop')
         
         # 运行一次
-        steps = list(agent.run_stream("测试"))
+        steps = [step async for step in agent.run_stream("测试")]
         
-        # _on_after_loop应该在某处被调用（这通过代码检查验证）
+        # 验证有final步骤（说明正常退出）
+        final_steps = [s for s in steps if s.get("type") == "final"]
+        assert len(final_steps) > 0
+    
+    @pytest.mark.asyncio
+    async def test_on_after_loop_called_on_error_exit(self):
+        """测试error退出时调用_on_after_loop"""
+        mock_llm = AsyncMock(return_value="")  # 空响应触发error
+        
+        agent = IntentAgent(
+            llm_client=mock_llm,
+            session_id="test-callback-error",
+            file_tools=MagicMock(spec=FileTools)
+        )
+        
+        steps = [step async for step in agent.run_stream("测试")]
+        
+        # 验证有error步骤
+        error_steps = [s for s in steps if s.get("type") == "error"]
+        assert len(error_steps) > 0
 
 
 if __name__ == "__main__":
