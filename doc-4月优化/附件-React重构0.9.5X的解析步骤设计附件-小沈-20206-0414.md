@@ -1945,8 +1945,8 @@ class BaseAgent(ABC):
         # ===== 解析LLM响应（新解析器）=====
         parsed = parse_react_response(response)  # 替换 self.parser.parse_response(response)
         
-        # 解析错误检查（兼容新格式）
-        is_parse_error = "⚠️" in parsed.get("content", "") or parsed.get("tool_name") == "finish"
+        # 解析错误检查（第232行，实际代码）
+        is_parse_error = "⚠️" in parsed.get("content", "")
         
         if is_parse_error:
             # 错误处理逻辑（不变）
