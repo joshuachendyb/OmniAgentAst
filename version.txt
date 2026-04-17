@@ -28,7 +28,63 @@ v0.9.7.8
 
 更新内容：
 
-## 1. 维度三架构流转图修正 - 删除多余is_done判断 - 小沈-2026-04-17
+## 1. StepFactory统一封装 - chat_stream_query.py改造 - 小沈-2026-04-17
+
+### 1.1 问题描述
+
+chat_stream_query.py中chunk、error、final步骤创建方式不统一，部分使用旧字典方式。
+
+### 1.2 改造内容
+
+**修改文件**: `backend/app/chat_stream/chat_stream_query.py`
+
+| 步骤类型 | 修改前 | 修改后 |
+|---------|--------|--------|
+| **chunk** | 手动构建字典 | `StepFactory.create_chunk_step()` → `.to_dict()` |
+| **error** | `create_error_step()` 函数 | `StepFactory.create_error_step()` → `.to_dict()` |
+| **final** | 手动构建字典 | `StepFactory.create_final_step()` → `.to_dict()` |
+
+### 1.3 具体代码变更
+
+```python
+# chunk修改
+chunk_step = StepFactory.create_chunk_step(
+    step=next_step(),
+    content=chunk.content,
+    is_reasoning=current_is_reasoning
+)
+chunk_data = chunk_step.to_dict()
+
+# error修改
+error_step_obj = StepFactory.create_error_step(
+    step=error_step_value,
+    error_type='empty_response',
+    error_message=error_message,
+    ...
+)
+error_step_dict = error_step_obj.to_dict()
+
+# final修改
+final_step_obj = StepFactory.create_final_step(
+    step=final_step_value,
+    response=full_content,
+    is_finished=True
+)
+final_step_dict = final_step_obj.to_dict()
+```
+
+### 1.4 Commit汇总
+
+| Commit | 时间 | 说明 |
+|--------|------|------|
+| 71a0ade8 | 2026-04-17 16:16:28 | refactor: unified react parser and step object encapsulation using StepFactory |
+| 039e8fb2 | 2026-04-17 14:37:56 | feat: StepFactory统一封装ErrorStep-SSE生成改造 |
+
+参与开发：小沈（实施）
+
+---
+
+## 2. 维度三架构流转图修正 - 删除多余is_done判断 - 小沈-2026-04-17
 
 ### 1.1 核对发现
 
