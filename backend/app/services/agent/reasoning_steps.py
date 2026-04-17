@@ -181,6 +181,69 @@ class ToolMixin:
 
 
 # =============================================================================
+# 第2.5部分：ChunkStep类（新增）
+# =============================================================================
+
+class ChunkStep(ReasoningStep):
+    """
+    ChunkStep类 - 流式块步骤
+    
+    表示LLM生成的流式文本片段：
+    - type: "chunk"
+    - is_done() = False → 继续生成
+    
+    字段说明：
+    - content: 块内容
+    - is_reasoning: 是否正在推理
+    
+    设计依据：补充流式输出统一封装
+    """
+    
+    def __init__(
+        self,
+        step: int,
+        content: str,
+        is_reasoning: bool = False,
+        timestamp: Optional[int] = None
+    ):
+        """
+        初始化ChunkStep
+        
+        Args:
+            step: 步骤序号
+            content: 块内容
+            is_reasoning: 是否正在推理
+            timestamp: 时间戳（毫秒）
+        """
+        # 调用ReasoningStep初始化
+        ReasoningStep.__init__(self, step, timestamp)
+        
+        self._content = content
+        self._is_reasoning = is_reasoning
+    
+    def get_type(self) -> str:
+        return "chunk"
+    
+    def get_content(self) -> str:
+        return self._content
+    
+    @property
+    def is_reasoning(self) -> bool:
+        """获取是否推理中"""
+        return self._is_reasoning
+    
+    def is_done(self) -> bool:
+        return False
+    
+    def to_dict(self) -> Dict[str, Any]:
+        base_dict = ReasoningStep.to_dict(self)
+        base_dict.update({
+            "is_reasoning": self._is_reasoning
+        })
+        return base_dict
+
+
+# =============================================================================
 # 第三部分：ThoughtStep类
 # =============================================================================
 
@@ -707,6 +770,7 @@ class StepFactory:
     - create_thought_step()
     - create_action_tool_step()
     - create_observation_step()
+    - create_chunk_step()
     - create_final_step()
     - create_error_step()
     
@@ -778,9 +842,32 @@ class StepFactory:
             execution_status=execution_result.get("status", "success"),
             summary=execution_result.get("summary", ""),
             execution_result=execution_result.get("data"),
-            error_message="",
+            error_message=execution_result.get("error", ""),
             action_retry_count=execution_result.get("retry_count", 0),
             execution_time_ms=execution_time_ms
+        )
+    
+    @staticmethod
+    def create_chunk_step(
+        step: int,
+        content: str,
+        is_reasoning: bool = False
+    ) -> ChunkStep:
+        """
+        创建ChunkStep
+        
+        Args:
+            step: 步骤序号
+            content: 块内容
+            is_reasoning: 是否正在推理
+                
+        Returns:
+            ChunkStep实例
+        """
+        return ChunkStep(
+            step=step,
+            content=content,
+            is_reasoning=is_reasoning
         )
     
     @staticmethod
@@ -916,6 +1003,7 @@ __all__ = [
     "ThoughtStep",
     "ActionToolStep",
     "ObservationStep",
+    "ChunkStep",
     "FinalStep",
     "ErrorStep",
     "StepFactory",

@@ -7,9 +7,9 @@
 
 ---
 
-**文档版本**: v2.21  
+**文档版本**: v2.22  
 **创建时间**: 2026-04-14  
-**更新时间**: 2026-04-17 15:16:30  
+**更新时间**: 2026-04-17 15:25:00  
 **编写人**: 小沈
 
 ## 版本历史
@@ -49,6 +49,7 @@
 | v2.19 | 2026-04-17 15:12:01 | 小沈 | 15.6章节字段定义更新：1)15.6.4 observation修正为summary（不是data）；2)15.6.5 final补充StepFactory字段；3)15.6.6 chunk添加step字段 |
 | v2.20 | 2026-04-17 15:15:00 | 小沈 | 15.6.3节：更新为StepFactory实现，添加统一result_dict格式说明 |
 | v2.21 | 2026-04-17 15:16:30 | 小沈 | 15.6.3节：补充完整to_dict字段说明（execution_status/summary/error_message/action_retry_count等11个字段） |
+| v2.22 | 2026-04-17 15:25:00 | 小沈 | 16章维度三设计更新：标注实现状态，不创建run_stream_v2()新方法，补充需完成步骤 |
 
 ---
 
@@ -5380,97 +5381,165 @@ error_response = create_error_response(
 
 **11个实施步骤概览**：
 
-| 步骤 | 内容 | 核心动作 |
-|------|------|---------|
-| 3.1 | 创建run_stream_v2() | 初始化steps列表、step_counter |
-| 3.2 | start步骤构建 | yield start类型步骤 |
-| 3.3 | 改造循环结构 | while step_counter < max_steps |
-| 3.4 | 统一解析调用 | `parsed = parse_react_response()` |
-| 3.5 | action类型处理 | Thought→工具执行→ActionTool→Observation |
-| 3.6 | is_done循环控制 | 检查obs_step.is_done()决定是否退出 |
-| 3.7 | answer/implicit处理 | 创建FinalStep，yield后break |
-| 3.8 | thought_only处理 | 直接continue |
-| 3.9 | 异常处理改造 | ErrorStep封装，yield后break |
-| 3.10 | max_steps处理 | 超限创建ErrorStep |
-| 3.11 | 清理旧代码 | 废弃run_stream() |
+| 步骤 | 内容 | 核心动作 | 状态 |
+|------|------|---------|--------|
+| 3.1 | 创建run_stream_v2() | 初始化steps列表、step_counter | ✅ 直接在run_stream()修改 |
+| 3.2 | start步骤构建 | yield start类型步骤 | ✅ 路由层发送 |
+| 3.3 | 改造循环结构 | while step_counter < max_steps | ✅ |
+| 3.4 | 统一解析调用 | `parsed = parse_react_response()` | ✅ |
+| 3.5 | action类型处理 | Thought→工具执行→ActionTool→Observation | ✅ |
+| 3.6 | is_done循环控制 | 检查obs_step.is_done()决定是否退出 | ✅ |
+| 3.7 | answer/implicit处理 | 创建FinalStep，yield后break | ⚠️ 需补充 |
+| 3.8 | thought_only处理 | 直接continue | ✅ |
+| 3.9 | 异常处理改造 | ErrorStep封装，yield后break | ✅ |
+| 3.10 | max_steps处理 | 超限创建ErrorStep | ⚠️ 需补充 |
+| 3.11 | 清理旧代码 | 渐进修改，无需新方法 | ❌ 待处理 |
 
 ---
 
 ### 16.1 维度三：重构Agent主循环2.0的详细设计
 
-#### 16.1.1 现有代码问题分析
+#### 16.1.1 设计 vs 实现对照
 
-**现有代码位置**: `backend/app/services/agent/base_react.py` (第114-310行)
+**【2026-04-17 更新】** - 基于实际代码实现状态标注
 
-**现有代码核心缺陷**：
+| 步骤 | 设计要求 | 代码位置 | 状态 | 说明 |
+|------|---------|---------|--------|------|
+| 3.1 | 创建run_stream_v2() | base_react.py第135行 | ✅ | 直接在run_stream()上修改 |
+| 3.2 | start步骤构建 | chat_router.py | ✅ | start在路由层发送 |
+| 3.3 | 循环结构改造 | 第194行 | ✅ | while step_counter < max_steps |
+| 3.4 | 统一解析调用 | 第220行 | ✅ | parse_react_response() |
+| 3.5 | action类型处理 | 第239-412行 | ✅ | StepFactory创建 |
+| 3.6 | is_done循环控制 | 第455行 | ✅ | obs_step.is_done() |
+| 3.7 | answer/implicit处理 | 第227-232行 | ⚠️ | 直接break，需补充yield FinalStep |
+| 3.8 | thought_only处理 | 第234-256行 | ✅ | continue |
+| 3.9 | 异常处理 | 第458-478行 | ✅ | ErrorStep封装 |
+| 3.10 | max_steps超限 | 第194行 | ⚠️ | 循环内检查，非独立处理 |
+| 3.11 | 清理旧代码 | - | ❌ | 待处理 |
 
-| 缺陷 | 位置 | 影响 | 严重程度 |
+**已实现的核心功能**：
+- ✅ 统一解析器 parse_react_response() 调用
+- ✅ StepFactory 步骤封装
+- ✅ is_done() 循环控制
+- ✅ thought_only 纯思考处理
+- ✅ ErrorStep 错误处理
+
+**需补充的实施步骤**：
+1. 步骤3.7：answer/implicit时yield FinalStep（包含thought）
+2. 步骤3.10：max_steps超限独立创建ErrorStep
+
+---
+
+#### 16.1.1 现有代码问题分析（基于实际代码）
+
+**现有代码位置**: `backend/app/services/agent/base_react.py` (第135-581行)
+
+**【2026-04-17 实际代码分析】**：
+
+**✅ 已修复的问题**：
+
+| 问题 | 位置 | 修复说明 |
+|------|------|---------|
+| 使用旧解析器 | 第218行 | ✅ 已改用`parse_react_response()`统一解析器 |
+| tool_name=="finish"判断 | 第227行 | ✅ 已改用`parsed["type"]`字段判断 |
+| 直接yield字典 | 第239-412行 | ✅ 已改用StepFactory创建Step类 |
+| 无Step类封装 | 整体 | ✅ 已使用ThoughtStep/ActionToolStep/ObservationStep等 |
+| 无is_done抽象 | 第455行 | ✅ 已使用`obs_step.is_done()`控制循环 |
+| thought_only处理 | 第235行 | ✅ 已实现continue继续 |
+| ErrorStep封装 | 第458行 | ✅ 已使用ErrorStep封装错误 |
+| parse_retry机制 | 第196行 | ✅ 已简化为每次循环重置计数器 |
+
+**⚠️ 待改进的问题**：
+
+| 问题 | 位置 | 影响 | 严重程度 |
 |------|------|------|---------|
-| 使用旧解析器 | 第195行 `self.parser.parse_response()` | 无法享受统一解析器优势 | 🔴 高 |
-| `tool_name == "finish"` 判断结束 | 第225行 | 语义不清晰，易出错 | 🔴 高 |
-| 直接yield字典 | 多处 | 无类型安全，无法扩展 | 🟡 中 |
-| 无Step类封装 | 整体 | 步骤逻辑分散，难维护 | 🟡 中 |
-| 无is_done抽象 | 整体 | 循环控制硬编码 | 🟡 中 |
-| parse_retry机制 | 第199-216行 | 依赖隐式"⚠️"判断 | 🟡 中 |
-| 错误处理混杂 | 多处 | 解析错误与逻辑错误混在一起 | 🟢 低 |
+| answer/implicit未yield | 第232行 | 需要补充yield FinalStep（含thought） | 🔴 高 |
+| max_steps检查 | 第199行 | 循环内检查，非独立ErrorStep | 🟡 中 |
 
-**现有代码流程图**：
+> **说明**：循环条件`while True`保持不变，当前实现合理。
+
+**现有代码实际流程图**：
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    现有Step构建流程（分散式）                  │
+│              现有Step构建流程（已部分重构）                    │
 ├─────────────────────────────────────────────────────────────┤
-│  1. 解析LLM响应                                               │
-│     └── parsed = self.parser.parse_response(response)        │
+│  1. 解析LLM响应（第218行）                                  │
+│     └── parsed = parse_react_response(response) ✅          │
 │                                                              │
-│  2. 判断步骤类型（硬编码）                                     │
-│     └── if tool_name == "finish": → 构建final（循环外）       │
+│  2. 判断步骤类型（第227行）                                  │
+│     └── if parsed["type"] in ["answer", "implicit"] ✅     │
+│         if parsed["type"] == "thought_only" ✅             │
 │                                                              │
-│  3. 构建thought步骤（第234-243行）                            │
-│     └── yield { "type": "thought", ... } 字典                │
+│  3. 构建thought步骤（第239-256行）                          │
+│     └── StepFactory.create_thought_step() ✅              │
 │                                                              │
-│  4. 执行工具                                                  │
-│     └── result = await self._execute_tool(...)               │
+│  4. 执行工具（第313-342行）                                 │
+│     └── result = await self._execute_tool(...) ✅          │
 │                                                              │
-│  5. 构建action_tool步骤（第257-279行）                        │
-│     ├── 失败: yield create_tool_error_result(...)            │
-│     └── 成功: yield { "type": "action_tool", ... } 字典     │
+│  5. 构建action_tool步骤（第344-380行）                      │
+│     └── StepFactory.create_action_tool_step() ✅          │
 │                                                              │
-│  6. 构建observation步骤（第302-308行）                        │
-│     └── yield { "type": "observation", ... } 字典             │
+│  6. 构建observation步骤（第400-412行）                       │
+│     └── StepFactory.create_observation_step() ✅           │
 │                                                              │
-│  7. 循环外处理final/error（第316-372行）                      │
-│     └── 多个if分支，分别yield不同error类型                    │
+│  7. is_done控制（第455行）                                 │
+│     └── if obs_step.is_done(): ✅                          │
+│                                                              │
+│  8. 循环外处理final/error（第460-581行）                   │
+│     └── ErrorStep封装 ✅                                   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**现有代码缺陷详解**：
+**实际代码示例**：
 
 ```python
-# 问题1: 使用旧解析器（第195行）
-parsed = self.parser.parse_response(response)  # ❌ 非统一入口
+# ✅ 问题1已修复: 使用统一解析器（第218行）
+parsed = parse_react_response(response)
 
-# 问题2: tool_name判断结束（第225行）
-if tool_name == "finish":  # ❌ 语义不清晰
+# ✅ 问题2已修复: type字段判断结束（第227行）
+if parsed["type"] in ["answer", "implicit"]:
     last_response = response
-    break  # ❌ 不yield thought，直接退出
+    break  # ⚠️ 问题：直接break，未yield FinalStep
 
-# 问题3: 直接yield字典（多处）
-yield {
-    "type": "thought",
-    "step": step_count,
-    "timestamp": current_time,
-    "content": thought_content,
-    ...
-}  # ❌ 无类型安全
+# ✅ 问题3已修复: StepFactory封装（第239行）
+thought_step = StepFactory.create_thought_step(
+    step=step_count,
+    content=thought_content,
+    tool_name=parsed["tool_name"],
+    tool_params=parsed.get("tool_params", {})
+)
+self.steps.append(thought_step)
+yield thought_step.to_dict()
 
-# 问题4: parse_retry机制（第199-216行）
-is_parse_error = "⚠️" in parsed.get("content", "")  # ❌ 隐式判断
-if is_parse_error:
-    self.parse_retry_count += 1
-    if self.parse_retry_count >= self.max_parse_retries:
-        last_error = "parse_error"
-        break
+# ✅ 问题4已修复: is_done控制（第455行）
+if obs_step.is_done():
+    # 创建FinalStep...
+    break
+```
+
+**仍需改进的代码**：
+
+```python
+# ⚠️ 问题1: answer/implicit时直接break（第227-232行）
+if parsed["type"] in ["answer", "implicit"]:
+    last_response = response
+    break  # ❌ 未yield FinalStep（含thought）
+    # 应改为：
+    final_step = StepFactory.create_final_step(
+        step=step_count,
+        response=parsed.get("response", ""),
+        thought=parsed.get("thought", ""),
+        is_finished=True
+    )
+    yield final_step.to_dict()
+    break
+
+# ⚠️ 问题2: max_steps在循环内检查（第199-201行）
+if step_count >= max_steps:
+    last_error = "max_steps_exceeded"
+    break  # ❌ 未创建独立ErrorStep
+    # 应改为在循环外独立处理
 ```
 
 ---

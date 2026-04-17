@@ -49,6 +49,7 @@
 | v4.29 | 2026-04-16 07:18:04 | 小沈 | 补充4.3.1.4完整代码修改方案：tool_executor.py新增TOOL_TIMEOUTS配置、超时和权限异常处理、warning状态判断 |
 | v4.30 | 2026-04-16 07:22:00 | 小沈 | 修正4.3.1.7.2循环终止条件：删除自动重试逻辑，由LLM决定；修正TOOL_TIMEOUTS键名与实际工具名一致 |
 | v4.31 | 2026-04-16 07:25:00 | 小沈 | 修正4.3.1.7.4前端显示要求：说明前端已兼容，不需要修改 |
+| v4.32 | 2026-04-17 15:20:00 | 小沈 | 13.2.3节维度三设计更新：不再创建run_stream_v2()新方法，直接在run_stream()上渐进修改；更新设计决策说明 |
 
 
 ---
@@ -5941,9 +5942,13 @@ from .reasoning_steps import (
     ObservationStep, FinalStep, ErrorStep
 )
 
-class BaseReactAgentV2:
+class BaseReactAgent:
     """
-    ReAct Agent v2.0 - 吸收5.1.1节和5.1.3节优点
+    ReAct Agent - 吸收5.1.1节和5.1.3节优点
+    
+    【2026-04-17 更新】
+    - 直接在run_stream()方法上渐进修改，不需要创建新方法run_stream_v2()
+    - 渐进修改方式更简洁，避免代码冗余
     
     改进点：
     1. 使用统一解析器 parse_react_response()
@@ -5952,7 +5957,7 @@ class BaseReactAgentV2:
     4. 清晰的错误处理流程
     """
     
-    async def run_stream_v2(
+    async def run_stream(
         self,
         task: str,
         context: Optional[Dict[str, Any]] = None,
@@ -6197,19 +6202,43 @@ if is_parse_error:
 
 ---
 
-####  13.2.3.3 维度三：重构Agent主循环2.0的实施步骤建议
+#### 13.2.3.3 维度三：重构Agent主循环2.0的实施步骤建议
 
-1. **步骤 3.1**: 创建新的主循环函数`run_stream_v2()`（保持`run_stream()`不变新增函数），初始化`steps: list[ReasoningStep]=[]`步骤历史列表和`step_counter=0`计数器
-2. **步骤 3.2**: 实现start步骤构建（调用`_build_start_step(task)`生成start类型步骤并yield）
-3. **步骤 3.3**: 改造主循环结构（将原`while True:`改为`while step_counter < max_steps:`，添加`step_counter += 1`计数器递增）
-4. **步骤 3.4**: 实现统一解析调用（第195行替换为`parsed = parse_react_response(llm_output)`，使用5.1.1节统一解析器）
-5. **步骤 3.5**: 实现action类型处理分支（当`parsed["type"] == "action"`时，使用StepFactory创建ThoughtStep→执行工具→创建ActionToolStep→创建ObservationStep，每个步骤添加到`steps`列表并yield）
-6. **步骤 3.6**: 实现is_done循环控制（在ObservationStep后检查`if obs_step.is_done():`创建FinalStep并break退出，否则continue继续下一轮）
-7. **步骤 3.7**: 实现answer/implicit类型处理分支（当`parsed["type"] in ("answer", "implicit")`时，创建FinalStep添加到`steps`列表并yield，然后break退出循环）
-8. **步骤 3.8**: 实现thought_only类型处理分支（当`parsed["type"] == "thought_only"`时，直接continue继续下一轮循环）
-9. **步骤 3.9**: 改造异常处理（将原有try-except块改造为创建ErrorStep并添加到`steps`列表，yield后break退出）
-10. **步骤 3.10**: 实现max_steps超限处理（在循环外检查`if step_counter >= max_steps:`创建ErrorStep并yield）
-11. **步骤 3.11**: 清理旧主循环代码（移除原`run_stream()`函数中的旧解析器调用、tool_name判断逻辑、直接yield字典代码，或标记为废弃保留兼容性）
+**【2026-04-17 更新】** - 基于实际代码实现状态标注
+
+| 步骤 | 设计要求 | 代码位置 | 状态 | 说明 |
+|------|---------|---------|--------|------|
+| 3.1 | 创建run_stream_v2() | base_react.py第135行 | ✅ 已实现 | 直接在run_stream()上修改，不需要新方法 |
+| 3.2 | start步骤构建 | chat_router.py | ✅ 已实现 | start在路由层发送，不在agent内 |
+| 3.3 | 循环结构改造 | 第194行 | ✅ 已实现 | 使用`while step_counter < max_steps` |
+| 3.4 | 统一解析调用 | 第220行 | ✅ 已实现 | `parse_react_response()` |
+| 3.5 | action类型处理 | 第239-412行 | ✅ 已实现 | StepFactory创建thought/action/observation |
+| 3.6 | is_done循环控制 | 第455行 | ✅ 已实现 | `obs_step.is_done()` |
+| 3.7 | answer/implicit处理 | 第227-232行 | ⚠️ 部分 | 直接break，需补充yield FinalStep |
+| 3.8 | thought_only处理 | 第234-256行 | ✅ 已实现 | continue继续循环 |
+| 3.9 | 异常处理 | 第458-478行 | ✅ 已实现 | ErrorStep封装 |
+| 3.10 | max_steps超限 | 第194行 | ⚠️ 部分 | 循环内检查，非独立处理 |
+| 3.11 | 清理旧代码 | - | ❌ 待处理 | 移除旧解析器调用等 |
+
+**已实现的核心功能**：
+- ✅ 统一解析器 parse_react_response() 调用
+- ✅ StepFactory 步骤封装
+- ✅ is_done() 循环控制
+- ✅ thought_only 纯思考处理
+- ✅ ErrorStep 错误处理
+
+**需补充的实施步骤**（仅2项）：
+
+| 步骤 | 内容 | 优先级 |
+|------|------|--------|
+| 3.7补充 | answer/implicit时yield FinalStep（包含thought） | P1 高 |
+| 3.10补充 | max_steps超限时独立创建ErrorStep | P2 中 |
+| 3.11 | 清理旧解析器调用、tool_name判断逻辑 | P3 低 |
+
+**【2026-04-17 更新说明】**
+- 不需要创建新方法`run_stream_v2()`，直接在`run_stream()`上修改
+- 渐进修改方式更加简洁，避免代码冗余和测试负担
+- 实际实现已证明有效性
 
 
 ### 13.2.4 整体构建的实施步骤建议

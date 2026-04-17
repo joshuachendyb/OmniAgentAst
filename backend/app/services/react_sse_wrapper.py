@@ -499,8 +499,10 @@ async def generate_sse_stream(
                 recoverable=False
             )
         
+            yield error_response
+        
         else:
-            # chat 或 confidence < 0.3：简单对话（暂时返回错误，后续阶段实现 chat_stream_query 集成）
+            # chat 或 confidence < 0.3：简单对话
             logger.warning(f"[ChatOp] chat_stream_query 待集成，暂时返回提示")
             error_step_obj = StepFactory.create_error_step(
                 step=next_step(),
@@ -515,12 +517,6 @@ async def generate_sse_stream(
             current_execution_steps.append(error_step_dict)
             await save_execution_steps_to_db(session_id, current_execution_steps, "简单对话功能正在开发中")
             yield error_response
-                error_type="not_implemented",
-                error_message="简单对话功能正在开发中",
-                model=ai_service.model,
-                provider=ai_service.provider,
-                recoverable=False
-            )
     
     except asyncio.CancelledError:
         # 客户端断开连接，任务被中断

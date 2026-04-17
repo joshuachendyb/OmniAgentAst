@@ -318,8 +318,8 @@ class BaseAgent(ABC):
                     "status": execution_result.get("status", "success"),
                     "summary": execution_result.get("summary", ""),
                     "data": execution_result.get("data"),
-                    "error": "",
-                    "retry_count": 0
+                    "error": execution_result.get("error", ""),
+                    "retry_count": execution_result.get("retry_count", 0)
                 }
 
                 # 【步骤2.9】使用StepFactory创建ActionToolStep
