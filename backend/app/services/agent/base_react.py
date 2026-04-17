@@ -205,12 +205,14 @@ class BaseAgent(ABC):
                 # ===== 场景5：正常完成（基于type字段判断）=====
                 # 【重构 2026-04-16 小沈】使用type字段判断，替代旧的tool_name=="finish"
                 if parsed["type"] in ["answer", "implicit"]:
+                    logger.info(f"[parse_react_response] 情况2: type={parsed['type']}, answer/implicit完成")
                     last_response = response  # 保存用于后续使用
                     last_parsed_type = parsed["type"]  # 记录退出类型
                     break  # 直接退出，不yield thought
                 
                 # 【新增】thought_only类型：纯思考分支，继续下一轮循环
                 if parsed["type"] == "thought_only":
+                    logger.info(f"[parse_react_response] 情况3: type=thought_only, 纯思考继续")
                     current_time = create_timestamp()
                     thought = parsed.get("thought", "")
                     yield {
@@ -232,6 +234,7 @@ class BaseAgent(ABC):
                 is_parse_error = "⚠️" in parsed.get("content", "")
                 
                 if is_parse_error:
+                    logger.info(f"[parse_react_response] 情况4: 解析错误, 重试次数={self.parse_retry_count}")
                     # 保存原始response到conversation_history
                     self.conversation_history.append({"role": "assistant", "content": response})
                     
@@ -248,7 +251,8 @@ class BaseAgent(ABC):
                         break  # 重试次数用尽，退出循环
                     continue  # 继续循环，让LLM重新尝试
                 
-                # ===== 正常流转：yield thought (非finish时) =====
+                # ===== 情况1：工具调用（Action）=====
+                logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
                 current_time = create_timestamp()
                 # 获取thought和reasoning字段
                 thought = parsed.get("thought", "")
