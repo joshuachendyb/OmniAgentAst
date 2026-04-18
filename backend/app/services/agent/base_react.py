@@ -193,6 +193,7 @@ class BaseAgent(ABC):
                         error_message=f"已达到最大迭代次数 {max_steps}",
                         recoverable=False
                     )
+                    self.steps.append(error_step)
                     yield error_step.to_dict()
                     self._on_after_loop()
                     return
@@ -215,6 +216,7 @@ class BaseAgent(ABC):
                         error_message="AI服务返回空响应",
                         recoverable=False
                     )
+                    self.steps.append(error_step)
                     yield error_step.to_dict()
                     self._on_after_loop()
                     return
@@ -250,6 +252,7 @@ class BaseAgent(ABC):
                             thought=parsed.get("thought", thought_content),
                             reasoning=parsed.get("reasoning", "")
                         )
+                        self.steps.append(thought_step)
                         yield thought_step.to_dict()
 
                     # 【步骤3.4】直接FinalStep→return，传入thought参数
@@ -259,6 +262,7 @@ class BaseAgent(ABC):
                         thought=parsed.get("thought", thought_content),
                         is_finished=True
                     )
+                    self.steps.append(final_step)
                     yield final_step.to_dict()
                     
                     self._on_after_loop()
@@ -317,6 +321,7 @@ class BaseAgent(ABC):
                             error_message=f"解析失败: {error_msg}（已重试{self.max_parse_retries}次）",
                             recoverable=False
                         )
+                        self.steps.append(error_step)
                         yield error_step.to_dict()
                         self._on_after_loop()
                         return
@@ -467,6 +472,7 @@ class BaseAgent(ABC):
                         thought="工具执行要求直接返回结果",
                         is_finished=True
                     )
+                    self.steps.append(final_step)
                     yield final_step.to_dict()
                     self._on_after_loop()
                     return
