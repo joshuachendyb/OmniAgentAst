@@ -1,3 +1,68 @@
+v0.9.8.4
+
+更新时间：2026-04-18 11:45:00
+
+更新内容：
+
+## 1. 修复纯JSON块解析失败问题 - 小沈-2026-04-18
+
+### 1.1 问题描述
+
+当LLM返回无```包裹的纯JSON块时，解析器无法正确提取参数：
+- LLM返回格式：`Thought内容...\n{...JSON...}`
+- 兜底函数`_extract_by_known_tools`硬编码`params["path"]`
+- 导致参数名错误（如output_dir变成path）
+
+### 1.2 修复内容
+
+| 文件 | 修改 |
+|------|------|
+| react_output_parser.py | 新增`_extract_json_block()`函数提取JSON对象 |
+| react_output_parser.py | 在`_determine_parse_type()`中添加纯JSON块检测 |
+| tool_executor.py | 添加generate_report的参数别名映射 |
+
+### 1.3 核心修改
+
+**新增纯JSON块检测**（react_output_parser.py）：
+```python
+# 检测到无```包裹时，先尝试提取JSON块
+json_data = _extract_json_block(output)
+if json_data and "tool_name" in json_data:
+    return {
+        "type": "action",
+        "tool_name": json_data["tool_name"],
+        "tool_params": json_data.get("tool_params", {}),
+        ...
+    }
+```
+
+**新增参数别名映射**（tool_executor.py）：
+```python
+"generate_report": {
+    "output_dir": "output_dir",
+    "output_path": "output_dir",
+    "path": "output_dir",
+},
+```
+
+### 1.4 测试验证
+
+| 测试格式 | 修复前 | 修复后 |
+|---------|--------|--------|
+| Markdown JSON（有```） | ✅ 正常 | ✅ 正常 |
+| 纯JSON块（无```） | ❌ 参数变path | ✅ 正确提取output_dir |
+| 混在文本中 | ❌ 参数变path | ✅ 正确提取output_dir |
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| [待提交] | fix: react_output_parser.py添加纯JSON块提取+tool_executor.py添加generate_report参数映射 |
+
+参与开发：小沈（分析+实施+验证）
+
+---
+
 v0.9.8.3
 
 更新时间：2026-04-18 11:00:40

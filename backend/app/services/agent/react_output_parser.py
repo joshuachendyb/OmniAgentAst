@@ -180,6 +180,28 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
             logger.warning(f"[_determine_parse_type] ToolParser failed: {e}, fallback to keyword matching")
     
     # ==========================================================================
+    # 【2026-04-18 小沈新增】纯JSON块检测
+    # 解决LLM返回无```包裹的JSON块时，_extract_by_known_tools兜底函数错误提取参数的问题
+    # 当LLM返回格式如：Thought内容...\n{...JSON...} 时，提取JSON块中的tool_name和tool_params
+    # ==========================================================================
+    json_data = _extract_json_block(output)
+    if json_data and "tool_name" in json_data:
+        tool_name = json_data["tool_name"]
+        tool_params = json_data.get("tool_params", {})
+        from app.utils.logger import logger
+        logger.info(f"[_determine_parse_type] 纯JSON块提取成功: tool={tool_name}, params={tool_params}")
+        return {
+            "type": "action",
+            "thought": json_data.get("thought", json_data.get("reasoning", output[:200])),
+            "content": json_data.get("thought", json_data.get("reasoning", output[:200])),
+            "reasoning": json_data.get("reasoning", ""),
+            "tool_name": tool_name,
+            "tool_params": tool_params,
+            "response": None,
+            "error": None
+        }
+    
+    # ==========================================================================
     # 【P0-必须新增】Pre-check: 工具名兜底匹配
     # 来源：llm_strategies.py _extract_by_known_tools()
     # 重要性：无此功能时，格式略不规范的LLM输出将导致工具调用完全失败
@@ -274,6 +296,45 @@ def _parse_thought_only(output: str, thought_match: re.Match) -> Dict[str, Any]:
         "tool_params": None,
         "response": None
     }
+
+
+# =============================================================================
+# 【2026-04-18 小沈新增】纯JSON块提取函数
+# 用于从无```包裹的LLM响应中提取JSON对象
+# 解决兜底函数_extract_by_known_tools错误提取参数的问题
+# =============================================================================
+
+def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
+    """
+    从文本中提取JSON对象（支持嵌套结构）
+    
+    当LLM返回类似：Thought内容...\n{...JSON...} 格式时，
+    使用平衡括号匹配提取完整的JSON对象。
+    
+    Args:
+        content: LLM原始响应文本
+        
+    Returns:
+        解析后的JSON字典，如果提取失败返回None
+    """
+    start = content.find('{')
+    if start == -1:
+        return None
+    
+    # 平衡括号匹配
+    depth = 0
+    for i in range(start, len(content)):
+        if content[i] == '{':
+            depth += 1
+        elif content[i] == '}':
+            depth -= 1
+            if depth == 0:
+                json_str = content[start:i+1]
+                try:
+                    return json.loads(json_str)
+                except json.JSONDecodeError:
+                    return None
+    return None
 
 
 # =============================================================================
@@ -716,6 +777,7 @@ __all__ = [
     "_parse_action_input",
     "_parse_thought_only",  # 【新增】14.5节要求的独立函数
     "_extract_by_known_tools",  # 【P0新增】工具名兜底匹配
+    "_extract_json_block",  # 【2026-04-18小沈新增】纯JSON块提取
     "_extract_json_with_balanced_braces",
     "_extract_key_value_pairs",
     "REACT_KEYWORDS",

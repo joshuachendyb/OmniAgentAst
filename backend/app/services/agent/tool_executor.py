@@ -217,6 +217,11 @@ class ToolExecutor:
                 "filename": "file_pattern",
                 "file": "file_pattern",
             },
+            "generate_report": {
+                "output_dir": "output_dir",
+                "output_path": "output_dir",
+                "path": "output_dir",
+            },
         }
         
         # 执行参数别名映射
