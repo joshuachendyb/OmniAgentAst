@@ -38,27 +38,27 @@ class TestParseReactResponse:
     """测试parse_react_response入口函数"""
     
     def test_empty_string(self):
-        """空字符串应返回implicit类型"""
+        """空字符串应返回parse_error类型"""
         result = parse_react_response("")
-        assert result["type"] == "implicit"
+        assert result["type"] == "parse_error"
         assert result["tool_name"] is None
         assert result["response"] == ""
     
     def test_none_input(self):
-        """None输入应返回implicit类型"""
+        """None输入应返回parse_error类型"""
         result = parse_react_response(None)
-        assert result["type"] == "implicit"
+        assert result["type"] == "parse_error"
         assert result["content"] == "(Implicit) Empty response"
     
     def test_non_string_input(self):
-        """非字符串输入应返回implicit类型"""
+        """非字符串输入应返回parse_error类型"""
         result = parse_react_response(123)
-        assert result["type"] == "implicit"
+        assert result["type"] == "parse_error"
 
     def test_non_string_list_input(self):
-        """list输入应安全返回implicit类型"""
+        """list输入应安全返回parse_error类型"""
         result = parse_react_response(["not", "a", "string"])
-        assert result["type"] == "implicit"
+        assert result["type"] == "parse_error"
         assert result["tool_name"] is None
     
     def test_action_type_returns_all_fields(self):
@@ -452,7 +452,7 @@ class TestEdgeCases:
     def test_whitespace_only(self):
         """纯空白字符"""
         result = parse_react_response("   \n\t  ")
-        assert result["type"] == "implicit"
+        assert result["type"] == "parse_error"
     
     def test_newlines_in_action_input(self):
         """Action Input中含换行符"""
@@ -502,3 +502,189 @@ class TestToolParserCompatibility:
         result = ToolParser.parse_response("Test content")
         assert "tool_name" in result
         assert "content" in result
+
+
+# =============================================================================
+# TestMarkdownJsonFormat - 16章融合方案测试（基于实际日志）
+# =============================================================================
+
+class TestMarkdownJsonFormat:
+    """
+    测试Markdown JSON格式解析（16章融合方案）
+    
+    验证从LLM返回的Markdown包裹的JSON中正确提取：
+    - content：JSON前的纯文本
+    - thought：JSON里的thought字段
+    - reasoning：JSON里的reasoning字段
+    - tool_name：JSON里的tool_name字段
+    - tool_params：JSON里的tool_params字段
+    """
+    
+    def test_markdown_json_with_all_fields(self):
+        """测试完整字段提取（基于message_id=606第1轮日志）"""
+        # LLM原始返回格式
+        llm_output = """I'll help you check the file types in the E drive directory. Here's my plan:
+
+1. Use the `list_directory` tool to scan the root of E drive
+2. Analyze the file extensions to determine the types
+
+```json
+{
+    "thought": "用户需要检查E盘的文件类型。第一步是列出E盘根目录下的所有文件和目录，获取文件列表后才能分析文件类型。",
+    "tool_name": "list_directory",
+    "tool_params": {
+        "dir_path": "E:/"
+    }
+}
+```"""
+        
+        result = parse_react_response(llm_output)
+        
+        # 验证type
+        assert result["type"] == "action"
+        
+        # 验证content（JSON前的纯文本）
+        assert "I'll help you check" in result["content"]
+        
+        # 验证thought
+        assert "用户需要检查E盘的文件类型" in result["thought"]
+        
+        # 验证tool_name
+        assert result["tool_name"] == "list_directory"
+        
+        # 验证tool_params（关键：参数不能为空！）
+        assert result["tool_params"] is not None
+        assert result["tool_params"] != {}
+        assert "dir_path" in result["tool_params"]
+        assert result["tool_params"]["dir_path"] == "E:/"
+    
+    def test_markdown_json_with_reasoning(self):
+        """测试reasoning字段提取（基于message_id=606第2轮日志）"""
+        llm_output = """I apologize for the confusion. Let me reissue the command with the correct parameter format:
+
+```json
+{
+    "thought": "需要获取E盘根目录的文件列表以分析文件类型，使用list_directory工具获取文件信息。",
+    "reasoning": "系统要求必须使用dir_path参数（而非directory_path或path），且路径应为绝对路径格式。",
+    "tool_name": "list_directory",
+    "tool_params": {
+        "dir_path": "E:/"
+    }
+}
+```"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"] == {"dir_path": "E:/"}
+        # 验证reasoning字段被正确提取
+        assert "reasoning" in result
+        assert "系统要求必须使用dir_path参数" in result["reasoning"]
+    
+    def test_markdown_json_complex_params(self):
+        """测试复杂参数提取（基于message_id=606第3轮日志）"""
+        llm_output = """I see the issue. It seems there might be a system configuration problem.
+
+```json
+{
+    "thought": "由于list_directory工具出现参数问题，改用search_files工具来获取E盘根目录下的所有文件列表。",
+    "reasoning": "search_files可以通过通配符'*'匹配所有文件，然后我将分析返回结果中的文件类型",
+    "tool_name": "search_files",
+    "tool_params": {
+        "file_pattern": "*",
+        "path": "E:/",
+        "recursive": false
+    }
+}
+```"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "search_files"
+        assert result["tool_params"]["file_pattern"] == "*"
+        assert result["tool_params"]["path"] == "E:/"
+        assert result["tool_params"]["recursive"] is False
+    
+    def test_markdown_json_no_json_tag(self):
+        """测试无json标签的Markdown代码块"""
+        llm_output = """Let me try a different approach.
+
+```
+{
+    "thought": "测试thought内容",
+    "tool_name": "test_tool",
+    "tool_params": {"key": "value"}
+}
+```"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "test_tool"
+        assert result["tool_params"] == {"key": "value"}
+    
+    def test_markdown_json_answer_type(self):
+        """测试Markdown JSON格式的answer类型"""
+        llm_output = """I have completed the analysis.
+
+```json
+{
+    "thought": "我已经完成了文件类型分析",
+    "reasoning": "通过检查E盘目录结构",
+    "tool_name": "finish"
+}
+```"""
+        
+        result = parse_react_response(llm_output)
+        
+        # finish应该被识别为answer类型
+        assert result["type"] == "answer"
+        assert result["tool_name"] is None
+        assert "tool_params" in result
+    
+    def test_markdown_json_multiple_params(self):
+        """测试多个参数的情况（message_id=606第5轮）"""
+        llm_output = """Let me try a different strategy by searching for common file extensions:
+
+```json
+{
+    "thought": "由于无法直接获取目录列表，我将通过搜索常见文件扩展名来识别E盘的文件类型",
+    "reasoning": "通过搜索特定扩展名（如*.docx, *.xlsx等）可以推断E盘中存在的文件类型",
+    "tool_name": "search_files",
+    "tool_params": {
+        "file_pattern": "*.docx|*.xlsx|*.pptx|*.pdf|*.jpg|*.png|*.mp3|*.mp4|*.exe|*.zip",
+        "path": "E:/",
+        "recursive": false
+    }
+}
+```"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "search_files"
+        assert "*.docx|*.xlsx" in result["tool_params"]["file_pattern"]
+        assert result["tool_params"]["path"] == "E:/"
+        assert result["tool_params"]["recursive"] is False
+    
+    def test_traditional_keyword_format_still_works(self):
+        """测试传统关键词格式仍然有效（非Markdown JSON）"""
+        # 这确保融合方案没有破坏原有功能
+        llm_output = "Thought: I need to list directory\nAction: list_directory\nAction Input: {\"path\": \"/home\"}"
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["path"] == "/home"
+    
+    def test_chinese_keyword_format_still_works(self):
+        """测试中文关键词格式仍然有效"""
+        llm_output = "思考：我需要列出目录\n行动：list_directory\n工具参数：{\"path\": \"/home\"}"
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"

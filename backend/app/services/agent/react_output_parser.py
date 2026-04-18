@@ -140,6 +140,50 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
     # 来源：llm_strategies.py _extract_by_known_tools() (行229-267)
     # 重要性：无此功能时，格式略不规范的LLM输出将导致工具调用完全失败
     # ==========================================================================
+    # ==========================================================================
+    # 【16章融合方案新增】Markdown JSON 检测（优先级最高，必须在最前面）
+    # 来源：设计文档第16章
+    # 当LLM返回Markdown包裹的JSON时，调用tool_parser完整解析
+    # 注意：这个检测必须在 _extract_by_known_tools 之前执行
+    # ==========================================================================
+    if '```' in output:
+        from app.services.agent.tool_parser import ToolParser
+        try:
+            result = ToolParser.parse_response(output)
+            
+            # 转换为 react_output_parser 的统一格式
+            if result["tool_name"] == "finish":
+                return {
+                    "type": "answer",
+                    "thought": result["thought"],
+                    "content": result["content"],
+                    "reasoning": result.get("reasoning", ""),
+                    "tool_name": None,
+                    "tool_params": None,
+                    "response": result["content"],
+                    "error": None
+                }
+            else:
+                return {
+                    "type": "action",
+                    "thought": result["thought"],
+                    "content": result["content"],
+                    "reasoning": result.get("reasoning", ""),
+                    "tool_name": result["tool_name"],
+                    "tool_params": result["tool_params"],
+                    "response": None,
+                    "error": None
+                }
+        except Exception as e:
+            # 解析失败，回退到原有逻辑
+            from app.utils.logger import logger
+            logger.warning(f"[_determine_parse_type] ToolParser failed: {e}, fallback to keyword matching")
+    
+    # ==========================================================================
+    # 【P0-必须新增】Pre-check: 工具名兜底匹配
+    # 来源：llm_strategies.py _extract_by_known_tools()
+    # 重要性：无此功能时，格式略不规范的LLM输出将导致工具调用完全失败
+    # ==========================================================================
     tool_result = _extract_by_known_tools(output)
     if tool_result:
         return {
