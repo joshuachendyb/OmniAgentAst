@@ -1,3 +1,44 @@
+v0.9.8.1
+
+更新时间：2026-04-18 09:16:03
+
+更新内容：
+
+## 1. 融合LLM响应解析器，支持Markdown包裹的JSON - 小沈-2026-04-18
+
+### 1.1 问题描述
+
+当前系统无法正确解析LLM返回的Markdown包裹的嵌套JSON，导致tool_params等参数丢失。
+
+### 1.2 修复内容
+
+按照设计文档第16章的融合方案，实施以下修改：
+
+| 修改 | 文件 | 说明 |
+|------|------|------|
+| 添加Markdown JSON检测 | react_output_parser.py:149 | 在_determine_parse_type()开头检测``` |
+| 融合ToolParser | react_output_parser.py:150-180 | 调用ToolParser.parse_response()完整解析 |
+| 新增测试用例 | test_react_output_parser.py | 8个Markdown JSON测试 |
+| 修正测试用例 | test_react_output_parser.py | 5个空输入类型修正 |
+
+### 1.3 测试验证
+
+| 测试项 | 结果 |
+|--------|------|
+| 单元测试 | ✅ 68 passed |
+| 融合方案测试 | ✅ 8 passed |
+| 传统格式兼容 | ✅ 通过 |
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 7a1936c6 | feat: 融合LLM响应解析器，支持Markdown包裹的JSON-小沈-2026-04-18 |
+
+参与开发：小沈（分析+实施+测试）、小健（代码审查）
+
+---
+
 v0.9.8.0
 
 更新时间：2026-04-18 06:10:33
