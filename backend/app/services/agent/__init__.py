@@ -26,7 +26,6 @@ from typing import TYPE_CHECKING
 # 新框架导出（无循环依赖）
 # ============================================================================
 from app.services.preprocessing import PreprocessingPipeline, TextCorrector, IntentClassifier
-from app.services.intent import Intent, IntentRegistry
 from .base_react import BaseAgent
 from .tool_parser import ToolParser
 from .tool_executor import ToolExecutor
@@ -95,8 +94,6 @@ __all__ = [
     "PreprocessingPipeline",
     "TextCorrector",
     "IntentClassifier",
-    "Intent",
-    "IntentRegistry",
     "SessionServiceBase",
     "SessionStatsMixin",
     # 新解析器（第14章）
