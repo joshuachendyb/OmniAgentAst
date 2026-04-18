@@ -494,7 +494,9 @@ class TestToolParserCompatibility:
     def test_empty_to_old_format(self):
         """空输入转换为旧格式"""
         result = ToolParser.parse_response("")
-        assert result["tool_name"] == "finish"
+        # 【2026-04-18小沈修正】空输入现在返回parse_error而不是finish
+        # 这是正确的改进，因为空输入不应该被当作finish处理
+        assert result["tool_name"] == "parse_error"
     
     def test_error_handling(self):
         """错误处理（ValueError异常时）"""
@@ -688,3 +690,202 @@ class TestMarkdownJsonFormat:
         
         assert result["type"] == "action"
         assert result["tool_name"] == "list_directory"
+
+
+# =============================================================================
+# TestNewFunctions - 新增函数测试（2026-04-18小沈）
+# =============================================================================
+
+class TestNewFunctions:
+    """测试新增的辅助函数"""
+    
+    def test_extract_json_block_with_trailing_comma(self):
+        """测试尾随逗号修复"""
+        from app.services.agent.react_output_parser import _extract_json_block
+        
+        json_with_comma = '{"tool_name": "list_directory", "tool_params": {"path": "E:/",},}'
+        result = _extract_json_block(json_with_comma)
+        
+        assert result is not None
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["path"] == "E:/"
+    
+    def test_extract_json_block_with_newlines(self):
+        """测试JSON中的实际换行符处理"""
+        from app.services.agent.react_output_parser import _extract_json_block
+        
+        json_with_newlines = '''{
+    "thought": "用户需要检查E盘
+    目录内容",
+    "tool_name": "list_directory",
+    "tool_params": {"dir_path": "E:/"}
+}'''
+        result = _extract_json_block(json_with_newlines)
+        
+        assert result is not None
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["dir_path"] == "E:/"
+    
+    def test_create_action_result_with_none(self):
+        """测试_create_action_result参数校验"""
+        from app.services.agent.react_output_parser import _create_action_result
+        
+        result = _create_action_result(None, "original output")
+        
+        assert result["type"] == "implicit"
+        assert result["response"] == "original output"
+    
+    def test_create_action_result_with_invalid_dict(self):
+        """测试_create_action_result无效字典处理"""
+        from app.services.agent.react_output_parser import _create_action_result
+        
+        result = _create_action_result("not a dict", "original output")
+        
+        assert result["type"] == "implicit"
+        assert result["response"] == "original output"
+    
+    def test_create_action_result_with_finish(self):
+        """测试_create_action_result的finish类型处理"""
+        from app.services.agent.react_output_parser import _create_action_result
+        
+        parsed = {
+            "thought": "任务完成",
+            "tool_name": "finish",
+            "tool_params": {"result": "已列出10个文件"}
+        }
+        result = _create_action_result(parsed, "original output")
+        
+        assert result["type"] == "answer"
+        assert result["tool_name"] is None
+        assert result["response"] == "已列出10个文件"
+    
+    def test_create_action_result_with_action(self):
+        """测试_create_action_result的action类型处理"""
+        from app.services.agent.react_output_parser import _create_action_result
+        
+        parsed = {
+            "thought": "用户想查看文件",
+            "tool_name": "list_directory",
+            "tool_params": {"dir_path": "E:/"}
+        }
+        result = _create_action_result(parsed, "original output")
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"] == {"dir_path": "E:/"}
+    
+    def test_extract_tool_params_from_thought_with_json(self):
+        """测试从thought中提取嵌套JSON参数"""
+        from app.services.agent.react_output_parser import _extract_tool_params_from_thought
+        
+        thought = '用户需要检查E盘，参数是{"dir_path": "E:/"}'
+        result = _extract_tool_params_from_thought(thought, "list_directory")
+        
+        assert result == {"dir_path": "E:/"}
+    
+    def test_extract_tool_params_from_thought_with_tool_params(self):
+        """测试从thought中提取tool_params字段"""
+        from app.services.agent.react_output_parser import _extract_tool_params_from_thought
+        
+        thought = '{"tool_params": {"dir_path": "E:/"}}'
+        result = _extract_tool_params_from_thought(thought, "list_directory")
+        
+        assert result == {"dir_path": "E:/"}
+    
+    def test_extract_tool_params_from_thought_empty(self):
+        """测试空thought返回空字典"""
+        from app.services.agent.react_output_parser import _extract_tool_params_from_thought
+        
+        result = _extract_tool_params_from_thought("", "list_directory")
+        
+        assert result == {}
+
+
+# =============================================================================
+# TestExceptionHandling - 异常处理测试（2026-04-18小沈）
+# =============================================================================
+
+class TestExceptionHandling:
+    """测试异常处理机制"""
+    
+    def test_determine_parse_type_with_malformed_markdown(self):
+        """测试畸形的Markdown代码块不会导致崩溃"""
+        llm_output = "```json\n{'invalid': json,}\n```"
+        
+        result = parse_react_response(llm_output)
+        
+        # 应该返回一个有效的结果，而不是抛出异常
+        assert "type" in result
+        assert "tool_name" in result
+    
+    def test_determine_parse_type_with_incomplete_json(self):
+        """测试不完整的JSON不会导致崩溃"""
+        llm_output = '{"tool_name": "list_directory", "tool_params": {'
+        
+        result = parse_react_response(llm_output)
+        
+        # 应该返回一个有效的结果
+        assert "type" in result
+    
+    def test_determine_parse_type_with_special_characters(self):
+        """测试特殊字符不会导致崩溃"""
+        llm_output = '{"thought": "参数是{dir_path: \'E:/\'}", "tool_name": "list_directory"}'
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+
+
+# =============================================================================
+# TestRealLLMOutputs - 真实LLM输出测试（2026-04-18小沈）
+# =============================================================================
+
+class TestRealLLMOutputs:
+    """使用真实LLM输出数据进行验证"""
+    
+    def test_real_llm_output_1(self):
+        """测试真实LLM输出用例1（来自文档16.2.7）"""
+        llm_output = """To analyze the directory and file distribution on the E: drive, I'll first list 
+the top-level contents of the drive to understand its high-level structure. 
+This will help identify main directories and files for further exploration.
+
+I'll use the `list_directory` tool with recursion disabled to avoid overwhelming 
+data, focusing only on the root items. This is the most efficient starting point 
+to map the distribution.
+
+{
+    "thought": "用户要求分析E盘目录和文件的分布情况。第一步需要获取E盘根目录的顶层结构，识别主要文件夹和文件。",
+    "reasoning": "list_directory是获取目录结构的核心工具，设置dir_path='E:/'可查看顶层内容。recursive=False确保只返回直接子项，避免信息过载。",
+    "tool_name": "list_directory",
+    "tool_params": {
+        "dir_path": "E:/"
+    }
+}"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["dir_path"] == "E:/"
+    
+    def test_real_llm_output_2(self):
+        """测试真实LLM输出用例2（来自文档16.2.11，finish类型）"""
+        llm_output = """I apologize for the continued issues. It appears there's a system-level problem 
+with tool execution. Since I cannot complete the requested analysis of E drive 
+distribution, I'll terminate the session with an error summary:
+
+{
+    "thought": "任务无法完成，因系统工具存在执行异常",
+    "reasoning": "多次尝试均失败：目录列表工具参数识别异常，报告生成工具参数映射错误。建议检查系统配置或联系技术支持。",
+    "tool_name": "finish",
+    "tool_params": {
+        "result": "错误总结：\\n1. list_directory 持续报告 dir_path 参数缺失\\n2. generate_report 存在参数映射错误\\n3. 无法访问 E: 盘内容\\n建议人工检查系统文件管理工具状态。"
+    }
+}"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "answer"
+        assert result["tool_name"] is None
+        assert "错误总结" in result["response"]
