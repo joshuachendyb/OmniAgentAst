@@ -180,23 +180,22 @@ class BaseAgent(ABC):
         self.conversation_history.append({"role": "user", "content": task_prompt})
         
         step_count = 0
-        
-        # 循环外变量（用于保存需要循环外处理的值）
-        last_error = None
-        last_response = None
-        last_parsed_type = None  # 跟踪退出时的解析类型
-        thought_content = ""
-        tool_name = "finish"
-        tool_params = {}
-        last_error_detail = ""  # 保存详细错误信息
-        
+
         # ===== 场景1：未捕获异常 (try...except包裹整个循环) =====
         try:
             while True:
                 # ===== 场景3：每次循环开始检查最大步数 =====
                 if step_count >= max_steps:
-                    last_error = "max_steps_exceeded"
-                    break  # 达到最大步数，退出
+                    # 【步骤3.2】直接ErrorStep→return
+                    error_step = StepFactory.create_error_step(
+                        step=step_count,
+                        error_type="max_steps_exceeded",
+                        error_message=f"已达到最大迭代次数 {max_steps}",
+                        recoverable=False
+                    )
+                    yield error_step.to_dict()
+                    self._on_after_loop()
+                    return
 
                 step_count += 1
                 
@@ -209,8 +208,16 @@ class BaseAgent(ABC):
                 # ===== 场景2：LLM返回空响应 =====
                 if not response:
                     logger.error(f"LLM返回空响应: {response}")
-                    last_error = "empty_response"
-                    break  # 空响应，退出
+                    # 【步骤3.2】直接ErrorStep→return
+                    error_step = StepFactory.create_error_step(
+                        step=step_count,
+                        error_type="empty_response",
+                        error_message="AI服务返回空响应",
+                        recoverable=False
+                    )
+                    yield error_step.to_dict()
+                    self._on_after_loop()
+                    return
                 
                 # ===== 场景4：解析响应并获取结果 =====  # 修复 2026-04-15 小沈
                 parsed = parse_react_response(response)
@@ -228,7 +235,11 @@ class BaseAgent(ABC):
                     # 【修复D3】成功解析，重置重试计数器
                     self.parse_retry_count = 0
                     
-                    # 【问题1优化】在退出前，如果存在thought内容，先yield一个ThoughtStep
+                    # 提取 thought_content 和 answer_response
+                    thought_content = parsed.get("content", "")
+                    answer_response = parsed.get("response", "")
+                    
+                    # 【步骤3.4】在退出前，如果存在thought内容，先yield一个ThoughtStep
                     # 确保前端能即时显示AI的思考过程
                     if thought_content and thought_content.strip():
                         thought_step = StepFactory.create_thought_step(
@@ -239,13 +250,20 @@ class BaseAgent(ABC):
                             thought=parsed.get("thought", thought_content),
                             reasoning=parsed.get("reasoning", "")
                         )
-                        self.steps.append(thought_step)
                         yield thought_step.to_dict()
 
-                    last_response = response  # 保存用于后续使用
-                    last_parsed_type = parsed["type"]  # 记录退出类型
-                    last_answer_response = parsed.get("response", "")  # 保存真正答案
-                    break  # 正常退出
+                    # 【步骤3.4】直接FinalStep→return，传入thought参数
+                    final_step = StepFactory.create_final_step(
+                        step=step_count,
+                        response=answer_response or thought_content,
+                        thought=parsed.get("thought", thought_content),
+                        is_finished=True
+                    )
+                    yield final_step.to_dict()
+                    
+                    self._on_after_loop()
+                    # FinalStep.is_done() 必然为 True，无需检查直接return
+                    return
                 
                 # 【新增】thought_only类型：纯思考分支，继续下一轮循环
                 if parsed["type"] == "thought_only":
@@ -285,18 +303,25 @@ class BaseAgent(ABC):
                     error_msg = parsed.get("error", "Unknown parse error")
                     logger.warning(f"[parse_react_response] 情况4: 解析错误: {error_msg}, 重试次数={self.parse_retry_count}")
                     
-                    # 添加错误提示到历史，引导 LLM 修复
+                    # 【步骤3.3】添加错误提示到历史，引导 LLM 修复
                     self._add_observation_to_history(f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format (Thought -> Action -> Action Input).")
                     
                     # 重试计数器+1
                     self.parse_retry_count += 1
                     
-                    # 重试次数 >= 3？退出循环
+                    # 【步骤3.3】重试次数 >= 3？直接ErrorStep→return
                     if self.parse_retry_count >= self.max_parse_retries:
-                        last_error = "parse_error"
-                        last_error_detail = error_msg
-                        break  
-                    continue  # 继续循环，让LLM重新尝试
+                        error_step = StepFactory.create_error_step(
+                            step=step_count,
+                            error_type="parse_error",
+                            error_message=f"解析失败: {error_msg}（已重试{self.max_parse_retries}次）",
+                            recoverable=False
+                        )
+                        yield error_step.to_dict()
+                        self._on_after_loop()
+                        return
+                    # 否则继续下一次循环
+                    continue
                 
                 # ===== 【步骤2.9】情况1：工具调用（Action）=====
                 logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
@@ -433,102 +458,21 @@ class BaseAgent(ABC):
                 # yield Step字典
                 yield observation_step.to_dict()
 
+                # 【步骤3.6】核心设计: observation_step.is_done() 决定是否直接结束任务
+                if observation_step.is_done():
+                    # return_direct 时生成 FinalStep 并退出
+                    final_step = StepFactory.create_final_step(
+                        step=step_count,
+                        response=str(execution_result.get("data", "")),
+                        thought="工具执行要求直接返回结果",
+                        is_finished=True
+                    )
+                    yield final_step.to_dict()
+                    self._on_after_loop()
+                    return
+
                 self._trim_history()
         
-            # ===== 循环外：统一处理退出场景 =====
-            
-            # ===== 【步骤2.9】场景5：正常完成（answer/implicit类型）=====
-            if last_parsed_type in ["answer", "implicit"]:
-                # 【步骤2.9】使用StepFactory创建FinalStep
-                final_step = StepFactory.create_final_step(
-                    step=step_count,
-                    response=self.last_answer_response or thought_content,
-                    thought=thought_content,
-                    is_finished=True
-                )
-                
-                # 【步骤2.10】记录步骤历史
-                self.steps.append(final_step)
-                
-                # yield Step字典
-                yield final_step.to_dict()
-                
-                self._on_after_loop()
-                return
-            
-            # ===== 【步骤2.9+2.11】场景2：LLM返回空响应错误 =====
-            if last_error == "empty_response":
-                # 【步骤2.9】使用StepFactory创建ErrorStep
-                error_step = StepFactory.create_error_step(
-                    step=step_count,
-                    error_type="empty_response",
-                    error_message="AI服务返回空响应",
-                    recoverable=False
-                )
-                
-                # 【步骤2.10】记录步骤历史
-                self.steps.append(error_step)
-                
-                # yield Step字典
-                yield error_step.to_dict()
-                
-                self._on_after_loop()
-                return
-            
-            # ===== 【步骤2.9+2.11】场景4：解析失败（重试3次后仍失败）=====
-            if last_error == "parse_error":
-                # 【步骤2.9】使用StepFactory创建ErrorStep
-                error_step = StepFactory.create_error_step(
-                    step=step_count,
-                    error_type="parse_error",
-                    error_message=f"解析失败: {last_error_detail}（已重试{self.max_parse_retries}次）",
-                    recoverable=False
-                )
-                
-                # 【步骤2.10】记录步骤历史
-                self.steps.append(error_step)
-                
-                # yield Step字典
-                yield error_step.to_dict()
-                
-                self._on_after_loop()
-                return
-            
-            # ===== 【步骤2.9+2.11】场景3：超过最大步数 =====
-            if step_count >= max_steps:
-                # 【步骤2.9】使用StepFactory创建ErrorStep
-                error_step = StepFactory.create_error_step(
-                    step=step_count,
-                    error_type="max_steps_exceeded",
-                    error_message=f"已达到最大迭代次数 {max_steps}",
-                    recoverable=False
-                )
-                
-                # 【步骤2.10】记录步骤历史
-                self.steps.append(error_step)
-                
-                # yield Step字典
-                yield error_step.to_dict()
-                
-                self._on_after_loop()
-                return
-            
-            # 场景1：未捕获异常 - 正常情况下不会执行到这里
-            # 如果执行到这里，说明循环正常结束但没有处理任何退出场景
-            # 这是一个安全保护分支
-            # 【修复D1】添加兜底处理，避免调用方永远等待
-            logger.error("[Safety] Loop exited without matching any exit scenario")
-            error_step = StepFactory.create_error_step(
-                step=step_count,
-                error_type="unexpected_exit",
-                error_message="Loop exited without matching any exit scenario",
-                recoverable=False
-            )
-            self.steps.append(error_step)
-            yield error_step.to_dict()
-            self._on_after_loop()
-            return
-    
         except Exception as e:
             # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
             # 【步骤2.11】废弃create_error_from_exception，使用StepFactory.create_error_step
