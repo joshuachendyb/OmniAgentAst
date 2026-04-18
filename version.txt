@@ -1,3 +1,30 @@
+v0.9.8.2
+
+更新时间：2026-04-18 10:17:54
+
+更新内容：
+
+## 1. 修复第14章Agent主循环6个缺陷 - 小沈-2026-04-18
+
+### 1.1 修复内容
+
+按照设计文档第14章的缺陷分析，修复以下问题：
+
+| 缺陷 | 修复内容 | 文件位置 |
+|------|----------|----------|
+| D3 | parse_retry_count不再在循环顶部重置，改为成功解析后重置 | base_react.py:228,255,306 |
+| D6 | _trim_history保留assistant消息，保持上下文连贯性 | base_react.py:586-600 |
+| D8 | ToolParser兼容层正确处理parse_error类型 | react_output_parser.py:758-770 |
+| D2 | thought_only分支添加_trim_history调用 | base_react.py:272-277 |
+| D5 | _trim_history日志使用正确长度 | base_react.py:600 |
+| D1 | 安全保护分支添加兜底处理 | base_react.py:516-530 |
+
+### 1.2 关键修复说明
+
+- **D3（致命Bug）**：parse_retry_count之前每次循环重置为0，导致重试机制完全失效。现在只在成功解析后重置。
+- **D6（严重缺陷）**：_trim_history之前只保留user和observation消息，丢弃assistant消息，破坏对话上下文。现在保留assistant消息。
+- **D8（严重缺陷）**：ToolParser兼容层将parse_error当作finish处理，导致解析失败被静默吞掉。现在明确返回tool_name="parse_error"。
+
 v0.9.8.1
 
 更新时间：2026-04-18 09:16:03
