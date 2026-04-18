@@ -193,14 +193,11 @@ class BaseAgent(ABC):
         # ===== 场景1：未捕获异常 (try...except包裹整个循环) =====
         try:
             while True:
-                # ===== 每次迭代开始时重置计数器 =====
-                self.parse_retry_count = 0
-                
                 # ===== 场景3：每次循环开始检查最大步数 =====
                 if step_count >= max_steps:
                     last_error = "max_steps_exceeded"
                     break  # 达到最大步数，退出
-                
+
                 step_count += 1
                 
                 # ===== 调用LLM =====
@@ -228,6 +225,9 @@ class BaseAgent(ABC):
                 if parsed["type"] in ["answer", "implicit"]:
                     logger.info(f"[parse_react_response] 情况2: type={parsed['type']}, answer/implicit完成")
                     
+                    # 【修复D3】成功解析，重置重试计数器
+                    self.parse_retry_count = 0
+                    
                     # 【问题1优化】在退出前，如果存在thought内容，先yield一个ThoughtStep
                     # 确保前端能即时显示AI的思考过程
                     if thought_content and thought_content.strip():
@@ -252,6 +252,9 @@ class BaseAgent(ABC):
                     logger.info(f"[parse_react_response] 情况3: type=thought_only, 纯思考继续")
                     thought = parsed.get("thought", "")
                     
+                    # 【修复D3】成功解析，重置重试计数器
+                    self.parse_retry_count = 0
+                    
                     # 【步骤2.9】使用StepFactory创建ThoughtStep
                     thought_step = StepFactory.create_thought_step(
                         step=step_count,
@@ -269,6 +272,10 @@ class BaseAgent(ABC):
                     yield thought_step.to_dict()
                     
                     self.conversation_history.append({"role": "assistant", "content": response})
+                    
+                    # 【修复D2】调用_trim_history防止历史无限增长
+                    self._trim_history()
+                    
                     continue  # 继续下一轮循环
                 
                 # ===== 【深度优化】问题3：检查解析是否失败 =====
@@ -296,6 +303,9 @@ class BaseAgent(ABC):
                 # 获取thought和reasoning字段
                 thought = parsed.get("thought", "")
                 reasoning = parsed.get("reasoning", "")
+                
+                # 【修复D3】成功解析，重置重试计数器
+                self.parse_retry_count = 0
 
                 # 【步骤2.9】使用StepFactory创建ThoughtStep
                 thought_step = StepFactory.create_thought_step(
@@ -506,6 +516,18 @@ class BaseAgent(ABC):
             # 场景1：未捕获异常 - 正常情况下不会执行到这里
             # 如果执行到这里，说明循环正常结束但没有处理任何退出场景
             # 这是一个安全保护分支
+            # 【修复D1】添加兜底处理，避免调用方永远等待
+            logger.error("[Safety] Loop exited without matching any exit scenario")
+            error_step = StepFactory.create_error_step(
+                step=step_count,
+                error_type="unexpected_exit",
+                error_message="Loop exited without matching any exit scenario",
+                recoverable=False
+            )
+            self.steps.append(error_step)
+            yield error_step.to_dict()
+            self._on_after_loop()
+            return
     
         except Exception as e:
             # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
@@ -564,6 +586,9 @@ class BaseAgent(ABC):
         # 保留最近5条消息（最新工具调用上下文）
         recent = self.conversation_history[-5:]
         
+        # 记录裁剪前的长度
+        original_len = len(self.conversation_history)
+        
         # 保留重要消息（用户需求、工具调用结果等）
         important = []
         for msg in self.conversation_history[1:-5]:  # 排除system和recent
@@ -572,8 +597,9 @@ class BaseAgent(ABC):
             
             # 保留条件：
             # 1. 用户消息（任务需求）
-            # 2. observation 消息（工具执行结果，以 "Observation:" 开头）
-            if role == "user" or content.startswith("Observation:"):
+            # 2. assistant消息（LLM推理过程，保持上下文连贯性）【修复D6】
+            # 3. observation消息（工具执行结果，以 "Observation:" 开头）
+            if role == "user" or role == "assistant" or content.startswith("Observation:"):
                 important.append(msg)
         
         # 如果重要消息太多，只保留最新的10条
@@ -583,7 +609,8 @@ class BaseAgent(ABC):
         # 重建对话历史：system + user + important + recent
         self.conversation_history = [system_msg] + important + recent
         
-        logger.info(f"[History] Trimmed from {len(self.conversation_history) + 5} to {len(self.conversation_history)} messages (important={len(important)}, recent={len(recent)})")
+        # 【修复D5】使用裁剪前记录的长度
+        logger.info(f"[History] Trimmed from {original_len} to {len(self.conversation_history)} messages (important={len(important)}, recent={len(recent)})")
 
     # ===== 通用方法 =====
 

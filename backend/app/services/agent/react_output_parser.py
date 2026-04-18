@@ -755,6 +755,15 @@ class ToolParser:
                 "tool_params": {},
                 "reasoning": ""
             }
+        elif parsed["type"] == "parse_error":
+            # 【修复D8】解析失败：返回错误信息，不当作finish处理
+            return {
+                "content": parsed.get("error", "Parse error"),
+                "thought": parsed.get("thought", ""),
+                "tool_name": "parse_error",  # 明确标识解析错误
+                "tool_params": {},
+                "reasoning": parsed.get("error", "")
+            }
         else:  # thought_only
             return {
                 "content": parsed.get("thought", ""),
