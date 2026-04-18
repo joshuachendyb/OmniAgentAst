@@ -82,3 +82,6 @@ nul
 # Database files
 *.db
 !file_operations.db
+
+# Arts
+.arts/

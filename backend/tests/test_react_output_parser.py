@@ -842,10 +842,141 @@ class TestExceptionHandling:
 # =============================================================================
 
 class TestRealLLMOutputs:
-    """使用真实LLM输出数据进行验证"""
+    """使用真实LLM输出数据进行验证（来自设计文档16.2章节）"""
     
-    def test_real_llm_output_1(self):
-        """测试真实LLM输出用例1（来自文档16.2.7）"""
+    # =============================================================================
+    # 第一组用例：16.2.1-16.2.6（```包裹格式，早期版本解析失败）
+    # =============================================================================
+    
+    def test_real_llm_output_case_1(self):
+        """测试用例16.2.1（第1轮，```包裹，参数丢失问题）"""
+        llm_output = """I'll help you check the file types in the E drive directory. Here's my plan:
+
+1. Use the `list_directory` tool to scan the root of E drive
+2. Analyze the file extensions to determine the types
+3. Pro...
+
+```json
+{
+    "thought": "用户需要检查E盘的文件类型。第一步是列出E盘根目录下的所有文件和目录，获取文件列表后才能分析文件类型。",
+    "tool_name": "list_directory",
+    "tool_params": {
+        "dir_path": "E:/"
+    }
+}
+```"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["dir_path"] == "E:/"
+    
+    def test_real_llm_output_case_2(self):
+        """测试用例16.2.2（第2轮，```包裹）"""
+        llm_output = """I apologize for the confusion. Let me reissue the command with the correct parameter format:
+
+```json
+{
+    "thought": "需要获取E盘根目录的文件列表以分析文件类型，使用list_directory工具获取文件信息。",
+    "reasoning": "系统要求必须使用dir_path参数（而非directory_path或path），且路径应为绝对路径格式。",
+    "tool_name": "list_directory",
+    "tool_params": {
+        "dir_path": "E:/"
+    }
+}
+```"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["dir_path"] == "E:/"
+    
+    def test_real_llm_output_case_3(self):
+        """测试用例16.2.3（第3轮，```包裹，search_files）"""
+        llm_output = """I see the issue. It seems there might be a system configuration problem. Let me try an alternative approach using the search tool to list all files in the E drive root directory:
+
+```json
+{
+    "thought": "由于list_directory工具出现参数问题，改用search_files工具来获取E盘根目录下的所有文件列表。",
+    "reasoning": "search_files可以通过通配符'*'匹配所有文件，然后我将分析返回结果中的文件类型",
+    "tool_name": "search_files",
+    "tool_params": {
+        "file_pattern": "*",
+        "path": "E:/",
+        "recursive": false
+    }
+}
+```"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "search_files"
+        assert result["tool_params"]["file_pattern"] == "*"
+        assert result["tool_params"]["path"] == "E:/"
+    
+    def test_real_llm_output_case_4(self):
+        """测试用例16.2.4（第4轮，```包裹）"""
+        llm_output = """I apologize for the continued issues. Let me try a different approach using the `list_directory` tool again, but with a more explicit parameter structure:
+
+```json
+{
+    "thought": "系统参数识别出现问题，我将使用更明确的参数格式尝试列出E盘目录内容",
+    "reasoning": "需要获取E盘根目录的文件列表才能分析文件类型，使用list_directory工具并确保参数格式完全符合要求",
+    "tool_name": "list_directory",
+    "tool_params": {
+        "dir_path": "E:/"
+    }
+}
+```"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["dir_path"] == "E:/"
+    
+    def test_real_llm_output_case_5(self):
+        """测试用例16.2.5（第5轮，```包裹，search_files复杂参数）"""
+        llm_output = """I'm encountering persistent issues with the tool parameters. Since I can't retrieve the file list through standard methods, I'll need to use an alternative approach to determine the file types on your E drive.
+
+Let me try a different strategy by searching for common file extensions:
+
+```json
+{
+    "thought": "由于无法直接获取目录列表，我将通过搜索常见文件扩展名来识别E盘的文件类型",
+    "reasoning": "通过搜索特定扩展名（如*.docx, *.xlsx等）可以推断E盘中存在的文件类型",
+    "tool_name": "search_files",
+    "tool_params": {
+        "file_pattern": "*.docx|*.xlsx|*.pptx|*.pdf|*.jpg|*.png|*.mp3|*.mp4|*.exe|*.zip",
+        "path": "E:/",
+        "recursive": false
+    }
+}
+```"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "search_files"
+        assert result["tool_params"]["file_pattern"] == "*.docx|*.xlsx|*.pptx|*.pdf|*.jpg|*.png|*.mp3|*.mp4|*.exe|*.zip"
+    
+    def test_real_llm_output_case_6(self):
+        """测试用例16.2.6（第6轮，无JSON，implicit类型）"""
+        llm_output = """I apologize for the persistent issues. It seems there's a fundamental problem with the tool parameter recognition. Since I'm unable to retrieve the file list through standard methods, I'll provide you..."""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "implicit"
+    
+    # =============================================================================
+    # 第二组用例：16.2.7-16.2.11（纯JSON块，无```包裹，最终修复后通过）
+    # =============================================================================
+    
+    def test_real_llm_output_case_7(self):
+        """测试用例16.2.7（轮次1，纯JSON块无```包裹）"""
         llm_output = """To analyze the directory and file distribution on the E: drive, I'll first list 
 the top-level contents of the drive to understand its high-level structure. 
 This will help identify main directories and files for further exploration.
@@ -869,8 +1000,69 @@ to map the distribution.
         assert result["tool_name"] == "list_directory"
         assert result["tool_params"]["dir_path"] == "E:/"
     
-    def test_real_llm_output_2(self):
-        """测试真实LLM输出用例2（来自文档16.2.11，finish类型）"""
+    def test_real_llm_output_case_8(self):
+        """测试用例16.2.8（轮次2，纯JSON块无```包裹）"""
+        llm_output = """I apologize for the error. It seems there was a technical issue with the parameter 
+passing. Let me retry listing the E drive root directory with the correct parameter format:
+
+{
+    "thought": "Retrying E盘目录检查，确保参数格式正确",
+    "reasoning": "需要重新调用list_directory工具，明确指定dir_path参数为E盘根目录",
+    "tool_name": "list_directory",
+    "tool_params": {
+        "dir_path": "E:/"
+    }
+}"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["dir_path"] == "E:/"
+    
+    def test_real_llm_output_case_9(self):
+        """测试用例16.2.9（轮次3，纯JSON块无```包裹）"""
+        llm_output = """I see the issue - the parameter name must be exactly `dir_path` (not `dir_path` with 
+a different case or formatting). Let me try again with strict parameter naming:
+
+{
+    "thought": "第三次尝试检查E盘目录结构，确保参数名称完全匹配",
+    "reasoning": "必须严格使用小写的dir_path参数名，并明确指定E盘根路径",
+    "tool_name": "list_directory",
+    "tool_params": {
+        "dir_path": "E:/"
+    }
+}"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["dir_path"] == "E:/"
+    
+    def test_real_llm_output_case_10(self):
+        """测试用例16.2.10（轮次4，generate_report工具）"""
+        llm_output = """It appears there's a persistent system issue preventing directory listing. Since I 
+can't proceed with analyzing E: drive's distribution, I'll generate a diagnostic 
+report to help troubleshoot the problem. 
+
+{
+    "thought": "无法完成E盘分布分析，因目录列表工具持续报错。生成操作报告供诊断",
+    "reasoning": "多次尝试均失败，需生成报告记录当前会话状态。generate_report工具可创建包含错误详情的诊断文件",
+    "tool_name": "generate_report",
+    "tool_params": {
+        "output_dir": "C:/Users/User/Desktop"
+    }
+}"""
+        
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "generate_report"
+        assert result["tool_params"]["output_dir"] == "C:/Users/User/Desktop"
+    
+    def test_real_llm_output_case_11(self):
+        """测试用例16.2.11（轮次5，finish类型）"""
         llm_output = """I apologize for the continued issues. It appears there's a system-level problem 
 with tool execution. Since I cannot complete the requested analysis of E drive 
 distribution, I'll terminate the session with an error summary:
