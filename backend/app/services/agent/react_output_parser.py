@@ -85,27 +85,44 @@ def parse_react_response(output: str) -> Dict[str, Any]:
         if isinstance(data, dict):
             # 新字段格式
             if "tool_name" in data:
-                logger.info(f"[parse_react_response] JSON预解析命中, type=action/answer")
+                tool_name = data["tool_name"]
+                is_finish = tool_name == "finish"
+                
+                # response处理：finish类型从tool_params.result获取
+                if is_finish and data.get("tool_params", {}).get("result"):
+                    response = data["tool_params"]["result"]
+                else:
+                    response = data.get("response", "")
+                
                 return {
-                    "type": "action" if data.get("tool_name") != "finish" else "answer",
+                    "type": "answer" if is_finish else "action",
                     "thought": data.get("content", data.get("thought", "")),
                     "content": data.get("content", data.get("thought", "")),
                     "reasoning": data.get("reasoning", ""),
-                    "tool_name": data["tool_name"],
-                    "tool_params": data.get("tool_params", {}),
-                    "response": data.get("response", "")
+                    "tool_name": None if is_finish else tool_name,
+                    "tool_params": None if is_finish else data.get("tool_params", {}),
+                    "response": response
                 }
             # 旧字段格式（action/action_input → tool_name/tool_params）
             if "action" in data:
+                action_name = data["action"]
+                is_finish = action_name == "finish"
+                
+                # response处理：finish类型从action_input.result获取
+                if is_finish and data.get("action_input", {}).get("result"):
+                    response = data["action_input"]["result"]
+                else:
+                    response = ""
+                
                 logger.info(f"[parse_react_response] JSON预解析命中(旧格式), type=action/answer")
                 return {
-                    "type": "action" if data.get("action") != "finish" else "answer",
+                    "type": "answer" if is_finish else "action",
                     "thought": data.get("thought", ""),
                     "content": data.get("thought", ""),
                     "reasoning": data.get("reasoning", ""),
-                    "tool_name": data["action"],
-                    "tool_params": data.get("action_input", {}),
-                    "response": ""
+                    "tool_name": None if is_finish else action_name,
+                    "tool_params": None if is_finish else data.get("action_input", {}),
+                    "response": response
                 }
     except (json.JSONDecodeError, TypeError):
         pass  # 不是JSON格式，继续走关键词匹配流程
@@ -140,11 +157,11 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
     # 来源：llm_strategies.py _extract_by_known_tools() (行229-267)
     # 重要性：无此功能时，格式略不规范的LLM输出将导致工具调用完全失败
     # ==========================================================================
-    # ==========================================================================
-    # 【16章融合方案新增】Markdown JSON 检测（优先级最高，必须在最前面）
-    # 来源：设计文档第16章
-    # 当LLM返回Markdown包裹的JSON时，调用tool_parser完整解析
-    # 注意：这个检测必须在 _extract_by_known_tools 之前执行
+# ==========================================================================
+    # 【融合修正 2026-04-18】保留```检测，只让ToolParser处理Markdown包裹的JSON
+    # ToolParser擅长解析：```json...``` 包裹的JSON
+    # 但不擅长解析：关键词格式（Action: xxx）和纯JSON块
+    # 所以只对```包裹的JSON调用ToolParser，其他情况继续用关键词匹配
     # ==========================================================================
     if '```' in output:
         from app.services.agent.tool_parser import ToolParser
@@ -175,26 +192,53 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
                     "error": None
                 }
         except Exception as e:
-            # 解析失败，回退到原有逻辑
+            # 解析失败，回退到关键词匹配
             from app.utils.logger import logger
             logger.warning(f"[_determine_parse_type] ToolParser failed: {e}, fallback to keyword matching")
     
     # ==========================================================================
-    # 【2026-04-18 小沈新增】纯JSON块检测
-    # 解决LLM返回无```包裹的JSON块时，_extract_by_known_tools兜底函数错误提取参数的问题
-    # 当LLM返回格式如：Thought内容...\n{...JSON...} 时，提取JSON块中的tool_name和tool_params
+    # 【2026-04-18 小沈新增】纯JSON块检测（无```包裹的JSON）
+    # ToolParser._extract_json_with_balanced_braces() 已经实现了这个功能
+    # 但需要在这里显式调用，因为它返回的是完整JSON而不是tool_name
+    # 改进：同时提取JSON前面的文本作为thought/reasoning来源
     # ==========================================================================
     json_data = _extract_json_block(output)
     if json_data and "tool_name" in json_data:
         tool_name = json_data["tool_name"]
         tool_params = json_data.get("tool_params", {})
+        
+        # 提取JSON前面的文本作为thought（LLM返回的思考内容）
+        json_start = output.find('{')
+        thought_before_json = output[:json_start].strip() if json_start > 0 else ""
+        
+        # 提取JSON中的thought/reasoning字段（如果LLM返回了这些字段）
+        json_thought = json_data.get("thought", json_data.get("reasoning", ""))
+        
+        # thought优先用JSON前面的文本，其次用JSON中的thought字段
+        thought = thought_before_json or json_thought or output[:200]
+        reasoning = json_data.get("reasoning", json_data.get("thinking", json_thought))
+        
         from app.utils.logger import logger
-        logger.info(f"[_determine_parse_type] 纯JSON块提取成功: tool={tool_name}, params={tool_params}")
+        logger.info(f"[_determine_parse_type] 纯JSON块提取成功: tool={tool_name}, params={tool_params}, thought={thought[:50]}...")
+        
+        # finish 类型返回 answer
+        if tool_name == "finish":
+            return {
+                "type": "answer",
+                "thought": thought,
+                "content": thought_before_json or json_thought,
+                "reasoning": reasoning,
+                "tool_name": None,
+                "tool_params": None,
+                "response": tool_params.get("result", thought),  # finish 的响应内容
+                "error": None
+            }
+        
         return {
             "type": "action",
-            "thought": json_data.get("thought", json_data.get("reasoning", output[:200])),
-            "content": json_data.get("thought", json_data.get("reasoning", output[:200])),
-            "reasoning": json_data.get("reasoning", ""),
+            "thought": thought,
+            "content": thought_before_json or json_thought,  # 兼容性字段：优先JSON前的文本
+            "reasoning": reasoning,
             "tool_name": tool_name,
             "tool_params": tool_params,
             "response": None,
@@ -333,7 +377,14 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
                 try:
                     return json.loads(json_str)
                 except json.JSONDecodeError:
-                    return None
+                    # 【2026-04-18小沈新增】处理JSON中的未转义换行符
+                    # LLM有时会在JSON字符串中输出实际换行符而非\n转义序列
+                    # 使用空格替换换行符（保持可读性）
+                    try:
+                        json_str_escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
+                        return json.loads(json_str_escaped)
+                    except json.JSONDecodeError:
+                        return None
     return None
 
 
