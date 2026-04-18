@@ -51,6 +51,7 @@
 | v4.31 | 2026-04-16 07:25:00 | 小沈 | 修正4.3.1.7.4前端显示要求：说明前端已兼容，不需要修改 |
 | v4.32 | 2026-04-17 15:20:00 | 小沈 | 13.2.3节维度三设计更新：不再创建run_stream_v2()新方法，直接在run_stream()上渐进修改；更新设计决策说明 |
 | v4.33 | 2026-04-18 | CodeArts Agent | 新增第14章：Agent主循环（run_stream）缺陷分析，共12个缺陷（4高/6中/2低），含详细修复建议和优先级排序 |
+| v4.34 | 2026-04-18 | CodeArts Agent | 修复13.2.3节Agent 2.0伪代码8处设计错误：parse_retry_count重置、steps.append遗漏、_trim_history遗漏、prompt_logger遗漏、observation_text区分、status更新、max_steps未定义、初始化逻辑遗漏 |
 
 
 ---
@@ -5998,27 +5999,57 @@ yield step.to_dict()      # 统一输出
     ) -> AsyncGenerator[Dict, None]:
         """
         ReAct Agent 主循环 2.0 (基于统一解析器与对象化步骤控制)
+        
+        【修复 2026-04-18 CodeArts Agent】修复8处设计错误：
+        - 修复1: parse_retry_count 不在循环顶部重置，改为成功解析后重置（同D3修复）
+        - 修复2: 所有 StepFactory 创建后添加 self.steps.append(step)
+        - 修复3: thought_only 和 action 分支添加 _trim_history() 调用
+        - 修复4: observation 阶段添加 prompt_logger.log_observation() 调用
+        - 修复5: observation_text 根据 exec_status 区分生成
+        - 修复6: 循环中添加 self.status 状态更新
+        - 修复7: run_stream 方法签名添加 max_steps 参数
+        - 修复8: 补充初始化逻辑（steps、conversation_history、status、llm_call_count、Hook调用）
         """
-        self.conversation_history.append({"role": "user", "content": task})
+        # ===== 【修复8】补充初始化逻辑 =====
+        self.steps = []
+        self.conversation_history = []
+        self.status = AgentStatus.THINKING
+        self.llm_call_count = 0
+        self.last_answer_response = ""
+        
+        # Hook: Session 初始化
+        self._on_session_init(task, context)
+        
+        # 获取 prompt
+        sys_prompt = self._get_system_prompt()
+        task_prompt = self._get_task_prompt(task, context)
+        
+        # Hook: 循环开始前
+        self._on_before_loop(sys_prompt, task_prompt)
+        
+        # 添加到对话历史
+        self.conversation_history.append({"role": "system", "content": sys_prompt})
+        self.conversation_history.append({"role": "user", "content": task_prompt})
         
         from app.services.agent.reasoning_steps import StepFactory
         from app.services.agent.react_output_parser import parse_react_response
+        from app.utils.prompt_logger import get_prompt_logger
         import time
 
         step_count = 0
         
         while True:
-            # 【修正】每次循环开始时重置解析重试计数器
-            self.parse_retry_count = 0
+            # 【修复1】删除循环顶部 parse_retry_count = 0，改为成功解析后重置
             
-            # 【补充】检查最大步数限制
-            if step_count >= max_steps:
+            # 检查最大步数限制
+            if step_count >= self.max_steps:
                 error_step = StepFactory.create_error_step(
                     step=step_count,
                     error_type="max_steps_exceeded",
-                    error_message=f"已达到最大迭代次数 {max_steps}",
+                    error_message=f"已达到最大迭代次数 {self.max_steps}",
                     recoverable=False
                 )
+                self.steps.append(error_step)
                 yield error_step.to_dict()
                 self._on_after_loop()
                 return
@@ -6027,9 +6058,10 @@ yield step.to_dict()      # 统一输出
 
             try:
                 # 步骤 1: 调用大模型并保存上下文
+                self.status = AgentStatus.THINKING  # 【修复6】状态更新
                 llm_response = await self._get_llm_response()
                 
-                # 【补充】检查LLM返回空响应
+                # 检查LLM返回空响应
                 if not llm_response:
                     error_step = StepFactory.create_error_step(
                         step=step_count,
@@ -6037,6 +6069,7 @@ yield step.to_dict()      # 统一输出
                         error_message="AI服务返回空响应",
                         recoverable=False
                     )
+                    self.steps.append(error_step)
                     yield error_step.to_dict()
                     self._on_after_loop()
                     return
@@ -6048,7 +6081,8 @@ yield step.to_dict()      # 统一输出
                 # 分支 1: 最终回答或隐式回答
                 # ==========================
                 if parsed["type"] in ["answer", "implicit"]:
-                    # 【对齐现有代码】
+                    self.parse_retry_count = 0  # 【修复1】成功解析，重置重试计数器
+                    
                     thought_content = parsed.get("content", "")
                     answer_response = parsed.get("response", "")
                     
@@ -6062,25 +6096,27 @@ yield step.to_dict()      # 统一输出
                             thought=parsed.get("thought", thought_content),
                             reasoning=parsed.get("reasoning", "")
                         )
+                        self.steps.append(thought_step)  # 【修复2】记录步骤历史
                         yield thought_step.to_dict()
 
-                    # 【修正】创建final_step时传入thought参数
+                    # 创建final_step时传入thought参数
                     final_step = StepFactory.create_final_step(
                         step=step_count,
                         response=answer_response or thought_content,
                         thought=parsed.get("thought", thought_content),
                         is_finished=True
                     )
+                    self.steps.append(final_step)  # 【修复2】记录步骤历史
                     yield final_step.to_dict()
                     self._on_after_loop()
-                    # FinalStep.is_done() 必然为 True，无需检查直接return
                     return
 
                 # ==========================
                 # 分支 2: 只有思考 (thought_only)
                 # ==========================
                 elif parsed["type"] == "thought_only":
-                    # 【补充】保存parsed中的thought到thought_content，供后续使用
+                    self.parse_retry_count = 0  # 【修复1】成功解析，重置重试计数器
+                    
                     thought_content = parsed.get("content", "")
                     thought_step = StepFactory.create_thought_step(
                         step=step_count,
@@ -6090,14 +6126,18 @@ yield step.to_dict()      # 统一输出
                         thought=parsed.get("thought", ""),
                         reasoning=parsed.get("reasoning", "")
                     )
+                    self.steps.append(thought_step)  # 【修复2】记录步骤历史
                     yield thought_step.to_dict()
                     self.conversation_history.append({"role": "assistant", "content": llm_response})
+                    self._trim_history()  # 【修复3】防止历史无限增长
                     continue
 
                 # ==========================
                 # 分支 3: 完整的工具调用 Action
                 # ==========================
                 elif parsed["type"] == "action":
+                    self.parse_retry_count = 0  # 【修复1】成功解析，重置重试计数器
+                    
                     tool_name = parsed["tool_name"]
                     tool_params = parsed["tool_params"]
                     
@@ -6110,14 +6150,16 @@ yield step.to_dict()      # 统一输出
                         thought=parsed.get("thought", ""),
                         reasoning=parsed.get("reasoning", "")
                     )
+                    self.steps.append(thought_step)  # 【修复2】记录步骤历史
                     yield thought_step.to_dict()
 
                     # 子步骤 3.2: 执行具体工具逻辑，并记录高精度时间
+                    self.status = AgentStatus.EXECUTING  # 【修复6】状态更新
                     start_time = time.perf_counter()
                     execution_result = await self._execute_tool(tool_name, tool_params)
                     execution_time_ms = int((time.perf_counter() - start_time) * 1000)
                     
-                    # 【对齐现有代码】action_tool_step 需要 dict，observation_step 需要原 execution_result
+                    # action_tool_step 需要 dict，observation_step 需要原 execution_result
                     execution_result_dict = {
                         "status": execution_result.get("status", "success"),
                         "summary": execution_result.get("summary", ""),
@@ -6134,37 +6176,72 @@ yield step.to_dict()      # 统一输出
                         execution_result=execution_result_dict,
                         execution_time_ms=execution_time_ms
                     )
+                    self.steps.append(action_tool_step)  # 【修复2】记录步骤历史
                     yield action_tool_step.to_dict()
                     
                     # 按照设计文档15.2.0.4，response 应该在 action_tool 之后才加入
                     self.conversation_history.append({"role": "assistant", "content": llm_response})
 
                     # 子步骤 3.4: 构造并抛出 ObservationStep
+                    # 【修复5】根据 exec_status 区分生成 observation_text
+                    exec_status = execution_result.get('status', 'unknown')
+                    
+                    if exec_status == 'success':
+                        observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+                        if execution_result.get('data'):
+                            data = execution_result.get('data')
+                            if isinstance(data, dict) and data.get('truncated'):
+                                total = data.get('total', 0)
+                                dir_count = data.get('dir_count', 0)
+                                file_count = data.get('file_count', 0)
+                                display_count = min(total, 200)
+                                observation_text += f"\n[目录包含 {total} 项: {dir_count} 目录, {file_count} 文件，显示前 {display_count} 项]"
+                                if data.get('entries'):
+                                    observation_text += f"\n实际数据: {data.get('entries')}"
+                            else:
+                                observation_text += f"\n实际数据: {data}"
+                    elif exec_status == 'warning':
+                        observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+                        if execution_result.get('data'):
+                            observation_text += f"\n部分数据: {execution_result.get('data')}"
+                    else:
+                        observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+                    
+                    # 更新消息历史
+                    self._add_observation_to_history(observation_text)
+                    
+                    # 【修复4】记录观察结果到prompt日志
+                    prompt_logger = get_prompt_logger()
+                    prompt_logger.log_observation(
+                        step_name="工具执行结果",
+                        observation_content=observation_text,
+                        tool_name=tool_name,
+                        tool_params=tool_params
+                    )
+                    
                     return_direct = execution_result.get("return_direct", False)
                     observation_step = StepFactory.create_observation_step(
                         step=step_count,
                         tool_name=tool_name,
                         tool_params=tool_params,
-                        execution_result=execution_result,  # 注意这里是对齐现有代码的原始 execution_result
+                        execution_result=execution_result,
                         return_direct=return_direct
                     )
+                    self.steps.append(observation_step)  # 【修复2】记录步骤历史
                     yield observation_step.to_dict()
                     
-                    # 将执行结果回填大模型上下文，供下轮推理
-                    self.conversation_history.append({
-                        "role": "user",
-                        "content": f"Observation: {observation_step.observation}"
-                    })
+                    self._trim_history()  # 【修复3】裁剪历史
 
                     # 核心设计: observation_step.is_done() 决定是否直接结束任务
                     if observation_step.is_done(): 
-                        # 【步骤3.6】return_direct 时生成 FinalStep 并退出
+                        # return_direct 时生成 FinalStep 并退出
                         final_step = StepFactory.create_final_step(
                             step=step_count,
                             response=str(execution_result.get("data", "")),
                             thought="工具执行要求直接返回结果",
                             is_finished=True
                         )
+                        self.steps.append(final_step)  # 【修复2】记录步骤历史
                         yield final_step.to_dict()
                         self._on_after_loop()
                         return
@@ -6175,12 +6252,12 @@ yield step.to_dict()      # 统一输出
                 elif parsed["type"] == "parse_error":
                     error_msg = parsed.get("error", "Unknown parse error")
                     
-                    # 【步骤3.3】添加错误提示到历史，引导LLM修复
+                    # 添加错误提示到历史，引导LLM修复
                     self._add_observation_to_history(
                         f"Parse Error: {error_msg}. Please ensure your response follows the ReAct format."
                     )
                     
-                    # 【补充】重试计数器+1
+                    # 重试计数器+1（【修复1】不在循环顶部重置，此处只累加）
                     self.parse_retry_count += 1
                     
                     # 如果重试次数超过限制，生成错误步骤并退出
@@ -6191,6 +6268,7 @@ yield step.to_dict()      # 统一输出
                             error_message=f"解析失败: {error_msg}（已重试{self.max_parse_retries}次）",
                             recoverable=False
                         )
+                        self.steps.append(error_step)  # 【修复2】记录步骤历史
                         yield error_step.to_dict()
                         self._on_after_loop()
                         return
@@ -6208,10 +6286,10 @@ yield step.to_dict()      # 统一输出
                 error_step = StepFactory.create_error_step(
                     step=step_count,
                     error_type=type(e).__name__,
-                    error_message=f"Agent 执行遭遇异常: {str(e)}
-{error_trace}",
+                    error_message=f"Agent 执行遭遇异常: {str(e)}\n{error_trace}",
                     recoverable=False
                 )
+                self.steps.append(error_step)  # 【修复2】记录步骤历史
                 yield error_step.to_dict()
                 self._on_after_loop()
                 return
