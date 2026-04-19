@@ -518,10 +518,32 @@ class FileTools:
             
             # 定义实际写入操作
             def _write_sync():
+                import tempfile
+                import os
+                
                 path.parent.mkdir(parents=True, exist_ok=True)
-                with open(path, 'w', encoding=encoding) as f:
+                
+                # 【修复P12】先写入临时文件，然后原子重命名
+                with tempfile.NamedTemporaryFile(
+                    mode='w',
+                    encoding=encoding,
+                    dir=path.parent,
+                    delete=False,
+                    prefix=f".{path.name}.",
+                    suffix=""
+                ) as f:
                     f.write(content)
-                return True
+                    temp_path = f.name
+                
+                try:
+                    os.replace(temp_path, str(path))
+                    return True
+                except Exception:
+                    try:
+                        os.unlink(temp_path)
+                    except:
+                        pass
+                    raise
             
             success = await asyncio.to_thread(
                 self.safety.execute_with_safety,
