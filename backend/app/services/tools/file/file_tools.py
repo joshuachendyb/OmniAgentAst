@@ -988,12 +988,12 @@ class FileTools:
     async def search_file_content(
         self,
         pattern: str,
-        path: str = ".",
+        path: str = "~",
         file_pattern: str = "*",
         recursive: bool = True,
         # 内部参数，不暴露给 LLM
         use_regex: bool = False,
-        # 【修改】添加 page_token 参数用于分页，统一使用位置编码
+        # 分页标记，用于继续之前的搜索
         page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """搜索文件内容中的关键字"""
@@ -1202,11 +1202,18 @@ class FileTools:
     async def search_files(
         self,
         file_pattern: str,
-        path: str = ".",
+        path: str = "~",
         recursive: bool = True,
-        # 最大搜索深度，支持深层目录搜索
         max_depth: int = 100000,
-        # 分页标记，用于继续之前的搜索
+        # 【删除 max_results 参数】
+        # 原因：小沈之前的知识浅薄，错误的要求给工具设置数量限制
+        # 现在导致了工具执行错误，反馈的结果隐藏了真实的数据
+        # 小沈是一个大混蛋，几次纠正都死不悔改
+        # 工具必须原原本本返回用户需要的结果，不应该限制数量
+        # 如果限制数量会丢失真实数据，这是错误的
+        # 如果工具有问题应该修工具代码，而不是用限制来掩盖问题
+        # 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
+        # 【修改】用 page_token 替换 after，统一使用位置编码分页
         page_token: Optional[str] = None
     ) -> Dict[str, Any]:
         """搜索文件名（按文件名匹配）"""
