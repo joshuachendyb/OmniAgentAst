@@ -51,6 +51,7 @@ from app.services.tools.file.file_schema import (
     GenerateReportInput,
     CopyFileInput,
     CreateDirectoryInput,
+    GetFileInfoInput,
 )
 
 from app.services.agent import (
@@ -1534,6 +1535,39 @@ class FileTools:
             execute_with_safety_func=self.safety.execute_with_safety,
             to_unified_format_func=_to_unified_format,
             get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="get_file_info",
+        description="""获取文件或目录的详细信息。
+
+使用场景：
+- 当用户想要查看文件属性时使用此工具
+- 当用户说"文件信息"、"查看属性"、"文件详情"时使用
+
+参数说明：
+- file_path: 文件或目录的完整路径（必须是绝对路径）
+
+【重要】必须使用 file_path 作为参数名。
+正确示例: {"file_path": "C:/Users/用户名/Documents/file.txt"}""",
+        input_model=GetFileInfoInput,
+        examples=[
+            {
+                "file_path": "C:/Users/用户名/Documents/file.txt"
+            }
+        ]
+    )
+    async def get_file_info(
+        self,
+        file_path: str,
+    ) -> Dict[str, Any]:
+        """获取文件信息"""
+        from app.services.tools.file.get_file_info import get_file_info_impl
+        
+        return await get_file_info_impl(
+            file_path=file_path,
+            validate_path_func=self._validate_path,
+            to_unified_format_func=_to_unified_format,
         )
 
 

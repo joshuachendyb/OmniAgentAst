@@ -205,6 +205,13 @@ class CreateDirectoryInput(BaseModel):
     )
 
 
+class GetFileInfoInput(BaseModel):
+    """get_file_info 工具的输入参数"""
+    file_path: str = Field(
+        description="文件或目录的完整路径（必须是绝对路径）"
+    )
+
+
 __all__ = [
     "ReadFileInput",
     "WriteFileInput",
@@ -216,4 +223,5 @@ __all__ = [
     "GenerateReportInput",
     "CopyFileInput",
     "CreateDirectoryInput",
+    "GetFileInfoInput",
 ]
