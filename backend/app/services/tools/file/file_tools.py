@@ -608,7 +608,7 @@ class FileTools:
         self,
         dir_path: str,
         recursive: bool = False,
-        max_depth: int = 100000,
+        max_depth: int = 10,
         offset: int = 0,
     ) -> Dict[str, Any]:
         """列出目录内容"""
