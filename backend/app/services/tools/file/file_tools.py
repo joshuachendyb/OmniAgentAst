@@ -52,6 +52,12 @@ from app.services.tools.file.file_schema import (
     CopyFileInput,
     CreateDirectoryInput,
     GetFileInfoInput,
+    CompareFilesInput,
+    BatchRenameInput,
+    CompressFilesInput,
+    FileMonitorInput,
+    FileStatisticsInput,
+    FileChecksumInput,
 )
 
 from app.services.agent import (
@@ -1570,6 +1576,396 @@ class FileTools:
             to_unified_format_func=_to_unified_format,
         )
 
+    @register_tool(
+        name="compare_files",
+        description="""比较两个文件的内容、大小或修改时间。
+
+使用场景：
+- 当用户需要比较两个文件是否相同时使用此工具
+- 当用户需要验证文件完整性或检测文件变化时使用
+- 当需要确认文件备份或同步是否成功时使用
+
+参数说明：
+- file_path1: 第一个文件的完整路径（必须是绝对路径）
+- file_path2: 第二个文件的完整路径（必须是绝对路径）
+- algorithm: 比较算法：content（内容比较）、size（大小比较）、mtime（修改时间比较），默认为content
+- chunk_size: 分块大小（字节），用于大文件比较，默认8192字节
+
+【重要】必须使用正确的参数名。
+正确示例: {"file_path1": "C:/file1.txt", "file_path2": "C:/file2.txt", "algorithm": "content"}""",
+        input_model=CompareFilesInput,
+        examples=[
+            {
+                "file_path1": "C:/Users/用户名/Documents/file1.txt",
+                "file_path2": "C:/Users/用户名/Documents/file2.txt",
+                "algorithm": "content"
+            },
+            {
+                "file_path1": "D:/项目代码/version1.py",
+                "file_path2": "D:/项目代码/version2.py",
+                "algorithm": "size"
+            },
+            {
+                "file_path1": "E:/备份/data.db",
+                "file_path2": "E:/恢复/data.db",
+                "algorithm": "mtime",
+                "chunk_size": 16384
+            }
+        ]
+    )
+    async def compare_files(
+        self,
+        file_path1: str,
+        file_path2: str,
+        algorithm: str = "content",
+        chunk_size: int = 8192,
+    ) -> Dict[str, Any]:
+        """比较两个文件"""
+        from app.services.tools.file.compare_files import compare_files_impl
+        
+        return await compare_files_impl(
+            file_path1=file_path1,
+            file_path2=file_path2,
+            algorithm=algorithm,
+            chunk_size=chunk_size,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="batch_rename",
+        description="""批量重命名目录中的文件。
+
+使用场景：
+- 当用户需要批量修改文件名时使用此工具
+- 当需要按照特定模式重命名文件时使用
+- 当需要整理文件命名规范时使用
+
+参数说明：
+- directory: 目标目录的完整路径（必须是绝对路径）
+- pattern: 匹配模式（支持正则表达式）
+- replacement: 替换字符串
+- recursive: 是否递归处理子目录，默认为False
+- preview: 是否只预览不执行，默认为False
+- conflict_strategy: 冲突处理策略：skip（跳过）、overwrite（覆盖）、rename（自动重命名），默认为skip
+
+【重要】必须使用正确的参数名。
+正确示例: {"directory": "C:/Users/用户名/Photos", "pattern": "IMG_\\d+\\.jpg", "replacement": "photo_$1.jpg", "preview": true}""",
+        input_model=BatchRenameInput,
+        examples=[
+            {
+                "directory": "C:/Users/用户名/Photos",
+                "pattern": "IMG_\\d+\\.jpg",
+                "replacement": "photo_$1.jpg",
+                "preview": True
+            },
+            {
+                "directory": "D:/项目代码/docs",
+                "pattern": "(.+)\\.txt",
+                "replacement": "$1.md",
+                "recursive": True,
+                "conflict_strategy": "rename"
+            },
+            {
+                "directory": "E:/音乐",
+                "pattern": "track_",
+                "replacement": "song_",
+                "conflict_strategy": "overwrite"
+            }
+        ]
+    )
+    async def batch_rename(
+        self,
+        directory: str,
+        pattern: str,
+        replacement: str,
+        recursive: bool = False,
+        preview: bool = False,
+        conflict_strategy: str = "skip",
+    ) -> Dict[str, Any]:
+        """批量重命名文件"""
+        from app.services.tools.file.batch_rename import batch_rename_impl
+        
+        return await batch_rename_impl(
+            directory=directory,
+            pattern=pattern,
+            replacement=replacement,
+            recursive=recursive,
+            preview=preview,
+            conflict_strategy=conflict_strategy,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="compress_files",
+        description="""压缩文件或目录。
+
+使用场景：
+- 当用户需要压缩文件以节省存储空间时使用此工具
+- 当需要打包多个文件以便传输时使用
+- 当需要创建备份压缩包时使用
+
+参数说明：
+- source_path: 源文件或目录的完整路径（必须是绝对路径）
+- destination_path: 目标压缩文件路径（必须是绝对路径）
+- format: 压缩格式：zip、tar.gz，默认为zip
+- compression_level: 压缩级别（0-9，0不压缩，9最高压缩），默认为6
+- password: 压缩密码（可选），用于加密压缩文件
+- split_size: 分卷大小（字节），None表示不分卷
+
+【重要】必须使用正确的参数名。
+正确示例: {"source_path": "C:/Users/用户名/Documents", "destination_path": "C:/备份/docs.zip", "format": "zip", "compression_level": 9}""",
+        input_model=CompressFilesInput,
+        examples=[
+            {
+                "source_path": "C:/Users/用户名/Documents",
+                "destination_path": "C:/备份/docs.zip",
+                "format": "zip",
+                "compression_level": 9
+            },
+            {
+                "source_path": "D:/项目代码",
+                "destination_path": "D:/备份/project.tar.gz",
+                "format": "tar.gz",
+                "compression_level": 6
+            },
+            {
+                "source_path": "E:/敏感数据",
+                "destination_path": "E:/加密备份/secure.zip",
+                "format": "zip",
+                "password": "mypassword123",
+                "split_size": 104857600  # 100MB分卷
+            }
+        ]
+    )
+    async def compress_files(
+        self,
+        source_path: str,
+        destination_path: str,
+        format: str = "zip",
+        compression_level: int = 6,
+        password: Optional[str] = None,
+        split_size: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """压缩文件或目录"""
+        from app.services.tools.file.compress_files import compress_files_impl
+        
+        return await compress_files_impl(
+            source_path=source_path,
+            destination_path=destination_path,
+            format=format,
+            compression_level=compression_level,
+            password=password,
+            split_size=split_size,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="file_monitor",
+        description="""监控文件系统变化。
+
+使用场景：
+- 当用户需要实时监控文件变化时使用此工具
+- 当需要检测文件创建、修改、删除事件时使用
+- 当需要监控目录变化并触发相应操作时使用
+
+参数说明：
+- directory: 监控目录的完整路径（必须是绝对路径）
+- event_types: 监控事件类型列表，默认为["created", "modified", "deleted", "renamed"]
+- recursive: 是否递归监控子目录，默认为True
+- filters: 过滤条件字典，支持file_type、min_size、max_size、modified_after等字段
+- duration: 监控持续时间（秒），None表示持续监控直到手动停止
+
+【重要】必须使用正确的参数名。
+正确示例: {"directory": "C:/Users/用户名/Downloads", "event_types": ["created", "modified"], "duration": 60}""",
+        input_model=FileMonitorInput,
+        examples=[
+            {
+                "directory": "C:/Users/用户名/Downloads",
+                "event_types": ["created", "modified"],
+                "duration": 60
+            },
+            {
+                "directory": "D:/项目代码/logs",
+                "recursive": False,
+                "filters": {"file_type": ".log"}
+            },
+            {
+                "directory": "E:/监控目录",
+                "event_types": ["created", "deleted", "renamed"],
+                "filters": {"min_size": 1024, "max_size": 1048576}
+            }
+        ]
+    )
+    async def file_monitor(
+        self,
+        directory: str,
+        event_types: List[str] = None,
+        recursive: bool = True,
+        filters: Optional[Dict[str, Any]] = None,
+        duration: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """监控文件系统变化"""
+        from app.services.tools.file.file_monitor import file_monitor_impl
+        
+        if event_types is None:
+            event_types = ["created", "modified", "deleted", "renamed"]
+        
+        return await file_monitor_impl(
+            directory=directory,
+            event_types=event_types,
+            recursive=recursive,
+            filters=filters,
+            duration=duration,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="file_statistics",
+        description="""统计文件系统信息。
+
+使用场景：
+- 当用户需要分析目录结构时使用此工具
+- 当需要统计文件数量、大小分布时使用
+- 当需要分析文件类型分布时使用
+
+参数说明：
+- directory: 统计目录的完整路径（必须是绝对路径）
+- recursive: 是否递归统计子目录，默认为True
+- max_depth: 最大递归深度，默认为100000
+- filters: 过滤条件字典，支持file_type、min_size、max_size等字段
+- output_format: 输出格式：json、csv、text，默认为json
+
+【重要】必须使用正确的参数名。
+正确示例: {"directory": "C:/Users/用户名/Documents", "recursive": true, "output_format": "json"}""",
+        input_model=FileStatisticsInput,
+        examples=[
+            {
+                "directory": "C:/Users/用户名/Documents",
+                "recursive": True,
+                "output_format": "json"
+            },
+            {
+                "directory": "D:/项目代码",
+                "filters": {"file_type": ".py"},
+                "output_format": "csv"
+            },
+            {
+                "directory": "E:/数据存储",
+                "recursive": True,
+                "max_depth": 3,
+                "filters": {"min_size": 1024, "max_size": 10485760}
+            }
+        ]
+    )
+    async def file_statistics(
+        self,
+        directory: str,
+        recursive: bool = True,
+        max_depth: int = 100000,
+        filters: Optional[Dict[str, Any]] = None,
+        output_format: str = "json",
+    ) -> Dict[str, Any]:
+        """统计文件系统信息"""
+        from app.services.tools.file.file_statistics import file_statistics_impl
+        
+        return await file_statistics_impl(
+            directory=directory,
+            recursive=recursive,
+            max_depth=max_depth,
+            filters=filters,
+            output_format=output_format,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="file_checksum",
+        description="""计算文件的校验和（哈希值）。
+
+使用场景：
+- 当用户需要验证文件完整性时使用此工具
+- 当需要检测文件是否被修改时使用
+- 当需要生成文件的唯一标识符时使用
+
+参数说明：
+- file_path: 文件的完整路径（必须是绝对路径）
+- algorithm: 哈希算法：md5、sha1、sha256、sha512，默认为md5
+- verify_hash: 验证哈希值（如果提供则进行验证）
+- chunk_size: 分块大小（字节），用于大文件哈希计算，默认65536字节
+
+【重要】必须使用正确的参数名。
+正确示例: {"file_path": "C:/Users/用户名/Documents/file.iso", "algorithm": "sha256"}""",
+        input_model=FileChecksumInput,
+        examples=[
+            {
+                "file_path": "C:/Users/用户名/Documents/file.iso",
+                "algorithm": "sha256"
+            },
+            {
+                "file_path": "D:/下载/软件安装包.exe",
+                "algorithm": "md5",
+                "verify_hash": "d41d8cd98f00b204e9800998ecf8427e"
+            },
+            {
+                "file_path": "E:/备份/data.db",
+                "algorithm": "sha512",
+                "chunk_size": 131072
+            }
+        ]
+    )
+    async def file_checksum(
+        self,
+        file_path: str,
+        algorithm: str = "md5",
+        verify_hash: Optional[str] = None,
+        chunk_size: int = 65536,
+    ) -> Dict[str, Any]:
+        """计算文件校验和"""
+        from app.services.tools.file.file_checksum import file_checksum_impl
+        
+        return await file_checksum_impl(
+            file_path=file_path,
+            algorithm=algorithm,
+            verify_hash=verify_hash,
+            chunk_size=chunk_size,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
 
 # ============================================================
 # 第七部分：工具函数导出
@@ -1635,6 +2031,84 @@ def _generate_summary(tool_name: str, result: Any) -> str:
             return f"生成报告失败：{result.get('error', '未知错误')}"
         reports = result.get("reports", {})
         return f"成功生成 {len(reports)} 个报告"
+    
+    elif tool_name == "copy_file":
+        if result.get("success") is False:
+            return f"复制失败：{result.get('error', '未知错误')}"
+        source = result.get("source", "")
+        destination = result.get("destination", "")
+        return f"成功复制文件：{source} -> {destination}"
+    
+    elif tool_name == "create_directory":
+        if result.get("success") is False:
+            return f"创建目录失败：{result.get('error', '未知错误')}"
+        dir_path = result.get("dir_path", "")
+        return f"成功创建目录：{dir_path}"
+    
+    elif tool_name == "get_file_info":
+        if result.get("success") is False:
+            return f"获取文件信息失败：{result.get('error', '未知错误')}"
+        file_path = result.get("file_path", "")
+        return f"成功获取文件信息：{file_path}"
+    
+    elif tool_name == "compare_files":
+        if result.get("success") is False:
+            return f"文件比较失败：{result.get('error', '未知错误')}"
+        identical = result.get("identical", False)
+        size_match = result.get("size_match", False)
+        if identical:
+            return "文件内容完全相同"
+        elif size_match:
+            return "文件大小相同但内容不同"
+        else:
+            return "文件大小不同"
+    
+    elif tool_name == "batch_rename":
+        if result.get("success") is False:
+            return f"批量重命名失败：{result.get('error', '未知错误')}"
+        total_files = result.get("total_files", 0)
+        renamed_files = result.get("renamed_files", 0)
+        preview = result.get("preview_mode", False)
+        if preview:
+            return f"预览模式：计划重命名 {renamed_files}/{total_files} 个文件"
+        else:
+            return f"成功重命名 {renamed_files}/{total_files} 个文件"
+    
+    elif tool_name == "compress_files":
+        if result.get("success") is False:
+            return f"压缩失败：{result.get('error', '未知错误')}"
+        source = result.get("source_path", "")
+        destination = result.get("destination_path", "")
+        compression_ratio = result.get("compression_ratio", 0)
+        return f"成功压缩：{source} -> {destination}，压缩率：{compression_ratio:.2%}"
+    
+    elif tool_name == "file_monitor":
+        if result.get("success") is False:
+            return f"文件监控失败：{result.get('error', '未知错误')}"
+        events_count = result.get("events_count", 0)
+        duration = result.get("duration", 0)
+        return f"监控完成：检测到 {events_count} 个事件，持续 {duration} 秒"
+    
+    elif tool_name == "file_statistics":
+        if result.get("success") is False:
+            return f"文件统计失败：{result.get('error', '未知错误')}"
+        total_files = result.get("total_files", 0)
+        total_size = result.get("total_size", 0)
+        return f"统计完成：共 {total_files} 个文件，总大小 {total_size:,} 字节"
+    
+    elif tool_name == "file_checksum":
+        if result.get("success") is False:
+            return f"校验和计算失败：{result.get('error', '未知错误')}"
+        algorithm = result.get("algorithm", "")
+        checksum = result.get("checksum", "")
+        verification = result.get("verification_result")
+        if verification is not None:
+            if verification:
+                return f"{algorithm.upper()} 校验和验证通过：{checksum[:16]}..."
+            else:
+                return f"{algorithm.upper()} 校验和验证失败"
+        else:
+            return f"{algorithm.upper()} 校验和：{checksum[:16]}..."
     
     return "操作完成"
 

@@ -16,6 +16,12 @@ class OperationType(str, Enum):
     COPY = "copy"              # 复制文件/目录
     RENAME = "rename"          # 重命名文件/目录
     MODIFY = "modify"          # 修改文件内容
+    COMPARE = "compare"        # 比较文件
+    BATCH_RENAME = "batch_rename"  # 批量重命名
+    COMPRESS = "compress"      # 压缩文件
+    MONITOR = "monitor"        # 监控文件
+    STATISTICS = "statistics"  # 统计文件
+    CHECKSUM = "checksum"      # 计算校验和
 
 
 class OperationStatus(str, Enum):

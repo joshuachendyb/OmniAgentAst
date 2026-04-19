@@ -18,7 +18,7 @@ Author: 小沈 - 2026-03-21
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List, Dict, Any, Literal
 
 
 class ReadFileInput(BaseModel):
@@ -212,6 +212,150 @@ class GetFileInfoInput(BaseModel):
     )
 
 
+class CompareFilesInput(BaseModel):
+    """compare_files 工具的输入参数"""
+    file_path1: str = Field(
+        description="第一个文件的完整路径（必须是绝对路径）"
+    )
+    file_path2: str = Field(
+        description="第二个文件的完整路径（必须是绝对路径）"
+    )
+    algorithm: str = Field(
+        default="content",
+        description="比较算法：content（内容）、size（大小）、mtime（修改时间）",
+        pattern="^(content|size|mtime)$"
+    )
+    chunk_size: int = Field(
+        default=8192,
+        ge=1024,
+        le=1048576,
+        description="分块大小（字节），用于大文件比较，默认8192字节"
+    )
+
+
+class BatchRenameInput(BaseModel):
+    """batch_rename 工具的输入参数"""
+    directory: str = Field(
+        description="目标目录的完整路径（必须是绝对路径）"
+    )
+    pattern: str = Field(
+        description="匹配模式（支持正则表达式）"
+    )
+    replacement: str = Field(
+        description="替换字符串"
+    )
+    recursive: bool = Field(
+        default=False,
+        description="是否递归处理子目录，默认为False"
+    )
+    preview: bool = Field(
+        default=False,
+        description="是否只预览不执行，默认为False"
+    )
+    conflict_strategy: Literal["skip", "overwrite", "rename"] = Field(
+        default="skip",
+        description="冲突处理策略：skip（跳过）、overwrite（覆盖）、rename（自动重命名），默认为skip"
+    )
+
+
+class CompressFilesInput(BaseModel):
+    """compress_files 工具的输入参数"""
+    source_path: str = Field(
+        description="源文件或目录的完整路径（必须是绝对路径）"
+    )
+    destination_path: str = Field(
+        description="目标压缩文件路径（必须是绝对路径）"
+    )
+    format: Literal["zip", "tar.gz"] = Field(
+        default="zip",
+        description="压缩格式：zip、tar.gz，默认为zip"
+    )
+    compression_level: int = Field(
+        default=6,
+        ge=0,
+        le=9,
+        description="压缩级别（0-9，0不压缩，9最高压缩），默认为6"
+    )
+    password: Optional[str] = Field(
+        default=None,
+        description="压缩密码（可选），用于加密压缩文件"
+    )
+    split_size: Optional[int] = Field(
+        default=None,
+        ge=1024,
+        description="分卷大小（字节），None表示不分卷"
+    )
+
+
+class FileMonitorInput(BaseModel):
+    """file_monitor 工具的输入参数"""
+    directory: str = Field(
+        description="监控目录的完整路径（必须是绝对路径）"
+    )
+    event_types: List[str] = Field(
+        default=["created", "modified", "deleted", "renamed"],
+        description="监控事件类型列表，默认为所有事件类型"
+    )
+    recursive: bool = Field(
+        default=True,
+        description="是否递归监控子目录，默认为True"
+    )
+    filters: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="过滤条件字典，支持file_type、min_size、max_size、modified_after等字段"
+    )
+    duration: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="监控持续时间（秒），None表示持续监控直到手动停止"
+    )
+
+
+class FileStatisticsInput(BaseModel):
+    """file_statistics 工具的输入参数"""
+    directory: str = Field(
+        description="统计目录的完整路径（必须是绝对路径）"
+    )
+    recursive: bool = Field(
+        default=True,
+        description="是否递归统计子目录，默认为True"
+    )
+    max_depth: int = Field(
+        default=100000,
+        ge=1,
+        description="最大递归深度，默认为100000"
+    )
+    filters: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="过滤条件字典，支持file_type、min_size、max_size等字段"
+    )
+    output_format: str = Field(
+        default="json",
+        description="输出格式：json、csv、text，默认为json"
+    )
+
+
+class FileChecksumInput(BaseModel):
+    """file_checksum 工具的输入参数"""
+    file_path: str = Field(
+        description="文件的完整路径（必须是绝对路径）"
+    )
+    algorithm: str = Field(
+        default="md5",
+        description="哈希算法：md5、sha1、sha256、sha512，默认为md5"
+    )
+    verify_hash: Optional[str] = Field(
+        default=None,
+        description="验证哈希值（如果提供则进行验证）"
+    )
+    chunk_size: int = Field(
+        default=65536,
+        ge=1024,
+        le=1048576,
+        description="分块大小（字节），用于大文件哈希计算，默认65536字节"
+    )
+
+
 __all__ = [
     "ReadFileInput",
     "WriteFileInput",
@@ -224,4 +368,10 @@ __all__ = [
     "CopyFileInput",
     "CreateDirectoryInput",
     "GetFileInfoInput",
+    "CompareFilesInput",
+    "BatchRenameInput",
+    "CompressFilesInput",
+    "FileMonitorInput",
+    "FileStatisticsInput",
+    "FileChecksumInput",
 ]
