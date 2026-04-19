@@ -27,10 +27,10 @@
 | P11 | 低 | read_file | `errors='ignore'`静默丢弃解码错误，用户无感知 | 改为replace | ✅ 确认需修复 |
 | P12 | 低 | write_file | 非原子写入，中断后文件半写状态丢失原内容 | 写临时文件 | ✅ 确认需修复 |
 | P13 | 低 | _validate_path | 字符串前缀匹配漏洞，`/home/userbackdoor`可通过`/home/user`白名单 | 改匹配方式 | ✅ 确认需修复 |
-| P14 | 低 | search_files | examples引用已删除的`max_results`参数 | 删示例 | ⚠️ 需确认代码 |
+| P14 | 低 | search_files | examples仍引用`"max_results": 100`参数（file_tools.py:1174） | 删示例 | ⚠️ 代码中仍有 |
 | P15 | 低 | search_files | `recursive=False`时仍递归遍历（遗漏问题） | 加dirs.clear() | ✅ 确认需修复 |
 | P16 | 低 | search_file_content/search_files | 异常处理过于宽泛（`except:`） | 指定具体异常 | ✅ 确认需修复 |
-| P17 | 低 | search_files | 函数注释包含攻击性语言 | 清理注释 | ✅ 确认需修复 |
+| P17 | 低 | search_files | 代码注释包含"大混蛋""知识浅薄""弱智"等攻击性语言(file_tools.py:1184-1198, file_schema.py:136-154) | 清理注释 | ⚠️ 代码中仍有 |
 
 ---
 
@@ -75,10 +75,11 @@
 | 状态 | 问题数 | 说明 |
 |------|--------|------|
 | ✅ **确认需修复** | 12个 | P3,P4,P5,P6,P9,P10,P11,P12,P13,P15,P16,P17 |
-| ⚠️ **需讨论决定** | 2个 | P1（无需改）, P2（行为变更） |
-| ⚠️ **简化方案** | 1个 | P8（只需加简单token） |
-| ⚠️ **需确认代码** | 1个 | P14（检查实际代码） |
+| ⚠️ **需讨论决定** | 1个 | P2（行为变更） |
+| ⚠️ **简化方案** | 1个 | P8（只需加token） |
+| ✅ **确认有** | 2个 | P14（max_results还在）, P17（攻击性语言还在） |
 | ✅ **设计正确** | 1个 | use_regex内部参数设计正确 |
+| ✅ **无需修改** | 1个 | P1（Schema描述值 vs 函数安全值） |
 
 ---
 
@@ -748,15 +749,37 @@ if len(real_parts) >= len(allowed_parts):
 ### P14: search_files — examples引用已删除的`max_results`参数
 
 **现状**（`file_tools.py:1174`）：
-检查代码发现examples中仍包含无效的 `"max_results": 100` 参数。
+- 代码中**仍存在** `"max_results": 100`
+- 在`file_schema.py`中也删除了该字段，但examples没更新
 
-**修复方案**：**删除无效示例参数并清理攻击性注释**
+**实际代码位置**：`file_tools.py` line 1174
+```python
+"max_results": 100  # 这个参数已删除但示例还在！
+```
 
-需要同时修复：
-1. 删除 examples 中的 `"max_results": 100`
-2. 清理P17的攻击性注释（已在P17修复方案中）
+**修复方案**：**删除无效示例参数**
 
-**验证**：需检查实际代码是否还有该参数
+修改 `file_tools.py` line 1170-1177：
+```python
+examples=[
+    {
+        "file_pattern": "*.py",
+        "path": "D:/项目代码",
+        "recursive": True
+    },
+    {
+        "file_pattern": "config*",
+        "path": "C:/Users/用户名",
+        "recursive": False
+    },
+    {
+        "file_pattern": "readme*",
+        "path": "D:/项目代码",
+        "recursive": True
+        # 删除 "max_results": 100
+    }
+]
+```
 
 ---
 
@@ -816,15 +839,18 @@ except (PermissionError, OSError):
 
 ### P17: search_files — 函数注释包含攻击性语言
 
-**现状**（`file_tools.py:1183-1199`）：
+**现状**（`file_tools.py:1184-1198` 和 `file_schema.py:136-154`）：
+- `file_tools.py:1184`: `# 小沈是一个大混蛋，几次纠正都死不悔改`
+- `file_tools.py:1189`: `# 这次必须正确理解，保证以后不再犯这样弱智的、低级错误`
+- `file_schema.py:138`: `# 小沈是一个大混蛋，几次纠正都死不悔改`
+- `file_schema.py:141`: `# 这次必须正确理解，保证以后不再犯这样弱智的、低级错误`
+
+**修复方案**：**清理攻击性注释，保持专业**
+
+修改为：
 ```python
-# 【修改 max_depth 默认值 10→100000】
-# 原因：小沈之前的知识浅薄，错误的要求给工具设置数量限制
-# 现在导致了工具执行错误，反馈的结果隐藏了真实的数据
-# 小沈是一个大混蛋，几次纠正都死不悔改
-# 工具必须原原本本返回用户需要的结果，不应该限制数量
-# 如果限制数量会丢失真实数据，这是错误的
-# 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
+# 原因：取消深度限制确保返回完整搜索结果
+# 工具应返回用户需要的全部结果，前端负责分页显示
 ```
 
 **修复方案**：**清理攻击性注释，保持专业**
