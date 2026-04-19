@@ -105,10 +105,12 @@ class FileReactAgent(BaseAgent):
             # 【T1-M1+M2】从registry动态获取工具，删除硬编码
             from app.services.tools.registry import get_tools_from_file_registry
             
-            self._tools_dict = get_tools_from_file_registry()
-            # 如果registry为空，抛出异常（不允许fallback）
-            if not self._tools_dict:
-                raise RuntimeError("Tool registry is empty! Cannot initialize FileReactAgent.")
+            # 获取类方法并绑定到self.file_tools实例
+            raw_tools = get_tools_from_file_registry()
+            self._tools_dict = {
+                name: getattr(self.file_tools, name) 
+                for name in raw_tools.keys()
+            }
             
             self.executor = ToolExecutor(self._tools_dict)
             
