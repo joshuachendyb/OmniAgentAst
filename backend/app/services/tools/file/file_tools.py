@@ -1233,91 +1233,57 @@ class FileTools:
                 
                 all_matches = []
                 seen_files = set()
-                
-                # 每次搜索最大获取数量（内部循环用，不限制最终结果）
-                BATCH_SIZE = 10000
-                
-                # 【修改】用 page_token 统一分页
                 start_offset = decode_page_token(page_token) if page_token else 0
+                seen_count = 0
                 
-                # 循环搜索，直到获取全部结果
-                while True:
-                    batch_matches = []
-                    batch_seen = set()
+                # 单次遍历（P4修复：去掉while True循环）
+                import fnmatch
+                
+                # 逐步遍历目录
+                for root, dirs, files in os.walk(search_path):
+                    # 【修复P15】尊重recursive参数
+                    if not recursive:
+                        dirs.clear()  # 不递归：清空子目录列表
+                    else:
+                        # 深度限制
+                        rel_root = Path(root).relative_to(search_path)
+                        depth = len(rel_root.parts) if str(rel_root) != "." else 0
+                        if depth >= max_depth:
+                            dirs.clear()  # 不再深入此目录的子目录
+                            continue
                     
-                    # 转换通配符为正则
-                    import re
-                    regex_pattern = file_pattern.replace(".", r"\.").replace("*", ".*").replace("?", ".")
-                    regex_pattern = f"^{regex_pattern}$"
-                    try:
-                        file_regex = re.compile(regex_pattern)
-                    except re.error:
-                        file_regex = None
-                    
-                    # 逐步遍历目录
-                    for root, dirs, files in os.walk(search_path):
-                        # 检查深度限制
-                        if recursive:
-                            rel_root = Path(root).relative_to(search_path)
-                            depth = len(rel_root.parts) if str(rel_root) != "." else 0
-                            if depth >= max_depth:
-                                continue
+                    # 遍历当前目录的文件
+                    for filename in files:
+                        # 【修复P10】用fnmatch替代手工正则
+                        if not fnmatch.fnmatch(filename, file_pattern):
+                            continue
                         
-                        # 遍历当前目录的文件
-                        for filename in files:
-                            # 正则匹配文件名
-                            if file_regex and not file_regex.match(filename):
-                                continue
-                            
-                            file_path = Path(root) / filename
-                            file_str = str(file_path.relative_to(search_path))
-                            
-                            # 跳过已存在的
-                            if file_str in seen_files:
-                                continue
-                            
-                            # 【修改】用位置偏移跳过已处理的文件
-                            current_idx = len(seen_files)
-                            if current_idx < start_offset:
-                                seen_files.add(file_str)
-                                continue
-                            
+                        file_path = Path(root) / filename
+                        file_str = str(file_path.relative_to(search_path))
+                        
+                        # 跳过已存在的
+                        if file_str in seen_files:
+                            continue
+                        
+                        seen_count += 1
+                        
+                        # 位置偏移跳过
+                        if seen_count <= start_offset:
                             seen_files.add(file_str)
-                            
-                            try:
-                                size = file_path.stat().st_size
-                            except:
-                                size = 0
-                            
-                            batch_matches.append({
-                                "name": filename,
-                                "path": file_str,
-                                "size": size
-                            })
-                            
-                            # 达到本次限制，停止收集
-                            if len(batch_matches) >= BATCH_SIZE:
-                                break
+                            continue
+                        seen_files.add(file_str)
                         
-                        # 达到本次限制，停止遍历
-                        if len(batch_matches) >= BATCH_SIZE:
-                            break
-                    
-                    # 添加本批次结果
-                    all_matches.extend(batch_matches)
-                    
-                    # 获取本批次最后一个文件名，用于下一次继续
-                    last_file = batch_matches[-1]["path"] if batch_matches else None
-                    
-                    # 如果没有更多结果了，或者已经达到总限制，停止循环
-                    if not last_file:
-                        break  # 搜索完成
-                    
-                    # 设置下一次继续的位置
-                    after = last_file
-                    
-                    # 【删除 max_results 限制判断】
-                    # 原因：工具必须原原本本返回用户需要的结果，不应该限制数量
+                        # 【修复P16】指定具体异常
+                        try:
+                            size = file_path.stat().st_size
+                        except (PermissionError, OSError):
+                            size = 0
+                        
+                        all_matches.append({
+                            "name": filename,
+                            "path": file_str,
+                            "size": size
+                        })
                 
                 return all_matches
             
