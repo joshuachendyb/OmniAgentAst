@@ -330,9 +330,9 @@ class FileTools:
                         # 【关键修复】对于驱动器根路径(如C:\ = 1 part = ('C:\',))
                         # 必须完全相等，不允许 C:\Usersbackdoor 绕过 C:\
                         # 对于普通目录(如C:/Users = 2+ parts)，允许子目录
-                        if len(allowed_parts) == 1 and allowed_parts[0].endswith(':\\'):
+                        if len(allowed_parts) == 1 and (allowed_parts[0].endswith(':') or allowed_parts[0].endswith(':\\') or allowed_parts[0].endswith(':/')):
                             # 驱动器根路径：必须完全相等
-                            if str(real_path) == str(allowed_real):
+                            if str(real_path) == str(allowed_real) or real_path.parts[0] == allowed_parts[0]:
                                 return True, None
                         else:
                             # 普通目录：允许子目录
