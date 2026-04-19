@@ -66,6 +66,11 @@ class ListDirectoryInput(BaseModel):
         default=False,
         description="是否递归列出所有子目录，默认为False（不递归）"
     )
+    offset: int = Field(
+        default=0,
+        ge=0,
+        description="起始偏移量，用于分页获取后续内容，默认为0"
+    )
 
 
 class DeleteFileInput(BaseModel):
