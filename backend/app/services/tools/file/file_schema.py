@@ -172,6 +172,24 @@ class GenerateReportInput(BaseModel):
     )
 
 
+class CopyFileInput(BaseModel):
+    """copy_file 工具的输入参数"""
+    source_path: str = Field(
+        description="源文件或目录的完整路径（必须是绝对路径）"
+    )
+    destination_path: str = Field(
+        description="目标路径（可以是新文件名或新目录位置）"
+    )
+    recursive: bool = Field(
+        default=False,
+        description="是否递归复制目录，仅当源路径是目录时有效，默认为False"
+    )
+    overwrite: bool = Field(
+        default=False,
+        description="是否覆盖已存在的目标文件，默认为False（不覆盖）"
+    )
+
+
 __all__ = [
     "ReadFileInput",
     "WriteFileInput",
@@ -181,4 +199,5 @@ __all__ = [
     "SearchFileContentInput",
     "SearchFilesByNameInput",
     "GenerateReportInput",
+    "CopyFileInput",
 ]
