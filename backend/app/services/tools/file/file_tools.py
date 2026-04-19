@@ -306,8 +306,31 @@ class FileTools:
             # 检查路径是否在白名单内
             for allowed in self.allowed_paths:
                 allowed_real = Path(os.path.realpath(allowed))
-                if str(real_path).startswith(str(allowed_real)):
-                    return True, None
+                # 【修复P13】防止前缀绕过：必须验证是真正的子路径
+                # 例如：C:/Users 允许 C:/Users/subdir，但不允许 C:/Usersbackdoor
+                try:
+                    real_parts = Path(real_path).parts
+                    allowed_parts = Path(allowed_real).parts
+                    
+                    # 检查是否完全匹配开头
+                    if len(real_parts) >= len(allowed_parts):
+                        prefix_match = all(real_parts[i] == allowed_parts[i] for i in range(len(allowed_parts)))
+                        if not prefix_match:
+                            continue
+                        
+                        # 【关键修复】对于驱动器根路径(如C:\ = 1 part = ('C:\',))
+                        # 必须完全相等，不允许 C:\Usersbackdoor 绕过 C:\
+                        # 对于普通目录(如C:/Users = 2+ parts)，允许子目录
+                        if len(allowed_parts) == 1 and allowed_parts[0].endswith(':\\'):
+                            # 驱动器根路径：必须完全相等
+                            if str(real_path) == str(allowed_real):
+                                return True, None
+                        else:
+                            # 普通目录：允许子目录
+                            if len(real_parts) > len(allowed_parts):
+                                return True, None
+                except (ValueError, OSError):
+                    pass
             
             return False, f"路径 '{file_path}' 不在允许的操作范围内（仅允许：{', '.join(str(p) for p in self.allowed_paths[:5])}...）"
             
