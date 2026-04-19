@@ -66,12 +66,6 @@ class ListDirectoryInput(BaseModel):
         default=False,
         description="是否递归列出所有子目录，默认为False（不递归）"
     )
-    max_depth: int = Field(
-        default=10,
-        ge=1,
-        le=50,
-        description="最大递归深度，仅当 recursive=True 时有效，默认为10"
-    )
 
 
 class DeleteFileInput(BaseModel):
