@@ -895,6 +895,9 @@ class FileTools:
             
             # 定义移动操作
             def _move_sync():
+                # 【修复P9】检查目标文件是否已存在
+                if dst.exists():
+                    raise FileExistsError(f"目标路径已存在: {dst}，移动操作已取消。请先删除目标文件或指定其他路径。")
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(src), str(dst))
                 return True
