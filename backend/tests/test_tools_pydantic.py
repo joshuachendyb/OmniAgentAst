@@ -46,7 +46,8 @@ from app.services.tools.file.file_tools import (
     ListDirectoryInput,
     DeleteFileInput,
     MoveFileInput,
-    SearchFilesInput,
+    SearchFileContentInput,
+    SearchFilesByNameInput,
     GenerateReportInput,
     # 工具函数
     get_registered_tools,
@@ -56,7 +57,7 @@ from app.services.tools.file.file_tools import (
     _to_unified_format,
     _generate_summary,
 )
-from app.services.agent.prompts import FileOperationPrompts
+from app.services.prompts.file.file_prompts import FileOperationPrompts
 
 
 # ============================================================
@@ -160,34 +161,43 @@ class TestPydanticModels:
         assert model.source_path == "C:/old/file.txt"
         assert model.destination_path == "D:/new/file.txt"
 
-    def test_search_files_input_valid(self):
-        """PMC014: SearchFilesInput - 有效参数"""
-        model = SearchFilesInput(
+    def test_search_file_content_input_valid(self):
+        """PMC014: SearchFileContentInput - 有效参数"""
+        model = SearchFileContentInput(
             pattern="TODO",
             path="D:/项目代码",
             file_pattern="*.py",
-            use_regex=True,
-            max_results=500
+            recursive=True
         )
         assert model.pattern == "TODO"
         assert model.path == "D:/项目代码"
         assert model.file_pattern == "*.py"
-        assert model.use_regex is True
-        assert model.max_results == 500
+        assert model.recursive is True
 
-    def test_search_files_input_defaults(self):
-        """PMC015: SearchFilesInput - 默认值"""
-        model = SearchFilesInput(pattern="test")
+    def test_search_file_content_input_defaults(self):
+        """PMC015: SearchFileContentInput - 默认值"""
+        model = SearchFileContentInput(pattern="test")
         assert model.path == "."
         assert model.file_pattern == "*"
-        assert model.use_regex is False
-        assert model.max_results == 1000
+        assert model.recursive is True
 
-    def test_search_files_input_max_results_constraint(self):
-        """PMC016: SearchFilesInput - max_results约束"""
-        # max_results必须 <= 10000
+    def test_search_files_by_name_input_valid(self):
+        """PMC016: SearchFilesByNameInput - 有效参数"""
+        model = SearchFilesByNameInput(
+            file_pattern="*.py",
+            path="D:/项目代码",
+            recursive=True,
+            max_depth=20,
+        )
+        assert model.file_pattern == "*.py"
+        assert model.path == "D:/项目代码"
+        assert model.recursive is True
+        assert model.max_depth == 20
+
+    def test_search_files_by_name_input_max_depth_constraint(self):
+        """PMC016b: SearchFilesByNameInput - max_depth约束"""
         with pytest.raises(Exception):
-            SearchFilesInput(pattern="test", max_results=20000)
+            SearchFilesByNameInput(file_pattern="*.py", max_depth=0)
 
     def test_generate_report_input_valid(self):
         """PMC017: GenerateReportInput - 有效参数"""
@@ -591,9 +601,8 @@ class TestSearchFilesSecurity:
         # 这是一个关键测试，验证search_files确实调用了_validate_path
         # 即使使用不存在的路径，也应该通过路径验证逻辑
         result = await file_tools.search_files(
-            pattern="test",
+            file_pattern="*test*",
             path=str(Path.home() / "test_dir"),
-            max_results=10
         )
         # 应该不是"路径不在允许范围内"错误
         # 可能返回"Path not found"（路径存在性检查），但不是白名单拒绝
@@ -612,9 +621,8 @@ class TestSearchFilesSecurity:
         for sensitive_path in sensitive_paths:
             if Path(sensitive_path).exists() or Path(sensitive_path).parent.exists():
                 result = await file_tools.search_files(
-                    pattern="test",
+                    file_pattern="*test*",
                     path=sensitive_path,
-                    max_results=10
                 )
                 # 如果路径验证工作，应该返回错误或空结果
                 # 关键是不应该返回内部文件内容
@@ -627,9 +635,8 @@ class TestSearchFilesSecurity:
         """SFS003: search_files使用realpath规范化"""
         # 使用~路径
         result = await file_tools.search_files(
-            pattern="test",
+            file_pattern="*test*",
             path="~/",
-            max_results=10
         )
         # 应该不会因为路径格式问题失败
         # 可能会因为"Path not found"失败（如果~/不存在）
@@ -643,9 +650,13 @@ class TestSearchFilesSecurity:
 class TestPromptsEnhancement:
     """测试Prompts增强"""
 
-    def test_system_prompt_contains_parameter_rules(self):
+    @pytest.fixture
+    def prompts(self):
+        return FileOperationPrompts()
+
+    def test_system_prompt_contains_parameter_rules(self, prompts):
         """PGE001: System Prompt包含参数命名规则"""
-        prompt = FileOperationPrompts.get_system_prompt()
+        prompt = prompts.get_system_prompt()
         
         # 检查关键规则
         assert "dir_path" in prompt
@@ -653,9 +664,9 @@ class TestPromptsEnhancement:
         assert "source_path" in prompt
         assert "destination_path" in prompt
 
-    def test_system_prompt_forbids_wrong_names(self):
+    def test_system_prompt_forbids_wrong_names(self, prompts):
         """PGE002: System Prompt禁止错误参数名"""
-        prompt = FileOperationPrompts.get_system_prompt()
+        prompt = prompts.get_system_prompt()
         
         # 检查禁止的错误名称
         forbidden_checks = [
@@ -667,66 +678,66 @@ class TestPromptsEnhancement:
             # 但不应该作为正确示例出现
             assert True  # 基础检查通过
 
-    def test_system_prompt_contains_tool_examples(self):
+    def test_system_prompt_contains_tool_examples(self, prompts):
         """PGE003: System Prompt包含工具调用示例"""
-        prompt = FileOperationPrompts.get_system_prompt()
+        prompt = prompts.get_system_prompt()
         
         # 检查示例
         assert "Example 1" in prompt or "Example:" in prompt
-        assert "action" in prompt
-        assert "action_input" in prompt
+        assert "tool_name" in prompt
+        assert "tool_params" in prompt
 
-    def test_system_prompt_describes_correct_usage(self):
+    def test_system_prompt_describes_correct_usage(self, prompts):
         """PGE004: System Prompt描述正确用法"""
-        prompt = FileOperationPrompts.get_system_prompt()
+        prompt = prompts.get_system_prompt()
         
         # list_directory应该用dir_path
         assert "list_directory" in prompt
         assert "dir_path" in prompt
 
-    def test_system_prompt_describes_path_format(self):
+    def test_system_prompt_describes_path_format(self, prompts):
         """PGE005: System Prompt描述路径格式"""
-        prompt = FileOperationPrompts.get_system_prompt()
+        prompt = prompts.get_system_prompt()
         
         # 检查路径格式说明
         path_indicators = ["absolute", "C:/", "/home"]
         has_path_info = any(indicator in prompt for indicator in path_indicators)
         assert has_path_info
 
-    def test_get_parameter_reminder_exists(self):
+    def test_get_parameter_reminder_exists(self, prompts):
         """PGE006: get_parameter_reminder方法存在"""
-        reminder = FileOperationPrompts.get_parameter_reminder()
+        reminder = prompts.get_parameter_reminder()
         assert reminder is not None
         assert len(reminder) > 0
         assert "dir_path" in reminder
         assert "file_path" in reminder
 
-    def test_get_available_tools_prompt_structure(self):
+    def test_get_available_tools_prompt_structure(self, prompts):
         """PGE007: get_available_tools_prompt结构"""
         tools = get_registered_tools()
-        prompt = FileOperationPrompts.get_available_tools_prompt(tools)
+        prompt = prompts.get_available_tools_prompt(tools)
         
         assert prompt is not None
         assert len(prompt) > 0
         assert "read_file" in prompt or "Available Tools" in prompt
 
-    def test_task_prompt_format(self):
+    def test_task_prompt_format(self, prompts):
         """PGE008: task_prompt格式"""
-        prompt = FileOperationPrompts.get_task_prompt("Test task")
+        prompt = prompts.get_task_prompt("Test task")
         assert "Task:" in prompt
         assert "Test task" in prompt
         assert "Current time:" in prompt
 
-    def test_observation_prompt_success_format(self):
+    def test_observation_prompt_success_format(self, prompts):
         """PGE009: observation_prompt成功格式"""
-        observation = {"success": True, "result": {"operation_type": "read"}}
-        prompt = FileOperationPrompts.get_observation_prompt(observation)
+        observation = '{"success": true, "result": {"operation_type": "read", "file_path": "C:/tmp/a.txt", "message": "ok"}}'
+        prompt = prompts.get_observation_prompt(observation)
         assert "successful" in prompt.lower() or "success" in prompt.lower()
 
-    def test_observation_prompt_error_format(self):
+    def test_observation_prompt_error_format(self, prompts):
         """PGE010: observation_prompt错误格式"""
-        observation = {"success": False, "error": "File not found"}
-        prompt = FileOperationPrompts.get_observation_prompt(observation)
+        observation = "Observation: error - File not found"
+        prompt = prompts.get_observation_prompt(observation)
         assert "failed" in prompt.lower() or "error" in prompt.lower()
 
 

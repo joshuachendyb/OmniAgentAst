@@ -14,7 +14,8 @@ from app.services.tools.file.file_tools import (
     ListDirectoryInput,
     DeleteFileInput,
     MoveFileInput,
-    SearchFilesInput,
+    SearchFileContentInput,
+    SearchFilesByNameInput,
     GenerateReportInput,
     ToolDefinition
 )
@@ -79,7 +80,6 @@ class TestListDirectoryInput:
         assert input_data.dir_path == "test_dir"
         assert input_data.recursive == False
         assert input_data.max_depth == 10
-        assert input_data.page_size == 100
     
     def test_create_with_recursive(self):
         """测试递归创建"""
@@ -128,26 +128,24 @@ class TestMoveFileInput:
 
 
 class TestSearchFilesInput:
-    """测试SearchFilesInput模型"""
+    """测试搜索相关Input模型"""
     
-    def test_create_default(self):
-        """测试默认创建"""
-        input_data = SearchFilesInput(pattern="test")
-        
+    def test_search_file_content_default(self):
+        """测试SearchFileContentInput默认创建"""
+        input_data = SearchFileContentInput(pattern="test")
         assert input_data.pattern == "test"
         assert input_data.path == "."
         assert input_data.file_pattern == "*"
-        assert input_data.use_regex == False
-        assert input_data.max_results == 1000
+        assert input_data.recursive is True
     
-    def test_create_with_regex(self):
-        """测试正则表达式搜索"""
-        input_data = SearchFilesInput(
-            pattern="test.*",
-            use_regex=True
+    def test_search_files_by_name_default(self):
+        """测试SearchFilesByNameInput默认创建"""
+        input_data = SearchFilesByNameInput(
+            file_pattern="*.py"
         )
-        
-        assert input_data.use_regex == True
+        assert input_data.file_pattern == "*.py"
+        assert input_data.path == "."
+        assert input_data.recursive is True
 
 
 class TestGenerateReportInput:

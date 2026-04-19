@@ -1,3 +1,43 @@
+# -*- coding: utf-8 -*-
 """Tools 模块 - 按意图类型组织的工具集"""
 
-__all__ = ["file", "network", "system", "database", "desktop"]
+from app.services.tools.registry import (
+    ToolRegistry,
+    ToolCategory,
+    ToolMetadata,
+    tool_registry,
+    get_tools_dict,
+    get_tools_from_file_registry,
+    register_tool,
+    get_registered_tools,
+    get_tool,
+)
+
+from app.services.tools.tool_config import (
+    ToolConfig,
+    tool_config,
+    get_tool_config,
+)
+
+__all__ = [
+    # registry
+    "ToolRegistry",
+    "ToolCategory", 
+    "ToolMetadata",
+    "tool_registry",
+    "get_tools_dict",
+    "get_tools_from_file_registry",
+    "register_tool",
+    "get_registered_tools",
+    "get_tool",
+    # config
+    "ToolConfig",
+    "tool_config",
+    "get_tool_config",
+    # categories
+    "file",
+    "network",
+    "system",
+    "database",
+    "desktop",
+]

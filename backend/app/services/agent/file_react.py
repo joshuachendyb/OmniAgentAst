@@ -102,17 +102,16 @@ class FileReactAgent(BaseAgent):
             # 初始化文件工具，确保 session_id 正确传递
             self.file_tools = file_tools or FileTools(session_id=session_id)
             
-            # ToolExecutor - 使用 tools dict
+            # 【T1-M1+M2】从registry动态获取工具，删除硬编码
+            from app.services.tools.registry import get_tools_from_file_registry
+            
+            # 获取类方法并绑定到self.file_tools实例
+            raw_tools = get_tools_from_file_registry()
             self._tools_dict = {
-                "read_file": self.file_tools.read_file,
-                "write_file": self.file_tools.write_file,
-                "list_directory": self.file_tools.list_directory,
-                "delete_file": self.file_tools.delete_file,
-                "move_file": self.file_tools.move_file,
-                "search_files": self.file_tools.search_files,
-                "search_file_content": self.file_tools.search_file_content,
-                "generate_report": self.file_tools.generate_report,
+                name: getattr(self.file_tools, name) 
+                for name in raw_tools.keys()
             }
+            
             self.executor = ToolExecutor(self._tools_dict)
             
             self.prompts = FileOperationPrompts()
