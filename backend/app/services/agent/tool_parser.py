@@ -1,16 +1,35 @@
 # -*- coding: utf-8 -*-
 """
-工具解析器模块
+工具解析器模块【已弃用】
+
+⚠️ 【P6】本模块已弃用，请使用 new parse_react_response() 或 parsers/ 目录下的解析器
 
 解析LLM响应中的Thought-Action-ActionInput结构
 Author: 小沈 - 2026-03-21
+Deprecated: 2026-04-19 - 使用 app.services.agent.react_output_parser.parse_react_response() 替代
 """
 
 import json
 import re
+import warnings
 from typing import Any, Dict, Optional
+from functools import wraps
 
 
+def deprecated(func):
+    """弃用装饰器"""
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        warnings.warn(
+            f"{func.__name__} 已弃用，请使用新的解析器",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        return func(*args, **kwargs)
+    return wrapper
+
+
+@deprecated
 class ToolParser:
     """
     工具解析器

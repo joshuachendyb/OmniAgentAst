@@ -27,13 +27,12 @@ from typing import TYPE_CHECKING
 # ============================================================================
 from app.services.preprocessing import PreprocessingPipeline, TextCorrector, IntentClassifier
 from .base_react import BaseAgent
-from .tool_parser import ToolParser
+# 【2026-04-19小沈优化】P3完成：ToolParser已迁移到parse_react_response，删除旧导入
 from .tool_executor import ToolExecutor
 from .react_output_parser import (
     parse_react_response,
     REACT_KEYWORDS,
     KNOWN_TOOLS,
-    ToolParser as ReactToolParser,
 )
 from .session_base import SessionServiceBase, SessionStatsMixin
 

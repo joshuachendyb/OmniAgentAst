@@ -1,11 +1,5 @@
 v0.9.8.7
 
-更新时间：2026-04-19 09:45:00
-
-更新内容：
-
-## 1. T1+T2工具注册表重构+配置外部化验收 - 小沈-2026-04-19
-
 ### 1.1 T1: 工具注册表重构
 - 新增registry.py (ToolRegistry类)
 - 新增tool_config.py (ToolConfig类+Pydantic验证)

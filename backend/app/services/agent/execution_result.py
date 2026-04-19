@@ -17,21 +17,21 @@ class ExecutionResult:
     执行结果
     
     Attributes:
-        status: 执行状态 ("success" | "error")
+        status: 执行状态 ("success" | "error" | "timeout" | "permission_denied")
         summary: 执行摘要
         data: 返回数据（成功时）
         error: 错误信息（失败时）
-        error_type: 错误类型
         execution_time_ms: 执行时间（毫秒）
         retry_count: 重试次数
+        metadata: 元数据（可选）
     """
     status: str
     summary: str
     data: Optional[Dict[str, Any]] = None
     error: Optional[str] = None
-    error_type: Optional[str] = None
     execution_time_ms: int = 0
     retry_count: int = 0
+    metadata: Optional[Dict[str, Any]] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为dict"""
@@ -46,7 +46,8 @@ class ExecutionResult:
             result["data"] = self.data
         elif self.status == "error":
             result["error"] = self.error
-            if self.error_type:
-                result["error_type"] = self.error_type
+        
+        if self.metadata:
+            result["metadata"] = self.metadata
         
         return result

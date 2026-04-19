@@ -4,15 +4,111 @@
 
 负责执行解析后的工具调用，处理错误和结果格式化
 Author: 小沈 - 2026-03-21
+Version: 1.1 - 2026-04-19 添加T3重试逻辑
 """
 
 import asyncio
-from typing import Any, Callable, Dict
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
 
 from app.utils.logger import logger
 
 # 【步骤7】T2: 从ToolConfig加载超时和别名
 from app.services.tools.tool_config import get_tool_config
+
+
+# =============================================================================
+# 7.4.3 T3：执行器增强 - 错误分类与重试
+# =============================================================================
+
+class ErrorType(Enum):
+    """错误类型枚举（含is_retryable/to_status/description）"""
+    
+    TIMEOUT = "timeout"
+    PERMISSION_DENIED = "permission_denied"
+    FILE_NOT_FOUND = "file_not_found"
+    INVALID_PARAMS = "invalid_params"
+    TOOL_NOT_FOUND = "tool_not_found"
+    UNKNOWN = "unknown"
+    
+    @property
+    def is_retryable(self) -> bool:
+        """判断错误是否可重试"""
+        return self.value in ["timeout"]
+    
+    @property
+    def to_status(self) -> str:
+        """转换为status字符串"""
+        mapping = {
+            "timeout": "timeout",
+            "permission_denied": "permission_denied",
+            "file_not_found": "error",
+            "invalid_params": "error",
+            "tool_not_found": "error",
+            "unknown": "error",
+        }
+        return mapping.get(self.value, "error")
+    
+    @property
+    def description(self) -> str:
+        """错误描述"""
+        mapping = {
+            "timeout": "执行超时",
+            "permission_denied": "权限拒绝",
+            "file_not_found": "文件未找到",
+            "invalid_params": "无效参数",
+            "tool_not_found": "工具未找到",
+            "unknown": "未知错误",
+        }
+        return mapping.get(self.value, "未知错误")
+
+
+class ErrorClassifier:
+    """错误分类器"""
+    
+    @staticmethod
+    def classify(error: Exception) -> ErrorType:
+        """分类错误类型"""
+        error_msg = str(error).lower()
+        
+        if isinstance(error, asyncio.TimeoutError):
+            return ErrorType.TIMEOUT
+        elif isinstance(error, PermissionError):
+            return ErrorType.PERMISSION_DENIED
+        elif isinstance(error, FileNotFoundError):
+            return ErrorType.FILE_NOT_FOUND
+        elif isinstance(error, ValueError):
+            return ErrorType.INVALID_PARAMS
+        elif isinstance(error, (KeyError, TypeError, AttributeError)):
+            return ErrorType.INVALID_PARAMS
+        elif isinstance(error, OSError):
+            return ErrorType.FILE_NOT_FOUND
+        elif "not found" in error_msg or "does not exist" in error_msg:
+            return ErrorType.TOOL_NOT_FOUND
+        else:
+            return ErrorType.UNKNOWN
+
+
+class RetryPolicy:
+    """重试策略（精简版：无熔断器）"""
+    
+    def __init__(
+        self,
+        max_retries: int = 3,
+        backoff_factor: float = 2.0,
+        retryable_errors: Optional[List[str]] = None
+    ):
+        """
+        初始化重试策略
+        
+        Args:
+            max_retries: 最大重试次数
+            backoff_factor: 退避因子
+            retryable_errors: 可重试错误列表
+        """
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
+        self.retryable_errors = retryable_errors or ["timeout"]
 
 
 # 【新增 2026-04-16 小沈】工具超时配置
@@ -46,14 +142,20 @@ class ToolExecutor:
     负责执行解析后的工具调用，处理错误和结果格式化
     """
     
-    def __init__(self, tools: Dict[str, Callable]):
+    def __init__(self, tools: Dict[str, Callable] = None):
         """
         初始化工具执行器
         
         Args:
-            tools: 工具名称到工具函数的映射字典
+            tools: 工具名称到工具函数的映射字典（可选）
+            如果未传入，从registry获取
         """
-        self.available_tools = tools
+        if tools is not None:
+            self.available_tools = tools
+        else:
+            # 【M5修正】从tool_registry获取实现函数
+            from app.services.tools.registry import get_implementations_from_registry
+            self.available_tools = get_implementations_from_registry()
     
     async def execute(
         self,
@@ -61,7 +163,9 @@ class ToolExecutor:
         action_input: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        执行工具调用
+        执行工具调用（带重试逻辑）
+        
+        步骤4：修改execute()方法，增加重试逻辑
         
         Args:
             action: 工具名称
@@ -71,10 +175,6 @@ class ToolExecutor:
             执行结果，包含success标志和结果数据
         """
         if action == "finish":
-            # 【修复 2026-04-01 小沈】统一返回格式
-            # 之前：返回success字段，与普通工具返回的status字段不一致
-            # 修复：改为返回status字段，与_format_result保持一致
-            # 影响：base_react.py第226行execution_result.get("status", "success")能正确获取
             return {
                 "status": "success",
                 "summary": "Task completed",
@@ -95,71 +195,99 @@ class ToolExecutor:
                 "retry_count": 0
             }
         
+        # 【步骤4】使用重试逻辑执行
+        return await self._execute_with_retry(action, action_input)
+    
+    async def _execute_with_retry(
+        self,
+        action: str,
+        action_input: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        步骤5：修改_execute_with_retry()，使用ErrorClassifier统一分类
+        """
         tool = self.available_tools[action]
+        config = get_tool_config()
+        retry_policy = RetryPolicy(
+            max_retries=config.get_retry_max(action),
+            backoff_factor=config.get_retry_backoff(action),
+            retryable_errors=config.get_retryable_errors(action)
+        )
         
-        try:
-            normalized_input = self._normalize_params(action, action_input)
-            
-            # 【小沈修复 2026-04-13】验证必需参数
-            import inspect
-            sig = inspect.signature(tool)
-            required_params = [
-                p.name for p in sig.parameters.values()
-                if p.default == inspect.Parameter.empty and p.name != 'self'
-            ]
-            missing = [p for p in required_params if p not in normalized_input]
-            if missing:
-                logger.warning(f"[参数验证] action={action} 缺少必需参数: {missing}")
-                return {
-                    "status": "error",
-                    "summary": f"Missing required parameter(s): {', '.join(missing)}",
-                    "data": None,
-                    "retry_count": 0
-                }
-            
-            # 【步骤7】T2: 从ToolConfig加载超时（降级到默认值）
-            config = get_tool_config()
-            timeout = config.get_timeout(action)
-            result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
-            
-            return self._format_result(result, action)
+        attempt_count = 0
+        last_error: Optional[Exception] = None
         
-        # 【新增 2026-04-16 小沈】超时处理
-        except asyncio.TimeoutError:
-            logger.error(f"[超时] action={action} 执行超过{timeout}秒")
-            return {
-                "status": "timeout",
-                "summary": f"Tool '{action}' execution timed out after {timeout} seconds",
-                "data": None,
-                "retry_count": 0
-            }
-        # 权限拒绝处理
-        except PermissionError as e:
-            logger.error(f"[权限拒绝] action={action}: {e}")
-            return {
-                "status": "permission_denied",
-                "summary": f"Permission denied: {str(e)}",
-                "data": None,
-                "retry_count": 0
-            }
-        # 文件未找到处理
-        except FileNotFoundError as e:
-            logger.error(f"[文件未找到] action={action}: {e}")
-            return {
-                "status": "error",
-                "summary": f"File not found: {str(e)}",
-                "data": None,
-                "retry_count": 0
-            }
-        # 其他异常
-        except Exception as e:
-            logger.error(f"Tool execution error: {e}", exc_info=True)
-            return {
-                "status": "error",
-                "summary": f"Execution error: {str(e)}",
-                "data": None,
-                "retry_count": 0
-            }
+        while attempt_count <= retry_policy.max_retries:
+            try:
+                normalized_input = self._normalize_params(action, action_input)
+                
+                # 验证必需参数
+                import inspect
+                sig = inspect.signature(tool)
+                required_params = [
+                    p.name for p in sig.parameters.values()
+                    if p.default == inspect.Parameter.empty and p.name != 'self'
+                ]
+                missing = [p for p in required_params if p not in normalized_input]
+                if missing:
+                    logger.warning(f"[参数验证] action={action} 缺少必需参数: {missing}")
+                    return {
+                        "status": "error",
+                        "summary": f"Missing required parameter(s): {', '.join(missing)}",
+                        "data": None,
+                        "retry_count": 0
+                    }
+                
+                # 执行工具
+                timeout = config.get_timeout(action)
+                result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
+                
+                return self._format_result(result, action)
+            
+            except Exception as e:
+                last_error = e
+                error_type = ErrorClassifier.classify(e)
+                attempt_count += 1
+                
+                # 步骤5：记录日志
+                logger.warning(
+                    f"[重试] action={action} 尝试{attempt_count}/{retry_policy.max_retries} "
+                    f"失败: {error_type.description} - {str(e)[:100]}"
+                )
+                
+                # 检查是否可重试
+                if not error_type.is_retryable:
+                    return {
+                        "status": error_type.to_status,
+                        "summary": f"{error_type.description}: {str(e)[:200]}",
+                        "data": None,
+                        "retry_count": attempt_count - 1,
+                        "metadata": {"error_type": error_type.value}
+                    }
+                
+                # 检查是否还有重试机会
+                if attempt_count > retry_policy.max_retries:
+                    logger.error(f"[重试] action={action} 超过最大重试次数{retry_policy.max_retries}")
+                    return {
+                        "status": error_type.to_status,
+                        "summary": f"{error_type.description}: {str(e)[:200]}",
+                        "data": None,
+                        "retry_count": attempt_count,
+                        "metadata": {"error_type": error_type.value}
+                    }
+                
+                # 等待后重试（指数退避）
+                wait_time = retry_policy.backoff_factor ** (attempt_count - 1)
+                logger.info(f"[重试] action={action} 等待{wait_time}秒后重试...")
+                await asyncio.sleep(wait_time)
+        
+        # 返回最后的错误
+        return {
+            "status": "error",
+            "summary": str(last_error)[:200] if last_error else "Unknown error",
+            "data": None,
+            "retry_count": attempt_count
+        }
     
     def _normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         """

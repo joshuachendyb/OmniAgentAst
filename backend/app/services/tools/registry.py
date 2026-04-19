@@ -350,6 +350,38 @@ def get_tools_dict() -> Dict[str, Callable]:
     return tool_registry._implementations
 
 
+def get_implementations_from_registry() -> Dict[str, Callable]:
+    """
+    【M5新增】从tool_registry获取所有工具实现函数
+    
+    如果tool_registry为空，自动从file_tools._TOOL_REGISTRY同步
+    
+    Returns:
+        {工具名: 工具函数} 格式
+    """
+    # 如果registry为空，从旧_TOOL_REGISTRY同步
+    if not tool_registry._implementations:
+        _sync_from_old_registry()
+    
+    return tool_registry._implementations
+
+
+def _sync_from_old_registry():
+    """从旧_TOOL_REGISTRY同步到tool_registry"""
+    from app.services.tools.file import file_tools as file_tools_module
+    
+    for name, info in file_tools_module._TOOL_REGISTRY.items():
+        func = info.get("function")
+        if func:
+            tool_registry.register(
+                name=name,
+                description=info.get("description", ""),
+                category=ToolCategory.FILE,
+                implementation=func,
+                version=info.get("version", "1.0.0")
+            )
+
+
 def get_tools_dict_by_category(category: ToolCategory) -> Dict[str, Callable]:
     """
     按分类获取工具函数字典

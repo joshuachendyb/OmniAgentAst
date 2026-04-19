@@ -136,6 +136,49 @@ class ToolConfig:
         aliases = self._config.get("tools", {}).get("aliases", {})
         return aliases.get(tool_name)
     
+    # =============================================================================
+    # 7.4.3 T3：执行器增强 - 重试配置方法
+    # =============================================================================
+    
+    def get_retry_max(self, tool_name: str) -> int:
+        """
+        获取最大重试次数
+        
+        Args:
+            tool_name: 工具名称
+        
+        Returns:
+            最大重试次数
+        """
+        retry = self._config.get("tools", {}).get("retry", {})
+        return retry.get(tool_name, retry.get("default", {}).get("max_retries", 3))
+    
+    def get_retry_backoff(self, tool_name: str) -> float:
+        """
+        获取重试退避因子
+        
+        Args:
+            tool_name: 工具名称
+        
+        Returns:
+            退避因子
+        """
+        retry = self._config.get("tools", {}).get("retry", {})
+        return retry.get(tool_name, retry.get("default", {}).get("backoff_factor", 2.0))
+    
+    def get_retryable_errors(self, tool_name: str) -> list:
+        """
+        获取可重试错误列表
+        
+        Args:
+            tool_name: 工具名称
+        
+        Returns:
+            可重试错误列表
+        """
+        retry = self._config.get("tools", {}).get("retry", {})
+        return retry.get(tool_name, retry.get("default", {}).get("retryable_errors", ["timeout"]))
+    
     def reload(self) -> bool:
         """
         【步骤4】热重载原子性保证
@@ -185,14 +228,19 @@ class ToolConfig:
     def _resolve_env_vars(self, config: Union[Dict, Any]) -> Union[Dict, Any]:
         """
         【步骤6】环境变量替换
-        - 未设置时保留原占位符
+        - 未设置时保留原占位符并记录警告
         - 错误时使用默认值
         """
         if isinstance(config, dict):
             return {k: self._resolve_env_vars(v) for k, v in config.items()}
         elif isinstance(config, str) and config.startswith("${") and config.endswith("}"):
             env_var = config[2:-1]
-            return os.environ.get(env_var, config)  # 保留原占位符
+            value = os.environ.get(env_var)
+            if value is None:
+                # 环境变量未设置：记录警告，保留原始占位符
+                logger.warning(f"环境变量 '${{{env_var}}}' 未设置，配置项保留原值")
+                return config
+            return value
         return config
     
     def validate(self) -> Dict[str, Any]:

@@ -69,11 +69,8 @@ class TextStrategy(LLMStrategy):
     - 方案A: ToolParser._extract_from_text() 支持中文提取
     - 方案B: 工具名保底匹配
     """
-    
-    KNOWN_TOOLS = [
-        "list_directory", "read_file", "write_file", "delete_file",
-        "move_file", "search_files", "search_file_content", "generate_report"
-    ]
+    # P4: 从react_output_parser统一导入KNOWN_TOOLS
+    from app.services.agent.react_output_parser import KNOWN_TOOLS
     
     async def call(
         self,
@@ -136,15 +133,15 @@ class TextStrategy(LLMStrategy):
                 tool_params={"result": f"⚠️ {user_message}"}
             )
         
-        # ===== 方案C: 尝试 ToolParser.parse_response() =====
-        from app.services.agent.tool_parser import ToolParser
+        # ===== P1: 使用 parse_react_response =====
+        from app.services.agent.react_output_parser import parse_react_response
         try:
-            parsed = ToolParser.parse_response(content)
+            parsed = parse_react_response(content)
             tool_name = parsed.get("tool_name", "finish")
             thought = parsed.get("content", "")
             tool_params = parsed.get("tool_params", {})
             reasoning = parsed.get("reasoning")
-            logger.info(f"[TextStrategy] ToolParser success: tool_name={tool_name}")
+            logger.info(f"[TextStrategy] parse_react_response success: tool_name={tool_name}")
             return self._make_result(content=thought, tool_name=tool_name, tool_params=tool_params, reasoning=reasoning)
         except ValueError:
             pass  # ToolParser 无法解析，继续方案A/B

@@ -153,39 +153,21 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
     
     output = output.strip()
     
-    # ① 【最高优先级】```包裹检测
+    # ① 【最高优先级】```包裹JSON解析
+    # 【2026-04-19小沈优化】删除了对tool_parser.ToolParser的依赖，直接解析```块
     try:
         if '```' in output:
-            from app.services.agent.tool_parser import ToolParser
-            result = ToolParser.parse_response(output)
-            
-            # 转换为 react_output_parser 的统一格式
-            if result["tool_name"] == "finish":
-                return {
-                    "type": "answer",
-                    "thought": result["thought"],
-                    "content": result["content"],
-                    "reasoning": result.get("reasoning", ""),
-                    "tool_name": None,
-                    "tool_params": None,
-                    "response": result["content"],
-                    "error": None
-                }
-            else:
-                return {
-                    "type": "action",
-                    "thought": result["thought"],
-                    "content": result["content"],
-                    "reasoning": result.get("reasoning", ""),
-                    "tool_name": result["tool_name"],
-                    "tool_params": result["tool_params"],
-                    "response": None,
-                    "error": None
-                }
+            # 提取```块内的JSON
+            json_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', output)
+            if json_match:
+                json_str = json_match.group(1).strip()
+                json_data = json.loads(json_str)
+                if "tool_name" in json_data:
+                    return _create_action_result(json_data, output)
     except Exception as e:
         # 记录日志，继续尝试下一个优先级
         from app.utils.logger import logger
-        logger.debug(f"```包裹检测失败: {e}")
+        logger.debug(f"```包裹JSON解析失败: {e}")
     
     # ② 【第二优先级】纯JSON块检测（无```包裹）
     try:
@@ -913,56 +895,8 @@ __all__ = [
     "_create_action_result",  # 【2026-04-18小沈新增】创建统一格式结果
     "_extract_tool_params_from_thought",  # 【2026-04-18小沈新增】从thought提取参数
     "REACT_KEYWORDS",
-    "KNOWN_TOOLS",  # 【新增】已知工具名列表
-    "ToolParser",   # 【兼容层】旧接口兼容包装器
+    "KNOWN_TOOLS",
 ]
 
 
-# =============================================================================
-# 【必选】ToolParser兼容层（阶段一必须集成）
-# 来源：第14章 14.6.1.5节
-# 重要性：llm_strategies.py等代码仍在调用ToolParser.parse_response()
-# =============================================================================
 
-class ToolParser:
-    """兼容旧接口的包装器（必须集成，阶段一必须加入）"""
-    
-    @staticmethod
-    def parse_response(response: str) -> Dict[str, Any]:
-        """兼容旧接口"""
-        parsed = parse_react_response(response)
-        
-        # 转换为旧格式
-        if parsed["type"] == "action":
-            return {
-                "content": parsed.get("thought", ""),
-                "thought": parsed.get("thought", ""),
-                "tool_name": parsed["tool_name"],
-                "tool_params": parsed["tool_params"] or {},
-                "reasoning": ""
-            }
-        elif parsed["type"] in ["answer", "implicit"]:
-            return {
-                "content": parsed.get("response", ""),
-                "thought": parsed.get("thought", ""),
-                "tool_name": "finish",
-                "tool_params": {},
-                "reasoning": ""
-            }
-        elif parsed["type"] == "parse_error":
-            # 【修复D8】解析失败：返回错误信息，不当作finish处理
-            return {
-                "content": parsed.get("error", "Parse error"),
-                "thought": parsed.get("thought", ""),
-                "tool_name": "parse_error",  # 明确标识解析错误
-                "tool_params": {},
-                "reasoning": parsed.get("error", "")
-            }
-        else:  # thought_only
-            return {
-                "content": parsed.get("thought", ""),
-                "thought": parsed.get("thought", ""),
-                "tool_name": "finish",
-                "tool_params": {},
-                "reasoning": ""
-            }
