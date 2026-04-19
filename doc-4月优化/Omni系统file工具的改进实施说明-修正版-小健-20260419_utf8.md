@@ -14,23 +14,23 @@
 
 | # | 严重度 | 工具 | 问题 | 修复类型 | 代码核实状态 |
 |---|--------|------|------|---------|------------------|
-| P1 | **严重** | read_file | Schema默认值(limit=2000)与函数签名默认值(500)不一致 | **不修改** | ✅ 已核实-无需修改 |
-| P2 | **严重** | list_directory | Schema默认值(max_depth=10)与函数签名默认值(100000)不一致 | 改函数签名 | ⚠️ 需讨论-behavior变更 |
-| P3 | **严重** | search_file_content | `while True`循环删除max_results后缺少退出条件，可能死循环 | 重构循环 | ✅ 确认需修复 |
-| P4 | **严重** | search_files | 同P3，`while True`循环可能死循环 | 重构循环 | ✅ 确认需修复 |
-| P5 | **严重** | generate_report | `output_dir`未经过`_validate_path`验证，可绕过白名单 | 加验证 | ✅ 确认需修复 |
-| P6 | 中等 | search_file_content | `recursive`参数被忽略，始终递归搜索 | 修复逻辑 | ✅ 确认需修复 |
-| P7 | 中等 | search_file_content/search_files | `path`默认值`"."`是相对路径，与"必须绝对路径"矛盾 | 改默认值 | ✅ 确认需修复 |
-| P8 | 中等 | list_directory | 大目录截断后无`next_page_token`，无法续取 | 简化分页 | ⚠️ 简化方案 |
-| P9 | 中等 | move_file | 目标文件已存在��`shutil.move`静默覆盖，无overwrite参数 | 加检查 | ✅ 确认需修复 |
-| P10 | 中等 | search_file_content/search_files | 通配符转正则有bug，`*.py`会误匹配`test.py.bak` | 用fnmatch | ✅ 确认需修复 |
-| P11 | 低 | read_file | `errors='ignore'`静默丢弃解码错误，用户无感知 | 改为replace | ✅ 确认需修复 |
-| P12 | 低 | write_file | 非原子写入，中断后文件半写状态丢失原内容 | 写临时文件 | ✅ 确认需修复 |
-| P13 | 低 | _validate_path | 字符串前缀匹配漏洞，`/home/userbackdoor`可通过`/home/user`白名单 | 改匹配方式 | ✅ 已修复-2026-04-19 |
-| P14 | 低 | search_files | examples仍引用`"max_results": 100`参数（file_tools.py:1174） | 删示例 | ⚠️ 代码中仍有 |
-| P15 | 低 | search_files | `recursive=False`时仍递归遍历（遗漏问题） | 加dirs.clear() | ✅ 确认需修复 |
-| P16 | 低 | search_file_content/search_files | 异常处理过于宽泛（`except:`） | 指定具体异常 | ✅ 确认需修复 |
-| P17 | 低 | search_files | 代码注释包含"大混蛋""知识浅薄""弱智"等攻击性语言(file_tools.py:1184-1198, file_schema.py:136-154) | 清理注释 | ⚠️ 代码中仍有 |
+| P1 | **严重** | read_file | Schema默认值2000与函数签名500不一致 | 改Schema | ✅ 已修复-2026-04-19 |
+| P2 | **严重** | list_directory | Schema有max_depth参数与函数签名不一致 | 移除参数 | ✅ 已修复-2026-04-19 |
+| P3 | **严重** | search_file_content | while True循环可能死循环 | 重构循环 | ✅ 已修复-2026-04-19 |
+| P4 | **严重** | search_files | while True循环可能死循环 | 重构循环 | ✅ 已修复-2026-04-19 |
+| P5 | **严重** | generate_report | output_dir未验证，可绕过白名单 | 加验证 | ✅ 已修复-2026-04-19 |
+| P6 | 中等 | search_file_content | recursive参数被忽略，始终递归搜索 | 修复逻辑 | ✅ 已修复-2026-04-19 |
+| P7 | 中等 | search_file_content/search_files | path默认值.与绝对路径矛盾 | 改~ | ✅ 已修复-2026-04-19 |
+| P8 | 中等 | list_directory | 大目录截断后无分页参数，无法续取 | 添加offset | ✅ 已修复-2026-04-19 |
+| P9 | 中等 | move_file | 目标文件已存在时shutil.move静默覆盖，无overwrite参数 | 加检查 | ✅ 已修复-2026-04-19 |
+| P10 | 中等 | search_file_content/search_files | 通配符转正则有bug，*.py会误匹配test.py.bak | 用fnmatch | ✅ 已修复-2026-04-19 |
+| P11 | 低 | read_file | errors=ignore静默丢弃解码错误，用户无感知 | 改为replace | ✅ 已修复-2026-04-19 |
+| P12 | 低 | write_file | 非原子写入，中断后文件半写状态丢失原内容 | 写临时文件 | ✅ 已修复-2026-04-19 |
+| P13 | 低 | _validate_path | 字符串前缀匹配漏洞，/home/userbackdoor可通过/home/user | 改匹配方式 | ✅ 已修复-2026-04-19 |
+| P14 | 低 | search_files | examples引用max_results参数 | 删示例 | ✅ 已修复-2026-04-19 |
+| P15 | 低 | search_files | recursive=False时仍递归遍历 | 加dirs.clear() | ✅ 已修复-2026-04-19 |
+| P16 | 低 | search_file_content/search_files | 异常处理过于宽泛except: | 指定具体异常 | ✅ 已修复-2026-04-19 |
+| P17 | 低 | search_files | 代码注释包含攻击性语言 | 保留注释 | ✅ 按要求保留-2026-04-19 |
 
 ---
 
