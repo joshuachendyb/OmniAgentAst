@@ -1011,55 +1011,45 @@ class FileTools:
                         "matches": []
                     }, "search_file_content")
             
-            # 搜索文件内容 - 支持循环搜索获取全部结果
+            # 搜索文件内容 - 单次遍历（P3修复：去掉while True循环）
             def _search_sync():
                 import os
+                import fnmatch
                 
                 all_results = []
-                
-                # 每次搜索最大获取数量（内部循环用，不限制最终结果）
-                BATCH_SIZE = 10000
-                
-                # 去除pattern首尾空白
                 search_term = pattern.strip()
-                
-                # 【修改】用 page_token 统一分页
                 start_offset = decode_page_token(page_token) if page_token else 0
-                
-                # 循环搜索，直到获取全部结果
                 seen_count = 0
-                while True:
-                    batch_results = []
+                
+                # 单次遍历，不需要while循环
+                for root, dirs, files in os.walk(search_path):
+                    # 【修复P6】尊重recursive参数
+                    if not recursive:
+                        dirs.clear()  # 不递归：清空子目录列表，os.walk不会进入子目录
                     
-                    # 逐步遍历目录
-                    for root, dirs, files in os.walk(search_path):
-                        # 遍历当前目录的文件
-                        for filename in files:
-                            # 用 file_pattern 过滤文件名
-                            if file_pattern and file_pattern != "*":
-                                import re
-                                fp = file_pattern.replace(".", r"\.").replace("*", ".*").replace("?", ".")
-                                fp = f"^{fp}$"
-                                try:
-                                    if not re.match(fp, filename):
-                                        continue
-                                except:
-                                    pass
-                            
-                            file_path = Path(root) / filename
-                            file_str = str(file_path.relative_to(search_path))
-                            
-                            # 【修改】用位置偏移跳过已处理的文件
-                            if seen_count < start_offset:
-                                seen_count += 1
+                    # 遍历当前目录的文件
+                    for filename in files:
+                        # 【修复P10】用fnmatch替代手工正则
+                        if file_pattern and file_pattern != "*":
+                            if not fnmatch.fnmatch(filename, file_pattern):
                                 continue
-                            
-                            # 读取文件内容
-                            try:
-                                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                    content = f.read()
-                            except:
-                                continue
+                        
+                        file_path = Path(root) / filename
+                        file_str = str(file_path.relative_to(search_path))
+                        
+                        # 【修改】用位置偏移跳过已处理的文件
+                        if seen_count < start_offset:
+                            seen_count += 1
+                            continue
+                        seen_count += 1
+                        
+                        # 【修复P11】errors='ignore' → errors='replace'
+                        # 【修复P16】指定具体异常
+                        try:
+                            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                                content = f.read()
+                        except (PermissionError, OSError):
+                            continue
                             
                             # 搜索内容
                             matches = []
@@ -1093,24 +1083,11 @@ class FileTools:
                                     idx = content.find(search_term, idx + 1)
                             
                             if matches:
-                                batch_results.append({
+                                all_results.append({
                                     "file": file_str,
                                     "matches": matches,
                                     "match_count": len(matches)
                                 })
-                            
-                            # 达到本次限制，停止收集
-                            if len(batch_results) >= BATCH_SIZE:
-                                break
-                    
-                    # 添加本批次结果
-                    all_results.extend(batch_results)
-                    
-                    if not batch_results:
-                        break  # 搜索完成
-                    
-                    # 【删除 max_results 限制判断】
-                    # 原因：工具必须原原本本返回用户需要的结果，不应该限制数量
                 
                 # 排序：匹配多的文件在前
                 all_results.sort(key=lambda x: x["match_count"], reverse=True)
