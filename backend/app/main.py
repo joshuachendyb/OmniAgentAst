@@ -11,7 +11,9 @@ from pathlib import Path
 # from app.api.v1 import health, chat_non_stream, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
 # 【阶段6废弃端点但保留代码】chat2.py 已移至 backup/chat2.py
 # cleanup_expired_tasks 已迁移到 react_sse_wrapper.py
-from app.api.v1 import health, init_model_select, file_operations, config, sessions, security, execution, metrics
+from app.api.v1 import health, init_model_select, file_operations, routes, sessions, security, execution, metrics
+# 兼容导入
+config = routes
 # chat_stream 暂时禁用，使用 chat_router 替代
 from app.utils.logger import logger
 from app.utils.monitoring import setup_monitoring

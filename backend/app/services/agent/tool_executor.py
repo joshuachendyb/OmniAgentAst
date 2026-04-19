@@ -11,6 +11,9 @@ from typing import Any, Callable, Dict
 
 from app.utils.logger import logger
 
+# 【步骤7】T2: 从ToolConfig加载超时和别名
+from app.services.tools.tool_config import get_tool_config
+
 
 # 【新增 2026-04-16 小沈】工具超时配置
 TOOL_TIMEOUTS = {
@@ -114,8 +117,9 @@ class ToolExecutor:
                     "retry_count": 0
                 }
             
-            # 【新增 2026-04-16 小沈】使用asyncio.wait_for带超时执行工具
-            timeout = TOOL_TIMEOUTS.get(action, TOOL_TIMEOUTS["default"])
+            # 【步骤7】T2: 从ToolConfig加载超时（降级到默认值）
+            config = get_tool_config()
+            timeout = config.get_timeout(action)
             result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
             
             return self._format_result(result, action)

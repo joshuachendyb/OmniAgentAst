@@ -1530,3 +1530,21 @@ def decode_page_token(token: str) -> int:
         return int(base64.b64decode(token.encode()).decode())
     except (ValueError, Exception):
         return 0
+
+
+# ============================================================
+# 【M3关键】工具初始化注册
+# 如果_TOOL_REGISTRY为空，手动注册所有工具
+# ============================================================
+def _ensure_tools_registered():
+    """确保工具已注册到_TOOL_REGISTRY"""
+    if _TOOL_REGISTRY:
+        return  # 已有工具，跳过
+    
+    # 创建FileTools实例触发注册装饰器
+    from app.services.tools.file import FileTools
+    _ = FileTools()
+
+
+# 立即执行注册（模块加载时）
+_ensure_tools_registered()
