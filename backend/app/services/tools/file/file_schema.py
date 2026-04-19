@@ -106,8 +106,8 @@ class SearchFileContentInput(BaseModel):
         description="搜索内容的关键字（必填，不能为空）"
     )
     path: str = Field(
-        default=".",
-        description="搜索的起始目录，默认为当前目录"
+        default="~",
+        description="搜索的起始目录（绝对路径），默认为用户主目录"
     )
     file_pattern: str = Field(
         default="*",
@@ -130,8 +130,8 @@ class SearchFilesByNameInput(BaseModel):
         description="文件名匹配模式，支持通配符（* 匹配任意字符，? 匹配单个字符）"
     )
     path: str = Field(
-        default=".",
-        description="搜索的起始目录，默认为当前目录"
+        default="~",
+        description="搜索的起始目录（绝对路径），默认为用户主目录"
     )
     recursive: bool = Field(
         default=True,
