@@ -32,10 +32,10 @@ class ReadFileInput(BaseModel):
         description="起始行号，从1开始计数，默认为1"
     )
     limit: int = Field(
-        default=2000,
+        default=500,
         ge=1,
         le=10000,
-        description="最大读取行数，默认为2000行，最大10000行"
+        description="最大读取行数，默认为500行，最大10000行"
     )
     encoding: str = Field(
         default="utf-8",
