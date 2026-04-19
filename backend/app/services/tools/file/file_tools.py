@@ -411,7 +411,7 @@ class FileTools:
             
             # 读取文件内容（异步执行）
             def _read_sync():
-                with open(path, 'r', encoding=encoding, errors='ignore') as f:
+                with open(path, 'r', encoding=encoding, errors='replace') as f:
                     return f.readlines()
             
             lines = await asyncio.to_thread(_read_sync)
