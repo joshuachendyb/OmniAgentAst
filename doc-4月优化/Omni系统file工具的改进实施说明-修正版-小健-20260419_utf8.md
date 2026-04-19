@@ -26,7 +26,7 @@
 | P10 | 中等 | search_file_content/search_files | 通配符转正则有bug，`*.py`会误匹配`test.py.bak` | 用fnmatch | ✅ 确认需修复 |
 | P11 | 低 | read_file | `errors='ignore'`静默丢弃解码错误，用户无感知 | 改为replace | ✅ 确认需修复 |
 | P12 | 低 | write_file | 非原子写入，中断后文件半写状态丢失原内容 | 写临时文件 | ✅ 确认需修复 |
-| P13 | 低 | _validate_path | 字符串前缀匹配漏洞，`/home/userbackdoor`可通过`/home/user`白名单 | 改匹配方式 | ✅ 确认需修复 |
+| P13 | 低 | _validate_path | 字符串前缀匹配漏洞，`/home/userbackdoor`可通过`/home/user`白名单 | 改匹配方式 | ✅ 已修复-2026-04-19 |
 | P14 | 低 | search_files | examples仍引用`"max_results": 100`参数（file_tools.py:1174） | 删示例 | ⚠️ 代码中仍有 |
 | P15 | 低 | search_files | `recursive=False`时仍递归遍历（遗漏问题） | 加dirs.clear() | ✅ 确认需修复 |
 | P16 | 低 | search_file_content/search_files | 异常处理过于宽泛（`except:`） | 指定具体异常 | ✅ 确认需修复 |
