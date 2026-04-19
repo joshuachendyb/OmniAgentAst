@@ -1353,6 +1353,16 @@ class FileTools:
     )
     async def generate_report(self, output_dir: Optional[str] = None) -> Dict[str, Any]:
         """生成操作报告"""
+        # 【修复P5】验证输出目录路径
+        if output_dir:
+            is_valid, error_msg = self._validate_path(output_dir)
+            if not is_valid:
+                return _to_unified_format({
+                    "success": False,
+                    "error": error_msg,
+                    "reports": {}
+                }, "generate_report")
+        
         if not self.session_id:
             return _to_unified_format({
                 "success": False,
