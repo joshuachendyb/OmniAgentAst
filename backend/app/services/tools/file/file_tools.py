@@ -541,7 +541,7 @@ class FileTools:
                 except Exception:
                     try:
                         os.unlink(temp_path)
-                    except:
+                    except OSError:
                         pass
                     raise
             
