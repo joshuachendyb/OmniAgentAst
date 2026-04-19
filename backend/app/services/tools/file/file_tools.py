@@ -50,6 +50,7 @@ from app.services.tools.file.file_schema import (
     SearchFilesByNameInput,
     GenerateReportInput,
     CopyFileInput,
+    CreateDirectoryInput,
 )
 
 from app.services.agent import (
@@ -1478,6 +1479,54 @@ class FileTools:
             destination_path=destination_path,
             recursive=recursive,
             overwrite=overwrite,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="create_directory",
+        description="""创建新目录。
+
+使用场景：
+- 当用户想要创建新文件夹时使用此工具
+- 当用户说"创建目录"、"新建文件夹"、"mkdir"时使用
+
+参数说明：
+- dir_path: 要创建的目录的完整路径（必须是绝对路径）
+- parents: 是否创建父目录，默认为True（如果父目录不存在则创建）
+- exist_ok: 如果目录已存在是否报错，默认为True（不报错）
+
+【重要】必须使用 dir_path 作为参数名。
+正确示例: {"dir_path": "C:/Users/用户名/Documents/new_folder"}""",
+        input_model=CreateDirectoryInput,
+        examples=[
+            {
+                "dir_path": "C:/Users/用户名/Documents/new_folder"
+            },
+            {
+                "dir_path": "D:/项目代码/src/components",
+                "parents": True
+            }
+        ]
+    )
+    async def create_directory(
+        self,
+        dir_path: str,
+        parents: bool = True,
+        exist_ok: bool = True,
+    ) -> Dict[str, Any]:
+        """创建目录"""
+        from app.services.tools.file.create_directory import create_directory_impl
+        
+        return await create_directory_impl(
+            dir_path=dir_path,
+            parents=parents,
+            exist_ok=exist_ok,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
             session_id=self.session_id,
