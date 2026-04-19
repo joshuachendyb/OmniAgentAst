@@ -13,99 +13,63 @@ Author: 小健 - 2026-04-19
 import asyncio
 import shutil
 from pathlib import Path
-from typing import Dict, Any
-
-from app.services.tools.file.file_tools import (
-    register_tool,
-    _to_unified_format,
-    OperationType,
-)
+from typing import Dict, Any, Optional
 
 
-class CopyFileInput:
-    """copy_file工具的输入参数Schema"""
-    
-    def __init__(self):
-        from pydantic import BaseModel, Field
-        from typing import Optional
-        
-        class _CopyFileInput(BaseModel):
-            source_path: str = Field(
-                description="源文件或目录的完整路径（必须是绝对路径）"
-            )
-            destination_path: str = Field(
-                description="目标路径（可以是新文件名或新目录位置）"
-            )
-            recursive: bool = Field(
-                default=False,
-                description="是否递归复制目录，仅当源路径是目录时有效，默认为False"
-            )
-            overwrite: bool = Field(
-                default=False,
-                description="是否覆盖已存在的目标文件，默认为False（不覆盖）"
-            )
-        
-        self.schema = _CopyFileInput
-
-
-@register_tool(
-    name="copy_file",
-    description="""复制文件或目录到新位置。
-
-使用场景：
-- 当用户想要复制文件时使用此工具
-- 当用户想要备份文件时使用
-- 当用户说"复制文件"、"拷贝文件"、"备份文件"时使用
-
-参数说明：
-- source_path: 源文件或目录的完整路径（必须是绝对路径）
-- destination_path: 目标路径（可以是新文件名或新目录位置）
-- recursive: 是否递归复制目录，仅当源路径是目录时有效，默认为False
-- overwrite: 是否覆盖已存在的目标文件，默认为False
-
-【重要】必须使用 source_path 和 destination_path 作为参数名。
-正确示例: {"source_path": "C:/Users/file.txt", "destination_path": "D:/backup/file.txt"}""",
-    input_model=CopyFileInput().schema,
-    examples=[
-        {
-            "source_path": "C:/Users/用户名/Documents/file.txt",
-            "destination_path": "D:/backup/file.txt"
-        },
-        {
-            "source_path": "C:/Users/用户名/Documents/folder",
-            "destination_path": "D:/backup/folder",
-            "recursive": True
-        }
-    ]
-)
-async def copy_file(
-    self,
+async def copy_file_impl(
     source_path: str,
     destination_path: str,
-    recursive: bool = False,
-    overwrite: bool = False,
+    recursive: bool,
+    overwrite: bool,
+    validate_path_func,
+    safety_service,
+    session_id: Optional[str],
+    record_operation_func,
+    execute_with_safety_func,
+    to_unified_format_func,
+    get_next_sequence_func,
 ) -> Dict[str, Any]:
-    """复制文件或目录"""
+    """
+    copy_file工具的实现函数
+    
+    Args:
+        source_path: 源文件或目录路径
+        destination_path: 目标路径
+        recursive: 是否递归复制目录
+        overwrite: 是否覆盖已存在的目标
+        validate_path_func: 路径验证函数
+        safety_service: 安全服务
+        session_id: 会话ID
+        record_operation_func: 记录操作函数
+        execute_with_safety_func: 安全执行函数
+        to_unified_format_func: 统一格式转换函数
+        get_next_sequence_func: 获取下一个序列号函数
+    
+    Returns:
+        统一格式的结果字典
+    """
+    from app.services.safety.file.file_safety import OperationType
+    
     # 验证源路径
-    is_valid_src, error_msg_src = self._validate_path(source_path)
+    is_valid_src, error_msg_src = validate_path_func(source_path)
     if not is_valid_src:
-        return _to_unified_format({
+        return to_unified_format_func({
             "success": False,
             "error": f"源路径{error_msg_src}",
             "operation_id": None
         }, "copy_file")
     
     # 验证目标路径
-    is_valid_dst, error_msg_dst = self._validate_path(destination_path)
+    is_valid_dst, error_msg_dst = validate_path_func(destination_path)
     if not is_valid_dst:
-        return _to_unified_format({
+        return to_unified_format_func({
             "success": False,
             "error": f"目标路径{error_msg_dst}",
             "operation_id": None
         }, "copy_file")
     
-    if not self.session_id:
-        return _to_unified_format({
+    if not session_id:
+        return to_unified_format_func({
             "success": False,
             "error": "No active session",
             "operation_id": None
@@ -116,7 +80,7 @@ async def copy_file(
     
     try:
         if not src.exists():
-            return _to_unified_format({
+            return to_unified_format_func({
                 "success": False,
                 "error": f"Source not found: {source_path}",
                 "operation_id": None
@@ -124,19 +88,19 @@ async def copy_file(
         
         # 检查目标是否已存在
         if dst.exists() and not overwrite:
-            return _to_unified_format({
+            return to_unified_format_func({
                 "success": False,
                 "error": f"目标路径已存在: {dst}，复制操作已取消。请设置overwrite=True或指定其他路径。",
                 "operation_id": None
             }, "copy_file")
         
         # 记录操作
-        operation_id = self.safety.record_operation(
-            session_id=self.session_id,
+        operation_id = record_operation_func(
+            session_id=session_id,
             operation_type=OperationType.COPY,
             source_path=src,
             destination_path=dst,
-            sequence_number=self._get_next_sequence()
+            sequence_number=get_next_sequence_func()
         )
         
         # 定义复制操作
@@ -159,13 +123,13 @@ async def copy_file(
             return True
         
         success = await asyncio.to_thread(
-            self.safety.execute_with_safety,
+            execute_with_safety_func,
             operation_id=operation_id,
             operation_func=_copy_sync
         )
         
         if success:
-            return _to_unified_format({
+            return to_unified_format_func({
                 "success": True,
                 "operation_id": operation_id,
                 "source": str(src),
@@ -173,14 +137,14 @@ async def copy_file(
                 "message": f"Copied: {src.name} -> {dst}"
             }, "copy_file")
         else:
-            return _to_unified_format({
+            return to_unified_format_func({
                 "success": False,
                 "error": "Failed to copy file",
                 "operation_id": operation_id
             }, "copy_file")
             
     except Exception as e:
-        return _to_unified_format({
+        return to_unified_format_func({
             "success": False,
             "error": str(e),
             "operation_id": None

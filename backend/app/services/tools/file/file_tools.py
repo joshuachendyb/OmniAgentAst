@@ -1432,6 +1432,61 @@ class FileTools:
                 "reports": {}
             }, "generate_report")
 
+    @register_tool(
+        name="copy_file",
+        description="""复制文件或目录到新位置。
+
+使用场景：
+- 当用户想要复制文件时使用此工具
+- 当用户想要备份文件时使用
+- 当用户说"复制文件"、"拷贝文件"、"备份文件"时使用
+
+参数说明：
+- source_path: 源文件或目录的完整路径（必须是绝对路径）
+- destination_path: 目标路径（可以是新文件名或新目录位置）
+- recursive: 是否递归复制目录，仅当源路径是目录时有效，默认为False
+- overwrite: 是否覆盖已存在的目标文件，默认为False
+
+【重要】必须使用 source_path 和 destination_path 作为参数名。
+正确示例: {"source_path": "C:/Users/file.txt", "destination_path": "D:/backup/file.txt"}""",
+        input_model=CopyFileInput,
+        examples=[
+            {
+                "source_path": "C:/Users/用户名/Documents/file.txt",
+                "destination_path": "D:/backup/file.txt"
+            },
+            {
+                "source_path": "C:/Users/用户名/Documents/folder",
+                "destination_path": "D:/backup/folder",
+                "recursive": True
+            }
+        ]
+    )
+    async def copy_file(
+        self,
+        source_path: str,
+        destination_path: str,
+        recursive: bool = False,
+        overwrite: bool = False,
+    ) -> Dict[str, Any]:
+        """复制文件或目录"""
+        # 导入copy_file实现
+        from app.services.tools.file.copy_file import copy_file_impl
+        
+        return await copy_file_impl(
+            source_path=source_path,
+            destination_path=destination_path,
+            recursive=recursive,
+            overwrite=overwrite,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
 
 # ============================================================
 # 第七部分：工具函数导出
