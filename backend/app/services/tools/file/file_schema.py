@@ -72,10 +72,9 @@ class ListDirectoryInput(BaseModel):
         le=50,
         description="最大递归深度，仅当 recursive=True 时有效，默认为10"
     )
-    offset: int = Field(
-        default=0,
-        ge=0,
-        description="起始偏移量，用于分页获取后续内容，默认为0"
+    page_token: Optional[str] = Field(
+        default=None,
+        description="分页令牌（位置编码），用于获取下一页结果"
     )
 
 

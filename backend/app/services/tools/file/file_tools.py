@@ -587,6 +587,7 @@ class FileTools:
 - dir_path: 目录的完整路径（必须是绝对路径，如 D:/项目代码 或 C:/Users/用户名/Documents）
 - recursive: 是否递归列出子目录内容，默认为False（不递归）
 - max_depth: 最大递归深度，仅当 recursive=True 时有效，默认为10
+- page_token: 分页令牌（位置编码），用于获取下一页结果，默认为None（第一页）
 
 【重要】必须使用 dir_path 作为参数名，不要使用 directory_path、path 或其他名称。
 错误示例: {"directory_path": "..."} 或 {"path": "..."}
@@ -601,6 +602,10 @@ class FileTools:
                 "dir_path": "D:/项目代码",
                 "recursive": True,
                 "max_depth": 3
+            },
+            {
+                "dir_path": "E:/工作文档",
+                "page_token": "MA=="  # 示例：base64编码的"0"
             }
         ]
     )
@@ -609,7 +614,7 @@ class FileTools:
         dir_path: str,
         recursive: bool = False,
         max_depth: int = 10,
-        offset: int = 0,
+        page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """列出目录内容"""
         # 验证路径合法性
@@ -622,6 +627,18 @@ class FileTools:
             }, "list_directory")
         
         path = Path(dir_path)
+        
+        # 解码page_token
+        start_offset = 0
+        if page_token:
+            try:
+                start_offset = decode_page_token(page_token)
+            except Exception as e:
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"Invalid page token: {e}",
+                    "entries": []
+                }, "list_directory")
         
         try:
             if not path.exists():
@@ -695,7 +712,7 @@ class FileTools:
                 file_count = sum(1 for e in all_entries if e.get("type") == "file")
                 
                 # 只返回前 MAX_DISPLAY_ENTRIES 项（排序后目录在前、文件在后）
-                display_entries = all_entries[offset:offset + MAX_DISPLAY_ENTRIES]
+                display_entries = all_entries[start_offset:start_offset + MAX_DISPLAY_ENTRIES]
                 
                 # 记录截断日志，方便运维监控大目录场景
                 logger.warning(
@@ -712,7 +729,7 @@ class FileTools:
                     "truncated": True,  # 标记为截断状态
                     "dir_count": dir_count,  # 目录总数
                     "file_count": file_count,  # 文件总数
-                    "next_offset": offset + MAX_DISPLAY_ENTRIES if offset + MAX_DISPLAY_ENTRIES < total else None  # 分页标记
+                    "next_page_token": encode_page_token(start_offset + MAX_DISPLAY_ENTRIES) if start_offset + MAX_DISPLAY_ENTRIES < total else None  # 分页标记
                 }, "list_directory")
 
             # 小目录（<=200项）：直接返回全部数据
@@ -720,7 +737,8 @@ class FileTools:
                 "success": True,
                 "entries": all_entries,
                 "total": total,
-                "directory": str(path)
+                "directory": str(path),
+                "next_page_token": None  # 没有更多数据
             }, "list_directory")
             
         except Exception as e:
