@@ -609,6 +609,7 @@ class FileTools:
         dir_path: str,
         recursive: bool = False,
         max_depth: int = 100000,
+        offset: int = 0,
     ) -> Dict[str, Any]:
         """列出目录内容"""
         # 验证路径合法性
@@ -694,7 +695,7 @@ class FileTools:
                 file_count = sum(1 for e in all_entries if e.get("type") == "file")
                 
                 # 只返回前 MAX_DISPLAY_ENTRIES 项（排序后目录在前、文件在后）
-                display_entries = all_entries[:MAX_DISPLAY_ENTRIES]
+                display_entries = all_entries[offset:offset + MAX_DISPLAY_ENTRIES]
                 
                 # 记录截断日志，方便运维监控大目录场景
                 logger.warning(
@@ -710,7 +711,8 @@ class FileTools:
                     "directory": str(path),
                     "truncated": True,  # 标记为截断状态
                     "dir_count": dir_count,  # 目录总数
-                    "file_count": file_count  # 文件总数
+                    "file_count": file_count,  # 文件总数
+                    "next_offset": offset + MAX_DISPLAY_ENTRIES if offset + MAX_DISPLAY_ENTRIES < total else None  # 分页标记
                 }, "list_directory")
 
             # 小目录（<=200项）：直接返回全部数据
