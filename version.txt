@@ -1,3 +1,50 @@
+v0.9.8.8
+
+更新时间：2026-04-19 11:08:00
+
+更新内容：
+
+## 1. T1-T5工具注册表重构+配置外部化+执行器增强+解析器重构+统一错误处理 - 小沈-2026-04-19
+
+### 1.1 主要变更
+
+| 任务 | 变更 |
+|------|------|
+| T1 工具注册表重构 | 新增registry.py(ToolRegistry)、tool_config.py(ToolConfig)、parsers/目录 |
+| T2 配置外部化 | 新增config/tools.yaml、4项安全机制(Pydantic验证/热重载原子性/降级链/环境变量容错) |
+| T3 执行器增强 | 新增ErrorType/ErrorClassifier/RetryPolicy、execution_result.py(metadata字段修正) |
+| T4 解析器重构 | 新增parsers/(base_parser/json_parser/keyword_parser/tool_name_parser/implicit_parser/parser_factory) |
+| T5 统一错误处理 | 修正tool_executor.py从registry获取工具方法、补充遗漏文件 |
+
+### 1.2 6.2.x核对修正
+
+| 章节 | 修正内容 |
+|------|----------|
+| 6.2.1 | M5原未从registry获取 → 已修正为get_implementations_from_registry() |
+| 6.2.2 | 遗漏implicit_parser.py和parser_factory.py → 已补充 |
+| 6.2.3 | ExecutionResult使用error_type → 已修正为metadata字段 |
+| 6.2.4 | 环境变量未设置时缺少日志警告 → 已添加logger.warning() |
+
+### 1.3 新增文件
+
+- backend/app/services/agent/parsers/__init__.py
+- backend/app/services/agent/parsers/base_parser.py
+- backend/app/services/agent/parsers/implicit_parser.py
+- backend/app/services/agent/parsers/json_parser.py
+- backend/app/services/agent/parsers/keyword_parser.py
+- backend/app/services/agent/parsers/parser_factory.py
+- backend/app/services/agent/parsers/tool_name_parser.py
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 607c260f | feat: T1-T5工具注册表重构+配置外部化+执行器增强+解析器重构+统一错误处理 |
+
+参与开发：小沈（分析+实施+核对验证）
+
+---
+
 v0.9.8.7
 
 ### 1.1 T1: 工具注册表重构
