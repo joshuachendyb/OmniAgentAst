@@ -190,6 +190,21 @@ class CopyFileInput(BaseModel):
     )
 
 
+class CreateDirectoryInput(BaseModel):
+    """create_directory 工具的输入参数"""
+    dir_path: str = Field(
+        description="要创建的目录的完整路径（必须是绝对路径）"
+    )
+    parents: bool = Field(
+        default=True,
+        description="是否创建父目录，默认为True（如果父目录不存在则创建）"
+    )
+    exist_ok: bool = Field(
+        default=True,
+        description="如果目录已存在是否报错，默认为True（不报错）"
+    )
+
+
 __all__ = [
     "ReadFileInput",
     "WriteFileInput",
@@ -200,4 +215,5 @@ __all__ = [
     "SearchFilesByNameInput",
     "GenerateReportInput",
     "CopyFileInput",
+    "CreateDirectoryInput",
 ]
