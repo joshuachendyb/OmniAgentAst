@@ -29,6 +29,9 @@ def parse_operation_target_v2(command: str) -> Tuple[str, float, List[Dict[str, 
     2. 添加上下文理解
     3. 返回所有匹配结果和置信度
     """
+    if not command:
+        return 'USER', 1.0, []
+    
     command_lower = command.lower().strip()
     matches = []
     

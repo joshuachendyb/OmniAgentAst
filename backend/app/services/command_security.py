@@ -787,7 +787,14 @@ def calculate_risk_score_v2(command: str) -> dict:
     import math
     
     if not command or not command.strip():
-        return {'score': 0, 'details': {}}
+        return {
+            'score': 0, 
+            'level': 'LOW',
+            'message': '操作安全',
+            'details': {},
+            'matches': {},
+            'suggestions': ['操作安全，可继续执行']
+        }
     
     command_lower = command.lower().strip()
     

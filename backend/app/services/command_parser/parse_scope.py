@@ -21,6 +21,9 @@ def parse_impact_scope(command: str) -> str:
     Returns:
         str: 范围类型 (SINGLE_FILE/DIRECTORY/CROSS_DIR/SYSTEM)
     """
+    if not command:
+        return 'SINGLE_FILE'
+    
     command_lower = command.lower().strip()
     
     # 检查系统级（最危险）

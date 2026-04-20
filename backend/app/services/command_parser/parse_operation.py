@@ -29,6 +29,9 @@ def parse_operation_type_v2(command: str) -> Tuple[str, float, List[Dict[str, An
     2. 添加否定词检查
     3. 返回置信度
     """
+    if not command:
+        return 'READ', 0.5, []
+    
     command_lower = command.lower().strip()
     matches = []
     
