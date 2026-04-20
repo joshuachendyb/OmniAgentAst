@@ -12,10 +12,12 @@ from app.services.command_parser.command_security import (
     CommandParser,
     get_command_parser,
     parse_command_semantics,
+    generate_risk_suggestions,
 )
 
 __all__ = [
     'CommandParser',
     'get_command_parser',
     'parse_command_semantics',
+    'generate_risk_suggestions',
 ]

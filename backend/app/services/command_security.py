@@ -27,6 +27,7 @@ import os
 import json
 from typing import Tuple, List, Optional, Set, Dict, Any
 from app.utils.logger import logger
+from app.services.command_parser import generate_risk_suggestions
 
 try:
     import yaml
@@ -1074,7 +1075,7 @@ def calculate_risk_score_v2(command: str) -> dict:
     confidence = calculate_confidence(command, op_type, op_target, scope)
     
     # 6. 生成建议（根据风险级别）
-    suggestions = _generate_suggestions(final_score, op_type, op_target, scope)
+    suggestions = generate_risk_suggestions(final_score, op_type, op_target, scope)
     
     # 6. 返回详细结果（包含matches和suggestions）
     result = {
@@ -1138,44 +1139,6 @@ def get_risk_message(score: int, command: str = "") -> str:
         return "检测到风险操作，是否确认？"
     else:
         return "危险操作已被系统拦截"
-
-
-def _generate_suggestions(score: int, op_type: str, op_target: str, scope: str) -> List[str]:
-    """
-    根据评分生成建议
-    
-    设计文档：CRSS评分系统深度分析与改进方案-2026-04-20.md 3.5节
-    
-    Args:
-        score: 风险分数
-        op_type: 操作类型
-        op_target: 操作对象
-        scope: 影响范围
-        
-    Returns:
-        List[str]: 建议列表
-    """
-    suggestions = []
-    
-    if score <= 3:
-        suggestions.append("操作安全，可继续执行")
-    elif score <= 6:
-        op_type_upper = op_type.upper() if op_type else ''
-        if op_type_upper in ['DELETE', 'EXEC', 'COPY', 'MOVE']:
-            suggestions.append("建议备份重要数据后再执行")
-        if op_target and op_target.upper() == 'SYSTEM':
-            suggestions.append("系统文件操作，请谨慎")
-    elif score <= 8:
-        suggestions.append("高风险操作，请确认目标路径")
-        if scope and scope.upper() == 'SYSTEM':
-            suggestions.append("避免系统级操作")
-    else:
-        suggestions.append("建议取消此操作")
-        op_type_upper = op_type.upper() if op_type else ''
-        if op_type_upper == 'DELETE':
-            suggestions.append("删除操作过于危险，已被拦截")
-    
-    return suggestions
 
 
 # =============================================================================
