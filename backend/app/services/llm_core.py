@@ -190,7 +190,22 @@ class BaseAIService:
                             stream_error_type="http_error")
                     return
                 
-                async for line in response.aiter_lines():
+                # 【问题2修复】使用wait_for定期检查，每5秒超时检查一次_cancelled标志
+                # 而不是等下一个token（可能30秒）
+                while True:
+                    try:
+                        line = await asyncio.wait_for(response.aiter_lines().__anext__(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        # 超时了，检查取消标志
+                        if self._cancelled:
+                            logger.info("[chat_stream] 检测到取消标志（5秒超时检查），中断流式响应")
+                            yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                            return
+                        # 没取消，继续等待
+                        continue
+                    except StopAsyncIteration:
+                        break
+                    
                     if self._cancelled:
                         logger.info("[chat_stream] 检测到取消标志，中断流式响应")
                         yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
@@ -478,7 +493,25 @@ class BaseAIService:
                     )
                     return
                 
-                async for line in response.aiter_lines():
+                # 【问题2修复】同样使用wait_for定期检查
+                while True:
+                    try:
+                        line = await asyncio.wait_for(response.aiter_lines().__anext__(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        if self._cancelled:
+                            logger.info("[chat_with_tools_stream] Cancelled (5s timeout check)")
+                            yield StreamChunk(
+                                content="",
+                                model=self.model,
+                                is_done=True,
+                                stream_error="任务已取消",
+                                stream_error_type="cancelled"
+                            )
+                            return
+                        continue
+                    except StopAsyncIteration:
+                        break
+                    
                     if self._cancelled:
                         logger.info("[chat_with_tools_stream] Cancelled")
                         yield StreamChunk(

@@ -533,11 +533,10 @@ async def generate_sse_stream(
             yield error_response
     
     except asyncio.CancelledError:
-        # 客户端断开连接，任务被中断
+        # 【问题3修复】客户端断开连接，任务被中断
+        # 用try-catch包裹yield，防止客户端已断开导致失败
         async with running_tasks_lock:
             running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
-        interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
-        logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
         interrupted_step = create_incident_data(
             incident_value='interrupted',
             message='客户端断开连接，任务中断',
@@ -545,7 +544,14 @@ async def generate_sse_stream(
         )
         current_execution_steps.append(interrupted_step)
         await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
-        yield f"data: {json.dumps(interrupted_data)}\n\n"
+        
+        try:
+            interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
+            logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
+            yield f"data: {json.dumps(interrupted_data)}\n\n"
+        except Exception:
+            # 客户端已断开，yield失败是正常的，记录日志但不中断
+            logger.info(f"[Step interrupted] 客户端已断开，跳过yield")
     
     except Exception as e:
         logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
