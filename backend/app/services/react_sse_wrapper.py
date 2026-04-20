@@ -340,14 +340,29 @@ async def generate_sse_stream(
     # 安全检查未通过，返回错误
     if not security_check_result.get('is_safe', True):
         risk = security_check_result.get('risk', '未知风险')
-        logger.info(f"[Step error] 发送error步骤(安全检测拦截)")
+        risk_level = security_check_result.get('risk_level', 'unknown')
+        blocked = security_check_result.get('blocked', False)
+        is_need_confirm = security_check_result.get('is_need_confirm', False)
+        
+        logger.info(f"[Step error] 发送error步骤(安全检测拦截), level={risk_level}, blocked={blocked}")
+        
+        # 构建完整的CRSS评分信息到context
+        security_context = {
+            "risk_level": risk_level,
+            "blocked": blocked,
+            "is_need_confirm": is_need_confirm,
+            "rule_matched": security_check_result.get('rule_matched'),
+            "command": last_message,
+        }
+        
         error_step_obj = StepFactory.create_error_step(
             step=next_step(),
             error_type="security",
             error_message=f"危险操作需确认: {risk}",
             recoverable=False,
             model=ai_service.model,
-            provider=ai_service.provider
+            provider=ai_service.provider,
+            context=security_context
         )
         error_step_dict = error_step_obj.to_dict()
         error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
