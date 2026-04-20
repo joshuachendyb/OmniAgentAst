@@ -1853,6 +1853,10 @@ return prev;
           setTimeout(() => reject(new Error("中断请求超时")), 5000);
         });
         
+        // ✅【关键修复】不立即断开连接！等待后端发送interrupted/final事件
+        // 如果后端正在处理，等它发送完事件后再断开
+        // 立即断开会导致收不到interrupted事件，UI一直显示"加载中"
+        
         // 使用统一的 taskControlApi（带超时）
         const result = await Promise.race([
           taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined),
@@ -1860,11 +1864,14 @@ return prev;
         ]) as { success: boolean; message: string };
         console.log("[中断] cancel API 返回:", result);
         
-        // ✅【方案2】断开连接，传递回调确保状态同步
-        disconnect(true, true, () => {
-          console.log("[中断] SSE已断开，状态已同步");
-        });
-        console.log("[中断] 已调用 disconnect(true)");
+        // ✅【方案2】等待1秒让后端发送interrupted事件，然后再断开
+        // 如果立即断开，后端可能还没来得及发送interrupted事件
+        setTimeout(() => {
+          disconnect(true, true, () => {
+            console.log("[中断] SSE已断开，状态已同步");
+          });
+          console.log("[中断] 已调用 disconnect(true)");
+        }, 1000);
         
         // 显示后端返回的具体消息
         showTaskResultMessage("interrupt", result.message);
@@ -1873,11 +1880,11 @@ return prev;
         console.error("[中断] 错误:", error);
         showTaskControlMessage("interrupt", false, error instanceof Error ? error.message : String(error));
         
-        // ✅ 即使出错也要确保UI状态更新
+        // ✅ 即使出错也要确保UI状态更新，并延迟断开
         setLoading(false);
         setIsPaused(false);
         if (setIsReceiving) setIsReceiving(false);
-        disconnect(true);
+        setTimeout(() => disconnect(true), 1000);
       }
     } else {
       console.warn("[中断] 没有有效的 taskId，无法中断");
