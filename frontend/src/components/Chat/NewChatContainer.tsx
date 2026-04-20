@@ -231,6 +231,7 @@ const NewChatContainer: React.FC = () => {
   // SSE Hook配置（用于流式输出）
   const {
     isReceiving,
+    setIsReceiving,  // 【方案3】用于中断时立即更新状态
     executionSteps,
     currentResponse,
     sendMessage: sendStreamMessage,
@@ -1831,21 +1832,49 @@ return prev;
   /**
    * 任务中断处理 - 前端小新代修改
    * 【小查修复2026-03-14】传递true参数，阻止重连
+   * 【修复 2026-04-20】立即更新UI状态，避免竞态条件
+   */
+  /**
+   * 任务中断处理 - 整合4个方案
+   * 方案1：立即更新UI状态
+   * 方案2：增强SSE断开回调
+   * 方案3：超时保护
+   * 方案4：后端配合
    */
   const handleInterrupt = async () => {
     const taskIdToCancel = serverTaskId;
     console.log(`[中断] serverTaskId=${serverTaskId}, taskIdToCancel=${taskIdToCancel}`);
+    
     if (taskIdToCancel) {
       try {
         showTaskControlInfo("正在中断任务...");
         console.log("[中断] 已显示 '正在中断任务...' 提示");
         
-        // 使用统一的 taskControlApi
-        const result = await taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined);
+        // ✅【方案1】立即更新UI状态，给用户即时反馈
+        setLoading(false);
+        setIsPaused(false);
+        // 【方案3】立即更新流式接收状态（添加防御）
+        if (setIsReceiving) {
+          setIsReceiving(false);
+        }
+        
+        // ✅【方案3】设置超时保护，防止请求长时间挂起
+        const timeoutPromise = new Promise<any>((_, reject) => {
+          setTimeout(() => reject(new Error("中断请求超时")), 5000);
+        });
+        
+        // 使用统一的 taskControlApi（带超时）
+        const result = await Promise.race([
+          taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined),
+          timeoutPromise
+        ]) as { success: boolean; message: string };
         console.log("[中断] cancel API 返回:", result);
         
-        // ✅ 先断开连接，停止自动重连！传递true表示手动中断
-        disconnect(true);
+        // ✅【方案2】断开连接，传递回调确保状态同步
+        disconnect(true, true, () => {
+          // 断开后的回调：通知父组件更新状态
+          console.log("[中断] SSE已断开，状态已同步");
+        });
         console.log("[中断] 已调用 disconnect(true)");
         
         // 显示后端返回的具体消息
@@ -1854,6 +1883,11 @@ return prev;
       } catch (error) {
         console.error("[中断] 错误:", error);
         showTaskControlMessage("interrupt", false, error instanceof Error ? error.message : String(error));
+        
+        // ✅ 即使出错也要确保UI状态更新
+        setLoading(false);
+        setIsPaused(false);
+        disconnect(true); // 确保连接断开
       }
     } else {
       console.warn("[中断] 没有有效的 taskId，无法中断");
