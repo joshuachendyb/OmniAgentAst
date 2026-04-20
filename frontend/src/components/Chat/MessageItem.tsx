@@ -26,6 +26,7 @@ import {
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
 import { formatTimestamp } from "../../utils/timestamp";
+import { STEP_LABEL_MAP, STEP_ICON_MAP } from "./constants/stepConstants";
 import { DynamicStatusDisplay } from "../../utils/dynamicStatus";
 import { } from "../../utils/markdown";
 import ErrorDetail from "./ErrorDetail";
@@ -79,38 +80,11 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   // 【小资修复 2026-03-23】从全局Map读取展开状态（未设置的key默认展开）
   const isExpanded = expandedSteps.get(stepIndex) ?? true;
   
-  const labelMap: Record<string, string> = {
-    start: "开始",
-    thought: "思考",
-    action_tool: "执行",
-    observation: "观察",
-    final: "完成",
-    error: "错误",
-    paused: "暂停",
-    resumed: "恢复",
-    interrupted: "中断",
-    retrying: "重试",
-    incident: "事件",  // incident默认标签
-  };
-
-  const iconMap: Record<string, string> = {
-    start: "🚀",
-    thought: "💭",
-    action_tool: "⚙️",
-    observation: "📋",
-    final: "✅",
-    error: "❌",
-    paused: "⏸️",
-    resumed: "▶️",
-    interrupted: "⚠️",
-    retrying: "🔄",
-    incident: "⚡",  // incident默认图标
-  };
-
   // 【小沈修复 2026-03-28】处理incident类型：优先使用incident_value，否则用type
   const effectiveType = step.type === 'incident' ? (step as any).incident_value || 'incident' : step.type;
-  const label = labelMap[effectiveType] || labelMap[step.type] || "步骤";
-  const icon = iconMap[effectiveType] || iconMap[step.type] || "";
+  // 【2026-04-20优化】使用常量替代内联对象
+  const label = STEP_LABEL_MAP[effectiveType] || STEP_LABEL_MAP[step.type] || "步骤";
+  const icon = STEP_ICON_MAP[effectiveType] || STEP_ICON_MAP[step.type] || "";
 
   // 【小强修改2026-04-15】直接使用execution_result，不再兼容raw_data
   const executionResult = step.execution_result;
