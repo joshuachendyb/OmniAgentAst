@@ -208,6 +208,9 @@ const NewChatContainer: React.FC = () => {
     showStepsFalseDone: false,
     showStepsTrueDone: false,
   });
+  
+  // 中断事件标记
+  const hasReceivedInterruptEventRef = useRef(false);
 
   // P1级别优化：新增状态变量
   type SaveStatus = "idle" | "saving" | "saved" | "error";
@@ -245,6 +248,12 @@ const NewChatContainer: React.FC = () => {
     },
     // onStep - 收到执行步骤
     useCallback((step: ExecutionStep) => {
+      // 【中断检测】记录是否收到了interrupted事件
+      if (step.type === "interrupted" || (step.type === "incident" && (step as any).incident_value === "interrupted")) {
+        hasReceivedInterruptEventRef.current = true;
+        console.log("[中断] 收到 interrupted 事件");
+      }
+      
       // 【小沈修复 2026-04-16】在收到第一个步骤时重置暂停状态
       // 问题原因：如果 isPausedRef.current = true，所有步骤会存入 displayBufferRef 而不是 streamingStepsRef
       // 这发生在：1)用户先按暂停再创建新会话 2)从sessionStorage恢复暂停状态 3)后端发送paused事件
@@ -1832,60 +1841,115 @@ return prev;
   /**
    * 任务中断处理 - 前端小新代修改
    * 【小查修复2026-03-14】传递true参数，阻止重连
-   * 【修复 2026-04-20】立即更新UI状态，避免竞态条件
-   */
+* 【修复 2026-04-20】立即更新UI状态，避免竞态条件
+    * 【增强 2026-04-21】防重复点击保护
+    */
+  const interruptInProgressRef = useRef(false);
+  
   const handleInterrupt = async () => {
+    // 【防重复点击】如果正在中断中，忽略后续点击
+    if (interruptInProgressRef.current) {
+      console.log("[中断] 正在中断中，忽略重复点击");
+      return;
+    }
+    interruptInProgressRef.current = true;
+    
     const taskIdToCancel = serverTaskId;
     console.log(`[中断] serverTaskId=${serverTaskId}, taskIdToCancel=${taskIdToCancel}`);
     
-    if (taskIdToCancel) {
-      try {
-        showTaskControlInfo("正在中断任务...");
-        console.log("[中断] 已显示 '正在中断任务...' 提示");
-        
-        // ✅【方案1】立即更新UI状态，给用户即时反馈
-        setLoading(false);
-        setIsPaused(false);
-        if (setIsReceiving) setIsReceiving(false);
-        
-        // ✅【方案3】设置超时保护，防止请求长时间挂起
-        const timeoutPromise = new Promise<any>((_, reject) => {
-          setTimeout(() => reject(new Error("中断请求超时")), 5000);
-        });
-        
-        // ✅【关键修复】不立即断开连接！等待后端发送interrupted/final事件
-        // 如果后端正在处理，等它发送完事件后再断开
-        // 立即断开会导致收不到interrupted事件，UI一直显示"加载中"
-        
-        // 使用统一的 taskControlApi（带超时）
-        const result = await Promise.race([
-          taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined),
-          timeoutPromise
-        ]) as { success: boolean; message: string };
-        console.log("[中断] cancel API 返回:", result);
-        
-        // ✅【方案2】等待1秒让后端发送interrupted事件，然后再断开
-        // 如果立即断开，后端可能还没来得及发送interrupted事件
-        setTimeout(() => {
+    try {
+      if (taskIdToCancel) {
+        try {
+          showTaskControlInfo("正在中断任务...");
+          console.log("[中断] 已显示 '正在中断任务...' 提示");
+          
+          // ✅【方案1】立即更新UI状态，给用户即时反馈
+          setLoading(false);
+          setIsPaused(false);
+          if (setIsReceiving) setIsReceiving(false);
+          
+          // ✅【方案3】设置超时保护，防止请求长时间挂起
+          const timeoutPromise = new Promise<any>((_, reject) => {
+            setTimeout(() => reject(new Error("中断请求超时")), 5000);
+          });
+          
+          // ✅【关键修复】不立即断开连接！等待后端发送interrupted/final事件
+          // 如果后端正在处理，等它发送完事件后再断开
+          // 立即断开会导致收不到interrupted事件，UI一直显示"加载中"
+          
+          // 使用统一的 taskControlApi（带超时）
+          const result = await Promise.race([
+            taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined),
+            timeoutPromise
+          ]) as { success: boolean; message: string };
+          console.log("[中断] cancel API 返回:", result);
+          
+          // ✅【重试机制】等待后端发送interrupted事件，最多等待1.5秒
+          // 如果立即断开，后端可能还没来得及发送interrupted事件
+          let retries = 0;
+          while (retries < 3) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            // 检查是否收到了interrupted事件
+            if (hasReceivedInterruptEventRef.current) {
+              console.log("[中断] 已收到 interrupted 事件");
+              break;
+            }
+            retries++;
+            console.log("[中断] 等待 interrupted 事件... 重试", retries);
+          }
+          
+          // 重置中断事件标记，为下一次中断准备
+          hasReceivedInterruptEventRef.current = false;
+          
           disconnect(true, true, () => {
             console.log("[中断] SSE已断开，状态已同步");
           });
           console.log("[中断] 已调用 disconnect(true)");
-        }, 1000);
-        
-        // 显示后端返回的具体消息
-        showTaskResultMessage("interrupt", result.message);
-        console.log("[中断] 已显示中断成功提示");
-      } catch (error) {
-        console.error("[中断] 错误:", error);
-        showTaskControlMessage("interrupt", false, error instanceof Error ? error.message : String(error));
-        
-        // ✅ 即使出错也要确保UI状态更新，并延迟断开
-        setLoading(false);
-        setIsPaused(false);
-        if (setIsReceiving) setIsReceiving(false);
-        setTimeout(() => disconnect(true), 1000);
-      }
+          
+          // 显示后端返回的具体消息
+          showTaskResultMessage("interrupt", result.message);
+          console.log("[中断] 已显示中断成功提示");
+        } catch (error) {
+          console.error("[中断] 错误:", error);
+          
+          // 【增强错误处理】区分错误类型并给出明确提示
+          let errorMessage = "中断请求失败";
+          if (error instanceof Error) {
+            if (error.message.includes("timeout") || error.message.includes("超时")) {
+              errorMessage = "中断请求超时，任务可能仍在运行";
+            } else if (error.message.includes("Failed to fetch") || error.message.includes("Network")) {
+              errorMessage = "网络连接失败，请刷新页面重试";
+            } else {
+              errorMessage = error.message;
+            }
+          }
+          
+          showTaskControlMessage("interrupt", false, errorMessage);
+          
+          // ✅ 即使出错也要确保UI状态更新，并延迟断开
+          // 无论cancel API是否成功，都需要断开SSE连接
+          setLoading(false);
+          setIsPaused(false);
+          if (setIsReceiving) setIsReceiving(false);
+          
+          // 【重试机制】错误情况下也等待interrupted事件
+          let retries = 0;
+          while (retries < 3) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            if (hasReceivedInterruptEventRef.current) {
+              console.log("[中断] 异常情况下仍收到 interrupted 事件");
+              break;
+            }
+            retries++;
+          }
+          hasReceivedInterruptEventRef.current = false;
+          disconnect(true);
+          
+          console.log("[中断] 已处理异常，强制断开SSE连接");
+        } finally {
+          // 【防重复点击】重置中断标志（无论成功还是失败都重置）
+          interruptInProgressRef.current = false;
+        }
     } else {
       console.warn("[中断] 没有有效的 taskId，可能任务尚未开始");
       
@@ -1899,6 +1963,10 @@ return prev;
       
       // 显示提示
       showTaskResultMessage("interrupt", "任务尚未开始或已结束，请求已取消");
+    }
+    } finally {
+      // 兜底：确保中断标志重置
+      interruptInProgressRef.current = false;
     }
   };
 

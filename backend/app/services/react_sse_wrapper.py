@@ -441,7 +441,10 @@ async def generate_sse_stream(
                 async for event in agent.run_stream(task=last_message, context=None, max_steps=max_steps, task_id=task_id, running_tasks=running_tasks):
                     # 检查中断
                     async with running_tasks_lock:
-                        if running_tasks.get(task_id, {}).get("cancelled", False):
+                        is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
+                        logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
+                        if is_cancelled:
+                            logger.info(f"[InterruptCheck] 发送中断事件")
                             interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
                             logger.info(f"[Step incident] 发送incident步骤(interrupted)")
                             yield f"data: {json.dumps(interrupted_data)}\n\n"
@@ -620,6 +623,11 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
             task_info["cancelled"] = True
             task_info["status"] = "cancelled"
             task_info["interrupt_time"] = interrupt_time.isoformat()  # 【方案4】记录中断时间
+            
+            # 【日志增强】记录任务详细信息
+            logger.info(f"[TaskControl] 中断任务 {task_id}，当前状态: {task_info.get('status')}")
+            logger.info(f"[TaskControl] ai_service存在: {'ai_service' in task_info}")
+            logger.info(f"[TaskControl] 任务步骤: {task_info.get('current_step', 'unknown')}")
             
             # 【方案4】强制关闭HTTP连接
             if "ai_service" in task_info and task_info["ai_service"]:

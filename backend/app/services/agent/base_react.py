@@ -205,7 +205,9 @@ class BaseAgent(ABC):
                 # =====【中断检查】每次循环开始检查任务是否被取消 - 小欧-2026-04-21 =====
                 if task_id and running_tasks:
                     # 直接检查 cancelled 标志（非线程安全但可接受，因为只是检查布尔值）
-                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                    is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
+                    logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
+                    if is_cancelled:
                         logger.info(f"[Interrupt] 任务 {task_id} 被取消，发送 interrupted 事件")
                         # 使用 interrupted 类型，与 error 类型区分
                         yield {
@@ -377,7 +379,9 @@ class BaseAgent(ABC):
                 
                 # 【工具执行前中断检查】在执行工具前检查是否被中断
                 if task_id and running_tasks:
-                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                    is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
+                    logger.info(f"[InterruptCheck] 任务 {task_id} 工具执行前取消状态: {is_cancelled}")
+                    if is_cancelled:
                         logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行前中断")
                         yield {"type": "interrupted", "step": step_count, "message": "用户取消了任务"}
                         self._on_after_loop()
@@ -390,7 +394,9 @@ class BaseAgent(ABC):
                 
                 # 【工具执行后中断检查】在执行工具后检查是否被中断
                 if task_id and running_tasks:
-                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                    is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
+                    logger.info(f"[InterruptCheck] 任务 {task_id} 工具执行后取消状态: {is_cancelled}")
+                    if is_cancelled:
                         logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行后中断")
                         yield {"type": "interrupted", "step": step_count, "message": "用户取消了任务"}
                         self._on_after_loop()
