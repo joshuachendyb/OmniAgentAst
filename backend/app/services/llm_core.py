@@ -190,11 +190,11 @@ class BaseAIService:
                             stream_error_type="http_error")
                     return
                 
-                # 【问题2修复】使用wait_for定期检查，每5秒超时检查一次_cancelled标志
+                # 【问题2修复】使用wait_for定期检查，每1秒超时检查一次_cancelled标志
                 # 而不是等下一个token（可能30秒）
                 while True:
                     try:
-                        line = await asyncio.wait_for(response.aiter_lines().__anext__(), timeout=5.0)
+                        line = await asyncio.wait_for(response.aiter_lines().__anext__(), timeout=1.0)
                     except asyncio.TimeoutError:
                         # 超时了，检查取消标志
                         if self._cancelled:
@@ -493,10 +493,10 @@ class BaseAIService:
                     )
                     return
                 
-                # 【问题2修复】同样使用wait_for定期检查
+                # 【问题2修复】同样使用wait_for定期检查，每1秒超时
                 while True:
                     try:
-                        line = await asyncio.wait_for(response.aiter_lines().__anext__(), timeout=5.0)
+                        line = await asyncio.wait_for(response.aiter_lines().__anext__(), timeout=1.0)
                     except asyncio.TimeoutError:
                         if self._cancelled:
                             logger.info("[chat_with_tools_stream] Cancelled (5s timeout check)")

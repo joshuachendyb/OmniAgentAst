@@ -577,9 +577,16 @@ async def generate_sse_stream(
     finally:
         logger.info(f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {llm_call_count} ======")
         
+        # 清理任务：如果任务状态不是cancelled，则删除
+        # cancelled状态的任务由cancel_task保留记录
         async with running_tasks_lock:
             if task_id in running_tasks:
-                del running_tasks[task_id]
+                task_status = running_tasks[task_id].get("status")
+                if task_status != "cancelled":
+                    del running_tasks[task_id]
+                    logger.info(f"[Cleanup] 任务 {task_id} 正常完成，已清理")
+                else:
+                    logger.info(f"[Cleanup] 任务 {task_id} 已被中断，保留记录")
 
 
 # ============================================================
@@ -623,13 +630,14 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
                 except Exception as e:
                     logger.error(f"[Task Cancelled] 关闭HTTP连接失败: {e}")
             
-            # 【方案4】记录任务当前状态
-            current_step = task_info.get("current_step", "unknown")
-            logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为中断，当前步骤: {current_step}")
-            
             # 从 running_tasks 中移除任务（避免内存泄漏）
-            del running_tasks[task_id]
-            logger.info(f"[Task Cancelled] 任务 {task_id} 已从 running_tasks 中移除")
+            # 修改：不立即删除，设置为cancelled状态保留记录
+            # del running_tasks[task_id]  # 不要立即删除
+            # 改为设置状态为已取消，但保留记录
+            task_info["status"] = "cancelled"
+            task_info["cancelled"] = True
+            task_info["interrupt_time"] = interrupt_time.isoformat()
+            logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为cancelled，保留记录")
             
             # 返回更详细的状态信息
             return {

@@ -136,7 +136,9 @@ class BaseAgent(ABC):
         self,
         task: str,
         context: Optional[Dict[str, Any]] = None,
-        max_steps: int = 100
+        max_steps: int = 100,
+        task_id: Optional[str] = None,
+        running_tasks: Optional[Dict[str, Any]] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         ReAct 核心循环
@@ -199,6 +201,20 @@ class BaseAgent(ABC):
                     return
 
                 step_count += 1
+                
+                # =====【中断检查】每次循环开始检查任务是否被取消 - 小欧-2026-04-21 =====
+                if task_id and running_tasks:
+                    # 直接检查 cancelled 标志（非线程安全但可接受，因为只是检查布尔值）
+                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                        logger.info(f"[Interrupt] 任务 {task_id} 被取消，发送 interrupted 事件")
+                        # 使用 interrupted 类型，与 error 类型区分
+                        yield {
+                            "type": "interrupted",
+                            "step": step_count,
+                            "message": "用户取消了任务"
+                        }
+                        self._on_after_loop()
+                        return
                 
                 # ===== 调用LLM =====
                 self.status = AgentStatus.THINKING
@@ -358,10 +374,27 @@ class BaseAgent(ABC):
                 
                 # ========== Action 阶段 ==========
                 self.status = AgentStatus.EXECUTING
+                
+                # 【工具执行前中断检查】在执行工具前检查是否被中断
+                if task_id and running_tasks:
+                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                        logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行前中断")
+                        yield {"type": "interrupted", "step": step_count, "message": "用户取消了任务"}
+                        self._on_after_loop()
+                        return
+                
                 # 使用 perf_counter 计算工具执行耗时（高精度）
                 start_time = time.perf_counter()
                 execution_result = await self._execute_tool(tool_name, tool_params)
                 execution_time_ms = int((time.perf_counter() - start_time) * 1000)
+                
+                # 【工具执行后中断检查】在执行工具后检查是否被中断
+                if task_id and running_tasks:
+                    if running_tasks.get(task_id, {}).get("cancelled", False):
+                        logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行后中断")
+                        yield {"type": "interrupted", "step": step_count, "message": "用户取消了任务"}
+                        self._on_after_loop()
+                        return
                 
                 # 【步骤2.9】根据执行结果构建 action_tool
                 
