@@ -598,15 +598,23 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
     """
     中断指定的流式任务
     
+    【方案4改进】增强中断响应机制：
+    1. 立即设置cancelled状态
+    2. 强制关闭LLM HTTP连接
+    3. 返回详细的状态信息
+    
     Args:
         task_id: 任务ID
         session_id: 会话ID（可选，用于阻止重连）
     
     Returns:
-        {"success": bool, "message": str}
+        {"success": bool, "message": str, "task_status": str}
     """
+    # 【方案4】记录中断时间戳
+    interrupt_time = datetime.now()
+    
     if session_id:
-        interrupted_sessions[session_id] = datetime.now()
+        interrupted_sessions[session_id] = interrupt_time
         logger.info(f"[Session Interrupted] 会话 {session_id} 已标记为中断，5分钟内禁止重连")
     
     async with running_tasks_lock:
@@ -616,8 +624,9 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
             task_info = running_tasks[task_id]
             task_info["cancelled"] = True
             task_info["status"] = "cancelled"
+            task_info["interrupt_time"] = interrupt_time.isoformat()  # 【方案4】记录中断时间
             
-            # 强制关闭HTTP连接
+            # 【方案4】强制关闭HTTP连接
             if "ai_service" in task_info and task_info["ai_service"]:
                 ai_service = task_info["ai_service"]
                 try:
@@ -626,15 +635,28 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
                 except Exception as e:
                     logger.error(f"[Task Cancelled] 关闭HTTP连接失败: {e}")
             
-            logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为中断")
-            return {"success": True, "message": f"任务 {task_id} 已中断"}
+            # 【方案4】记录任务当前状态
+            current_step = task_info.get("current_step", "unknown")
+            logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为中断，当前步骤: {current_step}")
+            
+            # 【方案4】返回更详细的状态信息
+            return {
+                "success": True, 
+                "message": f"任务 {task_id} 已中断",
+                "task_status": "cancelled",
+                "interrupt_time": interrupt_time.isoformat()
+            }
         else:
             logger.warning(f"[TaskControl] 任务 {task_id} 不在running_tasks中，可能已结束")
     
     if session_id:
-        return {"success": True, "message": f"会话 {session_id} 已标记为中断（任务可能已完成）"}
+        return {
+            "success": True, 
+            "message": f"会话 {session_id} 已标记为中断（任务可能已完成）",
+            "task_status": "finished_or_not_found"
+        }
     
-    return {"success": False, "message": f"任务 {task_id} 不存在"}
+    return {"success": False, "message": f"任务 {task_id} 不存在", "task_status": "not_found"}
 
 
 async def pause_task(task_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:

@@ -194,10 +194,11 @@ export interface ReconnectConfig {
 export interface UseSSEReturn {
   isConnected: boolean;
   isReceiving: boolean;
+  setIsReceiving?: (value: boolean) => void;  // 【方案3】暴露setter用于中断时立即更新状态
   executionSteps: ExecutionStep[];
   currentResponse: string;
   sendMessage: (content: string, sessionId?: string) => void;
-  disconnect: (manualDisconnect?: boolean) => void;
+  disconnect: (manualDisconnect?: boolean, clearStorage?: boolean, onDisconnect?: () => void) => void;
   clearSteps: () => void;
   serverTaskId?: string | null;
   setServerTaskId?: (taskId: string | null) => void;
@@ -500,8 +501,9 @@ export const useSSE = (
    * 断开连接
    * @param manualDisconnect - 是否是手动中断（手动中断不允许重连）
    * @param clearStorage - 是否清空 sessionStorage（重连时设为 false，保留数据）
+   * @param onDisconnect - 断开后的回调函数【方案2增强】
    */
-  const disconnect = useCallback((manualDisconnect: boolean = false, clearStorage: boolean = true) => {
+  const disconnect = useCallback((manualDisconnect: boolean = false, clearStorage: boolean = true, onDisconnect?: () => void) => {
     // 清空 sessionStorage 备份（除非重连时明确指定不清空）
     if (clearStorage) {
       clearStepsFromStorage();
@@ -527,6 +529,11 @@ export const useSSE = (
       setTimeout(() => {
         reconnectConfigRef.current.enabled = true;
       }, 3000);
+    }
+    
+    // 【方案2新增】调用断开回调
+    if (onDisconnect) {
+      onDisconnect();
     }
   }, []);
 
@@ -798,6 +805,7 @@ export const useSSE = (
   return {
     isConnected,
     isReceiving,
+    setIsReceiving,  // 【方案3】暴露setter用于中断时立即更新状态
     executionSteps,
     currentResponse,
     sendMessage,
@@ -833,7 +841,7 @@ const processSSEData = (
     responseBufferRef: React.MutableRefObject<string>;
     setIsReceiving: React.Dispatch<React.SetStateAction<boolean>>;
     setIsConnected: React.Dispatch<React.SetStateAction<boolean>>;
-    disconnect: (manualDisconnect?: boolean) => void;
+    disconnect: (manualDisconnect?: boolean, clearStorage?: boolean, onDisconnect?: () => void) => void;
     setServerTaskId?: (taskId: string) => void;
   },
   _isProcessingRef: React.MutableRefObject<boolean>
