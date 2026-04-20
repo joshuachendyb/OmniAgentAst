@@ -40,11 +40,6 @@ import {
 } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
-import { securityApi } from "../../services/api";
-import DangerConfirmModal from "../DangerConfirmModal";
-import SecurityAlert from "../SecurityAlert";
-import { showSecurityNotification } from "../SecurityNotification";
-import { getRiskLevel } from "../../types/security";
 import { useSSE, ExecutionStep } from "../../utils/sse";
 import { handleError, handleApiError, handleSSEError, ErrorType } from "../../utils/errorHandler";
 
@@ -75,7 +70,6 @@ import {
   showNoActiveTaskWarning,
   showLoadRetryWarning,
   showLoadErrorWithKey,
-  showDangerCancelled,
   showNewSessionSuccess,
   showNewSessionRetryWarning,
   showNewSessionError,
@@ -132,8 +126,6 @@ const NewChatContainer: React.FC = () => {
   const currentSessionIdRef = useRef<string | null>(null);
   // 【小新第二修复 2026-03-02】用于同步跟踪消息数量，确保保存时能获取准确值
   const messagesCountRef = useRef<number>(0);
-  // 【小新第三修复 2026-03-02】用于同步存储pendingMessage，解决React闭包陷阱
-  const pendingMessageRef = useRef<Message | null>(null);
   // 【小查修复2026-03-14】添加messagesRef避免visibilitychange useEffect频繁重新注册
   const messagesRef = useRef<Message[]>([]);
   // 【小新修复 2026-03-16】保存用户消息ID，用于AI消息关联
@@ -206,18 +198,6 @@ const NewChatContainer: React.FC = () => {
   const [showExecution, setShowExecution] = useState(true);
   const [useStream, setUseStream] = useState(true); // 默认使用流式
 
-  // 安全检测v2.0状态
-  const [dangerModalVisible, setDangerModalVisible] = useState(false);
-  const [dangerCommand, setDangerCommand] = useState("");
-  const [dangerScore, setDangerScore] = useState(0);
-  const [dangerMessage, setDangerMessage] = useState("");
-  const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
-  const [_checkingDanger, setCheckingDanger] = useState(false);
-  const [blockedCommand, setBlockedCommand] = useState<{
-    command: string;
-    score: number;
-    message: string;
-  } | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   // 【小查修复】使用 ref 存储加载状态，避免触发 useEffect
   const isLoadingHistoryRef = useRef(false);
@@ -538,11 +518,8 @@ const NewChatContainer: React.FC = () => {
           }
           setWaitTime(0);
           setIsRetrying(false);
-           // 【小新第三修复 2026-03-02】清理ref和state
-           pendingMessageRef.current = null; // 同步清理
-           setPendingMessage(null); // 异步清理
            
-           // ⭐ 【小资优化 2026-04-13】使用累积的ref内容一次性更新
+          // ⭐ 【小资优化 2026-04-13】使用累积的ref内容一次性更新
            setMessages((prev) => {
              const lastMessage = prev[prev.length - 1];
 if (lastMessage && lastMessage.role === "assistant") {
@@ -1765,10 +1742,6 @@ return prev;
     }, 1000);
     clearSteps();
 
-    // 保存待发送消息到ref（同步）和state（异步）
-    pendingMessageRef.current = userMessage; // 同步更新，立即生效 ✅
-    setPendingMessage(userMessage);
-
     // 【小沈修复2026-03-03】在调用 /chat/stream 之前先保存用户消息
     // 这样即使AI响应失败，用户消息也不会丢失
     const currentSessionId = currentSessionIdRef.current || sessionId;
@@ -2001,109 +1974,17 @@ return prev;
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setBlockedCommand(null);
 
     // ========== 红色开始标志 ==========
     logUserSend(userMessage.content);
     // ==================================
 
-    // 安全检测v2.0
-    setCheckingDanger(true);
-    try {
-      const checkResult = await securityApi.checkCommand(userMessage.content);
-      setCheckingDanger(false);
-
-      if (!checkResult.success || !checkResult.data) {
-        console.warn("安全检测失败:", checkResult.error);
-        await executeStreamSend(userMessage);
-        return;
-      }
-
-      const { score, message: riskMessage } = checkResult.data;
-      const riskLevel = getRiskLevel(score);
-
-      switch (riskLevel.level) {
-        case "SAFE":
-          await executeStreamSend(userMessage);
-          break;
-        case "MEDIUM":
-          showSecurityNotification(userMessage.content, score, riskMessage);
-          await executeStreamSend(userMessage);
-          break;
-        case "HIGH":
-          setDangerCommand(userMessage.content);
-          setDangerScore(score);
-          setDangerMessage(riskMessage);
-          // 【小新第三修复 2026-03-02】同步更新ref
-          pendingMessageRef.current = userMessage;
-          setPendingMessage(userMessage);
-          setDangerModalVisible(true);
-          break;
-        case "CRITICAL":
-          setBlockedCommand({
-            command: userMessage.content,
-            score,
-            message: riskMessage,
-          });
-          setMessages((prev) =>
-            prev.filter((msg) => msg.id !== userMessage.id)
-          );
-          // 使用统一错误处理中心 - 危险操作拦截
-          handleError({ 
-            error_type: ErrorType.DANGEROUS_OPERATION,
-            message: "危险操作已被系统拦截"
-          }, { source: "api" });
-          break;
-        }
-      } catch (error) {
-        console.warn("安全检测异常:", error);
-        setCheckingDanger(false);
-        // 使用统一错误处理中心 - 安全服务降级
-        handleError({
-          error_type: ErrorType.SECURITY_SERVICE_DOWN,
-          message: "安全检测服务暂时不可用，将以普通模式发送消息"
-        }, { source: "api" });
-        await executeStreamSend(userMessage);
-      }
-    };
+    // 【小强 2026-04-20】移除前端安全检测，直接发送消息
+    // 安全检测完全由后端处理，后端返回error步骤时前端会正确显示
+    await executeStreamSend(userMessage);
+  };
 
   // ============================================================
-
-  /**
-   * 危险命令确认执行
-   */
-  const handleDangerConfirm = async () => {
-    // 【强制修复】立即关闭弹窗，重置loading状态
-    setDangerModalVisible(false);
-    setLoading(false);
-    
-    // 【小新第五修复 2026-03-02】优先使用ref中的pendingMessage，确保获取正确的值
-    const messageToProcess = pendingMessageRef.current || pendingMessage;
-    if (messageToProcess) {
-      await executeStreamSend(messageToProcess);
-    }
-  };
-
-  /**
-   * 危险命令取消执行
-   */
-  const handleDangerCancel = () => {
-    // 【强制修复】立即关闭弹窗，重置loading状态
-    setDangerModalVisible(false);
-    setLoading(false);
-    
-    // 【小新第五修复 2026-03-02】优先使用ref中的pendingMessage
-    const messageToCancel = pendingMessageRef.current || pendingMessage;
-    if (messageToCancel) {
-      setMessages((prev) =>
-        prev.filter((msg) => msg.id !== messageToCancel.id)
-      );
-      showDangerCancelled();
-    }
-    // 【小新第五修复 2026-03-02】同步清理ref和state
-    pendingMessageRef.current = null;
-    setPendingMessage(null);
-  };
 
   /**
    * 新建会话 - 内部实现，支持重试机制
@@ -2453,30 +2334,9 @@ return prev;
         isRetrying={isRetrying}
         waitTime={waitTime}
         useStream={useStream}
-        checkingDanger={_checkingDanger}
         onSend={handleSend}
         onInterrupt={handleInterrupt}
         onTogglePause={handleTogglePause}
-      />
-
-      {/* 被拦截的命令警告 */}
-      {blockedCommand && (
-        <SecurityAlert
-          command={blockedCommand.command}
-          score={blockedCommand.score}
-          message={blockedCommand.message}
-        />
-      )}
-
-      {/* 危险命令确认弹窗 */}
-      <DangerConfirmModal
-        visible={dangerModalVisible}
-        command={dangerCommand}
-        score={dangerScore}
-        message={dangerMessage}
-        onConfirm={handleDangerConfirm}
-        onCancel={handleDangerCancel}
-        loading={loading}
       />
     </Card>
   );

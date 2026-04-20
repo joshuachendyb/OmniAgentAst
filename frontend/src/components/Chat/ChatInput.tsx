@@ -27,7 +27,6 @@ interface ChatInputProps {
   isRetrying: boolean;
   waitTime: number;
   useStream: boolean;
-  checkingDanger: boolean;
   onSend: (value: string) => void;
   onInterrupt: () => void;
   onTogglePause: () => void;
@@ -48,7 +47,6 @@ const ChatInput: React.FC<ChatInputProps> = React.memo(({
   isRetrying,
   waitTime,
   useStream,
-  checkingDanger,
   onSend,
   onInterrupt,
   onTogglePause,
@@ -130,16 +128,12 @@ const ChatInput: React.FC<ChatInputProps> = React.memo(({
         type="primary"
         icon={<SendOutlined />}
         onClick={handleSend}
-        loading={loading || isReceiving || checkingDanger}
+        loading={loading || isReceiving}
         disabled={!hasText}
         block
         style={buttonStyle}
       >
-        {isReceiving
-          ? "接收中..."
-          : checkingDanger
-          ? "安全检查中..."
-          : "发送消息"}
+        {isReceiving ? "接收中..." : "发送消息"}
       </Button>
     </Space>
   );
@@ -154,7 +148,6 @@ ChatInput.propTypes = {
   isRetrying: PropTypes.bool.isRequired,
   waitTime: PropTypes.number.isRequired,
   useStream: PropTypes.bool.isRequired,
-  checkingDanger: PropTypes.bool.isRequired,
   onSend: PropTypes.func.isRequired,
   onInterrupt: PropTypes.func.isRequired,
   onTogglePause: PropTypes.func.isRequired,
