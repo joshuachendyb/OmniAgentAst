@@ -1,17 +1,14 @@
-import React from "react";
+import React, { memo, useMemo } from "react";
 
 interface ErrorDetailProps {
   errorType?: string;
-  // 【小沈修改2026-04-15】删除errorCode，统一使用errorMessage
   errorMessage?: string;
   errorTimestamp?: string;
-  // 【小沈修改2026-04-16】添加details和stack字段
   errorDetails?: string;
   errorStack?: string;
   errorRetryAfter?: number;
   model?: string;
   provider?: string;
-  // 【小沈添加2026-04-15】新增recoverable和context
   errorRecoverable?: boolean;
   errorContext?: {
     step?: number;
@@ -21,140 +18,205 @@ interface ErrorDetailProps {
   };
 }
 
-/**
- * 错误详情面板组件
- * 显示 error 类型的完整信息（11个字段）
- * @author 小新
- * @update 2026-03-14 美化排版，改为两列布局，增大字体
- * @date 2026-03-13
- */
-const ErrorDetail: React.FC<ErrorDetailProps> = ({
+// ========== Step 2: 外部颜色配置常量 ==========
+const ERROR_COLORS_MAP: Record<string, { background: string; border: string; color: string; icon: string; title: string }> = {
+  security_error: {
+    background: "rgba(255, 193, 7, 0.1)",
+    border: "rgba(255, 193, 7, 0.3)",
+    color: "#d48806",
+    icon: "⚠️",
+    title: "待确认",
+  },
+  agent: {
+    background: "rgba(24, 144, 255, 0.1)",
+    border: "rgba(24, 144, 255, 0.3)",
+    color: "#1890ff",
+    icon: "🤖",
+    title: "Agent错误",
+  },
+  network: {
+    background: "rgba(255, 77, 79, 0.08)",
+    border: "rgba(255, 77, 79, 0.2)",
+    color: "#cf1322",
+    icon: "🌐",
+    title: "网络错误",
+  },
+  validation: {
+    background: "rgba(255, 77, 79, 0.08)",
+    border: "rgba(255, 77, 79, 0.2)",
+    color: "#cf1322",
+    icon: "⚠️",
+    title: "参数错误",
+  },
+  file_system: {
+    background: "rgba(255, 77, 79, 0.08)",
+    border: "rgba(255, 77, 79, 0.2)",
+    color: "#cf1322",
+    icon: "📁",
+    title: "文件错误",
+  },
+  security: {
+    background: "rgba(255, 77, 79, 0.08)",
+    border: "rgba(255, 77, 79, 0.2)",
+    color: "#cf1322",
+    icon: "🔒",
+    title: "权限错误",
+  },
+  unknown: {
+    background: "rgba(255, 77, 79, 0.08)",
+    border: "rgba(255, 77, 79, 0.2)",
+    color: "#cf1322",
+    icon: "❓",
+    title: "未知错误",
+  },
+  default: {
+    background: "rgba(255, 77, 79, 0.08)",
+    border: "rgba(255, 77, 79, 0.2)",
+    color: "#cf1322",
+    icon: "❌",
+    title: "错误详情",
+  },
+};
+
+// ========== Step 3: 外部类型标签映射常量 ==========
+const ERROR_TYPE_LABELS: Record<string, string> = {
+  empty_response: "空响应",
+  timeout: "请求超时",
+  network_error: "网络错误",
+  server_error: "服务器错误",
+  rate_limit: "速率限制",
+  authentication_error: "认证失败",
+  authorization_error: "权限不足",
+  validation_error: "参数错误",
+  not_found: "资源不存在",
+  internal_error: "内部错误",
+};
+
+// ========== Step 4: 合并内联style常量 ==========
+const containerStyle: React.CSSProperties = {
+  marginTop: 12,
+  padding: "16px",
+  borderRadius: 8,
+  fontSize: "14px",
+};
+
+const headerStyle: React.CSSProperties = {
+  fontWeight: 600,
+  marginBottom: 12,
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  fontSize: "15px",
+  paddingBottom: 8,
+};
+
+const messageStyle: React.CSSProperties = {
+  marginBottom: 8,
+  fontWeight: 500,
+  fontSize: "14px",
+};
+
+const gridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(2, 1fr)",
+  gap: "8px 16px",
+};
+
+const labelStyle: React.CSSProperties = {
+  color: "#888",
+  whiteSpace: "nowrap",
+  fontSize: "13px",
+};
+
+const valueStyle: React.CSSProperties = {
+  color: "#666",
+  fontSize: "13px",
+};
+
+const codeBlockStyle: React.CSSProperties = {
+  padding: "2px 8px",
+  borderRadius: 4,
+  fontSize: "13px",
+  fontWeight: 500,
+};
+
+const contextBoxStyle: React.CSSProperties = {
+  marginTop: 8,
+  padding: "8px 12px",
+  background: "rgba(255, 255, 255, 0.3)",
+  borderRadius: 6,
+};
+
+const detailsBoxStyle: React.CSSProperties = {
+  color: "#888",
+  fontSize: "12px",
+  marginBottom: 4,
+};
+
+const contentBoxStyle: React.CSSProperties = {
+  color: "#666",
+  fontSize: "13px",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-all",
+};
+
+const stackPreStyle: React.CSSProperties = {
+  margin: "8px 0 0 0",
+  padding: "8px 12px",
+  background: "rgba(0, 0, 0, 0.03)",
+  borderRadius: 6,
+  color: "#888",
+  fontSize: "12px",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-all",
+  maxHeight: "150px",
+  overflow: "auto",
+};
+
+// ========== Step 1 + Step 5: 组件使用 memo + useMemo ==========
+const ErrorDetail: React.FC<ErrorDetailProps> = memo(({
   errorType,
-  // 【小沈修改2026-04-15】删除errorCode
   errorMessage,
   errorTimestamp,
-  // 【小沈修改2026-04-16】添加details和stack字段
   errorDetails,
   errorStack,
   errorRetryAfter,
   model,
   provider,
-  // 【小沈添加2026-04-15】新增recoverable和context
   errorRecoverable,
   errorContext,
 }) => {
-  // 根据error_type显示不同颜色
-  const getColors = () => {
-    switch (errorType) {
-      case "security_error":
-        return {
-          background: "rgba(255, 193, 7, 0.1)",
-          border: "rgba(255, 193, 7, 0.3)",
-          color: "#d48806",
-          icon: "⚠️",
-          title: "待确认",
-        };
-      case "agent":
-        return {
-          background: "rgba(24, 144, 255, 0.1)",
-          border: "rgba(24, 144, 255, 0.3)",
-          color: "#1890ff",
-          icon: "🤖",
-          title: "Agent错误",
-        };
-      case "network":
-        return {
-          background: "rgba(255, 77, 79, 0.08)",
-          border: "rgba(255, 77, 79, 0.2)",
-          color: "#cf1322",
-          icon: "🌐",
-          title: "网络错误",
-        };
-      case "validation":
-        return {
-          background: "rgba(255, 77, 79, 0.08)",
-          border: "rgba(255, 77, 79, 0.2)",
-          color: "#cf1322",
-          icon: "⚠️",
-          title: "参数错误",
-        };
-      case "file_system":
-        return {
-          background: "rgba(255, 77, 79, 0.08)",
-          border: "rgba(255, 77, 79, 0.2)",
-          color: "#cf1322",
-          icon: "📁",
-          title: "文件错误",
-        };
-      case "security":
-        return {
-          background: "rgba(255, 77, 79, 0.08)",
-          border: "rgba(255, 77, 79, 0.2)",
-          color: "#cf1322",
-          icon: "🔒",
-          title: "权限错误",
-        };
-      case "unknown":
-        return {
-          background: "rgba(255, 77, 79, 0.08)",
-          border: "rgba(255, 77, 79, 0.2)",
-          color: "#cf1322",
-          icon: "❓",
-          title: "未知错误",
-        };
-      default:
-        return {
-          background: "rgba(255, 77, 79, 0.08)",
-          border: "rgba(255, 77, 79, 0.2)",
-          color: "#cf1322",
-          icon: "❌",
-          title: "错误详情",
-        };
-    }
-  };
-
-  const colors = getColors();
+  // 使用 useMemo 缓存颜色配置
+  const colors = useMemo(() => {
+    return ERROR_COLORS_MAP[errorType || ""] || ERROR_COLORS_MAP.default;
+  }, [errorType]);
 
   // 格式化错误类型显示
   const formatErrorType = (type?: string) => {
-    const typeMap: Record<string, string> = {
-      "empty_response": "空响应",
-      "timeout": "请求超时",
-      "network_error": "网络错误",
-      "server_error": "服务器错误",
-      "rate_limit": "速率限制",
-      "authentication_error": "认证失败",
-      "authorization_error": "权限不足",
-      "validation_error": "参数错误",
-      "not_found": "资源不存在",
-      "internal_error": "内部错误",
-    };
-    return typeMap[type || ""] || type || "未知";
+    return ERROR_TYPE_LABELS[type || ""] || type || "未知";
   };
+
+  // 动态code背景色
+  const codeBackground = errorType === "security_error"
+    ? "rgba(255, 193, 7, 0.2)"
+    : errorType === "agent"
+    ? "rgba(24, 144, 255, 0.2)"
+    : "rgba(255, 77, 79, 0.15)";
 
   return (
     <div
       style={{
-        marginTop: 12,
-        padding: "16px",
+        ...containerStyle,
         background: colors.background,
-        borderRadius: 8,
         border: `1px solid ${colors.border}`,
-        fontSize: "14px", // 【小新修改】增大字体
         color: colors.color,
       }}
     >
       {/* 错误类型标题 */}
       <div
         style={{
-          fontWeight: 600,
-          marginBottom: 12,
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          fontSize: "15px", // 【小新修改】标题更大
+          ...headerStyle,
           borderBottom: `1px solid ${colors.border}`,
-          paddingBottom: 8,
         }}
       >
         <span>{colors.icon}</span>
@@ -163,42 +225,21 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
 
       {/* 错误消息 - 简化显示 */}
       {errorMessage && (
-        <div
-          style={{
-            marginBottom: 8,
-            fontWeight: 500,
-            color: colors.color,
-            fontSize: "14px",
-          }}
-        >
+        <div style={{ ...messageStyle, color: colors.color }}>
           {errorMessage}
         </div>
       )}
 
       {/* 两列布局的错误信息 */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(2, 1fr)",
-          gap: "8px 16px",
-        }}
-      >
+      <div style={gridStyle}>
         {/* 类型 */}
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ color: "#888", whiteSpace: "nowrap", fontSize: "13px" }}>类型:</span>
+          <span style={labelStyle}>类型:</span>
           <code
             style={{
-              background:
-                errorType === "security_error"
-                  ? "rgba(255, 193, 7, 0.2)"
-                  : errorType === "agent"
-                  ? "rgba(24, 144, 255, 0.2)"
-                  : "rgba(255, 77, 79, 0.15)",
-              padding: "2px 8px",
-              borderRadius: 4,
-              fontSize: "13px",
+              ...codeBlockStyle,
+              background: codeBackground,
               color: colors.color,
-              fontWeight: 500,
             }}
           >
             {formatErrorType(errorType)}
@@ -208,8 +249,8 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
         {/* 时间 */}
         {errorTimestamp && (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ color: "#888", whiteSpace: "nowrap", fontSize: "13px" }}>时间:</span>
-            <span style={{ color: "#666", fontSize: "13px" }}>
+            <span style={labelStyle}>时间:</span>
+            <span style={valueStyle}>
               {new Date(errorTimestamp).toLocaleString("zh-CN")}
             </span>
           </div>
@@ -218,22 +259,21 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
         {/* 来源 */}
         {(model || provider) && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, gridColumn: "span 2" }}>
-            <span style={{ color: "#888", whiteSpace: "nowrap", fontSize: "13px" }}>来源:</span>
-            <span style={{ color: "#666", fontSize: "13px" }}>
-              {provider && model 
+            <span style={labelStyle}>来源:</span>
+            <span style={valueStyle}>
+              {provider && model
                 ? `${provider} (${model})`
-                : provider 
-                  ? provider 
-                  : model
-              }
+                : provider
+                ? provider
+                : model}
             </span>
           </div>
         )}
 
-        {/* 【小沈添加2026-04-15】显示recoverable字段（替代后端已删除的retryable） */}
+        {/* 显示recoverable字段 */}
         {errorRecoverable !== undefined && (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ color: "#888", whiteSpace: "nowrap", fontSize: "13px" }}>可恢复:</span>
+            <span style={labelStyle}>可恢复:</span>
             <span style={{ color: errorRecoverable ? "#52c41a" : "#999", fontSize: "13px", fontWeight: 500 }}>
               {errorRecoverable ? "是" : "否"}
               {errorRecoverable && errorRetryAfter !== undefined && (
@@ -244,49 +284,39 @@ const ErrorDetail: React.FC<ErrorDetailProps> = ({
             </span>
           </div>
         )}
-        {/* 【小沈添加2026-04-15】显示context字段 */}
+
+        {/* 显示context字段 */}
         {errorContext && (
-          <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(255, 255, 255, 0.3)", borderRadius: 6 }}>
-            <div style={{ color: "#888", fontSize: "12px", marginBottom: 4 }}>上下文:</div>
-            {errorContext.step && <div style={{ color: "#666", fontSize: "13px" }}>步骤: {errorContext.step}</div>}
-            {errorContext.model && <div style={{ color: "#666", fontSize: "13px" }}>模型: {errorContext.model}</div>}
-            {errorContext.provider && <div style={{ color: "#666", fontSize: "13px" }}>提供商: {errorContext.provider}</div>}
+          <div style={{ ...contextBoxStyle, gridColumn: "span 2" }}>
+            <div style={detailsBoxStyle}>上下文:</div>
+            {errorContext.step && <div style={contentBoxStyle}>步骤: {errorContext.step}</div>}
+            {errorContext.model && <div style={contentBoxStyle}>模型: {errorContext.model}</div>}
+            {errorContext.provider && <div style={contentBoxStyle}>提供商: {errorContext.provider}</div>}
           </div>
         )}
-        {/* 【小沈添加2026-04-16】显示details字段 */}
+
+        {/* 显示details字段 */}
         {errorDetails && (
-          <div style={{ marginTop: 8, padding: "8px 12px", background: "rgba(255, 255, 255, 0.3)", borderRadius: 6 }}>
-            <div style={{ color: "#888", fontSize: "12px", marginBottom: 4 }}>详情:</div>
-            <div style={{ color: "#666", fontSize: "13px", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
-              {errorDetails}
-            </div>
+          <div style={{ ...contextBoxStyle, gridColumn: "span 2" }}>
+            <div style={detailsBoxStyle}>详情:</div>
+            <div style={contentBoxStyle}>{errorDetails}</div>
           </div>
         )}
-        {/* 【小沈添加2026-04-16】显示stack字段（折叠显示） */}
+
+        {/* 显示stack字段（折叠显示） */}
         {errorStack && (
-          <details style={{ marginTop: 8 }}>
+          <details style={{ marginTop: 8, gridColumn: "span 2" }}>
             <summary style={{ color: "#888", fontSize: "13px", cursor: "pointer" }}>
               查看堆栈信息
             </summary>
-            <pre style={{
-              margin: "8px 0 0 0",
-              padding: "8px 12px",
-              background: "rgba(0, 0, 0, 0.03)",
-              borderRadius: 6,
-              color: "#888",
-              fontSize: "12px",
-              whiteSpace: "pre-wrap",
-              wordBreak: "break-all",
-              maxHeight: "150px",
-              overflow: "auto"
-            }}>
-              {errorStack}
-            </pre>
+            <pre style={stackPreStyle}>{errorStack}</pre>
           </details>
         )}
       </div>
     </div>
   );
-};
+});
+
+ErrorDetail.displayName = "ErrorDetail";
 
 export default ErrorDetail;

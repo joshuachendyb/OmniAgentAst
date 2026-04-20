@@ -1,3 +1,91 @@
+v0.9.9.4
+
+更新时间: 2026-04-20 20:31:51
+
+更新内容：
+
+## 1 ErrorDetail组件渲染性能优化 - 小强-2026-04-20
+
+### 1.1 优化内容
+
+- 添加React.memo防止不必要渲染
+- 提取颜色配置为外部常量ERROR_COLORS_MAP
+- 提取类型标签为外部常量ERROR_TYPE_LABELS
+- 合并10+个内联style为9个常量
+- 使用useMemo缓存颜色配置
+
+### 1.2 测试验证
+
+- 新增ErrorDetail.test.tsx，19个测试全部通过
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 待提交 | feat: ErrorDetail组件渲染性能优化 - 小强-2026-04-20 |
+
+参与开发：小强（优化实施）+ 小健（代码审查）
+
+---
+
+v0.9.9.3
+
+更新时间: 2026-04-20 19:08:25
+
+更新内容：
+
+## 1 CRSS评分系统v2改进-意图检测修复 - 小沈-2026-04-20
+
+### 1.1 实施方案1-5完成
+
+| 方案 | 功能 | 说明 |
+|------|------|------|
+| 方案1 | parse_operation_target_v2 + calculate_pattern_confidence | ✅ 完成 |
+| 方案2 | parse_operation_type_v2 | ✅ 完成 |
+| 方案3 | calculate_risk_score_v2 | ✅ 完成 |
+| 方案4 | CommandParser命令语义解析器 | ✅ 完成 |
+| 方案5 | CRSS评分可解释性 | ✅ 完成 |
+
+### 1.2 意图识别不稳定问题修复
+
+**问题根因**：意图分类器使用LLM(deepseek-v3.1)，切换AI模型时导致同一条输入识别结果不稳定
+
+**解决方案**：用CRSS规则替代LLM意图检测，新增`detect_intent_from_crss`函数
+
+### 1.3 Error步骤增强
+
+- error step的context中包含完整CRSS评分报告：risk_score、risk_level、analysis、matched_rule、suggestions
+
+### 1.4 边界情况修复
+
+- parse_operation_type_v2添加None检查
+- parse_operation_target_v2添加None检查
+- parse_impact_scope添加None检查
+- calculate_risk_score_v2返回完整结构
+
+### 1.5 代码重构
+
+- 重命名shell_security.py为command_security.py
+- 拆分v2函数到command_parser/目录独立文件
+
+### 1.6 测试验证
+
+- 新增CRSS意图检测测试用例16个，全部通过
+
+### 1.7 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 0981408f | test: 新增CRSS意图检测测试用例16个 - 小沈-2026-04-20 |
+| adb0a46c | refactor: 用CRSS规则替代LLM意图检测 - 小沈-2026-04-20 |
+| 4d0e5efc | fix: 完善CRSS评分报告结构，增加分析和建议 - 小沈-2026-04-20 |
+| 67681c8f | fix: error step添加完整CRSS评分信息到context - 小沈-2026-04-20 |
+| 7cb6962d | fix: 添加CRSS边界情况空值处理 - 小健-2026-04-20 |
+
+参与开发：小沈（分析+实施+测试）+ 小健（代码审查）
+
+---
+
 v0.9.9.2
 
 更新时间: 2026-04-20 15:16:49
