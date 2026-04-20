@@ -33,7 +33,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 from app.services import AIServiceFactory
 from app.services.llm_core import Message
-from app.services.shell_security import check_command_safety
+from app.services.command_security import check_command_safety
 from app.config import get_config
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name

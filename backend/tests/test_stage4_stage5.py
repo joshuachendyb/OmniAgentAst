@@ -274,7 +274,7 @@ class TestChatRouterSixSteps:
     @pytest.mark.asyncio
     async def test_route_step4_security_check(self):
         """TS5-009: 测试步骤4 - 安全检测"""
-        from app.services.shell_security import check_command_safety
+        from app.services.command_security import check_command_safety
         
         # 测试安全检查函数
         result = check_command_safety("安全的命令")

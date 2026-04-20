@@ -212,7 +212,7 @@ class ChatRouter:
         running_tasks_lock = asyncio.Lock()
         
         # ===== 步骤4: 安全检测 =====
-        from app.services.shell_security import check_command_safety
+        from app.services.command_security import check_command_safety
         security_check_result = check_command_safety(user_input)
         
         # 如果被阻止，记录警告但继续执行
