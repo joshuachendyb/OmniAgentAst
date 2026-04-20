@@ -231,6 +231,7 @@ const NewChatContainer: React.FC = () => {
   // SSE Hook配置（用于流式输出）
   const {
     isReceiving,
+    setIsReceiving,
     executionSteps,
     currentResponse,
     sendMessage: sendStreamMessage,
@@ -1842,16 +1843,27 @@ return prev;
         showTaskControlInfo("正在中断任务...");
         console.log("[中断] 已显示 '正在中断任务...' 提示");
         
-        // ✅【关键修复】立即更新UI状态，给用户即时反馈
+        // ✅【方案1】立即更新UI状态，给用户即时反馈
         setLoading(false);
         setIsPaused(false);
+        if (setIsReceiving) setIsReceiving(false);
         
-        // 使用统一的 taskControlApi
-        const result = await taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined);
+        // ✅【方案3】设置超时保护，防止请求长时间挂起
+        const timeoutPromise = new Promise<any>((_, reject) => {
+          setTimeout(() => reject(new Error("中断请求超时")), 5000);
+        });
+        
+        // 使用统一的 taskControlApi（带超时）
+        const result = await Promise.race([
+          taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined),
+          timeoutPromise
+        ]) as { success: boolean; message: string };
         console.log("[中断] cancel API 返回:", result);
         
-        // ✅ 立即断开连接，停止自动重连
-        disconnect(true);
+        // ✅【方案2】断开连接，传递回调确保状态同步
+        disconnect(true, true, () => {
+          console.log("[中断] SSE已断开，状态已同步");
+        });
         console.log("[中断] 已调用 disconnect(true)");
         
         // 显示后端返回的具体消息
@@ -1861,10 +1873,11 @@ return prev;
         console.error("[中断] 错误:", error);
         showTaskControlMessage("interrupt", false, error instanceof Error ? error.message : String(error));
         
-        // ✅【关键修复】即使API调用失败，也要确保UI状态更新
+        // ✅ 即使出错也要确保UI状态更新
         setLoading(false);
         setIsPaused(false);
-        disconnect(true); // 确保连接断开
+        if (setIsReceiving) setIsReceiving(false);
+        disconnect(true);
       }
     } else {
       console.warn("[中断] 没有有效的 taskId，无法中断");
