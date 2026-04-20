@@ -1,3 +1,40 @@
+v0.9.9.1
+
+更新时间: 2026-04-20 08:30:00
+
+更新内容：
+
+## 1 CRSS评分系统v2改进方案实施 - 小沈-2026-04-20
+
+### 1.1 实施方案1-3完成
+
+| 阶段 | 功能 | 实现状态 |
+|------|------|---------|
+| 阶段一(4.2) | parse_operation_target_v2 + calculate_pattern_confidence | ✅ 完成 |
+| 阶段二(4.3) | parse_operation_type_v2 | ✅ 完成 |
+| 阶段三(4.4) | calculate_risk_score_v2 | ✅ 完成 |
+| 阶段四(4.5) | 替换旧函数 calculate_risk_score | ✅ 完成 |
+
+### 1.2 主要改进
+
+- 新增操作目标解析函数 parse_operation_target_v2
+- 新增模式置信度计算函数 calculate_pattern_confidence  
+- 新增操作类型解析函数 parse_operation_type_v2（支持中文）
+- 新增风险评分计算函数 calculate_risk_score_v2
+- 添加COPY和MOVE操作类型支持中文"复制""移动"识别
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 767195f4 | feat: implement CRSS评分系统v2改进方案 - 小沈-2026-04-20 |
+| 541fc239 | fix: 修正negation_words否定词表 - 小沈-2026-04-20 |
+| cf79fd1f | fix: file_tools.py驱动器根路径验证bug-支持E盘等-小沈-2026-04-20 |
+
+参与开发：小沈（分析+实施+测试）
+
+---
+
 v0.9.9.0
 
 更新时间: 2026-04-20 05:21:19

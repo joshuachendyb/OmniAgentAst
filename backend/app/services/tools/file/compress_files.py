@@ -198,26 +198,18 @@ async def compress_files_impl(
                                     compressed_files.append(str(file_path))
                 
                 elif format == "tar.gz":
-                    # 创建tar.gz文件
-                    # 先创建tar文件
-                    tar_path = destination.with_suffix('.tar')
-                    
-                    # 创建tar文件
-                    with tarfile.open(tar_path, 'w') as tf:
+                    # 创建tar.gz文件 - 修复: 直接使用tar.gz模式
+                    with tarfile.open(destination, 'w:gz') as tf:
                         if source.is_file():
                             tf.add(source, source.name)
                             compressed_files.append(str(source))
                         else:
-                            tf.add(source, source.name)
-                            compressed_files.append(str(source))
-                    
-                    # 使用gzip压缩
-                    with open(tar_path, 'rb') as f_in:
-                        with gzip.open(destination, 'wb', compresslevel=compression_level) as f_out:
-                            shutil.copyfileobj(f_in, f_out)
-                    
-                    # 删除临时tar文件
-                    tar_path.unlink()
+                            # 压缩目录时排除根目录本身
+                            for file_path in source.rglob("*"):
+                                if file_path.is_file():
+                                    arcname = file_path.relative_to(source.parent)
+                                    tf.add(file_path, arcname)
+                                    compressed_files.append(str(file_path))
                 
                 # 计算压缩后大小
                 compressed_size = destination.stat().st_size

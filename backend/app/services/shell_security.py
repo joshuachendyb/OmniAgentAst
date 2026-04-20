@@ -90,6 +90,7 @@ def get_security_config() -> dict:
 
 # ============================================================
 # 配置加载函数（支持YAML配置文件）
+# 【废弃】2026-04-20 当前未使用，预留给未来版本
 # ============================================================
 
 def load_dangerous_commands_from_config(config_path: Optional[str] = None) -> Dict[str, List[str]]:
@@ -697,12 +698,16 @@ def get_command_risk_level(command: str) -> str:
 
 # ============================================================
 # CRSS评分系统解析函数 (设计文档v1.1)
+# 【废弃】2026-04-20 已由v2版本替代：
+# - parse_operation_type → parse_operation_type_v2
+# - parse_operation_target → parse_operation_target_v2
 # ============================================================
 
 def parse_operation_type(command: str) -> str:
     """
     解析操作类型
     
+    【废弃】2026-04-20 已由 parse_operation_type_v2 替代
     按优先级检查：DELETE > EXEC > UPDATE > CREATE > READ
     避免 READ 的通用关键词（如dir）误匹配其他操作
     
@@ -819,6 +824,8 @@ def parse_operation_type_v2(command: str) -> tuple:
 def parse_operation_target(command: str) -> str:
     """
     解析操作对象类型
+    
+    【废弃】2026-04-20 已由 parse_operation_target_v2 替代
     
     Args:
         command: 待解析的命令
