@@ -26,6 +26,7 @@ import {
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
 import { formatTimestamp } from "../../utils/timestamp";
+import { formatTime, formatRelativeTime } from "../../utils/timeFormatters";
 import { STEP_LABEL_MAP, STEP_ICON_MAP } from "./constants/stepConstants";
 import { DynamicStatusDisplay } from "../../utils/dynamicStatus";
 import { } from "../../utils/markdown";
@@ -1083,56 +1084,7 @@ const MessageItem = memo(({
     }
   };
 
-  /**
-   * 格式化时间戳
-   */
-  const formatTime = (date: Date | string) => {
-    try {
-      // 确保转换为Date对象
-      const dateObj = date instanceof Date ? date : new Date(date);
-
-      // 检查是否有效日期
-      if (isNaN(dateObj.getTime())) {
-        return "刚刚";
-      }
-
-      return dateObj.toLocaleTimeString("zh-CN", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch (error) {
-      return "刚刚";
-    }
-  };
-  
-  /**
-   * 格式化相对时间
-   */
-  const getRelativeTime = (date: Date | string) => {
-    try {
-      // 确保转换为Date对象
-      const dateObj = date instanceof Date ? date : new Date(date);
-
-      // 检查是否有效日期
-      if (isNaN(dateObj.getTime())) {
-        return "刚刚";
-      }
-
-      const now = new Date();
-      const diff = now.getTime() - dateObj.getTime();
-      const minutes = Math.floor(diff / 60000);
-
-      if (minutes < 1) return "刚刚";
-      if (minutes < 60) return `${minutes}分钟前`;
-      const hours = Math.floor(minutes / 60);
-      if (hours < 24) return `${hours}小时前`;
-      return dateObj.toLocaleDateString("zh-CN");
-    } catch (error) {
-      return "刚刚";
-    }
-  };
-
-const isUser = message.role === "user";
+  const isUser = message.role === "user";
   const isSystem = message.role === "system";
 
   return (
@@ -1194,7 +1146,7 @@ const isUser = message.role === "user";
               }}
             >
               <Tooltip title={formatTime(message.timestamp)}>
-                <span>{getRelativeTime(message.timestamp)}</span>
+                <span>{formatRelativeTime(message.timestamp)}</span>
               </Tooltip>
             </span>
           </div>
