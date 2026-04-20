@@ -661,6 +661,9 @@ async def pause_task(task_id: str, session_id: Optional[str] = None) -> Dict[str
     
     async with running_tasks_lock:
         if task_id in running_tasks:
+            # 如果任务已被中断，不能暂停
+            if running_tasks[task_id].get("cancelled", False):
+                return {"success": False, "message": f"任务 {task_id} 已被中断，无法暂停"}
             running_tasks[task_id]["paused"] = True
             running_tasks[task_id]["status"] = "paused"
             logger.info(f"[Pause] 任务 {task_id} 已暂停")
@@ -684,6 +687,12 @@ async def resume_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
     
     async with running_tasks_lock:
         if task_id in running_tasks:
+            # 如果任务已被中断，不能恢复
+            if running_tasks[task_id].get("cancelled", False):
+                return {"success": False, "message": f"任务 {task_id} 已被中断，无法恢复"}
+            # 如果任务没有暂停，不能恢复
+            if not running_tasks[task_id].get("paused", False):
+                return {"success": False, "message": f"任务 {task_id} 未暂停，无法恢复"}
             running_tasks[task_id]["paused"] = False
             running_tasks[task_id]["status"] = "running"
             logger.info(f"[Resume] 任务 {task_id} 已继续")
