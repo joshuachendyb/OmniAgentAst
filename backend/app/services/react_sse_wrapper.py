@@ -346,13 +346,40 @@ async def generate_sse_stream(
         
         logger.info(f"[Step error] 发送error步骤(安全检测拦截), level={risk_level}, blocked={blocked}")
         
-        # 构建完整的CRSS评分信息到context
+        # 获取详细的CRSS评分信息
+        from app.services.command_security import calculate_risk_score_v2
+        risk_detail = calculate_risk_score_v2(last_message)
+        
+        # 构建专业的CRSS评分报告
+        risk_level_text = {
+            "safe": "安全",
+            "low": "低风险",
+            "medium": "中等风险",
+            "high": "高风险",
+            "critical": "极高风险"
+        }.get(risk_level, "未知")
+        
+        action_text = "已拦截" if blocked else ("需确认" if is_need_confirm else "警告")
+        
+        # 构建专业的安全评估报告
         security_context = {
-            "risk_level": risk_level,
-            "blocked": blocked,
-            "is_need_confirm": is_need_confirm,
-            "rule_matched": security_check_result.get('rule_matched'),
-            "command": last_message,
+            "crss_report": {
+                "risk_score": risk_detail.get('score', 0),
+                "risk_level": risk_level,
+                "risk_level_text": f"[{risk_level_text}]",
+                "action_required": action_text,
+                "is_safe": security_check_result.get('is_safe', True),
+                "is_blocked": blocked,
+                "need_confirmation": is_need_confirm,
+            },
+            "analysis": {
+                "operation_type": risk_detail.get('details', {}).get('operation_type', 'UNKNOWN'),
+                "operation_target": risk_detail.get('details', {}).get('target', 'UNKNOWN'),
+                "impact_scope": risk_detail.get('details', {}).get('scope', 'UNKNOWN'),
+            },
+            "matched_rule": security_check_result.get('rule_matched'),
+            "original_command": last_message,
+            "suggestions": risk_detail.get('suggestions', []),
         }
         
         error_step_obj = StepFactory.create_error_step(
