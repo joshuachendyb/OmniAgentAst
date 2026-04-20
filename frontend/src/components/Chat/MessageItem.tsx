@@ -8,7 +8,7 @@
  * @since 2026-02-17
  */
 
-import React, { useState, memo } from "react";
+import React, { useState, useMemo, useCallback, memo } from "react";
 import {
   Avatar,
   Tooltip,
@@ -93,17 +93,34 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   const badgeStyle = getStepBadgeStyle(effectiveType as StepType);
   const labelStyle = getStepLabelStyle(effectiveType as StepType);
 
-  // 【小强优化 2026-03-18】内容区域样式
-  const getContentStyle = () => {
-    const baseStyle: React.CSSProperties = {
-      color: "#333",
-      wordBreak: "break-word",
-      fontSize: 13,
-      lineHeight: 1.8,
-      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
-    };
-    return baseStyle;
-  };
+  // 【2026-04-20优化3.1.2】使用useMemo缓存样式，避免每次渲染创建对象
+  const contentStyle = useMemo((): React.CSSProperties => ({
+    color: "#333",
+    wordBreak: "break-word",
+    fontSize: 13,
+    lineHeight: 1.8,
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
+  }), []);
+
+  // 【2026-04-20优化3.1.3】useCallback包装事件处理函数
+  const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.background = "rgba(0,0,0,0.04)";
+    e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
+  }, []);
+
+  const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.background = "rgba(0,0,0,0.02)";
+    e.currentTarget.style.boxShadow = "none";
+  }, []);
+
+  // 【2026-04-20优化3.1.3】链接hover效果
+  const handleLinkMouseEnter = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
+    e.currentTarget.style.color = "#096dd9";
+  }, []);
+
+  const handleLinkMouseLeave = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
+    e.currentTarget.style.color = "#1890ff";
+  }, []);
 
   // 【小强修改 2026-04-03】前端分页：后端返回全部数据，前端自己控制显示
   const handleLoadMore = () => {
@@ -179,14 +196,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
       background: "rgba(0,0,0,0.02)",
       transition: "all 0.2s ease",
     }}
-    onMouseEnter={(e) => {
-      e.currentTarget.style.background = "rgba(0,0,0,0.04)";
-      e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
-    }}
-    onMouseLeave={(e) => {
-      e.currentTarget.style.background = "rgba(0,0,0,0.02)";
-      e.currentTarget.style.boxShadow = "none";
-    }}
+    onMouseEnter={handleMouseEnter}
+    onMouseLeave={handleMouseLeave}
     >
         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
         {/* 【小强优化 2026-03-18】步骤编号徽章 */}
@@ -207,7 +218,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
           </span>
         )}
       </div>
-      <div style={{ ...getContentStyle(), marginTop: 4, marginLeft: 0 }}>
+      <div style={{ ...contentStyle, marginTop: 4, marginLeft: 0 }}>
         {step.type === "action_tool" && (
           <>
             {/* 【小强优化 2026-04-14】使用通用函数渲染工具信息 */}
@@ -238,12 +249,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
                       fontWeight: 500,
                       transition: "all 0.2s ease",
                     }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.color = "#096dd9";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.color = "#1890ff";
-                    }}
+                    onMouseEnter={handleLinkMouseEnter}
+                    onMouseLeave={handleLinkMouseLeave}
                   >
                     加载更多
                   </span>
