@@ -372,7 +372,9 @@ OPERATION_WEIGHTS = {
     'READ': {'min': 0, 'max': 2, 'default': 1, 'keywords': ['cat', 'ls', 'grep', '查看', '读取', 'type', 'dir', '运行']},
     'CREATE': {'min': 2, 'max': 4, 'default': 3, 'keywords': ['mkdir', 'touch', '创建', '新建', 'md']},
     'UPDATE': {'min': 4, 'max': 7, 'default': 5, 'keywords': ['edit', 'sed', '修改', '编辑', '更新', 'echo', 'write']},
-    'DELETE': {'min': 6, 'max': 10, 'default': 8, 'keywords': ['rm', 'del', '删除', 'remove', '清除', 'rmdir', 'rd']},
+    'DELETE': {'min': 6, 'max': 10, 'default': 8, 'keywords': ['rm', 'del', 'delete', '删除', 'remove', '清除', 'rmdir', 'rd']},
+    'COPY': {'min': 2, 'max': 5, 'default': 3, 'keywords': ['copy', 'cp', '复制', '拷贝']},
+    'MOVE': {'min': 2, 'max': 5, 'default': 3, 'keywords': ['move', 'mv', '移动']},
     'EXEC': {'min': 5, 'max': 10, 'default': 7, 'keywords': ['sudo', 'run', 'exec', '执行', 'start']},
 }
 
@@ -417,8 +419,8 @@ SCOPE_PATTERNS = {
     'DIRECTORY': [r'[/\\]$', r'\$'],                              # 以/或\结尾
     # 只匹配明确的全盘操作，不匹配普通通配符
     'CROSS_DIR': [r'所有', r'批量', r'全部'],
-    # 只匹配真正的系统级操作
-    'SYSTEM': [r'/s\s+/q', r'^[/\\]$', r'根目录', r'全盘'],
+    # 只匹配真正的系统级操作，不匹配普通盘符根目录（如E盘根目录）
+    'SYSTEM': [r'/s\s+/q', r'^[/\\]$', r'全盘', r'系统根目录', r'C:\\根目录', r'/根目录'],
 }
 
 
@@ -729,6 +731,91 @@ def parse_operation_type(command: str) -> str:
     return 'READ'
 
 
+def parse_operation_type_v2(command: str) -> tuple:
+    """
+    改进的操作类型解析 v2.0
+    
+    设计文档3.3节 414-469行，添加中文支持
+    改进：
+    1. 使用词边界匹配（英文）+ 子串匹配（中文）
+    2. 添加否定词检查
+    3. 返回置信度
+    """
+    command_lower = command.lower().strip()
+    matches = []
+    
+    # 定义优先级顺序
+    priority_order = ['DELETE', 'EXEC', 'UPDATE', 'COPY', 'MOVE', 'CREATE', 'READ']
+    
+    # 定义否定词（如果命令中包含这些词，不应该匹配）
+    negation_words = {
+        'DELETE': ['查看', '读取'],
+        'COPY': ['查看', '读取'],
+        'MOVE': ['查看', '读取'],
+        'EXEC': ['查看', '读取'],
+        'UPDATE': ['查看', '读取'],
+        'CREATE': ['查看', '读取'],
+    }
+    
+    for op_type in priority_order:
+        config = OPERATION_WEIGHTS[op_type]
+        for keyword in config['keywords']:
+            # 检查是否为中文关键词
+            is_chinese = any('\u4e00' <= c <= '\u9fff' for c in keyword)
+            
+            if is_chinese:
+                # 中文：使用子串匹配
+                if keyword in command_lower:
+                    match_start = command_lower.find(keyword)
+                    match = type('obj', (), {'group': lambda: keyword, 'start': lambda: match_start, 'end': lambda: match_start + len(keyword)})()
+                    
+                    # 检查否定词
+                    has_negation = False
+                    if op_type in negation_words:
+                        for neg_word in negation_words[op_type]:
+                            if neg_word in command_lower:
+                                has_negation = True
+                                break
+                    
+                    if not has_negation:
+                        confidence = 0.9
+                        matches.append({
+                            'type': op_type,
+                            'keyword': keyword,
+                            'confidence': confidence
+                        })
+            else:
+                # 英文：使用词边界匹配
+                pattern = r'\b' + re.escape(keyword.lower()) + r'\b'
+                match = re.search(pattern, command_lower)
+                
+                if match:
+                    # 检查否定词
+                    has_negation = False
+                    if op_type in negation_words:
+                        for neg_word in negation_words[op_type]:
+                            if neg_word in command_lower:
+                                has_negation = True
+                                break
+                    
+                    if not has_negation:
+                        confidence = 1.0 if match.group() == keyword.lower() else 0.8
+                        matches.append({
+                            'type': op_type,
+                            'keyword': keyword,
+                            'confidence': confidence
+                        })
+    
+    # 如果没有匹配，返回默认值
+    if not matches:
+        return 'READ', 0.5, []
+    
+    # 选择置信度最高的匹配
+    best_match = max(matches, key=lambda x: x['confidence'])
+    
+    return best_match['type'], best_match['confidence'], matches
+
+
 def parse_operation_target(command: str) -> str:
     """
     解析操作对象类型
@@ -750,6 +837,86 @@ def parse_operation_target(command: str) -> str:
     
     # 默认为用户数据
     return 'USER'
+
+
+def parse_operation_target_v2(command: str) -> tuple:
+    """
+    改进的操作对象解析 v2.0
+    
+    设计文档3.2节 330-368行
+    改进：
+    1. 使用优先级队列而不是字典遍历
+    2. 添加上下文理解
+    3. 返回所有匹配结果和置信度
+    """
+    command_lower = command.lower().strip()
+    matches = []
+    
+    # 1. 定义优先级顺序（从高到低）
+    priority_order = ['SYSTEM', 'PROJECT', 'USER', 'TEMP']
+    
+    # 2. 按优先级检查所有模式
+    for target_type in priority_order:
+        config = TARGET_WEIGHTS[target_type]
+        for pattern in config['patterns']:
+            match = re.search(pattern, command_lower, re.IGNORECASE)
+            if match:
+                # 计算匹配置信度
+                confidence = calculate_pattern_confidence(pattern, match, command_lower)
+                matches.append({
+                    'type': target_type,
+                    'pattern': pattern,
+                    'match': match.group(),
+                    'confidence': confidence
+                })
+    
+    # 3. 如果没有匹配，返回默认值
+    if not matches:
+        return 'USER', 1.0, []
+    
+    # 4. 选择置信度最高的匹配
+    best_match = max(matches, key=lambda x: x['confidence'])
+    
+    return best_match['type'], best_match['confidence'], matches
+
+
+def calculate_pattern_confidence(pattern: str, match, command: str) -> float:
+    """
+    计算模式匹配置信度
+    
+    设计文档3.2节 369-405行
+    考虑因素：
+    1. 匹配长度占命令长度的比例
+    2. 匹配位置（开头、中间、结尾）
+    3. 模式的特异性（正则表达式的复杂度）
+    """
+    match_length = len(match.group())
+    command_length = len(command)
+    
+    # 匹配长度比例
+    length_ratio = match_length / command_length
+    
+    # 匹配位置权重（开头和结尾更重要）
+    match_start = match.start()
+    position_weight = 1.0
+    if match_start == 0:  # 开头匹配
+        position_weight = 1.2
+    elif match.end() == command_length:  # 结尾匹配
+        position_weight = 1.1
+    
+    # 模式特异性（正则表达式越复杂，置信度越高）
+    specificity = 1.0
+    if '\\' in pattern:  # 包含转义字符
+        specificity = 1.1
+    if '[' in pattern or '(' in pattern:  # 包含字符集或分组
+        specificity = 1.2
+    if pattern.count('\\') > 2:  # 多个转义字符
+        specificity = 1.3
+    
+    # 综合置信度
+    confidence = min(1.0, length_ratio * position_weight * specificity)
+    
+    return confidence
 
 
 def parse_impact_scope(command: str) -> str:
@@ -787,8 +954,7 @@ def calculate_risk_score(command: str) -> int:
     """
     计算命令风险分数 (CRSS评分系统)
     
-    计算公式: (操作类型权重 + 操作对象权重) / 2 × 影响范围系数
-    分数范围: 0-10
+    使用改进的v2评分算法
     
     Args:
         command: 待检查的命令
@@ -796,19 +962,76 @@ def calculate_risk_score(command: str) -> int:
     Returns:
         int: 风险分数 (0=安全, 10=极度危险)
     """
+    result = calculate_risk_score_v2(command)
+    return result['score']
+
+
+def calculate_confidence(command: str, op_type: str, op_target: str, scope: str) -> float:
+    """
+    计算评分置信度
+    
+    设计文档3.1节 307行调用
+    基于各维度解析的置信度综合计算
+    """
+    # 获取操作类型置信度
+    type_result = parse_operation_type_v2(command)
+    type_confidence = type_result[1] if isinstance(type_result, tuple) else 1.0
+    
+    # 获取操作对象置信度
+    target_result = parse_operation_target_v2(command)
+    target_confidence = target_result[1] if isinstance(target_result, tuple) else 1.0
+    
+    # 综合置信度（取平均值）
+    confidence = (type_confidence + target_confidence) / 2
+    
+    return confidence
+
+
+def calculate_risk_score_v2(command: str) -> dict:
+    """
+    改进的CRSS评分系统 v2.0
+    
+    设计文档3.1节 252-310行
+    新公式：
+    1. 使用加权平均代替简单平均
+    2. 使用对数函数平滑影响范围系数
+    3. 添加风险叠加机制
+    """
+    import math
+    
     if not command or not command.strip():
-        return 0
+        return {'score': 0, 'details': {}}
     
     command_lower = command.lower().strip()
     
     # 1. 黑名单命令直接10分（致命危险）
     checker = get_safety_checker()
     if not checker.is_safe(command):
-        return 10
+        return {
+            'score': 10,
+            'details': {
+                'operation_type': 'BLACKLIST',
+                'operation_target': 'BLACKLIST',
+                'impact_scope': 'BLACKLIST',
+                'type_score': 10,
+                'target_score': 10,
+                'scope_multiplier': 1.0,
+                'base_score': 10,
+                'smoothed_multiplier': 1.0,
+                'risk_bonus': 0,
+                'confidence': 1.0
+            }
+        }
     
-    # 2. 解析三个维度
-    op_type = parse_operation_type(command)
-    op_target = parse_operation_target(command)
+    # 2. 解析三个维度（使用v2函数）
+    op_type_result = parse_operation_type_v2(command)
+    op_type = op_type_result[0] if isinstance(op_type_result, tuple) else op_type_result
+    op_type_conf = op_type_result[1] if isinstance(op_type_result, tuple) else 1.0
+    
+    op_target_result = parse_operation_target_v2(command)
+    op_target = op_target_result[0] if isinstance(op_target_result, tuple) else op_target_result
+    op_target_conf = op_target_result[1] if isinstance(op_target_result, tuple) else 1.0
+    
     scope = parse_impact_scope(command)
     
     # 3. 获取各维度权重
@@ -816,13 +1039,64 @@ def calculate_risk_score(command: str) -> int:
     target_score = TARGET_WEIGHTS[op_target]['default']
     scope_multiplier = SCOPE_MULTIPLIERS[scope]
     
-    # 4. 计算总分（按设计文档公式）
-    raw_score = (type_score + target_score) / 2 * scope_multiplier
-    final_score = min(10, int(round(raw_score)))
+    # 4. 新的评分公式
+    # 4.1 加权平均（操作类型权重更高）
+    type_weight = 0.5
+    target_weight = 0.3
+    base_score = type_score * type_weight + target_score * target_weight + (type_score + target_score) / 2 * (1 - type_weight - target_weight)
     
-    logger.info(f"CRSS评分: command='{command}', type={op_type}({type_score}), target={op_target}({target_score}), scope={scope}(×{scope_multiplier}), score={final_score}")
+    # 4.2 对数平滑影响范围系数（避免跳跃式增长）
+    smoothed_multiplier = 1 + math.log(scope_multiplier, 2)  # log2(系数) + 1
     
-    return final_score
+    # 4.3 风险叠加（高风险操作额外加分）
+    risk_bonus = 0
+    if op_type == 'DELETE' and op_target == 'SYSTEM':
+        risk_bonus = 3  # 删除系统文件额外加分
+    elif op_type == 'DELETE' and scope == 'SYSTEM':
+        risk_bonus = 2  # 系统级删除额外加分
+    elif op_type == 'EXEC' and op_target == 'SYSTEM':
+        risk_bonus = 2  # 执行系统命令额外加分
+    
+    # 4.4 计算最终分数
+    raw_score = base_score * smoothed_multiplier + risk_bonus
+    final_score = min(10, max(0, int(round(raw_score))))
+    
+    # 5. 计算置信度
+    confidence = calculate_confidence(command, op_type, op_target, scope)
+    
+    # 6. 返回详细结果
+    result = {
+        'score': final_score,
+        'level': get_risk_level(final_score),
+        'details': {
+            'operation_type': op_type,
+            'operation_target': op_target,
+            'impact_scope': scope,
+            'type_score': type_score,
+            'target_score': target_score,
+            'scope_multiplier': scope_multiplier,
+            'base_score': base_score,
+            'smoothed_multiplier': smoothed_multiplier,
+            'risk_bonus': risk_bonus,
+            'confidence': confidence
+        }
+    }
+    
+    logger.info(f"CRSS评分v2: command='{command}', type={op_type}({type_score}), target={op_target}({target_score}), scope={scope}(×{scope_multiplier}), score={final_score}, confidence={confidence:.2f}")
+    
+    return result
+
+
+def get_risk_level(score: int) -> str:
+    """根据分数获取风险级别"""
+    if score <= 3:
+        return 'LOW'
+    elif score <= 6:
+        return 'MEDIUM'
+    elif score <= 8:
+        return 'HIGH'
+    else:
+        return 'CRITICAL'
 
 
 def get_risk_message(score: int, command: str = "") -> str:
