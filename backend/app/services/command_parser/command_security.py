@@ -30,7 +30,7 @@ class CommandParser:
         # 操作类型识别模式
         self.operation_patterns = {
             'copy': [r'复制', r'copy(?!\s+-r)', r'\bcp\b'],
-            'move': [r'移动', r'\bmv\b'],
+            'move': [r'移动', r'\bmv\b', r'\bmove\b'],
             'delete': [r'删除', r'delete', r'\brm\b', r'\bdel\b', r'\brdir\b'],
             'read': [r'读取', r'查看', r'\bcat\b', r'\bread\b', r'\btype\b'],
             'create': [r'创建', r'新建', r'\bmkdir\b', r'\btouch\b'],
