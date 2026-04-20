@@ -300,14 +300,14 @@ class ChatRouter:
         # next_step: 步骤计数器（使用统一函数）
         next_step = create_step_counter()
         
-        # running_tasks: 任务字典
-        running_tasks: Dict[str, Any] = {}
-        
         # current_execution_steps: 执行步骤列表
         current_execution_steps: List[Dict] = []
         
-        # running_tasks_lock: 任务锁
-        running_tasks_lock = asyncio.Lock()
+        # 【问题1修复】使用 react_sse_wrapper 模块级全局变量，确保 cancel_task 能找到任务
+        from app.services.react_sse_wrapper import running_tasks, running_tasks_lock
+        # 运行期间保持引用，防止被垃圾回收
+        _running_tasks_ref = running_tasks
+        _running_tasks_lock_ref = running_tasks_lock
         
         # ===== 步骤4: 安全检测 =====
         from app.services.command_security import check_command_safety

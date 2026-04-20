@@ -140,6 +140,13 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
             is_streaming=event.get('is_streaming', False),  # 【15.7新增】
             is_reasoning=event.get('is_reasoning', False)  # 【15.7新增】
         )
+    elif event_type == 'interrupted':
+        # 【小欧添加 2026-04-21】用户主动中断
+        return create_incident_data(
+            'interrupted',
+            event.get('message', '用户取消了任务'),
+            step=step
+        )
     elif event_type == 'error':
         # 【15.7修改】error字段：删除code和message，使用新字段
         return create_error_response(
@@ -163,9 +170,6 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
 running_tasks_lock = asyncio.Lock()
 running_tasks: dict[str, dict] = {}
 
-# 会话级别中断记录（防止重连循环）
-interrupted_sessions: dict[str, datetime] = {}
-INTERRUPTED_SESSION_TIMEOUT = timedelta(minutes=5)  # 5分钟后允许重新连接
 TASK_TIMEOUT = timedelta(hours=1)  # 1小时超时
 
 
@@ -280,24 +284,6 @@ async def generate_sse_stream(
             task_content=user_message,
             context={"intent_type": intent_type, "confidence": confidence}
         )
-    
-    # 【小沈-2026-03-13修复】检查会话是否已中断（防止重连循环）
-    if session_id and session_id in interrupted_sessions:
-        last_interrupt = interrupted_sessions[session_id]
-        if datetime.now() - last_interrupt < INTERRUPTED_SESSION_TIMEOUT:
-            logger.warning(f"[Session Blocked] 会话 {session_id} 在5分钟内被中断过，拒绝重连")
-            
-            blocked_response = create_error_response(
-                error_type="session_interrupted",
-                error_message="会话已中断，请新建对话",
-                recoverable=False
-            )
-            yield blocked_response
-            return
-        else:
-            # 超过5分钟，清除记录，允许重新连接
-            logger.info(f"[Session Cleared] 会话 {session_id} 中断已超过5分钟，清除记录")
-            del interrupted_sessions[session_id]
     
     # 每次对话开始，重置LLM调用计数器
     llm_call_count = 0
@@ -452,7 +438,7 @@ async def generate_sse_stream(
             max_steps = config.get('app', {}).get('max_steps', 100)
             
             try:
-                async for event in agent.run_stream(task=last_message, context=None, max_steps=max_steps):
+                async for event in agent.run_stream(task=last_message, context=None, max_steps=max_steps, task_id=task_id, running_tasks=running_tasks):
                     # 检查中断
                     async with running_tasks_lock:
                         if running_tasks.get(task_id, {}).get("cancelled", False):
@@ -610,12 +596,8 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
     Returns:
         {"success": bool, "message": str, "task_status": str}
     """
-    # 【方案4】记录中断时间戳
+    # 记录中断时间戳
     interrupt_time = datetime.now()
-    
-    if session_id:
-        interrupted_sessions[session_id] = interrupt_time
-        logger.info(f"[Session Interrupted] 会话 {session_id} 已标记为中断，5分钟内禁止重连")
     
     async with running_tasks_lock:
         logger.info(f"[TaskControl] 当前running_tasks数量: {len(running_tasks)}, keys: {list(running_tasks.keys())}")
@@ -639,7 +621,11 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
             current_step = task_info.get("current_step", "unknown")
             logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为中断，当前步骤: {current_step}")
             
-            # 【方案4】返回更详细的状态信息
+            # 从 running_tasks 中移除任务（避免内存泄漏）
+            del running_tasks[task_id]
+            logger.info(f"[Task Cancelled] 任务 {task_id} 已从 running_tasks 中移除")
+            
+            # 返回更详细的状态信息
             return {
                 "success": True, 
                 "message": f"任务 {task_id} 已中断",
@@ -648,15 +634,9 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
             }
         else:
             logger.warning(f"[TaskControl] 任务 {task_id} 不在running_tasks中，可能已结束")
+            return {"success": False, "message": f"任务 {task_id} 不存在", "task_status": "not_found"}
     
-    if session_id:
-        return {
-            "success": True, 
-            "message": f"会话 {session_id} 已标记为中断（任务可能已完成）",
-            "task_status": "finished_or_not_found"
-        }
-    
-    return {"success": False, "message": f"任务 {task_id} 不存在", "task_status": "not_found"}
+    return {"success": True, "message": f"任务 {task_id} 已中断", "task_status": "cancelled"}
 
 
 async def pause_task(task_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
