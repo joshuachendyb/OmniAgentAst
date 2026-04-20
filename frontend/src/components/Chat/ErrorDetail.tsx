@@ -174,6 +174,7 @@ const stackPreStyle: React.CSSProperties = {
 };
 
 // ========== Step 1 + Step 5: 组件使用 memo + useMemo ==========
+/* eslint-disable react/prop-types */
 const ErrorDetail: React.FC<ErrorDetailProps> = memo(({
   errorType,
   errorMessage,

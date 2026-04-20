@@ -8,7 +8,7 @@
  * @since 2026-02-17
  */
 
-import React, { useState, memo } from "react";
+import React, { useState, useMemo, useCallback, memo } from "react";
 import {
   Avatar,
   Tooltip,
@@ -26,6 +26,8 @@ import {
 import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
 import { formatTimestamp } from "../../utils/timestamp";
+import { formatTime, formatRelativeTime } from "../../utils/timeFormatters";
+import { STEP_LABEL_MAP, STEP_ICON_MAP, CONTENT_BASE_STYLE } from "./constants/stepConstants";
 import { DynamicStatusDisplay } from "../../utils/dynamicStatus";
 import { } from "../../utils/markdown";
 import ErrorDetail from "./ErrorDetail";
@@ -78,39 +80,12 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
 
   // 【小资修复 2026-03-23】从全局Map读取展开状态（未设置的key默认展开）
   const isExpanded = expandedSteps.get(stepIndex) ?? true;
-  
-  const labelMap: Record<string, string> = {
-    start: "开始",
-    thought: "思考",
-    action_tool: "执行",
-    observation: "观察",
-    final: "完成",
-    error: "错误",
-    paused: "暂停",
-    resumed: "恢复",
-    interrupted: "中断",
-    retrying: "重试",
-    incident: "事件",  // incident默认标签
-  };
-
-  const iconMap: Record<string, string> = {
-    start: "🚀",
-    thought: "💭",
-    action_tool: "⚙️",
-    observation: "📋",
-    final: "✅",
-    error: "❌",
-    paused: "⏸️",
-    resumed: "▶️",
-    interrupted: "⚠️",
-    retrying: "🔄",
-    incident: "⚡",  // incident默认图标
-  };
 
   // 【小沈修复 2026-03-28】处理incident类型：优先使用incident_value，否则用type
+  // 【小强优化 2026-04-20】阶段1：使用导入的常量，不再每次渲染创建Map
   const effectiveType = step.type === 'incident' ? (step as any).incident_value || 'incident' : step.type;
-  const label = labelMap[effectiveType] || labelMap[step.type] || "步骤";
-  const icon = iconMap[effectiveType] || iconMap[step.type] || "";
+  const label = STEP_LABEL_MAP[effectiveType] || STEP_LABEL_MAP[step.type] || "步骤";
+  const icon = STEP_ICON_MAP[effectiveType] || STEP_ICON_MAP[step.type] || "";
 
   // 【小强修改2026-04-15】直接使用execution_result，不再兼容raw_data
   const executionResult = step.execution_result;
@@ -120,21 +95,14 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   const labelStyle = getStepLabelStyle(effectiveType as StepType);
 
   // 【小强优化 2026-03-18】内容区域样式
-  const getContentStyle = () => {
-    const baseStyle: React.CSSProperties = {
-      color: "#333",
-      wordBreak: "break-word",
-      fontSize: 13,
-      lineHeight: 1.8,
-      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
-    };
-    return baseStyle;
-  };
+  // 【小强优化 2026-04-20】阶段1.2：使用useMemo缓存样式，避免每次渲染重新创建
+  const contentStyle = useMemo(() => CONTENT_BASE_STYLE, []);
 
   // 【小强修改 2026-04-03】前端分页：后端返回全部数据，前端自己控制显示
-  const handleLoadMore = () => {
+  // 【小强优化 2026-04-20】阶段1.3：使用useCallback包装事件处理函数
+  const handleLoadMore = useCallback(() => {
     setShowAllData(true);  // 前端直接显示全部数据，不调用后端API
-  };
+  }, []);
 
   // 获取分页数据：前端切片
   const getPageData = () => {
@@ -196,6 +164,17 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
     );
   };
 
+// 【小强优化 2026-04-20】阶段1.3：使用useCallback包装事件处理函数
+  const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.background = "rgba(0,0,0,0.04)";
+    e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
+  }, []);
+
+  const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.background = "rgba(0,0,0,0.02)";
+    e.currentTarget.style.boxShadow = "none";
+  }, []);
+
   return (
     <div style={{ 
       marginBottom: 8, 
@@ -205,14 +184,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
       background: "rgba(0,0,0,0.02)",
       transition: "all 0.2s ease",
     }}
-    onMouseEnter={(e) => {
-      e.currentTarget.style.background = "rgba(0,0,0,0.04)";
-      e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
-    }}
-    onMouseLeave={(e) => {
-      e.currentTarget.style.background = "rgba(0,0,0,0.02)";
-      e.currentTarget.style.boxShadow = "none";
-    }}
+    onMouseEnter={handleMouseEnter}
+    onMouseLeave={handleMouseLeave}
     >
         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
         {/* 【小强优化 2026-03-18】步骤编号徽章 */}
@@ -233,7 +206,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
           </span>
         )}
       </div>
-      <div style={{ ...getContentStyle(), marginTop: 4, marginLeft: 0 }}>
+      <div style={{ ...contentStyle, marginTop: 4, marginLeft: 0 }}>
         {step.type === "action_tool" && (
           <>
             {/* 【小强优化 2026-04-14】使用通用函数渲染工具信息 */}
@@ -1104,52 +1077,15 @@ const MessageItem = memo(({
 
   /**
    * 格式化时间戳
+   * 【小强优化 2026-04-20】阶段1.4：使用导入的timeFormatters中的函数
    */
-  const formatTime = (date: Date | string) => {
-    try {
-      // 确保转换为Date对象
-      const dateObj = date instanceof Date ? date : new Date(date);
-
-      // 检查是否有效日期
-      if (isNaN(dateObj.getTime())) {
-        return "刚刚";
-      }
-
-      return dateObj.toLocaleTimeString("zh-CN", {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
-    } catch (error) {
-      return "刚刚";
-    }
-  };
+  // 已通过 import { formatTime, formatRelativeTime } from "../../utils/timeFormatters" 导入
   
   /**
    * 格式化相对时间
+   * 【小强优化 2026-04-20】阶段1.4：使用导入的timeFormatters中的函数
    */
-  const getRelativeTime = (date: Date | string) => {
-    try {
-      // 确保转换为Date对象
-      const dateObj = date instanceof Date ? date : new Date(date);
-
-      // 检查是否有效日期
-      if (isNaN(dateObj.getTime())) {
-        return "刚刚";
-      }
-
-      const now = new Date();
-      const diff = now.getTime() - dateObj.getTime();
-      const minutes = Math.floor(diff / 60000);
-
-      if (minutes < 1) return "刚刚";
-      if (minutes < 60) return `${minutes}分钟前`;
-      const hours = Math.floor(minutes / 60);
-      if (hours < 24) return `${hours}小时前`;
-      return dateObj.toLocaleDateString("zh-CN");
-    } catch (error) {
-      return "刚刚";
-    }
-  };
+  // 已通过 import { formatTime, formatRelativeTime } from "../../utils/timeFormatters" 导入
 
 const isUser = message.role === "user";
   const isSystem = message.role === "system";
@@ -1213,7 +1149,7 @@ const isUser = message.role === "user";
               }}
             >
               <Tooltip title={formatTime(message.timestamp)}>
-                <span>{getRelativeTime(message.timestamp)}</span>
+                <span>{formatRelativeTime(message.timestamp)}</span>
               </Tooltip>
             </span>
           </div>
