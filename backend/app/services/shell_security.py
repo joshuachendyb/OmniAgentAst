@@ -1127,3 +1127,13 @@ def get_risk_message(score: int, command: str = "") -> str:
         return "检测到风险操作，是否确认？"
     else:
         return "危险操作已被系统拦截"
+
+
+# =============================================================================
+# 方案4：命令语义解析器
+# 已移至独立模块 app/services/command_parser/
+# 设计文档：CRSS评分系统深度分析与改进方案-2026-04-20.md 3.4节
+# =============================================================================
+
+# 从独立模块导入（避免重复代码）
+from app.services.command_parser import parse_command_semantics
