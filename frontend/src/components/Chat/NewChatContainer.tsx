@@ -1887,8 +1887,18 @@ return prev;
         setTimeout(() => disconnect(true), 1000);
       }
     } else {
-      console.warn("[中断] 没有有效的 taskId，无法中断");
-      showNoActiveTaskWarning();
+      console.warn("[中断] 没有有效的 taskId，可能任务尚未开始");
+      
+      // 【问题4修复】即使没有taskId，也要更新UI状态并断开连接
+      setLoading(false);
+      setIsPaused(false);
+      if (setIsReceiving) setIsReceiving(false);
+      
+      // 断开SSE连接
+      disconnect(true);
+      
+      // 显示提示
+      showTaskResultMessage("interrupt", "任务尚未开始或已结束，请求已取消");
     }
   };
 
