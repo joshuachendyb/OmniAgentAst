@@ -1147,5 +1147,30 @@ def get_risk_message(score: int, command: str = "") -> str:
 # 设计文档：CRSS评分系统深度分析与改进方案-2026-04-20.md 3.4节
 # =============================================================================
 
-# 从独立模块导入（避免重复代码）
-from app.services.command_parser import parse_command_semantics
+# 从独立模块导入
+from app.services.command_parser import (
+    parse_command_semantics,
+    generate_risk_suggestions,
+    parse_operation_type_v2,
+    parse_operation_target_v2,
+    parse_impact_scope,
+    OPERATION_WEIGHTS,
+    TARGET_WEIGHTS,
+    SCOPE_MULTIPLIERS,
+)
+
+
+def calculate_confidence(command: str, op_type: str, op_target: str, scope: str) -> float:
+    """
+    计算评分置信度
+    
+    基于各维度解析的置信度综合计算
+    """
+    type_result = parse_operation_type_v2(command)
+    type_confidence = type_result[1] if isinstance(type_result, tuple) else 1.0
+    
+    target_result = parse_operation_target_v2(command)
+    target_confidence = target_result[1] if isinstance(target_result, tuple) else 1.0
+    
+    confidence = (type_confidence + target_confidence) / 2
+    return confidence
