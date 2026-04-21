@@ -69,7 +69,7 @@ import ChatToolbar from './ChatToolbar';
 
 // 【小强 2026-04-21】Hooks已创建，按方案2.1.7/2.2.7/2.3.5验证1：暂不使用
 // 使用时导入：
-// import { useChatSession } from '../../hooks/chat/useChatSession';
+import { useChatSession } from '../../hooks/chat/useChatSession';
 // import { useChatPersistence } from '../../hooks/chat/useChatPersistence';
 
 // 【小强 2026-04-21】Phase 2 Task 2.2: 导入useChatState
@@ -159,6 +159,9 @@ const NewChatContainer: React.FC = () => {
     chatCallbacks,
     { baseURL: API_BASE_URL, sessionId: sessionId }
   );
+
+  // 【小沈 2026-04-22】Phase 5: 使用useChatSession管理会话生命周期
+  const chatSession = useChatSession(chatState);
    
   // ===== 【小资优化 2026-04-13】流式性能优化 =====
   // 2. 滚动控制ref

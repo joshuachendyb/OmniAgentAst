@@ -31,7 +31,7 @@ import {
   showLoadRetryWarning,
   showSaveError
 } from "../../utils/chatMessages";
-import { handleApiError, ErrorType } from "../../utils/errorHandler";
+
 
 // ============================================================================
 // 类型定义
@@ -122,12 +122,7 @@ export const useChatSession = (
       return [];
     } catch (error) {
       console.error("加载会话失败:", error);
-      const errorResult = handleApiError(error);
-      if (errorResult.shouldContinue) {
-        showLoadRetryWarning(1);
-      } else {
-        showLoadErrorWithKey("加载失败", sid);
-      }
+      showLoadErrorWithKey("加载失败", sid);
       return [];
     }
   }, [
@@ -173,7 +168,7 @@ export const useChatSession = (
       // 生成智能标题
       const newTitle = generateNewSessionTitle();
       const response = await sessionApi.createSession(newTitle);
-      const newSessionId = response.data.session_id;
+      const newSessionId = response.session_id;
       
       setSessionId(newSessionId);
       currentSessionIdRef.current = newSessionId;
@@ -185,12 +180,8 @@ export const useChatSession = (
       
       showNewSessionSuccess(newTitle);
     } catch (error: any) {
-      const errorResult = handleApiError(error);
-      if (errorResult.retryable) {
-        showNewSessionRetryWarning(errorResult.message);
-      } else {
-        showNewSessionError(errorResult.message);
-      }
+      const errMsg = error?.message || "创建会话失败";
+      showNewSessionError(errMsg);
     }
   }, [
     setSessionId,
@@ -239,22 +230,20 @@ export const useChatSession = (
     }
     
     try {
-      const response = await sessionApi.updateSessionTitle(
+      const response = await sessionApi.updateSession(
         sessionId,
         newTitle.trim(),
         sessionVersion
       );
       
       setSessionTitle(newTitle.trim());
-      setSessionVersion(response.data.session_version);
-      setTitleLocked(response.data.title_locked || false);
+      setSessionVersion(response.version || sessionVersion);
       setLastSavedTitle(newTitle.trim());
       
-      console.log("✅ 标题更新成功:", newTitle, "版本:", response.data.session_version);
+      console.log("✅ 标题更新成功:", newTitle, "版本:", response.version);
     } catch (error: any) {
-      const errorResult = handleApiError(error);
-      
-      if (errorResult.status === 409) {
+      const errMsg = error?.message || "更新标题失败";
+      if (error?.response?.status === 409) {
         // 版本冲突，重新加载最新数据
         console.warn("⚠️ 标题版本冲突，重新加载最新数据");
         try {
@@ -273,7 +262,7 @@ export const useChatSession = (
           showSaveError("同步最新数据失败，请刷新页面重试");
         }
       } else {
-        showSaveError(errorResult.message || "更新标题失败");
+        showSaveError(errMsg);
       }
       throw error;
     }
