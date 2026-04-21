@@ -60,7 +60,6 @@ import {
   showTaskResultMessage,
   showTaskControlInfo,
   showNoActiveTaskWarning,
-  showLoadRetryWarning,
   showLoadErrorWithKey,
   showNewSessionSuccess,
   showNewSessionRetryWarning,
@@ -72,11 +71,11 @@ import {
 // 【小强修复 2026-03-31】独立输入框组件，隔离inputValue状态避免父组件重渲染
 import ChatInput from "./ChatInput";
 
-// 【小强 2026-04-12】骨架屏组件
+// 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表渲染逻辑已移至 MessageList 组件
+import MessageList from "./MessageList";
+
 import { MessageListSkeleton } from "../Skeleton";
 
-// 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表useMemo优化（使用独立hook）
-import { useMessageListRender } from '../../hooks/useMessageListRender';
 
 // 【小新 2026-03-13 代码拆分】类型和工具函数已提取到独立文件
 // - 类型定义: src/types/chat.ts
@@ -113,7 +112,8 @@ const NewChatContainer: React.FC = () => {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState("");
   const [lastSavedTitle, setLastSavedTitle] = useState<string>(""); // ⭐ 新增：记录最后保存的标题
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // 【小强 2026-04-21】messagesEndRef 已移至 MessageList 组件
+
   // 【小新第二修复 2026-03-02】用于保存当前会话ID，确保onComplete时使用正确的ID
   const currentSessionIdRef = useRef<string | null>(null);
   // 【小新第二修复 2026-03-02】用于同步跟踪消息数量，确保保存时能获取准确值
@@ -136,9 +136,8 @@ const NewChatContainer: React.FC = () => {
   const streamingStepsRef = useRef<ExecutionStep[]>([]); // 累积执行步骤
   // 【小沈注释 2026-04-18】已完全去掉节流机制，每次都实时更新UI
 
-  // 2. 滚动控制ref
-  const userScrolledUpRef = useRef(false);
   const lastScrollTimeRef = useRef(0);
+
   const SCROLL_THRESHOLD = 150;  // ChatGPT实践：超过150px认为用户主动滚动
   const SCROLL_INTERVAL = 100;   // 滚动节流间隔
 
@@ -213,13 +212,8 @@ const NewChatContainer: React.FC = () => {
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
   const [_isSavingTitle, setIsSavingTitle] = useState(false);
 
-  // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表渲染hook
-  const messageElements = useMessageListRender({
-    messages,
-    showExecution,
-    sessionId,
-    sessionTitle,
-  });
+  // 【小强 2026-04-21】§2.3.1 拆分组件：渲染逻辑已下放到 MessageList 内部
+
 
   const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
 
@@ -752,46 +746,8 @@ return prev;
     }, [])
   );
 
-  // 自动滚动到底部
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  // 【小强 2026-04-21】滚动逻辑已移至 MessageList 组件
 
-  // ===== 【小资优化 2026-04-13】优化滚动函数 =====
-  const scrollToBottomIfNeeded = useCallback(() => {
-    const now = Date.now();
-    
-    // ⭐ 节流：100ms内只滚动一次
-    if (now - lastScrollTimeRef.current < SCROLL_INTERVAL) {
-      return;
-    }
-    
-    // ⭐ 检查：用户主动滚动时不自动滚动
-    if (userScrolledUpRef.current) {
-      return;
-    }
-    
-    lastScrollTimeRef.current = now;
-    scrollToBottom();
-  }, []);
-  // ===== 【小资优化 2026-04-13】结束 =====
-
-  // 滚动到底部的增强版本，确保页面渲染完成后再滚动
-  const scrollToBottomDelayed = () => {
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100); // 延迟100ms确保DOM更新完成
-  };
-
-  // ⭐ 同步 isPaused 状态到 ref，供回调中使用
-  useEffect(() => {
-    isPausedRef.current = isPaused;
-  }, [isPaused]);
-
-  // ===== 【小资优化 2026-04-13】使用节流滚动
-  useEffect(() => {
-    scrollToBottomIfNeeded();
-  }, [messages, currentResponse, executionSteps, scrollToBottomIfNeeded]);
 
   // 【小查修复】同步executionSteps到ref，确保onComplete能获取最新值
   useEffect(() => {
@@ -1012,6 +968,7 @@ return prev;
     }
   };
 
+  // @ts-expect-error - 保留此函数以备后续功能扩展
   const restoreState = () => {
     const saved = sessionStorage.getItem(STORAGE_KEY);
     if (saved) {
@@ -1591,7 +1548,7 @@ return prev;
           
           isLoadingHistoryRef.current = true;
           const loadPromise = loadHistoryMessages(urlSessionId);
-          const result = await Promise.race([loadPromise, timeoutPromise]);
+          const result = await Promise.race([loadPromise, timeoutPromise]) as any;
           
           if (result) {
             setSessionId(result.sessionId);
@@ -2355,42 +2312,45 @@ return prev;
     >
       {/* AI思考过程面板已移至MessageItem内部 - 前端小新代修改 */}
 
-      {/* 消息列表 - 前端小新代修改 UX-C04: 时间分隔线 */}
+      {/* 消息列表 - 【小强 2026-04-21】§2.3.1 拆分组件优化渲染性能 */}
       <div
         style={{
           height: 500,
-          overflowY: "auto",
+          overflow: "hidden", // 由内部 MessageList 处理滚动
           border: "1px solid #f0f0f0",
           borderRadius: 8,
-          padding: "0 2px 2px 0",
           marginBottom: 0,
           backgroundColor: "#fafafa",
           position: "relative",
+          display: "flex",
+          flexDirection: "column"
         }}
-        >
-        
-        {messages.length === 0 ? (
-          isMessageListLoading ? (
-            <MessageListSkeleton count={4} />
-          ) : (
-            <div style={{ textAlign: "center", color: "#999", marginTop: 50 }}>
-              <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
-              <p>开始与 AI 助手对话</p>
-              <p style={{ fontSize: 12 }}>
-                {useStream
-                  ? "流式模式已开启 - 可实时查看 AI 思考过程"
-                  : "普通模式 - 一次性返回完整回复"}
-              </p>
-            </div>
-          )
-        ) : (
-          <div>
-            {/* 【小强 2026-04-12】Phase 2 P1级优化：使用独立hook优化消息列表渲染 */}
-            {messageElements}
+      >
+        {isMessageListLoading ? (
+          <div style={{ padding: '20px' }}>
+             <MessageListSkeleton count={4} />
           </div>
+        ) : messages.length === 0 ? (
+          <div style={{ textAlign: "center", color: "#999", marginTop: 50 }}>
+            <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
+            <p>开始与 AI 助手对话</p>
+            <p style={{ fontSize: 12 }}>
+              {useStream
+                ? "流式模式已开启 - 可实时查看 AI 思考过程"
+                : "普通模式 - 一次性返回完整回复"}
+            </p>
+          </div>
+        ) : (
+          <MessageList
+            messages={messages}
+            showExecution={showExecution}
+            sessionId={sessionId}
+            sessionTitle={sessionTitle}
+            isReceiving={isReceiving}
+          />
         )}
-        <div ref={messagesEndRef} />
       </div>
+
 
       {/* 输入区域 - 【小强修复 2026-03-31】使用独立ChatInput组件隔离inputValue状态 */}
       <ChatInput
