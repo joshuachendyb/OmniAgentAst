@@ -221,6 +221,13 @@ onMouseEnter={handleMouseEnter}
 onMouseLeave={handleMouseLeave}
 ```
 
+**实际代码更新记录**:
+| 时间 | 更新内容 | 作者 |
+|------|--------|------|
+| 2026-04-21 14:25:00 | 补充chunk类型定义 | 小沈 |
+| 2026-04-21 14:35:00 | 添加badgeStyle和labelStyle的useMemo缓存 | 小沈 |
+| 2026-04-21 16:20:00 | handleLoadMore添加useCallback包装 | 小沈 |
+
 #### 3.1.4 提取重复的时间格式化函数
 **实施步骤**:
 1. 创建 `src/utils/timeFormatters.ts`
@@ -305,6 +312,94 @@ src/components/Chat/StepRow/
 └── hooks/
     └── useStepData.ts     # 数据处理hook
 ```
+
+**【重要】拆分策略分析**：
+
+| 方案 | 描述 | 优点 | 缺点 | 推荐度 |
+|------|------|------|------|--------|
+| **方案A - 按位置拆分** | StepHeader/StepContent/StepFooter | 改动小，每步可验证 | Content内部仍复杂 | ⭐⭐⭐⭐ |
+| **方案B - 按业务类型拆分** | 8种type各一个组件 | 职责单一，维护性好 | 改动大，文件多 | ⭐⭐⭐ |
+| **方案C - 分阶段混合** | 先A后B | 渐进式改进 | 周期长 | ⭐⭐⭐⭐⭐ |
+
+**【推荐】方案C - 分阶段混合**：
+- **阶段3.2.1.1**：先做位置拆分（StepHeader/StepContent/StepFooter）
+- **阶段3.2.1.2**：后续再按类型拆分（可选择实施）
+
+---
+
+#### 3.2.1.1 阶段一：按位置拆分StepRow
+
+**目标**：最小改动实现组件拆分，每步可验证
+
+**步骤1：创建目录和类型文件**
+```
+步骤：
+1. 创建 src/components/Chat/StepRow/ 目录
+2. 创建 StepRow/types.ts 定义接口
+3. 创建 StepRow/index.tsx 主组件（导入三个子组件）
+
+验收：
+- 目录结构正确
+- 编译无错误
+```
+
+**步骤2：创建StepHeader组件**
+```
+内容：
+- 编号徽章（badgeStyle）
+- 标签图标（labelStyle + icon）
+- 时间戳显示
+
+验收：
+- 步骤编号正确显示
+- 标签图标正确显示
+- 时间戳正确显示
+```
+
+**步骤3：创建StepContent组件**
+```
+内容：
+- 保持现有switch逻辑不变
+- 8种type渲染逻辑完整迁移
+
+验收：
+- action_tool 渲染正确
+- observation 渲染正确
+- start 渲染正确
+- thought 渲染正确
+- final/error/incident 渲染正确
+```
+
+**步骤4：创建StepFooter组件**
+```
+内容：
+- 分页加载（"加载更多"按钮）
+- 执行状态（成功/失败）
+- 耗时、重试次数、摘要
+
+验收：
+- 加载更多按钮显示正常
+- 状态信息正确显示
+```
+
+**步骤5：集成验证**
+```
+步骤：
+1. 在MessageItem.tsx中导入新的StepRow组件
+2. 删除原StepRow代码（约500行）
+3. 编译测试
+4. 功能验证
+
+验收：
+- 编译无错误
+- 所有type渲染正常
+- 导出功能正常
+```
+
+**实际代码更新记录**:
+| 时间 | 更新内容 | 作者 | 状态 |
+|------|--------|------|------|
+| 2026-04-21 16:30:00 | 分析拆分策略，制定细化计划 | 小沈 | ⏳进行中 |
 
 **代码示例 - StepRow/index.tsx**:
 ```typescript
@@ -1011,8 +1106,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
 - [ ] 性能测试显示提升
 
 ### 6.2 阶段2验收清单
-- [ ] StepRow组件拆分完成
-- [ ] renderToolResult函数拆分完成
+- [x] StepRow组件拆分完成 ✅ **2026-04-21 小强** (commit 9dd038de)
+- [x] renderToolResult函数拆分完成 ✅ **2026-04-21 小强** (已集成到StepContent.tsx)
 - [ ] NewChatContainer状态管理优化
 - [ ] 所有拆分后的组件功能测试通过
 - [ ] 集成测试通过
@@ -1058,6 +1153,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
 |------|------|------|---------|
 | v1.0 | 2026-04-20 21:30:00 | CodeArts代码智能体 | 初始版本，详细实施方案 |
 | v1.1 | 2026-04-21 18:20:00 | 小强 | 验证实际代码，标注已完成项，添加改进建议 |
+| v1.2 | 2026-04-21 21:39:00 | 小强 | 完成3.2.1 StepRow组件拆分，集成到MessageItem.tsx (commit 9dd038de) |
 
-**更新时间**: 2026-04-21 18:20:00
+**更新时间**: 2026-04-21 21:39:00
 **编写人**: 小强
