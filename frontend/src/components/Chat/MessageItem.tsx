@@ -10,15 +10,11 @@
 
 import React, { useState, memo } from "react";
 import {
-  Avatar,
   Tooltip,
   Button,
   message as antMessage,
 } from "antd";
 import {
-  UserOutlined,
-  RobotOutlined,
-  InfoCircleOutlined,
   CopyOutlined,
   CheckOutlined,
   DownloadOutlined,
@@ -36,6 +32,8 @@ import { messageItemCompare } from '../../hooks/useMessageItemProps';
 // 【2026-04-21 优化3.2.1】从新拆分的StepRow目录导入
 import StepRow from "./StepRow/index";
 import MessageContent from "./MessageContent";
+import AvatarDisplay from "./MessageItem/AvatarDisplay";
+import RoleNameDisplay from "./MessageItem/RoleNameDisplay";
 
 // 【小强 2026-04-12】Phase 2 P1级优化：使用React.memo包装组件，减少不必要的重渲染
 // MessageItemProps 类型已移至 useMessageItemProps.ts 中导出，供外部使用
@@ -135,88 +133,6 @@ const MessageItem = memo(({
   };
 
   /**
-   * 获取角色图标
-   */
-  const getAvatar = () => {
-    switch (message.role) {
-      case "user":
-        return (
-          <Avatar
-            size={32}
-            icon={<UserOutlined />}
-            style={{
-              background: "linear-gradient(135deg, #1890ff 0%, #096dd9 100%)",
-            }}
-          />
-        );
-      case "assistant":
-        return (
-          <Avatar
-            size={32}
-            icon={<RobotOutlined />}
-            style={{
-              background: "linear-gradient(135deg, #52c41a 0%, #389e0d 100%)",
-            }}
-          />
-        );
-      case "system":
-        return (
-          <Avatar
-            size={32}
-            icon={<InfoCircleOutlined />}
-            style={{ background: "#faad14" }}
-          />
-        );
-      default:
-        return null;
-    }
-  };
-
-  /**
-   * 获取角色名称
-    */
-  const getRoleName = () => {
-    switch (message.role) {
-      case "user":
-        return "我";
-      case "assistant": {
-        // ✅ 老杨 UX 建议：占位消息显示 loading 状态
-        // 前端小新代修改：只要 isStreaming 为 true，就显示加载状态，并且显示 display_name
-        if (message.isStreaming) {
-          // 前端小新代修改：加载状态也显示 display_name（如果存在）
-          // 如果 display_name 为空，尝试使用 model 构建
-          let display_nameToShow = message.display_name;
-          if (!display_nameToShow && message.model) {
-            display_nameToShow = message.model;
-          }
-          
-          const result = display_nameToShow
-            ? `🤔 AI 助手【${display_nameToShow}】【加载中...】`
-            : `🤔 AI 助手【加载中...】`;
-          return result;
-        }
-
-
-        // 前端小新代修改 VIS-E02: 错误消息显示错误标识
-        if (message.isError) {
-          // ✅ 老杨 UX 建议：添加错误图标（⚠️）
-          return message.display_name
-            ? `⚠️ AI 助手【${message.display_name}】【错误】`
-            : `⚠️ AI 助手【错误】`;
-        }
-        // 直接使用后端返回的 display_name，用【】包住显示
-        return message.display_name
-          ? `AI 助手【${message.display_name}】`
-          : "AI 助手";
-      }
-      case "system":
-        return "系统";
-      default:
-        return "";
-    }
-  };
-
-  /**
    * 获取消息样式 - 前端小新代修改 VIS-C01: 圆角优化，VIS-C02: padding 优化，VIS-C03: 阴影优化，VIS-E01: 错误消息样式，UX-C04: 留白优化（用户建议 50%）
    */
   const getMessageStyle = () => {
@@ -304,7 +220,7 @@ const MessageItem = memo(({
       {/* 左侧头像（仅AI消息） */}
       {!isUser && !isSystem && (
         <div style={{ flexShrink: 0, marginTop: 6 }}>
-          {getAvatar()}
+          <AvatarDisplay role={message.role} />
         </div>
       )}
 
@@ -334,7 +250,13 @@ const MessageItem = memo(({
             }}
           >
             <span style={{ whiteSpace: "nowrap" }}>
-              {getRoleName()}
+              <RoleNameDisplay
+                role={message.role}
+                isStreaming={message.isStreaming}
+                isError={message.isError}
+                display_name={message.display_name}
+                model={message.model}
+              />
             </span>
             {/* 时间戳移到角色名称同一行 */}
               <span
@@ -524,7 +446,7 @@ const MessageItem = memo(({
       {/* 右侧头像（仅用户消息） */}
       {isUser && (
         <div style={{ flexShrink: 0, marginTop: 6 }}>
-          {getAvatar()}
+          <AvatarDisplay role={message.role} />
         </div>
       )}
 
