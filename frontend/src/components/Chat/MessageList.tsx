@@ -2,35 +2,51 @@
  * MessageList组件 - 消息列表展示
  * 
  * 功能：
- * - 渲染对话历史消息
+ * - 渲染对话历史消息（Dumb组件，纯展示）
  * - 结合 useMessageListRender Hook 实现高性能渲染
- * - 自动滚动控制
+ * - 通过 props 接收滚动控制 refs，不自行管理
  * 
- * @author 小强
+ * @author 小沈
  * @date 2026-04-21
  */
 
-import React, { memo, useRef, useEffect } from 'react';
+/* eslint-disable react/prop-types */
+import React, { memo } from 'react';
 import type { Message } from '../../types/chat';
 import { useMessageListRender } from '../../hooks/useMessageListRender';
 
 interface MessageListProps {
+  // 核心数据
   messages: Message[];
   showExecution: boolean;
   sessionId: string | null;
   sessionTitle: string;
+  
+  // 滚动控制 refs（由NewChatContainer管理）
+  messagesEndRef?: React.RefObject<HTMLDivElement>;
+  userScrolledUpRef?: React.MutableRefObject<boolean>;
+  
+  // 滚动控制函数
+  scrollToBottomIfNeeded?: () => void;
+  scrollToBottomDelayed?: () => void;
+  
+  // 状态
   isReceiving?: boolean;
 }
 
-const MessageList: React.FC<MessageListProps> = ({
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const MessageList: React.FC<MessageListProps> = memo(({
   messages,
   showExecution,
   sessionId,
   sessionTitle,
-  isReceiving
+  messagesEndRef,
+  // 预留扩展props（为后续优化准备）
+  userScrolledUpRef: _userScrolledUpRef,
+  scrollToBottomIfNeeded: _scrollToBottomIfNeeded,
+  scrollToBottomDelayed: _scrollToBottomDelayed,
+  isReceiving: _isReceiving,
 }) => {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
   // 使用高性能渲染 Hook
   const messageElements = useMessageListRender({
     messages,
@@ -39,20 +55,17 @@ const MessageList: React.FC<MessageListProps> = ({
     sessionTitle,
   });
 
-  // 收到新消息或正在接收时自动滚动到底部
-  useEffect(() => {
-    if (messages.length > 0 || isReceiving) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages.length, isReceiving]);
-
   return (
     <div className="message-list-content" style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
       {messageElements}
-      <div ref={messagesEndRef} style={{ float: 'left', clear: 'both' }} />
+      <div 
+        ref={messagesEndRef as React.Ref<HTMLDivElement>} 
+        style={{ float: 'left', clear: 'both' }} 
+      />
     </div>
   );
-};
+});
 
-// 使用 memo 避免父组件（NewChatContainer）输入框重渲染导致的无效更新
-export default memo(MessageList);
+MessageList.displayName = 'MessageList';
+
+export default MessageList;

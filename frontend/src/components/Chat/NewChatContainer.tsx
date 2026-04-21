@@ -75,8 +75,11 @@ import ChatInput from "./ChatInput";
 // 【小强 2026-04-12】骨架屏组件
 import { MessageListSkeleton } from "../Skeleton";
 
+// 【小沈 2026-04-21】MessageList组件拆分
+import MessageList from './MessageList';
+
 // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表useMemo优化（使用独立hook）
-import { useMessageListRender } from '../../hooks/useMessageListRender';
+// import { useMessageListRender } from '../../hooks/useMessageListRender'; // 已移至MessageList组件内部
 
 // 【小新 2026-03-13 代码拆分】类型和工具函数已提取到独立文件
 // - 类型定义: src/types/chat.ts
@@ -213,13 +216,8 @@ const NewChatContainer: React.FC = () => {
   const [retryCount, setRetryCount] = useState<Record<string, number>>({});
   const [_isSavingTitle, setIsSavingTitle] = useState(false);
 
-  // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表渲染hook
-  const messageElements = useMessageListRender({
-    messages,
-    showExecution,
-    sessionId,
-    sessionTitle,
-  });
+  // 【小沈 2026-04-21】MessageList渲染逻辑已拆分到MessageList组件
+  // const messageElements = useMessageListRender({...}); // 已移至MessageList组件
 
   const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
 
@@ -2442,12 +2440,19 @@ return prev;
             </div>
           )
         ) : (
-          <div>
-            {/* 【小强 2026-04-12】Phase 2 P1级优化：使用独立hook优化消息列表渲染 */}
-            {messageElements}
-          </div>
+          /* 【小沈 2026-04-21】使用MessageList组件拆分 - Smart/Dumb模式 */
+          <MessageList
+            messages={messages}
+            showExecution={showExecution}
+            sessionId={sessionId}
+            sessionTitle={sessionTitle}
+            messagesEndRef={messagesEndRef}
+            userScrolledUpRef={userScrolledUpRef}
+            scrollToBottomIfNeeded={scrollToBottomIfNeeded}
+            scrollToBottomDelayed={scrollToBottomDelayed}
+            isReceiving={isReceiving}
+          />
         )}
-        <div ref={messagesEndRef} />
       </div>
 
       {/* 输入区域 - 【小强修复 2026-03-31】使用独立ChatInput组件隔离inputValue状态 */}

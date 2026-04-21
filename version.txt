@@ -1,3 +1,39 @@
+v0.9.9.7
+
+更新时间: 2026-04-21 13:19:04
+
+更新内容：
+
+## 1 §2.3.1 MessageList组件拆分成功 - 小沈-2026-04-21
+
+### 1.1 实施方案
+
+- Smart/Dumb模式：MessageList为纯展示组件（Dumb）
+- 滚动逻辑保留在NewChatContainer（Smart）
+- 通过props传递ref和滚动控制函数
+
+### 1.2 拆分内容
+
+- 创建独立的MessageList.tsx组件
+- 接收messagesEndRef等props（预留扩展）
+- 内部使用useMessageListRender Hook
+- 禁用prop-types检查（避免ESLint错误）
+
+### 1.3 构建验证
+
+- TypeScript编译通过
+- 生产构建成功（28.95s）
+- bundle大小变化不大
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| (新建) | MessageList.tsx组件拆分 - 小沈-2026-04-21 |
+| (修改) | NewChatContainer.tsx使用MessageList组件 - 小沈-2026-04-21 |
+
+---
+
 v0.9.9.6
 
 更新时间: 2026-04-21 13:03:09
