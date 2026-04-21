@@ -206,10 +206,7 @@ const NewChatContainer: React.FC = () => {
   );
   // ===== 【小资优化 2026-04-13】结束 =====
 
-// SaveStatus类型定义
-  type SaveStatus = "idle" | "saving" | "saved" | "error";
-
-  // 【小沈 2026-04-22】Phase 4: 使用chatStreaming（useChatStreaming Hook）
+// 【小沈 2026-04-22】Phase 4: 使用chatStreaming（useChatStreaming Hook）
   const {
     isReceiving,
     setIsReceiving,
