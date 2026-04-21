@@ -8,7 +8,7 @@
  * @since 2026-02-17
  */
 
-import React, { useState, useMemo, useCallback, memo } from "react";
+import React, { useState, memo } from "react";
 import {
   Avatar,
   Tooltip,
@@ -27,22 +27,7 @@ import type { ChatMessage } from "../../services/api";
 import type { ExecutionStep } from "../../utils/sse";
 import { formatTimestamp } from "../../utils/timestamp";
 import { formatTime, formatRelativeTime } from "../../utils/timeFormatters";
-import { STEP_LABEL_MAP, STEP_ICON_MAP } from "./constants/stepConstants";
 import { DynamicStatusDisplay } from "../../utils/dynamicStatus";
-import { } from "../../utils/markdown";
-import ErrorDetail from "./ErrorDetail";
-import { 
-  getStepStyle, 
-  getStepTitleStyle,
-  getStepContentStyle,
-  getStepBadgeStyle,
-  getStepLabelStyle,
-  getTimestampStyle,
-  FontSize,
-  FontWeight,
-  Colors,
-  type StepType 
-} from "../../utils/stepStyles";
 
 // 【小强 2026-04-12】Phase 2 P1级优化 - 导入自定义比较函数
 import { messageItemCompare } from '../../hooks/useMessageItemProps';
