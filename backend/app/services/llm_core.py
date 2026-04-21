@@ -164,6 +164,13 @@ class BaseAIService:
             ) as response:
                 self._current_response = response
                 
+                # 【修复】发送请求后立即检查取消标志，避免14秒延迟
+                if self._cancelled:
+                    logger.info("[chat_stream] 请求发送后立即检测到取消，中断流式响应")
+                    response.close()
+                    yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                    return
+                
                 if response.status_code != 200:
                     error_body = ""
                     try:
@@ -483,6 +490,13 @@ class BaseAIService:
                 json=request_json
             ) as response:
                 self._current_response = response
+                
+                # 【修复】发送请求后立即检查取消标志，避免延迟
+                if self._cancelled:
+                    logger.info("[chat_with_tools_stream] 请求发送后立即检测到取消")
+                    response.close()
+                    yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                    return
                 
                 if response.status_code != 200:
                     yield StreamChunk(
