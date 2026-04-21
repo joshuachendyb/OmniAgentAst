@@ -28,12 +28,14 @@ import type { ExecutionStep } from "../../utils/sse";
 import { formatTimestamp } from "../../utils/timestamp";
 import { formatTime, formatRelativeTime } from "../../utils/timeFormatters";
 import { DynamicStatusDisplay } from "../../utils/dynamicStatus";
+import { exportMessage } from "../../utils/messageExporter";
 
 // 【小强 2026-04-12】Phase 2 P1级优化 - 导入自定义比较函数
 import { messageItemCompare } from '../../hooks/useMessageItemProps';
 
 // 【2026-04-21 优化3.2.1】从新拆分的StepRow目录导入
 import StepRow from "./StepRow/index";
+import MessageContent from "./MessageContent";
 
 // 【小强 2026-04-12】Phase 2 P1级优化：使用React.memo包装组件，减少不必要的重渲染
 // MessageItemProps 类型已移至 useMessageItemProps.ts 中导出，供外部使用
@@ -119,211 +121,13 @@ const MessageItem = memo(({
 
   /**
    * 导出消息内容
-   * - 有执行步骤：导出JSON格式
-   * - 有执行步骤：导出JSON格式（包含所有8种type的完整字段）
-   * - 是错误消息：导出JSON格式（包含完整error信息）
-   * - 是incident消息：导出JSON格式（包含完整incident信息）
-   * 
-   * 【重要】8种type说明：
-   * - 内容步骤：start（开始）、chunk（AI回复内容片段）、final（最终回答）
-   *   【chunk是AI流式输出的内容片段，不是执行步骤，显示在AI回复区域，不在步骤列表】
-   * - 执行步骤：thought（思考）、action_tool（工具调用）、observation（工具结果）
-   * - 异常步骤：error（错误）、incident（中断）
+   * 调用 utils/messageExporter.ts 中的 exportMessage 函数
    */
-  const handleExport = (e: React.MouseEvent) => {
+  const handleExport = async (e: React.MouseEvent) => {
     e.stopPropagation();
     console.log("🔍 [handleExport] 开始导出, message.id=", message.id);
     try {
-      const hasSteps = message.executionSteps && message.executionSteps.length > 0;
-      const isError = message.isError;
-      console.log("🔍 [handleExport] hasSteps=", hasSteps, "isError=", isError, "executionSteps数量=", message.executionSteps?.length);
-      
-      let blob: Blob;
-      let filename: string;
-       
-      // 统一的导出数据结构
-      const exportData: Record<string, any> = {
-        sessionId: sessionId || undefined,  // 【小强添加 2026-03-23】会话ID
-        sessionTitle: sessionTitle || undefined,  // 【小强添加 2026-03-23】会话标题
-        timestamp: formatTimestamp(message.timestamp instanceof Date ? message.timestamp.getTime() : message.timestamp),
-        messageId: message.id,
-        role: message.role,
-        content: message.content,
-      };
-      
-      // 检查是否包含incident类型的步骤（后端type固定为'incident'，通过incident_value区分具体类型）
-      const hasIncident = hasSteps && message.executionSteps?.some(
-        (step) => step.type === 'incident'
-      );
-      
-      if (hasIncident) {
-        // 【小沈修复2026-03-28】后端type固定为'incident'，通过incident_value区分具体类型
-        exportData.incidentSteps = message.executionSteps?.filter(
-          (step) => step.type === 'incident'
-        ).map(step => ({
-          type: (step as any).incident_value || 'incident',  // 使用incident_value作为type
-          incident_value: (step as any).incident_value,
-          message: step.content || (step as any).message,
-          timestamp: formatTimestamp((step as any).timestamp),
-          wait_time: (step as any).wait_time,
-        }));
-      }
-       
-      if (isError) {
-        // 错误消息：导出JSON格式（使用API文档字段名）
-        // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除
-        exportData.error = {
-          type: "error",
-          error_type: message.errorType,
-          error_message: message.errorMessage,  // 【小沈修改2026-04-15】message → error_message
-          retry_after: message.errorRetryAfter,
-          timestamp: formatTimestamp(message.errorTimestamp),
-          model: message.model,
-          provider: message.provider,
-          // 【小沈添加2026-04-15】新增recoverable和context
-          recoverable: message.errorRecoverable,
-          context: message.errorContext,
-        };
-        // 【小强修复 2026-03-17】executionSteps 也要转换 timestamp
-        exportData.executionSteps = message.executionSteps?.map(step => ({
-          ...step,
-          timestamp: formatTimestamp(step.timestamp),
-        }));
-        filename = `error_${message.id}_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
-      } else if (hasSteps) {
-        // 有执行步骤：导出JSON格式（包含所有8种type的完整字段）
-        // 8种type: start, thought, action_tool, observation, chunk, final, error, incident
-        exportData.executionSteps = message.executionSteps?.map(step => {
-          const baseExport: Record<string, any> = {
-            type: step.type,
-            content: step.content,
-            timestamp: formatTimestamp(step.timestamp),  // 转换为可读格式
-          };
-          
-            // 根据不同type添加对应字段
-          switch (step.type) {
-            case 'thought':
-              // 【小强修复 2026-04-14】添加thought和reasoning字段导出
-              return { 
-                ...baseExport, 
-                step: step.step, 
-                thought: step.thought || "",     // LLM思考过程
-                reasoning: step.reasoning || "", // LLM推理过程
-                tool_name: step.tool_name, 
-                tool_params: step.tool_params 
-              };
-            case 'action_tool':
-              // 【小强修改2026-04-15】raw_data → execution_result
-              return { ...baseExport, step: step.step, tool_name: step.tool_name, tool_params: step.tool_params, execution_status: step.execution_status, summary: step.summary, execution_result: step.execution_result || null, error_message: step.error_message || "", execution_time_ms: step.execution_time_ms || 0, action_retry_count: step.action_retry_count };
-            case 'observation':
-              // 【修复 2026-04-16】移除冗余的content字段，只保留observation字段
-              // 后端发送的是observation字段，前端content是兼容旧代码
-              return { 
-                type: step.type,
-                step: step.step, 
-                timestamp: formatTimestamp(step.timestamp),
-                tool_name: step.tool_name,
-                tool_params: step.tool_params,
-                observation: step.observation || step.content,  // 使用observation字段
-                return_direct: (step as any).return_direct
-              };
-            case 'chunk':
-              return { ...baseExport, step: step.step, is_reasoning: step.is_reasoning };
-            case 'final':
-              // 【小沈修改2026-04-16】添加response/thought/is_finished/is_streaming/is_reasoning
-              return { 
-                ...baseExport, 
-                step: step.step,
-                timestamp: formatTimestamp(step.timestamp),
-                display_name: step.display_name,
-                model: step.model,
-                provider: step.provider,
-                response: step.response,
-                thought: step.thought,
-                is_finished: (step as any).is_finished,
-                is_streaming: (step as any).is_streaming,
-                is_reasoning: (step as any).is_reasoning
-              };
-            case 'error':
-              // 【小沈修改2026-04-16】导出所有后端字段
-              return { 
-                ...baseExport, 
-                step: step.step, 
-                timestamp: formatTimestamp(step.timestamp),
-                error_type: (step as any).error_type, 
-                error_message: (step as any).error_message || "", 
-                details: (step as any).details,
-                stack: (step as any).stack,
-                recoverable: (step as any).recoverable, 
-                retry_after: (step as any).retry_after, 
-                model: (step as any).model, 
-                provider: (step as any).provider, 
-                context: (step as any).context 
-              };
-            case 'interrupted':
-            case 'paused':
-            case 'resumed':
-            case 'retrying':
-              // 【小强修复 2026-03-18】添加 step 字段
-              return { ...baseExport, step: step.step, incident_value: (step as any).incident_value || step.type, wait_time: (step as any).wait_time };
-            case 'incident':
-              // 【小沈修复 2026-03-28】后端type固定为'incident'，通过incident_value区分具体类型
-              return { 
-                ...baseExport, 
-                step: step.step, 
-                type: (step as any).incident_value || 'incident',  // 导出时还原为具体类型
-                incident_value: (step as any).incident_value,
-                message: step.content || (step as any).message,
-                wait_time: (step as any).wait_time 
-              };
-            case 'start':
-              // 【小强修复 2026-03-18】添加 step 字段
-              return { 
-                ...baseExport, 
-                task_id: step.task_id, 
-                step: step.step,
-                security_check: step.security_check,
-                user_message: step.user_message,
-                display_name: step.display_name,
-                model: step.model,
-                provider: step.provider
-              };
-            default:
-              return baseExport;
-          }
-        });
-        filename = `execution_steps_${new Date().toLocaleString("zh-CN").replace(/[/:]/g, "-").replace(/ /g, "T")}.json`;
-      } else {
-        // 无执行步骤：导出TXT格式
-        const content = message.content || "";
-        blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-        filename = `message_${message.id}_${new Date().toLocaleString("zh-CN").replace(/[/:]/g, "-")}.txt`;
-        
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-        antMessage.success("导出成功");
-        return;
-      }
-      
-      // JSON格式导出
-      const jsonStr = JSON.stringify(exportData, null, 2);
-      blob = new Blob([jsonStr], { type: "application/json;charset=utf-8" });
-      
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      antMessage.success("导出成功");
+      await exportMessage(message, { sessionId, sessionTitle });
     } catch (err) {
       console.error("🔍 [handleExport] 导出失败, error=", err);
       antMessage.error("导出失败");
@@ -643,110 +447,8 @@ const MessageItem = memo(({
               </span>
             )}
 
-            {/* 【小查修复】4. AI回复chunk - 逐个渲染 */}
-            {/* 【小新修复 2026-03-14】is_reasoning切换时自动添加换行 */}
-            {/* 
-             * 【重要】chunk 显示逻辑分两种情况：
-             * 1. SSE实时模式（isStreaming=true）：逐个渲染chunk，message.content作为备用
-             * 2. 历史模式（isStreaming=false）：逐个渲染chunk，数据不完整时用message.content补充
-             * 【chunk是AI流式输出的内容片段，不是执行步骤，显示在AI回复区域，不在步骤列表】
-             */ }
-            {(() => {
-              const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
-              
-              // 逐个渲染chunk
-              return chunks.map((chunk, index) => {
-                const is_reasoning = !!chunk.is_reasoning;
-                // 过滤掉 AI 模型返回的特殊标签
-                let content = (chunk.content || '').replace(/<\/?longcat_think>/g, '');
-                
-                // 【小新修复 2026-03-14】判断是否需要在前面加换行
-                // 当 is_reasoning 从 true->false 或 false->true 切换时
-                if (index > 0) {
-                  const prevChunk = chunks[index - 1];
-                  const prevIsReasoning = !!prevChunk.is_reasoning;
-                  const prevContent = prevChunk.content || '';
-                  
-                  // 只有在切换时才处理
-                  if (is_reasoning !== prevIsReasoning) {
-                    // 检查前一个chunk是否以\n结尾
-                    if (!prevContent.endsWith('\n')) {
-                      // 在当前chunk前面加换行
-                      content = '\n' + content;
-                    }
-                  }
-                }
-                
-                return (
-                  <span
-                    key={`chunk-${index}`}
-                    style={{
-                      color: is_reasoning ? '#888' : '#000',
-                      fontStyle: is_reasoning ? 'italic' : 'normal',
-                      fontSize: is_reasoning ? '0.95em' : '1em',
-                    }}
-                  >
-                    {content}
-                  </span>
-                );
-              });
-            })()}
-
-             {/* 【小新修改 2026-03-18】content 回退逻辑：当没有 chunk 时显示 message.content */}
-             {/* 【小强修改 2026-04-03】跳过 "🤔 AI 正在思考..." 占位文本（已由 DynamicStatusDisplay 处理） */}
-             {(() => {
-               let hasAction = 0;
-               for (const step of (message.executionSteps || [])) {
-                 if (step.type === 'action_tool') {
-                   hasAction = 1;
-                   break;
-                 }
-                 if (step.type === 'chunk') {
-                   hasAction = 0;
-                 }
-               }
-               
-               if (hasAction !== 1) {
-                 const chunks = message.executionSteps?.filter(s => s.type === "chunk") || [];
-                 const hasFalseReasoning = chunks.some(c => c.is_reasoning === false);
-                 
-                 const hasErrorStep = message.executionSteps?.some(step => {
-                   const content = step.content || '';
-                   return step.type === 'error' || 
-                          content.includes('[错误]') || 
-                          content.includes('429') || 
-                          content.includes('限流');
-                 });
-                 
-                 if (hasErrorStep) {
-                   return false;
-                 }
-                 
-                 if (message.isStreaming) {
-                   // 【小强修改】跳过占位文本，由 DynamicStatusDisplay 处理
-                   if (message.content === "🤔 AI 正在思考...") {
-                     return false;
-                   }
-                   return chunks.length === 0;
-                 }
-                 
-                 return !hasFalseReasoning;
-               }
-               
-               return false;
-              })() && (
-               <div
-                 style={{
-                   wordBreak: "break-word",
-                   overflowWrap: "break-word",
-                   paddingRight: 32,
-                 }}
-               >
-                 {message.content && typeof message.content === 'string' 
-                   ? message.content.replace(/\n\n/g, '\n')
-                   : String(message.content || '').replace(/\n\n/g, '\n')}
-               </div>
-             )}
+            {/* 【小新修复 2026-04-21】使用 MessageContent 组件渲染 chunk 和 content 回退 */}
+            <MessageContent message={message} isUser={isUser} isSystem={isSystem} />
 
             {/* 【小强新增 2026-04-03】动态状态提示：根据 step type 显示对应状态 */}
             {/* 只在 AI 助手消息的气泡底部显示，用户消息不显示 */}
