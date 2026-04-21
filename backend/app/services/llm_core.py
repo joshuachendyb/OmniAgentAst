@@ -200,13 +200,15 @@ class BaseAIService:
                 
                 # 【问题2修复】使用wait_for定期检查，每1秒超时检查一次_cancelled标志
                 # 而不是等下一个token（可能30秒）
+                # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
+                line_iterator = response.aiter_lines()
                 while True:
                     try:
-                        line = await asyncio.wait_for(response.aiter_lines().__anext__(), timeout=1.0)
+                        line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
                     except asyncio.TimeoutError:
                         # 超时了，检查取消标志
                         if self._cancelled:
-                            logger.info("[chat_stream] 检测到取消标志（5秒超时检查），中断流式响应")
+                            logger.info("[chat_stream] 检测到取消标志（1秒超时检查），中断流式响应")
                             yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
                             return
                         # 没取消，继续等待
@@ -235,44 +237,19 @@ class BaseAIService:
                     try:
                         data = json.loads(data_str)
                         choices = data.get("choices", [])
+                        
                         if choices:
                             delta = choices[0].get("delta", {})
-                            content_val = delta.get("content", "") or ""
-                            reasoning_val = delta.get("reasoning_content") or delta.get("reasoning") or ""
-                            finish_reason = choices[0].get("finish_reason", "")
-                            # 每个chunk都打印，太频繁，注释掉
-                            # logger.info(f"[LLM Response] content长度={len(content_val)}, reasoning长度={len(reasoning_val)}, finish_reason={finish_reason}")
+                            content = delta.get("content", "") or ""
                             
-                            content = delta.get("content", "")
-                            reasoning_content = (
-                                delta.get("reasoning_content") or 
-                                delta.get("reasoning") or 
-                                delta.get("thought") or
-                                ""
-                            )
-                            
-                            finish_reason = choices[0].get("finish_reason", "")
-                            
-                            if reasoning_content:
-                                yield StreamChunk(
-                                    content=reasoning_content, 
-                                    model=self.model, 
-                                    is_done=False,
-                                    reasoning="",
-                                    is_reasoning=True
-                                )
                             if content:
                                 yield StreamChunk(
-                                    content=content, 
-                                    model=self.model, 
+                                    content=content,
+                                    model=self.model,
                                     is_done=False,
-                                    reasoning="",
                                     is_reasoning=False
                                 )
-                        else:
-                            logger.warning("[AI Response] WARNING: choices is empty!")
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"[AI Response] JSON解析失败: {e}, data_str={data_str[:200]}")
+                    except json.JSONDecodeError:
                         continue
                 
                 yield StreamChunk(content="", model=self.model, is_done=True)
@@ -547,12 +524,14 @@ class BaseAIService:
                     return
                 
                 # 【问题2修复】同样使用wait_for定期检查，每1秒超时
+                # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
+                line_iterator = response.aiter_lines()
                 while True:
                     try:
-                        line = await asyncio.wait_for(response.aiter_lines().__anext__(), timeout=1.0)
+                        line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
                     except asyncio.TimeoutError:
                         if self._cancelled:
-                            logger.info("[chat_with_tools_stream] Cancelled (5s timeout check)")
+                            logger.info("[chat_with_tools_stream] Cancelled (1s timeout check)")
                             yield StreamChunk(
                                 content="",
                                 model=self.model,
