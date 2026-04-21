@@ -203,10 +203,16 @@ class BaseAgent(ABC):
                 step_count += 1
                 
                 # =====【中断检查】每次循环开始检查任务是否被取消 - 小欧-2026-04-21 =====
+                import time
                 if task_id and running_tasks:
                     # 直接检查 cancelled 标志（非线程安全但可接受，因为只是检查布尔值）
-                    is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
-                    logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
+                    task_data = running_tasks.get(task_id, {})
+                    is_cancelled = task_data.get("cancelled", False)
+                    # 【时间测量】计算时间差
+                    cancel_request_time = task_data.get("cancel_request_time")
+                    if cancel_request_time:
+                        time_diff = (time.time() - cancel_request_time) * 1000
+                        logger.info(f"[InterruptCheck] 任务 {task_id} 延迟: {time_diff:.0f}ms")
                     if is_cancelled:
                         logger.info(f"[Interrupt] 任务 {task_id} 被取消，发送 interrupted 事件")
                         # 使用 interrupted 类型，与 error 类型区分

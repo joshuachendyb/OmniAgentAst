@@ -623,9 +623,11 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
             task_info["cancelled"] = True
             task_info["status"] = "cancelled"
             task_info["interrupt_time"] = interrupt_time.isoformat()  # 【方案4】记录中断时间
+            task_info["cancel_request_time"] = interrupt_time.timestamp()  # 【时间测量】记录取消请求时间
             
-            # 【日志增强】记录任务详细信息
-            logger.info(f"[TaskControl] 中断任务 {task_id}，当前状态: {task_info.get('status')}")
+            # 【日志增强】记录任务详细信息和时间差
+            now_ts = interrupt_time.timestamp()
+            logger.info(f"[TaskControl] 中断任务 {task_id}，时间戳: {now_ts}")
             logger.info(f"[TaskControl] ai_service存在: {'ai_service' in task_info}")
             logger.info(f"[TaskControl] 任务步骤: {task_info.get('current_step', 'unknown')}")
             
