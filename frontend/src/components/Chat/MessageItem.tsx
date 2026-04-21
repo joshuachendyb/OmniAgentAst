@@ -124,9 +124,10 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   }, []);
 
   // 【小强修改 2026-04-03】前端分页：后端返回全部数据，前端自己控制显示
-  const handleLoadMore = () => {
+  // 【2026-04-21优化3.1.3】使用useCallback包装，避免每次渲染创建新函数
+  const handleLoadMore = useCallback(() => {
     setShowAllData(true);  // 前端直接显示全部数据，不调用后端API
-  };
+  }, []);
 
   // 获取分页数据：前端切片
   const getPageData = () => {
