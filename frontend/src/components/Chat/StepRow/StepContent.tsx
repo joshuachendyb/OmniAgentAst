@@ -134,59 +134,6 @@ const StepContent: React.FC<StepContentProps> = ({
           <div style={{ marginTop: 8 }}>
             <ToolResultRenderer step={step} isExpanded={isExpanded} toggleExpand={toggleExpand} stepIndex={stepIndex} />
           </div>
-          {executionResult && step.tool_name !== "list_directory" && hasMore && (
-            <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
-              <span 
-                onClick={handleInternalLoadMore}
-                style={{ 
-                  cursor: "pointer", 
-                  color: "#1890ff",
-                  textDecoration: "underline",
-                  fontWeight: 500,
-                  transition: "all 0.2s ease",
-                }}
-                onMouseEnter={handleLinkMouseEnter}
-                onMouseLeave={handleLinkMouseLeave}
-              >
-                加载更多
-              </span>
-            </div>
-          )}
-          {(step as any).execution_status && (
-            <div style={{ marginTop: 6, fontSize: 12 }}>
-              <span style={{ 
-                color: (step as any).execution_status === "success" ? "#52c41a" : "#ff4d4f",
-                fontWeight: 500 
-              }}>
-                {(step as any).execution_status === "success" ? "✅ 成功" : "❌ 失败"}
-              </span>
-              {(step as any).execution_time_ms !== undefined && (step as any).execution_time_ms > 0 && (
-                <span style={{ color: "#666", marginLeft: 8 }}>
-                  | ⏱️ 耗时：{(() => {
-                    const ms = (step as any).execution_time_ms;
-                    if (!ms || ms <= 0) return "";
-                    if (ms < 1000) return `${ms}ms`;
-                    return `${(ms / 1000).toFixed(1)}s`;
-                  })()}
-                </span>
-              )}
-              {(step as any).action_retry_count !== undefined && (step as any).action_retry_count > 0 && (
-                <span style={{ color: "#faad14", marginLeft: 8 }}>
-                  | 🔄 重试：{(step as any).action_retry_count}次
-                </span>
-              )}
-              {(step as any).summary && (
-                <span style={{ color: "#666", marginLeft: 8 }}>
-                  | 📝 {(step as any).summary}
-                </span>
-              )}
-              {(step as any).error_message && (
-                <span style={{ color: "#ff4d4f", marginLeft: 8 }}>
-                  | ❌ {(step as any).error_message}
-                </span>
-              )}
-            </div>
-          )}
         </>
       )}
       {step.type === "observation" && (step as any).observation && (
