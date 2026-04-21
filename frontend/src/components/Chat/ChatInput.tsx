@@ -54,10 +54,10 @@ const ChatInput: React.FC<ChatInputProps> = React.memo(({
   const [inputValue, setInputValue] = useState("");
 
   const handleSend = useCallback(() => {
-    if (!inputValue.trim() || loading) return;
+    if (!inputValue.trim() || loading || isReceiving) return;
     onSend(inputValue.trim());
     setInputValue("");
-  }, [inputValue, loading, onSend]);
+  }, [inputValue, loading, isReceiving, onSend]);
 
   const handleKeyPress = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (!e.shiftKey) {
