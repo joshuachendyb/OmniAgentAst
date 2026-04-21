@@ -77,6 +77,9 @@ import ChatToolbar from './ChatToolbar';
 // 【小强 2026-04-21】Phase 2 Task 2.2: 导入useChatState（暂不使用，验证导入正确）
 import { useChatState } from '../../hooks/chat/useChatState';
 
+// 【小沈 2026-04-22】Phase 3 Task 3.2: 导入useChatCallbacks（暂不使用，验证导入正确）
+import { useChatCallbacks } from '../../hooks/chat/useChatCallbacks';
+
 // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表useMemo优化（使用独立hook）
 // import { useMessageListRender } from '../../hooks/useMessageListRender'; // 已移至MessageList组件内部
 
