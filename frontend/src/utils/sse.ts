@@ -566,7 +566,12 @@ export const useSSE = (
     const connectStartTime = new Date().toLocaleTimeString();
     console.log(`[SSE] [连接建立] 时间=${connectStartTime}`);
     disconnect(false, false);  // 重连时：非手动断开 + 不清空 sessionStorage
-    softClearSteps();  // 软清理：保留 steps，只清理运行时状态
+    // 小沈修复 2026-04-21：新请求时清空 steps，重连时保留 steps
+    if (reconnectAttemptsRef.current > 0) {
+      softClearSteps();  // 重连：保留 steps，只清理运行时状态
+    } else {
+      clearSteps();  // 新请求：完全清空 steps
+    }
 
     // 【小强添加 2026-03-18】重置性能指标并记录开始时间
     requestStartTimeRef.current = Date.now();
@@ -1358,7 +1363,8 @@ const processSSEData = (
           case "interrupted":
             // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保中断时步骤列表显示
             onShowSteps?.(true);
-            // 中断时不调用onComplete，中断有自己的处理逻辑
+            // ✅ 调用onComplete完成清理（设置isStreaming=false、保存steps等）
+            onComplete?.(responseBufferRef.current, undefined);
             setIsReceiving(false);
             setIsConnected(false);
             break;
