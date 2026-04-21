@@ -235,7 +235,8 @@ const NewChatContainer: React.FC = () => {
     // onStep - 收到执行步骤
     useCallback((step: ExecutionStep) => {
       // ✅ 如果正在中断中，忽略所有事件（防止中断后还收到start等事件）
-      if (interruptInProgressRef.current) {
+      // 但 interrupted 事件本身需要通过，否则UI不知道任务已中断
+      if (interruptInProgressRef.current && step.type !== "interrupted") {
         console.log(`[中断] 忽略中断过程中收到的事件: ${step.type}`);
         return;
       }
