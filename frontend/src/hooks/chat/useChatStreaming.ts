@@ -50,7 +50,7 @@ export interface UseChatStreamingReturn {
   
   // SSE操作
   sendMessage: (content: string, sessionId?: string) => Promise<void>;
-  disconnect: () => void;
+  disconnect: (stopServer?: boolean, force?: boolean, callback?: () => void) => void;
   clearSteps: () => void;
   
   // 服务器任务ID
@@ -134,26 +134,27 @@ export const useChatStreaming = (
     }
   }, [sendStreamMessage, streamingContentRef, streamingStepsRef]);
   
-  // 中断任务函数
-  const interruptTask = useCallback(() => {
+// 中断任务函数 - 【小沈 2026-04-22】保留原disconnect参数
+  const disconnectWithParams = useCallback((stopServer?: boolean, force?: boolean, callback?: () => void) => {
     disconnect();
     // 清理流式状态
     streamingContentRef.current = '';
     streamingStepsRef.current = [];
+    if (callback) callback();
   }, [disconnect, streamingContentRef, streamingStepsRef]);
-  
+
   return {
     // 流式状态
     isReceiving,
-    setIsReceiving,
+    setIsReceiving: setIsReceiving || (() => {}),
     executionSteps,
     currentResponse,
     
     // SSE操作
     sendMessage,
-    disconnect: interruptTask,
+    disconnect: disconnectWithParams,
     clearSteps,
-    serverTaskId,
+    serverTaskId: serverTaskId || null,
     
     // Refs
     streamingContentRef,

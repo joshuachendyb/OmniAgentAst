@@ -23,7 +23,6 @@ import React, { useRef, useEffect, useCallback } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
-import { useSSE, ExecutionStep } from "../../utils/sse";
 import { handleError, handleApiError, handleSSEError, ErrorType } from "../../utils/errorHandler";
 
 // 【新增 2026-03-13】从独立文件导入类型和工具函数
@@ -70,15 +69,17 @@ import ChatToolbar from './ChatToolbar';
 
 // 【小强 2026-04-21】Hooks已创建，按方案2.1.7/2.2.7/2.3.5验证1：暂不使用
 // 使用时导入：
-// import { useChatStreaming } from '../../hooks/chat/useChatStreaming';
 // import { useChatSession } from '../../hooks/chat/useChatSession';
 // import { useChatPersistence } from '../../hooks/chat/useChatPersistence';
 
-// 【小强 2026-04-21】Phase 2 Task 2.2: 导入useChatState（暂不使用，验证导入正确）
+// 【小强 2026-04-21】Phase 2 Task 2.2: 导入useChatState
 import { useChatState } from '../../hooks/chat/useChatState';
 
-// 【小沈 2026-04-22】Phase 3 Task 3.2: 导入useChatCallbacks（暂不使用，验证导入正确）
+// 【小沈 2026-04-22】Phase 3 Task 3.2: 导入useChatCallbacks
 import { useChatCallbacks } from '../../hooks/chat/useChatCallbacks';
+
+// 【小沈 2026-04-22】Phase 4: 导入useChatStreaming
+import { useChatStreaming } from '../../hooks/chat/useChatStreaming';
 
 // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表useMemo优化（使用独立hook）
 // import { useMessageListRender } from '../../hooks/useMessageListRender'; // 已移至MessageList组件内部
@@ -149,8 +150,15 @@ const NewChatContainer: React.FC = () => {
   
   const [searchParams] = useSearchParams();
 
-  // 【小沈 2026-04-22】Phase 3 Task 3.2: 使用useChatCallbacks获取回调
+// 【小沈 2026-04-22】Phase 3 Task 3.2: 使用useChatCallbacks获取回调
   const chatCallbacks = useChatCallbacks(chatState);
+
+  // 【小沈 2026-04-22】Phase 4: 使用useChatStreaming替代useSSE
+  const chatStreaming = useChatStreaming(
+    chatState,
+    chatCallbacks,
+    { baseURL: API_BASE_URL, sessionId: sessionId }
+  );
    
   // ===== 【小资优化 2026-04-13】流式性能优化 =====
   // 2. 滚动控制ref
@@ -198,10 +206,10 @@ const NewChatContainer: React.FC = () => {
   );
   // ===== 【小资优化 2026-04-13】结束 =====
 
-  // SaveStatus类型定义
+// SaveStatus类型定义
   type SaveStatus = "idle" | "saving" | "saved" | "error";
 
-  // SSE Hook配置（用于流式输出）
+  // 【小沈 2026-04-22】Phase 4: 使用chatStreaming（useChatStreaming Hook）
   const {
     isReceiving,
     setIsReceiving,
@@ -211,35 +219,7 @@ const NewChatContainer: React.FC = () => {
     disconnect,
     clearSteps,
     serverTaskId,
-  } = useSSE(
-    {
-      baseURL: API_BASE_URL,
-      sessionId: sessionId || "default-session",
-    },
-    // onStep - 【小沈 2026-04-22】使用chatCallbacks
-    chatCallbacks.onStep,
-
-    // onChunk - 【小沈 2026-04-22】使用chatCallbacks
-    chatCallbacks.onChunk,
-
-// onComplete - 【小沈 2026-04-22】使用chatCallbacks
-    chatCallbacks.onComplete,
-
-    // onError - 【小沈 2026-04-22】使用chatCallbacks
-    chatCallbacks.onError,
-
-    // onPaused - 【小沈 2026-04-22】使用chatCallbacks
-    chatCallbacks.onPaused,
-
-    // onResumed - 【小沈 2026-04-22】使用chatCallbacks
-    chatCallbacks.onResumed,
-
-    // onShowSteps - 【小沈 2026-04-22】使用chatCallbacks
-    chatCallbacks.onShowSteps,
-
-    // onRetry - 【小沈 2026-04-22】使用chatCallbacks
-    chatCallbacks.onRetry,
-  );
+  } = chatStreaming;
 
   // 自动滚动到底部
   const scrollToBottom = () => {
