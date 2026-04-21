@@ -1509,221 +1509,163 @@ return prev;
   // ============================================
   useEffect(() => {
     const loadSession = async () => {
-      const urlSessionId = searchParams.get("session_id");
+      // 1. 立即显示骨架屏，不等待任何异步操作
+      setIsMessageListLoading(true);
 
-      // 检测是否是强制刷新（Ctrl+F5或Cmd+Shift+R）
-      // 使用最新的PerformanceNavigationTiming API（Navigation Timing Level 2标准）
-      // 兼容性：Chrome/Edge/Firefox/Safari均支持（2021年10月起Baseline）
+      // 2. 同步读取：searchParams 和 sessionStorage 都是同步 API
+      // 【小强 2026-04-21】§2.2.1 优化初始加载：不使用 Promise.all 包装同步操作
+      const urlSessionId = searchParams.get("session_id");
+      
+      // 检测是否是强制刷新
       const navigationEntry = performance.getEntriesByType("navigation")?.[0] as PerformanceNavigationTiming | undefined;
       const isReload = navigationEntry?.type === "reload";
-      
       if (isReload) {
         console.log("🔄 检测到刷新操作，清除sessionStorage缓存");
         sessionStorage.removeItem(STORAGE_KEY);
       }
 
-      // 🔴 修复1: URL参数绝对优先 - 清除旧的sessionStorage
+      const savedState = (() => {
+        try {
+          const saved = sessionStorage.getItem(STORAGE_KEY);
+          if (!saved) return null;
+          const state = JSON.parse(saved);
+          const currentTime = Date.now();
+          const savedTime = state.timestamp || 0;
+          
+          // 只恢复5分钟内的状态
+          if (currentTime - savedTime > SESSION_EXPIRY_TIME) {
+            sessionStorage.removeItem(STORAGE_KEY);
+            return null;
+          }
+          
+          // 检查缓存消息是否有效
+          // 【修正】不再校验 display_name，只要有消息就认为是有效的
+          if (!state.messages || state.messages.length === 0) {
+            return null;
+          }
+          
+          return state;
+        } catch {
+          return null;
+        }
+      })();
+      
+      // 3. 优先使用 sessionStorage (快速路径 - 最快响应)
+      if (savedState && !urlSessionId) {
+        console.log("🟢 从缓存恢复会话状态，消息数:", savedState.messages?.length);
+        setMessages(savedState.messages || []);
+        setSessionId(savedState.sessionId);
+        currentSessionIdRef.current = savedState.sessionId;
+        setSessionTitle(savedState.sessionTitle || "会话");
+        
+        // 恢复暂停状态
+        if (savedState.isPaused !== undefined) {
+          setIsPaused(savedState.isPaused);
+          isPausedRef.current = savedState.isPaused;
+        }
+        
+        // 标记版本和锁定状态
+        if (savedState.sessionVersion !== undefined) setSessionVersion(savedState.sessionVersion);
+        if (savedState.titleLocked !== undefined) setTitleLocked(savedState.titleLocked);
+        
+        // 立即关闭骨架屏，实现秒开体验
+        setIsMessageListLoading(false);
+        setIsInitialized(true);
+        return; // 快速返回，不等待API请求
+      }
+      
+      // 4. 如果有 URL 参数，加载指定会话（带超时机制）
       if (urlSessionId) {
-        // P1级别优化：添加会话跳转加载状态
         setSessionJumpLoading(true);
-        // 【小新修复 2026-03-14】显示loading前先销毁旧的，避免重复
-        message.destroy("session-load");
         message.loading({
           content: "正在加载会话...",
           key: "session-load",
           duration: 0,
         });
-
-        // 🔴 修复：不要清除sessionStorage
-        // 原因：用户从历史页面点击会话后，如果清除了sessionStorage
-        // 返回聊天页面时无法恢复之前的会话状态
-        // 改为：加载URL会话后，也会更新sessionStorage（在下面代码中）
-        // sessionStorage.removeItem(STORAGE_KEY);
-
-        const retryKey = `session-load-${urlSessionId}`;
-        const currentRetry = retryCount[retryKey] || 0;
-
-        // 【小查修复】如果正在加载中，跳过此次调用
-        if (isLoadingHistoryRef.current) {
-          console.log("⏭️ 正在加载中，跳过重复调用");
-          setSessionJumpLoading(false);
-          message.destroy("session-load");
-          return;
-        }
-
-        isLoadingHistoryRef.current = true; // 加锁
-        // 【小强优化 2026-04-08】API请求前显示Loading，避免空白等待
-        setIsRenderingMessages(true);
+        
         try {
-          // 调用统一的历史消息加载函数
-          const result = await loadHistoryMessages(urlSessionId);
+          // 【新增】5秒超时机制
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('加载超时')), 5000)
+          );
+          
+          isLoadingHistoryRef.current = true;
+          const loadPromise = loadHistoryMessages(urlSessionId);
+          const result = await Promise.race([loadPromise, timeoutPromise]);
+          
           if (result) {
             setSessionId(result.sessionId);
-            // 【小新第二修复 2026-03-02】加载会话时也更新ref
             currentSessionIdRef.current = result.sessionId;
             setMessages(result.messages);
             setSessionTitle(result.title);
-            if (result.version !== undefined) {
-              setSessionVersion(result.version);
-            }
-            if (result.title_locked !== undefined) {
-              setTitleLocked(result.title_locked);
-            }
-            // 加载成功
-            setSessionJumpLoading(false);
+            if (result.version !== undefined) setSessionVersion(result.version);
+            if (result.title_locked !== undefined) setTitleLocked(result.title_locked);
+            
             showLoadSuccess("会话加载成功");
-            setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
-            // 【小新修复 2026-03-14】销毁loading消息，避免一直显示
-            message.destroy("session-load");
-            // 渲染完成后关闭Loading和骨架屏
-            requestAnimationFrame(() => {
-              setIsRenderingMessages(false);
-              setIsMessageListLoading(false);
-            });
-
-            console.log(
-              "🔵 从URL加载会话:",
-              urlSessionId,
-              "标题:",
-              sessionTitle,
-              "版本:",
-              sessionVersion
-            );
-            isLoadingHistoryRef.current = false; // 解锁
-            return;
           } else {
-            // 【小新第四修复 2026-03-02 15:45:30】URL会话加载失败（没有消息），清理状态避免混乱
-            console.warn(
-              "🔴 URL会话没有消息，清理状态并跳过加载:",
-              urlSessionId
-            );
-            setSessionId(null);
-            currentSessionIdRef.current = null; // 同步清理ref
-            setMessages([]);
+            // 降级：显示新会话
             setSessionTitle("新会话");
-            setSessionVersion(1);
-            setTitleLocked(false);
-            setSessionJumpLoading(false);
-            message.destroy("session-load");
-            setIsRenderingMessages(false); // 关闭Loading
-            isLoadingHistoryRef.current = false; // 解锁
-            return;
+            setMessages([]);
+            setSessionId(null);
           }
         } catch (error) {
           console.warn("加载URL会话失败:", error);
-          setIsRenderingMessages(false); // 关闭Loading
-          isLoadingHistoryRef.current = false; // 解锁
-
-          // 重试机制 - 最多3次
-          if (currentRetry < 3) {
-            const newRetry = currentRetry + 1;
-            setRetryCount((prev) => ({ ...prev, [retryKey]: newRetry }));
-            showLoadRetryWarning(newRetry, 3, "session-load");
-
-            // 延迟1秒后重试
-            setTimeout(() => {
-              loadSession();
-            }, 1000);
-          } else {
-            // 超过重试次数，显示错误
-            setSessionJumpLoading(false);
-            isLoadingHistoryRef.current = false; // 解锁
-            showLoadErrorWithKey("加载会话失败，请检查网络后重试", "session-load");
-            setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
-          }
-        }
-      }
-
-      // 🔴 修复3: 只有在没有URL参数时才考虑sessionStorage
-      if (!urlSessionId) {
-        const restored = restoreState();
-        if (restored) {
-          console.log("🟢 从缓存恢复会话状态");
-          // 如果是从缓存恢复，也要关闭加载状态
-          setSessionJumpLoading(false);
-          isLoadingHistoryRef.current = false; // 解锁
-          message.destroy("session-load");
-          return;
-        }
-      }
-
-      // 【小新第二修复 2026-03-02】只有在没有URL参数时才加载最近会话
-      if (urlSessionId) {
-        console.warn("🔴 有URL参数，不加载最近会话:", urlSessionId);
-        setSessionJumpLoading(false);
-        message.destroy("session-load");
-        return;
-      }
-
-      // 🔴 修复4: 如果都没有，加载最近的会话
-      // 【小查修复】添加 isLoadingHistoryRef 检查，避免重复调用
-      if (isLoadingHistoryRef.current) {
-        console.log("⏭️ 正在加载中，跳过重复调用");
-        setSessionJumpLoading(false);
-        setIsInitialized(true);
-        message.destroy("session-load");
-        return;
-      }
-      
-      isLoadingHistoryRef.current = true; // 加锁
-      // 【小强优化 2026-04-08】API请求前显示Loading
-      setIsRenderingMessages(true);
-      try {
-        const result = await loadLatestHistoryMessages();
-        if (result) {
-          setSessionId(result.sessionId);
-          // 【小新第二修复 2026-03-02】加载最近会话时也更新ref
-          currentSessionIdRef.current = result.sessionId;
-          setSessionTitle(result.title);
-          if (result.version !== undefined) {
-            setSessionVersion(result.version);
-          }
-          if (result.title_locked !== undefined) {
-            setTitleLocked(result.title_locked);
-          }
-          
-          setMessages(result.messages);
-          // 渲染完成后关闭Loading和骨架屏
-          requestAnimationFrame(() => {
-            setIsRenderingMessages(false);
-            setIsMessageListLoading(false);
-          });
-          
-          console.log(
-            "🟡 加载最近会话:",
-            result.sessionId,
-            "标题:",
-            result.title,
-            "版本:",
-            result.version
-          );
-        } else {
-          // 如果没有获取到会话，显示提示信息
-          console.log("🟡 没有找到任何会话，显示新会话界面");
+          // 降级：显示新会话
           setSessionTitle("新会话");
           setMessages([]);
           setSessionId(null);
-          setIsRenderingMessages(false); // 关闭Loading
+          showLoadErrorWithKey("加载会话失败，请检查网络后重试", "session-load");
+        } finally {
+          setSessionJumpLoading(false);
+          isLoadingHistoryRef.current = false;
+          message.destroy("session-load");
+          setIsMessageListLoading(false);
+          setIsInitialized(true);
         }
-
-        // 关闭加载状态
-        setSessionJumpLoading(false);
-        isLoadingHistoryRef.current = false; // 解锁
-        message.destroy("session-load");
-      } catch (error) {
-        console.warn("加载最近会话失败:", error);
-        setIsRenderingMessages(false); // 关闭Loading
-        // 即使失败也关闭加载状态
-        setSessionJumpLoading(false);
-        isLoadingHistoryRef.current = false; // 解锁
-        message.destroy("session-load");
+        return;
       }
-
-      // 标记初始化完成
-      setIsInitialized(true);
+      
+      // 5. 加载最近会话（延迟执行，确保骨架屏有平滑展示机会）
+      setTimeout(async () => {
+        if (isLoadingHistoryRef.current) return;
+        
+        try {
+          isLoadingHistoryRef.current = true;
+          const result = await loadLatestHistoryMessages();
+          if (result) {
+            setSessionId(result.sessionId);
+            currentSessionIdRef.current = result.sessionId;
+            setSessionTitle(result.title);
+            if (result.version !== undefined) setSessionVersion(result.version);
+            if (result.title_locked !== undefined) setTitleLocked(result.title_locked);
+            setMessages(result.messages);
+          } else {
+            // 没有会话，显示新会话
+            setSessionTitle("新会话");
+            setMessages([]);
+            setSessionId(null);
+          }
+        } catch (error) {
+          console.warn("加载最近会话失败:", error);
+          setSessionTitle("新会话");
+          setMessages([]);
+          setSessionId(null);
+        } finally {
+          setIsMessageListLoading(false);
+          setIsInitialized(true);
+          isLoadingHistoryRef.current = false;
+        }
+      }, 100); // 延迟100ms，让骨架屏先显示
     };
-
+    
     loadSession();
+    
+    // 清理函数
+    return () => {
+      if (waitTimerRef.current) {
+        clearInterval(waitTimerRef.current);
+      }
+    };
   }, [searchParams]);
 
   // ============================================
