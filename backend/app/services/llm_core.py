@@ -16,6 +16,7 @@ LLM 核心模块 - 提供通用的 LLM API 调用能力
 """
 
 import json
+import asyncio
 import httpx
 import httpcore
 from typing import List, Dict, Optional, AsyncGenerator, Any
@@ -362,7 +363,10 @@ class BaseAIService:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto"
     ) -> ChatResponse:
-        """发送对话请求（使用 Function Calling）"""
+        """发送对话请求（使用 Function Calling）
+        
+        【小沈优化 2026-04-21】使用后台任务+心跳检查，1秒内响应取消
+        """
         try:
             messages = self._build_messages(message, history)
             
@@ -381,14 +385,49 @@ class BaseAIService:
                 f"tools数量={len(tools) if tools else 0}"
             )
             
-            response = await self.client.post(
-                f"{self.api_base}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=request_json
+            # 【小沈优化 2026-04-21】使用后台任务+心跳检查，支持1秒内响应取消
+            request_task = asyncio.ensure_future(
+                self.client.post(
+                    f"{self.api_base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json=request_json
+                )
             )
+            
+            try:
+                while not request_task.done():
+                    # 等待1秒或直到任务完成
+                    try:
+                        await asyncio.wait_for(asyncio.shield(request_task), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        # 检查是否被取消
+                        if self._cancelled:
+                            logger.info("[chat_with_tools] 检测到取消，中断请求")
+                            request_task.cancel()
+                            try:
+                                await request_task
+                            except asyncio.CancelledError:
+                                pass
+                            return ChatResponse(
+                                content="",
+                                model=self.model,
+                                provider=self.provider,
+                                error="任务已取消"
+                            )
+                        continue
+                
+                response = await request_task
+                
+            except asyncio.CancelledError:
+                return ChatResponse(
+                    content="",
+                    model=self.model,
+                    provider=self.provider,
+                    error="任务已取消"
+                )
             
             if response.status_code != 200:
                 error_text = response.text
@@ -397,7 +436,7 @@ class BaseAIService:
                     content="",
                     model=self.model,
                     provider=self.provider,
-                    error=f"API Error: {response.status_code}, {error_text}"  # 【修复 2026-04-10】传递完整错误信息
+                    error=f"API Error: {response.status_code}, {error_text}"
                 )
             
             data = response.json()
