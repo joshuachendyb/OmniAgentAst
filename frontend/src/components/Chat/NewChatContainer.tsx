@@ -68,6 +68,12 @@ import ChatHeader from './ChatHeader';
 // 【小沈 2026-04-21】ChatToolbar组件拆分
 import ChatToolbar from './ChatToolbar';
 
+// 【小强 2026-04-21】Hooks已创建，按方案2.1.7/2.2.7/2.3.5验证1：暂不使用
+// 使用时导入：
+// import { useChatStreaming } from '../../hooks/chat/useChatStreaming';
+// import { useChatSession } from '../../hooks/chat/useChatSession';
+// import { useChatPersistence } from '../../hooks/chat/useChatPersistence';
+
 // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表useMemo优化（使用独立hook）
 // import { useMessageListRender } from '../../hooks/useMessageListRender'; // 已移至MessageList组件内部
 
