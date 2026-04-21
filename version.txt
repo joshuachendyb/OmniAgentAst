@@ -1,10 +1,34 @@
 v0.9.9.7
 
-更新时间: 2026-04-21 13:19:04
+更新时间: 2026-04-21 14:22:18
 
 更新内容：
 
-## 1 §2.3.1 MessageList组件拆分成功 - 小沈-2026-04-21
+## 1 MessageItem优化方案文档完善 - 小沈-2026-04-21
+
+### 1.1 文档分析内容
+
+- 对照实际代码分析3.1.x和3.2.x各小节
+- 补充验收方法、依赖关系、风险提示
+- 阶段1（3.1.x）：labelMap/iconMap常量、useMemo缓存、useCallback、时间格式化工具已实现
+- 阶段2（3.2.x）：StepRow拆分可行，views目录结构与文档设计不同（待说明）
+
+### 1.2 NewChatContainer Hooks重构
+
+- 新增useChatCallbacks.ts（回调函数）
+- 新增useChatState.ts（状态管理）
+- 重构useChatPersistence.ts、useChatSession.ts、useChatStreaming.ts
+- 创建NewChatContainer.refactored.example.tsx示例文件
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 5b92009d | docs/hooks: 优化MessageItem和NewChatContainer文档及chat hooks重构 - 小沈-2026-04-21 |
+
+---
+
+## 2 §2.3.1 MessageList组件拆分成功 - 小沈-2026-04-21
 
 ### 1.1 实施方案
 
