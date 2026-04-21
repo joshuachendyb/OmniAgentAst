@@ -5,9 +5,49 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>OmniAgentAst</title>
+    <!--
+      【小强 2026-04-21】性能优化说明：
+      1. 内联骨架屏 CSS：JS 加载期间立即显示骨架屏，消除白屏
+      2. 不添加硬编码 preload：Vite 构建后文件名带 hash，
+         手动写 href="/assets/vendor-react.js" 永远不命中，
+         Vite 已自动注入 <link rel="modulepreload"> 无需手动处理
+    -->
+    <style>
+      /* 骨架屏关键 CSS - 内联，无需等待外部 CSS 文件加载 */
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { background: #f5f5f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+      #root { min-height: 100vh; }
+      @keyframes skeleton-loading {
+        0%   { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+      }
+      .skeleton-wrap {
+        padding: 20px;
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      .skeleton-bar {
+        height: 56px;
+        background: linear-gradient(90deg, #ebebeb 25%, #d6d6d6 50%, #ebebeb 75%);
+        background-size: 200% 100%;
+        animation: skeleton-loading 1.4s ease-in-out infinite;
+        border-radius: 8px;
+        margin-bottom: 14px;
+        opacity: 0.8;
+      }
+      .skeleton-bar:nth-child(2) { animation-delay: 0.15s; width: 80%; }
+      .skeleton-bar:nth-child(3) { animation-delay: 0.30s; width: 60%; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- 初始骨架屏：React JS 加载完成后自动替换，消除白屏 -->
+      <div class="skeleton-wrap">
+        <div class="skeleton-bar"></div>
+        <div class="skeleton-bar"></div>
+        <div class="skeleton-bar"></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

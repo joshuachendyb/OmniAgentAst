@@ -33,7 +33,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, AsyncGenerator, Any, Callable
 from app.services import AIServiceFactory
 from app.services.llm_core import Message
-from app.services.shell_security import check_command_safety
+from app.services.command_security import check_command_safety
 from app.config import get_config
 from app.utils.logger import logger
 from app.utils.display_name_cache import cache_display_name
@@ -140,6 +140,13 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
             is_streaming=event.get('is_streaming', False),  # 【15.7新增】
             is_reasoning=event.get('is_reasoning', False)  # 【15.7新增】
         )
+    elif event_type == 'interrupted':
+        # 【小欧添加 2026-04-21】用户主动中断
+        return create_incident_data(
+            'interrupted',
+            event.get('message', '用户取消了任务'),
+            step=step
+        )
     elif event_type == 'error':
         # 【15.7修改】error字段：删除code和message，使用新字段
         return create_error_response(
@@ -163,9 +170,6 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
 running_tasks_lock = asyncio.Lock()
 running_tasks: dict[str, dict] = {}
 
-# 会话级别中断记录（防止重连循环）
-interrupted_sessions: dict[str, datetime] = {}
-INTERRUPTED_SESSION_TIMEOUT = timedelta(minutes=5)  # 5分钟后允许重新连接
 TASK_TIMEOUT = timedelta(hours=1)  # 1小时超时
 
 
@@ -281,24 +285,6 @@ async def generate_sse_stream(
             context={"intent_type": intent_type, "confidence": confidence}
         )
     
-    # 【小沈-2026-03-13修复】检查会话是否已中断（防止重连循环）
-    if session_id and session_id in interrupted_sessions:
-        last_interrupt = interrupted_sessions[session_id]
-        if datetime.now() - last_interrupt < INTERRUPTED_SESSION_TIMEOUT:
-            logger.warning(f"[Session Blocked] 会话 {session_id} 在5分钟内被中断过，拒绝重连")
-            
-            blocked_response = create_error_response(
-                error_type="session_interrupted",
-                error_message="会话已中断，请新建对话",
-                recoverable=False
-            )
-            yield blocked_response
-            return
-        else:
-            # 超过5分钟，清除记录，允许重新连接
-            logger.info(f"[Session Cleared] 会话 {session_id} 中断已超过5分钟，清除记录")
-            del interrupted_sessions[session_id]
-    
     # 每次对话开始，重置LLM调用计数器
     llm_call_count = 0
     
@@ -340,14 +326,56 @@ async def generate_sse_stream(
     # 安全检查未通过，返回错误
     if not security_check_result.get('is_safe', True):
         risk = security_check_result.get('risk', '未知风险')
-        logger.info(f"[Step error] 发送error步骤(安全检测拦截)")
+        risk_level = security_check_result.get('risk_level', 'unknown')
+        blocked = security_check_result.get('blocked', False)
+        is_need_confirm = security_check_result.get('is_need_confirm', False)
+        
+        logger.info(f"[Step error] 发送error步骤(安全检测拦截), level={risk_level}, blocked={blocked}")
+        
+        # 获取详细的CRSS评分信息
+        from app.services.command_security import calculate_risk_score_v2
+        risk_detail = calculate_risk_score_v2(last_message)
+        
+        # 构建专业的CRSS评分报告
+        risk_level_text = {
+            "safe": "安全",
+            "low": "低风险",
+            "medium": "中等风险",
+            "high": "高风险",
+            "critical": "极高风险"
+        }.get(risk_level, "未知")
+        
+        action_text = "已拦截" if blocked else ("需确认" if is_need_confirm else "警告")
+        
+        # 构建专业的安全评估报告
+        security_context = {
+            "crss_report": {
+                "risk_score": risk_detail.get('score', 0),
+                "risk_level": risk_level,
+                "risk_level_text": f"[{risk_level_text}]",
+                "action_required": action_text,
+                "is_safe": security_check_result.get('is_safe', True),
+                "is_blocked": blocked,
+                "need_confirmation": is_need_confirm,
+            },
+            "analysis": {
+                "operation_type": risk_detail.get('details', {}).get('operation_type', 'UNKNOWN'),
+                "operation_target": risk_detail.get('details', {}).get('target', 'UNKNOWN'),
+                "impact_scope": risk_detail.get('details', {}).get('scope', 'UNKNOWN'),
+            },
+            "matched_rule": security_check_result.get('rule_matched'),
+            "original_command": last_message,
+            "suggestions": risk_detail.get('suggestions', []),
+        }
+        
         error_step_obj = StepFactory.create_error_step(
             step=next_step(),
             error_type="security",
             error_message=f"危险操作需确认: {risk}",
             recoverable=False,
             model=ai_service.model,
-            provider=ai_service.provider
+            provider=ai_service.provider,
+            context=security_context
         )
         error_step_dict = error_step_obj.to_dict()
         error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
@@ -410,10 +438,13 @@ async def generate_sse_stream(
             max_steps = config.get('app', {}).get('max_steps', 100)
             
             try:
-                async for event in agent.run_stream(task=last_message, context=None, max_steps=max_steps):
+                async for event in agent.run_stream(task=last_message, context=None, max_steps=max_steps, task_id=task_id, running_tasks=running_tasks):
                     # 检查中断
                     async with running_tasks_lock:
-                        if running_tasks.get(task_id, {}).get("cancelled", False):
+                        is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
+                        logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
+                        if is_cancelled:
+                            logger.info(f"[InterruptCheck] 发送中断事件")
                             interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
                             logger.info(f"[Step incident] 发送incident步骤(interrupted)")
                             yield f"data: {json.dumps(interrupted_data)}\n\n"
@@ -505,11 +536,10 @@ async def generate_sse_stream(
             yield error_response
     
     except asyncio.CancelledError:
-        # 客户端断开连接，任务被中断
+        # 【问题3修复】客户端断开连接，任务被中断
+        # 用try-catch包裹yield，防止客户端已断开导致失败
         async with running_tasks_lock:
             running_tasks[task_id] = {"status": "cancelled", "cancelled": True}
-        interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
-        logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
         interrupted_step = create_incident_data(
             incident_value='interrupted',
             message='客户端断开连接，任务中断',
@@ -517,7 +547,14 @@ async def generate_sse_stream(
         )
         current_execution_steps.append(interrupted_step)
         await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
-        yield f"data: {json.dumps(interrupted_data)}\n\n"
+        
+        try:
+            interrupted_data = create_incident_data('interrupted', '客户端断开连接，任务中断')
+            logger.info(f"[Step interrupted] 发送interrupted步骤(客户端断开)")
+            yield f"data: {json.dumps(interrupted_data)}\n\n"
+        except Exception:
+            # 客户端已断开，yield失败是正常的，记录日志但不中断
+            logger.info(f"[Step interrupted] 客户端已断开，跳过yield")
     
     except Exception as e:
         logger.error(f"流式响应异常：task_id={task_id}, error={e}", exc_info=True)
@@ -543,9 +580,16 @@ async def generate_sse_stream(
     finally:
         logger.info(f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {llm_call_count} ======")
         
+        # 清理任务：如果任务状态不是cancelled，则删除
+        # cancelled状态的任务由cancel_task保留记录
         async with running_tasks_lock:
             if task_id in running_tasks:
-                del running_tasks[task_id]
+                task_status = running_tasks[task_id].get("status")
+                if task_status != "cancelled":
+                    del running_tasks[task_id]
+                    logger.info(f"[Cleanup] 任务 {task_id} 正常完成，已清理")
+                else:
+                    logger.info(f"[Cleanup] 任务 {task_id} 已被中断，保留记录")
 
 
 # ============================================================
@@ -556,16 +600,20 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
     """
     中断指定的流式任务
     
+    【方案4改进】增强中断响应机制：
+    1. 立即设置cancelled状态
+    2. 强制关闭LLM HTTP连接
+    3. 返回详细的状态信息
+    
     Args:
         task_id: 任务ID
         session_id: 会话ID（可选，用于阻止重连）
     
     Returns:
-        {"success": bool, "message": str}
+        {"success": bool, "message": str, "task_status": str}
     """
-    if session_id:
-        interrupted_sessions[session_id] = datetime.now()
-        logger.info(f"[Session Interrupted] 会话 {session_id} 已标记为中断，5分钟内禁止重连")
+    # 记录中断时间戳
+    interrupt_time = datetime.now()
     
     async with running_tasks_lock:
         logger.info(f"[TaskControl] 当前running_tasks数量: {len(running_tasks)}, keys: {list(running_tasks.keys())}")
@@ -574,8 +622,16 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
             task_info = running_tasks[task_id]
             task_info["cancelled"] = True
             task_info["status"] = "cancelled"
+            task_info["interrupt_time"] = interrupt_time.isoformat()  # 【方案4】记录中断时间
+            task_info["cancel_request_time"] = interrupt_time.timestamp()  # 【时间测量】记录取消请求时间
             
-            # 强制关闭HTTP连接
+            # 【日志增强】记录任务详细信息和时间差
+            now_ts = interrupt_time.timestamp()
+            logger.info(f"[TaskControl] 中断任务 {task_id}，时间戳: {now_ts}")
+            logger.info(f"[TaskControl] ai_service存在: {'ai_service' in task_info}")
+            logger.info(f"[TaskControl] 任务步骤: {task_info.get('current_step', 'unknown')}")
+            
+            # 【方案4】强制关闭HTTP连接
             if "ai_service" in task_info and task_info["ai_service"]:
                 ai_service = task_info["ai_service"]
                 try:
@@ -584,15 +640,27 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
                 except Exception as e:
                     logger.error(f"[Task Cancelled] 关闭HTTP连接失败: {e}")
             
-            logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为中断")
-            return {"success": True, "message": f"任务 {task_id} 已中断"}
+            # 从 running_tasks 中移除任务（避免内存泄漏）
+            # 修改：不立即删除，设置为cancelled状态保留记录
+            # del running_tasks[task_id]  # 不要立即删除
+            # 改为设置状态为已取消，但保留记录
+            task_info["status"] = "cancelled"
+            task_info["cancelled"] = True
+            task_info["interrupt_time"] = interrupt_time.isoformat()
+            logger.info(f"[Task Cancelled] 任务 {task_id} 已标记为cancelled，保留记录")
+            
+            # 返回更详细的状态信息
+            return {
+                "success": True, 
+                "message": f"任务 {task_id} 已中断",
+                "task_status": "cancelled",
+                "interrupt_time": interrupt_time.isoformat()
+            }
         else:
             logger.warning(f"[TaskControl] 任务 {task_id} 不在running_tasks中，可能已结束")
+            return {"success": False, "message": f"任务 {task_id} 不存在", "task_status": "not_found"}
     
-    if session_id:
-        return {"success": True, "message": f"会话 {session_id} 已标记为中断（任务可能已完成）"}
-    
-    return {"success": False, "message": f"任务 {task_id} 不存在"}
+    return {"success": True, "message": f"任务 {task_id} 已中断", "task_status": "cancelled"}
 
 
 async def pause_task(task_id: str, session_id: Optional[str] = None) -> Dict[str, Any]:
@@ -611,6 +679,9 @@ async def pause_task(task_id: str, session_id: Optional[str] = None) -> Dict[str
     
     async with running_tasks_lock:
         if task_id in running_tasks:
+            # 如果任务已被中断，不能暂停
+            if running_tasks[task_id].get("cancelled", False):
+                return {"success": False, "message": f"任务 {task_id} 已被中断，无法暂停"}
             running_tasks[task_id]["paused"] = True
             running_tasks[task_id]["status"] = "paused"
             logger.info(f"[Pause] 任务 {task_id} 已暂停")
@@ -634,6 +705,12 @@ async def resume_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
     
     async with running_tasks_lock:
         if task_id in running_tasks:
+            # 如果任务已被中断，不能恢复
+            if running_tasks[task_id].get("cancelled", False):
+                return {"success": False, "message": f"任务 {task_id} 已被中断，无法恢复"}
+            # 如果任务没有暂停，不能恢复
+            if not running_tasks[task_id].get("paused", False):
+                return {"success": False, "message": f"任务 {task_id} 未暂停，无法恢复"}
             running_tasks[task_id]["paused"] = False
             running_tasks[task_id]["status"] = "running"
             logger.info(f"[Resume] 任务 {task_id} 已继续")

@@ -254,12 +254,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   const initializeApp = useCallback(async () => {
     // 防止重复调用（React Strict Mode会导致useEffect运行两次）
     if (initInProgressRef.current) {
-      console.log("[AppContext] 初始化进行中，跳过");
       return;
     }
     // 如果有错误，允许重试初始化
     if (isInitialized && !initError) {
-      console.log("[AppContext] 已初始化成功，跳过");
       return;
     }
 
@@ -270,7 +268,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
     }
     
     initInProgressRef.current = true;
-    console.log("[AppContext] 开始初始化...");
     setInitError(null); // 重置错误状态
     setValidationLoading(true);
     setModelListLoading(true);

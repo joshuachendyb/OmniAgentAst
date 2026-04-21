@@ -5,6 +5,11 @@ import prettier from "vite-plugin-prettier";
 import { visualizer } from "rollup-plugin-visualizer";
 
 // https://vitejs.dev/config/
+// 【小强 2026-04-21】性能优化：
+//   1. 添加 terser 生产压缩（drop_console/drop_debugger）
+//   2. 修正 chunkSizeWarningLimit 统一为 1000
+//   3. 添加 optimizeDeps 加速冷启动预构建
+//   4. 注：antd v5 已原生支持 Tree-shaking，无需 vite-plugin-style-import
 export default defineConfig(({ command }) => {
   const isBuild = command === "build";
   const shouldCheck = isBuild;
@@ -33,7 +38,7 @@ export default defineConfig(({ command }) => {
       },
     },
     build: {
-      // 方法2：手动分chunk - 把大库分离到独立文件
+      // 手动分 chunk：大库分离到独立文件，利用浏览器缓存
       rollupOptions: {
         output: {
           manualChunks: {
@@ -44,7 +49,22 @@ export default defineConfig(({ command }) => {
         },
       },
       cssCodeSplit: true,
-      chunkSizeWarningLimit: 500,
+      // 【小强 2026-04-21】统一为 1000KB，antd 分包后单 chunk 体积约 800KB
+      chunkSizeWarningLimit: 1000,
+      // 【小强 2026-04-21】生产构建压缩：移除 console/debugger，减少包体积
+      minify: 'terser',
+      terserOptions: {
+        compress: {
+          drop_console: true,
+          drop_debugger: true,
+        },
+      },
+      // 报告 gzip/brotli 压缩后实际大小
+      reportCompressedSize: true,
+    },
+    // 【小强 2026-04-21】预构建优化：开发模式冷启动加速
+    optimizeDeps: {
+      include: ['react', 'react-dom', 'react-router-dom', 'antd', 'axios', 'dayjs'],
     },
   };
 });

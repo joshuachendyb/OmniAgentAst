@@ -16,6 +16,7 @@ LLM 核心模块 - 提供通用的 LLM API 调用能力
 """
 
 import json
+import asyncio
 import httpx
 import httpcore
 from typing import List, Dict, Optional, AsyncGenerator, Any
@@ -164,6 +165,13 @@ class BaseAIService:
             ) as response:
                 self._current_response = response
                 
+                # 【修复】发送请求后立即检查取消标志，避免14秒延迟
+                if self._cancelled:
+                    logger.info("[chat_stream] 请求发送后立即检测到取消，中断流式响应")
+                    response.close()
+                    yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                    return
+                
                 if response.status_code != 200:
                     error_body = ""
                     try:
@@ -190,7 +198,24 @@ class BaseAIService:
                             stream_error_type="http_error")
                     return
                 
-                async for line in response.aiter_lines():
+                # 【问题2修复】使用wait_for定期检查，每1秒超时检查一次_cancelled标志
+                # 而不是等下一个token（可能30秒）
+                # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
+                line_iterator = response.aiter_lines()
+                while True:
+                    try:
+                        line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        # 超时了，检查取消标志
+                        if self._cancelled:
+                            logger.info("[chat_stream] 检测到取消标志（1秒超时检查），中断流式响应")
+                            yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                            return
+                        # 没取消，继续等待
+                        continue
+                    except StopAsyncIteration:
+                        break
+                    
                     if self._cancelled:
                         logger.info("[chat_stream] 检测到取消标志，中断流式响应")
                         yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
@@ -212,44 +237,19 @@ class BaseAIService:
                     try:
                         data = json.loads(data_str)
                         choices = data.get("choices", [])
+                        
                         if choices:
                             delta = choices[0].get("delta", {})
-                            content_val = delta.get("content", "") or ""
-                            reasoning_val = delta.get("reasoning_content") or delta.get("reasoning") or ""
-                            finish_reason = choices[0].get("finish_reason", "")
-                            # 每个chunk都打印，太频繁，注释掉
-                            # logger.info(f"[LLM Response] content长度={len(content_val)}, reasoning长度={len(reasoning_val)}, finish_reason={finish_reason}")
+                            content = delta.get("content", "") or ""
                             
-                            content = delta.get("content", "")
-                            reasoning_content = (
-                                delta.get("reasoning_content") or 
-                                delta.get("reasoning") or 
-                                delta.get("thought") or
-                                ""
-                            )
-                            
-                            finish_reason = choices[0].get("finish_reason", "")
-                            
-                            if reasoning_content:
-                                yield StreamChunk(
-                                    content=reasoning_content, 
-                                    model=self.model, 
-                                    is_done=False,
-                                    reasoning="",
-                                    is_reasoning=True
-                                )
                             if content:
                                 yield StreamChunk(
-                                    content=content, 
-                                    model=self.model, 
+                                    content=content,
+                                    model=self.model,
                                     is_done=False,
-                                    reasoning="",
                                     is_reasoning=False
                                 )
-                        else:
-                            logger.warning("[AI Response] WARNING: choices is empty!")
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"[AI Response] JSON解析失败: {e}, data_str={data_str[:200]}")
+                    except json.JSONDecodeError:
                         continue
                 
                 yield StreamChunk(content="", model=self.model, is_done=True)
@@ -340,7 +340,10 @@ class BaseAIService:
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto"
     ) -> ChatResponse:
-        """发送对话请求（使用 Function Calling）"""
+        """发送对话请求（使用 Function Calling）
+        
+        【小沈优化 2026-04-21】使用后台任务+心跳检查，1秒内响应取消
+        """
         try:
             messages = self._build_messages(message, history)
             
@@ -359,14 +362,49 @@ class BaseAIService:
                 f"tools数量={len(tools) if tools else 0}"
             )
             
-            response = await self.client.post(
-                f"{self.api_base}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=request_json
+            # 【小沈优化 2026-04-21】使用后台任务+心跳检查，支持1秒内响应取消
+            request_task = asyncio.ensure_future(
+                self.client.post(
+                    f"{self.api_base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json=request_json
+                )
             )
+            
+            try:
+                while not request_task.done():
+                    # 等待1秒或直到任务完成
+                    try:
+                        await asyncio.wait_for(asyncio.shield(request_task), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        # 检查是否被取消
+                        if self._cancelled:
+                            logger.info("[chat_with_tools] 检测到取消，中断请求")
+                            request_task.cancel()
+                            try:
+                                await request_task
+                            except asyncio.CancelledError:
+                                pass
+                            return ChatResponse(
+                                content="",
+                                model=self.model,
+                                provider=self.provider,
+                                error="任务已取消"
+                            )
+                        continue
+                
+                response = await request_task
+                
+            except asyncio.CancelledError:
+                return ChatResponse(
+                    content="",
+                    model=self.model,
+                    provider=self.provider,
+                    error="任务已取消"
+                )
             
             if response.status_code != 200:
                 error_text = response.text
@@ -375,7 +413,7 @@ class BaseAIService:
                     content="",
                     model=self.model,
                     provider=self.provider,
-                    error=f"API Error: {response.status_code}, {error_text}"  # 【修复 2026-04-10】传递完整错误信息
+                    error=f"API Error: {response.status_code}, {error_text}"
                 )
             
             data = response.json()
@@ -469,6 +507,13 @@ class BaseAIService:
             ) as response:
                 self._current_response = response
                 
+                # 【修复】发送请求后立即检查取消标志，避免延迟
+                if self._cancelled:
+                    logger.info("[chat_with_tools_stream] 请求发送后立即检测到取消")
+                    response.close()
+                    yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
+                    return
+                
                 if response.status_code != 200:
                     yield StreamChunk(
                         content="",
@@ -478,7 +523,27 @@ class BaseAIService:
                     )
                     return
                 
-                async for line in response.aiter_lines():
+                # 【问题2修复】同样使用wait_for定期检查，每1秒超时
+                # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
+                line_iterator = response.aiter_lines()
+                while True:
+                    try:
+                        line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        if self._cancelled:
+                            logger.info("[chat_with_tools_stream] Cancelled (1s timeout check)")
+                            yield StreamChunk(
+                                content="",
+                                model=self.model,
+                                is_done=True,
+                                stream_error="任务已取消",
+                                stream_error_type="cancelled"
+                            )
+                            return
+                        continue
+                    except StopAsyncIteration:
+                        break
+                    
                     if self._cancelled:
                         logger.info("[chat_with_tools_stream] Cancelled")
                         yield StreamChunk(

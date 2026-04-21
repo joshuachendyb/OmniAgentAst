@@ -49,6 +49,15 @@ from app.services.tools.file.file_schema import (
     SearchFileContentInput,
     SearchFilesByNameInput,
     GenerateReportInput,
+    CopyFileInput,
+    CreateDirectoryInput,
+    GetFileInfoInput,
+    CompareFilesInput,
+    BatchRenameInput,
+    CompressFilesInput,
+    FileMonitorInput,
+    FileStatisticsInput,
+    FileChecksumInput,
 )
 
 from app.services.agent import (
@@ -306,8 +315,31 @@ class FileTools:
             # 检查路径是否在白名单内
             for allowed in self.allowed_paths:
                 allowed_real = Path(os.path.realpath(allowed))
-                if str(real_path).startswith(str(allowed_real)):
-                    return True, None
+                # 【修复P13】防止前缀绕过：必须验证是真正的子路径
+                # 例如：C:/Users 允许 C:/Users/subdir，但不允许 C:/Usersbackdoor
+                try:
+                    real_parts = Path(real_path).parts
+                    allowed_parts = Path(allowed_real).parts
+                    
+                    # 检查是否完全匹配开头
+                    if len(real_parts) >= len(allowed_parts):
+                        prefix_match = all(real_parts[i] == allowed_parts[i] for i in range(len(allowed_parts)))
+                        if not prefix_match:
+                            continue
+                        
+                        # 【关键修复】对于驱动器根路径(如C:\ = 1 part = ('C:\',))
+                        # 必须完全相等，不允许 C:\Usersbackdoor 绕过 C:\
+                        # 对于普通目录(如C:/Users = 2+ parts)，允许子目录
+                        if len(allowed_parts) == 1 and (allowed_parts[0].endswith(':') or allowed_parts[0].endswith(':\\') or allowed_parts[0].endswith(':/')):
+                            # 驱动器根路径：必须完全相等
+                            if str(real_path) == str(allowed_real) or real_path.parts[0] == allowed_parts[0]:
+                                return True, None
+                        else:
+                            # 普通目录：允许子目录
+                            if len(real_parts) > len(allowed_parts):
+                                return True, None
+                except (ValueError, OSError):
+                    pass
             
             return False, f"路径 '{file_path}' 不在允许的操作范围内（仅允许：{', '.join(str(p) for p in self.allowed_paths[:5])}...）"
             
@@ -388,7 +420,7 @@ class FileTools:
             
             # 读取文件内容（异步执行）
             def _read_sync():
-                with open(path, 'r', encoding=encoding, errors='ignore') as f:
+                with open(path, 'r', encoding=encoding, errors='replace') as f:
                     return f.readlines()
             
             lines = await asyncio.to_thread(_read_sync)
@@ -495,10 +527,32 @@ class FileTools:
             
             # 定义实际写入操作
             def _write_sync():
+                import tempfile
+                import os
+                
                 path.parent.mkdir(parents=True, exist_ok=True)
-                with open(path, 'w', encoding=encoding) as f:
+                
+                # 【修复P12】先写入临时文件，然后原子重命名
+                with tempfile.NamedTemporaryFile(
+                    mode='w',
+                    encoding=encoding,
+                    dir=path.parent,
+                    delete=False,
+                    prefix=f".{path.name}.",
+                    suffix=""
+                ) as f:
                     f.write(content)
-                return True
+                    temp_path = f.name
+                
+                try:
+                    os.replace(temp_path, str(path))
+                    return True
+                except Exception:
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
+                    raise
             
             success = await asyncio.to_thread(
                 self.safety.execute_with_safety,
@@ -542,6 +596,7 @@ class FileTools:
 - dir_path: 目录的完整路径（必须是绝对路径，如 D:/项目代码 或 C:/Users/用户名/Documents）
 - recursive: 是否递归列出子目录内容，默认为False（不递归）
 - max_depth: 最大递归深度，仅当 recursive=True 时有效，默认为10
+- page_token: 分页令牌（位置编码），用于获取下一页结果，默认为None（第一页）
 
 【重要】必须使用 dir_path 作为参数名，不要使用 directory_path、path 或其他名称。
 错误示例: {"directory_path": "..."} 或 {"path": "..."}
@@ -556,6 +611,10 @@ class FileTools:
                 "dir_path": "D:/项目代码",
                 "recursive": True,
                 "max_depth": 3
+            },
+            {
+                "dir_path": "E:/工作文档",
+                "page_token": "MA=="  # 示例：base64编码的"0"
             }
         ]
     )
@@ -563,7 +622,8 @@ class FileTools:
         self,
         dir_path: str,
         recursive: bool = False,
-        max_depth: int = 100000,
+        max_depth: int = 10,
+        page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """列出目录内容"""
         # 验证路径合法性
@@ -576,6 +636,18 @@ class FileTools:
             }, "list_directory")
         
         path = Path(dir_path)
+        
+        # 解码page_token
+        start_offset = 0
+        if page_token:
+            try:
+                start_offset = decode_page_token(page_token)
+            except Exception as e:
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"Invalid page token: {e}",
+                    "entries": []
+                }, "list_directory")
         
         try:
             if not path.exists():
@@ -649,7 +721,7 @@ class FileTools:
                 file_count = sum(1 for e in all_entries if e.get("type") == "file")
                 
                 # 只返回前 MAX_DISPLAY_ENTRIES 项（排序后目录在前、文件在后）
-                display_entries = all_entries[:MAX_DISPLAY_ENTRIES]
+                display_entries = all_entries[start_offset:start_offset + MAX_DISPLAY_ENTRIES]
                 
                 # 记录截断日志，方便运维监控大目录场景
                 logger.warning(
@@ -665,7 +737,8 @@ class FileTools:
                     "directory": str(path),
                     "truncated": True,  # 标记为截断状态
                     "dir_count": dir_count,  # 目录总数
-                    "file_count": file_count  # 文件总数
+                    "file_count": file_count,  # 文件总数
+                    "next_page_token": encode_page_token(start_offset + MAX_DISPLAY_ENTRIES) if start_offset + MAX_DISPLAY_ENTRIES < total else None  # 分页标记
                 }, "list_directory")
 
             # 小目录（<=200项）：直接返回全部数据
@@ -673,7 +746,8 @@ class FileTools:
                 "success": True,
                 "entries": all_entries,
                 "total": total,
-                "directory": str(path)
+                "directory": str(path),
+                "next_page_token": None  # 没有更多数据
             }, "list_directory")
             
         except Exception as e:
@@ -872,6 +946,9 @@ class FileTools:
             
             # 定义移动操作
             def _move_sync():
+                # 【修复P9】检查目标文件是否已存在
+                if dst.exists():
+                    raise FileExistsError(f"目标路径已存在: {dst}，移动操作已取消。请先删除目标文件或指定其他路径。")
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(src), str(dst))
                 return True
@@ -940,12 +1017,12 @@ class FileTools:
     async def search_file_content(
         self,
         pattern: str,
-        path: str = ".",
+        path: str = "~",
         file_pattern: str = "*",
         recursive: bool = True,
         # 内部参数，不暴露给 LLM
         use_regex: bool = False,
-        # 【修改】添加 page_token 参数用于分页，统一使用位置编码
+        # 分页标记，用于继续之前的搜索
         page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
         """搜索文件内容中的关键字"""
@@ -988,55 +1065,45 @@ class FileTools:
                         "matches": []
                     }, "search_file_content")
             
-            # 搜索文件内容 - 支持循环搜索获取全部结果
+            # 搜索文件内容 - 单次遍历（P3修复：去掉while True循环）
             def _search_sync():
                 import os
+                import fnmatch
                 
                 all_results = []
-                
-                # 每次搜索最大获取数量（内部循环用，不限制最终结果）
-                BATCH_SIZE = 10000
-                
-                # 去除pattern首尾空白
                 search_term = pattern.strip()
-                
-                # 【修改】用 page_token 统一分页
                 start_offset = decode_page_token(page_token) if page_token else 0
-                
-                # 循环搜索，直到获取全部结果
                 seen_count = 0
-                while True:
-                    batch_results = []
+                
+                # 单次遍历，不需要while循环
+                for root, dirs, files in os.walk(search_path):
+                    # 【修复P6】尊重recursive参数
+                    if not recursive:
+                        dirs.clear()  # 不递归：清空子目录列表，os.walk不会进入子目录
                     
-                    # 逐步遍历目录
-                    for root, dirs, files in os.walk(search_path):
-                        # 遍历当前目录的文件
-                        for filename in files:
-                            # 用 file_pattern 过滤文件名
-                            if file_pattern and file_pattern != "*":
-                                import re
-                                fp = file_pattern.replace(".", r"\.").replace("*", ".*").replace("?", ".")
-                                fp = f"^{fp}$"
-                                try:
-                                    if not re.match(fp, filename):
-                                        continue
-                                except:
-                                    pass
-                            
-                            file_path = Path(root) / filename
-                            file_str = str(file_path.relative_to(search_path))
-                            
-                            # 【修改】用位置偏移跳过已处理的文件
-                            if seen_count < start_offset:
-                                seen_count += 1
+                    # 遍历当前目录的文件
+                    for filename in files:
+                        # 【修复P10】用fnmatch替代手工正则
+                        if file_pattern and file_pattern != "*":
+                            if not fnmatch.fnmatch(filename, file_pattern):
                                 continue
-                            
-                            # 读取文件内容
-                            try:
-                                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                                    content = f.read()
-                            except:
-                                continue
+                        
+                        file_path = Path(root) / filename
+                        file_str = str(file_path.relative_to(search_path))
+                        
+                        # 【修改】用位置偏移跳过已处理的文件
+                        if seen_count < start_offset:
+                            seen_count += 1
+                            continue
+                        seen_count += 1
+                        
+                        # 【修复P11】errors='ignore' → errors='replace'
+                        # 【修复P16】指定具体异常
+                        try:
+                            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                                content = f.read()
+                        except (PermissionError, OSError):
+                            continue
                             
                             # 搜索内容
                             matches = []
@@ -1070,24 +1137,11 @@ class FileTools:
                                     idx = content.find(search_term, idx + 1)
                             
                             if matches:
-                                batch_results.append({
+                                all_results.append({
                                     "file": file_str,
                                     "matches": matches,
                                     "match_count": len(matches)
                                 })
-                            
-                            # 达到本次限制，停止收集
-                            if len(batch_results) >= BATCH_SIZE:
-                                break
-                    
-                    # 添加本批次结果
-                    all_results.extend(batch_results)
-                    
-                    if not batch_results:
-                        break  # 搜索完成
-                    
-                    # 【删除 max_results 限制判断】
-                    # 原因：工具必须原原本本返回用户需要的结果，不应该限制数量
                 
                 # 排序：匹配多的文件在前
                 all_results.sort(key=lambda x: x["match_count"], reverse=True)
@@ -1170,23 +1224,15 @@ class FileTools:
             {
                 "file_pattern": "readme*",
                 "path": "D:/项目代码",
-                "recursive": True,
-                "max_results": 100
+                "recursive": True
             }
         ]
     )
     async def search_files(
         self,
         file_pattern: str,
-        path: str = ".",
+        path: str = "~",
         recursive: bool = True,
-        # 【修改 max_depth 默认值 10→100000】
-        # 原因：小沈之前的知识浅薄，错误的要求给工具设置数量限制
-        # 现在导致了工具执行错误，反馈的结果隐藏了真实的数据
-        # 小沈是一个大混蛋，几次纠正都死不悔改
-        # 工具必须原原本本返回用户需要的结果，不应该限制数量
-        # 如果限制数量会丢失真实数据，这是错误的
-        # 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
         max_depth: int = 100000,
         # 【删除 max_results 参数】
         # 原因：小沈之前的知识浅薄，错误的要求给工具设置数量限制
@@ -1233,91 +1279,57 @@ class FileTools:
                 
                 all_matches = []
                 seen_files = set()
-                
-                # 每次搜索最大获取数量（内部循环用，不限制最终结果）
-                BATCH_SIZE = 10000
-                
-                # 【修改】用 page_token 统一分页
                 start_offset = decode_page_token(page_token) if page_token else 0
+                seen_count = 0
                 
-                # 循环搜索，直到获取全部结果
-                while True:
-                    batch_matches = []
-                    batch_seen = set()
+                # 单次遍历（P4修复：去掉while True循环）
+                import fnmatch
+                
+                # 逐步遍历目录
+                for root, dirs, files in os.walk(search_path):
+                    # 【修复P15】尊重recursive参数
+                    if not recursive:
+                        dirs.clear()  # 不递归：清空子目录列表
+                    else:
+                        # 深度限制
+                        rel_root = Path(root).relative_to(search_path)
+                        depth = len(rel_root.parts) if str(rel_root) != "." else 0
+                        if depth >= max_depth:
+                            dirs.clear()  # 不再深入此目录的子目录
+                            continue
                     
-                    # 转换通配符为正则
-                    import re
-                    regex_pattern = file_pattern.replace(".", r"\.").replace("*", ".*").replace("?", ".")
-                    regex_pattern = f"^{regex_pattern}$"
-                    try:
-                        file_regex = re.compile(regex_pattern)
-                    except re.error:
-                        file_regex = None
-                    
-                    # 逐步遍历目录
-                    for root, dirs, files in os.walk(search_path):
-                        # 检查深度限制
-                        if recursive:
-                            rel_root = Path(root).relative_to(search_path)
-                            depth = len(rel_root.parts) if str(rel_root) != "." else 0
-                            if depth >= max_depth:
-                                continue
+                    # 遍历当前目录的文件
+                    for filename in files:
+                        # 【修复P10】用fnmatch替代手工正则
+                        if not fnmatch.fnmatch(filename, file_pattern):
+                            continue
                         
-                        # 遍历当前目录的文件
-                        for filename in files:
-                            # 正则匹配文件名
-                            if file_regex and not file_regex.match(filename):
-                                continue
-                            
-                            file_path = Path(root) / filename
-                            file_str = str(file_path.relative_to(search_path))
-                            
-                            # 跳过已存在的
-                            if file_str in seen_files:
-                                continue
-                            
-                            # 【修改】用位置偏移跳过已处理的文件
-                            current_idx = len(seen_files)
-                            if current_idx < start_offset:
-                                seen_files.add(file_str)
-                                continue
-                            
+                        file_path = Path(root) / filename
+                        file_str = str(file_path.relative_to(search_path))
+                        
+                        # 跳过已存在的
+                        if file_str in seen_files:
+                            continue
+                        
+                        seen_count += 1
+                        
+                        # 位置偏移跳过
+                        if seen_count <= start_offset:
                             seen_files.add(file_str)
-                            
-                            try:
-                                size = file_path.stat().st_size
-                            except:
-                                size = 0
-                            
-                            batch_matches.append({
-                                "name": filename,
-                                "path": file_str,
-                                "size": size
-                            })
-                            
-                            # 达到本次限制，停止收集
-                            if len(batch_matches) >= BATCH_SIZE:
-                                break
+                            continue
+                        seen_files.add(file_str)
                         
-                        # 达到本次限制，停止遍历
-                        if len(batch_matches) >= BATCH_SIZE:
-                            break
-                    
-                    # 添加本批次结果
-                    all_matches.extend(batch_matches)
-                    
-                    # 获取本批次最后一个文件名，用于下一次继续
-                    last_file = batch_matches[-1]["path"] if batch_matches else None
-                    
-                    # 如果没有更多结果了，或者已经达到总限制，停止循环
-                    if not last_file:
-                        break  # 搜索完成
-                    
-                    # 设置下一次继续的位置
-                    after = last_file
-                    
-                    # 【删除 max_results 限制判断】
-                    # 原因：工具必须原原本本返回用户需要的结果，不应该限制数量
+                        # 【修复P16】指定具体异常
+                        try:
+                            size = file_path.stat().st_size
+                        except (PermissionError, OSError):
+                            size = 0
+                        
+                        all_matches.append({
+                            "name": filename,
+                            "path": file_str,
+                            "size": size
+                        })
                 
                 return all_matches
             
@@ -1387,6 +1399,16 @@ class FileTools:
     )
     async def generate_report(self, output_dir: Optional[str] = None) -> Dict[str, Any]:
         """生成操作报告"""
+        # 【修复P5】验证输出目录路径
+        if output_dir:
+            is_valid, error_msg = self._validate_path(output_dir)
+            if not is_valid:
+                return _to_unified_format({
+                    "success": False,
+                    "error": error_msg,
+                    "reports": {}
+                }, "generate_report")
+        
         if not self.session_id:
             return _to_unified_format({
                 "success": False,
@@ -1417,6 +1439,532 @@ class FileTools:
                 "error": str(e),
                 "reports": {}
             }, "generate_report")
+
+    @register_tool(
+        name="copy_file",
+        description="""复制文件或目录到新位置。
+
+使用场景：
+- 当用户想要复制文件时使用此工具
+- 当用户想要备份文件时使用
+- 当用户说"复制文件"、"拷贝文件"、"备份文件"时使用
+
+参数说明：
+- source_path: 源文件或目录的完整路径（必须是绝对路径）
+- destination_path: 目标路径（可以是新文件名或新目录位置）
+- recursive: 是否递归复制目录，仅当源路径是目录时有效，默认为False
+- overwrite: 是否覆盖已存在的目标文件，默认为False
+
+【重要】必须使用 source_path 和 destination_path 作为参数名。
+正确示例: {"source_path": "C:/Users/file.txt", "destination_path": "D:/backup/file.txt"}""",
+        input_model=CopyFileInput,
+        examples=[
+            {
+                "source_path": "C:/Users/用户名/Documents/file.txt",
+                "destination_path": "D:/backup/file.txt"
+            },
+            {
+                "source_path": "C:/Users/用户名/Documents/folder",
+                "destination_path": "D:/backup/folder",
+                "recursive": True
+            }
+        ]
+    )
+    async def copy_file(
+        self,
+        source_path: str,
+        destination_path: str,
+        recursive: bool = False,
+        overwrite: bool = False,
+    ) -> Dict[str, Any]:
+        """复制文件或目录"""
+        # 导入copy_file实现
+        from app.services.tools.file.copy_file import copy_file_impl
+        
+        return await copy_file_impl(
+            source_path=source_path,
+            destination_path=destination_path,
+            recursive=recursive,
+            overwrite=overwrite,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="create_directory",
+        description="""创建新目录。
+
+使用场景：
+- 当用户想要创建新文件夹时使用此工具
+- 当用户说"创建目录"、"新建文件夹"、"mkdir"时使用
+
+参数说明：
+- dir_path: 要创建的目录的完整路径（必须是绝对路径）
+- parents: 是否创建父目录，默认为True（如果父目录不存在则创建）
+- exist_ok: 如果目录已存在是否报错，默认为True（不报错）
+
+【重要】必须使用 dir_path 作为参数名。
+正确示例: {"dir_path": "C:/Users/用户名/Documents/new_folder"}""",
+        input_model=CreateDirectoryInput,
+        examples=[
+            {
+                "dir_path": "C:/Users/用户名/Documents/new_folder"
+            },
+            {
+                "dir_path": "D:/项目代码/src/components",
+                "parents": True
+            }
+        ]
+    )
+    async def create_directory(
+        self,
+        dir_path: str,
+        parents: bool = True,
+        exist_ok: bool = True,
+    ) -> Dict[str, Any]:
+        """创建目录"""
+        from app.services.tools.file.create_directory import create_directory_impl
+        
+        return await create_directory_impl(
+            dir_path=dir_path,
+            parents=parents,
+            exist_ok=exist_ok,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="get_file_info",
+        description="""获取文件或目录的详细信息。
+
+使用场景：
+- 当用户想要查看文件属性时使用此工具
+- 当用户说"文件信息"、"查看属性"、"文件详情"时使用
+
+参数说明：
+- file_path: 文件或目录的完整路径（必须是绝对路径）
+
+【重要】必须使用 file_path 作为参数名。
+正确示例: {"file_path": "C:/Users/用户名/Documents/file.txt"}""",
+        input_model=GetFileInfoInput,
+        examples=[
+            {
+                "file_path": "C:/Users/用户名/Documents/file.txt"
+            }
+        ]
+    )
+    async def get_file_info(
+        self,
+        file_path: str,
+    ) -> Dict[str, Any]:
+        """获取文件信息"""
+        from app.services.tools.file.get_file_info import get_file_info_impl
+        
+        return await get_file_info_impl(
+            file_path=file_path,
+            validate_path_func=self._validate_path,
+            to_unified_format_func=_to_unified_format,
+        )
+
+    @register_tool(
+        name="compare_files",
+        description="""比较两个文件的内容、大小或修改时间。
+
+使用场景：
+- 当用户需要比较两个文件是否相同时使用此工具
+- 当用户需要验证文件完整性或检测文件变化时使用
+- 当需要确认文件备份或同步是否成功时使用
+
+参数说明：
+- file_path1: 第一个文件的完整路径（必须是绝对路径）
+- file_path2: 第二个文件的完整路径（必须是绝对路径）
+- algorithm: 比较算法：content（内容比较）、size（大小比较）、mtime（修改时间比较），默认为content
+- chunk_size: 分块大小（字节），用于大文件比较，默认8192字节
+
+【重要】必须使用正确的参数名。
+正确示例: {"file_path1": "C:/file1.txt", "file_path2": "C:/file2.txt", "algorithm": "content"}""",
+        input_model=CompareFilesInput,
+        examples=[
+            {
+                "file_path1": "C:/Users/用户名/Documents/file1.txt",
+                "file_path2": "C:/Users/用户名/Documents/file2.txt",
+                "algorithm": "content"
+            },
+            {
+                "file_path1": "D:/项目代码/version1.py",
+                "file_path2": "D:/项目代码/version2.py",
+                "algorithm": "size"
+            },
+            {
+                "file_path1": "E:/备份/data.db",
+                "file_path2": "E:/恢复/data.db",
+                "algorithm": "mtime",
+                "chunk_size": 16384
+            }
+        ]
+    )
+    async def compare_files(
+        self,
+        file_path1: str,
+        file_path2: str,
+        algorithm: str = "content",
+        chunk_size: int = 8192,
+    ) -> Dict[str, Any]:
+        """比较两个文件"""
+        from app.services.tools.file.compare_files import compare_files_impl
+        
+        return await compare_files_impl(
+            file_path1=file_path1,
+            file_path2=file_path2,
+            algorithm=algorithm,
+            chunk_size=chunk_size,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="batch_rename",
+        description="""批量重命名目录中的文件。
+
+使用场景：
+- 当用户需要批量修改文件名时使用此工具
+- 当需要按照特定模式重命名文件时使用
+- 当需要整理文件命名规范时使用
+
+参数说明：
+- directory: 目标目录的完整路径（必须是绝对路径）
+- pattern: 匹配模式（支持正则表达式）
+- replacement: 替换字符串
+- recursive: 是否递归处理子目录，默认为False
+- preview: 是否只预览不执行，默认为False
+- conflict_strategy: 冲突处理策略：skip（跳过）、overwrite（覆盖）、rename（自动重命名），默认为skip
+
+【重要】必须使用正确的参数名。
+正确示例: {"directory": "C:/Users/用户名/Photos", "pattern": "IMG_\\d+\\.jpg", "replacement": "photo_$1.jpg", "preview": true}""",
+        input_model=BatchRenameInput,
+        examples=[
+            {
+                "directory": "C:/Users/用户名/Photos",
+                "pattern": "IMG_\\d+\\.jpg",
+                "replacement": "photo_$1.jpg",
+                "preview": True
+            },
+            {
+                "directory": "D:/项目代码/docs",
+                "pattern": "(.+)\\.txt",
+                "replacement": "$1.md",
+                "recursive": True,
+                "conflict_strategy": "rename"
+            },
+            {
+                "directory": "E:/音乐",
+                "pattern": "track_",
+                "replacement": "song_",
+                "conflict_strategy": "overwrite"
+            }
+        ]
+    )
+    async def batch_rename(
+        self,
+        directory: str,
+        pattern: str,
+        replacement: str,
+        recursive: bool = False,
+        preview: bool = False,
+        conflict_strategy: str = "skip",
+    ) -> Dict[str, Any]:
+        """批量重命名文件"""
+        from app.services.tools.file.batch_rename import batch_rename_impl
+        
+        return await batch_rename_impl(
+            directory=directory,
+            pattern=pattern,
+            replacement=replacement,
+            recursive=recursive,
+            preview=preview,
+            conflict_strategy=conflict_strategy,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="compress_files",
+        description="""压缩文件或目录。
+
+使用场景：
+- 当用户需要压缩文件以节省存储空间时使用此工具
+- 当需要打包多个文件以便传输时使用
+- 当需要创建备份压缩包时使用
+
+参数说明：
+- source_path: 源文件或目录的完整路径（必须是绝对路径）
+- destination_path: 目标压缩文件路径（必须是绝对路径）
+- format: 压缩格式：zip、tar.gz，默认为zip
+- compression_level: 压缩级别（0-9，0不压缩，9最高压缩），默认为6
+- password: 压缩密码（可选），用于加密压缩文件
+- split_size: 分卷大小（字节），None表示不分卷
+
+【重要】必须使用正确的参数名。
+正确示例: {"source_path": "C:/Users/用户名/Documents", "destination_path": "C:/备份/docs.zip", "format": "zip", "compression_level": 9}""",
+        input_model=CompressFilesInput,
+        examples=[
+            {
+                "source_path": "C:/Users/用户名/Documents",
+                "destination_path": "C:/备份/docs.zip",
+                "format": "zip",
+                "compression_level": 9
+            },
+            {
+                "source_path": "D:/项目代码",
+                "destination_path": "D:/备份/project.tar.gz",
+                "format": "tar.gz",
+                "compression_level": 6
+            },
+            {
+                "source_path": "E:/敏感数据",
+                "destination_path": "E:/加密备份/secure.zip",
+                "format": "zip",
+                "password": "mypassword123",
+                "split_size": 104857600  # 100MB分卷
+            }
+        ]
+    )
+    async def compress_files(
+        self,
+        source_path: str,
+        destination_path: str,
+        format: str = "zip",
+        compression_level: int = 6,
+        password: Optional[str] = None,
+        split_size: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """压缩文件或目录"""
+        from app.services.tools.file.compress_files import compress_files_impl
+        
+        return await compress_files_impl(
+            source_path=source_path,
+            destination_path=destination_path,
+            format=format,
+            compression_level=compression_level,
+            password=password,
+            split_size=split_size,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="file_monitor",
+        description="""监控文件系统变化。
+
+使用场景：
+- 当用户需要实时监控文件变化时使用此工具
+- 当需要检测文件创建、修改、删除事件时使用
+- 当需要监控目录变化并触发相应操作时使用
+
+参数说明：
+- directory: 监控目录的完整路径（必须是绝对路径）
+- event_types: 监控事件类型列表，默认为["created", "modified", "deleted", "renamed"]
+- recursive: 是否递归监控子目录，默认为True
+- filters: 过滤条件字典，支持file_type、min_size、max_size、modified_after等字段
+- duration: 监控持续时间（秒），None表示持续监控直到手动停止
+
+【重要】必须使用正确的参数名。
+正确示例: {"directory": "C:/Users/用户名/Downloads", "event_types": ["created", "modified"], "duration": 60}""",
+        input_model=FileMonitorInput,
+        examples=[
+            {
+                "directory": "C:/Users/用户名/Downloads",
+                "event_types": ["created", "modified"],
+                "duration": 60
+            },
+            {
+                "directory": "D:/项目代码/logs",
+                "recursive": False,
+                "filters": {"file_type": ".log"}
+            },
+            {
+                "directory": "E:/监控目录",
+                "event_types": ["created", "deleted", "renamed"],
+                "filters": {"min_size": 1024, "max_size": 1048576}
+            }
+        ]
+    )
+    async def file_monitor(
+        self,
+        directory: str,
+        event_types: List[str] = None,
+        recursive: bool = True,
+        filters: Optional[Dict[str, Any]] = None,
+        duration: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """监控文件系统变化"""
+        from app.services.tools.file.file_monitor import file_monitor_impl
+        
+        if event_types is None:
+            event_types = ["created", "modified", "deleted", "renamed"]
+        
+        return await file_monitor_impl(
+            directory=directory,
+            event_types=event_types,
+            recursive=recursive,
+            filters=filters,
+            duration=duration,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="file_statistics",
+        description="""统计文件系统信息。
+
+使用场景：
+- 当用户需要分析目录结构时使用此工具
+- 当需要统计文件数量、大小分布时使用
+- 当需要分析文件类型分布时使用
+
+参数说明：
+- directory: 统计目录的完整路径（必须是绝对路径）
+- recursive: 是否递归统计子目录，默认为True
+- max_depth: 最大递归深度，默认为100000
+- filters: 过滤条件字典，支持file_type、min_size、max_size等字段
+- output_format: 输出格式：json、csv、text，默认为json
+
+【重要】必须使用正确的参数名。
+正确示例: {"directory": "C:/Users/用户名/Documents", "recursive": true, "output_format": "json"}""",
+        input_model=FileStatisticsInput,
+        examples=[
+            {
+                "directory": "C:/Users/用户名/Documents",
+                "recursive": True,
+                "output_format": "json"
+            },
+            {
+                "directory": "D:/项目代码",
+                "filters": {"file_type": ".py"},
+                "output_format": "csv"
+            },
+            {
+                "directory": "E:/数据存储",
+                "recursive": True,
+                "max_depth": 3,
+                "filters": {"min_size": 1024, "max_size": 10485760}
+            }
+        ]
+    )
+    async def file_statistics(
+        self,
+        directory: str,
+        recursive: bool = True,
+        max_depth: int = 100000,
+        filters: Optional[Dict[str, Any]] = None,
+        output_format: str = "json",
+    ) -> Dict[str, Any]:
+        """统计文件系统信息"""
+        from app.services.tools.file.file_statistics import file_statistics_impl
+        
+        return await file_statistics_impl(
+            directory=directory,
+            recursive=recursive,
+            max_depth=max_depth,
+            filters=filters,
+            output_format=output_format,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
+
+    @register_tool(
+        name="file_checksum",
+        description="""计算文件的校验和（哈希值）。
+
+使用场景：
+- 当用户需要验证文件完整性时使用此工具
+- 当需要检测文件是否被修改时使用
+- 当需要生成文件的唯一标识符时使用
+
+参数说明：
+- file_path: 文件的完整路径（必须是绝对路径）
+- algorithm: 哈希算法：md5、sha1、sha256、sha512，默认为md5
+- verify_hash: 验证哈希值（如果提供则进行验证）
+- chunk_size: 分块大小（字节），用于大文件哈希计算，默认65536字节
+
+【重要】必须使用正确的参数名。
+正确示例: {"file_path": "C:/Users/用户名/Documents/file.iso", "algorithm": "sha256"}""",
+        input_model=FileChecksumInput,
+        examples=[
+            {
+                "file_path": "C:/Users/用户名/Documents/file.iso",
+                "algorithm": "sha256"
+            },
+            {
+                "file_path": "D:/下载/软件安装包.exe",
+                "algorithm": "md5",
+                "verify_hash": "d41d8cd98f00b204e9800998ecf8427e"
+            },
+            {
+                "file_path": "E:/备份/data.db",
+                "algorithm": "sha512",
+                "chunk_size": 131072
+            }
+        ]
+    )
+    async def file_checksum(
+        self,
+        file_path: str,
+        algorithm: str = "md5",
+        verify_hash: Optional[str] = None,
+        chunk_size: int = 65536,
+    ) -> Dict[str, Any]:
+        """计算文件校验和"""
+        from app.services.tools.file.file_checksum import file_checksum_impl
+        
+        return await file_checksum_impl(
+            file_path=file_path,
+            algorithm=algorithm,
+            verify_hash=verify_hash,
+            chunk_size=chunk_size,
+            validate_path_func=self._validate_path,
+            safety_service=self.safety,
+            session_id=self.session_id,
+            record_operation_func=self.safety.record_operation,
+            execute_with_safety_func=self.safety.execute_with_safety,
+            to_unified_format_func=_to_unified_format,
+            get_next_sequence_func=self._get_next_sequence,
+        )
 
 
 # ============================================================
@@ -1483,6 +2031,84 @@ def _generate_summary(tool_name: str, result: Any) -> str:
             return f"生成报告失败：{result.get('error', '未知错误')}"
         reports = result.get("reports", {})
         return f"成功生成 {len(reports)} 个报告"
+    
+    elif tool_name == "copy_file":
+        if result.get("success") is False:
+            return f"复制失败：{result.get('error', '未知错误')}"
+        source = result.get("source", "")
+        destination = result.get("destination", "")
+        return f"成功复制文件：{source} -> {destination}"
+    
+    elif tool_name == "create_directory":
+        if result.get("success") is False:
+            return f"创建目录失败：{result.get('error', '未知错误')}"
+        dir_path = result.get("dir_path", "")
+        return f"成功创建目录：{dir_path}"
+    
+    elif tool_name == "get_file_info":
+        if result.get("success") is False:
+            return f"获取文件信息失败：{result.get('error', '未知错误')}"
+        file_path = result.get("file_path", "")
+        return f"成功获取文件信息：{file_path}"
+    
+    elif tool_name == "compare_files":
+        if result.get("success") is False:
+            return f"文件比较失败：{result.get('error', '未知错误')}"
+        identical = result.get("identical", False)
+        size_match = result.get("size_match", False)
+        if identical:
+            return "文件内容完全相同"
+        elif size_match:
+            return "文件大小相同但内容不同"
+        else:
+            return "文件大小不同"
+    
+    elif tool_name == "batch_rename":
+        if result.get("success") is False:
+            return f"批量重命名失败：{result.get('error', '未知错误')}"
+        total_files = result.get("total_files", 0)
+        renamed_files = result.get("renamed_files", 0)
+        preview = result.get("preview_mode", False)
+        if preview:
+            return f"预览模式：计划重命名 {renamed_files}/{total_files} 个文件"
+        else:
+            return f"成功重命名 {renamed_files}/{total_files} 个文件"
+    
+    elif tool_name == "compress_files":
+        if result.get("success") is False:
+            return f"压缩失败：{result.get('error', '未知错误')}"
+        source = result.get("source_path", "")
+        destination = result.get("destination_path", "")
+        compression_ratio = result.get("compression_ratio", 0)
+        return f"成功压缩：{source} -> {destination}，压缩率：{compression_ratio:.2%}"
+    
+    elif tool_name == "file_monitor":
+        if result.get("success") is False:
+            return f"文件监控失败：{result.get('error', '未知错误')}"
+        events_count = result.get("events_count", 0)
+        duration = result.get("duration", 0)
+        return f"监控完成：检测到 {events_count} 个事件，持续 {duration} 秒"
+    
+    elif tool_name == "file_statistics":
+        if result.get("success") is False:
+            return f"文件统计失败：{result.get('error', '未知错误')}"
+        total_files = result.get("total_files", 0)
+        total_size = result.get("total_size", 0)
+        return f"统计完成：共 {total_files} 个文件，总大小 {total_size:,} 字节"
+    
+    elif tool_name == "file_checksum":
+        if result.get("success") is False:
+            return f"校验和计算失败：{result.get('error', '未知错误')}"
+        algorithm = result.get("algorithm", "")
+        checksum = result.get("checksum", "")
+        verification = result.get("verification_result")
+        if verification is not None:
+            if verification:
+                return f"{algorithm.upper()} 校验和验证通过：{checksum[:16]}..."
+            else:
+                return f"{algorithm.upper()} 校验和验证失败"
+        else:
+            return f"{algorithm.upper()} 校验和：{checksum[:16]}..."
     
     return "操作完成"
 

@@ -20,31 +20,9 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import {
-  Input,
-  Button,
-  Card,
-  Tag,
-  Space,
-  message,
-  Tooltip,
-} from "antd";
-import {
-  RobotOutlined,
-  PlusOutlined,
-  ThunderboltOutlined,
-  EyeOutlined,
-  EyeInvisibleOutlined,
-  InfoCircleOutlined,
-  LockOutlined,
-} from "@ant-design/icons";
+import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
-import { securityApi } from "../../services/api";
-import DangerConfirmModal from "../DangerConfirmModal";
-import SecurityAlert from "../SecurityAlert";
-import { showSecurityNotification } from "../SecurityNotification";
-import { getRiskLevel } from "../../types/security";
 import { useSSE, ExecutionStep } from "../../utils/sse";
 import { handleError, handleApiError, handleSSEError, ErrorType } from "../../utils/errorHandler";
 
@@ -65,7 +43,6 @@ import {
   showSaveError,
   showLoadSuccess,
   showNetworkError,
-  showSessionConflict,
   showConflictError,
   showInfo,
   showRetryWarning,
@@ -75,22 +52,33 @@ import {
   showNoActiveTaskWarning,
   showLoadRetryWarning,
   showLoadErrorWithKey,
-  showDangerCancelled,
   showNewSessionSuccess,
   showNewSessionRetryWarning,
   showNewSessionError,
-  showTitleSaved,
-  showTitleUpdated,
 } from "../../utils/chatMessages";
 
 // 【小强修复 2026-03-31】独立输入框组件，隔离inputValue状态避免父组件重渲染
 import ChatInput from "./ChatInput";
 
-// 【小强 2026-04-12】骨架屏组件
-import { MessageListSkeleton } from "../Skeleton";
+// 【小沈 2026-04-21】MessageArea组件拆分
+import MessageArea from './MessageArea';
+
+// 【小沈 2026-04-21】ChatHeader组件拆分
+import ChatHeader from './ChatHeader';
+// 【小沈 2026-04-21】ChatToolbar组件拆分
+import ChatToolbar from './ChatToolbar';
+
+// 【小强 2026-04-21】Hooks已创建，按方案2.1.7/2.2.7/2.3.5验证1：暂不使用
+// 使用时导入：
+// import { useChatStreaming } from '../../hooks/chat/useChatStreaming';
+// import { useChatSession } from '../../hooks/chat/useChatSession';
+// import { useChatPersistence } from '../../hooks/chat/useChatPersistence';
+
+// 【小强 2026-04-21】Phase 2 Task 2.2: 导入useChatState（暂不使用，验证导入正确）
+import { useChatState } from '../../hooks/chat/useChatState';
 
 // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表useMemo优化（使用独立hook）
-import { useMessageListRender } from '../../hooks/useMessageListRender';
+// import { useMessageListRender } from '../../hooks/useMessageListRender'; // 已移至MessageList组件内部
 
 // 【小新 2026-03-13 代码拆分】类型和工具函数已提取到独立文件
 // - 类型定义: src/types/chat.ts
@@ -109,60 +97,63 @@ import { useMessageListRender } from '../../hooks/useMessageListRender';
  * @version 3.0.0
  */
 const NewChatContainer: React.FC = () => {
+  // Phase 2: 使用useChatState统一管理状态
+  const chatState = useChatState();
+  const { 
+    // 独立状态
+    showExecution, setShowExecution, 
+    useStream, setUseStream,
+    isInitialized, setIsInitialized,
+    saveStatus, setSaveStatus,
+    sessionJumpLoading, setSessionJumpLoading,
+    isMessageListLoading, setIsMessageListLoading,
+    retryCount, setRetryCount,
+    isSavingTitle, setIsSavingTitle,
+    lastSaveTime, setLastSaveTime,
+    isRenderingMessages, setIsRenderingMessages,
+    // 核心状态
+    messages, setMessages,
+    loading, setLoading,
+    waitTime, setWaitTime,
+    isRetrying, setIsRetrying,
+    isPaused, setIsPaused,
+    sessionId, setSessionId,
+    sessionTitle, setSessionTitle,
+    sessionVersion, setSessionVersion,
+    titleLocked, setTitleLocked,
+    editingTitle, setEditingTitle,
+    titleInput, setTitleInput,
+    lastSavedTitle, setLastSavedTitle,
+    // Refs
+    waitTimerRef,
+    messagesEndRef,
+    currentSessionIdRef,
+    messagesCountRef,
+    messagesRef,
+    replyUserMessageIdRef,
+    displayBufferRef,
+    isPausedRef,
+    executionStepsRef,
+    streamingContentRef,
+    streamingStepsRef,
+    userScrolledUpRef,
+    lastScrollTimeRef,
+    isLoadingHistoryRef,
+    logFlagsRef,
+    hasReceivedInterruptEventRef,
+    interruptInProgressRef,
+  } = chatState;
+  
   const [searchParams] = useSearchParams();
-  const [messages, setMessages] = useState<Message[]>([]);
-  // 【小强修复 2026-03-31】inputValue状态已移至ChatInput组件，避免每次按键触发整个组件重渲染
-  const [loading, setLoading] = useState(false);
-  // ⭐ 新增：等待时间计时器（正计时）
-  const [waitTime, setWaitTime] = useState(0);
-  const waitTimerRef = useRef<number | null>(null);
-  const [isRetrying, setIsRetrying] = useState(false);  // ⭐ 新增：重试状态
-  const [isPaused, setIsPaused] = useState(false);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [sessionTitle, setSessionTitle] = useState<string>("新会话");
-  const [sessionVersion, setSessionVersion] = useState<number>(1); // ⭐ 新增：会话版本号
-  const [titleLocked, setTitleLocked] = useState<boolean>(false); // ⭐ 新增：标题锁定状态
-  // 【小新第二修复 2026-03-02】title_source 是后端根据 title_locked 动态计算的，
-  // 不需要前端维护状态，直接使用 titleLocked 即可
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleInput, setTitleInput] = useState("");
-  const [lastSavedTitle, setLastSavedTitle] = useState<string>(""); // ⭐ 新增：记录最后保存的标题
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  // 【小新第二修复 2026-03-02】用于保存当前会话ID，确保onComplete时使用正确的ID
-  const currentSessionIdRef = useRef<string | null>(null);
-  // 【小新第二修复 2026-03-02】用于同步跟踪消息数量，确保保存时能获取准确值
-  const messagesCountRef = useRef<number>(0);
-  // 【小新第三修复 2026-03-02】用于同步存储pendingMessage，解决React闭包陷阱
-  const pendingMessageRef = useRef<Message | null>(null);
-  // 【小查修复2026-03-14】添加messagesRef避免visibilitychange useEffect频繁重新注册
-  const messagesRef = useRef<Message[]>([]);
-  // 【小新修复 2026-03-16】保存用户消息ID，用于AI消息关联
-  const replyUserMessageIdRef = useRef<number | null>(null);
-
-  // ⭐ 暂停功能缓冲区：暂存暂停期间接收的数据
-  const displayBufferRef = useRef<any[]>([]);
-  // ⭐ 暂停状态ref，用于在回调中同步访问
-  const isPausedRef = useRef(false);
-  // 【小查修复】用于在回调中获取最新的executionSteps
-  const executionStepsRef = useRef<ExecutionStep[]>([]);
-
+  
   // ===== 【小资优化 2026-04-13】流式性能优化 =====
-  // 1. 流式累积ref - 不触发重渲染
-  const streamingContentRef = useRef('');           // 累积AI回复内容
-  const streamingStepsRef = useRef<ExecutionStep[]>([]); // 累积执行步骤
-  // 【小沈注释 2026-04-18】已完全去掉节流机制，每次都实时更新UI
-
   // 2. 滚动控制ref
-  const userScrolledUpRef = useRef(false);
-  const lastScrollTimeRef = useRef(0);
   const SCROLL_THRESHOLD = 150;  // ChatGPT实践：超过150px认为用户主动滚动
   const SCROLL_INTERVAL = 100;   // 滚动节流间隔
 
   // 3. debounce保存函数ref - 使用chatHistory.ts已存在的debounce
   const saveMessagesToStorage = useRef(
     debounce((msgs: Message[], sid: string, title: string, paused: boolean, receiving: boolean) => {
-      // 【小强修复 2026-04-18】移除 receiving 限制，确保流式结束后的完整状态也能持久化
-      // 解决因最终状态未落盘，页面可见性变化时被读取出的旧缓存覆盖导致数据倒灌的问题
       if (sid) {
         const state = {
           messages: msgs,
@@ -176,7 +167,6 @@ const NewChatContainer: React.FC = () => {
         
         try {
           const stateStr = JSON.stringify(state);
-          // 原有4MB检查保留
           if (stateStr.length > 4 * 1024 * 1024) {
             const lightState = {
               sessionId: sid,
@@ -198,59 +188,17 @@ const NewChatContainer: React.FC = () => {
           }
         }
       }
-    }, 500)  // 500ms防抖
+    }, 500)
   );
   // ===== 【小资优化 2026-04-13】结束 =====
 
-  // 流式输出相关状态
-  const [showExecution, setShowExecution] = useState(true);
-  const [useStream, setUseStream] = useState(true); // 默认使用流式
-
-  // 安全检测v2.0状态
-  const [dangerModalVisible, setDangerModalVisible] = useState(false);
-  const [dangerCommand, setDangerCommand] = useState("");
-  const [dangerScore, setDangerScore] = useState(0);
-  const [dangerMessage, setDangerMessage] = useState("");
-  const [pendingMessage, setPendingMessage] = useState<Message | null>(null);
-  const [_checkingDanger, setCheckingDanger] = useState(false);
-  const [blockedCommand, setBlockedCommand] = useState<{
-    command: string;
-    score: number;
-    message: string;
-  } | null>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
-  // 【小查修复】使用 ref 存储加载状态，避免触发 useEffect
-  const isLoadingHistoryRef = useRef(false);
-
-  // 防重日志标记
-  const logFlagsRef = useRef({
-    chunkFirstDone: false,
-    showStepsFalseDone: false,
-    showStepsTrueDone: false,
-  });
-
-  // P1级别优化：新增状态变量
+  // SaveStatus类型定义
   type SaveStatus = "idle" | "saving" | "saved" | "error";
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
-  const [_sessionJumpLoading, setSessionJumpLoading] = useState(false);
-  const [__isRenderingMessages, setIsRenderingMessages] = useState(false); // 渲染大量消息时的loading
-  const [isMessageListLoading, setIsMessageListLoading] = useState(true); // 消息列表骨架屏状态
-  const [retryCount, setRetryCount] = useState<Record<string, number>>({});
-  const [_isSavingTitle, setIsSavingTitle] = useState(false);
-
-  // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表渲染hook
-  const messageElements = useMessageListRender({
-    messages,
-    showExecution,
-    sessionId,
-    sessionTitle,
-  });
-
-  const [_lastSaveTime, setLastSaveTime] = useState<number>(0);
 
   // SSE Hook配置（用于流式输出）
   const {
     isReceiving,
+    setIsReceiving,
     executionSteps,
     currentResponse,
     sendMessage: sendStreamMessage,
@@ -264,6 +212,19 @@ const NewChatContainer: React.FC = () => {
     },
     // onStep - 收到执行步骤
     useCallback((step: ExecutionStep) => {
+      // ✅ 如果正在中断中，忽略所有事件（防止中断后还收到start等事件）
+      // 但 interrupted 事件本身需要通过，否则UI不知道任务已中断
+      if (interruptInProgressRef.current && step.type !== "interrupted") {
+        console.log(`[中断] 忽略中断过程中收到的事件: ${step.type}`);
+        return;
+      }
+      
+      // 【中断检测】记录是否收到了interrupted事件
+      if (step.type === "interrupted" || (step.type === "incident" && (step as any).incident_value === "interrupted")) {
+        hasReceivedInterruptEventRef.current = true;
+        console.log("[中断] 收到 interrupted 事件");
+      }
+      
       // 【小沈修复 2026-04-16】在收到第一个步骤时重置暂停状态
       // 问题原因：如果 isPausedRef.current = true，所有步骤会存入 displayBufferRef 而不是 streamingStepsRef
       // 这发生在：1)用户先按暂停再创建新会话 2)从sessionStorage恢复暂停状态 3)后端发送paused事件
@@ -538,11 +499,8 @@ const NewChatContainer: React.FC = () => {
           }
           setWaitTime(0);
           setIsRetrying(false);
-           // 【小新第三修复 2026-03-02】清理ref和state
-           pendingMessageRef.current = null; // 同步清理
-           setPendingMessage(null); // 异步清理
            
-           // ⭐ 【小资优化 2026-04-13】使用累积的ref内容一次性更新
+          // ⭐ 【小资优化 2026-04-13】使用累积的ref内容一次性更新
            setMessages((prev) => {
              const lastMessage = prev[prev.length - 1];
 if (lastMessage && lastMessage.role === "assistant") {
@@ -1765,10 +1723,6 @@ return prev;
     }, 1000);
     clearSteps();
 
-    // 保存待发送消息到ref（同步）和state（异步）
-    pendingMessageRef.current = userMessage; // 同步更新，立即生效 ✅
-    setPendingMessage(userMessage);
-
     // 【小沈修复2026-03-03】在调用 /chat/stream 之前先保存用户消息
     // 这样即使AI响应失败，用户消息也不会丢失
     const currentSessionId = currentSessionIdRef.current || sessionId;
@@ -1856,35 +1810,146 @@ return prev;
   };
 
   /**
-   * 任务中断处理 - 前端小新代修改
-   * 【小查修复2026-03-14】传递true参数，阻止重连
+   * 任务中断处理
    */
+  // ✅ 智能等待中断事件函数
+  const waitForInterruptEvent = async (maxWaitTime = 3000, checkInterval = 200) => {
+    const startTime = Date.now();
+    let hasReceivedEvent = false;
+    
+    while (Date.now() - startTime < maxWaitTime) {
+      if (hasReceivedInterruptEventRef.current) {
+        console.log("[中断] 已收到 interrupted 事件");
+        hasReceivedEvent = true;
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+    
+    if (!hasReceivedEvent) {
+      console.warn(`[中断] 在 ${maxWaitTime}ms 内未收到 interrupted 事件，继续执行`);
+    }
+    
+    return hasReceivedEvent;
+  };
+  
   const handleInterrupt = async () => {
+    // 【防重复点击】如果正在中断中，忽略后续点击
+    if (interruptInProgressRef.current) {
+      console.log("[中断] 正在中断中，忽略重复点击");
+      return;
+    }
+    interruptInProgressRef.current = true;
+    
     const taskIdToCancel = serverTaskId;
     console.log(`[中断] serverTaskId=${serverTaskId}, taskIdToCancel=${taskIdToCancel}`);
-    if (taskIdToCancel) {
-      try {
-        showTaskControlInfo("正在中断任务...");
-        console.log("[中断] 已显示 '正在中断任务...' 提示");
-        
-        // 使用统一的 taskControlApi
-        const result = await taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined);
-        console.log("[中断] cancel API 返回:", result);
-        
-        // ✅ 先断开连接，停止自动重连！传递true表示手动中断
-        disconnect(true);
-        console.log("[中断] 已调用 disconnect(true)");
-        
-        // 显示后端返回的具体消息
-        showTaskResultMessage("interrupt", result.message);
-        console.log("[中断] 已显示中断成功提示");
-      } catch (error) {
-        console.error("[中断] 错误:", error);
-        showTaskControlMessage("interrupt", false, error instanceof Error ? error.message : String(error));
-      }
+    
+    try {
+      if (taskIdToCancel) {
+        try {
+          showTaskControlInfo("正在中断任务...");
+          console.log("[中断] 已显示 '正在中断任务...' 提示");
+          
+          // ✅【方案1】立即更新UI状态，给用户即时反馈
+          setLoading(false);
+          setIsPaused(false);
+          if (setIsReceiving) setIsReceiving(false);
+          
+          // ✅【方案3】设置超时保护，防止请求长时间挂起
+          const timeoutPromise = new Promise<any>((_, reject) => {
+            setTimeout(() => reject(new Error("中断请求超时")), 5000);
+          });
+          
+          // ✅【关键修复】不立即断开连接！等待后端发送interrupted/final事件
+          // 如果后端正在处理，等它发送完事件后再断开
+          // 立即断开会导致收不到interrupted事件，UI一直显示"加载中"
+          
+          // 使用统一的 taskControlApi（带超时）
+          const result = await Promise.race([
+            taskControlApi.cancel(taskIdToCancel, sessionId ?? undefined),
+            timeoutPromise
+          ]) as { success: boolean; message: string };
+          console.log("[中断] cancel API 返回:", result);
+          
+          // ✅ 使用智能等待策略等待后端发送interrupted事件
+          // 最长等待3000ms，每200ms检查一次
+          await waitForInterruptEvent(3000, 200);
+          
+          // ✅ 停止所有进行中的倒计时
+          if (waitTimerRef.current) {
+            clearInterval(waitTimerRef.current);
+            waitTimerRef.current = null;
+            console.log("[中断] 已清除waitTimerRef倒计时");
+          }
+          
+          disconnect(true, true, () => {
+            console.log("[中断] SSE已断开，状态已同步");
+            // 在断开连接完成后重置标记
+            hasReceivedInterruptEventRef.current = false;
+          });
+          console.log("[中断] 已调用 disconnect(true)");
+          
+          // 显示后端返回的具体消息
+          showTaskResultMessage("interrupt", result.message);
+          console.log("[中断] 已显示中断成功提示");
+        } catch (error) {
+          console.error("[中断] 错误:", error);
+          
+          // 【增强错误处理】区分错误类型并给出明确提示
+          let errorMessage = "中断请求失败";
+          if (error instanceof Error) {
+            if (error.message.includes("timeout") || error.message.includes("超时")) {
+              errorMessage = "中断请求超时，任务可能仍在运行";
+            } else if (error.message.includes("Failed to fetch") || error.message.includes("Network")) {
+              errorMessage = "网络连接失败，请刷新页面重试";
+            } else {
+              errorMessage = error.message;
+            }
+          }
+          
+          showTaskControlMessage("interrupt", false, errorMessage);
+          
+          // ✅ 即使出错也要确保UI状态更新，并延迟断开
+          // 无论cancel API是否成功，都需要断开SSE连接
+          setLoading(false);
+          setIsPaused(false);
+          if (setIsReceiving) setIsReceiving(false);
+          
+          // 【重试机制】错误情况下也等待interrupted事件
+          let retries = 0;
+          while (retries < 3) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+            if (hasReceivedInterruptEventRef.current) {
+              console.log("[中断] 异常情况下仍收到 interrupted 事件");
+              break;
+            }
+            retries++;
+          }
+          hasReceivedInterruptEventRef.current = false;
+          disconnect(true);
+          
+          console.log("[中断] 已处理异常，强制断开SSE连接");
+        } finally {
+          // 【防重复点击】重置中断标志（无论成功还是失败都重置）
+          interruptInProgressRef.current = false;
+        }
     } else {
-      console.warn("[中断] 没有有效的 taskId，无法中断");
-      showNoActiveTaskWarning();
+      console.warn("[中断] 没有有效的 taskId，可能任务尚未开始");
+      
+      // 【问题4修复】即使没有taskId，也要更新UI状态并断开连接
+      setLoading(false);
+      setIsPaused(false);
+      if (setIsReceiving) setIsReceiving(false);
+      
+      // 断开SSE连接
+      disconnect(true);
+      
+      // 显示提示
+      showTaskResultMessage("interrupt", "任务尚未开始或已结束，请求已取消");
+    }
+    } finally {
+      // 兜底：确保中断标志重置
+      interruptInProgressRef.current = false;
     }
   };
 
@@ -2001,109 +2066,17 @@ return prev;
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    setBlockedCommand(null);
 
     // ========== 红色开始标志 ==========
     logUserSend(userMessage.content);
     // ==================================
 
-    // 安全检测v2.0
-    setCheckingDanger(true);
-    try {
-      const checkResult = await securityApi.checkCommand(userMessage.content);
-      setCheckingDanger(false);
-
-      if (!checkResult.success || !checkResult.data) {
-        console.warn("安全检测失败:", checkResult.error);
-        await executeStreamSend(userMessage);
-        return;
-      }
-
-      const { score, message: riskMessage } = checkResult.data;
-      const riskLevel = getRiskLevel(score);
-
-      switch (riskLevel.level) {
-        case "SAFE":
-          await executeStreamSend(userMessage);
-          break;
-        case "MEDIUM":
-          showSecurityNotification(userMessage.content, score, riskMessage);
-          await executeStreamSend(userMessage);
-          break;
-        case "HIGH":
-          setDangerCommand(userMessage.content);
-          setDangerScore(score);
-          setDangerMessage(riskMessage);
-          // 【小新第三修复 2026-03-02】同步更新ref
-          pendingMessageRef.current = userMessage;
-          setPendingMessage(userMessage);
-          setDangerModalVisible(true);
-          break;
-        case "CRITICAL":
-          setBlockedCommand({
-            command: userMessage.content,
-            score,
-            message: riskMessage,
-          });
-          setMessages((prev) =>
-            prev.filter((msg) => msg.id !== userMessage.id)
-          );
-          // 使用统一错误处理中心 - 危险操作拦截
-          handleError({ 
-            error_type: ErrorType.DANGEROUS_OPERATION,
-            message: "危险操作已被系统拦截"
-          }, { source: "api" });
-          break;
-        }
-      } catch (error) {
-        console.warn("安全检测异常:", error);
-        setCheckingDanger(false);
-        // 使用统一错误处理中心 - 安全服务降级
-        handleError({
-          error_type: ErrorType.SECURITY_SERVICE_DOWN,
-          message: "安全检测服务暂时不可用，将以普通模式发送消息"
-        }, { source: "api" });
-        await executeStreamSend(userMessage);
-      }
-    };
+    // 【小强 2026-04-20】移除前端安全检测，直接发送消息
+    // 安全检测完全由后端处理，后端返回error步骤时前端会正确显示
+    await executeStreamSend(userMessage);
+  };
 
   // ============================================================
-
-  /**
-   * 危险命令确认执行
-   */
-  const handleDangerConfirm = async () => {
-    // 【强制修复】立即关闭弹窗，重置loading状态
-    setDangerModalVisible(false);
-    setLoading(false);
-    
-    // 【小新第五修复 2026-03-02】优先使用ref中的pendingMessage，确保获取正确的值
-    const messageToProcess = pendingMessageRef.current || pendingMessage;
-    if (messageToProcess) {
-      await executeStreamSend(messageToProcess);
-    }
-  };
-
-  /**
-   * 危险命令取消执行
-   */
-  const handleDangerCancel = () => {
-    // 【强制修复】立即关闭弹窗，重置loading状态
-    setDangerModalVisible(false);
-    setLoading(false);
-    
-    // 【小新第五修复 2026-03-02】优先使用ref中的pendingMessage
-    const messageToCancel = pendingMessageRef.current || pendingMessage;
-    if (messageToCancel) {
-      setMessages((prev) =>
-        prev.filter((msg) => msg.id !== messageToCancel.id)
-      );
-      showDangerCancelled();
-    }
-    // 【小新第五修复 2026-03-02】同步清理ref和state
-    pendingMessageRef.current = null;
-    setPendingMessage(null);
-  };
 
   /**
    * 新建会话 - 内部实现，支持重试机制
@@ -2214,236 +2187,66 @@ return prev;
   return (
     <Card
       styles={{ body: { padding: "0 4px 4px 4px" } }}
-      title={
-        <span 
-          style={{ cursor: "pointer", display: "inline-flex", alignItems: "center" }}
-                onClick={() => {
-                  if (!editingTitle && sessionId) {
-                    setTitleInput(sessionTitle || "");
-                  }
-                  setEditingTitle(true);
-                }}
-        >
-          <RobotOutlined />
-          {/* 【小强优化2026-04-14】显示"会话"标签 + 分隔符 + 实际标题 */}
-          <span style={{ marginLeft: 8, color: "#666", fontSize: 14 }}>会话</span>
-          {/* 优雅的分隔符：带渐变效果的竖线 */}
-          <span style={{
-            marginLeft: 8,
-            marginRight: 8,
-            height: 16,
-            width: 1,
-            background: "linear-gradient(to bottom, transparent, #d9d9d9, transparent)",
-          }} />
-          {sessionId && editingTitle ? (
-              <Space>
-                <Input
-                  value={titleInput}
-                  onChange={(e) => setTitleInput(e.target.value)}
-                  onPressEnter={async (e) => {
-                    e.preventDefault();
-                    if (titleInput.trim() && sessionId) {
-                      try {
-                        // 🔴 修复：回车时保存
-                        await sessionApi.updateSession(
-                          sessionId,
-                          titleInput.trim(),
-                          sessionVersion
-                        );
-                         setSessionTitle(titleInput.trim());
-                         setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
-                         showTitleSaved();
-                        } catch (error: any) {
-                         // ⭐ 处理 409 版本冲突
-                        if (error?.response?.status === 409) {
-                          showSessionConflict();
-                          // 尝试重新获取最新的会话信息
-                          try {
-                            const sessionData =
-                              await sessionApi.getSessionMessages(sessionId);
-                            if (sessionData.version) {
-                              setSessionVersion(sessionData.version);
-                            }
-                            if (sessionData.title) {
-                              setSessionTitle(sessionData.title);
-                            }
-                          } catch (refreshError) {
-                            console.error("刷新会话数据失败:", refreshError);
-                          }
-                        } else {
-                          console.warn("保存标题失败:", error);
-                          showSaveError("保存标题失败，请重试");
-                        }
-                      }
-                    }
-                    setEditingTitle(false);
-                  }}
-                  onBlur={async () => {
-                    if (titleInput.trim() && sessionId) {
-                      try {
-                        // 🔴 修复：失去焦点时也保存
-                        await sessionApi.updateSession(
-                          sessionId,
-                          titleInput.trim(),
-                          sessionVersion
-                        );
-                         setSessionTitle(titleInput.trim());
-                         setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
-                         showTitleUpdated();
-                        } catch (error: any) {
-                         // ⭐ 处理 409 版本冲突
-                        if (error?.response?.status === 409) {
-                          showSessionConflict();
-                          // 尝试重新获取最新的会话信息
-                          try {
-                            const sessionData =
-                              await sessionApi.getSessionMessages(sessionId);
-                            if (sessionData.version) {
-                              setSessionVersion(sessionData.version);
-                            }
-                            if (sessionData.title) {
-                              setSessionTitle(sessionData.title);
-                            }
-                          } catch (refreshError) {
-                            console.error("刷新会话数据失败:", refreshError);
-                          }
-                        } else {
-                          showSaveError("更新标题失败");
-                        }
-                      }
-                    }
-                    setEditingTitle(false);
-                  }}
-                  style={{ width: 200 }}
-                  autoFocus
-                  placeholder={sessionTitle || "输入会话标题"}
-                />
-              </Space>
-            ) : (
-              <span
-                style={{
-                  cursor: "pointer",
-                  color: titleLocked ? "#000" : "#666", // 【小新第二修复 2026-03-02】使用 titleLocked 替代 titleSource
-                  fontSize: titleLocked ? "16px" : "14px",
-                  fontWeight: titleLocked ? "bold" : "normal",
-                }}
-          onClick={() => {
+title={
+        <ChatHeader
+          sessionId={sessionId}
+          sessionTitle={sessionTitle}
+          titleLocked={titleLocked}
+          editingTitle={editingTitle}
+          titleInput={titleInput}
+          sessionVersion={sessionVersion}
+          setSessionTitle={setSessionTitle}
+          setTitleLocked={setTitleLocked}
+          setEditingTitle={setEditingTitle}
+          setTitleInput={setTitleInput}
+          setSessionVersion={setSessionVersion}
+          onEditingStart={() => {
             if (!editingTitle && sessionId) {
               setTitleInput(sessionTitle || "");
             }
             setEditingTitle(true);
           }}
-              >
-                {sessionTitle || "未命名会话"}
-                {!titleLocked && ( // 【小新第二修复 2026-03-02】使用 titleLocked 替代 titleSource
-                  <Tooltip title="AI自动生成的标题">
-                    <InfoCircleOutlined
-                      style={{ fontSize: 12, marginLeft: 4, color: "#999" }}
-                    />
-                  </Tooltip>
-                )}
-                {titleLocked && (
-                  <Tooltip title="标题已锁定，防止自动覆盖">
-                    <LockOutlined
-                      style={{ fontSize: 12, marginLeft: 4, color: "#1890ff" }}
-                    />
-                  </Tooltip>
-                )}
-              </span>
-            )}
-        </span>
+onEditingCancel={() => {
+            setEditingTitle(false);
+          }}
+        />
       }
       extra={
-        <Space>
-          {/* 新建会话按钮 */}
-          <Button
-            icon={<PlusOutlined />}
-            onClick={handleNewSession}
-            size="small"
-            type="primary"
-            style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
-          >
-            新建会话
-          </Button>
-
-          {/* 流式开关（同时控制显示过程） */}
-          <Tag.CheckableTag
-            checked={useStream}
-            onChange={(checked) => {
-              console.log("🔍 [流式开关] 被点击，新状态:", checked);
-              setUseStream(checked);
-              if (!checked) {
-                setShowExecution(false);
-              }
-            }}
-            style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
-          >
-            <ThunderboltOutlined /> {useStream ? "流式关闭" : "流式开启"}
-          </Tag.CheckableTag>
-
-          {/* 执行过程显示开关（仅在流式模式下显示） */}
-          {useStream && (
-            <Button
-              size="small"
-              icon={showExecution ? <EyeOutlined /> : <EyeInvisibleOutlined />}
-              onClick={() => {
-                console.log("🔍 [显示过程] 按钮被点击");
-                setShowExecution(!showExecution);
-              }}
-              style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
-            >
-              {showExecution ? "隐藏过程" : "显示过程"}
-            </Button>
-          )}
-
-          <Button 
-            onClick={handleClear} 
-            size="small"
-            style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
-          >
-            清空对话
-          </Button>
-        </Space>
+        <ChatToolbar
+          useStream={useStream}
+          showExecution={showExecution}
+          onNewSession={handleNewSession}
+          onClear={handleClear}
+          onToggleStream={(checked) => {
+            console.log("🔍 [流式开关] 被点击，新状态:", checked);
+            setUseStream(checked);
+            if (!checked) {
+              setShowExecution(false);
+            }
+          }}
+          onToggleExecution={() => {
+            console.log("🔍 [显示过程] 按钮被点击");
+            setShowExecution(!showExecution);
+          }}
+        />
       }
     >
       {/* AI思考过程面板已移至MessageItem内部 - 前端小新代修改 */}
 
-      {/* 消息列表 - 前端小新代修改 UX-C04: 时间分隔线 */}
-      <div
-        style={{
-          height: 500,
-          overflowY: "auto",
-          border: "1px solid #f0f0f0",
-          borderRadius: 8,
-          padding: "0 2px 2px 0",
-          marginBottom: 0,
-          backgroundColor: "#fafafa",
-          position: "relative",
-        }}
-        >
-        
-        {messages.length === 0 ? (
-          isMessageListLoading ? (
-            <MessageListSkeleton count={4} />
-          ) : (
-            <div style={{ textAlign: "center", color: "#999", marginTop: 50 }}>
-              <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
-              <p>开始与 AI 助手对话</p>
-              <p style={{ fontSize: 12 }}>
-                {useStream
-                  ? "流式模式已开启 - 可实时查看 AI 思考过程"
-                  : "普通模式 - 一次性返回完整回复"}
-              </p>
-            </div>
-          )
-        ) : (
-          <div>
-            {/* 【小强 2026-04-12】Phase 2 P1级优化：使用独立hook优化消息列表渲染 */}
-            {messageElements}
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
+      {/* 【小沈 2026-04-21】使用MessageArea组件 */}
+      <MessageArea
+        messages={messages}
+        showExecution={showExecution}
+        sessionId={sessionId}
+        sessionTitle={sessionTitle}
+        isReceiving={isReceiving}
+        useStream={useStream}
+        isMessageListLoading={isMessageListLoading}
+        messagesEndRef={messagesEndRef}
+        userScrolledUpRef={userScrolledUpRef}
+        scrollToBottomIfNeeded={scrollToBottomIfNeeded}
+        scrollToBottomDelayed={scrollToBottomDelayed}
+      />
 
       {/* 输入区域 - 【小强修复 2026-03-31】使用独立ChatInput组件隔离inputValue状态 */}
       <ChatInput
@@ -2453,30 +2256,9 @@ return prev;
         isRetrying={isRetrying}
         waitTime={waitTime}
         useStream={useStream}
-        checkingDanger={_checkingDanger}
         onSend={handleSend}
         onInterrupt={handleInterrupt}
         onTogglePause={handleTogglePause}
-      />
-
-      {/* 被拦截的命令警告 */}
-      {blockedCommand && (
-        <SecurityAlert
-          command={blockedCommand.command}
-          score={blockedCommand.score}
-          message={blockedCommand.message}
-        />
-      )}
-
-      {/* 危险命令确认弹窗 */}
-      <DangerConfirmModal
-        visible={dangerModalVisible}
-        command={dangerCommand}
-        score={dangerScore}
-        message={dangerMessage}
-        onConfirm={handleDangerConfirm}
-        onCancel={handleDangerCancel}
-        loading={loading}
       />
     </Card>
   );

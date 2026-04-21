@@ -6,7 +6,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional
-from app.services.shell_security import (
+from app.services.command_security import (
     calculate_risk_score,
     get_risk_message
 )

@@ -23,6 +23,8 @@ import os
 from typing import Any, Optional, List, Dict
 
 # ============== 配置加载 ==============
+# 【修复 2026-04-20 小沈】意图分类器使用固定模型，不受用户切换AI影响
+# 问题原因：之前从config读取qiniu.models[0]，切换AI会导致意图分类器模型变化
 
 def _load_qiniu_config() -> dict:
     """从配置文件加载七牛 API 配置"""
@@ -39,7 +41,8 @@ def _load_qiniu_config() -> dict:
         return {
             "api_base": qiniu_config.get("api_base", "https://api.qnaigc.com/v1"),
             "api_key": qiniu_config.get("api_key", ""),
-            "model": qiniu_config.get("models", ["deepseek-v3.1"])[0],
+            # 【修复】使用固定的deepseek-v3.1，不受切换AI影响
+            "model": "deepseek-v3.1",
             "timeout": qiniu_config.get("timeout", 90)
         }
     except Exception:
