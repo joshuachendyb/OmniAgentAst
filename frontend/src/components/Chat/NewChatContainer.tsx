@@ -20,15 +20,9 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { Space, message, Tooltip, Card, Input, Button, Tag } from "antd";
+import { message, Card } from "antd";
 import {
   RobotOutlined,
-  PlusOutlined,
-  ThunderboltOutlined,
-  EyeOutlined,
-  EyeInvisibleOutlined,
-  InfoCircleOutlined,
-  LockOutlined,
 } from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
@@ -52,7 +46,6 @@ import {
   showSaveError,
   showLoadSuccess,
   showNetworkError,
-  showSessionConflict,
   showConflictError,
   showInfo,
   showRetryWarning,
@@ -65,8 +58,6 @@ import {
   showNewSessionSuccess,
   showNewSessionRetryWarning,
   showNewSessionError,
-  showTitleSaved,
-  showTitleUpdated,
 } from "../../utils/chatMessages";
 
 // 【小强修复 2026-03-31】独立输入框组件，隔离inputValue状态避免父组件重渲染
@@ -77,6 +68,11 @@ import { MessageListSkeleton } from "../Skeleton";
 
 // 【小沈 2026-04-21】MessageList组件拆分
 import MessageList from './MessageList';
+
+// 【小沈 2026-04-21】ChatHeader组件拆分
+import ChatHeader from './ChatHeader';
+// 【小沈 2026-04-21】ChatToolbar组件拆分
+import ChatToolbar from './ChatToolbar';
 
 // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表useMemo优化（使用独立hook）
 // import { useMessageListRender } from '../../hooks/useMessageListRender'; // 已移至MessageList组件内部
@@ -2217,196 +2213,48 @@ return prev;
   return (
     <Card
       styles={{ body: { padding: "0 4px 4px 4px" } }}
-      title={
-        <span 
-          style={{ cursor: "pointer", display: "inline-flex", alignItems: "center" }}
-                onClick={() => {
-                  if (!editingTitle && sessionId) {
-                    setTitleInput(sessionTitle || "");
-                  }
-                  setEditingTitle(true);
-                }}
-        >
-          <RobotOutlined />
-          {/* 【小强优化2026-04-14】显示"会话"标签 + 分隔符 + 实际标题 */}
-          <span style={{ marginLeft: 8, color: "#666", fontSize: 14 }}>会话</span>
-          {/* 优雅的分隔符：带渐变效果的竖线 */}
-          <span style={{
-            marginLeft: 8,
-            marginRight: 8,
-            height: 16,
-            width: 1,
-            background: "linear-gradient(to bottom, transparent, #d9d9d9, transparent)",
-          }} />
-          {sessionId && editingTitle ? (
-              <Space>
-                <Input
-                  value={titleInput}
-                  onChange={(e) => setTitleInput(e.target.value)}
-                  onPressEnter={async (e) => {
-                    e.preventDefault();
-                    if (titleInput.trim() && sessionId) {
-                      try {
-                        // 🔴 修复：回车时保存
-                        await sessionApi.updateSession(
-                          sessionId,
-                          titleInput.trim(),
-                          sessionVersion
-                        );
-                         setSessionTitle(titleInput.trim());
-                         setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
-                         showTitleSaved();
-                        } catch (error: any) {
-                         // ⭐ 处理 409 版本冲突
-                        if (error?.response?.status === 409) {
-                          showSessionConflict();
-                          // 尝试重新获取最新的会话信息
-                          try {
-                            const sessionData =
-                              await sessionApi.getSessionMessages(sessionId);
-                            if (sessionData.version) {
-                              setSessionVersion(sessionData.version);
-                            }
-                            if (sessionData.title) {
-                              setSessionTitle(sessionData.title);
-                            }
-                          } catch (refreshError) {
-                            console.error("刷新会话数据失败:", refreshError);
-                          }
-                        } else {
-                          console.warn("保存标题失败:", error);
-                          showSaveError("保存标题失败，请重试");
-                        }
-                      }
-                    }
-                    setEditingTitle(false);
-                  }}
-                  onBlur={async () => {
-                    if (titleInput.trim() && sessionId) {
-                      try {
-                        // 🔴 修复：失去焦点时也保存
-                        await sessionApi.updateSession(
-                          sessionId,
-                          titleInput.trim(),
-                          sessionVersion
-                        );
-                         setSessionTitle(titleInput.trim());
-                         setTitleLocked(true); // 【小新第二修复 2026-03-02】用户修改标题后锁定
-                         showTitleUpdated();
-                        } catch (error: any) {
-                         // ⭐ 处理 409 版本冲突
-                        if (error?.response?.status === 409) {
-                          showSessionConflict();
-                          // 尝试重新获取最新的会话信息
-                          try {
-                            const sessionData =
-                              await sessionApi.getSessionMessages(sessionId);
-                            if (sessionData.version) {
-                              setSessionVersion(sessionData.version);
-                            }
-                            if (sessionData.title) {
-                              setSessionTitle(sessionData.title);
-                            }
-                          } catch (refreshError) {
-                            console.error("刷新会话数据失败:", refreshError);
-                          }
-                        } else {
-                          showSaveError("更新标题失败");
-                        }
-                      }
-                    }
-                    setEditingTitle(false);
-                  }}
-                  style={{ width: 200 }}
-                  autoFocus
-                  placeholder={sessionTitle || "输入会话标题"}
-                />
-              </Space>
-            ) : (
-              <span
-                style={{
-                  cursor: "pointer",
-                  color: titleLocked ? "#000" : "#666", // 【小新第二修复 2026-03-02】使用 titleLocked 替代 titleSource
-                  fontSize: titleLocked ? "16px" : "14px",
-                  fontWeight: titleLocked ? "bold" : "normal",
-                }}
-          onClick={() => {
+title={
+        <ChatHeader
+          sessionId={sessionId}
+          sessionTitle={sessionTitle}
+          titleLocked={titleLocked}
+          editingTitle={editingTitle}
+          titleInput={titleInput}
+          sessionVersion={sessionVersion}
+          setSessionTitle={setSessionTitle}
+          setTitleLocked={setTitleLocked}
+          setEditingTitle={setEditingTitle}
+          setTitleInput={setTitleInput}
+          setSessionVersion={setSessionVersion}
+          onEditingStart={() => {
             if (!editingTitle && sessionId) {
               setTitleInput(sessionTitle || "");
             }
             setEditingTitle(true);
           }}
-              >
-                {sessionTitle || "未命名会话"}
-                {!titleLocked && ( // 【小新第二修复 2026-03-02】使用 titleLocked 替代 titleSource
-                  <Tooltip title="AI自动生成的标题">
-                    <InfoCircleOutlined
-                      style={{ fontSize: 12, marginLeft: 4, color: "#999" }}
-                    />
-                  </Tooltip>
-                )}
-                {titleLocked && (
-                  <Tooltip title="标题已锁定，防止自动覆盖">
-                    <LockOutlined
-                      style={{ fontSize: 12, marginLeft: 4, color: "#1890ff" }}
-                    />
-                  </Tooltip>
-                )}
-              </span>
-            )}
-        </span>
+onEditingCancel={() => {
+            setEditingTitle(false);
+          }}
+        />
       }
       extra={
-        <Space>
-          {/* 新建会话按钮 */}
-          <Button
-            icon={<PlusOutlined />}
-            onClick={handleNewSession}
-            size="small"
-            type="primary"
-            style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
-          >
-            新建会话
-          </Button>
-
-          {/* 流式开关（同时控制显示过程） */}
-          <Tag.CheckableTag
-            checked={useStream}
-            onChange={(checked) => {
-              console.log("🔍 [流式开关] 被点击，新状态:", checked);
-              setUseStream(checked);
-              if (!checked) {
-                setShowExecution(false);
-              }
-            }}
-            style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
-          >
-            <ThunderboltOutlined /> {useStream ? "流式关闭" : "流式开启"}
-          </Tag.CheckableTag>
-
-          {/* 执行过程显示开关（仅在流式模式下显示） */}
-          {useStream && (
-            <Button
-              size="small"
-              icon={showExecution ? <EyeOutlined /> : <EyeInvisibleOutlined />}
-              onClick={() => {
-                console.log("🔍 [显示过程] 按钮被点击");
-                setShowExecution(!showExecution);
-              }}
-              style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
-            >
-              {showExecution ? "隐藏过程" : "显示过程"}
-            </Button>
-          )}
-
-          <Button 
-            onClick={handleClear} 
-            size="small"
-            style={{ cursor: 'pointer', position: 'relative', zIndex: 100 }}
-          >
-            清空对话
-          </Button>
-        </Space>
+        <ChatToolbar
+          useStream={useStream}
+          showExecution={showExecution}
+          onNewSession={handleNewSession}
+          onClear={handleClear}
+          onToggleStream={(checked) => {
+            console.log("🔍 [流式开关] 被点击，新状态:", checked);
+            setUseStream(checked);
+            if (!checked) {
+              setShowExecution(false);
+            }
+          }}
+          onToggleExecution={() => {
+            console.log("🔍 [显示过程] 按钮被点击");
+            setShowExecution(!showExecution);
+          }}
+        />
       }
     >
       {/* AI思考过程面板已移至MessageItem内部 - 前端小新代修改 */}
