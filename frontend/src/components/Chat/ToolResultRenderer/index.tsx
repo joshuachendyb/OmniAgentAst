@@ -1,7 +1,7 @@
 /**
  * ToolResultRenderer组件 - 工具结果渲染器（工厂模式）
  * 
- * 根据tool_name选择对应的渲染器组件
+ * 根据tool_name选择对应的Renderer组件
  * 
  * @author 小沈
  * @version 1.0.0
@@ -10,15 +10,15 @@
 
 import React from 'react';
 import type { ExecutionStep } from '../../../utils/sse';
-import ListDirectoryView from '../views/ListDirectoryView';
-import ReadFileView from '../views/ReadFileView';
-import WriteFileView from '../views/WriteFileView';
-import DeleteFileView from '../views/DeleteFileView';
-import MoveFileView from '../views/MoveFileView';
-import SearchFilesView from '../views/SearchFilesView';
-import SearchFileContentView from '../views/SearchFileContentView';
-import GenerateReportView from '../views/GenerateReportView';
-import { transformSearchFilesData, transformSearchFileContentData } from '../../../utils/searchTransformers';
+import ListDirectoryRenderer from './types/ListDirectoryRenderer';
+import ReadFileRenderer from './types/ReadFileRenderer';
+import WriteFileRenderer from './types/WriteFileRenderer';
+import DeleteFileRenderer from './types/DeleteFileRenderer';
+import MoveFileRenderer from './types/MoveFileRenderer';
+import SearchFilesRenderer from './types/SearchFilesRenderer';
+import SearchFileContentRenderer from './types/SearchFileContentRenderer';
+import GenerateReportRenderer from './types/GenerateReportRenderer';
+import DefaultRenderer from './types/DefaultRenderer';
 
 interface ToolResultRendererProps {
   step: ExecutionStep;
@@ -36,10 +36,6 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
   toggleExpand,
   stepIndex,
 }) => {
-  const execResult = step.execution_result;
-  const data = (execResult as any)?.data || execResult;
-  if (!data) return null;
-
   const handleToggle = toggleExpand && stepIndex !== undefined 
     ? () => toggleExpand(stepIndex) 
     : undefined;
@@ -47,39 +43,23 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
   // 工厂模式：根据tool_name选择渲染器
   switch (step.tool_name) {
     case "list_directory":
-      return <ListDirectoryView data={data} toolParams={step.tool_params} isExpanded={isExpanded} onToggle={handleToggle} />;
+      return <ListDirectoryRenderer step={step} isExpanded={isExpanded} onToggle={handleToggle} />;
     case "read_file":
-      return <ReadFileView data={data} />;
+      return <ReadFileRenderer step={step} />;
     case "write_file":
-      return <WriteFileView data={data} />;
+      return <WriteFileRenderer step={step} />;
     case "delete_file":
-      return <DeleteFileView data={data} />;
+      return <DeleteFileRenderer step={step} />;
     case "move_file":
-      return <MoveFileView data={data} />;
-    case "search_files": {
-      const transformedSearchFilesData = transformSearchFilesData(data);
-      return <SearchFilesView data={transformedSearchFilesData} />;
-    }
-    case "search_file_content": {
-      const transformedSearchFileContentData = transformSearchFileContentData(data);
-      return <SearchFileContentView data={transformedSearchFileContentData} />;
-    }
+      return <MoveFileRenderer step={step} />;
+    case "search_files":
+      return <SearchFilesRenderer step={step} />;
+    case "search_file_content":
+      return <SearchFileContentRenderer step={step} />;
     case "generate_report":
-      return <GenerateReportView data={data} isExpanded={isExpanded} onToggle={handleToggle} />;
+      return <GenerateReportRenderer step={step} isExpanded={isExpanded} onToggle={handleToggle} />;
     default:
-      // 未知工具，显示原始JSON
-      return (
-        <pre style={{
-          background: "#f5f5f5",
-          padding: "10px",
-          borderRadius: 4,
-          fontSize: 12,
-          maxHeight: 300,
-          overflow: "auto",
-        }}>
-          {JSON.stringify(data, null, 2)}
-        </pre>
-      );
+      return <DefaultRenderer step={step} />;
   }
 };
 
