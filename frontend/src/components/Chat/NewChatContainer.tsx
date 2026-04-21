@@ -67,7 +67,7 @@ import ChatToolbar from './ChatToolbar';
 // 【小强 2026-04-21】Hooks已创建，按方案2.1.7/2.2.7/2.3.5验证1：暂不使用
 // 使用时导入：
 import { useChatSession } from '../../hooks/chat/useChatSession';
-// import { useChatPersistence } from '../../hooks/chat/useChatPersistence';
+import { useChatPersistence } from '../../hooks/chat/useChatPersistence';
 
 // 【小强 2026-04-21】Phase 2 Task 2.2: 导入useChatState
 import { useChatState } from '../../hooks/chat/useChatState';
@@ -159,51 +159,17 @@ const NewChatContainer: React.FC = () => {
 
   // 【小沈 2026-04-22】Phase 5: 使用useChatSession管理会话生命周期
   const chatSession = useChatSession(chatState, chatStreaming);
+
+  // 【小沈 2026-04-22】Phase 6: 使用useChatPersistence管理持久化
+  const chatPersistence = useChatPersistence(chatState, chatStreaming);
    
   // ===== 【小资优化 2026-04-13】流式性能优化 =====
   // 2. 滚动控制ref
   const SCROLL_THRESHOLD = 150;  // ChatGPT实践：超过150px认为用户主动滚动
   const SCROLL_INTERVAL = 100;   // 滚动节流间隔
 
-  // 3. debounce保存函数ref - 使用chatHistory.ts已存在的debounce
-  const saveMessagesToStorage = useRef(
-    debounce((msgs: Message[], sid: string, title: string, paused: boolean, receiving: boolean) => {
-      if (sid) {
-        const state = {
-          messages: msgs,
-          sessionId: sid,
-          sessionTitle: title,
-          timestamp: Date.now(),
-          scrollPosition: messagesEndRef.current?.parentElement?.scrollTop || 0,
-          isPaused: paused,
-          isReceiving: receiving,
-        };
-        
-        try {
-          const stateStr = JSON.stringify(state);
-          if (stateStr.length > 4 * 1024 * 1024) {
-            const lightState = {
-              sessionId: sid,
-              sessionTitle: title,
-              timestamp: Date.now(),
-              messageCount: msgs.length,
-              isPaused: paused,
-              isReceiving: receiving,
-            };
-            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
-          } else {
-            sessionStorage.setItem(STORAGE_KEY, stateStr);
-          }
-        } catch (e) {
-          if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-            console.warn("⚠️ sessionStorage容量满，跳过保存");
-          } else {
-            console.error("保存会话状态失败:", e);
-          }
-        }
-      }
-    }, 500)
-  );
+  // 【小沈 2026-04-22】Phase 6: 使用chatPersistence版本的防抖保存
+  const { saveMessagesToStorage } = chatPersistence;
   // ===== 【小资优化 2026-04-13】结束 =====
 
 // 【小沈 2026-04-22】Phase 4: 使用chatStreaming（useChatStreaming Hook）
@@ -392,91 +358,8 @@ const NewChatContainer: React.FC = () => {
   // 【小强修复 2026-03-17】保存状态前确保 SSE 数据已处理完成
   // 问题：页面隐藏时 saveState() 可能还在接收 final 步骤，导致缓存中缺少 final
   // 修复：在 onComplete 回调中 SSE 完成时立即保存，确保 final 步骤已包含
-  const saveStateWithSSECheck = () => {
-    if (isReceiving) {
-      console.log("⚠️ [saveState] SSE 正在接收数据，延迟保存...");
-      // 延迟 300ms 后再保存，给 SSE 时间处理 final 步骤
-      setTimeout(() => {
-        console.log("⚠️ [saveState] 延迟后执行保存...");
-        saveState();
-      }, 300);
-    } else {
-      // SSE 已完成，直接保存
-      saveState();
-    }
-  };
-  
-  const saveState = () => {
-    // 【小沈修复 2026-03-17】直接使用 messages 状态，而不是 messagesRef.current
-    // 根因：messagesRef.current 是通过 useEffect 异步同步的，当页面隐藏时可能还没更新完成
-    //      导致 sessionStorage 保存的消息缺少 start 步骤
-    // 修复：直接使用 messages 状态，确保获取最新数据
-    if (sessionId) {
-      // 【问题2修复 2026-03-18】当正在接收SSE数据时，messages状态可能是异步更新未完成的
-      // 需要从executionStepsRef获取最新steps并更新到messages中保存
-      // 【修复 2026-03-18】使用messagesRef.current获取最新messages，而不是闭包中的messages
-      let messagesToSave = messagesRef.current;
-      if (isReceiving && executionStepsRef.current.length > 0) {
-        console.log("🔧 [saveState] SSE正在接收，合并最新steps到messages保存:", executionStepsRef.current.length);
-        messagesToSave = messagesRef.current.map((msg, idx) => {
-          // 找到最后一条assistant消息（正在流式输出的）
-          if (msg.role === 'assistant' && msg.isStreaming && idx === messagesRef.current.length - 1) {
-            return {
-              ...msg,
-              executionSteps: executionStepsRef.current,
-            };
-          }
-          return msg;
-        });
-      }
-      
-      const state = {
-        messages: messagesToSave,  // ← 使用合并后的messages
-        sessionId,
-        sessionTitle,
-        timestamp: Date.now(),
-        scrollPosition: messagesEndRef.current?.parentElement?.scrollTop || 0,
-        // 保存暂停/中断状态，避免页面切换时状态丢失
-        isPaused,
-        isReceiving,
-      };
-      
-      // 【2026-04-08修复】sessionStorage容量满时不崩溃
-      try {
-        const stateStr = JSON.stringify(state);
-        // 检查大小（sessionStorage限制约5-10MB）
-        const sizeInMB = (stateStr.length / 1024 / 1024).toFixed(2);
-        if (stateStr.length > 4 * 1024 * 1024) {
-          // 超过4MB，只保存消息摘要
-          console.warn(`⚠️ 会话数据过大(${sizeInMB}MB)，只保存摘要`);
-          const lightState = {
-            sessionId,
-            sessionTitle,
-            timestamp: Date.now(),
-            messageCount: messagesToSave.length,
-            isPaused,
-            isReceiving,
-          };
-          sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
-        } else {
-          sessionStorage.setItem(STORAGE_KEY, stateStr);
-        }
-        console.log("💾 type=%s 保存sessionStorage %s | msg=%d steps=%d", new Date().toLocaleTimeString(), messagesToSave.length, executionStepsRef.current.length);
-      } catch (e) {
-        if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-          console.warn("⚠️ sessionStorage容量满，只保存会话ID和标题");
-          // 保存最小信息，下次打开时从API重新加载
-          sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
-            sessionId,
-            sessionTitle,
-            timestamp: Date.now(),
-          }));
-        } else {
-          console.error("保存会话状态失败:", e);
-        }
-      }
-    }
-  };
+  // 【小沈 2026-04-22】Phase 6: 使用chatPersistence版本
+  const { saveStateWithSSECheck, saveState } = chatPersistence;
 
   const restoreState = () => {
     const saved = sessionStorage.getItem(STORAGE_KEY);

@@ -111,7 +111,7 @@ export const useChatPersistence = (
     messagesRef,
   } = state;
   
-  const { isReceiving } = streaming;
+  const { isReceiving, executionStepsRef } = streaming;
   
   // ========================================
   // 防抖保存函数Ref
@@ -165,12 +165,31 @@ export const useChatPersistence = (
   
   /**
    * saveState - 保存当前状态到sessionStorage
+   * 迁移自：NewChatContainer.tsx 第409行
+   * 包含 executionStepsRef 合并逻辑，用于 SSE 正在接收时保存最新数据
    */
   const saveState = useCallback(() => {
     if (sessionId) {
-      saveMessagesToStorage.current(messages, sessionId, sessionTitle, isPaused, isReceiving);
+      // 使用 messagesRef.current 获取最新消息，而不是闭包中的 messages
+      let messagesToSave = messagesRef.current;
+      
+      // 如果正在接收 SSE，合并最新 steps 到 messages
+      if (isReceiving && executionStepsRef.current.length > 0) {
+        messagesToSave = messagesRef.current.map((msg, idx) => {
+          // 找到最后一条 assistant 消息（正在流式输出的）
+          if (msg.role === 'assistant' && idx === messagesRef.current.length - 1) {
+            return {
+              ...msg,
+              executionSteps: executionStepsRef.current,
+            };
+          }
+          return msg;
+        });
+      }
+      
+      saveMessagesToStorage.current(messagesToSave, sessionId, sessionTitle, isPaused, isReceiving);
     }
-  }, [sessionId, messages, sessionTitle, isPaused, isReceiving]);
+  }, [sessionId, messagesRef, sessionTitle, isPaused, isReceiving, executionStepsRef, saveMessagesToStorage]);
   
   /**
    * saveStateWithSSECheck - 带SSE检查的保存
