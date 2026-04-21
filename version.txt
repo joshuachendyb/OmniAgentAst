@@ -1,3 +1,36 @@
+v0.9.9.8
+
+更新时间: 2026-04-21 22:39:02
+
+更新内容：
+
+## 1 MessageItem.tsx组件拆分重构 - 小沈-2026-04-21
+
+### 1.1 拆分内容
+
+| 模块 | 文件 | 说明 |
+|------|------|------|
+| 导出逻辑 | utils/messageExporter.ts | 从MessageItem抽取，约200行→252行工具函数 |
+| 内容渲染 | components/Chat/MessageContent/index.tsx | 抽取chunk渲染和content回退逻辑，约100行→161行组件 |
+| 头像显示 | components/Chat/MessageItem/AvatarDisplay.tsx | 根据role显示对应头像图标 |
+| 角色名称 | components/Chat/MessageItem/RoleNameDisplay.tsx | 根据role和消息状态显示名称 |
+
+### 1.2 重构效果
+
+- MessageItem.tsx从848行减少到446行，减少402行（47.4%）
+- handleExport函数从~200行简化为约10行调用包装
+- chunk渲染和content回退逻辑统一到MessageContent组件
+- 头像和角色名称逻辑独立为单独组件
+
+### 1.3 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 13ab5ca3 | refactor: 拆分MessageExporter和MessageContent为独立模块 - 小沈-2026-04-21 |
+| 28fad284 | refactor: 拆分AvatarDisplay和RoleNameDisplay为独立组件 - 小沈-2026-04-21 |
+
+---
+
 v0.9.9.7
 
 更新时间: 2026-04-21 14:22:18
