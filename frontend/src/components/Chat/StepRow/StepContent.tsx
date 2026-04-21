@@ -10,15 +10,7 @@ import React, { useCallback, useState, useMemo } from "react";
 import type { ExecutionStep } from "../../../utils/sse";
 import { STEP_LABEL_MAP, STEP_ICON_MAP } from "../constants/stepConstants";
 import ErrorDetail from "../ErrorDetail";
-import ListDirectoryView from "../views/ListDirectoryView";
-import ReadFileView from "../views/ReadFileView";
-import WriteFileView from "../views/WriteFileView";
-import DeleteFileView from "../views/DeleteFileView";
-import MoveFileView from "../views/MoveFileView";
-import SearchFilesView from "../views/SearchFilesView";
-import SearchFileContentView from "../views/SearchFileContentView";
-import GenerateReportView from "../views/GenerateReportView";
-import { transformSearchFilesData, transformSearchFileContentData } from "../../../utils/searchTransformers";
+import ToolResultRenderer from "../ToolResultRenderer/index";
 import {
   getStepStyle,
   getStepTitleStyle,
@@ -107,53 +99,6 @@ const getPageData = (executionResult: any, showAllData: boolean) => {
 };
 
 /**
- * renderToolResult函数 - 根据tool_name渲染工具结果
- */
-const renderToolResult = (step: ExecutionStep, isExpanded: boolean = true, toggleExpand?: (index: number) => void, stepIndex?: number) => {
-  const execResult = step.execution_result;
-  const data = (execResult as any)?.data || execResult;
-  if (!data) return null;
-
-  const handleToggle = toggleExpand && stepIndex !== undefined ? () => toggleExpand(stepIndex) : undefined;
-
-  switch (step.tool_name) {
-    case "list_directory":
-      return <ListDirectoryView data={data} toolParams={step.tool_params} isExpanded={isExpanded} onToggle={handleToggle} />;
-    case "read_file":
-      return <ReadFileView data={data} />;
-    case "write_file":
-      return <WriteFileView data={data} />;
-    case "delete_file":
-      return <DeleteFileView data={data} />;
-    case "move_file":
-      return <MoveFileView data={data} />;
-    case "search_files": {
-      const transformedSearchFilesData = transformSearchFilesData(data);
-      return <SearchFilesView data={transformedSearchFilesData} />;
-    }
-    case "search_file_content": {
-      const transformedSearchFileContentData = transformSearchFileContentData(data);
-      return <SearchFileContentView data={transformedSearchFileContentData} />;
-    }
-    case "generate_report":
-      return <GenerateReportView data={data} isExpanded={isExpanded} onToggle={handleToggle} />;
-    default:
-      return (
-        <pre style={{
-          background: "#f5f5f5",
-          padding: "10px",
-          borderRadius: 4,
-          fontSize: 12,
-          maxHeight: 300,
-          overflow: "auto",
-        }}>
-          {JSON.stringify(data, null, 2)}
-        </pre>
-      );
-  }
-};
-
-/**
  * StepContent组件 - 根据step.type渲染不同内容
  */
 const StepContent: React.FC<StepContentProps> = ({
@@ -187,7 +132,7 @@ const StepContent: React.FC<StepContentProps> = ({
         <>
           {renderToolInfo(step.tool_name, step.tool_params as Record<string, any>, { prefix: '🔧 ' })}
           <div style={{ marginTop: 8 }}>
-            {renderToolResult(step, isExpanded, toggleExpand, stepIndex)}
+            <ToolResultRenderer step={step} isExpanded={isExpanded} toggleExpand={toggleExpand} stepIndex={stepIndex} />
           </div>
           {executionResult && step.tool_name !== "list_directory" && hasMore && (
             <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
