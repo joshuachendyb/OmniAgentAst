@@ -23,7 +23,7 @@ import React, { useRef, useEffect, useCallback } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
-import { handleError, handleApiError, handleSSEError, ErrorType } from "../../utils/errorHandler";
+import { handleError, handleApiError, ErrorType } from "../../utils/errorHandler";
 
 // 【新增 2026-03-13】从独立文件导入类型和工具函数
 import type { Message } from "../../types/chat";
@@ -36,7 +36,7 @@ import {
 } from "../../utils/chatHistory";
 
 // 【新增 2026-03-13】从独立文件导入日志和消息提示函数
-import { logAIComplete, logAIError, logUserSend } from "../../utils/chatLogger";
+import { logUserSend } from "../../utils/chatLogger";
 import { getClientInfo } from "../../utils/clientInfo";  // 【小沈 2026-03-24】获取客户端信息
 import {
   showSaveError,
@@ -51,9 +51,6 @@ import {
   showNoActiveTaskWarning,
   showLoadRetryWarning,
   showLoadErrorWithKey,
-  showNewSessionSuccess,
-  showNewSessionRetryWarning,
-  showNewSessionError,
 } from "../../utils/chatMessages";
 
 // 【小强修复 2026-03-31】独立输入框组件，隔离inputValue状态避免父组件重渲染
