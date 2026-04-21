@@ -111,6 +111,7 @@ export const STEP_LABEL_MAP: Record<string, string> = {
   thought: "思考",
   action_tool: "执行",
   observation: "观察",
+  chunk: "回复",
   final: "完成",
   error: "错误",
   paused: "暂停",
@@ -125,6 +126,7 @@ export const STEP_ICON_MAP: Record<string, string> = {
   thought: "💭",
   action_tool: "⚙️",
   observation: "📋",
+  chunk: "💬",
   final: "✅",
   error: "❌",
   paused: "⏸️",
@@ -134,6 +136,11 @@ export const STEP_ICON_MAP: Record<string, string> = {
   incident: "⚡",
 };
 ```
+
+**实际代码更新记录**:
+| 时间 | 更新内容 | 作者 |
+|------|--------|------|
+| 2026-04-21 14:25:00 | 补充chunk类型定义 | 小沈 |
 
 #### 3.1.2 使用useMemo缓存样式对象
 **实施步骤**:
