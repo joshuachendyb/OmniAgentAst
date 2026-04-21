@@ -16,7 +16,7 @@
  * @since 2026-04-21
  */
 
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import type { UseChatStateReturn } from "./useChatState";
 import type { UseChatCallbacksReturn } from "./useChatCallbacks";
 import type { ExecutionStep } from "../../utils/sse";

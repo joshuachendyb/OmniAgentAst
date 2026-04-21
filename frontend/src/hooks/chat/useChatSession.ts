@@ -27,7 +27,6 @@ import {
   showNewSessionSuccess, 
   showNewSessionRetryWarning, 
   showNewSessionError,
-  showLoadSuccess,
   showLoadErrorWithKey,
   showSaveError
 } from "../../utils/chatMessages";

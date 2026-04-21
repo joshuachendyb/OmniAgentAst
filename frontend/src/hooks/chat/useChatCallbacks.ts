@@ -22,8 +22,7 @@ import type { Message } from "../../types/chat";
 import type { ExecutionStep } from "../../utils/sse";
 import type { UseChatStateReturn } from "./useChatState";
 import { handleSSEError, handleApiError, ErrorType } from "../../utils/errorHandler";
-import { logAIComplete, logAIError, logUserSend } from "../../utils/chatLogger";
-import { showTaskResultMessage } from "../../utils/chatMessages";
+import { logAIComplete, logAIError } from "../../utils/chatLogger";
 import { sessionApi } from "../../services/api";
 
 // ============================================================================
