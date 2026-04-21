@@ -21,9 +21,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { message, Card } from "antd";
-import {
-  RobotOutlined,
-} from "@ant-design/icons";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
 import { useSSE, ExecutionStep } from "../../utils/sse";
@@ -63,11 +60,8 @@ import {
 // 【小强修复 2026-03-31】独立输入框组件，隔离inputValue状态避免父组件重渲染
 import ChatInput from "./ChatInput";
 
-// 【小强 2026-04-12】骨架屏组件
-import { MessageListSkeleton } from "../Skeleton";
-
-// 【小沈 2026-04-21】MessageList组件拆分
-import MessageList from './MessageList';
+// 【小沈 2026-04-21】MessageArea组件拆分
+import MessageArea from './MessageArea';
 
 // 【小沈 2026-04-21】ChatHeader组件拆分
 import ChatHeader from './ChatHeader';
@@ -2259,49 +2253,20 @@ onEditingCancel={() => {
     >
       {/* AI思考过程面板已移至MessageItem内部 - 前端小新代修改 */}
 
-      {/* 消息列表 - 前端小新代修改 UX-C04: 时间分隔线 */}
-      <div
-        style={{
-          height: 500,
-          overflowY: "auto",
-          border: "1px solid #f0f0f0",
-          borderRadius: 8,
-          padding: "0 2px 2px 0",
-          marginBottom: 0,
-          backgroundColor: "#fafafa",
-          position: "relative",
-        }}
-        >
-        
-        {messages.length === 0 ? (
-          isMessageListLoading ? (
-            <MessageListSkeleton count={4} />
-          ) : (
-            <div style={{ textAlign: "center", color: "#999", marginTop: 50 }}>
-              <RobotOutlined style={{ fontSize: 48, marginBottom: 16 }} />
-              <p>开始与 AI 助手对话</p>
-              <p style={{ fontSize: 12 }}>
-                {useStream
-                  ? "流式模式已开启 - 可实时查看 AI 思考过程"
-                  : "普通模式 - 一次性返回完整回复"}
-              </p>
-            </div>
-          )
-        ) : (
-          /* 【小沈 2026-04-21】使用MessageList组件拆分 - Smart/Dumb模式 */
-          <MessageList
-            messages={messages}
-            showExecution={showExecution}
-            sessionId={sessionId}
-            sessionTitle={sessionTitle}
-            messagesEndRef={messagesEndRef}
-            userScrolledUpRef={userScrolledUpRef}
-            scrollToBottomIfNeeded={scrollToBottomIfNeeded}
-            scrollToBottomDelayed={scrollToBottomDelayed}
-            isReceiving={isReceiving}
-          />
-        )}
-      </div>
+      {/* 【小沈 2026-04-21】使用MessageArea组件 */}
+      <MessageArea
+        messages={messages}
+        showExecution={showExecution}
+        sessionId={sessionId}
+        sessionTitle={sessionTitle}
+        isReceiving={isReceiving}
+        useStream={useStream}
+        isMessageListLoading={isMessageListLoading}
+        messagesEndRef={messagesEndRef}
+        userScrolledUpRef={userScrolledUpRef}
+        scrollToBottomIfNeeded={scrollToBottomIfNeeded}
+        scrollToBottomDelayed={scrollToBottomDelayed}
+      />
 
       {/* 输入区域 - 【小强修复 2026-03-31】使用独立ChatInput组件隔离inputValue状态 */}
       <ChatInput
