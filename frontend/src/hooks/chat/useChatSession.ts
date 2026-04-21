@@ -20,15 +20,15 @@ import { useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
 import type { Message } from "../../types/chat";
 import type { UseChatStateReturn } from "./useChatState";
+import type { UseChatStreamingReturn } from "./useChatStreaming";
 import { sessionApi } from "../../services/api";
-import { loadHistoryMessages } from "../../utils/chatHistory";
+import { loadHistoryMessages, STORAGE_KEY } from "../../utils/chatHistory";
 import { 
   showNewSessionSuccess, 
   showNewSessionRetryWarning, 
   showNewSessionError,
   showLoadSuccess,
   showLoadErrorWithKey,
-  showLoadRetryWarning,
   showSaveError
 } from "../../utils/chatMessages";
 
@@ -52,7 +52,8 @@ export interface UseChatSessionReturn {
   
   // 会话函数
   loadSession: (sessionId: string) => Promise<Message[]>;
-  handleNewSession: () => Promise<void>;
+  handleNewSession: (retry?: number) => Promise<void>;
+  handleNewSessionInternal: (retry?: number) => Promise<void>;
   handleClear: () => void;
   updateSessionTitle: (newTitle: string) => Promise<void>;
   
@@ -82,7 +83,8 @@ export interface UseChatSessionReturn {
  * @returns 会话相关状态和函数
  */
 export const useChatSession = (
-  state: UseChatStateReturn
+  state: UseChatStateReturn,
+  streaming?: UseChatStreamingReturn
 ): UseChatSessionReturn => {
   const [searchParams] = useSearchParams();
   
@@ -160,10 +162,12 @@ export const useChatSession = (
   };
 
   /**
-   * handleNewSession - 新建会话
-   * 迁移自：NewChatContainer.tsx 第2189行
+   * handleNewSessionInternal - 新建会话内部实现，支持重试机制
+   * 迁移自：NewChatContainer.tsx handleNewSessionInternal
    */
-  const handleNewSession = useCallback(async () => {
+  const handleNewSessionInternal = useCallback(async (retry: number = 0): Promise<void> => {
+    const maxRetries = 3;
+
     try {
       // 生成智能标题
       const newTitle = generateNewSessionTitle();
@@ -175,12 +179,41 @@ export const useChatSession = (
       setSessionTitle(newTitle);
       setSessionVersion(1);
       setTitleLocked(false);
-      setMessages([]);
       setLastSavedTitle(newTitle);
+      
+      // 断开之前的SSE连接
+      if (streaming?.disconnect) {
+        streaming.disconnect();
+      }
+      if (streaming?.clearSteps) {
+        streaming.clearSteps();
+      }
+      
+      // 添加系统提示消息
+      const systemMessage: Message = {
+        id: (Date.now() + 1000).toString(),
+        role: "system",
+        content: "💡 新会话已创建！开始与AI助手对话吧。",
+        timestamp: new Date(),
+      };
+      setMessages([systemMessage]);
+      
+      // 清除sessionStorage
+      sessionStorage.removeItem(STORAGE_KEY);
+      
+      // 更新URL
+      window.history.pushState({}, "", `/?session_id=${newSessionId}`);
       
       showNewSessionSuccess(newTitle);
     } catch (error: any) {
-      const errMsg = error?.message || "创建会话失败";
+      if (retry < maxRetries) {
+        const newRetry = retry + 1;
+        showNewSessionRetryWarning(newRetry, maxRetries);
+        // 延迟1秒后重试
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        return handleNewSessionInternal(newRetry);
+      }
+      const errMsg = error?.message || "未知错误";
       showNewSessionError(errMsg);
     }
   }, [
@@ -191,14 +224,31 @@ export const useChatSession = (
     setMessages,
     setLastSavedTitle,
     currentSessionIdRef,
+    streaming,
   ]);
+
+  /**
+   * handleNewSession - 新建会话入口
+   */
+  const handleNewSession = useCallback(async (retry: number = 0): Promise<void> => {
+    return handleNewSessionInternal(retry);
+  }, [handleNewSessionInternal]);
   
   /**
    * handleClear - 清空对话
-   * 迁移自：NewChatContainer.tsx 第2197行
+   * 迁移自：NewChatContainer.tsx handleClear
    */
   const handleClear = useCallback(() => {
     console.log("[useChatSession] handleClear - 清空对话");
+    
+    // 断开SSE连接
+    if (streaming?.disconnect) {
+      streaming.disconnect();
+    }
+    if (streaming?.clearSteps) {
+      streaming.clearSteps();
+    }
+    
     setSessionId(null);
     currentSessionIdRef.current = null;
     setSessionTitle("新会话");
@@ -214,6 +264,7 @@ export const useChatSession = (
     setMessages,
     setLastSavedTitle,
     currentSessionIdRef,
+    streaming,
   ]);
   
   // ========================================
@@ -338,6 +389,7 @@ export const useChatSession = (
     // 会话函数
     loadSession,
     handleNewSession,
+    handleNewSessionInternal,
     handleClear,
     updateSessionTitle,
     

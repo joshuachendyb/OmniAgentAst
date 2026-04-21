@@ -161,7 +161,7 @@ const NewChatContainer: React.FC = () => {
   );
 
   // 【小沈 2026-04-22】Phase 5: 使用useChatSession管理会话生命周期
-  const chatSession = useChatSession(chatState);
+  const chatSession = useChatSession(chatState, chatStreaming);
    
   // ===== 【小资优化 2026-04-13】流式性能优化 =====
   // 2. 滚动控制ref
@@ -817,31 +817,6 @@ const NewChatContainer: React.FC = () => {
   // 统一的标题管理函数
   // ============================================
 
-
-  /**
-   * 生成新会话标题 - 智能生成有意义的标题
-   * 🔄 优化：添加更多时间细分，使标题更精确
-   */
-  const generateNewSessionTitle = (): string => {
-    const now = new Date();
-    const hours = now.getHours();
-    let timeOfDay = "";
-
-    // 更精确的时间段划分
-    if (hours >= 5 && hours < 8) timeOfDay = "清晨";
-    else if (hours >= 8 && hours < 12) timeOfDay = "上午";
-    else if (hours >= 12 && hours < 14) timeOfDay = "午间";
-    else if (hours >= 14 && hours < 18) timeOfDay = "下午";
-    else if (hours >= 18 && hours < 21) timeOfDay = "晚间";
-    else if (hours >= 21 && hours < 24) timeOfDay = "深夜";
-    else timeOfDay = "深夜"; // 0-5点
-
-    const dateStr = `${now.getMonth() + 1}月${now.getDate()}日`;
-    return `${dateStr} ${timeOfDay}会话 ${hours}:${now
-      .getMinutes()
-      .toString()
-      .padStart(2, "0")}`;
-  };
 
   // ⭐ 确保标题持久化到后端（带防抖、重试、版本冲突处理）
   const ensureTitlePersisted = async (sessionId: string, title: string) => {
@@ -1575,109 +1550,29 @@ const NewChatContainer: React.FC = () => {
   // ============================================================
 
   /**
-   * 新建会话 - 内部实现，支持重试机制
-   */
-  const handleNewSessionInternal = async (retry: number = 0) => {
-    const retryKey = "new-session";
-    const maxRetries = 3;
-
-    setLoading(true);
-    try {
-      // 生成智能标题
-      const newTitle = generateNewSessionTitle();
-      const newSession = await sessionApi.createSession(newTitle);
-      setSessionId(newSession.session_id);
-      // 【小新第二修复 2026-03-02】新建会话时也更新ref
-      currentSessionIdRef.current = newSession.session_id;
-      setSessionTitle(newTitle);
-      setMessages([]);
-      
-      // 【小沈修复 2026-04-16】重置暂停状态，避免新会话被旧暂停状态影响
-      // 问题原因：如果用户之前按了暂停按钮，isPausedRef.current 会是 true，
-      // 导致新会话的步骤被存入 displayBufferRef 而不是 streamingStepsRef，
-      // 最终导致 onComplete 时 ref=0
-      setIsPaused(false);
-      
-      // 重置日志标记
-      logFlagsRef.current = {
-        chunkFirstDone: false,
-        showStepsFalseDone: false,
-        showStepsTrueDone: false,
-      };
-
-      // 🔴 修复：清除旧的sessionStorage
-      sessionStorage.removeItem(STORAGE_KEY);
-
-      // 添加系统提示消息 - 新会话提示
-      const systemMessage: Message = {
-        id: (Date.now() + 1000).toString(),
-        role: "system",
-        content: "💡 新会话已创建！开始与AI助手对话吧。",
-        timestamp: new Date(),
-      };
-      setMessages([systemMessage]);
-
-      clearSteps();
-      disconnect();
-      window.history.pushState({}, "", `/?session_id=${newSession.session_id}`);
-
-      // 🎨 优化：添加更丰富的反馈
-      showNewSessionSuccess(newTitle);
-
-      // 重置重试计数
-      setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
-    } catch (error) {
-      // P1级别优化：重试机制
-      if (retry < maxRetries) {
-        const newRetry = retry + 1;
-        setRetryCount((prev) => ({ ...prev, [retryKey]: newRetry }));
-
-        showNewSessionRetryWarning(newRetry, maxRetries);
-
-        // 延迟1秒后重试
-        setTimeout(() => {
-          handleNewSessionInternal(newRetry);
-        }, 1000);
-        return;
-      }
-
-      // 🔴 修复：更好的错误处理
-      const errMsg = error instanceof Error ? error.message : "未知错误";
-      showNewSessionError(errMsg);
-      console.error("创建会话失败:", error);
-
-      // 重置重试计数
-      setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
-    } finally {
-      setLoading(false);
-      // ⭐ 停止等待计时器
-      if (waitTimerRef.current) {
-        clearInterval(waitTimerRef.current);
-        waitTimerRef.current = null;
-      }
-      setWaitTime(0);
-    }
-  };
-
-  /**
-   * 新建会话 - 按钮点击处理函数
+   * 新建会话 - 使用chatSession版本
+   * 迁移到 useChatSession Hook
    */
   const handleNewSession = () => {
     console.log("🔍 [handleNewSession] 按钮被点击");
-    handleNewSessionInternal(0);
+    chatSession.handleNewSession(0);
   };
 
   /**
-   * 清空对话
+   * 清空对话 - 使用chatSession版本
+   * 迁移到 useChatSession Hook
    */
   const handleClear = () => {
     console.log("🔍 [handleClear] 清空对话按钮被点击");
-    setMessages([]);
-    // 【小沈修复 2026-04-16】重置暂停状态，避免清空后新数据丢失
-    // 同 handleNewSessionInternal 的修复原因
+    // 重置暂停状态，避免清空后新数据丢失
     setIsPaused(false);
-    clearSteps();
-    disconnect();
+    // 重置日志标记
+    logFlagsRef.current = {
+      chunkFirstDone: false,
+      showStepsFalseDone: false,
+      showStepsTrueDone: false,
+    };
+    chatSession.handleClear();
   };
 
   return (
