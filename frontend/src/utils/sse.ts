@@ -1358,7 +1358,7 @@ const processSSEData = (
           case "interrupted":
             // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保中断时步骤列表显示
             onShowSteps?.(true);
-            onComplete?.(responseBufferRef.current, undefined);
+            // 中断时不调用onComplete，中断有自己的处理逻辑
             setIsReceiving(false);
             setIsConnected(false);
             break;

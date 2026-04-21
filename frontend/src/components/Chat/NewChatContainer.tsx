@@ -1846,6 +1846,27 @@ return prev;
     */
   const interruptInProgressRef = useRef(false);
   
+  // ✅ 智能等待中断事件函数
+  const waitForInterruptEvent = async (maxWaitTime = 3000, checkInterval = 200) => {
+    const startTime = Date.now();
+    let hasReceivedEvent = false;
+    
+    while (Date.now() - startTime < maxWaitTime) {
+      if (hasReceivedInterruptEventRef.current) {
+        console.log("[中断] 已收到 interrupted 事件");
+        hasReceivedEvent = true;
+        break;
+      }
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+    
+    if (!hasReceivedEvent) {
+      console.warn(`[中断] 在 ${maxWaitTime}ms 内未收到 interrupted 事件，继续执行`);
+    }
+    
+    return hasReceivedEvent;
+  };
+  
   const handleInterrupt = async () => {
     // 【防重复点击】如果正在中断中，忽略后续点击
     if (interruptInProgressRef.current) {
@@ -1884,25 +1905,14 @@ return prev;
           ]) as { success: boolean; message: string };
           console.log("[中断] cancel API 返回:", result);
           
-          // ✅【重试机制】等待后端发送interrupted事件，最多等待1.5秒
-          // 如果立即断开，后端可能还没来得及发送interrupted事件
-          let retries = 0;
-          while (retries < 3) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            // 检查是否收到了interrupted事件
-            if (hasReceivedInterruptEventRef.current) {
-              console.log("[中断] 已收到 interrupted 事件");
-              break;
-            }
-            retries++;
-            console.log("[中断] 等待 interrupted 事件... 重试", retries);
-          }
-          
-          // 重置中断事件标记，为下一次中断准备
-          hasReceivedInterruptEventRef.current = false;
+          // ✅ 使用智能等待策略等待后端发送interrupted事件
+          // 最长等待3000ms，每200ms检查一次
+          await waitForInterruptEvent(3000, 200);
           
           disconnect(true, true, () => {
             console.log("[中断] SSE已断开，状态已同步");
+            // 在断开连接完成后重置标记
+            hasReceivedInterruptEventRef.current = false;
           });
           console.log("[中断] 已调用 disconnect(true)");
           
