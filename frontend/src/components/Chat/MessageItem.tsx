@@ -90,11 +90,11 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   // 【小强修改2026-04-15】直接使用execution_result，不再兼容raw_data
   const executionResult = step.execution_result;
   
-  // 【小强优化 2026-03-18】步骤编号颜色随类型变化 - 使用stepStyles的函数
-  const badgeStyle = getStepBadgeStyle(effectiveType as StepType);
-  const labelStyle = getStepLabelStyle(effectiveType as StepType);
+  // 【2026-04-21优化3.1.2】使用useMemo缓存样式，避免每次渲染创建对象
+  const badgeStyle = useMemo(() => getStepBadgeStyle(effectiveType as StepType), [effectiveType]);
+  const labelStyle = useMemo(() => getStepLabelStyle(effectiveType as StepType), [effectiveType]);
 
-  // 【2026-04-20优化3.1.2】使用useMemo缓存样式，避免每次渲染创建对象
+  // 【2026-04-20优化3.1.2】contentStyle使用useMemo缓存
   const contentStyle = useMemo((): React.CSSProperties => ({
     color: "#333",
     wordBreak: "break-word",
