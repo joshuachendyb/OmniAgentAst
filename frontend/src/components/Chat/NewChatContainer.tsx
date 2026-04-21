@@ -248,6 +248,12 @@ const NewChatContainer: React.FC = () => {
     },
     // onStep - 收到执行步骤
     useCallback((step: ExecutionStep) => {
+      // ✅ 如果正在中断中，忽略所有事件（防止中断后还收到start等事件）
+      if (interruptInProgressRef.current) {
+        console.log(`[中断] 忽略中断过程中收到的事件: ${step.type}`);
+        return;
+      }
+      
       // 【中断检测】记录是否收到了interrupted事件
       if (step.type === "interrupted" || (step.type === "incident" && (step as any).incident_value === "interrupted")) {
         hasReceivedInterruptEventRef.current = true;
