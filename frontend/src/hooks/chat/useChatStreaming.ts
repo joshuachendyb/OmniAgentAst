@@ -2,20 +2,23 @@
  * useChatStreaming Hook - SSE协议与流式状态管理
  *
  * 功能：
- * - SSE相关状态管理（streamingContentRef, streamingStepsRef, executionStepsRef）
+ * - 管理SSE连接和流式状态
+ * - 提供发送消息、中断任务等操作
+ * - 集成useChatCallbacks中的回调函数
  *
- * 设计说明（按方案2.1.7）：
- * - 先创建Hook但暂不使用，保持NewChatContainer原样
- * - 仅迁移SSE相关状态到Refs，供后续Task 3.1切换使用
- * - 导出Refs供NewChatContainer使用
+ * 设计说明：
+ * - 作为SSE连接的核心管理Hook
+ * - 依赖useChatState和useChatCallbacks
+ * - 提供完整的SSE功能接口
  *
  * @author 小强
- * @version 1.0.0
+ * @version 2.0.0
  * @since 2026-04-21
  */
 
-import { useRef, useEffect } from "react";
-import type { Message } from "../../types/chat";
+import { useState, useCallback } from "react";
+import type { UseChatStateReturn } from "./useChatState";
+import type { UseChatCallbacksReturn } from "./useChatCallbacks";
 import type { ExecutionStep } from "../../utils/sse";
 import { useSSE } from "../../utils/sse";
 
@@ -24,11 +27,34 @@ import { useSSE } from "../../utils/sse";
 // ============================================================================
 
 /**
+ * SSE配置参数
+ */
+export interface SSEConfig {
+  baseURL: string;
+  sessionId: string | null;
+}
+
+/**
  * useChatStreaming Hook返回值
  */
 export interface UseChatStreamingReturn {
   // 流式接收状态
   isReceiving: boolean;
+  setIsReceiving: (receiving: boolean) => void;
+  
+  // 执行步骤
+  executionSteps: ExecutionStep[];
+  
+  // 当前响应
+  currentResponse: string;
+  
+  // SSE操作
+  sendMessage: (content: string, sessionId?: string) => Promise<void>;
+  disconnect: () => void;
+  clearSteps: () => void;
+  
+  // 服务器任务ID
+  serverTaskId: string | null;
   
   // Refs - 用于累积流式内容（供外部访问）
   streamingContentRef: React.MutableRefObject<string>;
@@ -43,66 +69,93 @@ export interface UseChatStreamingReturn {
 /**
  * useChatStreaming - SSE协议与流式状态管理
  * 
- * 迁移自：NewChatContainer.tsx 中的SSE相关Ref（第123-129行）
- * - streamingContentRef：累积AI回复内容
- * - streamingStepsRef：累积执行步骤
- * - executionStepsRef：当前executionSteps
+ * 迁移自：NewChatContainer.tsx 中的SSE相关逻辑
+ * - useSSE Hook配置和调用
+ * - 发送消息、中断任务等操作
+ * - 流式状态管理
  * 
- * 设计（按方案步骤2.1.7）：
- * - NewChatContainer保持原样，暂不使用新Hook
- * - 仅迁移流式状态管理逻辑到Hook
- * - 后续Task 3.1阶段切换使用
- * 
- * @param messages - 消息列表（用于同步executionSteps到ref）
- * @returns isReceiving, streamingContentRef, streamingStepsRef, executionStepsRef
+ * @param state - useChatState返回的状态对象
+ * @param callbacks - useChatCallbacks返回的回调函数
+ * @param config - SSE配置（baseURL, sessionId）
+ * @returns SSE相关状态和操作
  */
-export const useChatStreaming = (messages: Message[]): UseChatStreamingReturn => {
-  // ========================================
-  // Refs - 流式状态
-  // 迁移自：NewChatContainer.tsx 第123-129行
-  // ========================================
+export const useChatStreaming = (
+  state: UseChatStateReturn,
+  callbacks: UseChatCallbacksReturn,
+  config: SSEConfig
+): UseChatStreamingReturn => {
+  const { sessionId } = state;
+  const { onStep, onChunk, onComplete, onError, onPaused, onResumed } = callbacks;
   
-  // 【小查修复】用于在回调中获取最新的executionSteps
-  const executionStepsRef = useRef<ExecutionStep[]>([]);
-  
-  // 累积AI回复内容
-  const streamingContentRef = useRef('');
-  
-  // 累积执行步骤
-  const streamingStepsRef = useRef<ExecutionStep[]>([]);
-  
-  // ========================================
-  // useSSE Hook（空实现，按方案2.1.7暂不使用）
-  // ========================================
-  
-  const { isReceiving } = useSSE(
-    { baseURL: "", sessionId: "" } as any,
-    undefined,
-    undefined,
-    undefined,
-    undefined
+  // 使用useSSE Hook
+  const {
+    isReceiving,
+    setIsReceiving,
+    executionSteps,
+    currentResponse,
+    sendMessage: sendStreamMessage,
+    disconnect,
+    clearSteps,
+    serverTaskId,
+  } = useSSE(
+    {
+      baseURL: config.baseURL,
+      sessionId: sessionId || "default-session",
+    },
+    onStep,
+    onChunk,
+    onComplete,
+    onError,
+    onPaused,
+    onResumed
   );
   
-  // ========================================
-  // 同步executionSteps到ref
-  // 迁移自：NewChatContainer.tsx 第784-787行
-  // ========================================
+  // 从state中获取Refs
+  const {
+    streamingContentRef,
+    streamingStepsRef,
+    executionStepsRef,
+  } = state;
   
-  useEffect(() => {
-    // 同步最新executionSteps到ref，供onComplete使用
-    executionStepsRef.current = messages.length > 0 
-      ? messages[messages.length - 1].executionSteps || []
-      : [];
-  }, [messages]);
+  // 发送消息函数（包装useSSE的sendMessage）
+  const sendMessage = useCallback(async (content: string, customSessionId?: string) => {
+    try {
+      // 清理之前的流式内容
+      streamingContentRef.current = '';
+      streamingStepsRef.current = [];
+      
+      // 调用useSSE的sendMessage
+      return await sendStreamMessage(content, customSessionId);
+    } catch (error) {
+      console.error("发送消息失败:", error);
+      throw error;
+    }
+  }, [sendStreamMessage, streamingContentRef, streamingStepsRef]);
   
-  // ========================================
-  // 返回值
-  // ========================================
+  // 中断任务函数
+  const interruptTask = useCallback(() => {
+    disconnect();
+    // 清理流式状态
+    streamingContentRef.current = '';
+    streamingStepsRef.current = [];
+  }, [disconnect, streamingContentRef, streamingStepsRef]);
   
   return {
+    // 流式状态
     isReceiving,
-    streamingContentRef: streamingContentRef as React.MutableRefObject<string>,
-    streamingStepsRef: streamingStepsRef as React.MutableRefObject<ExecutionStep[]>,
-    executionStepsRef: executionStepsRef as React.MutableRefObject<ExecutionStep[]>,
+    setIsReceiving,
+    executionSteps,
+    currentResponse,
+    
+    // SSE操作
+    sendMessage,
+    disconnect: interruptTask,
+    clearSteps,
+    serverTaskId,
+    
+    // Refs
+    streamingContentRef,
+    streamingStepsRef,
+    executionStepsRef,
   };
 };

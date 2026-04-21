@@ -97,44 +97,17 @@ graph TD
 **目标**：提取标题编辑区域为独立组件
 **文件**：`src/components/Chat/ChatHeader.tsx`
 
-| 步骤 | 操作 | 验证方法 |
-|------|------|---------|
-| 1.1.1 | 分析NewChatContainer中标题相关代码（2300-2370行） | 明确提取范围 |
-| 1.1.2 | 定义ChatHeader Props接口 | 确定需要传递的props |
-| 1.1.3 | 创建ChatHeader.tsx空组件（仅渲染标题） | 编译通过 ✅ |
-| 1.1.4 | 提取标题状态到props | 类型检查通过 |
-| 1.1.5 | 提取回调到props | 编译通过 |
-| 1.1.6 | 在NewChatContainer中使用ChatHeader替换 | 编译通过 |
-| 1.1.7 | **验证**：页面显示+编辑功能正常 | 手动测试 ✅ |
+已经完成
 
 #### Task 1.2: 提取 ChatToolbar 组件
 **目标**：提取顶部按钮组（新建会话/流式开关/清空对话）
 **文件**：`src/components/Chat/ChatToolbar.tsx`
-
-| 步骤 | 操作 | 验证方法 |
-|------|------|---------|
-| 1.2.1 | 分析按钮组代码（2360-2420行） | 明确提取范围 |
-| 1.2.2 | 定义ChatToolbar Props接口 | 确定按钮类型和回调 |
-| 1.2.3 | 创建ChatToolbar.tsx空组件 | 编译通过 ✅ |
-| 1.2.4 | 提取按钮状态到props（useStream, showExecution等） | 类型检查 |
-| 1.2.5 | 提取按钮回调（onNew, onClear, onToggleStream等） | 编译通过 |
-| 1.2.6 | 在NewChatContainer中使用ChatToolbar | 编译通过 |
-| 1.2.7 | **验证**：按钮功能正常，样式正常 | 手动测试 ✅ |
+已经完成
 
 #### Task 1.3: 提取 MessageArea 组件
 **目标**：整合MessageList+骨架屏+滚动区域
 **文件**：`src/components/Chat/MessageArea.tsx`
-
-| 步骤 | 操作 | 验证方法 |
-|------|------|---------|
-| 1.3.1 | 分析消息区域代码（2415-2470行） | 明确提取范围 |
-| 1.3.2 | 定义MessageArea Props接口 | 确定需要传递的props |
-| 1.3.3 | 创建MessageArea.tsx空组件（整合MessageList） | 编译通过 ✅ |
-| 1.3.4 | 提取消息状态到props（messages, showExecution等） | 类型检查 |
-| 1.3.5 | 提取滚动控制props（messagesEndRef等） | 编译通过 |
-| 1.3.6 | 在NewChatContainer中使用MessageArea | 编译通过 |
-| 1.3.7 | **验证**：消息显示、滚动、自动滚动正常 | 手动测试 ✅ |
-
+已经完成
 ---
 
 ### 第二阶段：Hook拆分（逻辑下沉）
