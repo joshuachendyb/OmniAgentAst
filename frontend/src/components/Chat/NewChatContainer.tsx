@@ -1909,6 +1909,13 @@ return prev;
           // 最长等待3000ms，每200ms检查一次
           await waitForInterruptEvent(3000, 200);
           
+          // ✅ 停止所有进行中的倒计时
+          if (waitTimerRef.current) {
+            clearInterval(waitTimerRef.current);
+            waitTimerRef.current = null;
+            console.log("[中断] 已清除waitTimerRef倒计时");
+          }
+          
           disconnect(true, true, () => {
             console.log("[中断] SSE已断开，状态已同步");
             // 在断开连接完成后重置标记
