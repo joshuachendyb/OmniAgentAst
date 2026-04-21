@@ -19,7 +19,7 @@
  * @update 2026-03-13 代码拆分：类型和工具函数提取到独立文件
  */
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useRef, useEffect, useCallback } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
