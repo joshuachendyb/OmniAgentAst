@@ -22,7 +22,7 @@ import type { Message } from "../../types/chat";
 import type { UseChatStateReturn } from "./useChatState";
 import type { UseChatStreamingReturn } from "./useChatStreaming";
 import { sessionApi } from "../../services/api";
-import { loadHistoryMessages, STORAGE_KEY } from "../../utils/chatHistory";
+import { loadHistoryMessages, loadLatestHistoryMessages, STORAGE_KEY } from "../../utils/chatHistory";
 import { 
   showNewSessionSuccess, 
   showNewSessionRetryWarning, 
@@ -55,6 +55,7 @@ export interface UseChatSessionReturn {
   handleNewSessionInternal: (retry?: number) => Promise<void>;
   handleClear: () => void;
   updateSessionTitle: (newTitle: string) => Promise<void>;
+  initializeSession: (options: InitializeSessionOptions) => Promise<InitializeSessionResult>;
   
   // 标题编辑函数
   setEditingTitle: (editing: boolean) => void;
@@ -63,6 +64,38 @@ export interface UseChatSessionReturn {
   
   // Refs
   currentSessionIdRef: React.MutableRefObject<string | null>;
+}
+
+/**
+ * initializeSession 方法的参数
+ */
+export interface InitializeSessionOptions {
+  searchParams: URLSearchParams;
+  retryCount: Record<string, number>;
+  setRetryCount: (fn: (prev: Record<string, number>) => Record<string, number>) => void;
+  isLoadingHistoryRef: React.MutableRefObject<boolean>;
+  setIsInitialized: (v: boolean) => void;
+  restoreState: () => Promise<{
+    messages: Message[];
+    sessionId: string | null;
+    sessionTitle: string;
+    sessionVersion: number;
+  } | null>;
+  onLoadingStart: () => void;
+  onLoadingEnd: () => void;
+  onRenderStart: () => void;
+  onRenderEnd: () => void;
+  onMessageListLoadingStart: () => void;
+  onMessageListLoadingEnd: () => void;
+}
+
+/**
+ * initializeSession 方法的返回值
+ */
+export interface InitializeSessionResult {
+  loaded: boolean;
+  fromCache: boolean;
+  hasUrlSession: boolean;
 }
 
 // ============================================================================
@@ -128,6 +161,209 @@ export const useChatSession = (
     }
   }, [
     setSessionId,
+    setSessionTitle,
+    setSessionVersion,
+    setTitleLocked,
+    setLastSavedTitle,
+    currentSessionIdRef,
+  ]);
+
+  /**
+   * initializeSession - 初始化会话（核心入口）
+   * 迁移自：NewChatContainer.tsx loadSession useEffect (第838-1055行)
+   * 
+   * 处理三种互斥场景：
+   * 1. URL指定会话 -> loadHistoryMessages
+   * 2. 缓存恢复 -> restoreState
+   * 3. 最近会话 -> loadLatestHistoryMessages
+   */
+  const initializeSession = useCallback(async (options: InitializeSessionOptions): Promise<InitializeSessionResult> => {
+    const {
+      searchParams,
+      retryCount,
+      setRetryCount,
+      isLoadingHistoryRef,
+      setIsInitialized,
+      restoreState,
+      onLoadingStart,
+      onLoadingEnd,
+      onRenderStart,
+      onRenderEnd,
+      onMessageListLoadingStart,
+      onMessageListLoadingEnd,
+    } = options;
+
+    const urlSessionId = searchParams.get("session_id");
+
+    // 检测是否是强制刷新（Ctrl+F5或Cmd+Shift+R）
+    const navigationEntry = performance.getEntriesByType("navigation")?.[0] as PerformanceNavigationTiming | undefined;
+    const isReload = navigationEntry?.type === "reload";
+    
+    if (isReload) {
+      console.log("🔄 检测到刷新操作，清除sessionStorage缓存");
+      sessionStorage.removeItem(STORAGE_KEY);
+    }
+
+    // 场景1: URL指定会话
+    if (urlSessionId) {
+      const retryKey = `session-load-${urlSessionId}`;
+      const currentRetry = retryCount[retryKey] || 0;
+
+      // 如果正在加载中，跳过此次调用
+      if (isLoadingHistoryRef.current) {
+        console.log("⏭️ 正在加载中，跳过重复调用");
+        onLoadingEnd();
+        return { loaded: false, fromCache: false, hasUrlSession: true };
+      }
+
+      isLoadingHistoryRef.current = true;
+      onLoadingStart();
+      onRenderStart();
+
+      try {
+        const result = await loadHistoryMessages(urlSessionId);
+        if (result) {
+          setSessionId(result.sessionId);
+          currentSessionIdRef.current = result.sessionId;
+          setMessages(result.messages);
+          setSessionTitle(result.title);
+          if (result.version !== undefined) {
+            setSessionVersion(result.version);
+          }
+          if (result.title_locked !== undefined) {
+            setTitleLocked(result.title_locked);
+          }
+          setLastSavedTitle(result.title || "新会话");
+          
+          onLoadingEnd();
+          onRenderEnd();
+          onMessageListLoadingEnd();
+          setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
+
+          console.log("🔵 从URL加载会话:", urlSessionId, "标题:", result.title, "版本:", result.version);
+          isLoadingHistoryRef.current = false;
+          return { loaded: true, fromCache: false, hasUrlSession: true };
+        } else {
+          // URL会话没有消息，清理状态
+          console.warn("🔴 URL会话没有消息，清理状态并跳过加载:", urlSessionId);
+          setSessionId(null);
+          currentSessionIdRef.current = null;
+          setMessages([]);
+          setSessionTitle("新会话");
+          setSessionVersion(1);
+          setTitleLocked(false);
+          setLastSavedTitle("新会话");
+          
+          onLoadingEnd();
+          onRenderEnd();
+          isLoadingHistoryRef.current = false;
+          return { loaded: false, fromCache: false, hasUrlSession: true };
+        }
+      } catch (error) {
+        console.warn("加载URL会话失败:", error);
+        onRenderEnd();
+        isLoadingHistoryRef.current = false;
+
+        // 重试机制 - 最多3次
+        if (currentRetry < 3) {
+          const newRetry = currentRetry + 1;
+          setRetryCount((prev) => ({ ...prev, [retryKey]: newRetry }));
+
+          // 延迟1秒后重试
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          return initializeSession(options); // 递归重试
+        } else {
+          // 超过重试次数
+          onLoadingEnd();
+          setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
+          return { loaded: false, fromCache: false, hasUrlSession: true };
+        }
+      }
+    }
+
+    // 场景2: 缓存恢复
+    if (!urlSessionId) {
+      const restored = await restoreState();
+      if (restored) {
+        console.log("🟢 从缓存恢复会话状态");
+        setSessionId(restored.sessionId);
+        currentSessionIdRef.current = restored.sessionId;
+        setMessages(restored.messages);
+        setSessionTitle(restored.sessionTitle);
+        setSessionVersion(restored.sessionVersion);
+        setLastSavedTitle(restored.sessionTitle);
+        
+        onLoadingEnd();
+        isLoadingHistoryRef.current = false;
+        return { loaded: true, fromCache: true, hasUrlSession: false };
+      }
+    }
+
+    // 场景3: 加载最近会话
+    if (urlSessionId) {
+      // 有URL参数但不加载最近会话
+      onLoadingEnd();
+      return { loaded: false, fromCache: false, hasUrlSession: true };
+    }
+
+    // 检查是否正在加载
+    if (isLoadingHistoryRef.current) {
+      console.log("⏭️ 正在加载中，跳过重复调用");
+      onLoadingEnd();
+      setIsInitialized(true);
+      return { loaded: false, fromCache: false, hasUrlSession: false };
+    }
+
+    isLoadingHistoryRef.current = true;
+    onLoadingStart();
+    onRenderStart();
+
+    try {
+      const result = await loadLatestHistoryMessages();
+      if (result) {
+        setSessionId(result.sessionId);
+        currentSessionIdRef.current = result.sessionId;
+        setSessionTitle(result.title);
+        if (result.version !== undefined) {
+          setSessionVersion(result.version);
+        }
+        if (result.title_locked !== undefined) {
+          setTitleLocked(result.title_locked);
+        }
+        setLastSavedTitle(result.title);
+        
+        setMessages(result.messages);
+        
+        onLoadingEnd();
+        onRenderEnd();
+        onMessageListLoadingEnd();
+        
+        console.log("🟡 加载最近会话:", result.sessionId, "标题:", result.title, "版本:", result.version);
+      } else {
+        console.log("🟡 没有找到任何会话，显示新会话界面");
+        setSessionTitle("新会话");
+        setMessages([]);
+        setSessionId(null);
+        setLastSavedTitle("新会话");
+        onLoadingEnd();
+        onRenderEnd();
+      }
+
+      onLoadingEnd();
+      isLoadingHistoryRef.current = false;
+      setIsInitialized(true);
+      return { loaded: true, fromCache: false, hasUrlSession: false };
+    } catch (error) {
+      console.warn("加载最近会话失败:", error);
+      onLoadingEnd();
+      onRenderEnd();
+      isLoadingHistoryRef.current = false;
+      setIsInitialized(true);
+      return { loaded: false, fromCache: false, hasUrlSession: false };
+    }
+  }, [
+    setSessionId,
+    setMessages,
     setSessionTitle,
     setSessionVersion,
     setTitleLocked,
@@ -387,6 +623,7 @@ export const useChatSession = (
     
     // 会话函数
     loadSession,
+    initializeSession,
     handleNewSession,
     handleNewSessionInternal,
     handleClear,

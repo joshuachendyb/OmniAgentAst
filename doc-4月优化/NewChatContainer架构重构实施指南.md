@@ -217,36 +217,443 @@ const chatPersistence = useChatPersistence(chatState, chatStreaming);
 
 ### Phase 7: 重构NewChatContainer（2天）
 
-#### Task 7.1: 创建重构版本
+> **小强补充 - 2026-04-22**  
+> Phase 7是整个重构的最后一步，需要将NewChatContainer从1538行减少到约200行，成为纯编排器。
+
+#### Phase 7 模块划分总览
+
+| 模块 | 函数名 | 行号范围 | 目标迁移位置 | 优先级 |
+|------|--------|----------|--------------|--------|
+| **7.1** | `executeStreamSend` | 1062-1161 | `useChatStreaming` | P1 |
+| **7.2** | `handleInterrupt` | 1187-1305 | `useChatTaskControl` (新建) | P1 |
+| **7.3** | `handleTogglePause` | 1310-1345 | `useChatTaskControl` (合并) | P1 |
+| **7.4** | `checkNetworkConnection` | 678-694 | `utils/chatNetwork.ts` | P2 |
+| **7.5** | `ensureTitlePersisted` + `debouncedSaveTitle` | 702-829 | 清理/复用 `useChatSession.updateSessionTitle` | P2 |
+| **7.6** | `loadSession` useEffect | 835-1060 | `useChatSession` | P2 |
+| **7.7** | 最终清理 | 全部 | NewChatContainer.tsx (~200行) | P3 |
+
+---
+
+## Phase 7 各模块处理规范
+
+### 标准5步流程（每个模块必须遵守）
+
+```
+Step X.1: 分析依赖
+    ↓ 分析函数调用的所有API、状态、Refs、回调
+Step X.2: 设计方案
+    ↓ 制定迁移到目标Hook的详细方案
+Step X.3: 确认方案
+    ↓ 向用户确认方案后执行（必须等用户同意）
+Step X.4: 实施迁移
+    ↓ 实际执行迁移代码（先备份）
+Step X.5: 验证功能
+    ↓ 编译+测试验证功能正常
+```
+
+---
+
+## 模块 7.1: executeStreamSend 迁移到 useChatStreaming
+
+### Step 7.1.1: 分析依赖
+
+**函数位置**: NewChatContainer.tsx 第1062-1161行
+
+**调用关系分析**:
+```
+executeStreamSend(userMessage: Message)
+├── setLoading(true)
+├── setWaitTime(0), setIsRetrying(false)
+├── waitTimerRef (setInterval)
+├── clearSteps()
+├── getClientInfo()  ← 需要迁移
+├── sessionApi.saveMessage()  ← 需要迁移
+├── replyUserMessageIdRef
+├── setMessages (更新用户消息ID)
+├── sendStreamMessage()  ← 已在useChatStreaming
+└── 创建 assistantMessage
+```
+
+**使用的状态**:
+- `currentSessionIdRef.current`
+- `sessionId`
+- `loading`, `setLoading`
+- `waitTime`, `setWaitTime`
+- `isRetrying`, `setIsRetrying`
+- `messages`, `setMessages`
+- `waitTimerRef`
+
+**使用的Refs**:
+- `currentSessionIdRef`
+- `replyUserMessageIdRef`
+- `waitTimerRef`
+- `executionStepsRef` (clearSteps)
+
+**严重注意事项**:
+- ⚠️ `getClientInfo()` 获取客户端信息，必须随 `sessionApi.saveMessage` 一起迁移
+- ⚠️ `sendStreamMessage` 已在 `useChatStreaming`，不能重复迁移
+- ⚠️ 需要保留对 `sendStreamMessage` 的调用，但消息构建逻辑可以内部化
+- ⚠️ `waitTimerRef` 的 setInterval 逻辑需要确保清理
+
+### Step 7.1.2: 设计方案
+
+**推荐方案**: 在 `useChatStreaming` 中添加 `executeStreamSend` 方法
+
 ```typescript
-// 创建：src/components/Chat/NewChatContainer.refactored.tsx
-// 使用所有新Hook的完整版本
+// useChatStreaming.ts 新增方法
+const executeStreamSend = useCallback(async (userMessage: Message, options: {
+  sessionId: string | null;
+  setLoading: (v: boolean) => void;
+  setWaitTime: (v: number) => void;
+  setIsRetrying: (v: boolean) => void;
+  setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
+  replyUserMessageIdRef: React.MutableRefObject<number | null>;
+  currentSessionIdRef: React.MutableRefObject<string | null>;
+  waitTimerRef: React.MutableRefObject<NodeJS.Timeout | null>;
+  // ... 其他需要的依赖
+}) => {
+  // 实现迁移的逻辑
+}, [getClientInfo, sessionApi, sendStreamMessage]);
 ```
 
-**验证步骤**：
-1. 创建新文件，编译通过
-2. 逐步替换原有逻辑，每次替换一个Hook
-3. 每个Hook替换后立即验证功能
-4. 最终整合所有Hook，确保功能正常
+### Step 7.1.3: 确认方案
 
-#### Task 7.2: 替换原始文件
-```bash
-# 备份原始文件
-mv src/components/Chat/NewChatContainer.tsx src/components/Chat/NewChatContainer.original.tsx
-mv src/components/Chat/NewChatContainer.refactored.tsx src/components/Chat/NewChatContainer.tsx
+（待分析完成后向用户确认）
+
+### Step 7.1.4: 实施迁移
+
+（确认后执行）
+
+### Step 7.1.5: 验证功能
+
+（迁移后验证）
+
+---
+
+## 模块 7.2: handleInterrupt 创建 useChatTaskControl
+
+### Step 7.2.1: 分析依赖
+
+**函数位置**: NewChatContainer.tsx 第1187-1305行
+
+**调用关系分析**:
+```
+handleInterrupt()
+├── interruptInProgressRef (防重复点击)
+├── serverTaskId
+├── taskControlApi.cancel()  ← 核心依赖
+├── waitForInterruptEvent()  ← 内部函数，也需迁移
+├── showTaskControlInfo()
+├── setLoading(false)
+├── setIsPaused(false)
+├── setIsReceiving(false)
+├── waitTimerRef (clearInterval)
+├── disconnect(true, true, callback)  ← 已在useChatStreaming
+├── hasReceivedInterruptEventRef
+├── showTaskResultMessage()
+├── showTaskControlMessage()
+└── interruptInProgressRef = false
 ```
 
-#### Task 7.3: 运行完整测试
+**严重注意事项**:
+- ⚠️ `waitForInterruptEvent` 是内部辅助函数，必须和 `handleInterrupt` 一起迁移
+- ⚠️ `interruptInProgressRef` 用于防重复点击，这个机制必须保留
+- ⚠️ `disconnect` 来自 `useChatStreaming`，需要通过参数传入
+- ⚠️ `hasReceivedInterruptEventRef` 是外部Ref，需要正确传递
+- ⚠️ 中断流程复杂，包含智能等待策略，不能破坏
+
+### Step 7.2.2: 设计方案
+
+**推荐方案**: 创建新的 `useChatTaskControl` Hook
+
+```typescript
+// src/hooks/chat/useChatTaskControl.ts
+export const useChatTaskControl = (options: {
+  chatState: ReturnType<typeof useChatState>;
+  chatStreaming: ReturnType<typeof useChatStreaming>;
+}) => {
+  // handleInterrupt
+  // handleTogglePause
+  // waitForInterruptEvent (内部)
+};
+```
+
+### Step 7.2.3-7.2.5: 确认后实施和验证
+
+（待续）
+
+---
+
+## 模块 7.3: handleTogglePause 合并到 useChatTaskControl
+
+### Step 7.3.1: 分析依赖
+
+**函数位置**: NewChatContainer.tsx 第1310-1345行
+
+**调用关系分析**:
+```
+handleTogglePause()
+├── serverTaskId
+├── taskControlApi.pause() / resume()  ← 核心依赖
+├── isPaused (状态)
+├── setIsPaused
+├── isPausedRef
+├── showNoActiveTaskWarning()
+├── showTaskResultMessage()
+└── handleError()
+```
+
+**严重注意事项**:
+- ⚠️ 与 `handleInterrupt` 使用相同的 `taskControlApi`，应该合并到同一个Hook
+- ⚠️ `handleTogglePause` 逻辑相对简单，但需要准确的状态判断
+
+### Step 7.3.2-7.3.5: 确认后实施和验证
+
+（待续）
+
+---
+
+## 模块 7.4: checkNetworkConnection 移入 utils
+
+### Step 7.4.1: 分析依赖
+
+**函数位置**: NewChatContainer.tsx 第678-694行
+
+**函数内容**:
+```typescript
+const checkNetworkConnection = async (): Promise<boolean> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
+  try {
+    const response = await fetch(`${API_BASE_URL}/health`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response.ok;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.warn("网络连接检查失败:", error);
+    return false;
+  }
+};
+```
+
+**依赖**:
+- `API_BASE_URL` (从 `../../services/api` 导入)
+
+**严重注意事项**:
+- ⚠️ 这是纯工具函数，没有任何状态依赖，可以直接移入 utils
+- ⚠️ 只需要迁移函数本身，不需要创建Hook
+- ⚠️ 建议放在 `utils/chatNetwork.ts` 或 `utils/network.ts`
+
+### Step 7.4.2: 设计方案
+
+**推荐方案**: 创建 `utils/network.ts`
+
+```typescript
+// src/utils/network.ts
+export const checkNetworkConnection = async (apiBaseUrl: string): Promise<boolean> => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3000);
+  try {
+    const response = await fetch(`${apiBaseUrl}/health`, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response.ok;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    console.warn("网络连接检查失败:", error);
+    return false;
+  }
+};
+```
+
+### Step 7.4.3-7.4.5: 确认后实施和验证
+
+（待续）
+
+---
+
+## 模块 7.5: ensureTitlePersisted + debouncedSaveTitle 清理
+
+### Step 7.5.1: 分析依赖
+
+**函数位置**: 
+- `ensureTitlePersisted`: 第702-821行
+- `debouncedSaveTitle`: 第824-829行
+
+**函数功能分析**:
+```
+ensureTitlePersisted(sessionId, title)
+├── lastSavedTitle (防抖检查)
+├── saveStatus (防抖检查)
+├── retryCount
+├── sessionApi.updateSession()  ← 核心
+├── setSaveStatus
+├── setIsSavingTitle
+├── setSessionVersion
+├── setLastSavedTitle
+├── saveState()  ← 来自chatPersistence
+├── setLastSaveTime
+├── handleApiError()
+├── showConflictError()
+├── sessionApi.getSessionMessages()  ← 同步最新数据
+├── setSessionTitle
+├── setTitleLocked
+└── showInfo() / showRetryWarning() / showSaveError()
+
+debouncedSaveTitle
+└── debounce(ensureTitlePersisted, 1000)
+```
+
+**与 useChatSession.updateSessionTitle 的关系**:
+- `useChatSession` 已有 `updateSessionTitle` 方法
+- 需要对比功能，确认是否完全覆盖
+
+**严重注意事项**:
+- ⚠️ `ensureTitlePersisted` 包含完整的重试机制和版本冲突处理
+- ⚠️ `useChatSession.updateSessionTitle` 是否已经提供相同功能？
+- ⚠️ 如果已覆盖，则删除这两个函数；如果没有，则增强 `updateSessionTitle`
+- ⚠️ `debouncedSaveTitle` 使用 `debounce` 包装，必须确保防抖逻辑正确
+
+### Step 7.5.2: 设计方案
+
+（需要先对比 `useChatSession.updateSessionTitle` 的实现）
+
+### Step 7.5.3-7.5.5: 确认后实施和验证
+
+（待续）
+
+---
+
+## 模块 7.6: loadSession useEffect 迁移到 useChatSession
+
+### Step 7.6.1: 分析依赖
+
+**函数位置**: NewChatContainer.tsx 第835-1060行（useEffect）
+
+**功能分析**:
+```
+loadSession useEffect
+├── searchParams.get("session_id")
+├── performance.getEntriesByType("navigation")  ← 检测强制刷新
+├── sessionStorage.removeItem(STORAGE_KEY)  ← 强制刷新时
+├── sessionId (URL参数)
+├── setSessionJumpLoading
+├── message.loading()
+├── retryCount
+├── isLoadingHistoryRef
+├── loadHistoryMessages()  ← 来自chatHistory utils
+├── setMessages
+├── setSessionId
+├── setSessionTitle
+├── setSessionVersion
+├── setTitleLocked
+├── setIsRenderingMessages
+├── setIsMessageListLoading
+└── 大量sessionStorage读写逻辑
+```
+
+**严重注意事项**:
+- ⚠️ 这是最复杂的useEffect，包含会话加载、恢复、状态同步等
+- ⚠️ 与 `useChatPersistence` 功能有重叠（sessionStorage读写）
+- ⚠️ 需要仔细分析哪些在 `useChatPersistence` 中已处理
+- ⚠️ URL参数检测和强制刷新处理是特殊逻辑
+
+### Step 7.6.2: 设计方案
+
+（需要详细分析后制定）
+
+### Step 7.6.3-7.6.5: 确认后实施和验证
+
+（待续）
+
+---
+
+## 模块 7.7: 最终清理
+
+### Step 7.7.1: 检查未使用导入
+
+**检查项**:
+- [ ] 所有从 `../../services/api` 导入的是否还在使用？
+- [ ] 所有从 `../../utils/*` 导入的是否还在使用？
+- [ ] 所有从 `../../hooks/chat/*` 导入的是否还在使用？
+- [ ] 是否有未使用的 React API 导入？
+
+### Step 7.7.2: 清理开发注释
+
+**清理项**:
+- [ ] 删除所有 `【xxx修复】` 类型的注释
+- [ ] 删除所有 `【小x修复】` 类型的注释
+- [ ] 删除所有 `# ====` 分隔线注释（如果不再需要）
+- [ ] 保留必要的功能分组注释
+
+### Step 7.7.3: 验证构建
+
 ```bash
-# 运行单元测试
-npm test -- --testPathPattern=NewChatContainer
-
-# 运行集成测试
-npm run test:e2e
-
-# 构建检查
 npm run build
 ```
+
+### Step 7.7.4: 验证功能
+
+按照"五、验证清单"逐项验证
+
+### Step 7.7.5: 提交代码
+
+```bash
+git add .
+git commit -m "refactor: Phase 7完成 - NewChatContainer重构为纯编排器 - 小强-2026-04-22"
+git tag v0.9.9  # 或下一个版本号
+```
+
+---
+
+## Phase 7 严重注意事项（必须遵守）
+
+> 🚨 **以下事项绝对不能漏，否则会导致功能缺失或严重Bug**
+
+### 1. executeStreamSend 迁移注意事项
+- ❌ 不能遗漏 `getClientInfo()` 的调用
+- ❌ 不能遗漏 `sessionApi.saveMessage()` 的调用
+- ❌ 不能破坏 `sendStreamMessage` 的调用链
+- ❌ 必须保留 `waitTimerRef` 的清理逻辑
+
+### 2. handleInterrupt 迁移注意事项
+- ❌ 不能遗漏 `waitForInterruptEvent()` 智能等待逻辑
+- ❌ 不能删除 `interruptInProgressRef` 防重复机制
+- ❌ 必须正确处理 `hasReceivedInterruptEventRef`
+- ❌ 中断后的状态同步必须完整
+
+### 3. handleTogglePause 迁移注意事项
+- ❌ 不能遗漏 `serverTaskId` 的检查
+- ❌ 暂停和恢复的状态更新必须对称
+- ❌ 错误处理必须完善
+
+### 4. checkNetworkConnection 迁移注意事项
+- ✅ 相对简单，但必须确保 API_BASE_URL 正确传递
+- ✅ 3秒超时逻辑必须保留
+
+### 5. ensureTitlePersisted 清理注意事项
+- ⚠️ 必须先确认 `useChatSession.updateSessionTitle` 的功能覆盖范围
+- ⚠️ 如果删除，必须确保 `updateSessionTitle` 完全替代
+- ⚠️ `debouncedSaveTitle` 的防抖逻辑（1000ms）必须保留
+
+### 6. loadSession 迁移注意事项
+- ❌ 这是最复杂的部分，不能遗漏任何功能
+- ❌ URL参数处理逻辑必须保留
+- ❌ 强制刷新检测必须保留
+- ❌ sessionStorage 恢复逻辑必须保留
+- ❌ 与 `useChatPersistence` 的功能重叠需要理清
+
+### 7. 最终清理注意事项
+- ❌ 不能删除正在使用的导入
+- ❌ 不能删除仍然需要的功能代码
+- ❌ 验证清单必须逐项通过
+
+---
 
 ## 五、验证清单
 
