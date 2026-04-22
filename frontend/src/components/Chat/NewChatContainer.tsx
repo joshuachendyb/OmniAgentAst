@@ -38,6 +38,7 @@ import {
 // 【新增 2026-03-13】从独立文件导入日志和消息提示函数
 import { logUserSend } from "../../utils/chatLogger";
 import { getClientInfo } from "../../utils/clientInfo";  // 【小沈 2026-03-24】获取客户端信息
+import { checkNetworkConnection } from "../../utils/network";  // 【小强 2026-04-22】网络检查工具
 import {
   showSaveError,
   showLoadSuccess,
@@ -692,30 +693,7 @@ const NewChatContainer: React.FC = () => {
     };
   }, []);
 
-  // ============================================
-  // 网络连接检查
-  // ============================================
-
-  /**
-   * 检查网络连接状态
-   */
-  const checkNetworkConnection = async (): Promise<boolean> => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/health`, {
-        method: "GET",
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      return response.ok;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      console.warn("网络连接检查失败:", error);
-      return false;
-    }
-  };
+  // 注意：checkNetworkConnection 已迁移到 utils/network.ts
 
   // ============================================
   // 统一的标题管理函数
@@ -1107,9 +1085,9 @@ const NewChatContainer: React.FC = () => {
 
      // 🔴 修复：网络连接检查 - 移除过早的setLoading(false)
      setLoading(true);
-     try {
-       console.log("🔍 [handleSend] 开始检查网络连接...");
-       const isNetworkOK = await checkNetworkConnection();
+try {
+        console.log("🔍 [handleSend] 开始检查网络连接...");
+        const isNetworkOK = await checkNetworkConnection(API_BASE_URL);
         if (!isNetworkOK) {
           console.error("❌ [handleSend] 网络连接异常");
           showNetworkError();
