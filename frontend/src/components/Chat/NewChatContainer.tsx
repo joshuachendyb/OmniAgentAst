@@ -255,18 +255,8 @@ const NewChatContainer: React.FC = () => {
   }, []);
   // ===== 【小资优化 2026-04-13】结束 =====
 
-  // 【小新第二修复 2026-03-02】同步跟踪消息数量，用于保存消息时获取准确的值
-  // 【小查修复2026-03-14】同时同步messagesRef，避免visibilitychange useEffect频繁重新注册
-  // 【问题2修复 2026-03-18】当正在接收SSE数据时，持续保存到sessionStorage（页面隐藏期间也能保存）
-  useEffect(() => {
-    messagesCountRef.current = messages.length;
-    messagesRef.current = messages;
-    
-    if (sessionId) {
-      // ⭐ 使用debounce函数延迟保存（500ms）
-      saveMessagesToStorage.current(messages, sessionId, sessionTitle, isPaused, isReceiving);
-    }
-  }, [messages, sessionId, sessionTitle, isPaused, isReceiving]);
+  // 注意：messagesRef和messagesCountRef同步已迁移到useChatState内部
+  // 注意：防抖保存已迁移到useChatPersistence内部（saveStateWithSSECheck）
 
   // 当页面从隐藏状态变为显示时也自动滚动到底部
   useEffect(() => {
