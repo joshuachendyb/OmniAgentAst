@@ -19,39 +19,22 @@
  * @update 2026-03-13 代码拆分：类型和工具函数提取到独立文件
  */
 
-import React, { useRef, useEffect, useCallback } from "react";
+import React, { useEffect, useCallback } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
-import { sessionApi, API_BASE_URL, taskControlApi } from "../../services/api";
-import { handleError, handleApiError, ErrorType } from "../../utils/errorHandler";
-
-// 【新增 2026-03-13】从独立文件导入类型和工具函数
+import { sessionApi, API_BASE_URL } from "../../services/api";
+import { handleError, ErrorType } from "../../utils/errorHandler";
 import type { Message } from "../../types/chat";
 import {
-  debounce,
   loadHistoryMessages,
-  loadLatestHistoryMessages,
   SESSION_EXPIRY_TIME,
   STORAGE_KEY,
 } from "../../utils/chatHistory";
 
-// 【新增 2026-03-13】从独立文件导入日志和消息提示函数
 import { logUserSend } from "../../utils/chatLogger";
-import { getClientInfo } from "../../utils/clientInfo";  // 【小沈 2026-03-24】获取客户端信息
-import { checkNetworkConnection } from "../../utils/network";  // 【小强 2026-04-22】网络检查工具
+import { checkNetworkConnection } from "../../utils/network";
 import {
-  showSaveError,
-  showLoadSuccess,
   showNetworkError,
-  showConflictError,
-  showInfo,
-  showRetryWarning,
-  showTaskControlMessage,
-  showTaskResultMessage,
-  showTaskControlInfo,
-  showNoActiveTaskWarning,
-  showLoadRetryWarning,
-  showLoadErrorWithKey,
 } from "../../utils/chatMessages";
 
 // 【小强修复 2026-03-31】独立输入框组件，隔离inputValue状态避免父组件重渲染
@@ -109,7 +92,7 @@ const NewChatContainer: React.FC = () => {
     showExecution, setShowExecution, 
     useStream, setUseStream,
     isInitialized, setIsInitialized,
-    saveStatus, setSaveStatus,
+    setSaveStatus,
     sessionJumpLoading, setSessionJumpLoading,
     isMessageListLoading, setIsMessageListLoading,
     retryCount, setRetryCount,
@@ -386,82 +369,6 @@ const NewChatContainer: React.FC = () => {
   // 【小沈 2026-04-22】Phase 6: 使用chatPersistence版本
   const { saveStateWithSSECheck, saveState } = chatPersistence;
 
-  const restoreState = () => {
-    const saved = sessionStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const state = JSON.parse(saved);
-        // 🔴 修复：检查时间戳，避免恢复过时的状态（超过5分钟）
-        const currentTime = Date.now();
-        const savedTime = state.timestamp || 0;
-        const timeDiff = currentTime - savedTime;
-        // console.log("🕒 距离上次保存: " + (timeDiff/1000).toFixed(1) + "秒", "| 过期时间: 5分钟");
-
-        // 只恢复5分钟内的状态
-        if (timeDiff > SESSION_EXPIRY_TIME) {
-          // console.log("🕒 会话状态已过期，跳过恢复");
-          sessionStorage.removeItem(STORAGE_KEY);
-          return false;
-        }
-
-        if (state.sessionId) {
-          // ⭐ 小新修复 2026-03-07：检查缓存消息是否缺少 display_name，如果是则跳过恢复，从 API 重新加载
-          // 【2026-04-08修复】如果缓存中没有messages（容量满时只保存了摘要），也从API重新加载
-          if (!state.messages || state.messages.length === 0) {
-            console.log("🕒 缓存中没有messages（可能容量满），从 API 重新加载");
-            return false;
-          }
-          
-          const hasDisplayName = state.messages?.some((m: any) => m.display_name);
-          if (!hasDisplayName) {
-            console.log("🕒 缓存消息缺少 display_name，跳过恢复，从 API 重新加载");
-            sessionStorage.removeItem(STORAGE_KEY);
-            return false;
-          }
-          
-          setMessages(state.messages || []);
-          setSessionId(state.sessionId);
-          // 【小新第二修复 2026-03-02】从sessionStorage恢复时也更新ref
-          currentSessionIdRef.current = state.sessionId;
-          setSessionTitle(state.sessionTitle || "会话");
-
-          // 恢复暂停/中断状态
-          if (state.isPaused !== undefined) {
-            setIsPaused(state.isPaused);
-            isPausedRef.current = state.isPaused;
-            console.log("🔄 恢复暂停状态:", state.isPaused);
-          }
-          // 注意：isReceiving 状态不需要恢复，因为页面切换回来后需要重新开始接收
-
-          // 🔴 修复：根据保存的标记决定是否滚动到底部
-          if (state.shouldScrollToBottom) {
-            // 使用requestAnimationFrame确保DOM更新后再滚动
-            requestAnimationFrame(() => {
-              setTimeout(() => {
-                scrollToBottomDelayed();
-              }, 100);
-            });
-          } else if (state.scrollPosition !== undefined) {
-            // 恢复之前的滚动位置
-            setTimeout(() => {
-              if (messagesEndRef.current?.parentElement) {
-                messagesEndRef.current.parentElement.scrollTop =
-                  state.scrollPosition;
-              }
-            }, 100);
-          }
-
-          console.log("🔄 type=%s 恢复sessionStorage %s | msg=%d", new Date().toLocaleTimeString(), state.messages?.length);
-          return true;
-        }
-      } catch (e) {
-        console.warn("恢复会话状态失败:", e);
-        sessionStorage.removeItem(STORAGE_KEY); // 🔴 修复：清除损坏的数据
-      }
-    }
-    return false;
-  };
-
   // 页面可见性变化时保存和恢复状态
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -694,143 +601,7 @@ const NewChatContainer: React.FC = () => {
   }, []);
 
   // 注意：checkNetworkConnection 已迁移到 utils/network.ts
-
-// 注意：ensureTitlePersisted 和 debouncedSaveTitle 已删除
-  // 标题保存功能已由 useChatSession.updateSessionTitle 提供
-  // 【小新修复 2026-03-04】保存AI回复后不再调用 ensureTitlePersisted
-
-  // ============================================
-
-
-  // ⭐ 确保标题持久化到后端（带防抖、重试、版本冲突处理）
-  const ensureTitlePersisted = async (sessionId: string, title: string) => {
-    if (!sessionId || !title.trim()) return;
-
-    // ⭐ 防抖检查：标题未变化时跳过保存
-    if (title === lastSavedTitle) {
-      console.log("标题未变化，跳过保存");
-      return;
-    }
-
-    // ⭐ 防抖检查：正在保存时跳过重复请求
-    if (saveStatus === "saving") {
-      console.log("正在保存中，跳过重复请求");
-      return;
-    }
-
-    const retryKey = `title-save-${sessionId}`;
-    const currentRetry = retryCount[retryKey] || 0;
-
-    try {
-      setSaveStatus("saving");
-      setIsSavingTitle(true);
-
-      // 如果标题不是默认标题，保存到后端
-      if (title !== "新会话" && title !== "会话") {
-        // ⭐ 直接使用状态中的版本号
-        const response = await sessionApi.updateSession(
-          sessionId,
-          title.trim(),
-          sessionVersion
-        );
-
-        // ⭐ 更新本地版本号
-        if (response.version) {
-          setSessionVersion(response.version);
-        }
-
-        // ⭐ 更新最后保存的标题
-        setLastSavedTitle(title);
-
-        console.log(
-          "💾 标题持久化成功:",
-          sessionId,
-          title,
-          "版本:",
-          sessionVersion
-        );
-      }
-
-      // 更新本地sessionStorage
-      saveState();
-
-      // 保存成功
-      setSaveStatus("saved");
-      setIsSavingTitle(false);
-      setLastSaveTime(Date.now());
-      setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
-
-      // 2秒后恢复到idle状态
-      setTimeout(() => {
-        setSaveStatus("idle");
-      }, 2000);
-      } catch (error: any) {
-        console.warn("标题持久化失败:", error);
-
-        // ⭐ 处理409版本冲突错误
-        if (error?.response?.status === 409) {
-          // 使用统一错误处理中心
-          handleApiError(error, { showError: false });
-          
-          // 显示同步提示 - 使用 chatMessages 工具
-          const errorMsg = error.response.data?.detail || "版本冲突，该会话已被其他人修改";
-          showConflictError(errorMsg);
-
-        // ⭐ 从服务器重新获取最新数据
-        try {
-          const sessionData = await sessionApi.getSessionMessages(sessionId);
-          if (sessionData.version) {
-            setSessionVersion(sessionData.version);
-          }
-          if (sessionData.title) {
-            setSessionTitle(sessionData.title);
-          }
-          if (sessionData.title_locked !== undefined) {
-            setTitleLocked(sessionData.title_locked);
-          }
-          // 【小新第二修复 2026-03-02】title_source 由后端动态计算，前端不需要读取
-
-          showInfo("已自动同步最新数据，请重试");
-        } catch (syncError) {
-          console.error("同步最新数据失败:", syncError);
-        }
-
-        setSaveStatus("error");
-        setIsSavingTitle(false);
-        return;
-      }
-
-      // 其他错误：重试机制 - 最多3次
-      setSaveStatus("error");
-      setIsSavingTitle(false);
-
-      // 使用统一错误处理中心处理错误
-      handleApiError(error);
-
-      if (currentRetry < 3) {
-        const newRetry = currentRetry + 1;
-        setRetryCount((prev) => ({ ...prev, [retryKey]: newRetry }));
-        showRetryWarning(newRetry, 3);
-
-        // 延迟1秒后重试
-        setTimeout(() => {
-          debouncedSaveTitle(sessionId, title);
-        }, 1000);
-      } else {
-        // 超过重试次数，显示错误
-        showSaveError("保存失败，请检查网络后重试");
-        setRetryCount((prev) => ({ ...prev, [retryKey]: 0 }));
-      }
-    }
-  };
-
-  // ⭐ 防抖版本的保存标题函数
-  const debouncedSaveTitle = useCallback(
-    debounce(async (sessionId: string, title: string) => {
-      await ensureTitlePersisted(sessionId, title);
-    }, 1000),
-    []
-  );
+  // 注意：ensureTitlePersisted 和 debouncedSaveTitle 已删除，标题保存由 useChatSession.updateSessionTitle 提供
 
   // ============================================
   // 加载历史会话
