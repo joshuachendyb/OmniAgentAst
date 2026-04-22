@@ -242,9 +242,6 @@ const NewChatContainer: React.FC = () => {
   }, []);
   // ===== 【小资优化 2026-04-13】结束 =====
 
-  // 注意：messagesRef和messagesCountRef同步已迁移到useChatState内部
-  // 注意：防抖保存已迁移到useChatPersistence内部（saveStateWithSSECheck）
-
   // 当页面从隐藏状态变为显示时也自动滚动到底部
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -346,9 +343,6 @@ const NewChatContainer: React.FC = () => {
   // 【小沈 2026-04-22】Phase 6: 使用chatPersistence版本
   const { saveStateWithSSECheck, saveState } = chatPersistence;
 
-  // 注意：visibilitychange useEffect 已迁移到 useChatPersistence Hook
-  // 页面可见性变化时的保存逻辑在 useChatPersistence 内部处理
-
   // P1级别优化：状态验证和同步机制
   useEffect(() => {
     if (!sessionId || !isInitialized) return;
@@ -417,9 +411,6 @@ const NewChatContainer: React.FC = () => {
     };
   }, []);
 
-  // 注意：checkNetworkConnection 已迁移到 utils/network.ts
-  // 注意：ensureTitlePersisted 和 debouncedSaveTitle 已删除，标题保存由 useChatSession.updateSessionTitle 提供
-
   // ============================================
   // 加载历史会话
   // 【小强 2026-04-22】Phase 7.6: 使用chatSession.initializeSession替代原useEffect
@@ -480,9 +471,7 @@ const NewChatContainer: React.FC = () => {
    * 执行流式消息发送（使用useChatStreaming.executeSend）
    * 【小强 2026-04-22】Phase 7.1: executeStreamSend已迁移到useChatStreaming.executeSend
    */
-// 注意：executeSend方法已迁移到useChatStreaming hook
-  // 注意：handleInterrupt和handleTogglePause已迁移到useChatTaskControl hook
-  /**
+/**
    * 发送消息（带安全检测v2.0）
    * 【小强修复 2026-03-31】改为接收messageContent参数，不再依赖inputValue状态
    */
