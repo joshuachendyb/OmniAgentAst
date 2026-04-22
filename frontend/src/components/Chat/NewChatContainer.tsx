@@ -48,8 +48,7 @@ import ChatHeader from './ChatHeader';
 // 【小沈 2026-04-21】ChatToolbar组件拆分
 import ChatToolbar from './ChatToolbar';
 
-// 【小强 2026-04-21】Hooks已创建，按方案2.1.7/2.2.7/2.3.5验证1：暂不使用
-// 使用时导入：
+// 【小强 2026-04-21】Hooks已创建，按方案2.1.7/2.2.7/2.3.5验证
 import { useChatSession } from '../../hooks/chat/useChatSession';
 import { useChatPersistence } from '../../hooks/chat/useChatPersistence';
 
