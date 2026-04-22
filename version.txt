@@ -1,3 +1,32 @@
+v0.9.9.9
+
+更新时间: 2026-04-22 19:37:07
+
+更新内容：
+
+## 1 NewChatContainer.tsx Phase 7架构重构 - 小强-2026-04-22
+
+### 1.1 重构内容
+
+| Phase | 功能 | 文件 | 说明 |
+|-------|------|------|------|
+| 7.1 | executeStreamSend迁移 | useChatStreaming.ts | → useChatStreaming.executeSend |
+| 7.2 | 中断控制迁移 | useChatTaskControl.ts | handleInterrupt/handleTogglePause新Hook |
+| 7.3 | 网络检查迁移 | utils/network.ts | checkNetworkConnection独立工具函数 |
+| 7.4 | 死代码删除 | NewChatContainer.tsx | ensureTitlePersisted删除 |
+| 7.6 | initializeSession迁移 | useChatSession.ts | loadSession→initializeSession |
+
+### 1.2 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| 77e87d0d | refactor: Phase 7.1 - executeStreamSend迁移到useChatStreaming.executeSend |
+| c69fdbb8 | refactor: Phase 7.2 - useChatTaskControl Hook创建 |
+| 69fc86ed | refactor: Phase 7.3 - checkNetworkConnection迁移到utils/network.ts |
+| 87972049 | refactor: Phase 7.4+7.6 - 死代码删除+initializeSession迁移 |
+
+---
+
 v0.9.9.8
 
 更新时间: 2026-04-21 22:39:02
