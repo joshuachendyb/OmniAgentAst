@@ -72,18 +72,6 @@ import { useChatTaskControl } from '../../hooks/chat/useChatTaskControl';
 // - 类型定义: src/types/chat.ts
 // - 工具函数: src/utils/chatHistory.ts
 
-/**
-
-/**
- * NewChatContainer - 升级版对话容器
- *
- * 整合功能：
- * - Chat/index.tsx: 会话管理、安全检测、状态持久化
- * - ChatContainer: useSSE hook、ExecutionPanel、流式开关
- *
- * @author 小新
- * @version 3.0.0
- */
 const NewChatContainer: React.FC = () => {
   // Phase 2: 使用useChatState统一管理状态
   const chatState = useChatState();
