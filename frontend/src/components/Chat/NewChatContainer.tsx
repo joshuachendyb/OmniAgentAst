@@ -583,6 +583,32 @@ try {
     chatSession.handleClear();
   };
 
+  // ChatHeader回调 - 提取为useCallback优化性能
+  const handleEditingStart = useCallback(() => {
+    if (!editingTitle && sessionId) {
+      setTitleInput(sessionTitle || "");
+    }
+    setEditingTitle(true);
+  }, [editingTitle, sessionId, sessionTitle, setTitleInput, setEditingTitle]);
+
+  const handleEditingCancel = useCallback(() => {
+    setEditingTitle(false);
+  }, [setEditingTitle]);
+
+  // ChatToolbar回调 - 提取为useCallback优化性能
+  const handleToggleStream = useCallback((checked: boolean) => {
+    console.log("🔍 [流式开关] 被点击，新状态:", checked);
+    setUseStream(checked);
+    if (!checked) {
+      setShowExecution(false);
+    }
+  }, [setUseStream, setShowExecution]);
+
+  const handleToggleExecution = useCallback(() => {
+    console.log("🔍 [显示过程] 按钮被点击");
+    setShowExecution(!showExecution);
+  }, [showExecution, setShowExecution]);
+
   return (
     <Card
       styles={{ body: { padding: "0 4px 4px 4px" } }}
@@ -599,15 +625,8 @@ title={
           setEditingTitle={setEditingTitle}
           setTitleInput={setTitleInput}
           setSessionVersion={setSessionVersion}
-          onEditingStart={() => {
-            if (!editingTitle && sessionId) {
-              setTitleInput(sessionTitle || "");
-            }
-            setEditingTitle(true);
-          }}
-onEditingCancel={() => {
-            setEditingTitle(false);
-          }}
+          onEditingStart={handleEditingStart}
+          onEditingCancel={handleEditingCancel}
         />
       }
       extra={
@@ -616,17 +635,8 @@ onEditingCancel={() => {
           showExecution={showExecution}
           onNewSession={handleNewSession}
           onClear={handleClear}
-          onToggleStream={(checked) => {
-            console.log("🔍 [流式开关] 被点击，新状态:", checked);
-            setUseStream(checked);
-            if (!checked) {
-              setShowExecution(false);
-            }
-          }}
-          onToggleExecution={() => {
-            console.log("🔍 [显示过程] 按钮被点击");
-            setShowExecution(!showExecution);
-          }}
+          onToggleStream={handleToggleStream}
+          onToggleExecution={handleToggleExecution}
         />
       }
     >
