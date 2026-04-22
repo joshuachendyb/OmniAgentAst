@@ -173,6 +173,7 @@ const NewChatContainer: React.FC = () => {
   // ===== 【小资优化 2026-04-13】结束 =====
 
 // 【小沈 2026-04-22】Phase 4: 使用chatStreaming（useChatStreaming Hook）
+// 【小强 2026-04-22】Phase 7.1: 解构executeSend方法
   const {
     isReceiving,
     setIsReceiving,
@@ -182,6 +183,7 @@ const NewChatContainer: React.FC = () => {
     disconnect,
     clearSteps,
     serverTaskId,
+    executeSend,
   } = chatStreaming;
 
   // 自动滚动到底部
@@ -1050,115 +1052,15 @@ const NewChatContainer: React.FC = () => {
     loadSession();
   }, [searchParams]);
 
-  // ============================================
+// ============================================
   // 消息发送逻辑
   // ============================================
 
   /**
-   * 执行流式消息发送（使用useSSE hook）
-   *
-    * @update 2026-02-23 修复：添加assistant消息占位，确保onStep/onChunk能正确更新
-    */
-  const executeStreamSend = async (userMessage: Message) => {
-    console.log("📡 type=%s 开始发送消息");
-    
-    setLoading(true);
-    // ⭐ 启动等待计时器
-    setWaitTime(0);
-    setIsRetrying(false);
-    if (waitTimerRef.current) {
-      clearInterval(waitTimerRef.current);
-    }
-    waitTimerRef.current = setInterval(() => {
-      setWaitTime(t => t + 1);
-    }, 1000);
-    clearSteps();
-
-    // 【小沈修复2026-03-03】在调用 /chat/stream 之前先保存用户消息
-    // 这样即使AI响应失败，用户消息也不会丢失
-    const currentSessionId = currentSessionIdRef.current || sessionId;
-    // console.log("🔍 [executeStreamSend] 使用的sessionId:", currentSessionId);
-    
-    let backendUserMessageId: number | null = null;
-    
-    if (currentSessionId) {
-      try {
-        // 【小沈 2026-03-24】获取客户端信息
-        const clientInfo = getClientInfo();
-        console.log("🔍 客户端信息:", clientInfo);
-        
-        console.log("🔍 在调用AI之前先保存用户消息:", userMessage);
-        const saveResult = await sessionApi.saveMessage(currentSessionId, {
-          role: "user",
-          content: userMessage.content,
-          // 【小沈 2026-03-24】传递客户端信息
-          client_os: clientInfo.client_os,
-          browser: clientInfo.browser,
-          device: clientInfo.device,
-          network: clientInfo.network,
-        });
-        // 保存用户消息ID，用于AI消息关联
-        backendUserMessageId = saveResult?.message_id || null;
-        replyUserMessageIdRef.current = backendUserMessageId;
-        
-        // 【关键修复】用后端返回的ID更新用户消息ID
-        if (backendUserMessageId) {
-          setMessages((prev) => {
-            const newMessages = [...prev];
-            // 找到用户消息，用后端ID更新
-            const userMsgIndex = newMessages.findIndex(m => m.id === userMessage.id);
-            if (userMsgIndex !== -1) {
-              newMessages[userMsgIndex] = {
-                ...newMessages[userMsgIndex],
-                id: backendUserMessageId!.toString()
-              };
-              console.log("✅ 用户消息ID已更新:", backendUserMessageId);
-            }
-            return newMessages;
-          });
-        }
-        
-        console.log("✅ 用户消息保存成功, message_id:", saveResult?.message_id);
-      } catch (error) {
-        console.error("❌ 保存用户消息失败:", error);
-        // 使用统一错误处理中心 - 错误消息保存失败但继续发送AI
-        const result = handleError(error, { source: "api", continueOnError: true });
-        if (!result.shouldContinue) {
-          console.warn("   └─ 保存失败且不能继续");
-        }
-      }
-    } else {
-      console.warn("⚠️ 未找到sessionId，无法保存用户消息:", userMessage.id);
-    }
-
-    // 【关键修复】用后端返回的message_id生成assistant消息ID（后端逻辑：user_id + 1 = assistant_id）
-    const assistantId = backendUserMessageId 
-      ? (backendUserMessageId + 1).toString() 
-      : (Date.now() + 1).toString();
-    console.log("🔍 assistant消息ID:", assistantId, "(后端ID:", backendUserMessageId, "+1)");
-
-    // 【关键修复】用后端返回的ID创建assistant消息
-    // 【小沈修复 2026-03-26】timestamp会在SSE回调的onStep中更新为后端返回的正确时间戳
-    const assistantMessage: Message = {
-      id: assistantId,
-      role: "assistant",
-      content: "🤔 AI 正在思考...", // 【修复问题 2】显示占位文本，避免空白气泡
-      timestamp: new Date(), // 临时值，会被onStep回调中的正确时间戳覆盖
-      executionSteps: [],
-      isStreaming: true,
-      model: undefined, // 前端小新代修改：明确设置可选属性
-    };
-    // console.log("🔍 [executeStreamSend] 创建assistant占位消息:", assistantMessage);
-    setMessages((prev) => [...prev, assistantMessage]);
-
-    // console.log("🔍 [executeStreamSend] 准备调用sendStreamMessage...");
-    // console.log("  content:", userMessage.content);
-    // console.log("  sessionId:", currentSessionIdRef.current || sessionId);
-    
-    // 发送流式请求 - 【小沈添加 2026-03-03】传递sessionId用于后端缓存display_name
-    sendStreamMessage(userMessage.content, currentSessionIdRef.current ?? sessionId ?? undefined);
-    console.log("✅ type=%s sendStreamMessage已调用");
-  };
+   * 执行流式消息发送（使用useChatStreaming.executeSend）
+   * 【小强 2026-04-22】Phase 7.1: executeStreamSend已迁移到useChatStreaming.executeSend
+   */
+  // 注意：executeSend方法已迁移到useChatStreaming hook，调用chatStreaming.executeSend(userMessage)
 
   /**
    * 任务中断处理
@@ -1424,7 +1326,8 @@ const NewChatContainer: React.FC = () => {
 
     // 【小强 2026-04-20】移除前端安全检测，直接发送消息
     // 安全检测完全由后端处理，后端返回error步骤时前端会正确显示
-    await executeStreamSend(userMessage);
+    // 【小强 2026-04-22】Phase 7.1: 使用chatStreaming.executeSend替代executeStreamSend
+    await executeSend(userMessage);
   };
 
   // ============================================================
