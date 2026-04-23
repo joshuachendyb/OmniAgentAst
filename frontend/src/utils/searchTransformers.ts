@@ -62,11 +62,11 @@ export interface SearchFileContentData {
  * 后端返回: total=3023 (文件数量), matches=[...]
  * 前端期望: files_matched=3023, total_matches=0 (不使用)
  */
-export function transformSearchFilesData(rawData: any): SearchFilesData {
+export function transformSearchFilesData(rawData: unknown): SearchFilesData {
   return {
     files_matched: rawData?.total || 0,  // 后端返回total=文件数量
     total_matches: 0,  // search_files是文件搜索，不应该有"匹配数"概念
-    matches: (rawData?.matches || []).map((match: any) => ({
+    matches: (rawData?.matches || []).map((match: unknown) => ({
       name: match.name || "",
       path: match.path || "",
       size: match.size || 0,
