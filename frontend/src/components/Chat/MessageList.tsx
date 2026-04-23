@@ -24,28 +24,14 @@ interface MessageListProps {
   
   // 滚动控制 refs（由NewChatContainer管理）
   messagesEndRef?: React.RefObject<HTMLDivElement>;
-  userScrolledUpRef?: React.MutableRefObject<boolean>;
-  
-  // 滚动控制函数
-  scrollToBottomIfNeeded?: () => void;
-  scrollToBottomDelayed?: () => void;
-  
-  // 状态
-  isReceiving?: boolean;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const MessageList: React.FC<MessageListProps> = memo(({
   messages,
   showExecution,
   sessionId,
   sessionTitle,
   messagesEndRef,
-  // 预留扩展props（为后续优化准备）
-  userScrolledUpRef: _userScrolledUpRef,
-  scrollToBottomIfNeeded: _scrollToBottomIfNeeded,
-  scrollToBottomDelayed: _scrollToBottomDelayed,
-  isReceiving: _isReceiving,
 }) => {
   // 使用高性能渲染 Hook
   const messageElements = useMessageListRender({

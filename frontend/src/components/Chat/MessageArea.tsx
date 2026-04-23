@@ -90,10 +90,6 @@ const MessageArea: React.FC<MessageAreaProps> = ({
           sessionId={sessionId}
           sessionTitle={sessionTitle}
           messagesEndRef={messagesEndRef}
-          userScrolledUpRef={userScrolledUpRef}
-          scrollToBottomIfNeeded={scrollToBottomIfNeeded}
-          scrollToBottomDelayed={scrollToBottomDelayed}
-          isReceiving={isReceiving}
         />
       )}
     </div>
