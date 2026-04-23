@@ -514,45 +514,51 @@ try {
        console.warn("⚠️ [handleSend] 网络检查异常:", error);
      }
 
-    let currentSessionId = sessionId;
-    if (!currentSessionId) {
-      try {
+    // 【小沈修复 2026-04-23】P0-1: 消息发送后再添加到状态，避免发送失败时状态不一致
+    let userMessage: Message | null = null;
+    try {
+      // 1. 创建会话（如果需要）
+      let currentSessionId = sessionId;
+      if (!currentSessionId) {
         const newSession = await sessionApi.createSession(
           messageContent.trim().substring(0, 50)
         );
         currentSessionId = newSession.session_id;
         setSessionId(currentSessionId);
-        // 【小新第二修复 2026-03-02】保存到ref，确保onComplete时使用正确的ID
         currentSessionIdRef.current = currentSessionId;
         console.log("创建新会话:", currentSessionId);
-      } catch (error) {
-        // 使用统一错误处理中心 - 创建会话失败
-        handleError(error, { source: "api" });
-        console.error("创建会话失败:", error);
-        return; // 🔴 修复：创建会话失败时停止发送
+      } else {
+        currentSessionIdRef.current = currentSessionId;
       }
-    } else {
-      // 【小新第二修复 2026-03-02】已有会话时也保存到ref
-      currentSessionIdRef.current = currentSessionId;
+
+      // 2. 创建用户消息对象（先不添加到状态）
+      userMessage = {
+        id: Date.now().toString(),
+        role: "user" as const,
+        content: messageContent.trim(),
+        timestamp: new Date(),
+      };
+
+      // 3. 先发送消息，发送成功后再添加到状态
+      // 【小强 2026-04-22】Phase 7.1: 使用chatStreaming.executeSend替代executeStreamSend
+      await executeSend(userMessage);
+
+      // 4. 发送成功后才添加到状态
+      setMessages((prev) => [...prev, userMessage!]);
+      logUserSend(userMessage.content);
+
+    } catch (error) {
+      // 发送失败，不添加消息到状态
+      handleError(error, { source: "api" });
+    } finally {
+      setLoading(false);
+      // 停止等待计时器
+      if (waitTimerRef.current) {
+        clearInterval(waitTimerRef.current);
+        waitTimerRef.current = null;
+      }
+      setWaitTime(0);
     }
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: messageContent.trim(),
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-
-    // ========== 红色开始标志 ==========
-    logUserSend(userMessage.content);
-    // ==================================
-
-    // 【小强 2026-04-20】移除前端安全检测，直接发送消息
-    // 安全检测完全由后端处理，后端返回error步骤时前端会正确显示
-    // 【小强 2026-04-22】Phase 7.1: 使用chatStreaming.executeSend替代executeStreamSend
-    await executeSend(userMessage);
   };
 
   // ============================================================
