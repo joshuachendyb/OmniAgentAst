@@ -19,7 +19,7 @@
  * @update 2026-03-13 代码拆分：类型和工具函数提取到独立文件
  */
 
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useRef } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL } from "../../services/api";
@@ -135,8 +135,11 @@ const NewChatContainer: React.FC = () => {
     hasReceivedInterruptEventRef,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     interruptInProgressRef,
-  } = chatState;
-  
+} = chatState;
+   
+  // 【小沈 2026-04-24】P0-3优化：保存loading的hide函数，避免双重调用
+  const loadingHideRef = useRef<(() => void) | null>(null);
+   
   const [searchParams] = useSearchParams();
 
 // 【小沈 2026-04-22】Phase 3 Task 3.2: 使用useChatCallbacks获取回调
@@ -464,16 +467,27 @@ const NewChatContainer: React.FC = () => {
   // ============================================
   useEffect(() => {
     const onLoadingStart = () => {
+      // 【小沈 2026-04-24】P0-3优化：先关闭之前的loading，再创建新的
+      if (loadingHideRef.current) {
+        loadingHideRef.current();
+        loadingHideRef.current = null;
+      }
       setSessionJumpLoading(true);
       message.destroy("session-load");
-      message.loading({
+      const hide = message.loading({
         content: "正在加载会话...",
         key: "session-load",
         duration: 0,
       });
+      loadingHideRef.current = hide;
     };
 
     const onLoadingEnd = () => {
+      // 【小沈 2026-04-24】P0-3优化：清除ref并关闭loading
+      if (loadingHideRef.current) {
+        loadingHideRef.current();
+        loadingHideRef.current = null;
+      }
       setSessionJumpLoading(false);
       message.destroy("session-load");
     };
@@ -510,6 +524,17 @@ const NewChatContainer: React.FC = () => {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  // 【小沈 2026-04-24】P0-3优化：组件卸载时清理loading
+  useEffect(() => {
+    return () => {
+      if (loadingHideRef.current) {
+        loadingHideRef.current();
+        loadingHideRef.current = null;
+      }
+      message.destroy("session-load");
+    };
+  }, []);
 
   // ============================================================
 

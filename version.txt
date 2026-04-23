@@ -1,4 +1,110 @@
+v0.10.1
+
+更新时间: 2026-04-24 07:30:12
+
+更新内容：
+
+## 1 前端Chat组件代码清理 - 小沈-2026-04-24
+
+### 1.1 清理内容
+
+| 文件 | 清理项 | 说明 |
+|------|--------|------|
+| NewChatContainer.tsx | 移除未使用的chatStreaming属性 | setIsReceiving, sendMessage, disconnect, clearSteps, serverTaskId |
+| StepContent.tsx | 移除handleLinkMouse props | handleLinkMouseEnter, handleLinkMouseLeave, hasMore, effectiveType |
+| StepFooter.tsx | 移除onLinkMouse props | onLinkMouseEnter, onLinkMouseLeave |
+| StepRow/index.tsx | 移除handleLinkMouse callbacks | 同步清理 |
+| MessageList.tsx | 移除未使用的reserved props | userScrolledUpRef, scrollToBottomIfNeeded等 |
+| MessageArea.tsx | 移除传递给MessageList的未使用props | 同步清理 |
+
+### 1.2 架构说明
+
+- useChatState Hook设计：返回所有状态和refs（messages, loading, isPaused, sessionId, executionStepsRef等）
+- 这是架构设计选择，非bug：各组件可能不需要所有状态，但其他Hook（useChatSession, useChatCallbacks等）可能需要
+- 清理未使用props传递，但保留Hook返回的完整状态
+
+### 1.3 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| ESLint错误 | 0 |
+| ESLint警告 | 15 (仅test/setup.ts) |
+| 构建 | ✅ 通过 |
+
+### 1.4 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| dcbd4710 | fix: 清理NewChatContainer未使用的chatStreaming属性 - 小沈-2026-04-24 |
+| 80f8691e | fix: 清理StepRow未使用的handleLinkMouse props - 小沈-2026-04-24 |
+| 59566ff9 | fix: 清理MessageList未使用的props - 小沈-2026-04-24 |
+| 8d6bf3fb | fix: 清理MessageArea传递的未使用props - 小沈-2026-04-24 |
+| 00c74ad3 | fix: 清理未使用的导入(loadHistoryMessages, SESSION_EXPIRY_TIME) - 小沈-2026-04-24 |
+
+---
+
 v0.10.0
+
+更新时间: 2026-04-24 06:10:00
+
+更新内容：
+
+## 1 ESLint代码质量清理 - 小沈-2026-04-24
+
+### 1.1 核心文件ESLint清理
+
+| 文件 | 修复前 | 修复后 |
+|------|-------|--------|
+| NewChatContainer.tsx | 32 warnings | 0 |
+| History/index.tsx | 1 warning | 0 |
+| 总计 | 40 warnings | 12 warnings (test文件) |
+
+### 1.2 修复方法
+
+| 方法 | 说明 |
+|------|------|
+| any→unknown | 类型更严格 |
+| eslint-disable | unused vars和hooks dependencies |
+| useCallback | 包装频繁变化的函数 |
+
+### 1.4 UI修复
+
+- 用户头像位置：气泡在前，头像在后（右侧）
+- AI头像位置：头像在前，气泡在后（左侧）
+- 消息列表padding：左右4px
+- 图标显示：始终显示
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| f40daeea | fix: P0-1修复用户消息状态不一致 - 发送成功后再添加到状态 |
+| dd636740 | fix: P0-1修复回滚 - 改用乐观更新+错误回滚方案 |
+| a71d60c1 | fix: P0-1修复完成 - 失败时显示发送失败标识❌ |
+| 0f87a848 | fix: P0-1优化 - 失败图标❌显示在消息左侧更明显 |
+| b736689a | feat: 拆分MessageItem为UserMessageBubble和AIMessageBubble组件 |
+| 337ddb37 | fix: 修复用户头像位置错误，头像应该在气泡右侧 |
+| 3247a838 | fix: 添加AI消息头像显示 |
+| 6978fe66 | fix: 调整头像与气泡间距为4px |
+| 7fad152c | fix: 消息列表左右padding改为0，头像靠边 |
+| 9a71ac2a | fix: 调整消息列表左右padding为4px |
+| 675e6289 | fix: 添加hover状态控制图标显示 |
+| 9c3cf1ab | fix: 图标始终显示 |
+| a6aadebf | fix: 删除MessageItem中未使用的导入 |
+| d8c6123a | refactor: 清理废弃代码，删除未使用的isHovered状态和AvatarDisplay组件 |
+| 6de13634 | refactor: 提取handleSend到useChatSend Hook |
+
+### 1.6 文档新增
+
+| 文件 | 说明 |
+|------|------|
+| NewChatContainer_工作流程梳理.md | 工作流程梳理文档 |
+| NewChatContainer_组件结构分析.md | 组件结构分析文档 |
+| NewChatContainer_代码依赖分析.md | 代码依赖分析文档 |
+
+---
+
+v0.9.9.10
 
 更新时间: 2026-04-24 06:10:00
 
