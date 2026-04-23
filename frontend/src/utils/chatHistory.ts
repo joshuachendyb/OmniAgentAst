@@ -28,56 +28,54 @@ export const DEBUG_LOAD_FROM_API = import.meta.env.DEV || false;
 /**
  * 防抖函数
  */
-export const debounce = <T extends (...args: any[]) => any>(
+export const debounce = <T extends (...args: Parameters<T>) => void>(
   func: T,
   delay: number
-): ((...args: Parameters<T>) => void) => {
+): T => {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  return (...args: Parameters<T>): void => {
+  return ((...args: Parameters<T>) => {
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
     timeoutId = setTimeout(() => {
       func(...args);
-      timeoutId = null;
     }, delay);
-  };
+  }) as T;
 };
 
 /**
  * 解析单条消息
  * @update 2026-03-14: 添加错误相关字段解析（使用API文档字段名）
  */
-export const parseMessage = (rawMessage: any): Message => {
+export const parseMessage = (rawMessage: unknown): Message => {
+  const msg = rawMessage as Record<string, unknown>;
   // 处理 executionSteps（兼容两种字段名）
   let executionSteps: ExecutionStep[] = [];
-  if (rawMessage.execution_steps && Array.isArray(rawMessage.execution_steps)) {
-    executionSteps = rawMessage.execution_steps;
-  } else if (rawMessage.executionSteps && Array.isArray(rawMessage.executionSteps)) {
-    executionSteps = rawMessage.executionSteps;
+  if (msg.execution_steps && Array.isArray(msg.execution_steps)) {
+    executionSteps = msg.execution_steps as ExecutionStep[];
+  } else if (msg.executionSteps && Array.isArray(msg.executionSteps)) {
+    executionSteps = msg.executionSteps as ExecutionStep[];
   }
 
   return {
-    id: rawMessage.id?.toString() || Date.now().toString(),
-    role: rawMessage.role || "assistant",
-    content: rawMessage.content || "",
-    timestamp: new Date(rawMessage.timestamp || Date.now()),
+    id: (msg.id as string)?.toString() || Date.now().toString(),
+    role: (msg.role as Message["role"]) || "assistant",
+    content: (msg.content as string) || "",
+    timestamp: new Date((msg.timestamp as string) || Date.now()),
     executionSteps,
-    display_name: rawMessage.display_name,
-    model: rawMessage.model || undefined,
-    provider: rawMessage.provider || undefined,
-    is_reasoning: rawMessage.is_reasoning,
-    isStreaming: rawMessage.is_streaming ?? rawMessage.isStreaming ?? false,
-    // 【小沈修改2026-04-16】错误相关字段：删除details/stack/retryable，后端已删除
-    isError: rawMessage.is_error || false,
-    errorType: rawMessage.error_type || undefined,
-    errorMessage: rawMessage.error_message || rawMessage.message || undefined,  // 优先使用error_message
-    errorRetryAfter: rawMessage.retry_after || undefined,
-    errorTimestamp: rawMessage.timestamp || undefined,
-    // 【小沈添加2026-04-15】新增recoverable和context字段
-    errorRecoverable: rawMessage.recoverable || undefined,
-    errorContext: rawMessage.context || undefined,
+    display_name: msg.display_name as string | undefined,
+    model: (msg.model as string) || undefined,
+    provider: (msg.provider as string) || undefined,
+    is_reasoning: msg.is_reasoning as boolean | undefined,
+    isStreaming: (msg.is_streaming as boolean) ?? (msg.isStreaming as boolean) ?? false,
+    isError: (msg.is_error as boolean) || false,
+    errorType: (msg.error_type as string) || undefined,
+    errorMessage: (msg.error_message as string) || (msg.message as string) || undefined,
+    errorRetryAfter: msg.retry_after as number | undefined,
+    errorTimestamp: (msg.timestamp as string) || undefined,
+    errorRecoverable: msg.recoverable as boolean | undefined,
+    errorContext: msg.context as Record<string, unknown> | undefined,
   };
 };
 
@@ -141,10 +139,9 @@ console.log("%c└───── 历史消息加载 END", "color: blue; font-we
     }
 
     // 解析消息
-    const messages = sessionData.messages.map((rawMsg: any, index: number) => {
+const messages = sessionData.messages.map((rawMsg: unknown, index: number) => {
       const parsedMsg = parseMessage(rawMsg);
-      // 附加原始序号（从数据库返回的顺序）
-      (parsedMsg as any).dbIndex = index + 1;
+      (parsedMsg as Message & { dbIndex?: number }).dbIndex = index + 1;
       return parsedMsg;
     });
 
