@@ -128,8 +128,9 @@ const MessageItem = memo(({
           alignItems: "flex-start",
           justifyContent: "flex-end",
           marginBottom: 12,
-          gap: 10,
+          gap: 4,
           width: "100%",
+          paddingRight: 0,
         }}
       >
         {/* 用户消息气泡 */}
@@ -140,7 +141,7 @@ const MessageItem = memo(({
         />
 
         {/* 用户头像 */}
-        <div style={{ flexShrink: 0, marginTop: 6 }}>
+        <div style={{ flexShrink: 0, marginTop: 6, marginLeft: 0 }}>
           <div style={{
             width: 32,
             height: 32,
@@ -168,12 +169,13 @@ const MessageItem = memo(({
         alignItems: "flex-start",
         justifyContent: "flex-start",
         marginBottom: 12,
-        gap: 10,
+        gap: 4,
         width: "100%",
+        paddingLeft: 0,
       }}
     >
       {/* AI头像 */}
-      <div style={{ flexShrink: 0, marginTop: 6 }}>
+      <div style={{ flexShrink: 0, marginTop: 6, marginRight: 0 }}>
         <div style={{
           width: 32,
           height: 32,
