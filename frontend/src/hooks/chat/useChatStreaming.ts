@@ -128,7 +128,6 @@ export const useChatStreaming = (
     streamingStepsRef,
     executionStepsRef,
     // 【小强 2026-04-22】需要解构的Refs和状态setters
-    messagesRef,
     currentSessionIdRef,
     replyUserMessageIdRef,
     waitTimerRef,
@@ -156,9 +155,9 @@ export const useChatStreaming = (
       throw error;
     }
   }, [sendStreamMessage, streamingContentRef, streamingStepsRef]);
-  
-  // 中断任务函数 - 【小沈 2026-04-22】保留原disconnect参数
-  const disconnectWithParams = useCallback((stopServer?: boolean, force?: boolean, callback?: () => void) => {
+   
+   // 【小沈 2026-04-22】中断任务函数
+   const disconnectWithParams = useCallback((stopServer?: boolean, force?: boolean, callback?: () => void) => {
     disconnect();
     // 清理流式状态
     streamingContentRef.current = '';
@@ -216,7 +215,7 @@ export const useChatStreaming = (
             if (userMsgIndex !== -1) {
               newMessages[userMsgIndex] = {
                 ...newMessages[userMsgIndex],
-                id: backendUserMessageId!.toString()
+                id: String(backendUserMessageId)
               };
               console.log("✅ [executeSend] 用户消息ID已更新:", backendUserMessageId);
             }
@@ -273,7 +272,7 @@ export const useChatStreaming = (
   return {
     // 流式状态
     isReceiving,
-    setIsReceiving: setIsReceiving || (() => {}),
+    setIsReceiving: setIsReceiving || ((_: boolean) => { /* no-op */ }),
     executionSteps,
     currentResponse,
     
