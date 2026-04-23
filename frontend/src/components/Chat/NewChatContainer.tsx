@@ -514,10 +514,21 @@ try {
        console.warn("⚠️ [handleSend] 网络检查异常:", error);
      }
 
-    // 【小沈修复 2026-04-23】P0-1: 消息发送后再添加到状态，避免发送失败时状态不一致
-    let userMessage: Message | null = null;
+    // 【小沈修复 2026-04-23】P0-1修复：乐观更新 + 错误回滚
+    // 1. 先创建用户消息
+    const userMessage: Message = {
+      id: Date.now().toString(),
+      role: "user" as const,
+      content: messageContent.trim(),
+      timestamp: new Date(),
+    };
+
+    // 2. 乐观更新：立即添加到状态显示给用户
+    setMessages((prev) => [...prev, userMessage]);
+    logUserSend(userMessage.content);
+
     try {
-      // 1. 创建会话（如果需要）
+      // 3. 创建会话（如果需要）
       let currentSessionId = sessionId;
       if (!currentSessionId) {
         const newSession = await sessionApi.createSession(
@@ -531,24 +542,15 @@ try {
         currentSessionIdRef.current = currentSessionId;
       }
 
-      // 2. 创建用户消息对象（先不添加到状态）
-      userMessage = {
-        id: Date.now().toString(),
-        role: "user" as const,
-        content: messageContent.trim(),
-        timestamp: new Date(),
-      };
-
-      // 3. 先发送消息，发送成功后再添加到状态
+      // 4. 发送消息
       // 【小强 2026-04-22】Phase 7.1: 使用chatStreaming.executeSend替代executeStreamSend
       await executeSend(userMessage);
 
-      // 4. 发送成功后才添加到状态
-      setMessages((prev) => [...prev, userMessage!]);
-      logUserSend(userMessage.content);
+      // 5. 发送成功，不需要额外操作（用户消息已在列表中）
 
     } catch (error) {
-      // 发送失败，不添加消息到状态
+      // 6. 发送失败，回滚：移除刚添加的用户消息
+      setMessages((prev) => prev.filter((msg) => msg.id !== userMessage.id));
       handleError(error, { source: "api" });
     } finally {
       setLoading(false);
