@@ -136,7 +136,7 @@ export interface UseChatStateReturn {
   replyUserMessageIdRef: React.MutableRefObject<number | null>;
   
   // 暂停相关Refs
-  displayBufferRef: React.MutableRefObject<any[]>;
+  displayBufferRef: React.MutableRefObject<unknown[]>;
   isPausedRef: React.MutableRefObject<boolean>;
   
   // SSE相关Refs
@@ -247,7 +247,7 @@ export const useChatState = (): UseChatStateReturn => {
   const replyUserMessageIdRef = useRef<number | null>(null);
   
   // 暂停相关Refs
-  const displayBufferRef = useRef<any[]>([]);
+  const displayBufferRef = useRef<unknown[]>([]);
   const isPausedRef = useRef(false);
   
   // SSE相关Refs
