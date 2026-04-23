@@ -64,10 +64,6 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   const pendingMessageIdRef = useRef<string | null>(null);
 
   const handleSend = useCallback(async (messageContent: string) => {
-    console.log("🔍 [handleSend] 函数开始执行");
-    console.log("  messageContent:", messageContent);
-    console.log("  loading:", loading);
-
     // 1. 基础验证
     if (!messageContent.trim() || loading) return;
 
@@ -85,10 +81,9 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
 
     // 4. 网络连接检查
     try {
-      console.log("🔍 [handleSend] 开始检查网络连接...");
       const isNetworkOK = await checkNetworkConnection(API_BASE_URL);
       if (!isNetworkOK) {
-        console.error("❌ [handleSend] 网络连接异常");
+        console.error("[handleSend] 网络连接异常");
         showNetworkError();
         setLoading(false);
         // 停止等待计时器
@@ -99,9 +94,8 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
         setWaitTime(0);
         return;
       }
-      console.log("✅ [handleSend] 网络连接正常");
     } catch (error) {
-      console.warn("⚠️ [handleSend] 网络检查异常:", error);
+      console.warn("[handleSend] 网络检查异常:", error);
     }
 
     // 5. 创建用户消息（乐观更新）
@@ -127,7 +121,6 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
         currentSessionId = newSession.session_id;
         setSessionId(currentSessionId);
         currentSessionIdRef.current = currentSessionId;
-        console.log("创建新会话:", currentSessionId);
       } else {
         currentSessionIdRef.current = currentSessionId;
       }
@@ -139,7 +132,7 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
 
     } catch (error) {
       // 10. 发送失败，更新消息状态为failed（不移除消息）
-      console.error("❌ [handleSend] 发送失败:", error);
+      console.error("[handleSend] 发送失败:", error);
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === userMessage.id
