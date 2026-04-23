@@ -270,7 +270,7 @@ export const useChatPersistence = (
         return null;
       }
       
-      const hasDisplayName = data.messages.some((m: any) => m.display_name);
+      const hasDisplayName = data.messages.some((m: Message) => m.display_name);
       if (!hasDisplayName) {
         console.log("🕒 缓存消息缺少 display_name，跳过恢复");
         sessionStorage.removeItem(STORAGE_KEY);
