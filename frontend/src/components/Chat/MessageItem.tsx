@@ -219,10 +219,18 @@ const MessageItem = memo(({
         width: "100%",
       }}
     >
-      {/* 左侧头像（仅AI消息） */}
+      {/* 左侧头像或失败图标 */}
       {!isUser && !isSystem && (
         <div style={{ flexShrink: 0, marginTop: 6 }}>
           <AvatarDisplay role={message.role} />
+        </div>
+      )}
+      {isUser && message.sendStatus === "failed" && (
+        /* 【小沈修复2026-04-23】P0-1: 发送失败时显示❌图标在左侧 */
+        <div style={{ flexShrink: 0, marginTop: 6 }}>
+          <Tooltip title="发送失败">
+            <span style={{ fontSize: 24, color: "#ff4d4f" }}>❌</span>
+          </Tooltip>
         </div>
       )}
 
