@@ -106,14 +106,14 @@ export const useChatCallbacks = (
 ): UseChatCallbacksReturn => {
   // 解构状态
   const {
-    messages, setMessages,
-    loading, setLoading,
-    waitTime, setWaitTime,
-    isRetrying, setIsRetrying,
-    isPaused, setIsPaused,
+    setMessages,
+    setLoading,
+    setWaitTime,
+    setIsRetrying,
+    setIsPaused,
     sessionId,
-    sessionTitle, setSessionTitle,
-    showExecution, setShowExecution,
+    setSessionTitle,
+    setShowExecution,
     
     // Refs
     messagesEndRef,
