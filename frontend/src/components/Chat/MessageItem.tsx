@@ -10,9 +10,7 @@
  */
 
 import React, { useState, memo } from "react";
-import { message as antMessage } from "antd";
 import type { ExecutionStep } from "../../utils/sse";
-import { exportMessage } from "../../utils/messageExporter";
 
 // 【2026-04-21 优化3.2.1】从新拆分的StepRow目录导入
 import UserMessageBubble from "./MessageItem/UserMessageBubble";
