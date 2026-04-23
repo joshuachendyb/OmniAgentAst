@@ -160,7 +160,7 @@ export const useChatTaskControl = (
           if (setIsReceiving) setIsReceiving(false);
           
           // ✅【方案3】设置超时保护，防止请求长时间挂起
-          const timeoutPromise = new Promise<any>((_, reject) => {
+          const timeoutPromise = new Promise<unknown>((_, reject) => {
             setTimeout(() => reject(new Error("中断请求超时")), 5000);
           });
           
