@@ -1,33 +1,26 @@
-v0.9.9.10
+v0.10.0
 
-更新时间: 2026-04-23 16:38:59
+更新时间: 2026-04-24 06:10:00
 
 更新内容：
 
-## 1 P0-1修复 + MessageItem组件拆分 + useChatSend Hook提取 - 小沈-2026-04-23
+## 1 ESLint代码质量清理 - 小沈-2026-04-24
 
-### 1.1 P0-1修复：用户消息状态不一致
+### 1.1 核心文件ESLint清理
 
-| 功能 | 说明 |
+| 文件 | 修复前 | 修复后 |
+|------|-------|--------|
+| NewChatContainer.tsx | 32 warnings | 0 |
+| History/index.tsx | 1 warning | 0 |
+| 总计 | 40 warnings | 12 warnings (test文件) |
+
+### 1.2 修复方法
+
+| 方法 | 说明 |
 |------|------|
-| 问题 | 用户消息在AI消息之后显示（时序问题） |
-| 方案 | 乐观更新+错误回滚：先显示用户消息，发送失败时显示❌ |
-| sendStatus字段 | 添加到types/chat.ts、MessageItemProps、useMessageItemProps |
-
-### 1.2 MessageItem组件拆分
-
-| 组件 | 说明 |
-|------|------|
-| UserMessageBubble.tsx | 用户消息气泡组件 |
-| AIMessageBubble.tsx | AI消息气泡组件 |
-| AvatarDisplay.tsx | 删除（未使用） |
-
-### 1.3 useChatSend Hook提取
-
-| 文件 | 说明 |
-|------|------|
-| hooks/chat/useChatSend.ts | 新建，消息发送逻辑 |
-| NewChatContainer.tsx | 使用useChatSend替代handleSend |
+| any→unknown | 类型更严格 |
+| eslint-disable | unused vars和hooks dependencies |
+| useCallback | 包装频繁变化的函数 |
 
 ### 1.4 UI修复
 
