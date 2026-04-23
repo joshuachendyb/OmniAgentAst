@@ -140,16 +140,21 @@ export const useChatCallbacks = (
   // ==================== onStep回调 ====================
 
   const onStep = useCallback((step: ExecutionStep) => {
-    // ✅ 如果正在中断中，忽略所有事件（防止中断后还收到start等事件）
-    if (interruptInProgressRef.current) {
-      console.log(`[中断] 忽略中断过程中收到的事件: ${step.type}`);
-      return;
-    }
-    
-    // 【中断检测】记录是否收到了interrupted事件
+    // 【中断检测】记录是否收到了interrupted事件（这个要在中断判断之前，因为中断开启后就被忽略了）
     if (step.type === "interrupted" || (step.type === "incident" && (step as ExecutionStep).incident_value === "interrupted")) {
       hasReceivedInterruptEventRef.current = true;
       console.log("[中断] 收到 interrupted 事件");
+    }
+    
+    // ✅ 如果正在中断中，只显示 interrupted 事件，跳过其他事件
+    if (interruptInProgressRef.current) {
+      // 只允许 interrupted/incident 事件通过，其他都忽略
+      const isInterruptEvent = step.type === "interrupted" || (step.type === "incident" && (step as ExecutionStep).incident_value === "interrupted");
+      if (!isInterruptEvent) {
+        console.log(`[中断] 忽略中断过程中收到的事件: ${step.type}`);
+        return;
+      }
+      // 是中断事件，继续处理（显示到 UI）
     }
     
     // 【小沈修复 2026-04-16】在收到第一个步骤时重置暂停状态
