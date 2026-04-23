@@ -1,5 +1,73 @@
 v0.9.9.10
 
+更新时间: 2026-04-23 16:38:59
+
+更新内容：
+
+## 1 P0-1修复 + MessageItem组件拆分 + useChatSend Hook提取 - 小沈-2026-04-23
+
+### 1.1 P0-1修复：用户消息状态不一致
+
+| 功能 | 说明 |
+|------|------|
+| 问题 | 用户消息在AI消息之后显示（时序问题） |
+| 方案 | 乐观更新+错误回滚：先显示用户消息，发送失败时显示❌ |
+| sendStatus字段 | 添加到types/chat.ts、MessageItemProps、useMessageItemProps |
+
+### 1.2 MessageItem组件拆分
+
+| 组件 | 说明 |
+|------|------|
+| UserMessageBubble.tsx | 用户消息气泡组件 |
+| AIMessageBubble.tsx | AI消息气泡组件 |
+| AvatarDisplay.tsx | 删除（未使用） |
+
+### 1.3 useChatSend Hook提取
+
+| 文件 | 说明 |
+|------|------|
+| hooks/chat/useChatSend.ts | 新建，消息发送逻辑 |
+| NewChatContainer.tsx | 使用useChatSend替代handleSend |
+
+### 1.4 UI修复
+
+- 用户头像位置：气泡在前，头像在后（右侧）
+- AI头像位置：头像在前，气泡在后（左侧）
+- 消息列表padding：左右4px
+- 图标显示：始终显示
+
+### 1.5 Commit汇总
+
+| Commit | 说明 |
+|--------|------|
+| f40daeea | fix: P0-1修复用户消息状态不一致 - 发送成功后再添加到状态 |
+| dd636740 | fix: P0-1修复回滚 - 改用乐观更新+错误回滚方案 |
+| a71d60c1 | fix: P0-1修复完成 - 失败时显示发送失败标识❌ |
+| 0f87a848 | fix: P0-1优化 - 失败图标❌显示在消息左侧更明显 |
+| b736689a | feat: 拆分MessageItem为UserMessageBubble和AIMessageBubble组件 |
+| 337ddb37 | fix: 修复用户头像位置错误，头像应该在气泡右侧 |
+| 3247a838 | fix: 添加AI消息头像显示 |
+| 6978fe66 | fix: 调整头像与气泡间距为4px |
+| 7fad152c | fix: 消息列表左右padding改为0，头像靠边 |
+| 9a71ac2a | fix: 调整消息列表左右padding为4px |
+| 675e6289 | fix: 添加hover状态控制图标显示 |
+| 9c3cf1ab | fix: 图标始终显示 |
+| a6aadebf | fix: 删除MessageItem中未使用的导入 |
+| d8c6123a | refactor: 清理废弃代码，删除未使用的isHovered状态和AvatarDisplay组件 |
+| 6de13634 | refactor: 提取handleSend到useChatSend Hook |
+
+### 1.6 文档新增
+
+| 文件 | 说明 |
+|------|------|
+| NewChatContainer_工作流程梳理.md | 工作流程梳理文档 |
+| NewChatContainer_组件结构分析.md | 组件结构分析文档 |
+| NewChatContainer_代码依赖分析.md | 代码依赖分析文档 |
+
+---
+
+v0.9.9.9
+
 更新时间: 2026-04-23 13:43:54
 
 更新内容：
