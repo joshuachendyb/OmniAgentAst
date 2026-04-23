@@ -610,7 +610,7 @@ export const sessionApi = {
     keyword?: string,
     isValid?: boolean  // ⭐ 新增参数：true=有效会话，false=无效会话，undefined=全部
   ): Promise<SessionListResponse> => {
-    const params: any = { page, page_size: pageSize };
+    const params: Record<string, unknown> = { page, page_size: pageSize };
     if (keyword) params.keyword = keyword;
     // 只有明确传入 true 或 false 时才添加 is_valid 参数
     if (isValid === true || isValid === false) params.is_valid = isValid;
@@ -652,7 +652,7 @@ export const sessionApi = {
     message: {
       role: string;
       content: string;
-      execution_steps?: any[];
+      execution_steps?: unknown[];
       // 错误相关字段（API文档字段名）
       is_error?: boolean;
       error_type?: string;
@@ -691,7 +691,7 @@ export const sessionApi = {
    */
   saveExecutionSteps: async (
     sessionId: string,
-    executionSteps: any[],
+    executionSteps: unknown[],
     content?: string,
     replyUserMessageId?: number  // 新增：回复的用户消息ID
   ): Promise<{ success: boolean; message_id?: number; is_new_message?: boolean }> => {
@@ -859,7 +859,7 @@ interface TaskControlResponse {
  */
 interface NextPageResponse {
   success: boolean;
-  data?: any;
+  data?: unknown;
   next_page_token?: string;
   has_more: boolean;
 }
@@ -879,7 +879,7 @@ interface ConfirmRequest {
 interface NextPageRequest {
   task_id: string;
   tool_name: string;
-  tool_params?: Record<string, any>;
+  tool_params?: Record<string, unknown>;
   next_page_token: string;
 }
 
@@ -975,7 +975,7 @@ export const taskControlApi = {
   nextPage: async (
     taskId: string, 
     toolName: string, 
-    toolParams: Record<string, any>,
+    toolParams: Record<string, unknown>,
     nextPageToken: string
   ): Promise<NextPageResponse> => {
     const body: NextPageRequest = {
