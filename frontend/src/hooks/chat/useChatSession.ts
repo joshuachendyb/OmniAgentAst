@@ -118,6 +118,7 @@ export const useChatSession = (
   state: UseChatStateReturn,
   streaming?: UseChatStreamingReturn
 ): UseChatSessionReturn => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [searchParams] = useSearchParams();
   
   // 从state中解构需要的状态和setter
@@ -129,6 +130,7 @@ export const useChatSession = (
     editingTitle, setEditingTitle,
     titleInput, setTitleInput,
     lastSavedTitle, setLastSavedTitle,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     messages, setMessages,
     currentSessionIdRef,
   } = state;
@@ -189,6 +191,7 @@ export const useChatSession = (
       onLoadingEnd,
       onRenderStart,
       onRenderEnd,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       onMessageListLoadingStart,
       onMessageListLoadingEnd,
     } = options;

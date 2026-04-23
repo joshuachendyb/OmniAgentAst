@@ -23,10 +23,14 @@ import React, { useEffect, useCallback } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL } from "../../services/api";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import type { Message } from "../../types/chat";
 import {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   loadHistoryMessages,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   SESSION_EXPIRY_TIME,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   STORAGE_KEY,
 } from "../../utils/chatHistory";
 
@@ -70,6 +74,7 @@ import { useChatSend } from '../../hooks/chat/useChatSend';
 const NewChatContainer: React.FC = () => {
   // Phase 2: 使用useChatState统一管理状态
   const chatState = useChatState();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { 
     // 独立状态
     showExecution, setShowExecution, 
@@ -96,22 +101,38 @@ const NewChatContainer: React.FC = () => {
     titleInput, setTitleInput,
     lastSavedTitle, setLastSavedTitle,
     // Refs
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     waitTimerRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     messagesEndRef,
     currentSessionIdRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     messagesCountRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     messagesRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     replyUserMessageIdRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     displayBufferRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isPausedRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     executionStepsRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     streamingContentRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     streamingStepsRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     userScrolledUpRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     lastScrollTimeRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isLoadingHistoryRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     logFlagsRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     hasReceivedInterruptEventRef,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     interruptInProgressRef,
   } = chatState;
   

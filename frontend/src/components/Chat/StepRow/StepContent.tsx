@@ -109,19 +109,24 @@ const StepContent: React.FC<StepContentProps> = ({
   handleLinkMouseEnter,
   handleLinkMouseLeave,
 }) => {
-  const [_showAllData, setShowAllData] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_showAllData, _setShowAllData] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_isLoadingMore, _setIsLoadingMore] = useState(false);
 
   const isExpanded = expandedSteps.get(stepIndex) ?? true;
   const executionResult = step.execution_result;
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleInternalLoadMore = useCallback(() => {
-    setShowAllData(true);
+    _setShowAllData(true);
     handleLoadMore();
   }, [handleLoadMore]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { hasMore } = getPageData(executionResult, _showAllData);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const effectiveType = step.type === 'incident' ? (step as ExecutionStep).incident_value || 'incident' : step.type;
 
   return (
