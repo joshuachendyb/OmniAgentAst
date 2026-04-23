@@ -12,7 +12,6 @@ import { STEP_LABEL_MAP, STEP_ICON_MAP } from "../constants/stepConstants";
 import {
   getStepBadgeStyle,
   getStepLabelStyle,
-  getTimestampStyle,
   type StepType
 } from "../../../utils/stepStyles";
 import StepHeader from "./StepHeader";
@@ -31,8 +30,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   const [_isLoadingMore, _setIsLoadingMore] = useState(false);
   const [_showAllData, setShowAllData] = useState(false);
 
-  const isExpanded = expandedSteps.get(stepIndex) ?? true;
-  const effectiveType = step.type === 'incident' ? (step as any).incident_value || 'incident' : step.type;
+  const _isExpanded = expandedSteps.get(stepIndex) ?? true;
+  const effectiveType = step.type === 'incident' ? (step as ExecutionStep).incident_value || 'incident' : step.type;
   const label = STEP_LABEL_MAP[effectiveType] || STEP_LABEL_MAP[step.type] || "步骤";
   const icon = STEP_ICON_MAP[effectiveType] || STEP_ICON_MAP[step.type] || "";
   const executionResult = step.execution_result;
@@ -71,8 +70,8 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   }, []);
 
   const getPageData = () => {
-    const rawData = executionResult as any;
-    const allData = rawData?.matches || rawData?.entries || rawData?.results || [];
+    const rawData = executionResult as Record<string, unknown>;
+    const allData = (rawData?.matches || rawData?.entries || rawData?.results || []) as unknown[];
     const FRONTEND_PAGE_SIZE = 100;
     
     if (_showAllData) {
