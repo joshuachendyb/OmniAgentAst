@@ -100,6 +100,10 @@ def get_tools_schema_for_function_calling() -> List[Dict[str, Any]]:
         
         openai_tools.append(openai_tool)
     
+    # ===== 添加 finish 工具（2026-04-23 小沈修复）=====
+    # finish 不是真正的工具调用，而是用于结束 ReAct 循环
+    openai_tools.append(get_finish_tool_schema())
+    
     return openai_tools
 
 
