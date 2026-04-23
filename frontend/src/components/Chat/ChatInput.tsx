@@ -92,7 +92,7 @@ const ChatInput: React.FC<ChatInputProps> = React.memo(({
       )}
 
       {/* 中断和暂停按钮 */}
-      {loading && (
+      {(loading || isReceiving) && (
         <Space style={{ marginTop: 8, marginBottom: 8 }}>
           <Button
             danger
