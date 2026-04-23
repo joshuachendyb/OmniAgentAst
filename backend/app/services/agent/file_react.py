@@ -157,6 +157,10 @@ class FileReactAgent(BaseAgent):
                 }
                 openai_tools.append(openai_tool)
             
+            # 【2026-04-23 小沈修复】添加 finish 工具
+            from app.services.agent.types.react_schema import get_finish_tool_schema
+            openai_tools.append(get_finish_tool_schema())
+            
             # 记录工具Prompt日志
             prompt_logger = get_prompt_logger()
             for tool_def in openai_tools:
