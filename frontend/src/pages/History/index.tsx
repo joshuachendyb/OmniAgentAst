@@ -8,7 +8,7 @@
  * @since 2026-02-18
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Card,
   List,
@@ -76,7 +76,8 @@ const HistoryPage: React.FC = () => {
   /**
    * 加载会话列表
    */
-  const loadSessions = async (page: number = 1, searchKeyword?: string) => {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const loadSessions = useCallback(async (page: number = 1, searchKeyword?: string) => {
     setLoading(true);
     try {
       const response = await sessionApi.listSessions(
@@ -86,25 +87,25 @@ const HistoryPage: React.FC = () => {
         undefined  // ⭐ 显示所有会话（包括有效和无效）
       );
       setSessions(response.sessions);
-      setPagination({
-        ...pagination,
+      setPagination((prev) => ({
+        ...prev,
         current: page,
         total: response.total,
-      });
+      }));
     } catch (error) {
       handleError("加载会话列表失败");
       console.error("加载会话列表失败:", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, /* eslint-disable-next-line react-hooks/exhaustive-deps */ [pagination.pageSize]);
 
   /**
    * 首次加载
    */
   useEffect(() => {
     loadSessions();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadSessions]);
 
   /**
