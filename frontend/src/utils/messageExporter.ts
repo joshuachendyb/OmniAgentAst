@@ -23,9 +23,9 @@ export interface ExportData {
   messageId: string;
   role: string;
   content: string;
-  executionSteps?: Record<string, any>[];
-  error?: Record<string, any>;
-  incidentSteps?: Record<string, any>[];
+  executionSteps?: Record<string, unknown>[];
+  error?: Record<string, unknown>;
+  incidentSteps?: Record<string, unknown>[];
 }
 
 /**
@@ -58,12 +58,11 @@ export const exportMessage = async (
     errorRetryAfter?: number;
     errorTimestamp?: string;
     errorRecoverable?: boolean;
-    errorContext?: Record<string, any>;
+    errorContext?: Record<string, unknown>;
   },
   options: ExportOptions = {}
 ): Promise<void> => {
   const { sessionId, sessionTitle } = options;
-  const { formatTimestamp: fmtTs } = { formatTimestamp };
 
   const hasSteps = message.executionSteps && message.executionSteps.length > 0;
   const isError = message.isError;
@@ -88,11 +87,11 @@ export const exportMessage = async (
     exportData.incidentSteps = message.executionSteps?.filter(
       (step) => step.type === 'incident'
     ).map(step => ({
-      type: (step as any).incident_value || 'incident',
-      incident_value: (step as any).incident_value,
-      message: step.content || (step as any).message,
-      timestamp: formatTimestamp((step as any).timestamp),
-      wait_time: (step as any).wait_time,
+      type: step.incident_value || 'incident',
+      incident_value: step.incident_value,
+      message: step.content || (step as unknown as Record<string, unknown>).message,
+      timestamp: formatTimestamp((step as unknown as Record<string, unknown>).timestamp as number),
+      wait_time: (step as unknown as Record<string, unknown>).wait_time as number | undefined,
     }));
   }
 
@@ -115,7 +114,8 @@ export const exportMessage = async (
     filename = `error_${message.id}_${new Date().toISOString().replace(/[/:]/g, "-")}.json`;
   } else if (hasSteps) {
     exportData.executionSteps = message.executionSteps?.map(step => {
-      const baseExport: Record<string, any> = {
+      const stepExt = step as ExecutionStep & Record<string, unknown>;
+      const baseExport: Record<string, unknown> = {
         type: step.type,
         content: step.content,
         timestamp: formatTimestamp(step.timestamp),
@@ -152,7 +152,7 @@ export const exportMessage = async (
             tool_name: step.tool_name,
             tool_params: step.tool_params,
             observation: step.observation || step.content,
-            return_direct: (step as any).return_direct
+            return_direct: stepExt.return_direct
           };
         case 'chunk':
           return { ...baseExport, step: step.step, is_reasoning: step.is_reasoning };
@@ -164,26 +164,26 @@ export const exportMessage = async (
             display_name: step.display_name,
             model: step.model,
             provider: step.provider,
-            response: (step as any).response,
+            response: stepExt.response,
             thought: step.thought,
-            is_finished: (step as any).is_finished,
-            is_streaming: (step as any).is_streaming,
-            is_reasoning: (step as any).is_reasoning
+            is_finished: stepExt.is_finished,
+            is_streaming: stepExt.is_streaming,
+            is_reasoning: stepExt.is_reasoning
           };
         case 'error':
           return {
             ...baseExport,
             step: step.step,
             timestamp: formatTimestamp(step.timestamp),
-            error_type: (step as any).error_type,
-            error_message: (step as any).error_message || "",
-            details: (step as any).details,
-            stack: (step as any).stack,
-            recoverable: (step as any).recoverable,
-            retry_after: (step as any).retry_after,
-            model: (step as any).model,
-            provider: (step as any).provider,
-            context: (step as any).context
+            error_type: stepExt.error_type,
+            error_message: stepExt.error_message || "",
+            details: stepExt.details,
+            stack: stepExt.stack,
+            recoverable: stepExt.recoverable,
+            retry_after: stepExt.retry_after,
+            model: stepExt.model,
+            provider: stepExt.provider,
+            context: stepExt.context
           };
         case 'interrupted':
         case 'paused':
@@ -192,17 +192,17 @@ export const exportMessage = async (
           return {
             ...baseExport,
             step: step.step,
-            incident_value: (step as any).incident_value || step.type,
-            wait_time: (step as any).wait_time
+            incident_value: stepExt.incident_value || step.type,
+            wait_time: stepExt.wait_time
           };
         case 'incident':
           return {
             ...baseExport,
             step: step.step,
-            type: (step as any).incident_value || 'incident',
-            incident_value: (step as any).incident_value,
-            message: step.content || (step as any).message,
-            wait_time: (step as any).wait_time
+            type: stepExt.incident_value || 'incident',
+            incident_value: stepExt.incident_value,
+            message: step.content || stepExt.message,
+            wait_time: stepExt.wait_time
           };
         case 'start':
           return {

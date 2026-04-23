@@ -24,7 +24,7 @@ const GenerateReportRenderer: React.FC<GenerateReportRendererProps> = ({
   onToggle,
 }) => {
   const execResult = step.execution_result;
-  const data = (execResult as any)?.data || execResult;
+  const data = (execResult as Record<string, unknown>)?.data || execResult as Record<string, unknown>;
 
   if (!data) {
     return null;

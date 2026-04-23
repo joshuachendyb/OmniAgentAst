@@ -118,6 +118,7 @@ export const useChatSession = (
   state: UseChatStateReturn,
   streaming?: UseChatStreamingReturn
 ): UseChatSessionReturn => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [searchParams] = useSearchParams();
   
   // 从state中解构需要的状态和setter
@@ -129,6 +130,7 @@ export const useChatSession = (
     editingTitle, setEditingTitle,
     titleInput, setTitleInput,
     lastSavedTitle, setLastSavedTitle,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     messages, setMessages,
     currentSessionIdRef,
   } = state;
@@ -189,6 +191,7 @@ export const useChatSession = (
       onLoadingEnd,
       onRenderStart,
       onRenderEnd,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       onMessageListLoadingStart,
       onMessageListLoadingEnd,
     } = options;
@@ -440,7 +443,8 @@ export const useChatSession = (
       window.history.pushState({}, "", `/?session_id=${newSessionId}`);
       
       showNewSessionSuccess(newTitle);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { message?: string };
       if (retry < maxRetries) {
         const newRetry = retry + 1;
         showNewSessionRetryWarning(newRetry, maxRetries);
@@ -448,7 +452,7 @@ export const useChatSession = (
         await new Promise(resolve => setTimeout(resolve, 1000));
         return handleNewSessionInternal(newRetry);
       }
-      const errMsg = error?.message || "未知错误";
+      const errMsg = err?.message || "未知错误";
       showNewSessionError(errMsg);
     }
   }, [
@@ -527,9 +531,10 @@ export const useChatSession = (
       setLastSavedTitle(newTitle.trim());
       
       console.log("✅ 标题更新成功:", newTitle, "版本:", response.version);
-    } catch (error: any) {
-      const errMsg = error?.message || "更新标题失败";
-      if (error?.response?.status === 409) {
+    } catch (error: unknown) {
+      const err = error as { message?: string; response?: { status?: number } };
+      const errMsg = err?.message || "更新标题失败";
+      if (err?.response?.status === 409) {
         // 版本冲突，重新加载最新数据
         console.warn("⚠️ 标题版本冲突，重新加载最新数据");
         try {
@@ -568,6 +573,7 @@ export const useChatSession = (
   /**
    * startEditingTitle - 开始编辑标题
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const startEditingTitle = useCallback(() => {
     setEditingTitle(true);
     setTitleInput(sessionTitle);
@@ -576,6 +582,7 @@ export const useChatSession = (
   /**
    * cancelEditingTitle - 取消编辑标题
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const cancelEditingTitle = useCallback(() => {
     setEditingTitle(false);
     setTitleInput("");
@@ -584,6 +591,7 @@ export const useChatSession = (
   /**
    * saveEditingTitle - 保存编辑的标题
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const saveEditingTitle = useCallback(async () => {
     if (!titleInput.trim() || titleInput.trim() === sessionTitle) {
       setEditingTitle(false);

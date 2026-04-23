@@ -66,7 +66,7 @@ import {
   FileTextOutlined,
   CheckOutlined,
 } from "@ant-design/icons";
-import { configApi, chatApi } from "../../services/api";
+import { configApi, chatApi, SecurityConfig } from "../../services/api";
 import type { ProviderInfo } from "../../services/api";
 import HealthCheck from "../../components/HealthCheck";
 import { handleError, showSuccess, showMessage, ErrorType } from "../../utils/errorHandler";
@@ -92,9 +92,11 @@ const GlobalConfigArea: React.FC<{
   currentDisplayName: string;
   onDisplayNameChange: (option: ModelOption) => void;
 }> = ({ modelList, currentDisplayName, onDisplayNameChange }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [configPath, setConfigPath] = useState<any>(null);
   const [configContent] = useState<string>("");
   const [showConfigModal, setShowConfigModal] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [validationResult, setValidationResult] = useState<any>(null);
   const [validating, setValidating] = useState(false);
 
@@ -439,6 +441,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
     null
   );
   const [loading, setLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [validationResult] = useState<any>(null);
   const [validationModalVisible, setValidationModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -527,6 +530,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
     if (shouldLoad) {
       handleLoadWithValidation();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldLoad]);
 
   // 编辑Provider
@@ -542,9 +546,10 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
   };
 
   // 保存Provider编辑
-  const handleSaveProvider = async (values: any) => {
+  const handleSaveProvider = async (values: Record<string, unknown>) => {
     try {
-      await configApi.updateProvider(editingProvider!.name, values);
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      await configApi.updateProvider(editingProvider!.name, values as Record<string, unknown>);
 
       // 刷新配置
       loadConfig();
@@ -572,8 +577,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       loadConfig();
 
       showSuccess("Provider已删除");
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "删除失败");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "删除失败");
     }
   };
 
@@ -599,8 +605,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       setEditModalVisible(false);
       setEditingModel(null);
       modelEditForm.resetFields();
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "更新失败");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "更新失败");
     }
   };
 
@@ -613,8 +620,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       loadConfig();
 
       showSuccess("模型已删除");
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "删除失败");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "删除失败");
     }
   };
 
@@ -642,10 +650,10 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
             signal: controller.signal,
           });
           setDeleteProgress({ current: index + 1, total: models.length });
-          return { success: true, model: modelName };
-        } catch (error: any) {
-          // 如果是取消错误
-          if (error.name === "AbortError" || controller.signal.aborted) {
+return { success: true, model: modelName };
+        } catch (error: unknown) {
+          const err = error as { name?: string };
+          if (err?.name === "AbortError" || controller.signal.aborted) {
             return { success: false, model: modelName, cancelled: true };
           }
           setDeleteProgress({ current: index + 1, total: models.length });
@@ -670,8 +678,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       setSelectedModels(new Set());
       loadConfig();
-    } catch (error: any) {
-      if (error.name === "AbortError") {
+    } catch (error: unknown) {
+      const err = error as { name?: string };
+      if (err?.name === "AbortError") {
         handleError({ message: "批量删除已取消", error_type: ErrorType.WARNING });
       } else {
         handleError("批量删除失败");
@@ -701,22 +710,23 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       showSuccess("模型已添加");
       setAddModelModalVisible(false);
       modelForm.resetFields();
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "添加失败");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "添加失败");
     }
   };
 
   // 添加Provider
-  const handleAddProvider = async (values: any) => {
+  const handleAddProvider = async (values: Record<string, unknown>) => {
     try {
       await configApi.addProvider({
-        name: values.name,
-        api_base: values.api_base,
-        api_key: values.api_key || "",
-        model: values.model || "",
-        models: values.model ? [values.model] : [],
-        timeout: values.timeout || 60,
-        max_retries: values.max_retries || 3,
+        name: values.name as string,
+        api_base: values.api_base as string,
+        api_key: (values.api_key as string) || "",
+        model: (values.model as string) || "",
+        models: values.model ? [values.model as string] : [],
+        timeout: (values.timeout as number) || 60,
+        max_retries: (values.max_retries as number) || 3,
       });
 
       // 刷新配置
@@ -732,8 +742,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       showSuccess("Provider已添加");
       setAddProviderModalVisible(false);
       providerForm.resetFields();
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "添加失败");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "添加失败");
     }
   };
 
@@ -1496,6 +1507,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
  * 安全设置页面组件
  */
 const SecuritySettings: React.FC = () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [securityConfig, setSecurityConfig] = useState<any>({});
   const [securityForm] = Form.useForm();
   const [savingSecurity, setSavingSecurity] = useState(false);
@@ -1523,9 +1535,10 @@ const SecuritySettings: React.FC = () => {
 
   useEffect(() => {
     loadSecurityConfig();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleSaveSecurityConfig = async (values: any) => {
+  const handleSaveSecurityConfig = async (values: SecurityConfig) => {
     setSavingSecurity(true);
     try {
       const currentConfig = await configApi.getConfig();

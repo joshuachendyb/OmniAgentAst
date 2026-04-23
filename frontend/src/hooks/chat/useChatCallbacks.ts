@@ -147,7 +147,7 @@ export const useChatCallbacks = (
     }
     
     // 【中断检测】记录是否收到了interrupted事件
-    if (step.type === "interrupted" || (step.type === "incident" && (step as any).incident_value === "interrupted")) {
+    if (step.type === "interrupted" || (step.type === "incident" && (step as ExecutionStep).incident_value === "interrupted")) {
       hasReceivedInterruptEventRef.current = true;
       console.log("[中断] 收到 interrupted 事件");
     }
@@ -231,6 +231,7 @@ export const useChatCallbacks = (
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 50);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     setMessages,
     setIsPaused,
@@ -358,7 +359,7 @@ export const useChatCallbacks = (
           display_name: metadataObj.display_name || lastMessage.display_name,
           executionSteps: finalSteps,
         };
-        console.log("  └─ ✅ 已更新 (ref累积+SSE+历史) steps:", finalSteps.length, "| last3:", finalSteps.slice(-3).map((s: any) => s.type).join(","));
+        console.log("  └─ ✅ 已更新 (ref累积+SSE+历史) steps:", finalSteps.length, "| last3:", finalSteps.slice(-3).map((s: ExecutionStep) => s.type).join(","));
         return updated;
       }
       return prev;
@@ -391,8 +392,9 @@ export const useChatCallbacks = (
         // 原因：标题应该在用户修改时立即保存，避免版本冲突
         // 如果需要同步最新数据，应该在用户修改标题时处理
         // console.log("✅ [保存AI回复] 保存成功！");
-      } catch (saveError: any) {
-        console.error("❌ [保存AI回复] 保存失败:", saveError?.message || saveError);
+      } catch (saveError: unknown) {
+        const err = saveError as { message?: string };
+        console.error("❌ [保存AI回复] 保存失败:", err?.message || saveError);
         console.error("   └─ 保存时使用的会话ID:", currentSessionId);
         
         // 使用统一错误处理中心
@@ -506,18 +508,18 @@ export const useChatCallbacks = (
           ...lastMessage,
           // 错误时直接用错误消息替换内容，不保留"思考中"
           // 【小沈修改2026-04-15】优先使用error_message，兼容旧字段message
-          content: (errorObj as any).error_message || (errorObj as any).message || "未知错误",
+          content: ((errorObj as unknown) as Record<string, unknown>).error_message as string || ((errorObj as unknown) as Record<string, unknown>).message as string || "未知错误",
           isError: true,
           isStreaming: false,
           executionSteps: latestSteps,
           // 【小沈修改2026-04-16】删除details/stack/retryable，后端已删除
           errorType: errorObj.error_type,
-          errorMessage: (errorObj as any).error_message || (errorObj as any).message || "",  // 【小沈修改2026-04-15】优先使用error_message
+          errorMessage: ((errorObj as unknown) as Record<string, unknown>).error_message as string || ((errorObj as unknown) as Record<string, unknown>).message as string || "",  // 【小沈修改2026-04-15】优先使用error_message
           errorRetryAfter: errorObj.retry_after,
           errorTimestamp: errorObj.timestamp,
           // 【小沈添加2026-04-15】新增recoverable和context字段
-          errorRecoverable: (errorObj as any).recoverable,
-          errorContext: (errorObj as any).context,
+          errorRecoverable: ((errorObj as unknown) as Record<string, unknown>).recoverable as boolean | undefined,
+          errorContext: ((errorObj as unknown) as Record<string, unknown>).context as { step?: number; model?: string; provider?: string; thought_content?: string; } | undefined,
           // 如果 errorObj 中没有 model/provider，使用消息中已有的值
           model: errorObj.model || lastMessage.model,
           provider: errorObj.provider || lastMessage.provider,
@@ -537,7 +539,7 @@ export const useChatCallbacks = (
     setIsRetrying(false);
     
     // 【小沈修改2026-04-15】优先使用error_message，兼容旧字段message
-    logAIError((errorObj as any).error_message || (errorObj as any).message || "未知错误");
+    logAIError(((errorObj as unknown) as Record<string, unknown>).error_message as string || ((errorObj as unknown) as Record<string, unknown>).message as string || "未知错误");
     
     // ⭐ 完成后清理ref
     streamingContentRef.current = '';

@@ -63,22 +63,26 @@ export interface SearchFileContentData {
  * 前端期望: files_matched=3023, total_matches=0 (不使用)
  */
 export function transformSearchFilesData(rawData: unknown): SearchFilesData {
+  const data = rawData as Record<string, unknown>;
   return {
-    files_matched: rawData?.total || 0,  // 后端返回total=文件数量
-    total_matches: 0,  // search_files是文件搜索，不应该有"匹配数"概念
-    matches: (rawData?.matches || []).map((match: unknown) => ({
-      name: match.name || "",
-      path: match.path || "",
-      size: match.size || 0,
-    })),
-    search_pattern: rawData?.file_pattern || "",
-    search_path: rawData?.path || "",
+    files_matched: data?.total as number || 0,
+    total_matches: 0,
+    matches: ((data?.matches || []) as unknown[]).map((match: unknown) => {
+      const m = match as Record<string, unknown>;
+      return {
+        name: (m?.name as string) || "",
+        path: (m?.path as string) || "",
+        size: (m?.size as number) || 0,
+      };
+    }),
+    search_pattern: (data?.file_pattern as string) || "",
+    search_path: (data?.path as string) || "",
     pagination: {
-      page: rawData?.page || 1,
-      total_pages: rawData?.total_pages || 1,
-      page_size: rawData?.page_size || 200,
-      has_more: rawData?.has_more || false,
-      last_file: rawData?.last_file, // 最后一个文件的路径，用于分页标记
+      page: (data?.page as number) || 1,
+      total_pages: (data?.total_pages as number) || 1,
+      page_size: (data?.page_size as number) || 200,
+      has_more: (data?.has_more as boolean) || false,
+      last_file: data?.last_file as string | undefined,
     },
   };
 }
@@ -87,21 +91,22 @@ export function transformSearchFilesData(rawData: unknown): SearchFilesData {
  * search_file_content（文件内容搜索）转换函数
  * 将后端返回的文件内容搜索数据转换为前端组件期望的格式
  */
-export function transformSearchFileContentData(rawData: any): SearchFileContentData {
+export function transformSearchFileContentData(rawData: unknown): SearchFileContentData {
+  const data = rawData as Record<string, unknown>;
   return {
-    success: rawData?.success,
-    pattern: rawData?.pattern || "",
-    path: rawData?.path || "",
-    file_pattern: rawData?.file_pattern || "",
-    matches: rawData?.matches || [],
-    total: rawData?.total || 0,
-    total_matches: rawData?.total_matches || 0,
+    success: data?.success as boolean,
+    pattern: (data?.pattern as string) || "",
+    path: (data?.path as string) || "",
+    file_pattern: (data?.file_pattern as string) || "",
+    matches: (data?.matches as SearchFileContentData['matches']) || [],
+    total: (data?.total as number) || 0,
+    total_matches: (data?.total_matches as number) || 0,
     pagination: {
-      page: rawData?.page || 1,
-      total_pages: rawData?.total_pages || 1,
-      page_size: rawData?.page_size || 200,
-      has_more: rawData?.has_more || false,
-      last_file: rawData?.last_file, // 最后一个文件的路径，用于分页标记
+      page: (data?.page as number) || 1,
+      total_pages: (data?.total_pages as number) || 1,
+      page_size: (data?.page_size as number) || 200,
+      has_more: (data?.has_more as boolean) || false,
+      last_file: data?.last_file as string | undefined,
     },
   };
 }

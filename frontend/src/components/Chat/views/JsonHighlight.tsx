@@ -11,7 +11,7 @@
 import React from "react";
 
 interface JsonHighlightProps {
-  data: any;
+  data: unknown;
   isExpanded: boolean;
 }
 
@@ -31,7 +31,7 @@ interface JsonHighlightProps {
  */
 const JsonHighlight: React.FC<JsonHighlightProps> = ({ data, isExpanded }) => {
   // 递归渲染带颜色的JSON
-  const renderValue = (value: any, depth: number = 0): React.ReactNode => {
+  const renderValue = (value: unknown, depth: number = 0): React.ReactNode => {
     if (value === null) {
       return <span style={{ color: "#8c8c8c" }}>null</span>;
     }
@@ -68,7 +68,7 @@ const JsonHighlight: React.FC<JsonHighlightProps> = ({ data, isExpanded }) => {
       if (!isExpanded) {
         return <span style={{ color: "#595959" }}>{"{...}"}</span>;
       }
-      const keys = Object.keys(value);
+      const keys = Object.keys(value as object);
       return (
         <span>
           <span style={{ color: "#595959" }}>{"{"}</span>
@@ -77,7 +77,7 @@ const JsonHighlight: React.FC<JsonHighlightProps> = ({ data, isExpanded }) => {
               {i > 0 && <span style={{ color: "#595959" }}>, </span>}
               <span style={{ color: "#003a8c" }}>&quot;{key}&quot;</span>
               <span style={{ color: "#595959" }}>: </span>
-              {renderValue(value[key], depth + 1)}
+              {renderValue((value as Record<string, unknown>)[key], depth + 1)}
             </span>
           ))}
           <span style={{ color: "#595959" }}>{"}"}</span>

@@ -6,9 +6,8 @@
  * @since 2026-04-21
  */
 
-import React, { useCallback, useState, useMemo } from "react";
+import React, { useCallback, useState } from "react";
 import type { ExecutionStep } from "../../../utils/sse";
-import { STEP_LABEL_MAP, STEP_ICON_MAP } from "../constants/stepConstants";
 import ErrorDetail from "../ErrorDetail";
 import ToolResultRenderer from "../ToolResultRenderer/index";
 import {
@@ -16,7 +15,6 @@ import {
   getStepTitleStyle,
   getStepContentStyle,
   getStepBadgeStyle,
-  getTimestampStyle,
   FontSize,
   FontWeight,
   Colors,
@@ -37,7 +35,7 @@ interface StepContentProps {
 /**
  * 工具信息渲染函数
  */
-const renderToolInfo = (toolName: string | undefined, toolParams: Record<string, any> | undefined, options?: {
+const renderToolInfo = (toolName: string | undefined, toolParams: Record<string, unknown> | undefined, options?: {
   prefix?: string;
   bgColor?: string;
 }) => {
@@ -82,9 +80,9 @@ const renderToolInfo = (toolName: string | undefined, toolParams: Record<string,
 /**
  * 获取分页数据
  */
-const getPageData = (executionResult: any, showAllData: boolean) => {
-  const rawData = executionResult as any;
-  const allData = rawData?.matches || rawData?.entries || rawData?.results || [];
+const getPageData = (executionResult: unknown, showAllData: boolean) => {
+  const rawData = executionResult as Record<string, unknown>;
+  const allData = (rawData?.matches || rawData?.entries || rawData?.results || []) as unknown[];
   const FRONTEND_PAGE_SIZE = 100;
   
   if (showAllData) {
@@ -108,60 +106,67 @@ const StepContent: React.FC<StepContentProps> = ({
   toggleExpand,
   contentStyle,
   handleLoadMore,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   handleLinkMouseEnter,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   handleLinkMouseLeave,
 }) => {
-  const [_showAllData, setShowAllData] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_showAllData, _setShowAllData] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_isLoadingMore, _setIsLoadingMore] = useState(false);
 
   const isExpanded = expandedSteps.get(stepIndex) ?? true;
   const executionResult = step.execution_result;
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleInternalLoadMore = useCallback(() => {
-    setShowAllData(true);
+    _setShowAllData(true);
     handleLoadMore();
   }, [handleLoadMore]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { hasMore } = getPageData(executionResult, _showAllData);
 
-  const effectiveType = step.type === 'incident' ? (step as any).incident_value || 'incident' : step.type;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const effectiveType = step.type === 'incident' ? (step as ExecutionStep).incident_value || 'incident' : step.type;
 
   return (
     <div style={{ ...contentStyle, marginTop: 4, marginLeft: 0 }}>
       {step.type === "action_tool" && (
         <>
-          {renderToolInfo(step.tool_name, step.tool_params as Record<string, any>, { prefix: '🔧 ' })}
+          {renderToolInfo(step.tool_name, step.tool_params as Record<string, unknown>, { prefix: '🔧 ' })}
           <div style={{ marginTop: 8 }}>
             <ToolResultRenderer step={step} isExpanded={isExpanded} toggleExpand={toggleExpand} stepIndex={stepIndex} />
           </div>
         </>
       )}
-      {step.type === "observation" && (step as any).observation && (
+      {step.type === "observation" && String((step as ExecutionStep & Record<string, unknown>).observation || '') && (
         <div style={{ 
           ...getStepStyle("observation" as StepType),
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
         }}>
-          {(step as any).tool_name && (
+          {(step as ExecutionStep & Record<string, unknown>).tool_name && (
             <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>
-              🔧 工具：{(step as any).tool_name}
-              {(step as any).tool_params && ` ${JSON.stringify((step as any).tool_params)}`}
+              🔧 工具：{(step as ExecutionStep & Record<string, unknown>).tool_name}
+              {(step as ExecutionStep & Record<string, unknown>).tool_params && ` ${JSON.stringify((step as ExecutionStep & Record<string, unknown>).tool_params)}`}
             </div>
           )}
-          {(step as any).return_direct && (
+          {(step as ExecutionStep & Record<string, unknown>).return_direct && (
             <div style={{ fontSize: "12px", color: "#52c41a", marginBottom: 4 }}>
               🏁 直接返回结果
             </div>
           )}
           <span style={getStepContentStyle("observation" as StepType, "primary")}>
-            {(step as any).observation}
+            {String((step as ExecutionStep & Record<string, unknown>).observation || '')}
           </span>
         </div>
       )}
       {step.type === "start" && (
         <div style={getStepStyle("start" as StepType)}>
           <div style={getStepTitleStyle("start" as StepType)}>
-            🚀 用户消息：{(step as any).user_message || "(无)"}
+            🚀 用户消息：{(step as ExecutionStep & Record<string, unknown>).user_message || "(无)"}
           </div>
           <div style={{ 
             ...getStepContentStyle("start" as StepType, "secondary"),
@@ -198,7 +203,7 @@ const StepContent: React.FC<StepContentProps> = ({
             )}
             <span style={{ flex: 1 }} />
           </div>
-          {(step as any).provider || (step as any).model || (step as any).display_name ? (
+          {(step as ExecutionStep & Record<string, unknown>).provider || (step as ExecutionStep & Record<string, unknown>).model || (step as ExecutionStep & Record<string, unknown>).display_name ? (
             <div style={{ 
               marginTop: 4,
               padding: '6px 10px',
@@ -210,22 +215,22 @@ const StepContent: React.FC<StepContentProps> = ({
               flexWrap: 'wrap',
               gap: 12,
             }}>
-              {(step as any).provider && (
+              {(step as ExecutionStep & Record<string, unknown>).provider && (
                 <span>
                   <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>provider：</span>
-                  <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as any).provider}</span>
+                  <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as ExecutionStep & Record<string, unknown>).provider}</span>
                 </span>
               )}
-              {(step as any).model && (
+              {(step as ExecutionStep & Record<string, unknown>).model && (
                 <span>
                   <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>model：</span>
-                  <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as any).model}</span>
+                  <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as ExecutionStep & Record<string, unknown>).model}</span>
                 </span>
               )}
-              {(step as any).display_name && (
+              {(step as ExecutionStep & Record<string, unknown>).display_name && (
                 <span>
                   <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>display_name：</span>
-                  <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as any).display_name}</span>
+                  <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as ExecutionStep & Record<string, unknown>).display_name}</span>
                 </span>
               )}
             </div>
@@ -238,14 +243,14 @@ const StepContent: React.FC<StepContentProps> = ({
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
         }}>
-          {(step as any).thought || (step as any).reasoning ? (
+          {(step as ExecutionStep & Record<string, unknown>).thought || (step as ExecutionStep & Record<string, unknown>).reasoning ? (
             <div style={{
               marginBottom: 10,
               display: 'flex',
               flexDirection: 'column',
               gap: 8,
             }}>
-              {(step as any).thought && (
+              {(step as ExecutionStep & Record<string, unknown>).thought && (
                 <div style={{
                   padding: '10px 14px',
                   borderRadius: 8,
@@ -272,11 +277,11 @@ const StepContent: React.FC<StepContentProps> = ({
                     color: '#92400e',
                     lineHeight: 1.5,
                   }}>
-                    {(step as any).thought}
+                    {(step as ExecutionStep & Record<string, unknown>).thought}
                   </div>
                 </div>
               )}
-              {(step as any).reasoning && (
+              {(step as ExecutionStep & Record<string, unknown>).reasoning && (
                 <div style={{
                   padding: '10px 14px',
                   borderRadius: 8,
@@ -303,7 +308,7 @@ const StepContent: React.FC<StepContentProps> = ({
                     color: '#6d28d9',
                     lineHeight: 1.5,
                   }}>
-                    {(step as any).reasoning}
+                    {(step as ExecutionStep & Record<string, unknown>).reasoning}
                   </div>
                 </div>
               )}
@@ -321,7 +326,7 @@ const StepContent: React.FC<StepContentProps> = ({
             background: 'linear-gradient(135deg, rgba(250,173,20,0.08) 0%, rgba(212,136,6,0.08) 100%)',
             border: '1px solid rgba(255,213,145,0.3)',
           }}>
-            {renderToolInfo((step as any).tool_name, (step as any).tool_params as Record<string, any>, { 
+            {renderToolInfo((step as ExecutionStep & Record<string, unknown>).tool_name, (step as ExecutionStep & Record<string, unknown>).tool_params as Record<string, unknown>, { 
               prefix: '⬇️ 下一步：', 
               bgColor: 'rgba(255,170,0,0.1)' 
             })}
@@ -330,52 +335,52 @@ const StepContent: React.FC<StepContentProps> = ({
       )}
       {step.type === "final" && (
         <div style={getStepStyle("final" as StepType)}>
-          {(step as any).thought && (
+          {(step as ExecutionStep & Record<string, unknown>).thought && (
             <div style={{fontSize: "12px", color: "#888", marginBottom: "4px"}}>
-              思考: {(step as any).thought}
+              思考: {(step as ExecutionStep & Record<string, unknown>).thought}
             </div>
           )}
           <span style={getStepContentStyle("final" as StepType, "primary")}>
-            {(step as any).response || ""}
+            {(step as ExecutionStep & Record<string, unknown>).response || ""}
           </span>
         </div>
       )}
       {step.type === "error" && (
         <ErrorDetail
-          errorType={(step as any).error_type}
-          errorMessage={step.error_message || (step as any).message}
+          errorType={(step as ExecutionStep & Record<string, unknown>).error_type}
+          errorMessage={step.error_message || (step as ExecutionStep & Record<string, unknown>).message}
           errorTimestamp={typeof step.timestamp === 'number' ? new Date(step.timestamp).toISOString() : String(step.timestamp)}
-          errorDetails={(step as any).details}
-          errorStack={(step as any).stack}
-          errorRetryAfter={(step as any).retry_after}
-          model={(step as any).model}
-          provider={(step as any).provider}
-          errorRecoverable={(step as any).recoverable}
-          errorContext={(step as any).context}
+          errorDetails={(step as ExecutionStep & Record<string, unknown>).details}
+          errorStack={(step as ExecutionStep & Record<string, unknown>).stack}
+          errorRetryAfter={(step as ExecutionStep & Record<string, unknown>).retry_after}
+          model={(step as ExecutionStep & Record<string, unknown>).model}
+          provider={(step as ExecutionStep & Record<string, unknown>).provider}
+          errorRecoverable={(step as ExecutionStep & Record<string, unknown>).recoverable}
+          errorContext={(step as ExecutionStep & Record<string, unknown>).context}
         />
       )}
-      {(step.type === "interrupted" || (step.type === "incident" && (step as any).incident_value === "interrupted")) && (
+      {(step.type === "interrupted" || (step.type === "incident" && (step as ExecutionStep & Record<string, unknown>).incident_value === "interrupted")) && (
         <div style={getStepStyle("interrupted" as StepType)}>
           <span style={getStepContentStyle("interrupted" as StepType, "primary")}>
             {step.content || "客户端断开连接，任务中断"}
           </span>
         </div>
       )}
-      {(step.type === "paused" || (step.type === "incident" && (step as any).incident_value === "paused")) && (
+      {(step.type === "paused" || (step.type === "incident" && (step as ExecutionStep & Record<string, unknown>).incident_value === "paused")) && (
         <div style={getStepStyle("paused" as StepType)}>
           <span style={getStepContentStyle("paused" as StepType, "primary")}>
             {step.content || "任务已暂停，可恢复继续"}
           </span>
         </div>
       )}
-      {(step.type === "resumed" || (step.type === "incident" && (step as any).incident_value === "resumed")) && (
+      {(step.type === "resumed" || (step.type === "incident" && (step as ExecutionStep & Record<string, unknown>).incident_value === "resumed")) && (
         <div style={getStepStyle("resumed" as StepType)}>
           <span style={getStepContentStyle("resumed" as StepType, "primary")}>
             {step.content || "任务已恢复"}
           </span>
         </div>
       )}
-      {(step.type === "retrying" || (step.type === "incident" && (step as any).incident_value === "retrying")) && (
+      {(step.type === "retrying" || (step.type === "incident" && (step as ExecutionStep & Record<string, unknown>).incident_value === "retrying")) && (
         <div style={getStepStyle("retrying" as StepType)}>
           <span style={getStepContentStyle("retrying" as StepType, "primary")}>
             {step.content || "正在重试..."}

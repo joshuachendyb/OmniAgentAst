@@ -92,7 +92,7 @@ export interface ExecutionStep {
   // 【小新重构2026-03-09】thought类型需要的字段
   // 【小健建议2026-03-23】明确用途：LLM思考后决定的下一步动作
   tool_name?: string;        // 【thought类型】LLM思考后决定的下一步动作
-  tool_params?: Record<string, any>; // 【thought类型】LLM思考后决定的参数
+  tool_params?: Record<string, unknown>; // 【thought类型】LLM思考后决定的参数
   
   // === 保留字段（不变）===
   
@@ -101,13 +101,13 @@ export interface ExecutionStep {
   step?: number;
   thought?: string;
   action?: string;  // 兼容旧字段
-  observation?: any;
+  observation?: unknown;
   result?: string;
   
   // === 【小新重构】type=action_tool 新字段（与thought类型共用tool_name/tool_params）===
   execution_status?: 'success' | 'error' | 'warning'; // 执行状态（新）
   summary?: string;             // 执行摘要（新）
-  execution_result?: Record<string, any> | null; // 执行结果 【修改2026-04-15】raw_data → execution_result
+  execution_result?: Record<string, unknown> | null; // 执行结果 【修改2026-04-15】raw_data → execution_result
   execution_time_ms?: number;   // 执行耗时 【新增2026-04-15】
   action_retry_count?: number;  // 重试次数（新）
   
@@ -118,7 +118,7 @@ export interface ExecutionStep {
   // tool_name 已在上面 action_tool 字段定义（第97行），此处不再重复
 
   // === type=action 旧字段（兼容） ===
-  action_input?: Record<string, any>;  // 工具调用参数（旧）
+  action_input?: Record<string, unknown>;  // 工具调用参数（旧）
   
   // === type=chunk/final/start 字段 ===
   model?: string;         // AI模型
@@ -233,9 +233,9 @@ type SSEErrorType = "idle_timeout" | "request_timeout" | "network" | "server" | 
  * 【小强修复 2026-04-09】细分超时类型
  * 【小强修复 2026-04-11】增加 connection_refused 和 http_500，映射到统一ErrorType
  */
-const classifyError = (error: any): SSEErrorType => {
+const classifyError = (error: unknown): SSEErrorType => {
   // 使用errorHandler的分类结果进行映射
-  const unifiedType = errorHandlerHandleSSE(error, { reconnectAttempts: 0 }).errorType;
+  const unifiedType = errorHandlerHandleSSE(error as Error, { reconnectAttempts: 0 }).errorType;
   
   // 映射到SSE本地错误类型
   switch (unifiedType) {
@@ -281,7 +281,7 @@ interface ErrorConfig {
  * 【小强修复 2026-04-11】重构：使用errorHandler.handleSSEError
  */
 const handleSSEError = (params: {
-  error: any;
+  error: unknown;
   errorType: SSEErrorType;
   reconnectAttempts: number;
   reconnectConfig: ReconnectConfig;
@@ -308,7 +308,7 @@ const handleSSEError = (params: {
   } = params;
 
   // 使用统一错误处理中心
-  const result = errorHandlerHandleSSE(error, {
+  const result = errorHandlerHandleSSE(error as Error, {
     reconnectAttempts,
     maxRetries: reconnectConfig.maxAttempts,
     onReconnect: () => {
@@ -492,6 +492,7 @@ export const useSSE = (
   }, [config.sessionId]);
 
   // 清空 sessionStorage 的辅助函数
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const clearStepsFromStorage = useCallback(() => {
     const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
     sessionStorage.removeItem(storageKey);
@@ -535,6 +536,7 @@ export const useSSE = (
     if (onDisconnect) {
       onDisconnect();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
    /**
@@ -558,11 +560,12 @@ export const useSSE = (
     clearStepsFromStorage();
   }, [clearStepsFromStorage]);
 
-  /**
-    * 内部发送消息函数（用于重连）
-    * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
-    */
-  const sendMessageInternal = async (content: string, sessionId?: string) => {
+/**
+     * 内部发送消息函数（用于重连）
+     * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
+     */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const sendMessageInternal = async (content: string, sessionId?: string) => {
     const connectStartTime = new Date().toLocaleTimeString();
     console.log(`[SSE] [连接建立] 时间=${connectStartTime}`);
     disconnect(false, false);  // 重连时：非手动断开 + 不清空 sessionStorage
@@ -700,7 +703,7 @@ export const useSSE = (
       // 成功，重置重连状态
       setReconnectStatus("idle");
       reconnectAttemptsRef.current = 0;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("[SSE] 请求错误:", error);
       
       // 使用统一的错误处理中心
@@ -790,6 +793,7 @@ export const useSSE = (
       // 请求结束后重置
       isProcessingRef.current = false;
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [config, disconnect, clearSteps, onStep, onChunk, onComplete, onError, onRetry]
   );
 
@@ -1383,11 +1387,11 @@ const processSSEData = (
         }
         // 添加timestamp字段
         if (rawData.timestamp) {
-          (step as any).timestamp = rawData.timestamp;
+          step.timestamp = rawData.timestamp as number;
         }
         // 【小查修复2026-03-13】添加wait_time字段（仅retrying使用）
         if (rawData.wait_time !== undefined) {
-          (step as any).wait_time = rawData.wait_time;
+          step.wait_time = rawData.wait_time;
         }
         break;
       }

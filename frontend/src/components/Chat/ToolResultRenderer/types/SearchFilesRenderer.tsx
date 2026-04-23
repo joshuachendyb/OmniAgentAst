@@ -19,7 +19,7 @@ interface SearchFilesRendererProps {
 
 const SearchFilesRenderer: React.FC<SearchFilesRendererProps> = ({ step }) => {
   const execResult = step.execution_result;
-  const data = (execResult as any)?.data || execResult;
+  const data = (execResult as Record<string, unknown>)?.data || execResult as Record<string, unknown>;
 
   if (!data) {
     return null;
