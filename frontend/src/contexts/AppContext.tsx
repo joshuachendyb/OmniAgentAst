@@ -298,7 +298,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
       setServiceStatusLoading(false);
       setSessionCountLoading(false);
     }
-  }, [isInitialized]);
+  }, [isInitialized, initError, refreshModelList, refreshSessionCount]);
 
   // ==================== Context Value ====================
   const value: AppContextType = {
