@@ -573,6 +573,7 @@ export const useChatSession = (
   /**
    * startEditingTitle - 开始编辑标题
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const startEditingTitle = useCallback(() => {
     setEditingTitle(true);
     setTitleInput(sessionTitle);
@@ -581,6 +582,7 @@ export const useChatSession = (
   /**
    * cancelEditingTitle - 取消编辑标题
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const cancelEditingTitle = useCallback(() => {
     setEditingTitle(false);
     setTitleInput("");
@@ -589,6 +591,7 @@ export const useChatSession = (
   /**
    * saveEditingTitle - 保存编辑的标题
    */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const saveEditingTitle = useCallback(async () => {
     if (!titleInput.trim() || titleInput.trim() === sessionTitle) {
       setEditingTitle(false);

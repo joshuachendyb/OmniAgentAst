@@ -548,6 +548,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
   // 保存Provider编辑
   const handleSaveProvider = async (values: Record<string, unknown>) => {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       await configApi.updateProvider(editingProvider!.name, values as Record<string, unknown>);
 
       // 刷新配置

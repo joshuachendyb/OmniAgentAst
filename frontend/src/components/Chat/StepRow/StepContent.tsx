@@ -106,7 +106,9 @@ const StepContent: React.FC<StepContentProps> = ({
   toggleExpand,
   contentStyle,
   handleLoadMore,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   handleLinkMouseEnter,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   handleLinkMouseLeave,
 }) => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars

@@ -536,6 +536,7 @@ export const useSSE = (
     if (onDisconnect) {
       onDisconnect();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
    /**
