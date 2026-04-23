@@ -212,12 +212,12 @@ const NewChatContainer: React.FC = () => {
     waitTimerRef,
     currentSessionIdRef,
     executeSend,
-  });
+});
 
-  // 自动滚动到底部
-  const scrollToBottom = () => {
+  // 【小沈 2026-04-24】P1修复：使用useCallback包装scrollToBottom
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  }, [messagesEndRef]);
 
   // ===== 【小资优化 2026-04-13】优化滚动函数 =====
   const scrollToBottomIfNeeded = useCallback(() => {
@@ -235,8 +235,7 @@ const NewChatContainer: React.FC = () => {
     
     lastScrollTimeRef.current = now;
     scrollToBottom();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [SCROLL_INTERVAL, scrollToBottom]);
   // ===== 【小资优化 2026-04-13】结束 =====
 
   // 滚动到底部的增强版本，确保页面渲染完成后再滚动
