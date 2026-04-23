@@ -56,7 +56,7 @@ const MessageList: React.FC<MessageListProps> = memo(({
   });
 
   return (
-    <div className="message-list-content" style={{ flex: 1, overflowY: 'auto', padding: '20px 0' }}>
+    <div className="message-list-content" style={{ flex: 1, overflowY: 'auto', padding: '20px 4px' }}>
       {messageElements}
       <div 
         ref={messagesEndRef as React.Ref<HTMLDivElement>} 
