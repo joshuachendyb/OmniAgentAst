@@ -1341,7 +1341,9 @@ const processSSEData = (
         const stepNum = rawData.step || 1;
         console.log(`%c[STEP] [type=incident] [incident_type=${statusValue}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
         const statusMessage = rawData.message || "";
-        step.type = statusValue as ExecutionStep["type"];
+        // 【小沈修复 2026-04-24】保持type为incident，通过incident_value区分
+        step.type = "incident";
+        step.incident_value = statusValue;
         step.content = statusMessage;
         
         // 统一调用onStep（所有incident类型都需要添加到executionSteps）
