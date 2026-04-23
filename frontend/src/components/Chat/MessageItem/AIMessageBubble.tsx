@@ -25,7 +25,6 @@ import {
 import StepRow from "../StepRow/index";
 import MessageContent from "../MessageContent";
 import RoleNameDisplay from "./RoleNameDisplay";
-import AvatarDisplay from "./AvatarDisplay";
 import { DynamicStatusDisplay } from "../../../utils/dynamicStatus";
 import { formatTime, formatRelativeTime } from "../../../utils/timeFormatters";
 import { exportMessage } from "../../../utils/messageExporter";
@@ -143,11 +142,6 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
 
   return (
     <>
-      {/* 左侧头像 */}
-      <div style={{ flexShrink: 0, marginTop: 6 }}>
-        <AvatarDisplay role={message.role} />
-      </div>
-
       {/* 消息内容区 */}
       <div
         style={{

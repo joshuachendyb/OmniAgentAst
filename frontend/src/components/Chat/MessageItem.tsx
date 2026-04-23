@@ -132,6 +132,13 @@ const MessageItem = memo(({
           width: "100%",
         }}
       >
+        {/* 用户消息气泡 */}
+        <UserMessageBubble
+          message={message}
+          sessionId={sessionId}
+          sessionTitle={sessionTitle}
+        />
+
         {/* 用户头像 */}
         <div style={{ flexShrink: 0, marginTop: 6 }}>
           <div style={{
@@ -149,13 +156,6 @@ const MessageItem = memo(({
             我
           </div>
         </div>
-
-        {/* 用户消息气泡 */}
-        <UserMessageBubble
-          message={message}
-          sessionId={sessionId}
-          sessionTitle={sessionTitle}
-        />
       </div>
     );
   }
