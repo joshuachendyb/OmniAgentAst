@@ -24,16 +24,17 @@ const ListDirectoryRenderer: React.FC<ListDirectoryRendererProps> = ({
   onToggle,
 }) => {
   const execResult = step.execution_result;
-  const data = (execResult as any)?.data || execResult;
+  const data = (execResult as Record<string, unknown>)?.data || execResult as Record<string, unknown>;
+  const listData = data as { entries: Array<{ name: string; path: string; type: "directory" | "file"; size: number | null }>; total?: number; has_more?: boolean; directory?: string };
 
   if (!data) {
     return null;
   }
 
-  return (
+return (
     <ListDirectoryView 
-      data={data} 
-      toolParams={step.tool_params as any}
+      data={listData} 
+      toolParams={step.tool_params as Record<string, unknown>}
       isExpanded={isExpanded} 
       onToggle={onToggle} 
     />
