@@ -104,6 +104,7 @@ const HistoryPage: React.FC = () => {
    */
   useEffect(() => {
     loadSessions();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadSessions]);
 
   /**

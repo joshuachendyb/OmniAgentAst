@@ -530,6 +530,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
     if (shouldLoad) {
       handleLoadWithValidation();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shouldLoad]);
 
   // 编辑Provider
@@ -1533,6 +1534,7 @@ const SecuritySettings: React.FC = () => {
 
   useEffect(() => {
     loadSecurityConfig();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSaveSecurityConfig = async (values: SecurityConfig) => {

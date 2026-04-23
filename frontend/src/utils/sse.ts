@@ -492,6 +492,7 @@ export const useSSE = (
   }, [config.sessionId]);
 
   // 清空 sessionStorage 的辅助函数
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const clearStepsFromStorage = useCallback(() => {
     const storageKey = `${SSE_STORAGE_KEY}_${config.sessionId}`;
     sessionStorage.removeItem(storageKey);
@@ -558,11 +559,12 @@ export const useSSE = (
     clearStepsFromStorage();
   }, [clearStepsFromStorage]);
 
-  /**
-    * 内部发送消息函数（用于重连）
-    * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
-    */
-  const sendMessageInternal = async (content: string, sessionId?: string) => {
+/**
+     * 内部发送消息函数（用于重连）
+     * 【小强修复 2026-04-09】重连时使用软清理，保留已收到的 steps
+     */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const sendMessageInternal = async (content: string, sessionId?: string) => {
     const connectStartTime = new Date().toLocaleTimeString();
     console.log(`[SSE] [连接建立] 时间=${connectStartTime}`);
     disconnect(false, false);  // 重连时：非手动断开 + 不清空 sessionStorage
@@ -790,6 +792,7 @@ export const useSSE = (
       // 请求结束后重置
       isProcessingRef.current = false;
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [config, disconnect, clearSteps, onStep, onChunk, onComplete, onError, onRetry]
   );
 

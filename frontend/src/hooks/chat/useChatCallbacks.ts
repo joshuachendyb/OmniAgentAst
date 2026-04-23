@@ -231,6 +231,7 @@ export const useChatCallbacks = (
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 50);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     setMessages,
     setIsPaused,

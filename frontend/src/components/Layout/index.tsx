@@ -179,6 +179,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       });
       // 不在骨架屏显示错误，由errorHandler统一处理
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isInitialized, skeletonState.visible, initError]);
 
   // 【新增】骨架屏重试函数 - 用于加载失败时重试
@@ -330,6 +331,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
   // 【2026-04-08修复】页面加载不调用服务检查，与会话加载无关
   useEffect(() => {
     initializeApp();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
