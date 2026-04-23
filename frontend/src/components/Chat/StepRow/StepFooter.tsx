@@ -13,8 +13,6 @@ interface StepFooterProps {
   step: ExecutionStep;
   hasMore: boolean;
   onLoadMore: () => void;
-  onLinkMouseEnter: (e: React.MouseEvent<HTMLSpanElement>) => void;
-  onLinkMouseLeave: (e: React.MouseEvent<HTMLSpanElement>) => void;
 }
 
 /**
@@ -25,8 +23,6 @@ const StepFooter: React.FC<StepFooterProps> = ({
   step,
   hasMore,
   onLoadMore,
-  onLinkMouseEnter,
-  onLinkMouseLeave,
 }) => {
   const execution_status = step.execution_status;
   const execution_time_ms = step.execution_time_ms;
@@ -52,8 +48,6 @@ const StepFooter: React.FC<StepFooterProps> = ({
               fontWeight: 500,
               transition: "all 0.2s ease",
             }}
-            onMouseEnter={onLinkMouseEnter}
-            onMouseLeave={onLinkMouseLeave}
           >
             加载更多
           </span>

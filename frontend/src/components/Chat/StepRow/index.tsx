@@ -57,14 +57,6 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
     e.currentTarget.style.boxShadow = "none";
   }, []);
 
-  const handleLinkMouseEnter = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
-    e.currentTarget.style.color = "#096dd9";
-  }, []);
-
-  const handleLinkMouseLeave = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
-    e.currentTarget.style.color = "#1890ff";
-  }, []);
-
   const handleLoadMore = useCallback(() => {
     setShowAllData(true);
   }, []);
@@ -114,16 +106,12 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
         toggleExpand={toggleExpand}
         contentStyle={contentStyle}
         handleLoadMore={handleLoadMore}
-        handleLinkMouseEnter={handleLinkMouseEnter}
-        handleLinkMouseLeave={handleLinkMouseLeave}
       />
       
       <StepFooter
         step={step}
         hasMore={hasMore}
         onLoadMore={handleLoadMore}
-        onLinkMouseEnter={handleLinkMouseEnter}
-        onLinkMouseLeave={handleLinkMouseLeave}
       />
     </div>
   );

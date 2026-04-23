@@ -28,8 +28,6 @@ interface StepContentProps {
   toggleExpand: (index: number) => void;
   contentStyle: React.CSSProperties;
   handleLoadMore: () => void;
-  handleLinkMouseEnter: (e: React.MouseEvent<HTMLSpanElement>) => void;
-  handleLinkMouseLeave: (e: React.MouseEvent<HTMLSpanElement>) => void;
 }
 
 /**
@@ -106,30 +104,16 @@ const StepContent: React.FC<StepContentProps> = ({
   toggleExpand,
   contentStyle,
   handleLoadMore,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  handleLinkMouseEnter,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  handleLinkMouseLeave,
 }) => {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_showAllData, _setShowAllData] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [_isLoadingMore, _setIsLoadingMore] = useState(false);
 
   const isExpanded = expandedSteps.get(stepIndex) ?? true;
   const executionResult = step.execution_result;
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleInternalLoadMore = useCallback(() => {
     _setShowAllData(true);
     handleLoadMore();
   }, [handleLoadMore]);
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { hasMore } = getPageData(executionResult, _showAllData);
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const effectiveType = step.type === 'incident' ? (step as ExecutionStep).incident_value || 'incident' : step.type;
 
   return (
     <div style={{ ...contentStyle, marginTop: 4, marginLeft: 0 }}>
