@@ -51,7 +51,6 @@ export const useChatSend = (options: UseChatSendOptions): UseChatSendReturn => {
   const {
     loading,
     sessionId,
-    messages,
     setLoading,
     setSessionId,
     setMessages,
