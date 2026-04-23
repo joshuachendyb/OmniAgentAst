@@ -23,19 +23,12 @@ import React, { useEffect, useCallback } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL } from "../../services/api";
-import { handleError, ErrorType } from "../../utils/errorHandler";
 import type { Message } from "../../types/chat";
 import {
   loadHistoryMessages,
   SESSION_EXPIRY_TIME,
   STORAGE_KEY,
 } from "../../utils/chatHistory";
-
-import { logUserSend } from "../../utils/chatLogger";
-import { checkNetworkConnection } from "../../utils/network";
-import {
-  showNetworkError,
-} from "../../utils/chatMessages";
 
 // 【小强修复 2026-03-31】独立输入框组件，隔离inputValue状态避免父组件重渲染
 import ChatInput from "./ChatInput";
@@ -63,6 +56,9 @@ import { useChatStreaming } from '../../hooks/chat/useChatStreaming';
 
 // 【小强 2026-04-22】Phase 7.2: 导入useChatTaskControl
 import { useChatTaskControl } from '../../hooks/chat/useChatTaskControl';
+
+// 【小沈 2026-04-23】导入useChatSend
+import { useChatSend } from '../../hooks/chat/useChatSend';
 
 // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表useMemo优化（使用独立hook）
 // import { useMessageListRender } from '../../hooks/useMessageListRender'; // 已移至MessageList组件内部
@@ -178,6 +174,21 @@ const NewChatContainer: React.FC = () => {
     serverTaskId,
     executeSend,
   } = chatStreaming;
+
+  // 【小沈 2026-04-23】使用useChatSend管理发送逻辑
+  const { handleSend } = useChatSend({
+    loading,
+    sessionId,
+    messages,
+    waitTime,
+    setLoading,
+    setSessionId,
+    setMessages,
+    setWaitTime,
+    waitTimerRef,
+    currentSessionIdRef,
+    executeSend,
+  });
 
   // 自动滚动到底部
   const scrollToBottom = () => {
@@ -462,112 +473,6 @@ const NewChatContainer: React.FC = () => {
       onMessageListLoadingEnd,
     });
   }, [searchParams]);
-
-// ============================================
-  // 消息发送逻辑
-  // ============================================
-
-  /**
-   * 执行流式消息发送（使用useChatStreaming.executeSend）
-   * 【小强 2026-04-22】Phase 7.1: executeStreamSend已迁移到useChatStreaming.executeSend
-   */
-/**
-   * 发送消息（带安全检测v2.0）
-   * 【小强修复 2026-03-31】改为接收messageContent参数，不再依赖inputValue状态
-   */
-  const handleSend = async (messageContent: string) => {
-      console.log("🔍 [handleSend] 函数开始执行");
-      console.log("  messageContent:", messageContent);
-      console.log("  loading:", loading);
-      
-      if (!messageContent.trim() || loading) return;
-
-      // 【小新修复 2026-03-16】删除hasSavedStartMessageRef，不再需要防止重复保存
-      // 后端已自动处理assistant消息创建
-      
-      // 🔴 修复：添加输入长度限制和验证
-     if (messageContent.trim().length > 5000) {
-       // 使用统一错误处理中心
-       handleError({ message: "消息过长，请精简到5000字符以内", error_type: ErrorType.CONTENT_TOO_LONG });
-       return;
-     }
-
-     // 🔴 修复：网络连接检查 - 移除过早的setLoading(false)
-     setLoading(true);
-try {
-        console.log("🔍 [handleSend] 开始检查网络连接...");
-        const isNetworkOK = await checkNetworkConnection(API_BASE_URL);
-        if (!isNetworkOK) {
-          console.error("❌ [handleSend] 网络连接异常");
-          showNetworkError();
-          setLoading(false);
-          // ⭐ 停止等待计时器
-          if (waitTimerRef.current) {
-            clearInterval(waitTimerRef.current);
-            waitTimerRef.current = null;
-          }
-          setWaitTime(0);
-          return;
-        }
-       console.log("✅ [handleSend] 网络连接正常");
-     } catch (error) {
-       console.warn("⚠️ [handleSend] 网络检查异常:", error);
-     }
-
-    // 【小沈修复 2026-04-23】P0-1修复：乐观更新 + 错误回滚
-    // 1. 先创建用户消息
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: "user" as const,
-      content: messageContent.trim(),
-      timestamp: new Date(),
-    };
-
-    // 2. 乐观更新：立即添加到状态显示给用户
-    setMessages((prev) => [...prev, userMessage]);
-    logUserSend(userMessage.content);
-
-    try {
-      // 3. 创建会话（如果需要）
-      let currentSessionId = sessionId;
-      if (!currentSessionId) {
-        const newSession = await sessionApi.createSession(
-          messageContent.trim().substring(0, 50)
-        );
-        currentSessionId = newSession.session_id;
-        setSessionId(currentSessionId);
-        currentSessionIdRef.current = currentSessionId;
-        console.log("创建新会话:", currentSessionId);
-      } else {
-        currentSessionIdRef.current = currentSessionId;
-      }
-
-      // 4. 发送消息
-      // 【小强 2026-04-22】Phase 7.1: 使用chatStreaming.executeSend替代executeStreamSend
-      await executeSend(userMessage);
-
-      // 5. 发送成功，不需要额外操作（用户消息已在列表中）
-
-    } catch (error) {
-      // 6. 发送失败，更新消息状态为failed（不移除消息）
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === userMessage.id
-            ? { ...msg, sendStatus: "failed" as const }
-            : msg
-        )
-      );
-      handleError(error, { source: "api" });
-    } finally {
-      setLoading(false);
-      // 停止等待计时器
-      if (waitTimerRef.current) {
-        clearInterval(waitTimerRef.current);
-        waitTimerRef.current = null;
-      }
-      setWaitTime(0);
-    }
-  };
 
   // ============================================================
 
