@@ -19,7 +19,7 @@
  * @update 2026-03-13 代码拆分：类型和工具函数提取到独立文件
  */
 
-import React, { useEffect, useCallback, useRef } from "react";
+import React, { useEffect, useCallback } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL } from "../../services/api";
@@ -59,6 +59,9 @@ import { useChatTaskControl } from '../../hooks/chat/useChatTaskControl';
 
 // 【小沈 2026-04-23】导入useChatSend
 import { useChatSend } from '../../hooks/chat/useChatSend';
+
+// 【小沈 2026-04-24】P0-3优化：使用独立的loading管理Hook
+import { useLoadingMessage } from '../../hooks/useLoadingMessage';
 
 // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表useMemo优化（使用独立hook）
 // import { useMessageListRender } from '../../hooks/useMessageListRender'; // 已移至MessageList组件内部
@@ -137,8 +140,8 @@ const NewChatContainer: React.FC = () => {
     interruptInProgressRef,
 } = chatState;
    
-  // 【小沈 2026-04-24】P0-3优化：保存loading的hide函数，避免双重调用
-  const loadingHideRef = useRef<(() => void) | null>(null);
+  // 【小沈 2026-04-24】P0-3优化：使用useLoadingMessage Hook管理loading
+  const { show: showLoading, hide: hideLoading } = useLoadingMessage({ duration: 0 });
    
   const [searchParams] = useSearchParams();
 
@@ -467,29 +470,13 @@ const NewChatContainer: React.FC = () => {
   // ============================================
   useEffect(() => {
     const onLoadingStart = () => {
-      // 【小沈 2026-04-24】P0-3优化：先关闭之前的loading，再创建新的
-      if (loadingHideRef.current) {
-        loadingHideRef.current();
-        loadingHideRef.current = null;
-      }
       setSessionJumpLoading(true);
-      message.destroy("session-load");
-      const hide = message.loading({
-        content: "正在加载会话...",
-        key: "session-load",
-        duration: 0,
-      });
-      loadingHideRef.current = hide;
+      showLoading("正在加载会话...", "session-load");
     };
 
     const onLoadingEnd = () => {
-      // 【小沈 2026-04-24】P0-3优化：清除ref并关闭loading
-      if (loadingHideRef.current) {
-        loadingHideRef.current();
-        loadingHideRef.current = null;
-      }
+      hideLoading("session-load");
       setSessionJumpLoading(false);
-      message.destroy("session-load");
     };
 
     const onRenderStart = () => {
@@ -523,18 +510,14 @@ const NewChatContainer: React.FC = () => {
       onMessageListLoadingEnd,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+}, [searchParams, showLoading, hideLoading]);
 
   // 【小沈 2026-04-24】P0-3优化：组件卸载时清理loading
   useEffect(() => {
     return () => {
-      if (loadingHideRef.current) {
-        loadingHideRef.current();
-        loadingHideRef.current = null;
-      }
-      message.destroy("session-load");
+      hideLoading("session-load");
     };
-  }, []);
+  }, [hideLoading]);
 
   // ============================================================
 
