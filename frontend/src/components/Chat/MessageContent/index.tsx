@@ -69,8 +69,8 @@ const ChunkRenderer: React.FC<{ chunks: ExecutionStep[] }> = ({ chunks }) => {
  */
 const ContentFallback: React.FC<{
   message: MessageContentProps['message'];
-  hasChunk: boolean;
-}> = ({ message, hasChunk }) => {
+  _hasChunk: boolean;
+}> = ({ message }) => {
   const executionSteps = message.executionSteps || [];
 
   let hasAction = 0;
@@ -142,8 +142,6 @@ const ContentFallback: React.FC<{
  */
 const MessageContent: React.FC<MessageContentProps> = ({
   message,
-  isUser = false,
-  isSystem = false,
 }) => {
   const chunks = message.executionSteps?.filter(step => step.type === "chunk") || [];
 
@@ -153,7 +151,7 @@ const MessageContent: React.FC<MessageContentProps> = ({
       {chunks.length > 0 && <ChunkRenderer chunks={chunks} />}
 
       {/* Content回退 */}
-      <ContentFallback message={message} hasChunk={chunks.length > 0} />
+      <ContentFallback message={message} _hasChunk={chunks.length > 0} />
     </>
   );
 };

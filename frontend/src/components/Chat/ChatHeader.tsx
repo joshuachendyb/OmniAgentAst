@@ -83,9 +83,10 @@ const ChatHeader: React.FC<ChatHeaderProps> = ({
       setTitleLocked(true); // 用户修改后锁定
       showTitleSaved();
       setEditingTitle(false);
-    } catch (error: any) {
+    } catch (error: unknown) {
       // 处理 409 版本冲突
-      if (error?.response?.status === 409) {
+      const errObj = error as { response?: { status: number } };
+      if (errObj?.response?.status === 409) {
         showSessionConflict();
         // 尝试重新获取最新会话数据
         try {
