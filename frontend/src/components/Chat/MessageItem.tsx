@@ -172,6 +172,24 @@ const MessageItem = memo(({
         width: "100%",
       }}
     >
+      {/* AI头像 */}
+      <div style={{ flexShrink: 0, marginTop: 6 }}>
+        <div style={{
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          background: "linear-gradient(135deg, #52c41a 0%, #73d13d 100%)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#fff",
+          fontSize: 14,
+          fontWeight: 500,
+        }}>
+          AI
+        </div>
+      </div>
+
       <AIMessageBubble
         message={message}
         expandedSteps={expandedSteps}
