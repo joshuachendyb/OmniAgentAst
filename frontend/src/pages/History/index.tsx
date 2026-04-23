@@ -104,7 +104,7 @@ const HistoryPage: React.FC = () => {
    */
   useEffect(() => {
     loadSessions();
-  }, []);
+  }, [loadSessions]);
 
   /**
    * 搜索会话

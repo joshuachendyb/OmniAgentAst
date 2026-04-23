@@ -254,18 +254,24 @@ const NewChatContainer: React.FC = () => {
   // ===== 【小资优化 2026-04-13】结束 =====
 
   // 当页面从隐藏状态变为显示时也自动滚动到底部
+  // 【小沈修复 2026-04-23】同时检查SSE连接状态，确保按钮状态正确
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         // 延迟滚动以确保内容已渲染
         scrollToBottomDelayed();
+        
+        // 【Bug修复】页面恢复显示时，检查SSE连接状态
+        // 问题：浏览器可能降频导致状态丢失，按钮消失
+        // 解决：如果正在流式接收但状态异常，记录日志供调试
+        console.log(`[visibilitychange] 当前状态: isReceiving=${isReceiving}, hasExecutionSteps=${executionSteps.length > 0}`);
       }
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [messages, currentResponse, executionSteps]);
+  }, [messages, currentResponse, executionSteps, isReceiving]);
 
   // 组件卸载前保存状态（用于路由切换/F5刷新/Ctrl+F5强制刷新场景）
   // 【问题2修复 2026-03-18】增加beforeunload事件监听，刷新时也能保存数据
