@@ -106,7 +106,7 @@ export const logHistoryLoad = (messageCount: number, fromCache: boolean = false)
 /**
  * 调试日志（开发模式）
  */
-export const logDebug = (label: string, data?: any) => {
+export const logDebug = (label: string, data?: unknown) => {
   if (import.meta.env.DEV) {
     console.log(`🔍 [${label}]`, data);
   }
@@ -115,6 +115,6 @@ export const logDebug = (label: string, data?: any) => {
 /**
  * 错误日志
  */
-export const logError = (label: string, error: any) => {
+export const logError = (label: string, error: unknown) => {
   console.error(`🔴 [${label}]`, error);
 };

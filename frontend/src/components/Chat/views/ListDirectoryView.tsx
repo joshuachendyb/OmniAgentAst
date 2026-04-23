@@ -17,6 +17,7 @@ import {
   FileOutlined,
   SearchOutlined,
 } from "@ant-design/icons";
+import type { AntdTreeNodeAttribute } from "antd/lib/tree";
 
 const { DirectoryTree } = Tree;
 
@@ -49,7 +50,7 @@ interface ListDirectoryViewProps {
     path?: string;
   };
   isExpanded?: boolean;
-  onToggle?: () => void;  // 【小强添加 2026-03-24】折叠切换回调
+  onToggle?: () => void;
 }
 
 /**
@@ -577,13 +578,14 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
                   background: "transparent",
                   fontSize: 13,
                 }}
-                icon={({ data }: any) => {
+                icon={(props: AntdTreeNodeAttribute) => {
                   // 优先使用isLeaf属性判断
-                  if (data.isLeaf === true) {
+                  if (props.isLeaf === true) {
                     return <FileOutlined style={{ color: "#1890ff" }} />;
                   }
                   // 如果isLeaf为false或未定义，则判断是否有children
-                  if (data.children && data.children.length > 0) {
+                  const children = props.children as unknown[];
+                  if (children && Array.isArray(children) && children.length > 0) {
                     return <FolderOutlined style={{ color: "#faad14" }} />;
                   }
                   // 如果没有children，可能是文件
