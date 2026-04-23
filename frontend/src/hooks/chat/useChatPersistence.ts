@@ -105,7 +105,6 @@ export const useChatPersistence = (
     messages,
     sessionId,
     sessionTitle,
-    sessionVersion,
     isPaused,
     messagesEndRef,
     messagesRef,
@@ -319,7 +318,7 @@ export const useChatPersistence = (
   // ========================================
   
   useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+    const handleBeforeUnload = (_e: BeforeUnloadEvent) => {
       // 在页面卸载前保存状态
       saveState();
       
