@@ -206,7 +206,7 @@ class TextStrategy(LLMStrategy):
         # ===== 方案B: 工具名保底匹配（第二层解析）=====
         # 【说明】从原始文本 content 中查找已知工具名
         # 如果找到，返回 tool_name 和简化的 tool_params
-        # 如果没找到，继续兜底
+        # 如果没找到，触发兜底错误处理
         tool_result = self._extract_by_known_tools(content)
         if tool_result:
             logger.info(f"[TextStrategy] Tool match found: {tool_result['tool_name']}")
@@ -216,10 +216,21 @@ class TextStrategy(LLMStrategy):
                 tool_params=tool_result.get("tool_params", {})
             )
         
-        # ===== 无法提取工具调用，兜底返回 finish（第三层）=====
-        # 【说明】所有解析层都失败，返回 finish 让 base_react.py 处理
-        logger.info(f"[TextStrategy] No action extracted, returning finish with full content")
-        return self._make_result(content=content, tool_name="finish", tool_params={})
+        # ===== 所有解析层都失败，兜底返回 parse_error（第三层）=====
+        # 【说明】
+        #   - 第一层 parse_react_response 返回了非 answer/implicit 类型
+        #   - 且 type=action 但 tool_name 或 tool_params 缺失
+        #   - 第二层 _extract_by_known_tools 也没找到工具名
+        #   - 所有解析层都失败，返回 parse_error 让 base_react.py 处理
+        logger.info(f"[TextStrategy] 所有解析层都失败，返回 parse_error")
+        return json.dumps({
+            "type": "parse_error",
+            "error": "无法从 LLM 响应中提取工具调用（tool_name 或 tool_params 缺失）",
+            "content": content,
+            "tool_name": None,
+            "tool_params": None,
+            "reasoning": None
+        }, ensure_ascii=False)
     
     # ===== 方案A：分级错误信息 =====
     ERROR_HINTS = {
