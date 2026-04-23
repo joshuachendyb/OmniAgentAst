@@ -298,9 +298,10 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
       // 替代之前错误的setServiceStatus手动调用和分散的refreshModelList/refreshSessionCount
       await refreshAfterModelChange();
       console.log("[切换模型] 刷新完成, serviceStatus:", serviceStatus);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } }; message?: string };
       console.error("[切换模型] 失败:", error);
-      handleError({ message: error?.response?.data?.detail || error?.message || "切换模型失败", error_type: ErrorType.SWITCH_MODEL_FAILED });
+      handleError({ message: err?.response?.data?.detail || err?.message || "切换模型失败", error_type: ErrorType.SWITCH_MODEL_FAILED });
     }
   };
 
