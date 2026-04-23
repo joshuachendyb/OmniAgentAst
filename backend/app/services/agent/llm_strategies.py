@@ -133,20 +133,80 @@ class TextStrategy(LLMStrategy):
                 tool_params={"result": f"⚠️ {user_message}"}
             )
         
-        # ===== P1: 使用 parse_react_response =====
+        # ===== P1: 使用 parse_react_response（第一层解析）=====
+        # 【多层次解析架构说明】
+        # 每层解析后，根据 type 类型决定处理方式：
+        #   - answer: 直接返回 finish，退出循环
+        #   - implicit: 直接返回 finish，退出循环（base_react.py 会识别并退出）
+        #   - thought_only / parse_error: 继续下一层解析
+        #   - action: 检查 tool_name 和 tool_params 是否都有值
+        #       - 都有值: 直接返回，执行工具
+        #       - 缺失任一: 继续下一层解析
+        #
+        # 解析层级：
+        #   第一层: parse_react_response（JSON预解析 + 四级降级策略）
+        #   第二层: _extract_by_known_tools（从原始文本提取工具名）
+        #   第三层: 兜底返回 finish
         from app.services.agent.react_output_parser import parse_react_response
         try:
             parsed = parse_react_response(content)
-            tool_name = parsed.get("tool_name", "finish")
-            thought = parsed.get("content", "")
-            tool_params = parsed.get("tool_params", {})
-            reasoning = parsed.get("reasoning")
-            logger.info(f"[TextStrategy] parse_react_response success: tool_name={tool_name}")
-            return self._make_result(content=thought, tool_name=tool_name, tool_params=tool_params, reasoning=reasoning)
+            parsed_type = parsed.get("type")
+            logger.info(f"[TextStrategy] parse_react_response success: type={parsed_type}")
+            
+            # 【第一层解析结果处理】
+            # answer: 直接返回 finish，退出循环
+            if parsed_type == "answer":
+                logger.info(f"[TextStrategy] type=answer, 直接返回finish")
+                return self._make_result(
+                    content=parsed.get("content", ""),
+                    tool_name="finish",
+                    tool_params={},
+                    reasoning=parsed.get("reasoning")
+                )
+            
+            # implicit: 直接返回 finish，退出循环
+            # 【说明】base_react.py 的 type 判断逻辑会识别 implicit 并直接退出
+            if parsed_type == "implicit":
+                logger.info(f"[TextStrategy] type=implicit, 直接返回finish")
+                return self._make_result(
+                    content=parsed.get("content", ""),
+                    tool_name="finish",
+                    tool_params={},
+                    reasoning=parsed.get("reasoning")
+                )
+            
+            # thought_only / parse_error: 继续下一层解析
+            # 【说明】这些类型在 base_react.py 中需要继续循环或重试
+            if parsed_type in ("thought_only", "parse_error"):
+                logger.info(f"[TextStrategy] type={parsed_type}, 继续下一层解析")
+            
+            # action: 检查 tool_name 和 tool_params 是否完整
+            # 【完全成功条件】tool_name 有值 且 tool_params 有值 → 直接返回
+            # 【部分成功条件】tool_name 或 tool_params 缺失 → 继续下一层解析
+            if parsed_type == "action":
+                tool_name = parsed.get("tool_name")
+                tool_params = parsed.get("tool_params") or {}
+                
+                # 完全成功：tool_name 和 tool_params 都有值，直接返回
+                if tool_name and tool_params:
+                    logger.info(f"[TextStrategy] type=action, tool_name和tool_params都有值，直接返回")
+                    return self._make_result(
+                        content=parsed.get("content", ""),
+                        tool_name=tool_name,
+                        tool_params=tool_params,
+                        reasoning=parsed.get("reasoning")
+                    )
+                
+                # 部分成功：tool_name 或 tool_params 缺失，继续下一层解析
+                logger.info(f"[TextStrategy] type=action 但 tool_name={tool_name}, tool_params={bool(tool_params)}，继续下一层解析")
+            
         except ValueError:
-            pass  # ToolParser 无法解析，继续方案A/B
+            pass  # parse_react_response 解析失败（异常），继续方案A/B
         
-        # ===== 方案B: 工具名保底匹配 =====
+        # ===== 方案B: 工具名保底匹配（第二层解析）=====
+        # 【说明】从原始文本 content 中查找已知工具名
+        # 如果找到，返回 tool_name 和简化的 tool_params
+        # 如果没找到，继续兜底
         tool_result = self._extract_by_known_tools(content)
         if tool_result:
             logger.info(f"[TextStrategy] Tool match found: {tool_result['tool_name']}")
@@ -156,7 +216,8 @@ class TextStrategy(LLMStrategy):
                 tool_params=tool_result.get("tool_params", {})
             )
         
-        # ===== 无法提取工具调用，返回 finish =====
+        # ===== 无法提取工具调用，兜底返回 finish（第三层）=====
+        # 【说明】所有解析层都失败，返回 finish 让 base_react.py 处理
         logger.info(f"[TextStrategy] No action extracted, returning finish with full content")
         return self._make_result(content=content, tool_name="finish", tool_params={})
     
