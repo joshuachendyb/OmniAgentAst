@@ -189,21 +189,11 @@ const NewChatContainer: React.FC = () => {
   // ===== 【小资优化 2026-04-13】结束 =====
 
 // 【小沈 2026-04-22】Phase 4: 使用chatStreaming（useChatStreaming Hook）
-// 【小强 2026-04-22】Phase 7.1: 解构executeSend方法
+  // 【小强 2026-04-22】Phase 7.1: 解构executeSend方法
   const {
     isReceiving,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    setIsReceiving,
     executionSteps,
     currentResponse,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    sendMessage: sendStreamMessage,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    disconnect,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    clearSteps,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    serverTaskId,
     executeSend,
   } = chatStreaming;
 
