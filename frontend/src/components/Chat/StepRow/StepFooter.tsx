@@ -28,11 +28,11 @@ const StepFooter: React.FC<StepFooterProps> = ({
   onLinkMouseEnter,
   onLinkMouseLeave,
 }) => {
-  const execution_status = (step as any).execution_status;
-  const execution_time_ms = (step as any).execution_time_ms;
-  const action_retry_count = (step as any).action_retry_count;
-  const summary = (step as any).summary;
-  const error_message = (step as any).error_message;
+  const execution_status = step.execution_status;
+  const execution_time_ms = step.execution_time_ms;
+  const action_retry_count = step.action_retry_count;
+  const summary = step.summary;
+  const error_message = step.error_message;
 
   if (!execution_status && !hasMore) {
     return null;
