@@ -364,6 +364,25 @@ def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
     tool_name = parsed.get("tool_name", parsed.get("action_tool", parsed.get("action", "finish")))
     tool_params = parsed.get("tool_params", parsed.get("params", parsed.get("action_input", {})))
     
+    # 【2026-04-23 小沈修复】当 tool_name 为 None/null 时，检查 content 是否表明任务完成
+    if tool_name is None:
+        content_for_check = parsed.get("content", "") or parsed.get("thought", "") or ""
+        # 检查内容中是否包含完成相关的关键词
+        finish_keywords = ["完成", "结束", "任务完成", "已经", "finished", "complete", "done"]
+        if any(kw in content_for_check for kw in finish_keywords):
+            # 识别为 finish
+            result_text = parsed.get("content", "")
+            return {
+                "type": "answer",
+                "thought": parsed.get("thought", ""),
+                "content": result_text,
+                "reasoning": parsed.get("reasoning", ""),
+                "tool_name": None,
+                "tool_params": None,
+                "response": result_text,
+                "error": None
+            }
+    
     # 【新增】确保tool_params是字典
     if not isinstance(tool_params, dict):
         tool_params = {}
