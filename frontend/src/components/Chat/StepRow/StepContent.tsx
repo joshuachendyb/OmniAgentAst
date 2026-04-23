@@ -134,7 +134,7 @@ const StepContent: React.FC<StepContentProps> = ({
           </div>
         </>
       )}
-      {step.type === "observation" && (step as ExecutionStep & Record<string, unknown>).observation && (
+      {step.type === "observation" && String((step as ExecutionStep & Record<string, unknown>).observation || '') && (
         <div style={{ 
           ...getStepStyle("observation" as StepType),
           whiteSpace: "pre-wrap",
@@ -152,7 +152,7 @@ const StepContent: React.FC<StepContentProps> = ({
             </div>
           )}
           <span style={getStepContentStyle("observation" as StepType, "primary")}>
-            {(step as ExecutionStep & Record<string, unknown>).observation}
+            {String((step as ExecutionStep & Record<string, unknown>).observation || '')}
           </span>
         </div>
       )}
@@ -319,7 +319,7 @@ const StepContent: React.FC<StepContentProps> = ({
             background: 'linear-gradient(135deg, rgba(250,173,20,0.08) 0%, rgba(212,136,6,0.08) 100%)',
             border: '1px solid rgba(255,213,145,0.3)',
           }}>
-            {renderToolInfo((step as ExecutionStep & Record<string, unknown>).tool_name, (step as ExecutionStep & Record<string, unknown>).tool_params as Record<string, any>, { 
+            {renderToolInfo((step as ExecutionStep & Record<string, unknown>).tool_name, (step as ExecutionStep & Record<string, unknown>).tool_params as Record<string, unknown>, { 
               prefix: '⬇️ 下一步：', 
               bgColor: 'rgba(255,170,0,0.1)' 
             })}
