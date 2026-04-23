@@ -79,6 +79,14 @@ export interface UseChatCallbacksReturn {
   onRetry: (message: string, waitTime?: number) => void;
 }
 
+/**
+ * 暂停缓冲区数据类型
+ */
+type BufferItem = 
+  | { type: "step"; step: ExecutionStep }
+  | { type: "chunk"; content: string; is_reasoning?: boolean }
+  | { type: "error"; error: string | SSEError };
+
 // ============================================================================
 // Hook实现
 // ============================================================================
@@ -562,8 +570,9 @@ export const useChatCallbacks = (
     console.log("▶️ [onResumed] 收到恢复事件，缓冲区长度:", displayBufferRef.current.length);
     
     // 从缓冲区按顺序显示数据
-    displayBufferRef.current.forEach(data => {
-      if (data.type === "chunk" && data.content) {
+    displayBufferRef.current.forEach((data) => {
+      const item = data as BufferItem;
+      if (item.type === "chunk" && item.content) {
         // 处理 chunk 类型
         setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
@@ -571,13 +580,13 @@ export const useChatCallbacks = (
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...lastMessage,
-              content: lastMessage.content + data.content,
+              content: lastMessage.content + item.content,
             };
             return updated;
           }
           return prev;
         });
-      } else if (data.type === "step" && data.step) {
+      } else if (item.type === "step" && item.step) {
         // 【关键修复】恢复时要把step添加到executionSteps
         setMessages((prev) => {
           const lastMessage = prev[prev.length - 1];
@@ -585,15 +594,15 @@ export const useChatCallbacks = (
             const updated = [...prev];
             updated[updated.length - 1] = {
               ...lastMessage,
-              executionSteps: [...(lastMessage.executionSteps || []), data.step],
+              executionSteps: [...(lastMessage.executionSteps || []), item.step],
             };
             return updated;
           }
           return prev;
         });
-      } else if (data.type === "error" && data.error) {
+      } else if (item.type === "error" && item.error) {
         // 处理 error 类型
-        onError(data.error);
+        onError(item.error);
       }
     });
     
