@@ -549,8 +549,14 @@ try {
       // 5. 发送成功，不需要额外操作（用户消息已在列表中）
 
     } catch (error) {
-      // 6. 发送失败，回滚：移除刚添加的用户消息
-      setMessages((prev) => prev.filter((msg) => msg.id !== userMessage.id));
+      // 6. 发送失败，更新消息状态为failed（不移除消息）
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === userMessage.id
+            ? { ...msg, sendStatus: "failed" as const }
+            : msg
+        )
+      );
       handleError(error, { source: "api" });
     } finally {
       setLoading(false);

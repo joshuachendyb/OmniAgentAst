@@ -15,6 +15,7 @@ interface RoleNameDisplayProps {
   role: "user" | "assistant" | "system" | string;
   isStreaming?: boolean;
   isError?: boolean;
+  sendStatus?: 'sending' | 'sent' | 'failed'; // 【小沈修复2026-04-23】P0-1: 用户消息发送状态
   display_name?: string;
   model?: string;
 }
@@ -27,12 +28,21 @@ const RoleNameDisplay: React.FC<RoleNameDisplayProps> = memo(({
   role,
   isStreaming = false,
   isError = false,
+  sendStatus,
   display_name,
   model,
 }) => {
   switch (role) {
-    case "user":
+    case "user": {
+      // 【小沈修复2026-04-23】P0-1: 显示发送失败状态
+      if (sendStatus === "failed") {
+        return <span>❌ 我</span>;
+      }
+      if (sendStatus === "sending") {
+        return <span>⏳ 我</span>;
+      }
       return <span>我</span>;
+    }
     case "assistant": {
       // 加载状态
       if (isStreaming) {

@@ -275,6 +275,8 @@ export interface Message extends ChatMessage {
   executionSteps?: ExecutionStep[];
   isStreaming?: boolean;
   isError?: boolean;
+  // 【小沈修复2026-04-23】P0-1: 添加发送状态，用于显示发送失败标识
+  sendStatus?: 'sending' | 'sent' | 'failed';
   // 错误相关字段（与API文档对齐）
   // 【小沈修改2026-04-15】删除errorCode，添加errorRecoverable和errorContext
   // 【小沈修改2026-04-16】删除errorDetails/errorStack/errorRetryable，后端已删除这些字段

@@ -26,6 +26,8 @@ export interface MessageItemProps {
     provider?: string;
     isStreaming?: boolean;
     isError?: boolean;
+    // 【小沈修复2026-04-23】P0-1: 添加发送状态
+    sendStatus?: 'sending' | 'sent' | 'failed';
     display_name?: string;
     is_reasoning?: boolean;
     task_id?: string;
@@ -67,6 +69,11 @@ export const areMessageItemPropsEqual = (
   
   // 比较消息角色
   if (prev.message.role !== next.message.role) {
+    return false;
+  }
+  
+  // 【小沈修复2026-04-23】P0-1: 比较发送状态
+  if (prev.message.sendStatus !== next.message.sendStatus) {
     return false;
   }
   

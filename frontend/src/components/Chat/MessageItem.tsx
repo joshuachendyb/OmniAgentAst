@@ -46,6 +46,8 @@ export interface MessageItemProps {
     provider?: string; // 提供商
     isStreaming?: boolean;
     isError?: boolean;
+    // 【小沈修复2026-04-23】P0-1: 添加发送状态
+    sendStatus?: 'sending' | 'sent' | 'failed';
     display_name?: string; // 前端小新代修改：显示名称
     is_reasoning?: boolean; // 【小查修复】是否为思考过程（统一使用 snake_case）
     task_id?: string; // 【小新重构2026-03-09】任务ID，用于分页请求
@@ -254,6 +256,7 @@ const MessageItem = memo(({
                 role={message.role}
                 isStreaming={message.isStreaming}
                 isError={message.isError}
+                sendStatus={message.sendStatus}
                 display_name={message.display_name}
                 model={message.model}
               />
