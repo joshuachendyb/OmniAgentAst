@@ -199,7 +199,7 @@ const HistoryPage: React.FC = () => {
       }
 
       // 清空会话时分页获取所有会话（包括有效和无效）
-      const allSessions: any[] = [];
+      const allSessions: Session[] = [];
       let page = 1;
       const pageSize = 100;
       let hasMore = true;

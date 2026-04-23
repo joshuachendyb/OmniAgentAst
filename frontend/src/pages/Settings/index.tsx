@@ -66,7 +66,7 @@ import {
   FileTextOutlined,
   CheckOutlined,
 } from "@ant-design/icons";
-import { configApi, chatApi } from "../../services/api";
+import { configApi, chatApi, SecurityConfig } from "../../services/api";
 import type { ProviderInfo } from "../../services/api";
 import HealthCheck from "../../components/HealthCheck";
 import { handleError, showSuccess, showMessage, ErrorType } from "../../utils/errorHandler";
@@ -92,9 +92,11 @@ const GlobalConfigArea: React.FC<{
   currentDisplayName: string;
   onDisplayNameChange: (option: ModelOption) => void;
 }> = ({ modelList, currentDisplayName, onDisplayNameChange }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [configPath, setConfigPath] = useState<any>(null);
   const [configContent] = useState<string>("");
   const [showConfigModal, setShowConfigModal] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [validationResult, setValidationResult] = useState<any>(null);
   const [validating, setValidating] = useState(false);
 
@@ -439,6 +441,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
     null
   );
   const [loading, setLoading] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [validationResult] = useState<any>(null);
   const [validationModalVisible, setValidationModalVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
@@ -1502,6 +1505,7 @@ return { success: true, model: modelName };
  * 安全设置页面组件
  */
 const SecuritySettings: React.FC = () => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [securityConfig, setSecurityConfig] = useState<any>({});
   const [securityForm] = Form.useForm();
   const [savingSecurity, setSavingSecurity] = useState(false);
@@ -1531,7 +1535,7 @@ const SecuritySettings: React.FC = () => {
     loadSecurityConfig();
   }, []);
 
-  const handleSaveSecurityConfig = async (values: any) => {
+  const handleSaveSecurityConfig = async (values: SecurityConfig) => {
     setSavingSecurity(true);
     try {
       const currentConfig = await configApi.getConfig();
