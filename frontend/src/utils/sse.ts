@@ -1341,7 +1341,9 @@ const processSSEData = (
         const stepNum = rawData.step || 1;
         console.log(`%c[STEP] [type=incident] [incident_type=${statusValue}] [step=${stepNum}] [收到数据] 时间=${new Date().toLocaleTimeString()}`, 'color: red; font-weight: bold;');
         const statusMessage = rawData.message || "";
-        // 【小沈修复 2026-04-24】保持type为incident，通过incident_value区分
+        // 【小沈修复 2026-04-24】保持type为incident，通过incident_value区分具体类型
+        // 后端发送格式: type="incident", incident_value="interrupted/paused/resumed/retrying"
+        // 前端需要保持这个格式，不能直接把type改成具体类型，否则会影响后续判断
         step.type = "incident";
         step.incident_value = statusValue;
         step.content = statusMessage;
