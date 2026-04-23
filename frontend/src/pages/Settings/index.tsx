@@ -542,9 +542,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
   };
 
   // 保存Provider编辑
-  const handleSaveProvider = async (values: any) => {
+  const handleSaveProvider = async (values: Record<string, unknown>) => {
     try {
-      await configApi.updateProvider(editingProvider!.name, values);
+      await configApi.updateProvider(editingProvider!.name, values as Record<string, unknown>);
 
       // 刷新配置
       loadConfig();
@@ -572,8 +572,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       loadConfig();
 
       showSuccess("Provider已删除");
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "删除失败");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "删除失败");
     }
   };
 
@@ -599,8 +600,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       setEditModalVisible(false);
       setEditingModel(null);
       modelEditForm.resetFields();
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "更新失败");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "更新失败");
     }
   };
 
@@ -613,8 +615,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       loadConfig();
 
       showSuccess("模型已删除");
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "删除失败");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "删除失败");
     }
   };
 
@@ -642,10 +645,10 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
             signal: controller.signal,
           });
           setDeleteProgress({ current: index + 1, total: models.length });
-          return { success: true, model: modelName };
-        } catch (error: any) {
-          // 如果是取消错误
-          if (error.name === "AbortError" || controller.signal.aborted) {
+return { success: true, model: modelName };
+        } catch (error: unknown) {
+          const err = error as { name?: string };
+          if (err?.name === "AbortError" || controller.signal.aborted) {
             return { success: false, model: modelName, cancelled: true };
           }
           setDeleteProgress({ current: index + 1, total: models.length });
@@ -670,8 +673,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       setSelectedModels(new Set());
       loadConfig();
-    } catch (error: any) {
-      if (error.name === "AbortError") {
+    } catch (error: unknown) {
+      const err = error as { name?: string };
+      if (err?.name === "AbortError") {
         handleError({ message: "批量删除已取消", error_type: ErrorType.WARNING });
       } else {
         handleError("批量删除失败");
@@ -701,22 +705,23 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       showSuccess("模型已添加");
       setAddModelModalVisible(false);
       modelForm.resetFields();
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "添加失败");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "添加失败");
     }
   };
 
   // 添加Provider
-  const handleAddProvider = async (values: any) => {
+  const handleAddProvider = async (values: Record<string, unknown>) => {
     try {
       await configApi.addProvider({
-        name: values.name,
-        api_base: values.api_base,
-        api_key: values.api_key || "",
-        model: values.model || "",
-        models: values.model ? [values.model] : [],
-        timeout: values.timeout || 60,
-        max_retries: values.max_retries || 3,
+        name: values.name as string,
+        api_base: values.api_base as string,
+        api_key: (values.api_key as string) || "",
+        model: (values.model as string) || "",
+        models: values.model ? [values.model as string] : [],
+        timeout: (values.timeout as number) || 60,
+        max_retries: (values.max_retries as number) || 3,
       });
 
       // 刷新配置
@@ -732,8 +737,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       showSuccess("Provider已添加");
       setAddProviderModalVisible(false);
       providerForm.resetFields();
-    } catch (error: any) {
-      handleError(error.response?.data?.detail || "添加失败");
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { detail?: string } } };
+      handleError(err?.response?.data?.detail || "添加失败");
     }
   };
 

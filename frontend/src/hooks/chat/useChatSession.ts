@@ -440,7 +440,8 @@ export const useChatSession = (
       window.history.pushState({}, "", `/?session_id=${newSessionId}`);
       
       showNewSessionSuccess(newTitle);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const err = error as { message?: string };
       if (retry < maxRetries) {
         const newRetry = retry + 1;
         showNewSessionRetryWarning(newRetry, maxRetries);
@@ -448,7 +449,7 @@ export const useChatSession = (
         await new Promise(resolve => setTimeout(resolve, 1000));
         return handleNewSessionInternal(newRetry);
       }
-      const errMsg = error?.message || "未知错误";
+      const errMsg = err?.message || "未知错误";
       showNewSessionError(errMsg);
     }
   }, [
@@ -527,9 +528,10 @@ export const useChatSession = (
       setLastSavedTitle(newTitle.trim());
       
       console.log("✅ 标题更新成功:", newTitle, "版本:", response.version);
-    } catch (error: any) {
-      const errMsg = error?.message || "更新标题失败";
-      if (error?.response?.status === 409) {
+    } catch (error: unknown) {
+      const err = error as { message?: string; response?: { status?: number } };
+      const errMsg = err?.message || "更新标题失败";
+      if (err?.response?.status === 409) {
         // 版本冲突，重新加载最新数据
         console.warn("⚠️ 标题版本冲突，重新加载最新数据");
         try {
