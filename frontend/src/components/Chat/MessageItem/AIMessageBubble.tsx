@@ -90,6 +90,7 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
   sessionTitle,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   /**
    * 复制消息内容
@@ -189,7 +190,11 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
         </div>
 
         {/* 消息气泡 */}
-        <div style={{ ...bubbleStyle, position: "relative" }}>
+        <div 
+          style={{ ...bubbleStyle, position: "relative" }}
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => setIsHovered(false)}
+        >
           {/* 复制按钮 */}
           <Tooltip title={copied ? "已复制" : "复制"}>
             <Button
@@ -208,7 +213,7 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
                 position: "absolute",
                 top: 4,
                 right: 6,
-                opacity: 0,
+                opacity: isHovered ? 1 : 0,
                 transition: "opacity 0.2s ease",
                 background: "transparent",
                 border: "none",
@@ -235,7 +240,7 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
                 position: "absolute",
                 top: 4,
                 right: 30,
-                opacity: 0,
+                opacity: isHovered ? 1 : 0,
                 transition: "opacity 0.2s ease",
                 background: "transparent",
                 border: "none",
