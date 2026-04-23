@@ -148,8 +148,8 @@ export const useChatCallbacks = (
     
     // ✅ 如果正在中断中，只显示 interrupted 事件，跳过其他事件
     if (interruptInProgressRef.current) {
-      // 只允许 interrupted/incident 事件通过，其他都忽略
-      const isInterruptEvent = step.type === "interrupted" || (step.type === "incident" && (step as ExecutionStep).incident_value === "interrupted");
+      // 【小沈修复 2026-04-24】当step.type已经变成"interrupted"时，直接放行
+      const isInterruptEvent = step.type === "interrupted";
       if (!isInterruptEvent) {
         console.log(`[中断] 忽略中断过程中收到的事件: ${step.type}`);
         return;
