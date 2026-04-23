@@ -27,10 +27,6 @@ import { sessionApi, API_BASE_URL } from "../../services/api";
 import type { Message } from "../../types/chat";
 import {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  loadHistoryMessages,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  SESSION_EXPIRY_TIME,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   STORAGE_KEY,
 } from "../../utils/chatHistory";
 
