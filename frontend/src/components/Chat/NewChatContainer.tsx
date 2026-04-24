@@ -19,7 +19,7 @@
  * @update 2026-03-13 代码拆分：类型和工具函数提取到独立文件
  */
 
-import React, { useEffect, useCallback } from "react";
+import React, { useEffect, useCallback, useState } from "react";
 import { message, Card } from "antd";
 import { useSearchParams } from "react-router-dom";
 import { sessionApi, API_BASE_URL } from "../../services/api";
@@ -235,7 +235,7 @@ const NewChatContainer: React.FC = () => {
     
     lastScrollTimeRef.current = now;
     scrollToBottom();
-  }, [SCROLL_INTERVAL, scrollToBottom]);
+  }, [SCROLL_INTERVAL, scrollToBottom, lastScrollTimeRef, userScrolledUpRef]);
   // ===== 【小资优化 2026-04-13】结束 =====
 
   // 滚动到底部的增强版本，确保页面渲染完成后再滚动
@@ -392,13 +392,30 @@ const NewChatContainer: React.FC = () => {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { saveStateWithSSECheck, saveState } = chatPersistence;
 
-  // P1级别优化：状态验证和同步机制
-  useEffect(() => {
+  // 【小沈 2026-04-24】P2优化：智能状态验证轮询（带前瞻性策略）
+  const [lastValidationTime, setLastValidationTime] = useState(0);
+  const VALIDATION_INTERVAL = 5 * 60 * 1000; // 5分钟验证间隔
+  const FAILED_RETRY_DELAY = 30 * 1000; // 失败后30秒再试
+
+useEffect(() => {
     if (!sessionId || !isInitialized) return;
 
     const validateAndSyncState = async () => {
+      const now = Date.now();
       try {
-        // 验证前端状态与后端一致性
+        // 【前瞻性策略1】页面隐藏时不验证，节省资源
+        if (document.hidden) {
+          console.log('[状态验证] 页面隐藏，跳过验证');
+          return;
+        }
+
+        // 【前瞻性策略2】距离上次验证时间太短不验证
+        if (now - lastValidationTime < VALIDATION_INTERVAL) {
+          console.log('[状态验证] 距上次验证时间太短，跳过');
+          return;
+        }
+
+        console.log('[状态验证] 开始验证...');
         const sessionData = await sessionApi.getSessionMessages(sessionId);
 
         // 获取后端返回的正确标题
@@ -424,20 +441,36 @@ const NewChatContainer: React.FC = () => {
             console.warn("🔄 消息数量差异较大，建议刷新页面");
           }
         }
+
+        setLastValidationTime(now);
+        console.log('[状态验证] 验证完成');
       } catch (error) {
-        console.warn("状态验证失败:", error);
-        // 状态验证失败不影响用户体验，静默处理
+        console.warn("[状态验证] 失败:", error);
+        // 【前瞻性策略3】失败后延长下次验证时间
+        setLastValidationTime(now - VALIDATION_INTERVAL + FAILED_RETRY_DELAY);
       }
     };
 
-    // 每2分钟验证一次状态一致性
-    const intervalId = setInterval(() => {
-      validateAndSyncState();
-    }, 2 * 60 * 1000);
+    // 【前瞻性策略4】页面可见性变化时立即验证
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        validateAndSyncState();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    return () => clearInterval(intervalId);
+    // 初始验证
+    validateAndSyncState();
+
+    // 定时验证（延长到5分钟）
+    const intervalId = setInterval(validateAndSyncState, VALIDATION_INTERVAL);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, sessionTitle, messages, isInitialized]);
+  }, [sessionId, sessionTitle, messages, isInitialized, lastValidationTime]);
 
   // 全局快捷键 - 前端小新代修改 UX-G02: 全局快捷键
   // 【小强修复 2026-03-31】Ctrl+Enter快捷键已移至ChatInput组件内部处理
