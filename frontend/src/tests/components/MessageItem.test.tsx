@@ -3,7 +3,7 @@
  *
  * @author 小新
  * @description Unit tests for MessageItem component
- * @update 2026-02-18 修复测试期望以匹配实际组件输出 by 小新
+ * @update 2026-04-25 修复测试：使用queryByText避免multiple elements错误 by 小沈
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -20,9 +20,10 @@ describe('MessageItem Component', () => {
 
   it('should render user message', () => {
     render(<MessageItem message={baseMessage} />);
-
+  
     expect(screen.getByText('Test message content')).toBeInTheDocument();
-    expect(screen.getByText('我')).toBeInTheDocument();
+    // 修复：使用queryAllByText检查长度 >= 1（因为"我"出现在角色名称+头像两处）
+    expect(screen.queryAllByText('我').length).toBeGreaterThanOrEqual(1);
   });
 
   it('should render assistant message', () => {
@@ -35,8 +36,8 @@ describe('MessageItem Component', () => {
     render(<MessageItem message={assistantMessage} />);
 
     expect(screen.getByText('AI response')).toBeInTheDocument();
-    // 修复测试：使用部分匹配，因为角色名称可能包含模型信息
-    expect(screen.getByText(/AI 助手/)).toBeInTheDocument();
+    // 修复：使用queryByText避免multiple elements
+    expect(screen.queryByText(/AI 助手/)).toBeInTheDocument();
   });
 
   it('should render system message', () => {
@@ -73,7 +74,7 @@ describe('MessageItem Component', () => {
     render(<MessageItem message={messageWithSteps} showExecution={true} />);
 
     // 有 executionSteps 时渲染步骤内容，不渲染 message.content
-     // 检查思考步骤显示（💭 图标 + 思考内容）
+    // 检查思考步骤显示（💭 图标 + 思考内容）
     expect(screen.getByText(/Thinking\.\.\./)).toBeInTheDocument();
   });
 
@@ -120,18 +121,17 @@ describe('MessageItem Component', () => {
   it('should apply different styles for different roles', () => {
     const { rerender } = render(<MessageItem message={baseMessage} />);
 
-    // User message
-    expect(screen.getByText('我')).toBeInTheDocument();
+    // User message - 使用queryAllByText检查长度 >= 1（"我"出现在角色名称+头像两处）
+    expect(screen.queryAllByText('我').length).toBeGreaterThanOrEqual(1);
 
-    // Assistant message
+    // Assistant message - 使用queryAllByText检查长度 >= 1
     rerender(<MessageItem message={{ ...baseMessage, role: 'assistant' }} />);
-    // 修复测试：使用部分匹配
-    expect(screen.getByText(/AI 助手/)).toBeInTheDocument();
+    expect(screen.queryAllByText(/AI 助手/).length).toBeGreaterThanOrEqual(1);
 
-    // System message (no role name shown)
+    // System message (no role name shown) - 使用queryAllByText检查长度 = 0
     rerender(<MessageItem message={{ ...baseMessage, role: 'system' }} />);
-    expect(screen.queryByText('我')).not.toBeInTheDocument();
-    expect(screen.queryByText(/AI 助手/)).not.toBeInTheDocument();
+    expect(screen.queryAllByText('我').length).toBe(0);
+    expect(screen.queryAllByText(/AI 助手/).length).toBe(0);
   });
 
   it('should handle long content with proper formatting', () => {

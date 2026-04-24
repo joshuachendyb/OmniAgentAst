@@ -71,7 +71,7 @@ describe('前端分页功能（后端返回全部数据）', () => {
       render(<MessageItem message={message as any} showExecution={true} />);
 
       // 应该显示"加载更多"按钮（前端分页）
-      expect(screen.getByText(/加载更多/)).toBeInTheDocument();
+      expect(screen.queryAllByText(/加载更多/).length).toBeGreaterThanOrEqual(1);
     });
 
     it('应该不显示"加载更多"按钮当数据少于100条时', () => {
@@ -126,8 +126,10 @@ describe('前端分页功能（后端返回全部数据）', () => {
 
       render(<MessageItem message={message as any} showExecution={true} />);
 
-      // 点击"加载更多"
-      fireEvent.click(screen.getByText(/加载更多/));
+      // 点击"加载更多" - 使用queryAllByText获取第一个元素
+      const loadMoreButtons = screen.queryAllByText(/加载更多/);
+      expect(loadMoreButtons.length).toBeGreaterThanOrEqual(1);
+      fireEvent.click(loadMoreButtons[0]);
 
       // 不应该调用后端 nextPage API
       expect(taskControlApi.nextPage).not.toHaveBeenCalled();

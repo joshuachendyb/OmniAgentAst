@@ -90,7 +90,7 @@ describe('useMessageItemProps - areMessageItemPropsEqual', () => {
     expect(areMessageItemPropsEqual(prev, next)).toBe(true);
   });
 
-  it('应该处理executionSteps属性变化', () => {
+  it('应该返回false当executionSteps变化时', () => {
     const prev = createMockProps({ 
       message: { 
         executionSteps: [
@@ -107,7 +107,46 @@ describe('useMessageItemProps - areMessageItemPropsEqual', () => {
       } 
     });
     
-    // executionSteps不在比较范围内，content相同应该返回true
+    // executionSteps变化应该触发重新渲染（支持实时步骤显示）
+    expect(areMessageItemPropsEqual(prev, next)).toBe(false);
+  });
+  
+  it('应该返回false当executionSteps内容变化时', () => {
+    const prev = createMockProps({ 
+      message: { 
+        executionSteps: [
+          { type: 'thought', content: 'Thinking', timestamp: Date.now() }
+        ] as any
+      } 
+    });
+    const next = createMockProps({ 
+      message: { 
+        executionSteps: [
+          { type: 'thought', content: 'Different thinking', timestamp: Date.now() }
+        ] as any
+      } 
+    });
+    
+    expect(areMessageItemPropsEqual(prev, next)).toBe(false);
+  });
+  
+  it('应该返回true当executionSteps完全相同且其他props相同时', () => {
+    const timestamp = Date.now();
+    const prev = createMockProps({ 
+      message: { 
+        executionSteps: [
+          { type: 'thought', content: 'Thinking', timestamp }
+        ] as any
+      } 
+    });
+    const next = createMockProps({ 
+      message: { 
+        executionSteps: [
+          { type: 'thought', content: 'Thinking', timestamp }
+        ] as any
+      } 
+    });
+    
     expect(areMessageItemPropsEqual(prev, next)).toBe(true);
   });
 });

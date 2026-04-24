@@ -1,3 +1,51 @@
+v0.10.9
+
+更新时间: 2026-04-25 05:47:16
+
+更新内容：
+
+## 1 前端测试修复 - 解决Found multiple elements错误 - 小沈-2026-04-25
+
+### 1.1 修复原因
+
+MessageItem组件在角色名称和头像内同时显示"我"和"AI 助手"等文本，导致测试使用`getByText`/`queryByText`时报错"Found multiple elements"。
+
+### 1.2 修复文件
+
+| 文件 | 修复内容 |
+|------|---------|
+| MessageItem.test.tsx | 使用queryAllByText检查长度替代getByText |
+| MessageItem-memo.test.tsx | 同上 |
+| MessageItem-fields.test.tsx | 使用部分匹配替代精确文本 |
+| frontend-paging.test.tsx | 使用queryAllByText检查长度 |
+| StepRow-visual.test.tsx | 使用queryAllByText检查长度 |
+
+### 1.3 修复方法
+
+| 原方法 | 新方法 |
+|--------|---------|
+| `getByText('我')` | `queryAllByText('我').length >= 1` |
+| `queryByText('AI 助手')` | `queryAllByText(/AI 助手/).length >= 1` |
+| `getByText('执行成功')` | `queryAllByText(/执行成功/).length >= 1` |
+
+### 1.4 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| 测试通过 | ✅ 527/534 tests passed |
+| 测试失败 | ⚠️ 7 tests（原因不同，需逐个分析） |
+
+### 1.5 待处理
+
+| 文件 | 问题 | 说明 |
+|------|------|------|
+| useChatFacade.test.ts | JSX in .test.ts file | 需要改为.test.tsx |
+| frontend-paging.test.tsx | "加载更多"不存在 | 功能已移除或实现不同 |
+| MessageItem-fields.test.tsx | 内容不存在 | 可能测试期望与实际实现不符 |
+| MessageItem-optimization.test.tsx | badgeStyle undefined | Ant Tag未渲染或选择器问题 |
+
+---
+
 v0.10.8
 
 更新时间: 2026-04-25 04:43:27

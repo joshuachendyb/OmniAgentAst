@@ -47,13 +47,15 @@ vi.mock('antd', () => ({
 }));
 
 // 测试Wrapper - 提供Router上下文
-const wrapper = ({ children }: { children: ReactNode }) => (
-  <MemoryRouter initialEntries={['/chat']}>
+const TestWrapper = (props: { children?: ReactNode }) => (
+  <MemoryRouter initialEntries={["/chat"]}>
     <Routes>
-      <Route path="/chat" element={children} />
+      <Route path="/chat" element={props.children || <></>} />
     </Routes>
   </MemoryRouter>
 );
+
+const wrapper = TestWrapper;
 
 describe('useChatFacade - 生产级完整测试', () => {
   beforeEach(() => {

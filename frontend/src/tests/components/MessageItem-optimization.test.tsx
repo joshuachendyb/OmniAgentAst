@@ -31,6 +31,9 @@ describe('MessageItem 3.1.2 Optimization - useMemo caching', () => {
     timestamp: new Date(),
     executionSteps: [baseExecutionStep],
     executionStepsComplete: true,
+    // 添加错误状态以触发badge显示
+    isError: true,
+    errorType: 'test_error',
   };
 
   it('should useMemo cache badgeStyle', () => {

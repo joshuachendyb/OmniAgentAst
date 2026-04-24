@@ -45,7 +45,8 @@ describe('MessageItem with React.memo', () => {
     render(<MessageItem message={baseMessage} {...defaultProps} />);
     
     expect(screen.getByText('Test message content')).toBeInTheDocument();
-    expect(screen.getByText('我')).toBeInTheDocument();
+    // 修复：使用queryAllByText检查长度（"我"出现在角色名称+头像两处）
+    expect(screen.queryAllByText('我').length).toBeGreaterThanOrEqual(1);
   });
 
   it('应该正常渲染assistant消息', () => {
@@ -176,7 +177,8 @@ describe('MessageItem with React.memo', () => {
     const { rerender } = render(
       <MessageItem message={baseMessage} {...defaultProps} />
     );
-    expect(screen.getByText('我')).toBeInTheDocument();
+    // 修复：使用queryAllByText检查长度
+    expect(screen.queryAllByText('我').length).toBeGreaterThanOrEqual(1);
     
     // Assistant message
     rerender(
@@ -185,7 +187,8 @@ describe('MessageItem with React.memo', () => {
         {...defaultProps} 
       />
     );
-    expect(screen.getByText(/AI 助手/)).toBeInTheDocument();
+    // 修复：使用queryAllByText检查长度
+    expect(screen.queryAllByText(/AI 助手/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('应该正确处理error消息', () => {

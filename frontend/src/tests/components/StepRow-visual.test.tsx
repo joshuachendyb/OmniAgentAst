@@ -258,9 +258,9 @@ describe('StepRow UI视觉和布局', () => {
       render(<MessageItem message={messageWithObservation} />);
 
       // 应该显示检查结果
-      expect(screen.getByText(/执行成功/)).toBeInTheDocument();
+      expect(screen.queryAllByText(/执行成功/).length).toBeGreaterThanOrEqual(1);
       // 应该显示步骤编号
-      expect(screen.getByText(/步骤3/)).toBeInTheDocument();
+      expect(screen.queryAllByText(/步骤3/).length).toBeGreaterThanOrEqual(1);
     });
   });
 });
