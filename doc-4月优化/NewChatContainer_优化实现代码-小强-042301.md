@@ -2242,409 +2242,160 @@ ErrorMonitor.init();
 
 ---
 
-## 七、useChatGroups 详细设计说明（小强-2026-04-24）
+## 七、最终设计说明（2026-04-24）
 
-### 7.1 设计目标
-
-| 目标 | 说明 |
-|------|------|
-| **统一入口** | 提供单个Hook访问所有状态分组 |
-| **按需加载** | 支持延迟加载非首屏需要的组 |
-| **渐进兼容** | 不改变现有Hook结构，保持稳定 |
-| **前瞻设计** | 为未来优化预留接口 |
-
-### 7.2 五组状态设计
+### 7.1 核心结论
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                      5组状态结构                                  │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                     │
-│  组1：SessionGroup（首屏必需）                                      │
-│  ├── sessionId: string | null                                       │
-│  ├── sessionTitle: string                                           │
-│  ├── sessionVersion: number                                         │
-│  ├── titleLocked: boolean                                          │
-│  ├── editingTitle: boolean                                          │
-│  ├── titleInput: string                                             │
-│  └── currentSessionIdRef: Ref                                      │
-│                                                                     │
-│  组2：MessageGroup（首屏必需）                                       │
-│  ├── messages: Message[]                                            │
-│  ├── loading: boolean                                              │
-│  ├── isRetrying: boolean                                           │
-│  ├── messagesRef: Ref                                              │
-│  ├── messagesEndRef: Ref                                           │
-│  ├── messagesCountRef: Ref                                         │
-│  └── replyUserMessageIdRef: Ref                                    │
-│                                                                     │
-│  组3：StreamingGroup（按需）                                        │
-│  ├── isReceiving: boolean                                          │
-│  ├── isPaused: boolean                                              │
-│  ├── waitTime: number                                              │
-│  ├── executionSteps: ExecutionStep[]                               │
-│  ├── serverTaskId: string | null                                   │
-│  ├── currentResponse: string                                       │
-│  └── waitTimerRef: Ref                                              │
-│                                                                     │
-│  组4：UIGroup（首屏必需）                                            │
-│  ├── showExecution: boolean                                         │
-│  ├── useStream: boolean                                            │
-│  ├── isInitialized: boolean                                         │
-│  ├── sessionJumpLoading: boolean                                    │
-│  ├── isMessageListLoading: boolean                                 │
-│  ├── isRenderingMessages: boolean                                 │
-│  ├── retryCount: Record<string, number>                           │
-│  ├── userScrolledUpRef: Ref                                         │
-│  └── lastScrollTimeRef: Ref                                         │
-│                                                                     │
-│  组5：InterruptGroup（按需）                                         │
-│  ├── hasReceivedInterruptEventRef: Ref                             │
-│  ├── interruptInProgressRef: Ref                                    │
-│  ├── handleInterrupt: () => Promise<void>                          │
-│  └── handleTogglePause: () => Promise<void>                       │
-│                                                                     │
-└─────────────────────────────────────────────────────────────────────┘
+✅ 可行的方案：
+1. 统一Facade（useChatFacade.ts）- 始终加载所有Hook，提供统一入口
+2. UI级按需渲染 - 通过条件渲染控制组件显示
+3. 代码分割 - Vite/Webpack自动处理
+
+❌ 不可行的方案：
+1. 代码级按需加载Hook - React规则禁止在条件语句中调用Hook
 ```
 
-### 7.3 按需加载配置
+### 7.2 两个文件的状态
+
+| 文件 | 状态 | 说明 |
+|------|------|------|
+| `useChatFacade.ts` | ✅ 推荐使用 | 正确设计，始终加载+UI按需渲染 |
+| `useChatGroups.ts` | ⚠️ 废弃 | 条件调用Hook违反React规则 |
+
+### 7.3 useChatFacade.ts 设计（正确方案）
 
 ```typescript
-// 使用方法
-const chat = useChatGroups({
-  immediate: true,      // 首屏加载所有必需组
-  lazyStreaming: false,  // false=立即加载, true=按需
-  lazyInterrupt: false,  // false=立即加载, true=按需
-  apiBaseURL: "",
-});
-
-// 解构使用
-const { session, message, streaming, ui, interrupt } = chat;
-
-// 或单独使用
-if (streaming) {
-  await streaming.executeSend(userMessage);
-}
-```
-
-### 7.4 文件结构
-
-```
-frontend/src/
-├── hooks/
-│   └── chat/
-│       ├── useChatState.ts         # 基础状态（已有）
-│       ├── useChatCallbacks.ts     # 回调函数（已有）
-│       ├── useChatStreaming.ts      # 流式处理（已有）
-│       ├── useChatSession.ts       # 会话管理（已有）
-│       ├── useChatPersistence.ts   # 持久化（已有）
-│       ├── useChatSend.ts          # 消息发送（已有）
-│       ├── useChatTaskControl.ts  # 中断控制（已有）
-│       └── useChatGroups.ts        # ⭐ 统一Facade（新）
-│
-└── types/
-    └── chat/
-        └── groups.ts               # ⭐ 5组类型定义（新）
-```
-
-### 7.5 实现代码
-
-#### 7.5.1 类型定义（groups.ts）
-
-```typescript
-/**
- * SaveStatus - 保存状态类型
- */
-export type SaveStatus = "idle" | "saving" | "saved" | "error";
-
-/**
- * LogFlags - 日志标记类型
- */
-export interface LogFlags {
-  chunkFirstDone: boolean;
-  showStepsFalseDone: boolean;
-  showStepsTrueDone: boolean;
-}
-
-// 会话组
-export interface SessionGroupState {
-  sessionId: string | null;
-  sessionTitle: string;
-  sessionVersion: number;
-  titleLocked: boolean;
-  editingTitle: boolean;
-  titleInput: string;
-  lastSavedTitle: string;
-}
-
-// 消息组
-export interface MessageGroupState {
-  messages: Message[];
-  loading: boolean;
-  isRetrying: boolean;
-}
-
-// 流式组
-export interface StreamingGroupState {
-  isReceiving: boolean;
-  isPaused: boolean;
-  waitTime: number;
-  executionSteps: ExecutionStep[];
-  serverTaskId: string | null;
-  currentResponse: string;
-}
-
-// UI组
-export interface UIGroupState {
-  showExecution: boolean;
-  useStream: boolean;
-  isInitialized: boolean;
-  saveStatus: SaveStatus;
-  sessionJumpLoading: boolean;
-  isMessageListLoading: boolean;
-  isRenderingMessages: boolean;
-  retryCount: Record<string, number>;
-  isSavingTitle: boolean;
-  lastSaveTime: number;
-}
-
-// 配置选项
-export interface ChatGroupsOptions {
-  immediate?: boolean;
-  lazyStreaming?: boolean;
-  lazyInterrupt?: boolean;
-  apiBaseURL?: string;
-}
-```
-
-#### 7.5.2 Hook实现（useChatGroups.ts）
-
-```typescript
-/**
- * useChatGroups Hook
- * 
- * 功能：
- * - 包装���有的7个独立Hook
- * - 提供按需加载的初始化接口
- * - 保持与现有代码的兼容性
- * - 支持渐进式迁移
- */
-export const useChatGroups = (options: ChatGroupsOptions = {}): ChatGroups => {
-  const {
-    immediate = true,
-    lazyStreaming = false,
-    lazyInterrupt = false,
-    apiBaseURL = "",
-  } = options;
-
-  // 1. 基础状态（始终加载）
+// ✅ 始终加载所有Hook
+export const useChatFacade = (options?: { baseURL?: string; sessionId?: string | null }) => {
+  // 所有Hook始终加载
   const chatState = useChatState();
+  const chatCallbacks = useChatCallbacks(chatState);
+  const chatStreaming = useChatStreaming(chatState, chatCallbacks, config);
+  // ...
   
-  // 2. 会话组
-  const {
-    sessionId, setSessionId,
-    sessionTitle, setSessionTitle,
-    sessionVersion, setSessionVersion,
-    titleLocked, setTitleLocked,
-    editingTitle, setEditingTitle,
-    titleInput, setTitleInput,
-    currentSessionIdRef,
-  } = chatState;
-
-  // 3. 消息组
-  const {
-    messages, setMessages,
-    loading, setLoading,
-    isRetrying, setIsRetrying,
-    messagesRef,
-    messagesEndRef,
-    messagesCountRef,
-    replyUserMessageIdRef,
-  } = chatState;
-
-  // 4. 流式组（按需加载）
-  const [streamingLoaded, setStreamingLoaded] = useState(!lazyStreaming);
-  
-  const streamingGroup: StreamingGroup | null = streamingLoaded
-    ? (() => {
-        const callbacks = useChatCallbacks(chatState);
-        const streaming = useChatStreaming(chatState, callbacks, { baseURL: apiBaseURL, sessionId });
-        return streaming;
-      })()
-    : null;
-
-  // 5. UI组
-  const {
-    showExecution, setShowExecution,
-    useStream, setUseStream,
-    isInitialized, setIsInitialized,
-    sessionJumpLoading, setSessionJumpLoading,
-    isMessageListLoading, setIsMessageListLoading,
-    isRenderingMessages, setIsRenderingMessages,
-    retryCount, setRetryCount,
-    userScrolledUpRef,
-    lastScrollTimeRef,
-    isLoadingHistoryRef,
-  } = chatState;
-
-  // 6. 中断控制（按需加载）
-  const [interruptLoaded, setInterruptLoaded] = useState(!lazyInterrupt);
-  
-  const interruptGroup: InterruptGroup | null = interruptLoaded && streamingLoaded
-    ? (() => {
-        const taskControl = useChatTaskControl({
-          setters: {
-            setLoading,
-            setIsPaused: chatState.setIsPaused,
-            setIsReceiving: streamingGroup?.setIsReceiving ?? (() => {}),
-          },
-          states: {
-            isPaused: chatState.isPaused,
-            sessionId: sessionId ?? null,
-            serverTaskId: streamingGroup?.serverTaskId ?? null,
-          },
-          refs: {
-            chatState.hasReceivedInterruptEventRef,
-            chatState.interruptInProgressRef,
-            chatState.waitTimerRef,
-            chatState.isPausedRef,
-          },
-          functions: {
-            disconnect: streamingGroup?.disconnect ?? (() => {}),
-          },
-        });
-        return taskControl;
-      })()
-    : null;
-
-  // 7. 返回统一的5个组
-  return {
-    session: { sessionId, sessionTitle, sessionVersion, ... },
-    message: { messages, loading, isRetrying, ... },
-    streaming: streamingGroup,
-    ui: { showExecution, useStream, isInitialized, ... },
-    interrupt: interruptGroup,
-    shared: {
-      waitTimerRef: chatState.waitTimerRef,
-      executionStepsRef: chatState.executionStepsRef,
-      isPausedRef: chatState.isPausedRef,
-      hasReceivedInterruptEventRef: chatState.hasReceivedInterruptEventRef,
-      interruptInProgressRef: chatState.interruptInProgressRef,
-    },
-    loading: { show, hide },
-    beforeUnload: { shouldSave, saveData },
-    session: { initializeSession, handleNewSession, handleClear },
-    send: { handleSend },
-  };
+  // 通过useMemo返回，避免不必要重渲染
+  return useMemo(() => ({
+    session: { ... },
+    message: { ... },
+    streaming: { ... },
+    ui: { ... },
+    send: { ... },
+    interrupt: { ... },
+  }), [依赖项]);
 };
+
+// ✅ UI级按需渲染（正确做法）
+const chat = useChatFacade();
+
+return (
+  <div>
+    {/* 只有正在接收时才显示 */}
+    {chat.streaming.isReceiving && <LoadingIndicator />}
+    
+    {/* 只有有步骤时才显示 */}
+    {chat.streaming.executionSteps.length > 0 && <StepList />}
+    
+    {/* 只有接收中或暂停时才显示中断按钮 */}
+    {(chat.streaming.isReceiving || chat.state.isPaused) && (
+      <InterruptButton onClick={chat.interrupt.handleInterrupt} />
+    )}
+  </div>
+);
 ```
 
-### 7.6 使用示例
-
-#### 7.6.1 首屏加载（立即加载所有组）
+### 7.4 使用示例
 
 ```typescript
-const chat = useChatGroups({ immediate: true });
-const { session, message, streaming, ui, interrupt } = chat;
+// 一步获取所有状态
+const chat = useChatFacade();
 
-// 使用状态
-console.log(session.sessionId);
-console.log(message.messages);
+// 分组使用
+const { session, message, streaming, ui, send, interrupt, persistence } = chat;
 
-// 使用流式功能
-streaming?.executeSend(userMessage);
+// 发送消息
+await send.handleSend(content);
 
-// 使用中断功能
-interrupt?.handleInterrupt();
+// 中断任务
+await interrupt.handleInterrupt();
+
+// UI按需渲染
+{streaming.isReceiving && <LoadingIndicator />}
+{streaming.executionSteps.length > 0 && <StepList />}
 ```
 
-#### 7.6.2 延迟加载（按需加载流式组）
-
-```typescript
-const chat = useChatGroups({ 
-  immediate: true,
-  lazyStreaming: true,  // 延迟加载
-  lazyInterrupt: true,   // 延迟加载
-});
-const { session, message, streaming, ui, interrupt } = chat;
-
-// streaming默认可能是null，需要动态检测
-const handleSend = async (content: string) => {
-  if (!streaming) {
-    // 动态加载流式组
-    await initializeStreaming();
-  }
-  await streaming.executeSend(userMessage);
-};
-```
-
-### 7.7 技术注意事项
-
-| 事项 | 说明 |
-|------|------|
-| **React Hook规则** | Hooks必须在组件顶层调用，不能在条件语句中调用 |
-| **条件渲染问题** | streamingLoaded/useState不能在if中条件调用 |
-| **性能考虑** | 使用useMemo缓存返回值，避免不必要的重新计算 |
-| **TypeScript** | 保持完整的类型定义，确保类型安全 |
-
-### 7.8 验证结果
+### 7.5 验证结果
 
 | 检查项 | 结果 |
 |--------|------|
-| TypeScript | 0 errors |
-| ESLint | 0 errors |
-| Build | ✅ 24.62s |
-| 功能测试 | 需要实际测试 |
-
-### 7.9 与现有Hook的关系
-
-| 现有Hook | 关系 | 保留 |
-|---------|------|------|
-| useChatState | 被useChatGroups包装 | ✅ 保留 |
-| useChatCallbacks | 被useChatGroups调用 | ✅ 保留 |
-| useChatStreaming | 被useChatGroups调用 | ✅ 保留 |
-| useChatSession | 被useChatGroups调用 | ✅ 保留 |
-| useChatPersistence | 被useChatGroups调用 | ✅ 保留 |
-| useChatSend | 被useChatGroups调用 | ✅ 保留 |
-| useChatTaskControl | 被useChatGroups调用 | ✅ 保留 |
-
-### 7.10 迁移路径
-
-**当前状态**：useChatGroups.ts作为蓝图，未被NewChatContainer.tsx使用
-
-**未来迁移**：
-1. 在新组件中首先使用useChatGroups
-2. 逐步替换NewChatContainer中的Hook调用
-3. 验证功能正常后移除旧Hook
-4. 删除未使用的旧Hook文件
+| TypeScript | ✅ 通过 |
+| ESLint | ✅ 配置警告（可忽略） |
+| Build | ✅ 成功（23.80s） |
 
 ---
 
 ## 八、实施检查清单
 
-### 8.1 创建文件检查
+### 8.1 已创建文件
 
 - [x] `types/chat/groups.ts` - 5组类型定义
-- [x] `hooks/chat/useChatGroups.ts` - 统一Facade Hook
+- [x] `hooks/chat/useChatFacade.ts` - ✅ 统一Facade（正确设计）
 
-### 8.2 验证检查
+### 8.2 废弃文件
+
+- [ ] `hooks/chat/useChatGroups.ts` - 条件调用Hook违反React规则，不使用
+
+### 8.3 验证检查
 
 - [x] TypeScript编译通过
-- [x] ESLint检查通过
 - [x] Build构建成功
 - [ ] 功能测试（待实际测试）
 
-### 8.3 设计检查
+---
 
-- [x] 5组状态设计完整
-- [x] 按需加载接口设计
-- [x] 类型定义完整
-- [x] 使用示例完整
-- [x] 技术注意事项说明
+## 九、下一步行动
+
+### 9.1 推荐做法
+
+1. **使用 useChatFacade.ts** - 正确的统一Facade设计
+2. **在 NewChatContainer.tsx 中替换** - 用 useChatFacade 替换现有的多个Hook调用
+3. **会话操作使用 sessionOps** - 区分session状态和sessionOps操作
+
+### 9.2 架构演进
+
+```
+当前：NewChatContainer.tsx 调用 7 个独立Hook
+        ↓
+目标：用 useChatFacade 替换为 1 个Facade + UI按需渲染
+```
+
+### 9.3 使用方法
+
+```typescript
+// 步骤1：导入
+import { useChatFacade } from "../../hooks/chat/useChatFacade";
+
+// 步骤2：使用Facade
+const chat = useChatFacade();
+
+// 步骤3：解构使用
+const { session, message, streaming, ui, send, interrupt, sessionOps, persistence, shared } = chat;
+
+// 步骤4：UI按需渲染
+return (
+  <div>
+    {streaming.isReceiving && <LoadingIndicator />}
+    {streaming.executionSteps.length > 0 && <StepList />}
+    {(streaming.isReceiving || streaming.isPaused) && (
+      <InterruptButton onClick={interrupt.handleInterrupt} />
+    )}
+  </div>
+);
+```
 
 ---
 
-*设计文档版本: 1.0.0*
-*创建时间: 2026-04-24 09:35:13*
+*设计文档版本: 1.3.0*
+*创建时间: 2026-04-24*
 *编写人: 小强*
-*最后更新: 2026-04-24 09:35:13*
+*最后更新: 2026-04-24 10:47:37*

@@ -1,20 +1,24 @@
 /**
- * useChatGroups Hook - 统一状态分组管理
+ * 【废弃】useChatGroups Hook - 统一状态分组管理
  * 
- * 功能：
+ * ⚠️ 此文件已废弃，不应该在生产中使用！
+ * 
+ * 废弃原因：
+ * 1. 违反React Hooks规则 - 条件语句中调用Hook（第228-254行、275-305行）
+ * 2. 代码级"按需加载Hook"技术上不可行
+ * 3. 应使用 useChatFacade.ts 替代（始终加载 + UI按需渲染）
+ * 
+ * 功能（仅供历史参考）：
  * - 包装现有的7个独立Hook
  * - 提供按需加载的初始化接口
  * - 保持与现有代码的兼容性
- * - 支持渐进式迁移
  * 
- * 设计说明（简化渐进方案）：
- * - 不改变现有Hook结构，只添加统一入口
- * - 通过initialize方法实现按需加载
- * - 保持与useChatState返回相同的接口
+ * @deprecated 使用 useChatFacade.ts 替代
+ * @see useChatFacade.ts
  * 
  * @author 小强
- * @version 1.0.0
- * @since 2026-04-24
+ * @version 1.0.0,
+ * @since 2026-04-24,
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
