@@ -127,6 +127,18 @@ def parse_react_response(output: str) -> Dict[str, Any]:
     except (json.JSONDecodeError, TypeError):
         pass  # 不是JSON格式，继续走关键词匹配流程
     
+    # 【新增 2026-04-24 小沈】JSON预解析失败后，尝试从混合文本中提取JSON块
+    # 解决混合文本+JSON（情况③/⑤）的解析问题：LLM返回"思考文本+JSON"格式时正确提取
+    json_data = _extract_json_block(output)
+    if json_data and isinstance(json_data, dict):
+        if "tool_name" in json_data:
+            logger.info("[parse_react_response] 混合文本中提取到JSON，走JSON处理流程")
+            return _create_action_result(json_data, output)
+        # 如果是finish类型的JSON
+        if json_data.get("tool_name") == "finish":
+            logger.info("[parse_react_response] 混合文本中提取到finish JSON")
+            return _create_action_result(json_data, output)
+    
     # 步骤1.2：四种情况判断逻辑
     logger.info(f"[parse_react_response] 走关键词匹配流程")
     return _determine_parse_type(output)
