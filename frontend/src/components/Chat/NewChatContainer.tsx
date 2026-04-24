@@ -97,8 +97,6 @@ const NewChatContainer: React.FC = () => {
   const SCROLL_THRESHOLD = 150;
 
   // 延迟滚动
-
-  // 延迟滚动
   const scrollToBottomDelayed = useCallback(() => {
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -109,6 +107,16 @@ const NewChatContainer: React.FC = () => {
   useEffect(() => {
     isPausedRef.current = isPaused;
   }, [isPaused, isPausedRef]);
+
+  // 自动滚动到底部 - 修复清理后缺失的自动滚动功能
+  useEffect(() => {
+    scrollToBottomDelayed();
+  }, [messages, currentResponse, executionSteps, scrollToBottomDelayed]);
+
+  // 同步executionSteps到ref - 修复清理后缺失的同步功能
+  useEffect(() => {
+    executionStepsRef.current = executionSteps;
+  }, [executionSteps, executionStepsRef]);  // ✅ 加上executionStepsRef依赖
 
   // 滚动位置监听
   useEffect(() => {
@@ -209,6 +217,7 @@ const NewChatContainer: React.FC = () => {
   }, []);
 
   // 会话状态持久化 - 使用chatSession.initializeSession
+  // 仅当searchParams变化时才重新初始化（URL的sessionId变化）
   useEffect(() => {
     const onLoadingStart = () => {
       setSessionJumpLoading(true);
@@ -250,7 +259,9 @@ const NewChatContainer: React.FC = () => {
       onMessageListLoadingStart,
       onMessageListLoadingEnd,
     });
-  }, [searchParams, showLoading, hideLoading, chatPersistence, chatSession, isLoadingHistoryRef, retryCount, setRetryCount, setIsInitialized, setSessionJumpLoading, setIsMessageListLoading, setIsRenderingMessages]);
+    // ✅ 仅保留searchParams，避免重复执行initializeSession（其他函数通过useCallback保持稳定）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // 组件卸载时清理loading
   useEffect(() => {
