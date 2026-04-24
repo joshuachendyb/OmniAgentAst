@@ -611,8 +611,17 @@ class ResponseFormatStrategy(LLMStrategy):
             
             # 处理响应
             if hasattr(response, 'error') and response.error:
-                logger.error(f"[Agent] response_format error: {response.error}")
-                raise Exception(response.error)
+                error_msg = str(response.error)
+                logger.error(f"[Agent] response_format error: {error_msg}")
+                # 【修复 2026-04-24 小沈】解析失败返回parse_error，符合统一架构
+                return json.dumps({
+                    "type": "parse_error",
+                    "error": error_msg,
+                    "content": f"[错误] {error_msg}",
+                    "tool_name": None,
+                    "tool_params": None,
+                    "reasoning": None
+                }, ensure_ascii=False)
             
             if hasattr(response, 'content'):
                 content = response.content
@@ -643,7 +652,15 @@ class ResponseFormatStrategy(LLMStrategy):
                 
             except json.JSONDecodeError as e:
                 logger.error(f"[Agent] Failed to parse response_format JSON: {e}, content={content}")
-                raise Exception(f"Invalid JSON from LLM: {content}")
+                # 【修复 2026-04-24 小沈】解析失败返回parse_error，符合统一架构
+                return json.dumps({
+                    "type": "parse_error",
+                    "error": f"Invalid JSON from LLM: {content[:200]}",
+                    "content": content[:200],
+                    "tool_name": None,
+                    "tool_params": None,
+                    "reasoning": None
+                }, ensure_ascii=False)
             
             
         except Exception as e:

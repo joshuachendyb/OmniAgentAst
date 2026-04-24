@@ -16,6 +16,8 @@ import re
 import json
 from typing import Dict, Any, Optional, Tuple
 
+from app.utils.logger import logger
+
 
 # =============================================================================
 # 步骤1.1：定义REACT_KEYWORDS中英文关键词映射表
@@ -131,13 +133,64 @@ def parse_react_response(output: str) -> Dict[str, Any]:
     # 解决混合文本+JSON（情况③/⑤）的解析问题：LLM返回"思考文本+JSON"格式时正确提取
     json_data = _extract_json_block(output)
     if json_data and isinstance(json_data, dict):
-        if "tool_name" in json_data:
+        # 提取前面的文本（JSON之前的部分）作为content
+        # 找到第一个'{'的位置，前面的文本就是content
+        json_start = output.find('{')
+        if json_start != -1:
+            prefix_text = output[:json_start].strip()
+        else:
+            prefix_text = ""
+        
+        # 获取tool_name并检查是否为finish
+        tool_name = json_data.get("tool_name")
+        tool_params = json_data.get("tool_params", {})
+        
+        # 确保tool_params是字典
+        if not isinstance(tool_params, dict):
+            tool_params = {}
+        
+        # 如果是finish类型
+        if tool_name == "finish":
+            logger.info("[parse_react_response] 混合文本中提取到finish JSON")
+            result_text = tool_params.get("result", "") if tool_params else ""
+            return {
+                "type": "answer",
+                "thought": json_data.get("thought", ""),
+                "content": result_text or prefix_text,
+                "reasoning": json_data.get("reasoning", ""),
+                "tool_name": None,
+                "tool_params": None,
+                "response": result_text or prefix_text,
+                "error": None
+            }
+        
+        # 其他情况（有tool_name且不是finish）
+        if tool_name:
             logger.info("[parse_react_response] 混合文本中提取到JSON，走JSON处理流程")
-            return _create_action_result(json_data, output)
+            return {
+                "type": "action",
+                "thought": json_data.get("thought", ""),
+                "content": prefix_text,  # 使用前面文本
+                "reasoning": json_data.get("reasoning", ""),
+                "tool_name": tool_name,
+                "tool_params": tool_params,
+                "response": None,
+                "error": None
+            }
         # 如果是finish类型的JSON
         if json_data.get("tool_name") == "finish":
+            result_text = tool_params.get("result", "") if tool_params else "" if isinstance(tool_params, dict) else ""
             logger.info("[parse_react_response] 混合文本中提取到finish JSON")
-            return _create_action_result(json_data, output)
+            return {
+                "type": "answer",
+                "thought": json_data.get("thought", ""),
+                "content": result_text or prefix_text,
+                "reasoning": json_data.get("reasoning", ""),
+                "tool_name": None,
+                "tool_params": None,
+                "response": result_text or prefix_text,
+                "error": None
+            }
     
     # 步骤1.2：四种情况判断逻辑
     logger.info(f"[parse_react_response] 走关键词匹配流程")
@@ -234,19 +287,33 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
         from app.utils.logger import logger
         logger.debug(f"工具名兜底失败: {e}")
     
-    # 所有解析方法都失败，返回parse_error（指令要求：解析失败回退返回parse_error）
-    # 【修复 2026-04-24 小沈】移除implicit误判，所有解析失败统一返回parse_error
-    logger.info(f"[parse_react_response] 所有解析层都失败，返回parse_error")
-    return {
-        "type": "parse_error",
-        "error": "无法解析LLM响应，所有解析层（JSON/关键词/工具名）都失败",
-        "thought": output.strip()[:200],  # 截取前200字符避免过长
-        "content": output.strip()[:200],
-        "reasoning": output.strip()[:200],
-        "tool_name": None,
-        "tool_params": None,
-        "response": output.strip()
-    }
+    # 所有解析方法都失败，根据输出长度判断返回implicit或parse_error
+    # 【恢复 2026-04-24 小沈】纯文本无关键词时，长文本返回implicit，短文本返回parse_error
+    stripped = output.strip()
+    if len(stripped) >= 5:
+        # 纯文本情况，返回implicit类型
+        return {
+            "type": "implicit",
+            "thought": stripped,
+            "content": stripped,             # 兼容性字段
+            "reasoning": stripped,           # 兼容性字段
+            "tool_name": None,
+            "tool_params": None,
+            "response": stripped,
+            "error": None
+        }
+    else:
+        # 很短的输出，返回parse_error
+        return {
+            "type": "parse_error",
+            "error": "无法解析LLM响应，所有解析层（JSON/关键词/工具名）都失败",
+            "thought": stripped[:200],
+            "content": stripped[:200],
+            "reasoning": stripped[:200],
+            "tool_name": None,
+            "tool_params": None,
+            "response": stripped
+        }
 
 
 # =============================================================================
@@ -403,7 +470,7 @@ def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
     return {
         "type": "action",
         "thought": parsed.get("thought", ""),
-        "content": "",
+        "content": parsed.get("content", parsed.get("thought", original_output.strip())),
         "reasoning": parsed.get("reasoning", ""),
         "tool_name": tool_name,
         "tool_params": tool_params,
