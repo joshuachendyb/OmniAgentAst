@@ -487,9 +487,19 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       setModelList(modelData.models);
 
       // 设置当前显示名称
-      const currentModelOption = modelData.models.find((m) => m.current_model);
+      const currentModelOption = modelData.models.find((m: ModelOption) => m.current_model);
       if (currentModelOption) {
         setCurrentDisplayName(currentModelOption.display_name);
+      } else {
+        // 如果找不到current_model，使用当前Provider的显示名称作为后备
+        const currentProviderInfo = providerList.find((p: ProviderInfo) => p.name === data.current_provider);
+        if (currentProviderInfo && currentProviderInfo.display_name) {
+          setCurrentDisplayName(currentProviderInfo.display_name + " (默认)");
+        } else if (data.current_provider) {
+          setCurrentDisplayName(data.current_provider);
+        } else {
+          setCurrentDisplayName("未设置");
+        }
       }
 
       // 设置当前选中的Provider为当前使用的Provider或第一个Provider
@@ -563,6 +573,8 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       showSuccess("Provider配置已更新");
       setEditModalVisible(false);
+      form.resetFields(); // ✅ 重置表单
+      setEditingProvider(null); // ✅ 清空编辑状态
     } catch (error) {
       handleError("更新失败");
     }
@@ -709,7 +721,8 @@ return { success: true, model: modelName };
 
       showSuccess("模型已添加");
       setAddModelModalVisible(false);
-      modelForm.resetFields();
+      modelForm.resetFields(); // ✅ 重置表单
+      setSelectedProviderForModel(""); // ✅ 清空选中的Provider
     } catch (error: unknown) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "添加失败");
@@ -1027,7 +1040,6 @@ return { success: true, model: modelName };
 
         {/* 右侧Provider详细信息 */}
         <Col xs={24} md={11}>
-          <div style={{  }}>
           {selectedProvider ? (
             <div>
               <Typography.Title level={5} style={{ marginBottom: 24 }}>
@@ -1075,7 +1087,7 @@ return { success: true, model: modelName };
 
               <Card size="small">
                 {/* Provider基本信息 */}
-                <Row gutter={[16, 8]} style={{ marginBottom: 16,  }}>
+                <Row gutter={[16, 8]} style={{ marginBottom: 16 }}>
                   <Col span={24}>
                     <Text type="secondary">API地址：</Text>
                     <Text code>{selectedProvider.api_base}</Text>
@@ -1085,9 +1097,9 @@ return { success: true, model: modelName };
                       <Text type="secondary">API密钥：</Text>
                       <Text>
                         {selectedProvider.api_key
-                          ? showApiKey[selectedProvider.name]
-                            ? selectedProvider.api_key
-                            : "******" + selectedProvider.api_key.slice(-4)
+                          ? (showApiKey[selectedProvider.name]
+                              ? selectedProvider.api_key
+                              : `******${selectedProvider.api_key.slice(-4)}`)
                           : "未设置"}
                       </Text>
                       {selectedProvider.api_key && (
@@ -1153,7 +1165,11 @@ return { success: true, model: modelName };
 
                   {/* 模型卡片列表 */}
                   <div
-                    style={{ display: "flex", flexDirection: "column", gap: 8 }}
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 8,
+                    }}
                   >
                     {selectedProvider.models.map((model) => {
                       const isActive = model === selectedProvider.model;
@@ -1228,9 +1244,9 @@ return { success: true, model: modelName };
                                 <Button
                                   type="text"
                                   size="small"
-                                  danger
                                   icon={<DeleteOutlined />}
-                                  onClick={(e) => e.stopPropagation()}
+                                  danger
+                                  onClick={(e) => e?.stopPropagation()}
                                 >
                                   删除
                                 </Button>
@@ -1241,35 +1257,17 @@ return { success: true, model: modelName };
                       );
                     })}
                   </div>
-
-                  {/* 批量删除进度指示器 */}
-                  {deleteProgress.total > 0 && (
-                    <div style={{ marginTop: 8 }}>
-                      <Progress
-                        percent={Math.round(
-                          (deleteProgress.current / deleteProgress.total) * 100
-                        )}
-                        status="active"
-                        format={() =>
-                          `${deleteProgress.current}/${deleteProgress.total}`
-                        }
-                      />
-                    </div>
-                  )}
                 </div>
-
               </Card>
             </div>
           ) : (
-            <Alert
-              message="请选择一个Provider"
-              description="在左侧列表中点击选择一个Provider以查看详细配置"
-              type="info"
-              showIcon
-              style={{ marginBottom: 16,  }}
-            />
+            <div style={{ padding: 40, textAlign: 'center' }}>
+              <Typography.Title level={5} type="secondary">
+                <ApiOutlined /> 暂无选中的Provider
+              </Typography.Title>
+              <p>请从左侧列表选择Provider，或添加新的Provider</p>
+            </div>
           )}
-          </div>
         </Col>
       </Row>
 

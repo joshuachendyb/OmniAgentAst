@@ -1,3 +1,31 @@
+v0.10.8
+
+更新时间: 2026-04-25 04:43:27
+
+更新内容：
+
+## 1 Settings页面Bug修复 - 小强-2026-04-25
+
+### 1.1 修复内容
+
+| 修复项 | 说明 | 行号 |
+|--------|------|------|
+| currentDisplayName设置逻辑增强 | 找不到current_model时使用Provider显示名称后备 | 489-503 |
+| selectedProvider为null时空状态UI | 显示"暂无选中的Provider"提示 | 1263-1269 |
+| handleSaveProvider成功后重置表单 | form.resetFields() + setEditingProvider(null) | 574-577 |
+| handleUpdateModel成功后重置表单 | modelEditForm.resetFields() + setEditingModel(null) | 617-619 |
+| handleAddModel成功后重置表单 | modelForm.resetFields() + setSelectedProviderForModel("") | 722-725 |
+| 修复JSX重复内容导致的编译错误 | 删除Provider详情区域重复渲染内容 | 1020-1271 |
+
+### 1.2 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| ESLint | ✅ 0 errors, 0 warnings |
+| Build | ✅ 26.37s |
+
+---
+
 v0.10.7
 
 更新时间: 2026-04-24 20:41:32
