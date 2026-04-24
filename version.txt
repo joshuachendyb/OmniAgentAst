@@ -1,3 +1,54 @@
+v0.10.2
+
+更新时间: 2026-04-24 13:40:00
+
+更新内容：
+
+## 1 NewChatContainer.tsx全面优化（P0-P3）- 小沈/小强-2026-04-24
+
+### 1.1 P0优化
+
+| 问题 | 方案 | Commit |
+|------|------|--------|
+| loading双重调用 | 使用useLoadingMessage Hook统一管理loading状态 | 72d1547b |
+| | loading双重调用优化 | 6ec9e210 |
+
+### 1.2 P1优化
+
+| 问题 | 方案 | Commit |
+|------|------|--------|
+| scrollToBottomIfNeeded依赖 | 添加明确依赖refs/scrollToBottomRef | 14ec7b52 |
+
+### 1.3 P2优化
+
+| 问题 | 方案 | Commit |
+|------|------|--------|
+| 状态验证轮询 | 带前瞻性策略的验证轮询 | a5c7ef62 |
+| beforeunload重复 | 使用useBeforeUnload Hook | 8eb8c5cd |
+
+### 1.4 P3优化
+
+| 问题 | 方案 | Commit |
+|------|------|--------|
+| useChatTaskControl参数过多(10个) | 参数分组（setters/states/refs/functions） | ffdf8256 |
+
+### 1.5 新增Hook文件
+
+| 文件 | 说明 |
+|------|------|
+| hooks/useLoadingMessage.ts | loading状态管理Hook |
+| hooks/useBeforeUnload.ts | beforeunload管理Hook |
+
+### 1.6 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| ESLint错误 | 0 |
+| ESLint警告 | 21（非本次引入） |
+| 构建 | ✅ 46.05s |
+
+---
+
 v0.10.1
 
 更新时间: 2026-04-24 07:30:12
