@@ -112,7 +112,7 @@ const ChatFacadeTest: React.FC = () => {
       executionSteps={streaming.executionSteps}
       waitTime={streaming.waitTime}
     />
-  ), [streaming.isReceiving, streaming.isPaused, streaming.executionSteps, streaming.waitTime]);
+  ), [streaming]);
 
   // 发送消息
   const handleSend = useCallback(async (content: string) => {
@@ -121,7 +121,7 @@ const ChatFacadeTest: React.FC = () => {
     } catch (err) {
       console.error("发送失败:", err);
     }
-  }, [send.handleSend]);
+  }, [send]);
 
   // 中断任务
   const handleInterrupt = useCallback(async () => {
@@ -130,7 +130,7 @@ const ChatFacadeTest: React.FC = () => {
     } catch (err) {
       console.error("操作失败:", err);
     }
-  }, [interrupt.handleTogglePause]);
+  }, [interrupt]);
 
   // 会话信息
   const sessionInfo = useMemo(() => {

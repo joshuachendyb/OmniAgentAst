@@ -1,0 +1,43 @@
+{
+  "id": "2682e69f-84c0-4d8f-b890-a3706191661a",
+  "type": "session",
+  "name": null,
+  "status": "completed",
+  "children": [
+    {
+      "id": "op-78cdc71c27d64b158ce52df4bb138f93",
+      "type": "statistics",
+      "name": "",
+      "status": "executing",
+      "source": "E:\\"
+    },
+    {
+      "id": "op-142fdb44703043a787bf8d7ebd95430e",
+      "type": "statistics",
+      "name": "",
+      "status": "executing",
+      "source": "E:\\"
+    },
+    {
+      "id": "op-c3a4f23a562f42cfb9daa5f272d88920",
+      "type": "statistics",
+      "name": "",
+      "status": "executing",
+      "source": "E:\\"
+    },
+    {
+      "id": "op-ada626a1b10748f2a6583210954c8d3d",
+      "type": "statistics",
+      "name": "",
+      "status": "executing",
+      "source": "E:\\"
+    },
+    {
+      "id": "op-ff35fbf58e3b414bb395374b516a2f2c",
+      "type": "statistics",
+      "name": "",
+      "status": "success",
+      "source": "E:\\"
+    }
+  ]
+}
