@@ -32,24 +32,41 @@ import { handleError } from "../../utils/errorHandler";
 
 /**
  * useChatTaskControl 配置参数
+ * 
+ * 【P3优化】方案1：参数分组
+ * - 将10个扁平参数改为4个分组参数
+ * - setters: 状态设置函数
+ * - states: 状态值
+ * - refs: Ref引用
+ * - functions: 函数
  */
 export interface UseChatTaskControlOptions {
-  // chatState 提供
-  setLoading: (v: boolean) => void;
-  setIsPaused: (v: boolean) => void;
-  interruptInProgressRef: React.MutableRefObject<boolean>;
-  hasReceivedInterruptEventRef: React.MutableRefObject<boolean>;
-  waitTimerRef: React.MutableRefObject<number | null>;
-  isPaused: boolean;
-  isPausedRef: React.MutableRefObject<boolean>;
+  // 状态设置函数
+  setters: {
+    setLoading: (v: boolean) => void;
+    setIsPaused: (v: boolean) => void;
+    setIsReceiving: (v: boolean) => void;
+  };
   
-  // chatStreaming 提供
-  serverTaskId: string | null;
-  setIsReceiving: (v: boolean) => void;
-  disconnect: (stopServer?: boolean, force?: boolean, callback?: () => void) => void;
+  // 状态值
+  states: {
+    isPaused: boolean;
+    sessionId: string | null;
+    serverTaskId: string | null;
+  };
   
-  // session
-  sessionId: string | null;
+  // Refs
+  refs: {
+    interruptInProgressRef: React.MutableRefObject<boolean>;
+    hasReceivedInterruptEventRef: React.MutableRefObject<boolean>;
+    waitTimerRef: React.MutableRefObject<number | null>;
+    isPausedRef: React.MutableRefObject<boolean>;
+  };
+  
+  // 函数
+  functions: {
+    disconnect: (stopServer?: boolean, force?: boolean, callback?: () => void) => void;
+  };
 }
 
 /**
@@ -78,19 +95,17 @@ export interface UseChatTaskControlReturn {
 export const useChatTaskControl = (
   options: UseChatTaskControlOptions
 ): UseChatTaskControlReturn => {
-  const {
-    setLoading,
-    setIsPaused,
+  // 【P3优化】方案1参数分组解构
+  const { setters, states, refs, functions } = options;
+  const { setLoading, setIsPaused, setIsReceiving } = setters;
+  const { isPaused, sessionId, serverTaskId } = states;
+  const { 
     interruptInProgressRef,
     hasReceivedInterruptEventRef,
     waitTimerRef,
-    isPaused,
     isPausedRef,
-    serverTaskId,
-    setIsReceiving,
-    disconnect,
-    sessionId,
-  } = options;
+  } = refs;
+  const { disconnect } = functions;
 
   // =========================================================================
   // 内部辅助函数

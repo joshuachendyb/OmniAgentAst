@@ -165,21 +165,31 @@ const NewChatContainer: React.FC = () => {
   const chatPersistence = useChatPersistence(chatState, chatStreaming);
 
   // 【小强 2026-04-22】Phase 7.2: 使用useChatTaskControl管理任务控制
+  // 【小强 2026-04-23】P3优化：使用方案1参数分组
   const chatTaskControl = useChatTaskControl({
-    // chatState
-    setLoading,
-    setIsPaused,
-    interruptInProgressRef,
-    hasReceivedInterruptEventRef,
-    waitTimerRef,
-    isPaused,
-    isPausedRef,
-    // chatStreaming
-    serverTaskId: chatStreaming.serverTaskId,
-    setIsReceiving: chatStreaming.setIsReceiving,
-    disconnect: chatStreaming.disconnect,
-    // session
-    sessionId,
+    // 状态设置函数分组
+    setters: {
+      setLoading,
+      setIsPaused,
+      setIsReceiving: chatStreaming.setIsReceiving,
+    },
+    // 状态值分组
+    states: {
+      isPaused,
+      sessionId,
+      serverTaskId: chatStreaming.serverTaskId,
+    },
+    // Refs分组
+    refs: {
+      interruptInProgressRef,
+      hasReceivedInterruptEventRef,
+      waitTimerRef,
+      isPausedRef,
+    },
+    // 函数分组
+    functions: {
+      disconnect: chatStreaming.disconnect,
+    },
   });
   const { handleInterrupt, handleTogglePause } = chatTaskControl;
    
