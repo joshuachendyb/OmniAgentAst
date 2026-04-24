@@ -222,32 +222,18 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
         from app.utils.logger import logger
         logger.debug(f"工具名兜底失败: {e}")
     
-    # 所有方法都失败，返回implicit
-    # 【深度分析】如果文本很长且没有关键词，可能是隐式回答；如果很短或乱码，可能是解析失败
-    if len(output.strip()) < 5:
-        thought = "Response too short to be meaningful"
-        return {
-            "type": "parse_error",
-            "error": "LLM response is too short or malformed",
-            "thought": thought,
-            "content": thought,
-            "reasoning": thought,
-            "tool_name": None,
-            "tool_params": None,
-            "response": output.strip(),
-            "error": None
-        }
-
-    thought = "(Implicit) I can answer without any more tools!"
+    # 所有解析方法都失败，返回parse_error（指令要求：解析失败回退返回parse_error）
+    # 【修复 2026-04-24 小沈】移除implicit误判，所有解析失败统一返回parse_error
+    logger.info(f"[parse_react_response] 所有解析层都失败，返回parse_error")
     return {
-        "type": "implicit",
-        "thought": thought,
-        "content": thought,             # 兼容性字段
-        "reasoning": thought,           # 兼容性字段
+        "type": "parse_error",
+        "error": "无法解析LLM响应，所有解析层（JSON/关键词/工具名）都失败",
+        "thought": output.strip()[:200],  # 截取前200字符避免过长
+        "content": output.strip()[:200],
+        "reasoning": output.strip()[:200],
         "tool_name": None,
         "tool_params": None,
-        "response": output.strip(),
-        "error": None
+        "response": output.strip()
     }
 
 
