@@ -1,3 +1,52 @@
+v0.10.7
+
+更新时间: 2026-04-24 20:41:32
+
+更新内容：
+
+## 1 NewChatContainer.tsx Bug修复 - 小强-2026-04-24 20:41:32
+
+### 1.1 问题描述
+
+| 问题 | 现象 |
+|------|------|
+| Bug1: "正在加载会话"提示框反复闪动 | 刷新页面后提示框闪动很久 |
+| Bug2: 自动滚动功能缺失 | 页面不自动滚动到底部 |
+| Bug3: executionSteps同步缺失 | 消息状态异常 |
+| Bug4: 输入框失效 | 无法输入、发送、删除 |
+
+### 1.2 根因分析
+
+| 根因 | 说明 |
+|------|------|
+| 误删自动滚动useEffect | 清理时删除了scrollToBottomIfNeeded() |
+| 误删executionSteps同步 | 清理时删除了executionStepsRef同步 |
+| useEffect依赖过多 | initializeSession依赖数组有11项，引用类型不稳定导致重复执行 |
+
+### 1.3 修复内容
+
+| 修复项 | 说明 | 行号 |
+|--------|------|------|
+| 补回自动滚动useEffect | messages/currentResponse/executionSteps变化时自动滚到底部 | 113-116 |
+| 补回executionSteps同步useEffect | 同步到ref，用于beforeunload保存 | 118-121 |
+| 精简useEffect依赖数组 | 只保留[searchParams]，避免重复初始化 | 262 |
+
+### 1.4 Commit汇总
+
+| Commit | 说明 | 时间 |
+|--------|------|------|
+| 96e35dff | fix: 修复NewChatContainer误删useEffect导致bug | 20:41:32 |
+
+### 1.5 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| ESLint | ✅ 0 errors, 0 warnings |
+| Build | ✅ 24.59s |
+| 功能 | ✅ 系统正常运行 |
+
+---
+
 v0.10.6
 
 更新时间: 2026-04-24 19:08:43
