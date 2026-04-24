@@ -62,7 +62,6 @@ const NewChatContainer: React.FC = () => {
   const chatFacade = useChatFacade({ baseURL: API_BASE_URL, sessionId: searchParams.get('sessionId') });
   const {
     chatState,
-    chatCallbacks,
     chatStreaming,
     chatSession,
     chatPersistence,
@@ -71,9 +70,9 @@ const NewChatContainer: React.FC = () => {
   } = chatFacade;
 
   // 解构chatState（和原来一致）
-  const { 
+  const {
     // 独立状态
-    showExecution, setShowExecution, 
+    showExecution, setShowExecution,
     useStream, setUseStream,
     isInitialized, setIsInitialized,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -89,13 +88,13 @@ const NewChatContainer: React.FC = () => {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isRenderingMessages, setIsRenderingMessages,
     // 核心状态
-    messages, setMessages,
-    loading, setLoading,
-    waitTime, setWaitTime,
+    messages,
+    loading,
+    waitTime,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     isRetrying, setIsRetrying,
     isPaused, setIsPaused,
-    sessionId, setSessionId,
+    sessionId,
     sessionTitle, setSessionTitle,
     sessionVersion, setSessionVersion,
     titleLocked, setTitleLocked,
@@ -108,7 +107,6 @@ const NewChatContainer: React.FC = () => {
     waitTimerRef,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     messagesEndRef,
-    currentSessionIdRef,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     messagesCountRef,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -143,7 +141,6 @@ const NewChatContainer: React.FC = () => {
     isReceiving,
     executionSteps,
     currentResponse,
-    executeSend,
   } = chatStreaming;
 
   // 解构chatTaskControl
@@ -152,8 +149,7 @@ const NewChatContainer: React.FC = () => {
   // 解构chatSend
   const { handleSend } = chatSend;
 
-  // 解构chatPersistence
-  const { saveMessagesToStorage } = chatPersistence;
+  // 解构chatPersistence - 暂无需要解构的内容
 
   // 【小沈 2026-04-24】P0-3优化：使用useLoadingMessage Hook管理loading
   const { show: showLoading, hide: hideLoading } = useLoadingMessage({ duration: 0 });
@@ -304,7 +300,7 @@ const NewChatContainer: React.FC = () => {
         console.error("保存会话状态失败:", e);
       }
     }
-  }, [isReceiving, sessionId, sessionTitle, isPaused]);
+  }, [isReceiving, sessionId, sessionTitle, isPaused, executionStepsRef, messagesRef]);
 
   // 【小沈 2026-04-24】P2优化：使用useBeforeUnload Hook统一管理
   useBeforeUnload({
@@ -588,13 +584,9 @@ title={
         showExecution={showExecution}
         sessionId={sessionId}
         sessionTitle={sessionTitle}
-        isReceiving={isReceiving}
         useStream={useStream}
         isMessageListLoading={isMessageListLoading}
         messagesEndRef={messagesEndRef}
-        userScrolledUpRef={userScrolledUpRef}
-        scrollToBottomIfNeeded={scrollToBottomIfNeeded}
-        scrollToBottomDelayed={scrollToBottomDelayed}
       />
 
       {/* 输入区域 - 【小强修复 2026-03-31】使用独立ChatInput组件隔离inputValue状态 */}

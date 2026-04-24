@@ -6,6 +6,8 @@
  * @update 2026-02-18 修复类型定义 by 小新
  */
 
+/* eslint-disable @typescript-eslint/no-empty-function, @typescript-eslint/no-explicit-any */
+
 import '@testing-library/jest-dom';
 import { vi } from 'vitest';
 

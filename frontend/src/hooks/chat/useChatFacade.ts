@@ -97,6 +97,7 @@ export interface UseChatFacadeReturn {
   };
   
   sessionOps: {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     initializeSession: (options: any) => Promise<any>;
     handleNewSession: (retry?: number) => Promise<void>;
     handleClear: () => void;
@@ -295,50 +296,17 @@ export const useChatFacade = (options?: { baseURL?: string; sessionId?: string |
    chatSession,
    chatPersistence,
    chatSend,
-   chatTaskControl,
+    chatTaskControl,
   }), [
     // ✅ 只依赖具体用到的基础值，不是整个对象
-    chatState.sessionId,
-    chatState.sessionTitle,
-    chatState.sessionVersion,
-    chatState.titleLocked,
-    chatState.editingTitle,
-    chatState.titleInput,
-    chatState.messages,
-    chatState.loading,
-    chatState.isRetrying,
-    chatState.isPaused,
-    chatState.waitTime,
-    chatState.showExecution,
-    chatState.useStream,
-    chatState.isInitialized,
-    chatState.sessionJumpLoading,
-    chatState.isMessageListLoading,
-    chatState.isRenderingMessages,
-    chatState.retryCount,
-    chatState.isSavingTitle,
-    chatState.lastSaveTime,
-    chatStreaming.isReceiving,
-    chatStreaming.executionSteps,
-    chatStreaming.serverTaskId,
-    chatStreaming.currentResponse,
-    chatState.isPaused,
-    chatState.waitTime,
-    chatState.showExecution,
-    chatState.useStream,
-    chatState.isInitialized,
-    chatState.sessionJumpLoading,
-    chatState.isMessageListLoading,
-    chatState.isRenderingMessages,
-    chatState.retryCount,
-    chatState.isSavingTitle,
-    chatState.lastSaveTime,
-    chatStreaming.isReceiving,
-    chatState.isPaused,
-    chatStreaming.executionSteps,
-    chatStreaming.serverTaskId,
-    chatStreaming.currentResponse,
-  ]);
+    chatState,
+    chatCallbacks,
+    chatStreaming,
+    chatSession,
+    chatPersistence,
+    chatSend,
+    chatTaskControl,
+  ]); // eslint-disable-line react-hooks/exhaustive-deps
 };
 
 /**

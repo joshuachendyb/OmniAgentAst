@@ -23,7 +23,6 @@ interface MessageAreaProps {
   showExecution: boolean;
   sessionId: string | null;
   sessionTitle: string;
-  isReceiving: boolean;
   useStream: boolean;
   
   // 骨架屏状态
@@ -31,11 +30,6 @@ interface MessageAreaProps {
   
   // 滚动控制 refs
   messagesEndRef: React.RefObject<HTMLDivElement>;
-  userScrolledUpRef: React.MutableRefObject<boolean>;
-  
-  // 滚动控制函数
-  scrollToBottomIfNeeded: () => void;
-  scrollToBottomDelayed: () => void;
 }
 
 /**
@@ -46,13 +40,9 @@ const MessageArea: React.FC<MessageAreaProps> = ({
   showExecution,
   sessionId,
   sessionTitle,
-  isReceiving,
   useStream,
   isMessageListLoading,
   messagesEndRef,
-  userScrolledUpRef,
-  scrollToBottomIfNeeded,
-  scrollToBottomDelayed,
 }) => {
   return (
     <div

@@ -28,13 +28,13 @@ interface StepRowProps {
 
 const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0, expandedSteps, toggleExpand }) => {
   const [_isLoadingMore, _setIsLoadingMore] = useState(false);
-  const [_showAllData, setShowAllData] = useState(false);
+  const [_showAllData, _setShowAllData] = useState(false);
 
   const _isExpanded = expandedSteps.get(stepIndex) ?? true;
   const effectiveType = step.type === 'incident' ? (step as ExecutionStep).incident_value || 'incident' : step.type;
   const label = STEP_LABEL_MAP[effectiveType] || STEP_LABEL_MAP[step.type] || "步骤";
   const icon = STEP_ICON_MAP[effectiveType] || STEP_ICON_MAP[step.type] || "";
-  const executionResult = step.execution_result;
+  const _executionResult = step.execution_result;
 
   const badgeStyle = useMemo(() => getStepBadgeStyle(effectiveType as StepType), [effectiveType]);
   const labelStyle = useMemo(() => getStepLabelStyle(effectiveType as StepType), [effectiveType]);
@@ -57,27 +57,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
     e.currentTarget.style.boxShadow = "none";
   }, []);
 
-  const handleLoadMore = useCallback(() => {
-    setShowAllData(true);
-  }, []);
-
-  const getPageData = () => {
-    const rawData = executionResult as Record<string, unknown>;
-    const allData = (rawData?.matches || rawData?.entries || rawData?.results || []) as unknown[];
-    const FRONTEND_PAGE_SIZE = 100;
-    
-    if (_showAllData) {
-      return { displayData: allData, hasMore: false };
-    }
-    
-    if (allData.length > FRONTEND_PAGE_SIZE) {
-      return { displayData: allData.slice(0, FRONTEND_PAGE_SIZE), hasMore: true };
-    }
-    
-    return { displayData: allData, hasMore: false };
-  };
-
-  const { hasMore } = getPageData();
+  const [hasMore, setHasMore] = useState(false);
 
   return (
     <div style={{ 
@@ -105,13 +85,12 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
         expandedSteps={expandedSteps}
         toggleExpand={toggleExpand}
         contentStyle={contentStyle}
-        handleLoadMore={handleLoadMore}
       />
       
       <StepFooter
         step={step}
         hasMore={hasMore}
-        onLoadMore={handleLoadMore}
+        onLoadMore={() => setHasMore(false)}
       />
     </div>
   );

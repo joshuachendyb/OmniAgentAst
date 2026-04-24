@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 export interface BeforeUnloadOptions {
   shouldSave: boolean;

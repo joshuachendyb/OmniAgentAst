@@ -6,7 +6,7 @@
  * @since 2026-04-21
  */
 
-import React, { useCallback, useState } from "react";
+import React, { useState } from "react";
 import type { ExecutionStep } from "../../../utils/sse";
 import ErrorDetail from "../ErrorDetail";
 import ToolResultRenderer from "../ToolResultRenderer/index";
@@ -27,7 +27,6 @@ interface StepContentProps {
   expandedSteps: Map<number, boolean>;
   toggleExpand: (index: number) => void;
   contentStyle: React.CSSProperties;
-  handleLoadMore: () => void;
 }
 
 /**
@@ -75,24 +74,7 @@ const renderToolInfo = (toolName: string | undefined, toolParams: Record<string,
   );
 };
 
-/**
- * 获取分页数据
- */
-const getPageData = (executionResult: unknown, showAllData: boolean) => {
-  const rawData = executionResult as Record<string, unknown>;
-  const allData = (rawData?.matches || rawData?.entries || rawData?.results || []) as unknown[];
-  const FRONTEND_PAGE_SIZE = 100;
-  
-  if (showAllData) {
-    return { displayData: allData, hasMore: false };
-  }
-  
-  if (allData.length > FRONTEND_PAGE_SIZE) {
-    return { displayData: allData.slice(0, FRONTEND_PAGE_SIZE), hasMore: true };
-  }
-  
-  return { displayData: allData, hasMore: false };
-};
+
 
 /**
  * StepContent组件 - 根据step.type渲染不同内容
@@ -103,18 +85,11 @@ const StepContent: React.FC<StepContentProps> = ({
   expandedSteps,
   toggleExpand,
   contentStyle,
-  handleLoadMore,
 }) => {
   const [_showAllData, _setShowAllData] = useState(false);
 
   const isExpanded = expandedSteps.get(stepIndex) ?? true;
-  const executionResult = step.execution_result;
-
-  const handleInternalLoadMore = useCallback(() => {
-    _setShowAllData(true);
-    handleLoadMore();
-  }, [handleLoadMore]);
-
+  
   return (
     <div style={{ ...contentStyle, marginTop: 4, marginLeft: 0 }}>
       {step.type === "action_tool" && (

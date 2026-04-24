@@ -102,7 +102,7 @@ const StreamingStatus: React.FC<{
 // 测试组件主体
 const ChatFacadeTest: React.FC = () => {
   const chat = useChatFacade();
-  const { session, message: msgState, streaming, ui, send, interrupt } = chat;
+  const { session, message: msgState, streaming, send, interrupt } = chat;
 
   // UI按需渲染
   const renderStreamingUI = useMemo(() => (
