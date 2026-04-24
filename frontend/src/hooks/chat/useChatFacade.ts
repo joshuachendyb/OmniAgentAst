@@ -110,14 +110,23 @@ export interface UseChatFacadeReturn {
   };
   
   // ===== 共享Refs =====
-  shared: {
-    waitTimerRef: React.MutableRefObject<number | null>;
-    executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
-    isPausedRef: React.MutableRefObject<boolean>;
-    hasReceivedInterruptEventRef: React.MutableRefObject<boolean>;
-    interruptInProgressRef: React.MutableRefObject<boolean>;
-  };
-}
+   shared: {
+     waitTimerRef: React.MutableRefObject<number | null>;
+     executionStepsRef: React.MutableRefObject<ExecutionStep[]>;
+     isPausedRef: React.MutableRefObject<boolean>;
+     hasReceivedInterruptEventRef: React.MutableRefObject<boolean>;
+     interruptInProgressRef: React.MutableRefObject<boolean>;
+   };
+
+   // ===== 原有Hook对象（兼容旧引用）=====
+   chatState: ReturnType<typeof useChatState>;
+   chatCallbacks: ReturnType<typeof useChatCallbacks>;
+   chatStreaming: ReturnType<typeof useChatStreaming>;
+   chatSession: ReturnType<typeof useChatSession>;
+   chatPersistence: ReturnType<typeof useChatPersistence>;
+   chatSend: ReturnType<typeof useChatSend>;
+   chatTaskControl: ReturnType<typeof useChatTaskControl>;
+ }
 
 /**
  * useChatFacade - 统一的Chat状态Facade
@@ -270,16 +279,24 @@ export const useChatFacade = (options?: { baseURL?: string; sessionId?: string |
       saveMessagesToStorage: chatPersistence.saveMessagesToStorage,
     },
     
-    // ===== 共享Refs =====
-    shared: {
-      waitTimerRef: chatState.waitTimerRef,
-      executionStepsRef: chatState.executionStepsRef,
-      isPausedRef: chatState.isPausedRef,
-      hasReceivedInterruptEventRef: chatState.hasReceivedInterruptEventRef,
-      interruptInProgressRef: chatState.interruptInProgressRef,
-    },
-    
-  }), [
+  // ===== 共享Refs =====
+   shared: {
+     waitTimerRef: chatState.waitTimerRef,
+     executionStepsRef: chatState.executionStepsRef,
+     isPausedRef: chatState.isPausedRef,
+     hasReceivedInterruptEventRef: chatState.hasReceivedInterruptEventRef,
+     interruptInProgressRef: chatState.interruptInProgressRef,
+   },
+
+   // ===== 原有Hook对象（兼容旧引用）=====
+   chatState,
+   chatCallbacks,
+   chatStreaming,
+   chatSession,
+   chatPersistence,
+   chatSend,
+   chatTaskControl,
+ }), [
     // ✅ 只依赖具体用到的基础值，不是整个对象
     chatState.sessionId,
     chatState.sessionTitle,

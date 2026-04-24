@@ -41,24 +41,8 @@ import ChatHeader from './ChatHeader';
 // 【小沈 2026-04-21】ChatToolbar组件拆分
 import ChatToolbar from './ChatToolbar';
 
-// 【小强 2026-04-21】Hooks已创建，按方案2.1.7/2.2.7/2.3.5验证
-import { useChatSession } from '../../hooks/chat/useChatSession';
-import { useChatPersistence } from '../../hooks/chat/useChatPersistence';
-
-// 【小强 2026-04-21】Phase 2 Task 2.2: 导入useChatState
-import { useChatState } from '../../hooks/chat/useChatState';
-
-// 【小沈 2026-04-22】Phase 3 Task 3.2: 导入useChatCallbacks
-import { useChatCallbacks } from '../../hooks/chat/useChatCallbacks';
-
-// 【小沈 2026-04-22】Phase 4: 导入useChatStreaming
-import { useChatStreaming } from '../../hooks/chat/useChatStreaming';
-
-// 【小强 2026-04-22】Phase 7.2: 导入useChatTaskControl
-import { useChatTaskControl } from '../../hooks/chat/useChatTaskControl';
-
-// 【小沈 2026-04-23】导入useChatSend
-import { useChatSend } from '../../hooks/chat/useChatSend';
+// 【小强 2026-04-24】集成useChatFacade替代7个独立Hook
+import { useChatFacade } from '../../hooks/chat/useChatFacade';
 
 // 【小沈 2026-04-24】P0-3优化：使用独立的loading管理Hook
 import { useLoadingMessage } from '../../hooks/useLoadingMessage';
@@ -74,8 +58,19 @@ import { useBeforeUnload } from '../../hooks/useBeforeUnload';
 // - 工具函数: src/utils/chatHistory.ts
 
 const NewChatContainer: React.FC = () => {
-  // Phase 2: 使用useChatState统一管理状态
-  const chatState = useChatState();
+  const [searchParams] = useSearchParams();
+  const chatFacade = useChatFacade({ baseURL: API_BASE_URL, sessionId: searchParams.get('sessionId') });
+  const {
+    chatState,
+    chatCallbacks,
+    chatStreaming,
+    chatSession,
+    chatPersistence,
+    chatSend,
+    chatTaskControl,
+  } = chatFacade;
+
+  // 解构chatState（和原来一致）
   const { 
     // 独立状态
     showExecution, setShowExecution, 
@@ -141,70 +136,9 @@ const NewChatContainer: React.FC = () => {
     hasReceivedInterruptEventRef,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     interruptInProgressRef,
-} = chatState;
-   
-  // 【小沈 2026-04-24】P0-3优化：使用useLoadingMessage Hook管理loading
-  const { show: showLoading, hide: hideLoading } = useLoadingMessage({ duration: 0 });
-   
-  const [searchParams] = useSearchParams();
+  } = chatState;
 
-// 【小沈 2026-04-22】Phase 3 Task 3.2: 使用useChatCallbacks获取回调
-  const chatCallbacks = useChatCallbacks(chatState);
-
-  // 【小沈 2026-04-22】Phase 4: 使用useChatStreaming替代useSSE
-  const chatStreaming = useChatStreaming(
-    chatState,
-    chatCallbacks,
-    { baseURL: API_BASE_URL, sessionId: sessionId }
-  );
-
-  // 【小沈 2026-04-22】Phase 5: 使用useChatSession管理会话生命周期
-  const chatSession = useChatSession(chatState, chatStreaming);
-
-  // 【小沈 2026-04-22】Phase 6: 使用useChatPersistence管理持久化
-  const chatPersistence = useChatPersistence(chatState, chatStreaming);
-
-  // 【小强 2026-04-22】Phase 7.2: 使用useChatTaskControl管理任务控制
-  // 【小强 2026-04-23】P3优化：使用方案1参数分组
-  const chatTaskControl = useChatTaskControl({
-    // 状态设置函数分组
-    setters: {
-      setLoading,
-      setIsPaused,
-      setIsReceiving: chatStreaming.setIsReceiving,
-    },
-    // 状态值分组
-    states: {
-      isPaused,
-      sessionId,
-      serverTaskId: chatStreaming.serverTaskId,
-    },
-    // Refs分组
-    refs: {
-      interruptInProgressRef,
-      hasReceivedInterruptEventRef,
-      waitTimerRef,
-      isPausedRef,
-    },
-    // 函数分组
-    functions: {
-      disconnect: chatStreaming.disconnect,
-    },
-  });
-  const { handleInterrupt, handleTogglePause } = chatTaskControl;
-   
-  // ===== 【小资优化 2026-04-13】流式性能优化 =====
-  // 2. 滚动控制ref
-  const SCROLL_THRESHOLD = 150;  // ChatGPT实践：超过150px认为用户主动滚动
-  const SCROLL_INTERVAL = 100;   // 滚动节流间隔
-
-// 【小沈 2026-04-22】Phase 6: 使用chatPersistence版本的防抖保存
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { saveMessagesToStorage } = chatPersistence;
-  // ===== 【小资优化 2026-04-13】结束 =====
-
-// 【小沈 2026-04-22】Phase 4: 使用chatStreaming（useChatStreaming Hook）
-  // 【小强 2026-04-22】Phase 7.1: 解构executeSend方法
+  // 解构chatStreaming
   const {
     isReceiving,
     executionSteps,
@@ -212,20 +146,23 @@ const NewChatContainer: React.FC = () => {
     executeSend,
   } = chatStreaming;
 
-  // 【小沈 2026-04-23】使用useChatSend管理发送逻辑
-  const { handleSend } = useChatSend({
-    loading,
-    sessionId,
-    messages,
-    waitTime,
-    setLoading,
-    setSessionId,
-    setMessages,
-    setWaitTime,
-    waitTimerRef,
-    currentSessionIdRef,
-    executeSend,
-});
+  // 解构chatTaskControl
+  const { handleInterrupt, handleTogglePause } = chatTaskControl;
+
+  // 解构chatSend
+  const { handleSend } = chatSend;
+
+  // 解构chatPersistence
+  const { saveMessagesToStorage } = chatPersistence;
+
+  // 【小沈 2026-04-24】P0-3优化：使用useLoadingMessage Hook管理loading
+  const { show: showLoading, hide: hideLoading } = useLoadingMessage({ duration: 0 });
+
+  // ===== 【小资优化 2026-04-13】流式性能优化 =====
+  // 2. 滚动控制ref
+  const SCROLL_THRESHOLD = 150;  // ChatGPT实践：超过150px认为用户主动滚动
+  const SCROLL_INTERVAL = 100;   // 滚动节流间隔
+  // ===== 【小资优化 2026-04-13】结束 =====
 
   // 【小沈 2026-04-24】P1修复：使用useCallback包装scrollToBottom
   const scrollToBottom = useCallback(() => {
