@@ -63,6 +63,9 @@ import { useChatSend } from '../../hooks/chat/useChatSend';
 // 【小沈 2026-04-24】P0-3优化：使用独立的loading管理Hook
 import { useLoadingMessage } from '../../hooks/useLoadingMessage';
 
+// 【小沈 2026-04-24】P2优化：使用统一的beforeunload管理Hook
+import { useBeforeUnload } from '../../hooks/useBeforeUnload';
+
 // 【小强 2026-04-12】Phase 2 P1级优化 - 消息列表useMemo优化（使用独立hook）
 // import { useMessageListRender } from '../../hooks/useMessageListRender'; // 已移至MessageList组件内部
 
@@ -299,83 +302,77 @@ const NewChatContainer: React.FC = () => {
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+};
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, currentResponse, executionSteps, isReceiving]);
+
+  // 【小沈 2026-04-24】P2优化：提取beforeunload保存逻辑为独立函数
+  const handleSaveBeforeUnload = useCallback(() => {
+    if (!isReceiving || !sessionId) return;
+
+    console.log("💾 [beforeunload] 刷新前保存状态, steps:", executionStepsRef.current.length);
+    
+    let messagesToSave = messagesRef.current;
+    if (executionStepsRef.current.length > 0) {
+      messagesToSave = messagesRef.current.map((msg, idx) => {
+        if (msg.role === 'assistant' && msg.isStreaming && idx === messagesRef.current.length - 1) {
+          return {
+            ...msg,
+            executionSteps: executionStepsRef.current,
+          };
+        }
+        return msg;
+      });
+    }
+    
+    const state = {
+      messages: messagesToSave,
+      sessionId,
+      sessionTitle,
+      timestamp: Date.now(),
+      scrollPosition: 0,
+      isPaused,
+      isReceiving,
+    };
+    
+    try {
+      const stateStr = JSON.stringify(state);
+      if (stateStr.length > 4 * 1024 * 1024) {
+        const lightState = {
+          sessionId,
+          sessionTitle,
+          timestamp: Date.now(),
+          messageCount: messagesToSave.length,
+          isPaused,
+          isReceiving,
+        };
+        sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
+      } else {
+        sessionStorage.setItem(STORAGE_KEY, stateStr);
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'QuotaExceededError') {
+        console.warn("⚠️ [beforeunload] sessionStorage容量满，跳过保存");
+      } else {
+        console.error("保存会话状态失败:", e);
+      }
+    }
+  }, [isReceiving, sessionId, sessionTitle, isPaused]);
+
+  // 【小沈 2026-04-24】P2优化：使用useBeforeUnload Hook统一管理
+  useBeforeUnload({
+    shouldSave: !!isReceiving && !!sessionId,
+    saveData: handleSaveBeforeUnload,
+    showDialog: true,
+    dialogMessage: '正在接收消息，确定要离开吗？',
+  });
 
   // 组件卸载前保存状态（用于路由切换/F5刷新/Ctrl+F5强制刷新场景）
   // 【问题2修复 2026-03-18】增加beforeunload事件监听，刷新时也能保存数据
   useEffect(() => {
-    // beforeunload：页面刷新/关闭前触发
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      // 当正在接收SSE数据时，同步保存最新状态
-      if (isReceiving && sessionId) {
-        console.log("💾 [beforeunload] 刷新前保存状态, steps:", executionStepsRef.current.length);
-        
-        // 同步保存最新数据（从executionStepsRef获取最新steps）
-        // 【修复 2026-03-18】使用messagesRef.current获取最新messages，而不是闭包中的messages
-        let messagesToSave = messagesRef.current;
-        if (executionStepsRef.current.length > 0) {
-          messagesToSave = messagesRef.current.map((msg, idx) => {
-            if (msg.role === 'assistant' && msg.isStreaming && idx === messagesRef.current.length - 1) {
-              return {
-                ...msg,
-                executionSteps: executionStepsRef.current,
-              };
-            }
-            return msg;
-          });
-        }
-        
-        const state = {
-          messages: messagesToSave,
-          sessionId,
-          sessionTitle,
-          timestamp: Date.now(),
-          scrollPosition: 0,
-          isPaused,
-          isReceiving,
-        };
-        // 【小强修复 2026-04-08】添加try-catch防止QuotaExceededError崩溃
-        try {
-          const stateStr = JSON.stringify(state);
-          if (stateStr.length > 4 * 1024 * 1024) {
-            const lightState = {
-              sessionId,
-              sessionTitle,
-              timestamp: Date.now(),
-              messageCount: messagesToSave.length,
-              isPaused,
-              isReceiving,
-            };
-            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(lightState));
-          } else {
-            sessionStorage.setItem(STORAGE_KEY, stateStr);
-          }
-        } catch (e) {
-          if (e instanceof DOMException && e.name === 'QuotaExceededError') {
-            console.warn("⚠️ [beforeunload] sessionStorage容量满，跳过保存");
-          } else {
-            console.error("保存会话状态失败:", e);
-          }
-        }
-        
-        // 提示浏览器不要关闭（可选）
-        e.preventDefault();
-        e.returnValue = '';
-      }
-    };
-    
-    // 添加事件监听
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    
+    // 清理可能残留的loading消息
     return () => {
-      // 销毁可能残留的loading消息
       message.destroy("session-load");
-      
-      // 移除事件监听
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      
       console.log("🔄 组件卸载（页面即将跳转或关闭）");
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
