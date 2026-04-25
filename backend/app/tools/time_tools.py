@@ -1,29 +1,30 @@
 # -*- coding: utf-8 -*-
 """
-时间工具函数模块 - 为普通用户提供时间相关功能
+时间工具函数模块 - 为普通用户提供时间相关功能（修正版）
 
 包含：
-- P0 核心基础（5个）：time_now, time_format, time_diff, timer_set, timer_clear
-- P1 常用辅助（3个）：time_utc_to_local, time_local_to_utc, time_is_weekend, time_is_holiday
+- P0 核心基础（5个）：time_now, time_format, time_diff, timer_set, timer_clear;
+- P1 常用辅助（3个）：time_utc_to_local, time_local_to_utc, time_is_weekend, time_is_holiday;
 
-Author: 小沈 - 2026-04-25
-创建时间: 2026-04-25 15:44:54
+Author: 小沈 - 2026-04-25;
+创建时间: 2026-04-25 17:17:43;
+修正时间: 2026-04-25 17:40:00;
 """
 
-import asyncio
-import json
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, Optional, Callable, Awaitable
-import re
+import asyncio;
+import json;
+from datetime import datetime, timedelta, timezone;
+from typing import Dict, Any, Optional, Callable, Awaitable;
+import re;
 
-# 定时器存储
-_timers: Dict[str, asyncio.TimerHandle] = {}
-_timer_counter = 0
+# 定时器存储;
+_timers: Dict[str, asyncio.TimerHandle] = {};
+_timer_counter = 0;
 
 
-# ============================================================
-# P0 核心基础（普通用户最高频场景）
-# ============================================================
+# ===========================================================;
+# P0 核心基础（普通用户最高频场景）;
+# ============================================================;
 
 def time_now() -> Dict[str, Any]:
     """
@@ -36,7 +37,7 @@ def time_now() -> Dict[str, Any]:
                 "iso": "2026-04-25T15:44:54+08:00",
                 "timestamp": 1777103094,  # Unix时间戳（秒）
                 "format": "2026-04-25 15:44:54",  # 默认格式
-                "timezone": "+08:00",
+                "timezone": "+0800",
                 "weekday": "Saturday",
                 "isoweekday": 6  # 1=Monday, 7=Sunday
             },
@@ -48,10 +49,10 @@ def time_now() -> Dict[str, Any]:
         - 用户问：“今天星期几？”
         - 用户问：“当前时间戳是多少？”
     
-    Author: 小沈 - 2026-04-25
+    Author: 小沈 - 2026-04-25;
     """
     try:
-        now = datetime.now().astimezone()
+        now = datetime.now().astimezone();
         
         return {
             "code": "SUCCESS",
@@ -59,7 +60,7 @@ def time_now() -> Dict[str, Any]:
                 "iso": now.isoformat(),
                 "timestamp": int(now.timestamp()),
                 "format": now.strftime("%Y-%m-%d %H:%M:%S"),
-                "timezone": now.strftime("%z"),
+                "timezone": now.strftime("%z").replace(":", ""),  # 转为+0800格式
                 "weekday": now.strftime("%A"),
                 "isoweekday": now.isoweekday()  # 1=Monday, 7=Sunday
             },
@@ -70,7 +71,7 @@ def time_now() -> Dict[str, Any]:
             "code": "ERR_TIME_NOW",
             "data": None,
             "message": f"获取当前时间失败: {str(e)}"
-        }
+        };
 
 
 def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) -> Dict[str, Any]:
@@ -104,7 +105,7 @@ def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) 
         - str: 日期字符串（自动识别ISO、YYYY-MM-DD等）
         - datetime对象: 直接使用
     
-    Author: 小沈 - 2026-04-25
+    Author: 小沈 - 2026-04-25;
     """
     try:
         # 1. 确定要格式化的datetime
@@ -149,7 +150,7 @@ def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) 
             "code": "ERR_TIME_FORMAT",
             "data": None,
             "message": f"格式化时间失败: {str(e)}"
-        }
+        };
 
 
 def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
@@ -187,7 +188,7 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
         - < 12个月：X个月前/后
         - 否则：X年前/后
     
-    Author: 小沈 - 2026-04-25
+    Author: 小沈 - 2026-04-25;
     """
     try:
         # 1. 解析开始时间
@@ -212,14 +213,14 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
                 }
         
         # 3. 计算差值
-        delta = end_dt - start_dt
+        delta = end_dt - start_dt  # end - start;
         total_seconds = abs(delta.total_seconds())
-        is_future = delta.total_seconds() < 0
+        is_future = delta.total_seconds() > 0  # end > start 表示未来（is_future=True）;
         
         seconds = int(total_seconds)
-        minutes = total_seconds / 60.0
-        hours = total_seconds / 3600.0
-        days = total_seconds / 86400.0
+        minutes = total_seconds / 60.0;
+        hours = total_seconds / 3600.0;
+        days = total_seconds / 86400.0;
         
         # 4. 人性化描述
         if total_seconds < 60:
@@ -257,7 +258,7 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
             "code": "ERR_TIME_DIFF",
             "data": None,
             "message": f"计算时间差失败: {str(e)}"
-        }
+        };
 
 
 async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -285,13 +286,13 @@ async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[st
         - 用户说：“10分钟后执行这个任务”
     
     注意：
-        - 定时器在后台运行，使用asyncio
-        - 回调函数需要实现为字符串描述，因为跨进程限制
+        - 定时器在后台运行，使用asyncio;
+        - 回调函数需要实现为字符串描述，因为跨进程限制;
         - 实际项目中，回调可能通过消息队列或事件总线实现
     
-    Author: 小沈 - 2026-04-25
+    Author: 小沈 - 2026-04-25;
     """
-    global _timer_counter
+    global _timer_counter;
     try:
         if delay <= 0:
             return {
@@ -308,24 +309,24 @@ async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[st
             }
         
         # 生成定时器ID
-        _timer_counter += 1
-        timer_id = f"timer_{_timer_counter}_{int(datetime.now().timestamp())}"
+        _timer_counter += 1;
+        timer_id = f"timer_{_timer_counter}_{int(datetime.now().timestamp())}";
         
         # 计算触发时间
-        trigger_at = datetime.now().astimezone() + timedelta(seconds=delay)
+        trigger_at = datetime.now().astimezone() + timedelta(seconds=delay);
         
         # 创建回调函数（这里用简单的打印，实际项目需要更复杂的实现）
         async def _timer_callback():
-            print(f"[Timer {timer_id}] 触发: {callback}")
-            # 实际项目中，这里应该发送通知或执行任务
-            # 例如：await notify_user(f"提醒: {callback}", callback_data)
+            print(f"[Timer {timer_id}] 触发: {callback}");
+            # 实际项目中，这里应该发送通知或执行任务;
+            # 例如：await notify_user(f"提醒: {callback}", callback_data);
         
         # 设置定时器
-        loop = asyncio.get_event_loop()
-        timer_handle = loop.call_later(delay, lambda: asyncio.ensure_future(_timer_callback()))
+        loop = asyncio.get_event_loop();
+        timer_handle = loop.call_later(delay, lambda: asyncio.ensure_future(_timer_callback()));
         
         # 保存定时器
-        _timers[timer_id] = timer_handle
+        _timers[timer_id] = timer_handle;
         
         return {
             "code": "SUCCESS",
@@ -342,7 +343,7 @@ async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[st
             "code": "ERR_TIMER_SET",
             "data": None,
             "message": f"设置定时器失败: {str(e)}"
-        }
+        };
 
 
 async def timer_clear(timer_id: str) -> Dict[str, Any]:
@@ -366,7 +367,7 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
         - 用户说：“别提醒我了”
         - 用户说：“取消那个定时器”
     
-    Author: 小沈 - 2026-04-25
+    Author: 小沈 - 2026-04-25;
     """
     try:
         if timer_id not in _timers:
@@ -378,10 +379,10 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
         
         # 取消定时器
         timer_handle = _timers[timer_id]
-        timer_handle.cancel()
+        timer_handle.cancel();
         
         # 从字典中移除
-        del _timers[timer_id]
+        del _timers[timer_id];
         
         return {
             "code": "SUCCESS",
@@ -396,12 +397,12 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
             "code": "ERR_TIMER_CLEAR",
             "data": None,
             "message": f"清除定时器失败: {str(e)}"
-        }
+        };
 
 
-# ============================================================
-# P1 常用辅助（时区、日历相关）
-# ============================================================
+# ===========================================================;
+# P1 常用辅助（时区、日历相关）;
+# ============================================================;
 
 def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -416,8 +417,8 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
             "code": "SUCCESS",
             "data": {
                 "local_time": "2026-04-25 23:44:54",
-                "timezone": "+08:00",
-                "utc_original": "2026-04-25 15:44:54"
+                "timezone": "+0800",
+                "utc_original": "2026-04-25T15:44:54+00:00"
             },
             "message": "成功转换时区"
         }
@@ -425,7 +426,7 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
     场景：
         - 跨时区用户问：“现在UTC时间是几点？请用北京时间显示”
     
-    Author: 小沈 - 2026-04-25
+    Author: 小沈 - 2026-04-25;
     """
     try:
         # 1. 解析UTC时间
@@ -439,7 +440,7 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
         
         # 确保是UTC时间
         if utc_dt.tzinfo != timezone.utc:
-            utc_dt = utc_dt.astimezone(timezone.utc)
+            utc_dt = utc_dt.astimezone(timezone.utc);
         
         # 2. 转换到目标时区
         if target_tz:
@@ -463,8 +464,8 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
             "code": "SUCCESS",
             "data": {
                 "local_time": local_dt.strftime("%Y-%m-%d %H:%M:%S"),
-                "timezone": local_dt.strftime("%z"),
-                "utc_original": utc_dt.strftime("%Y-%m-%d %H:%M:%S")
+                "timezone": local_dt.strftime("%z").replace(":", ""),
+                "utc_original": utc_dt.isoformat()  # 返回UTC的ISO格式
             },
             "message": "成功转换时区"
         }
@@ -473,7 +474,7 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
             "code": "ERR_TIME_UTC_TO_LOCAL",
             "data": None,
             "message": f"时区转换失败: {str(e)}"
-        }
+        };
 
 
 def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[str, Any]:
@@ -495,7 +496,7 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
             "message": "成功转换为UTC时间"
         }
     
-    Author: 小沈 - 2026-04-25
+    Author: 小沈 - 2026-04-25;
     """
     try:
         # 1. 解析本地时间
@@ -514,10 +515,10 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
                 offset_hours = int(source_tz[1:3])
                 offset_minutes = int(source_tz[4:6])
                 tz = timezone(timedelta(hours=offset_hours, minutes=offset_minutes))
-                local_dt = local_dt.replace(tzinfo=tz)
+                local_dt = local_dt.replace(tzinfo=tz);
         
         # 2. 转换为UTC
-        utc_dt = local_dt.astimezone(timezone.utc)
+        utc_dt = local_dt.astimezone(timezone.utc);
         
         return {
             "code": "SUCCESS",
@@ -533,7 +534,7 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
             "code": "ERR_TIME_LOCAL_TO_UTC",
             "data": None,
             "message": f"时区转换失败: {str(e)}"
-        }
+        };
 
 
 def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
@@ -549,7 +550,7 @@ def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
             "data": {
                 "is_weekend": true,
                 "weekday": "Saturday",
-                "isoweekday": 6,  # 6=Saturday, 7=Sunday
+                "isoweekday": 6,  # 6=Saturday, 7=Sunday;
                 "date": "2026-04-25"
             },
             "message": "今天是周末"
@@ -559,7 +560,7 @@ def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
         - 用户问：“明天要上班吗？”
         - 用户问：“这周六是休息日吗？”
     
-    Author: 小沈 - 2026-04-25
+    Author: 小沈 - 2026-04-25;
     """
     try:
         # 解析日期
@@ -574,8 +575,8 @@ def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
                     "message": f"无法解析日期: {date}"
                 }
         
-        isoweekday = dt.isoweekday()  # 1=Monday, 7=Sunday
-        is_weekend = isoweekday >= 6  # Saturday or Sunday
+        isoweekday = dt.isoweekday()  # 1=Monday, 7=Sunday;
+        is_weekend = isoweekday >= 6  # Saturday or Sunday;
         
         # 构造消息
         if is_weekend:
@@ -601,7 +602,7 @@ def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
             "code": "ERR_TIME_IS_WEEKEND",
             "data": None,
             "message": f"检查周末失败: {str(e)}"
-        }
+        };
 
 
 def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
@@ -630,7 +631,7 @@ def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
         - 用户问：“今天是不是节假日？”
         - 用户问：“国庆节放几天假？”
     
-    Author: 小沈 - 2026-04-25
+    Author: 小沈 - 2026-04-25;
     """
     try:
         # 解析日期
@@ -647,18 +648,18 @@ def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
         
         # 简单假日检查（固定日期）
         # 实际项目中应该使用节假日API
-        month_day = (dt.month, dt.day)
+        month_day = (dt.month, dt.day);
         
         # 定义一些固定假日（简化版）
         fixed_holidays = {
             (1, 1): "元旦",
             (5, 1): "劳动节",
             (10, 1): "国庆节",
-            # 注意：春节、清明、端午、中秋等是农历，这里不处理
+            # 注意：春节、清明、端午、中秋等是农历，这里不处理;
         }
         
-        is_holiday = month_day in fixed_holidays
-        holiday_name = fixed_holidays.get(month_day)
+        is_holiday = month_day in fixed_holidays;
+        holiday_name = fixed_holidays.get(month_day);
         
         # 构造消息
         if is_holiday:
@@ -680,12 +681,12 @@ def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
             "code": "ERR_TIME_IS_HOLIDAY",
             "data": None,
             "message": f"检查假日失败: {str(e)}"
-        }
+        };
 
 
-# ============================================================
-# 内部辅助函数
-# ============================================================
+# ===========================================================;
+# 内部辅助函数;
+# ============================================================;
 
 def _parse_datetime_any(value: Any) -> Optional[datetime]:
     """
@@ -695,7 +696,7 @@ def _parse_datetime_any(value: Any) -> Optional[datetime]:
         value: 可以是时间戳（int/float）、字符串、datetime对象
     
     Returns:
-        datetime对象，解析失败返回None
+        datetime对象，解析失败返回None;
     """
     try:
         if isinstance(value, datetime):
@@ -705,9 +706,9 @@ def _parse_datetime_any(value: Any) -> Optional[datetime]:
         elif isinstance(value, str):
             return _parse_datetime_string(value)
         else:
-            return None
+            return None;
     except Exception:
-        return None
+        return None;
 
 
 def _parse_datetime_string(date_str: str) -> Optional[datetime]:
@@ -715,24 +716,24 @@ def _parse_datetime_string(date_str: str) -> Optional[datetime]:
     解析日期字符串，支持多种格式
     
     支持格式：
-        - ISO格式：2026-04-25T15:44:54+08:00
-        - 简单日期：2026-04-25
-        - 简单日期时间：2026-04-25 15:44:54
-        - 斜杠格式：2026/04/25
-        - 中文格式：2026年04月25日
+        - ISO格式：2026-04-25T15:44:54+08:00;
+        - 简单日期：2026-04-25;
+        - 简单日期时间：2026-04-25 15:44:54;
+        - 斜杠格式：2026/04/25;
+        - 中文格式：2026年04月25日;
     
     Returns:
-        datetime对象，解析失败返回None
+        datetime对象，解析失败返回None;
     """
     try:
         # 去除空格
-        date_str = date_str.strip()
+        date_str = date_str.strip();
         
         # 尝试ISO格式
         try:
             return datetime.fromisoformat(date_str)
         except ValueError:
-            pass
+            pass;
         
         # 尝试常见格式
         formats = [
@@ -750,24 +751,24 @@ def _parse_datetime_string(date_str: str) -> Optional[datetime]:
                 dt = datetime.strptime(date_str, fmt)
                 return dt.astimezone()
             except ValueError:
-                continue
+                continue;
         
-        # 尝试提取数字：20260425
+        # 尝试提取数字：20260425;
         numbers = re.findall(r'\d+', date_str)
         if len(numbers) >= 3:
             try:
                 year = int(numbers[0])
                 month = int(numbers[1])
                 day = int(numbers[2])
-                hour = int(numbers[3]) if len(numbers) > 3 else 0
-                minute = int(numbers[4]) if len(numbers) > 4 else 0
-                second = int(numbers[5]) if len(numbers) > 5 else 0
+                hour = int(numbers[3]) if len(numbers) > 3 else 0;
+                minute = int(numbers[4]) if len(numbers) > 4 else 0;
+                second = int(numbers[5]) if len(numbers) > 5 else 0;
                 
                 dt = datetime(year, month, day, hour, minute, second)
                 return dt.astimezone()
             except Exception:
-                pass
+                pass;
         
-        return None
+        return None;
     except Exception:
-        return None
+        return None;
