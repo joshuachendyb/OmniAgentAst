@@ -21,6 +21,9 @@ import GenerateReportRenderer from './types/GenerateReportRenderer';
 import CopyFileRenderer from './types/CopyFileRenderer';
 import CreateDirectoryRenderer from './types/CreateDirectoryRenderer';
 import GetFileInfoRenderer from './types/GetFileInfoRenderer';
+import CompareFilesRenderer from './types/CompareFilesRenderer';
+import BatchRenameRenderer from './types/BatchRenameRenderer';
+import CompressFilesRenderer from './types/CompressFilesRenderer';
 import DefaultRenderer from './types/DefaultRenderer';
 
 interface ToolResultRendererProps {
@@ -67,6 +70,12 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
       return <CreateDirectoryRenderer step={step} />;
     case "get_file_info":
       return <GetFileInfoRenderer step={step} />;
+    case "compare_files":
+      return <CompareFilesRenderer step={step} />;
+    case "batch_rename":
+      return <BatchRenameRenderer step={step} />;
+    case "compress_files":
+      return <CompressFilesRenderer step={step} />;
     default:
       return <DefaultRenderer step={step} />;
   }
