@@ -161,9 +161,48 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
             recoverable=event.get('recoverable', event.get('retryable', False)),
             step=step
         )
+    elif event_type == 'chunk':
+        # 【问题1修复】chunk类型：流式文本片段，支持统一ReAct流程
+        return format_chunk_sse(
+            event=event,
+            step=step,
+            model=model,
+            provider=provider
+        )
     else:
         # 未知类型，返回空字符串
         return ""
+
+
+# ============================================================
+# SSE 格式化函数 - chunk 类型处理
+# ============================================================
+
+def format_chunk_sse(event: Dict[str, Any], step: int, model: str, provider: str) -> str:
+    """
+    格式化chunk类型的SSE事件
+    
+    Args:
+        event: chunk事件 dict，包含content/thought/reasoning/timestamp/is_reasoning
+        step: 步骤编号
+        model: 模型名称
+        provider: 提供商
+    
+    Returns:
+        SSE格式的字符串
+    
+    Author: 小沈-2026-04-25（参考文档问题1修复）
+    """
+    chunk_data = {
+        "type": "chunk",
+        "step": step,
+        "content": event.get("content", ""),
+        "thought": event.get("thought", ""),
+        "reasoning": event.get("reasoning", ""),
+        "timestamp": event.get("timestamp", ""),
+        "is_reasoning": event.get("is_reasoning", False)
+    }
+    return f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
 
 
 # ============================================================

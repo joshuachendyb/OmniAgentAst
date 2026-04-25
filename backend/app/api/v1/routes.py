@@ -1134,10 +1134,10 @@ async def update_provider(provider_name: str, data: ProviderUpdate):
         if data.api_base is not None:
             config['ai'][provider_name]['api_base'] = data.api_base
         if data.api_key is not None:
-            config['ai'][provider_name]['api_key'] = data.api_key
+            config['ai'][provider_name]['api_key'] = data.api_key.strip()  # trim 空格
         if data.model is not None:
             # 【修正】更新顶层 ai.model，而不是 provider 下的 model
-            config['ai']['model'] = data.model
+            config['ai']['model'] = data.model.strip()  # trim 空格
         if data.timeout is not None:
             config['ai'][provider_name]['timeout'] = data.timeout
         if data.max_retries is not None:
@@ -1249,9 +1249,9 @@ async def add_provider(data: ProviderAddRequest):
         
         # 2. 【修正】不写 provider 下的 model 字段
         config['ai'][data.name] = {
-            'api_base': data.api_base,
-            'api_key': data.api_key,
-            'models': data.models if data.models else ([data.model] if data.model else []),
+            'api_base': data.api_base.strip(),  # trim 空格
+            'api_key': data.api_key.strip() if data.api_key else "",  # trim 空格
+            'models': [m.strip() for m in (data.models if data.models else ([data.model] if data.model else []))],  # trim 空格
             'timeout': data.timeout,
             'max_retries': data.max_retries
         }

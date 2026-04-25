@@ -1196,6 +1196,14 @@ const handleBatchDeleteModels = async (
                     </Space>
                   </Col>
                   <Col span={24}>
+                    <Space size="large">
+                      <Text type="secondary">超时时间：</Text>
+                      <Text>{selectedProvider.timeout || 60} 秒</Text>
+                      <Text type="secondary">最大重试：</Text>
+                      <Text>{selectedProvider.max_retries || 3} 次</Text>
+                    </Space>
+                  </Col>
+                  <Col span={24}>
                     <Text type="secondary">当前模型：</Text>
                     <Text strong>{selectedProvider.model}</Text>
                   </Col>

@@ -362,9 +362,9 @@ class AIServiceFactory:
             raise ValueError(f"provider {final_provider} 的配置为空，请检查 config.yaml")
         
         cls._instance = BaseAIService(
-            api_key=provider_config.get("api_key", ""),
+            api_key=(provider_config.get("api_key") or "").strip(),  # trim 空格
             model=final_model,
-            api_base=provider_config.get("api_base", "https://api.openai.com/v1"),
+            api_base=(provider_config.get("api_base") or "https://api.openai.com/v1").strip(),
             provider=final_provider,  # 新增：传递provider
             timeout=provider_config.get("timeout", 30)
         )
@@ -466,9 +466,9 @@ class AIServiceFactory:
                 provider_config = {}
             
             cls._instance = BaseAIService(
-                api_key=provider_config.get("api_key", ""),
+                api_key=(provider_config.get("api_key") or "").strip(),  # trim 空格
                 model=final_model,
-                api_base=provider_config.get("api_base", "https://api.openai.com/v1"),
+                api_base=(provider_config.get("api_base") or "https://api.openai.com/v1").strip(),
                 provider=final_provider,
                 timeout=provider_config.get("timeout", 30)
             )
