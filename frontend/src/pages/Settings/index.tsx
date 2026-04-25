@@ -641,6 +641,7 @@ modelEditForm.setFieldsValue({ model: modelName });
       setProviders(Object.values(data.providers));
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
+      console.log("删除模型后刷新列表:", modelData.models);
 
       showSuccess("模型已删除");
     } catch (error) {
@@ -734,6 +735,7 @@ return { success: true, model: modelName };
       setProviders(Object.values(data.providers));
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
+      console.log("添加模型后刷新列表:", modelData.models);
 
       // 验证服务可用性
       try {
