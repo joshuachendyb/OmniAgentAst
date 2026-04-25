@@ -4,7 +4,7 @@
  * 显示文件复制结果，包括源路径、目标路径、复制状态
  *
  * @author 小强
- * @version 1.0.0
+ * @version 1.0.2
  * @since 2026-04-25
  */
 
@@ -26,25 +26,31 @@ interface CopyFileViewProps {
 /**
  * 格式化文件大小
  */
-function formatFileSize(bytes: number): string {
+const formatFileSize = (bytes: number): string => {
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
   if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB";
-}
+};
 
 /**
  * CopyFileView 主组件
  */
 const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
-  const { 
-    source_path = "", 
-    destination_path = "", 
-    success = true, 
-    file_size, 
+  // 数据提取（包含默认值）
+  const {
+    source_path = "",
+    destination_path = "",
+    success = true,
+    file_size,
     elapsed_time,
-    error_message 
-  } = data;
+    error_message
+  } = data || {};
+
+  // 空数据检查 - 在useMemo之前
+  const isEmpty = useMemo(() => {
+    return !data || (!source_path && !destination_path);
+  }, [data, source_path, destination_path]);
 
   // 处理文件大小
   const processedFileSize = useMemo(() => {
@@ -53,11 +59,11 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
 
   // 容器样式 - 使用useMemo缓存
   const containerStyle = useMemo(() => ({
-    background: success 
+    background: success
       ? "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)"
       : "linear-gradient(135deg, #fff2f0 0%, #f5f5f5 100%)",
-    border: success 
-      ? "1px solid #b7eb8f" 
+    border: success
+      ? "1px solid #b7eb8f"
       : "1px solid #ffa39e",
     borderRadius: 8,
     padding: "12px 16px",
@@ -90,6 +96,15 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
     marginRight: 8,
   }), []);
 
+  // 空数据返回 - 条件渲染
+  if (isEmpty) {
+    return (
+      <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
+        ⚠️ 复制操作数据为空
+      </div>
+    );
+  }
+
   const handleCopyPath = (path: string) => {
     navigator.clipboard.writeText(path);
   };
@@ -120,9 +135,9 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
             {source_path}
           </span>
           <Tooltip title="复制路径">
-            <Button 
-              type="text" 
-              size="small" 
+            <Button
+              type="text"
+              size="small"
               onClick={() => handleCopyPath(source_path)}
               icon={<CopyOutlined />}
               style={{ padding: "0 4px", minWidth: "auto" }}
@@ -140,9 +155,9 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
             {destination_path}
           </span>
           <Tooltip title="复制路径">
-            <Button 
-              type="text" 
-              size="small" 
+            <Button
+              type="text"
+              size="small"
               onClick={() => handleCopyPath(destination_path)}
               icon={<CopyOutlined />}
               style={{ padding: "0 4px", minWidth: "auto" }}
