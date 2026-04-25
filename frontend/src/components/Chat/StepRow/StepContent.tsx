@@ -214,8 +214,8 @@ const StepContent: React.FC<StepContentProps> = ({
                 <div style={{
                   padding: '10px 14px',
                   borderRadius: 8,
-                  background: 'linear-gradient(135deg, rgba(250,173,20,0.12) 0%, rgba(255,165,0,0.08) 100%)',
-                  border: '1px solid rgba(255,170,0,0.25)',
+                  background: 'rgba(255,170,0,0.1)',
+                  border: '1px solid rgba(255,170,0,0.2)',
                 }}>
                   <div style={{
                     display: 'flex',
@@ -245,8 +245,10 @@ const StepContent: React.FC<StepContentProps> = ({
                 <div style={{
                   padding: '10px 14px',
                   borderRadius: 8,
-                  background: 'linear-gradient(135deg, rgba(139,92,246,0.1) 0%, rgba(167,139,250,0.06) 100%)',
-                  border: '1px solid rgba(167,139,250,0.2)',
+                  paddingLeft: 16,
+                  borderLeft: '3px solid #722ed1',
+                  background: 'rgba(114,46,209,0.05)',
+                  border: '1px solid rgba(114,46,209,0.1)',
                 }}>
                   <div style={{
                     display: 'flex',
@@ -283,8 +285,8 @@ const StepContent: React.FC<StepContentProps> = ({
             marginTop: 6,
             padding: '8px 12px',
             borderRadius: 6,
-            background: 'linear-gradient(135deg, rgba(250,173,20,0.08) 0%, rgba(212,136,6,0.08) 100%)',
-            border: '1px solid rgba(255,213,145,0.3)',
+            background: 'rgba(255,170,0,0.08)',
+            border: '1px solid rgba(255,170,0,0.2)',
           }}>
             {renderToolInfo((step as ExecutionStep & Record<string, unknown>).tool_name, (step as ExecutionStep & Record<string, unknown>).tool_params as Record<string, unknown>, { 
               prefix: '⬇️ 下一步：', 
