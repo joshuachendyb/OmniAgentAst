@@ -18,6 +18,9 @@ import MoveFileRenderer from './types/MoveFileRenderer';
 import SearchFilesRenderer from './types/SearchFilesRenderer';
 import SearchFileContentRenderer from './types/SearchFileContentRenderer';
 import GenerateReportRenderer from './types/GenerateReportRenderer';
+import CopyFileRenderer from './types/CopyFileRenderer';
+import CreateDirectoryRenderer from './types/CreateDirectoryRenderer';
+import GetFileInfoRenderer from './types/GetFileInfoRenderer';
 import DefaultRenderer from './types/DefaultRenderer';
 
 interface ToolResultRendererProps {
@@ -58,6 +61,12 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
       return <SearchFileContentRenderer step={step} />;
     case "generate_report":
       return <GenerateReportRenderer step={step} isExpanded={isExpanded} onToggle={handleToggle} />;
+    case "copy_file":
+      return <CopyFileRenderer step={step} />;
+    case "create_directory":
+      return <CreateDirectoryRenderer step={step} />;
+    case "get_file_info":
+      return <GetFileInfoRenderer step={step} />;
     default:
       return <DefaultRenderer step={step} />;
   }
