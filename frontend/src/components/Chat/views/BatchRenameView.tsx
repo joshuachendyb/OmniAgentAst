@@ -8,8 +8,8 @@
  * @since 2026-04-25
  */
 
-import React, { useState } from "react";
-import { CheckCircleOutlined, CloseCircleOutlined, WarningOutlined, SyncOutlined, DownOutlined, RightOutlined } from "@ant-design/icons";
+import React from "react";
+import { CheckCircleOutlined, CloseCircleOutlined, WarningOutlined, SyncOutlined, RightOutlined } from "@ant-design/icons";
 import { Collapse, Tag } from "antd";
 
 interface BatchRenameViewProps {
@@ -42,7 +42,6 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
     error_message 
   } = data;
 
-  const [expanded, setExpanded] = useState(false);
   const hasList = rename_list && rename_list.length > 0;
 
   // 错误状态

@@ -8,9 +8,9 @@
  * @since 2026-04-25
  */
 
-import React, { useState } from "react";
-import { CheckCircleOutlined, CloseCircleOutlined, InboxOutlined, DownloadOutlined, RightOutlined } from "@ant-design/icons";
-import { Collapse, Tag, Button } from "antd";
+import React from "react";
+import { CloseCircleOutlined, InboxOutlined, DownloadOutlined, RightOutlined } from "@ant-design/icons";
+import { Collapse, Button } from "antd";
 
 interface CompressFilesViewProps {
   data: {

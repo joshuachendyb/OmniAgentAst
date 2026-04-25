@@ -8,7 +8,7 @@
  * @since 2026-04-25
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import { CheckCircleOutlined, CloseCircleOutlined, FileOutlined, CopyOutlined } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
 
@@ -46,8 +46,13 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
     error_message 
   } = data;
 
-  // 容器样式 - 与系统设计风格一致
-  const containerStyle = {
+  // 处理文件大小
+  const processedFileSize = useMemo(() => {
+    return file_size !== undefined ? formatFileSize(file_size) : null;
+  }, [file_size]);
+
+  // 容器样式 - 使用useMemo缓存
+  const containerStyle = useMemo(() => ({
     background: success 
       ? "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)"
       : "linear-gradient(135deg, #fff2f0 0%, #f5f5f5 100%)",
@@ -57,33 +62,33 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 6,
-  };
+  }), [success]);
 
   // 标题样式
-  const titleStyle = {
+  const titleStyle = useMemo(() => ({
     display: "flex",
     alignItems: "center",
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
     color: success ? "#52c41a" : "#ff4d4f",
-  };
+  }), [success]);
 
   // 信息项样式
-  const infoItemStyle = {
+  const infoItemStyle = useMemo(() => ({
     display: "flex",
     alignItems: "center",
     marginBottom: 8,
     fontSize: 13,
     color: "#595959",
-  };
+  }), []);
 
   // 标签样式
-  const labelStyle = {
+  const labelStyle = useMemo(() => ({
     minWidth: 80,
     color: "#8c8c8c",
     marginRight: 8,
-  };
+  }), []);
 
   const handleCopyPath = (path: string) => {
     navigator.clipboard.writeText(path);
