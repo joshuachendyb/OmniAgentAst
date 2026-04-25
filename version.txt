@@ -1,3 +1,26 @@
+v0.10.14
+
+ 更新时间: 2026-04-25 23:15:00
+
+ 更新内容：
+
+ ## 1 FILE类工具测试用例修复 - 小资-2026-04-25
+
+ | 文件 | 修复内容 |
+ |------|---------|
+ | CopyFileView.test.tsx | 样式测试适配useMemo |
+ | BatchRenameView.test.tsx | 语法错误+样式测试修复 |
+ | CompareFilesView.test.tsx | 语法错误+样式测试修复 |
+ | GetFileInfoView.test.tsx | 语法错误修复 |
+ | CompressFilesView.test.tsx | 样式+列表+边界测试修复 |
+ | CreateDirectoryView.test.tsx | 语法错误+样式测试修复 |
+ | SearchFileContentView.test.tsx | 样式测试修复 |
+ | SearchFilesView.test.tsx | 样式测试修复 |
+
+ Commit: test: 修复FILE类View测试用例兼容useMemo优化-小资-2026-04-25
+
+---
+
 v0.10.13
 
  更新时间: 2026-04-25 22:45:23
