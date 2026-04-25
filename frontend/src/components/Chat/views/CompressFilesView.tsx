@@ -8,7 +8,7 @@
  * @since 2026-04-25
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import { CloseCircleOutlined, InboxOutlined, DownloadOutlined, RightOutlined } from "@ant-design/icons";
 import { Collapse, Button } from "antd";
 
@@ -56,8 +56,8 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
   const hasError = !success || (error_message !== undefined && error_message !== "");
   const hasFileList = file_list && file_list.length > 0;
 
-  // 容器样式 - 与系统设计风格一致
-  const containerStyle = {
+  // 容器样式 - 使用useMemo缓存
+  const containerStyle = useMemo(() => ({
     background: hasError 
       ? "linear-gradient(135deg, #fff2f0 0%, #f5f5f5 100%)"
       : "linear-gradient(135deg, #e6f7ff 0%, #f5f5f5 100%)",
@@ -67,20 +67,20 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 6,
-  };
+  }), [hasError]);
 
   // 标题样式
-  const titleStyle = {
+  const titleStyle = useMemo(() => ({
     display: "flex",
     alignItems: "center",
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
     color: hasError ? "#ff4d4f" : "#1890ff",
-  };
+  }), [hasError]);
 
   // 统计卡片样式
-  const statsCardStyle = {
+  const statsCardStyle = useMemo(() => ({
     display: "grid",
     gridTemplateColumns: "repeat(3, 1fr)",
     gap: 12,
@@ -89,22 +89,22 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
     background: "#fafafa",
     borderRadius: 6,
     border: "1px solid #f0f0f0",
-  };
+  }), []);
 
   // 统计项样式
-  const statItemStyle: React.CSSProperties = {
+  const statItemStyle: React.CSSProperties = useMemo(() => ({
     textAlign: "center",
-  };
+  }), []);
 
   // 压缩比样式
-  const ratioColor = compression_ratio !== undefined 
+  const ratioColor = useMemo(() => compression_ratio !== undefined 
     ? (compression_ratio >= 70 ? "#52c41a" : (compression_ratio >= 30 ? "#faad14" : "#1890ff"))
-    : "#595959";
+    : "#595959", [compression_ratio]);
 
   // 处理原始大小
-  const originalFormatted = original_size !== undefined ? formatFileSize(original_size) : null;
-  const compressedFormatted = compressed_size !== undefined ? formatFileSize(compressed_size) : null;
-  const compressionRatio = compression_ratio !== undefined ? compression_ratio.toFixed(1) + "%" : null;
+  const originalFormatted = useMemo(() => original_size !== undefined ? formatFileSize(original_size) : null, [original_size]);
+  const compressedFormatted = useMemo(() => compressed_size !== undefined ? formatFileSize(compressed_size) : null, [compressed_size]);
+  const compressionRatio = useMemo(() => compression_ratio !== undefined ? compression_ratio.toFixed(1) + "%" : null, [compression_ratio]);
 
   return (
     <div style={containerStyle}>

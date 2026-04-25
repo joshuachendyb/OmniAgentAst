@@ -8,7 +8,7 @@
  * @since 2026-04-25
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import { CheckCircleOutlined, CloseCircleOutlined, WarningOutlined, SyncOutlined, RightOutlined } from "@ant-design/icons";
 import { Collapse, Tag } from "antd";
 
@@ -47,8 +47,8 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
   // 错误状态
   const hasError = error_message !== undefined && error_message !== "";
 
-  // 容器样式 - 与系统设计风格一致
-  const containerStyle = {
+  // 容器样式 - 使用useMemo缓存
+  const containerStyle = useMemo(() => ({
     background: hasError 
       ? "linear-gradient(135deg, #fff2f0 0%, #f5f5f5 100%)"
       : "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
@@ -58,51 +58,51 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 6,
-  };
+  }), [hasError]);
 
   // 标题样式
-  const titleStyle = {
+  const titleStyle = useMemo(() => ({
     display: "flex",
     alignItems: "center",
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
     color: hasError ? "#ff4d4f" : "#52c41a",
-  };
+  }), [hasError]);
 
   // 统计数字样式
-  const statsStyle = {
+  const statsStyle = useMemo(() => ({
     display: "flex",
     gap: 16,
     marginBottom: 12,
     paddingBottom: 12,
     borderBottom: "1px solid #f0f0f0",
-  };
+  }), []);
 
   // 统计项样式
-  const statItemStyle = {
+  const statItemStyle = useMemo(() => ({
     display: "flex",
     alignItems: "center",
     gap: 6,
     fontSize: 13,
-  };
+  }), []);
 
   // 重命名列表项样式
-  const listItemStyle = {
+  const listItemStyle = useMemo(() => ({
     display: "flex",
     alignItems: "center",
     padding: "6px 0",
     fontSize: 12,
     fontFamily: "Consolas, Monaco, 'Courier New', monospace",
     borderBottom: "1px solid #f5f5f5",
-  };
+  }), []);
 
-  const panelStyle = {
+  const panelStyle = useMemo(() => ({
     background: "#fafafa",
     border: "1px solid #d9d9d9",
     borderRadius: 6,
     marginTop: 8,
-  };
+  }), []);
 
   return (
     <div style={containerStyle}>

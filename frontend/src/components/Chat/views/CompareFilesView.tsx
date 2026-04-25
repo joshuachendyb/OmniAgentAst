@@ -8,7 +8,7 @@
  * @since 2026-04-25
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import { CheckCircleOutlined, MinusCircleOutlined, FileOutlined, SwapOutlined } from "@ant-design/icons";
 
 interface CompareFilesViewProps {
@@ -55,8 +55,8 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
   // 错误状态
   const hasError = !success || (error_message !== undefined && error_message !== "");
 
-  // 容器样式 - 与系统设计风格一致
-  const containerStyle = {
+  // 容器样式 - 使用useMemo缓存
+  const containerStyle = useMemo(() => ({
     background: hasError 
       ? "linear-gradient(135deg, #fff2f0 0%, #f5f5f5 100%)"
       : "linear-gradient(135deg, #e6f7ff 0%, #f5f5f5 100%)",
@@ -66,51 +66,51 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 6,
-  };
+  }), [hasError]);
 
   // 标题样式
-  const titleStyle = {
+  const titleStyle = useMemo(() => ({
     display: "flex",
     alignItems: "center",
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
     color: hasError ? "#ff4d4f" : "#1890ff",
-  };
+  }), [hasError]);
 
   // 对比面板样式
-  const comparePanelStyle = {
+  const comparePanelStyle = useMemo(() => ({
     display: "grid",
     gridTemplateColumns: "1fr auto 1fr",
     gap: 16,
     alignItems: "center",
     marginBottom: 12,
-  };
+  }), []);
 
   // 文件卡片样式
-  const fileCardStyle = {
+  const fileCardStyle = useMemo(() => ({
     background: "#fafafa",
     border: "1px solid #d9d9d9",
     borderRadius: 6,
     padding: "10px 12px",
     fontSize: 12,
-  };
+  }), []);
 
   // 信息项样式
-  const infoItemStyle = {
+  const infoItemStyle = useMemo(() => ({
     display: "flex",
     alignItems: "center",
     marginBottom: 8,
     fontSize: 13,
     color: "#595959",
-  };
+  }), []);
 
   // 标签样式
-  const labelStyle = {
+  const labelStyle = useMemo(() => ({
     minWidth: 100,
     color: "#8c8c8c",
     marginRight: 8,
-  };
+  }), []);
 
   // 处理文件大小
   const sizeA = file_a_size !== undefined ? formatFileSize(file_a_size) : null;

@@ -8,7 +8,7 @@
  * @since 2026-04-25
  */
 
-import React from "react";
+import React, { useMemo } from "react";
 import { FileOutlined, FolderOutlined, ClockCircleOutlined, LockOutlined } from "@ant-design/icons";
 
 interface GetFileInfoViewProps {
@@ -54,8 +54,8 @@ const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
   // 错误状态
   const hasError = error_message !== undefined && error_message !== "";
 
-  // 容器样式 - 与系统设计风格一致
-  const containerStyle = {
+  // 容器样式 - 使用useMemo缓存
+  const containerStyle = useMemo(() => ({
     background: hasError 
       ? "linear-gradient(135deg, #fff2f0 0%, #f5f5f5 100%)"
       : "linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)",
@@ -65,47 +65,49 @@ const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 6,
-  };
+  }), [hasError]);
 
   // 标题样式
-  const titleStyle = {
+  const titleStyle = useMemo(() => ({
     display: "flex",
     alignItems: "center",
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
     color: hasError ? "#ff4d4f" : "#262626",
-  };
+  }), [hasError]);
 
   // 信息网格样式
-  const infoGridStyle = {
+  const infoGridStyle = useMemo(() => ({
     display: "grid",
     gridTemplateColumns: "repeat(2, 1fr)",
     gap: "8px 16px",
     fontSize: 13,
-  };
+  }), []);
 
   // 每一项样式
-  const infoItemStyle = {
+  const infoItemStyle = useMemo(() => ({
     display: "flex",
     alignItems: "center",
-  };
+  }), []);
 
   // 标签样式
-  const labelStyle = {
+  const labelStyle = useMemo(() => ({
     minWidth: 70,
     color: "#8c8c8c",
     marginRight: 8,
     display: "flex",
     alignItems: "center",
-  };
+  }), []);
 
   // 处理文件大小
-  const processedSize = size !== undefined ? formatFileSize(size) : null;
+  const processedSize = useMemo(() => {
+    return size !== undefined ? formatFileSize(size) : null;
+  }, [size]);
 
   // 根据文件类型选择图标
   const FileIcon = is_directory ? FolderOutlined : FileOutlined;
-  const iconColor = is_directory ? "#fa8c16" : "#1890ff";
+  const iconColor = useMemo(() => is_directory ? "#fa8c16" : "#1890ff", [is_directory]);
 
   return (
     <div style={containerStyle}>

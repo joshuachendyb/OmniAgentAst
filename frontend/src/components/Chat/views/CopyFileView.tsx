@@ -94,9 +94,6 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
     navigator.clipboard.writeText(path);
   };
 
-  // 处理文件大小
-  const processedFileSize = file_size !== undefined ? formatFileSize(file_size) : null;
-
   return (
     <div style={containerStyle}>
       {/* 标题 */}
