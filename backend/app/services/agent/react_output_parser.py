@@ -132,6 +132,36 @@ def parse_react_response(output: str) -> Dict[str, Any]:
     # 【新增 2026-04-24 小沈】JSON预解析失败后，尝试从混合文本中提取JSON块
     # 解决混合文本+JSON（情况③/⑤）的解析问题：LLM返回"思考文本+JSON"格式时正确提取
     json_data = _extract_json_block(output)
+    
+    # 【新增 2026-04-26 小沈】检测不完整JSON格式
+    # 问题来源：日志 app_2026-04-25.log 23:23:43 LLM原始返回被截断
+    # 原始文本: {"thought": "用户想查看D盘的目录情况，我需要使用list_directory工具来列出D盘
+    # 解析器误将thought值中的"list_directory"识别为可执行action
+    #
+    # 修复逻辑：
+    # 1. 如果json_data为空（JSON提取失败）
+    # 2. 且原始文本匹配 {"thought": "xxx" 格式（不完整JSON）
+    # 3. 则返回implicit类型，不误识别为action
+    #
+    # 测试用例:
+    #   输入: {"thought": "用户想查看D盘的目录情况，我需要使用list_directory工具来列出D盘"
+    #   修复前: type=action, tool_name=list_directory  (误识别)
+    #   修复后: type=implicit, tool_name=None, thought=原始文本 (正确)
+    if not json_data:
+        if re.match(r'^\s*\{\s*"thought":\s*"', output):
+            thought_text = output.strip()
+            logger.info("[parse_react_response] 检测到不完整JSON格式，返回implicit")
+            return {
+                "type": "implicit",
+                "thought": thought_text,
+                "content": thought_text,
+                "reasoning": thought_text,
+                "tool_name": None,
+                "tool_params": None,
+                "response": thought_text,
+                "error": None
+            }
+    
     if json_data and isinstance(json_data, dict):
         # 提取前面的文本（JSON之前的部分）作为content
         # 找到第一个'{'的位置，前面的文本就是content
