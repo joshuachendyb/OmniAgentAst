@@ -353,23 +353,24 @@ export const getStepBadgeStyle = (
   
   if (variant === 'outline') {
     return {
-      padding: '1px 6px',
-      borderRadius: 4,
-      fontSize: FontSize.CAPTION,
-      fontWeight: FontWeight.MEDIUM,
+      padding: '4px 10px',
+      borderRadius: 6,
+      fontSize: FontSize.TERTIARY,
+      fontWeight: FontWeight.BOLD,
       color: scheme.text,
-      border: `1px solid ${scheme.border}`,
+      border: '1.5px solid ' + scheme.border,
       backgroundColor: 'transparent',
     };
   }
   
   return {
-    padding: '1px 6px',
-    borderRadius: 4,
-    fontSize: FontSize.CAPTION,
-    fontWeight: FontWeight.MEDIUM,
+    padding: '4px 10px',
+    borderRadius: 6,
+    fontSize: FontSize.TERTIARY,
+    fontWeight: FontWeight.BOLD,
     color: Colors.TEXT.INVERSE,
     backgroundColor: scheme.text,
+    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
   };
 };
 

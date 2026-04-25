@@ -9,6 +9,7 @@
 import React from "react";
 import { formatTimestamp } from "../../../utils/timestamp";
 import type { ExecutionStep } from "../../../utils/sse";
+import { getTimestampStyle } from "../../../utils/stepStyles";
 
 interface StepHeaderProps {
   step: ExecutionStep;
@@ -44,10 +45,7 @@ const StepHeader: React.FC<StepHeaderProps> = ({
       <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
       {/* timestamp放在行右侧，与右侧边框挨着，更醒目 */}
       {step.timestamp && (
-        <span style={{ 
-          fontSize: 11, 
-          color: "#999999" 
-        }}>
+        <span style={getTimestampStyle(step.type as any)}>
           ⏰ {formatTimestamp(step.timestamp)}
         </span>
       )}
