@@ -602,7 +602,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
   const handleEditModel = async (providerName: string, modelName: string) => {
     setEditingModel({ provider: providerName, model: modelName });
-    modelEditForm.setFieldsValue({ model: modelName });
+modelEditForm.setFieldsValue({ model: modelName });
     setEditModelModalVisible(true);
   };
 
@@ -611,8 +611,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
     try {
       await configApi.updateModel(editingModel.provider, editingModel.model, values.model);
 
-      // 刷新配置
-      loadConfig();
+      // ✅ 只刷新模型列表，不重新加载全部配置，避免状态重置
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
 
       showSuccess("模型已更新");
       setEditModelModalVisible(false);
@@ -629,8 +630,9 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
     try {
       await configApi.deleteModel(providerName, modelName);
 
-      // 刷新配置
-      loadConfig();
+      // ✅ 只刷新模型列表，不重新加载全部配置，避免状态重置
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
 
       showSuccess("模型已删除");
     } catch (error) {
@@ -705,13 +707,19 @@ return { success: true, model: modelName };
     }
   };
 
-  // 添加模型
+// 添加模型
   const handleAddModel = async (values: { model: string }) => {
     try {
       await configApi.addModel(selectedProviderForModel, values);
 
-      // 刷新配置
-      loadConfig();
+      // ✅ 先关闭弹窗，避免延迟
+      setAddModelModalVisible(false);
+      modelForm.resetFields(); // ✅ 重置表单
+      setSelectedProviderForModel(""); // ✅ 清空选中的Provider
+
+      // 刷新模型列表（异步，不阻塞弹窗关闭）
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
 
       // 验证服务可用性
       try {
@@ -721,9 +729,6 @@ return { success: true, model: modelName };
       }
 
       showSuccess("模型已添加");
-      setAddModelModalVisible(false);
-      modelForm.resetFields(); // ✅ 重置表单
-      setSelectedProviderForModel(""); // ✅ 清空选中的Provider
     } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "添加失败");
