@@ -444,7 +444,8 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [validationResult] = useState<any>(null);
   const [validationModalVisible, setValidationModalVisible] = useState(false);
-  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editProviderModalVisible, setEditProviderModalVisible] = useState(false);
+  const [editModelModalVisible, setEditModelModalVisible] = useState(false);
   const [addModelModalVisible, setAddModelModalVisible] = useState(false);
   const [addProviderModalVisible, setAddProviderModalVisible] = useState(false);
   const [editingProvider, setEditingProvider] = useState<ProviderInfo | null>(
@@ -552,7 +553,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       timeout: provider.timeout,
       max_retries: provider.max_retries,
     });
-    setEditModalVisible(true);
+    setEditProviderModalVisible(true);
   };
 
   // 保存Provider编辑
@@ -572,7 +573,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       }
 
       showSuccess("Provider配置已更新");
-      setEditModalVisible(false);
+      setEditProviderModalVisible(false);
       form.resetFields(); // ✅ 重置表单
       setEditingProvider(null); // ✅ 清空编辑状态
     } catch (error) {
@@ -589,7 +590,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       loadConfig();
 
       showSuccess("Provider已删除");
-    } catch (error: unknown) {
+    } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "删除失败");
     }
@@ -602,7 +603,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
   const handleEditModel = async (providerName: string, modelName: string) => {
     setEditingModel({ provider: providerName, model: modelName });
     modelEditForm.setFieldsValue({ model: modelName });
-    setEditModalVisible(true);
+    setEditModelModalVisible(true);
   };
 
   const handleUpdateModel = async (values: { model: string }) => {
@@ -614,10 +615,10 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       loadConfig();
 
       showSuccess("模型已更新");
-      setEditModalVisible(false);
+      setEditModelModalVisible(false);
       setEditingModel(null);
       modelEditForm.resetFields();
-    } catch (error: unknown) {
+    } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "更新失败");
     }
@@ -632,7 +633,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       loadConfig();
 
       showSuccess("模型已删除");
-    } catch (error: unknown) {
+    } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "删除失败");
     }
@@ -663,7 +664,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
           });
           setDeleteProgress({ current: index + 1, total: models.length });
 return { success: true, model: modelName };
-        } catch (error: unknown) {
+        } catch (error) {
           const err = error as { name?: string };
           if (err?.name === "AbortError" || controller.signal.aborted) {
             return { success: false, model: modelName, cancelled: true };
@@ -690,7 +691,7 @@ return { success: true, model: modelName };
 
       setSelectedModels(new Set());
       loadConfig();
-    } catch (error: unknown) {
+    } catch (error) {
       const err = error as { name?: string };
       if (err?.name === "AbortError") {
         handleError({ message: "批量删除已取消", error_type: ErrorType.WARNING });
@@ -723,7 +724,7 @@ return { success: true, model: modelName };
       setAddModelModalVisible(false);
       modelForm.resetFields(); // ✅ 重置表单
       setSelectedProviderForModel(""); // ✅ 清空选中的Provider
-    } catch (error: unknown) {
+    } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "添加失败");
     }
@@ -755,7 +756,7 @@ return { success: true, model: modelName };
       showSuccess("Provider已添加");
       setAddProviderModalVisible(false);
       providerForm.resetFields();
-    } catch (error: unknown) {
+    } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "添加失败");
     }
@@ -1316,17 +1317,20 @@ return { success: true, model: modelName };
       </Modal>
 
       {/* 编辑Provider弹框 */}
-      <Modal
-        title={`编辑 ${getProviderDisplayName(
-          editingProvider?.name || "",
-          providers
-        )} 配置`}
-        open={editModalVisible}
-        onCancel={() => setEditModalVisible(false)}
-        footer={null}
-        width={600}
-      >
-        <Form form={form} layout="vertical" onFinish={handleSaveProvider}>
+       <Modal
+         title={`编辑 ${getProviderDisplayName(
+           editingProvider?.name || "",
+           providers
+         )} 配置`}
+         open={editProviderModalVisible}
+         onCancel={() => {
+           setEditProviderModalVisible(false);
+           form.resetFields();
+         }}
+         footer={null}
+         width={600}
+       >
+         <Form form={form} layout="vertical" onFinish={handleSaveProvider}>
           <Form.Item
             label="API地址"
             name="api_base"
@@ -1357,7 +1361,7 @@ return { success: true, model: modelName };
               <Button type="primary" htmlType="submit">
                 保存
               </Button>
-              <Button onClick={() => setEditModalVisible(false)}>取消</Button>
+              <Button onClick={() => setEditProviderModalVisible(false)}>取消</Button>
             </Space>
           </Form.Item>
         </Form>
@@ -1396,17 +1400,17 @@ return { success: true, model: modelName };
       </Modal>
 
       {/* 编辑模型弹框 */}
-      <Modal
-        title="编辑模型"
-        open={editModalVisible}
-        onCancel={() => {
-          setEditModalVisible(false);
-          setEditingModel(null);
-          modelEditForm.resetFields();
-        }}
-        footer={null}
-      >
-        <Form form={modelEditForm} layout="vertical" onFinish={handleUpdateModel}>
+       <Modal
+         title="编辑模型"
+         open={editModelModalVisible}
+         onCancel={() => {
+           setEditModelModalVisible(false);
+           setEditingModel(null);
+           modelEditForm.resetFields();
+         }}
+         footer={null}
+       >
+         <Form form={modelEditForm} layout="vertical" onFinish={handleUpdateModel}>
           <Form.Item
             label="模型名称"
             name="model"
@@ -1420,7 +1424,7 @@ return { success: true, model: modelName };
               <Button type="primary" htmlType="submit">
                 保存
               </Button>
-              <Button onClick={() => setEditModalVisible(false)}>
+              <Button onClick={() => setEditModelModalVisible(false)}>
                 取消
               </Button>
             </Space>
