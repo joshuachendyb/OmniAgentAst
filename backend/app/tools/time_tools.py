@@ -4,11 +4,11 @@
 
 包含：
 - P0 核心基础（5个）：time_now, time_format, time_diff, timer_set, timer_clear;
-- P1 常用辅助（3个）：time_utc_to_local, time_local_to_utc, time_is_weekend, time_is_holiday;
+- P1 常用辅助（4个）：time_utc_to_local, time_local_to_utc, time_is_weekend, time_is_holiday;
 
 Author: 小沈 - 2026-04-25;
-创建时间: 2026-04-25 17:17:43;
-修正时间: 2026-04-25 17:40:00;
+创建时间: 2026-04-25 15:44:54;
+修正时间: 2026-04-25 17:55:00;
 """
 
 import asyncio;
@@ -22,9 +22,9 @@ _timers: Dict[str, asyncio.TimerHandle] = {};
 _timer_counter = 0;
 
 
-# ===========================================================;
-# P0 核心基础（普通用户最高频场景）;
-# ============================================================;
+# ===========================================================
+# P0 核心基础（普通用户最高频场景）
+# ===========================================================
 
 def time_now() -> Dict[str, Any]:
     """
@@ -71,7 +71,7 @@ def time_now() -> Dict[str, Any]:
             "code": "ERR_TIME_NOW",
             "data": None,
             "message": f"获取当前时间失败: {str(e)}"
-        };
+        }
 
 
 def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) -> Dict[str, Any]:
@@ -150,7 +150,7 @@ def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) 
             "code": "ERR_TIME_FORMAT",
             "data": None,
             "message": f"格式化时间失败: {str(e)}"
-        };
+        }
 
 
 def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
@@ -197,8 +197,11 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
             return {
                 "code": "ERR_TIME_DIFF",
                 "data": None,
-                "message": f"无法解析开始时间: {start}"
+                "message": f"无法解析开始时间: {start} (类型: {type(start).__name__})"
             }
+        # 确保是offset-aware
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc).astimezone()
         
         # 2. 解析结束时间
         if end is None:
@@ -209,13 +212,18 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
                 return {
                     "code": "ERR_TIME_DIFF",
                     "data": None,
-                    "message": f"无法解析结束时间: {end}"
+                    "message": f"无法解析结束时间: {end} (类型: {type(end).__name__})"
                 }
+            # 确保是offset-aware
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc).astimezone()
         
         # 3. 计算差值
-        delta = end_dt - start_dt  # end - start;
+        delta = end_dt - start_dt
         total_seconds = abs(delta.total_seconds())
-        is_future = delta.total_seconds() > 0  # end > start 表示未来（is_future=True）;
+        # is_future: 结束时间是否在未来（相对于当前时间）
+        now = datetime.now().astimezone()
+        is_future = end_dt > now  # end在未来 → True
         
         seconds = int(total_seconds)
         minutes = total_seconds / 60.0;
@@ -258,7 +266,7 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
             "code": "ERR_TIME_DIFF",
             "data": None,
             "message": f"计算时间差失败: {str(e)}"
-        };
+        }
 
 
 async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -343,7 +351,7 @@ async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[st
             "code": "ERR_TIMER_SET",
             "data": None,
             "message": f"设置定时器失败: {str(e)}"
-        };
+        }
 
 
 async def timer_clear(timer_id: str) -> Dict[str, Any]:
@@ -397,12 +405,12 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
             "code": "ERR_TIMER_CLEAR",
             "data": None,
             "message": f"清除定时器失败: {str(e)}"
-        };
+        }
 
 
-# ===========================================================;
-# P1 常用辅助（时区、日历相关）;
-# ============================================================;
+# ===========================================================
+# P1 常用辅助（时区、日历相关）
+# ===========================================================
 
 def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -474,7 +482,7 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
             "code": "ERR_TIME_UTC_TO_LOCAL",
             "data": None,
             "message": f"时区转换失败: {str(e)}"
-        };
+        }
 
 
 def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[str, Any]:
@@ -515,7 +523,7 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
                 offset_hours = int(source_tz[1:3])
                 offset_minutes = int(source_tz[4:6])
                 tz = timezone(timedelta(hours=offset_hours, minutes=offset_minutes))
-                local_dt = local_dt.replace(tzinfo=tz);
+                local_dt = local_dt.replace(tzinfo=tz)
         
         # 2. 转换为UTC
         utc_dt = local_dt.astimezone(timezone.utc);
@@ -534,7 +542,7 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
             "code": "ERR_TIME_LOCAL_TO_UTC",
             "data": None,
             "message": f"时区转换失败: {str(e)}"
-        };
+        }
 
 
 def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
@@ -602,7 +610,7 @@ def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
             "code": "ERR_TIME_IS_WEEKEND",
             "data": None,
             "message": f"检查周末失败: {str(e)}"
-        };
+        }
 
 
 def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
@@ -681,12 +689,12 @@ def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
             "code": "ERR_TIME_IS_HOLIDAY",
             "data": None,
             "message": f"检查假日失败: {str(e)}"
-        };
+        }
 
 
-# ===========================================================;
-# 内部辅助函数;
-# ============================================================;
+# ===========================================================
+# 内部辅助函数
+# ===========================================================
 
 def _parse_datetime_any(value: Any) -> Optional[datetime]:
     """
@@ -721,6 +729,9 @@ def _parse_datetime_string(date_str: str) -> Optional[datetime]:
         - 简单日期时间：2026-04-25 15:44:54;
         - 斜杠格式：2026/04/25;
         - 中文格式：2026年04月25日;
+        - 带T的ISO格式（不带时区）：2026-04-25T15:44:54;
+        - 带T和微秒的ISO格式：2026-04-25T15:44:54.123456;
+        - 带T和时区的ISO格式：2026-04-25T15:44:54+08:00;
     
     Returns:
         datetime对象，解析失败返回None;
@@ -729,13 +740,22 @@ def _parse_datetime_string(date_str: str) -> Optional[datetime]:
         # 去除空格
         date_str = date_str.strip();
         
-        # 尝试ISO格式
+        # 方法1：尝试ISO格式（带冒号时区）
+        try:
+            # 处理时区中的冒号：+08:00 → +0800
+            s = re.sub(r'([+-]\d{2}):(\d{2})$', r'\1\2', date_str)
+            if s != date_str:  # 确实去除了冒号
+                return datetime.fromisoformat(s)
+        except ValueError:
+            pass;
+        
+        # 方法2：尝试直接ISO格式（可能不带时区）
         try:
             return datetime.fromisoformat(date_str)
         except ValueError:
             pass;
         
-        # 尝试常见格式
+        # 方法3：尝试常见格式（带T）
         formats = [
             "%Y-%m-%d %H:%M:%S",
             "%Y-%m-%d",
@@ -743,6 +763,10 @@ def _parse_datetime_string(date_str: str) -> Optional[datetime]:
             "%Y/%m/%d",
             "%Y年%m月%d日 %H:%M:%S",
             "%Y年%m月%d日",
+            "%Y-%m-%dT%H:%M:%S",          # 带T不带时区
+            "%Y-%m-%dT%H:%M:%S.%f",    # 带T和微秒
+            "%Y-%m-%dT%H:%M:%S%z",       # 带T和时区（无冒号）
+            "%Y-%m-%dT%H:%M:%S.%f%z",   # 带T、微秒和时区
         ]
         
         for fmt in formats:
@@ -753,7 +777,7 @@ def _parse_datetime_string(date_str: str) -> Optional[datetime]:
             except ValueError:
                 continue;
         
-        # 尝试提取数字：20260425;
+        # 方法4：尝试提取数字
         numbers = re.findall(r'\d+', date_str)
         if len(numbers) >= 3:
             try:
@@ -769,6 +793,8 @@ def _parse_datetime_string(date_str: str) -> Optional[datetime]:
             except Exception:
                 pass;
         
+        return None;
+    except Exception:
         return None;
     except Exception:
         return None;
