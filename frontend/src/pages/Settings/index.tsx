@@ -431,7 +431,7 @@ const ProviderList: React.FC<{
  * @author 小新
  * @update 2026-02-26 重构：提取子组件
  */
-const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = true }) => {
+const ProviderSettings: React.FC<{ shouldLoad?: boolean; forceRefresh?: boolean }> = ({ shouldLoad = true, forceRefresh }) => {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [currentProvider, setCurrentProvider] = useState<string>("");
   // 模型列表（从 getModelList API 获取，包含 display_name）
@@ -538,11 +538,11 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
   useEffect(() => {
     // ⭐ 老杨修复：按需加载 - 只在shouldLoad为true时加载
-    if (shouldLoad) {
+    // 如果是强制刷新后的回调，不重新加载
+    if (shouldLoad && !forceRefresh) {
       handleLoadWithValidation();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shouldLoad]);
+  }, [shouldLoad, forceRefresh]);
 
   // 编辑Provider
   const handleEditProvider = (provider: ProviderInfo) => {
@@ -578,8 +578,10 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
 
       showSuccess("Provider配置已更新");
       setEditProviderModalVisible(false);
-      form.resetFields(); // ✅ 重置表单
-      setEditingProvider(null); // ✅ 清空编辑状态
+      form.resetFields();
+      setEditingProvider(null);
+      // ✅ 触发强制刷新标记
+      setForceRefreshFlag(f => f + 1);
     } catch (error) {
       handleError("更新失败");
     }
@@ -625,6 +627,8 @@ modelEditForm.setFieldsValue({ model: modelName });
       setEditModelModalVisible(false);
       setEditingModel(null);
       modelEditForm.resetFields();
+      // ✅ 触发强制刷新标记
+      setForceRefreshFlag(f => f + 1);
     } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "更新失败");
@@ -644,6 +648,8 @@ modelEditForm.setFieldsValue({ model: modelName });
       console.log("删除模型后刷新列表:", modelData.models);
 
       showSuccess("模型已删除");
+      // ✅ 触发强制刷新标记
+      setForceRefreshFlag(f => f + 1);
     } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "删除失败");
@@ -706,6 +712,8 @@ return { success: true, model: modelName };
       setProviders(Object.values(data.providers));
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
+      // ✅ 触发强制刷新标记
+      setForceRefreshFlag(f => f + 1);
     } catch (error) {
       const err = error as { name?: string };
       if (err?.name === "AbortError") {
@@ -745,6 +753,8 @@ return { success: true, model: modelName };
       }
 
       showSuccess("模型已添加");
+      // ✅ 触发强制刷新标记
+      setForceRefreshFlag(f => f + 1);
     } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "添加失败");
@@ -781,6 +791,8 @@ return { success: true, model: modelName };
       showSuccess("Provider已添加");
       setAddProviderModalVisible(false);
       providerForm.resetFields();
+      // ✅ 触发强制刷新标记
+      setForceRefreshFlag(f => f + 1);
     } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "添加失败");
@@ -1819,6 +1831,8 @@ const Settings: React.FC = () => {
   const [pendingKey, setPendingKey] = useState<string>("");
   // ⭐ 老杨修复：按需加载 - 跟踪已加载的Tab
   const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(["model"])); // 默认"model"已加载
+  // ⭐ 新增：防止操作后重新加载的标记
+  const [forceRefreshFlag, setForceRefreshFlag] = useState(0);
   // ⭐ 删除未使用的状态变量：configFilePath, fixingConfig, fixProgress, showFixModal
 
   /**
@@ -1892,7 +1906,7 @@ const Settings: React.FC = () => {
               key="model"
             >
               {/* ⭐ 老杨修复：按需加载 - 传递shouldLoad参数 */}
-              <ProviderSettings shouldLoad={loadedTabs.has("model")} />
+              <ProviderSettings shouldLoad={loadedTabs.has("model")} forceRefresh={forceRefreshFlag} />
             </TabPane>
 
             <TabPane
