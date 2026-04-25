@@ -103,19 +103,19 @@ export const Colors = {
 
 // ==================== 步骤配置 ====================
 
-// 精细化颜色方案映射 - 每个步骤都有独特的视觉语义和分行规则
+// 精细化颜色方案映射 - 统一为3种主色调：灰/绿/橙
 const colorSchemes: Record<StepType, ColorScheme> = {
-  // ===== 思考类（橙色系）- 表示思考和警告 =====
-thought: {
-      bg1: "#fff7e6",
-      bg2: "#fffbe6",
-      border: "#ffd591",
-      text: "#ad4e00",
-      textSecondary: "#7a4a00",  // 更深的橙色，提高对比度
-      label: "💭 思考",
-      priority: "secondary",
-      layout: "block",
-    },
+  // ===== 思考类（橙色系）=====
+  thought: {
+    bg1: "#fff7e6",
+    bg2: "#fffbe6",
+    border: "#ffd591",
+    text: "#ad4e00",
+    textSecondary: "#7a4a00",
+    label: "💭 思考",
+    priority: "secondary",
+    layout: "block",
+  },
   interrupted: {
     bg1: "#fff2e8",
     bg2: "#fff",
@@ -124,42 +124,42 @@ thought: {
     textSecondary: "#ad4e26",
     label: "⚠️ 中断",
     priority: "primary",
-    layout: "block",  // 中断信息需要醒目显示
+    layout: "block",
   },
 
-  // ===== 信息类（蓝色系）- 表示进行中的操作 =====
+  // ===== 基础类（灰色系）=====
   start: {
-    bg1: "#e6f7ff",
-    bg2: "#f0f8ff",
-    border: "#91d5ff",
-    text: "#0050b3", // 改为更深蓝色，提高可读性
-    textSecondary: "#003a8c",
+    bg1: "#fafafa",
+    bg2: "#f5f5f5",
+    border: "#d9d9d9",
+    text: "#262626",
+    textSecondary: "#595959",
     label: "🚀 开始",
     priority: "primary",
-    layout: "inline-with-details",  // 标题一行，详情可以展开
+    layout: "inline-with-details",
   },
   retrying: {
-    bg1: "#e6f7ff",
-    bg2: "#f9f0ff",
-    border: "#91d5ff",
-    text: "#1d39c4",
-    textSecondary: "#597ef7",
+    bg1: "#f5f5f5",
+    bg2: "#f0f0f0",
+    border: "#d9d9d9",
+    text: "#595959",
+    textSecondary: "#8c8c8c",
     label: "🔄 重试",
     priority: "secondary",
-    layout: "inline",  // 重试信息简短，一行显示
+    layout: "inline",
   },
   action_tool: {
-    bg1: "#e6f7ff",
-    bg2: "#f0f5ff",
-    border: "#69c0ff",
-    text: "#003a8c", // 改为更深蓝色，提高可读性
-    textSecondary: "#0050b3",
+    bg1: "#f5f5f5",
+    bg2: "#fafafa",
+    border: "#d9d9d9",
+    text: "#262626",
+    textSecondary: "#595959",
     label: "⚙️ 执行",
     priority: "primary",
-    layout: "inline-with-details",  // 工具名一行，参数可展开
+    layout: "inline-with-details",
   },
 
-  // ===== 完成类（绿色系）- 表示成功和完成 =====
+  // ===== 完成类（绿色系）=====
   final: {
     bg1: "#f6ffed",
     bg2: "#f5f5f5",
@@ -168,31 +168,38 @@ thought: {
     textSecondary: "#52c41a",
     label: "✅ 完成",
     priority: "primary",
-    layout: "block",  // 完成信息可能较长，需要换行
+    layout: "block",
   },
   resumed: {
     bg1: "#f6ffed",
-    bg2: "#f0f5ff",
+    bg2: "#f5f5f5",
     border: "#b7eb8f",
     text: "#389e0d",
-    textSecondary: "#237804", // 【老杨修复 2026-03-25】提升对比度：#73d13d → #237804 (WCAG 4.5:1)
+    textSecondary: "#237804",
     label: "▶️ 恢复",
     priority: "secondary",
-    layout: "inline",  // 恢复信息简短，一行显示
+    layout: "inline",
   },
   observation: {
-    bg1: "#e6ffed",
+    bg1: "#f6ffed",
     bg2: "#f5fff5",
-    border: "#73d13d",
-    text: "#237804",
-    textSecondary: "#389e0d",
+    border: "#b7eb8f",
+    text: "#389e0d",
+    textSecondary: "#52c41a",
     label: "📋 观察",
     priority: "secondary",
-    layout: "inline-with-details",  // 观察摘要一行，详细可展开
+    layout: "inline-with-details",
   },
   report: {
     bg1: "#f6ffed",
     bg2: "#f5f5f5",
+    border: "#b7eb8f",
+    text: "#389e0d",
+    textSecondary: "#52c41a",
+    label: "📊 报告",
+    priority: "secondary",
+    layout: "inline-with-details",
+  },
     border: "#b7eb8f",
     text: "#52c41a",
     textSecondary: "#237804", // 【老杨修复 2026-03-25】提升对比度：#73d13d → #237804 (WCAG 4.5:1)
@@ -259,7 +266,7 @@ export const getStepStyle = (stepType: StepType | string, isPrimary: boolean = t
   
   const style = {
     ...baseStyle,
-    background: `linear-gradient(135deg, ${scheme.bg1} 0%, ${scheme.bg2} 100%)`,
+    background: scheme.bg1,
     border: `1px solid ${scheme.border}`,
     color: scheme.text,
   };

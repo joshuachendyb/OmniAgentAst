@@ -35,7 +35,7 @@ const MoveFileView: React.FC<MoveFileViewProps> = ({ data }) => {
 
   // 移动成功样式
   const moveStyle = {
-    background: "linear-gradient(135deg, #e6f7ff 0%, #f5f5f5 100%)",
+    background: "#e6f7ff",
     border: "1px solid #91d5ff",
     borderRadius: 8,
     padding: "12px 16px",

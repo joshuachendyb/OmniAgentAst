@@ -35,7 +35,7 @@ const WriteFileView: React.FC<WriteFileViewProps> = ({ data }) => {
 
   // 成功样式
   const successStyle = {
-    background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
+    background: "#f6ffed",
     border: "1px solid #b7eb8f",
     borderRadius: 8,
     padding: "12px 16px",

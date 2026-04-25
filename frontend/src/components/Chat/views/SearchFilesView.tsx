@@ -196,7 +196,7 @@ const SearchFilesView: React.FC<SearchFilesViewProps> = ({ data, onLoadMore, isL
 
   // 【小强实现 2026-03-31】蓝色系搜索结果背景样式（与action_tool一致）
   const searchResultStyle = {
-    background: "linear-gradient(135deg, #e6f7ff 0%, #f0f5ff 100%)",
+    background: "#e6f7ff",
     border: "1px solid #69c0ff",
     borderRadius: 8,
     padding: "10px 14px",

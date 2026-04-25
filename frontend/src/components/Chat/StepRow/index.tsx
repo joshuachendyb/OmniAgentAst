@@ -48,14 +48,14 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   }), []);
 
   const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    e.currentTarget.style.background = "linear-gradient(135deg, #f0f0f0 0%, #e8e8e8 100%)";
+    e.currentTarget.style.background = "#fafafa";
     e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.12)";
     e.currentTarget.style.border = "1px solid #d0d0d0";
     e.currentTarget.style.transform = "translateY(-1px)";
   }, []);
 
   const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    e.currentTarget.style.background = "linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)";
+    e.currentTarget.style.background = "#fff";
     e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)";
     e.currentTarget.style.border = "1px solid #e8e8e8";
     e.currentTarget.style.transform = "translateY(0)";
@@ -68,7 +68,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
       marginBottom: 12, 
       padding: "12px 16px",
       borderRadius: 12,
-      background: "linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)",
+      background: "#fff",
       border: "1px solid #e8e8e8",
       boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
       transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",

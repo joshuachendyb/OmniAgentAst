@@ -168,8 +168,8 @@ const StepContent: React.FC<StepContentProps> = ({
               marginTop: 4,
               padding: '6px 10px',
               borderRadius: 6,
-              background: 'rgba(24,144,255,0.06)',
-              border: '1px solid rgba(24,144,255,0.15)',
+              background: 'rgba(0,0,0,0.03)',
+              border: '1px solid rgba(0,0,0,0.08)',
               fontSize: FontSize.SMALL,
               display: 'flex',
               flexWrap: 'wrap',
@@ -177,20 +177,20 @@ const StepContent: React.FC<StepContentProps> = ({
             }}>
               {(step as ExecutionStep & Record<string, unknown>).provider && (
                 <span>
-                  <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>provider：</span>
-                  <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as ExecutionStep & Record<string, unknown>).provider}</span>
+                  <span style={{ color: Colors.TEXT.TERTIARY, fontWeight: FontWeight.MEDIUM }}>provider：</span>
+                  <span style={{ color: Colors.TEXT.PRIMARY, fontWeight: FontWeight.MEDIUM }}>{(step as ExecutionStep & Record<string, unknown>).provider}</span>
                 </span>
               )}
               {(step as ExecutionStep & Record<string, unknown>).model && (
                 <span>
-                  <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>model：</span>
-                  <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as ExecutionStep & Record<string, unknown>).model}</span>
+                  <span style={{ color: Colors.TEXT.TERTIARY, fontWeight: FontWeight.MEDIUM }}>model：</span>
+                  <span style={{ color: Colors.TEXT.PRIMARY, fontWeight: FontWeight.MEDIUM }}>{(step as ExecutionStep & Record<string, unknown>).model}</span>
                 </span>
               )}
               {(step as ExecutionStep & Record<string, unknown>).display_name && (
                 <span>
-                  <span style={{ color: Colors.TEXT.SECONDARY, fontWeight: FontWeight.MEDIUM }}>display_name：</span>
-                  <span style={{ color: '#1890ff', fontWeight: FontWeight.MEDIUM }}>{(step as ExecutionStep & Record<string, unknown>).display_name}</span>
+                  <span style={{ color: Colors.TEXT.TERTIARY, fontWeight: FontWeight.MEDIUM }}>display_name：</span>
+                  <span style={{ color: Colors.TEXT.PRIMARY, fontWeight: FontWeight.MEDIUM }}>{(step as ExecutionStep & Record<string, unknown>).display_name}</span>
                 </span>
               )}
             </div>

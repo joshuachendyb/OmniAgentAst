@@ -292,7 +292,7 @@ interface VirtualFileListProps {
 
 const VirtualFileList: React.FC<VirtualFileListProps> = ({ filteredEntries }) => {
   const fileListBackground = {
-    background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
+    background: "#f6ffed",
     border: "1px solid #b7eb8f",
     borderRadius: 8,
     padding: "10px 14px",
@@ -468,7 +468,7 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
 
   // 文件列表背景样式
   const fileListBackground = {
-    background: "linear-gradient(135deg, #f6ffed 0%, #f5f5f5 100%)",
+    background: "#f6ffed",
     border: "1px solid #b7eb8f",
     borderRadius: 8,
     padding: "10px 14px",
@@ -594,29 +594,6 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
           ) : (
             /* 非递归模式：虚拟列表 - List自身管理滚动，外层div不限制 */
             <VirtualFileList filteredEntries={filteredEntries} />
-          )}
-
-          {/* 总数信息 - 也根据 isExpanded 控制 */}
-          {total > 0 && (
-            <div
-              style={{
-                marginTop: 8,
-                fontSize: 12,
-                color: "#666",
-              }}
-            >
-              <span
-                style={{
-                  background: "#e6f7ff",
-                  padding: "2px 8px",
-                  borderRadius: 4,
-                  color: "#1890ff",
-                  fontWeight: 500,
-                }}
-              >
-                {/* 【小沈删除 2026-03-30】用户要求删除"📊 共 XX 个项目" */}
-              </span>
-            </div>
           )}
         </>
       )}
