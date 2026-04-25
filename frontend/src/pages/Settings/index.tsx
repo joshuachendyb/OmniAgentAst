@@ -522,6 +522,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean; forceRefresh?: boolean 
   // 选择Provider
   const onSelectProvider = (provider: ProviderInfo) => {
     setSelectedProvider(provider);
+    setCurrentProvider(provider.name); // 同时更新currentProvider以更新列表高亮
   };
 
   // 加载配置时同时进行验证
@@ -569,18 +570,24 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean; forceRefresh?: boolean 
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
 
-      // 验证服务可用性
+      // 验证服务可用性（失败不影响弹窗关闭）
       try {
         await chatApi.validateService();
       } catch (e) {
         console.warn("验证服务失败:", e);
       }
 
-      showSuccess("Provider配置已更新");
+      // 先关闭弹窗，再显示成功提示（避免状态冲突）
       setEditProviderModalVisible(false);
       form.resetFields();
       setEditingProvider(null);
+      
+      // 延迟显示成功提示，确保弹窗已关闭
+      setTimeout(() => {
+        showSuccess("Provider配置已更新");
+      }, 150);
     } catch (error) {
+      console.error("更新Provider失败:", error);
       handleError("更新失败");
     }
   };
@@ -613,13 +620,22 @@ modelEditForm.setFieldsValue({ model: modelName });
   const handleUpdateModel = async (values: { model: string }) => {
     if (!editingModel) return;
     try {
-      await configApi.updateModel(editingModel.provider, editingModel.model, values.model);
+      // 清理输入：移除多余空白字符
+      const cleanModelName = values.model.trim().replace(/\s+/g, " ");
+      await configApi.updateModel(editingModel.provider, editingModel.model, cleanModelName);
 
       // ✅ 同时刷新providers和modelList
       const data = await configApi.getFullConfig();
       setProviders(Object.values(data.providers));
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
+      
+      // 更新当前选中的Provider数据，确保模型列表同步更新
+      const providerArray = Object.values(data.providers) as ProviderInfo[];
+      const updatedProvider = providerArray.find((p) => p.name === editingModel.provider);
+      if (updatedProvider) {
+        setSelectedProvider(updatedProvider);
+      }
 
       showSuccess("模型已更新");
       setEditModelModalVisible(false);
@@ -641,6 +657,13 @@ modelEditForm.setFieldsValue({ model: modelName });
       setProviders(Object.values(data.providers));
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
+      
+      // 更新当前选中的Provider数据，确保模型列表同步更新
+      const providerArray = Object.values(data.providers) as ProviderInfo[];
+      const updatedProvider = providerArray.find((p) => p.name === providerName);
+      if (updatedProvider) {
+        setSelectedProvider(updatedProvider);
+      }
       console.log("删除模型后刷新列表:", modelData.models);
 
       showSuccess("模型已删除");
@@ -694,6 +717,13 @@ const handleBatchDeleteModels = async (
       setProviders(Object.values(data.providers));
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
+      
+      // 更新当前选中的Provider数据，确保模型列表同步更新
+      const providerArray = Object.values(data.providers) as ProviderInfo[];
+      const updatedProvider = providerArray.find((p) => p.name === providerName);
+      if (updatedProvider) {
+        setSelectedProvider(updatedProvider);
+      }
 
       setSelectedModels(new Set());
 
@@ -730,7 +760,9 @@ const handleBatchDeleteModels = async (
 // 添加模型
   const handleAddModel = async (values: { model: string }) => {
     try {
-      const result = await configApi.addModel(selectedProviderForModel, values);
+      // 清理输入：移除多余空白字符，换行符等
+      const cleanModelName = values.model.trim().replace(/\s+/g, " ");
+      const result = await configApi.addModel(selectedProviderForModel, { model: cleanModelName });
       console.log("添加模型结果:", result);
 
       // ✅ 先关闭弹窗，避免延迟
@@ -743,6 +775,14 @@ const handleBatchDeleteModels = async (
       setProviders(Object.values(data.providers));
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
+      
+      // 更新当前选中的Provider数据，确保模型列表同步更新
+      const providerName = selectedProviderForModel || selectedProvider?.name;
+      const providerArray = Object.values(data.providers) as ProviderInfo[];
+      const updatedProvider = providerArray.find((p) => p.name === providerName);
+      if (updatedProvider) {
+        setSelectedProvider(updatedProvider);
+      }
       console.log("添加模型后刷新列表:", modelData.models);
 
       // 验证服务可用性
@@ -786,9 +826,13 @@ const handleBatchDeleteModels = async (
         console.warn("验证服务失败:", e);
       }
 
-      showSuccess("Provider已添加");
+      // 先关闭弹窗，再延迟显示成功提示（避免状态冲突）
       setAddProviderModalVisible(false);
       providerForm.resetFields();
+      
+      setTimeout(() => {
+        showSuccess("Provider已添加");
+      }, 150);
     } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "添加失败");
@@ -1073,7 +1117,7 @@ const handleBatchDeleteModels = async (
         </Col>
 
         {/* 右侧Provider详细信息 */}
-        <Col xs={24} md={11}>
+        <Col xs={24} md={12}>
           {selectedProvider ? (
             <div>
               <Typography.Title level={5} style={{ marginBottom: 24 }}>

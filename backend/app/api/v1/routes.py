@@ -1050,6 +1050,65 @@ async def delete_model(provider_name: str, model_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.put("/config/provider/{provider_name}/model/{old_model_name}")
+async def update_model(provider_name: str, old_model_name: str, data: ModelAddRequest):
+    """
+    更新Provider下的模型名称
+    
+    Args:
+        provider_name: Provider名称
+        old_model_name: 原模型名称
+        data: 新模型名称
+    """
+    try:
+        config_path = Path(AIServiceFactory.get_config_path())
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        if provider_name not in config.get('ai', {}):
+            raise HTTPException(status_code=404, detail=f"Provider {provider_name} 不存在")
+        
+        models = config['ai'][provider_name].get('models', [])
+        
+        # 清理新模型名称
+        new_model_name = ' '.join(data.model.split())
+        
+        if old_model_name not in models:
+            raise HTTPException(status_code=404, detail=f"模型 {old_model_name} 不存在")
+        
+        if new_model_name == old_model_name:
+            return {"success": True, "message": "模型名称未改变"}
+        
+        if new_model_name in models:
+            raise HTTPException(status_code=400, detail=f"模型 {new_model_name} 已存在")
+        
+        # 更新模型名称
+        index = models.index(old_model_name)
+        models[index] = new_model_name
+        config['ai'][provider_name]['models'] = models
+        
+        # 如果顶层 ai.model 指向旧名称，更新为新名称
+        if config['ai'].get('model') == old_model_name:
+            config['ai']['model'] = new_model_name
+        
+        write_yaml_with_order(str(config_path), config)
+        
+        # 重新加载配置
+        config_obj = get_config_instance()
+        config_obj._load_config()
+        
+        # 清空AIServiceFactory缓存
+        AIServiceFactory.reset()
+        
+        return {"success": True, "message": f"模型已从 {old_model_name} 更新为 {new_model_name}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新模型失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.put("/config/provider/{provider_name}")
 async def update_provider(provider_name: str, data: ProviderUpdate):
     """
@@ -1139,17 +1198,20 @@ async def add_model(provider_name: str, data: ModelAddRequest):
         if provider_name not in config.get('ai', {}):
             raise HTTPException(status_code=404, detail=f"Provider {provider_name} 不存在")
         
+        # 清理模型名称：移除首尾空白和内部多余空格
+        model_name = ' '.join(data.model.split())
+        
         models = config['ai'][provider_name].get('models', [])
-        if data.model in models:
-            raise HTTPException(status_code=400, detail=f"模型 {data.model} 已存在")
+        if model_name in models:
+            raise HTTPException(status_code=400, detail=f"模型 {model_name} 已存在")
         
         # 添加模型
-        models.append(data.model)
+        models.append(model_name)
         config['ai'][provider_name]['models'] = models
         
         # 如果，设为新增的顶层没有ai.model模型
         if not config['ai'].get('model'):
-            config['ai']['model'] = data.model
+            config['ai']['model'] = model_name
         
         write_yaml_with_order(str(config_path), config)
         
