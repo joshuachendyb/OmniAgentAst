@@ -17,9 +17,26 @@ v0.10.15
 | backend/app/tools/time_tools.py | 创建8个时间工具函数：get_current_time, get_time_offset, time_diff, time_add, get_weekday, get_month_days, format_timestamp, validate_timestamp |
 | backend/tests/test_time_tools.py | 创建完整测试文件，58个测试用例全部通过 |
 
+v0.10.15
+
+ 更新时间: 2026-04-26 00:15:00
+
+ 更新内容：
+
+ ## 1 CopyFileView空数据检查 - 小强-2026-04-25
+
+ | 改进 | 说明 |
+ |------|-------|
+ | 空数据检查 | 增加checkEmptyData函数，检查data是否为空 |
+ |Early Return | useMemo之后判断空数据返回提示 |
+
+ Commit: feat: CopyFileView增加空数据检查-小强-2026-04-25
+
+---
+
 v0.10.14
 
-更新时间: 2026-04-25 23:15:00
+ 更新时间: 2026-04-25 23:15:00
 
 更新内容：
 
