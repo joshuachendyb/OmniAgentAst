@@ -200,15 +200,8 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     priority: "secondary",
     layout: "inline-with-details",
   },
-    border: "#b7eb8f",
-    text: "#52c41a",
-    textSecondary: "#237804", // 【老杨修复 2026-03-25】提升对比度：#73d13d → #237804 (WCAG 4.5:1)
-    label: "📊 报告",
-    priority: "secondary",
-    layout: "inline",  // 报告标签和路径一行显示，不分行
-  },
 
-  // ===== 错误类（红色系）- 表示错误和失败 =====
+  // ===== 错误类（红色系）=====
   error: {
     bg1: "#fff1f0",
     bg2: "#fff",
