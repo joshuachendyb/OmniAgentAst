@@ -48,25 +48,30 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   }), []);
 
   const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    e.currentTarget.style.background = "rgba(0,0,0,0.04)";
-    e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.08)";
+    e.currentTarget.style.background = "linear-gradient(135deg, #f0f0f0 0%, #e8e8e8 100%)";
+    e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.12)";
+    e.currentTarget.style.border = "1px solid #d0d0d0";
+    e.currentTarget.style.transform = "translateY(-1px)";
   }, []);
 
   const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    e.currentTarget.style.background = "rgba(0,0,0,0.02)";
-    e.currentTarget.style.boxShadow = "none";
+    e.currentTarget.style.background = "linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)";
+    e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)";
+    e.currentTarget.style.border = "1px solid #e8e8e8";
+    e.currentTarget.style.transform = "translateY(0)";
   }, []);
 
   const [hasMore, setHasMore] = useState(false);
 
   return (
     <div style={{ 
-      marginBottom: 8, 
-      marginRight: 30,
-      padding: "8px 12px",
-      borderRadius: 8,
-      background: "rgba(0,0,0,0.02)",
-      transition: "all 0.2s ease",
+      marginBottom: 12, 
+      padding: "12px 16px",
+      borderRadius: 12,
+      background: "linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)",
+      border: "1px solid #e8e8e8",
+      boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
     }}
     onMouseEnter={handleMouseEnter}
     onMouseLeave={handleMouseLeave}
