@@ -56,16 +56,17 @@ const renderToolInfo = (toolName: string | undefined, toolParams: Record<string,
       {toolParams && Object.keys(toolParams).length > 0 && (
         <span style={{ 
           color: '#595959',
-          fontSize: 11,
+          fontSize: 12,
           fontFamily: 'Consolas, Monaco, "Courier New", monospace',
           background: bgColor,
-          padding: '2px 6px',
-          borderRadius: 4,
-          maxWidth: '60%',
-          overflow: 'hidden',
+          padding: '6px 12px',
+          borderRadius: 6,
+          maxWidth: '100%',
+          overflow: 'auto',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
           display: 'inline-block',
+          border: '1px solid rgba(0,0,0,0.08)',
         }}>
           {JSON.stringify(toolParams)}
         </span>
