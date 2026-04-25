@@ -49,7 +49,7 @@ const getAIBubbleStyle = (isError?: boolean): React.CSSProperties => {
     paddingTop: 8,
     paddingBottom: 8,
     paddingLeft: 10,
-    paddingRight: 30,
+    paddingRight: 60,
     borderRadius: "16px",
     position: "relative",
     transition: "all 0.3s ease",
@@ -207,7 +207,8 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
               style={{
                 position: "absolute",
                 top: 4,
-                right: 6,
+                right: 34,
+                zIndex: 10,
                 opacity: 1,
                 transition: "opacity 0.2s ease",
                 background: "transparent",
@@ -234,7 +235,8 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
               style={{
                 position: "absolute",
                 top: 4,
-                right: 30,
+                right: 6,
+                zIndex: 10,
                 opacity: 1,
                 transition: "opacity 0.2s ease",
                 background: "transparent",
