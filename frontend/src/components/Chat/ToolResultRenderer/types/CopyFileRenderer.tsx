@@ -9,12 +9,10 @@
  */
 
 import React from "react";
-import type { ExecutionStep } from "../../../../utils/sse";
 import CopyFileView from "../../views/CopyFileView";
+import { BaseRendererProps } from "./BaseRendererProps";
 
-interface CopyFileRendererProps {
-  step: ExecutionStep;
-}
+interface CopyFileRendererProps extends BaseRendererProps {}
 
 const CopyFileRenderer: React.FC<CopyFileRendererProps> = ({ step }) => {
   const execResult = step.execution_result;

@@ -9,7 +9,6 @@
  */
 
 import React from 'react';
-import type { ExecutionStep } from '../../../utils/sse';
 import ListDirectoryRenderer from './types/ListDirectoryRenderer';
 import ReadFileRenderer from './types/ReadFileRenderer';
 import WriteFileRenderer from './types/WriteFileRenderer';
@@ -25,12 +24,10 @@ import CompareFilesRenderer from './types/CompareFilesRenderer';
 import BatchRenameRenderer from './types/BatchRenameRenderer';
 import CompressFilesRenderer from './types/CompressFilesRenderer';
 import DefaultRenderer from './types/DefaultRenderer';
+import { BaseRendererProps } from './types/BaseRendererProps';
 
-interface ToolResultRendererProps {
-  step: ExecutionStep;
-  isExpanded?: boolean;
+interface ToolResultRendererProps extends BaseRendererProps {
   toggleExpand?: (index: number) => void;
-  stepIndex?: number;
 }
 
 /**
