@@ -300,7 +300,6 @@ const VirtualFileList: React.FC<VirtualFileListProps> = ({ filteredEntries }) =>
     fontSize: "0.9em",
     lineHeight: 1.8,
     whiteSpace: "pre-wrap",
-    boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
   };
 
   return (
@@ -479,7 +478,6 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
     whiteSpace: "pre-wrap",
     maxHeight: 300,
     overflow: "auto",
-    boxShadow: "inset 0 1px 2px rgba(0,0,0,0.05)",
   };
 
   // 过滤后的文件列表（用于非递归模式）
