@@ -1,8 +1,27 @@
+v0.10.15
+
+更新时间: 2026-04-26
+
+更新内容：
+
+## 1 LLM不完整JSON解析修复 - 小沈-2026-04-26
+
+| 文件 | 修复内容 |
+|------|---------|
+| backend/app/services/agent/react_output_parser.py | 添加不完整JSON检测逻辑，修复`{"thought": "xxx"`格式被误识别为action的问题 |
+
+## 2 time_tools模块创建 - 小沈-2026-04-25
+
+| 文件 | 修复内容 |
+|------|---------|
+| backend/app/tools/time_tools.py | 创建8个时间工具函数：get_current_time, get_time_offset, time_diff, time_add, get_weekday, get_month_days, format_timestamp, validate_timestamp |
+| backend/tests/test_time_tools.py | 创建完整测试文件，58个测试用例全部通过 |
+
 v0.10.14
 
- 更新时间: 2026-04-25 23:15:00
+更新时间: 2026-04-25 23:15:00
 
- 更新内容：
+更新内容：
 
  ## 1 FILE类工具测试用例修复 - 小资-2026-04-25
 
