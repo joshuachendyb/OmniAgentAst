@@ -826,13 +826,12 @@ const handleBatchDeleteModels = async (
         console.warn("验证服务失败:", e);
       }
 
-      // 先关闭弹窗，再延迟显示成功提示（避免状态冲突）
+      // 关闭弹窗并清理表单
       setAddProviderModalVisible(false);
-      providerForm.resetFields();
-      
       setTimeout(() => {
+        providerForm.resetFields();
         showSuccess("Provider已添加");
-      }, 150);
+      }, 100);
     } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "添加失败");
@@ -1124,9 +1123,7 @@ const handleBatchDeleteModels = async (
                 <Space style={{ width: "100%", justifyContent: "space-between" }}>
                   {/* 左侧: 标题内容 */}
                   <Space>
-                    <ApiOutlined />
-                    配置详情：
-                    {getProviderDisplayName(selectedProvider.name, providers)}
+                    配置详情:{getProviderDisplayName(selectedProvider.name, providers)}
                     <Tag color="blue">{selectedProvider.name}</Tag>
                     {selectedProvider.name === currentProvider && (
                       <Tag icon={<CheckCircleOutlined />} color="success">
@@ -1513,12 +1510,14 @@ const handleBatchDeleteModels = async (
       <Modal
         title="添加新Provider"
         open={addProviderModalVisible}
+        destroyOnClose
         onCancel={() => {
           setAddProviderModalVisible(false);
           providerForm.resetFields();
         }}
         footer={null}
         width={600}
+        maskClosable={false}
       >
         <Form
           form={providerForm}
