@@ -36,6 +36,7 @@ from app.services.agent.reasoning_steps import (
 )
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
+from app.chat_stream.incident_handler import create_incident_data
 from app.utils.prompt_logger import get_prompt_logger
 
 # 【步骤2.11】已废弃以下导入，改用StepFactory：
@@ -215,12 +216,13 @@ class BaseAgent(ABC):
                         logger.info(f"[InterruptCheck] 任务 {task_id} 延迟: {time_diff:.0f}ms")
                     if is_cancelled:
                         logger.info(f"[Interrupt] 任务 {task_id} 被取消，发送 interrupted 事件")
-                        # 使用 interrupted 类型，与 error 类型区分
-                        yield {
-                            "type": "interrupted",
-                            "step": step_count,
-                            "message": "用户取消了任务"
-                        }
+                        # 【问题2修复】使用create_incident_data替代裸字典，保证Step封装统一性
+                        interrupted_data = create_incident_data(
+                            incident_value="interrupted",
+                            message="用户取消了任务",
+                            step=step_count
+                        )
+                        yield interrupted_data
                         self._on_after_loop()
                         return
                 
@@ -349,6 +351,13 @@ class BaseAgent(ABC):
                         yield error_step.to_dict()
                         self._on_after_loop()
                         return
+                    # 【问题3修复】重试前发送retrying事件，让前端显示重试提示
+                    retrying_data = create_incident_data(
+                        incident_value="retrying",
+                        message=f"解析失败，正在重试（第{self.parse_retry_count}次）",
+                        step=step_count
+                    )
+                    yield retrying_data
                     # 否则继续下一次循环
                     continue
                 
@@ -389,7 +398,13 @@ class BaseAgent(ABC):
                     logger.info(f"[InterruptCheck] 任务 {task_id} 工具执行前取消状态: {is_cancelled}")
                     if is_cancelled:
                         logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行前中断")
-                        yield {"type": "interrupted", "step": step_count, "message": "用户取消了任务"}
+                        # 【问题2修复】使用create_incident_data替代裸字典
+                        interrupted_data = create_incident_data(
+                            incident_value="interrupted",
+                            message="用户取消了任务",
+                            step=step_count
+                        )
+                        yield interrupted_data
                         self._on_after_loop()
                         return
                 
@@ -404,7 +419,13 @@ class BaseAgent(ABC):
                     logger.info(f"[InterruptCheck] 任务 {task_id} 工具执行后取消状态: {is_cancelled}")
                     if is_cancelled:
                         logger.info(f"[Interrupt] 任务 {task_id} 被取消，工具执行后中断")
-                        yield {"type": "interrupted", "step": step_count, "message": "用户取消了任务"}
+                        # 【问题2修复】使用create_incident_data替代裸字典
+                        interrupted_data = create_incident_data(
+                            incident_value="interrupted",
+                            message="用户取消了任务",
+                            step=step_count
+                        )
+                        yield interrupted_data
                         self._on_after_loop()
                         return
                 

@@ -140,13 +140,17 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
             is_streaming=event.get('is_streaming', False),  # 【15.7新增】
             is_reasoning=event.get('is_reasoning', False)  # 【15.7新增】
         )
+    elif event_type == 'incident':
+        # 【问题2修复】incident类型直接格式化为SSE（base_react.py已使用create_incident_data产生标准格式）
+        return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
     elif event_type == 'interrupted':
-        # 【小欧添加 2026-04-21】用户主动中断
-        return create_incident_data(
+        # 【兼容层】处理仍发送type="interrupted"的旧代码路径，转换为incident格式
+        incident_data = create_incident_data(
             'interrupted',
             event.get('message', '用户取消了任务'),
             step=step
         )
+        return f"data: {json.dumps(incident_data, ensure_ascii=False)}\n\n"
     elif event_type == 'error':
         # 【15.7修改】error字段：删除code和message，使用新字段
         return create_error_response(

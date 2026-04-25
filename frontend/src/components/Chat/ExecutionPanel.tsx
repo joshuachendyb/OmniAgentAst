@@ -457,6 +457,80 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = memo(
               </div>
             );
 
+          // 【问题5修复】incident类型渲染：根据incident_value分发到具体渲染
+          case "incident": {
+            const incidentValue = (step as ExecutionStep & Record<string, unknown>).incident_value as string;
+            const incidentMessage = step.content || (step as ExecutionStep & Record<string, unknown>).message || '';
+            switch (incidentValue) {
+              case "interrupted":
+                return (
+                  <div className="step-item">
+                    <div style={{
+                      borderLeft: "2px solid #ffbb96",
+                      padding: "6px 8px",
+                      borderRadius: 4,
+                      marginTop: 8,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                    }}>
+                      <Tag color="warning">⚠️ 中断</Tag>
+                      <Typography.Text type="secondary">{incidentMessage || '任务已中断'}</Typography.Text>
+                    </div>
+                  </div>
+                );
+              case "paused":
+                return (
+                  <div className="step-item">
+                    <div style={{
+                      borderLeft: "2px solid #d9d9d9",
+                      padding: "6px 8px",
+                      borderRadius: 4,
+                      marginTop: 8,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                    }}>
+                      <Tag color="default">⏸️ 暂停</Tag>
+                      <Typography.Text type="secondary">{incidentMessage || '任务已暂停'}</Typography.Text>
+                    </div>
+                  </div>
+                );
+              case "resumed":
+                return (
+                  <div className="step-item">
+                    <div style={{
+                      borderLeft: "2px solid #52c41a",
+                      padding: "6px 8px",
+                      borderRadius: 4,
+                      marginTop: 8,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                    }}>
+                      <Tag color="success">▶️ 恢复</Tag>
+                      <Typography.Text type="secondary">{incidentMessage || '任务已恢复'}</Typography.Text>
+                    </div>
+                  </div>
+                );
+              case "retrying":
+                return (
+                  <div className="step-item">
+                    <div style={{
+                      borderLeft: "2px solid #1890ff",
+                      padding: "6px 8px",
+                      borderRadius: 4,
+                      marginTop: 8,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                    }}>
+                      <Tag color="processing">🔄 重试</Tag>
+                      <Typography.Text type="secondary">{incidentMessage || '正在重试...'}</Typography.Text>
+                    </div>
+                  </div>
+                );
+              default:
+                return null;
+            }
+          }
+
           case "error":
             return (
               <div className="step-item">
