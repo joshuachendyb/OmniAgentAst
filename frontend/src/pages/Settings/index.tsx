@@ -562,8 +562,12 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean }> = ({ shouldLoad = tru
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       await configApi.updateProvider(editingProvider!.name, values as Record<string, unknown>);
 
-      // 刷新配置
-      loadConfig();
+      // ✅ 同时刷新providers和modelList，避免部分刷新导致状态不一致
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
+      setCurrentProvider(data.current_provider);
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
 
       // 验证服务可用性
       try {
@@ -611,7 +615,9 @@ modelEditForm.setFieldsValue({ model: modelName });
     try {
       await configApi.updateModel(editingModel.provider, editingModel.model, values.model);
 
-      // ✅ 只刷新模型列表，不重新加载全部配置，避免状态重置
+      // ✅ 同时刷新providers和modelList
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
 
@@ -625,12 +631,14 @@ modelEditForm.setFieldsValue({ model: modelName });
     }
   };
 
-  // 删除模型
+// 删除模型
   const handleDeleteModel = async (providerName: string, modelName: string) => {
     try {
       await configApi.deleteModel(providerName, modelName);
 
-      // ✅ 只刷新模型列表，不重新加载全部配置，避免状态重置
+      // ✅ 同时刷新providers和modelList，避免状态不一致
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
 
@@ -692,7 +700,11 @@ return { success: true, model: modelName };
       }
 
       setSelectedModels(new Set());
-      loadConfig();
+      // ✅ 同时刷新providers和modelList
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
     } catch (error) {
       const err = error as { name?: string };
       if (err?.name === "AbortError") {
@@ -717,7 +729,9 @@ return { success: true, model: modelName };
       modelForm.resetFields(); // ✅ 重置表单
       setSelectedProviderForModel(""); // ✅ 清空选中的Provider
 
-      // 刷新模型列表（异步，不阻塞弹窗关闭）
+      // ✅ 同时刷新providers和modelList
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
 
@@ -748,8 +762,12 @@ return { success: true, model: modelName };
         max_retries: (values.max_retries as number) || 3,
       });
 
-      // 刷新配置
-      loadConfig();
+      // ✅ 同时刷新providers和modelList
+      const data = await configApi.getFullConfig();
+      setProviders(Object.values(data.providers));
+      setCurrentProvider(data.current_provider);
+      const modelData = await configApi.getModelList();
+      setModelList(modelData.models);
 
       // 验证服务可用性
       try {
