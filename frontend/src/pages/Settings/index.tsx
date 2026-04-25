@@ -580,8 +580,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean; forceRefresh?: boolean 
       setEditProviderModalVisible(false);
       form.resetFields();
       setEditingProvider(null);
-      // ✅ 触发强制刷新标记
-      setForceRefreshFlag(f => f + 1);
     } catch (error) {
       handleError("更新失败");
     }
@@ -627,15 +625,13 @@ modelEditForm.setFieldsValue({ model: modelName });
       setEditModelModalVisible(false);
       setEditingModel(null);
       modelEditForm.resetFields();
-      // ✅ 触发强制刷新标记
-      setForceRefreshFlag(f => f + 1);
-    } catch (error) {
-      const err = error as { response?: { data?: { detail?: string } } };
-      handleError(err?.response?.data?.detail || "更新失败");
+    } catch (error: unknown) {
+      console.error("更新模型失败:", error);
+      handleError("更新失败");
     }
   };
 
-// 删除模型
+  // 删除模型
   const handleDeleteModel = async (providerName: string, modelName: string) => {
     try {
       await configApi.deleteModel(providerName, modelName);
@@ -648,16 +644,14 @@ modelEditForm.setFieldsValue({ model: modelName });
       console.log("删除模型后刷新列表:", modelData.models);
 
       showSuccess("模型已删除");
-      // ✅ 触发强制刷新标记
-      setForceRefreshFlag(f => f + 1);
-    } catch (error) {
-      const err = error as { response?: { data?: { detail?: string } } };
-      handleError(err?.response?.data?.detail || "删除失败");
+    } catch (error: unknown) {
+      console.error("删除模型失败:", error);
+      handleError("删除失败");
     }
   };
 
   // 批量删除模型（并发优化，支持取消）
-  const handleBatchDeleteModels = async (
+const handleBatchDeleteModels = async (
     providerName: string,
     models: string[]
   ) => {
@@ -680,44 +674,49 @@ modelEditForm.setFieldsValue({ model: modelName });
             signal: controller.signal,
           });
           setDeleteProgress({ current: index + 1, total: models.length });
-return { success: true, model: modelName };
+          return { success: true, model: modelName };
         } catch (error) {
           const err = error as { name?: string };
           if (err?.name === "AbortError" || controller.signal.aborted) {
             return { success: false, model: modelName, cancelled: true };
           }
-          setDeleteProgress({ current: index + 1, total: models.length });
-          return { success: false, model: modelName, error };
+          throw error;
         }
       });
 
       const results = await Promise.all(deletePromises);
       const successCount = results.filter((r) => r.success).length;
-      const failCount = results.filter(
-        (r) => !r.success && !r.cancelled
-      ).length;
+      const failCount = results.filter((r) => !r.success && !r.cancelled).length;
       const cancelledCount = results.filter((r) => r.cancelled).length;
 
-      if (controller.signal.aborted) {
-        handleError({ message: `批量删除已取消：${successCount} 成功，${cancelledCount} 未执行`, error_type: ErrorType.WARNING });
-      } else if (failCount === 0) {
-        showSuccess(`批量删除完成：${successCount} 个模型`);
-      } else {
-        handleError({ message: `批量删除完成：${successCount} 成功，${failCount} 失败`, error_type: ErrorType.WARNING });
-      }
-
-      setSelectedModels(new Set());
       // ✅ 同时刷新providers和modelList
       const data = await configApi.getFullConfig();
       setProviders(Object.values(data.providers));
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
-      // ✅ 触发强制刷新标记
-      setForceRefreshFlag(f => f + 1);
+
+      setSelectedModels(new Set());
+
+      if (cancelledCount > 0) {
+        handleError({
+          message: `批量删除已取消：${successCount} 成功，${cancelledCount} 未执行`,
+          error_type: ErrorType.WARNING,
+        });
+      } else if (failCount > 0) {
+        handleError({
+          message: `批量删除完成：${successCount} 成功，${failCount} 失败`,
+          error_type: ErrorType.WARNING,
+        });
+      } else {
+        showSuccess(`成功删除 ${successCount} 个模型`);
+      }
     } catch (error) {
       const err = error as { name?: string };
       if (err?.name === "AbortError") {
-        handleError({ message: "批量删除已取消", error_type: ErrorType.WARNING });
+        handleError({
+          message: "批量删除已取消",
+          error_type: ErrorType.WARNING,
+        });
       } else {
         handleError("批量删除失败");
       }
@@ -731,12 +730,13 @@ return { success: true, model: modelName };
 // 添加模型
   const handleAddModel = async (values: { model: string }) => {
     try {
-      await configApi.addModel(selectedProviderForModel, values);
+      const result = await configApi.addModel(selectedProviderForModel, values);
+      console.log("添加模型结果:", result);
 
       // ✅ 先关闭弹窗，避免延迟
       setAddModelModalVisible(false);
-      modelForm.resetFields(); // ✅ 重置表单
-      setSelectedProviderForModel(""); // ✅ 清空选中的Provider
+      modelForm.resetFields();
+      setSelectedProviderForModel("");
 
       // ✅ 同时刷新providers和modelList
       const data = await configApi.getFullConfig();
@@ -753,11 +753,9 @@ return { success: true, model: modelName };
       }
 
       showSuccess("模型已添加");
-      // ✅ 触发强制刷新标记
-      setForceRefreshFlag(f => f + 1);
-    } catch (error) {
-      const err = error as { response?: { data?: { detail?: string } } };
-      handleError(err?.response?.data?.detail || "添加失败");
+    } catch (error: unknown) {
+      console.error("添加模型失败:", error);
+      handleError("添加失败");
     }
   };
 
@@ -791,8 +789,6 @@ return { success: true, model: modelName };
       showSuccess("Provider已添加");
       setAddProviderModalVisible(false);
       providerForm.resetFields();
-      // ✅ 触发强制刷新标记
-      setForceRefreshFlag(f => f + 1);
     } catch (error) {
       const err = error as { response?: { data?: { detail?: string } } };
       handleError(err?.response?.data?.detail || "添加失败");
@@ -1824,16 +1820,12 @@ const SecuritySettings: React.FC = () => {
  */
 const Settings: React.FC = () => {
   // 注意：React 18 自动批处理状态更新，无需手动优化
-  // 多个 setState 调用会自动合并为一次重渲染
   const [activeKey, setActiveKey] = useState("model");
   const [isDirty, setIsDirty] = useState(false);
   const [confirmModalVisible, setConfirmModalVisible] = useState(false);
   const [pendingKey, setPendingKey] = useState<string>("");
-  // ⭐ 老杨修复：按需加载 - 跟踪已加载的Tab
-  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(["model"])); // 默认"model"已加载
-  // ⭐ 新增：防止操作后重新加载的标记
-  const [forceRefreshFlag, setForceRefreshFlag] = useState(0);
-  // ⭐ 删除未使用的状态变量：configFilePath, fixingConfig, fixProgress, showFixModal
+  const [loadedTabs, setLoadedTabs] = useState<Set<string>>(new Set(["model"]));
+  // 多个 setState 调用会自动合并为一次重渲染
 
   /**
    * 加载配置信息（只读，不备份）
@@ -1906,7 +1898,7 @@ const Settings: React.FC = () => {
               key="model"
             >
               {/* ⭐ 老杨修复：按需加载 - 传递shouldLoad参数 */}
-              <ProviderSettings shouldLoad={loadedTabs.has("model")} forceRefresh={forceRefreshFlag} />
+              <ProviderSettings shouldLoad={loadedTabs.has("model")} />
             </TabPane>
 
             <TabPane
