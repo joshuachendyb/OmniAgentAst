@@ -158,8 +158,8 @@ describe("GetFileInfoView 目录显示测试", () => {
   it("目录不应该显示文件类型扩展名", () => {
     const props = createProps({ data: mockDirectoryData });
     render(<GetFileInfoView {...props} />);
-
-    expect(screen.queryByText((content) => content.includes("(")))).toBeNull();
+    const content = screen.queryByText((content) => content.includes("("));
+    expect(content).toBeNull();
   });
 
   it("目录应该显示为0字节", () => {
@@ -209,7 +209,7 @@ describe("GetFileInfoView 错误状态测试", () => {
     render(<GetFileInfoView {...props} />);
 
     expect(screen.getByText("文件不存在")).toBeTruthy();
-    expect(screen.getByText((content) => content.includes("错误信息：")))).toBeTruthy();
+    expect(screen.getByText((content) => content.includes("错误信息："))).toBeTruthy();
   });
 
   it("错误状态应该使用红色边框", () => {
