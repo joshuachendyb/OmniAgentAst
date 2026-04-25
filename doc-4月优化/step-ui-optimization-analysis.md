@@ -42,9 +42,6 @@
 ```tsx
 // 建议：统一背景层次，减少视觉噪音
 <div style={{ 
-  marginBottom: 12,           // 增加间距
-  padding: "12px 16px",       // 增加内边距
-  borderRadius: 12,           // 更大圆角
   background: "linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)", // 渐变背景
   border: "1px solid #e8e8e8", // 添加边框
   boxShadow: "0 2px 8px rgba(0,0,0,0.06)", // 添加阴影
