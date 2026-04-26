@@ -6,7 +6,13 @@ Tools/File 模块 - 文件操作工具集
 本目录是从 agent/tools.py 迁移而来
 迁移时间：2026-03-21
 
+【重构说明】2026-04-26 小沈
+- file_tools.py 使用独立的 @register_tool 装饰器（已废弃）
+- 但保留导出以兼容现有代码
+- 未来将迁移到 registry.py 的统一注册
+
 Author: 小沈 - 2026-03-21
+更新时间: 2026-04-26
 """
 
 from app.services.tools.file.file_schema import (
