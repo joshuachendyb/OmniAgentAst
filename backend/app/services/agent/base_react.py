@@ -52,9 +52,15 @@ class BaseAgent(ABC):
     子类需要实现抽象方法
     """
     
-    def __init__(self, max_steps: int = 100):
-        """初始化 BaseAgent"""
+    def __init__(self, max_steps: int = 100, tool_category: Any = None):
+        """初始化 BaseAgent
+        
+        Args:
+            max_steps: 最大步数
+            tool_category: 工具分类 【修复】小沈-2026-04-26
+        """
         self.max_steps = max_steps
+        self.tool_category = tool_category  # 【修复】小沈-2026-04-26
         
         # 【步骤2.10】步骤历史管理：使用ReasoningStep类型
         self.steps: List[ReasoningStep] = []
