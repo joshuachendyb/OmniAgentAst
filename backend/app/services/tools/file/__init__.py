@@ -54,6 +54,8 @@ from app.services.tools.file.file_tools import (
     _generate_summary,
     get_file_tools,
 )
+# 注册点（触发工具注册）
+from app.services.tools.file import file_register
 
 __all__ = [
     # Schema模型
