@@ -2,6 +2,10 @@
 """
 时间工具函数模块 - 为普通用户提供时间相关功能
 
+【迁移说明】2026-04-26 小沈
+- 本文件从 app/tools/time_tools.py 迁移而来
+- 使用 registry.py 的 @register_tool 装饰器注册
+
 包含：
 - P0 核心基础（5个）：time_now, time_format, time_diff, timer_set, timer_clear;
 - P1 常用辅助（4个）：time_utc_to_local, time_local_to_utc, time_is_weekend, time_is_holiday;
@@ -115,7 +119,7 @@ def time_now() -> Dict[str, Any]:
         {"timestamp": 1777103094},
         {"timestamp": None, "pattern": "%Y年%m月%d日"},
         {"timestamp": "2026-04-25", "pattern": "%Y/%m/%d"}
-]
+    ]
 )
 def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) -> Dict[str, Any]:
     """格式化时间戳"""
@@ -205,28 +209,7 @@ def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) 
     ]
 )
 def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
-    """
-    计算两个时间之间的差值，返回人性化描述
-    
-    Args:
-        start: 开始时间（时间戳、字符串、datetime）
-        end: 结束时间（时间戳、字符串、datetime），如果为None则使用当前时间
-    
-    返回：
-        dict: {
-            "code": "SUCCESS",
-            "data": {
-                "humanized": "3小时前",  # 人性化描述
-                "seconds": 10800,  # 总秒数
-                "minutes": 180.0,  # 总分钟数
-                "hours": 3.0,  # 总小时数
-                "days": 0,  # 总天数
-                "is_future": false  # 是否在未来
-            },
-"message": "成功计算时间差"
-        }
-     
-    """
+    """计算两个时间之间的差值，返回人性化描述"""
     try:
         # 1. 解析开始时间
         start_dt = _parse_datetime_any(start)
@@ -302,7 +285,7 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
         return {
             "code": "ERR_TIME_DIFF",
             "data": None,
-"message": f"计算时间差失败: {str(e)}"
+            "message": f"计算时间差失败: {str(e)}"
         }
 
 
@@ -340,36 +323,7 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
     ]
 )
 async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    设置定时器，在延迟后执行回调
-    
-    Args:
-        delay: 延迟时间（秒）
-        callback: 回调函数标识或描述（字符串）
-        callback_data: 传递给回调的数据（可选）
-    
-    返回：
-        dict: {
-            "code": "SUCCESS",
-            "data": {
-                "timer_id": "timer_123456",
-                "delay": 180,
-                "trigger_at": "2026-04-25 15:47:54"
-            },
-            "message": "定时器已设置，3分钟后提醒"
-        }
-    
-    场景：
-        - 用户说：“3分钟后提醒我”
-        - 用户说：“10分钟后执行这个任务”
-    
-    注意：
-        - 定时器在后台运行，使用asyncio;
-        - 回调函数需要实现为字符串描述，因为跨进程限制;
-        - 实际项目中，回调可能通过消息队列或事件总线实现
-    
-    Author: 小沈 - 2026-04-25;
-    """
+    """设置定时器，在延迟后执行回调"""
     global _timer_counter;
     try:
         if delay <= 0:
@@ -452,28 +406,7 @@ async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[st
     ]
 )
 async def timer_clear(timer_id: str) -> Dict[str, Any]:
-    """
-    清除（取消）定时器
-    
-    Args:
-        timer_id: 定时器ID（由timer_set返回）
-    
-    返回：
-        dict: {
-            "code": "SUCCESS",
-            "data": {
-                "timer_id": "timer_123456",
-                "cancelled": true
-            },
-            "message": "定时器已取消"
-        }
-    
-    场景：
-        - 用户说：“别提醒我了”
-        - 用户说：“取消那个定时器”
-    
-    Author: 小沈 - 2026-04-25;
-    """
+    """清除（取消）定时器"""
     try:
         if timer_id not in _timers:
             return {
@@ -542,29 +475,7 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
     ]
 )
 def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[str, Any]:
-    """
-    将UTC时间转换为本地时间或指定时区时间
-    
-    Args:
-        utc_time: UTC时间（时间戳、字符串、datetime）
-        target_tz: 目标时区（如"+08:00"、"Asia/Shanghai"），如果为None则使用本地时区
-    
-    返回：
-        dict: {
-            "code": "SUCCESS",
-            "data": {
-                "local_time": "2026-04-25 23:44:54",
-                "timezone": "+0800",
-                "utc_original": "2026-04-25T15:44:54+00:00"
-            },
-            "message": "成功转换时区"
-        }
-    
-    场景：
-        - 跨时区用户问：“现在UTC时间是几点？请用北京时间显示”
-    
-    Author: 小沈 - 2026-04-25;
-    """
+    """将UTC时间转换为本地时间或指定时区时间"""
     try:
         # 1. 解析UTC时间
         utc_dt = _parse_datetime_any(utc_time)
@@ -718,30 +629,7 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
     ]
 )
 def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
-    """
-    检查给定日期是否为周末
-    
-    Args:
-        date: 日期（时间戳、字符串、datetime），如果为None则使用当前日期
-    
-    返回：
-        dict: {
-            "code": "SUCCESS",
-            "data": {
-                "is_weekend": true,
-                "weekday": "Saturday",
-                "isoweekday": 6,  # 6=Saturday, 7=Sunday;
-                "date": "2026-04-25"
-            },
-            "message": "今天是周末"
-        }
-    
-    场景：
-        - 用户问：“明天要上班吗？”
-        - 用户问：“这周六是休息日吗？”
-    
-    Author: 小沈 - 2026-04-25;
-    """
+    """检查给定日期是否为周末"""
     try:
         # 解析日期
         if date is None:
@@ -819,33 +707,7 @@ def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
     ]
 )
 def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
-    """
-    检查给定日期是否为假日（简单实现，实际需要节假日API）
-    
-    Args:
-        date: 日期（时间戳、字符串、datetime），如果为None则使用当前日期
-    
-    返回：
-        dict: {
-            "code": "SUCCESS",
-            "data": {
-                "is_holiday": false,
-                "holiday_name": null,  # 如果是假日，这里会有名称
-                "date": "2026-04-25"
-            },
-            "message": "今天不是节假日"
-        }
-    
-    注意：
-        - 这是简单实现，只检查固定的几个假日（如元旦、春节等）
-        - 实际项目中应该调用节假日API或使用完整日历数据
-    
-    场景：
-        - 用户问：“今天是不是节假日？”
-        - 用户问：“国庆节放几天假？”
-    
-    Author: 小沈 - 2026-04-25;
-    """
+    """检查给定日期是否为假日"""
     try:
         # 解析日期
         if date is None:
@@ -860,7 +722,6 @@ def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
                 }
         
         # 简单假日检查（固定日期）
-        # 实际项目中应该使用节假日API
         month_day = (dt.month, dt.day);
         
         # 定义一些固定假日（简化版）
@@ -868,7 +729,6 @@ def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
             (1, 1): "元旦",
             (5, 1): "劳动节",
             (10, 1): "国庆节",
-            # 注意：春节、清明、端午、中秋等是农历，这里不处理;
         }
         
         is_holiday = month_day in fixed_holidays;
@@ -902,15 +762,7 @@ def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
 # ===========================================================
 
 def _parse_datetime_any(value: Any) -> Optional[datetime]:
-    """
-    尝试解析各种格式的时间值为datetime对象
-    
-    Args:
-        value: 可以是时间戳（int/float）、字符串、datetime对象
-    
-    Returns:
-        datetime对象，解析失败返回None;
-    """
+    """尝试解析各种格式的时间值为datetime对象"""
     try:
         if isinstance(value, datetime):
             return value.astimezone() if value.tzinfo else value.astimezone()
@@ -925,42 +777,25 @@ def _parse_datetime_any(value: Any) -> Optional[datetime]:
 
 
 def _parse_datetime_string(date_str: str) -> Optional[datetime]:
-    """
-    解析日期字符串，支持多种格式
-    
-    支持格式：
-        - ISO格式：2026-04-25T15:44:54+08:00;
-        - 简单日期：2026-04-25;
-        - 简单日期时间：2026-04-25 15:44:54;
-        - 斜杠格式：2026/04/25;
-        - 中文格式：2026年04月25日;
-        - 带T的ISO格式（不带时区）：2026-04-25T15:44:54;
-        - 带T和微秒的ISO格式：2026-04-25T15:44:54.123456;
-        - 带T和时区的ISO格式：2026-04-25T15:44:54+08:00;
-    
-    Returns:
-        datetime对象，解析失败返回None;
-    """
+    """解析日期字符串，支持多种格式"""
     try:
-        # 去除空格
         date_str = date_str.strip();
         
         # 方法1：尝试ISO格式（带冒号时区）
         try:
-            # 处理时区中的冒号：+08:00 → +0800
             s = re.sub(r'([+-]\d{2}):(\d{2})$', r'\1\2', date_str)
-            if s != date_str:  # 确实去除了冒号
+            if s != date_str:
                 return datetime.fromisoformat(s)
         except ValueError:
             pass;
         
-        # 方法2：尝试直接ISO格式（可能不带时区）
+        # 方法2：尝试直接ISO格式
         try:
             return datetime.fromisoformat(date_str)
         except ValueError:
             pass;
         
-        # 方法3：尝试常见格式（带T）
+        # 方法3：尝试常见格式
         formats = [
             "%Y-%m-%d %H:%M:%S",
             "%Y-%m-%d",
@@ -968,15 +803,14 @@ def _parse_datetime_string(date_str: str) -> Optional[datetime]:
             "%Y/%m/%d",
             "%Y年%m月%d日 %H:%M:%S",
             "%Y年%m月%d日",
-            "%Y-%m-%dT%H:%M:%S",          # 带T不带时区
-            "%Y-%m-%dT%H:%M:%S.%f",    # 带T和微秒
-            "%Y-%m-%dT%H:%M:%S%z",       # 带T和时区（无冒号）
-            "%Y-%m-%dT%H:%M:%S.%f%z",   # 带T、微秒和时区
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S%z",
+            "%Y-%m-%dT%H:%M:%S.%f%z",
         ]
         
         for fmt in formats:
             try:
-                # 没有时区的，假设为本地时间
                 dt = datetime.strptime(date_str, fmt)
                 return dt.astimezone()
             except ValueError:
@@ -998,8 +832,6 @@ def _parse_datetime_string(date_str: str) -> Optional[datetime]:
             except Exception:
                 pass;
         
-        return None;
-    except Exception:
         return None;
     except Exception:
         return None;
