@@ -46,16 +46,17 @@ from app.services.tools.file.file_tools import (
     SearchFilesByNameInput,
     GenerateReportInput,
     # 工具函数
-    get_registered_tools,
-    get_tool,
     encode_page_token,
     decode_page_token,
     _to_unified_format,
     _generate_summary,
     get_file_tools,
 )
+# 兼容导出 - 从 file_register 导入
+from app.services.tools.file.file_register import get_registered_tools, get_tool
+
 # 注册点（触发工具注册）
-from app.services.tools.file import file_register
+from app.services.tools.file.file_register import FileTools, get_file_tools
 
 __all__ = [
     # Schema模型

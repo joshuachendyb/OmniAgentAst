@@ -150,105 +150,31 @@ class ToolDefinition:
             "description": self.description,
             "input_schema": self.to_schema(),
             "input_examples": self.examples
-        }
+}
 
 
 # ============================================================
-# 第五部分：工具注册表
+# 第五部分：已废弃（2026-04-26 小沈）
+# 【重要】旧的注册逻辑已移除
+# - _TOOL_REGISTRY 已删除
+# - @register_tool 装饰器已删除（第5部分的旧函数）
+# 工具现在通过 file_register.py 注册到 tool_registry
+# 
+# 保留一个空操作装饰器用于兼容 FileTools 类中的旧代码
+# 类中所有 @register_tool 已替换为 pass
 # ============================================================
 
-_TOOL_REGISTRY: Dict[str, Dict[str, Any]] = {}
-
-
+# 空的注册装饰器（兼容旧代码，不执行任何操作）
 def register_tool(
     name: Optional[str] = None,
     description: str = "",
     input_model: Optional[type[BaseModel]] = None,
     examples: Optional[List[Dict[str, Any]]] = None
 ):
-    """
-    工具注册装饰器（改进版 - 使用Pydantic）
-    
-    【改进】2026-03-19 小强
-    - 使用Pydantic模型自动生成Schema
-    - 支持input_examples示例
-    
-    用法:
-        @register_tool(
-            name="list_directory",
-            description="列出目录内容...",
-            input_model=ListDirectoryInput,
-            examples=[
-                {"dir_path": "C:/Users/用户名/Documents"},
-                {"dir_path": "D:/项目代码", "recursive": True}
-            ]
-        )
-        async def list_directory(self, dir_path: str, ...):
-            ...
-    """
+    """空的注册装饰器（已废弃，仅用于兼容）"""
     def decorator(func):
-        tool_name = name or func.__name__
-        
-        # 如果提供了Pydantic模型，创建ToolDefinition
-        if input_model is not None:
-            tool_def = ToolDefinition(
-                name=tool_name,
-                description=description or func.__doc__ or "",
-                input_model=input_model,
-                examples=examples
-            )
-        else:
-            tool_def = None
-        
-        tool_info = {
-            "name": tool_name,
-            "description": description or func.__doc__ or "",
-            "definition": tool_def,
-            "function": func,
-            "input_model": input_model,
-            "registered_at": datetime.now().isoformat()
-        }
-        _TOOL_REGISTRY[tool_name] = tool_info
-        
-        logger.info(f"Tool registered: {tool_name}")
-        
         return func
-    
     return decorator
-
-
-def get_registered_tools(category: Optional[str] = None) -> List[Dict[str, Any]]:
-    """
-    获取已注册的工具列表
-    
-    Returns:
-        MCP格式的工具定义列表
-    """
-    tools = []
-    for name, info in _TOOL_REGISTRY.items():
-        if category:
-            tool_category = info.get("category", "file")
-            if tool_category != category:
-                continue
-        
-        tool_def = info.get("definition")
-        if tool_def:
-            tools.append(tool_def.to_mcp_format())
-        else:
-            # 兼容没有definition的工具
-            tools.append({
-                "name": info["name"],
-                "description": info["description"],
-                "input_schema": {"type": "object", "properties": {}},
-                "input_examples": []
-            })
-    
-    return tools
-
-
-def get_tool(name: str) -> Optional[Dict[str, Any]]:
-    """获取指定工具的信息"""
-    return _TOOL_REGISTRY.get(name)
 
 
 from datetime import datetime
@@ -2166,17 +2092,4 @@ def decode_page_token(token: str) -> int:
 
 # ============================================================
 # 【M3关键】工具初始化注册
-# 如果_TOOL_REGISTRY为空，手动注册所有工具
-# ============================================================
-def _ensure_tools_registered():
-    """确保工具已注册到_TOOL_REGISTRY"""
-    if _TOOL_REGISTRY:
-        return  # 已有工具，跳过
-    
-    # 创建FileTools实例触发注册装饰器
-    from app.services.tools.file import FileTools
-    _ = FileTools()
-
-
-# 立即执行注册（模块加载时）
-_ensure_tools_registered()
+from datetime import datetime
