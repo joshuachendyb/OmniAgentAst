@@ -1,4 +1,32 @@
-v0.10.20
+v0.11.0
+
+ 更新时间: 2026-04-26 22:31:24
+
+ 更新内容：
+
+ ## 1 Phase 0-5 AgentFactory架构完成 - 小沈-2026-04-26
+
+ | Phase | 说明 | 状态 |
+ |-------|------|------|
+ | Phase 0 | 修复mixin.py方法名和registry.py函数 | ✅ |
+ | Phase 1 | BaseAgent添加llm_client和session_id参数 | ✅ |
+ | Phase 2 | FileReactAgent支持tool_category | ✅ |
+ | Phase 3 | 验证TimeReactAgent加载9个时间工具 | ✅ |
+ | Phase 4 | AgentFactory更新参数结构 | ✅ |
+ | Phase 5 | 14项集成测试全部通过 | ✅ |
+
+ | Commit | 说明 |
+ |--------|------|
+ | 19268ecb | fix: Phase0修复mixin.py和registry.py |
+ | 81d431df | fix: Phase1修复BaseAgent添加llm_client和session_id |
+ | c4ce5580 | fix: Phase2修复FileReactAgent支持tool_category |
+ | 86538aad | fix: Phase3验证TimeReactAgent通过-9个工具 |
+ | 7782ed80 | fix: Phase4修复AgentFactory支持tool_category |
+ | d859109d | test: Phase5集成测试-14个测试用例全部通过 |
+
+ ---
+
+ v0.10.20
 
  更新时间: 2026-04-26 20:19:01
 
