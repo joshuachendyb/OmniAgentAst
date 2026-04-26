@@ -289,6 +289,8 @@ def register_tool(
         tool_name = name or func.__name__
         
         # 自动从函数签名生成输入Schema
+        if 'input_schema' not in locals():  # 修复未定义问题
+            input_schema = None
         if input_schema is None:
             input_schema = {}
         

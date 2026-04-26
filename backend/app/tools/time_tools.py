@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-时间工具函数模块 - 为普通用户提供时间相关功能（修正版）
+时间工具函数模块 - 为普通用户提供时间相关功能
 
 包含：
 - P0 核心基础（5个）：time_now, time_format, time_diff, timer_set, timer_clear;
@@ -8,14 +8,27 @@
 
 Author: 小沈 - 2026-04-25;
 创建时间: 2026-04-25 15:44:54;
-修正时间: 2026-04-25 17:55:00;
+更新时间: 2026-04-26;
 """
 
 import asyncio;
 import json;
 from datetime import datetime, timedelta, timezone;
 from typing import Dict, Any, Optional, Callable, Awaitable;
+from pydantic import BaseModel, Field;
 import re;
+
+from app.services.tools.registry import register_tool;
+
+
+# ===========================================================
+# Pydantic 输入模型定义
+# ===========================================================
+
+class TimeNowInput(BaseModel):
+    """time_now 工具的输入参数（无参数）"""
+    pass
+
 
 # 定时器存储;
 _timers: Dict[str, asyncio.TimerHandle] = {};
@@ -25,32 +38,32 @@ _timer_counter = 0;
 # ===========================================================
 # P0 核心基础（普通用户最高频场景）
 # ===========================================================
+# P0 核心基础 - time_now
+# ===========================================================
 
+@register_tool(
+    name="time_now",
+    description="""获取当前系统时间。
+
+使用场景：
+- 当用户问"现在几点了"时使用此工具
+- 当用户问"今天星期几"时使用此工具
+- 当用户问"当前时间戳是多少"时使用此工具
+- 当用户想要查看当前日期和时间时使用
+
+返回数据说明：
+- iso: ISO格式时间（如2026-04-26T10:30:00+08:00）
+- timestamp: Unix时间戳（秒）
+- format: 默认格式时间（如2026-04-26 10:30:00）
+- timezone: 时区（如+0800）
+- weekday: 英文星期几（如Saturday）
+- isoweekday: ISO星期几（1=Monday, 7=Sunday）""",
+    examples=[
+        {},
+    ]
+)
 def time_now() -> Dict[str, Any]:
-    """
-    获取当前系统时间
-    
-    返回：
-        dict: {
-            "code": "SUCCESS",
-            "data": {
-                "iso": "2026-04-25T15:44:54+08:00",
-                "timestamp": 1777103094,  # Unix时间戳（秒）
-                "format": "2026-04-25 15:44:54",  # 默认格式
-                "timezone": "+0800",
-                "weekday": "Saturday",
-                "isoweekday": 6  # 1=Monday, 7=Sunday
-            },
-            "message": "成功获取当前时间"
-        }
-    
-    场景：
-        - 用户问：“现在几点了？”
-        - 用户问：“今天星期几？”
-        - 用户问：“当前时间戳是多少？”
-    
-    Author: 小沈 - 2026-04-25;
-    """
+    """获取当前系统时间"""
     try:
         now = datetime.now().astimezone();
         
@@ -72,8 +85,7 @@ def time_now() -> Dict[str, Any]:
             "data": None,
             "message": f"获取当前时间失败: {str(e)}"
         }
-
-
+    
 def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) -> Dict[str, Any]:
     """
     格式化时间戳或日期字符串
