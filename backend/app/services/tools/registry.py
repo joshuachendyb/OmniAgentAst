@@ -1,11 +1,78 @@
 # -*- coding: utf-8 -*-
 """
-工具注册表模块 - 小健
+工具注册表模块 - 统一入口
 
-T1: 工具注册表重构
-参考文档: Omni系统tool-实现分析报告 v1.15 第6.2.1节
+【架构规范】2026-04-26 小沈
+
+================================================================================
+一、总体架构
+================================================================================
+- registry.py: 总注册表，统一入口，所有工具通过 @register_tool 装饰器注册到这里
+- 各分类目录: {category}_register.py（注册点）+ {category}_tools.py（实现）
+
+================================================================================
+二、新增工具流程
+================================================================================
+1. 在对应分类的 {category}_tools.py 中编写实现函数
+2. 在对应分类的 {category}_register.py 中使用 @register_tool 装饰器注册
+3. 在分类的 __init__.py 中导入注册模块（触发注册）
+
+示例：
+    # file/file_register.py
+    from app.services.tools.registry import register_tool, ToolCategory
+    from app.services.tools.file.file_tools import read_file, write_file
+    
+    @register_tool(name="read_file", description="读取文件", category=ToolCategory.FILE)
+    def read_file(...): pass
+
+================================================================================
+三、目录组织规范
+================================================================================
+| 分类     | 目录    | 注册文件         | 实现文件         |
+|----------|---------|------------------|------------------|
+| 文件操作 | file/   | file_register.py | file_tools.py    |
+| 时间日期 | time/   | time_register.py | time_tools.py    |
+| Shell命令| shell/ | shell_register.py| shell_tools.py   |
+| 网络通信 | network/| network_register.py| network_tools.py|
+| 环境变量 | env/   | env_register.py  | env_tools.py     |
+| 系统信息 | system/ | system_register.py| system_tools.py  |
+| 数据库   | database/| database_register.py|database_tools.py|
+| 桌面功能 | desktop/| desktop_register.py| desktop_tools.py|
+
+================================================================================
+四、命名规范
+================================================================================
+- 注册装饰器: @register_tool（来自 registry.py）
+- 注册函数别名: {分类}tool（可选，如 filetool = tool_registry）
+- 实现文件: {分类}_tools.py
+- 注册文件: {分类}_register.py
+- 模式文件: {分类}_schema.py（用于Pydantic模型）
+
+================================================================================
+五、必须遵守的规则
+================================================================================
+1. 工具必须注册到 registry.py 的 tool_registry
+2. 各分类只负责实现，注册在 __init__.py 导入时自动触发
+3. 文件名必须具体，不能用笼统名称如 tools.py
+4. 空目录保留，用于未来扩展
+5. 分类枚举必须使用 ToolCategory 枚举类
+
+================================================================================
+六、TODO - 待实现分类
+================================================================================
+| 分类     | 状态  | 工具数量 | 说明                    |
+|----------|-------|----------|-------------------------|
+| TIME     | 待创建 | 9个      | 时间/日期工具           |
+| SHELL    | 待创建 | 3个      | Shell命令执行           |
+| NETWORK  | 待创建 | 2个      | 网络通信                |
+| ENV      | 待创建 | 2个      | 环境变量                |
+| SYSTEM   | 待创建 | 1个      | 系统信息                |
+| DATABASE | 待创建 | 3个      | 数据库访问              |
+| DESKTOP  | 待创建 | 0个      | 桌面功能（保留扩展）    |
 
 创建时间: 2026-04-19 08:20:00
+更新时间: 2026-04-26 10:40:00
+更新人: 小沈
 """
 
 from typing import Dict, List, Optional, Callable, Any, Union
@@ -18,12 +85,21 @@ logger = logging.getLogger(__name__)
 
 
 class ToolCategory(Enum):
-    """工具分类枚举"""
+    """
+    工具分类枚举
+    
+    【更新】2026-04-26 小沈
+    - 原有: FILE, DATABASE, NETWORK, SYSTEM, DESKTOP
+    - 新增: TIME, SHELL, ENV
+    """
     FILE = "file"
-    DATABASE = "database"
-    NETWORK = "network"
-    SYSTEM = "system"
-    DESKTOP = "desktop"
+    TIME = "time"           # 时间/日期
+    SHELL = "shell"         # Shell命令执行
+    NETWORK = "network"     # 网络通信
+    ENV = "env"             # 环境变量
+    SYSTEM = "system"        # 系统信息
+    DATABASE = "database"   # 数据库访问
+    DESKTOP = "desktop"     # 桌面功能
 
 
 @dataclass
