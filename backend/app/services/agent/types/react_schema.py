@@ -25,11 +25,7 @@ ReAct Agent Structured Outputs 实现 - Function Calling Schema 生成器
 import json
 from typing import Any, Dict, List, Optional
 
-from app.services.tools.file.file_tools import (
-    FileTools,
-    get_registered_tools,
-    get_tool,
-)
+from app.services.tools.registry import tool_registry
 
 
 def get_tools_schema_for_function_calling() -> List[Dict[str, Any]]:
@@ -64,7 +60,7 @@ def get_tools_schema_for_function_calling() -> List[Dict[str, Any]]:
         ...
     ]
     """
-    tools = get_registered_tools()
+    tools = tool_registry.list_tools()
     
     openai_tools = []
     for tool in tools:
@@ -333,7 +329,7 @@ def get_available_tools() -> List[str]:
     Returns:
         工具名称列表
     """
-    tools = get_registered_tools()
+    tools = tool_registry.list_tools()
     return [tool.get("name", "") for tool in tools if tool.get("name")]
 
 

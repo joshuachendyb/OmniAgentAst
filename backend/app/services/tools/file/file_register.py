@@ -113,20 +113,8 @@ _register_file_tools()
 # ============================================================
 from app.services.tools.file.file_tools import FileTools, get_file_tools
 
-# 兼容导出（用于旧代码）
-def get_registered_tools(category: Optional[str] = None):
-    """获取已注册的工具列表（兼容旧接口）"""
-    return tool_registry.list_tools(category=category and ToolCategory(category))
-
-
-def get_tool(name: str):
-    """获取指定工具的信息（兼容旧接口）"""
-    return tool_registry.get(name)
-
 
 __all__ = [
     "FileTools",
     "get_file_tools",
-    "get_registered_tools",  # 兼容导出
-    "get_tool",              # 兼容导出
 ]

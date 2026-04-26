@@ -129,10 +129,10 @@ class FileReactAgent(BaseAgent):
         openai_tools = tools or []
         if not openai_tools and should_use_function_calling:
             # 从注册表获取工具定义并转换为OpenAI格式
-            from app.services.tools.file import get_registered_tools
+            from app.services.tools.registry import tool_registry, ToolCategory
             from app.services.agent.types.react_schema import _process_description, _clean_properties
             
-            mcp_tools = get_registered_tools(category="file")
+            mcp_tools = tool_registry.list_tools(category=ToolCategory.FILE)
             openai_tools = []
             for tool in mcp_tools:
                 # 转换逻辑（参考react_schema.py）

@@ -442,23 +442,13 @@ def get_tools_dict() -> Dict[str, Callable]:
 
 def get_implementations_from_registry() -> Dict[str, Callable]:
     """
-    【M5新增】从tool_registry获取所有工具实现函数
-    
-    如果tool_registry为空，自动从file_tools._TOOL_REGISTRY同步
+    从tool_registry获取所有工具实现函数
     
     Returns:
         {工具名: 工具函数} 格式
     """
-    # 如果registry为空，从旧_TOOL_REGISTRY同步
-    if not tool_registry._implementations:
-        _sync_from_old_registry()
-    
-    return tool_registry._implementations
-
-
-def _sync_from_old_registry():
-    """占位函数（旧同步逻辑已废弃）"""
-    pass  # 不再需要同步，已迁移到各register.py
+    return {name: tool_registry.get_implementation(name) 
+            for name in tool_registry.list_tools()}
 
 
 def get_tools_dict_by_category(category: ToolCategory) -> Dict[str, Callable]:

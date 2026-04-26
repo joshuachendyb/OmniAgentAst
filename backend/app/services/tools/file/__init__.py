@@ -2,14 +2,10 @@
 """
 Tools/File 模块 - 文件操作工具集
 
-【迁移说明】
-本目录是从 agent/tools.py 迁移而来
-迁移时间：2026-03-21
-
-【重构说明】2026-04-26 小沈
-- file_tools.py 使用独立的 @register_tool 装饰器（已废弃）
-- 但保留导出以兼容现有代码
-- 未来将迁移到 registry.py 的统一注册
+【重构说明】2026-04-26 小健
+- file_tools.py: FileTools 类 + 实用函数
+- file_register.py: 到 tool_registry 的注册
+- tool_registry: 唯一注册中心
 
 Author: 小沈 - 2026-03-21
 更新时间: 2026-04-26
@@ -34,8 +30,6 @@ from app.services.tools.file.file_tools import (
     # 类
     FileTools,
     ToolDefinition,
-    # 装饰器
-    register_tool,
     # 模型
     ReadFileInput,
     WriteFileInput,
@@ -52,10 +46,7 @@ from app.services.tools.file.file_tools import (
     _generate_summary,
     get_file_tools,
 )
-# 兼容导出 - 从 file_register 导入
-from app.services.tools.file.file_register import get_registered_tools, get_tool
-
-# 注册点（触发工具注册）
+# 触发工具注册
 from app.services.tools.file.file_register import FileTools, get_file_tools
 
 __all__ = [
@@ -76,11 +67,7 @@ __all__ = [
     # 类
     "FileTools",
     "ToolDefinition",
-    # 装饰器
-    "register_tool",
     # 工具函数
-    "get_registered_tools",
-    "get_tool",
     "encode_page_token",
     "decode_page_token",
     "_to_unified_format",

@@ -153,18 +153,10 @@ class ToolDefinition:
 }
 
 
-# ============================================================
-# 第五部分：已废弃（2026-04-26 小沈）
-# 【重要】旧的注册逻辑已移除
-# - _TOOL_REGISTRY 已删除
-# - @register_tool 装饰器已删除（第5部分的旧函数）
-# 工具现在通过 file_register.py 注册到 tool_registry
-# 
-# 保留一个空操作装饰器用于兼容 FileTools 类中的旧代码
-# 类中所有 @register_tool 已替换为 pass
-# ============================================================
+from datetime import datetime
 
-# 空的注册装饰器（兼容旧代码，不执行任何操作）
+
+# 空装饰器（已废弃，仍用于兼容FileTools类中的@register_tool）
 def register_tool(
     name: Optional[str] = None,
     description: str = "",
@@ -175,9 +167,6 @@ def register_tool(
     def decorator(func):
         return func
     return decorator
-
-
-from datetime import datetime
 
 
 # ============================================================
@@ -2090,25 +2079,4 @@ def decode_page_token(token: str) -> int:
         return 0
 
 
-# ============================================================
-# 兼容导出（旧接口需要）
-# ============================================================
-def get_registered_tools(category: Optional[str] = None):
-    """获取已注册的工具列表（兼容旧接口）"""
-    from app.services.tools.registry import tool_registry, ToolCategory
-    if category:
-        tools = tool_registry.list_tools(category=ToolCategory(category))
-    else:
-        tools = tool_registry.list_tools()
-    return [t["name"] for t in tools]
-
-
-def get_tool(name: str):
-    """获取指定工具的信息（兼容旧接口）"""
-    from app.services.tools.registry import tool_registry
-    return tool_registry.get(name)
-
-
-# ============================================================
-# 【M3关键】工具初始化注册
-from datetime import datetime
+# 文件结束
