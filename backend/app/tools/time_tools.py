@@ -684,6 +684,39 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
         }
 
 
+# ===========================================================
+# P1 常用辅助 - time_is_weekend
+# ===========================================================
+
+@register_tool(
+    name="time_is_weekend",
+    description="""检查给定日期是否为周末（周六或周日）。
+
+使用场景：
+- 当用户问"明天是周末吗？"时使用此工具
+- 当用户问"这个日期是周末吗？"时使用此工具
+- 当用户需要判断是否可以安排周末活动时使用
+- 当用户想要知道某天是否需要上班时使用
+
+参数说明：
+- date: 日期（时间戳、字符串、datetime）。如果为None则使用当前日期。可选参数，默认为None（当前日期）
+
+返回数据说明：
+- is_weekend: 是否为周末（True=是周末，False=不是周末）
+- date: 输入的日期
+- weekday: 星期几（英文）
+- isoweekday: ISO星期几（1=Monday, 7=Sunday）
+
+注意：
+- 周六和周日被认为是周末
+- 使用ISO标准：Monday=1, Tuesday=2, ..., Sunday=7""",
+    examples=[
+        {},
+        {"date": "2026-04-25"},
+        {"date": "2026-04-26"},
+        {"date": 1777103094}
+    ]
+)
 def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
     """
     检查给定日期是否为周末
