@@ -5,9 +5,11 @@ AgentFactory - Agent工厂类
 
 位置: app/services/agent/agent_factory.py
 小健 - 2026-04-26
+修复 - 2026-04-26 小沈
 """
 from typing import Dict, Any, Optional, Type
 from app.services.agent.base_react import BaseAgent
+from app.services.tools.registry import ToolCategory
 
 
 class AgentFactory:
@@ -26,7 +28,7 @@ class AgentFactory:
     """
     
     _AGENTS: Dict[str, Type[BaseAgent]] = {}
-    _TOOL_CATEGORIES: Dict[str, str] = {}
+    _TOOL_CATEGORIES: Dict[str, Optional[ToolCategory]] = {}
     
     @classmethod
     def create(
@@ -37,6 +39,7 @@ class AgentFactory:
         api_base: Optional[str] = None,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
+        tool_category: Optional[ToolCategory] = None,
         **kwargs
     ) -> BaseAgent:
         """创建Agent实例
@@ -48,6 +51,7 @@ class AgentFactory:
             api_base: API地址
             api_key: API密钥
             model: 模型名称
+            tool_category: 工具分类 【新增】
             **kwargs: 其他参数
             
         Returns:
@@ -60,13 +64,19 @@ class AgentFactory:
         if not AgentClass:
             return None
         
-        # 创建Agent实例（传递所有参数）
+        # 获取tool_category（优先使用参数，其次使用预注册的）
+        effective_tool_category = tool_category
+        if not effective_tool_category:
+            effective_tool_category = cls._TOOL_CATEGORIES.get(intent_type)
+        
+        # 创建Agent实例（传递所有参数，包括tool_category）
         return AgentClass(
             llm_client=llm_client,
             session_id=session_id,
             api_base=api_base,
             api_key=api_key,
             model=model,
+            tool_category=effective_tool_category,
             **kwargs
         )
     
@@ -75,7 +85,7 @@ class AgentFactory:
         cls,
         intent_type: str,
         agent_class: Type[BaseAgent],
-        tool_category: Optional[str] = None
+        tool_category: Optional[ToolCategory] = None
     ):
         """注册新的Agent
         
@@ -103,6 +113,15 @@ class AgentFactory:
 # 注册默认的FileReactAgent
 try:
     from app.services.agent.file_react import FileReactAgent
-    AgentFactory.register('file', FileReactAgent, 'file')
-except ImportError:
-    pass
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('file', FileReactAgent, ToolCategory.FILE)
+except ImportError as e:
+    print(f"[AgentFactory] 注册FileReactAgent失败: {e}")
+
+# 注册TimeReactAgent（如果存在）
+try:
+    from app.services.agent.time_react import TimeReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('time', TimeReactAgent, ToolCategory.TIME)
+except ImportError as e:
+    print(f"[AgentFactory] TimeReactAgent未找到: {e}")
