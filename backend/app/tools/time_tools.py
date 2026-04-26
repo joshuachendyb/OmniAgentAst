@@ -508,7 +508,39 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
 # ===========================================================
 # P1 常用辅助（时区、日历相关）
 # ===========================================================
+# P1 常用辅助 - time_utc_to_local
+# ===========================================================
 
+@register_tool(
+    name="time_utc_to_local",
+    description="""将UTC时间转换为本地时间或指定时区时间。
+
+使用场景：
+- 当用户需要将UTC时间转换为本地时间时使用此工具
+- 当用户在不同时区间转换时间时使用
+- 当用户处理跨国时间问题时使用
+- 当用户指定目标时区时使用
+
+参数说明：
+- utc_time: UTC时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。必填参数
+- target_tz: 目标时区（如"+08:00"、"Asia/Shanghai"）。如果为None则使用本地时区。可选参数，默认为None（本地时区）
+
+返回数据说明：
+- utc_time: 原始UTC时间
+- local_time: 转换后的本地时间
+- target_tz: 目标时区
+
+常用时区：
+- +08:00 或 Asia/Shanghai（北京时间）
+- +00:00 或 UTC（世界协调时间）
+- -05:00 或 America/New_York（纽约时间）
+- +09:00 或 Asia/Tokyo（东京时间）""",
+    examples=[
+        {"utc_time": "2026-04-25T12:00:00Z"},
+        {"utc_time": 1777103094, "target_tz": "+08:00"},
+        {"utc_time": "2026-04-25T12:00:00Z", "target_tz": "Asia/Shanghai"}
+    ]
+)
 def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[str, Any]:
     """
     将UTC时间转换为本地时间或指定时区时间
