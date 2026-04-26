@@ -302,10 +302,43 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
         return {
             "code": "ERR_TIME_DIFF",
             "data": None,
-            "message": f"计算时间差失败: {str(e)}"
+"message": f"计算时间差失败: {str(e)}"
         }
 
 
+# ===========================================================
+# P0 核心基础 - timer_set
+# ===========================================================
+
+@register_tool(
+    name="timer_set",
+    description="""设置定时器，在指定延迟后执行回调。
+
+使用场景：
+- 当用户说"3分钟后提醒我"时使用此工具
+- 当用户说"10分钟后执行这个任务"时使用此工具
+- 当用户需要定时执行某个动作时使用
+- 当用户设置提醒或定时任务时使用
+
+参数说明：
+- delay: 延迟时间（秒）。必须大于0，不能超过86400秒（24小时）。必填参数
+- callback: 回调函数标识或描述（字符串）。描述要执行的操作。必填参数
+- callback_data: 传递给回调的数据（可选）。可选参数，默认为None
+
+返回数据说明：
+- timer_id: 定时器ID（如timer_1_1234567890）
+- delay: 实际设置的延迟（秒）
+- trigger_at: 触发时间（ISO格式）
+
+注意：
+- 定时器在后台运行，使用asyncio
+- 回调函数通过字符串描述实现""",
+    examples=[
+        {"delay": 180, "callback": "提醒用户喝水"},
+        {"delay": 600, "callback": "执行备份", "callback_data": {"file": "D:/backup"}},
+        {"delay": 3600, "callback": "发送报告邮件"}
+    ]
+)
 async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     设置定时器，在延迟后执行回调
