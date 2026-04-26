@@ -52,28 +52,26 @@ FILE_TOOL_DESCRIPTIONS = {
     "delete_file": "删除文件",
     "move_file": "移动文件",
     "search_file_content": "搜索文件内容",
-    "search_files_by_name": "按名称搜索文件",
-    "search_files": "搜索文件名",  # 额外注册
+    "search_files": "搜索文件名",
     "generate_report": "生成报告",
     "copy_file": "复制文件",
     "create_directory": "创建目录",
     "get_file_info": "获取文件信息",
-    "compress_files": "压缩文件",
     "compare_files": "比较文件",
     "batch_rename": "批量重命名",
-    "file_checksum": "文件校验",
-    "file_statistics": "文件统计",
+    "compress_files": "压缩文件",
     "file_monitor": "文件监控",
+    "file_statistics": "文件统计",
+    "file_checksum": "文件校验",
 }
 
 
 def _register_file_tools():
     """注册所有文件工具到 tool_registry"""
-    # 【关键】只创建一个 FileTools 实例
-    # 后续所有工具调用都会使用这个实例的方法
+    # 只创建一个 FileTools 实例
     ft = FileTools()
     
-    # 17个工具方法映射（从 FileTools 实例获取绑定方法）
+    # 统一的工具映射 - 注册名与实际方法名一致
     tool_methods = {
         "read_file": ft.read_file,
         "write_file": ft.write_file,
@@ -81,7 +79,7 @@ def _register_file_tools():
         "delete_file": ft.delete_file,
         "move_file": ft.move_file,
         "search_file_content": ft.search_file_content,
-        "search_files_by_name": ft.search_files,  # 实际方法名 search_files，注册名 search_files_by_name
+        "search_files": ft.search_files,      # 统一：注册名 = 方法名
         "generate_report": ft.generate_report,
         "copy_file": ft.copy_file,
         "create_directory": ft.create_directory,
@@ -94,10 +92,7 @@ def _register_file_tools():
         "file_checksum": ft.file_checksum,
     }
     
-    # 【重要】同时注册 search_files 以便 getattr 可以找到
-    tool_methods["search_files"] = ft.search_files
-    
-    # 注册每个工具
+    # 注册
     for name, method in tool_methods.items():
         desc = FILE_TOOL_DESCRIPTIONS.get(name, "")
         tool_registry.register(

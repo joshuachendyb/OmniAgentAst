@@ -500,10 +500,10 @@ def get_tools_from_file_registry() -> Dict[str, Callable]:
     return result
 
 
-# 已知file工具名列表（从file_register同步）
+# 已知file工具名列表（统一命名）
 _FILE_TOOL_NAMES = [
     "read_file", "write_file", "list_directory", "delete_file", "move_file",
-    "search_file_content", "search_files_by_name", "search_files", "generate_report", "copy_file",
+    "search_file_content", "search_files", "generate_report", "copy_file",
     "create_directory", "get_file_info", "compare_files", "batch_rename",
     "compress_files", "file_monitor", "file_statistics", "file_checksum"
 ]
