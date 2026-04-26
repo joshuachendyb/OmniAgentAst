@@ -1,22 +1,3 @@
-v0.10.15
-
-更新时间: 2026-04-26
-
-更新内容：
-
-## 1 LLM不完整JSON解析修复 - 小沈-2026-04-26
-
-| 文件 | 修复内容 |
-|------|---------|
-| backend/app/services/agent/react_output_parser.py | 添加不完整JSON检测逻辑，修复`{"thought": "xxx"`格式被误识别为action的问题 |
-
-## 2 time_tools模块创建 - 小沈-2026-04-25
-
-| 文件 | 修复内容 |
-|------|---------|
-| backend/app/tools/time_tools.py | 创建8个时间工具函数：get_current_time, get_time_offset, time_diff, time_add, get_weekday, get_month_days, format_timestamp, validate_timestamp |
-| backend/tests/test_time_tools.py | 创建完整测试文件，58个测试用例全部通过 |
-
 v0.10.16
 
  更新时间: 2026-04-26 01:00:00
@@ -25,7 +6,6 @@ v0.10.16
 
  ## 1 3.3低优先级渲染器实现 - 小强-2026-04-26
 
- ### TIME类（9个）
  | 工具 | Render | View |
  |------|--------|------|
  | time_now | TimeNowRenderer | TimeNowView |
@@ -37,10 +17,6 @@ v0.10.16
  | time_local_to_utc | TimeLocalToUtcRenderer | TimeLocalToUtcView |
  | time_is_weekend | TimeIsWeekendRenderer | TimeIsWeekendView |
  | time_is_holiday | TimeIsHolidayRenderer | TimeIsHolidayView |
-
- ### FILE类（3个）
- | 工具 | Render | View |
- |------|--------|------|
  | file_monitor | FileMonitorRenderer | FileMonitorView |
  | file_statistics | FileStatisticsRenderer | FileStatisticsView |
  | file_checksum | FileChecksumRenderer | FileChecksumView |
@@ -51,16 +27,24 @@ v0.10.16
 
 v0.10.15
 
- 更新时间: 2026-04-26 00:15:00
+ 更新时间: 2026-04-26 00:30:00
 
  更新内容：
 
- ## 1 CopyFileView空数据检查 - 小强-2026-04-25
+ ## 1 LLM不完整JSON解析修复 - 小沈-2026-04-26
+
+ | 文件 | 修复内容 |
+ |------|---------|
+ | backend/app/services/agent/react_output_parser.py | 添加不完整JSON检测逻辑，修复`{"thought": "xxx"`格式被误识别为action的问题 |
+
+ Commit: fix: 修复LLM不完整JSON被误识别为action问题-小沈-2026-04-26
+
+ ## 2 CopyFileView空数据检查 - 小强-2026-04-25
 
  | 改进 | 说明 |
  |------|-------|
  | 空数据检查 | 增加checkEmptyData函数，检查data是否为空 |
- |Early Return | useMemo之后判断空数据返回提示 |
+ | Early Return | useMemo之后判断空数据返回提示 |
 
  Commit: feat: CopyFileView增加空数据检查-小强-2026-04-25
 
@@ -70,7 +54,7 @@ v0.10.14
 
  更新时间: 2026-04-25 23:15:00
 
-更新内容：
+ 更新内容：
 
  ## 1 FILE类工具测试用例修复 - 小资-2026-04-25
 
