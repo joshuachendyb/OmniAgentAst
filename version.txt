@@ -1,3 +1,50 @@
+v0.10.20
+
+ 更新时间: 2026-04-26 20:19:01
+
+ 更新内容：
+
+ ## 1 TimeReactAgent按文档5.4实现 - 小沈-2026-04-26
+
+ | 变更 | 说明 |
+ |------|------|
+ | time_react.py | 新增TimeReactAgent类，继承ToolLoaderMixin+BaseAgent |
+ | agent_factory.py | 注册TimeReactAgent到AgentFactory |
+ | 测试 | 10/10 通过 |
+
+ ## 2 BaseAgent添加tool_category参数 - 小沈-2026-04-26
+
+ | 文件 | 变更 |
+ |------|------|
+ | base_react.py | __init__新增tool_category参数 |
+
+ ## 3 Time工具注册优化 - 小沈-2026-04-26
+
+ | 文件 | 变更 |
+ |------|------|
+ | time/__init__.py | 优化导出 |
+ | time_register.py | 简化注册逻辑 |
+ | time_tools.py | 优化工具实现 |
+
+ ## 4 文档更新 - 小沈-2026-04-26
+
+ | 文件 | 说明 |
+ |------|------|
+ | docs/plans/2026-04-26-agent-factory-design 02.md | 新增AgentFactory设计文档v1.2 |
+ | notes/2026-04-26-agent-factory-design*.md | 新增文档备份 |
+
+ Commit汇总：
+ | Commit | 说明 |
+ |--------|------|
+ | 86cd958f | feat: 新增TimeReactAgent按文档5.4实现 - 小沈-2026-04-26 |
+ | fb4bec1f | docs: 新增AgentFactory设计文档v1.2 - 小沈-2026-04-26 |
+ | 4f639c99 | feat: base_react.py添加tool_category参数 - 小沈-2026-04-26 |
+ | 1dee0620 | feat: time/__init__.py优化导出 - 小沈-2026-04-26 |
+ | ab888cef | feat: time_register.py简化注册逻辑 - 小沈-2026-04-26 |
+ | 48eb0216 | feat: time_tools.py优化工具实现 - 小沈-2026-04-26 |
+
+---
+
 v0.10.19
 
  更新时间: 2026-04-26 17:52:54
