@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-Agent 核心基类
+Agent 核心基类 - 支持多工具分类
+
+参考: 文档5.6节+7.5节完整代码
 
 定义 ReAct 循环的核心逻辑，供所有 Agent 实现类继承。
 
@@ -14,14 +16,18 @@ Agent 核心基类
 - 步骤2.10：添加步骤历史管理self.steps
 - 步骤2.11：清理废弃的create_*_result函数
 
+【Phase 1修复 2026-04-26 小沈】：
+- 添加 llm_client, session_id 参数
+- 添加 _load_tools 方法从 registry 加载工具
+
 Author: 小沈 - 2026-03-25
-Updated: 小沈 - 2026-04-17
+Updated: 小沈 - 2026-04-26
 """
 
 import asyncio
 import time
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, AsyncGenerator
+from typing import Any, Dict, List, Optional, AsyncGenerator, Callable
 
 from app.services.agent.types import AgentStatus
 from app.services.agent.react_output_parser import parse_react_response
@@ -34,6 +40,7 @@ from app.services.agent.reasoning_steps import (
     FinalStep,
     ErrorStep,
 )
+from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
@@ -46,21 +53,35 @@ from app.utils.prompt_logger import get_prompt_logger
 
 class BaseAgent(ABC):
     """
-    Agent 核心基类
+    Agent 核心基类 - 支持多工具分类
+    
+    参考: 文档5.6节+7.5节完整代码
     
     定义 ReAct (Thought-Action-Observation) 循环的核心逻辑
     子类需要实现抽象方法
     """
     
-    def __init__(self, max_steps: int = 100, tool_category: Any = None):
+    def __init__(
+        self,
+        llm_client: Any,
+        session_id: str,
+        tool_category: Optional[ToolCategory] = None,
+        max_steps: int = 100,
+        **kwargs
+    ):
         """初始化 BaseAgent
+        参考: 7.5节行1064-1088
         
         Args:
+            llm_client: LLM客户端
+            session_id: 会话ID
+            tool_category: 工具分类
             max_steps: 最大步数
-            tool_category: 工具分类 【修复】小沈-2026-04-26
         """
+        self.llm_client = llm_client
+        self.session_id = session_id
+        self.tool_category = tool_category
         self.max_steps = max_steps
-        self.tool_category = tool_category  # 【修复】小沈-2026-04-26
         
         # 【步骤2.10】步骤历史管理：使用ReasoningStep类型
         self.steps: List[ReasoningStep] = []
@@ -75,6 +96,22 @@ class BaseAgent(ABC):
         # 【重构 2026-04-11 小沈】解析重试相关参数
         self.parse_retry_count = 0  # 解析重试计数器
         self.max_parse_retries = 3   # 最大重试次数
+        
+        # 【Phase1修复】从registry加载工具
+        self._tools_dict = self._load_tools()
+        
+        # 创建工具执行器
+        self.executor = None  # 子类应初始化
+    
+    def _load_tools(self) -> Dict[str, Callable]:
+        """
+        从registry加载工具
+        参考: 7.5节行1082-1088
+        """
+        if not self.tool_category:
+            return {}
+        
+        return get_tools_from_registry_by_category(self.tool_category)
     
     # ===== 抽象方法（子类必须实现）=====
     
