@@ -1,8 +1,8 @@
 # Agent工厂模式架构改进设计方案
 
-**版本**: v1.2
+**版本**: v1.3
 **创建时间**: 2026-04-26 12:25:00
-**更新时间**: 2026-04-26 14:31:08
+**更新时间**: 2026-04-26 20:34:02
 **作者**: 小健
 **分析**: 小沈
 **目标**: 从单一file模式提升到支持多工具分类的架构模式
@@ -16,6 +16,7 @@
 | v1.0 | 2026-04-26 12:25:00 | 小健 | 初始版本 |
 | v1.1 | 2026-04-26 13:00:00 | 小沈 | 补充缺陷分析 - 小沈 |
 | v1.2 | 2026-04-26 14:31:08 | 小健 | 补充Mixin实现，修正状态 - 小沈 |
+| v1.3 | 2026-04-26 20:34:02 | 小沈 | 新增6.1计划（修正版）-基于代码差异分析 - 小沈 |
 
 ---
 
@@ -578,55 +579,278 @@ class BaseAgent(ABC):
 
 ## 六、实施计划（修正版）- 与实际代码比对后
 
-**实际代码状态**：
-- BaseAgent: ✅ 存在（base_react.py）
-- FileReactAgent: ✅ 存在（file_react.py，使用旧参数：api_base, api_key, model）
-- TimeReactAgent: ❌ 不存在
-- AgentFactory: ❌ 不存在
-- ToolLoaderMixin: ❌ 不存在
-- time_register.py: ✅ 存在
-- file_register.py: ✅ 存在
+### 文档与实际代码差异分析（2026-04-26 小沈）
 
-### Phase 1: 创建AgentFactory（高优先级）- 已完成
+| 文件 | 文档要求(第5/7章) | 实际代码 | 问题 |
+|------|-------------------|---------|------|
+| **BaseAgent** | `__init__(llm_client, session_id, tool_category, max_steps, **kwargs)` | `__init__(max_steps, tool_category)` | ❌ 缺少llm_client/session_id |
+| **FileReactAgent** | 使用tool_category参数 | 使用旧参数(intent_type, api_base等) | ❌ 不支持tool_category |
+| **TimeReactAgent** | 文档5.4要求 | ✅ 已按文档实现 | ✅ 已完成 |
+| **ToolLoaderMixin** | 文档5.2 `_load_tools(category)` | ✅ mixin.py已存在 | ✅ 已完成 |
+| **AgentFactory** | 传递tool_category给Agent | 传递旧参数 | ❌ 参数不匹配 |
+| **registry** | 文档5.3 `get_tools_from_registry_by_category` | ✅ 已存在 | ✅ 已完成 |
 
-| 任务 | 文件 | 内容 | 实际状态 | 状态 |
-|------|------|------|----------|------|
-| T1.1 | agent_factory.py | 创建AgentFactory类 | ✅ 已创建 | ✅ 已完成 |
-| T1.2 | registry.py | 添加get_tools_by_category | ✅ 已添加别名 | ✅ 已完成 |
-| T1.3 | base_react.py + mixin.py | ToolLoaderMixin | ✅ 已创建 | ✅ 已完成 |
-| T1.4 | react_sse_wrapper.py | 使用AgentFactory | ✅ 已修改 | ✅ 已完成 |
-| T1.5 | file_react.py | 支持参数 | ✅ 已有 | ✅ 已完成 |
-| T1.6 | 验证无旧代码残留 | 已验证 | ✅ 验证通过 | ✅ 已完成 |
+---
 
-### Phase 2: 集成time工具（高优先级）
+### 6.1 现有代码的修改完善计划
 
-| 任务 | 文件 | 内容 | 实际状态 | 状态 |
-|------|------|------|----------|------|
-| T2.1 | time_register.py | 改为注册到tool_registry | ✅ 已完成 | ✅ 已完成 |
-| T2.2 | agent/time_react.py | 新建TimeReactAgent | ❌ 不存在 | 🔴 待创建 |
-| T2.3 | time/__init__.py | 更新导出 | ⚠️ 导出需检查 | ⚠️ 需检查 |
-| T2.4 | 测试TimeReactAgent | 测试TimeReactAgent | ❌ 未测试 | 🔴 待测试 |
+**⚠️ 铁律（必须严格遵守）**：
+- 所有修改代码**必须**严格参考文档第5章相应章节的代码
+- 禁止自行臆造代码，必须在「文档参考」列明引用的章节和行号
+- 这是之前代码漏洞百出的关键原因：之前的人总是臆造代码
 
-### Phase 3: 创建其他Agent（中优先级）
+### 核心原则
+1. **依赖关系**：后面的代码修正必须依赖前面的正确实施
+2. **代码集成顺序**：从底层到上层，从基类到Agent类
+3. **不修改文档第5/7章设计**
 
-| 任务 | 文件 | 内容 | 实际状态 | 状态 |
-|------|------|------|----------|------|
-| T3.1 | shell_tools.py | 实现shell工具 | ❌ 不存在 | 🔴 待创建 |
-| T3.2 | shell_register.py | 注册到registry | ⚠️ 已创建空文件 | 🔴 待实现 |
-| T3.3 | agent/shell_react.py | 新建ShellReactAgent | ❌ 不存在 | 🔴 待创建 |
-| T3.4 | network_tools.py | 实现网络工具 | ❌ 不存在 | 🔴 待创建 |
-| T3.5 | network_register.py | 注册到registry | ❌ 不存在 | 🔴 待创建 |
-| T3.6 | agent/network_react.py | 新建NetworkReactAgent | ❌ 不存在 | 🔴 待创建 |
-| T3.7 | desktop_tools.py | 实现桌面工具 | ❌ 不存在 | 🔴 待创建 |
-| T3.8 | desktop_register.py | 注册到registry | ❌ 不存在 | 🔴 待创建 |
-| T3.9 | agent/desktop_react.py | 新建DesktopReactAgent | ❌ 不存在 | 🔴 待创建 |
+### 依赖关系图
 
-### Phase 4: 混合工具支持（扩展）
+```
+                    ┌─────────────────────────────────────────┐
+                    │           Phase 0: 基础设施                │
+                    │  (所有其他Phase的前置依赖)              │
+                    ├─────────────────────────────────────────┤
+                    │  T0.1: registry.py 新注册函数 ✅    │
+                    │  T0.2: ToolLoaderMixin ✅           │
+                    └─────────────────────────────────────────┘
+                                    ↓ 依赖
+                    ┌─────────────────────────────────────────┐
+                    │         Phase 1: BaseAgent修复            │
+                    │    (所有Agent子类依赖此基类)           │
+                    ├─────────────────────────────────────────┤
+                    │  T1.1: BaseAgent添加llm_client       │
+                    │  T1.2: BaseAgent添加session_id     │
+                    │  T1.3: BaseAgent添加_load_tools  │
+                    └─────────────────────────────────────────┘
+                                    ↓ 依赖
+                    ┌─────────────────────────────────────────┐
+                    │      Phase 2: FileReactAgent修复        │
+                    │      (依赖Phase 1完成)            │
+                    ├─────────────────────────────────────────┤
+                    │  T2.1: FileReactAgent支持          │
+                    │       tool_category参数              │
+                    │  T2.2: FileReactAgent重写         │
+                    │       _load_tools方法             │
+                    │  T2.3: 移除旧参数兼容         │
+                    └─────────────────────────────────────────┘
+                                    ↓ 依赖
+                    ┌─────────────────────────────────────────┐
+                    │      Phase 3: TimeReactAgent验证          │
+                    │      (依赖Phase 1完成)            │
+                    ├─────────────────────────────────────────┤
+                    │  T3.1: TimeReactAgent测试     │
+                    │  T3.2: 时间工具加载验证     │
+                    └─────────────────────────────────────────┘
+                                    ↓ 依赖
+                    ┌─────────────────────────────────────────┐
+                    │      Phase 4: AgentFactory修复        │
+                    │      (依赖Phase 1/2完成)          │
+                    ├─────────────────────────────────────────┤
+                    │  T4.1: AgentFactory适配       │
+                    │       新参数结构            │
+                    │  T4.2: 注册更新           │
+                    └─────────────────────────────────────────┘
+                                    ↓ 依赖
+                    ┌─────────────────────────────────────────┐
+                    │      Phase 5: 集成测试              │
+                    │      (所有Phase完成后)            │
+                    ├─────────────────────────────────────────┤
+                    │  T5.1: 工厂创建测试         │
+                    │  T5.2: 工具加载测试        │
+                    │  T5.3: SSE wrapper测试     │
+                    └─────────────────────────────────────────┘
+```
 
-| 任务 | 文件 | 内容 | 实际状态 | 状态 |
-|------|------|------|----------|------|
-| T4.1 | BaseAgent | 支持多分类 | ❌ 不支持 | 🔴 待改造 |
-| T4.2 | ToolExecutor | 跨分类执行 | ⚠️ 需检查 | 🔴 待改造 |
+---
+
+### Phase 1: BaseAgent修复（高优先级）
+
+**参考代码**: 文档5.6节 `BaseAgent改进`
+
+| 任务ID | 文件 | 修改内容 | 文档参考 | 状态 |
+|--------|------|---------|---------|------|
+| **T1.1** | base_react.py | 添加 `llm_client` 参数到`__init__` | 5.6节行552 `llm_client: Any` | 🔴 待完成 |
+| **T1.2** | base_react.py | 添加 `session_id` 参数到`__init__` | 5.6节行553 `session_id: str` | 🔴 待完成 |
+| **T1.3** | base_react.py | 实现 `_load_tools` 方法调用registry | 5.6节行569-575 | 🔴 待完成 |
+
+---
+
+### Phase 2: FileReactAgent修复（依赖Phase 1）
+
+**参考代码**: 文档5.5节 `FileReactAgent Mixin实现`
+
+| 任务ID | 文件 | 修改内容 | 文档参考 | 状态 |
+|--------|------|---------|---------|------|
+| **T2.1** | file_react.py | 支持 `tool_category` 参数 | 5.5节行515-517 | 🔴 待完成 |
+| **T2.2** | file_react.py | 重写 `_load_tools` 方法 | 5.5节行531-538 | 🔴 待完成 |
+| **T2.3** | file_react.py | 移除旧参数兼容代码 | 5.5节行528-529 | 🔴 待完成 |
+
+---
+
+### Phase 3: TimeReactAgent验证（依赖Phase 1）
+
+**参考代码**: 文档5.4节 `TimeReactAgent`
+
+| 任务ID | 文件 | 修改内容 | 验证命令 | 状态 |
+|--------|------|---------|---------|------|------|
+| **T3.1** | time_react.py | 测试TimeReactAgent | 5.4节代码测试 | 🔴 待完成 |
+| **T3.2** | - | 验证9个时间工具加载 | 预期输出: 9 | 🔴 待完成 |
+
+---
+
+### Phase 4: AgentFactory修复（依赖Phase 1/2）
+
+**参考代码**: 文档5.1节 `AgentFactory`
+
+| 任务ID | 文件 | 修改内容 | 文档参考 | 状态 |
+|--------|------|---------|---------|------|
+| **T4.1** | agent_factory.py | 适配新参数结构 | 5.1节行324-330 | 🔴 待完成 |
+| **T4.2** | agent_factory.py | 更新注册 | 5.1节行332-348 | 🔴 待完成 |
+
+---
+
+### Phase 5: 集成测试（所有Phase完成后）
+
+| 任务ID | 文件 | 修改内容 | 验证命令 | 预期输出 | 状态 |
+|--------|------|---------|---------|---------|------|------|
+| **T5.1** | - | 工厂创建FileReactAgent测试 | 5.1节create调用 | FileReactAgent/17 | 🔴 待完成 |
+| **T5.2** | - | 工厂创建TimeReactAgent测试 | 5.1节create调用 | TimeReactAgent/9 | 🔴 待完成 |
+| **T5.3** | react_sse_wrapper.py | 集成测试 | 启动后实际使用 | 无报错 | 🔴 待完成 |
+
+---
+
+### Phase 2: FileReactAgent修复（依赖Phase 1）
+
+| 任务ID | 文件 | 修改内容 | 修改后代码 | 依赖 | 状�� |
+|--------|------|---------|----------|----------|------|------|
+| **T2.1** | file_react.py | 支持 `tool_category` 参数 | `tool_category: Optional[ToolCategory]` | T1.3 | 🔴 待完成 |
+| **T2.2** | file_react.py | 重写 `_load_tools` 方法 | 调用Mixin方法 | T2.1 | 🔴 待完成 |
+| **T2.3** | file_react.py | 移除旧参数兼容代码 | 删除intent_type/api_base等 | T2.2 | 🔴 待完成 |
+
+**T2.x 修改详细代码（file_react.py）**：
+```python
+def __init__(
+    self,
+    llm_client: Any,
+    session_id: str,
+    tool_category: Optional[ToolCategory] = None,  # 新增：替换旧intent_type参数
+    max_steps: int = 100,
+    **kwargs
+):
+    effective_category = tool_category or ToolCategory.FILE
+    
+    super().__init__(
+        llm_client=llm_client,
+        session_id=session_id,
+        tool_category=effective_category,
+        max_steps=max_steps,
+        **kwargs
+    )
+    # 保留：file_tools初始化、prompts、adapter等FileReactAgent特有逻辑
+
+def _load_tools(self):
+    """重写工具加载方法 - 使用Mixin"""
+    if self.tool_category:
+        return ToolLoaderMixin._load_tools(self, self.tool_category)
+    return {}
+```
+
+---
+
+### Phase 3: TimeReactAgent验证（依赖Phase 1）
+
+| 任务ID | 文件 | 修改内容 | 验证命令 | 依赖 | 状态 |
+|--------|------|---------|---------|---------|------|------|
+| **T3.1** | time_react.py | 测试TimeReactAgent | `python -c "from app.services.agent.time_react import TimeReactAgent; a=TimeReactAgent(None,'t'); print(type(a).__name__)"` | T1.3 | 🔴 待完成 |
+| **T3.2** | - | 验证9个时间工具加载 | `python -c "from app.services.agent.time_react import TimeReactAgent; a=TimeReactAgent(None,'t'); print(len(a._tools_dict))"` 预期输出: 9 | T3.1 | 🔴 待完成 |
+
+---
+
+### Phase 4: AgentFactory修复（依赖Phase 1/2）
+
+| 任务ID | 文件 | 修改内容 | 修改后代码 | 依赖 | 状态 |
+|--------|------|---------|----------|----------|------|------|
+| **T4.1** | agent_factory.py | 适配新参数结构 | 移除api_base/api_key/model，添加tool_category | T2.3 | 🔴 待完成 |
+| **T4.2** | agent_factory.py | 更新注册 | 使用新参数签名 | T4.1 | 🔴 待完成 |
+
+**T4.x 修改详细代码（agent_factory.py）**：
+```python
+def create(
+    cls,
+    intent_type: str,
+    llm_client: Any = None,
+    session_id: str = "",
+    tool_category: Optional[ToolCategory] = None,  # 新增
+    **kwargs
+) -> BaseAgent:
+    AgentClass = cls._AGENTS.get(intent_type)
+    if not AgentClass:
+        return None
+    
+    effective_category = tool_category or cls._TOOL_CATEGORIES.get(intent_type)
+    
+    return AgentClass(
+        llm_client=llm_client,
+        session_id=session_id,
+        tool_category=effective_category,
+        **kwargs
+    )
+```
+
+---
+
+### Phase 5: 集成测试（所有Phase完成后）
+
+| 任务ID | 文件 | 修改内容 | 验证命令 | 预期输出 | 依赖 | 状态 |
+|--------|------|---------|---------|---------|---------|------|------|
+| **T5.1** | - | 工厂创建FileReactAgent测试 | 工厂create+打印type/tool_category/tools_count | FileReactAgent/ToolCategory.FILE/17 | T4.2 | 🔴 待完成 |
+| **T5.2** | - | 工厂创建TimeReactAgent测试 | 工厂create+打印type/tool_category/tools_count | TimeReactAgent/ToolCategory.TIME/9 | T5.1 | 🔴 待完成 |
+| **T5.3** | react_sse_wrapper.py | 集成测试 | 启动后实际使用 | 无报错 | T5.2 | 🔴 待完成 |
+
+**T5.x 验证命令**：
+```bash
+# T5.1: 测试工厂创建FileReactAgent
+python -c "
+from app.services.agent.agent_factory import AgentFactory
+agent = AgentFactory.create('file', llm_client=None, session_id='test')
+print(f'Agent类型: {type(agent).__name__}')
+print(f'tool_category: {agent.tool_category}')
+print(f'工具数量: {len(agent._tools_dict)}')
+"
+# 预期: Agent类型: FileReactAgent, tool_category: ToolCategory.FILE, 工具数量: 17
+
+# T5.2: 测试工厂创建TimeReactAgent
+python -c "
+from app.services.agent.agent_factory import AgentFactory
+agent = AgentFactory.create('time', llm_client=None, session_id='test')
+print(f'Agent类型: {type(agent).__name__}')
+print(f'tool_category: {agent.tool_category}')
+print(f'工具数量: {len(agent._tools_dict)}')
+"
+# 预期: Agent类型: TimeReactAgent, tool_category: ToolCategory.TIME, 工具数量: 9
+```
+
+---
+
+### 执行顺序（严格按依赖关系）
+
+```
+文档参考  → 任务
+─────────────────────────────────────
+5.6节    → T1.1/T1.2/T1.3 (Phase 1: BaseAgent修复)
+5.5节    → T2.1/T2.2/T2.3 (Phase 2: FileReactAgent修复)
+5.4节    → T3.1/T3.2     (Phase 3: TimeReactAgent验证)
+5.1节    → T4.1/T4.2     (Phase 4: AgentFactory修复)
+5.1节    → T5.1/T5.2/T5.3 (Phase 5: 集成测试)
+```
+
+---
+
+### 计划制定时间
+制定时间: 2026-04-26 20:34:02
+制定人: 小沈
+**强调**: 所有修改代码必须严格参考文档第5章相应章节，禁止臆造
 
 ---
 
