@@ -1,11 +1,21 @@
 # Agent工厂模式架构改进设计方案
 
-**版本**: v1.1
+**版本**: v1.2
 **创建时间**: 2026-04-26 12:25:00
-**更新时间**: 2026-04-26 15:30:00
+**更新时间**: 2026-04-26 13:01:55
 **作者**: 小健
 **分析**: 小沈
 **目标**: 从单一file模式提升到支持多工具分类的架构模式
+
+---
+
+### 版本历史
+
+| 版本 | 时间 | 作者 | 更新内容 |
+|------|------|------|----------|
+| v1.0 | 2026-04-26 12:25:00 | 小健 | 初始版本 |
+| v1.1 | 2026-04-26 13:00:00 | 小沈 | 补充缺陷分析 - 小沈 |
+| v1.2 | 2026-04-26 13:01:55 | 小健 | 补充Mixin实现，修正状态 - 小沈 |
 
 ---
 
@@ -496,6 +506,102 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
 
 请直接回答用户的时间相关问题。"""
 
+
+### 4.5 FileReactAgent Mixin实现（新增）
+
+```python
+# 文件位置: app/services/agent/file_react.py
+# ============================================================
+
+from typing import Any, Optional
+from app.services.agent.base_react import BaseAgent
+from app.services.tools.mixin import ToolLoaderMixin
+from app.services.tools.registry import ToolCategory
+
+
+class FileReactAgent(ToolLoaderMixin, BaseAgent):
+    """
+    文件工具Agent - 支持tool_category参数
+    
+    MRO（方法解析顺序）：
+    FileReactAgent → ToolLoaderMixin → BaseAgent → object
+    
+    使用方式（两种）：
+    
+    1. 使用旧参数（保持兼容）:
+        agent = FileReactAgent(
+            llm_client=llm_client,
+            session_id=session_id,
+            intent_type="file",
+            api_base=api_base,
+            api_key=api_key,
+            model=model
+        )
+    
+    2. 使用新参数（推荐）:
+        agent = FileReactAgent(
+            llm_client=llm_client,
+            session_id=session_id,
+            tool_category=ToolCategory.FILE,
+            config={"tool_category": ToolCategory.FILE}
+        )
+    """
+    
+    def __init__(
+        self,
+        llm_client: Any,
+        session_id: str,
+        intent_type: str = "file",
+        tool_category: Optional[ToolCategory] = None,
+        api_base: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        config: Optional[dict] = None,
+        max_steps: int = 100,
+        **kwargs
+    ):
+        # 提取有效的tool_category（优先使用参数，其次config）
+        effective_category = tool_category
+        if not effective_category and config:
+            effective_category = config.get("tool_category")
+        if not effective_category:
+            effective_category = ToolCategory.FILE
+        
+        # 调用父类初始化（BaseAgent会调用_load_tools）
+        super().__init__(
+            llm_client=llm_client,
+            session_id=session_id,
+            tool_category=effective_category,
+            max_steps=max_steps,
+            **kwargs
+        )
+        
+        # 存储特定参数（保持向后兼容）
+        self.intent_type = intent_type
+        self.api_base = api_base
+        self.api_key = api_key
+        self.model = model
+        self.config = config or {}
+    
+    def _load_tools(self):
+        """
+        重写工具加载方法
+        
+        如果父类的工具加载为空（BaseAgent不支持tool_category时），
+        则使用Mixin的方法加载工具
+        
+        Returns:
+            {工具名: 工具函数}
+        """
+        # 先尝试父类方法
+        tools = super()._load_tools()
+        
+        # 如果父类返回空（BaseAgent不支持tool_category），使用Mixin
+        if not tools and self.tool_category:
+            tools = ToolLoaderMixin._load_tools(self, self.tool_category)
+        
+        return tools
+
 ### 4.5 BaseAgent改进
 
 ```python
@@ -569,15 +675,17 @@ def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Cal
 | T1.2 | registry.py | 添加get_tools_by_category | ✅ 已完成 |
 | T1.3 | base_react.py | 改造BaseAgent支持tool_category | ⚠️ 已Mixin缓解 |
 | T1.4 | react_sse_wrapper.py | 使用AgentFactory | ✅ 已完成 |
-| **T1.5** | **file_react.py** | **支持tool_category参数** | 🔴 **待修复** |
+| **T1.5** | **file_react.py** | **支持tool_category参数** | 🔴 **待完成** |
+| **T1.6** | **验证无旧代码残留** | **确认_TOOL_REGISTRY已移除** | 🔴 **待验证** |
 
 ### Phase 2: 集成time工具（高优先级）
 
 | 任务 | 文件 | 内容 | 状态 |
 |------|------|------|------|
 | T2.1 | time_register.py | 改为注册到tool_registry | ✅ 已完成 |
-| T2.2 | agent/time_react.py | 新建TimeReactAgent | 🟡 规划中 |
+| T2.2 | agent/time_react.py | 新建TimeReactAgent | ⚠️ **部分完成** |
 | T2.3 | time/__init__.py | 更新导出 | ✅ 已完成 |
+| **T2.4** | **验证time工具可用** | **测试TimeReactAgent** | 🔴 **待验证** |
 
 ### Phase 3: 创建Network/DesktopAgent（中优先级）
 
@@ -758,6 +866,66 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
         )
         
         self.system_prompt = """你是一个时间助手，可以回答时间相关问题。"""
+
+
+### 6.4 FileReactAgent Mixin实现
+
+```python
+# ============================================================
+# app/services/agent/file_react.py
+# ============================================================
+
+from typing import Any, Optional
+from app.services.agent.base_react import BaseAgent
+from app.services.tools.mixin import ToolLoaderMixin
+from app.services.tools.registry import ToolCategory
+
+
+class FileReactAgent(ToolLoaderMixin, BaseAgent):
+    """
+    文件工具Agent - 支持tool_category参数
+    """
+    
+    def __init__(
+        self,
+        llm_client: Any,
+        session_id: str,
+        intent_type: str = "file",
+        tool_category: Optional[ToolCategory] = None,
+        api_base: Optional[str] = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        config: Optional[dict] = None,
+        max_steps: int = 100,
+        **kwargs
+    ):
+        # 提取有效的tool_category
+        effective_category = tool_category
+        if not effective_category and config:
+            effective_category = config.get("tool_category")
+        if not effective_category:
+            effective_category = ToolCategory.FILE
+        
+        super().__init__(
+            llm_client=llm_client,
+            session_id=session_id,
+            tool_category=effective_category,
+            max_steps=max_steps,
+            **kwargs
+        )
+        
+        self.intent_type = intent_type
+        self.api_base = api_base
+        self.api_key = api_key
+        self.model = model
+        self.config = config or {}
+    
+    def _load_tools(self):
+        """重写工具加载方法"""
+        tools = super()._load_tools()
+        if not tools and self.tool_category:
+            tools = ToolLoaderMixin._load_tools(self, self.tool_category)
+        return tools
 ```
 
 ### 6.2 registry.py新函数
@@ -787,7 +955,26 @@ def get_tools_by_category(category: ToolCategory) -> Dict[str, Callable]:
 | file工具 registry数量 | 17 | ✅ 已验证 |
 | time工具注册到registry | 9 | ✅ 已修复 |
 | react_sse_wrapper使用工厂 | 正常工作 | ✅ 已完成 |
-| **FileReactAgent支持tool_category** | 待实现 | 🔴 **待修复** |
+| **FileReactAgent支持tool_category** | 待实现 | 🔴 **待完成** |
+| **无旧代码残留** | grep验证 | 🔴 **待验证** |
+
+### 验证命令
+
+```bash
+# 1. 验证file工具数量
+python -c "from app.services.tools.registry import tool_registry; print(tool_registry.list_tools('file'))"
+
+# 2. 验证time工具数量
+python -c "from app.services.tools.registry import tool_registry; print(tool_registry.list_tools('time'))"
+
+# 3. 验证无旧_TOOL_REGISTRY残留
+grep -r "_TOOL_REGISTRY" backend/app/services/tools/
+# 应无输出
+
+# 4. 验证无旧register_tool残留
+grep -r "register_tool" backend/app/services/tools/
+# 应无输出（除了装饰器定义）
+```
 
 ### 验证检查清单
 
@@ -798,6 +985,7 @@ def get_tools_by_category(category: ToolCategory) -> Dict[str, Callable]:
 - [x] ✅ 移除旧注册系统引用
 - [ ] ⚠️ FileReactAgent支持tool_category（进行中）
 - [ ] ⚠️ BaseAgent兼容性测试通过
+- [ ] ⚠️ 无旧代码残留（验证）
 
 ---
 
@@ -839,6 +1027,6 @@ def get_tools_by_category(category: ToolCategory) -> Dict[str, Callable]:
 
 ---
 
-**更新时间**: 2026-04-26 17:00:00
+**更新时间**: 2026-04-26 13:01:55
 **版本**: v1.2
-**更新说明**: 补充ToolLoaderMixin、TimeReactAgent完整实现，更新目标架构
+**更新说明**: 补充ToolLoaderMixin、TimeReactAgent完整实现，更新目标架构 - 小沈-2026-04-26
