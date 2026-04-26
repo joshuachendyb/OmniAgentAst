@@ -454,6 +454,7 @@ def get_implementations_from_registry() -> Dict[str, Callable]:
 def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Callable]:
     """
     按分类从registry获取工具（别名: get_tools_dict_by_category）
+    参考: 文档5.3节+7.6节完整代码
     
     Args:
         category: 工具分类
@@ -461,10 +462,18 @@ def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Cal
     Returns:
         {工具名: 工具函数} 格式
     """
-    tools = tool_registry.list_tools(category=category, include_metadata=True)
+    # Get tool list - handle both old and new return formats
+    tools_list = tool_registry.list_tools(category=category, include_metadata=False)
+    
+    # If tools_list is list of dicts (new format), extract names
+    if tools_list and isinstance(tools_list[0], dict):
+        tool_names = [t["name"] for t in tools_list if "name" in t]
+    else:
+        tool_names = tools_list
+    
+    # Get implementations
     result = {}
-    for tool_info in tools:
-        name = tool_info["name"]
+    for name in tool_names:
         impl = tool_registry.get_implementation(name)
         if impl:
             result[name] = impl
