@@ -23,6 +23,18 @@ import GetFileInfoRenderer from './types/GetFileInfoRenderer';
 import CompareFilesRenderer from './types/CompareFilesRenderer';
 import BatchRenameRenderer from './types/BatchRenameRenderer';
 import CompressFilesRenderer from './types/CompressFilesRenderer';
+import TimeNowRenderer from './types/TimeNowRenderer';
+import TimeFormatRenderer from './types/TimeFormatRenderer';
+import TimeDiffRenderer from './types/TimeDiffRenderer';
+import TimerSetRenderer from './types/TimerSetRenderer';
+import TimerClearRenderer from './types/TimerClearRenderer';
+import TimeUtcToLocalRenderer from './types/TimeUtcToLocalRenderer';
+import TimeLocalToUtcRenderer from './types/TimeLocalToUtcRenderer';
+import TimeIsWeekendRenderer from './types/TimeIsWeekendRenderer';
+import TimeIsHolidayRenderer from './types/TimeIsHolidayRenderer';
+import FileMonitorRenderer from './types/FileMonitorRenderer';
+import FileStatisticsRenderer from './types/FileStatisticsRenderer';
+import FileChecksumRenderer from './types/FileChecksumRenderer';
 import DefaultRenderer from './types/DefaultRenderer';
 import { BaseRendererProps } from './types/BaseRendererProps';
 
@@ -73,6 +85,30 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
       return <BatchRenameRenderer step={step} />;
     case "compress_files":
       return <CompressFilesRenderer step={step} />;
+    case "time_now":
+      return <TimeNowRenderer step={step} />;
+    case "time_format":
+      return <TimeFormatRenderer step={step} />;
+    case "time_diff":
+      return <TimeDiffRenderer step={step} />;
+    case "timer_set":
+      return <TimerSetRenderer step={step} />;
+    case "timer_clear":
+      return <TimerClearRenderer step={step} />;
+    case "time_utc_to_local":
+      return <TimeUtcToLocalRenderer step={step} />;
+    case "time_local_to_utc":
+      return <TimeLocalToUtcRenderer step={step} />;
+    case "time_is_weekend":
+      return <TimeIsWeekendRenderer step={step} />;
+    case "time_is_holiday":
+      return <TimeIsHolidayRenderer step={step} />;
+    case "file_monitor":
+      return <FileMonitorRenderer step={step} />;
+    case "file_statistics":
+      return <FileStatisticsRenderer step={step} />;
+    case "file_checksum":
+      return <FileChecksumRenderer step={step} />;
     default:
       return <DefaultRenderer step={step} />;
   }
