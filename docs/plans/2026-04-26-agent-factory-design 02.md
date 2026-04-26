@@ -586,9 +586,9 @@ class BaseAgent(ABC):
 | **BaseAgent** | `__init__(llm_client, session_id, tool_category, max_steps, **kwargs)` | `__init__(max_steps, tool_category)` | ❌ 缺少llm_client/session_id |
 | **FileReactAgent** | 使用tool_category参数 | 使用旧参数(intent_type, api_base等) | ❌ 不支持tool_category |
 | **TimeReactAgent** | 文档5.4要求 | ✅ 已按文档实现 | ✅ 已完成 |
-| **ToolLoaderMixin** | 文档5.2 `_load_tools(category)` | ✅ mixin.py已存在 | ✅ 已完成 |
+| **ToolLoaderMixin** | 文档5.2 `_load_tools(category)` | 行50用`get_implementation` ❌ | ❌ **方法名错误** |
 | **AgentFactory** | 传递tool_category给Agent | 传递旧参数 | ❌ 参数不匹配 |
-| **registry** | 文档5.3 `get_tools_from_registry_by_category` | ✅ 已存在 | ✅ 已完成 |
+| **registry** | 文档5.3 `get_tools_from_registry_by_category` | 行464用`include_metadata` | ⚠️ 轻微差异 |
 
 ---
 
@@ -607,60 +607,34 @@ class BaseAgent(ABC):
 ### 依赖关系图
 
 ```
-                    ┌─────────────────────────────────────────┐
-                    │           Phase 0: 基础设施                │
-                    │  (所有其他Phase的前置依赖)              │
-                    ├─────────────────────────────────────────┤
-                    │  T0.1: registry.py 新注册函数 ✅    │
-                    │  T0.2: ToolLoaderMixin ✅           │
-                    └─────────────────────────────────────────┘
-                                    ↓ 依赖
-                    ┌─────────────────────────────────────────┐
-                    │         Phase 1: BaseAgent修复            │
-                    │    (所有Agent子类依赖此基类)           │
-                    ├─────────────────────────────────────────┤
-                    │  T1.1: BaseAgent添加llm_client       │
-                    │  T1.2: BaseAgent添加session_id     │
-                    │  T1.3: BaseAgent添加_load_tools  │
-                    └─────────────────────────────────────────┘
-                                    ↓ 依赖
-                    ┌─────────────────────────────────────────┐
-                    │      Phase 2: FileReactAgent修复        │
-                    │      (依赖Phase 1完成)            │
-                    ├─────────────────────────────────────────┤
-                    │  T2.1: FileReactAgent支持          │
-                    │       tool_category参数              │
-                    │  T2.2: FileReactAgent重写         │
-                    │       _load_tools方法             │
-                    │  T2.3: 移除旧参数兼容         │
-                    └─────────────────────────────────────────┘
-                                    ↓ 依赖
-                    ┌─────────────────────────────────────────┐
-                    │      Phase 3: TimeReactAgent验证          │
-                    │      (依赖Phase 1完成)            │
-                    ├─────────────────────────────────────────┤
-                    │  T3.1: TimeReactAgent测试     │
-                    │  T3.2: 时间工具加载验证     │
-                    └─────────────────────────────────────────┘
-                                    ↓ 依赖
-                    ┌─────────────────────────────────────────┐
-                    │      Phase 4: AgentFactory修复        │
-                    │      (依赖Phase 1/2完成)          │
-                    ├─────────────────────────────────────────┤
-                    │  T4.1: AgentFactory适配       │
-                    │       新参数结构            │
-                    │  T4.2: 注册更新           │
-                    └─────────────────────────────────────────┘
-                                    ↓ 依赖
-                    ┌─────────────────────────────────────────┐
-                    │      Phase 5: 集成测试              │
-                    │      (所有Phase完成后)            │
-                    ├─────────────────────────────────────────┤
-                    │  T5.1: 工厂创建测试         │
-                    │  T5.2: 工具加载测试        │
-                    │  T5.3: SSE wrapper测试     │
-                    └─────────────────────────────────────────┘
+Phase 0: 基础设施（前置依赖）
+├─ 5.2节: ToolLoaderMixin修复 (行424 get_exact_implementation) ⚠️关键修复
+└─ 5.3节: registry.py新注册函数 (行440-455)
+            ↓ 依赖
+Phase 1: BaseAgent修复 (5.6节)
+            ↓ 依赖
+Phase 2: FileReactAgent修复 (5.5节)
+            ↓ 依赖
+Phase 3: TimeReactAgent验证 (5.4节)
+            ↓ 依赖
+Phase 4: AgentFactory修复 (5.1节)
+            ↓ 依赖
+Phase 5: 集成测试
 ```
+```
+
+---
+
+### Phase 0: 基础设施修复（前置依赖）
+
+**已发现问题**: mixin.py行50使用错误方法`get_implementation`，应为文档5.2节要求的`get_exact_implementation`
+
+**参考代码**: 文档5.2节行424
+
+| 任务ID | 文件 | 问题 | 修复 | 文档参考 | 状态 |
+|--------|------|------|------|---------|------|------|
+| **T0.1** | mixin.py | 行50用`get_implementation` | 改为`get_exact_implementation` | 5.2节行424 | 🔴 待完成 |
+| **T0.2** | registry.py | 行464用`include_metadata` | 应与5.3节一致 | 5.3节行452 | 🔴 待完成 |
 
 ---
 
@@ -836,13 +810,23 @@ print(f'工具数量: {len(agent._tools_dict)}')
 ### 执行顺序（严格按依赖关系）
 
 ```
-文档参考  → 任务
-─────────────────────────────────────
-5.6节    → T1.1/T1.2/T1.3 (Phase 1: BaseAgent修复)
-5.5节    → T2.1/T2.2/T2.3 (Phase 2: FileReactAgent修复)
-5.4节    → T3.1/T3.2     (Phase 3: TimeReactAgent验证)
-5.1节    → T4.1/T4.2     (Phase 4: AgentFactory修复)
-5.1节    → T5.1/T5.2/T5.3 (Phase 5: 集成测试)
+Phase 0: 基础设施 (T0.1/T0.2)
+│       5.2节→T0.1, 5.3节→T0.2
+│           ↓
+Phase 1: BaseAgent修复 (T1.1/T1.2/T1.3)
+│       5.6节
+│           ↓
+Phase 2: FileReactAgent修复 (T2.1/T2.2/T2.3)
+│       5.5节
+│           ↓
+Phase 3: TimeReactAgent验证 (T3.1/T3.2)
+│       5.4节
+│           ↓
+Phase 4: AgentFactory修复 (T4.1/T4.2)
+│       5.1节
+│           ↓
+Phase 5: 集成测试 (T5.1/T5.2/T5.3)
+        5.1节
 ```
 
 ---
