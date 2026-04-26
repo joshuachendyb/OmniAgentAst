@@ -3,8 +3,9 @@
 AgentFactory - Agent工厂类
 统一创建Agent实例
 
+参考: 文档5.1节+7.1节完整代码
+
 位置: app/services/agent/agent_factory.py
-小健 - 2026-04-26
 修复 - 2026-04-26 小沈
 """
 from typing import Dict, Any, Optional, Type
@@ -15,15 +16,14 @@ from app.services.tools.registry import ToolCategory
 class AgentFactory:
     """
     Agent工厂 - 统一创建Agent实例
+    参考: 7.1节行857-912
     
     使用方式:
         agent = AgentFactory.create(
             intent_type="file",
             llm_client=llm_client,
             session_id=session_id,
-            api_base=api_base,
-            api_key=api_key,
-            model=model
+            tool_category=ToolCategory.FILE
         )
     """
     
@@ -36,22 +36,19 @@ class AgentFactory:
         intent_type: str,
         llm_client: Any = None,
         session_id: str = "",
-        api_base: Optional[str] = None,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
         tool_category: Optional[ToolCategory] = None,
+        max_steps: int = 100,
         **kwargs
     ) -> BaseAgent:
         """创建Agent实例
+        参考: 7.1节行881-901
         
         Args:
             intent_type: 意图类型 (file/time/shell/network/desktop/chat)
             llm_client: LLM客户端
             session_id: 会话ID
-            api_base: API地址
-            api_key: API密钥
-            model: 模型名称
-            tool_category: 工具分类 【新增】
+            tool_category: 工具分类
+            max_steps: 最大步数
             **kwargs: 其他参数
             
         Returns:
@@ -69,14 +66,12 @@ class AgentFactory:
         if not effective_tool_category:
             effective_tool_category = cls._TOOL_CATEGORIES.get(intent_type)
         
-        # 创建Agent实例（传递所有参数，包括tool_category）
+        # 创建Agent实例（传递所有参数，按新结构）
         return AgentClass(
             llm_client=llm_client,
             session_id=session_id,
-            api_base=api_base,
-            api_key=api_key,
-            model=model,
             tool_category=effective_tool_category,
+            max_steps=max_steps,
             **kwargs
         )
     
@@ -88,6 +83,7 @@ class AgentFactory:
         tool_category: Optional[ToolCategory] = None
     ):
         """注册新的Agent
+        参考: 7.1节行902-912
         
         Args:
             intent_type: 意图类型
@@ -110,18 +106,19 @@ class AgentFactory:
             for name in cls._AGENTS.keys()
         }
 
-# 注册默认的FileReactAgent
+# 注册默认的Agent
+# FileReactAgent
 try:
     from app.services.agent.file_react import FileReactAgent
     from app.services.tools.registry import ToolCategory
     AgentFactory.register('file', FileReactAgent, ToolCategory.FILE)
 except ImportError as e:
-    print(f"[AgentFactory] 注册FileReactAgent失败: {e}")
+    print(f"[AgentFactory] FileReactAgent: {e}")
 
-# 注册TimeReactAgent（如果存在）
+# TimeReactAgent
 try:
     from app.services.agent.time_react import TimeReactAgent
     from app.services.tools.registry import ToolCategory
     AgentFactory.register('time', TimeReactAgent, ToolCategory.TIME)
 except ImportError as e:
-    print(f"[AgentFactory] TimeReactAgent未找到: {e}")
+    print(f"[AgentFactory] TimeReactAgent: {e}")
