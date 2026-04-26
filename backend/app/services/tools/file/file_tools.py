@@ -596,7 +596,7 @@ class FileTools:
 - dir_path: 目录的完整路径（必须是绝对路径，如 D:/项目代码 或 C:/Users/用户名/Documents）
 - recursive: 是否递归列出子目录内容，默认为False（不递归）
 - max_depth: 最大递归深度，仅当 recursive=True 时有效，默认为10
-- page_token: 分页令牌（位置编码），用于获取下一页结果，默认为None（第一页）
+- page_token: 分页令牌（base64编码的位置偏移量），用于获取后续页面结果，默认为None（从第一页开始）
 
 【重要】必须使用 dir_path 作为参数名，不要使用 directory_path、path 或其他名称。
 错误示例: {"directory_path": "..."} 或 {"path": "..."}
@@ -614,7 +614,13 @@ class FileTools:
             },
             {
                 "dir_path": "E:/工作文档",
-                "page_token": "MA=="  # 示例：base64编码的"0"
+                "recursive": False,
+                "page_token": "MA=="  # 示例：base64编码的"0"，从第0条开始
+            },
+            {
+                "dir_path": "E:/工作文档",
+                "recursive": False,
+                "page_token": "NTA="  # 示例：base64编码的"10"，从第10条开始
             }
         ]
     )
