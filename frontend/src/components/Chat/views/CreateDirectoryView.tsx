@@ -84,19 +84,19 @@ const CreateDirectoryView: React.FC<CreateDirectoryViewProps> = ({ data }) => {
         {success ? (
           <>
             <CheckCircleOutlined style={{ marginRight: 8 }} />
-            📁 目录创建成功
+            目录创建成功
           </>
         ) : (
           <>
             <CloseCircleOutlined style={{ marginRight: 8 }} />
-            ❌ 目录创建失败
+            目录创建失败
           </>
         )}
       </div>
 
       {/* 目录路径 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>📂 目录路径：</span>
+        <span style={labelStyle}>目录路径：</span>
         <div style={{ flex: 1, display: "flex", alignItems: "center" }}>
           <FolderOutlined style={{ marginRight: 6, color: "#fa8c16" }} />
           <span style={{ flex: 1, fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 12 }}>
@@ -116,14 +116,14 @@ const CreateDirectoryView: React.FC<CreateDirectoryViewProps> = ({ data }) => {
 
       {/* 权限 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>📊 权限：</span>
+        <span style={labelStyle}>权限：</span>
         <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace" }}>{permissions}</span>
       </div>
 
       {/* 创建时间 */}
       {created_at && (
         <div style={infoItemStyle}>
-          <span style={labelStyle}>📅 创建时间：</span>
+          <span style={labelStyle}>创建时间：</span>
           <span>{created_at}</span>
         </div>
       )}

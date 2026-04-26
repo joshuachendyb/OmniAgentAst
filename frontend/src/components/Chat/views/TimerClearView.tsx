@@ -76,7 +76,7 @@ const TimerClearView: React.FC<TimerClearViewProps> = ({ data }) => {
   if (isEmpty) {
     return (
       <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
-        ⚠️ 定时器数据为空
+        定时器数据为空
       </div>
     );
   }
@@ -88,19 +88,19 @@ const TimerClearView: React.FC<TimerClearViewProps> = ({ data }) => {
         {isSuccess ? (
           <>
             <CheckCircleOutlined style={{ marginRight: 8 }} />
-            ✅ 定时器已取消
+            定时器已取消
           </>
         ) : (
           <>
             <CloseCircleOutlined style={{ marginRight: 8 }} />
-            ❌ 取消失败
+            取消失败
           </>
         )}
       </div>
 
       {/* 定时器ID */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>🔖 ID：</span>
+        <span style={labelStyle}>ID：</span>
         <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 12 }}>
           {timer_id}
         </span>
@@ -108,7 +108,7 @@ const TimerClearView: React.FC<TimerClearViewProps> = ({ data }) => {
 
       {/* 状态 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>📊 状态：</span>
+        <span style={labelStyle}>状态：</span>
         <span style={{ color: isSuccess ? "#52c41a" : "#ff4d4f", fontWeight: 500 }}>
           {cancelled ? "已取消" : "未取消"}
         </span>

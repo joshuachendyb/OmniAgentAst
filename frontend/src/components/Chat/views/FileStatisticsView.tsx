@@ -77,7 +77,7 @@ const FileStatisticsView: React.FC<FileStatisticsViewProps> = ({ data }) => {
   if (isEmpty) {
     return (
       <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
-        ⚠️ 统计数据为空
+        统计数据为空
       </div>
     );
   }
@@ -87,12 +87,12 @@ const FileStatisticsView: React.FC<FileStatisticsViewProps> = ({ data }) => {
       {/* 标题 */}
       <div style={titleStyle}>
         <BarChartOutlined style={{ marginRight: 8 }} />
-        📊 文件统计
+        文件统计
       </div>
 
       {/* 监控目录 */}
       <div style={{ marginBottom: 16, fontSize: 12, color: "#8c8c8c" }}>
-        📁 {directory}
+        {directory}
       </div>
 
       {/* 统计卡片 */}

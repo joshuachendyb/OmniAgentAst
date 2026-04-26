@@ -114,20 +114,20 @@ const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
       {/* 标题 */}
       <div style={titleStyle}>
         <FileIcon style={{ marginRight: 8, color: iconColor }} />
-        📄 文件信息
+        文件信息
       </div>
 
       {/* 信息网格 */}
       <div style={infoGridStyle}>
         {/* 名称 */}
         <div style={infoItemStyle}>
-          <span style={labelStyle}>📝 名称：</span>
+          <span style={labelStyle}>名称：</span>
           <span style={{ fontWeight: 500, color: "#262626" }}>{name}</span>
         </div>
 
         {/* 类型 */}
         <div style={infoItemStyle}>
-          <span style={labelStyle}>📝 类型：</span>
+          <span style={labelStyle}>类型：</span>
           <span style={{ color: "#595959" }}>
             {type || (is_directory ? "目录" : "文件")}
             {type && !is_directory && <span style={{ color: "#8c8c8c" }}> (.{type})</span>}
@@ -136,7 +136,7 @@ const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
 
         {/* 路径 */}
         <div style={{ ...infoItemStyle, gridColumn: "1 / -1" }}>
-          <span style={{ ...labelStyle, minWidth: 70 }}>📂 路径：</span>
+          <span style={{ ...labelStyle, minWidth: 70 }}>路径：</span>
           <span style={{ 
             flex: 1, 
             fontFamily: "Consolas, Monaco, 'Courier New', monospace", 
@@ -149,8 +149,8 @@ const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
 
         {/* 大小 */}
         {processedSize && (
-          <div style={infoItemStyle}>
-            <span style={labelStyle}>📊 大小：</span>
+<div style={infoItemStyle}>
+          <span style={labelStyle}>大小：</span>
             <span style={{ fontWeight: 500 }}>{processedSize}</span>
           </div>
         )}

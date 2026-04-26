@@ -27,7 +27,8 @@ const DeleteFileView: React.FC<DeleteFileViewProps> = ({ data }) => {
   if (!deleted_path && !message) {
     return (
       <div style={{ color: "#888", fontStyle: "italic" }}>
-        🗑️ 删除结果为空
+        <DeleteOutlined style={{ marginRight: 8 }} />
+        删除结果为空
       </div>
     );
   }
@@ -55,7 +56,7 @@ const DeleteFileView: React.FC<DeleteFileViewProps> = ({ data }) => {
       {/* 删除路径 */}
       {deleted_path && (
         <div style={{ marginTop: 8 }}>
-          <span style={{ color: "#666" }}>🗑️ 删除路径：</span>
+          <DeleteOutlined style={{ marginRight: 4 }} /> 删除路径：
           <code
             style={{
               background: "#f5f5f5",

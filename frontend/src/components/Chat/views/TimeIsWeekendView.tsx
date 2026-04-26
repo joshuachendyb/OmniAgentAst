@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo } from "react";
-import { CheckCircleOutlined, CloseCircleOutlined, CalendarOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, CloseCircleOutlined, CalendarOutlined, ClockCircleOutlined, NumberOutlined } from "@ant-design/icons";
 
 interface TimeIsWeekendViewProps {
   data: {
@@ -92,7 +92,7 @@ const TimeIsWeekendView: React.FC<TimeIsWeekendViewProps> = ({ data }) => {
   if (isEmpty) {
     return (
       <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
-        ⚠️ 周末数据为空
+        周末数据为空
       </div>
     );
   }
@@ -104,12 +104,12 @@ const TimeIsWeekendView: React.FC<TimeIsWeekendViewProps> = ({ data }) => {
         {isWeekendDay ? (
           <>
             <CheckCircleOutlined style={{ marginRight: 8 }} />
-            ✅ 周末判定
+            周末判定
           </>
         ) : (
           <>
             <CloseCircleOutlined style={{ marginRight: 8 }} />
-            ❌ 周末判定
+            周末判定
           </>
         )}
       </div>
@@ -117,28 +117,31 @@ const TimeIsWeekendView: React.FC<TimeIsWeekendViewProps> = ({ data }) => {
       {/* 状态徽章 */}
       <div style={{ textAlign: "center", marginBottom: 16, padding: "12px 0" }}>
         <div style={badgeStyle}>
-          {isWeekendDay ? "🛋️ 今天是休息日" : "💼 今天是工作日"}
+          {isWeekendDay ? <CheckCircleOutlined style={{ marginRight: 4 }} /> : <ClockCircleOutlined style={{ marginRight: 4 }} />}
+          {isWeekendDay ? "今天是休息日" : "今天是工作日"}
         </div>
       </div>
 
       {/* 日期 */}
       <div style={infoItemStyle}>
         <CalendarOutlined style={{ marginRight: 6, color: "#fa8c16" }} />
-        <span style={labelStyle}>📅 日期：</span>
+        <span style={labelStyle}>日期：</span>
         <span style={{ fontWeight: 500 }}>{date}</span>
       </div>
 
       {/* 星期几 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>📆 星期：</span>
+        <CalendarOutlined style={{ marginRight: 6, color: isWeekendDay ? "#52c41a" : "#1890ff" }} />
+        <span style={labelStyle}>星期：</span>
         <span style={{ color: isWeekendDay ? "#52c41a" : "#1890ff", fontWeight: 500 }}>
           {weekday}
         </span>
       </div>
 
-      {/* ISO��期 */}
+      {/* ISO星期 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>🔢 ISO：</span>
+        <NumberOutlined style={{ marginRight: 6, color: "#1890ff" }} />
+        <span style={labelStyle}>ISO：</span>
         <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 12 }}>
           星期{isoweekday} (1=周一, 7=周日)
         </span>

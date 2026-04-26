@@ -124,12 +124,12 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
         {hasError ? (
           <>
             <MinusCircleOutlined style={{ marginRight: 8 }} />
-            ❌ 文件比较失败
+            文件比较失败
           </>
         ) : (
           <>
             <SwapOutlined style={{ marginRight: 8 }} />
-            🔍 文件比较结果
+            文件比较结果
           </>
         )}
       </div>
@@ -148,7 +148,7 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
             </div>
             {sizeA && (
               <div style={{ marginTop: 4, color: "#8c8c8c", fontSize: 11 }}>
-                📊 {sizeA}
+                {sizeA}
               </div>
             )}
           </div>
@@ -167,7 +167,7 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
             </div>
             {sizeB && (
               <div style={{ marginTop: 4, color: "#8c8c8c", fontSize: 11 }}>
-                📊 {sizeB}
+                {sizeB}
               </div>
             )}
           </div>
@@ -180,7 +180,7 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
           {/* 大小差异 */}
           {sizeDiff && size_diff !== undefined && (
             <div style={infoItemStyle}>
-              <span style={labelStyle}>📊 大小差异：</span>
+              <span style={labelStyle}>大小差异：</span>
               <span style={{ 
                 color: size_diff > 0 ? "#52c41a" : (size_diff < 0 ? "#ff4d4f" : "#595959"),
                 fontWeight: 500 
@@ -193,7 +193,7 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
           {/* 修改时间差异 */}
           {modified_time_diff && (
             <div style={infoItemStyle}>
-              <span style={labelStyle}>📅 修改时间差异：</span>
+              <span style={labelStyle}>修改时间差异：</span>
               <span>{modified_time_diff}</span>
             </div>
           )}
@@ -201,7 +201,7 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
           {/* 内容差异数量 */}
           {content_diff_count !== undefined && (
             <div style={infoItemStyle}>
-              <span style={labelStyle}>📝 内容差异：</span>
+              <span style={labelStyle}>内容差异：</span>
               <span style={{ fontWeight: 500 }}>
                 {content_diff_count}处不同
               </span>

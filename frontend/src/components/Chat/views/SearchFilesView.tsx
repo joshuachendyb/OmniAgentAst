@@ -15,7 +15,7 @@
 
 import React from "react";
 import { List, Tag, Button } from "antd";
-import { FileTextOutlined } from "@ant-design/icons";
+import { FileTextOutlined, SearchOutlined, FolderOutlined, FileOutlined, BarcodeOutlined, WarningOutlined } from "@ant-design/icons";
 
 // 文件匹配接口（向后兼容）
 interface FileMatch {
@@ -189,7 +189,8 @@ const SearchFilesView: React.FC<SearchFilesViewProps> = ({ data, onLoadMore, isL
   if (files_matched === 0 && matches.length === 0) {
     return (
       <div style={{ color: "#888", fontStyle: "italic" }}>
-        🔍 未找到匹配结果
+        <SearchOutlined style={{ marginRight: 8 }} />
+        未找到匹配结果
       </div>
     );
   }
@@ -222,13 +223,13 @@ const SearchFilesView: React.FC<SearchFilesViewProps> = ({ data, onLoadMore, isL
       >
         {/* 搜索模式 */}
         <Tag style={{ background: "#e6f7ff", border: "none", color: "#003a8c" }}>
-          🔍 搜索模式：{search_pattern}
+          <SearchOutlined style={{ marginRight: 4 }} /> 搜索模式：{search_pattern}
         </Tag>
         
         {/* 搜索路径（新增） */}
         {search_path && (
           <Tag style={{ background: "#e6f7ff", border: "none", color: "#003a8c" }}>
-            📂 {search_path}
+            <FolderOutlined style={{ marginRight: 4 }} /> {search_path}
           </Tag>
         )}
         
@@ -242,7 +243,7 @@ const SearchFilesView: React.FC<SearchFilesViewProps> = ({ data, onLoadMore, isL
             fontWeight: 500,
           }}
         >
-          📁 {files_matched} 个文件
+          <FileOutlined style={{ marginRight: 4 }} /> {files_matched} 个文件
         </span>
         
         {/* 分页信息（新增） */}
@@ -256,7 +257,7 @@ const SearchFilesView: React.FC<SearchFilesViewProps> = ({ data, onLoadMore, isL
               fontWeight: 500,
             }}
           >
-            📋 第 {pagination.page}/{pagination.total_pages} 页
+            <BarcodeOutlined style={{ marginRight: 4 }} /> 第 {pagination.page}/{pagination.total_pages} 页
           </span>
         )}
       </div>
@@ -281,7 +282,7 @@ const SearchFilesView: React.FC<SearchFilesViewProps> = ({ data, onLoadMore, isL
                 background: "rgba(230,247,255,0.5)",
                 borderRadius: 4,
               }}>
-                ⚠️ 显示前 {matches.length} 条结果（超过100条启用虚拟滚动）
+                <WarningOutlined /> 显示前 {matches.length} 条结果（超过100条启用虚拟滚动）
               </div>
             </div>
           ) : (

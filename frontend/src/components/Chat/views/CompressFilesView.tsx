@@ -113,12 +113,12 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
         {hasError ? (
           <>
             <CloseCircleOutlined style={{ marginRight: 8 }} />
-            ❌ 文件压缩失败
+            文件压缩失败
           </>
         ) : (
           <>
             <InboxOutlined style={{ marginRight: 8 }} />
-            🗜️ 文件压缩完成
+            文件压缩完成
           </>
         )}
       </div>
@@ -130,7 +130,7 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
             {/* 原始大小 */}
             <div style={statItemStyle}>
               <div style={{ fontSize: 11, color: "#8c8c8c", marginBottom: 4 }}>
-                📊 原始大小
+                原始大小
               </div>
               <div style={{ fontSize: 16, fontWeight: 600, color: "#595959" }}>
                 {originalFormatted || "-"}
@@ -140,7 +140,7 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
             {/* 压缩后大小 */}
             <div style={statItemStyle}>
               <div style={{ fontSize: 11, color: "#8c8c8c", marginBottom: 4 }}>
-                📦 压缩后
+                压缩后
               </div>
               <div style={{ fontSize: 16, fontWeight: 600, color: "#52c41a" }}>
                 {compressedFormatted || "-"}
@@ -150,7 +150,7 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
             {/* 压缩率 */}
             <div style={statItemStyle}>
               <div style={{ fontSize: 11, color: "#8c8c8c", marginBottom: 4 }}>
-                📈 压缩率
+                压缩率
               </div>
               <div style={{ fontSize: 16, fontWeight: 600, color: ratioColor }}>
                 {compressionRatio || "-"}
@@ -172,7 +172,7 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
             }}>
               <div>
                 <div style={{ fontSize: 11, color: "#8c8c8c", marginBottom: 2 }}>
-                  📦 压缩文件
+                  压缩文件
                 </div>
                 <div style={{ fontSize: 13, fontFamily: "Consolas, Monaco, 'Courier New', monospace" }}>
                   {archive_name || archive_path}
@@ -201,8 +201,8 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
                 {
                   key: '1',
                   label: (
-                    <span style={{ fontSize: 13, color: "#595959" }}>
-                      📋 包含文件（{file_count}个）
+<span style={{ fontSize: 13, color: "#595959" }}>
+                        包含文件（{file_count}个）
                     </span>
                   ),
                   children: (

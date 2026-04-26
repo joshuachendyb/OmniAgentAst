@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo } from "react";
-import { ClockCircleOutlined, CalendarOutlined, GlobalOutlined } from "@ant-design/icons";
+import { ClockCircleOutlined, CalendarOutlined, GlobalOutlined, NumberOutlined, FileTextOutlined, CheckCircleOutlined } from "@ant-design/icons";
 
 interface TimeNowViewProps {
   data: {
@@ -94,7 +94,7 @@ const TimeNowView: React.FC<TimeNowViewProps> = ({ data }) => {
   if (isEmpty) {
     return (
       <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
-        ⚠️ 时间数据为空
+        时间数据为空
       </div>
     );
   }
@@ -104,12 +104,13 @@ const TimeNowView: React.FC<TimeNowViewProps> = ({ data }) => {
       {/* 标题 */}
       <div style={titleStyle}>
         <ClockCircleOutlined style={{ marginRight: 8 }} />
-        🕒 当前时间
+        当前时间
       </div>
 
       {/* 时间显示 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>⏰ 时间：</span>
+        <ClockCircleOutlined style={{ marginRight: 6, color: "#fa8c16" }} />
+        <span style={labelStyle}>时间：</span>
         <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 14 }}>
           {format}
         </span>
@@ -118,20 +119,21 @@ const TimeNowView: React.FC<TimeNowViewProps> = ({ data }) => {
       {/* 日期 */}
       <div style={infoItemStyle}>
         <CalendarOutlined style={{ marginRight: 6, color: "#fa8c16" }} />
-        <span style={labelStyle}>📅 日期：</span>
+        <span style={labelStyle}>日期：</span>
         <span>{weekday}</span>
       </div>
 
       {/* 时区 */}
       <div style={infoItemStyle}>
         <GlobalOutlined style={{ marginRight: 6, color: "#52c41a" }} />
-        <span style={labelStyle}>🌍 时区：</span>
+        <span style={labelStyle}>时区：</span>
         <span>UTC{timezone}</span>
       </div>
 
       {/* 时间戳 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>🔢 时间戳：</span>
+        <NumberOutlined style={{ marginRight: 6, color: "#1890ff" }} />
+        <span style={labelStyle}>时间戳：</span>
         <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 12 }}>
           {timestamp}
         </span>
@@ -139,7 +141,8 @@ const TimeNowView: React.FC<TimeNowViewProps> = ({ data }) => {
 
       {/* ISO格式 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>📋 ISO：</span>
+        <FileTextOutlined style={{ marginRight: 6, color: "#8c8c8c" }} />
+        <span style={labelStyle}>ISO：</span>
         <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 11, color: "#8c8c8c" }}>
           {iso}
         </span>
@@ -148,7 +151,8 @@ const TimeNowView: React.FC<TimeNowViewProps> = ({ data }) => {
       {/* 星期状态 */}
       <div style={{ ...infoItemStyle, marginTop: 8, paddingTop: 8, borderTop: "1px dashed #d9d9d9" }}>
         <span style={statusStyle}>
-          {isWeekend ? "✅ 今天是休息日" : "💼 今天是工作日"}
+          {isWeekend ? <CheckCircleOutlined style={{ marginRight: 4 }} /> : <ClockCircleOutlined style={{ marginRight: 4 }} />}
+          {isWeekend ? "今天是休息日" : "今天是工作日"}
         </span>
       </div>
     </div>

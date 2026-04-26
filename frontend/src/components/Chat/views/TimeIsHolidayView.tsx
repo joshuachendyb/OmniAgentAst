@@ -90,7 +90,7 @@ const TimeIsHolidayView: React.FC<TimeIsHolidayViewProps> = ({ data }) => {
   if (isEmpty) {
     return (
       <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
-        ⚠️ 节假日数据为空
+        节假日数据为空
       </div>
     );
   }
@@ -102,12 +102,12 @@ const TimeIsHolidayView: React.FC<TimeIsHolidayViewProps> = ({ data }) => {
         {isHolidayDay ? (
           <>
             <GiftOutlined style={{ marginRight: 8 }} />
-            🎉 节假日判定
+            节假日判定
           </>
         ) : (
           <>
             <CalendarOutlined style={{ marginRight: 8 }} />
-            📅 节假日判定
+            节假日判定
           </>
         )}
       </div>
@@ -115,14 +115,15 @@ const TimeIsHolidayView: React.FC<TimeIsHolidayViewProps> = ({ data }) => {
       {/* 状态徽章 */}
       <div style={{ textAlign: "center", marginBottom: 16, padding: "12px 0" }}>
         <div style={badgeStyle}>
-          {isHolidayDay ? "🎊 今天是节假日" : "✅ 今天不是节假日"}
+          {isHolidayDay ? <CheckCircleOutlined style={{ marginRight: 4 }} /> : <CloseCircleOutlined style={{ marginRight: 4 }} />}
+          {isHolidayDay ? "今天是节假日" : "今天不是节假日"}
         </div>
       </div>
 
       {/* 日期 */}
       <div style={infoItemStyle}>
         <CalendarOutlined style={{ marginRight: 6, color: "#722ed1" }} />
-        <span style={labelStyle}>📅 日期：</span>
+        <span style={labelStyle}>日期：</span>
         <span style={{ fontWeight: 500 }}>{date}</span>
       </div>
 
@@ -131,7 +132,7 @@ const TimeIsHolidayView: React.FC<TimeIsHolidayViewProps> = ({ data }) => {
         <div style={{ ...infoItemStyle, padding: "8px 12px", background: "#fff1f0", borderRadius: 4 }}>
           <GiftOutlined style={{ marginRight: 6, color: "#ff4d4f" }} />
           <span style={{ color: "#ff4d4f", fontWeight: 500 }}>
-            🎁 {holiday_name}
+            {holiday_name}
           </span>
         </div>
       )}

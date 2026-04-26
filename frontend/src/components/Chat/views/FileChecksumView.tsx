@@ -90,7 +90,7 @@ const FileChecksumView: React.FC<FileChecksumViewProps> = ({ data }) => {
   if (isEmpty) {
     return (
       <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
-        ⚠️ 校验和数据为空
+        校验和数据为空
       </div>
     );
   }
@@ -100,17 +100,17 @@ const FileChecksumView: React.FC<FileChecksumViewProps> = ({ data }) => {
       {/* 标题 */}
       <div style={titleStyle}>
         <SafetyOutlined style={{ marginRight: 8 }} />
-        🔐 文件校验
+        文件校验
       </div>
 
       {/* 文件路径 */}
       <div style={{ marginBottom: 8, fontSize: 12, color: "#8c8c8c", wordBreak: "break-all" }}>
-        📄 {file_path}
+        {file_path}
       </div>
 
       {/* 文件大小 */}
       <div style={{ marginBottom: 16 }}>
-        <span style={{ color: "#8c8c8c" }}>📊 大小：</span>
+        <span style={{ color: "#8c8c8c" }}>大小：</span>
         {formatSize(file_size)}
       </div>
 

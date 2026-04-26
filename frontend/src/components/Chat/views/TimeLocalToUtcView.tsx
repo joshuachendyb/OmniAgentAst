@@ -81,7 +81,7 @@ const TimeLocalToUtcView: React.FC<TimeLocalToUtcViewProps> = ({ data }) => {
   if (isEmpty) {
     return (
       <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
-        ⚠️ 时区转换数据为空
+        时区转换数据为空
       </div>
     );
   }
@@ -91,7 +91,7 @@ const TimeLocalToUtcView: React.FC<TimeLocalToUtcViewProps> = ({ data }) => {
       {/* 标题 */}
       <div style={titleStyle}>
         <GlobalOutlined style={{ marginRight: 8 }} />
-        🌍 本地时间转UTC
+        本地时间转UTC
       </div>
 
       {/* 箭头转换显示 */}
@@ -114,7 +114,8 @@ const TimeLocalToUtcView: React.FC<TimeLocalToUtcViewProps> = ({ data }) => {
 
       {/* 源时区 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>🌍 源时区：</span>
+        <GlobalOutlined style={{ marginRight: 6, color: "#1890ff" }} />
+        <span style={labelStyle}>源时区：</span>
         <span style={{ fontWeight: 500, color: "#1890ff" }}>UTC{source_timezone}</span>
       </div>
     </div>

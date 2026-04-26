@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo } from "react";
-import { ClockCircleOutlined, ArrowRightOutlined } from "@ant-design/icons";
+import { ClockCircleOutlined, CalendarOutlined, NumberOutlined } from "@ant-design/icons";
 
 interface TimeDiffViewProps {
   data: {
@@ -98,20 +98,21 @@ const TimeDiffView: React.FC<TimeDiffViewProps> = ({ data }) => {
       {/* 标题 */}
       <div style={titleStyle}>
         <ClockCircleOutlined style={{ marginRight: 8 }} />
-        ⏱️ 时间差
+        时间差
       </div>
 
       {/* 人性化描述 - 大数字突出显示 */}
       <div style={{ textAlign: "center", marginBottom: 16, padding: "12px 0" }}>
         <div style={bigNumberStyle}>{humanized}</div>
         <div style={{ fontSize: 12, color: "#8c8c8c", marginTop: 4 }}>
-          {is_future ? "📍 未来时间" : "📍 过去时间"}
+          {is_future ? "未来时间" : "过去时间"}
         </div>
       </div>
 
       {/* 详细数值 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>⏰ 总计：</span>
+        <ClockCircleOutlined style={{ marginRight: 6, color: "#fa8c16" }} />
+        <span style={labelStyle}>总计：</span>
         <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace" }}>
           {seconds} 秒
         </span>
@@ -120,32 +121,32 @@ const TimeDiffView: React.FC<TimeDiffViewProps> = ({ data }) => {
       {/* 各单位 */}
       {days > 0 && (
         <div style={infoItemStyle}>
-          <ArrowRightOutlined style={{ marginRight: 6, color: "#52c41a" }} />
-          <span style={labelStyle}>📅 天数：</span>
+          <CalendarOutlined style={{ marginRight: 6, color: "#52c41a" }} />
+          <span style={labelStyle}>天数：</span>
           <span>{days.toFixed(1)} 天</span>
         </div>
       )}
 
       {hours > 0 && hours < 24 && (
         <div style={infoItemStyle}>
-          <ArrowRightOutlined style={{ marginRight: 6, color: "#1890ff" }} />
-          <span style={labelStyle}>⏱️ 小时：</span>
+          <ClockCircleOutlined style={{ marginRight: 6, color: "#1890ff" }} />
+          <span style={labelStyle}>小时：</span>
           <span>{hours.toFixed(1)} 小时</span>
         </div>
       )}
 
       {minutes > 0 && minutes < 60 && (
         <div style={infoItemStyle}>
-          <ArrowRightOutlined style={{ marginRight: 6, color: "#722ed1" }} />
-          <span style={labelStyle}>⏲ 分钟：</span>
+          <ClockCircleOutlined style={{ marginRight: 6, color: "#722ed1" }} />
+          <span style={labelStyle}>分钟：</span>
           <span>{minutes.toFixed(1)} 分钟</span>
         </div>
       )}
 
       {seconds > 0 && seconds < 60 && (
         <div style={infoItemStyle}>
-          <ArrowRightOutlined style={{ marginRight: 6, color: "#fa8c16" }} />
-          <span style={labelStyle}>🔢 秒数：</span>
+          <NumberOutlined style={{ marginRight: 6, color: "#fa8c16" }} />
+          <span style={labelStyle}>秒数：</span>
           <span>{seconds} 秒</span>
         </div>
       )}

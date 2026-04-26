@@ -83,7 +83,7 @@ const TimeFormatView: React.FC<TimeFormatViewProps> = ({ data }) => {
   if (isEmpty) {
     return (
       <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
-        ⚠️ 格式化时间数据为空
+        格式化时间数据为空
       </div>
     );
   }
@@ -93,20 +93,20 @@ const TimeFormatView: React.FC<TimeFormatViewProps> = ({ data }) => {
       {/* 标题 */}
       <div style={titleStyle}>
         <ClockCircleOutlined style={{ marginRight: 8 }} />
-        📝 时间格式化
+        时间格式化
       </div>
 
       {/* 格式化后的时间 */}
       <div style={infoItemStyle}>
         <CalendarOutlined style={{ marginRight: 6, color: "#fa8c16" }} />
-        <span style={labelStyle}>📅 日期：</span>
+        <span style={labelStyle}>日期：</span>
         <span style={bigNumberStyle}>{formatted}</span>
       </div>
 
       {/* 使用的格式 */}
       {pattern_used && (
         <div style={infoItemStyle}>
-          <span style={labelStyle}>🔧 格式：</span>
+          <span style={labelStyle}>格式：</span>
           <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 11 }}>
             {pattern_used}
           </span>
@@ -116,7 +116,7 @@ const TimeFormatView: React.FC<TimeFormatViewProps> = ({ data }) => {
       {/* ISO格式 */}
       {iso && (
         <div style={infoItemStyle}>
-          <span style={labelStyle}>📋 ISO：</span>
+          <span style={labelStyle}>ISO：</span>
           <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 11, color: "#8c8c8c" }}>
             {iso}
           </span>
@@ -126,7 +126,7 @@ const TimeFormatView: React.FC<TimeFormatViewProps> = ({ data }) => {
       {/* 时间戳 */}
       {timestamp > 0 && (
         <div style={infoItemStyle}>
-          <span style={labelStyle}>🔢 时间戳：</span>
+          <span style={labelStyle}>时间戳：</span>
           <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 12 }}>
             {timestamp}
           </span>

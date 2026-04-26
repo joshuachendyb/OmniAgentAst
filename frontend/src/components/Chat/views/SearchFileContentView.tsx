@@ -17,7 +17,10 @@ import React from "react";
 import { List, Tag, Button, Collapse, Empty } from "antd";
 import { 
   FileTextOutlined, 
-  SearchOutlined
+  SearchOutlined,
+  FolderOutlined,
+  FolderOpenOutlined,
+  FileSearchOutlined
 } from "@ant-design/icons";
 
 const { Panel } = Collapse;
@@ -89,7 +92,7 @@ const SearchFileContentView: React.FC<SearchFileContentViewProps> = ({
   if (!success || (matches.length === 0 && total === 0)) {
     return (
       <div style={{ color: "#888", fontStyle: "italic" }}>
-        🔍 未找到匹配结果
+        未找到匹配结果
       </div>
     );
   }
@@ -229,59 +232,44 @@ const SearchFileContentView: React.FC<SearchFileContentViewProps> = ({
         }}
       >
         {/* 搜索关键词 */}
-        <Tag style={{ background: "#e6f7ff", border: "none", color: "#003a8c" }}>
-          🔍 关键词：{pattern}
-        </Tag>
+        <FileSearchOutlined style={{ color: "#1890ff", marginRight: 8 }} />
+        <span style={{ fontWeight: 500, color: "#003a8c" }}>关键词：{pattern}</span>
         
         {/* 搜索路径 */}
-        <Tag style={{ background: "#e6f7ff", border: "none", color: "#003a8c" }}>
-          📂 {path}
-        </Tag>
+        <FileTextOutlined style={{ background: "#e6f7ff", padding: "2px 8px",
+              borderRadius: 4, color: "#003a8c", fontWeight: 500, marginRight: 8 }}>
+          <FolderOpenOutlined style={{ marginRight: 4 }} />
+          {path}
+        </FileTextOutlined>
         
         {/* 文件模式 */}
-        <Tag style={{ background: "#e6f7ff", border: "none", color: "#003a8c" }}>
-          📁 {file_pattern || "*"}
-        </Tag>
+        <FileTextOutlined style={{ background: "#e6f7ff", padding: "2px 8px",
+              borderRadius: 4, color: "#003a8c", fontWeight: 500 }}>
+          <FolderOutlined style={{ marginRight: 4 }} />
+          {file_pattern || "*"}
+        </FileTextOutlined>
         
         {/* 匹配文件数 */}
-        <span
-          style={{
-            background: "#e6f7ff",
-            padding: "2px 8px",
-            borderRadius: 4,
-            color: "#003a8c",
-            fontWeight: 500,
-          }}
-        >
-          📄 {total} 个文件
-        </span>
+        <FileTextOutlined style={{ background: "#e6f7ff", padding: "2px 8px",
+              borderRadius: 4, color: "#003a8c", fontWeight: 500 }}>
+          <FileTextOutlined style={{ marginRight: 4 }} />
+          {total} 个文件
+        </FileTextOutlined>
         
         {/* 内容匹配数 */}
-        <span
-          style={{
-            background: "#e6f7ff",
-            padding: "2px 8px",
-            borderRadius: 4,
-            color: "#003a8c",
-            fontWeight: 500,
-          }}
-        >
-          🔎 {total_matches} 处匹配
-        </span>
+        <FileTextOutlined style={{ background: "#e6f7ff", padding: "2px 8px",
+              borderRadius: 4, color: "#003a8c", fontWeight: 500 }}>
+          <FileSearchOutlined style={{ marginRight: 4 }} />
+          {total_matches} 处匹配
+        </FileTextOutlined>
         
         {/* 分页信息 */}
         {pagination && (
-          <span
-            style={{
-              background: "#e6f7ff",
-              padding: "2px 8px",
-              borderRadius: 4,
-              color: "#003a8c",
-              fontWeight: 500,
-            }}
-          >
-            📋 第 {pagination.page}/{pagination.total_pages} 页
-          </span>
+          <FileTextOutlined style={{ background: "#e6f7ff", padding: "2px 8px",
+              borderRadius: 4, color: "#003a8c", fontWeight: 500 }}>
+          <FileTextOutlined style={{ marginRight: 4 }} />
+          第 {pagination.page}/{pagination.total_pages} 页
+        </FileTextOutlined>
         )}
       </div>
 

@@ -89,7 +89,7 @@ const TimerSetView: React.FC<TimerSetViewProps> = ({ data }) => {
   if (isEmpty) {
     return (
       <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
-        ⚠️ 定时器数据为空
+        定时器数据为空
       </div>
     );
   }
@@ -99,12 +99,12 @@ const TimerSetView: React.FC<TimerSetViewProps> = ({ data }) => {
       {/* 标题 */}
       <div style={titleStyle}>
         <CheckCircleOutlined style={{ marginRight: 8, color: "#52c41a" }} />
-        ⏰ 定时器已设置
+        定时器已设置
       </div>
 
       {/* 定时器ID */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>🔖 ID：</span>
+        <span style={labelStyle}>ID：</span>
         <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 12 }}>
           {timer_id}
         </span>
@@ -120,7 +120,7 @@ const TimerSetView: React.FC<TimerSetViewProps> = ({ data }) => {
       {trigger_at && (
         <div style={infoItemStyle}>
           <ClockCircleOutlined style={{ marginRight: 6, color: "#fa8c16" }} />
-          <span style={labelStyle}>⏱️ 触发于：</span>
+          <span style={labelStyle}>触发于：</span>
           <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 12 }}>
             {trigger_at}
           </span>
@@ -130,7 +130,7 @@ const TimerSetView: React.FC<TimerSetViewProps> = ({ data }) => {
       {/* 回调说明 */}
       {callback && (
         <div style={infoItemStyle}>
-          <span style={labelStyle}>📝 回调：</span>
+          <span style={labelStyle}>回调：</span>
           <span style={{ fontSize: 12, color: "#595959" }}>{callback}</span>
         </div>
       )}

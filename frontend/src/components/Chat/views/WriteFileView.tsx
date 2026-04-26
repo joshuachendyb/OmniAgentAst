@@ -9,7 +9,7 @@
  */
 
 import React from "react";
-import { CheckCircleOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, EditOutlined, BarChartOutlined, FileTextOutlined } from "@ant-design/icons";
 
 interface WriteFileViewProps {
   data: {
@@ -28,7 +28,8 @@ const WriteFileView: React.FC<WriteFileViewProps> = ({ data }) => {
   if (!file_path && !message) {
     return (
       <div style={{ color: "#888", fontStyle: "italic" }}>
-        ✍️ 写入结果为空
+        <EditOutlined style={{ marginRight: 8 }} />
+        写入结果为空
       </div>
     );
   }
@@ -56,7 +57,7 @@ const WriteFileView: React.FC<WriteFileViewProps> = ({ data }) => {
       {/* 文件路径 */}
       {file_path && (
         <div style={{ marginTop: 8 }}>
-          <span style={{ color: "#666" }}>📝 文件路径：</span>
+          <span style={{ color: "#666" }}>文件路径：</span>
           <code
             style={{
               background: "#f5f5f5",
@@ -74,7 +75,7 @@ const WriteFileView: React.FC<WriteFileViewProps> = ({ data }) => {
       {/* 写入字节数 */}
       {bytes_written > 0 && (
         <div style={{ marginTop: 8 }}>
-          <span style={{ color: "#666" }}>📊 写入字节：</span>
+          <span style={{ color: "#666" }}>写入字节：</span>
           <span style={{ fontWeight: 500 }}>{formatBytes(bytes_written)}</span>
         </div>
       )}

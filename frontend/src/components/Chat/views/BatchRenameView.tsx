@@ -111,12 +111,12 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
         {hasError ? (
           <>
             <CloseCircleOutlined style={{ marginRight: 8 }} />
-            ❌ 批量重命名失败
+            批量重命名失败
           </>
         ) : (
           <>
             <SyncOutlined style={{ marginRight: 8 }} />
-            🔄 批量重命名完成
+            批量重命名完成
           </>
         )}
       </div>
@@ -126,7 +126,7 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
         <>
           <div style={statsStyle}>
             <div style={statItemStyle}>
-              <span style={{ color: "#8c8c8c" }}>📊 处理文件：</span>
+              <span style={{ color: "#8c8c8c" }}>处理文件：</span>
               <strong>{total_count}个</strong>
             </div>
             
@@ -163,7 +163,7 @@ const BatchRenameView: React.FC<BatchRenameViewProps> = ({ data }) => {
                   key: '1',
                   label: (
                     <span style={{ fontSize: 13, color: "#595959" }}>
-                      📋 重命名列表（{rename_list.length}项）
+                        重命名列表（{rename_list.length}项）
                     </span>
                   ),
                   children: (

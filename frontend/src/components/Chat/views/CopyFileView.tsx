@@ -100,7 +100,7 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
   if (isEmpty) {
     return (
       <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
-        ⚠️ 复制操作数据为空
+        复制操作数据为空
       </div>
     );
   }
@@ -116,19 +116,19 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
         {success ? (
           <>
             <CheckCircleOutlined style={{ marginRight: 8 }} />
-            📋 文件复制成功
+            文件复制成功
           </>
         ) : (
           <>
             <CloseCircleOutlined style={{ marginRight: 8 }} />
-            ❌ 文件复制失败
+            文件复制失败
           </>
         )}
       </div>
 
       {/* 源文件路径 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>📄 源文件：</span>
+        <span style={labelStyle}>源文件：</span>
         <div style={{ flex: 1, display: "flex", alignItems: "center" }}>
           <FileOutlined style={{ marginRight: 6, color: "#1890ff" }} />
           <span style={{ flex: 1, fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 12 }}>
@@ -148,7 +148,7 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
 
       {/* 目标文件路径 */}
       <div style={infoItemStyle}>
-        <span style={labelStyle}>📄 目标文件：</span>
+        <span style={labelStyle}>目标文件：</span>
         <div style={{ flex: 1, display: "flex", alignItems: "center" }}>
           <FileOutlined style={{ marginRight: 6, color: "#52c41a" }} />
           <span style={{ flex: 1, fontFamily: "Consolas, Monaco, 'Courier New', monospace", fontSize: 12 }}>
@@ -169,7 +169,7 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
       {/* 文件大小 */}
       {processedFileSize && (
         <div style={infoItemStyle}>
-          <span style={labelStyle}>📊 文件大小：</span>
+          <span style={labelStyle}>文件大小：</span>
           <span>{processedFileSize}</span>
         </div>
       )}
@@ -177,7 +177,7 @@ const CopyFileView: React.FC<CopyFileViewProps> = ({ data }) => {
       {/* 复制耗时 */}
       {elapsed_time !== undefined && (
         <div style={infoItemStyle}>
-          <span style={labelStyle}>⏱️ 复制耗时：</span>
+          <span style={labelStyle}>复制耗时：</span>
           <span>{elapsed_time.toFixed(2)}秒</span>
         </div>
       )}
