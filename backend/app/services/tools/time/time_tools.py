@@ -22,7 +22,7 @@ from typing import Dict, Any, Optional, Callable, Awaitable;
 from pydantic import BaseModel, Field;
 import re;
 
-from app.services.tools.registry import register_tool;
+from app.services.tools.registry import register_tool, ToolCategory;
 
 
 # ===========================================================
@@ -62,6 +62,7 @@ _timer_counter = 0;
 - timezone: 时区（如+0800）
 - weekday: 英文星期几（如Saturday）
 - isoweekday: ISO星期几（1=Monday, 7=Sunday）""",
+    category=ToolCategory.TIME,
     examples=[
         {},
     ]
@@ -114,6 +115,7 @@ def time_now() -> Dict[str, Any]:
 - iso: ISO格式时间
 - timestamp: Unix时间戳
 - pattern_used: 实际使用的格式""",
+    category=ToolCategory.TIME,
     examples=[
         {},
         {"timestamp": 1777103094},
@@ -202,6 +204,7 @@ def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) 
 - < 30天：X天前/后
 - < 12个月：X个月前/后
 - 否则：X年前/后""",
+    category=ToolCategory.TIME,
     examples=[
         {"start": 1777103094},
         {"start": "2026-04-25", "end": None},
@@ -316,6 +319,7 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
 注意：
 - 定时器在后台运行，使用asyncio
 - 回调函数通过字符串描述实现""",
+    category=ToolCategory.TIME,
     examples=[
         {"delay": 180, "callback": "提醒用户喝水"},
         {"delay": 600, "callback": "执行备份", "callback_data": {"file": "D:/backup"}},
@@ -400,6 +404,7 @@ async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[st
 
 注意：
 - 如果定时器已经触发，返回cancelled=False""",
+    category=ToolCategory.TIME,
     examples=[
         {"timer_id": "timer_1_1234567890"},
         {"timer_id": "timer_2_1234567890"}
@@ -468,6 +473,7 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
 - +00:00 或 UTC（世界协调时间）
 - -05:00 或 America/New_York（纽约时间）
 - +09:00 或 Asia/Tokyo（东京时间）""",
+    category=ToolCategory.TIME,
     examples=[
         {"utc_time": "2026-04-25T12:00:00Z"},
         {"utc_time": 1777103094, "target_tz": "+08:00"},
@@ -530,7 +536,7 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
 # ===========================================================
 
 @register_tool(
-    name="time_local_to_utc",
+    name="time_local_to_local",
     description="""将本地时间或指定时区时间转换为UTC时间。
 
 使用场景：
@@ -548,6 +554,7 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
 - source_tz: 源时区
 
 常用时区：参考time_utc_to_local""",
+    category=ToolCategory.TIME,
     examples=[
         {"local_time": "2026-04-25 20:00:00"},
         {"local_time": "2026-04-25T20:00:00", "source_tz": "+08:00"},
@@ -621,6 +628,7 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
 注意：
 - 周六和周日被认为是周末
 - 使用ISO标准：Monday=1, Tuesday=2, ..., Sunday=7""",
+    category=ToolCategory.TIME,
     examples=[
         {},
         {"date": "2026-04-25"},
@@ -699,6 +707,7 @@ def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
 - 当前为简单实现，使用内置假日列表
 - 实际生产环境需要调用节假日API获取准确信息
 - 中国法定节假日：元旦、春节、清明、五一、端午、中秋、国庆""",
+    category=ToolCategory.TIME,
     examples=[
         {},
         {"date": "2026-01-01"},
