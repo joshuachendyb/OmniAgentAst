@@ -614,27 +614,37 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
         }
 
 
+# ===========================================================
+# P1 常用辅助 - time_local_to_utc
+# ===========================================================
+
+@register_tool(
+    name="time_local_to_utc",
+    description="""将本地时间或指定时区时间转换为UTC时间。
+
+使用场景：
+- 当用户需要将本地时间转换为UTC时间时使用此工具
+- 当用户在跨国协作中需要统一到UTC时间时使用
+- 当用户需要提交UTC时间给系统时使用
+- 当用户指定源时区时使用
+
+参数说明：
+- local_time: 本地时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。必填参数
+- source_tz: 源时区（如"+08:00"、"Asia/Shanghai"）。如果为None则使用本地时区。可选参数，默认为None（本地时区）
+
+返回数据说明：
+- utc_time: 转换后的UTC时间
+- source_tz: 源时区
+
+常用时区：参考time_utc_to_local""",
+    examples=[
+        {"local_time": "2026-04-25 20:00:00"},
+        {"local_time": "2026-04-25T20:00:00", "source_tz": "+08:00"},
+        {"local_time": "2026-04-25 20:00:00", "source_tz": "Asia/Shanghai"}
+    ]
+)
 def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[str, Any]:
-    """
-    将本地时间转换为UTC时间
-    
-    Args:
-        local_time: 本地时间（时间戳、字符串、datetime）
-        source_tz: 源时区（如"+08:00"、"Asia/Shanghai"），如果为None则使用本地时区
-    
-    返回：
-        dict: {
-            "code": "SUCCESS",
-            "data": {
-                "utc_time": "2026-04-25 15:44:54",
-                "iso": "2026-04-25T15:44:54+00:00",
-                "timestamp": 1777103094
-            },
-            "message": "成功转换为UTC时间"
-        }
-    
-    Author: 小沈 - 2026-04-25;
-    """
+    """转换本地时间为UTC时间"""
     try:
         # 1. 解析本地时间
         local_dt = _parse_datetime_any(local_time)
