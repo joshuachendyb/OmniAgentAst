@@ -424,6 +424,33 @@ async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[st
         }
 
 
+# ===========================================================
+# P0 核心基础 - timer_clear
+# ===========================================================
+
+@register_tool(
+    name="timer_clear",
+    description="""清除（取消）已设置的定时器。
+
+使用场景：
+- 当用户说"取消那个定时器"时使用此工具
+- 当用户想要取消之前设置的提醒时使用
+- 当用户取消定时任务时使用
+
+参数说明：
+- timer_id: 定时器ID（由timer_set返回）。必填参数
+
+返回数据说明：
+- timer_id: 被清除的定时器ID
+- cancelled: 是否成功取消（True=成功）
+
+注意：
+- 如果定时器已经触发，返回cancelled=False""",
+    examples=[
+        {"timer_id": "timer_1_1234567890"},
+        {"timer_id": "timer_2_1234567890"}
+    ]
+)
 async def timer_clear(timer_id: str) -> Dict[str, Any]:
     """
     清除（取消）定时器
