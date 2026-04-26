@@ -11,10 +11,14 @@ Time 模块 - 时间/日期工具
     ├── __init__.py           # 本文件，导入 time_register 触发注册
     ├── time_register.py     # 工具注册点
     └── time_tools.py        # 具体实现
+
+【修复】2026-04-26 小沈
+- 必须同时导入 time_register 和 time_tools 来触发注册
 """
 
-# 导入 time_register 触发工具注册
+# 【修复】必须同时导入 time_register 和 time_tools 来触发注册
 from app.services.tools.time import time_register
+from app.services.tools.time import time_tools  # 触发 time_tools 中的 @register_tool 装饰器
 
 # 导出常用工具函数（方便直接导入使用）
 from app.services.tools.time.time_tools import (
