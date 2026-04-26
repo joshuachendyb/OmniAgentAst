@@ -272,6 +272,18 @@ class ToolRegistry:
         """
         return self._implementations.get(name)
     
+    def get_exact_implementation(self, name: str) -> Optional[Callable]:
+        """
+        获取工具实现函数（使用精确名称匹配）
+        
+        Args:
+            name: 工具名称
+        
+        Returns:
+            工具实现函数，如果不存在则返回None
+        """
+        return self._implementations.get(name)
+    
     def list_tools(
         self,
         category: Optional[ToolCategory] = None,
@@ -445,19 +457,8 @@ def get_implementations_from_registry() -> Dict[str, Callable]:
 
 
 def _sync_from_old_registry():
-    """从旧_TOOL_REGISTRY同步到tool_registry"""
-    from app.services.tools.file import file_tools as file_tools_module
-    
-    for name, info in file_tools_module._TOOL_REGISTRY.items():
-        func = info.get("function")
-        if func:
-            tool_registry.register(
-                name=name,
-                description=info.get("description", ""),
-                category=ToolCategory.FILE,
-                implementation=func,
-                version=info.get("version", "1.0.0")
-            )
+    """占位函数（旧同步逻辑已废弃）"""
+    pass  # 不再需要同步，已迁移到各register.py
 
 
 def get_tools_dict_by_category(category: ToolCategory) -> Dict[str, Callable]:
@@ -482,16 +483,27 @@ def get_tools_dict_by_category(category: ToolCategory) -> Dict[str, Callable]:
 
 def get_tools_from_file_registry() -> Dict[str, Callable]:
     """
-    从file_tools._TOOL_REGISTRY获取工具（兼容旧接口）
+    从tool_registry获取file工具
     
     Returns:
         {工具名: 工具函数} 格式
     """
-    from app.services.tools.file import file_tools as file_tools_module
+    # 触发 file_register 注册（确保注册已执行）
+    from app.services.tools.file import file_register
     
+    # 直接使用全局 tool_registry 实例
     result = {}
-    for name, info in file_tools_module._TOOL_REGISTRY.items():
-        func = info.get("function")
-        if func:
-            result[name] = func
+    for name in _FILE_TOOL_NAMES:  # 已知工具名列表
+        impl = tool_registry.get_exact_implementation(name)
+        if impl:
+            result[name] = impl
     return result
+
+
+# 已知file工具名列表（从file_register同步）
+_FILE_TOOL_NAMES = [
+    "read_file", "write_file", "list_directory", "delete_file", "move_file",
+    "search_file_content", "search_files_by_name", "generate_report", "copy_file",
+    "create_directory", "get_file_info", "compare_files", "batch_rename",
+    "compress_files", "file_monitor", "file_statistics", "file_checksum"
+]
