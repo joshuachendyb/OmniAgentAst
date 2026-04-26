@@ -105,12 +105,9 @@ class FileReactAgent(BaseAgent):
             # 【T1-M1+M2】从registry动态获取工具，删除硬编码
             from app.services.tools.registry import get_tools_from_file_registry
             
-            # 获取类方法并绑定到self.file_tools实例
+            # registry返回的是已绑定到FileTools实例的方法
             raw_tools = get_tools_from_file_registry()
-            self._tools_dict = {
-                name: getattr(self.file_tools, name) 
-                for name in raw_tools.keys()
-            }
+            self._tools_dict = raw_tools  # 直接使用，无需getattr
             
             self.executor = ToolExecutor(self._tools_dict)
             
