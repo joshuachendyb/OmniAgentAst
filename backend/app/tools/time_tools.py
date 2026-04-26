@@ -165,6 +165,45 @@ def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) 
         }
 
 
+# ===========================================================
+# P0 核心基础 - time_diff
+# ===========================================================
+
+@register_tool(
+    name="time_diff",
+    description="""计算两个时间之间的差值，返回人性化描述。
+
+使用场景：
+- 当用户问"我上次问这个是什么时候？"时使用此工具
+- 当用户问"这个文件多久前修改的？"时使用此工具
+- 当用户问"距离 deadline 还有多长时间？"时使用此工具
+- 当用户想要知道两个时间点之间相差多久时使用
+
+参数说明：
+- start: 开始时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。必填参数
+- end: 结束时间（时间戳、字符串、datetime）。如果为None则使用当前时间。支持格式同start。可选参数，默认为None（当前时间）
+
+返回数据说明：
+- humanized: 人性化描述（如"3小时前"、"2天后"）
+- seconds: 总秒数
+- minutes: 总分钟数
+- hours: 总小时数
+- days: 总天数
+- is_future: 是否在未来（True=未来，False=过去）
+
+人性化规则：
+- < 60秒：刚刚
+- < 60分钟：X分钟前/后
+- < 24小时：X小时前/后
+- < 30天：X天前/后
+- < 12个月：X个月前/后
+- 否则：X年前/后""",
+    examples=[
+        {"start": 1777103094},
+        {"start": "2026-04-25", "end": None},
+        {"start": "2026-01-01", "end": "2026-04-25"}
+    ]
+)
 def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
     """
     计算两个时间之间的差值，返回人性化描述
@@ -184,23 +223,9 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
                 "days": 0,  # 总天数
                 "is_future": false  # 是否在未来
             },
-            "message": "成功计算时间差"
+"message": "成功计算时间差"
         }
-    
-    场景：
-        - 用户问：“我上次问这个是什么时候？”
-        - 用户问：“这个文件多久前修改的？”
-        - 用户问：“距离 deadline 还有多长时间？”
-    
-    人性化规则：
-        - < 60秒：刚刚
-        - < 60分钟：X分钟前/后
-        - < 24小时：X小时前/后
-        - < 30天：X天前/后
-        - < 12个月：X个月前/后
-        - 否则：X年前/后
-    
-    Author: 小沈 - 2026-04-25;
+     
     """
     try:
         # 1. 解析开始时间
