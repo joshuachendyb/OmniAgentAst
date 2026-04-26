@@ -461,12 +461,12 @@ async def generate_sse_stream(
         
         # 分发逻辑
         if intent_type == "file" and confidence >= 0.3:
-            # 文件操作：FileReactAgent.run_stream() 返回 event dict
-            from app.services.agent.file_react import FileReactAgent
-            agent = FileReactAgent(
+            # 文件操作：使用AgentFactory创建Agent
+            from app.services.agent.agent_factory import AgentFactory
+            agent = AgentFactory.create(
+                intent_type='file',
                 llm_client=llm_client,
                 session_id=session_id,
-                intent_type="file",
                 api_base=ai_service.api_base,
                 api_key=ai_service.api_key,
                 model=ai_service.model
