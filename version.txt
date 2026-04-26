@@ -1,3 +1,29 @@
+v0.10.19
+
+ 更新时间: 2026-04-26 17:52:54
+
+ 更新内容：
+
+ ## 1 Phase 1 AgentFactory架构完成 - 小健-2026-04-26
+
+ | 变更 | 说明 |
+ |------|------|
+ | agent_factory.py | 新建AgentFactory类 |
+ | mixin.py | 新建ToolLoaderMixin类 |
+ | registry.py | 添加get_tools_from_registry_by_category |
+ | react_sse_wrapper.py | 使用AgentFactory.create() |
+ | 测试 | 7/7 通过 |
+
+ | 测试结果 | 状态 |
+ |----------|------|
+ | tool_registry核心功能 | PASS |
+ | file_register注册流程 | PASS |
+ | FileReactAgent集成 | PASS |
+ | react_schema集成 | PASS |
+ | 废弃代码清理 | PASS |
+
+---
+
 v0.10.18
 
  更新时间: 2026-04-26 12:15:00
