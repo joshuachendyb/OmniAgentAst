@@ -85,40 +85,40 @@ def time_now() -> Dict[str, Any]:
             "data": None,
             "message": f"获取当前时间失败: {str(e)}"
         }
-    
+
+
+# ===========================================================
+# P0 核心基础 - time_format
+# ===========================================================
+
+@register_tool(
+    name="time_format",
+    description="""格式化时间戳或日期字符串为指定格式。
+
+使用场景：
+- 当用户问"这个文件什么时候改的？用中文显示"时使用此工具
+- 当用户问"把当前时间格式化成YYYY年MM月DD日"时使用此工具
+- 当用户需要将时间戳转换为可读格式时使用
+- 当用户指定特定日期格式时使用
+
+参数说明：
+- timestamp: 时间戳（Unix秒）、日期字符串（如"2026-04-25"）、或datetime对象。如果为None，则使用当前时间。支持格式：int/float=Unix时间戳，str=日期字符串自动识别，datetime=直接使用。默认为None（当前时间）
+- pattern: 格式字符串（如"%Y-%m-%d %H:%M:%S"）。如果为None，则使用默认格式"%Y-%m-%d %H:%M:%S"。常用格式：%Y年%m月%d日、%Y-%m-%d %H:%M:%S、%Y/%m/%d。默认为None（%Y-%m-%d %H:%M:%S）
+
+返回数据说明：
+- formatted: 格式化后的字符串
+- iso: ISO格式时间
+- timestamp: Unix时间戳
+- pattern_used: 实际使用的格式""",
+    examples=[
+        {},
+        {"timestamp": 1777103094},
+        {"timestamp": None, "pattern": "%Y年%m月%d日"},
+        {"timestamp": "2026-04-25", "pattern": "%Y/%m/%d"}
+]
+)
 def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) -> Dict[str, Any]:
-    """
-    格式化时间戳或日期字符串
-    
-    Args:
-        timestamp: 时间戳（Unix秒）、日期字符串（如"2026-04-25"）、或datetime对象
-                  如果为None，则使用当前时间
-        pattern: 格式字符串（如"%Y-%m-%d %H:%M:%S"）
-                 如果为None，则使用默认格式"%Y-%m-%d %H:%M:%S"
-    
-    返回：
-        dict: {
-            "code": "SUCCESS",
-            "data": {
-                "formatted": "2026-04-25 15:44:54",
-                "iso": "2026-04-25T15:44:54+08:00",
-                "timestamp": 1777103094,
-                "pattern_used": "%Y-%m-%d %H:%M:%S"
-            },
-            "message": "成功格式化时间"
-        }
-    
-    场景：
-        - 用户问：“这个文件什么时候改的？用中文显示”
-        - 用户问：“把当前时间格式化成YYYY年MM月DD日”
-    
-    支持的时间戳格式：
-        - int/float: Unix时间戳（秒）
-        - str: 日期字符串（自动识别ISO、YYYY-MM-DD等）
-        - datetime对象: 直接使用
-    
-    Author: 小沈 - 2026-04-25;
-    """
+    """格式化时间戳"""
     try:
         # 1. 确定要格式化的datetime
         if timestamp is None:
