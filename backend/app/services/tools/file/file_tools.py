@@ -2091,5 +2091,24 @@ def decode_page_token(token: str) -> int:
 
 
 # ============================================================
+# 兼容导出（旧接口需要）
+# ============================================================
+def get_registered_tools(category: Optional[str] = None):
+    """获取已注册的工具列表（兼容旧接口）"""
+    from app.services.tools.registry import tool_registry, ToolCategory
+    if category:
+        tools = tool_registry.list_tools(category=ToolCategory(category))
+    else:
+        tools = tool_registry.list_tools()
+    return [t["name"] for t in tools]
+
+
+def get_tool(name: str):
+    """获取指定工具的信息（兼容旧接口）"""
+    from app.services.tools.registry import tool_registry
+    return tool_registry.get(name)
+
+
+# ============================================================
 # 【M3关键】工具初始化注册
 from datetime import datetime
