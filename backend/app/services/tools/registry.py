@@ -451,9 +451,9 @@ def get_implementations_from_registry() -> Dict[str, Callable]:
             for name in tool_registry.list_tools()}
 
 
-def get_tools_dict_by_category(category: ToolCategory) -> Dict[str, Callable]:
+def get_tools_from_registry_by_category(category: ToolCategory) -> Dict[str, Callable]:
     """
-    按分类获取工具函数字典
+    按分类从registry获取工具（别名: get_tools_dict_by_category）
     
     Args:
         category: 工具分类
@@ -469,6 +469,10 @@ def get_tools_dict_by_category(category: ToolCategory) -> Dict[str, Callable]:
         if impl:
             result[name] = impl
     return result
+
+
+# 别名兼容性
+get_tools_dict_by_category = get_tools_from_registry_by_category
 
 
 def get_tools_from_file_registry() -> Dict[str, Callable]:
