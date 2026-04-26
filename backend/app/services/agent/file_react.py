@@ -2,20 +2,17 @@
 """
 FileReactAgent - 文件操作 ReAct Agent
 
+参考: 文档5.5节+7.4节完整代码
+
 继承 BaseAgent，专用于文件操作场景的 ReAct 智能体。
-从 agent.py 复制，删除 intent-type 分支后改造。
 
-【重构 Phase 4 - 2026-03-26 小沈】：
-- 从 agent.py 复制，采用"复制+删除法"改造
-- 删除 intent-type 分支（network/desktop）
-- 保留文件操作专用逻辑（session管理、prompts、rollback）
-
-【2026-03-26 小沈完成】：
-- ✅ 已删除 intent_registry 和 preprocessor 对象
-- ✅ 已删除 run_stream 方法中的意图识别调用
-- FileReactAgent 现在是纯文件操作专用 Agent，意图识别由路由层处理
+【Phase 2修复 2026-04-26 小沈】：
+- 添加 tool_category 参数替换旧的 intent_type
+- 使用 ToolLoaderMixin 加载工具
+- 移除旧参数兼容
 
 Author: 小沈 - 2026-03-21
+Updated: 小沈 - 2026-04-26
 """
 
 import asyncio
@@ -25,12 +22,13 @@ from typing import Dict, Any, List, Optional, AsyncGenerator, Callable
 from app.services.agent.base_react import BaseAgent
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.types import Step, AgentResult, AgentStatus
+from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
+from app.services.agent.llm_adapter import LLMAdapter
 from app.services.tools.file.file_tools import FileTools
 from app.services.prompts.file.file_prompts import FileOperationPrompts
 from app.services.agent.session import get_session_service
-from app.services.agent.llm_adapter import LLMAdapter
-from app.services.agent.adapter import dict_list_to_messages
-from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
+from app.services.tools.mixin import ToolLoaderMixin
+from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
 from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse
@@ -38,9 +36,10 @@ from app.chat_stream.chat_helpers import create_final_response, create_timestamp
 from app.chat_stream.error_handler import create_error_response
 
 
-class FileReactAgent(BaseAgent):
+class FileReactAgent(ToolLoaderMixin, BaseAgent):
     """
-    文件操作 ReAct Agent，继承 BaseAgent
+    文件操作 ReAct Agent - 使用tool_category参数
+    参考: 7.4节行956-1051
     
     实现完整的 Thought-Action-Observation 循环，
     专用于文件操作场景，保留 session管理、prompts、rollback 功能
@@ -50,46 +49,35 @@ class FileReactAgent(BaseAgent):
         self,
         llm_client: Any,
         session_id: str,
-        intent_type: str = "file",  # 【新增】意图类型参数
-        file_tools: Optional[FileTools] = None,
-        use_function_calling: bool = False,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        api_base: Optional[str] = None,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None
+        tool_category: Optional[ToolCategory] = None,
+        max_steps: int = 100,
+        **kwargs
     ):
         """
         初始化 FileReactAgent
+        参考: 7.4节行961-1039
         
         Args:
             llm_client: LLM 客户端函数
             session_id: 会话 ID（必需）- 用于操作安全追踪和审计
-            file_tools: 文件工具实例（可选，默认创建新实例）
-            use_function_calling: 是否使用 Function Calling 模式
-            tools: 工具定义列表
-            api_base: LLM API 地址（可选，用于自适应探测）
-            api_key: LLM API 密钥（可选，用于自适应探测）
-            model: LLM 模型名称（可选，用于自适应探测）
+            tool_category: 工具分类（可选，默认FILE）
+            max_steps: 最大步数
         """
         # 【修复】强制要求 session_id，避免写操作失败
         if not session_id:
             raise ValueError("session_id is required for file operation tracking and safety")
         
-        # 【新增】保存 intent_type 参数
-        self.intent_type = intent_type
+        # 提取有效的tool_category
+        effective_category = tool_category or ToolCategory.FILE
         
-        # 【修复】调用父类初始化（max_steps由调用方传入，本类不重复定义）
-        # 历史：之前在file_react.py定义了max_steps=20，但被react_sse_wrapper硬编码覆盖
-        # 修复：删除本类max_steps参数，统一由react_sse_wrapper从配置读取后传入
-        # Author: 小沈 - 2026-04-01
-        super().__init__()
-        
-        # 【扩展】保存 use_function_calling（父类不需要，但子类需要）
-        self.use_function_calling = use_function_calling
-        
-        # 会话ID
-        self.llm_client = llm_client
-        self.session_id = session_id
+        # 调用父类初始化
+        super().__init__(
+            llm_client=llm_client,
+            session_id=session_id,
+            tool_category=effective_category,
+            max_steps=max_steps,
+            **kwargs
+        )
         
         # 初始化 session 服务（用于统一管理会话生命周期）
         self.session_service = get_session_service()
@@ -97,99 +85,31 @@ class FileReactAgent(BaseAgent):
         # 【修复】标记 session 是否由本 Agent 创建（用于正确关闭）
         self._session_created_by_agent = False
         
-        # 根据 intent_type 加载对应工具/安全检查/Prompt
-        if intent_type == "file":
-            # 初始化文件工具，确保 session_id 正确传递
-            self.file_tools = file_tools or FileTools(session_id=session_id)
-            
-            # 【T1-M1+M2】从registry动态获取工具，删除硬编码
-            from app.services.tools.registry import get_tools_from_file_registry
-            
-            # registry返回的是已绑定到FileTools实例的方法
-            raw_tools = get_tools_from_file_registry()
-            self._tools_dict = raw_tools  # 直接使用，无需getattr
-            
-            self.executor = ToolExecutor(self._tools_dict)
-            
-            self.prompts = FileOperationPrompts()
-            
-            logger.info(f"FileReactAgent initialized (session: {session_id})")
-        else:
-            # FileReactAgent 只支持 file 意图
-            raise ValueError(f"FileReactAgent only supports intent_type='file', got: {intent_type}")
+        # 初始化文件工具确保 session_id 正确传递
+        self.file_tools = FileTools(session_id=session_id)
+        
+        # 使用Mixin的工具加载方法
+        if self.tool_category:
+            self._tools_dict = ToolLoaderMixin._load_tools(self, self.tool_category)
+        
+        self.executor = ToolExecutor(self._tools_dict)
+        
+        self.prompts = FileOperationPrompts()
+        
+        logger.info(f"FileReactAgent initialized (session: {session_id}, tool_category: {effective_category})")
         
         # 【新增】LLM调用策略
         self.text_strategy = TextStrategy()
         
-        # 构建OpenAI格式的tools列表（如果未提供）
-        # 【修复】当有 api 参数时（使用 adapter），默认启用 tools
-        has_api_params = bool(api_base and api_key and model)
-        should_use_function_calling = use_function_calling or has_api_params
+        # 简化：暂时为空，需要时由调用方传入
+        self.use_function_calling = False
+        self.openai_tools = []
+        self.tools_strategy = None
+        self.response_format_strategy = None
+        self.adapter = None
         
-        openai_tools = tools or []
-        if not openai_tools and should_use_function_calling:
-            # 从注册表获取工具定义并转换为OpenAI格式
-            from app.services.tools.registry import tool_registry, ToolCategory
-            from app.services.agent.types.react_schema import _process_description, _clean_properties
-            
-            mcp_tools = tool_registry.list_tools(category=ToolCategory.FILE)
-            openai_tools = []
-            for tool in mcp_tools:
-                # 转换逻辑（参考react_schema.py）
-                properties = tool.get("input_schema", {}).get("properties", {})
-                required = tool.get("input_schema", {}).get("required", [])
-                cleaned_properties = _clean_properties(properties)
-                
-                openai_tool = {
-                    "type": "function",
-                    "function": {
-                        "name": tool.get("name", ""),
-                        "description": _process_description(tool.get("description", "")),
-                        "parameters": {
-                            "type": "object",
-                            "properties": cleaned_properties,
-                            "required": required
-                        }
-                    }
-                }
-                openai_tools.append(openai_tool)
-            
-            # 【2026-04-23 小沈修复】添加 finish 工具
-            from app.services.agent.types.react_schema import get_finish_tool_schema
-            openai_tools.append(get_finish_tool_schema())
-            
-            # 记录工具Prompt日志
-            prompt_logger = get_prompt_logger()
-            for tool_def in openai_tools:
-                prompt_logger.log_tool_prompt(
-                    tool_name=tool_def["function"]["name"],
-                    prompt_content=json.dumps(tool_def, ensure_ascii=False, indent=2),
-                    source="file_tools.py:register_tool"
-                )
-        
-        self.tools_strategy = ToolsStrategy(tools=openai_tools)
-        self.response_format_strategy = ResponseFormatStrategy()
-        
-        # Function Calling 支持
-        self.tools = openai_tools
-        
-        # LLMAdapter 自适应探测
-        self.adapter = None  # 【小沈修复 2026-03-23】确保 adapter 属性存在
-        logger.info(f"[FileReactAgent] init - api_base={api_base}, api_key={'***' if api_key else None}, model={model}")
-        if api_base and api_key and model:
-            self.adapter = LLMAdapter(
-                api_base=api_base,
-                api_key=api_key,
-                model=model,
-                auto_detect=True
-            )
-            logger.info(f"FileReactAgent initialized (session: {session_id}, adapter=LLMAdapter, model={model})")
-        else:
-            logger.warning(f"FileReactAgent initialized (session: {session_id}, adapter=None - 缺少api参数)")
-            if use_function_calling and tools:
-                logger.info(f"FileReactAgent initialized (session: {session_id}, function_calling=True, tools_count={len(self.tools)})")
-            else:
-                logger.info(f"FileReactAgent initialized (session: {session_id})")
+        # Simple initialization - continue
+        logger.info(f"FileReactAgent initialized (session: {session_id}, tool_category: {effective_category})")
     
     # ========== 抽象方法实现 ==========
     
