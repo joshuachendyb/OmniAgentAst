@@ -260,11 +260,17 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         
         【关键】直接使用 self.file_tools（有正确 task_id），
         而不是通过 executor（executor 用的是 registry 里没有 task_id 的工具）
+        
+        【2026-04-27 小沈修复】：调用 _normalize_params 做参数别名映射
         """
+        # 【2026-04-27 小沈新增】标准化参数（别名映射）
+        normalized_params = self.executor._normalize_params(action, params)
+        logger.info(f"[file_react._execute_tool] action={action}, 原params={params}, 标准化后={normalized_params}")
+        
         tool_method = getattr(self.file_tools, action, None)
         if not tool_method:
             return {"success": False, "error": f"Tool '{action}' not found", "result": None}
-        return await tool_method(**params)
+        return await tool_method(**normalized_params)
     
     # ===== 实现父类抽象方法 =====
     
