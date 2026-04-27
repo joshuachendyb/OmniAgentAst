@@ -29,7 +29,7 @@ async def file_monitor_impl(
     duration: Optional[int] = None,
     validate_path_func=None,
     safety_service=None,
-    session_id: Optional[str] = None,
+    task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
     to_unified_format_func=None,
@@ -46,7 +46,7 @@ async def file_monitor_impl(
         duration: 监控持续时间（秒）
         validate_path_func: 路径验证函数
         safety_service: 安全服务
-        session_id: 会话ID
+        task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
         to_unified_format_func: 统一格式转换函数
@@ -70,10 +70,10 @@ async def file_monitor_impl(
             "operation_id": None
         }, "file_monitor")
     
-    if not session_id:
+    if not task_id:
         return to_unified_format_func({
             "success": False,
-            "error": "No active session",
+            "error": "No active task",
             "operation_id": None
         }, "file_monitor")
     
@@ -97,7 +97,7 @@ async def file_monitor_impl(
         
         # 记录操作
         operation_id = record_operation_func(
-            session_id=session_id,
+            task_id=task_id,
             operation_type=OperationType.MONITOR,
             source_path=dir_path,
             destination_path=None,

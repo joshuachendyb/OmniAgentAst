@@ -33,42 +33,34 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
     def __init__(
         self,
         llm_client: Any,
-        session_id: str,
+        task_id: str,
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = 50,
         **kwargs
     ):
-        # 默认使用TIME分类
+        """初始化 TimeReactAgent"""
         effective_category = tool_category or ToolCategory.TIME
         
-        # 确保工具已注册 - 再次导入确保注册
         import app.services.tools.time.time_tools as time_tools_register
         
-        # 按文档5.4要求调用父类
         super().__init__(
             llm_client=llm_client,
-            session_id=session_id,
+            task_id=task_id,
             tool_category=effective_category,
             max_steps=max_steps,
             **kwargs
         )
         
-        # 明确加载TIME工具
+        self.system_prompt = "你是一个时间工具助手，可以回答时间相关的问题。"
+        
         if self.tool_category == ToolCategory.TIME:
             self._tools_dict = ToolLoaderMixin._load_tools(self, ToolCategory.TIME)
         
-        # 按文档5.4简化prompt
-        self.system_prompt = """你是一个时间助手，可以使用时间工具来：
-- 获取当前时间 (time_now)
-- 格式化时间戳 (time_format)
-- 计算时间差 (time_diff)
-- 设置定时器 (timer_set, timer_clear)
-- 时区转换 (time_utc_to_local, time_local_to_utc)
-- 判断日期 (time_is_weekend, time_is_holiday)
-
-请直接回答用户的时间相关问题。"""
+        self.executor = ToolExecutor(self._tools_dict)
         
-        logger.info(f"TimeReactAgent initialized (session: {session_id}, tool_category: {effective_category}, tools: {len(self._tools_dict)})")
+        self.text_strategy = TextStrategy()
+        
+        logger.info(f"TimeReactAgent initialized (task_id: {task_id}, tool_category: {effective_category}, tools: {len(self._tools_dict)})")
     
     def _get_system_prompt(self) -> str:
         """获取系统 Prompt"""

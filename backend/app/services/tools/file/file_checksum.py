@@ -25,7 +25,7 @@ async def file_checksum_impl(
     chunk_size: int = 65536,
     validate_path_func=None,
     safety_service=None,
-    session_id: Optional[str] = None,
+    task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
     to_unified_format_func=None,
@@ -41,7 +41,7 @@ async def file_checksum_impl(
         chunk_size: 分块大小（字节），用于大文件哈希计算
         validate_path_func: 路径验证函数
         safety_service: 安全服务
-        session_id: 会话ID
+        task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
         to_unified_format_func: 统一格式转换函数
@@ -61,10 +61,10 @@ async def file_checksum_impl(
             "operation_id": None
         }, "file_checksum")
     
-    if not session_id:
+    if not task_id:
         return to_unified_format_func({
             "success": False,
-            "error": "No active session",
+            "error": "No active task",
             "operation_id": None
         }, "file_checksum")
     
@@ -105,7 +105,7 @@ async def file_checksum_impl(
         
         # 记录操作
         operation_id = record_operation_func(
-            session_id=session_id,
+            task_id=task_id,
             operation_type=OperationType.CHECKSUM,
             source_path=path,
             destination_path=None,

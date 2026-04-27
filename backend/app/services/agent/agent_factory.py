@@ -35,7 +35,7 @@ class AgentFactory:
         cls,
         intent_type: str,
         llm_client: Any = None,
-        session_id: str = "",
+        task_id: str = "",  # 【修改】session_id → task_id，2026-04-26 小沈
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = 100,
         **kwargs
@@ -46,7 +46,7 @@ class AgentFactory:
         Args:
             intent_type: 意图类型 (file/time/shell/network/desktop/chat)
             llm_client: LLM客户端
-            session_id: 会话ID
+            task_id: 任务ID（操作追踪和回退用）
             tool_category: 工具分类
             max_steps: 最大步数
             **kwargs: 其他参数
@@ -67,9 +67,10 @@ class AgentFactory:
             effective_tool_category = cls._TOOL_CATEGORIES.get(intent_type)
         
         # 创建Agent实例（传递所有参数，按新结构）
+        # 【修改】task_id参数传递，2026-04-26 小沈
         return AgentClass(
             llm_client=llm_client,
-            session_id=session_id,
+            task_id=task_id,  # 修正：使用已重命名的task_id参数
             tool_category=effective_tool_category,
             max_steps=max_steps,
             **kwargs

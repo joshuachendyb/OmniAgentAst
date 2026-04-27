@@ -28,7 +28,7 @@ async def batch_rename_impl(
     conflict_strategy: str = "skip",
     validate_path_func=None,
     safety_service=None,
-    session_id: Optional[str] = None,
+    task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
     to_unified_format_func=None,
@@ -46,7 +46,7 @@ async def batch_rename_impl(
         conflict_strategy: 冲突处理策略（skip、overwrite、rename）
         validate_path_func: 路径验证函数
         safety_service: 安全服务
-        session_id: 会话ID
+        task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
         to_unified_format_func: 统一格式转换函数
@@ -66,10 +66,10 @@ async def batch_rename_impl(
             "operation_id": None
         }, "batch_rename")
     
-    if not session_id:
+    if not task_id:
         return to_unified_format_func({
             "success": False,
-            "error": "No active session",
+            "error": "No active task",
             "operation_id": None
         }, "batch_rename")
     
@@ -181,7 +181,7 @@ async def batch_rename_impl(
             operation_id = None
             if record_operation_func:
                 operation_id = record_operation_func(
-                    session_id=session_id,
+                    task_id=task_id,
                     operation_type=OperationType.RENAME,
                     source_path=file_path,
                     destination_path=final_new_path,

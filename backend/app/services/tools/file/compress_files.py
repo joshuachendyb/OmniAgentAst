@@ -32,7 +32,7 @@ async def compress_files_impl(
     split_size: Optional[int] = None,
     validate_path_func=None,
     safety_service=None,
-    session_id: Optional[str] = None,
+    task_id: Optional[str] = None,
     record_operation_func=None,
     execute_with_safety_func=None,
     to_unified_format_func=None,
@@ -50,7 +50,7 @@ async def compress_files_impl(
         split_size: 分卷大小（字节），None表示不分卷
         validate_path_func: 路径验证函数
         safety_service: 安全服务
-        session_id: 会话ID
+        task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
         to_unified_format_func: 统一格式转换函数
@@ -79,10 +79,10 @@ async def compress_files_impl(
             "operation_id": None
         }, "compress_files")
     
-    if not session_id:
+    if not task_id:
         return to_unified_format_func({
             "success": False,
-            "error": "No active session",
+            "error": "No active task",
             "operation_id": None
         }, "compress_files")
     
@@ -127,7 +127,7 @@ async def compress_files_impl(
         
         # 记录操作
         operation_id = record_operation_func(
-            session_id=session_id,
+            task_id=task_id,
             operation_type=OperationType.COMPRESS,
             source_path=source,
             destination_path=destination,

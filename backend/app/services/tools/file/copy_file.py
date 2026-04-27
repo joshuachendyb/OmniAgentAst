@@ -23,7 +23,7 @@ async def copy_file_impl(
     overwrite: bool,
     validate_path_func,
     safety_service,
-    session_id: Optional[str],
+    task_id: Optional[str],
     record_operation_func,
     execute_with_safety_func,
     to_unified_format_func,
@@ -39,7 +39,7 @@ async def copy_file_impl(
         overwrite: 是否覆盖已存在的目标
         validate_path_func: 路径验证函数
         safety_service: 安全服务
-        session_id: 会话ID
+        task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
         to_unified_format_func: 统一格式转换函数
@@ -68,10 +68,10 @@ async def copy_file_impl(
             "operation_id": None
         }, "copy_file")
     
-    if not session_id:
+    if not task_id:
         return to_unified_format_func({
             "success": False,
-            "error": "No active session",
+            "error": "No active task",
             "operation_id": None
         }, "copy_file")
     
@@ -96,7 +96,7 @@ async def copy_file_impl(
         
         # 记录操作
         operation_id = record_operation_func(
-            session_id=session_id,
+            task_id=task_id,
             operation_type=OperationType.COPY,
             source_path=src,
             destination_path=dst,

@@ -466,7 +466,7 @@ async def generate_sse_stream(
             agent = AgentFactory.create(
                 intent_type='file',
                 llm_client=llm_client,
-                session_id=session_id,
+                task_id=task_id,  # 【修改】2026-04-26 小沈
                 api_base=ai_service.api_base,
                 api_key=ai_service.api_key,
                 model=ai_service.model

@@ -21,7 +21,7 @@ async def create_directory_impl(
     exist_ok: bool,
     validate_path_func,
     safety_service,
-    session_id: Optional[str],
+    task_id: Optional[str],
     record_operation_func,
     execute_with_safety_func,
     to_unified_format_func,
@@ -36,7 +36,7 @@ async def create_directory_impl(
         exist_ok: 如果目录已存在是否报错
         validate_path_func: 路径验证函数
         safety_service: 安全服务
-        session_id: 会话ID
+        task_id: 任务ID
         record_operation_func: 记录操作函数
         execute_with_safety_func: 安全执行函数
         to_unified_format_func: 统一格式转换函数
@@ -56,10 +56,10 @@ async def create_directory_impl(
             "operation_id": None
         }, "create_directory")
     
-    if not session_id:
+    if not task_id:
         return to_unified_format_func({
             "success": False,
-            "error": "No active session",
+            "error": "No active task",
             "operation_id": None
         }, "create_directory")
     
@@ -85,7 +85,7 @@ async def create_directory_impl(
         
         # 记录操作
         operation_id = record_operation_func(
-            session_id=session_id,
+            task_id=task_id,
             operation_type=OperationType.CREATE,
             destination_path=path,
             sequence_number=get_next_sequence_func()
