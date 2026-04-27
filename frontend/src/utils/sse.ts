@@ -1371,8 +1371,8 @@ const processSSEData = (
           case "interrupted":
             // 【小强修复 2026-04-10】添加 onShowSteps?.(true)，确保中断时步骤列表显示
             onShowSteps?.(true);
-            // ✅ 调用onComplete完成清理（设置isStreaming=false、保存steps等）
-            onComplete?.(responseBufferRef.current, undefined);
+            // 【小沈修复 2026-04-27】必须传当前的steps，否则前端的16个steps会丢失
+            onComplete?.(responseBufferRef.current, undefined, handlers.executionStepsRef.current);
             setIsReceiving(false);
             setIsConnected(false);
             break;
