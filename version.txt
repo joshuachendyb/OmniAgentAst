@@ -1,18 +1,27 @@
-v0.11.0
+v0.11.1
 
- 更新时间: 2026-04-26 22:31:24
+ 更新时间: 2026-04-27 10:30:00
 
  更新内容：
 
- ## 1 Phase 0-5 AgentFactory架构完成 - 小沈-2026-04-26
+ ## 1 task_id正确传递修复 - 小沈-2026-04-27
 
- | Phase | 说明 | 状态 |
- |-------|------|------|
- | Phase 0 | 修复mixin.py方法名和registry.py函数 | ✅ |
- | Phase 1 | BaseAgent添加llm_client和session_id参数 | ✅ |
- | Phase 2 | FileReactAgent支持tool_category | ✅ |
- | Phase 3 | 验证TimeReactAgent加载9个时间工具 | ✅ |
- | Phase 4 | AgentFactory更新参数结构 | ✅ |
+ | 文件 | 修改 | 状态 |
+ |------|------|------|
+ | file_tools.py | session_id → task_id参数名 | ✅ |
+ | file_safety.py | session_id → task_id参数名 | ✅ |
+ | base_react.py | session_id → task_id参数名 | ✅ |
+ | file_react.py | session_id → task_id参数名 | ✅ |
+ | time_react.py | session_id → task_id参数名 | ✅ |
+ | agent_factory.py | 添加task_id参数传递 | ✅ |
+ | react_sse_wrapper.py | 传递task_id参数 | ✅ |
+
+ **修复说明**：
+ - write_file等工具需要task_id追踪操作
+ - react_sse_wrapper生成task_id并传给agent
+ - FileTools接收task_id并传给file_safety记录操作
+ 
+ **测试结果**：64 passed
  | Phase 5 | 14项集成测试全部通过 | ✅ |
 
  | Commit | 说明 |

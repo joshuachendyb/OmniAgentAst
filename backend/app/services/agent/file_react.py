@@ -48,7 +48,9 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
     def __init__(
         self,
         llm_client: Any,
-        session_id: str,
+        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
+        # session_id 专用于会话场景，操作追踪必须用 task_id
+        task_id: str,
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = 100,
         **kwargs
@@ -59,13 +61,14 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         
         Args:
             llm_client: LLM 客户端函数
-            session_id: 会话 ID（必需）- 用于操作安全追踪和审计
+            task_id: 任务ID（必需）- 用于操作安全追踪和审计
+            # 【禁止】不要使用 session_id，会话和操作追踪是不同概念
             tool_category: 工具分类（可选，默认FILE）
             max_steps: 最大步数
         """
-        # 【修复】强制要求 session_id，避免写操作失败
-        if not session_id:
-            raise ValueError("session_id is required for file operation tracking and safety")
+        # 【修复】强制要求 task_id，避免写操作失败
+        if not task_id:
+            raise ValueError("task_id is required for file operation tracking and safety")
         
         # 提取有效的tool_category
         effective_category = tool_category or ToolCategory.FILE
@@ -73,7 +76,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         # 调用父类初始化
         super().__init__(
             llm_client=llm_client,
-            session_id=session_id,
+            task_id=task_id,  # 【修改】2026-04-26 小沈
             tool_category=effective_category,
             max_steps=max_steps,
             **kwargs
@@ -85,8 +88,8 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         # 【修复】标记 session 是否由本 Agent 创建（用于正确关闭）
         self._session_created_by_agent = False
         
-        # 初始化文件工具确保 session_id 正确传递
-        self.file_tools = FileTools(session_id=session_id)
+        # 初始化文件工具确保 task_id 正确传递
+        self.file_tools = FileTools(task_id=task_id)  # 【修改】session_id → task_id，2026-04-26 小沈
         
         # 使用Mixin的工具加载方法
         if self.tool_category:
@@ -96,7 +99,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         
         self.prompts = FileOperationPrompts()
         
-        logger.info(f"FileReactAgent initialized (session: {session_id}, tool_category: {effective_category})")
+        logger.info(f"FileReactAgent initialized (task_id: {task_id}, tool_category: {effective_category})")
         
         # 【新增】LLM调用策略
         self.text_strategy = TextStrategy()
@@ -109,7 +112,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         self.adapter = None
         
         # Simple initialization - continue
-        logger.info(f"FileReactAgent initialized (session: {session_id}, tool_category: {effective_category})")
+        logger.info(f"FileReactAgent initialized (task_id: {task_id}, tool_category: {effective_category})")
     
     # ========== 抽象方法实现 ==========
     
@@ -255,9 +258,13 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         """
         执行工具的抽象方法实现
         
-        代理到 ToolExecutor.execute
+        【关键】直接使用 self.file_tools（有正确 task_id），
+        而不是通过 executor（executor 用的是 registry 里没有 task_id 的工具）
         """
-        return await self.executor.execute(action, params)
+        tool_method = getattr(self.file_tools, action, None)
+        if not tool_method:
+            return {"success": False, "error": f"Tool '{action}' not found", "result": None}
+        return await tool_method(**params)
     
     # ===== 实现父类抽象方法 =====
     
@@ -277,7 +284,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
     def _on_session_init(self, task: str, context: Optional[Dict[str, Any]]):
         """Session 初始化 Hook"""
         # 确保 session 存在
-        session_id = self.session_id
+        session_id = self.task_id
         if not session_id:
             session_id = self.session_service.create_session(
                 agent_id="file-operation-agent",
@@ -294,13 +301,13 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
     
     def _on_after_loop(self):
         """循环结束后 Hook - 关闭 Session"""
-        if self._session_created_by_agent and self.session_id and self.session_service:
+        if self._session_created_by_agent and self.task_id and self.session_service:
             try:
-                self.session_service.complete_session(self.session_id, success=True)
-                logger.info(f"Session completed in run_stream: {self.session_id}")
+                self.session_service.complete_session(self.task_id, success=True)
+                logger.info(f"Session completed in run_stream: {self.task_id}")
                 self._session_created_by_agent = False
             except Exception as e:
-                logger.error(f"Failed to complete session {self.session_id}: {e}")
+                logger.error(f"Failed to complete session {self.task_id}: {e}")
     
     # ========== 文件专用方法 ==========
     
@@ -348,7 +355,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         【说明】意图识别已移至路由层（chat_router.py），此处只做文件操作
         """
         # 获取 session_id 用于日志追踪
-        session_id = self.session_id or ""
+        session_id = self.task_id or ""
         
         # 使用局部变量管理 session（session_id 在预处理前已获取）
         session_created_by_this_run = False
@@ -427,7 +434,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
                     self.session_service.complete_session(session_id, success=success)
                     logger.info(f"Session completed: {session_id} (success={success})")
                     self._session_created_by_agent = False
-                    self.session_id = None
+                    self.task_id = None
                 except Exception as e:
                     logger.error(f"Failed to complete session {session_id}: {e}")
     
@@ -442,13 +449,13 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
             是否成功
         """
         try:
-            if not self.session_id:
+            if not self.task_id:
                 raise ValueError("Session ID is required for rollback")
             
             if step_number is None:
                 # 回滚整个会话
                 result = await asyncio.to_thread(
-                    self.file_tools.safety.rollback_session, self.session_id
+                    self.file_tools.safety.rollback_session, self.task_id
                 )
                 success = result.get("success", 0) > 0
             else:

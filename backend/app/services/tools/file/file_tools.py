@@ -187,11 +187,13 @@ class FileTools:
     - 详细的参数验证
     """
     
-    def __init__(self, session_id: Optional[str] = None):
+    def __init__(self, task_id: Optional[str] = None):
+        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
+        # session_id 专用于会话场景，操作追踪必须用 task_id
         self.safety = get_file_safety_service()
         self.session = get_session_service()
         self.visualizer = get_visualizer()
-        self.session_id = session_id
+        self.task_id = task_id
         self._sequence = 0
         self._sequence_lock = threading.Lock()
         # 【改进】允许自定义白名单
@@ -203,9 +205,10 @@ class FileTools:
             self._sequence += 1
             return self._sequence
     
-    def set_session(self, session_id: str):
-        """设置当前会话ID"""
-        self.session_id = session_id
+    def set_task_id(self, task_id: str):
+        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
+        # session_id 专用于会话场景，操作追踪必须用 task_id
+        self.task_id = task_id
         self._sequence = 0
     
     def _validate_path(self, file_path: str) -> tuple[bool, Optional[str]]:
@@ -422,10 +425,10 @@ class FileTools:
                 "content": None
             }, "write_file")
         
-        if not self.session_id:
+        if not self.task_id:
             return _to_unified_format({
                 "success": False,
-                "error": "No active session",
+                "error": "No active task",
                 "operation_id": None
             }, "write_file")
         
@@ -434,7 +437,7 @@ class FileTools:
         try:
             # 记录操作
             operation_id = self.safety.record_operation(
-                session_id=self.session_id,
+                task_id=self.task_id,
                 operation_type=OperationType.CREATE,
                 destination_path=path,
                 sequence_number=self._get_next_sequence()
@@ -722,10 +725,10 @@ class FileTools:
                 "operation_id": None
             }, "delete_file")
         
-        if not self.session_id:
+        if not self.task_id:
             return _to_unified_format({
                 "success": False,
-                "error": "No active session",
+                "error": "No active task",
                 "operation_id": None
             }, "delete_file")
         
@@ -741,7 +744,7 @@ class FileTools:
             
             # 记录操作
             operation_id = self.safety.record_operation(
-                session_id=self.session_id,
+                task_id=self.task_id,
                 operation_type=OperationType.DELETE,
                 source_path=path,
                 sequence_number=self._get_next_sequence()
@@ -838,10 +841,10 @@ class FileTools:
                 "operation_id": None
             }, "move_file")
         
-        if not self.session_id:
+        if not self.task_id:
             return _to_unified_format({
                 "success": False,
-                "error": "No active session",
+                "error": "No active task",
                 "operation_id": None
             }, "move_file")
         
@@ -858,7 +861,7 @@ class FileTools:
             
             # 记录操作
             operation_id = self.safety.record_operation(
-                session_id=self.session_id,
+                task_id=self.task_id,
                 operation_type=OperationType.MOVE,
                 source_path=src,
                 destination_path=dst,
@@ -1330,26 +1333,26 @@ class FileTools:
                     "reports": {}
                 }, "generate_report")
         
-        if not self.session_id:
+        if not self.task_id:
             return _to_unified_format({
                 "success": False,
-                "error": "No active session",
+                "error": "No active task",
                 "reports": {}
             }, "generate_report")
         
         try:
             output_path = Path(output_dir) if output_dir else None
-            session_id = self.session_id or ""
+            task_id = self.task_id or ""
             
             def _generate_sync():
-                return self.visualizer.generate_all_reports(session_id, output_path)
+                return self.visualizer.generate_all_reports(task_id, output_path)
             
             reports = await asyncio.to_thread(_generate_sync)
             report_paths = {k: str(v) for k, v in reports.items()}
             
             return _to_unified_format({
                 "success": True,
-                "session_id": self.session_id,
+                "task_id": self.task_id,
                 "reports": report_paths
             }, "generate_report")
             
@@ -1409,7 +1412,7 @@ class FileTools:
             overwrite=overwrite,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
-            session_id=self.session_id,
+            task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
             to_unified_format_func=_to_unified_format,
@@ -1457,7 +1460,7 @@ class FileTools:
             exist_ok=exist_ok,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
-            session_id=self.session_id,
+            task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
             to_unified_format_func=_to_unified_format,
@@ -1551,7 +1554,7 @@ class FileTools:
             chunk_size=chunk_size,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
-            session_id=self.session_id,
+            task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
             to_unified_format_func=_to_unified_format,
@@ -1621,7 +1624,7 @@ class FileTools:
             conflict_strategy=conflict_strategy,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
-            session_id=self.session_id,
+            task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
             to_unified_format_func=_to_unified_format,
@@ -1691,7 +1694,7 @@ class FileTools:
             split_size=split_size,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
-            session_id=self.session_id,
+            task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
             to_unified_format_func=_to_unified_format,
@@ -1757,7 +1760,7 @@ class FileTools:
             duration=duration,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
-            session_id=self.session_id,
+            task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
             to_unified_format_func=_to_unified_format,
@@ -1821,7 +1824,7 @@ class FileTools:
             output_format=output_format,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
-            session_id=self.session_id,
+            task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
             to_unified_format_func=_to_unified_format,
@@ -1880,7 +1883,7 @@ class FileTools:
             chunk_size=chunk_size,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
-            session_id=self.session_id,
+            task_id=self.task_id,
             record_operation_func=self.safety.record_operation,
             execute_with_safety_func=self.safety.execute_with_safety,
             to_unified_format_func=_to_unified_format,
@@ -1892,9 +1895,9 @@ class FileTools:
 # 第七部分：工具函数导出
 # ============================================================
 
-def get_file_tools(session_id: Optional[str] = None) -> FileTools:
+def get_file_tools(task_id: Optional[str] = None) -> FileTools:
     """获取文件工具实例"""
-    return FileTools(session_id)
+    return FileTools(task_id)
 
 
 # ============================================================
