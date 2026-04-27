@@ -44,11 +44,11 @@ const StepHeader: React.FC<StepHeaderProps> = ({
       </span>
       <span style={{ flex: 1 }} />  {/* 弹性空间，将timestamp推到右侧 */}
       {/* timestamp放在行右侧，与右侧边框挨着，更醒目 */}
-      {step.timestamp && (
-        <span style={getTimestampStyle(step.type as any)}>
-          ⏰ {formatTimestamp(step.timestamp)}
-        </span>
-      )}
+       {step.timestamp && (
+         <span style={getTimestampStyle(step.type)}>
+           ⏰ {formatTimestamp(step.timestamp)}
+         </span>
+       )}
     </div>
   );
 };

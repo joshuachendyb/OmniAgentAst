@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo } from "react";
-import { ClockCircleOutlined, CalendarOutlined, GlobalOutlined, NumberOutlined, FileTextOutlined, CheckCircleOutlined } from "@ant-design/icons";
+import { ClockCircleOutlined, CalendarOutlined, GlobalOutlined, NumberOutlined, FileTextOutlined } from "@ant-design/icons";
 
 interface TimeNowViewProps {
   data: {
@@ -21,13 +21,6 @@ interface TimeNowViewProps {
     isoweekday?: number;
   };
 }
-
-/**
- * 空数据检查
- */
-const checkEmptyData = (data: TimeNowViewProps["data"]): boolean => {
-  return !data || (!data.timestamp && !data.format);
-};
 
 /**
  * TimeNowView 主组件
@@ -151,7 +144,7 @@ const TimeNowView: React.FC<TimeNowViewProps> = ({ data }) => {
       {/* 星期状态 */}
       <div style={{ ...infoItemStyle, marginTop: 8, paddingTop: 8, borderTop: "1px dashed #d9d9d9" }}>
         <span style={statusStyle}>
-          {isWeekend ? <CheckCircleOutlined style={{ marginRight: 4 }} /> : <ClockCircleOutlined style={{ marginRight: 4 }} />}
+           {isWeekend ? <ClockCircleOutlined style={{ marginRight: 4 }} /> : <ClockCircleOutlined style={{ marginRight: 4 }} />}
           {isWeekend ? "今天是休息日" : "今天是工作日"}
         </span>
       </div>

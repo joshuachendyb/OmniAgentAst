@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo } from "react";
-import { SafetyOutlined, CopyOutlined, CheckCircleOutlined } from "@ant-design/icons";
+import { SafetyOutlined, CopyOutlined } from "@ant-design/icons";
 import { Button, Tooltip } from "antd";
 
 interface ChecksumItem {

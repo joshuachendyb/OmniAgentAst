@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo } from "react";
-import { ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
+import { ClockCircleOutlined, CheckCircleOutlined } from "@ant-design/icons";
 
 interface TimerSetViewProps {
   data: {

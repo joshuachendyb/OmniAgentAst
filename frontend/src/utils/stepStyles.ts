@@ -26,7 +26,8 @@ export type StepType =
   | 'observation' 
   | 'action_tool' 
   | 'chunk' 
-  | 'report';
+  | 'report'
+  | 'incident';
 
 // 视觉优先级
 export type StepPriority = 'primary' | 'secondary' | 'accent';
@@ -113,6 +114,16 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     text: "#ad4e00",
     textSecondary: "#7a4a00",
     label: "💭 思考",
+    priority: "secondary",
+    layout: "block",
+  },
+  incident: {
+    bg1: "#fff7e6",
+    bg2: "#fffbe6",
+    border: "#ffd591",
+    text: "#ad4e00",
+    textSecondary: "#7a4a00",
+    label: "🔧 处理中",
     priority: "secondary",
     layout: "block",
   },

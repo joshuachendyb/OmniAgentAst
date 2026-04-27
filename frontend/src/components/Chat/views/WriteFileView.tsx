@@ -9,7 +9,7 @@
  */
 
 import React from "react";
-import { CheckCircleOutlined, EditOutlined, BarChartOutlined, FileTextOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, EditOutlined } from "@ant-design/icons";
 
 interface WriteFileViewProps {
   data: {

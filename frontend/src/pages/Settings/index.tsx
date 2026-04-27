@@ -28,7 +28,7 @@
  * @since 2026-02-22
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Card,
   Button,
@@ -525,25 +525,25 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean; forceRefresh?: boolean 
     setCurrentProvider(provider.name); // 同时更新currentProvider以更新列表高亮
   };
 
-  // 加载配置时同时进行验证
-  const handleLoadWithValidation = async () => {
-    await loadConfig();
-    
-    // 验证AI服务可用性（触发后端备份清理）
-    try {
-      await chatApi.validateService();
-    } catch (error) {
-      console.warn("AI服务验证失败:", error);
-    }
-  };
+// 加载配置时同时进行验证
+    const handleLoadWithValidation = useCallback(async () => {
+      await loadConfig();
+      
+      // 验证AI服务可用性（触发后端备份清理）
+      try {
+        await chatApi.validateService();
+      } catch (error) {
+        console.warn("AI服务验证失败:", error);
+      }
+    }, [loadConfig]);
 
-  useEffect(() => {
-    // ⭐ 老杨修复：按需加载 - 只在shouldLoad为true时加载
-    // 如果是强制刷新后的回调，不重新加载
-    if (shouldLoad && !forceRefresh) {
-      handleLoadWithValidation();
-    }
-  }, [shouldLoad, forceRefresh]);
+useEffect(() => {
+     // ⭐ 老杨修复：按需加载 - 只在shouldLoad为true时加载
+     // 如果是强制刷新后的回调，不重新加载
+     if (shouldLoad && !forceRefresh) {
+       handleLoadWithValidation();
+     }
+   }, [shouldLoad, forceRefresh, handleLoadWithValidation]);
 
   // 编辑Provider
   const handleEditProvider = (provider: ProviderInfo) => {
