@@ -115,10 +115,10 @@ Available Tools:
    - destination_path: Target path (MUST use destination_path)
    Example: {"source_path": "C:/old/file.txt", "destination_path": "D:/new/file.txt"}
 
-5. search_files(file_pattern, path=".", recursive=True)
+5. search_files(file_pattern, path, recursive=True)
    Search files by file name pattern.
    - file_pattern: File name pattern with wildcard (e.g., "*.py", "config*") (REQUIRED)
-   - path: Starting directory for search, default "."
+   - path: Starting directory for search (REQUIRED, CANNOT be empty)
    - recursive: Whether to search subdirectories, default True
    Example: {"file_pattern": "*.py", "path": "D:/project", "recursive": True}
 

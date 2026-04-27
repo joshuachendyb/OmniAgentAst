@@ -458,6 +458,7 @@ class BaseAgent(ABC):
                 
                 # 使用 perf_counter 计算工具执行耗时（高精度）
                 start_time = time.perf_counter()
+                logger.info(f"[DEBUG_TOOL_PARAMS] before execute_tool: tool_name={tool_name}, tool_params={tool_params}")
                 execution_result = await self._execute_tool(tool_name, tool_params)
                 execution_time_ms = int((time.perf_counter() - start_time) * 1000)
                 

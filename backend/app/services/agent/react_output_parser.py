@@ -404,6 +404,8 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
     if not content:
         return None
     
+    import re  # 确保re可用
+    
     content = content.strip()
     
     # 直接使用平衡括号算法提取JSON（已包含字符串状态处理）
@@ -412,23 +414,73 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
     if not json_str:
         return None
     
+    json_str_escaped = json_str  # 初始化默认
+    json_str_fixed = json_str    # 初始化默认
+    
     # 尝试直接解析
     try:
         return json.loads(json_str)
     except json.JSONDecodeError:
-        # 【2026-04-18小沈新增】处理JSON中的未转义换行符
-        # LLM有时会在JSON字符串中输出实际换行符而非\n转义序列
-        # 使用空格替换换行符（保持可读性）
+        # 失败原因1: 编码问题 - 尝试用errors='replace'
         try:
-            json_str_escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
-            return json.loads(json_str_escaped)
-        except json.JSONDecodeError:
-            # 【2026-04-18小沈新增】尝试修复尾随逗号
+            json_fixed = json_str.encode('utf-8', errors='replace').decode('utf-8')
+            return json.loads(json_fixed)
+        except:
+            pass
+    
+    # 失败原因2: 未转义换行符 - 用空格替换
+    try:
+        json_str_escaped = json_str.replace('\r\n', ' ').replace('\n', ' ').replace('\r', ' ')
+        return json.loads(json_str_escaped)
+    except json.JSONDecodeError:
+        pass
+    
+    # 失败原因3: 尾随逗号 - 修复后重试
+    try:
+        json_str_fixed = re.sub(r',(\s*[}\]])', r'\1', json_str_escaped)
+        return json.loads(json_str_fixed)
+    except json.JSONDecodeError:
+        pass
+    
+# 【新增强降级】如果JSON提取成功但解析失败，尝试手动提取tool_params
+    # 这是最后的fallback确保不丢失参数
+    try:
+        # 提取tool_params部分
+        tp_match = re.search(r'"tool_params":\s*(\{[^}]+\})', json_str)
+        if tp_match:
+            tp_str = tp_match.group(1)
+            # 处理编码问题
             try:
-                json_str_fixed = re.sub(r',(\s*[}\]])', r'\1', json_str_escaped)
-                return json.loads(json_str_fixed)
-            except json.JSONDecodeError:
-                return None
+                tp = json.loads(tp_str)
+            except:
+                # 尝试修复编码
+                tp_str_fixed = tp_str.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                tp = json.loads(tp_str_fixed)
+            
+            # 重建完整JSON
+            tool_name_match = re.search(r'"tool_name":\s*"([^"]+)"', json_str)
+            content_match = re.search(r'"content":\s*"([^"]*)"', json_str)
+            reasoning_match = re.search(r'"reasoning":\s*"([^"]*)"', json_str)
+            
+            result = {}
+            if tool_name_match:
+                result["tool_name"] = tool_name_match.group(1)
+            if tp:
+                result["tool_params"] = tp
+            if content_match:
+                content_fixed = content_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                result["content"] = content_fixed
+                result["thought"] = content_fixed
+            if reasoning_match:
+                reasoning_fixed = reasoning_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                result["reasoning"] = reasoning_fixed
+            
+            if result.get("tool_name") and result.get("tool_params"):
+                return result
+    except:
+        pass
+    
+    return None
 
 
 def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:

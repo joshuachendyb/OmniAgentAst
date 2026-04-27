@@ -193,6 +193,7 @@ class FileOperationSafety:
         # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
         # session_id 专用于会话场景，操作追踪必须用 task_id
         task_id: str,
+        operation_type: Optional[str] = None,
         source_path: Optional[Path] = None,
         destination_path: Optional[Path] = None,
         sequence_number: int = 0,

@@ -343,6 +343,7 @@ class ToolExecutor:
             "search_files": {
                 "file": "file_pattern",
                 "filename": "file_pattern",
+                "pattern": "file_pattern",
             },
             "search_file_content": {
                 "file_pattern": "file_pattern",
