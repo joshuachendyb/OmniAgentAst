@@ -64,7 +64,7 @@ class BaseAgent(ABC):
     def __init__(
         self,
         llm_client: Any,
-        session_id: str,
+        task_id: str,  # 【修改】session_id → task_id，2026-04-26 小沈
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = 100,
         **kwargs
@@ -74,12 +74,12 @@ class BaseAgent(ABC):
         
         Args:
             llm_client: LLM客户端
-            session_id: 会话ID
+            task_id: 任务ID（操作追踪和回退用）
             tool_category: 工具分类
             max_steps: 最大步数
         """
         self.llm_client = llm_client
-        self.session_id = session_id
+        self.task_id = task_id  # 赋值task_id
         self.tool_category = tool_category
         self.max_steps = max_steps
         
@@ -209,7 +209,12 @@ class BaseAgent(ABC):
         self.conversation_history = []
         self.status = AgentStatus.THINKING
         self.llm_call_count = 0
-        self.last_answer_response = ""  # 保存answer类型的真正答案
+        self.last_answer_response = ""
+        
+        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
+        # session_id 专用于会话场景，操作追踪必须用 task_id
+        if task_id:
+            self.task_id = task_id  # 保存answer类型的真正答案
         
         # Hook: Session 初始化
         self._on_session_init(task, context)
