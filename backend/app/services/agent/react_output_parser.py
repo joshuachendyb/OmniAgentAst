@@ -445,38 +445,58 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
 # 【新增强降级】如果JSON提取成功但解析失败，尝试手动提取tool_params
     # 这是最后的fallback确保不丢失参数
     try:
-        # 提取tool_params部分
-        tp_match = re.search(r'"tool_params":\s*(\{[^}]+\})', json_str)
-        if tp_match:
-            tp_str = tp_match.group(1)
-            # 处理编码问题
-            try:
-                tp = json.loads(tp_str)
-            except:
-                # 尝试修复编码
-                tp_str_fixed = tp_str.encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                tp = json.loads(tp_str_fixed)
-            
-            # 重建完整JSON
-            tool_name_match = re.search(r'"tool_name":\s*"([^"]+)"', json_str)
-            content_match = re.search(r'"content":\s*"([^"]*)"', json_str)
-            reasoning_match = re.search(r'"reasoning":\s*"([^"]*)"', json_str)
-            
-            result = {}
-            if tool_name_match:
-                result["tool_name"] = tool_name_match.group(1)
-            if tp:
-                result["tool_params"] = tp
-            if content_match:
-                content_fixed = content_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                result["content"] = content_fixed
-                result["thought"] = content_fixed
-            if reasoning_match:
-                reasoning_fixed = reasoning_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                result["reasoning"] = reasoning_fixed
-            
-            if result.get("tool_name") and result.get("tool_params"):
-                return result
+        # 【2026-04-27 小沈修复】使用平衡括号算法替代正则表达式
+        # 问题：正则 `[^}]+` 无法正确匹配嵌套 `}` 的JSON对象，导致 file_pattern 丢失
+        # 修复：使用 _extract_json_with_balanced_braces 正确提取完整的 JSON 对象
+        
+        # 先尝试直接解析整个 json_str
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            pass
+        
+        # 如果直接解析失败，使用平衡括号算法提取 tool_params
+        # 找到 "tool_params": { 开始的位置
+        tp_start_pattern = r'"tool_params"\s*:\s*\{'
+        tp_start_match = re.search(tp_start_pattern, json_str)
+        if tp_start_match:
+            # 从 tool_params 位置开始，使用平衡括号算法提取完整对象
+            json_after_tp, _ = _extract_json_with_balanced_braces(json_str[tp_start_match.start():])
+            if json_after_tp:
+                # json_after_tp 包含 "tool_params": {...}，直接解析
+                try:
+                    partial_json = json.loads(json_after_tp)
+                    tp = partial_json.get("tool_params", {})
+                except:
+                    # 如果解析失败，尝试从文本中提取
+                    tp_end = json_after_tp.find('}') + 1
+                    tp_str = json_after_tp[:tp_end].replace('"tool_params": ', '')
+                    tp = json.loads(tp_str)
+            else:
+                tp = {}
+        else:
+            tp = {}
+        
+        # 提取其他字段
+        tool_name_match = re.search(r'"tool_name":\s*"([^"]+)"', json_str)
+        content_match = re.search(r'"content":\s*"([^"]*)"', json_str)
+        reasoning_match = re.search(r'"reasoning":\s*"([^"]*)"', json_str)
+        
+        result = {}
+        if tool_name_match:
+            result["tool_name"] = tool_name_match.group(1)
+        if tp:
+            result["tool_params"] = tp
+        if content_match:
+            content_fixed = content_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+            result["content"] = content_fixed
+            result["thought"] = content_fixed
+        if reasoning_match:
+            reasoning_fixed = reasoning_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+            result["reasoning"] = reasoning_fixed
+        
+        if result.get("tool_name") and result.get("tool_params"):
+            return result
     except:
         pass
     
