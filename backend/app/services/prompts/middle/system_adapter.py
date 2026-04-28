@@ -90,14 +90,20 @@ class SystemAdapter:
 
 【路径格式】
 - Windows: C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt
-- Linux/Mac: /home/xxx/file.txt 或 /Users/xxx/file.txt
+- Linux/macOS: /home/xxx/file.txt 或 /Users/xxx/file.txt
 
 【命令格式】
 - list: {commands.get('list', 'ls')}
 - copy: {commands.get('copy', 'cp')}
 - delete: {commands.get('delete', 'rm')}
 - read: {commands.get('read', 'cat')}
-- create_dir: {commands.get('create_dir', 'mkdir')}"""
+- create_dir: {commands.get('create_dir', 'mkdir')}
+
+【严格格式要求】
+- ❌ 禁止使用 [TOOL_CALL] 格式（如：[TOOL_CALL]{{...}}[/TOOL_CALL]）
+- ✅ 必须使用标准JSON格式：{{"tool_name": "...", "tool_params": {{...}}}}
+- ❌ 禁止在参数中使用 args: {{...}} 格式
+- ✅ 参数必须直接放在 tool_params 对象中"""
         
         return prompt
     
