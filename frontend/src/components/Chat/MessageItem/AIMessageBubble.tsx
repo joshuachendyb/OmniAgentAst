@@ -264,33 +264,47 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
             />
           ))}
 
-          {/* 思考中标签 - 第四步添加呼吸渐变动画 */}
+          {/* 思考中标签 - 第四步添加呼吸渐变动画（增强版） */}
           {message.is_reasoning && (
             <>
               <style>{`
                 @keyframes thinking-glow {
                   0%, 100% {
-                    background: linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%);
+                    background: linear-gradient(135deg, #fff7e6 0%, #ffe7ba 50%, #fff7e6 100%);
+                    box-shadow: 0 0 8px rgba(255, 215, 0, 0.3);
+                    transform: scale(1);
                   }
                   50% {
-                    background: linear-gradient(135deg, #ffe7ba 0%, #ffd591 100%);
+                    background: linear-gradient(135deg, #ffe7ba 0%, #ffb347 50%, #ffe7ba 100%);
+                    box-shadow: 0 0 16px rgba(255, 165, 0, 0.5);
+                    transform: scale(1.05);
                   }
                 }
                 .thinking-badge {
-                  animation: thinking-glow 2s ease-in-out infinite;
+                  animation: thinking-glow 1s ease-in-out infinite;
                   display: inline-flex;
                   align-items: center;
                   gap: 4px;
-                  padding: 4px 10px;
-                  border-radius: 6px;
-                  font-size: 12px;
-                  font-weight: 500;
-                  color: #d97706;
-                  margin-right: 4px;
+                  padding: 6px 12px;
+                  border-radius: 8px;
+                  font-size: 13px;
+                  font-weight: 600;
+                  color: #b45309;
+                  margin-right: 8px;
+                  border: 1px solid rgba(255, 165, 0, 0.3);
                 }
+                @keyframes thinking-dot {
+                  0%, 100% { opacity: 0.3; }
+                  50% { opacity: 1; }
+                }
+                .thinking-dot {
+                  animation: thinking-dot 0.5s ease-in-out infinite;
+                }
+                .thinking-dot:nth-child(2) { animation-delay: 0.15s; }
+                .thinking-dot:nth-child(3) { animation-delay: 0.3s; }
               `}</style>
               <span className="thinking-badge">
-                💭 思考中
+                💭 思考中<span className="thinking-dot">.</span><span className="thinking-dot">.</span><span className="thinking-dot">.</span>
               </span>
             </>
           )}
