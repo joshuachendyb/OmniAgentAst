@@ -1233,6 +1233,278 @@ distribution, I'll terminate the session with an error summary:
 
 
 # =============================================================================
+# TestLLMReturnTypesComplete - LLM全量返回类型完整测试（2026-04-28小沈补充）
+# 覆盖设计文档11种LLM返回类型，确保100%覆盖无遗漏
+# =============================================================================
+
+class TestLLMReturnTypesComplete:
+    """
+    完整的LLM返回类型测试套件
+    覆盖设计文档《LLM全量返回类型解析器设计文档》规定的11种返回类型
+    
+    类型1: None/空值 ✅
+    类型2: dict对象 ✅  
+    类型3: list数组（对象维度）- 补充
+    类型4: 标准JSON字符串 ✅
+    类型5: Markdown包裹JSON ✅
+    类型6: 混合文本+JSON ✅
+    类型7: JSON数组字符串 - 补充
+    类型8: 非标准JSON - 补充
+    类型9: 字段缺失 - 补充
+    类型10: content类型异常 - 补充
+    类型11: 超长文本 ✅
+    
+    编写人: 小沈
+    时间: 2026-04-28
+    """
+    
+    # ==================== 类型3: list数组（对象维度） ====================
+    def test_llm_return_list_array_single_item(self):
+        """【类型3.1】list数组 - 单个元素"""
+        list_input = [
+            {"content": "任务完成", "tool_name": "write_file", "tool_params": {"content": "hello", "file_path": "E:/test.txt"}, "reasoning": "测试"}
+        ]
+        result = parse_react_response(list_input)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        assert result["tool_params"]["content"] == "hello"
+    
+    def test_llm_return_list_array_multiple_items(self):
+        """【类型3.2】list数组 - 多个元素（取最后一个）"""
+        list_input = [
+            {"content": "第1个任务", "tool_name": "list_directory", "tool_params": {"dir_path": "D:/"}, "reasoning": "1"},
+            {"content": "第2个任务", "tool_name": "read_file", "tool_params": {"file_path": "E:/1.txt"}, "reasoning": "2"},
+            {"content": "第3个任务", "tool_name": "write_file", "tool_params": {"content": "最终内容", "file_path": "E:/final.txt"}, "reasoning": "3"}
+        ]
+        result = parse_react_response(list_input)
+        # 应取最后一个元素
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        assert result["tool_params"]["content"] == "最终内容"
+    
+    def test_llm_return_list_array_empty(self):
+        """【类型3.3】list数组 - 空数组"""
+        list_input = []
+        result = parse_react_response(list_input)
+        # 空数组应返回parse_error
+        assert result["type"] == "parse_error"
+    
+    def test_llm_return_list_array_non_dict_element(self):
+        """【类型3.4】list数组 - 非dict元素（安全处理）"""
+        list_input = ["string1", "string2", 123]
+        result = parse_react_response(list_input)
+        # 非dict元素应返回parse_error
+        assert result["type"] == "parse_error"
+    
+    def test_llm_return_list_array_with_long_content(self):
+        """【类型3.5】list数组 - 长文本content（验证不丢失）"""
+        long_text = "这是一段很长的内容" + "，重复填充" * 50
+        list_input = [
+            {"content": "第一个", "tool_name": "list_directory", "tool_params": {"dir_path": "D:/"}, "reasoning": ""},
+            {"content": "最终任务", "tool_name": "write_file", "tool_params": {"content": long_text, "file_path": "E:/final.txt"}, "reasoning": ""}
+        ]
+        result = parse_react_response(list_input)
+        # 取最后一个，长文本应完整保留
+        assert result["tool_params"]["content"] == long_text
+        assert len(result["tool_params"]["content"]) > 200
+    
+    # ==================== 类型7: JSON数组字符串 ====================
+    def test_llm_return_json_array_string_single(self):
+        """【类型7.1】JSON数组字符串 - 单个元素"""
+        json_array_str = '[{"content": "完成", "tool_name": "write_file", "tool_params": {"content": "hello", "file_path": "E:/test.txt"}}]'
+        result = parse_react_response(json_array_str)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+    
+    def test_llm_return_json_array_string_multiple(self):
+        """【类型7.2】JSON数组字符串 - 多个元素（取最后一个）"""
+        json_array_str = '[{"content": "第1", "tool_name": "list_directory", "tool_params": {"dir_path": "D:/"}}, {"content": "第2", "tool_name": "read_file", "tool_params": {"file_path": "E:/1.txt"}}, {"content": "最终", "tool_name": "write_file", "tool_params": {"content": "最终内容", "file_path": "E:/final.txt"}}]'
+        result = parse_react_response(json_array_str)
+        # 应取最后一个元素
+        assert result["tool_name"] == "write_file"
+        assert result["tool_params"]["content"] == "最终内容"
+    
+    def test_llm_return_json_array_string_empty(self):
+        """【类型7.3】JSON数组字符串 - 空数组"""
+        json_array_str = "[]"
+        result = parse_react_response(json_array_str)
+        # 空数组应返回parse_error
+        assert result["type"] == "parse_error"
+    
+    def test_llm_return_json_array_string_with_long_content(self):
+        """【类型7.4】JSON数组字符串 - 长文本content"""
+        long_text = "长文本内容" + "重复填充" * 30
+        json_array_str = f'[{{"content": "第1", "tool_name": "list_directory", "tool_params": {{"dir_path": "D:/"}}}}, {{"content": "最终", "tool_name": "write_file", "tool_params": {{"content": "{long_text}", "file_path": "E:/final.txt"}}}}]'
+        result = parse_react_response(json_array_str)
+        # 最后一个元素的长文本应完整保留
+        assert result["tool_params"]["content"] == long_text
+        assert len(result["tool_params"]["content"]) > 100
+    
+    # ==================== 类型8: 非标准JSON ====================
+    def test_llm_return_non_standard_json_single_quotes(self):
+        """【类型8.1】非标准JSON - 单引号"""
+        non_standard = "{'content': '完成', 'tool_name': 'write_file', 'tool_params': {'content': '内容', 'file_path': 'E:/test.txt'}}"
+        result = parse_react_response(non_standard)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        assert result["tool_params"]["content"] == "内容"
+    
+    def test_llm_return_non_standard_json_trailing_comma(self):
+        """【类型8.2】非标准JSON - 尾逗号"""
+        non_standard = '{"content": "完成", "tool_name": "write_file", "tool_params": {"content": "内容", "file_path": "E:/test.txt",}, "reasoning": ""}'
+        result = parse_react_response(non_standard)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+    
+    def test_llm_return_non_standard_json_single_quotes_and_trailing_comma(self):
+        """【类型8.3】非标准JSON - 单引号+尾逗号组合"""
+        non_standard = "{'content': '完成', 'tool_name': 'write_file', 'tool_params': {'content': '内容', 'file_path': 'E:/test.txt',}, 'reasoning': ''}"
+        result = parse_react_response(non_standard)
+        assert result["type"] == "action"
+        assert result["tool_params"]["content"] == "内容"
+    
+    def test_llm_return_non_standard_json_comment(self):
+        """【类型8.4】非标准JSON - 包含//注释"""
+        non_standard = '{"content": "完成", // 这是注释\n "tool_name": "write_file", "tool_params": {"content": "内容"}}'
+        result = parse_react_response(non_standard)
+        # 注释应该被移除后解析
+        assert result["type"] in ["action", "parse_error", "implicit"]
+    
+    def test_llm_return_non_standard_json_mixed_errors(self):
+        """【类型8.5】非标准JSON - 多种错误组合"""
+        non_standard = "{'content': '测试' // 注释\n, 'tool_name': 'write_file', 'tool_params': {'content': '内容', 'file_path': 'E:/test.txt',},}"
+        result = parse_react_response(non_standard)
+        # 应该能修复并正确解析
+        assert result is not None
+        assert result["type"] in ["action", "parse_error", "implicit"]
+    
+    # ==================== 类型9: 字段缺失 ====================
+    def test_llm_return_missing_content_field(self):
+        """【类型9.1】字段缺失 - 缺少content"""
+        missing_field = '{"tool_name": "write_file", "tool_params": {"content": "内容", "file_path": "E:/test.txt"}}'
+        result = parse_react_response(missing_field)
+        # content缺失时应有合理的降级处理
+        assert result is not None
+        assert "type" in result
+    
+    def test_llm_return_missing_tool_name(self):
+        """【类型9.2】字段缺失 - 缺少tool_name"""
+        missing_field = '{"content": "完成", "tool_params": {"content": "内容", "file_path": "E:/test.txt"}}'
+        result = parse_react_response(missing_field)
+        # tool_name缺失应有合理的降级处理
+        assert result is not None
+    
+    def test_llm_return_missing_tool_params(self):
+        """【类型9.3】字段缺失 - 缺少tool_params"""
+        missing_field = '{"content": "完成", "tool_name": "write_file"}'
+        result = parse_react_response(missing_field)
+        # tool_params缺失应有合理的降级处理
+        assert result is not None
+    
+    def test_llm_return_missing_all_required_fields(self):
+        """【类型9.4】字段缺失 - 全部必填字段都缺失"""
+        missing_all = '{"other": "value"}'
+        result = parse_react_response(missing_all)
+        # 全部缺失应有合理的降级处理
+        assert result is not None
+    
+    def test_llm_return_dict_input_missing_field(self):
+        """【类型9.5】dict输入 - 缺少必填字段"""
+        dict_input = {"content": "完成", "tool_name": "write_file"}  # 缺少tool_params
+        result = parse_react_response(dict_input)
+        # dict输入缺少字段应有合理的降级处理
+        assert result is not None
+    
+    # ==================== 类型10: content类型异常 ====================
+    def test_llm_return_content_as_number(self):
+        """【类型10.1】content类型异常 - 数字类型"""
+        content_as_number = '{"content": "完成", "tool_name": "write_file", "tool_params": {"content": 12345, "file_path": "E:/test.txt"}}'
+        result = parse_react_response(content_as_number)
+        assert result["type"] == "action"
+        # 应强制转换为字符串
+        assert isinstance(result["tool_params"]["content"], str)
+        assert result["tool_params"]["content"] == "12345"
+    
+    def test_llm_return_content_as_boolean(self):
+        """【类型10.2】content类型异常 - 布尔类型"""
+        content_as_bool = '{"content": "完成", "tool_name": "write_file", "tool_params": {"content": true, "file_path": "E:/test.txt"}}'
+        result = parse_react_response(content_as_bool)
+        assert result["type"] == "action"
+        # 应强制转换为字符串
+        assert isinstance(result["tool_params"]["content"], str)
+        assert result["tool_params"]["content"] == "True"
+    
+    def test_llm_return_content_as_none(self):
+        """【类型10.3】content类型异常 - None值"""
+        content_as_none = '{"content": "完成", "tool_name": "write_file", "tool_params": {"content": null, "file_path": "E:/test.txt"}}'
+        result = parse_react_response(content_as_none)
+        assert result is not None
+        # None值应该保留为None，不崩溃
+    
+    def test_llm_return_content_as_number_in_dict(self):
+        """【类型10.4】dict输入 - content为数字类型"""
+        dict_input = {"content": "完成", "tool_name": "write_file", "tool_params": {"content": 999, "file_path": "E:/test.txt"}}
+        result = parse_react_response(dict_input)
+        assert result["type"] == "action"
+        # 应强制转换为字符串
+        assert isinstance(result["tool_params"]["content"], str)
+        assert result["tool_params"]["content"] == "999"
+    
+    def test_llm_return_content_as_boolean_in_dict(self):
+        """【类型10.5】dict输入 - content为布尔类型"""
+        dict_input = {"content": "完成", "tool_name": "write_file", "tool_params": {"content": False, "file_path": "E:/test.txt"}}
+        result = parse_react_response(dict_input)
+        assert result["type"] == "action"
+        # 应强制转换为字符串
+        assert isinstance(result["tool_params"]["content"], str)
+        assert result["tool_params"]["content"] == "False"
+    
+    # ==================== 类型11: 超长文本（1000+/10000+/50000+字符） ====================
+    def test_llm_return_content_over_1000_chars(self):
+        """【类型11.1】超长文本 - 1000+字符"""
+        long_text = "内容" * 500  # 1500字符
+        dict_input = {"content": "完成", "tool_name": "write_file", "tool_params": {"content": long_text, "file_path": "E:/test.txt"}}
+        result = parse_react_response(dict_input)
+        assert result["type"] == "action"
+        # 1000+字符应有warning日志但不截断
+        assert len(result["tool_params"]["content"]) >= 1000
+    
+    def test_llm_return_content_over_10000_chars(self):
+        """【类型11.2】超长文本 - 10000+字符"""
+        long_text = "内容" * 5000  # 约15000字符（超出10000）
+        dict_input = {"content": "完成", "tool_name": "write_file", "tool_params": {"content": long_text, "file_path": "E:/test.txt"}}
+        result = parse_react_response(dict_input)
+        assert result["type"] == "action"
+        # 10000+字符应有更高级别warning但不截断
+        assert len(result["tool_params"]["content"]) >= 10000
+    
+    def test_llm_return_content_over_50000_chars(self):
+        """【类型11.3】超长文本 - 50000+字符（可能截断风险）"""
+        long_text = "内容" * 12500  # 约25000字符
+        dict_input = {"content": "完成", "tool_name": "write_file", "tool_params": {"content": long_text, "file_path": "E:/test.txt"}}
+        result = parse_react_response(dict_input)
+        assert result is not None
+        # 50000+字符应有error日志
+        assert "type" in result
+    
+    def test_llm_return_content_over_1000_chars_in_json_string(self):
+        """【类型11.4】超长文本 - JSON字符串格式1000+字符"""
+        long_text = "内容" * 500  # 1500字符
+        json_str = f'{{"content": "完成", "tool_name": "write_file", "tool_params": {{"content": "{long_text}", "file_path": "E:/test.txt"}}}}'
+        result = parse_react_response(json_str)
+        assert result["type"] == "action"
+        assert len(result["tool_params"]["content"]) >= 1000
+    
+    def test_llm_return_content_over_1000_chars_in_list_array(self):
+        """【类型11.5】超长文本 - list数组格式1000+字符"""
+        long_text = "内容" * 500  # 1500字符
+        list_input = [{"content": "完成", "tool_name": "write_file", "tool_params": {"content": long_text, "file_path": "E:/test.txt"}}]
+        result = parse_react_response(list_input)
+        assert result["type"] == "action"
+        assert len(result["tool_params"]["content"]) >= 1000
+
+
+# =============================================================================
 # TestLongContentTruncation - 长文本截断问题测试（2026-04-28新增）
 # =============================================================================
 

@@ -70,6 +70,24 @@ def parse_react_response(output: str) -> Dict[str, Any]:
         logger.info(f"[parse_react_response] 检测到dict输入，直接解析")
         return _create_action_result_from_dict(output)
     
+    # 【2026-04-28 小沈新增】处理 list 输入（数组）
+    # LLM可能返回JSON数组，如：[{"tool_name": "xxx", ...}]
+    if isinstance(output, list):
+        logger.info(f"[parse_react_response] 检测到list输入，解析数组")
+        return _create_action_result_from_list(output)
+    
+    # 【2026-04-28 小沈新增】处理 JSON 数组字符串
+    # LLM可能返回JSON数组字符串，如：'[{"tool_name": "xxx", ...}]'
+    # 需要先解析为list，再调用list处理函数
+    if isinstance(output, str) and output.strip().startswith("["):
+        try:
+            parsed_list = json.loads(output)
+            if isinstance(parsed_list, list):
+                logger.info(f"[parse_react_response] 检测到JSON数组字符串，解析为list处理")
+                return _create_action_result_from_list(parsed_list)
+        except (json.JSONDecodeError, TypeError):
+            pass  # 不是有效的JSON数组，继续其他处理
+    
     output_length = len(output) if isinstance(output, str) else 0
     logger.info(f"[parse_react_response] 调用新统一解析器, output长度: {output_length}")
     
@@ -114,7 +132,7 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                     "content": data.get("content", data.get("thought", "")),
                     "reasoning": data.get("reasoning", ""),
                     "tool_name": None if is_finish else tool_name,
-                    "tool_params": None if is_finish else data.get("tool_params", {}),
+                    "tool_params": None if is_finish else _normalize_tool_params_content(data.get("tool_params", {})),
                     "response": response
                 }
             # 旧字段格式（action/action_input → tool_name/tool_params）
@@ -135,11 +153,35 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                     "content": data.get("thought", ""),
                     "reasoning": data.get("reasoning", ""),
                     "tool_name": None if is_finish else action_name,
-                    "tool_params": None if is_finish else data.get("action_input", {}),
+                    "tool_params": None if is_finish else _normalize_tool_params_content(data.get("action_input", {})),
                     "response": response
                 }
     except (json.JSONDecodeError, TypeError):
         pass  # 不是JSON格式，继续走关键词匹配流程
+    
+    # 【2026-04-28 小沈新增】尝试解析非标准JSON（单引号）
+    # 标准JSON解析失败后，尝试解析单引号JSON
+    non_std_data = _try_parse_non_standard_json(output)
+    if non_std_data and isinstance(non_std_data, dict):
+        if "tool_name" in non_std_data:
+            tool_name = non_std_data["tool_name"]
+            is_finish = tool_name == "finish"
+            tool_params = non_std_data.get("tool_params", {})
+            
+            # 标准化tool_params中的content字段类型
+            if isinstance(tool_params, dict):
+                tool_params = _normalize_tool_params_content(tool_params)
+            
+            logger.info(f"[parse_react_response] 非标准JSON解析成功")
+            return {
+                "type": "answer" if is_finish else "action",
+                "thought": non_std_data.get("content", non_std_data.get("thought", "")),
+                "content": non_std_data.get("content", non_std_data.get("thought", "")),
+                "reasoning": non_std_data.get("reasoning", ""),
+                "tool_name": None if is_finish else tool_name,
+                "tool_params": None if is_finish else tool_params,
+                "response": ""
+            }
     
     # 【新增 2026-04-24 小沈】JSON预解析失败后，尝试从混合文本中提取JSON块
     # 解决混合文本+JSON（情况③/⑤）的解析问题：LLM返回"思考文本+JSON"格式时正确提取
@@ -605,6 +647,11 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
     content = data.get("content", data.get("thought", ""))
     reasoning = data.get("reasoning", "")
     
+    # 【2026-04-28 小沈新增】标准化tool_params中的content字段类型
+    # 处理数字、布尔值等非字符串类型
+    if isinstance(tool_params, dict):
+        tool_params = _normalize_tool_params_content(tool_params)
+    
     # finish 类型处理
     if tool_name == "finish":
         result_text = tool_params.get("result", "") if isinstance(tool_params, dict) else ""
@@ -630,6 +677,130 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
         "response": None,
         "error": None
     }
+
+
+def _create_action_result_from_list(data: list) -> Dict[str, Any]:
+    """
+    【2026-04-28 小沈新增】从 list 输入创建统一格式的结果
+    处理LLM返回的JSON数组场景
+    
+    Args:
+        data: 已经解析好的 list（来自 LLM 返回的 JSON 数组）
+        
+    Returns:
+        统一格式的结果字典
+    """
+    from app.utils.logger import logger
+    
+    # 空数组处理
+    if not data:
+        logger.info(f"[parse_react_response] list为空，返回parse_error")
+        return {
+            "type": "parse_error",
+            "error": "Empty list input from LLM",
+            "thought": "",
+            "content": "",
+            "reasoning": "",
+            "tool_name": None,
+            "tool_params": None,
+            "response": ""
+        }
+    
+    # 遍历list，寻找有效的dict元素
+    valid_items = [item for item in data if isinstance(item, dict)]
+    
+    # 无有效dict元素
+    if not valid_items:
+        logger.info(f"[parse_react_response] list中无有效dict元素，返回parse_error")
+        return {
+            "type": "parse_error",
+            "error": "No valid dict items in list",
+            "thought": "",
+            "content": "",
+            "reasoning": "",
+            "tool_name": None,
+            "tool_params": None,
+            "response": ""
+        }
+    
+    # 取最后一个有效的dict元素（LLM通常将最终结果放在最后）
+    last_item = valid_items[-1]
+    logger.info(f"[parse_react_response] list解析成功，使用最后一个元素")
+    
+    return _create_action_result_from_dict(last_item)
+
+
+def _normalize_tool_params_content(tool_params: Dict) -> Dict:
+    """
+    【2026-04-28 小沈新增】标准化tool_params中的content字段类型
+    确保content字段始终为字符串，处理数字、布尔值等类型
+    
+    Args:
+        tool_params: 原始tool_params字典
+        
+    Returns:
+        标准化后的tool_params字典
+    """
+    if not isinstance(tool_params, dict):
+        return tool_params
+    
+    # 复制一份避免修改原始数据
+    normalized = dict(tool_params)
+    
+    # 检查content字段
+    if "content" in normalized:
+        content_value = normalized["content"]
+        
+        # 数字类型转换为字符串
+        if isinstance(content_value, (int, float)):
+            normalized["content"] = str(content_value)
+        # 布尔类型转换为字符串
+        elif isinstance(content_value, bool):
+            normalized["content"] = str(content_value)
+        # None保留为None，不做转换
+        # 字符串保持不变
+    
+    return normalized
+
+
+def _try_parse_non_standard_json(input_str: str) -> Optional[Dict]:
+    """
+    【2026-04-28 小沈新增】尝试解析非标准JSON（单引号、尾逗号等）
+    
+    Args:
+        input_str: 可能包含非标准JSON的字符串
+        
+    Returns:
+        解析后的dict，或None如果解析失败
+    """
+    if not isinstance(input_str, str):
+        return None
+    
+    try:
+        # 方法1：直接尝试标准JSON解析（可能成功）
+        return json.loads(input_str)
+    except json.JSONDecodeError:
+        pass
+    
+    # 方法2：尝试将单引号替换为双引号（注意处理内部单引号）
+    try:
+        # 简单的单引号转双引号（可能不完美，但能处理大多数情况）
+        # 匹配 'xxx' 模式，替换为 "xxx"
+        result = re.sub(r"'([^'\\]*(\\.[^'\\]*)*)'", r'"\1"', input_str)
+        return json.loads(result)
+    except json.JSONDecodeError:
+        pass
+    
+    # 方法3：处理尾随逗号（如 {"a": 1, } -> {"a": 1}）
+    try:
+        result = re.sub(r',(\s*})', r'\1', input_str)
+        # 再尝试单引号替换
+        result = re.sub(r"'([^'\\]*(\\.[^'\\]*)*)'", r'"\1"', result)
+        return json.loads(result)
+    except json.JSONDecodeError:
+        pass
+    
+    return None
 
 
 def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
