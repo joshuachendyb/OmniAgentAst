@@ -81,7 +81,6 @@ nul
 
 # Database files
 *.db
-!file_operations.db
 backend/chat_app.db
 backend/data/sessions.db
 backend/data/file_operations.db
