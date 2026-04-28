@@ -2,8 +2,9 @@
  * StepRow组件 - 步骤行主组件（容器）
  * 
  * @author 小沈
- * @version 1.0.0
+ * @version 1.1.0
  * @since 2026-04-21
+ * @update 2026-04-28 小强 - 第一步：容器三区域背景色设计（Header浅灰/Content白/Footer极浅灰）
  */
 
 import React, { useState, useMemo, useCallback } from "react";
@@ -26,6 +27,52 @@ interface StepRowProps {
   toggleExpand: (index: number) => void;
 }
 
+/**
+ * 容器样式 - 白色背景，圆角边框
+ * 2026-04-28 小强修改：添加overflow hidden让子元素圆角正确显示
+ */
+const containerStyle: React.CSSProperties = {
+  marginBottom: 12,
+  borderRadius: 12,
+  background: "#fff",
+  border: "1px solid #e8e8e8",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+  overflow: "hidden",
+  transition: "all 0.25s ease",
+};
+
+/**
+ * Header头部样式 - 浅灰色背景
+ * 放置：步骤编号、标签、图标、时间戳
+ * 2026-04-28 小强修改：第一步实现三区域背景色
+ */
+const headerStyle: React.CSSProperties = {
+  background: "#f5f5f5",
+  padding: "10px 16px",
+  borderBottom: "1px solid #eee",
+};
+
+/**
+ * Content中部样式 - 白色背景
+ * 放置：主要内容（thought、tool、observation等）
+ * 2026-04-28 小强修改：第一步实现三区域背景色
+ */
+const contentStyle: React.CSSProperties = {
+  background: "#ffffff",
+  padding: "16px",
+};
+
+/**
+ * Footer底部样式 - 极浅灰色背景
+ * 放置：执行状态、耗时、重试次数等
+ * 2026-04-28 小强修改：第一步实现三区域背景色
+ */
+const footerStyle: React.CSSProperties = {
+  background: "#fafafa",
+  padding: "8px 16px",
+  borderTop: "1px solid #eee",
+};
+
 const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0, expandedSteps, toggleExpand }) => {
   const [_isLoadingMore, _setIsLoadingMore] = useState(false);
   const [_showAllData, _setShowAllData] = useState(false);
@@ -39,7 +86,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   const badgeStyle = useMemo(() => getStepBadgeStyle(effectiveType as StepType), [effectiveType]);
   const labelStyle = useMemo(() => getStepLabelStyle(effectiveType as StepType), [effectiveType]);
 
-  const contentStyle = useMemo((): React.CSSProperties => ({
+  const textStyle = useMemo((): React.CSSProperties => ({
     color: "#333",
     wordBreak: "break-word",
     fontSize: 13,
@@ -47,56 +94,53 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
   }), []);
 
+  // 2026-04-28 小强修改：优化hover效果
   const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    e.currentTarget.style.background = "#fafafa";
-    e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.12)";
-    e.currentTarget.style.border = "1px solid #d0d0d0";
-    e.currentTarget.style.transform = "translateY(-1px)";
+    e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.1)";
+    e.currentTarget.style.borderColor = "#d9d9d9";
   }, []);
 
   const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    e.currentTarget.style.background = "#fff";
     e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)";
-    e.currentTarget.style.border = "1px solid #e8e8e8";
-    e.currentTarget.style.transform = "translateY(0)";
+    e.currentTarget.style.borderColor = "#e8e8e8";
   }, []);
 
   const [hasMore, setHasMore] = useState(false);
 
   return (
-    <div style={{ 
-      marginBottom: 12, 
-      padding: "12px 16px",
-      borderRadius: 12,
-      background: "#fff",
-      border: "1px solid #e8e8e8",
-      boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-    }}
-    onMouseEnter={handleMouseEnter}
-    onMouseLeave={handleMouseLeave}
-    >
-      <StepHeader 
-        step={step}
-        badgeStyle={badgeStyle}
-        labelStyle={labelStyle}
-        label={label}
-        icon={icon}
-      />
+    // 2026-04-28 小强修改：应用三区域背景色结构
+    <div style={containerStyle} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
       
-      <StepContent
-        step={step}
-        stepIndex={stepIndex}
-        expandedSteps={expandedSteps}
-        toggleExpand={toggleExpand}
-        contentStyle={contentStyle}
-      />
+      {/* Header头部 - 浅灰色背景 */}
+      <div style={headerStyle}>
+        <StepHeader 
+          step={step}
+          badgeStyle={badgeStyle}
+          labelStyle={labelStyle}
+          label={label}
+          icon={icon}
+        />
+      </div>
       
-      <StepFooter
-        step={step}
-        hasMore={hasMore}
-        onLoadMore={() => setHasMore(false)}
-      />
+      {/* Content中部 - 白色背景 */}
+      <div style={contentStyle}>
+        <StepContent
+          step={step}
+          stepIndex={stepIndex}
+          expandedSteps={expandedSteps}
+          toggleExpand={toggleExpand}
+          contentStyle={textStyle}
+        />
+      </div>
+      
+      {/* Footer底部 - 极浅灰色背景 */}
+      <div style={footerStyle}>
+        <StepFooter
+          step={step}
+          hasMore={hasMore}
+          onLoadMore={() => setHasMore(false)}
+        />
+      </div>
     </div>
   );
 };
