@@ -2047,3 +2047,191 @@ class TestComprehensiveEdgeCases:
         assert result["type"] == "action"
         assert result["tool_params"] == {}
 
+
+# =============================================================================
+# 新增：[TOOL_CALL]格式 + 字段顺序变化 + 多字段过滤测试（2026-04-28 小沈）
+# =============================================================================
+
+class TestToolCallFormatsAndFieldOrder:
+    """测试多种tool call形式和字段顺序变化"""
+    
+    def test_tool_call_format_basic(self):
+        """【TOOL_CALL】基本格式"""
+        tool_call = '{"tool_name": "list_directory", "args": {"dir_path": "E:/"}}'
+        # 注意：实际[TOOL_CALL]格式需要特殊处理，这里先用标准JSON模拟
+        result = parse_react_response(tool_call)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["dir_path"] == "E:/"
+    
+    def test_tool_call_format_with_reasoning(self):
+        """【TOOL_CALL】包含reasoning字段，验证过滤"""
+        data = {
+            "tool_name": "write_file",
+            "tool_params": {"file_path": "E:/test.txt", "content": "hello"},
+            "reasoning": "需要写入文件",
+            "thought": "思考内容"
+        }
+        result = parse_react_response(data)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        assert result["reasoning"] == "需要写入文件"  # reasoning保留在顶层
+        assert "reasoning" not in result["tool_params"]  # 不在tool_params中
+        assert result["tool_params"]["content"] == "hello"  # content是有效参数
+    
+    def test_field_order_tool_name_last(self):
+        """字段顺序：tool_name在最后"""
+        json_str = '{"thought": "思考内容", "tool_params": {"dir_path": "E:/"}, "tool_name": "list_directory"}'
+        result = parse_react_response(json_str)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["dir_path"] == "E:/"
+    
+    def test_field_order_reasoning_first(self):
+        """字段顺序：reasoning在开头"""
+        json_str = '{"reasoning": "这是推理过程", "thought": "思考", "tool_name": "read_file", "tool_params": {"file_path": "E:/test.txt"}}'
+        result = parse_react_response(json_str)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "read_file"
+        assert result["reasoning"] == "这是推理过程"
+        assert "reasoning" not in result["tool_params"]
+    
+    def test_multiple_non_tool_fields(self):
+        """LLM返回多个非工具字段，验证过滤"""
+        data = {
+            "thought": "思考内容",
+            "reasoning": "推理过程",
+            "content": "内容",
+            "type": "action",
+            "tool_name": "write_file",
+            "tool_params": {"file_path": "E:/test.txt", "content": "hello"},
+            "action": "write_file",  # 多余字段
+            "action_input": {"file_path": "E:/test.txt"}  # 多余字段
+        }
+        result = parse_react_response(data)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        # 验证非工具字段被过滤
+        assert "reasoning" not in result["tool_params"]
+        assert "thought" not in result["tool_params"]
+        assert "content" in result["tool_params"]  # content是有效参数
+        assert "action" not in result["tool_params"]
+        assert "action_input" not in result["tool_params"]
+    
+    def test_tool_params_with_extra_fields(self):
+        """tool_params内部包含非参数字段，验证过滤"""
+        data = {
+            "thought": "思考",
+            "tool_name": "list_directory",
+            "tool_params": {
+                "dir_path": "E:/",
+                "reasoning": "这是工具调用前的推理",  # 不应该在tool_params中
+                "thought": "这是思考",  # 不应该在tool_params中
+                "extra_field": "额外字段"  # 不应该在tool_params中
+            }
+        }
+        result = parse_react_response(data)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        # 验证tool_params中的非参数字段被过滤
+        assert "reasoning" not in result["tool_params"]
+        assert "thought" not in result["tool_params"]
+        assert "extra_field" not in result["tool_params"]
+        assert result["tool_params"]["dir_path"] == "E:/"
+    
+    def test_dict_input_with_multiple_extra_fields(self):
+        """dict输入包含多个额外字段，验证过滤"""
+        data = {
+            "reasoning": "推理1",
+            "thought": "思考1",
+            "content": "内容1",
+            "tool_name": "finish",
+            "tool_params": {"result": "完成"},
+            "type": "answer",
+            "action": "finish"
+        }
+        result = parse_react_response(data)
+        assert result["type"] == "answer"
+        assert result["tool_name"] is None
+        assert result["reasoning"] == "推理1"
+        assert result["tool_params"] is None  # finish类型的tool_params应该是None
+    
+    def test_json_string_with_fields_in_different_order(self):
+        """JSON字符串字段顺序变化"""
+        # tool_name在中间
+        json_str1 = '{"thought": "思考", "tool_name": "read_file", "tool_params": {"file_path": "E:/1.txt"}, "reasoning": "推理"}'
+        result1 = parse_react_response(json_str1)
+        assert result1["type"] == "action"
+        assert result1["tool_name"] == "read_file"
+        
+        # reasoning在开头
+        json_str2 = '{"reasoning": "推理2", "thought": "思考", "tool_name": "list_directory", "tool_params": {"dir_path": "E:/"}}'
+        result2 = parse_react_response(json_str2)
+        assert result2["type"] == "action"
+        assert result2["tool_name"] == "list_directory"
+    
+    def test_markdown_json_with_different_field_orders(self):
+        """Markdown JSON字段顺序变化"""
+        # 标准顺序
+        md1 = '```json\n{"tool_name": "read_file", "thought": "思考", "tool_params": {"file_path": "E:/1.txt"}}\n```'
+        result1 = parse_react_response(md1)
+        assert result1["type"] == "action"
+        
+        # 颠倒顺序
+        md2 = '```json\n{"tool_params": {"file_path": "E:/2.txt"}, "thought": "思考", "tool_name": "write_file"}\n```'
+        result2 = parse_react_response(md2)
+        assert result2["type"] == "action"
+        assert result2["tool_name"] == "write_file"
+    
+    def test_tool_call_format_non_standard_args(self):
+        """【TOOL_CALL】格式args不是标准JSON（模拟）"""
+        # 模拟[TOOL_CALL]格式，但使用标准JSON测试解析器入口
+        data = {
+            "tool_name": "list_directory",
+            "args": {"--dir_path": "E:/"},  # 非标准参数格式
+            "reasoning": "测试"
+        }
+        result = parse_react_response(data)
+        # 应该能解析
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+    
+    def test_multiple_reasoning_thought_content(self):
+        """LLM返回reasoning、thought、content等多个字段"""
+        data = {
+            "reasoning": "这是LLM的推理过程，可能很长",
+            "thought": "这是思考内容",
+            "content": "这是内容字段",
+            "tool_name": "search_files",
+            "tool_params": {"path": "E:/", "pattern": "*.txt", "content": "搜索内容"}
+        }
+        result = parse_react_response(data)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "search_files"
+        assert result["reasoning"] == "这是LLM的推理过程，可能很长"
+        assert result["thought"] == "这是思考内容"
+        # content在tool_params中是有效参数，应该保留
+        assert result["tool_params"]["content"] == "搜索内容"
+        # reasoning不应该在tool_params中
+        assert "reasoning" not in result["tool_params"]
+    
+    def test_field_order_all_variations(self):
+        """测试所有可能的字段顺序组合"""
+        # 变体1: reasoning, thought, tool_name, tool_params
+        json1 = '{"reasoning": "R1", "thought": "T1", "tool_name": "read_file", "tool_params": {"file_path": "E:/1.txt"}}'
+        r1 = parse_react_response(json1)
+        assert r1["type"] == "action"
+        assert r1["tool_name"] == "read_file"
+        
+        # 变体2: tool_params, tool_name, reasoning, thought
+        json2 = '{"tool_params": {"dir_path": "E:/"}, "tool_name": "list_directory", "reasoning": "R2", "thought": "T2"}'
+        r2 = parse_react_response(json2)
+        assert r2["type"] == "action"
+        assert r2["tool_name"] == "list_directory"
+        
+        # 变体3: thought, tool_params, reasoning, tool_name
+        json3 = '{"thought": "T3", "tool_params": {"file_path": "E:/3.txt"}, "reasoning": "R3", "tool_name": "write_file"}'
+        r3 = parse_react_response(json3)
+        assert r3["type"] == "action"
+        assert r3["tool_name"] == "write_file"
+

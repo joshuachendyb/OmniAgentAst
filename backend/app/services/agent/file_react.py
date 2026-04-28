@@ -262,14 +262,29 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         而不是通过 executor（executor 用的是 registry 里没有 task_id 的工具）
         
         【2026-04-27 小沈修复】：调用 _normalize_params 做参数别名映射
+        【2026-04-28 小沈修复】：添加工具名映射，支持 create_dir → create_directory
         """
+        # 【2026-04-28 小沈新增】工具名映射表（LLM返回名 → 实际方法名）
+        TOOL_NAME_MAP = {
+            "create_dir": "create_directory",
+            "list_dir": "list_directory",
+            "delete_dir": "delete_directory",
+            "rename_dir": "rename_directory",
+        }
+        
+        # 映射工具名
+        original_action = action
+        action = TOOL_NAME_MAP.get(action, action)
+        if original_action != action:
+            logger.info(f"[file_react._execute_tool] 工具名映射: {original_action} → {action}")
+        
         # 【2026-04-27 小沈新增】标准化参数（别名映射）
         normalized_params = self.executor._normalize_params(action, params)
         logger.info(f"[file_react._execute_tool] action={action}, 原params={params}, 标准化后={normalized_params}")
         
         tool_method = getattr(self.file_tools, action, None)
         if not tool_method:
-            return {"success": False, "error": f"Tool '{action}' not found", "result": None}
+            return {"success": False, "error": f"Tool '{original_action}' not found", "result": None}
         return await tool_method(**normalized_params)
     
     # ===== 实现父类抽象方法 =====

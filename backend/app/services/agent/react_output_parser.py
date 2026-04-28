@@ -132,7 +132,8 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                     "content": data.get("content", data.get("thought", "")),
                     "reasoning": data.get("reasoning", ""),
                     "tool_name": None if is_finish else tool_name,
-                    "tool_params": None if is_finish else _normalize_tool_params_content(data.get("tool_params", {})),
+                    # 【2026-04-28 小沈修复】支持args字段，并过滤非参数字段
+                    "tool_params": None if is_finish else _filter_tool_params(_normalize_tool_params_content(data.get("tool_params", data.get("args", {})))),
                     "response": response
                 }
             # 旧字段格式（action/action_input → tool_name/tool_params）
@@ -147,13 +148,15 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                     response = ""
                 
                 logger.info(f"[parse_react_response] JSON预解析命中(旧格式), type=action/answer")
+                # 【2026-04-28 小沈修复】支持args字段，并过滤非参数字段
+                tool_params = data.get("action_input", data.get("args", {}))
                 return {
                     "type": "answer" if is_finish else "action",
                     "thought": data.get("thought", ""),
                     "content": data.get("thought", ""),
                     "reasoning": data.get("reasoning", ""),
                     "tool_name": None if is_finish else action_name,
-                    "tool_params": None if is_finish else _normalize_tool_params_content(data.get("action_input", {})),
+                    "tool_params": None if is_finish else _filter_tool_params(_normalize_tool_params_content(tool_params)),
                     "response": response
                 }
     except (json.JSONDecodeError, TypeError):
@@ -166,11 +169,14 @@ def parse_react_response(output: str) -> Dict[str, Any]:
         if "tool_name" in non_std_data:
             tool_name = non_std_data["tool_name"]
             is_finish = tool_name == "finish"
-            tool_params = non_std_data.get("tool_params", {})
+            # 【2026-04-28 小沈修复】支持args字段
+            tool_params = non_std_data.get("tool_params", non_std_data.get("args", {}))
             
             # 标准化tool_params中的content字段类型
             if isinstance(tool_params, dict):
                 tool_params = _normalize_tool_params_content(tool_params)
+                # 【2026-04-28 小沈新增】过滤非参数字段
+                tool_params = _filter_tool_params(tool_params)
             
             logger.info(f"[parse_react_response] 非标准JSON解析成功")
             return {
@@ -643,14 +649,21 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
         }
     
     tool_name = data.get("tool_name")
-    tool_params = data.get("tool_params", {})
-    content = data.get("content", data.get("thought", ""))
+    # 【2026-04-28 小沈修复】支持args字段（LLM可能返回args而非tool_params）
+    tool_params = data.get("tool_params", data.get("args", {}))
+    # 【2026-04-28 小沈修复】thought字段独立获取，不被content字段覆盖
+    thought = data.get("thought", "")
+    content = data.get("content", thought)
     reasoning = data.get("reasoning", "")
     
     # 【2026-04-28 小沈新增】标准化tool_params中的content字段类型
     # 处理数字、布尔值等非字符串类型
     if isinstance(tool_params, dict):
         tool_params = _normalize_tool_params_content(tool_params)
+    
+    # 【2026-04-28 小沈新增】过滤tool_params中的非参数字段（如reasoning、thought等）
+    if isinstance(tool_params, dict):
+        tool_params = _filter_tool_params(tool_params)
     
     # finish 类型处理
     if tool_name == "finish":
@@ -667,9 +680,10 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
         }
     
     # action 类型
+    # 【2026-04-28 小沈修复】thought字段独立获取，不被content字段覆盖
     return {
         "type": "action",
-        "thought": content,
+        "thought": thought,
         "content": content,
         "reasoning": reasoning,
         "tool_name": tool_name,
@@ -764,6 +778,52 @@ def _normalize_tool_params_content(tool_params: Dict) -> Dict:
         # 字符串保持不变
     
     return normalized
+
+
+def _filter_tool_params(tool_params: Dict) -> Dict:
+    """
+    【2026-04-28 小沈新增】过滤tool_params中的非工具参数字段
+    
+    从tool_params中移除reasoning、thought、extra_field等LLM返回的额外字段，
+    只保留工具真正需要的参数（包括content字段）
+    
+    Args:
+        tool_params: 原始参数字典
+        
+    Returns:
+        过滤后的参数字典
+    """
+    if not tool_params or not isinstance(tool_params, dict):
+        return {}
+    
+    # 已知的非参数字段（LLM可能返回的额外字段，这些不是工具参数）
+    NON_PARAM_FIELDS = {
+        "reasoning",    # LLM的思考过程（不是工具参数）
+        "thought",       # 思考内容（不是工具参数）
+        "type",         # 类型字段（不是工具参数）
+        "tool_name",    # 工具名（不应在参数中）
+        "action",       # 动作字段（不是工具参数）
+        "action_input", # 动作输入（不是工具参数）
+        "extra_field",  # 额外字段（不是工具参数）
+        "metadata",     # 元数据（不是工具参数）
+        "context",      # 上下文（不是工具参数）
+    }
+    
+    # 创建新字典，只保留非NON_PARAM_FIELDS的字段
+    # 注意：content字段是许多工具的有效参数（如write_file），不应该被过滤
+    # 过滤逻辑：只保留看起来像真正参数的字段名（字母/数字/下划线组成）
+    # 同时过滤掉以--开头的参数名（[TOOL_CALL]格式的参数）
+    import re
+    param_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+    
+    filtered = {}
+    for k, v in tool_params.items():
+        if k not in NON_PARAM_FIELDS:
+            # 字段名必须匹配参数名模式（字母/数字/下划线，不能以数字开头）
+            if param_name_pattern.match(k):
+                filtered[k] = v
+    
+    return filtered
 
 
 def _try_parse_non_standard_json(input_str: str) -> Optional[Dict]:
@@ -892,7 +952,12 @@ def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
         }
     
     tool_name = parsed.get("tool_name", parsed.get("action_tool", parsed.get("action", "finish")))
-    tool_params = parsed.get("tool_params", parsed.get("params", parsed.get("action_input", {})))
+    # 【2026-04-28 小沈修复】支持args字段（LLM可能返回args而非tool_params）
+    tool_params = parsed.get("tool_params", parsed.get("params", parsed.get("action_input", parsed.get("args", {}))))
+    
+    # 【2026-04-28 小沈新增】过滤tool_params中的非参数字段
+    if isinstance(tool_params, dict):
+        tool_params = _filter_tool_params(tool_params)
     
     # 【2026-04-23 小沈修复】当 tool_name 为 None/null 时，检查 content 是否表明任务完成
     if tool_name is None:
