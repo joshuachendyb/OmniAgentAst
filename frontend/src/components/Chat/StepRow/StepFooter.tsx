@@ -2,8 +2,9 @@
  * StepFooter组件 - 步骤底部（状态、分页、工具信息）
  * 
  * @author 小沈
- * @version 1.0.0
+ * @version 1.1.0
  * @since 2026-04-21
+ * @update 2026-04-28 小强 - 第十一步：边界情况处理（无内容时完全隐藏）
  */
 
 import React from "react";
@@ -18,6 +19,7 @@ interface StepFooterProps {
 /**
  * StepFooter组件
  * 显示执行状态、耗时、重试次数、摘要、加载更多
+ * 第十一步：边界情况处理 - 无内容时完全隐藏
  */
 const StepFooter: React.FC<StepFooterProps> = ({
   step,
@@ -30,7 +32,10 @@ const StepFooter: React.FC<StepFooterProps> = ({
   const summary = step.summary;
   const error_message = step.error_message;
 
-  if (!execution_status && !hasMore) {
+  // 第十一步：边界情况处理 - 检查是否有内容需要显示
+  const hasContent = execution_status || hasMore || summary || error_message;
+
+  if (!hasContent) {
     return null;
   }
 
