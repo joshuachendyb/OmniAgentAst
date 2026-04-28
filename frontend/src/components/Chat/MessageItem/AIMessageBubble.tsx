@@ -45,17 +45,14 @@ interface AIMessageBubbleProps {
 }
 
 /**
- * AI消息气泡样式
+ * AI消息气泡样式 - 留白优化版
  */
 const getAIBubbleStyle = (isError?: boolean): React.CSSProperties => {
   const baseStyle: React.CSSProperties = {
     maxWidth: "100%",
     minWidth: "60px",
     width: "auto",
-    paddingTop: 8,
-    paddingBottom: 8,
-    paddingLeft: 10,
-    paddingRight: 60,
+    padding: 0,  // 【修改】由内层getStepStyle控制留白
     borderRadius: "16px",
     position: "relative",
     transition: "all 0.3s ease",
