@@ -108,19 +108,32 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
     e.currentTarget.style.borderColor = "#e8e8e8";
   }, []);
 
+  // 第六步P2：焦点样式
+  const handleFocus = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
+    e.currentTarget.style.outline = "2px solid #1890ff";
+    e.currentTarget.style.outlineOffset = "2px";
+  }, []);
+
+  const handleBlur = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
+    e.currentTarget.style.outline = "none";
+  }, []);
+
   const [hasMore, setHasMore] = useState(false);
 
   // 2026-04-28 小强修改：第六步添加无障碍ARIA标签
   const effectiveLabel = STEP_LABEL_MAP[effectiveType] || STEP_LABEL_MAP[step.type] || "步骤";
 
   return (
-    // 第六步无障碍优化：添加role和aria-label
+    // 第六步无障碍优化：添加role和aria-label，添加焦点样式
     <div 
       style={containerStyle} 
       onMouseEnter={handleMouseEnter} 
       onMouseLeave={handleMouseLeave}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
       role="group"
       aria-label={`执行步骤 ${step.step || ''} ${effectiveLabel}`}
+      tabIndex={0}
     >
       
       {/* Header头部 - 浅灰色背景 */}
