@@ -85,6 +85,9 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   // 第七步：深色模式动态样式
   const dark = isDarkMode();
   
+  // 第八步：响应式适配 - 检测小屏幕
+  const isSmallScreen = typeof window !== 'undefined' && window.innerWidth < 768;
+  
   const dynamicContainerStyle = useMemo((): React.CSSProperties => ({
     marginBottom: 12,
     borderRadius: 12,
@@ -97,28 +100,28 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
 
   const dynamicHeaderStyle = useMemo((): React.CSSProperties => ({
     background: dark ? darkModeColors.headerBg : "#f5f5f5",
-    padding: "10px 16px",
+    padding: isSmallScreen ? "8px 12px" : "10px 16px",
     borderBottom: `1px solid ${dark ? darkModeColors.border : "#eee"}`,
-  }), [dark]);
+  }), [dark, isSmallScreen]);
 
   const dynamicContentStyle = useMemo((): React.CSSProperties => ({
     background: dark ? darkModeColors.contentBg : "#ffffff",
-    padding: "16px",
-  }), [dark]);
+    padding: isSmallScreen ? "12px" : "16px",
+  }), [dark, isSmallScreen]);
 
   const dynamicFooterStyle = useMemo((): React.CSSProperties => ({
     background: dark ? darkModeColors.footerBg : "#fafafa",
-    padding: "8px 16px",
+    padding: isSmallScreen ? "6px 12px" : "8px 16px",
     borderTop: `1px solid ${dark ? darkModeColors.border : "#eee"}`,
-  }), [dark]);
+  }), [dark, isSmallScreen]);
 
   const textStyle = useMemo((): React.CSSProperties => ({
     color: dark ? darkModeColors.text : "#333",
     wordBreak: "break-word",
-    fontSize: 13,
+    fontSize: isSmallScreen ? 12 : 13,
     lineHeight: 1.8,
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
-  }), [dark]);
+  }), [dark, isSmallScreen]);
 
   // 第七步：深色模式hover效果
   const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
