@@ -19,6 +19,54 @@ v0.11.4
   | 场景1: LLM返回{"file_path": "xxx"}缺失content → 从original_output提取 |
   | 场景2: LLM返回{"content": "xxx"}缺失file_path → 从content推断（原有逻辑） |
 
+  ## 2 参数补充逻辑增强 - 小沈-2026-04-28
+
+  | 文件 | 修改 | 状态 |
+  |------|------|------|
+  | react_output_parser.py | 注释明确适用范围（写小说场景专用） | ✅ |
+  | react_output_parser.py | 强化回退机制（推断失败时明确日志） | ✅ |
+  | react_output_parser.py | 优化正则支持转义引号 | ✅ |
+  | react_output_parser.py | 优先JSON解析，避免正则错误 | ✅ |
+  | 测试结果 | 215个测试全部通过 | ✅ |
+
+  | 增强内容 |
+  |---------|
+  | 优先JSON解析tool_params.content，失败再用正则 |
+  | 正则改为((?:[^\"\\]|\\.)*)支持转义引号 |
+  | 推断失败时输出详细日志便于调试 |
+
+  ## 3 新增边界测试用例 - 小沈-2026-04-28
+
+  | 文件 | 修改 | 状态 |
+  |------|------|------|
+  | test_react_output_parser.py | 新增15个功能验证测试用例 | ✅ |
+  | test_react_output_parser.py | 新增15个发现问题测试用例 | ✅ |
+  | 测试结果 | 230个测试全部通过 | ✅ |
+
+  | 新增测试覆盖 |
+  |---------|
+  | 多工具参数缺失场景（move_file/list_directory等） |
+  | 特殊字符（嵌套引号、多种转义序列、emoji） |
+  | 边界情况（空字符串值、单参数、超长content） |
+
+  ## 4 驼峰参数名转下划线修复 - 小沈-2026-04-28
+
+  | 文件 | 修改 | 状态 |
+  |------|------|------|
+  | react_output_parser.py | 新增CAMEL_TO_SNAKE驼峰转下划线映射表 | ✅ |
+  | react_output_parser.py | 修改_filter_tool_params自动标准化参数名 | ✅ |
+  | 测试结果 | 245个测试全部通过 | ✅ |
+
+  | 修复内容 |
+  |---------|
+  | 修复LLM返回驼峰参数名（如filePath）导致必需参数检查失败的问题 |
+  | 自动将filePath→file_path, Content→content等 |
+  | 通过测试用例发现真实bug并修复 |
+
+  ---
+
+  ## 旧版记录（已合并到v0.11.4）
+
   ## 2 新增30个边界测试用例 - 小沈-2026-04-28
 
   | 文件 | 修改 | 状态 |
