@@ -264,11 +264,35 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
             />
           ))}
 
-          {/* 思考中标签 */}
+          {/* 思考中标签 - 第四步添加呼吸渐变动画 */}
           {message.is_reasoning && (
-            <span style={{ color: '#888', fontSize: '0.85em', marginRight: 4, fontWeight: 500 }}>
-              💭 思考中:
-            </span>
+            <>
+              <style>{`
+                @keyframes thinking-glow {
+                  0%, 100% {
+                    background: linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%);
+                  }
+                  50% {
+                    background: linear-gradient(135deg, #ffe7ba 0%, #ffd591 100%);
+                  }
+                }
+                .thinking-badge {
+                  animation: thinking-glow 2s ease-in-out infinite;
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 4px;
+                  padding: 4px 10px;
+                  border-radius: 6px;
+                  font-size: 12px;
+                  font-weight: 500;
+                  color: #d97706;
+                  margin-right: 4px;
+                }
+              `}</style>
+              <span className="thinking-badge">
+                💭 思考中
+              </span>
+            </>
           )}
 
           {/* 消息内容 */}
