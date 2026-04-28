@@ -66,14 +66,13 @@ export type StepPriority = 'primary' | 'secondary' | 'accent';
 // 分行模式
 export type LayoutMode = 'inline' | 'block' | 'inline-with-details';
 
-// 颜色方案接口
+// 颜色方案接口 - 9种浅色方案精简版
 interface ColorScheme {
-  bg1: string;          // 渐变起始颜色
-  bg2: string;          // 渐变结束颜色
+  bg1: string;          // 背景色-主
+  bg2: string;          // 背景色-次
   border: string;       // 边框颜色
-  text: string;         // 主文字颜色
-  textSecondary: string; // 次要文字颜色
-  label: string;        // 视觉标签
+  text: string;        // 文字颜色
+  label: string;       // 视觉标签
   priority: StepPriority;
   layout: LayoutMode;   // 分行模式
 }
@@ -138,7 +137,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#fffbe6",
     border: "#ffd591",
     text: "#ad4e00",
-    textSecondary: "#7a4a00",
     label: "💭 思考",
     priority: "secondary",
     layout: "block",
@@ -148,7 +146,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#fffbe6",
     border: "#ffd591",
     text: "#ad4e00",
-    textSecondary: "#7a4a00",
     label: "🔧 处理中",
     priority: "secondary",
     layout: "block",
@@ -158,7 +155,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#fff",
     border: "#ffbb96",
     text: "#d4380d",
-    textSecondary: "#ad4e26",
     label: "⚠️ 中断",
     priority: "primary",
     layout: "block",
@@ -170,7 +166,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#f5f5f5",
     border: "#d9d9d9",
     text: "#262626",
-    textSecondary: "#595959",
     label: "🚀 开始",
     priority: "primary",
     layout: "inline-with-details",
@@ -180,7 +175,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#f0f0f0",
     border: "#d9d9d9",
     text: "#595959",
-    textSecondary: "#8c8c8c",
     label: "🔄 重试",
     priority: "secondary",
     layout: "inline",
@@ -190,7 +184,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#fafafa",
     border: "#d9d9d9",
     text: "#262626",
-    textSecondary: "#595959",
     label: "⚙️ 执行",
     priority: "primary",
     layout: "inline-with-details",
@@ -202,7 +195,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#f5f5f5",
     border: "#b7eb8f",
     text: "#389e0d",
-    textSecondary: "#52c41a",
     label: "✅ 完成",
     priority: "primary",
     layout: "block",
@@ -212,7 +204,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#f5f5f5",
     border: "#b7eb8f",
     text: "#389e0d",
-    textSecondary: "#237804",
     label: "▶️ 恢复",
     priority: "secondary",
     layout: "inline",
@@ -222,7 +213,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#f5fff5",
     border: "#b7eb8f",
     text: "#389e0d",
-    textSecondary: "#52c41a",
     label: "📋 观察",
     priority: "secondary",
     layout: "inline-with-details",
@@ -232,7 +222,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#f5f5f5",
     border: "#b7eb8f",
     text: "#389e0d",
-    textSecondary: "#52c41a",
     label: "📊 报告",
     priority: "secondary",
     layout: "inline-with-details",
@@ -244,7 +233,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#fff",
     border: "#ffa39e",
     text: "#cf1322",
-    textSecondary: "#a8071a", // 【老杨修复 2026-03-25】提升对比度：#ff6b6b → #a8071a (WCAG 6.2:1)
     label: "❌ 错误",
     priority: "primary",
     layout: "block",  // 错误信息需要醒目显示
@@ -256,7 +244,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#f5f5f5",
     border: "#d9d9d9",
     text: "#595959",
-    textSecondary: "#8c8c8c",
     label: "⏸️ 暂停",
     priority: "secondary",
     layout: "inline",  // 暂停信息简短，一行显示
@@ -268,7 +255,6 @@ const colorSchemes: Record<StepType, ColorScheme> = {
     bg2: "#f5f5ff",
     border: "#d3adf7",
     text: "#722ed1",
-    textSecondary: "#531dab", // 【老杨修复 2026-03-25】提升对比度：#b37feb → #531dab (WCAG 5.8:1)
     label: "📝 内容",
     priority: "primary",
     layout: "block",  // 内容片段需要换行显示
@@ -340,7 +326,7 @@ export const getStepContentStyle = (
     },
     secondary: {
       fontSize: FontSize.TERTIARY,
-      color: scheme.textSecondary,
+      color: Colors.TEXT.TERTIARY,
       fontWeight: FontWeight.REGULAR,
     },
     detail: {
@@ -466,7 +452,7 @@ export const getStepDetailStyle = (stepType: StepType | string) => {
     border: `1px solid ${scheme.border}`,
     fontSize: FontSize.CODE,
     fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-    color: scheme.textSecondary,
+    color: Colors.TEXT.TERTIARY,
     lineHeight: 1.6,
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
