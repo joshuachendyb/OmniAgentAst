@@ -777,6 +777,27 @@ class TestNewFunctions:
         
         assert result == {"dir_path": "E:/"}
     
+    def test_parse_react_response_with_dict_input(self):
+        """【2026-04-28 小沈新增】测试直接传入dict输入（解决长文本content丢失问题）"""
+        # 这是模拟 LLM 返回的 dict 格式数据（不是 JSON 字符串）
+        dict_input = {
+            "content": "第九篇创作成功！现在开始第十篇",
+            "tool_name": "write_file",
+            "tool_params": {
+                "file_path": "E:/春天爱情故事/春日回忆.txt",
+                "content": "第十篇：春日回忆\n\n又是一个春天到来，\n我站在我们曾经相遇的地方。"
+            },
+            "reasoning": "创作第十篇关于春天和爱情的小说"
+        }
+        
+        result = parse_react_response(dict_input)
+        
+        # 验证能正确解析 dict 输入
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        assert result["tool_params"]["file_path"] == "E:/春天爱情故事/春日回忆.txt"
+        assert result["tool_params"]["content"] == "第十篇：春日回忆\n\n又是一个春天到来，\n我站在我们曾经相遇的地方。"
+    
     def test_extract_tool_params_from_thought_empty(self):
         """测试空thought返回空字典"""
         from app.services.agent.react_output_parser import _extract_tool_params_from_thought
@@ -784,6 +805,149 @@ class TestNewFunctions:
         result = _extract_tool_params_from_thought("", "list_directory")
         
         assert result == {}
+    
+    # ============================================================================
+    # 【2026-04-28 小沈新增】LLM返回形式完整测试套件
+    # 覆盖 LLM 可能返回的所有格式，确保 parser 能正确处理
+    # ============================================================================
+    
+    def test_llm_return_form_1_json_string(self):
+        """【形式1】标准JSON字符串 - LLM直接返回完整JSON"""
+        json_string = '{"content": "完成", "tool_name": "write_file", "tool_params": {"file_path": "E:/test.txt", "content": "内容"}, "reasoning": "测试"}'
+        result = parse_react_response(json_string)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        assert result["tool_params"]["content"] == "内容"
+    
+    def test_llm_return_form_2_dict_object(self):
+        """【形式2】Dict对象 - 已经解析的dict（导致本次bug的原因）"""
+        dict_input = {
+            "content": "创作成功",
+            "tool_name": "write_file",
+            "tool_params": {"file_path": "E:/test.txt", "content": "长文本内容..."},
+            "reasoning": "测试"
+        }
+        result = parse_react_response(dict_input)
+        assert result["type"] == "action"
+        assert result["tool_params"]["content"] == "长文本内容..."
+    
+    def test_llm_return_form_3_markdown_json(self):
+        """【形式3】Markdown包裹的JSON - ```json {...} ``` """
+        markdown_json = '```json\n{"content": "完成", "tool_name": "list_directory", "tool_params": {"dir_path": "E:/"}}\n```'
+        result = parse_react_response(markdown_json)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+    
+    def test_llm_return_form_4_markdown_json_no_lang(self):
+        """【形式3.1】Markdown包裹的JSON（无json标签）- ``` {...} ``` """
+        markdown_json = '```\n{"content": "完成", "tool_name": "read_file", "tool_params": {"file_path": "E:/test.txt"}}\n```'
+        result = parse_react_response(markdown_json)
+        assert result["type"] == "action"
+    
+    def test_llm_return_form_5_mixed_text_json(self):
+        """【形式4】混合文本+JSON - "思考内容 {...JSON...}" """
+        mixed = '根据用户需求，我需要写入文件。{"content": "执行写入", "tool_name": "write_file", "tool_params": {"file_path": "E:/test.txt", "content": "内容"}}'
+        result = parse_react_response(mixed)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+    
+    def test_llm_return_form_6_traditional_react(self):
+        """【形式5】传统ReAct格式 - Thought/Action/Action Input"""
+        traditional = '''Thought: 我需要读取文件
+Action: read_file
+Action Input: {"file_path": "E:/test.txt"}'''
+        result = parse_react_response(traditional)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "read_file"
+    
+    def test_llm_return_form_6_chinese_react(self):
+        """【形式5.1】传统ReAct格式（中文）"""
+        traditional = '''思考：用户需要查看目录
+行动：list_directory
+工具参数：{"dir_path": "E:/"}'''
+        result = parse_react_response(traditional)
+        assert result["type"] == "action"
+    
+    def test_llm_return_form_7_plain_text(self):
+        """【形式6】纯文本回答（无JSON格式）"""
+        plain = '我已经完成了任务，共写了10篇故事。'
+        result = parse_react_response(plain)
+        # 纯文本应该返回 implicit 或 answer 类型
+        assert result["type"] in ["implicit", "answer", "thought_only"]
+    
+    def test_llm_return_form_8_empty_string(self):
+        """【形式7】空字符串"""
+        result = parse_react_response("")
+        assert result["type"] == "parse_error"
+    
+    def test_llm_return_form_9_none_input(self):
+        """【形式8】None输入"""
+        result = parse_react_response(None)
+        assert result["type"] == "parse_error"
+    
+    def test_llm_return_form_10_finish_type(self):
+        """【形式9】finish类型（返回最终答案）"""
+        # JSON字符串格式
+        finish_json = '{"content": "任务完成", "tool_name": "finish", "tool_params": {"result": "共写10篇"}}'
+        result = parse_react_response(finish_json)
+        assert result["type"] == "answer"
+        
+        # Dict格式
+        finish_dict = {"content": "完成", "tool_name": "finish", "tool_params": {"result": "成功"}}
+        result2 = parse_react_response(finish_dict)
+        assert result2["type"] == "answer"
+    
+    def test_llm_return_form_11_malformed_json(self):
+        """【形式10】畸形JSON（解析失败时的降级处理）"""
+        malformed = '{"content": "部分JSON, tool_name: "write_file"'  # 缺少引号
+        result = parse_react_response(malformed)
+        # 应该降级到关键词匹配或兜底
+        assert result["type"] in ["action", "implicit", "thought_only", "parse_error"]
+    
+    def test_llm_return_form_12_partial_json(self):
+        """【形式11】不完整JSON（缺少闭合括号）"""
+        partial = '{"content": "未完成, "tool_name": "write_file"'
+        result = parse_react_response(partial)
+        # 应该尝试关键词匹配
+        assert result["type"] in ["action", "implicit", "thought_only", "parse_error"]
+    
+    def test_llm_return_form_13_with_special_chars(self):
+        """【形式12】包含特殊字符的内容"""
+        special = '{"content": "包含<>引号和换行", "tool_name": "write_file", "tool_params": {"file_path": "E:/test.txt", "content": "内容含\"引号\\和\n换行"}}'
+        result = parse_react_response(special)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+    
+    def test_llm_return_form_14_nested_params(self):
+        """【形式13】嵌套的tool_params"""
+        nested = '{"content": "复杂参数", "tool_name": "write_file", "tool_params": {"file_path": "E:/test.txt", "content": {"text": "内容", "metadata": {"author": "测试", "tags": ["a", "b"]}}}}'
+        result = parse_react_response(nested)
+        assert result["type"] == "action"
+        assert result["tool_params"]["content"]["metadata"]["author"] == "测试"
+    
+    def test_llm_return_form_15_missing_tool_params(self):
+        """【形式14】有tool_name但tool_params为空的JSON"""
+        missing_params = '{"content": "无参数", "tool_name": "list_directory", "tool_params": {}}'
+        result = parse_react_response(missing_params)
+        # 应该尝试工具名兜底匹配
+        assert result["type"] in ["action", "implicit", "thought_only", "parse_error"]
+    
+    def test_llm_return_form_16_long_content_dict(self):
+        """【形式15】长文本content（本次bug的核心场景）"""
+        long_content = "第十篇：春日回忆\n\n" + "春风吹过，仿佛还带着你的气息，\n" * 100
+        long_dict = {
+            "content": "第九篇创作成功！",
+            "tool_name": "write_file",
+            "tool_params": {
+                "file_path": "E:/春天爱情故事/春日回忆.txt",
+                "content": long_content
+            }
+        }
+        result = parse_react_response(long_dict)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        assert result["tool_params"]["content"] == long_content  # 完整保留！
+        assert len(result["tool_params"]["content"]) > 1000  # 验证长度
 
 
 # =============================================================================

@@ -111,6 +111,9 @@ class TextStrategy(LLMStrategy):
         else:
             content = str(response)
         
+        logger.info(f"[LLM Response Raw (text)] content长度: {len(content) if isinstance(content, str) else '非字符串'}")
+        logger.info(f"[LLM Response Raw (text)] content类型: {type(content)}")
+        logger.info(f"[LLM Response Raw (text)] content前200字符: {str(content)[:200] if content else '空'}")
         logger.info(f"[LLM Response Raw (text)] content={content}")
         
         # ===== 情况0: 空内容 =====
@@ -148,6 +151,7 @@ class TextStrategy(LLMStrategy):
         #   第二层: _extract_by_known_tools（从原始文本提取工具名）
         #   第三层: 兜底返回 finish
         from app.services.agent.react_output_parser import parse_react_response
+        logger.info(f"[DEBUG] 传给parse前 - content长度: {len(content) if isinstance(content, str) else '非字符串'}, content类型: {type(content)}")
         try:
             parsed = parse_react_response(content)
             parsed_type = parsed.get("type")

@@ -63,6 +63,13 @@ def parse_react_response(output: str) -> Dict[str, Any]:
     设计依据: LlamaIndex ReActOutputParser.parse() 统一入口设计思想
     """
     from app.utils.logger import logger
+    
+    # 【2026-04-28 小沈修复】在函数开头处理 dict 输入
+    # 如果传入的是 dict（而非 JSON 字符串），直接解析并返回
+    if isinstance(output, dict):
+        logger.info(f"[parse_react_response] 检测到dict输入，直接解析")
+        return _create_action_result_from_dict(output)
+    
     output_length = len(output) if isinstance(output, str) else 0
     logger.info(f"[parse_react_response] 调用新统一解析器, output长度: {output_length}")
     
@@ -83,7 +90,12 @@ def parse_react_response(output: str) -> Dict[str, Any]:
     # 包含tool_name/tool_params或action/action_input字段，直接返回解析结果
     # 用途：兼容旧测试用例和直接传入JSON dict的场景
     try:
-        data = json.loads(output)
+        # 【2026-04-28 小沈修复】支持 dict 和 string 两种输入
+        if isinstance(output, dict):
+            data = output
+        else:
+            data = json.loads(output)
+        
         if isinstance(data, dict):
             # 新字段格式
             if "tool_name" in data:
@@ -563,6 +575,61 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
         logger.error(f"[_extract_json_block] Fallback提取失败: {e}")
     
     return None
+
+
+def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
+    """
+    【2026-04-28 小沈新增】从 dict 输入创建统一格式的结果
+    直接处理已解析的 dict（不是 JSON 字符串），解决长文本 content 丢失问题
+    
+    Args:
+        data: 已经解析好的 dict（来自 LLM 返回的 JSON）
+        
+    Returns:
+        统一格式的结果字典
+    """
+    if not data or not isinstance(data, dict):
+        return {
+            "type": "parse_error",
+            "error": "Empty or invalid dict input",
+            "thought": "",
+            "content": "",
+            "reasoning": "",
+            "tool_name": None,
+            "tool_params": None,
+            "response": ""
+        }
+    
+    tool_name = data.get("tool_name")
+    tool_params = data.get("tool_params", {})
+    content = data.get("content", data.get("thought", ""))
+    reasoning = data.get("reasoning", "")
+    
+    # finish 类型处理
+    if tool_name == "finish":
+        result_text = tool_params.get("result", "") if isinstance(tool_params, dict) else ""
+        return {
+            "type": "answer",
+            "thought": content,
+            "content": result_text or content,
+            "reasoning": reasoning,
+            "tool_name": None,
+            "tool_params": None,
+            "response": result_text or content,
+            "error": None
+        }
+    
+    # action 类型
+    return {
+        "type": "action",
+        "thought": content,
+        "content": content,
+        "reasoning": reasoning,
+        "tool_name": tool_name,
+        "tool_params": tool_params if isinstance(tool_params, dict) else {},
+        "response": None,
+        "error": None
+    }
 
 
 def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
