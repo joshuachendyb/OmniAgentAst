@@ -126,14 +126,18 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                 else:
                     response = data.get("response", "")
                 
+                # 【2026-04-28 小沈新增】检测必需参数是否完整
+                processed_tool_params = None if is_finish else _filter_tool_params(_normalize_tool_params_content(data.get("tool_params", data.get("args", {}))))
+                if not is_finish and processed_tool_params:
+                    processed_tool_params = _supplement_missing_params(tool_name, processed_tool_params, output if isinstance(output, str) else None)
+                
                 return {
                     "type": "answer" if is_finish else "action",
                     "thought": data.get("content", data.get("thought", "")),
                     "content": data.get("content", data.get("thought", "")),
                     "reasoning": data.get("reasoning", ""),
                     "tool_name": None if is_finish else tool_name,
-                    # 【2026-04-28 小沈修复】支持args字段，并过滤非参数字段
-                    "tool_params": None if is_finish else _filter_tool_params(_normalize_tool_params_content(data.get("tool_params", data.get("args", {})))),
+                    "tool_params": processed_tool_params,
                     "response": response
                 }
             # 旧字段格式（action/action_input → tool_name/tool_params）
@@ -177,6 +181,9 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                 tool_params = _normalize_tool_params_content(tool_params)
                 # 【2026-04-28 小沈新增】过滤非参数字段
                 tool_params = _filter_tool_params(tool_params)
+                # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
+                if not is_finish and tool_params:
+                    tool_params = _supplement_missing_params(tool_name, tool_params, output if isinstance(output, str) else None)
             
             logger.info(f"[parse_react_response] 非标准JSON解析成功")
             return {
@@ -257,10 +264,18 @@ def parse_react_response(output: str) -> Dict[str, Any]:
         # 其他情况（有tool_name且不是finish）
         if tool_name:
             logger.info("[parse_react_response] 混合文本中提取到JSON，走JSON处理流程")
+            # 【2026-04-28 小沈修复】优先使用json_data中的content字段，而不是prefix_text
+            extracted_content = json_data.get("content", "")
+            # 如果json_data中没有content字段，才使用prefix_text
+            if not extracted_content:
+                extracted_content = prefix_text
+            # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
+            if tool_params:
+                tool_params = _supplement_missing_params(tool_name, tool_params, output if isinstance(output, str) else None)
             return {
                 "type": "action",
                 "thought": json_data.get("thought", ""),
-                "content": prefix_text,  # 使用前面文本
+                "content": extracted_content,
                 "reasoning": json_data.get("reasoning", ""),
                 "tool_name": tool_name,
                 "tool_params": tool_params,
@@ -363,13 +378,17 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
     try:
         tool_result = _extract_by_known_tools(output)
         if tool_result:
+            # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
+            tp = tool_result.get("tool_params")
+            if tp:
+                tp = _supplement_missing_params(tool_result["tool_name"], tp, output if isinstance(output, str) else None)
             return {
                 "type": "action",
                 "thought": tool_result["content"],
                 "content": tool_result["content"],      # 兼容性字段
                 "reasoning": tool_result["content"],    # 兼容性字段
                 "tool_name": tool_result["tool_name"],
-                "tool_params": tool_result["tool_params"],
+                "tool_params": tp,
                 "response": None,
                 "error": None
             }
@@ -568,11 +587,18 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
                         else:
                             tp = {}
                     except:
-                        tp = {}  # 解析失败返回空字典
+                        # 【2026-04-28 小沈新增】当JSON解析失败时，使用正则提取参数
+                        # 处理content字段包含中文引号的情况
+                        tp = _extract_params_by_regex_from_json_str(json_after_tp)
+            
             else:
                 tp = {}
         else:
             tp = {}
+        
+        # 【2026-04-28 小沈新增】如果tp仍然为空，尝试用正则提取
+        if not tp:
+            tp = _extract_params_by_regex_from_json_str(json_str)
         
         if tp:
             result["tool_params"] = tp
@@ -591,11 +617,10 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
                     result["content"] = content_fixed
                     result["thought"] = content_fixed
                 except:
-                    # 如果解析失败，使用更宽松的正则（处理引号内可能包含转义字符的情况）
-                    # 匹配从 "content": " 到最后一个未转义的 "
-                    content_match = re.search(r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"', json_str)
-                    if content_match:
-                        content_fixed = content_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                    # 【2026-04-28 小沈修复】如果解析失败，使用平衡引号算法提取content值
+                    # 处理content字段包含中文引号的情况
+                    content_fixed = _extract_content_value_from_json_str(json_str)
+                    if content_fixed:
                         result["content"] = content_fixed
                         result["thought"] = content_fixed
         
@@ -681,13 +706,17 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
     
     # action 类型
     # 【2026-04-28 小沈修复】thought字段独立获取，不被content字段覆盖
+    # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
+    final_tool_params = tool_params if tool_params is not None else None
+    if final_tool_params:
+        final_tool_params = _supplement_missing_params(tool_name, final_tool_params, None)
     return {
         "type": "action",
         "thought": thought,
         "content": content,
         "reasoning": reasoning,
         "tool_name": tool_name,
-        "tool_params": tool_params if tool_params is not None else None,
+        "tool_params": final_tool_params,
         "response": None,
         "error": None
     }
@@ -824,6 +853,195 @@ def _filter_tool_params(tool_params: Dict) -> Dict:
                 filtered[k] = v
     
     return filtered
+
+
+# 【2026-04-28 小沈新增】工具必需参数定义
+TOOL_REQUIRED_PARAMS = {
+    "write_file": ["file_path", "content"],
+    "read_file": ["file_path"],
+    "delete_file": ["file_path"],
+    "move_file": ["source_path", "destination_path"],
+    "list_directory": ["dir_path"],
+    "search_files": ["file_pattern"],
+    "search_file_content": ["pattern", "path"],
+    "generate_report": ["format"],
+}
+
+
+def _check_missing_required_params(tool_name: str, tool_params: Dict, original_output: str = None) -> tuple:
+    """
+    【2026-04-28 小沈新增】检测并补充缺失的必需参数
+    
+    根据TOOL_REQUIRED_PARAMS定义的工具必需参数列表，检查LLM返回的参数字典是否完整。
+    如果存在缺失，尝试从LLM原始输出中提取缺失的参数值。
+    
+    检测逻辑：
+    1. 查找tool_name在TOOL_REQUIRED_PARAMS中定义的必需参数列表
+    2. 遍历必需参数，检查是否都存在于tool_params中
+    3. 如果有缺失，尝试用正则从original_output中提取：
+       - 匹配 "param_name": "value" 或 param_name: value 格式
+       - 兼容file_path和path参数的互相提取
+    4. 如果仍无法补充，返回(None, True)让调用方返回parse_error
+    
+    Args:
+        tool_name: 工具名称（如write_file, read_file, list_directory等）
+        tool_params: 已解析的参数字典（可能缺少必需参数）
+        original_output: LLM原始输出文本（用于从中提取缺失的参数值）
+        
+    Returns:
+        tuple: (补充后的参数字典, 是否有缺失)
+            - 如果成功补充或无需补充: (完整参数字典, False)
+            - 如果无法补充必需参数: (None, True)
+            
+    示例:
+        # write_file需要file_path和content两个必需参数
+        >>> _check_missing_required_params("write_file", {"file_path": "a.txt"}, '{"tool_name":"write_file","tool_params":{"file_path":"a.txt","content":"内容"}}')
+        ({"file_path": "a.txt", "content": "内容"}, False)
+        
+        # 缺失必需参数且无法补充
+        >>> _check_missing_required_params("write_file", {"file_path": "a.txt"}, None)
+        (None, True)
+    """
+    from app.utils.logger import logger
+    
+    # 如果没有定义必需参数，返回无缺失
+    if tool_name not in TOOL_REQUIRED_PARAMS:
+        return tool_params, False
+    
+    required = TOOL_REQUIRED_PARAMS[tool_name]
+    missing = [p for p in required if p not in tool_params]
+    
+    if not missing:
+        # 没有缺失参数
+        return tool_params, False
+    
+    logger.warning(f"[_check_missing_required_params] tool={tool_name}, 缺失必需参数={missing}, 当前参数={list(tool_params.keys())}")
+    
+    # 尝试从原始输出中提取缺失的参数
+    supplemented = False
+    if original_output:
+        import re
+        
+        for param in missing:
+            # 尝试多种模式匹配
+            patterns = [
+                # 匹配 "file_path": "xxx" 或 file_path: xxx
+                rf'["\']?{param}["\']?\s*:\s*["\']([^"\']+)["\']',
+                rf'["\']?{param}["\']?\s*:\s*([^\s,\}}]+)',
+                # 匹配 path 参数（兼容file_path）
+                rf'(?:file_?path)\s*[=:]\s*["\']?([^"\'\s,\}}]+)',
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, original_output, re.IGNORECASE)
+                if match:
+                    value = match.group(1).strip()
+                    if value and len(value) > 0 and value not in ["null", "none", "undefined"]:
+                        tool_params[param] = value
+                        logger.info(f"[_check_missing_required_params] 从原始输出补充参数 {param}={value[:50]}...")
+                        supplemented = True
+                        break
+    
+    # 如果仍然缺失必需参数，返回None让调用方返回parse_error
+    still_missing = [p for p in required if p not in tool_params]
+    if still_missing:
+        logger.warning(f"[_check_missing_required_params] 无法补充缺失参数={still_missing}，返回parse_error让LLM重试")
+        return None, True
+    
+    return tool_params, False
+
+
+def _supplement_missing_params(tool_name: str, tool_params: Dict, original_output: str = None) -> Dict:
+    """
+    【2026-04-28 小沈新增】补充缺失的必需参数
+    
+    当LLM返回的参数不完整时，尝试从原始输出或内容中推断缺失的参数。
+    这是处理LLM返回参数顺序不固定（如先返回file_path再返回content）的容错机制。
+    
+    处理逻辑：
+    1. 首先调用_check_missing_required_params尝试从原始输出补充
+    2. 如果无法补充，根据工具类型使用推断逻辑：
+       - write_file: 
+         - 缺失content时：从original_output中提取content字段
+         - 缺失file_path时：从content第一行提取标题作为文件名
+       - read_file:
+         - 缺失file_path时：从content中提取路径或使用默认值
+    
+    Args:
+        tool_name: 工具名称（如write_file, read_file等）
+        tool_params: 已解析的参数字典（可能不完整）
+        original_output: LLM原始输出文本（用于提取缺失参数）
+        
+    Returns:
+        补充后的参数字典
+        
+    示例:
+        # LLM返回 {"file_path": "xxx"} 但缺失content
+        >>> _supplement_missing_params("write_file", {"file_path": "xxx"}, '{"tool_name":"write_file","tool_params":{"file_path":"xxx","content":"小说内容"}}')
+        {"file_path": "xxx", "content": "小说内容"}
+        
+        # LLM返回 {"content": "xxx"} 但缺失file_path
+        >>> _supplement_missing_params("write_file", {"content": "第一章\n内容..."}, None)
+        {"content": "第一章\n内容...", "file_path": "E:/故事/第一章.txt"}
+    """
+    result, has_missing = _check_missing_required_params(tool_name, tool_params, original_output)
+    
+    # 如果能补充，直接返回
+    if result is not None:
+        return result
+    
+    # 无法补充时，使用推断逻辑
+    # 对于write_file，如果没有content，从file_path推断
+    if tool_name == "write_file" and "content" not in tool_params and "file_path" in tool_params:
+        # 已有file_path，content缺失，这通常是LLM返回参数顺序问题
+        # 从original_output中提取content
+        if original_output:
+            import re
+            # 尝试提取content字段的值
+            patterns = [
+                r'"content"\s*:\s*"([^"]*(?:\\.[^"]*)*)"',
+                r"'content'\s*:\s*'([^']*(?:\\.[^']*)*)'",
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, original_output, re.DOTALL)
+                if match:
+                    tool_params["content"] = match.group(1)
+                    logger.info(f"[_supplement_missing_params] 从原始输出补充content参数")
+                    return tool_params
+        
+        # 如果无法提取，返回原始参数（让LLM重试）
+        logger.warning(f"[_supplement_missing_params] write_file 缺失content，无法从原始输出补充")
+        return tool_params
+    
+    # 对于write_file，如果没有file_path，从content推断
+    if tool_name == "write_file" and "file_path" not in tool_params and "content" in tool_params:
+        content = tool_params.get("content", "")
+        first_line = content.split('\n')[0].strip() if content else ""
+        if first_line and len(first_line) < 100:
+            import re
+            title_match = re.match(r'^([^:：]+)', first_line)
+            if title_match:
+                title = title_match.group(1).strip()
+                title = re.sub(r'[\\/:*?"<>|]', '', title)[:50]
+                tool_params["file_path"] = f"E:/故事/{title}.txt"
+                return tool_params
+    
+    # 对于read_file，如果没有file_path，尝试从content推断
+    if tool_name == "read_file" and "file_path" not in tool_params and "content" in tool_params:
+        content = tool_params.get("content", "")
+        # 从content中尝试提取文件名
+        import re
+        # 匹配可能的小说文件名或路径
+        match = re.search(r'([A-Za-z]:[/\\]|/)[^/\\:*?"<>|]+\.txt', content)
+        if match:
+            tool_params["file_path"] = match.group(0)
+            return tool_params
+        # 使用默认读取路径
+        tool_params["file_path"] = "E:/默认读取.txt"
+        return tool_params
+    
+    # 其他情况返回原参数（可能不完整）
+    return tool_params
 
 
 def _try_parse_non_standard_json(input_str: str) -> Optional[Dict]:
@@ -997,13 +1215,17 @@ def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
         }
     
     # action类型
+    # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
+    final_tool_params = tool_params
+    if final_tool_params:
+        final_tool_params = _supplement_missing_params(tool_name, final_tool_params, original_output if isinstance(original_output, str) else None)
     return {
         "type": "action",
         "thought": parsed.get("thought", ""),
         "content": parsed.get("content", parsed.get("thought", original_output.strip())),
         "reasoning": parsed.get("reasoning", ""),
         "tool_name": tool_name,
-        "tool_params": tool_params,
+        "tool_params": final_tool_params,
         "response": None,
         "error": None
     }
@@ -1077,6 +1299,11 @@ def _extract_by_known_tools(content: str) -> Optional[Dict[str, Any]]:
     当关键词定位失败时，尝试在content中查找已知工具名作为兜底。
     这是系统鲁棒性的关键保障，必须在关键词定位之前执行。
     
+    【2026-04-28 小沈修复】增强参数提取逻辑：
+    1. 先尝试从tool_params JSON块中提取完整参数（包括content字段）
+    2. 再使用正确的参数名（file_path而非path）
+    3. 最后才使用简单的正则提取作为兜底
+    
     Args:
         content: LLM响应文本
         
@@ -1085,7 +1312,7 @@ def _extract_by_known_tools(content: str) -> Optional[Dict[str, Any]]:
         {
             "tool_name": str,       # 匹配到的工具名
             "content": str,         # 原始文本作为thought
-            "tool_params": dict     # 提取的参数（简化版）
+            "tool_params": dict     # 提取的参数（完整版）
         }
     """
     content_lower = content.lower()
@@ -1093,29 +1320,291 @@ def _extract_by_known_tools(content: str) -> Optional[Dict[str, Any]]:
     for tool in KNOWN_TOOLS:
         # 查找工具名出现位置（单词边界匹配）
         pattern = rf'\b{re.escape(tool)}\b'
-        if re.search(pattern, content_lower, re.IGNORECASE):
-            # 尝试提取参数（简化版：查找引号内的内容）
-            params = {}
+        tool_match = re.search(pattern, content_lower, re.IGNORECASE)
+        if not tool_match:
+            continue
             
-            # 查找路径参数（Windows/Unix路径）
-            path_patterns = [
-                r'["\']?([A-Za-z]:\\[^"\'\s]+)["\']?',  # Windows路径 C:\path
-                r'["\']?(/[^\s"\'<>]+)["\']?',          # Unix路径 /path
-            ]
-            
-            for p in path_patterns:
-                matches = re.findall(p, content)
-                if matches:
-                    params["path"] = matches[0]
-                    break
-            
+        # 【2026-04-28 小沈新增】尝试提取完整的tool_params JSON块
+        params = _extract_tool_params_from_text(content, tool_match.start())
+        
+        if params:
             return {
                 "tool_name": tool,
                 "content": content,
                 "tool_params": params
             }
+        
+        # 如果上面失败，使用简单的路径提取作为兜底，但使用正确的参数名
+        params = {}
+        
+        # 根据工具类型选择正确的参数名
+        path_param_name = "file_path" if tool in ["read_file", "write_file", "delete_file"] else "path"
+        
+        # 【2026-04-28 小沈修复】同时添加path作为别名，保持向后兼容
+        also_add_path_alias = tool in ["read_file", "write_file", "delete_file"]
+        
+        # 查找路径参数（Windows/Unix路径）
+        path_patterns = [
+            r'["\']?([A-Za-z]:\\[^"\'\s]+)["\']?',  # Windows路径 C:\path
+            r'["\']?(/[^\s"\'<>]+)["\']?',          # Unix路径 /path
+        ]
+        
+        for p in path_patterns:
+            matches = re.findall(p, content)
+            if matches:
+                params[path_param_name] = matches[0]
+                # 同时添加path别名以保持向后兼容
+                if also_add_path_alias:
+                    params["path"] = matches[0]
+                break
+        
+        # 【2026-04-28 小沈修复】即使没有找到路径参数，只要找到了工具名就返回
+        # 这确保 "I will list_directory the files" 这种情况也能正确匹配
+        return {
+            "tool_name": tool,
+            "content": content,
+            "tool_params": params
+        }
     
     return None
+
+
+def _extract_tool_params_from_text(content: str, tool_start_pos: int) -> Optional[Dict[str, Any]]:
+    """
+    【2026-04-28 小沈新增】从文本中提取tool_params JSON块
+    
+    在tool_name位置附近查找tool_params并尝试提取完整参数
+    
+    Args:
+        content: LLM响应文本
+        tool_start_pos: tool_name在文本中的起始位置
+        
+    Returns:
+        提取的参数字典，或None（提取失败）
+    """
+    # 在tool_name后面查找tool_params JSON块
+    search_text = content[tool_start_pos:]
+    
+    # 查找 "tool_params": { 开始位置
+    tp_pattern = r'"tool_params"\s*:\s*\{'
+    tp_match = re.search(tp_pattern, search_text)
+    
+    if not tp_match:
+        return None
+    
+    # 使用平衡括号算法提取完整的tool_params对象
+    from .react_output_parser import _extract_json_with_balanced_braces
+    json_start = tp_match.start()
+    json_text, _ = _extract_json_with_balanced_braces(search_text[json_start:])
+    
+    if not json_text:
+        return None
+    
+    # 尝试解析提取的JSON
+    try:
+        # 方法1：直接解析
+        parsed = json.loads(json_text)
+        if "tool_params" in parsed:
+            return parsed["tool_params"]
+        elif isinstance(parsed, dict):
+            # 如果没有tool_params外层，直接返回parsed
+            # 过滤掉非参数字段
+            return {k: v for k, v in parsed.items() if k not in ["reasoning", "thought", "type", "tool_name", "action", "action_input", "extra_field", "metadata", "context"]}
+    except:
+        pass
+    
+    # 方法2：尝试去掉外层，直接提取内部对象
+    try:
+        inner_start = json_text.find('{', json_text.find('tool_params'))
+        if inner_start != -1:
+            inner_json, _ = _extract_json_with_balanced_braces(json_text[inner_start:])
+            if inner_json:
+                return json.loads(inner_json)
+    except:
+        pass
+    
+    # 方法3：【2026-04-28 小沈新增】当JSON解析失败时，使用更宽松的正则提取参数
+    # 处理content字段包含换行和未转义引号的情况
+    params = _extract_params_by_regex(search_text)
+    if params:
+        return params
+    
+    return None
+
+
+def _extract_content_value_from_json_str(json_str: str) -> Optional[str]:
+    """
+    【2026-04-28 小沈新增】从JSON字符串中提取外层content字段的值
+    
+    处理content字段包含中文引号、换行等导致JSON解析失败的情况
+    
+    Args:
+        json_str: 完整的JSON字符串
+        
+    Returns:
+        提取的content值，或None
+    """
+    # 找到第一个"content"字段（不是tool_params中的content）
+    content_start = json_str.find('"content"')
+    if content_start == -1:
+        return None
+    
+    # 检查是否是tool_params中的content（通过检查前面是否有"tool_params"）
+    tool_params_pos = json_str.find('"tool_params"')
+    if tool_params_pos != -1 and content_start > tool_params_pos:
+        # 这是tool_params中的content，不是外层的content
+        return None
+    
+    # 找到"content"后面的引号
+    quote_start = json_str.find('"', content_start + len('"content"'))
+    if quote_start == -1:
+        return None
+    
+    # 使用平衡引号算法找到结束引号
+    value_start = quote_start + 1
+    i = value_start
+    while i < len(json_str):
+        if json_str[i] == '\\' and i + 1 < len(json_str):
+            i += 2
+            continue
+        if json_str[i] == '"':
+            return json_str[value_start:i]
+        i += 1
+    
+    return None
+
+
+def _extract_params_by_regex_from_json_str(json_str: str) -> Optional[Dict[str, Any]]:
+    """
+    【2026-04-28 小沈新增】从JSON字符串中提取tool_params
+    
+    当JSON解析失败时（如content字段包含中文引号），使用正则表达式提取参数
+    
+    Args:
+        json_str: 完整的JSON字符串
+        
+    Returns:
+        提取的参数字典，或None
+    """
+    # 在整个JSON字符串中查找tool_params对象
+    params = {}
+    
+    # 查找 tool_params 对象的开始位置
+    tp_start = json_str.find('"tool_params"')
+    if tp_start == -1:
+        return None
+    
+    # 找到 "tool_params": { 的 { 位置
+    brace_start = json_str.find('{', tp_start)
+    if brace_start == -1:
+        return None
+    
+    # 使用平衡括号提取整个tool_params对象
+    tp_json, _ = _extract_json_with_balanced_braces(json_str[brace_start:])
+    if not tp_json:
+        return None
+    
+    # 尝试解析，如果失败使用正则提取
+    try:
+        return json.loads(tp_json)
+    except:
+        pass
+    
+    # 使用正则提取各个参数
+    # 提取file_path
+    file_path_match = re.search(r'"file_path"\s*:\s*"([^"]+)"', tp_json)
+    if file_path_match:
+        params["file_path"] = file_path_match.group(1)
+    
+    # 提取content - 使用平衡引号算法
+    content_start = tp_json.find('"content"')
+    if content_start != -1:
+        quote_start = tp_json.find('"', content_start + len('"content"'))
+        if quote_start != -1:
+            value_start = quote_start + 1
+            i = value_start
+            while i < len(tp_json):
+                if tp_json[i] == '\\' and i + 1 < len(tp_json):
+                    i += 2
+                    continue
+                if tp_json[i] == '"':
+                    params["content"] = tp_json[value_start:i]
+                    break
+                i += 1
+    
+    # 提取其他常见参数
+    other_params = ["dir_path", "source_path", "destination_path", "file_pattern", "pattern", "offset", "limit", "encoding"]
+    for p in other_params:
+        pattern = rf'"{p}"\s*:\s*"([^"]+)"'
+        match = re.search(pattern, tp_json)
+        if match:
+            params[p] = match.group(1)
+    
+    return params if params else None
+
+
+def _extract_params_by_regex(text: str) -> Optional[Dict[str, Any]]:
+    """
+    【2026-04-28 小沈新增】当JSON解析失败时，使用正则表达式提取参数
+    
+    处理tool_params JSON中content字段包含换行和未转义引号的情况
+    
+    Args:
+        text: 包含tool_params的文本
+        
+    Returns:
+        提取的参数字典，或None
+    """
+    params = {}
+    
+    # 提取file_path参数（支持Windows和Unix路径）
+    file_path_patterns = [
+        r'"file_path"\s*:\s*"([^"]+)"',
+        r'"filepath"\s*:\s*"([^"]+)"',
+    ]
+    for pattern in file_path_patterns:
+        match = re.search(pattern, text)
+        if match:
+            params["file_path"] = match.group(1)
+            break
+    
+    # 如果上面没找到，尝试更宽松的路径模式
+    if "file_path" not in params:
+        path_patterns = [
+            r'["\']?([A-Za-z]:\\[^"\'\s,}]+)["\']?',  # Windows路径
+            r'"path"\s*:\s*"([^"]+)"',
+        ]
+        for pattern in path_patterns:
+            match = re.search(pattern, text)
+            if match:
+                params["file_path"] = match.group(1)
+                break
+    
+    # 提取content参数 - 使用更宽松的模式匹配
+    # 匹配 "content": " 后面到下一个 " 之前的内容（处理引号内可能有换行的情况）
+    # 关键：需要找到content字段在tool_params块中的位置，然后向后查找直到找到配对的结束引号
+    content_start = text.find('"content"')
+    if content_start != -1:
+        # 从content位置开始查找值的开始引号
+        quote_start = text.find('"', content_start + len('"content"'))
+        if quote_start != -1:
+            # 使用平衡引号算法找到结束引号
+            # 注意：需要处理引号内的转义引号
+            value_start = quote_start + 1
+            i = value_start
+            in_string = True
+            while i < len(text):
+                if text[i] == '\\' and i + 1 < len(text):
+                    # 转义字符，跳过
+                    i += 2
+                    continue
+                if text[i] == '"':
+                    # 找到结束引号
+                    params["content"] = text[value_start:i]
+                    break
+                i += 1
+    
+    return params if params else None
 
 
 # =============================================================================
@@ -1219,13 +1708,16 @@ def _parse_action(
             "response": None
         }
 
+    # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
+    final_tool_params = tool_params or {}
+    final_tool_params = _supplement_missing_params(tool_name, final_tool_params, None)
     return {
         "type": "action",
         "thought": thought,
         "content": thought,             # 兼容性字段
         "reasoning": thought,           # 兼容性字段
         "tool_name": tool_name,
-        "tool_params": tool_params or {},
+        "tool_params": final_tool_params,
         "response": None,
         "error": None
     }
