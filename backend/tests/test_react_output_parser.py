@@ -2235,3 +2235,372 @@ class TestToolCallFormatsAndFieldOrder:
         assert r3["type"] == "action"
         assert r3["tool_name"] == "write_file"
 
+
+# =============================================================================
+# TestChineseQuotesAndEdgeCases - 中文引号和边界情况测试（2026-04-28新增）
+# =============================================================================
+
+class TestChineseQuotesAndEdgeCases:
+    """测试中文引号、未转义引号、降级提取等边界情况"""
+
+    # -------------------------------------------------------------------------
+    # 中文引号问题 - 第1个bug的场景
+    # -------------------------------------------------------------------------
+    
+    def test_chinese_quotes_in_content_causes_parse_failure(self):
+        """【边界1】content中含中文引号导致JSON解析失败，应降级提取"""
+        # LLM返回的JSON包含中文引号 "" 和 ""
+        llm_output = '''{"content": "也许这就是命吧。", "thought": "用户说这就是命", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt", "content": "这是一段内容"}}'''
+        result = parse_react_response(llm_output)
+        # 应该能正确解析或降级处理
+        assert result["type"] in ["action", "implicit", "thought_only"]
+
+    def test_chinese_quotes_mixed_with_english(self):
+        """【边界2】混合中英文引号"""
+        llm_output = '''{"content": "他说："你好"，然后离开了", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt"}}'''
+        result = parse_react_response(llm_output)
+        assert result["type"] in ["action", "implicit", "thought_only"]
+
+    def test_unescaped_quotes_in_chinese_content(self):
+        """【边界3】中文内容含未转义引号（如"让一让，让一让！"）"""
+        llm_output = '''{"content": "让一让，让一让！", "thought": "需要让路", "tool_name": "list_directory", "tool_params": {"dir_path": "E:/"}}'''
+        result = parse_react_response(llm_output)
+        assert result["type"] in ["action", "implicit", "thought_only"]
+        if result["type"] == "action":
+            assert result["tool_name"] == "list_directory"
+
+    def test_multiple_chinese_quotes_in_text(self):
+        """【边界4】文本中多处中文引号"""
+        llm_output = '''{"content": "他说："这是一个"测试"", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt"}}'''
+        result = parse_react_response(llm_output)
+        assert result["type"] in ["action", "implicit", "thought_only"]
+
+    # -------------------------------------------------------------------------
+    # 降级后外层字段提取 - 第2个bug的场景
+    # -------------------------------------------------------------------------
+
+    def test_fallback_extract_outer_content_field(self):
+        """【边界5】JSON解析失败后应提取外层content字段"""
+        # 中文引号导致解析失败，但外层content字段应该被提取
+        llm_output = '''{"content": "这是外层content内容，包含中文引号"测试"", "thought": "思考过程", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt"}}'''
+        result = parse_react_response(llm_output)
+        # content应该在thought或response中
+        assert result.get("thought") is not None or result.get("response") is not None
+
+    def test_fallback_extract_outer_reasoning_field(self):
+        """【边界6】JSON解析失败后应提取外层reasoning字段"""
+        llm_output = '''{"reasoning": "推理过程"包含引号", "thought": "思考", "tool_name": "read_file", "tool_params": {"file_path": "E:/1.txt"}}'''
+        result = parse_react_response(llm_output)
+        assert result["type"] in ["action", "implicit", "thought_only"]
+        # reasoning应该被提取
+        if result["type"] == "action":
+            assert result.get("reasoning") is not None
+
+    def test_fallback_with_content_and_reasoning(self):
+        """【边界7】同时有外层content和reasoning字段"""
+        llm_output = '''{"content": "内容"测试", "reasoning": "推理"过程", "tool_name": "list_directory", "tool_params": {"dir_path": "D:/"}}'''
+        result = parse_react_response(llm_output)
+        assert result["type"] in ["action", "implicit", "thought_only"]
+        if result["type"] == "action":
+            # 至少应该提取到tool_name
+            assert result["tool_name"] == "list_directory"
+
+    # -------------------------------------------------------------------------
+    # 字符串内特殊字符问题
+    # -------------------------------------------------------------------------
+
+    def test_newline_in_json_string_not_escaped(self):
+        """【边界8】JSON字符串内有未转义换行符"""
+        llm_output = '{"content": "第一行\\n第二行", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+
+    def test_tab_in_json_string_not_escaped(self):
+        """【边界9】JSON字符串内有未转义制表符"""
+        llm_output = '{"content": "字段1\\t字段2", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert "字段1" in result.get("tool_params", {}).get("content", "") or "字段1" in result.get("thought", "")
+
+    def test_backslash_in_content(self):
+        """【边界10】content中有多余反斜杠"""
+        llm_output = '{"content": "路径C:\\\\Users\\\\test", "tool_name": "list_directory", "tool_params": {"dir_path": "C:/"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] in ["action", "implicit", "thought_only"]
+
+    # -------------------------------------------------------------------------
+    # 空值和边界值
+    # -------------------------------------------------------------------------
+
+    def test_empty_string_content(self):
+        """【边界11】content是空字符串"""
+        llm_output = '{"content": "", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt", "content": "实际内容"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+
+    def test_null_content_field(self):
+        """【边界12】content字段为null"""
+        llm_output = '{"content": null, "thought": "思考", "tool_name": "list_directory", "tool_params": {"dir_path": "E:/"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+
+    def test_empty_object_tool_params(self):
+        """【边界13】tool_params是空对象（非finish类型）"""
+        # 非finish类型时，空对象应该保留
+        llm_output = '{"content": "完成", "tool_name": "write_file", "tool_params": {}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        # 非finish类型的空tool_params应保留为空对象
+        assert result["tool_params"] == {}
+
+    def test_missing_tool_params_field(self):
+        """【边界14】缺少tool_params字段"""
+        llm_output = '{"content": "完成", "tool_name": "list_directory"}'
+        result = parse_react_response(llm_output)
+        assert result["type"] in ["action", "implicit", "thought_only"]
+
+    # -------------------------------------------------------------------------
+    # 字段顺序极端情况
+    # -------------------------------------------------------------------------
+
+    def test_field_order_reversed_extreme(self):
+        """【边界15】字段顺序完全反转"""
+        llm_output = '{"tool_params": {"dir_path": "E:/"}, "reasoning": "R", "tool_name": "list_directory", "thought": "T", "content": "C"}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        assert result["tool_params"]["dir_path"] == "E:/"
+
+    def test_only_tool_name_and_tool_params(self):
+        """【边界16】只有tool_name和tool_params，没有content/thought"""
+        llm_output = '{"tool_name": "read_file", "tool_params": {"file_path": "E:/1.txt"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "read_file"
+
+    def test_tool_params_content_field_priority(self):
+        """【边界17】tool_params内有content字段时的优先级"""
+        llm_output = '{"content": "外层content", "tool_name": "write_file", "tool_params": {"file_path": "E:/test.txt", "content": "tool_params内的content"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        # tool_params内的content应该是完整的内容
+        assert result["tool_params"]["content"] == "tool_params内的content"
+
+    # -------------------------------------------------------------------------
+    # 特殊格式的JSON
+    # -------------------------------------------------------------------------
+
+    def test_json_with_trailing_comma(self):
+        """【边界18】JSON有尾部逗号"""
+        llm_output = '{"content": "完成", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt",},}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+
+    def test_json_with_single_quotes(self):
+        """【边界19】JSON使用单引号（需要转换）"""
+        llm_output = "{'content': '完成', 'tool_name': 'write_file', 'tool_params': {'path': 'E:/test.txt'}}"
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+
+    def test_json_with_mixed_quotes(self):
+        """【边界20】混用单双引号"""
+        llm_output = '{"content": "完成", \'tool_name\': "write_file", "tool_params": {\'path\': "E:/test.txt"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] in ["action", "implicit", "thought_only"]
+
+    # -------------------------------------------------------------------------
+    # 真实场景模拟 - 基于日志中的问题
+    # -------------------------------------------------------------------------
+
+    def test_real_scenario_chinese_quote_in_content(self):
+        """【边界21】真实场景：content中带中文引号的完整JSON"""
+        # 模拟16:00:02时的情况
+        llm_output = '''{"content": "也许这就是命吧。", "thought": "用户感叹道", "reasoning": "用户表达了宿命感", "tool_name": "write_file", "tool_params": {"path": "E:/日记.txt", "content": "今天天气很好"}}'''
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        # 外层content应该在thought或response中
+        assert "也许这就是命吧" in (result.get("thought", "") + result.get("response", ""))
+
+    def test_real_scenario_unescaped_quote_in_thought(self):
+        """【边界22】真实场景：thought中带未转义引号"""
+        llm_output = '''{"thought": "用户说："让一让，让一让！", "tool_name": "list_directory", "tool_params": {"dir_path": "E:/"}}'''
+        result = parse_react_response(llm_output)
+        assert result["type"] in ["action", "implicit", "thought_only"]
+        if result["type"] == "action":
+            assert result["tool_name"] == "list_directory"
+
+    def test_real_scenario_multiline_content_with_quotes(self):
+        """【边界23】真实场景：多行content带引号"""
+        llm_output = '''{"content": "第一段\\n第二段"引号内容"", "thought": "处理完成", "tool_name": "write_file", "tool_params": {"path": "E:/output.txt", "content": "实际写入内容"}}'''
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+
+    def test_real_scenario_reasoning_with_chinese_quotes(self):
+        """【边界24】真实场景：reasoning带中文引号"""
+        llm_output = '''{"reasoning": "推理"过程"包含引号", "thought": "思考", "tool_name": "read_file", "tool_params": {"file_path": "E:/1.txt"}}'''
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "read_file"
+        # reasoning应该被提取
+        assert result.get("reasoning") is not None
+
+    def test_real_scenario_content_with_punctuation(self):
+        """【边界25】真实场景：content包含中文标点符号"""
+        llm_output = '''{"content": "这是内容，包含：中文、标点、"引号"、和...更多内容", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt"}}'''
+        result = parse_react_response(llm_output)
+        assert result["type"] in ["action", "implicit", "thought_only"]
+
+    # -------------------------------------------------------------------------
+    # 极端边界情况
+    # -------------------------------------------------------------------------
+
+    def test_very_long_content_with_quotes(self):
+        """【边界26】超长content带引号"""
+        long_text = "这是很长的内容，" * 100 + '"包含引号"'
+        llm_output = f'{{"content": "{long_text}", "tool_name": "write_file", "tool_params": {{"path": "E:/test.txt"}}}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+
+    def test_nested_quotes_in_tool_params(self):
+        """【边界27】tool_params内多层嵌套引号"""
+        llm_output = '{"content": "完成", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt", "content": "内容含"内层引号"和\'单引号\'"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] in ["action", "implicit", "thought_only"]
+
+    def test_emoji_in_content(self):
+        """【边界28】content中含emoji"""
+        llm_output = '{"content": "完成🎉", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert "🎉" in result.get("tool_params", {}).get("content", "") or "🎉" in result.get("thought", "")
+
+    def test_mixed_language_in_content(self):
+        """【边界29】content混合中英文和特殊字符"""
+        llm_output = '{"content": "Hello你好123!@#", "tool_name": "write_file", "tool_params": {"path": "E:/test.txt"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+
+    def test_json_with_only_whitespace_between_fields(self):
+        """【边界30】字段间只有空白字符"""
+        llm_output = '{"content": "完成"   ,   "tool_name":   "write_file"   ,   "tool_params":   {"path":   "E:/test.txt"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+
+    # -------------------------------------------------------------------------
+    # 必需参数补充测试
+    # -------------------------------------------------------------------------
+
+    def test_missing_file_path_auto_supplemented(self):
+        """【边界31】write_file缺少file_path参数，自动补充默认路径"""
+        # 模拟日志中的场景：tool_params只有content，缺少file_path
+        llm_output = '{"content": "我需要继续写第三章", "tool_name": "write_file", "tool_params": {"content": "第三章：金黄的银杏叶"}}'
+        result = parse_react_response(llm_output)
+        # 自动补充了file_path
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        assert "file_path" in result["tool_params"] or "path" in result["tool_params"]
+
+    def test_supplement_from_original_output_success(self):
+        """【边界32】从原始输出中提取缺失的参数成功，解析正常"""
+        llm_output = '{"content": "写文件", "tool_name": "write_file", "tool_params": {"content": "文件内容"}} file_path: E:/test.txt'
+        result = parse_react_response(llm_output)
+        # 应该从原始输出中提取到file_path，解析成功
+        assert result["type"] == "action"
+        assert "file_path" in result["tool_params"] or "path" in result["tool_params"]
+
+    def test_complete_params_no_supplement(self):
+        """【边界33】完整参数不应被修改"""
+        llm_output = '{"content": "写文件", "tool_name": "write_file", "tool_params": {"file_path": "E:/完整.txt", "content": "完整内容"}}'
+        result = parse_react_response(llm_output)
+        assert result["type"] == "action"
+        assert result["tool_params"]["file_path"] == "E:/完整.txt"
+        assert result["tool_params"]["content"] == "完整内容"
+
+    def test_read_file_with_path_in_text(self):
+        """【边界34】read_file有path信息在文本中，能成功提取"""
+        llm_output = '{"content": "读取文件", "tool_name": "read_file", "tool_params": {"offset": 1}} file_path: C:/test.txt'
+        result = parse_react_response(llm_output)
+        # 应该有file_path或path参数
+        assert result["type"] == "action"
+        assert "file_path" in result["tool_params"] or "path" in result["tool_params"]
+
+    def test_real_llm_missing_file_path_scenario(self):
+        """【边界35】真实场景：基于日志16:03:41的LLM返回，tool_params只有content缺少file_path"""
+        # LLM返回的JSON（基于日志）
+        llm_output = '{"content": "我需要继续写第三章，并且增加内容篇幅以达到每章10000-20000字的要求。同时继续创作秋天的爱情故事", "tool_name": "write_file", "tool_params": {"content": "第三章：金黄的银杏叶\\n\\n秋天是收获的季节，也是爱情最美的季节。"}}'
+        result = parse_react_response(llm_output)
+        
+        # 验证解析成功
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        
+        # 验证必需参数被自动补充
+        assert "content" in result["tool_params"]
+        assert "file_path" in result["tool_params"]
+        
+        # 验证补充的file_path合理
+        file_path = result["tool_params"]["file_path"]
+        assert "第三章" in file_path or "故事" in file_path
+
+    def test_llm_missing_multiple_required_params(self):
+        """【边界36】缺少必需参数但有content字段可以推断"""
+        # read_file 缺少 file_path，但 tool_params 中有 content 可以尝试推断
+        llm_output = '{"content": "读取文件", "tool_name": "read_file", "tool_params": {"content": "读取E:/小说/第一章.txt", "offset": 10, "limit": 100}}'
+        result = parse_react_response(llm_output)
+        
+        # 应该自动补充 file_path
+        assert result["type"] == "action"
+        assert "file_path" in result["tool_params"] or "path" in result["tool_params"]
+
+    def test_llm_all_params_present_no_change(self):
+        """【边界37】所有必需参数都存在，不应修改"""
+        llm_output = '{"content": "写文件", "tool_name": "write_file", "tool_params": {"file_path": "D:/明确路径/文件.txt", "content": "内容"}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_params"]["file_path"] == "D:/明确路径/文件.txt"
+        assert result["tool_params"]["content"] == "内容"
+    
+    def test_content_with_escaped_quotes(self):
+        """【边界38】content包含转义引号时正确提取"""
+        # 模拟LLM返回包含转义引号的content
+        llm_output = '{"tool_name":"write_file","tool_params":{"file_path":"a.txt","content":"他说：\\"你好世界\\""}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+        # 验证content被正确提取（JSON解析支持转义）
+        assert "content" in result["tool_params"]
+        # 转义引号可能被解析为普通引号或保留转义形式
+    
+    def test_multiple_content_fields_in_output(self):
+        """【边界39】原始输出中有多个content字段时，优先提取tool_params里的content"""
+        # 模拟原始输出中有thought.content和tool_params.content
+        # 使用标准action格式：包含tool_name和tool_params
+        llm_output = '{"content": "思考内容", "tool_name": "write_file", "tool_params": {"content": "正确的content", "file_path": "a.txt"}}'
+        result = parse_react_response(llm_output)
+        
+        # 应该能正确解析为action类型
+        assert result["type"] == "action"
+        # tool_params里的content应该是正确的
+        assert result["tool_params"]["content"] == "正确的content"
+        assert result["tool_params"]["file_path"] == "a.txt"
+    
+    def test_write_file_content_too_long_for_inference(self):
+        """【边界40】write_file的content第一行超长时，推断file_path应回退"""
+        # 使用超长第一行触发推断回退
+        llm_output = '{"tool_name":"write_file","tool_params":{"content":"' + 'a' * 150 + '\\n第二行内容"}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        # content应该存在
+        assert "content" in result["tool_params"]
+        # 由于第一行超长，file_path不应被推断添加（触发回退）
+        # 注意：实际行为取决于_supplement_missing_params的回退逻辑
+

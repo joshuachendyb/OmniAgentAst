@@ -991,40 +991,70 @@ def _supplement_missing_params(tool_name: str, tool_params: Dict, original_outpu
         return result
     
     # 无法补充时，使用推断逻辑
+    # 【适用范围】专为「写小说/长文本」场景设计，非小说内容（代码、日志等）推断可能不准确
+    # 【回退机制】推断失败时直接返回原参数，让LLM重试
+    
     # 对于write_file，如果没有content，从file_path推断
     if tool_name == "write_file" and "content" not in tool_params and "file_path" in tool_params:
         # 已有file_path，content缺失，这通常是LLM返回参数顺序问题
-        # 从original_output中提取content
+        # 从original_output中提取content：优先JSON解析，失败再用正则
         if original_output:
+            # 【改进】优先尝试JSON解析，精确提取tool_params里的content
+            extracted_content = None
+            try:
+                json_data = json.loads(original_output)
+                # 标准格式：tool_params.content
+                if isinstance(json_data, dict):
+                    tool_params_data = json_data.get("tool_params") or json_data.get("action_input") or {}
+                    if isinstance(tool_params_data, dict) and "content" in tool_params_data:
+                        extracted_content = tool_params_data["content"]
+            except (json.JSONDecodeError, TypeError):
+                pass
+            
+            if extracted_content:
+                tool_params["content"] = extracted_content
+                logger.info(f"[_supplement_missing_params] 从JSON解析补充content参数")
+                return tool_params
+            
+            # 【改进】正则支持转义引号（\" 或 \'）
             import re
-            # 尝试提取content字段的值
             patterns = [
-                r'"content"\s*:\s*"([^"]*(?:\\.[^"]*)*)"',
-                r"'content'\s*:\s*'([^']*(?:\\.[^']*)*)'",
+                r'"content"\s*:\s*"((?:[^\"\\]|\\.)*)"',  # 支持转义双引号
+                r"'content'\s*:\s*'((?:[^'\\]|\\.)*)'",  # 支持转义单引号
             ]
             for pattern in patterns:
                 match = re.search(pattern, original_output, re.DOTALL)
                 if match:
                     tool_params["content"] = match.group(1)
-                    logger.info(f"[_supplement_missing_params] 从原始输出补充content参数")
+                    logger.info(f"[_supplement_missing_params] 从正则匹配补充content参数")
                     return tool_params
         
         # 如果无法提取，返回原始参数（让LLM重试）
-        logger.warning(f"[_supplement_missing_params] write_file 缺失content，无法从原始输出补充")
+        logger.warning(f"[_supplement_missing_params] write_file 缺失content，无法从原始输出补充（original_output={type(original_output).__name__}）")
         return tool_params
     
     # 对于write_file，如果没有file_path，从content推断
+    # 【适用范围】专为「写小说/长文本」场景设计，非小说内容推断可能不准确
+    # 【回退机制】推断失败时返回原参数，让LLM重试
     if tool_name == "write_file" and "file_path" not in tool_params and "content" in tool_params:
         content = tool_params.get("content", "")
         first_line = content.split('\n')[0].strip() if content else ""
+        inferred_path = None
         if first_line and len(first_line) < 100:
             import re
             title_match = re.match(r'^([^:：]+)', first_line)
             if title_match:
                 title = title_match.group(1).strip()
                 title = re.sub(r'[\\/:*?"<>|]', '', title)[:50]
-                tool_params["file_path"] = f"E:/故事/{title}.txt"
-                return tool_params
+                inferred_path = f"E:/故事/{title}.txt"
+        
+        if inferred_path:
+            tool_params["file_path"] = inferred_path
+            return tool_params
+        else:
+            # 推断失败，明确日志并返回原参数，让LLM重试
+            logger.warning(f"[_supplement_missing_params] write_file 无法从content推断file_path（第一行长度={len(first_line)}字符），返回原参数让LLM重试")
+            return tool_params
     
     # 对于read_file，如果没有file_path，尝试从content推断
     if tool_name == "read_file" and "file_path" not in tool_params and "content" in tool_params:
