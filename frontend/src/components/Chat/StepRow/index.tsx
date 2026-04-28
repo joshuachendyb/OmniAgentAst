@@ -30,6 +30,9 @@ interface StepRowProps {
 /**
  * 容器样式 - 白色背景，圆角边框
  * 2026-04-28 小强修改：添加overflow hidden让子元素圆角正确显示
+ * 第五步说明：边框颜色#e8e8e8与AI气泡#b7eb8f区分是合理设计
+ * - AI气泡绿色边框表示AI身份
+ * - StepRow灰色边框表示执行步骤（不是AI消息）
  */
 const containerStyle: React.CSSProperties = {
   marginBottom: 12,
