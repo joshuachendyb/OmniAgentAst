@@ -22,12 +22,17 @@ import {
   CheckOutlined,
   DownloadOutlined,
 } from "@ant-design/icons";
-import StepRow from "../StepRow/index";
+import StepHeader from "../StepRow/StepHeader";
+import StepContent from "../StepRow/StepContent";
+import StepFooter from "../StepRow/StepFooter";
 import MessageContent from "../MessageContent";
 import RoleNameDisplay from "./RoleNameDisplay";
 import { DynamicStatusDisplay } from "../../../utils/dynamicStatus";
 import { formatTime, formatRelativeTime } from "../../../utils/timeFormatters";
 import { exportMessage } from "../../../utils/messageExporter";
+import { getStepStyle, getStepBadgeStyle, getStepLabelStyle, isValidStepType } from "../../../utils/stepStyles";
+import type { StepType } from "../../../utils/stepStyles";
+import { STEP_LABEL_MAP } from "../constants/stepConstants";
 import type { MessageItemProps } from "../../../hooks/useMessageItemProps";
 
 interface AIMessageBubbleProps {
@@ -252,17 +257,40 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
             />
           </Tooltip>
 
-          {/* 执行步骤 */}
-          {stepData.sortedSteps.map((step, index) => (
-            <StepRow 
-              key={`step-${index}`} 
-              step={step} 
-              taskId={stepData.taskId} 
-              stepIndex={index} 
-              expandedSteps={expandedSteps} 
-              toggleExpand={toggleExpand} 
-            />
-          ))}
+          {/* 执行步骤 - 框层合并后直接使用子组件 */}
+          {stepData.sortedSteps.map((step, index) => {
+            // 处理incident类型
+            const effectiveType = step.type === 'incident' 
+              ? ((step as any).incident_value || 'incident') 
+              : step.type;
+            const label = STEP_LABEL_MAP[effectiveType] || STEP_LABEL_MAP[step.type] || "步骤";
+            const badgeStyle = getStepBadgeStyle(effectiveType as StepType);
+            const labelStyle = getStepLabelStyle(effectiveType as StepType);
+            
+            return (
+              <div key={`step-${index}`} style={getStepStyle(effectiveType as StepType, true)}>
+                <StepHeader 
+                  step={step} 
+                  badgeStyle={badgeStyle} 
+                  labelStyle={labelStyle} 
+                  label={label} 
+                  icon="" 
+                />
+                <StepContent 
+                  step={step} 
+                  stepIndex={index} 
+                  expandedSteps={expandedSteps} 
+                  toggleExpand={toggleExpand}
+                  contentStyle={{}}
+                />
+                <StepFooter 
+                  step={step} 
+                  hasMore={false} 
+                  onLoadMore={() => {}} 
+                />
+              </div>
+            );
+          })}
 
           {/* 思考中标签 - 第四步添加呼吸渐变动画（增强版） */}
           {message.is_reasoning && (
