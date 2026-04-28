@@ -300,6 +300,7 @@ class TextStrategy(LLMStrategy):
         【方案B】通过已知工具名匹配提取 action
         
         当 ToolParser 无法解析时，尝试在 content 中查找已知工具名
+        【2026-04-28 小沈增强】提取更完整的参数，包括 path, content 等
         """
         import re
         
@@ -311,14 +312,13 @@ class TextStrategy(LLMStrategy):
             if re.search(pattern, content_lower, re.IGNORECASE):
                 logger.info(f"[TextStrategy] Found known tool: {tool}")
                 
-                # 尝试提取参数（简化版：查找引号内的内容）
+                # 尝试提取参数（增强版：提取多种参数）
                 params = {}
                 
-                # 查找路径参数
+                # 1. 查找 path 参数
                 path_patterns = [
                     r'["\']?([A-Za-z]:\\[^"\'\s]+)["\']?',  # Windows 路径 C:\path
                     r'["\']?(/[^\s"\'<>]+)["\']?',  # Unix 路径 /path
-                    r'["\']?([^"\'\s]+)["\']?',  # 一般字符串
                 ]
                 
                 for p in path_patterns:
@@ -326,6 +326,35 @@ class TextStrategy(LLMStrategy):
                     if matches:
                         params["path"] = matches[0]
                         break
+                
+                # 2. 查找 content 参数（用于 write_file 等工具）
+                # 尝试从 JSON 块中提取 content
+                json_match = re.search(r'\{[^}]*"content"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
+                if json_match:
+                    params["content"] = json_match.group(1)
+                else:
+                    # 备用：从 content 标签中提取
+                    content_match = re.search(r'["\']?content["\']?\s*:\s*"([^"]*)"', content, re.DOTALL)
+                    if content_match:
+                        params["content"] = content_match.group(1)
+                
+                # 3. 查找其他常见参数
+                # file_name
+                fn_match = re.search(r'["\']?file_name["\']?\s*:\s*"([^"]*)"', content)
+                if fn_match:
+                    params["file_name"] = fn_match.group(1)
+                
+                # search_query
+                sq_match = re.search(r'["\']?search_query["\']?\s*:\s*"([^"]*)"', content)
+                if sq_match:
+                    params["search_query"] = sq_match.group(1)
+                
+                # keyword
+                kw_match = re.search(r'["\']?keyword["\']?\s*:\s*"([^"]*)"', content)
+                if kw_match:
+                    params["keyword"] = kw_match.group(1)
+                
+                logger.info(f"[TextStrategy] Extracted params: {list(params.keys())}")
                 
                 return {
                     "tool_name": tool,
