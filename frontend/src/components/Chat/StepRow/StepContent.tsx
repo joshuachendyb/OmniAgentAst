@@ -201,6 +201,7 @@ const StepContent: React.FC<StepContentProps> = ({
         </div>
       )}
       {step.type === "thought" && (
+        // 2026-04-28 小强修改：第三步实现thought/reasoning样式简化
         <div style={{ 
           ...getStepStyle("thought" as StepType),
           whiteSpace: "pre-wrap",
@@ -213,12 +214,14 @@ const StepContent: React.FC<StepContentProps> = ({
               flexDirection: 'column',
               gap: 8,
             }}>
+              {/* thought主要内容的简洁样式（第三步修改） */}
               {(step as ExecutionStep & Record<string, unknown>).thought && (
                 <div style={{
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  background: 'rgba(255,170,0,0.1)',
-                  border: '1px solid rgba(255,170,0,0.2)',
+                  padding: "12px 16px",
+                  borderRadius: 10,
+                  background: "#fafafa",
+                  border: "1px solid #f0f0f0",
+                  marginBottom: 8,
                 }}>
                   <div style={{
                     display: 'flex',
@@ -237,44 +240,29 @@ const StepContent: React.FC<StepContentProps> = ({
                   </div>
                   <div style={{
                     fontSize: 13,
-                    color: '#92400e',
+                    color: '#333',
                     lineHeight: 1.5,
+                    fontWeight: 500,
                   }}>
                     {(step as ExecutionStep & Record<string, unknown>).thought}
                   </div>
                 </div>
               )}
+              {/* reasoning次要信息，左侧竖线标识（第三步修改） */}
               {(step as ExecutionStep & Record<string, unknown>).reasoning && (
                 <div style={{
-                  padding: '10px 14px',
-                  borderRadius: 8,
-                  paddingLeft: 16,
-                  borderLeft: '3px solid #722ed1',
-                  background: 'rgba(114,46,209,0.05)',
-                  border: '1px solid rgba(114,46,209,0.1)',
+                  marginTop: 8,
+                  marginLeft: 12,
+                  paddingLeft: 12,
+                  borderLeft: "2px solid #d9d9d9",
+                  color: "#666",
+                  fontSize: 12,
+                  lineHeight: 1.5,
                 }}>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    marginBottom: 6,
-                  }}>
-                    <span style={{ fontSize: 14 }}>🧠</span>
-                    <span style={{ 
-                      fontSize: 12, 
-                      fontWeight: 600,
-                      color: '#7c3aed',
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                    }}>推理</span>
-                  </div>
-                  <div style={{
-                    fontSize: 13,
-                    color: '#6d28d9',
-                    lineHeight: 1.5,
-                  }}>
+                  <span style={{ fontWeight: 500, marginRight: 4 }}>🧠 推理:</span>
+                  <span style={{ color: '#666' }}>
                     {(step as ExecutionStep & Record<string, unknown>).reasoning}
-                  </div>
+                  </span>
                 </div>
               )}
             </div>
