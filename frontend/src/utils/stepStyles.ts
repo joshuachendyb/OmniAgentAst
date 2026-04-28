@@ -22,16 +22,23 @@ export const isDarkMode = (): boolean => {
 };
 
 /**
- * 深色模式配色（第七步实现）
+ * 深色模式配色 - 9种浅色方案精简版
+ * 设计原则：3种色系×3种深浅=9种浅色，绝对不用深色
+ * 兼容说明：保留StepRow组件需要的临时属性，后续框层合并时删除
  */
 export const darkModeColors = {
+  // 基础3色（容器/边框/文字）
   container: '#1f1f1f',
+  border: '#404040',
+  text: '#e5e5e5',
+  // 扩展色（保留必要区分度）
+  success: '#52c41a',
+  error: '#cf1322',
+  warning: '#d97706',
+  // StepRow临时使用的属性（后续框层合并时删除）
   headerBg: '#2a2a2a',
   contentBg: '#141414',
   footerBg: '#1a1a1a',
-  border: '#404040',
-  text: '#e5e5e5',
-  textSecondary: '#999',
   hoverBorder: '#595959',
 };
 
@@ -93,37 +100,32 @@ export const FontWeight = {
   LIGHT: 300,           // 辅助文字
 } as const;
 
-// 颜色常量（用于非步骤元素）
+// 颜色常量 - 9种浅色方案精简版
+// 设计原则：3种色系×3种深浅=9种浅色，绝对不用深色，禁止到处框框色块
 export const Colors = {
-  // 文字颜色层次
+  // 文字颜色（3种浅色）
   TEXT: {
-    PRIMARY: '#262626',     // 主要文字
-    SECONDARY: '#595959',   // 次要文字
-    TERTIARY: '#8c8c8c',    // 辅助文字
-    DISABLED: '#bfbfbf',    // 禁用状态
-    INVERSE: '#fff',        // 反色文字
+    PRIMARY: '#262626',     // 主要文字 - 浅灰
+    SECONDARY: '#595959',   // 次要文字 - 中灰
+    TERTIARY: '#999999',    // 辅助文字 - 深灰（仍是浅色）
   },
-  
-  // 背景颜色层次
+  // 背景颜色（3种浅色）
   BG: {
-    PRIMARY: '#fff',        // 主背景
-    SECONDARY: '#fafafa',   // 次要背景
-    TERTIARY: '#f5f5f5',    // 第三背景
-    HOVER: '#f0f0f0',       // 悬停背景
+    PRIMARY: '#ffffff',    // 主背景 - 白色
+    SECONDARY: '#fafafa',  // 次要背景 - 极浅灰
+    TERTIARY: '#f5f5f5',   // 第三背景 - 浅灰
   },
-  
-  // 边框颜色
+  // 边框颜色（3种浅色）
   BORDER: {
-    LIGHT: '#f0f0f0',
-    DEFAULT: '#d9d9d9',
-    STRONG: '#8c8c8c',
+    LIGHT: '#f0f0f0',    // 浅边框
+    DEFAULT: '#d9d9d9',    // 中边框
+    STRONG: '#bfbfbf',    // 深边框（仍是浅色）
   },
-  
-  // 功能颜色
-  SUCCESS: '#52c41a',
-  WARNING: '#faad14',
-  ERROR: '#ff4d4f',
-  INFO: '#1890ff',
+  // 功能颜色（4种）
+  SUCCESS: '#52c41a',        // 成功状态 - 绿色
+  ERROR: '#ff4d4f',          // 错误状态 - 红色
+  WARNING: '#d97706',        // 警告/思考状态 - 橙色
+  INFO: '#096dd9',          // 信息/开始状态 - 蓝色
 } as const;
 
 // ==================== 步骤配置 ====================
