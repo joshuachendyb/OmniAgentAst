@@ -352,6 +352,7 @@ export const getStepLabelStyle = (stepType: StepType | string) => {
 
 /**
  * 获取徽章样式（用于步骤编号、计数等）
+ * 2026-04-28 小强修改：第二步实现渐变badge（设计文档3.2节要求）
  * @param stepType 步骤类型
  * @param variant 徽章变体
  * @returns CSS样式对象
@@ -360,7 +361,41 @@ export const getStepBadgeStyle = (
   stepType: StepType | string,
   variant: 'default' | 'outline' = 'default'
 ) => {
-  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
+  // 渐变色映射表（设计文档3.2节要求）
+  const gradientBg: Record<string, string> = {
+    start: 'linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%)',
+    thought: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)',
+    action_tool: 'linear-gradient(135deg, #f9f0ff 0%, #d3adf7 100%)',
+    observation: 'linear-gradient(135deg, #e6fffb 0%, #87e8de 100%)',
+    final: 'linear-gradient(135deg, #f6ffed 0%, #b7eb8f 100%)',
+    error: 'linear-gradient(135deg, #fff1f0 0%, #ffccc7 100%)',
+    interrupted: 'linear-gradient(135deg, #fff2e8 0%, #ffbb96 100%)',
+    paused: 'linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%)',
+    resumed: 'linear-gradient(135deg, #f6ffed 0%, #b7eb8f 100%)',
+    retrying: 'linear-gradient(135deg, #fff1f0 0%, #ffccc7 100%)',
+    incident: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)',
+    report: 'linear-gradient(135deg, #f6ffed 0%, #b7eb8f 100%)',
+  };
+  
+  // 文字颜色映射表
+  const textColor: Record<string, string> = {
+    start: '#096dd9',
+    thought: '#d97706',
+    action_tool: '#722ed1',
+    observation: '#08979c',
+    final: '#389e0d',
+    error: '#cf1322',
+    interrupted: '#d4380d',
+    paused: '#096dd9',
+    resumed: '#389e0d',
+    retrying: '#cf1322',
+    incident: '#d97706',
+    report: '#389e0d',
+  };
+  
+  const validType = isValidStepType(stepType) ? stepType : 'start';
+  const gradient = gradientBg[validType] || gradientBg.start;
+  const color = textColor[validType] || textColor.start;
   
   if (variant === 'outline') {
     return {
@@ -368,20 +403,24 @@ export const getStepBadgeStyle = (
       borderRadius: 6,
       fontSize: FontSize.TERTIARY,
       fontWeight: FontWeight.BOLD,
-      color: scheme.text,
-      border: '1.5px solid ' + scheme.border,
+      color: color,
+      border: '1.5px solid ' + color,
       backgroundColor: 'transparent',
     };
   }
   
+  // 渐变badge样式（第二步实现）
   return {
     padding: '4px 10px',
     borderRadius: 6,
     fontSize: FontSize.TERTIARY,
     fontWeight: FontWeight.BOLD,
-    color: Colors.TEXT.INVERSE,
-    backgroundColor: scheme.text,
-    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+    color: color,
+    background: gradient,
+    border: '1px solid transparent',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
   };
 };
 
