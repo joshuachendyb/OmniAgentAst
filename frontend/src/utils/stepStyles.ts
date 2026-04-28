@@ -5,11 +5,35 @@
  * 设计原则：视觉层次清晰、颜色语义明确、分行规则统一
  *
  * @author 小强
- * @version 2.0.1
+ * @version 2.1.0
  * @since 2026-03-24
+ * @update 2026-04-28 小强 - 第七步添加深色模式支持
  */
 
 import React from 'react';
+
+/**
+ * 检测深色模式（第七步实现）
+ * @returns true表示深色模式，false表示浅色模式
+ */
+export const isDarkMode = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
+};
+
+/**
+ * 深色模式配色（第七步实现）
+ */
+export const darkModeColors = {
+  container: '#1f1f1f',
+  headerBg: '#2a2a2a',
+  contentBg: '#141414',
+  footerBg: '#1a1a1a',
+  border: '#404040',
+  text: '#e5e5e5',
+  textSecondary: '#999',
+  hoverBorder: '#595959',
+};
 
 // ==================== 类型定义 ====================
 

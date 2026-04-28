@@ -13,6 +13,8 @@ import { STEP_LABEL_MAP, STEP_ICON_MAP } from "../constants/stepConstants";
 import {
   getStepBadgeStyle,
   getStepLabelStyle,
+  isDarkMode,
+  darkModeColors,
   type StepType
 } from "../../../utils/stepStyles";
 import StepHeader from "./StepHeader";
@@ -28,11 +30,8 @@ interface StepRowProps {
 }
 
 /**
- * 容器样式 - 白色背景，圆角边框
- * 2026-04-28 小强修改：添加overflow hidden让子元素圆角正确显示
- * 第五步说明：边框颜色#e8e8e8与AI气泡#b7eb8f区分是合理设计
- * - AI气泡绿色边框表示AI身份
- * - StepRow灰色边框表示执行步骤（不是AI消息）
+ * 容器样式 - 浅色模式静态定义（已废弃，使用dynamicContainerStyle）
+ * 第七步：深色模式使用useMemo动态生成，不再使用静态定义
  */
 const containerStyle: React.CSSProperties = {
   marginBottom: 12,
@@ -45,9 +44,7 @@ const containerStyle: React.CSSProperties = {
 };
 
 /**
- * Header头部样式 - 浅灰色背景
- * 放置：步骤编号、标签、图标、时间戳
- * 2026-04-28 小强修改：第一步实现三区域背景色
+ * Header头部样式 - 浅色模式（已废弃，使用dynamicHeaderStyle）
  */
 const headerStyle: React.CSSProperties = {
   background: "#f5f5f5",
@@ -56,9 +53,7 @@ const headerStyle: React.CSSProperties = {
 };
 
 /**
- * Content中部样式 - 白色背景
- * 放置：主要内容（thought、tool、observation等）
- * 2026-04-28 小强修改：第一步实现三区域背景色
+ * Content中部样式 - 浅色模式（已废弃，使用dynamicContentStyle）
  */
 const contentStyle: React.CSSProperties = {
   background: "#ffffff",
@@ -66,9 +61,7 @@ const contentStyle: React.CSSProperties = {
 };
 
 /**
- * Footer底部样式 - 极浅灰色背景
- * 放置：执行状态、耗时、重试次数等
- * 2026-04-28 小强修改：第一步实现三区域背景色
+ * Footer底部样式 - 浅色模式（已废弃，使用dynamicFooterStyle）
  */
 const footerStyle: React.CSSProperties = {
   background: "#fafafa",
@@ -89,24 +82,54 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
   const badgeStyle = useMemo(() => getStepBadgeStyle(effectiveType as StepType), [effectiveType]);
   const labelStyle = useMemo(() => getStepLabelStyle(effectiveType as StepType), [effectiveType]);
 
+  // 第七步：深色模式动态样式
+  const dark = isDarkMode();
+  
+  const dynamicContainerStyle = useMemo((): React.CSSProperties => ({
+    marginBottom: 12,
+    borderRadius: 12,
+    background: dark ? darkModeColors.container : "#fff",
+    border: `1px solid ${dark ? darkModeColors.border : "#e8e8e8"}`,
+    boxShadow: dark ? "0 2px 8px rgba(0,0,0,0.3)" : "0 2px 8px rgba(0,0,0,0.06)",
+    overflow: "hidden",
+    transition: "all 0.25s ease",
+  }), [dark]);
+
+  const dynamicHeaderStyle = useMemo((): React.CSSProperties => ({
+    background: dark ? darkModeColors.headerBg : "#f5f5f5",
+    padding: "10px 16px",
+    borderBottom: `1px solid ${dark ? darkModeColors.border : "#eee"}`,
+  }), [dark]);
+
+  const dynamicContentStyle = useMemo((): React.CSSProperties => ({
+    background: dark ? darkModeColors.contentBg : "#ffffff",
+    padding: "16px",
+  }), [dark]);
+
+  const dynamicFooterStyle = useMemo((): React.CSSProperties => ({
+    background: dark ? darkModeColors.footerBg : "#fafafa",
+    padding: "8px 16px",
+    borderTop: `1px solid ${dark ? darkModeColors.border : "#eee"}`,
+  }), [dark]);
+
   const textStyle = useMemo((): React.CSSProperties => ({
-    color: "#333",
+    color: dark ? darkModeColors.text : "#333",
     wordBreak: "break-word",
     fontSize: 13,
     lineHeight: 1.8,
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
-  }), []);
+  }), [dark]);
 
-  // 2026-04-28 小强修改：优化hover效果
+  // 第七步：深色模式hover效果
   const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.1)";
-    e.currentTarget.style.borderColor = "#d9d9d9";
-  }, []);
+    e.currentTarget.style.boxShadow = dark ? "0 4px 16px rgba(0,0,0,0.4)" : "0 4px 16px rgba(0,0,0,0.1)";
+    e.currentTarget.style.borderColor = dark ? darkModeColors.hoverBorder : "#d9d9d9";
+  }, [dark]);
 
   const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)";
-    e.currentTarget.style.borderColor = "#e8e8e8";
-  }, []);
+    e.currentTarget.style.boxShadow = dark ? "0 2px 8px rgba(0,0,0,0.3)" : "0 2px 8px rgba(0,0,0,0.06)";
+    e.currentTarget.style.borderColor = dark ? darkModeColors.border : "#e8e8e8";
+  }, [dark]);
 
   // 第六步P2：焦点样式
   const handleFocus = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
@@ -125,8 +148,9 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
 
   return (
     // 第六步无障碍优化：添加role和aria-label，添加焦点样式
+    // 第七步深色模式：使用动态样式
     <div 
-      style={containerStyle} 
+      style={dynamicContainerStyle} 
       onMouseEnter={handleMouseEnter} 
       onMouseLeave={handleMouseLeave}
       onFocus={handleFocus}
@@ -137,7 +161,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
     >
       
       {/* Header头部 - 浅灰色背景 */}
-      <div style={headerStyle} aria-label="步骤头部区域">
+      <div style={dynamicHeaderStyle} aria-label="步骤头部区域">
         <StepHeader 
           step={step}
           badgeStyle={badgeStyle}
@@ -148,7 +172,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
       </div>
       
       {/* Content中部 - 白色背景 */}
-      <div style={contentStyle} aria-label="步骤内容区域">
+      <div style={dynamicContentStyle} aria-label="步骤内容区域">
         <StepContent
           step={step}
           stepIndex={stepIndex}
@@ -159,7 +183,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
       </div>
       
       {/* Footer底部 - 极浅灰色背景 */}
-      <div style={footerStyle} aria-label="步骤底部区域">
+      <div style={dynamicFooterStyle} aria-label="步骤底部区域">
         <StepFooter
           step={step}
           hasMore={hasMore}
