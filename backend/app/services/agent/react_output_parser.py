@@ -845,12 +845,42 @@ def _filter_tool_params(tool_params: Dict) -> Dict:
     import re
     param_name_pattern = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
     
+    # 【2026-04-28 小沈新增】驼峰转下划线映射表
+    CAMEL_TO_SNAKE = {
+        "filePath": "file_path",
+        "filePath2": "file_path",
+        "dirPath": "dir_path",
+        "dirPath2": "dir_path",
+        "sourcePath": "source_path",
+        "sourcePath2": "source_path",
+        "destinationPath": "destination_path",
+        "destinationPath2": "destination_path",
+        "filePattern": "file_pattern",
+        "filePattern2": "file_pattern",
+        "offset2": "offset",
+        "limit2": "limit",
+        # 首字母大写映射
+        "Content": "content",
+        "FilePath": "file_path",
+        "DirPath": "dir_path",
+        "SourcePath": "source_path",
+        "DestinationPath": "destination_path",
+        "FilePattern": "file_pattern",
+    }
+    
     filtered = {}
     for k, v in tool_params.items():
         if k not in NON_PARAM_FIELDS:
             # 字段名必须匹配参数名模式（字母/数字/下划线，不能以数字开头）
             if param_name_pattern.match(k):
-                filtered[k] = v
+                # 驼峰转下划线（如filePath → file_path）
+                normalized_k = CAMEL_TO_SNAKE.get(k, k)
+                # 如果标准化后的key已存在，保留原始key（避免覆盖）
+                if normalized_k not in filtered:
+                    filtered[normalized_k] = v
+                else:
+                    # 标准化key已存在，保留原始key
+                    filtered[k] = v
     
     return filtered
 

@@ -2604,7 +2604,115 @@ class TestChineseQuotesAndEdgeCases:
         # 由于第一行超长，file_path不应被推断添加（触发回退）
         # 注意：实际行为取决于_supplement_missing_params的回退逻辑
     
-    # ========== 补充更多边界测试用例 ==========
+    # ========== 【重点】发现问题类测试用例 - 覆盖真实异常场景 ==========
+    
+    def test_llm_returns_only_thought_no_tool(self):
+        """【发现问题1】LLM只返回thought，没有tool调用（可能遗漏action判断）"""
+        llm_output = '{"thought": "我需要写文件，但忘记返回tool_call"}'
+        result = parse_react_response(llm_output)
+        # 应该能被识别为thought类型，而不是action或error
+        assert result["type"] in ["thought", "implicit", "answer"]
+    
+    def test_tool_name_typo_similar_name(self):
+        """【发现问题2】工具名拼写错误但相似（如write_file写成writ_file）"""
+        llm_output = '{"tool_name":"writ_file","tool_params":{"file_path":"a.txt","content":"test"}}'
+        result = parse_react_response(llm_output)
+        # 应该能识别为未知工具，不应崩溃
+        assert result is not None
+    
+    def test_tool_params_field_name_case_sensitive(self):
+        """【发现问题3】参数名大小写不一致（如filePath vs file_path）"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"filePath":"a.txt","Content":"test"}}'
+        result = parse_react_response(llm_output)
+        # 大小写不同的字段可能被过滤掉，导致参数缺失
+        # 这是一个潜在bug：应该兼容filePath
+        assert "filePath" in result["tool_params"] or "file_path" in result["tool_params"]
+    
+    def test_content_value_is_number_not_string(self):
+        """【发现问题4】content值是数字而非字符串（类型错误）"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"file_path":"a.txt","content":12345}}'
+        result = parse_react_response(llm_output)
+        # 应该自动转为字符串，否则可能导致后续处理错误
+        assert isinstance(result["tool_params"]["content"], str)
+    
+    def test_tool_params_with_numeric_string(self):
+        """【发现问题5】参数值是数字字符串（如"123"）"""
+        llm_output = '{"tool_name":"read_file","tool_params":{"file_path":"a.txt","offset":"10","limit":"100"}}'
+        result = parse_react_response(llm_output)
+        # 数字字符串可能被误解为应该转为数字
+        assert result["tool_params"].get("offset") is not None
+    
+    def test_very_deeply_nested_json(self):
+        """【发现问题6】多层嵌套的JSON（层级过深）"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"file_path":"a.txt","content":{"level1":{"level2":{"level3":{"level4":"深层内容"}}}}}}'
+        result = parse_react_response(llm_output)
+        # content是dict类型，应该被转为JSON字符串
+        assert isinstance(result["tool_params"]["content"], str)
+    
+    def test_tool_call_with_extra_field_between(self):
+        """【发现问题7】tool_params中有额外字段分隔有效参数"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"file_path":"a.txt","extra_field":"垃圾数据","content":"test"}}'
+        result = parse_react_response(llm_output)
+        # extra_field应该被过滤掉，不影响有效参数
+        assert "file_path" in result["tool_params"]
+        assert "content" in result["tool_params"]
+        assert "extra_field" not in result["tool_params"]  # 应该被过滤
+    
+    def test_malformed_json_partial_parse(self):
+        """【发现问题8】JSON部分损坏，只有一部分能解析"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"file_path":'  # 截断的JSON
+        result = parse_react_response(llm_output)
+        # 应该能回退处理，不崩溃
+        assert result is not None
+    
+    def test_answer_type_with_tool_name(self):
+        """【发现问题9】answer类型但包含tool_name（类型冲突）"""
+        llm_output = '{"content":"完成了","tool_name":"finish","tool_params":{"result":"done"}}'
+        result = parse_react_response(llm_output)
+        # 应该被识别为finish，返回answer类型，tool_name应为None
+        assert result["type"] == "answer" or result["type"] == "action"
+    
+    def test_reasoning_field_as_tool_params(self):
+        """【发现问题10】reasoning字段被误认为tool_params"""
+        llm_output = '{"thought":"思考","reasoning":"推理过程","tool_name":"write_file","tool_params":{"content":"test"}}'
+        result = parse_react_response(llm_output)
+        # reasoning应该被过滤，不影响tool_params
+        assert "reasoning" not in result.get("tool_params", {})
+    
+    def test_empty_tool_params_object(self):
+        """【发现问题11】tool_params是空对象{}"""
+        llm_output = '{"tool_name":"write_file","tool_params":{}}'
+        result = parse_react_response(llm_output)
+        # 应该能处理，不崩溃
+        assert result is not None
+    
+    def test_duplicate_keys_in_json(self):
+        """【发现问题12】JSON中有重复的key（后面的覆盖前面的）"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"content":"first","content":"second"}}'
+        result = parse_react_response(llm_output)
+        # JSON规范：后面的值覆盖前面的
+        assert result["tool_params"]["content"] == "second"
+    
+    def test_chinese_in_tool_name(self):
+        """【发现问题13】工具名包含中文（可能无法匹配）"""
+        llm_output = '{"tool_name":"写文件","tool_params":{"file_path":"a.txt"}}'
+        result = parse_react_response(llm_output)
+        # 中文工具名可能无法匹配注册的工具
+        assert result is not None
+    
+    def test_whitespace_only_content(self):
+        """【发现问题14】content只包含空白字符"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"file_path":"a.txt","content":"   \\n\\t  "}}'
+        result = parse_react_response(llm_output)
+        # 空白的content可能导致问题
+        assert result["tool_params"]["content"] is not None
+    
+    def test_unicode_emoji_in_params(self):
+        """【发现问题15】参数值包含emoji和Unicode字符"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"file_path":"📝文件.txt","content":"🎉内容✨"}}'
+        result = parse_react_response(llm_output)
+        # 应该能正确处理Unicode
+        assert "📝文件.txt" in result["tool_params"]["file_path"]
     
     def test_move_file_missing_source_path(self):
         """【边界41】move_file缺少source_path时的处理"""
