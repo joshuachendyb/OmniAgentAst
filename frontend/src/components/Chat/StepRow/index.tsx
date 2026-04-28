@@ -123,24 +123,28 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif",
   }), [dark, isSmallScreen]);
 
-  // 第七步：深色模式hover效果
+  // 第七步：深色模式hover效果（第十步性能优化：添加will-change）
   const handleMouseEnter = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.willChange = 'transform, box-shadow, border-color';
     e.currentTarget.style.boxShadow = dark ? "0 4px 16px rgba(0,0,0,0.4)" : "0 4px 16px rgba(0,0,0,0.1)";
     e.currentTarget.style.borderColor = dark ? darkModeColors.hoverBorder : "#d9d9d9";
   }, [dark]);
 
   const handleMouseLeave = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.currentTarget.style.willChange = 'auto';
     e.currentTarget.style.boxShadow = dark ? "0 2px 8px rgba(0,0,0,0.3)" : "0 2px 8px rgba(0,0,0,0.06)";
     e.currentTarget.style.borderColor = dark ? darkModeColors.border : "#e8e8e8";
   }, [dark]);
 
-  // 第六步P2：焦点样式
+  // 第六步P2：焦点样式（第十步性能优化：添加will-change）
   const handleFocus = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
+    e.currentTarget.style.willChange = 'outline';
     e.currentTarget.style.outline = "2px solid #1890ff";
     e.currentTarget.style.outlineOffset = "2px";
   }, []);
 
   const handleBlur = useCallback((e: React.FocusEvent<HTMLDivElement>) => {
+    e.currentTarget.style.willChange = 'auto';
     e.currentTarget.style.outline = "none";
   }, []);
 
