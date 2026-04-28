@@ -32,7 +32,8 @@ import { formatTime, formatRelativeTime } from "../../../utils/timeFormatters";
 import { exportMessage } from "../../../utils/messageExporter";
 import { getStepStyle, getStepBadgeStyle, getStepLabelStyle, isValidStepType } from "../../../utils/stepStyles";
 import type { StepType } from "../../../utils/stepStyles";
-import { STEP_LABEL_MAP } from "../constants/stepConstants";
+import { STEP_LABEL_MAP, STEP_ICON_MAP } from "../constants/stepConstants";
+import type { ExecutionStep } from "../../../utils/sse";
 import type { MessageItemProps } from "../../../hooks/useMessageItemProps";
 
 interface AIMessageBubbleProps {
@@ -260,10 +261,11 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
           {/* 执行步骤 - 框层合并后直接使用子组件 */}
           {stepData.sortedSteps.map((step, index) => {
             // 处理incident类型
-            const effectiveType = step.type === 'incident' 
-              ? ((step as any).incident_value || 'incident') 
-              : step.type;
+            const castStep = step as ExecutionStep;
+            const stepType = castStep.incident_value || step.type;
+            const effectiveType = step.type === 'incident' ? stepType : step.type;
             const label = STEP_LABEL_MAP[effectiveType] || STEP_LABEL_MAP[step.type] || "步骤";
+            const icon = STEP_ICON_MAP[effectiveType] || STEP_ICON_MAP[step.type] || "";
             const badgeStyle = getStepBadgeStyle(effectiveType as StepType);
             const labelStyle = getStepLabelStyle(effectiveType as StepType);
             
@@ -273,8 +275,8 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
                   step={step} 
                   badgeStyle={badgeStyle} 
                   labelStyle={labelStyle} 
-                  label={label} 
-                  icon="" 
+                  label={label}
+                  icon={icon}
                 />
                 <StepContent 
                   step={step} 
