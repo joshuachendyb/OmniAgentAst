@@ -110,12 +110,21 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
 
   const [hasMore, setHasMore] = useState(false);
 
+  // 2026-04-28 小强修改：第六步添加无障碍ARIA标签
+  const effectiveLabel = STEP_LABEL_MAP[effectiveType] || STEP_LABEL_MAP[step.type] || "步骤";
+
   return (
-    // 2026-04-28 小强修改：应用三区域背景色结构
-    <div style={containerStyle} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+    // 第六步无障碍优化：添加role和aria-label
+    <div 
+      style={containerStyle} 
+      onMouseEnter={handleMouseEnter} 
+      onMouseLeave={handleMouseLeave}
+      role="group"
+      aria-label={`执行步骤 ${step.step || ''} ${effectiveLabel}`}
+    >
       
       {/* Header头部 - 浅灰色背景 */}
-      <div style={headerStyle}>
+      <div style={headerStyle} aria-label="步骤头部区域">
         <StepHeader 
           step={step}
           badgeStyle={badgeStyle}
@@ -126,7 +135,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
       </div>
       
       {/* Content中部 - 白色背景 */}
-      <div style={contentStyle}>
+      <div style={contentStyle} aria-label="步骤内容区域">
         <StepContent
           step={step}
           stepIndex={stepIndex}
@@ -137,7 +146,7 @@ const StepRow: React.FC<StepRowProps> = ({ step, taskId: _taskId, stepIndex = 0,
       </div>
       
       {/* Footer底部 - 极浅灰色背景 */}
-      <div style={footerStyle}>
+      <div style={footerStyle} aria-label="步骤底部区域">
         <StepFooter
           step={step}
           hasMore={hasMore}
