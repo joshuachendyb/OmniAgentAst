@@ -37,7 +37,7 @@ async def send_start_step(
     - ai_service: AI 服务实例（用于获取 provider/model）
     - task_id: 任务ID
     - next_step: 获取步骤号函数
-    - user_message: 用户消息（用于预览，取前40字）
+    - user_message: 用户消息（完整显示，不截断）
     - security_check_result: 安全检查结果
     - current_execution_steps: 执行步骤列表
     - session_id: 会话ID（用于保存到数据库）
@@ -49,6 +49,7 @@ async def send_start_step(
     from app.chat_stream.chat_helpers import create_timestamp
     
     # 1. 构建 start_data
+    # 2026-04-28 小强修改：北京老陈要求user_message不截断，完全显示
     start_data = {
         'type': 'start',
         'step': next_step(),
@@ -57,7 +58,7 @@ async def send_start_step(
         'provider': ai_service.provider,
         'model': ai_service.model,
         'task_id': task_id,
-        'user_message': user_message[:40] if user_message else "",
+        'user_message': user_message if user_message else "",  # 不截断，完全显示
         'security_check': {
             'is_safe': security_check_result.get('is_safe', True),
             'risk_level': security_check_result.get('risk_level'),

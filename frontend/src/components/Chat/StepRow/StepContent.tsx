@@ -53,6 +53,7 @@ const renderToolInfo = (toolName: string | undefined, toolParams: Record<string,
           {prefix}{toolName}
         </span>
       )}
+      {/* 2026-04-28 小强修改：tool_params不截断，完全显示 - by 北京老陈 */}
       {toolParams && Object.keys(toolParams).length > 0 && (
         <span style={{ 
           color: '#595959',
@@ -61,12 +62,14 @@ const renderToolInfo = (toolName: string | undefined, toolParams: Record<string,
           background: bgColor,
           padding: '6px 12px',
           borderRadius: 6,
-          maxWidth: '100%',
-          overflow: 'auto',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          // 北京老陈要求：不截断，完全显示
+          maxWidth: 'none',
+          overflow: 'visible',
+          textOverflow: 'clip',
+          whiteSpace: 'pre-wrap',
           display: 'inline-block',
           border: '1px solid rgba(0,0,0,0.08)',
+          wordBreak: 'break-all',
         }}>
           {JSON.stringify(toolParams)}
         </span>
