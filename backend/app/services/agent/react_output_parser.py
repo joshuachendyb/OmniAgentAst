@@ -673,7 +673,7 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
         "content": content,
         "reasoning": reasoning,
         "tool_name": tool_name,
-        "tool_params": tool_params if isinstance(tool_params, dict) else {},
+        "tool_params": tool_params if tool_params is not None else None,
         "response": None,
         "error": None
     }
@@ -757,6 +757,9 @@ def _normalize_tool_params_content(tool_params: Dict) -> Dict:
         # 布尔类型转换为字符串
         elif isinstance(content_value, bool):
             normalized["content"] = str(content_value)
+        # 列表/字典类型转换为JSON字符串
+        elif isinstance(content_value, (list, dict)):
+            normalized["content"] = json.dumps(content_value, ensure_ascii=False)
         # None保留为None，不做转换
         # 字符串保持不变
     
@@ -765,7 +768,7 @@ def _normalize_tool_params_content(tool_params: Dict) -> Dict:
 
 def _try_parse_non_standard_json(input_str: str) -> Optional[Dict]:
     """
-    【2026-04-28 小沈新增】尝试解析非标准JSON（单引号、尾逗号等）
+    【2026-04-28 小沈新增】尝试解析非标准JSON（单引号、尾逗号、注释等）
     
     Args:
         input_str: 可能包含非标准JSON的字符串
@@ -798,6 +801,66 @@ def _try_parse_non_standard_json(input_str: str) -> Optional[Dict]:
         result = re.sub(r"'([^'\\]*(\\.[^'\\]*)*)'", r'"\1"', result)
         return json.loads(result)
     except json.JSONDecodeError:
+        pass
+    
+    # 方法4：处理//注释（单行注释）
+    try:
+        # 移除//注释（不处理字符串内的//）
+        lines = input_str.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            # 查找//，但确保不在字符串内
+            in_string = False
+            comment_pos = -1
+            for i, ch in enumerate(line):
+                if ch == '"' and (i == 0 or line[i-1] != '\\'):
+                    in_string = not in_string
+                elif ch == '/' and i + 1 < len(line) and line[i+1] == '/' and not in_string:
+                    comment_pos = i
+                    break
+            if comment_pos != -1:
+                cleaned_lines.append(line[:comment_pos])
+            else:
+                cleaned_lines.append(line)
+        cleaned = '\n'.join(cleaned_lines)
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    
+    # 方法5：检测不完整JSON（缺少闭合括号）
+    try:
+        # 检查括号是否匹配
+        stack = []
+        in_string = False
+        escape = False
+        for ch in input_str:
+            if escape:
+                escape = False
+                continue
+            if ch == '\\':
+                escape = True
+                continue
+            if ch == '"' and not in_string:
+                in_string = True
+                continue
+            if ch == '"' and in_string:
+                in_string = False
+                continue
+            if not in_string:
+                if ch in '{[(':
+                    stack.append(ch)
+                elif ch in '}])':
+                    if not stack:
+                        return None
+                    opener = stack.pop()
+                    if (ch == '}' and opener != '{') or \
+                       (ch == ']' and opener != '[') or \
+                       (ch == ')' and opener != '('):
+                        return None
+        # 如果括号不匹配，返回None
+        if stack:
+            return None
+    except:
         pass
     
     return None
