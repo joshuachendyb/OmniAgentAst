@@ -2603,4 +2603,138 @@ class TestChineseQuotesAndEdgeCases:
         assert "content" in result["tool_params"]
         # 由于第一行超长，file_path不应被推断添加（触发回退）
         # 注意：实际行为取决于_supplement_missing_params的回退逻辑
+    
+    # ========== 补充更多边界测试用例 ==========
+    
+    def test_move_file_missing_source_path(self):
+        """【边界41】move_file缺少source_path时的处理"""
+        llm_output = '{"tool_name":"move_file","tool_params":{"destination_path":"E:/新目录/文件.txt"}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "move_file"
+        # destination_path应该存在
+        assert "destination_path" in result["tool_params"]
+    
+    def test_move_file_missing_destination_path(self):
+        """【边界42】move_file缺少destination_path时的处理"""
+        llm_output = '{"tool_name":"move_file","tool_params":{"source_path":"E:/旧目录/文件.txt"}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "move_file"
+        # source_path应该存在
+        assert "source_path" in result["tool_params"]
+    
+    def test_list_directory_missing_dir_path(self):
+        """【边界43】list_directory缺少dir_path时的处理"""
+        llm_output = '{"tool_name":"list_directory","tool_params":{}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "list_directory"
+        # tool_params可以为空（可选参数）
+    
+    def test_search_file_content_missing_pattern(self):
+        """【边界44】search_file_content缺少pattern时的处理"""
+        llm_output = '{"tool_name":"search_file_content","tool_params":{"path":"E:/"}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "search_file_content"
+        # path应该存在
+        assert "path" in result["tool_params"]
+    
+    def test_delete_file_missing_file_path(self):
+        """【边界45】delete_file缺少file_path时的处理"""
+        llm_output = '{"tool_name":"delete_file","tool_params":{}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "delete_file"
+        # 参数可能为空
+    
+    def test_json_with_nested_quotes_in_content(self):
+        """【边界46】content包含多层嵌套引号"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"file_path":"a.txt","content":"外层\\"内层\\"还有\\"更多\\""}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert "content" in result["tool_params"]
+    
+    def test_content_with_mixed_escape_sequences(self):
+        """【content47】content包含多种转义序列（\\n \\t \\"）"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"file_path":"a.txt","content":"第一行\\n第二行\\t缩进\\"引号\\""}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert "content" in result["tool_params"]
+    
+    def test_tool_params_only_single_param(self):
+        """【边界48】tool_params只有一个参数的情况"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"content":"只有content"}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert "content" in result["tool_params"]
+    
+    def test_tool_params_empty_string_values(self):
+        """【边界49】tool_params包含空字符串值"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"file_path":"","content":""}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert "file_path" in result["tool_params"]
+        assert "content" in result["tool_params"]
+    
+    def test_tool_name_with_underscores_and_numbers(self):
+        """【边界50】tool_name包含下划线和数字"""
+        llm_output = '{"tool_name":"search_file_content_2","tool_params":{"pattern":"*.py","path":"E:/"}}'
+        result = parse_react_response(llm_output)
+        
+        # 工具名可能无法匹配，但不应崩溃
+        assert result is not None
+    
+    def test_special_chars_in_file_path(self):
+        """【边界51】file_path包含特殊字符（中文、emoji等）"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"file_path":"E:/故事/第一章📖.txt","content":"内容"}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_params"]["file_path"] == "E:/故事/第一章📖.txt"
+    
+    def test_very_long_content_supplement_scenario(self):
+        """【边界52】超长content配合参数补充场景"""
+        long_content = "第一章\n" + "a" * 500 + "\n第二章\n" + "b" * 500
+        llm_output = f'{{"tool_name":"write_file","tool_params":{{"content":"{long_content}"}}}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert "content" in result["tool_params"]
+        # file_path不应该被推断（第一行是"第一章"，会被尝试推断）
+        # 但由于content很长，实际行为取决于推断逻辑
+    
+    def test_multiple_tools_in_array(self):
+        """【边界53】LLM返回多个工具调用的数组"""
+        llm_output = '[{"tool_name":"list_directory","tool_params":{"dir_path":"E:/"}},{"tool_name":"write_file","tool_params":{"file_path":"a.txt","content":"ok"}}]'
+        result = parse_react_response(llm_output)
+        
+        # 数组格式可能被解析为某种类型，不应崩溃
+        assert result is not None
+    
+    def test_json_with_spaces_between_fields(self):
+        """【边界54】JSON字段之间有多个空格"""
+        llm_output = '{"tool_name"   :   "write_file"   ,   "tool_params"   :   {"file_path"   :   "a.txt"}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert result["tool_name"] == "write_file"
+    
+    def test_content_with_only_whitespace_first_line(self):
+        """【边界55】content第一行是空白字符"""
+        llm_output = '{"tool_name":"write_file","tool_params":{"content":"   \\n第一章内容"}}'
+        result = parse_react_response(llm_output)
+        
+        assert result["type"] == "action"
+        assert "content" in result["tool_params"]
 
