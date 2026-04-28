@@ -1,3 +1,50 @@
+v0.11.3
+
+ 更新时间: 2026-04-28 11:52:02
+
+ 更新内容：
+
+ ## 1 前端step显示截断修复 - 小强-2026-04-28
+
+ | 文件 | 修改 | 状态 |
+ |------|------|------|
+ | ExecutionPanel.tsx | 移除result的200字符截断，完全显示 | ✅ |
+ | StepContent.tsx | 移除tool_params的CSS截断（ellipsis/nowrap） | ✅ |
+
+ | Commit | 说明 |
+ |--------|------|
+ | 1b7213ec | fix: 移除step显示截断（result/tool_params/user_message） |
+
+ ## 2 后端user_message截断修复 - 小强-2026-04-28
+
+ | 文件 | 修改 | 状态 |
+ |------|------|------|
+ | start_step.py | 移除user_message[:40]截断，完整显示 | ✅ |
+
+ | Commit | 说明 |
+ |--------|------|
+ | 1b7213ec | fix: 移除step显示截断（result/tool_params/user_message） |
+
+ ## 3 LLM返回解析器完善 - 小沈-2026-04-28
+
+ | 文件 | 修改 | 状态 |
+ |------|------|------|
+ | react_output_parser.py | 完善解析器覆盖11种类型 | ✅ |
+ | test_react_output_parser.py | 新增23个测试用例 | ✅ |
+
+ | Commit | 说明 |
+ |--------|------|
+ | 394cbe47 | fix: 完善LLM返回解析器覆盖11种类型+23测试用例+设计文档 |
+
+ ## 4 配置清理 - 小沈-2026-04-28
+
+ | Commit | 说明 |
+ |--------|------|
+ | 277ed77b | config: 删除file_operations.db例外规则 |
+ | 70c88081 | config: 忽略3个空db文件并删除 |
+
+ ---
+
 v0.11.2
 
  更新时间: 2026-04-28 09:55:00
