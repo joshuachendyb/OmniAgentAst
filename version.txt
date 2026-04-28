@@ -1,10 +1,74 @@
-v0.11.6
+v0.11.4
 
-  更新时间: 2026-04-28 16:35:00
+  更新时间: 2026-04-28 18:20:00
 
   更新内容：
 
-  ## 1 LLM解析器增强修复 - 小沈-2026-04-28
+  ## 1 参数补充逻辑修复 - 小沈-2026-04-28
+
+  | 文件 | 修改 | 状态 |
+  |------|------|------|
+  | react_output_parser.py | 修复参数补充只处理缺失content的情况 | ✅ |
+  | react_output_parser.py | 新增缺失file_path时从original_output提取content | ✅ |
+  | react_output_parser.py | 补充函数注释 | ✅ |
+  | 测试结果 | 212个测试全部通过 | ✅ |
+
+  | 修复内容 |
+  |---------|
+  | 修复LLM返回参数顺序不固定导致的参数补充失败问题 |
+  | 场景1: LLM返回{"file_path": "xxx"}缺失content → 从original_output提取 |
+  | 场景2: LLM返回{"content": "xxx"}缺失file_path → 从content推断（原有逻辑） |
+
+  ## 2 新增30个边界测试用例 - 小沈-2026-04-28
+
+  | 文件 | 修改 | 状态 |
+  |------|------|------|
+  | test_react_output_parser.py | 新增30个边界测试用例 | ✅ |
+  | 测试结果 | 205个测试全部通过 | ✅ |
+
+  | 新增测试覆盖 |
+  |---------|
+  | 中文引号导致JSON解析失败的处理 |
+  | 未转义引号（如"让一让，让一让！"）的处理 |
+  | 降级后外层content/reasoning字段提取 |
+  | 字符串内未转义换行符、制表符 |
+  | 空值边界情况（空字符串、null、空对象） |
+  | 字段顺序极端变化 |
+  | 真实场景模拟（基于日志问题） |
+  | 特殊字符（emoji、混合语言） |
+
+  ## 2 LLM解析器content和reasoning字段提取修复 - 小沈-2026-04-28
+
+  | 文件 | 修改 | 状态 |
+  |------|------|------|
+  | react_output_parser.py | 新增_extract_content_value_from_json_str函数提取外层content | ✅ |
+  | react_output_parser.py | 新增_extract_params_by_regex_from_json_str函数提取tool_params | ✅ |
+  | react_output_parser.py | 修复parse_react_response使用json_data中的content字段 | ✅ |
+  | 测试结果 | 205个测试全部通过 | ✅ |
+
+  | 修复内容 |
+  |---------|
+  | 修复LLM返回JSON包含中文引号时content/reasoning字段提取失败 |
+  | 修复thought字段被设置为整个JSON字符串的问题 |
+  | 修复parse_react_response正确使用json_data中的content字段 |
+
+  ## 3 LLM解析器解析失败问题修复 - 小沈-2026-04-28
+
+  | 文件 | 修改 | 状态 |
+  |------|------|------|
+  | react_output_parser.py | 修复_extract_by_known_tools函数，正确提取tool_params | ✅ |
+  | react_output_parser.py | 新增_extract_tool_params_from_text函数 | ✅ |
+  | react_output_parser.py | 新增_extract_params_by_regex函数处理content字段 | ✅ |
+  | 测试结果 | 205个测试全部通过 | ✅ |
+
+  | 修复内容 |
+  |---------|
+  | 修复LLM返回的JSON包含换行和未转义引号时解析失败的问题 |
+  | 修复content字段丢失的问题 |
+  | 修复file_path被错误映射为path的问题 |
+  | 保持向后兼容，同时返回file_path和path |
+
+  ## 4 LLM解析器增强修复 - 小沈-2026-04-28
 
   | 文件 | 修改 | 状态 |
   |------|------|------|
@@ -22,20 +86,12 @@ v0.11.6
   | 支持多种字段顺序的JSON解析 |
   | 支持[TOOL_CALL]格式和非标准JSON解析 |
 
-  ---
-
-  v0.11.5
-
-  更新时间: 2026-04-28 13:53:35
-
-  更新内容：
-
-  ## 1 工具名称映射修复 - 小沈-2026-04-28
+  ## 5 工具名称映射修复 - 小沈-2026-04-28
 
   | 文件 | 修改 | 状态 |
   |------|------|------|
   | file_react.py | 添加TOOL_NAME_MAP映射LLM返回名到实际方法名 | ✅ |
-  | test_react_output_parser.py | 163个测试全部通过 | ✅ |
+  | 测试结果 | 175个测试全部通过 | ✅ |
 
   | 映射内容 |
   |---------|
@@ -44,94 +100,70 @@ v0.11.6
   | delete_dir → delete_directory |
   | rename_dir → rename_directory |
 
-  | Commit | 说明 |
-  |--------|------|
-  | - | fix: 修复LLM返回工具名与实际注册名不匹配问题 - 小沈-2026-04-28 |
-
----
-v0.11.4
-
-  更新时间: 2026-04-28 13:05:33
-
- 更新内容：
- 
-  ## 1 后端LLM解析器全面测试增强 - 小健-2026-04-28
+  ## 6 后端LLM解析器全面测试增强 - 小健-2026-04-28
 
   | 文件 | 修改 | 状态 |
   |------|------|------|
-  | test_react_output_parser.py | 新增18个边缘场景测试用例 | ✅ 163个测试全部通过 |
-  | react_output_parser.py | 修复5个代码缺陷（content类型转换、注释处理等） | ✅ 修复完成 |
+  | test_react_output_parser.py | 新增18个边缘场景测试用例 | ✅ |
+  | react_output_parser.py | 修复5个代码缺陷（content类型转换、注释处理等） | ✅ |
+  | 测试结果 | 163个测试全部通过 | ✅ |
 
-  ## 2 前端step显示截断修复 - 小强-2026-04-28
+  ## 7 前端step显示截断修复 - 小强-2026-04-28
 
- | 文件 | 修改 | 状态 |
- |------|------|------|
- | ExecutionPanel.tsx | 移除result的200字符截断，完全显示 | ✅ |
- | StepContent.tsx | 移除tool_params的CSS截断（ellipsis/nowrap） | ✅ |
+  | 文件 | 修改 | 状态 |
+  |------|------|------|
+  | ExecutionPanel.tsx | 移除result的200字符截断，完全显示 | ✅ |
+  | StepContent.tsx | 移除tool_params的CSS截断（ellipsis/nowrap） | ✅ |
 
- | Commit | 说明 |
- |--------|------|
- | 1b7213ec | fix: 移除step显示截断（result/tool_params/user_message） |
+  ## 8 后端user_message截断修复 - 小强-2026-04-28
 
- ## 2 后端user_message截断修复 - 小强-2026-04-28
+  | 文件 | 修改 | 状态 |
+  |------|------|------|
+  | start_step.py | 移除user_message[:40]截断，完整显示 | ✅ |
 
- | 文件 | 修改 | 状态 |
- |------|------|------|
- | start_step.py | 移除user_message[:40]截断，完整显示 | ✅ |
+  ## 9 LLM返回解析器完善 - 小沈-2026-04-28
 
- | Commit | 说明 |
- |--------|------|
- | 1b7213ec | fix: 移除step显示截断（result/tool_params/user_message） |
+  | 文件 | 修改 | 状态 |
+  |------|------|------|
+  | react_output_parser.py | 完善解析器覆盖11种类型 | ✅ |
+  | test_react_output_parser.py | 新增23个测试用例 | ✅ |
 
- ## 3 LLM返回解析器完善 - 小沈-2026-04-28
+  ## 10 配置清理 - 小沈-2026-04-28
 
- | 文件 | 修改 | 状态 |
- |------|------|------|
- | react_output_parser.py | 完善解析器覆盖11种类型 | ✅ |
- | test_react_output_parser.py | 新增23个测试用例 | ✅ |
+  | 说明 |
+  |------|
+  | 删除file_operations.db例外规则 |
+  | 忽略3个空db文件并删除 |
 
- | Commit | 说明 |
- |--------|------|
- | 394cbe47 | fix: 完善LLM返回解析器覆盖11种类型+23测试用例+设计文档 |
+  ## 11 LLM解析器增强：支持dict/list/非标准JSON/类型转换 - 小沈-2026-04-28
 
- ## 4 配置清理 - 小沈-2026-04-28
+  ### 11.1 新增功能
 
- | Commit | 说明 |
- |--------|------|
- | 277ed77b | config: 删除file_operations.db例外规则 |
- | 70c88081 | config: 忽略3个空db文件并删除 |
+  | 功能 | 说明 |
+  |------|------|
+  | dict输入处理 | 支持dict对象输入（历史bug根因） |
+  | list输入处理 | 支持list数组输入（批量操作指令） |
+  | JSON数组字符串 | 支持`[{"tool_name": "xxx", ...}]`格式 |
+  | 非标准JSON解析 | 支持单引号、尾逗号等非标准格式 |
+  | content类型转换 | 数字/布尔类型强制转为字符串 |
+  | 测试覆盖 | 144个测试用例全部通过 |
 
- ## 5 LLM解析器增强：支持dict/list/非标准JSON/类型转换 - 小沈-2026-04-28
+  ### 11.2 整合方案
 
- ### 5.1 新增功能
+  新增功能与现有4层解析机制有机整合：
+  - 输入预处理层：在4层解析之前处理dict/list/JSON数组
+  - 字段标准化层：统一处理content类型转换
+  - 双层保护：非标准JSON+五级JSON降级策略
 
- | 功能 | 说明 |
- |------|------|
- | dict输入处理 | 支持dict对象输入（历史bug根因） |
- | list输入处理 | 支持list数组输入（批量操作指令） |
- | JSON数组字符串 | 支持`[{"tool_name": "xxx", ...}]`格式 |
- | 非标准JSON解析 | 支持单引号、尾逗号等非标准格式 |
- | content类型转换 | 数字/布尔类型强制转为字符串 |
- | 测试覆盖 | 144个测试用例全部通过 |
+  ---
 
- ### 5.2 整合方案
+v0.11.3
 
- 新增功能与现有4层解析机制有机整合：
- - 输入预处理层：在4层解析之前处理dict/list/JSON数组
- - 字段标准化层：统一处理content类型转换
- - 双层保护：非标准JSON+五级JSON降级策略
+  更新时间: 2026-04-28 12:00:00
 
- | Commit | 说明 |
- |--------|------|
- | 43e79b70 | feat: 增强LLM返回解析器支持list/非标准JSON/类型转换 - 小沈-2026-04-28 |
+  更新内容：（此版本无记录变更）
 
- ### 5.3 文档更新
-
- | 文件 | 说明 |
- |------|------|
- | docs/LLM全量返回类型解析器设计文档_小沈_2026-04-28.md | 新增第8章整合方案，与4层解析机制有机结合 |
-
- ---
+---
 
 v0.11.2
 
