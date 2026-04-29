@@ -9,6 +9,9 @@ DATABASE Schema - 数据库工具 Pydantic 模型
 2. execute_sql - 执行写操作SQL
 3. get_db_schema - 获取数据库表结构
 
+【2026-04-29 小健审查修复】
+- 添加连接参数支持真实数据库：connection_type, connection_string, db_path
+
 创建时间: 2026-04-29
 """
 
@@ -20,6 +23,18 @@ class QuerySqlInput(BaseModel):
     """query_sql 工具的输入参数 - 执行只读SQL查询"""
     sql: str = Field(
         description="SQL 查询语句。仅支持 SELECT/SHOW/DESCRIBE 等只读操作"
+    )
+    connection_type: str = Field(
+        default="sqlite",
+        description="数据库类型：sqlite(默认)、mysql、postgresql"
+    )
+    connection_string: Optional[str] = Field(
+        default=None,
+        description="MySQL/PostgreSQL 连接字符串，如 mysql+pymysql://user:pass@host:port/db"
+    )
+    db_path: Optional[str] = Field(
+        default=None,
+        description="SQLite 数据库文件路径，如 D:/data/test.db。默认使用内存数据库"
     )
     limit: int = Field(
         default=50,
@@ -44,6 +59,18 @@ class ExecuteSqlInput(BaseModel):
     sql: str = Field(
         description="SQL 写操作语句。支持 INSERT/UPDATE/DELETE/DDL，仅支持单语句自动提交"
     )
+    connection_type: str = Field(
+        default="sqlite",
+        description="数据库类型：sqlite(默认)、mysql、postgresql"
+    )
+    connection_string: Optional[str] = Field(
+        default=None,
+        description="MySQL/PostgreSQL 连接字符串，如 mysql+pymysql://user:pass@host:port/db"
+    )
+    db_path: Optional[str] = Field(
+        default=None,
+        description="SQLite 数据库文件路径，如 D:/data/test.db。默认使用内存数据库"
+    )
     dry_run: bool = Field(
         default=False,
         description="预演模式。若 SQL 含 DROP/TRUNCATE/DELETE 无 WHERE，强制开启仅校验语法"
@@ -62,6 +89,18 @@ class ExecuteSqlInput(BaseModel):
 
 class GetDbSchemaInput(BaseModel):
     """get_db_schema 工具的输入参数 - 获取数据库表结构"""
+    connection_type: str = Field(
+        default="sqlite",
+        description="数据库类型：sqlite(默认)、mysql、postgresql"
+    )
+    connection_string: Optional[str] = Field(
+        default=None,
+        description="MySQL/PostgreSQL 连接字符串，如 mysql+pymysql://user:pass@host:port/db"
+    )
+    db_path: Optional[str] = Field(
+        default=None,
+        description="SQLite 数据库文件路径，如 D:/data/test.db。默认使用内存数据库"
+    )
     db_name: Optional[str] = Field(
         default=None,
         description="目标数据库名。默认 null（读取当前连接配置）"
@@ -72,7 +111,7 @@ class GetDbSchemaInput(BaseModel):
     )
     include_details: bool = Field(
         default=False,
-        description="是否包含详细索引、外键、约束信息。默认 false"
+        description="是否包含详细索引，外键、约束信息。默认 false"
     )
     output_format: str = Field(
         default="markdown",
