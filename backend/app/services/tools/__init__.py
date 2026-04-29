@@ -25,6 +25,7 @@ from app.services.tools import shell  # 触发shell工具注册
 from app.services.tools import network  # 触发network工具注册
 from app.services.tools import env  # 触发env工具注册
 from app.services.tools import system  # 触发system工具注册
+from app.services.tools import database  # 触发database工具注册
 
 __all__ = [
     # registry
