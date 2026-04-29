@@ -473,7 +473,7 @@ export const getTimestampStyle = (stepType: StepType): React.CSSProperties => {
     borderRadius: 6,                 // 圆角
     backgroundColor: scheme.bg1,     // 步骤类型的浅色背景（保持各类型特色）
     // 【小强修复 2026-04-14】去掉边框，更简洁
-    color: '#333333',                // 统一深灰色字体，对比强烈
+    color: '#595959',                // 统一浅灰色字体，符合9种浅色方案
     fontSize: FontSize.TERTIARY,     // 12px
     fontWeight: FontWeight.BOLD,     // 加粗
     display: 'inline-flex',
