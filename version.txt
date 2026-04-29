@@ -20,13 +20,20 @@ v0.11.6
   | UserMessageBubble.tsx | 16px | 8px | ✅ |
   | MessageItem.tsx | 16px | 8px | ✅ |
 
+  ## 3 UI优化补充 - 小强-2026-04-29
+
   | Commit | 说明 |
   |--------|------|
-  | 37d488bc | fix: 统一外层框圆角为8px与内层一致 |
-  | 29a23362 | fix: 修复colorSchemes.text深色#262626为浅色#595959 |
-  | b40b7b1e | fix: 修复Colors.TEXT.PRIMARY深色#262626为浅色#595959 |
-  | e52d5c14 | fix: 修复深色#333333为浅色#595959 |
-  | 5eb402b1 | feat: AI气泡Step留白优化(12px)+flex布局 |
+  | eb3f4d52 | fix: UI optimization - remove badge backgrounds, adjust spacing |
+  | 5f5f486f | fix: 去除provider/model和下一步背景块 |
+  | 53095f66 | fix: 去除工具参数背景和边框 |
+
+  | 下一步优化项 | 说明 |
+  |---------|------|
+  | 去除badge背景 | 步骤标签、推理块、下一步块 |
+  | 去除provider/model背景块 | 无框无背景 |
+  | 去除工具参数背景和边框 | 🔧工具/⬇️下一步参数无框无背景 |
+  | 间距调整 | gap/margin/padding多处优化 |
 
 ---
 
