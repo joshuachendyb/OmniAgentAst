@@ -252,8 +252,8 @@ const StepContent: React.FC<StepContentProps> = ({
               {(step as ExecutionStep & Record<string, unknown>).reasoning && (
                 <div style={{
                   marginTop: 8,
-                  marginLeft: 12,
-                  paddingLeft: 12,
+                  marginLeft: 0,
+                  paddingLeft: 4,
                   borderLeft: "2px solid #d9d9d9",
                   color: "#666",
                   fontSize: 12,

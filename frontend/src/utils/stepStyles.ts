@@ -274,7 +274,7 @@ export const getStepStyle = (stepType: StepType | string, isPrimary: boolean = t
   
   return {
     borderRadius: 8,
-    padding: "12px",
+    padding: "6px",
     marginTop: 6,
     fontSize: isPrimary ? FontSize.SECONDARY : FontSize.TERTIARY,
     lineHeight: 1.8,
@@ -283,7 +283,7 @@ export const getStepStyle = (stepType: StepType | string, isPrimary: boolean = t
     color: scheme.text,
     display: 'flex' as const,
     flexDirection: 'column' as const,
-    gap: '8px',
+    gap: '1px',
   };
 };
 
@@ -348,14 +348,13 @@ export const getStepLabelStyle = (stepType: StepType | string) => {
     display: 'inline-flex' as const,
     alignItems: 'center' as const,
     gap: 4,
-    padding: '3px 10px',     // 【小强修复 2026-04-14】与时间戳统一高度
-    borderRadius: 6,        // 【小强修复 2026-04-14】与时间戳统一圆角
-    backgroundColor: `${scheme.bg1}`,
+    padding: '2px 0',     // 取消背景色块后精简padding
+    borderRadius: 0,      // 取消圆角
+    backgroundColor: 'transparent', // 无背景
     color: scheme.text,
-    fontSize: FontSize.TERTIARY, // 增大字体大小，提高可读性
+    fontSize: FontSize.TERTIARY,
     fontWeight: FontWeight.MEDIUM,
-    // 【小强修复 2026-04-14】去掉边框，更简洁
-    boxShadow: '0 1px 2px rgba(0,0,0,0.05)',  // 【小强修复 2026-04-14】与时间戳统一阴影
+    boxShadow: 'none',    // 取消阴影
   };
 };
 
@@ -370,41 +369,8 @@ export const getStepBadgeStyle = (
   stepType: StepType | string,
   variant: 'default' | 'outline' = 'default'
 ) => {
-  // 渐变色映射表（设计文档3.2节要求）
-  const gradientBg: Record<string, string> = {
-    start: 'linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%)',
-    thought: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)',
-    action_tool: 'linear-gradient(135deg, #f9f0ff 0%, #d3adf7 100%)',
-    observation: 'linear-gradient(135deg, #e6fffb 0%, #87e8de 100%)',
-    final: 'linear-gradient(135deg, #f6ffed 0%, #b7eb8f 100%)',
-    error: 'linear-gradient(135deg, #fff1f0 0%, #ffccc7 100%)',
-    interrupted: 'linear-gradient(135deg, #fff2e8 0%, #ffbb96 100%)',
-    paused: 'linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%)',
-    resumed: 'linear-gradient(135deg, #f6ffed 0%, #b7eb8f 100%)',
-    retrying: 'linear-gradient(135deg, #fff1f0 0%, #ffccc7 100%)',
-    incident: 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)',
-    report: 'linear-gradient(135deg, #f6ffed 0%, #b7eb8f 100%)',
-  };
-  
-  // 文字颜色映射表
-  const textColor: Record<string, string> = {
-    start: '#096dd9',
-    thought: '#d97706',
-    action_tool: '#722ed1',
-    observation: '#08979c',
-    final: '#389e0d',
-    error: '#cf1322',
-    interrupted: '#d4380d',
-    paused: '#096dd9',
-    resumed: '#389e0d',
-    retrying: '#cf1322',
-    incident: '#d97706',
-    report: '#389e0d',
-  };
-  
-  const validType = isValidStepType(stepType) ? stepType : 'start';
-  const gradient = gradientBg[validType] || gradientBg.start;
-  const color = textColor[validType] || textColor.start;
+  const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
+  const color = scheme.text;
   
   if (variant === 'outline') {
     return {
@@ -418,15 +384,15 @@ export const getStepBadgeStyle = (
     };
   }
   
-  // 渐变badge样式（第二步实现）
+  // 渐变badge样式（默认改为无背景，只保留文字颜色）
   return {
-    padding: '4px 10px',
-    borderRadius: 6,
+    padding: '2px 0',
+    borderRadius: 0,
     fontSize: FontSize.TERTIARY,
     fontWeight: FontWeight.BOLD,
     color: color,
-    background: gradient,
-    border: '1px solid transparent',
+    backgroundColor: 'transparent',
+    border: 'none',
     display: 'inline-flex',
     alignItems: 'center',
     gap: 4,

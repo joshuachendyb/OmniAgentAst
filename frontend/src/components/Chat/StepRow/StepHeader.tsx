@@ -73,7 +73,7 @@ const StepHeader: React.FC<StepHeaderProps> = ({
     <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
       {/* 步骤编号徽章 */}
       {step.step && (
-        <span style={badgeStyle}>
+        <span style={{ ...badgeStyle, marginRight: 4 }}>
           步骤{step.step}
         </span>
       )}
