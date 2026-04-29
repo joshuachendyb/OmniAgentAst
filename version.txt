@@ -1,3 +1,30 @@
+v0.11.8
+
+  更新时间: 2026-04-29 14:35:00
+
+  更新内容：
+
+  ## 1 TIME工具补充time_schema.py并使用input_model注册 - 小沈-2026-04-29
+
+  | 修改文件 | 更新内容 |
+  |----------|----------|
+  | time_schema.py | 新建，定义9个工具的Pydantic模型 |
+  | time_tools.py | 更新9个工具的注册，使用input_model参数 |
+
+  | 工具名 | input_model | examples数量 |
+  |--------|-------------|-------------|
+  | time_now | TimeNowInput | 1 |
+  | time_format | TimeFormatInput | 4 |
+  | time_diff | TimeDiffInput | 3 |
+  | timer_set | TimerSetInput | 3 |
+  | timer_clear | TimerClearInput | 2 |
+  | time_utc_to_local | TimeUtcToLocalInput | 3 |
+  | time_local_to_utc | TimeLocalToUtcInput | 3 |
+  | time_is_weekend | TimeIsWeekendInput | 4 |
+  | time_is_holiday | TimeIsHolidayInput | 4 |
+
+  ---
+
 v0.11.7
 
   更新时间: 2026-04-29 14:20:00
