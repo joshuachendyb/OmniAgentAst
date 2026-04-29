@@ -1,3 +1,35 @@
+v0.11.9
+
+  更新时间: 2026-04-29 15:26:04
+
+  更新内容：
+
+  ## 1 小健审查问题修复 - 小沈-2026-04-29
+
+  | 修复项 | 说明 | 状态 |
+  |--------|------|------|
+  | test拼写错误 | time_local_to_local → time_local_to_utc | ✅ |
+  | tools/__init__.py | 补充 file/time/shell 触发导入 | ✅ |
+  | shell_register.py | 移除不存在的register_category API | ✅ |
+  | shell新规范重构 | 新建 shell_schema.py/shell_tools.py/__init__.py | ✅ |
+  | file/__init__.py | 补充缺少的9个Pydantic模型导出 | ✅ |
+  | FILE/SHELL冲突 | 移除shell的list_directory（与FILE重复） | ✅ |
+
+  | 工具分类 | 注册数量 | 状态 |
+  |---------|---------|------|
+  | FILE | 17 | ✅ |
+  | TIME | 9 | ✅ |
+  | SHELL | 4 | ✅ |
+
+  ## 2 修改文件清单 - 小沈-2026-04-29
+
+  | 类型 | 文件 |
+  |------|------|
+  | 修改 | tools/__init__.py, file/__init__.py, shell_register.py, test_agent_system_integration.py |
+  | 新建 | shell/__init__.py, shell_schema.py, shell_tools.py |
+
+  ---
+
 v0.11.8
 
   更新时间: 2026-04-29 14:35:00
