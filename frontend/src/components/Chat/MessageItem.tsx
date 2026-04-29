@@ -106,7 +106,7 @@ const MessageItem = memo(({
             border: "1px solid #ffe58f",
             color: "#ad6800",
             padding: "8px 16px",
-            borderRadius: "16px",
+            borderRadius: "8px",
             maxWidth: "90%",
             whiteSpace: "nowrap",
             fontSize: 14,

@@ -53,7 +53,7 @@ const getAIBubbleStyle = (isError?: boolean): React.CSSProperties => {
     minWidth: "60px",
     width: "auto",
     padding: 0,  // 【修改】由内层getStepStyle控制留白
-    borderRadius: "16px",
+    borderRadius: "8px",  // 统一为内层Step圆角程度
     position: "relative",
     transition: "all 0.3s ease",
     whiteSpace: "pre-wrap" as const,

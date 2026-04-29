@@ -45,7 +45,7 @@ const getUserBubbleStyle = (sendStatus?: string): React.CSSProperties => {
     paddingBottom: 8,
     paddingLeft: 10,
     paddingRight: 30,
-    borderRadius: "16px",
+    borderRadius: "8px",
     position: "relative",
     transition: "all 0.3s ease",
     whiteSpace: "pre-wrap" as const,
