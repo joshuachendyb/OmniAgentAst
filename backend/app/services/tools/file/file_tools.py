@@ -60,13 +60,13 @@ from app.services.tools.file.file_schema import (
     FileChecksumInput,
 )
 
-from app.services.agent import (
-    get_file_safety_service,
-    get_session_service
-)
 from app.services.safety.file.file_safety import OperationType
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
+
+# 【重要】延迟导入，避免循环导入问题
+# file_tools.py 在 tools 模块加载时被导入，此时 agent 还未初始化完成
+# 将 agent 服务延迟到实际使用时再导入
 
 
 # ============================================================
@@ -188,6 +188,9 @@ class FileTools:
     """
     
     def __init__(self, task_id: Optional[str] = None):
+        # 【重要】延迟导入 agent 服务，避免循环导入
+        from app.services.agent import get_file_safety_service, get_session_service
+        
         # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
         # session_id 专用于会话场景，操作追踪必须用 task_id
         self.safety = get_file_safety_service()

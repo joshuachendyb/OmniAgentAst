@@ -175,28 +175,36 @@ def _register_file_tools():
     【小健 2026-04-29】强制要求：此函数在新增工具时必须在TOOL_INPUT_MODELS中添加映射，并传入input_model参数
     【小健 2026-04-29】禁止后续新增工具使用旧的非规范注册方式（直接传input_schema字典）
     """
-    # 只创建一个 FileTools 实例
-    ft = FileTools()
+    # 【重要】延迟创建 FileTools 实例，避免循环导入
+    # 工具方法的绑定在函数被调用时才创建，此时 agent已完成初始化
+    ft = None
     
-    # 统一的工具映射 - 注册名与实际方法名一致
+    def _get_ft():
+        nonlocal ft
+        if ft is None:
+            from app.services.tools.file.file_tools import FileTools
+            ft = FileTools()
+        return ft
+    
+    # 【重要】使用 lambda 延迟绑定方法，避免在注册时立即访问 FileTools
     tool_methods = {
-        "read_file": ft.read_file,
-        "write_file": ft.write_file,
-        "list_directory": ft.list_directory,
-        "delete_file": ft.delete_file,
-        "move_file": ft.move_file,
-        "search_file_content": ft.search_file_content,
-        "search_files": ft.search_files,      # 统一：注册名 = 方法名
-        "generate_report": ft.generate_report,
-        "copy_file": ft.copy_file,
-        "create_directory": ft.create_directory,
-        "get_file_info": ft.get_file_info,
-        "compare_files": ft.compare_files,
-        "batch_rename": ft.batch_rename,
-        "compress_files": ft.compress_files,
-        "file_monitor": ft.file_monitor,
-        "file_statistics": ft.file_statistics,
-        "file_checksum": ft.file_checksum,
+        "read_file": lambda: _get_ft().read_file,
+        "write_file": lambda: _get_ft().write_file,
+        "list_directory": lambda: _get_ft().list_directory,
+        "delete_file": lambda: _get_ft().delete_file,
+        "move_file": lambda: _get_ft().move_file,
+        "search_file_content": lambda: _get_ft().search_file_content,
+        "search_files": lambda: _get_ft().search_files,
+        "generate_report": lambda: _get_ft().generate_report,
+        "copy_file": lambda: _get_ft().copy_file,
+        "create_directory": lambda: _get_ft().create_directory,
+        "get_file_info": lambda: _get_ft().get_file_info,
+        "compare_files": lambda: _get_ft().compare_files,
+        "batch_rename": lambda: _get_ft().batch_rename,
+        "compress_files": lambda: _get_ft().compress_files,
+        "file_monitor": lambda: _get_ft().file_monitor,
+        "file_statistics": lambda: _get_ft().file_statistics,
+        "file_checksum": lambda: _get_ft().file_checksum,
     }
     
     # 【小健 2026-04-29】强制映射：工具名与Pydantic模型一一对应，禁止新增工具时跳过此映射
