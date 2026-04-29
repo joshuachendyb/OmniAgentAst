@@ -37,7 +37,7 @@ const renderToolInfo = (toolName: string | undefined, toolParams: Record<string,
   bgColor?: string;
 }) => {
   const prefix = options?.prefix || '';
-  const bgColor = options?.bgColor || 'rgba(0,0,0,0.03)';
+  const bgColor = options?.bgColor || 'transparent';
   
   if (!toolName && !toolParams) return null;
   
@@ -60,15 +60,15 @@ const renderToolInfo = (toolName: string | undefined, toolParams: Record<string,
           fontSize: 12,
           fontFamily: 'Consolas, Monaco, "Courier New", monospace',
           background: bgColor,
-          padding: '6px 12px',
-          borderRadius: 6,
+          padding: bgColor !== 'transparent' ? '6px 12px' : '0',
+          borderRadius: bgColor !== 'transparent' ? 6 : 0,
           // 北京老陈要求：不截断，完全显示
           maxWidth: 'none',
           overflow: 'visible',
           textOverflow: 'clip',
           whiteSpace: 'pre-wrap',
           display: 'inline-block',
-          border: '1px solid rgba(0,0,0,0.08)',
+          border: bgColor !== 'transparent' ? '1px solid rgba(0,0,0,0.08)' : 'none',
           wordBreak: 'break-all',
         }}>
           {JSON.stringify(toolParams)}
