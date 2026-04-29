@@ -215,11 +215,11 @@ def _get_files_in_directory(directory: Path, recursive: bool) -> Dict[str, Dict[
     files = {}
     
     if recursive:
-        walk_func = directory.rglob
+        paths = directory.rglob("*")
     else:
-        walk_func = directory.iterdir
+        paths = directory.iterdir()
     
-    for path in walk_func("*"):
+    for path in paths:
         if path.is_file() or path.is_dir():
             try:
                 stat = path.stat()
@@ -230,7 +230,6 @@ def _get_files_in_directory(directory: Path, recursive: bool) -> Dict[str, Dict[
                     "path": str(path)
                 }
             except (OSError, PermissionError):
-                # 跳过无法访问的文件
                 continue
     
     return files

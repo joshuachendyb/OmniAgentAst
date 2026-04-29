@@ -55,6 +55,10 @@ class WriteFileInput(BaseModel):
         default="utf-8",
         description="文件编码，默认为utf-8"
     )
+    unescape: bool = Field(
+        default=True,
+        description="是否自动反转义转义字符（如 \\n 转为真实换行、\\\" 转为引号），默认为True"
+    )
 
 
 class ListDirectoryInput(BaseModel):
@@ -335,6 +339,211 @@ class FileStatisticsInput(BaseModel):
     )
 
 
+class ReadTextFileInput(BaseModel):
+    """read_text_file 工具的输入参数"""
+    file_path: str = Field(
+        description="文件的完整路径，必须是绝对路径，支持中文路径（如 D:/文档/测试.txt）"
+    )
+    head: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=1000000,
+        description="读取文件的前 N 行，不能与 tail 参数同时使用。用于只查看文件开头部分内容"
+    )
+    tail: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=1000000,
+        description="读取文件的后 N 行，不能与 head 参数同时使用。用于查看文件末尾部分内容，如日志文件的最新记录"
+    )
+    encoding: Optional[str] = Field(
+        default=None,
+        description="文件编码。可选参数，由 Agent 根据文件内容自动检测。常见值：utf-8（默认）、gbk、gb2312、utf-8-sig"
+    )
+
+
+class ReadMediaFileInput(BaseModel):
+    """read_media_file 工具的输入参数"""
+    file_path: str = Field(
+        description="媒体文件的完整路径，必须是绝对路径，支持图片（JPG、PNG、GIF、BMP、WebP）和音频（MP3、WAV、OGG、M4A）格式"
+    )
+
+
+class ReadBatchFileInput(BaseModel):
+    """read_batch_file 工具的输入参数"""
+    file_paths: List[str] = Field(
+        description="文件路径数组，每个元素必须是文件的完整绝对路径，支持中文路径。数组长度建议不超过100个文件"
+    )
+
+
+class PreciseReplaceInFileInput(BaseModel):
+    """precise_replace_in_file 工具的输入参数"""
+    file_path: str = Field(
+        description="文件的绝对路径，支持中文路径（如 D:/项目/代码/main.py）"
+    )
+    old_string: str = Field(
+        description="要替换的精确文本，支持中文。必须是文件中确实存在的文本，进行精确匹配（非正则表达式）"
+    )
+    new_string: str = Field(
+        description="替换后的文本，支持中文。用于替换 old_string 的内容"
+    )
+    replace_all: bool = Field(
+        default=False,
+        description="是否替换所有匹配项。设置为 true 时替换文件中所有匹配的 old_string，设置为 false 时只替换第一个匹配项"
+    )
+    ignore_case: bool = Field(
+        default=False,
+        description="是否忽略大小写。由 Agent 根据上下文智能判断"
+    )
+    encoding: Optional[str] = Field(
+        default=None,
+        description="文件编码。由 Agent 根据文件内容自动检测。常见值：utf-8、gbk、gb2312"
+    )
+
+
+class EditFileInput(BaseModel):
+    """edit_file 工具的输入参数"""
+    file_path: str = Field(
+        description="要编辑的文件路径，支持中文路径"
+    )
+    edits: List[Dict[str, str]] = Field(
+        description="编辑操作数组，每个元素包含 oldText（要替换的文本）和 newText（替换后的文本），支持同时执行多个编辑操作"
+    )
+    dryRun: bool = Field(
+        default=False,
+        description="预览模式。设置为 true 时只返回修改后的内容预览，不实际修改文件；设置为 false 时执行实际修改"
+    )
+    encoding: Optional[str] = Field(
+        default=None,
+        description="文件编码。可选参数，由 Agent 根据文件内容自动检测。常见值：utf-8、gbk、gb2312"
+    )
+
+
+class RenameFileInput(BaseModel):
+    """rename_file 工具的输入参数"""
+    file_path: str = Field(
+        description="当前文件或目录的路径。必须是已存在的文件或目录"
+    )
+    new_name: str = Field(
+        description="新的文件名或目录名。不能包含路径分隔符，只输入文件名或目录名"
+    )
+
+
+class GlobFilesInput(BaseModel):
+    """glob_files 工具的输入参数"""
+    pattern: str = Field(
+        description="Glob 模式，用于匹配文件名。如 \"**/*.js\" 匹配所有 JS 文件，\"src/**/*.ts\" 匹配 src 目录下所有 TS 文件，\"*.py\" 匹配当前目录所有 Python 文件"
+    )
+    search_dir: Optional[str] = Field(
+        default=None,
+        description="搜索目录，默认为当前工作目录。必须是绝对路径，支持中文目录名"
+    )
+    include_hidden: bool = Field(
+        default=False,
+        description="是否包含隐藏文件（如 .env、.gitignore）。Agent 智能判断"
+    )
+
+
+class GrepFileContentInput(BaseModel):
+    """grep_file_content 工具的输入参数"""
+    pattern: str = Field(
+        description="正则表达式搜索模式，支持中文内容搜索。常用示例：搜索\"函数定义\"或\"class.*方法\""
+    )
+    search_dir: Optional[str] = Field(
+        default=None,
+        description="搜索路径，默认当前目录。必须是绝对路径，支持中文目录名"
+    )
+    output_mode: Optional[str] = Field(
+        default=None,
+        description="输出模式。可选值：content（显示匹配行的内容）、files_with_matches（只显示包含匹配的文件名）、count（显示每个文件的匹配数量）"
+    )
+    glob: Optional[str] = Field(
+        default=None,
+        description="文件类型过滤，使用 glob 通配符。例如：\"*.ts\" 只搜索 TS 文件，\"*.{js,py}\" 搜索 JS 和 Python 文件"
+    )
+    type: Optional[str] = Field(
+        default=None,
+        description="语言类型，简化 glob 匹配。常用值：js（JavaScript）、py（Python）、rust、html、json 等"
+    )
+    after_lines: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=1000,
+        description="匹配行之后额外显示的行数，用于查看后续上下文"
+    )
+    before_lines: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=1000,
+        description="匹配行之前额外显示的行数，用于查看前面上下文"
+    )
+    context_lines: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=500,
+        description="匹配行前后各显示的行数，同时设置 before 和 after，用于查看完整上下文"
+    )
+    ignore_case: bool = Field(
+        default=False,
+        description="搜索时是否忽略大小写。设置为 true 时，\"test\" 会匹配 \"Test\" 和 \"TEST\"。默认 false"
+    )
+    show_line_no: bool = Field(
+        default=False,
+        description="是否在输出中显示行号，便于定位。默认 false"
+    )
+    multiline: bool = Field(
+        default=False,
+        description="启用多行匹配模式，允许正则表达式中的 . 匹配换行符。默认 false"
+    )
+    head_limit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=100000,
+        description="限制返回的匹配结果数量，用于大文件搜索避免输出过多"
+    )
+
+
+class ListDirectoryWithSizesInput(BaseModel):
+    """list_directory_with_sizes 工具的输入参数"""
+    dir_path: str = Field(
+        description="目录路径，必须是绝对路径，支持中文目录名"
+    )
+    sortBy: str = Field(
+        default="name",
+        description="排序方式。可选值：name（按名称字母排序，默认值）、size（按文件大小排序，从大到小）"
+    )
+    include_hidden: bool = Field(
+        default=False,
+        description="是否显示隐藏文件。Agent 智能判断"
+    )
+    recursive: bool = Field(
+        default=False,
+        description="是否递归列出子目录内容。Agent 智能判断（只看当前层）"
+    )
+
+
+class GetDirectoryTreeInput(BaseModel):
+    """get_directory_tree 工具的输入参数"""
+    dir_path: str = Field(
+        description="起始目录，必须是绝对路径，支持中文目录名"
+    )
+    excludePatterns: Optional[List[str]] = Field(
+        default=None,
+        description="排除模式数组，符合排除模式的目录不会包含在结果中。格式为 glob 通配符，如 [\"node_modules\", \"__pycache__\", \"*.pyc\"]"
+    )
+    max_depth: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=100,
+        description="最大递归深度。可选参数，由 Agent 根据系统资源和目录规模动态设置。若未设置则默认无限制。"
+    )
+
+
+class ListAllowedDirectoriesInput(BaseModel):
+    """list_allowed_directories 工具的输入参数"""
+    pass
+
+
 class FileChecksumInput(BaseModel):
     """file_checksum 工具的输入参数"""
     file_path: str = Field(
@@ -374,4 +583,15 @@ __all__ = [
     "FileMonitorInput",
     "FileStatisticsInput",
     "FileChecksumInput",
+    "ReadTextFileInput",
+    "ReadMediaFileInput",
+    "ReadBatchFileInput",
+    "PreciseReplaceInFileInput",
+    "EditFileInput",
+    "RenameFileInput",
+    "GlobFilesInput",
+    "GrepFileContentInput",
+    "ListDirectoryWithSizesInput",
+    "GetDirectoryTreeInput",
+    "ListAllowedDirectoriesInput",
 ]

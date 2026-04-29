@@ -256,8 +256,8 @@ class FileTools:
                             if str(real_path) == str(allowed_real) or real_path.parts[0] == allowed_parts[0]:
                                 return True, None
                         else:
-                            # 普通目录：允许子目录
-                            if len(real_parts) > len(allowed_parts):
+                            # 普通目录：允许子目录或相等路径
+                            if len(real_parts) >= len(allowed_parts):
                                 return True, None
                 except (ValueError, OSError):
                     pass
@@ -381,6 +381,107 @@ class FileTools:
                 "error": str(e),
                 "content": None
             }, "read_file")
+
+    async def read_text_file(
+        self,
+        file_path: str,
+        head: Optional[int] = None,
+        tail: Optional[int] = None,
+        encoding: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """读取文本文件的完整内容，支持指定行数"""
+        try:
+            # 验证head和tail不能同时使用
+            if head is not None and tail is not None:
+                return _to_unified_format({
+                    "success": False,
+                    "error": "head 和 tail 参数不能同时使用，请只使用其中一个",
+                    "content": None
+                }, "read_text_file")
+
+            # 验证路径合法性
+            is_valid, error_msg = self._validate_path(file_path)
+            if not is_valid:
+                return _to_unified_format({
+                    "success": False,
+                    "error": error_msg,
+                    "content": None
+                }, "read_text_file")
+
+            path = Path(file_path)
+            if not path.exists():
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"文件不存在: {file_path}",
+                    "content": None
+                }, "read_text_file")
+
+            if not path.is_file():
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"路径不是文件: {file_path}",
+                    "content": None
+                }, "read_text_file")
+
+            # 尝试编码读取
+            encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
+            file_size = path.stat().st_size
+            content = None
+            used_encoding = None
+
+            for enc in encodings_to_try:
+                if enc is None:
+                    continue
+                try:
+                    def _read_sync(e=enc):
+                        with open(path, 'r', encoding=e, errors='replace') as f:
+                            return f.read()
+                    content = await asyncio.to_thread(_read_sync)
+                    used_encoding = enc
+                    break
+                except Exception:
+                    continue
+
+            if content is None:
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"无法读取文件: {file_path}，已尝试编码: {encodings_to_try}",
+                    "content": None
+                }, "read_text_file")
+
+            lines = content.splitlines(keepends=True)
+            total_lines = len(lines)
+
+            # 处理head/tail
+            if head is not None:
+                selected_lines = lines[:min(head, total_lines)]
+            elif tail is not None:
+                start = max(0, total_lines - tail)
+                selected_lines = lines[start:]
+            else:
+                selected_lines = lines
+
+            result_content = "".join(selected_lines)
+            line_count = len(selected_lines)
+
+            return _to_unified_format({
+                "success": True,
+                "content": result_content,
+                "total_lines": total_lines,
+                "line_count": line_count,
+                "head": head,
+                "tail": tail,
+                "encoding": used_encoding,
+                "file_size": file_size,
+            }, "read_text_file")
+
+        except Exception as e:
+            logger.error(f"read_text_file failed: {file_path}: {e}")
+            return _to_unified_format({
+                "success": False,
+                "error": str(e),
+                "content": None
+            }, "read_text_file")
     
     @register_tool(
         name="write_file",
@@ -416,9 +517,13 @@ class FileTools:
         self,
         file_path: str,
         content: str,
-        encoding: str = "utf-8"
+        encoding: str = "utf-8",
+        unescape: bool = True
     ) -> Dict[str, Any]:
         """写入文件内容"""
+        # 若启用反转义，对内容做转义字符还原
+        if unescape:
+            content = content.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\")
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(file_path)
         if not is_valid:
@@ -1893,6 +1998,635 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
+    async def read_media_file(
+        self,
+        file_path: str,
+    ) -> Dict[str, Any]:
+        """读取媒体文件，返回Base64编码"""
+        try:
+            is_valid, error_msg = self._validate_path(file_path)
+            if not is_valid:
+                return _to_unified_format({
+                    "success": False, "error": error_msg, "data": None, "mime_type": None
+                }, "read_media_file")
+
+            path = Path(file_path)
+            if not path.exists():
+                return _to_unified_format({
+                    "success": False, "error": f"文件不存在: {file_path}", "data": None, "mime_type": None
+                }, "read_media_file")
+            if not path.is_file():
+                return _to_unified_format({
+                    "success": False, "error": f"路径不是文件: {file_path}", "data": None, "mime_type": None
+                }, "read_media_file")
+
+            suffix = path.suffix.lower()
+            mime_map = {
+                ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+                ".gif": "image/gif", ".bmp": "image/bmp", ".webp": "image/webp",
+                ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg",
+                ".m4a": "audio/mp4",
+            }
+            mime_type = mime_map.get(suffix, "application/octet-stream")
+
+            def _read_sync():
+                with open(path, 'rb') as f:
+                    return base64.b64encode(f.read()).decode('utf-8')
+
+            b64_data = await asyncio.to_thread(_read_sync)
+            return _to_unified_format({
+                "success": True, "data": b64_data, "mime_type": mime_type,
+                "file_name": path.name, "file_size": path.stat().st_size,
+            }, "read_media_file")
+        except Exception as e:
+            logger.error(f"read_media_file failed: {file_path}: {e}")
+            return _to_unified_format({
+                "success": False, "error": str(e), "data": None, "mime_type": None
+            }, "read_media_file")
+
+    async def read_batch_file(
+        self,
+        file_paths: List[str],
+    ) -> Dict[str, Any]:
+        """同时读取多个文本文件"""
+        if not file_paths:
+            return _to_unified_format({
+                "success": False, "error": "文件路径列表为空", "results": []
+            }, "read_batch_file")
+
+        async def _read_single(fp: str) -> Dict[str, Any]:
+            is_valid, error_msg = self._validate_path(fp)
+            if not is_valid:
+                return {"file_path": fp, "success": False, "error": error_msg, "content": None}
+            path = Path(fp)
+            if not path.exists():
+                return {"file_path": fp, "success": False, "error": f"文件不存在: {fp}", "content": None}
+            try:
+                for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
+                    try:
+                        content = await asyncio.to_thread(
+                            lambda e=enc: open(path, 'r', encoding=e, errors='replace').read()
+                        )
+                        return {"file_path": fp, "success": True, "content": content, "encoding": enc, "file_size": path.stat().st_size}
+                    except Exception:
+                        continue
+                return {"file_path": fp, "success": False, "error": f"无法解码文件: {fp}", "content": None}
+            except Exception as e:
+                return {"file_path": fp, "success": False, "error": str(e), "content": None}
+
+        results = await asyncio.gather(*[_read_single(fp) for fp in file_paths])
+        success_count = sum(1 for r in results if r["success"])
+        return _to_unified_format({
+            "success": True, "results": results, "total": len(results),
+            "success_count": success_count, "failed_count": len(results) - success_count,
+        }, "read_batch_file")
+
+    async def precise_replace_in_file(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+        ignore_case: bool = False,
+        encoding: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """精确替换文件中的字符串"""
+        try:
+            is_valid, error_msg = self._validate_path(file_path)
+            if not is_valid:
+                return _to_unified_format({
+                    "success": False, "error": error_msg, "replaced_count": 0
+                }, "precise_replace_in_file")
+
+            path = Path(file_path)
+            if not path.exists():
+                return _to_unified_format({
+                    "success": False, "error": f"文件不存在: {file_path}", "replaced_count": 0
+                }, "precise_replace_in_file")
+
+            encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
+
+            def _replace_sync() -> tuple[int, str, str]:
+                content = None
+                used_enc = None
+                for enc in encodings_to_try:
+                    if enc is None:
+                        continue
+                    try:
+                        with open(path, 'r', encoding=enc, errors='replace') as f:
+                            content = f.read()
+                        used_enc = enc
+                        break
+                    except Exception:
+                        continue
+                if content is None:
+                    raise ValueError(f"无法读取文件: {file_path}")
+
+                if ignore_case:
+                    import re as re_mod
+                    if replace_all:
+                        new_content = re_mod.sub(re_mod.escape(old_string), new_string, content, flags=re_mod.IGNORECASE)
+                        count = len(re_mod.findall(re_mod.escape(old_string), content, flags=re_mod.IGNORECASE))
+                    else:
+                        new_content = re_mod.sub(re_mod.escape(old_string), new_string, content, count=1, flags=re_mod.IGNORECASE)
+                        count = 1
+                else:
+                    if replace_all:
+                        count = content.count(old_string)
+                        new_content = content.replace(old_string, new_string)
+                    else:
+                        idx = content.find(old_string)
+                        if idx == -1:
+                            raise ValueError(f"文件中未找到匹配文本: {old_string[:50]}")
+                        new_content = content[:idx] + new_string + content[idx + len(old_string):]
+                        count = 1
+
+                with open(path, 'w', encoding=used_enc) as f:
+                    f.write(new_content)
+                return count, used_enc, path.name
+
+            count, used_enc, name = await asyncio.to_thread(_replace_sync)
+            return _to_unified_format({
+                "success": True, "replaced_count": count, "encoding": used_enc,
+                "file_path": str(path), "file_name": name,
+            }, "precise_replace_in_file")
+        except Exception as e:
+            logger.error(f"precise_replace_in_file failed: {file_path}: {e}")
+            return _to_unified_format({
+                "success": False, "error": str(e), "replaced_count": 0
+            }, "precise_replace_in_file")
+
+    async def edit_file(
+        self,
+        file_path: str,
+        edits: List[Dict[str, str]],
+        dryRun: bool = False,
+        encoding: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """高级编辑文件，支持多处编辑和预览"""
+        try:
+            is_valid, error_msg = self._validate_path(file_path)
+            if not is_valid:
+                return _to_unified_format({
+                    "success": False, "error": error_msg, "applied_edits": 0, "preview": None
+                }, "edit_file")
+
+            path = Path(file_path)
+            if not path.exists():
+                return _to_unified_format({
+                    "success": False, "error": f"文件不存在: {file_path}", "applied_edits": 0, "preview": None
+                }, "edit_file")
+
+            encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
+
+            def _edit_sync() -> Dict[str, Any]:
+                content = None
+                used_enc = None
+                for enc in encodings_to_try:
+                    if enc is None:
+                        continue
+                    try:
+                        with open(path, 'r', encoding=enc, errors='replace') as f:
+                            content = f.read()
+                        used_enc = enc
+                        break
+                    except Exception:
+                        continue
+                if content is None:
+                    raise ValueError(f"无法读取文件: {file_path}")
+
+                results = []
+                modified = content
+                for i, edit in enumerate(edits):
+                    old_text = edit.get("oldText", "")
+                    new_text = edit.get("newText", "")
+                    if not old_text:
+                        results.append({"index": i, "success": False, "error": "oldText 为空"})
+                        continue
+                    idx = modified.find(old_text)
+                    if idx == -1:
+                        results.append({"index": i, "success": False, "error": f"未找到匹配文本: {old_text[:50]}"})
+                        continue
+                    modified = modified[:idx] + new_text + modified[idx + len(old_text):]
+                    results.append({"index": i, "success": True, "old_text": old_text[:50], "new_text": new_text[:50]})
+
+                applied = sum(1 for r in results if r["success"])
+                if not dryRun:
+                    with open(path, 'w', encoding=used_enc) as f:
+                        f.write(modified)
+                return {
+                    "success": True, "applied_edits": applied, "total_edits": len(edits),
+                    "results": results, "preview": modified if dryRun else None,
+                    "dry_run": dryRun, "encoding": used_enc,
+                }
+
+            result = await asyncio.to_thread(_edit_sync)
+            return _to_unified_format(result, "edit_file")
+        except Exception as e:
+            logger.error(f"edit_file failed: {file_path}: {e}")
+            return _to_unified_format({
+                "success": False, "error": str(e), "applied_edits": 0, "preview": None
+            }, "edit_file")
+
+    async def rename_file(
+        self,
+        file_path: str,
+        new_name: str,
+    ) -> Dict[str, Any]:
+        """重命名文件或目录"""
+        try:
+            is_valid, error_msg = self._validate_path(file_path)
+            if not is_valid:
+                return _to_unified_format({
+                    "success": False, "error": error_msg, "new_path": None
+                }, "rename_file")
+
+            src = Path(file_path)
+            if not src.exists():
+                return _to_unified_format({
+                    "success": False, "error": f"文件或目录不存在: {file_path}", "new_path": None
+                }, "rename_file")
+
+            if "/" in new_name or "\\" in new_name:
+                return _to_unified_format({
+                    "success": False, "error": "新名称不能包含路径分隔符", "new_path": None
+                }, "rename_file")
+
+            dst = src.parent / new_name
+            if dst.exists():
+                return _to_unified_format({
+                    "success": False, "error": f"目标已存在: {dst}", "new_path": None
+                }, "rename_file")
+
+            def _rename_sync():
+                src.rename(dst)
+                return True
+
+            await asyncio.to_thread(_rename_sync)
+            return _to_unified_format({
+                "success": True, "new_path": str(dst), "old_path": str(src),
+                "old_name": src.name, "new_name": new_name,
+            }, "rename_file")
+        except Exception as e:
+            logger.error(f"rename_file failed: {file_path}: {e}")
+            return _to_unified_format({
+                "success": False, "error": str(e), "new_path": None
+            }, "rename_file")
+
+    async def glob_files(
+        self,
+        pattern: str,
+        search_dir: Optional[str] = None,
+        include_hidden: bool = False,
+    ) -> Dict[str, Any]:
+        """Glob模式匹配文件，按修改时间排序"""
+        try:
+            import glob as glob_mod
+
+            search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
+            is_valid, error_msg = self._validate_path(str(search_path))
+            if not is_valid:
+                return _to_unified_format({
+                    "success": False, "error": error_msg, "files": []
+                }, "glob_files")
+
+            if not search_path.exists():
+                return _to_unified_format({
+                    "success": False, "error": f"目录不存在: {search_path}", "files": []
+                }, "glob_files")
+
+            def _glob_sync():
+                all_files = []
+                for p in search_path.glob(pattern):
+                    if not include_hidden and p.name.startswith('.'):
+                        continue
+                    all_files.append({
+                        "path": str(p.resolve()),
+                        "name": p.name,
+                        "type": "directory" if p.is_dir() else "file",
+                        "size": p.stat().st_size if p.is_file() else None,
+                        "mtime": p.stat().st_mtime,
+                    })
+                all_files.sort(key=lambda x: x["mtime"], reverse=True)
+                return all_files
+
+            files = await asyncio.to_thread(_glob_sync)
+            return _to_unified_format({
+                "success": True, "files": files, "total": len(files),
+                "search_dir": str(search_path), "pattern": pattern,
+            }, "glob_files")
+        except Exception as e:
+            logger.error(f"glob_files failed: {e}")
+            return _to_unified_format({
+                "success": False, "error": str(e), "files": []
+            }, "glob_files")
+
+    async def grep_file_content(
+        self,
+        pattern: str,
+        search_dir: Optional[str] = None,
+        output_mode: Optional[str] = None,
+        glob: Optional[str] = None,
+        type: Optional[str] = None,
+        after_lines: Optional[int] = None,
+        before_lines: Optional[int] = None,
+        context_lines: Optional[int] = None,
+        ignore_case: bool = False,
+        show_line_no: bool = False,
+        multiline: bool = False,
+        head_limit: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """基于正则的内容搜索"""
+        try:
+            search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
+            is_valid, error_msg = self._validate_path(str(search_path))
+            if not is_valid:
+                return _to_unified_format({
+                    "success": False, "error": error_msg, "matches": []
+                }, "grep_file_content")
+
+            if not pattern:
+                return _to_unified_format({
+                    "success": False, "error": "搜索模式不能为空", "matches": []
+                }, "grep_file_content")
+
+            type_ext_map = {
+                "js": "*.js", "ts": "*.ts", "tsx": "*.tsx", "jsx": "*.jsx",
+                "py": "*.py", "rs": "*.rs", "go": "*.go", "java": "*.java",
+                "html": "*.html", "css": "*.css", "json": "*.json", "yaml": "*.yaml",
+                "md": "*.md", "xml": "*.xml", "c": "*.c", "cpp": "*.cpp",
+                "h": "*.h", "rust": "*.rs",
+            }
+            file_glob = glob or (type_ext_map.get(type) if type else None)
+
+            def _grep_sync() -> List[Dict[str, Any]]:
+                import fnmatch
+                import re as re_mod
+
+                flags = re_mod.IGNORECASE if ignore_case else 0
+                if multiline:
+                    flags |= re_mod.DOTALL
+                try:
+                    regex = re_mod.compile(pattern, flags)
+                except re.error as e:
+                    raise ValueError(f"正则表达式错误: {e}")
+
+                results = []
+                match_count = 0
+
+                for root, dirs, files in os.walk(search_path):
+                    filtered_files = []
+                    for f in files:
+                        if file_glob and not fnmatch.fnmatch(f, file_glob):
+                            continue
+                        filtered_files.append(f)
+                    for filename in filtered_files:
+                        if head_limit is not None and match_count >= head_limit:
+                            break
+                        file_path = Path(root) / filename
+                        try:
+                            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
+                                lines = f.readlines()
+                        except Exception:
+                            continue
+
+                        file_matches = []
+                        for line_no, line in enumerate(lines, 1):
+                            m = regex.search(line)
+                            if m:
+                                match_count += 1
+                                entry = {
+                                    "line": line_no if show_line_no else None,
+                                    "content": line.rstrip('\n\r'),
+                                }
+                                if context_lines or after_lines:
+                                    after = after_lines or context_lines or 0
+                                    after_content = []
+                                    for i in range(1, after + 1):
+                                        if line_no - 1 + i < len(lines):
+                                            after_content.append(lines[line_no - 1 + i].rstrip('\n\r'))
+                                    entry["after"] = after_content if after_content else None
+                                if context_lines or before_lines:
+                                    before = before_lines or context_lines or 0
+                                    before_content = []
+                                    for i in range(1, before + 1):
+                                        if line_no - 1 - i >= 0:
+                                            before_content.insert(0, lines[line_no - 1 - i].rstrip('\n\r'))
+                                    entry["before"] = before_content if before_content else None
+                                file_matches.append(entry)
+                                if head_limit is not None and match_count >= head_limit:
+                                    break
+
+                        if file_matches:
+                            if output_mode == "count":
+                                results.append({"file": str(file_path), "count": len(file_matches)})
+                            elif output_mode == "files_with_matches":
+                                results.append({"file": str(file_path)})
+                            else:
+                                results.append({"file": str(file_path), "matches": file_matches, "match_count": len(file_matches)})
+
+                return results
+
+            matches = await asyncio.to_thread(_grep_sync)
+            total_matches = sum(m.get("match_count", 0) if "match_count" in m else (m.get("count", 1) if "count" in m else 1) for m in matches)
+
+            return _to_unified_format({
+                "success": True, "matches": matches, "total_files": len(matches),
+                "total_matches": total_matches, "pattern": pattern,
+                "search_dir": str(search_path), "output_mode": output_mode or "content",
+            }, "grep_file_content")
+        except Exception as e:
+            logger.error(f"grep_file_content failed: {e}")
+            return _to_unified_format({
+                "success": False, "error": str(e), "matches": []
+            }, "grep_file_content")
+
+    async def list_directory_with_sizes(
+        self,
+        dir_path: str,
+        sortBy: str = "name",
+        include_hidden: bool = False,
+        recursive: bool = False,
+    ) -> Dict[str, Any]:
+        """列出目录内容，包含文件大小和排序"""
+        try:
+            is_valid, error_msg = self._validate_path(dir_path)
+            if not is_valid:
+                return _to_unified_format({
+                    "success": False, "error": error_msg, "entries": [], "statistics": None
+                }, "list_directory_with_sizes")
+
+            path = Path(dir_path)
+            if not path.exists():
+                return _to_unified_format({
+                    "success": False, "error": f"目录不存在: {dir_path}", "entries": [], "statistics": None
+                }, "list_directory_with_sizes")
+            if not path.is_dir():
+                return _to_unified_format({
+                    "success": False, "error": f"不是目录: {dir_path}", "entries": [], "statistics": None
+                }, "list_directory_with_sizes")
+
+            def _list_sync() -> Dict[str, Any]:
+                entries = []
+                total_size = 0
+                dir_count = 0
+                file_count = 0
+
+                if recursive:
+                    for root, dirs, files in os.walk(path):
+                        for d in dirs:
+                            dp = Path(root) / d
+                            if not include_hidden and d.startswith('.'):
+                                continue
+                            try:
+                                st = dp.stat()
+                                entries.append({
+                                    "name": d, "path": str(dp), "type": "directory",
+                                    "size": None, "mtime": st.st_mtime,
+                                })
+                                dir_count += 1
+                            except (PermissionError, OSError):
+                                continue
+                        for f in files:
+                            fp = Path(root) / f
+                            if not include_hidden and f.startswith('.'):
+                                continue
+                            try:
+                                st = fp.stat()
+                                entries.append({
+                                    "name": f, "path": str(fp), "type": "file",
+                                    "size": st.st_size, "mtime": st.st_mtime,
+                                })
+                                total_size += st.st_size
+                                file_count += 1
+                            except (PermissionError, OSError):
+                                continue
+                else:
+                    for item in path.iterdir():
+                        if not include_hidden and item.name.startswith('.'):
+                            continue
+                        try:
+                            st = item.stat()
+                            is_dir = item.is_dir()
+                            entries.append({
+                                "name": item.name, "path": str(item.absolute()),
+                                "type": "directory" if is_dir else "file",
+                                "size": None if is_dir else st.st_size,
+                                "mtime": st.st_mtime,
+                            })
+                            if is_dir:
+                                dir_count += 1
+                            else:
+                                total_size += st.st_size
+                                file_count += 1
+                        except (PermissionError, OSError):
+                            continue
+
+                if sortBy == "size":
+                    entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("size") or 0), reverse=True)
+                else:
+                    entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
+
+                return {
+                    "entries": entries, "total": len(entries),
+                    "statistics": {
+                        "total_size": total_size, "dir_count": dir_count,
+                        "file_count": file_count, "sort_by": sortBy,
+                    }
+                }
+
+            result = await asyncio.to_thread(_list_sync)
+            result["success"] = True
+            result["directory"] = str(path)
+            return _to_unified_format(result, "list_directory_with_sizes")
+        except Exception as e:
+            logger.error(f"list_directory_with_sizes failed: {dir_path}: {e}")
+            return _to_unified_format({
+                "success": False, "error": str(e), "entries": [], "statistics": None
+            }, "list_directory_with_sizes")
+
+    async def get_directory_tree(
+        self,
+        dir_path: str,
+        excludePatterns: Optional[List[str]] = None,
+        max_depth: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """获取目录的递归JSON树结构"""
+        try:
+            is_valid, error_msg = self._validate_path(dir_path)
+            if not is_valid:
+                return _to_unified_format({
+                    "success": False, "error": error_msg, "tree": None
+                }, "get_directory_tree")
+
+            path = Path(dir_path)
+            if not path.exists():
+                return _to_unified_format({
+                    "success": False, "error": f"目录不存在: {dir_path}", "tree": None
+                }, "get_directory_tree")
+            if not path.is_dir():
+                return _to_unified_format({
+                    "success": False, "error": f"不是目录: {dir_path}", "tree": None
+                }, "get_directory_tree")
+
+            excludes = excludePatterns or []
+            import fnmatch
+
+            def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
+                if max_depth is not None and depth > max_depth:
+                    return None
+                name = current_path.name
+                for pattern in excludes:
+                    if fnmatch.fnmatch(name, pattern):
+                        return None
+                if current_path.is_file():
+                    return {"name": name, "type": "file"}
+                try:
+                    children = []
+                    for item in sorted(current_path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+                        child = _build_tree(item, depth + 1)
+                        if child is not None:
+                            children.append(child)
+                    return {"name": name, "type": "directory", "children": children}
+                except (PermissionError, OSError):
+                    return {"name": name, "type": "directory", "children": []}
+
+            tree = await asyncio.to_thread(_build_tree, path)
+            tree = tree or {"name": path.name, "type": "directory", "children": []}
+            return _to_unified_format({
+                "success": True, "tree": tree, "root": str(path),
+            }, "get_directory_tree")
+        except Exception as e:
+            logger.error(f"get_directory_tree failed: {dir_path}: {e}")
+            return _to_unified_format({
+                "success": False, "error": str(e), "tree": None
+            }, "get_directory_tree")
+
+    async def list_allowed_directories(self) -> Dict[str, Any]:
+        """列出允许访问的目录"""
+        try:
+            dirs = []
+            for p in self.allowed_paths:
+                p_obj = Path(p)
+                try:
+                    exists = p_obj.exists()
+                    dirs.append({
+                        "path": str(p_obj.resolve()),
+                        "exists": exists,
+                        "type": "directory" if exists and p_obj.is_dir() else "unknown",
+                    })
+                except Exception:
+                    dirs.append({"path": str(p), "exists": False, "type": "unknown"})
+
+            return _to_unified_format({
+                "success": True, "directories": dirs, "total": len(dirs),
+            }, "list_allowed_directories")
+        except Exception as e:
+            logger.error(f"list_allowed_directories failed: {e}")
+            return _to_unified_format({
+                "success": False, "error": str(e), "directories": []
+            }, "list_allowed_directories")
+
 
 # ============================================================
 # 第七部分：工具函数导出
@@ -2036,6 +2770,84 @@ def _generate_summary(tool_name: str, result: Any) -> str:
                 return f"{algorithm.upper()} 校验和验证失败"
         else:
             return f"{algorithm.upper()} 校验和：{checksum[:16]}..."
+    
+    elif tool_name == "read_text_file":
+        if result.get("success") is False:
+            return f"读取失败：{result.get('error', '未知错误')}"
+        line_count = result.get("line_count", 0)
+        total_lines = result.get("total_lines", 0)
+        return f"成功读取文件：{line_count}/{total_lines} 行"
+    
+    elif tool_name == "read_media_file":
+        if result.get("success") is False:
+            return f"读取失败：{result.get('error', '未知错误')}"
+        mime = result.get("mime_type", "未知")
+        size = result.get("file_size", 0)
+        return f"成功读取媒体文件：{mime}，{size:,} 字节"
+    
+    elif tool_name == "read_batch_file":
+        if result.get("success") is False:
+            return f"批量读取失败：{result.get('error', '未知错误')}"
+        success_count = result.get("success_count", 0)
+        failed_count = result.get("failed_count", 0)
+        return f"批量读取完成：成功 {success_count} 个，失败 {failed_count} 个"
+    
+    elif tool_name == "precise_replace_in_file":
+        if result.get("success") is False:
+            return f"替换失败：{result.get('error', '未知错误')}"
+        count = result.get("replaced_count", 0)
+        return f"成功替换 {count} 处文本"
+    
+    elif tool_name == "edit_file":
+        if result.get("success") is False:
+            return f"编辑失败：{result.get('error', '未知错误')}"
+        applied = result.get("applied_edits", 0)
+        total = result.get("total_edits", 0)
+        dry = result.get("dry_run", False)
+        if dry:
+            return f"预览模式：{applied}/{total} 处编辑将生效"
+        return f"成功应用 {applied}/{total} 处编辑"
+    
+    elif tool_name == "rename_file":
+        if result.get("success") is False:
+            return f"重命名失败：{result.get('error', '未知错误')}"
+        old = result.get("old_name", "")
+        new = result.get("new_name", "")
+        return f"成功重命名：{old} -> {new}"
+    
+    elif tool_name == "glob_files":
+        if result.get("success") is False:
+            return f"匹配失败：{result.get('error', '未知错误')}"
+        total = result.get("total", 0)
+        return f"Glob匹配完成，共 {total} 个文件"
+    
+    elif tool_name == "grep_file_content":
+        if result.get("success") is False:
+            return f"搜索失败：{result.get('error', '未知错误')}"
+        total_files = result.get("total_files", 0)
+        total_matches = result.get("total_matches", 0)
+        return f"搜索完成：{total_files} 个文件，{total_matches} 处匹配"
+    
+    elif tool_name == "list_directory_with_sizes":
+        if result.get("success") is False:
+            return f"列出目录失败：{result.get('error', '未知错误')}"
+        stats = result.get("statistics", {})
+        total_size = stats.get("total_size", 0)
+        dir_count = stats.get("dir_count", 0)
+        file_count = stats.get("file_count", 0)
+        size_str = f"{total_size:,}" if total_size < 1073741824 else f"{total_size / 1073741824:.2f} GB"
+        return f"列出目录：{dir_count} 个目录，{file_count} 个文件，总大小 {size_str} 字节"
+    
+    elif tool_name == "get_directory_tree":
+        if result.get("success") is False:
+            return f"获取目录树失败：{result.get('error', '未知错误')}"
+        return f"成功获取目录树结构"
+    
+    elif tool_name == "list_allowed_directories":
+        if result.get("success") is False:
+            return f"获取允许目录失败：{result.get('error', '未知错误')}"
+        total = result.get("total", 0)
+        return f"列出 {total} 个允许访问的目录"
     
     return "操作完成"
 
