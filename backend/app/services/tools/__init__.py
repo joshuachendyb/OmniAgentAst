@@ -19,6 +19,10 @@ from app.services.tools.tool_config import (
     get_tool_config,
 )
 
+from app.services.tools import file  # 触发file工具注册
+from app.services.tools import time  # 触发time工具注册
+from app.services.tools import shell  # 触发shell工具注册
+
 __all__ = [
     # registry
     "ToolRegistry",
@@ -40,4 +44,6 @@ __all__ = [
     "system",
     "database",
     "desktop",
+    "time",
+    "shell",
 ]

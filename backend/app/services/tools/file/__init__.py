@@ -20,6 +20,15 @@ from app.services.tools.file.file_schema import (
     SearchFileContentInput,
     SearchFilesByNameInput,
     GenerateReportInput,
+    CopyFileInput,
+    CreateDirectoryInput,
+    GetFileInfoInput,
+    CompareFilesInput,
+    BatchRenameInput,
+    CompressFilesInput,
+    FileMonitorInput,
+    FileStatisticsInput,
+    FileChecksumInput,
 )
 from app.services.tools.file.file_tools import (
     # 常量
@@ -30,15 +39,6 @@ from app.services.tools.file.file_tools import (
     # 类
     FileTools,
     ToolDefinition,
-    # 模型
-    ReadFileInput,
-    WriteFileInput,
-    ListDirectoryInput,
-    DeleteFileInput,
-    MoveFileInput,
-    SearchFileContentInput,
-    SearchFilesByNameInput,
-    GenerateReportInput,
     # 工具函数
     encode_page_token,
     decode_page_token,
@@ -59,6 +59,15 @@ __all__ = [
     "SearchFileContentInput",
     "SearchFilesByNameInput",
     "GenerateReportInput",
+    "CopyFileInput",
+    "CreateDirectoryInput",
+    "GetFileInfoInput",
+    "CompareFilesInput",
+    "BatchRenameInput",
+    "CompressFilesInput",
+    "FileMonitorInput",
+    "FileStatisticsInput",
+    "FileChecksumInput",
     # 常量
     "PAGE_SIZE",
     "MAX_PAGE_SIZE",

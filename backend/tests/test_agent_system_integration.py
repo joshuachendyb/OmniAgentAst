@@ -174,7 +174,7 @@ class TestPhase3TimeReactAgent:
         # 验证关键工具存在
         expected_tools = ['time_now', 'time_format', 'time_diff', 
                          'timer_set', 'timer_clear',
-                         'time_utc_to_local', 'time_local_to_local',
+                         'time_utc_to_local', 'time_local_to_utc',
                          'time_is_weekend', 'time_is_holiday']
         
         for tool in expected_tools:
