@@ -272,22 +272,19 @@ const colorSchemes: Record<StepType, ColorScheme> = {
 export const getStepStyle = (stepType: StepType | string, isPrimary: boolean = true) => {
   const scheme = (isValidStepType(stepType) ? colorSchemes[stepType] : colorSchemes.start) || colorSchemes.start;
   
-  const baseStyle = {
+  return {
     borderRadius: 8,
-    padding: "10px 14px",
+    padding: "12px",
     marginTop: 6,
     fontSize: isPrimary ? FontSize.SECONDARY : FontSize.TERTIARY,
     lineHeight: 1.8,
-  };
-  
-  const style = {
-    ...baseStyle,
     background: scheme.bg1,
     border: `1px solid ${scheme.border}`,
     color: scheme.text,
+    display: 'flex' as const,
+    flexDirection: 'column' as const,
+    gap: '8px',
   };
-
-  return style;
 };
 
 /**
