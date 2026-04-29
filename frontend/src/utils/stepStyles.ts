@@ -104,7 +104,7 @@ export const FontWeight = {
 export const Colors = {
   // 文字颜色（3种浅色）
   TEXT: {
-    PRIMARY: '#262626',     // 主要文字 - 浅灰
+    PRIMARY: '#595959',     // 主要文字 - 改用浅灰色（避免深色#262626）
     SECONDARY: '#595959',   // 次要文字 - 中灰
     TERTIARY: '#999999',    // 辅助文字 - 深灰（仍是浅色）
   },
