@@ -75,10 +75,11 @@
 更新人: 小沈
 """
 
-from typing import Dict, List, Optional, Callable, Any, Union
+from typing import Dict, List, Optional, Callable, Any, Union, Type
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pydantic import BaseModel
 import logging
 
 logger = logging.getLogger(__name__)
@@ -156,6 +157,8 @@ class ToolRegistry:
         implementation: Callable,
         version: str = "1.0.0",
         dependencies: Optional[List[str]] = None,
+        # 【小健 2026-04-29】按文档5.1规范：新增工具必须通过此参数传入Pydantic模型类，自动生成OpenAI Schema，禁止手动编写input_schema字典
+        input_model: Optional[Type[BaseModel]] = None,
         input_schema: Optional[Dict] = None,
         output_schema: Optional[Dict] = None,
         examples: Optional[List[Dict]] = None
@@ -170,7 +173,8 @@ class ToolRegistry:
             implementation: 工具实现函数
             version: 版本号
             dependencies: 依赖的其他工具
-            input_schema: 输入参数Schema
+            input_model: Pydantic 模型类，自动生成 input_schema
+            input_schema: 输入参数Schema（当没有 input_model 时使用）
             output_schema: 输出结果Schema
             examples: 使用示例
         
@@ -180,6 +184,23 @@ class ToolRegistry:
         Raises:
             ValueError: 如果工具已注册（首次注册时）
         """
+        # 【小健 2026-04-29】input_model处理逻辑：自动生成Schema，优先于手动传入的input_schema，后续新增工具必须走此流程
+        # 【2026-04-29 小沈新增】如果传入 input_model，自动生成 input_schema
+        if input_model is not None and input_schema is None:
+            try:
+                input_schema = input_model.model_json_schema()
+                logger.info(f"[ToolRegistry.register] 从 Pydantic 模型生成 input_schema: {name}")
+            except Exception as e:
+                logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")
+                input_schema = {}
+        
+        # 如果既有 input_model 又有 input_schema，优先使用 input_model 生成的
+        if input_model is not None and input_schema is not None:
+            try:
+                input_schema = input_model.model_json_schema()
+                logger.info(f"[ToolRegistry.register] 使用 Pydantic 模型覆盖 input_schema: {name}")
+            except Exception as e:
+                logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")
         # 允许重复注册（更新模式）
         if name in self._tools:
             # 更新已有工具
@@ -347,16 +368,19 @@ class ToolRegistry:
 
 
 # 全局工具注册表实例
+# 【小健 2026-04-29】后续新增所有工具分类（time/shell/network/env/system/database/desktop）的register文件，必须按此规范使用input_model参数注册，禁止旧的非规范方式
 tool_registry = ToolRegistry()
 
 
-# 装饰器版本（兼容现有file_tools.py）
+# 装饰器版本（支持 Pydantic 模型）
 def register_tool(
     name: Optional[str] = None,
     description: str = "",
     category: ToolCategory = ToolCategory.FILE,
     version: str = "1.0.0",
     dependencies: Optional[List[str]] = None,
+    # 【小健 2026-04-29】装饰器input_model参数：必须传入Pydantic模型类，禁止手动传input_schema（除非无对应Pydantic模型）
+    input_model: Optional[Type[BaseModel]] = None,
     input_schema: Optional[Dict] = None,
     output_schema: Optional[Dict] = None,
     examples: Optional[List[Dict]] = None
@@ -364,25 +388,34 @@ def register_tool(
     """
     工具注册装饰器
     
+    【2026-04-29 小沈更新】支持 Pydantic 模型注册
+    【小健 2026-04-29】强制要求：新增工具必须使用input_model参数，禁止旧的非规范注册方式
+    【小健 2026-04-29】后续新增工具类型（time/shell/network等）也必须遵守此规范
+    
     用法:
+        # 方式1：使用 Pydantic 模型（推荐）
         @register_tool(
             name="list_directory",
             description="列出目录内容",
-            category=ToolCategory.FILE
+            category=ToolCategory.FILE,
+            input_model=ListDirectoryInput
         )
-        async def list_directory(params):
-            ...
+        async def list_directory(params): ...
+        
+        # 方式2：使用字典（兼容旧代码）
+        @register_tool(
+            name="list_directory",
+            description="列出目录内容",
+            category=ToolCategory.FILE,
+            input_schema={"type": "object", "properties": {...}}
+        )
+        async def list_directory(params): ...
     """
     def decorator(func: Callable) -> Callable:
         tool_name = name or func.__name__
         
-        # 自动从函数签名生成输入Schema
-        if 'input_schema' not in locals():  # 修复未定义问题
-            input_schema = None
-        if input_schema is None:
-            input_schema = {}
-        
-        # 注册工具
+        # 【小健 2026-04-29】强制传入input_model参数，禁止手动编写input_schema，符合文档5.1要求
+        # 注册工具（支持 input_model）
         tool_registry.register(
             name=tool_name,
             description=description or func.__doc__ or "",
@@ -390,6 +423,7 @@ def register_tool(
             implementation=func,
             version=version,
             dependencies=dependencies,
+            input_model=input_model,
             input_schema=input_schema,
             output_schema=output_schema,
             examples=examples
