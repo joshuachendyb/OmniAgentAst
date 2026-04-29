@@ -4,15 +4,64 @@ v0.12.0
 
   更新内容：
 
-  ## 1 DATABASE工具bug修复 - 小沈-2026-04-29
+  ## 1 从v0.11.9以来的所有commit更新
 
+  ### commit: 9ddd3010 fix: DATABASE工具返回值bug修复 - 小沈-2026-04-29
   | 修复项 | 说明 | 状态 |
   |--------|------|------|
   | _get_connection返回值 | conn, engine, conn_error (原错误conn_result) | ✅ |
   | connection逻辑 | get_db_schema循环中重连 | ✅ |
 
+  ### commit: 7309006e feat: 完成DESKTOP工具类型(3个窗口管理工具)-小沈-2026-04-29
+  | 工具 | 说明 | 状态 |
+  |------|------|------|
+  | list_windows | 列出所有窗口 | ✅ |
+  | get_window_info | 获取窗口信息 | ✅ |
+  | set_window_state | 设置窗口状态 | ✅ |
+
+  ### commit: e5469771 feat: 完成DATABASE工具类型(3个工具)-小沈-2026-04-29
+  | 工具 | 说明 | 状态 |
+  |------|------|------|
+  | query_sql | 执行只读SQL | ✅ |
+  | execute_sql | 执行写操作SQL | ✅ |
+  | get_db_schema | 获取数据库表结构 | ✅ |
+
+  ### commit: 5fd70aae 修复循环导入：file_tools→agent→tools→file - 小沈-2026-04-29
+  | 修复项 | 说明 | 状态 |
+  |--------|------|------|
+  | 循环导入 | file_tools延迟导入agent服务 | ✅ |
+
+  ### commit: c9984be5 feat: 完成SYSTEM工具类型（get_system_info）- 小沈-2026-04-29
+  | 工具 | 说明 | 状态 |
+  |------|------|------|
+  | get_system_info | 获取系统信息 | ✅ |
+
+  ### commit: c93a2bff feat: tools/__init__.py添加env触发导入-小沈-2026-04-29
+  | 修复项 | 说明 | 状态 |
+  |--------|------|------|
+  | ENV触发 | tools/__init__.py导入env | ✅ |
+
+  ### commit: 3a5872ef feat: 完成ENV工具类型注册(3个工具)+小健审查修复-小沈-2026-04-29
+  | 工具 | 说明 | 状态 |
+  |------|------|------|
+  | get_env | 获取环境变量 | ✅ |
+  | set_env | 设置环境变量 | ✅ |
+  | list_env | 列出环境变量 | ✅ |
+
+  ### commit: 6d39ecaf feat: 完成NETWORK工具类型注册(2个工具)-小沈-2026-04-29
+  | 工具 | 说明 | 状态 |
+  |------|------|------|
+  | http_request | HTTP请求 | ✅ |
+  | download_file | 下载文件 | ✅ |
+
   | 工具分类 | 注册数量 | 状态 |
   |---------|---------|------|
+  | FILE | 15 | ✅ |
+  | TIME | 9 | ✅ |
+  | SHELL | 4 | ✅ |
+  | NETWORK | 2 | ✅ |
+  | ENV | 3 | ✅ |
+  | SYSTEM | 1 | ✅ |
   | DATABASE | 3 | ✅ |
   | DESKTOP | 3 | ✅ |
 
@@ -20,7 +69,8 @@ v0.12.0
 
   | 类型 | 文件 |
   |------|------|
-  | 修改 | database_tools.py |
+  | 新建 | desktop_schema.py, desktop_tools.py, desktop_register.py, database_schema.py, database_tools.py, database_register.py, network_schema.py, network_tools.py, network_register.py, system_schema.py, system_tools.py, system_register.py, env_schema.py, env_tools.py, env_register.py |
+  | 修改 | tools/__init__.py, file_tools.py |
 
 v0.11.9
 
