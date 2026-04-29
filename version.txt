@@ -1,3 +1,34 @@
+v0.12.1
+
+  更新时间: 2026-04-30 07:50:26
+
+  更新内容：
+
+  ## 1 file_monitor.py Path.iterdir() bug修复 - 小沈-2026-04-30
+
+  | 修复项 | 说明 | 状态 |
+  |--------|------|------|
+  | _get_files_in_directory | Path.iterdir("*") → 无参数调用 | ✅ |
+
+  **问题**：Path.iterdir() 不接受任何参数，调用 iterdir("*") 会抛出 TypeError
+
+  ## 2 write_file JSON反转义功能增强 - 小沈-2026-04-30
+
+  | 功能 | 说明 | 状态 |
+  |------|------|------|
+  | unescape参数 | 新增WriteFileInput.unescape字段（默认True） | ✅ |
+  | 反转义实现 | \n→换行, \\"→引号, \\\\→单反斜杠 | ✅ |
+  | 测试覆盖 | 新增4个反转义测试用例 | ✅ |
+
+  ## 3 修改文件清单 - 小沈-2026-04-30
+
+  | 类型 | 文件 |
+  |------|------|
+  | 修改 | file_monitor.py, file_schema.py, file_tools.py |
+  | 新增 | test_new_file_tools.py（TestWriteFileUnescape测试类） |
+
+  ---
+
 v0.12.0
 
   更新时间: 2026-04-29 16:03:27
