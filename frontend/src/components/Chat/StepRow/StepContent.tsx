@@ -169,10 +169,6 @@ const StepContent: React.FC<StepContentProps> = ({
           {(step as ExecutionStep & Record<string, unknown>).provider || (step as ExecutionStep & Record<string, unknown>).model || (step as ExecutionStep & Record<string, unknown>).display_name ? (
             <div style={{ 
               marginTop: 4,
-              padding: '6px 10px',
-              borderRadius: 6,
-              background: 'rgba(0,0,0,0.03)',
-              border: '1px solid rgba(0,0,0,0.08)',
               fontSize: FontSize.SMALL,
               display: 'flex',
               flexWrap: 'wrap',
@@ -274,14 +270,10 @@ const StepContent: React.FC<StepContentProps> = ({
           </div>
           <div style={{
             marginTop: 6,
-            padding: '8px 12px',
-            borderRadius: 6,
-            background: 'rgba(255,170,0,0.08)',
-            border: '1px solid rgba(255,170,0,0.2)',
           }}>
             {renderToolInfo((step as ExecutionStep & Record<string, unknown>).tool_name, (step as ExecutionStep & Record<string, unknown>).tool_params as Record<string, unknown>, { 
               prefix: '⬇️ 下一步：', 
-              bgColor: 'rgba(255,170,0,0.1)' 
+              bgColor: 'transparent' 
             })}
           </div>
         </div>
