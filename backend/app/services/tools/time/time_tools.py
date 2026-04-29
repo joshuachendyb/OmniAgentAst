@@ -6,32 +6,37 @@
 - 本文件从 app/tools/time_tools.py 迁移而来
 - 使用 registry.py 的 @register_tool 装饰器注册
 
+【2026-04-29 更新】按新规范，使用 input_model 参数传入 Pydantic 模型
+
 包含：
 - P0 核心基础（5个）：time_now, time_format, time_diff, timer_set, timer_clear;
 - P1 常用辅助（4个）：time_utc_to_local, time_local_to_utc, time_is_weekend, time_is_holiday;
 
 Author: 小沈 - 2026-04-25;
 创建时间: 2026-04-25 15:44:54;
-更新时间: 2026-04-26;
+更新时间: 2026-04-29;
 """
 
 import asyncio;
 import json;
 from datetime import datetime, timedelta, timezone;
 from typing import Dict, Any, Optional, Callable, Awaitable;
-from pydantic import BaseModel, Field;
 import re;
 
 from app.services.tools.registry import register_tool, ToolCategory;
 
-
-# ===========================================================
-# Pydantic 输入模型定义
-# ===========================================================
-
-class TimeNowInput(BaseModel):
-    """time_now 工具的输入参数（无参数）"""
-    pass
+# 【2026-04-29 更新】从 time_schema 导入 Pydantic 模型（按新规范）
+from app.services.tools.time.time_schema import (
+    TimeNowInput,
+    TimeFormatInput,
+    TimeDiffInput,
+    TimerSetInput,
+    TimerClearInput,
+    TimeUtcToLocalInput,
+    TimeLocalToUtcInput,
+    TimeIsWeekendInput,
+    TimeIsHolidayInput,
+)
 
 
 # 定时器存储;
@@ -45,6 +50,7 @@ _timer_counter = 0;
 # P0 核心基础 - time_now
 # ===========================================================
 
+# 【2026-04-29 更新】使用 input_model 参数，按文档3.6规范
 @register_tool(
     name="time_now",
     description="""获取当前系统时间。
@@ -63,6 +69,7 @@ _timer_counter = 0;
 - weekday: 英文星期几（如Saturday）
 - isoweekday: ISO星期几（1=Monday, 7=Sunday）""",
     category=ToolCategory.TIME,
+    input_model=TimeNowInput,
     examples=[
         {},
     ]
@@ -96,6 +103,7 @@ def time_now() -> Dict[str, Any]:
 # P0 核心基础 - time_format
 # ===========================================================
 
+# 【2026-04-29 更新】使用 input_model 参数
 @register_tool(
     name="time_format",
     description="""格式化时间戳或日期字符串为指定格式。
@@ -116,6 +124,7 @@ def time_now() -> Dict[str, Any]:
 - timestamp: Unix时间戳
 - pattern_used: 实际使用的格式""",
     category=ToolCategory.TIME,
+    input_model=TimeFormatInput,
     examples=[
         {},
         {"timestamp": 1777103094},
@@ -175,6 +184,7 @@ def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) 
 # P0 核心基础 - time_diff
 # ===========================================================
 
+# 【2026-04-29 更新】使用 input_model 参数
 @register_tool(
     name="time_diff",
     description="""计算两个时间之间的差值，返回人性化描述。
@@ -205,6 +215,7 @@ def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) 
 - < 12个月：X个月前/后
 - 否则：X年前/后""",
     category=ToolCategory.TIME,
+    input_model=TimeDiffInput,
     examples=[
         {"start": 1777103094},
         {"start": "2026-04-25", "end": None},
@@ -296,6 +307,7 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
 # P0 核心基础 - timer_set
 # ===========================================================
 
+# 【2026-04-29 更新】使用 input_model 参数
 @register_tool(
     name="timer_set",
     description="""设置定时器，在指定延迟后执行回调。
@@ -320,6 +332,7 @@ def time_diff(start: Any, end: Optional[Any] = None) -> Dict[str, Any]:
 - 定时器在后台运行，使用asyncio
 - 回调函数通过字符串描述实现""",
     category=ToolCategory.TIME,
+    input_model=TimerSetInput,
     examples=[
         {"delay": 180, "callback": "提醒用户喝水"},
         {"delay": 600, "callback": "执行备份", "callback_data": {"file": "D:/backup"}},
@@ -386,6 +399,7 @@ async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[st
 # P0 核心基础 - timer_clear
 # ===========================================================
 
+# 【2026-04-29 更新】使用 input_model 参数
 @register_tool(
     name="timer_clear",
     description="""清除（取消）已设置的定时器。
@@ -405,6 +419,7 @@ async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[st
 注意：
 - 如果定时器已经触发，返回cancelled=False""",
     category=ToolCategory.TIME,
+    input_model=TimerClearInput,
     examples=[
         {"timer_id": "timer_1_1234567890"},
         {"timer_id": "timer_2_1234567890"}
@@ -449,6 +464,7 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
 # P1 常用辅助 - time_utc_to_local
 # ===========================================================
 
+# 【2026-04-29 更新】使用 input_model 参数
 @register_tool(
     name="time_utc_to_local",
     description="""将UTC时间转换为本地时间或指定时区时间。
@@ -474,6 +490,7 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
 - -05:00 或 America/New_York（纽约时间）
 - +09:00 或 Asia/Tokyo（东京时间）""",
     category=ToolCategory.TIME,
+    input_model=TimeUtcToLocalInput,
     examples=[
         {"utc_time": "2026-04-25T12:00:00Z"},
         {"utc_time": 1777103094, "target_tz": "+08:00"},
@@ -535,8 +552,9 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
 # P1 常用辅助 - time_local_to_utc
 # ===========================================================
 
+# 【2026-04-29 更新】使用 input_model 参数
 @register_tool(
-    name="time_local_to_local",
+    name="time_local_to_utc",
     description="""将本地时间或指定时区时间转换为UTC时间。
 
 使用场景：
@@ -555,6 +573,7 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
 
 常用时区：参考time_utc_to_local""",
     category=ToolCategory.TIME,
+    input_model=TimeLocalToUtcInput,
     examples=[
         {"local_time": "2026-04-25 20:00:00"},
         {"local_time": "2026-04-25T20:00:00", "source_tz": "+08:00"},
@@ -606,6 +625,7 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
 # P1 常用辅助 - time_is_weekend
 # ===========================================================
 
+# 【2026-04-29 更新】使用 input_model 参数
 @register_tool(
     name="time_is_weekend",
     description="""检查给定日期是否为周末（周六或周日）。
@@ -629,6 +649,7 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
 - 周六和周日被认为是周末
 - 使用ISO标准：Monday=1, Tuesday=2, ..., Sunday=7""",
     category=ToolCategory.TIME,
+    input_model=TimeIsWeekendInput,
     examples=[
         {},
         {"date": "2026-04-25"},
@@ -685,6 +706,7 @@ def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
 # P1 常用辅助 - time_is_holiday
 # ===========================================================
 
+# 【2026-04-29 更新】使用 input_model 参数
 @register_tool(
     name="time_is_holiday",
     description="""检查给定日期是否为假日（简单实现，需要外部API支持）。
@@ -708,6 +730,7 @@ def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
 - 实际生产环境需要调用节假日API获取准确信息
 - 中国法定节假日：元旦、春节、清明、五一、端午、中秋、国庆""",
     category=ToolCategory.TIME,
+    input_model=TimeIsHolidayInput,
     examples=[
         {},
         {"date": "2026-01-01"},
