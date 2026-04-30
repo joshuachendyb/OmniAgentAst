@@ -1,8 +1,8 @@
 # FILE工具健壮性审计报告
 
-**版本**: v1.3
+**版本**: v1.4
 **创建时间**: 2026-04-30 23:48:50
-**更新时间**: 2026-05-01 06:54:37
+**更新时间**: 2026-05-01 07:09:45
 **作者**: 小沈
 **审计对象**: `backend/app/services/tools/file/file_tools.py`（28个FILE工具）
 **审计范围**: 参数校验、异常处理、边界情况、返回格式、安全性
@@ -13,8 +13,8 @@
 
 | 等级 | 数量 | 说明 |
 |------|------|------|
-| ✅ 健壮（Robust） | 6 | 异常处理完善、返回格式一致、OOM防护、参数校验 |
-| ⚠️ 部分健全（Partial） | 22 | 有基本异常处理，部分边界保护已补全 |
+| ✅ 健壮（Robust） | 16 | 异常处理完善、返回格式一致、OOM防护/参数校验/safety记录齐全 |
+| ⚠️ 部分健全（Partial） | 10 | 委托impl或有小风险（非空目录/跨设备/max_depth默认等） |
 | ❌ 脆弱（Fragile） | 0 | ~~4个~~ 全部已修复 |
 
 ---
@@ -210,56 +210,56 @@ with open(path, 'w', encoding=used_enc) as f:
 
 ---
 
-## 四、⚠️ 部分健全工具共性分析（23个）
+## 四、⚠️→✅ 部分健全工具修复记录（OOM防护+符号链接防护+参数校验，全部已修复）
 
-### 4.1 大文件OOM风险（8个工具）
+### 4.1 大文件OOM风险（8个工具）— ✅ 全部已修复
 
-以下工具使用 `f.read()` / `f.readlines()` 全量载入文件内容，无大小限制：
+以下工具~~使用 `f.read()` / `f.readlines()` 全量载入文件内容，无大小限制~~ 已添加MAX_READ_SIZE预检：
 
-| 工具 | 行号 | 载入方式 |
-|------|------|---------|
-| `read_file` | 308-383 | `f.readlines()` |
-| `read_text_file` | 385-484 | `f.read()` |
-| `search_file_content` | 1049-1227 | `f.read()` |
-| `grep_file_content` | 2324-2442 | `f.readlines()` |
-| `precise_replace_in_file` | 2084-2157 | `f.read()` |
-| `edit_file` | 2159-2229 | `f.read()` |
-| `read_media_file` | 2001-2045 | `f.read()` + base64（膨胀33%） |
-| `read_batch_file` | 2047-2082 | `open().read()` |
+| 工具 | 行号 | 载入方式 | 修复状态 |
+|------|------|---------|---------|
+| `read_file` | 308-383 | `f.readlines()` | ✅ MAX_READ_SIZE(10MB)预检 |
+| `read_text_file` | 385-484 | `f.read()` | ✅ MAX_READ_SIZE(10MB)预检 |
+| `search_file_content` | 1049-1227 | `f.read()` | ✅ MAX_SEARCH_FILE_SIZE(10MB)跳过大文件 |
+| `grep_file_content` | 2324-2442 | `f.readlines()` | ✅ MAX_SEARCH_FILE_SIZE(10MB)跳过大文件 |
+| `precise_replace_in_file` | 2084-2157 | `f.read()` | ✅ MAX_READ_SIZE(10MB)预检 |
+| `edit_file` | 2159-2229 | `f.read()` | ✅ MAX_READ_SIZE(10MB)预检 |
+| `read_media_file` | 2001-2045 | `f.read()` + base64 | ✅ MAX_MEDIA_READ_SIZE(50MB)预检 |
+| `read_batch_file` | 2047-2082 | `open().read()` | ✅ 单文件MAX_READ_SIZE+批量数MAX_BATCH_FILE_COUNT(100) |
 
-**风险**: 读取GB级文件时OOM，`read_media_file` 尤其严重（原始+base64双倍内存）。
-
----
-
-### 4.2 符号链接循环风险（4个工具）
-
-| 工具 | 行号 | 遍历方式 |
-|------|------|---------|
-| `list_directory` | 653-791 | `os.walk`（默认不跟随，但递归模式需确认） |
-| `glob_files` | 2276-2322 | `Path.glob`（会跟随符号链接目录） |
-| `grep_file_content` | 2324-2442 | `os.walk` |
-| `get_directory_tree` | 2548-2603 | 递归 `_build_tree` |
-
-**风险**: 循环符号链接导致无限递归。
+~~**风险**: 读取GB级文件时OOM，`read_media_file` 尤其严重（原始+base64双倍内存）。~~ **已全部修复（2026-05-01 小沈）**
 
 ---
 
-### 4.3 参数校验不完整（主要遗漏）
+### 4.2 符号链接循环风险（4个工具）— ✅ 关键项已修复
 
-| 工具 | 遗漏的参数校验 |
-|------|---------------|
-| `read_file` | `offset`/`limit` 无负数校验；`encoding` 无合法性校验 |
-| `read_text_file` | `head`/`tail` 无负数校验 |
-| `write_file` | `content` 无大小限制；`encoding` 无校验 |
-| `list_directory` | `max_depth` 无负数/零校验 |
-| `glob_files` | `pattern` 无空值校验 |
-| `list_directory_with_sizes` | `sortBy` 无枚举校验（只支持 "size" 和 "name"） |
+| 工具 | 行号 | 遍历方式 | 修复状态 |
+|------|------|---------|---------|
+| `list_directory` | 653-791 | `os.walk`（默认不跟随symlink） | ✅ 安全（os.walk默认followlinks=False） |
+| `glob_files` | 2276-2322 | `Path.glob`（会跟随符号链接目录） | ✅ 已修复：跳过symlink目录+结果数上限 |
+| `grep_file_content` | 2324-2442 | `os.walk` | ✅ 安全（os.walk默认不跟随） |
+| `get_directory_tree` | 2548-2603 | 递归 `_build_tree` | ✅ 已修复：默认max_depth=10+条目上限+跳过symlink |
+
+~~**风险**: 循环符号链接导致无限递归。~~ **关键项已修复（2026-05-01 小沈）**
 
 ---
 
-## 五、安全机制不一致（设计层面问题）
+### 4.3 参数校验不完整 — ✅ 全部已修复
 
-修改类工具的 safety 保障严重不一致：
+| 工具 | ~~遗漏的参数校验~~ → 修复内容 | 修复状态 |
+|------|---------------------------|---------|
+| `read_file` | `offset`/`limit` 负数校验 | ✅ 已修复 |
+| `read_text_file` | `head`/`tail` 负数校验 | ✅ 已修复 |
+| `write_file` | `content` 大小限制(MAX_WRITE_SIZE=10MB) | ✅ 已修复 |
+| `list_directory` | `max_depth` 负数/零校验 | ✅ 已修复 |
+| `glob_files` | `pattern` 空值校验 | ✅ 已修复 |
+| `list_directory_with_sizes` | `sortBy` 枚举校验(只支持"name"和"size") | ✅ 已修复 |
+
+---
+
+## 五、安全机制不一致（设计层面问题）— ✅ 已全部修复
+
+~~修改类工具的 safety 保障严重不一致：~~ **已全部修复对齐（2026-05-01 小沈）**
 
 | 工具 | `_validate_path` | `safety.record_operation` | `task_id` 检查 | 原子写入 |
 |------|:-:|:-:|:-:|:-:|
@@ -309,7 +309,7 @@ with open(path, 'w', encoding=used_enc) as f:
 
 ---
 
-## 六、修复优先级建议
+## 六-B、修复优先级建议 — ✅ 全部已完成
 
 | 优先级 | 工具 | 问题 | 预估工时 | 风险 | 状态 |
 |--------|------|------|---------|------|------|
@@ -326,7 +326,7 @@ with open(path, 'w', encoding=used_enc) as f:
 
 ## 七、write_file 格式验证处理方案（v1.1新增 2026-05-01 小沈）
 
-### 7.1 问题1：content过大/OOM（已在3.1节和六节P3列出风险）
+### 7.1 问题1：content过大/OOM（已在4.1节和六-B节P3列出风险）
 
 **处理方法**：采用分级策略，不截断内容（截断会导致数据丢失），而是防护OOM：
 
@@ -416,3 +416,4 @@ with open(path, 'w', encoding=used_enc) as f:
 | v1.1 | 2026-05-01 00:03:22 | 小沈 | 新增第七章：write_file格式验证处理方案；已实现_validate_content_format()方法 |
 | v1.2 | 2026-05-01 00:21:21 | 小沈 | edit_file/rename_file健壮性修复；修复记录章节(第二章) |
 | v1.3 | 2026-05-01 06:54:37 | 小沈 | OOM防护(8工具)+符号链接防护(2工具)+参数校验(6工具)；更新评级表/优先级表/安全机制表 |
+| v1.4 | 2026-05-01 07:09:45 | 小沈 | 修正总览数字(✅16/⚠️10/❌0)；第四章标注修复状态；4.1/4.2/4.3节更新为已修复；五章标题+描述更新；六章重复编号修正(六-B)；7.1节引用修正 |
