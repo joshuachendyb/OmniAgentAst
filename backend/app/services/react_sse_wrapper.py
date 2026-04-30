@@ -481,10 +481,11 @@ async def generate_sse_stream(
             agent = AgentFactory.create(
                 intent_type='file',
                 llm_client=llm_client,
-                task_id=task_id,  # 【修改】2026-04-26 小沈
+                task_id=task_id,
+                api_base=ai_service.api_base,
+                api_key=ai_service.api_key,
+                model=ai_service.model,
                 candidates=candidates  # 【新增 2026-04-30 小沈】传递候选意图列表
-                # 【修复 2026-04-30 小沈】移除 api_base/api_key/model，这些参数
-                # 通过 **kwargs 传递到 BaseAgent 后被静默忽略，语义混乱
             )
             
             # 【修复BUG】从配置文件读取 max_steps
@@ -549,8 +550,10 @@ async def generate_sse_stream(
                 intent_type='time',
                 llm_client=llm_client,
                 task_id=task_id,
+                api_base=ai_service.api_base,
+                api_key=ai_service.api_key,
+                model=ai_service.model,
                 candidates=candidates
-                # 【修复 2026-04-30 小沈】移除 api_base/api_key/model，同file分支
             )
 
             config = get_config()

@@ -89,6 +89,14 @@ class BaseAgent(ABC):
         self.tool_category = tool_category
         self.max_steps = max_steps
         
+        # 【修复 2026-04-30 小沈】将 **kwargs 中有用的参数 setattr 到 self
+        # 之前 **kwargs 被静默忽略，导致 model/provider/api_base/api_key 丢失
+        # 这些属性被 prompt_logger 和 llm_adapter 等使用
+        _ALLOWED_KWARGS = {'model', 'provider', 'api_base', 'api_key'}
+        for key, value in kwargs.items():
+            if key in _ALLOWED_KWARGS:
+                setattr(self, key, value)
+        
         # 【步骤2.10】步骤历史管理：使用ReasoningStep类型
         self.steps: List[ReasoningStep] = []
         self.conversation_history: List[Dict[str, str]] = []
