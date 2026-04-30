@@ -472,7 +472,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean; forceRefresh?: boolean 
   };
 
   // 加载配置
-  const loadConfig = async () => {
+  const loadConfig = useCallback(async () => {
     setLoading(true);
     try {
       // 获取完整配置
@@ -514,7 +514,7 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean; forceRefresh?: boolean 
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   // 加载配置文件路径
   // 打开配置文件所在目录（在 GlobalConfigArea 组件中实现）

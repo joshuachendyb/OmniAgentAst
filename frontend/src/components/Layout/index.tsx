@@ -617,7 +617,6 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                 return (
                   <Tag color="error" style={{ cursor: "pointer" }} onClick={checkingStatus ? undefined : handleCheckService}>
                     <CheckCircleOutlined /> {serviceStatus.provider}{" "}
-                    <CheckCircleOutlined /> {serviceStatus.provider}{" "}
                     {serviceStatus.model && `(${serviceStatus.model})`}
                     <span style={{ marginLeft: 8, fontSize: 12 }}>(已失效)</span>
                   </Tag>
