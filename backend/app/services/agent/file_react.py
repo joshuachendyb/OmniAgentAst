@@ -101,9 +101,6 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         
         self.prompts = FileOperationPrompts()
         
-        # 【2026-04-30 小沈】跨分类工具概要缓存
-        self._tools_summary = None
-        
         # 【新增 2026-04-30 小沈】存储候选意图列表，用于跨分类工具访问
         self._candidates = candidates if candidates else []
         
@@ -123,19 +120,17 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
     
     def _get_tools_summary(self) -> str:
         """
-        获取跨分类工具概要（带缓存）
-        
+        获取跨分类工具概要（每轮实时生成，确保动态注册的工具被包含）
+
         设计文档 v1.5 4.2节
-        
+
         Returns:
             格式化的工具概要字符串
         """
-        if self._tools_summary is None:
-            from app.services.tools.registry import tool_registry
-            self._tools_summary = tool_registry.get_all_tools_summary(
-                priority_category=self.tool_category or ToolCategory.FILE
-            )
-        return self._tools_summary
+        from app.services.tools.registry import tool_registry
+        return tool_registry.get_all_tools_summary(
+            priority_category=self.tool_category or ToolCategory.FILE
+        )
     
     # ========== 抽象方法实现 ==========
     
@@ -312,11 +307,17 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         # 【2026-04-27 小沈新增】标准化参数（别名映射）
         normalized_params = self.executor._normalize_params(action, params)
         logger.info(f"[file_react._execute_tool] action={action}, 原params={params}, 标准化后={normalized_params}")
-        
+
+        # 【2026-04-30 小沈修复】跨分类工具支持
+        # 先尝试从 self.file_tools 查找（有正确 task_id，用于操作安全追踪）
         tool_method = getattr(self.file_tools, action, None)
-        if not tool_method:
-            return {"success": False, "error": f"Tool '{original_action}' not found", "result": None}
-        return await tool_method(**normalized_params)
+        if tool_method:
+            return await tool_method(**normalized_params)
+
+        # 未在 FILE 工具中找到 → 跨分类 fallback：通过 executor 从全局 registry 查找
+        # executor.execute() 内部会优先查本地字典，再 fallback 到 tool_registry.get_implementation()
+        logger.info(f"[file_react._execute_tool] 跨分类fallback: {original_action} → ToolExecutor")
+        return await self.executor.execute(original_action, params)
     
     # ===== 实现父类抽象方法 =====
     

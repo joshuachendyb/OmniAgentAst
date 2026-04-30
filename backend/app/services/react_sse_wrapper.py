@@ -541,7 +541,67 @@ async def generate_sse_stream(
                 current_execution_steps.append(error_step_dict)
                 await save_execution_steps_to_db(session_id, current_execution_steps, "文件操作执行失败")
                 yield error_response
-        
+
+        elif intent_type == "time" and confidence >= 0.3:
+            # 时间日期操作：使用AgentFactory创建TimeReactAgent
+            from app.services.agent.agent_factory import AgentFactory
+            agent = AgentFactory.create(
+                intent_type='time',
+                llm_client=llm_client,
+                task_id=task_id,
+                api_base=ai_service.api_base,
+                api_key=ai_service.api_key,
+                model=ai_service.model,
+                candidates=candidates
+            )
+
+            config = get_config()
+            max_steps = config.get('app', {}).get('max_steps', DEFAULT_MAX_STEPS)
+
+            try:
+                async for event in agent.run_stream(task=last_message, context=None, max_steps=max_steps, task_id=task_id, running_tasks=running_tasks):
+                    # 检查中断
+                    async with running_tasks_lock:
+                        is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
+                        if is_cancelled:
+                            logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
+                            interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
+                            logger.info(f"[Step incident] 发送incident步骤(interrupted)")
+                            yield f"data: {json.dumps(interrupted_data)}\n\n"
+                            current_execution_steps.append(interrupted_data)
+                            await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
+                            break
+
+                    # SSE 格式化
+                    sse_data = _format_sse_event(event, next_step(), ai_service.model, ai_service.provider)
+                    if sse_data:
+                        if sse_data.startswith("data: "):
+                            step_data = json.loads(sse_data[6:])
+                            current_execution_steps.append(step_data)
+                            if step_data.get('type') == 'final':
+                                current_content = step_data.get('response', '')
+                            await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+
+                        logger.info(f"[TimeOp SSE] 发送数据")
+                        yield sse_data
+                        await asyncio.sleep(0.05)
+
+            except Exception as e:
+                logger.error(f"时间操作执行出错：task_id={task_id}, error={e}", exc_info=True)
+                error_step_obj = StepFactory.create_error_step(
+                    step=next_step(),
+                    error_type='time_operation_error',
+                    error_message="时间操作执行失败",
+                    recoverable=False,
+                    model=ai_service.model,
+                    provider=ai_service.provider
+                )
+                error_step_dict = error_step_obj.to_dict()
+                error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
+                current_execution_steps.append(error_step_dict)
+                await save_execution_steps_to_db(session_id, current_execution_steps, "时间操作执行失败")
+                yield error_response
+
         elif intent_type == "network" and confidence >= 0.3:
             # 网络操作：待实现 NetworkReactAgent
             logger.warning(f"[NetworkOp] NetworkReactAgent 待实现，使用回退逻辑")

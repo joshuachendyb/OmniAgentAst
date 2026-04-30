@@ -69,9 +69,6 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
         
         self.text_strategy = TextStrategy()
         
-        # 【2026-04-30 小沈】跨分类工具概要缓存
-        self._tools_summary = None
-        
         # 【新增 2026-04-30 小沈】存储候选意图列表
         self._candidates = candidates if candidates else []
         
@@ -81,19 +78,17 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
     
     def _get_tools_summary(self) -> str:
         """
-        获取跨分类工具概要（带缓存）
-        
+        获取跨分类工具概要（每轮实时生成，确保动态注册的工具被包含）
+
         设计文档 v1.5 4.2节
-        
+
         Returns:
             格式化的工具概要字符串
         """
-        if self._tools_summary is None:
-            from app.services.tools.registry import tool_registry
-            self._tools_summary = tool_registry.get_all_tools_summary(
-                priority_category=ToolCategory.TIME
-            )
-        return self._tools_summary
+        from app.services.tools.registry import tool_registry
+        return tool_registry.get_all_tools_summary(
+            priority_category=ToolCategory.TIME
+        )
     
     def _get_system_prompt(self) -> str:
         """获取系统 Prompt（含跨工具提示 + 候选意图）"""
