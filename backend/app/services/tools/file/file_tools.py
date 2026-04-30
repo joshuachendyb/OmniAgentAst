@@ -214,6 +214,89 @@ class FileTools:
         self.task_id = task_id
         self._sequence = 0
     
+    def _validate_content_format(self, file_path: str, content: str) -> Optional[str]:
+        """
+        写入前按文件扩展名验证内容格式合法性
+        
+        【新增 2026-04-30 小沈】
+        防止写入畸形格式的文件：
+        - .json: 验证JSON合法性
+        - .csv: 验证CSV基本格式
+        - .xml/.html/.htm: 验证标记基本合法性
+        - .py: 验证Python语法
+        - .xlsx/.docx/.pdf/.png/.jpg等二进制格式: 拒绝通过write_file写入
+        
+        Args:
+            file_path: 文件路径
+            content: 要写入的内容
+            
+        Returns:
+            None 表示验证通过，str 表示错误信息
+        """
+        path = Path(file_path)
+        suffix = path.suffix.lower()
+        
+        # 二进制格式禁止通过write_file写入（会损坏文件）
+        BINARY_EXTENSIONS = {
+            '.xlsx', '.xls', '.docx', '.doc', '.pptx', '.ppt',
+            '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp',
+            '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+            '.exe', '.dll', '.so', '.dylib',
+            '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv',
+            '.sqlite', '.db', '.pyc', '.pyd', '.class',
+        }
+        if suffix in BINARY_EXTENSIONS:
+            return f"不支持通过write_file写入二进制格式文件(.{suffix[1:]})，请使用对应的专业工具操作"
+        
+        # .json: 验证JSON合法性
+        if suffix == '.json':
+            try:
+                import json
+                json.loads(content)
+            except json.JSONDecodeError as e:
+                return f"JSON格式验证失败: 第{e.lineno}行第{e.colno}列 - {e.msg}"
+        
+        # .csv: 验证CSV基本格式（检查行数和列数一致性）
+        elif suffix == '.csv':
+            try:
+                import csv
+                from io import StringIO
+                reader = csv.reader(StringIO(content))
+                row_lengths = []
+                for i, row in enumerate(reader):
+                    if i > 1000:  # 只检查前1000行
+                        break
+                    if row:  # 跳过空行
+                        row_lengths.append(len(row))
+                if row_lengths and len(set(row_lengths)) > 1:
+                    return f"CSV格式警告: 列数不一致(发现{set(row_lengths)}种列数)，写入可能导致数据错位"
+            except Exception as e:
+                return f"CSV格式验证失败: {str(e)[:100]}"
+        
+        # .xml/.html/.htm: 验证标记基本合法性
+        elif suffix in ('.xml', '.html', '.htm'):
+            if suffix == '.xml':
+                try:
+                    import xml.etree.ElementTree as ET
+                    ET.fromstring(content)
+                except ET.ParseError as e:
+                    return f"XML格式验证失败: {str(e)[:100]}"
+            # html只做基本检查（< 和 > 配对）
+            elif suffix in ('.html', '.htm'):
+                open_tags = content.count('<')
+                close_tags = content.count('>')
+                if open_tags != close_tags:
+                    return f"HTML标记验证警告: '<'({open_tags}个)与'>'({close_tags}个)数量不匹配"
+        
+        # .py: 验证Python语法
+        elif suffix == '.py':
+            try:
+                compile(content, str(path), 'exec')
+            except SyntaxError as e:
+                return f"Python语法验证失败: 第{e.lineno}行 - {e.msg}"
+        
+        return None
+
     def _validate_path(self, file_path: str) -> tuple[bool, Optional[str]]:
         """
         验证文件路径是否合法
@@ -524,6 +607,16 @@ class FileTools:
         # 若启用反转义，对内容做转义字符还原
         if unescape:
             content = content.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\")
+        
+        # 【新增 2026-04-30 小沈】写入前按文件格式验证内容合法性
+        validation_error = self._validate_content_format(file_path, content)
+        if validation_error:
+            return _to_unified_format({
+                "success": False,
+                "error": validation_error,
+                "content": None
+            }, "write_file")
+        
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(file_path)
         if not is_valid:
