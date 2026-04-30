@@ -1224,49 +1224,52 @@ class FileTools:
                         
                         # 【修复P11】errors='ignore' → errors='replace'
                         # 【修复P16】指定具体异常
+                        # 【修复 2026-04-30 小沈】搜索逻辑从except continue之后移到try块内
+                        # 原BUG：搜索逻辑在except (PermissionError,OSError): continue 之后，
+                        # 是不可达死代码，导致search_file_content永远返回空结果
                         try:
                             with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                                 content = f.read()
                         except (PermissionError, OSError):
                             continue
-                            
-                            # 搜索内容
-                            matches = []
-                            
-                            if use_regex and regex is not None:
-                                for match in regex.finditer(content):
-                                    start = max(0, match.start() - 50)
-                                    end = min(len(content), match.end() + 50)
-                                    context = content[start:end]
-                                    
-                                    matches.append({
-                                        "start": match.start(),
-                                        "end": match.end(),
-                                        "matched": match.group(),
-                                        "context": context
-                                    })
-                            else:
-                                idx = content.find(search_term)
-                                while idx != -1:
-                                    start = max(0, idx - 50)
-                                    end = min(len(content), idx + len(search_term) + 50)
-                                    context = content[start:end]
-                                    
-                                    matches.append({
-                                        "start": idx,
-                                        "end": idx + len(search_term),
-                                        "matched": search_term,
-                                        "context": context
-                                    })
-                                    
-                                    idx = content.find(search_term, idx + 1)
-                            
-                            if matches:
-                                all_results.append({
-                                    "file": file_str,
-                                    "matches": matches,
-                                    "match_count": len(matches)
+                        
+                        # 搜索内容（已移到try块外、except continue之后正确位置）
+                        matches = []
+                        
+                        if use_regex and regex is not None:
+                            for match in regex.finditer(content):
+                                start = max(0, match.start() - 50)
+                                end = min(len(content), match.end() + 50)
+                                context = content[start:end]
+                                
+                                matches.append({
+                                    "start": match.start(),
+                                    "end": match.end(),
+                                    "matched": match.group(),
+                                    "context": context
                                 })
+                        else:
+                            idx = content.find(search_term)
+                            while idx != -1:
+                                start = max(0, idx - 50)
+                                end = min(len(content), idx + len(search_term) + 50)
+                                context = content[start:end]
+                                
+                                matches.append({
+                                    "start": idx,
+                                    "end": idx + len(search_term),
+                                    "matched": search_term,
+                                    "context": context
+                                })
+                                
+                                idx = content.find(search_term, idx + 1)
+                        
+                        if matches:
+                            all_results.append({
+                                "file": file_str,
+                                "matches": matches,
+                                "match_count": len(matches)
+                            })
                 
                 # 排序：匹配多的文件在前
                 all_results.sort(key=lambda x: x["match_count"], reverse=True)
@@ -2157,9 +2160,11 @@ class FileTools:
             try:
                 for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
                     try:
-                        content = await asyncio.to_thread(
-                            lambda e=enc: open(path, 'r', encoding=e, errors='replace').read()
-                        )
+                        # 【修复 2026-04-30 小沈】用with语句读取，避免文件句柄泄漏
+                        def _read_with(e=enc):
+                            with open(path, 'r', encoding=e, errors='replace') as f:
+                                return f.read()
+                        content = await asyncio.to_thread(_read_with)
                         return {"file_path": fp, "success": True, "content": content, "encoding": enc, "file_size": path.stat().st_size}
                     except Exception:
                         continue
@@ -2169,8 +2174,9 @@ class FileTools:
 
         results = await asyncio.gather(*[_read_single(fp) for fp in file_paths])
         success_count = sum(1 for r in results if r["success"])
+        # 【修复 2026-04-30 小沈】success基于实际结果，不再硬编码True
         return _to_unified_format({
-            "success": True, "results": results, "total": len(results),
+            "success": success_count > 0, "results": results, "total": len(results),
             "success_count": success_count, "failed_count": len(results) - success_count,
         }, "read_batch_file")
 
@@ -2184,6 +2190,18 @@ class FileTools:
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
         """精确替换文件中的字符串"""
+        # 【修复 2026-04-30 小沈】空old_string拒绝：content.replace("", x)会在每个字符间插入，导致内容爆炸
+        if not old_string:
+            return _to_unified_format({
+                "success": False, "error": "old_string不能为空，空字符串替换会导致内容爆炸", "replaced_count": 0
+            }, "precise_replace_in_file")
+        
+        # 【修复 2026-04-30 小沈】添加task_id检查（与write_file对齐）
+        if not self.task_id:
+            return _to_unified_format({
+                "success": False, "error": "No active task", "replaced_count": 0
+            }, "precise_replace_in_file")
+        
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
@@ -2196,6 +2214,14 @@ class FileTools:
                 return _to_unified_format({
                     "success": False, "error": f"文件不存在: {file_path}", "replaced_count": 0
                 }, "precise_replace_in_file")
+
+            # 【修复 2026-04-30 小沈】添加safety记录（与write_file对齐）
+            operation_id = self.safety.record_operation(
+                task_id=self.task_id,
+                operation_type=OperationType.MODIFY,
+                destination_path=path,
+                sequence_number=self._get_next_sequence()
+            )
 
             encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
 
@@ -2234,14 +2260,35 @@ class FileTools:
                         new_content = content[:idx] + new_string + content[idx + len(old_string):]
                         count = 1
 
-                with open(path, 'w', encoding=used_enc) as f:
+                # 【修复 2026-04-30 小沈】原子写入：先写临时文件再重命名（与write_file对齐）
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(
+                    mode='w', encoding=used_enc,
+                    dir=path.parent, delete=False,
+                    prefix=f".{path.name}.", suffix=""
+                ) as f:
                     f.write(new_content)
+                    temp_path = f.name
+                try:
+                    os.replace(temp_path, str(path))
+                except Exception:
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
+                    raise
                 return count, used_enc, path.name
 
-            count, used_enc, name = await asyncio.to_thread(_replace_sync)
+            count, used_enc, name = await asyncio.to_thread(
+                self.safety.execute_with_safety,
+                operation_id=operation_id,
+                operation_func=_replace_sync
+            )
             return _to_unified_format({
                 "success": True, "replaced_count": count, "encoding": used_enc,
                 "file_path": str(path), "file_name": name,
+                "operation_id": operation_id,
             }, "precise_replace_in_file")
         except Exception as e:
             logger.error(f"precise_replace_in_file failed: {file_path}: {e}")
@@ -2256,7 +2303,7 @@ class FileTools:
         dryRun: bool = False,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """高级编辑文件，支持多处编辑和预览"""
+        """高级编辑文件，支持多处编辑和预览 - 小沈 2026-05-01"""
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
@@ -2264,11 +2311,25 @@ class FileTools:
                     "success": False, "error": error_msg, "applied_edits": 0, "preview": None
                 }, "edit_file")
 
+            # 【修复 2026-05-01 小沈】添加task_id检查（与write_file对齐）
+            if not self.task_id:
+                return _to_unified_format({
+                    "success": False, "error": "No active task", "applied_edits": 0, "preview": None
+                }, "edit_file")
+
             path = Path(file_path)
             if not path.exists():
                 return _to_unified_format({
                     "success": False, "error": f"文件不存在: {file_path}", "applied_edits": 0, "preview": None
                 }, "edit_file")
+
+            # 【修复 2026-05-01 小沈】添加safety记录（与precise_replace_in_file对齐）
+            operation_id = self.safety.record_operation(
+                task_id=self.task_id,
+                operation_type=OperationType.MODIFY,
+                destination_path=path,
+                sequence_number=self._get_next_sequence()
+            )
 
             encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
 
@@ -2304,16 +2365,37 @@ class FileTools:
                     results.append({"index": i, "success": True, "old_text": old_text[:50], "new_text": new_text[:50]})
 
                 applied = sum(1 for r in results if r["success"])
-                if not dryRun:
-                    with open(path, 'w', encoding=used_enc) as f:
+                if not dryRun and applied > 0:
+                    # 【修复 2026-05-01 小沈】原子写入：先写临时文件再重命名（与write_file对齐）
+                    import tempfile
+                    import os
+                    with tempfile.NamedTemporaryFile(
+                        mode='w', encoding=used_enc,
+                        dir=path.parent, delete=False,
+                        prefix=f".{path.name}.", suffix=""
+                    ) as f:
                         f.write(modified)
+                        temp_path = f.name
+                    try:
+                        os.replace(temp_path, str(path))
+                    except Exception:
+                        try:
+                            os.unlink(temp_path)
+                        except OSError:
+                            pass
+                        raise
                 return {
                     "success": True, "applied_edits": applied, "total_edits": len(edits),
                     "results": results, "preview": modified if dryRun else None,
                     "dry_run": dryRun, "encoding": used_enc,
+                    "operation_id": operation_id,
                 }
 
-            result = await asyncio.to_thread(_edit_sync)
+            result = await asyncio.to_thread(
+                self.safety.execute_with_safety,
+                operation_id=operation_id,
+                operation_func=_edit_sync
+            )
             return _to_unified_format(result, "edit_file")
         except Exception as e:
             logger.error(f"edit_file failed: {file_path}: {e}")
@@ -2326,12 +2408,18 @@ class FileTools:
         file_path: str,
         new_name: str,
     ) -> Dict[str, Any]:
-        """重命名文件或目录"""
+        """重命名文件或目录 - 小沈 2026-05-01"""
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
                 return _to_unified_format({
                     "success": False, "error": error_msg, "new_path": None
+                }, "rename_file")
+
+            # 【修复 2026-05-01 小沈】添加task_id检查（与move_file对齐）
+            if not self.task_id:
+                return _to_unified_format({
+                    "success": False, "error": "No active task", "new_path": None
                 }, "rename_file")
 
             src = Path(file_path)
@@ -2346,20 +2434,49 @@ class FileTools:
                 }, "rename_file")
 
             dst = src.parent / new_name
+
+            # 【修复 2026-05-01 小沈】添加目标路径验证（与move_file对齐）
+            is_valid_dst, error_msg_dst = self._validate_path(str(dst))
+            if not is_valid_dst:
+                return _to_unified_format({
+                    "success": False, "error": f"目标路径{error_msg_dst}", "new_path": None
+                }, "rename_file")
+
             if dst.exists():
                 return _to_unified_format({
                     "success": False, "error": f"目标已存在: {dst}", "new_path": None
                 }, "rename_file")
 
+            # 【修复 2026-05-01 小沈】添加safety记录（与move_file对齐）
+            operation_id = self.safety.record_operation(
+                task_id=self.task_id,
+                operation_type=OperationType.MOVE,
+                source_path=src,
+                destination_path=dst,
+                sequence_number=self._get_next_sequence()
+            )
+
             def _rename_sync():
                 src.rename(dst)
                 return True
 
-            await asyncio.to_thread(_rename_sync)
-            return _to_unified_format({
-                "success": True, "new_path": str(dst), "old_path": str(src),
-                "old_name": src.name, "new_name": new_name,
-            }, "rename_file")
+            success = await asyncio.to_thread(
+                self.safety.execute_with_safety,
+                operation_id=operation_id,
+                operation_func=_rename_sync
+            )
+
+            if success:
+                return _to_unified_format({
+                    "success": True, "new_path": str(dst), "old_path": str(src),
+                    "old_name": src.name, "new_name": new_name,
+                    "operation_id": operation_id,
+                }, "rename_file")
+            else:
+                return _to_unified_format({
+                    "success": False, "error": "Failed to rename file",
+                    "operation_id": operation_id, "new_path": None
+                }, "rename_file")
         except Exception as e:
             logger.error(f"rename_file failed: {file_path}: {e}")
             return _to_unified_format({

@@ -1,8 +1,8 @@
 # FILE工具健壮性审计报告
 
-**版本**: v1.1
+**版本**: v1.2
 **创建时间**: 2026-04-30 23:48:50
-**更新时间**: 2026-05-01 00:03:22
+**更新时间**: 2026-05-01 00:21:21
 **作者**: 小沈
 **审计对象**: `backend/app/services/tools/file/file_tools.py`（28个FILE工具）
 **审计范围**: 参数校验、异常处理、边界情况、返回格式、安全性
@@ -19,9 +19,80 @@
 
 ---
 
-## 二、❌ 脆弱工具详细分析（4个）
+## 二、❌→✅ 脆弱工具修复记录（5个，全部已修复）
 
-### 2.1 `search_file_content` — 搜索功能完全失效（死代码BUG）
+> **修复时间**: 2026-05-01 00:21:21
+> **修复人**: 小沈
+> **修复前**: 4个❌脆弱 + search_file_content死代码
+> **修复后**: 5个❌全部修复为✅
+
+### 2.1 `search_file_content` ✅ — 死代码BUG修复
+
+**修复内容**: 搜索逻辑从 `except continue` 之后移到正确位置（try块内），使搜索功能恢复正常。
+
+**修复时间**: 2026-04-30
+**签名**: 小沈
+
+---
+
+### 2.2 `read_batch_file` ✅ — 成功判定+文件句柄修复
+
+**修复内容**:
+1. 成功判定改为 `success_count > 0`
+2. 文件句柄改用 `with` 语句
+
+**修复时间**: 2026-04-30
+**签名**: 小沈
+
+---
+
+### 2.3 `precise_replace_in_file` ✅ — 空old_string拒绝+safety记录+原子写入
+
+**修复内容**:
+1. 空 `old_string` 直接拒绝返回错误
+2. 添加 `task_id` 检查
+3. 添加 `safety.record_operation()`（OperationType.MODIFY）
+4. 原子写入：临时文件+`os.replace`重命名
+5. 用 `safety.execute_with_safety` 包装写入操作
+
+**修复时间**: 2026-04-30
+**签名**: 小沈
+
+---
+
+### 2.4 `edit_file` ✅ — task_id检查+safety记录+空edits不写入+原子写入
+
+**修复内容**:
+1. 添加 `task_id` 检查（与write_file对齐）
+2. 添加 `safety.record_operation()`（OperationType.MODIFY，与precise_replace_in_file对齐）
+3. `applied > 0` 时才写入文件（空edits列表不再触发无意义重写）
+4. 原子写入：临时文件+`os.replace`重命名（与write_file/precise_replace_in_file对齐）
+5. 用 `safety.execute_with_safety` 包装写入操作
+6. 返回结果添加 `operation_id` 字段
+
+**修复时间**: 2026-05-01
+**签名**: 小沈
+
+---
+
+### 2.5 `rename_file` ✅ — task_id检查+目标路径验证+safety记录
+
+**修复内容**:
+1. 添加 `task_id` 检查（与move_file对齐）
+2. `dst = src.parent / new_name` 后添加 `_validate_path(str(dst))` 验证目标路径（与move_file对齐）
+3. 添加 `safety.record_operation()`（OperationType.MOVE，source_path+destination_path，与move_file对齐）
+4. 用 `safety.execute_with_safety` 包装重命名操作
+5. 返回结果添加 `operation_id` 字段
+6. `execute_with_safety` 返回 `False` 时返回失败结果
+
+**修复时间**: 2026-05-01
+**签名**: 小沈
+
+---
+
+## 三、❌ 脆弱工具详细分析（修复前原始记录）
+
+### 3.1 `search_file_content` — 搜索功能完全失效（死代码BUG）
 
 **位置**: file_tools.py 行1049-1227
 **严重度**: 🔴 致命
@@ -52,7 +123,7 @@ except (PermissionError, OSError):
 
 ---
 
-### 2.2 `read_batch_file` — 成功判定逻辑错误 + 文件句柄泄漏
+### 3.2 `read_batch_file` — 成功判定逻辑错误 + 文件句柄泄漏
 
 **位置**: file_tools.py 行2047-2082
 **严重度**: 🔴 严重
@@ -83,7 +154,7 @@ content = await asyncio.to_thread(
 
 ---
 
-### 2.3 `precise_replace_in_file` — 空old_string爆炸 + 无安全记录 + 非原子写入
+### 3.3 `precise_replace_in_file` — 空old_string爆炸 + 无安全记录 + 非原子写入
 
 **位置**: file_tools.py 行2084-2157
 **严重度**: 🔴 严重
@@ -116,7 +187,7 @@ with open(path, 'w', encoding=used_enc) as f:
 
 ---
 
-### 2.4 `edit_file` / `rename_file` — 无安全记录
+### 3.4 `edit_file` / `rename_file` — 无安全记录
 
 **位置**: file_tools.py 行2159-2229（edit_file）、行2231-2274（rename_file）
 **严重度**: 🟡 高
@@ -139,9 +210,9 @@ with open(path, 'w', encoding=used_enc) as f:
 
 ---
 
-## 三、⚠️ 部分健全工具共性分析（23个）
+## 四、⚠️ 部分健全工具共性分析（23个）
 
-### 3.1 大文件OOM风险（8个工具）
+### 4.1 大文件OOM风险（8个工具）
 
 以下工具使用 `f.read()` / `f.readlines()` 全量载入文件内容，无大小限制：
 
@@ -160,7 +231,7 @@ with open(path, 'w', encoding=used_enc) as f:
 
 ---
 
-### 3.2 符号链接循环风险（4个工具）
+### 4.2 符号链接循环风险（4个工具）
 
 | 工具 | 行号 | 遍历方式 |
 |------|------|---------|
@@ -173,7 +244,7 @@ with open(path, 'w', encoding=used_enc) as f:
 
 ---
 
-### 3.3 参数校验不完整（主要遗漏）
+### 4.3 参数校验不完整（主要遗漏）
 
 | 工具 | 遗漏的参数校验 |
 |------|---------------|
@@ -186,7 +257,7 @@ with open(path, 'w', encoding=used_enc) as f:
 
 ---
 
-## 四、安全机制不一致（设计层面问题）
+## 五、安全机制不一致（设计层面问题）
 
 修改类工具的 safety 保障严重不一致：
 
@@ -203,7 +274,7 @@ with open(path, 'w', encoding=used_enc) as f:
 
 ---
 
-## 五、逐工具评级明细
+## 六、逐工具评级明细
 
 | # | tool_name | 评级 | 关键问题 | 行号 |
 |---|-----------|------|---------|------|
