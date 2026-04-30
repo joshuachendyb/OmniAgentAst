@@ -1,13 +1,14 @@
-v0.12.1
+v0.12.2
 
-  更新时间: 2026-04-30 07:50:26
+  更新时间: 2026-04-30 14:18:29
 
   更新内容：
 
-  ## 1 file_monitor.py Path.iterdir() bug修复 - 小沈-2026-04-30
+  ## 1 candidates意图列表传递功能 - 小沈-2026-04-30
 
-  | 修复项 | 说明 | 状态 |
-  |--------|------|------|
+  | 功能 | 说明 | 状态 |
+  |------|------|------|
+  | candidates参数 | route_with_fallback返回candidates列表，传递到Agent并注入prompt | ✅ |
   | _get_files_in_directory | Path.iterdir("*") → 无参数调用 | ✅ |
 
   **问题**：Path.iterdir() 不接受任何参数，调用 iterdir("*") 会抛出 TypeError
