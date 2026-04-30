@@ -119,9 +119,6 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         self.response_format_strategy = None
         self.adapter = None
         
-        # Simple initialization - continue
-        logger.info(f"FileReactAgent initialized (task_id: {task_id}, tool_category: {effective_category})")
-    
     # ========== 跨分类工具支持方法（2026-04-30 小沈）==========
     
     def _get_tools_summary(self) -> str:

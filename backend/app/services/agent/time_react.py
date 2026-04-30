@@ -52,8 +52,6 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
         """
         effective_category = tool_category or ToolCategory.TIME
         
-        import app.services.tools.time.time_tools as time_tools_register
-        
         super().__init__(
             llm_client=llm_client,
             task_id=task_id,
