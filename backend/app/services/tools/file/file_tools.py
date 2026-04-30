@@ -2309,7 +2309,10 @@ class FileTools:
 
             encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
 
-            def _replace_sync() -> tuple[int, str, str]:
+            # 【修复 2026-05-01 小沈】闭包变量存结果，_replace_sync返回True给execute_with_safety
+            replace_result = {}
+
+            def _replace_sync() -> bool:
                 content = None
                 used_enc = None
                 for enc in encodings_to_try:
@@ -2362,18 +2365,27 @@ class FileTools:
                     except OSError:
                         pass
                     raise
-                return count, used_enc, path.name
+                replace_result['count'] = count
+                replace_result['used_enc'] = used_enc
+                replace_result['name'] = path.name
+                return True
 
-            count, used_enc, name = await asyncio.to_thread(
+            success = await asyncio.to_thread(
                 self.safety.execute_with_safety,
                 operation_id=operation_id,
                 operation_func=_replace_sync
             )
-            return _to_unified_format({
-                "success": True, "replaced_count": count, "encoding": used_enc,
-                "file_path": str(path), "file_name": name,
-                "operation_id": operation_id,
-            }, "precise_replace_in_file")
+            if success:
+                return _to_unified_format({
+                    "success": True, "replaced_count": replace_result['count'], "encoding": replace_result['used_enc'],
+                    "file_path": str(path), "file_name": replace_result['name'],
+                    "operation_id": operation_id,
+                }, "precise_replace_in_file")
+            else:
+                return _to_unified_format({
+                    "success": False, "error": "Failed to replace in file",
+                    "replaced_count": 0, "operation_id": operation_id
+                }, "precise_replace_in_file")
         except Exception as e:
             logger.error(f"precise_replace_in_file failed: {file_path}: {e}")
             return _to_unified_format({
@@ -2423,7 +2435,10 @@ class FileTools:
 
             encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
 
-            def _edit_sync() -> Dict[str, Any]:
+            # 【修复 2026-05-01 小沈】闭包变量存结果，_edit_sync返回True给execute_with_safety
+            edit_result = {}
+
+            def _edit_sync() -> bool:
                 content = None
                 used_enc = None
                 for enc in encodings_to_try:
@@ -2474,19 +2489,31 @@ class FileTools:
                         except OSError:
                             pass
                         raise
-                return {
-                    "success": True, "applied_edits": applied, "total_edits": len(edits),
-                    "results": results, "preview": modified if dryRun else None,
-                    "dry_run": dryRun, "encoding": used_enc,
-                    "operation_id": operation_id,
-                }
+                edit_result['applied_edits'] = applied
+                edit_result['total_edits'] = len(edits)
+                edit_result['results'] = results
+                edit_result['preview'] = modified if dryRun else None
+                edit_result['dry_run'] = dryRun
+                edit_result['used_enc'] = used_enc
+                return True
 
-            result = await asyncio.to_thread(
+            success = await asyncio.to_thread(
                 self.safety.execute_with_safety,
                 operation_id=operation_id,
                 operation_func=_edit_sync
             )
-            return _to_unified_format(result, "edit_file")
+            if success:
+                return _to_unified_format({
+                    "success": True, "applied_edits": edit_result['applied_edits'], "total_edits": edit_result['total_edits'],
+                    "results": edit_result['results'], "preview": edit_result['preview'],
+                    "dry_run": edit_result['dry_run'], "encoding": edit_result['used_enc'],
+                    "operation_id": operation_id,
+                }, "edit_file")
+            else:
+                return _to_unified_format({
+                    "success": False, "error": "Failed to edit file",
+                    "applied_edits": 0, "operation_id": operation_id
+                }, "edit_file")
         except Exception as e:
             logger.error(f"edit_file failed: {file_path}: {e}")
             return _to_unified_format({

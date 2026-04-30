@@ -281,7 +281,7 @@ class ToolExecutor:
                     }
                 
                 # 检查是否还有重试机会
-                if attempt_count > retry_policy.max_retries:
+                if attempt_count >= retry_policy.max_retries:
                     logger.error(f"[重试] action={action} 超过最大重试次数{retry_policy.max_retries}")
                     return {
                         "status": error_type.to_status,
