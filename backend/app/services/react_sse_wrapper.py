@@ -320,14 +320,20 @@ async def generate_sse_stream(
             user_message_id=str(ai_message_id),
             session_id=session_id or task_id
         )
-        # 记录系统 prompt
-        from app.services.prompts.file import FileOperationPrompts
-        file_prompts_instance = FileOperationPrompts()
-        sys_prompt = file_prompts_instance.get_system_prompt()
+        # 记录系统 prompt（根据 intent_type 动态选择对应的 prompt 类）
+        if intent_type == "time":
+            from app.services.prompts.time import TimePrompts
+            prompts_instance = TimePrompts()
+            source_name = "time_prompts.py:get_system_prompt()"
+        else:
+            from app.services.prompts.file import FileOperationPrompts
+            prompts_instance = FileOperationPrompts()
+            source_name = "file_prompts.py:get_system_prompt()"
+        sys_prompt = prompts_instance.get_system_prompt()
         prompt_logger.log_system_prompt(
             step_name="系统Prompt生成",
             prompt_content=sys_prompt,
-            source="file_prompts.py:get_system_prompt()",
+            source=source_name,
             details={"intent_type": intent_type, "confidence": confidence}
         )
         # 记录任务 prompt

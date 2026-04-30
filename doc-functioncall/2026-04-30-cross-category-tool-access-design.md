@@ -1,8 +1,8 @@
 # 跨分类工具访问设计方案
 
 **创建时间**: 2026-04-30 11:39:42
-**更新时间**: 2026-04-30 13:30:00
-**版本**: v1.5
+**更新时间**: 2026-04-30 14:39:00
+**版本**: v1.8
 **作者**: 小沈
 **状态**: 详细设计
 
@@ -105,11 +105,12 @@
 
 1. **阶段1：CRSS规则扩展（覆盖所有 ToolCategory）**
 
-   ```python
-   返回值: (intent: Optional[ToolCategory], candidates: List[ToolCategory])
-   # intent: 唯一匹配结果（None表示无唯一匹配）
-   # candidates: 候选列表（匹配到的所有可能分类）
-   ```
+    ```python
+    返回值: (primary: Optional[ToolCategory], candidates: List[ToolCategory], confidence: float)
+    # primary: 主意图（None表示无唯一匹配）
+    # candidates: 候选列表（匹配到的所有可能分类，按置信度排序）
+    # confidence: 主意图置信度（经归一化到 [0,1)）
+    ```
 
    规则扩展：
    - `FILE`：文件操作关键词（原有规则 + 词边界检查 `\bkeyword\b` 防止误匹配）
@@ -126,18 +127,18 @@
 
 2. **阶段2：LLM语义分类（作为CRSS的补充，不是替代）**
 
-   - 仅在以下情况触发LLM：
-     a. CRSS无匹配 → LLM从全部分类中选择
-     b. CRSS匹配到多个候选（如用户输入同时含文件+网络关键词）
-   - LLM使用主聊天模型的lite版本（或独立配置的小模型，不强制用七牛）
-   - 返回完整置信度分布：`{"FILE": 0.85, "NETWORK": 0.10, "CHAT": 0.05}`
+    - 仅在以下情况触发LLM：
+      a. CRSS无匹配 → LLM从全部分类中选择
+      b. CRSS匹配到多个候选（如用户输入同时含文件+网络关键词）
+    - 返回完整置信度分布（all_intents字段），包含所有候选标签的置信度：`{"file": 0.85, "chat": 0.10, "network": 0.05, ...}`
    - 带文本矫正功能（原有的文本矫正能力保留）
 
 3. **消除冗余LLM调用**
 
-   - `chat_router.py` 中删除 `PreprocessingPipeline.process()` 的LLM调用
-   - 保留 `PreprocessingPipeline` 作为架构，但内部改为先CRSS后LLM
-   - `intent_classifier.py` 保留但改造为阶段2的LLM分类器
+    - `chat_router.py` 中删除 `PreprocessingPipeline.process()` 的LLM调用
+    - 保留 `PreprocessingPipeline` 作为纯文本预处理架构（不做分类）
+    - 两阶段分类逻辑（CRSS → LLM）统一在 `route_with_fallback()` 中实现
+    - `intent_classifier.py` 保留但改造为阶段2的LLM分类器（返回多意图置信度分布）
 
 4. **多意图支持**
 
@@ -398,66 +399,167 @@ def _extract_required_params(self, input_schema: Dict) -> List[str]:
 ### 5.1 每轮LLM调用的消息构造
 
 ```python
-async def _get_llm_response(self, current_message: str) -> str:
+async def _get_llm_response(self) -> str:
     """获取 LLM 响应"""
+    self.llm_call_count += 1
     
-    # 构建系统提示
-    sys_prompt = self._build_system_prompt()
+    last_message = self.conversation_history[-1]["content"]
+    history_dicts = self.conversation_history[:-1]
     
-    messages = [{"role": "system", "content": sys_prompt}]
-    messages.extend(self.conversation_history)
-    
-    # 【新增】在当前 user message 末尾追加工具概要
+    # 【新增】在当前 user message 末尾追加跨分类工具概要
     # 每轮都注入，确保LLM不会丢失工具信息
     tools_summary = self._get_tools_summary()
-    enhanced_message = current_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
-    messages.append({"role": "user", "content": enhanced_message})
+    enhanced_message = last_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
     
-    # 调用LLM
-    response = await self.llm_client(messages)
+    # 【新增】使用 LLMAdapter 自适应策略选择
+    # 策略选择：response_format / tools / text（根据LLM能力自动探测）
+    strategy = await self.adapter.ensure_capability()
+    response = await strategy.call(
+        llm_client=self.llm_client,
+        message=enhanced_message,
+        history_dicts=history_dicts,
+        conversation_history=self.conversation_history
+    )
     return response
 ```
 
+**流程说明**：
+1. **system prompt** 在 `run_stream()` 初始化时通过 `_get_system_prompt()` 设置一次（含跨工具提示 + 候选意图），存入 `conversation_history[0]`
+2. **历史消息** 从 `conversation_history[:-1]` 取出（含 system prompt）
+3. **当前消息** 从 `conversation_history[-1]["content"]` 取出
+4. **工具概要** 注入到当前 user message 末尾：`"\n\n---\n当前可用工具列表:\n" + tools_summary`
+5. **LLM 调用** 通过 `LLMAdapter` 自适应策略层（自动探测LLM支持 response_format/tools/text 并选择最佳方式）
+
+> **注意**：`_build_system_prompt()` 已合并进 `_get_system_prompt()`，不再作为独立方法存在。
+
 ### 5.2 ToolExecutor 执行（支持跨分类工具）
 
-**修改 ToolExecutor.execute 方法**，当本地字典找不到工具时，从全局注册表查找：
+ToolExecutor 不仅支持跨分类fallback，还包含完整的重试、参数规范化和结果格式化机制。
 
 ```python
 class ToolExecutor:
+    """工具执行器 - 支持跨分类fallback + 重试 + 参数映射"""
+
     def __init__(self, tools: Dict[str, Callable] = None):
         if tools is not None:
             self.available_tools = tools
         else:
             from app.services.tools.registry import get_implementations_from_registry
             self.available_tools = get_implementations_from_registry()
-    
+
     async def execute(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
+        """执行工具调用"""
         if action == "finish":
-            return {"success": True, "result": "Task finished"}
-        
-        # 查找工具实现
-        impl = self.available_tools.get(action)
-        
-        # 【新增】如果本地没有，从全局注册表查找
-        if not impl:
+            return {
+                "status": "success",
+                "summary": "Task completed",
+                "result": {"operation_type": "finish", ...},
+                "data": ...,
+                "retry_count": 0
+            }
+
+        if action not in self.available_tools:
+            # 【跨分类fallback】本地没有时从全局registry查找
             from app.services.tools.registry import tool_registry
             impl = tool_registry.get_implementation(action)
-            if not impl:
-                return {
-                    "success": False,
-                    "error": f"Tool '{action}' not found"
-                }
-            # 【新增】缓存到本地，下次快速查找
-            self.available_tools[action] = impl
-        
-        # 执行工具
-        try:
-            # 调用工具实现
-            result = impl(**action_input)
-            return {"success": True, "result": result}
-        except Exception as e:
-            return {"success": False, "error": str(e)}
+            if impl is not None:
+                self.available_tools[action] = impl  # 缓存到本地
+                return await self._execute_with_retry(action, action_input)
+            return {
+                "status": "error",
+                "summary": f"Unknown tool: {action}",
+                "data": None,
+                "retry_count": 0
+            }
+
+        return await self._execute_with_retry(action, action_input)
 ```
+
+#### 5.2.1 内联重试
+
+```python
+async def _execute_with_retry(self, action: str, action_input: Dict) -> Dict:
+    """执行工具（含重试逻辑）"""
+    tool = self.available_tools[action]
+    retry_policy = RetryPolicy(
+        max_retries=config.get_retry_max(action),        # 默认3次
+        backoff_factor=config.get_retry_backoff(action), # 默认2.0
+        retryable_errors=config.get_retryable_errors(action)
+    )
+
+    attempt_count = 0
+    while attempt_count <= retry_policy.max_retries:
+        try:
+            normalized_input = self._normalize_params(action, action_input)
+            timeout = config.get_timeout(action)  # 每个工具独立超时
+            result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
+            return self._format_result(result, action)
+        except Exception as e:
+            error_type = ErrorClassifier.classify(e)
+            attempt_count += 1
+            if not error_type.is_retryable:  # 不可重试直接返回
+                return {"status": "error", "summary": str(e), ...}
+            if attempt_count > retry_policy.max_retries:
+                return {"status": "error", "summary": "重试耗尽", ...}
+            await asyncio.sleep(retry_policy.backoff_factor ** (attempt_count - 1))  # 指数退避
+```
+
+#### 5.2.2 参数规范化（别名映射）
+
+```python
+def _normalize_params(self, action: str, action_input: Dict) -> Dict:
+    """参数别名映射：LLM可能传错参数名，自动纠正"""
+    PARAM_ALIASES = {
+        "read_file":      {"path": "file_path", "file": "file_path"},
+        "list_directory":  {"path": "dir_path", "folder": "dir_path"},
+        "move_file":      {"source": "source_path", "target": "destination_path"},
+        # ... 其他工具同理
+    }
+    for wrong_name, correct_name in aliases.items():
+        if wrong_name in params and correct_name not in params:
+            params[correct_name] = params[wrong_name]
+    return params
+```
+
+#### 5.2.3 结果格式化
+
+```python
+def _format_result(self, result: Any, action: str) -> Dict:
+    """统一格式化执行结果"""
+    # 统一返回 {status, summary, data, retry_count} 结构
+    # 支持 dict 结果（success/status字段）和任意结果
+```
+
+#### 5.2.4 错误分类与重试策略
+
+```python
+class ErrorType(Enum):
+    TIMEOUT = "timeout"           # 可重试
+    PERMISSION_DENIED = "permission_denied"  # 不可重试
+    FILE_NOT_FOUND = "file_not_found"       # 不可重试
+    INVALID_PARAMS = "invalid_params"        # 不可重试
+    TOOL_NOT_FOUND = "tool_not_found"       # 不可重试
+    UNKNOWN = "unknown"                      # 不可重试
+
+    @property
+    def is_retryable(self) -> bool:
+        return self.value in ["timeout"]  # 只有超时可重试
+
+class RetryPolicy:
+    def __init__(self, max_retries=3, backoff_factor=2.0, retryable_errors=None):
+        ...
+
+class ErrorClassifier:
+    @staticmethod
+    def classify(error: Exception) -> ErrorType:
+        # asyncio.TimeoutError → TIMEOUT
+        # PermissionError → PERMISSION_DENIED
+        # FileNotFoundError → FILE_NOT_FOUND
+        # ValueError → INVALID_PARAMS
+        # 其他 → UNKNOWN
+```
+
+> **说明**：设计文档早期版本只描述了跨分类fallback（§5.2核心功能点），实际的 ToolExecutor 还包含重试、参数映射、结果格式化等生产级增强。这些已在 v1.0 代码中逐步实现，v1.7 补入文档。
 
 ---
 
@@ -477,17 +579,14 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         # 【新增】缓存工具概要（避免每轮都生成）
         self._tools_summary = None
     
-    def _build_system_prompt(self) -> str:
-        """构建系统提示"""
-        base_prompt = self.prompts.get_system_prompt()
+    def _get_system_prompt(self) -> str:
+        """获取系统 Prompt（含跨工具提示 + 候选意图）"""
+        if hasattr(self, '_custom_system_prompt') and self._custom_system_prompt:
+            return self._custom_system_prompt
+        base = self.prompts.get_system_prompt()
         # 【修改】追加跨工具提示，告知LLM可使用所有分类的工具
-        cross_tool_hint = (
-            "\n\n【注意】除了文件操作工具，你还可以使用其他分类的工具。"
-            "例如：创建脚本后可以用 execute_command 来运行它，"
-            "需要时间信息时可以用 get_current_time 等。"
-            "根据任务需要自由选择合适的工具，不受初始分类限制。"
-        )
-        return base_prompt + cross_tool_hint
+        # candidates_hint（如果有候选意图）+ cross_tool_hint
+        ...
     
     def _get_tools_summary(self) -> str:
         """获取工具概要（带缓存）"""
@@ -499,19 +598,29 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
             )
         return self._tools_summary
     
-    async def _get_llm_response(self, current_message: str) -> str:
-        """获取 LLM 响应"""
-        sys_prompt = self._build_system_prompt()
+    async def _get_llm_response(self) -> str:
+        """获取 LLM 响应（策略模式）"""
+        self.llm_call_count += 1
         
-        messages = [{"role": "system", "content": sys_prompt}]
-        messages.extend(self.conversation_history)
+        last_message = self.conversation_history[-1]["content"]
+        history_dicts = self.conversation_history[:-1]
         
         # 【修改】在当前 user message 末尾追加跨分类工具概要
         tools_summary = self._get_tools_summary()
-        enhanced = current_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
-        messages.append({"role": "user", "content": enhanced})
+        enhanced_message = last_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
         
-        # ... 调用LLM，其余逻辑不变
+        # 使用 LLMAdapter 自适应策略
+        if self.adapter:
+            strategy = await self.adapter.ensure_capability()
+            if strategy.method == "response_format":
+                response = await self.response_format_strategy.call(...)
+            elif strategy.method == "tools":
+                response = await self.tools_strategy.call(...)
+            else:
+                response = await self.text_strategy.call(...)
+        else:
+            response = await self.text_strategy.call(...)
+        return response
 ```
 
 ### 6.2 ToolExecutor 使用场景说明
@@ -550,29 +659,33 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
             )
         return self._tools_summary
     
-    def _build_system_prompt(self) -> str:
-        """构建系统提示（含跨工具提示）"""
-        base_prompt = self.prompts.get_system_prompt()
-        cross_tool_hint = (
-            "\n\n【注意】除了时间日期工具，你还可以使用其他分类的工具。"
-            "例如：需要操作文件时可以用 read_file/write_file，"
-            "需要执行命令时可以用 execute_command 等。"
-            "根据任务需要自由选择合适的工具。"
-        )
-        return base_prompt + cross_tool_hint
+    def _get_system_prompt(self) -> str:
+        """获取系统 Prompt（含跨工具提示 + 候选意图）"""
+        base = self.prompts.get_system_prompt()
+        # 【修改】追加跨工具提示，告知LLM可使用所有分类的工具
+        # candidates_hint + cross_tool_hint
+        ...
     
-    async def _get_llm_response(self, current_message: str) -> str:
-        # system prompt（Time场景）
-        sys_prompt = self._build_system_prompt()
-        messages = [{"role": "system", "content": sys_prompt}]
-        messages.extend(self.conversation_history)
+    async def _get_llm_response(self) -> str:
+        """获取 LLM 响应（策略模式）"""
+        self.llm_call_count += 1
+        
+        last_message = self.conversation_history[-1]["content"]
+        history_dicts = self.conversation_history[:-1]
         
         # 【修改】在当前 user message 末尾追加跨分类工具概要
         tools_summary = self._get_tools_summary()
-        enhanced = current_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
-        messages.append({"role": "user", "content": enhanced})
+        enhanced_message = last_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
         
-        # ... 调用LLM
+        # 使用 LLMAdapter 自适应策略
+        strategy = await self.adapter.ensure_capability()
+        response = await strategy.call(
+            llm_client=self.llm_client,
+            message=enhanced_message,
+            history_dicts=history_dicts,
+            conversation_history=self.conversation_history
+        )
+        return response
 ```
 
 ### 7.2 TimeReactAgent 特有的部分
@@ -591,24 +704,45 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
 
 ```python
 class NewAgent(ToolLoaderMixin, BaseAgent):
-    def __init__(self, ...):
+    def __init__(self, llm_client, task_id, tool_category=None, candidates=None, **kwargs):
+        # 0. 本分类（如 tool_category or ToolCategory.XXX）
+        effective_category = tool_category or ToolCategory.XXX
+        
+        super().__init__(llm_client=llm_client, task_id=task_id,
+                         tool_category=effective_category, **kwargs)
+        
         # 1. 加载本分类工具到本地缓存
         self._tools_dict = ToolLoaderMixin._load_tools(self, ToolCategory.XXX)
         
         # 2. 创建ToolExecutor（自动支持跨分类fallback）
         self.executor = ToolExecutor(self._tools_dict)
         
-        # 3. 缓存工具概要
+        # 3. 使用对应分类的Prompts类
+        self.prompts = XXXPrompts()
+        
+        # 4. 缓存工具概要
         self._tools_summary = None
+        
+        # 5. 存储候选意图列表
+        self._candidates = candidates if candidates else []
     
-    def _build_system_prompt(self) -> str:
-        """构建系统提示（含跨工具提示）"""
-        base_prompt = self.xxx_prompts.get_system_prompt()  # 使用对应分类的prompts
+    def _get_system_prompt(self) -> str:
+        """系统提示（含跨工具提示 + 候选意图）"""
+        base = self.prompts.get_system_prompt()
+        candidates_hint = ""
+        if self._candidates:
+            candidates_list = ", ".join(self._candidates)
+            candidates_hint = (
+                f"\n\n【候选意图】已识别出以下可能的意图类别: {candidates_list}。"
+                "你可以根据实际任务需要，访问任意候选分类的工具。"
+            )
         cross_tool_hint = (
             "\n\n【注意】除了本分类工具，你还可以使用其他分类的工具。"
+            "例如：需要操作文件时可以用 read_file/write_file，"
+            "需要执行命令时可以用 execute_command 等。"
             "根据任务需要自由选择合适的工具，不受初始分类限制。"
         )
-        return base_prompt + cross_tool_hint
+        return base + candidates_hint + cross_tool_hint
     
     def _get_tools_summary(self) -> str:
         """获取工具概要（复制此方法到新Agent）"""
@@ -619,18 +753,25 @@ class NewAgent(ToolLoaderMixin, BaseAgent):
             )
         return self._tools_summary
     
-    async def _get_llm_response(self, current_message: str) -> str:
+    async def _get_llm_response(self) -> str:
         """获取LLM响应（复制此模式）"""
-        sys_prompt = self._build_system_prompt()
-        messages = [{"role": "system", "content": sys_prompt}]
-        messages.extend(self.conversation_history)
+        self.llm_call_count += 1
+        last_message = self.conversation_history[-1]["content"]
+        history_dicts = self.conversation_history[:-1]
         
-        # 在当前 user message 末尾跨分类工具概要
+        # 在当前 user message 末尾追加跨分类工具概要
         tools_summary = self._get_tools_summary()
-        enhanced = current_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
-        messages.append({"role": "user", "content": enhanced})
+        enhanced_message = last_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
         
-        # ... 调用LLM
+        # 通过 LLMAdapter 自适应策略调用 LLM
+        strategy = await self.adapter.ensure_capability()
+        response = await strategy.call(
+            llm_client=self.llm_client,
+            message=enhanced_message,
+            history_dicts=history_dicts,
+            conversation_history=self.conversation_history
+        )
+        return response
 ```
 
 **子Agent只需关注**：
@@ -697,16 +838,25 @@ class NewAgent(ToolLoaderMixin, BaseAgent):
 **代码实现**：
 
 ```python
-async def _get_llm_response(self, current_message: str) -> str:
-    sys_prompt = self._build_system_prompt()
+async def _get_llm_response(self) -> str:
+    self.llm_call_count += 1
     
-    messages = [{"role": "system", "content": sys_prompt}]
-    messages.extend(self.conversation_history)
+    last_message = self.conversation_history[-1]["content"]
+    history_dicts = self.conversation_history[:-1]
     
     # 在当前 user message 末尾追加工具概要（每轮都有）
     tools_summary = self._get_tools_summary()
-    enhanced_message = current_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
-    messages.append({"role": "user", "content": enhanced_message})
+    enhanced_message = last_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
+    
+    # 通过 LLMAdapter 自适应策略调用 LLM
+    strategy = await self.adapter.ensure_capability()
+    response = await strategy.call(
+        llm_client=self.llm_client,
+        message=enhanced_message,
+        history_dicts=history_dicts,
+        conversation_history=self.conversation_history
+    )
+    return response
 ```
 
 ### 11.2 按Agent场景调整概要顺序
@@ -752,3 +902,6 @@ def _extract_required_params(self, input_schema: Dict) -> List[str]:
 | v1.3 | 2026-04-30 12:45:00 | 小健 | 修复：messages构造方式、system prompt→user message注入位置、新Agent模板统一 |
 | v1.4 | 2026-04-30 13:00:00 | 小沈 | 新增3.1节意图分类分析与优化方案 |
 | v1.5 | 2026-04-30 13:30:00 | 小健 | 重写3.1.2：废弃LLM→CRSS+LLM两阶段策略；新增3.1.4动态工具发现（阶段二）；修复11.1注入位置一致性问题；新增system prompt跨工具提示；修复4.1节缺少finish工具；增强3.1.3多意图联动 |
+| v1.6 | 2026-04-30 14:39:00 | 小沈 | 代码对齐：修正3.1.2 detect_intent_v2返回值描述匹配实际三元组；删除LLM使用主模型lite版本描述；更新LLM返回完整置信度分布说明；更新Pipeline架构描述；删除detect_intent_from_crss老函数引用 |
+| v1.7 | 2026-04-30 15:00:00 | 小沈 | 修复§5.1：_build_system_prompt合并进_get_system_prompt（原为死代码从未被调用）；更新消息构造代码为实际strategy模式；注明adapter自适应策略选择 |
+| v1.8 | 2026-04-30 15:30:00 | 小沈 | 更新§5.2：补充完整的ToolExecutor实现（重试/参数映射/结果格式化/错误分类）；更新§6.1/§7.1/§8 Agent模板代码对齐实际实现 |

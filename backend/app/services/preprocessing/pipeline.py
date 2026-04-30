@@ -2,22 +2,15 @@
 """
 预处理流水线模块
 
-整合语句校对和意图检测（文本矫正已合并到 LLM 调用中）
-Author: 小沈 - 2026-03-20
+【2026-04-30 小沈修改】移除LLM分类器调用，改为纯文本预处理
+意图检测已统一由 chat_router.route_with_fallback() 的两阶段逻辑处理
 """
-
 from typing import Any, List
-
 from app.utils.logger import logger
-
-from .intent_classifier import IntentClassifier
 
 
 class PreprocessingPipeline:
-    """用户输入预处理流水线（异步版本）"""
-
-    def __init__(self) -> None:
-        self.classifier = IntentClassifier()
+    """用户输入预处理流水线（纯文本处理，不含LLM调用）"""
 
     async def process(
         self,
@@ -26,48 +19,30 @@ class PreprocessingPipeline:
         session_id: str = ""
     ) -> dict[str, Any]:
         """
-        处理用户输入（异步）
+        预处理用户输入（纯文本处理，不含LLM）
 
-        Args:
-            user_input: 用户原始输入
-            intent_labels: 候选意图标签列表
-            session_id: 会话ID，用于日志追踪
+        【2026-04-30 小沈修改】移除了IntentClassifier的LLM调用。
+        意图检测已统一由 chat_router.route_with_fallback() 处理。
 
         Returns:
-            dict: {
-                original: 原始输入,
-                corrected: 修正后文本,
-                errors: 修正记录列表,
-                intent: 最佳意图,
-                confidence: 置信度,
-                all_intents: 所有意图及置信度
-            }
+            dict: {original, corrected, errors, intent, confidence, all_intents}
         """
         session_tag = f"[session={session_id}]" if session_id else "[session=N/A]"
 
-        # 步骤1: 意图检测（同时进行文本矫正）
-        try:
-            intent_result = await self.classifier.classify(user_input, intent_labels)
-            corrected = intent_result.get("corrected", user_input)
-            errors = []
-            
-            logger.info(
-                f"[Preprocessing] {session_tag} Classifier - "
-                f"input: '{user_input}', corrected: '{corrected}', labels: {intent_labels} -> "
-                f"intent: '{intent_result.get('intent', 'unknown')}', "
-                f"confidence: {intent_result.get('confidence', 0):.4f}"
-            )
-        except Exception as e:
-            logger.warning(f"[Preprocessing] {session_tag} Classifier failed: {e}")
-            intent_result = {"intent": "unknown", "confidence": 0.0, "all_intents": {}}
-            corrected = user_input
-            errors = []
+        # 基本文本清理（白名单+编码修复）
+        corrected = user_input.strip()
+        errors = []
+
+        logger.info(
+            f"[Preprocessing] {session_tag} - input: '{user_input}', "
+            f"corrected: '{corrected}'"
+        )
 
         return {
             "original": user_input,
             "corrected": corrected,
             "errors": errors,
-            "intent": intent_result.get("intent", "unknown"),
-            "confidence": intent_result.get("confidence", 0.0),
-            "all_intents": intent_result.get("all_intents", {}),
+            "intent": "unknown",
+            "confidence": 0.0,
+            "all_intents": {},
         }

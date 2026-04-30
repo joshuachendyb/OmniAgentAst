@@ -6,4 +6,5 @@ __all__ = [
     "BasePrompts",
     "base",
     "file",
+    "time",
 ]

@@ -362,6 +362,92 @@ class ToolRegistry:
         logger.info(f"Tool unregistered: {name}")
         return {"status": "success"}
     
+    # ===== 跨分类工具概要（2026-04-30 小沈新增）=====
+
+    def _extract_required_params(self, input_schema: Optional[Dict]) -> List[str]:
+        """
+        从input_schema中提取必填参数名
+
+        Args:
+            input_schema: Pydantic模型生成的schema字典
+
+        Returns:
+            必填参数名列表（排序后）
+        """
+        if not input_schema:
+            return []
+        required = set(input_schema.get("required", []))
+        return sorted(required)
+
+    def get_all_tools_summary(self, priority_category: Optional['ToolCategory'] = None) -> str:
+        """
+        获取所有工具的概要描述（按分类组织）
+
+        自动遍历所有已注册工具，按ToolCategory分组。
+        priority_category 对应的分类排在最前面，其余按固定顺序。
+
+        每个工具显示：名称(必填参数): 描述
+
+        Args:
+            priority_category: 优先展示的分类
+
+        Returns:
+            格式化的工具概要字符串
+        """
+        lines = []
+        lines.append("=== 可用工具列表 ===")
+        lines.append("")
+
+        from collections import defaultdict
+        by_category: Dict[ToolCategory, List[str]] = defaultdict(list)
+        for name, metadata in self._tools.items():
+            by_category[metadata.category].append((name, metadata))
+
+        # 分类展示顺序
+        category_order = [
+            ToolCategory.FILE,
+            ToolCategory.SHELL,
+            ToolCategory.TIME,
+            ToolCategory.ENV,
+            ToolCategory.SYSTEM,
+            ToolCategory.NETWORK,
+            ToolCategory.DATABASE,
+            ToolCategory.DESKTOP,
+        ]
+
+        # 如果指定了priority_category，移到最前面
+        if priority_category and priority_category in category_order:
+            category_order.remove(priority_category)
+            category_order.insert(0, priority_category)
+
+        category_names = {
+            ToolCategory.FILE: "文件操作工具",
+            ToolCategory.SHELL: "Shell命令工具",
+            ToolCategory.TIME: "时间日期工具",
+            ToolCategory.ENV: "环境变量工具",
+            ToolCategory.SYSTEM: "系统信息工具",
+            ToolCategory.NETWORK: "网络通信工具",
+            ToolCategory.DATABASE: "数据库工具",
+            ToolCategory.DESKTOP: "桌面工具",
+        }
+
+        for cat in category_order:
+            if cat not in by_category:
+                continue
+            items = by_category[cat]
+            display_name = category_names.get(cat, cat.value)
+            lines.append(f"【{display_name}】")
+            for name, meta in sorted(items, key=lambda x: x[0]):
+                params = self._extract_required_params(meta.input_schema)
+                param_str = ", ".join(params) if params else ""
+                if param_str:
+                    lines.append(f"  {name}({param_str}): {meta.description}")
+                else:
+                    lines.append(f"  {name}: {meta.description}")
+            lines.append("")
+
+        return "\n".join(lines)
+
     def __len__(self) -> int:
         """返回已注册工具数量"""
         return len(self._tools)

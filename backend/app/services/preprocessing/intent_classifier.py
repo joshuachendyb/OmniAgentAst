@@ -2,8 +2,10 @@
 """
 意图检测模块
 
-使用 LLM（七牛 deepseek-v3.1）进行意图分类
+阶段2: LLM语义分类器（设计文档 v1.5 §3.1.2）
+使用 LLM（七牛 deepseek-v3.1）进行意图分类，返回完整置信度分布。
 Author: 小沈 - 2026-03-27
+Updated: 小沈 - 2026-04-30（支持多意图置信度分布）
 
 注意：意图分类的 LLM 调用独立于此文件，不与主流程的 BaseAIService 混淆
 
@@ -55,6 +57,42 @@ def _load_qiniu_config() -> dict:
 
 INTENT_CLASSIFIER_CONFIG = _load_qiniu_config()
 
+# ============== 意图定义（从labels动态生成）==============
+
+_INTENT_DEFINITIONS = {
+    "file": "文件操作，包括查看目录、浏览文件、打开磁盘(C盘/D盘/E盘)、打开文件夹、列出文件、读取/保存/删除/复制/移动文件等",
+    "shell": "命令执行，包括运行npm/pip/git/docker等命令行工具、执行脚本、编译代码、运行程序等",
+    "time": "时间日期，包括查询当前时间、格式化日期、计算时间差、设置定时器、时区转换、检查周末/假日等",
+    "network": "网络操作，包括ping/curl/wget/ssh等网络工具、端口扫描、HTTP请求、API调用、下载文件、FTP操作等",
+    "desktop": "桌面操作，包括截图、截屏、窗口管理、打开应用程序、模拟按键、鼠标点击等",
+    "env": "环境变量，包括查看/设置PATH、HOME、TEMP等系统环境变量、系统变量配置等",
+    "system": "系统信息，包括查询CPU/内存/磁盘/进程/服务等系统资源、系统配置查看等",
+    "database": "数据库操作，包括SQL查询、select/insert/update/delete等数据库命令、表结构操作等",
+    "chat": "普通对话，不涉及上述任何特定操作的日常聊天、问答、解释等",
+}
+
+
+def _build_intent_prompt(text: str, labels: List[str]) -> str:
+    """根据labels动态构建意图分类prompt"""
+    definitions_lines = []
+    for label in labels:
+        if label in _INTENT_DEFINITIONS:
+            definitions_lines.append(f"- {label}: {_INTENT_DEFINITIONS[label]}")
+
+    definitions_str = "\n".join(definitions_lines)
+
+    return f"""你是一个文本处理助手。需要完成两个任务：
+1. 文本矫正：修正错别字、标点、格式
+2. 意图分类：分析用户意图，返回所有候选意图的置信度分布
+
+意图定义：
+{definitions_str}
+
+用户输入：{text}
+
+请输出JSON，不要其他内容：
+{{"corrected": "矫正后的文本", "intent": "最佳意图标签", "confidence": 0.0-1.0, "all_intents": {{"意图标签1": 置信度, "意图标签2": 置信度, ...}}}}"""
+
 
 # ============== 意图分类函数 ==============
 
@@ -67,41 +105,27 @@ async def classify_intent(
 ) -> Dict[str, Any]:
     """
     使用 LLM 同时进行文本矫正和意图分类（独立函数，不依赖 BaseAIService）
-    
+
     Args:
         text: 用户输入文本
         labels: 候选意图标签列表，如 ["file", "network", "chat"]
         api_key: API 密钥（可选，默认从配置文件读取）
         api_base: API 地址（可选，默认从配置文件读取）
         model: 模型名称（可选，默认用配置：deepseek-v3.1）
-    
+
     Returns:
         {
             "corrected": "矫正后的文本",
             "intent": "最佳意图",
             "confidence": 0.95,
-            "all_intents": {"file": 0.95, "chat": 0.05}
+            "all_intents": {"file": 0.85, "chat": 0.10, "network": 0.05, ...}
         }
     """
     _api_key = api_key or INTENT_CLASSIFIER_CONFIG["api_key"]
     _api_base = api_base or INTENT_CLASSIFIER_CONFIG["api_base"]
     _model = model or INTENT_CLASSIFIER_CONFIG["model"]
-    
-    # 同时进行文本矫正和意图分类
-    prompt = f"""你是一个文本处理助手。需要完成两个任务：
-1. 文本矫正：修正错别字、标点、格式
-2. 意图分类：严格按照下面的定义选择意图
 
-意图定义：
-- file: 文件操作，包括查看目录、浏览文件、打开磁盘(C盘/D盘/E盘)、打开文件夹、列出文件、读取/保存/删除/复制/移动文件等
-- network: 网络操作，包括下载、HTTP请求、API调用、爬虫、抓取网页等
-- desktop: 桌面操作，包括截图、截屏、窗口管理、打开应用程序(非文件管理器)、桌面快捷操作等
-- chat: 聊天对话，不涉及上述操作的普通对话
-
-用户输入：{text}
-
-直接返回JSON，不要其他内容：
-{{"corrected": "矫正后的文本", "intent": "选中的意图标签", "confidence": 0.0-1.0}}"""
+    prompt = _build_intent_prompt(text, labels)
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -117,7 +141,7 @@ async def classify_intent(
                     "temperature": 0.1
                 }
             )
-            
+
             if response.status_code != 200:
                 return {
                     "corrected": text,
@@ -126,23 +150,26 @@ async def classify_intent(
                     "all_intents": {},
                     "error": f"API error: {response.status_code}"
                 }
-            
+
             data = response.json()
             content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            
+
             try:
                 if "{" in content and "}" in content:
                     json_str = content[content.find("{"):content.rfind("}")+1]
                     result = json.loads(json_str)
+                    all_intents = result.get("all_intents", {})
+                    if not isinstance(all_intents, dict) or len(all_intents) == 0:
+                        all_intents = {result.get("intent", "chat"): float(result.get("confidence", 0.5))}
                     return {
                         "corrected": result.get("corrected", text),
                         "intent": result.get("intent", "chat"),
                         "confidence": float(result.get("confidence", 0.5)),
-                        "all_intents": {result.get("intent", "chat"): float(result.get("confidence", 0.5))}
+                        "all_intents": all_intents,
                     }
             except (json.JSONDecodeError, ValueError):
                 pass
-            
+
             return {
                 "corrected": text,
                 "intent": "chat",
@@ -150,7 +177,7 @@ async def classify_intent(
                 "all_intents": {},
                 "error": "Failed to parse LLM response"
             }
-            
+
     except Exception as e:
         return {
             "corrected": text,
@@ -172,11 +199,11 @@ class IntentClassifier:
     async def classify(self, text: str, labels: List[str]) -> Dict[str, Any]:
         """
         异步意图分类（使用 LLM，同时进行文本矫正）
-        
+
         Args:
             text: 用户输入文本
             labels: 候选意图标签列表
-        
+
         Returns:
             {
                 corrected: 矫正后的文本,
@@ -187,12 +214,12 @@ class IntentClassifier:
         """
         if not text or not labels:
             return {"corrected": text, "intent": "unknown", "confidence": 0.0, "all_intents": {}}
-        
+
         return await classify_intent(text, labels)
 
     async def classify_with_llm_async(
-        self, 
-        text: str, 
+        self,
+        text: str,
         labels: List[str]
     ) -> Dict[str, Any]:
         """使用 LLM 进行意图分类（异步方法，同时文本矫正）"""

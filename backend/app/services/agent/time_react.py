@@ -10,6 +10,7 @@ TimeReactAgent - 时间工具 ReAct Agent
 【Phase 3验证 2026-04-26 小沈】
 
 Author: 小沈 - 2026-04-26
+【TimePrompts 2026-04-30 小沈】使用 TimePrompts 类替代硬编码 system_prompt
 """
 
 # 必须先导入触发工具注册 - 导入整个模块
@@ -22,6 +23,7 @@ from app.services.tools.mixin import ToolLoaderMixin
 from app.services.tools.registry import ToolCategory
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.llm_strategies import TextStrategy
+from app.services.prompts.time import TimePrompts
 from app.utils.logger import logger
 
 
@@ -60,7 +62,7 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
             **kwargs
         )
         
-        self.system_prompt = "你是一个时间工具助手，可以回答时间相关的问题。"
+        self.prompts = TimePrompts()
         
         if self.tool_category == ToolCategory.TIME:
             self._tools_dict = ToolLoaderMixin._load_tools(self, ToolCategory.TIME)
@@ -79,31 +81,6 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
     
     # ========== 跨分类工具支持方法（2026-04-30 小沈）==========
     
-    def _build_system_prompt(self) -> str:
-        """
-        构建系统提示（含跨工具提示 + 候选意图列表）
-        
-        设计文档 v1.5 7.1节
-        """
-        base_prompt = self._get_system_prompt()
-        
-        # 【2026-04-30 小沈】注入候选意图信息
-        candidates_hint = ""
-        if self._candidates:
-            candidates_list = ", ".join(self._candidates)
-            candidates_hint = (
-                f"\n\n【候选意图】已识别出以下可能的意图类别: {candidates_list}。"
-                "你可以根据实际任务需要，访问任意候选分类的工具。"
-            )
-        
-        cross_tool_hint = (
-            "\n\n【注意】除了时间日期工具，你还可以使用其他分类的工具。"
-            "例如：需要操作文件时可以用 read_file/write_file，"
-            "需要执行命令时可以用 execute_command 等。"
-            "根据任务需要自由选择合适的工具。"
-        )
-        return base_prompt + candidates_hint + cross_tool_hint
-    
     def _get_tools_summary(self) -> str:
         """
         获取跨分类工具概要（带缓存）
@@ -121,8 +98,22 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
         return self._tools_summary
     
     def _get_system_prompt(self) -> str:
-        """获取系统 Prompt"""
-        return self.system_prompt
+        """获取系统 Prompt（含跨工具提示 + 候选意图）"""
+        base = self.prompts.get_system_prompt()
+        candidates_hint = ""
+        if self._candidates:
+            candidates_list = ", ".join(self._candidates)
+            candidates_hint = (
+                f"\n\n【候选意图】已识别出以下可能的意图类别: {candidates_list}。"
+                "你可以根据实际任务需要，访问任意候选分类的工具。"
+            )
+        cross_tool_hint = (
+            "\n\n【注意】除了时间日期工具，你还可以使用其他分类的工具。"
+            "例如：需要操作文件时可以用 read_file/write_file，"
+            "需要执行命令时可以用 execute_command 等。"
+            "根据任务需要自由选择合适的工具。"
+        )
+        return base + candidates_hint + cross_tool_hint
     
     def _get_task_prompt(self, task: str, context: Optional[Dict] = None) -> str:
         """获取任务 Prompt"""

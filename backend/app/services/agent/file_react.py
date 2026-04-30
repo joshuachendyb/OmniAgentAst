@@ -124,31 +124,6 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
     
     # ========== 跨分类工具支持方法（2026-04-30 小沈）==========
     
-    def _build_system_prompt(self) -> str:
-        """
-        构建系统提示（含跨工具提示 + 候选意图列表）
-        
-        设计文档 v1.5 6.1节
-        """
-        base_prompt = self.prompts.get_system_prompt()
-        
-        # 【2026-04-30 小沈】注入候选意图信息
-        candidates_hint = ""
-        if self._candidates:
-            candidates_list = ", ".join(self._candidates)
-            candidates_hint = (
-                f"\n\n【候选意图】已识别出以下可能的意图类别: {candidates_list}。"
-                "你可以根据实际任务需要，访问任意候选分类的工具。"
-            )
-        
-        cross_tool_hint = (
-            "\n\n【注意】除了文件操作工具，你还可以使用其他分类的工具。"
-            "例如：创建脚本后可以用 execute_command 来运行它，"
-            "需要时间信息时可以用 get_current_time 等。"
-            "根据任务需要自由选择合适的工具，不受初始分类限制。"
-        )
-        return base_prompt + candidates_hint + cross_tool_hint
-    
     def _get_tools_summary(self) -> str:
         """
         获取跨分类工具概要（带缓存）
@@ -349,11 +324,24 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
     # ===== 实现父类抽象方法 =====
     
     def _get_system_prompt(self) -> str:
-        """获取系统 Prompt"""
-        # 如果有自定义的 system_prompt，先使用它
+        """获取系统 Prompt（含跨工具提示 + 候选意图）"""
         if hasattr(self, '_custom_system_prompt') and self._custom_system_prompt:
             return self._custom_system_prompt
-        return self.prompts.get_system_prompt()
+        base = self.prompts.get_system_prompt()
+        candidates_hint = ""
+        if self._candidates:
+            candidates_list = ", ".join(self._candidates)
+            candidates_hint = (
+                f"\n\n【候选意图】已识别出以下可能的意图类别: {candidates_list}。"
+                "你可以根据实际任务需要，访问任意候选分类的工具。"
+            )
+        cross_tool_hint = (
+            "\n\n【注意】除了文件操作工具，你还可以使用其他分类的工具。"
+            "例如：创建脚本后可以用 execute_command 来运行它，"
+            "需要时间信息时可以用 get_current_time 等。"
+            "根据任务需要自由选择合适的工具，不受初始分类限制。"
+        )
+        return base + candidates_hint + cross_tool_hint
     
     def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         """获取任务 Prompt"""

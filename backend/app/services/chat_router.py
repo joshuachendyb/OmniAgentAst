@@ -48,106 +48,13 @@ from app.services.tools.registry import ToolCategory
 
 
 # 意图标签列表（用于 PreprocessingPipeline）
-INTENT_LABELS = ["chat", "file", "network", "desktop"]
+INTENT_LABELS = [c.value for c in ToolCategory] + ["chat"]
 
 
 # ================================================================================
-# 基于CRSS规则的意图检测函数（小沈 2026-04-20）
-# ================================================================================
-# 
-# 背景：之前的IntentClassifier用LLM进行意图检测，存在不稳定问题
-# 同样的输入可能返回不同的意图（file vs chat）
-# 
-# 解决方案：用CRSS的规则直接检测意图，替代LLM
-# - 利用已有的DANGEROUS_COMMANDS和OPERATION_WEIGHTS
-# - 确定性匹配：同样输入永远得到同样结果
-# - 无外部API依赖
-#
-# 意图判断逻辑：
-# 1. 危险命令 → file (需要处理)
-# 2. 文件操作关键词 → file
-# 3. 网络操作关键词 → file
-# 4. 桌面操作关键词 → file
-# 5. 其他 → chat (默认)
-# ================================================================================
-
-def detect_intent_from_crss(command: str) -> tuple[str, float]:
-    """
-    用CRSS规则检测意图（确定性，无LLM依赖）
-    
-    用已有的CRSS规则来检测用户意图，替代之前的LLM分类器。
-    优点：确定性、无外部依赖、更稳定。
-    
-    Args:
-        command: 用户输入的命令
-        
-    Returns:
-        tuple[str, float]: (intent_type, confidence)
-            - intent_type: "chat" | "file"
-              - "chat": 简单对话，不需要文件操作处理
-              - "file": 需要文件操作处理（包括危险命令）
-            - confidence: 1.0 (确定性，返回1.0)
-    
-    规则优先级：
-    1. 首先检查DANGEROUS_COMMANDS（危险命令）→ file
-    2. 然后检查OPERATION_WEIGHTS关键词 → file
-    3. 最后检查NETWORK_KEYWORDS和DESKTOP_KEYWORDS → file
-    4. 默认 → chat
-    
-    Author: 小沈 - 2026-04-20
-    """
-    if not command or not command.strip():
-        return "chat", 1.0
-    
-    command_lower = command.lower().strip()
-    
-    # ===== 1. 检查危险命令 =====
-    # 如果是危险命令，需要处理，返回file
-    from app.services.command_security import DANGEROUS_COMMANDS
-    for dangerous in DANGEROUS_COMMANDS:
-        if dangerous.lower() in command_lower:
-            logger.info(f"[CRSS Intent] 危险命令检测 → file: '{dangerous}'")
-            return "file", 1.0
-    
-    # ===== 2. 检查文件操作关键词 =====
-    # 使用CRSS的操作类型关键词
-    from app.services.command_security import OPERATION_WEIGHTS
-    for op_type, config in OPERATION_WEIGHTS.items():
-        for keyword in config.get('keywords', []):
-            if keyword.lower() in command_lower:
-                logger.info(f"[CRSS Intent] 文件操作关键词 → file: '{keyword}' ({op_type})")
-                return "file", 1.0
-    
-    # ===== 3. 检查网络操作关键词 =====
-    NETWORK_KEYWORDS = [
-        'ping', 'curl', 'wget', 'ssh', 'telnet',
-        'nc', 'netcat', 'nmap', '端口', '扫描',
-        'http', 'https', 'ftp', 'socket'
-    ]
-    for keyword in NETWORK_KEYWORDS:
-        if keyword in command_lower:
-            logger.info(f"[CRSS Intent] 网络操作关键词 → file: '{keyword}'")
-            return "file", 1.0
-    
-    # ===== 4. 检查桌面操作关键词 =====
-    DESKTOP_KEYWORDS = [
-        'screenshot', '截图', 'capture', '录屏',
-        'click', '点击', 'type', '输入',
-        'key', 'press', '按键', '键盘'
-    ]
-    for keyword in DESKTOP_KEYWORDS:
-        if keyword in command_lower:
-            logger.info(f"[CRSS Intent] 桌面操作关键词 → file: '{keyword}'")
-            return "file", 1.0
-    
-    # ===== 5. 默认：chat =====
-    logger.info(f"[CRSS Intent] 无匹配关键词 → chat")
-    return "chat", 1.0
-
-
-# ================================================================================
-# detect_intent_v2 - 新版CRSS意图检测（设计文档v1.5 3.1.2节）
-# 返回 ToolCategory 枚举，支持多意图，使用词边界正则
+# detect_intent_v2 - CRSS加权评分意图检测（设计文档v1.5 3.1.2节）
+# 替代旧的 detect_intent_from_crss，返回 ToolCategory 枚举，支持多意图
+# 使用词边界正则 + 加权评分，覆盖：SHELL/TIME/NETWORK/DESKTOP/ENV/SYSTEM/DATABASE/FILE
 # 小沈 - 2026-04-30
 # ================================================================================
 
@@ -196,7 +103,8 @@ INTENT_KEYWORDS: Dict[str, Dict] = {
     "NETWORK": {
         "keywords": [
             r'\bping\b', r'\bcurl\b', r'\bwget\b', r'\bssh\b', r'\btelnet\b',
-            r'\bnc\b', r'\bnmap\b', r'\bhttp\b', r'\bhttps\b', r'\bftp\b',
+            r'\bnc\b', r'\bnetcat\b', r'\bnmap\b', r'\bhttp\b', r'\bhttps\b',
+            r'\bftp\b', r'\bsocket\b',
         ],
         "chinese_keywords": ['下载', '端口', '扫描', '网络', '请求', 'API']
     },
@@ -565,8 +473,8 @@ class ChatRouter:
             SSE 格式字符串
         """
         # ===== 步骤1: 预处理 =====
-        # 【修改 2026-04-20 小沈】意图检测改用CRSS规则，不再调用LLM
-        # 保留预处理功能（文本矫正等），但意图检测用新的detect_intent_from_crss函数
+        # 【修改 2026-04-30 小沈】意图检测使用两阶段 route_with_fallback
+        # 预处理只做纯文本处理，意图检测在步骤2
         intent_result = await self.preprocessing.process(
             user_input=user_input,
             intent_labels=INTENT_LABELS,

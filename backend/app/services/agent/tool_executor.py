@@ -188,6 +188,12 @@ class ToolExecutor:
             }
         
         if action not in self.available_tools:
+            # 【2026-04-30 小沈】跨分类fallback：本地没有时从全局registry查找
+            from app.services.tools.registry import tool_registry
+            impl = tool_registry.get_implementation(action)
+            if impl is not None:
+                self.available_tools[action] = impl
+                return await self._execute_with_retry(action, action_input)
             return {
                 "status": "error",
                 "summary": f"Unknown tool: {action}. Available tools: {list(self.available_tools.keys())}",
