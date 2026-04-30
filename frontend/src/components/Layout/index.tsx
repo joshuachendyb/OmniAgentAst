@@ -103,6 +103,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     validationResult,
     initializeApp,
     refreshAll,
+    refreshServiceStatus,
     refreshAfterModelChange,
     refreshModelList: appRefreshModelList,  // 获取AppContext的refreshModelList
     isInitialized,
@@ -315,15 +316,20 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
     await appRefreshModelList();
   };
 
-  // 手动检查服务 - 使用AppContext刷新数据
+  // 手动检查服务
   const handleCheckService = async () => {
     setCheckingStatus(true);
-    setIsManualRefreshing(true);  // 设置手动刷新标志
     try {
-      await refreshAll();
+      const status = await refreshServiceStatus();
+      if (status && status.success) {
+        showMessage(ErrorType.INFO, `${status.provider} (${status.model}) 服务连接正常`);
+      } else {
+        showMessage(ErrorType.WARNING, `${status?.provider || "未知"} (${status?.model || "未知"}) 验证失败: ${status?.message || "请检查配置"}`);
+      }
+    } catch {
+      showMessage(ErrorType.WARNING, "服务验证失败，请检查网络连接");
     } finally {
       setCheckingStatus(false);
-      setIsManualRefreshing(false);  // 重置手动刷新标志
     }
   };
 

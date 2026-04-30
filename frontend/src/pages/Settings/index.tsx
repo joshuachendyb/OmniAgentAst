@@ -568,13 +568,6 @@ const ProviderSettings: React.FC<{ shouldLoad?: boolean; forceRefresh?: boolean 
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
 
-      // 验证服务可用性（失败不影响弹窗关闭）
-      try {
-        await chatApi.validateService();
-      } catch (e) {
-        console.warn("验证服务失败:", e);
-      }
-
       // 先关闭弹窗，再显示成功提示（避免状态冲突）
       setEditProviderModalVisible(false);
       form.resetFields();
@@ -783,13 +776,6 @@ const handleBatchDeleteModels = async (
       }
       console.log("添加模型后刷新列表:", modelData.models);
 
-      // 验证服务可用性
-      try {
-        await chatApi.validateService();
-      } catch (e) {
-        console.warn("验证服务失败:", e);
-      }
-
       showSuccess("模型已添加");
     } catch (error: unknown) {
       console.error("添加模型失败:", error);
@@ -816,13 +802,6 @@ const handleBatchDeleteModels = async (
       setCurrentProvider(data.current_provider);
       const modelData = await configApi.getModelList();
       setModelList(modelData.models);
-
-      // 验证服务可用性
-      try {
-        await chatApi.validateService();
-      } catch (e) {
-        console.warn("验证服务失败:", e);
-      }
 
       // 关闭弹窗并清理表单
       setAddProviderModalVisible(false);
@@ -864,14 +843,6 @@ const handleBatchDeleteModels = async (
 
       // 刷新配置
       loadConfig();
-
-      // 验证服务可用性（触发后端备份删除/恢复机制）
-      try {
-        await chatApi.validateService();
-      } catch (e) {
-        // 验证失败不影响切换成功提示
-        console.warn("服务验证失败:", e);
-      }
 
       showSuccess(`已切换到 ${option.display_name}`);
     } catch (error) {
