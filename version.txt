@@ -1,6 +1,6 @@
 v0.12.2
 
-  更新时间: 2026-04-30 14:22:20
+  更新时间: 2026-04-30 14:25:00
 
   更新内容：
 
@@ -8,13 +8,31 @@ v0.12.2
 
   | 功能 | 说明 | 状态 |
   |------|------|------|
-  | candidates参数 | route_with_fallback返回candidates列表，传递到Agent并注入prompt | ✅ |
+  | candidates参数传递 | route_with_fallback返回candidates列表，传递到Agent并注入prompt | ✅ |
 
-  ## 2 修改文件清单 - 小沈-2026-04-30
+  ## 2 前端优化 - 小沈-2026-04-30
+
+  | 修复项 | 说明 | 状态 |
+  |--------|------|------|
+  | loadConfig useCallback | 修复loadConfig缺少useCallback导致无限循环轮询API | ✅ |
+  | refreshAll优化 | 移除refreshServiceStatus避免页面切换时自动验证 | ✅ |
+  | validateService优化 | 超时30s+防重复点击+httpx连接池限制 | ✅ |
+  | settings优化 | 移除自动validateService + 顶部检查服务按钮加结果反馈 | ✅ |
+  | AIServiceFactory优化 | get_service缓存 + max_steps统一常量 | ✅ |
+
+  ## 3 file_operations统一命名 - 小沈-2026-04-30
+
+  | 修复项 | 说明 | 状态 |
+  |--------|------|------|
+  | session_id→task_id | file_operations表session_id统一改为task_id | ✅ |
+
+  ## 4 修改文件清单 - 小沈-2026-04-30
 
   | 类型 | 文件 |
   |------|------|
-  | 修改 | agent_factory.py, file_react.py, time_react.py, chat_router.py, react_sse_wrapper.py |
+  | 新增 | agent_factory.py, file_react.py, time_react.py |
+  | 修改 | chat_router.py, react_sse_wrapper.py |
+  | 前端 | useConfig.ts, NewSettings.tsx |
 
   ---
 
