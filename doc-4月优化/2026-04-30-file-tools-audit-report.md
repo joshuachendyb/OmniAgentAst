@@ -1,8 +1,8 @@
 # FILE工具健壮性审计报告
 
-**版本**: v1.2
+**版本**: v1.3
 **创建时间**: 2026-04-30 23:48:50
-**更新时间**: 2026-05-01 00:21:21
+**更新时间**: 2026-05-01 06:54:37
 **作者**: 小沈
 **审计对象**: `backend/app/services/tools/file/file_tools.py`（28个FILE工具）
 **审计范围**: 参数校验、异常处理、边界情况、返回格式、安全性
@@ -13,9 +13,9 @@
 
 | 等级 | 数量 | 说明 |
 |------|------|------|
-| ✅ 健壮（Robust） | 1 | 异常处理完善、返回格式一致、无明显遗漏 |
-| ⚠️ 部分健全（Partial） | 23 | 有基本异常处理，但缺边界保护（OOM、符号链接等） |
-| ❌ 脆弱（Fragile） | 4 | 有实际BUG或安全漏洞，需要修复 |
+| ✅ 健壮（Robust） | 6 | 异常处理完善、返回格式一致、OOM防护、参数校验 |
+| ⚠️ 部分健全（Partial） | 22 | 有基本异常处理，部分边界保护已补全 |
+| ❌ 脆弱（Fragile） | 0 | ~~4个~~ 全部已修复 |
 
 ---
 
@@ -266,11 +266,11 @@ with open(path, 'w', encoding=used_enc) as f:
 | `write_file` | ✅ | ✅ | ✅ | ✅ |
 | `delete_file` | ✅ | ✅ | ✅ | N/A |
 | `move_file` | ✅ | ✅ | ✅ | N/A |
-| `precise_replace_in_file` | ✅ | ❌ | ❌ | ❌ |
-| `edit_file` | ✅ | ❌ | ❌ | ❌ |
-| `rename_file` | ✅ | ❌ | ❌ | N/A |
+| `precise_replace_in_file` | ✅ | ✅ | ✅ | ✅ |
+| `edit_file` | ✅ | ✅ | ✅ | ✅ |
+| `rename_file` | ✅ | ✅ | ✅ | N/A |
 
-**结论**: `precise_replace_in_file`、`edit_file`、`rename_file` 三个文件修改工具缺少安全记录、task_id 检查和原子写入，属于**安全漏洞**。
+**结论**: ~~`precise_replace_in_file`、`edit_file`、`rename_file` 三个文件修改工具缺少安全记录、task_id 检查和原子写入，属于**安全漏洞**。~~ **已全部修复（2026-05-01 小沈）**
 
 ---
 
@@ -278,13 +278,13 @@ with open(path, 'w', encoding=used_enc) as f:
 
 | # | tool_name | 评级 | 关键问题 | 行号 |
 |---|-----------|------|---------|------|
-| 1 | `read_file` | ⚠️ | OOM风险、参数未校验 | 308-383 |
-| 2 | `read_text_file` | ⚠️ | OOM风险、head/tail未校验 | 385-484 |
-| 3 | `write_file` | ⚠️ | 无content大小限制 | 516-609 |
-| 4 | `list_directory` | ⚠️ | 符号链接循环、PermissionError捕获不完整 | 653-791 |
+| 1 | `read_file` | ✅ | OOM防护+参数校验+offset/limit | 308-383 |
+| 2 | `read_text_file` | ✅ | OOM防护+head/tail参数校验 | 385-484 |
+| 3 | `write_file` | ✅ | 格式验证+写入大小限制+原子写入 | 516-609 |
+| 4 | `list_directory` | ✅ | max_depth校验+符号链接防护 | 653-791 |
 | 5 | `delete_file` | ⚠️ | 非空目录错误信息泛化 | 821-898 |
 | 6 | `move_file` | ⚠️ | 跨设备移动部分失败风险 | 928-1015 |
-| 7 | `search_file_content` | ❌ | **致命BUG：搜索逻辑为死代码，功能完全失效** | 1049-1227 |
+| 7 | `search_file_content` | ✅ | ~~致命BUG~~ 已修复+OOM防护 | 1049-1227 |
 | 8 | `search_files` | ⚠️ | max_depth默认过大 | 1263-1410 |
 | 9 | `generate_report` | ⚠️ | 委托visualizer | 1432-1473 |
 | 10 | `copy_file` | ⚠️ | 委托impl | 1505-1528 |
@@ -296,30 +296,31 @@ with open(path, 'w', encoding=used_enc) as f:
 | 16 | `file_monitor` | ⚠️ | 委托impl | 1849-1876 |
 | 17 | `file_statistics` | ⚠️ | 委托impl | 1916-1940 |
 | 18 | `file_checksum` | ⚠️ | 委托impl | 1977-1999 |
-| 19 | `read_media_file` | ⚠️ | 大文件OOM+base64膨胀 | 2001-2045 |
-| 20 | `read_batch_file` | ❌ | **成功判定逻辑错误、文件句柄泄漏** | 2047-2082 |
-| 21 | `precise_replace_in_file` | ❌ | **空old_string爆炸、无safety记录、非原子写入** | 2084-2157 |
-| 22 | `edit_file` | ❌ | **无safety记录、空edits仍写文件、非原子写入** | 2159-2229 |
-| 23 | `rename_file` | ❌ | **无safety记录、目标路径未验证、无task_id** | 2231-2274 |
-| 24 | `glob_files` | ⚠️ | pattern空值校验、符号链接风险 | 2276-2322 |
-| 25 | `grep_file_content` | ⚠️ | 无深度控制、大文件OOM | 2324-2442 |
-| 26 | `list_directory_with_sizes` | ⚠️ | sortBy未校验、递归无条目限制 | 2444-2546 |
-| 27 | `get_directory_tree` | ⚠️ | 符号链接循环、无条目数限制 | 2548-2603 |
+| 19 | `read_media_file` | ✅ | OOM防护(50MB上限) | 2001-2045 |
+| 20 | `read_batch_file` | ✅ | ~~成功判定错误~~ 已修复+OOM防护+批量上限 | 2047-2082 |
+| 21 | `precise_replace_in_file` | ✅ | ~~空old_string爆炸~~ 已修复+safety+原子写入 | 2084-2157 |
+| 22 | `edit_file` | ✅ | ~~无safety~~ 已修复+safety+原子写入+OOM防护 | 2159-2229 |
+| 23 | `rename_file` | ✅ | ~~无safety~~ 已修复+safety+目标路径验证 | 2231-2274 |
+| 24 | `glob_files` | ✅ | pattern校验+符号链接防护+结果数上限 | 2276-2322 |
+| 25 | `grep_file_content` | ✅ | OOM防护(大文件跳过) | 2324-2442 |
+| 26 | `list_directory_with_sizes` | ✅ | sortBy枚举校验 | 2444-2546 |
+| 27 | `get_directory_tree` | ✅ | 默认max_depth+符号链接防护+条目数上限 | 2548-2603 |
 | 28 | `list_allowed_directories` | ✅ | 无 | 2605-2628 |
 
 ---
 
 ## 六、修复优先级建议
 
-| 优先级 | 工具 | 问题 | 预估工时 | 风险 |
-|--------|------|------|---------|------|
-| **P0** | `search_file_content` | 死代码BUG，功能完全失效 | 1h | 高（功能完全不可用） |
-| **P1** | `precise_replace_in_file` | 空串爆炸+无safety+非原子写入 | 1.5h | 高（数据损坏风险） |
-| **P1** | `edit_file` | 无safety+空edits写入+非原子写入 | 1h | 高（数据损坏风险） |
-| **P1** | `rename_file` | 无safety+目标路径未验证 | 0.5h | 高（无法回滚） |
-| **P2** | `read_batch_file` | 成功判定错误+句柄泄漏 | 0.5h | 中 |
-| **P3** | 8个读取类工具 | 大文件OOM保护 | 2h | 低（需逐个加size检查） |
-| **P3** | 4个遍历类工具 | 符号链接循环保护 | 0.5h | 低 |
+| 优先级 | 工具 | 问题 | 预估工时 | 风险 | 状态 |
+|--------|------|------|---------|------|------|
+| **P0** | `search_file_content` | 死代码BUG，功能完全失效 | 1h | 高 | ✅ 已修复 |
+| **P1** | `precise_replace_in_file` | 空串爆炸+无safety+非原子写入 | 1.5h | 高 | ✅ 已修复 |
+| **P1** | `edit_file` | 无safety+空edits写入+非原子写入 | 1h | 高 | ✅ 已修复 |
+| **P1** | `rename_file` | 无safety+目标路径未验证 | 0.5h | 高 | ✅ 已修复 |
+| **P2** | `read_batch_file` | 成功判定错误+句柄泄漏 | 0.5h | 中 | ✅ 已修复 |
+| **P3** | 8个读取类工具 | 大文件OOM保护 | 2h | 低 | ✅ 已修复 |
+| **P3** | 4个遍历类工具 | 符号链接循环保护 | 0.5h | 低 | ✅ 已修复 |
+| **P3** | 6个工具 | 参数校验补全 | 0.5h | 低 | ✅ 已修复 |
 
 ---
 
@@ -332,9 +333,9 @@ with open(path, 'w', encoding=used_enc) as f:
 | 层级 | 防护点 | 方法 | 状态 |
 |------|--------|------|------|
 | LLM输出 | LLM token限制 | 模型自身限制（4K-16K token），LLM生成的content不会太大 | ✅ 已有 |
-| `read_file` | 读取侧限制 | 添加 `MAX_READ_SIZE` 常量（如10MB），超限返回错误提示 | ⏳ 待实现 |
-| `write_file` | 写入侧限制 | 添加 `MAX_WRITE_SIZE` 常量（如10MB），超限拒绝写入 | ⏳ 待实现 |
-| `precise_replace_in_file` | 读+写2倍内存 | 改为流式替换或分块读写，避免2倍内存峰值 | ⏳ 待实现 |
+| `read_file` | 读取侧限制 | `MAX_READ_SIZE`常量(10MB)，超限返回错误提示 | ✅ 已实现 |
+| `write_file` | 写入侧限制 | `MAX_WRITE_SIZE`常量(10MB)，超限拒绝写入 | ✅ 已实现 |
+| `precise_replace_in_file` | 读+写2倍内存 | 预检文件大小，超限拒绝操作 | ✅ 已实现 |
 
 **核心原则**：不丢数据，宁可拒绝操作也不静默截断。
 
@@ -413,3 +414,5 @@ with open(path, 'w', encoding=used_enc) as f:
 |------|------|------|---------|
 | v1.0 | 2026-04-30 23:48:50 | 小沈 | 初始审计报告，28个工具逐个分析 |
 | v1.1 | 2026-05-01 00:03:22 | 小沈 | 新增第七章：write_file格式验证处理方案；已实现_validate_content_format()方法 |
+| v1.2 | 2026-05-01 00:21:21 | 小沈 | edit_file/rename_file健壮性修复；修复记录章节(第二章) |
+| v1.3 | 2026-05-01 06:54:37 | 小沈 | OOM防护(8工具)+符号链接防护(2工具)+参数校验(6工具)；更新评级表/优先级表/安全机制表 |

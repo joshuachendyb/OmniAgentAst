@@ -76,6 +76,12 @@ from app.utils.logger import logger
 PAGE_SIZE = 100
 MAX_PAGE_SIZE = 500
 
+# 【修复 2026-05-01 小沈】OOM防护常量
+MAX_READ_SIZE = 10 * 1024 * 1024        # 文本文件读取上限：10MB
+MAX_MEDIA_READ_SIZE = 50 * 1024 * 1024   # 媒体文件读取上限：50MB（base64后约67MB）
+MAX_BATCH_FILE_COUNT = 100               # 批量读取文件数上限
+MAX_SEARCH_FILE_SIZE = 10 * 1024 * 1024  # 搜索/单个文件读取上限：10MB
+
 
 # ============================================================
 # 第二部分：动态白名单
@@ -395,7 +401,13 @@ class FileTools:
         limit: int = READ_FILE_DEFAULT_LIMIT,
         encoding: str = "utf-8"
     ) -> Dict[str, Any]:
-        """读取文件内容"""
+        """读取文件内容 - 小沈 2026-05-01"""
+        # 【修复 2026-05-01 小沈】参数校验
+        if offset < 1:
+            return _to_unified_format({"success": False, "error": f"offset必须>=1，当前值: {offset}", "content": None}, "read_file")
+        if limit < 1:
+            return _to_unified_format({"success": False, "error": f"limit必须>=1，当前值: {limit}", "content": None}, "read_file")
+        
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(file_path)
         if not is_valid:
@@ -419,6 +431,15 @@ class FileTools:
                 return _to_unified_format({
                     "success": False,
                     "error": f"Not a file: {file_path}",
+                    "content": None
+                }, "read_file")
+            
+            # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
+            file_size = path.stat().st_size
+            if file_size > MAX_READ_SIZE:
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"文件过大({file_size}字节)，超过读取上限{MAX_READ_SIZE}字节({MAX_READ_SIZE//1024//1024}MB)。请使用offset/limit分段读取，或使用search_file_content搜索特定内容。",
                     "content": None
                 }, "read_file")
             
@@ -472,8 +493,14 @@ class FileTools:
         tail: Optional[int] = None,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """读取文本文件的完整内容，支持指定行数"""
+        """读取文本文件的完整内容，支持指定行数 - 小沈 2026-05-01"""
         try:
+            # 【修复 2026-05-01 小沈】参数校验
+            if head is not None and head < 1:
+                return _to_unified_format({"success": False, "error": f"head必须>=1，当前值: {head}", "content": None}, "read_text_file")
+            if tail is not None and tail < 1:
+                return _to_unified_format({"success": False, "error": f"tail必须>=1，当前值: {tail}", "content": None}, "read_text_file")
+            
             # 验证head和tail不能同时使用
             if head is not None and tail is not None:
                 return _to_unified_format({
@@ -509,6 +536,15 @@ class FileTools:
             # 尝试编码读取
             encodings_to_try = [encoding, "utf-8", "gbk", "gb2312", "utf-8-sig"] if encoding else ["utf-8", "gbk", "gb2312", "utf-8-sig"]
             file_size = path.stat().st_size
+            
+            # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
+            if file_size > MAX_READ_SIZE:
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"文件过大({file_size}字节)，超过读取上限{MAX_READ_SIZE}字节({MAX_READ_SIZE//1024//1024}MB)。请使用head/tail参数分段读取。",
+                    "content": None
+                }, "read_text_file")
+            
             content = None
             used_encoding = None
 
@@ -603,7 +639,16 @@ class FileTools:
         encoding: str = "utf-8",
         unescape: bool = True
     ) -> Dict[str, Any]:
-        """写入文件内容"""
+        """写入文件内容 - 小沈 2026-05-01"""
+        # 【修复 2026-05-01 小沈】写入大小限制
+        MAX_WRITE_SIZE = MAX_READ_SIZE
+        if len(content.encode(encoding)) > MAX_WRITE_SIZE:
+            return _to_unified_format({
+                "success": False,
+                "error": f"写入内容过大，超过上限{MAX_WRITE_SIZE//1024//1024}MB",
+                "content": None
+            }, "write_file")
+        
         # 若启用反转义，对内容做转义字符还原
         if unescape:
             content = content.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\")
@@ -750,7 +795,11 @@ class FileTools:
         max_depth: int = 10,
         page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """列出目录内容"""
+        """列出目录内容 - 小沈 2026-05-01"""
+        # 【修复 2026-05-01 小沈】参数校验
+        if max_depth < 1:
+            return _to_unified_format({"success": False, "error": f"max_depth必须>=1，当前值: {max_depth}", "entries": []}, "list_directory")
+        
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(dir_path)
         if not is_valid:
@@ -1227,6 +1276,14 @@ class FileTools:
                         # 【修复 2026-04-30 小沈】搜索逻辑从except continue之后移到try块内
                         # 原BUG：搜索逻辑在except (PermissionError,OSError): continue 之后，
                         # 是不可达死代码，导致search_file_content永远返回空结果
+                        
+                        # 【修复 2026-05-01 小沈】OOM防护：跳过大文件
+                        try:
+                            if file_path.stat().st_size > MAX_SEARCH_FILE_SIZE:
+                                continue
+                        except OSError:
+                            continue
+                        
                         try:
                             with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                                 content = f.read()
@@ -2116,6 +2173,13 @@ class FileTools:
                     "success": False, "error": f"路径不是文件: {file_path}", "data": None, "mime_type": None
                 }, "read_media_file")
 
+            # 【修复 2026-05-01 小沈】OOM防护：预检媒体文件大小（base64膨胀约33%）
+            file_size = path.stat().st_size
+            if file_size > MAX_MEDIA_READ_SIZE:
+                return _to_unified_format({
+                    "success": False, "error": f"媒体文件过大({file_size}字节)，超过读取上限{MAX_MEDIA_READ_SIZE//1024//1024}MB", "data": None, "mime_type": None
+                }, "read_media_file")
+
             suffix = path.suffix.lower()
             mime_map = {
                 ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
@@ -2144,10 +2208,16 @@ class FileTools:
         self,
         file_paths: List[str],
     ) -> Dict[str, Any]:
-        """同时读取多个文本文件"""
+        """同时读取多个文本文件 - 小沈 2026-05-01"""
         if not file_paths:
             return _to_unified_format({
                 "success": False, "error": "文件路径列表为空", "results": []
+            }, "read_batch_file")
+
+        # 【修复 2026-05-01 小沈】OOM防护：批量文件数上限
+        if len(file_paths) > MAX_BATCH_FILE_COUNT:
+            return _to_unified_format({
+                "success": False, "error": f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT}，请分批读取", "results": []
             }, "read_batch_file")
 
         async def _read_single(fp: str) -> Dict[str, Any]:
@@ -2157,6 +2227,14 @@ class FileTools:
             path = Path(fp)
             if not path.exists():
                 return {"file_path": fp, "success": False, "error": f"文件不存在: {fp}", "content": None}
+            
+            # 【修复 2026-05-01 小沈】OOM防护：单文件大小预检
+            try:
+                if path.stat().st_size > MAX_READ_SIZE:
+                    return {"file_path": fp, "success": False, "error": f"文件过大({path.stat().st_size}字节)，超过读取上限{MAX_READ_SIZE//1024//1024}MB", "content": None}
+            except OSError as e:
+                return {"file_path": fp, "success": False, "error": str(e), "content": None}
+            
             try:
                 for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
                     try:
@@ -2213,6 +2291,12 @@ class FileTools:
             if not path.exists():
                 return _to_unified_format({
                     "success": False, "error": f"文件不存在: {file_path}", "replaced_count": 0
+                }, "precise_replace_in_file")
+
+            # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
+            if path.stat().st_size > MAX_READ_SIZE:
+                return _to_unified_format({
+                    "success": False, "error": f"文件过大({path.stat().st_size}字节)，超过替换上限{MAX_READ_SIZE//1024//1024}MB", "replaced_count": 0
                 }, "precise_replace_in_file")
 
             # 【修复 2026-04-30 小沈】添加safety记录（与write_file对齐）
@@ -2321,6 +2405,12 @@ class FileTools:
             if not path.exists():
                 return _to_unified_format({
                     "success": False, "error": f"文件不存在: {file_path}", "applied_edits": 0, "preview": None
+                }, "edit_file")
+
+            # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
+            if path.stat().st_size > MAX_READ_SIZE:
+                return _to_unified_format({
+                    "success": False, "error": f"文件过大({path.stat().st_size}字节)，超过编辑上限{MAX_READ_SIZE//1024//1024}MB", "applied_edits": 0, "preview": None
                 }, "edit_file")
 
             # 【修复 2026-05-01 小沈】添加safety记录（与precise_replace_in_file对齐）
@@ -2489,8 +2579,12 @@ class FileTools:
         search_dir: Optional[str] = None,
         include_hidden: bool = False,
     ) -> Dict[str, Any]:
-        """Glob模式匹配文件，按修改时间排序"""
+        """Glob模式匹配文件，按修改时间排序 - 小沈 2026-05-01"""
         try:
+            # 【修复 2026-05-01 小沈】参数校验
+            if not pattern or not pattern.strip():
+                return _to_unified_format({"success": False, "error": "pattern不能为空", "files": []}, "glob_files")
+            
             import glob as glob_mod
 
             search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
@@ -2510,6 +2604,9 @@ class FileTools:
                 for p in search_path.glob(pattern):
                     if not include_hidden and p.name.startswith('.'):
                         continue
+                    # 【修复 2026-05-01 小沈】符号链接循环防护：跳过符号链接目录
+                    if p.is_dir() and p.is_symlink():
+                        continue
                     all_files.append({
                         "path": str(p.resolve()),
                         "name": p.name,
@@ -2517,6 +2614,9 @@ class FileTools:
                         "size": p.stat().st_size if p.is_file() else None,
                         "mtime": p.stat().st_mtime,
                     })
+                    # 【修复 2026-05-01 小沈】结果数上限防护
+                    if len(all_files) >= MAX_PAGE_SIZE:
+                        break
                 all_files.sort(key=lambda x: x["mtime"], reverse=True)
                 return all_files
 
@@ -2594,6 +2694,12 @@ class FileTools:
                         if head_limit is not None and match_count >= head_limit:
                             break
                         file_path = Path(root) / filename
+                        # 【修复 2026-05-01 小沈】OOM防护：跳过大文件
+                        try:
+                            if file_path.stat().st_size > MAX_SEARCH_FILE_SIZE:
+                                continue
+                        except OSError:
+                            continue
                         try:
                             with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
                                 lines = f.readlines()
@@ -2658,8 +2764,14 @@ class FileTools:
         include_hidden: bool = False,
         recursive: bool = False,
     ) -> Dict[str, Any]:
-        """列出目录内容，包含文件大小和排序"""
+        """列出目录内容，包含文件大小和排序 - 小沈 2026-05-01"""
         try:
+            # 【修复 2026-05-01 小沈】参数校验
+            if sortBy not in ("name", "size"):
+                return _to_unified_format({
+                    "success": False, "error": f"sortBy只支持'name'或'size'，当前值: '{sortBy}'", "entries": [], "statistics": None
+                }, "list_directory_with_sizes")
+            
             is_valid, error_msg = self._validate_path(dir_path)
             if not is_valid:
                 return _to_unified_format({
@@ -2761,7 +2873,7 @@ class FileTools:
         excludePatterns: Optional[List[str]] = None,
         max_depth: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """获取目录的递归JSON树结构"""
+        """获取目录的递归JSON树结构 - 小沈 2026-05-01"""
         try:
             is_valid, error_msg = self._validate_path(dir_path)
             if not is_valid:
@@ -2779,17 +2891,27 @@ class FileTools:
                     "success": False, "error": f"不是目录: {dir_path}", "tree": None
                 }, "get_directory_tree")
 
+            # 【修复 2026-05-01 小沈】默认max_depth防止无限递归
+            effective_max_depth = max_depth if max_depth is not None else 10
             excludes = excludePatterns or []
             import fnmatch
+            entry_count = [0]
 
             def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
-                if max_depth is not None and depth > max_depth:
+                if depth > effective_max_depth:
+                    return None
+                # 【修复 2026-05-01 小沈】条目数上限防护
+                if entry_count[0] >= MAX_PAGE_SIZE:
+                    return None
+                # 【修复 2026-05-01 小沈】符号链接循环防护：跳过符号链接目录
+                if current_path.is_dir() and current_path.is_symlink():
                     return None
                 name = current_path.name
                 for pattern in excludes:
                     if fnmatch.fnmatch(name, pattern):
                         return None
                 if current_path.is_file():
+                    entry_count[0] += 1
                     return {"name": name, "type": "file"}
                 try:
                     children = []
@@ -2797,6 +2919,7 @@ class FileTools:
                         child = _build_tree(item, depth + 1)
                         if child is not None:
                             children.append(child)
+                    entry_count[0] += 1
                     return {"name": name, "type": "directory", "children": children}
                 except (PermissionError, OSError):
                     return {"name": name, "type": "directory", "children": []}
