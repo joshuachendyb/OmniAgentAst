@@ -211,15 +211,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({
   /**
    * 刷新所有数据（并行方法）
    * @author 小新
+   * @update 2026-04-30 小沈修复：移除 refreshServiceStatus()，避免页面切换时自动触发LLM API验证
+   *          validateService 只由用户手动点击"检查服务"按钮触发
    */
   const refreshAll = useCallback(async () => {
     await Promise.all([
       refreshSessionCount(),
       refreshModelList(),
-      refreshServiceStatus(),
       refreshValidation(),
     ]);
-  }, [refreshSessionCount, refreshModelList, refreshServiceStatus, refreshValidation]);
+  }, [refreshSessionCount, refreshModelList, refreshValidation]);
 
   /**
    * 串行刷新方法（解决时序问题）
