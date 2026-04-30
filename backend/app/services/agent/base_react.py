@@ -166,10 +166,12 @@ class BaseAgent(ABC):
         """
         pass
     
-    def _on_before_loop(self, sys_prompt: str, task_prompt: str):
+    def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
         """
         循环开始前 Hook
         子类可覆盖：做 prompt 日志等
+        
+        【修复 2026-04-30 小沈】添加 context 参数，与子类 FileReactAgent 签名一致
         """
         pass
     
@@ -230,7 +232,7 @@ class BaseAgent(ABC):
         task_prompt = self._get_task_prompt(task, context)
         
         # Hook: 循环开始前
-        self._on_before_loop(sys_prompt, task_prompt)
+        self._on_before_loop(sys_prompt, task_prompt, context)
         
         # 添加到对话历史
         self.conversation_history.append({"role": "system", "content": sys_prompt})

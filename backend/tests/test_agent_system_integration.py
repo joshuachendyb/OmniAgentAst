@@ -11,6 +11,7 @@
 - Phase 5: 集成测试
 
 修复 - 2026-04-26 小沈
+【修复 2026-04-30 小沈】session_id→task_id, _load_tools→load_tools_by_category
 """
 import sys
 sys.path.insert(0, r'D:\OmniAgentAs-desk\backend')
@@ -29,8 +30,8 @@ class TestPhase0Infrastructure:
         # 验证Mixin类存在
         assert ToolLoaderMixin is not None
         
-        # 验证Mixin有_load_tools方法
-        assert hasattr(ToolLoaderMixin, '_load_tools')
+        # 【修复 2026-04-30 小沈】_load_tools 已改名为 load_tools_by_category（消除MRO遮蔽）
+        assert hasattr(ToolLoaderMixin, 'load_tools_by_category')
         
         print("[OK] Phase0: ToolLoaderMixin ready")
     
@@ -52,7 +53,7 @@ class TestPhase1BaseAgent:
     """Phase 1: BaseAgent测试"""
     
     def test_base_agent_signature(self):
-        """测试BaseAgent新签名包含llm_client, session_id"""
+        """测试BaseAgent新签名包含llm_client, task_id"""
         from app.services.agent.base_react import BaseAgent
         import inspect
         
@@ -62,7 +63,7 @@ class TestPhase1BaseAgent:
         
         # 验证参数
         assert 'llm_client' in params, "Missing llm_client parameter"
-        assert 'session_id' in params, "Missing session_id parameter"
+        assert 'task_id' in params, "Missing task_id parameter"
         assert 'tool_category' in params, "Missing tool_category parameter"
         assert 'max_steps' in params, "Missing max_steps parameter"
         
@@ -87,14 +88,14 @@ class TestPhase1BaseAgent:
         # 实例化
         agent = MockAgent(
             llm_client=None,
-            session_id="test-session",
+            task_id="test-session",
             tool_category=ToolCategory.TIME,
             max_steps=10
         )
         
         # 验证属性
         assert agent.llm_client is None
-        assert agent.session_id == "test-session"
+        assert agent.task_id == "test-session"
         assert agent.tool_category == ToolCategory.TIME
         assert agent.max_steps == 10
         
@@ -113,7 +114,7 @@ class TestPhase2FileReactAgent:
         params = list(sig.parameters.keys())
         
         assert 'llm_client' in params
-        assert 'session_id' in params
+        assert 'task_id' in params
         assert 'tool_category' in params
         assert 'max_steps' in params
         
@@ -126,12 +127,12 @@ class TestPhase2FileReactAgent:
         
         agent = FileReactAgent(
             llm_client=None,
-            session_id="test-file-session",
+            task_id="test-file-session",
             tool_category=ToolCategory.FILE,
             max_steps=10
         )
         
-        assert agent.session_id == "test-file-session"
+        assert agent.task_id == "test-file-session"
         assert agent.tool_category == ToolCategory.FILE
         assert agent.max_steps == 10
         
@@ -150,7 +151,7 @@ class TestPhase3TimeReactAgent:
         params = list(sig.parameters.keys())
         
         assert 'llm_client' in params
-        assert 'session_id' in params
+        assert 'task_id' in params
         assert 'tool_category' in params
         assert 'max_steps' in params
         
@@ -163,7 +164,7 @@ class TestPhase3TimeReactAgent:
         
         agent = TimeReactAgent(
             llm_client=None,
-            session_id="test-time-session",
+            task_id="test-time-session",
             tool_category=ToolCategory.TIME,
             max_steps=50
         )
@@ -194,12 +195,12 @@ class TestPhase4AgentFactory:
         agent = AgentFactory.create(
             intent_type='file',
             llm_client=None,
-            session_id='factory-test-file',
+            task_id='factory-test-file',
             tool_category=ToolCategory.FILE
         )
         
         assert agent is not None
-        assert agent.session_id == 'factory-test-file'
+        assert agent.task_id == 'factory-test-file'
         assert agent.tool_category == ToolCategory.FILE
         
         print(f"[OK] Phase4: Created {type(agent).__name__}")
@@ -212,12 +213,12 @@ class TestPhase4AgentFactory:
         agent = AgentFactory.create(
             intent_type='time',
             llm_client=None,
-            session_id='factory-test-time',
+            task_id='factory-test-time',
             tool_category=ToolCategory.TIME
         )
         
         assert agent is not None
-        assert agent.session_id == 'factory-test-time'
+        assert agent.task_id == 'factory-test-time'
         assert agent.tool_category == ToolCategory.TIME
         assert len(agent._tools_dict) == 9  # 9个时间工具
         
@@ -249,11 +250,11 @@ class TestPhase5Integration:
         agent = AgentFactory.create(
             intent_type='file',
             llm_client=None,
-            session_id='integration-test-file'
+            task_id='integration-test-file'
         )
         
         # 2. 验证属性
-        assert agent.session_id == 'integration-test-file'
+        assert agent.task_id == 'integration-test-file'
         assert agent.tool_category is not None
         
         # 3. 验证工具加载
@@ -269,11 +270,11 @@ class TestPhase5Integration:
         agent = AgentFactory.create(
             intent_type='time',
             llm_client=None,
-            session_id='integration-test-time'
+            task_id='integration-test-time'
         )
         
         # 2. 验证属性
-        assert agent.session_id == 'integration-test-time'
+        assert agent.task_id == 'integration-test-time'
         assert agent.tool_category is not None
         
         # 3. 验证工具加载（9个）
@@ -296,14 +297,14 @@ class TestPhase5Integration:
         file_agent = AgentFactory.create(
             intent_type='file',
             llm_client=None,
-            session_id='compat-file'
+            task_id='compat-file'
         )
         
         # 创建time agent
         time_agent = AgentFactory.create(
             intent_type='time',
             llm_client=None,
-            session_id='compat-time'
+            task_id='compat-time'
         )
         
         # 验证两者类型不同

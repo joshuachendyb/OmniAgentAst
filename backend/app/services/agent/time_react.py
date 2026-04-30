@@ -62,8 +62,9 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
         
         self.prompts = TimePrompts()
         
-        if self.tool_category == ToolCategory.TIME:
-            self._tools_dict = ToolLoaderMixin._load_tools(self, ToolCategory.TIME)
+        # 【修复 2026-04-30 小沈】使用 load_tools_by_category（原 _load_tools 改名），条件统一为 if self.tool_category
+        if self.tool_category:
+            self._tools_dict = self.load_tools_by_category(self.tool_category)
         
         self.executor = ToolExecutor(self._tools_dict)
         

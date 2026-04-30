@@ -1,8 +1,8 @@
 # Agent工厂模式架构改进设计方案
 
-**版本**: v1.3
+**版本**: v1.4
 **创建时间**: 2026-04-26 12:25:00
-**更新时间**: 2026-04-26 20:34:02
+**更新时间**: 2026-04-30 21:06:52
 **作者**: 小健
 **分析**: 小沈
 **目标**: 从单一file模式提升到支持多工具分类的架构模式
@@ -17,6 +17,7 @@
 | v1.1 | 2026-04-26 13:00:00 | 小沈 | 补充缺陷分析 - 小沈 |
 | v1.2 | 2026-04-26 14:31:08 | 小健 | 补充Mixin实现，修正状态 - 小沈 |
 | v1.3 | 2026-04-26 20:34:02 | 小沈 | 新增6.1计划（修正版）-基于代码差异分析 - 小沈 |
+| v1.4 | 2026-04-30 21:06:52 | 小沈 | 7项重构修复：①Mixin._load_tools→load_tools_by_category消除MRO遮蔽 ②AgentFactory回退FileReactAgent而非None ③react_sse_wrapper移除无效参数 ④TimeReactAgent条件统一 ⑤_on_before_loop签名统一 ⑥session_id→task_id同步 ⑦文档与代码对齐 - 小沈 |
 
 ---
 
@@ -522,7 +523,7 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
             session_id=session_id,
             tool_category=effective_category,
             max_steps=max_steps,
-            **kwargs**
+            **kwargs  # 【修复 2026-04-30 小沈】笔误：双星号→单星号
         )
         
         # 移除旧参数存储 - 不再兼容旧代码
@@ -553,7 +554,7 @@ class BaseAgent(ABC):
         session_id: str,
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = 100,
-        **kwargs**
+        **kwargs  # 【修复 2026-04-30 小沈】笔误
     ):
         self.llm_client = llm_client
         self.session_id = session_id
@@ -824,7 +825,7 @@ class AgentFactory:
         llm_client: Any,
         session_id: str,
         config: Dict[str, Any],
-        **kwargs**
+        **kwargs  # 【修复 2026-04-30 小沈】笔误
     ) -> BaseAgent:
         """创建Agent实例"""
         AgentClass = cls._AGENTS.get(intent_type, BaseReact)
@@ -836,7 +837,7 @@ class AgentFactory:
             session_id=session_id,
             tool_category=tool_category,
             config=config,
-            **kwargs**
+            **kwargs  # 【修复 2026-04-30 小沈】笔误：双星号→单星号
         )
     
     @classmethod
@@ -925,7 +926,7 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
         session_id: str,
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = 50,
-        **kwargs**
+        **kwargs  # 【修复 2026-04-30 小沈】笔误
     ):
         effective_category = tool_category or ToolCategory.TIME
         
@@ -934,7 +935,7 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
             session_id=session_id,
             tool_category=effective_category,
             max_steps=max_steps,
-            **kwargs**
+            **kwargs  # 【修复 2026-04-30 小沈】笔误：双星号→单星号
         )
         
         self.system_prompt = """你是一个时间助手，可以回答时间相关问题。"""
@@ -964,7 +965,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         session_id: str,
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = 100,
-        **kwargs**
+        **kwargs  # 【修复 2026-04-30 小沈】笔误
     ):
         # 提取有效的tool_category
         effective_category = tool_category or ToolCategory.FILE
@@ -975,7 +976,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
             session_id=session_id,
             tool_category=effective_category,
             max_steps=max_steps,
-            **kwargs**
+            **kwargs  # 【修复 2026-04-30 小沈】笔误：双星号→单星号
         )
         
         # 移除旧参数存储 - 不再兼容旧代码
@@ -1006,7 +1007,7 @@ class BaseAgent(ABC):
         session_id: str,
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = 100,
-        **kwargs**
+        **kwargs  # 【修复 2026-04-30 小沈】笔误
     ):
         self.llm_client = llm_client
         self.session_id = session_id

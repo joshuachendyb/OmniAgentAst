@@ -93,9 +93,9 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         # 初始化文件工具确保 task_id 正确传递
         self.file_tools = FileTools(task_id=task_id)  # 【修改】session_id → task_id，2026-04-26 小沈
         
-        # 使用Mixin的工具加载方法
+        # 【修复 2026-04-30 小沈】使用Mixin的 load_tools_by_category（原 _load_tools 改名，消除MRO遮蔽）
         if self.tool_category:
-            self._tools_dict = ToolLoaderMixin._load_tools(self, self.tool_category)
+            self._tools_dict = self.load_tools_by_category(self.tool_category)
         
         self.executor = ToolExecutor(self._tools_dict)
         
