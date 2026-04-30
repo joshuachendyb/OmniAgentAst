@@ -1,6 +1,6 @@
 v0.12.2
 
-  更新时间: 2026-04-30 14:18:29
+  更新时间: 2026-04-30 14:22:20
 
   更新内容：
 
@@ -9,6 +9,25 @@ v0.12.2
   | 功能 | 说明 | 状态 |
   |------|------|------|
   | candidates参数 | route_with_fallback返回candidates列表，传递到Agent并注入prompt | ✅ |
+
+  ## 2 修改文件清单 - 小沈-2026-04-30
+
+  | 类型 | 文件 |
+  |------|------|
+  | 修改 | agent_factory.py, file_react.py, time_react.py, chat_router.py, react_sse_wrapper.py |
+
+  ---
+
+v0.12.1
+
+  更新时间: 2026-04-30 07:50:26
+
+  更新内容：
+
+  ## 1 file_monitor.py Path.iterdir() bug修复 - 小沈-2026-04-30
+
+  | 修复项 | 说明 | 状态 |
+  |--------|------|------|
   | _get_files_in_directory | Path.iterdir("*") → 无参数调用 | ✅ |
 
   **问题**：Path.iterdir() 不接受任何参数，调用 iterdir("*") 会抛出 TypeError
