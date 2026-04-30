@@ -1,6 +1,49 @@
-v0.12.2
+v0.12.3
 
-  更新时间: 2026-04-30 14:25:00
+  更新时间: 2026-04-30 19:01:57
+
+  更新内容：
+
+  ## 1 跨分类工具访问设计与实现对齐 - 小沈-2026-04-30
+
+  | 功能 | 说明 | 状态 |
+  |------|------|------|
+  | TimePrompts类 | 新建TimePrompts类（5324字符）与FileOperationPrompts同级别 | ✅ |
+  | prompts/time/目录 | 新建backend/app/services/prompts/time/目录 | ✅ |
+  | 死代码修复 | _build_system_prompt()合并进_get_system_prompt()，注入cross_tool_hint和candidates_hint | ✅ |
+  | CRSS评分关键词 | NETWORK分类补充\bnetcat\b和\bocket\b关键词 | ✅ |
+  | LLM多意图返回 | 修改all_intents返回完整置信度分布 | ✅ |
+  | 删除老函数 | 删除废弃的detect_intent_from_crss()函数 | ✅ |
+  | 新增测试 | test_crss_intent_v2.py（17个测试用例） | ✅ |
+  | 设计文档更新 | 移动到doc-functioncall/，更新到v1.8 | ✅ |
+
+  **修改文件**：
+  | 文件 | 说明 |
+  |------|------|
+  | backend/app/services/agent/file_react.py | 合并system prompt |
+  | backend/app/services/agent/time_react.py | 合并system prompt |
+  | backend/app/services/chat_router.py | 删除老函数+加关键词 |
+  | backend/app/services/preprocessing/intent_classifier.py | LLM多意图分布 |
+  | backend/app/services/preprocessing/pipeline.py | 更新导入 |
+  | backend/app/services/prompts/__init__.py | 导出time模块 |
+  | backend/app/services/react_sse_wrapper.py | 动态prompt_logger |
+  | backend/app/services/tools/registry.py | 清理导入 |
+
+  **新增文件**：
+  | 文件 | 说明 |
+  |------|------|
+  | backend/app/services/prompts/time/__init__.py | 模块导出 |
+  | backend/app/services/prompts/time/time_prompts.py | TimePrompts类 |
+  | backend/tests/test_crss_intent_v2.py | 17个测试用例 |
+  | doc-functioncall/2026-04-30-cross-category-tool-access-design.md | 设计文档v1.8 |
+
+  **测试结果**：47/47 相关测试全部通过
+
+  ---
+
+v0.12.2（里程碑版本）
+
+  更新时间: 2026-04-30 19:01:57
 
   更新内容：
 
