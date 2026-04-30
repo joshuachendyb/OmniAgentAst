@@ -245,8 +245,17 @@ class ToolExecutor:
                     }
                 
                 # 执行工具
+                # 【修复 2026-04-30 小沈】兼容同步工具函数（如execute_command/change_directory）
+                # 之前统一await，对同步函数报错：object dict can't be used in 'await' expression
                 timeout = config.get_timeout(action)
-                result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
+                if inspect.iscoroutinefunction(tool):
+                    result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
+                else:
+                    # 同步函数：在线程池中执行，避免阻塞事件循环
+                    result = await asyncio.wait_for(
+                        asyncio.to_thread(tool, **normalized_input),
+                        timeout=timeout
+                    )
                 
                 return self._format_result(result, action)
             

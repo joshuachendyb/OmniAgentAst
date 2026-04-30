@@ -105,7 +105,15 @@ class BaseAIService:
         self._cancelled = True
         if self._current_response:
             try:
-                self._current_response.close()
+                # 【修复 2026-04-30 小沈】异步流用aclose()，不能用同步close()
+                if hasattr(self._current_response, 'aclose'):
+                    import asyncio
+                    try:
+                        asyncio.get_event_loop().run_until_complete(self._current_response.aclose())
+                    except RuntimeError:
+                        pass
+                else:
+                    self._current_response.close()
                 logger.info("[BaseAIService.cancel] HTTP响应已强制关闭")
             except Exception as e:
                 logger.error(f"[BaseAIService.cancel] 关闭响应失败: {e}")
@@ -168,7 +176,8 @@ class BaseAIService:
                 # 【修复】发送请求后立即检查取消标志，避免14秒延迟
                 if self._cancelled:
                     logger.info("[chat_stream] 请求发送后立即检测到取消，中断流式响应")
-                    response.close()
+                    # 【修复 2026-04-30 小沈】异步流用aclose()，不能用同步close()
+                    await response.aclose()
                     yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
                     return
                 
@@ -510,7 +519,8 @@ class BaseAIService:
                 # 【修复】发送请求后立即检查取消标志，避免延迟
                 if self._cancelled:
                     logger.info("[chat_with_tools_stream] 请求发送后立即检测到取消")
-                    response.close()
+                    # 【修复 2026-04-30 小沈】异步流用aclose()
+                    await response.aclose()
                     yield StreamChunk(content="", model=self.model, is_done=True, stream_error="任务已取消", stream_error_type="cancelled")
                     return
                 
