@@ -165,11 +165,12 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
             last_message = self.conversation_history[-1]["content"]
             history_dicts = self.conversation_history[:-1]
             
-            # 【2026-04-30 小沈】在当前 user message 末尾追加跨分类工具概要
-            # 每轮都注入，确保LLM不会丢失工具信息
+            # 【修复 2026-04-30 小沈】工具概要改为独立system消息插入history
+            # 避免追加到 Observation 末尾导致语义混乱（Observation是工具执行结果，不应混杂工具列表）
             try:
                 tools_summary = self._get_tools_summary()
-                last_message = last_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
+                summary_msg = {"role": "system", "content": f"【当前可用工具列表】\n{tools_summary}"}
+                history_dicts = list(history_dicts) + [summary_msg]
             except Exception as e:
                 logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
             

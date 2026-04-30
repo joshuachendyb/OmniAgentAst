@@ -23,6 +23,7 @@ from app.services.tools.mixin import ToolLoaderMixin
 from app.services.tools.registry import ToolCategory
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.llm_strategies import TextStrategy
+from app.services.agent.llm_adapter import LLMAdapter  # 【修复 2026-04-30 小沈】添加LLMAdapter导入
 from app.services.prompts.time import TimePrompts
 from app.utils.logger import logger
 
@@ -70,6 +71,14 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
         
         self.text_strategy = TextStrategy()
         
+        # 【修复 2026-04-30 小沈】添加 LLMAdapter 自适应策略（与 FileReactAgent 对齐）
+        # adapter 默认 None，需外部注入才生效，不改变现有行为
+        self.adapter = None
+        self.use_function_calling = False
+        self.openai_tools = []
+        self.tools_strategy = None
+        self.response_format_strategy = None
+        
         # 【新增 2026-04-30 小沈】存储候选意图列表
         self._candidates = candidates if candidates else []
         
@@ -114,26 +123,60 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
         return task
     
     async def _get_llm_response(self) -> str:
-        """获取 LLM 响应"""
+        """获取 LLM 响应（支持 LLMAdapter 自适应策略）
+        
+        【修复 2026-04-30 小沈】添加 adapter 策略选择，与 FileReactAgent 对齐。
+        当 adapter 未注入时（默认None），行为与修改前完全一致（使用 TextStrategy）。
+        """
         self.llm_call_count += 1
         
         try:
             last_message = self.conversation_history[-1]["content"]
             history_dicts = self.conversation_history[:-1]
             
-            # 【2026-04-30 小沈】在当前 user message 末尾追加跨分类工具概要
+            # 【修复 2026-04-30 小沈】工具概要改为独立system消息插入history
+            # 避免追加到 Observation 末尾导致语义混乱
             try:
                 tools_summary = self._get_tools_summary()
-                last_message = last_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
+                summary_msg = {"role": "system", "content": f"【当前可用工具列表】\n{tools_summary}"}
+                history_dicts = list(history_dicts) + [summary_msg]
             except Exception as e:
                 logger.warning(f"[ToolSummary] TimeAgent注入工具概要失败: {e}")
             
-            response = await self.text_strategy.call(
-                llm_client=self.llm_client,
-                message=last_message,
-                history_dicts=history_dicts,
-                conversation_history=self.conversation_history
-            )
+            # 【修复 2026-04-30 小沈】自适应策略选择（与 FileReactAgent 对齐）
+            if self.adapter:
+                strategy = await self.adapter.ensure_capability()
+                logger.info(f"[TimeAgent] Using method: {strategy.method}")
+                
+                if strategy.method == "response_format" and self.response_format_strategy:
+                    response = await self.response_format_strategy.call(
+                        llm_client=self.llm_client,
+                        message=last_message,
+                        history_dicts=history_dicts,
+                        conversation_history=self.conversation_history
+                    )
+                elif strategy.method == "tools" and self.tools_strategy:
+                    response = await self.tools_strategy.call(
+                        llm_client=self.llm_client,
+                        message=last_message,
+                        history_dicts=history_dicts,
+                        conversation_history=self.conversation_history
+                    )
+                else:
+                    response = await self.text_strategy.call(
+                        llm_client=self.llm_client,
+                        message=last_message,
+                        history_dicts=history_dicts,
+                        conversation_history=self.conversation_history
+                    )
+            else:
+                # 无 adapter 时，使用普通文本模式（与修改前行为一致）
+                response = await self.text_strategy.call(
+                    llm_client=self.llm_client,
+                    message=last_message,
+                    history_dicts=history_dicts,
+                    conversation_history=self.conversation_history
+                )
             return response
         except Exception as e:
             logger.error(f"TimeReactAgent LLM error: {e}")

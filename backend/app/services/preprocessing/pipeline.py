@@ -5,7 +5,7 @@
 【2026-04-30 小沈修改】移除LLM分类器调用，改为纯文本预处理
 意图检测已统一由 chat_router.route_with_fallback() 的两阶段逻辑处理
 """
-from typing import Any, List
+from typing import Any
 from app.utils.logger import logger
 
 
@@ -15,7 +15,6 @@ class PreprocessingPipeline:
     async def process(
         self,
         user_input: str,
-        intent_labels: List[str],
         session_id: str = ""
     ) -> dict[str, Any]:
         """
@@ -23,6 +22,7 @@ class PreprocessingPipeline:
 
         【2026-04-30 小沈修改】移除了IntentClassifier的LLM调用。
         意图检测已统一由 chat_router.route_with_fallback() 处理。
+        【修复 2026-04-30 小沈】移除废弃的 intent_labels 参数（从未在方法体内使用）。
 
         Returns:
             dict: {original, corrected, errors, intent, confidence, all_intents}

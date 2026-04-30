@@ -128,7 +128,8 @@ async def classify_intent(
     prompt = _build_intent_prompt(text, labels)
 
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        _timeout = INTENT_CLASSIFIER_CONFIG.get("timeout", 90)  # 【修复 2026-04-30 小沈】用配置的timeout，默认90s
+        async with httpx.AsyncClient(timeout=_timeout) as client:
             response = await client.post(
                 f"{_api_base}/chat/completions",
                 headers={

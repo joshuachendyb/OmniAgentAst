@@ -44,6 +44,7 @@ from app.chat_stream.chat_helpers import create_final_response, create_timestamp
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
 from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse, format_sse_event
 from app.services.agent.base_react import DEFAULT_MAX_STEPS
+from app.services.chat_router import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-04-30 小沈】统一置信度阈值常量
 
 
 # ============================================================
@@ -474,7 +475,7 @@ async def generate_sse_stream(
         llm_client = LLMClientWrapper(ai_service)
         
         # 分发逻辑
-        if intent_type == "file" and confidence >= 0.3:
+        if intent_type == "file" and confidence >= CRSS_CONFIDENCE_THRESHOLD:
             # 文件操作：使用AgentFactory创建Agent
             from app.services.agent.agent_factory import AgentFactory
             agent = AgentFactory.create(
@@ -541,7 +542,7 @@ async def generate_sse_stream(
                 await save_execution_steps_to_db(session_id, current_execution_steps, "文件操作执行失败")
                 yield error_response
 
-        elif intent_type == "time" and confidence >= 0.3:
+        elif intent_type == "time" and confidence >= CRSS_CONFIDENCE_THRESHOLD:
             # 时间日期操作：使用AgentFactory创建TimeReactAgent
             from app.services.agent.agent_factory import AgentFactory
             agent = AgentFactory.create(
@@ -599,7 +600,7 @@ async def generate_sse_stream(
                 await save_execution_steps_to_db(session_id, current_execution_steps, "时间操作执行失败")
                 yield error_response
 
-        elif intent_type == "network" and confidence >= 0.3:
+        elif intent_type == "network" and confidence >= CRSS_CONFIDENCE_THRESHOLD:
             # 网络操作：待实现 NetworkReactAgent
             logger.warning(f"[NetworkOp] NetworkReactAgent 待实现，使用回退逻辑")
             error_step_obj = StepFactory.create_error_step(
@@ -616,7 +617,7 @@ async def generate_sse_stream(
             await save_execution_steps_to_db(session_id, current_execution_steps, "网络操作功能正在开发中")
             yield error_response
         
-        elif intent_type == "desktop" and confidence >= 0.3:
+        elif intent_type == "desktop" and confidence >= CRSS_CONFIDENCE_THRESHOLD:
             # 桌面操作：待实现 DesktopReactAgent
             logger.warning(f"[DesktopOp] DesktopReactAgent 待实现，使用回退逻辑")
             error_step_obj = StepFactory.create_error_step(

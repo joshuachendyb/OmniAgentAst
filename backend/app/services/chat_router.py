@@ -50,6 +50,10 @@ from app.services.tools.registry import ToolCategory
 # 意图标签列表（用于 PreprocessingPipeline）
 INTENT_LABELS = [c.value for c in ToolCategory] + ["chat"]
 
+# 【修复 2026-04-30 小沈】CRSS置信度阈值：归一化评分 >= 此值认为意图可信
+# CRSS评分经 1 - 2^(-raw) 归一化到 [0, 1)，0.3 对应原始分约 0.5
+CRSS_CONFIDENCE_THRESHOLD = 0.3
+
 
 # ================================================================================
 # detect_intent_v2 - CRSS加权评分意图检测（设计文档v1.5 3.1.2节）
@@ -298,7 +302,7 @@ async def route_with_fallback(user_input: str) -> Dict:
     }
 
     # CRSS匹配成功（加权评分后有明确主意图）
-    if primary is not None and confidence >= 0.3:
+    if primary is not None and confidence >= CRSS_CONFIDENCE_THRESHOLD:
         logger.info(
             f"[RouteFallback] CRSS阶段1 → intent={primary.value}, "
             f"conf={confidence}, candidates={[c.value for c in candidates]}"
@@ -475,9 +479,9 @@ class ChatRouter:
         # ===== 步骤1: 预处理 =====
         # 【修改 2026-04-30 小沈】意图检测使用两阶段 route_with_fallback
         # 预处理只做纯文本处理，意图检测在步骤2
-        intent_result = await self.preprocessing.process(
+        # 【修复 2026-04-30 小沈】移除废弃的 intent_labels 参数和死变量 intent_result
+        await self.preprocessing.process(
             user_input=user_input,
-            intent_labels=INTENT_LABELS,
             session_id=session_id
         )
         
@@ -490,7 +494,7 @@ class ChatRouter:
         
         # 【新增 2026-04-30 小沈】从 intent_info 提取 candidates 列表
         candidates_values = intent_info.get("candidates", [])
-        candidates_list = [c.value if c else "" for c in candidates_values if c]  # 转字符串列表
+        candidates_list = [c.value for c in candidates_values if c]  # 【修复 2026-04-30 小沈】简化：if c 已过滤None，else "" 不可达
         
         # 将ToolCategory转为字符串（与下游generate_sse_stream接口兼容）
         intent_type = intent_type_value.value if intent_type_value else "chat"
