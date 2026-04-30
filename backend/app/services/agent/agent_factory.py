@@ -7,8 +7,9 @@ AgentFactory - Agent工厂类
 
 位置: app/services/agent/agent_factory.py
 修复 - 2026-04-26 小沈
+新增 - 2026-04-30 小沈（candidates参数）
 """
-from typing import Dict, Any, Optional, Type
+from typing import Dict, Any, Optional, Type, List
 from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
 from app.services.tools.registry import ToolCategory
 
@@ -38,6 +39,7 @@ class AgentFactory:
         task_id: str = "",  # 【修改】session_id → task_id，2026-04-26 小沈
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
+        candidates: Optional[List[str]] = None,  # 【新增 2026-04-30 小沈】候选意图列表
         **kwargs
     ) -> BaseAgent:
         """创建Agent实例
@@ -49,6 +51,7 @@ class AgentFactory:
             task_id: 任务ID（操作追踪和回退用）
             tool_category: 工具分类
             max_steps: 最大步数
+            candidates: 候选意图列表（如 ["file", "chat"]），用于跨分类工具访问
             **kwargs: 其他参数
             
         Returns:
@@ -68,11 +71,13 @@ class AgentFactory:
         
         # 创建Agent实例（传递所有参数，按新结构）
         # 【修改】task_id参数传递，2026-04-26 小沈
+        # 【新增】candidates参数传递，2026-04-30 小沈
         return AgentClass(
             llm_client=llm_client,
             task_id=task_id,  # 修正：使用已重命名的task_id参数
             tool_category=effective_tool_category,
             max_steps=max_steps,
+            candidates=candidates,  # 传递候选意图列表
             **kwargs
         )
     

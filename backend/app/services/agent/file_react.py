@@ -53,6 +53,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         task_id: str,
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
+        candidates: Optional[List[str]] = None,  # 【新增 2026-04-30 小沈】候选意图列表
         **kwargs
     ):
         """
@@ -65,6 +66,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
             # 【禁止】不要使用 session_id，会话和操作追踪是不同概念
             tool_category: 工具分类（可选，默认FILE）
             max_steps: 最大步数
+            candidates: 候选意图列表（如 ["file", "chat"]），用于跨分类工具访问
         """
         # 【修复】强制要求 task_id，避免写操作失败
         if not task_id:
@@ -99,7 +101,13 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         
         self.prompts = FileOperationPrompts()
         
-        logger.info(f"FileReactAgent initialized (task_id: {task_id}, tool_category: {effective_category})")
+        # 【2026-04-30 小沈】跨分类工具概要缓存
+        self._tools_summary = None
+        
+        # 【新增 2026-04-30 小沈】存储候选意图列表，用于跨分类工具访问
+        self._candidates = candidates if candidates else []
+        
+        logger.info(f"FileReactAgent initialized (task_id: {task_id}, tool_category: {effective_category}, candidates: {self._candidates})")
         
         # 【新增】LLM调用策略
         self.text_strategy = TextStrategy()
@@ -113,6 +121,49 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         
         # Simple initialization - continue
         logger.info(f"FileReactAgent initialized (task_id: {task_id}, tool_category: {effective_category})")
+    
+    # ========== 跨分类工具支持方法（2026-04-30 小沈）==========
+    
+    def _build_system_prompt(self) -> str:
+        """
+        构建系统提示（含跨工具提示 + 候选意图列表）
+        
+        设计文档 v1.5 6.1节
+        """
+        base_prompt = self.prompts.get_system_prompt()
+        
+        # 【2026-04-30 小沈】注入候选意图信息
+        candidates_hint = ""
+        if self._candidates:
+            candidates_list = ", ".join(self._candidates)
+            candidates_hint = (
+                f"\n\n【候选意图】已识别出以下可能的意图类别: {candidates_list}。"
+                "你可以根据实际任务需要，访问任意候选分类的工具。"
+            )
+        
+        cross_tool_hint = (
+            "\n\n【注意】除了文件操作工具，你还可以使用其他分类的工具。"
+            "例如：创建脚本后可以用 execute_command 来运行它，"
+            "需要时间信息时可以用 get_current_time 等。"
+            "根据任务需要自由选择合适的工具，不受初始分类限制。"
+        )
+        return base_prompt + candidates_hint + cross_tool_hint
+    
+    def _get_tools_summary(self) -> str:
+        """
+        获取跨分类工具概要（带缓存）
+        
+        设计文档 v1.5 4.2节
+        
+        Returns:
+            格式化的工具概要字符串
+        """
+        if self._tools_summary is None:
+            from app.services.tools.registry import tool_registry
+            self._tools_summary = tool_registry.get_all_tools_summary(
+                priority_category=self.tool_category or ToolCategory.FILE
+            )
+        return self._tools_summary
     
     # ========== 抽象方法实现 ==========
     
@@ -146,6 +197,14 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         try:
             last_message = self.conversation_history[-1]["content"]
             history_dicts = self.conversation_history[:-1]
+            
+            # 【2026-04-30 小沈】在当前 user message 末尾追加跨分类工具概要
+            # 每轮都注入，确保LLM不会丢失工具信息
+            try:
+                tools_summary = self._get_tools_summary()
+                last_message = last_message + "\n\n---\n当前可用工具列表:\n" + tools_summary
+            except Exception as e:
+                logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
             
             # 【调试】记录发送给LLM的messages
             logger.info(f"[Debug] _get_llm_response - conversation_history长度: {len(self.conversation_history)}")

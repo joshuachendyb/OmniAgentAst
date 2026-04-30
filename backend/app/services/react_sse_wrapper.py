@@ -239,6 +239,7 @@ async def generate_sse_stream(
     messages: List[Dict[str, str]],
     intent_type: str = "chat",
     confidence: float = 0.0,
+    candidates: Optional[List[str]] = None,  # 【新增 2026-04-30 小沈】候选意图列表
     provider: Optional[str] = None,
     model: Optional[str] = None,
     temperature: float = 0.7,
@@ -255,27 +256,33 @@ async def generate_sse_stream(
     
     供 chat_router.py 调用，返回 AsyncGenerator 用于 SSE 流式输出。
     
-    【阶段6修改】添加 intent_type 和 confidence 参数，实现分发逻辑。
+    【阶段6修改】添加 intent_type 和 confidence 参数实现分发逻辑。
+    【2026-04-30 小沈】新增 candidates 参数，传递候选意图列表。
     注意：start 步骤由 chat_router 发送，本层只处理分发后的逻辑。
     
     Args:
-        messages: 消息列表 [{"role": "user", "content": "..."}]
-        intent_type: 意图类型 (chat/file/network/desktop)
-        confidence: 意图置信度 (0.0-1.0)
+        messages: 消息列表
+        intent_type: 意图类型
+        confidence: 意图置信度
+        candidates: 候选意图列表
         provider: AI 服务提供商
         model: AI 模型
         temperature: 创造性参数
-        task_id: 任务ID（可选）
-        session_id: 会话ID（可选）
-        ai_service: AI服务实例（可选，由chat_router传入）
-        next_step: 步骤计数器函数（可选，由chat_router传入）
-        running_tasks: 任务字典（可选，由chat_router传入）
-        running_tasks_lock: 任务锁（可选，由chat_router传入）
-        current_execution_steps: 执行步骤列表（可选，由chat_router传入）
+        task_id: 任务ID
+        session_id: 会话ID
+        ai_service: AI服务实例
+        next_step: 步骤计数器函数
+        running_tasks: 任务字典
+        running_tasks_lock: 任务锁
+        current_execution_steps: 执行步骤列表
     
     Yields:
         SSE 格式的数据字符串
     """
+    # 如果没传入 candidates，设置默认值
+    if candidates is None:
+        candidates = []
+    
     # 如果没传入，使用默认值
     if running_tasks is None:
         running_tasks = {}
@@ -470,7 +477,8 @@ async def generate_sse_stream(
                 task_id=task_id,  # 【修改】2026-04-26 小沈
                 api_base=ai_service.api_base,
                 api_key=ai_service.api_key,
-                model=ai_service.model
+                model=ai_service.model,
+                candidates=candidates  # 【新增 2026-04-30 小沈】传递候选意图列表
             )
             
             # 【修复BUG】从配置文件读取 max_steps

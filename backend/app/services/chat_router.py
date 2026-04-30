@@ -44,6 +44,7 @@ from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_step_counter
 from app.chat_stream.error_handler import create_error_response
 from app.services.agent.base_react import DEFAULT_MAX_STEPS
+from app.services.tools.registry import ToolCategory
 
 
 # 意图标签列表（用于 PreprocessingPipeline）
@@ -142,6 +143,302 @@ def detect_intent_from_crss(command: str) -> tuple[str, float]:
     # ===== 5. 默认：chat =====
     logger.info(f"[CRSS Intent] 无匹配关键词 → chat")
     return "chat", 1.0
+
+
+# ================================================================================
+# detect_intent_v2 - 新版CRSS意图检测（设计文档v1.5 3.1.2节）
+# 返回 ToolCategory 枚举，支持多意图，使用词边界正则
+# 小沈 - 2026-04-30
+# ================================================================================
+
+import re
+
+
+def _ascii_word_boundary_match(keyword: str, text: str) -> bool:
+    """
+    ASCII-only 词边界检查（解决Python 3中 \w 包含中文的问题）
+    
+    Python 3 的 \b 将中文字符视为 \w，导致 '运行npm' 中 \bnpm\b 失效。
+    此函数只将 [a-zA-Z0-9_] 视为词字符，中文视为非词字符。
+    
+    Args:
+        keyword: 关键词（如 'npm'）
+        text: 被搜索的文本
+        
+    Returns:
+        是否匹配
+    """
+    import re as _re
+    # 用 ASCII-only 的 \w 构建自定义边界模式
+    pattern = f'(?<![a-zA-Z0-9_]){_re.escape(keyword)}(?![a-zA-Z0-9_])'
+    return bool(_re.search(pattern, text, _re.IGNORECASE))
+
+
+# 操作关键词定义（按ToolCategory分类）
+INTENT_KEYWORDS: Dict[str, Dict] = {
+    "SHELL": {
+        "keywords": [
+            # 危险命令已经在 DANGEROUS_COMMANDS 中，这里只添加执行类关键词
+            r'\bnpm\b', r'\bpip\b', r'\bnode\b', r'\build\b', r'\brun\b',
+            r'\bexec\b', r'\bexecute\b', r'\bgcc\b', r'\bg++\b', r'\bpython\b',
+            r'\bgit\b', r'\bdocker\b', r'\bgradle\b', r'\bmvn\b', r'\bmake\b',
+            '执行命令', '运行脚本', '终端', 'shell'
+        ],
+        "chinese_keywords": ['执行命令', '运行脚本', '终端']
+    },
+    "TIME": {
+        "keywords": [
+            r'\bdate\b', r'\btime\b', r'\bnow\b', r'\bclock\b',
+            r'\bcalendar\b', r'\bschedule\b',
+        ],
+        "chinese_keywords": ['时间', '日期', '现在几点', '今天星期', '几月几号', '什么时候']
+    },
+    "NETWORK": {
+        "keywords": [
+            r'\bping\b', r'\bcurl\b', r'\bwget\b', r'\bssh\b', r'\btelnet\b',
+            r'\bnc\b', r'\bnmap\b', r'\bhttp\b', r'\bhttps\b', r'\bftp\b',
+        ],
+        "chinese_keywords": ['下载', '端口', '扫描', '网络', '请求', 'API']
+    },
+    "DESKTOP": {
+        "keywords": [
+            r'\bscreenshot\b', r'\bcapture\b',
+            r'\bclick\b', r'\btype\b', r'\bpress\b', r'\bkey\b',
+        ],
+        "chinese_keywords": ['截图', '录屏', '点击', '输入', '按键', '键盘', '鼠标']
+    },
+    "ENV": {
+        "keywords": [
+            r'\bPATH\b', r'\bHOME\b', r'\bTEMP\b', r'\bTMP\b',
+        ],
+        "chinese_keywords": ['环境变量', 'PATH', '系统变量']
+    },
+    "SYSTEM": {
+        "keywords": [
+            r'\bcpu\b', r'\bmemory\b', r'\bram\b', r'\bdisk\b',
+            r'\btasklist\b', r'\bprocess\b', r'\bservice\b',
+        ],
+        "chinese_keywords": ['系统信息', 'CPU', '内存', '进程', '服务', '磁盘', '系统配置']
+    },
+    "DATABASE": {
+        "keywords": [
+            r'\bselect\b', r'\binsert\b', r'\bupdate\b', r'\bdelete\b',
+            r'\bcreate table\b', r'\bdrop\b', r'\balter\b', r'\bjoin\b',
+            r'\bsql\b', r'\bdb\b', r'\bdatabase\b',
+        ],
+        "chinese_keywords": ['查询', 'SQL', '数据库', '表', '数据']
+    },
+}
+
+
+def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
+    """
+    CRSS加权评分：按匹配强度计算每个意图的置信度
+
+    评分规则：
+    - 中文关键词命中：+2.0/个（明确意图）
+    - 英文正则命中：  +1.0/个（中度信号）
+    - FILE操作关键词：+0.5/个（宽泛匹配）
+    - 危险命令：      +3.0 基础分
+    - 归一化： raw_score 经 1 - 2^(-score) 映射到 [0,1)
+
+    Returns:
+        Dict[ToolCategory, float] 置信度从高到低排序
+    """
+    if not command or not command.strip():
+        return {}
+
+    command_lower = command.lower().strip()
+    raw_scores: Dict[ToolCategory, float] = {}
+
+    # ===== 0. 危险命令 → SHELL 高分 =====
+    from app.services.command_security import DANGEROUS_COMMANDS
+    for dangerous in DANGEROUS_COMMANDS:
+        if dangerous.lower() in command_lower:
+            logger.info(f"[CRSS Score] 危险命令 → SHELL +3.0: '{dangerous}'")
+            raw_scores[ToolCategory.SHELL] = raw_scores.get(ToolCategory.SHELL, 0) + 3.0
+            break
+
+    # ===== 1. INTENT_KEYWORDS 分类匹配 =====
+    category_map = {
+        "SHELL": ToolCategory.SHELL,
+        "TIME": ToolCategory.TIME,
+        "NETWORK": ToolCategory.NETWORK,
+        "DESKTOP": ToolCategory.DESKTOP,
+        "ENV": ToolCategory.ENV,
+        "SYSTEM": ToolCategory.SYSTEM,
+        "DATABASE": ToolCategory.DATABASE,
+    }
+
+    for cat_name, cat_info in INTENT_KEYWORDS.items():
+        cat_enum = category_map[cat_name]
+
+        # 中文关键词：+2.0 每个
+        for kw in cat_info.get("chinese_keywords", []):
+            if kw in command_lower:
+                logger.info(f"[CRSS Score] {cat_name} 中文关键词 +2.0: '{kw}'")
+                raw_scores[cat_enum] = raw_scores.get(cat_enum, 0) + 2.0
+
+        # 英文关键词：+1.0 每个（可能多个匹配）
+        for pattern in cat_info.get("keywords", []):
+            keyword = pattern.replace(r'\b', '')
+            if _ascii_word_boundary_match(keyword, command_lower):
+                logger.info(f"[CRSS Score] {cat_name} 英文关键词 +1.0: '{keyword}'")
+                raw_scores[cat_enum] = raw_scores.get(cat_enum, 0) + 1.0
+
+    # ===== 2. FILE 操作关键词 =====
+    from app.services.command_security import OPERATION_WEIGHTS
+    file_count = 0
+    for op_type, config in OPERATION_WEIGHTS.items():
+        for keyword in config.get('keywords', []):
+            if keyword.lower() in command_lower:
+                file_count += 1
+
+    if file_count > 0:
+        raw_scores[ToolCategory.FILE] = raw_scores.get(ToolCategory.FILE, 0) + file_count * 0.5
+        logger.info(f"[CRSS Score] FILE 关键词 +{file_count * 0.5}: {file_count}个匹配")
+
+    # ===== 3. 归一化 =====
+    scores = {}
+    for cat, raw in raw_scores.items():
+        # 1 - 2^(-raw) 将 raw 映射到 [0, 1)
+        adjusted = 1.0 - (2.0 ** (-raw))
+        scores[cat] = round(adjusted, 4)
+
+    # 按置信度从高到低排序
+    return dict(sorted(scores.items(), key=lambda x: -x[1]))
+
+
+def detect_intent_v2(command: str):
+    """
+    新版CRSS意图检测（设计文档 v1.5 3.1.2节）
+
+    两阶段策略的阶段1: CRSS规则匹配
+    - 使用加权评分计算各意图置信度
+    - 返回 ToolCategory 枚举（不再是字符串）
+    - 多候选支持
+
+    Args:
+        command: 用户输入的命令
+
+    Returns:
+        tuple: (primary_intent, candidates, confidence)
+            - primary_intent: Optional[ToolCategory] 主意图（None表示无匹配）
+            - candidates: List[ToolCategory] 所有候选意图（按置信度排序）
+            - confidence: float 主意图置信度
+    """
+    if not command or not command.strip():
+        return None, [], 0.0
+
+    scores = _compute_intent_scores(command)
+
+    if not scores:
+        logger.info(f"[CRSS v2] 无匹配关键词 → None，等待LLM兜底")
+        return None, [], 0.0
+
+    sorted_items = list(scores.items())
+    primary = sorted_items[0][0]
+    candidates = [cat for cat, _ in sorted_items]
+    confidence = sorted_items[0][1]
+
+    logger.info(
+        f"[CRSS v2] 加权评分结果 → primary={primary.value}, "
+        f"confidence={confidence:.4f}, all={list(scores.keys())}"
+    )
+    return primary, candidates, confidence
+
+
+# ================================================================================
+# route_with_fallback - 两阶段意图路由（设计文档v1.5 3.1.2节）
+# 阶段1: CRSS快速匹配 → 阶段2: LLM语义分类（兜底）
+# 小沈 - 2026-04-30
+# ================================================================================
+
+async def route_with_fallback(user_input: str) -> Dict:
+    """
+    两阶段意图路由：CRSS快速匹配 + LLM兜底
+
+    阶段1: 调用 detect_intent_v2 进行CRSS规则匹配
+      - 匹配成功且唯一 → 直接返回，不调LLM
+    阶段2: 无匹配或模糊匹配 → 调用 LLM 语义分类
+
+    Args:
+        user_input: 用户输入
+
+    Returns:
+        dict: {
+            "intent": ToolCategory,       # 最终意图
+            "candidates": List[ToolCategory],  # 所有候选
+            "confidence": float,           # 置信度
+            "original": str,               # 原始输入
+            "corrected": str,              # 矫正后文本（LLM兜底时）
+            "all_intents": dict,           # 所有意图置信度
+            "source": str,                 # "crss" 或 "llm"
+        }
+    """
+    # ===== 阶段1: CRSS快速匹配 =====
+    primary, candidates, confidence = detect_intent_v2(user_input)
+
+    result = {
+        "intent": primary,
+        "candidates": candidates,
+        "confidence": confidence,
+        "original": user_input,
+        "corrected": user_input,
+        "all_intents": {},
+        "source": "crss",
+    }
+
+    # CRSS匹配成功（加权评分后有明确主意图）
+    if primary is not None and confidence >= 0.3:
+        logger.info(
+            f"[RouteFallback] CRSS阶段1 → intent={primary.value}, "
+            f"conf={confidence}, candidates={[c.value for c in candidates]}"
+        )
+        return result
+
+    # ===== 阶段2: LLM语义分类（兜底）=====
+    logger.info(
+        f"[RouteFallback] CRSS无匹配或模糊，进入LLM兜底阶段2. "
+        f"primary={primary}, candidates={candidates}"
+    )
+
+    try:
+        from app.services.preprocessing.intent_classifier import classify_intent
+
+        # 准备提示标签（所有ToolCategory + chat）
+        intent_labels = [c.value for c in ToolCategory] + ["chat"]
+
+        llm_result = await classify_intent(user_input, intent_labels)
+
+        intent_str = llm_result.get("intent", "chat")
+        llm_confidence = float(llm_result.get("confidence", 0.5))
+
+        # 将LLM返回的字符串转为ToolCategory
+        intent_enum = None
+        for cat in ToolCategory:
+            if cat.value == intent_str:
+                intent_enum = cat
+                break
+
+        result.update({
+            "intent": intent_enum,
+            "candidates": [intent_enum] if intent_enum else [],
+            "confidence": llm_confidence,
+            "corrected": llm_result.get("corrected", user_input),
+            "all_intents": llm_result.get("all_intents", {}),
+            "source": "llm",
+        })
+
+        logger.info(
+            f"[RouteFallback] LLM阶段2 → intent={intent_str}({intent_enum}), "
+            f"conf={llm_confidence}, corrected='{result['corrected']}'"
+        )
+    except Exception as e:
+        logger.warning(f"[RouteFallback] LLM兜底失败: {e}，使用CRSS结果")
+        # LLM失败时，保持CRSS结果
+
+    return result
 
 
 # ==================== FastAPI 路由定义 ====================
@@ -276,15 +573,25 @@ class ChatRouter:
             session_id=session_id
         )
         
-        # ===== 步骤2: 意图检测（基于CRSS规则）=====
-        # 【修改 2026-04-20 小沈】
-        # 之前用LLM（IntentClassifier）进行意图检测，存在不稳定问题
-        # 现在用CRSS规则（detect_intent_from_crss）替代，确定性匹配
-        intent_type, confidence = detect_intent_from_crss(user_input)
+        # ===== 步骤2: 意图检测（两阶段：CRSS + LLM兜底）=====
+        # 【修改 2026-04-30 小沈】使用两阶段意图路由
+        # 阶段1：CRSS规则快速匹配 → 阶段2：LLM语义分类（兜底）
+        intent_info = await route_with_fallback(user_input)
+        intent_type_value = intent_info["intent"]
+        confidence = intent_info["confidence"]
+        
+        # 【新增 2026-04-30 小沈】从 intent_info 提取 candidates 列表
+        candidates_values = intent_info.get("candidates", [])
+        candidates_list = [c.value if c else "" for c in candidates_values if c]  # 转字符串列表
+        
+        # 将ToolCategory转为字符串（与下游generate_sse_stream接口兼容）
+        intent_type = intent_type_value.value if intent_type_value else "chat"
         
         logger.info(
-            f"[ChatRouter] CRSS意图检测 → intent_type={intent_type}, confidence={confidence:.4f}, "
-            f"original='{user_input}'"
+            f"[ChatRouter] 两阶段意图检测 → intent_type={intent_type}({intent_type_value}), "
+            f"confidence={confidence:.4f}, source={intent_info['source']}, "
+            f"candidates={candidates_list}, "
+            f"original='{user_input}', corrected='{intent_info['corrected']}'"
         )
         
         # ===== 步骤3: 初始化 =====
@@ -375,7 +682,7 @@ class ChatRouter:
                 yield event
         else:
             # 动作意图：调用 react_sse_wrapper 处理
-            logger.info(f"[ChatRouter] 动作意图 (type={intent_type}, conf={confidence:.2f})，分发到 react_sse_wrapper")
+            logger.info(f"[ChatRouter] 动作意图 (type={intent_type}, conf={confidence:.2f}, candidates={candidates_list})，分发到 react_sse_wrapper")
             from app.services.react_sse_wrapper import generate_sse_stream
             
             # 准备 messages 列表
@@ -385,6 +692,7 @@ class ChatRouter:
                 messages=messages,
                 intent_type=intent_type,
                 confidence=confidence,
+                candidates=candidates_list,  # 【新增 2026-04-30 小沈】传递候选意图列表
                 provider=provider,
                 model=model,
                 task_id=task_id,
