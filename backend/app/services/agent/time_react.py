@@ -17,7 +17,7 @@ import app.services.tools.time.time_tools as _
 
 from typing import Any, Optional, Dict
 
-from app.services.agent.base_react import BaseAgent
+from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
 from app.services.tools.mixin import ToolLoaderMixin
 from app.services.tools.registry import ToolCategory
 from app.services.agent.tool_executor import ToolExecutor
@@ -35,7 +35,7 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
         llm_client: Any,
         task_id: str,
         tool_category: Optional[ToolCategory] = None,
-        max_steps: int = 50,
+        max_steps: int = DEFAULT_MAX_STEPS,
         **kwargs
     ):
         """初始化 TimeReactAgent"""

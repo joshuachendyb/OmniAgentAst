@@ -19,7 +19,7 @@ import asyncio
 import json
 from typing import Dict, Any, List, Optional, AsyncGenerator, Callable
 
-from app.services.agent.base_react import BaseAgent
+from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.types import Step, AgentResult, AgentStatus
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
@@ -52,7 +52,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         # session_id 专用于会话场景，操作追踪必须用 task_id
         task_id: str,
         tool_category: Optional[ToolCategory] = None,
-        max_steps: int = 100,
+        max_steps: int = DEFAULT_MAX_STEPS,
         **kwargs
     ):
         """

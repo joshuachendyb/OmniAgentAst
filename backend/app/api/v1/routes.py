@@ -95,6 +95,7 @@ from pydantic import BaseModel, Field
 from app.config import get_config as get_config_instance
 from app.services import AIServiceFactory
 from app.utils.logger import logger
+from app.services.agent.base_react import DEFAULT_MAX_STEPS
 
 router = APIRouter()
 
@@ -220,7 +221,7 @@ class ConfigResponse(BaseModel):
     theme: str = Field(..., description="当前主题")
     language: str = Field(..., description="当前语言")
     security: Optional[SecurityConfig] = Field(None, description="安全配置")
-    max_steps: int = Field(100, description="Agent最大迭代次数")
+    max_steps: int = Field(DEFAULT_MAX_STEPS, description="Agent最大迭代次数")
 
 
 class ConfigValidateRequest(BaseModel):
@@ -325,7 +326,7 @@ async def get_system_config():
             theme=theme,
             language=language,
             security=security_config,
-            max_steps=config.get('app', {}).get('max_steps', 100)
+            max_steps=config.get('app', {}).get('max_steps', DEFAULT_MAX_STEPS)
         )
         
     except Exception as e:

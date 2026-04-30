@@ -43,6 +43,7 @@ from app.services.agent.reasoning_steps import StepFactory
 from app.chat_stream.chat_helpers import create_final_response, create_timestamp, create_step_counter
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
 from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse, format_sse_event
+from app.services.agent.base_react import DEFAULT_MAX_STEPS
 
 
 # ============================================================
@@ -478,7 +479,7 @@ async def generate_sse_stream(
             # 相关文件：config/config.yaml (max_steps配置)
             # Author: 小沈 - 2026-04-01
             config = get_config()
-            max_steps = config.get('app', {}).get('max_steps', 100)
+            max_steps = config.get('app', {}).get('max_steps', DEFAULT_MAX_STEPS)
             
             try:
                 async for event in agent.run_stream(task=last_message, context=None, max_steps=max_steps, task_id=task_id, running_tasks=running_tasks):

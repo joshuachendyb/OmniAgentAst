@@ -9,7 +9,7 @@ AgentFactory - Agent工厂类
 修复 - 2026-04-26 小沈
 """
 from typing import Dict, Any, Optional, Type
-from app.services.agent.base_react import BaseAgent
+from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
 from app.services.tools.registry import ToolCategory
 
 
@@ -37,7 +37,7 @@ class AgentFactory:
         llm_client: Any = None,
         task_id: str = "",  # 【修改】session_id → task_id，2026-04-26 小沈
         tool_category: Optional[ToolCategory] = None,
-        max_steps: int = 100,
+        max_steps: int = DEFAULT_MAX_STEPS,
         **kwargs
     ) -> BaseAgent:
         """创建Agent实例

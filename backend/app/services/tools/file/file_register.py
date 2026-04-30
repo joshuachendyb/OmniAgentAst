@@ -11,7 +11,7 @@ File Register - 文件工具注册点
 - 按文档设计，使用 Pydantic 模型注册
 - 使用 input_model 参数，自动生成 OpenAI Schema
 
-【工具列表】（共17个）
+【工具列表】（共28个）
 1. read_file - 读取文件
 2. write_file - 写入文件
 3. list_directory - 列出目录
@@ -29,6 +29,17 @@ File Register - 文件工具注册点
 15. file_checksum - 文件校验
 16. file_statistics - 文件统计
 17. file_monitor - 文件监控
+18. read_text_file - 读取文本文件
+19. read_media_file - 读取媒体文件
+20. read_batch_file - 批量读取文件
+21. precise_replace_in_file - 精确替换文件内容
+22. edit_file - 编辑文件
+23. rename_file - 重命名文件/目录
+24. glob_files - Glob匹配文件
+25. grep_file_content - 搜索文件内容
+26. list_directory_with_sizes - 列出目录内容及大小
+27. get_directory_tree - 获取目录树
+28. list_allowed_directories - 列出允许访问的目录
 
 【注册说明】
 - file_tools.py 的旧 _TOOL_REGISTRY 已移除（2026-04-26）
@@ -68,6 +79,17 @@ from app.services.tools.file.file_schema import (
     FileMonitorInput,
     FileStatisticsInput,
     FileChecksumInput,
+    ReadTextFileInput,
+    ReadMediaFileInput,
+    ReadBatchFileInput,
+    PreciseReplaceInFileInput,
+    EditFileInput,
+    RenameFileInput,
+    GlobFilesInput,
+    GrepFileContentInput,
+    ListDirectoryWithSizesInput,
+    GetDirectoryTreeInput,
+    ListAllowedDirectoriesInput,
 )
 
 # 导入工具类
@@ -92,6 +114,17 @@ FILE_TOOL_DESCRIPTIONS = {
     "file_monitor": "文件监控",
     "file_statistics": "文件统计",
     "file_checksum": "文件校验",
+    "read_text_file": "读取文本文件",
+    "read_media_file": "读取媒体文件",
+    "read_batch_file": "批量读取文件",
+    "precise_replace_in_file": "精确替换文件内容",
+    "edit_file": "编辑文件",
+    "rename_file": "重命名文件",
+    "glob_files": "Glob匹配文件",
+    "grep_file_content": "搜索文件内容",
+    "list_directory_with_sizes": "列出目录内容及大小",
+    "get_directory_tree": "获取目录树",
+    "list_allowed_directories": "列出允许访问的目录",
 }
 
 # 【小沈 2026-04-29】补充 examples 参数 - 17个工具的使用示例
@@ -164,6 +197,50 @@ FILE_TOOL_EXAMPLES = {
     "file_checksum": [
         {"file_path": "C:/Users/用户名/Documents/data.zip", "algorithm": "md5"},
         {"file_path": "D:/项目代码/main.py", "algorithm": "sha256"}
+    ],
+    "read_text_file": [
+        {"file_path": "D:/OmniAgentAs-desk/backend/app/main.py"},
+        {"file_path": "D:/OmniAgentAs-desk/backend/app/services/agent.py", "head": 10},
+        {"file_path": "D:/OmniAgentAs-desk/logs/app.log", "tail": 5}
+    ],
+    "read_media_file": [
+        {"file_path": "D:/OmniAgentAs-desk/docs/screenshot.png"},
+        {"file_path": "D:/OmniAgentAs-desk/audio/notification.mp3"}
+    ],
+    "read_batch_file": [
+        {"file_paths": ["D:/OmniAgentAs-desk/backend/app/main.py", "D:/OmniAgentAs-desk/backend/app/config.py"]},
+        {"file_paths": ["D:/OmniAgentAs-desk/config.yaml", "D:/OmniAgentAs-desk/.env"]}
+    ],
+    "precise_replace_in_file": [
+        {"file_path": "D:/OmniAgentAs-desk/backend/app/main.py", "old_string": "def old_func():", "new_string": "def new_func():"},
+        {"file_path": "D:/OmniAgentAs-desk/backend/app/main.py", "old_string": "print(\"debug\")", "new_string": "# print(\"debug\")", "replace_all": True}
+    ],
+    "edit_file": [
+        {"file_path": "D:/OmniAgentAs-desk/backend/app/main.py", "edits": [{"oldText": "def old():", "newText": "def new():"}]},
+        {"file_path": "D:/OmniAgentAs-desk/backend/app/main.py", "edits": [{"oldText": "import os", "newText": "import os\nimport sys"}], "dryRun": True}
+    ],
+    "rename_file": [
+        {"file_path": "D:/documents/report_old.txt", "new_name": "report_final.txt"},
+        {"file_path": "D:/projects/old_folder", "new_name": "new_folder"}
+    ],
+    "glob_files": [
+        {"pattern": "**/*.js"},
+        {"pattern": "src/**/*.ts", "search_dir": "D:/OmniAgentAs-desk"}
+    ],
+    "grep_file_content": [
+        {"pattern": "def read_file", "search_dir": "D:/OmniAgentAs-desk/backend"},
+        {"pattern": "class.*Component", "search_dir": "D:/OmniAgentAs-desk/frontend", "glob": "*.tsx", "ignore_case": True}
+    ],
+    "list_directory_with_sizes": [
+        {"dir_path": "D:/OmniAgentAs-desk", "sortBy": "name"},
+        {"dir_path": "D:/OmniAgentAs-desk", "sortBy": "size"}
+    ],
+    "get_directory_tree": [
+        {"dir_path": "D:/OmniAgentAs-desk"},
+        {"dir_path": "D:/OmniAgentAs-desk", "excludePatterns": ["node_modules", "__pycache__"]}
+    ],
+    "list_allowed_directories": [
+        {}
     ]
 }
 
@@ -205,6 +282,17 @@ def _register_file_tools():
         "file_monitor": lambda: _get_ft().file_monitor,
         "file_statistics": lambda: _get_ft().file_statistics,
         "file_checksum": lambda: _get_ft().file_checksum,
+        "read_text_file": lambda: _get_ft().read_text_file,
+        "read_media_file": lambda: _get_ft().read_media_file,
+        "read_batch_file": lambda: _get_ft().read_batch_file,
+        "precise_replace_in_file": lambda: _get_ft().precise_replace_in_file,
+        "edit_file": lambda: _get_ft().edit_file,
+        "rename_file": lambda: _get_ft().rename_file,
+        "glob_files": lambda: _get_ft().glob_files,
+        "grep_file_content": lambda: _get_ft().grep_file_content,
+        "list_directory_with_sizes": lambda: _get_ft().list_directory_with_sizes,
+        "get_directory_tree": lambda: _get_ft().get_directory_tree,
+        "list_allowed_directories": lambda: _get_ft().list_allowed_directories,
     }
     
     # 【小健 2026-04-29】强制映射：工具名与Pydantic模型一一对应，禁止新增工具时跳过此映射
@@ -228,6 +316,17 @@ def _register_file_tools():
         "file_monitor": FileMonitorInput,
         "file_statistics": FileStatisticsInput,
         "file_checksum": FileChecksumInput,
+        "read_text_file": ReadTextFileInput,
+        "read_media_file": ReadMediaFileInput,
+        "read_batch_file": ReadBatchFileInput,
+        "precise_replace_in_file": PreciseReplaceInFileInput,
+        "edit_file": EditFileInput,
+        "rename_file": RenameFileInput,
+        "glob_files": GlobFilesInput,
+        "grep_file_content": GrepFileContentInput,
+        "list_directory_with_sizes": ListDirectoryWithSizesInput,
+        "get_directory_tree": GetDirectoryTreeInput,
+        "list_allowed_directories": ListAllowedDirectoriesInput,
     }
     
     # 【2026-04-29 小沈更新】使用 Pydantic 模型注册

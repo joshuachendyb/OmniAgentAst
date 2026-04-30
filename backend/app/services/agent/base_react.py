@@ -50,6 +50,11 @@ from app.utils.prompt_logger import get_prompt_logger
 # from app.chat_stream.error_handler import create_tool_error_result, create_session_error_result, create_error_from_exception
 # 这些函数的逻辑已整合到StepFactory.create_action_tool_step()和create_error_step()
 
+# ===== 全局默认值常量 =====
+# 原则：config.yaml > 代码常量 > 硬编码默认值
+# react_sse_wrapper.py 从 config.yaml 读取后传入
+DEFAULT_MAX_STEPS = 100
+
 
 class BaseAgent(ABC):
     """
@@ -66,17 +71,18 @@ class BaseAgent(ABC):
         llm_client: Any,
         task_id: str,  # 【修改】session_id → task_id，2026-04-26 小沈
         tool_category: Optional[ToolCategory] = None,
-        max_steps: int = 100,
+        max_steps: int = DEFAULT_MAX_STEPS,
         **kwargs
     ):
-        """初始化 BaseAgent
-        参考: 7.5节行1064-1088
-        
+        """
+        初始化 BaseAgent
+        参考: 5.1节行 503-534
+
         Args:
-            llm_client: LLM客户端
-            task_id: 任务ID（操作追踪和回退用）
-            tool_category: 工具分类
-            max_steps: 最大步数
+            llm_client: LLM 客户端函数
+            task_id: 任务ID - 用于操作安全追踪和审计（必需，不可为空字符串）
+            tool_category: 工具分类（可选，用于加载特定工具集）
+            max_steps: 最大步数（默认 DEFAULT_MAX_STEPS=100，优先从 config.yaml 读取）
         """
         self.llm_client = llm_client
         self.task_id = task_id  # 赋值task_id
@@ -180,7 +186,7 @@ class BaseAgent(ABC):
         self,
         task: str,
         context: Optional[Dict[str, Any]] = None,
-        max_steps: int = 100,
+        max_steps: int = DEFAULT_MAX_STEPS,
         task_id: Optional[str] = None,
         running_tasks: Optional[Dict[str, Any]] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:

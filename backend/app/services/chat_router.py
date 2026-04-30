@@ -43,6 +43,7 @@ from app.services import AIServiceFactory
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_step_counter
 from app.chat_stream.error_handler import create_error_response
+from app.services.agent.base_react import DEFAULT_MAX_STEPS
 
 
 # 意图标签列表（用于 PreprocessingPipeline）
@@ -245,7 +246,7 @@ class ChatRouter:
         request: Optional[ChatRequest] = None,
         context: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
-        max_steps: int = 100,
+        max_steps: int = DEFAULT_MAX_STEPS,
         ai_service: Optional[Any] = None  # 【新增】接收外部传入的 ai_service
     ) -> AsyncGenerator[str, None]:
         """
