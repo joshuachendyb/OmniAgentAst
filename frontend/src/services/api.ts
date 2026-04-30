@@ -144,7 +144,7 @@ export const chatApi = {
    * @author 小新
    */
   validateService: async (): Promise<ValidateResponse> => {
-    const response = await api.get<ValidateResponse>("/chat/validate");
+    const response = await api.get<ValidateResponse>("/chat/validate", { timeout: 30000 });
     return response.data;
   },
 

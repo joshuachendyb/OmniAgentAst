@@ -614,9 +614,9 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
               const currentModel = modelList.find(m => m.current_model === true);
               
               if (serviceStatus && !serviceStatus.success) {
-                // ❌ 失败时，显示配置文件中的模型名称（错误信息通过弹框显示）
                 return (
-                  <Tag color="error" onClick={handleCheckService} style={{ cursor: "pointer" }}>
+                  <Tag color="error" style={{ cursor: "pointer" }} onClick={checkingStatus ? undefined : handleCheckService}>
+                    <CheckCircleOutlined /> {serviceStatus.provider}{" "}
                     <CheckCircleOutlined /> {serviceStatus.provider}{" "}
                     {serviceStatus.model && `(${serviceStatus.model})`}
                     <span style={{ marginLeft: 8, fontSize: 12 }}>(已失效)</span>
@@ -628,7 +628,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                   ? (serviceStatus.status === "warning" ? "warning" : "success") 
                   : "default";
                 return (
-                  <Tag color={tagColor} onClick={handleCheckService} style={{ cursor: "pointer" }}>
+                  <Tag color={tagColor} onClick={checkingStatus ? undefined : handleCheckService} style={{ cursor: "pointer" }}>
                     <CheckCircleOutlined /> {currentModel.provider}{" "}
                     ({currentModel.model})
                     {serviceStatus?.status === "warning" && <span style={{ marginLeft: 4, fontSize: 11 }}>⚠️</span>}
@@ -637,7 +637,7 @@ const AppLayout: React.FC<LayoutProps> = ({ children, activeKey = "/" }) => {
                 );
               } else {
                 return (
-                  <Tag color="error" onClick={handleCheckService} style={{ cursor: "pointer" }}>
+                  <Tag color="error" onClick={checkingStatus ? undefined : handleCheckService} style={{ cursor: "pointer" }}>
                     未配置 (点击检查)
                   </Tag>
                 );
@@ -693,6 +693,7 @@ onChange={handleModelChange}
               icon={<ReloadOutlined />}
               onClick={handleCheckService}
               loading={checkingStatus}
+              disabled={checkingStatus}
               size="small"
             >
               检查服务

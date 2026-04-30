@@ -198,9 +198,10 @@ async def validate_ai_service():
         # 验证服务 - 【小沈-2026-03-27修复】直接在接口中验证，添加30秒超时
         logger.info(f"[检查服务] 开始调用 API 验证...")
         import httpx
+        from httpx import Limits
         is_valid = False
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, limits=Limits(max_connections=5, max_keepalive_connections=2)) as client:
                 response = await client.post(
                     f"{ai_service.api_base}/chat/completions",
                     headers={
@@ -261,8 +262,9 @@ async def validate_ai_service():
             test_response = None
             try:
                 # 使用 ai_service 的 timeout 配置（从 config.yaml 读取）
+                from httpx import Limits
                 timeout = ai_service.timeout if hasattr(ai_service, 'timeout') else 30
-                async with httpx.AsyncClient(timeout=timeout) as client:
+                async with httpx.AsyncClient(timeout=timeout, limits=Limits(max_connections=5, max_keepalive_connections=2)) as client:
                     test_response = await client.post(
                         f"{ai_service.api_base}/chat/completions",
                         headers={
