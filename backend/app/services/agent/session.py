@@ -129,7 +129,7 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
                 SELECT COUNT(*), 
                        SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END),
                        SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)
-                FROM file_operations WHERE session_id = ?
+                FROM file_operations WHERE task_id = ?
             ''', (session_id,))
             
             total, success_count, failed_count = cursor.fetchone()
@@ -175,7 +175,7 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT * FROM file_operation_sessions WHERE session_id = ?
+                SELECT * FROM file_operation_sessions WHERE task_id = ?
             ''', (session_id,))
             
             row = cursor.fetchone()
