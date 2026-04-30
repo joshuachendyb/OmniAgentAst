@@ -604,38 +604,122 @@ async def generate_sse_stream(
                 yield error_response
 
         elif intent_type == "network" and confidence >= CRSS_CONFIDENCE_THRESHOLD:
-            # 网络操作：待实现 NetworkReactAgent
-            logger.warning(f"[NetworkOp] NetworkReactAgent 待实现，使用回退逻辑")
-            error_step_obj = StepFactory.create_error_step(
-                step=next_step(),
-                error_type="not_implemented",
-                error_message="网络操作功能正在开发中",
-                recoverable=False,
+            # 【修复 2026-04-30 小沈】network意图走AgentFactory兜底到FileReactAgent
+            # 之前直接报错"功能正在开发中"，现在AgentFactory未注册intent_type会回退FileReactAgent
+            logger.info(f"[NetworkOp] NetworkReactAgent未实现，通过AgentFactory回退到FileReactAgent")
+            from app.services.agent.agent_factory import AgentFactory
+            agent = AgentFactory.create(
+                intent_type='network',
+                llm_client=llm_client,
+                task_id=task_id,
+                api_base=ai_service.api_base,
+                api_key=ai_service.api_key,
                 model=ai_service.model,
-                provider=ai_service.provider
+                candidates=candidates
             )
-            error_step_dict = error_step_obj.to_dict()
-            error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
-            current_execution_steps.append(error_step_dict)
-            await save_execution_steps_to_db(session_id, current_execution_steps, "网络操作功能正在开发中")
-            yield error_response
+
+            config = get_config()
+            max_steps = config.get('app', {}).get('max_steps', DEFAULT_MAX_STEPS)
+
+            try:
+                async for event in agent.run_stream(task=last_message, context=None, max_steps=max_steps, task_id=task_id, running_tasks=running_tasks):
+                    async with running_tasks_lock:
+                        is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
+                        if is_cancelled:
+                            logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
+                            interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
+                            logger.info(f"[Step incident] 发送incident步骤(interrupted)")
+                            yield f"data: {json.dumps(interrupted_data)}\n\n"
+                            current_execution_steps.append(interrupted_data)
+                            await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
+                            break
+
+                    sse_data = _format_sse_event(event, next_step(), ai_service.model, ai_service.provider)
+                    if sse_data:
+                        if sse_data.startswith("data: "):
+                            step_data = json.loads(sse_data[6:])
+                            current_execution_steps.append(step_data)
+                            if step_data.get('type') == 'final':
+                                current_content = step_data.get('response', '')
+                            await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+
+                        logger.info(f"[NetworkOp SSE] 发送数据(回退FileReactAgent)")
+                        yield sse_data
+                        await asyncio.sleep(0.05)
+
+            except Exception as e:
+                logger.error(f"网络操作执行出错(回退FileReactAgent)：task_id={task_id}, error={e}", exc_info=True)
+                error_step_obj = StepFactory.create_error_step(
+                    step=next_step(),
+                    error_type='network_operation_error',
+                    error_message="网络操作执行失败",
+                    recoverable=False,
+                    model=ai_service.model,
+                    provider=ai_service.provider
+                )
+                error_step_dict = error_step_obj.to_dict()
+                error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
+                current_execution_steps.append(error_step_dict)
+                await save_execution_steps_to_db(session_id, current_execution_steps, "网络操作执行失败")
+                yield error_response
         
         elif intent_type == "desktop" and confidence >= CRSS_CONFIDENCE_THRESHOLD:
-            # 桌面操作：待实现 DesktopReactAgent
-            logger.warning(f"[DesktopOp] DesktopReactAgent 待实现，使用回退逻辑")
-            error_step_obj = StepFactory.create_error_step(
-                step=next_step(),
-                error_type="not_implemented",
-                error_message="桌面操作功能正在开发中",
-                recoverable=False,
+            # 【修复 2026-04-30 小沈】desktop意图走AgentFactory兜底到FileReactAgent
+            logger.info(f"[DesktopOp] DesktopReactAgent未实现，通过AgentFactory回退到FileReactAgent")
+            from app.services.agent.agent_factory import AgentFactory
+            agent = AgentFactory.create(
+                intent_type='desktop',
+                llm_client=llm_client,
+                task_id=task_id,
+                api_base=ai_service.api_base,
+                api_key=ai_service.api_key,
                 model=ai_service.model,
-                provider=ai_service.provider
+                candidates=candidates
             )
-            error_step_dict = error_step_obj.to_dict()
-            error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
-            current_execution_steps.append(error_step_dict)
-            await save_execution_steps_to_db(session_id, current_execution_steps, "桌面操作功能正在开发中")
-            yield error_response
+
+            config = get_config()
+            max_steps = config.get('app', {}).get('max_steps', DEFAULT_MAX_STEPS)
+
+            try:
+                async for event in agent.run_stream(task=last_message, context=None, max_steps=max_steps, task_id=task_id, running_tasks=running_tasks):
+                    async with running_tasks_lock:
+                        is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
+                        if is_cancelled:
+                            logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
+                            interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
+                            yield f"data: {json.dumps(interrupted_data)}\n\n"
+                            current_execution_steps.append(interrupted_data)
+                            await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
+                            break
+
+                    sse_data = _format_sse_event(event, next_step(), ai_service.model, ai_service.provider)
+                    if sse_data:
+                        if sse_data.startswith("data: "):
+                            step_data = json.loads(sse_data[6:])
+                            current_execution_steps.append(step_data)
+                            if step_data.get('type') == 'final':
+                                current_content = step_data.get('response', '')
+                            await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
+
+                        logger.info(f"[DesktopOp SSE] 发送数据(回退FileReactAgent)")
+                        yield sse_data
+                        await asyncio.sleep(0.05)
+
+            except Exception as e:
+                logger.error(f"桌面操作执行出错(回退FileReactAgent)：task_id={task_id}, error={e}", exc_info=True)
+                error_step_obj = StepFactory.create_error_step(
+                    step=next_step(),
+                    error_type='desktop_operation_error',
+                    error_message="桌面操作执行失败",
+                    recoverable=False,
+                    model=ai_service.model,
+                    provider=ai_service.provider
+                )
+                error_step_dict = error_step_obj.to_dict()
+                error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
+                current_execution_steps.append(error_step_dict)
+                await save_execution_steps_to_db(session_id, current_execution_steps, "桌面操作执行失败")
+                yield error_response
         
         else:
             # chat 或 confidence < 0.3：简单对话
