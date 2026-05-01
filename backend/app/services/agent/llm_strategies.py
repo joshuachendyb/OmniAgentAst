@@ -319,7 +319,7 @@ class TextStrategy(LLMStrategy):
                 # 尝试提取参数（增强版：提取多种参数）
                 params = {}
                 
-                # 1. 查找 path 参数（根据工具类型使用正确的参数名）
+                # 1. 【修复 2026-05-01 小沈 小健】查找 path 参数（根据工具类型使用正确的参数名）
                 path_patterns = [
                     r'["\']?([A-Za-z]:\\[^"\'\s,}]+)["\']?',  # Windows 路径 C:\path
                     r'["\']?(/[^\s"\'<>,}]+)["\']?',  # Unix 路径 /path
