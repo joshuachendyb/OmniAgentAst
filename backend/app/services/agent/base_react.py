@@ -345,11 +345,11 @@ class BaseAgent(ABC):
                         self.steps.append(thought_step)
                         yield thought_step.to_dict()
 
-                    # 【步骤3.4】直接FinalStep→return，传入thought参数
+                    # 2026-05-01 小强修改：thought和response各归各位，不生搬硬套重复
                     final_step = StepFactory.create_final_step(
                         step=step_count,
-                        response=answer_response or thought_content,
-                        thought=parsed.get("thought", thought_content),
+                        response=answer_response,
+                        thought=parsed.get("thought", ""),
                         is_finished=True
                     )
                     self.steps.append(final_step)
