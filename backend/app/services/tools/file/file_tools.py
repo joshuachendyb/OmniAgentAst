@@ -2503,8 +2503,10 @@ class FileTools:
                 operation_func=_edit_sync
             )
             if success:
+                # 【修复 2026-05-01 小沈】applied_edits=0时success应为False（如oldText全为空）
+                edit_success = edit_result['applied_edits'] > 0
                 return _to_unified_format({
-                    "success": True, "applied_edits": edit_result['applied_edits'], "total_edits": edit_result['total_edits'],
+                    "success": edit_success, "applied_edits": edit_result['applied_edits'], "total_edits": edit_result['total_edits'],
                     "results": edit_result['results'], "preview": edit_result['preview'],
                     "dry_run": edit_result['dry_run'], "encoding": edit_result['used_enc'],
                     "operation_id": operation_id,
