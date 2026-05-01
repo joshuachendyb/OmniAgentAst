@@ -74,11 +74,15 @@ class BaseAIService:
     新增provider只需在配置文件中添加配置，零代码修改！
     """
     
-    def __init__(self, api_key: str, model: str, api_base: str, provider: str = "", timeout: int = 60):
+    def __init__(self, api_key: str, model: str, api_base: str, provider: str = "", timeout: int = 60,
+                 max_tokens: int = 4096, temperature: float = 0.7, seed: Optional[int] = None):
         self.api_key = api_key
         self.model = model
         self.api_base = api_base
         self.provider = provider
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.seed = seed
         
         try:
             timeout_value = float(timeout) if timeout else 60.0
@@ -98,6 +102,27 @@ class BaseAIService:
         
         self._cancelled = False
         self._current_response: Optional[httpx.Response] = None
+
+    def _build_request_body(self, messages: List[Dict]) -> Dict:
+        """
+        构建LLM API请求体
+
+        【改进8 2026-05-01 小沈 小健】添加max_tokens/temperature/seed参数
+
+        Returns:
+            包含model/messages/stream/参数的请求体字典
+        """
+        body = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+        }
+        # seed可选，None时不传（避免不支持seed的API报错）
+        if self.seed is not None:
+            body["seed"] = self.seed
+        return body
     
     def cancel(self):
         """强制取消当前请求"""
@@ -165,11 +190,7 @@ class BaseAIService:
                     "Authorization": f"Bearer {self.api_key}",
                     "Content-Type": "application/json"
                 },
-                json={
-                    "model": self.model,
-                    "messages": messages,
-                    "stream": True
-                }
+                json=self._build_request_body(messages)
             ) as response:
                 self._current_response = response
                 

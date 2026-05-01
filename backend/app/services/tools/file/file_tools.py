@@ -672,19 +672,16 @@ class FileTools:
                 import logging
                 logging.getLogger(__name__).info(f"write_file: 自动将全角标点替换为半角标点({file_path})")
 
-        # 【修复 2026-05-01 序号7】.py文件写入前：检测思维泄漏
-        if path_preview.suffix.lower() == '.py' and content:
-            python_keywords = ['def ', 'class ', 'import ', 'from ', 'if ', 'for ', 'while ',
-                               'return ', 'with ', 'try:', 'except', 'print(', '# ', '"""']
-            has_python = any(kw in content for kw in python_keywords)
-            chinese_chars = sum(1 for c in content if '\u4e00' <= c <= '\u9fff')
-            if not has_python and chinese_chars > len(content) * 0.3 and len(content) < 500:
+        # 【改进1 2026-05-01 小沈 小健】思维泄漏检测扩展到所有文件类型
+        if content:
+            from app.services.tools.content_quality import check_content_quality
+            quality_result = check_content_quality(content=content, file_path=file_path)
+            if quality_result.get("is_thought_leak"):
                 return _to_unified_format({
                     "success": False,
-                    "error": f"内容保护：写入.py文件的内容不包含任何Python关键字且{chinese_chars}个中文字符占比>{int(chinese_chars/max(len(content),1)*100)}%，可能是思维文本而非代码。请在content参数中传入实际代码内容。",
+                    "error": f"内容保护：{quality_result['warning']}",
                     "content": None
                 }, "write_file")
-
         # 若启用反转义，对内容做转义字符还原
         if unescape:
             content = content.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\")

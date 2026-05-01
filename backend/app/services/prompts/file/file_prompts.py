@@ -217,7 +217,8 @@ Example 5: Task completed
 【Response Format】:
 Always format responses as JSON:
 {
-    "thought": "Your reasoning about what to do next",
+    "thought": "分析当前状态和下一步决策（禁止写‘已成功’/‘需要继续’等确认性语言）",
+    "reasoning": "为什么选这个工具、参数如何确定（必需，不能为空，禁止写确认性语言）",
     "tool_name": "tool_name",
     "tool_params": {
         "param1": "value1",
@@ -225,7 +226,15 @@ Always format responses as JSON:
     }
 }
 
-If task is complete: {"thought": "...", "tool_name": "finish", "tool_params": {"result": "summary"}}"""
+【⚠️ write_file content规则 - 极其重要】:
+- content参数必须传入实际的文件内容（代码、文本、正文等）
+- ❌ 绝对禁止将你的思考/计划/状态确认当作content传入
+- ❌ 错误示例: content="已成功创建并写入第一章，需要继续创建第二章"
+- ✅ 正确示例: content="第一章：觉醒
+
+林凡是一名普通的大学生..."
+
+If task is complete: {"thought": "...", "reasoning": "...", "tool_name": "finish", "tool_params": {"result": "summary"}}"""
 
     def get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
@@ -447,11 +456,19 @@ Common mistakes to avoid:
                 "properties": {
                     "thought": {
                         "type": "string",
-                        "description": "思考过程，分析当前情况和用户需求"
+                        "description": (
+                            "分析当前情况、用户需求和下一步行动。"
+                            "【禁止】不要写'已成功'、'已完成'、'需要继续'等自我确认或计划性语言，"
+                            "只描述你的分析和决策。"
+                        )
                     },
                     "reasoning": {
                         "type": "string",
-                        "description": "推理过程，解释为什么选择这个工具及其参数"
+                        "description": (
+                            "详细推理过程，解释为什么选择这个工具、参数如何确定。"
+                            "【禁止】reasoning不能为空，不能包含'已成功'、'现在需要继续'等思维确认文本，"
+                            "必须是真正的逻辑推理。"
+                        )
                     },
                     "tool_name": {
                         "type": "string",
@@ -459,10 +476,14 @@ Common mistakes to avoid:
                     },
                     "tool_params": {
                         "type": "object",
-                        "description": "工具参数字典"
+                        "description": (
+                            "工具参数字典。"
+                            "【关键】write_file的content参数必须传入实际的文件内容（如代码、文本、小说正文），"
+                            "绝对禁止将你的思考过程、计划说明、状态确认当作content传入。"
+                        )
                     }
                 },
-                "required": ["thought", "tool_name"]
+                "required": ["thought", "reasoning", "tool_name"]
             }
         }
 

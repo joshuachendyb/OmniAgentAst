@@ -367,11 +367,15 @@ class AIServiceFactory:
             model=final_model,
             api_base=(provider_config.get("api_base") or "https://api.openai.com/v1").strip(),
             provider=final_provider,
-            timeout=provider_config.get("timeout", 30)
+            timeout=provider_config.get("timeout", 30),
+            # 【改进8 2026-05-01 小沈 小健】LLM调用参数
+            max_tokens=provider_config.get("max_tokens", 4096),
+            temperature=float(provider_config.get("temperature", 0.7)),
+            seed=provider_config.get("seed", None),
         )
-        
+
         return cls._instance
-    
+
     @classmethod
     def switch_provider(cls, provider: str, config_path: Optional[str] = None):
         """【废弃】切换AI提供商 - 请使用updateConfig同时更新provider和model"""
@@ -471,7 +475,11 @@ class AIServiceFactory:
                 model=final_model,
                 api_base=(provider_config.get("api_base") or "https://api.openai.com/v1").strip(),
                 provider=final_provider,
-                timeout=provider_config.get("timeout", 30)
+                timeout=provider_config.get("timeout", 30),
+                # 【改进8 2026-05-01 小沈 小健】LLM调用参数
+                max_tokens=provider_config.get("max_tokens", 4096),
+                temperature=float(provider_config.get("temperature", 0.7)),
+                seed=provider_config.get("seed", None),
             )
             
             return cls._instance

@@ -20,6 +20,36 @@ from app.utils.logger import logger
 
 
 # =============================================================================
+# 【改进7 2026-05-01 小沈 小健】reasoning验证辅助函数
+# =============================================================================
+
+_REASONING_MIN_LENGTH = 10
+
+
+def _add_reasoning_warning(result: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    检查tool call的reasoning字段是否为空或过短，附加parse_warning
+
+    当LLM跳过reasoning（直接输出thought+tool_name），标记warning但不阻塞流程。
+    调用方(base_react.py)可根据parse_warning决定是否在Observation中附加警告。
+
+    Args:
+        result: 解析结果字典
+
+    Returns:
+        可能附加了parse_warning的同一个字典（原地修改后返回）
+    """
+    if result.get("tool_name") and not result.get("parse_warning"):
+        reasoning = result.get("reasoning", "")
+        if not reasoning or len(reasoning.strip()) < _REASONING_MIN_LENGTH:
+            result["parse_warning"] = (
+                "⚠️ reasoning字段为空或过短(<10字符)。"
+                "有效的reasoning应包含：为什么选择这个工具、参数如何确定。"
+            )
+    return result
+
+
+# =============================================================================
 # 步骤1.1：定义REACT_KEYWORDS中英文关键词映射表
 # =============================================================================
 
@@ -707,10 +737,11 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
     # action 类型
     # 【2026-04-28 小沈修复】thought字段独立获取，不被content字段覆盖
     # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
+    # 【改进7 2026-05-01 小沈 小健】添加reasoning验证
     final_tool_params = tool_params if tool_params is not None else None
     if final_tool_params:
         final_tool_params = _supplement_missing_params(tool_name, final_tool_params, None)
-    return {
+    result = {
         "type": "action",
         "thought": thought,
         "content": content,
@@ -720,6 +751,7 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
         "response": None,
         "error": None
     }
+    return _add_reasoning_warning(result)
 
 
 def _create_action_result_from_list(data: list) -> Dict[str, Any]:
@@ -1276,10 +1308,11 @@ def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
     
     # action类型
     # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
+    # 【改进7 2026-05-01 小沈 小健】添加reasoning验证
     final_tool_params = tool_params
     if final_tool_params:
         final_tool_params = _supplement_missing_params(tool_name, final_tool_params, original_output if isinstance(original_output, str) else None)
-    return {
+    result = {
         "type": "action",
         "thought": parsed.get("thought", ""),
         "content": parsed.get("content", parsed.get("thought", original_output.strip())),
@@ -1289,6 +1322,7 @@ def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
         "response": None,
         "error": None
     }
+    return _add_reasoning_warning(result)
 
 
 def _extract_tool_params_from_thought(thought: str, tool_name: str = None) -> Dict[str, Any]:

@@ -560,14 +560,25 @@ class BaseAgent(ABC):
                     # 失败状态（error/timeout/permission_denied）：只显示错误摘要，不显示数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
                 
-                # 【小沈修复 2026-04-16】生成 display_text（给前端 UI 显示）
-                # 只显示摘要，不包含冗余数据结构
-                display_text = execution_result.get('summary', '')
-                
-                # 更新消息历史
+                # 【改进2 2026-05-01 小沈 小健】agent层独立内容质量检测
+                # 给LLM通道：在observation_text中附加质量警告和content摘要
+                if tool_name == "write_file" and exec_status == 'success':
+                    data_dict = execution_result.get('data', {}) or {}
+                    quality_warning = self._check_write_content_quality(tool_params, data_dict)
+                    if quality_warning:
+                        observation_text += f"\n⚠️ 内容质量警告: {quality_warning}"
+                    # 附加content摘要供LLM自查
+                    written_content = tool_params.get("content", "")
+                    if written_content:
+                        content_preview = written_content[:200]
+                        if len(written_content) > 200:
+                            content_preview += "..."
+                        observation_text += f"\n写入内容摘要({len(written_content)}字符): {content_preview}"
+
+                # 更新消息历史（给LLM通道）
                 logger.info(f"[Debug] observation加入history: {observation_text[:100]}...")
                 self._add_observation_to_history(observation_text)
-                
+
                 # 记录观察结果到prompt日志
                 prompt_logger = get_prompt_logger()
                 prompt_logger.log_observation(
@@ -576,22 +587,38 @@ class BaseAgent(ABC):
                     tool_name=tool_name,
                     tool_params=tool_params
                 )
-                
-                # ===== 【步骤2.9】yield observation =====
 
-                # 【步骤2.9】使用StepFactory创建ObservationStep
+                # ===== 【步骤2.9】yield observation =====
+                # 【改进2 2026-05-01】给前端通道也附加质量警告
+                display_summary = execution_result.get('summary', '')
+                if tool_name == "write_file" and exec_status == 'success':
+                    data_dict = execution_result.get('data', {}) or {}
+                    quality_warning = self._check_write_content_quality(tool_params, data_dict)
+                    if quality_warning:
+                        display_summary += f"\n⚠️ {quality_warning}"
+
+                # 使用带警告的display_result创建ObservationStep（给前端）
+                display_result = dict(execution_result)
+                display_result['summary'] = display_summary
+
                 observation_step = StepFactory.create_observation_step(
+                    step=step_count,
+                    tool_name=tool_name,
+                    tool_params=tool_params,
+                    execution_result=display_result,
+                    return_direct=execution_result.get("return_direct", False)
+                )
+
+                # 【步骤2.10】记录步骤历史（用原始execution_result，不含警告，避免重复）
+                self.steps.append(StepFactory.create_observation_step(
                     step=step_count,
                     tool_name=tool_name,
                     tool_params=tool_params,
                     execution_result=execution_result,
                     return_direct=execution_result.get("return_direct", False)
-                )
+                ))
 
-                # 【步骤2.10】记录步骤历史
-                self.steps.append(observation_step)
-
-                # yield Step字典
+                # yield带警告的版本给前端
                 yield observation_step.to_dict()
 
                 # 【步骤3.6】核心设计: observation_step.is_done() 决定是否直接结束任务
@@ -640,7 +667,7 @@ class BaseAgent(ABC):
         """
         分层保留对话历史
         - 保留 system message
-        - 保留用户消息
+        - 保留原始用户消息（任务需求）← 【改进3 2026-05-01 小沈 小健】
         - 保留所有 observation 消息（工具执行结果）
         - 保留最近5条消息
 
@@ -651,46 +678,55 @@ class BaseAgent(ABC):
         【优化 2026-04-16 小沈】
         - 问题：entries 数据过大导致 API 429 错误
         - 修复：在 list_directory 中截断 entries（最多 200 项），已从根本上解决超长 observation 问题
+
+        【改进3 2026-05-01 小沈 小健】
+        - 问题：原始user消息在important裁剪时可能被丢弃，导致LLM丢失任务约束（如"10章"）
+        - 修复：显式保留conversation_history[1]（原始user消息），不参与important裁剪
+        - 参考：设计文档 v2.1 §改进3
         """
         if len(self.conversation_history) <= 2:
             return  # 少于 system + user，不需要裁剪
 
-        # 【优化 2026-04-16 小沈】不再需要总长度检查，因为 entries 已被截断
-        
         # 不需要裁剪
         if len(self.conversation_history) <= 15:
             return
-        
-        # 保留 system message
+
         system_msg = self.conversation_history[0]
-        
-        # 保留最近5条消息（最新工具调用上下文）
+
+        # 【改进3 2026-05-01】显式保留原始用户消息，不参与裁剪
+        # 原始user消息在conversation_history[1]，记录了用户最初的任务需求（如"写10章小说"）
+        original_user_msg = self.conversation_history[1] if len(self.conversation_history) > 1 else None
+
         recent = self.conversation_history[-5:]
-        
-        # 记录裁剪前的长度
+
         original_len = len(self.conversation_history)
-        
-        # 保留重要消息（用户需求、工具调用结果等）
+
+        # 从index=2开始遍历（跳过已显式保留的原始user消息）
         important = []
-        for msg in self.conversation_history[1:-5]:  # 排除system和recent
+        start_idx = 2 if original_user_msg else 1
+        for msg in self.conversation_history[start_idx:-5]:
             content = msg.get("content", "")
             role = msg.get("role", "")
-            
+
             # 保留条件：
-            # 1. 用户消息（任务需求）
-            # 2. assistant消息（LLM推理过程，保持上下文连贯性）【修复D6】
-            # 3. observation消息（工具执行结果，以 "Observation:" 开头）
-            if role == "user" or role == "assistant" or content.startswith("Observation:"):
+            # 1. assistant消息（LLM推理过程，保持上下文连贯性）
+            # 2. observation消息（工具执行结果，以 "Observation:" 开头）
+            if role == "assistant" or content.startswith("Observation:"):
                 important.append(msg)
-        
+
         # 如果重要消息太多，只保留最新的10条
         if len(important) > 10:
             important = important[-10:]
-        
-        # 重建对话历史：system + user + important + recent
-        self.conversation_history = [system_msg] + important + recent
-        
-        # 【修复D5】使用裁剪前记录的长度
+
+        # 重建：system + original_user + important + recent
+        rebuilt = [system_msg]
+        if original_user_msg:
+            rebuilt.append(original_user_msg)
+        rebuilt.extend(important)
+        rebuilt.extend(recent)
+
+        self.conversation_history = rebuilt
+
         logger.info(f"[History] Trimmed from {original_len} to {len(self.conversation_history)} messages (important={len(important)}, recent={len(recent)})")
 
     # ===== 通用方法 =====
@@ -699,3 +735,53 @@ class BaseAgent(ABC):
         """添加观察结果到对话历史"""
         self.conversation_history.append({"role": "user", "content": observation})
         self._trim_history()
+
+    # ========== 【改进2 2026-05-01 小沈 小健】agent层独立内容质量检测 ==========
+
+    def _check_write_content_quality(self, tool_params: dict, data: dict) -> str:
+        """
+        agent层独立检查write_file写入内容的质量。
+
+        与改进1（工具层）不同，此方法在Observation阶段执行，检测结果通过
+        两条Observation通道（给LLM + 给前端）传递。即使工具层漏检（如精确
+        关键词未命中），agent层仍能发现并警告LLM和前端用户。
+
+        使用共享的 content_quality.check_content_quality 方法，检测逻辑
+        与工具层完全一致。
+
+        另外独立检查 bytes_written 极小（<256字节），提示可能输出不完整。
+
+        Args:
+            tool_params: LLM返回的tool_params字典（含content, file_path等）
+            data: 工具执行返回的data字典（含bytes_written等）
+
+        Returns:
+            警告信息字符串（空字符串表示无问题）
+        """
+        bytes_written = 0
+        if isinstance(data, dict):
+            bytes_written = data.get("bytes_written", 0)
+
+        written_content = tool_params.get("content", "")
+        file_path = tool_params.get("file_path", "")
+        warnings = []
+
+        # 使用共享的自我指涉检测方法
+        if written_content:
+            from app.services.tools.content_quality import check_content_quality
+            quality_result = check_content_quality(content=written_content, file_path=file_path)
+            if quality_result.get("is_thought_leak"):
+                warnings.append(
+                    f"内容疑似思维泄漏：写入内容中{int(quality_result['self_ref_rate']*100)}%"
+                    f"为自我指涉描述，不是实际的文件内容。"
+                    f"请在content参数中传入真正的文件内容，而非你的思考过程。"
+                )
+
+        # 检查bytes_written极小（<256字节），可能不是期望的完整内容
+        if 0 < bytes_written < 256:
+            warnings.append(
+                f"写入内容过小：仅{bytes_written}字节，"
+                f"请确认是否已将完整内容写入content参数。"
+            )
+
+        return "；".join(warnings)
