@@ -20,6 +20,7 @@ import {
   Colors,
   type StepType
 } from "../../../utils/stepStyles";
+import { formatStepContent, formatReasoningContent } from "../../../utils/stepContentUtils";
 
 interface StepContentProps {
   step: ExecutionStep;
@@ -240,7 +241,7 @@ const StepContent: React.FC<StepContentProps> = ({
                     lineHeight: 1.5,
                     fontWeight: 500,
                   }}>
-                    {String((step as ExecutionStep & Record<string, unknown>).thought).replace(/\\n/g, '\n')}
+                    {formatStepContent((step as ExecutionStep & Record<string, unknown>).thought)}
                   </div>
                 </div>
               )}
@@ -257,7 +258,7 @@ const StepContent: React.FC<StepContentProps> = ({
                 }}>
                   <span style={{ fontWeight: 500, marginRight: 4 }}>🧠 推理:</span>
                   <span style={{ color: '#666' }}>
-                    {String((step as ExecutionStep & Record<string, unknown>).reasoning).replace(/\\n/g, '\n')}
+                    {formatReasoningContent((step as ExecutionStep & Record<string, unknown>).reasoning)}
                   </span>
                 </div>
               )}
@@ -265,7 +266,7 @@ const StepContent: React.FC<StepContentProps> = ({
           ) : null}
           <div>
             <span style={getStepContentStyle("thought" as StepType, "primary")}>
-              {String(step.content || "").replace(/\\n/g, '\n')}
+              {formatStepContent(step.content)}
             </span>
           </div>
           <div style={{
@@ -282,11 +283,11 @@ const StepContent: React.FC<StepContentProps> = ({
         <div style={{...getStepStyle("final" as StepType), whiteSpace: "pre-wrap", wordBreak: "break-word"}}>
           {(step as ExecutionStep & Record<string, unknown>).thought && (
             <div style={{fontSize: "12px", color: "#888", marginBottom: "4px"}}>
-              思考: {String((step as ExecutionStep & Record<string, unknown>).thought).replace(/\\n/g, '\n')}
+              思考: {formatStepContent((step as ExecutionStep & Record<string, unknown>).thought)}
             </div>
           )}
           <span style={getStepContentStyle("final" as StepType, "primary")}>
-            {String((step as ExecutionStep & Record<string, unknown>).response || "").replace(/\\n/g, '\n')}
+            {formatStepContent((step as ExecutionStep & Record<string, unknown>).response)}
           </span>
         </div>
       )}
