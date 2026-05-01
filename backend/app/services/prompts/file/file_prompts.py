@@ -200,6 +200,8 @@ Example 5: Task completed
 - Linux/Mac: /home/username/...
 - MUST use absolute paths (not relative paths like ./file.txt)
 - Do NOT use ~ to represent home directory
+- ❌ CRITICAL: Do NOT translate or replace Chinese characters in paths! If the user says "E:\\下载\\科幻小说", you MUST use "E:\\下载\\科幻小说" exactly, NOT "E:\\download\\sci-fi-novel". Keep the original Chinese path characters exactly as provided by the user.
+- ❌ Do NOT convert Chinese paths to English or pinyin. Always use the path EXACTLY as the user specified.
 
 ---
 
@@ -208,6 +210,7 @@ Example 5: Task completed
 - All operations are tracked and can be rolled back
 - Search operations are read-only and safe
 - Be careful with write operations (overwrites existing content)
+- ❌ CRITICAL: When using write_file to modify an existing file, you MUST provide the COMPLETE new content, not just a summary or your thought process. Writing a short text to a large file will be REJECTED by data protection. If you only need to change part of a file, use precise_replace_in_file instead.
 
 ---
 
