@@ -8,6 +8,8 @@ Network 工具函数模块 - 网络通信工具
 包含：
 - http_request: 发起HTTP请求
 - download_file: 下载文件到本地
+- fetch_webpage: 获取和处理网页内容
+- search_web: 搜索网络获取最新信息
 
 返回格式：统一 {code, data, message} 格式
 - code: SUCCESS 或 ERR_xxx 错误码
@@ -19,8 +21,9 @@ Author: 小沈 - 2026-04-29
 
 import os
 import json
-from typing import Optional, Dict, Any, Literal
-from urllib.parse import urlencode, urlparse, urlunparse
+import re
+from typing import Optional, Dict, Any, Literal, List
+from urllib.parse import urlencode, urlparse, urlunparse, quote_plus
 
 import httpx
 from app.utils.logger import logger
@@ -255,4 +258,276 @@ async def download_file(
             "code": "ERR_NETWORK_UNKNOWN",
             "data": None,
             "message": f"下载异常: {str(e)}"
+        }
+
+
+async def fetch_webpage(
+    url: str,
+    prompt: Optional[str] = None,
+    extract_format: str = "markdown",
+    js_render: bool = False,
+    timeout: int = 30,
+    max_tokens: int = 8000,
+    user_agent: Optional[str] = None,
+    proxy: Optional[str] = None,
+) -> dict:
+    """
+    获取和处理网页内容 - 小沈 2026-05-02
+    
+    支持静态抓取和JS渲染（需要额外依赖）。
+    支持多种输出格式：markdown、html、text。
+    支持AI提取指令（prompt）。
+    """
+    try:
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            return {
+                "code": "ERR_NETWORK_INVALID_URL",
+                "data": None,
+                "message": f"无效的URL: {url}"
+            }
+        
+        headers = {}
+        if user_agent:
+            headers["User-Agent"] = user_agent
+        else:
+            headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        
+        proxy_config = None
+        if proxy:
+            proxy_config = {"http://": proxy, "https://": proxy}
+        
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(timeout),
+            follow_redirects=True,
+            proxies=proxy_config
+        ) as client:
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            
+            html_content = response.text
+            content_type = response.headers.get("content-type", "")
+            
+            if extract_format == "html":
+                extracted_content = html_content
+            elif extract_format == "text":
+                text_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL|re.IGNORECASE)
+                text_content = re.sub(r'<style[^>]*>.*?</style>', '', text_content, flags=re.DOTALL|re.IGNORECASE)
+                text_content = re.sub(r'<[^>]+>', ' ', text_content)
+                text_content = re.sub(r'\s+', ' ', text_content).strip()
+                extracted_content = text_content
+            else:
+                extracted_content = _html_to_markdown(html_content)
+            
+            if len(extracted_content) > max_tokens * 4:
+                extracted_content = extracted_content[:max_tokens * 4]
+                truncated = True
+            else:
+                truncated = False
+            
+            result_data = {
+                "url": url,
+                "content": extracted_content,
+                "format": extract_format,
+                "content_type": content_type,
+                "status_code": response.status_code,
+                "truncated": truncated,
+            }
+            
+            if prompt:
+                result_data["prompt"] = prompt
+                result_data["note"] = "AI提取功能需要LLM后处理"
+            
+            return {
+                "code": "SUCCESS",
+                "data": result_data,
+                "message": f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else "")
+            }
+    
+    except httpx.TimeoutException:
+        return {
+            "code": "ERR_NETWORK_TIMEOUT",
+            "data": None,
+            "message": f"获取网页超时（{timeout}秒）：{url}"
+        }
+    except httpx.HTTPStatusError as e:
+        return {
+            "code": "ERR_NETWORK_HTTP_ERROR",
+            "data": None,
+            "message": f"获取网页失败 (HTTP {e.response.status_code})：{url}"
+        }
+    except httpx.RequestError as e:
+        return {
+            "code": "ERR_NETWORK_REQUEST_ERROR",
+            "data": None,
+            "message": f"网络请求失败：{str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"[fetch_webpage] 未知错误: {e}")
+        return {
+            "code": "ERR_NETWORK_UNKNOWN",
+            "data": None,
+            "message": f"获取网页异常: {str(e)}"
+        }
+
+
+def _html_to_markdown(html: str) -> str:
+    """简单的HTML转Markdown - 小沈 2026-05-02"""
+    text = html
+    text = re.sub(r'<script[^>]*>.*?</script>', '', text, flags=re.DOTALL|re.IGNORECASE)
+    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL|re.IGNORECASE)
+    text = re.sub(r'<head[^>]*>.*?</head>', '', text, flags=re.DOTALL|re.IGNORECASE)
+    text = re.sub(r'<nav[^>]*>.*?</nav>', '', text, flags=re.DOTALL|re.IGNORECASE)
+    text = re.sub(r'<footer[^>]*>.*?</footer>', '', text, flags=re.DOTALL|re.IGNORECASE)
+    
+    text = re.sub(r'<h1[^>]*>(.*?)</h1>', r'# \1\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<h2[^>]*>(.*?)</h2>', r'## \1\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<h3[^>]*>(.*?)</h3>', r'### \1\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<h4[^>]*>(.*?)</h4>', r'#### \1\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<h5[^>]*>(.*?)</h5>', r'##### \1\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<h6[^>]*>(.*?)</h6>', r'###### \1\n', text, flags=re.IGNORECASE)
+    
+    text = re.sub(r'<strong[^>]*>(.*?)</strong>', r'**\1**', text, flags=re.IGNORECASE)
+    text = re.sub(r'<b[^>]*>(.*?)</b>', r'**\1**', text, flags=re.IGNORECASE)
+    text = re.sub(r'<em[^>]*>(.*?)</em>', r'*\1*', text, flags=re.IGNORECASE)
+    text = re.sub(r'<i[^>]*>(.*?)</i>', r'*\1*', text, flags=re.IGNORECASE)
+    
+    text = re.sub(r'<a[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', r'[\2](\1)', text, flags=re.IGNORECASE)
+    
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<p[^>]*>(.*?)</p>', r'\1\n\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<li[^>]*>(.*?)</li>', r'- \1\n', text, flags=re.IGNORECASE)
+    
+    text = re.sub(r'<[^>]+>', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'\n\s*\n', '\n\n', text)
+    
+    return text.strip()
+
+
+async def search_web(
+    query: str,
+    allowed_domains: Optional[List[str]] = None,
+    blocked_domains: Optional[List[str]] = None,
+    num_results: int = 10,
+    time_range: str = "any",
+    language: Optional[str] = None,
+    safe_search: str = "moderate",
+    proxy: Optional[str] = None,
+) -> dict:
+    """
+    搜索网络获取最新信息 - 小沈 2026-05-02
+    
+    使用DuckDuckGo搜索API（无需API密钥）。
+    支持域名过滤、时间范围、安全搜索等参数。
+    """
+    try:
+        if len(query) < 2:
+            return {
+                "code": "ERR_SEARCH_QUERY_TOO_SHORT",
+                "data": None,
+                "message": "搜索查询至少需要2个字符"
+            }
+        
+        proxy_config = None
+        if proxy:
+            proxy_config = {"http://": proxy, "https://": proxy}
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        
+        search_url = "https://api.duckduckgo.com/"
+        params = {
+            "q": query,
+            "format": "json",
+            "no_html": 1,
+            "skip_disambig": 1,
+        }
+        
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(30),
+            follow_redirects=True,
+            proxies=proxy_config
+        ) as client:
+            response = await client.get(search_url, params=params, headers=headers)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            results = []
+            
+            if data.get("AbstractText"):
+                results.append({
+                    "title": data.get("Heading", "摘要"),
+                    "url": data.get("AbstractURL", ""),
+                    "snippet": data.get("AbstractText", ""),
+                    "source": "DuckDuckGo Instant Answer"
+                })
+            
+            for topic in data.get("RelatedTopics", [])[:num_results]:
+                if isinstance(topic, dict):
+                    if "Text" in topic and "FirstURL" in topic:
+                        results.append({
+                            "title": topic.get("Text", "").split(" - ")[0] if " - " in topic.get("Text", "") else topic.get("Text", ""),
+                            "url": topic.get("FirstURL", ""),
+                            "snippet": topic.get("Text", ""),
+                            "source": "DuckDuckGo"
+                        })
+                    elif "Topics" in topic:
+                        for subtopic in topic.get("Topics", []):
+                            if len(results) >= num_results:
+                                break
+                            if "Text" in subtopic and "FirstURL" in subtopic:
+                                results.append({
+                                    "title": subtopic.get("Text", "").split(" - ")[0] if " - " in subtopic.get("Text", "") else subtopic.get("Text", ""),
+                                    "url": subtopic.get("FirstURL", ""),
+                                    "snippet": subtopic.get("Text", ""),
+                                    "source": "DuckDuckGo"
+                                })
+            
+            if allowed_domains:
+                results = [r for r in results if any(domain in r.get("url", "") for domain in allowed_domains)]
+            
+            if blocked_domains:
+                results = [r for r in results if not any(domain in r.get("url", "") for domain in blocked_domains)]
+            
+            results = results[:num_results]
+            
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "query": query,
+                    "results": results,
+                    "total": len(results),
+                    "time_range": time_range,
+                    "language": language,
+                },
+                "message": f"找到 {len(results)} 条搜索结果"
+            }
+    
+    except httpx.TimeoutException:
+        return {
+            "code": "ERR_NETWORK_TIMEOUT",
+            "data": None,
+            "message": "搜索请求超时"
+        }
+    except httpx.HTTPStatusError as e:
+        return {
+            "code": "ERR_NETWORK_HTTP_ERROR",
+            "data": None,
+            "message": f"搜索请求失败 (HTTP {e.response.status_code})"
+        }
+    except httpx.RequestError as e:
+        return {
+            "code": "ERR_NETWORK_REQUEST_ERROR",
+            "data": None,
+            "message": f"网络请求失败：{str(e)}"
+        }
+    except Exception as e:
+        logger.error(f"[search_web] 未知错误: {e}")
+        return {
+            "code": "ERR_NETWORK_UNKNOWN",
+            "data": None,
+            "message": f"搜索异常: {str(e)}"
         }

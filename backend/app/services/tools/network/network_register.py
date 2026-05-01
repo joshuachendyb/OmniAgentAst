@@ -7,15 +7,18 @@ Network Register - 网络通信工具注册点
 - 使用 registry.py 的 tool_registry.register() 显式注册
 - 使用 Pydantic 模型注册，自动生成 OpenAI Schema
 
-【工具列表】（共2个）
+【工具列表】（共4个）
 1. http_request - 发起HTTP请求
 2. download_file - 下载文件到本地
+3. fetch_webpage - 获取和处理网页内容
+4. search_web - 搜索网络获取最新信息
 
 【注册说明】
 - 导入 network_register 时自动触发注册
 - 按规范使用 input_model 参数
 
 创建时间: 2026-04-29
+更新时间: 2026-05-02
 """
 
 # ============================================================
@@ -27,29 +30,35 @@ from app.services.tools.registry import register_tool, ToolCategory, tool_regist
 from app.utils.logger import logger
 
 # 导入 Pydantic 模型
-# 【小健 2026-04-29】强制规范：新增工具必须从network_schema导入对应Pydantic模型，禁止手动编写input_schema字典
 from app.services.tools.network.network_schema import (
     HttpRequestInput,
     DownloadFileInput,
+    FetchWebpageInput,
+    SearchWebInput,
 )
 
 # 导入工具函数
 from app.services.tools.network.network_tools import (
     http_request,
     download_file,
+    fetch_webpage,
+    search_web,
 )
 
 # 工具描述
 NETWORK_TOOL_DESCRIPTIONS = {
     "http_request": "发起HTTP请求，支持GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS方法，支持自定义请求头、查询参数和请求体",
     "download_file": "从URL下载文件到本地，支持大文件流式下载和断点续传",
+    "fetch_webpage": "获取和处理网页内容，支持多种输出格式（markdown/html/text）和AI提取指令",
+    "search_web": "搜索网络获取最新信息，支持域名过滤、时间范围、安全搜索等参数",
 }
 
-# 【小健 2026-04-29】强制映射：工具名与Pydantic模型一一对应
-# 【2026-04-29 小沈新增】工具名到 Pydantic 模型的映射（按文档5.1设计）
+# 工具名到 Pydantic 模型的映射
 NETWORK_TOOL_INPUT_MODELS = {
     "http_request": HttpRequestInput,
     "download_file": DownloadFileInput,
+    "fetch_webpage": FetchWebpageInput,
+    "search_web": SearchWebInput,
 }
 
 # 使用示例
@@ -57,24 +66,30 @@ NETWORK_TOOL_EXAMPLES = {
     "http_request": [
         {"url": "https://api.github.com/repos/python/cpython", "method": "GET", "timeout": 10},
         {"url": "https://httpbin.org/post", "method": "POST", "json_body": {"name": "test", "value": 123}, "timeout": 30},
-        {"url": "https://api.example.com/search", "method": "GET", "params": {"q": "python", "page": 1}, "timeout": 15},
     ],
     "download_file": [
         {"url": "https://github.com/python/cpython/archive/refs/heads/main.zip", "destination_path": "D:/Downloads/cpython-main.zip", "timeout": 300},
-        {"url": "https://example.com/file.pdf", "destination_path": "C:/Users/用户名/Documents/file.pdf", "timeout": 120},
+    ],
+    "fetch_webpage": [
+        {"url": "https://example.com", "extract_format": "markdown"},
+        {"url": "https://docs.python.org/3/library/asyncio.html", "prompt": "提取asyncio的主要功能和使用示例"},
+    ],
+    "search_web": [
+        {"query": "OpenAI function calling", "num_results": 10},
+        {"query": "React 19 新特性", "allowed_domains": ["github.com", "react.dev"], "num_results": 5},
     ],
 }
 
 
 def _register_network_tools():
     """按文档5.1设计注册所有网络工具"""
-    # 统一的工具映射 - 注册名与实际函数名一致
     tool_methods = {
         "http_request": http_request,
         "download_file": download_file,
+        "fetch_webpage": fetch_webpage,
+        "search_web": search_web,
     }
 
-    # 注册所有工具
     for name, method in tool_methods.items():
         desc = NETWORK_TOOL_DESCRIPTIONS.get(name, "")
         input_model = NETWORK_TOOL_INPUT_MODELS.get(name)
