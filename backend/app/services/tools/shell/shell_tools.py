@@ -10,13 +10,19 @@ Shell 工具函数模块 - Shell命令执行工具
 - get_working_directory: 获取当前工作目录
 - change_directory: 切换工作目录
 - check_path_exists: 检查路径是否存在
+- get_shell_output: 获取后台shell输出
+- terminate_shell: 终止后台shell
 
 Author: 小沈 - 2026-04-29
 """
 
 import os
 import subprocess
-from typing import Optional
+import signal
+import re
+import uuid
+from typing import Optional, Dict, Any
+from datetime import datetime
 
 from app.services.tools.registry import register_tool, ToolCategory
 
@@ -25,7 +31,13 @@ from app.services.tools.shell.shell_schema import (
     GetWorkingDirectoryInput,
     ChangeDirectoryInput,
     CheckPathExistsInput,
+    GetShellOutputInput,
+    TerminateShellInput,
 )
+
+
+# 后台Shell会话管理器 - 小沈 2026-05-02
+_background_shells: Dict[str, Dict[str, Any]] = {}
 
 
 @register_tool(
@@ -199,4 +211,247 @@ def check_path_exists(path: str) -> dict:
             "code": "ERR_SHELL_CHECK_PATH",
             "data": None,
             "message": f"检查路径失败: {str(e)}"
+        }
+
+
+@register_tool(
+    name="get_shell_output",
+    description="""获取后台运行的 shell 命令输出。
+
+使用场景：
+- 当用户需要获取后台命令的执行结果时使用
+- 当用户想要检查后台命令是否完成时使用
+- 当用户需要分批获取长命令输出时使用
+
+参数说明：
+- shell_id：后台 shell 的 ID，由 execute_shell_command 的 run_in_background=true 时返回
+- filter：过滤输出的正则表达式（可选）
+- encoding：输出编码（可选），默认utf-8
+- max_lines：最大返回行数（可选），默认1000
+- tail：是否只返回最后N行（可选），默认false
+
+【重要】返回 shell 命令的 stdout 和 stderr 输出
+
+使用示例：
+- 获取输出：{"shell_id": "shell_abc123"}
+- 过滤输出：{"shell_id": "shell_abc123", "filter": "ERROR"}""",
+    category=ToolCategory.SHELL,
+    input_model=GetShellOutputInput,
+    examples=[
+        {"shell_id": "shell_abc123"},
+        {"shell_id": "shell_abc123", "filter": "ERROR|FAIL"},
+        {"shell_id": "shell_abc123", "max_lines": 500, "tail": True}
+    ]
+)
+def get_shell_output(
+    shell_id: str,
+    filter: Optional[str] = None,
+    encoding: Optional[str] = None,
+    max_lines: int = 1000,
+    tail: bool = False
+) -> dict:
+    """获取后台shell命令输出 - 小沈 2026-05-02"""
+    try:
+        if shell_id not in _background_shells:
+            return {
+                "code": "ERR_SHELL_NOT_FOUND",
+                "data": None,
+                "message": f"后台shell不存在: {shell_id}"
+            }
+        
+        shell_info = _background_shells[shell_id]
+        process = shell_info.get("process")
+        
+        if process is None:
+            return {
+                "code": "ERR_SHELL_NO_PROCESS",
+                "data": None,
+                "message": f"shell进程不存在: {shell_id}"
+            }
+        
+        enc = encoding or "utf-8"
+        
+        stdout_text = ""
+        stderr_text = ""
+        
+        if process.stdout:
+            stdout_bytes = process.stdout.read()
+            try:
+                stdout_text = stdout_bytes.decode(enc)
+            except UnicodeDecodeError:
+                for fallback_enc in ["utf-8", "gbk", "gb2312", "latin-1"]:
+                    try:
+                        stdout_text = stdout_bytes.decode(fallback_enc)
+                        break
+                    except UnicodeDecodeError:
+                        continue
+        
+        if process.stderr:
+            stderr_bytes = process.stderr.read()
+            try:
+                stderr_text = stderr_bytes.decode(enc)
+            except UnicodeDecodeError:
+                for fallback_enc in ["utf-8", "gbk", "gb2312", "latin-1"]:
+                    try:
+                        stderr_text = stderr_bytes.decode(fallback_enc)
+                        break
+                    except UnicodeDecodeError:
+                        continue
+        
+        stdout_lines = stdout_text.splitlines() if stdout_text else []
+        stderr_lines = stderr_text.splitlines() if stderr_text else []
+        
+        if filter:
+            try:
+                pattern = re.compile(filter, re.IGNORECASE)
+                stdout_lines = [line for line in stdout_lines if pattern.search(line)]
+                stderr_lines = [line for line in stderr_lines if pattern.search(line)]
+            except re.error as e:
+                return {
+                    "code": "ERR_SHELL_FILTER_INVALID",
+                    "data": None,
+                    "message": f"无效的正则表达式: {filter}, 错误: {str(e)}"
+                }
+        
+        if tail:
+            stdout_lines = stdout_lines[-max_lines:]
+            stderr_lines = stderr_lines[-max_lines:]
+        else:
+            if len(stdout_lines) > max_lines:
+                stdout_lines = stdout_lines[:max_lines]
+            if len(stderr_lines) > max_lines:
+                stderr_lines = stderr_lines[:max_lines]
+        
+        truncated = len(stdout_text.splitlines()) > max_lines or len(stderr_text.splitlines()) > max_lines
+        
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "shell_id": shell_id,
+                "stdout": "\n".join(stdout_lines),
+                "stderr": "\n".join(stderr_lines),
+                "stdout_lines": len(stdout_lines),
+                "stderr_lines": len(stderr_lines),
+                "truncated": truncated,
+                "is_running": process.poll() is None
+            },
+            "message": "成功获取shell输出" + ("（输出已截断）" if truncated else "")
+        }
+    
+    except Exception as e:
+        return {
+            "code": "ERR_SHELL_GET_OUTPUT",
+            "data": None,
+            "message": f"获取shell输出失败: {str(e)}"
+        }
+
+
+@register_tool(
+    name="terminate_shell",
+    description="""终止运行中的后台 shell 会话。
+
+使用场景：
+- 当用户需要终止正在运行的后台命令时使用
+- 当用户想要停止长时间运行的命令时使用
+- 当用户需要清理后台进程时使用
+
+参数说明：
+- shell_id：要终止的 shell ID
+- force：是否强制终止（可选），默认false
+- cleanup：终止后是否清理临时文件（可选），默认true
+
+【重要】强制终止后台进程，会丢失未读取的输出
+
+使用示例：
+- 终止后台shell：{"shell_id": "shell_abc123"}
+- 强制终止：{"shell_id": "shell_abc123", "force": true}""",
+    category=ToolCategory.SHELL,
+    input_model=TerminateShellInput,
+    examples=[
+        {"shell_id": "shell_abc123"},
+        {"shell_id": "shell_abc123", "force": True},
+        {"shell_id": "shell_abc123", "force": True, "cleanup": True}
+    ]
+)
+def terminate_shell(
+    shell_id: str,
+    force: bool = False,
+    cleanup: bool = True
+) -> dict:
+    """终止后台shell会话 - 小沈 2026-05-02"""
+    try:
+        if shell_id not in _background_shells:
+            return {
+                "code": "ERR_SHELL_NOT_FOUND",
+                "data": None,
+                "message": f"后台shell不存在: {shell_id}"
+            }
+        
+        shell_info = _background_shells[shell_id]
+        process = shell_info.get("process")
+        
+        if process is None:
+            del _background_shells[shell_id]
+            return {
+                "code": "SUCCESS",
+                "data": {"shell_id": shell_id, "terminated": True},
+                "message": f"shell会话已清理: {shell_id}"
+            }
+        
+        if process.poll() is not None:
+            del _background_shells[shell_id]
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "shell_id": shell_id,
+                    "terminated": True,
+                    "already_stopped": True,
+                    "returncode": process.returncode
+                },
+                "message": f"shell进程已停止: {shell_id}"
+            }
+        
+        try:
+            if force:
+                process.kill()
+            else:
+                process.terminate()
+            
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                if not force:
+                    process.kill()
+                    process.wait(timeout=5)
+        
+        except ProcessLookupError:
+            pass
+        except Exception as e:
+            return {
+                "code": "ERR_SHELL_TERMINATE",
+                "data": None,
+                "message": f"终止进程失败: {str(e)}"
+            }
+        
+        returncode = process.returncode
+        
+        del _background_shells[shell_id]
+        
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "shell_id": shell_id,
+                "terminated": True,
+                "force": force,
+                "returncode": returncode,
+                "cleanup": cleanup
+            },
+            "message": f"成功终止shell会话: {shell_id}" + ("（强制终止）" if force else "")
+        }
+    
+    except Exception as e:
+        return {
+            "code": "ERR_SHELL_TERMINATE",
+            "data": None,
+            "message": f"终止shell失败: {str(e)}"
         }

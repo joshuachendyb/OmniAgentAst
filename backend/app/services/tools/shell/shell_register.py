@@ -23,4 +23,6 @@ __all__ = [
     "get_working_directory",
     "change_directory",
     "check_path_exists",
+    "get_shell_output",
+    "terminate_shell",
 ]
