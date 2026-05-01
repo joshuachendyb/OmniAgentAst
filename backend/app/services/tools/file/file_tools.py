@@ -1530,6 +1530,30 @@ class FileTools:
                             dirs.clear()  # 不再深入此目录的子目录
                             continue
                     
+                    # 【修复B4 2026-05-01 小沈】支持目录名匹配
+                    for dirname in dirs:
+                        if not fnmatch.fnmatch(dirname, file_pattern):
+                            continue
+
+                        dir_path = Path(root) / dirname
+                        dir_str = str(dir_path.relative_to(search_path))
+
+                        if dir_str in seen_files:
+                            continue
+
+                        seen_count += 1
+
+                        if seen_count <= start_offset:
+                            seen_files.add(dir_str)
+                            continue
+                        seen_files.add(dir_str)
+
+                        all_matches.append({
+                            "name": dirname,
+                            "path": dir_str,
+                            "type": "directory"
+                        })
+
                     # 遍历当前目录的文件
                     for filename in files:
                         # 【修复P10】用fnmatch替代手工正则
@@ -1560,7 +1584,8 @@ class FileTools:
                         all_matches.append({
                             "name": filename,
                             "path": file_str,
-                            "size": size
+                            "size": size,
+                            "type": "file"
                         })
                 
                 return all_matches
@@ -2231,8 +2256,14 @@ class FileTools:
             mime_map = {
                 ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
                 ".gif": "image/gif", ".bmp": "image/bmp", ".webp": "image/webp",
+                ".svg": "image/svg+xml", ".tiff": "image/tiff", ".tif": "image/tiff",
+                ".ico": "image/x-icon", ".heic": "image/heic", ".heif": "image/heif",
                 ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg",
-                ".m4a": "audio/mp4",
+                ".m4a": "audio/mp4", ".flac": "audio/flac", ".aac": "audio/aac",
+                ".wma": "audio/x-ms-wma", ".mid": "audio/midi", ".midi": "audio/midi",
+                ".mp4": "video/mp4", ".avi": "video/x-msvideo", ".mov": "video/quicktime",
+                ".mkv": "video/x-matroska", ".webm": "video/webm", ".wmv": "video/x-ms-wmv",
+                ".pdf": "application/pdf",
             }
             mime_type = mime_map.get(suffix, "application/octet-stream")
 
@@ -2267,35 +2298,39 @@ class FileTools:
                 "success": False, "error": f"批量读取文件数({len(file_paths)})超过上限{MAX_BATCH_FILE_COUNT}，请分批读取", "results": []
             }, "read_batch_file")
 
+        # 【修复 2026-05-01 小沈】B1: 添加Semaphore并发限制，防止大量文件并发读取耗尽文件句柄
+        semaphore = asyncio.Semaphore(20)
+
         async def _read_single(fp: str) -> Dict[str, Any]:
-            is_valid, error_msg = self._validate_path(fp)
-            if not is_valid:
-                return {"file_path": fp, "success": False, "error": error_msg, "content": None}
-            path = Path(fp)
-            if not path.exists():
-                return {"file_path": fp, "success": False, "error": f"文件不存在: {fp}", "content": None}
-            
-            # 【修复 2026-05-01 小沈】OOM防护：单文件大小预检
-            try:
-                if path.stat().st_size > MAX_READ_SIZE:
-                    return {"file_path": fp, "success": False, "error": f"文件过大({path.stat().st_size}字节)，超过读取上限{MAX_READ_SIZE//1024//1024}MB", "content": None}
-            except OSError as e:
-                return {"file_path": fp, "success": False, "error": str(e), "content": None}
-            
-            try:
-                for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
-                    try:
-                        # 【修复 2026-04-30 小沈】用with语句读取，避免文件句柄泄漏
-                        def _read_with(e=enc):
-                            with open(path, 'r', encoding=e, errors='replace') as f:
-                                return f.read()
-                        content = await asyncio.to_thread(_read_with)
-                        return {"file_path": fp, "success": True, "content": content, "encoding": enc, "file_size": path.stat().st_size}
-                    except Exception:
-                        continue
-                return {"file_path": fp, "success": False, "error": f"无法解码文件: {fp}", "content": None}
-            except Exception as e:
-                return {"file_path": fp, "success": False, "error": str(e), "content": None}
+            async with semaphore:
+                is_valid, error_msg = self._validate_path(fp)
+                if not is_valid:
+                    return {"file_path": fp, "success": False, "error": error_msg, "content": None}
+                path = Path(fp)
+                if not path.exists():
+                    return {"file_path": fp, "success": False, "error": f"文件不存在: {fp}", "content": None}
+                
+                # 【修复 2026-05-01 小沈】OOM防护：单文件大小预检
+                try:
+                    if path.stat().st_size > MAX_READ_SIZE:
+                        return {"file_path": fp, "success": False, "error": f"文件过大({path.stat().st_size}字节)，超过读取上限{MAX_READ_SIZE//1024//1024}MB", "content": None}
+                except OSError as e:
+                    return {"file_path": fp, "success": False, "error": str(e), "content": None}
+                
+                try:
+                    for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
+                        try:
+                            # 【修复 2026-04-30 小沈】用with语句读取，避免文件句柄泄漏
+                            def _read_with(e=enc):
+                                with open(path, 'r', encoding=e, errors='replace') as f:
+                                    return f.read()
+                            content = await asyncio.to_thread(_read_with)
+                            return {"file_path": fp, "success": True, "content": content, "encoding": enc, "file_size": path.stat().st_size}
+                        except Exception:
+                            continue
+                    return {"file_path": fp, "success": False, "error": f"无法解码文件: {fp}", "content": None}
+                except Exception as e:
+                    return {"file_path": fp, "success": False, "error": str(e), "content": None}
 
         results = await asyncio.gather(*[_read_single(fp) for fp in file_paths])
         success_count = sum(1 for r in results if r["success"])
@@ -3092,9 +3127,17 @@ def _generate_summary(tool_name: str, result: Any) -> str:
     elif tool_name == "search_file_content":
         if result.get("success") is False:
             return f"搜索内容失败：{result.get('error', '未知错误')}"
-        files_matched = result.get("files_matched", 0)
+        # 【修复 2026-05-01 小沈】B5: 字段名files_matched不存在，实际字段是total
+        files_matched = result.get("total", result.get("files_matched", 0))
         total_matches = result.get("total_matches", 0)
         return f"搜索内容完成，找到 {files_matched} 个文件，共 {total_matches} 处匹配"
+    
+    # 【修复 2026-05-01 小沈】C1: search_files添加专属summary分支
+    elif tool_name == "search_files":
+        if result.get("success") is False:
+            return f"搜索文件失败：{result.get('error', '未知错误')}"
+        total = result.get("total", 0)
+        return f"搜索完成，找到 {total} 个匹配文件"
     
     elif tool_name == "generate_report":
         if result.get("success") is False:
@@ -3302,7 +3345,7 @@ def decode_page_token(token: str) -> int:
     """解码页码令牌"""
     try:
         return int(base64.b64decode(token.encode()).decode())
-    except (ValueError, Exception):
+    except Exception:  # 【修复C2 2026-05-01 小沈】移除冗余ValueError（Exception已包含）
         return 0
 
 
