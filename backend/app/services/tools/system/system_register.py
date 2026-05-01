@@ -4,10 +4,13 @@ SYSTEM Register - 系统信息工具注册点
 
 【架构规范】2026-04-29 小沈
 
-【工具列表】（共1个）
+【工具列表】（共3个）
 1. get_system_info - 获取系统信息
+2. net_connections - 获取网络连接列表
+3. event_log - 获取系统事件日志
 
 创建时间: 2026-04-29
+更新时间: 2026-05-02
 """
 
 import logging
@@ -16,20 +19,28 @@ from app.utils.logger import logger
 
 from app.services.tools.system.system_schema import (
     GetSystemInfoInput,
+    NetConnectionsInput,
+    EventLogInput,
 )
 
 from app.services.tools.system.system_tools import (
     get_system_info,
+    net_connections,
+    event_log,
 )
 
 # 工具描述
 SYSTEM_TOOL_DESCRIPTIONS = {
     "get_system_info": "获取系统信息，包括平台、CPU、内存、磁盘、网络等详细信息",
+    "net_connections": "获取网络连接列表，支持按类型、状态、端口过滤，可获取进程信息",
+    "event_log": "获取系统事件日志，支持按级别、来源、时间范围过滤",
 }
 
 # 模型映射
 SYSTEM_TOOL_INPUT_MODELS = {
     "get_system_info": GetSystemInfoInput,
+    "net_connections": NetConnectionsInput,
+    "event_log": EventLogInput,
 }
 
 # 使用示例
@@ -38,8 +49,16 @@ SYSTEM_TOOL_EXAMPLES = {
         {"info_type": "all"},
         {"info_type": "cpu"},
         {"info_type": "memory"},
-        {"info_type": "disk"},
-        {"info_type": "basic"},
+    ],
+    "net_connections": [
+        {},
+        {"kind": "tcp", "state": "established"},
+        {"filter_port": 8080, "process_info": True},
+    ],
+    "event_log": [
+        {},
+        {"log_name": "Application", "max_events": 20},
+        {"level": "error", "time_range": "24h"},
     ],
 }
 
@@ -48,6 +67,8 @@ def _register_system_tools():
     """注册所有系统信息工具"""
     tool_methods = {
         "get_system_info": get_system_info,
+        "net_connections": net_connections,
+        "event_log": event_log,
     }
 
     for name, method in tool_methods.items():
