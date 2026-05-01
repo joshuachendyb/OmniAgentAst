@@ -334,12 +334,13 @@ class BaseAgent(ABC):
                     # 【步骤3.4】在退出前，如果存在thought内容，先yield一个ThoughtStep
                     # 确保前端能即时显示AI的思考过程
                     if thought_content and thought_content.strip():
+                        # 2026-05-01 小强修改：thought不兜底thought_content，避免和content重复
                         thought_step = StepFactory.create_thought_step(
                             step=step_count,
                             content=thought_content,
                             tool_name="finish",
                             tool_params={},
-                            thought=parsed.get("thought", thought_content),
+                            thought=parsed.get("thought", ""),
                             reasoning=parsed.get("reasoning", "")
                         )
                         self.steps.append(thought_step)
