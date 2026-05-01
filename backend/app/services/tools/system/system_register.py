@@ -4,10 +4,12 @@ SYSTEM Register - 系统信息工具注册点
 
 【架构规范】2026-04-29 小沈
 
-【工具列表】（共3个）
+【工具列表】（共5个）
 1. get_system_info - 获取系统信息
 2. net_connections - 获取网络连接列表
 3. event_log - 获取系统事件日志
+4. list_processes - 列出所有进程
+5. kill_process - 终止指定进程
 
 创建时间: 2026-04-29
 更新时间: 2026-05-02
@@ -21,12 +23,16 @@ from app.services.tools.system.system_schema import (
     GetSystemInfoInput,
     NetConnectionsInput,
     EventLogInput,
+    ListProcessesInput,
+    KillProcessInput,
 )
 
 from app.services.tools.system.system_tools import (
     get_system_info,
     net_connections,
     event_log,
+    list_processes,
+    kill_process,
 )
 
 # 工具描述
@@ -34,6 +40,8 @@ SYSTEM_TOOL_DESCRIPTIONS = {
     "get_system_info": "获取系统信息，包括平台、CPU、内存、磁盘、网络等详细信息",
     "net_connections": "获取网络连接列表，支持按类型、状态、端口过滤，可获取进程信息",
     "event_log": "获取系统事件日志，支持按级别、来源、时间范围过滤",
+    "list_processes": "列出系统进程，支持按名称/PID过滤，可按CPU/内存排序",
+    "kill_process": "终止指定进程，支持优雅终止和强制终止",
 }
 
 # 模型映射
@@ -41,6 +49,8 @@ SYSTEM_TOOL_INPUT_MODELS = {
     "get_system_info": GetSystemInfoInput,
     "net_connections": NetConnectionsInput,
     "event_log": EventLogInput,
+    "list_processes": ListProcessesInput,
+    "kill_process": KillProcessInput,
 }
 
 # 使用示例
@@ -60,6 +70,15 @@ SYSTEM_TOOL_EXAMPLES = {
         {"log_name": "Application", "max_events": 20},
         {"level": "error", "time_range": "24h"},
     ],
+    "list_processes": [
+        {},
+        {"filter_name": "python"},
+        {"sort_by": "memory", "descending": True, "max_results": 20},
+    ],
+    "kill_process": [
+        {"pid": 1234},
+        {"pid": 1234, "force": True},
+    ],
 }
 
 
@@ -69,6 +88,8 @@ def _register_system_tools():
         "get_system_info": get_system_info,
         "net_connections": net_connections,
         "event_log": event_log,
+        "list_processes": list_processes,
+        "kill_process": kill_process,
     }
 
     for name, method in tool_methods.items():
