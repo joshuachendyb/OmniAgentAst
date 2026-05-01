@@ -898,9 +898,7 @@ class FileTools:
             # 异步执行目录遍历
             def _list_sync():
                 entries = []
-                total_size = 0
-                dir_count = 0
-                file_count = 0
+                stats = {"total_size": 0, "dir_count": 0, "file_count": 0}
 
                 if recursive:
                     def _scan_recursive(current_path: Path, current_depth: int):
@@ -921,11 +919,11 @@ class FileTools:
                                         "mtime": st.st_mtime,
                                     })
                                     if is_dir:
-                                        dir_count += 1
+                                        stats["dir_count"] += 1
                                         _scan_recursive(item, current_depth + 1)
                                     else:
-                                        total_size += st.st_size
-                                        file_count += 1
+                                        stats["total_size"] += st.st_size
+                                        stats["file_count"] += 1
                                 except (PermissionError, OSError):
                                     continue
                         except (PermissionError, OSError):
@@ -947,14 +945,14 @@ class FileTools:
                                 "mtime": st.st_mtime,
                             })
                             if is_dir:
-                                dir_count += 1
+                                stats["dir_count"] += 1
                             else:
-                                total_size += st.st_size
-                                file_count += 1
+                                stats["total_size"] += st.st_size
+                                stats["file_count"] += 1
                         except (PermissionError, OSError):
                             continue
 
-                return entries, total_size, dir_count, file_count
+                return entries, stats["total_size"], stats["dir_count"], stats["file_count"]
 
             all_entries, total_size, dir_count, file_count = await asyncio.to_thread(_list_sync)
 
@@ -2903,8 +2901,6 @@ class FileTools:
             return _to_unified_format({
                 "success": False, "error": str(e), "matches": []
             }, "grep_file_content")
-
-    # 【删除 2026-05-01 小沈】list_directory_with_sizes已合并到list_directory
 
     async def get_directory_tree(
         self,

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr *)",
+      "Bash(python -c ' *)",
+      "Bash(python -m pytest tests/test_tool_executor_fallback.py tests/test_agent_cross_tool_prompt.py tests/test_time_react_agent.py tests/test_agent_factory_tdd.py -v --tb=short)"
+    ]
+  }
+}

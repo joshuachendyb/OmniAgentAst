@@ -511,8 +511,6 @@ class GrepFileContentInput(BaseModel):
     )
 
 
-# 【删除 2026-05-01 小沈】ListDirectoryWithSizesInput已合并到ListDirectoryInput
-
 
 class GetDirectoryTreeInput(BaseModel):
     """get_directory_tree 工具的输入参数"""
