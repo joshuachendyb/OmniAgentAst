@@ -319,17 +319,35 @@ class TextStrategy(LLMStrategy):
                 # 尝试提取参数（增强版：提取多种参数）
                 params = {}
                 
-                # 1. 查找 path 参数
+                # 1. 查找 path 参数（根据工具类型使用正确的参数名）
                 path_patterns = [
-                    r'["\']?([A-Za-z]:\\[^"\'\s]+)["\']?',  # Windows 路径 C:\path
-                    r'["\']?(/[^\s"\'<>]+)["\']?',  # Unix 路径 /path
+                    r'["\']?([A-Za-z]:\\[^"\'\s,}]+)["\']?',  # Windows 路径 C:\path
+                    r'["\']?(/[^\s"\'<>,}]+)["\']?',  # Unix 路径 /path
                 ]
-                
+
+                extracted_path = None
                 for p in path_patterns:
                     matches = re.findall(p, content)
                     if matches:
-                        params["path"] = matches[0]
+                        extracted_path = matches[0]
                         break
+
+                if extracted_path:
+                    # 根据工具类型使用正确的参数名
+                    path_tools_file = {'write_file', 'read_file', 'delete_file', 'copy_file',
+                                       'get_file_info', 'file_checksum', 'compare_files',
+                                       'rename_file', 'precise_replace_in_file', 'edit_file'}
+                    path_tools_dir = {'list_directory', 'create_directory', 'list_directory_with_sizes',
+                                      'get_directory_tree', 'file_monitor', 'file_statistics',
+                                      'generate_report'}
+                    if tool in path_tools_file:
+                        params["file_path"] = extracted_path
+                    elif tool in path_tools_dir:
+                        params["dir_path"] = extracted_path
+                    elif tool in {'move_file'}:
+                        params["source_path"] = extracted_path
+                    else:
+                        params["path"] = extracted_path
                 
                 # 2. 查找 content 参数（用于 write_file 等工具）
                 # 尝试从 JSON 块中提取 content
