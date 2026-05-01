@@ -14,7 +14,7 @@ import re
 import logging
 from typing import Dict, List, Optional
 
-from app.services.tools.base import ToolCategory
+from app.services.tools.registry import ToolCategory
 
 logger = logging.getLogger(__name__)
 
