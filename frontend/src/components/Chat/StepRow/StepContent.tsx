@@ -240,7 +240,7 @@ const StepContent: React.FC<StepContentProps> = ({
                     lineHeight: 1.5,
                     fontWeight: 500,
                   }}>
-                    {(step as ExecutionStep & Record<string, unknown>).thought}
+                    {String((step as ExecutionStep & Record<string, unknown>).thought).replace(/\\n/g, '\n')}
                   </div>
                 </div>
               )}
@@ -257,7 +257,7 @@ const StepContent: React.FC<StepContentProps> = ({
                 }}>
                   <span style={{ fontWeight: 500, marginRight: 4 }}>🧠 推理:</span>
                   <span style={{ color: '#666' }}>
-                    {(step as ExecutionStep & Record<string, unknown>).reasoning}
+                    {String((step as ExecutionStep & Record<string, unknown>).reasoning).replace(/\\n/g, '\n')}
                   </span>
                 </div>
               )}
@@ -265,7 +265,7 @@ const StepContent: React.FC<StepContentProps> = ({
           ) : null}
           <div>
             <span style={getStepContentStyle("thought" as StepType, "primary")}>
-              {step.content || ""}
+              {String(step.content || "").replace(/\\n/g, '\n')}
             </span>
           </div>
           <div style={{
@@ -282,11 +282,11 @@ const StepContent: React.FC<StepContentProps> = ({
         <div style={{...getStepStyle("final" as StepType), whiteSpace: "pre-wrap", wordBreak: "break-word"}}>
           {(step as ExecutionStep & Record<string, unknown>).thought && (
             <div style={{fontSize: "12px", color: "#888", marginBottom: "4px"}}>
-              思考: {(step as ExecutionStep & Record<string, unknown>).thought}
+              思考: {String((step as ExecutionStep & Record<string, unknown>).thought).replace(/\\n/g, '\n')}
             </div>
           )}
           <span style={getStepContentStyle("final" as StepType, "primary")}>
-            {(step as ExecutionStep & Record<string, unknown>).response || ""}
+            {String((step as ExecutionStep & Record<string, unknown>).response || "").replace(/\\n/g, '\n')}
           </span>
         </div>
       )}
