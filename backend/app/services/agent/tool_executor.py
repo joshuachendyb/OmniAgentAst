@@ -376,9 +376,13 @@ class ToolExecutor:
         if action in PARAM_ALIASES:
             aliases = PARAM_ALIASES[action]
             for wrong_name, correct_name in aliases.items():
-                if wrong_name in params and correct_name not in params:
-                    logger.info(f"[参数映射] action={action}: '{wrong_name}' → '{correct_name}'")
-                    params[correct_name] = params[wrong_name]
+                if wrong_name in params:
+                    if correct_name not in params:
+                        logger.info(f"[参数映射] action={action}: '{wrong_name}' → '{correct_name}'")
+                        params[correct_name] = params[wrong_name]
+                    # 【修复】即使correct_name已存在，也删除wrong_name
+                    # 场景：LLM同时返回path和file_path，或解析器补充了file_path但path未删除
+                    # 原条件 correct_name not in params 在此场景下为False，path残留在params中
                     del params[wrong_name]
         
         # 定义每个工具的标准参数名
