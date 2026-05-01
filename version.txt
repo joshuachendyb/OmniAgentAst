@@ -1,3 +1,62 @@
+v0.12.4
+
+  更新时间: 2026-05-01 21:07:32
+
+  更新内容：
+
+  ## v0.12.3→v0.12.4 变更汇总 - 小沈-2026-05-01
+
+  ### fix 修复
+  | commit | 说明 |
+  |--------|------|
+  | a565c558 | write_file数据保护+全角替换+思维泄漏检测+Python验证提示优化 |
+  | bceeab6f | Agent prompt添加中文路径保护+write_file数据保护说明 |
+  | b7f39c7e | file_tools旧审计遗留问题修复(B3 MIME扩展+B4目录名匹配+C2冗余异常) |
+  | c3756404 | list_directory闭包变量BUG修复+测试更新+list_directory_with_sizes彻底清理 |
+  | 0e2a3006 | execute_command成功误判为error + _format_result增加code字段判定 |
+  | ee5eb03a | edit_file applied_edits=0时success应为False |
+  | 21d153af | crss_scorer import path tools.base -> tools.registry - 小健 |
+  | 27c2dc0d | precise_replace/edit_file execute_with_safety返回值BUG + 重试off-by-one |
+  | f242b554 | FILE工具OOM防护+符号链接防护+参数校验 |
+  | f03312d6 | edit_file/rename_file健壮性修复 |
+  | 404c2819 | 同步工具函数await报错+异步流close报错 |
+  | 620d9272 | network/desktop意图走AgentFactory兜底到FileReactAgent而非直接报错 |
+  | 3511092c | BaseAgent.__init__处理**kwargs有用参数setattr+恢复api_base/api_key/model传参 |
+  | 48e5c139 | 修复跨分类工具6项缺陷 |
+  | 9fbb630e | 修复Agent架构7项重构问题 |
+  | 06cdceb0 | 删除重复导入和重复日志 - 小健 |
+
+  ### feat 新功能
+  | commit | 说明 |
+  |--------|------|
+  | 8c99b212 | add neutral keywords for better intent coverage |
+  | 74b55b34 | add cross-category tool support |
+  | ca8502ff | write_file添加格式验证_validate_content_format |
+
+  ### refactor 重构
+  | commit | 说明 |
+  |--------|------|
+  | 2be07921 | 合并list_directory_with_sizes到list_directory(B6重构) |
+  | b7bee276 | extract CRSS scorer to independent module |
+  | bc316b06 | 提取_run_agent_sse_stream通用函数消除4处重复代码 |
+
+  ### docs 文档
+  | commit | 说明 |
+  |--------|------|
+  | 8c8632d6 | LLM消息传递机制深度分析与事故复盘+修复验证报告+遗留问题分析报告 |
+  | 4299ced8 | LLM消息传递机制分析文档v1.4-补充Prompt强化改进5+改进6 |
+  | 4fe481fc | LLM消息传递机制分析v1.7-采纳小健审查+北京老陈意见 |
+  | c91a1906 | LLM消息传递机制分析v2.1-北京老陈修订(移除句子中断检测+完善完整性检测) |
+  | 3af4e03c | 审计报告v1.3-更新修复清单全部为已完成 |
+  | dbbbf47e | 审计报告v1.4-修正总览数字+章节状态标注 |
+  | 562a0bc8 | 新增MessageId-1 200问题分析报告 |
+  | 2ecafda5 | FILE工具健壮性审计报告(28个工具逐个分析) |
+
+  ### chore 其他
+  | commit | 说明 |
+  |--------|------|
+  | 24194c0a | .gitignore添加.claude/worktrees/忽略 |
+
 v0.12.3
 
   更新时间: 2026-04-30 19:01:57
