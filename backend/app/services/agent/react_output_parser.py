@@ -326,6 +326,39 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                 "response": result_text or prefix_text,
                 "error": None
             }
+        
+        # 2026-05-02 小强新增：处理无tool_name但有content/reasoning的JSON
+        # LLM可能返回 {"content": "xxx", "reasoning": "yyy"} 格式（缺少tool_name）
+        # 此时应该正确提取content和reasoning字段，而不是把整个JSON当作字符串
+        # 
+        # 但要排除情况：JSON是Action Input的参数值而非顶层结构
+        # 判断依据：JSON前面有Action/Answer关键词则走关键词匹配
+        if "content" in json_data or "reasoning" in json_data:
+            # 检查是否前面有Action/Answer关键词
+            has_action_keyword = re.search(r'\bAction\s*:', output, re.IGNORECASE)
+            has_answer_keyword = re.search(r'\bAnswer\s*:', output, re.IGNORECASE)
+            if not has_action_keyword and not has_answer_keyword:
+                logger.info("[parse_react_response] 检测到无tool_name的JSON，提取content/reasoning字段")
+                content_value = json_data.get("content", "")
+                reasoning_value = json_data.get("reasoning", "")
+                # content和reasoning可能是嵌套的JSON字符串，需要尝试解析
+                if isinstance(content_value, str) and content_value.startswith("{"):
+                    try:
+                        parsed_content = json.loads(content_value)
+                        if isinstance(parsed_content, dict):
+                            content_value = parsed_content.get("content", content_value)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                return {
+                    "type": "implicit",
+                    "thought": prefix_text or content_value,
+                    "content": content_value,
+                    "reasoning": reasoning_value,
+                    "tool_name": None,
+                    "tool_params": None,
+                    "response": content_value,
+                    "error": None
+                }
     
     # 步骤1.2：四种情况判断逻辑
     logger.info(f"[parse_react_response] 走关键词匹配流程")
