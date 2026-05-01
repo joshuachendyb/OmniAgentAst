@@ -24,7 +24,7 @@ class ExecuteCommandInput(BaseModel):
         default=None, description="工作目录（可选）。如果为None则使用当前工作目录"
     )
     timeout: int = Field(
-        default=30, ge=1, le=300, description="超时时间（秒），默认为30秒，最大300秒"
+        default=60, ge=1, le=600, description="超时时间（秒），默认为60秒，最大600秒 - 小沈 2026-05-01"
     )
 
 

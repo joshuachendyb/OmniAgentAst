@@ -436,6 +436,32 @@ class ToolExecutor:
                     "data": result.get("data"),
                     "retry_count": result.get("retry_count", 0)
                 }
+            # 【修复 2026-05-01 小沈】先检查code字段（shell工具返回code/data/message格式）
+            # 之前只检查success字段，导致execute_command等工具的SUCCESS结果被误判为error
+            elif result.get("code") == "SUCCESS":
+                # code=SUCCESS但需区分returncode：0=真正成功，非0=有错误输出
+                data = result.get("data")
+                if isinstance(data, dict) and data.get("returncode", 0) != 0:
+                    return {
+                        "status": "error",
+                        "summary": result.get("message", f"Command exited with code {data.get('returncode')}"),
+                        "data": result,
+                        "retry_count": 0
+                    }
+                else:
+                    return {
+                        "status": "success",
+                        "summary": result.get("message", f"Successfully executed {action}"),
+                        "data": result,
+                        "retry_count": 0
+                    }
+            elif result.get("code", "").startswith("ERR_"):
+                return {
+                    "status": "error",
+                    "summary": result.get("message", f"Failed to execute {action}"),
+                    "data": result,
+                    "retry_count": 0
+                }
             elif result.get("success", False):
                 return {
                     "status": "success",
@@ -446,7 +472,7 @@ class ToolExecutor:
             else:
                 return {
                     "status": "error",
-                    "summary": result.get("error", f"Failed to execute {action}"),
+                    "summary": result.get("error", result.get("message", f"Failed to execute {action}")),
                     "data": result,
                     "retry_count": 0
                 }

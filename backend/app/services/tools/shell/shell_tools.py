@@ -54,8 +54,8 @@ from app.services.tools.shell.shell_schema import (
         {"command": "dir /b D:/项目代码", "cwd": "D:/项目代码", "timeout": 30}
     ]
 )
-def execute_command(command: str, cwd: Optional[str] = None, timeout: int = 30) -> dict:
-    """执行Shell命令"""
+def execute_command(command: str, cwd: Optional[str] = None, timeout: int = 60) -> dict:
+    """执行Shell命令 - 小沈 2026-05-01"""
     try:
         result = subprocess.run(
             command,
@@ -65,6 +65,14 @@ def execute_command(command: str, cwd: Optional[str] = None, timeout: int = 30) 
             cwd=cwd,
             timeout=timeout
         )
+        # 【修复 2026-05-01 小沈】message更精确：区分returncode+stderr
+        if result.returncode == 0:
+            if result.stderr and result.stderr.strip():
+                message = f"命令执行成功（有警告输出）"
+            else:
+                message = "命令执行成功"
+        else:
+            message = f"命令执行完成（退出码{result.returncode}）"
         return {
             "code": "SUCCESS",
             "data": {
@@ -72,12 +80,17 @@ def execute_command(command: str, cwd: Optional[str] = None, timeout: int = 30) 
                 "stderr": result.stderr,
                 "returncode": result.returncode
             },
-            "message": "命令执行成功" if result.returncode == 0 else "命令执行完成（有错误输出）"
+            "message": message
         }
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
+        # 【修复 2026-05-01 小沈】超时时也返回已捕获的输出
         return {
             "code": "ERR_SHELL_TIMEOUT",
-            "data": None,
+            "data": {
+                "stdout": e.stdout if e.stdout else "",
+                "stderr": e.stderr if e.stderr else "",
+                "returncode": -1
+            },
             "message": f"命令执行超时（{timeout}秒）"
         }
     except Exception as e:
