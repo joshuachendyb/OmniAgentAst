@@ -802,12 +802,15 @@ class FileTools:
 - 当需要了解目录结构时使用
 - 当需要获取文件列表进行进一步操作时使用
 - 当用户说"查看D盘"、"列出目录"、"文件夹里有什么"时使用
+- 当需要按文件大小排序时使用
 
 参数说明：
 - dir_path: 目录的完整路径（必须是绝对路径，如 D:/项目代码 或 C:/Users/用户名/Documents）
 - recursive: 是否递归列出子目录内容，默认为False（不递归）
 - max_depth: 最大递归深度，仅当 recursive=True 时有效，默认为10
 - page_token: 分页令牌（base64编码的位置偏移量），用于获取后续页面结果，默认为None（从第一页开始）
+- sortBy: 排序方式，可选值为 name（按名称排序，默认）或 size（按文件大小排序）
+- include_hidden: 是否显示隐藏文件（以.开头的文件），默认为False
 
 【重要】必须使用 dir_path 作为参数名，不要使用 directory_path、path 或其他名称。
 错误示例: {"directory_path": "..."} 或 {"path": "..."}
@@ -826,12 +829,15 @@ class FileTools:
             {
                 "dir_path": "E:/工作文档",
                 "recursive": False,
-                "page_token": "MA=="  # 示例：base64编码的"0"，从第0条开始
+                "page_token": "MA=="
             },
             {
-                "dir_path": "E:/工作文档",
-                "recursive": False,
-                "page_token": "NTA="  # 示例：base64编码的"10"，从第10条开始
+                "dir_path": "D:/项目代码",
+                "sortBy": "size"
+            },
+            {
+                "dir_path": "D:/项目代码",
+                "include_hidden": True
             }
         ]
     )
@@ -841,12 +847,16 @@ class FileTools:
         recursive: bool = False,
         max_depth: int = 10,
         page_token: Optional[str] = None,
+        sortBy: str = "name",
+        include_hidden: bool = False,
     ) -> Dict[str, Any]:
-        """列出目录内容 - 小沈 2026-05-01"""
+        """列出目录内容（含大小/排序/统计） - 小沈 2026-05-01"""
         # 【修复 2026-05-01 小沈】参数校验
         if max_depth < 1:
             return _to_unified_format({"success": False, "error": f"max_depth必须>=1，当前值: {max_depth}", "entries": []}, "list_directory")
-        
+        if sortBy not in ("name", "size"):
+            return _to_unified_format({"success": False, "error": f"sortBy只支持'name'或'size'，当前值: '{sortBy}'", "entries": []}, "list_directory")
+
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(dir_path)
         if not is_valid:
@@ -855,9 +865,9 @@ class FileTools:
                 "error": error_msg,
                 "entries": []
             }, "list_directory")
-        
+
         path = Path(dir_path)
-        
+
         # 解码page_token
         start_offset = 0
         if page_token:
@@ -869,7 +879,7 @@ class FileTools:
                     "error": f"Invalid page token: {e}",
                     "entries": []
                 }, "list_directory")
-        
+
         try:
             if not path.exists():
                 return _to_unified_format({
@@ -877,17 +887,21 @@ class FileTools:
                     "error": f"Directory not found: {dir_path}",
                     "entries": []
                 }, "list_directory")
-            
+
             if not path.is_dir():
                 return _to_unified_format({
                     "success": False,
                     "error": f"Not a directory: {dir_path}",
                     "entries": []
                 }, "list_directory")
-            
+
             # 异步执行目录遍历
             def _list_sync():
                 entries = []
+                total_size = 0
+                dir_count = 0
+                file_count = 0
+
                 if recursive:
                     def _scan_recursive(current_path: Path, current_depth: int):
                         if current_depth > max_depth:
@@ -895,82 +909,104 @@ class FileTools:
                         try:
                             for item in current_path.iterdir():
                                 try:
-                                    # 【修复 2026-04-16】保留 path 字段，因为：
-                                    # 1. 前端 ListDirectoryView 需要 path 构建树形结构
-                                    # 2. 只在 base_react.py 生成 observation_text 时去掉 path
+                                    if not include_hidden and item.name.startswith('.'):
+                                        continue
+                                    st = item.stat()
+                                    is_dir = item.is_dir()
                                     entries.append({
                                         "name": item.name,
                                         "path": str(item.absolute()),
-                                        "type": "directory" if item.is_dir() else "file",
-                                        "size": item.stat().st_size if item.is_file() else None
+                                        "type": "directory" if is_dir else "file",
+                                        "size": None if is_dir else st.st_size,
+                                        "mtime": st.st_mtime,
                                     })
-                                    if item.is_dir():
+                                    if is_dir:
+                                        dir_count += 1
                                         _scan_recursive(item, current_depth + 1)
+                                    else:
+                                        total_size += st.st_size
+                                        file_count += 1
                                 except (PermissionError, OSError):
                                     continue
                         except (PermissionError, OSError):
                             return
-                    
+
                     _scan_recursive(path, 1)
                 else:
-                    # 【修复 2026-04-16】保留 path 字段
                     for item in path.iterdir():
-                        entries.append({
-                            "name": item.name,
-                            "path": str(item.absolute()),
-                            "type": "directory" if item.is_dir() else "file",
-                            "size": item.stat().st_size if item.is_file() else None
-                        })
-                return entries
-            
-            all_entries = await asyncio.to_thread(_list_sync)
-            
-            # 排序：目录在前，文件在后
-            all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"]))
-            
+                        try:
+                            if not include_hidden and item.name.startswith('.'):
+                                continue
+                            st = item.stat()
+                            is_dir = item.is_dir()
+                            entries.append({
+                                "name": item.name,
+                                "path": str(item.absolute()),
+                                "type": "directory" if is_dir else "file",
+                                "size": None if is_dir else st.st_size,
+                                "mtime": st.st_mtime,
+                            })
+                            if is_dir:
+                                dir_count += 1
+                            else:
+                                total_size += st.st_size
+                                file_count += 1
+                        except (PermissionError, OSError):
+                            continue
+
+                return entries, total_size, dir_count, file_count
+
+            all_entries, total_size, dir_count, file_count = await asyncio.to_thread(_list_sync)
+
+            # 排序：目录优先，然后按sortBy
+            if sortBy == "size":
+                all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("size") or 0), reverse=True)
+            else:
+                all_entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
+
             total = len(all_entries)
-            
+
             # 【优化 2026-04-16 小沈】大目录优化
             # 背景：E盘根目录有 492,335 个文件，entries JSON 大小达 90.58MB
             # 问题：导致 API 请求体过大，触发 429 错误
             # 解决：截断大目录，只返回前 200 项 + 统计摘要
-            MAX_DISPLAY_ENTRIES = 200  # 最多显示 200 项
+            MAX_DISPLAY_ENTRIES = 200
+
+            statistics = {
+                "total_size": total_size, "dir_count": dir_count,
+                "file_count": file_count, "sort_by": sortBy,
+            }
 
             if total > MAX_DISPLAY_ENTRIES:
-                # 大目录处理：计算目录/文件统计，返回截断后的数据
-                dir_count = sum(1 for e in all_entries if e.get("type") == "directory")
-                file_count = sum(1 for e in all_entries if e.get("type") == "file")
-                
-                # 只返回前 MAX_DISPLAY_ENTRIES 项（排序后目录在前、文件在后）
                 display_entries = all_entries[start_offset:start_offset + MAX_DISPLAY_ENTRIES]
-                
-                # 记录截断日志，方便运维监控大目录场景
+
                 logger.warning(
                     f"[list_directory] Large directory truncated: path={path}, "
                     f"total={total}, dir_count={dir_count}, file_count={file_count}, "
                     f"displayed={MAX_DISPLAY_ENTRIES}"
                 )
-                
+
                 return _to_unified_format({
                     "success": True,
                     "entries": display_entries,
                     "total": total,
                     "directory": str(path),
-                    "truncated": True,  # 标记为截断状态
-                    "dir_count": dir_count,  # 目录总数
-                    "file_count": file_count,  # 文件总数
-                    "next_page_token": encode_page_token(start_offset + MAX_DISPLAY_ENTRIES) if start_offset + MAX_DISPLAY_ENTRIES < total else None  # 分页标记
+                    "truncated": True,
+                    "dir_count": dir_count,
+                    "file_count": file_count,
+                    "statistics": statistics,
+                    "next_page_token": encode_page_token(start_offset + MAX_DISPLAY_ENTRIES) if start_offset + MAX_DISPLAY_ENTRIES < total else None
                 }, "list_directory")
 
-            # 小目录（<=200项）：直接返回全部数据
             return _to_unified_format({
                 "success": True,
                 "entries": all_entries,
                 "total": total,
                 "directory": str(path),
-                "next_page_token": None  # 没有更多数据
+                "statistics": statistics,
+                "next_page_token": None
             }, "list_directory")
-            
+
         except Exception as e:
             logger.error(f"Failed to list directory {dir_path}: {e}")
             return _to_unified_format({
@@ -2868,115 +2904,7 @@ class FileTools:
                 "success": False, "error": str(e), "matches": []
             }, "grep_file_content")
 
-    async def list_directory_with_sizes(
-        self,
-        dir_path: str,
-        sortBy: str = "name",
-        include_hidden: bool = False,
-        recursive: bool = False,
-    ) -> Dict[str, Any]:
-        """列出目录内容，包含文件大小和排序 - 小沈 2026-05-01"""
-        try:
-            # 【修复 2026-05-01 小沈】参数校验
-            if sortBy not in ("name", "size"):
-                return _to_unified_format({
-                    "success": False, "error": f"sortBy只支持'name'或'size'，当前值: '{sortBy}'", "entries": [], "statistics": None
-                }, "list_directory_with_sizes")
-            
-            is_valid, error_msg = self._validate_path(dir_path)
-            if not is_valid:
-                return _to_unified_format({
-                    "success": False, "error": error_msg, "entries": [], "statistics": None
-                }, "list_directory_with_sizes")
-
-            path = Path(dir_path)
-            if not path.exists():
-                return _to_unified_format({
-                    "success": False, "error": f"目录不存在: {dir_path}", "entries": [], "statistics": None
-                }, "list_directory_with_sizes")
-            if not path.is_dir():
-                return _to_unified_format({
-                    "success": False, "error": f"不是目录: {dir_path}", "entries": [], "statistics": None
-                }, "list_directory_with_sizes")
-
-            def _list_sync() -> Dict[str, Any]:
-                entries = []
-                total_size = 0
-                dir_count = 0
-                file_count = 0
-
-                if recursive:
-                    for root, dirs, files in os.walk(path):
-                        for d in dirs:
-                            dp = Path(root) / d
-                            if not include_hidden and d.startswith('.'):
-                                continue
-                            try:
-                                st = dp.stat()
-                                entries.append({
-                                    "name": d, "path": str(dp), "type": "directory",
-                                    "size": None, "mtime": st.st_mtime,
-                                })
-                                dir_count += 1
-                            except (PermissionError, OSError):
-                                continue
-                        for f in files:
-                            fp = Path(root) / f
-                            if not include_hidden and f.startswith('.'):
-                                continue
-                            try:
-                                st = fp.stat()
-                                entries.append({
-                                    "name": f, "path": str(fp), "type": "file",
-                                    "size": st.st_size, "mtime": st.st_mtime,
-                                })
-                                total_size += st.st_size
-                                file_count += 1
-                            except (PermissionError, OSError):
-                                continue
-                else:
-                    for item in path.iterdir():
-                        if not include_hidden and item.name.startswith('.'):
-                            continue
-                        try:
-                            st = item.stat()
-                            is_dir = item.is_dir()
-                            entries.append({
-                                "name": item.name, "path": str(item.absolute()),
-                                "type": "directory" if is_dir else "file",
-                                "size": None if is_dir else st.st_size,
-                                "mtime": st.st_mtime,
-                            })
-                            if is_dir:
-                                dir_count += 1
-                            else:
-                                total_size += st.st_size
-                                file_count += 1
-                        except (PermissionError, OSError):
-                            continue
-
-                if sortBy == "size":
-                    entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x.get("size") or 0), reverse=True)
-                else:
-                    entries.sort(key=lambda x: (0 if x["type"] == "directory" else 1, x["name"].lower()))
-
-                return {
-                    "entries": entries, "total": len(entries),
-                    "statistics": {
-                        "total_size": total_size, "dir_count": dir_count,
-                        "file_count": file_count, "sort_by": sortBy,
-                    }
-                }
-
-            result = await asyncio.to_thread(_list_sync)
-            result["success"] = True
-            result["directory"] = str(path)
-            return _to_unified_format(result, "list_directory_with_sizes")
-        except Exception as e:
-            logger.error(f"list_directory_with_sizes failed: {dir_path}: {e}")
-            return _to_unified_format({
-                "success": False, "error": str(e), "entries": [], "statistics": None
-            }, "list_directory_with_sizes")
+    # 【删除 2026-05-01 小沈】list_directory_with_sizes已合并到list_directory
 
     async def get_directory_tree(
         self,
@@ -3105,10 +3033,16 @@ def _generate_summary(tool_name: str, result: Any) -> str:
         return f"成功写入文件 {file_path}，共 {bytes_written} 字节"
     
     elif tool_name == "list_directory":
-        entries = result.get("entries", [])
-        total = result.get("total", len(entries))
         if result.get("success") is False:
             return f"列出目录失败：{result.get('error', '未知错误')}"
+        stats = result.get("statistics", {})
+        if stats:
+            total_size = stats.get("total_size", 0)
+            dir_count = stats.get("dir_count", 0)
+            file_count = stats.get("file_count", 0)
+            size_str = f"{total_size:,}" if total_size < 1073741824 else f"{total_size / 1073741824:.2f} GB"
+            return f"列出目录：{dir_count} 个目录，{file_count} 个文件，总大小 {size_str} 字节"
+        total = result.get("total", 0)
         return f"成功读取目录，共 {total} 个项目"
     
     elif tool_name == "delete_file":
@@ -3279,17 +3213,7 @@ def _generate_summary(tool_name: str, result: Any) -> str:
         total_files = result.get("total_files", 0)
         total_matches = result.get("total_matches", 0)
         return f"搜索完成：{total_files} 个文件，{total_matches} 处匹配"
-    
-    elif tool_name == "list_directory_with_sizes":
-        if result.get("success") is False:
-            return f"列出目录失败：{result.get('error', '未知错误')}"
-        stats = result.get("statistics", {})
-        total_size = stats.get("total_size", 0)
-        dir_count = stats.get("dir_count", 0)
-        file_count = stats.get("file_count", 0)
-        size_str = f"{total_size:,}" if total_size < 1073741824 else f"{total_size / 1073741824:.2f} GB"
-        return f"列出目录：{dir_count} 个目录，{file_count} 个文件，总大小 {size_str} 字节"
-    
+
     elif tool_name == "get_directory_tree":
         if result.get("success") is False:
             return f"获取目录树失败：{result.get('error', '未知错误')}"

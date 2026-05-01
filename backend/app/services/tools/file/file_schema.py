@@ -80,6 +80,14 @@ class ListDirectoryInput(BaseModel):
         default=None,
         description="分页令牌（位置编码），用于获取下一页结果"
     )
+    sortBy: str = Field(
+        default="name",
+        description="排序方式。可选值：name（按名称字母排序，默认值）、size（按文件大小排序，从大到小）"
+    )
+    include_hidden: bool = Field(
+        default=False,
+        description="是否显示隐藏文件（以.开头的文件），默认为False"
+    )
 
 
 class DeleteFileInput(BaseModel):
@@ -503,23 +511,7 @@ class GrepFileContentInput(BaseModel):
     )
 
 
-class ListDirectoryWithSizesInput(BaseModel):
-    """list_directory_with_sizes 工具的输入参数"""
-    dir_path: str = Field(
-        description="目录路径，必须是绝对路径，支持中文目录名"
-    )
-    sortBy: str = Field(
-        default="name",
-        description="排序方式。可选值：name（按名称字母排序，默认值）、size（按文件大小排序，从大到小）"
-    )
-    include_hidden: bool = Field(
-        default=False,
-        description="是否显示隐藏文件。Agent 智能判断"
-    )
-    recursive: bool = Field(
-        default=False,
-        description="是否递归列出子目录内容。Agent 智能判断（只看当前层）"
-    )
+# 【删除 2026-05-01 小沈】ListDirectoryWithSizesInput已合并到ListDirectoryInput
 
 
 class GetDirectoryTreeInput(BaseModel):

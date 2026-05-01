@@ -37,9 +37,8 @@ File Register - 文件工具注册点
 23. rename_file - 重命名文件/目录
 24. glob_files - Glob匹配文件
 25. grep_file_content - 搜索文件内容
-26. list_directory_with_sizes - 列出目录内容及大小
-27. get_directory_tree - 获取目录树
-28. list_allowed_directories - 列出允许访问的目录
+26. get_directory_tree - 获取目录树
+27. list_allowed_directories - 列出允许访问的目录
 
 【注册说明】
 - file_tools.py 的旧 _TOOL_REGISTRY 已移除（2026-04-26）
@@ -87,7 +86,6 @@ from app.services.tools.file.file_schema import (
     RenameFileInput,
     GlobFilesInput,
     GrepFileContentInput,
-    ListDirectoryWithSizesInput,
     GetDirectoryTreeInput,
     ListAllowedDirectoriesInput,
 )
@@ -122,7 +120,6 @@ FILE_TOOL_DESCRIPTIONS = {
     "rename_file": "重命名文件",
     "glob_files": "Glob匹配文件",
     "grep_file_content": "搜索文件内容",
-    "list_directory_with_sizes": "列出目录内容及大小",
     "get_directory_tree": "获取目录树",
     "list_allowed_directories": "列出允许访问的目录",
 }
@@ -231,10 +228,6 @@ FILE_TOOL_EXAMPLES = {
         {"pattern": "def read_file", "search_dir": "D:/OmniAgentAs-desk/backend"},
         {"pattern": "class.*Component", "search_dir": "D:/OmniAgentAs-desk/frontend", "glob": "*.tsx", "ignore_case": True}
     ],
-    "list_directory_with_sizes": [
-        {"dir_path": "D:/OmniAgentAs-desk", "sortBy": "name"},
-        {"dir_path": "D:/OmniAgentAs-desk", "sortBy": "size"}
-    ],
     "get_directory_tree": [
         {"dir_path": "D:/OmniAgentAs-desk"},
         {"dir_path": "D:/OmniAgentAs-desk", "excludePatterns": ["node_modules", "__pycache__"]}
@@ -290,7 +283,6 @@ def _register_file_tools():
         "rename_file": lambda: _get_ft().rename_file,
         "glob_files": lambda: _get_ft().glob_files,
         "grep_file_content": lambda: _get_ft().grep_file_content,
-        "list_directory_with_sizes": lambda: _get_ft().list_directory_with_sizes,
         "get_directory_tree": lambda: _get_ft().get_directory_tree,
         "list_allowed_directories": lambda: _get_ft().list_allowed_directories,
     }
@@ -324,7 +316,6 @@ def _register_file_tools():
         "rename_file": RenameFileInput,
         "glob_files": GlobFilesInput,
         "grep_file_content": GrepFileContentInput,
-        "list_directory_with_sizes": ListDirectoryWithSizesInput,
         "get_directory_tree": GetDirectoryTreeInput,
         "list_allowed_directories": ListAllowedDirectoriesInput,
     }
