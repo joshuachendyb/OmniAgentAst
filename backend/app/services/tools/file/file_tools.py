@@ -299,7 +299,15 @@ class FileTools:
             try:
                 compile(content, str(path), 'exec')
             except SyntaxError as e:
-                return f"Python语法验证失败: 第{e.lineno}行 - {e.msg}"
+                # 【修复 2026-05-01 序号5】Python验证错误提示优化：给出具体修复建议
+                error_msg = f"Python语法验证失败: 第{e.lineno}行 - {e.msg}"
+                if "unterminated string literal" in e.msg:
+                    error_msg += "；建议：转义字符串请使用raw string r'...'，如 r'\\\\' 代替 '\\\\'"
+                elif "invalid character" in e.msg:
+                    error_msg += "；建议：Python不支持全角标点，请使用半角括号()、逗号,、冒号:、分号;"
+                elif "invalid escape sequence" in e.msg:
+                    error_msg += "；建议：请在字符串前加r前缀使用raw string，或将转义字符双写如 \\\\d → r'\\d'"
+                return error_msg
         
         return None
 
@@ -648,7 +656,35 @@ class FileTools:
                 "error": f"写入内容过大，超过上限{MAX_WRITE_SIZE//1024//1024}MB",
                 "content": None
             }, "write_file")
-        
+
+        # 【修复 2026-05-01 序号6】.py文件写入前：全角标点→半角标点自动替换
+        path_preview = Path(file_path)
+        if path_preview.suffix.lower() == '.py' and content:
+            fullwidth_map = {
+                '（': '(', '）': ')', '，': ',', '：': ':', '；': ';',
+                '！': '!', '？': '?', '＝': '=', '＋': '+', '－': '-',
+                '＊': '*', '／': '/', '＜': '<', '＞': '>', '［': '[', '］': ']',
+            }
+            original_content = content
+            for fw, hw in fullwidth_map.items():
+                content = content.replace(fw, hw)
+            if content != original_content:
+                import logging
+                logging.getLogger(__name__).info(f"write_file: 自动将全角标点替换为半角标点({file_path})")
+
+        # 【修复 2026-05-01 序号7】.py文件写入前：检测思维泄漏
+        if path_preview.suffix.lower() == '.py' and content:
+            python_keywords = ['def ', 'class ', 'import ', 'from ', 'if ', 'for ', 'while ',
+                               'return ', 'with ', 'try:', 'except', 'print(', '# ', '"""']
+            has_python = any(kw in content for kw in python_keywords)
+            chinese_chars = sum(1 for c in content if '\u4e00' <= c <= '\u9fff')
+            if not has_python and chinese_chars > len(content) * 0.3 and len(content) < 500:
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"内容保护：写入.py文件的内容不包含任何Python关键字且{chinese_chars}个中文字符占比>{int(chinese_chars/max(len(content),1)*100)}%，可能是思维文本而非代码。请在content参数中传入实际代码内容。",
+                    "content": None
+                }, "write_file")
+
         # 若启用反转义，对内容做转义字符还原
         if unescape:
             content = content.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\")
@@ -679,6 +715,17 @@ class FileTools:
             }, "write_file")
         
         path = Path(file_path)
+        
+        # 【修复 2026-05-01 序号4】数据保护：覆盖已有文件时检查大小差异
+        if path.exists() and path.is_file():
+            old_size = path.stat().st_size
+            new_size = len(content.encode(encoding))
+            if old_size > 1024 and new_size < old_size * 0.1:
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节，缩小{100-int(new_size/max(old_size,1)*100)}%)，可能覆盖数据。如确认覆盖，请使用precise_replace_in_file或在content中传入完整内容。",
+                    "content": None
+                }, "write_file")
         
         try:
             # 记录操作
