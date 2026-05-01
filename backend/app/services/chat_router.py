@@ -140,6 +140,15 @@ INTENT_KEYWORDS: Dict[str, Dict] = {
         ],
         "chinese_keywords": ['查询', 'SQL', '数据库', '表', '数据']
     },
+    # 【2026-04-30 小沈新增】跨类型中性词 - 不偏向任何分类，用于增加候选列表完整性
+    "NEUTRAL": {
+        "keywords": [
+            r'\bread\b', r'\bopen\b', r'\bview\b', r'\baccess\b', r'\bprocess\b',
+            r'\bcheck\b', r'\bfind\b', r'\bsearch\b', r'\blist\b',
+            '读取', '打开', '查看', '访问', '处理', '检查', '查找', '搜索', '列出', '遍历'
+        ],
+        "chinese_keywords": ['读取', '打开', '查看', '访问', '处理', '检查', '查找', '搜索', '列出', '遍历']
+    },
 }
 
 
@@ -183,6 +192,10 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
     }
 
     for cat_name, cat_info in INTENT_KEYWORDS.items():
+        # 【2026-04-30 小沈】跳过NEUTRAL分类，特殊处理
+        if cat_name == "NEUTRAL":
+            continue
+            
         cat_enum = category_map[cat_name]
 
         # 中文关键词：+2.0 每个
@@ -197,6 +210,18 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
             if _ascii_word_boundary_match(keyword, command_lower):
                 logger.info(f"[CRSS Score] {cat_name} 英文关键词 +1.0: '{keyword}'")
                 raw_scores[cat_enum] = raw_scores.get(cat_enum, 0) + 1.0
+
+    # 【2026-04-30 小沈】跨类型中性词处理 - 不偏向任何分类，增加所有匹配分类
+    neutral_info = INTENT_KEYWORDS.get("NEUTRAL", {})
+    neutral_score_count = 0
+    for kw in neutral_info.get("chinese_keywords", []):
+        if kw in command_lower:
+            neutral_score_count += 1
+    if neutral_score_count > 0:
+        # 中性词给所有分类都加少量分数 (+0.3/个)
+        for cat_enum in category_map.values():
+            raw_scores[cat_enum] = raw_scores.get(cat_enum, 0) + neutral_score_count * 0.3
+        logger.info(f"[CRSS Score] NEUTRAL 中性词 +{neutral_score_count * 0.3}: {neutral_score_count}个")
 
     # ===== 2. FILE 操作关键词 =====
     from app.services.command_security import OPERATION_WEIGHTS
