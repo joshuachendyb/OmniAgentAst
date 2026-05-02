@@ -104,6 +104,7 @@ class ToolCategory(Enum):
     DATA_ANALYSIS = "data_analysis"  # 数据分析（小沈-2026-05-02）
     DOCUMENT = "document"            # 文档读写（小沈-2026-05-02）
     ENV_CHECK = "env_check"          # 环境检查（小沈-2026-05-02）
+    GUI = "gui"                      # GUI操作（小沈-2026-05-02）
 
 
 @dataclass
@@ -419,6 +420,7 @@ class ToolRegistry:
             ToolCategory.DATA_ANALYSIS,
             ToolCategory.DOCUMENT,
             ToolCategory.ENV_CHECK,
+            ToolCategory.GUI,
         ]
 
         # 如果指定了priority_category，移到最前面
@@ -438,6 +440,7 @@ class ToolRegistry:
             ToolCategory.DATA_ANALYSIS: "数据分析工具",
             ToolCategory.DOCUMENT: "文档读写工具",
             ToolCategory.ENV_CHECK: "环境检查工具",
+            ToolCategory.GUI: "GUI操作工具",
         }
 
         for cat in category_order:
