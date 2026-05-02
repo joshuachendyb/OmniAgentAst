@@ -12,9 +12,8 @@ Author: 小沈 - 2026-03-21
 """
 
 from app.services.tools.file.file_schema import (
-    ReadFileInput,
+    ReadTextFileInput,
     WriteTextFileInput,
-    WriteFileInput,
     ListDirectoryInput,
     DeleteFileInput,
     MoveFileInput,
@@ -51,9 +50,8 @@ from app.services.tools.file.file_register import FileTools, get_file_tools
 
 __all__ = [
     # Schema模型
-    "ReadFileInput",
+    "ReadTextFileInput",
     "WriteTextFileInput",
-    "WriteFileInput",
     "ListDirectoryInput",
     "DeleteFileInput",
     "MoveFileInput",

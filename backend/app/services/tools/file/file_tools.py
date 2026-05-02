@@ -41,8 +41,8 @@ DEFAULT_PAGE_SIZE = 999999999  # 远超实际数据量，保证返回全部
 from pydantic import BaseModel, Field
 
 from app.services.tools.file.file_schema import (
-    ReadFileInput,
-    WriteFileInput,
+    ReadTextFileInput,
+    WriteTextFileInput,
     ListDirectoryInput,
     DeleteFileInput,
     MoveFileInput,

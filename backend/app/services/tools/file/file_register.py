@@ -59,7 +59,6 @@ from app.utils.logger import logger
 # 【小健 2026-04-29】后续新增tool类型（time/shell/network等）也必须按此要求，从对应schema文件导入模型注册
 from app.services.tools.file.file_schema import (
     WriteTextFileInput,
-    WriteFileInput,
     ListDirectoryInput,
     DeleteFileInput,
     MoveFileInput,
