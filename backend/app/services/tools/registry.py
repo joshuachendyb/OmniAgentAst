@@ -120,6 +120,7 @@ class ToolMetadata:
     input_schema: Dict[str, Any] = field(default_factory=dict)
     output_schema: Dict[str, Any] = field(default_factory=dict)
     examples: List[Dict[str, Any]] = field(default_factory=list)
+    expose_to_llm: bool = True
     created_at: datetime = field(default_factory=datetime.now)
     updated_at: datetime = field(default_factory=datetime.now)
     
@@ -166,7 +167,8 @@ class ToolRegistry:
         input_model: Optional[Type[BaseModel]] = None,
         input_schema: Optional[Dict] = None,
         output_schema: Optional[Dict] = None,
-        examples: Optional[List[Dict]] = None
+        examples: Optional[List[Dict]] = None,
+        expose_to_llm: bool = True,
     ) -> Dict[str, Any]:
         """
         注册工具
@@ -182,6 +184,7 @@ class ToolRegistry:
             input_schema: 输入参数Schema（当没有 input_model 时使用）
             output_schema: 输出结果Schema
             examples: 使用示例
+            expose_to_llm: 是否暴露给LLM（默认True），为False时工具仅作为内部辅助函数不发送给LLM - 小沈2026-05-02
         
         Returns:
             {"status": "success"} or {"status": "error", "error": "..."}
@@ -232,7 +235,8 @@ class ToolRegistry:
             dependencies=dependencies or [],
             input_schema=input_schema or {},
             output_schema=output_schema or {},
-            examples=examples or []
+            examples=examples or [],
+            expose_to_llm=expose_to_llm,
         )
         
         # 注册工具
@@ -313,7 +317,8 @@ class ToolRegistry:
     def list_tools(
         self,
         category: Optional[ToolCategory] = None,
-        include_metadata: bool = True
+        include_metadata: bool = True,
+        expose_to_llm_only: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         列出工具
@@ -321,6 +326,7 @@ class ToolRegistry:
         Args:
             category: 按分类过滤（可选）
             include_metadata: 是否包含元数据（默认True返回dict）
+            expose_to_llm_only: 是否只返回暴露给LLM的工具（默认False返回全部） - 小沈2026-05-02
         
         Returns:
             工具信息dict列表
@@ -329,6 +335,9 @@ class ToolRegistry:
             tool_names = self._categories.get(category, [])
         else:
             tool_names = list(self._tools.keys())
+        
+        if expose_to_llm_only:
+            tool_names = [name for name in tool_names if self._tools[name].expose_to_llm]
         
         return [
             {
@@ -384,7 +393,7 @@ class ToolRegistry:
         required = set(input_schema.get("required", []))
         return sorted(required)
 
-    def get_all_tools_summary(self, priority_category: Optional['ToolCategory'] = None) -> str:
+    def get_all_tools_summary(self, priority_category: Optional['ToolCategory'] = None, expose_to_llm_only: bool = True) -> str:
         """
         获取所有工具的概要描述（按分类组织）
 
@@ -395,6 +404,7 @@ class ToolRegistry:
 
         Args:
             priority_category: 优先展示的分类
+            expose_to_llm_only: 是否只展示暴露给LLM的工具（默认True） - 小沈2026-05-02
 
         Returns:
             格式化的工具概要字符串
@@ -406,6 +416,8 @@ class ToolRegistry:
         from collections import defaultdict
         by_category: Dict[ToolCategory, List[str]] = defaultdict(list)
         for name, metadata in self._tools.items():
+            if expose_to_llm_only and not metadata.expose_to_llm:
+                continue
             by_category[metadata.category].append((name, metadata))
 
         # 分类展示顺序
@@ -484,7 +496,8 @@ def register_tool(
     input_model: Optional[Type[BaseModel]] = None,
     input_schema: Optional[Dict] = None,
     output_schema: Optional[Dict] = None,
-    examples: Optional[List[Dict]] = None
+    examples: Optional[List[Dict]] = None,
+    expose_to_llm: bool = True,
 ):
     """
     工具注册装饰器
@@ -527,7 +540,8 @@ def register_tool(
             input_model=input_model,
             input_schema=input_schema,
             output_schema=output_schema,
-            examples=examples
+            examples=examples,
+            expose_to_llm=expose_to_llm,
         )
         
         return func

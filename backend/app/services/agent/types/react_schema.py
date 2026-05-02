@@ -60,7 +60,7 @@ def get_tools_schema_for_function_calling() -> List[Dict[str, Any]]:
         ...
     ]
     """
-    tools = tool_registry.list_tools()
+    tools = tool_registry.list_tools(expose_to_llm_only=True)
     
     openai_tools = []
     for tool in tools:
@@ -329,7 +329,7 @@ def get_available_tools() -> List[str]:
     Returns:
         工具名称列表
     """
-    tools = tool_registry.list_tools()
+    tools = tool_registry.list_tools(expose_to_llm_only=True)
     return [tool.get("name", "") for tool in tools if tool.get("name")]
 
 
