@@ -1088,185 +1088,20 @@ class FileTools:
         # 分页标记，用于继续之前的搜索
         page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """搜索文件内容中的关键字"""
-        # 【修复】验证搜索路径 - 2026-03-19 小强
-        is_valid, error_msg = self._validate_path(path)
-        if not is_valid:
-            return _to_unified_format({
-                "success": False,
-                "error": error_msg,
-                "matches": []
-            }, "search_file_content")
-        
-        # 【修复】空pattern校验 - 2026-03-28 小沈
-        if not pattern or not pattern.strip():
-            return _to_unified_format({
-                "success": False,
-                "error": "搜索关键字不能为空，请提供有效的搜索内容",
-                "matches": []
-            }, "search_file_content")
-        
-        search_path = Path(path)
-        
-        try:
-            if not search_path.exists():
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"Path not found: {path}",
-                    "matches": []
-                }, "search_file_content")
-            
-            # 编译正则表达式
-            regex = None
-            if use_regex:
-                try:
-                    regex = re.compile(pattern)
-                except re.error as e:
-                    return _to_unified_format({
-                        "success": False,
-                        "error": f"Invalid regex pattern: {e}",
-                        "matches": []
-                    }, "search_file_content")
-            
-            # 搜索文件内容 - 单次遍历（P3修复：去掉while True循环）
-            def _search_sync():
-                import os
-                import fnmatch
-                
-                all_results = []
-                search_term = pattern.strip()
-                start_offset = decode_page_token(page_token) if page_token else 0
-                seen_count = 0
-                
-                # 单次遍历，不需要while循环
-                for root, dirs, files in os.walk(search_path):
-                    # 【修复P6】尊重recursive参数
-                    if not recursive:
-                        dirs.clear()  # 不递归：清空子目录列表，os.walk不会进入子目录
-                    
-                    # 遍历当前目录的文件
-                    for filename in files:
-                        # 【修复P10】用fnmatch替代手工正则
-                        if file_pattern and file_pattern != "*":
-                            if not fnmatch.fnmatch(filename, file_pattern):
-                                continue
-                        
-                        file_path = Path(root) / filename
-                        file_str = str(file_path.relative_to(search_path))
-                        
-                        # 【修改】用位置偏移跳过已处理的文件
-                        if seen_count < start_offset:
-                            seen_count += 1
-                            continue
-                        seen_count += 1
-                        
-                        # 【修复P11】errors='ignore' → errors='replace'
-                        # 【修复P16】指定具体异常
-                        # 【修复 2026-04-30 小沈】搜索逻辑从except continue之后移到try块内
-                        # 原BUG：搜索逻辑在except (PermissionError,OSError): continue 之后，
-                        # 是不可达死代码，导致search_file_content永远返回空结果
-                        
-                        # 【修复 2026-05-01 小沈】OOM防护：跳过大文件
-                        try:
-                            if file_path.stat().st_size > MAX_SEARCH_FILE_SIZE:
-                                continue
-                        except OSError:
-                            continue
-                        
-                        try:
-                            with open(file_path, 'r', encoding='utf-8', errors='replace') as f:
-                                content = f.read()
-                        except (PermissionError, OSError):
-                            continue
-                        
-                        # 搜索内容（已移到try块外、except continue之后正确位置）
-                        matches = []
-                        
-                        if use_regex and regex is not None:
-                            for match in regex.finditer(content):
-                                start = max(0, match.start() - 50)
-                                end = min(len(content), match.end() + 50)
-                                context = content[start:end]
-                                
-                                matches.append({
-                                    "start": match.start(),
-                                    "end": match.end(),
-                                    "matched": match.group(),
-                                    "context": context
-                                })
-                        else:
-                            idx = content.find(search_term)
-                            while idx != -1:
-                                start = max(0, idx - 50)
-                                end = min(len(content), idx + len(search_term) + 50)
-                                context = content[start:end]
-                                
-                                matches.append({
-                                    "start": idx,
-                                    "end": idx + len(search_term),
-                                    "matched": search_term,
-                                    "context": context
-                                })
-                                
-                                idx = content.find(search_term, idx + 1)
-                        
-                        if matches:
-                            all_results.append({
-                                "file": file_str,
-                                "matches": matches,
-                                "match_count": len(matches)
-                            })
-                
-                # 排序：匹配多的文件在前
-                all_results.sort(key=lambda x: x["match_count"], reverse=True)
-                
-                return all_results
-            
-            # 执行搜索
-            all_results = await asyncio.to_thread(_search_sync)
-            
-            # 计算总匹配数
-            total_matches = sum(r["match_count"] for r in all_results)
-            
-            # 搜索完成后，根据结果数量决定如何返回前端
-            total = len(all_results)
-            
-            # 前端分页配置（使用全局统一常量）
-            if total > DEFAULT_PAGE_SIZE:
-                # 结果多，分页返回
-                total_pages = (total + DEFAULT_PAGE_SIZE - 1) // DEFAULT_PAGE_SIZE
-                page_results = all_results[:DEFAULT_PAGE_SIZE]
-                has_more = True
-                next_page_token = encode_page_token(DEFAULT_PAGE_SIZE) if has_more else None
-            else:
-                # 结果少，一次返回
-                page_results = all_results
-                total_pages = 1
-                has_more = False
-                next_page_token = None
-            
-            return _to_unified_format({
-                "success": True,
-                "pattern": pattern,
-                "path": str(search_path),
-                "file_pattern": file_pattern,
-                "matches": page_results,
-                "total": total,
-                "total_matches": total_matches,
-                "page": 1,
-                "total_pages": total_pages,
-                "page_size": DEFAULT_PAGE_SIZE,
-                "next_page_token": next_page_token,
-                "has_more": has_more
-            }, "search_file_content")
-            
-        except Exception as e:
-            logger.error(f"Failed to search file content: {e}")
-            return _to_unified_format({
-                "success": False,
-                "error": str(e),
-                "matches": []
-            }, "search_file_content")
+        """【已废弃】请使用 grep_file_content 替代 - 小健 2026-05-02
+        该工具已废弃，自动转发到 grep_file_content（功能更强、性能更好、支持正则+分页）。
+        """
+        logger.warning("[deprecated] search_file_content 已废弃，请使用 grep_file_content 替代")
+        return await self.grep_file_content(
+            pattern=pattern,
+            search_dir=path,
+            output_mode="content",
+            glob=file_pattern if file_pattern != "*" else None,
+            ignore_case=True,
+            show_line_no=True,
+            head_limit=200,
+            page_token=page_token,
+        )
     
     async def search_files(
         self,
@@ -2252,8 +2087,9 @@ class FileTools:
         show_line_no: bool = False,
         multiline: bool = False,
         head_limit: Optional[int] = None,
+        page_token: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """基于正则的内容搜索"""
+        """基于正则的内容搜索，支持分页 - 小健 2026-05-02 添加page_token"""
         try:
             search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
             is_valid, error_msg = self._validate_path(str(search_path))
@@ -2353,10 +2189,24 @@ class FileTools:
             matches = await asyncio.to_thread(_grep_sync)
             total_matches = sum(m.get("match_count", 0) if "match_count" in m else (m.get("count", 1) if "count" in m else 1) for m in matches)
 
+            # 【小健 2026-05-02】分页逻辑（从search_file_content迁移）
+            total = len(matches)
+            start_offset = decode_page_token(page_token) if page_token else 0
+            if total > DEFAULT_PAGE_SIZE or start_offset > 0:
+                end_offset = start_offset + DEFAULT_PAGE_SIZE
+                page_results = matches[start_offset:end_offset]
+                has_more = end_offset < total
+                next_page_token = encode_page_token(end_offset) if has_more else None
+            else:
+                page_results = matches
+                has_more = False
+                next_page_token = None
+
             return _to_unified_format({
-                "success": True, "matches": matches, "total_files": len(matches),
+                "success": True, "matches": page_results, "total_files": total,
                 "total_matches": total_matches, "pattern": pattern,
                 "search_dir": str(search_path), "output_mode": output_mode or "content",
+                "has_more": has_more, "next_page_token": next_page_token,
             }, "grep_file_content")
         except Exception as e:
             logger.error(f"grep_file_content failed: {e}")

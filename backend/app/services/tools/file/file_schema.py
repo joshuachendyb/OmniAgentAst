@@ -533,6 +533,10 @@ class GrepFileContentInput(BaseModel):
         le=100000,
         description="限制返回的匹配结果数量，用于大文件搜索避免输出过多"
     )
+    page_token: Optional[str] = Field(
+        default=None,
+        description="分页令牌（位置编码），用于获取下一页结果"
+    )
 
 
 
