@@ -286,11 +286,10 @@ class ToolExecutor:
     
     def _normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         """
-        参数规范化：基于Pydantic模型schema校验 - 小健 2026-05-02
+        参数规范化：基于tool_registry的input_schema校验 - 小健 2026-05-02
         
-        删除硬编码的PARAM_ALIASES和STANDARD_PARAMS，
-        改为从Pydantic模型schema动态获取标准参数名，
-        非标准参数仅记录警告日志。
+        从tool_registry.get_tool()获取input_schema，支持所有tool类型（file/shell/network等）
+        删除硬编码的file_register依赖。
         
         Args:
             action: 工具名称
@@ -301,13 +300,12 @@ class ToolExecutor:
         """
         params = action_input.copy()
         
-        # 从Pydantic模型schema获取标准参数名，记录非标准参数警告
+        # 从tool_registry获取input_schema，支持所有tool类型
         try:
-            from app.services.tools.file.file_register import get_tool_input_models
-            models = get_tool_input_models()
-            if action in models:
-                schema = models[action].model_json_schema()
-                valid_params = set(schema.get("properties", {}).keys())
+            from app.services.tools.registry import tool_registry
+            metadata = tool_registry.get_tool(action)
+            if metadata and metadata.input_schema:
+                valid_params = set(metadata.input_schema.get("properties", {}).keys())
                 for key in list(params.keys()):
                     if key not in valid_params:
                         val = params[key]
@@ -316,8 +314,8 @@ class ToolExecutor:
                             f"[参数监控] action={action}, 非标准参数名: "
                             f"param={key}={val_str}, 期望参数={sorted(valid_params)}"
                         )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[参数监控] action={action}, 获取schema失败: {e}")
         
         return params
     

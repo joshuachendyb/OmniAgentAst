@@ -13,13 +13,10 @@ from .base_parser import BaseParser, ParseResult
 
 
 def _get_all_tool_names() -> List[str]:
-    """从注册中心获取所有工具名 - 小健 2026-05-02"""
+    """从tool_registry获取所有已注册工具名 - 小健 2026-05-02"""
     try:
-        from app.services.tools.file.file_register import get_all_file_tool_names
-        tools = set(get_all_file_tool_names())
-        tools.update(["execute_command", "run_command", "get_current_time",
-                      "get_system_info", "finish", "finish_with_error"])
-        return sorted(tools)
+        from app.services.tools.registry import tool_registry
+        return tool_registry.list_tools(include_metadata=False)
     except Exception:
         return ["read_file", "write_file", "delete_file", "list_directory",
                 "search_files", "grep_file_content", "execute_command",
