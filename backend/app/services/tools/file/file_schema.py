@@ -104,13 +104,17 @@ class ListDirectoryInput(BaseModel):
 
 
 class DeleteFileInput(BaseModel):
-    """delete_file 工具的输入参数"""
+    """delete_file 工具的输入参数 - 小健 2026-05-02 增加force"""
     file_path: str = Field(
         description="要删除的文件或目录的完整路径"
     )
     recursive: bool = Field(
         default=False,
         description="是否递归删除目录（目录非空时需要设为True）"
+    )
+    force: bool = Field(
+        default=False,
+        description="是否强制删除只读文件。遇到只读文件报错时，设为True可自动解除只读属性后删除，默认为False"
     )
 
 

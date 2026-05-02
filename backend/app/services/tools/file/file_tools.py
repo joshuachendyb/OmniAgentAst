@@ -83,6 +83,12 @@ MAX_BATCH_FILE_COUNT = 100               # 批量读取文件数上限
 MAX_SEARCH_FILE_SIZE = 10 * 1024 * 1024  # 搜索/单个文件读取上限：10MB
 
 
+def _remove_readonly(func, path, excinfo):
+    """force删除时解除只读属性的回调 - 小健 2026-05-02"""
+    os.chmod(path, os.stat(path).st_mode | 0o200)
+    func(path)
+
+
 # ============================================================
 # 第二部分：动态白名单
 # ============================================================
@@ -894,9 +900,10 @@ class FileTools:
     async def delete_file(
         self,
         file_path: str,
-        recursive: bool = False
+        recursive: bool = False,
+        force: bool = False
     ) -> Dict[str, Any]:
-        """删除文件或目录"""
+        """删除文件或目录 - 小健 2026-05-02 增加force"""
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(file_path)
         if not is_valid:
@@ -935,10 +942,15 @@ class FileTools:
             def _delete_sync():
                 if path.is_dir():
                     if recursive:
-                        shutil.rmtree(path)
+                        if force:
+                            shutil.rmtree(str(path), onerror=_remove_readonly)
+                        else:
+                            shutil.rmtree(path)
                     else:
                         path.rmdir()
                 else:
+                    if force and path.exists() and not os.access(str(path), os.W_OK):
+                        path.chmod(path.stat().st_mode | 0o200)
                     path.unlink()
                 return True
             
