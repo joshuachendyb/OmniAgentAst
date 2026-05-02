@@ -118,9 +118,37 @@ class SearchWebInput(BaseModel):
     )
 
 
+class PingInput(BaseModel):
+    """ping 工具的输入参数 - 小沈 2026-05-02"""
+    host: str = Field(
+        ..., description="目标主机地址（必填），可以是域名或IP地址，例如 8.8.8.8 或 www.baidu.com"
+    )
+    count: int = Field(
+        default=4, ge=1, le=10, description="发送ping包数量，默认4次，最多10次"
+    )
+    timeout: int = Field(
+        default=5, ge=1, le=30, description="每次ping的超时时间（秒），默认5秒，最大30秒"
+    )
+
+
+class PortCheckInput(BaseModel):
+    """port_check 工具的输入参数 - 小沈 2026-05-02"""
+    host: str = Field(
+        ..., description="目标主机地址（必填），可以是域名或IP地址，例如 127.0.0.1 或 localhost"
+    )
+    port: int = Field(
+        ..., ge=1, le=65535, description="要检查的端口号（必填），范围 1-65535，例如 80、443、8080"
+    )
+    timeout: int = Field(
+        default=3, ge=1, le=10, description="连接超时时间（秒），默认3秒，最大10秒"
+    )
+
+
 __all__ = [
     "HttpRequestInput",
     "DownloadFileInput",
     "FetchWebpageInput",
     "SearchWebInput",
+    "PingInput",
+    "PortCheckInput",
 ]

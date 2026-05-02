@@ -10,6 +10,8 @@ Network 工具函数模块 - 网络通信工具
 - download_file: 下载文件到本地
 - fetch_webpage: 获取和处理网页内容
 - search_web: 搜索网络获取最新信息
+- ping: 执行ping测试（小沈 2026-05-02）
+- port_check: 检查端口是否开放（小沈 2026-05-02）
 
 返回格式：统一 {code, data, message} 格式
 - code: SUCCESS 或 ERR_xxx 错误码
@@ -22,6 +24,9 @@ Author: 小沈 - 2026-04-29
 import os
 import json
 import re
+import platform
+import subprocess
+import socket
 from typing import Optional, Dict, Any, Literal, List
 from urllib.parse import urlencode, urlparse, urlunparse, quote_plus
 
@@ -530,4 +535,312 @@ async def search_web(
             "code": "ERR_NETWORK_UNKNOWN",
             "data": None,
             "message": f"搜索异常: {str(e)}"
+        }
+
+
+async def ping(
+    host: str,
+    count: int = 4,
+    timeout: int = 5,
+) -> dict:
+    """
+    执行ping测试 - 小沈 2026-05-02
+    
+    使用系统ping命令测试网络连通性。
+    Windows使用 ping 命令，Linux/macOS使用 ping 命令。
+    
+    参数:
+        host: 目标主机地址（域名或IP）
+        count: 发送ping包数量
+        timeout: 每次ping的超时时间（秒）
+    
+    返回:
+        {
+            "code": "SUCCESS",
+            "data": {
+                "host": "目标主机",
+                "packets_sent": 发送包数,
+                "packets_received": 接收包数,
+                "packets_lost": 丢失包数,
+                "loss_rate": 丢包率,
+                "min_latency": 最小延迟(ms),
+                "avg_latency": 平均延迟(ms),
+                "max_latency": 最大延迟(ms),
+                "is_reachable": 是否可达,
+                "raw_output": 原始输出,
+            },
+            "message": "描述信息"
+        }
+    """
+    try:
+        if not host or len(host.strip()) == 0:
+            return {
+                "code": "ERR_NETWORK_INVALID_HOST",
+                "data": None,
+                "message": "目标主机地址不能为空"
+            }
+        
+        host = host.strip()
+        
+        system = platform.system().lower()
+        
+        if system == "windows":
+            cmd = ["ping", "-n", str(count), "-w", str(timeout * 1000), host]
+        else:
+            cmd = ["ping", "-c", str(count), "-W", str(timeout), host]
+        
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=count * timeout + 10
+            )
+            raw_output = result.stdout
+        except subprocess.TimeoutExpired:
+            return {
+                "code": "ERR_NETWORK_TIMEOUT",
+                "data": None,
+                "message": f"Ping命令执行超时（{count * timeout + 10}秒）"
+            }
+        except FileNotFoundError:
+            return {
+                "code": "ERR_NETWORK_COMMAND_NOT_FOUND",
+                "data": None,
+                "message": "系统ping命令不可用"
+            }
+        
+        packets_sent = count
+        packets_received = 0
+        packets_lost = 0
+        loss_rate = 0.0
+        min_latency = None
+        avg_latency = None
+        max_latency = None
+        is_reachable = False
+        
+        if system == "windows":
+            loss_match = re.search(r"已发送\s*=\s*(\d+).*?已接收\s*=\s*(\d+).*?丢失\s*=\s*(\d+).*?(\d+)%", raw_output, re.DOTALL)
+            if loss_match:
+                packets_sent = int(loss_match.group(1))
+                packets_received = int(loss_match.group(2))
+                packets_lost = int(loss_match.group(3))
+                loss_rate = float(loss_match.group(4))
+            
+            latency_match = re.search(r"最短\s*=\s*(\d+)ms.*?最长\s*=\s*(\d+)ms.*?平均\s*=\s*(\d+)ms", raw_output, re.DOTALL)
+            if latency_match:
+                min_latency = int(latency_match.group(1))
+                max_latency = int(latency_match.group(2))
+                avg_latency = int(latency_match.group(3))
+            
+            if "TTL=" in raw_output or "ttl=" in raw_output.lower():
+                is_reachable = True
+        else:
+            loss_match = re.search(r"(\d+)\s+packets transmitted.*?(\d+)\s+received.*?(\d+)%\s+packet loss", raw_output, re.DOTALL)
+            if loss_match:
+                packets_sent = int(loss_match.group(1))
+                packets_received = int(loss_match.group(2))
+                loss_rate = float(loss_match.group(3))
+                packets_lost = packets_sent - packets_received
+            
+            latency_match = re.search(r"rtt min/avg/max/mdev\s*=\s*([\d.]+)/([\d.]+)/([\d.]+)", raw_output)
+            if latency_match:
+                min_latency = float(latency_match.group(1))
+                avg_latency = float(latency_match.group(2))
+                max_latency = float(latency_match.group(3))
+            
+            if packets_received > 0:
+                is_reachable = True
+        
+        if is_reachable:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "host": host,
+                    "packets_sent": packets_sent,
+                    "packets_received": packets_received,
+                    "packets_lost": packets_lost,
+                    "loss_rate": loss_rate,
+                    "min_latency": min_latency,
+                    "avg_latency": avg_latency,
+                    "max_latency": max_latency,
+                    "is_reachable": True,
+                    "raw_output": raw_output,
+                },
+                "message": f"Ping测试成功：{host} 可达，平均延迟 {avg_latency if avg_latency else 'N/A'} ms"
+            }
+        else:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "host": host,
+                    "packets_sent": packets_sent,
+                    "packets_received": 0,
+                    "packets_lost": packets_sent,
+                    "loss_rate": 100.0,
+                    "min_latency": None,
+                    "avg_latency": None,
+                    "max_latency": None,
+                    "is_reachable": False,
+                    "raw_output": raw_output,
+                },
+                "message": f"Ping测试失败：{host} 不可达"
+            }
+    
+    except Exception as e:
+        logger.error(f"[ping] 未知错误: {e}")
+        return {
+            "code": "ERR_NETWORK_UNKNOWN",
+            "data": None,
+            "message": f"Ping测试异常: {str(e)}"
+        }
+
+
+async def port_check(
+    host: str,
+    port: int,
+    timeout: int = 3,
+) -> dict:
+    """
+    检查端口是否开放 - 小沈 2026-05-02
+    
+    使用socket连接测试端口是否开放。
+    
+    参数:
+        host: 目标主机地址（域名或IP）
+        port: 端口号（1-65535）
+        timeout: 连接超时时间（秒）
+    
+    返回:
+        {
+            "code": "SUCCESS",
+            "data": {
+                "host": "目标主机",
+                "port": 端口号,
+                "is_open": 是否开放,
+                "service": 服务名称（如果已知）,
+            },
+            "message": "描述信息"
+        }
+    """
+    try:
+        if not host or len(host.strip()) == 0:
+            return {
+                "code": "ERR_NETWORK_INVALID_HOST",
+                "data": None,
+                "message": "目标主机地址不能为空"
+            }
+        
+        if port < 1 or port > 65535:
+            return {
+                "code": "ERR_NETWORK_INVALID_PORT",
+                "data": None,
+                "message": f"端口号无效：{port}，必须在 1-65535 范围内"
+            }
+        
+        host = host.strip()
+        
+        well_known_ports = {
+            20: "FTP-DATA",
+            21: "FTP",
+            22: "SSH",
+            23: "Telnet",
+            25: "SMTP",
+            53: "DNS",
+            80: "HTTP",
+            110: "POP3",
+            143: "IMAP",
+            443: "HTTPS",
+            465: "SMTPS",
+            587: "SMTP-MSA",
+            993: "IMAPS",
+            995: "POP3S",
+            1433: "MSSQL",
+            1521: "Oracle",
+            3306: "MySQL",
+            3389: "RDP",
+            5432: "PostgreSQL",
+            5900: "VNC",
+            6379: "Redis",
+            8080: "HTTP-Proxy",
+            8443: "HTTPS-Alt",
+            27017: "MongoDB",
+        }
+        
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            
+            result = sock.connect_ex((host, port))
+            
+            if result == 0:
+                is_open = True
+                sock.close()
+                
+                service = well_known_ports.get(port, "Unknown")
+                
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "host": host,
+                        "port": port,
+                        "is_open": True,
+                        "service": service,
+                    },
+                    "message": f"端口 {port} ({service}) 开放：{host}:{port}"
+                }
+            else:
+                sock.close()
+                
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "host": host,
+                        "port": port,
+                        "is_open": False,
+                        "service": well_known_ports.get(port, "Unknown"),
+                    },
+                    "message": f"端口 {port} 关闭：{host}:{port}"
+                }
+        
+        except socket.gaierror as e:
+            return {
+                "code": "ERR_NETWORK_DNS_ERROR",
+                "data": {
+                    "host": host,
+                    "port": port,
+                    "is_open": False,
+                    "service": None,
+                },
+                "message": f"DNS解析失败：{host} ({str(e)})"
+            }
+        except socket.timeout:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "host": host,
+                    "port": port,
+                    "is_open": False,
+                    "service": well_known_ports.get(port, "Unknown"),
+                },
+                "message": f"端口 {port} 连接超时：{host}:{port}"
+            }
+        except OSError as e:
+            return {
+                "code": "ERR_NETWORK_CONNECTION_ERROR",
+                "data": {
+                    "host": host,
+                    "port": port,
+                    "is_open": False,
+                    "service": None,
+                },
+                "message": f"连接失败：{str(e)}"
+            }
+    
+    except Exception as e:
+        logger.error(f"[port_check] 未知错误: {e}")
+        return {
+            "code": "ERR_NETWORK_UNKNOWN",
+            "data": None,
+            "message": f"端口检查异常: {str(e)}"
         }

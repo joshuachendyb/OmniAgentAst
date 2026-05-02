@@ -12,6 +12,7 @@ SYSTEM 模块 - 系统信息工具
     └── system_schema.py     # Pydantic 模型
 
 创建时间: 2026-04-29
+更新时间: 2026-05-02
 """
 
 from app.services.tools.system import system_register
@@ -19,8 +20,14 @@ from app.services.tools.system import system_tools
 
 from app.services.tools.system.system_tools import (
     get_system_info,
+    service_list,
+    service_start,
+    service_stop,
 )
 
 __all__ = [
     "get_system_info",
+    "service_list",
+    "service_start",
+    "service_stop",
 ]

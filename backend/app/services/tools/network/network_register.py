@@ -7,11 +7,13 @@ Network Register - 网络通信工具注册点
 - 使用 registry.py 的 tool_registry.register() 显式注册
 - 使用 Pydantic 模型注册，自动生成 OpenAI Schema
 
-【工具列表】（共4个）
+【工具列表】（共6个）
 1. http_request - 发起HTTP请求
 2. download_file - 下载文件到本地
 3. fetch_webpage - 获取和处理网页内容
 4. search_web - 搜索网络获取最新信息
+5. ping - 执行ping测试（小沈 2026-05-02）
+6. port_check - 检查端口是否开放（小沈 2026-05-02）
 
 【注册说明】
 - 导入 network_register 时自动触发注册
@@ -35,6 +37,8 @@ from app.services.tools.network.network_schema import (
     DownloadFileInput,
     FetchWebpageInput,
     SearchWebInput,
+    PingInput,
+    PortCheckInput,
 )
 
 # 导入工具函数
@@ -43,6 +47,8 @@ from app.services.tools.network.network_tools import (
     download_file,
     fetch_webpage,
     search_web,
+    ping,
+    port_check,
 )
 
 # 工具描述
@@ -51,6 +57,8 @@ NETWORK_TOOL_DESCRIPTIONS = {
     "download_file": "从URL下载文件到本地，支持大文件流式下载和断点续传",
     "fetch_webpage": "获取和处理网页内容，支持多种输出格式（markdown/html/text）和AI提取指令",
     "search_web": "搜索网络获取最新信息，支持域名过滤、时间范围、安全搜索等参数",
+    "ping": "执行ping测试，检查目标主机是否可达，返回延迟和丢包率等信息",
+    "port_check": "检查目标主机的指定端口是否开放，支持常见服务端口识别",
 }
 
 # 工具名到 Pydantic 模型的映射
@@ -59,6 +67,8 @@ NETWORK_TOOL_INPUT_MODELS = {
     "download_file": DownloadFileInput,
     "fetch_webpage": FetchWebpageInput,
     "search_web": SearchWebInput,
+    "ping": PingInput,
+    "port_check": PortCheckInput,
 }
 
 # 使用示例
@@ -78,6 +88,14 @@ NETWORK_TOOL_EXAMPLES = {
         {"query": "OpenAI function calling", "num_results": 10},
         {"query": "React 19 新特性", "allowed_domains": ["github.com", "react.dev"], "num_results": 5},
     ],
+    "ping": [
+        {"host": "8.8.8.8", "count": 4, "timeout": 5},
+        {"host": "www.baidu.com", "count": 4},
+    ],
+    "port_check": [
+        {"host": "127.0.0.1", "port": 8080, "timeout": 3},
+        {"host": "www.example.com", "port": 443},
+    ],
 }
 
 
@@ -88,6 +106,8 @@ def _register_network_tools():
         "download_file": download_file,
         "fetch_webpage": fetch_webpage,
         "search_web": search_web,
+        "ping": ping,
+        "port_check": port_check,
     }
 
     for name, method in tool_methods.items():
