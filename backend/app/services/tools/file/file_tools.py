@@ -186,6 +186,15 @@ class FileTools:
     - 详细的参数验证
     """
     
+    BINARY_EXTENSIONS = {
+        '.xlsx', '.xls', '.docx', '.doc', '.pptx', '.ppt',
+        '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp',
+        '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
+        '.exe', '.dll', '.so', '.dylib',
+        '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv',
+        '.sqlite', '.db', '.pyc', '.pyd', '.class',
+    }
+    
     def __init__(self, task_id: Optional[str] = None):
         # 【重要】延迟导入 agent 服务，避免循环导入
         from app.services.agent import get_file_safety_service, get_session_service
@@ -236,15 +245,7 @@ class FileTools:
         suffix = path.suffix.lower()
         
         # 二进制格式禁止通过write_file写入（会损坏文件）
-        BINARY_EXTENSIONS = {
-            '.xlsx', '.xls', '.docx', '.doc', '.pptx', '.ppt',
-            '.pdf', '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.webp',
-            '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2',
-            '.exe', '.dll', '.so', '.dylib',
-            '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv',
-            '.sqlite', '.db', '.pyc', '.pyd', '.class',
-        }
-        if suffix in BINARY_EXTENSIONS:
+        if suffix in self.BINARY_EXTENSIONS:
             return f"不支持通过write_file写入二进制格式文件(.{suffix[1:]})，请使用对应的专业工具操作"
         
         # .json: 验证JSON合法性
@@ -1843,6 +1844,13 @@ class FileTools:
                 "success": False, "error": "No active task", "replaced_count": 0
             }, "precise_replace_in_file")
         
+        # 【小健 2026-05-02】二进制文件保护：仅支持文本文件编辑
+        suffix = Path(file_path).suffix.lower()
+        if suffix in self.BINARY_EXTENSIONS:
+            return _to_unified_format({
+                "success": False, "error": f"不支持编辑二进制格式文件({suffix})，请使用对应的专业工具操作", "replaced_count": 0
+            }, "precise_replace_in_file")
+        
         try:
             is_valid, error_msg = self._validate_path(file_path)
             if not is_valid:
@@ -1974,6 +1982,13 @@ class FileTools:
             if not self.task_id:
                 return _to_unified_format({
                     "success": False, "error": "No active task", "applied_edits": 0, "preview": None
+                }, "edit_file")
+
+            # 【小健 2026-05-02】二进制文件保护：仅支持文本文件编辑
+            suffix = Path(file_path).suffix.lower()
+            if suffix in self.BINARY_EXTENSIONS:
+                return _to_unified_format({
+                    "success": False, "error": f"不支持编辑二进制格式文件({suffix})，请使用对应的专业工具操作", "applied_edits": 0, "preview": None
                 }, "edit_file")
 
             path = Path(file_path)
