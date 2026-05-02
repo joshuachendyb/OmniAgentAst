@@ -30,9 +30,9 @@ from app.services.tools.desktop.desktop_tools import (
 
 # 工具描述
 DESKTOP_TOOL_DESCRIPTIONS = {
-    "list_windows": "列出当前所有窗口，支持过滤和状态筛选",
-    "get_window_info": "获取指定窗口的详细信息（位置、大小、状态等）",
-    "set_window_state": "设置窗口状态：最大化、最小化、还原、置顶、取消置顶",
+    "list_windows": "列出当前所有窗口，支持按标题过滤、是否包含最小化窗口筛选。适合查找特定窗口、查看所有打开的窗口",
+    "get_window_info": "获取指定窗口的详细信息，包括位置、大小、状态（最大化/最小化/正常）、句柄、进程ID等。适合获取窗口属性、定位窗口位置",
+    "set_window_state": "设置窗口状态：maximize（最大化）、minimize（最小化）、restore（还原）、topmost（置顶）、untopmost（取消置顶）。适合窗口管理、自动化操作",
 }
 
 # 模型映射

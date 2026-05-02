@@ -30,9 +30,9 @@ from app.services.tools.database.database_tools import (
 
 # 工具描述
 DATABASE_TOOL_DESCRIPTIONS = {
-    "query_sql": "执行只读SQL查询。仅支持 SELECT/SHOW/DESCRIBE 等操作，返回查询结果",
-    "execute_sql": "执行写操作SQL。支持 INSERT/UPDATE/DELETE/DDL，包含危险操作检测",
-    "get_db_schema": "获取数据库表结构、字段、索引等元数据信息",
+    "query_sql": "执行只读SQL查询（SELECT/SHOW/DESCRIBE），不支持写操作，返回查询结果集。适合查询数据、查看表内容、统计记录数",
+    "execute_sql": "执行写操作SQL（INSERT/UPDATE/DELETE/DDL），包含危险操作检测和dryRun预览模式。适合插入数据、更新记录、创建表结构",
+    "get_db_schema": "获取数据库表结构元数据，包括表名、字段、类型、索引、外键等信息。适合查看数据库结构、了解表设计",
 }
 
 # 模型映射

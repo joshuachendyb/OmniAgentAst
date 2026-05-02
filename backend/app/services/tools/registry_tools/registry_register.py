@@ -30,9 +30,9 @@ from app.services.tools.registry_tools.registry_tools import (
 )
 
 REGISTRY_TOOL_DESCRIPTIONS = {
-    "reg_read": "读取Windows注册表键值，支持所有根键（HKEY_LOCAL_MACHINE、HKEY_CURRENT_USER等）",
-    "reg_write": "写入Windows注册表键值，支持多种数据类型（REG_SZ、REG_DWORD、REG_BINARY等）",
-    "reg_delete": "删除Windows注册表键值或子键，需谨慎操作",
+    "reg_read": "读取Windows注册表键值，支持所有根键（HKLM/HKCU/HKCR等），返回键值数据和类型。适合读取系统配置、应用程序设置",
+    "reg_write": "写入Windows注册表键值，支持多种数据类型（REG_SZ字符串/REG_DWORD数字/REG_BINARY二进制），需管理员权限。适合修改系统配置、设置程序参数",
+    "reg_delete": "删除Windows注册表键值或整个子键，操作不可逆需谨慎使用，建议先备份。适合清理注册表、删除无用配置",
 }
 
 REGISTRY_TOOL_INPUT_MODELS = {

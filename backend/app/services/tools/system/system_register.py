@@ -61,19 +61,19 @@ from app.services.tools.system.system_tools import (
 
 # 工具描述
 SYSTEM_TOOL_DESCRIPTIONS = {
-    "get_system_info": "获取系统信息，包括平台、CPU、内存、磁盘、网络等详细信息",
-    "net_connections": "获取网络连接列表，支持按类型、状态、端口过滤，可获取进程信息",
-    "event_log": "获取系统事件日志，支持按级别、来源、时间范围过滤",
-    "list_processes": "列出系统进程，支持按名称/PID过滤，可按CPU/内存排序",
-    "kill_process": "终止指定进程，支持优雅终止和强制终止",
-    "log_message": "记录日志消息，支持debug/info/warning/error/critical级别",
-    "get_logs": "获取应用日志，支持按日期、级别、模块、关键字过滤",
-    "service_list": "列出所有系统服务，支持按名称和状态过滤（Windows用sc，Linux用systemctl）",
-    "service_start": "启动指定服务，支持超时设置（Windows用sc，Linux用systemctl）",
-    "service_stop": "停止指定服务，支持优雅停止和强制停止（Windows用sc，Linux用systemctl）",
-    "task_list": "列出所有计划任务（Windows专用），使用schtasks query命令，支持按名称和状态过滤",
-    "task_create": "创建计划任务（Windows专用），使用schtasks create命令，支持每日/每周/每月调度",
-    "task_delete": "删除计划任务（Windows专用），使用schtasks delete命令，支持强制删除",
+    "get_system_info": "获取系统完整信息，包括操作系统、CPU、内存、磁盘、网络接口等硬件和系统配置信息。适合查看系统配置、诊断系统问题",
+    "net_connections": "获取网络连接列表，支持按类型（TCP/UDP）、状态（ESTABLISHED/LISTEN）、端口过滤，可获取关联进程信息。适合查看网络连接、排查端口占用",
+    "event_log": "获取系统事件日志（Windows事件查看器/Linux syslog），支持按级别、来源、时间范围过滤。适合查看系统错误、诊断问题、审计日志",
+    "list_processes": "列出系统所有进程，支持按名称/PID过滤，可按CPU/内存占用排序。适合查看进程状态、找资源占用高的进程",
+    "kill_process": "终止指定进程，支持优雅终止（SIGTERM）和强制终止（SIGKILL），需谨慎使用。适合结束卡死进程、释放资源",
+    "log_message": "记录日志消息到应用日志文件，支持debug/info/warning/error/critical级别。适合记录调试信息、错误追踪",
+    "get_logs": "获取应用日志内容，支持按日期、级别、模块、关键字过滤，分页读取。适合查看运行日志、排查错误、分析问题",
+    "service_list": "列出系统服务（Windows用sc/Linux用systemctl），支持按名称和状态（running/stopped）过滤。适合查看服务状态、管理服务",
+    "service_start": "启动指定系统服务（Windows用sc/Linux用systemctl），支持超时设置。适合启动停止的服务",
+    "service_stop": "停止指定系统服务（Windows用sc/Linux用systemctl），支持优雅停止和强制停止。适合停止异常服务",
+    "task_list": "列出所有计划任务（Windows专用，使用schtasks），支持按名称和状态过滤。适合查看定时任务配置",
+    "task_create": "创建计划任务（Windows专用），支持每日/每周/每月/一次性调度，可设置启动程序和参数。适合创建定时备份、定时检查等任务",
+    "task_delete": "删除计划任务（Windows专用），使用schtasks delete命令，支持强制删除。适合清理无用定时任务",
 }
 
 # 模型映射
