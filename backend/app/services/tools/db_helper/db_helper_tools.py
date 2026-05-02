@@ -3,15 +3,50 @@
 数据库辅助工具函数模块
 
 【创建时间】2026-05-02 小沈
+【更新时间】2026-05-02 小沈
 
-包含7个工具：
-- check_db_exists: 检查数据库是否存在
-- get_table_schema: 获取表结构
-- begin_transaction: 开始事务
-- commit_transaction: 提交事务
-- rollback_transaction: 回滚事务
-- check_network_connectivity: 检查网络连通性
-- validate_url: 验证URL格式
+================================================================================
+一、模块性质（双重身份）
+================================================================================
+本模块的函数具有双重身份：
+
+1. **公共辅助函数** - 可被其他Tool函数内部调用
+   - 例如：query_sql内部调用check_db_exists验证数据库存在
+   - 例如：http_request内部调用validate_url验证URL格式
+
+2. **LLM可调用Tool** - 可被用户直接调用
+   - 用户问"检查数据库是否存在" → LLM调用check_db_exists
+   - 用户问"这个URL格式对不对" → LLM调用validate_url
+
+【重要】这些函数不是"没用"，而是作为公共基础设施，供其他Tool和用户共用。
+
+================================================================================
+二、包含工具（7个）
+================================================================================
+- check_db_exists: 检查数据库是否存在（公共函数 + LLM Tool）
+- get_table_schema: 获取表结构（公共函数 + LLM Tool）
+- begin_transaction: 开始事务（LLM Tool，用于事务控制）
+- commit_transaction: 提交事务（LLM Tool）
+- rollback_transaction: 回滚事务（LLM Tool）
+- check_network_connectivity: 检查网络连通性（公共函数 + LLM Tool）
+- validate_url: 验证URL格式（公共函数 + LLM Tool）
+
+================================================================================
+三、调用关系示例
+================================================================================
+```
+# 其他Tool内部调用示例
+def query_sql(db_path, sql):
+    # 内部调用公共辅助函数
+    result = check_db_exists(db_path)
+    if not result["data"]["exists"]:
+        return {"error": "数据库不存在"}
+    # 执行SQL...
+
+# LLM直接调用示例
+用户: "帮我检查D:/data/app.db是否存在"
+LLM: 调用 check_db_exists({"db_path": "D:/data/app.db"})
+```
 
 Author: 小沈 - 2026-05-02
 """
