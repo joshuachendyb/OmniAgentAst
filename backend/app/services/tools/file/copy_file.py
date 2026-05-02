@@ -21,7 +21,6 @@ async def copy_file_impl(
     destination_path: str,
     recursive: bool,
     overwrite: bool,
-    preserve_metadata: bool = True,
     validate_path_func,
     safety_service,
     task_id: Optional[str],
@@ -29,6 +28,7 @@ async def copy_file_impl(
     execute_with_safety_func,
     to_unified_format_func,
     get_next_sequence_func,
+    preserve_metadata: bool = True,
 ) -> Dict[str, Any]:
     """
     copy_file工具的实现函数 - 小健 2026-05-02 增加preserve_metadata
