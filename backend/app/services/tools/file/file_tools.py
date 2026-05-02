@@ -559,24 +559,25 @@ class FileTools:
                 "content": None
             }, "read_text_file")
     
-    async def write_file(
+    async def write_text_file(
         self,
         file_path: str,
-        content: str,
+        text: str,
         encoding: str = "utf-8",
+        append: bool = False,
+        create_parents: bool = True,
         unescape: bool = True
     ) -> Dict[str, Any]:
-        """写入文件内容 - 小沈 2026-05-01"""
-        # 【修复 2026-05-01 小沈】写入大小限制
+        """写入文本文件 - 小健 2026-05-02 增强: text参数+append+create_parents"""
+        content = text
         MAX_WRITE_SIZE = MAX_READ_SIZE
         if len(content.encode(encoding)) > MAX_WRITE_SIZE:
             return _to_unified_format({
                 "success": False,
                 "error": f"写入内容过大，超过上限{MAX_WRITE_SIZE//1024//1024}MB",
                 "content": None
-            }, "write_file")
+            }, "write_text_file")
 
-        # 【修复 2026-05-01 序号6】.py文件写入前：全角标点→半角标点自动替换
         path_preview = Path(file_path)
         if path_preview.suffix.lower() == '.py' and content:
             fullwidth_map = {
@@ -589,9 +590,8 @@ class FileTools:
                 content = content.replace(fw, hw)
             if content != original_content:
                 import logging
-                logging.getLogger(__name__).info(f"write_file: 自动将全角标点替换为半角标点({file_path})")
+                logging.getLogger(__name__).info(f"write_text_file: 自动将全角标点替换为半角标点({file_path})")
 
-        # 【改进1 2026-05-01 小沈 小健】思维泄漏检测扩展到所有文件类型
         if content:
             from app.services.tools.content_quality import check_content_quality
             quality_result = check_content_quality(content=content, file_path=file_path)
@@ -600,51 +600,46 @@ class FileTools:
                     "success": False,
                     "error": f"内容保护：{quality_result['warning']}",
                     "content": None
-                }, "write_file")
-        # 若启用反转义，对内容做转义字符还原
+                }, "write_text_file")
         if unescape:
             content = content.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\")
         
-        # 【新增 2026-04-30 小沈】写入前按文件格式验证内容合法性
         validation_error = self._validate_content_format(file_path, content)
         if validation_error:
             return _to_unified_format({
                 "success": False,
                 "error": validation_error,
                 "content": None
-            }, "write_file")
+            }, "write_text_file")
         
-        # 验证路径合法性
         is_valid, error_msg = self._validate_path(file_path)
         if not is_valid:
             return _to_unified_format({
                 "success": False,
                 "error": error_msg,
                 "content": None
-            }, "write_file")
+            }, "write_text_file")
         
         if not self.task_id:
             return _to_unified_format({
                 "success": False,
                 "error": "No active task",
                 "operation_id": None
-            }, "write_file")
+            }, "write_text_file")
         
         path = Path(file_path)
         
-        # 【修复 2026-05-01 序号4】数据保护：覆盖已有文件时检查大小差异
-        if path.exists() and path.is_file():
+        if not append and path.exists() and path.is_file():
             old_size = path.stat().st_size
             new_size = len(content.encode(encoding))
             if old_size > 1024 and new_size < old_size * 0.1:
                 return _to_unified_format({
                     "success": False,
-                    "error": f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节，缩小{100-int(new_size/max(old_size,1)*100)}%)，可能覆盖数据。如确认覆盖，请使用precise_replace_in_file或在content中传入完整内容。",
+                    "error": f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节，缩小{100-int(new_size/max(old_size,1)*100)}%)，可能覆盖数据。如确认覆盖，请使用precise_replace_in_file或在text中传入完整内容。",
                     "content": None
-                }, "write_file")
+                }, "write_text_file")
         
         try:
-            # 记录操作
             operation_id = self.safety.record_operation(
                 task_id=self.task_id,
                 operation_type=OperationType.CREATE,
@@ -652,14 +647,20 @@ class FileTools:
                 sequence_number=self._get_next_sequence()
             )
             
-            # 定义实际写入操作
             def _write_sync():
                 import tempfile
                 import os
                 
-                path.parent.mkdir(parents=True, exist_ok=True)
+                if create_parents:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                elif not path.parent.exists():
+                    raise FileNotFoundError(f"父目录不存在: {path.parent}")
                 
-                # 【修复P12】先写入临时文件，然后原子重命名
+                if append and path.exists() and path.is_file():
+                    with open(path, 'a', encoding=encoding) as f:
+                        f.write(content)
+                    return True
+                
                 with tempfile.NamedTemporaryFile(
                     mode='w',
                     encoding=encoding,
@@ -693,13 +694,13 @@ class FileTools:
                     "operation_id": operation_id,
                     "file_path": str(path),
                     "bytes_written": len(content.encode(encoding))
-                }, "write_file")
+                }, "write_text_file")
             else:
                 return _to_unified_format({
                     "success": False,
                     "error": "Failed to write file",
                     "operation_id": operation_id
-                }, "write_file")
+                }, "write_text_file")
                 
         except Exception as e:
             logger.error(f"Failed to write file {file_path}: {e}")
@@ -707,7 +708,16 @@ class FileTools:
                 "success": False,
                 "error": str(e),
                 "operation_id": None
-            }, "write_file")
+            }, "write_text_file")
+
+    async def write_file(self, file_path: str, content: str, encoding: str = "utf-8",
+                         append: bool = False, create_parents: bool = True,
+                         unescape: bool = True) -> Dict[str, Any]:
+        """write_file兼容别名 - 小健 2026-05-02"""
+        return await self.write_text_file(
+            file_path=file_path, text=content, encoding=encoding,
+            append=append, create_parents=create_parents, unescape=unescape
+        )
     
     async def list_directory(
         self,
@@ -1463,9 +1473,9 @@ class FileTools:
         destination_path: str,
         recursive: bool = False,
         overwrite: bool = False,
+        preserve_metadata: bool = True,
     ) -> Dict[str, Any]:
-        """复制文件或目录"""
-        # 导入copy_file实现
+        """复制文件或目录 - 小健 2026-05-02 增加preserve_metadata"""
         from app.services.tools.file.copy_file import copy_file_impl
         
         return await copy_file_impl(
@@ -1473,6 +1483,7 @@ class FileTools:
             destination_path=destination_path,
             recursive=recursive,
             overwrite=overwrite,
+            preserve_metadata=preserve_metadata,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
             task_id=self.task_id,

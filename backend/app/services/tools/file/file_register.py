@@ -13,32 +13,33 @@ File Register - 文件工具注册点
 
 【工具列表】（共28个）
 1. read_file - 读取文件
-2. write_file - 写入文件
-3. list_directory - 列出目录
-4. delete_file - 删除文件
-5. move_file - 移动文件
-6. search_file_content - 搜索文件内容
-7. search_files_by_name - 按名称搜索文件
-8. generate_report - 生成报告
-9. copy_file - 复制文件
-10. create_directory - 创建目录
-11. get_file_info - 获取文件信息
-12. compress_files - 压缩文件
-13. compare_files - 比较文件
-14. batch_rename - 批量重命名
-15. file_checksum - 文件校验
-16. file_statistics - 文件统计
-17. file_monitor - 文件监控
-18. read_text_file - 读取文本文件
-19. read_media_file - 读取媒体文件
-20. read_batch_file - 批量读取文件
-21. precise_replace_in_file - 精确替换文件内容
-22. edit_file - 编辑文件
-23. rename_file - 重命名文件/目录
-24. glob_files - Glob匹配文件
-25. grep_file_content - 搜索文件内容
-26. get_directory_tree - 获取目录树
-27. list_allowed_directories - 列出允许访问的目录
+2. write_text_file - 写入文本文件 - 小健 2026-05-02 新增
+3. write_file - 写入文件（兼容别名）
+4. list_directory - 列出目录
+5. delete_file - 删除文件
+6. move_file - 移动文件
+7. search_file_content - 搜索文件内容
+8. search_files_by_name - 按名称搜索文件
+9. generate_report - 生成报告
+10. copy_file - 复制文件
+11. create_directory - 创建目录
+12. get_file_info - 获取文件信息
+13. compress_files - 压缩文件
+14. compare_files - 比较文件
+15. batch_rename - 批量重命名
+16. file_checksum - 文件校验
+17. file_statistics - 文件统计
+18. file_monitor - 文件监控
+19. read_text_file - 读取文本文件
+20. read_media_file - 读取媒体文件
+21. read_batch_file - 批量读取文件
+22. precise_replace_in_file - 精确替换文件内容
+23. edit_file - 编辑文件
+24. rename_file - 重命名文件/目录
+25. glob_files - Glob匹配文件
+26. grep_file_content - 搜索文件内容
+27. get_directory_tree - 获取目录树
+28. list_allowed_directories - 列出允许访问的目录
 
 【注册说明】
 - file_tools.py 的旧 _TOOL_REGISTRY 已移除（2026-04-26）
@@ -62,6 +63,7 @@ from app.utils.logger import logger
 # 【小健 2026-04-29】后续新增tool类型（time/shell/network等）也必须按此要求，从对应schema文件导入模型注册
 from app.services.tools.file.file_schema import (
     ReadFileInput,
+    WriteTextFileInput,
     WriteFileInput,
     ListDirectoryInput,
     DeleteFileInput,
@@ -96,7 +98,8 @@ from app.services.tools.file.file_tools import FileTools, get_file_tools
 # 工具描述（用于注册）
 FILE_TOOL_DESCRIPTIONS = {
     "read_file": "读取文件内容",
-    "write_file": "写入文件内容",
+    "write_text_file": "写入文本文件",
+    "write_file": "写入文件内容（兼容别名）",
     "list_directory": "列出目录内容",
     "delete_file": "删除文件",
     "move_file": "移动文件",
@@ -130,6 +133,11 @@ FILE_TOOL_EXAMPLES = {
         {"file_path": "C:/Users/用户名/Documents/config.json", "offset": 1, "limit": 100},
         {"file_path": "D:/项目代码/src/main.py", "offset": 1, "limit": 2000},
         {"file_path": "C:/Users/用户名/Desktop/README.md", "offset": 1, "limit": 500, "encoding": "utf-8"}
+    ],
+    "write_text_file": [
+        {"file_path": "C:/Users/用户名/Documents/test.txt", "text": "Hello World"},
+        {"file_path": "D:/项目代码/config.json", "text": "{\"key\": \"value\"}", "encoding": "utf-8"},
+        {"file_path": "D:/项目代码/logs/app.log", "text": "新增日志行\\n", "append": True}
     ],
     "write_file": [
         {"file_path": "C:/Users/用户名/Documents/test.txt", "content": "Hello World"},
@@ -259,6 +267,7 @@ def _register_file_tools():
     # 【重要】使用 lambda 延迟绑定方法，避免在注册时立即访问 FileTools
     tool_methods = {
         "read_file": lambda: _get_ft().read_file,
+        "write_text_file": lambda: _get_ft().write_text_file,
         "write_file": lambda: _get_ft().write_file,
         "list_directory": lambda: _get_ft().list_directory,
         "delete_file": lambda: _get_ft().delete_file,
@@ -292,6 +301,7 @@ def _register_file_tools():
     # 【2026-04-29 小沈新增】工具名到 Pydantic 模型的映射（按文档5.1设计）
     TOOL_INPUT_MODELS = {
         "read_file": ReadFileInput,
+        "write_text_file": WriteTextFileInput,
         "write_file": WriteFileInput,
         "list_directory": ListDirectoryInput,
         "delete_file": DeleteFileInput,

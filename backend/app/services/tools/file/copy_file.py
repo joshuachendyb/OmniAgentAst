@@ -21,6 +21,7 @@ async def copy_file_impl(
     destination_path: str,
     recursive: bool,
     overwrite: bool,
+    preserve_metadata: bool = True,
     validate_path_func,
     safety_service,
     task_id: Optional[str],
@@ -30,13 +31,14 @@ async def copy_file_impl(
     get_next_sequence_func,
 ) -> Dict[str, Any]:
     """
-    copy_file工具的实现函数
+    copy_file工具的实现函数 - 小健 2026-05-02 增加preserve_metadata
     
     Args:
         source_path: 源文件或目录路径
         destination_path: 目标路径
         recursive: 是否递归复制目录
         overwrite: 是否覆盖已存在的目标
+        preserve_metadata: 是否保留文件元数据（时间戳等），默认True
         validate_path_func: 路径验证函数
         safety_service: 安全服务
         task_id: 任务ID
@@ -105,20 +107,21 @@ async def copy_file_impl(
         
         # 定义复制操作
         def _copy_sync():
-            # 确保目标父目录存在
             dst.parent.mkdir(parents=True, exist_ok=True)
             
+            copy_func = shutil.copy2 if preserve_metadata else shutil.copy
+            
             if src.is_file():
-                # 复制文件
-                shutil.copy2(str(src), str(dst))
+                copy_func(str(src), str(dst))
             elif src.is_dir():
                 if recursive:
-                    # 递归复制目录
                     if dst.exists():
                         shutil.rmtree(str(dst))
-                    shutil.copytree(str(src), str(dst))
+                    if preserve_metadata:
+                        shutil.copytree(str(src), str(dst))
+                    else:
+                        shutil.copytree(str(src), str(dst), copy_function=shutil.copy)
                 else:
-                    # 非递归复制目录（只复制目录本身，不复制内容）
                     dst.mkdir(exist_ok=True)
             return True
         

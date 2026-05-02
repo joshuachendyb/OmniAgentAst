@@ -43,22 +43,35 @@ class ReadFileInput(BaseModel):
     )
 
 
-class WriteFileInput(BaseModel):
-    """write_file 工具的输入参数"""
+class WriteTextFileInput(BaseModel):
+    """write_text_file 工具的输入参数 - 小健 2026-05-02"""
     file_path: str = Field(
         description="文件的完整路径（必须是绝对路径）"
     )
-    content: str = Field(
-        description="要写入文件的内容"
+    text: str = Field(
+        description="要写入文件的文本内容"
     )
     encoding: str = Field(
         default="utf-8",
         description="文件编码，默认为utf-8"
     )
+    append: bool = Field(
+        default=False,
+        description="是否追加写入。True=在文件末尾追加内容，False=覆盖写入（默认）。对.log文件Agent可自动设为True"
+    )
+    create_parents: bool = Field(
+        default=True,
+        description="是否自动创建父目录，默认为True。若父目录不存在则自动创建"
+    )
     unescape: bool = Field(
         default=True,
         description="是否自动反转义转义字符（如 \\n 转为真实换行、\\\" 转为引号），默认为True"
     )
+
+
+class WriteFileInput(WriteTextFileInput):
+    """write_file 兼容别名 - 小健 2026-05-02"""
+    pass
 
 
 class ListDirectoryInput(BaseModel):
@@ -185,7 +198,7 @@ class GenerateReportInput(BaseModel):
 
 
 class CopyFileInput(BaseModel):
-    """copy_file 工具的输入参数"""
+    """copy_file 工具的输入参数 - 小健 2026-05-02 增强"""
     source_path: str = Field(
         description="源文件或目录的完整路径（必须是绝对路径）"
     )
@@ -199,6 +212,10 @@ class CopyFileInput(BaseModel):
     overwrite: bool = Field(
         default=False,
         description="是否覆盖已存在的目标文件，默认为False（不覆盖）"
+    )
+    preserve_metadata: bool = Field(
+        default=True,
+        description="是否保留文件元数据（修改时间、访问时间等），默认为True。若用户意图是'备份'，Agent自动设True；若仅需内容不需元数据可设False"
     )
 
 
@@ -557,6 +574,7 @@ class FileChecksumInput(BaseModel):
 
 __all__ = [
     "ReadFileInput",
+    "WriteTextFileInput",
     "WriteFileInput",
     "ListDirectoryInput",
     "DeleteFileInput",
