@@ -1533,14 +1533,16 @@ class FileTools:
     async def get_file_info(
         self,
         file_path: str,
+        follow_symlinks: bool = True,
     ) -> Dict[str, Any]:
-        """获取文件信息"""
+        """获取文件信息 - 小健 2026-05-02 增加follow_symlinks"""
         from app.services.tools.file.get_file_info import get_file_info_impl
         
         return await get_file_info_impl(
             file_path=file_path,
             validate_path_func=self._validate_path,
             to_unified_format_func=_to_unified_format,
+            follow_symlinks=follow_symlinks,
         )
 
     async def compare_files(

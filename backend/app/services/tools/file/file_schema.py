@@ -238,9 +238,13 @@ class CreateDirectoryInput(BaseModel):
 
 
 class GetFileInfoInput(BaseModel):
-    """get_file_info 工具的输入参数"""
+    """get_file_info 工具的输入参数 - 小健 2026-05-02 增加follow_symlinks"""
     file_path: str = Field(
         description="文件或目录的完整路径（必须是绝对路径）"
+    )
+    follow_symlinks: bool = Field(
+        default=True,
+        description="是否跟随符号链接获取真实文件信息，默认为True。设为False则获取链接文件本身的信息"
     )
 
 

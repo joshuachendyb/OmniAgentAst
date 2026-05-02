@@ -21,9 +21,9 @@ async def get_file_info_impl(
     file_path: str,
     validate_path_func,
     to_unified_format_func,
+    follow_symlinks: bool = True,
 ) -> Dict[str, Any]:
-    """获取文件信息"""
-    # 验证路径
+    """获取文件信息 - 小健 2026-05-02 增加follow_symlinks"""
     is_valid, error_msg = validate_path_func(file_path)
     if not is_valid:
         return to_unified_format_func({
@@ -41,7 +41,7 @@ async def get_file_info_impl(
             }, "get_file_info")
         
         def _get_info_sync():
-            stat = path.stat()
+            stat = path.stat(follow_symlinks=follow_symlinks)
             info = {
                 "path": str(path.absolute()),
                 "name": path.name,
@@ -55,11 +55,19 @@ async def get_file_info_impl(
                 "is_executable": os.access(path, os.X_OK),
             }
             
+            if not follow_symlinks and path.is_symlink():
+                info["is_symlink"] = True
+                try:
+                    info["symlink_target"] = str(os.readlink(path))
+                except OSError:
+                    info["symlink_target"] = None
+            else:
+                info["is_symlink"] = path.is_symlink()
+            
             if path.is_file():
                 info["extension"] = path.suffix
                 info["parent_directory"] = str(path.parent)
             elif path.is_dir():
-                # 目录统计
                 try:
                     file_count = sum(1 for _ in path.rglob("*") if _.is_file())
                     dir_count = sum(1 for _ in path.rglob("*") if _.is_dir())
