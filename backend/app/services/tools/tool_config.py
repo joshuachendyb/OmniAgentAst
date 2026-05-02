@@ -21,6 +21,24 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
+# 【别名映射表 - 小健 2026-05-02】
+# ============================================================
+
+# 工具名称别名映射（别名 -> 主工具名）
+TOOL_NAME_ALIASES = {
+    'write_file': 'write_text_file',        # 兼容旧代码
+    'glob_files': 'search_files',            # 兼容旧代码
+    'read_file': 'read_text_file',           # 兼容旧代码（文本文件）
+    'search_file_content': 'grep_file_content',  # 兼容旧代码
+}
+
+# 废弃工具列表（不再支持，调用时返回错误提示）
+DEPRECATED_TOOLS = {
+    # 目前无废弃工具
+}
+
+
+# ============================================================
 # 【步骤3】配置Schema验证（Pydantic）
 # ============================================================
 
@@ -274,3 +292,29 @@ tool_config = ToolConfig()
 def get_tool_config() -> ToolConfig:
     """获取工具配置实例"""
     return tool_config
+
+
+def get_tool_name_alias(alias: str) -> Optional[str]:
+    """
+    获取工具名称的主名 - 小健 2026-05-02
+    
+    Args:
+        alias: 工具别名
+    
+    Returns:
+        主工具名，如果不是别名则返回None
+    """
+    return TOOL_NAME_ALIASES.get(alias)
+
+
+def is_deprecated_tool(tool_name: str) -> Optional[str]:
+    """
+    检查工具是否已废弃 - 小健 2026-05-02
+    
+    Args:
+        tool_name: 工具名称
+    
+    Returns:
+        废弃提示信息，如果未废弃则返回None
+    """
+    return DEPRECATED_TOOLS.get(tool_name)

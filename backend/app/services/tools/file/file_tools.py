@@ -394,44 +394,6 @@ class FileTools:
         except Exception as e:
             return False, f"路径验证失败: {str(e)}"
     
-    async def read_file(
-        self,
-        file_path: str,
-        offset: int = 1,
-        limit: int = READ_FILE_DEFAULT_LIMIT,
-        encoding: str = "utf-8"
-    ) -> Dict[str, Any]:
-        """【已废弃】请使用 read_text_file 或 read_media_file 替代 - 小沈 2026-05-02
-        
-        该工具已废弃，根据文件类型自动转发：
-        - 文本文件 → read_text_file
-        - 媒体文件 → read_media_file
-        
-        保留原因：
-        - read_text_file: 文本专用，支持 head/tail，禁止二进制
-        - read_media_file: 媒体专用，Base64编码，支持图片/音频/视频
-        """
-        logger.warning("[deprecated] read_file 已废弃，请使用 read_text_file 或 read_media_file 替代")
-        
-        # 根据文件后缀判断类型
-        path = Path(file_path)
-        suffix = path.suffix.lower()
-        
-        # 媒体文件后缀
-        media_extensions = {
-            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.tiff', '.tif',
-            '.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac',
-            '.mp4', '.avi', '.mov', '.mkv', '.webm',
-            '.pdf'
-        }
-        
-        if suffix in media_extensions:
-            # 媒体文件 → read_media_file
-            return await self.read_media_file(file_path)
-        else:
-            # 文本文件 → read_text_file（使用 offset/limit 参数）
-            return await self.read_text_file(file_path, offset=offset, limit=limit, encoding=encoding)
-
     async def read_text_file(
         self,
         file_path: str,
@@ -1115,32 +1077,6 @@ class FileTools:
                 "error": str(e),
                 "operation_id": None
             }, "move_file")
-    
-    async def search_file_content(
-        self,
-        pattern: str,
-        path: str = "~",
-        file_pattern: str = "*",
-        recursive: bool = True,
-        # 内部参数，不暴露给 LLM
-        use_regex: bool = False,
-        # 分页标记，用于继续之前的搜索
-        page_token: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """【已废弃】请使用 grep_file_content 替代 - 小健 2026-05-02
-        该工具已废弃，自动转发到 grep_file_content（功能更强、性能更好、支持正则+分页）。
-        """
-        logger.warning("[deprecated] search_file_content 已废弃，请使用 grep_file_content 替代")
-        return await self.grep_file_content(
-            pattern=pattern,
-            search_dir=path,
-            output_mode="content",
-            glob=file_pattern if file_pattern != "*" else None,
-            ignore_case=True,
-            show_line_no=True,
-            head_limit=200,
-            page_token=page_token,
-        )
     
     async def search_files(
         self,

@@ -21,28 +21,6 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
 
 
-class ReadFileInput(BaseModel):
-    """read_file 工具的输入参数"""
-    file_path: str = Field(
-        description="文件的完整路径（必须是绝对路径，如 C:/Users/用户名/Documents/file.txt）"
-    )
-    offset: int = Field(
-        default=1,
-        ge=1,
-        description="起始行号，从1开始计数，默认为1"
-    )
-    limit: int = Field(
-        default=500,
-        ge=1,
-        le=10000,
-        description="最大读取行数，默认为500行，最大10000行"
-    )
-    encoding: str = Field(
-        default="utf-8",
-        description="文件编码，默认为utf-8"
-    )
-
-
 class WriteTextFileInput(BaseModel):
     """write_text_file 工具的输入参数 - 小健 2026-05-02"""
     file_path: str = Field(
@@ -67,11 +45,6 @@ class WriteTextFileInput(BaseModel):
         default=True,
         description="是否自动反转义转义字符（如 \\n 转为真实换行、\\\" 转为引号），默认为True"
     )
-
-
-class WriteFileInput(WriteTextFileInput):
-    """write_file 兼容别名 - 小健 2026-05-02"""
-    pass
 
 
 class ListDirectoryInput(BaseModel):

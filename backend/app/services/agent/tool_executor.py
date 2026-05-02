@@ -5,6 +5,7 @@
 负责执行解析后的工具调用，处理错误和结果格式化
 Author: 小沈 - 2026-03-21
 Version: 1.1 - 2026-04-19 添加T3重试逻辑
+Version: 1.2 - 2026-05-02 添加工具别名映射机制 - 小健
 """
 
 import asyncio
@@ -14,7 +15,11 @@ from typing import Any, Callable, Dict, List, Optional
 from app.utils.logger import logger
 
 # 【步骤7】T2: 从ToolConfig加载超时和别名
-from app.services.tools.tool_config import get_tool_config
+from app.services.tools.tool_config import (
+    get_tool_config,
+    get_tool_name_alias,
+    is_deprecated_tool
+)
 
 
 # =============================================================================
@@ -146,6 +151,7 @@ class ToolExecutor:
         执行工具调用（带重试逻辑）
         
         步骤4：修改execute()方法，增加重试逻辑
+        步骤5：增加别名转换和废弃检查 - 小健 2026-05-02
         
         Args:
             action: 工具名称
@@ -154,6 +160,23 @@ class ToolExecutor:
         Returns:
             执行结果，包含success标志和结果数据
         """
+        # 【废弃检查】小健 2026-05-02
+        deprecation_msg = is_deprecated_tool(action)
+        if deprecation_msg:
+            return {
+                "status": "error",
+                "summary": f"工具 '{action}' 已废弃: {deprecation_msg}",
+                "data": None,
+                "retry_count": 0
+            }
+        
+        # 【别名转换】小健 2026-05-02
+        original_action = action
+        main_name = get_tool_name_alias(action)
+        if main_name:
+            action = main_name
+            logger.info(f"工具别名转换: {original_action} -> {action}")
+        
         if action == "finish":
             return {
                 "status": "success",

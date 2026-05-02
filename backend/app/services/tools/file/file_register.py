@@ -11,34 +11,31 @@ File Register - 文件工具注册点
 - 按文档设计，使用 Pydantic 模型注册
 - 使用 input_model 参数，自动生成 OpenAI Schema
 
-【工具列表】（共28个）
-1. read_file - 读取文件
-2. write_text_file - 写入文本文件 - 小健 2026-05-02 新增
-3. write_file - 写入文件（兼容别名）
-4. list_directory - 列出目录
-5. delete_file - 删除文件
-6. move_file - 移动文件
-7. search_file_content - 【已废弃，请使用grep_file_content】
-8. search_files_by_name - 按名称搜索文件
-9. generate_report - 生成报告
-10. copy_file - 复制文件
-11. create_directory - 创建目录
-12. get_file_info - 获取文件信息
-13. compress_files - 压缩文件
-14. compare_files - 比较文件
-15. batch_rename - 批量重命名
-16. file_checksum - 文件校验
-17. file_statistics - 文件统计
-18. file_monitor - 文件监控
-19. read_text_file - 读取文本文件
-20. read_media_file - 读取媒体文件
-21. read_batch_file - 批量读取文件
-22. precise_replace_in_file - 精确替换文件内容
-23. edit_file - 编辑文件
-24. rename_file - 重命名文件/目录
-25. grep_file_content - 搜索文件内容
-26. get_directory_tree - 获取目录树
-27. list_allowed_directories - 列出允许访问的目录
+【工具列表】（共24个）
+1. write_text_file - 写入文本文件 - 小健 2026-05-02 新增
+2. list_directory - 列出目录
+3. delete_file - 删除文件
+5. move_file - 移动文件
+6. search_files_by_name - 按名称搜索文件
+7. generate_report - 生成报告
+8. copy_file - 复制文件
+9. create_directory - 创建目录
+10. get_file_info - 获取文件信息
+11. compress_files - 压缩文件
+12. compare_files - 比较文件
+13. batch_rename - 批量重命名
+14. file_checksum - 文件校验
+15. file_statistics - 文件统计
+16. file_monitor - 文件监控
+17. read_text_file - 读取文本文件
+18. read_media_file - 读取媒体文件
+19. read_batch_file - 批量读取文件
+20. precise_replace_in_file - 精确替换文件内容
+21. edit_file - 编辑文件
+22. rename_file - 重命名文件/目录
+23. grep_file_content - 搜索文件内容
+24. get_directory_tree - 获取目录树
+25. list_allowed_directories - 列出允许访问的目录
 
 【注册说明】
 - file_tools.py 的旧 _TOOL_REGISTRY 已移除（2026-04-26）
@@ -61,7 +58,6 @@ from app.utils.logger import logger
 # 【小健 2026-04-29】强制规范：新增工具必须从file_schema导入对应Pydantic模型，禁止手动编写input_schema字典
 # 【小健 2026-04-29】后续新增tool类型（time/shell/network等）也必须按此要求，从对应schema文件导入模型注册
 from app.services.tools.file.file_schema import (
-    ReadFileInput,
     WriteTextFileInput,
     WriteFileInput,
     ListDirectoryInput,
@@ -94,9 +90,7 @@ from app.services.tools.file.file_tools import FileTools, get_file_tools
 
 # 工具描述（用于注册）
 FILE_TOOL_DESCRIPTIONS = {
-    "read_file": "【已废弃】请使用 read_text_file（文本文件）或 read_media_file（媒体文件）替代。根据文件类型自动转发",
     "write_text_file": "写入或追加文本文件内容（仅支持文本文件，禁止写入二进制文件），自动创建父目录，支持编码设置和追加模式",
-    "write_file": "写入文件内容（write_text_file的兼容别名）",
     "list_directory": "列出目录内容，返回扁平列表，支持递归/排序/分页/显示隐藏文件。适合查看单个目录、找大文件、清理空间",
     "delete_file": "删除文件或目录（永久删除不进回收站），支持递归删除目录和强制删除只读文件",
     "move_file": "移动文件到其他目录，或重命名文件（跨目录操作）。适合'移动文件'或'把文件改名并移动'场景",
@@ -124,19 +118,10 @@ FILE_TOOL_DESCRIPTIONS = {
 
 # 【小沈 2026-04-29】补充 examples 参数 - 17个工具的使用示例
 FILE_TOOL_EXAMPLES = {
-    "read_file": [
-        {"file_path": "C:/Users/用户名/Documents/config.json", "offset": 1, "limit": 100},
-        {"file_path": "D:/项目代码/src/main.py", "offset": 1, "limit": 2000},
-        {"file_path": "C:/Users/用户名/Desktop/README.md", "offset": 1, "limit": 500, "encoding": "utf-8"}
-    ],
     "write_text_file": [
         {"file_path": "C:/Users/用户名/Documents/test.txt", "text": "Hello World"},
         {"file_path": "D:/项目代码/config.json", "text": "{\"key\": \"value\"}", "encoding": "utf-8"},
         {"file_path": "D:/项目代码/logs/app.log", "text": "新增日志行\\n", "append": True}
-    ],
-    "write_file": [
-        {"file_path": "C:/Users/用户名/Documents/test.txt", "text": "Hello World"},
-        {"file_path": "D:/项目代码/config.json", "text": "{\"key\": \"value\"}", "encoding": "utf-8"}
     ],
     "list_directory": [
         {"dir_path": "C:/Users/用户名/Documents"},
@@ -253,9 +238,7 @@ def _register_file_tools():
     
     # 【重要】使用 lambda 延迟绑定方法，避免在注册时立即访问 FileTools
     tool_methods = {
-        "read_file": lambda: _get_ft().read_file,
         "write_text_file": lambda: _get_ft().write_text_file,
-        "write_file": lambda: _get_ft().write_file,
         "list_directory": lambda: _get_ft().list_directory,
         "delete_file": lambda: _get_ft().delete_file,
         "move_file": lambda: _get_ft().move_file,
@@ -281,13 +264,9 @@ def _register_file_tools():
         "list_allowed_directories": lambda: _get_ft().list_allowed_directories,
     }
     
-    # 【小健 2026-04-29】强制映射：工具名与Pydantic模型一一对应，禁止新增工具时跳过此映射
-    # 【小健 2026-04-29】后续新增工具必须在此字典中添加映射，否则无法按规范生成Schema
     # 【2026-04-29 小沈新增】工具名到 Pydantic 模型的映射（按文档5.1设计）
     TOOL_INPUT_MODELS = {
-        "read_file": ReadFileInput,
         "write_text_file": WriteTextFileInput,
-        "write_file": WriteFileInput,
         "list_directory": ListDirectoryInput,
         "delete_file": DeleteFileInput,
         "move_file": MoveFileInput,
