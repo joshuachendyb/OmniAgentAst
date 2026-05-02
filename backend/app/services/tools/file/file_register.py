@@ -36,10 +36,9 @@ File Register - 文件工具注册点
 22. precise_replace_in_file - 精确替换文件内容
 23. edit_file - 编辑文件
 24. rename_file - 重命名文件/目录
-25. glob_files - Glob匹配文件
-26. grep_file_content - 搜索文件内容
-27. get_directory_tree - 获取目录树
-28. list_allowed_directories - 列出允许访问的目录
+25. grep_file_content - 搜索文件内容
+26. get_directory_tree - 获取目录树
+27. list_allowed_directories - 列出允许访问的目录
 
 【注册说明】
 - file_tools.py 的旧 _TOOL_REGISTRY 已移除（2026-04-26）
@@ -85,7 +84,6 @@ from app.services.tools.file.file_schema import (
     PreciseReplaceInFileInput,
     EditFileInput,
     RenameFileInput,
-    GlobFilesInput,
     GrepFileContentInput,
     GetDirectoryTreeInput,
     ListAllowedDirectoriesInput,
@@ -119,7 +117,6 @@ FILE_TOOL_DESCRIPTIONS = {
     "precise_replace_in_file": "精确替换文件内容",
     "edit_file": "编辑文件",
     "rename_file": "重命名文件",
-    "glob_files": "Glob匹配文件",
     "grep_file_content": "搜索文件内容",
     "get_directory_tree": "获取目录树",
     "list_allowed_directories": "列出允许访问的目录",
@@ -222,10 +219,6 @@ FILE_TOOL_EXAMPLES = {
         {"file_path": "D:/documents/report_old.txt", "new_name": "report_final.txt"},
         {"file_path": "D:/projects/old_folder", "new_name": "new_folder"}
     ],
-    "glob_files": [
-        {"pattern": "**/*.js"},
-        {"pattern": "src/**/*.ts", "search_dir": "D:/OmniAgentAs-desk"}
-    ],
     "grep_file_content": [
         {"pattern": "def read_file", "search_dir": "D:/OmniAgentAs-desk/backend"},
         {"pattern": "class.*Component", "search_dir": "D:/OmniAgentAs-desk/frontend", "glob": "*.tsx", "ignore_case": True}
@@ -283,7 +276,6 @@ def _register_file_tools():
         "precise_replace_in_file": lambda: _get_ft().precise_replace_in_file,
         "edit_file": lambda: _get_ft().edit_file,
         "rename_file": lambda: _get_ft().rename_file,
-        "glob_files": lambda: _get_ft().glob_files,
         "grep_file_content": lambda: _get_ft().grep_file_content,
         "get_directory_tree": lambda: _get_ft().get_directory_tree,
         "list_allowed_directories": lambda: _get_ft().list_allowed_directories,
@@ -316,7 +308,6 @@ def _register_file_tools():
         "precise_replace_in_file": PreciseReplaceInFileInput,
         "edit_file": EditFileInput,
         "rename_file": RenameFileInput,
-        "glob_files": GlobFilesInput,
         "grep_file_content": GrepFileContentInput,
         "get_directory_tree": GetDirectoryTreeInput,
         "list_allowed_directories": ListAllowedDirectoriesInput,

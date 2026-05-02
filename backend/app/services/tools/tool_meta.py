@@ -23,7 +23,6 @@ TOOL_TIMEOUTS = {
     "get_file_info": 10,
     "get_directory_tree": 30,
     "search_files": 30,
-    "glob_files": 15,
     "grep_file_content": 60,
     "read_text_file": 30,
     "read_media_file": 30,

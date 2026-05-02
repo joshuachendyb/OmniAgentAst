@@ -437,21 +437,6 @@ class RenameFileInput(BaseModel):
     )
 
 
-class GlobFilesInput(BaseModel):
-    """glob_files 工具的输入参数"""
-    pattern: str = Field(
-        description="Glob 模式，用于匹配文件名。如 \"**/*.js\" 匹配所有 JS 文件，\"src/**/*.ts\" 匹配 src 目录下所有 TS 文件，\"*.py\" 匹配当前目录所有 Python 文件"
-    )
-    search_dir: Optional[str] = Field(
-        default=None,
-        description="搜索目录，默认为当前工作目录。必须是绝对路径，支持中文目录名"
-    )
-    include_hidden: bool = Field(
-        default=False,
-        description="是否包含隐藏文件（如 .env、.gitignore）。Agent 智能判断"
-    )
-
-
 class GrepFileContentInput(BaseModel):
     """grep_file_content 工具的输入参数"""
     pattern: str = Field(
