@@ -401,90 +401,38 @@ class FileTools:
         limit: int = READ_FILE_DEFAULT_LIMIT,
         encoding: str = "utf-8"
     ) -> Dict[str, Any]:
-        """读取文件内容 - 小沈 2026-05-01"""
-        # 【修复 2026-05-01 小沈】参数校验
-        if offset < 1:
-            return _to_unified_format({"success": False, "error": f"offset必须>=1，当前值: {offset}", "content": None}, "read_file")
-        if limit < 1:
-            return _to_unified_format({"success": False, "error": f"limit必须>=1，当前值: {limit}", "content": None}, "read_file")
+        """【已废弃】请使用 read_text_file 或 read_media_file 替代 - 小沈 2026-05-02
         
-        # 验证路径合法性
-        is_valid, error_msg = self._validate_path(file_path)
-        if not is_valid:
-            return _to_unified_format({
-                "success": False,
-                "error": error_msg,
-                "content": None
-            }, "read_file")
+        该工具已废弃，根据文件类型自动转发：
+        - 文本文件 → read_text_file
+        - 媒体文件 → read_media_file
         
+        保留原因：
+        - read_text_file: 文本专用，支持 head/tail，禁止二进制
+        - read_media_file: 媒体专用，Base64编码，支持图片/音频/视频
+        """
+        logger.warning("[deprecated] read_file 已废弃，请使用 read_text_file 或 read_media_file 替代")
+        
+        # 根据文件后缀判断类型
         path = Path(file_path)
+        suffix = path.suffix.lower()
         
-        try:
-            if not path.exists():
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"File not found: {file_path}",
-                    "content": None
-                }, "read_file")
-            
-            if not path.is_file():
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"Not a file: {file_path}",
-                    "content": None
-                }, "read_file")
-            
-            # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
-            file_size = path.stat().st_size
-            if file_size > MAX_READ_SIZE:
-                return _to_unified_format({
-                    "success": False,
-                    "error": f"文件过大({file_size}字节)，超过读取上限{MAX_READ_SIZE}字节({MAX_READ_SIZE//1024//1024}MB)。请使用offset/limit分段读取，或使用search_file_content搜索特定内容。",
-                    "content": None
-                }, "read_file")
-            
-            # 读取文件内容（异步执行）
-            def _read_sync():
-                with open(path, 'r', encoding=encoding, errors='replace') as f:
-                    return f.readlines()
-            
-            lines = await asyncio.to_thread(_read_sync)
-            total_lines = len(lines)
-            
-            # 处理offset和limit
-            start_idx = max(0, offset - 1)
-            end_idx = min(start_idx + limit, total_lines)
-            
-            selected_lines = lines[start_idx:end_idx]
-            
-            # 添加行号
-            content = ""
-            for i, line in enumerate(selected_lines, start=offset):
-                content += f"{i}: {line}"
-            
-            has_more = end_idx < total_lines
-            # 【新增】返回 next_page_token（位置编码）
-            next_page_token = encode_page_token(end_idx) if has_more else None
-            
-            return _to_unified_format({
-                "success": True,
-                "content": content,
-                "total_lines": total_lines,
-                "start_line": offset,
-                "end_line": end_idx,
-                "has_more": has_more,
-                "next_page_token": next_page_token,
-                "file_size": path.stat().st_size,
-                "encoding": encoding
-            }, "read_file")
-            
-        except Exception as e:
-            logger.error(f"Failed to read file {file_path}: {e}")
-            return _to_unified_format({
-                "success": False,
-                "error": str(e),
-                "content": None
-            }, "read_file")
+        # 媒体文件后缀
+        media_extensions = {
+            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg', '.tiff', '.tif',
+            '.mp3', '.wav', '.ogg', '.m4a', '.flac', '.aac',
+            '.mp4', '.avi', '.mov', '.mkv', '.webm',
+            '.pdf'
+        }
+        
+        if suffix in media_extensions:
+            # 媒体文件 → read_media_file
+            return await self.read_media_file(file_path)
+        else:
+            # 文本文件 → read_text_file
+            # 转换 offset/limit 为 head 参数
+            head = limit
+            return await self.read_text_file(file_path, head=head, encoding=encoding)
 
     async def read_text_file(
         self,
@@ -500,7 +448,7 @@ class FileTools:
             if is_binary:
                 return _to_unified_format({
                     "success": False,
-                    "error": f"{binary_reason}。请使用 read_media_file 工具读取媒体文件，或使用 read_file 工具读取任意类型文件。",
+                    "error": f"{binary_reason}。请使用 read_media_file 工具读取媒体文件（图片/音频/视频）。",
                     "content": None
                 }, "read_text_file")
             
