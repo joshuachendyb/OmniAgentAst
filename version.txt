@@ -1,4 +1,93 @@
-v0.12.5
+v0.12.6
+
+更新时间: 2026-05-03 00:07:11
+
+更新内容：
+
+## v0.12.5→v0.12.6 变更汇总 - 小健-2026-05-03
+
+### refactor 重构
+| commit | 说明 |
+|--------|------|
+| 4149051b | 文件工具精简与别名机制重构：28个→24个，删除glob_files/read_file/search_file_content，统一别名管理 |
+| 5ae40f57 | 为read_text_file添加offset/limit参数，功能完全覆盖read_file |
+| 7b4109e2 | 废弃read_file，改用语义明确的专用工具 |
+| 8b734a3e | 从schema和注册文件彻底删除glob_files |
+| 9fe4855f | 彻底删除glob_files，保留rename_file |
+| d3f480d1 | 精简文件操作工具，废弃rename_file/glob_files |
+| b87e324f | search_file_content废弃，合并到grep_file_content |
+| 23c7633d | 9个分类从装饰器注册统一改为显式注册-支持按需/动态加载 |
+| f5401bb0 | 移除file_tools.py中的空装饰器和所有@register_tool使用 |
+
+### feat 新功能
+| commit | 说明 |
+|--------|------|
+| 8eb779b3 | 为文件操作工具添加二进制文件保护机制（5个工具） |
+| bae91a25 | search_files新增excludePatterns/ignore_case/type/sortBy参数 |
+| 24093929 | delete_file新增force参数-支持强制删除只读文件 |
+| 06c82182 | move_file新增overwrite参数-支持覆盖已存在目标 |
+| 98eef4f6 | get_file_info新增follow_symlinks参数-支持控制符号链接跟随 |
+| 4bc5fee6 | write_file→write_text_file增强(text+append+create_parents+unescape) |
+| 544da00c | 新增expose_to_llm暴露控制机制-支持Tool对LLM的可见性管理 |
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| 563db5b3 | 修复precise_replace_in_file/edit_file二进制保护bug（self.BINARY_EXTENSIONS→模块级常量） |
+| adfbb281 | 编辑工具添加二进制文件保护 |
+| caa88371 | 工具参数一致性修复 |
+| 5fc95d05 | 彻底清理search_file_content残留引用 |
+| c8e1a210 | copy_file.py preserve_metadata参数位置修正 |
+
+### docs 文档
+| commit | 说明 |
+|--------|------|
+| 87e8e474 | 明确标注文本工具的二进制保护限制 |
+| 0e76eb09 | 优化所有工具类型的描述，确保清晰准确 |
+| 08dbb033 | 优化工具描述，让LLM准确选择工具 |
+| 8b32858d | 补充8个遗漏工具的参数表(Tool 19-1~19-8) |
+| f921740d | read_file的limit默认值统一为500与代码一致 |
+| 15610bab | 删除edit_file重复的Tool 7条目 |
+| acf124eb | create_directory文档补充parents和exist_ok参数 |
+
+### 核心变更：别名机制重构
+
+**1. 工具精简（28个 → 24个）**：
+- 删除 `glob_files`：功能已被 `search_files(sortBy)` 覆盖
+- 删除 `read_file`：功能已被 `read_text_file` 覆盖  
+- 删除 `search_file_content`：功能已被 `grep_file_content` 覆盖
+- 保留 `rename_file`：语义明确（仅同目录改名）
+
+**2. 统一别名管理（tool_config.py）**：
+```python
+TOOL_NAME_ALIASES = {
+    'write_file': 'write_text_file',        # 兼容旧代码
+    'glob_files': 'search_files',            # 兼容旧代码
+    'read_file': 'read_text_file',           # 兼容旧代码
+    'search_file_content': 'grep_file_content',  # 兼容旧代码
+}
+```
+
+**3. 别名处理流程（tool_executor.py）**：
+- 检查别名 → 自动转换为主工具名 → 执行
+- LLM只看到主工具名，别名仅在dispatch层转换
+
+### 二进制文件保护机制
+
+**新增保护的工具**（5个）：
+- read_text_file
+- write_text_file
+- read_batch_file
+- precise_replace_in_file
+- edit_file
+
+**保护的后缀**：.png/.jpg/.jpeg/.gif/.zip/.exe/.dll/.docx/.xlsx/.pptx/.pdf/.mp3/.mp4/.wav/.avi/.mkv
+
+### 工具总数
+- v0.12.5: 112个
+- v0.12.6: 108个 (-4个，删除glob_files/read_file/search_file_content/write_file别名)
+
+---
 
   更新时间: 2026-05-02 09:10:00
 
