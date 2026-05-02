@@ -46,7 +46,6 @@ from app.services.tools.file.file_schema import (
     ListDirectoryInput,
     DeleteFileInput,
     MoveFileInput,
-    SearchFileContentInput,
     SearchFilesInput,
     GenerateReportInput,
     CopyFileInput,
@@ -2366,7 +2365,7 @@ def _generate_summary(tool_name: str, result: Any) -> str:
         destination = result.get("destination", "")
         return f"成功移动文件：{source} -> {destination}"
     
-    elif tool_name == "search_file_content":
+    elif tool_name == "grep_file_content":
         if result.get("success") is False:
             return f"搜索内容失败：{result.get('error', '未知错误')}"
         # 【修复 2026-05-01 小沈】B5: 字段名files_matched不存在，实际字段是total

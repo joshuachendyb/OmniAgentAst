@@ -115,7 +115,7 @@ class RetryPolicy:
 TOOL_TIMEOUTS = {
     # 文件操作类工具
     "read_file": 30,
-    "search_file_content": 60,  # 全文搜索（耗时较长）
+    "grep_file_content": 60,  # 正则内容搜索（耗时较长）
     "write_file": 30,
     "delete_file": 30,
     "move_file": 30,
@@ -360,10 +360,9 @@ class ToolExecutor:
                 "filename": "file_pattern",
                 "pattern": "file_pattern",
             },
-            "search_file_content": {
-                "file_pattern": "file_pattern",
-                "filename": "file_pattern",
-                "file": "file_pattern",
+            "grep_file_content": {
+                "pattern": "pattern",
+                "search_dir": "search_dir",
             },
             "generate_report": {
                 "output_dir": "output_dir",
@@ -393,7 +392,7 @@ class ToolExecutor:
             "list_directory": ["dir_path", "recursive", "max_depth"],
             "move_file": ["source_path", "destination_path"],
             "search_files": ["file_pattern", "path", "recursive", "max_depth", "page_token"],
-            "search_file_content": ["pattern", "path", "file_pattern", "recursive"],
+            "grep_file_content": ["pattern", "search_dir", "output_mode", "glob", "ignore_case", "head_limit", "page_token"],
             "generate_report": ["output_dir"],
         }
         

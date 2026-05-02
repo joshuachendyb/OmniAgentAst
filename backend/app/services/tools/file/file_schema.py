@@ -132,30 +132,6 @@ class MoveFileInput(BaseModel):
     )
 
 
-class SearchFileContentInput(BaseModel):
-    """search_file_content 工具的输入参数"""
-    pattern: str = Field(
-        description="搜索内容的关键字（必填，不能为空）"
-    )
-    path: str = Field(
-        default="~",
-        description="搜索的起始目录（绝对路径），默认为用户主目录"
-    )
-    file_pattern: str = Field(
-        default="*",
-        description="文件名匹配模式，支持通配符（* 匹配任意字符），默认为*（所有文件）"
-    )
-    recursive: bool = Field(
-        default=True,
-        description="是否递归搜索子目录，默认为True"
-    )
-    # 【新增】分页令牌，用于获取下一页结果
-    page_token: Optional[str] = Field(
-        default=None,
-        description="分页令牌（位置编码），用于获取下一页结果"
-    )
-
-
 class SearchFilesInput(BaseModel):
     """search_files 工具的输入参数 - 小健 2026-05-02 增加excludePatterns/ignore_case/type"""
     file_pattern: str = Field(
@@ -590,7 +566,6 @@ __all__ = [
     "ListDirectoryInput",
     "DeleteFileInput",
     "MoveFileInput",
-    "SearchFileContentInput",
     "SearchFilesInput",
     "GenerateReportInput",
     "CopyFileInput",

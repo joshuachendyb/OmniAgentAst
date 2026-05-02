@@ -70,7 +70,7 @@ You have access to the following tools:
 - delete_file → use file_path (NOT filepath, NOT path)
 - move_file → use source_path AND destination_path (NOT src, NOT dst, NOT source, NOT destination)
  - search_files → use file_pattern (NOT pattern)
- - search_file_content → use pattern AND path
+ - grep_file_content → use pattern AND search_dir
 
 【FORBIDDEN parameter names - DO NOT use】:
 - ❌ directory_path (correct: dir_path)
@@ -122,13 +122,14 @@ Available Tools:
    - recursive: Whether to search subdirectories, default True
    Example: {"file_pattern": "*.py", "path": "D:/project", "recursive": True}
 
-6. search_file_content(pattern, path=".", file_pattern="*", recursive=True)
-   Search files by content pattern.
-   - pattern: Search keyword (REQUIRED, CANNOT be empty)
-   - path: Starting directory for search, default "."
-   - file_pattern: File name filter (e.g., "*.py"), default "*"
-   - recursive: Whether to search subdirectories, default True
-   Example: {"pattern": "TODO", "path": "D:/project", "file_pattern": "*.py", "recursive": True}
+6. grep_file_content(pattern, search_dir=".", glob="*.py", ignore_case=True, head_limit=50)
+   Search files by content pattern (regex supported).
+   - pattern: Regex search pattern (REQUIRED, CANNOT be empty)
+   - search_dir: Starting directory for search, default current dir
+   - glob: File name filter (e.g., "*.py"), default None
+   - ignore_case: Whether to ignore case, default False
+   - head_limit: Max results to return, default None
+   Example: {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py", "ignore_case": true}
 
 7. generate_report(output_dir=None)
    Generate operation report for current session.
@@ -164,8 +165,8 @@ Example 2: Read file
 Example 3: Search file content
 {
     "thought": "User wants to search for TODO comments in Python files",
-    "reasoning": "search_file_content支持关键词搜索和多路径筛选，是搜索文件内容的最佳工具",
-    "tool_name": "search_file_content",
+    "reasoning": "grep_file_content支持正则搜索和多选项筛选，是搜索文件内容的最佳工具",
+    "tool_name": "grep_file_content",
     "tool_params": {
         "pattern": "TODO",
         "path": "D:/project",
@@ -401,7 +402,7 @@ Correct parameter names to use:
 - write_file: file_path
 - delete_file: file_path
 - move_file: source_path, destination_path
-- search_file_content: pattern, path
+- grep_file_content: pattern, search_dir
 
 Common mistakes to avoid:
 - ❌ directory_path (use: dir_path)

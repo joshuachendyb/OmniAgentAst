@@ -15,7 +15,7 @@ from .base_parser import BaseParser, ParseResult
 # 从react_output_parser.py提取的已知工具名列表
 KNOWN_TOOLS = [
     "read_file", "write_file", "delete_file", "list_directory",
-    "search_files", "search_file_content", "execute_command", 
+    "search_files", "grep_file_content", "execute_command", 
     "move_file", "get_current_time", "get_system_info",
     "finish", "finish_with_error"
 ]

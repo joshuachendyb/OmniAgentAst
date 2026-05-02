@@ -67,7 +67,7 @@ REACT_KEYWORDS = {
 # 来源：llm_strategies.py KNOWN_TOOLS (行62-67)
 KNOWN_TOOLS = [
     "list_directory", "read_file", "write_file", "delete_file",
-    "move_file", "search_files", "search_file_content", "generate_report",
+    "move_file", "search_files", "grep_file_content", "generate_report",
     # 更多工具名从配置动态加载...
 ]
 
@@ -958,7 +958,7 @@ TOOL_REQUIRED_PARAMS = {
     "move_file": ["source_path", "destination_path"],
     "list_directory": ["dir_path"],
     "search_files": ["file_pattern"],
-    "search_file_content": ["pattern", "path"],
+    "grep_file_content": ["pattern"],
     "generate_report": ["format"],
 }
 

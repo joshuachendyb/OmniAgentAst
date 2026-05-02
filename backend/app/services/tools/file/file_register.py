@@ -18,7 +18,7 @@ File Register - 文件工具注册点
 4. list_directory - 列出目录
 5. delete_file - 删除文件
 6. move_file - 移动文件
-7. search_file_content - 搜索文件内容
+7. search_file_content - 【已废弃，请使用grep_file_content】
 8. search_files_by_name - 按名称搜索文件
 9. generate_report - 生成报告
 10. copy_file - 复制文件
@@ -68,7 +68,6 @@ from app.services.tools.file.file_schema import (
     ListDirectoryInput,
     DeleteFileInput,
     MoveFileInput,
-    SearchFileContentInput,
     SearchFilesInput,
     GenerateReportInput,
     CopyFileInput,
@@ -103,7 +102,6 @@ FILE_TOOL_DESCRIPTIONS = {
     "list_directory": "列出目录内容",
     "delete_file": "删除文件",
     "move_file": "移动文件",
-    "search_file_content": "搜索文件内容",
     "search_files": "搜索文件名",
     "generate_report": "生成报告",
     "copy_file": "复制文件",
@@ -154,10 +152,6 @@ FILE_TOOL_EXAMPLES = {
     "move_file": [
         {"source_path": "C:/Users/用户名/Desktop/old.txt", "destination_path": "C:/Users/用户名/Documents/new.txt"},
         {"source_path": "D:/项目代码/a.txt", "destination_path": "D:/项目代码/b.txt"}
-    ],
-    "search_file_content": [
-        {"path": "D:/项目代码", "pattern": "TODO", "file_pattern": "*.py"},
-        {"path": "C:/Users/用户名/Documents", "pattern": "import", "ignore_case": True}
     ],
     "search_files": [
         {"path": "D:/项目代码", "file_pattern": "*.py"},
@@ -272,7 +266,6 @@ def _register_file_tools():
         "list_directory": lambda: _get_ft().list_directory,
         "delete_file": lambda: _get_ft().delete_file,
         "move_file": lambda: _get_ft().move_file,
-        "search_file_content": lambda: _get_ft().search_file_content,
         "search_files": lambda: _get_ft().search_files,
         "generate_report": lambda: _get_ft().generate_report,
         "copy_file": lambda: _get_ft().copy_file,
@@ -306,7 +299,6 @@ def _register_file_tools():
         "list_directory": ListDirectoryInput,
         "delete_file": DeleteFileInput,
         "move_file": MoveFileInput,
-        "search_file_content": SearchFileContentInput,
         "search_files": SearchFilesInput,
         "generate_report": GenerateReportInput,
         "copy_file": CopyFileInput,
