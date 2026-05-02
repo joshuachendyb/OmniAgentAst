@@ -69,8 +69,8 @@ class TextStrategy(LLMStrategy):
     - 方案A: ToolParser._extract_from_text() 支持中文提取
     - 方案B: 工具名保底匹配
     """
-    # P4: 从react_output_parser统一导入KNOWN_TOOLS
-    from app.services.agent.react_output_parser import KNOWN_TOOLS
+    # P4: 从注册中心动态获取工具名 - 小健 2026-05-02
+    from app.services.agent.react_output_parser import _get_known_tools
     
     async def call(
         self,
@@ -310,7 +310,7 @@ class TextStrategy(LLMStrategy):
         
         content_lower = content.lower()
         
-        for tool in self.KNOWN_TOOLS:
+        for tool in _get_known_tools():
             # 查找工具名出现位置
             pattern = rf'\b{re.escape(tool)}\b'
             if re.search(pattern, content_lower, re.IGNORECASE):
@@ -333,27 +333,15 @@ class TextStrategy(LLMStrategy):
                         break
 
                 if extracted_path:
-                    # 根据工具类型使用正确的参数名
-                    path_tools_file = {'write_file', 'read_file', 'delete_file', 'copy_file',
-                                       'get_file_info', 'file_checksum', 'compare_files',
-                                       'rename_file', 'precise_replace_in_file', 'edit_file'}
-                    path_tools_dir = {'list_directory', 'create_directory', 'list_directory_with_sizes',
-                                      'get_directory_tree', 'file_monitor', 'file_statistics',
-                                      'generate_report'}
-                    if tool in path_tools_file:
-                        params["file_path"] = extracted_path
-                    elif tool in path_tools_dir:
-                        params["dir_path"] = extracted_path
-                    elif tool in {'move_file'}:
-                        params["source_path"] = extracted_path
-                    else:
-                        params["path"] = extracted_path
+                    # 从tool_meta.py获取工具分类 - 小健 2026-05-02
+                    from app.services.tools.tool_meta import get_path_param_name, PATH_PARAM_TOOLS
+                    param_name = get_path_param_name(tool)
+                    params[param_name] = extracted_path
                 
-                # 2. 查找 content 参数（用于 write_file 等工具）
-                # 尝试从 JSON 块中提取 content
-                json_match = re.search(r'\{[^}]*"content"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
+                # 2. 查找 text 参数（用于 write_file 等工具）- 小健 2026-05-02 content→text
+                json_match = re.search(r'\{[^}]*"text"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"', content)
                 if json_match:
-                    params["content"] = json_match.group(1)
+                    params["text"] = json_match.group(1)
                 else:
                     # 备用：从 content 标签中提取
                     content_match = re.search(r'["\']?content["\']?\s*:\s*"([^"]*)"', content, re.DOTALL)

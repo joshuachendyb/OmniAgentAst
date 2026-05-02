@@ -111,28 +111,8 @@ class RetryPolicy:
         self.retryable_errors = retryable_errors or ["timeout"]
 
 
-# 【新增 2026-04-16 小沈】工具超时配置
-TOOL_TIMEOUTS = {
-    # 文件操作类工具
-    "read_file": 30,
-    "grep_file_content": 60,  # 正则内容搜索（耗时较长）
-    "write_file": 30,
-    "delete_file": 30,
-    "move_file": 30,
-    "list_directory": 10,
-    "search_files": 30,
-    
-    # 命令执行类工具
-    "execute_command": 120,
-    "run_command": 120,
-    
-    # 快速工具
-    "get_current_time": 5,
-    "get_system_info": 10,
-    
-    # 默认超时
-    "default": 30
-}
+# 工具超时配置 - 从tool_meta.py统一导入 - 小健 2026-05-02
+from app.services.tools.tool_meta import TOOL_TIMEOUTS, get_timeout
 
 
 class ToolExecutor:
@@ -306,13 +286,11 @@ class ToolExecutor:
     
     def _normalize_params(self, action: str, action_input: Dict[str, Any]) -> Dict[str, Any]:
         """
-        参数规范化：处理参数别名映射
+        参数规范化：基于Pydantic模型schema校验 - 小健 2026-05-02
         
-        【2026-04-18 小沈修复】
-        添加参数别名自动映射，解决LLM返回错误参数名的问题
-        - path → dir_path (list_directory)
-        - path → file_path (read_file, delete_file)
-        - file → file_path (read_file, delete_file)
+        删除硬编码的PARAM_ALIASES和STANDARD_PARAMS，
+        改为从Pydantic模型schema动态获取标准参数名，
+        非标准参数仅记录警告日志。
         
         Args:
             action: 工具名称
@@ -323,90 +301,23 @@ class ToolExecutor:
         """
         params = action_input.copy()
         
-        # 【新增 2026-04-18 小沈】参数别名映射：常见错误参数名 → 正确参数名
-        PARAM_ALIASES = {
-            "list_directory": {
-                "path": "dir_path",
-                "directory_path": "dir_path",
-                "folder": "dir_path",
-            },
-            "read_file": {
-                "path": "file_path",
-                "file": "file_path",
-                "filepath": "file_path",
-                "file_name": "file_path",
-            },
-            "delete_file": {
-                "path": "file_path",
-                "file": "file_path",
-                "filepath": "file_path",
-                "file_name": "file_path",
-            },
-            "write_file": {
-                "path": "file_path",
-                "file": "file_path",
-                "filepath": "file_path",
-                "file_name": "file_path",
-            },
-            "move_file": {
-                "source": "source_path",
-                "src": "source_path",
-                "target": "destination_path",
-                "dst": "destination_path",
-                "dest": "destination_path",
-            },
-            "search_files": {
-                "file": "file_pattern",
-                "filename": "file_pattern",
-                "pattern": "file_pattern",
-            },
-            "grep_file_content": {
-                "pattern": "pattern",
-                "search_dir": "search_dir",
-            },
-            "generate_report": {
-                "output_dir": "output_dir",
-                "output_path": "output_dir",
-                "path": "output_dir",
-            },
-        }
-        
-        # 执行参数别名映射
-        if action in PARAM_ALIASES:
-            aliases = PARAM_ALIASES[action]
-            for wrong_name, correct_name in aliases.items():
-                if wrong_name in params:
-                    if correct_name not in params:
-                        logger.info(f"[参数映射] action={action}: '{wrong_name}' → '{correct_name}'")
-                        params[correct_name] = params[wrong_name]
-                    # 【修复 2026-05-01 小沈 小健】即使correct_name已存在，也删除wrong_name
-                    # 场景：LLM同时返回path和file_path，或解析器补充了file_path但path未删除
-                    # 原条件 correct_name not in params 在此场景下为False，path残留在params中
-                    del params[wrong_name]
-        
-        # 定义每个工具的标准参数名
-        STANDARD_PARAMS = {
-            "read_file": ["file_path", "offset", "limit", "encoding"],
-            "write_file": ["file_path", "content", "encoding"],
-            "delete_file": ["file_path", "recursive"],
-            "list_directory": ["dir_path", "recursive", "max_depth"],
-            "move_file": ["source_path", "destination_path"],
-            "search_files": ["file_pattern", "path", "recursive", "max_depth", "page_token"],
-            "grep_file_content": ["pattern", "search_dir", "output_mode", "glob", "ignore_case", "head_limit", "page_token"],
-            "generate_report": ["output_dir"],
-        }
-        
-        # 检查是否有非标准参数名（映射后再次检查）
-        if action in STANDARD_PARAMS:
-            standard = STANDARD_PARAMS[action]
-            for key in list(params.keys()):
-                if key not in standard:
-                    val = params[key]
-                    val_str = str(val)[:50] + "..." if len(str(val)) > 50 else str(val)
-                    logger.warning(
-                        f"[参数监控] action={action}, 仍有非标准参数名: "
-                        f"param={key}={val_str}, 期望参数={standard}"
-                    )
+        # 从Pydantic模型schema获取标准参数名，记录非标准参数警告
+        try:
+            from app.services.tools.file.file_register import get_tool_input_models
+            models = get_tool_input_models()
+            if action in models:
+                schema = models[action].model_json_schema()
+                valid_params = set(schema.get("properties", {}).keys())
+                for key in list(params.keys()):
+                    if key not in valid_params:
+                        val = params[key]
+                        val_str = str(val)[:50] + "..." if len(str(val)) > 50 else str(val)
+                        logger.warning(
+                            f"[参数监控] action={action}, 非标准参数名: "
+                            f"param={key}={val_str}, 期望参数={sorted(valid_params)}"
+                        )
+        except Exception:
+            pass
         
         return params
     

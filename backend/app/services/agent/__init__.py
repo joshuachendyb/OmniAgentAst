@@ -32,7 +32,6 @@ from .tool_executor import ToolExecutor
 from .react_output_parser import (
     parse_react_response,
     REACT_KEYWORDS,
-    KNOWN_TOOLS,
 )
 from .session_base import SessionServiceBase, SessionStatsMixin
 
@@ -98,7 +97,6 @@ __all__ = [
     # 新解析器（第14章）
     "parse_react_response",
     "REACT_KEYWORDS",
-    "KNOWN_TOOLS",
     "ReactToolParser",
     # 原 file_operations（通过__getattr__懒加载）
     "FileOperationSafety",

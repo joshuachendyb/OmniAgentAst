@@ -7,18 +7,25 @@
 """
 
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from .base_parser import BaseParser, ParseResult
 
 
-# 从react_output_parser.py提取的已知工具名列表
-KNOWN_TOOLS = [
-    "read_file", "write_file", "delete_file", "list_directory",
-    "search_files", "grep_file_content", "execute_command", 
-    "move_file", "get_current_time", "get_system_info",
-    "finish", "finish_with_error"
-]
+def _get_known_tools() -> List[str]:
+    """从工具注册中心动态获取已知工具名 - 小健 2026-05-02"""
+    try:
+        from app.services.tools.file.file_register import FILE_TOOL_DESCRIPTIONS
+        from app.services.tools.registry import _FILE_TOOL_NAMES
+        tools = set(_FILE_TOOL_NAMES) | set(FILE_TOOL_DESCRIPTIONS.keys())
+        tools.update(["execute_command", "run_command", "get_current_time",
+                      "get_system_info", "finish", "finish_with_error"])
+        return sorted(tools)
+    except Exception:
+        return ["read_file", "write_file", "delete_file", "list_directory",
+                "search_files", "grep_file_content", "execute_command",
+                "move_file", "get_current_time", "get_system_info",
+                "finish", "finish_with_error"]
 
 
 class ToolNameParser(BaseParser):
@@ -27,14 +34,14 @@ class ToolNameParser(BaseParser):
     def can_parse(self, output: str) -> bool:
         """检查是否包含已知工具名"""
         output = output.strip()
-        return any(tool in output for tool in KNOWN_TOOLS)
+        return any(tool in output for tool in _get_known_tools())
     
     def parse(self, output: str) -> ParseResult:
         """工具名兜底匹配"""
         output = output.strip()
         
         # 查找已知工具名
-        for tool_name in KNOWN_TOOLS:
+        for tool_name in _get_known_tools():
             if tool_name in output:
                 # 尝试提取参数
                 tool_params = self._extract_params(output, tool_name)

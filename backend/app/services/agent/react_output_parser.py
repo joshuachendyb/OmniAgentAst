@@ -63,13 +63,29 @@ REACT_KEYWORDS = {
     "answer": r"(?:Answer|回答|最终答案|结论):\s*",
 }
 
-# 【基于14.0分析新增】已知工具名列表（从配置或注册中心动态获取）
-# 来源：llm_strategies.py KNOWN_TOOLS (行62-67)
-KNOWN_TOOLS = [
-    "list_directory", "read_file", "write_file", "delete_file",
-    "move_file", "search_files", "grep_file_content", "generate_report",
-    # 更多工具名从配置动态加载...
-]
+
+def _get_known_tools():
+    """从工具注册中心动态获取已知工具名 - 小健 2026-05-02"""
+    try:
+        from app.services.tools.file.file_register import FILE_TOOL_DESCRIPTIONS
+        from app.services.tools.registry import _FILE_TOOL_NAMES
+        return sorted(set(_FILE_TOOL_NAMES) | set(FILE_TOOL_DESCRIPTIONS.keys()))
+    except Exception:
+        return ["list_directory", "read_file", "write_file", "delete_file",
+                "move_file", "search_files", "grep_file_content", "generate_report"]
+
+
+def _get_required_params(tool_name: str):
+    """从Pydantic模型schema动态获取必需参数 - 小健 2026-05-02"""
+    try:
+        from app.services.tools.file.file_register import get_tool_input_models
+        models = get_tool_input_models()
+        if tool_name in models:
+            schema = models[tool_name].model_json_schema()
+            return schema.get("required", [])
+    except Exception:
+        pass
+    return []
 
 
 # =============================================================================
@@ -950,17 +966,8 @@ def _filter_tool_params(tool_params: Dict) -> Dict:
     return filtered
 
 
-# 【2026-04-28 小沈新增】工具必需参数定义
-TOOL_REQUIRED_PARAMS = {
-    "write_file": ["file_path", "content"],
-    "read_file": ["file_path"],
-    "delete_file": ["file_path"],
-    "move_file": ["source_path", "destination_path"],
-    "list_directory": ["dir_path"],
-    "search_files": ["file_pattern"],
-    "grep_file_content": ["pattern"],
-    "generate_report": ["format"],
-}
+# TOOL_REQUIRED_PARAMS 已删除 - 小健 2026-05-02
+# 必需参数从Pydantic模型schema动态获取，使用 _get_required_params(tool_name)
 
 
 def _check_missing_required_params(tool_name: str, tool_params: Dict, original_output: str = None) -> tuple:
@@ -1000,10 +1007,10 @@ def _check_missing_required_params(tool_name: str, tool_params: Dict, original_o
     from app.utils.logger import logger
     
     # 如果没有定义必需参数，返回无缺失
-    if tool_name not in TOOL_REQUIRED_PARAMS:
+    required = _get_required_params(tool_name)
+    if not required:
         return tool_params, False
     
-    required = TOOL_REQUIRED_PARAMS[tool_name]
     missing = [p for p in required if p not in tool_params]
     
     if not missing:
@@ -1444,7 +1451,7 @@ def _extract_by_known_tools(content: str) -> Optional[Dict[str, Any]]:
     """
     content_lower = content.lower()
     
-    for tool in KNOWN_TOOLS:
+    for tool in _get_known_tools():
         # 查找工具名出现位置（单词边界匹配）
         pattern = rf'\b{re.escape(tool)}\b'
         tool_match = re.search(pattern, content_lower, re.IGNORECASE)
@@ -2128,7 +2135,6 @@ __all__ = [
     "_create_action_result",  # 【2026-04-18小沈新增】创建统一格式结果
     "_extract_tool_params_from_thought",  # 【2026-04-18小沈新增】从thought提取参数
     "REACT_KEYWORDS",
-    "KNOWN_TOOLS",
 ]
 
 
