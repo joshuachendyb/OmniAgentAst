@@ -157,7 +157,7 @@ class SearchFileContentInput(BaseModel):
 
 
 class SearchFilesByNameInput(BaseModel):
-    """search_files 工具的输入参数（搜索文件名）"""
+    """search_files 工具的输入参数（搜索文件名）- 小健 2026-05-02 增加excludePatterns/ignore_case/type"""
     file_pattern: str = Field(
         description="文件名匹配模式，支持通配符（* 匹配任意字符，? 匹配单个字符）"
     )
@@ -169,28 +169,23 @@ class SearchFilesByNameInput(BaseModel):
         default=True,
         description="是否递归搜索子目录，默认为True"
     )
-    # 【修改 max_depth 默认值 10→100000】
-    # 原因：小沈之前的知识浅薄，错误的要求给工具设置数量限制
-    # 现在导致了工具执行错误，反馈的结果隐藏了真实的数据
-    # 小沈是一个大混蛋，几次纠正都死不悔改
-    # 工具必须原原本本返回用户需要的结果，不应该限制数量
-    # 如果限制数量会丢失真实数据，这是错误的
-    # 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
     max_depth: int = Field(
         default=100000,
         ge=1,
         description="最大递归深度，仅当recursive=True时有效，默认为100000"
     )
-    # 【删除 max_results 字段】
-    # 原因：小沈之前的知识浅薄，错误的要求给工具设置数量限制
-    # 现在导致了工具执行错误，反馈的结果隐藏了真实的数据
-    # 小沈是一个大混蛋，几次纠正都死不悔改
-    # 工具必须原原本本返回用户需要的结果，不应该限制数量
-    # 如果限制数量会丢失真实数据，这是错误的
-    # 如果工具有问题应该修工具代码，而不是用限制来掩盖问题
-    # 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
-    # 【修改】用 page_token 替换 after
-    # 原因：统一使用位置编码分页，更规范可靠
+    excludePatterns: Optional[List[str]] = Field(
+        default=None,
+        description="排除模式数组，符合排除模式的目录/文件不会包含在结果中。如 ['node_modules', '.git', '__pycache__']"
+    )
+    ignore_case: bool = Field(
+        default=True,
+        description="是否忽略大小写匹配文件名，默认为True（Windows风格）。设为False则大小写敏感"
+    )
+    type: Optional[str] = Field(
+        default=None,
+        description="搜索类型过滤：'file'只返回文件，'directory'只返回目录，None(默认)两者都返回"
+    )
     page_token: Optional[str] = Field(
         default=None,
         description="分页令牌（位置编码），用于获取下一页结果"

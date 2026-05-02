@@ -1273,18 +1273,12 @@ class FileTools:
         path: str = "~",
         recursive: bool = True,
         max_depth: int = 100000,
-        # 【删除 max_results 参数】
-        # 原因：小沈之前的知识浅薄，错误的要求给工具设置数量限制
-        # 现在导致了工具执行错误，反馈的结果隐藏了真实的数据
-        # 小沈是一个大混蛋，几次纠正都死不悔改
-        # 工具必须原原本本返回用户需要的结果，不应该限制数量
-        # 如果限制数量会丢失真实数据，这是错误的
-        # 如果工具有问题应该修工具代码，而不是用限制来掩盖问题
-        # 这次必须正确理解，保证以后不再犯这样弱智的、低级错误
-        # 【修改】用 page_token 替换 after，统一使用位置编码分页
+        excludePatterns: Optional[List[str]] = None,
+        ignore_case: bool = True,
+        type: Optional[str] = None,
         page_token: Optional[str] = None
     ) -> Dict[str, Any]:
-        """搜索文件名（按文件名匹配）"""
+        """搜索文件名（按文件名匹配）- 小健 2026-05-02 增加excludePatterns/ignore_case/type"""
         # 验证搜索路径
         is_valid, error_msg = self._validate_path(path)
         if not is_valid:
@@ -1326,20 +1320,23 @@ class FileTools:
                 
                 # 逐步遍历目录
                 for root, dirs, files in os.walk(search_path):
-                    # 【修复P15】尊重recursive参数
                     if not recursive:
-                        dirs.clear()  # 不递归：清空子目录列表
+                        dirs.clear()
                     else:
-                        # 深度限制
                         rel_root = Path(root).relative_to(search_path)
                         depth = len(rel_root.parts) if str(rel_root) != "." else 0
                         if depth >= max_depth:
-                            dirs.clear()  # 不再深入此目录的子目录
+                            dirs.clear()
                             continue
                     
-                    # 【修复B4 2026-05-01 小沈】支持目录名匹配
+                    if excludePatterns:
+                        dirs[:] = [d for d in dirs if not any(fnmatch.fnmatch(d, pat) for pat in excludePatterns)]
+                    
                     for dirname in dirs:
-                        if not fnmatch.fnmatch(dirname, file_pattern):
+                        if type == "file":
+                            continue
+                        matched = fnmatch.fnmatch(dirname, file_pattern) if ignore_case else fnmatch.fnmatchcase(dirname, file_pattern)
+                        if not matched:
                             continue
 
                         dir_path = Path(root) / dirname
@@ -1361,10 +1358,11 @@ class FileTools:
                             "type": "directory"
                         })
 
-                    # 遍历当前目录的文件
                     for filename in files:
-                        # 【修复P10】用fnmatch替代手工正则
-                        if not fnmatch.fnmatch(filename, file_pattern):
+                        if type == "directory":
+                            continue
+                        matched = fnmatch.fnmatch(filename, file_pattern) if ignore_case else fnmatch.fnmatchcase(filename, file_pattern)
+                        if not matched:
                             continue
                         
                         file_path = Path(root) / filename
