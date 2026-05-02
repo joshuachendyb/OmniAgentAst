@@ -81,6 +81,43 @@ MAX_MEDIA_READ_SIZE = 50 * 1024 * 1024   # 媒体文件读取上限：50MB（bas
 MAX_BATCH_FILE_COUNT = 100               # 批量读取文件数上限
 MAX_SEARCH_FILE_SIZE = 10 * 1024 * 1024  # 搜索/单个文件读取上限：10MB
 
+# 【新增 2026-05-02 小沈】二进制文件保护：禁止的后缀列表
+BINARY_EXTENSIONS = {
+    # 图片
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.ico', '.svg', '.tiff', '.tif',
+    # 音视频
+    '.mp3', '.mp4', '.wav', '.avi', '.mkv', '.mov', '.wmv', '.flv', '.m4a', '.ogg',
+    # 压缩包
+    '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.tar.gz', '.tar.bz2',
+    # 可执行文件
+    '.exe', '.dll', '.so', '.dylib', '.msi', '.app', '.deb', '.rpm',
+    # 办公文档（二进制格式）
+    '.docx', '.xlsx', '.pptx', '.doc', '.xls', '.ppt', '.pdf',
+    # 数据库
+    '.db', '.sqlite', '.sqlite3',
+    # 虚拟机/磁盘
+    '.iso', '.vhd', '.vmdk',
+}
+
+
+def _is_binary_file(file_path: str) -> tuple[bool, str]:
+    """
+    检测文件是否为二进制文件 - 小沈 2026-05-02
+    
+    Args:
+        file_path: 文件路径
+        
+    Returns:
+        (is_binary, reason): 是否为二进制文件及原因说明
+    """
+    path = Path(file_path)
+    suffix = path.suffix.lower()
+    
+    if suffix in BINARY_EXTENSIONS:
+        return True, f"文件后缀 '{suffix}' 属于二进制文件类型，禁止使用text工具操作"
+    
+    return False, ""
+
 
 def _remove_readonly(func, path, excinfo):
     """force删除时解除只读属性的回调 - 小健 2026-05-02"""
@@ -458,6 +495,15 @@ class FileTools:
     ) -> Dict[str, Any]:
         """读取文本文件的完整内容，支持指定行数 - 小沈 2026-05-01"""
         try:
+            # 【新增 2026-05-02 小沈】二进制文件保护
+            is_binary, binary_reason = _is_binary_file(file_path)
+            if is_binary:
+                return _to_unified_format({
+                    "success": False,
+                    "error": f"{binary_reason}。请使用 read_media_file 工具读取媒体文件，或使用 read_file 工具读取任意类型文件。",
+                    "content": None
+                }, "read_text_file")
+            
             # 【修复 2026-05-01 小沈】参数校验
             if head is not None and head < 1:
                 return _to_unified_format({"success": False, "error": f"head必须>=1，当前值: {head}", "content": None}, "read_text_file")
@@ -575,6 +621,15 @@ class FileTools:
         unescape: bool = True
     ) -> Dict[str, Any]:
         """写入文本文件 - 小健 2026-05-02 增强: text参数+append+create_parents"""
+        # 【新增 2026-05-02 小沈】二进制文件保护（最关键，防止破坏二进制文件）
+        is_binary, binary_reason = _is_binary_file(file_path)
+        if is_binary:
+            return _to_unified_format({
+                "success": False,
+                "error": f"{binary_reason}。write_text_file 仅支持文本文件，禁止写入二进制文件。",
+                "content": None
+            }, "write_text_file")
+        
         content = text
         MAX_WRITE_SIZE = MAX_READ_SIZE
         if len(content.encode(encoding)) > MAX_WRITE_SIZE:
@@ -1619,6 +1674,11 @@ class FileTools:
 
         async def _read_single(fp: str) -> Dict[str, Any]:
             async with semaphore:
+                # 【新增 2026-05-02 小沈】二进制文件保护
+                is_binary, binary_reason = _is_binary_file(fp)
+                if is_binary:
+                    return {"file_path": fp, "success": False, "error": f"{binary_reason}。已跳过该文件。", "content": None}
+                
                 is_valid, error_msg = self._validate_path(fp)
                 if not is_valid:
                     return {"file_path": fp, "success": False, "error": error_msg, "content": None}
