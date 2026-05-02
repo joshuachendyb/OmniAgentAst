@@ -115,12 +115,16 @@ class DeleteFileInput(BaseModel):
 
 
 class MoveFileInput(BaseModel):
-    """move_file 工具的输入参数"""
+    """move_file 工具的输入参数 - 小健 2026-05-02 增加overwrite"""
     source_path: str = Field(
         description="源文件或目录的完整路径"
     )
     destination_path: str = Field(
         description="目标路径（可以是新文件名或新目录位置）"
+    )
+    overwrite: bool = Field(
+        default=False,
+        description="是否覆盖已存在的目标文件，默认为False（不覆盖，目标存在时报错）"
     )
 
 

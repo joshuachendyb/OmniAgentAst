@@ -973,9 +973,10 @@ class FileTools:
     async def move_file(
         self,
         source_path: str,
-        destination_path: str
+        destination_path: str,
+        overwrite: bool = False
     ) -> Dict[str, Any]:
-        """移动或重命名文件"""
+        """移动或重命名文件 - 小健 2026-05-02 增加overwrite"""
         # 验证源路径
         is_valid_src, error_msg_src = self._validate_path(source_path)
         if not is_valid_src:
@@ -1023,9 +1024,13 @@ class FileTools:
             
             # 定义移动操作
             def _move_sync():
-                # 【修复P9】检查目标文件是否已存在
                 if dst.exists():
-                    raise FileExistsError(f"目标路径已存在: {dst}，移动操作已取消。请先删除目标文件或指定其他路径。")
+                    if not overwrite:
+                        raise FileExistsError(f"目标路径已存在: {dst}，移动操作已取消。请设置overwrite=True或指定其他路径。")
+                    if dst.is_dir():
+                        shutil.rmtree(str(dst))
+                    else:
+                        dst.unlink()
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(src), str(dst))
                 return True
