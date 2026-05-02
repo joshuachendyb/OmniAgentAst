@@ -19,6 +19,7 @@ v0.12.5
   | a4afa82c | 新增环境检查类Tool(env_check): 9个工具(check_python/validate_code/check_node/check_module/validate_csv/validate_chart/check_pdf/check_docx/check_xlsx) |
   | 30c74217 | 新增GUI操作类Tool(gui): 13个工具(鼠标click/move/scroll + 键盘type_text/shortcut/key_combo + 屏幕screenshot/snapshot/screen_record + 窗口list_windows/focus_window/resize_window + OCR) |
   | 05c3db07 | 新增数据库辅助类Tool(db_helper): 7个工具(check_db_exists/get_table_schema/begin_transaction/commit_transaction/rollback_transaction/check_network_connectivity/validate_url) |
+  | 9a4d1984 | 补提交code_execution/data_format/registry_tools目录及network/system修改(子代理创建文件未随主流程commit) |
 
   ### fix 修复
   | commit | 说明 |
