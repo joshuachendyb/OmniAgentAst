@@ -162,19 +162,6 @@ class ToolDefinition:
 from datetime import datetime
 
 
-# 空装饰器（已废弃，仍用于兼容FileTools类中的@register_tool）
-def register_tool(
-    name: Optional[str] = None,
-    description: str = "",
-    input_model: Optional[type[BaseModel]] = None,
-    examples: Optional[List[Dict[str, Any]]] = None
-):
-    """空的注册装饰器（已废弃，仅用于兼容）"""
-    def decorator(func):
-        return func
-    return decorator
-
-
 # ============================================================
 # 第六部分：FileTools类（重写版）
 # ============================================================
@@ -364,44 +351,6 @@ class FileTools:
         except Exception as e:
             return False, f"路径验证失败: {str(e)}"
     
-    @register_tool(
-        name="read_file",
-        description="""读取文件的内容。
-
-使用场景：
-- 当用户想要查看文件内容时使用此工具
-- 当用户想要读取配置文件、日志文件、代码文件等时使用
-- 当需要分析文件内容时使用
-
-参数说明：
-- file_path: 文件的完整路径（必须是绝对路径，如 C:/Users/用户名/Documents/file.txt）
-- offset: 起始行号，从1开始计数，默认为1
-- limit: 最大读取行数，默认为2000行
-- encoding: 文件编码，默认为utf-8
-
-【重要】必须使用 file_path 作为参数名，不要使用 filepath、path 或其他名称。
-错误示例: {"filepath": "..."} 或 {"path": "..."} 
-正确示例: {"file_path": "C:/Users/用户名/Documents/config.json", "offset": 1, "limit": 100}""",
-        input_model=ReadFileInput,
-        examples=[
-            {
-                "file_path": "C:/Users/用户名/Documents/config.json",
-                "offset": 1,
-                "limit": 100
-            },
-            {
-                "file_path": "D:/项目代码/src/main.py",
-                "offset": 1,
-                "limit": 2000
-            },
-            {
-                "file_path": "C:/Users/用户名/Desktop/README.md",
-                "offset": 1,
-                "limit": 500,
-                "encoding": "utf-8"
-            }
-        ]
-    )
     async def read_file(
         self,
         file_path: str,
@@ -610,36 +559,6 @@ class FileTools:
                 "content": None
             }, "read_text_file")
     
-    @register_tool(
-        name="write_file",
-        description="""写入内容到文件（如果文件存在则覆盖）。
-
-使用场景：
-- 当用户想要创建新文件时使用此工具
-- 当用户想要修改现有文件内容时使用
-- 当用户想要保存代码、配置、文本等时使用
-
-参数说明：
-- file_path: 文件的完整路径（必须是绝对路径）
-- content: 要写入文件的内容
-- encoding: 文件编码，默认为utf-8
-
-【重要】必须使用 file_path 作为参数名，不要使用 filepath、path 或其他名称。
-
-【注意】此操作会覆盖已有文件，请确认目标路径。""",
-        input_model=WriteFileInput,
-        examples=[
-            {
-                "file_path": "C:/Users/用户名/Documents/test.txt",
-                "content": "这是要写入的内容"
-            },
-            {
-                "file_path": "D:/项目代码/config.json",
-                "content": '{"name": "myproject", "version": "1.0.0"}',
-                "encoding": "utf-8"
-            }
-        ]
-    )
     async def write_file(
         self,
         file_path: str,
@@ -790,54 +709,6 @@ class FileTools:
                 "operation_id": None
             }, "write_file")
     
-    @register_tool(
-        name="list_directory",
-        description="""列出指定目录中的所有文件和子目录。
-
-使用场景：
-- 当用户想要查看某个文件夹里有什么文件时使用此工具
-- 当需要了解目录结构时使用
-- 当需要获取文件列表进行进一步操作时使用
-- 当用户说"查看D盘"、"列出目录"、"文件夹里有什么"时使用
-- 当需要按文件大小排序时使用
-
-参数说明：
-- dir_path: 目录的完整路径（必须是绝对路径，如 D:/项目代码 或 C:/Users/用户名/Documents）
-- recursive: 是否递归列出子目录内容，默认为False（不递归）
-- max_depth: 最大递归深度，仅当 recursive=True 时有效，默认为10
-- page_token: 分页令牌（base64编码的位置偏移量），用于获取后续页面结果，默认为None（从第一页开始）
-- sortBy: 排序方式，可选值为 name（按名称排序，默认）或 size（按文件大小排序）
-- include_hidden: 是否显示隐藏文件（以.开头的文件），默认为False
-
-【重要】必须使用 dir_path 作为参数名，不要使用 directory_path、path 或其他名称。
-错误示例: {"directory_path": "..."} 或 {"path": "..."}
-正确示例: {"dir_path": "D:/项目代码"} 或 {"dir_path": "C:/Users/用户名/Documents", "recursive": True}""",
-        input_model=ListDirectoryInput,
-        examples=[
-            {
-                "dir_path": "C:/Users/用户名/Documents",
-                "recursive": False
-            },
-            {
-                "dir_path": "D:/项目代码",
-                "recursive": True,
-                "max_depth": 3
-            },
-            {
-                "dir_path": "E:/工作文档",
-                "recursive": False,
-                "page_token": "MA=="
-            },
-            {
-                "dir_path": "D:/项目代码",
-                "sortBy": "size"
-            },
-            {
-                "dir_path": "D:/项目代码",
-                "include_hidden": True
-            }
-        ]
-    )
     async def list_directory(
         self,
         dir_path: str,
@@ -1010,34 +881,6 @@ class FileTools:
                 "entries": []
             }, "list_directory")
     
-    @register_tool(
-        name="delete_file",
-        description="""删除文件或目录（自动备份到回收站）。
-
-使用场景：
-- 当用户想要删除文件时使用此工具
-- 当用户想要删除空目录或非空目录时使用
-- 【注意】删除的文件会自动备份到回收站，可以恢复
-
-参数说明：
-- file_path: 要删除的文件或目录的完整路径
-- recursive: 是否递归删除目录（当目录非空时需要设为True），默认为False
-
-【重要】必须使用 file_path 作为参数名，不要使用 filepath、path 或其他名称。
-
-【警告】此操作会将文件移动到回收站而非永久删除，但请谨慎使用。""",
-        input_model=DeleteFileInput,
-        examples=[
-            {
-                "file_path": "C:/Users/用户名/Documents/temp.txt",
-                "recursive": False
-            },
-            {
-                "file_path": "D:/项目代码/old_folder",
-                "recursive": True
-            }
-        ]
-    )
     async def delete_file(
         self,
         file_path: str,
@@ -1117,34 +960,6 @@ class FileTools:
                 "operation_id": None
             }, "delete_file")
     
-    @register_tool(
-        name="move_file",
-        description="""移动或重命名文件/目录。
-
-使用场景：
-- 当用户想要移动文件到另一个位置时使用此工具
-- 当用户想要重命名文件时使用
-- 当用户想要将文件从一个文件夹移动到另一个文件夹时使用
-
-参数说明：
-- source_path: 源文件或目录的完整路径
-- destination_path: 目标路径（可以是新文件名或新目录位置）
-
-【重要】必须使用 source_path 和 destination_path 作为参数名，不要使用 src、dst、source、dest 等名称。
-错误示例: {"src": "...", "dst": "..."} 或 {"source": "...", "destination": "..."}
-正确示例: {"source_path": "C:/Users/用户名/Documents/old.txt", "destination_path": "D:/项目/new.txt"}""",
-        input_model=MoveFileInput,
-        examples=[
-            {
-                "source_path": "C:/Users/用户名/Documents/old.txt",
-                "destination_path": "D:/项目/new.txt"
-            },
-            {
-                "source_path": "C:/Users/用户名/Desktop/file.py",
-                "destination_path": "D:/项目代码/src/main.py"
-            }
-        ]
-    )
     async def move_file(
         self,
         source_path: str,
@@ -1234,38 +1049,6 @@ class FileTools:
                 "operation_id": None
             }, "move_file")
     
-    @register_tool(
-        name="search_file_content",
-        description="""搜索文件内容中的关键字。
-
-使用场景：
-- 当用户想要在文件内容中搜索特定关键字时使用此工具
-- 当用户说"搜索文件内容"、"在文件中查找xxx"、"搜索包含xxx的文件"时使用
-
-参数说明：
-- pattern: 搜索内容的关键字（必填，不能为空）
-- path: 搜索的起始目录，默认为当前目录 "."
-- file_pattern: 文件类型过滤，支持通配符（* 匹配任意字符），默认为 "*"（搜索所有文件）
-- recursive: 是否递归搜索子目录，默认为True
-
-【重要】必须使用 pattern 和 path 作为参数名。
-示例: {"pattern": "TODO", "path": "D:/项目代码", "file_pattern": "*.py", "recursive": True}""",
-        input_model=SearchFileContentInput,
-        examples=[
-            {
-                "pattern": "TODO",
-                "path": "D:/项目代码",
-                "file_pattern": "*.py",
-                "recursive": True
-            },
-            {
-                "pattern": "config",
-                "path": "C:/Users/用户名",
-                "file_pattern": "*.json",
-                "recursive": True
-            }
-        ]
-    )
     async def search_file_content(
         self,
         pattern: str,
@@ -1457,40 +1240,6 @@ class FileTools:
                 "matches": []
             }, "search_file_content")
     
-    @register_tool(
-        name="search_files",
-        description="""搜索文件名（按文件名匹配）。
-
-使用场景：
-- 当用户想要根据文件名查找文件时使用此工具
-- 当用户说"搜索文件"、"查找名为xxx的文件"、"按文件名找文件"时使用
-
-参数说明：
-- file_pattern: 文件名匹配模式，支持通配符（* 匹配任意字符，? 匹配单个字符）（必填）
-- path: 搜索的起始目录，默认为当前目录 "."
-- recursive: 是否递归搜索子目录，默认为True
-
-【重要】必须使用 file_pattern 作为参数名，不要使用 pattern。
-示例: {"file_pattern": "*.py", "path": "D:/项目代码", "recursive": True}""",
-        input_model=SearchFilesByNameInput,
-        examples=[
-            {
-                "file_pattern": "*.py",
-                "path": "D:/项目代码",
-                "recursive": True
-            },
-            {
-                "file_pattern": "config*",
-                "path": "C:/Users/用户名",
-                "recursive": False
-            },
-            {
-                "file_pattern": "readme*",
-                "path": "D:/项目代码",
-                "recursive": True
-            }
-        ]
-    )
     async def search_files(
         self,
         file_pattern: str,
@@ -1665,26 +1414,6 @@ class FileTools:
                 "matches": []
             }, "search_files")
     
-    @register_tool(
-        name="generate_report",
-        description="""生成操作报告。
-
-使用场景：
-- 当用户想要查看当前会话的所有操作记录时使用此工具
-- 当需要生成操作历史报告时使用
-
-参数说明：
-- output_dir: 报告输出目录，默认为None（使用默认目录）""",
-        input_model=GenerateReportInput,
-        examples=[
-            {
-                "output_dir": None
-            },
-            {
-                "output_dir": "C:/Users/用户名/Desktop"
-            }
-        ]
-    )
     async def generate_report(self, output_dir: Optional[str] = None) -> Dict[str, Any]:
         """生成操作报告"""
         # 【修复P5】验证输出目录路径
@@ -1728,36 +1457,6 @@ class FileTools:
                 "reports": {}
             }, "generate_report")
 
-    @register_tool(
-        name="copy_file",
-        description="""复制文件或目录到新位置。
-
-使用场景：
-- 当用户想要复制文件时使用此工具
-- 当用户想要备份文件时使用
-- 当用户说"复制文件"、"拷贝文件"、"备份文件"时使用
-
-参数说明：
-- source_path: 源文件或目录的完整路径（必须是绝对路径）
-- destination_path: 目标路径（可以是新文件名或新目录位置）
-- recursive: 是否递归复制目录，仅当源路径是目录时有效，默认为False
-- overwrite: 是否覆盖已存在的目标文件，默认为False
-
-【重要】必须使用 source_path 和 destination_path 作为参数名。
-正确示例: {"source_path": "C:/Users/file.txt", "destination_path": "D:/backup/file.txt"}""",
-        input_model=CopyFileInput,
-        examples=[
-            {
-                "source_path": "C:/Users/用户名/Documents/file.txt",
-                "destination_path": "D:/backup/file.txt"
-            },
-            {
-                "source_path": "C:/Users/用户名/Documents/folder",
-                "destination_path": "D:/backup/folder",
-                "recursive": True
-            }
-        ]
-    )
     async def copy_file(
         self,
         source_path: str,
@@ -1783,32 +1482,6 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
-    @register_tool(
-        name="create_directory",
-        description="""创建新目录。
-
-使用场景：
-- 当用户想要创建新文件夹时使用此工具
-- 当用户说"创建目录"、"新建文件夹"、"mkdir"时使用
-
-参数说明：
-- dir_path: 要创建的目录的完整路径（必须是绝对路径）
-- parents: 是否创建父目录，默认为True（如果父目录不存在则创建）
-- exist_ok: 如果目录已存在是否报错，默认为True（不报错）
-
-【重要】必须使用 dir_path 作为参数名。
-正确示例: {"dir_path": "C:/Users/用户名/Documents/new_folder"}""",
-        input_model=CreateDirectoryInput,
-        examples=[
-            {
-                "dir_path": "C:/Users/用户名/Documents/new_folder"
-            },
-            {
-                "dir_path": "D:/项目代码/src/components",
-                "parents": True
-            }
-        ]
-    )
     async def create_directory(
         self,
         dir_path: str,
@@ -1831,26 +1504,6 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
-    @register_tool(
-        name="get_file_info",
-        description="""获取文件或目录的详细信息。
-
-使用场景：
-- 当用户想要查看文件属性时使用此工具
-- 当用户说"文件信息"、"查看属性"、"文件详情"时使用
-
-参数说明：
-- file_path: 文件或目录的完整路径（必须是绝对路径）
-
-【重要】必须使用 file_path 作为参数名。
-正确示例: {"file_path": "C:/Users/用户名/Documents/file.txt"}""",
-        input_model=GetFileInfoInput,
-        examples=[
-            {
-                "file_path": "C:/Users/用户名/Documents/file.txt"
-            }
-        ]
-    )
     async def get_file_info(
         self,
         file_path: str,
@@ -1864,43 +1517,6 @@ class FileTools:
             to_unified_format_func=_to_unified_format,
         )
 
-    @register_tool(
-        name="compare_files",
-        description="""比较两个文件的内容、大小或修改时间。
-
-使用场景：
-- 当用户需要比较两个文件是否相同时使用此工具
-- 当用户需要验证文件完整性或检测文件变化时使用
-- 当需要确认文件备份或同步是否成功时使用
-
-参数说明：
-- file_path1: 第一个文件的完整路径（必须是绝对路径）
-- file_path2: 第二个文件的完整路径（必须是绝对路径）
-- algorithm: 比较算法：content（内容比较）、size（大小比较）、mtime（修改时间比较），默认为content
-- chunk_size: 分块大小（字节），用于大文件比较，默认8192字节
-
-【重要】必须使用正确的参数名。
-正确示例: {"file_path1": "C:/file1.txt", "file_path2": "C:/file2.txt", "algorithm": "content"}""",
-        input_model=CompareFilesInput,
-        examples=[
-            {
-                "file_path1": "C:/Users/用户名/Documents/file1.txt",
-                "file_path2": "C:/Users/用户名/Documents/file2.txt",
-                "algorithm": "content"
-            },
-            {
-                "file_path1": "D:/项目代码/version1.py",
-                "file_path2": "D:/项目代码/version2.py",
-                "algorithm": "size"
-            },
-            {
-                "file_path1": "E:/备份/data.db",
-                "file_path2": "E:/恢复/data.db",
-                "algorithm": "mtime",
-                "chunk_size": 16384
-            }
-        ]
-    )
     async def compare_files(
         self,
         file_path1: str,
@@ -1925,48 +1541,6 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
-    @register_tool(
-        name="batch_rename",
-        description="""批量重命名目录中的文件。
-
-使用场景：
-- 当用户需要批量修改文件名时使用此工具
-- 当需要按照特定模式重命名文件时使用
-- 当需要整理文件命名规范时使用
-
-参数说明：
-- directory: 目标目录的完整路径（必须是绝对路径）
-- pattern: 匹配模式（支持正则表达式）
-- replacement: 替换字符串
-- recursive: 是否递归处理子目录，默认为False
-- preview: 是否只预览不执行，默认为False
-- conflict_strategy: 冲突处理策略：skip（跳过）、overwrite（覆盖）、rename（自动重命名），默认为skip
-
-【重要】必须使用正确的参数名。
-正确示例: {"directory": "C:/Users/用户名/Photos", "pattern": "IMG_\\d+\\.jpg", "replacement": "photo_$1.jpg", "preview": true}""",
-        input_model=BatchRenameInput,
-        examples=[
-            {
-                "directory": "C:/Users/用户名/Photos",
-                "pattern": "IMG_\\d+\\.jpg",
-                "replacement": "photo_$1.jpg",
-                "preview": True
-            },
-            {
-                "directory": "D:/项目代码/docs",
-                "pattern": "(.+)\\.txt",
-                "replacement": "$1.md",
-                "recursive": True,
-                "conflict_strategy": "rename"
-            },
-            {
-                "directory": "E:/音乐",
-                "pattern": "track_",
-                "replacement": "song_",
-                "conflict_strategy": "overwrite"
-            }
-        ]
-    )
     async def batch_rename(
         self,
         directory: str,
@@ -1995,48 +1569,6 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
-    @register_tool(
-        name="compress_files",
-        description="""压缩文件或目录。
-
-使用场景：
-- 当用户需要压缩文件以节省存储空间时使用此工具
-- 当需要打包多个文件以便传输时使用
-- 当需要创建备份压缩包时使用
-
-参数说明：
-- source_path: 源文件或目录的完整路径（必须是绝对路径）
-- destination_path: 目标压缩文件路径（必须是绝对路径）
-- format: 压缩格式：zip、tar.gz，默认为zip
-- compression_level: 压缩级别（0-9，0不压缩，9最高压缩），默认为6
-- password: 压缩密码（可选），用于加密压缩文件
-- split_size: 分卷大小（字节），None表示不分卷
-
-【重要】必须使用正确的参数名。
-正确示例: {"source_path": "C:/Users/用户名/Documents", "destination_path": "C:/备份/docs.zip", "format": "zip", "compression_level": 9}""",
-        input_model=CompressFilesInput,
-        examples=[
-            {
-                "source_path": "C:/Users/用户名/Documents",
-                "destination_path": "C:/备份/docs.zip",
-                "format": "zip",
-                "compression_level": 9
-            },
-            {
-                "source_path": "D:/项目代码",
-                "destination_path": "D:/备份/project.tar.gz",
-                "format": "tar.gz",
-                "compression_level": 6
-            },
-            {
-                "source_path": "E:/敏感数据",
-                "destination_path": "E:/加密备份/secure.zip",
-                "format": "zip",
-                "password": "mypassword123",
-                "split_size": 104857600  # 100MB分卷
-            }
-        ]
-    )
     async def compress_files(
         self,
         source_path: str,
@@ -2065,43 +1597,6 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
-    @register_tool(
-        name="file_monitor",
-        description="""监控文件系统变化。
-
-使用场景：
-- 当用户需要实时监控文件变化时使用此工具
-- 当需要检测文件创建、修改、删除事件时使用
-- 当需要监控目录变化并触发相应操作时使用
-
-参数说明：
-- directory: 监控目录的完整路径（必须是绝对路径）
-- event_types: 监控事件类型列表，默认为["created", "modified", "deleted", "renamed"]
-- recursive: 是否递归监控子目录，默认为True
-- filters: 过滤条件字典，支持file_type、min_size、max_size、modified_after等字段
-- duration: 监控持续时间（秒），None表示持续监控直到手动停止
-
-【重要】必须使用正确的参数名。
-正确示例: {"directory": "C:/Users/用户名/Downloads", "event_types": ["created", "modified"], "duration": 60}""",
-        input_model=FileMonitorInput,
-        examples=[
-            {
-                "directory": "C:/Users/用户名/Downloads",
-                "event_types": ["created", "modified"],
-                "duration": 60
-            },
-            {
-                "directory": "D:/项目代码/logs",
-                "recursive": False,
-                "filters": {"file_type": ".log"}
-            },
-            {
-                "directory": "E:/监控目录",
-                "event_types": ["created", "deleted", "renamed"],
-                "filters": {"min_size": 1024, "max_size": 1048576}
-            }
-        ]
-    )
     async def file_monitor(
         self,
         directory: str,
@@ -2131,44 +1626,6 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
-    @register_tool(
-        name="file_statistics",
-        description="""统计文件系统信息。
-
-使用场景：
-- 当用户需要分析目录结构时使用此工具
-- 当需要统计文件数量、大小分布时使用
-- 当需要分析文件类型分布时使用
-
-参数说明：
-- directory: 统计目录的完整路径（必须是绝对路径）
-- recursive: 是否递归统计子目录，默认为True
-- max_depth: 最大递归深度，默认为100000
-- filters: 过滤条件字典，支持file_type、min_size、max_size等字段
-- output_format: 输出格式：json、csv、text，默认为json
-
-【重要】必须使用正确的参数名。
-正确示例: {"directory": "C:/Users/用户名/Documents", "recursive": true, "output_format": "json"}""",
-        input_model=FileStatisticsInput,
-        examples=[
-            {
-                "directory": "C:/Users/用户名/Documents",
-                "recursive": True,
-                "output_format": "json"
-            },
-            {
-                "directory": "D:/项目代码",
-                "filters": {"file_type": ".py"},
-                "output_format": "csv"
-            },
-            {
-                "directory": "E:/数据存储",
-                "recursive": True,
-                "max_depth": 3,
-                "filters": {"min_size": 1024, "max_size": 10485760}
-            }
-        ]
-    )
     async def file_statistics(
         self,
         directory: str,
@@ -2195,41 +1652,6 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
-    @register_tool(
-        name="file_checksum",
-        description="""计算文件的校验和（哈希值）。
-
-使用场景：
-- 当用户需要验证文件完整性时使用此工具
-- 当需要检测文件是否被修改时使用
-- 当需要生成文件的唯一标识符时使用
-
-参数说明：
-- file_path: 文件的完整路径（必须是绝对路径）
-- algorithm: 哈希算法：md5、sha1、sha256、sha512，默认为md5
-- verify_hash: 验证哈希值（如果提供则进行验证）
-- chunk_size: 分块大小（字节），用于大文件哈希计算，默认65536字节
-
-【重要】必须使用正确的参数名。
-正确示例: {"file_path": "C:/Users/用户名/Documents/file.iso", "algorithm": "sha256"}""",
-        input_model=FileChecksumInput,
-        examples=[
-            {
-                "file_path": "C:/Users/用户名/Documents/file.iso",
-                "algorithm": "sha256"
-            },
-            {
-                "file_path": "D:/下载/软件安装包.exe",
-                "algorithm": "md5",
-                "verify_hash": "d41d8cd98f00b204e9800998ecf8427e"
-            },
-            {
-                "file_path": "E:/备份/data.db",
-                "algorithm": "sha512",
-                "chunk_size": 131072
-            }
-        ]
-    )
     async def file_checksum(
         self,
         file_path: str,
