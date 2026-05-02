@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-数据库辅助工具函数模块
+支撑工具函数模块 - 公共函数 + LLM可调用Tool
 
 【创建时间】2026-05-02 小沈
 【更新时间】2026-05-02 小沈
@@ -10,15 +10,15 @@
 ================================================================================
 本模块的函数具有双重身份：
 
-1. **公共辅助函数** - 可被其他Tool函数内部调用
+1. **公共辅助函数（主要用途 90%）** - 被其他Tool函数内部调用
    - 例如：query_sql内部调用check_db_exists验证数据库存在
    - 例如：http_request内部调用validate_url验证URL格式
 
-2. **LLM可调用Tool** - 可被用户直接调用
+2. **LLM可调用Tool（次要用途 10%）** - 可被用户直接调用
    - 用户问"检查数据库是否存在" → LLM调用check_db_exists
    - 用户问"这个URL格式对不对" → LLM调用validate_url
 
-【重要】这些函数不是"没用"，而是作为公共基础设施，供其他Tool和用户共用。
+【重要】这些函数主要作为公共基础设施供其他Tool调用，LLM直接调用场景较少。
 
 ================================================================================
 二、包含工具（7个）
@@ -35,15 +35,14 @@
 三、调用关系示例
 ================================================================================
 ```
-# 其他Tool内部调用示例
+# 其他Tool内部调用示例（主要场景）
 def query_sql(db_path, sql):
-    # 内部调用公共辅助函数
     result = check_db_exists(db_path)
     if not result["data"]["exists"]:
         return {"error": "数据库不存在"}
     # 执行SQL...
 
-# LLM直接调用示例
+# LLM直接调用示例（次要场景）
 用户: "帮我检查D:/data/app.db是否存在"
 LLM: 调用 check_db_exists({"db_path": "D:/data/app.db"})
 ```
@@ -62,7 +61,7 @@ from urllib.parse import urlparse
 
 from app.services.tools.registry import register_tool, ToolCategory
 
-from app.services.tools.db_helper.db_helper_schema import (
+from app.services.tools.support_tool.support_tool_schema import (
     CheckDbExistsInput,
     GetTableSchemaInput,
     ValidateUrlInput,
@@ -86,7 +85,7 @@ _active_transactions: Dict[str, sqlite3.Connection] = {}
 返回数据说明：
 - code: 状态码
 - data: exists(bool), db_type(str)""",
-    category=ToolCategory.DB_HELPER,
+    category=ToolCategory.SUPPORT_TOOL,
     input_model=CheckDbExistsInput,
     examples=[{"db_path": "D:/data/app.db"}]
 )
@@ -121,7 +120,7 @@ def check_db_exists(db_path: str) -> Dict[str, Any]:
 返回数据说明：
 - code: 状态码
 - data: columns, primary_key等信息""",
-    category=ToolCategory.DB_HELPER,
+    category=ToolCategory.SUPPORT_TOOL,
     input_model=GetTableSchemaInput,
     examples=[{"db_path": "D:/data/app.db", "table_name": "users"}]
 )
@@ -174,7 +173,7 @@ def get_table_schema(db_path: str, table_name: str) -> Dict[str, Any]:
 - 当用户需要保证数据操作的原子性时使用
 
 【重要】返回事务ID，用于后续commit/rollback""",
-    category=ToolCategory.DB_HELPER,
+    category=ToolCategory.SUPPORT_TOOL,
     input_model=None,
     input_schema={"type": "object", "properties": {}, "required": []},
     examples=[{}]
@@ -195,7 +194,7 @@ def begin_transaction() -> Dict[str, Any]:
 
 参数说明：
 - transaction_id：事务ID""",
-    category=ToolCategory.DB_HELPER,
+    category=ToolCategory.SUPPORT_TOOL,
     input_model=None,
     input_schema={"type": "object", "properties": {"transaction_id": {"type": "string", "description": "事务ID"}}, "required": ["transaction_id"]},
     examples=[{"transaction_id": "abc12345"}]
@@ -214,7 +213,7 @@ def commit_transaction(transaction_id: str) -> Dict[str, Any]:
 
 参数说明：
 - transaction_id：事务ID""",
-    category=ToolCategory.DB_HELPER,
+    category=ToolCategory.SUPPORT_TOOL,
     input_model=None,
     input_schema={"type": "object", "properties": {"transaction_id": {"type": "string", "description": "事务ID"}}, "required": ["transaction_id"]},
     examples=[{"transaction_id": "abc12345"}]
@@ -233,7 +232,7 @@ def rollback_transaction(transaction_id: str) -> Dict[str, Any]:
 - 当用户在执行网络操作前需要验证连通性时使用
 
 【重要】返回网络是否可用及延迟信息""",
-    category=ToolCategory.DB_HELPER,
+    category=ToolCategory.SUPPORT_TOOL,
     input_model=None,
     input_schema={"type": "object", "properties": {}, "required": []},
     examples=[{}]
@@ -275,7 +274,7 @@ def check_network_connectivity() -> Dict[str, Any]:
 - url：要验证的URL
 
 【重要】返回URL是否有效及解析信息""",
-    category=ToolCategory.DB_HELPER,
+    category=ToolCategory.SUPPORT_TOOL,
     input_model=ValidateUrlInput,
     examples=[{"url": "https://example.com"}]
 )

@@ -105,7 +105,7 @@ class ToolCategory(Enum):
     DOCUMENT = "document"            # 文档读写（小沈-2026-05-02）
     ENV_CHECK = "env_check"          # 环境检查（小沈-2026-05-02）
     GUI = "gui"                      # GUI操作（小沈-2026-05-02）
-    DB_HELPER = "db_helper"          # 数据库辅助（小沈-2026-05-02）
+    SUPPORT_TOOL = "support_tool"     # 支撑工具（公共函数+LLM可调用，小沈-2026-05-02）
 
 
 @dataclass
@@ -422,7 +422,7 @@ class ToolRegistry:
             ToolCategory.DOCUMENT,
             ToolCategory.ENV_CHECK,
             ToolCategory.GUI,
-            ToolCategory.DB_HELPER,
+            ToolCategory.SUPPORT_TOOL,
         ]
 
         # 如果指定了priority_category，移到最前面
@@ -443,7 +443,7 @@ class ToolRegistry:
             ToolCategory.DOCUMENT: "文档读写工具",
             ToolCategory.ENV_CHECK: "环境检查工具",
             ToolCategory.GUI: "GUI操作工具",
-            ToolCategory.DB_HELPER: "数据库辅助工具",
+            ToolCategory.SUPPORT_TOOL: "支撑工具(公共函数)",
         }
 
         for cat in category_order:
