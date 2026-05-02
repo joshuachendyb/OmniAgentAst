@@ -2012,68 +2012,50 @@ class FileTools:
         file_path: str,
         new_name: str,
     ) -> Dict[str, Any]:
-        """【已废弃】请使用 move_file 替代 - 小沈 2026-05-02
-        该工具已废弃，自动转发到 move_file（功能更强，支持跨目录移动+重命名）。
-        rename_file 仅支持同目录改名，move_file 既支持改名也支持移动。
-        """
-        logger.warning("[deprecated] rename_file 已废弃，请使用 move_file 替代")
+        """重命名文件或目录（仅同目录改名）- 小沈 2026-05-02
         
+        注意：内部通过 move_file 实现，但对外保持独立语义。
+        - rename_file: 仅同目录改名（语义明确）
+        - move_file: 跨目录移动+改名（功能更强）
+        
+        用户说"重命名"用此工具，说"移动"用 move_file。
+        """
         # 计算新路径（同目录改名）
         src = Path(file_path)
+        
+        # 参数校验
+        if "/" in new_name or "\\" in new_name:
+            return _to_unified_format({
+                "success": False, 
+                "error": "新名称不能包含路径分隔符（rename_file仅支持同目录改名）。如需跨目录移动请使用move_file。", 
+                "new_path": None
+            }, "rename_file")
+        
         dst = src.parent / new_name
         
-        # 转发到 move_file
-        return await self.move_file(
+        # 内部调用 move_file 实现
+        result = await self.move_file(
             source_path=file_path,
             destination_path=str(dst),
             overwrite=False
         )
-
-    async def glob_files(
-        self,
-        pattern: str,
-        search_dir: Optional[str] = None,
-        include_hidden: bool = False,
-    ) -> Dict[str, Any]:
-        """【已废弃】请使用 search_files 替代 - 小沈 2026-05-02
-        该工具已废弃，自动转发到 search_files（功能更强，支持排除模式+分页+排序）。
-        glob_files 仅支持按修改时间排序，search_files 支持 sortBy="mtime/name/size"。
-        """
-        logger.warning("[deprecated] glob_files 已废弃，请使用 search_files 替代")
         
-        # 转发到 search_files
-        result = await self.search_files(
-            file_pattern=pattern,
-            path=search_dir or ".",
-            recursive=True,
-            ignore_case=True,
-            sortBy="mtime"  # glob_files 默认按修改时间排序
-        )
-        
-        # 转换结果格式（保持兼容）
+        # 转换返回格式（保持rename_file的语义）
         if result.get("success"):
-            files = []
-            for match in result.get("matches", []):
-                files.append({
-                    "path": match.get("path"),
-                    "name": match.get("name"),
-                    "type": match.get("type"),
-                    "size": match.get("size"),
-                    "mtime": match.get("mtime")
-                })
             return _to_unified_format({
                 "success": True,
-                "files": files,
-                "total": len(files),
-                "search_dir": search_dir or ".",
-                "pattern": pattern
-            }, "glob_files")
+                "new_path": str(dst),
+                "old_path": str(src),
+                "old_name": src.name,
+                "new_name": new_name,
+                "operation_id": result.get("operation_id"),
+            }, "rename_file")
         else:
             return _to_unified_format({
                 "success": False,
                 "error": result.get("error"),
-                "files": []
-            }, "glob_files")
+                "new_path": None
+            }, "rename_file")
 
     async def grep_file_content(
         self,
