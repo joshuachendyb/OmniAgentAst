@@ -20,6 +20,7 @@ v0.12.5
   | 30c74217 | 新增GUI操作类Tool(gui): 13个工具(鼠标click/move/scroll + 键盘type_text/shortcut/key_combo + 屏幕screenshot/snapshot/screen_record + 窗口list_windows/focus_window/resize_window + OCR) |
   | 05c3db07 | 新增数据库辅助类Tool(db_helper): 7个工具(check_db_exists/get_table_schema/begin_transaction/commit_transaction/rollback_transaction/check_network_connectivity/validate_url) |
   | 9a4d1984 | 补提交code_execution/data_format/registry_tools目录及network/system修改(子代理创建文件未随主流程commit) |
+  | 49f6827c | 目录重组: db_helper重命名为support_tool(公共函数+LLM可调用Tool) |
 
   ### fix 修复
   | commit | 说明 |
@@ -31,14 +32,14 @@ v0.12.5
   - DOCUMENT: 文档读写
   - ENV_CHECK: 环境检查
   - GUI: GUI操作
-  - DB_HELPER: 数据库辅助
+  - SUPPORT_TOOL: 支撑工具(原DB_HELPER)
 
   ### 新增目录结构
   - backend/app/services/tools/data_analysis/
   - backend/app/services/tools/document/
   - backend/app/services/tools/env_check/
   - backend/app/services/tools/gui/
-  - backend/app/services/tools/db_helper/
+  - backend/app/services/tools/support_tool/ (原db_helper/)
 
   ### 工具总数
   - v0.12.4: 77个
