@@ -17,8 +17,6 @@ import importlib
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 
-from app.services.tools.registry import register_tool, ToolCategory
-
 from app.services.tools.document.document_schema import (
     ReadPdfInput,
     ReadDocxInput,
@@ -54,33 +52,6 @@ def _parse_pages(pages_str: str) -> List[int]:
     return sorted(set(result))
 
 
-@register_tool(
-    name="read_pdf",
-    description="""读取 PDF 文件并提取文本内容。
-
-使用场景：
-- 当用户需要读取 PDF 文档内容时使用
-- 当用户想要从 PDF 中提取文字信息时使用
-- 当用户需要分析 PDF 文档内容时使用
-
-参数说明：
-- file_path：PDF 文件路径
-- pages：要读取的页面（如 "1-5" 或 "1,3,5"）
-- extract_images：是否提取图片，默认 false
-
-【重要】需要安装 pdfplumber 库（pip install pdfplumber）
-
-返回数据说明：
-- code: 状态码（SUCCESS/ERR_READ_PDF/ERR_NO_PDFPLUMBER）
-- data: 包含text、page_count、pages_read的字典
-- message: 操作结果消息""",
-    category=ToolCategory.DOCUMENT,
-    input_model=ReadPdfInput,
-    examples=[
-        {"file_path": "D:/documents/report.pdf"},
-        {"file_path": "D:/documents/report.pdf", "pages": "1-3"},
-    ]
-)
 def read_pdf(
     file_path: str,
     pages: str = None,
@@ -143,30 +114,6 @@ def read_pdf(
         }
 
 
-@register_tool(
-    name="read_docx",
-    description="""读取 Word 文档并提取文本内容。
-
-使用场景：
-- 当用户需要读取 Word 文档内容时使用
-- 当用户想要从 Word 文档中提取文字信息时使用
-- 当用户需要分析 Word 文档内容时使用
-
-参数说明：
-- file_path：Word 文件路径
-
-【重要】需要安装 python-docx 库（pip install python-docx）
-
-返回数据说明：
-- code: 状态码（SUCCESS/ERR_READ_DOCX/ERR_NO_DOCX）
-- data: 包含text、paragraph_count的字典
-- message: 操作结果消息""",
-    category=ToolCategory.DOCUMENT,
-    input_model=ReadDocxInput,
-    examples=[
-        {"file_path": "D:/documents/report.docx"},
-    ]
-)
 def read_docx(file_path: str) -> Dict[str, Any]:
     """读取Word文档并提取文本内容 - 小沈 2026-05-02"""
     if not _check_module("docx"):
@@ -207,33 +154,6 @@ def read_docx(file_path: str) -> Dict[str, Any]:
         }
 
 
-@register_tool(
-    name="read_xlsx",
-    description="""读取 Excel 文件并提取表格数据。
-
-使用场景：
-- 当用户需要读取 Excel 表格数据时使用
-- 当用户想要从 Excel 中提取数据进行分析时使用
-- 当用户需要查看 Excel 文件内容时使用
-
-参数说明：
-- file_path：Excel 文件路径
-- sheet_name：工作表名称（默认第一个）
-- max_rows：最大读取行数，默认 1000
-
-【重要】需要安装 openpyxl 库（pip install openpyxl）
-
-返回数据说明：
-- code: 状态码（SUCCESS/ERR_READ_XLSX/ERR_NO_OPENPYXL）
-- data: 包含headers、rows、row_count、sheet_names的字典
-- message: 操作结果消息""",
-    category=ToolCategory.DOCUMENT,
-    input_model=ReadXlsxInput,
-    examples=[
-        {"file_path": "D:/data/report.xlsx"},
-        {"file_path": "D:/data/report.xlsx", "sheet_name": "Sheet2"},
-    ]
-)
 def read_xlsx(
     file_path: str,
     sheet_name: str = None,

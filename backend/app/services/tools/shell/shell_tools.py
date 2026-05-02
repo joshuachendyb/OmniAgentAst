@@ -3,7 +3,7 @@
 Shell 工具函数模块 - Shell命令执行工具
 
 【创建时间】2026-04-29 小沈
-【规范】按新规范使用 @register_tool 装饰器 + Pydantic 模型注册
+【规范】2026-05-02 小沈 移除 @register_tool 装饰器，改由 shell_register.py 显式注册
 
 包含：
 - execute_command: 执行Shell命令
@@ -24,48 +24,11 @@ import uuid
 from typing import Optional, Dict, Any
 from datetime import datetime
 
-from app.services.tools.registry import register_tool, ToolCategory
-
-from app.services.tools.shell.shell_schema import (
-    ExecuteCommandInput,
-    GetWorkingDirectoryInput,
-    ChangeDirectoryInput,
-    CheckPathExistsInput,
-    GetShellOutputInput,
-    TerminateShellInput,
-)
-
 
 # 后台Shell会话管理器 - 小沈 2026-05-02
 _background_shells: Dict[str, Dict[str, Any]] = {}
 
 
-@register_tool(
-    name="execute_command",
-    description="""执行Shell命令并返回结果。
-
-使用场景：
-- 当用户需要执行系统命令时使用
-- 当用户需要运行脚本或程序时使用
-- 当用户需要获取系统信息（如ipconfig、dir等）时使用
-
-参数说明：
-- command: 要执行的Shell命令。必填参数
-- cwd: 工作目录，如果为None则使用当前工作目录。可选参数
-- timeout: 超时时间（秒），默认为30秒。可选参数
-
-返回数据说明：
-- stdout: 标准输出内容
-- stderr: 标准错误内容
-- returncode: 返回码（0表示成功）""",
-    category=ToolCategory.SHELL,
-    input_model=ExecuteCommandInput,
-    examples=[
-        {"command": "dir", "timeout": 10},
-        {"command": "python --version", "timeout": 10},
-        {"command": "dir /b D:/项目代码", "cwd": "D:/项目代码", "timeout": 30}
-    ]
-)
 def execute_command(command: str, cwd: Optional[str] = None, timeout: int = 60) -> dict:
     """执行Shell命令 - 小沈 2026-05-01"""
     try:
@@ -113,13 +76,6 @@ def execute_command(command: str, cwd: Optional[str] = None, timeout: int = 60) 
         }
 
 
-@register_tool(
-    name="get_working_directory",
-    description="获取当前工作目录的完整路径。",
-    category=ToolCategory.SHELL,
-    input_model=GetWorkingDirectoryInput,
-    examples=[{}]
-)
 def get_working_directory() -> dict:
     """获取当前工作目录"""
     try:
@@ -138,16 +94,6 @@ def get_working_directory() -> dict:
         }
 
 
-@register_tool(
-    name="change_directory",
-    description="改变当前工作目录到指定路径。",
-    category=ToolCategory.SHELL,
-    input_model=ChangeDirectoryInput,
-    examples=[
-        {"path": "D:/项目代码"},
-        {"path": "C:/Users"}
-    ]
-)
 def change_directory(path: str) -> dict:
     """切换工作目录"""
     try:
@@ -180,16 +126,6 @@ def change_directory(path: str) -> dict:
         }
 
 
-@register_tool(
-    name="check_path_exists",
-    description="检查指定的文件或目录是否存在，并返回类型信息。",
-    category=ToolCategory.SHELL,
-    input_model=CheckPathExistsInput,
-    examples=[
-        {"path": "D:/项目代码"},
-        {"path": "C:/Users/用户名/Documents/config.json"}
-    ]
-)
 def check_path_exists(path: str) -> dict:
     """检查路径是否存在"""
     try:
@@ -214,35 +150,6 @@ def check_path_exists(path: str) -> dict:
         }
 
 
-@register_tool(
-    name="get_shell_output",
-    description="""获取后台运行的 shell 命令输出。
-
-使用场景：
-- 当用户需要获取后台命令的执行结果时使用
-- 当用户想要检查后台命令是否完成时使用
-- 当用户需要分批获取长命令输出时使用
-
-参数说明：
-- shell_id：后台 shell 的 ID，由 execute_shell_command 的 run_in_background=true 时返回
-- filter：过滤输出的正则表达式（可选）
-- encoding：输出编码（可选），默认utf-8
-- max_lines：最大返回行数（可选），默认1000
-- tail：是否只返回最后N行（可选），默认false
-
-【重要】返回 shell 命令的 stdout 和 stderr 输出
-
-使用示例：
-- 获取输出：{"shell_id": "shell_abc123"}
-- 过滤输出：{"shell_id": "shell_abc123", "filter": "ERROR"}""",
-    category=ToolCategory.SHELL,
-    input_model=GetShellOutputInput,
-    examples=[
-        {"shell_id": "shell_abc123"},
-        {"shell_id": "shell_abc123", "filter": "ERROR|FAIL"},
-        {"shell_id": "shell_abc123", "max_lines": 500, "tail": True}
-    ]
-)
 def get_shell_output(
     shell_id: str,
     filter: Optional[str] = None,
@@ -346,33 +253,6 @@ def get_shell_output(
         }
 
 
-@register_tool(
-    name="terminate_shell",
-    description="""终止运行中的后台 shell 会话。
-
-使用场景：
-- 当用户需要终止正在运行的后台命令时使用
-- 当用户想要停止长时间运行的命令时使用
-- 当用户需要清理后台进程时使用
-
-参数说明：
-- shell_id：要终止的 shell ID
-- force：是否强制终止（可选），默认false
-- cleanup：终止后是否清理临时文件（可选），默认true
-
-【重要】强制终止后台进程，会丢失未读取的输出
-
-使用示例：
-- 终止后台shell：{"shell_id": "shell_abc123"}
-- 强制终止：{"shell_id": "shell_abc123", "force": true}""",
-    category=ToolCategory.SHELL,
-    input_model=TerminateShellInput,
-    examples=[
-        {"shell_id": "shell_abc123"},
-        {"shell_id": "shell_abc123", "force": True},
-        {"shell_id": "shell_abc123", "force": True, "cleanup": True}
-    ]
-)
 def terminate_shell(
     shell_id: str,
     force: bool = False,

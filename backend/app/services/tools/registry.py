@@ -106,6 +106,9 @@ class ToolCategory(Enum):
     ENV_CHECK = "env_check"          # 环境检查（小沈-2026-05-02）
     GUI = "gui"                      # GUI操作（小沈-2026-05-02）
     SUPPORT_TOOL = "support_tool"     # 支撑工具（公共函数+LLM可调用，小沈-2026-05-02）
+    REGISTRY_TOOLS = "registry_tools" # 注册表操作（小沈-2026-05-02）
+    DATA_FORMAT = "data_format"      # 数据格式（小沈-2026-05-02）
+    CODE_EXECUTION = "code_execution" # 代码执行（小沈-2026-05-02）
 
 
 @dataclass
@@ -430,6 +433,9 @@ class ToolRegistry:
             ToolCategory.NETWORK,
             ToolCategory.DATABASE,
             ToolCategory.DESKTOP,
+            ToolCategory.REGISTRY_TOOLS,
+            ToolCategory.DATA_FORMAT,
+            ToolCategory.CODE_EXECUTION,
             ToolCategory.DATA_ANALYSIS,
             ToolCategory.DOCUMENT,
             ToolCategory.ENV_CHECK,
@@ -451,6 +457,9 @@ class ToolRegistry:
             ToolCategory.NETWORK: "网络通信工具",
             ToolCategory.DATABASE: "数据库工具",
             ToolCategory.DESKTOP: "桌面工具",
+            ToolCategory.REGISTRY_TOOLS: "注册表操作工具",
+            ToolCategory.DATA_FORMAT: "数据格式工具",
+            ToolCategory.CODE_EXECUTION: "代码执行工具",
             ToolCategory.DATA_ANALYSIS: "数据分析工具",
             ToolCategory.DOCUMENT: "文档读写工具",
             ToolCategory.ENV_CHECK: "环境检查工具",

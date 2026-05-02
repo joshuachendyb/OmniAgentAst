@@ -21,14 +21,6 @@ from typing import Dict, Any, List, Union
 from pathlib import Path
 from datetime import datetime
 
-from app.services.tools.registry import register_tool, ToolCategory
-
-from app.services.tools.data_analysis.data_analysis_schema import (
-    ReadCsvDataframeInput,
-    GenerateChartInput,
-    AnalyzeDataInput,
-)
-
 
 def _check_pandas() -> bool:
     """检查pandas是否可用 - 小沈 2026-05-02"""
@@ -48,35 +40,6 @@ def _check_matplotlib() -> bool:
         return False
 
 
-@register_tool(
-    name="read_csv_dataframe",
-    description="""使用 pandas 读取 CSV 文件并进行数据分析，返回 DataFrame 格式支持后续统计分析。
-
-使用场景：
-- 当用户需要读取 CSV 文件并进行数据分析时使用
-- 当用户想要对表格数据进行统计、筛选、排序时使用
-- 当用户需要进行数据清洗和预处理时使用
-
-参数说明：
-- file_path：CSV 文件路径
-- encoding：文件编码，默认 utf-8
-- delimiter：分隔符，默认 ,
-- has_header：是否有表头，默认 true
-- max_rows：最大读取行数，默认 1000
-
-【重要】需要安装 pandas 库（pip install pandas）
-
-返回数据说明：
-- code: 状态码（SUCCESS/ERR_READ_CSV_DATAFRAME/ERR_NO_PANDAS）
-- data: 包含columns、rows、row_count、dtypes的字典
-- message: 操作结果消息""",
-    category=ToolCategory.DATA_ANALYSIS,
-    input_model=ReadCsvDataframeInput,
-    examples=[
-        {"file_path": "D:/data/users.csv"},
-        {"file_path": "D:/data/users.csv", "encoding": "gbk", "delimiter": ";"},
-    ]
-)
 def read_csv_dataframe(
     file_path: str,
     encoding: str = "utf-8",
@@ -146,36 +109,6 @@ def read_csv_dataframe(
         }
 
 
-@register_tool(
-    name="generate_chart",
-    description="""使用 matplotlib 生成数据可视化图表。
-
-使用场景：
-- 当用户需要将数据可视化展示时使用
-- 当用户想要生成柱状图、折线图、饼图等图表时使用
-- 当用户需要生成报告中的图表时使用
-
-参数说明：
-- data：图表数据（JSON 格式）
-- chart_type：图表类型（可选），可填 bar/line/pie/scatter
-- title：图表标题
-- x_label：X轴标签
-- y_label：Y轴标签
-- output_path：输出图片路径（可选）
-
-【重要】需要安装 matplotlib 库（pip install matplotlib）
-
-返回数据说明：
-- code: 状态码（SUCCESS/ERR_GENERATE_CHART/ERR_NO_MATPLOTLIB）
-- data: 输出图片路径
-- message: 操作结果消息""",
-    category=ToolCategory.DATA_ANALYSIS,
-    input_model=GenerateChartInput,
-    examples=[
-        {"data": {"labels": ["A", "B"], "values": [10, 20]}, "chart_type": "bar", "title": "销售统计"},
-        {"data": {"labels": ["1月", "2月"], "values": [100, 200]}, "chart_type": "line", "output_path": "D:/output/chart.png"},
-    ]
-)
 def generate_chart(
     data: Dict[str, Any],
     chart_type: str = "bar",
@@ -252,33 +185,6 @@ def generate_chart(
         }
 
 
-@register_tool(
-    name="analyze_data",
-    description="""对数据集进行统计分析，返回描述性统计信息。
-
-使用场景：
-- 当用户需要对数据进行统计分析时使用
-- 当用户想要获取数据的均值、总和、最大值、最小值等统计信息时使用
-- 当用户需要进行数据分组分析时使用
-
-参数说明：
-- data：要分析的数据（数组或 CSV 文件路径）
-- operations：分析操作，可选 mean/sum/count/min/max/std（默认全部）
-- group_by：分组字段
-
-【重要】需要安装 pandas 库
-
-返回数据说明：
-- code: 状态码（SUCCESS/ERR_ANALYZE_DATA/ERR_NO_PANDAS）
-- data: 统计分析结果
-- message: 操作结果消息""",
-    category=ToolCategory.DATA_ANALYSIS,
-    input_model=AnalyzeDataInput,
-    examples=[
-        {"data": [{"name": "A", "value": 10}, {"name": "B", "value": 20}]},
-        {"data": "D:/data/users.csv", "operations": ["mean", "max"]},
-    ]
-)
 def analyze_data(
     data: Union[str, List[Dict[str, Any]]],
     operations: List[str] = None,

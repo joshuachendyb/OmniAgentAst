@@ -16,6 +16,9 @@
 - check_docx_readable: 检查Word可读性
 - check_xlsx_readable: 检查Excel可读性
 
+【2026-05-02 小沈重构】
+- 移除所有 @register_tool 装饰器，改由 env_check_register.py 显式注册
+
 Author: 小沈 - 2026-05-02
 """
 
@@ -28,17 +31,6 @@ import subprocess
 from typing import Dict, Any
 from pathlib import Path
 
-from app.services.tools.registry import register_tool, ToolCategory
-
-from app.services.tools.env_check.env_check_schema import (
-    ValidateCodeSafetyInput,
-    CheckModuleAvailableInput,
-    ValidateCsvFormatInput,
-    ValidateChartDataInput,
-    CheckPdfReadableInput,
-    CheckDocxReadableInput,
-    CheckXlsxReadableInput,
-)
 
 DANGEROUS_PATTERNS = [
     (r"os\.system\s*\(", "系统调用(os.system)"),
@@ -57,20 +49,6 @@ DANGEROUS_PATTERNS = [
 ]
 
 
-@register_tool(
-    name="check_python_available",
-    description="""检查Python环境是否可用。
-
-使用场景：
-- 当用户需要确认Python环境是否安装时使用
-- 当用户在执行Python代码前需要验证环境时使用
-
-【重要】返回Python环境是否可用（true/false）及版本信息""",
-    category=ToolCategory.ENV_CHECK,
-    input_model=None,
-    input_schema={"type": "object", "properties": {}, "required": []},
-    examples=[{}]
-)
 def check_python_available() -> Dict[str, Any]:
     """检查Python环境是否可用 - 小沈 2026-05-02"""
     try:
@@ -93,22 +71,6 @@ def check_python_available() -> Dict[str, Any]:
         }
 
 
-@register_tool(
-    name="validate_code_safety",
-    description="""验证代码安全性，防止危险操作。
-
-使用场景：
-- 当用户需要检查代码是否安全时使用
-- 当用户想要在执行代码前进行安全验证时使用
-
-参数说明：
-- code：要验证的代码
-
-【重要】返回代码是否安全（true/false）及安全评估信息""",
-    category=ToolCategory.ENV_CHECK,
-    input_model=ValidateCodeSafetyInput,
-    examples=[{"code": "import os; os.system('dir')"}]
-)
 def validate_code_safety(code: str) -> Dict[str, Any]:
     """验证代码安全性 - 小沈 2026-05-02"""
     warnings = []
@@ -129,20 +91,6 @@ def validate_code_safety(code: str) -> Dict[str, Any]:
     }
 
 
-@register_tool(
-    name="check_node_available",
-    description="""检查Node.js环境是否可用。
-
-使用场景：
-- 当用户需要确认Node.js环境是否安装时使用
-- 当用户在执行JavaScript代码前需要验证环境时使用
-
-【重要】返回Node.js环境是否可用（true/false）及版本信息""",
-    category=ToolCategory.ENV_CHECK,
-    input_model=None,
-    input_schema={"type": "object", "properties": {}, "required": []},
-    examples=[{}]
-)
 def check_node_available() -> Dict[str, Any]:
     """检查Node.js环境是否可用 - 小沈 2026-05-02"""
     try:
@@ -179,22 +127,6 @@ def check_node_available() -> Dict[str, Any]:
         }
 
 
-@register_tool(
-    name="check_module_available",
-    description="""检查Python模块是否已安装。
-
-使用场景：
-- 当用户需要确认某个Python模块是否已安装时使用
-- 当用户在导入模块前需要验证是否可用时使用
-
-参数说明：
-- module_name：模块名称
-
-【重要】返回模块是否已安装（true/false）""",
-    category=ToolCategory.ENV_CHECK,
-    input_model=CheckModuleAvailableInput,
-    examples=[{"module_name": "pandas"}]
-)
 def check_module_available(module_name: str) -> Dict[str, Any]:
     """检查Python模块是否已安装 - 小沈 2026-05-02"""
     try:
@@ -219,22 +151,6 @@ def check_module_available(module_name: str) -> Dict[str, Any]:
         }
 
 
-@register_tool(
-    name="validate_csv_format",
-    description="""验证CSV文件格式是否正确。
-
-使用场景：
-- 当用户需要确认CSV文件格式是否正确时使用
-- 当用户在读取CSV前需要验证文件完整性时使用
-
-参数说明：
-- file_path：CSV文件路径
-
-【重要】返回CSV文件格式是否正确（true/false）及错误信息""",
-    category=ToolCategory.ENV_CHECK,
-    input_model=ValidateCsvFormatInput,
-    examples=[{"file_path": "D:/data/users.csv"}]
-)
 def validate_csv_format(file_path: str) -> Dict[str, Any]:
     """验证CSV文件格式 - 小沈 2026-05-02"""
     path = Path(file_path)
@@ -289,22 +205,6 @@ def validate_csv_format(file_path: str) -> Dict[str, Any]:
     }
 
 
-@register_tool(
-    name="validate_chart_data",
-    description="""验证图表数据格式是否正确。
-
-使用场景：
-- 当用户需要确认图表数据格式是否正确时使用
-- 当用户在生成图表前需要验证数据时使用
-
-参数说明：
-- data：图表数据（JSON格式）
-
-【重要】返回数据格式是否正确（true/false）及错误信息""",
-    category=ToolCategory.ENV_CHECK,
-    input_model=ValidateChartDataInput,
-    examples=[{"data": {"labels": ["A", "B"], "values": [10, 20]}}]
-)
 def validate_chart_data(data: Dict[str, Any]) -> Dict[str, Any]:
     """验证图表数据格式 - 小沈 2026-05-02"""
     errors = []
@@ -335,22 +235,6 @@ def validate_chart_data(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-@register_tool(
-    name="check_pdf_readable",
-    description="""检查PDF文件是否可读。
-
-使用场景：
-- 当用户需要确认PDF文件是否可读取时使用
-- 当用户在读取PDF前需要验证文件是否损坏时使用
-
-参数说明：
-- file_path：PDF文件路径
-
-【重要】返回PDF文件是否可读（true/false）""",
-    category=ToolCategory.ENV_CHECK,
-    input_model=CheckPdfReadableInput,
-    examples=[{"file_path": "D:/documents/report.pdf"}]
-)
 def check_pdf_readable(file_path: str) -> Dict[str, Any]:
     """检查PDF文件是否可读 - 小沈 2026-05-02"""
     path = Path(file_path)
@@ -384,22 +268,6 @@ def check_pdf_readable(file_path: str) -> Dict[str, Any]:
         }
 
 
-@register_tool(
-    name="check_docx_readable",
-    description="""检查Word文件是否可读。
-
-使用场景：
-- 当用户需要确认Word文件是否可读取时使用
-- 当用户在读取Word前需要验证文件是否损坏时使用
-
-参数说明：
-- file_path：Word文件路径
-
-【重要】返回Word文件是否可读（true/false）""",
-    category=ToolCategory.ENV_CHECK,
-    input_model=CheckDocxReadableInput,
-    examples=[{"file_path": "D:/documents/report.docx"}]
-)
 def check_docx_readable(file_path: str) -> Dict[str, Any]:
     """检查Word文件是否可读 - 小沈 2026-05-02"""
     path = Path(file_path)
@@ -433,22 +301,6 @@ def check_docx_readable(file_path: str) -> Dict[str, Any]:
         }
 
 
-@register_tool(
-    name="check_xlsx_readable",
-    description="""检查Excel文件是否可读。
-
-使用场景：
-- 当用户需要确认Excel文件是否可读取时使用
-- 当用户在读取Excel前需要验证文件是否损坏时使用
-
-参数说明：
-- file_path：Excel文件路径
-
-【重要】返回Excel文件是否可读（true/false）""",
-    category=ToolCategory.ENV_CHECK,
-    input_model=CheckXlsxReadableInput,
-    examples=[{"file_path": "D:/data/report.xlsx"}]
-)
 def check_xlsx_readable(file_path: str) -> Dict[str, Any]:
     """检查Excel文件是否可读 - 小沈 2026-05-02"""
     path = Path(file_path)

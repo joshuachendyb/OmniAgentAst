@@ -74,7 +74,7 @@ def _register_registry_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.SYSTEM,
+            category=ToolCategory.REGISTRY_TOOLS,
             implementation=method,
             version="1.0.0",
             input_model=input_model,
