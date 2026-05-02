@@ -27,6 +27,10 @@ from app.services.tools import env  # 触发env工具注册
 from app.services.tools import system  # 触发system工具注册
 from app.services.tools import database  # 触发database工具注册
 from app.services.tools import desktop  # 触发desktop工具注册
+from app.services.tools import registry_tools  # 触发registry_tools工具注册（小沈-2026-05-02）
+from app.services.tools import data_format  # 触发data_format工具注册（小沈-2026-05-02）
+from app.services.tools import code_execution  # 触发code_execution工具注册（小沈-2026-05-02）
+from app.services.tools import data_analysis  # 触发data_analysis工具注册（小沈-2026-05-02）
 
 __all__ = [
     # registry
@@ -51,4 +55,8 @@ __all__ = [
     "desktop",
     "time",
     "shell",
+    "registry_tools",
+    "data_format",
+    "code_execution",
+    "data_analysis",
 ]

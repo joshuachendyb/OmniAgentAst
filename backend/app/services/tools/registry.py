@@ -101,6 +101,7 @@ class ToolCategory(Enum):
     SYSTEM = "system"        # 系统信息
     DATABASE = "database"   # 数据库访问
     DESKTOP = "desktop"     # 桌面功能
+    DATA_ANALYSIS = "data_analysis"  # 数据分析（小沈-2026-05-02）
 
 
 @dataclass
@@ -413,6 +414,7 @@ class ToolRegistry:
             ToolCategory.NETWORK,
             ToolCategory.DATABASE,
             ToolCategory.DESKTOP,
+            ToolCategory.DATA_ANALYSIS,
         ]
 
         # 如果指定了priority_category，移到最前面
@@ -429,6 +431,7 @@ class ToolRegistry:
             ToolCategory.NETWORK: "网络通信工具",
             ToolCategory.DATABASE: "数据库工具",
             ToolCategory.DESKTOP: "桌面工具",
+            ToolCategory.DATA_ANALYSIS: "数据分析工具",
         }
 
         for cat in category_order:
