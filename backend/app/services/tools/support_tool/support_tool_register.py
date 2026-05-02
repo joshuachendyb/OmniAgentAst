@@ -4,6 +4,7 @@ Support Tool Register - 支撑工具显式注册
 
 【架构规范】2026-05-02 小沈
 【更新时间】2026-05-02 小沈 - 从@register_tool装饰器改为显式注册
+【更新时间】2026-05-02 小沈 - 将4个使用input_schema的工具改为使用Pydantic模型
 
 ================================================================================
 一、注册方式
@@ -13,13 +14,13 @@ Support Tool Register - 支撑工具显式注册
 ================================================================================
 二、包含工具（7个）
 ================================================================================
-- check_db_exists: 检查数据库是否存在
-- get_table_schema: 获取表结构
-- begin_transaction: 开始事务（input_schema）
-- commit_transaction: 提交事务（input_schema）
-- rollback_transaction: 回滚事务（input_schema）
-- check_network_connectivity: 检查网络连通性（input_schema）
-- validate_url: 验证URL格式
+- check_db_exists: 检查数据库是否存在（input_model）
+- get_table_schema: 获取表结构（input_model）
+- begin_transaction: 开始事务（input_model）
+- commit_transaction: 提交事务（input_model）
+- rollback_transaction: 回滚事务（input_model）
+- check_network_connectivity: 检查网络连通性（input_model）
+- validate_url: 验证URL格式（input_model）
 
 Author: 小沈 - 2026-05-02
 """
@@ -31,6 +32,10 @@ from app.services.tools.support_tool.support_tool_schema import (
     CheckDbExistsInput,
     GetTableSchemaInput,
     ValidateUrlInput,
+    BeginTransactionInput,
+    CommitTransactionInput,
+    RollbackTransactionInput,
+    CheckNetworkConnectivityInput,
 )
 from app.services.tools.support_tool.support_tool_tools import (
     check_db_exists,
@@ -126,21 +131,6 @@ EXAMPLES = {
     "validate_url": [{"url": "https://example.com"}],
 }
 
-INPUT_SCHEMAS = {
-    "begin_transaction": {"type": "object", "properties": {}, "required": []},
-    "commit_transaction": {
-        "type": "object",
-        "properties": {"transaction_id": {"type": "string", "description": "事务ID"}},
-        "required": ["transaction_id"],
-    },
-    "rollback_transaction": {
-        "type": "object",
-        "properties": {"transaction_id": {"type": "string", "description": "事务ID"}},
-        "required": ["transaction_id"],
-    },
-    "check_network_connectivity": {"type": "object", "properties": {}, "required": []},
-}
-
 
 def _register_support_tool_tools():
     """注册所有支撑工具 - 小沈 2026-05-02"""
@@ -168,7 +158,7 @@ def _register_support_tool_tools():
         description=DESCRIPTIONS["begin_transaction"],
         category=ToolCategory.SUPPORT_TOOL,
         implementation=begin_transaction,
-        input_schema=INPUT_SCHEMAS["begin_transaction"],
+        input_model=BeginTransactionInput,
         examples=EXAMPLES["begin_transaction"],
     )
 
@@ -177,7 +167,7 @@ def _register_support_tool_tools():
         description=DESCRIPTIONS["commit_transaction"],
         category=ToolCategory.SUPPORT_TOOL,
         implementation=commit_transaction,
-        input_schema=INPUT_SCHEMAS["commit_transaction"],
+        input_model=CommitTransactionInput,
         examples=EXAMPLES["commit_transaction"],
     )
 
@@ -186,7 +176,7 @@ def _register_support_tool_tools():
         description=DESCRIPTIONS["rollback_transaction"],
         category=ToolCategory.SUPPORT_TOOL,
         implementation=rollback_transaction,
-        input_schema=INPUT_SCHEMAS["rollback_transaction"],
+        input_model=RollbackTransactionInput,
         examples=EXAMPLES["rollback_transaction"],
     )
 
@@ -195,7 +185,7 @@ def _register_support_tool_tools():
         description=DESCRIPTIONS["check_network_connectivity"],
         category=ToolCategory.SUPPORT_TOOL,
         implementation=check_network_connectivity,
-        input_schema=INPUT_SCHEMAS["check_network_connectivity"],
+        input_model=CheckNetworkConnectivityInput,
         examples=EXAMPLES["check_network_connectivity"],
     )
 
