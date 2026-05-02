@@ -156,8 +156,8 @@ class SearchFileContentInput(BaseModel):
     )
 
 
-class SearchFilesByNameInput(BaseModel):
-    """search_files 工具的输入参数（搜索文件名）- 小健 2026-05-02 增加excludePatterns/ignore_case/type"""
+class SearchFilesInput(BaseModel):
+    """search_files 工具的输入参数 - 小健 2026-05-02 增加excludePatterns/ignore_case/type"""
     file_pattern: str = Field(
         description="文件名匹配模式，支持通配符（* 匹配任意字符，? 匹配单个字符）"
     )
@@ -587,7 +587,7 @@ __all__ = [
     "DeleteFileInput",
     "MoveFileInput",
     "SearchFileContentInput",
-    "SearchFilesByNameInput",
+    "SearchFilesInput",
     "GenerateReportInput",
     "CopyFileInput",
     "CreateDirectoryInput",

@@ -47,7 +47,7 @@ from app.services.tools.file.file_schema import (
     DeleteFileInput,
     MoveFileInput,
     SearchFileContentInput,
-    SearchFilesByNameInput,
+    SearchFilesInput,
     GenerateReportInput,
     CopyFileInput,
     CreateDirectoryInput,
@@ -716,12 +716,12 @@ class FileTools:
                 "operation_id": None
             }, "write_text_file")
 
-    async def write_file(self, file_path: str, content: str, encoding: str = "utf-8",
+    async def write_file(self, file_path: str, text: str, encoding: str = "utf-8",
                          append: bool = False, create_parents: bool = True,
                          unescape: bool = True) -> Dict[str, Any]:
         """write_file兼容别名 - 小健 2026-05-02"""
         return await self.write_text_file(
-            file_path=file_path, text=content, encoding=encoding,
+            file_path=file_path, text=text, encoding=encoding,
             append=append, create_parents=create_parents, unescape=unescape
         )
     

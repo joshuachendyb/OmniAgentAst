@@ -69,7 +69,7 @@ from app.services.tools.file.file_schema import (
     DeleteFileInput,
     MoveFileInput,
     SearchFileContentInput,
-    SearchFilesByNameInput,
+    SearchFilesInput,
     GenerateReportInput,
     CopyFileInput,
     CreateDirectoryInput,
@@ -140,8 +140,8 @@ FILE_TOOL_EXAMPLES = {
         {"file_path": "D:/项目代码/logs/app.log", "text": "新增日志行\\n", "append": True}
     ],
     "write_file": [
-        {"file_path": "C:/Users/用户名/Documents/test.txt", "content": "Hello World"},
-        {"file_path": "D:/项目代码/config.json", "content": "{\"key\": \"value\"}", "encoding": "utf-8"}
+        {"file_path": "C:/Users/用户名/Documents/test.txt", "text": "Hello World"},
+        {"file_path": "D:/项目代码/config.json", "text": "{\"key\": \"value\"}", "encoding": "utf-8"}
     ],
     "list_directory": [
         {"dir_path": "C:/Users/用户名/Documents"},
@@ -152,24 +152,24 @@ FILE_TOOL_EXAMPLES = {
         {"file_path": "D:/项目代码/logs/app.log"}
     ],
     "move_file": [
-        {"source_path": "C:/Users/用户名/Desktop/old.txt", "dest_path": "C:/Users/用户名/Documents/new.txt"},
-        {"source_path": "D:/项目代码/a.txt", "dest_path": "D:/项目代码/b.txt"}
+        {"source_path": "C:/Users/用户名/Desktop/old.txt", "destination_path": "C:/Users/用户名/Documents/new.txt"},
+        {"source_path": "D:/项目代码/a.txt", "destination_path": "D:/项目代码/b.txt"}
     ],
     "search_file_content": [
-        {"dir_path": "D:/项目代码", "pattern": "TODO", "file_types": ["*.py", "*.js"]},
-        {"dir_path": "C:/Users/用户名/Documents", "pattern": "import", "case_sensitive": False}
+        {"path": "D:/项目代码", "pattern": "TODO", "file_pattern": "*.py"},
+        {"path": "C:/Users/用户名/Documents", "pattern": "import", "ignore_case": True}
     ],
     "search_files": [
-        {"dir_path": "D:/项目代码", "pattern": "*.py"},
-        {"dir_path": "C:/Users/用户名/Documents", "pattern": "config*"}
+        {"path": "D:/项目代码", "file_pattern": "*.py"},
+        {"path": "C:/Users/用户名/Documents", "file_pattern": "config*"}
     ],
     "generate_report": [
-        {"dir_path": "D:/项目代码", "output_path": "D:/项目代码/report.txt", "format": "text"},
-        {"dir_path": "C:/Users/用户名/Documents", "output_path": "C:/Users/用户名/Documents/report.json", "format": "json"}
+        {"output_dir": "D:/项目代码"},
+        {"output_dir": "C:/Users/用户名/Documents"}
     ],
     "copy_file": [
-        {"source_path": "C:/Users/用户名/Documents/source.txt", "dest_path": "C:/Users/用户名/Documents/dest.txt"},
-        {"source_path": "D:/项目代码/a.py", "dest_path": "D:/项目代码/b.py"}
+        {"source_path": "C:/Users/用户名/Documents/source.txt", "destination_path": "C:/Users/用户名/Documents/dest.txt"},
+        {"source_path": "D:/项目代码/a.py", "destination_path": "D:/项目代码/b.py"}
     ],
     "create_directory": [
         {"dir_path": "C:/Users/用户名/Documents/新文件夹"},
@@ -180,24 +180,24 @@ FILE_TOOL_EXAMPLES = {
         {"file_path": "D:/项目代码/main.py"}
     ],
     "compare_files": [
-        {"file1_path": "C:/Users/用户名/Documents/a.txt", "file2_path": "C:/Users/用户名/Documents/b.txt"},
-        {"file1_path": "D:/项目代码/v1.py", "file2_path": "D:/项目代码/v2.py"}
+        {"file_path1": "C:/Users/用户名/Documents/a.txt", "file_path2": "C:/Users/用户名/Documents/b.txt"},
+        {"file_path1": "D:/项目代码/v1.py", "file_path2": "D:/项目代码/v2.py", "algorithm": "content"}
     ],
     "batch_rename": [
         {"dir_path": "C:/Users/用户名/Documents", "pattern": "*.txt", "replacement": "新文件_"},
         {"dir_path": "D:/项目代码", "pattern": "old_", "replacement": "new_"}
     ],
     "compress_files": [
-        {"files": ["C:/Users/用户名/Documents/a.txt", "C:/Users/用户名/Documents/b.txt"], "output_path": "C:/Users/用户名/Documents/archive.zip"},
-        {"files": ["D:/项目代码/file1.py", "D:/项目代码/file2.py"], "output_path": "D:/项目代码/code.zip"}
+        {"source_path": "C:/Users/用户名/Documents/a.txt", "destination_path": "C:/Users/用户名/Documents/archive.zip"},
+        {"source_path": "D:/项目代码/src", "destination_path": "D:/项目代码/code.zip", "format": "zip", "compression_level": 6}
     ],
     "file_monitor": [
-        {"dir_path": "C:/Users/用户名/Documents", "events": ["create", "modify"]},
-        {"dir_path": "D:/项目代码", "events": ["delete"]}
+        {"directory": "C:/Users/用户名/Documents", "event_types": ["created", "modified"]},
+        {"directory": "D:/项目代码", "event_types": ["deleted"]}
     ],
     "file_statistics": [
-        {"dir_path": "C:/Users/用户名/Documents"},
-        {"dir_path": "D:/项目代码", "include_patterns": ["*.py", "*.js"]}
+        {"directory": "C:/Users/用户名/Documents"},
+        {"directory": "D:/项目代码", "filters": {"file_type": ["*.py", "*.js"]}}
     ],
     "file_checksum": [
         {"file_path": "C:/Users/用户名/Documents/data.zip", "algorithm": "md5"},
@@ -307,7 +307,7 @@ def _register_file_tools():
         "delete_file": DeleteFileInput,
         "move_file": MoveFileInput,
         "search_file_content": SearchFileContentInput,
-        "search_files": SearchFilesByNameInput,
+        "search_files": SearchFilesInput,
         "generate_report": GenerateReportInput,
         "copy_file": CopyFileInput,
         "create_directory": CreateDirectoryInput,
