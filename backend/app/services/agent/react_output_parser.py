@@ -64,28 +64,17 @@ REACT_KEYWORDS = {
 }
 
 
-def _get_known_tools():
-    """从工具注册中心动态获取已知工具名 - 小健 2026-05-02"""
+def _get_all_tool_names():
+    """从注册中心获取所有工具名 - 小健 2026-05-02"""
     try:
-        from app.services.tools.file.file_register import FILE_TOOL_DESCRIPTIONS
-        from app.services.tools.registry import _FILE_TOOL_NAMES
-        return sorted(set(_FILE_TOOL_NAMES) | set(FILE_TOOL_DESCRIPTIONS.keys()))
+        from app.services.tools.file.file_register import get_all_file_tool_names
+        tools = set(get_all_file_tool_names())
+        tools.update(["execute_command", "run_command", "get_current_time",
+                      "get_system_info", "finish", "finish_with_error"])
+        return sorted(tools)
     except Exception:
         return ["list_directory", "read_file", "write_file", "delete_file",
                 "move_file", "search_files", "grep_file_content", "generate_report"]
-
-
-def _get_required_params(tool_name: str):
-    """从Pydantic模型schema动态获取必需参数 - 小健 2026-05-02"""
-    try:
-        from app.services.tools.file.file_register import get_tool_input_models
-        models = get_tool_input_models()
-        if tool_name in models:
-            schema = models[tool_name].model_json_schema()
-            return schema.get("required", [])
-    except Exception:
-        pass
-    return []
 
 
 # =============================================================================
@@ -1006,50 +995,8 @@ def _check_missing_required_params(tool_name: str, tool_params: Dict, original_o
     """
     from app.utils.logger import logger
     
-    # 如果没有定义必需参数，返回无缺失
-    required = _get_required_params(tool_name)
-    if not required:
-        return tool_params, False
-    
-    missing = [p for p in required if p not in tool_params]
-    
-    if not missing:
-        # 没有缺失参数
-        return tool_params, False
-    
-    logger.warning(f"[_check_missing_required_params] tool={tool_name}, 缺失必需参数={missing}, 当前参数={list(tool_params.keys())}")
-    
-    # 尝试从原始输出中提取缺失的参数
-    supplemented = False
-    if original_output:
-        import re
-        
-        for param in missing:
-            # 尝试多种模式匹配
-            patterns = [
-                # 匹配 "file_path": "xxx" 或 file_path: xxx
-                rf'["\']?{param}["\']?\s*:\s*["\']([^"\']+)["\']',
-                rf'["\']?{param}["\']?\s*:\s*([^\s,\}}]+)',
-                # 匹配 path 参数（兼容file_path）
-                rf'(?:file_?path)\s*[=:]\s*["\']?([^"\'\s,\}}]+)',
-            ]
-            
-            for pattern in patterns:
-                match = re.search(pattern, original_output, re.IGNORECASE)
-                if match:
-                    value = match.group(1).strip()
-                    if value and len(value) > 0 and value not in ["null", "none", "undefined"]:
-                        tool_params[param] = value
-                        logger.info(f"[_check_missing_required_params] 从原始输出补充参数 {param}={value[:50]}...")
-                        supplemented = True
-                        break
-    
-    # 如果仍然缺失必需参数，返回None让调用方返回parse_error
-    still_missing = [p for p in required if p not in tool_params]
-    if still_missing:
-        logger.warning(f"[_check_missing_required_params] 无法补充缺失参数={still_missing}，返回parse_error让LLM重试")
-        return None, True
-    
+    # 必需参数校验已删除 - 小健 2026-05-02
+    # Pydantic模型在执行时自动校验required参数，此处不再重复检查
     return tool_params, False
 
 
@@ -1451,7 +1398,7 @@ def _extract_by_known_tools(content: str) -> Optional[Dict[str, Any]]:
     """
     content_lower = content.lower()
     
-    for tool in _get_known_tools():
+    for tool in _get_all_tool_names():
         # 查找工具名出现位置（单词边界匹配）
         pattern = rf'\b{re.escape(tool)}\b'
         tool_match = re.search(pattern, content_lower, re.IGNORECASE)

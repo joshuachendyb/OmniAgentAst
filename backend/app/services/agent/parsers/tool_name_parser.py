@@ -12,12 +12,11 @@ from typing import Dict, Any, Optional, List
 from .base_parser import BaseParser, ParseResult
 
 
-def _get_known_tools() -> List[str]:
-    """从工具注册中心动态获取已知工具名 - 小健 2026-05-02"""
+def _get_all_tool_names() -> List[str]:
+    """从注册中心获取所有工具名 - 小健 2026-05-02"""
     try:
-        from app.services.tools.file.file_register import FILE_TOOL_DESCRIPTIONS
-        from app.services.tools.registry import _FILE_TOOL_NAMES
-        tools = set(_FILE_TOOL_NAMES) | set(FILE_TOOL_DESCRIPTIONS.keys())
+        from app.services.tools.file.file_register import get_all_file_tool_names
+        tools = set(get_all_file_tool_names())
         tools.update(["execute_command", "run_command", "get_current_time",
                       "get_system_info", "finish", "finish_with_error"])
         return sorted(tools)
@@ -34,14 +33,14 @@ class ToolNameParser(BaseParser):
     def can_parse(self, output: str) -> bool:
         """检查是否包含已知工具名"""
         output = output.strip()
-        return any(tool in output for tool in _get_known_tools())
+        return any(tool in output for tool in _get_all_tool_names())
     
     def parse(self, output: str) -> ParseResult:
         """工具名兜底匹配"""
         output = output.strip()
         
         # 查找已知工具名
-        for tool_name in _get_known_tools():
+        for tool_name in _get_all_tool_names():
             if tool_name in output:
                 # 尝试提取参数
                 tool_params = self._extract_params(output, tool_name)

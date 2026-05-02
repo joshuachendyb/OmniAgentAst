@@ -70,7 +70,7 @@ class TextStrategy(LLMStrategy):
     - 方案B: 工具名保底匹配
     """
     # P4: 从注册中心动态获取工具名 - 小健 2026-05-02
-    from app.services.agent.react_output_parser import _get_known_tools
+    from app.services.agent.react_output_parser import _get_all_tool_names
     
     async def call(
         self,
@@ -310,7 +310,7 @@ class TextStrategy(LLMStrategy):
         
         content_lower = content.lower()
         
-        for tool in _get_known_tools():
+        for tool in _get_all_tool_names():
             # 查找工具名出现位置
             pattern = rf'\b{re.escape(tool)}\b'
             if re.search(pattern, content_lower, re.IGNORECASE):
@@ -333,9 +333,18 @@ class TextStrategy(LLMStrategy):
                         break
 
                 if extracted_path:
-                    # 从tool_meta.py获取工具分类 - 小健 2026-05-02
-                    from app.services.tools.tool_meta import get_path_param_name, PATH_PARAM_TOOLS
-                    param_name = get_path_param_name(tool)
+                    # 从Pydantic schema获取第一个参数名作为路径参数 - 小健 2026-05-02
+                    try:
+                        from app.services.tools.file.file_register import get_tool_input_models
+                        models = get_tool_input_models()
+                        if tool in models:
+                            schema = models[tool].model_json_schema()
+                            props = list(schema.get("properties", {}).keys())
+                            param_name = props[0] if props else "path"
+                        else:
+                            param_name = "path"
+                    except Exception:
+                        param_name = "path"
                     params[param_name] = extracted_path
                 
                 # 2. 查找 text 参数（用于 write_file 等工具）- 小健 2026-05-02 content→text

@@ -46,35 +46,6 @@ TOOL_TIMEOUTS = {
 }
 
 
-PATH_PARAM_TOOLS = {
-    "file": {
-        "write_file", "write_text_file", "read_file", "read_text_file",
-        "delete_file", "copy_file", "get_file_info", "file_checksum",
-        "compare_files", "rename_file", "precise_replace_in_file",
-        "edit_file", "read_batch_file", "read_media_file",
-    },
-    "directory": {
-        "list_directory", "create_directory", "get_directory_tree",
-        "file_monitor", "file_statistics", "generate_report",
-    },
-    "move": {
-        "move_file",
-    },
-}
-
-
 def get_timeout(tool_name: str) -> int:
     """获取工具超时时间（秒）"""
     return TOOL_TIMEOUTS.get(tool_name, TOOL_TIMEOUTS["default"])
-
-
-def get_path_param_name(tool_name: str) -> str:
-    """根据工具类型返回路径参数名"""
-    if tool_name in PATH_PARAM_TOOLS["file"]:
-        return "file_path"
-    elif tool_name in PATH_PARAM_TOOLS["directory"]:
-        return "dir_path"
-    elif tool_name in PATH_PARAM_TOOLS["move"]:
-        return "source_path"
-    else:
-        return "path"

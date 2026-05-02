@@ -353,4 +353,19 @@ from app.services.tools.file.file_tools import FileTools, get_file_tools
 __all__ = [
     "FileTools",
     "get_file_tools",
+    "FILE_TOOL_DESCRIPTIONS",
+    "TOOL_INPUT_MODELS",
+    "FILE_TOOL_EXAMPLES",
+    "get_all_file_tool_names",
+    "get_tool_input_models",
 ]
+
+
+def get_all_file_tool_names() -> list:
+    """获取所有已注册的文件工具名 - 小健 2026-05-02"""
+    return list(TOOL_INPUT_MODELS.keys())
+
+
+def get_tool_input_models() -> dict:
+    """获取所有工具的Pydantic输入模型映射 - 小健 2026-05-02"""
+    return TOOL_INPUT_MODELS
