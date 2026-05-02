@@ -95,7 +95,7 @@ from app.services.tools.file.file_tools import FileTools, get_file_tools
 # 工具描述（用于注册）
 FILE_TOOL_DESCRIPTIONS = {
     "read_file": "读取任意类型文件内容（支持文本/图片/PDF），按行分页读取大文件，自动检测编码",
-    "write_text_file": "写入或追加文本文件内容，自动创建父目录，支持编码设置和追加模式",
+    "write_text_file": "写入或追加文本文件内容（仅支持文本文件，禁止写入二进制文件），自动创建父目录，支持编码设置和追加模式",
     "write_file": "写入文件内容（write_text_file的兼容别名）",
     "list_directory": "列出目录内容，返回扁平列表，支持递归/排序/分页/显示隐藏文件。适合查看单个目录、找大文件、清理空间",
     "delete_file": "删除文件或目录（永久删除不进回收站），支持递归删除目录和强制删除只读文件",
@@ -114,8 +114,8 @@ FILE_TOOL_DESCRIPTIONS = {
     "read_text_file": "读取纯文本文件内容，支持head/tail只读前N行或后N行。禁止读取二进制文件。适合查看日志、代码、配置文件",
     "read_media_file": "读取图片或音频文件，返回Base64编码。适合读取.png/.jpg/.mp3等二进制媒体文件",
     "read_batch_file": "批量读取多个文本文件内容，并行读取提高效率。适合对比多个文件、批量查看配置",
-    "precise_replace_in_file": "精确替换单个字符串，支持replace_all全局替换。适合简单的字符串替换场景，如批量修改变量名",
-    "edit_file": "同时编辑文件的多处位置，支持dryRun预览模式。适合复杂的多位置编辑，可先预览再执行",
+    "precise_replace_in_file": "精确替换单个字符串（仅支持文本文件，禁止编辑二进制文件），支持replace_all全局替换。适合简单的字符串替换场景，如批量修改变量名",
+    "edit_file": "同时编辑文件的多处位置（仅支持文本文件，禁止编辑二进制文件），支持dryRun预览模式。适合复杂的多位置编辑，可先预览再执行",
     "rename_file": "重命名文件或目录（仅同目录改名，不移动）。适合'重命名'场景，语义明确。内部通过move_file实现",
     "grep_file_content": "按内容搜索文件（正则表达式），支持上下文行/文件类型过滤/分页。适合搜索代码、查找函数定义、搜索关键词",
     "get_directory_tree": "获取目录的JSON树形结构，递归展示所有层级。适合查看项目整体结构、生成目录文档",
