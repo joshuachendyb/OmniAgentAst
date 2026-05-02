@@ -1,10 +1,65 @@
+v0.12.5
+
+  更新时间: 2026-05-02 09:10:00
+
+  更新内容：
+
+  ## v0.12.4→v0.12.5 变更汇总 - 小沈-2026-05-02
+
+  ### feat 新功能
+  | commit | 说明 |
+  |--------|------|
+  | efe4bb3e | 新增Shell工具: get_shell_output + terminate_shell (后台Shell会话管理) |
+  | 926f122b | 新增网络工具: fetch_webpage(DuckDuckGo) + search_web |
+  | 432d92cf | 新增系统工具: net_connections + event_log |
+  | 1aff361e | 新增file_helpers.py内部辅助函数(10个，不暴露给LLM) |
+  | 1d093f80 | 新增系统工具: list_processes + kill_process |
+  | 58388b0c | 新增数据分析类Tool(data_analysis): read_csv_dataframe + generate_chart + analyze_data |
+  | a365d26c | 新增文档读写类Tool(document): read_pdf + read_docx + read_xlsx |
+  | a4afa82c | 新增环境检查类Tool(env_check): 9个工具(check_python/validate_code/check_node/check_module/validate_csv/validate_chart/check_pdf/check_docx/check_xlsx) |
+  | 30c74217 | 新增GUI操作类Tool(gui): 13个工具(鼠标click/move/scroll + 键盘type_text/shortcut/key_combo + 屏幕screenshot/snapshot/screen_record + 窗口list_windows/focus_window/resize_window + OCR) |
+  | 05c3db07 | 新增数据库辅助类Tool(db_helper): 7个工具(check_db_exists/get_table_schema/begin_transaction/commit_transaction/rollback_transaction/check_network_connectivity/validate_url) |
+
+  ### fix 修复
+  | commit | 说明 |
+  |--------|------|
+  | 5ba2ae90 | react_output_parser解析无tool_name的JSON提取content/reasoning字段 - 小强 |
+
+  ### 新增ToolCategory枚举
+  - DATA_ANALYSIS: 数据分析
+  - DOCUMENT: 文档读写
+  - ENV_CHECK: 环境检查
+  - GUI: GUI操作
+  - DB_HELPER: 数据库辅助
+
+  ### 新增目录结构
+  - backend/app/services/tools/data_analysis/
+  - backend/app/services/tools/document/
+  - backend/app/services/tools/env_check/
+  - backend/app/services/tools/gui/
+  - backend/app/services/tools/db_helper/
+
+  ### 工具总数
+  - v0.12.4: 77个
+  - v0.12.5: 112个 (+35个)
+
+  ### 测试覆盖
+  - test_data_analysis_tools.py: 18个用例
+  - test_document_tools.py: 11个用例
+  - test_env_check_tools.py: 19个用例
+  - test_gui_tools.py: 11个用例
+  - test_db_helper_tools.py: 12个用例
+
 v0.12.4
 
-  更新时间: 2026-05-01 21:07:32
+  更新时间: 2026-05-02 00:00:00
 
   更新内容：
 
   ## v0.12.3→v0.12.4 变更汇总 - 小沈-2026-05-01
+  ### 版本历史
+  - v1 2026-05-01 21:07:32 小沈 初始记录30个commit
+  - v2 2026-05-02 00:00:00 小沈 补录13个遗漏commit
 
   ### fix 修复
   | commit | 说明 |
@@ -25,6 +80,12 @@ v0.12.4
   | 48e5c139 | 修复跨分类工具6项缺陷 |
   | 9fbb630e | 修复Agent架构7项重构问题 |
   | 06cdceb0 | 删除重复导入和重复日志 - 小健 |
+  | 93cb0b48 | _extract_by_known_tools 使用工具对应的正确参数名 |
+  | cccafe5f | _normalize_params 别名映射条件修复 + 测试更新 |
+  | 532701c3 | base_react.py thought步骤thought字段不兜底content避免重复 - 小强 |
+  | 3ae2ada1 | base_react.py final步骤thought/response各归各位不重复 - 小强 |
+  | 4958371a | StepContent文本内容\n字面转真换行-thought/content/reasoning/final的response和thought字段 - 小强 |
+  | 70656b09 | StepContent.tsx final类型添加whiteSpace:pre-wrap解决\n不换行问题 - 小强 |
 
   ### feat 新功能
   | commit | 说明 |
@@ -32,6 +93,7 @@ v0.12.4
   | 8c99b212 | add neutral keywords for better intent coverage |
   | 74b55b34 | add cross-category tool support |
   | ca8502ff | write_file添加格式验证_validate_content_format |
+  | 2753a7d4 | 实现设计文档v2.1全部7项改进 |
 
   ### refactor 重构
   | commit | 说明 |
@@ -39,6 +101,7 @@ v0.12.4
   | 2be07921 | 合并list_directory_with_sizes到list_directory(B6重构) |
   | b7bee276 | extract CRSS scorer to independent module |
   | bc316b06 | 提取_run_agent_sse_stream通用函数消除4处重复代码 |
+  | 890b0a76 | 抽取formatStepContent+formatReasoningContent到stepContentUtils.ts - 小强 |
 
   ### docs 文档
   | commit | 说明 |
@@ -51,11 +114,20 @@ v0.12.4
   | dbbbf47e | 审计报告v1.4-修正总览数字+章节状态标注 |
   | 562a0bc8 | 新增MessageId-1 200问题分析报告 |
   | 2ecafda5 | FILE工具健壮性审计报告(28个工具逐个分析) |
+  | 81753925 | 补充注释中的日期和作者标记 |
+  | 25496ac7 | version.txt升级v0.12.4-记录v0.12.3以来30个commit变更 - 小沈 |
+  | 3ebffa27 | update version to v0.12.3 - 小沈 |
 
   ### chore 其他
   | commit | 说明 |
   |--------|------|
   | 24194c0a | .gitignore添加.claude/worktrees/忽略 |
+
+  ### test 测试
+  | commit | 说明 |
+  |--------|------|
+  | 9458a582 | 新增stepContentUtils测试13个用例-formatStepContent+formatReasoningContent - 小强 |
+  | 8bc15917 | 新增内容质量检测测试45个用例-覆盖改进1/2/7自我指涉检测+reasoning验证 - 小健 |
 
 v0.12.3
 
