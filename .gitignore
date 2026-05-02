@@ -88,5 +88,5 @@ backend/data/file_operations.db
 # Arts
 .arts/
 
-# Claude worktrees
-.claude/worktrees/
+# Claude
+.claude/
