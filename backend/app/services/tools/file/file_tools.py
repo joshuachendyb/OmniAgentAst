@@ -1738,11 +1738,11 @@ class FileTools:
                 "success": False, "error": "No active task", "replaced_count": 0
             }, "precise_replace_in_file")
         
-        # 【小健 2026-05-02】二进制文件保护：仅支持文本文件编辑
-        suffix = Path(file_path).suffix.lower()
-        if suffix in self.BINARY_EXTENSIONS:
+        # 【小健 2026-05-02】【修复 2026-05-02 小沈】二进制文件保护：仅支持文本文件编辑
+        is_binary, binary_reason = _is_binary_file(file_path)
+        if is_binary:
             return _to_unified_format({
-                "success": False, "error": f"不支持编辑二进制格式文件({suffix})，请使用对应的专业工具操作", "replaced_count": 0
+                "success": False, "error": f"{binary_reason}。请使用对应的专业工具操作二进制文件。", "replaced_count": 0
             }, "precise_replace_in_file")
         
         try:
@@ -1878,11 +1878,11 @@ class FileTools:
                     "success": False, "error": "No active task", "applied_edits": 0, "preview": None
                 }, "edit_file")
 
-            # 【小健 2026-05-02】二进制文件保护：仅支持文本文件编辑
-            suffix = Path(file_path).suffix.lower()
-            if suffix in self.BINARY_EXTENSIONS:
+            # 【小健 2026-05-02】【修复 2026-05-02 小沈】二进制文件保护：仅支持文本文件编辑
+            is_binary, binary_reason = _is_binary_file(file_path)
+            if is_binary:
                 return _to_unified_format({
-                    "success": False, "error": f"不支持编辑二进制格式文件({suffix})，请使用对应的专业工具操作", "applied_edits": 0, "preview": None
+                    "success": False, "error": f"{binary_reason}。请使用对应的专业工具操作二进制文件。", "applied_edits": 0, "preview": None
                 }, "edit_file")
 
             path = Path(file_path)
