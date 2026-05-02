@@ -1166,9 +1166,10 @@ class FileTools:
         excludePatterns: Optional[List[str]] = None,
         ignore_case: bool = True,
         type: Optional[str] = None,
+        sortBy: Optional[str] = None,
         page_token: Optional[str] = None
     ) -> Dict[str, Any]:
-        """搜索文件名（按文件名匹配）- 小健 2026-05-02 增加excludePatterns/ignore_case/type"""
+        """搜索文件名（按文件名匹配）- 小沈 2026-05-02 增加sortBy参数（覆盖glob_files功能）"""
         # 验证搜索路径
         is_valid, error_msg = self._validate_path(path)
         if not is_valid:
@@ -1280,13 +1281,25 @@ class FileTools:
                             "name": filename,
                             "path": file_str,
                             "size": size,
-                            "type": "file"
+                            "type": "file",
+                            "mtime": file_path.stat().st_mtime if sortBy == "mtime" else None
                         })
                 
                 return all_matches
             
             # 执行搜索
             all_matches = await asyncio.to_thread(_search_sync)
+            
+            # 【新增 2026-05-02 小沈】排序支持（覆盖glob_files功能）
+            if sortBy == "mtime":
+                # 按修改时间降序（最新的在前）
+                all_matches.sort(key=lambda x: x.get("mtime", 0) or 0, reverse=True)
+            elif sortBy == "name":
+                # 按名称升序
+                all_matches.sort(key=lambda x: x.get("name", ""))
+            elif sortBy == "size":
+                # 按大小降序
+                all_matches.sort(key=lambda x: x.get("size", 0) or 0, reverse=True)
             
             # 搜索完成后，根据结果数量决定如何返回前端
             total = len(all_matches)
@@ -1999,80 +2012,22 @@ class FileTools:
         file_path: str,
         new_name: str,
     ) -> Dict[str, Any]:
-        """重命名文件或目录 - 小沈 2026-05-01"""
-        try:
-            is_valid, error_msg = self._validate_path(file_path)
-            if not is_valid:
-                return _to_unified_format({
-                    "success": False, "error": error_msg, "new_path": None
-                }, "rename_file")
-
-            # 【修复 2026-05-01 小沈】添加task_id检查（与move_file对齐）
-            if not self.task_id:
-                return _to_unified_format({
-                    "success": False, "error": "No active task", "new_path": None
-                }, "rename_file")
-
-            src = Path(file_path)
-            if not src.exists():
-                return _to_unified_format({
-                    "success": False, "error": f"文件或目录不存在: {file_path}", "new_path": None
-                }, "rename_file")
-
-            if "/" in new_name or "\\" in new_name:
-                return _to_unified_format({
-                    "success": False, "error": "新名称不能包含路径分隔符", "new_path": None
-                }, "rename_file")
-
-            dst = src.parent / new_name
-
-            # 【修复 2026-05-01 小沈】添加目标路径验证（与move_file对齐）
-            is_valid_dst, error_msg_dst = self._validate_path(str(dst))
-            if not is_valid_dst:
-                return _to_unified_format({
-                    "success": False, "error": f"目标路径{error_msg_dst}", "new_path": None
-                }, "rename_file")
-
-            if dst.exists():
-                return _to_unified_format({
-                    "success": False, "error": f"目标已存在: {dst}", "new_path": None
-                }, "rename_file")
-
-            # 【修复 2026-05-01 小沈】添加safety记录（与move_file对齐）
-            operation_id = self.safety.record_operation(
-                task_id=self.task_id,
-                operation_type=OperationType.MOVE,
-                source_path=src,
-                destination_path=dst,
-                sequence_number=self._get_next_sequence()
-            )
-
-            def _rename_sync():
-                src.rename(dst)
-                return True
-
-            success = await asyncio.to_thread(
-                self.safety.execute_with_safety,
-                operation_id=operation_id,
-                operation_func=_rename_sync
-            )
-
-            if success:
-                return _to_unified_format({
-                    "success": True, "new_path": str(dst), "old_path": str(src),
-                    "old_name": src.name, "new_name": new_name,
-                    "operation_id": operation_id,
-                }, "rename_file")
-            else:
-                return _to_unified_format({
-                    "success": False, "error": "Failed to rename file",
-                    "operation_id": operation_id, "new_path": None
-                }, "rename_file")
-        except Exception as e:
-            logger.error(f"rename_file failed: {file_path}: {e}")
-            return _to_unified_format({
-                "success": False, "error": str(e), "new_path": None
-            }, "rename_file")
+        """【已废弃】请使用 move_file 替代 - 小沈 2026-05-02
+        该工具已废弃，自动转发到 move_file（功能更强，支持跨目录移动+重命名）。
+        rename_file 仅支持同目录改名，move_file 既支持改名也支持移动。
+        """
+        logger.warning("[deprecated] rename_file 已废弃，请使用 move_file 替代")
+        
+        # 计算新路径（同目录改名）
+        src = Path(file_path)
+        dst = src.parent / new_name
+        
+        # 转发到 move_file
+        return await self.move_file(
+            source_path=file_path,
+            destination_path=str(dst),
+            overwrite=False
+        )
 
     async def glob_files(
         self,
@@ -2080,56 +2035,44 @@ class FileTools:
         search_dir: Optional[str] = None,
         include_hidden: bool = False,
     ) -> Dict[str, Any]:
-        """Glob模式匹配文件，按修改时间排序 - 小沈 2026-05-01"""
-        try:
-            # 【修复 2026-05-01 小沈】参数校验
-            if not pattern or not pattern.strip():
-                return _to_unified_format({"success": False, "error": "pattern不能为空", "files": []}, "glob_files")
-            
-            import glob as glob_mod
-
-            search_path = Path(search_dir).resolve() if search_dir else Path.cwd().resolve()
-            is_valid, error_msg = self._validate_path(str(search_path))
-            if not is_valid:
-                return _to_unified_format({
-                    "success": False, "error": error_msg, "files": []
-                }, "glob_files")
-
-            if not search_path.exists():
-                return _to_unified_format({
-                    "success": False, "error": f"目录不存在: {search_path}", "files": []
-                }, "glob_files")
-
-            def _glob_sync():
-                all_files = []
-                for p in search_path.glob(pattern):
-                    if not include_hidden and p.name.startswith('.'):
-                        continue
-                    # 【修复 2026-05-01 小沈】符号链接循环防护：跳过符号链接目录
-                    if p.is_dir() and p.is_symlink():
-                        continue
-                    all_files.append({
-                        "path": str(p.resolve()),
-                        "name": p.name,
-                        "type": "directory" if p.is_dir() else "file",
-                        "size": p.stat().st_size if p.is_file() else None,
-                        "mtime": p.stat().st_mtime,
-                    })
-                    # 【修复 2026-05-01 小沈】结果数上限防护
-                    if len(all_files) >= MAX_PAGE_SIZE:
-                        break
-                all_files.sort(key=lambda x: x["mtime"], reverse=True)
-                return all_files
-
-            files = await asyncio.to_thread(_glob_sync)
+        """【已废弃】请使用 search_files 替代 - 小沈 2026-05-02
+        该工具已废弃，自动转发到 search_files（功能更强，支持排除模式+分页+排序）。
+        glob_files 仅支持按修改时间排序，search_files 支持 sortBy="mtime/name/size"。
+        """
+        logger.warning("[deprecated] glob_files 已废弃，请使用 search_files 替代")
+        
+        # 转发到 search_files
+        result = await self.search_files(
+            file_pattern=pattern,
+            path=search_dir or ".",
+            recursive=True,
+            ignore_case=True,
+            sortBy="mtime"  # glob_files 默认按修改时间排序
+        )
+        
+        # 转换结果格式（保持兼容）
+        if result.get("success"):
+            files = []
+            for match in result.get("matches", []):
+                files.append({
+                    "path": match.get("path"),
+                    "name": match.get("name"),
+                    "type": match.get("type"),
+                    "size": match.get("size"),
+                    "mtime": match.get("mtime")
+                })
             return _to_unified_format({
-                "success": True, "files": files, "total": len(files),
-                "search_dir": str(search_path), "pattern": pattern,
+                "success": True,
+                "files": files,
+                "total": len(files),
+                "search_dir": search_dir or ".",
+                "pattern": pattern
             }, "glob_files")
-        except Exception as e:
-            logger.error(f"glob_files failed: {e}")
+        else:
             return _to_unified_format({
-                "success": False, "error": str(e), "files": []
+                "success": False,
+                "error": result.get("error"),
+                "files": []
             }, "glob_files")
 
     async def grep_file_content(
