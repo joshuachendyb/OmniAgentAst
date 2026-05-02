@@ -429,19 +429,26 @@ class FileTools:
             # 媒体文件 → read_media_file
             return await self.read_media_file(file_path)
         else:
-            # 文本文件 → read_text_file
-            # 转换 offset/limit 为 head 参数
-            head = limit
-            return await self.read_text_file(file_path, head=head, encoding=encoding)
+            # 文本文件 → read_text_file（使用 offset/limit 参数）
+            return await self.read_text_file(file_path, offset=offset, limit=limit, encoding=encoding)
 
     async def read_text_file(
         self,
         file_path: str,
         head: Optional[int] = None,
         tail: Optional[int] = None,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None,
         encoding: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """读取文本文件的完整内容，支持指定行数 - 小沈 2026-05-01"""
+        """读取文本文件的完整内容，支持指定行数 - 小沈 2026-05-02 增加 offset/limit 参数
+        
+        参数组合说明：
+        - 无参数：读取全部内容
+        - head=N：读取前N行
+        - tail=N：读取后N行
+        - offset=N, limit=M：从第N行开始读取M行（分页读取）
+        """
         try:
             # 【新增 2026-05-02 小沈】二进制文件保护
             is_binary, binary_reason = _is_binary_file(file_path)
@@ -457,12 +464,23 @@ class FileTools:
                 return _to_unified_format({"success": False, "error": f"head必须>=1，当前值: {head}", "content": None}, "read_text_file")
             if tail is not None and tail < 1:
                 return _to_unified_format({"success": False, "error": f"tail必须>=1，当前值: {tail}", "content": None}, "read_text_file")
+            if offset is not None and offset < 1:
+                return _to_unified_format({"success": False, "error": f"offset必须>=1，当前值: {offset}", "content": None}, "read_text_file")
+            if limit is not None and limit < 1:
+                return _to_unified_format({"success": False, "error": f"limit必须>=1，当前值: {limit}", "content": None}, "read_text_file")
             
-            # 验证head和tail不能同时使用
+            # 验证参数不能同时使用
             if head is not None and tail is not None:
                 return _to_unified_format({
                     "success": False,
                     "error": "head 和 tail 参数不能同时使用，请只使用其中一个",
+                    "content": None
+                }, "read_text_file")
+            
+            if (head is not None or tail is not None) and (offset is not None or limit is not None):
+                return _to_unified_format({
+                    "success": False,
+                    "error": "head/tail 与 offset/limit 不能同时使用。head/tail用于快捷读取首尾，offset/limit用于分页读取",
                     "content": None
                 }, "read_text_file")
 
@@ -528,28 +546,47 @@ class FileTools:
             lines = content.splitlines(keepends=True)
             total_lines = len(lines)
 
-            # 处理head/tail
+            # 处理不同的参数组合
             if head is not None:
+                # head: 读取前N行
                 selected_lines = lines[:min(head, total_lines)]
             elif tail is not None:
+                # tail: 读取后N行
                 start = max(0, total_lines - tail)
                 selected_lines = lines[start:]
+            elif offset is not None:
+                # offset/limit: 分页读取（从第offset行开始读取limit行）
+                start_idx = max(0, offset - 1)
+                end_idx = start_idx + limit if limit else total_lines
+                selected_lines = lines[start_idx:end_idx]
             else:
+                # 无参数：读取全部
                 selected_lines = lines
 
             result_content = "".join(selected_lines)
             line_count = len(selected_lines)
 
-            return _to_unified_format({
+            # 返回结果（根据参数类型返回不同字段）
+            result = {
                 "success": True,
                 "content": result_content,
                 "total_lines": total_lines,
                 "line_count": line_count,
-                "head": head,
-                "tail": tail,
                 "encoding": used_encoding,
                 "file_size": file_size,
-            }, "read_text_file")
+            }
+            
+            if head is not None:
+                result["head"] = head
+            elif tail is not None:
+                result["tail"] = tail
+            elif offset is not None:
+                result["offset"] = offset
+                result["limit"] = limit
+                result["start_line"] = offset
+                result["end_line"] = offset + line_count - 1
+
+            return _to_unified_format(result, "read_text_file")
 
         except Exception as e:
             logger.error(f"read_text_file failed: {file_path}: {e}")

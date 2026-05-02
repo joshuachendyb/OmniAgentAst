@@ -348,7 +348,7 @@ class FileStatisticsInput(BaseModel):
 
 
 class ReadTextFileInput(BaseModel):
-    """read_text_file 工具的输入参数"""
+    """read_text_file 工具的输入参数 - 小沈 2026-05-02 增加 offset/limit"""
     file_path: str = Field(
         description="文件的完整路径，必须是绝对路径，支持中文路径（如 D:/文档/测试.txt）"
     )
@@ -356,13 +356,25 @@ class ReadTextFileInput(BaseModel):
         default=None,
         ge=1,
         le=1000000,
-        description="读取文件的前 N 行，不能与 tail 参数同时使用。用于只查看文件开头部分内容"
+        description="读取文件的前 N 行，不能与 tail/offset 参数同时使用。用于只查看文件开头部分内容"
     )
     tail: Optional[int] = Field(
         default=None,
         ge=1,
         le=1000000,
-        description="读取文件的后 N 行，不能与 head 参数同时使用。用于查看文件末尾部分内容，如日志文件的最新记录"
+        description="读取文件的后 N 行，不能与 head/offset 参数同时使用。用于查看文件末尾部分内容，如日志文件的最新记录"
+    )
+    offset: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=10000000,
+        description="起始行号（从1开始），不能与 head/tail 参数同时使用。用于分页读取，配合 limit 使用从中间位置开始读取"
+    )
+    limit: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=1000000,
+        description="最大读取行数，配合 offset 使用进行分页读取。如果只设置 limit 而不设置 offset，则从头读取 limit 行（等同于 head）"
     )
     encoding: Optional[str] = Field(
         default=None,
