@@ -53,7 +53,7 @@ from app.services.tools.network.network_tools import (
 
 # 工具描述
 NETWORK_TOOL_DESCRIPTIONS = {
-    "http_request": "发起HTTP请求（GET/POST/PUT/DELETE等），支持自定义请求头、查询参数、请求体、超时设置。适合调用API、测试接口、获取网络数据",
+    "http_request": "发起HTTP请求（GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS），支持自定义请求头、查询参数、请求体、JSON请求体、超时设置、SSL验证、代理、重试。适合调用API、测试接口、获取网络数据",
     "download_file": "从URL下载文件到本地，支持大文件流式下载、断点续传、进度显示。适合下载图片、视频、安装包等大文件",
     "fetch_webpage": "获取网页内容并转换为指定格式（markdown/html/text），支持AI内容提取和摘要。适合抓取网页、提取正文、分析页面结构",
     "search_web": "搜索网络获取最新信息，支持域名过滤、时间范围、安全搜索、结果数量控制。适合搜索新闻、查找资料、获取实时信息",

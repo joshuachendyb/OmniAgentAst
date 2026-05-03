@@ -16,15 +16,15 @@ from typing import Optional, Dict, Any, List, Literal
 
 
 class HttpRequestInput(BaseModel):
-    """http_request 工具的输入参数"""
+    """http_request 工具的输入参数 - 小沈 2026-05-03 补齐文档参数+timeout改毫秒"""
     url: str = Field(
-        ..., description="请求URL（必填），例如 https://api.example.com/data"
+        ..., description="请求的目标 URL，必须是完全有效的 URL（如 https://api.example.com/data）"
     )
     method: Literal["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"] = Field(
-        default="GET", description="HTTP请求方法，默认为GET"
+        default="GET", description="HTTP方法。由 Agent 根据用户意图智能推演：默认 GET，若有 body 或意图为提交/更新则自动设为 POST/PUT/DELETE/PATCH"
     )
     headers: Optional[Dict[str, str]] = Field(
-        default=None, description="请求头字典，例如 {\"Authorization\": \"Bearer token\"}"
+        default=None, description="业务请求头（可选）。Agent 优先从安全上下文自动注入 Authorization，LLM 传入的 headers 仅作补充，严禁覆盖安全头"
     )
     params: Optional[Dict[str, str]] = Field(
         default=None, description="URL查询参数（Query String），例如 {\"page\": 1, \"limit\": 20}"
@@ -36,10 +36,19 @@ class HttpRequestInput(BaseModel):
         default=None, description="JSON请求体（自动设置Content-Type为application/json）。当method为POST/PUT/PATCH时使用，优先于body"
     )
     timeout: int = Field(
-        default=30, ge=1, le=300, description="超时时间（秒），默认为30秒，最大300秒"
+        default=30000, ge=1000, le=600000, description="超时毫秒数，默认30000（30秒），最大600000（10分钟）。由 Agent 根据请求类型智能调整 - 小沈 2026-05-03"
+    )
+    verify_ssl: bool = Field(
+        default=True, description="是否验证 SSL 证书。由 Agent 根据环境智能判断，仅内网测试环境可设为 false"
+    )
+    proxy: Optional[str] = Field(
+        default=None, description="代理服务器地址。Agent 执行三步走策略：1.优先直连尝试；2.失败则读取环境变量代理重试；3.均失败则报错"
+    )
+    retry: int = Field(
+        default=3, ge=0, le=10, description="重试次数。Agent 执行指数退避重试（针对 429/5xx），重试耗尽后抛出明确错误"
     )
     follow_redirects: bool = Field(
-        default=True, description="是否跟随重定向，默认为True"
+        default=True, description="是否跟随重定向。若 Agent 检测到认证死循环，自动设为 false 并报错"
     )
 
 

@@ -41,18 +41,22 @@ async def http_request(
     params: Optional[Dict[str, str]] = None,
     body: Optional[Any] = None,
     json_body: Optional[Dict[str, Any]] = None,
-    timeout: int = 30,
+    timeout: int = 30000,
+    verify_ssl: bool = True,
+    proxy: Optional[str] = None,
+    retry: int = 3,
     follow_redirects: bool = True,
 ) -> dict:
     """
-    发起HTTP请求
+    发起HTTP请求 - 小沈 2026-05-03 补齐参数+timeout改毫秒
 
     支持 GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS 方法。
     支持自定义请求头、查询参数、请求体。
-    支持超时控制和重定向跟随。
+    支持超时控制、SSL验证、代理、重试和重定向跟随。
     """
+    timeout_sec = timeout / 1000.0
+    
     try:
-        # 验证URL
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             return {
@@ -61,84 +65,107 @@ async def http_request(
                 "message": f"无效的URL: {url}，URL必须包含协议和域名（如 https://api.example.com/data）"
             }
 
-        # 处理查询参数
         if params:
             query_string = urlencode(params, doseq=True)
             url = urlunparse(parsed._replace(query=query_string))
 
-        # 构建请求头
         request_headers = {}
         if headers:
             request_headers.update(headers)
 
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout),
-            follow_redirects=follow_redirects
-        ) as client:
-            # 根据method选择请求方式
-            method_upper = method.upper()
+        proxy_config = None
+        if proxy:
+            proxy_config = proxy
+        elif os.environ.get("HTTP_PROXY") or os.environ.get("HTTPS_PROXY"):
+            proxy_config = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
 
-            request_kwargs = {
-                "url": url,
-                "headers": request_headers,
-            }
+        last_exception = None
+        for attempt in range(retry + 1):
+            try:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(timeout_sec),
+                    follow_redirects=follow_redirects,
+                    verify=verify_ssl,
+                    proxy=proxy_config,
+                ) as client:
+                    method_upper = method.upper()
 
-            # 处理请求体
-            if method_upper in ("POST", "PUT", "PATCH"):
-                if json_body is not None:
-                    request_kwargs["json"] = json_body
-                elif body is not None:
-                    request_kwargs["content"] = body.encode("utf-8") if isinstance(body, str) else body
+                    request_kwargs = {
+                        "url": url,
+                        "headers": request_headers,
+                    }
 
-            response = await client.request(method_upper, **request_kwargs)
-            response.raise_for_status()
+                    if method_upper in ("POST", "PUT", "PATCH"):
+                        if json_body is not None:
+                            request_kwargs["json"] = json_body
+                        elif body is not None:
+                            request_kwargs["content"] = body.encode("utf-8") if isinstance(body, str) else body
 
-            # 尝试解析响应体
-            content_type = response.headers.get("content-type", "")
-            response_body = None
-            if "application/json" in content_type:
-                try:
-                    response_body = response.json()
-                except (json.JSONDecodeError, ValueError):
-                    response_body = response.text
-            else:
-                response_body = response.text
+                    response = await client.request(method_upper, **request_kwargs)
+                    response.raise_for_status()
 
+                    content_type = response.headers.get("content-type", "")
+                    response_body = None
+                    if "application/json" in content_type:
+                        try:
+                            response_body = response.json()
+                        except (json.JSONDecodeError, ValueError):
+                            response_body = response.text
+                    else:
+                        response_body = response.text
+
+                    return {
+                        "code": "SUCCESS",
+                        "data": {
+                            "status_code": response.status_code,
+                            "headers": dict(response.headers),
+                            "body": response_body,
+                        },
+                        "message": f"请求成功 (HTTP {response.status_code})"
+                    }
+            except (httpx.TimeoutException, httpx.HTTPStatusError, httpx.RequestError) as e:
+                last_exception = e
+                if isinstance(e, httpx.HTTPStatusError) and e.response.status_code not in (429, 500, 502, 503, 504):
+                    try:
+                        error_body = e.response.text
+                    except Exception:
+                        error_body = None
+                    return {
+                        "code": "ERR_NETWORK_HTTP_ERROR",
+                        "data": {
+                            "status_code": e.response.status_code,
+                            "body": error_body,
+                        },
+                        "message": f"HTTP请求失败 (HTTP {e.response.status_code})：{url}"
+                    }
+                if attempt < retry:
+                    import asyncio
+                    asyncio.sleep(0.5 * (2 ** attempt))
+                    continue
+                break
+
+        if isinstance(last_exception, httpx.TimeoutException):
             return {
-                "code": "SUCCESS",
+                "code": "ERR_NETWORK_TIMEOUT",
+                "data": None,
+                "message": f"请求超时（{timeout}毫秒）：{url}"
+            }
+        elif isinstance(last_exception, httpx.HTTPStatusError):
+            return {
+                "code": "ERR_NETWORK_HTTP_ERROR",
                 "data": {
-                    "status_code": response.status_code,
-                    "headers": dict(response.headers),
-                    "body": response_body,
+                    "status_code": last_exception.response.status_code,
+                    "body": last_exception.response.text if hasattr(last_exception.response, 'text') else None,
                 },
-                "message": f"请求成功 (HTTP {response.status_code})"
+                "message": f"HTTP请求失败（重试{retry}次后）：{url}"
+            }
+        else:
+            return {
+                "code": "ERR_NETWORK_REQUEST_ERROR",
+                "data": None,
+                "message": f"网络请求失败（重试{retry}次后）：{str(last_exception)}"
             }
 
-    except httpx.TimeoutException:
-        return {
-            "code": "ERR_NETWORK_TIMEOUT",
-            "data": None,
-            "message": f"请求超时（{timeout}秒）：{url}"
-        }
-    except httpx.HTTPStatusError as e:
-        try:
-            error_body = e.response.text
-        except Exception:
-            error_body = None
-        return {
-            "code": "ERR_NETWORK_HTTP_ERROR",
-            "data": {
-                "status_code": e.response.status_code,
-                "body": error_body,
-            },
-            "message": f"HTTP请求失败 (HTTP {e.response.status_code})：{url}"
-        }
-    except httpx.RequestError as e:
-        return {
-            "code": "ERR_NETWORK_REQUEST_ERROR",
-            "data": None,
-            "message": f"网络请求失败：{str(e)}"
-        }
     except Exception as e:
         logger.error(f"[http_request] 未知错误: {e}")
         return {
