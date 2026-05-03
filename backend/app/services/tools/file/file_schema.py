@@ -365,13 +365,13 @@ class ReadTextFileInput(BaseModel):
         default=None,
         ge=1,
         le=1000000,
-        description="读取文件的前 N 行，不能与 tail/offset 参数同时使用。用于只查看文件开头部分内容"
+        description="读取文件的前 N 行，不能与 tail/offset 参数同时使用。若 LLM 没给，Agent 检查文件大小：超大文件(>10MB日志)自动设 head=100 避免内存溢出；小代码文件则不设，读全部"
     )
     tail: Optional[int] = Field(
         default=None,
         ge=1,
         le=1000000,
-        description="读取文件的后 N 行，不能与 head/offset 参数同时使用。用于查看文件末尾部分内容，如日志文件的最新记录"
+        description="读取文件的后 N 行，不能与 head/offset 参数同时使用。若文件是 .log 结尾且 LLM 没给 head，Agent 推测用户想看最新动态，自动设 tail=50"
     )
     offset: Optional[int] = Field(
         default=None,
@@ -383,7 +383,7 @@ class ReadTextFileInput(BaseModel):
         default=None,
         ge=1,
         le=1000000,
-        description="最大读取行数，配合 offset 使用进行分页读取。如果只设置 limit 而不设置 offset，则从头读取 limit 行（等同于 head）"
+        description="最大读取行数，配合 offset 使用进行分页读取。若只设置 limit 而不设置 offset，则从头读取 limit 行（等同于 head）"
     )
     encoding: Optional[str] = Field(
         default=None,
