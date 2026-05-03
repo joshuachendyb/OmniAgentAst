@@ -106,11 +106,11 @@ class MoveFileInput(BaseModel):
 
 
 class SearchFilesInput(BaseModel):
-    """search_files 工具的输入参数 - 小健 2026-05-02 增加excludePatterns/ignore_case/type"""
-    file_pattern: str = Field(
+    """search_files 工具的输入参数 - 小健 2026-05-03 参数名统一为pattern/search_dir"""
+    pattern: str = Field(
         description="文件名匹配模式，支持通配符（* 匹配任意字符，? 匹配单个字符）"
     )
-    path: str = Field(
+    search_dir: str = Field(
         default="~",
         description="搜索的起始目录（绝对路径），默认为用户主目录"
     )

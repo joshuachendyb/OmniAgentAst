@@ -1080,8 +1080,8 @@ class FileTools:
     
     async def search_files(
         self,
-        file_pattern: str,
-        path: str = "~",
+        pattern: str,
+        search_dir: str = "~",
         recursive: bool = True,
         max_depth: int = 100000,
         excludePatterns: Optional[List[str]] = None,
@@ -1090,9 +1090,9 @@ class FileTools:
         sortBy: Optional[str] = None,
         page_token: Optional[str] = None
     ) -> Dict[str, Any]:
-        """搜索文件名（按文件名匹配）- 小沈 2026-05-02 增加sortBy参数（覆盖glob_files功能）"""
+        """搜索文件名（按文件名匹配）- 小健 2026-05-03 参数名统一为pattern/search_dir"""
         # 验证搜索路径
-        is_valid, error_msg = self._validate_path(path)
+        is_valid, error_msg = self._validate_path(search_dir)
         if not is_valid:
             return _to_unified_format({
                 "success": False,
@@ -1100,21 +1100,21 @@ class FileTools:
                 "matches": []
             }, "search_files")
         
-        # 验证 file_pattern 不为空
-        if not file_pattern or not file_pattern.strip():
+        # 验证 pattern 不为空
+        if not pattern or not pattern.strip():
             return _to_unified_format({
                 "success": False,
                 "error": "文件名匹配模式不能为空，请提供有效的文件名模式",
                 "matches": []
             }, "search_files")
         
-        search_path = Path(path)
+        search_path = Path(search_dir)
         
         try:
             if not search_path.exists():
                 return _to_unified_format({
                     "success": False,
-                    "error": f"Path not found: {path}",
+                    "error": f"Path not found: {search_dir}",
                     "matches": []
                 }, "search_files")
             
@@ -1147,7 +1147,7 @@ class FileTools:
                     for dirname in dirs:
                         if type == "file":
                             continue
-                        matched = fnmatch.fnmatch(dirname, file_pattern) if ignore_case else fnmatch.fnmatchcase(dirname, file_pattern)
+                        matched = fnmatch.fnmatch(dirname, pattern) if ignore_case else fnmatch.fnmatchcase(dirname, pattern)
                         if not matched:
                             continue
 
@@ -1173,7 +1173,7 @@ class FileTools:
                     for filename in files:
                         if type == "directory":
                             continue
-                        matched = fnmatch.fnmatch(filename, file_pattern) if ignore_case else fnmatch.fnmatchcase(filename, file_pattern)
+                        matched = fnmatch.fnmatch(filename, pattern) if ignore_case else fnmatch.fnmatchcase(filename, pattern)
                         if not matched:
                             continue
                         
@@ -1226,7 +1226,7 @@ class FileTools:
             total = len(all_matches)
             
             # 【调试】记录搜索结果数量
-            logger.info(f"[search_files] 搜索完成: file_pattern={file_pattern}, path={path}, total={total}, matches数量={len(all_matches)}")
+            logger.info(f"[search_files] 搜索完成: pattern={pattern}, search_dir={search_dir}, total={total}, matches数量={len(all_matches)}")
             
             # 前端分页配置（使用全局统一常量）
             if total > DEFAULT_PAGE_SIZE:
@@ -1244,8 +1244,8 @@ class FileTools:
             
             return _to_unified_format({
                 "success": True,
-                "file_pattern": file_pattern,
-                "path": str(search_path),
+                "pattern": pattern,
+                "search_dir": str(search_path),
                 "matches": page_matches,
                 "total": total,
                 "page": 1,
