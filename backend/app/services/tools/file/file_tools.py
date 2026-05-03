@@ -905,7 +905,7 @@ class FileTools:
         recursive: bool = False,
         force: bool = False
     ) -> Dict[str, Any]:
-        """删除文件或目录 - 小健 2026-05-02 增加force"""
+        """删除文件或目录 - 小健 2026-05-03 默认放入回收站，force=True永久删除"""
         # 验证路径合法性
         is_valid, error_msg = self._validate_path(file_path)
         if not is_valid:
@@ -942,19 +942,46 @@ class FileTools:
             
             # 定义删除操作
             def _delete_sync():
-                if path.is_dir():
-                    if recursive:
-                        if force:
+                if force:
+                    # force=True: 永久删除（不放入回收站）
+                    if path.is_dir():
+                        if recursive:
                             shutil.rmtree(str(path), onerror=_remove_readonly)
                         else:
-                            shutil.rmtree(path)
+                            path.rmdir()
                     else:
-                        path.rmdir()
+                        if path.exists() and not os.access(str(path), os.W_OK):
+                            path.chmod(path.stat().st_mode | 0o200)
+                        path.unlink()
+                    return True
                 else:
-                    if force and path.exists() and not os.access(str(path), os.W_OK):
-                        path.chmod(path.stat().st_mode | 0o200)
-                    path.unlink()
-                return True
+                    # force=False: 放入回收站（默认，更安全）
+                    try:
+                        import send2trash
+                        send2trash.send2trash(str(path))
+                        return True
+                    except ImportError:
+                        # send2trash未安装时回退到永久删除
+                        logger.warning("send2trash未安装，回退到永久删除")
+                        if path.is_dir():
+                            if recursive:
+                                shutil.rmtree(str(path), onerror=_remove_readonly)
+                            else:
+                                path.rmdir()
+                        else:
+                            path.unlink()
+                        return True
+                    except Exception as e:
+                        # send2trash失败时回退到永久删除
+                        logger.warning(f"send2trash失败: {e}，回退到永久删除")
+                        if path.is_dir():
+                            if recursive:
+                                shutil.rmtree(str(path), onerror=_remove_readonly)
+                            else:
+                                path.rmdir()
+                        else:
+                            path.unlink()
+                        return True
             
             success = await asyncio.to_thread(
                 self.safety.execute_with_safety,
@@ -963,11 +990,12 @@ class FileTools:
             )
             
             if success:
+                delete_mode = "永久删除" if force else "放入回收站"
                 return _to_unified_format({
                     "success": True,
                     "operation_id": operation_id,
                     "deleted_path": str(path),
-                    "message": "File deleted (backup in recycle bin)"
+                    "message": f"文件已{delete_mode}: {file_path}"
                 }, "delete_file")
             else:
                 return _to_unified_format({
