@@ -47,7 +47,7 @@ SHELL_TOOL_DESCRIPTIONS = {
 参数说明：
 - command：要执行的命令
 - shell_type：执行环境。powershell（默认）-Windows PowerShell；cmd-Windows 命令提示符
-- timeout：超时毫秒数，默认300000（5分钟），最大600000（10分钟）
+- timeout：超时毫秒数，默认120000（2分钟），最大600000（10分钟）
 - run_in_background：是否在后台运行命令
 - cwd：工作目录
 - encoding：命令输出编码，默认null自动检测
@@ -60,9 +60,9 @@ SHELL_TOOL_DESCRIPTIONS = {
 - 执行dir命令：{"command": "dir"}
 - 执行Python脚本：{"command": "python script.py", "shell_type": "powershell"}
 - 后台运行：{"command": "npm run dev", "run_in_background": true}""",
-    "get_working_directory": "获取当前工作目录的完整路径。",
-    "change_directory": "改变当前工作目录到指定路径。",
-    "check_path_exists": "检查指定的文件或目录是否存在，并返回类型信息。",
+    "get_working_directory": "获取当前工作目录的完整路径。\n\n使用场景：\n- 当用户需要确认当前工作目录时使用\n- 当用户需要获取当前所在路径时使用\n- 当用户需要获取绝对路径时使用\n\n参数说明：\n- 无参数\n\n【重要】返回当前shell会话的工作目录绝对路径\n\n使用示例：\n- 获取当前目录：{}",
+    "change_directory": "切换当前工作目录到指定路径。\n\n使用场景：\n- 当用户需要切换工作目录时使用\n- 当用户需要在特定目录下执行命令时使用\n- 当用户需要改变当前路径时使用\n\n参数说明：\n- path：要切换到的目录路径（必须是绝对路径）\n\n【重要】切换shell会话的工作目录，后续命令在此目录下执行\n\n使用示例：\n- 切换到D盘：{\"path\": \"D:/\"}\n- 切换到项目目录：{\"path\": \"D:/OmniAgentAs-desk\"}",
+    "check_path_exists": "检查指定的文件或目录是否存在，并返回类型信息。\n\n使用场景：\n- 当用户需要检查文件是否存在时使用\n- 当用户需要确认路径是文件还是目录时使用\n- 当用户需要验证路径有效性时使用\n\n参数说明：\n- path：要检查的文件或目录路径\n\n【重要】返回路径是否存在以及类型（file/directory/nonexistent）\n\n使用示例：\n- 检查文件：{\"path\": \"D:/OmniAgentAs-desk/main.py\"}\n- 检查目录：{\"path\": \"D:/OmniAgentAs-desk/src\"}",
     "get_shell_output": """获取后台运行的 shell 命令输出。
 
 使用场景：
