@@ -34,61 +34,70 @@ from app.services.tools.data_format.data_format_tools import (
     read_csv_basic,
 )
 
-# 工具描述（用于注册）
+# 工具描述（用于注册）- 小沈 2026-05-03修正，按文档7.4节
 DESCRIPTIONS = {
-    "read_json": """读取JSON文件内容。
+    "read_json": """读取并解析 JSON 文件，返回结构化对象。
 
 使用场景：
-- 读取JSON配置文件
-- 解析JSON数据文件
-- 获取结构化数据
+- 读取 JSON 配置文件时使用
+- 解析 JSON 格式的数据文件时使用
 
-返回数据说明：
-- code: 状态码（SUCCESS/ERR_READ_JSON）
-- data: JSON数据内容
-- message: 操作结果消息""",
+参数说明（按文档7.4节）：
+- file_path：JSON 文件路径（必填）
+- encoding：文件编码（可选），默认 auto_detect
+- max_depth：最大解析深度（可选），默认 10
 
-    "write_json": """写入数据到JSON文件。
+返回 { data: ..., metadata: { truncated: bool } } 结构，绝不破坏原始数据树。""",
 
-使用场景：
-- 保存配置到JSON文件
-- 导出数据为JSON格式
-- 创建结构化数据文件
-
-返回数据说明：
-- code: 状态码（SUCCESS/ERR_WRITE_JSON）
-- data: 写入的文件路径
-- message: 操作结果消息""",
-
-    "read_csv_basic": """读取CSV文件内容（基础版）。
+    "write_json": """将数据写入 JSON 文件。
 
 使用场景：
-- 读取CSV数据文件
-- 导入表格数据
-- 解析CSV格式的日志或记录
+- 保存配置到 JSON 文件时使用
+- 导出数据为 JSON 格式时使用
 
-返回数据说明：
-- code: 状态码（SUCCESS/ERR_READ_CSV）
-- data: 包含headers和rows的字典
-- message: 操作结果消息
+参数说明（按文档7.4节）：
+- file_path：JSON 文件路径（必填）
+- data：要写入的数据（必填）
+- encoding：文件编码（可选），默认 utf-8
+- indent：缩进空格数（可选），默认 2
+- ensure_ascii：是否转义非 ASCII（可选），默认 false
+- backup_before_write：写入前备份（可选），默认 true
+- create_parents：自动创建父目录（可选），默认 true
 
-注意：这是基础版本，适用于简单的CSV文件。""",
+备份至会话临时目录，绝不污染原目录。""",
+
+    "read_csv_basic": """使用 Python 标准库 csv 读取 CSV 文件，零依赖，轻量级读取。
+
+使用场景：
+- 读取 CSV 格式的数据文件时使用
+- 分析表格数据时使用
+
+参数说明（按文档7.4节）：
+- file_path：CSV 文件路径（必填）
+- encoding：文件编码（可选），默认 auto_detect
+- delimiter：分隔符（可选），默认 auto_detect
+- has_header：是否有表头（可选），默认 true
+- max_rows：最大读取行数（可选），默认 500
+- skip_blank_lines：跳过空行（可选），默认 true
+
+Agent 自动探测分隔符与表头，失败自动 fallback 到默认值。""",
 }
 
-# 工具使用示例
+# 工具使用示例 - 小沈 2026-05-03修正，按文档7.4节
 EXAMPLES = {
     "read_json": [
-        {"file_path": "D:/data/config.json"},
-        {"file_path": "D:/data/users.json", "encoding": "utf-8"},
+        {"file_path": "D:/config/settings.json"},
+        {"file_path": "D:/data/users.json", "max_depth": 5},
     ],
     "write_json": [
-        {"file_path": "D:/data/output.json", "data": {"name": "test", "value": 123}},
-        {"file_path": "D:/data/list.json", "data": [1, 2, 3], "indent": 4},
+        {"file_path": "D:/output/data.json", "data": {"name": "test", "value": 123}},
+        {"file_path": "D:/output/list.json", "data": [1, 2, 3], "indent": 4},
+        {"file_path": "D:/output/config.json", "data": {"key": "value"}, "backup_before_write": True, "create_parents": True},
     ],
     "read_csv_basic": [
         {"file_path": "D:/data/users.csv"},
         {"file_path": "D:/data/data.tsv", "delimiter": "\t"},
-        {"file_path": "D:/data/no_header.csv", "has_header": False},
+        {"file_path": "D:/data/no_header.csv", "has_header": False, "max_rows": 100},
     ],
 }
 
