@@ -298,18 +298,20 @@ async def fetch_webpage(
     prompt: Optional[str] = None,
     extract_format: str = "markdown",
     js_render: bool = False,
-    timeout: int = 30,
+    timeout: int = 30000,
     max_tokens: int = 8000,
     user_agent: Optional[str] = None,
     proxy: Optional[str] = None,
 ) -> dict:
     """
-    获取和处理网页内容 - 小沈 2026-05-02
+    获取和处理网页内容 - 小沈 2026-05-03 timeout改毫秒
     
     支持静态抓取和JS渲染（需要额外依赖）。
     支持多种输出格式：markdown、html、text。
     支持AI提取指令（prompt）。
     """
+    timeout_sec = timeout / 1000.0
+    
     try:
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
@@ -330,7 +332,7 @@ async def fetch_webpage(
             proxy_config = {"http://": proxy, "https://": proxy}
         
         async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout),
+            timeout=httpx.Timeout(timeout_sec),
             follow_redirects=True,
             proxies=proxy_config
         ) as client:

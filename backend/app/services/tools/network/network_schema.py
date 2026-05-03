@@ -86,7 +86,7 @@ class FetchWebpageInput(BaseModel):
         default=False, description="是否启用JS渲染（Headless浏览器）。默认false（静态抓取）。若返回内容为空或检测到SPA特征，Agent自动重试true"
     )
     timeout: int = Field(
-        default=30, ge=5, le=120, description="超时秒数。默认30秒。Agent根据域名响应历史动态调整：慢站自动延长至60秒"
+        default=30000, ge=1000, le=120000, description="超时毫秒数，默认30000（30秒），最大120000（2分钟）。Agent根据域名响应历史动态调整 - 小沈 2026-05-03"
     )
     max_tokens: int = Field(
         default=8000, ge=500, le=32000, description="最大返回Token数。默认8000。Agent按语义块边界智能截断，确保返回完整结构化文本"
