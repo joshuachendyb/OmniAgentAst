@@ -16,35 +16,70 @@ Author: 小沈 - 2026-04-29
 """
 
 import os
+import sys
 from typing import Optional, Dict, Any, List
 
 from app.utils.logger import logger
 
 
-def get_env(name: str, default: Optional[str] = None) -> dict:
+def get_env(name: str, default: Optional[str] = None, scope: str = "process", expand_vars: bool = True) -> dict:
     """
-    获取环境变量
+    获取环境变量 - 小沈 2026-05-03 增加scope+expand_vars支持
 
     Args:
         name: 环境变量名称
         default: 默认值（可选）
+        scope: 作用域 (process/user/system)
+        expand_vars: 是否展开嵌套变量
 
     Returns:
         {code, data, message}
     """
     try:
-        value = os.environ.get(name)
+        value = None
+
+        if scope == "process":
+            value = os.environ.get(name)
+        elif scope in ("user", "system"):
+            try:
+                import winreg
+                hive = winreg.HKEY_CURRENT_USER if scope == "user" else winreg.HKEY_LOCAL_MACHINE
+                key = winreg.OpenKey(
+                    hive,
+                    r"Environment" if scope == "user" else r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+                    0, winreg.KEY_READ
+                )
+                try:
+                    value, _ = winreg.QueryValueEx(key, name)
+                except FileNotFoundError:
+                    value = None
+                finally:
+                    winreg.CloseKey(key)
+            except Exception as e:
+                logger.warning(f"[get_env] 读取{scope}级环境变量失败: {e}")
+                value = os.environ.get(name)
+
         if value is not None:
+            original_value = value
+            if expand_vars and isinstance(value, str):
+                try:
+                    if sys.platform == "win32":
+                        expanded = os.path.expandvars(value)
+                    else:
+                        expanded = os.path.expandvars(value)
+                    value = expanded
+                except Exception:
+                    pass
             return {
                 "code": "SUCCESS",
-                "data": {"name": name, "value": value, "exists": True},
-                "message": f"成功获取环境变量 {name}"
+                "data": {"name": name, "value": value, "exists": True, "scope": scope, "expanded": expand_vars},
+                "message": f"成功获取环境变量 {name}（作用域: {scope}）"
             }
         else:
             return {
                 "code": "SUCCESS",
-                "data": {"name": name, "value": default, "exists": False},
-                "message": f"环境变量 {name} 不存在，返回默认值"
+                "data": {"name": name, "value": default, "exists": False, "scope": scope, "expanded": expand_vars},
+                "message": f"环境变量 {name} 不存在（作用域: {scope}），返回默认值"
             }
     except Exception as e:
         logger.error(f"[get_env] 获取环境变量失败: {e}")
@@ -55,25 +90,26 @@ def get_env(name: str, default: Optional[str] = None) -> dict:
         }
 
 
-def set_env(name: str, value: str, scope: str = "process") -> dict:
+def set_env(name: str, value: str, scope: str = "process", append_mode: bool = False) -> dict:
     """
-    设置环境变量
+    设置环境变量 - 小沈 2026-05-03 增加append_mode支持
 
     注意：
     - scope="process": 仅当前进程生效（推荐）
     - scope="user": 需要写入用户环境（需要权限，可能需要重启shell生效）
     - scope="system": 需要管理员权限（写入系统环境，不推荐）
+    - append_mode=True: 追加而非覆盖，自动去重和选择分隔符
 
     Args:
         name: 环境变量名称
         value: 环境变量值
         scope: 作用域 (process/user/system)
+        append_mode: 追加模式（默认False覆盖）
 
     Returns:
         {code, data, message}
     """
     try:
-        # 验证变量名
         if not name or not name.strip():
             return {
                 "code": "ERR_ENV_INVALID_NAME",
@@ -81,7 +117,6 @@ def set_env(name: str, value: str, scope: str = "process") -> dict:
                 "message": "环境变量名称不能为空"
             }
 
-        # 验证变量值
         if value is None:
             return {
                 "code": "ERR_ENV_INVALID_VALUE",
@@ -89,43 +124,59 @@ def set_env(name: str, value: str, scope: str = "process") -> dict:
                 "message": "环境变量值不能为None"
             }
 
+        if append_mode:
+            existing = os.environ.get(name, "")
+            separator = ";" if sys.platform == "win32" else ":"
+            if existing:
+                parts = [p.strip() for p in existing.split(separator) if p.strip()]
+                new_value_stripped = value.strip()
+                if new_value_stripped not in parts:
+                    parts.append(new_value_stripped)
+                effective_value = separator.join(parts)
+            else:
+                effective_value = value
+        else:
+            effective_value = value
+
         if scope == "process":
-            # 仅当前进程
-            os.environ[name] = value
+            os.environ[name] = effective_value
             return {
                 "code": "SUCCESS",
-                "data": {"name": name, "value": value, "scope": scope},
-                "message": f"已设置环境变量（当前进程）: {name}={value}"
+                "data": {"name": name, "value": effective_value, "scope": scope, "append_mode": append_mode},
+                "message": f"已设置环境变量（当前进程）: {name}={effective_value}"
             }
 
         elif scope == "user":
-            # 需要使用setx写入用户环境
             import subprocess
             result = subprocess.run(
-                ["setx", name, value],
+                ["setx", name, effective_value],
                 capture_output=True,
                 text=True,
                 shell=True
             )
             if result.returncode == 0:
+                os.environ[name] = effective_value
                 return {
                     "code": "SUCCESS",
-                    "data": {"name": name, "value": value, "scope": scope},
-                    "message": f"已设置环境变量（用户级）: {name}={value}，需要重启终端生效"
+                    "data": {"name": name, "value": effective_value, "scope": scope, "append_mode": append_mode},
+                    "message": f"已设置环境变量（用户级）: {name}={effective_value}，需要重启终端生效"
                 }
             else:
+                logger.warning(f"[set_env] setx失败，降级为process: {result.stderr}")
+                os.environ[name] = effective_value
                 return {
-                    "code": "ERR_ENV_SET_USER",
-                    "data": None,
-                    "message": f"设置用户环境变量失败: {result.stderr}"
+                    "code": "SUCCESS",
+                    "data": {"name": name, "value": effective_value, "scope": "process", "append_mode": append_mode},
+                    "message": f"设置用户环境变量失败，已降级为进程级: {name}={effective_value}"
                 }
 
         elif scope == "system":
-            # 需要管理员权限
+            logger.warning("[set_env] system scope需管理员权限，降级为process")
+            os.environ[name] = effective_value
             return {
-                "code": "ERR_ENV_NO_PERMISSION",
-                "data": None,
-                "message": "设置系统级环境变量需要管理员权限，建议使用 user 作用域或在系统属性中手动设置"
+                "code": "SUCCESS",
+                "data": {"name": name, "value": effective_value, "scope": "process", "append_mode": append_mode},
+                "message": f"系统级需管理员权限，已降级为进程级: {name}={effective_value}"
             }
 
         else:

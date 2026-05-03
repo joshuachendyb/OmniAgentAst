@@ -35,9 +35,54 @@ from app.services.tools.env.env_tools import (
 
 # 工具描述
 ENV_TOOL_DESCRIPTIONS = {
-    "get_env": "获取指定环境变量的值，支持设置默认值（变量不存在时返回默认值）。适合读取PATH、HOME、JAVA_HOME等系统环境变量",
-    "set_env": "设置环境变量，支持进程级（仅当前进程有效）和用户级（持久化到系统）作用域。适合临时修改变量、配置环境",
-    "list_env": "列出所有环境变量或指定前缀的环境变量（如列出所有JAVA_开头的变量）。适合查看所有环境变量、查找特定前缀变量",
+    "get_env": """获取指定的环境变量值。
+
+使用场景：
+- 当用户需要获取环境变量时使用
+- 当用户想要读取系统配置时使用
+- 当用户需要获取 PATH 等系统环境变量时使用
+
+参数说明：
+- name：环境变量名称
+- default：默认值（可选）
+- scope：作用域（可选），默认 process
+- expand_vars：是否展开嵌套变量（可选），默认 true
+
+【重要】返回环境变量的值，自动展开嵌套变量
+
+使用示例：
+- 获取PATH：{"name": "PATH"}
+- 获取带默认值：{"name": "MY_API_KEY", "default": "unknown"}""",
+    "set_env": """设置指定的环境变量值。
+
+使用场景：
+- 当用户需要设置环境变量时使用
+- 当用户想要配置系统环境时使用
+- 当用户需要临时设置运行参数时使用
+
+参数说明：
+- name：环境变量名称
+- value：环境变量值
+- scope：作用域（可选），默认 process
+- append_mode：追加模式（可选），默认 false
+
+【重要】设置环境变量。默认仅对当前进程有效。若 scope 为 user/system，Agent 尝试持久化，遇权限不足自动降级为 process 并提示用户
+
+使用示例：
+- 设置变量：{"name": "MY_API_KEY", "value": "sk-abc123"}
+- 追加PATH：{"name": "PATH", "value": "C:\\Python39", "append_mode": true}""",
+    "list_env": """列出所有环境变量或指定前缀的环境变量。
+
+使用场景：
+- 当用户需要查看所有环境变量时使用
+- 当用户想要查找特定前缀变量时使用
+- 当用户问"有哪些JAVA相关变量"时使用
+
+参数说明：
+- prefix：环境变量名前缀过滤（可选），例如 PY、JAVA
+- include_system：是否包含系统级环境变量（可选），默认 false
+
+【重要】返回环境变量列表，支持前缀过滤""",
 }
 
 # 模型映射
@@ -53,10 +98,12 @@ ENV_TOOL_EXAMPLES = {
         {"name": "PATH"},
         {"name": "JAVA_HOME", "default": "C:/Java"},
         {"name": "HOME", "default": "C:/Users"},
+        {"name": "PATH", "scope": "user", "expand_vars": True},
     ],
     "set_env": [
         {"name": "MY_VAR", "value": "test_value", "scope": "process"},
         {"name": "APP_PATH", "value": "D:/myapp", "scope": "user"},
+        {"name": "PATH", "value": "C:/Python39", "append_mode": True},
     ],
     "list_env": [
         {"prefix": "PY"},

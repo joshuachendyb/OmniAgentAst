@@ -21,25 +21,34 @@ from typing import Optional, Dict, Any, Literal
 
 
 class GetEnvInput(BaseModel):
-    """get_env 工具的输入参数"""
+    """get_env 工具的输入参数 - 小沈 2026-05-03 增加scope+expand_vars参数"""
     name: str = Field(
-        ..., description="环境变量名称（必填），例如 PATH、HOME、USER"
+        ..., description="环境变量名称。如 \"PATH\"、\"HOME\"、\"USER\"、\"JAVA_HOME\" 等"
     )
     default: Optional[str] = Field(
-        default=None, description="默认值（可选）。当环境变量不存在时返回此值"
+        default=None, description="默认值（可选）。如果指定的环境变量不存在，则返回此默认值"
+    )
+    scope: Literal["process", "user", "system"] = Field(
+        default="process", description="作用域。process（仅当前进程，默认）、user（当前用户持久化）、system（全局持久化，需管理员权限）。由 Agent 根据 query 语义自动映射"
+    )
+    expand_vars: bool = Field(
+        default=True, description="是否展开值中的嵌套变量（如 %JAVA_HOME%\\bin 或 $HOME/.local）。默认 true（返回绝对路径）。展开失败时保留原始字符串"
     )
 
 
 class SetEnvInput(BaseModel):
-    """set_env 工具的输入参数"""
+    """set_env 工具的输入参数 - 小沈 2026-05-03 增加append_mode参数"""
     name: str = Field(
-        ..., description="环境变量名称（必填），例如 MY_VAR、APP_PATH"
+        ..., description="环境变量名称。如 \"MY_VARIABLE\"、\"CONFIG_PATH\"、\"PATH\" 等"
     )
     value: str = Field(
-        ..., description="环境变量值（必填），例如 /path/to/app、true、123"
+        ..., description="环境变量值。任意字符串值"
     )
     scope: Literal["user", "system", "process"] = Field(
-        default="process", description="环境变量作用域：user（当前用户）、system（系统级）、process（当前进程），默认为process"
+        default="process", description="作用域。可选值：process（仅当前进程，默认）、user（持久化到当前用户）、system（持久化到全局，需管理员权限）。Agent 根据语义自动映射，遇权限不足自动降级为 process 并提示用户"
+    )
+    append_mode: bool = Field(
+        default=False, description="追加模式。默认 false（覆盖）。若 name 为 PATH 或 CLASSPATH，Agent 自动设 true，安全追加新路径且自动去除重复路径。根据 OS 自动选择分隔符（Win ; / Linux :）"
     )
 
 
