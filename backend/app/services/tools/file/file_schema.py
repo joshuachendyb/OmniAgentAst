@@ -60,11 +60,11 @@ class ListDirectoryInput(BaseModel):
         default=10,
         ge=1,
         le=50,
-        description="最大递归深度，仅当 recursive=True 时有效，默认为10"
+        description="最大递归深度，仅当 recursive=True 时有效，默认10层保护系统性能"
     )
     page_token: Optional[str] = Field(
         default=None,
-        description="分页令牌（位置编码），用于获取下一页结果"
+        description="分页令牌（base64编码的位置偏移量），用于获取后续页面结果"
     )
     sortBy: str = Field(
         default="name",
@@ -94,25 +94,25 @@ class DeleteFileInput(BaseModel):
 class MoveFileInput(BaseModel):
     """move_file 工具的输入参数 - 小健 2026-05-02 增加overwrite"""
     source_path: str = Field(
-        description="源文件或目录的完整路径"
+        description="源文件或目录的完整路径，必须是已存在的文件或目录"
     )
     destination_path: str = Field(
-        description="目标路径（可以是新文件名或新目录位置）"
+        description="目标路径（可以是新文件名或新目录位置）。如果目标目录不存在会自动创建"
     )
     overwrite: bool = Field(
         default=False,
-        description="是否覆盖已存在的目标文件，默认为False（不覆盖，目标存在时报错）"
+        description="是否覆盖已存在的目标文件，默认为False（不覆盖，目标存在时报错）。Agent智能判断防误覆盖"
     )
 
 
 class SearchFilesInput(BaseModel):
     """search_files 工具的输入参数 - 小健 2026-05-03 参数名统一为pattern/search_dir"""
     pattern: str = Field(
-        description="文件名匹配模式，支持通配符（* 匹配任意字符，? 匹配单个字符）"
+        description="文件名匹配模式，支持glob风格通配符（* 匹配任意字符，? 匹配单个字符）和中文文件名搜索。常用模式：\"*.txt\"、\"测试*\"、\"**/*.py\""
     )
     search_dir: str = Field(
         default="~",
-        description="搜索的起始目录（绝对路径），默认为用户主目录"
+        description="搜索的起始目录（绝对路径），默认为用户主目录。支持中文目录名（如 D:/项目/源码）"
     )
     recursive: bool = Field(
         default=True,
@@ -134,6 +134,10 @@ class SearchFilesInput(BaseModel):
     type: Optional[str] = Field(
         default=None,
         description="搜索类型过滤：'file'只返回文件，'directory'只返回目录，None(默认)两者都返回"
+    )
+    sortBy: Optional[str] = Field(
+        default="name",
+        description="排序方式。可选值：name（按名称字母排序，默认值）、size（按文件大小排序，从大到小）、mtime（按修改时间排序，最新的在前）"
     )
     page_token: Optional[str] = Field(
         default=None,
@@ -182,14 +186,14 @@ class CreateDirectoryInput(BaseModel):
     )
     exist_ok: bool = Field(
         default=True,
-        description="如果目录已存在是否报错，默认为True（不报错）"
+        description="如果目录已存在是否报错，默认为True（不报错，静默成功）。设为False则目录已存在时报错"
     )
 
 
 class GetFileInfoInput(BaseModel):
     """get_file_info 工具的输入参数 - 小健 2026-05-02 增加follow_symlinks"""
     file_path: str = Field(
-        description="文件或目录的完整路径（必须是绝对路径）"
+        description="文件或目录的完整路径（必须是绝对路径），支持中文路径"
     )
     follow_symlinks: bool = Field(
         default=True,
