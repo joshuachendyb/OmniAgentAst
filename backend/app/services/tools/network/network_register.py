@@ -101,19 +101,28 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - 简单下载：{"url": "https://example.com/file.zip", "destination_path": "D:/Downloads/file.zip"}
 - 带认证下载：{"url": "https://private.com/file.zip", "destination_path": "D:/Downloads/file.zip", "headers": {"Authorization": "Bearer token"}}
 - 禁止续传：{"url": "https://example.com/file.zip", "destination_path": "D:/Downloads/file.zip", "resume": false}""",
-    "fetch_webpage": """获取和处理网页内容，带 AI 分析功能。
+    "fetch_webpage": """获取和处理网页内容，支持多种格式提取。
 
 使用场景：
 - 当用户需要获取网页内容时使用
 - 当用户想要从网页中提取特定信息时使用
-- 当用户需要分析网页内容时使用
+- 当用户需要将网页转为Markdown格式时使用
 
 参数说明：
 - url：完全有效的 URL
-- prompt：提取指令（可选），默认提取核心内容和摘要
-- extract_format：提取格式（可选），默认 markdown
-- js_render：是否启用 JS 渲染（可选），默认 false
+- extract_format：提取格式（可选），可选值 markdown/html/text，默认 markdown
 - timeout：超时毫秒数（可选），默认 30000
+- max_tokens：最大返回字符数（可选），默认 8000
+- user_agent：自定义 UA（可选），默认自动生成浏览器UA
+- proxy：代理地址（可选）
+
+注意：
+- prompt 参数已定义但需要LLM后处理实现AI提取
+- js_render 参数已定义但未实现JS渲染功能
+
+【重要】返回网页的文本内容和提取格式
+
+使用示例：
 - max_tokens：最大返回 Token 数（可选），默认 8000
 - user_agent：自定义 UA（可选），Agent 自动注入随机浏览器 UA
 - proxy：代理地址（可选），Agent 优先直连，失败后自动使用代理重试
@@ -122,7 +131,7 @@ NETWORK_TOOL_DESCRIPTIONS = {
 
 使用示例：
 - 获取网页：{"url": "https://example.com", "prompt": "提取页面标题和主要内容"}""",
-    "search_web": """搜索网络获取最新信息。
+    "search_web": """搜索网络获取最新信息（使用DuckDuckGo API）。
 
 使用场景：
 - 当用户需要搜索网络获取最新信息时使用
@@ -130,11 +139,20 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - 当用户需要获取网上最新的技术文档时使用
 
 参数说明：
-- query：搜索查询字符串
-- allowed_domains：包含的域名数组（可选）
-- blocked_domains：排除的域名数组（可选）
+- query：搜索查询字符串（必填）
 - num_results：结果数量（可选），默认 10
-- time_range：时间范围（可选），可选值 any/d/w/m/y
+- proxy：代理地址（可选）
+
+注意：
+- allowed_domains 参数已定义但未实现
+- blocked_domains 参数已定义但未实现
+- time_range 参数已定义但未实现
+- language 参数已定义但未实现
+- safe_search 参数已定义但未实现
+
+【重要】返回搜索结果列表，包含标题、URL 和摘要
+
+使用示例：
 - language：搜索语言（可选），默认匹配当前会话语言
 - safe_search：安全搜索级别（可选），可选值 strict/moderate/off
 - proxy：代理地址（可选），Agent 优先直连，失败后自动使用代理重试
