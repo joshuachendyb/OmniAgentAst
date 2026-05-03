@@ -8,14 +8,23 @@ SYSTEM 工具参数 Schema 定义
 职责：
 定义 system 工具的 Pydantic 模型。
 
-工具列表（5个）：
+工具列表（13个）：
 1. get_system_info - 获取系统信息
 2. net_connections - 获取网络连接列表
 3. event_log - 获取系统事件日志
 4. list_processes - 列出所有进程
 5. kill_process - 终止指定进程
+6. log_message - 记录日志消息
+7. get_logs - 获取日志内容
+8. service_list - 列出系统服务
+9. service_start - 启动系统服务
+10. service_stop - 停止系统服务
+11. task_list - 列出计划任务
+12. task_create - 创建计划任务
+13. task_delete - 删除计划任务
 
 Author: 小沈 - 2026-04-29
+更新时间: 2026-05-03 小沈 - 修正参数description，准确清晰完整
 """
 
 from pydantic import BaseModel, Field
@@ -23,195 +32,262 @@ from typing import Optional, List, Literal
 
 
 class GetSystemInfoInput(BaseModel):
-    """get_system_info 工具的输入参数"""
+    """get_system_info 工具的输入参数 - 小沈 2026-05-03 修正"""
     info_type: Optional[Literal["basic", "cpu", "memory", "disk", "network", "all"]] = Field(
-        default="all", description="要获取的信息类型：basic（基本信息）、cpu（CPU信息）、memory（内存信息）、disk（磁盘信息）、network（网络信息）、all（全部信息），默认为all"
+        default="all",
+        description="要获取的系统信息类型。必填为LLM给出，当LLM未明确指定时Agent智能补全为all。可选值含义：\n- basic：操作系统名称、版本、主机名、架构等基础信息\n- cpu：处理器型号、核心数、频率、使用率等CPU信息\n- memory：总内存、可用内存、使用率等内存信息\n- disk：各磁盘总空间、可用空间、使用率等磁盘信息\n- network：网络接口名称、IP地址、MAC地址等网络信息\n- all：以上全部信息（默认）"
     )
 
 
 class NetConnectionsInput(BaseModel):
-    """net_connections 工具的输入参数"""
+    """net_connections 工具的输入参数 - 小沈 2026-05-03 修正"""
     kind: Literal["inet", "tcp", "udp"] = Field(
-        default="inet", description="连接类型。可选值：inet（TCP+UDP，默认）、tcp、udp"
+        default="inet",
+        description="网络连接的类型。必填为LLM给出，当LLM未明确指定时Agent智能补全为inet。可选值含义：\n- inet：TCP和UDP连接（默认）\n- tcp：仅TCP连接\n- 仅UDP连接"
     )
     state: Optional[str] = Field(
-        default=None, description="连接状态。可选值：established（已建立）、listen（监听）、time_wait等"
+        default=None,
+        description="连接状态过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（返回所有状态）。常见取值：\n- established：已建立的连接（用户问\"谁连着我\"时Agent自动设为此值）\n- listen：监听中的端口（用户问\"开了哪些服务\"时Agent自动设为此值）\n- time_wait：等待中的连接\n- close_wait：关闭等待中的连接"
     )
     resolve_dns: bool = Field(
-        default=False, description="是否进行反向DNS解析。默认false。若开启，仅对ESTABLISHED状态的前10个IP解析"
+        default=False,
+        description="是否对IP地址进行反向DNS解析，将IP地址解析为域名。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。开启后仅对ESTABLISHED状态的前10个IP进行解析，单IP超时2秒自动跳过，防止阻塞。"
     )
     process_info: bool = Field(
-        default=False, description="是否获取占用端口的进程名/PID。默认false"
+        default=False,
+        description="是否获取占用端口的进程信息（进程名和PID）。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。若用户问\"哪个程序占用端口\"，Agent自动设为true。权限不足时自动降级为仅返回IP和端口，并提示需要管理员权限。"
     )
     filter_port: Optional[int] = Field(
-        default=None, description="过滤指定端口号", ge=1, le=65535
+        default=None,
+        ge=1,
+        le=65535,
+        description="过滤指定端口号，只返回与该端口相关的连接。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。Agent自动从用户query中提取��口号填入，例如用户问\"占用8080端口的进程\"时Agent自动填入8080。"
     )
 
 
 class EventLogInput(BaseModel):
-    """event_log 工具的输入参数"""
+    """event_log 工具的输入参数 - 小沈 2026-05-03 修正"""
     log_name: str = Field(
-        default="System", description="日志名称。常用值：System、Application、Security"
+        default="System",
+        description="要读取的日志名称（Windows事件查看器日志分类）。必填为LLM给出，当LLM未明确指定时Agent智能补全为System。可选值含义：\n- System：系统日志，记录系统组件事件（默认）\n- Application：应用程序日志，记录应用程序事件\n- Security：安全日志，记录登录审计等信息\n用户问\"软件崩溃\"时Agent自动切为Application；问\"登录失败\"时Agent自动切为Security。"
     )
     max_events: int = Field(
-        default=50, ge=1, le=1000, description="最大返回事件数。默认50"
+        default=50,
+        ge=1,
+        le=1000,
+        description="最大返回的事件数。必填为LLM给出，当LLM未明确指定时Agent智能补全为50。Agent根据意图动态调整：概览类意图自动设为20条，深度排查类意图自动设为200条。"
     )
     level: Optional[Literal["critical", "error", "warning", "info"]] = Field(
-        default="error", description="日志级别。可选值：critical、error（默认）、warning、info"
+        default="error",
+        description="日志级别过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为error。可选值含义：\n- critical：严重错误（最高级别）\n- error：错误（默认）\n- warning：警告\n- info：信息\nAgent负责跨平台映射并自动收窄范围。"
     )
     source: Optional[str] = Field(
-        default=None, description="事件来源/应用名"
+        default=None,
+        description="事件来源/应用名过滤，只返回指定来源的事件。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。Agent自动从用户query中提取应用名填入，例如用户问\"Windows Update错误\"时Agent自动填入\"Windows Update\"。"
     )
     time_range: str = Field(
-        default="1h", description="时间范围。支持：10m、1h（默认）、24h、7d"
+        default="1h",
+        description="时间范围过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为1h。支持格式：\n- 10m：最近10分钟\n- 1h：最近1小时（默认）\n- 24h：最近24小时\n- 7d：最近7天\nAgent语义映射自然语言到标准格式，例如用户说\"今天\"自动映射为24h。"
     )
     event_id: Optional[List[int]] = Field(
-        default=None, description="事件ID数组"
+        default=None,
+        description="事件ID数组过滤，只返回指定ID的事件。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。支持数组格式例如[4625,4771]。Agent自动解析用户query中的事件ID进行联合过滤。"
     )
 
 
 class ListProcessesInput(BaseModel):
-    """list_processes 工具的输入参数 - 小沈 2026-05-02"""
+    """list_processes 工具的输入参数 - 小沈 2026-05-03 修正"""
     filter_name: Optional[str] = Field(
-        default=None, description="按进程名过滤（支持模糊匹配）"
+        default=None,
+        description="按进程名模糊匹配过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。例如填写\"python\"会匹配所有名称包含python的进程。"
     )
     filter_pid: Optional[int] = Field(
-        default=None, description="按PID过滤", ge=1
+        default=None,
+        ge=1,
+        description="按进程PID精确过滤，只返回指定PID的进程。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。"
     )
     sort_by: Literal["pid", "name", "cpu", "memory"] = Field(
-        default="pid", description="排序字段：pid（默认）、name、cpu、memory"
+        default="pid",
+        description="排序字段。必填为LLM给出，当LLM未明确指定时Agent智能补全为pid。可选值含义：\n- pid：按进程ID排序（默认）\n- name：按进程名排序\n- cpu：按CPU使用率排序\n- memory：按内存使用率排序"
     )
     descending: bool = Field(
-        default=False, description="是否降序排序。默认False（升序）"
+        default=False,
+        description="是否降序排序。必填为LLM给出，当LLM未明确指定时Agent智能补全为false（升序）。true为降序（从高到���）��false为升序（从低到高）。"
     )
     max_results: int = Field(
-        default=100, ge=1, le=500, description="最大返回进程数。默认100"
+        default=100,
+        ge=1,
+        le=500,
+        description="最大返回的进程数。必填为LLM给出，当LLM未明确指定时Agent智能补全为100。用于限制返回结果数量，避免输出过多。"
     )
 
 
 class KillProcessInput(BaseModel):
-    """kill_process 工具的输入参数 - 小沈 2026-05-02"""
+    """kill_process 工具的输入参数 - 小沈 2026-05-03 修正"""
     pid: int = Field(
-        description="要终止的进程PID", ge=1
+        ...,
+        ge=1,
+        description="要终止的进程PID（必填）。这是进程的唯一标识符，可通过list_processes工具获取。必填由LLM提供。"
     )
     force: bool = Field(
-        default=False, description="是否强制终止（SIGKILL）。默认False（SIGTERM）"
+        default=False,
+        description="是否强制终止进程。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。\n- false：优雅终止（SIGTERM），给进程机会清理资源（默认）\n- true：强制终止（SIGKILL），立即杀死进程\n若进程无响应，Agent自动设force为true强制杀死。"
     )
     timeout: int = Field(
-        default=5, ge=1, le=30, description="等待进程终止的超时时间（秒）。默认5秒"
+        default=5,
+        ge=1,
+        le=30,
+        description="等待进程终止的超时时间（秒）。必填为LLM给出，当LLM未明确指定时Agent智能补全为5。优雅终止时等待进程响应的最长时间，超过后自动转为强制终止。"
     )
 
 
 class LogMessageInput(BaseModel):
-    """log_message 工具的输入参数 - 小沈 2026-05-02"""
-    level: Literal["debug", "info", "warning", "error", "critical"] = Field(
-        default="info", description="日志级别：debug、info（默认）、warning、error、critical"
-    )
+    """log_message 工具的输入参数 - 小沈 2026-05-03 修正"""
     message: str = Field(
-        description="日志消息内容"
+        ...,
+        description="日志消息内容（必填）。要记录到日志的消息文本。必填由LLM提供。"
+    )
+    level: Literal["debug", "info", "warning", "error", "critical"] = Field(
+        default="info",
+        description="日志级别。必填为LLM给出，当LLM未明确指定时Agent智能补全为info。可选值含义：\n- debug：调试信息\n- info：一般信息（默认）\n- warning：警告\n- error：错误\n- critical：严重错误"
     )
     module: str = Field(
-        default="system", description="模块名称，用于区分日志来源。默认system"
+        default="system",
+        description="模块名称，用于区分日志来源。必填为LLM给出，当LLM未明确指定时Agent智能补全为system。例如：agent、tool、workflow等。"
     )
 
 
 class GetLogsInput(BaseModel):
-    """get_logs 工具的输入参数 - 小沈 2026-05-02"""
+    """get_logs 工具的输入参数 - 小沈 2026-05-03 修正"""
     date: Optional[str] = Field(
-        default=None, description="日期（格式：YYYY-MM-DD），默认今天"
+        default=None,
+        description="日志日期，格式为YYYY-MM-DD。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（默认当天）。例如：2026-05-03。"
     )
     level: Optional[Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]] = Field(
-        default=None, description="按日志级别过滤"
+        default=None,
+        description="日志级别过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（返回所有级别）。可选值：DEBUG、INFO、WARNING、ERROR、CRITICAL。"
     )
     module: Optional[str] = Field(
-        default=None, description="按模块名过滤"
+        default=None,
+        description="模块名称过滤，只返回指定模块的日志。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。"
     )
     keyword: Optional[str] = Field(
-        default=None, description="按关键字过滤"
+        default=None,
+        description="关键字过滤，只返回包含指定关键字的日志行。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。支持模糊匹配。"
     )
     max_lines: int = Field(
-        default=100, ge=1, le=1000, description="最大返回行数。默认100"
+        default=100,
+        ge=1,
+        le=1000,
+        description="最大返回的日志行数。必填为LLM给出，当LLM未明确指定时Agent智能补全为100。用于限制返回结果数量，避免输出过多。"
     )
 
 
 class ServiceListInput(BaseModel):
-    """service_list 工具的输入参数 - 小沈 2026-05-02"""
+    """service_list 工具的输入参数 - 小沈 2026-05-03 修正"""
     filter_name: Optional[str] = Field(
-        default=None, description="按服务名过滤（支持模糊匹配）"
+        default=None,
+        description="按服务名模糊匹配过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。例如填写\"mysql\"会匹配所有名称包含mysql的服务。"
     )
     filter_state: Optional[Literal["running", "stopped", "all"]] = Field(
-        default="all", description="按状态过滤：running（运行中）、stopped（已停止）、all（全部，默认）"
+        default="all",
+        description="按服务状态过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为all。可选值含义：\n- running：仅返回运行中的服务\n- stopped：仅返回已停止的服务\n- all：返回所有服务（默认）"
     )
     max_results: int = Field(
-        default=100, ge=1, le=500, description="最大返回服务数。默认100"
+        default=100,
+        ge=1,
+        le=500,
+        description="最大返回的服务数。必填为LLM给出，当LLM未明确指定时Agent智能补全为100。用于限制返回结果数量，避免输出过多。"
     )
 
 
 class ServiceStartInput(BaseModel):
-    """service_start 工具的输入参数 - 小沈 2026-05-02"""
+    """service_start 工具的输入参数 - 小沈 2026-05-03 修正"""
     service_name: str = Field(
-        description="要启动的服务名称"
+        ...,
+        description="要启动的服务名称（必填）。可通过service_list工具查询可用的服务名称。必填由LLM提供。"
     )
     timeout: int = Field(
-        default=30, ge=5, le=120, description="等待服务启动的超时时间（秒）。默认30秒"
+        default=30,
+        ge=5,
+        le=120,
+        description="等待服务启动的超时时间（秒）。必填为LLM给出，当LLM未明确指定时Agent智能补全为30。若服务启动时间超过此值则超时失败。"
     )
 
 
 class ServiceStopInput(BaseModel):
-    """service_stop 工具的输入参数 - 小沈 2026-05-02"""
+    """service_stop 工具的输入参数 - 小沈 2026-05-03 修正"""
     service_name: str = Field(
-        description="要停止的服务名称"
+        ...,
+        description="要停止的服务名称（必填）。可通过service_list工具查询可用的服务名称。必填由LLM提供。"
     )
     force: bool = Field(
-        default=False, description="是否强制停止。默认False（优雅停止）"
+        default=False,
+        description="是否强制停止服务。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。\n- false：优雅停止，发送停止信号（默认）\n- true：强制停止，立即终止\n若服务无响应，Agent自动设force为true强制停止。"
     )
     timeout: int = Field(
-        default=30, ge=5, le=120, description="等待服务停止的超时时间（秒）。默认30秒"
+        default=30,
+        ge=5,
+        le=120,
+        description="等待服务停止的超时时间（秒）。必填为LLM给出，当LLM未明确指定时Agent智能补全为30。若服务停止时间超过此值则超时失败。"
     )
 
 
 class TaskListInput(BaseModel):
-    """task_list 工具的输入参数 - 小沈 2026-05-02"""
+    """task_list 工具的输入参数 - 小沈 2026-05-03 修正"""
     filter_name: Optional[str] = Field(
-        default=None, description="按任务名过滤（支持模糊匹配）"
+        default=None,
+        description="按计划任务名模糊匹配过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。例如填写\"backup\"会匹配所有名称包含backup的任务。"
     )
     filter_status: Optional[Literal["ready", "running", "disabled", "all"]] = Field(
-        default="all", description="按状态过滤：ready（就绪）、running（运行中）、disabled（已禁用）、all（全部，默认）"
+        default="all",
+        description="按任务状态过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为all。可选值含义：\n- ready：已就绪待执行的任务\n- running：正在运行的任务\n- disabled：已禁用的任务\n- all：所有任务（默认）"
     )
     max_results: int = Field(
-        default=100, ge=1, le=500, description="最大返回任务数。默认100"
+        default=100,
+        ge=1,
+        le=500,
+        description="最大返回的任务数。必填为LLM给出，当LLM未明确指定时Agent智能补全为100。用于限制返回结果数量，避免输出过多。"
     )
 
 
 class TaskCreateInput(BaseModel):
-    """task_create 工具的输入参数 - 小沈 2026-05-02"""
+    """task_create 工具的输入参数 - 小沈 2026-05-03 修正"""
     task_name: str = Field(
-        description="计划任务名称"
+        ...,
+        description="计划任务的名称（必填）。用于标识和后续管理任务，不能与现有任务重名。必填由LLM提供。"
     )
     command: str = Field(
-        description="要执行的命令或程序路径"
+        ...,
+        description="要执行的命令或程序路径（必填）。可以是命令行或完整路径的可执行文件。必填由LLM提供。"
     )
     schedule: str = Field(
-        description="计划时间。格式：'HH:MM'（每日）或 'HH:MM /day'（每周几，1-7）或 'HH:MM /monthly DD'（每月几日）"
+        ...,
+        description="计划执行时间（必填）。格式说明：\n- 每日：\"HH:MM\"，例如\"08:00\"表示每天早上8点执行\n- 每周：\"HH:MM /day D\"，例如\"08:00 /day 1\"表示每周一早上8点执行，1-7代表周日到周六\n- 每月：\"HH:MM /monthly DD\"，例如\"08:00 /monthly 1\"表示每月1号早上8点执行\n必填由LLM提供。"
     )
     description: Optional[str] = Field(
-        default=None, description="任务描述"
+        default=None,
+        description="任务描述，用于说明任务的用途。可选，不提供时Agent智能补全为null。"
     )
     user: Optional[str] = Field(
-        default=None, description="运行任务的用户账户。默认当前用户"
+        default=None,
+        description="运行任务的用户账户。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（默认使用当前用户）。需要指定具有相应权限的用户。"
     )
     start_in: Optional[str] = Field(
-        default=None, description="任务起始目录"
+        default=None,
+        description="任务执行的起始目录。可选，不提供时Agent智能补全为null。指定命令执行时的工作目录。"
     )
 
 
 class TaskDeleteInput(BaseModel):
-    """task_delete 工具的输入参数 - 小沈 2026-05-02"""
+    """task_delete ��具的输入参数 - 小沈 2026-05-03 修正"""
     task_name: str = Field(
-        description="要删除的计划任务名称"
+        ...,
+        description="要删除的计划任务名称（必填）。可通过task_list工具查询现有的任务名称。必填由LLM提供。"
     )
     force: bool = Field(
-        default=False, description="是否强制删除（即使任务正在运行）。默认False"
+        default=False,
+        description="是否强制删除（即使任务正在运行）。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。\n- false：仅删除已停止的任务（默认）\n- true：强制删除，包括正在运行的任务"
     )
 
 
