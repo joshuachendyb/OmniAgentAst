@@ -562,12 +562,12 @@ class FileTools:
         self,
         file_path: str,
         text: str,
-        encoding: str = "utf-8",
+        encoding: Optional[str] = None,
         append: bool = False,
         create_parents: bool = True,
         unescape: bool = True
     ) -> Dict[str, Any]:
-        """写入文本文件 - 小健 2026-05-02 增强: text参数+append+create_parents"""
+        """写入文本文件 - 小健 2026-05-03 增加编码自动检测+OOM保护"""
         # 【新增 2026-05-02 小沈】二进制文件保护（最关键，防止破坏二进制文件）
         is_binary, binary_reason = _is_binary_file(file_path)
         if is_binary:
@@ -577,12 +577,12 @@ class FileTools:
                 "content": None
             }, "write_text_file")
         
+        # 【小健 2026-05-03】OOM保护：写入内容超过10MB时拒绝
         content = text
-        MAX_WRITE_SIZE = MAX_READ_SIZE
-        if len(content.encode(encoding)) > MAX_WRITE_SIZE:
+        if content and len(content.encode(encoding or 'utf-8')) > MAX_READ_SIZE:
             return _to_unified_format({
                 "success": False,
-                "error": f"写入内容过大，超过上限{MAX_WRITE_SIZE//1024//1024}MB",
+                "error": f"内容过大({len(content.encode(encoding or 'utf-8'))}字节)，超过写入上限{MAX_READ_SIZE//1024//1024}MB。请分批写入或使用其他方式处理大文件。",
                 "content": None
             }, "write_text_file")
 
@@ -636,6 +636,23 @@ class FileTools:
             }, "write_text_file")
         
         path = Path(file_path)
+        
+        # 【小健 2026-05-03】编码自动检测：encoding=None时自动检测
+        if encoding is None:
+            if append and path.exists() and path.is_file():
+                # 追加模式：检测已有文件的编码
+                for enc in ["utf-8", "gbk", "gb2312", "utf-8-sig"]:
+                    try:
+                        with open(path, 'r', encoding=enc) as f:
+                            f.read(1024)
+                        encoding = enc
+                        break
+                    except (UnicodeDecodeError, UnicodeError):
+                        continue
+                if encoding is None:
+                    encoding = "utf-8"
+            else:
+                encoding = "utf-8"
         
         if not append and path.exists() and path.is_file():
             old_size = path.stat().st_size

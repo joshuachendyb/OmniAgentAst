@@ -22,16 +22,16 @@ from typing import Optional, List, Dict, Any, Literal
 
 
 class WriteTextFileInput(BaseModel):
-    """write_text_file 工具的输入参数 - 小健 2026-05-02"""
+    """write_text_file 工具的输入参数 - 小健 2026-05-03 增加编码自动检测+OOM保护"""
     file_path: str = Field(
         description="文件的完整路径（必须是绝对路径）"
     )
     text: str = Field(
         description="要写入文件的文本内容"
     )
-    encoding: str = Field(
-        default="utf-8",
-        description="文件编码，默认为utf-8"
+    encoding: Optional[str] = Field(
+        default=None,
+        description="文件编码。None(默认)=自动检测（追加时检测已有文件编码，新建默认utf-8）；也可指定utf-8/gbk/gb2312等"
     )
     append: bool = Field(
         default=False,
@@ -394,7 +394,7 @@ class PreciseReplaceInFileInput(BaseModel):
     )
 
 
-class EditFileInput(BaseModel):
+class EditTextFileInput(BaseModel):
     """edit_file 工具的输入参数"""
     file_path: str = Field(
         description="要编辑的文件路径，支持中文路径"
@@ -549,7 +549,7 @@ __all__ = [
     "ReadMediaFileInput",
     "ReadBatchFileInput",
     "PreciseReplaceInFileInput",
-    "EditFileInput",
+    "EditTextFileInput",
     "RenameFileInput",
     "GrepFileContentInput",
     "GetDirectoryTreeInput",

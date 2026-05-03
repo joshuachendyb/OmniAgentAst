@@ -31,7 +31,7 @@ File Register - 文件工具注册点
 18. read_media_file - 读取媒体文件
 19. read_batch_file - 批量读取文件
 20. precise_replace_in_file - 精确替换文件内容
-21. edit_file - 编辑文件
+21. edit_text_file - 编辑文本文件
 22. rename_file - 重命名文件/目录
 23. grep_file_content - 搜索文件内容
 24. get_directory_tree - 获取目录树
@@ -77,7 +77,7 @@ from app.services.tools.file.file_schema import (
     ReadMediaFileInput,
     ReadBatchFileInput,
     PreciseReplaceInFileInput,
-    EditFileInput,
+    EditTextFileInput,
     RenameFileInput,
     GrepFileContentInput,
     GetDirectoryTreeInput,
@@ -108,7 +108,7 @@ FILE_TOOL_DESCRIPTIONS = {
     "read_media_file": "读取图片或音频文件，返回Base64编码。适合读取.png/.jpg/.mp3等二进制媒体文件",
     "read_batch_file": "批量读取多个文本文件内容，并行读取提高效率。适合对比多个文件、批量查看配置",
     "precise_replace_in_file": "精确替换单个字符串（仅支持文本文件，禁止编辑二进制文件），支持replace_all全局替换。适合简单的字符串替换场景，如批量修改变量名",
-    "edit_file": "同时编辑文件的多处位置（仅支持文本文件，禁止编辑二进制文件），支持dryRun预览模式。适合复杂的多位置编辑，可先预览再执行",
+    "edit_text_file": "同时编辑文本文件的多处位置（仅支持文本文件，禁止编辑二进制文件），支持dryRun预览模式。适合复杂的多位置编辑，可先预览再执行",
     "rename_file": "重命名文件或目录（仅同目录改名，不移动）。适合'重命名'场景，语义明确。内部通过move_file实现",
     "grep_file_content": "按内容搜索文件（正则表达式），支持上下文行/文件类型过滤/分页。适合搜索代码、查找函数定义、搜索关键词",
     "get_directory_tree": "获取目录的JSON树形结构，递归展示所有层级。适合查看项目整体结构、生成目录文档",
@@ -195,7 +195,7 @@ FILE_TOOL_EXAMPLES = {
         {"file_path": "D:/OmniAgentAs-desk/backend/app/main.py", "old_string": "def old_func():", "new_string": "def new_func():"},
         {"file_path": "D:/OmniAgentAs-desk/backend/app/main.py", "old_string": "print(\"debug\")", "new_string": "# print(\"debug\")", "replace_all": True}
     ],
-    "edit_file": [
+    "edit_text_file": [
         {"file_path": "D:/OmniAgentAs-desk/backend/app/main.py", "edits": [{"oldText": "def old():", "newText": "def new():"}]},
         {"file_path": "D:/OmniAgentAs-desk/backend/app/main.py", "edits": [{"oldText": "import os", "newText": "import os\nimport sys"}], "dryRun": True}
     ],
@@ -256,7 +256,7 @@ def _register_file_tools():
         "read_media_file": lambda: _get_ft().read_media_file,
         "read_batch_file": lambda: _get_ft().read_batch_file,
         "precise_replace_in_file": lambda: _get_ft().precise_replace_in_file,
-        "edit_file": lambda: _get_ft().edit_file,
+        "edit_text_file": lambda: _get_ft().edit_file,
         "rename_file": lambda: _get_ft().rename_file,
         "grep_file_content": lambda: _get_ft().grep_file_content,
         "get_directory_tree": lambda: _get_ft().get_directory_tree,
@@ -284,7 +284,7 @@ def _register_file_tools():
         "read_media_file": ReadMediaFileInput,
         "read_batch_file": ReadBatchFileInput,
         "precise_replace_in_file": PreciseReplaceInFileInput,
-        "edit_file": EditFileInput,
+        "edit_text_file": EditTextFileInput,
         "rename_file": RenameFileInput,
         "grep_file_content": GrepFileContentInput,
         "get_directory_tree": GetDirectoryTreeInput,
