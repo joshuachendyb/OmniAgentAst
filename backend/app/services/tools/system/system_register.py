@@ -134,12 +134,12 @@ SYSTEM_TOOL_EXAMPLES = {
     ],
     "service_list": [
         {},
-        {"filter_state": "running"},
-        {"filter_name": "mysql", "max_results": 20},
+        {"state": "running"},
+        {"name": "mysql", "state": "running"},
     ],
     "service_start": [
         {"service_name": "mysql"},
-        {"service_name": "nginx", "timeout": 60},
+        {"service_name": "nginx", "wait_for_started": True},
     ],
     "service_stop": [
         {"service_name": "mysql"},

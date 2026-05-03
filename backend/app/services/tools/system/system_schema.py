@@ -234,52 +234,63 @@ class GetLogsInput(BaseModel):
 
 
 class ServiceListInput(BaseModel):
-    """service_list 工具的输入参数 - 小沈 2026-05-03 修正"""
-    filter_name: Optional[str] = Field(
+    """service_list 工具的输入参数 - 小沈 2026-05-03 修正
+    
+    按文档7.6节参数定义：
+    - name: 服务名称过滤（可选）
+    - state: 状态过滤（可选），running/stopped/all
+    - output_format: 输出格式（可选），json/table
+    """
+    name: Optional[str] = Field(
         default=None,
-        description="按服务名模糊匹配过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。例如填写\"mysql\"会匹配所有名称包含mysql的服务。"
+        description="服务名称过滤（可选）。如 MySQL、nginx。Agent 根据 query 语义自动提取服务名关键词进行模糊匹配"
     )
-    filter_state: Optional[Literal["running", "stopped", "all"]] = Field(
+    state: Optional[Literal["running", "stopped", "all"]] = Field(
         default="all",
-        description="按服务状态过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为all。可选值含义：\n- running：仅返回运行中的服务\n- stopped：仅返回已停止的服务\n- all：返回所有服务（默认）"
+        description="服务状态过滤（可选）。可选值：running（运行中）、stopped（已停止）、all（全部，默认值）。Agent 根据 query 语义自动映射，如问运行中的服务自动映射为 running"
     )
-    max_results: int = Field(
-        default=100,
-        ge=1,
-        le=500,
-        description="最大返回的服务数。必填为LLM给出，当LLM未明确指定时Agent智能补全为100。用于限制返回结果数量，避免输出过多。"
+    output_format: Literal["json", "table"] = Field(
+        default="json",
+        description="输出格式（可选）。可选值：json（默认，结构化数据）、table（人类可读表格）。Agent 根据下游需求自动切换，如需人类阅读则切换为 table"
     )
 
 
 class ServiceStartInput(BaseModel):
-    """service_start 工具的输入参数 - 小沈 2026-05-03 修正"""
+    """service_start 工具的输入参数 - 小沈 2026-05-03 修正
+    
+    按文档7.6节参数定义：
+    - service_name: 服务名称（必填）
+    - wait_for_started: 等待启动（可选），默认 true
+    """
     service_name: str = Field(
         ...,
-        description="要启动的服务名称（必填）。可通过service_list工具查询可用的服务名称。必填由LLM提供。"
+        description="要启动的服务名称（必填）。如 MySQL、nginx。必填由 LLM 提供，可通过 service_list 查询可用服务"
     )
-    timeout: int = Field(
-        default=30,
-        ge=5,
-        le=120,
-        description="等待服务启动的超时时间（秒）。必填为LLM给出，当LLM未明确指定时Agent智能补全为30。若服务启动时间超过此值则超时失败。"
+    wait_for_started: bool = Field(
+        default=True,
+        description="等待服务启动完成（可选）。默认 true。Agent 等待服务真正进入运行状态后再返回，确保启动成功。若设为 false 则立即返回"
     )
 
 
 class ServiceStopInput(BaseModel):
-    """service_stop 工具的输入参数 - 小沈 2026-05-03 修正"""
+    """service_stop 工具的输入参数 - 小沈 2026-05-03 修正
+    
+    按文档7.6节参数定义：
+    - service_name: 服务名称（必填）
+    - force: 强制停止（可选），默认 false
+    - wait_for_stopped: 等待停止（可选），默认 true
+    """
     service_name: str = Field(
         ...,
-        description="要停止的服务名称（必填）。可通过service_list工具查询可用的服务名称。必填由LLM提供。"
+        description="要停止的服务名称（必填）。如 MySQL、nginx。必填由 LLM 提供，可通过 service_list 查询可用服务"
     )
     force: bool = Field(
         default=False,
-        description="是否强制停止服务。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。\n- false：优雅停止，发送停止信号（默认）\n- true：强制停止，立即终止\n若服务无响应，Agent自动设force为true强制停止。"
+        description="是否强制停止服务（可选）。默认 false。false：优雅停止，发送停止信号等待清理；true：强制立即终止。若服务无响应，Agent 自动设 force 为 true"
     )
-    timeout: int = Field(
-        default=30,
-        ge=5,
-        le=120,
-        description="等待服务停止的超时时间（秒）。必填为LLM给出，当LLM未明确指定时Agent智能补全为30。若服务停止时间超过此值则超时失败。"
+    wait_for_stopped: bool = Field(
+        default=True,
+        description="等待服务停止完成（可选）。默认 true。Agent 等待服务真正停止后再返回，确保停止成功。若设为 false 则立即返回"
     )
 
 

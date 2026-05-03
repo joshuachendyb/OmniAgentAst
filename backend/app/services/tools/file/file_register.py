@@ -165,7 +165,7 @@ FILE_TOOL_EXAMPLES = {
     "compress_files": [
         {"source_path": "C:/Users/用户名/Documents/a.txt", "output_path": "C:/Users/用户名/Documents/archive.zip"},
         {"source_path": "D:/项目代码/src", "output_path": "D:/项目代码/code.zip", "format": "zip", "compression_level": 6},
-        {"source_path": "D:/项目代码", "output_path": "D:/backup/bak.tar.gz", "format": "tar.gz", "exclude_patterns": ["node_modules", "__pycache__"], "overwrite": false}
+        {"source_path": "D:/项目代码", "output_path": "D:/backup/bak.tar.gz", "format": "tar.gz", "exclude_patterns": ["node_modules", "__pycache__"], "overwrite": False}
     ],
     "file_monitor": [
         {"directory": "C:/Users/用户名/Documents", "event_types": ["created", "modified"]},
