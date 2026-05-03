@@ -62,16 +62,23 @@ NETWORK_TOOL_DESCRIPTIONS = {
 
 参数说明：
 - url：请求的目标 URL，必须是完全有效的 URL（如 https://api.example.com/data）
-- method：HTTP 方法。可选值：GET、POST、PUT、DELETE、PATCH
+- method：HTTP 方法。可选值：GET、POST、PUT、DELETE、PATCH、HEAD、OPTIONS
 - headers：请求头对象（可选），如 {"Content-Type": "application/json", "Authorization": "Bearer token"}
+- params：查询参数对象（可选），自动拼接到 URL
 - body：请求体（可选），用于 POST、PUT、PATCH 方法，格式为字符串
+- json_body：JSON请求体（可选），自动序列化为JSON并设置 Content-Type
 - timeout：超时毫秒数，默认30000（30秒）
+- verify_ssl：是否验证SSL证书（可选），默认True
+- proxy：代理地址（可选），如需代理可传入
+- retry：重试次数（可选），默认3次
+- follow_redirects：是否跟随重定向（可选），默认True
 
 【重要】返回响应的状态码、响应头和响应体
 
 使用示例：
 - GET请求：{"url": "https://api.example.com/users", "method": "GET"}
-- POST请求：{"url": "https://api.example.com/users", "method": "POST", "headers": {"Content-Type": "application/json"}, "body": "{\"name\": \"张三\"}""",
+- POST请求：{"url": "https://api.example.com/users", "method": "POST", "headers": {"Content-Type": "application/json"}, "json_body": {"name": "张三"}}
+- 带重试：{"url": "https://api.example.com/users", "retry": 5}""",
     "download_file": """从 URL 下载文件到本地，支持大文件流式下载、断点续传、进度显示。
 
 使用场景：
