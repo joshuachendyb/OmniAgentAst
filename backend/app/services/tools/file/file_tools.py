@@ -1556,9 +1556,10 @@ class FileTools:
     async def file_checksum(
         self,
         file_path: str,
-        algorithm: str = "md5",
+        algorithm: str = "sha256",
         verify_hash: Optional[str] = None,
         chunk_size: int = 65536,
+        timeout: int = 30000,
     ) -> Dict[str, Any]:
         """计算文件校验和"""
         from app.services.tools.file.file_checksum import file_checksum_impl
@@ -1568,6 +1569,7 @@ class FileTools:
             algorithm=algorithm,
             verify_hash=verify_hash,
             chunk_size=chunk_size,
+            timeout=timeout,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
             task_id=self.task_id,

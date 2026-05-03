@@ -547,21 +547,27 @@ class ListAllowedDirectoriesInput(BaseModel):
 class FileChecksumInput(BaseModel):
     """file_checksum 工具的输入参数"""
     file_path: str = Field(
-        description="文件的完整路径（必须是绝对路径）"
+        ...,
+        description="要计算哈希的文件路径（必填）。必须是已存在的文件。"
     )
-    algorithm: str = Field(
-        default="md5",
-        description="哈希算法：md5、sha1、sha256、sha512，默认为md5"
+    algorithm: Literal["md5", "sha1", "sha256", "sha512"] = Field(
+        default="sha256",
+        description="哈希算法。必填为LLM给出，当LLM未明确指定时Agent智能补全为sha256。可选值含义：\n- md5：128位，快速但有碰撞风险（默认不推荐）\n- sha1：160位，安全性中等\n- sha256：256位，安全可靠（默认推荐）\n- sha512：512位，最安全但速度最慢\n除非用户明确指令\"快速校验\"或文件>5GB，否则绝不降级为md5。"
     )
     verify_hash: Optional[str] = Field(
         default=None,
-        description="验证哈希值（如果提供则进行验证）"
+        description="验证哈希值（可选）。若提供此参数，Agent自动比对并返回verified状态。"
     )
     chunk_size: int = Field(
         default=65536,
         ge=1024,
         le=1048576,
-        description="分块大小（字节），用于大文件哈希计算，默认65536字节"
+        description="分块大小（字节）。必填为LLM给出，当LLM未明确指定时Agent智能补全为65536。用于大文件流式计算，避免内存溢出。\n- 建议值：65536（64KB）\n- 大文件（>1GB）：可设为131072或更大"
+    )
+    timeout: int = Field(
+        default=30000,
+        ge=5000,
+        description="超时毫秒数。必填为LLM给出，当LLM未明确指定时Agent智能补全为30000。Agent根据文件大小动态调整（1GB→60000, 5GB→120000）。超时返回进度或报错，防主流程卡死。"
     )
 
 
