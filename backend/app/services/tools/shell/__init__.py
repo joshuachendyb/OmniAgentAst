@@ -22,14 +22,14 @@ from app.services.tools.shell import shell_register
 from app.services.tools.shell import shell_tools
 
 from app.services.tools.shell.shell_tools import (
-    execute_command,
+    execute_shell_command,
     get_working_directory,
     change_directory,
     check_path_exists,
 )
 
 __all__ = [
-    "execute_command",
+    "execute_shell_command",
     "get_working_directory",
     "change_directory",
     "check_path_exists",

@@ -6,7 +6,7 @@ Shell 工具函数模块 - Shell命令执行工具
 【规范】2026-05-02 小沈 移除 @register_tool 装饰器，改由 shell_register.py 显式注册
 
 包含：
-- execute_command: 执行Shell命令
+- execute_shell_command: 执行Shell命令（支持后台运行）
 - get_working_directory: 获取当前工作目录
 - change_directory: 切换工作目录
 - check_path_exists: 检查路径是否存在
@@ -29,21 +29,71 @@ from datetime import datetime
 _background_shells: Dict[str, Dict[str, Any]] = {}
 
 
-def execute_command(command: str, cwd: Optional[str] = None, timeout: int = 60) -> dict:
-    """执行Shell命令 - 小沈 2026-05-01"""
+def execute_shell_command(
+    command: str,
+    shell_type: Optional[str] = "powershell",
+    timeout: int = 300000,
+    run_in_background: bool = False,
+    cwd: Optional[str] = None,
+    encoding: Optional[str] = None,
+    env_vars: Optional[dict] = None,
+    run_as_admin: bool = False
+) -> dict:
+    """执行Shell命令 - 小沈 2026-05-03 重命名+补齐参数+timeout改毫秒"""
+    timeout_sec = timeout / 1000.0
+    
+    env = None
+    if env_vars:
+        env = os.environ.copy()
+        env.update(env_vars)
+    
+    if shell_type == "cmd":
+        executable = "cmd.exe"
+    else:
+        executable = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+    
     try:
+        if run_in_background:
+            shell_id = f"shell_{uuid.uuid4().hex[:8]}"
+            process = subprocess.Popen(
+                command,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=cwd,
+                env=env,
+                executable=executable
+            )
+            _background_shells[shell_id] = {
+                "process": process,
+                "command": command,
+                "started_at": datetime.now().isoformat(),
+                "shell_type": shell_type,
+                "cwd": cwd
+            }
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "shell_id": shell_id,
+                    "is_running": True,
+                    "started_at": datetime.now().isoformat()
+                },
+                "message": f"命令已在后台启动，shell_id: {shell_id}"
+            }
+        
         result = subprocess.run(
             command,
             shell=True,
             capture_output=True,
             text=True,
             cwd=cwd,
-            timeout=timeout
+            timeout=timeout_sec,
+            env=env,
+            executable=executable
         )
-        # 【修复 2026-05-01 小沈】message更精确：区分returncode+stderr
         if result.returncode == 0:
             if result.stderr and result.stderr.strip():
-                message = f"命令执行成功（有警告输出）"
+                message = "命令执行成功（有警告输出）"
             else:
                 message = "命令执行成功"
         else:
@@ -58,7 +108,6 @@ def execute_command(command: str, cwd: Optional[str] = None, timeout: int = 60) 
             "message": message
         }
     except subprocess.TimeoutExpired as e:
-        # 【修复 2026-05-01 小沈】超时时也返回已捕获的输出
         return {
             "code": "ERR_SHELL_TIMEOUT",
             "data": {
@@ -66,7 +115,7 @@ def execute_command(command: str, cwd: Optional[str] = None, timeout: int = 60) 
                 "stderr": e.stderr if e.stderr else "",
                 "returncode": -1
             },
-            "message": f"命令执行超时（{timeout}秒）"
+            "message": f"命令执行超时（{timeout}毫秒）"
         }
     except Exception as e:
         return {

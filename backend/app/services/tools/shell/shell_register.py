@@ -19,7 +19,7 @@ from app.services.tools.registry import register_tool, ToolCategory, tool_regist
 from app.utils.logger import logger
 
 from app.services.tools.shell.shell_schema import (
-    ExecuteCommandInput,
+    ExecuteShellCommandInput,
     GetWorkingDirectoryInput,
     ChangeDirectoryInput,
     CheckPathExistsInput,
@@ -28,7 +28,7 @@ from app.services.tools.shell.shell_schema import (
 )
 
 from app.services.tools.shell.shell_tools import (
-    execute_command,
+    execute_shell_command,
     get_working_directory,
     change_directory,
     check_path_exists,
@@ -37,22 +37,29 @@ from app.services.tools.shell.shell_tools import (
 )
 
 SHELL_TOOL_DESCRIPTIONS = {
-    "execute_command": """执行Shell命令并返回结果。
+    "execute_shell_command": """在指定 shell 环境中执行命令。Windows 原生默认 PowerShell，可选 CMD；bash 需额外安装（未来扩展）。
 
 使用场景：
 - 当用户需要执行系统命令时使用
-- 当用户需要运行脚本或程序时使用
-- 当用户需要获取系统信息（如ipconfig、dir等）时使用
+- 当用户想要运行命令行工具时使用
+- 当用户需要执行脚本或程序时使用
 
 参数说明：
-- command: 要执行的Shell命令。必填参数
-- cwd: 工作目录，如果为None则使用当前工作目录。可选参数
-- timeout: 超时时间（秒），默认为30秒。可选参数
+- command：要执行的命令
+- shell_type：执行环境。powershell（默认）-Windows PowerShell；cmd-Windows 命令提示符
+- timeout：超时毫秒数，默认300000（5分钟），最大600000（10分钟）
+- run_in_background：是否在后台运行命令
+- cwd：工作目录
+- encoding：命令输出编码，默认null自动检测
+- env_vars：环境变量对象
+- run_as_admin：是否以管理员权限运行
 
-返回数据说明：
-- stdout: 标准输出内容
-- stderr: 标准错误内容
-- returncode: 返回码（0表示成功）""",
+【重要】返回命令的 stdout、stderr 和退出码
+
+使用示例：
+- 执行dir命令：{"command": "dir"}
+- 执行Python脚本：{"command": "python script.py", "shell_type": "powershell"}
+- 后台运行：{"command": "npm run dev", "run_in_background": true}""",
     "get_working_directory": "获取当前工作目录的完整路径。",
     "change_directory": "改变当前工作目录到指定路径。",
     "check_path_exists": "检查指定的文件或目录是否存在，并返回类型信息。",
@@ -95,10 +102,10 @@ SHELL_TOOL_DESCRIPTIONS = {
 }
 
 SHELL_TOOL_EXAMPLES = {
-    "execute_command": [
-        {"command": "dir", "timeout": 10},
-        {"command": "python --version", "timeout": 10},
-        {"command": "dir /b D:/项目代码", "cwd": "D:/项目代码", "timeout": 30}
+    "execute_shell_command": [
+        {"command": "dir", "timeout": 10000},
+        {"command": "python --version", "shell_type": "powershell", "timeout": 10000},
+        {"command": "npm run dev", "run_in_background": True}
     ],
     "get_working_directory": [{}],
     "change_directory": [
@@ -128,7 +135,7 @@ def _register_shell_tools():
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
     tool_methods = {
-        "execute_command": execute_command,
+        "execute_shell_command": execute_shell_command,
         "get_working_directory": get_working_directory,
         "change_directory": change_directory,
         "check_path_exists": check_path_exists,
@@ -137,7 +144,7 @@ def _register_shell_tools():
     }
 
     TOOL_INPUT_MODELS = {
-        "execute_command": ExecuteCommandInput,
+        "execute_shell_command": ExecuteShellCommandInput,
         "get_working_directory": GetWorkingDirectoryInput,
         "change_directory": ChangeDirectoryInput,
         "check_path_exists": CheckPathExistsInput,
@@ -166,7 +173,7 @@ _register_shell_tools()
 
 
 __all__ = [
-    "execute_command",
+    "execute_shell_command",
     "get_working_directory",
     "change_directory",
     "check_path_exists",
