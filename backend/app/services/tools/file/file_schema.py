@@ -387,7 +387,7 @@ class ReadTextFileInput(BaseModel):
     )
     encoding: Optional[str] = Field(
         default=None,
-        description="文件编码。可选参数，由 Agent 根据文件内容自动检测。常见值：utf-8（默认）、gbk、gb2312、utf-8-sig"
+        description="文件编码。若读取失败，Agent 自动尝试 gbk、gb2312；若检测到 BOM 头，自动设为 utf-8-sig。常见值：utf-8（默认）、gbk、gb2312、utf-8-sig"
     )
 
 
