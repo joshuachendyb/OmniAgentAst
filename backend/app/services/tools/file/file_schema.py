@@ -248,9 +248,41 @@ class BatchRenameInput(BaseModel):
 
 
 class CompressFilesInput(BaseModel):
-    """compress_files 工具的输入参数"""
+    """compress_files 工具的输入参数 - 小沈 2026-05-03 修正"""
     source_path: str = Field(
-        description="源文件或目录的完整路径（必须是绝对路径）"
+        ...,
+        description="要压缩的文件或目录路径（必填）。必须是已存在的文件或目录。"
+    )
+    output_path: str = Field(
+        ...,
+        description="输出压缩文件路径（必填）。若是无后缀，Agent自动补全.zip后缀。"
+    )
+    format: Literal["zip", "tar.gz"] = Field(
+        default="zip",
+        description="压缩格式。必填为LLM给出，当LLM未明确指定时Agent智能补全为zip。可选值含义：\n- zip：ZIP格式压缩（默认）\n- tar.gz：tar.gz格式压缩\n若output_path后缀匹配，Agent自动推断。"
+    )
+    exclude_patterns: Optional[List[str]] = Field(
+        default=None,
+        description="排除的文件/目录模式数组。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。Agent仅扫描根目录特征文件（如package.json）自动注入排除列表（如node_modules），绝不深度遍历。"
+    )
+    compression_level: int = Field(
+        default=6,
+        ge=0,
+        le=9,
+        description="压缩级别（0-9）。必填为LLM给出，当LLM未明确指定时Agent智能补全为6。含义：\n- 0：不压缩，仅存储\n- 1-5：快速压缩，压缩比较低\n- 6：平衡压缩（默认）\n- 7-9：最高压缩，压缩比高但速度慢\n若源目录>1GB，Agent强制限制不超过6防CPU阻塞，除非用户明确指令\"不惜时间\"。"
+    )
+    overwrite: bool = Field(
+        default=False,
+        description="是否覆盖已存在的目标文件。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。含义：\n- false：不覆盖，若目标已存在则报错（默认）\n- true：覆盖已存在的目标文件\n若目标已存在且Agent自动比对哈希，相同则跳过，不同才覆盖。"
+    )
+    password: Optional[str] = Field(
+        default=None,
+        description="压缩密码（可选），用于加密压缩文件。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。注意：仅ZIP格式支持密码保护。"
+    )
+    split_size: Optional[int] = Field(
+        default=None,
+        ge=1024,
+        description="分卷大小（字节）。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（不分卷）。含义：\n- None表示不分卷\n- 数值表示分卷大小，例如1048576（1MB）\n用于大文件分卷压缩，便于网络传输。"
     )
     destination_path: str = Field(
         description="目标压缩文件路径（必须是绝对路径）"

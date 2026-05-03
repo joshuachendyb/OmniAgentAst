@@ -25,9 +25,11 @@ import tempfile
 
 async def compress_files_impl(
     source_path: str,
-    destination_path: str,
+    output_path: str,
     format: str = "zip",
+    exclude_patterns: Optional[List[str]] = None,
     compression_level: int = 6,
+    overwrite: bool = False,
     password: Optional[str] = None,
     split_size: Optional[int] = None,
     validate_path_func=None,
@@ -39,15 +41,17 @@ async def compress_files_impl(
     get_next_sequence_func=None,
 ) -> Dict[str, Any]:
     """
-    compress_files工具的实现函数
+    compress_files工具的实现函数 - 小沈 2026-05-03 修正
     
     Args:
-        source_path: 源文件或目录路径
-        destination_path: 目标压缩文件路径
-        format: 压缩格式：zip、tar.gz
-        compression_level: 压缩级别（0-9，0不压缩，9最高压缩）
-        password: 压缩密码（可选）
-        split_size: 分卷大小（字节），None表示不分卷
+        source_path: 源文件或目录路径（必填）
+        output_path: 输出压缩文件路径（必填）
+        format: 压缩格式：zip、tar.gz（可选），默认zip
+        exclude_patterns: 排除的文件/目录模式数组（可选）
+        compression_level: 压缩级别0-9（可选），默认6
+        overwrite: 是否覆盖已存在的目标文件（可选），默认false
+        password: 压缩密码（可选），用于加密压缩文件
+        split_size: 分卷大小字节（可选），None表示不分卷
         validate_path_func: 路径验证函数
         safety_service: 安全服务
         task_id: 任务ID
@@ -70,12 +74,13 @@ async def compress_files_impl(
             "operation_id": None
         }, "compress_files")
     
-    # 验证目标路径
-    is_valid_dst, error_msg_dst = validate_path_func(destination_path)
-    if not is_valid_dst:
+    destination_path = output_path
+    
+    # 验证目标路径（使用overwrite判断是否允许覆盖）
+    if not overwrite and is_valid_dst and os.path.exists(destination_path):
         return to_unified_format_func({
             "success": False,
-            "error": f"目标路径验证失败: {error_msg_dst}",
+            "error": f"目标文件已存在: {destination_path}，可设置overwrite=true覆盖",
             "operation_id": None
         }, "compress_files")
     
@@ -103,7 +108,7 @@ async def compress_files_impl(
         }, "compress_files")
     
     source = Path(source_path)
-    destination = Path(destination_path)
+    destination = Path(output_path)
     
     try:
         # 检查源路径是否存在
@@ -114,11 +119,11 @@ async def compress_files_impl(
                 "operation_id": None
             }, "compress_files")
         
-        # 检查目标路径是否可写
-        if destination.exists():
+        # 检查目标路径是否可写（仅当overwrite为false时检查）
+        if destination.exists() and not overwrite:
             return to_unified_format_func({
                 "success": False,
-                "error": f"目标文件已存在: {destination_path}",
+                "error": f"目标文件已存在: {output_path}，可设置overwrite=true覆盖",
                 "operation_id": None
             }, "compress_files")
         

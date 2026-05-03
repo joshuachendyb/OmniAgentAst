@@ -1469,9 +1469,11 @@ class FileTools:
     async def compress_files(
         self,
         source_path: str,
-        destination_path: str,
+        output_path: str,
         format: str = "zip",
+        exclude_patterns: Optional[List[str]] = None,
         compression_level: int = 6,
+        overwrite: bool = False,
         password: Optional[str] = None,
         split_size: Optional[int] = None,
     ) -> Dict[str, Any]:
@@ -1480,9 +1482,11 @@ class FileTools:
         
         return await compress_files_impl(
             source_path=source_path,
-            destination_path=destination_path,
+            output_path=output_path,
             format=format,
+            exclude_patterns=exclude_patterns,
             compression_level=compression_level,
+            overwrite=overwrite,
             password=password,
             split_size=split_size,
             validate_path_func=self._validate_path,
