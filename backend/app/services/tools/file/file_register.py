@@ -99,9 +99,9 @@ FILE_TOOL_DESCRIPTIONS = {
     "copy_file": "复制文件或目录到指定位置。\n\n使用场景：\n- 当用户需要复制文件到另一个位置时使用\n- 当用户想要备份文件时使用\n- 当用户需要创建文件的副本时使用\n\n参数说明：\n- source_path：源文件或目录路径\n- destination_path：目标路径\n- recursive：是否递归复制目录，仅当源路径是目录时有效\n- overwrite：目标已存在时是否覆盖\n- preserve_metadata：是否保留文件元数据（修改时间等），默认true\n\n【重要】如果目标路径已存在文件且 overwrite 为 false，操作会失败\n\n使用示例：\n- 复制文件：{\"source_path\": \"D:/OmniAgentAs-desk/config.yaml\", \"destination_path\": \"D:/backup/config.yaml\"}\n- 复制目录：{\"source_path\": \"D:/OmniAgentAs-desk/src\", \"destination_path\": \"D:/backup/src\", \"recursive\": true}",
     "create_directory": "创建新目录，如需要会创建父目录，目录已存在则静默成功。\n\n使用场景：\n- 当用户需要创建新目录时使用\n- 当用户需要创建多级目录时使用\n- 当用户需要在指定位置创建文件夹时使用\n\n参数说明：\n- dir_path：要创建的目录的完整路径（必须是绝对路径）\n- parents：是否创建父目录，默认为True（如果父目录不存在则创建）\n- exist_ok：如果目录已存在是否报错，默认为True（不报错，静默成功）\n\n【重要】默认情况下会自动创建父目录，且已存在目录不会报错，确保操作幂等性\n\n使用示例：\n- 创建单级目录：{\"dir_path\": \"D:/OmniAgentAs-desk/new_folder\"}\n- 创建多级目录：{\"dir_path\": \"D:/OmniAgentAs-desk/output/reports/2026\"}\n- 不创建父目录（父目录必须存在）：{\"dir_path\": \"D:/existing_folder/new_folder\", \"parents\": false}\n- 目录已存在时报错：{\"dir_path\": \"D:/existing_folder\", \"exist_ok\": false}",
     "get_file_info": "获取文件/目录的详细元数据，包括大小、创建/修改/访问时间、类型、权限。\n\n使用场景：\n- 当用户需要获取文件的详细信息时使用\n- 当用户想要了解文件的大小、修改时间等元数据时使用\n- 当用户需要检查文件类型和权限时使用\n\n参数说明：\n- file_path：文件或目录路径\n- follow_symlinks：是否跟随软链接。设置为 true 时获取链接指向的真实文件信息，设置为 false 时获取链接文件本身信息\n\n【重要】返回文件的完整元数据信息，包括：文件大小（字节）、创建时间、修改时间、访问时间、文件类型、权限标志\n\n使用示例：\n- 获取文件信息：{\"file_path\": \"D:/OmniAgentAs-desk/version.txt\"}\n- 不跟随软链接：{\"file_path\": \"D:/OmniAgentAs-desk/shortcut.lnk\", \"follow_symlinks\": false}",
-    "compare_files": "比较两个文件的内容/大小/修改时间差异，支持分块比较大文件。\n\n使用场景：\n- 当用户需要比较两个文件是否相同时使用\n- 当用户需要检查文件是否被修改时使用\n- 当用户需要查找两个文件的差异时使用\n\n参数说明：\n- file_path1：第一个文件路径\n- file_path2：第二个文件路径\n- mode：比较模式，可选content/size/mtime/all\n- chunk_size：分块大小，用于大文件分块比较\n\n【重要】支持分块比较，适合大文件。返回比较结果包含差异位置和行数\n\n使用示例：\n- 比较两个文件：{\"file_path1\": \"D:/a.txt\", \"file_path2\": \"D:/b.txt\"}\n- 分块比较：{\"file_path1\": \"D:/large1.txt\", \"file_path2\": \"D:/large2.txt\", \"chunk_size\": 4096}",
+    "compare_files": "比较两个文件的内容/大小/修改时间差异，支持分块比较大文件。\n\n使用场景：\n- 当用户需要比较两个文件是否相同时使用\n- 当用户需要检查文件是否被修改时使用\n- 当用户需要查找两个文件的差异时使用\n\n参数说明：\n- file_path1：第一个文件路径\n- file_path2：第二个文件路径\n- algorithm：比较算法，content（内容）、size（大小）、mtime（修改时间）\n- chunk_size：分块大小，用于大文件分块比较\n\n【重要】支持分块比较，适合大文件。返回比较结果包含差异位置和行数\n\n使用示例：\n- 比较两个文件：{\"file_path1\": \"D:/a.txt\", \"file_path2\": \"D:/b.txt\"}\n- 分块比较：{\"file_path1\": \"D:/large1.txt\", \"file_path2\": \"D:/large2.txt\", \"chunk_size\": 4096}",
     "batch_rename": "批量重命名文件（正则匹配），支持预览、冲突处理。\n\n使用场景：\n- 当用户需要批量重命名文件时使用\n- 当用户需要按规则统一修改文件名时使用\n- 当用户需要重命名多个文件时使用\n\n参数说明：\n- directory：目录路径\n- pattern：正则匹配模式\n- replacement：替换内容\n- recursive：是否递归子目录\n- preview：是否预览模式（不执行仅显示结果）\n- conflict_strategy：冲突处理方式skip/overwrite/rename\n\n【重要】首次执行建议preview=true先预览，确认无误后再执行\n\n使用示例：\n- 预览模式：{\"directory\": \"D:/files\", \"pattern\": \"(.*)\\.txt\", \"replacement\": \"$1_backup.txt\", \"preview\": true}\n- 执行重命名：{\"directory\": \"D:/files\", \"pattern\": \"(.*)\\.txt\", \"replacement\": \"$1_backup.txt\", \"preview\": false}",
-    "compress_files": "压缩文件或目录为zip/tar.gz，支持加密（password）和分卷（split_size）。\n\n使用场景：\n- 当用户需要压缩文件或目录时使用\n- 当用户需要打包多个文件时使用\n- 当用户需要创建备份时使用\n\n参数说明：\n- source_path：要压缩的文件或目录路径\n- output_path：压缩包输出路径\n- format：压缩格式，可选zip/tar.gz\n- password：加密密码（可选）\n- split_size：分卷大小，如10m、100m\n\n【重要】支持任意类型文件，支持加密和分卷\n\n使用示例：\n- 压缩目录：{\"source_path\": \"D:/docs\", \"output_dir\": \"D:/backup/docs.zip\"}\n- 加密压缩：{\"source_path\": \"D:/docs\", \"output_dir\": \"D:/backup/docs.zip\", \"password\": \"mypassword\"}\n- 分卷压缩：{\"source_path\": \"D:/large\", \"output_dir\": \"D:/backup/large.zip\", \"split_size\": \"100m\"}",
+    "compress_files": "压缩文件或目录为zip/tar.gz，支持加密（password）和分卷（split_size）。\n\n使用场景：\n- 当用户需要压缩文件或目录时使用\n- 当用户需要打包多个文件时使用\n- 当用户需要创建备份时使用\n\n参数说明：\n- source_path：要压缩的文件或目录路径\n- output_path：压缩包输出路径\n- format：压缩格式，可选zip/tar.gz\n- password：加密密码（可选）\n- split_size：分卷大小，如10m、100m\n\n【重要】支持任意类型文件，支持加密和分卷\n\n使用示例：\n- 压缩目录：{\"source_path\": \"D:/docs\", \"output_path\": \"D:/backup/docs.zip\"}\n- 加密压缩：{\"source_path\": \"D:/docs\", \"output_path\": \"D:/backup/docs.zip\", \"password\": \"mypassword\"}\n- 分卷压缩：{\"source_path\": \"D:/large\", \"output_path\": \"D:/backup/large.zip\", \"split_size\": \"100m\"}",
     "file_monitor": "监控目录文件变化（创建/修改/删除/重命名事件），支持递归监控、过滤条件、限时监控。\n\n使用场景：\n- 当用户需要监控目录文件变化时使用\n- 当用户需要监听文件创建/修改/删除事件时使用\n- 当用户需要实时了解目录变化时使用\n\n参数说明：\n- directory：监控的目录路径\n- recursive：是否递归监控子目录\n- event_types：监控事件类型create/modify/delete/rename\n- filters：过滤条件\n- duration：监控持续时间（秒）\n\n【重要】支持递归监控、多种事件类型过滤\n\n使用示例：\n- 监控目录：{\"directory\": \"D:/watch\", \"duration\": 60}\n- 监控修改事件：{\"directory\": \"D:/watch\", \"event_types\": [\"modify\"], \"duration\": 30}",
     "file_statistics": "统计目录的文件数量、总大小、类型分布，支持递归统计、过滤条件、多种输出格式。\n\n使用场景：\n- 当用户需要统计目录文件数量时使用\n- 当用户需要了解目录大小分布时使用\n- 当用户需要按文件类型统计存储空间时使用\n\n参数说明：\n- directory：统计的目录路径\n- recursive：是否递归统计子目录\n- output_format：输出格式json/csv/text\n- filters：过滤条件\n\n【重要】返回目录的文件数量、总大小、类型分布\n\n使用示例：\n- 统计目录：{\"directory\": \"D:/docs\"}\n- JSON格式输出：{\"directory\": \"D:/docs\", \"output_format\": \"json\"}",
     "file_checksum": "计算文件的MD5/SHA1/SHA256/SHA512哈希值，用于校验文件完整性。\n\n使用场景：\n- 当用户需要计算文件哈希值时使用\n- 当用户需要校验文件完整性时使用\n- 当用户需要验证下载文件是否被篡改时使用\n\n参数说明：\n- file_path：文件路径\n- algorithm：哈希算法，可选md5/sha1/sha256/sha512，默认sha256\n- verify_hash：验证哈希值（与给定的hash比较）\n\n【重要】支持分块计算大文件，返回哈希值可用于完整性校验\n\n使用示例：\n- 计算SHA256：{\"file_path\": \"D:/downloads/file.zip\"}\n- 验证完整性：{\"file_path\": \"D:/downloads/file.zip\", \"algorithm\": \"sha256\", \"verify_hash\": \"abc123...\"}",
@@ -159,15 +159,15 @@ FILE_TOOL_EXAMPLES = {
         {"file_path1": "C:/Users/用户名/Documents/a.txt", "file_path2": "C:/Users/用户名/Documents/b.txt"},
         {"file_path1": "D:/项目代码/v1.py", "file_path2": "D:/项目代码/v2.py", "algorithm": "content"}
     ],
-    "batch_rename": [
-        {"dir_path": "C:/Users/用户名/Documents", "pattern": "*.txt", "replacement": "新文件_"},
-        {"dir_path": "D:/项目代码", "pattern": "old_", "replacement": "new_"}
-    ],
-    "compress_files": [
-        {"source_path": "C:/Users/用户名/Documents/a.txt", "output_dir": "C:/Users/用户名/Documents/archive.zip"},
-        {"source_path": "D:/项目代码/src", "output_dir": "D:/项目代码/code.zip", "format": "zip", "compression_level": 6},
-        {"source_path": "D:/项目代码", "output_dir": "D:/backup/bak.tar.gz", "format": "tar.gz", "exclude_patterns": ["node_modules", "__pycache__"], "overwrite": False}
-    ],
+"batch_rename": [
+        {"directory": "C:/Users/用户名/Documents", "pattern": "*.txt", "replacement": "新文件_"},
+        {"directory": "D:/项目代码", "pattern": "old_", "replacement": "new_"}
+    ],
+"compress_files": [
+        {"source_path": "C:/Users/用户名/Documents/a.txt", "output_path": "C:/Users/用户名/Documents/archive.zip"},
+        {"source_path": "D:/项目代码/src", "output_path": "D:/项目代码/code.zip", "format": "zip", "compression_level": 6},
+        {"source_path": "D:/项目代码", "output_path": "D:/backup/bak.tar.gz", "format": "tar.gz", "exclude_patterns": ["node_modules", "__pycache__"], "overwrite": False}
+    ],
     "file_monitor": [
         {"directory": "C:/Users/用户名/Documents", "event_types": ["created", "modified"]},
         {"directory": "D:/项目代码", "event_types": ["deleted"]}
@@ -176,10 +176,10 @@ FILE_TOOL_EXAMPLES = {
         {"directory": "C:/Users/用户名/Documents"},
         {"directory": "D:/项目代码", "filters": {"file_type": ["*.py", "*.js"]}}
     ],
-    "file_checksum": [
-        {"file_path": "C:/Users/用户名/Documents/data.zip", "algorithm": "md5"},
-        {"file_path": "D:/项目代码/main.py", "algorithm": "sha256"}
-    ],
+"file_checksum": [
+        {"file_path": "C:/Users/用户名/Documents/data.zip", "algorithm": "md5"},
+        {"file_path": "D:/项目代码/main.py", "algorithm": "sha256", "verify_hash": "abc123..."}
+    ],
     "read_text_file": [
         {"file_path": "D:/OmniAgentAs-desk/backend/app/main.py"},
         {"file_path": "D:/OmniAgentAs-desk/backend/app/services/agent.py", "head": 10},
