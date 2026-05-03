@@ -1,6 +1,49 @@
-v0.12.6
+v0.12.7
 
-更新时间: 2026-05-03 00:07:11
+更新时间: 2026-05-03 16:25:43
+
+更新内容：
+
+## v0.12.6→v0.12.7 变更汇总 - 小沈-2026-05-03
+
+### refactor 重构
+| commit | 说明 |
+|--------|------|
+| 609fefd1 | 注册表工具参数匹配文档7.2节(root_key+sub_key→key_path+hive) |
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| 8e08e7dd | compress_archive参数description更新与代码一致 |
+| d65a125b | compress_files参数补齐exclude_patterns+overwrite+description准确 |
+| a31e0302 | system工具参数description修正准确清晰完整 |
+| f1389843 | system_schema.py参数description修正准确清晰完整 |
+
+### feat 新功能
+| commit | 说明 |
+|--------|------|
+| 5d80b7da | ENV工具对照文档-补get_env(scope+expand_vars)+set_env(append_mode)+文档补list_env+description提升 |
+| 96e614a0 | Time工具对照文档-重命名time_now→get_current_time+补3参数+文档补Tools28-35详细定义 |
+| 2925d885 | fetch_webpage/search_web对照-修正timeout秒→毫秒+补充text选项 |
+| 9958b934 | http_request补齐到文档水平+timeout改毫秒 |
+| 6f760f70 | Shell工具补齐到文档水平-execute_command→execute_shell_command |
+| db205889 | 代码与文档精确对照-提升description精准度+修正默认值差异 |
+
+### 文档更新
+| 章节 | 更新内容 |
+|------|----------|
+| 6.6.2节 | ENV工具(get_env/set_env/list_env)参数description提升 |
+| 6.7节 | system工具(get_system_info)参数description修正 |
+| 6.8节 | 网络工具(http_request/fetch_webpage/search_web/download_file)参数修正 |
+| 6.9节 | 压缩工具(compress_files/compress_archive)参数补齐 |
+| 6.10节 | 文件哈希工具参数description更新 |
+| 6.11节 | 辅助函数(get_current_working_dir)补充到文档 |
+| 7.1节 | 数据库工具参数docstring修正 |
+| 7.2节 | 注册表工具参数与文档一致(root_key+sub_key→key_path+hive) |
+
+---
+
+v0.12.6
 
 更新内容：
 
