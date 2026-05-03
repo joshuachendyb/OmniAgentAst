@@ -96,48 +96,59 @@ class EventLogInput(BaseModel):
 
 
 class ListProcessesInput(BaseModel):
-    """list_processes 工具的输入参数 - 小沈 2026-05-03 修正"""
-    filter_name: Optional[str] = Field(
+    """list_processes 工具的输入参数 - 小沈 2026-05-03修正
+    
+    按文档7.5节参数定义：
+    - name: 进程名称过滤（可选）
+    - user: 用户名过滤（可选）
+    - status: 状态过滤（可选），running/sleeping
+    - limit: 返回数量限制（可选），默认 100
+    - sort_by: 排序方式（可选），默认 pid
+    """
+    name: Optional[str] = Field(
         default=None,
-        description="按进程名模糊匹配过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。例如填写\"python\"会匹配所有名称包含python的进程。"
+        description="进程名称过滤（可选）。如 python.exe、chrome.exe。Agent 根据 query 语义自动提取进程名，若 query 只说查看进程则不设此参数"
     )
-    filter_pid: Optional[int] = Field(
+    user: Optional[str] = Field(
         default=None,
-        ge=1,
-        description="按进程PID精确过滤，只返回指定PID的进程。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。"
+        description="用户名过滤（可选）。如 Administrator。Agent 根据 query 中是否包含用户信息自动映射"
     )
-    sort_by: Literal["pid", "name", "cpu", "memory"] = Field(
-        default="pid",
-        description="排序字段。必填为LLM给出，当LLM未明确指定时Agent智能补全为pid。可选值含义：\n- pid：按进程ID排序（默认）\n- name：按进程名排序\n- cpu：按CPU使用率排序\n- memory：按内存使用率排序"
+    status: Optional[Literal["running", "sleeping"]] = Field(
+        default=None,
+        description="状态过滤（可选）。可选值：running（运行中）、sleeping（睡眠）。Agent 根据 query 语义自动映射，如问卡住的进程自动映射为 running"
     )
-    descending: bool = Field(
-        default=False,
-        description="是否降序排序。必填为LLM给出，当LLM未明确指定时Agent智能补全为false（升序）。true为降序（从高到���）��false为升序（从低到高）。"
-    )
-    max_results: int = Field(
+    limit: int = Field(
         default=100,
         ge=1,
         le=500,
-        description="最大返回的进程数。必填为LLM给出，当LLM未明确指定时Agent智能补全为100。用于限制返回结果数量，避免输出过多。"
+        description="返回进程数量限制（可选），默认 100。Agent 根据 query 语义自动提取数量，如说前10个自动设 limit=10"
+    )
+    sort_by: Literal["pid", "name", "cpu", "memory"] = Field(
+        default="pid",
+        description="排序方式（可选）。可选值：pid（默认值）、name（名称）、cpu（CPU 占用）、memory（内存占用）。Agent 根据 query 语义自动映射，如问最占 CPU 自动设 cpu"
     )
 
 
 class KillProcessInput(BaseModel):
-    """kill_process 工具的输入参数 - 小沈 2026-05-03 修正"""
-    pid: int = Field(
-        ...,
+    """kill_process 工具的输入参数 - 小沈 2026-05-03修正
+    
+    按文档7.5节参数定义：
+    - pid: 进程ID（可选）
+    - name: 进程名称（可选，可批量终止）
+    - force: 是否强制终止（可选），默认 false
+    """
+    pid: Optional[int] = Field(
+        default=None,
         ge=1,
-        description="要终止的进程PID（必填）。这是进程的唯一标识符，可通过list_processes工具获取。必填由LLM提供。"
+        description="进程 ID（可选）。如 1234。Agent 根据 query 语义自动提取 PID，若 query 只提供进程名则通过 list_processes 查找后再填充"
+    )
+    name: Optional[str] = Field(
+        default=None,
+        description="进程名称（可选）。可批量终止同名进程，如 python.exe。Agent 根据 query 语义自动提取进程名"
     )
     force: bool = Field(
         default=False,
-        description="是否强制终止进程。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。\n- false：优雅终止（SIGTERM），给进程机会清理资源（默认）\n- true：强制终止（SIGKILL），立即杀死进程\n若进程无响应，Agent自动设force为true强制杀死。"
-    )
-    timeout: int = Field(
-        default=5,
-        ge=1,
-        le=30,
-        description="等待进程终止的超时时间（秒）。必填为LLM给出，当LLM未明确指定时Agent智能补全为5。优雅终止时等待进程响应的最长时间，超过后自动转为强制终止。"
+        description="是否强制终止进程。默认 false。false：优雅终止（SIGTERM），给进程机会清理资源；true：强制终止（SIGKILL），立即杀死进程。若进程无响应，Agent 自动设 force 为 true 强制杀死"
     )
 
 

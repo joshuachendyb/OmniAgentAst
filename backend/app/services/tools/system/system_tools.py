@@ -420,11 +420,11 @@ def _get_linux_event_log(
 
 
 def list_processes(
-    filter_name: Optional[str] = None,
-    filter_pid: Optional[int] = None,
+    name: Optional[str] = None,
+    user: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
     sort_by: str = "pid",
-    descending: bool = False,
-    max_results: int = 100,
 ) -> dict:
     """
     列出所有进程 - 小沈 2026-05-02
@@ -432,11 +432,11 @@ def list_processes(
     使用psutil获取进程列表，支持按名称/PID过滤和排序。
     
     Args:
-        filter_name: 按进程名过滤（模糊匹配）
-        filter_pid: 按PID过滤
+        name: 按进程名过滤（模糊匹配）
+        user: 按用户名过滤
+        status: 状态过滤（running/sleeping）
+        limit: 最大返回进程数
         sort_by: 排序字段（pid/name/cpu/memory）
-        descending: 是否降序排序
-        max_results: 最大返回进程数
     
     Returns:
         {code, data, message}
@@ -444,17 +444,24 @@ def list_processes(
     try:
         processes = []
         
-        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'exe', 'cmdline', 'status', 'create_time']):
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'exe', 'cmdline', 'status', 'create_time', 'username']):
             try:
                 proc_info = proc.info
                 
-                if filter_pid:
-                    if proc_info['pid'] != filter_pid:
+                # 参数过滤
+                if name:
+                    proc_name = proc_info.get('name', '')
+                    if name.lower() not in proc_name.lower():
                         continue
                 
-                if filter_name:
-                    proc_name = proc_info.get('name', '')
-                    if filter_name.lower() not in proc_name.lower():
+                if user:
+                    proc_user = proc_info.get('username', '')
+                    if user.lower() not in proc_user.lower():
+                        continue
+                
+                if status:
+                    proc_status = proc_info.get('status', '').lower()
+                    if status.lower() != proc_status:
                         continue
                 
                 cpu_percent = proc_info.get('cpu_percent') or 0.0
@@ -464,6 +471,7 @@ def list_processes(
                     "pid": proc_info['pid'],
                     "name": proc_info.get('name', 'N/A'),
                     "status": proc_info.get('status', 'N/A'),
+                    "user": proc_info.get('username', 'N/A'),
                     "cpu_percent": round(cpu_percent, 2),
                     "memory_percent": round(memory_percent, 2),
                     "exe": proc_info.get('exe', 'N/A'),
@@ -473,6 +481,7 @@ def list_processes(
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
         
+        # 排序处理
         sort_keys = {
             "pid": lambda x: x["pid"],
             "name": lambda x: x["name"].lower(),
@@ -480,10 +489,13 @@ def list_processes(
             "memory": lambda x: x["memory_percent"],
         }
         
-        sort_key = sort_keys.get(sort_by, sort_keys["pid"])
-        processes.sort(key=sort_key, reverse=descending)
+        # 按pid/name/cpu/memory其中一个排序
+        if sort_by in sort_keys:
+            processes.sort(key=sort_keys[sort_by], reverse=False)
+        else:
+            processes.sort(key=sort_keys["pid"], reverse=False)
         
-        limited_processes = processes[:max_results]
+        limited_processes = processes[:limit]
         
         return {
             "code": "SUCCESS",
@@ -492,7 +504,6 @@ def list_processes(
                 "total": len(limited_processes),
                 "total_matched": len(processes),
                 "sort_by": sort_by,
-                "descending": descending,
             },
             "message": f"找到 {len(processes)} 个进程，返回前 {len(limited_processes)} 个"
         }
@@ -507,62 +518,156 @@ def list_processes(
 
 
 def kill_process(
-    pid: int,
+    pid: Optional[int] = None,
+    name: Optional[str] = None,
     force: bool = False,
     timeout: int = 5,
 ) -> dict:
     """
-    终止指定进程 - 小沈 2026-05-02
+    终止指定进程 - 小沈 2026-05-03
     
-    使用psutil终止进程，支持正常终止和强制终止。
+    使用psutil终止进程，支持PID终止和名称批量终止。
+    pid和name二选一，优先使用pid。
     
     Args:
         pid: 要终止的进程PID
+        name: 进程名称，可批量终止同名进程
         force: 是否强制终止（True=SIGKILL，False=SIGTERM）
         timeout: 等待进程终止的超时时间（秒）
     
     Returns:
         {code, data, message}
     """
-    try:
-        proc = psutil.Process(pid)
-        
-        proc_info = {
-            "pid": proc.pid,
-            "name": proc.name(),
-            "status": proc.status(),
-            "exe": proc.exe(),
-        }
-        
-        if force:
-            proc.kill()
-            terminate_type = "强制终止(SIGKILL)"
-        else:
-            proc.terminate()
-            terminate_type = "正常终止(SIGTERM)"
-        
-        try:
-            proc.wait(timeout=timeout)
-            final_status = "已终止"
-        except psutil.TimeoutExpired:
-            if not force:
-                proc.kill()
-                try:
-                    proc.wait(timeout=timeout)
-                    final_status = "已强制终止（超时后SIGKILL）"
-                except psutil.TimeoutExpired:
-                    final_status = "终止超时，可能需要管理员权限"
-            else:
-                final_status = "终止超时，可能需要管理员权限"
-        
+    # 参数验证
+    if pid is None and not name:
         return {
-            "code": "SUCCESS",
-            "data": {
+            "code": "ERR_INVALID_PARAM",
+            "data": None,
+            "message": "请提供 pid 或 name 参数"
+        }
+    
+    try:
+        killed_list = []
+        
+        if pid is not None:
+            # 按PID终止单个进程
+            proc = psutil.Process(pid)
+            
+            proc_info = {
+                "pid": proc.pid,
+                "name": proc.name(),
+                "status": proc.status(),
+                "exe": proc.exe(),
+            }
+            
+            if force:
+                proc.kill()
+                terminate_type = "强制终止(SIGKILL)"
+            else:
+                proc.terminate()
+                terminate_type = "正常终止(SIGTERM)"
+            
+            try:
+                proc.wait(timeout=timeout)
+                final_status = "已终止"
+            except psutil.TimeoutExpired:
+                if not force:
+                    proc.kill()
+                    try:
+                        proc.wait(timeout=timeout)
+                        final_status = "已强制终止（超时后SIGKILL）"
+                    except psutil.TimeoutExpired:
+                        final_status = "终止超时，可能需要管理员权限"
+                else:
+                    final_status = "终止超时，可能需要管理员权限"
+            
+            killed_list.append({
                 "process": proc_info,
                 "terminate_type": terminate_type,
                 "final_status": final_status,
-            },
-            "message": f"进程 {pid} ({proc_info['name']}) {final_status}"
+            })
+            
+            return {
+                "code": "SUCCESS",
+                "data": {"killed": killed_list},
+                "message": f"进程 {pid} ({proc_info['name']}) {final_status}"
+            }
+        
+        elif name:
+            # 按名称批量终止
+            killed_count = 0
+            failed_count = 0
+            failed_list = []
+            
+            for proc in psutil.process_iter(['pid', 'name', 'status', 'exe']):
+                try:
+                    proc_name = proc.info.get('name', '')
+                    if name.lower() in proc_name.lower():
+                        proc_info = {
+                            "pid": proc.pid,
+                            "name": proc_name,
+                            "status": proc.info.get('status', 'N/A'),
+                            "exe": proc.info.get('exe', 'N/A'),
+                        }
+                        
+                        if force:
+                            proc.kill()
+                            terminate_type = "强制终止(SIGKILL)"
+                        else:
+                            proc.terminate()
+                            terminate_type = "正常终止(SIGTERM)"
+                        
+                        try:
+                            proc.wait(timeout=timeout)
+                            final_status = "已终止"
+                        except psutil.TimeoutExpired:
+                            if not force:
+                                proc.kill()
+                                try:
+                                    proc.wait(timeout=timeout)
+                                    final_status = "已强制终止"
+                                except psutil.TimeoutExpired:
+                                    final_status = "终止超时"
+                            else:
+                                final_status = "终止超时"
+                        
+                        killed_list.append({
+                            "process": proc_info,
+                            "terminate_type": terminate_type,
+                            "final_status": final_status,
+                        })
+                        killed_count += 1
+                
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+            
+            if killed_count == 0:
+                return {
+                    "code": "ERR_PROCESS_NOT_FOUND",
+                    "data": None,
+                    "message": f"未找到名为 {name} 的进程"
+                }
+            
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "killed": killed_list,
+                    "total_killed": killed_count,
+                },
+                "message": f"已终止 {killed_count} 个名为 {name} 的进程"
+            }
+    
+    except psutil.NoSuchProcess:
+        return {
+            "code": "ERR_PROCESS_NOT_FOUND",
+            "data": None,
+            "message": f"进程 {pid} 不存在"
+        }
+    except psutil.AccessDenied:
+        return {
+            "code": "ERR_PERMISSION_DENIED",
+            "data": None,
+            "message": f"无权限终止进程 {pid}，请尝试使用管理员权限"
         }
     
     except psutil.NoSuchProcess:

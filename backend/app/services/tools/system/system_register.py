@@ -112,12 +112,13 @@ SYSTEM_TOOL_EXAMPLES = {
     ],
     "list_processes": [
         {},
-        {"filter_name": "python"},
-        {"sort_by": "memory", "descending": True, "max_results": 20},
+        {"name": "python"},
+        {"name": "python", "status": "running", "sort_by": "memory", "limit": 20},
     ],
     "kill_process": [
         {"pid": 1234},
         {"pid": 1234, "force": True},
+        {"name": "python.exe"},
     ],
     "log_message": [
         {"message": "这是一条测试日志"},
