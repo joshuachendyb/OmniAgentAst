@@ -90,10 +90,10 @@ from app.services.tools.file.file_tools import FileTools, get_file_tools
 # 工具描述（用于注册）
 FILE_TOOL_DESCRIPTIONS = {
     "write_text_file": "写入或追加文本文件内容，支持中文内容写入、编码自动检测、追加模式（追加时保留原文件内容）。仅支持文本文件，禁止写入二进制文件。自动创建父目录",
-    "list_directory": "列出目录内容，包含文件大小、修改时间，支持递归、分页、排序（name/size）、隐藏文件过滤。适合查看目录、找大文件、清理空间",
+    "list_directory": "列出目录内容，包含文件大小、修改时间，支持递归、分页、排序、隐藏文件过滤。\n\n使用场景：\n- 当用户需要查看目录内容及文件大小时使用\n- 当用户想要了解文件夹中哪些文件占用空间较大时使用\n- 当用户需要递归查看子目录时使用\n- 当用户需要分页查看大型目录时使用\n- 当用户需要按名称或大小排序时使用\n- 当用户需要显示隐藏文件时使用\n\n参数说明：\n- dir_path：目录的完整路径（必须是绝对路径）\n- recursive：是否递归列出所有子目录，默认为False\n- max_depth：最大递归深度，仅当 recursive=True 时有效，默认10层保护系统性能\n- page_token：分页令牌，用于获取后续页面结果\n- sortBy：排序方式，可选name（按名称）或size（按大小）\n- include_hidden：是否显示隐藏文件，默认为False\n\n【重要】返回目录中每个文件/目录的名称、路径、类型、大小、修改时间，以及分页信息\n\n使用示例：\n- 基础使用：{\"dir_path\": \"D:/OmniAgentAs-desk\"}\n- 递归查看：{\"dir_path\": \"D:/OmniAgentAs-desk\", \"recursive\": true}\n- 按大小排序：{\"dir_path\": \"D:/OmniAgentAs-desk\", \"sortBy\": \"size\"}",
     "delete_file": "删除文件或目录，默认放入回收站更安全（force=False）。设force=True则永久删除不可恢复。支持递归删除目录",
     "move_file": "移动或重命名文件（跨目录操作），目标目录不存在会自动创建。支持overwrite覆盖控制。适合'移动文件'或'把文件改名并移动'场景",
-    "search_files": "递归搜索匹配或排除模式的文件/目录，支持中文文件名搜索、通配符、排除模式、排序（mtime/name/size）、分页。适合找特定文件、按时间排序找最近修改",
+    "search_files": "递归搜索匹配或排除模式的文件/目录，返回完整路径，支持中文文件名搜索。\n\n使用场景：\n- 当用户需要在目录中搜索特定名称的文件时使用\n- 当用户想要查找符合条件的文件时使用\n- 当用户需要对文件进行批量操作前需要找到目标文件时使用\n\n参数说明：\n- search_dir：搜索的起始目录，支持中文目录名\n- pattern：搜索模式，支持 glob 风格通配符。支持中文搜索\n- excludePatterns：排除模式数组\n- recursive：是否递归搜索子目录，默认为True\n- max_depth：最大递归深度\n- ignore_case：是否忽略大小写匹配，默认为True\n- type：搜索类型，可选file/directory\n- sortBy：排序方式，可选name/size/mtime\n\n【重要】递归搜索所有子目录，返回所有匹配的文件完整路径\n\n使用示例：\n- 搜索所有 Python 文件：{\"search_dir\": \"D:/OmniAgentAs-desk\", \"pattern\": \"**/*.py\"}\n- 搜索并排除 node_modules：{\"search_dir\": \"D:/OmniAgentAs-desk\", \"pattern\": \"**/*.js\", \"excludePatterns\": [\"node_modules\"]}",
     "generate_report": "生成文件操作报告，记录所有操作历史",
     "copy_file": "复制文件或目录到指定位置，支持递归复制、覆盖控制、保留元数据（修改时间等）。适合备份文件",
     "create_directory": "创建新目录，如需要会自动创建父目录，目录已存在则静默成功（确保操作幂等性）",
@@ -104,7 +104,7 @@ FILE_TOOL_DESCRIPTIONS = {
     "file_monitor": "监控目录文件变化（创建/修改/删除/重命名事件），支持递归监控、过滤条件、限时监控",
     "file_statistics": "统计目录的文件数量、总大小、类型分布，支持递归统计、过滤条件、多种输出格式（json/csv/text）",
     "file_checksum": "计算文件的MD5/SHA1/SHA256/SHA512哈希值，用于校验文件完整性。支持验证哈希值、分块计算大文件",
-    "read_text_file": "读取文本文件内容，支持head/tail/offset/limit分页读取。仅支持文本文件，禁止读取二进制文件。适合查看日志、代码、配置文件",
+    "read_text_file": "读取文本文件的完整内容，始终以 UTF-8 编码处理文件，支持中文等多字节字符。仅支持文本文件，禁止读取二进制文件。\n\n使用场景：\n- 当用户需要查看文本文件的内容时使用\n- 当用户想要读取配置文件、日志文件、代码文件等文本内容时使用\n- 当用户需要获取文件的前几行或后几行时使用\n\n参数说明：\n- file_path：文件的完整路径，必须是绝对路径，支持中文路径（如 D:/文档/测试.txt）\n- head：读取文件的前 N 行，不能与 tail 参数同时使用\n- tail：读取文件的后 N 行，不能与 head 参数同时使用\n- offset：起始行号（从1开始），不能与 head/tail 参数同时使用，用于分页读取\n- limit：最大读取行数，配合 offset 使用进行分页读取\n\n【重要】本工具仅支持文本文件，禁止读取二进制文件。禁止的后缀：.png/.jpg/.jpeg/.gif/.zip/.exe/.dll/.docx/.xlsx/.pptx/.pdf/.mp3/.mp4/.wav/.avi/.mkv等。若需读取媒体文件（图片/音频），请使用read_media_file工具。\n\n使用示例：\n- 读取全部内容：{\"file_path\": \"D:/OmniAgentAs-desk/backend/app/main.py\"}\n- 只读取前10行：{\"file_path\": \"D:/OmniAgentAs-desk/backend/app/services/agent.py\", \"head\": 10}\n- 只读取最后5行：{\"file_path\": \"D:/OmniAgentAs-desk/logs/app.log\", \"tail\": 5}",
     "read_media_file": "读取图片或音频文件，返回Base64编码数据和MIME类型。支持JPG/PNG/GIF/BMP/WebP图片和MP3/WAV/OGG/M4A音频",
     "read_batch_file": "同时读取多个文本文件内容，单个文件失败不会中断整个操作。自动跳过二进制文件并提示。适合对比多个文件、批量查看配置",
     "precise_replace_in_file": "执行精确的字符串替换，支持中文内容精确匹配和替换、replace_all全局替换。仅支持文本文件，禁止编辑二进制文件",
