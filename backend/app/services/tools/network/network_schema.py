@@ -69,6 +69,9 @@ class DownloadFileInput(BaseModel):
     chunk_size: int = Field(
         default=8192, ge=1024, le=1048576, description="下载分块大小（字节），默认8192字节"
     )
+    resume: bool = Field(
+        default=True, description="是否启用断点续传（可选），默认True，文件存在时自动尝试续传"
+    )
 
 
 class FetchWebpageInput(BaseModel):

@@ -181,11 +181,12 @@ async def download_file(
     headers: Optional[Dict[str, str]] = None,
     timeout: int = 300,
     chunk_size: int = 8192,
+    resume: bool = True,
 ) -> dict:
     """
     从URL下载文件到本地路径
 
-    支持大文件流式下载。
+    支持大文件流式下载、断点续传、进度显示。
     自动创建目标目录。
     支持超时控制和自定义请求头。
     """
@@ -224,10 +225,10 @@ async def download_file(
         if headers:
             request_headers.update(headers)
 
-        # 检查是否支持断点续传（文件已存在则尝试续传）
+        # 检查是否支持断点续传（根据resume参数和文件是否存在）
         downloaded = 0
         resume_offset = 0
-        if os.path.exists(dest_path):
+        if resume and os.path.exists(dest_path):
             resume_offset = os.path.getsize(dest_path)
             if resume_offset > 0:
                 request_headers["Range"] = f"bytes={resume_offset}-"
