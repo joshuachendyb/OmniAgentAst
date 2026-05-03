@@ -224,24 +224,43 @@ async def download_file(
         if headers:
             request_headers.update(headers)
 
+        # 检查是否支持断点续传（文件已存在则尝试续传）
+        downloaded = 0
+        resume_offset = 0
+        if os.path.exists(dest_path):
+            resume_offset = os.path.getsize(dest_path)
+            if resume_offset > 0:
+                request_headers["Range"] = f"bytes={resume_offset}-"
+
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(timeout),
             follow_redirects=True
         ) as client:
             async with client.stream("GET", url, headers=request_headers) as response:
-                response.raise_for_status()
+                # 检查服务器是否支持断点续传
+                is_resume = response.status_code == 206
+                if is_resume:
+                    content_range = response.headers.get("content-range", "")
+                    if content_range:
+                        total_size = int(content_range.split("/")[-1]) if "/" in content_range else resume_offset + int(response.headers.get("content-length", 0))
+                    else:
+                        total_size = resume_offset + int(response.headers.get("content-length", 0))
+                else:
+                    total_size = int(response.headers.get("content-length", 0))
+                    if resume_offset > 0:
+                        resume_offset = 0
 
-                # 获取文件信息
-                total_size = int(response.headers.get("content-length", 0))
                 content_type = response.headers.get("content-type", "")
 
                 # 流式写入文件
-                downloaded = 0
+                progress_percent = 0
                 try:
-                    with open(dest_path, "wb") as f:
+                    with open(dest_path, "ab" if resume_offset > 0 else "wb") as f:
                         async for chunk in response.aiter_bytes(chunk_size=chunk_size):
                             f.write(chunk)
                             downloaded += len(chunk)
+                            if total_size > 0:
+                                progress_percent = int((resume_offset + downloaded) * 100 / total_size)
                 except (PermissionError, OSError) as e:
                     # 清理不完整的文件
                     try:
@@ -260,10 +279,11 @@ async def download_file(
                     "data": {
                         "file_path": dest_path,
                         "file_size": downloaded,
-                        "content_type": content_type,
                         "total_size": total_size,
+                        "progress_percent": progress_percent,
+                        "content_type": content_type,
                     },
-                    "message": f"文件下载成功 ({downloaded} 字节)：保存到 {dest_path}"
+                    "message": f"文件下载成功 ({downloaded}/{total_size} 字节, {progress_percent}%)：保存到 {dest_path}"
                 }
 
     except httpx.TimeoutException:
