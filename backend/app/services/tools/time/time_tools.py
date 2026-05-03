@@ -45,6 +45,8 @@ def time_now(
     """获取当前系统时间 - 小沈 2026-05-03 增加3参数"""
     try:
         import pytz
+        import locale as _locale_module
+        
         if timezone:
             tz = pytz.timezone(timezone)
             now = datetime.now(tz)
@@ -53,12 +55,31 @@ def time_now(
         
         fmt = format or "%Y-%m-%d %H:%M:%S"
         
+        # 使用locale进行本地化格式化
+        formatted = now.strftime(fmt)
+        if locale:
+            try:
+                # locale映射表
+                locale_map = {
+                    "zh_CN": "chinese",
+                    "zh_CN.GBK": "chinese",
+                    "en_US": "english",
+                    "en_US.ISO8859-1": "english",
+                    "ja_JP": "japanese",
+                    "ja_JP.eucJP": "japanese",
+                }
+                loc = locale_map.get(locale, locale)
+                _locale_module.setlocale(_locale_module.LC_TIME, loc)
+                formatted = now.strftime(_locale_module.nl_langinfo(_locale_module.D_T_FMT))
+            except Exception:
+                formatted = now.strftime(fmt)
+        
         return {
             "code": "SUCCESS",
             "data": {
                 "iso": now.isoformat(),
                 "timestamp": int(now.timestamp()),
-                "format": now.strftime(fmt),
+                "format": formatted,
                 "timezone": now.strftime("%z").replace(":", ""),
                 "weekday": now.strftime("%A"),
                 "isoweekday": now.isoweekday(),
@@ -70,12 +91,13 @@ def time_now(
         try:
             now = datetime.now().astimezone()
             fmt = format or "%Y-%m-%d %H:%M:%S"
+            formatted = now.strftime(fmt)
             return {
                 "code": "SUCCESS",
                 "data": {
                     "iso": now.isoformat(),
                     "timestamp": int(now.timestamp()),
-                    "format": now.strftime(fmt),
+                    "format": formatted,
                     "timezone": now.strftime("%z").replace(":", ""),
                     "weekday": now.strftime("%A"),
                     "isoweekday": now.isoweekday(),
@@ -98,6 +120,7 @@ def time_now(
 def time_format(timestamp: Optional[Any] = None, pattern: Optional[str] = None) -> Dict[str, Any]:
     """格式化时间戳"""
     try:
+        from datetime import timezone
         # 1. 确定要格式化的datetime
         if timestamp is None:
             dt = datetime.now().astimezone()
