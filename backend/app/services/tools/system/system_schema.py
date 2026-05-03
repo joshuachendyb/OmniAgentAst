@@ -142,44 +142,83 @@ class KillProcessInput(BaseModel):
 
 
 class LogMessageInput(BaseModel):
-    """log_message 工具的输入参数 - 小沈 2026-05-03 修正"""
+    """log_message 工具的输入参数 - 小沈 2026-05-03 修正
+    
+    按文档7.3节参数定义：
+    - message: 日志消息内容（必填）
+    - level: 日志级别（可选），默认 INFO
+    - logger_name: 记录器名称（可选），默认 root
+    - log_file: 日志文件路径（可选），默认控制台
+    """
     message: str = Field(
         ...,
         description="日志消息内容（必填）。要记录到日志的消息文本。必填由LLM提供。"
     )
-    level: Literal["debug", "info", "warning", "error", "critical"] = Field(
-        default="info",
-        description="日志级别。必填为LLM给出，当LLM未明确指定时Agent智能补全为info。可选值含义：\n- debug：调试信息\n- info：一般信息（默认）\n- warning：警告\n- error：错误\n- critical：严重错误"
+    level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
+        default="INFO",
+        description="日志级别。可选值：DEBUG、INFO（默认）、WARNING、ERROR、CRITICAL。Agent 根据消息语义自动推断：崩溃/失败→ERROR，启动/完成→INFO，调试→DEBUG"
     )
-    module: str = Field(
-        default="system",
-        description="模块名称，用于区分日志来源。必填为LLM给出，当LLM未明确指定时Agent智能补全为system。例如：agent、tool、workflow等。"
+    logger_name: str = Field(
+        default="root",
+        description="日志记录器名称。默认 root。Agent 根据 query 模块名自动映射，如 agent、tool、workflow 等"
+    )
+    log_file: Optional[str] = Field(
+        default=None,
+        description="日志文件路径。默认 null（仅输出到控制台）。Agent 根据意图自动路由到项目标准日志路径"
     )
 
 
 class GetLogsInput(BaseModel):
-    """get_logs 工具的输入参数 - 小沈 2026-05-03 修正"""
-    date: Optional[str] = Field(
-        default=None,
-        description="日志日期，格式为YYYY-MM-DD。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（默认当天）。例如：2026-05-03。"
+    """get_logs 工具的输入参数 - 小沈 2026-05-03 修正
+    
+    按文档7.3节参数定义：
+    - log_file: 日志文件路径（必填）
+    - level: 日志级别过滤（可选），默认 WARNING
+    - start_time: 起始时间过滤（可选）
+    - end_time: 结束时间过滤（可选）
+    - log_format: 时间格式（可选），默认 auto_detect
+    - max_lines: 最大行数（可选），默认 200
+    - tail_mode: 尾部读取模式（可选），默认 false
+    - pattern: 关键词过滤（可选）
+    - output_format: 输出格式（可选），默认 table
+    """
+    log_file: str = Field(
+        ...,
+        description="日志文件路径（必填）。如 D:/logs/app.log。必填由LLM提供。"
     )
     level: Optional[Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]] = Field(
-        default=None,
-        description="日志级别过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（返回所有级别）。可选值：DEBUG、INFO、WARNING、ERROR、CRITICAL。"
+        default="WARNING",
+        description="日志级别过滤。默认 WARNING。可选值：DEBUG、INFO、WARNING、ERROR、CRITICAL。Agent 根据 query 语义自动收窄：查错误→ERROR，全量→DEBUG"
     )
-    module: Optional[str] = Field(
+    start_time: Optional[str] = Field(
         default=None,
-        description="模块名称过滤，只返回指定模块的日志。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。"
+        description="起始时间过滤。Agent 解析自然语言自动转为标准格式。依赖 log_format 解析"
     )
-    keyword: Optional[str] = Field(
+    end_time: Optional[str] = Field(
         default=None,
-        description="关键字过滤，只返回包含指定关键字的日志行。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。支持模糊匹配。"
+        description="结束时间过滤。默认 null（截至当前）"
+    )
+    log_format: Optional[str] = Field(
+        default="auto_detect",
+        description="日志时间格式。默认 auto_detect。Agent 优先自动探测常见格式；若失败或需精确过滤，自动注入标准格式（如 YYYY-MM-DD HH:mm:ss）"
     )
     max_lines: int = Field(
-        default=100,
+        default=200,
         ge=1,
         le=1000,
-        description="最大返回的日志行数。必填为LLM给出，当LLM未明确指定时Agent智能补全为100。用于限制返回结果数量，避免输出过多。"
+        description="返回最大行数。默认 200。Agent 根据意图动态调整：概览 50 行，深度排查 1000 行"
+    )
+    tail_mode: bool = Field(
+        default=False,
+        description="是否仅读取文件末尾 max_lines 行。默认 false。注意：开启后不执行 level/pattern 过滤，若需过滤 Agent 自动关闭此模式改为正向读取"
+    )
+    pattern: Optional[str] = Field(
+        default=None,
+        description="关键词/正则过滤。Agent 从 query 自动提取注入。与 tail_mode 互斥"
+    )
+    output_format: Literal["table", "json"] = Field(
+        default="table",
+        description="输出格式。可选值：table（默认，人类可读）、json（结构化数据）。由 Agent 根据下游需求自动切换"
     )
 
 

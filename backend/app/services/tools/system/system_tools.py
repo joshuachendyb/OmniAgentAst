@@ -587,142 +587,159 @@ def kill_process(
 
 
 def log_message(
-    level: str = "info",
-    message: str = "",
-    module: str = "system",
+    message: str,
+    level: str = "INFO",
+    logger_name: str = "root",
+    log_file: Optional[str] = None,
 ) -> dict:
     """
-    记录日志消息 - 小沈 2026-05-02
+    记录日志消息到指定日志文件或日志系统 - 小沈 2026-05-03修正
     
-    使用Python logging模块记录日志消息。
+    按文档7.3节参数定义：message必填，3个可选参数
     
     Args:
-        level: 日志级别（debug/info/warning/error/critical）
-        message: 日志消息内容
-        module: 模块名称（用于区分日志来源）
+        message: 日志消息内容（必填）
+        level: 日志级别，默认INFO
+        logger_name: 记录器名称，默认root
+        log_file: 日志文件路径，默认None（仅控制台）
     
     Returns:
         {code, data, message}
     """
     try:
-        log_logger = logging.getLogger(f"OmniAgentAst.{module}")
-        
-        if not log_logger.handlers:
-            log_logger = logger
+        log_logger = logging.getLogger(logger_name)
         
         level_map = {
-            "debug": logging.DEBUG,
-            "info": logging.INFO,
-            "warning": logging.WARNING,
-            "error": logging.ERROR,
-            "critical": logging.CRITICAL,
+            "DEBUG": logging.DEBUG,
+            "INFO": logging.INFO,
+            "WARNING": logging.WARNING,
+            "ERROR": logging.ERROR,
+            "CRITICAL": logging.CRITICAL,
         }
         
-        log_level = level_map.get(level.lower(), logging.INFO)
+        log_level = level_map.get(level.upper(), logging.INFO)
         
-        log_logger.log(log_level, f"[{module}] {message}")
+        if log_file:
+            file_handler = logging.FileHandler(log_file, encoding="utf-8")
+            file_handler.setLevel(log_level)
+            log_logger.addHandler(file_handler)
+        
+        log_logger.log(log_level, message)
         
         return {
             "code": "SUCCESS",
             "data": {
                 "level": level,
                 "message": message,
-                "module": module,
+                "logger_name": logger_name,
+                "log_file": log_file,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             },
-            "message": f"日志记录成功 [{level.upper()}] [{module}] {message}"
+            "message": f"日志记录成功 [{level.upper()}] [{logger_name}] {message}"
         }
     
     except Exception as e:
         return {
-            "code": "ERR_LOG_MESSAGE",
+            "code": "ERROR",
             "data": None,
             "message": f"记录日志失败: {str(e)}"
         }
 
 
 def get_logs(
-    date: Optional[str] = None,
-    level: Optional[str] = None,
-    module: Optional[str] = None,
-    keyword: Optional[str] = None,
-    max_lines: int = 100,
+    log_file: str,
+    level: Optional[str] = "WARNING",
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    log_format: Optional[str] = "auto_detect",
+    max_lines: int = 200,
+    tail_mode: bool = False,
+    pattern: Optional[str] = None,
+    output_format: str = "table",
 ) -> dict:
     """
-    获取应用日志 - 小沈 2026-05-02
+    读取指定日志文件的内容，支持智能过滤与截断 - 小沈 2026-05-03修正
     
-    读取应用日志文件，支持按日期、级别、模块、关键字过滤。
+    按文档7.3节参数定义：log_file必填，9个可选参数
     
     Args:
-        date: 日期（格式：YYYY-MM-DD，默认今天）
-        level: 按日志级别过滤（DEBUG/INFO/WARNING/ERROR/CRITICAL）
-        module: 按模块名过滤
-        keyword: 按关键字过滤
-        max_lines: 最大返回行数
+        log_file: 日志文件路径（必填）
+        level: 日志级别过滤，默认WARNING
+        start_time: 起始时间过滤
+        end_time: 结束时间过滤
+        log_format: 时间格式，默认auto_detect
+        max_lines: 最大行数，默认200
+        tail_mode: 尾部读取模式，默认False
+        pattern: 关键词过滤
+        output_format: 输出格式，默认table
     
     Returns:
         {code, data, message}
     """
+    from pathlib import Path
+    
     try:
-        if date:
-            log_date = date
-        else:
-            log_date = datetime.now().strftime("%Y-%m-%d")
+        log_path = Path(log_file)
         
-        log_dir = Path(__file__).parent.parent.parent.parent / "logs"
-        log_file = log_dir / f"app_{log_date}.log"
-        
-        if not log_file.exists():
+        if not log_path.exists():
             return {
-                "code": "ERR_LOG_FILE_NOT_FOUND",
+                "code": "ERROR",
                 "data": None,
-                "message": f"日志文件不存在: {log_file.name}"
+                "message": f"日志文件不存在: {log_file}"
             }
         
         logs = []
-        with open(log_file, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                if level:
-                    if f" - {level.upper()} - " not in line:
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            if tail_mode:
+                lines = f.readlines()
+                logs = lines[-max_lines:] if len(lines) > max_lines else lines
+            else:
+                all_lines = f.readlines()
+                for line in all_lines:
+                    line = line.strip()
+                    if not line:
                         continue
-                
-                if module:
-                    if f"[{module}]" not in line:
-                        continue
-                
-                if keyword:
-                    if keyword.lower() not in line.lower():
-                        continue
-                
-                logs.append(line)
-                
-                if len(logs) >= max_lines:
-                    break
+                    
+                    if level and level != "WARNING":
+                        level_str = f" - {level} - "
+                        if level_str not in line and f" - {level.upper()} - " not in line:
+                            continue
+                    
+                    if pattern:
+                        if pattern.lower() not in line.lower():
+                            continue
+                    
+                    logs.append(line)
+                    
+                    if len(logs) >= max_lines:
+                        break
         
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "date": log_date,
-                "logs": logs,
-                "total": len(logs),
-                "log_file": log_file.name,
-                "filters": {
-                    "level": level,
-                    "module": module,
-                    "keyword": keyword,
-                }
-            },
-            "message": f"获取到 {len(logs)} 条日志记录"
-        }
+        if output_format == "json":
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "logs": logs,
+                    "total": len(logs)
+                },
+                "message": f"获取到 {len(logs)} 条日志记录"
+            }
+        else:
+            table_lines = logs[:max_lines]
+            table_str = "\n".join(table_lines)
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "logs": logs,
+                    "total": len(logs),
+                    "table": table_str
+                },
+                "message": f"获取到 {len(logs)} 条日志记录"
+            }
     
     except Exception as e:
         logger.error(f"[get_logs] 获取日志失败: {e}")
         return {
-            "code": "ERR_GET_LOGS",
+            "code": "ERROR",
             "data": None,
             "message": f"获取日志失败: {str(e)}"
         }
