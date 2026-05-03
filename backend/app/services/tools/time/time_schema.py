@@ -26,8 +26,19 @@ from typing import Optional, Dict, Any, Union
 # ===========================================================
 
 class TimeNowInput(BaseModel):
-    """time_now 工具的输入参数（无参数）"""
-    pass
+    """get_current_time 工具的输入参数 - 小沈 2026-05-03 增加3参数"""
+    timezone: Optional[str] = Field(
+        default=None,
+        description="时区（IANA标准），如'Asia/Shanghai'、'America/New_York'。None(默认)跟随系统时区。Agent可从query地名自动映射"
+    )
+    format: Optional[str] = Field(
+        default=None,
+        description="输出格式字符串（如'%Y-%m-%d %H:%M:%S'）。None(默认)使用'%Y-%m-%d %H:%M:%S'。Agent语义解析意图：'几号'→'%Y-%m-%d'，'星期几'→'%A'，'时间戳'→'X'"
+    )
+    locale: Optional[str] = Field(
+        default=None,
+        description="本地化语言（如'zh_CN'、'en_US'）。None(默认)匹配当前会话语言。自动处理星期、月份、AM/PM的本地化输出"
+    )
 
 
 class TimeFormatInput(BaseModel):

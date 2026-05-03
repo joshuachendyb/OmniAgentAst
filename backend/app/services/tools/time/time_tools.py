@@ -37,29 +37,58 @@ _timer_counter = 0;
 # P0 核心基础 - time_now
 # ===========================================================
 
-def time_now() -> Dict[str, Any]:
-    """获取当前系统时间"""
+def time_now(
+    timezone: Optional[str] = None,
+    format: Optional[str] = None,
+    locale: Optional[str] = None
+) -> Dict[str, Any]:
+    """获取当前系统时间 - 小沈 2026-05-03 增加3参数"""
     try:
-        now = datetime.now().astimezone();
+        import pytz
+        if timezone:
+            tz = pytz.timezone(timezone)
+            now = datetime.now(tz)
+        else:
+            now = datetime.now().astimezone()
+        
+        fmt = format or "%Y-%m-%d %H:%M:%S"
         
         return {
             "code": "SUCCESS",
             "data": {
                 "iso": now.isoformat(),
                 "timestamp": int(now.timestamp()),
-                "format": now.strftime("%Y-%m-%d %H:%M:%S"),
-                "timezone": now.strftime("%z").replace(":", ""),  # 转为+0800格式
+                "format": now.strftime(fmt),
+                "timezone": now.strftime("%z").replace(":", ""),
                 "weekday": now.strftime("%A"),
-                "isoweekday": now.isoweekday()  # 1=Monday, 7=Sunday
+                "isoweekday": now.isoweekday(),
+                "locale": locale
             },
             "message": "成功获取当前时间"
         }
     except Exception as e:
-        return {
-            "code": "ERR_TIME_NOW",
-            "data": None,
-            "message": f"获取当前时间失败: {str(e)}"
-        }
+        try:
+            now = datetime.now().astimezone()
+            fmt = format or "%Y-%m-%d %H:%M:%S"
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "iso": now.isoformat(),
+                    "timestamp": int(now.timestamp()),
+                    "format": now.strftime(fmt),
+                    "timezone": now.strftime("%z").replace(":", ""),
+                    "weekday": now.strftime("%A"),
+                    "isoweekday": now.isoweekday(),
+                    "locale": locale
+                },
+                "message": "成功获取当前时间（使用默认时区）"
+            }
+        except Exception as e2:
+            return {
+                "code": "ERR_TIME_NOW",
+                "data": None,
+                "message": f"获取当前时间失败: {str(e2)}"
+            }
 
 
 # ===========================================================

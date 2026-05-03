@@ -43,21 +43,28 @@ from app.services.tools.time.time_tools import (
 )
 
 TIME_TOOL_DESCRIPTIONS = {
-    "time_now": """获取当前系统时间。
+    "get_current_time": """获取当前系统时间，支持时区、格式和本地化设置。
 
 使用场景：
-- 当用户问"现在几点了"时使用此工具
-- 当用户问"今天星期几"时使用此工具
-- 当用户问"当前时间戳是多少"时使用此工具
-- 当用户想要查看当前日期和时间时使用
+- 当用户需要获取当前时间时使用
+- 当用户想要以特定格式显示时间时使用
+- 当用户需要进行时间相关的计算时使用
+
+参数说明：
+- timezone：时区（可选），默认跟随系统时区
+- format：输出格式（可选），默认 %Y-%m-%d %H:%M:%S
+- locale：本地化语言（可选），默认匹配当前会话语言
+
+【重要】返回格式化后的当前时间字符串
 
 返回数据说明：
 - iso: ISO格式时间（如2026-04-26T10:30:00+08:00）
 - timestamp: Unix时间戳（秒）
 - format: 默认格式时间（如2026-04-26 10:30:00）
 - timezone: 时区（如+0800）
-- weekday: 英文星期几（如Saturday）
-- isoweekday: ISO星期几（1=Monday, 7=Sunday）""",
+- weekday: 星期几（如Saturday）
+- isoweekday: ISO星期几（1=Monday, 7=Sunday）
+- locale: 本地化语言标识""",
     "time_format": """格式化时间戳或日期字符串为指定格式。
 
 使用场景：
@@ -221,8 +228,10 @@ TIME_TOOL_DESCRIPTIONS = {
 }
 
 TIME_TOOL_EXAMPLES = {
-    "time_now": [
+    "get_current_time": [
         {},
+        {"timezone": "Asia/Shanghai"},
+        {"timezone": "America/New_York", "format": "%Y-%m-%d %H:%M:%S"},
     ],
     "time_format": [
         {},
@@ -275,7 +284,7 @@ def _register_time_tools():
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
     tool_methods = {
-        "time_now": time_now,
+        "get_current_time": time_now,
         "time_format": time_format,
         "time_diff": time_diff,
         "timer_set": timer_set,
@@ -287,7 +296,7 @@ def _register_time_tools():
     }
 
     TOOL_INPUT_MODELS = {
-        "time_now": TimeNowInput,
+        "get_current_time": TimeNowInput,
         "time_format": TimeFormatInput,
         "time_diff": TimeDiffInput,
         "timer_set": TimerSetInput,

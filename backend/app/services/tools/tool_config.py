@@ -31,6 +31,7 @@ TOOL_NAME_ALIASES = {
     'read_file': 'read_text_file',           # 兼容旧代码（文本文件）
     'search_file_content': 'grep_file_content',  # 兼容旧代码
     'edit_file': 'edit_text_file',           # 兼容旧代码（语义明确化）
+    'time_now': 'get_current_time',          # 兼容旧代码（语义明确化）- 小沈 2026-05-03
 }
 
 # 废弃工具列表（不再支持，调用时返回错误提示）
