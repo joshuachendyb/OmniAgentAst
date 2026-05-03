@@ -45,11 +45,11 @@ class TimeFormatInput(BaseModel):
     """time_format 工具的输入参数"""
     timestamp: Optional[Union[int, float, str]] = Field(
         default=None,
-        description="时间戳（Unix秒）、日期字符串（如'2026-04-25'）、或datetime对象。如果为None，则使用当前时间。支持格式：int/float=Unix时间戳，str=日期字符串自动识别，datetime=直接使用。默认为None（当前时间）"
+        description="时间戳（Unix秒）、日期字符串（如'2026-04-25'）、或datetime对象。Agent 判断：如果为None（默认），则使用当前时间。支持格式：int/float=Unix时间戳，str=日期字符串自动识别，datetime=直接使用"
     )
     pattern: Optional[str] = Field(
         default=None,
-        description="格式字符串（如'%Y-%m-%d %H:%M:%S'）。如果为None，则使用默认格式'%Y-%m-%d %H:%M:%S'。常用格式：%Y年%m月%d日、%Y-%m-%d %H:%M:%S、%Y/%m/%d。默认为None（%Y-%m-%d %H:%M:%S）"
+        description="格式字符串（如'%Y-%m-%d %H:%M:%S'）。Agent语义解析意图：'几号'→'%Y-%m-%d'，'星期几'→'%A'，'时间戳'→'X'。如果为None（默认），则使用'%Y-%m-%d %H:%M:%S'"
     )
 
 
@@ -61,7 +61,7 @@ class TimeDiffInput(BaseModel):
     )
     end: Optional[Union[int, float, str]] = Field(
         default=None,
-        description="结束时间（时间戳、字符串、datetime）。如果为None则使用当前时间。支持格式同start。可选参数，默认为None（当前时间）"
+        description="结束时间（时间戳、字符串、datetime）。Agent 判断：如果为None（默认），则使用当前时间。支持格式同start"
     )
 
 
