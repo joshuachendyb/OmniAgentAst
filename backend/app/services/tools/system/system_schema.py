@@ -96,18 +96,29 @@ class EventLogInput(BaseModel):
 
 
 class ListProcessesInput(BaseModel):
-    """list_processes 工具的输入参数 - 小沈 2026-05-03修正
-    
-    按文档7.5节参数定义：
-    - name: 进程名称过滤（可选）
-    - user: 用户名过滤（可选）
-    - status: 状态过滤（可选），running/sleeping
-    - limit: 返回数量限制（可选），默认 100
-    - sort_by: 排序方式（可选），默认 pid
-    """
-    name: Optional[str] = Field(
+    """list_processes 工具的输入参数 - 小沈 2026-05-04 修正"""
+    filter_name: Optional[str] = Field(
         default=None,
-        description="进程名称过滤（可选）。如 python.exe、chrome.exe。Agent 根据 query 语义自动提取进程名，若 query 只说查看进程则不设此参数"
+        description="按进程名过滤（模糊匹配）"
+    )
+    filter_pid: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="按PID过滤"
+    )
+    sort_by: Literal["pid", "name", "cpu", "memory"] = Field(
+        default="pid",
+        description="排序字段（可选）。可选值：pid（默认值）、name（名称）、cpu（CPU占用）、memory（内存占用）"
+    )
+    descending: bool = Field(
+        default=False,
+        description="降序排序，默认False"
+    )
+    max_results: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="最大返回进程数，默认100"
     )
     user: Optional[str] = Field(
         default=None,
@@ -130,106 +141,63 @@ class ListProcessesInput(BaseModel):
 
 
 class KillProcessInput(BaseModel):
-    """kill_process 工具的输入参数 - 小沈 2026-05-03修正
-    
-    按文档7.5节参数定义：
-    - pid: 进程ID（可选）
-    - name: 进程名称（可选，可批量终止）
-    - force: 是否强制终止（可选），默认 false
-    """
-    pid: Optional[int] = Field(
-        default=None,
+    """kill_process 工具的输入参数 - 小沈 2026-05-04 修正"""
+    pid: int = Field(
+        ...,
         ge=1,
-        description="进程 ID（可选）。如 1234。Agent 根据 query 语义自动提取 PID，若 query 只提供进程名则通过 list_processes 查找后再填充"
-    )
-    name: Optional[str] = Field(
-        default=None,
-        description="进程名称（可选）。可批量终止同名进程，如 python.exe。Agent 根据 query 语义自动提取进程名"
+        description="进程 ID（必填）。如 1234"
     )
     force: bool = Field(
         default=False,
-        description="是否强制终止进程。默认 false。false：优雅终止（SIGTERM），给进程机会清理资源；true：强制终止（SIGKILL），立即杀死进程。若进程无响应，Agent 自动设 force 为 true 强制杀死"
+        description="是否强制终止进程。默认 False。false：优雅终止（SIGTERM），给进程机会清理资源；true：强制终止（SIGKILL），立即杀死进程"
+    )
+    timeout: int = Field(
+        default=5,
+        ge=1,
+        le=60,
+        description="等待进程终止的超时时间（秒），默认5秒"
     )
 
 
 class LogMessageInput(BaseModel):
-    """log_message 工具的输入参数 - 小沈 2026-05-03 修正
-    
-    按文档7.3节参数定义：
-    - message: 日志消息内容（必填）
-    - level: 日志级别（可选），默认 INFO
-    - logger_name: 记录器名称（可选），默认 root
-    - log_file: 日志文件路径（可选），默认控制台
-    """
+    """log_message 工具的输入参数 - 小沈 2026-05-04 修正"""
     message: str = Field(
         ...,
-        description="日志消息内容（必填）。要记录到日志的消息文本。必填由LLM提供。"
+        description="日志消息内容（必填）"
     )
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
         default="INFO",
-        description="日志级别。可选值：DEBUG、INFO（默认）、WARNING、ERROR、CRITICAL。Agent 根据消息语义自动推断：崩溃/失败→ERROR，启动/完成→INFO，调试→DEBUG"
+        description="日志级别。可选值：DEBUG、INFO（默认）、WARNING、ERROR、CRITICAL"
     )
-    logger_name: str = Field(
-        default="root",
-        description="日志记录器名称。默认 root。Agent 根据 query 模块名自动映射，如 agent、tool、workflow 等"
-    )
-    log_file: Optional[str] = Field(
-        default=None,
-        description="日志文件路径。默认 null（仅输出到控制台）。Agent 根据意图自动路由到项目标准日志路径"
+    module: str = Field(
+        default="system",
+        description="日志模块来源，默认system"
     )
 
 
 class GetLogsInput(BaseModel):
-    """get_logs 工具的输入参数 - 小沈 2026-05-03 修正
-    
-    按文档7.3节参数定义：
-    - log_file: 日志文件路径（必填）
-    - level: 日志级别过滤（可选），默认 WARNING
-    - start_time: 起始时间过滤（可选）
-    - end_time: 结束时间过滤（可选）
-    - log_format: 时间格式（可选），默认 auto_detect
-    - max_lines: 最大行数（可选），默认 200
-    - tail_mode: 尾部读取模式（可选），默认 false
-    - pattern: 关键词过滤（可选）
-    - output_format: 输出格式（可选），默认 table
-    """
+    """get_logs 工具的输入参数 - 小沈 2026-05-04 修正"""
     log_file: str = Field(
         ...,
-        description="日志文件路径（必填）。如 D:/logs/app.log。必填由LLM提供。"
+        description="日志文件路径（必填）"
+    )
+    date: Optional[str] = Field(
+        default=None,
+        description="日期过滤，默认null（今天）"
     )
     level: Optional[Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]] = Field(
-        default="WARNING",
-        description="日志级别过滤。默认 WARNING。可选值：DEBUG、INFO、WARNING、ERROR、CRITICAL。Agent 根据 query 语义自动收窄：查错误→ERROR，全量→DEBUG"
-    )
-    start_time: Optional[str] = Field(
         default=None,
-        description="起始时间过滤。Agent 解析自然语言自动转为标准格式。依赖 log_format 解析"
+        description="日志级别过滤"
     )
-    end_time: Optional[str] = Field(
+    keyword: Optional[str] = Field(
         default=None,
-        description="结束时间过滤。默认 null（截至当前）"
-    )
-    log_format: Optional[str] = Field(
-        default="auto_detect",
-        description="日志时间格式。默认 auto_detect。Agent 优先自动探测常见格式；若失败或需精确过滤，自动注入标准格式（如 YYYY-MM-DD HH:mm:ss）"
+        description="关键字过滤"
     )
     max_lines: int = Field(
-        default=200,
+        default=100,
         ge=1,
         le=1000,
-        description="返回最大行数。默认 200。Agent 根据意图动态调整：概览 50 行，深度排查 1000 行"
-    )
-    tail_mode: bool = Field(
-        default=False,
-        description="是否仅读取文件末尾 max_lines 行。默认 false。注意：开启后不执行 level/pattern 过滤，若需过滤 Agent 自动关闭此模式改为正向读取"
-    )
-    pattern: Optional[str] = Field(
-        default=None,
-        description="关键词/正则过滤。Agent 从 query 自动提取注入。与 tail_mode 互斥"
-    )
-    output_format: Literal["table", "json"] = Field(
-        default="table",
-        description="输出格式。可选值：table（默认，人类可读）、json（结构化数据）。由 Agent 根据下游需求自动切换"
+        description="最大返回行数，默认100"
     )
 
 

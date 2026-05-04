@@ -420,23 +420,21 @@ def _get_linux_event_log(
 
 
 def list_processes(
-    name: Optional[str] = None,
-    user: Optional[str] = None,
-    status: Optional[str] = None,
-    limit: int = 100,
+    filter_name: Optional[str] = None,
+    filter_pid: Optional[int] = None,
     sort_by: str = "pid",
+    descending: bool = False,
+    max_results: int = 100,
 ) -> dict:
     """
-    列出所有进程 - 小沈 2026-05-02
+    列出所有进程 - 小沈 2026-05-04 修正
     
-    使用psutil获取进程列表，支持按名称/PID过滤和排序。
-    
-    Args:
-        name: 按进程名过滤（模糊匹配）
-        user: 按用户名过滤
-        status: 状态过滤（running/sleeping）
-        limit: 最大返回进程数
-        sort_by: 排序字段（pid/name/cpu/memory）
+    按文档7.5节参数定义：
+    - filter_name: 进程名称过滤（可选）
+    - filter_pid: PID过滤（可选）
+    - sort_by: 排序字段（可选），默认pid
+    - descending: 降序排序（可选），默认False
+    - max_results: 最大返回数（可选），默认100
     
     Returns:
         {code, data, message}
@@ -449,19 +447,13 @@ def list_processes(
                 proc_info = proc.info
                 
                 # 参数过滤
-                if name:
+                if filter_name:
                     proc_name = proc_info.get('name', '')
-                    if name.lower() not in proc_name.lower():
+                    if filter_name.lower() not in proc_name.lower():
                         continue
                 
-                if user:
-                    proc_user = proc_info.get('username', '')
-                    if user.lower() not in proc_user.lower():
-                        continue
-                
-                if status:
-                    proc_status = proc_info.get('status', '').lower()
-                    if status.lower() != proc_status:
+                if filter_pid:
+                    if proc_info.get('pid') != filter_pid:
                         continue
                 
                 cpu_percent = proc_info.get('cpu_percent') or 0.0
@@ -491,11 +483,11 @@ def list_processes(
         
         # 按pid/name/cpu/memory其中一个排序
         if sort_by in sort_keys:
-            processes.sort(key=sort_keys[sort_by], reverse=False)
+            processes.sort(key=sort_keys[sort_by], reverse=descending)
         else:
             processes.sort(key=sort_keys["pid"], reverse=False)
         
-        limited_processes = processes[:limit]
+        limited_processes = processes[:max_results]
         
         return {
             "code": "SUCCESS",
@@ -518,28 +510,25 @@ def list_processes(
 
 
 def kill_process(
-    pid: Optional[int] = None,
-    name: Optional[str] = None,
+    pid: int,
     force: bool = False,
     timeout: int = 5,
 ) -> dict:
     """
-    终止指定进程 - 小沈 2026-05-03
+    终止指定进程 - 小沈 2026-05-04 修正
     
-    使用psutil终止进程，支持PID终止和名称批量终止。
-    pid和name二选一，优先使用pid。
+    按文档参数定义：pid必填，force可选，timeout可选
     
     Args:
-        pid: 要终止的进程PID
-        name: 进程名称，可批量终止同名进程
-        force: 是否强制终止（True=SIGKILL，False=SIGTERM）
-        timeout: 等待进程终止的超时时间（秒）
+        pid: 要终止的进程PID（必填）
+        force: 是否强制终止（可选），默认False
+        timeout: 等待进程终止的超时时间（秒，可选），默认5秒
     
     Returns:
         {code, data, message}
     """
     # 参数验证
-    if pid is None and not name:
+    if pid is None or pid <= 0:
         return {
             "code": "ERR_INVALID_PARAM",
             "data": None,
@@ -694,26 +683,23 @@ def kill_process(
 def log_message(
     message: str,
     level: str = "INFO",
-    logger_name: str = "root",
-    log_file: Optional[str] = None,
+    module: str = "system",
 ) -> dict:
     """
-    记录日志消息到指定日志文件或日志系统 - 小沈 2026-05-03修正
+    记录日志消息 - 小沈 2026-05-04 修正
     
-    按文档7.3节参数定义：message必填，3个可选参数
+    按文档7.3节参数定义：message必填，level可选，module可选
     
     Args:
         message: 日志消息内容（必填）
-        level: 日志级别，默认INFO
-        logger_name: 记录器名称，默认root
-        log_file: 日志文件路径，默认None（仅控制台）
+        level: 日志级别（可选），默认INFO
+        module: 日志模块来源（可选），默认system
     
     Returns:
         {code, data, message}
     """
     try:
-        log_logger = logging.getLogger(logger_name)
-        
+        # 记录日志
         level_map = {
             "DEBUG": logging.DEBUG,
             "INFO": logging.INFO,
@@ -724,10 +710,15 @@ def log_message(
         
         log_level = level_map.get(level.upper(), logging.INFO)
         
-        if log_file:
-            file_handler = logging.FileHandler(log_file, encoding="utf-8")
-            file_handler.setLevel(log_level)
-            log_logger.addHandler(file_handler)
+        # 使用module创建或获取logger
+        log_logger = logging.getLogger(module)
+        log_logger.setLevel(log_level)
+        
+        # 添加控制台处理器
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(log_level)
+        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        log_logger.addHandler(console_handler)
         
         log_logger.log(log_level, message)
         
@@ -736,11 +727,10 @@ def log_message(
             "data": {
                 "level": level,
                 "message": message,
-                "logger_name": logger_name,
-                "log_file": log_file,
+                "module": module,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             },
-            "message": f"日志记录成功 [{level.upper()}] [{logger_name}] {message}"
+            "message": f"日志记录成功 [{level.upper()}] [{module}] {message}"
         }
     
     except Exception as e:
@@ -753,30 +743,22 @@ def log_message(
 
 def get_logs(
     log_file: str,
-    level: Optional[str] = "WARNING",
-    start_time: Optional[str] = None,
-    end_time: Optional[str] = None,
-    log_format: Optional[str] = "auto_detect",
-    max_lines: int = 200,
-    tail_mode: bool = False,
-    pattern: Optional[str] = None,
-    output_format: str = "table",
+    date: Optional[str] = None,
+    level: Optional[str] = None,
+    keyword: Optional[str] = None,
+    max_lines: int = 100,
 ) -> dict:
     """
-    读取指定日志文件的内容，支持智能过滤与截断 - 小沈 2026-05-03修正
+    读取指定日志文件的内容 - 小沈 2026-05-04 修正
     
-    按文档7.3节参数定义：log_file必填，9个可选参数
+    按文档参数定义：log_file必填，date/level/keyword/max_lines可选
     
     Args:
         log_file: 日志文件路径（必填）
-        level: 日志级别过滤，默认WARNING
-        start_time: 起始时间过滤
-        end_time: 结束时间过滤
-        log_format: 时间格式，默认auto_detect
-        max_lines: 最大行数，默认200
-        tail_mode: 尾部读取模式，默认False
-        pattern: 关键词过滤
-        output_format: 输出格式，默认table
+        date: 日期过滤（可选）
+        level: 日志级别过滤（可选）
+        keyword: 关键字过滤（可选）
+        max_lines: 最大行数（可选），默认100
     
     Returns:
         {code, data, message}
@@ -794,52 +776,37 @@ def get_logs(
             }
         
         logs = []
-        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-            if tail_mode:
-                lines = f.readlines()
-                logs = lines[-max_lines:] if len(lines) > max_lines else lines
-            else:
-                all_lines = f.readlines()
-                for line in all_lines:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    if level and level != "WARNING":
-                        level_str = f" - {level} - "
-                        if level_str not in line and f" - {level.upper()} - " not in line:
-                            continue
-                    
-                    if pattern:
-                        if pattern.lower() not in line.lower():
-                            continue
-                    
-                    logs.append(line)
-                    
-                    if len(logs) >= max_lines:
-                        break
+        all_lines = open(log_path, "r", encoding="utf-8", errors="ignore").readlines()
         
-        if output_format == "json":
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "logs": logs,
-                    "total": len(logs)
-                },
-                "message": f"获取到 {len(logs)} 条日志记录"
-            }
-        else:
-            table_lines = logs[:max_lines]
-            table_str = "\n".join(table_lines)
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "logs": logs,
-                    "total": len(logs),
-                    "table": table_str
-                },
-                "message": f"获取到 {len(logs)} 条日志记录"
-            }
+        for line in all_lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # 级别过滤
+            if level:
+                level_str = f" - {level.upper()} - "
+                if level_str not in line and f" - {level.upper()} - " not in line:
+                    continue
+            
+            # 关键字过滤
+            if keyword and keyword.lower() not in line.lower():
+                continue
+            
+            logs.append(line)
+            
+            if len(logs) >= max_lines:
+                break
+        
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "logs": logs,
+                "total": len(logs),
+                "file": log_file,
+            },
+            "message": f"获取到 {len(logs)} 条日志记录"
+        }
     
     except Exception as e:
         logger.error(f"[get_logs] 获取日志失败: {e}")
