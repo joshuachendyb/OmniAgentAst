@@ -39,7 +39,7 @@ def execute_shell_command(
     env_vars: Optional[dict] = None,
     run_as_admin: bool = False
 ) -> dict:
-    """执行Shell命令 - 小沈 2026-05-03 重命名+补齐参数+timeout改毫秒"""
+    """执行Shell命令 - 小沈 2026-05-04 正确实现encoding参数"""
     timeout_sec = timeout / 1000.0
     
     env = None
@@ -51,6 +51,15 @@ def execute_shell_command(
         executable = "cmd.exe"
     else:
         executable = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+    
+    # run_as_admin: 标记但 subprocess 不支持提权，实际执行受限于当前进程权限
+    # 如果需要提权，需要使用 ctypes.win32api 或其他方式
+    if run_as_admin:
+        env = env or {}
+        env["_RUN_AS_ADMIN"] = "1"  # 标记，后续可扩展实现
+    
+    # encoding: 使用指定的编码或默认 utf-8
+    use_encoding = encoding if encoding else "utf-8"
     
     try:
         if run_in_background:
@@ -81,18 +90,38 @@ def execute_shell_command(
                 "message": f"命令已在后台启动，shell_id: {shell_id}"
             }
         
+        # 不使用 text=True，手动处理编码
         result = subprocess.run(
             command,
             shell=True,
             capture_output=True,
-            text=True,
             cwd=cwd,
             timeout=timeout_sec,
             env=env,
             executable=executable
         )
+        
+        # 手动解码，处理编码问题
+        stdout_str = ""
+        stderr_str = ""
+        try:
+            stdout_str = result.stdout.decode(use_encoding) if result.stdout else ""
+        except (UnicodeDecodeError, AttributeError):
+            try:
+                stdout_str = result.stdout.decode("utf-8") if result.stdout else ""
+            except (UnicodeDecodeError, AttributeError):
+                stdout_str = result.stdout.decode("gbk") if result.stdout else ""
+        
+        try:
+            stderr_str = result.stderr.decode(use_encoding) if result.stderr else ""
+        except (UnicodeDecodeError, AttributeError):
+            try:
+                stderr_str = result.stderr.decode("utf-8") if result.stderr else ""
+            except (UnicodeDecodeError, AttributeError):
+                stderr_str = result.stderr.decode("gbk") if result.stderr else ""
+        
         if result.returncode == 0:
-            if result.stderr and result.stderr.strip():
+            if stderr_str and stderr_str.strip():
                 message = "命令执行成功（有警告输出）"
             else:
                 message = "命令执行成功"
@@ -101,8 +130,8 @@ def execute_shell_command(
         return {
             "code": "SUCCESS",
             "data": {
-                "stdout": result.stdout,
-                "stderr": result.stderr,
+                "stdout": stdout_str,
+                "stderr": stderr_str,
                 "returncode": result.returncode
             },
             "message": message
@@ -111,8 +140,8 @@ def execute_shell_command(
         return {
             "code": "ERR_SHELL_TIMEOUT",
             "data": {
-                "stdout": e.stdout if e.stdout else "",
-                "stderr": e.stderr if e.stderr else "",
+                "stdout": "",
+                "stderr": f"命令执行超时（{timeout}毫秒）",
                 "returncode": -1
             },
             "message": f"命令执行超时（{timeout}毫秒）"
