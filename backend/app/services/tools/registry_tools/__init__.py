@@ -9,6 +9,12 @@ REGISTRY 工具包
 Author: 小沈 - 2026-05-02
 """
 
+from app.services.tools.registry_tools.registry_tools import (
+    reg_read,
+    reg_write,
+    reg_delete,
+)
+
 from app.services.tools.registry_tools.registry_register import *
 
 __all__ = [

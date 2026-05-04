@@ -1,34 +1,7 @@
 # -*- coding: utf-8 -*-
-"""
-Tools/File 模块 - 文件操作工具集
+"""Tools/File 模块 - 文件操作工具集"""
 
-【重构说明】2026-04-26 小健
-- file_tools.py: FileTools 类 + 实用函数
-- file_register.py: 到 tool_registry 的注册
-- tool_registry: 唯一注册中心
-
-Author: 小沈 - 2026-03-21
-更新时间: 2026-04-26
-"""
-
-from app.services.tools.file.file_schema import (
-    ReadTextFileInput,
-    WriteTextFileInput,
-    ListDirectoryInput,
-    DeleteFileInput,
-    MoveFileInput,
-    SearchFilesInput,
-    GenerateReportInput,
-    CopyFileInput,
-    CreateDirectoryInput,
-    GetFileInfoInput,
-    CompareFilesInput,
-    BatchRenameInput,
-    CompressFilesInput,
-    FileMonitorInput,
-    FileStatisticsInput,
-    FileChecksumInput,
-)
+from app.services.tools.file.file_register import *
 from app.services.tools.file.file_tools import (
     # 常量
     PAGE_SIZE,
@@ -45,8 +18,6 @@ from app.services.tools.file.file_tools import (
     _generate_summary,
     get_file_tools,
 )
-# 触发工具注册
-from app.services.tools.file.file_register import FileTools, get_file_tools
 
 __all__ = [
     # Schema模型
@@ -66,6 +37,15 @@ __all__ = [
     "FileMonitorInput",
     "FileStatisticsInput",
     "FileChecksumInput",
+    "ReadTextFileInput",
+    "ReadMediaFileInput",
+    "ReadBatchFileInput",
+    "PreciseReplaceInFileInput",
+    "EditTextFileInput",
+    "RenameFileInput",
+    "GrepFileContentInput",
+    "GetDirectoryTreeInput",
+    "ListAllowedDirectoriesInput",
     # 常量
     "PAGE_SIZE",
     "MAX_PAGE_SIZE",
