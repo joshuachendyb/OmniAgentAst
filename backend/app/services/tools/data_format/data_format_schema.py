@@ -118,3 +118,99 @@ class ReadCsvBasicInput(BaseModel):
         default=True,
         description="是否跳过空行和纯空白行。默认 true。防解析中断"
     )
+
+
+class ParseYamlInput(BaseModel):
+    """parse_yaml 工具的输入参数"""
+    file_path: str = Field(
+        ...,
+        description="YAML文件路径。如 D:/config/app.yaml"
+    )
+    encoding: Optional[str] = Field(
+        default="utf-8",
+        description="文件编码。默认 utf-8"
+    )
+
+
+class WriteYamlInput(BaseModel):
+    """write_yaml 工具的输入参数"""
+    file_path: str = Field(
+        ...,
+        description="YAML文件路径。如 D:/config/app.yaml"
+    )
+    data: Any = Field(
+        ...,
+        description="要写入的数据"
+    )
+    encoding: Optional[str] = Field(
+        default="utf-8",
+        description="文件编码。默认 utf-8"
+    )
+    indent: Optional[int] = Field(
+        default=2,
+        description="缩进空格数。默认 2"
+    )
+
+
+class ParseTomlInput(BaseModel):
+    """parse_toml 工具的输入参数"""
+    file_path: str = Field(
+        ...,
+        description="TOML文件路径。如 D:/config/pyproject.toml"
+    )
+    encoding: Optional[str] = Field(
+        default="utf-8",
+        description="文件编码。默认 utf-8"
+    )
+
+
+class WriteTomlInput(BaseModel):
+    """write_toml 工具的输入参数"""
+    file_path: str = Field(
+        ...,
+        description="TOML文件路径。如 D:/config/app.toml"
+    )
+    data: Dict[str, Any] = Field(
+        ...,
+        description="要写入的数据（字典）"
+    )
+    encoding: Optional[str] = Field(
+        default="utf-8",
+        description="文件编码。默认 utf-8"
+    )
+
+
+class ParseIniInput(BaseModel):
+    """parse_ini 工具的输入参数"""
+    file_path: str = Field(
+        ...,
+        description="INI文件路径。如 D:/config/app.ini"
+    )
+    encoding: Optional[str] = Field(
+        default="utf-8",
+        description="文件编码。默认 utf-8"
+    )
+
+
+class ParseXmlInput(BaseModel):
+    """parse_xml 工具的输入参数"""
+    file_path: str = Field(
+        ...,
+        description="XML文件路径。如 D:/config/app.xml"
+    )
+    encoding: Optional[str] = Field(
+        default="utf-8",
+        description="文件编码。默认 utf-8"
+    )
+
+
+class ParsePropertiesInput(BaseModel):
+    """parse_properties 工具的输入参数"""
+    file_path: str = Field(
+        ...,
+        description="Properties文件路径。如 D:/config/app.properties"
+    )
+    encoding: Optional[str] = Field(
+        default="utf-8",
+        description="文件编码。默认 utf-8"
+    )

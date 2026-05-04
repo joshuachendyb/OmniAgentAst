@@ -15,6 +15,13 @@
 - read_json: 读取JSON文件
 - write_json: 写入JSON文件
 - read_csv_basic: 读取CSV文件（基础版）
+- parse_yaml: 读取YAML文件
+- write_yaml: 写入YAML文件
+- parse_toml: 读取TOML文件
+- write_toml: 写入TOML文件
+- parse_ini: 读取INI文件
+- parse_xml: 读取XML文件
+- parse_properties: 读取Properties文件
 
 Author: 小沈 - 2026-05-02
 """
@@ -240,6 +247,158 @@ def read_csv_basic(
             },
             "message": f"成功读取CSV文件: {file_path}，共 {len(rows)} 行"
         }
+    except Exception as e:
+        return {
+            "code": "ERROR",
+            "data": None,
+            "message": f"读取CSV文件失败: {str(e)}"
+        }
+
+
+def parse_yaml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
+    """读取YAML文件内容 - 小沈 2026-05-04"""
+    try:
+        import yaml
+        path = Path(file_path)
+        if not path.exists():
+            return {"code": "ERROR", "data": None, "message": f"文件不存在: {file_path}"}
+        
+        with open(path, "r", encoding=encoding) as f:
+            data = yaml.safe_load(f)
+        
+        return {"code": "SUCCESS", "data": data, "message": f"成功读取YAML文件: {file_path}"}
+    except ImportError:
+        return {"code": "ERROR", "data": None, "message": "PyYAML库未安装，请先执行: pip install pyyaml"}
+    except Exception as e:
+        return {"code": "ERROR", "data": None, "message": f"读取YAML失败: {str(e)}"}
+
+
+def write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
+    """写入数据到YAML文件 - 小沈 2026-05-04"""
+    try:
+        import yaml
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(path, "w", encoding=encoding) as f:
+            yaml.safe_dump(data, f, allow_unicode=True, indent=indent)
+        
+        return {"code": "SUCCESS", "data": {"file_path": file_path}, "message": f"成功写入YAML文件: {file_path}"}
+    except ImportError:
+        return {"code": "ERROR", "data": None, "message": "PyYAML库未安装，请先执行: pip install pyyaml"}
+    except Exception as e:
+        return {"code": "ERROR", "data": None, "message": f"写入YAML失败: {str(e)}"}
+
+
+def parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
+    """读取TOML文件内容 - 小沈 2026-05-04"""
+    try:
+        import tomli
+        path = Path(file_path)
+        if not path.exists():
+            return {"code": "ERROR", "data": None, "message": f"文件不存在: {file_path}"}
+        
+        with open(path, "rb") as f:
+            data = tomli.load(f)
+        
+        return {"code": "SUCCESS", "data": data, "message": f"成功读取TOML文件: {file_path}"}
+    except ImportError:
+        return {"code": "ERROR", "data": None, "message": "tomli库未安装，请先执行: pip install tomli"}
+    except Exception as e:
+        return {"code": "ERROR", "data": None, "message": f"读取TOML失败: {str(e)}"}
+
+
+def write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -> Dict[str, Any]:
+    """写入数据到TOML文件 - 小沈 2026-05-04"""
+    try:
+        import tomli_w as tomli
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(path, "wb") as f:
+            tomli.dump(data, f)
+        
+        return {"code": "SUCCESS", "data": {"file_path": file_path}, "message": f"成功写入TOML文件: {file_path}"}
+    except ImportError:
+        return {"code": "ERROR", "data": None, "message": "tomli库未安装，请先执行: pip install tomli"}
+    except Exception as e:
+        return {"code": "ERROR", "data": None, "message": f"写入TOML失败: {str(e)}"}
+
+
+def parse_ini(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
+    """读取INI配置文件 - 小沈 2026-05-04"""
+    try:
+        import configparser
+        path = Path(file_path)
+        if not path.exists():
+            return {"code": "ERROR", "data": None, "message": f"文件不存在: {file_path}"}
+        
+        config = configparser.ConfigParser()
+        config.read(path, encoding=encoding)
+        
+        result = {}
+        for section in config.sections():
+            result[section] = dict(config[section])
+        
+        return {"code": "SUCCESS", "data": result, "message": f"成功读取INI文件: {file_path}"}
+    except Exception as e:
+        return {"code": "ERROR", "data": None, "message": f"读取INI失败: {str(e)}"}
+
+
+def parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
+    """读取XML文件内容 - 小沈 2026-05-04"""
+    try:
+        import xml.etree.ElementTree as ET
+        path = Path(file_path)
+        if not path.exists():
+            return {"code": "ERROR", "data": None, "message": f"文件不存在: {file_path}"}
+        
+        tree = ET.parse(path)
+        root = tree.getroot()
+        
+        def elem_to_dict(elem):
+            children = list(elem)
+            if not children:
+                return elem.text
+            result = {}
+            for child in children:
+                child_data = elem_to_dict(child)
+                if child.tag in result:
+                    if not isinstance(result[child.tag], list):
+                        result[child.tag] = [result[child.tag]]
+                    result[child.tag].append(child_data)
+                else:
+                    result[child.tag] = child_data
+            return result
+        
+        data = {root.tag: elem_to_dict(root)}
+        return {"code": "SUCCESS", "data": data, "message": f"成功读取XML文件: {file_path}"}
+    except Exception as e:
+        return {"code": "ERROR", "data": None, "message": f"读取XML失败: {str(e)}"}
+
+
+def parse_properties(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
+    """读取Java Properties文件 - 小沈 2026-05-04"""
+    try:
+        path = Path(file_path)
+        if not path.exists():
+            return {"code": "ERROR", "data": None, "message": f"文件不存在: {file_path}"}
+        
+        result = {}
+        with open(path, "r", encoding=encoding) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and not line.startswith("!"):
+                    if "=" in line:
+                        key, val = line.split("=", 1)
+                        result[key.strip()] = val.strip()
+                    elif ":" in line:
+                        key, val = line.split(":", 1)
+                        result[key.strip()] = val.strip()
+        
+        return {"code": "SUCCESS", "data": result, "message": f"成功读取Properties文件: {file_path}"}
+    except Exception as e:
+        return {"code": "ERROR", "data": None, "message": f"读取Properties失败: {str(e)}"}
     except Exception as e:
         return {
             "code": "ERROR",

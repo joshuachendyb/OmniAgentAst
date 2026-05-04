@@ -349,6 +349,7 @@ npm run test -- --run <test-name>
 | `pytest tests/test_adapter.py` | Run specific test file |
 | `pytest -k test_name` | Run tests matching pattern |
 | `pytest --cov=app` | Run with coverage |
+| `pytest tests/data_format/` | Run data_format tool tests |
 
 **Run a single test**:
 ```bash

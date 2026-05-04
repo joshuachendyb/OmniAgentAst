@@ -12,7 +12,7 @@ Author: 小沈 - 2026-05-02
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Any
 
 
 class ReadPdfInput(BaseModel):
@@ -68,4 +68,56 @@ class ReadXlsxInput(BaseModel):
     index_col: Optional[bool] = Field(
         default=False,
         description="第一列是否为索引（可选）。默认 False"
+    )
+
+
+class WriteDocxInput(BaseModel):
+    """write_docx 工具的输入参数 - 小沈 2026-05-04"""
+    file_path: str = Field(
+        ...,
+        description="输出文件路径。如 D:/output/report.docx"
+    )
+    content: Optional[str] = Field(
+        default=None,
+        description="正文内容"
+    )
+    paragraphs: Optional[list] = Field(
+        default=None,
+        description="段落列表。如 [\"第一段\", \"第二段\"]"
+    )
+    title: Optional[str] = Field(
+        default=None,
+        description="文档标题"
+    )
+    table_data: Optional[list] = Field(
+        default=None,
+        description="表格数据二维数组"
+    )
+
+
+class WriteXlsxInput(BaseModel):
+    """write_xlsx 工具的输入参数 - 小沈 2026-05-04"""
+    file_path: str = Field(
+        ...,
+        description="输出文件路径。如 D:/output/data.xlsx"
+    )
+    data: dict = Field(
+        ...,
+        description="数据字典，包含 headers 和 rows"
+    )
+    sheet_name: Optional[str] = Field(
+        default="Sheet1",
+        description="工作表名称"
+    )
+
+
+class ReadPptxInput(BaseModel):
+    """read_pptx 工具的输入参数 - 小沈 2026-05-04"""
+    file_path: str = Field(
+        ...,
+        description="PPT 文件路径。如 D:/documents/presentation.pptx"
+    )
+    extract_notes: Optional[bool] = Field(
+        default=False,
+        description="是否提取演讲备注"
     )

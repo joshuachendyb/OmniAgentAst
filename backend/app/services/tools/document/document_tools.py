@@ -15,6 +15,9 @@
 - read_pdf: 读取PDF文件并提取文本内容
 - read_docx: 读取Word文档并提取文本内容
 - read_xlsx: 读取Excel文件并提取表格数据
+- write_docx: 写入Word文档
+- write_xlsx: 写入Excel文件
+- read_pptx: 读取PPT幻灯片
 
 Author: 小沈 - 2026-05-02
 """
@@ -27,6 +30,9 @@ from app.services.tools.document.document_schema import (
     ReadPdfInput,
     ReadDocxInput,
     ReadXlsxInput,
+    WriteDocxInput,
+    WriteXlsxInput,
+    ReadPptxInput,
 )
 
 
@@ -268,4 +274,192 @@ def read_xlsx(
             "code": "ERR_READ_XLSX",
             "data": None,
             "message": f"读取Excel文件失败: {str(e)}"
+        }
+
+
+def write_docx(
+    file_path: str,
+    content: str = None,
+    paragraphs: list = None,
+    title: str = None,
+    table_data: list = None
+) -> Dict[str, Any]:
+    """写入Word文档 - 小沈 2026-05-04"""
+    if not _check_module("docx"):
+        return {
+            "code": "ERR_NO_DOCX",
+            "data": None,
+            "message": "python-docx库未安装，请先执行: pip install python-docx"
+        }
+
+    try:
+        import docx
+        from docx import Document
+        from docx.shared import Inches, Pt
+
+        doc = Document()
+        
+        # 添加标题
+        if title:
+            doc.add_heading(title, 0)
+        
+        # 添加段落列表
+        if paragraphs:
+            for para in paragraphs:
+                doc.add_paragraph(para)
+        
+        # 添加纯文本内容
+        if content:
+            doc.add_paragraph(content)
+        
+        # 添加表格
+        if table_data:
+            for tbl in table_data:
+                if tbl and len(tbl) > 0:
+                    rows = len(tbl)
+                    cols = len(tbl[0]) if tbl[0] else 0
+                    if rows > 0 and cols > 0:
+                        table = doc.add_table(rows=rows, cols=cols)
+                        for i, row_data in enumerate(tbl):
+                            for j, cell_data in enumerate(row_data):
+                                table.rows[i].cells[j].text = str(cell_data if cell_data is not None else "")
+        
+        # 保存文档
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        doc.save(path)
+        
+        return {
+            "code": "SUCCESS",
+            "data": {"file_path": str(path)},
+            "message": f"成功写入Word文档: {file_path}"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_WRITE_DOCX",
+            "data": None,
+            "message": f"写入Word文档失败: {str(e)}"
+        }
+
+
+def write_xlsx(
+    file_path: str,
+    data: dict,
+    sheet_name: str = "Sheet1"
+) -> Dict[str, Any]:
+    """写入Excel文件 - 小沈 2026-05-04"""
+    if not _check_module("openpyxl"):
+        return {
+            "code": "ERR_NO_OPENPYXL",
+            "data": None,
+            "message": "openpyxl库未安装，请先执行: pip install openpyxl"
+        }
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font, Alignment
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = sheet_name
+        
+        # 写入数据
+        if "headers" in data and data["headers"]:
+            headers = data["headers"]
+            for col_idx, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col_idx, value=header)
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal="center")
+        
+        if "rows" in data and data["rows"]:
+            for row_idx, row_data in enumerate(data["rows"], 2):
+                for col_idx, cell_data in enumerate(row_data, 1):
+                    ws.cell(row=row_idx, column=col_idx, value=cell_data)
+        
+        # 保存文档
+        path = Path(file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        wb.save(path)
+        
+        return {
+            "code": "SUCCESS",
+            "data": {"file_path": str(path), "row_count": len(data.get("rows", []))},
+            "message": f"成功写入Excel文件: {file_path}"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_WRITE_XLSX",
+            "data": None,
+            "message": f"写入Excel文件失败: {str(e)}"
+        }
+
+
+def read_pptx(
+    file_path: str,
+    extract_notes: bool = False
+) -> Dict[str, Any]:
+    """读取PPT幻灯片 - 小沈 2026-05-04"""
+    if not _check_module("pptx"):
+        return {
+            "code": "ERR_NO_PPTX",
+            "data": None,
+            "message": "python-pptx库未安装，请先执行: pip install python-pptx"
+        }
+
+    try:
+        from pptx import Presentation
+
+        path = Path(file_path)
+        if not path.exists():
+            return {
+                "code": "ERR_READ_PPTX",
+                "data": None,
+                "message": f"文件不存在: {file_path}"
+            }
+
+        prs = Presentation(path)
+        slides_data = []
+        notes_data = []
+        
+        for slide_num, slide in enumerate(prs.slides, 1):
+            slide_text = []
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    for para in shape.text_frame.paragraphs:
+                        text = para.text.strip()
+                        if text:
+                            slide_text.append(text)
+            
+            slides_data.append({
+                "slide_num": slide_num,
+                "text": "\n".join(slide_text)
+            })
+            
+            # 提取备注
+            if extract_notes and slide.has_notes_slide:
+                notes = slide.notes_slide.notes_text_frame.text.strip()
+                if notes:
+                    notes_data.append({
+                        "slide_num": slide_num,
+                        "notes": notes
+                    })
+
+        result_data = {
+            "slide_count": len(prs.slides),
+            "slides": slides_data,
+        }
+        
+        if extract_notes and notes_data:
+            result_data["notes"] = notes_data
+
+        return {
+            "code": "SUCCESS",
+            "data": result_data,
+            "message": f"成功读取PPT文件: {file_path}，共 {len(prs.slides)} 页"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_READ_PPTX",
+            "data": None,
+            "message": f"读取PPT文件失败: {str(e)}"
         }
