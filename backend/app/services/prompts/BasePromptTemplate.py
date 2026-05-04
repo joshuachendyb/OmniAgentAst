@@ -139,6 +139,14 @@ If an operation fails:
 3. Report the error to the user clearly
 """
 
+    # 【修复 2026-05-05 小沈】通用Tool Call Rules，所有意图共享
+    TOOL_CALL_RULES = """【Tool Call Rules - 极其重要】:
+- 确认用户意图后，立即调用对应工具，不要在thought中反复讨论该用哪个工具
+- reasoning字段简短说明选择理由即可（1-2句），不要写长篇分析
+- ❌ 禁止：在thought中列举多个工具比较优缺点而不调用
+- ❌ 禁止：在thought中分析参数是否必填而不调用
+- ✅ 正确：确认意图→直接调用→根据结果决定下一步"""
+
     def build_full_system_prompt(self) -> str:
         """
         构建完整的系统 Prompt
@@ -155,6 +163,9 @@ If an operation fails:
         tools_prompt = self.get_available_tools_prompt()
         if tools_prompt:
             parts.append(tools_prompt)
+        
+        # 【修复 2026-05-05 小沈】通用Tool Call Rules加入所有意图的prompt
+        parts.append(self.TOOL_CALL_RULES)
         
         safety = self.get_safety_reminder()
         if safety:
