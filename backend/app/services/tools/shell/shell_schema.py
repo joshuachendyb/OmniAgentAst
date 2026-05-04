@@ -16,7 +16,7 @@ from typing import Optional
 
 
 class ExecuteShellCommandInput(BaseModel):
-    """execute_shell_command 工具的输入参数 - 小沈 2026-05-03 补齐文档参数+timeout改毫秒"""
+    """execute_shell_command 工具的输入参数 - 小沈 2026-05-04 修正description实际行为"""
     command: str = Field(
         ..., description="要执行的命令。如 \"dir\"、\"ls -la\"、\"python script.py\" 等"
     )
@@ -35,13 +35,13 @@ class ExecuteShellCommandInput(BaseModel):
         default=None, description="工作目录。由 Agent 根据上下文智能设置当前项目目录"
     )
     encoding: Optional[str] = Field(
-        default=None, description="命令输出编码。None=自动检测(默认utf-8)，若乱码自动尝试gbk、gb2312"
+        default=None, description="【注意】参数已废弃，当前版本固定使用utf-8自动检测。命令输出编码由系统自动检测utf-8，若乱码自动尝试gbk、gb2312"
     )
     env_vars: Optional[dict] = Field(
         default=None, description="环境变量对象。由 Agent 根据命令类型自动注入必要环境变量（如 PYTHONIOENCODING=utf-8）"
     )
     run_as_admin: bool = Field(
-        default=False, description="是否以管理员权限运行。由 Agent 智能判断是否需要提权（如安装软件、修改注册表时设true）"
+        default=False, description="【注意】参数已定义但当前版本未实现。是否以管理员权限运行由 Agent 判断（如安装软件、修改注册表时设true），实际执行受限于当前进程权限"
     )
 
 
