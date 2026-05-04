@@ -307,6 +307,8 @@ class TextStrategy(LLMStrategy):
         【2026-04-28 小沈增强】提取更完整的参数，包括 path, content 等
         """
         import re
+        # 【修复 2026-05-05 小沈】方法内局部导入，避免reload后NameError
+        from app.services.agent.react_output_parser import _get_all_tool_names
         
         content_lower = content.lower()
         
