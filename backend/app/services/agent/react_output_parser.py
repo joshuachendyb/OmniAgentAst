@@ -69,7 +69,8 @@ def _get_all_tool_names():
     try:
         from app.services.tools.registry import tool_registry
         tools = tool_registry.list_tools(include_metadata=False)
-        return tools
+        # 【修复 2026-05-05 小沈】list_tools返回dict列表，提取name字段
+        return [t["name"] if isinstance(t, dict) else t for t in tools]
     except Exception:
         return ["list_directory", "read_file", "write_file", "delete_file",
                 "move_file", "search_files", "grep_file_content", "generate_report",
