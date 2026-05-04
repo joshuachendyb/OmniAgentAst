@@ -122,10 +122,6 @@ SHELL_TOOL_EXAMPLES = {
         {"path": "D:/项目代码"},
         {"path": "C:/Users/用户名/Documents/config.json"}
     ],
-    "check_path_exists": [
-        {"path": "D:/项目代码"},
-        {"path": "C:/Users/用户名/Documents/config.json"}
-    ],
     "check_command_available": [
         {"command": "python"},
         {"command": "git"},
