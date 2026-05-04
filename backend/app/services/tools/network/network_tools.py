@@ -27,6 +27,7 @@ import re
 import platform
 import subprocess
 import socket
+import asyncio
 from typing import Optional, Dict, Any, Literal, List
 from urllib.parse import urlencode, urlparse, urlunparse, quote_plus
 
@@ -325,9 +326,9 @@ async def fetch_webpage(
     proxy: Optional[str] = None,
 ) -> dict:
     """
-    获取和处理网页内容 - 小沈 2026-05-03 timeout改毫秒
+    获取和处理网页内容 - 小沈 2026-05-04 添加Playwright JS渲染支持
     
-    支持静态抓取和JS渲染（需要额外依赖）。
+    支持静态抓取和JS渲染（Playwright）。
     支持多种输出格式：markdown、html、text。
     支持AI提取指令（prompt）。
     """
@@ -352,17 +353,52 @@ async def fetch_webpage(
         if proxy:
             proxy_config = {"http://": proxy, "https://": proxy}
         
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(timeout_sec),
-            follow_redirects=True,
-            proxies=proxy_config
-        ) as client:
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
+        # js_render: 使用Playwright渲染动态页面
+        if js_render:
+            try:
+                from playwright.async_api import async_playwright
+                
+                browser_config = {
+                    "headless": True,
+                    "proxy": proxy_config,
+                }
+                
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(**browser_config)
+                    page = await browser.new_page()
+                    
+                    if proxy_config:
+                        await page.set_default_timeout(timeout_sec * 1000)
+                    
+                    await page.goto(url, wait_until="networkidle", timeout=timeout_sec * 1000)
+                    html_content = await page.content()
+                    
+                    await browser.close()
+                    
+            except ImportError:
+                return {
+                    "code": "ERR_NETWORK_JS_RENDER",
+                    "data": None,
+                    "message": "js_render需要安装Playwright: pip install playwright && playwright install chromium"
+                }
+            except Exception as e:
+                return {
+                    "code": "ERR_NETWORK_JS_RENDER",
+                    "data": None,
+                    "message": f"JS渲染失败: {str(e)}"
+                }
+        else:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(timeout_sec),
+                follow_redirects=True,
+                proxies=proxy_config
+            ) as client:
+                response = await client.get(url, headers=headers)
+                response.raise_for_status()
+                html_content = response.text
+                content_type = response.headers.get("content-type", "")
             
-            html_content = response.text
-            content_type = response.headers.get("content-type", "")
-            
+            # 提取内容
             if extract_format == "html":
                 extracted_content = html_content
             elif extract_format == "text":
@@ -380,24 +416,26 @@ async def fetch_webpage(
             else:
                 truncated = False
             
-            result_data = {
-                "url": url,
-                "content": extracted_content,
-                "format": extract_format,
-                "content_type": content_type,
-                "status_code": response.status_code,
-                "truncated": truncated,
-            }
-            
-            if prompt:
-                result_data["prompt"] = prompt
-                result_data["note"] = "AI提取功能需要LLM后处理"
-            
-            return {
-                "code": "SUCCESS",
-                "data": result_data,
-                "message": f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else "")
-            }
+            status_code = response.status_code
+        
+        result_data = {
+            "url": url,
+            "content": extracted_content,
+            "format": extract_format,
+            "content_type": content_type,
+            "status_code": status_code,
+            "truncated": truncated,
+        }
+        
+        if prompt:
+            result_data["prompt"] = prompt
+            result_data["note"] = "AI提取功能需要LLM后处理"
+        
+        return {
+            "code": "SUCCESS",
+            "data": result_data,
+            "message": f"成功获取网页内容（{extract_format}格式）" + ("（已截断）" if truncated else "")
+        }
     
     except httpx.TimeoutException:
         return {

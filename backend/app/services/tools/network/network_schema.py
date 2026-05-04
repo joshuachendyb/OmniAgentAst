@@ -86,7 +86,7 @@ class FetchWebpageInput(BaseModel):
         default="markdown", description="提取格式。可选值：markdown（默认，LLM处理效率高）、html（保留完整DOM结构）、text（纯文本）"
     )
     js_render: bool = Field(
-        default=False, description="【注意】参数已定义但当前版本未实现JS渲染功能。默认false（静态抓取）。若需JS渲染需扩展Playwright等依赖"
+        default=False, description="是否启用JS渲染（使用Playwright）。默认false（静态抓取）。true时使用Chromium渲染动态页面（SPA必备）"
     )
     timeout: int = Field(
         default=30000, ge=1000, le=120000, description="超时毫秒数，默认30000（30秒），最大120000（2分钟）。Agent根据域名响应历史动态调整 - 小沈 2026-05-03"
