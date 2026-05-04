@@ -104,6 +104,7 @@ def _format_sse_event(event: Dict[str, Any], step: int, model: str, provider: st
         return format_thought_sse(
             step=step,
             content=event.get('content', ''),
+            thought=event.get('thought', ''),
             reasoning=event.get('reasoning', ''),
             tool_name=event.get('tool_name', event.get('action_tool', '')),
             tool_params=event.get('tool_params', event.get('params', {}))
