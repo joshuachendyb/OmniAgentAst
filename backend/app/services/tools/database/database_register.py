@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-DATABASE Register - 数据库工具注册点
+DATABASE Register - Database Tools Registration Point
 
-【架构规范】2026-04-29 小沈
+[Architecture Standard] 2026-04-29 Xiao Shen
 
-【工具列表】（共3个）
-1. query_sql - 执行只读SQL查询
-2. execute_sql - 执行写操作SQL
-3. get_db_schema - 获取数据库表结构
+[Tool List] (3 tools)
+1. query_sql - Execute read-only SQL query
+2. execute_sql - Execute write SQL
+3. get_db_schema - Get database schema
 
-创建时间: 2026-04-29
+Created: 2026-04-29
 """
 
 import logging
@@ -28,32 +28,34 @@ from app.services.tools.database.database_tools import (
     get_db_schema,
 )
 
-# 工具描述
+# Tool descriptions
 DATABASE_TOOL_DESCRIPTIONS = {
-    "query_sql": "执行只读SQL查询（SELECT/SHOW/DESCRIBE），不支持写操作，返回查询结果集。适合查询数据、查看表内容、统计记录数",
-    "execute_sql": "执行写操作SQL（INSERT/UPDATE/DELETE/DDL），包含危险操作检测和dryRun预览模式。适合插入数据、更新记录、创建表结构",
-    "get_db_schema": "获取数据库表结构元数据，包括表名、字段、类型、索引、外键等信息。适合查看数据库结构、了解表设计",
+    "query_sql": "Execute read-only SQL query (SELECT/SHOW/DESCRIBE), returns result set.\n\nScenarios:\n- When user needs to query database data\n- When user wants to analyze table data\n\nParams:\n- sql: SELECT query statement\n- limit: result row limit (optional), default 50\n- timeout: timeout ms (optional), default 15000\n- output_format: output format (optional), default table\n\n[Important] Force read-only. Auto-trigger EXPLAIN on timeout\n\nExamples:\n- Simple: {\"sql\": \"SELECT * FROM users LIMIT 10\"}\n- JSON: {\"sql\": \"SELECT id, name FROM orders\", \"output_format\": \"json\"}",
+    "execute_sql": "Execute write SQL (INSERT/UPDATE/DELETE/DDL).\n\nScenarios:\n- When user needs to modify database data\n- When user wants to execute CREATE TABLE\n\nParams:\n- sql: write SQL statement\n- dry_run: dry run mode (optional), default false\n- timeout: timeout ms (optional), default 30000\n- affected_rows_check: check affected rows (optional), default true\n\n[Important] Only supports single-statement auto-commit. High-risk ops auto-blocked\n\nExamples:\n- Insert: {\"sql\": \"INSERT INTO logs (msg) VALUES ('test')\"}\n- Dry run: {\"sql\": \"DELETE FROM temp_logs\", \"dry_run\": true}",
+    "get_db_schema": "Get database schema metadata, including table names, fields, types, indexes, foreign keys.\n\nScenarios:\n- When user needs to view database table structure\n- When user wants to understand table design\n- When user needs DDL generation\n\nParams:\n- db_name: target database name (optional)\n- filter_pattern: table filter pattern (optional), supports SQL LIKE\n- include_details: include details (optional), default false\n- output_format: output format (optional), default markdown\n\n[Important] If include_details=true, max 20 tables to prevent context explosion\n\nExamples:\n- All tables: {}\n- Filter: {\"filter_pattern\": \"user%\"}\n- JSON: {\"include_details\": true, \"output_format\": \"json\"}",
 }
 
-# 模型映射
+# Model mapping
 DATABASE_TOOL_INPUT_MODELS = {
     "query_sql": QuerySqlInput,
     "execute_sql": ExecuteSqlInput,
     "get_db_schema": GetDbSchemaInput,
 }
 
-# 使用示例
+# Usage examples
 DATABASE_TOOL_EXAMPLES = {
     "query_sql": [
         {"sql": "SELECT * FROM users LIMIT 10"},
         {"sql": "SELECT name, email FROM orders WHERE status = 'pending'", "limit": 50},
+        {"sql": "SELECT * FROM logs", "timeout": 20000, "output_format": "json"},
     ],
     "execute_sql": [
         {"sql": "INSERT INTO logs (msg) VALUES ('test')"},
         {"sql": "DELETE FROM temp_data WHERE created_at < '2024-01-01'", "dry_run": True},
+        {"sql": "UPDATE users SET status = 'active'", "affected_rows_check": True, "timeout": 30000},
     ],
     "get_db_schema": [
-        {},
+        {"db_name": "myapp"},
         {"filter_pattern": "user%"},
         {"include_details": True, "output_format": "json"},
     ],
@@ -62,18 +64,15 @@ DATABASE_TOOL_EXAMPLES = {
 
 def _register_database_tools():
     """
-    【2026-04-29 小沈】按文档5.1设计注册所有数据库工具
-    使用 Pydantic 模型自动生成 OpenAI Schema
-    【小健 2026-04-29】强制要求：此函数在新增工具时必须在TOOL_INPUT_MODELS中添加映射，并传入input_model参数
+    [2026-04-29 Xiao Shen] Register all database tools per doc 5.1 design
+    Use Pydantic model for auto OpenAI Schema
     """
-    # 统一的工具映射 - 注册名与实际函数名一致
     tool_methods = {
         "query_sql": query_sql,
         "execute_sql": execute_sql,
         "get_db_schema": get_db_schema,
     }
 
-    # 注册所有工具
     for name, method in tool_methods.items():
         desc = DATABASE_TOOL_DESCRIPTIONS.get(name, "")
         input_model = DATABASE_TOOL_INPUT_MODELS.get(name)
@@ -89,11 +88,11 @@ def _register_database_tools():
             examples=examples,
         )
         logger.info(
-            f"[database_register] 已注册工具: {name}, "
-            f"使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, "
-            f"examples: {len(examples)}个"
+            f"[database_register] Registered tool: {name}, "
+            f"Pydantic model: {input_model.__name__ if input_model else 'None'}, "
+            f"examples: {len(examples)}"
         )
 
 
-# 触发注册
+# Trigger registration
 _register_database_tools()
