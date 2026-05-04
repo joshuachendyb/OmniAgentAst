@@ -683,17 +683,17 @@ def kill_process(
 def log_message(
     message: str,
     level: str = "INFO",
-    module: str = "system",
+    logger_name: str = "root",
+    log_file: Optional[str] = None,
 ) -> dict:
     """
-    记录日志消息 - 小沈 2026-05-04 修正
-    
-    按文档7.3节参数定义：message必填，level可选，module可选
+    记录日志消息到指定日志文件或日志系统 - 按文档7.3节定义
     
     Args:
         message: 日志消息内容（必填）
-        level: 日志级别（可选），默认INFO
-        module: 日志模块来源（可选），默认system
+        level: 日志级别（可选），默认INFO，可选DEBUG/INFO/WARNING/ERROR/CRITICAL
+        logger_name: 日志记录器名称（可选），默认root
+        log_file: 日志文件路径（可选），默认null输出到控制台
     
     Returns:
         {code, data, message}
@@ -710,15 +710,18 @@ def log_message(
         
         log_level = level_map.get(level.upper(), logging.INFO)
         
-        # 使用module创建或获取logger
-        log_logger = logging.getLogger(module)
+        # 使用logger_name创建或获取logger
+        log_logger = logging.getLogger(logger_name)
         log_logger.setLevel(log_level)
         
-        # 添加控制台处理器
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level)
-        console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-        log_logger.addHandler(console_handler)
+        # 添加控制台处理器（或文件处理器）
+        if log_file:
+            handler = logging.FileHandler(log_file, encoding="utf-8")
+        else:
+            handler = logging.StreamHandler()
+        handler.setLevel(log_level)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        log_logger.addHandler(handler)
         
         log_logger.log(log_level, message)
         
@@ -727,10 +730,11 @@ def log_message(
             "data": {
                 "level": level,
                 "message": message,
-                "module": module,
+                "logger_name": logger_name,
+                "log_file": log_file,
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             },
-            "message": f"日志记录成功 [{level.upper()}] [{module}] {message}"
+            "message": f"日志记录成功 [{level.upper()}] [{logger_name}] {message}"
         }
     
     except Exception as e:
@@ -743,22 +747,28 @@ def log_message(
 
 def get_logs(
     log_file: str,
-    date: Optional[str] = None,
-    level: Optional[str] = None,
-    keyword: Optional[str] = None,
-    max_lines: int = 100,
+    level: Optional[str] = "WARNING",
+    start_time: Optional[str] = None,
+    end_time: Optional[str] = None,
+    log_format: str = "auto_detect",
+    max_lines: int = 200,
+    tail_mode: bool = False,
+    pattern: Optional[str] = None,
+    output_format: str = "table",
 ) -> dict:
     """
-    读取指定日志文件的内容 - 小沈 2026-05-04 修正
-    
-    按文档参数定义：log_file必填，date/level/keyword/max_lines可选
+    读取指定日志文件的内容 - 按文档7.3节定义
     
     Args:
         log_file: 日志文件路径（必填）
-        date: 日期过滤（可选）
-        level: 日志级别过滤（可选）
-        keyword: 关键字过滤（可选）
-        max_lines: 最大行数（可选），默认100
+        level: 日志级别过滤（可选），默认WARNING
+        start_time: 起始时间（可选）
+        end_time: 结束时间（可选），默认当前
+        log_format: 时间格式（可选），默认auto_detect
+        max_lines: 最大行数（可选），默认200
+        tail_mode: 尾部读取模式（可选），默认false
+        pattern: 关键词过滤（可选）
+        output_format: 输出格式（可选），默认table
     
     Returns:
         {code, data, message}
@@ -784,13 +794,13 @@ def get_logs(
                 continue
             
             # 级别过滤
-            if level:
+            if level and level.upper() != "WARNING":
                 level_str = f" - {level.upper()} - "
                 if level_str not in line and f" - {level.upper()} - " not in line:
                     continue
             
-            # 关键字过滤
-            if keyword and keyword.lower() not in line.lower():
+            # pattern过滤
+            if pattern and pattern.lower() not in line.lower():
                 continue
             
             logs.append(line)
@@ -798,12 +808,17 @@ def get_logs(
             if len(logs) >= max_lines:
                 break
         
+        # tail_mode处理：直接从末尾读取
+        if tail_mode:
+            logs = logs[-max_lines:] if len(logs) > max_lines else logs
+        
         return {
             "code": "SUCCESS",
             "data": {
                 "logs": logs,
                 "total": len(logs),
                 "file": log_file,
+                "tail_mode": tail_mode,
             },
             "message": f"获取到 {len(logs)} 条日志记录"
         }
