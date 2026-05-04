@@ -115,22 +115,13 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - max_tokens：最大返回字符数（可选），默认 8000
 - user_agent：自定义 UA（可选），默认自动生成浏览器UA
 - proxy：代理地址（可选）
-
-注意：
-- prompt 参数已定义但需要LLM后处理实现AI提取
-- js_render 参数已定义但未实现JS渲染功能
+- js_render：是否启用JS渲染（可选），默认false
 
 【重要】返回网页的文本内容和提取格式
 
 使用示例：
-- max_tokens：最大返回 Token 数（可选），默认 8000
-- user_agent：自定义 UA（可选），Agent 自动注入随机浏览器 UA
-- proxy：代理地址（可选），Agent 优先直连，失败后自动使用代理重试
-
-【重要】返回网页的文本内容和 AI 分析结果
-
-使用示例：
-- 获取网页：{"url": "https://example.com", "prompt": "提取页面标题和主要内容"}""",
+- 获取网页：{"url": "https://example.com", "prompt": "提取页面标题和主要内容"}
+- JS渲染：{"url": "https://example.com", "js_render": true}""",
     "search_web": """搜索网络获取最新信息（使用DuckDuckGo API）。
 
 使用场景：
@@ -141,27 +132,19 @@ NETWORK_TOOL_DESCRIPTIONS = {
 参数说明：
 - query：搜索查询字符串（必填）
 - num_results：结果数量（可选），默认 10
-- proxy：代理地址（可选）
-
-注意：
-- allowed_domains 参数已定义但未实现
-- blocked_domains 参数已定义但未实现
-- time_range 参数已定义但未实现
-- language 参数已定义但未实现
-- safe_search 参数已定义但未实现
-
-【重要】返回搜索结果列表，包含标题、URL 和摘要
-
-使用示例：
-- language：搜索语言（可选），默认匹配当前会话语言
+- allowed_domains：包含的域名（可选）
+- blocked_domains：排除的域名（可选）
+- time_range：时间范围（可选），可选值 any/d/w/m/y
+- language：搜索语言（可选）
 - safe_search：安全搜索级别（可选），可选值 strict/moderate/off
-- proxy：代理地址（可选），Agent 优先直连，失败后自动使用代理重试
+- proxy：代理地址（可选）
 
 【重要】返回搜索结果列表，包含标题、URL 和摘要
 
 使用示例：
 - 简单搜索：{"query": "OpenAI function calling"}
-- 限定域名搜索：{"query": "React 19 新特性", "allowed_domains": ["github.com", "react.dev"]}""",
+- 限定域名：{"query": "React 19 新特性", "allowed_domains": ["github.com", "react.dev"]}
+- 时间范围：{"query": "AI news", "time_range": "d"}""",
     "ping": """执行ping测试检查主机可达性，返回延迟、丢包率、TTL等网络诊断信息。
 
 使用场景：

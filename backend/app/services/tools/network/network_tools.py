@@ -147,7 +147,7 @@ async def http_request(
                     }
                 if attempt < retry:
                     import asyncio
-                    asyncio.sleep(0.5 * (2 ** attempt))
+                    await asyncio.sleep(0.5 * (2 ** attempt))
                     continue
                 break
 
