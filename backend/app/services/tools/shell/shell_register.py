@@ -23,6 +23,8 @@ from app.services.tools.shell.shell_schema import (
     GetWorkingDirectoryInput,
     ChangeDirectoryInput,
     CheckPathExistsInput,
+    CheckCommandAvailableInput,
+    LocateCommandInput,
     GetShellOutputInput,
     TerminateShellInput,
 )
@@ -167,6 +169,8 @@ def _register_shell_tools():
         "get_working_directory": GetWorkingDirectoryInput,
         "change_directory": ChangeDirectoryInput,
         "check_path_exists": CheckPathExistsInput,
+        "check_command_available": CheckCommandAvailableInput,
+        "locate_command": LocateCommandInput,
         "get_shell_output": GetShellOutputInput,
         "terminate_shell": TerminateShellInput,
     }

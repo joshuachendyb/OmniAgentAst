@@ -71,6 +71,20 @@ class CheckPathExistsInput(BaseModel):
     )
 
 
+class CheckCommandAvailableInput(BaseModel):
+    """check_command_available 工具的输入参数"""
+    command: str = Field(
+        ..., description="要检查的命令名称，如 python、git、npm"
+    )
+
+
+class LocateCommandInput(BaseModel):
+    """locate_command 工具的输入参数"""
+    command: str = Field(
+        ..., description="要查找的命令名称，如 python、node"
+    )
+
+
 class GetShellOutputInput(BaseModel):
     """get_shell_output 工具的输入参数"""
     shell_id: str = Field(
