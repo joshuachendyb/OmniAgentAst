@@ -531,12 +531,34 @@ async def search_web(
         }
         
         search_url = "https://api.duckduckgo.com/"
+        
+        # time_range 参数实现：DuckDuckGo 使用 kc 参数
+        time_kl_map = {"d": "us-en", "w": "us-en", "m": "us-en", "y": "us-en", "any": "us-en"}
+        
+        # language 参数实现：使用 kl 参数
+        lang_map = {"zh-CN": "zh-cn", "en-US": "us-en", "en": "us-en", "zh": "zh-cn"}
+        
+        # safe_search 参数实现：使用 kp 参数
+        safe_map = {"strict": "1", "moderate": "2", "off": "-1"}
+        
         params = {
             "q": query,
             "format": "json",
             "no_html": 1,
             "skip_disambig": 1,
         }
+        
+        # 应用 time_range
+        if time_range != "any" and time_range in time_kl_map:
+            params["df"] = time_range  # 时间过滤
+        
+        # 应用 language  
+        if language and language in lang_map:
+            params["kl"] = lang_map[language]
+        
+        # 应用 safe_search
+        if safe_search in safe_map:
+            params["kp"] = safe_map[safe_search]
         
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(30),
