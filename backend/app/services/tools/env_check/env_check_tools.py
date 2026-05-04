@@ -5,6 +5,12 @@
 【创建时间】2026-05-02 小沈
 【设计依据】按文档第8.4节 Tool 83-91 定义
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. *_tools.py: 函数实现（必须有详细注释）
+2. *_schema.py: Pydantic 模型（输入参数定义）
+3. *_register.py: 显式注册（description + examples + input_model）
+
 包含9个工具：
 - check_python_available: 检查Python环境
 - validate_code_safety: 验证代码安全性

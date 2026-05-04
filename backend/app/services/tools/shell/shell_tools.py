@@ -5,11 +5,19 @@ Shell 工具函数模块 - Shell命令执行工具
 【创建时间】2026-04-29 小沈
 【规范】2026-05-02 小沈 移除 @register_tool 装饰器，改由 shell_register.py 显式注册
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. shell_tools.py: 函数实现（必须有详细注释）
+2. shell_schema.py: Pydantic 模型（输入参数定义）
+3. shell_register.py: 显式注册（description + examples + input_model）
+
 包含：
 - execute_shell_command: 执行Shell命令（支持后台运行）
 - get_working_directory: 获取当前工作目录
 - change_directory: 切换工作目录
 - check_path_exists: 检查路径是否存在
+- check_command_available: 检查命令是否可用
+- locate_command: 查找命令路径
 - get_shell_output: 获取后台shell输出
 - terminate_shell: 终止后台shell
 
