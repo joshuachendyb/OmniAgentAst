@@ -6,6 +6,12 @@ REGISTRY 工具函数模块 - Windows注册表操作工具
 【更新时间】2026-05-03 小沈
 【规范】按文档7.2节参数定义更新
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. *_tools.py: 函数实现（必须有详细注释）
+2. *_schema.py: Pydantic 模型（输入参数定义）
+3. *_register.py: 显式注册（description + examples + input_model）
+
 包含：
 - reg_read: 读取注册表键值
 - reg_write: 写入注册表键值

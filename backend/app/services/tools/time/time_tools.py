@@ -10,6 +10,12 @@
 - 移除 register_tool/ToolCategory 导入
 - 移除 Pydantic 模型导入（模型由 time_register.py 导入）
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. *_tools.py: 函数实现（必须有详细注释）
+2. *_schema.py: Pydantic 模型（输入参数定义）
+3. *_register.py: 显式注册（description + examples + input_model）
+
 包含：
 - P0 核心基础（5个）：time_now, time_format, time_diff, timer_set, timer_clear;
 - P1 常用辅助（4个）：time_utc_to_local, time_local_to_utc, time_is_weekend, time_is_holiday;

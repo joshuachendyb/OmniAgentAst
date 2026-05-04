@@ -5,6 +5,12 @@ SYSTEM 工具函数模块 - 系统信息工具
 【创建时间】2026-04-29 小沈
 【规范】按新规范使用 Pydantic 模型注册
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. *_tools.py: 函数实现（必须有详细注释）
+2. *_schema.py: Pydantic 模型（输入参数定义）
+3. *_register.py: 显式注册（description + examples + input_model）
+
 包含：
 - get_system_info: 获取系统信息
 - net_connections: 获取网络连接列表

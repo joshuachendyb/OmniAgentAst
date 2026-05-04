@@ -4,6 +4,12 @@ DATABASE Tools - 数据库工具实现
 
 【架构规范】2026-04-29 小沈
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. *_tools.py: 函数实现（必须有详细注释）
+2. *_schema.py: Pydantic 模型（输入参数定义）
+3. *_register.py: 显式注册（description + examples + input_model）
+
 【工具列表】（共3个）
 1. query_sql - 执行只读SQL查询
 2. execute_sql - 执行写操作SQL

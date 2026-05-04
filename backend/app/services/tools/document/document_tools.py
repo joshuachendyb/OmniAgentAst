@@ -5,6 +5,12 @@
 【创建时间】2026-05-02 小沈
 【设计依据】按文档第8.3节 Tool 80-82 定义
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. *_tools.py: 函数实现（必须有详细注释）
+2. *_schema.py: Pydantic 模型（输入参数定义）
+3. *_register.py: 显式注册（description + examples + input_model）
+
 包含：
 - read_pdf: 读取PDF文件并提取文本内容
 - read_docx: 读取Word文档并提取文本内容

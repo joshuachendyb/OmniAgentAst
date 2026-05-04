@@ -7,6 +7,12 @@ GUI 辅助工具函数实现
 - gui_helpers_schema.py: Pydantic 模型
 - gui_helpers_register.py: 显式注册
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. *_tools.py: 函数实现（必须有详细注释）
+2. *_schema.py: Pydantic 模型（输入参数定义）
+3. *_register.py: 显式注册（description + examples + input_model）
+
 【返回格式】统一格式：
 - 成功：{"code": "SUCCESS", "data": {...}, "message": "成功信息"}
 - 失败：{"code": "ERR_xxx", "data": None, "message": "错误信息"}
