@@ -32,6 +32,9 @@ from app.services.tools.gui.gui_schema import (
     ResizeWindowInput,
     OcrInput,
     ListWindowsInput,
+    ReadClipboardInput,
+    WriteClipboardInput,
+    SendNotificationInput,
 )
 
 from app.services.tools.gui.gui_tools import (
@@ -48,6 +51,9 @@ from app.services.tools.gui.gui_tools import (
     focus_window,
     resize_window,
     ocr,
+    read_clipboard,
+    write_clipboard,
+    send_notification,
 )
 
 GUI_TOOL_DESCRIPTIONS = {
@@ -192,6 +198,38 @@ GUI_TOOL_DESCRIPTIONS = {
 - language：识别语言，可选 eng/chi_sim/eng+chi_sim
 
 【重要】需要安装 pytesseract 库和 Tesseract OCR 引擎""",
+    "read_clipboard": """读取剪贴板内容。
+
+使用场景：
+- 当用户需要获取剪贴板中的文本时使用
+- 当用户需要读取复制的内容时使用
+
+参数说明：
+- 无参数
+
+【重要】使用 pyperclip 库或零依赖的 ctypes""",
+    "write_clipboard": """写入内容到剪贴板。
+
+使用场景：
+- 当用户需要将文本复制到剪贴板时使用
+- 当用户需要准备数据供用户粘贴时使用
+
+参数说明：
+- text：要写入的内容（必填）
+
+【重要】使用 pyperclip 库或零依赖的 ctypes""",
+    "send_notification": """发送 Windows 系统通知。
+
+使用场景：
+- 当用户需要发送系统通知提醒时使用
+- 当用户需要通知用户某个操作完成时使用
+
+参数说明：
+- title：通知标题（必填）
+- message：通知内容（必填）
+- duration：显示时长（可选），默认5秒
+
+【重要】需要安装 win10toast 库（Windows专用）""",
 }
 
 GUI_TOOL_EXAMPLES = {
@@ -245,6 +283,16 @@ GUI_TOOL_EXAMPLES = {
         {"image_path": "D:/images/screenshot.png"},
         {"image_path": "D:/images/screenshot.png", "language": "chi_sim"},
     ],
+    "read_clipboard": [
+        {},
+    ],
+    "write_clipboard": [
+        {"text": "要复制的文本内容"},
+    ],
+    "send_notification": [
+        {"title": "任务完成", "message": "文件已成功保存"},
+        {"title": "提醒", "message": "请检查结果", "duration": 10},
+    ],
 }
 
 
@@ -267,6 +315,9 @@ def _register_gui_tools():
         "focus_window": focus_window,
         "resize_window": resize_window,
         "ocr": ocr,
+        "read_clipboard": read_clipboard,
+        "write_clipboard": write_clipboard,
+        "send_notification": send_notification,
     }
 
     TOOL_INPUT_MODELS = {
@@ -283,6 +334,9 @@ def _register_gui_tools():
         "focus_window": FocusWindowInput,
         "resize_window": ResizeWindowInput,
         "ocr": OcrInput,
+        "read_clipboard": ReadClipboardInput,
+        "write_clipboard": WriteClipboardInput,
+        "send_notification": SendNotificationInput,
     }
 
     for name, method in tool_methods.items():
@@ -310,5 +364,5 @@ __all__ = [
     "type_text", "shortcut", "key_combo",
     "screenshot", "snapshot", "screen_record",
     "list_windows", "focus_window", "resize_window",
-    "ocr",
+    "ocr", "read_clipboard", "write_clipboard", "send_notification",
 ]
