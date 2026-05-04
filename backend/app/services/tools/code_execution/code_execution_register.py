@@ -69,12 +69,14 @@ EXAMPLES = {
     "execute_python": [
         {"code": "print('Hello, World!')"},
         {"code": "import math\nprint(math.sqrt(16))"},
-        {"code": "for i in range(5):\n    print(i)", "timeout": 10}
+        {"code": "for i in range(5):\n    print(i)", "timeout": 10},
+        {"code": "import os\nprint(os.listdir('.'))", "working_dir": "D:/projects"}
     ],
     "execute_javascript": [
         {"code": "console.log('Hello, World!');"},
         {"code": "const result = Math.sqrt(16);\nconsole.log(result);"},
-        {"code": "for(let i=0; i<5; i++) {\n  console.log(i);\n}", "timeout": 10}
+        {"code": "for(let i=0; i<5; i++) {\n  console.log(i);\n}", "timeout": 10},
+        {"code": "console.log(process.cwd());", "working_dir": "D:/projects"}
     ],
 }
 
