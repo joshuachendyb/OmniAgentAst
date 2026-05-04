@@ -142,6 +142,7 @@ SYSTEM_TOOL_EXAMPLES = {
     "service_stop": [
         {"service_name": "mysql"},
         {"service_name": "nginx", "force": True},
+        {"service_name": "mysql", "force": True, "wait_for_stopped": True},
     ],
     "task_list": [
         {},
