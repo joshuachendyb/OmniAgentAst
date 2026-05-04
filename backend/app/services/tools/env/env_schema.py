@@ -62,8 +62,22 @@ class ListEnvInput(BaseModel):
     )
 
 
+class DeleteEnvInput(BaseModel):
+    """delete_env 工具的输入参数"""
+    name: str = Field(..., description="要删除的环境变量名称")
+    scope: Literal["process", "user", "system"] = Field(default="process", description="作用域")
+
+
+class ExistsEnvInput(BaseModel):
+    """exists_env 工具的输入参数"""
+    name: str = Field(..., description="要检查的环境变量名称")
+    scope: Literal["process", "user", "system"] = Field(default="process", description="作用域")
+
+
 __all__ = [
     "GetEnvInput",
     "SetEnvInput",
     "ListEnvInput",
+    "DeleteEnvInput",
+    "ExistsEnvInput",
 ]

@@ -1,3 +1,66 @@
+v0.12.11
+
+更新时间: 2026-05-04 18:12:48
+
+更新内容：
+
+## v0.12.10→v0.12.11 变更汇总 - 小沈-2026-05-04
+
+### feat 新增
+| commit | 说明 |
+|--------|------|
+| 1f778098 | 添加GUI辅助工具(Tool 108-114) - 窗口/剪贴板/通知/OCR/截图/录屏/鼠标/键盘 |
+| f827269e | shell添加check_command_available和locate_command工具 |
+| 12e47f29 | data_analysis增强功能-usecols/skiprows/figure_size/color/rotation/sort_by/top_n |
+| 76dec47a | document增强功能-表格提取/表头索引选择 |
+| 0546ffd4 | 完善document和data_format工具，添加测试用例 |
+
+### fix 修复
+| commit | 说明 | 状态 |
+|--------|------|------|
+| 4f23b9db | 修复gui_tools.py中的Bug-numpy导入顺序/send_notification返回值 | ✅ |
+| e4adfbfb | 修复monitor索引越界Bug | ✅ |
+| d24448e9 | code_execution添加working_dir验证 | ✅ |
+| b8011f85 | shell补全check_command和locate的schema注册 | ✅ |
+| 1f0bb4cd | 修复write_clipboard参数名 | ✅ |
+
+### docs 文档完善
+| commit | 说明 |
+|--------|------|
+| 42042ef4 | 统一gui_helpers返回格式 + 添加测试用例16个 |
+| 1f0bb4cd | 窗口管理/剪贴板/通知工具description与文档一致 |
+| 4daea9ce | 完善ocr工具description与文档一致 |
+| 25de3810 | 完善截图/录屏工具description与文档一致 |
+| f448c4b7 | 完善键盘输入工具description与文档一致 |
+| 44fe125d | 完善鼠标控制工具description与文档一致 |
+| 67f8189d | 工具目录添加新函数规范注释 |
+| 5bd67584 | 所有工具目录添加新函数规范注释 |
+
+### test 测试
+| 文件 | 测试数 | 状态 |
+|--------|------|------|
+| tests/data_format/ | 19 | ✅ |
+| tests/document/ | 13 | ✅ |
+| tests/gui/ | 16 | ✅ |
+
+### 新增工具汇总（Tool 108-120+）
+| Tool | 工具名 | 说明 |
+|------|--------|------|
+| 108 | window_control | 窗口控制 |
+| 109 | clipboard_write | 剪贴板写入 |
+| 110 | clipboard_read | 剪贴板读取 |
+| 111 | send_notification | 发送通知 |
+| 112 | ocr_image | OCR识别 |
+| 113 | screenshot | 截图 |
+| 114 | record_screen | 录屏 |
+| 115 | mouse_move | 鼠标移动 |
+| 116 | mouse_click | 鼠标点击 |
+| 117 | mouse_drag | 鼠标拖拽 |
+| 118 | keyboard_type | 键盘输入 |
+| 119 | check_command | 检查命令 |
+| 120+ | parse_yaml/write_yaml等 | data_format和document增强 |
+
+---
 v0.12.10
 
 更新时间: 2026-05-04 10:25:00
