@@ -70,7 +70,11 @@ GUI_TOOL_DESCRIPTIONS = {
 - button：鼠标按钮（可选），可填 left/right/middle
 - click_type：点击类型（可选），可填 single/double
 
-【重要】需要安装 pyautogui 库（pip install pyautogui）""",
+【重要】需要安装 pyautogui 库
+
+使用示例：
+- 单击左键：{"x": 500, "y": 300}
+- 双击：{"x": 500, "y": 300, "click_type": "double"}""",
     "move": """移动鼠标到指定位置。
 
 使用场景：
@@ -78,18 +82,32 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要进行桌面自动化操作时使用
 - 当用户需要将鼠标悬停在特定元素上时使用
 
-【重要】需要安装 pyautogui 库""",
+参数说明：
+- x：目标 X 坐标
+- y：目标 Y 坐标
+- duration：移动持续时间（秒）（可选）
+
+【重要】需要安装 pyautogui 库
+
+使用示例：
+- 瞬间移动：{"x": 500, "y": 300}
+- 平滑移动：{"x": 500, "y": 300, "duration": 1.5}""",
     "scroll": """模拟鼠标滚轮滚动。
 
 使用场景：
 - 当用户需要滚动页面或文档时使用
 - 当用户需要向下滚动查看更多内容时使用
+- 当用户需要向上滚动回到顶部时使用
 
 参数说明：
 - direction：滚动方向，可选 up/down
 - amount：滚动单位数量（可选）
 
-【重要】需要安装 pyautogui 库""",
+【重要】需要安装 pyautogui 库
+
+使用示例：
+- 向下滚动：{"direction": "down"}
+- 向上滚动10单位：{"direction": "up", "amount": 10}""",
     "type_text": """模拟键盘输入文本。
 
 使用场景：
