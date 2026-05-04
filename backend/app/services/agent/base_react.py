@@ -335,13 +335,11 @@ class BaseAgent(ABC):
                         answer_response = parsed.get("reasoning", "")
                     
                     # 【修复 2026-05-05 小沈】finish时直接yield final，不再先yield thought
-                    # 将thought_content(详细思考)和reasoning合并到final的response中
-                    # 确保前端一个final步骤就能拿到全部内容
                     _reasoning = parsed.get("reasoning", "")
                     final_step = StepFactory.create_final_step(
                         step=step_count,
-                        response=answer_response or thought_content,
-                        thought=parsed.get("thought", "") or _reasoning,
+                        response=answer_response,
+                        thought=_reasoning,
                         model=getattr(self, 'model', None),
                         provider=getattr(self, 'provider', None)
                     )
