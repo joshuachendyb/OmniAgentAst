@@ -14,6 +14,12 @@ v0.12.10
 | 91bf9768 | fetch_webpage实现js_render-使用Playwright渲染动态页面 |
 | 69e7beb8 | fetch_webpage标注js_render未实现+download_file补充resume参数 |
 
+### fix 修复（v0.12.10）
+| commit | 说明 | 状态 |
+|--------|------|------|
+| 4f23b9db | 修复gui_tools.py中的Bug-numpy导入顺序/send_notification返回值 | ✅ |
+| e4adfbfb | 修复monitor索引越界Bug | ✅ |
+
 ### refactor 重构
 | commit | 说明 |
 |--------|------|
