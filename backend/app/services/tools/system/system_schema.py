@@ -360,56 +360,6 @@ class TaskDeleteInput(BaseModel):
         default=None,
         description="任务所在文件夹（可选）。如 \\Microsoft。Agent 从 query 推断任务所在文件夹，如说Microsoft下的任务自动映射为 \\Microsoft，并自动处理强制删除逻辑"
     )
-    filter_status: Optional[Literal["ready", "running", "disabled", "all"]] = Field(
-        default="all",
-        description="按任务状态过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为all。可选值含义：\n- ready：已就绪待执行的任务\n- running：正在运行的任务\n- disabled：已禁用的任务\n- all：所有任务（默认）"
-    )
-    max_results: int = Field(
-        default=100,
-        ge=1,
-        le=500,
-        description="最大返回的任务数。必填为LLM给出，当LLM未明确指定时Agent智能补全为100。用于限制返回结果数量，避免输出过多。"
-    )
-
-
-class TaskCreateInput(BaseModel):
-    """task_create 工具的输入参数 - 小沈 2026-05-03 修正"""
-    task_name: str = Field(
-        ...,
-        description="计划任务的名称（必填）。用于标识和后续管理任务，不能与现有任务重名。必填由LLM提供。"
-    )
-    command: str = Field(
-        ...,
-        description="要执行的命令或程序路径（必填）。可以是命令行或完整路径的可执行文件。必填由LLM提供。"
-    )
-    schedule: str = Field(
-        ...,
-        description="计划执行时间（必填）。格式说明：\n- 每日：\"HH:MM\"，例如\"08:00\"表示每天早上8点执行\n- 每周：\"HH:MM /day D\"，例如\"08:00 /day 1\"表示每周一早上8点执行，1-7代表周日到周六\n- 每月：\"HH:MM /monthly DD\"，例如\"08:00 /monthly 1\"表示每月1号早上8点执行\n必填由LLM提供。"
-    )
-    description: Optional[str] = Field(
-        default=None,
-        description="任务描述，用于说明任务的用途。可选，不提供时Agent智能补全为null。"
-    )
-    user: Optional[str] = Field(
-        default=None,
-        description="运行任务的用户账户。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（默认使用当前用户）。需要指定具有相应权限的用户。"
-    )
-    start_in: Optional[str] = Field(
-        default=None,
-        description="任务执行的起始目录。可选，不提供时Agent智能补全为null。指定命令执行时的工作目录。"
-    )
-
-
-class TaskDeleteInput(BaseModel):
-    """task_delete ��具的输入参数 - 小沈 2026-05-03 修正"""
-    task_name: str = Field(
-        ...,
-        description="要删除的计划任务名称（必填）。可通过task_list工具查询现有的任务名称。必填由LLM提供。"
-    )
-    force: bool = Field(
-        default=False,
-        description="是否强制删除（即使任务正在运行）。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。\n- false：仅删除已停止的任务（默认）\n- true：强制删除，包括正在运行的任务"
-    )
 
 
 __all__ = [
