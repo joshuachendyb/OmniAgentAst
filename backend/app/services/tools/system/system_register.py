@@ -146,16 +146,16 @@ SYSTEM_TOOL_EXAMPLES = {
     ],
     "task_list": [
         {},
-        {"state": "running"},
-        {"folder": "\\Microsoft", "state": "ready"},
+        {"filter_status": "running"},
+        {"filter_name": "backup", "filter_status": "ready"},
     ],
     "task_create": [
         {"task_name": "MyBackup", "command": "C:\\scripts\\backup.bat", "schedule": "02:00"},
-        {"task_name": "WeeklyReport", "command": "python C:\\scripts\\report.py", "schedule": "09:00 /day 1", "start_time": "09:00"},
+        {"task_name": "WeeklyReport", "command": "python C:\\scripts\\report.py", "schedule": "09:00 /day 1", "description": "生成周报"},
     ],
     "task_delete": [
         {"task_name": "MyBackup"},
-        {"task_name": "OldTask", "folder": "\\Microsoft"},
+        {"task_name": "MyBackup", "force": True},
     ],
 }
 
