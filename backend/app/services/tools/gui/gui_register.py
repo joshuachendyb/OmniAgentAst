@@ -95,33 +95,48 @@ GUI_TOOL_DESCRIPTIONS = {
 使用场景：
 - 当用户需要在输入框中输入文本时使用
 - 当用户需要进行表单填写自动化时使用
+- 当用户需要模拟键盘打字时使用
 
 参数说明：
 - text：要输入的文本
 - interval：每个字符间隔（秒）（可选）
 
-【重要】需要安装 pyautogui 库""",
+【重要】需要安装 pyautogui 或 keyboard 库
+
+使用示例：
+- 快速输入：{"text": "Hello World"}
+- 模拟打字：{"text": "Hello", "interval": 0.1}""",
     "shortcut": """执行键盘快捷键组合。
 
 使用场景：
 - 当用户需要执行快捷键操作时使用
 - 当用户需要进行复制粘贴、保存等快捷操作时使用
+- 当用户需要切换窗口或程序时使用
 
 参数说明：
 - keys：快捷键组合（如 "ctrl+c", "alt+tab"）
 
-【重要】需要安装 pyautogui 库""",
+【重要】需要安装 pyautogui 或 keyboard 库
+
+使用示例：
+- 复制：{"keys": "ctrl+c"}
+- 切换窗口：{"keys": "alt+tab"}""",
     "key_combo": """按住多个键后释放。
 
 使用场景：
 - 当用户需要按住多个键执行组合操作时使用
+- 当用户需要自定义按键组合时使用
 - 当用户需要精确控制按键按下和释放顺序时使用
 
 参数说明：
 - keys：要按住的键数组
 - action：操作，可选 press/hold/release
 
-【重要】需要安装 pyautogui 库""",
+【重要】需要安装 pyautogui 或 keyboard 库
+
+使用示例：
+- 按下并释放：{"keys": ["ctrl", "c"], "action": "press"}
+- 按住不放：{"keys": ["ctrl", "shift"], "action": "hold"}""",
     "screenshot": """截取屏幕截图。
 
 使用场景：
