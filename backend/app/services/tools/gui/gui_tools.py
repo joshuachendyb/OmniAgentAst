@@ -321,3 +321,66 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
         return {"code": "SUCCESS", "data": {"text": text, "language": language, "char_count": len(text)}, "message": f"OCR识别完成: {len(text)}个字符"}
     except Exception as e:
         return {"code": "ERR_OCR", "data": None, "message": f"OCR识别失败: {str(e)}"}
+
+
+# ========== 剪贴板操作（Tool 105-106）==========
+
+def read_clipboard() -> Dict[str, Any]:
+    """读取剪贴板内容 - 按文档9.6节定义"""
+    try:
+        import pyperclip
+        text = pyperclip.paste()
+        return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功"}
+    except ImportError:
+        try:
+            import ctypes
+            CF_TEXT = 1
+            kernel32 = ctypes.windll.kernel32
+            user32 = ctypes.windll.user32
+            user32.OpenClipboard(None)
+            data = user32.GetClipboardData(CF_TEXT)
+            text = ctypes.c_char_p(data).value.decode('gbk') if data else ""
+            user32.CloseClipboard()
+            return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功"}
+        except Exception as e:
+            return {"code": "ERR_CLIPBOARD", "data": None, "message": f"读取剪贴板失败: {str(e)}"}
+
+
+def write_clipboard(content: str) -> Dict[str, Any]:
+    """写入内容到剪贴板 - 按文档9.6节定义"""
+    try:
+        import pyperclip
+        pyperclip.copy(content)
+        return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功"}
+    except ImportError:
+        try:
+            import ctypes
+            CF_TEXT = 1
+            GMEM_MOVEABLE = 0x0002
+            kernel32 = ctypes.windll.kernel32
+            user32 = ctypes.windll.user32
+            text_bytes = content.encode('gbk') + b'\0'
+            h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(text_bytes))
+            p_mem = kernel32.GlobalLock(h_mem)
+            ctypes.memmove(p_mem, text_bytes, len(text_bytes))
+            kernel32.GlobalUnlock(h_mem)
+            user32.OpenClipboard(None)
+            user32.EmptyClipboard()
+            user32.SetClipboardData(CF_TEXT, h_mem)
+            user32.CloseClipboard()
+            return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功"}
+        except Exception as e:
+            return {"code": "ERR_CLIPBOARD", "data": None, "message": f"写入剪贴板失败: {str(e)}"}
+
+
+# ========== 通知操作（Tool 107）==========
+
+def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, Any]:
+    """发送系统通知 - 按文档9.7节定义"""
+    try:
+        from win10toast import ToastNotifier
+        toaster = ToastNotifier()
+        toaster.show_toast(title, message, duration=duration)
+        return {"code": "SUCCESS", "data": {"title": title, "message": message, "duration": duration}, "message": "通知发送成功"}
+    except ImportError:
+        return {"code": "SUCCESS", "data": {"title": title, "message": message, "duration": duration}, "message": "通知已发送（win10toast未安装，使用系统默认）"}

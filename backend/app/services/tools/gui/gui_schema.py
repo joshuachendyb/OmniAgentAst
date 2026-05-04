@@ -89,3 +89,40 @@ class OcrInput(BaseModel):
 class ListWindowsInput(BaseModel):
     """list_windows 工具的输入参数（Tool 102）"""
     filter: Optional[str] = Field(default=None, description="窗口标题过滤（可选）。如 \"Chrome\" 只返回标题包含 Chrome 的窗口")
+
+
+class ReadClipboardInput(BaseModel):
+    """read_clipboard 工具的输入参数（Tool 105）- 按文档9.6节定义"""
+    pass
+
+
+class WriteClipboardInput(BaseModel):
+    """write_clipboard 工具的输入参数（Tool 106）- 按文档9.6节定义"""
+    content: str = Field(..., description="要写入的内容。任意文本内容")
+
+
+class SendNotificationInput(BaseModel):
+    """send_notification 工具的输入参数（Tool 107）- 按文档9.7节定义"""
+    title: str = Field(..., description="通知标题。如 \"任务完成\"、\"提醒\"")
+    message: str = Field(..., description="通知内容。通知的详细信息")
+    duration: Optional[int] = Field(default=5, description="显示时长（可选），单位为秒。默认5秒")
+
+
+__all__ = [
+    "ClickInput",
+    "MoveInput",
+    "ScrollInput",
+    "TypeTextInput",
+    "ShortcutInput",
+    "KeyComboInput",
+    "ScreenshotInput",
+    "SnapshotInput",
+    "ScreenRecordInput",
+    "FocusWindowInput",
+    "ResizeWindowInput",
+    "OcrInput",
+    "ListWindowsInput",
+    "ReadClipboardInput",
+    "WriteClipboardInput",
+    "SendNotificationInput",
+]
