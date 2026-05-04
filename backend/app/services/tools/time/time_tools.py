@@ -439,17 +439,22 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
         
         # 2. 转换到目标时区
         if target_tz:
-            # 尝试解析时区字符串
+            # 优先尝试IANA时区名称（如"Asia/Shanghai"、"America/New_York"）
             try:
-                # 简单处理：如果格式是+08:00，则计算偏移
-                if re.match(r'^[+-]\d{2}:\d{2}$', target_tz):
-                    offset_hours = int(target_tz[1:3])
-                    offset_minutes = int(target_tz[4:6])
-                    tz = timezone(timedelta(hours=offset_hours, minutes=offset_minutes))
+                # 方法1：尝试IANA时区名称（使用pytz）
+                try:
+                    tz = pytz.timezone(target_tz)
                     local_dt = utc_dt.astimezone(tz)
-                else:
-                    # 默认使用本地时区
-                    local_dt = utc_dt.astimezone()
+                except Exception:
+                    # 方法2：失败再尝试±HH:MM格式
+                    if re.match(r'^[+-]\d{2}:\d{2}$', target_tz):
+                        offset_hours = int(target_tz[1:3])
+                        offset_minutes = int(target_tz[4:6])
+                        tz = timezone(timedelta(hours=offset_hours, minutes=offset_minutes))
+                        local_dt = utc_dt.astimezone(tz)
+                    else:
+                        # 默认使用本地时区
+                        local_dt = utc_dt.astimezone()
             except Exception:
                 local_dt = utc_dt.astimezone()
         else:
@@ -490,12 +495,21 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
         
         # 设置源时区
         if source_tz:
-            # 简单处理时区偏移
-            if re.match(r'^[+-]\d{2}:\d{2}$', source_tz):
-                offset_hours = int(source_tz[1:3])
-                offset_minutes = int(source_tz[4:6])
-                tz = timezone(timedelta(hours=offset_hours, minutes=offset_minutes))
-                local_dt = local_dt.replace(tzinfo=tz)
+            try:
+                # 优先尝试IANA时区名称（如"Asia/Shanghai"、"America/New_York"）
+                try:
+                    tz = pytz.timezone(source_tz)
+                    local_dt = local_dt.replace(tzinfo=tz)
+                except Exception:
+                    # 失败再尝试±HH:MM格式
+                    if re.match(r'^[+-]\d{2}:\d{2}$', source_tz):
+                        offset_hours = int(source_tz[1:3])
+                        offset_minutes = int(source_tz[4:6])
+                        tz = timezone(timedelta(hours=offset_hours, minutes=offset_minutes))
+                        local_dt = local_dt.replace(tzinfo=tz)
+                    # 其他情况，保持原样（使用本地时区）
+            except Exception:
+                pass
         
         # 2. 转换为UTC
         utc_dt = local_dt.astimezone(timezone.utc);
