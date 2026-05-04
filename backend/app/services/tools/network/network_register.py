@@ -198,6 +198,16 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - 检查多个端口需要多次调用""",
 }
 
+# 工具名到实现函数的映射
+NETWORK_TOOL_IMPLEMENTATIONS = {
+    "http_request": http_request,
+    "download_file": download_file,
+    "fetch_webpage": fetch_webpage,
+    "search_web": search_web,
+    "ping": ping,
+    "port_check": port_check,
+}
+
 # 工具名到 Pydantic 模型的映射
 NETWORK_TOOL_INPUT_MODELS = {
     "http_request": HttpRequestInput,
@@ -244,6 +254,7 @@ def register_network_tools():
         tool_registry.register(
             name=tool_name,
             description=NETWORK_TOOL_DESCRIPTIONS[tool_name],
+            implementation=NETWORK_TOOL_IMPLEMENTATIONS[tool_name],
             input_model=NETWORK_TOOL_INPUT_MODELS[tool_name],
             category=ToolCategory.NETWORK,
             examples=NETWORK_TOOL_EXAMPLES.get(tool_name, []),
