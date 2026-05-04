@@ -669,6 +669,292 @@ def _parse_datetime_any(value: Any) -> Optional[datetime]:
     except Exception:
         return None
 
+
+# ===========================================================
+# P2 定时器辅助 - timer_list
+# ===========================================================
+
+def timer_list(limit: int = 10) -> Dict[str, Any]:
+    """查询定时器列表：返回当前所有活跃的定时器"""
+    try:
+        # 获取当前所有定时器
+        timers = []
+        for timer_id, info in _timer_callbacks.items():
+            timers.append({
+                "timer_id": timer_id,
+                "callback": info.get("callback", ""),
+                "callback_data": info.get("callback_data"),
+                "created_at": info.get("created_at", ""),
+                "trigger_at": info.get("trigger_at", ""),
+            })
+        
+        # 按触发时间排序
+        timers.sort(key=lambda x: x.get("trigger_at", ""))
+        
+        # 限制返回数量
+        timers = timers[:limit] if limit > 0 else timers
+        
+        return {
+            "code": "OK",
+            "data": timers,
+            "message": f"共{len(timers)}个定时器"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_TIMER_LIST",
+            "data": None,
+            "message": f"获取定时器列表失败: {str(e)}"
+        }
+
+
+# ===========================================================
+# P2 时间比较 - time_compare
+# ===========================================================
+
+def time_compare(time1: Any, time2: Any, unit: str = "days") -> Dict[str, Any]:
+    """时间比较：比较两个时间的大小和差值"""
+    try:
+        # 解析两个时间
+        dt1 = _parse_datetime_any(time1)
+        dt2 = _parse_datetime_any(time2)
+        
+        if dt1 is None:
+            return {
+                "code": "ERR_TIME_COMPARE",
+                "data": None,
+                "message": f"无法解析time1: {time1}"
+            }
+        
+        if dt2 is None:
+            return {
+                "code": "ERR_TIME_COMPARE",
+                "data": None,
+                "message": f"无法解析time2: {time2}"
+            }
+        
+        # 确保时区一致
+        if dt1.tzinfo is None:
+            dt1 = dt1.replace(tzinfo=timezone.utc).astimezone()
+        if dt2.tzinfo is None:
+            dt2 = dt2.replace(tzinfo=timezone.utc).astimezone()
+        
+        # 计算差值
+        diff = dt1 - dt2
+        
+        # 根据单位返回差值
+        diff_value = {
+            "days": diff.days,
+            "hours": diff.total_seconds() / 3600,
+            "minutes": diff.total_seconds() / 60,
+            "seconds": diff.total_seconds(),
+        }.get(unit, diff.days)
+        
+        # 比较结果
+        if diff.total_seconds() > 0:
+            compare_result = "gt"  # time1 > time2
+        elif diff.total_seconds() < 0:
+            compare_result = "lt"  # time1 < time2
+        else:
+            compare_result = "eq"  # time1 == time2
+        
+        return {
+            "code": "OK",
+            "data": {
+                "result": compare_result,
+                "diff_seconds": diff.total_seconds(),
+                "diff_value": diff_value,
+                "diff_unit": unit,
+                "time1": dt1.isoformat(),
+                "time2": dt2.isoformat(),
+            },
+            "message": f"time1 {compare_result} time2"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_TIME_COMPARE",
+            "data": None,
+            "message": f"时间比较失败: {str(e)}"
+        }
+
+
+# ===========================================================
+# P2 时间转换 - time_to_timestamp
+# ===========================================================
+
+def time_to_timestamp(time: Any, unit: str = "seconds") -> Dict[str, Any]:
+    """时间转时间戳：将时间转换为Unix时间戳"""
+    try:
+        # 解析时间
+        dt = _parse_datetime_any(time)
+        
+        if dt is None:
+            return {
+                "code": "ERR_TIME_TO_TIMESTAMP",
+                "data": None,
+                "message": f"无法解析time: {time}"
+            }
+        
+        # 确保是offset-aware
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc).astimezone()
+        
+        # 转换为Unix时间戳
+        ts = dt.timestamp()
+        
+        # 根据单位返回
+        if unit == "seconds":
+            ts_value = int(ts)
+        elif unit == "milliseconds":
+            ts_value = int(ts * 1000)
+        elif unit == "microseconds":
+            ts_value = int(ts * 1000000)
+        else:
+            ts_value = int(ts)
+        
+        return {
+            "code": "OK",
+            "data": ts_value,
+            "message": f"时间戳: {ts_value} {unit}"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_TIME_TO_TIMESTAMP",
+            "data": None,
+            "message": f"时间转换失败: {str(e)}"
+        }
+
+
+# ===========================================================
+# P2 时间转换 - timestamp_to_time
+# ===========================================================
+
+def timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") -> Dict[str, Any]:
+    """时间戳转时间：将Unix时间戳转换为时间"""
+    try:
+        # 解析时间戳
+        try:
+            ts = float(timestamp)
+        except (ValueError, TypeError):
+            return {
+                "code": "ERR_TIMESTAMP_TO_TIME",
+                "data": None,
+                "message": f"无法解析timestamp: {timestamp}"
+            }
+        
+        # 解析目标时区
+        try:
+            tz = zoneinfo.ZoneInfo(target_tz) if target_tz else timezone.utc
+        except Exception:
+            tz = timezone.utc
+        
+        # 转换为时间
+        dt = datetime.fromtimestamp(ts, tz=tz)
+        
+        return {
+            "code": "OK",
+            "data": {
+                "datetime": dt.strftime("%Y-%m-%d %H:%M:%S"),
+                "isoformat": dt.isoformat(),
+                "timestamp": ts,
+                "timezone": target_tz,
+            },
+            "message": f"时间: {dt.strftime('%Y-%m-%d %H:%M:%S')}"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_TIMESTAMP_TO_TIME",
+            "data": None,
+            "message": f"时间戳转换失败: {str(e)}"
+        }
+
+
+# ===========================================================
+# P2 工作日判断 - time_is_workday
+# ===========================================================
+
+def time_is_workday(date: Optional[Union[int, float, str]] = None) -> Dict[str, Any]:
+    """工作日判断：判断日期是否为工作日（周一到周五）"""
+    try:
+        # 解析日期
+        dt = _parse_datetime_any(date) if date else datetime.now().astimezone()
+        
+        if dt is None:
+            return {
+                "code": "ERR_TIME_IS_WORKDAY",
+                "data": None,
+                "message": f"无法解析date: {date}"
+            }
+        
+        # 判断是否为周末（周六=5，周日=6）
+        weekday = dt.weekday()
+        is_weekend = weekday >= 5
+        
+        # 判断是否为假日
+        is_holiday_result = _is_holiday(dt.date())
+        
+        # 工作日 = 非周末且非假日
+        is_workday = not is_weekend and not is_holiday_result
+        
+        return {
+            "code": "OK",
+            "data": is_workday,
+            "message": "工作日" if is_workday else "非工作日"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_TIME_IS_WORKDAY",
+            "data": None,
+            "message": f"工作日判断失败: {str(e)}"
+        }
+
+
+# ===========================================================
+# P2 下N个工作日 - time_next_n_workday
+# ===========================================================
+
+def time_next_n_workday(start: Optional[Union[int, float, str]] = None, n: int = 1) -> Dict[str, Any]:
+    """下N个工作日：计算从起始日期往后第N个工作日的日期"""
+    try:
+        # 解析起始日期
+        dt = _parse_datetime_any(start) if start else datetime.now().astimezone()
+        
+        if dt is None:
+            return {
+                "code": "ERR_TIME_NEXT_N_WORKDAY",
+                "data": None,
+                "message": f"无法解析start: {start}"
+            }
+        
+        # 从下一天开始查找
+        current_date = dt.date() + timedelta(days=1)
+        found_count = 0
+        result_dates = []
+        
+        while found_count < n:
+            # 判断是否为工作日
+            weekday = current_date.weekday()
+            is_weekend = weekday >= 5
+            is_holiday = _is_holiday(current_date)
+            is_workday = not is_weekend and not is_holiday
+            
+            if is_workday:
+                result_dates.append(current_date.isoformat())
+                found_count += 1
+            
+            current_date += timedelta(days=1)
+        
+        return {
+            "code": "OK",
+            "data": result_dates,
+            "message": f"第{n}个工作日: {result_dates[0] if result_dates else None}"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_TIME_NEXT_N_WORKDAY",
+            "data": None,
+            "message": f"计算失败: {str(e)}"
+        }
+
 # ===========================================================
 # P1 常用辅助 - time_add
 # ===========================================================

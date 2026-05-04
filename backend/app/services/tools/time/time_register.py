@@ -29,6 +29,12 @@ from app.services.tools.time.time_schema import (
     TimeIsWeekendInput,
     TimeIsHolidayInput,
     TimeAddInput,
+    TimerListInput,
+    TimeCompareInput,
+    TimeToTimestampInput,
+    TimestampToTimeInput,
+    TimeIsWorkdayInput,
+    TimeNextNWorkdayInput,
 )
 
 from app.services.tools.time.time_tools import (
@@ -42,6 +48,12 @@ from app.services.tools.time.time_tools import (
     time_is_weekend,
     time_is_holiday,
     time_add,
+    timer_list,
+    time_compare,
+    time_to_timestamp,
+    timestamp_to_time,
+    time_is_workday,
+    time_next_n_workday,
 )
 
 TIME_TOOL_DESCRIPTIONS = {
