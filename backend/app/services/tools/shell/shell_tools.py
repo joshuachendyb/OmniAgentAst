@@ -228,6 +228,116 @@ def check_path_exists(path: str) -> dict:
         }
 
 
+def check_command_available(command: str) -> dict:
+    """检查命令是否可用 - 小沈 2026-05-04
+    
+    类似 which 或 where 命令，检查系统命令是否存在且可执行。
+    """
+    import shutil
+    try:
+        cmd_path = shutil.which(command)
+        available = cmd_path is not None
+        if available:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "available": True,
+                    "command": command,
+                    "path": cmd_path,
+                },
+                "message": f"命令 '{command}' 可用，路径: {cmd_path}"
+            }
+        else:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "available": False,
+                    "command": command,
+                    "path": None,
+                },
+                "message": f"命令 '{command}' 不可用"
+            }
+    except Exception as e:
+        return {
+            "code": "ERR_SHELL_CHECK_COMMAND",
+            "data": None,
+            "message": f"检查命令失败: {str(e)}"
+        }
+
+
+def locate_command(command: str) -> dict:
+    """查找命令的所有可能路径 - 小沈 2026-05-04
+    
+    类似于 'where' 命令，列出命令的所有可能位置。
+    Windows 上会查找 PATH 环境变量中的所有目录。
+    """
+    import shutil
+    try:
+        # 使用 shutil.which 只能找到第一个，使用 shell 来模拟 where 命令
+        if os.name == 'nt':
+            result = subprocess.run(
+                ['where', command],
+                capture_output=True,
+                text=True,
+                shell=True
+            )
+            if result.returncode == 0:
+                paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "command": command,
+                        "paths": paths,
+                        "count": len(paths),
+                    },
+                    "message": f"找到 {len(paths)} 个路径"
+                }
+            else:
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "command": command,
+                        "paths": [],
+                        "count": 0,
+                    },
+                    "message": f"命令 '{command}' 不可用"
+                }
+        else:
+            # Unix-like 使用 which -a
+            result = subprocess.run(
+                ['which', '-a', command],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "command": command,
+                        "paths": paths,
+                        "count": len(paths),
+                    },
+                    "message": f"找到 {len(paths)} 个路径"
+                }
+            else:
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "command": command,
+                        "paths": [],
+                        "count": 0,
+                    },
+                    "message": f"命令 '{command}' 不可用"
+                }
+    except Exception as e:
+        return {
+            "code": "ERR_SHELL_LOCATE_COMMAND",
+            "data": None,
+            "message": f"查找命令失败: {str(e)}"
+        }
+
+
 def get_shell_output(
     shell_id: str,
     filter: Optional[str] = None,
