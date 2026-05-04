@@ -84,7 +84,11 @@ def type_text(text: str, interval: float = 0) -> Dict[str, Any]:
         return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
     try:
         import pyautogui
-        pyautogui.typewrite(text, interval=interval) if text.isascii() else pyautogui.write(text)
+        # ASCII字符使用typewrite（支持间隔），非ASCII使用write
+        if text.isascii():
+            pyautogui.typewrite(text, interval=interval)
+        else:
+            pyautogui.write(text)
         return {"code": "SUCCESS", "data": {"text_length": len(text)}, "message": f"输入文本完成: {len(text)}个字符"}
     except Exception as e:
         return {"code": "ERR_TYPE_TEXT", "data": None, "message": f"输入文本失败: {str(e)}"}
@@ -167,7 +171,13 @@ def snapshot(display: int = 1) -> Dict[str, Any]:
         output_path = os.path.join(tempfile.gettempdir(), f"snapshot_{timestamp}.png")
         with mss.mss() as sct:
             monitors = sct.monitors
-            mon_index = min(display, len(monitors) - 1) if display < len(monitors) else 1
+            # display参数：1=主显示器，2=副显示器1，以此类推
+            # monitors索引：0=全屏虚拟，1=显示器1，2=显示器2...
+            # 无效值fallback到1（主显示器）
+            if display < 1 or display >= len(monitors):
+                mon_index = 1
+            else:
+                mon_index = display
             img = sct.grab(monitors[mon_index])
             from PIL import Image
             pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
@@ -327,7 +337,7 @@ def ocr(image_path: str, language: str = "eng") -> Dict[str, Any]:
 def read_clipboard() -> Dict[str, Any]:
     """读取剪贴板内容 - 按文档9.6节定义"""
     try:
-        import pyperclip
+        import pyperclip  # 修复：正确库名pyperclip - 小沈 2026-05-04
         text = pyperclip.paste()
         return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功"}
     except ImportError:
@@ -348,7 +358,7 @@ def read_clipboard() -> Dict[str, Any]:
 def write_clipboard(content: str) -> Dict[str, Any]:
     """写入内容到剪贴板 - 按文档9.6节定义"""
     try:
-        import pyperclip
+        import pyperclip  # 修复：正确库名pyperclip - 小沈 2026-05-04
         pyperclip.copy(content)
         return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功"}
     except ImportError:
@@ -360,14 +370,20 @@ def write_clipboard(content: str) -> Dict[str, Any]:
             user32 = ctypes.windll.user32
             text_bytes = content.encode('gbk') + b'\0'
             h_mem = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(text_bytes))
+            if h_mem == 0:
+                return {"code": "ERR_CLIPBOARD", "data": None, "message": "内存分配失败"}
             p_mem = kernel32.GlobalLock(h_mem)
-            ctypes.memmove(p_mem, text_bytes, len(text_bytes))
-            kernel32.GlobalUnlock(h_mem)
-            user32.OpenClipboard(None)
-            user32.EmptyClipboard()
-            user32.SetClipboardData(CF_TEXT, h_mem)
-            user32.CloseClipboard()
-            return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功"}
+            if p_mem:
+                ctypes.memmove(p_mem, text_bytes, len(text_bytes))
+                kernel32.GlobalUnlock(h_mem)
+                user32.OpenClipboard(None)
+                user32.EmptyClipboard()
+                user32.SetClipboardData(CF_TEXT, h_mem)
+                user32.CloseClipboard()
+                return {"code": "SUCCESS", "data": {"content": content}, "message": "剪贴板写入成功"}
+            else:
+                kernel32.GlobalFree(h_mem)
+                return {"code": "ERR_CLIPBOARD", "data": None, "message": "内存锁定失败"}
         except Exception as e:
             return {"code": "ERR_CLIPBOARD", "data": None, "message": f"写入剪贴板失败: {str(e)}"}
 
