@@ -114,6 +114,9 @@ SYSTEM_TOOL_EXAMPLES = {
         {},
         {"filter_name": "python"},
         {"filter_name": "python", "sort_by": "memory", "max_results": 20},
+        {"filter_pid": 1234},
+        {"user": "Administrator", "status": "running"},
+        {"limit": 50, "sort_by": "cpu", "descending": True},
     ],
     "kill_process": [
         {"pid": 1234},
