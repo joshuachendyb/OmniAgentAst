@@ -199,8 +199,8 @@ FILE_TOOL_EXAMPLES = {
         {"source_path": "D:/项目代码/a.txt", "destination_path": "D:/项目代码/b.txt"},
     ],
     "search_files": [
-        {"path": "D:/项目代码", "file_pattern": "*.py"},
-        {"path": "C:/Users/用户名/Documents", "file_pattern": "config*"},
+        {"pattern": "*.py", "search_dir": "D:/项目代码"},
+        {"pattern": "config*", "search_dir": "C:/Users/用户名/Documents"},
     ],
     "generate_report": [
         {"output_dir": "D:/项目代码"},

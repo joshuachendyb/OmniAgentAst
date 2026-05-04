@@ -284,28 +284,6 @@ class CompressFilesInput(BaseModel):
         ge=1024,
         description="分卷大小（字节）。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（不分卷）。含义：\n- None表示不分卷\n- 数值表示分卷大小，例如1048576（1MB）\n用于大文件分卷压缩，便于网络传输。"
     )
-    destination_path: str = Field(
-        description="目标压缩文件路径（必须是绝对路径）"
-    )
-    format: Literal["zip", "tar.gz"] = Field(
-        default="zip",
-        description="压缩格式：zip、tar.gz，默认为zip"
-    )
-    compression_level: int = Field(
-        default=6,
-        ge=0,
-        le=9,
-        description="压缩级别（0-9，0不压缩，9最高压缩），默认为6"
-    )
-    password: Optional[str] = Field(
-        default=None,
-        description="压缩密码（可选），用于加密压缩文件"
-    )
-    split_size: Optional[int] = Field(
-        default=None,
-        ge=1024,
-        description="分卷大小（字节），None表示不分卷"
-    )
 
 
 class FileMonitorInput(BaseModel):
