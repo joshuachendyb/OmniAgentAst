@@ -962,14 +962,18 @@ def time_next_n_workday(start: Optional[Union[int, float, str]] = None, n: int =
 def time_add(start: Any, delta: float, unit: str = "days") -> Dict[str, Any]:
     """时间加减计算：在基准时间上增加/减少偏移量"""
     try:
-        # 1. 解析基准时间
-        start_dt = _parse_datetime_any(start)
-        if start_dt is None:
-            return {
-                "code": "ERR_TIME_ADD",
-                "data": None,
-                "message": f"无法解析基准时间: {start}"
-            }
+        # 【修复 2026-05-05 小沈】start为None时使用当前时间
+        if start is None:
+            start_dt = datetime.now().astimezone()
+        else:
+            # 1. 解析基准时间
+            start_dt = _parse_datetime_any(start)
+            if start_dt is None:
+                return {
+                    "code": "ERR_TIME_ADD",
+                    "data": None,
+                    "message": f"无法解析基准时间: {start}"
+                }
         
         # 确保是offset-aware
         if start_dt.tzinfo is None:

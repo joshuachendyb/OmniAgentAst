@@ -136,9 +136,11 @@ class TimeIsHolidayInput(BaseModel):
 
 class TimeAddInput(BaseModel):
     """time_add 工具的输入参数"""
-    start: Union[int, float, str] = Field(
-        ...,
-        description="基准时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。必填参数"
+    # 【修复 2026-05-05 小沈】start改为可选，默认None=当前时间
+    # 避免LLM犹豫"start是必填需要先获取时间"而不调用工具
+    start: Optional[Union[int, float, str]] = Field(
+        default=None,
+        description="基准时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。可选参数，默认为None（当前时间）"
     )
     delta: float = Field(
         ...,

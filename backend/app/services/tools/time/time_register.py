@@ -105,7 +105,7 @@ TIME_TOOL_DESCRIPTIONS = {
 - 当用户想要知道两个时间点之间相差多久时使用
 
 参数说明：
-- start: 开始时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。必填参数
+- start: 开始时间（时间戳、字符串、datetime）。可选参数，默认为None（当前时间）
 - end: 结束时间（时间戳、字符串、datetime）。如果为None则使用当前时间。支持格式同start。可选参数，默认为None（当前时间）
 
 返回数据说明：
@@ -249,7 +249,7 @@ TIME_TOOL_DESCRIPTIONS = {
     - 当用户问"100天后是几号"时使用此工具
     
 参数说明：
-    - start: 基准时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。必填参数
+    - start: 基准时间（时间戳、字符串、datetime）。可选参数，默认为None（当前时间）。不填则使用当前时间
     - delta: 偏移量（数字）。正数表示增加，负数表示减少。必填参数
     - unit: 单位（days/hours/minutes/seconds/months）。默认为days。Agent 语义解析：'3天'→unit='days'，'2小时'→unit='hours'。可选参数，默认为days
     
