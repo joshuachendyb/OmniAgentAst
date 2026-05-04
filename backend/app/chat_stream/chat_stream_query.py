@@ -376,8 +376,7 @@ async def chat_stream_query(
     final_step_value = next_step()
     final_step_obj = StepFactory.create_final_step(
         step=final_step_value,
-        response=full_content,
-        is_finished=True
+        response=full_content
     )
     final_step_dict = final_step_obj.to_dict()
     
