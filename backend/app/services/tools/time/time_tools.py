@@ -35,6 +35,8 @@ import re;
 # 定时器存储;
 _timers: Dict[str, asyncio.TimerHandle] = {};
 _timer_counter = 0;
+_timer_callbacks: Dict[str, Dict[str, Any]] = {};  # 存储回调信息;
+_timer_events: List[Dict[str, Any]] = [];  # 存储触发事件
 
 
 # ===========================================================
@@ -286,11 +288,70 @@ async def timer_set(delay: float, callback: str, callback_data: Optional[Dict[st
         # 计算触发时间
         trigger_at = datetime.now().astimezone() + timedelta(seconds=delay);
         
-        # 创建回调函数（这里用简单的打印，实际项目需要更复杂的实现）
+        # 存储回调信息
+        _timer_callbacks[timer_id] = {
+            "callback": callback,
+            "callback_data": callback_data,
+            "created_at": datetime.now().astimezone().isoformat(),
+            "trigger_at": trigger_at.isoformat(),
+        }
+        
+        # 创建回调函数（真正实现回调执行）
         async def _timer_callback():
-            print(f"[Timer {timer_id}] 触发: {callback}");
-            # 实际项目中，这里应该发送通知或执行任务;
-            # 例如：await notify_user(f"提醒: {callback}", callback_data);
+            """定时器触发时执行"""
+            try:
+                # 获取回调信息
+                cb_info = _timer_callbacks.get(timer_id, {})
+                cb = cb_info.get("callback", "")
+                cb_data = cb_info.get("callback_data")
+                
+                # 记录触发事件
+                event = {
+                    "timer_id": timer_id,
+                    "triggered_at": datetime.now().astimezone().isoformat(),
+                    "callback": cb,
+                    "callback_data": cb_data,
+                    "status": "triggered",
+                }
+                _timer_events.append(event)
+                
+                # 执行回调
+                if cb:
+                    # 情况1：callback是简单消息，记录日志
+                    if not cb.strip().startswith("http") and not cb.strip().startswith("{"):
+                        logger.info(f"[Timer {timer_id}] 提醒: {cb}")
+                        event["executed_as"] = "log_message"
+                    # 情况2：callback是URL，尝试调用（简化版）
+                    elif cb.strip().startswith("http"):
+                        try:
+                            import httpx
+                            resp = httpx.get(cb, timeout=5.0)
+                            event["executed_as"] = "http_call"
+                            event["http_status"] = resp.status_code
+                        except Exception as http_err:
+                            event["executed_as"] = "http_call_failed"
+                            event["error"] = str(http_err)
+                    # 情况3：其他情况，记录
+                    else:
+                        logger.info(f"[Timer {timer_id}] 回调内容: {cb}")
+                        event["executed_as"] = "other"
+                
+                # 如果有callback_data，合并到事件
+                if cb_data:
+                    event["executed_data"] = cb_data
+                
+                logger.info(f"[Timer {timer_id}] 已触发，回调: {cb}")
+                
+            except Exception as cb_err:
+                # 记录错误事件
+                error_event = {
+                    "timer_id": timer_id,
+                    "triggered_at": datetime.now().astimezone().isoformat(),
+                    "status": "error",
+                    "error": str(cb_err),
+                }
+                _timer_events.append(error_event)
+                logger.error(f"[Timer {timer_id}] 回调执行失败: {cb_err}")
         
         # 设置定时器
         loop = asyncio.get_event_loop();
@@ -524,18 +585,34 @@ def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
                     "message": f"无法解析日期: {date}"
                 }
         
-        # 简单假日检查（固定日期）
-        month_day = (dt.month, dt.day);
+        # 简单假日检查（中国法定假日）
+        month_day = (dt.month, dt.day)
+        year = dt.year
         
-        # 定义一些固定假日（简化版）
+        # 固定日期假日
         fixed_holidays = {
             (1, 1): "元旦",
             (5, 1): "劳动节",
             (10, 1): "国庆节",
         }
         
-        is_holiday = month_day in fixed_holidays;
-        holiday_name = fixed_holidays.get(month_day);
+        # 动态计算的假日（简化版）
+        # 清明节：4月4日或5日（查表法，2024-2030年）
+        qingming_dates = {
+            2024: (4, 4), 2025: (4, 4), 2026: (4, 5),
+            2027: (4, 5), 2028: (4, 4), 2029: (4, 5), 2030: (4, 5),
+        }
+        qingming = qingming_dates.get(year, (4, 5))  # 默认4月5日
+        
+        is_holiday = month_day in fixed_holidays or month_day == qingming
+        holiday_name = fixed_holidays.get(month_day)
+        
+        if month_day == qingming:
+            holiday_name = "清明节"
+        
+        # 农历节日（待实现，需农历转换库）
+        # 端午节（农历五月初五）、中秋节（农历八月十五）、春节（农历正月初一）
+        # 暂未支持，标记为“农历假日需库支持”
         
         # 构造消息
         if is_holiday:
