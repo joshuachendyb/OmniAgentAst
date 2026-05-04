@@ -49,15 +49,17 @@ REGISTRY_TOOL_EXAMPLES = {
     "reg_read": [
         {"key_path": "Software\\Microsoft\\Windows\\CurrentVersion", "value_name": "ProductName"},
         {"key_path": "Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders", "value_name": "Desktop", "hive": "HKCU"},
-        {"key_path": "SYSTEM\\CurrentControlSet\\Control\\ComputerName\\ComputerName", "value_name": "ComputerName", "hive": "HKLM"},
+        {"key_path": "Software\\MyApp", "output_format": "hex"},
     ],
     "reg_write": [
         {"key_path": "Software\\MyTestApp", "value_name": "TestValue", "value": "Hello World", "value_type": "REG_SZ"},
         {"key_path": "Software\\MyTestApp", "value_name": "TestNumber", "value": "12345", "value_type": "REG_DWORD", "backup_before_write": True},
+        {"key_path": "System\\CurrentControlSet\\Services\\TestService", "value_name": "Test", "value": "1", "dry_run": True},
     ],
     "reg_delete": [
         {"key_path": "Software\\MyTestApp", "value_name": "TestValue"},
-        {"key_path": "Software\\MyTestApp"},
+        {"key_path": "Software\\MyTestApp", "backup_before_delete": True},
+        {"key_path": "Software\\TempTest", "recursive": True, "backup_before_delete": True},
     ],
 }
 
