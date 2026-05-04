@@ -428,19 +428,25 @@ def _get_linux_event_log(
 def list_processes(
     filter_name: Optional[str] = None,
     filter_pid: Optional[int] = None,
+    user: Optional[str] = None,
+    status: Optional[str] = None,
     sort_by: str = "pid",
     descending: bool = False,
     max_results: int = 100,
+    limit: Optional[int] = None,
 ) -> dict:
     """
-    列出所有进程 - 小沈 2026-05-04 修正
+    列出所有进程 - 小沈 2026-05-04 修正（增强：支持user/status/limit过滤）
     
     按文档7.5节参数定义：
     - filter_name: 进程名称过滤（可选）
     - filter_pid: PID过滤（可选）
+    - user: 用户名过滤（可选）
+    - status: 状态过滤（可选），running/sleeping
     - sort_by: 排序字段（可选），默认pid
     - descending: 降序排序（可选），默认False
     - max_results: 最大返回数（可选），默认100
+    - limit: 限制返回数量（可选），同max_results
     
     Returns:
         {code, data, message}
@@ -462,6 +468,18 @@ def list_processes(
                     if proc_info.get('pid') != filter_pid:
                         continue
                 
+                # 新增：user过滤
+                if user:
+                    proc_user = proc_info.get('username', '')
+                    if user.lower() not in proc_user.lower():
+                        continue
+                
+                # 新增：status过滤
+                if status:
+                    proc_status = proc_info.get('status', '')
+                    if proc_status != status:
+                        continue
+                
                 cpu_percent = proc_info.get('cpu_percent') or 0.0
                 memory_percent = proc_info.get('memory_percent') or 0.0
                 
@@ -475,7 +493,7 @@ def list_processes(
                     "exe": proc_info.get('exe', 'N/A'),
                     "cmdline": ' '.join(proc_info.get('cmdline', []))[:200] if proc_info.get('cmdline') else 'N/A',
                 })
-            
+                
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
         
@@ -493,7 +511,9 @@ def list_processes(
         else:
             processes.sort(key=sort_keys["pid"], reverse=False)
         
-        limited_processes = processes[:max_results]
+        # 限制数量：优先使用limit，其次max_results
+        limit_val = limit if limit is not None else max_results
+        limited_processes = processes[:limit_val]
         
         return {
             "code": "SUCCESS",
@@ -516,17 +536,19 @@ def list_processes(
 
 
 def kill_process(
-    pid: int,
+    pid: Optional[int] = None,
+    name: Optional[str] = None,
     force: bool = False,
     timeout: int = 5,
 ) -> dict:
     """
-    终止指定进程 - 小沈 2026-05-04 修正
+    终止指定进程 - 小沈 2026-05-04 修正（增强：支持按名称终止）
     
-    按文档参数定义：pid必填，force可选，timeout可选
+    按文档参数定义：pid或name至少提供一个，force可选，timeout可选
     
     Args:
-        pid: 要终止的进程PID（必填）
+        pid: 要终止的进程PID（可选，与name二选一）
+        name: 要终止的进程名称（可选，与pid二选一）
         force: 是否强制终止（可选），默认False
         timeout: 等待进程终止的超时时间（秒，可选），默认5秒
     
@@ -534,11 +556,11 @@ def kill_process(
         {code, data, message}
     """
     # 参数验证
-    if pid is None or pid <= 0:
+    if (pid is None and name is None) or (pid is not None and pid <= 0):
         return {
             "code": "ERR_INVALID_PARAM",
             "data": None,
-            "message": "请提供 pid 或 name 参数"
+            "message": "请提供 pid 或 name 参数（二选一）"
         }
     
     try:
@@ -727,9 +749,13 @@ def log_message(
             handler = logging.StreamHandler()
         handler.setLevel(log_level)
         handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-        log_logger.addHandler(handler)
         
-        log_logger.log(log_level, message)
+        try:
+            log_logger.addHandler(handler)
+            log_logger.log(log_level, message)
+        finally:
+            log_logger.removeHandler(handler)
+            handler.close()
         
         return {
             "code": "SUCCESS",
@@ -792,7 +818,8 @@ def get_logs(
             }
         
         logs = []
-        all_lines = open(log_path, "r", encoding="utf-8", errors="ignore").readlines()
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            all_lines = f.readlines()
         
         for line in all_lines:
             line = line.strip()
@@ -839,28 +866,28 @@ def get_logs(
 
 
 def service_list(
-    filter_name: Optional[str] = None,
-    filter_state: str = "all",
-    max_results: int = 100,
+    name: Optional[str] = None,
+    state: Optional[str] = "all",
+    output_format: str = "json",
 ) -> dict:
     """
-    列出所有服务 - 小沈 2026-05-02
+    列出所有服务 - 小沈 2026-05-04 修正（参数匹配schema）
     
     Windows使用sc query命令，Linux使用systemctl list-units。
     
     Args:
-        filter_name: 按服务名过滤（模糊匹配）
-        filter_state: 按状态过滤（running/stopped/all）
-        max_results: 最大返回服务数
+        name: 按服务名过滤（模糊匹配，可选）
+        state: 按状态过滤（running/stopped/all，可选）
+        output_format: 输出格式（json/table，可选）
     
     Returns:
         {code, data, message}
     """
     try:
         if platform.system() == "Windows":
-            return _windows_service_list(filter_name, filter_state, max_results)
+            return _windows_service_list(name, state, output_format)
         else:
-            return _linux_service_list(filter_name, filter_state, max_results)
+            return _linux_service_list(name, state, output_format)
     
     except Exception as e:
         logger.error(f"[service_list] 获取服务列表失败: {e}")
@@ -872,21 +899,74 @@ def service_list(
 
 
 def _windows_service_list(
-    filter_name: Optional[str],
-    filter_state: str,
-    max_results: int,
+    name: Optional[str],
+    state: str,
+    output_format: str = "json",
 ) -> dict:
     """Windows服务列表获取"""
     try:
         cmd = ["sc", "query", "type=", "service", "state=", "all"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         
-        if result.returncode != 0:
+        if result.returncode !=0:
             return {
                 "code": "ERR_SERVICE_LIST",
                 "data": None,
                 "message": f"获取服务列表失败: {result.stderr}"
             }
+        
+        services = []
+        current_service = {}
+        
+        for line in result.stdout.splitlines():
+            line_stripped = line.strip()
+            if line_stripped.startswith("SERVICE_NAME:"):
+                if current_service and "name" in current_service:
+                    services.append(current_service)
+                current_service = {"name": line_stripped.split(":", 1)[1].strip()}
+            elif line_stripped.startswith("DISPLAY_NAME:"):
+                current_service["display_name"] = line_stripped.split(":", 1)[1].strip()
+            elif "STATE" in line and ":" in line:
+                state_part = line_stripped.split(":", 1)
+                if len(state_part) > 1:
+                    state_str = state_part[1].strip()
+                    if "RUNNING" in state_str:
+                        current_service["state"] = "running"
+                    elif "STOPPED" in state_str:
+                        current_service["state"] = "stopped"
+                    else:
+                        current_service["state"] = "other"
+                    current_service["state_desc"] = state_str.split()[0] if state_str.split() else state_str
+        
+        if current_service and "name" in current_service:
+            services.append(current_service)
+        
+        filtered_services = []
+        for svc in services:
+            if name:
+                svc_name = svc.get("name", "")
+                svc_display = svc.get("display_name", "")
+                if name.lower() not in svc_name.lower() and name.lower() not in svc_display.lower():
+                    continue
+            
+            if state != "all":
+                svc_state = svc.get("state", "")
+                if svc_state != state:
+                    continue
+            
+            filtered_services.append(svc)
+        
+        # 不限制数量，返回所有过滤后的服务
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "services": filtered_services,
+                "total": len(filtered_services),
+                "total_matched": len(services),
+                "platform": "Windows",
+            },
+            "message": f"找到 {len(services)} 个服务，返回 {len(filtered_services)} 个"
+        }
         
         services = []
         current_service = {}
@@ -957,9 +1037,9 @@ def _windows_service_list(
 
 
 def _linux_service_list(
-    filter_name: Optional[str],
-    filter_state: str,
-    max_results: int,
+    name: Optional[str],
+    state: str,
+    output_format: str = "json",
 ) -> dict:
     """Linux服务列表获取（systemctl）"""
     try:
@@ -972,6 +1052,45 @@ def _linux_service_list(
                 "data": None,
                 "message": f"获取服务列表失败: {result.stderr}"
             }
+        
+        services = []
+        lines = result.stdout.splitlines()
+        
+        for line in lines[1:]:
+            if not line.strip():
+                continue
+            
+            parts = line.split()
+            if len(parts) >= 4:
+                svc_name = parts[0]
+                svc_state = parts[3] if len(parts) > 3 else "unknown"
+                
+                # name过滤
+                if name:
+                    if name.lower() not in svc_name.lower():
+                        continue
+                
+                # state过滤
+                if state != "all":
+                    if svc_state != state:
+                        continue
+                
+                services.append({
+                    "name": svc_name,
+                    "state": svc_state,
+                    "display_name": svc_name,
+                })
+        
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "services": services,
+                "total": len(services),
+                "total_matched": len(services),
+                "platform": "Linux",
+            },
+            "message": f"找到 {len(services)} 个服务"
+        }
         
         services = []
         lines = result.stdout.splitlines()
@@ -1042,25 +1161,25 @@ def _linux_service_list(
 
 def service_start(
     service_name: str,
-    timeout: int = 30,
+    wait_for_started: bool = True,
 ) -> dict:
     """
-    启动服务 - 小沈 2026-05-02
+    启动服务 - 小沈 2026-05-04 修正（参数匹配schema）
     
     Windows使用sc start命令，Linux使用systemctl start。
     
     Args:
         service_name: 要启动的服务名称
-        timeout: 等待服务启动的超时时间（秒）
+        wait_for_started: 是否等待服务启动完成（默认True）
     
     Returns:
         {code, data, message}
     """
     try:
         if platform.system() == "Windows":
-            return _windows_service_start(service_name, timeout)
+            return _windows_service_start(service_name, wait_for_started)
         else:
-            return _linux_service_start(service_name, timeout)
+            return _linux_service_start(service_name, wait_for_started)
     
     except Exception as e:
         logger.error(f"[service_start] 启动服务失败: {e}")
@@ -1071,18 +1190,92 @@ def service_start(
         }
 
 
-def _windows_service_start(service_name: str, timeout: int) -> dict:
+def _windows_service_start(service_name: str, wait_for_started: bool = True) -> dict:
     """Windows服务启动"""
     try:
         query_cmd = ["sc", "query", service_name]
         query_result = subprocess.run(query_cmd, capture_output=True, text=True, timeout=10)
         
-        if query_result.returncode != 0:
+        if query_result.returncode !=0:
             return {
                 "code": "ERR_SERVICE_NOT_FOUND",
                 "data": None,
                 "message": f"服务 {service_name} 不存在"
             }
+        
+        current_state = ""
+        for line in query_result.stdout.splitlines():
+            if line.strip().startswith("STATE:"):
+                current_state = line.strip()
+                break
+        
+        if "RUNNING" in current_state:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "service_name": service_name,
+                    "state": "running",
+                    "action": "none",
+                },
+                "message": f"服务 {service_name} 已经在运行中"
+            }
+        
+        start_cmd = ["sc", "start", service_name]
+        start_result = subprocess.run(start_cmd, capture_output=True, text=True, timeout=30)
+        
+        if start_result.returncode !=0:
+            return {
+                "code": "ERR_SERVICE_START",
+                "data": None,
+                "message": f"启动服务失败: {start_result.stderr.strip() or start_result.stdout.strip()}"
+            }
+        
+        if not wait_for_started:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "service_name": service_name,
+                    "state": "starting",
+                    "action": "start",
+                },
+                "message": f"服务 {service_name} 启动命令已执行，未等待完成"
+            }
+        
+        import time
+        for _ in range(15):  # 最多等待15次，每次2秒，共30秒
+            time.sleep(2)
+            check_cmd = ["sc", "query", service_name]
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+            
+            final_state = "unknown"
+            for line in check_result.stdout.splitlines():
+                if line.strip().startswith("STATE:"):
+                    if "RUNNING" in line:
+                        final_state = "running"
+                    elif "STOPPED" in line:
+                        final_state = "stopped"
+                    break
+            
+            if final_state == "running":
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "service_name": service_name,
+                        "state": final_state,
+                        "action": "start",
+                    },
+                    "message": f"服务 {service_name} 启动成功，当前状态: {final_state}"
+                }
+        
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "service_name": service_name,
+                "state": final_state,
+                "action": "start",
+            },
+            "message": f"服务 {service_name} 启动命令已执行，当前状态: {final_state}"
+        }
         
         current_state = ""
         for line in query_result.stdout.splitlines():
@@ -1144,18 +1337,44 @@ def _windows_service_start(service_name: str, timeout: int) -> dict:
         }
 
 
-def _linux_service_start(service_name: str, timeout: int) -> dict:
+def _linux_service_start(service_name: str, wait_for_started: bool = True) -> dict:
     """Linux服务启动"""
     try:
         start_cmd = ["systemctl", "start", service_name]
-        start_result = subprocess.run(start_cmd, capture_output=True, text=True, timeout=timeout)
+        start_result = subprocess.run(start_cmd, capture_output=True, text=True, timeout=30)
         
-        if start_result.returncode != 0:
+        if start_result.returncode !=0:
             return {
                 "code": "ERR_SERVICE_START",
                 "data": None,
                 "message": f"启动服务失败: {start_result.stderr.strip()}"
             }
+        
+        if not wait_for_started:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "service_name": service_name,
+                    "state": "starting",
+                    "action": "start",
+                },
+                "message": f"服务 {service_name} 启动命令已执行，未等待完成"
+            }
+        
+        check_cmd = ["systemctl", "is-active", service_name]
+        check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+        
+        final_state = check_result.stdout.strip()
+        
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "service_name": service_name,
+                "state": final_state,
+                "action": "start",
+            },
+            "message": f"服务 {service_name} 启动命令已执行，当前状态: {final_state}"
+        }
         
         check_cmd = ["systemctl", "is-active", service_name]
         check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
@@ -1183,26 +1402,26 @@ def _linux_service_start(service_name: str, timeout: int) -> dict:
 def service_stop(
     service_name: str,
     force: bool = False,
-    timeout: int = 30,
+    wait_for_stopped: bool = True,
 ) -> dict:
     """
-    停止服务 - 小沈 2026-05-02
+    停止服务 - 小沈 2026-05-04 修正（参数匹配schema）
     
     Windows使用sc stop命令，Linux使用systemctl stop。
     
     Args:
         service_name: 要停止的服务名称
         force: 是否强制停止
-        timeout: 等待服务停止的超时时间（秒）
+        wait_for_stopped: 是否等待服务停止完成（默认True）
     
     Returns:
         {code, data, message}
     """
     try:
         if platform.system() == "Windows":
-            return _windows_service_stop(service_name, force, timeout)
+            return _windows_service_stop(service_name, force, wait_for_stopped)
         else:
-            return _linux_service_stop(service_name, force, timeout)
+            return _linux_service_stop(service_name, force, wait_for_stopped)
     
     except Exception as e:
         logger.error(f"[service_stop] 停止服务失败: {e}")
@@ -1213,18 +1432,101 @@ def service_stop(
         }
 
 
-def _windows_service_stop(service_name: str, force: bool, timeout: int) -> dict:
+def _windows_service_stop(service_name: str, force: bool, wait_for_stopped: bool = True) -> dict:
     """Windows服务停止"""
     try:
         query_cmd = ["sc", "query", service_name]
         query_result = subprocess.run(query_cmd, capture_output=True, text=True, timeout=10)
         
-        if query_result.returncode != 0:
+        if query_result.returncode !=0:
             return {
                 "code": "ERR_SERVICE_NOT_FOUND",
                 "data": None,
                 "message": f"服务 {service_name} 不存在"
             }
+        
+        current_state = ""
+        for line in query_result.stdout.splitlines():
+            if line.strip().startswith("STATE:"):
+                current_state = line.strip()
+                break
+        
+        if "STOPPED" in current_state:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "service_name": service_name,
+                    "state": "stopped",
+                    "action": "none",
+                },
+                "message": f"服务 {service_name} 已经停止"
+            }
+        
+        stop_cmd = ["sc", "stop", service_name]
+        stop_result = subprocess.run(stop_cmd, capture_output=True, text=True, timeout=30)
+        
+        if stop_result.returncode !=0:
+            if force:
+                taskkill_cmd = ["taskkill", "/F", "/IM", f"{service_name}.exe"]
+                subprocess.run(taskkill_cmd, capture_output=True, text=True, timeout=10)
+            
+            return {
+                "code": "ERR_SERVICE_STOP",
+                "data": None,
+                "message": f"停止服务失败: {stop_result.stderr.strip() or stop_result.stdout.strip()}"
+            }
+        
+        if not wait_for_stopped:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "service_name": service_name,
+                    "state": "stopping",
+                    "action": "stop",
+                    "stop_type": "强制停止" if force else "优雅停止",
+                },
+                "message": f"服务 {service_name} 停止命令已执行，未等待完成"
+            }
+        
+        import time
+        for _ in range(15):  # 最多等待15次，每次2秒，共30秒
+            time.sleep(2)
+            check_cmd = ["sc", "query", service_name]
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+            
+            final_state = "unknown"
+            for line in check_result.stdout.splitlines():
+                if line.strip().startswith("STATE:"):
+                    if "RUNNING" in line:
+                        final_state = "running"
+                    elif "STOPPED" in line:
+                        final_state = "stopped"
+                    break
+            
+            if final_state == "stopped":
+                stop_type = "强制停止" if force else "优雅停止"
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "service_name": service_name,
+                        "state": final_state,
+                        "action": "stop",
+                        "stop_type": stop_type,
+                    },
+                    "message": f"服务 {service_name} 停止成功（{stop_type}），当前状态: {final_state}"
+                }
+        
+        stop_type = "强制停止" if force else "优雅停止"
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "service_name": service_name,
+                "state": final_state,
+                "action": "stop",
+                "stop_type": stop_type,
+            },
+            "message": f"服务 {service_name} 停止命令已执行（{stop_type}），当前状态: {final_state}"
+        }
         
         current_state = ""
         for line in query_result.stdout.splitlines():
@@ -1293,13 +1595,13 @@ def _windows_service_stop(service_name: str, force: bool, timeout: int) -> dict:
         }
 
 
-def _linux_service_stop(service_name: str, force: bool, timeout: int) -> dict:
+def _linux_service_stop(service_name: str, force: bool, wait_for_stopped: bool = True) -> dict:
     """Linux服务停止"""
     try:
         stop_cmd = ["systemctl", "stop", service_name]
-        stop_result = subprocess.run(stop_cmd, capture_output=True, text=True, timeout=timeout)
+        stop_result = subprocess.run(stop_cmd, capture_output=True, text=True, timeout=30)
         
-        if stop_result.returncode != 0:
+        if stop_result.returncode !=0:
             if force:
                 kill_cmd = ["systemctl", "kill", service_name]
                 subprocess.run(kill_cmd, capture_output=True, text=True, timeout=10)
@@ -1309,6 +1611,36 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int) -> dict:
                 "data": None,
                 "message": f"停止服务失败: {stop_result.stderr.strip()}"
             }
+        
+        if not wait_for_stopped:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "service_name": service_name,
+                    "state": "stopping",
+                    "action": "stop",
+                    "stop_type": "强制停止" if force else "优雅停止",
+                },
+                "message": f"服务 {service_name} 停止命令已执行，未等待完成"
+            }
+        
+        check_cmd = ["systemctl", "is-active", service_name]
+        check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+        
+        final_state = check_result.stdout.strip()
+        
+        stop_type = "强制停止" if force else "优雅停止"
+        
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "service_name": service_name,
+                "state": final_state,
+                "action": "stop",
+                "stop_type": stop_type,
+            },
+            "message": f"服务 {service_name} 停止命令已执行（{stop_type}），当前状态: {final_state}"
+        }
         
         check_cmd = ["systemctl", "is-active", service_name]
         check_result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
