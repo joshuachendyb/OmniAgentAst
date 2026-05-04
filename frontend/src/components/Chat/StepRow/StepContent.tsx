@@ -211,7 +211,24 @@ const StepContent: React.FC<StepContentProps> = ({
               flexDirection: 'column',
               gap: 8,
             }}>
-              {/* 【修复 2026-05-05 小沈】reasoning用卡片大字样式(主要内容) */}
+              {/* 【修复 2026-05-05 小沈】thought用小字竖线样式 */}
+              {(step as ExecutionStep & Record<string, unknown>).thought && (
+                <div style={{
+                  marginTop: 8,
+                  marginLeft: 0,
+                  paddingLeft: 4,
+                  borderLeft: "2px solid #d9d9d9",
+                  color: "#666",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}>
+                  <span style={{ fontWeight: 500, marginRight: 4 }}>💭 思考:</span>
+                  <span style={{ color: '#666' }}>
+                    {formatStepContent((step as ExecutionStep & Record<string, unknown>).thought)}
+                  </span>
+                </div>
+              )}
+              {/* 【修复 2026-05-05 小沈】reasoning用卡片大字样式 */}
               {(step as ExecutionStep & Record<string, unknown>).reasoning && (
                 <div style={{
                   padding: "12px 16px",
@@ -243,23 +260,6 @@ const StepContent: React.FC<StepContentProps> = ({
                   }}>
                     {formatReasoningContent((step as ExecutionStep & Record<string, unknown>).reasoning)}
                   </div>
-                </div>
-              )}
-              {/* 【修复 2026-05-05 小沈】thought用小字竖线样式(详细思考) */}
-              {(step as ExecutionStep & Record<string, unknown>).thought && (
-                <div style={{
-                  marginTop: 8,
-                  marginLeft: 0,
-                  paddingLeft: 4,
-                  borderLeft: "2px solid #d9d9d9",
-                  color: "#666",
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                }}>
-                  <span style={{ fontWeight: 500, marginRight: 4 }}>💭 思考:</span>
-                  <span style={{ color: '#666' }}>
-                    {formatStepContent((step as ExecutionStep & Record<string, unknown>).thought)}
-                  </span>
                 </div>
               )}
             </div>
