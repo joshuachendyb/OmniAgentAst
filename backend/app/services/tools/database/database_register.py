@@ -48,16 +48,19 @@ DATABASE_TOOL_EXAMPLES = {
         {"sql": "SELECT * FROM users LIMIT 10"},
         {"sql": "SELECT name, email FROM orders WHERE status = 'pending'", "limit": 50},
         {"sql": "SELECT * FROM logs", "timeout": 20000, "output_format": "json"},
+        {"sql": "SELECT * FROM users", "connection_type": "sqlite", "db_path": "D:/data/app.db"},
     ],
     "execute_sql": [
         {"sql": "INSERT INTO logs (msg) VALUES ('test')"},
         {"sql": "DELETE FROM temp_data WHERE created_at < '2024-01-01'", "dry_run": True},
         {"sql": "UPDATE users SET status = 'active'", "affected_rows_check": True, "timeout": 30000},
+        {"sql": "INSERT INTO users (name) VALUES ('test')", "connection_type": "sqlite", "db_path": "D:/data/app.db"},
     ],
     "get_db_schema": [
         {"db_name": "myapp"},
         {"filter_pattern": "user%"},
         {"include_details": True, "output_format": "json"},
+        {"filter_pattern": "orders%", "connection_type": "sqlite", "db_path": "D:/data/app.db"},
     ],
 }
 
