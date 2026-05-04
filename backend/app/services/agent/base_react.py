@@ -340,17 +340,18 @@ class BaseAgent(ABC):
                     # 【步骤3.4】在退出前，如果存在thought内容，先yield一个ThoughtStep
                     # 确保前端能即时显示AI的思考过程
                     if thought_content and thought_content.strip():
-                        # 【修复 2026-05-05 小沈】修正ThoughtStep字段语义：
-                        # thought为空时兜底thought_content(详细思考过程)
-                        # 修复前：thought为空 → 前端💭思考框空
+                        # 【修复 2026-05-05 小沈】ThoughtStep三字段各司其职：
+                        # content=简短摘要(reasoning值)，thought=详细思考过程，reasoning=推理
+                        # 避免content和thought重复显示同一内容
                         _thought_val = parsed.get("thought", "") or thought_content
+                        _reasoning_val = parsed.get("reasoning", "")
                         thought_step = StepFactory.create_thought_step(
                             step=step_count,
-                            content=thought_content,
+                            content=_reasoning_val or thought_content,
                             tool_name="finish",
                             tool_params={},
                             thought=_thought_val,
-                            reasoning=parsed.get("reasoning", "")
+                            reasoning=_reasoning_val
                         )
                         self.steps.append(thought_step)
                         yield thought_step.to_dict()
@@ -379,15 +380,16 @@ class BaseAgent(ABC):
                     self.parse_retry_count = 0
                     
                     # 【步骤2.9】使用StepFactory创建ThoughtStep
-                    # 【修复 2026-05-05 小沈】thought为空时兜底thought_content
+                    # 【修复 2026-05-05 小沈】三字段各司其职：content=摘要，thought=详细思考，reasoning=推理
                     _thought_val = thought or thought_content
+                    _reasoning_val = parsed.get("reasoning", "")
                     thought_step = StepFactory.create_thought_step(
                         step=step_count,
-                        content=thought_content,
+                        content=_reasoning_val or thought_content,
                         tool_name="",
                         tool_params={},
                         thought=_thought_val,
-                        reasoning=parsed.get("reasoning", "")
+                        reasoning=_reasoning_val
                     )
                     
                     # 【步骤2.10】记录步骤历史
@@ -448,11 +450,11 @@ class BaseAgent(ABC):
                 self.parse_retry_count = 0
 
                 # 【步骤2.9】使用StepFactory创建ThoughtStep
-                # 【修复 2026-05-05 小沈】thought为空时兜底thought_content
+                # 【修复 2026-05-05 小沈】三字段各司其职：content=摘要，thought=详细思考，reasoning=推理
                 _thought_val = thought or thought_content
                 thought_step = StepFactory.create_thought_step(
                     step=step_count,
-                    content=thought_content,
+                    content=reasoning or thought_content,
                     tool_name=tool_name,
                     tool_params=tool_params,
                     thought=_thought_val,
