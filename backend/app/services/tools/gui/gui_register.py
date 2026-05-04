@@ -205,12 +205,17 @@ GUI_TOOL_DESCRIPTIONS = {
 使用场景：
 - 当用户需要从图片中提取文字内容时使用
 - 当用户需要进行图片文字识别（OCR）时使用
+- 当用户需要识别截图中的文字时使用
 
 参数说明：
 - image_path：图片文件路径
 - language：识别语言，可选 eng/chi_sim/eng+chi_sim
 
-【重要】需要安装 pytesseract 库和 Tesseract OCR 引擎""",
+【重要】需要安装 pytesseract 库和 Tesseract OCR 引擎
+
+使用示例：
+- 英文识别：{"image_path": "D:/images/screenshot.png"}
+- 中文识别：{"image_path": "D:/images/screenshot.png", "language": "chi_sim"}""",
     "read_clipboard": """读取剪贴板内容。
 
 使用场景：
