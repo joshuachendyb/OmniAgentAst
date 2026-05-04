@@ -1331,19 +1331,19 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int) -> dict:
 
 
 def task_list(
-    folder: Optional[str] = None,
-    state: Optional[str] = None,
-    output_format: str = "json",
+    filter_name: Optional[str] = None,
+    filter_status: str = "all",
+    max_results: int = 100,
 ) -> dict:
     """
-    列出所有计划任务（Windows专用） - 小沈 2026-05-03
+    列出所有计划任务（Windows专用） - 按文档7.7定义
     
     使用schtasks query命令列出计划任务。
     
     Args:
-        folder: 任务文件夹
-        state: 状态过滤（ready/running/disabled）
-        output_format: 输出格式（json/table）
+        filter_name: 按计划任务名模糊匹配过滤
+        filter_status: 按任务状态过滤（ready/running/disabled/all）
+        max_results: 最大返回的任务数
     
     Returns:
         {code, data, message}
@@ -1457,26 +1457,22 @@ def task_create(
     task_name: str,
     command: str,
     schedule: str,
-    start_time: Optional[str] = None,
-    start_date: Optional[str] = None,
-    interval: Optional[int] = None,
     description: Optional[str] = None,
     user: Optional[str] = None,
+    start_in: Optional[str] = None,
 ) -> dict:
     """
-    创建计划任务（Windows专用） - 小沈 2026-05-03
+    创建计划任务（Windows专用） - 按文档7.7定义
     
     使用schtasks create命令创建计划任务。
     
     Args:
         task_name: 计划任务名称
         command: 要执行的命令或程序路径
-        schedule: 计划时间（格式：'HH:MM' 或 'HH:MM /day' 或 'HH:MM /monthly DD'）
-        start_time: 起始时间
-        start_date: 起始日期
-        interval: 重复间隔（分钟）
+        schedule: 计划时间（格式：'HH:MM' 或 'HH:MM /day D' 或 'HH:MM /monthly DD'）
         description: 任务描述
         user: 运行任务的用户账户
+        start_in: 任务执行的起始目录
     
     Returns:
         {code, data, message}
@@ -1562,16 +1558,16 @@ def task_create(
 
 def task_delete(
     task_name: str,
-    folder: Optional[str] = None,
+    force: bool = False,
 ) -> dict:
     """
-    删除计划任务（Windows专用） - 小沈 2026-05-03
+    删除计划任务（Windows专用） - 按文档7.7定义
     
     使用schtasks delete命令删除计划任务。
     
     Args:
         task_name: 要删除的计划任务名称
-        folder: 任务所在文件夹
+        force: 是否强制删除（即使任务正在运行）
     
     Returns:
         {code, data, message}
@@ -1584,23 +1580,20 @@ def task_delete(
                 "message": "task_delete 仅支持Windows系统"
             }
         
-        # 处理完整的任务名（folder + task_name）
-        full_task_name = task_name
-        if folder:
-            full_task_name = f"{folder}\\{task_name}"
-        
         # 先查询确认任务存在
-        query_cmd = ["schtasks", "/query", "/tn", full_task_name]
+        query_cmd = ["schtasks", "/query", "/tn", task_name]
         query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=10)
         
         if query_result.returncode != 0:
             return {
                 "code": "ERR_TASK_NOT_FOUND",
                 "data": None,
-                "message": f"计划任务 {full_task_name} 不存在"
+                "message": f"计划任务 {task_name} 不存在"
             }
         
-        cmd = ["schtasks", "/delete", "/tn", full_task_name, "/f"]
+        cmd = ["schtasks", "/delete", "/tn", task_name]
+        if force:
+            cmd.append("/f")
         
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=30)
         
@@ -1611,16 +1604,15 @@ def task_delete(
                 "message": f"删除计划任务失败: {result.stderr.strip() or result.stdout.strip()}"
             }
         
-        delete_type = f"强制删除（{folder}）" if folder else "普通删除"
+        delete_type = "强制删除" if force else "普通删除"
         
         return {
             "code": "SUCCESS",
             "data": {
-                "task_name": full_task_name,
-                "folder": folder,
+                "task_name": task_name,
                 "delete_type": delete_type,
             },
-            "message": f"计划任务 {full_task_name} 已删除"
+            "message": f"计划任务 {task_name} 已删除"
         }
     
     except subprocess.TimeoutExpired:
