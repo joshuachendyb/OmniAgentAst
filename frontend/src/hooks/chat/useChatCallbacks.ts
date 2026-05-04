@@ -314,13 +314,38 @@ export const useChatCallbacks = (
     let errorMessage: string | undefined = undefined;
     
     if (!finalResponse || !finalResponse.trim()) {
-      finalResponse = "抱歉，我暂时无法回答这个问题。请您稍后再尝试，或者换个方式提问。";
-      isError = true; // 标记为错误类型，以便显示红色样式
-      // 【小新修复 2026-03-14】补充错误字段，与onError保持一致
-      errorType = "empty_response";
-      // 【小沈修改2026-04-15】删除errorCode
-      errorMessage = "模型未能生成有效回复，请尝试更换问题或稍后重试";
-      console.warn("⚠️ AI 返回了空内容，已使用默认回复，errorType:", errorType);
+      // 【修复 2026-05-05 小沈】Agent路径不发chunk，finalResponse永远为空，
+      // 但executionSteps可能完全正常（有thought步骤含回答内容）。
+      // 判断条件：final步骤的response和thought都空，且没有thought步骤有content，才判error
+      const sseSteps = executionStepsFromSSE || executionStepsRef.current || [];
+      const finalStep = sseSteps.find((s: ExecutionStep) => s.type === 'final') as (ExecutionStep & Record<string, unknown>) | undefined;
+      const finalStepResponse = (finalStep?.response as string) || '';
+      const finalStepThought = (finalStep?.thought as string) || '';
+      
+      // 也检查thought步骤中是否有content（LLM的回答通常在thought步骤的content里）
+      const thoughtSteps = sseSteps.filter((s: ExecutionStep) => s.type === 'thought');
+      const hasThoughtContent = thoughtSteps.some((s: ExecutionStep) => s.content && String(s.content).trim());
+      
+      // response或thought任一有内容，或有thought步骤含content，都不算error
+      const hasValidContent = 
+        (finalStepResponse && finalStepResponse.trim()) || 
+        (finalStepThought && finalStepThought.trim()) || 
+        hasThoughtContent;
+      
+      if (hasValidContent) {
+        // 有有效内容，优先用final步骤的response，其次用thought
+        finalResponse = finalStepResponse || finalStepThought || '';
+        console.info("✅ finalResponse为空但executionSteps有有效内容，不标记error");
+      } else {
+        // response和thought都空，且没有thought步骤有内容 → 确实是空响应
+        finalResponse = "抱歉，我暂时无法回答这个问题。请您稍后再尝试，或者换个方式提问。";
+        isError = true;
+        // 【小新修复 2026-03-14】补充错误字段，与onError保持一致
+        errorType = "empty_response";
+        // 【小沈修改2026-04-15】删除errorCode
+        errorMessage = "模型未能生成有效回复，请尝试更换问题或稍后重试";
+        console.warn("⚠️ AI 返回了空内容(response和thought都空)，errorType:", errorType);
+      }
     }
 
     setMessages((prev) => {
