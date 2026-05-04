@@ -87,16 +87,16 @@ Agent 自动探测分隔符与表头，失败自动 fallback 到默认值。""",
 EXAMPLES = {
     "read_json": [
         {"file_path": "D:/config/settings.json"},
-        {"file_path": "D:/data/users.json", "max_depth": 5},
+        {"file_path": "D:/data/users.json", "encoding": "utf-8", "max_depth": 5},
     ],
     "write_json": [
         {"file_path": "D:/output/data.json", "data": {"name": "test", "value": 123}},
         {"file_path": "D:/output/list.json", "data": [1, 2, 3], "indent": 4},
-        {"file_path": "D:/output/config.json", "data": {"key": "value"}, "backup_before_write": True, "create_parents": True},
+        {"file_path": "D:/output/config.json", "data": {"key": "value"}, "encoding": "utf-8", "ensure_ascii": False, "backup_before_write": True, "create_parents": True},
     ],
     "read_csv_basic": [
         {"file_path": "D:/data/users.csv"},
-        {"file_path": "D:/data/data.tsv", "delimiter": "\t"},
+        {"file_path": "D:/data/data.tsv", "encoding": "utf-8", "delimiter": "\t"},
         {"file_path": "D:/data/no_header.csv", "has_header": False, "max_rows": 100},
     ],
 }
