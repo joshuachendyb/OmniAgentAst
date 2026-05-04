@@ -286,6 +286,52 @@ class CompressFilesInput(BaseModel):
     )
 
 
+class ExtractArchiveInput(BaseModel):
+    """extract_archive 工具的输入参数 - 小沈 2026-05-04"""
+    archive_path: str = Field(
+        ...,
+        description="压缩文件路径（必填）。必须是已存在的压缩文件，支持 zip、tar、gz 格式"
+    )
+    output_dir: Optional[str] = Field(
+        default=None,
+        description="解压目标目录（可选）。默认 null，Agent 自动创建与压缩包同名（去后缀）的隔离文件夹"
+    )
+    overwrite: bool = Field(
+        default=False,
+        description="是否覆盖已存在的文件（可选）。默认 false。若冲突，Agent 自动跳过并返回冲突清单"
+    )
+    password: Optional[str] = Field(
+        default=None,
+        description="解压密码（可选）。Agent 从安全上下文获取，若密码错误仅提示错误"
+    )
+    preserve_permissions: bool = Field(
+        default=True,
+        description="是否保留文件权限（可选）。默认 true。跨平台自动适配权限保留策略"
+    )
+
+
+class GetFileHashInput(BaseModel):
+    """get_file_hash 工具的输入参数 - 小沈 2026-05-04"""
+    file_path: str = Field(
+        ...,
+        description="文件路径（必填）。必须是要计算哈希的文件"
+    )
+    algorithm: Literal["md5", "sha1", "sha256", "sha512"] = Field(
+        default="sha256",
+        description="哈希算法（可选）。可选值：md5、sha1、sha256（默认）、sha512"
+    )
+    verify_against: Optional[str] = Field(
+        default=None,
+        description="比对哈希值（可选）。若提供，Agent 自动计算并比对，返回 verified: true/false"
+    )
+    timeout: int = Field(
+        default=30000,
+        ge=1000,
+        le=600000,
+        description="超时毫秒数（可选），默认30000（30秒）"
+    )
+
+
 class FileMonitorInput(BaseModel):
     """file_monitor 工具的输入参数"""
     directory: str = Field(
@@ -562,6 +608,8 @@ __all__ = [
     "CompareFilesInput",
     "BatchRenameInput",
     "CompressFilesInput",
+    "ExtractArchiveInput",
+    "GetFileHashInput",
     "FileMonitorInput",
     "FileStatisticsInput",
     "FileChecksumInput",
