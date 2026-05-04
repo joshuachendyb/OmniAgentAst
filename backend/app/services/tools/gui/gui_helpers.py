@@ -7,13 +7,17 @@ GUI 辅助工具函数实现
 - gui_helpers_schema.py: Pydantic 模型
 - gui_helpers_register.py: 显式注册
 
+【返回格式】统一格式：
+- 成功：{"code": "SUCCESS", "data": {...}, "message": "成功信息"}
+- 失败：{"code": "ERR_xxx", "data": None, "message": "错误信息"}
+
 创建时间: 2026-05-04
 更新时间: 2026-05-04
 """
 
 import ctypes
 import subprocess
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 try:
     import pyautogui
@@ -30,70 +34,64 @@ except ImportError:
     WIN32_AVAILABLE = False
 
 
-def get_mouse_position() -> Dict[str, int]:
+def get_mouse_position() -> Dict[str, Any]:
     """获取当前鼠标位置（Tool 108）。
 
-    返回：
-        dict: 包含 x 和 y 坐标的字典
-
-    示例：
-        >>> get_mouse_position()
-        {"x": 960, "y": 540}
+    返回格式：
+        成功：{"code": "SUCCESS", "data": {"x": x, "y": y}, "message": "获取成功"}
+        失败：{"code": "ERR_GET_MOUSE_POSITION", "data": None, "message": "错误信息"}
     """
     if WIN32_AVAILABLE:
         try:
             point = win32api.GetCursorPos()
-            return {"x": point[0], "y": point[1]}
-        except Exception:
-            pass
+            return {"code": "SUCCESS", "data": {"x": point[0], "y": point[1]}, "message": f"鼠标位置: ({point[0]}, {point[1]})"}
+        except Exception as e:
+            return {"code": "ERR_GET_MOUSE_POSITION", "data": None, "message": f"获取失败: {str(e)}"}
     
     if PYAUTOGUI_AVAILABLE:
-        x, y = pyautogui.position()
-        return {"x": x, "y": y}
+        try:
+            x, y = pyautogui.position()
+            return {"code": "SUCCESS", "data": {"x": x, "y": y}, "message": f"鼠标位置: ({x}, {y})"}
+        except Exception as e:
+            return {"code": "ERR_GET_MOUSE_POSITION", "data": None, "message": f"获取失败: {str(e)}"}
     
-    return {"x": 0, "y": 0}
+    return {"code": "SUCCESS", "data": {"x": 0, "y": 0}, "message": "无依赖库，返回默认位置 (0, 0)"}
 
 
-def check_screen_size() -> Dict[str, int]:
+def check_screen_size() -> Dict[str, Any]:
     """检查屏幕分辨率（Tool 109）。
 
-    返回：
-        dict: 包含 width 和 height 的字典
-
-    示例：
-        >>> check_screen_size()
-        {"width": 1920, "height": 1080}
+    返回格式：
+        成功：{"code": "SUCCESS", "data": {...}, "message": "成功信息"}
+        失败：{"code": "ERR_CHECK_SCREEN_SIZE", "data": None, "message": "错误信息"}
     """
     if WIN32_AVAILABLE:
         try:
             width = win32api.GetSystemMetrics(win32con.SM_CXSCREEN)
             height = win32api.GetSystemMetrics(win32con.SM_CYSCREEN)
-            return {"width": width, "height": height}
-        except Exception:
-            pass
+            return {"code": "SUCCESS", "data": {"width": width, "height": height}, "message": f"屏幕分辨率: {width}x{height}"}
+        except Exception as e:
+            return {"code": "ERR_CHECK_SCREEN_SIZE", "data": None, "message": f"获取失败: {str(e)}"}
     
     if PYAUTOGUI_AVAILABLE:
-        size = pyautogui.size()
-        return {"width": size.width, "height": size.height}
+        try:
+            size = pyautogui.size()
+            return {"code": "SUCCESS", "data": {"width": size.width, "height": size.height}, "message": f"屏幕分辨率: {size.width}x{size.height}"}
+        except Exception as e:
+            return {"code": "ERR_CHECK_SCREEN_SIZE", "data": None, "message": f"获取失败: {str(e)}"}
     
-    return {"width": 1920, "height": 1080}
+    return {"code": "SUCCESS", "data": {"width": 1920, "height": 1080}, "message": "无依赖库，返回默认分辨率 1920x1080"}
 
 
-def check_window_exists(title: str) -> Dict[str, bool]:
+def check_window_exists(title: str) -> Dict[str, Any]:
     """检查窗口是否存在（Tool 110）。
 
-    参数：
-        title: 窗口标题，会模糊匹配
-
-    返回：
-        dict: 包含 exists 的字典
-
-    示例：
-        >>> check_window_exists(title="Chrome")
-        {"exists": true}
+    返回格式：
+        成功：{"code": "SUCCESS", "data": {"exists": true/false}, "message": "成功信息"}
+        失败：{"code": "ERR_CHECK_WINDOW", "data": None, "message": "错误信息"}
     """
     if not WIN32_AVAILABLE:
-        return {"exists": False}
+        return {"code": "ERR_CHECK_WINDOW", "data": None, "message": "win32库未安装"}
     
     def find_window(handle: int, data: Dict) -> bool:
         try:
@@ -108,27 +106,22 @@ def check_window_exists(title: str) -> Dict[str, bool]:
     result = {"found": False}
     try:
         win32gui.EnumWindows(lambda h, d: find_window(h, d) or None, result)
-    except Exception:
-        pass
+    except Exception as e:
+        return {"code": "ERR_CHECK_WINDOW", "data": None, "message": f"检查失败: {str(e)}"}
     
-    return {"exists": result.get("found", False)}
+    exists = result.get("found", False)
+    return {"code": "SUCCESS", "data": {"exists": exists}, "message": f"窗口 '{title}' {'存在' if exists else '不存在'}"}
 
 
-def get_window_position(title: str) -> Optional[Dict[str, Any]]:
+def get_window_position(title: str) -> Dict[str, Any]:
     """获取窗口位置和大小（Tool 111）。
 
-    参数：
-        title: 窗口标题，会模糊匹配
-
-    返回：
-        dict: 包含 x, y, width, height 或 error
-
-    示例：
-        >>> get_window_position(title="Chrome")
-        {"x": 100, "y": 100, "width": 1280, "height": 720}
+    返回格式：
+        成功：{"code": "SUCCESS", "data": {"x": x, "y": y, "width": w, "height": h}, "message": "成功信息"}
+        失败：{"code": "ERR_GET_WINDOW_POSITION", "data": None, "message": "错误信息"}
     """
     if not WIN32_AVAILABLE:
-        return {"error": "win32 not available"}
+        return {"code": "ERR_GET_WINDOW_POSITION", "data": None, "message": "win32库未安装"}
     
     def find_window(handle: int, data: Dict) -> bool:
         try:
@@ -147,26 +140,23 @@ def get_window_position(title: str) -> Optional[Dict[str, Any]]:
     result = {}
     try:
         win32gui.EnumWindows(lambda h, d: find_window(h, d) or None, result)
-    except Exception:
-        pass
+    except Exception as e:
+        return {"code": "ERR_GET_WINDOW_POSITION", "data": None, "message": f"获取失败: {str(e)}"}
     
     if result:
-        return result
-    return {"error": f"窗口 '{title}' 未找到"}
+        return {"code": "SUCCESS", "data": result, "message": f"窗口位置: ({result['x']}, {result['y']}) 大小: {result['width']}x{result['height']}"}
+    return {"code": "ERR_GET_WINDOW_POSITION", "data": None, "message": f"窗口 '{title}' 未找到"}
 
 
-def check_screen_capture_permission() -> Dict[str, bool]:
+def check_screen_capture_permission() -> Dict[str, Any]:
     """检查屏幕捕获权限（Tool 112）。
 
-    返回：
-        dict: 包含 has_permission 的字典
-
-    示例：
-        >>> check_screen_capture_permission()
-        {"has_permission": true}
+    返回格式：
+        成功：{"code": "SUCCESS", "data": {"has_permission": true/false}, "message": "成功信息"}
+        失败：{"code": "ERR_CHECK_PERMISSION", "data": None, "message": "错误信息"}
     """
     if not WIN32_AVAILABLE:
-        return {"has_permission": False}
+        return {"code": "ERR_CHECK_PERMISSION", "data": None, "message": "win32库未安装"}
     
     try:
         import ctypes.wintypes
@@ -178,20 +168,17 @@ def check_screen_capture_permission() -> Dict[str, bool]:
                 ("dwTime", ctypes.wintypes.DWORD),
             ]
         
-        return {"has_permission": True}
-    except Exception:
-        return {"has_permission": False}
+        return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "具有屏幕捕获权限"}
+    except Exception as e:
+        return {"code": "SUCCESS", "data": {"has_permission": False}, "message": f"无屏幕捕获权限: {str(e)}"}
 
 
-def check_tesseract_available() -> Dict[str, bool]:
+def check_tesseract_available() -> Dict[str, Any]:
     """检查 Tesseract OCR 引擎是否可用（Tool 113）。
 
-    返回：
-        dict: 包含 is_available 的字典
-
-    示例：
-        >>> check_tesseract_available()
-        {"is_available": true}
+    返回格式：
+        成功：{"code": "SUCCESS", "data": {"is_available": true/false}, "message": "成功信息"}
+        失败：{"code": "ERR_CHECK_TESSERACT", "data": None, "message": "错误信息"}
     """
     try:
         result = subprocess.run(
@@ -200,25 +187,25 @@ def check_tesseract_available() -> Dict[str, bool]:
             text=True,
             timeout=5,
         )
-        return {"is_available": result.returncode == 0}
+        available = result.returncode == 0
+        if available:
+            return {"code": "SUCCESS", "data": {"is_available": True}, "message": "Tesseract OCR 引擎可用"}
+        return {"code": "SUCCESS", "data": {"is_available": False}, "message": "Tesseract 命令执行失败"}
     except FileNotFoundError:
-        return {"is_available": False}
-    except Exception:
-        return {"is_available": False}
+        return {"code": "SUCCESS", "data": {"is_available": False}, "message": "Tesseract OCR 未安装"}
+    except Exception as e:
+        return {"code": "ERR_CHECK_TESSERACT", "data": None, "message": f"检查失败: {str(e)}"}
 
 
-def check_notification_permission() -> Dict[str, bool]:
+def check_notification_permission() -> Dict[str, Any]:
     """检查系统通知权限（Tool 114）。
 
-    返回：
-        dict: 包含 has_permission 的字典
-
-    示例：
-        >>> check_notification_permission()
-        {"has_permission": true}
+    返回格式：
+        成功：{"code": "SUCCESS", "data": {"has_permission": true/false}, "message": "成功信息"}
+        失败：{"code": "ERR_CHECK_PERMISSION", "data": None, "message": "错误信息"}
     """
     if not WIN32_AVAILABLE:
-        return {"has_permission": False}
+        return {"code": "ERR_CHECK_PERMISSION", "data": None, "message": "win32库未安装"}
     
     try:
         import win32api
@@ -227,6 +214,6 @@ def check_notification_permission() -> Dict[str, bool]:
         class NOTIFYICONVERSION(ctypes.Structure):
             _fields_ = []
         
-        return {"has_permission": True}
-    except Exception:
-        return {"has_permission": False}
+        return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "具有通知权限"}
+    except Exception as e:
+        return {"code": "SUCCESS", "data": {"has_permission": False}, "message": f"无通知权限: {str(e)}"}
