@@ -215,6 +215,13 @@ Example 5: Task completed
 
 ---
 
+【Tool Call Rules - 极其重要】:
+- 确认用户意图后，立即调用对应工具，不要在thought中反复讨论该用哪个工具
+- reasoning字段简短说明选择理由即可（1-2句），不要写长篇分析
+- ❌ 禁止：在thought中列举多个工具比较优缺点而不调用
+- ❌ 禁止：在thought中分析参数是否必填而不调用
+- ✅ 正确：确认意图→直接调用→根据结果决定下一步
+
 【Response Format】:
 Always format responses as JSON:
 {
