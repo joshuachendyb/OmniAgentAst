@@ -341,13 +341,12 @@ class BaseAgent(ABC):
                     # 确保前端能即时显示AI的思考过程
                     if thought_content and thought_content.strip():
                         # 【修复 2026-05-05 小沈】修正ThoughtStep字段语义：
-                        # thought=详细思考过程(content值)，content=简短摘要(reasoning值)
-                        # 修复前：content放详细思考、thought为空 → 前端💭思考框空
+                        # thought为空时兜底thought_content(详细思考过程)
+                        # 修复前：thought为空 → 前端💭思考框空
                         _thought_val = parsed.get("thought", "") or thought_content
-                        _content_val = parsed.get("reasoning", "") or thought_content
                         thought_step = StepFactory.create_thought_step(
                             step=step_count,
-                            content=_content_val,
+                            content=thought_content,
                             tool_name="finish",
                             tool_params={},
                             thought=_thought_val,
@@ -380,12 +379,11 @@ class BaseAgent(ABC):
                     self.parse_retry_count = 0
                     
                     # 【步骤2.9】使用StepFactory创建ThoughtStep
-                    # 【修复 2026-05-05 小沈】修正字段语义：thought=详细思考过程，content=简短摘要
+                    # 【修复 2026-05-05 小沈】thought为空时兜底thought_content
                     _thought_val = thought or thought_content
-                    _content_val = parsed.get("reasoning", "") or thought_content
                     thought_step = StepFactory.create_thought_step(
                         step=step_count,
-                        content=_content_val,
+                        content=thought_content,
                         tool_name="",
                         tool_params={},
                         thought=_thought_val,
@@ -450,12 +448,11 @@ class BaseAgent(ABC):
                 self.parse_retry_count = 0
 
                 # 【步骤2.9】使用StepFactory创建ThoughtStep
-                # 【修复 2026-05-05 小沈】修正字段语义：thought=详细思考过程，content=简短摘要
+                # 【修复 2026-05-05 小沈】thought为空时兜底thought_content
                 _thought_val = thought or thought_content
-                _content_val = reasoning or thought_content
                 thought_step = StepFactory.create_thought_step(
                     step=step_count,
-                    content=_content_val,
+                    content=thought_content,
                     tool_name=tool_name,
                     tool_params=tool_params,
                     thought=_thought_val,
