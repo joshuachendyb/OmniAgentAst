@@ -130,6 +130,8 @@ from app.services.tools.file.file_schema import (
     RenameFileInput,
     SearchFilesInput,
     WriteTextFileInput,
+    ExtractArchiveInput,
+    GetFileHashInput,
 )
 
 # 导入工具类
@@ -155,6 +157,8 @@ FILE_TOOL_DESCRIPTIONS = {
     "file_monitor": '监控目录文件变化（创建/修改/删除/重命名事件），支持递归监控、过滤条件、限时监控。\n\n使用场景：\n- 当用户需要监控目录文件变化时使用\n- 当用户需要监听文件创建/修改/删除事件时使用\n- 当用户需要实时了解目录变化时使用\n\n参数说明：\n- directory：监控的目录路径\n- recursive：是否递归监控子目录\n- event_types：监控事件类型create/modify/delete/rename\n- filters：过滤条件\n- duration：监控持续时间（秒）\n\n【重要】支持递归监控、多种事件类型过滤\n\n使用示例：\n- 监控目录：{"directory": "D:/watch", "duration": 60}\n- 监控修改事件：{"directory": "D:/watch", "event_types": ["modify"], "duration": 30}',
     "file_statistics": '统计目录的文件数量、总大小、类型分布，支持递归统计、过滤条件、多种输出格式。\n\n使用场景：\n- 当用户需要统计目录文件数量时使用\n- 当用户需要了解目录大小分布时使用\n- 当用户需要按文件类型统计存储空间时使用\n\n参数说明：\n- directory：统计的目录路径\n- recursive：是否递归统计子目录\n- output_format：输出格式json/csv/text\n- filters：过滤条件\n\n【重要】返回目录的文件数量、总大小、类型分布\n\n使用示例：\n- 统计目录：{"directory": "D:/docs"}\n- JSON格式输出：{"directory": "D:/docs", "output_format": "json"}',
     "file_checksum": '计算文件的MD5/SHA1/SHA256/SHA512哈希值，用于校验文件完整性。\n\n使用场景：\n- 当用户需要计算文件哈希值时使用\n- 当用户需要校验文件完整性时使用\n- 当用户需要验证下载文件是否被篡改时使用\n\n参数说明：\n- file_path：文件路径\n- algorithm：哈希算法，可选md5/sha1/sha256/sha512，默认sha256\n- verify_hash：验证哈希值（与给定的hash比较）\n\n【重要】支持分块计算大文件，返回哈希值可用于完整性校验\n\n使用示例：\n- 计算SHA256：{"file_path": "D:/downloads/file.zip"}\n- 验证完整性：{"file_path": "D:/downloads/file.zip", "algorithm": "sha256", "verify_hash": "abc123..."}',
+    "extract_archive": '解压zip、tar、gz压缩文件，支持密码解压、覆盖、权限保留。\n\n使用场景：\n- 当用户需要解压压缩文件时使用\n- 当用户需要提取压缩包中的文件时使用\n- 当用户需要访问zip/tar.gz压缩包内容时使用\n\n参数说明：\n- archive_path：压缩文件路径，必填\n- output_dir：解压目标目录，可选（默认创建与压缩包同名的隔离文件夹）\n- overwrite：是否覆盖已存在的文件，默认false\n- password：解压密码（可选）\n- preserve_permissions：是否保留文件权限，默认true\n\n【重要】支持zip/tar/gz格式，支持加密压缩包\n\n使用示例：\n- 解压ZIP：{"archive_path": "D:/backup/docs.zip"}\n- 解压到指定目录：{"archive_path": "D:/backup/docs.zip", "output_dir": "D:/extract/docs"}\n- 覆盖解压：{"archive_path": "D:/backup/docs.zip", "overwrite": true}',
+    "get_file_hash": '计算文件的MD5/SHA1/SHA256/SHA512哈希值，支持大文件、哈希比对。\n\n使用场景：\n- 当用户需要计算文件哈希值时使用\n- 当用户需要校验文件完整性时使用\n- 当用户需要验证下载文件是否被篡改时使用\n- 当用户需要比对两个文件的哈希值时使用\n\n参数说明：\n- file_path：文件路径，必填\n- algorithm：哈希算法，可选md5/sha1/sha256/sha512，默认sha256\n- verify_against：比对哈希值（可选），若提供则自动比对并返回verified结果\n- timeout：超时毫秒数，默认30000\n\n【重要】支持大文件分块计算，返回哈希值可用于完整性校验\n\n使用示例：\n- 计算SHA256：{"file_path": "D:/downloads/file.zip"}\n- 验证完整性：{"file_path": "D:/downloads/file.zip", "verify_against": "abc123..."}',
     "read_text_file": '读取文本文件的完整内容，始终以 UTF-8 编码处理文件，支持中文等多字节字符。仅支持文本文件，禁止读取二进制文件。\n\n使用场景：\n- 当用户需要查看文本文件的内容时使用\n- 当用户想要读取配置文件、日志文件、代码文件等文本内容时使用\n- 当用户需要获取文件的前几行或后几行时使用\n\n参数说明：\n- file_path：文件的完整路径，必须是绝对路径，支持中文路径（如 D:/文档/测试.txt）\n- head：读取文件的前 N 行，不能与 tail 参数同时使用\n- tail：读取文件的后 N 行，不能与 head 参数同时使用\n- offset：起始行号（从1开始），不能与 head/tail 参数同时使用，用于分页读取\n- limit：最大读取行数，配合 offset 使用进行分页读取\n\n【重要】本工具仅支持文本文件，禁止读取二进制文件。禁止的后缀：.png/.jpg/.jpeg/.gif/.zip/.exe/.dll/.docx/.xlsx/.pptx/.pdf/.mp3/.mp4/.wav/.avi/.mkv等。若需读取媒体文件（图片/音频），请使用read_media_file工具。\n\n使用示例：\n- 读取全部内容：{"file_path": "D:/OmniAgentAs-desk/backend/app/main.py"}\n- 只读取前10行：{"file_path": "D:/OmniAgentAs-desk/backend/app/services/agent.py", "head": 10}\n- 只读取最后5行：{"file_path": "D:/OmniAgentAs-desk/logs/app.log", "tail": 5}',
     "read_media_file": '读取图片或音频文件，返回 Base64 编码的数据和对应的 MIME 类型。\n\n使用场景：\n- 当用户需要获取图片或音频文件的内容时使用\n- 当用户想要将媒体文件转换为 Base64 字符串以便传输或嵌入时使用\n- 当用户需要查看媒体文件的 MIME 类型时使用\n\n参数说明：\n- file_path：媒体文件的完整路径，必须是绝对路径\n\n【重要】返回 Base64 编码的媒体数据和 MIME 类型，适用于图片（JPG、PNG、GIF等）和音频（MP3、WAV等）文件\n\n使用示例：\n- 读取图片：{"file_path": "D:/OmniAgentAs-desk/docs/screenshot.png"}\n- 读取音频：{"file_path": "D:/OmniAgentAs-desk/audio/notification.mp3"}',
     "read_batch_file": '同时读取多个文件的内容，单个文件读取失败不会中断整个操作。仅支持文本文件，Agent会自动跳过二进制文件并提示。\n\n使用场景：\n- 当用户需要同时读取多个文件进行分析或对比时使用\n- 当用户想要批量获取多个配置文件内容时使用\n- 当用户需要快速了解多个相关文件的内容时使用\n\n参数说明：\n- file_paths：文件路径数组，每个元素必须是文件的完整绝对路径\n\n【重要】本工具仅支持文本文件，禁止读取二进制文件。禁止的后缀：.png/.jpg/.jpeg/.gif/.zip/.exe/.dll/.docx/.xlsx/.pptx/.pdf/.mp3/.mp4/.wav等。Agent会自动检测文件类型，跳过二进制文件并返回提示信息。\n\n使用示例：\n- 读取2个文件：{"file_paths": ["D:/OmniAgentAs-desk/backend/app/main.py", "D:/OmniAgentAs-desk/backend/app/config.py"]}\n- 读取配置文件：{"file_paths": ["D:/OmniAgentAs-desk/config.yaml", "D:/OmniAgentAs-desk/.env"]}',
@@ -278,6 +282,19 @@ FILE_TOOL_EXAMPLES = {
             "verify_hash": "abc123...",
         },
     ],
+    "extract_archive": [
+        {"archive_path": "C:/Users/用户名/Documents/archive.zip"},
+        {"archive_path": "D:/backup/docs.zip", "output_dir": "D:/extract/docs"},
+        {"archive_path": "D:/backup/docs.zip", "overwrite": True, "password": "mypassword"},
+    ],
+    "get_file_hash": [
+        {"file_path": "C:/Users/用户名/Documents/data.zip", "algorithm": "md5"},
+        {
+            "file_path": "D:/项目代码/main.py",
+            "algorithm": "sha256",
+            "verify_against": "abc123...",
+        },
+    ],
     "read_text_file": [
         {"file_path": "D:/OmniAgentAs-desk/backend/app/main.py"},
         {"file_path": "D:/OmniAgentAs-desk/backend/app/services/agent.py", "head": 10},
@@ -363,6 +380,8 @@ TOOL_INPUT_MODELS = {
     "file_monitor": FileMonitorInput,
     "file_statistics": FileStatisticsInput,
     "file_checksum": FileChecksumInput,
+    "extract_archive": ExtractArchiveInput,
+    "get_file_hash": GetFileHashInput,
     "read_text_file": ReadTextFileInput,
     "read_media_file": ReadMediaFileInput,
     "read_batch_file": ReadBatchFileInput,
@@ -420,6 +439,8 @@ def _register_file_tools():
         "compare_files": lambda: _get_ft().compare_files,
         "batch_rename": lambda: _get_ft().batch_rename,
         "compress_files": lambda: _get_ft().compress_files,
+        "extract_archive": lambda: _get_ft().extract_archive,
+        "get_file_hash": lambda: _get_ft().get_file_hash,
         "file_monitor": lambda: _get_ft().file_monitor,
         "file_statistics": lambda: _get_ft().file_statistics,
         "file_checksum": lambda: _get_ft().file_checksum,

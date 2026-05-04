@@ -57,6 +57,8 @@ from app.services.tools.file.file_schema import (
     FileMonitorInput,
     FileStatisticsInput,
     FileChecksumInput,
+    ExtractArchiveInput,
+    GetFileHashInput,
 )
 
 from app.services.safety.file.file_safety import OperationType
@@ -1496,6 +1498,42 @@ class FileTools:
             execute_with_safety_func=self.safety.execute_with_safety,
             to_unified_format_func=_to_unified_format,
             get_next_sequence_func=self._get_next_sequence,
+        )
+
+    async def extract_archive(
+        self,
+        archive_path: str,
+        output_dir: Optional[str] = None,
+        overwrite: bool = False,
+        password: Optional[str] = None,
+        preserve_permissions: bool = True,
+    ) -> Dict[str, Any]:
+        """解压压缩文件"""
+        from app.services.tools.toolhelper.file_helpers import extract_archive as _extract_archive
+        
+        return _extract_archive(
+            archive_path=archive_path,
+            output_dir=output_dir,
+            overwrite=overwrite,
+            password=password,
+            preserve_permissions=preserve_permissions,
+        )
+
+    async def get_file_hash(
+        self,
+        file_path: str,
+        algorithm: str = "sha256",
+        verify_against: Optional[str] = None,
+        timeout: int = 30000,
+    ) -> Dict[str, Any]:
+        """计算文件哈希值"""
+        from app.services.tools.toolhelper.file_helpers import get_file_hash as _get_file_hash
+        
+        return _get_file_hash(
+            file_path=file_path,
+            algorithm=algorithm,
+            verify_against=verify_against,
+            timeout=timeout,
         )
 
     async def file_monitor(
