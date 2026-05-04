@@ -329,13 +329,10 @@ class BaseAgent(ABC):
                     
                     # 提取 thought_content 和 answer_response
                     thought_content = parsed.get("content", "")
-                    # 【修复 2026-05-05 小沈】response为空时用reasoning+content兜底
-                    # LLM返回JSON通常没有response字段，回答在content，推理在reasoning
-                    # 将二者合并作为最终回答，确保前端能拿到完整内容
+                    # 【修复 2026-05-05 小沈】response为空时用reasoning兜底
                     answer_response = parsed.get("response", "")
                     if not answer_response or not answer_response.strip():
-                        reasoning_part = parsed.get("reasoning", "")
-                        answer_response = (reasoning_part + "\n" + thought_content).strip() if reasoning_part else thought_content
+                        answer_response = parsed.get("reasoning", "")
                     
                     # 【步骤3.4】在退出前，如果存在thought内容，先yield一个ThoughtStep
                     # 确保前端能即时显示AI的思考过程
