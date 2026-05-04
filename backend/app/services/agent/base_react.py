@@ -334,26 +334,7 @@ class BaseAgent(ABC):
                     if not answer_response or not answer_response.strip():
                         answer_response = parsed.get("reasoning", "")
                     
-                    # 【步骤3.4】在退出前，如果存在thought内容，先yield一个ThoughtStep
-                    # 确保前端能即时显示AI的思考过程
-                    if thought_content and thought_content.strip():
-                        # 【修复 2026-05-05 小沈】thought去重拼接：相同则不拼
-                        _t = parsed.get("thought", "")
-                        _thought_val = thought_content
-                        if _t and _t.strip():
-                            _thought_val = _t if _t == thought_content else (_t + "\n" + thought_content).strip()
-                        thought_step = StepFactory.create_thought_step(
-                            step=step_count,
-                            content="",
-                            tool_name="finish",
-                            tool_params={},
-                            thought=_thought_val,
-                            reasoning=parsed.get("reasoning", "")
-                        )
-                        self.steps.append(thought_step)
-                        yield thought_step.to_dict()
-
-                    # 2026-05-01 小强修改：thought和response各归各位，不生搬硬套重复
+                    # 【修复 2026-05-05 小沈】finish时直接yield final，不再先yield thought
                     final_step = StepFactory.create_final_step(
                         step=step_count,
                         response=answer_response,
