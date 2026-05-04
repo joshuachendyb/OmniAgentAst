@@ -1409,22 +1409,19 @@ def task_list(
         
         filtered_tasks = []
         for task in tasks:
-            if folder:
+            if filter_name:
                 task_name = task.get("name", "")
-                task_folder = task.get("folder", "")
-                # folder匹配：任务名以folder开头或任务文件夹匹配
-                if not (task_name.startswith(folder) or task_folder.startswith(folder)):
+                if filter_name.lower() not in task_name.lower():
                     continue
             
-            if state:
+            if filter_status and filter_status != "all":
                 task_status = task.get("status", "")
-                if task_status != state:
+                if task_status != filter_status:
                     continue
             
             filtered_tasks.append(task)
         
-        # 按output_format返回全部或限制
-        limited_tasks = filtered_tasks  # 返回全部，由Agent根据output_format处理
+        limited_tasks = filtered_tasks[:max_results]
         
         return {
             "code": "SUCCESS",
@@ -1433,7 +1430,6 @@ def task_list(
                 "total": len(limited_tasks),
                 "total_matched": len(tasks),
                 "platform": "Windows",
-                "output_format": output_format,
             },
             "message": f"找到 {len(tasks)} 个计划任务"
         }
