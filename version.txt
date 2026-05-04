@@ -6,10 +6,53 @@ v0.12.10
 
 ## v0.12.9→v0.12.10 变更汇总 - 小沈-2026-05-04
 
+### feat 新增
+| commit | 说明 |
+|--------|------|
+| 1f778098 | 添加GUI辅助工具(Tool 108-114) |
+| ca1464b8 | file_register-添加extract_archive和get_file_hash工具注册 |
+| 91bf9768 | fetch_webpage实现js_render-使用Playwright渲染动态页面 |
+| 69e7beb8 | fetch_webpage标注js_render未实现+download_file补充resume参数 |
+
+### refactor 重构
+| commit | 说明 |
+|--------|------|
+| 42042ef4 | 统一gui_helpers返回格式 + 添加测试用例16个 |
+
 ### fix 修复
 | commit | 说明 |
 |--------|------|
 | 4f23b9db | 修复gui_tools.py中的Bug（numpy导入顺序、send_notification返回错误码） |
+| 44fe125d | 完善鼠标控制工具description与文档一致 |
+| f448c4b7 | 完善键盘输入工具description与文档一致 |
+| 25de3810 | 完善截图/录屏工具description与文档一致 |
+| 4daea9ce | 完善ocr工具description与文档一致 |
+| 1f0bb4cd | 窗口管理/剪贴板/通知工具description与文档一致 + 修复write_clipboard参数名 |
+| 01cfb0b5 | 添加剪贴板和通知工具到gui_register |
+| f101e9eb | 完善database和system工具的description和examples参数 |
+| 992216df | 添加code_execution工具的working_dir示例 |
+| f918e630 | 按实际代码添加database工具的连接参数 |
+| 0a0fd056 | 按文档7.7修复task_list/task_create/task_delete的examples |
+| ea75884f | 按文档7.7修复task_list/task_create/task_delete函数签名 |
+| 87c788cd | 按文档7.7重写task_list/task_create/task_delete参数 |
+| f6a1e216 | 修复system_schema.py中TaskCreateInput和TaskDeleteInput重复定义 |
+| 4fe36473 | system_register-补充service_stop缺失参数 |
+| a4540af5 | system_schema-修复ListProcessesInput重复字段 |
+| 3e2e0416 | data_format_register-补充examples缺失参数 |
+| 19b8c941 | system-按文档7.3修复log_message和get_logs参数 |
+| 39ae70f0 | system_register-修复log_message和get_logs参数 |
+| fe70a12f | registry_register-补充examples缺失参数 |
+| 759ce015 | database_register-完善description和examples参数 |
+| 6e26a7ef | file_schema-修复GetFileHashInput缺少闭合括号 |
+| 2a163ff4 | 修正system examples描述并更新参数 |
+| 9c265ca9 | 修正system_tools参数与文档一致 |
+| 1d76a7fe | search_web正确实现time_range/language/safe_search参数 |
+| 4c81ab74 | 正确实现encoding参数-手动解码处理+run_as_admin标记 |
+| 5b5e5fb6 | 修正shell_schema参数描述-标注encoding废弃/run_as_admin未实现 |
+| 2755b811 | 修复search_files示例参数名+删除CompressFilesInput重复字段 |
+| 2a4b10d7 | FinalStep to_dict删除重复content字段 |
+| 68a08a6f | FinalStep精简-只保留response/thought/model/provider |
+| 30314638 | StepFooter.tsx+AIMessageBubble.tsx-删除加载更多死代码 |
 
 ---
 
