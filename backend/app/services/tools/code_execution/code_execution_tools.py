@@ -25,6 +25,13 @@ from app.services.tools.code_execution.code_execution_schema import (
 
 def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None) -> dict:
     """执行Python代码 - 小沈 2026-05-02"""
+    # 验证working_dir是否存在
+    if working_dir and not os.path.isdir(working_dir):
+        return {
+            "code": "ERR_EXEC_INVALID_DIR",
+            "data": None,
+            "message": f"工作目录不存在: {working_dir}"
+        }
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
             f.write(code)
@@ -82,6 +89,13 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
 
 def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None) -> dict:
     """执行JavaScript代码 - 小沈 2026-05-02"""
+    # 验证working_dir是否存在
+    if working_dir and not os.path.isdir(working_dir):
+        return {
+            "code": "ERR_EXEC_INVALID_DIR",
+            "data": None,
+            "message": f"工作目录不存在: {working_dir}"
+        }
     try:
         with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False, encoding='utf-8') as f:
             f.write(code)
