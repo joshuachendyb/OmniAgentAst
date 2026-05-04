@@ -279,37 +279,39 @@ class ServiceStopInput(BaseModel):
 
 
 class TaskListInput(BaseModel):
-    """task_list 工具的输入参数 - 小沈 2026-05-03 修正
+    """task_list 工具的输入参数 - 按文档7.7节定义
     
     按文档7.7节参数定义：
-    - folder: 任务文件夹（可选）
-    - state: 状态过滤（可选），ready/running/disabled
-    - output_format: 输出格式（可选），json/table
+    - filter_name: 任务名过滤（可选）
+    - filter_status: 状态过滤（可选），ready/running/disabled/all
+    - max_results: 最大返回数（可选），默认100
     """
-    folder: Optional[str] = Field(
+    filter_name: Optional[str] = Field(
         default=None,
-        description="任务文件夹（可选）。如 \\Microsoft、\\。Agent 根据 query 语义自动提取文件夹路径，如问Microsoft的任务自动映射为 \\Microsoft"
+        description="按计划任务名模糊匹配过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。例如填写\"backup\"会匹配所有名称包含backup的任务。"
     )
-    state: Optional[Literal["ready", "running", "disabled"]] = Field(
-        default=None,
-        description="状态过滤（可选）。可选值：ready（就绪）、running（运行中）、disabled（已禁用）。Agent 根据 query 语义自动映射，如问运行中的任务自动映射为 running"
+    filter_status: Optional[Literal["ready", "running", "disabled", "all"]] = Field(
+        default="all",
+        description="按任务状态过滤。必填为LLM给出，当LLM未明确指定时Agent智能补全为all。可选值含义：\n- ready：已就绪待执行的任务\n- running：正在运行的任务\n- disabled：已禁用的任务\n- all：所有任务（默认）"
     )
-    output_format: Literal["json", "table"] = Field(
-        default="json",
-        description="输出格式（可选）。可选值：json（默认，结构化数据）、table（人类可读表格）。Agent 根据下游需求自动切换，如需人类阅读则切换为 table"
+    max_results: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="最大返回的任务数。必填为LLM给出，当LLM未明确指定时Agent智能补全为100。用于限制返回结果数量，避免输出过多。"
     )
 
 
 class TaskCreateInput(BaseModel):
-    """task_create 工具的输入参数 - 小沈 2026-05-03 修正
+    """task_create 工具的输入参数 - 按文档7.7节定义
     
     按文档7.7节参数定义：
     - task_name: 任务名称（必填）
     - command: 命令（必填）
     - schedule: 计划时间（必填）
-    - start_time: 起始时间（可选）
-    - start_date: 起始日期（可选）
-    - interval: 间隔（可选）
+    - description: 任务描述（可选）
+    - user: 运行用户（可选）
+    - start_in: 起始目录（可选）
     """
     task_name: str = Field(
         ...,
@@ -321,44 +323,36 @@ class TaskCreateInput(BaseModel):
     )
     schedule: str = Field(
         ...,
-        description="计划执行时间（必填）。格式说明：\n- 每日：HH:MM，例如08:00表示每天早上8点执行\n- 每周：HH:MM /day D，例如08:00 /day 1表示每周一早上8点执行\n- 每月：HH:MM /monthly DD，例如08:00 /monthly 1表示每月1号早上8点执行\n必填由 LLM 提供。"
-    )
-    start_time: Optional[str] = Field(
-        default=None,
-        description="任务执行的起始时间（可选）。Agent 从 query 推断时间语义：晚上10点→22:00，凌晨→00:00"
-    )
-    start_date: Optional[str] = Field(
-        default=None,
-        description="任务执行的起始日期（可选）。Agent 从 query 推断日期语义：从明天开始→计算明天日期，下周一开始→计算下周一的日期"
-    )
-    interval: Optional[int] = Field(
-        default=None,
-        description="任务重复间隔（分钟，可选）。Agent 根据 schedule 类型自动推断：DAILY→1440分钟，WEEKLY→10080分钟，ONCE→null"
+        description="计划执行时间（必填）。格式说明：\n- 每日：\"HH:MM\"，例如\"08:00\"表示每天早上8点执行\n- 每周：\"HH:MM /day D\"，例如\"08:00 /day 1\"表示每周一早上8点执行，1-7代表周日到周六\n- 每月：\"HH:MM /monthly DD\"，例如\"08:00 /monthly 1\"表示每月1号早上8点执行\n必填由 LLM 提供。"
     )
     description: Optional[str] = Field(
         default=None,
-        description="任务描述（可选）。用于说明任务的用途"
+        description="任务描述，用于说明任务的用途。可选，不提供时Agent智能补全为null。"
     )
     user: Optional[str] = Field(
         default=None,
-        description="运行任务的用户账户（可选）。默认使用当前用户，需要指定具有相应权限的用户"
+        description="运行任务的用户账户。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（默认使用当前用户）。需要指定具有相应权限的用户。"
+    )
+    start_in: Optional[str] = Field(
+        default=None,
+        description="任务执行的起始目录。可选，不提供时Agent智能补全为null。指定命令执行时的工作目录。"
     )
 
 
 class TaskDeleteInput(BaseModel):
-    """task_delete 工具的输入参数 - 小沈 2026-05-03 修正
+    """task_delete 工具的输入参数 - 按文档7.7节定义
     
     按文档7.7节参数定义：
     - task_name: 任务名称（必填）
-    - folder: 任务文件夹（可选）
+    - force: 强制删除（可选），默认false
     """
     task_name: str = Field(
         ...,
         description="要删除的计划任务名称（必填）。可通过 task_list 工具查询现有的任务名称。必填由 LLM 提供。"
     )
-    folder: Optional[str] = Field(
-        default=None,
-        description="任务所在文件夹（可选）。如 \\Microsoft。Agent 从 query 推断任务所在文件夹，如说Microsoft下的任务自动映射为 \\Microsoft，并自动处理强制删除逻辑"
+    force: bool = Field(
+        default=False,
+        description="是否强制删除（即使任务正在运行）。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。\n- false：仅删除已停止的任务（默认）\n- true：强制删除，包括正在运行的任务"
     )
 
 
