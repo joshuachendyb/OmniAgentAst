@@ -627,6 +627,8 @@ class FinalStep(ReasoningStep):
     
     def to_dict(self) -> Dict[str, Any]:
         base_dict = ReasoningStep.to_dict(self)
+        # 删除重复的content字段，FinalStep用response
+        base_dict.pop("content", None)
         base_dict.update({
             "response": self._response,
             "thought": self._thought,
