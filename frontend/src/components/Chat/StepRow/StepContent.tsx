@@ -211,8 +211,8 @@ const StepContent: React.FC<StepContentProps> = ({
               flexDirection: 'column',
               gap: 8,
             }}>
-              {/* thought主要内容的简洁样式（第三步修改） */}
-              {(step as ExecutionStep & Record<string, unknown>).thought && (
+              {/* 【修复 2026-05-05 小沈】reasoning用卡片大字样式(主要内容) */}
+              {(step as ExecutionStep & Record<string, unknown>).reasoning && (
                 <div style={{
                   padding: "12px 16px",
                   borderRadius: 10,
@@ -226,14 +226,14 @@ const StepContent: React.FC<StepContentProps> = ({
                     gap: 6,
                     marginBottom: 6,
                   }}>
-                    <span style={{ fontSize: 14 }}>💭</span>
+                    <span style={{ fontSize: 14 }}>🧠</span>
                     <span style={{ 
                       fontSize: 12, 
                       fontWeight: 600,
-                      color: '#d97706',
+                      color: '#1890ff',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
-                    }}>思考</span>
+                    }}>推理</span>
                   </div>
                   <div style={{
                     fontSize: 13,
@@ -241,12 +241,12 @@ const StepContent: React.FC<StepContentProps> = ({
                     lineHeight: 1.5,
                     fontWeight: 500,
                   }}>
-                    {formatStepContent((step as ExecutionStep & Record<string, unknown>).thought)}
+                    {formatReasoningContent((step as ExecutionStep & Record<string, unknown>).reasoning)}
                   </div>
                 </div>
               )}
-              {/* reasoning次要信息，左侧竖线标识（第三步修改） */}
-              {(step as ExecutionStep & Record<string, unknown>).reasoning && (
+              {/* 【修复 2026-05-05 小沈】thought用小字竖线样式(详细思考) */}
+              {(step as ExecutionStep & Record<string, unknown>).thought && (
                 <div style={{
                   marginTop: 8,
                   marginLeft: 0,
@@ -256,9 +256,9 @@ const StepContent: React.FC<StepContentProps> = ({
                   fontSize: 12,
                   lineHeight: 1.5,
                 }}>
-                  <span style={{ fontWeight: 500, marginRight: 4 }}>🧠 推理:</span>
+                  <span style={{ fontWeight: 500, marginRight: 4 }}>💭 思考:</span>
                   <span style={{ color: '#666' }}>
-                    {formatReasoningContent((step as ExecutionStep & Record<string, unknown>).reasoning)}
+                    {formatStepContent((step as ExecutionStep & Record<string, unknown>).thought)}
                   </span>
                 </div>
               )}
