@@ -61,6 +61,20 @@ async def http_request(
     支持自定义请求头、查询参数、请求体。
     支持超时控制、SSL验证、代理、重试和重定向跟随。
     """
+    # 参数校验
+    if retry < 0 or retry > 10:
+        return {
+            "code": "ERR_NETWORK_INVALID_PARAM",
+            "data": None,
+            "message": f"重试次数必须在0-10之间，当前值：{retry}"
+        }
+    if timeout < 1000 or timeout > 600000:
+        return {
+            "code": "ERR_NETWORK_INVALID_PARAM",
+            "data": None,
+            "message": f"超时时间必须在1000-600000毫秒之间，当前值：{timeout}"
+        }
+    
     timeout_sec = timeout / 1000.0
     
     try:
@@ -272,7 +286,7 @@ async def download_file(
                 except (PermissionError, OSError) as e:
                     # 清理不完整的文件
                     try:
-                        if os.path.exists(dest_path):
+                        if dest_path and os.path.exists(dest_path):
                             os.remove(dest_path)
                     except OSError:
                         pass
@@ -542,7 +556,14 @@ async def search_web(
         time_kl_map = {"d": "us-en", "w": "us-en", "m": "us-en", "y": "us-en", "any": "us-en"}
         
         # language 参数实现：使用 kl 参数
-        lang_map = {"zh-CN": "zh-cn", "en-US": "us-en", "en": "us-en", "zh": "zh-cn"}
+        lang_map = {
+            "zh-CN": "zh-cn", "zh": "zh-cn", 
+            "en-US": "us-en", "en": "us-en", 
+            "ja": "jp-jp", "ja-JP": "jp-jp",
+            "ko": "kr-kr", "ko-KR": "kr-kr",
+            "fr": "fr-fr", "de": "de-de", "es": "es-es",
+            "it": "it-it", "pt": "pt-br", "ru": "ru-ru",
+        }
         
         # safe_search 参数实现：使用 kp 参数
         safe_map = {"strict": "1", "moderate": "2", "off": "-1"}
@@ -857,8 +878,8 @@ async def port_check(
         host = host.strip()
         
         well_known_ports = {
-            20: "FTP-DATA",
-            21: "FTP",
+            20: "FTP-Data(数据端口)",
+            21: "FTP-Control(控制端口)",
             22: "SSH",
             23: "Telnet",
             25: "SMTP",

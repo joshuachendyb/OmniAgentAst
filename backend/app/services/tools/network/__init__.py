@@ -24,9 +24,17 @@ from app.services.tools.network import network_tools
 from app.services.tools.network.network_tools import (
     http_request,
     download_file,
+    fetch_webpage,
+    search_web,
+    ping,
+    port_check,
 )
 
 __all__ = [
     "http_request",
     "download_file",
+    "fetch_webpage",
+    "search_web",
+    "ping",
+    "port_check",
 ]
