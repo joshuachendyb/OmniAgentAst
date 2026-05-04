@@ -96,7 +96,7 @@ class EventLogInput(BaseModel):
 
 
 class ListProcessesInput(BaseModel):
-    """list_processes 工具的输入参数 - 小沈 2026-05-04 修正"""
+    """list_processes 工具的输入参数 - 按文档7.5节定义"""
     filter_name: Optional[str] = Field(
         default=None,
         description="按进程名过滤（模糊匹配）"
@@ -106,9 +106,23 @@ class ListProcessesInput(BaseModel):
         ge=1,
         description="按PID过滤"
     )
+    user: Optional[str] = Field(
+        default=None,
+        description="用户名过滤（可选）。如 Administrator"
+    )
+    status: Optional[Literal["running", "sleeping"]] = Field(
+        default=None,
+        description="状态过滤（可选）。可选值：running（运行中）、sleeping（睡眠）"
+    )
+    limit: int = Field(
+        default=100,
+        ge=1,
+        le=500,
+        description="返回进程数量限制（可选），默认100"
+    )
     sort_by: Literal["pid", "name", "cpu", "memory"] = Field(
         default="pid",
-        description="排序字段（可选）。可选值：pid（默认值）、name（名称）、cpu（CPU占用）、memory（内存占用）"
+        description="排序方式（可选）。可选值：pid、name、cpu、memory，默认pid"
     )
     descending: bool = Field(
         default=False,
@@ -120,36 +134,18 @@ class ListProcessesInput(BaseModel):
         le=500,
         description="最大返回进程数，默认100"
     )
-    user: Optional[str] = Field(
-        default=None,
-        description="用户名过滤（可选）。如 Administrator。Agent 根据 query 中是否包含用户信息自动映射"
-    )
-    status: Optional[Literal["running", "sleeping"]] = Field(
-        default=None,
-        description="状态过滤（可选）。可选值：running（运行中）、sleeping（睡眠）。Agent 根据 query 语义自动映射，如问卡住的进程自动映射为 running"
-    )
-    limit: int = Field(
-        default=100,
-        ge=1,
-        le=500,
-        description="返回进程数量限制（可选），默认 100。Agent 根据 query 语义自动提取数量，如说前10个自动设 limit=10"
-    )
-    sort_by: Literal["pid", "name", "cpu", "memory"] = Field(
-        default="pid",
-        description="排序方式（可选）。可选值：pid（默认值）、name（名称）、cpu（CPU 占用）、memory（内存占用）。Agent 根据 query 语义自动映射，如问最占 CPU 自动设 cpu"
-    )
 
 
 class KillProcessInput(BaseModel):
-    """kill_process 工具的输入参数 - 小沈 2026-05-04 修正"""
+    """kill_process 工具的输入参数 - 按文档7.5节定义"""
     pid: int = Field(
         ...,
         ge=1,
-        description="进程 ID（必填）。如 1234"
+        description="进程ID（必填）。如 1234"
     )
     force: bool = Field(
         default=False,
-        description="是否强制终止进程。默认 False。false：优雅终止（SIGTERM），给进程机会清理资源；true：强制终止（SIGKILL），立即杀死进程"
+        description="是否强制终止进程。默认False"
     )
     timeout: int = Field(
         default=5,
