@@ -12,7 +12,7 @@ Author: 小沈 - 2026-05-02
 """
 
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List, Union
+from typing import Optional, Dict, Any, List, Union, Tuple
 
 
 class ReadCsvDataframeInput(BaseModel):
@@ -36,6 +36,14 @@ class ReadCsvDataframeInput(BaseModel):
     max_rows: Optional[int] = Field(
         default=1000,
         description="最大读取行数（可选）。Agent根据文件大小自动调整，大文件→500，小文件→2000"
+    )
+    usecols: Optional[List[str]] = Field(
+        default=None,
+        description="选择列（可选）。指定要读取的列名列表，如 [\"name\", \"age\", \"score\"]"
+    )
+    skip_rows: Optional[int] = Field(
+        default=0,
+        description="跳过行数（可选）。跳过文件开头的N行"
     )
 
 
@@ -65,6 +73,18 @@ class GenerateChartInput(BaseModel):
         default=None,
         description="输出图片路径（可选）。Agent根据上下文自动生成，含时间戳"
     )
+    figure_size: Optional[tuple] = Field(
+        default=None,
+        description="图表尺寸（可选）。如 (10, 6)，默认 (10, 6)"
+    )
+    rotation: Optional[int] = Field(
+        default=0,
+        description="X轴标签旋转角度（可选）。如 45，设置标签旋转避免重叠"
+    )
+    color: Optional[str] = Field(
+        default=None,
+        description="图表颜色（可选）。如 #FF5733 或 blue"
+    )
 
 
 class AnalyzeDataInput(BaseModel):
@@ -80,4 +100,16 @@ class AnalyzeDataInput(BaseModel):
     group_by: Optional[str] = Field(
         default=None,
         description="分组字段（可选）。Agent根据query推断分组字段"
+    )
+    sort_by: Optional[str] = Field(
+        default=None,
+        description="排序字段（可选）。按指定列排序"
+    )
+    sort_ascending: Optional[bool] = Field(
+        default=True,
+        description="升序/降序（可选）。默认 True 升序"
+    )
+    top_n: Optional[int] = Field(
+        default=None,
+        description="返回前N条（可选）。如 top_n=10 返回前10条"
     )

@@ -51,7 +51,9 @@ def read_csv_dataframe(
     encoding: str = "utf-8",
     delimiter: str = ",",
     has_header: bool = True,
-    max_rows: int = 1000
+    max_rows: int = 1000,
+    usecols: List[str] = None,
+    skip_rows: int = 0
 ) -> Dict[str, Any]:
     """使用pandas读取CSV文件返回DataFrame格式数据 - 小沈 2026-05-02"""
     if not _check_pandas():
@@ -78,7 +80,9 @@ def read_csv_dataframe(
             encoding=encoding,
             delimiter=delimiter,
             header=header,
-            nrows=max_rows
+            nrows=max_rows,
+            usecols=usecols,
+            skiprows=skip_rows
         )
 
         columns = df.columns.tolist()
@@ -121,7 +125,10 @@ def generate_chart(
     title: str = None,
     x_label: str = None,
     y_label: str = None,
-    output_path: str = None
+    output_path: str = None,
+    figure_size: tuple = None,
+    rotation: int = 0,
+    color: str = None
 ) -> Dict[str, Any]:
     """使用matplotlib生成数据可视化图表 - 小沈 2026-05-02"""
     if not _check_matplotlib():
@@ -151,20 +158,37 @@ def generate_chart(
             temp_dir = tempfile.gettempdir()
             output_path = os.path.join(temp_dir, f"chart_{timestamp}.png")
 
-        fig, ax = plt.subplots(figsize=(10, 6))
+        fig, ax = plt.subplots(figsize=figure_size if figure_size else (10, 6))
 
         chart_type_lower = chart_type.lower() if chart_type else "bar"
 
-        if chart_type_lower == "bar":
-            ax.bar(labels, values)
-        elif chart_type_lower == "line":
-            ax.plot(labels, values, marker="o")
-        elif chart_type_lower == "pie":
-            ax.pie(values, labels=labels, autopct="%1.1f%%")
-        elif chart_type_lower == "scatter":
-            ax.scatter(labels, values)
+        # 处理颜色
+        if color:
+            if chart_type_lower == "bar":
+                ax.bar(labels, values, color=color)
+            elif chart_type_lower == "line":
+                ax.plot(labels, values, marker="o", color=color)
+            elif chart_type_lower == "pie":
+                ax.pie(values, labels=labels, autopct="%1.1f%%", colors=[color]*len(values))
+            elif chart_type_lower == "scatter":
+                ax.scatter(labels, values, c=color)
+            else:
+                ax.bar(labels, values, color=color)
         else:
-            ax.bar(labels, values)
+            if chart_type_lower == "bar":
+                ax.bar(labels, values)
+            elif chart_type_lower == "line":
+                ax.plot(labels, values, marker="o")
+            elif chart_type_lower == "pie":
+                ax.pie(values, labels=labels, autopct="%1.1f%%")
+            elif chart_type_lower == "scatter":
+                ax.scatter(labels, values)
+            else:
+                ax.bar(labels, values)
+
+        # 设置标签旋转
+        if rotation and chart_type_lower != "pie":
+            plt.xticks(rotation=rotation)
 
         if title:
             ax.set_title(title)
@@ -194,7 +218,10 @@ def generate_chart(
 def analyze_data(
     data: Union[str, List[Dict[str, Any]]],
     operations: List[str] = None,
-    group_by: str = None
+    group_by: str = None,
+    sort_by: str = None,
+    sort_ascending: bool = True,
+    top_n: int = None
 ) -> Dict[str, Any]:
     """对数据集进行统计分析 - 小沈 2026-05-02"""
     if not _check_pandas():
@@ -238,6 +265,16 @@ def analyze_data(
             }
 
         result = {"row_count": len(df), "columns": df.columns.tolist()}
+
+        # 排序处理
+        if sort_by and sort_by in df.columns:
+            df = df.sort_values(by=sort_by, ascending=sort_ascending)
+
+        # 取前N条
+        if top_n and top_n > 0:
+            df = df.head(top_n)
+            result["limited"] = True
+            result["top_n"] = top_n
 
         if group_by and group_by in df.columns:
             grouped = df.groupby(group_by)[numeric_cols]
