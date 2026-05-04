@@ -61,7 +61,8 @@ def _parse_pages(pages_str: str) -> List[int]:
 def read_pdf(
     file_path: str,
     pages: str = None,
-    extract_images: bool = False
+    extract_images: bool = False,
+    extract_tables: bool = False
 ) -> Dict[str, Any]:
     """读取PDF文件并提取文本内容 - 小沈 2026-05-02"""
     if not _check_module("pdfplumber"):
@@ -85,6 +86,7 @@ def read_pdf(
         all_text = []
         page_count = 0
         pages_read = []
+        tables_data = []
 
         with pdfplumber.open(path) as pdf:
             page_count = len(pdf.pages)
@@ -100,12 +102,26 @@ def read_pdf(
                 text = page.extract_text() or ""
                 all_text.append(f"--- 第 {page_num} 页 ---\n{text}")
                 pages_read.append(page_num)
+                
+                # 提取表格
+                if extract_tables:
+                    tables = page.extract_tables()
+                    if tables:
+                        for idx, table in enumerate(tables):
+                            tables_data.append({
+                                "page": page_num,
+                                "table_idx": idx,
+                                "data": table
+                            })
 
         result_data = {
             "text": "\n\n".join(all_text),
             "page_count": page_count,
             "pages_read": pages_read,
         }
+        
+        if extract_tables and tables_data:
+            result_data["tables"] = tables_data
 
         return {
             "code": "SUCCESS",
@@ -120,7 +136,10 @@ def read_pdf(
         }
 
 
-def read_docx(file_path: str) -> Dict[str, Any]:
+def read_docx(
+    file_path: str,
+    extract_tables: bool = False
+) -> Dict[str, Any]:
     """读取Word文档并提取文本内容 - 小沈 2026-05-02"""
     if not _check_module("docx"):
         return {
@@ -143,13 +162,27 @@ def read_docx(file_path: str) -> Dict[str, Any]:
         doc = docx.Document(path)
         paragraphs = [para.text for para in doc.paragraphs]
         text = "\n".join(paragraphs)
-
+        
+        result_data = {
+            "text": text,
+            "paragraph_count": len(paragraphs),
+        }
+        
+        # 提取表格
+        if extract_tables:
+            tables_data = []
+            for table in doc.tables:
+                table_rows = []
+                for row in table.rows:
+                    row_data = [cell.text.strip() for cell in row.cells]
+                    table_rows.append(row_data)
+                tables_data.append(table_rows)
+            result_data["tables"] = tables_data
+            result_data["table_count"] = len(tables_data)
+        
         return {
             "code": "SUCCESS",
-            "data": {
-                "text": text,
-                "paragraph_count": len(paragraphs),
-            },
+            "data": result_data,
             "message": f"成功读取Word文档: {file_path}，共 {len(paragraphs)} 段"
         }
     except Exception as e:
@@ -163,7 +196,9 @@ def read_docx(file_path: str) -> Dict[str, Any]:
 def read_xlsx(
     file_path: str,
     sheet_name: str = None,
-    max_rows: int = 1000
+    max_rows: int = 1000,
+    header: bool = True,
+    index_col: bool = False
 ) -> Dict[str, Any]:
     """读取Excel文件并提取表格数据 - 小沈 2026-05-02"""
     if not _check_module("openpyxl"):

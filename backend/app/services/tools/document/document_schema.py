@@ -29,6 +29,10 @@ class ReadPdfInput(BaseModel):
         default=False,
         description="是否提取图片（可选）。Agent根据query判断，如\"提取图片\"→true"
     )
+    extract_tables: Optional[bool] = Field(
+        default=False,
+        description="是否提取表格（可选）。Agent根据query判断，如\"提取表格\"→true"
+    )
 
 
 class ReadDocxInput(BaseModel):
@@ -36,6 +40,10 @@ class ReadDocxInput(BaseModel):
     file_path: str = Field(
         ...,
         description="Word 文件路径。如 D:/documents/report.docx"
+    )
+    extract_tables: Optional[bool] = Field(
+        default=False,
+        description="是否提取表格（可选）。Agent根据query判断，如\"提取表格\"→true"
     )
 
 
@@ -52,4 +60,12 @@ class ReadXlsxInput(BaseModel):
     max_rows: Optional[int] = Field(
         default=1000,
         description="最大读取行数（可选）。Agent根据文件大小自动调整，大文件→500，小文件→2000"
+    )
+    header: Optional[bool] = Field(
+        default=True,
+        description="第一行是否为表头（可选）。默认 True"
+    )
+    index_col: Optional[bool] = Field(
+        default=False,
+        description="第一列是否为索引（可选）。默认 False"
     )
