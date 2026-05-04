@@ -66,8 +66,8 @@ SYSTEM_TOOL_DESCRIPTIONS = {
     "event_log": "获取系统事件日志（Windows事件查看器/Linux syslog），支持按级别、来源、时间范围过滤。适合查看系统错误、诊断问题、审计日志",
     "list_processes": "列出系统所有进程，支持按filter_name/filter_pid过滤，可按CPU/内存占用排序。适合查看进程状态、找资源占用高的进程",
     "kill_process": "终止指定进程(pid必填)，支持优雅终止（SIGTERM）和强制终止（SIGKILL），需谨慎使用。适合结束卡死进程、释放资源",
-    "log_message": "记录日志消息(message必填)，支持DEBUG/INFO/WARNING/ERROR/CRITICAL级别(module可选)。适合记录调试信息、错误追踪、审计日志",
-    "get_logs": "读取指定日志文件(log_file必填)，支持按level/keyword/max_lines过滤。适合查看运行日志、排查错误、分析问题",
+    "log_message": "记录日志消息到指定日志文件或日志系统。\n\nScenarios:\n- When user needs to log operation\n- When user wants audit trail\n- When user needs debug\n\nParams:\n- message: log message content (required)\n- level: log level (optional), default INFO\n- logger_name: logger name (optional), default root\n- log_file: log file path (optional), default console\n\n[Important] Uses Python builtin logging. Agent auto infers level\n\nExamples:\n- Log: {\"message\": \"User logged in\", \"level\": \"INFO\"}\n- To file: {\"message\": \"System started\", \"log_file\": \"D:/logs/app.log\"}",
+    "get_logs": "读取指定日志文件的内容，支持智能过滤与截断。\n\nScenarios:\n- When user needs to view log content\n- When user wants to analyze history\n- When user needs troubleshooting\n\nParams:\n- log_file: log file path (required)\n- level: log level filter (optional), default WARNING\n- start_time/end_time: time range filter (optional)\n- log_format: time format (optional), default auto_detect\n- max_lines: max lines (optional), default 200\n- tail_mode: tail read mode (optional), default false\n- pattern: keyword filter (optional)\n- output_format: output format (optional), default table\n\n[Important] tail_mode enabled skips level/pattern filter\n\nExamples:\n- Read: {\"log_file\": \"D:/logs/app.log\"}\n- Filter ERROR: {\"log_file\": \"D:/logs/app.log\", \"level\": \"ERROR\", \"max_lines\": 100}",
     "service_list": "列出系统服务（Windows用sc/Linux用systemctl），支持按名称和状态（running/stopped）过滤。适合查看服务状态、管理服务",
     "service_start": "启动指定系统服务（Windows用sc/Linux用systemctl），支持超时设置。适合启动停止的服务",
     "service_stop": "停止指定系统服务（Windows用sc/Linux用systemctl），支持优雅停止和强制停止。适合停止异常服务",
@@ -122,12 +122,13 @@ SYSTEM_TOOL_EXAMPLES = {
     "log_message": [
         {"message": "这是一条测试日志"},
         {"level": "WARNING", "message": "警告信息"},
-        {"message": "错误信息", "level": "ERROR", "module": "api"},
+        {"message": "错误信息", "level": "ERROR", "logger_name": "api"},
     ],
     "get_logs": [
         {"log_file": "D:/logs/app.log"},
         {"log_file": "D:/logs/app.log", "level": "ERROR", "max_lines": 100},
-        {"log_file": "D:/logs/app.log", "keyword": "timeout"},
+        {"log_file": "D:/logs/app.log", "pattern": "timeout", "tail_mode": True},
+        {"log_file": "D:/logs/app.log", "start_time": "2026-01-01", "end_time": "2026-01-02", "output_format": "json"},
     ],
     "service_list": [
         {},
