@@ -1,10 +1,10 @@
 /**
- * StepFooter组件 - 步骤底部（状态、分页、工具信息）
+ * StepFooter组件 - 步骤底部（状态、工具信息、模型信息）
  * 
  * @author 小沈
- * @version 1.1.0
+ * @version 1.2.0
  * @since 2026-04-21
- * @update 2026-04-28 小强 - 第十一步：边界情况处理（无内容时完全隐藏）
+ * @update 2026-05-04 小沈 - 删除加载更多死代码
  */
 
 import React from "react";
@@ -12,19 +12,14 @@ import type { ExecutionStep } from "../../../utils/sse";
 
 interface StepFooterProps {
   step: ExecutionStep;
-  hasMore: boolean;
-  onLoadMore: () => void;
 }
 
 /**
  * StepFooter组件
- * 显示执行状态、耗时、重试次数、摘要、加载更多
- * 第十一步：边界情况处理 - 无内容时完全隐藏
+ * 显示执行状态、耗时、重试次数、摘要、模型信息
  */
 const StepFooter: React.FC<StepFooterProps> = ({
   step,
-  hasMore,
-  onLoadMore,
 }) => {
   const execution_status = step.execution_status;
   const execution_time_ms = step.execution_time_ms;
@@ -35,8 +30,8 @@ const StepFooter: React.FC<StepFooterProps> = ({
   const provider = step.provider;
   const display_name = step.display_name;
 
-  // 第十一：边界情况处理 - 检查是否有内容需要显示
-  const hasContent = execution_status || hasMore || summary || error_message || model || provider;
+  // 检查是否有内容需要显示
+  const hasContent = execution_status || summary || error_message || model || provider;
 
   if (!hasContent) {
     return null;
@@ -47,24 +42,6 @@ const StepFooter: React.FC<StepFooterProps> = ({
 
   return (
     <>
-      {/* 加载更多按钮 */}
-      {hasMore && (
-        <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
-          <span 
-            onClick={onLoadMore}
-            style={{ 
-              cursor: "pointer", 
-              color: "#1890ff",
-              textDecoration: "underline",
-              fontWeight: 500,
-              transition: "all 0.2s ease",
-            }}
-          >
-            加载更多
-          </span>
-        </div>
-      )}
-
       {/* 执行状态信息 */}
       {execution_status && (
         <div style={{ marginTop: 6, fontSize: 12 }}>
