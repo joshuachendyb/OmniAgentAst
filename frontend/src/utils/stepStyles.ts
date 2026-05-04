@@ -69,7 +69,7 @@ export type LayoutMode = 'inline' | 'block' | 'inline-with-details';
 // 颜色方案接口 - 9种浅色方案精简版
 interface ColorScheme {
   bg1: string;          // 背景色-主
-  bg2: string;          // 背景色-次
+  bg2?: string;         // 背景色-次（可选）
   border: string;       // 边框颜色
   text: string;        // 文字颜色
   label: string;       // 视觉标签
@@ -192,9 +192,8 @@ const colorSchemes: Record<StepType, ColorScheme> = {
   // ===== 完成类（绿色系）=====
   final: {
     bg1: "#f6ffed",
-    bg2: "#f5f5f5",
     border: "#b7eb8f",
-    text: "#389e0d",
+    text: "#52c41a",
     label: "✅ 完成",
     priority: "primary",
     layout: "block",

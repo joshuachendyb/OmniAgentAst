@@ -280,13 +280,20 @@ const StepContent: React.FC<StepContentProps> = ({
         </div>
       )}
       {step.type === "final" && (
-        <div style={{...getStepStyle("final" as StepType), whiteSpace: "pre-wrap", wordBreak: "break-word"}}>
+        <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
           {(step as ExecutionStep & Record<string, unknown>).thought && (
-            <div style={{fontSize: "12px", color: "#888", marginBottom: "4px"}}>
+            <div style={{
+              fontSize: "12px",
+              color: "#8c8c8c",
+              fontStyle: "italic",
+              marginBottom: "6px",
+              paddingLeft: 8,
+              borderLeft: "2px solid #d9d9d9",
+            }}>
               思考: {formatStepContent((step as ExecutionStep & Record<string, unknown>).thought)}
             </div>
           )}
-          <span style={getStepContentStyle("final" as StepType, "primary")}>
+          <span style={{ fontSize: 13, color: '#333' }}>
             {formatStepContent((step as ExecutionStep & Record<string, unknown>).response)}
           </span>
         </div>

@@ -556,6 +556,8 @@ class FinalStep(ReasoningStep):
         is_finished: bool = True,
         is_streaming: bool = False,
         is_reasoning: bool = False,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
         timestamp: Optional[int] = None
     ):
         """
@@ -568,6 +570,8 @@ class FinalStep(ReasoningStep):
             is_finished: 业务完成标志
             is_streaming: 是否流式输出
             is_reasoning: 是否推理中
+            model: 模型名称（可选）
+            provider: 提供商（可选）
             timestamp: 时间戳（毫秒）
         """
         # 调用ReasoningStep初始化
@@ -578,6 +582,8 @@ class FinalStep(ReasoningStep):
         self._is_finished = is_finished
         self._is_streaming = is_streaming
         self._is_reasoning = is_reasoning
+        self._model = model
+        self._provider = provider
     
     def get_type(self) -> str:
         return "final"
@@ -610,6 +616,16 @@ class FinalStep(ReasoningStep):
         """获取是否推理中"""
         return self._is_reasoning
     
+    @property
+    def model(self) -> Optional[str]:
+        """获取模型名称"""
+        return self._model
+    
+    @property
+    def provider(self) -> Optional[str]:
+        """获取提供商"""
+        return self._provider
+    
     def is_done(self) -> bool:
         return True
     
@@ -621,6 +637,8 @@ class FinalStep(ReasoningStep):
             "is_finished": self._is_finished,
             "is_streaming": self._is_streaming,
             "is_reasoning": self._is_reasoning,
+            "model": self._model,
+            "provider": self._provider,
         })
         return base_dict
 
@@ -925,7 +943,9 @@ class StepFactory:
         step: int,
         response: str,
         thought: str = "",
-        is_finished: bool = True
+        is_finished: bool = True,
+        model: Optional[str] = None,
+        provider: Optional[str] = None
     ) -> FinalStep:
         """
         创建FinalStep
@@ -935,6 +955,8 @@ class StepFactory:
             response: 最终回答
             thought: 思考过程
             is_finished: 业务完成标志
+            model: 模型名称（可选）
+            provider: 提供商（可选）
                 
         Returns:
             FinalStep实例
@@ -943,7 +965,9 @@ class StepFactory:
             step=step,
             response=response,
             thought=thought,
-            is_finished=is_finished
+            is_finished=is_finished,
+            model=model,
+            provider=provider
         )
     
     @staticmethod

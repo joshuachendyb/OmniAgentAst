@@ -351,7 +351,9 @@ class BaseAgent(ABC):
                         step=step_count,
                         response=answer_response,
                         thought=parsed.get("thought", ""),
-                        is_finished=True
+                        is_finished=True,
+                        model=getattr(self, 'model', None),
+                        provider=getattr(self, 'provider', None)
                     )
                     self.steps.append(final_step)
                     yield final_step.to_dict()
@@ -629,7 +631,9 @@ class BaseAgent(ABC):
                         step=step_count,
                         response=str(execution_result.get("data", "")),
                         thought="工具执行要求直接返回结果",
-                        is_finished=True
+                        is_finished=True,
+                        model=getattr(self, 'model', None),
+                        provider=getattr(self, 'provider', None)
                     )
                     self.steps.append(final_step)
                     yield final_step.to_dict()

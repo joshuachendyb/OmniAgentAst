@@ -31,13 +31,19 @@ const StepFooter: React.FC<StepFooterProps> = ({
   const action_retry_count = step.action_retry_count;
   const summary = step.summary;
   const error_message = step.error_message;
+  const model = step.model;
+  const provider = step.provider;
+  const display_name = step.display_name;
 
-  // 第十一步：边界情况处理 - 检查是否有内容需要显示
-  const hasContent = execution_status || hasMore || summary || error_message;
+  // 第十一：边界情况处理 - 检查是否有内容需要显示
+  const hasContent = execution_status || hasMore || summary || error_message || model || provider;
 
   if (!hasContent) {
     return null;
   }
+
+  // AI模型信息显示逻辑
+  const modelInfo = display_name || (provider && model ? `${provider} (${model})` : model);
 
   return (
     <>
@@ -100,6 +106,13 @@ const StepFooter: React.FC<StepFooterProps> = ({
               | ❌ {error_message}
             </span>
           )}
+        </div>
+      )}
+
+      {/* AI模型信息 - final/start类型显示 */}
+      {modelInfo && (
+        <div style={{ marginTop: 4, fontSize: 11, color: "#8c8c8c" }}>
+          🤖 {modelInfo}
         </div>
       )}
     </>
