@@ -185,6 +185,10 @@ def screen_record(duration: int, output_path: str = None, fps: int = 15) -> Dict
     except ImportError:
         return {"code": "ERR_NO_RECORD_LIB", "data": None, "message": "需要安装 mss 和 PIL 库"}
     try:
+        import numpy  # 移到循环前导入 - 小沈 2026-05-04
+    except ImportError:
+        return {"code": "ERR_NO_NUMPY", "data": None, "message": "需要安装 numpy 库"}
+    try:
         import imageio.v2 as imageio
     except ImportError:
         try:
@@ -210,11 +214,6 @@ def screen_record(duration: int, output_path: str = None, fps: int = 15) -> Dict
                 pil_img = Image.frombytes("RGB", img.size, img.bgra, "raw", "BGRX")
                 frames.append(numpy.array(pil_img))
                 time.sleep(interval)
-
-            try:
-                import numpy
-            except ImportError:
-                return {"code": "ERR_NO_NUMPY", "data": None, "message": "需要安装 numpy 库"}
 
             imageio.mimwrite(output_path, frames, fps=fps)
 
@@ -383,4 +382,4 @@ def send_notification(title: str, message: str, duration: int = 5) -> Dict[str, 
         toaster.show_toast(title, message, duration=duration)
         return {"code": "SUCCESS", "data": {"title": title, "message": message, "duration": duration}, "message": "通知发送成功"}
     except ImportError:
-        return {"code": "SUCCESS", "data": {"title": title, "message": message, "duration": duration}, "message": "通知已发送（win10toast未安装，使用系统默认）"}
+        return {"code": "ERR_NO_WIN10TOAST", "data": None, "message": "需要安装 win10toast 库: pip install win10toast"}
