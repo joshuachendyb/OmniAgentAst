@@ -733,8 +733,24 @@ class BaseAgent(ABC):
 
     # ===== 通用方法 =====
 
+    # 【修复 2026-05-05 小沈】observation最大长度，超出截断避免撑爆上下文窗口
+    MAX_OBSERVATION_LENGTH = 30000
+
     def _add_observation_to_history(self, observation: str) -> None:
-        """添加观察结果到对话历史"""
+        """添加观察结果到对话历史
+        
+        【修复 2026-05-05 小沈】observation过大时截断，
+        避免超出LLM上下文窗口导致空响应。
+        阈值30000字符，超出时保留前面部分+截断提示。
+        """
+        if len(observation) > self.MAX_OBSERVATION_LENGTH:
+            truncated = observation[:self.MAX_OBSERVATION_LENGTH]
+            truncated += f"\n\n[⚠️ 内容过长已截断] 原始长度{len(observation)}字符，保留前{self.MAX_OBSERVATION_LENGTH}字符。如需查看完整内容，请使用read_file工具读取。"
+            logger.warning(
+                f"[observation截断] 原始长度={len(observation)}, "
+                f"截断后={len(truncated)}, 阈值={self.MAX_OBSERVATION_LENGTH}"
+            )
+            observation = truncated
         self.conversation_history.append({"role": "user", "content": observation})
         self._trim_history()
 
