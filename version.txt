@@ -1,3 +1,19 @@
+v0.12.8
+
+更新时间: 2026-05-04 08:25:28
+
+更新内容：
+
+## v0.12.7→v0.12.8 变更汇总 - 小沈-2026-05-04
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| dc9a3be8 | 修复network_register.py缺少implementation参数 |
+| d37c9f4b | 修复file_register.py TOOL_INPUT_MODELS作用域问题 |
+
+---
+
 v0.12.7
 
 更新时间: 2026-05-03 16:25:43
