@@ -133,3 +133,18 @@ class TimeIsHolidayInput(BaseModel):
         default=None,
         description="日期（时间戳、字符串、datetime）。如果为None则使用当前日期。可选参数，默认为None（当前日期）"
     )
+
+class TimeAddInput(BaseModel):
+    """time_add 工具的输入参数"""
+    start: Union[int, float, str] = Field(
+        ...,
+        description="基准时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。必填参数"
+    )
+    delta: float = Field(
+        ...,
+        description="偏移量（数字）。正数表示增加，负数表示减少。必填参数"
+    )
+    unit: str = Field(
+        default="days",
+        description="单位（days/hours/minutes/seconds/months）。默认为days。Agent 语义解析：'3天'→unit='days', '2小时'→unit='hours'。可选参数，默认为days"
+    )

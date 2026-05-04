@@ -665,10 +665,75 @@ def _parse_datetime_any(value: Any) -> Optional[datetime]:
         elif isinstance(value, str):
             return _parse_datetime_string(value)
         else:
-            return None;
+            return None
     except Exception:
-        return None;
+        return None
 
+# ===========================================================
+# P1 常用辅助 - time_add
+# ===========================================================
+
+def time_add(start: Any, delta: float, unit: str = "days") -> Dict[str, Any]:
+    """时间加减计算：在基准时间上增加/减少偏移量"""
+    try:
+        # 1. 解析基准时间
+        start_dt = _parse_datetime_any(start)
+        if start_dt is None:
+            return {
+                "code": "ERR_TIME_ADD",
+                "data": None,
+                "message": f"无法解析基准时间: {start}"
+            }
+        
+        # 确保是offset-aware
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=timezone.utc).astimezone()
+        
+        # 2. 根据单位计算新时间
+        unit = unit.lower()
+        
+        if unit == "days":
+            new_dt = start_dt + timedelta(days=delta)
+        elif unit == "hours":
+            new_dt = start_dt + timedelta(hours=delta)
+        elif unit == "minutes":
+            new_dt = start_dt + timedelta(minutes=delta)
+        elif unit == "seconds":
+            new_dt = start_dt + timedelta(seconds=delta)
+        elif unit == "months":
+            # 月份计算（简化版：按30天计算）
+            new_dt = start_dt + timedelta(days=delta * 30)
+        else:
+            return {
+                "code": "ERR_TIME_ADD",
+                "data": None,
+                "message": f"不支持的单位: {unit}，可选: days/hours/minutes/seconds/months"
+            }
+        
+        # 3. 格式化返回
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "result_time": new_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                "iso": new_dt.isoformat(),
+                "timestamp": int(new_dt.timestamp()),
+                "tz": new_dt.strftime("%z").replace(":", ""),
+                "unit_used": unit,
+                "delta_used": delta,
+            },
+            "message": f"成功计算时间（{delta} {unit}后）"
+        }
+    
+    except Exception as e:
+        return {
+            "code": "ERR_TIME_ADD",
+            "data": None,
+            "message": f"时间加减失败: {str(e)}"
+        }
+
+
+    except Exception:
+            return None
 
 def _parse_datetime_string(date_str: str) -> Optional[datetime]:
     """解析日期字符串，支持多种格式"""
@@ -724,8 +789,8 @@ def _parse_datetime_string(date_str: str) -> Optional[datetime]:
                 dt = datetime(year, month, day, hour, minute, second)
                 return dt.astimezone()
             except Exception:
-                pass;
+                pass
         
-        return None;
+        return None
     except Exception:
-        return None;
+        return None

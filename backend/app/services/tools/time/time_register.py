@@ -28,6 +28,7 @@ from app.services.tools.time.time_schema import (
     TimeLocalToUtcInput,
     TimeIsWeekendInput,
     TimeIsHolidayInput,
+    TimeAddInput,
 )
 
 from app.services.tools.time.time_tools import (
@@ -40,6 +41,7 @@ from app.services.tools.time.time_tools import (
     time_local_to_utc,
     time_is_weekend,
     time_is_holiday,
+    time_add,
 )
 
 TIME_TOOL_DESCRIPTIONS = {
@@ -205,27 +207,52 @@ TIME_TOOL_DESCRIPTIONS = {
 注意：
 - 周六和周日被认为是周末
 - 使用ISO标准：Monday=1, Tuesday=2, ..., Sunday=7""",
-    "time_is_holiday": """检查给定日期是否为假日（仅支持3个固定节日）。
-
+    "time_is_holiday": """检查给定日期是否为假日（仅支持4个固定节日）。
+    
 使用场景：
-- 当用户问"明天是假期吗？"时使用此工具
-- 当用户问"这个日期是法定节假日吗？"时使用此工具
-- 当用户需要安排假期活动时使用
-- 当用户想要知道某天是否放假时使用
-
+    - 当用户问"明天是假期吗？"时使用此工具
+    - 当用户问"这个日期是法定节假日吗？"时使用此工具
+    - 当用户需要安排假期活动时使用
+    - 当用户想要知道某天是否放假时使用
+    
 参数说明：
-- date: 日期（时间戳、字符串、datetime）。如果为None则使用当前日期。可选参数，默认为None（当前日期）
-
+    - date: 日期（时间戳、字符串、datetime）。如果为None则使用当前日期。可选参数，默认为None（当前日期）
+    
 返回数据说明：
-- is_holiday: 是否为假日（True=是假日，False=不是假日）
-- date: 输入的日期
-- holiday_name: 假日名称
-
+    - is_holiday: 是否为假日（True=是假日，False=不是假日）
+    - date: 输入的日期
+    - holiday_name: 假日名称
+    
 注意：
-- 当前仅支持3个固定节日：元旦（1月1日）、劳动节（5月1日）、国庆节（10月1日）
-- 春节、清明、端午、中秋等农历假日未支持
-- 农历假日建议使用专门的节假日API""",
-}
+    - 当前支持4个固定节日：元旦（1月1日）、劳动节（5月1日）、国庆节（10月1日）、清明节（4月4或5日）
+    - 春节、端午、中秋等农历假日未支持
+    - 农历假日建议使用专门的节假日API""",
+    
+    "time_add": """时间加减计算：在基准时间上增加/减少偏移量。
+    
+使用场景：
+    - 当用户问"当前时间+3天"、"下个月今天"时使用此工具
+    - 当用户说"30分钟后提醒"需要计算目标时间时使用
+    - 当用户需要计算未来或过去时间时使用
+    - 当用户问"100天后是几号"时使用此工具
+    
+参数说明：
+    - start: 基准时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。必填参数
+    - delta: 偏移量（数字）。正数表示增加，负数表示减少。必填参数
+    - unit: 单位（days/hours/minutes/seconds/months）。默认为days。Agent 语义解析：'3天'→unit='days'，'2小时'→unit='hours'。可选参数，默认为days
+    
+返回数据说明：
+    - result_time: 计算后的时间字符串（默认格式）
+    - iso: ISO格式时间
+    - timestamp: Unix时间戳
+    - tz: 时区
+    - unit_used: 实际使用的单位
+    - delta_used: 实际使用的偏移量
+    
+注意：
+    - months单位按30天简化计算
+    - unit支持：days（天）、hours（小时）、minutes（分钟）、seconds（秒）、months（月）""",
+    }
 
 TIME_TOOL_EXAMPLES = {
     "get_current_time": [
@@ -275,6 +302,11 @@ TIME_TOOL_EXAMPLES = {
         {"date": "2026-10-01"},
         {"date": "2026-04-05"}
     ],
+    "time_add": [
+        {"start": "2026-05-04", "delta": 3, "unit": "days"},
+        {"start": 1777103094, "delta": 2, "unit": "hours"},
+        {"start": "2026-05-04 12:00:00", "delta": -30, "unit": "minutes"},
+    ],
 }
 
 
@@ -293,6 +325,7 @@ def _register_time_tools():
         "time_local_to_utc": time_local_to_utc,
         "time_is_weekend": time_is_weekend,
         "time_is_holiday": time_is_holiday,
+        "time_add": time_add,
     }
 
     TOOL_INPUT_MODELS = {
@@ -305,6 +338,7 @@ def _register_time_tools():
         "time_local_to_utc": TimeLocalToUtcInput,
         "time_is_weekend": TimeIsWeekendInput,
         "time_is_holiday": TimeIsHolidayInput,
+        "time_add": TimeAddInput,
     }
 
     for name, method in tool_methods.items():
