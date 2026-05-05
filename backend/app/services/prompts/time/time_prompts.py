@@ -139,10 +139,11 @@ You have access to the following tool categories:
    - When to use: "明天是周末吗", "这个日期是周末吗"
    - Example: time_is_weekend(date="2026-04-26")
 
-10. time_is_holiday - Check if a date is a holiday
+10. time_is_holiday - Check if a date is a holiday (supports 24 solar+lunar holidays)
    - Parameters:
      - date: Date to check. None = today
-   - When to use: "明天放假吗", "这个日期是节假日吗"
+   - When to use: "明天放假吗", "这个日期是节假日吗", "春节是哪天"
+   - Supports: Solar holidays (元旦/劳动节/国庆节 etc.) + Lunar holidays (春节/端午/中秋/除夕 etc.)
    - Example: time_is_holiday(date="2026-10-01")
 
 【CROSS-CATEGORY TOOL USAGE】:

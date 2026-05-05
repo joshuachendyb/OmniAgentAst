@@ -65,16 +65,19 @@ You have access to the following tools:
 
 【IMPORTANT】Parameter Naming Rules - MUST follow these exactly:
 - list_directory → use dir_path (NOT directory_path, NOT path)
-- read_file → use file_path (NOT filepath, NOT path)
-- write_file → use file_path (NOT filepath, NOT path)
+- read_text_file → use file_path (NOT filepath, NOT path)
+- write_text_file → use file_path AND text (NOT filepath, NOT path, NOT content)
 - delete_file → use file_path (NOT filepath, NOT path)
 - move_file → use source_path AND destination_path (NOT src, NOT dst, NOT source, NOT destination)
- - search_files → use file_pattern (NOT pattern)
- - grep_file_content → use pattern AND search_dir
+- search_files → use pattern AND search_dir (NOT file_pattern, NOT path)
+- grep_file_content → use pattern AND search_dir (NOT path, NOT file_pattern for glob)
 
 【FORBIDDEN parameter names - DO NOT use】:
 - ❌ directory_path (correct: dir_path)
 - ❌ filepath (correct: file_path)
+- ❌ content for write (correct: text)
+- ❌ file_pattern for search (correct: pattern)
+- ❌ path for search_dir (correct: search_dir)
 - ❌ src / source (correct: source_path)
 - ❌ dst / dest / destination (correct: destination_path)
 
@@ -82,48 +85,52 @@ You have access to the following tools:
 
 Available Tools:
 
-1. read_file(file_path, offset=1, limit=2000, encoding="utf-8")
-   Read file content with optional line offset and limit.
+1. read_text_file(file_path, head=None, tail=None, offset=None, limit=None, encoding=None)
+   Read text file content, supports head/tail/offset/limit modes. Always UTF-8.
    - file_path: Complete file path (MUST use file_path, NOT filepath or path)
-   - offset: Starting line number (1-indexed), default 1
-   - limit: Maximum lines to read, default 2000
+   - head: Read first N lines (cannot use with tail/offset)
+   - tail: Read last N lines (cannot use with head/offset)
+   - offset: Starting line number (1-indexed, cannot use with head/tail)
+   - limit: Maximum lines to read (use with offset)
    Example: {"file_path": "C:/Users/username/Documents/config.json", "offset": 1, "limit": 100}
 
-2. write_file(file_path, content, encoding="utf-8")
-   Write content to a file (overwrites if exists).
+2. write_text_file(file_path, text, encoding=None, append=False, create_parents=True, unescape=True)
+   Write or append text to a file (overwrites if exists, unless append=True).
    - file_path: Complete file path (MUST use file_path)
-   - content: Content to write
-   Example: {"file_path": "D:/project/config.json", "content": "{\"key\": \"value\"}"}
+   - text: Text content to write (MUST use text, NOT content)
+   - append: Append to file instead of overwrite, default False
+   Example: {"file_path": "D:/project/config.json", "text": "{\"key\": \"value\"}"}
 
-3. list_directory(dir_path, recursive=False, max_depth=10, page_size=100)
-   List directory contents.
+3. list_directory(dir_path, recursive=False, max_depth=10, sortBy=None, include_hidden=False)
+   List directory contents with file size, modification time.
    - dir_path: Complete directory path (MUST use dir_path, NOT directory_path or path)
    - recursive: Whether to list subdirectories, default False
    - max_depth: Maximum recursion depth (only when recursive=True), default 10
    Example: {"dir_path": "D:/project/code", "recursive": True, "max_depth": 3}
    Common use: When user says "查看D盘", "列出目录", "文件夹里有什么"
 
-4. delete_file(file_path, recursive=False)
-   Delete file or directory (auto backup to recycle bin).
+4. delete_file(file_path, recursive=False, force=False)
+   Delete file or directory. Default: move to recycle bin (safe). force=True: permanent delete.
    - file_path: Complete path to delete (MUST use file_path)
    - recursive: Required for non-empty directories, default False
+   - force: Permanent delete without recycle bin, default False
    Example: {"file_path": "C:/Users/username/temp.txt", "recursive": False}
 
-5. move_file(source_path, destination_path)
+5. move_file(source_path, destination_path, overwrite=False)
    Move or rename file/directory.
    - source_path: Source file/directory path (MUST use source_path)
    - destination_path: Target path (MUST use destination_path)
    Example: {"source_path": "C:/old/file.txt", "destination_path": "D:/new/file.txt"}
 
-5. search_files(file_pattern, path, recursive=True)
-   Search files by file name pattern.
-   - file_pattern: File name pattern with wildcard (e.g., "*.py", "config*") (REQUIRED)
-   - path: Starting directory for search (REQUIRED, CANNOT be empty)
+6. search_files(pattern, search_dir, recursive=True, max_depth=10, ignore_case=True)
+   Search files by file name pattern (glob supported, Chinese filenames supported).
+   - pattern: File name pattern with wildcard (e.g., "**/*.py", "config*") (REQUIRED)
+   - search_dir: Starting directory for search (REQUIRED, CANNOT be empty)
    - recursive: Whether to search subdirectories, default True
-   Example: {"file_pattern": "*.py", "path": "D:/project", "recursive": True}
+   Example: {"pattern": "**/*.py", "search_dir": "D:/project", "recursive": True}
 
-6. grep_file_content(pattern, search_dir=".", glob="*.py", ignore_case=True, head_limit=50)
-   Search files by content pattern (regex supported).
+7. grep_file_content(pattern, search_dir=None, glob=None, ignore_case=False, head_limit=None, show_line_no=True)
+   Search files by content pattern (regex supported, Chinese supported).
    - pattern: Regex search pattern (REQUIRED, CANNOT be empty)
    - search_dir: Starting directory for search, default current dir
    - glob: File name filter (e.g., "*.py"), default None
@@ -131,10 +138,29 @@ Available Tools:
    - head_limit: Max results to return, default None
    Example: {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py", "ignore_case": true}
 
-7. generate_report(output_dir=None)
+8. generate_report(output_dir=None)
    Generate operation report for current session.
    - output_dir: Output directory (optional)
    Example: {"output_dir": "C:/Users/username/Desktop"}
+
+9. precise_replace_in_file(file_path, old_string, new_string, replace_all=False)
+   Precise string replacement in text file. Supports Chinese content matching.
+   - file_path: File absolute path
+   - old_string: Exact text to find and replace
+   - new_string: Replacement text
+   Example: {"file_path": "D:/project/main.py", "old_string": "def old():", "new_string": "def new():"}
+
+10. edit_text_file(file_path, edits, dryRun=False)
+    Advanced multi-edit with pattern matching, supports dryRun preview.
+    - file_path: File path to edit
+    - edits: Array of {oldText, newText} edit operations
+    - dryRun: Preview only without modifying file, default False
+    Example: {"file_path": "D:/project/main.py", "edits": [{"oldText": "old", "newText": "new"}]}
+
+11. get_directory_tree(dir_path, excludePatterns=None, max_depth=None)
+    Get recursive JSON tree structure of directory.
+    - dir_path: Starting directory
+    Example: {"dir_path": "D:/project"}
 
 ---
 
@@ -154,27 +180,52 @@ Example 1: List directory
 Example 2: Read file
 {
     "thought": "User wants to read a config file",
-    "reasoning": "read_file是读取文件内容的唯一工具，需要设置file_path参数",
-    "tool_name": "read_file",
+    "reasoning": "read_text_file是读取文件内容的唯一工具，需要设置file_path参数",
+    "tool_name": "read_text_file",
     "tool_params": {
         "file_path": "C:/Users/username/config.json"  // ✅ CORRECT: uses file_path
     }
 }
-// ❌ WRONG: {"filepath": "..."} or {"path": "..."}
+// ❌ WRONG: {"filepath": "..."} or {"path": "..."} or tool_name="read_file"
 
-Example 3: Search file content
+Example 3: Write file
+{
+    "thought": "User wants to write content to a file",
+    "reasoning": "write_text_file是写入文件内容的工具，需要设置file_path和text参数",
+    "tool_name": "write_text_file",
+    "tool_params": {
+        "file_path": "D:/project/output.txt",
+        "text": "Hello World"  // ✅ CORRECT: uses text, NOT content
+    }
+}
+// ❌ WRONG: {"content": "..."} or tool_name="write_file"
+
+Example 4: Search files
+{
+    "thought": "User wants to search for Python files",
+    "reasoning": "search_files按文件名模式搜索，需要设置pattern和search_dir参数",
+    "tool_name": "search_files",
+    "tool_params": {
+        "pattern": "**/*.py",
+        "search_dir": "D:/project"  // ✅ CORRECT: uses pattern and search_dir
+    }
+}
+// ❌ WRONG: {"file_pattern": "*.py", "path": "D:/project"}
+
+Example 5: Search file content
 {
     "thought": "User wants to search for TODO comments in Python files",
     "reasoning": "grep_file_content支持正则搜索和多选项筛选，是搜索文件内容的最佳工具",
     "tool_name": "grep_file_content",
     "tool_params": {
         "pattern": "TODO",
-        "path": "D:/project",
-        "file_pattern": "*.py"
+        "search_dir": "D:/project",
+        "glob": "*.py"  // ✅ CORRECT: uses search_dir and glob
     }
 }
+// ❌ WRONG: {"path": "D:/project", "file_pattern": "*.py"}
 
-Example 4: Move file
+Example 6: Move file
 {
     "thought": "User wants to move file to new location",
     "reasoning": "move_file支持文件和目录移动，需要source_path和destination_path两个参数",
@@ -186,7 +237,7 @@ Example 4: Move file
 }
 // ❌ WRONG: {"src": "...", "dst": "..."}
 
-Example 5: Task completed
+Example 7: Task completed
 {
     "thought": "用户的任务已完成，我已列出D盘文件列表",
     "reasoning": "没有更多操作需要执行，任务结束",
@@ -211,7 +262,7 @@ Example 5: Task completed
 - All operations are tracked and can be rolled back
 - Search operations are read-only and safe
 - Be careful with write operations (overwrites existing content)
-- ❌ CRITICAL: When using write_file to modify an existing file, you MUST provide the COMPLETE new content, not just a summary or your thought process. Writing a short text to a large file will be REJECTED by data protection. If you only need to change part of a file, use precise_replace_in_file instead.
+- ❌ CRITICAL: When using write_text_file to modify an existing file, you MUST provide the COMPLETE new content, not just a summary or your thought process. Writing a short text to a large file will be REJECTED by data protection. If you only need to change part of a file, use precise_replace_in_file instead.
 
 ---
 
@@ -227,11 +278,11 @@ Always format responses as JSON:
     }
 }
 
-【⚠️ write_file content规则 - 极其重要】:
-- content参数必须传入实际的文件内容（代码、文本、正文等）
-- ❌ 绝对禁止将你的思考/计划/状态确认当作content传入
-- ❌ 错误示例: content="已成功创建并写入第一章，需要继续创建第二章"
-- ✅ 正确示例: content="第一章：觉醒
+【⚠️ write_text_file text规则 - 极其重要】:
+- text参数必须传入实际的文件内容（代码、文本、正文等）
+- ❌ 绝对禁止将你的思考/计划/状态确认当作text传入
+- ❌ 错误示例: text="已成功创建并写入第一章，需要继续创建第二章"
+- ✅ 正确示例: text="第一章：觉醒
 
 林凡是一名普通的大学生..."
 
@@ -398,17 +449,23 @@ Warning: Rollback operations cannot be undone. Be certain before proceeding."""
 
 Correct parameter names to use:
 - list_directory: dir_path
-- read_file: file_path
-- write_file: file_path
+- read_text_file: file_path
+- write_text_file: file_path, text
 - delete_file: file_path
 - move_file: source_path, destination_path
+- search_files: pattern, search_dir
 - grep_file_content: pattern, search_dir
+- precise_replace_in_file: file_path, old_string, new_string
 
 Common mistakes to avoid:
 - ❌ directory_path (use: dir_path)
 - ❌ filepath (use: file_path)
+- ❌ content for write (use: text)
+- ❌ file_pattern for search (use: pattern)
+- ❌ path for search_dir (use: search_dir)
 - ❌ src/dst (use: source_path/destination_path)
-- ❌ path for read/write (use: file_path)"""
+- ❌ read_file (use: read_text_file)
+- ❌ write_file (use: write_text_file)"""
 
     def get_llm_response_schema(self) -> Dict[str, Any]:
         """

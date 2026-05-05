@@ -111,6 +111,10 @@ class BaseAgent(ABC):
         self.parse_retry_count = 0  # 解析重试计数器
         self.max_parse_retries = 3   # 最大重试次数
         
+        # 【修复 2026-05-05 小沈】空响应重试相关参数
+        self.empty_response_retry_count = 0  # 空响应重试计数器
+        self.max_empty_response_retries = 2  # 空响应最大重试次数（截断历史后重试）
+        
         # 【Phase1修复】从registry加载工具
         self._tools_dict = self._load_tools()
         
@@ -298,12 +302,38 @@ class BaseAgent(ABC):
                 
                 # ===== 场景2：LLM返回空响应 =====
                 if not response:
-                    logger.error(f"LLM返回空响应: {response}")
-                    # 【步骤3.2】直接ErrorStep→return
+                    self.empty_response_retry_count += 1
+                    logger.error(
+                        f"[空响应] LLM返回空响应 (第{self.empty_response_retry_count}次重试), "
+                        f"history长度={len(self.conversation_history)}"
+                    )
+                    
+                    if self.empty_response_retry_count <= self.max_empty_response_retries:
+                        # 【修复 2026-05-05 小沈】截断历史重试
+                        original_len = len(self.conversation_history)
+                        if original_len > 4:
+                            # 保留system prompt(前2条) + 最近2条，删除中间的
+                            kept = self.conversation_history[:2] + self.conversation_history[-2:]
+                            removed_len = original_len - len(kept)
+                            self.conversation_history = kept
+                            logger.warning(
+                                f"[空响应截断历史] 从{original_len}条截断到{len(kept)}条, "
+                                f"移除{removed_len}条中间历史, 准备重试"
+                            )
+                            # 发送重试提示事件
+                            retrying_data = create_incident_data(
+                                incident_value="retrying",
+                                message=f"AI返回空响应，已压缩对话历史重试（第{self.empty_response_retry_count}次）"
+                            )
+                            yield retrying_data
+                            continue
+                        else:
+                            logger.warning("[空响应] 历史已很短无法截断，直接报错")
+                    # 重试次数用尽或历史太短，报错退出
                     error_step = StepFactory.create_error_step(
                         step=step_count,
                         error_type="empty_response",
-                        error_message="AI服务返回空响应",
+                        error_message=f"AI服务返回空响应（已重试{self.empty_response_retry_count}次）",
                         recoverable=False
                     )
                     self.steps.append(error_step)
@@ -313,6 +343,9 @@ class BaseAgent(ABC):
                 
                 # ===== 场景4：解析响应并获取结果 =====  # 修复 2026-04-15 小沈
                 parsed = parse_react_response(response)
+                
+                # 【修复 2026-05-05 小沈】成功获取响应，重置空响应计数器
+                self.empty_response_retry_count = 0
                 
                 # ===== 先获取 parsed 结果 =====
                 thought_content = parsed.get("content", "")
@@ -731,24 +764,101 @@ class BaseAgent(ABC):
 
     # ===== 通用方法 =====
 
-    # 【修复 2026-05-05 小沈】observation最大长度，超出截断避免撑爆上下文窗口
-    MAX_OBSERVATION_LENGTH = 30000
+    # 【升级 2026-05-05 小沈】智能observation截断策略
+    # 方案D: 首尾保留+智能摘要 + 动态递减预算
+    CONTEXT_WINDOW_SIZE = 200000  # 上下文窗口大小（字符数，约200K tokens）
+    OBSERVATION_BUDGET_INITIAL = 150000  # 第1轮observation最大长度
+    OBSERVATION_BUDGET_DECAY = 10000  # 每增加1轮，预算减少10K
+    OBSERVATION_BUDGET_MIN = 20000  # 最低预算，不低于20K
+    OBSERVATION_HEAD_RATIO = 0.6  # 头部保留比例（60%给头部，40%给尾部）
+    OBSERVATION_SUMMARY_THRESHOLD = 50000  # 超过此长度时启用智能摘要
+
+    def _get_observation_budget(self) -> int:
+        """根据当前轮数动态计算observation可用预算
+
+        策略：初始150K，每轮递减10K，最低20K
+        轮数越多，history越长，留给新observation的空间越小
+        """
+        budget = self.OBSERVATION_BUDGET_INITIAL - (self.llm_call_count * self.OBSERVATION_BUDGET_DECAY)
+        budget = max(budget, self.OBSERVATION_BUDGET_MIN)
+        return budget
+
+    @staticmethod
+    def _smart_truncate(content: str, budget: int, head_ratio: float = 0.6) -> str:
+        """智能截断：首尾保留 + 中间摘要
+
+        策略：
+        1. 内容在预算内 → 原样返回
+        2. 内容超预算但<摘要阈值 → 首部保留budget，末尾附截断提示
+        3. 内容超摘要阈值 → 首部保留head_ratio*budget，
+           尾部保留(1-head_ratio)*budget，中间替换为摘要
+
+        Args:
+            content: 原始内容
+            budget: 本次允许的最大字符数
+            head_ratio: 头部保留比例，默认0.6
+
+        Returns:
+            截断后的内容
+        """
+        original_len = len(content)
+
+        if original_len <= budget:
+            return content
+
+        head_size = int(budget * head_ratio)
+        tail_size = budget - head_size
+
+        # 计算中间省略了多少
+        middle_len = original_len - head_size - tail_size
+
+        # 估算省略的行数
+        head_part = content[:head_size]
+        tail_part = content[-tail_size:]
+        total_lines = content.count('\n') + 1
+        head_lines = head_part.count('\n') + 1
+        tail_lines = tail_part.count('\n') + 1
+        omitted_lines = total_lines - head_lines - tail_lines
+
+        # 构建摘要
+        if omitted_lines > 0:
+            summary = f"\n\n... [省略 {middle_len} 字符, 约 {omitted_lines} 行] ...\n\n"
+        else:
+            summary = f"\n\n... [省略 {middle_len} 字符] ...\n\n"
+
+        truncated = head_part + summary + tail_part
+        return truncated
 
     def _add_observation_to_history(self, observation: str) -> None:
         """添加观察结果到对话历史
-        
-        【修复 2026-05-05 小沈】observation过大时截断，
-        避免超出LLM上下文窗口导致空响应。
-        阈值30000字符，超出时保留前面部分+截断提示。
+
+        【升级 2026-05-05 小沈】智能截断策略：
+        - 动态预算：第1轮150K，每轮递减10K，最低20K
+        - 首尾保留：保留头部（结构/开头信息）+ 尾部（结果/错误信息）
+        - 中间摘要：省略部分用字符数+行数摘要替代
+        - 上下文保护：总observation不超过上下文窗口
         """
-        if len(observation) > self.MAX_OBSERVATION_LENGTH:
-            truncated = observation[:self.MAX_OBSERVATION_LENGTH]
-            truncated += f"\n\n[⚠️ 内容过长已截断] 原始长度{len(observation)}字符，保留前{self.MAX_OBSERVATION_LENGTH}字符。如需查看完整内容，请使用read_file工具读取。"
+        budget = self._get_observation_budget()
+
+        if len(observation) > budget:
+            truncated = self._smart_truncate(
+                observation,
+                budget=budget,
+                head_ratio=self.OBSERVATION_HEAD_RATIO
+            )
             logger.warning(
-                f"[observation截断] 原始长度={len(observation)}, "
-                f"截断后={len(truncated)}, 阈值={self.MAX_OBSERVATION_LENGTH}"
+                f"[智能截断] 轮数={self.llm_call_count}, "
+                f"原始长度={len(observation)}, "
+                f"预算={budget}, "
+                f"截断后={len(truncated)}, "
+                f"策略=首尾保留(头{int(self.OBSERVATION_HEAD_RATIO*100)}%+尾{int((1-self.OBSERVATION_HEAD_RATIO)*100)}%)"
             )
             observation = truncated
+        else:
+            logger.info(
+                f"[observation] 轮数={self.llm_call_count}, "
+                f"长度={len(observation)}, 预算={budget}, 无需截断"
+            )
         self.conversation_history.append({"role": "user", "content": observation})
         self._trim_history()
 
