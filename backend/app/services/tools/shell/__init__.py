@@ -26,6 +26,10 @@ from app.services.tools.shell.shell_tools import (
     get_working_directory,
     change_directory,
     check_path_exists,
+    check_command_available,
+    locate_command,
+    get_shell_output,
+    terminate_shell,
 )
 
 __all__ = [
@@ -33,4 +37,8 @@ __all__ = [
     "get_working_directory",
     "change_directory",
     "check_path_exists",
+    "check_command_available",
+    "locate_command",
+    "get_shell_output",
+    "terminate_shell",
 ]

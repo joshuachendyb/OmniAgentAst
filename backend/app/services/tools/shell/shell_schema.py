@@ -115,6 +115,8 @@ __all__ = [
     "GetWorkingDirectoryInput",
     "ChangeDirectoryInput",
     "CheckPathExistsInput",
+    "CheckCommandAvailableInput",
+    "LocateCommandInput",
     "GetShellOutputInput",
     "TerminateShellInput",
 ]

@@ -29,6 +29,7 @@ import subprocess
 import signal
 import re
 import uuid
+import shutil
 from typing import Optional, Dict, Any
 from datetime import datetime
 
@@ -63,8 +64,9 @@ def execute_shell_command(
     # run_as_admin: 标记但 subprocess 不支持提权，实际执行受限于当前进程权限
     # 如果需要提权，需要使用 ctypes.win32api 或其他方式
     if run_as_admin:
-        env = env or {}
-        env["_RUN_AS_ADMIN"] = "1"  # 标记，后续可扩展实现
+        if env is None:
+            env = os.environ.copy()
+        env["_RUN_AS_ADMIN"] = "1"
     
     # encoding: 使用指定的编码或默认 utf-8
     use_encoding = encoding if encoding else "utf-8"
@@ -133,17 +135,25 @@ def execute_shell_command(
                 message = "命令执行成功（有警告输出）"
             else:
                 message = "命令执行成功"
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "stdout": stdout_str,
+                    "stderr": stderr_str,
+                    "returncode": result.returncode
+                },
+                "message": message
+            }
         else:
-            message = f"命令执行完成（退出码{result.returncode}）"
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "stdout": stdout_str,
-                "stderr": stderr_str,
-                "returncode": result.returncode
-            },
-            "message": message
-        }
+            return {
+                "code": "ERR_SHELL_EXEC",
+                "data": {
+                    "stdout": stdout_str,
+                    "stderr": stderr_str,
+                    "returncode": result.returncode
+                },
+                "message": f"命令执行失败（退出码{result.returncode}）"
+            }
     except subprocess.TimeoutExpired as e:
         return {
             "code": "ERR_SHELL_TIMEOUT",
@@ -241,7 +251,6 @@ def check_command_available(command: str) -> dict:
     
     类似 which 或 where 命令，检查系统命令是否存在且可执行。
     """
-    import shutil
     try:
         cmd_path = shutil.which(command)
         available = cmd_path is not None
@@ -279,7 +288,6 @@ def locate_command(command: str) -> dict:
     类似于 'where' 命令，列出命令的所有可能位置。
     Windows 上会查找 PATH 环境变量中的所有目录。
     """
-    import shutil
     try:
         # 使用 shutil.which 只能找到第一个，使用 shell 来模拟 where 命令
         if os.name == 'nt':
@@ -287,7 +295,7 @@ def locate_command(command: str) -> dict:
                 ['where', command],
                 capture_output=True,
                 text=True,
-                shell=True
+                shell=False
             )
             if result.returncode == 0:
                 paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
@@ -346,6 +354,43 @@ def locate_command(command: str) -> dict:
         }
 
 
+def _read_stream_nonblocking(stream, encoding: str = "utf-8") -> str:
+    """非阻塞读取子进程输出流 - 小沈 2026-05-05
+    
+    如果进程已结束，读取全部输出；
+    如果进程仍在运行，读取当前可用的输出而不阻塞。
+    """
+    if stream is None:
+        return ""
+    
+    import io
+    try:
+        if hasattr(stream, 'read1'):
+            bytes_data = b""
+            while True:
+                chunk = stream.read1(4096)
+                if not chunk:
+                    break
+                bytes_data += chunk
+        else:
+            bytes_data = stream.read()
+    except (IOError, OSError):
+        return ""
+    
+    if not bytes_data:
+        return ""
+    
+    try:
+        return bytes_data.decode(encoding)
+    except UnicodeDecodeError:
+        for fallback_enc in ["utf-8", "gbk", "gb2312", "latin-1"]:
+            try:
+                return bytes_data.decode(fallback_enc)
+            except UnicodeDecodeError:
+                continue
+        return bytes_data.decode("latin-1")
+
+
 def get_shell_output(
     shell_id: str,
     filter: Optional[str] = None,
@@ -374,32 +419,8 @@ def get_shell_output(
         
         enc = encoding or "utf-8"
         
-        stdout_text = ""
-        stderr_text = ""
-        
-        if process.stdout:
-            stdout_bytes = process.stdout.read()
-            try:
-                stdout_text = stdout_bytes.decode(enc)
-            except UnicodeDecodeError:
-                for fallback_enc in ["utf-8", "gbk", "gb2312", "latin-1"]:
-                    try:
-                        stdout_text = stdout_bytes.decode(fallback_enc)
-                        break
-                    except UnicodeDecodeError:
-                        continue
-        
-        if process.stderr:
-            stderr_bytes = process.stderr.read()
-            try:
-                stderr_text = stderr_bytes.decode(enc)
-            except UnicodeDecodeError:
-                for fallback_enc in ["utf-8", "gbk", "gb2312", "latin-1"]:
-                    try:
-                        stderr_text = stderr_bytes.decode(fallback_enc)
-                        break
-                    except UnicodeDecodeError:
-                        continue
+        stdout_text = _read_stream_nonblocking(process.stdout, enc)
+        stderr_text = _read_stream_nonblocking(process.stderr, enc)
         
         stdout_lines = stdout_text.splitlines() if stdout_text else []
         stderr_lines = stderr_text.splitlines() if stderr_text else []
