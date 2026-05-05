@@ -30,12 +30,16 @@ from app.services.tools.data_analysis.data_analysis_schema import (
     ReadCsvDataframeInput,
     GenerateChartInput,
     AnalyzeDataInput,
+    ReadExcelDataframeInput,
+    FilterDataInput,
 )
 
 from app.services.tools.data_analysis.data_analysis_tools import (
     read_csv_dataframe,
     generate_chart,
     analyze_data,
+    read_excel_dataframe,
+    filter_data,
 )
 
 
@@ -53,7 +57,7 @@ DESCRIPTIONS = {
 - delimiter：分隔符（可选）。Agent根据文件内容自动检测，CSV→逗号，TSV→制表符，中文CSV常用分号。默认 ,
 - has_header：是否有表头（可选）。Agent分析第一行是否为表头，自动判断。默认 True
 - max_rows：最大读取行数（可选）。Agent根据文件大小自动调整，大文件→500，小文件→2000。默认 1000
-- use_cols：选择列（可选）。指定要读取的列名列表，如 ["name", "age", "score"]
+- usecols：选择列（可选）。指定要读取的列名列表，如 ["name", "age", "score"]
 - skip_rows：跳过行数（可选）。跳过文件开头的N行。默认 0
 
 【重要】需要安装 pandas 库（pip install pandas）
@@ -109,6 +113,49 @@ DESCRIPTIONS = {
 - code: 状态码（SUCCESS/ERR_ANALYZE_DATA/ERR_NO_PANDAS）
 - data: 统计分析结果（包含row_count、columns、statistics/grouped_statistics等）
 - message: 操作结果消息""",
+
+    "read_excel_dataframe": """使用 pandas 读取 Excel 文件并进行数据分析，返回 DataFrame 格式支持后续统计分析。
+
+使用场景：
+- 当用户需要读取 Excel 文件并进行数据分析时使用
+- 当用户说"帮我分析这个Excel"时使用
+- 当用户想要对Excel表格数据进行统计、筛选时使用
+
+参数说明：
+- file_path：Excel 文件路径（必填）。如 D:/data/sales.xlsx
+- sheet_name：工作表名称（可选）。默认第一个工作表
+- max_rows：最大读取行数（可选）。默认 1000
+- usecols：选择列（可选）。如 ["name", "age", "score"]
+- skip_rows：跳过行数（可选）。默认 0
+
+【重要】需要安装 pandas + openpyxl 库
+
+返回数据说明：
+- code: 状态码（SUCCESS/ERR_READ_EXCEL_DATAFRAME/ERR_NO_PANDAS/ERR_NO_OPENPYXL）
+- data: 包含columns、rows、row_count、dtypes的字典
+- message: 操作结果消息""",
+
+    "filter_data": """按条件筛选/过滤数据，支持多条件组合。
+
+使用场景：
+- 当用户说"筛选年龄大于30的记录"时使用
+- 当用户说"找出销售额前10的产品"时使用
+- 当用户说"只看北京的数据"时使用
+- 当用户需要按条件过滤数据时使用
+
+参数说明：
+- data：要筛选的数据（必填）。可以是数组或CSV/Excel文件路径
+- conditions：筛选条件列表（必填）。每个条件: {"column": "列名", "operator": "操作符", "value": 值}
+  - 操作符: eq(等于), ne(不等于), gt(大于), gte(大于等于), lt(小于), lte(小于等于), in(在列表中), contains(包含文本), not_contains(不包含文本)
+- select_columns：选择返回的列（可选）。如 ["name", "age"]
+- sort_by：排序字段（可选）
+- sort_ascending：升序/降序（可选）。默认True升序
+- top_n：返回前N条（可选）
+
+返回数据说明：
+- code: 状态码（SUCCESS/ERR_FILTER_DATA）
+- data: 包含columns、rows、row_count、original_count、filtered_count
+- message: 操作结果消息""",
 }
 
 
@@ -125,6 +172,14 @@ EXAMPLES = {
         {"data": [{"name": "A", "value": 10}, {"name": "B", "value": 20}]},
         {"data": "D:/data/users.csv", "operations": ["mean", "max"]},
     ],
+    "read_excel_dataframe": [
+        {"file_path": "D:/data/sales.xlsx"},
+        {"file_path": "D:/data/sales.xlsx", "sheet_name": "Sheet2", "max_rows": 500},
+    ],
+    "filter_data": [
+        {"data": [{"name": "A", "age": 25}, {"name": "B", "age": 35}], "conditions": [{"column": "age", "operator": "gt", "value": 30}]},
+        {"data": "D:/data/users.csv", "conditions": [{"column": "city", "operator": "eq", "value": "北京"}], "sort_by": "age", "top_n": 10},
+    ],
 }
 
 
@@ -132,6 +187,8 @@ TOOL_INPUT_MODELS = {
     "read_csv_dataframe": ReadCsvDataframeInput,
     "generate_chart": GenerateChartInput,
     "analyze_data": AnalyzeDataInput,
+    "read_excel_dataframe": ReadExcelDataframeInput,
+    "filter_data": FilterDataInput,
 }
 
 
@@ -144,6 +201,8 @@ def _register_data_analysis_tools():
         "read_csv_dataframe": read_csv_dataframe,
         "generate_chart": generate_chart,
         "analyze_data": analyze_data,
+        "read_excel_dataframe": read_excel_dataframe,
+        "filter_data": filter_data,
     }
 
     for name, func in tool_methods.items():
@@ -171,4 +230,6 @@ __all__ = [
     "read_csv_dataframe",
     "generate_chart",
     "analyze_data",
+    "read_excel_dataframe",
+    "filter_data",
 ]

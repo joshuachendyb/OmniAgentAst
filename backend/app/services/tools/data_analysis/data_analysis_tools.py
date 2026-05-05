@@ -15,8 +15,11 @@
 - read_csv_dataframe: 使用pandas读取CSV文件并返回DataFrame格式数据
 - generate_chart: 使用matplotlib生成数据可视化图表
 - analyze_data: 对数据集进行统计分析
+- read_excel_dataframe: 使用pandas读取Excel文件并返回DataFrame格式数据
+- filter_data: 按条件筛选/过滤数据
 
 Author: 小沈 - 2026-05-02
+【新增 2026-05-05 小沈】read_excel_dataframe, filter_data
 """
 
 import os
@@ -323,4 +326,216 @@ def analyze_data(
             "code": "ERR_ANALYZE_DATA",
             "data": None,
             "message": f"数据分析失败: {str(e)}"
+        }
+
+
+def _check_openpyxl() -> bool:
+    """检查openpyxl是否可用 - 小沈 2026-05-05"""
+    try:
+        importlib.import_module("openpyxl")
+        return True
+    except ImportError:
+        return False
+
+
+def read_excel_dataframe(
+    file_path: str,
+    sheet_name: str = None,
+    max_rows: int = 1000,
+    usecols: List[str] = None,
+    skip_rows: int = 0
+) -> Dict[str, Any]:
+    """使用pandas读取Excel文件返回DataFrame格式数据 - 小沈 2026-05-05"""
+    if not _check_pandas():
+        return {
+            "code": "ERR_NO_PANDAS",
+            "data": None,
+            "message": "pandas库未安装，请先执行: pip install pandas openpyxl"
+        }
+
+    if not _check_openpyxl():
+        return {
+            "code": "ERR_NO_OPENPYXL",
+            "data": None,
+            "message": "openpyxl库未安装，请先执行: pip install openpyxl"
+        }
+
+    try:
+        import pandas as pd
+
+        path = Path(file_path)
+        if not path.exists():
+            return {
+                "code": "ERR_READ_EXCEL_DATAFRAME",
+                "data": None,
+                "message": f"文件不存在: {file_path}"
+            }
+
+        df = pd.read_excel(
+            path,
+            sheet_name=sheet_name,
+            nrows=max_rows,
+            usecols=usecols,
+            skiprows=skip_rows,
+            engine="openpyxl"
+        )
+
+        columns = df.columns.tolist()
+        rows = df.values.tolist()
+        dtypes = {col: str(dtype) for col, dtype in df.dtypes.items()}
+
+        serialized_rows = []
+        for row in rows:
+            serialized_row = []
+            for val in row:
+                if pd.isna(val):
+                    serialized_row.append(None)
+                elif hasattr(val, 'item'):
+                    serialized_row.append(val.item())
+                else:
+                    serialized_row.append(val)
+            serialized_rows.append(serialized_row)
+
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "columns": columns,
+                "rows": serialized_rows,
+                "row_count": len(serialized_rows),
+                "dtypes": dtypes,
+                "sheet_name": sheet_name or "default",
+            },
+            "message": f"成功读取Excel文件: {file_path}，共 {len(serialized_rows)} 行数据"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_READ_EXCEL_DATAFRAME",
+            "data": None,
+            "message": f"读取Excel文件失败: {str(e)}"
+        }
+
+
+def filter_data(
+    data: Union[str, List[Dict[str, Any]]],
+    conditions: List[Dict[str, Any]],
+    select_columns: List[str] = None,
+    sort_by: str = None,
+    sort_ascending: bool = True,
+    top_n: int = None
+) -> Dict[str, Any]:
+    """按条件筛选/过滤数据 - 小沈 2026-05-05"""
+    if not _check_pandas():
+        return {
+            "code": "ERR_NO_PANDAS",
+            "data": None,
+            "message": "pandas库未安装，请先执行: pip install pandas"
+        }
+
+    try:
+        import pandas as pd
+
+        if isinstance(data, str):
+            path = Path(data)
+            if not path.exists():
+                return {
+                    "code": "ERR_FILTER_DATA",
+                    "data": None,
+                    "message": f"文件不存在: {data}"
+                }
+            if data.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(data, engine="openpyxl" if data.endswith('.xlsx') else None)
+            else:
+                df = pd.read_csv(data)
+        elif isinstance(data, list):
+            df = pd.DataFrame(data)
+        else:
+            return {
+                "code": "ERR_FILTER_DATA",
+                "data": None,
+                "message": "data参数必须是文件路径或数据数组"
+            }
+
+        original_count = len(df)
+
+        operator_map = {
+            "eq": "__eq__",
+            "ne": "__ne__",
+            "gt": "__gt__",
+            "gte": "__ge__",
+            "lt": "__lt__",
+            "lte": "__le__",
+        }
+
+        mask = pd.Series([True] * len(df), index=df.index)
+
+        for cond in conditions:
+            column = cond.get("column")
+            operator = cond.get("operator", "eq")
+            value = cond.get("value")
+
+            if column not in df.columns:
+                continue
+
+            if operator in operator_map:
+                try:
+                    col_values = df[column].astype(float)
+                    value = float(value)
+                    cond_mask = getattr(col_values, operator_map[operator])(value)
+                except (ValueError, TypeError):
+                    cond_mask = getattr(df[column], operator_map[operator])(value)
+            elif operator == "in":
+                cond_mask = df[column].isin(value if isinstance(value, list) else [value])
+            elif operator == "contains":
+                cond_mask = df[column].astype(str).str.contains(str(value), na=False)
+            elif operator == "not_contains":
+                cond_mask = ~df[column].astype(str).str.contains(str(value), na=False)
+            else:
+                continue
+
+            mask = mask & cond_mask
+
+        filtered_df = df[mask]
+
+        if select_columns:
+            available_cols = [c for c in select_columns if c in filtered_df.columns]
+            if available_cols:
+                filtered_df = filtered_df[available_cols]
+
+        if sort_by and sort_by in filtered_df.columns:
+            filtered_df = filtered_df.sort_values(by=sort_by, ascending=sort_ascending)
+
+        if top_n and top_n > 0:
+            filtered_df = filtered_df.head(top_n)
+
+        columns = filtered_df.columns.tolist()
+        rows = filtered_df.values.tolist()
+        serialized_rows = []
+        for row in rows:
+            serialized_row = []
+            for val in row:
+                if pd.isna(val):
+                    serialized_row.append(None)
+                elif hasattr(val, 'item'):
+                    serialized_row.append(val.item())
+                else:
+                    serialized_row.append(val)
+            serialized_rows.append(serialized_row)
+
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "columns": columns,
+                "rows": serialized_rows,
+                "row_count": len(serialized_rows),
+                "original_count": original_count,
+                "filtered_count": len(serialized_rows),
+                "filter_ratio": f"{len(serialized_rows)}/{original_count}",
+            },
+            "message": f"筛选完成: {original_count}行 → {len(serialized_rows)}行 (条件: {len(conditions)}个)"
+        }
+    except Exception as e:
+        return {
+            "code": "ERR_FILTER_DATA",
+            "data": None,
+            "message": f"数据筛选失败: {str(e)}"
         }

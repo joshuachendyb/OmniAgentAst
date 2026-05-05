@@ -7,13 +7,15 @@ Document Register - 文档读写工具注册点
 - 实际工具实现在 document_tools.py 中
 - 使用 registry.py 的 tool_registry.register() 显式注册
 
-【工具列表】（共6个）
+【工具列表】（共8个）
 1. read_pdf - 读取PDF文件
 2. read_docx - 读取Word文档
 3. read_xlsx - 读取Excel文件
 4. write_docx - 写入Word文档
 5. write_xlsx - 写入Excel文件
 6. read_pptx - 读取PPT幻灯片
+7. write_pdf - 写入PDF文档
+8. convert_document - 文档格式转换
 
 【注册说明】
 - 使用 Pydantic 模型注册，自动生成 OpenAI Schema
@@ -34,6 +36,9 @@ from app.services.tools.document.document_schema import (
     WriteDocxInput,
     WriteXlsxInput,
     ReadPptxInput,
+    WritePdfInput,
+    WritePptxInput,
+    ConvertDocumentInput,
 )
 
 from app.services.tools.document.document_tools import (
@@ -43,6 +48,9 @@ from app.services.tools.document.document_tools import (
     write_docx,
     write_xlsx,
     read_pptx,
+    write_pdf,
+    convert_document,
+    write_pptx,
 )
 
 DESCRIPTIONS = {
@@ -165,6 +173,64 @@ DESCRIPTIONS = {
 - message: 操作结果消息
 
 【依赖库】python-pptx（pip install python-pptx）""",
+
+    "write_pdf": """写入 PDF 文档，支持标题、段落、表格。
+
+【使用场景】
+- 当用户需要生成PDF报告时使用
+- 当用户需要导出为PDF格式时使用
+- 当用户需要创建包含表格的PDF文档时使用
+
+【参数说明】
+- file_path：输出PDF文件路径（必填）
+- title：文档标题（可选）
+- content：正文内容（可选）
+- paragraphs：段落列表（可选），如 ["第一段", "第二段"]
+- table_data：表格数据二维数组（可选），如 [["列1", "列2"], ["值1", "值2"]]
+
+【返回数据】
+- code: SUCCESS / ERR_WRITE_PDF / ERR_NO_REPORTLAB
+- data: { file_path }
+- message: 操作结果消息
+
+【依赖库】reportlab（pip install reportlab）""",
+
+    "convert_document": """文档格式转换（docx/xlsx/pptx → PDF）。
+ 
+【使用场景】
+- 当用户需要将Word/Excel/PPT转换为PDF时使用
+- 当用户说"把这个docx转成pdf"时使用
+- 当用户需要分享不可编辑的文档时使用
+ 
+【参数说明】
+- input_path：输入文件路径（必填）。支持 .docx/.doc/.xlsx/.xls/.pptx/.ppt/.odt/.ods
+- output_format：目标格式（必填）。当前仅支持 "pdf"
+- output_path：输出文件路径（可选）。默认与输入同目录
+ 
+【返回数据】
+- code: SUCCESS / ERR_CONVERT_DOCUMENT / ERR_NO_LIBREOFFICE
+- data: { input_path, output_path }
+- message: 操作结果消息
+ 
+【重要】需要安装LibreOffice（https://www.libreoffice.org/download/）""",
+    "write_pptx": """写入 PPT 幻灯片。
+ 
+【使用场景】
+- 当用户需要生成PPT演示文稿时使用
+- 当用户需要创建幻灯片时使用
+- 当用户需要导出PPT文件时使用
+ 
+【参数说明】
+- file_path：输出文件路径（必填）
+- title：演示文稿标题（可选）
+- slides：幻灯片内容列表（可选），每个元素是一个字典，包含 title 和 content
+ 
+【返回数据】
+- code: SUCCESS / ERR_WRITE_PPTX / ERR_NO_PPTX
+- data: { file_path, slide_count }
+- message: 操作结果消息
+ 
+【依赖库】python-pptx（pip install python-pptx）""",
 }
 
 EXAMPLES = {
@@ -195,6 +261,15 @@ EXAMPLES = {
         {"file_path": "D:/documents/presentation.pptx"},
         {"file_path": "D:/documents/presentation.pptx", "extract_notes": True},
     ],
+    "write_pdf": [
+        {"file_path": "D:/output/report.pdf", "title": "测试报告", "content": "这是报告内容"},
+        {"file_path": "D:/output/data.pdf", "paragraphs": ["第一段", "第二段"]},
+        {"file_path": "D:/output/table.pdf", "title": "数据表", "table_data": [["Name", "Age"], ["张三", "25"], ["李四", "30"]]},
+    ],
+    "convert_document": [
+        {"input_path": "D:/documents/report.docx", "output_format": "pdf"},
+        {"input_path": "D:/data/sales.xlsx", "output_format": "pdf", "output_path": "D:/output/sales.pdf"},
+    ],
 }
 
 TOOL_INPUT_MODELS = {
@@ -204,6 +279,8 @@ TOOL_INPUT_MODELS = {
     "write_docx": WriteDocxInput,
     "write_xlsx": WriteXlsxInput,
     "read_pptx": ReadPptxInput,
+    "write_pdf": WritePdfInput,
+    "convert_document": ConvertDocumentInput,
 }
 
 TOOL_IMPLEMENTATIONS = {
@@ -213,6 +290,9 @@ TOOL_IMPLEMENTATIONS = {
     "write_docx": write_docx,
     "write_xlsx": write_xlsx,
     "read_pptx": read_pptx,
+    "write_pdf": write_pdf,
+    "write_pptx": write_pptx,
+    "convert_document": convert_document,
 }
 
 
@@ -249,4 +329,6 @@ __all__ = [
     "write_docx",
     "write_xlsx",
     "read_pptx",
+    "write_pdf",
+    "convert_document",
 ]

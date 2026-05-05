@@ -121,3 +121,59 @@ class ReadPptxInput(BaseModel):
         default=False,
         description="是否提取演讲备注"
     )
+
+
+class WritePdfInput(BaseModel):
+    """write_pdf 工具的输入参数 - 小沈 2026-05-05"""
+    file_path: str = Field(
+        ...,
+        description="输出PDF文件路径。如 D:/output/report.pdf"
+    )
+    title: Optional[str] = Field(
+        default=None,
+        description="文档标题"
+    )
+    content: Optional[str] = Field(
+        default=None,
+        description="正文内容（纯文本）"
+    )
+    paragraphs: Optional[list] = Field(
+        default=None,
+        description="段落列表。如 [\"第一段\", \"第二段\"]"
+    )
+    table_data: Optional[list] = Field(
+        default=None,
+        description="表格数据二维数组。如 [[\"列1\", \"列2\"], [\"值1\", \"值2\"]]"
+    )
+
+
+class ConvertDocumentInput(BaseModel):
+    """convert_document 工具的输入参数 - 小沈 2026-05-05"""
+    input_path: str = Field(
+        ...,
+        description="输入文件路径。如 D:/documents/report.docx"
+    )
+    output_format: str = Field(
+        ...,
+        description="目标格式。可选: pdf"
+    )
+    output_path: Optional[str] = Field(
+        default=None,
+        description="输出文件路径（可选）。默认与输入同目录，扩展名替换"
+    )
+
+
+class WritePptxInput(BaseModel):
+    """write_pptx 工具的输入参数 - 小沈 2026-05-05"""
+    file_path: str = Field(
+        ...,
+        description="输出PPT文件路径。如 D:/output/presentation.pptx"
+    )
+    title: Optional[str] = Field(
+        default=None,
+        description="演示文稿标题"
+    )
+    slides: Optional[list] = Field(
+        default=None,
+        description="幻灯片内容列表。每个元素是一个字典，包含 title 和 content"
+    )

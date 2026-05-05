@@ -6,10 +6,12 @@ ENV Register - 环境变量工具注册点
 - env_register.py 作为环境变量工具的注册点
 - 使用 Pydantic 模型注册
 
-【工具列表】（共3个）
+【工具列表】（共5个）
 1. get_env - 获取环境变量
 2. set_env - 设置环境变量
 3. list_env - 列出环境变量
+4. delete_env - 删除环境变量
+5. exists_env - 检查环境变量是否存在
 
 创建时间: 2026-04-29
 """
@@ -25,12 +27,16 @@ from app.services.tools.env.env_schema import (
     GetEnvInput,
     SetEnvInput,
     ListEnvInput,
+    DeleteEnvInput,
+    ExistsEnvInput,
 )
 
 from app.services.tools.env.env_tools import (
     get_env,
     set_env,
     list_env,
+    delete_env,
+    exists_env,
 )
 
 # 工具描述
@@ -72,17 +78,47 @@ ENV_TOOL_DESCRIPTIONS = {
 - 设置变量：{"name": "MY_API_KEY", "value": "sk-abc123"}
 - 追加PATH：{"name": "PATH", "value": "C:\\Python39", "append_mode": true}""",
     "list_env": """列出所有环境变量或指定前缀的环境变量。
-
+ 
 使用场景：
 - 当用户需要查看所有环境变量时使用
 - 当用户想要查找特定前缀变量时使用
 - 当用户问"有哪些JAVA相关变量"时使用
-
+ 
 参数说明：
 - prefix：环境变量名前缀过滤（可选），例如 PY、JAVA
 - include_system：是否包含系统级环境变量（可选），默认 false
-
+ 
 【重要】返回环境变量列表，支持前缀过滤""",
+    "delete_env": """删除指定的环境变量。
+ 
+使用场景：
+- 当用户需要删除环境变量时使用
+- 当用户想要清理系统配置时使用
+- 当用户需要移除临时变量时使用
+ 
+参数说明：
+- name：环境变量名称
+- scope：作用域（可选），默认 process
+ 
+【重要】删除环境变量。默认仅对当前进程有效。若 scope 为 user/system，Agent 尝试持久化，遇权限不足自动降级为 process 并提示用户
+ 
+使用示例：
+- 删除变量：{"name": "MY_VAR"}
+- 删除用户级：{"name": "APP_PATH", "scope": "user"}""",
+    "exists_env": """检查环境变量是否存在。
+ 
+使用场景：
+- 当用户需要检查环境变量是否存在时使用
+- 当用户想要验证系统配置时使用
+- 当用户需要判断变量是否设置时使用
+ 
+参数说明：
+- name：环境变量名称
+- scope：作用域（可选），默认 process
+ 
+使用示例：
+- 检查变量：{"name": "JAVA_HOME"}
+- 检查系统级：{"name": "PATH", "scope": "system"}""",
 }
 
 # 模型映射
@@ -90,6 +126,8 @@ ENV_TOOL_INPUT_MODELS = {
     "get_env": GetEnvInput,
     "set_env": SetEnvInput,
     "list_env": ListEnvInput,
+    "delete_env": DeleteEnvInput,
+    "exists_env": ExistsEnvInput,
 }
 
 # 使用示例
@@ -119,6 +157,8 @@ def _register_env_tools():
         "get_env": get_env,
         "set_env": set_env,
         "list_env": list_env,
+        "delete_env": delete_env,
+        "exists_env": exists_env,
     }
 
     for name, method in tool_methods.items():

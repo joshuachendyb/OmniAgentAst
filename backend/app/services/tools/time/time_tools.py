@@ -585,9 +585,8 @@ def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
 # ===========================================================
 
 def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
-    """检查给定日期是否为假日"""
+    """检查给定日期是否为假日（支持公历+农历节日）"""
     try:
-        # 解析日期
         if date is None:
             dt = datetime.now().astimezone()
         else:
@@ -598,42 +597,72 @@ def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
                     "data": None,
                     "message": f"无法解析日期: {date}"
                 }
-        
-        # 简单假日检查（中国法定假日）
+
         month_day = (dt.month, dt.day)
         year = dt.year
-        
-        # 固定日期假日
-        fixed_holidays = {
+
+        # ===== 公历固定节日 =====
+        # 【升级 2026-05-05 小沈】从4个扩展到14个公历节日
+        solar_holidays = {
             (1, 1): "元旦",
+            (2, 14): "情人节",
+            (3, 8): "妇女节",
+            (3, 12): "植树节",
+            (4, 1): "愚人节",
             (5, 1): "劳动节",
+            (5, 4): "青年节",
+            (6, 1): "儿童节",
+            (7, 1): "建党节",
+            (8, 1): "建军节",
+            (9, 10): "教师节",
             (10, 1): "国庆节",
+            (12, 24): "平安夜",
+            (12, 25): "圣诞节",
         }
-        
-        # 动态计算的假日（简化版）
-        # 清明节：4月4日或5日（查表法，2024-2030年）
+
+        # 清明节：查表法（2024-2035年）
         qingming_dates = {
             2024: (4, 4), 2025: (4, 4), 2026: (4, 5),
             2027: (4, 5), 2028: (4, 4), 2029: (4, 5), 2030: (4, 5),
+            2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
         }
-        qingming = qingming_dates.get(year, (4, 5))  # 默认4月5日
-        
-        is_holiday = month_day in fixed_holidays or month_day == qingming
-        holiday_name = fixed_holidays.get(month_day)
-        
+        qingming = qingming_dates.get(year, (4, 5))
+
+        holiday_name = solar_holidays.get(month_day)
         if month_day == qingming:
             holiday_name = "清明节"
-        
-        # 农历节日（待实现，需农历转换库）
-        # 端午节（农历五月初五）、中秋节（农历八月十五）、春节（农历正月初一）
-        # 暂未支持，标记为“农历假日需库支持”
-        
-        # 构造消息
+
+        # ===== 农历节日（lunarcalendar库）=====
+        # 【升级 2026-05-05 小沈】支持9个农历节日
+        if holiday_name is None:
+            try:
+                from lunarcalendar import Converter
+                solar_date = dt.date() if hasattr(dt, 'date') else dt
+                lunar = Converter.Solar2Lunar(solar_date)
+                lunar_month_day = (lunar.month, lunar.day)
+
+                lunar_holidays = {
+                    (1, 1): "春节（农历正月初一）",
+                    (1, 15): "元宵节（农历正月十五）",
+                    (5, 5): "端午节（农历五月初五）",
+                    (7, 7): "七夕节（农历七月初七）",
+                    (7, 15): "中元节（农历七月十五）",
+                    (8, 15): "中秋节（农历八月十五）",
+                    (9, 9): "重阳节（农历九月初九）",
+                    (12, 8): "腊八节（农历十二月初八）",
+                    (12, 30): "除夕（农历十二月三十）",
+                }
+                holiday_name = lunar_holidays.get(lunar_month_day)
+            except Exception as e:
+                logger.warning(f"[time_is_holiday] 农历转换失败: {e}")
+
+        is_holiday = holiday_name is not None
+
         if is_holiday:
-            msg = f"今天是{holiday_name}，节假日"
+            msg = f"{dt.strftime('%Y-%m-%d')}是{holiday_name}，节假日"
         else:
-            msg = "今天不是节假日（注：农历假日未完全支持）"
-        
+            msg = f"{dt.strftime('%Y-%m-%d')}不是节假日"
+
         return {
             "code": "SUCCESS",
             "data": {
@@ -649,7 +678,6 @@ def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
             "data": None,
             "message": f"检查假日失败: {str(e)}"
         }
-
 
 # ===========================================================
 # 内部辅助函数

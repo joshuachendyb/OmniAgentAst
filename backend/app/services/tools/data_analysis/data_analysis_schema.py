@@ -113,3 +113,55 @@ class AnalyzeDataInput(BaseModel):
         default=None,
         description="返回前N条（可选）。如 top_n=10 返回前10条"
     )
+
+
+class ReadExcelDataframeInput(BaseModel):
+    """read_excel_dataframe 工具的输入参数 - 小沈 2026-05-05"""
+    file_path: str = Field(
+        ...,
+        description="Excel 文件路径。如 D:/data/sales.xlsx"
+    )
+    sheet_name: Optional[str] = Field(
+        default=None,
+        description="工作表名称（可选）。默认第一个工作表"
+    )
+    max_rows: Optional[int] = Field(
+        default=1000,
+        description="最大读取行数（可选）。默认1000"
+    )
+    usecols: Optional[List[str]] = Field(
+        default=None,
+        description="选择列（可选）。如 [\"name\", \"age\", \"score\"]"
+    )
+    skip_rows: Optional[int] = Field(
+        default=0,
+        description="跳过行数（可选）。默认0"
+    )
+
+
+class FilterDataInput(BaseModel):
+    """filter_data 工具的输入参数 - 小沈 2026-05-05"""
+    data: Union[str, List[Dict[str, Any]]] = Field(
+        ...,
+        description="要筛选的数据。可以是数组或CSV/Excel文件路径"
+    )
+    conditions: List[Dict[str, Any]] = Field(
+        ...,
+        description="筛选条件列表。每个条件: {\"column\": \"列名\", \"operator\": \"操作符\", \"value\": 值}。操作符: eq(=), ne(!=), gt(>), gte(>=), lt(<), lte(<=), in(在列表中), contains(包含文本)"
+    )
+    select_columns: Optional[List[str]] = Field(
+        default=None,
+        description="选择返回的列（可选）。如 [\"name\", \"age\"]"
+    )
+    sort_by: Optional[str] = Field(
+        default=None,
+        description="排序字段（可选）"
+    )
+    sort_ascending: Optional[bool] = Field(
+        default=True,
+        description="升序/降序（可选）。默认True升序"
+    )
+    top_n: Optional[int] = Field(
+        default=None,
+        description="返回前N条（可选）"
+    )

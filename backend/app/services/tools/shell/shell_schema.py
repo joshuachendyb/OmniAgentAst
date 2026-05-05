@@ -45,13 +45,6 @@ class ExecuteShellCommandInput(BaseModel):
     )
 
 
-class ListDirectoryInput(BaseModel):
-    """list_directory 工具的输入参数"""
-    path: str = Field(
-        default=".", description="目录路径，默认为当前目录"
-    )
-
-
 class GetWorkingDirectoryInput(BaseModel):
     """get_working_directory 工具的输入参数（无参数）"""
     pass
@@ -119,7 +112,6 @@ class TerminateShellInput(BaseModel):
 
 __all__ = [
     "ExecuteShellCommandInput",
-    "ListDirectoryInput",
     "GetWorkingDirectoryInput",
     "ChangeDirectoryInput",
     "CheckPathExistsInput",

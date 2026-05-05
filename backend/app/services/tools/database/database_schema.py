@@ -96,63 +96,7 @@ class ExecuteSqlInput(BaseModel):
 
 
 class GetDbSchemaInput(BaseModel):
-    """get_db_schema tool input - get database schema
-    
-    Args from doc 7.1.2:
-    - db_name: target database name (optional)
-    - filter_pattern: table filter pattern (optional)
-    - include_details: include details (optional), default False  
-    - output_format: output format (optional), default markdown
-    - connection_type: database type (optional), default sqlite
-    - connection_string: MySQL/PostgreSQL connection string (optional)
-    - db_path: SQLite database file path (optional)
-    """
-    db_name: Optional[str] = Field(
-        default=None,
-        description="Target database name (optional). Default None reads current connection. Agent auto-switches if specified"
-    )
-    filter_pattern: Optional[str] = Field(
-        default=None,
-        description="Table filter pattern (optional). Supports SQL LIKE syntax like user%. Agent auto-injects LIKE filter"
-    )
-    include_details: bool = Field(
-        default=False,
-        description="Include detailed index/foreign key/constraint info (optional), default False"
-    )
-    output_format: str = Field(
-        default="markdown",
-        description="Output format (optional), default markdown. Values: markdown, json, sql_ddl. Agent auto-switches"
-    )
-    connection_type: str = Field(
-        default="sqlite",
-        description="Database type (optional). Values: sqlite (default), mysql, postgresql. Agent auto-detects from connection_string"
-    )
-    connection_string: Optional[str] = Field(
-        default=None,
-        description="MySQL/PostgreSQL connection string (optional). Example: user:pass@host:port/dbname"
-    )
-    db_path: Optional[str] = Field(
-        default=None,
-        description="SQLite database file path (optional). Example: D:/data/app.db"
-    )
-    dry_run: bool = Field(
-        default=False,
-        description="Dry run mode (optional), default False. If SQL has DROP/TRUNCATE/DELETE without WHERE, Agent forces True"
-    )
-    timeout: int = Field(
-        default=30000,
-        ge=1000,
-        le=120000,
-        description="Timeout ms (optional), default 30000. Write ops strictly monitored, auto-rollback on timeout"
-    )
-    affected_rows_check: bool = Field(
-        default=True,
-        description="Check affected rows (optional), default True. Blocks only when affected >10000 without confirm"
-    )
-
-
-class GetDbSchemaInput(BaseModel):
-    """get_db_schema tool input - get database schema
+    """get_db_schema tool input - get database schema - 小沈 2026-05-05 修复重复定义和多余字段
     
     Args from doc 7.1.2:
     - db_name: target database name (optional)
@@ -190,18 +134,6 @@ class GetDbSchemaInput(BaseModel):
     db_path: Optional[str] = Field(
         default=None,
         description="SQLite database file path (optional). Example: D:/data/app.db"
-    )
-    filter_pattern: Optional[str] = Field(
-        default=None,
-        description="Table filter pattern (optional). Supports SQL LIKE syntax like user%. Agent auto-injects LIKE filter"
-    )
-    include_details: bool = Field(
-        default=False,
-        description="Include detailed index/foreign key/constraint info (optional), default False"
-    )
-    output_format: str = Field(
-        default="markdown",
-        description="Output format (optional), default markdown. Values: markdown, json, sql_ddl. Agent auto-switches"
     )
 
 

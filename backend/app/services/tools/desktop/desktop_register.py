@@ -28,11 +28,68 @@ from app.services.tools.desktop.desktop_tools import (
     set_window_state,
 )
 
-# 工具描述
+# 工具描述（中文，与schema/tools一致）- 小健 2026-05-05修正
 DESKTOP_TOOL_DESCRIPTIONS = {
-    "list_windows": "列出当前所有窗口，支持按标题过滤、是否包含最小化窗口筛选。适合查找特定窗口、查看所有打开的窗口",
-    "get_window_info": "获取指定窗口的详细信息，包括位置、大小、状态（最大化/最小化/正常）、句柄、进程ID等。适合获取窗口属性、定位窗口位置",
-    "set_window_state": "设置窗口状态：maximize（最大化）、minimize（最小化）、restore（还原）、topmost（置顶）、untopmost（取消置顶）。适合窗口管理、自动化操作",
+    "list_windows": """列出当前所有窗口。
+
+【使用场景】
+- 当需要查看所有打开的窗口时使用
+- 当需要查找特定窗口时使用
+- 当需要筛选窗口列表时使用
+
+【参数说明】
+- include_minimized：是否包含最小化窗口（可选）。默认False
+- filter_title：按窗口标题过滤（可选）。支持模糊匹配
+
+【返回数据】
+- code: SUCCESS / ERROR
+- data: { windows: [{hwnd, title, state, position}], total }
+- message: 操作结果消息
+
+【示例】
+- 所有窗口: {}
+- 包含最小化: {"include_minimized": True}
+- 过滤标题: {"filter_title": "Chrome"}""",
+
+    "get_window_info": """获取指定窗口的详细信息。
+
+【使用场景】
+- 当需要获取窗口属性时使用
+- 当需要定位窗口位置时使用
+- 当需要查看窗口状态时使用
+
+【参数说明】
+- window_title：窗口标题（必填）。支持精确匹配或模糊匹配
+
+【返回数据】
+- code: SUCCESS / ERROR
+- data: { hwnd, title, class_name, state, position, process_id, is_visible, is_enabled }
+- message: 操作结果消息
+
+【示例】
+- 获取窗口: {"window_title": "Chrome"}
+- 模糊匹配: {"window_title": "Notepad"}""",
+
+    "set_window_state": """设置窗口状态。
+
+【使用场景】
+- 当需要管理窗口时使用
+- 当需要自动化操作窗口时使用
+- 当需要置顶窗口时使用
+
+【参数说明】
+- window_title：窗口标题（必填）。支持精确匹配或模糊匹配
+- action：操作类型（必填）。可选：maximize(最大化)、minimize(最小化)、restore(还原)、topmost(置顶)、unpin(取消置顶)
+
+【返回数据】
+- code: SUCCESS / ERROR
+- data: { window_title, action, hwnd }
+- message: 操作结果消息
+
+【示例】
+- 最大化: {"window_title": "Chrome", "action": "maximize"}
+- 最小化: {"window_title": "Notepad", "action": "minimize"}
+- 置顶: {"window_title": "Calculator", "action": "topmost"}""",
 }
 
 # 模型映射

@@ -11,6 +11,8 @@ Shell Register - Shell工具注册点
 - 从 @register_tool 装饰器注册改为显式注册（tool_registry.register）
 - 按 file_register.py 模式重写
 
+# Shell操作工具（共8个） 小沈-2026-05-05
+
 创建时间: 2026-04-29
 更新时间: 2026-05-02
 """
@@ -196,6 +198,8 @@ __all__ = [
     "get_working_directory",
     "change_directory",
     "check_path_exists",
+    "check_command_available",
+    "locate_command",
     "get_shell_output",
     "terminate_shell",
 ]

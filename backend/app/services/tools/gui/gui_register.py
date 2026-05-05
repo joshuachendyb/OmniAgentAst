@@ -11,6 +11,8 @@ GUI Register - GUI操作工具注册点
 - 从 @register_tool 装饰器注册改为显式注册（tool_registry.register）
 - 按 shell_register.py 模式重写
 
+# GUI操作工具（共16个） 小沈-2026-05-05
+
 创建时间: 2026-05-02
 更新时间: 2026-05-02
 """
@@ -286,7 +288,7 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要进行剪贴板自动化操作时使用
 
 参数说明：
-- text：要写入的内容
+- content：要写入的内容
 
 【重要】使用 pyperclip 库或零依赖的 ctypes
 
@@ -366,7 +368,7 @@ GUI_TOOL_EXAMPLES = {
         {},
     ],
     "write_clipboard": [
-        {"text": "要复制的文本内容"},
+        {"content": "要复制的文本内容"},
     ],
     "send_notification": [
         {"title": "任务完成", "message": "文件已成功保存"},

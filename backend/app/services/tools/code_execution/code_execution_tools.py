@@ -15,12 +15,19 @@ Code Execution 工具函数模块 - 代码执行工具
 - execute_python: 执行Python代码
 - execute_javascript: 执行JavaScript代码
 
+【2026-05-05 小沈修正】小健检查发现的问题：
+1. 非零退出码返回SUCCESS的逻辑错误 → returncode!=0时返回ERR_EXEC_FAILED
+2. Python缺少FileNotFoundError处理（JavaScript有而Python没有）
+3. 裸except:pass吞掉异常 → 改为OSError + logger.warning
+4. TimeoutExpired的stdout/stderr显式str转换保证类型安全
+
 Author: 小沈 - 2026-05-02
 """
 
 import os
 import subprocess
 import tempfile
+import logging
 from typing import Optional
 
 from app.services.tools.code_execution.code_execution_schema import (
@@ -28,10 +35,11 @@ from app.services.tools.code_execution.code_execution_schema import (
     ExecuteJavascriptInput,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None) -> dict:
-    """执行Python代码 - 小沈 2026-05-02"""
-    # 验证working_dir是否存在
+    """执行Python代码 - 小沈 2026-05-02, 小沈修正 2026-05-05"""
     if working_dir and not os.path.isdir(working_dir):
         return {
             "code": "ERR_EXEC_INVALID_DIR",
@@ -42,7 +50,7 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
         with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
             f.write(code)
             temp_file = f.name
-        
+
         try:
             result = subprocess.run(
                 ['python', temp_file],
@@ -51,30 +59,39 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                 cwd=working_dir,
                 timeout=timeout
             )
-            
+
             if result.returncode == 0:
                 if result.stderr and result.stderr.strip():
                     message = "Python代码执行成功（有警告输出）"
                 else:
                     message = "Python代码执行成功"
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                        "returncode": result.returncode
+                    },
+                    "message": message
+                }
             else:
-                message = f"Python代码执行完成（退出码{result.returncode}）"
-            
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "returncode": result.returncode
-                },
-                "message": message
-            }
+                message = f"Python代码执行失败（退出码{result.returncode}）"
+                return {
+                    "code": "ERR_EXEC_FAILED",
+                    "data": {
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                        "returncode": result.returncode
+                    },
+                    "message": message
+                }
+
         except subprocess.TimeoutExpired as e:
             return {
                 "code": "ERR_EXEC_TIMEOUT",
                 "data": {
-                    "stdout": e.stdout if e.stdout else "",
-                    "stderr": e.stderr if e.stderr else "",
+                    "stdout": str(e.stdout or ""),
+                    "stderr": str(e.stderr or ""),
                     "returncode": -1
                 },
                 "message": f"Python代码执行超时（{timeout}秒）"
@@ -82,9 +99,15 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
         finally:
             try:
                 os.unlink(temp_file)
-            except:
-                pass
-                
+            except OSError as e:
+                logger.warning(f"删除临时文件失败: {temp_file}, 错误: {e}")
+
+    except FileNotFoundError:
+        return {
+            "code": "ERR_EXEC_PYTHON_NOT_FOUND",
+            "data": None,
+            "message": "未找到Python环境，请确认Python已安装且在PATH中"
+        }
     except Exception as e:
         return {
             "code": "ERR_EXEC_PYTHON",
@@ -94,8 +117,7 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
 
 
 def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None) -> dict:
-    """执行JavaScript代码 - 小沈 2026-05-02"""
-    # 验证working_dir是否存在
+    """执行JavaScript代码 - 小沈 2026-05-02, 小沈修正 2026-05-05"""
     if working_dir and not os.path.isdir(working_dir):
         return {
             "code": "ERR_EXEC_INVALID_DIR",
@@ -106,7 +128,7 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False, encoding='utf-8') as f:
             f.write(code)
             temp_file = f.name
-        
+
         try:
             result = subprocess.run(
                 ['node', temp_file],
@@ -115,30 +137,39 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                 cwd=working_dir,
                 timeout=timeout
             )
-            
+
             if result.returncode == 0:
                 if result.stderr and result.stderr.strip():
                     message = "JavaScript代码执行成功（有警告输出）"
                 else:
                     message = "JavaScript代码执行成功"
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                        "returncode": result.returncode
+                    },
+                    "message": message
+                }
             else:
-                message = f"JavaScript代码执行完成（退出码{result.returncode}）"
-            
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "stdout": result.stdout,
-                    "stderr": result.stderr,
-                    "returncode": result.returncode
-                },
-                "message": message
-            }
+                message = f"JavaScript代码执行失败（退出码{result.returncode}）"
+                return {
+                    "code": "ERR_EXEC_FAILED",
+                    "data": {
+                        "stdout": result.stdout,
+                        "stderr": result.stderr,
+                        "returncode": result.returncode
+                    },
+                    "message": message
+                }
+
         except subprocess.TimeoutExpired as e:
             return {
                 "code": "ERR_EXEC_TIMEOUT",
                 "data": {
-                    "stdout": e.stdout if e.stdout else "",
-                    "stderr": e.stderr if e.stderr else "",
+                    "stdout": str(e.stdout or ""),
+                    "stderr": str(e.stderr or ""),
                     "returncode": -1
                 },
                 "message": f"JavaScript代码执行超时（{timeout}秒）"
@@ -146,9 +177,9 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
         finally:
             try:
                 os.unlink(temp_file)
-            except:
-                pass
-                
+            except OSError as e:
+                logger.warning(f"删除临时文件失败: {temp_file}, 错误: {e}")
+
     except FileNotFoundError:
         return {
             "code": "ERR_EXEC_NODE_NOT_FOUND",

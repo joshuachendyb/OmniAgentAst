@@ -101,7 +101,7 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - 简单下载：{"url": "https://example.com/file.zip", "destination_path": "D:/Downloads/file.zip"}
 - 带认证下载：{"url": "https://private.com/file.zip", "destination_path": "D:/Downloads/file.zip", "headers": {"Authorization": "Bearer token"}}
 - 禁止续传：{"url": "https://example.com/file.zip", "destination_path": "D:/Downloads/file.zip", "resume": false}""",
-    "fetch_webpage": """获取和处理网页内容，支持多种格式提取。
+    "fetch_webpage": """获取和处理网页内容，支持多种格式提取和智能内容提取。
 
 使用场景：
 - 当用户需要获取网页内容时使用
@@ -110,12 +110,13 @@ NETWORK_TOOL_DESCRIPTIONS = {
 
 参数说明：
 - url：完全有效的 URL
+- prompt：内容提取提示（可选）。指定需要从网页中提取的信息，如"提取页面标题和主要内容"
 - extract_format：提取格式（可选），可选值 markdown/html/text，默认 markdown
+- js_render：是否启用JS渲染（可选），默认false
 - timeout：超时毫秒数（可选），默认 30000
 - max_tokens：最大返回字符数（可选），默认 8000
 - user_agent：自定义 UA（可选），默认自动生成浏览器UA
 - proxy：代理地址（可选）
-- js_render：是否启用JS渲染（可选），默认false
 
 【重要】返回网页的文本内容和提取格式
 
