@@ -12,7 +12,6 @@ DATABASE Register - Database Tools Registration Point
 Created: 2026-04-29
 """
 
-import logging
 from app.services.tools.registry import ToolCategory, tool_registry
 from app.utils.logger import logger
 
@@ -49,7 +48,7 @@ DATABASE_TOOL_DESCRIPTIONS = {
 【重要】强制只读，写操作返回错误。超时自动触发EXPLAIN分析。
 
 【返回数据】
-- code: SUCCESS / ERROR
+- code: SUCCESS / ERR_READ_ONLY_VIOLATION / ERR_DB_CONNECTION / ERR_SQL_EXEC
 - data: { columns, rows, total }
 - message: 操作结果消息
 
@@ -77,7 +76,7 @@ DATABASE_TOOL_DESCRIPTIONS = {
 【重要】仅支持单语句自动提交。高风险操作（DROP/TRUNCATE）自动拦截。
 
 【返回数据】
-- code: SUCCESS / ERROR / WARNING
+- code: SUCCESS / WARNING / ERR_DB_CONNECTION / ERR_SQL_EXEC / ERR_EXEC_FAILED
 - data: { affected_rows, sql }
 - message: 操作结果消息
 
@@ -105,7 +104,7 @@ DATABASE_TOOL_DESCRIPTIONS = {
 【重要】include_details=true时最多返回20个表，防止上下文爆炸。
 
 【返回数据】
-- code: SUCCESS / ERROR
+- code: SUCCESS / ERR_DB_CONNECTION / ERR_SQL_EXEC / ERR_SCHEMA_FAILED
 - data: { tables: [{name, columns, indexes}], total }
 - message: 操作结果消息
 

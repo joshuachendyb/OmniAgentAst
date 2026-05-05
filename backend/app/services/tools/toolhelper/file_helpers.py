@@ -54,6 +54,7 @@ Author: 小沈 - 2026-05-02
 """
 
 import os
+import re
 import shutil
 import zipfile
 import tarfile
@@ -62,10 +63,17 @@ import mimetypes
 import subprocess
 import send2trash
 from pathlib import Path
+from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _is_safe_path(output_dir: str, member_path: str) -> bool:
+    """检查解压成员路径是否在output_dir内，防止路径遍历攻击 - 小沈 2026-05-05"""
+    target = os.path.normpath(os.path.join(output_dir, member_path))
+    return target.startswith(os.path.normpath(output_dir) + os.sep) or target == os.path.normpath(output_dir)
 
 
 def extract_archive(
@@ -109,6 +117,11 @@ def extract_archive(
                 skipped = []
                 
                 for member in members:
+                    if not _is_safe_path(output_dir, member):
+                        logger.warning(f"跳过路径遍历成员: {member}")
+                        skipped.append(member)
+                        continue
+                    
                     target_path = os.path.join(output_dir, member)
                     
                     if not overwrite and os.path.exists(target_path):
@@ -133,6 +146,11 @@ def extract_archive(
                 skipped = []
                 
                 for member in members:
+                    if not _is_safe_path(output_dir, member.name):
+                        logger.warning(f"跳过路径遍历成员: {member.name}")
+                        skipped.append(member.name)
+                        continue
+                    
                     target_path = os.path.join(output_dir, member.name)
                     
                     if not overwrite and os.path.exists(target_path):
@@ -144,8 +162,8 @@ def extract_archive(
                     if preserve_permissions:
                         try:
                             os.chmod(target_path, member.mode)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"设置权限失败: {e}")
                     
                     extracted.append(member.name)
                 
@@ -164,6 +182,11 @@ def extract_archive(
                 skipped = []
                 
                 for member in members:
+                    if not _is_safe_path(output_dir, member.name):
+                        logger.warning(f"跳过路径遍历成员: {member.name}")
+                        skipped.append(member.name)
+                        continue
+                    
                     target_path = os.path.join(output_dir, member.name)
                     
                     if not overwrite and os.path.exists(target_path):
@@ -175,8 +198,8 @@ def extract_archive(
                     if preserve_permissions:
                         try:
                             os.chmod(target_path, member.mode)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"设置权限失败: {e}")
                     
                     extracted.append(member.name)
                 
@@ -192,11 +215,18 @@ def extract_archive(
             with tarfile.open(archive_path, 'r') as tf:
                 members = tf.getmembers()
                 extracted = []
+                skipped = []
                 
                 for member in members:
+                    if not _is_safe_path(output_dir, member.name):
+                        logger.warning(f"跳过路径遍历成员: {member.name}")
+                        skipped.append(member.name)
+                        continue
+                    
                     target_path = os.path.join(output_dir, member.name)
                     
                     if not overwrite and os.path.exists(target_path):
+                        skipped.append(member.name)
                         continue
                     
                     tf.extract(member, output_dir)
@@ -204,8 +234,8 @@ def extract_archive(
                     if preserve_permissions:
                         try:
                             os.chmod(target_path, member.mode)
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning(f"设置权限失败: {e}")
                     
                     extracted.append(member.name)
                 
@@ -213,6 +243,7 @@ def extract_archive(
                     "success": True,
                     "output_dir": output_dir,
                     "extracted_files": len(extracted),
+                    "skipped_files": len(skipped),
                     "format": "tar"
                 }
         
@@ -451,7 +482,6 @@ def backup_file(
         if not os.path.exists(file_path):
             return {"success": False, "error": f"文件不存在: {file_path}"}
         
-        from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         file_name = os.path.basename(file_path)
@@ -518,7 +548,6 @@ def validate_command(command: str) -> Dict[str, Any]:
             r'poweroff\s+',
         ]
         
-        import re
         is_dangerous = False
         matched_pattern = None
         
