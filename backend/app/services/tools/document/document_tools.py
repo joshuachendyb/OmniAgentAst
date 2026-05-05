@@ -604,8 +604,7 @@ def convert_document(
             output_path = str(src.with_suffix('.pdf'))
         
         import subprocess
-        import tempfile
-        
+         
         soffice_paths = [
             r"C:\Program Files\LibreOffice\program\soffice.exe",
             r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
