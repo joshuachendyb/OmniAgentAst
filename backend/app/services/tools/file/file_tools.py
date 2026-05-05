@@ -609,7 +609,7 @@ class FileTools:
                 logging.getLogger(__name__).info(f"write_text_file: 自动将全角标点替换为半角标点({file_path})")
 
         if content:
-            from app.services.tools.content_quality import check_content_quality
+            from app.services.tools.toolhelper.content_quality import check_content_quality
             quality_result = check_content_quality(content=content, file_path=file_path)
             if quality_result.get("is_thought_leak"):
                 return _to_unified_format({

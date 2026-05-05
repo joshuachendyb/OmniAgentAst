@@ -894,7 +894,7 @@ class BaseAgent(ABC):
 
         # 使用共享的自我指涉检测方法
         if written_content:
-            from app.services.tools.content_quality import check_content_quality
+            from app.services.tools.toolhelper.content_quality import check_content_quality
             quality_result = check_content_quality(content=written_content, file_path=file_path)
             if quality_result.get("is_thought_leak"):
                 warnings.append(

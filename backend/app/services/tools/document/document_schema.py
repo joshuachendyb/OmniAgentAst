@@ -65,10 +65,6 @@ class ReadXlsxInput(BaseModel):
         default=True,
         description="第一行是否为表头（可选）。默认 True"
     )
-    index_col: Optional[bool] = Field(
-        default=False,
-        description="第一列是否为索引（可选）。默认 False"
-    )
 
 
 class WriteDocxInput(BaseModel):

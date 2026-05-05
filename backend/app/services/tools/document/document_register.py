@@ -335,5 +335,6 @@ __all__ = [
     "write_xlsx",
     "read_pptx",
     "write_pdf",
+    "write_pptx",
     "convert_document",
 ]
