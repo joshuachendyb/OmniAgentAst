@@ -147,6 +147,14 @@ ENV_TOOL_EXAMPLES = {
         {"prefix": "JAVA", "include_system": True},
         {},
     ],
+    "delete_env": [
+        {"name": "MY_VAR"},
+        {"name": "APP_PATH", "scope": "user"},
+    ],
+    "exists_env": [
+        {"name": "JAVA_HOME"},
+        {"name": "PATH", "scope": "system"},
+    ],
 }
 
 

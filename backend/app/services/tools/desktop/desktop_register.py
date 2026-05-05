@@ -42,7 +42,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 - filter_title：按窗口标题过滤（可选）。支持模糊匹配
 
 【返回数据】
-- code: SUCCESS / ERROR
+- code: SUCCESS / ERR_LIST_WINDOWS
 - data: { windows: [{hwnd, title, state, position}], total }
 - message: 操作结果消息
 
@@ -62,7 +62,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 - window_title：窗口标题（必填）。支持精确匹配或模糊匹配
 
 【返回数据】
-- code: SUCCESS / ERROR
+- code: SUCCESS / ERR_WINDOW_NOT_FOUND
 - data: { hwnd, title, class_name, state, position, process_id, is_visible, is_enabled }
 - message: 操作结果消息
 
@@ -82,7 +82,7 @@ DESKTOP_TOOL_DESCRIPTIONS = {
 - action：操作类型（必填）。可选：maximize(最大化)、minimize(最小化)、restore(还原)、topmost(置顶)、unpin(取消置顶)
 
 【返回数据】
-- code: SUCCESS / ERROR
+- code: SUCCESS / ERR_INVALID_ACTION
 - data: { window_title, action, hwnd }
 - message: 操作结果消息
 

@@ -176,7 +176,7 @@ def check_screen_capture_permission() -> Dict[str, Any]:
         
         return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "具有屏幕捕获权限"}
     except Exception as e:
-        return {"code": "SUCCESS", "data": {"has_permission": False}, "message": f"无屏幕捕获权限: {str(e)}"}
+        return {"code": "ERR_CHECK_PERMISSION", "data": {"has_permission": False}, "message": f"检查屏幕捕获权限失败: {str(e)}"}
 
 
 def check_tesseract_available() -> Dict[str, Any]:
@@ -222,4 +222,4 @@ def check_notification_permission() -> Dict[str, Any]:
         
         return {"code": "SUCCESS", "data": {"has_permission": True}, "message": "具有通知权限"}
     except Exception as e:
-        return {"code": "SUCCESS", "data": {"has_permission": False}, "message": f"无通知权限: {str(e)}"}
+        return {"code": "ERR_CHECK_PERMISSION", "data": {"has_permission": False}, "message": f"检查通知权限失败: {str(e)}"}

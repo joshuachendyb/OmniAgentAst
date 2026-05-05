@@ -69,10 +69,7 @@ def get_env(name: str, default: Optional[str] = None, scope: str = "process", ex
             original_value = value
             if expand_vars and isinstance(value, str):
                 try:
-                    if sys.platform == "win32":
-                        expanded = os.path.expandvars(value)
-                    else:
-                        expanded = os.path.expandvars(value)
+                    expanded = os.path.expandvars(value)
                     value = expanded
                 except Exception:
                     pass
