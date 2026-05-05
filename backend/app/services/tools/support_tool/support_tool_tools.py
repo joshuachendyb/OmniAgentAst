@@ -102,7 +102,7 @@ def get_table_schema(db_path: str, table_name: str) -> Dict[str, Any]:
         conn = sqlite3.connect(str(path))
         cursor = conn.cursor()
 
-        cursor.execute(f"PRAGMA table_info(\"{table_name}\")")
+        cursor.execute("PRAGMA table_info(?)", (table_name,))
         columns = cursor.fetchall()
 
         if not columns:

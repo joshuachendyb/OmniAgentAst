@@ -229,7 +229,7 @@ def list_env(prefix: Optional[str] = None, include_system: bool = False) -> dict
                         name, value, _ = winreg.EnumValue(key, i)
                         system_vars.append((name, value))
                         i += 1
-                except WindowsError:
+                except OSError:
                     pass
                 finally:
                     winreg.CloseKey(key)

@@ -582,7 +582,8 @@ def kill_process(
                 "message": f"进程 {pid} ({proc_info['name']}) {final_status}"
             }
         
-        elif name:
+        # 注：按名称批量终止功能已移除（函数签名无name参数）- 小沈 2026-05-05
+        else:
             # 按名称批量终止
             killed_count = 0
             failed_count = 0
@@ -786,7 +787,8 @@ def get_logs(
             }
         
         logs = []
-        all_lines = open(log_path, "r", encoding="utf-8", errors="ignore").readlines()
+        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
+            all_lines = f.readlines()
         
         for line in all_lines:
             line = line.strip()
@@ -1513,8 +1515,8 @@ def task_create(
         if user:
             cmd.extend(["/ru", user])
         
-        if start_in:
-            cmd.extend(["/sd", start_in])
+        if start_time:
+            cmd.extend(["/sd", start_time])
         
         cmd.append("/f")
         

@@ -23,7 +23,6 @@ Author: 小沈 - 2026-05-02
 """
 
 import winreg
-import struct
 import os
 import tempfile
 from typing import Optional, Dict, Any
@@ -54,7 +53,7 @@ _registry_session_backup = {}
 
 
 def _parse_key_path(key_path: str, hive: str = "HKCU") -> tuple:
-    """解析key_path，提取根键和子键路径
+    """解析key_path，提取根键和子键路径 - 小沈 2026-05-05 修正映射逻辑
     
     Args:
         key_path: 完整键路径，可能含根键前缀
@@ -63,14 +62,14 @@ def _parse_key_path(key_path: str, hive: str = "HKCU") -> tuple:
     Returns:
         (root_key_name, sub_key_path)
     """
-    # 检查是否包含根键前缀
-    for hk_name in HIVE_MAP.keys():
-        if key_path.upper().startswith(f"{hk_name}\\") or key_path.upper().startswith(f"HKEY_{hk_name.replace('HK', '')}"):
-            full_name = HIVE_MAP.get(hk_name) or f"HKEY_{hk_name.replace('HK', '')}"
-            sub = key_path[len(hk_name)+1:] if key_path.upper().startswith(f"{hk_name}\\") else key_path
+    for hk_name, full_name in HIVE_MAP.items():
+        if key_path.upper().startswith(f"{hk_name}\\"):
+            sub = key_path[len(hk_name)+1:]
+            return full_name, sub
+        if key_path.upper().startswith(f"{full_name}\\"):
+            sub = key_path[len(full_name)+1:]
             return full_name, sub
     
-    # 无前缀，使用默认hive
     return HIVE_MAP.get(hive, "HKEY_CURRENT_USER"), key_path
 
 

@@ -23,7 +23,6 @@ SYSTEM Register - 系统信息工具注册点
 更新时间: 2026-05-02
 """
 
-import logging
 from app.services.tools.registry import ToolCategory, tool_registry
 from app.utils.logger import logger
 
