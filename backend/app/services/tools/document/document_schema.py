@@ -150,8 +150,8 @@ class ConvertDocumentInput(BaseModel):
         description="输入文件路径。如 D:/documents/report.docx"
     )
     output_format: str = Field(
-        ...,
-        description="目标格式。可选: pdf"
+        default="pdf",
+        description="目标格式。可选: pdf, 默认pdf - 小健 2026-05-06 改为可选"
     )
     output_path: Optional[str] = Field(
         default=None,

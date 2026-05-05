@@ -73,6 +73,9 @@ class RegWriteInput(BaseModel):
     dry_run: bool = Field(
         default=False, description="预演模式。默认 false。若涉及系统关键路径，Agent 强制开启仅校验，阻断实际写入"
     )
+    hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
+        default="HKCU", description="注册表根键。可选值：HKCU（默认）、HKLM、HKCR、HKU、HKCC。若 key_path 已含前缀则忽略此参数 - 小健 2026-05-06"
+    )
 
 
 class RegDeleteInput(BaseModel):
@@ -83,6 +86,7 @@ class RegDeleteInput(BaseModel):
     - value_name: 值名称（可选）
     - backup_before_delete: 删除前备份（可选），默认true
     - recursive: 递归删除（可选），默认false
+    - hive: 根键（可选），默认HKCU - 小健 2026-05-06
     """
     key_path: str = Field(
         description="注册表键路径。Agent 自动标准化路径"
@@ -95,6 +99,9 @@ class RegDeleteInput(BaseModel):
     )
     recursive: bool = Field(
         default=False, description="是否递归删除子键。默认 false。仅允许删 Value 或空 Key。递归删 Key 需双重校验（白名单 + 数量确认）"
+    )
+    hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
+        default="HKCU", description="注册表根键。可选值：HKCU（默认）、HKLM、HKCR、HKU、HKCC。若 key_path 已含前缀则忽略此参数 - 小健 2026-05-06"
     )
 
 

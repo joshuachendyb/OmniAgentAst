@@ -749,6 +749,8 @@ def _parse_datetime_any(value: Any) -> Optional[datetime]:
         return None
 
 
+
+
 # ===========================================================
 # P2 定时器辅助 - timer_list
 # ===========================================================
@@ -1039,8 +1041,8 @@ def time_next_n_workday(start: Optional[Union[int, float, str]] = None, n: int =
 # P1 常用辅助 - time_add
 # ===========================================================
 
-def time_add(start: Any, delta: float, unit: str = "days") -> Dict[str, Any]:
-    """时间加减计算：在基准时间上增加/减少偏移量"""
+def time_add(delta: float, start: Any = None, unit: str = "days") -> Dict[str, Any]:
+    """时间加减计算 - 小健 2026-05-06 delta必填前置,start可选对齐Schema"""
     try:
         # 【修复 2026-05-05 小沈】start为None时使用当前时间
         if start is None:

@@ -20,7 +20,7 @@ class CheckDbExistsInput(BaseModel):
 class GetTableSchemaInput(BaseModel):
     """get_table_schema 工具的输入参数"""
     db_path: str = Field(..., description="数据库文件路径")
-    table_name: str = Field(..., description="表名称")
+    table_name: str = Field(..., description="要查询的表名称。如 users、orders - 小健 2026-05-06")
 
 
 class ValidateUrlInput(BaseModel):

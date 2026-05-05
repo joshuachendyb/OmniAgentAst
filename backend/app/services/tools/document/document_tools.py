@@ -570,10 +570,10 @@ def write_pdf(
 
 def convert_document(
     input_path: str,
-    output_format: str,
+    output_format: str = "pdf",
     output_path: str = None
 ) -> Dict[str, Any]:
-    """文档格式转换 - 小沈 2026-05-05"""
+    """文档格式转换 - 小健 2026-05-06 output_format改可选对齐Schema"""
     try:
         src = Path(input_path)
         if not src.exists():

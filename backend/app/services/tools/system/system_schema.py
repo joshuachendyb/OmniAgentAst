@@ -240,12 +240,7 @@ class ServiceListInput(BaseModel):
 
 
 class ServiceStartInput(BaseModel):
-    """service_start 工具的输入参数 - 小沈 2026-05-03 修正
-    
-    按文档7.6节参数定义：
-    - service_name: 服务名称（必填）
-    - wait_for_started: 等待启动（可选），默认 true
-    """
+    """service_start 工具的输入参数 - 小沈 2026-05-03, 小健 2026-05-06 补timeout"""
     service_name: str = Field(
         ...,
         description="要启动的服务名称（必填）。如 MySQL、nginx。必填由 LLM 提供，可通过 service_list 查询可用服务"
@@ -253,6 +248,10 @@ class ServiceStartInput(BaseModel):
     wait_for_started: bool = Field(
         default=True,
         description="等待服务启动完成（可选）。默认 true。Agent 等待服务真正进入运行状态后再返回，确保启动成功。若设为 false 则立即返回"
+    )
+    timeout: int = Field(
+        default=30, ge=1, le=300,
+        description="等待服务启动的超时时间（秒）。默认30秒 - 小健 2026-05-06"
     )
 
 
@@ -275,6 +274,10 @@ class ServiceStopInput(BaseModel):
     wait_for_stopped: bool = Field(
         default=True,
         description="等待服务停止完成（可选）。默认 true。Agent 等待服务真正停止后再返回，确保停止成功。若设为 false 则立即返回"
+    )
+    timeout: int = Field(
+        default=30, ge=1, le=300,
+        description="等待服务停止的超时时间（秒）。默认30秒 - 小健 2026-05-06"
     )
 
 
@@ -337,10 +340,22 @@ class TaskCreateInput(BaseModel):
         default=None,
         description="任务执行的起始目录。可选，不提供时Agent智能补全为null。指定命令执行时的工作目录。"
     )
+    start_time: Optional[str] = Field(
+        default=None,
+        description="起始时间（可选）。如 '08:00'。不提供时使用schedule中的时间 - 小健 2026-05-06"
+    )
+    start_date: Optional[str] = Field(
+        default=None,
+        description="起始日期（可选）。如 '2026-05-06'。不提供时使用当前日期 - 小健 2026-05-06"
+    )
+    interval: Optional[int] = Field(
+        default=None,
+        description="重复间隔（分钟，可选）。不提供时使用schedule中的间隔 - 小健 2026-05-06"
+    )
 
 
 class TaskDeleteInput(BaseModel):
-    """task_delete 工具的输入参数 - 按文档7.7节定义
+    """task_delete 工具的输入参数 - 按文档7.7节定义, 小健 2026-05-06 补folder
     
     按文档7.7节参数定义：
     - task_name: 任务名称（必填）
@@ -353,6 +368,10 @@ class TaskDeleteInput(BaseModel):
     force: bool = Field(
         default=False,
         description="是否强制删除（即使任务正在运行）。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。\n- false：仅删除已停止的任务（默认）\n- true：强制删除，包括正在运行的任务"
+    )
+    folder: Optional[str] = Field(
+        default=None,
+        description="任务所在文件夹（可选）。不提供时从根目录查找 - 小健 2026-05-06"
     )
 
 

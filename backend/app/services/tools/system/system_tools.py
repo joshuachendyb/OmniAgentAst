@@ -422,12 +422,15 @@ def _get_linux_event_log(
 def list_processes(
     filter_name: Optional[str] = None,
     filter_pid: Optional[int] = None,
+    user: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
     sort_by: str = "pid",
     descending: bool = False,
     max_results: int = 100,
 ) -> dict:
     """
-    列出所有进程 - 小沈 2026-05-04 修正
+    列出所有进程 - 小健 2026-05-06 补user/status/limit对齐Schema
     
     按文档7.5节参数定义：
     - filter_name: 进程名称过滤（可选）
@@ -835,28 +838,25 @@ def get_logs(
 
 
 def service_list(
-    filter_name: Optional[str] = None,
-    filter_state: str = "all",
-    max_results: int = 100,
+    name: Optional[str] = None,
+    state: str = "all",
+    output_format: str = "json",
 ) -> dict:
     """
-    列出所有服务 - 小沈 2026-05-02
+    列出所有服务 - 小健 2026-05-06 参数名对齐Schema(name/state/output_format)
     
     Windows使用sc query命令，Linux使用systemctl list-units。
-    
-    Args:
-        filter_name: 按服务名过滤（模糊匹配）
-        filter_state: 按状态过滤（running/stopped/all）
-        max_results: 最大返回服务数
     
     Returns:
         {code, data, message}
     """
+    filter_name = name
+    filter_state = state
     try:
         if platform.system() == "Windows":
-            return _windows_service_list(filter_name, filter_state, max_results)
+            return _windows_service_list(filter_name, filter_state, 100)
         else:
-            return _linux_service_list(filter_name, filter_state, max_results)
+            return _linux_service_list(filter_name, filter_state, 100)
     
     except Exception as e:
         logger.error(f"[service_list] 获取服务列表失败: {e}")
@@ -1038,10 +1038,11 @@ def _linux_service_list(
 
 def service_start(
     service_name: str,
+    wait_for_started: bool = True,
     timeout: int = 30,
 ) -> dict:
     """
-    启动服务 - 小沈 2026-05-02
+    启动服务 - 小健 2026-05-06 补wait_for_started对齐Schema
     
     Windows使用sc start命令，Linux使用systemctl start。
     
@@ -1179,10 +1180,11 @@ def _linux_service_start(service_name: str, timeout: int) -> dict:
 def service_stop(
     service_name: str,
     force: bool = False,
+    wait_for_stopped: bool = True,
     timeout: int = 30,
 ) -> dict:
     """
-    停止服务 - 小沈 2026-05-02
+    停止服务 - 小健 2026-05-06 补wait_for_stopped对齐Schema
     
     Windows使用sc stop命令，Linux使用systemctl stop。
     
@@ -1333,12 +1335,12 @@ def _linux_service_stop(service_name: str, force: bool, timeout: int) -> dict:
 
 
 def task_list(
-    folder: Optional[str] = None,
-    state: Optional[str] = None,
-    output_format: str = "json",
+    filter_name: Optional[str] = None,
+    filter_status: str = "all",
+    max_results: int = 100,
 ) -> dict:
     """
-    列出所有计划任务（Windows专用） - 小沈 2026-05-03
+    列出所有计划任务 - 小健 2026-05-06 参数名对齐Schema
     
     使用schtasks query命令列出计划任务。
     
@@ -1459,14 +1461,15 @@ def task_create(
     task_name: str,
     command: str,
     schedule: str,
+    description: Optional[str] = None,
+    user: Optional[str] = None,
+    start_in: Optional[str] = None,
     start_time: Optional[str] = None,
     start_date: Optional[str] = None,
     interval: Optional[int] = None,
-    description: Optional[str] = None,
-    user: Optional[str] = None,
 ) -> dict:
     """
-    创建计划任务（Windows专用） - 小沈 2026-05-03
+    创建计划任务 - 小健 2026-05-06 补start_in对齐Schema
     
     使用schtasks create命令创建计划任务。
     
@@ -1564,10 +1567,11 @@ def task_create(
 
 def task_delete(
     task_name: str,
+    force: bool = False,
     folder: Optional[str] = None,
 ) -> dict:
     """
-    删除计划任务（Windows专用） - 小沈 2026-05-03
+    删除计划任务 - 小健 2026-05-06 补force对齐Schema
     
     使用schtasks delete命令删除计划任务。
     
