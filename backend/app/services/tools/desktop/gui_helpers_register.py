@@ -203,7 +203,7 @@ def _register_gui_helpers():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.GUI,
+            category=ToolCategory.DESKTOP,
             implementation=method,
             version="1.0.0",
             input_model=input_model,

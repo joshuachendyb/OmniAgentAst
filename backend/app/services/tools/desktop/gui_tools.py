@@ -75,7 +75,7 @@ def scroll(direction: str, amount: int = 3) -> Dict[str, Any]:
         return {"code": "ERR_NO_PYAUTOGUI", "data": None, "message": "pyautogui库未安装"}
     try:
         import pyautogui
-        scroll_amount = amount if direction == "down" else -amount
+        scroll_amount = -amount if direction == "down" else amount
         pyautogui.scroll(scroll_amount)
         return {"code": "SUCCESS", "data": {"direction": direction, "amount": amount}, "message": f"滚动完成: {direction} {amount}单位"}
     except Exception as e:
@@ -254,6 +254,7 @@ def list_windows(filter: str = None) -> Dict[str, Any]:
                 if title:
                     if filter is None or filter.lower() in title.lower():
                         windows.append({"hwnd": hwnd, "title": title})
+            return True
         win32gui.EnumWindows(_enum_cb, None)
         return {"code": "SUCCESS", "data": {"windows": windows, "count": len(windows)}, "message": f"找到 {len(windows)} 个窗口"}
     except Exception as e:
@@ -274,6 +275,7 @@ def focus_window(title: str) -> Dict[str, Any]:
                 win_title = win32gui.GetWindowText(hwnd)
                 if title.lower() in win_title.lower():
                     target_hwnd = hwnd
+            return True
         win32gui.EnumWindows(_enum_cb, None)
 
         if target_hwnd:
@@ -299,6 +301,7 @@ def resize_window(title: str, width: int = None, height: int = None) -> Dict[str
                 win_title = win32gui.GetWindowText(hwnd)
                 if title.lower() in win_title.lower():
                     target_hwnd = hwnd
+            return True
         win32gui.EnumWindows(_enum_cb, None)
 
         if not target_hwnd:
@@ -353,9 +356,11 @@ def read_clipboard() -> Dict[str, Any]:
             kernel32 = ctypes.windll.kernel32
             user32 = ctypes.windll.user32
             user32.OpenClipboard(None)
-            data = user32.GetClipboardData(CF_TEXT)
-            text = ctypes.c_char_p(data).value.decode('gbk') if data else ""
-            user32.CloseClipboard()
+            try:
+                data = user32.GetClipboardData(CF_TEXT)
+                text = ctypes.c_char_p(data).value.decode('gbk') if data else ""
+            finally:
+                user32.CloseClipboard()
             return {"code": "SUCCESS", "data": {"text": text}, "message": "剪贴板读取成功"}
         except Exception as e:
             return {"code": "ERR_CLIPBOARD", "data": None, "message": f"读取剪贴板失败: {str(e)}"}

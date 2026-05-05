@@ -19,7 +19,6 @@ ENV Register - 环境变量工具注册点
 # ============================================================
 # 环境变量工具注册 - 使用 Pydantic 模型
 # ============================================================
-import logging
 from app.services.tools.registry import ToolCategory, tool_registry
 from app.utils.logger import logger
 
