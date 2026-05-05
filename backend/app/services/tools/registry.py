@@ -100,14 +100,16 @@ class ToolCategory(Enum):
     ENVIRONMENT = "environment"  # 环境管理（原env+env_check合并，小沈-2026-05-05）
     SYSTEM = "system"        # 系统信息+注册表操作（原system+registry_tools合并，小沈-2026-05-05）
     DATABASE = "database"      # 数据库访问
-    DESKTOP = "desktop"     # 桌面功能
+    DESKTOP = "desktop"     # 桌面功能（原desktop+gui合并，小沈-2026-05-05）
     # 2026-05-02新增：
-    DATA_ANALYSIS = "data_analysis"  # 数据分析（小沈-2026-05-02）
-    DOCUMENT = "document"          # 文档读写（小沈-2026-05-02）
-    GUI = "gui"                    # GUI操作（小沈-2026-05-02）
+    DOCUMENT = "document"          # 文档读写+数据分析（原document+data_analysis合并，小沈-2026-05-05）
     SUPPORT_TOOL = "support_tool" # 支撑工具（公共函数+LLM内部使用，小沈-2026-05-02）
     DATA_FORMAT = "data_format"    # 数据格式（小沈-2026-05-02）
     CODE_EXECUTION = "code_execution" # 代码执行（小沈-2026-05-02）
+    
+    # 已合并到其他分类（枚举值保留用于兼容旧数据）：
+    # DATA_ANALYSIS = "data_analysis"  # 已合并到document - 2026-05-05
+    # GUI = "gui"                    # 已合并到desktop - 2026-05-05
 
 
 @dataclass
