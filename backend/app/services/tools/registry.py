@@ -97,17 +97,17 @@ class ToolCategory(Enum):
     TIME = "time"           # 时间/日期
     SHELL = "shell"         # Shell命令执行
     NETWORK = "network"     # 网络通信
-    ENV = "env"             # 环境变量
-    SYSTEM = "system"        # 系统信息
-    DATABASE = "database"   # 数据库访问
+    ENV = "env"                  # 环境变量（小沈-2026-05-05保留兼容）
+    ENVIRONMENT = "environment"  # 环境管理（原env+env_check合并，小沈-2026-05-05）
+    SYSTEM = "system"        # 系统信息+注册表操作（原system+registry_tools合并，小沈-2026-05-05）
+    DATABASE = "database"      # 数据库访问
     DESKTOP = "desktop"     # 桌面功能
+    # 2026-05-02新增：
     DATA_ANALYSIS = "data_analysis"  # 数据分析（小沈-2026-05-02）
-    DOCUMENT = "document"            # 文档读写（小沈-2026-05-02）
-    ENV_CHECK = "env_check"          # 环境检查（小沈-2026-05-02）
-    GUI = "gui"                      # GUI操作（小沈-2026-05-02）
-    SUPPORT_TOOL = "support_tool"     # 支撑工具（公共函数+LLM可调用，小沈-2026-05-02）
-    REGISTRY_TOOLS = "registry_tools" # 注册表操作（小沈-2026-05-02）
-    DATA_FORMAT = "data_format"      # 数据格式（小沈-2026-05-02）
+    DOCUMENT = "document"          # 文档读写（小沈-2026-05-02）
+    GUI = "gui"                    # GUI操作（小沈-2026-05-02）
+    SUPPORT_TOOL = "support_tool" # 支撑工具（公共函数+LLM内部使用，小沈-2026-05-02）
+    DATA_FORMAT = "data_format"    # 数据格式（小沈-2026-05-02）
     CODE_EXECUTION = "code_execution" # 代码执行（小沈-2026-05-02）
 
 
