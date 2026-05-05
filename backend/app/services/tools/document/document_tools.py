@@ -207,10 +207,11 @@ def read_xlsx(
     file_path: str,
     sheet_name: str = None,
     max_rows: int = 1000,
-    header: bool = True,
-    index_col: bool = False
+    header: bool = True
 ) -> Dict[str, Any]:
-    """读取Excel文件并提取表格数据 - 小沈 2026-05-02"""
+    """读取Excel文件并提取表格数据 - 小沈 2026-05-02, 修正 2026-05-05
+    【修正】删除未使用的index_col参数；header=False时正确处理首行数据
+    """
     if not _check_module("openpyxl"):
         return {
             "code": "ERR_NO_OPENPYXL",
@@ -249,15 +250,17 @@ def read_xlsx(
         row_count = 0
 
         for i, row in enumerate(ws.iter_rows(values_only=True)):
-            if i >= max_rows + 1:
+            if i >= max_rows + (1 if header else 0):
                 break
             row_data = [
                 None if val is None else val
                 for val in row
             ]
-            if i == 0:
+            if i == 0 and header:
                 headers = [str(h) if h is not None else f"column_{j}" for j, h in enumerate(row_data)]
             else:
+                if i == 0 and not header:
+                    headers = [f"column_{j}" for j in range(len(row_data))]
                 rows.append(row_data)
                 row_count += 1
 
