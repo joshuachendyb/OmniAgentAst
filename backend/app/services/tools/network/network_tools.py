@@ -35,7 +35,7 @@ import subprocess
 import socket
 import asyncio
 from typing import Optional, Dict, Any, Literal, List
-from urllib.parse import urlencode, urlparse, urlunparse, quote_plus
+from urllib.parse import urlencode, urlparse, urlunparse
 
 import httpx
 from app.utils.logger import logger
@@ -263,9 +263,12 @@ async def download_file(
                 is_resume = response.status_code == 206
                 if is_resume:
                     content_range = response.headers.get("content-range", "")
-                    if content_range:
-                        total_size = int(content_range.split("/")[-1]) if "/" in content_range else resume_offset + int(response.headers.get("content-length", 0))
-                    else:
+                    try:
+                        if content_range and "/" in content_range:
+                            total_size = int(content_range.split("/")[-1])
+                        else:
+                            total_size = resume_offset + int(response.headers.get("content-length", 0))
+                    except (ValueError, IndexError):
                         total_size = resume_offset + int(response.headers.get("content-length", 0))
                 else:
                     total_size = int(response.headers.get("content-length", 0))
@@ -392,8 +395,29 @@ async def fetch_webpage(
                     
                     await page.goto(url, wait_until="networkidle", timeout=timeout_sec * 1000)
                     html_content = await page.content()
+                    status_code = 200
                     
                     await browser.close()
+                    
+                    # 提取内容 - 小沈 2026-05-05 修正js_render分支缺少内容提取
+                    if extract_format == "html":
+                        extracted_content = html_content
+                    elif extract_format == "text":
+                        text_content = re.sub(r'<script[^>]*>.*?</script>', '', html_content, flags=re.DOTALL|re.IGNORECASE)
+                        text_content = re.sub(r'<style[^>]*>.*?</style>', '', text_content, flags=re.DOTALL|re.IGNORECASE)
+                        text_content = re.sub(r'<[^>]+>', ' ', text_content)
+                        text_content = re.sub(r'\s+', ' ', text_content).strip()
+                        extracted_content = text_content
+                    else:
+                        extracted_content = _html_to_markdown(html_content)
+                    
+                    if len(extracted_content) > max_tokens * 4:
+                        extracted_content = extracted_content[:max_tokens * 4]
+                        truncated = True
+                    else:
+                        truncated = False
+                    
+                    content_type = "text/html"
                     
             except ImportError:
                 return {

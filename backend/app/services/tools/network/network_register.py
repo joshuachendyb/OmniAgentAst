@@ -26,8 +26,6 @@ Network Register - 网络通信工具注册点
 # ============================================================
 # 网络工具注册 - 使用 Pydantic 模型（按文档设计）
 # ============================================================
-import logging
-from typing import Optional
 from app.services.tools.registry import register_tool, ToolCategory, tool_registry
 from app.utils.logger import logger
 
