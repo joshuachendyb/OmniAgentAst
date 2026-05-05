@@ -18,7 +18,7 @@ Env Check Register - 环境检查工具注册点
 from app.services.tools.registry import register_tool, ToolCategory, tool_registry
 from app.utils.logger import logger
 
-from app.services.tools.env_check.env_check_schema import (
+from app.services.tools.environment.env_check_schema import (
     ValidateCodeSafetyInput,
     CheckModuleAvailableInput,
     ValidateCsvFormatInput,
@@ -28,7 +28,7 @@ from app.services.tools.env_check.env_check_schema import (
     CheckXlsxReadableInput,
 )
 
-from app.services.tools.env_check.env_check_tools import (
+from app.services.tools.environment.env_check_tools import (
     check_python_available,
     validate_code_safety,
     check_node_available,
@@ -182,7 +182,7 @@ def _register_env_check_tools():
             tool_registry.register(
                 name=name,
                 description=desc,
-                category=ToolCategory.ENV_CHECK,
+                category=ToolCategory.ENVIRONMENT,
                 implementation=method,
                 version="1.0.0",
                 input_model=input_model,
@@ -193,7 +193,7 @@ def _register_env_check_tools():
             tool_registry.register(
                 name=name,
                 description=desc,
-                category=ToolCategory.ENV_CHECK,
+                category=ToolCategory.ENVIRONMENT,
                 implementation=method,
                 version="1.0.0",
                 input_schema=input_schema,

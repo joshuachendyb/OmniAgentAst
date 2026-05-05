@@ -23,7 +23,7 @@ import logging
 from app.services.tools.registry import ToolCategory, tool_registry
 from app.utils.logger import logger
 
-from app.services.tools.env.env_schema import (
+from app.services.tools.environment.env_schema import (
     GetEnvInput,
     SetEnvInput,
     ListEnvInput,
@@ -31,7 +31,7 @@ from app.services.tools.env.env_schema import (
     ExistsEnvInput,
 )
 
-from app.services.tools.env.env_tools import (
+from app.services.tools.environment.env_tools import (
     get_env,
     set_env,
     list_env,
@@ -169,7 +169,7 @@ def _register_env_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.ENV,
+            category=ToolCategory.ENVIRONMENT,
             implementation=method,
             version="1.0.0",
             input_model=input_model,

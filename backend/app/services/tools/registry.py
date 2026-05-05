@@ -97,7 +97,6 @@ class ToolCategory(Enum):
     TIME = "time"           # 时间/日期
     SHELL = "shell"         # Shell命令执行
     NETWORK = "network"     # 网络通信
-    ENV = "env"                  # 环境变量（小沈-2026-05-05保留兼容）
     ENVIRONMENT = "environment"  # 环境管理（原env+env_check合并，小沈-2026-05-05）
     SYSTEM = "system"        # 系统信息+注册表操作（原system+registry_tools合并，小沈-2026-05-05）
     DATABASE = "database"      # 数据库访问
