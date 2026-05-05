@@ -28,7 +28,7 @@ import logging
 from app.services.tools.registry import tool_registry, ToolCategory
 from app.utils.logger import logger
 
-from app.services.tools.data_analysis.data_analysis_schema import (
+from app.services.tools.document.data_analysis_schema import (
     ReadCsvDataframeInput,
     GenerateChartInput,
     AnalyzeDataInput,
@@ -36,7 +36,7 @@ from app.services.tools.data_analysis.data_analysis_schema import (
     FilterDataInput,
 )
 
-from app.services.tools.data_analysis.data_analysis_tools import (
+from app.services.tools.document.data_analysis_tools import (
     read_csv_dataframe,
     generate_chart,
     analyze_data,

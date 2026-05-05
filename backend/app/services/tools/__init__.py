@@ -30,9 +30,9 @@ from app.services.tools import desktop  # 触发desktop工具注册
 # from app.services.tools import registry_tools  # 已合并到system，注册表工具现在通过system导入
 from app.services.tools import data_format  # 触发data_format工具注册（小沈-2026-05-02）
 from app.services.tools import code_execution  # 触发code_execution工具注册（小沈-2026-05-02）
-from app.services.tools import data_analysis  # 触发data_analysis工具注册（小沈-2026-05-02）
+# from app.services.tools import data_analysis  # 已合并到document，注册data_analysis工具现在通过document导入
 from app.services.tools import document  # 触发document工具注册（小沈-2026-05-02）
-from app.services.tools import gui  # 触发gui工具注册（小沈-2026-05-02）
+# from app.services.tools import gui  # 已合并到desktop，注册gui工具现在通过desktop导入
 from app.services.tools import support_tool  # 触发support_tool工具注册（小沈-2026-05-02）
 
 __all__ = [
