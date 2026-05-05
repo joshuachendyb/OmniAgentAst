@@ -116,14 +116,12 @@ async def file_checksum_impl(
         
         # 定义哈希计算操作
         def _calculate_checksum_sync():
-            import time
             start_time = time.time()
+            timeout_sec = timeout / 1000.0
             
             try:
-                # 获取文件大小
                 file_size = path.stat().st_size
                 
-                # 选择哈希算法
                 algorithm_lower = algorithm.lower()
                 if algorithm_lower == "md5":
                     hash_obj = hashlib.md5()
@@ -136,13 +134,14 @@ async def file_checksum_impl(
                 else:
                     raise ValueError(f"不支持的哈希算法: {algorithm}")
                 
-                # 计算哈希值
                 with open(path, 'rb') as f:
                     while True:
                         chunk = f.read(chunk_size)
                         if not chunk:
                             break
                         hash_obj.update(chunk)
+                        if time.time() - start_time > timeout_sec:
+                            raise TimeoutError(f"哈希计算超时（{timeout}毫秒）")
                 
                 checksum = hash_obj.hexdigest()
                 end_time = time.time()
@@ -166,8 +165,8 @@ async def file_checksum_impl(
                     "checksum_lower": checksum.lower()
                 }
                 
-            except Exception as e:
-                raise e
+            except Exception:
+                raise
         
         # 执行哈希计算操作
         result = await asyncio.to_thread(

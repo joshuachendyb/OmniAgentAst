@@ -189,21 +189,17 @@ async def batch_rename_impl(
                 )
             
             if not preview:
-                # 执行重命名
-                def _rename_sync():
+                # 执行重命名 - 使用默认参数绑定避免闭包延迟绑定 - 小沈 2026-05-05
+                def _rename_sync(_src=file_path, _dst=final_new_path):
                     try:
-                        # 确保目标目录存在
-                        final_new_path.parent.mkdir(parents=True, exist_ok=True)
+                        _dst.parent.mkdir(parents=True, exist_ok=True)
                         
-                        # 执行重命名
-                        if conflict_strategy == "overwrite" and final_new_path.exists():
-                            # 覆盖模式，先删除目标文件
-                            final_new_path.unlink()
+                        if conflict_strategy == "overwrite" and _dst.exists():
+                            _dst.unlink()
                         
-                        shutil.move(str(file_path), str(final_new_path))
+                        shutil.move(str(_src), str(_dst))
                         return True
                     except Exception as e:
-                        # 记录错误但不中断整个操作
                         return str(e)
                 
                 rename_result = await asyncio.to_thread(

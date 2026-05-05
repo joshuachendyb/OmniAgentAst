@@ -393,7 +393,7 @@ def _apply_filters(path: Path, filters: Optional[Dict[str, Any]]) -> bool:
                         dt = datetime.fromisoformat(modified_after.replace('Z', '+00:00'))
                         if stat.st_mtime < dt.timestamp():
                             return False
-                    except:
+                    except (ValueError, TypeError):
                         pass
             
             if "modified_before" in filters:
@@ -409,7 +409,7 @@ def _apply_filters(path: Path, filters: Optional[Dict[str, Any]]) -> bool:
                         dt = datetime.fromisoformat(modified_before.replace('Z', '+00:00'))
                         if stat.st_mtime > dt.timestamp():
                             return False
-                    except:
+                    except (ValueError, TypeError):
                         pass
         
         except (OSError, PermissionError):

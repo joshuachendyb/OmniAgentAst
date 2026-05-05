@@ -15,7 +15,6 @@ Author: 小健 - 2026-04-19
 import asyncio
 import zipfile
 import tarfile
-import gzip
 import os
 import shutil
 from pathlib import Path
@@ -76,8 +75,16 @@ async def compress_files_impl(
     
     destination_path = output_path
     
-    # 验证目标路径（使用overwrite判断是否允许覆盖）
-    if not overwrite and is_valid_dst and os.path.exists(destination_path):
+    # 验证目标路径
+    is_valid_dst, error_msg_dst = validate_path_func(destination_path)
+    if not is_valid_dst:
+        return to_unified_format_func({
+            "success": False,
+            "error": f"目标路径验证失败: {error_msg_dst}",
+            "operation_id": None
+        }, "compress_files")
+    
+    if not overwrite and os.path.exists(destination_path):
         return to_unified_format_func({
             "success": False,
             "error": f"目标文件已存在: {destination_path}，可设置overwrite=true覆盖",
@@ -159,26 +166,16 @@ async def compress_files_impl(
                 compressed_files = []
                 
                 if format == "zip":
-                    # 创建zip文件
-                    compression = zipfile.ZIP_DEFLATED
-                    compression_level_mapping = {
-                        0: zipfile.ZIP_STORED,
-                        1: zipfile.ZIP_DEFLATED,
-                        2: zipfile.ZIP_DEFLATED,
-                        3: zipfile.ZIP_DEFLATED,
-                        4: zipfile.ZIP_DEFLATED,
-                        5: zipfile.ZIP_DEFLATED,
-                        6: zipfile.ZIP_DEFLATED,
-                        7: zipfile.ZIP_DEFLATED,
-                        8: zipfile.ZIP_DEFLATED,
-                        9: zipfile.ZIP_DEFLATED
-                    }
-                    compression = compression_level_mapping.get(compression_level, zipfile.ZIP_DEFLATED)
+                    # 级别0用ZIP_STORED(不压缩)，1-9用ZIP_DEFLATED - 小沈 2026-05-05
+                    compression = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
                     
-                    # 设置密码
+                    # 注意：Python标准库zipfile的setpassword()仅对解压有效，写入加密无效
+                    # 用户设置的密码仅作为元数据标记，实际压缩文件并未加密 - 小沈 2026-05-05
                     zip_password = None
+                    password_warning = None
                     if password:
                         zip_password = password.encode('utf-8')
+                        password_warning = "注意：Python zipfile不支持写入加密，密码仅对解压验证有效"
                     
                     # 创建zip文件
                     with zipfile.ZipFile(
@@ -240,9 +237,9 @@ async def compress_files_impl(
                 if destination.exists():
                     try:
                         destination.unlink()
-                    except:
+                    except OSError:
                         pass
-                raise e
+                raise
         
         # 执行压缩操作
         result = await asyncio.to_thread(

@@ -61,6 +61,10 @@ async def file_monitor_impl(
     if event_types is None:
         event_types = ["created", "modified", "deleted", "renamed"]
     
+    # duration=None 时设置默认超时60秒，防止无限阻塞 - 小沈 2026-05-05
+    if duration is None:
+        duration = 60
+    
     # 验证路径
     is_valid, error_msg = validate_path_func(directory)
     if not is_valid:
@@ -170,8 +174,8 @@ async def file_monitor_impl(
                     "end_time": time.time()
                 }
                 
-            except Exception as e:
-                raise e
+            except Exception:
+                raise
         
         # 执行监控操作
         result = await asyncio.to_thread(
@@ -287,7 +291,7 @@ def _detect_file_changes(
                     dt = datetime.fromisoformat(modified_after.replace('Z', '+00:00'))
                     if file_info["mtime"] < dt.timestamp():
                         return False
-                except:
+                except (ValueError, TypeError):
                     pass
         
         return True
