@@ -14,6 +14,7 @@ Data Format 模块 - 数据格式处理工具
     └── data_format_tools.py     # 具体实现
 
 Author: 小沈 - 2026-05-02
+【修正 2026-05-05 小沈】补充7个新工具导出
 """
 
 from app.services.tools.data_format.data_format_register import *
@@ -21,10 +22,24 @@ from app.services.tools.data_format.data_format_tools import (
     read_json,
     write_json,
     read_csv_basic,
+    parse_yaml,
+    write_yaml,
+    parse_toml,
+    write_toml,
+    parse_ini,
+    parse_xml,
+    parse_properties,
 )
 
 __all__ = [
     "read_json",
     "write_json",
     "read_csv_basic",
+    "parse_yaml",
+    "write_yaml",
+    "parse_toml",
+    "write_toml",
+    "parse_ini",
+    "parse_xml",
+    "parse_properties",
 ]

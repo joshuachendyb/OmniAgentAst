@@ -6,10 +6,12 @@ Data Analysis Register - 数据分析工具注册点
 - 使用 tool_registry.register() 显式注册所有数据分析工具
 - 工具函数从 data_analysis_tools.py 导入
 
-【工具列表】（共3个）
+【工具列表】（共5个）
 1. read_csv_dataframe - 使用pandas读取CSV文件并返回DataFrame格式数据
 2. generate_chart - 使用matplotlib生成数据可视化图表
 3. analyze_data - 对数据集进行统计分析
+4. read_excel_dataframe - 使用pandas读取Excel文件并返回DataFrame格式数据
+5. filter_data - 按条件筛选/过滤数据
 
 【注册说明】
 - 使用 registry.py 的 tool_registry 统一注册

@@ -24,17 +24,30 @@
 - parse_properties: 读取Properties文件
 
 Author: 小沈 - 2026-05-02
+【修正 2026-05-05 小沈】小健检查发现的问题：
+1. parse_properties 末尾重复except块（死代码+复制粘贴残留）→ 删除
+2. read_json 截断逻辑 truncated 永远为 True → 修正为仅在确实截断时为 True
+3. read_csv_basic 自动检测分隔符时 open() 未 close + 全量扫描 → 改为只读前10行
+4. 裸 except (3处) → 改为 except Exception
+5. write_json 备份路径硬编码 → 改为 tempfile.gettempdir()
+6. write_json backup_created 判断时机错误 → 在备份后立即判断
+7. 错误码统一为 ERR_XXX 格式
+8. write_toml 中 tomli_w 别名覆盖 + 错误提示不准确 → 修正
 """
 
 import json
 import csv
+import tempfile
+import logging
 from typing import Dict, Any, List, Union
 from pathlib import Path
 
+logger = logging.getLogger(__name__)
+
 
 def read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10) -> Dict[str, Any]:
-    """读取JSON文件内容 - 小沈 2026-05-03修正，按文档7.4节参数定义
-    
+    """读取JSON文件内容 - 小沈 2026-05-03, 修正 2026-05-05
+
     参数：
     - file_path: JSON文件路径（必填）
     - encoding: 文件编码（可选），默认 auto_detect
@@ -44,11 +57,11 @@ def read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10
         path = Path(file_path)
         if not path.exists():
             return {
-                "code": "ERROR",
+                "code": "ERR_READ_JSON",
                 "data": None,
                 "message": f"文件不存在: {file_path}"
             }
-        
+
         actual_encoding = "utf-8"
         if encoding == "auto_detect":
             try:
@@ -62,27 +75,39 @@ def read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10
                         try:
                             raw.decode("utf-8")
                             actual_encoding = "utf-8"
-                        except:
+                        except UnicodeDecodeError:
                             actual_encoding = "gbk"
-            except:
+            except Exception:
                 actual_encoding = "utf-8"
-        
+
         with open(path, "r", encoding=actual_encoding) as f:
             data = json.load(f)
-        
+
         def truncate_dict(d, current_depth=0):
             if current_depth >= max_depth:
-                return {"__truncated__": True, "depth": current_depth}
+                return {"__truncated__": True, "depth": current_depth}, True
             if isinstance(d, dict):
-                return {k: truncate_dict(v, current_depth+1) for k, v in d.items()}
+                result = {}
+                any_truncated = False
+                for k, v in d.items():
+                    result[k], t = truncate_dict(v, current_depth + 1)
+                    any_truncated = any_truncated or t
+                return result, any_truncated
             elif isinstance(d, list):
-                return [truncate_dict(item, current_depth+1) for item in d[:100]]
-            return d
-        
+                truncated_list = d[:100]
+                any_truncated = len(d) > 100
+                result = []
+                for item in truncated_list:
+                    r, t = truncate_dict(item, current_depth + 1)
+                    result.append(r)
+                    any_truncated = any_truncated or t
+                return result, any_truncated
+            return d, False
+
         truncated = False
         if max_depth < 50:
-            data, truncated = truncate_dict(data), True
-        
+            data, truncated = truncate_dict(data)
+
         return {
             "code": "SUCCESS",
             "data": data,
@@ -95,13 +120,13 @@ def read_json(file_path: str, encoding: str = "auto_detect", max_depth: int = 10
         }
     except json.JSONDecodeError as e:
         return {
-            "code": "ERROR",
+            "code": "ERR_READ_JSON",
             "data": None,
             "message": f"JSON解析失败: {str(e)}"
         }
     except Exception as e:
         return {
-            "code": "ERROR",
+            "code": "ERR_READ_JSON",
             "data": None,
             "message": f"读取JSON文件失败: {str(e)}"
         }
@@ -116,8 +141,8 @@ def write_json(
     backup_before_write: bool = True,
     create_parents: bool = True,
 ) -> Dict[str, Any]:
-    """写入数据到JSON文件 - 小沈 2026-05-03修正，按文档7.4节参数定义
-    
+    """写入数据到JSON文件 - 小沈 2026-05-03, 修正 2026-05-05
+
     参数：
     - file_path: JSON文件路径（必填）
     - data: 要写入的数据（必填）
@@ -129,34 +154,36 @@ def write_json(
     """
     import shutil
     from datetime import datetime
-    
+
     try:
         path = Path(file_path)
-        
+        backup_created = False
+
         if backup_before_write and path.exists():
-            backup_dir = Path(__file__).parent.parent.parent.parent / "temp" / "json_backup"
+            backup_dir = Path(tempfile.gettempdir()) / "json_backup"
             backup_dir.mkdir(parents=True, exist_ok=True)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = backup_dir / f"{path.stem}_{timestamp}{path.suffix}"
             shutil.copy2(path, backup_path)
-        
+            backup_created = backup_path.exists()
+
         if create_parents:
             path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(path, "w", encoding=encoding) as f:
             json.dump(data, f, indent=indent, ensure_ascii=ensure_ascii)
-        
+
         return {
             "code": "SUCCESS",
             "data": {
                 "file_path": file_path,
-                "backup_created": backup_before_write and path.exists()
+                "backup_created": backup_created
             },
             "message": f"成功写入JSON文件: {file_path}"
         }
     except Exception as e:
         return {
-            "code": "ERROR",
+            "code": "ERR_WRITE_JSON",
             "data": None,
             "message": f"写入JSON文件失败: {str(e)}"
         }
@@ -170,8 +197,8 @@ def read_csv_basic(
     max_rows: int = 500,
     skip_blank_lines: bool = True,
 ) -> Dict[str, Any]:
-    """读取CSV文件内容（基础版）- 小沈 2026-05-03修正，按文档7.4节参数定义
-    
+    """读取CSV文件内容（基础版）- 小沈 2026-05-03, 修正 2026-05-05
+
     参数：
     - file_path: CSV文件路径（必填）
     - encoding: 文件编码（可选），默认 auto_detect
@@ -181,16 +208,16 @@ def read_csv_basic(
     - skip_blank_lines: 跳过空行（可选），默认 true
     """
     import csv
-    
+
     try:
         path = Path(file_path)
         if not path.exists():
             return {
-                "code": "ERROR",
+                "code": "ERR_READ_CSV_BASIC",
                 "data": None,
                 "message": f"文件不存在: {file_path}"
             }
-        
+
         actual_encoding = "utf-8"
         if encoding == "auto_detect":
             try:
@@ -198,46 +225,45 @@ def read_csv_basic(
                     raw = f.read(10)
                     raw.decode("utf-8")
                 actual_encoding = "utf-8"
-            except:
+            except Exception:
                 actual_encoding = "gbk"
-        
+
         actual_delimiter = ","
         if delimiter == "auto_detect":
-            with open(path, "r", encoding=actual_encoding, newline="") as f:
-                sample = [f.readline() for _ in range(min(10, sum(1 for _ in open(path, "r", encoding=actual_encoding))))]
-                try:
-                    sample_text = sample[0] if sample else ""
-                    if "\t" in sample_text:
-                        actual_delimiter = "\t"
-                    elif ";" in sample_text:
-                        actual_delimiter = ";"
-                    else:
-                        actual_delimiter = ","
-                except:
+            try:
+                with open(path, "r", encoding=actual_encoding, newline="") as f:
+                    sample_text = f.readline()
+                if "\t" in sample_text:
+                    actual_delimiter = "\t"
+                elif ";" in sample_text:
+                    actual_delimiter = ";"
+                else:
                     actual_delimiter = ","
+            except Exception:
+                actual_delimiter = ","
         else:
             actual_delimiter = delimiter
-        
+
         rows = []
         headers = []
-        
+
         with open(path, "r", encoding=actual_encoding, newline="") as f:
             reader = csv.reader(f, delimiter=actual_delimiter)
-            
+
             for i, row in enumerate(reader):
                 if skip_blank_lines and not any(cell.strip() for cell in row):
                     continue
-                    
+
                 if i == 0 and has_header:
                     headers = row
                 else:
                     rows.append(row)
                     if len(rows) >= max_rows:
                         break
-        
+
         if not has_header and rows:
             headers = [f"column_{i}" for i in range(len(rows[0]))] if rows else []
-        
+
         return {
             "code": "SUCCESS",
             "data": {
@@ -249,7 +275,7 @@ def read_csv_basic(
         }
     except Exception as e:
         return {
-            "code": "ERROR",
+            "code": "ERR_READ_CSV_BASIC",
             "data": None,
             "message": f"读取CSV文件失败: {str(e)}"
         }
@@ -261,16 +287,16 @@ def parse_yaml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         import yaml
         path = Path(file_path)
         if not path.exists():
-            return {"code": "ERROR", "data": None, "message": f"文件不存在: {file_path}"}
-        
+            return {"code": "ERR_PARSE_YAML", "data": None, "message": f"文件不存在: {file_path}"}
+
         with open(path, "r", encoding=encoding) as f:
             data = yaml.safe_load(f)
-        
+
         return {"code": "SUCCESS", "data": data, "message": f"成功读取YAML文件: {file_path}"}
     except ImportError:
-        return {"code": "ERROR", "data": None, "message": "PyYAML库未安装，请先执行: pip install pyyaml"}
+        return {"code": "ERR_NO_PYYAML", "data": None, "message": "PyYAML库未安装，请先执行: pip install pyyaml"}
     except Exception as e:
-        return {"code": "ERROR", "data": None, "message": f"读取YAML失败: {str(e)}"}
+        return {"code": "ERR_PARSE_YAML", "data": None, "message": f"读取YAML失败: {str(e)}"}
 
 
 def write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int = 2) -> Dict[str, Any]:
@@ -279,15 +305,15 @@ def write_yaml(file_path: str, data: Any, encoding: str = "utf-8", indent: int =
         import yaml
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(path, "w", encoding=encoding) as f:
             yaml.safe_dump(data, f, allow_unicode=True, indent=indent)
-        
+
         return {"code": "SUCCESS", "data": {"file_path": file_path}, "message": f"成功写入YAML文件: {file_path}"}
     except ImportError:
-        return {"code": "ERROR", "data": None, "message": "PyYAML库未安装，请先执行: pip install pyyaml"}
+        return {"code": "ERR_NO_PYYAML", "data": None, "message": "PyYAML库未安装，请先执行: pip install pyyaml"}
     except Exception as e:
-        return {"code": "ERROR", "data": None, "message": f"写入YAML失败: {str(e)}"}
+        return {"code": "ERR_WRITE_YAML", "data": None, "message": f"写入YAML失败: {str(e)}"}
 
 
 def parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
@@ -296,33 +322,33 @@ def parse_toml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         import tomli
         path = Path(file_path)
         if not path.exists():
-            return {"code": "ERROR", "data": None, "message": f"文件不存在: {file_path}"}
-        
+            return {"code": "ERR_PARSE_TOML", "data": None, "message": f"文件不存在: {file_path}"}
+
         with open(path, "rb") as f:
             data = tomli.load(f)
-        
+
         return {"code": "SUCCESS", "data": data, "message": f"成功读取TOML文件: {file_path}"}
     except ImportError:
-        return {"code": "ERROR", "data": None, "message": "tomli库未安装，请先执行: pip install tomli"}
+        return {"code": "ERR_NO_TOMLI", "data": None, "message": "tomli库未安装，请先执行: pip install tomli"}
     except Exception as e:
-        return {"code": "ERROR", "data": None, "message": f"读取TOML失败: {str(e)}"}
+        return {"code": "ERR_PARSE_TOML", "data": None, "message": f"读取TOML失败: {str(e)}"}
 
 
 def write_toml(file_path: str, data: Dict[str, Any], encoding: str = "utf-8") -> Dict[str, Any]:
-    """写入数据到TOML文件 - 小沈 2026-05-04"""
+    """写入数据到TOML文件 - 小沈 2026-05-04, 修正 2026-05-05"""
     try:
-        import tomli_w as tomli
+        import tomli_w
         path = Path(file_path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        
+
         with open(path, "wb") as f:
-            tomli.dump(data, f)
-        
+            tomli_w.dump(data, f)
+
         return {"code": "SUCCESS", "data": {"file_path": file_path}, "message": f"成功写入TOML文件: {file_path}"}
     except ImportError:
-        return {"code": "ERROR", "data": None, "message": "tomli库未安装，请先执行: pip install tomli"}
+        return {"code": "ERR_NO_TOMLI_W", "data": None, "message": "tomli_w库未安装，请先执行: pip install tomli-w"}
     except Exception as e:
-        return {"code": "ERROR", "data": None, "message": f"写入TOML失败: {str(e)}"}
+        return {"code": "ERR_WRITE_TOML", "data": None, "message": f"写入TOML失败: {str(e)}"}
 
 
 def parse_ini(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
@@ -331,18 +357,18 @@ def parse_ini(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         import configparser
         path = Path(file_path)
         if not path.exists():
-            return {"code": "ERROR", "data": None, "message": f"文件不存在: {file_path}"}
-        
+            return {"code": "ERR_PARSE_INI", "data": None, "message": f"文件不存在: {file_path}"}
+
         config = configparser.ConfigParser()
         config.read(path, encoding=encoding)
-        
+
         result = {}
         for section in config.sections():
             result[section] = dict(config[section])
-        
+
         return {"code": "SUCCESS", "data": result, "message": f"成功读取INI文件: {file_path}"}
     except Exception as e:
-        return {"code": "ERROR", "data": None, "message": f"读取INI失败: {str(e)}"}
+        return {"code": "ERR_PARSE_INI", "data": None, "message": f"读取INI失败: {str(e)}"}
 
 
 def parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
@@ -351,11 +377,11 @@ def parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
         import xml.etree.ElementTree as ET
         path = Path(file_path)
         if not path.exists():
-            return {"code": "ERROR", "data": None, "message": f"文件不存在: {file_path}"}
-        
+            return {"code": "ERR_PARSE_XML", "data": None, "message": f"文件不存在: {file_path}"}
+
         tree = ET.parse(path)
         root = tree.getroot()
-        
+
         def elem_to_dict(elem):
             children = list(elem)
             if not children:
@@ -370,20 +396,20 @@ def parse_xml(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
                 else:
                     result[child.tag] = child_data
             return result
-        
+
         data = {root.tag: elem_to_dict(root)}
         return {"code": "SUCCESS", "data": data, "message": f"成功读取XML文件: {file_path}"}
     except Exception as e:
-        return {"code": "ERROR", "data": None, "message": f"读取XML失败: {str(e)}"}
+        return {"code": "ERR_PARSE_XML", "data": None, "message": f"读取XML失败: {str(e)}"}
 
 
 def parse_properties(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
-    """读取Java Properties文件 - 小沈 2026-05-04"""
+    """读取Java Properties文件 - 小沈 2026-05-04, 修正 2026-05-05"""
     try:
         path = Path(file_path)
         if not path.exists():
-            return {"code": "ERROR", "data": None, "message": f"文件不存在: {file_path}"}
-        
+            return {"code": "ERR_PARSE_PROPERTIES", "data": None, "message": f"文件不存在: {file_path}"}
+
         result = {}
         with open(path, "r", encoding=encoding) as f:
             for line in f:
@@ -395,13 +421,7 @@ def parse_properties(file_path: str, encoding: str = "utf-8") -> Dict[str, Any]:
                     elif ":" in line:
                         key, val = line.split(":", 1)
                         result[key.strip()] = val.strip()
-        
+
         return {"code": "SUCCESS", "data": result, "message": f"成功读取Properties文件: {file_path}"}
     except Exception as e:
-        return {"code": "ERROR", "data": None, "message": f"读取Properties失败: {str(e)}"}
-    except Exception as e:
-        return {
-            "code": "ERROR",
-            "data": None,
-            "message": f"读取CSV文件失败: {str(e)}"
-        }
+        return {"code": "ERR_PARSE_PROPERTIES", "data": None, "message": f"读取Properties失败: {str(e)}"}

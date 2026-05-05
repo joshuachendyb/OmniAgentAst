@@ -22,10 +22,14 @@ from app.services.tools.data_analysis.data_analysis_tools import (
     read_csv_dataframe,
     generate_chart,
     analyze_data,
+    read_excel_dataframe,
+    filter_data,
 )
 
 __all__ = [
     "read_csv_dataframe",
     "generate_chart",
     "analyze_data",
+    "read_excel_dataframe",
+    "filter_data",
 ]
