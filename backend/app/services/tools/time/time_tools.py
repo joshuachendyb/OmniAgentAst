@@ -30,6 +30,7 @@ import json;
 from datetime import datetime, timedelta, timezone;
 from typing import Dict, Any, Optional, Callable, Awaitable, List, Union;
 import re;
+from app.utils.logger import logger;
 
 
 # 定时器存储;
@@ -396,8 +397,8 @@ async def timer_clear(timer_id: str) -> Dict[str, Any]:
         timer_handle = _timers[timer_id]
         timer_handle.cancel();
         
-        # 从字典中移除
         del _timers[timer_id];
+        _timer_callbacks.pop(timer_id, None)
         
         return {
             "code": "SUCCESS",
@@ -441,16 +442,17 @@ def time_utc_to_local(utc_time: Any, target_tz: Optional[str] = None) -> Dict[st
         if target_tz:
             # 优先尝试IANA时区名称（如"Asia/Shanghai"、"America/New_York"）
             try:
-                # 方法1：尝试IANA时区名称（使用pytz）
+                import pytz
                 try:
                     tz = pytz.timezone(target_tz)
                     local_dt = utc_dt.astimezone(tz)
                 except Exception:
                     # 方法2：失败再尝试±HH:MM格式
                     if re.match(r'^[+-]\d{2}:\d{2}$', target_tz):
+                        sign = -1 if target_tz[0] == '-' else 1
                         offset_hours = int(target_tz[1:3])
                         offset_minutes = int(target_tz[4:6])
-                        tz = timezone(timedelta(hours=offset_hours, minutes=offset_minutes))
+                        tz = timezone(timedelta(hours=sign*offset_hours, minutes=sign*offset_minutes))
                         local_dt = utc_dt.astimezone(tz)
                     else:
                         # 默认使用本地时区
@@ -496,16 +498,17 @@ def time_local_to_utc(local_time: Any, source_tz: Optional[str] = None) -> Dict[
         # 设置源时区
         if source_tz:
             try:
-                # 优先尝试IANA时区名称（如"Asia/Shanghai"、"America/New_York"）
+                import pytz
                 try:
                     tz = pytz.timezone(source_tz)
                     local_dt = local_dt.replace(tzinfo=tz)
                 except Exception:
                     # 失败再尝试±HH:MM格式
                     if re.match(r'^[+-]\d{2}:\d{2}$', source_tz):
+                        sign = -1 if source_tz[0] == '-' else 1
                         offset_hours = int(source_tz[1:3])
                         offset_minutes = int(source_tz[4:6])
-                        tz = timezone(timedelta(hours=offset_hours, minutes=offset_minutes))
+                        tz = timezone(timedelta(hours=sign*offset_hours, minutes=sign*offset_minutes))
                         local_dt = local_dt.replace(tzinfo=tz)
                     # 其他情况，保持原样（使用本地时区）
             except Exception:
@@ -583,6 +586,54 @@ def time_is_weekend(date: Optional[Any] = None) -> Dict[str, Any]:
 # ===========================================================
 # P1 常用辅助 - time_is_holiday
 # ===========================================================
+
+def _is_holiday(date_obj) -> bool:
+    """判断日期是否为假日（布尔值）- 小沈 2026-05-05 抽取公共函数
+    
+    Args:
+        date_obj: datetime.date 或 datetime 对象
+    Returns:
+        bool: 是否为假日
+    """
+    try:
+        dt = date_obj if hasattr(date_obj, 'month') else None
+        if dt is None:
+            return False
+        
+        month_day = (dt.month, dt.day)
+        year = dt.year
+        
+        solar_holidays = {
+            (1, 1), (2, 14), (3, 8), (3, 12), (4, 1),
+            (5, 1), (5, 4), (6, 1), (7, 1), (8, 1),
+            (9, 10), (10, 1), (12, 24), (12, 25),
+        }
+        
+        qingming_dates = {
+            2024: (4, 4), 2025: (4, 4), 2026: (4, 5),
+            2027: (4, 5), 2028: (4, 4), 2029: (4, 5), 2030: (4, 5),
+            2031: (4, 5), 2032: (4, 4), 2033: (4, 4), 2034: (4, 5), 2035: (4, 5),
+        }
+        qingming = qingming_dates.get(year, (4, 5))
+        
+        if month_day in solar_holidays or month_day == qingming:
+            return True
+        
+        try:
+            from lunarcalendar import Converter
+            solar_date = dt.date() if hasattr(dt, 'date') else dt
+            lunar = Converter.Solar2Lunar(solar_date)
+            lunar_month_day = (lunar.month, lunar.day)
+            lunar_holidays = {
+                (1, 1), (1, 15), (5, 5), (7, 7), (7, 15),
+                (8, 15), (9, 9), (12, 8), (12, 30),
+            }
+            return lunar_month_day in lunar_holidays
+        except Exception:
+            return False
+    except Exception:
+        return False
+
 
 def time_is_holiday(date: Optional[Any] = None) -> Dict[str, Any]:
     """检查给定日期是否为假日（支持公历+农历节日）"""
@@ -723,7 +774,7 @@ def timer_list(limit: int = 10) -> Dict[str, Any]:
         timers = timers[:limit] if limit > 0 else timers
         
         return {
-            "code": "OK",
+            "code": "SUCCESS",
             "data": timers,
             "message": f"共{len(timers)}个定时器"
         }
@@ -786,7 +837,7 @@ def time_compare(time1: Any, time2: Any, unit: str = "days") -> Dict[str, Any]:
             compare_result = "eq"  # time1 == time2
         
         return {
-            "code": "OK",
+            "code": "SUCCESS",
             "data": {
                 "result": compare_result,
                 "diff_seconds": diff.total_seconds(),
@@ -840,7 +891,7 @@ def time_to_timestamp(time: Any, unit: str = "seconds") -> Dict[str, Any]:
             ts_value = int(ts)
         
         return {
-            "code": "OK",
+            "code": "SUCCESS",
             "data": ts_value,
             "message": f"时间戳: {ts_value} {unit}"
         }
@@ -871,6 +922,7 @@ def timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") -
         
         # 解析目标时区
         try:
+            import zoneinfo
             tz = zoneinfo.ZoneInfo(target_tz) if target_tz else timezone.utc
         except Exception:
             tz = timezone.utc
@@ -879,7 +931,7 @@ def timestamp_to_time(timestamp: Union[int, float], target_tz: str = "+08:00") -
         dt = datetime.fromtimestamp(ts, tz=tz)
         
         return {
-            "code": "OK",
+            "code": "SUCCESS",
             "data": {
                 "datetime": dt.strftime("%Y-%m-%d %H:%M:%S"),
                 "isoformat": dt.isoformat(),
@@ -924,7 +976,7 @@ def time_is_workday(date: Optional[Union[int, float, str]] = None) -> Dict[str, 
         is_workday = not is_weekend and not is_holiday_result
         
         return {
-            "code": "OK",
+            "code": "SUCCESS",
             "data": is_workday,
             "message": "工作日" if is_workday else "非工作日"
         }
@@ -972,7 +1024,7 @@ def time_next_n_workday(start: Optional[Union[int, float, str]] = None, n: int =
             current_date += timedelta(days=1)
         
         return {
-            "code": "OK",
+            "code": "SUCCESS",
             "data": result_dates,
             "message": f"第{n}个工作日: {result_dates[0] if result_dates else None}"
         }
@@ -1049,9 +1101,6 @@ def time_add(start: Any, delta: float, unit: str = "days") -> Dict[str, Any]:
             "message": f"时间加减失败: {str(e)}"
         }
 
-
-    except Exception:
-            return None
 
 def _parse_datetime_string(date_str: str) -> Optional[datetime]:
     """解析日期字符串，支持多种格式"""
