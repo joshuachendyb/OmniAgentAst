@@ -14,7 +14,7 @@ GUI 辅助工具注册点
 from app.services.tools.registry import tool_registry, ToolCategory
 from app.utils.logger import logger
 
-from app.services.tools.gui.gui_helpers_schema import (
+from app.services.tools.desktop.gui_helpers_schema import (
     GetMousePositionInput,
     CheckScreenSizeInput,
     CheckWindowExistsInput,
@@ -24,7 +24,7 @@ from app.services.tools.gui.gui_helpers_schema import (
     CheckNotificationPermissionInput,
 )
 
-from app.services.tools.gui.gui_helpers import (
+from app.services.tools.desktop.gui_helpers import (
     get_mouse_position,
     check_screen_size,
     check_window_exists,

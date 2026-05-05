@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.services.tools.data_analysis.data_analysis_tools import (
+from app.services.tools.document.data_analysis_tools import (
     read_csv_dataframe,
     generate_chart,
     analyze_data,

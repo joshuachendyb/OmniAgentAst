@@ -20,7 +20,7 @@ GUI Register - GUI操作工具注册点
 from app.services.tools.registry import tool_registry, ToolCategory
 from app.utils.logger import logger
 
-from app.services.tools.gui.gui_schema import (
+from app.services.tools.desktop.gui_schema import (
     ClickInput,
     MoveInput,
     ScrollInput,
@@ -39,7 +39,7 @@ from app.services.tools.gui.gui_schema import (
     SendNotificationInput,
 )
 
-from app.services.tools.gui.gui_tools import (
+from app.services.tools.desktop.gui_tools import (
     click,
     move,
     scroll,

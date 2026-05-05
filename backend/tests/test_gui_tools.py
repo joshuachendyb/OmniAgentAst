@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.services.tools.gui.gui_tools import (
+from app.services.tools.desktop.gui_tools import (
     click, move, scroll,
     type_text, shortcut, key_combo,
     screenshot, snapshot, screen_record,
