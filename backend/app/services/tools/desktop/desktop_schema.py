@@ -10,9 +10,10 @@ DESKTOP Schema - 桌面工具 Pydantic 模型
 3. set_window_state - 设置窗口状态（最大化/最小化/还原/置顶）
 
 创建时间: 2026-04-29
+【修正 2026-05-05 小沈】SetWindowStateInput.action 改为 Literal 约束
 """
 
-from typing import Optional
+from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
 
@@ -36,10 +37,10 @@ class GetWindowInfoInput(BaseModel):
 
 
 class SetWindowStateInput(BaseModel):
-    """set_window_state 工具的输入参数 - 设置窗口状态"""
+    """set_window_state 工具的输入参数 - 设置窗口状态 - 小沈 2026-05-05修正action为Literal"""
     window_title: str = Field(
         description="窗口标题（精确匹配或模糊匹配）"
     )
-    action: str = Field(
+    action: Literal["maximize", "minimize", "restore", "topmost", "unpin"] = Field(
         description="窗口操作：maximize(最大化)、minimize(最小化)、restore(还原)、topmost(置顶)、unpin(取消置顶)"
     )

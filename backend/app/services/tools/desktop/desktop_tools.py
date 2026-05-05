@@ -16,24 +16,60 @@ DESKTOP Tools - 桌面工具实现（窗口管理）
 3. set_window_state - 设置窗口状态（最大化/最小化/还原/置顶）
 
 创建时间: 2026-04-29
+【修正 2026-05-05 小沈】小健检查发现的问题：
+1. pywin32未安装/非Windows时模块加载崩溃 → 改为try/except惰性导入 + HAS_WIN32标志
+2. 裸except(7处) → 改为 except Exception
+3. 错误码"ERROR" → 统一为 ERR_XXX
+4. 多窗口匹配只取第一个 → 加 matched_count 提示
+5. action缺少枚举约束 → Schema改Literal（在schema.py中）
+6. 删除死代码 target_hwnd / _is_window_visible
+7. 重复定义 find_window_callback → 抽取 _find_windows_by_title 公共函数
 """
 
 import platform
 from typing import Any, Dict, List, Optional
 from app.utils.logger import logger
 
+_HAS_WIN32 = False
+_win32gui = None
+_win32con = None
+_win32api = None
+
 if platform.system() == "Windows":
-    import win32gui
-    import win32con
-    import win32api
-    import ctypes
-    from ctypes import wintypes
+    try:
+        import win32gui as _win32gui_mod
+        import win32con as _win32con_mod
+        import win32api as _win32api_mod
+        _win32gui = _win32gui_mod
+        _win32con = _win32con_mod
+        _win32api = _win32api_mod
+        _HAS_WIN32 = True
+    except ImportError:
+        _HAS_WIN32 = False
+        logger.warning("pywin32未安装，桌面工具将不可用。请执行: pip install pywin32")
+
+
+def _check_platform() -> Optional[Dict[str, Any]]:
+    """检查平台和依赖是否可用 - 小沈 2026-05-05"""
+    if platform.system() != "Windows":
+        return {
+            "code": "ERR_NOT_WINDOWS",
+            "data": None,
+            "message": "此功能仅支持 Windows 系统"
+        }
+    if not _HAS_WIN32:
+        return {
+            "code": "ERR_NO_PYWIN32",
+            "data": None,
+            "message": "pywin32库未安装，请先执行: pip install pywin32"
+        }
+    return None
 
 
 def _get_window_rect(hwnd: int) -> Optional[Dict[str, int]]:
-    """获取窗口位置和大小"""
+    """获取窗口位置和大小 - 小沈 2026-05-05修正"""
     try:
-        rect = win32gui.GetWindowRect(hwnd)
+        rect = _win32gui.GetWindowRect(hwnd)
         return {
             "left": rect[0],
             "top": rect[1],
@@ -42,89 +78,86 @@ def _get_window_rect(hwnd: int) -> Optional[Dict[str, int]]:
             "width": rect[2] - rect[0],
             "height": rect[3] - rect[1]
         }
-    except:
+    except Exception:
         return None
 
 
-def _is_window_visible(hwnd: int) -> bool:
-    """检查窗口是否可见"""
-    try:
-        return win32gui.IsWindowVisible(hwnd)
-    except:
-        return False
-
-
 def _get_window_state(hwnd: int) -> str:
-    """获取窗口状态"""
+    """获取窗口状态 - 小沈 2026-05-05修正"""
     try:
-        if not win32gui.IsWindowVisible(hwnd):
+        if not _win32gui.IsWindowVisible(hwnd):
             return "minimized"
-        placement = win32gui.GetWindowPlacement(hwnd)
-        if placement[1] == win32con.SW_SHOWMAXIMIZED:
+        placement = _win32gui.GetWindowPlacement(hwnd)
+        if placement[1] == _win32con.SW_SHOWMAXIMIZED:
             return "maximized"
-        elif placement[1] == win32con.SW_SHOWMINIMIZED:
+        elif placement[1] == _win32con.SW_SHOWMINIMIZED:
             return "minimized"
         else:
             return "normal"
-    except:
+    except Exception:
         return "unknown"
 
 
 def _enum_windows_callback(hwnd: int, windows: List[Dict]) -> bool:
-    """枚举窗口回调函数"""
+    """枚举窗口回调函数 - 小沈 2026-05-05修正"""
     try:
-        if not win32gui.IsWindowVisible(hwnd):
+        if not _win32gui.IsWindowVisible(hwnd):
             return True
-        
-        title = win32gui.GetWindowText(hwnd)
+
+        title = _win32gui.GetWindowText(hwnd)
         if not title:
             return True
-        
+
         rect = _get_window_rect(hwnd)
         state = _get_window_state(hwnd)
-        
+
         windows.append({
             "hwnd": hwnd,
             "title": title,
             "state": state,
             "position": rect
         })
-    except:
+    except Exception:
         pass
     return True
+
+
+def _find_windows_by_title(window_title: str) -> List[int]:
+    """按标题模糊匹配查找窗口句柄列表 - 小沈 2026-05-05"""
+    windows = []
+
+    def callback(hwnd: int, _: List) -> bool:
+        try:
+            title = _win32gui.GetWindowText(hwnd)
+            if title and window_title.lower() in title.lower():
+                windows.append(hwnd)
+        except Exception:
+            pass
+        return True
+
+    _win32gui.EnumWindows(callback, [])
+    return windows
 
 
 def list_windows(
     include_minimized: bool = False,
     filter_title: Optional[str] = None
 ) -> Dict[str, Any]:
-    """
-    列出所有窗口
+    """列出所有窗口 - 小沈 2026-04-29, 修正 2026-05-05"""
+    err = _check_platform()
+    if err:
+        return err
 
-    Args:
-        include_minimized: 是否包含最小化的窗口，默认 False
-        filter_title: 按窗口标题过滤
-
-    Returns:
-        Dict with code, data, message
-    """
     try:
-        if platform.system() != "Windows":
-            return {
-                "code": "ERROR",
-                "data": None,
-                "message": "此功能仅支持 Windows 系统"
-            }
-        
         windows = []
-        win32gui.EnumWindows(_enum_windows_callback, windows)
-        
+        _win32gui.EnumWindows(_enum_windows_callback, windows)
+
         if not include_minimized:
             windows = [w for w in windows if w["state"] != "minimized"]
-        
+
         if filter_title:
             windows = [w for w in windows if filter_title.lower() in w["title"].lower()]
-        
+
         return {
             "code": "SUCCESS",
             "data": {
@@ -133,71 +166,47 @@ def list_windows(
             },
             "message": f"共找到 {len(windows)} 个窗口"
         }
-        
+
     except Exception as e:
         logger.error(f"list_windows error: {e}")
         return {
-            "code": "ERROR",
+            "code": "ERR_LIST_WINDOWS",
             "data": None,
             "message": f"获取窗口列表失败: {str(e)}"
         }
 
 
 def get_window_info(window_title: str) -> Dict[str, Any]:
-    """
-    获取窗口详细信息
+    """获取窗口详细信息 - 小沈 2026-04-29, 修正 2026-05-05"""
+    err = _check_platform()
+    if err:
+        return err
 
-    Args:
-        window_title: 窗口标题（精确匹配或模糊匹配）
-
-    Returns:
-        Dict with code, data, message
-    """
     try:
-        if platform.system() != "Windows":
+        matched_hwnds = _find_windows_by_title(window_title)
+
+        if not matched_hwnds:
             return {
-                "code": "ERROR",
-                "data": None,
-                "message": "此功能仅支持 Windows 系统"
-            }
-        
-        target_hwnd = None
-        
-        def find_window_callback(hwnd: int, windows: List) -> bool:
-            nonlocal target_hwnd
-            try:
-                title = win32gui.GetWindowText(hwnd)
-                if title and window_title.lower() in title.lower():
-                    windows.append(hwnd)
-            except:
-                pass
-            return True
-        
-        windows = []
-        win32gui.EnumWindows(find_window_callback, windows)
-        
-        if not windows:
-            return {
-                "code": "ERROR",
+                "code": "ERR_WINDOW_NOT_FOUND",
                 "data": None,
                 "message": f"未找到窗口: {window_title}"
             }
-        
-        hwnd = windows[0]
-        title = win32gui.GetWindowText(hwnd)
+
+        hwnd = matched_hwnds[0]
+        title = _win32gui.GetWindowText(hwnd)
         rect = _get_window_rect(hwnd)
         state = _get_window_state(hwnd)
-        
+
         try:
-            class_name = win32gui.GetClassName(hwnd)
-        except:
+            class_name = _win32gui.GetClassName(hwnd)
+        except Exception:
             class_name = "Unknown"
-        
+
         try:
-            process_id = win32api.GetWindowThreadProcessId(hwnd)[0]
-        except:
+            process_id = _win32api.GetWindowThreadProcessId(hwnd)[0]
+        except Exception:
             process_id = 0
-        
+
         info = {
             "hwnd": hwnd,
             "title": title,
@@ -205,106 +214,93 @@ def get_window_info(window_title: str) -> Dict[str, Any]:
             "state": state,
             "position": rect,
             "process_id": process_id,
-            "is_visible": win32gui.IsWindowVisible(hwnd),
-            "is_enabled": win32gui.IsWindowEnabled(hwnd),
+            "is_visible": _win32gui.IsWindowVisible(hwnd),
+            "is_enabled": _win32gui.IsWindowEnabled(hwnd),
+            "matched_count": len(matched_hwnds),
         }
-        
+
+        msg = f"获取窗口信息成功: {title}"
+        if len(matched_hwnds) > 1:
+            msg += f"（共匹配到 {len(matched_hwnds)} 个窗口，返回第一个）"
+
         return {
             "code": "SUCCESS",
             "data": info,
-            "message": f"获取窗口信息成功: {title}"
+            "message": msg
         }
-        
+
     except Exception as e:
         logger.error(f"get_window_info error: {e}")
         return {
-            "code": "ERROR",
+            "code": "ERR_GET_WINDOW_INFO",
             "data": None,
             "message": f"获取窗口信息失败: {str(e)}"
         }
 
 
 def set_window_state(window_title: str, action: str) -> Dict[str, Any]:
-    """
-    设置窗口状态
+    """设置窗口状态 - 小沈 2026-04-29, 修正 2026-05-05"""
+    err = _check_platform()
+    if err:
+        return err
 
-    Args:
-        window_title: 窗口标题
-        action: 操作类型：maximize, minimize, restore, topmost, unpin
-
-    Returns:
-        Dict with code, data, message
-    """
     try:
-        if platform.system() != "Windows":
-            return {
-                "code": "ERROR",
-                "data": None,
-                "message": "此功能仅支持 Windows 系统"
-            }
-        
         valid_actions = ["maximize", "minimize", "restore", "topmost", "unpin"]
         if action not in valid_actions:
             return {
-                "code": "ERROR",
+                "code": "ERR_INVALID_ACTION",
                 "data": None,
                 "message": f"无效的操作: {action}，支持的操作为: {valid_actions}"
             }
-        
-        def find_window_callback(hwnd: int, windows: List) -> bool:
-            try:
-                title = win32gui.GetWindowText(hwnd)
-                if title and window_title.lower() in title.lower():
-                    windows.append(hwnd)
-            except:
-                pass
-            return True
-        
-        windows = []
-        win32gui.EnumWindows(find_window_callback, windows)
-        
-        if not windows:
+
+        matched_hwnds = _find_windows_by_title(window_title)
+
+        if not matched_hwnds:
             return {
-                "code": "ERROR",
+                "code": "ERR_WINDOW_NOT_FOUND",
                 "data": None,
                 "message": f"未找到窗口: {window_title}"
             }
-        
-        hwnd = windows[0]
-        title = win32gui.GetWindowText(hwnd)
-        
+
+        hwnd = matched_hwnds[0]
+        title = _win32gui.GetWindowText(hwnd)
+
         if action == "maximize":
-            win32gui.ShowWindow(hwnd, win32con.SW_MAXIMIZE)
+            _win32gui.ShowWindow(hwnd, _win32con.SW_MAXIMIZE)
             msg = f"已最大化窗口: {title}"
         elif action == "minimize":
-            win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
+            _win32gui.ShowWindow(hwnd, _win32con.SW_MINIMIZE)
             msg = f"已最小化窗口: {title}"
         elif action == "restore":
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            _win32gui.ShowWindow(hwnd, _win32con.SW_RESTORE)
             msg = f"已还原窗口: {title}"
         elif action == "topmost":
-            win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0, 
-                                  win32con.SWP_NOMOVE | win32con.SWP_NOSIZE)
+            _win32gui.SetWindowPos(hwnd, _win32con.HWND_TOPMOST, 0, 0, 0, 0,
+                                   _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE)
             msg = f"已置顶窗口: {title}"
         elif action == "unpin":
-            win32gui.SetWindowPos(hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
-                                  win32con.SWP_NOMOVE | win32con.SWP_NOSIZE)
+            _win32gui.SetWindowPos(hwnd, _win32con.HWND_NOTOPMOST, 0, 0, 0, 0,
+                                   _win32con.SWP_NOMOVE | _win32con.SWP_NOSIZE)
             msg = f"已取消置顶窗口: {title}"
-        
+
+        if len(matched_hwnds) > 1:
+            msg += f"（共匹配到 {len(matched_hwnds)} 个窗口，操作了第一个）"
+
         return {
             "code": "SUCCESS",
             "data": {
                 "window_title": title,
                 "action": action,
-                "hwnd": hwnd
+                "hwnd": hwnd,
+                "matched_count": len(matched_hwnds),
             },
             "message": msg
         }
-        
+
     except Exception as e:
         logger.error(f"set_window_state error: {e}")
         return {
-            "code": "ERROR",
+            "code": "ERR_SET_WINDOW_STATE",
             "data": None,
             "message": f"设置窗口状态失败: {str(e)}"
         }
