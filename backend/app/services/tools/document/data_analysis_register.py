@@ -215,7 +215,7 @@ def _register_data_analysis_tools():
         tool_registry.register(
             name=name,
             description=desc,
-            category=ToolCategory.DATA_ANALYSIS,
+            category=ToolCategory.DOCUMENT,
             implementation=func,
             version="1.0.0",
             input_model=input_model,

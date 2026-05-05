@@ -39,8 +39,8 @@ logger = logging.getLogger(__name__)
 
 
 def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None) -> dict:
-    """执行Python代码 - 小沈 2026-05-02, 小沈修正 2026-05-05"""
-    if working_dir and not os.path.isdir(working_dir):
+    """执行Python代码 - 小沈 2026-05-02, 小沈修正 2026-05-05, 小沈修正 2026-05-05(空字符串working_dir)"""
+    if working_dir is not None and not os.path.isdir(working_dir):
         return {
             "code": "ERR_EXEC_INVALID_DIR",
             "data": None,
@@ -117,8 +117,8 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
 
 
 def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None) -> dict:
-    """执行JavaScript代码 - 小沈 2026-05-02, 小沈修正 2026-05-05"""
-    if working_dir and not os.path.isdir(working_dir):
+    """执行JavaScript代码 - 小沈 2026-05-02, 小沈修正 2026-05-05, 小沈修正 2026-05-05(空字符串working_dir)"""
+    if working_dir is not None and not os.path.isdir(working_dir):
         return {
             "code": "ERR_EXEC_INVALID_DIR",
             "data": None,
