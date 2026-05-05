@@ -28,11 +28,92 @@ from app.services.tools.database.database_tools import (
     get_db_schema,
 )
 
-# Tool descriptions
+# Tool descriptions（中文，与schema/tools一致）- 小健 2026-05-05修正
 DATABASE_TOOL_DESCRIPTIONS = {
-    "query_sql": "Execute read-only SQL query (SELECT/SHOW/DESCRIBE), returns result set.\n\nScenarios:\n- When user needs to query database data\n- When user wants to analyze table data\n\nParams:\n- sql: SELECT query statement (required)\n- limit: result row limit (optional), default 50\n- timeout: timeout ms (optional), default 15000\n- output_format: output format (optional), default table\n- connection_type: database type (optional), default sqlite (mysql/postgresql/sqlite)\n- connection_string: MySQL/PostgreSQL connection string (optional)\n- db_path: SQLite database file path (optional)\n\n[Important] Force read-only. Auto-trigger EXPLAIN on timeout\n\nExamples:\n- Simple: {\"sql\": \"SELECT * FROM users LIMIT 10\"}\n- JSON: {\"sql\": \"SELECT id, name FROM orders\", \"output_format\": \"json\"}\n- SQLite: {\"sql\": \"SELECT * FROM users\", \"connection_type\": \"sqlite\", \"db_path\": \"D:/data/app.db\"}",
-    "execute_sql": "Execute write SQL (INSERT/UPDATE/DELETE/DDL).\n\nScenarios:\n- When user needs to modify database data\n- When user wants to execute CREATE TABLE\n\nParams:\n- sql: write SQL statement (required)\n- dry_run: dry run mode (optional), default false\n- timeout: timeout ms (optional), default 30000\n- affected_rows_check: check affected rows (optional), default true\n- connection_type: database type (optional), default sqlite (mysql/postgresql/sqlite)\n- connection_string: MySQL/PostgreSQL connection string (optional)\n- db_path: SQLite database file path (optional)\n\n[Important] Only supports single-statement auto-commit. High-risk ops auto-blocked\n\nExamples:\n- Insert: {\"sql\": \"INSERT INTO logs (msg) VALUES ('test')\"}\n- Dry run: {\"sql\": \"DELETE FROM temp_logs\", \"dry_run\": true}\n- SQLite: {\"sql\": \"INSERT INTO users (name) VALUES ('test')\", \"connection_type\": \"sqlite\", \"db_path\": \"D:/data/app.db\"}",
-    "get_db_schema": "Get database schema metadata, including table names, fields, types, indexes, foreign keys.\n\nScenarios:\n- When user needs to view database table structure\n- When user wants to understand table design\n- When user needs DDL generation\n\nParams:\n- db_name: target database name (optional)\n- filter_pattern: table filter pattern (optional), supports SQL LIKE\n- include_details: include details (optional), default false\n- output_format: output format (optional), default markdown\n- connection_type: database type (optional), default sqlite (mysql/postgresql/sqlite)\n- connection_string: MySQL/PostgreSQL connection string (optional)\n- db_path: SQLite database file path (optional)\n\n[Important] If include_details=true, max 20 tables to prevent context explosion\n\nExamples:\n- All tables: {}\n- Filter: {\"filter_pattern\": \"user%\"}\n- JSON: {\"include_details\": True, \"output_format\": \"json\"}\n- SQLite: {\"filter_pattern\": \"orders%\", \"connection_type\": \"sqlite\", \"db_path\": \"D:/data/app.db\"}",
+    "query_sql": """执行只读SQL查询（SELECT/SHOW/DESCRIBE），返回结果集。
+
+【使用场景】
+- 当用户需要查询数据库数据时使用
+- 当用户需要分析表数据时使用
+- 当需要执行只读操作时使用
+
+【参数说明】
+- sql: SQL查询语句（必填）。仅支持SELECT/SHOW/DESCRIBE等只读操作
+- limit: 结果行数限制（可选）。默认50，防止上下文爆炸
+- timeout: 超时毫秒数（可选）。默认15000，超5秒自动触发EXPLAIN
+- output_format: 输出格式（可选）。默认table（人类可读），可选json（结构化）
+- connection_type: 数据库类型（可选）。默认sqlite，可选mysql/postgresql
+- connection_string: MySQL/PostgreSQL连接字符串（可选）。如 user:pass@host:port/dbname
+- db_path: SQLite数据库文件路径（可选）。如 D:/data/app.db
+
+【重要】强制只读，写操作返回错误。超时自动触发EXPLAIN分析。
+
+【返回数据】
+- code: SUCCESS / ERROR
+- data: { columns, rows, total }
+- message: 操作结果消息
+
+【示例】
+- 简单查询: {"sql": "SELECT * FROM users LIMIT 10"}
+- JSON输出: {"sql": "SELECT id, name FROM orders", "output_format": "json"}
+- SQLite: {"sql": "SELECT * FROM users", "connection_type": "sqlite", "db_path": "D:/data/app.db"}""",
+
+    "execute_sql": """执行写操作SQL（INSERT/UPDATE/DELETE/DDL）。
+
+【使用场景】
+- 当用户需要修改数据库数据时使用
+- 当用户需要执行CREATE TABLE等DDL时使用
+- 当需要执行写操作时使用
+
+【参数说明】
+- sql: SQL写操作语句（必填）。支持INSERT/UPDATE/DELETE/DDL
+- dry_run: 预演模式（可选）。默认False，DDL或危险操作自动强制True
+- timeout: 超时毫秒数（可选）。默认30000，写操作严格监控
+- affected_rows_check: 影响行数检查（可选）。默认True，影响>10000行需确认
+- connection_type: 数据库类型（可选）。默认sqlite，可选mysql/postgresql
+- connection_string: MySQL/PostgreSQL连接字符串（可选）
+- db_path: SQLite数据库文件路径（可选）
+
+【重要】仅支持单语句自动提交。高风险操作（DROP/TRUNCATE）自动拦截。
+
+【返回数据】
+- code: SUCCESS / ERROR / WARNING
+- data: { affected_rows, sql }
+- message: 操作结果消息
+
+【示例】
+- 插入: {"sql": "INSERT INTO logs (msg) VALUES ('test')"}
+- 预演: {"sql": "DELETE FROM temp_logs", "dry_run": true}
+- SQLite: {"sql": "INSERT INTO users (name) VALUES ('test')", "connection_type": "sqlite", "db_path": "D:/data/app.db"}""",
+
+    "get_db_schema": """获取数据库结构元数据，包括表名、字段、类型、索引、外键。
+
+【使用场景】
+- 当用户需要查看数据库表结构时使用
+- 当用户需要理解表设计时
+- 当用户需要生成DDL时使用
+
+【参数说明】
+- db_name: 目标数据库名（可选）。默认None读取当前连接
+- filter_pattern: 表名过滤模式（可选）。支持SQL LIKE语法，如 user%
+- include_details: 包含详细信息（可选）。默认False，为True时最多20个表防上下文爆炸
+- output_format: 输出格式（可选）。默认markdown，可选json/sql_ddl
+- connection_type: 数据库类型（可选）。默认sqlite，可选mysql/postgresql
+- connection_string: MySQL/PostgreSQL连接字符串（可选）
+- db_path: SQLite数据库文件路径（可选）
+
+【重要】include_details=true时最多返回20个表，防止上下文爆炸。
+
+【返回数据】
+- code: SUCCESS / ERROR
+- data: { tables: [{name, columns, indexes}], total }
+- message: 操作结果消息
+
+【示例】
+- 所有表: {}
+- 过滤: {"filter_pattern": "user%"}
+- JSON: {"include_details": True, "output_format": "json"}
+- SQLite: {"filter_pattern": "orders%", "connection_type": "sqlite", "db_path": "D:/data/app.db"}""",
 }
 
 # Model mapping

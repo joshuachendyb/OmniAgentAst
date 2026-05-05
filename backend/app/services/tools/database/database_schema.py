@@ -159,10 +159,37 @@ class GetDbSchemaInput(BaseModel):
     - filter_pattern: table filter pattern (optional)
     - include_details: include details (optional), default False  
     - output_format: output format (optional), default markdown
+    - connection_type: database type (optional), default sqlite
+    - connection_string: MySQL/PostgreSQL connection string (optional)
+    - db_path: SQLite database file path (optional)
     """
     db_name: Optional[str] = Field(
         default=None,
         description="Target database name (optional). Default None reads current connection. Agent auto-switches if specified"
+    )
+    filter_pattern: Optional[str] = Field(
+        default=None,
+        description="Table filter pattern (optional). Supports SQL LIKE syntax like user%. Agent auto-injects LIKE filter"
+    )
+    include_details: bool = Field(
+        default=False,
+        description="Include detailed index/foreign key/constraint info (optional), default False. Max 20 tables to prevent context explosion"
+    )
+    output_format: str = Field(
+        default="markdown",
+        description="Output format (optional), default markdown. Values: markdown, json, sql_ddl. Agent auto-switches"
+    )
+    connection_type: str = Field(
+        default="sqlite",
+        description="Database type (optional). Values: sqlite (default), mysql, postgresql. Agent auto-detects from connection_string"
+    )
+    connection_string: Optional[str] = Field(
+        default=None,
+        description="MySQL/PostgreSQL connection string (optional). Example: user:pass@host:port/dbname"
+    )
+    db_path: Optional[str] = Field(
+        default=None,
+        description="SQLite database file path (optional). Example: D:/data/app.db"
     )
     filter_pattern: Optional[str] = Field(
         default=None,
