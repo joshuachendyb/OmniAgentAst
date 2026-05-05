@@ -89,27 +89,24 @@ class ToolCategory(Enum):
     """
     工具分类枚举
     
-    【更新】2026-04-26 小沈
-    - 原有: FILE, DATABASE, NETWORK, SYSTEM, DESKTOP
-    - 新增: TIME, SHELL, ENV
+    【更新】2026-05-05 小沈（彻底废弃旧枚举值）
+    - FILE, TIME, SHELL, NETWORK, ENVIRONMENT, SYSTEM, DATABASE, DESKTOP
+    - DOCUMENT, SUPPORT_TOOL, DATA_FORMAT, CODE_EXECUTION
+    - 已废弃: DATA_ANALYSIS, GUI, ENV_CHECK, REGISTRY_TOOLS（彻底删除）
     """
     FILE = "file"
     TIME = "time"           # 时间/日期
     SHELL = "shell"         # Shell命令执行
     NETWORK = "network"     # 网络通信
-    ENVIRONMENT = "environment"  # 环境管理（原env+env_check合并，小沈-2026-05-05）
-    SYSTEM = "system"        # 系统信息+注册表操作（原system+registry_tools合并，小沈-2026-05-05）
+    ENVIRONMENT = "environment"  # 环境管理
+    SYSTEM = "system"        # 系统信息
     DATABASE = "database"      # 数据库访问
-    DESKTOP = "desktop"     # 桌面功能（原desktop+gui合并，小沈-2026-05-05）
+    DESKTOP = "desktop"     # 桌面功能
     # 2026-05-02新增：
-    DOCUMENT = "document"          # 文档读写+数据分析（原document+data_analysis合并，小沈-2026-05-05）
+    DOCUMENT = "document"      # 文档读写
     SUPPORT_TOOL = "support_tool" # 支撑工具（公共函数+LLM内部使用，小沈-2026-05-02）
     DATA_FORMAT = "data_format"    # 数据格式（小沈-2026-05-02）
-    CODE_EXECUTION = "code_execution" # 代码执行（小沈-2026-05-02）
-    
-    # 已合并到其他分类（枚举值保留用于兼容旧数据）：
-    # DATA_ANALYSIS = "data_analysis"  # 已合并到document - 2026-05-05
-    # GUI = "gui"                    # 已合并到desktop - 2026-05-05
+    CODE_EXECUTION = "code_execution" # 代码执行
 
 
 @dataclass
@@ -429,18 +426,14 @@ class ToolRegistry:
             ToolCategory.FILE,
             ToolCategory.SHELL,
             ToolCategory.TIME,
-            ToolCategory.ENV,
+            ToolCategory.ENVIRONMENT,
             ToolCategory.SYSTEM,
             ToolCategory.NETWORK,
             ToolCategory.DATABASE,
             ToolCategory.DESKTOP,
-            ToolCategory.REGISTRY_TOOLS,
             ToolCategory.DATA_FORMAT,
             ToolCategory.CODE_EXECUTION,
-            ToolCategory.DATA_ANALYSIS,
             ToolCategory.DOCUMENT,
-            ToolCategory.ENV_CHECK,
-            ToolCategory.GUI,
             ToolCategory.SUPPORT_TOOL,
         ]
 
@@ -453,18 +446,14 @@ class ToolRegistry:
             ToolCategory.FILE: "文件操作工具",
             ToolCategory.SHELL: "Shell命令工具",
             ToolCategory.TIME: "时间日期工具",
-            ToolCategory.ENV: "环境变量工具",
+            ToolCategory.ENVIRONMENT: "环境变量工具",
             ToolCategory.SYSTEM: "系统信息工具",
             ToolCategory.NETWORK: "网络通信工具",
             ToolCategory.DATABASE: "数据库工具",
             ToolCategory.DESKTOP: "桌面工具",
-            ToolCategory.REGISTRY_TOOLS: "注册表操作工具",
             ToolCategory.DATA_FORMAT: "数据格式工具",
             ToolCategory.CODE_EXECUTION: "代码执行工具",
-            ToolCategory.DATA_ANALYSIS: "数据分析工具",
             ToolCategory.DOCUMENT: "文档读写工具",
-            ToolCategory.ENV_CHECK: "环境检查工具",
-            ToolCategory.GUI: "GUI操作工具",
             ToolCategory.SUPPORT_TOOL: "支撑工具(公共函数)",
         }
 
