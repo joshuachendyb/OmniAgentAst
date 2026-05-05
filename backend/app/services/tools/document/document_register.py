@@ -270,6 +270,10 @@ EXAMPLES = {
         {"input_path": "D:/documents/report.docx", "output_format": "pdf"},
         {"input_path": "D:/data/sales.xlsx", "output_format": "pdf", "output_path": "D:/output/sales.pdf"},
     ],
+    "write_pptx": [
+        {"file_path": "D:/output/presentation.pptx", "title": "项目汇报"},
+        {"file_path": "D:/output/slides.pptx", "title": "季度总结", "slides": [{"title": "业绩概览", "content": "本季度销售额增长20%"}]},
+    ],
 }
 
 TOOL_INPUT_MODELS = {
@@ -280,6 +284,7 @@ TOOL_INPUT_MODELS = {
     "write_xlsx": WriteXlsxInput,
     "read_pptx": ReadPptxInput,
     "write_pdf": WritePdfInput,
+    "write_pptx": WritePptxInput,
     "convert_document": ConvertDocumentInput,
 }
 

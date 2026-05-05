@@ -604,6 +604,7 @@ def convert_document(
             output_path = str(src.with_suffix('.pdf'))
         
         import subprocess
+        import tempfile
         
         soffice_paths = [
             r"C:\Program Files\LibreOffice\program\soffice.exe",
@@ -626,11 +627,14 @@ def convert_document(
                 "message": "LibreOffice未安装，无法转换。请安装LibreOffice: https://www.libreoffice.org/download/"
             }
         
+        out_dir = str(Path(output_path).parent)
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        
         cmd = [
             soffice,
             "--headless",
             "--convert-to", "pdf",
-            "--outdir", str(src.parent),
+            "--outdir", out_dir,
             str(src)
         ]
         
@@ -643,7 +647,7 @@ def convert_document(
                 "message": f"LibreOffice转换失败: {result.stderr}"
             }
         
-        expected_pdf = src.with_suffix('.pdf')
+        expected_pdf = Path(out_dir) / src.with_suffix('.pdf').name
         if not expected_pdf.exists():
             return {
                 "code": "ERR_CONVERT_DOCUMENT",
@@ -711,7 +715,7 @@ def write_pptx(
                 
                 # 设置内容
                 for shape in slide.shapes:
-                    if shape.has_text_frame and shape.text_frame.text == "单击此处添加文本":
+                    if shape.has_text_frame and not shape.text_frame.text.strip():
                         text_frame = shape.text_frame
                         text_frame.clear()
                         p = text_frame.paragraphs[0]
