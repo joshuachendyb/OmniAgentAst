@@ -22,7 +22,7 @@ from app.services.tools.time import time_tools  # 触发 time_tools 中的 @regi
 
 # 导出常用工具函数（方便直接导入使用）
 from app.services.tools.time.time_tools import (
-    time_now,
+    get_current_time,
     time_format,
     time_diff,
     timer_set,
@@ -41,7 +41,7 @@ from app.services.tools.time.time_tools import (
 )
 
 __all__ = [
-    "time_now",
+    "get_current_time",
     "time_format",
     "time_diff",
     "timer_set",

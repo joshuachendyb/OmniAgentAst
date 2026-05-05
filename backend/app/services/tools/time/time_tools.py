@@ -17,7 +17,7 @@
 3. *_register.py: 显式注册（description + examples + input_model）
 
 包含：
-- P0 核心基础（5个）：time_now, time_format, time_diff, timer_set, timer_clear;
+- P0 核心基础（5个）：get_current_time, time_format, time_diff, timer_set, timer_clear;
 - P1 常用辅助（4个）：time_utc_to_local, time_local_to_utc, time_is_weekend, time_is_holiday;
 
 Author: 小沈 - 2026-04-25;
@@ -43,10 +43,10 @@ _timer_events: List[Dict[str, Any]] = [];  # 存储触发事件
 # ===========================================================
 # P0 核心基础（普通用户最高频场景）
 # ===========================================================
-# P0 核心基础 - time_now
+# P0 核心基础 - get_current_time
 # ===========================================================
 
-def time_now(
+def get_current_time(
     timezone: Optional[str] = None,
     format: Optional[str] = None,
     locale: Optional[str] = None

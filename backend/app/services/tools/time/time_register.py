@@ -38,7 +38,7 @@ from app.services.tools.time.time_schema import (
 )
 
 from app.services.tools.time.time_tools import (
-    time_now,
+    get_current_time,
     time_format,
     time_diff,
     timer_set,
@@ -440,7 +440,7 @@ def _register_time_tools():
     使用 Pydantic 模型自动生成 OpenAI Schema
     """
     tool_methods = {
-        "get_current_time": time_now,
+        "get_current_time": get_current_time,
         "time_format": time_format,
         "time_diff": time_diff,
         "timer_set": timer_set,
@@ -498,7 +498,7 @@ _register_time_tools()
 
 
 __all__ = [
-    "time_now",
+    "get_current_time",
     "time_format",
     "time_diff",
     "timer_set",

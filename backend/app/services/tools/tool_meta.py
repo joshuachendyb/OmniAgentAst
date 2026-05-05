@@ -53,7 +53,7 @@ TOOL_TIMEOUTS = {
     "task_create": 30,
     "task_delete": 10,
     # time/工具超时配置 小沈-2026-05-05
-    "time_now": 5,
+    "get_current_time": 5,
     "time_format": 5,
     "time_diff": 5,
     "timer_set": 30,
