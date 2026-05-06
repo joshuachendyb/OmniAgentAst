@@ -41,28 +41,14 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
         self._init_db()
     
     def _init_db(self):
-        """初始化数据库"""
+        """初始化数据库（建表已移至file_safety.py，此处不再重复）"""
+        # 建表已由 FileSafetyService._init_db() 统一处理
+        # 此处只做连接测试
         conn = None
         try:
             conn = self._get_connection()
             cursor = conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS file_operation_sessions (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    agent_id TEXT NOT NULL,
-                    task_description TEXT,
-                    status TEXT DEFAULT 'pending',
-                    total_operations INTEGER DEFAULT 0,
-                    success_count INTEGER DEFAULT 0,
-                    failed_count INTEGER DEFAULT 0,
-                    rolled_back_count INTEGER DEFAULT 0,
-                    report_generated INTEGER DEFAULT 0,
-                    report_path TEXT,
-                    created_at TIMESTAMP,
-                    completed_at TIMESTAMP
-                )
-            ''')
+            cursor.execute("SELECT 1")  # 测试连接
             conn.commit()
         finally:
             if conn:
