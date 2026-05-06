@@ -1,11 +1,8 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
-SystemReactAgent - 系统信息 ReAct Agent。
-
-P2优先级。
-
-Author: 小健 - 2026-05-06（修正-小沈 2026-05-06：rollback返回False）
-"""
+SystemReactAgent - 绯荤粺淇℃伅 ReAct Agent銆?
+P2浼樺厛绾с€?
+Author: 灏忓仴 - 2026-05-06锛堜慨姝?灏忔矆 2026-05-06锛歳ollback杩斿洖False锛?"""
 from typing import Any, Optional, Dict, List
 
 from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
@@ -16,7 +13,7 @@ from app.utils.logger import logger
 
 
 class SystemReactAgent(ReactAgentMixin, BaseAgent):
-    """系统信息 ReAct Agent"""
+    """绯荤粺淇℃伅 ReAct Agent"""
     
     def __init__(
         self,
@@ -40,19 +37,18 @@ class SystemReactAgent(ReactAgentMixin, BaseAgent):
             **kwargs
         )
         
-        # 公用逻辑初始化
-        self._init_tools_and_executor(effective_category)
+        # 鍏敤閫昏緫鍒濆鍖?        self._init_tools_and_executor(effective_category)
         self._init_llm_strategies()
-        self._init_session()  # 使用Mixin的session管理
+        self._init_task_tracking()()  # 浣跨敤Mixin鐨剆ession绠＄悊
         self._init_candidates(candidates)
         
-        # System专用prompts
+        # System涓撶敤prompts
         self.prompts = SystemPrompts()
         
         logger.info(f"SystemReactAgent initialized (task_id: {task_id}, category: {effective_category}, tools: {len(self._tools_dict)})")
     
     def _get_system_prompt(self) -> str:
-        return self._build_system_prompt("系统信息")
+        return self._build_system_prompt("绯荤粺淇℃伅")
     
     def _get_task_prompt(self, task: str, context=None) -> str:
         return self.prompts.get_task_prompt(task, context)
@@ -66,10 +62,10 @@ class SystemReactAgent(ReactAgentMixin, BaseAgent):
     
     async def rollback(self, step_number=None) -> bool:
         """
-        系统信息操作无法回滚
+        绯荤粺淇℃伅鎿嶄綔鏃犳硶鍥炴粴
         
         Returns:
-            False - 表示回滚不可用，而非回滚失败
+            False - 琛ㄧず鍥炴粴涓嶅彲鐢紝鑰岄潪鍥炴粴澶辫触
         """
-        logger.warning(f"[SystemReactAgent] 系统信息操作无法回滚，已执行操作不会撤销。请手动检查系统状态。")
-        return False  # ✅ 更准确的返回值（缺陷4修正）
+        logger.warning(f"[SystemReactAgent] 绯荤粺淇℃伅鎿嶄綔鏃犳硶鍥炴粴锛屽凡鎵ц鎿嶄綔涓嶄細鎾ら攢銆傝鎵嬪姩妫€鏌ョ郴缁熺姸鎬併€?)
+        return False  # 鉁?鏇村噯纭殑杩斿洖鍊硷紙缂洪櫡4淇锛?

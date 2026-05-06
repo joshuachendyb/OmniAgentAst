@@ -1,11 +1,8 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
-DatabaseReactAgent - 数据库操作 ReAct Agent。
-
-P1优先级。
-
-Author: 小健 - 2026-05-06（修正-小沈 2026-05-06：rollback返回False）
-"""
+DatabaseReactAgent - 鏁版嵁搴撴搷浣?ReAct Agent銆?
+P1浼樺厛绾с€?
+Author: 灏忓仴 - 2026-05-06锛堜慨姝?灏忔矆 2026-05-06锛歳ollback杩斿洖False锛?"""
 from typing import Any, Optional, Dict, List
 
 from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
@@ -16,7 +13,7 @@ from app.utils.logger import logger
 
 
 class DatabaseReactAgent(ReactAgentMixin, BaseAgent):
-    """数据库操作 ReAct Agent"""
+    """鏁版嵁搴撴搷浣?ReAct Agent"""
     
     def __init__(
         self,
@@ -40,19 +37,18 @@ class DatabaseReactAgent(ReactAgentMixin, BaseAgent):
             **kwargs
         )
         
-        # 公用逻辑初始化
-        self._init_tools_and_executor(effective_category)
+        # 鍏敤閫昏緫鍒濆鍖?        self._init_tools_and_executor(effective_category)
         self._init_llm_strategies()
-        self._init_session()  # 使用Mixin的session管理
+        self._init_task_tracking()()  # 浣跨敤Mixin鐨剆ession绠＄悊
         self._init_candidates(candidates)
         
-        # Database专用prompts
+        # Database涓撶敤prompts
         self.prompts = DatabasePrompts()
         
         logger.info(f"DatabaseReactAgent initialized (task_id: {task_id}, category: {effective_category}, tools: {len(self._tools_dict)})")
     
     def _get_system_prompt(self) -> str:
-        return self._build_system_prompt("数据库操作")
+        return self._build_system_prompt("鏁版嵁搴撴搷浣?)
     
     def _get_task_prompt(self, task: str, context=None) -> str:
         return self.prompts.get_task_prompt(task, context)
@@ -66,10 +62,9 @@ class DatabaseReactAgent(ReactAgentMixin, BaseAgent):
     
     async def rollback(self, step_number=None) -> bool:
         """
-        数据库操作无法回滚
-        
+        鏁版嵁搴撴搷浣滄棤娉曞洖婊?        
         Returns:
-            False - 表示回滚不可用，而非回滚失败
+            False - 琛ㄧず鍥炴粴涓嶅彲鐢紝鑰岄潪鍥炴粴澶辫触
         """
-        logger.warning(f"[DatabaseReactAgent] 数据库操作无法回滚，已执行SQL不会撤销。请手动检查数据状态。")
-        return False  # ✅ 更准确的返回值（缺陷4修正）
+        logger.warning(f"[DatabaseReactAgent] 鏁版嵁搴撴搷浣滄棤娉曞洖婊氾紝宸叉墽琛孲QL涓嶄細鎾ら攢銆傝鎵嬪姩妫€鏌ユ暟鎹姸鎬併€?)
+        return False  # 鉁?鏇村噯纭殑杩斿洖鍊硷紙缂洪櫡4淇锛?
