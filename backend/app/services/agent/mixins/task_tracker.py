@@ -57,7 +57,11 @@ class TaskExecutionTracker:
         tracker = self.get_tracker(agent_id)
         if tracker:
             try:
-                tracker.create_session(agent_id=agent_id, task_description=task_description)
+                # 【修复 2026-05-07 小沈】FileOperationSessionService用create_task，GenericTaskTracker用create_session
+                if hasattr(tracker, 'create_task'):
+                    tracker.create_task(agent_id=agent_id, task_description=task_description)
+                elif hasattr(tracker, 'create_session'):
+                    tracker.create_session(agent_id=agent_id, task_description=task_description)
             except Exception as e:
                 logger.warning(f"[TaskTracker] create_task失败: {e}")
     
@@ -66,7 +70,11 @@ class TaskExecutionTracker:
         tracker = self.get_tracker(agent_id)
         if tracker:
             try:
-                tracker.complete_session(task_id, success=success)
+                # 【修复 2026-05-07 小沈】FileOperationSessionService用complete_task，GenericTaskTracker用complete_session
+                if hasattr(tracker, 'complete_task'):
+                    tracker.complete_task(task_id, success=success)
+                elif hasattr(tracker, 'complete_session'):
+                    tracker.complete_session(task_id, success=success)
             except Exception as e:
                 logger.error(f"[TaskTracker] complete_task失败: {e}")
 

@@ -56,7 +56,7 @@ class ShellReactAgent(ReactAgentMixin, BaseAgent):
         return self._build_system_prompt("Shell命令")
     
     def _get_task_prompt(self, task: str, context=None) -> str:
-        return self.prompts.get_task_prompt(task, context)
+        return self.prompts.get_task_prompt(task)
     
     async def _get_llm_response(self) -> str:
         return await self._call_llm_with_summary()

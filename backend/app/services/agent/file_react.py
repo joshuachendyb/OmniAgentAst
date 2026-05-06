@@ -187,7 +187,7 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
                         conversation_history=self.conversation_history
                     )
                 elif strategy.method == "tools":
-                    self.tools_strategy.tools = self.tools or []
+                    self.tools_strategy.tools = self.openai_tools or []
                     response = await self.tools_strategy.call(
                         llm_client=self.llm_client,
                         message=last_message,
@@ -201,9 +201,9 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
                         history_dicts=history_dicts,
                         conversation_history=self.conversation_history
                     )
-            elif self.use_function_calling and self.tools:
+            elif self.use_function_calling and self.openai_tools:
                 # 使用 Function Calling 模式
-                self.tools_strategy.tools = self.tools
+                self.tools_strategy.tools = self.openai_tools
                 response = await self.tools_strategy.call(
                     llm_client=self.llm_client,
                     message=last_message,
@@ -261,7 +261,7 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
         history_dicts: List[Dict[str, str]]
     ) -> str:
         """获取 LLM 响应（Function Calling 模式）- 使用策略类"""
-        self.tools_strategy.tools = self.tools or []
+        self.tools_strategy.tools = self.openai_tools or []
         return await self.tools_strategy.call(
             llm_client=self.llm_client,
             message=message,
@@ -310,21 +310,21 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
     
     def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         """获取任务 Prompt"""
-        return self.prompts.get_task_prompt(task, context)
+        return self.prompts.get_task_prompt(task)
     
     # ===== 实现父类 Hook 方法 =====
     
-    def _on_task_init(self, task: str, context: Optional[Dict[str, Any]]):
+    def _on_session_init(self, task: str, context: Optional[Dict[str, Any]]):
         """Session 初始化 Hook"""
         # 确保 session 存在
         task_id = self.task_id
         if not task_id:
-            task_id = self.task_tracker.create_task(
+            task_id = self._task_tracker.create_task(
                 agent_id="file-operation-agent",
                 task_description=task
             )
             self._task_created_by_agent = True
-            logger.info(f"Session created in run_stream(): {task_id}")
+            logger.info(f"Task created in run_stream(): {task_id}")
     
     def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
         """循环开始前 Hook - 无操作，日志记录已由上层处理"""
@@ -332,9 +332,9 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
     
     def _on_after_loop(self):
         """循环结束后 Hook - 关闭 Session"""
-        if self._task_created_by_agent and self.task_id and self.task_tracker:
+        if self._task_created_by_agent and self.task_id and self._task_tracker:
             try:
-                self.task_tracker.complete_task(self.task_id, success=True)
+                self._task_tracker.complete_task(self.task_id, success=True)
                 logger.info(f"Session completed in run_stream: {self.task_id}")
                 self._task_created_by_agent = False
             except Exception as e:
@@ -393,7 +393,7 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
         
         # 确保 session 已创建
         if not task_id:
-            task_id = self.task_tracker.create_task(
+            task_id = self._task_tracker.create_task(
                 agent_id="file-operation-agent",
                 task_description=task
             )
@@ -457,10 +457,10 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
             
         finally:
             # 只关闭由本次 run 创建的 session
-            if session_created_by_this_run and task_id and self.task_tracker:
+            if session_created_by_this_run and task_id and self._task_tracker:
                 try:
                     success = result.success if result else False
-                    self.task_tracker.complete_task(task_id, success=success)
+                    self._task_tracker.complete_task(task_id, success=success)
                     logger.info(f"Session completed: {task_id} (success={success})")
                     self._task_created_by_agent = False
                     self.task_id = None
