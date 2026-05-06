@@ -247,21 +247,7 @@ Example 7: Task completed
 
 ---
 
-【Path Format Requirements】:
-- Windows: C:/Users/username/... or C:\\Users\\username\\...
-- Linux/Mac: /home/username/...
-- MUST use absolute paths (not relative paths like ./file.txt)
-- Do NOT use ~ to represent home directory
-- ❌ CRITICAL: Do NOT translate or replace Chinese characters in paths! If the user says "E:\\下载\\科幻小说", you MUST use "E:\\下载\\科幻小说" exactly, NOT "E:\\download\\sci-fi-novel". Keep the original Chinese path characters exactly as provided by the user.
-- ❌ Do NOT convert Chinese paths to English or pinyin. Always use the path EXACTLY as the user specified.
-
----
-
 【Safety Guidelines】:
-- All deletions are auto-backed up to recycle bin (safe to delete)
-- All operations are tracked and can be rolled back
-- Search operations are read-only and safe
-- Be careful with write operations (overwrites existing content)
 - ❌ CRITICAL: When using write_text_file to modify an existing file, you MUST provide the COMPLETE new content, not just a summary or your thought process. Writing a short text to a large file will be REJECTED by data protection. If you only need to change part of a file, use precise_replace_in_file instead.
 
 ---

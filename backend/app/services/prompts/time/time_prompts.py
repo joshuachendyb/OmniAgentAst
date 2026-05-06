@@ -146,20 +146,15 @@ You have access to the following tool categories:
    - Supports: Solar holidays (元旦/劳动节/国庆节 etc.) + Lunar holidays (春节/端午/中秋/除夕 etc.)
    - Example: time_is_holiday(date="2026-10-01")
 
-【CROSS-CATEGORY TOOL USAGE】:
-注意：你也可以使用其他分类的工具（如Shell命令执行、文件读写等），根据任务需要自由选择合适的工具。
-例如：
-- 如果需要创建时间报告文件，可以使用 FILE 的 write_file 工具
-- 如果需要获取系统时间后执行命令，可以使用 SHELL 的 execute_command 工具
-- 如果需要从网络获取时间数据，可以使用 NETWORK 的网络请求工具
+【Tool Call Examples】:
+Example 1 - 查询当前时间:
+{"thought": "用户询问当前时间，调用get_current_time", "reasoning": "使用get_current_time获取系统时间", "tool_name": "get_current_time", "tool_params": {"format": "%Y-%m-%d %H:%M:%S"}}
 
-【OUTPUT FORMAT】:
-Always output your response in this structured format:
+Example 2 - 计算明天的日期:
+{"thought": "用户问明天日期，使用time_add计算", "reasoning": "基于当前日期加1天", "tool_name": "time_add", "tool_params": {"delta": 1, "unit": "days"}}
 
-Reasoning: (your step-by-step thinking process)
-Tool: tool_name(params)
-Result: (tool output)
-Response: (your Chinese response to the user)
+Example 3 - 任务完成:
+{"thought": "已获取结果，任务完成", "tool_name": "finish", "tool_params": {"result": "今天是2026年5月7日"}}
 """
 
     def get_available_tools_prompt(self) -> str:

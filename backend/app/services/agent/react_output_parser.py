@@ -1249,7 +1249,7 @@ def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
             "error": None
         }
     
-    tool_name = parsed.get("tool_name", parsed.get("action_tool", parsed.get("action", "finish")))
+    tool_name = parsed.get("tool_name", parsed.get("action_tool", parsed.get("action", None)))
     # 【2026-04-28 小沈修复】支持args字段（LLM可能返回args而非tool_params）
     tool_params = parsed.get("tool_params", parsed.get("params", parsed.get("action_input", parsed.get("args", {}))))
     
