@@ -189,10 +189,14 @@ class TextStrategy(LLMStrategy):
             # 【部分成功条件】tool_name 或 tool_params 缺失 → 继续下一层解析
             if parsed_type == "action":
                 tool_name = parsed.get("tool_name")
-                tool_params = parsed.get("tool_params") or {}
+                raw_tool_params = parsed.get("tool_params")
+                # 【修复 2026-05-07 小沈】区分tool_params的两种"空"：
+                #   {} → 合法，无参数工具（如list_allowed_directories），直接返回
+                #   None → 解析失败，没拿到参数，需要fallback
+                tool_params = raw_tool_params if raw_tool_params is not None else {}
                 
-                # 完全成功：tool_name 和 tool_params 都有值，直接返回
-                if tool_name and tool_params:
+                # 完全成功：tool_name有值 且 tool_params不是None（解析器成功提取了参数信息）
+                if tool_name and raw_tool_params is not None:
                     logger.info(f"[TextStrategy] type=action, tool_name和tool_params都有值，直接返回")
                     return self._make_result(
                         content=parsed.get("content", ""),

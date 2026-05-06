@@ -235,7 +235,9 @@ class ToolExecutor:
                 sig = inspect.signature(tool)
                 required_params = [
                     p.name for p in sig.parameters.values()
-                    if p.default == inspect.Parameter.empty and p.name != 'self'
+                    if p.default == inspect.Parameter.empty
+                    and p.name != 'self'
+                    and p.kind not in (inspect.Parameter.VAR_KEYWORD, inspect.Parameter.VAR_POSITIONAL)
                 ]
                 missing = [p for p in required_params if p not in normalized_input]
                 if missing:
@@ -249,16 +251,18 @@ class ToolExecutor:
                 
                 # 执行工具
                 # 【修复 2026-04-30 小沈】兼容同步工具函数（如execute_command/change_directory）
-                # 之前统一await，对同步函数报错：object dict can't be used in 'await' expression
+                # 【修复 2026-05-07 小沈】lambda包装的async工具：iscoroutinefunction(lambda)=False，
+                # 需要先调用lambda拿到实际方法再判断是否coroutine
                 timeout = config.get_timeout(action)
                 if inspect.iscoroutinefunction(tool):
                     result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
                 else:
-                    # 同步函数：在线程池中执行，避免阻塞事件循环
-                    result = await asyncio.wait_for(
-                        asyncio.to_thread(tool, **normalized_input),
-                        timeout=timeout
-                    )
+                    # 先调用一次看返回值是否为coroutine（lambda包装的async方法）
+                    call_result = tool(**normalized_input)
+                    if inspect.iscoroutine(call_result):
+                        result = await asyncio.wait_for(call_result, timeout=timeout)
+                    else:
+                        result = call_result
                 
                 return self._format_result(result, action)
             
