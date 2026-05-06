@@ -82,8 +82,8 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
             **kwargs
         )
         
-        # 【步骤5】使用ReactAgentMixin的session管理（缺陷8修复）
-        self._init_session(enable=True)
+        # 【步骤6】使用ReactAgentMixin的任务追踪管理
+        self._init_task_tracking(enable=True)
         
         # 【修复 2026-04-30 小沈】使用Mixin的 load_tools_by_category（原 _load_tools 改名，消除MRO遮蔽）
         if self.tool_category:
