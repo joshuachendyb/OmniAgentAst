@@ -1,3 +1,30 @@
+v0.12.15
+
+更新时间: 2026-05-06 12:27:50
+
+更新内容：
+
+## v0.12.14→v0.12.15 变更汇总 - 小沈-2026-05-06
+
+### feat 新增
+| commit | 说明 |
+|--------|------|
+| e914a4bc | 新增7个分类的prompts文件 |
+| aa8903f3 | 新增7个分类的ReactAgent文件 |
+
+### 实施步骤
+- 步骤1: ReactAgentMixin公用逻辑类（69d53d82）
+- 步骤2: 7个prompts文件（shell/network/desktop/database/system/document/code_execution）
+- 步骤3: 7个Agent文件（shell_react/network_react/desktop_react/database_react/system_react/document_react/code_execution_react）
+
+### 测试
+| 测试文件 | 结果 |
+|--------|------|
+| test_prompts.py | 7/7 通过 |
+| test_react_agents.py | 7/7 通过 |
+
+---
+
 v0.12.14
 
 更新时间: 2026-05-06 11:10:01
