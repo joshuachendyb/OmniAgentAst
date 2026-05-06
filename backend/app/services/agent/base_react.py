@@ -261,7 +261,7 @@ class BaseAgent(ABC):
         # 基类只提供默认实现
         pass
     
-    def _check_and_load_missing_tools(self, observation: str, llm_client=None):
+    async def _check_and_load_missing_tools(self, observation: str, llm_client=None):
         """
         在Observation阶段，检测是否需要新工具（改进版）
         
@@ -276,7 +276,11 @@ class BaseAgent(ABC):
         if llm_client and self._intent_classifier:
             try:
                 # 使用意图分类器重新检测
-                result = self._intent_classifier.classify(observation)
+                # labels应该是所有可能的意图类型
+                from app.services.tools.registry import ToolCategory
+                labels = [cat.value for cat in ToolCategory]
+                
+                result = await self._intent_classifier.classify(observation, labels)
                 new_intent = result.get("intent")
                 confidence = result.get("confidence", 0)
                 
