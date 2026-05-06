@@ -242,6 +242,8 @@ class FileTools:
     def __init__(self, task_id: Optional[str] = None):
         # 【重要】延迟导入 agent 服务，避免循环导入
         from app.services.agent import get_file_safety_service, get_session_service
+        from app.services.agent.mixins.task_tracker import get_task_tracker
+        from app.utils.visualization.file_visualization import get_visualizer
         
         # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
         # session_id 专用于会话场景，操作追踪必须用 task_id

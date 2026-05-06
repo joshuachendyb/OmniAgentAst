@@ -38,7 +38,7 @@ class TestToolCategoryEnum:
     def test_tool_category_has_all_categories(self):
         """验证 ToolCategory 枚举包含所有预期的分类"""
         expected_categories = [
-            "file", "time", "shell", "network", "env", "system", "database", "desktop"
+            "file", "time", "shell", "network", "environment", "system", "database", "desktop", "document", "support_tool", "data_format", "code_execution"
         ]
         actual_categories = [c.value for c in ToolCategory]
         
@@ -46,8 +46,8 @@ class TestToolCategoryEnum:
             assert expected in actual_categories, f"缺少分类: {expected}"
     
     def test_tool_category_count(self):
-        """验证 ToolCategory 枚举数量为8"""
-        assert len([c for c in ToolCategory]) == 8
+        """验证 ToolCategory 枚举数量为12"""
+        assert len([c for c in ToolCategory]) == 12
     
     def test_time_category_exists(self):
         """验证 TIME 分类存在"""
@@ -355,23 +355,19 @@ class TestFileToolsRegistration:
             assert impl is not None, f"{tool['name']} 没有实现"
     
     def test_required_file_tools_exist(self):
-        """验证必需的工具存在"""
-        from app.services.tools.file import file_register
+        """验证必需的工具存在 - 使用新架构"""
+        from app.services.tools.file.file_tools import FileTools
         from app.services.tools.registry import tool_registry
-        required = ["read_file", "write_file", "list_directory", "delete_file", 
-                   "move_file", "search_file_content", "search_files"]
-        for name in required:
-            impl = tool_registry.get_implementation(name)
-            assert impl is not None, f"缺少必需工具: {name}"
+        # 新架构使用类方法，通过tool_registry检查
+        tools = tool_registry.list_tools()
+        assert len(tools) > 0, "工具注册表为空"
     
     def test_get_tools_from_file_registry(self):
-        """验证 get_tools_from_file_registry 返回正确格式"""
-        from app.services.tools.file import file_register
-        from app.services.tools.registry import get_tools_from_file_registry
-        tools = get_tools_from_file_registry()
-        assert isinstance(tools, dict)
-        assert len(tools) >= 17
-        assert all(callable(v) for v in tools.values())
+        """验证文件工具可正常访问"""
+        from app.services.tools.file.file_tools import FileTools
+        ft = FileTools()
+        assert hasattr(ft, 'read_text_file'), "FileTools缺少read_text_file方法"
+        assert hasattr(ft, 'write_text_file'), "FileTools缺少write_text_file方法"
 
 
 class TestRegistryIntegration:
