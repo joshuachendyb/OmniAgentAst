@@ -395,12 +395,19 @@ def get_tools_schema_for_categories(categories: List[Any]) -> List[Dict[str, Any
     openai_tools = []
     
     for category in categories:
-        tools = get_tools_from_registry_by_category(category)
-        for tool in tools:
-            name = tool.get("name", "")
-            description = tool.get("description", "") or ""
-            input_schema = tool.get("input_schema", {})
-            examples = tool.get("input_examples", [])
+        # get_tools_from_registry_by_category返回 Dict[str, Callable]
+        tools_dict: Dict[str, Callable] = get_tools_from_registry_by_category(category)
+        
+        # 从metadata获取详细信息（registry存储了工具元数据）
+        tool_list = tool_registry.list_tools(category=category, include_metadata=True)
+        tool_metadata = {t["name"]: t for t in tool_list if isinstance(t, dict)}
+        
+        for name, func in tools_dict.items():
+            # 获取metadata
+            meta = tool_metadata.get(name, {})
+            description = meta.get("description", "") or ""
+            input_schema = meta.get("input_schema", {})
+            examples = meta.get("input_examples", [])
             
             processed_description = _process_description(description)
             properties = input_schema.get("properties", {})
