@@ -81,7 +81,7 @@ class OperationRecord(BaseModel):
         json_schema_extra = {
             "example": {
                 "operation_id": "op-123e4567-e89b-12d3-a456-426614174000",
-                "session_id": "sess-abc-123",
+                "task_id": "task-abc-123",
                 "operation_type": "move",
                 "status": "success",
                 "source_path": "C:\\Users\\test\\file.txt",

@@ -132,8 +132,8 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
             if conn:
                 conn.close()
     
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """获取会话信息"""
+    def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """获取任务信息 - 小沈-2026-05-06"""
         conn = None
         try:
             conn = self._get_connection()
@@ -141,7 +141,7 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
             
             cursor.execute('''
                 SELECT * FROM file_operation_sessions WHERE task_id = ?
-            ''', (session_id,))
+            ''', (task_id,))
             
             row = cursor.fetchone()
             if row is None:
@@ -151,15 +151,15 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
             return dict(zip(columns, row))
             
         except Exception as e:
-            logger.error(f"Failed to get session: {e}")
+            logger.error(f"Failed to get task: {e}")
             return None
             
         finally:
             if conn:
                 conn.close()
     
-    def get_recent_sessions(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """获取最近的会话列表"""
+    def get_recent_tasks(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """获取最近的任务列表 - 小沈-2026-05-06"""
         conn = None
         try:
             conn = self._get_connection()
@@ -172,12 +172,12 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
             ''', (limit,))
             
             columns = [desc[0] for desc in cursor.description]
-            sessions = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            tasks = [dict(zip(columns, row)) for row in cursor.fetchall()]
             
-            return sessions
+            return tasks
             
         except Exception as e:
-            logger.error(f"Failed to get recent sessions: {e}")
+            logger.error(f"Failed to get recent tasks: {e}")
             return []
             
         finally:
