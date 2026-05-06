@@ -60,18 +60,10 @@ class AgentFactory:
         # 获取Agent类
         AgentClass = cls._AGENTS.get(intent_type)
         
-        # 【修复 2026-04-30 小沈】未注册的intent_type回退到FileReactAgent，而非返回None
-        # 返回None会导致调用方 None.run_stream() → AttributeError
+        # 【步骤7】不再回退到FileReactAgent，未注册intent直接报错
         if not AgentClass:
-            from app.utils.logger import logger
-            logger.warning(f"[AgentFactory] intent_type='{intent_type}' 未注册，回退到 FileReactAgent")
-            fallback_class = cls._AGENTS.get('file')
-            if not fallback_class:
-                raise ValueError(f"AgentFactory: intent_type='{intent_type}' 未注册且无回退Agent可用")
-            AgentClass = fallback_class
-            # 回退时也使用file的tool_category
-            if not tool_category:
-                tool_category = cls._TOOL_CATEGORIES.get('file')
+            available = list(cls._AGENTS.keys())
+            raise ValueError(f"AgentFactory: intent_type='{intent_type}' 未注册。可用Agent: {available}")
         
         # 获取tool_category（优先使用参数，其次使用预注册的）
         effective_tool_category = tool_category

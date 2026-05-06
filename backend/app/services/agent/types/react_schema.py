@@ -369,8 +369,111 @@ __all__ = [
     "validate_tool_call",
     "get_available_tools",
     "get_finish_tool_schema",
+    "get_tools_schema_for_intent_distribution",
     "_process_description",
     "_clean_properties",
     "_extract_type",
     "_generate_example_hints",
 ]
+
+
+def get_tools_schema_for_intent_distribution(
+    intent_dist: Dict[str, float],
+    top_n: int = 2,
+    conf_threshold: float = 0.3,
+    brief_threshold: float = 0.1
+) -> tuple[List[Dict[str, Any]], str]:
+    """
+    根据意图置信度分布，返回混合Schema（高置信度详细，其他简要）
+    
+    【步骤8】实现文档4.14节缺陷2修正：置信度阈值无降级策略
+    
+    Args:
+        intent_dist: 意图置信度分布 {"file": 0.85, "time": 0.60, "shell": 0.15}
+        top_n: 前N个高置信度意图给详细Schema（默认2）
+        conf_threshold: 置信度阈值，低于此值的不加载详细Schema（默认0.3）
+        brief_threshold: 简要清单阈值，高于此值的低置信度意图列入简要清单（默认0.1）
+    
+    Returns:
+        (openai_tools, brief_tools_hint): 详细Schema列表 + 简要清单提示
+    
+    设计说明：
+    1. 高置信度（>=conf_threshold）：完整详细Schema（Pydantic模型）
+    2. 低置信度（>=brief_threshold）：只给简要清单，不加载详细Schema
+    3. 极低置信度（<brief_threshold）：完全忽略
+    4. 所有工具置信度都低于阈值：降级返回通用工具清单
+    """
+    from app.services.tools.registry import tool_registry
+    from app.services.tools.registry import ToolCategory
+    
+    # 1. 排序意图
+    sorted_intents = sorted(intent_dist.items(), key=lambda x: x[1], reverse=True)
+    
+    openai_tools = []
+    loaded_categories = set()
+    brief_intents = []
+    
+    # 2. 高置信度意图：详细Schema（阈值0.3）
+    for intent, score in sorted_intents[:top_n]:
+        if score < conf_threshold:
+            # 低于阈值的跳过详细Schema，加入简要清单（如果>=brief_threshold）
+            if score >= brief_threshold:
+                brief_intents.append(f"- {intent}类工具（置信度{score:.2f}）")
+            continue
+        
+        try:
+            category = ToolCategory(intent)
+            tools = tool_registry.get_tools(category)
+            for tool in tools:
+                schema = _build_detailed_schema(tool)
+                openai_tools.append(schema)
+            loaded_categories.add(intent)
+        except ValueError:
+            logger.warning(f"[Schema] 意图'{intent}'无对应工具分类，跳过")
+    
+    # 3. 低置信度意图：只给简要清单（阈值0.1）
+    for intent, score in sorted_intents[top_n:]:
+        if score >= brief_threshold:
+            brief_intents.append(f"- {intent}类工具（置信度{score:.2f}）")
+    
+    # 4. 构建简要清单提示
+    brief_tools_hint = ""
+    if brief_intents:
+        brief_tools_hint = "\n【可用但未加载详细说明的工具】\n"
+        brief_tools_hint += "\n".join(brief_intents)
+        brief_tools_hint += "\n如需使用，请说明需求，我将动态加载。"
+    
+    # 5. 全部置信度低于阈值：降级返回通用工具清单
+    if not openai_tools:
+        logger.warning(f"[Schema] 所有意图置信度<{conf_threshold}，降级为通用工具清单")
+        return get_tools_schema_for_function_calling()[:10], "【通用工具清单】置信度过低，仅提供基础工具"
+    
+    return openai_tools, brief_tools_hint
+
+
+def _build_detailed_schema(tool: Any) -> Dict[str, Any]:
+    """构建详细Schema（Pydantic模型）"""
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.input_schema
+        }
+    }
+
+
+def _build_brief_schema(tool: Any, score: float) -> Dict[str, Any]:
+    """构建简要Schema（用于低置信度意图）"""
+    return {
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": f"【简要】{tool.description[:50]}... 置信度: {score:.2f}",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    }
