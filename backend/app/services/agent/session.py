@@ -121,6 +121,59 @@ class FileOperationSessionService(SessionServiceBase, SessionStatsMixin):
                 task_id
             ))
             
+            conn.commit()
+            logger.info(f"Session completed: {task_id} (success={success})")
+            
+        except Exception as e:
+            logger.error(f"Failed to complete session: {e}")
+            raise
+            
+        finally:
+            if conn:
+                conn.close()
+    
+    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """获取会话信息"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT * FROM file_operation_sessions WHERE task_id = ?
+            ''', (session_id,))
+            
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            
+            columns = [desc[0] for desc in cursor.description]
+            return dict(zip(columns, row))
+            
+        except Exception as e:
+            logger.error(f"Failed to get session: {e}")
+            return None
+            
+        finally:
+            if conn:
+                conn.close()
+    
+    def get_recent_sessions(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """获取最近的会话列表"""
+        conn = None
+        try:
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT * FROM file_operation_sessions 
+                ORDER BY created_at DESC 
+                LIMIT ?
+            ''', (limit,))
+            
+            columns = [desc[0] for desc in cursor.description]
+            sessions = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            
             return sessions
             
         except Exception as e:
@@ -141,3 +194,6 @@ def get_task_tracker() -> FileOperationSessionService:
     if _task_tracker_instance is None:
         _task_tracker_instance = FileOperationSessionService()
     return _task_tracker_instance
+
+
+get_session_service = get_task_tracker

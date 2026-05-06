@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 DocumentReactAgent - Document Read/Write ReAct Agent.
 
