@@ -61,8 +61,8 @@ class TimeReactAgent(ReactAgentMixin, BaseAgent):
             **kwargs
         )
         
-        # 【步骤5】使用ReactAgentMixin的session管理
-        self._init_session(enable=True)
+        # 【步骤7】使用ReactAgentMixin的任务追踪管理
+        self._init_task_tracking(enable=True)
         
         self.prompts = TimePrompts()
         
