@@ -93,7 +93,7 @@ class TimeReactAgent(ReactAgentMixin, BaseAgent):
     
     def _get_task_prompt(self, task: str, context: Optional[Dict] = None) -> str:
         """获取任务 Prompt - 小沈2026-05-06统一走self.prompts"""
-        return self.prompts.get_task_prompt(task, context)
+        return self.prompts.get_task_prompt(task)
     
     async def _get_llm_response(self) -> str:
         """获取LLM响应 - 小沈2026-05-06统一走Mixin的_call_llm_with_summary"""
