@@ -24,10 +24,8 @@ from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.types import Step, AgentResult, AgentStatus
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
 from app.services.agent.llm_adapter import LLMAdapter
-from app.services.tools.file.file_tools import FileTools
 from app.services.prompts.file.file_prompts import FileOperationPrompts
-from app.services.agent.session import get_session_service
-from app.services.tools.mixin import ToolLoaderMixin
+from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin  # 【步骤5改用ReactAgentMixin】
 from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
@@ -36,7 +34,7 @@ from app.chat_stream.chat_helpers import create_final_response, create_timestamp
 from app.chat_stream.error_handler import create_error_response
 
 
-class FileReactAgent(ToolLoaderMixin, BaseAgent):
+class FileReactAgent(ReactAgentMixin, BaseAgent):
     """
     文件操作 ReAct Agent - 使用tool_category参数
     参考: 7.4节行956-1051
@@ -84,14 +82,8 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
             **kwargs
         )
         
-        # 初始化 session 服务（用于统一管理会话生命周期）
-        self.session_service = get_session_service()
-        
-        # 【修复】标记 session 是否由本 Agent 创建（用于正确关闭）
-        self._session_created_by_agent = False
-        
-        # 初始化文件工具确保 task_id 正确传递
-        self.file_tools = FileTools(task_id=task_id)  # 【修改】session_id → task_id，2026-04-26 小沈
+        # 【步骤5】使用ReactAgentMixin的session管理（缺陷8修复）
+        self._init_session(enable=True)
         
         # 【修复 2026-04-30 小沈】使用Mixin的 load_tools_by_category（原 _load_tools 改名，消除MRO遮蔽）
         if self.tool_category:
