@@ -284,9 +284,7 @@ Always format responses as JSON:
 - ❌ 错误示例: text="已成功创建并写入第一章，需要继续创建第二章"
 - ✅ 正确示例: text="第一章：觉醒
 
-林凡是一名普通的大学生..."
-
-If task is complete: {"thought": "...", "reasoning": "...", "tool_name": "finish", "tool_params": {"result": "summary"}}"""
+林凡是一名普通的大学生..."""
 
     def get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
@@ -307,11 +305,6 @@ Please help me complete this file management task. Follow these steps:
 1. First, analyze what needs to be done
 2. Use the appropriate tools to accomplish the task
 3. Provide a summary when finished
-
-IMPORTANT - When to finish:
-- When the user's task is COMPLETED, use tool_name="finish" with a summary of what was done
-- Do NOT keep calling tools after the task is done
-- Example finish: {{"thought": "任务已完成，我已查看E盘内容...", "tool_name": "finish", "tool_params": {{"result": "完成了..."}}}}
 
 Remember:
 - You can use multiple tools in sequence
