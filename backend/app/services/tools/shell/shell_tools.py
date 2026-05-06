@@ -57,7 +57,7 @@ def execute_shell_command(
         env.update(env_vars)
     
     if shell_type == "cmd":
-        executable = "cmd.exe"
+        executable = None  # shell=True时使用COMSPEC默认cmd.exe - 小沈 2026-05-06
     else:
         executable = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
     

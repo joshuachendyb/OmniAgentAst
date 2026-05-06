@@ -37,7 +37,6 @@ __all__ = [
     "FileMonitorInput",
     "FileStatisticsInput",
     "FileChecksumInput",
-    "ReadTextFileInput",
     "ReadMediaFileInput",
     "ReadBatchFileInput",
     "PreciseReplaceInFileInput",

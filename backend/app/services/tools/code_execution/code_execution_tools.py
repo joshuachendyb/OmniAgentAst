@@ -21,6 +21,12 @@ Code Execution 工具函数模块 - 代码执行工具
 3. 裸except:pass吞掉异常 → 改为OSError + logger.warning
 4. TimeoutExpired的stdout/stderr显式str转换保证类型安全
 
+【2026-05-06 小沈修正】深度测试发现的缺陷：
+1. #1 working_dir空字符串校验漏洞 → is not None 判断
+2. #2/#3 Windows中文编码问题 → 去掉text=True，手动UTF-8解码stdout/stderr，
+   同时传PYTHONUTF8=1+PYTHONIOENCODING=utf-8环境变量
+3. #6 TimeoutExpired的stdout/stderr可能是bytes → 安全解码函数
+
 Author: 小沈 - 2026-05-02
 """
 
@@ -38,8 +44,51 @@ from app.services.tools.code_execution.code_execution_schema import (
 logger = logging.getLogger(__name__)
 
 
+def _safe_decode(data, encodings=None):
+    """安全解码bytes或返回str - 小沈 2026-05-06
+    
+    解决Windows下subprocess stdout/stderr编码问题：
+    - 如果data是str，直接返回
+    - 如果data是bytes，按encodings列表依次尝试解码
+    - 如果data是None，返回空字符串
+    - 统一将Windows的\\r\\n行尾转为\\n，保证跨平台一致性
+    
+    Args:
+        data: bytes、str或None
+        encodings: 尝试的编码列表，默认['utf-8', 'gbk', 'latin-1']
+    
+    Returns:
+        str: 解码后的字符串
+    """
+    if data is None:
+        return ""
+    if isinstance(data, str):
+        return data.replace('\r\n', '\n')
+    if isinstance(data, bytes):
+        for enc in (encodings or ['utf-8', 'gbk', 'latin-1']):
+            try:
+                return data.decode(enc).replace('\r\n', '\n')
+            except (UnicodeDecodeError, LookupError):
+                continue
+        return data.decode('latin-1').replace('\r\n', '\n')
+    return str(data)
+
+
+def _get_utf8_env():
+    """获取强制UTF-8的环境变量副本 - 小沈 2026-05-06
+    
+    设置PYTHONUTF8=1和PYTHONIOENCODING=utf-8，
+    确保Python解释器用UTF-8模式读取源文件和输出。
+    Node.js不受这些变量影响，但stdout解码走_safe_decode。
+    """
+    env = os.environ.copy()
+    env['PYTHONUTF8'] = '1'
+    env['PYTHONIOENCODING'] = 'utf-8'
+    return env
+
+
 def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = None) -> dict:
-    """执行Python代码 - 小沈 2026-05-02, 小沈修正 2026-05-05, 小沈修正 2026-05-05(空字符串working_dir)"""
+    """执行Python代码 - 小沈 2026-05-02, 修正 2026-05-05(空字符串working_dir), 修正 2026-05-06(中文编码)"""
     if working_dir is not None and not os.path.isdir(working_dir):
         return {
             "code": "ERR_EXEC_INVALID_DIR",
@@ -55,21 +104,24 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
             result = subprocess.run(
                 ['python', temp_file],
                 capture_output=True,
-                text=True,
                 cwd=working_dir,
-                timeout=timeout
+                timeout=timeout,
+                env=_get_utf8_env()
             )
 
+            stdout_str = _safe_decode(result.stdout)
+            stderr_str = _safe_decode(result.stderr)
+
             if result.returncode == 0:
-                if result.stderr and result.stderr.strip():
+                if stderr_str and stderr_str.strip():
                     message = "Python代码执行成功（有警告输出）"
                 else:
                     message = "Python代码执行成功"
                 return {
                     "code": "SUCCESS",
                     "data": {
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
+                        "stdout": stdout_str,
+                        "stderr": stderr_str,
                         "returncode": result.returncode
                     },
                     "message": message
@@ -79,8 +131,8 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
                 return {
                     "code": "ERR_EXEC_FAILED",
                     "data": {
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
+                        "stdout": stdout_str,
+                        "stderr": stderr_str,
                         "returncode": result.returncode
                     },
                     "message": message
@@ -90,8 +142,8 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
             return {
                 "code": "ERR_EXEC_TIMEOUT",
                 "data": {
-                    "stdout": str(e.stdout or ""),
-                    "stderr": str(e.stderr or ""),
+                    "stdout": _safe_decode(e.stdout),
+                    "stderr": _safe_decode(e.stderr),
                     "returncode": -1
                 },
                 "message": f"Python代码执行超时（{timeout}秒）"
@@ -117,7 +169,7 @@ def execute_python(code: str, timeout: int = 30, working_dir: Optional[str] = No
 
 
 def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] = None) -> dict:
-    """执行JavaScript代码 - 小沈 2026-05-02, 小沈修正 2026-05-05, 小沈修正 2026-05-05(空字符串working_dir)"""
+    """执行JavaScript代码 - 小沈 2026-05-02, 修正 2026-05-05(空字符串working_dir), 修正 2026-05-06(中文编码)"""
     if working_dir is not None and not os.path.isdir(working_dir):
         return {
             "code": "ERR_EXEC_INVALID_DIR",
@@ -133,21 +185,23 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
             result = subprocess.run(
                 ['node', temp_file],
                 capture_output=True,
-                text=True,
                 cwd=working_dir,
                 timeout=timeout
             )
 
+            stdout_str = _safe_decode(result.stdout)
+            stderr_str = _safe_decode(result.stderr)
+
             if result.returncode == 0:
-                if result.stderr and result.stderr.strip():
+                if stderr_str and stderr_str.strip():
                     message = "JavaScript代码执行成功（有警告输出）"
                 else:
                     message = "JavaScript代码执行成功"
                 return {
                     "code": "SUCCESS",
                     "data": {
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
+                        "stdout": stdout_str,
+                        "stderr": stderr_str,
                         "returncode": result.returncode
                     },
                     "message": message
@@ -157,8 +211,8 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
                 return {
                     "code": "ERR_EXEC_FAILED",
                     "data": {
-                        "stdout": result.stdout,
-                        "stderr": result.stderr,
+                        "stdout": stdout_str,
+                        "stderr": stderr_str,
                         "returncode": result.returncode
                     },
                     "message": message
@@ -168,8 +222,8 @@ def execute_javascript(code: str, timeout: int = 30, working_dir: Optional[str] 
             return {
                 "code": "ERR_EXEC_TIMEOUT",
                 "data": {
-                    "stdout": str(e.stdout or ""),
-                    "stderr": str(e.stderr or ""),
+                    "stdout": _safe_decode(e.stdout),
+                    "stderr": _safe_decode(e.stderr),
                     "returncode": -1
                 },
                 "message": f"JavaScript代码执行超时（{timeout}秒）"

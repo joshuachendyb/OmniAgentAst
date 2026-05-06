@@ -665,7 +665,10 @@ class FileTools:
         if not append and path.exists() and path.is_file():
             old_size = path.stat().st_size
             new_size = len(content.encode(encoding))
-            if old_size > 1024 and new_size < old_size * 0.1:
+            # 【修正 2026-05-06 小沈】数据保护：缩小95%以上且非空内容才拦截
+            # 原阈值10%过严，清空文件(空字符串)和大幅精简是合法场景
+            # 豁免条件：新内容为空（有意清空）或缩小比例<95%
+            if old_size > 1024 and new_size > 0 and new_size < old_size * 0.05:
                 return _to_unified_format({
                     "success": False,
                     "error": f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节，缩小{100-int(new_size/max(old_size,1)*100)}%)，可能覆盖数据。如确认覆盖，请使用precise_replace_in_file或在text中传入完整内容。",
