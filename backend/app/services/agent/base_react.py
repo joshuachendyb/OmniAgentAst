@@ -803,7 +803,12 @@ class BaseAgent(ABC):
 
                 # yield带警告的版本给前端
                 yield observation_step.to_dict()
-
+                
+                # 【步骤9】检查是否需要动态加载新工具
+                # 在Observation之后、下一轮LLM调用前检查
+                # observation_text 是行712-744构建的observation内容
+                await self._check_and_load_missing_tools(observation_text, self.llm_client)
+                
                 # 【步骤3.6】核心设计: observation_step.is_done() 决定是否直接结束任务
                 if observation_step.is_done():
                     # return_direct 时生成 FinalStep 并退出
