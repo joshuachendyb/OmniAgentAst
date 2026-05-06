@@ -137,3 +137,62 @@ try:
     AgentFactory.register('time', TimeReactAgent, ToolCategory.TIME)
 except ImportError as e:
     print(f"[AgentFactory] TimeReactAgent: {e}")
+
+# ===== 步骤4：注册7个新Agent ===== 
+# 参考文档4.14节，步骤4实施要求使用fallback机制
+
+# ShellReactAgent
+try:
+    from app.services.agent.shell_react import ShellReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('shell', ShellReactAgent, ToolCategory.SHELL)
+except ImportError as e:
+    print(f"[AgentFactory] ShellReactAgent: {e}")
+
+# NetworkReactAgent
+try:
+    from app.services.agent.network_react import NetworkReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('network', NetworkReactAgent, ToolCategory.NETWORK)
+except ImportError as e:
+    print(f"[AgentFactory] NetworkReactAgent: {e}")
+
+# DesktopReactAgent
+try:
+    from app.services.agent.desktop_react import DesktopReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('desktop', DesktopReactAgent, ToolCategory.DESKTOP)
+except ImportError as e:
+    print(f"[AgentFactory] DesktopReactAgent: {e}")
+
+# DatabaseReactAgent
+try:
+    from app.services.agent.database_react import DatabaseReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('database', DatabaseReactAgent, ToolCategory.DATABASE)
+except ImportError as e:
+    print(f"[AgentFactory] DatabaseReactAgent: {e}")
+
+# SystemReactAgent
+try:
+    from app.services.agent.system_react import SystemReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('system', SystemReactAgent, ToolCategory.SYSTEM)
+except ImportError as e:
+    print(f"[AgentFactory] SystemReactAgent: {e}")
+
+# DocumentReactAgent
+try:
+    from app.services.agent.document_react import DocumentReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('document', DocumentReactAgent, ToolCategory.DOCUMENT)
+except ImportError as e:
+    print(f"[AgentFactory] DocumentReactAgent: {e}")
+
+# CodeExecutionReactAgent
+try:
+    from app.services.agent.code_execution_react import CodeExecutionReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('code_execution', CodeExecutionReactAgent, ToolCategory.CODE_EXECUTION)
+except ImportError as e:
+    print(f"[AgentFactory] CodeExecutionReactAgent: {e}")
