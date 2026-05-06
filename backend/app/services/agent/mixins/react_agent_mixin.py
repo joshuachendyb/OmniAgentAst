@@ -11,7 +11,6 @@ from typing import Dict, Any, List, Optional, Tuple
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
 from app.services.agent.llm_adapter import LLMAdapter
-from app.services.agent.session import get_session_service
 from app.services.tools.mixin import ToolLoaderMixin
 from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
@@ -27,7 +26,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                 super().__init__(...)
                 self._init_tools_and_executor(tool_category)
                 self._init_llm_strategies()
-                self._init_session()
+                self._init_task_tracking()
     """
     
     def _init_tools_and_executor(self, tool_category: Optional[ToolCategory] = None):
@@ -48,25 +47,29 @@ class ReactAgentMixin(ToolLoaderMixin):
         self.tools_strategy = None
         self.response_format_strategy = None
     
-    def _init_session(self, enable: bool = True):
+    def _init_task_tracking(self, enable: bool = True):
         """
-        初始化session管理
+        初始化任务执行追踪
+        
+        替代原来的_init_session()，明确语义：任务追踪（使用_init_task_tracking()）
+        - task_id = 任务执行实例ID（一次Agent.run()的生命周期）
+        - tracker = 按意图类型分发的追踪服务
         
         Args:
-            enable: 是否启用session管理（默认True）
-                - FileReactAgent: True（需要session追踪写操作）
+            enable: 是否启用追踪（默认True）
+                - FileReactAgent: True（需要追踪写操作）
                 - TimeReactAgent: True（统一接口）
                 - ShellReactAgent: True（追踪命令执行）
-                - 如需自定义session逻辑，设为False后自己实现
+                - 如需自定义追踪逻辑，设为False后自己实现
         """
         if not enable:
-            self.session_service = None
-            self._session_created_by_agent = False
+            self._task_tracker = None
+            self._task_created_by_agent = False
             return
         
-        from app.services.agent.session import get_session_service
-        self.session_service = get_session_service()
-        self._session_created_by_agent = False
+        from app.services.agent.mixins.task_tracker import get_task_tracker
+        self._task_tracker = get_task_tracker()
+        self._task_created_by_agent = False
     
     def _init_candidates(self, candidates: Optional[List[str]] = None):
         """初始化候选意图列表"""
@@ -140,20 +143,32 @@ class ReactAgentMixin(ToolLoaderMixin):
             llm_client=self.llm_client, message=last_message,
             history_dicts=history_dicts, conversation_history=self.conversation_history)
     
-    # ===== Session管理 =====
+    # ===== 任务追踪管理 =====
     
-    def _on_session_init(self, task: str, context=None):
-        """Session初始化Hook"""
+    def _on_task_init(self, task: str, context=None):
+        """任务开始追踪Hook"""
+        from app.services.agent.mixins.task_tracker import get_task_tracker
         if not self.task_id:
-            self.task_id = self.session_service.create_session(
-                agent_id=f"{self.__class__.__name__}-agent", task_description=task)
-            self._session_created_by_agent = True
+            # task_id为空时才需要创建
+            from uuid import uuid4
+            self.task_id = str(uuid4())
+            self._task_created_by_agent = True
+        
+        # 创建追踪记录
+        if self._task_tracker:
+            agent_id = self.__class__.__name__.replace('ReactAgent', '').lower()
+            self._task_tracker.create_task(
+                task_id=self.task_id,
+                agent_id=agent_id,
+                task_description=task
+            )
     
-    def _on_after_loop(self):
-        """循环结束后Hook - 关闭Session"""
-        if self._session_created_by_agent and self.task_id and self.session_service:
+    def _on_task_complete(self):
+        """任务结束追踪Hook"""
+        if self._task_created_by_agent and self.task_id and self._task_tracker:
             try:
-                self.session_service.complete_session(self.task_id, success=True)
-                self._session_created_by_agent = False
+                agent_id = self.__class__.__name__.replace('ReactAgent', '').lower()
+                self._task_tracker.complete_task(self.task_id, agent_id=agent_id, success=True)
+                self._task_created_by_agent = False
             except Exception as e:
-                logger.error(f"Failed to complete session {self.task_id}: {e}")
+                logger.error(f"Failed to complete task tracking: {e}")
