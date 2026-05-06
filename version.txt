@@ -1,10 +1,80 @@
-v0.12.15
+v0.12.17
 
-更新时间: 2026-05-06 12:27:50
+更新时间: 2026-05-06 18:30:00
 
 更新内容：
 
-## v0.12.14→v0.12.15 变更汇总 - 小沈-2026-05-06
+## v0.12.16→v0.12.17 变更汇总 - 小沈-2026-05-06
+
+### 完成设计文档v1.0全部13个实施步骤（文档4.14节1941-1958行）
+
+| 步骤 | 内容 | commit | 状态 |
+|------|------|--------|------|
+| 1 | 创建task_tracker.py | 14b91fcc | ✅ |
+| 2 | 修正react_agent_mixin.py | ee5670b1 | ✅ |
+| 3 | 检查7个prompts文件 | - | ✅ |
+| 4 | 修正7个agent/{cat}_react.py | 03ac23cd | ✅ |
+| 5 | 修改agent_factory.py注册7个新Agent | - | ✅ |
+| 6 | 改进FileReactAgent使用ReactAgentMixin | 4de45424 | ✅ |
+| 7 | 改进TimeReactAgent使用ReactAgentMixin | bc608f02 | ✅ |
+| 8 | 改进file_prompts.py实现get_available_tools_prompt | - | ✅ |
+| 9 | 新增react_schema.py的get_tools_schema_for_intent_distribution() | 6e43cf3b | ✅ |
+| 10 | 新增base_react.py的动态加载触发条件判断 | a223369c | ✅ |
+| 11 | 修正Pydantic/ORM模型字段名（session_id→task_id） | 46eb1fa2 | ✅ |
+| 12 | 删除session.py中的重复DDL | eb594db9 | ✅ |
+| 13 | 新增base_react.py的_check_and_load_missing_tools() | a223369c | ✅ |
+
+### 新增/修改文件清单
+- backend/app/services/agent/mixins/task_tracker.py（新增TaskExecutionTracker+GenericTaskTracker）
+- backend/app/services/agent/mixins/react_agent_mixin.py（修正方法名+变量名）
+- backend/app/services/agent/react_sse_wrapper.py（集成TaskExecutionTracker）
+- backend/app/services/prompts/（7个分类prompts文件）
+- backend/app/services/agent/（7个Agent文件：shell_react/network_react等）
+- backend/app/services/agent/agent_factory.py（注册7个新Agent）
+- backend/app/services/agent/file_react.py（使用ReactAgentMixin）
+- backend/app/services/agent/time_react.py（使用ReactAgentMixin）
+- backend/app/services/prompts/file_prompts.py（实现get_available_tools_prompt）
+- backend/app/services/agent/types/react_schema.py（get_tools_schema_for_intent_distribution）
+- backend/app/services/agent/base_react.py（动态加载触发条件+_check_and_load_missing_tools）
+- backend/app/models/file_operations/__init__.py（session_id→task_id）
+- backend/app/services/agent/session.py（删除重复DDL）
+
+### 测试覆盖
+- tests/test_step11_models.py（5个测试：Pydantic/ORM字段名）
+- tests/test_step12_session.py（5个测试：删除重复DDL）
+- tests/test_step13_check_missing_tools.py（3个测试：_check_and_load_missing_tools）
+- 全部13个测试通过 ✅
+
+---
+
+v0.12.16
+
+更新时间: 2026-05-06 15:28:59
+
+更新内容：
+
+## v0.12.15→v0.12.16 变更汇总 - 小沈-2026-05-06
+
+### feat 新增
+| commit | 说明 |
+|--------|------|
+| 6e43cf3b | feat: 步骤9完成 - base_react.py动态加载+否定词检测 |
+| a223369c | feat: 步骤9集成_check_and_load_missing_tools到run_stream |
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| 53637821 | fix: 修正get_tools_schema_for_categories函数实现+测试通过 |
+| 553b117e | fix: 修正_check_and_load_missing_tools异步调用+去掉错误await |
+
+### 步骤9完成内容
+- base_react.py: 动态加载+否定词检测（7个方法，约150行）
+- react_schema.py: 新增get_tools_schema_for_categories函数
+- 导入路径修正: types.react_schema + preprocessing.intent_classifier
+- 测试通过: 工具加载(27个) + 否定词检测(6/6) + IntentClassifier(async)
+
+---
+
 
 ### feat 新增
 | commit | 说明 |

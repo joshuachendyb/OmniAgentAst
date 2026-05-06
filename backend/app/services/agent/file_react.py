@@ -46,8 +46,8 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
     def __init__(
         self,
         llm_client: Any,
-        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
-        # session_id 专用于会话场景，操作追踪必须用 task_id
+        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 task_id
+        # task_id 专用于会话场景，操作追踪必须用 task_id
         task_id: str,
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
@@ -61,7 +61,7 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
         Args:
             llm_client: LLM 客户端函数
             task_id: 任务ID（必需）- 用于操作安全追踪和审计
-            # 【禁止】不要使用 session_id，会话和操作追踪是不同概念
+            # 【禁止】不要使用 task_id，会话和操作追踪是不同概念
             tool_category: 工具分类（可选，默认FILE）
             max_steps: 最大步数
             candidates: 候选意图列表（如 ["file", "chat"]），用于跨分类工具访问
@@ -277,9 +277,6 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
         """
         执行工具的抽象方法实现
         
-        【关键】直接使用 self.file_tools（有正确 task_id），
-        而不是通过 executor（executor 用的是 registry 里没有 task_id 的工具）
-        
         【2026-04-27 小沈修复】：调用 _normalize_params 做参数别名映射
         【2026-04-28 小沈修复】：添加工具名映射，支持 create_dir → create_directory
         """
@@ -300,16 +297,9 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
         # 【2026-04-27 小沈新增】标准化参数（别名映射）
         normalized_params = self.executor._normalize_params(action, params)
         logger.info(f"[file_react._execute_tool] action={action}, 原params={params}, 标准化后={normalized_params}")
-
-        # 【2026-04-30 小沈修复】跨分类工具支持
-        # 先尝试从 self.file_tools 查找（有正确 task_id，用于操作安全追踪）
-        tool_method = getattr(self.file_tools, action, None)
-        if tool_method:
-            return await tool_method(**normalized_params)
-
-        # 未在 FILE 工具中找到 → 跨分类 fallback：通过 executor 从全局 registry 查找
-        # executor.execute() 内部会优先查本地字典，再 fallback 到 tool_registry.get_implementation()
-        logger.info(f"[file_react._execute_tool] 跨分类fallback: {original_action} → ToolExecutor")
+        
+        # 通过 executor 从全局 registry 查找工具（内部会优先查本地字典，再 fallback 到 tool_registry.get_implementation()）
+        logger.info(f"[file_react._execute_tool] 使用ToolExecutor: {original_action}")
         return await self.executor.execute(original_action, params)
     
     # ===== 实现父类抽象方法 =====
@@ -340,19 +330,19 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
     
     # ===== 实现父类 Hook 方法 =====
     
-    def _on_session_init(self, task: str, context: Optional[Dict[str, Any]]):
+    def _on_task_init(self, task: str, context: Optional[Dict[str, Any]]):
         """Session 初始化 Hook"""
         # 确保 session 存在
-        session_id = self.task_id
-        if not session_id:
-            session_id = self.session_service.create_session(
+        task_id = self.task_id
+        if not task_id:
+            task_id = self.task_tracker.create_task(
                 agent_id="file-operation-agent",
                 task_description=task
             )
-            self._session_created_by_agent = True
-            if hasattr(self.file_tools, 'set_session'):
-                self.file_tools.set_session(session_id)
-            logger.info(f"Session created in run_stream(): {session_id}")
+            self._task_created_by_agent = True
+            if hasattr(self.file_tools, 'set_task_id'):
+                self.file_tools.set_task_id(task_id)
+            logger.info(f"Session created in run_stream(): {task_id}")
     
     def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
         """循环开始前 Hook - 无操作，日志记录已由上层处理"""
@@ -360,11 +350,11 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
     
     def _on_after_loop(self):
         """循环结束后 Hook - 关闭 Session"""
-        if self._session_created_by_agent and self.task_id and self.session_service:
+        if self._task_created_by_agent and self.task_id and self.task_tracker:
             try:
-                self.session_service.complete_session(self.task_id, success=True)
+                self.task_tracker.complete_task(self.task_id, success=True)
                 logger.info(f"Session completed in run_stream: {self.task_id}")
-                self._session_created_by_agent = False
+                self._task_created_by_agent = False
             except Exception as e:
                 logger.error(f"Failed to complete session {self.task_id}: {e}")
     
@@ -394,9 +384,9 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
             Agent 执行结果
         """
         async with self._lock:
-            return await self._run_with_session(task, context, system_prompt)
+            return await self._run_with_task_tracking(task, context, system_prompt)
     
-    async def _run_with_session(
+    async def _run_with_task_tracking(
         self,
         task: str,
         context: Optional[Dict[str, Any]] = None,
@@ -413,24 +403,24 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
         
         【说明】意图识别已移至路由层（chat_router.py），此处只做文件操作
         """
-        # 获取 session_id 用于日志追踪
-        session_id = self.task_id or ""
+        # 获取 task_id 用于日志追踪
+        task_id = self.task_id or ""
         
-        # 使用局部变量管理 session（session_id 在预处理前已获取）
+        # 使用局部变量管理 session（task_id 在预处理前已获取）
         session_created_by_this_run = False
         
         # 确保 session 已创建
-        if not session_id:
-            session_id = self.session_service.create_session(
+        if not task_id:
+            task_id = self.task_tracker.create_task(
                 agent_id="file-operation-agent",
                 task_description=task
             )
             session_created_by_this_run = True
-            self._session_created_by_agent = True
+            self._task_created_by_agent = True
             
-            if hasattr(self.file_tools, 'set_session'):
-                self.file_tools.set_session(session_id)
-            logger.info(f"Session created in run(): {session_id}")
+            if hasattr(self.file_tools, 'set_task_id'):
+                self.file_tools.set_task_id(task_id)
+            logger.info(f"Session created in run(): {task_id}")
         
         # 【重构 2026-03-31】调用父类 run_stream() 统一执行 ReAct 循环
         # 消除与 base_react.py 的重复实现，确保行为一致
@@ -446,7 +436,7 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
                         message=event.get("content", "Task completed successfully"),
                         steps=self.steps,
                         total_steps=len(self.steps),
-                        session_id=session_id,
+                        task_id=self.task_id,
                         final_result=event.get("content")
                     )
                 elif event_type == "error":
@@ -456,7 +446,7 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
                         message=event.get("message", "Execution failed"),
                         steps=self.steps,
                         total_steps=len(self.steps),
-                        session_id=session_id,
+                        task_id=task_id,
                         error=event.get("message")
                     )
             
@@ -467,7 +457,7 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
                     message=f"Exceeded maximum steps ({self.max_steps})",
                     steps=self.steps,
                     total_steps=len(self.steps),
-                    session_id=session_id,
+                    task_id=task_id,
                     error="Maximum steps exceeded"
                 )
             
@@ -480,22 +470,22 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
                 message=f"Execution failed: {str(e)}",
                 steps=self.steps,
                 total_steps=len(self.steps),
-                session_id=session_id,
+                task_id=task_id,
                 error=str(e)
             )
             return result
             
         finally:
             # 只关闭由本次 run 创建的 session
-            if session_created_by_this_run and session_id and self.session_service:
+            if session_created_by_this_run and task_id and self.task_tracker:
                 try:
                     success = result.success if result else False
-                    self.session_service.complete_session(session_id, success=success)
-                    logger.info(f"Session completed: {session_id} (success={success})")
-                    self._session_created_by_agent = False
+                    self.task_tracker.complete_task(task_id, success=success)
+                    logger.info(f"Session completed: {task_id} (success={success})")
+                    self._task_created_by_agent = False
                     self.task_id = None
                 except Exception as e:
-                    logger.error(f"Failed to complete session {session_id}: {e}")
+                    logger.error(f"Failed to complete session {task_id}: {e}")
     
     async def rollback(self, step_number: Optional[int] = None) -> bool:
         """
@@ -513,9 +503,7 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
             
             if step_number is None:
                 # 回滚整个会话
-                result = await asyncio.to_thread(
-                    self.file_tools.safety.rollback_session, self.task_id
-                )
+                result = await self.executor.execute('rollback_session', {'task_id': self.task_id})
                 success = result.get("success", 0) > 0
             else:
                 # 回滚到指定步骤
@@ -530,9 +518,7 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
                     result_data = observation.get("result", {}) if isinstance(observation, dict) else {}
                     operation_id = result_data.get("operation_id")
                     if operation_id:
-                        step_success = await asyncio.to_thread(
-                            self.file_tools.safety.rollback_operation, operation_id
-                        )
+                        step_success = await self.executor.execute('rollback_operation', {'operation_id': operation_id})
                         success = success and step_success
                     else:
                         raise ValueError(f"No operation_id found for step {step.step_number}")

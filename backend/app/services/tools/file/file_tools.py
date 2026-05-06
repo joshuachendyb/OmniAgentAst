@@ -246,7 +246,7 @@ class FileTools:
         # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
         # session_id 专用于会话场景，操作追踪必须用 task_id
         self.safety = get_file_safety_service()
-        self.session = get_session_service()
+        self.task_tracker = get_task_tracker()
         self.visualizer = get_visualizer()
         self.task_id = task_id
         self._sequence = 0

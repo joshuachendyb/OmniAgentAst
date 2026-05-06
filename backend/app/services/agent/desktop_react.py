@@ -39,7 +39,7 @@ class DesktopReactAgent(ReactAgentMixin, BaseAgent):
         
         # 鍏敤閫昏緫鍒濆鍖?        self._init_tools_and_executor(effective_category)
         self._init_llm_strategies()
-        self._init_task_tracking()()  # 浣跨敤Mixin鐨剆ession绠＄悊
+        self._init_task_tracking()  # 浣跨敤Mixin鐨剆ession绠＄悊
         self._init_candidates(candidates)
         
         # Desktop涓撶敤prompts

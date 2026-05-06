@@ -39,7 +39,7 @@ class NetworkReactAgent(ReactAgentMixin, BaseAgent):
         
         # 鍏敤閫昏緫鍒濆鍖?        self._init_tools_and_executor(effective_category)
         self._init_llm_strategies()
-        self._init_task_tracking()()
+        self._init_task_tracking()
         self._init_candidates(candidates)
         
         # Network涓撶敤prompts

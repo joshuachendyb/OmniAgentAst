@@ -43,7 +43,7 @@ class DocumentReactAgent(ReactAgentMixin, BaseAgent):
         # Mixin initialization
         self._init_tools_and_executor(effective_category)
         self._init_llm_strategies()
-        self._init_task_tracking()()  # Use Mixin's session management
+        self._init_task_tracking()  # Use Mixin's session management
         self._init_candidates(candidates)
         
         # Document specific prompts

@@ -45,26 +45,26 @@ class SessionServiceBase(ABC):
     """
     
     @abstractmethod
-    def create_session(self, agent_id: str, task_description: str) -> str:
+    def create_task(self, agent_id: str, task_description: str) -> str:
         """
-        创建新的会话
+        创建新的任务
         
         Args:
             agent_id: Agent标识符
             task_description: 任务描述
             
         Returns:
-            session_id: 会话唯一标识符
+            task_id: 任务唯一标识符
         """
         pass
     
     @abstractmethod
-    def complete_session(self, session_id: str, success: bool = True) -> None:
+    def complete_task(self, task_id: str, success: bool = True) -> None:
         """
-        完成会话
+        完成任务
         
         Args:
-            session_id: 会话ID
+            task_id: 任务ID
             success: 是否成功完成
         """
         pass
