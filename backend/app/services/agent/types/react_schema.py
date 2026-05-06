@@ -370,11 +370,67 @@ __all__ = [
     "get_available_tools",
     "get_finish_tool_schema",
     "get_tools_schema_for_intent_distribution",
+    "get_tools_schema_for_categories",
     "_process_description",
     "_clean_properties",
     "_extract_type",
     "_generate_example_hints",
 ]
+
+
+def get_tools_schema_for_categories(categories: List[Any]) -> List[Dict[str, Any]]:
+    """
+    根据分类列表获取工具Schema
+    
+    【步骤9】用于动态加载工具时的Schema生成
+    
+    Args:
+        categories: ToolCategory分类列表
+        
+    Returns:
+        OpenAI格式的tools Schema列表
+    """
+    from app.services.tools.registry import get_tools_from_registry_by_category
+    
+    openai_tools = []
+    
+    for category in categories:
+        tools = get_tools_from_registry_by_category(category)
+        for tool in tools:
+            name = tool.get("name", "")
+            description = tool.get("description", "") or ""
+            input_schema = tool.get("input_schema", {})
+            examples = tool.get("input_examples", [])
+            
+            processed_description = _process_description(description)
+            properties = input_schema.get("properties", {})
+            required = input_schema.get("required", [])
+            cleaned_properties = _clean_properties(properties)
+            
+            openai_tool = {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": processed_description,
+                    "parameters": {
+                        "type": "object",
+                        "properties": cleaned_properties,
+                        "required": required if required else []
+                    }
+                }
+            }
+            
+            if examples:
+                example_hints = _generate_example_hints(name, examples)
+                if example_hints:
+                    openai_tool["function"]["description"] += f"\n\n{example_hints}"
+            
+            openai_tools.append(openai_tool)
+    
+    # 添加 finish 工具
+    openai_tools.append(get_finish_tool_schema())
+    
+    return openai_tools
 
 
 def get_tools_schema_for_intent_distribution(

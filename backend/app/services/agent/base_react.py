@@ -41,6 +41,9 @@ from app.services.agent.reasoning_steps import (
     ErrorStep,
 )
 from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
+from app.services.agent.types import AgentStatus
+from app.services.agent.types.react_schema import get_tools_schema_for_categories  # 【步骤9】动态加载Schema
+from app.services.preprocessing.intent_classifier import IntentClassifier  # 【步骤9】意图分类器
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
@@ -117,6 +120,10 @@ class BaseAgent(ABC):
         
         # 【Phase1修复】从registry加载工具
         self._tools_dict = self._load_tools()
+        self._loaded_categories = set()  # 【步骤9】已加载的分类，用于动态加载
+        
+        # 【步骤9】意图分类器初始化（用于更可靠检测）
+        self._intent_classifier = None   # 意图分类器（用于更可靠检测）
         
         # 创建工具执行器
         self.executor = None  # 子类应初始化
@@ -181,6 +188,7 @@ class BaseAgent(ABC):
     def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
         """
         循环开始前 Hook
+        
         子类可覆盖：做 prompt 日志等
         
         【修复 2026-04-30 小沈】添加 context 参数，与子类 FileReactAgent 签名一致
@@ -190,9 +198,148 @@ class BaseAgent(ABC):
     def _on_after_loop(self):
         """
         循环结束后 Hook
+        
         子类可覆盖：做 session 关闭等
         """
         pass
+    
+    # ===== 步骤9：动态加载工具相关方法（文档4.14节）=====
+    
+    def load_tools_by_intent(self, intent_type: str, reason: str = ""):
+        """
+        动态加载某个意图的工具
+        
+        参考：文档4.14节步骤9代码示例
+        
+        Args:
+            intent_type: 意图类型（file/time/shell/network等）
+            reason: 加载原因（用于日志）
+        """
+        if intent_type in self._loaded_categories:
+            return  # 已加载
+        
+        logger.info(f"[动态加载] 原因: {reason}，加载意图: {intent_type}")
+        
+        # 1. 获取该意图的工具
+        try:
+            category = ToolCategory(intent_type)
+            new_tools = get_tools_from_registry_by_category(category)
+        except ValueError as e:
+            logger.warning(f"[动态加载] 意图'{intent_type}'无对应工具分类: {e}")
+            return
+        
+        # 2. 添加到_tools_dict
+        self._tools_dict.update(new_tools)
+        self._loaded_categories.add(intent_type)
+        
+        # 3. 重新生成tools_schema（给LLM看）
+        self._refresh_tools_schema()
+        
+        logger.info(f"[动态加载] 完成，新增{len(new_tools)}个工具，总计{len(self._tools_dict)}个")
+    
+    def _refresh_tools_schema(self):
+        """重新生成tools_schema"""
+        # 根据当前已加载的分类，生成Schema
+        categories = list(self._loaded_categories)
+        self._tools_schema = get_tools_schema_for_categories(categories)
+        
+        # 同时更新system prompt，告知LLM新增了工具
+        self._update_system_prompt_with_tools()
+    
+    def _update_system_prompt_with_tools(self):
+        """更新system prompt，告知LLM新增了工具"""
+        # 获取当前工具的简要清单
+        tool_names = list(self._tools_dict.keys())
+        if not tool_names:
+            return
+        
+        tool_hint = f"\n【工具更新】当前可用工具: {', '.join(tool_names[:10])}"
+        if len(tool_names) > 10:
+            tool_hint += f" 等{len(tool_names)}个工具"
+        
+        # 注意：实际实现中，这个方法可能被子类覆盖
+        # 基类只提供默认实现
+        pass
+    
+    def _check_and_load_missing_tools(self, observation: str, llm_client=None):
+        """
+        在Observation阶段，检测是否需要新工具（改进版）
+        
+        参考：文档4.14节步骤9代码示例
+        改进方案：结合LLM判断 + 关键词检测
+        
+        Args:
+            observation: LLM返回的observation内容
+            llm_client: LLM客户端（用于LLM判断）
+        """
+        # 方案1：LLM判断（更可靠，推荐）
+        if llm_client and self._intent_classifier:
+            try:
+                # 使用意图分类器重新检测
+                result = self._intent_classifier.classify(observation)
+                new_intent = result.get("intent")
+                confidence = result.get("confidence", 0)
+                
+                if (new_intent and new_intent not in self._loaded_categories 
+                        and confidence >= 0.3):
+                    # 否定词检测：避免"不要执行shell"误触发
+                    if self._should_trigger_dynamic_load(observation, new_intent):
+                        self.load_tools_by_intent(
+                            new_intent, 
+                            reason=f"LLM检测新意图: {new_intent}(置信度{confidence:.2f})"
+                        )
+                    return
+            except Exception as e:
+                logger.warning(f"[动态加载] LLM判断失败，降级到关键词: {e}")
+        
+        # 方案2：关键词检测（降级方案）
+        trigger_keywords = {
+            "network": ["ping ", "http", "下载", "网络", "url", "curl", "wget"],
+            "desktop": ["截图", "截屏", "窗口", "鼠标点击", "键盘输入"],
+            "shell": ["执行命令", "npm ", "pip ", "git ", "docker "],
+            "database": ["数据库", "SQL", "查询", "SELECT", "INSERT"],
+            "env": ["环境变量", "PATH", "JAVA_HOME"],
+            "system": ["系统信息", "CPU", "内存", "磁盘"],
+        }
+        
+        for intent, keywords in trigger_keywords.items():
+            if any(kw in observation for kw in keywords):
+                # 否定词检测：避免"不要执行shell"误触发
+                if self._should_trigger_dynamic_load(observation, intent):
+                    if intent not in self._loaded_categories:
+                        self.load_tools_by_intent(
+                            intent, 
+                            reason=f"Observation关键词检测: {keywords}"
+                        )
+                        return  # 一次只加载一个，避免混乱
+    
+    def _should_trigger_dynamic_load(self, observation: str, intent: str) -> bool:
+        """
+        判断是否应该触发动态加载（包含否定词检测）
+        
+        参考：文档4.14节步骤9缺陷7修正
+        避免"不要执行shell"误触发
+        
+        Args:
+            observation: LLM返回的observation内容
+            intent: 检测的意图类型
+        Returns:
+            bool: 是否应该触发动态加载
+        """
+        # 否定词列表（表示否定的词语）
+        negation_words = [
+            "不要", "不需要", "别", "禁止", "不可以", "不能", 
+            "don't", "donot", "cannot", "should not", "not to"
+        ]
+        
+        # 检查observation中是否包含否定词
+        has_negation = any(neg in observation.lower() for neg in negation_words)
+        
+        if has_negation:
+            logger.info(f"[动态加载] 检测到否定词，不触发{intent}工具加载")
+            return False
+        
+        return True
     
     # ===== 核心方法（子类调用）=====
     
