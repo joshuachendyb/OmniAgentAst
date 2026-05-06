@@ -1,3 +1,69 @@
+v0.12.18
+
+更新时间: 2026-05-07 06:26:39
+
+更新内容：
+
+## v0.12.17→v0.12.18 变更汇总 - 小沈-2026-05-07
+
+### 修复类commit（12个）
+
+| commit | 说明 |
+|--------|------|
+| ac076ed5 | chore: 将backend/tests/添加到.gitignore并取消git跟踪 |
+| 1495da85 | chore: 补充prompts的__init__.py+清理已删除文件 |
+| 3443ff00 | fix: 修复test_tool_executor.py的8个失败测试用例 |
+| ad27bc8e | fix: 系统性修复升级v0.12.14以来的6个连锁问题 |
+| a0a56bcd | fix: 修复LLM解析空dict误判+tool_executor参数验证和async判断 |
+| 7973d011 | fix: 修复time_react参数传递错误+file_register工具lambda参数转发 |
+| 93dbe74c | fix: 防止LLM工具调用死循环-统一注入终止规则 |
+| 8e8501e1 | fix: 终止规则改为参照解析器逻辑(answer/implicit退出,action循环) |
+| 0a3cc340 | refactor: 删除prompts中重复的finish规则-统一由mixin注入 |
+| a0968067 | fix: 验证设计文档一致性+修复Agent导入 |
+| 73609c41 | fix: 修复test_tool_registry.py测试失败+file_tools.py导入 |
+| 4f758684 | fix: 二次复核修正命名纠正遗漏（#12-13/#15/#18）+更新文档3.6.4节 |
+| dca82082 | fix: 修复session.py缺失get_session_service+清除BOM字符 |
+| b61f651e | fix: 修正小健审查问题（双括号bug+命名纠正） |
+
+### docs类commit
+
+| commit | 说明 |
+|--------|------|
+| ea97871a | docs: 更新设计文档（审查结论+命名纠正统计） |
+
+### 设计文档深度验证
+
+| 验证文件 | 测试数 | 状态 |
+|---------|--------|------|
+| test_design_implementation.py | 15 | ✅ |
+| test_design_implementation_v2.py | 19 | ✅ |
+| test_design_implementation_v3.py | 38 | ✅ |
+| test_design_implementation_v4.py | 14 | ✅ |
+| test_design_implementation_v5.py | 19 | ✅ |
+| test_design_implementation_v6.py | 8 | ✅ |
+| test_design_implementation_v7.py | 14 | ✅ |
+| test_design_implementation_v8.py | 52 | ✅ |
+| test_design_defect_analysis.py | 10 | ✅ |
+
+### 验证核心内容
+- 文档0.1-0.6节：核心问题分析、4组件、12分类完整性
+- 文档0.6.1节：FileReactAgent/TimeReactAgent核心设计
+- 文档0.6.2-0.6.5节：设计缺陷修正、命名纠正、P0问题
+- 文档0.7节：场景覆盖分析
+- 文档0.10节：按需暴露与动态加载机制
+- 文档1.1-7节：预期效果、风险、测试计划
+- 缺陷分析文档：设计缺陷修复方案
+- ToolCategory枚举12值
+- 125工具注册验证
+- 9+子Agent注册验证
+
+### 测试验证结果
+- 后端语法检查：✅ 全部通过
+- 单元测试：✅ 179个设计文档测试全部通过
+- 核心模块导入：✅ 全部正常
+
+---
+
 v0.12.17
 
 更新时间: 2026-05-06 18:30:00
