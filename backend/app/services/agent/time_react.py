@@ -19,16 +19,16 @@ import app.services.tools.time.time_tools as _
 from typing import Any, Optional, Dict
 
 from app.services.agent.base_react import BaseAgent, DEFAULT_MAX_STEPS
-from app.services.tools.mixin import ToolLoaderMixin
+from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin  # 【步骤5改用ReactAgentMixin】
 from app.services.tools.registry import ToolCategory
 from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.llm_strategies import TextStrategy
-from app.services.agent.llm_adapter import LLMAdapter  # 【修复 2026-04-30 小沈】添加LLMAdapter导入
+from app.services.agent.llm_adapter import LLMAdapter
 from app.services.prompts.time import TimePrompts
 from app.utils.logger import logger
 
 
-class TimeReactAgent(ToolLoaderMixin, BaseAgent):
+class TimeReactAgent(ReactAgentMixin, BaseAgent):
     """
     时间工具Agent - 按文档5.4+7.3实现
     """
@@ -60,6 +60,9 @@ class TimeReactAgent(ToolLoaderMixin, BaseAgent):
             max_steps=max_steps,
             **kwargs
         )
+        
+        # 【步骤5】使用ReactAgentMixin的session管理
+        self._init_session(enable=True)
         
         self.prompts = TimePrompts()
         
