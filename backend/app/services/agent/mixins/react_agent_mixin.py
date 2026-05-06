@@ -105,12 +105,21 @@ class ReactAgentMixin(ToolLoaderMixin):
             "根据任务需要自由选择合适的工具，不受初始分类限制。"
         )
     
+    # 【2026-05-07 小沈】统一终止规则，防止LLM死循环
+    _FINISH_RULE = """
+
+【TERMINATION RULE - 必须遵守】:
+- 调用工具获得结果后，必须直接用自然语言回复用户，任务完成
+- 禁止在最终回复中再次包含tool_name或tool_params字段
+- 如果在回复中包含tool_name/tool_params，系统会误判为又一次工具调用，导致死循环
+- 正确做法：得到工具结果后，直接输出最终答案，不要重复调用已完成的工具"""
+
     def _build_system_prompt(self, category_name: str) -> str:
-        """构建完整system prompt（base + candidates + cross）"""
+        """构建完整system prompt（base + candidates + cross + finish_rule）"""
         if hasattr(self, '_custom_system_prompt') and self._custom_system_prompt:
             return self._custom_system_prompt
         base = self.prompts.get_system_prompt()
-        return base + self._build_candidates_hint() + self._build_cross_tool_hint(category_name)
+        return base + self._build_candidates_hint() + self._build_cross_tool_hint(category_name) + self._FINISH_RULE
     
     # ===== LLM调用 =====
     
