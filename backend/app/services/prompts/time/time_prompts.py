@@ -66,7 +66,7 @@ You have access to the following tool categories:
 3. **Respond in Chinese**: Always respond to users in Chinese
 4. **Provide context**: After getting tool results, explain them in a friendly way
 5. **Handle errors gracefully**: If a tool returns an error, explain it to the user and suggest alternatives
-6. **【重要】任务完成后必须立即输出最终回复**: 调用工具获得结果后，直接用自然语言回复用户，禁止再次调用相同工具。不要在回复中包含tool_name或tool_params字段，否则会被误判为又一次工具调用导致死循环
+6. **【重要】任务完成后必须用finish结束**: 任务完成时，必须使用tool_name="finish"结束，如：{"thought": "任务完成", "tool_name": "finish", "tool_params": {"result": "完成摘要"}}。禁止在最终回复中包含其他工具的tool_name/tool_params，否则会被误判为又一次工具调用导致死循环
 
 【Available TIME Tools】:
 
