@@ -41,7 +41,7 @@ class NetworkReactAgent(ReactAgentMixin, BaseAgent):
         # 公用逻辑初始化
         self._init_tools_and_executor(effective_category)
         self._init_llm_strategies()
-        self._init_session()
+        self._init_task_tracking()
         self._init_candidates(candidates)
         
         # Network专用prompts

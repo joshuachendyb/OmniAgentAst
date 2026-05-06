@@ -71,6 +71,10 @@ class ReactAgentMixin(ToolLoaderMixin):
         self._task_tracker = get_task_tracker()
         self._task_created_by_agent = False
     
+    def _init_session(self, enable: bool = True):
+        """向后兼容：调用_init_task_tracking()"""
+        self._init_task_tracking(enable=enable)
+    
     def _init_candidates(self, candidates: Optional[List[str]] = None):
         """初始化候选意图列表"""
         self._candidates = candidates if candidates else []

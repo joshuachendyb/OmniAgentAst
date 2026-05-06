@@ -87,104 +87,22 @@ class TimeReactAgent(ReactAgentMixin, BaseAgent):
         
         logger.info(f"TimeReactAgent initialized (task_id: {task_id}, tool_category: {effective_category}, tools: {len(self._tools_dict)}, candidates: {self._candidates})")
     
-    # ========== 跨分类工具支持方法（2026-04-30 小沈）==========
-    
-    def _get_tools_summary(self) -> str:
-        """
-        获取跨分类工具概要（每轮实时生成，确保动态注册的工具被包含）
-
-        设计文档 v1.5 4.2节
-
-        Returns:
-            格式化的工具概要字符串
-        """
-        from app.services.tools.registry import tool_registry
-        return tool_registry.get_all_tools_summary(
-            priority_category=ToolCategory.TIME
-        )
-    
     def _get_system_prompt(self) -> str:
-        """获取系统 Prompt（含跨工具提示 + 候选意图）"""
-        base = self.prompts.get_system_prompt()
-        candidates_hint = ""
-        if self._candidates:
-            candidates_list = ", ".join(self._candidates)
-            candidates_hint = (
-                f"\n\n【候选意图】已识别出以下可能的意图类别: {candidates_list}。"
-                "你可以根据实际任务需要，访问任意候选分类的工具。"
-            )
-        cross_tool_hint = (
-            "\n\n【注意】除了时间日期工具，你还可以使用其他分类的工具。"
-            "例如：需要操作文件时可以用 read_file/write_file，"
-            "需要执行命令时可以用 execute_command 等。"
-            "根据任务需要自由选择合适的工具。"
-        )
-        return base + candidates_hint + cross_tool_hint
+        """获取系统 Prompt - 小沈2026-05-06改用Mixin动态方法"""
+        return self._build_system_prompt("时间日期")
     
     def _get_task_prompt(self, task: str, context: Optional[Dict] = None) -> str:
-        """获取任务 Prompt"""
-        return task
+        """获取任务 Prompt - 小沈2026-05-06统一走self.prompts"""
+        return self.prompts.get_task_prompt(task, context)
     
     async def _get_llm_response(self) -> str:
-        """获取 LLM 响应（支持 LLMAdapter 自适应策略）
-        
-        【修复 2026-04-30 小沈】添加 adapter 策略选择，与 FileReactAgent 对齐。
-        当 adapter 未注入时（默认None），行为与修改前完全一致（使用 TextStrategy）。
-        """
-        self.llm_call_count += 1
-        
-        try:
-            last_message = self.conversation_history[-1]["content"]
-            history_dicts = self.conversation_history[:-1]
-            
-            # 【修复 2026-04-30 小沈】工具概要改为独立system消息插入history
-            # 避免追加到 Observation 末尾导致语义混乱
-            try:
-                tools_summary = self._get_tools_summary()
-                summary_msg = {"role": "system", "content": f"【当前可用工具列表】\n{tools_summary}"}
-                history_dicts = list(history_dicts) + [summary_msg]
-            except Exception as e:
-                logger.warning(f"[ToolSummary] TimeAgent注入工具概要失败: {e}")
-            
-            # 【修复 2026-04-30 小沈】自适应策略选择（与 FileReactAgent 对齐）
-            if self.adapter:
-                strategy = await self.adapter.ensure_capability()
-                logger.info(f"[TimeAgent] Using method: {strategy.method}")
-                
-                if strategy.method == "response_format" and self.response_format_strategy:
-                    response = await self.response_format_strategy.call(
-                        llm_client=self.llm_client,
-                        message=last_message,
-                        history_dicts=history_dicts,
-                        conversation_history=self.conversation_history
-                    )
-                elif strategy.method == "tools" and self.tools_strategy:
-                    response = await self.tools_strategy.call(
-                        llm_client=self.llm_client,
-                        message=last_message,
-                        history_dicts=history_dicts,
-                        conversation_history=self.conversation_history
-                    )
-                else:
-                    response = await self.text_strategy.call(
-                        llm_client=self.llm_client,
-                        message=last_message,
-                        history_dicts=history_dicts,
-                        conversation_history=self.conversation_history
-                    )
-            else:
-                # 无 adapter 时，使用普通文本模式（与修改前行为一致）
-                response = await self.text_strategy.call(
-                    llm_client=self.llm_client,
-                    message=last_message,
-                    history_dicts=history_dicts,
-                    conversation_history=self.conversation_history
-                )
-            return response
-        except Exception as e:
-            logger.error(f"TimeReactAgent LLM error: {e}")
-            raise
+        """获取LLM响应 - 小沈2026-05-06统一走Mixin的_call_llm_with_summary"""
+        return await self._call_llm_with_summary()
     
     async def _execute_tool(self, action: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """执行工具"""
         return await self.executor.execute(action, params)
+    
+    async def rollback(self, step_number=None) -> bool:
+        """时间操作无需回滚 - 小沈2026-05-06添加"""
+        return True

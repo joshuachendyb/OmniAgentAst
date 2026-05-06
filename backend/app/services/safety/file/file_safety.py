@@ -16,7 +16,7 @@ import platform
 
 from app.models.file_operations import (
     OperationRecord, SessionRecord, OperationType, OperationStatus,
-    OperationRecordORM, SessionRecordORM
+    OperationRecordORM
 )
 from app.utils.logger import logger
 

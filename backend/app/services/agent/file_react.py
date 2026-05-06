@@ -166,13 +166,13 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
             except Exception as e:
                 logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
             
-            # 【调试】记录发送给LLM的messages
-            logger.info(f"[Debug] _get_llm_response - conversation_history长度: {len(self.conversation_history)}")
-            logger.info(f"[Debug] _get_llm_response - history_dicts长度: {len(history_dicts)}")
+            # 【调试】记录发送给LLM的messages - 小沈2026-05-06改为debug
+            logger.debug(f"[Debug] _get_llm_response - conversation_history长度: {len(self.conversation_history)}")
+            logger.debug(f"[Debug] _get_llm_response - history_dicts长度: {len(history_dicts)}")
             for i, h in enumerate(history_dicts):
-                logger.info(f"[Debug] history[{i}] role={h.get('role')}, content长度={len(h.get('content', ''))}")
-            logger.info(f"[Debug] _get_llm_response - last_message长度: {len(last_message)}")
-            logger.info(f"[Debug] _get_llm_response - last_message内容: {last_message[:200]}")
+                logger.debug(f"[Debug] history[{i}] role={h.get('role')}, content长度={len(h.get('content', ''))}")
+            logger.debug(f"[Debug] _get_llm_response - last_message长度: {len(last_message)}")
+            logger.debug(f"[Debug] _get_llm_response - last_message内容: {last_message[:200]}")
             
             # 【修改】使用 LLMAdapter 自适应策略
             if self.adapter:
@@ -305,24 +305,8 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
     # ===== 实现父类抽象方法 =====
     
     def _get_system_prompt(self) -> str:
-        """获取系统 Prompt（含跨工具提示 + 候选意图）"""
-        if hasattr(self, '_custom_system_prompt') and self._custom_system_prompt:
-            return self._custom_system_prompt
-        base = self.prompts.get_system_prompt()
-        candidates_hint = ""
-        if self._candidates:
-            candidates_list = ", ".join(self._candidates)
-            candidates_hint = (
-                f"\n\n【候选意图】已识别出以下可能的意图类别: {candidates_list}。"
-                "你可以根据实际任务需要，访问任意候选分类的工具。"
-            )
-        cross_tool_hint = (
-            "\n\n【注意】除了文件操作工具，你还可以使用其他分类的工具。"
-            "例如：创建脚本后可以用 execute_command 来运行它，"
-            "需要时间信息时可以用 get_current_time 等。"
-            "根据任务需要自由选择合适的工具，不受初始分类限制。"
-        )
-        return base + candidates_hint + cross_tool_hint
+        """获取系统 Prompt（含跨工具提示 + 候选意图）- 小沈2026-05-06改用Mixin动态方法"""
+        return self._build_system_prompt("文件操作")
     
     def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         """获取任务 Prompt"""
@@ -340,8 +324,6 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
                 task_description=task
             )
             self._task_created_by_agent = True
-            if hasattr(self.file_tools, 'set_task_id'):
-                self.file_tools.set_task_id(task_id)
             logger.info(f"Session created in run_stream(): {task_id}")
     
     def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
@@ -418,8 +400,6 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
             session_created_by_this_run = True
             self._task_created_by_agent = True
             
-            if hasattr(self.file_tools, 'set_task_id'):
-                self.file_tools.set_task_id(task_id)
             logger.info(f"Session created in run(): {task_id}")
         
         # 【重构 2026-03-31】调用父类 run_stream() 统一执行 ReAct 循环

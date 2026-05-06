@@ -43,7 +43,7 @@ class SystemReactAgent(ReactAgentMixin, BaseAgent):
         # 公用逻辑初始化
         self._init_tools_and_executor(effective_category)
         self._init_llm_strategies()
-        self._init_session()  # 使用Mixin的session管理
+        self._init_task_tracking()  # 使用Mixin的任务追踪管理
         self._init_candidates(candidates)
         
         # System专用prompts
