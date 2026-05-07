@@ -484,7 +484,11 @@ def _register_file_tools():
 
 # 触发注册
 
-_register_file_tools()
+# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
+_initialized = False
+if not _initialized:
+    _register_file_tools()
+    _initialized = True
 
 
 # ============================================================

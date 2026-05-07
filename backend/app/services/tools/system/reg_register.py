@@ -93,4 +93,8 @@ def _register_registry_tools():
         )
 
 
-_register_registry_tools()
+# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
+_initialized = False
+if not _initialized:
+    _register_registry_tools()
+    _initialized = True

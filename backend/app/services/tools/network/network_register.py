@@ -243,5 +243,8 @@ def register_network_tools():
         )
     logger.info(f"已注册 {len(NETWORK_TOOL_DESCRIPTIONS)} 个网络工具")
 
-# 触发注册
-register_network_tools()
+# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
+_initialized = False
+if not _initialized:
+    register_network_tools()
+    _initialized = True

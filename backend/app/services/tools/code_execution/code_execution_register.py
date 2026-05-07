@@ -113,7 +113,11 @@ def _register_code_execution_tools():
         logger.info(f"[code_execution_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
 
 
-_register_code_execution_tools()
+# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
+_initialized = False
+if not _initialized:
+    _register_code_execution_tools()
+    _initialized = True
 
 
 __all__ = [

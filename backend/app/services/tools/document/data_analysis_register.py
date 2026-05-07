@@ -224,8 +224,11 @@ def _register_data_analysis_tools():
         logger.info(f"[data_analysis_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
 
 
-# 触发注册
-_register_data_analysis_tools()
+# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
+_initialized = False
+if not _initialized:
+    _register_data_analysis_tools()
+    _initialized = True
 
 
 __all__ = [

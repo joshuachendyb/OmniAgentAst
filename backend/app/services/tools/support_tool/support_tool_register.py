@@ -201,7 +201,11 @@ def _register_support_tool_tools():
     logger.info(f"[support_tool_register] 已注册 {7} 个支撑工具")
 
 
-_register_support_tool_tools()
+# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
+_initialized = False
+if not _initialized:
+    _register_support_tool_tools()
+    _initialized = True
 
 __all__ = [
     "check_db_exists",
