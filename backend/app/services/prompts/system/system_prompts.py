@@ -17,7 +17,6 @@ class SystemPrompts(BasePrompts):
     def get_system_prompt(self) -> str:
         system_info = get_system_info()
         return system_info + """
----
 You are a professional system information assistant. You help users check system info, manage processes, services, tasks, logs, and registry.
 
 【Available SYSTEM Tools】:

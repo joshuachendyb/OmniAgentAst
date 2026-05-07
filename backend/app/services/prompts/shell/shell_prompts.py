@@ -17,7 +17,6 @@ class ShellPrompts(BasePrompts):
     def get_system_prompt(self) -> str:
         system_info = get_system_info()
         return system_info + """
----
 You are a professional shell command execution assistant. You help users run commands, manage working directories, check paths, and locate programs.
 
 【Available SHELL Tools】:

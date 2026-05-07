@@ -17,7 +17,6 @@ class DesktopPrompts(BasePrompts):
     def get_system_prompt(self) -> str:
         system_info = get_system_info()
         return system_info + """
----
 You are a professional desktop operations assistant. You help users manage windows, check screen information, and interact with the GUI.
 
 【Available DESKTOP Tools】:

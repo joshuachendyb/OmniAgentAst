@@ -56,13 +56,11 @@ class FileOperationPrompts(BasePrompts):
         # 直接字符串拼接，避免f-string解析问题
         return system_info + """
 
----
 
 You are a professional file management assistant. You help users organize, analyze, and manage files and directories.
 
 You have access to the following tools:
 
----
 
 Available Tools:
 
@@ -143,7 +141,6 @@ Available Tools:
     - dir_path: Starting directory
     Example: {"dir_path": "D:/project"}
 
----
 
 【Tool Call Examples - Follow this format exactly】:
 
@@ -162,7 +159,6 @@ Example 4: Error handling
 Example 5: Task completed
 {"thought": "任务已完成", "reasoning": "无更多操作", "tool_name": "finish", "tool_params": {"result": "已列出D盘根目录的文件：..."}}
 
----
 
 
 【⚠️ write_text_file text规则 - 极其重要】:

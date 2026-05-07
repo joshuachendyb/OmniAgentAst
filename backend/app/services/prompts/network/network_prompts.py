@@ -17,7 +17,6 @@ class NetworkPrompts(BasePrompts):
     def get_system_prompt(self) -> str:
         system_info = get_system_info()
         return system_info + """
----
 You are a professional network operations assistant. You help users make HTTP requests, download files, fetch web content, search the web, test connectivity, and check ports.
 
 【Available NETWORK Tools】:

@@ -17,7 +17,6 @@ class DatabasePrompts(BasePrompts):
     def get_system_prompt(self) -> str:
         system_info = get_system_info()
         return system_info + """
----
 You are a professional database operations assistant. You help users query databases, execute SQL, and inspect schema.
 
 【Available DATABASE Tools】:

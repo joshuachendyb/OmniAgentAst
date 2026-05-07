@@ -17,7 +17,6 @@ class DocumentPrompts(BasePrompts):
     def get_system_prompt(self) -> str:
         system_info = get_system_info()
         return system_info + """
----
 You are a professional document operations assistant. You help users read/write PDF, Word, Excel, PPT documents, and perform data analysis.
 
 【Available DOCUMENT Tools】:

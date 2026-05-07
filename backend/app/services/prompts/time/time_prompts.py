@@ -32,8 +32,6 @@ class TimePrompts(BasePrompts):
 
         return system_info + """
 
----
-
 You are a professional time and date assistant. You help users query time, format dates, calculate time differences, manage timers, and handle timezone conversions.
 
 You have access to the following tool categories:
