@@ -52,6 +52,10 @@ class BasePrompts(ABC):
 - tool_name: 要调用的工具名
 - tool_params: 工具参数（无参数时为空对象{}）
 
+格式禁止项：
+- ❌ 禁止使用 [TOOL_CALL] 格式
+- ❌ 禁止在tool_params中使用 args: {} 嵌套，参数直接作为tool_params的键值对
+
 示例：
 {"thought": "用户询问当前时间", "reasoning": "调用get_current_time获取", "tool_name": "get_current_time", "tool_params": {"format": "%Y-%m-%d"}}"""
 
@@ -61,7 +65,9 @@ class BasePrompts(ABC):
 - reasoning字段简短说明选择理由即可（1-2句），不要写长篇分析
 - ❌ 禁止：在thought中列举多个工具比较优缺点而不调用
 - ❌ 禁止：在thought中分析参数是否必填而不调用
-- ✅ 正确：确认意图→直接调用→根据结果决定下一步"""
+- ✅ 正确：确认意图→直接调用→根据结果决定下一步
+- 始终用中文回复用户
+- 工具返回错误时，向用户解释错误并建议替代方案"""
 
     # 【2026-05-07 小沈】终止规则（从react_agent_mixin集中到基类）
     FINISH_RULE = """

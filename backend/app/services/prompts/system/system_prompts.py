@@ -96,3 +96,11 @@ Example 2 - 任务完成:
         "- ❌ dir (correct: working_directory)\n"
         "- ❌ cwd (correct: working_directory)"
         )
+
+    def get_task_prompt(self, task: str) -> str:
+        return f"""Task: {task}
+
+Please help me complete this system information task. Follow these steps:
+1. First, analyze what system information is needed
+2. Use the appropriate system tool
+3. Provide a clear summary in Chinese"""

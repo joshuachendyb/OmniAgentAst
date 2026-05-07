@@ -60,3 +60,11 @@ Example 2 - 任务完成:
         "FORBIDDEN parameter names - DO NOT use:\n"
         "- ❌ script / source / python_code / js_code (correct: code)"
         )
+
+    def get_task_prompt(self, task: str) -> str:
+        return f"""Task: {task}
+
+Please help me execute this code. Follow these steps:
+1. First, analyze the code or language needed
+2. Execute the code using the appropriate tool
+3. Provide the execution result"""

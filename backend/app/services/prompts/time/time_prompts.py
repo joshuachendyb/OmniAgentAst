@@ -14,6 +14,7 @@
 
 Author: 小沈 - 2026-04-30
 """
+from datetime import datetime
 from typing import Dict, Any, Optional
 
 from app.services.prompts.BasePromptTemplate import BasePrompts
@@ -161,6 +162,16 @@ Example 3 - 任务完成:
             "- time_is_weekend: date\n"
             "- time_is_holiday: date"
         )
+
+    def get_task_prompt(self, task: str) -> str:
+        return f"""Task: {task}
+
+Current time: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+Please help me complete this time/date task. Follow these steps:
+1. First, analyze what time operation is needed
+2. Use the appropriate time tool to accomplish the task
+3. Provide a friendly Chinese response with the result"""
 
     def get_safety_reminder(self) -> str:
         return "⚠️ Time Safety: timer_clear only affects timers created in current session. Do NOT clear system timers."

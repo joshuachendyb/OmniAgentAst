@@ -85,3 +85,11 @@ Example 2 - 任务完成:
         "- ❌ name (correct: file_name)\n"
         "- ❌ data for write (correct: content)"
         )
+
+    def get_task_prompt(self, task: str) -> str:
+        return f"""Task: {task}
+
+Please help me complete this document task. Follow these steps:
+1. First, analyze the document operation needed
+2. Use the appropriate document tool
+3. Provide a summary of the result"""

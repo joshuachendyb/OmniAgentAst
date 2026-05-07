@@ -98,6 +98,14 @@ Example 3: Ping test:
             "- Use download_file for large files"
         )
     
+    def get_task_prompt(self, task: str) -> str:
+        return f"""Task: {task}
+
+Please help me complete this network task. Follow these steps:
+1. First, analyze the network operation needed
+2. Use the appropriate network tool
+3. Provide a summary of the result"""
+
     def get_parameter_reminder(self) -> str:
         return (
             "Parameter Reminder:\n"

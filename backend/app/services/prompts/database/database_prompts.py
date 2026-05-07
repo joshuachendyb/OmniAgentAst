@@ -61,3 +61,17 @@ You are a professional database operations assistant. You help users query datab
             "- execute_sql: sql(required)\n"
             "- get_db_schema: table_name(optional)"
         )
+
+    def get_task_prompt(self, task: str) -> str:
+        return f"""Task: {task}
+
+Please help me complete this database task. Follow these steps:
+1. First, check the database schema if needed (use get_db_schema)
+2. Use query_sql for read operations, execute_sql for write operations
+3. Provide a clear summary of the result"""
+
+    def get_rollback_instructions(self) -> str:
+        return """If a SQL operation fails:
+1. Use query_sql with SELECT to preview data before UPDATE/DELETE
+2. Always include WHERE clause for UPDATE/DELETE operations
+3. If transaction fails, report the error and suggest manual ROLLBACK"""

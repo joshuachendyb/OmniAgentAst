@@ -124,3 +124,17 @@ Example 3: Check command availability
             "- get_shell_output: session_id(required)\n"
             "- terminate_shell: session_id(required)"
         )
+
+    def get_task_prompt(self, task: str) -> str:
+        return f"""Task: {task}
+
+Please help me execute this shell command task. Follow these steps:
+1. First, check if the command is available
+2. Execute the command with appropriate timeout
+3. Provide a clear summary of the result"""
+
+    def get_rollback_instructions(self) -> str:
+        return """If a command fails:
+1. Check if the command is available (use check_command_available)
+2. Check if the working directory is correct (use get_working_directory)
+3. For destructive commands, verify the target before execution"""

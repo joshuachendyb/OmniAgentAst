@@ -60,5 +60,13 @@ You are a professional desktop operations assistant. You help users manage windo
                 "- check_window_exists: title(required)\n"
                 "- get_window_position: title(required)")
 
+    def get_task_prompt(self, task: str) -> str:
+        return f"""Task: {task}
+
+Please help me complete this desktop operation task. Follow these steps:
+1. First, identify the target window or application
+2. Use the appropriate desktop tool
+3. Confirm the result"""
+
     def get_safety_reminder(self) -> str:
         return "⚠️ Desktop Safety: Only interact with visible windows. Do NOT attempt to access system-level windows."
