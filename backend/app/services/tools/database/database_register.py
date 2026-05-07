@@ -171,9 +171,7 @@ def _register_database_tools():
             examples=examples,
         )
         logger.info(
-            f"[database_register] Registered tool: {name}, "
-            f"Pydantic model: {input_model.__name__ if input_model else 'None'}, "
-            f"examples: {len(examples)}"
+            f"[database_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个"
         )
 
 

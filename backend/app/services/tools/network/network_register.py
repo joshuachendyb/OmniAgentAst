@@ -233,15 +233,19 @@ NETWORK_TOOL_EXAMPLES = {
 def register_network_tools():
     """注册所有网络工具"""
     for tool_name in NETWORK_TOOL_DESCRIPTIONS:
+        input_model = NETWORK_TOOL_INPUT_MODELS[tool_name]
+        examples = NETWORK_TOOL_EXAMPLES.get(tool_name, [])
         tool_registry.register(
             name=tool_name,
             description=NETWORK_TOOL_DESCRIPTIONS[tool_name],
             implementation=NETWORK_TOOL_IMPLEMENTATIONS[tool_name],
-            input_model=NETWORK_TOOL_INPUT_MODELS[tool_name],
+            input_model=input_model,
             category=ToolCategory.NETWORK,
-            examples=NETWORK_TOOL_EXAMPLES.get(tool_name, []),
+            examples=examples,
         )
-    logger.info(f"已注册 {len(NETWORK_TOOL_DESCRIPTIONS)} 个网络工具")
+        logger.info(
+            f"[network_register] 已注册工具: {tool_name}, 使用 Pydantic 模型: {input_model.__name__}, examples: {len(examples)}个"
+        )
 
 # 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
 _initialized = False
