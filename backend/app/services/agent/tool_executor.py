@@ -333,6 +333,7 @@ class ToolExecutor:
             metadata = tool_registry.get_tool(action)
             if metadata and metadata.input_schema:
                 valid_params = set(metadata.input_schema.get("properties", {}).keys())
+                invalid_keys = []
                 for key in list(params.keys()):
                     if key not in valid_params:
                         val = params[key]
@@ -341,6 +342,10 @@ class ToolExecutor:
                             f"[参数监控] action={action}, 非标准参数名: "
                             f"param={key}={val_str}, 期望参数={sorted(valid_params)}"
                         )
+                        invalid_keys.append(key)
+                # 【修复 2026-05-07 小沈】删除非法参数，防止传给函数报 unexpected keyword argument
+                for key in invalid_keys:
+                    del params[key]
         except Exception as e:
             logger.warning(f"[参数监控] action={action}, 获取schema失败: {e}")
         
