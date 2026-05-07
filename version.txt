@@ -1,3 +1,27 @@
+v0.12.19
+
+更新时间: 2026-05-08 04:36:47
+
+更新内容：
+## v0.12.19 增强所有Prompt的Parameter Reminder - 小沈-2026-05-08
+### Commit
+| commit | 说明 |
+|--------|------|
+| 13ff7e96 | feat: 增强所有Prompt的Parameter Reminder(统一类型说明+FORBIDDEN段落) |
+### 修改内容
+| Prompt类 | 修改 |
+|----------|------|
+| Shell | 新增get_parameter_reminder()+get_safety_reminder()（之前完全缺失） |
+| Time | 增强类型说明(str/int/float/选项)+新增FORBIDDEN段落 |
+| Document | 增加类型说明(str/list/dict) |
+| Network | 增加类型+FORBIDDEN; task_prompt从88字符泛化1步→3步详细指导 |
+| Database | 增加类型+FORBIDDEN |
+| CodeExecution | 增加类型说明+范围(max=120) |
+### 新增文档
+- doc-5月优化/Time类型Prompt参数命名问题分析-小沈-2026-05-07.md
+
+---
+
 v0.12.18
 
 更新时间: 2026-05-07 12:18:25
