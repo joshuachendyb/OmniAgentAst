@@ -513,8 +513,12 @@ class BaseAgent(ABC):
                     
                     # 提取 thought_content 和 answer_response
                     thought_content = parsed.get("content", "")
-                    # 【修复 2026-05-05 小沈】response为空时用reasoning兜底
+                    # 【修复 2026-05-07 小沈】response取值链：response → tool_params.result → content → reasoning
                     answer_response = parsed.get("response", "")
+                    if not answer_response or not answer_response.strip():
+                        answer_response = parsed.get("tool_params", {}).get("result", "") if isinstance(parsed.get("tool_params"), dict) else ""
+                    if not answer_response or not answer_response.strip():
+                        answer_response = parsed.get("content", "")
                     if not answer_response or not answer_response.strip():
                         answer_response = parsed.get("reasoning", "")
                     

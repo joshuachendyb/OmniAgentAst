@@ -69,6 +69,13 @@ TOOL_TIMEOUTS = {
     "timestamp_to_time": 5,
     "time_is_workday": 10,
     "time_next_n_workday": 10,
+    # network/工具超时配置 小沈-2026-05-07
+    "search_web": 25,
+    "http_request": 30,
+    "download_file": 60,
+    "fetch_webpage": 30,
+    "ping": 15,
+    "port_check": 10,
     "default": 30,
 }
 

@@ -47,14 +47,17 @@ class LLMStrategy(ABC):
         """
         pass
     
-    def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None) -> str:
-        """构建返回结果（基类方法，供子类使用）"""
-        return json.dumps({
+    def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None, response: str = "") -> str:
+        """构建返回结果（基类方法，供子类使用）- 小沈2026-05-07加response字段"""
+        result = {
             "content": content,
             "tool_name": tool_name,
             "tool_params": tool_params,
             "reasoning": reasoning
-        }, ensure_ascii=False)
+        }
+        if response:
+            result["response"] = response
+        return json.dumps(result, ensure_ascii=False)
 
 
 class TextStrategy(LLMStrategy):
@@ -161,22 +164,30 @@ class TextStrategy(LLMStrategy):
             # answer: 直接返回 finish，退出循环
             if parsed_type == "answer":
                 logger.info(f"[TextStrategy] type=answer, 直接返回finish")
+                _response = parsed.get("response", "")
+                if not _response or not _response.strip():
+                    _response = parsed.get("content", "")
                 return self._make_result(
                     content=parsed.get("content", ""),
                     tool_name="finish",
-                    tool_params={},
-                    reasoning=parsed.get("reasoning")
+                    tool_params={"result": _response},
+                    reasoning=parsed.get("reasoning"),
+                    response=_response
                 )
             
             # implicit: 直接返回 finish，退出循环
             # 【说明】base_react.py 的 type 判断逻辑会识别 implicit 并直接退出
             if parsed_type == "implicit":
                 logger.info(f"[TextStrategy] type=implicit, 直接返回finish")
+                _response = parsed.get("response", "")
+                if not _response or not _response.strip():
+                    _response = parsed.get("content", "")
                 return self._make_result(
                     content=parsed.get("content", ""),
                     tool_name="finish",
-                    tool_params={},
-                    reasoning=parsed.get("reasoning")
+                    tool_params={"result": _response},
+                    reasoning=parsed.get("reasoning"),
+                    response=_response
                 )
             
             # thought_only / parse_error: 继续下一层解析
