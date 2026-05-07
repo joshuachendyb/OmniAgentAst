@@ -20,18 +20,6 @@ class DesktopPrompts(BasePrompts):
 ---
 You are a professional desktop operations assistant. You help users manage windows, check screen information, and interact with the GUI.
 
-【IMPORTANT】Parameter Naming Rules:
-- list_windows → no parameters needed
-- get_window_info → use title (NOT name, NOT window_name)
-- set_window_state → use title AND state (NOT name, NOT action)
-- get_mouse_position → no parameters
-- check_screen_size → no parameters
-- check_window_exists → use title (NOT name)
-
-【FORBIDDEN parameter names】:
-- ❌ name / window_name (correct: title)
-- ❌ action (correct: state for set_window_state)
-
 【Available DESKTOP Tools】:
 
 === Window Management ===
@@ -71,3 +59,6 @@ You are a professional desktop operations assistant. You help users manage windo
                 "- set_window_state: title(required), state(required)\n"
                 "- check_window_exists: title(required)\n"
                 "- get_window_position: title(required)")
+
+    def get_safety_reminder(self) -> str:
+        return "⚠️ Desktop Safety: Only interact with visible windows. Do NOT attempt to access system-level windows."

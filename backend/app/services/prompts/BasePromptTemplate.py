@@ -63,6 +63,25 @@ class BasePrompts(ABC):
 - ❌ 禁止：在thought中分析参数是否必填而不调用
 - ✅ 正确：确认意图→直接调用→根据结果决定下一步"""
 
+    # 【2026-05-07 小沈】终止规则（从react_agent_mixin集中到基类）
+    FINISH_RULE = """
+【TERMINATION RULE - 任务完成时必须正确退出，否则会死循环】:
+
+系统通过解析器判断你的输出类型：
+- 含 tool_name 且 tool_name≠"finish" → type=action（继续调用工具，循环不退出）
+- 含 tool_name="finish" → type=answer（退出循环，返回结果）
+- 不含 tool_name，只含 content/reasoning → type=implicit（退出循环，返回结果）
+
+因此，任务完成后你必须用以下任一方式退出：
+
+方式1（推荐）：使用finish
+{"thought": "任务完成", "tool_name": "finish", "tool_params": {"result": "完成摘要"}}
+
+方式2：直接输出纯文本回复（不包含tool_name字段）
+{"content": "今天是2026年5月7日", "reasoning": "已获取时间信息"}
+
+⚠️ 禁止：任务完成后在回复中包含其他工具的tool_name，这会被解析为type=action导致死循环"""
+
     @abstractmethod
     def get_system_prompt(self) -> str:
         """
@@ -142,6 +161,8 @@ class BasePrompts(ABC):
         if param_reminder:
             parts.append(param_reminder)
         
+
+        parts.append(self.FINISH_RULE)
         rollback = self.get_rollback_instructions()
         if rollback:
             parts.append(rollback)

@@ -20,22 +20,6 @@ class ShellPrompts(BasePrompts):
 ---
 You are a professional shell command execution assistant. You help users run commands, manage working directories, check paths, and locate programs.
 
-【IMPORTANT】Parameter Naming Rules - MUST follow these exactly:
-- execute_shell_command → use command (NOT cmd, NOT script, NOT cmd_str)
-- get_working_directory → no parameters needed
-- change_directory → use path (NOT dir, NOT directory, NOT dir_path)
-- check_path_exists → use path (NOT file_path, NOT dir_path)
-- check_command_available → use command (NOT cmd, NOT name)
-- locate_command → use command (NOT cmd, NOT name)
-- get_shell_output → use session_id (NOT id, NOT sid)
-- terminate_shell → use session_id (NOT id, NOT sid)
-
-【FORBIDDEN parameter names - DO NOT use】:
-- ❌ cmd / cmd_str / script (correct: command)
-- ❌ dir / directory / dir_path for change_directory (correct: path)
-- ❌ file_path / dir_path for check_path_exists (correct: path)
-- ❌ id / sid (correct: session_id)
-
 【Available SHELL Tools】:
 
 === P0 - Core Tools ===
@@ -88,13 +72,6 @@ You are a professional shell command execution assistant. You help users run com
    - Parameters:
      - session_id: Background session ID (REQUIRED)
    - Example: terminate_shell(session_id="shell_123")
-
-【SAFETY GUIDELINES】:
-- ⚠️ CONFIRM before destructive operations: rm, del, rmdir, format, mkfs
-- ⚠️ Never run: format C:, del /s /q C:\\*, rm -rf /
-- ✅ Use timeout for long-running commands (default 120s, max 600s)
-- ✅ Prefer PowerShell on Windows (default shell_type)
-- ✅ Check path existence before operations that require it
 
 【Tool Call Examples】:
 

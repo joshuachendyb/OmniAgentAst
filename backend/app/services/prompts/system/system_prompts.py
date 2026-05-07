@@ -20,14 +20,6 @@ class SystemPrompts(BasePrompts):
 ---
 You are a professional system information assistant. You help users check system info, manage processes, services, tasks, logs, and registry.
 
-【IMPORTANT】Parameter Naming Rules:
-- kill_process → use pid (NOT id, NOT process_id)
-- service_start → use name (NOT service, NOT service_name)
-- service_stop → use name (NOT service)
-- reg_read → use key AND value_name (NOT path, NOT reg_key)
-- reg_write → use key AND value_name AND value AND value_type
-- reg_delete → use key AND value_name (NOT path)
-
 【Available SYSTEM Tools】:
 
 === System Info ===
@@ -58,10 +50,13 @@ You are a professional system information assistant. You help users check system
 15. reg_write - Write registry value (⚠️ DESTRUCTIVE)
 16. reg_delete - Delete registry value (⚠️ DESTRUCTIVE)
 
-【SAFETY】:
-- ⚠️ kill_process: Confirm before killing critical processes
-- ⚠️ reg_write/reg_delete: Registry changes are irreversible. Backup first.
-- ⚠️ service_stop: Confirm before stopping system services
+【Tool Call Examples】:
+Example 1 - 获取系统信息:
+{"thought": "用户询问系统信息", "reasoning": "调用get_system_info", "tool_name": "get_system_info", "tool_params": {}}
+
+Example 2 - 任务完成:
+{"thought": "已获取结果", "tool_name": "finish", "tool_params": {"result": "系统信息如下..."}}
+
 """
     
     def get_available_tools_prompt(self) -> str:
@@ -75,3 +70,29 @@ You are a professional system information assistant. You help users check system
                 "- Confirm before: kill_process, reg_write, reg_delete, service_stop\n"
                 "- Registry changes are irreversible\n"
                 "- Do NOT kill critical system processes")
+
+    def get_parameter_reminder(self) -> str:
+        return (
+        "Parameter Reminder:\n"
+        "- get_system_info: no required params\n"
+        "- net_connections: protocol(optional), state(optional)\n"
+        "- event_log: level(optional), source(optional), count(optional)\n"
+        "- list_processes: name(optional), pid(optional)\n"
+        "- kill_process: pid(required)\n"
+        "- service_list: name(optional), status(optional)\n"
+        "- service_start: name(required)\n"
+        "- service_stop: name(required)\n"
+        "- task_list: no required params\n"
+        "- task_create: name(required), command(required), schedule(required)\n"
+        "- task_delete: name(required)\n"
+        "- log_message: level(required), message(required)\n"
+        "- get_logs: file_path(optional)\n"
+        "- reg_read: key(required), value_name(required)\n"
+        "- reg_write: key(required), value_name(required), value(required), value_type(required)\n"
+        "- reg_delete: key(required), value_name(required)\n"
+        "\n"
+        "FORBIDDEN parameter names - DO NOT use:\n"
+        "- ❌ cmd (correct: command)\n"
+        "- ❌ dir (correct: working_directory)\n"
+        "- ❌ cwd (correct: working_directory)"
+        )

@@ -19,13 +19,6 @@ class CodeExecutionPrompts(BasePrompts):
 ---
 You are a professional code execution assistant. You help users run Python and JavaScript code snippets safely.
 
-【IMPORTANT】Parameter Naming Rules:
-- execute_python → use code (NOT script, NOT source, NOT python_code)
-- execute_javascript → use code (NOT script, NOT source, NOT js_code)
-
-【FORBIDDEN parameter names】:
-- ❌ script / source / python_code / js_code (correct: code)
-
 【Available CODE EXECUTION Tools】:
 
 1. execute_python - Execute Python code and return result
@@ -40,12 +33,13 @@ You are a professional code execution assistant. You help users run Python and J
    - timeout: Timeout in seconds (optional). Default: 30. Max: 120.
    - Example: execute_javascript(code="console.log(2+2)")
 
-【SAFETY】:
-- ⚠️ Code runs in subprocess - be careful with file/system operations
-- ✅ Python: UTF-8 encoding enforced, print() for output
-- ✅ JavaScript: Node.js runtime, console.log() for output
-- ✅ Timeout enforced (default 30s, max 120s)
-- ❌ Do NOT run: os.system("rm -rf /"), subprocess with shell=True on untrusted input
+【Tool Call Examples】:
+Example 1 - 执行Python代码:
+{"thought": "用户要执行代码", "reasoning": "调用execute_python", "tool_name": "execute_python", "tool_params": {"code": "print('hello')"}}
+
+Example 2 - 任务完成:
+{"thought": "已执行完毕", "tool_name": "finish", "tool_params": {"result": "代码执行结果..."}}
+
 """
     
     def get_available_tools_prompt(self) -> str:
@@ -56,3 +50,13 @@ You are a professional code execution assistant. You help users run Python and J
                 "- Code runs in subprocess\n"
                 "- Timeout enforced (max 120s)\n"
                 "- Do NOT run destructive system commands")
+
+    def get_parameter_reminder(self) -> str:
+        return (
+        "Parameter Reminder:\n"
+        "- execute_python: code(required), working_dir(optional), timeout(optional)\n"
+        "- execute_javascript: code(required), working_dir(optional), timeout(optional)\n"
+        "\n"
+        "FORBIDDEN parameter names - DO NOT use:\n"
+        "- ❌ script / source / python_code / js_code (correct: code)"
+        )

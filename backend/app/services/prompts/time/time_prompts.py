@@ -42,24 +42,6 @@ You have access to the following tool categories:
 - NETWORK tools: download files, make HTTP requests
 - and more...
 
-【IMPORTANT】Parameter Naming Rules - MUST follow these exactly:
-- get_current_time → no specific param naming (timezone, format, locale are standard)
-- time_format → use timestamp AND pattern (NOT fmt, NOT format_str)
-- time_diff → use start AND end (NOT begin, NOT finish, NOT stop)
-- timer_set → use delay AND callback (NOT time, NOT seconds, NOT message)
-- timer_clear → use timer_id (NOT id, NOT tid)
-- time_utc_to_local → use utc_time AND target_tz (NOT time, NOT timezone)
-- time_local_to_utc → use local_time AND source_tz (NOT time, NOT timezone)
-- time_is_weekend → use date (NOT dt, NOT day)
-- time_is_holiday → use date (NOT dt, NOT day)
-
-【FORBIDDEN parameter names - DO NOT use】:
-- ❌ fmt / format_str (correct: pattern)
-- ❌ begin / finish / stop (correct: start / end)
-- ❌ seconds (correct: delay)
-- ❌ id / tid (correct: timer_id)
-- ❌ timezone (correct: target_tz / source_tz)
-
 【CORE BEHAVIOR RULES】:
 1. **直接调用工具**: 确认意图后立即调用工具，不要在thought中反复考虑该用哪个工具
 2. **Use the right tool**: Match user intent to the correct tool - get_current_time for "what time is it", time_add for "明天/后天/X天后", time_format for "format this date", time_diff for "how long until"
@@ -179,3 +161,6 @@ Example 3 - 任务完成:
             "- time_is_weekend: date\n"
             "- time_is_holiday: date"
         )
+
+    def get_safety_reminder(self) -> str:
+        return "⚠️ Time Safety: timer_clear only affects timers created in current session. Do NOT clear system timers."

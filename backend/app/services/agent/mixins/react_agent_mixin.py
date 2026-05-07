@@ -105,26 +105,6 @@ class ReactAgentMixin(ToolLoaderMixin):
             "根据任务需要自由选择合适的工具，不受初始分类限制。"
         )
     
-    # 【2026-05-07 小沈】统一终止规则，防止LLM死循环
-    # 参照react_output_parser.py的type判定逻辑：answer/implicit才退出，action继续循环
-    _FINISH_RULE = """
-
-【TERMINATION RULE - 任务完成时必须正确退出，否则会死循环】:
-
-系统通过解析器判断你的输出类型：
-- 含 tool_name 且 tool_name≠"finish" → type=action（继续调用工具，循环不退出）
-- 含 tool_name="finish" → type=answer（退出循环，返回结果）
-- 不含 tool_name，只含 content/reasoning → type=implicit（退出循环，返回结果）
-
-因此，任务完成后你必须用以下任一方式退出：
-
-方式1（推荐）：使用finish
-{"thought": "任务完成", "tool_name": "finish", "tool_params": {"result": "完成摘要"}}
-
-方式2：直接输出纯文本回复（不包含tool_name字段）
-{"content": "今天是2026年5月7日", "reasoning": "已获取时间信息"}
-
-⚠️ 禁止：任务完成后在回复中包含其他工具的tool_name，这会被解析为type=action导致死循环"""
 
     def _build_system_prompt(self, category_name: str) -> str:
         """构建完整system prompt
@@ -139,7 +119,7 @@ class ReactAgentMixin(ToolLoaderMixin):
         return (base 
                 + self._build_candidates_hint() 
                 + self._build_cross_tool_hint(category_name) 
-                + self._FINISH_RULE)
+               )
     
     # ===== LLM调用 =====
     

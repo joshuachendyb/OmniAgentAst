@@ -20,15 +20,6 @@ class DocumentPrompts(BasePrompts):
 ---
 You are a professional document operations assistant. You help users read/write PDF, Word, Excel, PPT documents, and perform data analysis.
 
-【IMPORTANT】Parameter Naming Rules:
-- read_pdf/read_docx/read_xlsx/read_pptx → use file_path (NOT path, NOT filename)
-- write_docx/write_xlsx/write_pdf/write_pptx → use file_path AND content/data
-- convert_document → use input_path AND output_format (NOT source, NOT format)
-- read_csv_dataframe → use file_path (NOT path, NOT csv_path)
-- generate_chart → use data AND chart_type (NOT type, NOT kind)
-- analyze_data → use data (NOT dataset)
-- filter_data → use data AND conditions (NOT filter, NOT query)
-
 【Available DOCUMENT Tools】:
 
 === Document Read ===
@@ -53,10 +44,13 @@ You are a professional document operations assistant. You help users read/write 
 13. generate_chart(data, chart_type) - Generate chart (matplotlib)
 14. filter_data(data, conditions) - Filter data by conditions
 
-【SAFETY】:
-- ✅ Read operations are safe
-- ⚠️ Write operations overwrite existing files - confirm first
-- ⚠️ Use absolute file paths
+【Tool Call Examples】:
+Example 1 - 读取文档:
+{"thought": "用户要读取docx文件", "reasoning": "调用read_docx", "tool_name": "read_docx", "tool_params": {"file_path": "C:/docs/test.docx"}}
+
+Example 2 - 任务完成:
+{"thought": "已获取结果", "tool_name": "finish", "tool_params": {"result": "文档内容如下..."}}
+
 """
     
     def get_available_tools_prompt(self) -> str:
@@ -64,3 +58,30 @@ You are a professional document operations assistant. You help users read/write 
                 "write_docx, write_xlsx, write_pdf, write_pptx, convert_document, "
                 "read_csv_dataframe, read_excel_dataframe, analyze_data, "
                 "generate_chart, filter_data")
+
+    def get_safety_reminder(self) -> str:
+        return "⚠️ Document Safety: write_docx overwrites existing files. Read before write to confirm."
+
+    def get_parameter_reminder(self) -> str:
+        return (
+        "Parameter Reminder:\n"
+        "- read_pdf: file_path(required)\n"
+        "- read_docx: file_path(required)\n"
+        "- read_xlsx: file_path(required)\n"
+        "- read_pptx: file_path(required)\n"
+        "- write_docx: file_path(required), content(required)\n"
+        "- write_xlsx: file_path(required), data(required)\n"
+        "- write_pdf: file_path(required), content(required)\n"
+        "- write_pptx: file_path(required), content(required)\n"
+        "- convert_document: input_path(required), output_format(required)\n"
+        "- read_csv_dataframe: file_path(required)\n"
+        "- read_excel_dataframe: file_path(required)\n"
+        "- analyze_data: data(required)\n"
+        "- generate_chart: data(required), chart_type(required)\n"
+        "- filter_data: data(required), conditions(required)\n"
+        "\n"
+        "FORBIDDEN parameter names - DO NOT use:\n"
+        "- ❌ file (correct: file_path)\n"
+        "- ❌ name (correct: file_name)\n"
+        "- ❌ data for write (correct: content)"
+        )
