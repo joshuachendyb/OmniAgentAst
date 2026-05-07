@@ -421,11 +421,30 @@ async def generate_sse_stream(
             session_id=session_id or task_id
         )
         # 记录系统 prompt（根据 intent_type 动态选择对应的 prompt 类）
-        if intent_type == "time":
+        # 【修复 2026-05-07 小沈】完善intent_type→Prompt类映射，处理chat意图
+        if intent_type == "chat":
+            # chat意图：不创建Prompt实例，使用空字符串
+            prompts_instance = None
+            sys_prompt = ""
+            source_name = "chat意图：无系统Prompt"
+        elif intent_type == "time":
             from app.services.prompts.time import TimePrompts
             prompts_instance = TimePrompts()
             source_name = "time_prompts.py:get_system_prompt()"
+        elif intent_type == "shell":
+            from app.services.prompts.shell import ShellPrompts
+            prompts_instance = ShellPrompts()
+            source_name = "shell_prompts.py:get_system_prompt()"
+        elif intent_type == "network":
+            from app.services.prompts.network import NetworkPrompts
+            prompts_instance = NetworkPrompts()
+            source_name = "network_prompts.py:get_system_prompt()"
+        elif intent_type == "desktop":
+            from app.services.prompts.desktop import DesktopPrompts
+            prompts_instance = DesktopPrompts()
+            source_name = "desktop_prompts.py:get_system_prompt()"
         else:
+            # 默认file意图
             from app.services.prompts.file import FileOperationPrompts
             prompts_instance = FileOperationPrompts()
             source_name = "file_prompts.py:get_system_prompt()"

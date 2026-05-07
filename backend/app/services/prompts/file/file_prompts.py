@@ -149,60 +149,19 @@ Available Tools:
 【Tool Call Examples - Follow this format exactly】:
 
 Example 1: List directory
-{
-    "thought": "User wants to see files in D drive root",
-    "reasoning": "list_directory是列出目录的唯一工具，需要设置dir_path参数为D:/",
-    "tool_name": "list_directory",
-    "tool_params": {"dir_path": "D:/"}
-}
+{"thought": "查看D盘根目录文件", "reasoning": "调用list_directory", "tool_name": "list_directory", "tool_params": {"dir_path": "D:/"}}
 
 Example 2: Read file
-{
-    "thought": "User wants to read a config file",
-    "reasoning": "read_text_file是读取文件内容的唯一工具，需要设置file_path参数",
-    "tool_name": "read_text_file",
-    "tool_params": {"file_path": "C:/Users/username/config.json"}
-}
+{"thought": "读取配置文件", "reasoning": "调用read_text_file", "tool_name": "read_text_file", "tool_params": {"file_path": "C:/Users/username/config.json"}}
 
 Example 3: Write file
-{
-    "thought": "User wants to write content to a file",
-    "reasoning": "write_text_file是写入文件内容的工具，需要设置file_path和text参数",
-    "tool_name": "write_text_file",
-    "tool_params": {"file_path": "D:/project/output.txt", "text": "Hello World"}
-}
+{"thought": "写入文件内容", "reasoning": "调用write_text_file", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/project/output.txt", "text": "Hello World"}}
 
-Example 4: Search files
-{
-    "thought": "User wants to search for Python files",
-    "reasoning": "search_files按文件名模式搜索，需要设置pattern和search_dir参数",
-    "tool_name": "search_files",
-    "tool_params": {"pattern": "**/*.py", "search_dir": "D:/project"}
-}
+Example 4: Error handling
+{"thought": "文件读取失败，路径可能不存在", "reasoning": "向用户报告错误并建议检查路径", "tool_name": "finish", "tool_params": {"result": "读取失败：文件C:/not-exist.txt不存在，请确认路径是否正确"}}
 
-Example 5: Search file content
-{
-    "thought": "User wants to search for TODO comments in Python files",
-    "reasoning": "grep_file_content支持正则搜索和多选项筛选，是搜索文件内容的最佳工具",
-    "tool_name": "grep_file_content",
-    "tool_params": {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py"}
-}
-
-Example 6: Move file
-{
-    "thought": "User wants to move file to new location",
-    "reasoning": "move_file支持文件和目录移动，需要source_path和destination_path两个参数",
-    "tool_name": "move_file",
-    "tool_params": {"source_path": "C:/old/file.txt", "destination_path": "D:/new/file.txt"}
-}
-
-Example 7: Task completed
-{
-    "thought": "用户的任务已完成，我已列出D盘文件列表",
-    "reasoning": "没有更多操作需要执行，任务结束",
-    "tool_name": "finish",
-    "tool_params": {"result": "已列出D盘根目录的文件：..."}
-}
+Example 5: Task completed
+{"thought": "任务已完成", "reasoning": "无更多操作", "tool_name": "finish", "tool_params": {"result": "已列出D盘根目录的文件：..."}}
 
 ---
 
