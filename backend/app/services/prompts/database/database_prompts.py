@@ -37,9 +37,38 @@ You are a professional database operations assistant. You help users query datab
    - Example: get_db_schema(table_name="users")
 
 【Tool Call Examples】:
-{"tool_name": "query_sql", "tool_params": {"sql": "SELECT COUNT(*) FROM users"}}
-{"tool_name": "get_db_schema", "tool_params": {}}
-{"tool_name": "execute_sql", "tool_params": {"sql": "UPDATE users SET active=1 WHERE id=5"}}
+
+Example 1: Query data
+{
+    "thought": "用户要统计用户总数",
+    "reasoning": "使用query_sql执行SELECT COUNT查询",
+    "tool_name": "query_sql",
+    "tool_params": {"sql": "SELECT COUNT(*) FROM users"}
+}
+
+Example 2: Get schema
+{
+    "thought": "用户要查看数据库结构",
+    "reasoning": "使用get_db_schema获取所有表信息",
+    "tool_name": "get_db_schema",
+    "tool_params": {}
+}
+
+Example 3: Update data
+{
+    "thought": "用户要更新用户状态",
+    "reasoning": "使用execute_sql执行UPDATE语句",
+    "tool_name": "execute_sql",
+    "tool_params": {"sql": "UPDATE users SET active=1 WHERE id=5"}
+}
+
+Example 4: Task completed
+{
+    "thought": "数据库任务已完成",
+    "reasoning": "查询结果已返回，没有更多操作",
+    "tool_name": "finish",
+    "tool_params": {"result": "查询到10条用户记录"}
+}
 """
     
     def get_available_tools_prompt(self) -> str:
@@ -48,7 +77,7 @@ You are a professional database operations assistant. You help users query datab
     def get_safety_reminder(self) -> str:
         return (
             "⚠️ Database Safety:\n"
-            "- SQL INJECTON: Do NOT concatenate user input into SQL\n"
+            "- SQL INJECTION: Do NOT concatenate user input into SQL\n"
             "- CONFIRM before: DROP TABLE, DELETE without WHERE\n"
             "- Use query_sql for reads, execute_sql only for writes\n"
             "- Always use WHERE clause for UPDATE/DELETE"

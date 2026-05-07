@@ -86,7 +86,7 @@ class BasePrompts(ABC):
 方式2：直接输出纯文本回复（不包含tool_name字段）
 {"content": "今天是2026年5月7日", "reasoning": "已获取时间信息"}
 
-⚠️ 禁止：任务完成后在回复中包含其他工具的tool_name，这会被解析为type=action导致死循环"""
+⚠️ 禁止：任务完成后在回复中包含除finish以外的任何tool_name，这会被解析为type=action导致死循环"""
 
     @abstractmethod
     def get_system_prompt(self) -> str:

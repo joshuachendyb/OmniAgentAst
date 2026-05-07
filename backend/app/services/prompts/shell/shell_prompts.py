@@ -98,6 +98,14 @@ Example 3: Check command availability
     "tool_name": "check_command_available",
     "tool_params": {"command": "git"}
 }
+
+Example 4: Task completed
+{
+    "thought": "Shell命令任务已完成",
+    "reasoning": "命令执行成功，结果已返回",
+    "tool_name": "finish",
+    "tool_params": {"result": "已列出目录内容：..."}
+}
 """
     
     def get_available_tools_prompt(self) -> str:

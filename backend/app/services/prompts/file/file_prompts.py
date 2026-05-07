@@ -153,71 +153,48 @@ Example 1: List directory
     "thought": "User wants to see files in D drive root",
     "reasoning": "list_directory是列出目录的唯一工具，需要设置dir_path参数为D:/",
     "tool_name": "list_directory",
-    "tool_params": {
-        "dir_path": "D:/"  // ✅ CORRECT: uses dir_path
-    }
+    "tool_params": {"dir_path": "D:/"}
 }
-// ❌ WRONG: {"directory_path": "D:/"} or {"path": "D:/"}
 
 Example 2: Read file
 {
     "thought": "User wants to read a config file",
     "reasoning": "read_text_file是读取文件内容的唯一工具，需要设置file_path参数",
     "tool_name": "read_text_file",
-    "tool_params": {
-        "file_path": "C:/Users/username/config.json"  // ✅ CORRECT: uses file_path
-    }
+    "tool_params": {"file_path": "C:/Users/username/config.json"}
 }
-// ❌ WRONG: {"filepath": "..."} or {"path": "..."} or tool_name="read_file"
 
 Example 3: Write file
 {
     "thought": "User wants to write content to a file",
     "reasoning": "write_text_file是写入文件内容的工具，需要设置file_path和text参数",
     "tool_name": "write_text_file",
-    "tool_params": {
-        "file_path": "D:/project/output.txt",
-        "text": "Hello World"  // ✅ CORRECT: uses text, NOT content
-    }
+    "tool_params": {"file_path": "D:/project/output.txt", "text": "Hello World"}
 }
-// ❌ WRONG: {"content": "..."} or tool_name="write_file"
 
 Example 4: Search files
 {
     "thought": "User wants to search for Python files",
     "reasoning": "search_files按文件名模式搜索，需要设置pattern和search_dir参数",
     "tool_name": "search_files",
-    "tool_params": {
-        "pattern": "**/*.py",
-        "search_dir": "D:/project"  // ✅ CORRECT: uses pattern and search_dir
-    }
+    "tool_params": {"pattern": "**/*.py", "search_dir": "D:/project"}
 }
-// ❌ WRONG: {"file_pattern": "*.py", "path": "D:/project"}
 
 Example 5: Search file content
 {
     "thought": "User wants to search for TODO comments in Python files",
     "reasoning": "grep_file_content支持正则搜索和多选项筛选，是搜索文件内容的最佳工具",
     "tool_name": "grep_file_content",
-    "tool_params": {
-        "pattern": "TODO",
-        "search_dir": "D:/project",
-        "glob": "*.py"  // ✅ CORRECT: uses search_dir and glob
-    }
+    "tool_params": {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py"}
 }
-// ❌ WRONG: {"path": "D:/project", "file_pattern": "*.py"}
 
 Example 6: Move file
 {
     "thought": "User wants to move file to new location",
     "reasoning": "move_file支持文件和目录移动，需要source_path和destination_path两个参数",
     "tool_name": "move_file",
-    "tool_params": {
-        "source_path": "C:/old/file.txt",  // ✅ CORRECT
-        "destination_path": "D:/new/file.txt"  // ✅ CORRECT
-    }
+    "tool_params": {"source_path": "C:/old/file.txt", "destination_path": "D:/new/file.txt"}
 }
-// ❌ WRONG: {"src": "...", "dst": "..."}
 
 Example 7: Task completed
 {

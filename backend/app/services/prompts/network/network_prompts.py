@@ -67,22 +67,37 @@ You are a professional network operations assistant. You help users make HTTP re
 
 【Tool Call Examples】:
 
-Example 1: GET request:
+Example 1: GET request
 {
+    "thought": "用户要获取用户列表数据",
+    "reasoning": "使用http_request执行GET请求",
     "tool_name": "http_request",
     "tool_params": {"url": "https://api.example.com/users", "method": "GET"}
 }
 
-Example 2: POST request:
+Example 2: POST request
 {
+    "thought": "用户要创建新用户",
+    "reasoning": "使用http_request执行POST请求，body传JSON数据",
     "tool_name": "http_request",
     "tool_params": {"url": "https://api.example.com/users", "method": "POST", "body": "{\"name\": \"test\"}"}
 }
 
-Example 3: Ping test:
+Example 3: Ping test
 {
+    "thought": "用户要测试网络连通性",
+    "reasoning": "使用ping测试到baidu.com的连接",
     "tool_name": "ping",
     "tool_params": {"host": "baidu.com", "count": 4}
+}
+
+Example 4: Task completed
+{
+    "thought": "网络请求任务已完成",
+    "reasoning": "请求成功，数据已返回",
+    "tool_name": "finish",
+    "tool_params": {"result": "获取到100条用户数据"}
+}
 """
     
     def get_available_tools_prompt(self) -> str:

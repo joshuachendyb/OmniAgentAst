@@ -42,9 +42,38 @@ You are a professional desktop operations assistant. You help users manage windo
 10. check_notification_permission - Check notification permission
 
 【Tool Call Examples】:
-{"tool_name": "list_windows", "tool_params": {}}
-{"tool_name": "set_window_state", "tool_params": {"title": "Notepad", "state": "maximize"}}
-{"tool_name": "check_screen_size", "tool_params": {}}
+
+Example 1: List windows
+{
+    "thought": "用户要查看所有打开的窗口",
+    "reasoning": "使用list_windows获取窗口列表",
+    "tool_name": "list_windows",
+    "tool_params": {}
+}
+
+Example 2: Maximize window
+{
+    "thought": "用户要最大化记事本窗口",
+    "reasoning": "使用set_window_state设置窗口状态为maximize",
+    "tool_name": "set_window_state",
+    "tool_params": {"title": "Notepad", "state": "maximize"}
+}
+
+Example 3: Check screen size
+{
+    "thought": "用户要获取屏幕分辨率",
+    "reasoning": "使用check_screen_size获取屏幕尺寸",
+    "tool_name": "check_screen_size",
+    "tool_params": {}
+}
+
+Example 4: Task completed
+{
+    "thought": "桌面操作任务已完成",
+    "reasoning": "窗口状态已调整",
+    "tool_name": "finish",
+    "tool_params": {"result": "已最大化Notepad窗口"}
+}
 """
     
     def get_available_tools_prompt(self) -> str:
