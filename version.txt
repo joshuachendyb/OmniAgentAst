@@ -1,10 +1,36 @@
 v0.12.18
 
-更新时间: 2026-05-07 06:26:39
+更新时间: 2026-05-07 12:18:25
 
 更新内容：
 
-## v0.12.17→v0.12.18 变更汇总 - 小沈-2026-05-07
+## v0.12.18 Prompt体系全面重构 - 小沈-2026-05-07
+
+### 重构类commit（8个）- Prompt体系去重/补齐/集中管理
+
+| commit | 说明 |
+|--------|------|
+| f33568de | fix: prompt体系审计修复-消除重复/矛盾/含糊 |
+| a86cce73 | refactor: 提取公共prompt规则到BasePromptTemplate统一注入 |
+| 8be4f74f | refactor: 统一prompt组装架构-消除双轨制 |
+| b3e587f5 | refactor: prompt体系全面重构-去重补齐集中管理 |
+| e4259480 | fix: 补齐所有prompt缺失-完成最后4项问题修复 |
+| e6068b0a | fix: 修复审计核对的剩余13项问题 |
+| 372e0a8a | fix: file_prompts精简Example+补error示例(F-6/F-8) |
+| c9e0c234 | refactor: 删除get_available_tools_prompt死方法+修复file_prompts语法错误 |
+
+### 重构要点
+- BasePromptTemplate统一组装架构(build_full_system_prompt为唯一入口)
+- 参数命名三合一：9个prompt删除IMPORTANT/FORBIDDEN段落，统一到get_parameter_reminder()
+- Safety去重：7个prompt删除SAFETY段落，统一到get_safety_reminder()
+- FINISH_RULE集中到BasePrompts
+- 删除get_available_tools_prompt死方法(基类返回空字符串)
+- 修复file_prompts.py删除死代码残留的语法错误
+- 19个修改文件全部语法验证通过
+
+---
+
+## v0.12.17→v0.12.18 变更汇总(前期) - 小沈-2026-05-07
 
 ### 修复类commit（12个）
 
