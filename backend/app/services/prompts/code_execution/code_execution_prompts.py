@@ -45,8 +45,8 @@ Example 2 - 任务完成:
     def get_parameter_reminder(self) -> str:
         return (
         "Parameter Reminder:\n"
-        "- execute_python: code(required), working_dir(optional), timeout(optional)\n"
-        "- execute_javascript: code(required), working_dir(optional), timeout(optional)\n"
+        "- execute_python: code(required, str), working_dir(optional, str), timeout(optional, int, default=30, max=120)\n"
+        "- execute_javascript: code(required, str), working_dir(optional, str), timeout(optional, int, default=30, max=120)\n"
         "\n"
         "FORBIDDEN parameter names - DO NOT use:\n"
         "- ❌ script / source / python_code / js_code (correct: code)"

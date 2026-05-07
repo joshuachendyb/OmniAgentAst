@@ -142,16 +142,21 @@ Example 3 - 任务完成:
     def get_parameter_reminder(self) -> str:
         return (
             "Parameter Reminder:\n"
-            "- get_current_time: timezone(optional), format(optional), locale(optional)\n"
-            "- time_add: start(optional, default=now), delta(required), unit(optional, default=days)\n"
-            "- time_format: timestamp, pattern\n"
-            "- time_diff: start, end\n"
-            "- timer_set: delay, callback, callback_data\n"
-            "- timer_clear: timer_id\n"
-            "- time_utc_to_local: utc_time, target_tz\n"
-            "- time_local_to_utc: local_time, source_tz\n"
-            "- time_is_weekend: date\n"
-            "- time_is_holiday: date"
+            "- get_current_time: timezone(optional, str, e.g.\"Asia/Shanghai\"), format(optional, str), locale(optional, str)\n"
+            "- time_add: start(optional, str/int, default=now), delta(required, int/float), unit(optional, str, default=\"days\", options: days/hours/minutes/seconds/months)\n"
+            "- time_format: timestamp(optional, int/float/str), pattern(optional, str)\n"
+            "- time_diff: start(optional, str/int), end(optional, str/int, default=now)\n"
+            "- timer_set: delay(required, int, 1~86400), callback(required, str), callback_data(optional)\n"
+            "- timer_clear: timer_id(required, str)\n"
+            "- time_utc_to_local: utc_time(required, str/int), target_tz(optional, str)\n"
+            "- time_local_to_utc: local_time(required, str/int), source_tz(optional, str)\n"
+            "- time_is_weekend: date(optional, str, default=today)\n"
+            "- time_is_holiday: date(optional, str, default=today)\n"
+            "\n"
+            "FORBIDDEN parameter names - DO NOT use:\n"
+            "- ❌ amount / value (correct: delta)\n"
+            "- ❌ unit_type (correct: unit)\n"
+            "- ❌ tid / id (correct: timer_id)"
         )
 
     def get_task_prompt(self, task: str) -> str:

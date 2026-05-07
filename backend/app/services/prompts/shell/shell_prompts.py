@@ -116,6 +116,33 @@ Please help me execute this shell command task. Follow these steps:
 2. Execute the command with appropriate timeout
 3. Provide a clear summary of the result"""
 
+    def get_parameter_reminder(self) -> str:
+        return (
+            "Parameter Reminder:\n"
+            "- execute_shell_command: command(required, str), working_dir(optional, str), timeout(optional, int, default=120), shell_type(optional, str, default=powershell)\n"
+            "- get_working_directory: no params\n"
+            "- change_directory: path(required, str)\n"
+            "- check_path_exists: path(required, str)\n"
+            "- check_command_available: command(required, str)\n"
+            "- locate_command: command(required, str)\n"
+            "- get_shell_output: session_id(required, str)\n"
+            "- terminate_shell: session_id(required, str)\n"
+            "\n"
+            "FORBIDDEN parameter names - DO NOT use:\n"
+            "- ❌ cmd / script / shell_cmd (correct: command)\n"
+            "- ❌ directory / dir / cwd (correct: working_dir or path)\n"
+            "- ❌ id / session / sid (correct: session_id)"
+        )
+
+    def get_safety_reminder(self) -> str:
+        return (
+            "⚠️ Shell Safety:\n"
+            "- Destructive commands (rm/del/format/rmdir) require extra caution\n"
+            "- Always check command availability before execution\n"
+            "- Use timeout to prevent hanging commands\n"
+            "- Verify working directory before relative path operations"
+        )
+
     def get_rollback_instructions(self) -> str:
         return """If a command fails:
 1. Check if the command is available (use check_command_available)

@@ -103,10 +103,30 @@ Example 4: Task completed
     def get_parameter_reminder(self) -> str:
         return (
             "Parameter Reminder:\n"
-            "- http_request: url(required), method(optional,default=GET), headers(optional), body(optional), timeout(optional,default=30)\n"
-            "- download_file: url(required), save_path(required), timeout(optional,default=300)\n"
-            "- fetch_webpage: url(required), format(optional,default=text)\n"
-            "- search_web: query(required), max_results(optional,default=10)\n"
-            "- ping: host(required), count(optional,default=4), timeout(optional,default=5)\n"
-            "- port_check: host(required), port(required), timeout(optional,default=3)"
+            "- http_request: url(required, str), method(optional, str, default=GET, options: GET/POST/PUT/DELETE/PATCH), headers(optional, dict), body(optional, str/dict), timeout(optional, int, default=30)\n"
+            "- download_file: url(required, str), save_path(required, str, absolute path), timeout(optional, int, default=300)\n"
+            "- fetch_webpage: url(required, str), format(optional, str, default=text, options: text/markdown/html)\n"
+            "- search_web: query(required, str), max_results(optional, int, default=10)\n"
+            "- ping: host(required, str), count(optional, int, default=4), timeout(optional, int, default=5)\n"
+            "- port_check: host(required, str), port(required, int, 1~65535), timeout(optional, int, default=3)\n"
+            "\n"
+            "FORBIDDEN parameter names - DO NOT use:\n"
+            "- ❌ data / params (correct: body)\n"
+            "- ❌ address / host_url (correct: url)\n"
+            "- ❌ path / file_path (correct: save_path)\n"
+            "- ❌ q / keyword (correct: query)"
         )
+
+    def get_task_prompt(self, task: str) -> str:
+        return f"""Task: {task}
+
+Please help me complete this network task. Follow these steps:
+1. First, identify the network operation needed (HTTP request, download, search, connectivity test)
+2. Use the appropriate network tool with correct URL/parameters
+3. Handle errors gracefully (timeout, connection refused, DNS failure) and suggest alternatives
+
+Remember:
+- URL must include scheme (http:// or https://)
+- For POST/PUT, use body parameter (NOT data/params)
+- Use timeout for operations that may hang
+- If DuckDuckGo search fails, try alternative keywords or simpler queries"""
