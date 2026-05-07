@@ -42,14 +42,6 @@ Example 2 - 任务完成:
 
 """
     
-    def get_available_tools_prompt(self) -> str:
-        return "Available CODE EXECUTION tools: execute_python, execute_javascript"
-    
-    def get_safety_reminder(self) -> str:
-        return ("⚠️ Code Execution Safety:\n"
-                "- Code runs in subprocess\n"
-                "- Timeout enforced (max 120s)\n"
-                "- Do NOT run destructive system commands")
 
     def get_parameter_reminder(self) -> str:
         return (

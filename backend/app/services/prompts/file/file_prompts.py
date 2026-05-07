@@ -15,7 +15,6 @@
 6. 嵌入服务器OS信息（Prompt中间层）- 2026-03-24
 7. 升级Examples添加reasoning字段 - 2026-04-14
 8. 新增finish示例和result字段 - 2026-04-14
-9. 新增get_llm_response_schema()方法 - 2026-04-14
 
 更新时间: 2026-03-19 23:55:00
 迁移时间: 2026-03-21
@@ -239,65 +238,6 @@ Error: {error}
 
 Please reconsider your approach and suggest an alternative action."""
 
-    def get_available_tools_prompt(self, tools: Optional[List[Dict[str, Any]]] = None) -> str:
-        """
-        获取可用工具列表Prompt（增强版 - 支持input_examples）
-        
-        Args:
-            tools: 可用工具列表
-            
-        Returns:
-            格式化的工具列表Prompt
-        """
-        if not tools:
-            return "No tools available."
-        
-        tool_descriptions = []
-        
-        for tool in tools:
-            name = tool.get("name", "unknown")
-            description = tool.get("description", "No description")
-            
-            # 提取schema信息
-            schema = tool.get("input_schema", {})
-            properties = schema.get("properties", {})
-            required = schema.get("required", [])
-            
-            # 提取examples
-            examples = tool.get("input_examples", [])
-            
-            # 构建参数描述
-            params = []
-            for param_name, param_info in properties.items():
-                param_type = param_info.get("type", "any")
-                param_desc = param_info.get("description", "")
-                is_required = param_name in required
-                req_str = "(required)" if is_required else "(optional)"
-                
-                # 简化描述（取第一行或前50字符）
-                short_desc = param_desc.split('\n')[0] if param_desc else ""
-                if len(short_desc) > 50:
-                    short_desc = short_desc[:50] + "..."
-                
-                params.append(f"  - {param_name} ({param_type}) {req_str}: {short_desc}")
-            
-            # 构建示例
-            example_str = ""
-            if examples:
-                example_str = f"\n  Examples:\n"
-                for i, ex in enumerate(examples[:2], 1):  # 最多2个示例
-                    example_str += f"    {i}. {ex}\n"
-            
-            tool_desc = f"""
-{name}:
-  Description: {description.split(chr(10))[0] if description else 'No description'}  # 首行
-  Parameters:
-{chr(10).join(params) if params else '  (no parameters)'}
-{example_str}"""
-            
-            tool_descriptions.append(tool_desc)
-        
-        return "Available Tools:\n" + "\n\n".join(tool_descriptions)
 
     def get_rollback_instructions(self) -> str:
         """获取回滚指令Prompt"""
@@ -348,86 +288,6 @@ Common mistakes to avoid:
 - ❌ read_file (use: read_text_file)
 - ❌ write_file (use: write_text_file)"""
 
-    def get_llm_response_schema(self) -> Dict[str, Any]:
-        """
-        获取LLM响应的Function Calling Schema
-        用于强制LLM输出结构化响应（包含thought+reasoning）
-        
-        Returns:
-            OpenAI Function Calling格式的Schema
-            
-        示例返回：
-        {
-            "name": "execute_tool",
-            "description": "执行工具完成用户任务",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "thought": {
-                        "type": "string",
-                        "description": "思考过程，分析当前情况和用户需求"
-                    },
-                    "reasoning": {
-                        "type": "string",
-                        "description": "推理过程，解释为什么选择这个工具及其参数"
-                    },
-                    "tool_name": {
-                        "type": "string",
-                        "description": "工具名称，如list_directory, read_file, write_file, finish等"
-                    },
-                    "tool_params": {
-                        "type": "object",
-                        "description": "工具参数字典"
-                    }
-                },
-                "required": ["thought", "tool_name"]
-            }
-        }
-        
-        Returns:
-            Dict[str, Any]: Function Calling Schema
-        """
-        return {
-            "name": "execute_tool",
-            "description": "执行工具完成用户任务",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "thought": {
-                        "type": "string",
-                        "description": (
-                            "分析当前情况、用户需求和下一步行动。"
-                            "【禁止】不要写'已成功'、'已完成'、'需要继续'等自我确认或计划性语言，"
-                            "只描述你的分析和决策。"
-                        )
-                    },
-                    "reasoning": {
-                        "type": "string",
-                        "description": (
-                            "详细推理过程，解释为什么选择这个工具、参数如何确定。"
-                            "【禁止】reasoning不能为空，不能包含'已成功'、'现在需要继续'等思维确认文本，"
-                            "必须是真正的逻辑推理。"
-                        )
-                    },
-                    "tool_name": {
-                        "type": "string",
-                        "description": "工具名称，如list_directory, read_file, write_file, finish等"
-                    },
-                    "tool_params": {
-                        "type": "object",
-                        "description": (
-                            "工具参数字典。"
-                            "【关键】write_file的content参数必须传入实际的文件内容（如代码、文本、小说正文），"
-                            "绝对禁止将你的思考过程、计划说明、状态确认当作content传入。"
-                        )
-                    }
-                },
-                "required": ["thought", "reasoning", "tool_name"]
-            }
-        }
-
-
-# 预定义的任务模板
 class TaskTemplates:
     """预定义任务模板"""
     

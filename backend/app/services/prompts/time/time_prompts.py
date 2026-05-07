@@ -140,13 +140,6 @@ Example 3 - 任务完成:
 {"thought": "已获取结果，任务完成", "tool_name": "finish", "tool_params": {"result": "今天是2026年5月7日"}}
 """
 
-    def get_available_tools_prompt(self) -> str:
-        """获取可用工具列表描述"""
-        return (
-            "Available TIME tools: get_current_time, time_add, time_format, time_diff, "
-            "timer_set, timer_clear, time_utc_to_local, time_local_to_utc, "
-            "time_is_weekend, time_is_holiday"
-        )
 
     def get_parameter_reminder(self) -> str:
         return (

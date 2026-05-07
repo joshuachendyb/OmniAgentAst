@@ -423,38 +423,46 @@ async def generate_sse_stream(
         # 记录系统 prompt（根据 intent_type 动态选择对应的 prompt 类）
         # 【修复 2026-05-07 小沈】完善intent_type→Prompt类映射，处理chat意图
         if intent_type == "chat":
-            # chat意图：不创建Prompt实例，使用空字符串
-            prompts_instance = None
+            # chat意图：不创建Prompt实例
             sys_prompt = ""
             source_name = "chat意图：无系统Prompt"
         elif intent_type == "time":
             from app.services.prompts.time import TimePrompts
             prompts_instance = TimePrompts()
             source_name = "time_prompts.py:get_system_prompt()"
+            sys_prompt = prompts_instance.get_system_prompt()
         elif intent_type == "shell":
             from app.services.prompts.shell import ShellPrompts
             prompts_instance = ShellPrompts()
             source_name = "shell_prompts.py:get_system_prompt()"
+            sys_prompt = prompts_instance.get_system_prompt()
         elif intent_type == "network":
             from app.services.prompts.network import NetworkPrompts
             prompts_instance = NetworkPrompts()
             source_name = "network_prompts.py:get_system_prompt()"
+            sys_prompt = prompts_instance.get_system_prompt()
         elif intent_type == "desktop":
             from app.services.prompts.desktop import DesktopPrompts
             prompts_instance = DesktopPrompts()
             source_name = "desktop_prompts.py:get_system_prompt()"
+            sys_prompt = prompts_instance.get_system_prompt()
         else:
             # 默认file意图
             from app.services.prompts.file import FileOperationPrompts
             prompts_instance = FileOperationPrompts()
             source_name = "file_prompts.py:get_system_prompt()"
-        sys_prompt = prompts_instance.get_system_prompt()
-        prompt_logger.log_system_prompt(
-            step_name="系统Prompt生成",
-            prompt_content=sys_prompt,
-            source=source_name,
-            details={"intent_type": intent_type, "confidence": confidence}
-        )
+            sys_prompt = prompts_instance.get_system_prompt()
+        
+        # 只有非chat意图才记录系统prompt
+        if intent_type != "chat":
+            # 【修复 2026-05-07 小沈】记录完整prompt（包含公共规则），而非只记录get_system_prompt()
+            full_prompt = prompts_instance.build_full_system_prompt() if prompts_instance else sys_prompt
+            prompt_logger.log_system_prompt(
+                step_name="系统Prompt生成",
+                prompt_content=full_prompt,
+                source=source_name,
+                details={"intent_type": intent_type, "confidence": confidence, "note": "含OUTPUT_FORMAT+TOOL_CALL_RULES+SAFETY+PARAM+FINISH_RULE+ROLLBACK"}
+            )
         # 记录任务 prompt
         prompt_logger.log_task_prompt(
             task_content=user_message,

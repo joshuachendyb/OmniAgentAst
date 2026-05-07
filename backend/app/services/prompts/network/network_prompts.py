@@ -100,26 +100,6 @@ Example 4: Task completed
 }
 """
     
-    def get_available_tools_prompt(self) -> str:
-        return ("Available NETWORK tools: http_request, download_file, fetch_webpage, "
-                "search_web, ping, port_check")
-    
-    def get_safety_reminder(self) -> str:
-        return (
-            "⚠️ Network Safety:\n"
-            "- Use https:// when available\n"
-            "- Do NOT send credentials in URLs\n"
-            "- Set reasonable timeout\n"
-            "- Use download_file for large files"
-        )
-    
-    def get_task_prompt(self, task: str) -> str:
-        return f"""Task: {task}
-
-Please help me complete this network task. Follow these steps:
-1. First, analyze the network operation needed
-2. Use the appropriate network tool
-3. Provide a summary of the result"""
 
     def get_parameter_reminder(self) -> str:
         return (

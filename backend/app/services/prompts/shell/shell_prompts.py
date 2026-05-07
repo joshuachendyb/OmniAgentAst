@@ -108,30 +108,6 @@ Example 4: Task completed
 }
 """
     
-    def get_available_tools_prompt(self) -> str:
-        return ("Available SHELL tools: execute_shell_command, get_working_directory, "
-                "change_directory, check_path_exists, check_command_available, "
-                "locate_command, get_shell_output, terminate_shell")
-    
-    def get_safety_reminder(self) -> str:
-        return (
-            "⚠️ Shell Safety:\n"
-            "- CONFIRM before: rm, del, rmdir, format\n"
-            "- NEVER run: format C:, del /s /q C:\\*, rm -rf /\n"
-            "- Use timeout for long commands"
-        )
-    
-    def get_parameter_reminder(self) -> str:
-        return (
-            "Parameter Reminder:\n"
-            "- execute_shell_command: command(required), working_dir(optional), timeout(optional), shell_type(optional)\n"
-            "- change_directory: path(required)\n"
-            "- check_path_exists: path(required)\n"
-            "- check_command_available: command(required)\n"
-            "- locate_command: command(required)\n"
-            "- get_shell_output: session_id(required)\n"
-            "- terminate_shell: session_id(required)"
-        )
 
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}

@@ -76,18 +76,6 @@ Example 4: Task completed
 }
 """
     
-    def get_available_tools_prompt(self) -> str:
-        return ("Available DESKTOP tools: list_windows, get_window_info, set_window_state, "
-                "get_mouse_position, check_screen_size, check_window_exists, "
-                "get_window_position, check_screen_capture_permission, "
-                "check_tesseract_available, check_notification_permission")
-    
-    def get_parameter_reminder(self) -> str:
-        return ("Parameter Reminder:\n"
-                "- get_window_info: title(required)\n"
-                "- set_window_state: title(required), state(required)\n"
-                "- check_window_exists: title(required)\n"
-                "- get_window_position: title(required)")
 
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}

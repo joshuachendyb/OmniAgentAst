@@ -71,9 +71,6 @@ Example 4: Task completed
 }
 """
     
-    def get_available_tools_prompt(self) -> str:
-        return "Available DATABASE tools: query_sql, execute_sql, get_db_schema"
-    
     def get_safety_reminder(self) -> str:
         return (
             "⚠️ Database Safety:\n"

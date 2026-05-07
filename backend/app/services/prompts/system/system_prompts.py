@@ -59,17 +59,6 @@ Example 2 - 任务完成:
 
 """
     
-    def get_available_tools_prompt(self) -> str:
-        return ("Available SYSTEM tools: get_system_info, net_connections, event_log, "
-                "list_processes, kill_process, service_list, service_start, service_stop, "
-                "task_list, task_create, task_delete, log_message, get_logs, "
-                "reg_read, reg_write, reg_delete")
-    
-    def get_safety_reminder(self) -> str:
-        return ("⚠️ System Safety:\n"
-                "- Confirm before: kill_process, reg_write, reg_delete, service_stop\n"
-                "- Registry changes are irreversible\n"
-                "- Do NOT kill critical system processes")
 
     def get_parameter_reminder(self) -> str:
         return (

@@ -53,11 +53,6 @@ Example 2 - 任务完成:
 
 """
     
-    def get_available_tools_prompt(self) -> str:
-        return ("Available DOCUMENT tools: read_pdf, read_docx, read_xlsx, read_pptx, "
-                "write_docx, write_xlsx, write_pdf, write_pptx, convert_document, "
-                "read_csv_dataframe, read_excel_dataframe, analyze_data, "
-                "generate_chart, filter_data")
 
     def get_safety_reminder(self) -> str:
         return "⚠️ Document Safety: write_docx overwrites existing files. Read before write to confirm."
