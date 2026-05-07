@@ -147,6 +147,17 @@ If an operation fails:
 - ❌ 禁止：在thought中分析参数是否必填而不调用
 - ✅ 正确：确认意图→直接调用→根据结果决定下一步"""
 
+    # 【2026-05-07 小沈】统一JSON输出格式，所有意图共享（对齐react_output_parser.py解析逻辑）
+    OUTPUT_FORMAT = """【Response Format - 必须遵守】:
+必须使用JSON格式输出，包含以下字段：
+- thought: 分析当前状态和下一步决策（禁止写确认性语言如"已成功"/"需要继续"）
+- reasoning: 为什么选这个工具、参数如何确定（必需，不能为空）
+- tool_name: 要调用的工具名
+- tool_params: 工具参数（无参数时为空对象{}）
+
+示例：
+{"thought": "用户询问当前时间", "reasoning": "调用get_current_time获取", "tool_name": "get_current_time", "tool_params": {"format": "%Y-%m-%d"}}"""
+
     def build_full_system_prompt(self) -> str:
         """
         构建完整的系统 Prompt

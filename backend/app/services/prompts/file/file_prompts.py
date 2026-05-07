@@ -252,18 +252,6 @@ Example 7: Task completed
 
 ---
 
-【Response Format】:
-Always format responses as JSON:
-{
-    "thought": "分析当前状态和下一步决策（禁止写‘已成功’/‘需要继续’等确认性语言）",
-    "reasoning": "为什么选这个工具、参数如何确定（必需，不能为空，禁止写确认性语言）",
-    "tool_name": "tool_name",
-    "tool_params": {
-        "param1": "value1",
-        "param2": "value2"
-    }
-}
-
 【⚠️ write_text_file text规则 - 极其重要】:
 - text参数必须传入实际的文件内容（代码、文本、正文等）
 - ❌ 绝对禁止将你的思考/计划/状态确认当作text传入

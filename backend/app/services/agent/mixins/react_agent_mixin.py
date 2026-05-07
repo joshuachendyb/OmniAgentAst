@@ -127,11 +127,16 @@ class ReactAgentMixin(ToolLoaderMixin):
 ⚠️ 禁止：任务完成后在回复中包含其他工具的tool_name，这会被解析为type=action导致死循环"""
 
     def _build_system_prompt(self, category_name: str) -> str:
-        """构建完整system prompt（base + candidates + cross + finish_rule）"""
+        """构建完整system prompt（base + output_format + candidates + cross + finish_rule）"""
         if hasattr(self, '_custom_system_prompt') and self._custom_system_prompt:
             return self._custom_system_prompt
+        from app.services.prompts.BasePromptTemplate import BasePrompts
         base = self.prompts.get_system_prompt()
-        return base + self._build_candidates_hint() + self._build_cross_tool_hint(category_name) + self._FINISH_RULE
+        return (base 
+                + BasePrompts.OUTPUT_FORMAT 
+                + self._build_candidates_hint() 
+                + self._build_cross_tool_hint(category_name) 
+                + self._FINISH_RULE)
     
     # ===== LLM调用 =====
     
