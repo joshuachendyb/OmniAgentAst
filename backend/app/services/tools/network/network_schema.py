@@ -83,7 +83,7 @@ class FetchWebpageInput(BaseModel):
         default=None, description="提取指令（可选）。默认提取页面核心内容、关键数据和摘要。LLM仅在需精准提取时传参"
     )
     extract_format: Literal["markdown", "html", "text"] = Field(
-        default="markdown", description="提取格式。可选值：markdown（默认，LLM处理效率高）、html（保留完整DOM结构）、text（纯文本）"
+        default="markdown", description="提取格式。可选值：markdown（LLM处理效率高）、html（保留完整DOM结构）、text（纯文本）。默认为markdown"
     )
     js_render: bool = Field(
         default=False, description="是否启用JS渲染（使用Playwright）。默认false（静态抓取）。true时使用Chromium渲染动态页面（SPA必备）"
@@ -95,7 +95,7 @@ class FetchWebpageInput(BaseModel):
         default=8000, ge=500, le=32000, description="最大返回Token数。默认8000。Agent按语义块边界智能截断，确保返回完整结构化文本"
     )
     user_agent: Optional[str] = Field(
-        default=None, description="自定义User-Agent。默认null，由Agent自动注入随机化标准浏览器UA"
+        default=None, description="自定义User-Agent。默认为自动注入随机化标准浏览器UA"
     )
     proxy: Optional[str] = Field(
         default=None, description="代理服务器地址。Agent执行三步走策略：1.优先直连尝试；2.失败则读取环境变量代理重试；3.均失败则报错"

@@ -231,11 +231,11 @@ class ServiceListInput(BaseModel):
     )
     state: Optional[Literal["running", "stopped", "all"]] = Field(
         default="all",
-        description="服务状态过滤（可选）。可选值：running（运行中）、stopped（已停止）、all（全部，默认值）。Agent 根据 query 语义自动映射，如问运行中的服务自动映射为 running"
+        description="服务状态过滤（可选）。可选值：running（运行中）、stopped（已停止）、all（全部）。Agent 根据 query 语义自动映射，如问运行中的服务自动映射为 running。默认为all"
     )
     output_format: Literal["json", "table"] = Field(
         default="json",
-        description="输出格式（可选）。可选值：json（默认，结构化数据）、table（人类可读表格）。Agent 根据下游需求自动切换，如需人类阅读则切换为 table"
+        description="输出格式（可选）。可选值：json（结构化数据）、table（人类可读表格）。Agent 根据下游需求自动切换，如需人类阅读则切换为 table。默认为json"
     )
 
 

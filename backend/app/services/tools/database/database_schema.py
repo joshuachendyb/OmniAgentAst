@@ -1,139 +1,104 @@
 # -*- coding: utf-8 -*-
 # DATABASE Schema - Database Tools Pydantic Models
+# 最后更新: 2026-05-08 小沈 小健 — 全部description改为中文 + "默认为X"格式
 
 from typing import Optional
 from pydantic import BaseModel, Field
 
 
 class QuerySqlInput(BaseModel):
-    """query_sql tool input - execute read-only SQL query
-    
-    Args from doc 7.1.2:
-    - sql: SQL query statement (required)
-    - limit: result row limit (optional), default 50
-    - timeout: timeout ms (optional), default 15000
-    - output_format: output format (optional), default table
-    - connection_type: database type (optional), default sqlite
-    - connection_string: MySQL/PostgreSQL connection string (optional)
-    - db_path: SQLite database file path (optional)
-    """
+    """query_sql 工具输入参数 - 执行只读 SQL 查询"""
     sql: str = Field(
         ...,
-        description="SQL query statement (required). Tool enforces read-only: SELECT/SHOW/DESCRIBE. Returns error for write ops."
+        description="SQL 查询语句。工具强制只读：仅允许 SELECT/SHOW/DESCRIBE，写入操作返回错误。必填参数"
     )
     limit: int = Field(
-        default=50,
-        ge=1,
-        le=10000,
-        description="Max result rows (optional), default 50. Prevents context explosion. Agent bypasses if SQL has LIMIT or LLM says all"
+        default=50, ge=1, le=10000,
+        description="最大返回行数，防止上下文爆炸。Agent 在 SQL 已有 LIMIT 或用户要求全部时自动绕过限制。默认为50"
     )
     timeout: int = Field(
-        default=15000,
-        ge=1000,
-        le=120000,
-        description="Timeout ms (optional), default 15000. Agent auto-triggers EXPLAIN if timeout or >5s, never blocks"
+        default=15000, ge=1000, le=120000,
+        description="超时毫秒数。超时或超过5秒时 Agent 自动触发 EXPLAIN。默认为15000（15秒）"
     )
     output_format: str = Field(
         default="table",
-        description="Output format (optional), default table. Values: table (human), json (structured). Agent auto-switches"
+        description="输出格式。可选值：table（人类可读表格）、json（结构化数据）。Agent 自动切换。默认为table"
     )
     connection_type: str = Field(
         default="sqlite",
-        description="Database type (optional). Values: sqlite (default), mysql, postgresql. Agent auto-detects from connection_string"
+        description="数据库类型。可选值：sqlite、mysql、postgresql。Agent 从 connection_string 自动检测。默认为sqlite"
     )
     connection_string: Optional[str] = Field(
         default=None,
-        description="MySQL/PostgreSQL connection string (optional). Example: user:pass@host:port/dbname"
+        description="MySQL/PostgreSQL 连接字符串。示例：user:pass@host:port/dbname。可选参数"
     )
     db_path: Optional[str] = Field(
         default=None,
-        description="SQLite database file path (optional). Example: D:/data/app.db"
+        description="SQLite 数据库文件路径。示例：D:/data/app.db。可选参数"
     )
 
 
 class ExecuteSqlInput(BaseModel):
-    """execute_sql tool input - execute write SQL
-    
-    Args from doc 7.1.2:
-    - sql: SQL write statement (required)
-    - dry_run: dry run mode (optional), default False
-    - timeout: timeout ms (optional), default 30000
-    - affected_rows_check: check affected rows (optional), default True
-    - connection_type: database type (optional), default sqlite
-    - connection_string: MySQL/PostgreSQL connection string (optional)
-    - db_path: SQLite database file path (optional)
-    """
+    """execute_sql 工具输入参数 - 执行写入 SQL"""
     sql: str = Field(
         ...,
-        description="SQL write statement (required). Supports INSERT/UPDATE/DELETE/DDL. Tool only supports single-statement auto-commit"
+        description="SQL 写入语句。支持 INSERT/UPDATE/DELETE/DDL，仅支持单语句自动提交。必填参数"
     )
     dry_run: bool = Field(
         default=False,
-        description="Dry run mode (optional), default False. If SQL has DROP/TRUNCATE/DELETE without WHERE, Agent forces True"
+        description="预检模式。True=只检查不执行。当 SQL 含 DROP/TRUNCATE/DELETE 且无 WHERE 时 Agent 强制设为 True。默认为False"
     )
     timeout: int = Field(
-        default=30000,
-        ge=1000,
-        le=120000,
-        description="Timeout ms (optional), default 30000. Write ops strictly monitored, auto-rollback on timeout"
+        default=30000, ge=1000, le=120000,
+        description="超时毫秒数。写入操作严格监控，超时自动回滚。默认为30000（30秒）"
     )
     affected_rows_check: bool = Field(
         default=True,
-        description="Check affected rows (optional), default True. Blocks only when affected >10000 without confirm"
+        description="受影响行数检查。仅当影响行数超过10000且未经用户确认时阻塞。默认为True"
     )
     connection_type: str = Field(
         default="sqlite",
-        description="Database type (optional). Values: sqlite (default), mysql, postgresql. Agent auto-detects from connection_string"
+        description="数据库类型。可选值：sqlite、mysql、postgresql。Agent 自动检测。默认为sqlite"
     )
     connection_string: Optional[str] = Field(
         default=None,
-        description="MySQL/PostgreSQL connection string (optional). Example: user:pass@host:port/dbname"
+        description="MySQL/PostgreSQL 连接字符串。示例：user:pass@host:port/dbname。可选参数"
     )
     db_path: Optional[str] = Field(
         default=None,
-        description="SQLite database file path (optional). Example: D:/data/app.db"
+        description="SQLite 数据库文件路径。示例：D:/data/app.db。可选参数"
     )
 
 
 class GetDbSchemaInput(BaseModel):
-    """get_db_schema tool input - get database schema - 小沈 2026-05-05 修复重复定义和多余字段
-    
-    Args from doc 7.1.2:
-    - db_name: target database name (optional)
-    - filter_pattern: table filter pattern (optional)
-    - include_details: include details (optional), default False  
-    - output_format: output format (optional), default markdown
-    - connection_type: database type (optional), default sqlite
-    - connection_string: MySQL/PostgreSQL connection string (optional)
-    - db_path: SQLite database file path (optional)
-    """
+    """get_db_schema 工具输入参数 - 获取数据库结构"""
     db_name: Optional[str] = Field(
         default=None,
-        description="Target database name (optional). Default None reads current connection. Agent auto-switches if specified"
+        description="目标数据库名称。Agent 自动切换。默认为当前连接数据库"
     )
     filter_pattern: Optional[str] = Field(
         default=None,
-        description="Table filter pattern (optional). Supports SQL LIKE syntax like user%. Agent auto-injects LIKE filter"
+        description="表名过滤模式，支持 SQL LIKE 语法如 user%。Agent 自动注入 LIKE 过滤。可选参数"
     )
     include_details: bool = Field(
         default=False,
-        description="Include detailed index/foreign key/constraint info (optional), default False. Max 20 tables to prevent context explosion"
+        description="是否包含索引/外键/约束等详细信息。最多返回20张表防上下文爆炸。默认为False"
     )
     output_format: str = Field(
         default="markdown",
-        description="Output format (optional), default markdown. Values: markdown, json, sql_ddl. Agent auto-switches"
+        description="输出格式。可选值：markdown、json、sql_ddl。Agent 自动切换。默认为markdown"
     )
     connection_type: str = Field(
         default="sqlite",
-        description="Database type (optional). Values: sqlite (default), mysql, postgresql. Agent auto-detects from connection_string"
+        description="数据库类型。可选值：sqlite、mysql、postgresql。Agent 自动检测。默认为sqlite"
     )
     connection_string: Optional[str] = Field(
         default=None,
-        description="MySQL/PostgreSQL connection string (optional). Example: user:pass@host:port/dbname"
+        description="MySQL/PostgreSQL 连接字符串。示例：user:pass@host:port/dbname。可选参数"
     )
     db_path: Optional[str] = Field(
         default=None,
-        description="SQLite database file path (optional). Example: D:/data/app.db"
+        description="SQLite 数据库文件路径。示例：D:/data/app.db。可选参数"
     )
 
 

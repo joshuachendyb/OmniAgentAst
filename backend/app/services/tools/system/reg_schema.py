@@ -37,10 +37,10 @@ class RegReadInput(BaseModel):
         default=None, description="值名称（可选）。不填则返回键的默认值。Agent 可自动列出该键下所有值"
     )
     hive: Literal["HKCU", "HKLM", "HKCR", "HKU", "HKCC"] = Field(
-        default="HKCU", description="注册表根键。可选值：HKCU（默认）、HKLM、HKCR、HKU、HKCC。若 key_path 已含前缀则忽略此参数"
+        default="HKCU", description="注册表根键。可选值：HKCU、HKLM、HKCR、HKU、HKCC。若 key_path 已含前缀则忽略此参数。默认为HKCU"
     )
     output_format: Literal["auto", "raw", "hex"] = Field(
-        default="auto", description="输出格式。可选值：auto（默认，按类型自动格式化）、raw（原始类型标识）、hex（强制 Hex 字符串）"
+        default="auto", description="输出格式。可选值：auto（按类型自动格式化）、raw（原始类型标识）、hex（强制 Hex 字符串）。默认为auto"
     )
 
 

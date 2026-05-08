@@ -282,7 +282,7 @@ class CompressFilesInput(BaseModel):
     split_size: Optional[int] = Field(
         default=None,
         ge=1024,
-        description="分卷大小（字节）。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（不分卷）。含义：\n- None表示不分卷\n- 数值表示分卷大小，例如1048576（1MB）\n用于大文件分卷压缩，便于网络传输。"
+        description="分卷大小（字节）。用于大文件分卷压缩，便于网络传输。含义：\n- None=不分卷（默认）\n- 数值=分卷大小，例如1048576（1MB）。默认为不分卷"
     )
 
 
@@ -294,7 +294,7 @@ class ExtractArchiveInput(BaseModel):
     )
     output_dir: Optional[str] = Field(
         default=None,
-        description="解压目标目录（可选）。默认 null，Agent 自动创建与压缩包同名（去后缀）的隔离文件夹"
+        description="解压目标目录（可选）。默认为自动创建与压缩包同名（去后缀）的隔离文件夹"
     )
     overwrite: bool = Field(
         default=False,
@@ -352,7 +352,7 @@ class FileMonitorInput(BaseModel):
     duration: Optional[int] = Field(
         default=None,
         ge=1,
-        description="监控持续时间（秒），None表示持续监控直到手动停止"
+        description="监控持续时间（秒）。默认为持续监控直到手动停止"
     )
 
 

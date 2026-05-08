@@ -24,7 +24,7 @@ class ExecutePythonInput(BaseModel):
         default=30, ge=1, le=300, description="超时时间（秒），默认为30秒，最大300秒"
     )
     working_dir: Optional[str] = Field(
-        default=None, description="工作目录（可选）。如果为None则使用当前工作目录"
+        default=None, description="工作目录（可选）。默认为当前工作目录"
     )
 
 
@@ -37,7 +37,7 @@ class ExecuteJavascriptInput(BaseModel):
         default=30, ge=1, le=300, description="超时时间（秒），默认为30秒，最大300秒"
     )
     working_dir: Optional[str] = Field(
-        default=None, description="工作目录（可选）。如果为None则使用当前工作目录"
+        default=None, description="工作目录（可选）。默认为当前工作目录"
     )
 
 
