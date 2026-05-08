@@ -107,7 +107,6 @@ DESCRIPTIONS = {
 - sheet_name：工作表名称（可选），默认第一个
 - max_rows：最大读取行数（可选），默认 1000
 - header：第一行是否为表头（可选），默认 true
-- index_col：第一列是否为索引（可选），默认 false
 
 【返回数据】
 - code: SUCCESS / ERR_READ_XLSX / ERR_NO_OPENPYXL
@@ -204,7 +203,7 @@ DESCRIPTIONS = {
  
 【参数说明】
 - input_path：输入文件路径（必填）。支持 .docx/.doc/.xlsx/.xls/.pptx/.ppt/.odt/.ods
-- output_format：目标格式（必填）。当前仅支持 "pdf"
+- output_format：目标格式（可选），默认 pdf。当前仅支持 "pdf"
 - output_path：输出文件路径（可选）。默认与输入同目录
  
 【返回数据】

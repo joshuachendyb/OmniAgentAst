@@ -108,6 +108,8 @@ DESCRIPTIONS = {
 - sort_by：排序字段（可选）。按指定列排序
 - sort_ascending：升序/降序（可选）。默认 True 升序
 - top_n：返回前N条（可选）。如 top_n=10 返回前10条
+- encoding：文件编码（可选）。当data为文件路径时使用，中文文件→gbk。默认 utf-8
+- max_rows：最大读取行数（可选）。当data为文件路径时使用，None=全部读取
 
 【重要】需要安装 pandas 库
 
