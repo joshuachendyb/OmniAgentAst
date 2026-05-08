@@ -24,10 +24,8 @@ from app.services.agent.tool_executor import ToolExecutor
 from app.services.agent.types import Step, AgentResult, AgentStatus
 from app.services.agent.llm_strategies import TextStrategy, ToolsStrategy, ResponseFormatStrategy
 from app.services.agent.llm_adapter import LLMAdapter
-from app.services.tools.file.file_tools import FileTools
 from app.services.prompts.file.file_prompts import FileOperationPrompts
-from app.services.agent.session import get_session_service
-from app.services.tools.mixin import ToolLoaderMixin
+from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin  # 【步骤5改用ReactAgentMixin】
 from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
 from app.utils.prompt_logger import get_prompt_logger
@@ -36,7 +34,7 @@ from app.chat_stream.chat_helpers import create_final_response, create_timestamp
 from app.chat_stream.error_handler import create_error_response
 
 
-class FileReactAgent(ToolLoaderMixin, BaseAgent):
+class FileReactAgent(ReactAgentMixin, BaseAgent):
     """
     文件操作 ReAct Agent - 使用tool_category参数
     参考: 7.4节行956-1051
@@ -48,8 +46,8 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
     def __init__(
         self,
         llm_client: Any,
-        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
-        # session_id 专用于会话场景，操作追踪必须用 task_id
+        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 task_id
+        # task_id 专用于会话场景，操作追踪必须用 task_id
         task_id: str,
         tool_category: Optional[ToolCategory] = None,
         max_steps: int = DEFAULT_MAX_STEPS,
@@ -63,7 +61,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         Args:
             llm_client: LLM 客户端函数
             task_id: 任务ID（必需）- 用于操作安全追踪和审计
-            # 【禁止】不要使用 session_id，会话和操作追踪是不同概念
+            # 【禁止】不要使用 task_id，会话和操作追踪是不同概念
             tool_category: 工具分类（可选，默认FILE）
             max_steps: 最大步数
             candidates: 候选意图列表（如 ["file", "chat"]），用于跨分类工具访问
@@ -84,14 +82,8 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
             **kwargs
         )
         
-        # 初始化 session 服务（用于统一管理会话生命周期）
-        self.session_service = get_session_service()
-        
-        # 【修复】标记 session 是否由本 Agent 创建（用于正确关闭）
-        self._session_created_by_agent = False
-        
-        # 初始化文件工具确保 task_id 正确传递
-        self.file_tools = FileTools(task_id=task_id)  # 【修改】session_id → task_id，2026-04-26 小沈
+        # 【步骤6】使用ReactAgentMixin的任务追踪管理
+        self._init_task_tracking(enable=True)
         
         # 【修复 2026-04-30 小沈】使用Mixin的 load_tools_by_category（原 _load_tools 改名，消除MRO遮蔽）
         if self.tool_category:
@@ -174,13 +166,13 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
             except Exception as e:
                 logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
             
-            # 【调试】记录发送给LLM的messages
-            logger.info(f"[Debug] _get_llm_response - conversation_history长度: {len(self.conversation_history)}")
-            logger.info(f"[Debug] _get_llm_response - history_dicts长度: {len(history_dicts)}")
+            # 【调试】记录发送给LLM的messages - 小沈2026-05-06改为debug
+            logger.debug(f"[Debug] _get_llm_response - conversation_history长度: {len(self.conversation_history)}")
+            logger.debug(f"[Debug] _get_llm_response - history_dicts长度: {len(history_dicts)}")
             for i, h in enumerate(history_dicts):
-                logger.info(f"[Debug] history[{i}] role={h.get('role')}, content长度={len(h.get('content', ''))}")
-            logger.info(f"[Debug] _get_llm_response - last_message长度: {len(last_message)}")
-            logger.info(f"[Debug] _get_llm_response - last_message内容: {last_message[:200]}")
+                logger.debug(f"[Debug] history[{i}] role={h.get('role')}, content长度={len(h.get('content', ''))}")
+            logger.debug(f"[Debug] _get_llm_response - last_message长度: {len(last_message)}")
+            logger.debug(f"[Debug] _get_llm_response - last_message内容: {last_message[:200]}")
             
             # 【修改】使用 LLMAdapter 自适应策略
             if self.adapter:
@@ -195,7 +187,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
                         conversation_history=self.conversation_history
                     )
                 elif strategy.method == "tools":
-                    self.tools_strategy.tools = self.tools or []
+                    self.tools_strategy.tools = self.openai_tools or []
                     response = await self.tools_strategy.call(
                         llm_client=self.llm_client,
                         message=last_message,
@@ -209,9 +201,9 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
                         history_dicts=history_dicts,
                         conversation_history=self.conversation_history
                     )
-            elif self.use_function_calling and self.tools:
+            elif self.use_function_calling and self.openai_tools:
                 # 使用 Function Calling 模式
-                self.tools_strategy.tools = self.tools
+                self.tools_strategy.tools = self.openai_tools
                 response = await self.tools_strategy.call(
                     llm_client=self.llm_client,
                     message=last_message,
@@ -269,7 +261,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         history_dicts: List[Dict[str, str]]
     ) -> str:
         """获取 LLM 响应（Function Calling 模式）- 使用策略类"""
-        self.tools_strategy.tools = self.tools or []
+        self.tools_strategy.tools = self.openai_tools or []
         return await self.tools_strategy.call(
             llm_client=self.llm_client,
             message=message,
@@ -284,9 +276,6 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
     ) -> Dict[str, Any]:
         """
         执行工具的抽象方法实现
-        
-        【关键】直接使用 self.file_tools（有正确 task_id），
-        而不是通过 executor（executor 用的是 registry 里没有 task_id 的工具）
         
         【2026-04-27 小沈修复】：调用 _normalize_params 做参数别名映射
         【2026-04-28 小沈修复】：添加工具名映射，支持 create_dir → create_directory
@@ -308,59 +297,34 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         # 【2026-04-27 小沈新增】标准化参数（别名映射）
         normalized_params = self.executor._normalize_params(action, params)
         logger.info(f"[file_react._execute_tool] action={action}, 原params={params}, 标准化后={normalized_params}")
-
-        # 【2026-04-30 小沈修复】跨分类工具支持
-        # 先尝试从 self.file_tools 查找（有正确 task_id，用于操作安全追踪）
-        tool_method = getattr(self.file_tools, action, None)
-        if tool_method:
-            return await tool_method(**normalized_params)
-
-        # 未在 FILE 工具中找到 → 跨分类 fallback：通过 executor 从全局 registry 查找
-        # executor.execute() 内部会优先查本地字典，再 fallback 到 tool_registry.get_implementation()
-        logger.info(f"[file_react._execute_tool] 跨分类fallback: {original_action} → ToolExecutor")
+        
+        # 通过 executor 从全局 registry 查找工具（内部会优先查本地字典，再 fallback 到 tool_registry.get_implementation()）
+        logger.info(f"[file_react._execute_tool] 使用ToolExecutor: {original_action}")
         return await self.executor.execute(original_action, params)
     
     # ===== 实现父类抽象方法 =====
     
     def _get_system_prompt(self) -> str:
-        """获取系统 Prompt（含跨工具提示 + 候选意图）"""
-        if hasattr(self, '_custom_system_prompt') and self._custom_system_prompt:
-            return self._custom_system_prompt
-        base = self.prompts.get_system_prompt()
-        candidates_hint = ""
-        if self._candidates:
-            candidates_list = ", ".join(self._candidates)
-            candidates_hint = (
-                f"\n\n【候选意图】已识别出以下可能的意图类别: {candidates_list}。"
-                "你可以根据实际任务需要，访问任意候选分类的工具。"
-            )
-        cross_tool_hint = (
-            "\n\n【注意】除了文件操作工具，你还可以使用其他分类的工具。"
-            "例如：创建脚本后可以用 execute_command 来运行它，"
-            "需要时间信息时可以用 get_current_time 等。"
-            "根据任务需要自由选择合适的工具，不受初始分类限制。"
-        )
-        return base + candidates_hint + cross_tool_hint
+        """获取系统 Prompt（含跨工具提示 + 候选意图）- 小沈2026-05-06改用Mixin动态方法"""
+        return self._build_system_prompt("文件操作")
     
     def _get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         """获取任务 Prompt"""
-        return self.prompts.get_task_prompt(task, context)
+        return self.prompts.get_task_prompt(task)
     
     # ===== 实现父类 Hook 方法 =====
     
     def _on_session_init(self, task: str, context: Optional[Dict[str, Any]]):
         """Session 初始化 Hook"""
         # 确保 session 存在
-        session_id = self.task_id
-        if not session_id:
-            session_id = self.session_service.create_session(
+        task_id = self.task_id
+        if not task_id:
+            task_id = self._task_tracker.create_task(
                 agent_id="file-operation-agent",
                 task_description=task
             )
-            self._session_created_by_agent = True
-            if hasattr(self.file_tools, 'set_session'):
-                self.file_tools.set_session(session_id)
-            logger.info(f"Session created in run_stream(): {session_id}")
+            self._task_created_by_agent = True
+            logger.info(f"Task created in run_stream(): {task_id}")
     
     def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
         """循环开始前 Hook - 无操作，日志记录已由上层处理"""
@@ -368,11 +332,11 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
     
     def _on_after_loop(self):
         """循环结束后 Hook - 关闭 Session"""
-        if self._session_created_by_agent and self.task_id and self.session_service:
+        if self._task_created_by_agent and self.task_id and self._task_tracker:
             try:
-                self.session_service.complete_session(self.task_id, success=True)
+                self._task_tracker.complete_task(self.task_id, success=True)
                 logger.info(f"Session completed in run_stream: {self.task_id}")
-                self._session_created_by_agent = False
+                self._task_created_by_agent = False
             except Exception as e:
                 logger.error(f"Failed to complete session {self.task_id}: {e}")
     
@@ -402,9 +366,9 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
             Agent 执行结果
         """
         async with self._lock:
-            return await self._run_with_session(task, context, system_prompt)
+            return await self._run_with_task_tracking(task, context, system_prompt)
     
-    async def _run_with_session(
+    async def _run_with_task_tracking(
         self,
         task: str,
         context: Optional[Dict[str, Any]] = None,
@@ -421,24 +385,22 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
         
         【说明】意图识别已移至路由层（chat_router.py），此处只做文件操作
         """
-        # 获取 session_id 用于日志追踪
-        session_id = self.task_id or ""
+        # 获取 task_id 用于日志追踪
+        task_id = self.task_id or ""
         
-        # 使用局部变量管理 session（session_id 在预处理前已获取）
+        # 使用局部变量管理 session（task_id 在预处理前已获取）
         session_created_by_this_run = False
         
         # 确保 session 已创建
-        if not session_id:
-            session_id = self.session_service.create_session(
+        if not task_id:
+            task_id = self._task_tracker.create_task(
                 agent_id="file-operation-agent",
                 task_description=task
             )
             session_created_by_this_run = True
-            self._session_created_by_agent = True
+            self._task_created_by_agent = True
             
-            if hasattr(self.file_tools, 'set_session'):
-                self.file_tools.set_session(session_id)
-            logger.info(f"Session created in run(): {session_id}")
+            logger.info(f"Session created in run(): {task_id}")
         
         # 【重构 2026-03-31】调用父类 run_stream() 统一执行 ReAct 循环
         # 消除与 base_react.py 的重复实现，确保行为一致
@@ -454,7 +416,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
                         message=event.get("content", "Task completed successfully"),
                         steps=self.steps,
                         total_steps=len(self.steps),
-                        session_id=session_id,
+                        task_id=self.task_id,
                         final_result=event.get("content")
                     )
                 elif event_type == "error":
@@ -464,7 +426,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
                         message=event.get("message", "Execution failed"),
                         steps=self.steps,
                         total_steps=len(self.steps),
-                        session_id=session_id,
+                        task_id=task_id,
                         error=event.get("message")
                     )
             
@@ -475,7 +437,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
                     message=f"Exceeded maximum steps ({self.max_steps})",
                     steps=self.steps,
                     total_steps=len(self.steps),
-                    session_id=session_id,
+                    task_id=task_id,
                     error="Maximum steps exceeded"
                 )
             
@@ -488,22 +450,22 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
                 message=f"Execution failed: {str(e)}",
                 steps=self.steps,
                 total_steps=len(self.steps),
-                session_id=session_id,
+                task_id=task_id,
                 error=str(e)
             )
             return result
             
         finally:
             # 只关闭由本次 run 创建的 session
-            if session_created_by_this_run and session_id and self.session_service:
+            if session_created_by_this_run and task_id and self._task_tracker:
                 try:
                     success = result.success if result else False
-                    self.session_service.complete_session(session_id, success=success)
-                    logger.info(f"Session completed: {session_id} (success={success})")
-                    self._session_created_by_agent = False
+                    self._task_tracker.complete_task(task_id, success=success)
+                    logger.info(f"Session completed: {task_id} (success={success})")
+                    self._task_created_by_agent = False
                     self.task_id = None
                 except Exception as e:
-                    logger.error(f"Failed to complete session {session_id}: {e}")
+                    logger.error(f"Failed to complete session {task_id}: {e}")
     
     async def rollback(self, step_number: Optional[int] = None) -> bool:
         """
@@ -521,9 +483,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
             
             if step_number is None:
                 # 回滚整个会话
-                result = await asyncio.to_thread(
-                    self.file_tools.safety.rollback_session, self.task_id
-                )
+                result = await self.executor.execute('rollback_session', {'task_id': self.task_id})
                 success = result.get("success", 0) > 0
             else:
                 # 回滚到指定步骤
@@ -538,9 +498,7 @@ class FileReactAgent(ToolLoaderMixin, BaseAgent):
                     result_data = observation.get("result", {}) if isinstance(observation, dict) else {}
                     operation_id = result_data.get("operation_id")
                     if operation_id:
-                        step_success = await asyncio.to_thread(
-                            self.file_tools.safety.rollback_operation, operation_id
-                        )
+                        step_success = await self.executor.execute('rollback_operation', {'operation_id': operation_id})
                         success = success and step_success
                     else:
                         raise ValueError(f"No operation_id found for step {step.step_number}")

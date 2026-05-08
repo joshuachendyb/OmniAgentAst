@@ -41,6 +41,9 @@ from app.services.agent.reasoning_steps import (
     ErrorStep,
 )
 from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
+from app.services.agent.types import AgentStatus
+from app.services.agent.types.react_schema import get_tools_schema_for_categories  # 【步骤9】动态加载Schema
+from app.services.preprocessing.intent_classifier import IntentClassifier  # 【步骤9】意图分类器
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
 from app.chat_stream.incident_handler import create_incident_data
@@ -111,8 +114,16 @@ class BaseAgent(ABC):
         self.parse_retry_count = 0  # 解析重试计数器
         self.max_parse_retries = 3   # 最大重试次数
         
+        # 【修复 2026-05-05 小沈】空响应重试相关参数
+        self.empty_response_retry_count = 0  # 空响应重试计数器
+        self.max_empty_response_retries = 2  # 空响应最大重试次数（截断历史后重试）
+        
         # 【Phase1修复】从registry加载工具
         self._tools_dict = self._load_tools()
+        self._loaded_categories = set()  # 【步骤9】已加载的分类，用于动态加载
+        
+        # 【步骤9】意图分类器初始化（用于更可靠检测）
+        self._intent_classifier = None   # 意图分类器（用于更可靠检测）
         
         # 创建工具执行器
         self.executor = None  # 子类应初始化
@@ -177,6 +188,7 @@ class BaseAgent(ABC):
     def _on_before_loop(self, sys_prompt: str, task_prompt: str, context: Optional[Dict[str, Any]] = None):
         """
         循环开始前 Hook
+        
         子类可覆盖：做 prompt 日志等
         
         【修复 2026-04-30 小沈】添加 context 参数，与子类 FileReactAgent 签名一致
@@ -186,9 +198,152 @@ class BaseAgent(ABC):
     def _on_after_loop(self):
         """
         循环结束后 Hook
+        
         子类可覆盖：做 session 关闭等
         """
         pass
+    
+    # ===== 步骤9：动态加载工具相关方法（文档4.14节）=====
+    
+    def load_tools_by_intent(self, intent_type: str, reason: str = ""):
+        """
+        动态加载某个意图的工具
+        
+        参考：文档4.14节步骤9代码示例
+        
+        Args:
+            intent_type: 意图类型（file/time/shell/network等）
+            reason: 加载原因（用于日志）
+        """
+        if intent_type in self._loaded_categories:
+            return  # 已加载
+        
+        logger.info(f"[动态加载] 原因: {reason}，加载意图: {intent_type}")
+        
+        # 1. 获取该意图的工具
+        try:
+            category = ToolCategory(intent_type)
+            new_tools = get_tools_from_registry_by_category(category)
+        except ValueError as e:
+            logger.warning(f"[动态加载] 意图'{intent_type}'无对应工具分类: {e}")
+            return
+        
+        # 2. 添加到_tools_dict
+        self._tools_dict.update(new_tools)
+        self._loaded_categories.add(intent_type)
+        
+        # 3. 重新生成tools_schema（给LLM看）
+        self._refresh_tools_schema()
+        
+        logger.info(f"[动态加载] 完成，新增{len(new_tools)}个工具，总计{len(self._tools_dict)}个")
+    
+    def _refresh_tools_schema(self):
+        """重新生成tools_schema"""
+        # 根据当前已加载的分类，生成Schema
+        categories = list(self._loaded_categories)
+        self._tools_schema = get_tools_schema_for_categories(categories)
+        
+        # 同时更新system prompt，告知LLM新增了工具
+        self._update_system_prompt_with_tools()
+    
+    def _update_system_prompt_with_tools(self):
+        """更新system prompt，告知LLM新增了工具"""
+        # 获取当前工具的简要清单
+        tool_names = list(self._tools_dict.keys())
+        if not tool_names:
+            return
+        
+        tool_hint = f"\n【工具更新】当前可用工具: {', '.join(tool_names[:10])}"
+        if len(tool_names) > 10:
+            tool_hint += f" 等{len(tool_names)}个工具"
+        
+        # 注意：实际实现中，这个方法可能被子类覆盖
+        # 基类只提供默认实现
+        pass
+    
+    async def _check_and_load_missing_tools(self, observation: str, llm_client=None):
+        """
+        在Observation阶段，检测是否需要新工具（改进版）
+        
+        参考：文档4.14节步骤9代码示例
+        改进方案：结合LLM判断 + 关键词检测
+        
+        Args:
+            observation: LLM返回的observation内容
+            llm_client: LLM客户端（用于LLM判断）
+        """
+        # 方案1：LLM判断（更可靠，推荐）
+        if llm_client and self._intent_classifier:
+            try:
+                # 使用意图分类器重新检测
+                # labels应该是所有可能的意图类型
+                from app.services.tools.registry import ToolCategory
+                labels = [cat.value for cat in ToolCategory]
+                
+                result = await self._intent_classifier.classify(observation, labels)
+                new_intent = result.get("intent")
+                confidence = result.get("confidence", 0)
+                
+                if (new_intent and new_intent not in self._loaded_categories 
+                        and confidence >= 0.3):
+                    # 否定词检测：避免"不要执行shell"误触发
+                    if self._should_trigger_dynamic_load(observation, new_intent):
+                        self.load_tools_by_intent(
+                            new_intent, 
+                            reason=f"LLM检测新意图: {new_intent}(置信度{confidence:.2f})"
+                        )
+                    return
+            except Exception as e:
+                logger.warning(f"[动态加载] LLM判断失败，降级到关键词: {e}")
+        
+        # 方案2：关键词检测（降级方案）
+        trigger_keywords = {
+            "network": ["ping ", "http", "下载", "网络", "url", "curl", "wget"],
+            "desktop": ["截图", "截屏", "窗口", "鼠标点击", "键盘输入"],
+            "shell": ["执行命令", "npm ", "pip ", "git ", "docker "],
+            "database": ["数据库", "SQL", "查询", "SELECT", "INSERT"],
+            "env": ["环境变量", "PATH", "JAVA_HOME"],
+            "system": ["系统信息", "CPU", "内存", "磁盘"],
+        }
+        
+        for intent, keywords in trigger_keywords.items():
+            if any(kw in observation for kw in keywords):
+                # 否定词检测：避免"不要执行shell"误触发
+                if self._should_trigger_dynamic_load(observation, intent):
+                    if intent not in self._loaded_categories:
+                        self.load_tools_by_intent(
+                            intent, 
+                            reason=f"Observation关键词检测: {keywords}"
+                        )
+                        return  # 一次只加载一个，避免混乱
+    
+    def _should_trigger_dynamic_load(self, observation: str, intent: str) -> bool:
+        """
+        判断是否应该触发动态加载（包含否定词检测）
+        
+        参考：文档4.14节步骤9缺陷7修正
+        避免"不要执行shell"误触发
+        
+        Args:
+            observation: LLM返回的observation内容
+            intent: 检测的意图类型
+        Returns:
+            bool: 是否应该触发动态加载
+        """
+        # 否定词列表（表示否定的词语）
+        negation_words = [
+            "不要", "不需要", "别", "禁止", "不可以", "不能", 
+            "don't", "donot", "cannot", "should not", "not to"
+        ]
+        
+        # 检查observation中是否包含否定词
+        has_negation = any(neg in observation.lower() for neg in negation_words)
+        
+        if has_negation:
+            logger.info(f"[动态加载] 检测到否定词，不触发{intent}工具加载")
+            return False
+        
+        return True
     
     # ===== 核心方法（子类调用）=====
     
@@ -298,12 +453,38 @@ class BaseAgent(ABC):
                 
                 # ===== 场景2：LLM返回空响应 =====
                 if not response:
-                    logger.error(f"LLM返回空响应: {response}")
-                    # 【步骤3.2】直接ErrorStep→return
+                    self.empty_response_retry_count += 1
+                    logger.error(
+                        f"[空响应] LLM返回空响应 (第{self.empty_response_retry_count}次重试), "
+                        f"history长度={len(self.conversation_history)}"
+                    )
+                    
+                    if self.empty_response_retry_count <= self.max_empty_response_retries:
+                        # 【修复 2026-05-05 小沈】截断历史重试
+                        original_len = len(self.conversation_history)
+                        if original_len > 4:
+                            # 保留system prompt(前2条) + 最近2条，删除中间的
+                            kept = self.conversation_history[:2] + self.conversation_history[-2:]
+                            removed_len = original_len - len(kept)
+                            self.conversation_history = kept
+                            logger.warning(
+                                f"[空响应截断历史] 从{original_len}条截断到{len(kept)}条, "
+                                f"移除{removed_len}条中间历史, 准备重试"
+                            )
+                            # 发送重试提示事件
+                            retrying_data = create_incident_data(
+                                incident_value="retrying",
+                                message=f"AI返回空响应，已压缩对话历史重试（第{self.empty_response_retry_count}次）"
+                            )
+                            yield retrying_data
+                            continue
+                        else:
+                            logger.warning("[空响应] 历史已很短无法截断，直接报错")
+                    # 重试次数用尽或历史太短，报错退出
                     error_step = StepFactory.create_error_step(
                         step=step_count,
                         error_type="empty_response",
-                        error_message="AI服务返回空响应",
+                        error_message=f"AI服务返回空响应（已重试{self.empty_response_retry_count}次）",
                         recoverable=False
                     )
                     self.steps.append(error_step)
@@ -313,6 +494,9 @@ class BaseAgent(ABC):
                 
                 # ===== 场景4：解析响应并获取结果 =====  # 修复 2026-04-15 小沈
                 parsed = parse_react_response(response)
+                
+                # 【修复 2026-05-05 小沈】成功获取响应，重置空响应计数器
+                self.empty_response_retry_count = 0
                 
                 # ===== 先获取 parsed 结果 =====
                 thought_content = parsed.get("content", "")
@@ -329,29 +513,23 @@ class BaseAgent(ABC):
                     
                     # 提取 thought_content 和 answer_response
                     thought_content = parsed.get("content", "")
+                    # 【修复 2026-05-07 小沈】response取值链：response → tool_params.result → content → reasoning
                     answer_response = parsed.get("response", "")
+                    if not answer_response or not answer_response.strip():
+                        answer_response = parsed.get("tool_params", {}).get("result", "") if isinstance(parsed.get("tool_params"), dict) else ""
+                    if not answer_response or not answer_response.strip():
+                        answer_response = parsed.get("content", "")
+                    if not answer_response or not answer_response.strip():
+                        answer_response = parsed.get("reasoning", "")
                     
-                    # 【步骤3.4】在退出前，如果存在thought内容，先yield一个ThoughtStep
-                    # 确保前端能即时显示AI的思考过程
-                    if thought_content and thought_content.strip():
-                        # 2026-05-01 小强修改：thought不兜底thought_content，避免和content重复
-                        thought_step = StepFactory.create_thought_step(
-                            step=step_count,
-                            content=thought_content,
-                            tool_name="finish",
-                            tool_params={},
-                            thought=parsed.get("thought", ""),
-                            reasoning=parsed.get("reasoning", "")
-                        )
-                        self.steps.append(thought_step)
-                        yield thought_step.to_dict()
-
-                    # 2026-05-01 小强修改：thought和response各归各位，不生搬硬套重复
+                    # 【修复 2026-05-05 小沈】finish时直接yield final，不再先yield thought
+                    _reasoning = parsed.get("reasoning", "")
                     final_step = StepFactory.create_final_step(
                         step=step_count,
                         response=answer_response,
-                        thought=parsed.get("thought", ""),
-                        is_finished=True
+                        thought=_reasoning,
+                        model=getattr(self, 'model', None),
+                        provider=getattr(self, 'provider', None)
                     )
                     self.steps.append(final_step)
                     yield final_step.to_dict()
@@ -369,12 +547,16 @@ class BaseAgent(ABC):
                     self.parse_retry_count = 0
                     
                     # 【步骤2.9】使用StepFactory创建ThoughtStep
+                    # 【修复 2026-05-05 小沈】thought去重拼接：相同则不拼
+                    _thought_val = thought_content
+                    if thought and thought.strip():
+                        _thought_val = thought if thought == thought_content else (thought + "\n" + thought_content).strip()
                     thought_step = StepFactory.create_thought_step(
                         step=step_count,
-                        content=thought_content,
+                        content="",
                         tool_name="",
                         tool_params={},
-                        thought=thought,
+                        thought=_thought_val,
                         reasoning=parsed.get("reasoning", "")
                     )
                     
@@ -436,12 +618,16 @@ class BaseAgent(ABC):
                 self.parse_retry_count = 0
 
                 # 【步骤2.9】使用StepFactory创建ThoughtStep
+                # 【修复 2026-05-05 小沈】thought去重拼接：thought和thought_content相同则不拼
+                _thought_val = thought_content
+                if thought and thought.strip():
+                    _thought_val = thought if thought == thought_content else (thought + "\n" + thought_content).strip()
                 thought_step = StepFactory.create_thought_step(
                     step=step_count,
-                    content=thought_content,
+                    content="",
                     tool_name=tool_name,
                     tool_params=tool_params,
-                    thought=thought,
+                    thought=_thought_val,
                     reasoning=reasoning
                 )
 
@@ -621,7 +807,12 @@ class BaseAgent(ABC):
 
                 # yield带警告的版本给前端
                 yield observation_step.to_dict()
-
+                
+                # 【步骤9】检查是否需要动态加载新工具
+                # 在Observation之后、下一轮LLM调用前检查
+                # observation_text 是行712-744构建的observation内容
+                await self._check_and_load_missing_tools(observation_text, self.llm_client)
+                
                 # 【步骤3.6】核心设计: observation_step.is_done() 决定是否直接结束任务
                 if observation_step.is_done():
                     # return_direct 时生成 FinalStep 并退出
@@ -629,7 +820,8 @@ class BaseAgent(ABC):
                         step=step_count,
                         response=str(execution_result.get("data", "")),
                         thought="工具执行要求直接返回结果",
-                        is_finished=True
+                        model=getattr(self, 'model', None),
+                        provider=getattr(self, 'provider', None)
                     )
                     self.steps.append(final_step)
                     yield final_step.to_dict()
@@ -732,8 +924,101 @@ class BaseAgent(ABC):
 
     # ===== 通用方法 =====
 
+    # 【升级 2026-05-05 小沈】智能observation截断策略
+    # 方案D: 首尾保留+智能摘要 + 动态递减预算
+    CONTEXT_WINDOW_SIZE = 200000  # 上下文窗口大小（字符数，约200K tokens）
+    OBSERVATION_BUDGET_INITIAL = 150000  # 第1轮observation最大长度
+    OBSERVATION_BUDGET_DECAY = 10000  # 每增加1轮，预算减少10K
+    OBSERVATION_BUDGET_MIN = 20000  # 最低预算，不低于20K
+    OBSERVATION_HEAD_RATIO = 0.6  # 头部保留比例（60%给头部，40%给尾部）
+    OBSERVATION_SUMMARY_THRESHOLD = 50000  # 超过此长度时启用智能摘要
+
+    def _get_observation_budget(self) -> int:
+        """根据当前轮数动态计算observation可用预算
+
+        策略：初始150K，每轮递减10K，最低20K
+        轮数越多，history越长，留给新observation的空间越小
+        """
+        budget = self.OBSERVATION_BUDGET_INITIAL - (self.llm_call_count * self.OBSERVATION_BUDGET_DECAY)
+        budget = max(budget, self.OBSERVATION_BUDGET_MIN)
+        return budget
+
+    @staticmethod
+    def _smart_truncate(content: str, budget: int, head_ratio: float = 0.6) -> str:
+        """智能截断：首尾保留 + 中间摘要
+
+        策略：
+        1. 内容在预算内 → 原样返回
+        2. 内容超预算但<摘要阈值 → 首部保留budget，末尾附截断提示
+        3. 内容超摘要阈值 → 首部保留head_ratio*budget，
+           尾部保留(1-head_ratio)*budget，中间替换为摘要
+
+        Args:
+            content: 原始内容
+            budget: 本次允许的最大字符数
+            head_ratio: 头部保留比例，默认0.6
+
+        Returns:
+            截断后的内容
+        """
+        original_len = len(content)
+
+        if original_len <= budget:
+            return content
+
+        head_size = int(budget * head_ratio)
+        tail_size = budget - head_size
+
+        # 计算中间省略了多少
+        middle_len = original_len - head_size - tail_size
+
+        # 估算省略的行数
+        head_part = content[:head_size]
+        tail_part = content[-tail_size:]
+        total_lines = content.count('\n') + 1
+        head_lines = head_part.count('\n') + 1
+        tail_lines = tail_part.count('\n') + 1
+        omitted_lines = total_lines - head_lines - tail_lines
+
+        # 构建摘要
+        if omitted_lines > 0:
+            summary = f"\n\n... [省略 {middle_len} 字符, 约 {omitted_lines} 行] ...\n\n"
+        else:
+            summary = f"\n\n... [省略 {middle_len} 字符] ...\n\n"
+
+        truncated = head_part + summary + tail_part
+        return truncated
+
     def _add_observation_to_history(self, observation: str) -> None:
-        """添加观察结果到对话历史"""
+        """添加观察结果到对话历史
+
+        【升级 2026-05-05 小沈】智能截断策略：
+        - 动态预算：第1轮150K，每轮递减10K，最低20K
+        - 首尾保留：保留头部（结构/开头信息）+ 尾部（结果/错误信息）
+        - 中间摘要：省略部分用字符数+行数摘要替代
+        - 上下文保护：总observation不超过上下文窗口
+        """
+        budget = self._get_observation_budget()
+
+        if len(observation) > budget:
+            truncated = self._smart_truncate(
+                observation,
+                budget=budget,
+                head_ratio=self.OBSERVATION_HEAD_RATIO
+            )
+            logger.warning(
+                f"[智能截断] 轮数={self.llm_call_count}, "
+                f"原始长度={len(observation)}, "
+                f"预算={budget}, "
+                f"截断后={len(truncated)}, "
+                f"策略=首尾保留(头{int(self.OBSERVATION_HEAD_RATIO*100)}%+尾{int((1-self.OBSERVATION_HEAD_RATIO)*100)}%)"
+            )
+            observation = truncated
+        else:
+            logger.info(
+                f"[observation] 轮数={self.llm_call_count}, "
+                f"长度={len(observation)}, 预算={budget}, 无需截断"
+            )
         self.conversation_history.append({"role": "user", "content": observation})
         self._trim_history()
 
@@ -769,7 +1054,7 @@ class BaseAgent(ABC):
 
         # 使用共享的自我指涉检测方法
         if written_content:
-            from app.services.tools.content_quality import check_content_quality
+            from app.services.tools.toolhelper.content_quality import check_content_quality
             quality_result = check_content_quality(content=written_content, file_path=file_path)
             if quality_result.get("is_thought_leak"):
                 warnings.append(

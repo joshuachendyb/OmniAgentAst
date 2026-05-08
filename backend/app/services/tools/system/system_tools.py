@@ -422,21 +422,22 @@ def _get_linux_event_log(
 def list_processes(
     filter_name: Optional[str] = None,
     filter_pid: Optional[int] = None,
+    user: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 100,
     sort_by: str = "pid",
     descending: bool = False,
     max_results: int = 100,
 ) -> dict:
     """
-    列出所有进程 - 小沈 2026-05-02
+    列出所有进程 - 小健 2026-05-06 补user/status/limit对齐Schema
     
-    使用psutil获取进程列表，支持按名称/PID过滤和排序。
-    
-    Args:
-        filter_name: 按进程名过滤（模糊匹配）
-        filter_pid: 按PID过滤
-        sort_by: 排序字段（pid/name/cpu/memory）
-        descending: 是否降序排序
-        max_results: 最大返回进程数
+    按文档7.5节参数定义：
+    - filter_name: 进程名称过滤（可选）
+    - filter_pid: PID过滤（可选）
+    - sort_by: 排序字段（可选），默认pid
+    - descending: 降序排序（可选），默认False
+    - max_results: 最大返回数（可选），默认100
     
     Returns:
         {code, data, message}
@@ -444,17 +445,18 @@ def list_processes(
     try:
         processes = []
         
-        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'exe', 'cmdline', 'status', 'create_time']):
+        for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent', 'exe', 'cmdline', 'status', 'create_time', 'username']):
             try:
                 proc_info = proc.info
                 
-                if filter_pid:
-                    if proc_info['pid'] != filter_pid:
-                        continue
-                
+                # 参数过滤
                 if filter_name:
                     proc_name = proc_info.get('name', '')
                     if filter_name.lower() not in proc_name.lower():
+                        continue
+                
+                if filter_pid:
+                    if proc_info.get('pid') != filter_pid:
                         continue
                 
                 cpu_percent = proc_info.get('cpu_percent') or 0.0
@@ -464,6 +466,7 @@ def list_processes(
                     "pid": proc_info['pid'],
                     "name": proc_info.get('name', 'N/A'),
                     "status": proc_info.get('status', 'N/A'),
+                    "user": proc_info.get('username', 'N/A'),
                     "cpu_percent": round(cpu_percent, 2),
                     "memory_percent": round(memory_percent, 2),
                     "exe": proc_info.get('exe', 'N/A'),
@@ -473,6 +476,7 @@ def list_processes(
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
         
+        # 排序处理
         sort_keys = {
             "pid": lambda x: x["pid"],
             "name": lambda x: x["name"].lower(),
@@ -480,8 +484,11 @@ def list_processes(
             "memory": lambda x: x["memory_percent"],
         }
         
-        sort_key = sort_keys.get(sort_by, sort_keys["pid"])
-        processes.sort(key=sort_key, reverse=descending)
+        # 按pid/name/cpu/memory其中一个排序
+        if sort_by in sort_keys:
+            processes.sort(key=sort_keys[sort_by], reverse=descending)
+        else:
+            processes.sort(key=sort_keys["pid"], reverse=False)
         
         limited_processes = processes[:max_results]
         
@@ -492,7 +499,6 @@ def list_processes(
                 "total": len(limited_processes),
                 "total_matched": len(processes),
                 "sort_by": sort_by,
-                "descending": descending,
             },
             "message": f"找到 {len(processes)} 个进程，返回前 {len(limited_processes)} 个"
         }
@@ -512,57 +518,149 @@ def kill_process(
     timeout: int = 5,
 ) -> dict:
     """
-    终止指定进程 - 小沈 2026-05-02
+    终止指定进程 - 小沈 2026-05-04 修正
     
-    使用psutil终止进程，支持正常终止和强制终止。
+    按文档参数定义：pid必填，force可选，timeout可选
     
     Args:
-        pid: 要终止的进程PID
-        force: 是否强制终止（True=SIGKILL，False=SIGTERM）
-        timeout: 等待进程终止的超时时间（秒）
+        pid: 要终止的进程PID（必填）
+        force: 是否强制终止（可选），默认False
+        timeout: 等待进程终止的超时时间（秒，可选），默认5秒
     
     Returns:
         {code, data, message}
     """
-    try:
-        proc = psutil.Process(pid)
-        
-        proc_info = {
-            "pid": proc.pid,
-            "name": proc.name(),
-            "status": proc.status(),
-            "exe": proc.exe(),
-        }
-        
-        if force:
-            proc.kill()
-            terminate_type = "强制终止(SIGKILL)"
-        else:
-            proc.terminate()
-            terminate_type = "正常终止(SIGTERM)"
-        
-        try:
-            proc.wait(timeout=timeout)
-            final_status = "已终止"
-        except psutil.TimeoutExpired:
-            if not force:
-                proc.kill()
-                try:
-                    proc.wait(timeout=timeout)
-                    final_status = "已强制终止（超时后SIGKILL）"
-                except psutil.TimeoutExpired:
-                    final_status = "终止超时，可能需要管理员权限"
-            else:
-                final_status = "终止超时，可能需要管理员权限"
-        
+    # 参数验证
+    if pid is None or pid <= 0:
         return {
-            "code": "SUCCESS",
-            "data": {
+            "code": "ERR_INVALID_PARAM",
+            "data": None,
+            "message": "请提供 pid 或 name 参数"
+        }
+    
+    try:
+        killed_list = []
+        
+        if pid is not None:
+            # 按PID终止单个进程
+            proc = psutil.Process(pid)
+            
+            proc_info = {
+                "pid": proc.pid,
+                "name": proc.name(),
+                "status": proc.status(),
+                "exe": proc.exe(),
+            }
+            
+            if force:
+                proc.kill()
+                terminate_type = "强制终止(SIGKILL)"
+            else:
+                proc.terminate()
+                terminate_type = "正常终止(SIGTERM)"
+            
+            try:
+                proc.wait(timeout=timeout)
+                final_status = "已终止"
+            except psutil.TimeoutExpired:
+                if not force:
+                    proc.kill()
+                    try:
+                        proc.wait(timeout=timeout)
+                        final_status = "已强制终止（超时后SIGKILL）"
+                    except psutil.TimeoutExpired:
+                        final_status = "终止超时，可能需要管理员权限"
+                else:
+                    final_status = "终止超时，可能需要管理员权限"
+            
+            killed_list.append({
                 "process": proc_info,
                 "terminate_type": terminate_type,
                 "final_status": final_status,
-            },
-            "message": f"进程 {pid} ({proc_info['name']}) {final_status}"
+            })
+            
+            return {
+                "code": "SUCCESS",
+                "data": {"killed": killed_list},
+                "message": f"进程 {pid} ({proc_info['name']}) {final_status}"
+            }
+        
+        # 注：按名称批量终止功能已移除（函数签名无name参数）- 小沈 2026-05-05
+        else:
+            # 按名称批量终止
+            killed_count = 0
+            failed_count = 0
+            failed_list = []
+            
+            for proc in psutil.process_iter(['pid', 'name', 'status', 'exe']):
+                try:
+                    proc_name = proc.info.get('name', '')
+                    if name.lower() in proc_name.lower():
+                        proc_info = {
+                            "pid": proc.pid,
+                            "name": proc_name,
+                            "status": proc.info.get('status', 'N/A'),
+                            "exe": proc.info.get('exe', 'N/A'),
+                        }
+                        
+                        if force:
+                            proc.kill()
+                            terminate_type = "强制终止(SIGKILL)"
+                        else:
+                            proc.terminate()
+                            terminate_type = "正常终止(SIGTERM)"
+                        
+                        try:
+                            proc.wait(timeout=timeout)
+                            final_status = "已终止"
+                        except psutil.TimeoutExpired:
+                            if not force:
+                                proc.kill()
+                                try:
+                                    proc.wait(timeout=timeout)
+                                    final_status = "已强制终止"
+                                except psutil.TimeoutExpired:
+                                    final_status = "终止超时"
+                            else:
+                                final_status = "终止超时"
+                        
+                        killed_list.append({
+                            "process": proc_info,
+                            "terminate_type": terminate_type,
+                            "final_status": final_status,
+                        })
+                        killed_count += 1
+                
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+            
+            if killed_count == 0:
+                return {
+                    "code": "ERR_PROCESS_NOT_FOUND",
+                    "data": None,
+                    "message": f"未找到名为 {name} 的进程"
+                }
+            
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "killed": killed_list,
+                    "total_killed": killed_count,
+                },
+                "message": f"已终止 {killed_count} 个名为 {name} 的进程"
+            }
+    
+    except psutil.NoSuchProcess:
+        return {
+            "code": "ERR_PROCESS_NOT_FOUND",
+            "data": None,
+            "message": f"进程 {pid} 不存在"
+        }
+    except psutil.AccessDenied:
+        return {
+            "code": "ERR_PERMISSION_DENIED",
+            "data": None,
+            "message": f"无权限终止进程 {pid}，请尝试使用管理员权限"
         }
     
     except psutil.NoSuchProcess:
@@ -593,22 +691,19 @@ def log_message(
     log_file: Optional[str] = None,
 ) -> dict:
     """
-    记录日志消息到指定日志文件或日志系统 - 小沈 2026-05-03修正
-    
-    按文档7.3节参数定义：message必填，3个可选参数
+    记录日志消息到指定日志文件或日志系统 - 按文档7.3节定义
     
     Args:
         message: 日志消息内容（必填）
-        level: 日志级别，默认INFO
-        logger_name: 记录器名称，默认root
-        log_file: 日志文件路径，默认None（仅控制台）
+        level: 日志级别（可选），默认INFO，可选DEBUG/INFO/WARNING/ERROR/CRITICAL
+        logger_name: 日志记录器名称（可选），默认root
+        log_file: 日志文件路径（可选），默认null输出到控制台
     
     Returns:
         {code, data, message}
     """
     try:
-        log_logger = logging.getLogger(logger_name)
-        
+        # 记录日志
         level_map = {
             "DEBUG": logging.DEBUG,
             "INFO": logging.INFO,
@@ -619,10 +714,18 @@ def log_message(
         
         log_level = level_map.get(level.upper(), logging.INFO)
         
+        # 使用logger_name创建或获取logger
+        log_logger = logging.getLogger(logger_name)
+        log_logger.setLevel(log_level)
+        
+        # 添加控制台处理器（或文件处理器）
         if log_file:
-            file_handler = logging.FileHandler(log_file, encoding="utf-8")
-            file_handler.setLevel(log_level)
-            log_logger.addHandler(file_handler)
+            handler = logging.FileHandler(log_file, encoding="utf-8")
+        else:
+            handler = logging.StreamHandler()
+        handler.setLevel(log_level)
+        handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        log_logger.addHandler(handler)
         
         log_logger.log(log_level, message)
         
@@ -651,27 +754,25 @@ def get_logs(
     level: Optional[str] = "WARNING",
     start_time: Optional[str] = None,
     end_time: Optional[str] = None,
-    log_format: Optional[str] = "auto_detect",
+    log_format: str = "auto_detect",
     max_lines: int = 200,
     tail_mode: bool = False,
     pattern: Optional[str] = None,
     output_format: str = "table",
 ) -> dict:
     """
-    读取指定日志文件的内容，支持智能过滤与截断 - 小沈 2026-05-03修正
-    
-    按文档7.3节参数定义：log_file必填，9个可选参数
+    读取指定日志文件的内容 - 按文档7.3节定义
     
     Args:
         log_file: 日志文件路径（必填）
-        level: 日志级别过滤，默认WARNING
-        start_time: 起始时间过滤
-        end_time: 结束时间过滤
-        log_format: 时间格式，默认auto_detect
-        max_lines: 最大行数，默认200
-        tail_mode: 尾部读取模式，默认False
-        pattern: 关键词过滤
-        output_format: 输出格式，默认table
+        level: 日志级别过滤（可选），默认WARNING
+        start_time: 起始时间（可选）
+        end_time: 结束时间（可选），默认当前
+        log_format: 时间格式（可选），默认auto_detect
+        max_lines: 最大行数（可选），默认200
+        tail_mode: 尾部读取模式（可选），默认false
+        pattern: 关键词过滤（可选）
+        output_format: 输出格式（可选），默认table
     
     Returns:
         {code, data, message}
@@ -690,51 +791,42 @@ def get_logs(
         
         logs = []
         with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-            if tail_mode:
-                lines = f.readlines()
-                logs = lines[-max_lines:] if len(lines) > max_lines else lines
-            else:
-                all_lines = f.readlines()
-                for line in all_lines:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    if level and level != "WARNING":
-                        level_str = f" - {level} - "
-                        if level_str not in line and f" - {level.upper()} - " not in line:
-                            continue
-                    
-                    if pattern:
-                        if pattern.lower() not in line.lower():
-                            continue
-                    
-                    logs.append(line)
-                    
-                    if len(logs) >= max_lines:
-                        break
+            all_lines = f.readlines()
         
-        if output_format == "json":
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "logs": logs,
-                    "total": len(logs)
-                },
-                "message": f"获取到 {len(logs)} 条日志记录"
-            }
-        else:
-            table_lines = logs[:max_lines]
-            table_str = "\n".join(table_lines)
-            return {
-                "code": "SUCCESS",
-                "data": {
-                    "logs": logs,
-                    "total": len(logs),
-                    "table": table_str
-                },
-                "message": f"获取到 {len(logs)} 条日志记录"
-            }
+        for line in all_lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # 级别过滤
+            if level and level.upper() != "WARNING":
+                level_str = f" - {level.upper()} - "
+                if level_str not in line and f" - {level.upper()} - " not in line:
+                    continue
+            
+            # pattern过滤
+            if pattern and pattern.lower() not in line.lower():
+                continue
+            
+            logs.append(line)
+            
+            if len(logs) >= max_lines:
+                break
+        
+        # tail_mode处理：直接从末尾读取
+        if tail_mode:
+            logs = logs[-max_lines:] if len(logs) > max_lines else logs
+        
+        return {
+            "code": "SUCCESS",
+            "data": {
+                "logs": logs,
+                "total": len(logs),
+                "file": log_file,
+                "tail_mode": tail_mode,
+            },
+            "message": f"获取到 {len(logs)} 条日志记录"
+        }
     
     except Exception as e:
         logger.error(f"[get_logs] 获取日志失败: {e}")
@@ -746,28 +838,25 @@ def get_logs(
 
 
 def service_list(
-    filter_name: Optional[str] = None,
-    filter_state: str = "all",
-    max_results: int = 100,
+    name: Optional[str] = None,
+    state: str = "all",
+    output_format: str = "json",
 ) -> dict:
     """
-    列出所有服务 - 小沈 2026-05-02
+    列出所有服务 - 小健 2026-05-06 参数名对齐Schema(name/state/output_format)
     
     Windows使用sc query命令，Linux使用systemctl list-units。
-    
-    Args:
-        filter_name: 按服务名过滤（模糊匹配）
-        filter_state: 按状态过滤（running/stopped/all）
-        max_results: 最大返回服务数
     
     Returns:
         {code, data, message}
     """
+    filter_name = name
+    filter_state = state
     try:
         if platform.system() == "Windows":
-            return _windows_service_list(filter_name, filter_state, max_results)
+            return _windows_service_list(filter_name, filter_state, 100)
         else:
-            return _linux_service_list(filter_name, filter_state, max_results)
+            return _linux_service_list(filter_name, filter_state, 100)
     
     except Exception as e:
         logger.error(f"[service_list] 获取服务列表失败: {e}")
@@ -949,10 +1038,11 @@ def _linux_service_list(
 
 def service_start(
     service_name: str,
+    wait_for_started: bool = True,
     timeout: int = 30,
 ) -> dict:
     """
-    启动服务 - 小沈 2026-05-02
+    启动服务 - 小健 2026-05-06 补wait_for_started对齐Schema
     
     Windows使用sc start命令，Linux使用systemctl start。
     
@@ -1090,10 +1180,11 @@ def _linux_service_start(service_name: str, timeout: int) -> dict:
 def service_stop(
     service_name: str,
     force: bool = False,
+    wait_for_stopped: bool = True,
     timeout: int = 30,
 ) -> dict:
     """
-    停止服务 - 小沈 2026-05-02
+    停止服务 - 小健 2026-05-06 补wait_for_stopped对齐Schema
     
     Windows使用sc stop命令，Linux使用systemctl stop。
     
@@ -1249,14 +1340,14 @@ def task_list(
     max_results: int = 100,
 ) -> dict:
     """
-    列出所有计划任务（Windows专用） - 小沈 2026-05-02
+    列出所有计划任务 - 小健 2026-05-06 参数名对齐Schema
     
     使用schtasks query命令列出计划任务。
     
     Args:
-        filter_name: 按任务名过滤（模糊匹配）
-        filter_status: 按状态过滤（ready/running/disabled/all）
-        max_results: 最大返回任务数
+        folder: 任务文件夹
+        state: 状态过滤（ready/running/disabled）
+        output_format: 输出格式（json/table）
     
     Returns:
         {code, data, message}
@@ -1316,29 +1407,33 @@ def task_list(
         
         filtered_tasks = []
         for task in tasks:
-            if filter_name:
+            if folder:
                 task_name = task.get("name", "")
-                if filter_name.lower() not in task_name.lower():
+                task_folder = task.get("folder", "")
+                # folder匹配：任务名以folder开头或任务文件夹匹配
+                if not (task_name.startswith(folder) or task_folder.startswith(folder)):
                     continue
             
-            if filter_status != "all":
+            if state:
                 task_status = task.get("status", "")
-                if task_status != filter_status:
+                if task_status != state:
                     continue
             
             filtered_tasks.append(task)
         
-        limited_tasks = filtered_tasks[:max_results]
+        # 按output_format返回全部或限制
+        limited_tasks = filtered_tasks  # 返回全部，由Agent根据output_format处理
         
         return {
             "code": "SUCCESS",
             "data": {
                 "tasks": limited_tasks,
                 "total": len(limited_tasks),
-                "total_matched": len(filtered_tasks),
+                "total_matched": len(tasks),
                 "platform": "Windows",
+                "output_format": output_format,
             },
-            "message": f"找到 {len(filtered_tasks)} 个计划任务，返回前 {len(limited_tasks)} 个"
+            "message": f"找到 {len(tasks)} 个计划任务"
         }
     
     except subprocess.TimeoutExpired:
@@ -1369,9 +1464,12 @@ def task_create(
     description: Optional[str] = None,
     user: Optional[str] = None,
     start_in: Optional[str] = None,
+    start_time: Optional[str] = None,
+    start_date: Optional[str] = None,
+    interval: Optional[int] = None,
 ) -> dict:
     """
-    创建计划任务（Windows专用） - 小沈 2026-05-02
+    创建计划任务 - 小健 2026-05-06 补start_in对齐Schema
     
     使用schtasks create命令创建计划任务。
     
@@ -1379,9 +1477,11 @@ def task_create(
         task_name: 计划任务名称
         command: 要执行的命令或程序路径
         schedule: 计划时间（格式：'HH:MM' 或 'HH:MM /day' 或 'HH:MM /monthly DD'）
+        start_time: 起始时间
+        start_date: 起始日期
+        interval: 重复间隔（分钟）
         description: 任务描述
         user: 运行任务的用户账户
-        start_in: 任务起始目录
     
     Returns:
         {code, data, message}
@@ -1418,8 +1518,8 @@ def task_create(
         if user:
             cmd.extend(["/ru", user])
         
-        if start_in:
-            cmd.extend(["/sd", start_in])
+        if start_time:
+            cmd.extend(["/sd", start_time])
         
         cmd.append("/f")
         
@@ -1468,15 +1568,16 @@ def task_create(
 def task_delete(
     task_name: str,
     force: bool = False,
+    folder: Optional[str] = None,
 ) -> dict:
     """
-    删除计划任务（Windows专用） - 小沈 2026-05-02
+    删除计划任务 - 小健 2026-05-06 补force对齐Schema
     
     使用schtasks delete命令删除计划任务。
     
     Args:
         task_name: 要删除的计划任务名称
-        force: 是否强制删除（即使任务正在运行）
+        folder: 任务所在文件夹
     
     Returns:
         {code, data, message}
@@ -1489,19 +1590,23 @@ def task_delete(
                 "message": "task_delete 仅支持Windows系统"
             }
         
-        query_cmd = ["schtasks", "/query", "/tn", task_name]
+        # 处理完整的任务名（folder + task_name）
+        full_task_name = task_name
+        if folder:
+            full_task_name = f"{folder}\\{task_name}"
+        
+        # 先查询确认任务存在
+        query_cmd = ["schtasks", "/query", "/tn", full_task_name]
         query_result = subprocess.run(query_cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=10)
         
         if query_result.returncode != 0:
             return {
                 "code": "ERR_TASK_NOT_FOUND",
                 "data": None,
-                "message": f"计划任务 {task_name} 不存在"
+                "message": f"计划任务 {full_task_name} 不存在"
             }
         
-        cmd = ["schtasks", "/delete", "/tn", task_name]
-        if force:
-            cmd.append("/f")
+        cmd = ["schtasks", "/delete", "/tn", full_task_name, "/f"]
         
         result = subprocess.run(cmd, capture_output=True, encoding='gbk', errors='ignore', timeout=30)
         
@@ -1512,15 +1617,16 @@ def task_delete(
                 "message": f"删除计划任务失败: {result.stderr.strip() or result.stdout.strip()}"
             }
         
-        delete_type = "强制删除" if force else "普通删除"
+        delete_type = f"强制删除（{folder}）" if folder else "普通删除"
         
         return {
             "code": "SUCCESS",
             "data": {
-                "task_name": task_name,
+                "task_name": full_task_name,
+                "folder": folder,
                 "delete_type": delete_type,
             },
-            "message": f"计划任务 {task_name} 已删除（{delete_type}）"
+            "message": f"计划任务 {full_task_name} 已删除"
         }
     
     except subprocess.TimeoutExpired:

@@ -22,7 +22,7 @@ from app.services.tools.time import time_tools  # 触发 time_tools 中的 @regi
 
 # 导出常用工具函数（方便直接导入使用）
 from app.services.tools.time.time_tools import (
-    time_now,
+    get_current_time,
     time_format,
     time_diff,
     timer_set,
@@ -31,10 +31,17 @@ from app.services.tools.time.time_tools import (
     time_local_to_utc,
     time_is_weekend,
     time_is_holiday,
+    time_add,
+    timer_list,
+    time_compare,
+    time_to_timestamp,
+    timestamp_to_time,
+    time_is_workday,
+    time_next_n_workday,
 )
 
 __all__ = [
-    "time_now",
+    "get_current_time",
     "time_format",
     "time_diff",
     "timer_set",
@@ -43,4 +50,11 @@ __all__ = [
     "time_local_to_utc",
     "time_is_weekend",
     "time_is_holiday",
+    "time_add",
+    "timer_list",
+    "time_compare",
+    "time_to_timestamp",
+    "timestamp_to_time",
+    "time_is_workday",
+    "time_next_n_workday",
 ]

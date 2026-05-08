@@ -282,11 +282,7 @@ const AIMessageBubble: React.FC<AIMessageBubbleProps> = memo(({
                   toggleExpand={toggleExpand}
                   contentStyle={{}}
                 />
-                <StepFooter 
-                  step={step} 
-                  hasMore={false} 
-                  onLoadMore={() => {}} 
-                />
+                <StepFooter step={step} />
               </div>
             );
           })}

@@ -5,6 +5,12 @@
 【创建时间】2026-05-02 小沈
 【更新时间】2026-05-02 小沈 - 移除@register_tool装饰器，改为显式注册
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. *_tools.py: 函数实现（必须有详细注释）
+2. *_schema.py: Pydantic 模型（输入参数定义）
+3. *_register.py: 显式注册（description + examples + input_model）
+
 ================================================================================
 一、模块性质（双重身份）
 ================================================================================
@@ -96,7 +102,7 @@ def get_table_schema(db_path: str, table_name: str) -> Dict[str, Any]:
         conn = sqlite3.connect(str(path))
         cursor = conn.cursor()
 
-        cursor.execute(f"PRAGMA table_info(\"{table_name}\")")
+        cursor.execute("PRAGMA table_info(?)", (table_name,))
         columns = cursor.fetchall()
 
         if not columns:

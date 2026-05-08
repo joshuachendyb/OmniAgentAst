@@ -85,30 +85,77 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """修复Pydantic生成的JSON Schema中缺失的type字段 - 小健 2026-05-06
+    
+    Pydantic V2对Union/Optional/Dict等复杂类型生成anyOf/oneOf，
+    导致OpenAI Schema兼容的properties中缺少type字段。
+    此函数遍历properties，为缺少type的字段推断并补上。
+    """
+    if not schema or 'properties' not in schema:
+        return schema
+    
+    properties = schema['properties']
+    for prop_name, prop_info in properties.items():
+        if 'type' in prop_info:
+            continue
+        
+        if 'anyOf' in prop_info:
+            types = []
+            for item in prop_info['anyOf']:
+                if 'type' in item:
+                    types.append(item['type'])
+                elif item.get('type') == 'null' or item == {'type': 'null'}:
+                    pass
+            
+            if types:
+                non_null = [t for t in types if t != 'null']
+                if len(non_null) == 1:
+                    prop_info['type'] = non_null[0]
+                elif 'string' in non_null and 'number' in non_null:
+                    prop_info['type'] = 'string'
+                elif 'integer' in non_null and 'number' in non_null:
+                    prop_info['type'] = 'number'
+                elif non_null:
+                    prop_info['type'] = non_null[0]
+        
+        if 'type' not in prop_info:
+            if '$ref' in prop_info:
+                prop_info['type'] = 'object'
+            elif 'allOf' in prop_info:
+                prop_info['type'] = 'object'
+            elif 'oneOf' in prop_info:
+                prop_info['type'] = 'object'
+            elif 'anyOf' in prop_info:
+                prop_info['type'] = 'object'
+            else:
+                prop_info['type'] = 'string'
+    
+    return schema
+
+
 class ToolCategory(Enum):
     """
     工具分类枚举
     
-    【更新】2026-04-26 小沈
-    - 原有: FILE, DATABASE, NETWORK, SYSTEM, DESKTOP
-    - 新增: TIME, SHELL, ENV
+    【更新】2026-05-05 小沈（彻底废弃旧枚举值）
+    - FILE, TIME, SHELL, NETWORK, ENVIRONMENT, SYSTEM, DATABASE, DESKTOP
+    - DOCUMENT, SUPPORT_TOOL, DATA_FORMAT, CODE_EXECUTION
+    - 已废弃: DATA_ANALYSIS, GUI, ENV_CHECK, REGISTRY_TOOLS（彻底删除）
     """
     FILE = "file"
     TIME = "time"           # 时间/日期
     SHELL = "shell"         # Shell命令执行
     NETWORK = "network"     # 网络通信
-    ENV = "env"             # 环境变量
+    ENVIRONMENT = "environment"  # 环境管理
     SYSTEM = "system"        # 系统信息
-    DATABASE = "database"   # 数据库访问
+    DATABASE = "database"      # 数据库访问
     DESKTOP = "desktop"     # 桌面功能
-    DATA_ANALYSIS = "data_analysis"  # 数据分析（小沈-2026-05-02）
-    DOCUMENT = "document"            # 文档读写（小沈-2026-05-02）
-    ENV_CHECK = "env_check"          # 环境检查（小沈-2026-05-02）
-    GUI = "gui"                      # GUI操作（小沈-2026-05-02）
-    SUPPORT_TOOL = "support_tool"     # 支撑工具（公共函数+LLM可调用，小沈-2026-05-02）
-    REGISTRY_TOOLS = "registry_tools" # 注册表操作（小沈-2026-05-02）
-    DATA_FORMAT = "data_format"      # 数据格式（小沈-2026-05-02）
-    CODE_EXECUTION = "code_execution" # 代码执行（小沈-2026-05-02）
+    # 2026-05-02新增：
+    DOCUMENT = "document"      # 文档读写
+    SUPPORT_TOOL = "support_tool" # 支撑工具（公共函数+LLM内部使用，小沈-2026-05-02）
+    DATA_FORMAT = "data_format"    # 数据格式（小沈-2026-05-02）
+    CODE_EXECUTION = "code_execution" # 代码执行
 
 
 @dataclass
@@ -200,15 +247,16 @@ class ToolRegistry:
         if input_model is not None and input_schema is None:
             try:
                 input_schema = input_model.model_json_schema()
+                input_schema = _fix_schema_types(input_schema)
                 logger.info(f"[ToolRegistry.register] 从 Pydantic 模型生成 input_schema: {name}")
             except Exception as e:
                 logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")
                 input_schema = {}
         
-        # 如果既有 input_model 又有 input_schema，优先使用 input_model 生成的
         if input_model is not None and input_schema is not None:
             try:
                 input_schema = input_model.model_json_schema()
+                input_schema = _fix_schema_types(input_schema)
                 logger.info(f"[ToolRegistry.register] 使用 Pydantic 模型覆盖 input_schema: {name}")
             except Exception as e:
                 logger.error(f"[ToolRegistry.register] 从 Pydantic 模型生成 Schema 失败: {e}")
@@ -428,18 +476,14 @@ class ToolRegistry:
             ToolCategory.FILE,
             ToolCategory.SHELL,
             ToolCategory.TIME,
-            ToolCategory.ENV,
+            ToolCategory.ENVIRONMENT,
             ToolCategory.SYSTEM,
             ToolCategory.NETWORK,
             ToolCategory.DATABASE,
             ToolCategory.DESKTOP,
-            ToolCategory.REGISTRY_TOOLS,
             ToolCategory.DATA_FORMAT,
             ToolCategory.CODE_EXECUTION,
-            ToolCategory.DATA_ANALYSIS,
             ToolCategory.DOCUMENT,
-            ToolCategory.ENV_CHECK,
-            ToolCategory.GUI,
             ToolCategory.SUPPORT_TOOL,
         ]
 
@@ -452,18 +496,14 @@ class ToolRegistry:
             ToolCategory.FILE: "文件操作工具",
             ToolCategory.SHELL: "Shell命令工具",
             ToolCategory.TIME: "时间日期工具",
-            ToolCategory.ENV: "环境变量工具",
+            ToolCategory.ENVIRONMENT: "环境变量工具",
             ToolCategory.SYSTEM: "系统信息工具",
             ToolCategory.NETWORK: "网络通信工具",
             ToolCategory.DATABASE: "数据库工具",
             ToolCategory.DESKTOP: "桌面工具",
-            ToolCategory.REGISTRY_TOOLS: "注册表操作工具",
             ToolCategory.DATA_FORMAT: "数据格式工具",
             ToolCategory.CODE_EXECUTION: "代码执行工具",
-            ToolCategory.DATA_ANALYSIS: "数据分析工具",
             ToolCategory.DOCUMENT: "文档读写工具",
-            ToolCategory.ENV_CHECK: "环境检查工具",
-            ToolCategory.GUI: "GUI操作工具",
             ToolCategory.SUPPORT_TOOL: "支撑工具(公共函数)",
         }
 

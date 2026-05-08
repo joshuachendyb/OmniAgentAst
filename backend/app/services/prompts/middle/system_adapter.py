@@ -89,8 +89,7 @@ class SystemAdapter:
 {system_name}
 
 【路径格式】
-- Windows: C:\\Users\\xxx\\file.txt 或 C:/Users/xxx/file.txt
-- Linux/macOS: /home/xxx/file.txt 或 /Users/xxx/file.txt
+- 当前系统: {path_format}
 
 【命令格式】
 - list: {commands.get('list', 'ls')}
@@ -99,11 +98,11 @@ class SystemAdapter:
 - read: {commands.get('read', 'cat')}
 - create_dir: {commands.get('create_dir', 'mkdir')}
 
-【严格格式要求】
-- ❌ 禁止使用 [TOOL_CALL] 格式（如：[TOOL_CALL]{{...}}[/TOOL_CALL]）
-- ✅ 必须使用标准JSON格式：{{"tool_name": "...", "tool_params": {{...}}}}
-- ❌ 禁止在参数中使用 args: {{...}} 格式
-- ✅ 参数必须直接放在 tool_params 对象中"""
+【路径规则】
+- 必须使用绝对路径（禁止相对路径如 ./file.txt）
+- 禁止用 ~ 表示家目录
+- ❌ 路径中的中文字符必须原样保留，禁止翻译或转换！用户说"E:\\下载\\科幻小说"就用"E:\\下载\\科幻小说"，禁止改成"E:\\download\\sci-fi-novel"
+"""
         
         return prompt
     

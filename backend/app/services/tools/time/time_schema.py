@@ -45,11 +45,11 @@ class TimeFormatInput(BaseModel):
     """time_format 工具的输入参数"""
     timestamp: Optional[Union[int, float, str]] = Field(
         default=None,
-        description="时间戳（Unix秒）、日期字符串（如'2026-04-25'）、或datetime对象。如果为None，则使用当前时间。支持格式：int/float=Unix时间戳，str=日期字符串自动识别，datetime=直接使用。默认为None（当前时间）"
+        description="时间戳（Unix秒）、日期字符串（如'2026-04-25'）、或datetime对象。Agent 判断：如果为None（默认），则使用当前时间。支持格式：int/float=Unix时间戳，str=日期字符串自动识别，datetime=直接使用"
     )
     pattern: Optional[str] = Field(
         default=None,
-        description="格式字符串（如'%Y-%m-%d %H:%M:%S'）。如果为None，则使用默认格式'%Y-%m-%d %H:%M:%S'。常用格式：%Y年%m月%d日、%Y-%m-%d %H:%M:%S、%Y/%m/%d。默认为None（%Y-%m-%d %H:%M:%S）"
+        description="格式字符串（如'%Y-%m-%d %H:%M:%S'）。Agent语义解析意图：'几号'→'%Y-%m-%d'，'星期几'→'%A'，'时间戳'→'X'。如果为None（默认），则使用'%Y-%m-%d %H:%M:%S'"
     )
 
 
@@ -61,7 +61,7 @@ class TimeDiffInput(BaseModel):
     )
     end: Optional[Union[int, float, str]] = Field(
         default=None,
-        description="结束时间（时间戳、字符串、datetime）。如果为None则使用当前时间。支持格式同start。可选参数，默认为None（当前时间）"
+        description="结束时间（时间戳、字符串、datetime）。Agent 判断：如果为None（默认），则使用当前时间。支持格式同start"
     )
 
 
@@ -132,4 +132,83 @@ class TimeIsHolidayInput(BaseModel):
     date: Optional[Union[int, float, str]] = Field(
         default=None,
         description="日期（时间戳、字符串、datetime）。如果为None则使用当前日期。可选参数，默认为None（当前日期）"
+    )
+
+class TimeAddInput(BaseModel):
+    """time_add 工具的输入参数"""
+    # 【修复 2026-05-05 小沈】start改为可选，默认None=当前时间
+    # 避免LLM犹豫"start是必填需要先获取时间"而不调用工具
+    start: Optional[Union[int, float, str]] = Field(
+        default=None,
+        description="基准时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。可选参数，默认为None（当前时间）"
+    )
+    delta: float = Field(
+        ...,
+        description="偏移量（数字）。正数表示增加，负数表示减少。必填参数"
+    )
+    unit: str = Field(
+        default="days",
+        description="单位（days/hours/minutes/seconds/months）。默认为days。Agent 语义解析：'3天'→unit='days', '2小时'→unit='hours'。可选参数，默认为days"
+    )
+
+class TimerListInput(BaseModel):
+    """timer_list 工具的输入参数"""
+    limit: int = Field(
+        default=10,
+        description="返回数量限制。默认为10。可选参数"
+    )
+
+class TimeCompareInput(BaseModel):
+    """time_compare 工具的输入参数"""
+    time1: Union[int, float, str] = Field(
+        ...,
+        description="时间1（时间戳、字符串、datetime）。必填参数"
+    )
+    time2: Union[int, float, str] = Field(
+        ...,
+        description="时间2（时间戳、字符串、datetime）。必填参数"
+    )
+    unit: str = Field(
+        default="days",
+        description="比较单位（days/hours/minutes/seconds）。默认为days。可选参数"
+    )
+
+class TimeToTimestampInput(BaseModel):
+    """time_to_timestamp 工具的输入参数"""
+    time: Union[int, float, str] = Field(
+        ...,
+        description="时间（时间戳、字符串、datetime）。必填参数"
+    )
+    unit: str = Field(
+        default="seconds",
+        description="时间戳单位（seconds/milliseconds/microseconds）。默认为seconds。可选参数"
+    )
+
+class TimestampToTimeInput(BaseModel):
+    """timestamp_to_time 工具的输入参数"""
+    timestamp: Union[int, float] = Field(
+        ...,
+        description="Unix时间戳（秒）。必填参数"
+    )
+    target_tz: str = Field(
+        default="+08:00",
+        description="目标时区（IANA时区名称或±HH:MM格式）。默认为+08:00。可选参数"
+    )
+
+class TimeIsWorkdayInput(BaseModel):
+    """time_is_workday 工具的输入参数"""
+    date: Optional[Union[int, float, str]] = Field(
+        default=None,
+        description="日期（时间戳、字符串、datetime）。如果为None则使用当前日期。可选参数，默认为None（当前日期）"
+    )
+
+class TimeNextNWorkdayInput(BaseModel):
+    """time_next_n_workday 工具的输入参数"""
+    start: Optional[Union[int, float, str]] = Field(
+        default=None,
+        description="起始日期（时间戳、字符串、datetime）。如果为None则使用当前日期。可选参数，默认为None（当前日期）"
+    )
+    n: int = Field(
+        default=1,
+        description="第N个工作日（正整数）。默认为1。可选参数"
     )

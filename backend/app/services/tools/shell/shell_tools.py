@@ -5,11 +5,19 @@ Shell 工具函数模块 - Shell命令执行工具
 【创建时间】2026-04-29 小沈
 【规范】2026-05-02 小沈 移除 @register_tool 装饰器，改由 shell_register.py 显式注册
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. shell_tools.py: 函数实现（必须有详细注释）
+2. shell_schema.py: Pydantic 模型（输入参数定义）
+3. shell_register.py: 显式注册（description + examples + input_model）
+
 包含：
 - execute_shell_command: 执行Shell命令（支持后台运行）
 - get_working_directory: 获取当前工作目录
 - change_directory: 切换工作目录
 - check_path_exists: 检查路径是否存在
+- check_command_available: 检查命令是否可用
+- locate_command: 查找命令路径
 - get_shell_output: 获取后台shell输出
 - terminate_shell: 终止后台shell
 
@@ -21,6 +29,7 @@ import subprocess
 import signal
 import re
 import uuid
+import shutil
 from typing import Optional, Dict, Any
 from datetime import datetime
 
@@ -39,7 +48,7 @@ def execute_shell_command(
     env_vars: Optional[dict] = None,
     run_as_admin: bool = False
 ) -> dict:
-    """执行Shell命令 - 小沈 2026-05-03 重命名+补齐参数+timeout改毫秒"""
+    """执行Shell命令 - 小沈 2026-05-04 正确实现encoding参数"""
     timeout_sec = timeout / 1000.0
     
     env = None
@@ -48,9 +57,19 @@ def execute_shell_command(
         env.update(env_vars)
     
     if shell_type == "cmd":
-        executable = "cmd.exe"
+        executable = None  # shell=True时使用COMSPEC默认cmd.exe - 小沈 2026-05-06
     else:
         executable = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+    
+    # run_as_admin: 标记但 subprocess 不支持提权，实际执行受限于当前进程权限
+    # 如果需要提权，需要使用 ctypes.win32api 或其他方式
+    if run_as_admin:
+        if env is None:
+            env = os.environ.copy()
+        env["_RUN_AS_ADMIN"] = "1"
+    
+    # encoding: 使用指定的编码或默认 utf-8
+    use_encoding = encoding if encoding else "utf-8"
     
     try:
         if run_in_background:
@@ -81,38 +100,66 @@ def execute_shell_command(
                 "message": f"命令已在后台启动，shell_id: {shell_id}"
             }
         
+        # 不使用 text=True，手动处理编码
         result = subprocess.run(
             command,
             shell=True,
             capture_output=True,
-            text=True,
             cwd=cwd,
             timeout=timeout_sec,
             env=env,
             executable=executable
         )
+        
+        # 手动解码，处理编码问题
+        stdout_str = ""
+        stderr_str = ""
+        try:
+            stdout_str = result.stdout.decode(use_encoding) if result.stdout else ""
+        except (UnicodeDecodeError, AttributeError):
+            try:
+                stdout_str = result.stdout.decode("utf-8") if result.stdout else ""
+            except (UnicodeDecodeError, AttributeError):
+                stdout_str = result.stdout.decode("gbk") if result.stdout else ""
+        
+        try:
+            stderr_str = result.stderr.decode(use_encoding) if result.stderr else ""
+        except (UnicodeDecodeError, AttributeError):
+            try:
+                stderr_str = result.stderr.decode("utf-8") if result.stderr else ""
+            except (UnicodeDecodeError, AttributeError):
+                stderr_str = result.stderr.decode("gbk") if result.stderr else ""
+        
         if result.returncode == 0:
-            if result.stderr and result.stderr.strip():
+            if stderr_str and stderr_str.strip():
                 message = "命令执行成功（有警告输出）"
             else:
                 message = "命令执行成功"
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "stdout": stdout_str,
+                    "stderr": stderr_str,
+                    "returncode": result.returncode
+                },
+                "message": message
+            }
         else:
-            message = f"命令执行完成（退出码{result.returncode}）"
-        return {
-            "code": "SUCCESS",
-            "data": {
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "returncode": result.returncode
-            },
-            "message": message
-        }
+            return {
+                "code": "ERR_SHELL_EXEC",
+                "data": {
+                    "stdout": stdout_str,
+                    "stderr": stderr_str,
+                    "returncode": result.returncode
+                },
+                "message": f"命令执行失败（退出码{result.returncode}）"
+            }
     except subprocess.TimeoutExpired as e:
         return {
             "code": "ERR_SHELL_TIMEOUT",
             "data": {
-                "stdout": e.stdout if e.stdout else "",
-                "stderr": e.stderr if e.stderr else "",
+                "stdout": "",
+                "stderr": f"命令执行超时（{timeout}毫秒）",
                 "returncode": -1
             },
             "message": f"命令执行超时（{timeout}毫秒）"
@@ -199,6 +246,151 @@ def check_path_exists(path: str) -> dict:
         }
 
 
+def check_command_available(command: str) -> dict:
+    """检查命令是否可用 - 小沈 2026-05-04
+    
+    类似 which 或 where 命令，检查系统命令是否存在且可执行。
+    """
+    try:
+        cmd_path = shutil.which(command)
+        available = cmd_path is not None
+        if available:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "available": True,
+                    "command": command,
+                    "path": cmd_path,
+                },
+                "message": f"命令 '{command}' 可用，路径: {cmd_path}"
+            }
+        else:
+            return {
+                "code": "SUCCESS",
+                "data": {
+                    "available": False,
+                    "command": command,
+                    "path": None,
+                },
+                "message": f"命令 '{command}' 不可用"
+            }
+    except Exception as e:
+        return {
+            "code": "ERR_SHELL_CHECK_COMMAND",
+            "data": None,
+            "message": f"检查命令失败: {str(e)}"
+        }
+
+
+def locate_command(command: str) -> dict:
+    """查找命令的所有可能路径 - 小沈 2026-05-04
+    
+    类似于 'where' 命令，列出命令的所有可能位置。
+    Windows 上会查找 PATH 环境变量中的所有目录。
+    """
+    try:
+        # 使用 shutil.which 只能找到第一个，使用 shell 来模拟 where 命令
+        if os.name == 'nt':
+            result = subprocess.run(
+                ['where', command],
+                capture_output=True,
+                text=True,
+                shell=False
+            )
+            if result.returncode == 0:
+                paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "command": command,
+                        "paths": paths,
+                        "count": len(paths),
+                    },
+                    "message": f"找到 {len(paths)} 个路径"
+                }
+            else:
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "command": command,
+                        "paths": [],
+                        "count": 0,
+                    },
+                    "message": f"命令 '{command}' 不可用"
+                }
+        else:
+            # Unix-like 使用 which -a
+            result = subprocess.run(
+                ['which', '-a', command],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                paths = [p.strip() for p in result.stdout.strip().split('\n') if p.strip()]
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "command": command,
+                        "paths": paths,
+                        "count": len(paths),
+                    },
+                    "message": f"找到 {len(paths)} 个路径"
+                }
+            else:
+                return {
+                    "code": "SUCCESS",
+                    "data": {
+                        "command": command,
+                        "paths": [],
+                        "count": 0,
+                    },
+                    "message": f"命令 '{command}' 不可用"
+                }
+    except Exception as e:
+        return {
+            "code": "ERR_SHELL_LOCATE_COMMAND",
+            "data": None,
+            "message": f"查找命令失败: {str(e)}"
+        }
+
+
+def _read_stream_nonblocking(stream, encoding: str = "utf-8") -> str:
+    """非阻塞读取子进程输出流 - 小沈 2026-05-05
+    
+    如果进程已结束，读取全部输出；
+    如果进程仍在运行，读取当前可用的输出而不阻塞。
+    """
+    if stream is None:
+        return ""
+    
+    import io
+    try:
+        if hasattr(stream, 'read1'):
+            bytes_data = b""
+            while True:
+                chunk = stream.read1(4096)
+                if not chunk:
+                    break
+                bytes_data += chunk
+        else:
+            bytes_data = stream.read()
+    except (IOError, OSError):
+        return ""
+    
+    if not bytes_data:
+        return ""
+    
+    try:
+        return bytes_data.decode(encoding)
+    except UnicodeDecodeError:
+        for fallback_enc in ["utf-8", "gbk", "gb2312", "latin-1"]:
+            try:
+                return bytes_data.decode(fallback_enc)
+            except UnicodeDecodeError:
+                continue
+        return bytes_data.decode("latin-1")
+
+
 def get_shell_output(
     shell_id: str,
     filter: Optional[str] = None,
@@ -227,32 +419,8 @@ def get_shell_output(
         
         enc = encoding or "utf-8"
         
-        stdout_text = ""
-        stderr_text = ""
-        
-        if process.stdout:
-            stdout_bytes = process.stdout.read()
-            try:
-                stdout_text = stdout_bytes.decode(enc)
-            except UnicodeDecodeError:
-                for fallback_enc in ["utf-8", "gbk", "gb2312", "latin-1"]:
-                    try:
-                        stdout_text = stdout_bytes.decode(fallback_enc)
-                        break
-                    except UnicodeDecodeError:
-                        continue
-        
-        if process.stderr:
-            stderr_bytes = process.stderr.read()
-            try:
-                stderr_text = stderr_bytes.decode(enc)
-            except UnicodeDecodeError:
-                for fallback_enc in ["utf-8", "gbk", "gb2312", "latin-1"]:
-                    try:
-                        stderr_text = stderr_bytes.decode(fallback_enc)
-                        break
-                    except UnicodeDecodeError:
-                        continue
+        stdout_text = _read_stream_nonblocking(process.stdout, enc)
+        stderr_text = _read_stream_nonblocking(process.stderr, enc)
         
         stdout_lines = stdout_text.splitlines() if stdout_text else []
         stderr_lines = stderr_text.splitlines() if stderr_text else []

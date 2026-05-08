@@ -69,6 +69,9 @@ class DownloadFileInput(BaseModel):
     chunk_size: int = Field(
         default=8192, ge=1024, le=1048576, description="下载分块大小（字节），默认8192字节"
     )
+    resume: bool = Field(
+        default=True, description="是否启用断点续传（可选），默认True，文件存在时自动尝试续传"
+    )
 
 
 class FetchWebpageInput(BaseModel):
@@ -83,7 +86,7 @@ class FetchWebpageInput(BaseModel):
         default="markdown", description="提取格式。可选值：markdown（默认，LLM处理效率高）、html（保留完整DOM结构）、text（纯文本）"
     )
     js_render: bool = Field(
-        default=False, description="是否启用JS渲染（Headless浏览器）。默认false（静态抓取）。若返回内容为空或检测到SPA特征，Agent自动重试true"
+        default=False, description="是否启用JS渲染（使用Playwright）。默认false（静态抓取）。true时使用Chromium渲染动态页面（SPA必备）"
     )
     timeout: int = Field(
         default=30000, ge=1000, le=120000, description="超时毫秒数，默认30000（30秒），最大120000（2分钟）。Agent根据域名响应历史动态调整 - 小沈 2026-05-03"

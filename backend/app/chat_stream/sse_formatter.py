@@ -42,6 +42,7 @@ def format_thought_sse(
     step: int,
     content: str,
     reasoning: str = '',
+    thought: str = '',
     tool_name: str = '',
     tool_params: Optional[Dict] = None
 ) -> str:
@@ -52,14 +53,17 @@ def format_thought_sse(
         step: 步骤编号
         content: 思考内容
         reasoning: 推理过程
+        thought: 详细思考过程
         tool_name: 目标工具
         tool_params: 工具参数
 
     Returns:
         SSE 格式字符串
     """
+    # 【修复 2026-05-05 小沈】SSE输出增加thought字段
     return format_sse_event('thought', step, {
         'content': content,
+        'thought': thought,
         'reasoning': reasoning,
         'tool_name': tool_name,
         'tool_params': tool_params or {}

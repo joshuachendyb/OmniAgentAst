@@ -69,7 +69,8 @@ def _get_all_tool_names():
     try:
         from app.services.tools.registry import tool_registry
         tools = tool_registry.list_tools(include_metadata=False)
-        return tools
+        # 【修复 2026-05-05 小沈】list_tools返回dict列表，提取name字段
+        return [t["name"] if isinstance(t, dict) else t for t in tools]
     except Exception:
         return ["list_directory", "read_file", "write_file", "delete_file",
                 "move_file", "search_files", "grep_file_content", "generate_report",
@@ -1248,7 +1249,7 @@ def _create_action_result(parsed: Dict, original_output: str) -> Dict[str, Any]:
             "error": None
         }
     
-    tool_name = parsed.get("tool_name", parsed.get("action_tool", parsed.get("action", "finish")))
+    tool_name = parsed.get("tool_name", parsed.get("action_tool", parsed.get("action", None)))
     # 【2026-04-28 小沈修复】支持args字段（LLM可能返回args而非tool_params）
     tool_params = parsed.get("tool_params", parsed.get("params", parsed.get("action_input", parsed.get("args", {}))))
     

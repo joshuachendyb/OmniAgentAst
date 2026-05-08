@@ -16,7 +16,7 @@ from typing import Optional
 
 
 class ExecuteShellCommandInput(BaseModel):
-    """execute_shell_command 工具的输入参数 - 小沈 2026-05-03 补齐文档参数+timeout改毫秒"""
+    """execute_shell_command 工具的输入参数 - 小沈 2026-05-04 encoding已正确实现"""
     command: str = Field(
         ..., description="要执行的命令。如 \"dir\"、\"ls -la\"、\"python script.py\" 等"
     )
@@ -25,7 +25,7 @@ class ExecuteShellCommandInput(BaseModel):
         description="执行环境。可选值：powershell、cmd。由 Agent 根据命令特征智能判断：默认 powershell，若执行报错且疑似语法错误（如包含 %VAR%），Agent 自动切换 cmd 重试"
     )
     timeout: int = Field(
-        default=300000, ge=1000, le=600000, description="超时毫秒数，默认300000（5分钟），最大600000（10分钟）。由 Agent 根据命令类型智能调整 - 小沈 2026-05-03"
+        default=300000, ge=1000, le=600000, description="超时毫秒数，默认300000（5分钟），最大600000（10分钟）。Agent 根据命令类型智能调整：简单命令 30s，编译/安装 300s - 小沈 2026-05-03"
     )
     run_in_background: bool = Field(
         default=False,
@@ -35,20 +35,13 @@ class ExecuteShellCommandInput(BaseModel):
         default=None, description="工作目录。由 Agent 根据上下文智能设置当前项目目录"
     )
     encoding: Optional[str] = Field(
-        default=None, description="命令输出编码。None=自动检测(默认utf-8)，若乱码自动尝试gbk、gb2312"
+        default=None, description="命令输出编码。默认utf-8，可选值：utf-8（默认）、gbk、gb2312、latin-1。若不指定则默认utf-8，自动尝试回退到gbk"
     )
     env_vars: Optional[dict] = Field(
         default=None, description="环境变量对象。由 Agent 根据命令类型自动注入必要环境变量（如 PYTHONIOENCODING=utf-8）"
     )
     run_as_admin: bool = Field(
-        default=False, description="是否以管理员权限运行。由 Agent 智能判断是否需要提权（如安装软件、修改注册表时设true）"
-    )
-
-
-class ListDirectoryInput(BaseModel):
-    """list_directory 工具的输入参数"""
-    path: str = Field(
-        default=".", description="目录路径，默认为当前目录"
+        default=False, description="是否请求管理员权限（标记）。当前版本标记此意图，实际执行受限于当前进程权限。Agent 智能判断安装软件、修改注册表等高权限操作"
     )
 
 
@@ -68,6 +61,20 @@ class CheckPathExistsInput(BaseModel):
     """check_path_exists 工具的输入参数"""
     path: str = Field(
         ..., description="要检查的文件或目录路径。必填参数"
+    )
+
+
+class CheckCommandAvailableInput(BaseModel):
+    """check_command_available 工具的输入参数"""
+    command: str = Field(
+        ..., description="要检查的命令名称，如 python、git、npm"
+    )
+
+
+class LocateCommandInput(BaseModel):
+    """locate_command 工具的输入参数"""
+    command: str = Field(
+        ..., description="要查找的命令名称，如 python、node"
     )
 
 
@@ -105,10 +112,11 @@ class TerminateShellInput(BaseModel):
 
 __all__ = [
     "ExecuteShellCommandInput",
-    "ListDirectoryInput",
     "GetWorkingDirectoryInput",
     "ChangeDirectoryInput",
     "CheckPathExistsInput",
+    "CheckCommandAvailableInput",
+    "LocateCommandInput",
     "GetShellOutputInput",
     "TerminateShellInput",
 ]

@@ -211,8 +211,25 @@ const StepContent: React.FC<StepContentProps> = ({
               flexDirection: 'column',
               gap: 8,
             }}>
-              {/* thought主要内容的简洁样式（第三步修改） */}
+              {/* 【修复 2026-05-05 小沈】thought用小字竖线样式 */}
               {(step as ExecutionStep & Record<string, unknown>).thought && (
+                <div style={{
+                  marginTop: 8,
+                  marginLeft: 0,
+                  paddingLeft: 4,
+                  borderLeft: "2px solid #d9d9d9",
+                  color: "#666",
+                  fontSize: 12,
+                  lineHeight: 1.5,
+                }}>
+                  <span style={{ fontWeight: 500, marginRight: 4 }}>💭 思考:</span>
+                  <span style={{ color: '#666' }}>
+                    {formatStepContent((step as ExecutionStep & Record<string, unknown>).thought)}
+                  </span>
+                </div>
+              )}
+              {/* 【修复 2026-05-05 小沈】reasoning用卡片大字样式 */}
+              {(step as ExecutionStep & Record<string, unknown>).reasoning && (
                 <div style={{
                   padding: "12px 16px",
                   borderRadius: 10,
@@ -226,14 +243,14 @@ const StepContent: React.FC<StepContentProps> = ({
                     gap: 6,
                     marginBottom: 6,
                   }}>
-                    <span style={{ fontSize: 14 }}>💭</span>
+                    <span style={{ fontSize: 14 }}>🧠</span>
                     <span style={{ 
                       fontSize: 12, 
                       fontWeight: 600,
-                      color: '#d97706',
+                      color: '#1890ff',
                       textTransform: 'uppercase',
                       letterSpacing: '0.5px',
-                    }}>思考</span>
+                    }}>推理</span>
                   </div>
                   <div style={{
                     fontSize: 13,
@@ -241,25 +258,8 @@ const StepContent: React.FC<StepContentProps> = ({
                     lineHeight: 1.5,
                     fontWeight: 500,
                   }}>
-                    {formatStepContent((step as ExecutionStep & Record<string, unknown>).thought)}
-                  </div>
-                </div>
-              )}
-              {/* reasoning次要信息，左侧竖线标识（第三步修改） */}
-              {(step as ExecutionStep & Record<string, unknown>).reasoning && (
-                <div style={{
-                  marginTop: 8,
-                  marginLeft: 0,
-                  paddingLeft: 4,
-                  borderLeft: "2px solid #d9d9d9",
-                  color: "#666",
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                }}>
-                  <span style={{ fontWeight: 500, marginRight: 4 }}>🧠 推理:</span>
-                  <span style={{ color: '#666' }}>
                     {formatReasoningContent((step as ExecutionStep & Record<string, unknown>).reasoning)}
-                  </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -280,13 +280,20 @@ const StepContent: React.FC<StepContentProps> = ({
         </div>
       )}
       {step.type === "final" && (
-        <div style={{...getStepStyle("final" as StepType), whiteSpace: "pre-wrap", wordBreak: "break-word"}}>
+        <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
           {(step as ExecutionStep & Record<string, unknown>).thought && (
-            <div style={{fontSize: "12px", color: "#888", marginBottom: "4px"}}>
+            <div style={{
+              fontSize: "12px",
+              color: "#8c8c8c",
+              fontStyle: "italic",
+              marginBottom: "6px",
+              paddingLeft: 8,
+              borderLeft: "2px solid #d9d9d9",
+            }}>
               思考: {formatStepContent((step as ExecutionStep & Record<string, unknown>).thought)}
             </div>
           )}
-          <span style={getStepContentStyle("final" as StepType, "primary")}>
+          <span style={{ fontSize: 13, color: '#333' }}>
             {formatStepContent((step as ExecutionStep & Record<string, unknown>).response)}
           </span>
         </div>

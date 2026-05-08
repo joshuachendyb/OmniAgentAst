@@ -284,27 +284,51 @@ class CompressFilesInput(BaseModel):
         ge=1024,
         description="分卷大小（字节）。必填为LLM给出，当LLM未明确指定时Agent智能补全为null（不分卷）。含义：\n- None表示不分卷\n- 数值表示分卷大小，例如1048576（1MB）\n用于大文件分卷压缩，便于网络传输。"
     )
-    destination_path: str = Field(
-        description="目标压缩文件路径（必须是绝对路径）"
+
+
+class ExtractArchiveInput(BaseModel):
+    """extract_archive 工具的输入参数 - 小沈 2026-05-04"""
+    archive_path: str = Field(
+        ...,
+        description="压缩文件路径（必填）。必须是已存在的压缩文件，支持 zip、tar、gz 格式"
     )
-    format: Literal["zip", "tar.gz"] = Field(
-        default="zip",
-        description="压缩格式：zip、tar.gz，默认为zip"
+    output_dir: Optional[str] = Field(
+        default=None,
+        description="解压目标目录（可选）。默认 null，Agent 自动创建与压缩包同名（去后缀）的隔离文件夹"
     )
-    compression_level: int = Field(
-        default=6,
-        ge=0,
-        le=9,
-        description="压缩级别（0-9，0不压缩，9最高压缩），默认为6"
+    overwrite: bool = Field(
+        default=False,
+        description="是否覆盖已存在的文件（可选）。默认 false。若冲突，Agent 自动跳过并返回冲突清单"
     )
     password: Optional[str] = Field(
         default=None,
-        description="压缩密码（可选），用于加密压缩文件"
+        description="解压密码（可选）。Agent 从安全上下文获取，若密码错误仅提示错误"
     )
-    split_size: Optional[int] = Field(
+    preserve_permissions: bool = Field(
+        default=True,
+        description="是否保留文件权限（可选）。默认 true。跨平台自动适配权限保留策略"
+    )
+
+
+class GetFileHashInput(BaseModel):
+    """get_file_hash 工具的输入参数 - 小沈 2026-05-04"""
+    file_path: str = Field(
+        ...,
+        description="文件路径（必填）。必须是要计算哈希的文件"
+    )
+    algorithm: Literal["md5", "sha1", "sha256", "sha512"] = Field(
+        default="sha256",
+        description="哈希算法（可选）。可选值：md5、sha1、sha256（默认）、sha512"
+    )
+    verify_against: Optional[str] = Field(
         default=None,
-        ge=1024,
-        description="分卷大小（字节），None表示不分卷"
+        description="比对哈希值（可选）。若提供，Agent 自动计算并比对，返回 verified: true/false"
+    )
+    timeout: int = Field(
+        default=30000,
+        ge=1000,
+        le=600000,
+        description="超时毫秒数（可选），默认30000（30秒）"
     )
 
 
@@ -365,13 +389,13 @@ class ReadTextFileInput(BaseModel):
         default=None,
         ge=1,
         le=1000000,
-        description="读取文件的前 N 行，不能与 tail/offset 参数同时使用。用于只查看文件开头部分内容"
+        description="读取文件的前 N 行，不能与 tail/offset 参数同时使用。若 LLM 没给，Agent 检查文件大小：超大文件(>10MB日志)自动设 head=100 避免内存溢出；小代码文件则不设，读全部"
     )
     tail: Optional[int] = Field(
         default=None,
         ge=1,
         le=1000000,
-        description="读取文件的后 N 行，不能与 head/offset 参数同时使用。用于查看文件末尾部分内容，如日志文件的最新记录"
+        description="读取文件的后 N 行，不能与 head/offset 参数同时使用。若文件是 .log 结尾且 LLM 没给 head，Agent 推测用户想看最新动态，自动设 tail=50"
     )
     offset: Optional[int] = Field(
         default=None,
@@ -383,11 +407,11 @@ class ReadTextFileInput(BaseModel):
         default=None,
         ge=1,
         le=1000000,
-        description="最大读取行数，配合 offset 使用进行分页读取。如果只设置 limit 而不设置 offset，则从头读取 limit 行（等同于 head）"
+        description="最大读取行数，配合 offset 使用进行分页读取。若只设置 limit 而不设置 offset，则从头读取 limit 行（等同于 head）"
     )
     encoding: Optional[str] = Field(
         default=None,
-        description="文件编码。可选参数，由 Agent 根据文件内容自动检测。常见值：utf-8（默认）、gbk、gb2312、utf-8-sig"
+        description="文件编码。若读取失败，Agent 自动尝试 gbk、gb2312；若检测到 BOM 头，自动设为 utf-8-sig。常见值：utf-8（默认）、gbk、gb2312、utf-8-sig"
     )
 
 
@@ -547,21 +571,27 @@ class ListAllowedDirectoriesInput(BaseModel):
 class FileChecksumInput(BaseModel):
     """file_checksum 工具的输入参数"""
     file_path: str = Field(
-        description="文件的完整路径（必须是绝对路径）"
+        ...,
+        description="要计算哈希的文件路径（必填）。必须是已存在的文件。"
     )
-    algorithm: str = Field(
-        default="md5",
-        description="哈希算法：md5、sha1、sha256、sha512，默认为md5"
+    algorithm: Literal["md5", "sha1", "sha256", "sha512"] = Field(
+        default="sha256",
+        description="哈希算法。必填为LLM给出，当LLM未明确指定时Agent智能补全为sha256。可选值含义：\n- md5：128位，快速但有碰撞风险（默认不推荐）\n- sha1：160位，安全性中等\n- sha256：256位，安全可靠（默认推荐）\n- sha512：512位，最安全但速度最慢\n除非用户明确指令\"快速校验\"或文件>5GB，否则绝不降级为md5。"
     )
     verify_hash: Optional[str] = Field(
         default=None,
-        description="验证哈希值（如果提供则进行验证）"
+        description="验证哈希值（可选）。若提供此参数，Agent自动比对并返回verified状态。"
     )
     chunk_size: int = Field(
         default=65536,
         ge=1024,
         le=1048576,
-        description="分块大小（字节），用于大文件哈希计算，默认65536字节"
+        description="分块大小（字节）。必填为LLM给出，当LLM未明确指定时Agent智能补全为65536。用于大文件流式计算，避免内存溢出。\n- 建议值：65536（64KB）\n- 大文件（>1GB）：可设为131072或更大"
+    )
+    timeout: int = Field(
+        default=30000,
+        ge=5000,
+        description="超时毫秒数。必填为LLM给出，当LLM未明确指定时Agent智能补全为30000。Agent根据文件大小动态调整（1GB→60000, 5GB→120000）。超时返回进度或报错，防主流程卡死。"
     )
 
 
@@ -578,6 +608,8 @@ __all__ = [
     "CompareFilesInput",
     "BatchRenameInput",
     "CompressFilesInput",
+    "ExtractArchiveInput",
+    "GetFileHashInput",
     "FileMonitorInput",
     "FileStatisticsInput",
     "FileChecksumInput",

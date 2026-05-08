@@ -47,14 +47,17 @@ class LLMStrategy(ABC):
         """
         pass
     
-    def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None) -> str:
-        """构建返回结果（基类方法，供子类使用）"""
-        return json.dumps({
+    def _make_result(self, content: str, tool_name: str, tool_params: dict, reasoning: Any = None, response: str = "") -> str:
+        """构建返回结果（基类方法，供子类使用）- 小沈2026-05-07加response字段"""
+        result = {
             "content": content,
             "tool_name": tool_name,
             "tool_params": tool_params,
             "reasoning": reasoning
-        }, ensure_ascii=False)
+        }
+        if response:
+            result["response"] = response
+        return json.dumps(result, ensure_ascii=False)
 
 
 class TextStrategy(LLMStrategy):
@@ -161,22 +164,30 @@ class TextStrategy(LLMStrategy):
             # answer: 直接返回 finish，退出循环
             if parsed_type == "answer":
                 logger.info(f"[TextStrategy] type=answer, 直接返回finish")
+                _response = parsed.get("response", "")
+                if not _response or not _response.strip():
+                    _response = parsed.get("content", "")
                 return self._make_result(
                     content=parsed.get("content", ""),
                     tool_name="finish",
-                    tool_params={},
-                    reasoning=parsed.get("reasoning")
+                    tool_params={"result": _response},
+                    reasoning=parsed.get("reasoning"),
+                    response=_response
                 )
             
             # implicit: 直接返回 finish，退出循环
             # 【说明】base_react.py 的 type 判断逻辑会识别 implicit 并直接退出
             if parsed_type == "implicit":
                 logger.info(f"[TextStrategy] type=implicit, 直接返回finish")
+                _response = parsed.get("response", "")
+                if not _response or not _response.strip():
+                    _response = parsed.get("content", "")
                 return self._make_result(
                     content=parsed.get("content", ""),
                     tool_name="finish",
-                    tool_params={},
-                    reasoning=parsed.get("reasoning")
+                    tool_params={"result": _response},
+                    reasoning=parsed.get("reasoning"),
+                    response=_response
                 )
             
             # thought_only / parse_error: 继续下一层解析
@@ -189,10 +200,14 @@ class TextStrategy(LLMStrategy):
             # 【部分成功条件】tool_name 或 tool_params 缺失 → 继续下一层解析
             if parsed_type == "action":
                 tool_name = parsed.get("tool_name")
-                tool_params = parsed.get("tool_params") or {}
+                raw_tool_params = parsed.get("tool_params")
+                # 【修复 2026-05-07 小沈】区分tool_params的两种"空"：
+                #   {} → 合法，无参数工具（如list_allowed_directories），直接返回
+                #   None → 解析失败，没拿到参数，需要fallback
+                tool_params = raw_tool_params if raw_tool_params is not None else {}
                 
-                # 完全成功：tool_name 和 tool_params 都有值，直接返回
-                if tool_name and tool_params:
+                # 完全成功：tool_name有值 且 tool_params不是None（解析器成功提取了参数信息）
+                if tool_name and raw_tool_params is not None:
                     logger.info(f"[TextStrategy] type=action, tool_name和tool_params都有值，直接返回")
                     return self._make_result(
                         content=parsed.get("content", ""),
@@ -307,6 +322,8 @@ class TextStrategy(LLMStrategy):
         【2026-04-28 小沈增强】提取更完整的参数，包括 path, content 等
         """
         import re
+        # 【修复 2026-05-05 小沈】方法内局部导入，避免reload后NameError
+        from app.services.agent.react_output_parser import _get_all_tool_names
         
         content_lower = content.lower()
         

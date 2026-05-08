@@ -135,73 +135,36 @@ EXAMPLES = {
 def _register_support_tool_tools():
     """注册所有支撑工具 - 小沈 2026-05-02"""
 
-    tool_registry.register(
-        name="check_db_exists",
-        description=DESCRIPTIONS["check_db_exists"],
-        category=ToolCategory.SUPPORT_TOOL,
-        implementation=check_db_exists,
-        input_model=CheckDbExistsInput,
-        examples=EXAMPLES["check_db_exists"],
-    )
+    tools_to_register = [
+        ("check_db_exists", check_db_exists, CheckDbExistsInput),
+        ("get_table_schema", get_table_schema, GetTableSchemaInput),
+        ("begin_transaction", begin_transaction, BeginTransactionInput),
+        ("commit_transaction", commit_transaction, CommitTransactionInput),
+        ("rollback_transaction", rollback_transaction, RollbackTransactionInput),
+        ("check_network_connectivity", check_network_connectivity, CheckNetworkConnectivityInput),
+        ("validate_url", validate_url, ValidateUrlInput),
+    ]
 
-    tool_registry.register(
-        name="get_table_schema",
-        description=DESCRIPTIONS["get_table_schema"],
-        category=ToolCategory.SUPPORT_TOOL,
-        implementation=get_table_schema,
-        input_model=GetTableSchemaInput,
-        examples=EXAMPLES["get_table_schema"],
-    )
-
-    tool_registry.register(
-        name="begin_transaction",
-        description=DESCRIPTIONS["begin_transaction"],
-        category=ToolCategory.SUPPORT_TOOL,
-        implementation=begin_transaction,
-        input_model=BeginTransactionInput,
-        examples=EXAMPLES["begin_transaction"],
-    )
-
-    tool_registry.register(
-        name="commit_transaction",
-        description=DESCRIPTIONS["commit_transaction"],
-        category=ToolCategory.SUPPORT_TOOL,
-        implementation=commit_transaction,
-        input_model=CommitTransactionInput,
-        examples=EXAMPLES["commit_transaction"],
-    )
-
-    tool_registry.register(
-        name="rollback_transaction",
-        description=DESCRIPTIONS["rollback_transaction"],
-        category=ToolCategory.SUPPORT_TOOL,
-        implementation=rollback_transaction,
-        input_model=RollbackTransactionInput,
-        examples=EXAMPLES["rollback_transaction"],
-    )
-
-    tool_registry.register(
-        name="check_network_connectivity",
-        description=DESCRIPTIONS["check_network_connectivity"],
-        category=ToolCategory.SUPPORT_TOOL,
-        implementation=check_network_connectivity,
-        input_model=CheckNetworkConnectivityInput,
-        examples=EXAMPLES["check_network_connectivity"],
-    )
-
-    tool_registry.register(
-        name="validate_url",
-        description=DESCRIPTIONS["validate_url"],
-        category=ToolCategory.SUPPORT_TOOL,
-        implementation=validate_url,
-        input_model=ValidateUrlInput,
-        examples=EXAMPLES["validate_url"],
-    )
-
-    logger.info(f"[support_tool_register] 已注册 {7} 个支撑工具")
+    for name, impl, input_model in tools_to_register:
+        examples = EXAMPLES.get(name, [])
+        tool_registry.register(
+            name=name,
+            description=DESCRIPTIONS[name],
+            category=ToolCategory.SUPPORT_TOOL,
+            implementation=impl,
+            input_model=input_model,
+            examples=examples,
+        )
+        logger.info(
+            f"[support_tool_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__}, examples: {len(examples)}个"
+        )
 
 
-_register_support_tool_tools()
+# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
+_initialized = False
+if not _initialized:
+    _register_support_tool_tools()
+    _initialized = True
 
 __all__ = [
     "check_db_exists",

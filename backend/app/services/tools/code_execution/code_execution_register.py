@@ -37,11 +37,11 @@ DESCRIPTIONS = {
 - 当用户需要执行数据处理、计算等Python脚本时使用
 
 参数说明：
-- code: 要执行的Python代码。必填参数
-- timeout: 超时时间（秒），默认为30秒。可选参数
-- working_dir: 工作目录，如果为None则使用当前工作目录。可选参数
+- code: 要执行的Python代码（字符串）。必填参数
+- timeout: 超时时间（秒），默认为30秒，最大300秒。可选参数
+- working_dir: 工作目录（可选）。如果为None则使用当前工作目录
 
-返回数据说明：
+返回数据说明（位于返回的data字段中）：
 - stdout: 标准输出内容
 - stderr: 标准错误内容
 - returncode: 返回码（0表示成功）""",
@@ -53,11 +53,11 @@ DESCRIPTIONS = {
 - 当用户需要执行Node.js脚本时使用
 
 参数说明：
-- code: 要执行的JavaScript代码。必填参数
-- timeout: 超时时间（秒），默认为30秒。可选参数
-- working_dir: 工作目录，如果为None则使用当前工作目录。可选参数
+- code: 要执行的JavaScript代码（字符串）。必填参数
+- timeout: 超时时间（秒），默认为30秒，最大300秒。可选参数
+- working_dir: 工作目录（可选）。如果为None则使用当前工作目录
 
-返回数据说明：
+返回数据说明（位于返回的data字段中）：
 - stdout: 标准输出内容
 - stderr: 标准错误内容
 - returncode: 返回码（0表示成功）
@@ -69,12 +69,14 @@ EXAMPLES = {
     "execute_python": [
         {"code": "print('Hello, World!')"},
         {"code": "import math\nprint(math.sqrt(16))"},
-        {"code": "for i in range(5):\n    print(i)", "timeout": 10}
+        {"code": "for i in range(5):\n    print(i)", "timeout": 10},
+        {"code": "import os\nprint(os.listdir('.'))", "working_dir": "D:/projects"}
     ],
     "execute_javascript": [
         {"code": "console.log('Hello, World!');"},
         {"code": "const result = Math.sqrt(16);\nconsole.log(result);"},
-        {"code": "for(let i=0; i<5; i++) {\n  console.log(i);\n}", "timeout": 10}
+        {"code": "for(let i=0; i<5; i++) {\n  console.log(i);\n}", "timeout": 10},
+        {"code": "console.log(process.cwd());", "working_dir": "D:/projects"}
     ],
 }
 
@@ -111,7 +113,11 @@ def _register_code_execution_tools():
         logger.info(f"[code_execution_register] 已注册工具: {name}, 使用 Pydantic 模型: {input_model.__name__ if input_model else 'None'}, examples: {len(examples)}个")
 
 
-_register_code_execution_tools()
+# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
+_initialized = False
+if not _initialized:
+    _register_code_execution_tools()
+    _initialized = True
 
 
 __all__ = [

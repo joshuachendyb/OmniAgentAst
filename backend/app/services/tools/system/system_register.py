@@ -23,7 +23,6 @@ SYSTEM Register - 系统信息工具注册点
 更新时间: 2026-05-02
 """
 
-import logging
 from app.services.tools.registry import ToolCategory, tool_registry
 from app.utils.logger import logger
 
@@ -64,10 +63,10 @@ SYSTEM_TOOL_DESCRIPTIONS = {
     "get_system_info": "获取系统完整信息，包括操作系统、CPU、内存、磁盘、网络接口等硬件和系统配置信息。适合查看系统配置、诊断系统问题",
     "net_connections": "获取网络连接列表，支持按类型（TCP/UDP）、状态（ESTABLISHED/LISTEN）、端口过滤，可获取关联进程信息。适合查看网络连接、排查端口占用",
     "event_log": "获取系统事件日志（Windows事件查看器/Linux syslog），支持按级别、来源、时间范围过滤。适合查看系统错误、诊断问题、审计日志",
-    "list_processes": "列出系统所有进程，支持按名称/PID过滤，可按CPU/内存占用排序。适合查看进程状态、找资源占用高的进程",
-    "kill_process": "终止指定进程，支持优雅终止（SIGTERM）和强制终止（SIGKILL），需谨慎使用。适合结束卡死进程、释放资源",
-    "log_message": "记录日志消息到指定日志文件或日志系统，支持DEBUG/INFO/WARNING/ERROR/CRITICAL级别。使用Python内置库logging，零依赖。适合记录调试信息、错误追踪、审计日志",
-    "get_logs": "读取指定日志文件的内容，支持按级别、时间范围、关键词过滤，支持尾部读取和分页。适合查看运行日志、排查错误、分析问题",
+    "list_processes": "列出系统所有进程，支持按filter_name/filter_pid过滤，可按CPU/内存占用排序。适合查看进程状态、找资源占用高的进程",
+    "kill_process": "终止指定进程(pid必填)，支持优雅终止（SIGTERM）和强制终止（SIGKILL），需谨慎使用。适合结束卡死进程、释放资源",
+    "log_message": "记录日志消息到指定日志文件或日志系统。\n\nScenarios:\n- When user needs to log operation\n- When user wants audit trail\n- When user needs debug\n\nParams:\n- message: log message content (required)\n- level: log level (optional), default INFO\n- logger_name: logger name (optional), default root\n- log_file: log file path (optional), default console\n\n[Important] Uses Python builtin logging. Agent auto infers level\n\nExamples:\n- Log: {\"message\": \"User logged in\", \"level\": \"INFO\"}\n- To file: {\"message\": \"System started\", \"log_file\": \"D:/logs/app.log\"}",
+    "get_logs": "读取指定日志文件的内容，支持智能过滤与截断。\n\nScenarios:\n- When user needs to view log content\n- When user wants to analyze history\n- When user needs troubleshooting\n\nParams:\n- log_file: log file path (required)\n- level: log level filter (optional), default WARNING\n- start_time/end_time: time range filter (optional)\n- log_format: time format (optional), default auto_detect\n- max_lines: max lines (optional), default 200\n- tail_mode: tail read mode (optional), default false\n- pattern: keyword filter (optional)\n- output_format: output format (optional), default table\n\n[Important] tail_mode enabled skips level/pattern filter\n\nExamples:\n- Read: {\"log_file\": \"D:/logs/app.log\"}\n- Filter ERROR: {\"log_file\": \"D:/logs/app.log\", \"level\": \"ERROR\", \"max_lines\": 100}",
     "service_list": "列出系统服务（Windows用sc/Linux用systemctl），支持按名称和状态（running/stopped）过滤。适合查看服务状态、管理服务",
     "service_start": "启动指定系统服务（Windows用sc/Linux用systemctl），支持超时设置。适合启动停止的服务",
     "service_stop": "停止指定系统服务（Windows用sc/Linux用systemctl），支持优雅停止和强制停止。适合停止异常服务",
@@ -113,7 +112,7 @@ SYSTEM_TOOL_EXAMPLES = {
     "list_processes": [
         {},
         {"filter_name": "python"},
-        {"sort_by": "memory", "descending": True, "max_results": 20},
+        {"filter_name": "python", "sort_by": "memory", "max_results": 20},
     ],
     "kill_process": [
         {"pid": 1234},
@@ -122,40 +121,40 @@ SYSTEM_TOOL_EXAMPLES = {
     "log_message": [
         {"message": "这是一条测试日志"},
         {"level": "WARNING", "message": "警告信息"},
-        {"level": "ERROR", "message": "错误信息", "logger_name": "api"},
-        {"message": "系统启动", "log_file": "D:/logs/app.log"},
+        {"message": "错误信息", "level": "ERROR", "logger_name": "api"},
     ],
     "get_logs": [
         {"log_file": "D:/logs/app.log"},
         {"log_file": "D:/logs/app.log", "level": "ERROR", "max_lines": 100},
-        {"log_file": "D:/logs/app.log", "tail_mode": True, "max_lines": 50},
-        {"log_file": "D:/logs/app.log", "pattern": "timeout", "output_format": "json"},
+        {"log_file": "D:/logs/app.log", "pattern": "timeout", "tail_mode": True},
+        {"log_file": "D:/logs/app.log", "start_time": "2026-01-01", "end_time": "2026-01-02", "output_format": "json"},
     ],
     "service_list": [
         {},
-        {"filter_state": "running"},
-        {"filter_name": "mysql", "max_results": 20},
+        {"state": "running"},
+        {"name": "mysql", "state": "running"},
     ],
     "service_start": [
         {"service_name": "mysql"},
-        {"service_name": "nginx", "timeout": 60},
+        {"service_name": "nginx", "wait_for_started": True},
     ],
     "service_stop": [
         {"service_name": "mysql"},
         {"service_name": "nginx", "force": True},
+        {"service_name": "mysql", "force": True, "wait_for_stopped": True},
     ],
     "task_list": [
         {},
-        {"filter_status": "ready"},
-        {"filter_name": "backup", "max_results": 20},
+        {"state": "running"},
+        {"folder": "\\Microsoft", "state": "ready"},
     ],
     "task_create": [
         {"task_name": "MyBackup", "command": "C:\\scripts\\backup.bat", "schedule": "02:00"},
-        {"task_name": "WeeklyReport", "command": "python C:\\scripts\\report.py", "schedule": "09:00 /day 1"},
+        {"task_name": "WeeklyReport", "command": "python C:\\scripts\\report.py", "schedule": "09:00 /day 1", "start_time": "09:00"},
     ],
     "task_delete": [
         {"task_name": "MyBackup"},
-        {"task_name": "OldTask", "force": True},
+        {"task_name": "OldTask", "folder": "\\Microsoft"},
     ],
 }
 
@@ -199,5 +198,8 @@ def _register_system_tools():
         )
 
 
-# 触发注册
-_register_system_tools()
+# 【修复 2026-05-07 小沈】守护模式：只首次import时注册，防止重复注册
+_initialized = False
+if not _initialized:
+    _register_system_tools()
+    _initialized = True

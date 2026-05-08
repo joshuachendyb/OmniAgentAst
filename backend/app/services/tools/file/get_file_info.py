@@ -73,7 +73,7 @@ async def get_file_info_impl(
                     dir_count = sum(1 for _ in path.rglob("*") if _.is_dir())
                     info["file_count"] = file_count
                     info["dir_count"] = dir_count
-                except:
+                except (OSError, PermissionError):
                     info["file_count"] = None
                     info["dir_count"] = None
             

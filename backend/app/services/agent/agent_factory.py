@@ -60,18 +60,10 @@ class AgentFactory:
         # 获取Agent类
         AgentClass = cls._AGENTS.get(intent_type)
         
-        # 【修复 2026-04-30 小沈】未注册的intent_type回退到FileReactAgent，而非返回None
-        # 返回None会导致调用方 None.run_stream() → AttributeError
+        # 【步骤7】不再回退到FileReactAgent，未注册intent直接报错
         if not AgentClass:
-            from app.utils.logger import logger
-            logger.warning(f"[AgentFactory] intent_type='{intent_type}' 未注册，回退到 FileReactAgent")
-            fallback_class = cls._AGENTS.get('file')
-            if not fallback_class:
-                raise ValueError(f"AgentFactory: intent_type='{intent_type}' 未注册且无回退Agent可用")
-            AgentClass = fallback_class
-            # 回退时也使用file的tool_category
-            if not tool_category:
-                tool_category = cls._TOOL_CATEGORIES.get('file')
+            available = list(cls._AGENTS.keys())
+            raise ValueError(f"AgentFactory: intent_type='{intent_type}' 未注册。可用Agent: {available}")
         
         # 获取tool_category（优先使用参数，其次使用预注册的）
         effective_tool_category = tool_category
@@ -137,3 +129,62 @@ try:
     AgentFactory.register('time', TimeReactAgent, ToolCategory.TIME)
 except ImportError as e:
     print(f"[AgentFactory] TimeReactAgent: {e}")
+
+# ===== 步骤4：注册7个新Agent ===== 
+# 参考文档4.14节，步骤4实施要求使用fallback机制
+
+# ShellReactAgent
+try:
+    from app.services.agent.shell_react import ShellReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('shell', ShellReactAgent, ToolCategory.SHELL)
+except ImportError as e:
+    print(f"[AgentFactory] ShellReactAgent: {e}")
+
+# NetworkReactAgent
+try:
+    from app.services.agent.network_react import NetworkReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('network', NetworkReactAgent, ToolCategory.NETWORK)
+except ImportError as e:
+    print(f"[AgentFactory] NetworkReactAgent: {e}")
+
+# DesktopReactAgent
+try:
+    from app.services.agent.desktop_react import DesktopReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('desktop', DesktopReactAgent, ToolCategory.DESKTOP)
+except ImportError as e:
+    print(f"[AgentFactory] DesktopReactAgent: {e}")
+
+# DatabaseReactAgent
+try:
+    from app.services.agent.database_react import DatabaseReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('database', DatabaseReactAgent, ToolCategory.DATABASE)
+except ImportError as e:
+    print(f"[AgentFactory] DatabaseReactAgent: {e}")
+
+# SystemReactAgent
+try:
+    from app.services.agent.system_react import SystemReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('system', SystemReactAgent, ToolCategory.SYSTEM)
+except ImportError as e:
+    print(f"[AgentFactory] SystemReactAgent: {e}")
+
+# DocumentReactAgent
+try:
+    from app.services.agent.document_react import DocumentReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('document', DocumentReactAgent, ToolCategory.DOCUMENT)
+except ImportError as e:
+    print(f"[AgentFactory] DocumentReactAgent: {e}")
+
+# CodeExecutionReactAgent
+try:
+    from app.services.agent.code_execution_react import CodeExecutionReactAgent
+    from app.services.tools.registry import ToolCategory
+    AgentFactory.register('code_execution', CodeExecutionReactAgent, ToolCategory.CODE_EXECUTION)
+except ImportError as e:
+    print(f"[AgentFactory] CodeExecutionReactAgent: {e}")

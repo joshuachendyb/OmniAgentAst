@@ -146,7 +146,7 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
         "TIME": ToolCategory.TIME,
         "NETWORK": ToolCategory.NETWORK,
         "DESKTOP": ToolCategory.DESKTOP,
-        "ENV": ToolCategory.ENV,
+        "ENV": ToolCategory.ENVIRONMENT,
         "SYSTEM": ToolCategory.SYSTEM,
         "DATABASE": ToolCategory.DATABASE,
     }

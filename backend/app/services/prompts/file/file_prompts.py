@@ -15,7 +15,6 @@
 6. 嵌入服务器OS信息（Prompt中间层）- 2026-03-24
 7. 升级Examples添加reasoning字段 - 2026-04-14
 8. 新增finish示例和result字段 - 2026-04-14
-9. 新增get_llm_response_schema()方法 - 2026-04-14
 
 更新时间: 2026-03-19 23:55:00
 迁移时间: 2026-03-21
@@ -57,73 +56,60 @@ class FileOperationPrompts(BasePrompts):
         # 直接字符串拼接，避免f-string解析问题
         return system_info + """
 
----
 
 You are a professional file management assistant. You help users organize, analyze, and manage files and directories.
 
 You have access to the following tools:
 
-【IMPORTANT】Parameter Naming Rules - MUST follow these exactly:
-- list_directory → use dir_path (NOT directory_path, NOT path)
-- read_file → use file_path (NOT filepath, NOT path)
-- write_file → use file_path (NOT filepath, NOT path)
-- delete_file → use file_path (NOT filepath, NOT path)
-- move_file → use source_path AND destination_path (NOT src, NOT dst, NOT source, NOT destination)
- - search_files → use file_pattern (NOT pattern)
- - grep_file_content → use pattern AND search_dir
-
-【FORBIDDEN parameter names - DO NOT use】:
-- ❌ directory_path (correct: dir_path)
-- ❌ filepath (correct: file_path)
-- ❌ src / source (correct: source_path)
-- ❌ dst / dest / destination (correct: destination_path)
-
----
 
 Available Tools:
 
-1. read_file(file_path, offset=1, limit=2000, encoding="utf-8")
-   Read file content with optional line offset and limit.
+1. read_text_file(file_path, head=None, tail=None, offset=None, limit=None, encoding=None)
+   Read text file content, supports head/tail/offset/limit modes. Always UTF-8.
    - file_path: Complete file path (MUST use file_path, NOT filepath or path)
-   - offset: Starting line number (1-indexed), default 1
-   - limit: Maximum lines to read, default 2000
+   - head: Read first N lines (cannot use with tail/offset)
+   - tail: Read last N lines (cannot use with head/offset)
+   - offset: Starting line number (1-indexed, cannot use with head/tail)
+   - limit: Maximum lines to read (use with offset)
    Example: {"file_path": "C:/Users/username/Documents/config.json", "offset": 1, "limit": 100}
 
-2. write_file(file_path, content, encoding="utf-8")
-   Write content to a file (overwrites if exists).
+2. write_text_file(file_path, text, encoding=None, append=False, create_parents=True, unescape=True)
+   Write or append text to a file (overwrites if exists, unless append=True).
    - file_path: Complete file path (MUST use file_path)
-   - content: Content to write
-   Example: {"file_path": "D:/project/config.json", "content": "{\"key\": \"value\"}"}
+   - text: Text content to write (MUST use text, NOT content)
+   - append: Append to file instead of overwrite, default False
+   Example: {"file_path": "D:/project/config.json", "text": "{\"key\": \"value\"}"}
 
-3. list_directory(dir_path, recursive=False, max_depth=10, page_size=100)
-   List directory contents.
+3. list_directory(dir_path, recursive=False, max_depth=10, sortBy=None, include_hidden=False)
+   List directory contents with file size, modification time.
    - dir_path: Complete directory path (MUST use dir_path, NOT directory_path or path)
    - recursive: Whether to list subdirectories, default False
    - max_depth: Maximum recursion depth (only when recursive=True), default 10
    Example: {"dir_path": "D:/project/code", "recursive": True, "max_depth": 3}
    Common use: When user says "查看D盘", "列出目录", "文件夹里有什么"
 
-4. delete_file(file_path, recursive=False)
-   Delete file or directory (auto backup to recycle bin).
+4. delete_file(file_path, recursive=False, force=False)
+   Delete file or directory. Default: move to recycle bin (safe). force=True: permanent delete.
    - file_path: Complete path to delete (MUST use file_path)
    - recursive: Required for non-empty directories, default False
+   - force: Permanent delete without recycle bin, default False
    Example: {"file_path": "C:/Users/username/temp.txt", "recursive": False}
 
-5. move_file(source_path, destination_path)
+5. move_file(source_path, destination_path, overwrite=False)
    Move or rename file/directory.
    - source_path: Source file/directory path (MUST use source_path)
    - destination_path: Target path (MUST use destination_path)
    Example: {"source_path": "C:/old/file.txt", "destination_path": "D:/new/file.txt"}
 
-5. search_files(file_pattern, path, recursive=True)
-   Search files by file name pattern.
-   - file_pattern: File name pattern with wildcard (e.g., "*.py", "config*") (REQUIRED)
-   - path: Starting directory for search (REQUIRED, CANNOT be empty)
+6. search_files(pattern, search_dir, recursive=True, max_depth=10, ignore_case=True)
+   Search files by file name pattern (glob supported, Chinese filenames supported).
+   - pattern: File name pattern with wildcard (e.g., "**/*.py", "config*") (REQUIRED)
+   - search_dir: Starting directory for search (REQUIRED, CANNOT be empty)
    - recursive: Whether to search subdirectories, default True
-   Example: {"file_pattern": "*.py", "path": "D:/project", "recursive": True}
+   Example: {"pattern": "**/*.py", "search_dir": "D:/project", "recursive": True}
 
-6. grep_file_content(pattern, search_dir=".", glob="*.py", ignore_case=True, head_limit=50)
-   Search files by content pattern (regex supported).
+7. grep_file_content(pattern, search_dir=None, glob=None, ignore_case=False, head_limit=None, show_line_no=True)
+   Search files by content pattern (regex supported, Chinese supported).
    - pattern: Regex search pattern (REQUIRED, CANNOT be empty)
    - search_dir: Starting directory for search, default current dir
    - glob: File name filter (e.g., "*.py"), default None
@@ -131,111 +117,57 @@ Available Tools:
    - head_limit: Max results to return, default None
    Example: {"pattern": "TODO", "search_dir": "D:/project", "glob": "*.py", "ignore_case": true}
 
-7. generate_report(output_dir=None)
+8. generate_report(output_dir=None)
    Generate operation report for current session.
    - output_dir: Output directory (optional)
    Example: {"output_dir": "C:/Users/username/Desktop"}
 
----
+9. precise_replace_in_file(file_path, old_string, new_string, replace_all=False)
+   Precise string replacement in text file. Supports Chinese content matching.
+   - file_path: File absolute path
+   - old_string: Exact text to find and replace
+   - new_string: Replacement text
+   Example: {"file_path": "D:/project/main.py", "old_string": "def old():", "new_string": "def new():"}
+
+10. edit_text_file(file_path, edits, dryRun=False)
+    Advanced multi-edit with pattern matching, supports dryRun preview.
+    - file_path: File path to edit
+    - edits: Array of {oldText, newText} edit operations
+    - dryRun: Preview only without modifying file, default False
+    Example: {"file_path": "D:/project/main.py", "edits": [{"oldText": "old", "newText": "new"}]}
+
+11. get_directory_tree(dir_path, excludePatterns=None, max_depth=None)
+    Get recursive JSON tree structure of directory.
+    - dir_path: Starting directory
+    Example: {"dir_path": "D:/project"}
+
 
 【Tool Call Examples - Follow this format exactly】:
 
 Example 1: List directory
-{
-    "thought": "User wants to see files in D drive root",
-    "reasoning": "list_directory是列出目录的唯一工具，需要设置dir_path参数为D:/",
-    "tool_name": "list_directory",
-    "tool_params": {
-        "dir_path": "D:/"  // ✅ CORRECT: uses dir_path
-    }
-}
-// ❌ WRONG: {"directory_path": "D:/"} or {"path": "D:/"}
+{"thought": "查看D盘根目录文件", "reasoning": "调用list_directory", "tool_name": "list_directory", "tool_params": {"dir_path": "D:/"}}
 
 Example 2: Read file
-{
-    "thought": "User wants to read a config file",
-    "reasoning": "read_file是读取文件内容的唯一工具，需要设置file_path参数",
-    "tool_name": "read_file",
-    "tool_params": {
-        "file_path": "C:/Users/username/config.json"  // ✅ CORRECT: uses file_path
-    }
-}
-// ❌ WRONG: {"filepath": "..."} or {"path": "..."}
+{"thought": "读取配置文件", "reasoning": "调用read_text_file", "tool_name": "read_text_file", "tool_params": {"file_path": "C:/Users/username/config.json"}}
 
-Example 3: Search file content
-{
-    "thought": "User wants to search for TODO comments in Python files",
-    "reasoning": "grep_file_content支持正则搜索和多选项筛选，是搜索文件内容的最佳工具",
-    "tool_name": "grep_file_content",
-    "tool_params": {
-        "pattern": "TODO",
-        "path": "D:/project",
-        "file_pattern": "*.py"
-    }
-}
+Example 3: Write file
+{"thought": "写入文件内容", "reasoning": "调用write_text_file", "tool_name": "write_text_file", "tool_params": {"file_path": "D:/project/output.txt", "text": "Hello World"}}
 
-Example 4: Move file
-{
-    "thought": "User wants to move file to new location",
-    "reasoning": "move_file支持文件和目录移动，需要source_path和destination_path两个参数",
-    "tool_name": "move_file",
-    "tool_params": {
-        "source_path": "C:/old/file.txt",  // ✅ CORRECT
-        "destination_path": "D:/new/file.txt"  // ✅ CORRECT
-    }
-}
-// ❌ WRONG: {"src": "...", "dst": "..."}
+Example 4: Error handling
+{"thought": "文件读取失败，路径可能不存在", "reasoning": "向用户报告错误并建议检查路径", "tool_name": "finish", "tool_params": {"result": "读取失败：文件C:/not-exist.txt不存在，请确认路径是否正确"}}
 
 Example 5: Task completed
-{
-    "thought": "用户的任务已完成，我已列出D盘文件列表",
-    "reasoning": "没有更多操作需要执行，任务结束",
-    "tool_name": "finish",
-    "tool_params": {"result": "已列出D盘根目录的文件：..."}
-}
+{"thought": "任务已完成", "reasoning": "无更多操作", "tool_name": "finish", "tool_params": {"result": "已列出D盘根目录的文件：..."}}
 
----
 
-【Path Format Requirements】:
-- Windows: C:/Users/username/... or C:\\Users\\username\\...
-- Linux/Mac: /home/username/...
-- MUST use absolute paths (not relative paths like ./file.txt)
-- Do NOT use ~ to represent home directory
-- ❌ CRITICAL: Do NOT translate or replace Chinese characters in paths! If the user says "E:\\下载\\科幻小说", you MUST use "E:\\下载\\科幻小说" exactly, NOT "E:\\download\\sci-fi-novel". Keep the original Chinese path characters exactly as provided by the user.
-- ❌ Do NOT convert Chinese paths to English or pinyin. Always use the path EXACTLY as the user specified.
 
----
+【⚠️ write_text_file text规则 - 极其重要】:
+- text参数必须传入实际的文件内容（代码、文本、正文等）
+- ❌ 绝对禁止将你的思考/计划/状态确认当作text传入
+- ❌ 错误示例: text="已成功创建并写入第一章，需要继续创建第二章"
+- ✅ 正确示例: text="第一章：觉醒
 
-【Safety Guidelines】:
-- All deletions are auto-backed up to recycle bin (safe to delete)
-- All operations are tracked and can be rolled back
-- Search operations are read-only and safe
-- Be careful with write operations (overwrites existing content)
-- ❌ CRITICAL: When using write_file to modify an existing file, you MUST provide the COMPLETE new content, not just a summary or your thought process. Writing a short text to a large file will be REJECTED by data protection. If you only need to change part of a file, use precise_replace_in_file instead.
-
----
-
-【Response Format】:
-Always format responses as JSON:
-{
-    "thought": "分析当前状态和下一步决策（禁止写‘已成功’/‘需要继续’等确认性语言）",
-    "reasoning": "为什么选这个工具、参数如何确定（必需，不能为空，禁止写确认性语言）",
-    "tool_name": "tool_name",
-    "tool_params": {
-        "param1": "value1",
-        "param2": "value2"
-    }
-}
-
-【⚠️ write_file content规则 - 极其重要】:
-- content参数必须传入实际的文件内容（代码、文本、正文等）
-- ❌ 绝对禁止将你的思考/计划/状态确认当作content传入
-- ❌ 错误示例: content="已成功创建并写入第一章，需要继续创建第二章"
-- ✅ 正确示例: content="第一章：觉醒
-
-林凡是一名普通的大学生..."
-
-If task is complete: {"thought": "...", "reasoning": "...", "tool_name": "finish", "tool_params": {"result": "summary"}}"""
+林凡是一名普通的大学生..."""
 
     def get_task_prompt(self, task: str, context: Optional[Dict[str, Any]] = None) -> str:
         """
@@ -256,11 +188,6 @@ Please help me complete this file management task. Follow these steps:
 1. First, analyze what needs to be done
 2. Use the appropriate tools to accomplish the task
 3. Provide a summary when finished
-
-IMPORTANT - When to finish:
-- When the user's task is COMPLETED, use tool_name="finish" with a summary of what was done
-- Do NOT keep calling tools after the task is done
-- Example finish: {{"thought": "任务已完成，我已查看E盘内容...", "tool_name": "finish", "tool_params": {{"result": "完成了..."}}}}
 
 Remember:
 - You can use multiple tools in sequence
@@ -307,65 +234,6 @@ Error: {error}
 
 Please reconsider your approach and suggest an alternative action."""
 
-    def get_available_tools_prompt(self, tools: Optional[List[Dict[str, Any]]] = None) -> str:
-        """
-        获取可用工具列表Prompt（增强版 - 支持input_examples）
-        
-        Args:
-            tools: 可用工具列表
-            
-        Returns:
-            格式化的工具列表Prompt
-        """
-        if not tools:
-            return "No tools available."
-        
-        tool_descriptions = []
-        
-        for tool in tools:
-            name = tool.get("name", "unknown")
-            description = tool.get("description", "No description")
-            
-            # 提取schema信息
-            schema = tool.get("input_schema", {})
-            properties = schema.get("properties", {})
-            required = schema.get("required", [])
-            
-            # 提取examples
-            examples = tool.get("input_examples", [])
-            
-            # 构建参数描述
-            params = []
-            for param_name, param_info in properties.items():
-                param_type = param_info.get("type", "any")
-                param_desc = param_info.get("description", "")
-                is_required = param_name in required
-                req_str = "(required)" if is_required else "(optional)"
-                
-                # 简化描述（取第一行或前50字符）
-                short_desc = param_desc.split('\n')[0] if param_desc else ""
-                if len(short_desc) > 50:
-                    short_desc = short_desc[:50] + "..."
-                
-                params.append(f"  - {param_name} ({param_type}) {req_str}: {short_desc}")
-            
-            # 构建示例
-            example_str = ""
-            if examples:
-                example_str = f"\n  Examples:\n"
-                for i, ex in enumerate(examples[:2], 1):  # 最多2个示例
-                    example_str += f"    {i}. {ex}\n"
-            
-            tool_desc = f"""
-{name}:
-  Description: {description.split(chr(10))[0] if description else 'No description'}  # 首行
-  Parameters:
-{chr(10).join(params) if params else '  (no parameters)'}
-{example_str}"""
-            
-            tool_descriptions.append(tool_desc)
-        
-        return "Available Tools:\n" + "\n\n".join(tool_descriptions)
 
     def get_rollback_instructions(self) -> str:
         """获取回滚指令Prompt"""
@@ -398,98 +266,24 @@ Warning: Rollback operations cannot be undone. Be certain before proceeding."""
 
 Correct parameter names to use:
 - list_directory: dir_path
-- read_file: file_path
-- write_file: file_path
+- read_text_file: file_path
+- write_text_file: file_path, text
 - delete_file: file_path
 - move_file: source_path, destination_path
+- search_files: pattern, search_dir
 - grep_file_content: pattern, search_dir
+- precise_replace_in_file: file_path, old_string, new_string
 
 Common mistakes to avoid:
 - ❌ directory_path (use: dir_path)
 - ❌ filepath (use: file_path)
+- ❌ content for write (use: text)
+- ❌ file_pattern for search (use: pattern)
+- ❌ path for search_dir (use: search_dir)
 - ❌ src/dst (use: source_path/destination_path)
-- ❌ path for read/write (use: file_path)"""
+- ❌ read_file (use: read_text_file)
+- ❌ write_file (use: write_text_file)"""
 
-    def get_llm_response_schema(self) -> Dict[str, Any]:
-        """
-        获取LLM响应的Function Calling Schema
-        用于强制LLM输出结构化响应（包含thought+reasoning）
-        
-        Returns:
-            OpenAI Function Calling格式的Schema
-            
-        示例返回：
-        {
-            "name": "execute_tool",
-            "description": "执行工具完成用户任务",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "thought": {
-                        "type": "string",
-                        "description": "思考过程，分析当前情况和用户需求"
-                    },
-                    "reasoning": {
-                        "type": "string",
-                        "description": "推理过程，解释为什么选择这个工具及其参数"
-                    },
-                    "tool_name": {
-                        "type": "string",
-                        "description": "工具名称，如list_directory, read_file, write_file, finish等"
-                    },
-                    "tool_params": {
-                        "type": "object",
-                        "description": "工具参数字典"
-                    }
-                },
-                "required": ["thought", "tool_name"]
-            }
-        }
-        
-        Returns:
-            Dict[str, Any]: Function Calling Schema
-        """
-        return {
-            "name": "execute_tool",
-            "description": "执行工具完成用户任务",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "thought": {
-                        "type": "string",
-                        "description": (
-                            "分析当前情况、用户需求和下一步行动。"
-                            "【禁止】不要写'已成功'、'已完成'、'需要继续'等自我确认或计划性语言，"
-                            "只描述你的分析和决策。"
-                        )
-                    },
-                    "reasoning": {
-                        "type": "string",
-                        "description": (
-                            "详细推理过程，解释为什么选择这个工具、参数如何确定。"
-                            "【禁止】reasoning不能为空，不能包含'已成功'、'现在需要继续'等思维确认文本，"
-                            "必须是真正的逻辑推理。"
-                        )
-                    },
-                    "tool_name": {
-                        "type": "string",
-                        "description": "工具名称，如list_directory, read_file, write_file, finish等"
-                    },
-                    "tool_params": {
-                        "type": "object",
-                        "description": (
-                            "工具参数字典。"
-                            "【关键】write_file的content参数必须传入实际的文件内容（如代码、文本、小说正文），"
-                            "绝对禁止将你的思考过程、计划说明、状态确认当作content传入。"
-                        )
-                    }
-                },
-                "required": ["thought", "reasoning", "tool_name"]
-            }
-        }
-
-
-# 预定义的任务模板
 class TaskTemplates:
     """预定义任务模板"""
     

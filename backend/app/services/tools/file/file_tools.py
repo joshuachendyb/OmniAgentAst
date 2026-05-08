@@ -4,6 +4,12 @@ MCP文件操作工具集 - 重写版本
 【重构日期】2026-03-19 小强
 【参考】FastMCP、MarcusJellinghaus、LangChain、Claude官方Tool Use规范
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. *_tools.py: 函数实现（必须有详细注释）
+2. *_schema.py: Pydantic 模型（输入参数定义）
+3. *_register.py: 显式注册（description + examples + input_model）
+
 改进点：
 1. 使用Pydantic模型定义参数Schema
 2. 动态白名单（自动添加存在的盘符）
@@ -57,6 +63,8 @@ from app.services.tools.file.file_schema import (
     FileMonitorInput,
     FileStatisticsInput,
     FileChecksumInput,
+    ExtractArchiveInput,
+    GetFileHashInput,
 )
 
 from app.services.safety.file.file_safety import OperationType
@@ -234,11 +242,13 @@ class FileTools:
     def __init__(self, task_id: Optional[str] = None):
         # 【重要】延迟导入 agent 服务，避免循环导入
         from app.services.agent import get_file_safety_service, get_session_service
+        from app.services.agent.mixins.task_tracker import get_task_tracker
+        from app.utils.visualization.file_visualization import get_visualizer
         
         # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
         # session_id 专用于会话场景，操作追踪必须用 task_id
         self.safety = get_file_safety_service()
-        self.session = get_session_service()
+        self.task_tracker = get_task_tracker()
         self.visualizer = get_visualizer()
         self.task_id = task_id
         self._sequence = 0
@@ -601,7 +611,7 @@ class FileTools:
                 logging.getLogger(__name__).info(f"write_text_file: 自动将全角标点替换为半角标点({file_path})")
 
         if content:
-            from app.services.tools.content_quality import check_content_quality
+            from app.services.tools.toolhelper.content_quality import check_content_quality
             quality_result = check_content_quality(content=content, file_path=file_path)
             if quality_result.get("is_thought_leak"):
                 return _to_unified_format({
@@ -657,7 +667,10 @@ class FileTools:
         if not append and path.exists() and path.is_file():
             old_size = path.stat().st_size
             new_size = len(content.encode(encoding))
-            if old_size > 1024 and new_size < old_size * 0.1:
+            # 【修正 2026-05-06 小沈】数据保护：缩小95%以上且非空内容才拦截
+            # 原阈值10%过严，清空文件(空字符串)和大幅精简是合法场景
+            # 豁免条件：新内容为空（有意清空）或缩小比例<95%
+            if old_size > 1024 and new_size > 0 and new_size < old_size * 0.05:
                 return _to_unified_format({
                     "success": False,
                     "error": f"数据保护：新内容({new_size}字节)远小于原始内容({old_size}字节，缩小{100-int(new_size/max(old_size,1)*100)}%)，可能覆盖数据。如确认覆盖，请使用precise_replace_in_file或在text中传入完整内容。",
@@ -1498,6 +1511,42 @@ class FileTools:
             get_next_sequence_func=self._get_next_sequence,
         )
 
+    async def extract_archive(
+        self,
+        archive_path: str,
+        output_dir: Optional[str] = None,
+        overwrite: bool = False,
+        password: Optional[str] = None,
+        preserve_permissions: bool = True,
+    ) -> Dict[str, Any]:
+        """解压压缩文件"""
+        from app.services.tools.toolhelper.file_helpers import extract_archive as _extract_archive
+        
+        return _extract_archive(
+            archive_path=archive_path,
+            output_dir=output_dir,
+            overwrite=overwrite,
+            password=password,
+            preserve_permissions=preserve_permissions,
+        )
+
+    async def get_file_hash(
+        self,
+        file_path: str,
+        algorithm: str = "sha256",
+        verify_against: Optional[str] = None,
+        timeout: int = 30000,
+    ) -> Dict[str, Any]:
+        """计算文件哈希值"""
+        from app.services.tools.toolhelper.file_helpers import get_file_hash as _get_file_hash
+        
+        return _get_file_hash(
+            file_path=file_path,
+            algorithm=algorithm,
+            verify_against=verify_against,
+            timeout=timeout,
+        )
+
     async def file_monitor(
         self,
         directory: str,
@@ -1556,9 +1605,10 @@ class FileTools:
     async def file_checksum(
         self,
         file_path: str,
-        algorithm: str = "md5",
+        algorithm: str = "sha256",
         verify_hash: Optional[str] = None,
         chunk_size: int = 65536,
+        timeout: int = 30000,
     ) -> Dict[str, Any]:
         """计算文件校验和"""
         from app.services.tools.file.file_checksum import file_checksum_impl
@@ -1568,6 +1618,7 @@ class FileTools:
             algorithm=algorithm,
             verify_hash=verify_hash,
             chunk_size=chunk_size,
+            timeout=timeout,
             validate_path_func=self._validate_path,
             safety_service=self.safety,
             task_id=self.task_id,

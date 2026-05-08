@@ -24,6 +24,7 @@ Thumbs.db
 # Test files
 test_*.py
 *.test.py
+backend/tests/
 
 # Backup files
 *.backup

@@ -1,3 +1,382 @@
+v0.12.18
+
+更新时间: 2026-05-07 12:18:25
+
+更新内容：
+
+## v0.12.18 Prompt体系全面重构 - 小沈-2026-05-07
+
+### 重构类commit（8个）- Prompt体系去重/补齐/集中管理
+
+| commit | 说明 |
+|--------|------|
+| f33568de | fix: prompt体系审计修复-消除重复/矛盾/含糊 |
+| a86cce73 | refactor: 提取公共prompt规则到BasePromptTemplate统一注入 |
+| 8be4f74f | refactor: 统一prompt组装架构-消除双轨制 |
+| b3e587f5 | refactor: prompt体系全面重构-去重补齐集中管理 |
+| e4259480 | fix: 补齐所有prompt缺失-完成最后4项问题修复 |
+| e6068b0a | fix: 修复审计核对的剩余13项问题 |
+| 372e0a8a | fix: file_prompts精简Example+补error示例(F-6/F-8) |
+| c9e0c234 | refactor: 删除get_available_tools_prompt死方法+修复file_prompts语法错误 |
+
+### 重构要点
+- BasePromptTemplate统一组装架构(build_full_system_prompt为唯一入口)
+- 参数命名三合一：9个prompt删除IMPORTANT/FORBIDDEN段落，统一到get_parameter_reminder()
+- Safety去重：7个prompt删除SAFETY段落，统一到get_safety_reminder()
+- FINISH_RULE集中到BasePrompts
+- 删除get_available_tools_prompt死方法(基类返回空字符串)
+- 修复file_prompts.py删除死代码残留的语法错误
+- 19个修改文件全部语法验证通过
+
+---
+
+## v0.12.17→v0.12.18 变更汇总(前期) - 小沈-2026-05-07
+
+### 修复类commit（12个）
+
+| commit | 说明 |
+|--------|------|
+| ac076ed5 | chore: 将backend/tests/添加到.gitignore并取消git跟踪 |
+| 1495da85 | chore: 补充prompts的__init__.py+清理已删除文件 |
+| 3443ff00 | fix: 修复test_tool_executor.py的8个失败测试用例 |
+| ad27bc8e | fix: 系统性修复升级v0.12.14以来的6个连锁问题 |
+| a0a56bcd | fix: 修复LLM解析空dict误判+tool_executor参数验证和async判断 |
+| 7973d011 | fix: 修复time_react参数传递错误+file_register工具lambda参数转发 |
+| 93dbe74c | fix: 防止LLM工具调用死循环-统一注入终止规则 |
+| 8e8501e1 | fix: 终止规则改为参照解析器逻辑(answer/implicit退出,action循环) |
+| 0a3cc340 | refactor: 删除prompts中重复的finish规则-统一由mixin注入 |
+| a0968067 | fix: 验证设计文档一致性+修复Agent导入 |
+| 73609c41 | fix: 修复test_tool_registry.py测试失败+file_tools.py导入 |
+| 4f758684 | fix: 二次复核修正命名纠正遗漏（#12-13/#15/#18）+更新文档3.6.4节 |
+| dca82082 | fix: 修复session.py缺失get_session_service+清除BOM字符 |
+| b61f651e | fix: 修正小健审查问题（双括号bug+命名纠正） |
+
+### docs类commit
+
+| commit | 说明 |
+|--------|------|
+| ea97871a | docs: 更新设计文档（审查结论+命名纠正统计） |
+
+### 设计文档深度验证
+
+| 验证文件 | 测试数 | 状态 |
+|---------|--------|------|
+| test_design_implementation.py | 15 | ✅ |
+| test_design_implementation_v2.py | 19 | ✅ |
+| test_design_implementation_v3.py | 38 | ✅ |
+| test_design_implementation_v4.py | 14 | ✅ |
+| test_design_implementation_v5.py | 19 | ✅ |
+| test_design_implementation_v6.py | 8 | ✅ |
+| test_design_implementation_v7.py | 14 | ✅ |
+| test_design_implementation_v8.py | 52 | ✅ |
+| test_design_defect_analysis.py | 10 | ✅ |
+
+### 验证核心内容
+- 文档0.1-0.6节：核心问题分析、4组件、12分类完整性
+- 文档0.6.1节：FileReactAgent/TimeReactAgent核心设计
+- 文档0.6.2-0.6.5节：设计缺陷修正、命名纠正、P0问题
+- 文档0.7节：场景覆盖分析
+- 文档0.10节：按需暴露与动态加载机制
+- 文档1.1-7节：预期效果、风险、测试计划
+- 缺陷分析文档：设计缺陷修复方案
+- ToolCategory枚举12值
+- 125工具注册验证
+- 9+子Agent注册验证
+
+### 测试验证结果
+- 后端语法检查：✅ 全部通过
+- 单元测试：✅ 179个设计文档测试全部通过
+- 核心模块导入：✅ 全部正常
+
+---
+
+v0.12.17
+
+更新时间: 2026-05-06 18:30:00
+
+更新内容：
+
+## v0.12.16→v0.12.17 变更汇总 - 小沈-2026-05-06
+
+### 完成设计文档v1.0全部13个实施步骤（文档4.14节1941-1958行）
+
+| 步骤 | 内容 | commit | 状态 |
+|------|------|--------|------|
+| 1 | 创建task_tracker.py | 14b91fcc | ✅ |
+| 2 | 修正react_agent_mixin.py | ee5670b1 | ✅ |
+| 3 | 检查7个prompts文件 | - | ✅ |
+| 4 | 修正7个agent/{cat}_react.py | 03ac23cd | ✅ |
+| 5 | 修改agent_factory.py注册7个新Agent | - | ✅ |
+| 6 | 改进FileReactAgent使用ReactAgentMixin | 4de45424 | ✅ |
+| 7 | 改进TimeReactAgent使用ReactAgentMixin | bc608f02 | ✅ |
+| 8 | 改进file_prompts.py实现get_available_tools_prompt | - | ✅ |
+| 9 | 新增react_schema.py的get_tools_schema_for_intent_distribution() | 6e43cf3b | ✅ |
+| 10 | 新增base_react.py的动态加载触发条件判断 | a223369c | ✅ |
+| 11 | 修正Pydantic/ORM模型字段名（session_id→task_id） | 46eb1fa2 | ✅ |
+| 12 | 删除session.py中的重复DDL | eb594db9 | ✅ |
+| 13 | 新增base_react.py的_check_and_load_missing_tools() | a223369c | ✅ |
+
+### 新增/修改文件清单
+- backend/app/services/agent/mixins/task_tracker.py（新增TaskExecutionTracker+GenericTaskTracker）
+- backend/app/services/agent/mixins/react_agent_mixin.py（修正方法名+变量名）
+- backend/app/services/agent/react_sse_wrapper.py（集成TaskExecutionTracker）
+- backend/app/services/prompts/（7个分类prompts文件）
+- backend/app/services/agent/（7个Agent文件：shell_react/network_react等）
+- backend/app/services/agent/agent_factory.py（注册7个新Agent）
+- backend/app/services/agent/file_react.py（使用ReactAgentMixin）
+- backend/app/services/agent/time_react.py（使用ReactAgentMixin）
+- backend/app/services/prompts/file_prompts.py（实现get_available_tools_prompt）
+- backend/app/services/agent/types/react_schema.py（get_tools_schema_for_intent_distribution）
+- backend/app/services/agent/base_react.py（动态加载触发条件+_check_and_load_missing_tools）
+- backend/app/models/file_operations/__init__.py（session_id→task_id）
+- backend/app/services/agent/session.py（删除重复DDL）
+
+### 测试覆盖
+- tests/test_step11_models.py（5个测试：Pydantic/ORM字段名）
+- tests/test_step12_session.py（5个测试：删除重复DDL）
+- tests/test_step13_check_missing_tools.py（3个测试：_check_and_load_missing_tools）
+- 全部13个测试通过 ✅
+
+---
+
+v0.12.16
+
+更新时间: 2026-05-06 15:28:59
+
+更新内容：
+
+## v0.12.15→v0.12.16 变更汇总 - 小沈-2026-05-06
+
+### feat 新增
+| commit | 说明 |
+|--------|------|
+| 6e43cf3b | feat: 步骤9完成 - base_react.py动态加载+否定词检测 |
+| a223369c | feat: 步骤9集成_check_and_load_missing_tools到run_stream |
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| 53637821 | fix: 修正get_tools_schema_for_categories函数实现+测试通过 |
+| 553b117e | fix: 修正_check_and_load_missing_tools异步调用+去掉错误await |
+
+### 步骤9完成内容
+- base_react.py: 动态加载+否定词检测（7个方法，约150行）
+- react_schema.py: 新增get_tools_schema_for_categories函数
+- 导入路径修正: types.react_schema + preprocessing.intent_classifier
+- 测试通过: 工具加载(27个) + 否定词检测(6/6) + IntentClassifier(async)
+
+---
+
+
+### feat 新增
+| commit | 说明 |
+|--------|------|
+| e914a4bc | 新增7个分类的prompts文件 |
+| aa8903f3 | 新增7个分类的ReactAgent文件 |
+
+### 实施步骤
+- 步骤1: ReactAgentMixin公用逻辑类（69d53d82）
+- 步骤2: 7个prompts文件（shell/network/desktop/database/system/document/code_execution）
+- 步骤3: 7个Agent文件（shell_react/network_react/desktop_react/database_react/system_react/document_react/code_execution_react）
+
+### 测试
+| 测试文件 | 结果 |
+|--------|------|
+| test_prompts.py | 7/7 通过 |
+| test_react_agents.py | 7/7 通过 |
+
+---
+
+v0.12.14
+
+更新时间: 2026-05-06 11:10:01
+
+更新内容：
+
+## v0.12.13→v0.12.14 变更汇总 - 小沈-2026-05-06
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| ac8cb7dc | 更新按需暴露与动态加载工具设计文档 |
+| dd1d9476 | 新增按需暴露与动态加载工具设计缺陷分析 |
+| 282c7a9d | shell工具参数一致性修正+删除临时检查脚本 |
+| a63fc84b | 工具函数签名与Schema参数一致性修复+Schema类型缺失补全 |
+| a9211940 | time目录time_now改为get_current_time统一命名 |
+
+---
+
+v0.12.13
+
+更新时间: 2026-05-05 20:36:00
+
+更新内容：
+
+## v0.12.12→v0.12.13 变更汇总 - 小沈-2026-05-05
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| 4a39c390 | 修复旧ENV枚举引用为ENVIRONMENT |
+| 25363505 | 修复working_dir空字符串判断+data_analysis分类引用 |
+
+### cleanup 清理
+| commit | 说明 |
+|--------|------|
+| 964061a3 | 删除根目录临时脚本analyze_tools等5个文件 |
+| 05a43ea8 | 删除过时测试计划TEST_PLAN_20260503.md |
+
+---
+
+v0.12.12
+
+更新时间: 2026-05-05 20:25:00
+
+更新内容：
+
+## v0.12.11→v0.12.12 变更汇总 - 小沈-2026-05-05
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| 18fb1482 | 彻底废弃ToolCategory旧枚举值DATA_ANALYSIS/GUI/ENV_CHECK/REGISTRY_TOOLS |
+| 22a1059d | 彻底删除设计文档v1.1中旧枚举引用 |
+
+### feat 新增
+| commit | 说明 |
+|--------|------|
+| 1f778098 | 添加GUI辅助工具(Tool 108-114) - 窗口/剪贴板/通知/OCR/截图/录屏/鼠标/键盘 |
+| f827269e | shell添加check_command_available和locate_command工具 |
+| 12e47f29 | data_analysis增强功能-usecols/skiprows/figure_size/color/rotation/sort_by/top_n |
+| 76dec47a | document增强功能-表格提取/表头索引选择 |
+| 0546ffd4 | 完善document和data_format工具，添加测试用例 |
+
+### fix 修复
+| commit | 说明 | 状态 |
+|--------|------|------|
+| 4f23b9db | 修复gui_tools.py中的Bug-numpy导入顺序/send_notification返回值 | ✅ |
+| e4adfbfb | 修复monitor索引越界Bug | ✅ |
+| d24448e9 | code_execution添加working_dir验证 | ✅ |
+| b8011f85 | shell补全check_command和locate的schema注册 | ✅ |
+| 1f0bb4cd | 修复write_clipboard参数名 | ✅ |
+
+### docs 文档完善
+| commit | 说明 |
+|--------|------|
+| 42042ef4 | 统一gui_helpers返回格式 + 添加测试用例16个 |
+| 1f0bb4cd | 窗口管理/剪贴板/通知工具description与文档一致 |
+| 4daea9ce | 完善ocr工具description与文档一致 |
+| 25de3810 | 完善截图/录屏工具description与文档一致 |
+| f448c4b7 | 完善键盘输入工具description与文档一致 |
+| 44fe125d | 完善鼠标控制工具description与文档一致 |
+| 67f8189d | 工具目录添加新函数规范注释 |
+| 5bd67584 | 所有工具目录添加新函数规范注释 |
+
+### test 测试
+| 文件 | 测试数 | 状态 |
+|--------|------|------|
+| tests/data_format/ | 19 | ✅ |
+| tests/document/ | 13 | ✅ |
+| tests/gui/ | 16 | ✅ |
+
+### 新增工具汇总（Tool 108-120+）
+| Tool | 工具名 | 说明 |
+|------|--------|------|
+| 108 | window_control | 窗口控制 |
+| 109 | clipboard_write | 剪贴板写入 |
+| 110 | clipboard_read | 剪贴板读取 |
+| 111 | send_notification | 发送通知 |
+| 112 | ocr_image | OCR识别 |
+| 113 | screenshot | 截图 |
+| 114 | record_screen | 录屏 |
+| 115 | mouse_move | 鼠标移动 |
+| 116 | mouse_click | 鼠标点击 |
+| 117 | mouse_drag | 鼠标拖拽 |
+| 118 | keyboard_type | 键盘输入 |
+| 119 | check_command | 检查命令 |
+| 120+ | parse_yaml/write_yaml等 | data_format和document增强 |
+
+---
+v0.12.10
+
+更新时间: 2026-05-04 10:25:00
+
+更新内容：
+
+## v0.12.9→v0.12.10 变更汇总 - 小沈-2026-05-04
+
+### feat 新增
+| commit | 说明 |
+|--------|------|
+| 1f778098 | 添加GUI辅助工具(Tool 108-114) |
+| ca1464b8 | file_register-添加extract_archive和get_file_hash工具注册 |
+| 91bf9768 | fetch_webpage实现js_render-使用Playwright渲染动态页面 |
+| 69e7beb8 | fetch_webpage标注js_render未实现+download_file补充resume参数 |
+
+### fix 修复（v0.12.10）
+| commit | 说明 | 状态 |
+|--------|------|------|
+| 4f23b9db | 修复gui_tools.py中的Bug-numpy导入顺序/send_notification返回值 | ✅ |
+| e4adfbfb | 修复monitor索引越界Bug | ✅ |
+
+### refactor 重构
+| commit | 说明 |
+|--------|------|
+| 42042ef4 | 统一gui_helpers返回格式 + 添加测试用例16个 |
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| 4f23b9db | 修复gui_tools.py中的Bug（numpy导入顺序、send_notification返回错误码） |
+| 44fe125d | 完善鼠标控制工具description与文档一致 |
+| f448c4b7 | 完善键盘输入工具description与文档一致 |
+| 25de3810 | 完善截图/录屏工具description与文档一致 |
+| 4daea9ce | 完善ocr工具description与文档一致 |
+| 1f0bb4cd | 窗口管理/剪贴板/通知工具description与文档一致 + 修复write_clipboard参数名 |
+| 01cfb0b5 | 添加剪贴板和通知工具到gui_register |
+| f101e9eb | 完善database和system工具的description和examples参数 |
+| 992216df | 添加code_execution工具的working_dir示例 |
+| f918e630 | 按实际代码添加database工具的连接参数 |
+| 0a0fd056 | 按文档7.7修复task_list/task_create/task_delete的examples |
+| ea75884f | 按文档7.7修复task_list/task_create/task_delete函数签名 |
+| 87c788cd | 按文档7.7重写task_list/task_create/task_delete参数 |
+| f6a1e216 | 修复system_schema.py中TaskCreateInput和TaskDeleteInput重复定义 |
+| 4fe36473 | system_register-补充service_stop缺失参数 |
+| a4540af5 | system_schema-修复ListProcessesInput重复字段 |
+| 3e2e0416 | data_format_register-补充examples缺失参数 |
+| 19b8c941 | system-按文档7.3修复log_message和get_logs参数 |
+| 39ae70f0 | system_register-修复log_message和get_logs参数 |
+| fe70a12f | registry_register-补充examples缺失参数 |
+| 759ce015 | database_register-完善description和examples参数 |
+| 6e26a7ef | file_schema-修复GetFileHashInput缺少闭合括号 |
+| 2a163ff4 | 修正system examples描述并更新参数 |
+| 9c265ca9 | 修正system_tools参数与文档一致 |
+| 1d76a7fe | search_web正确实现time_range/language/safe_search参数 |
+| 4c81ab74 | 正确实现encoding参数-手动解码处理+run_as_admin标记 |
+| 5b5e5fb6 | 修正shell_schema参数描述-标注encoding废弃/run_as_admin未实现 |
+| 2755b811 | 修复search_files示例参数名+删除CompressFilesInput重复字段 |
+| 2a4b10d7 | FinalStep to_dict删除重复content字段 |
+| 68a08a6f | FinalStep精简-只保留response/thought/model/provider |
+| 30314638 | StepFooter.tsx+AIMessageBubble.tsx-删除加载更多死代码 |
+
+---
+
+v0.12.9
+
+更新时间: 2026-05-04 08:25:28
+
+更新内容：
+
+## v0.12.7→v0.12.8 变更汇总 - 小沈-2026-05-04
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| dc9a3be8 | 修复network_register.py缺少implementation参数 |
+| d37c9f4b | 修复file_register.py TOOL_INPUT_MODELS作用域问题 |
+
+---
+
 v0.12.7
 
 更新时间: 2026-05-03 16:25:43

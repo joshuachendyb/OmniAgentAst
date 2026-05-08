@@ -17,9 +17,7 @@ Code Execution 模块 - 代码执行工具
 创建时间: 2026-05-02
 """
 
-from app.services.tools.code_execution import code_execution_register
-from app.services.tools.code_execution import code_execution_tools
-
+from app.services.tools.code_execution.code_execution_register import *
 from app.services.tools.code_execution.code_execution_tools import (
     execute_python,
     execute_javascript,

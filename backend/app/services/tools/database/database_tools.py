@@ -4,6 +4,12 @@ DATABASE Tools - 数据库工具实现
 
 【架构规范】2026-04-29 小沈
 
+【重要】新函数增加规范 - 小沈 2026-05-04
+新增函数时必须同步修改以下3个文件：
+1. *_tools.py: 函数实现（必须有详细注释）
+2. *_schema.py: Pydantic 模型（输入参数定义）
+3. *_register.py: 显式注册（description + examples + input_model）
+
 【工具列表】（共3个）
 1. query_sql - 执行只读SQL查询
 2. execute_sql - 执行写操作SQL
@@ -58,8 +64,8 @@ def _close_connection(conn, engine=None):
             engine.dispose()
         elif conn:
             conn.close()
-    except:
-        pass
+    except Exception as e:
+        logger.warning(f"关闭数据库连接时出错: {e}")
 
 
 def query_sql(
@@ -94,14 +100,14 @@ def query_sql(
         
         if not sql_upper.startswith(("SELECT", "SHOW", "DESCRIBE", "PRAGMA", "WITH", "EXPLAIN")):
             return {
-                "code": "ERROR",
+                "code": "ERR_READ_ONLY_VIOLATION",
                 "data": None,
                 "message": f"错误：只允许 SELECT/SHOW/DESCRIBE 等只读操作，当前语句以 {sql.split()[0] if sql.split() else '未知'} 开头"
             }
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return {"code": "ERROR", "data": None, "message": conn_error}
+            return {"code": "ERR_DB_CONNECTION", "data": None, "message": conn_error}
         
         if connection_type in ("mysql", "postgresql"):
             engine = conn.engine
@@ -109,7 +115,6 @@ def query_sql(
             rows = result.fetchall()
             columns = list(result.keys()) if hasattr(result, 'keys') else []
             results = [dict(zip(columns, row)) for row in rows]
-            conn.close()
         else:
             conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
@@ -117,7 +122,6 @@ def query_sql(
             rows = cursor.fetchall()
             columns = [desc[0] for desc in cursor.description] if cursor.description else []
             results = [dict(row) for row in rows]
-            conn.close()
         
         if limit > 0 and len(results) > limit:
             results = results[:limit]
@@ -146,9 +150,9 @@ def query_sql(
             }
             
     except sqlite3.Error as e:
-        return {"code": "ERROR", "data": None, "message": f"SQL执行错误: {str(e)}"}
+        return {"code": "ERR_SQL_EXEC", "data": None, "message": f"SQL执行错误: {str(e)}"}
     except Exception as e:
-        return {"code": "ERROR", "data": None, "message": f"执行失败: {str(e)}"}
+        return {"code": "ERR_QUERY_FAILED", "data": None, "message": f"执行失败: {str(e)}"}
     finally:
         _close_connection(conn, engine)
 
@@ -210,14 +214,13 @@ def execute_sql(
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path, timeout)
         if conn is None:
-            return {"code": "ERROR", "data": None, "message": conn_error}
+            return {"code": "ERR_DB_CONNECTION", "data": None, "message": conn_error}
         
         if connection_type in ("mysql", "postgresql"):
             engine = conn.engine
             result = conn.execute(sql)
             conn.commit()
             affected_rows = result.rowcount
-            conn.close()
         else:
             cursor = conn.cursor()
             cursor.execute(sql)
@@ -225,7 +228,6 @@ def execute_sql(
             
             if affected_rows_check and affected_rows > 10000:
                 conn.rollback()
-                conn.close()
                 return {
                     "code": "WARNING",
                     "data": {
@@ -236,7 +238,6 @@ def execute_sql(
                 }
             
             conn.commit()
-            conn.close()
         
         return {
             "code": "SUCCESS",
@@ -249,14 +250,20 @@ def execute_sql(
         
     except sqlite3.Error as e:
         if conn:
-            conn.rollback()
-            _close_connection(conn, engine)
-        return {"code": "ERROR", "data": None, "message": f"SQL执行错误: {str(e)}"}
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return {"code": "ERR_SQL_EXEC", "data": None, "message": f"SQL执行错误: {str(e)}"}
     except Exception as e:
         if conn:
-            conn.rollback()
-            _close_connection(conn, engine)
-        return {"code": "ERROR", "data": None, "message": f"执行失败: {str(e)}"}
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        return {"code": "ERR_EXEC_FAILED", "data": None, "message": f"执行失败: {str(e)}"}
+    finally:
+        _close_connection(conn, engine)
 
 
 def get_db_schema(
@@ -289,22 +296,21 @@ def get_db_schema(
     try:
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
-            return {"code": "ERROR", "data": None, "message": conn_error}
+            return {"code": "ERR_DB_CONNECTION", "data": None, "message": conn_error}
         
         if connection_type in ("mysql", "postgresql"):
-            query = f"SELECT table_name FROM information_schema.tables WHERE table_schema = '{db_name or 'test'}'"
-            result = conn.execute(query)
+            from sqlalchemy import text
+            query = text("SELECT table_name FROM information_schema.tables WHERE table_schema = :db_name")
+            result = conn.execute(query, {"db_name": db_name or "test"})
             tables = [row[0] for row in result.fetchall()]
-            tables_result = result.fetchall()
-            conn.close()
-            conn = None
         else:
             cursor = conn.cursor()
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
             tables = [row[0] for row in cursor.fetchall()]
-            tables_result = cursor.fetchall()
-            conn.close()
-            conn = None
+        
+        _close_connection(conn, engine)
+        conn = None
+        engine = None
         
         if filter_pattern:
             tables = [t for t in tables if filter_pattern.replace('%', '').lower() in t.lower()]
@@ -316,11 +322,15 @@ def get_db_schema(
         
         conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
         if conn is None:
-            return {"code": "ERROR", "data": None, "message": conn_error}
+            return {"code": "ERR_DB_CONNECTION", "data": None, "message": conn_error}
         
         for table_name in tables:
             if connection_type in ("mysql", "postgresql"):
-                col_result = conn.execute(f"SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name = '{table_name}'")
+                from sqlalchemy import text as sa_text
+                col_result = conn.execute(
+                    sa_text("SELECT column_name, data_type, is_nullable, column_key, column_default FROM information_schema.columns WHERE table_name = :table_name"),
+                    {"table_name": table_name}
+                )
                 columns = []
                 for col in col_result.fetchall():
                     columns.append({
@@ -342,21 +352,19 @@ def get_db_schema(
                         "default": col[4],
                         "pk": bool(col[5])
                     })
-                conn.close()
-                conn = None
-                conn, engine, conn_error = _get_connection(connection_type, connection_string, db_path)
-                if conn is None:
-                    continue
-                cursor = conn.cursor()
             
             table_info = {"name": table_name, "columns": columns}
             
             if include_details:
                 if connection_type in ("mysql", "postgresql"):
-                    idx_result = conn.execute(f"SHOW INDEX FROM {table_name}")
+                    from sqlalchemy import text as sa_text2
+                    idx_result = conn.execute(
+                        sa_text2("SELECT index_name, non_unique FROM information_schema.statistics WHERE table_name = :table_name GROUP BY index_name, non_unique"),
+                        {"table_name": table_name}
+                    )
                     indexes = []
                     for idx in idx_result.fetchall():
-                        indexes.append({"name": idx[2], "unique": bool(idx[1])})
+                        indexes.append({"name": idx[0], "unique": not bool(idx[1])})
                     table_info["indexes"] = indexes
                 else:
                     cursor.execute(f"PRAGMA index_list('{table_name}')")
@@ -415,9 +423,9 @@ def get_db_schema(
             }
             
     except sqlite3.Error as e:
-        return {"code": "ERROR", "data": None, "message": f"获取数据库结构失败: {str(e)}"}
+        return {"code": "ERR_SQL_EXEC", "data": None, "message": f"获取数据库结构失败: {str(e)}"}
     except Exception as e:
-        return {"code": "ERROR", "data": None, "message": f"执行失败: {str(e)}"}
+        return {"code": "ERR_SCHEMA_FAILED", "data": None, "message": f"执行失败: {str(e)}"}
     finally:
         _close_connection(conn, engine)
 

@@ -158,21 +158,37 @@ class BaseAIService:
         return messages
     
     async def chat(self, message: str, history: Optional[List[Message]] = None) -> ChatResponse:
-        """发送对话请求（一次性返回）"""
+        """发送对话请求（一次性返回）
+        
+        【修复 2026-05-05 小沈】添加reasoning_content聚合日志，
+        便于诊断thinking模型空响应问题
+        """
         try:
             full_content = ""
+            full_reasoning = ""
             stream_error = None
             async for chunk in self.chat_stream(message, history):
                 if chunk.content:
                     full_content += chunk.content
+                # 【修复 2026-05-05 小沈】收集reasoning_content用于日志
+                if chunk.reasoning:
+                    full_reasoning += chunk.reasoning
                 if chunk.stream_error:
                     stream_error = chunk.stream_error
                 if chunk.is_done:
                     break
+            # 【修复 2026-05-05 小沈】日志：记录聚合结果，便于诊断空响应
+            logger.info(
+                f"[chat] 聚合结果, model={self.model}, "
+                f"full_content长度={len(full_content)}, "
+                f"full_reasoning长度={len(full_reasoning)}, "
+                f"has_error={stream_error is not None}"
+            )
             if stream_error:
                 return ChatResponse(content="", model=self.model, provider=self.provider, error=stream_error)
             return ChatResponse(content=full_content, model=self.model, provider=self.provider)
         except Exception as e:
+            logger.error(f"[chat] 异常: {e}")
             return ChatResponse(content="", model=self.model, provider=self.provider, error=str(e))
     
     async def chat_stream(self, message: str, history: Optional[List[Message]] = None) -> AsyncGenerator[StreamChunk, None]:
@@ -232,6 +248,11 @@ class BaseAIService:
                 # 而不是等下一个token（可能30秒）
                 # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
                 line_iterator = response.aiter_lines()
+                
+                # 【修复 2026-05-05 小沈】统计reasoning_content和content的接收情况
+                _reasoning_content_total = 0
+                _content_total = 0
+                
                 while True:
                     try:
                         line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
@@ -261,6 +282,12 @@ class BaseAIService:
                         continue
                     
                     if data_str.strip() == "[DONE]":
+                        # 【修复 2026-05-05 小沈】日志：记录流结束时的统计信息
+                        logger.info(
+                            f"[chat_stream] 流结束[DONE], model={self.model}, "
+                            f"content_total={_content_total}, "
+                            f"reasoning_content_total={_reasoning_content_total}"
+                        )
                         yield StreamChunk(content="", model=self.model, is_done=True)
                         return
                     
@@ -271,17 +298,50 @@ class BaseAIService:
                         if choices:
                             delta = choices[0].get("delta", {})
                             content = delta.get("content", "") or ""
+                            # 【修复 2026-05-05 小沈】处理thinking模型的reasoning_content
+                            # thinking模型(如big-pickle, LongCat-Flash-Thinking)在思考阶段
+                            # 将输出放在reasoning_content中，content为空。若不处理，
+                            # chat()聚合后full_content为空，导致"AI服务返回空响应"
+                            reasoning_content = delta.get("reasoning_content", "") or ""
                             
                             if content:
+                                _content_total += len(content)
                                 yield StreamChunk(
                                     content=content,
                                     model=self.model,
                                     is_done=False,
                                     is_reasoning=False
                                 )
+                            
+                            # 【修复 2026-05-05 小沈】reasoning_content也作为content输出
+                            # 对于Agent路径(TextStrategy)，reasoning_content中的内容
+                            # 才是模型实际的"思考+输出"，必须收集到full_content中
+                            if reasoning_content:
+                                _reasoning_content_total += len(reasoning_content)
+                                # 日志：首次收到reasoning_content时记录原始delta信息
+                                if _reasoning_content_total == len(reasoning_content):
+                                    logger.info(
+                                        f"[chat_stream] 首次收到reasoning_content, "
+                                        f"model={self.model}, "
+                                        f"delta_keys={list(delta.keys())}, "
+                                        f"content={content!r}, "
+                                        f"reasoning_content前100={reasoning_content[:100]!r}"
+                                    )
+                                yield StreamChunk(
+                                    content=reasoning_content,
+                                    model=self.model,
+                                    is_done=False,
+                                    is_reasoning=True
+                                )
                     except json.JSONDecodeError:
                         continue
                 
+                # 【修复 2026-05-05 小沈】日志：记录流正常结束时的统计信息
+                logger.info(
+                    f"[chat_stream] 流正常结束(迭代器耗尽), model={self.model}, "
+                    f"content_total={_content_total}, "
+                    f"reasoning_content_total={_reasoning_content_total}"
+                )
                 yield StreamChunk(content="", model=self.model, is_done=True)
                 
         except httpx.TimeoutException:
@@ -557,6 +617,11 @@ class BaseAIService:
                 # 【问题2修复】同样使用wait_for定期检查，每1秒超时
                 # 【小沈修复 2026-04-21】修复StreamConsumed错误：使用单个迭代器，避免重复创建
                 line_iterator = response.aiter_lines()
+                
+                # 【修复 2026-05-05 小沈】统计reasoning_content和content的接收情况
+                _reasoning_content_total = 0
+                _content_total = 0
+                
                 while True:
                     try:
                         line = await asyncio.wait_for(line_iterator.__anext__(), timeout=1.0)
@@ -597,6 +662,12 @@ class BaseAIService:
                         continue
                     
                     if data_str.strip() == "[DONE]":
+                        # 【修复 2026-05-05 小沈】日志：记录流结束时的统计信息
+                        logger.info(
+                            f"[chat_with_tools_stream] 流结束[DONE], model={self.model}, "
+                            f"content_total={_content_total}, "
+                            f"reasoning_content_total={_reasoning_content_total}"
+                        )
                         yield StreamChunk(content="", model=self.model, is_done=True)
                         return
                     
@@ -607,17 +678,42 @@ class BaseAIService:
                         if choices:
                             delta = choices[0].get("delta", {})
                             content = delta.get("content", "") or ""
+                            # 【修复 2026-05-05 小沈】处理thinking模型的reasoning_content
+                            reasoning_content = delta.get("reasoning_content", "") or ""
                             
                             if content:
+                                _content_total += len(content)
                                 yield StreamChunk(
                                     content=content,
                                     model=self.model,
                                     is_done=False,
                                     is_reasoning=False
                                 )
+                            
+                            # 【修复 2026-05-05 小沈】reasoning_content也作为content输出
+                            if reasoning_content:
+                                _reasoning_content_total += len(reasoning_content)
+                                if _reasoning_content_total == len(reasoning_content):
+                                    logger.info(
+                                        f"[chat_with_tools_stream] 首次收到reasoning_content, "
+                                        f"model={self.model}, "
+                                        f"delta_keys={list(delta.keys())}"
+                                    )
+                                yield StreamChunk(
+                                    content=reasoning_content,
+                                    model=self.model,
+                                    is_done=False,
+                                    is_reasoning=True
+                                )
                     except json.JSONDecodeError:
                         continue
                 
+                # 【修复 2026-05-05 小沈】日志：记录流正常结束时的统计信息
+                logger.info(
+                    f"[chat_with_tools_stream] 流正常结束(迭代器耗尽), model={self.model}, "
+                    f"content_total={_content_total}, "
+                    f"reasoning_content_total={_reasoning_content_total}"
+                )
                 yield StreamChunk(content="", model=self.model, is_done=True)
                 
         except Exception as e:
