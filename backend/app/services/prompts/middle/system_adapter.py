@@ -28,23 +28,74 @@ class SystemAdapter:
         "Windows": {
             "list": "dir",
             "copy": "copy",
+            "move": "move",
+            "rename": "ren",
             "delete": "del",
+            "delete_dir": "rmdir /s /q",
             "read": "type",
-            "create_dir": "mkdir"
+            "create_dir": "mkdir",
+            "pwd": "cd",
+            "echo": "echo",
+            "find_file": "dir /s /b",
+            "find_content": "findstr",
+            "which": "where",
+            "env": "set",
+            "ps": "tasklist",
+            "kill": "taskkill /F /PID",
+            "ping": "ping",
+            "netstat": "netstat",
+            "ipconfig": "ipconfig",
+            "curl": "curl",
+            "df": "wmic logicaldisk get size,freespace,caption",
+            "chmod": "icacls",
         },
         "Linux": {
             "list": "ls",
             "copy": "cp",
+            "move": "mv",
+            "rename": "mv",
             "delete": "rm",
+            "delete_dir": "rm -rf",
             "read": "cat",
-            "create_dir": "mkdir"
+            "create_dir": "mkdir",
+            "pwd": "pwd",
+            "echo": "echo",
+            "find_file": "find",
+            "find_content": "grep",
+            "which": "which",
+            "env": "env",
+            "ps": "ps aux",
+            "kill": "kill",
+            "ping": "ping",
+            "netstat": "netstat",
+            "ipconfig": "ifconfig",
+            "curl": "curl",
+            "df": "df -h",
+            "chmod": "chmod",
         },
         "Darwin": {
             "list": "ls",
             "copy": "cp",
+            "move": "mv",
+            "rename": "mv",
             "delete": "rm",
+            "delete_dir": "rm -rf",
             "read": "cat",
-            "create_dir": "mkdir"
+            "create_dir": "mkdir",
+            "pwd": "pwd",
+            "echo": "echo",
+            "find_file": "find",
+            "find_content": "grep",
+            "which": "which",
+            "env": "env",
+            "ps": "ps aux",
+            "kill": "kill",
+            "ping": "ping",
+            "netstat": "netstat",
+            "ipconfig": "ifconfig",
+            "curl": "curl",
+            "df": "df -h",
+            "chmod": "chmod",
         }
     }
     
@@ -85,6 +136,8 @@ class SystemAdapter:
         path_format = self.get_path_format()
         commands = self.get_commands()
         
+        cmd_lines = "\n".join(f"- {k}: {v}" for k, v in commands.items())
+        
         prompt = f"""【当前系统】
 {system_name}
 
@@ -92,11 +145,7 @@ class SystemAdapter:
 - 当前系统: {path_format}
 
 【命令格式】
-- list: {commands.get('list', 'ls')}
-- copy: {commands.get('copy', 'cp')}
-- delete: {commands.get('delete', 'rm')}
-- read: {commands.get('read', 'cat')}
-- create_dir: {commands.get('create_dir', 'mkdir')}
+{cmd_lines}
 
 【路径规则】
 - 必须使用绝对路径（禁止相对路径如 ./file.txt）

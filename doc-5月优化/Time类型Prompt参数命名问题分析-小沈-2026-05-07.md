@@ -30,44 +30,6 @@ time_is_weekend(date: Optional[Any] = None)
 time_format(date="2026-06-19")           # 参数名错误
 time_is_weekend(path="http://...")       # 完全错误（把URL当参数）
 ```
-### 1.3  梳理出整个系统的调用LLM的信息情况
-
-```
-┌─ prompt文本 ─┐
-│ system_adapter.py   → 段落① 系统信息
-│ time_prompts.py     → 段落②⑤⑥ 自然语言说明
-│ BasePromptTemplate  → 段落③④⑦⑧ 公共规则
-└─────────────────────┘
-
-┌─ tools定义（JSON Schema）──┐
-│ time_schema.py  → 参数类型+required数组
-│ time_register.py → description+input_schema生成
-└────────────────────────────┘
-
-```
-所以：
-
-register/schema 不是二级代码，是另一个并行通道
-prompt通道：自然语言指导（人可读）
-tool通道：结构化定义（机器可解析）
-两者都传给LLM，只是形式不同。LLM同时看到：
-
-prompt的自然语言描述（"time_format用于格式化时间..."）
-tools的JSON Schema（{"required":["timestamp"], "properties":{...}}）
-
-意图识别阶段（只执行一次）
-    ↓
-确定意图 = [Time, File]
-    ↓
-加载 tools = get_tools(Time) + get_tools(File)
-    ↓
-进入ReAct循环
-    轮次1: messages=[sys, task] + tools[42个]  ← 固定
-    轮次2: messages=[...] + tools[42个]        ← 同一个
-    轮次3: messages=[...] + tools[42个]        ← 同一个
-    ...
-    轮次N: messages=[...] + tools[42个]        ← 同一个
-
 
 ---
 
@@ -84,8 +46,6 @@ conversation_history = [
 ```
 
 ### 2.2 首次给LLM的Messages架构和tools的说明
-
-### 2.2.1 关于message的组装构建分析
 
 **conversation_history由2条独立message组成**：
 
@@ -115,6 +75,28 @@ time_register.py	注册工具 → 生成input_schema + 详细description
 这两个文件生成的信息不进prompt文本，而是进tools定义传给LLM。
 给LLM的信息 = prompt文本 + tools定义
 
+```
+┌─ prompt文本 ─┐
+│ system_adapter.py   → 段落① 系统信息
+│ time_prompts.py     → 段落②⑤⑥ 自然语言说明
+│ BasePromptTemplate  → 段落③④⑦⑧ 公共规则
+└─────────────────────┘
+
+┌─ tools定义（JSON Schema）──┐
+│ time_schema.py  → 参数类型+required数组
+│ time_register.py → description+input_schema生成
+└────────────────────────────┘
+
+```
+所以：
+
+register/schema 不是二级代码，是另一个并行通道
+prompt通道：自然语言指导（人可读）
+tool通道：结构化定义（机器可解析）
+两者都传给LLM，只是形式不同。LLM同时看到：
+
+prompt的自然语言描述（"time_format用于格式化时间..."）
+tools的JSON Schema（{"required":["timestamp"], "properties":{...}}）
 
 
 ```
@@ -133,7 +115,6 @@ conversation_history (首次messages)
     ├── （2）Current time: xxx — time_prompts.py
     └── （3）执行步骤 — time_prompts.py
 ```
-### 2.2.2 关于tool的组装构建分析
 
 **tools定义结构（与messages并行传给LLM）**：
 
@@ -207,6 +188,19 @@ def _load_tools(self):
     if not self.tool_category:
         return {}
     return get_tools_from_registry_by_category(self.tool_category)  # ← 只加载当前意图
+
+意图识别阶段（只执行一次）
+    ↓
+确定意图 = [Time, File]
+    ↓
+加载 tools = get_tools(Time) + get_tools(File)
+    ↓
+进入ReAct循环
+    轮次1: messages=[sys, task] + tools[42个]  ← 固定
+    轮次2: messages=[...] + tools[42个]        ← 同一个
+    轮次3: messages=[...] + tools[42个]        ← 同一个
+    ...
+    轮次N: messages=[...] + tools[42个]        ← 同一个
 
 
 ### 2.3 sys_prompt 内部层次（build_full_system_prompt组装，8段落）
