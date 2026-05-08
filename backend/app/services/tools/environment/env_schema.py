@@ -29,7 +29,7 @@ class GetEnvInput(BaseModel):
         default=None, description="默认值（可选）。如果指定的环境变量不存在，则返回此默认值"
     )
     scope: Literal["process", "user", "system"] = Field(
-        default="process", description="作用域。process（仅当前进程，默认）、user（当前用户持久化）、system（全局持久化，需管理员权限）。由 Agent 根据 query 语义自动映射"
+        default="process", description="作用域。可选值：process（仅当前进程）、user（当前用户持久化）、system（全局持久化，需管理员权限）。Agent根据query语义自动映射。默认为process"
     )
     expand_vars: bool = Field(
         default=True, description="是否展开值中的嵌套变量（如 %JAVA_HOME%\\bin 或 $HOME/.local）。默认 true（返回绝对路径）。展开失败时保留原始字符串"
@@ -45,10 +45,10 @@ class SetEnvInput(BaseModel):
         ..., description="环境变量值。任意字符串值"
     )
     scope: Literal["user", "system", "process"] = Field(
-        default="process", description="作用域。可选值：process（仅当前进程，默认）、user（持久化到当前用户）、system（持久化到全局，需管理员权限）。Agent 根据语义自动映射，遇权限不足自动降级为 process 并提示用户"
+        default="process", description="作用域。可选值：process（仅当前进程）、user（持久化到当前用户）、system（持久化到全局，需管理员权限）。Agent根据语义自动映射。默认为process"
     )
     append_mode: bool = Field(
-        default=False, description="追加模式。默认 false（覆盖）。若 name 为 PATH 或 CLASSPATH，Agent 自动设 true，安全追加新路径且自动去除重复路径。根据 OS 自动选择分隔符（Win ; / Linux :）"
+        default=False, description="追加模式。若 name 为 PATH 或 CLASSPATH，Agent 自动设true。根据OS自动选择分隔符。默认为False"
     )
 
 

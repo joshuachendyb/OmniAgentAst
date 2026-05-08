@@ -16,27 +16,27 @@ class ClickInput(BaseModel):
     """click 工具的输入参数（Tool 92）"""
     x: Optional[int] = Field(default=None, description="点击的 X 坐标（可选）。屏幕水平位置，从左上角开始计算")
     y: Optional[int] = Field(default=None, description="点击的 Y 坐标（可选）。屏幕垂直位置，从左上角开始计算")
-    button: Optional[str] = Field(default="left", description="鼠标按钮（可选）。Agent根据query推断，右键菜单→right，中键→middle")
-    click_type: Optional[str] = Field(default="single", description="点击类型（可选）。Agent根据query推断，\"双击\"→double")
+    button: Optional[str] = Field(default="left", description="鼠标按钮。Agent根据query推断（右键菜单→right，中键→middle）。默认为left")
+    click_type: Optional[str] = Field(default="single", description="点击类型。Agent根据query推断（双击→double）。默认为single")
 
 
 class MoveInput(BaseModel):
     """move 工具的输入参数（Tool 93）"""
     x: int = Field(..., description="目标 X 坐标。屏幕水平位置，从左上角开始计算")
     y: int = Field(..., description="目标 Y 坐标。屏幕垂直位置，从左上角开始计算")
-    duration: Optional[float] = Field(default=0, description="移动持续时间（可选），单位为秒")
+    duration: Optional[float] = Field(default=0, description="移动持续时间，单位为秒。默认为0")
 
 
 class ScrollInput(BaseModel):
     """scroll 工具的输入参数（Tool 94）"""
     direction: str = Field(..., description="滚动方向。可选值：up（向上滚动）、down（向下滚动）")
-    amount: Optional[int] = Field(default=3, description="滚动单位数量（可选）")
+    amount: Optional[int] = Field(default=3, description="滚动单位数量。默认为3")
 
 
 class TypeTextInput(BaseModel):
     """type_text 工具的输入参数（Tool 95）"""
     text: str = Field(..., description="要输入的文本。支持中英文输入")
-    interval: Optional[float] = Field(default=0, description="每个字符间隔（可选），单位为秒")
+    interval: Optional[float] = Field(default=0, description="每个字符间隔，单位为秒。默认为0")
 
 
 class ShortcutInput(BaseModel):
@@ -47,7 +47,7 @@ class ShortcutInput(BaseModel):
 class KeyComboInput(BaseModel):
     """key_combo 工具的输入参数（Tool 97）"""
     keys: List[str] = Field(..., description="要按住的键数组。如 [\"ctrl\", \"shift\", \"esc\"]")
-    action: Optional[str] = Field(default="press", description="操作（可选）。可选值：press/hold/release")
+    action: Optional[str] = Field(default="press", description="操作。可选值：press/hold/release。默认为press")
 
 
 class ScreenshotInput(BaseModel):
@@ -58,14 +58,14 @@ class ScreenshotInput(BaseModel):
 
 class SnapshotInput(BaseModel):
     """snapshot 工具的输入参数（Tool 99）"""
-    display: Optional[int] = Field(default=1, description="显示器编号（可选）。主显示器→1，第二显示器→2")
+    display: Optional[int] = Field(default=1, description="显示器编号。主显示器→1，第二显示器→2。默认为1")
 
 
 class ScreenRecordInput(BaseModel):
     """screen_record 工具的输入参数（Tool 100）"""
     duration: int = Field(..., description="录制时长，单位为秒")
     output_path: Optional[str] = Field(default=None, description="输出文件路径（可选）")
-    fps: Optional[int] = Field(default=15, description="帧率（可选）")
+    fps: Optional[int] = Field(default=15, description="帧率。默认为15")
 
 
 class FocusWindowInput(BaseModel):
@@ -83,7 +83,7 @@ class ResizeWindowInput(BaseModel):
 class OcrInput(BaseModel):
     """ocr 工具的输入参数（Tool 101）"""
     image_path: str = Field(..., description="图片文件路径。如 D:/images/screenshot.png")
-    language: Optional[str] = Field(default="eng", description="识别语言（可选）。可选值：eng/chi_sim/eng+chi_sim")
+    language: Optional[str] = Field(default="eng", description="识别语言。可选值：eng/chi_sim/eng+chi_sim。默认为eng")
 
 
 class ListWindowsInput(BaseModel):

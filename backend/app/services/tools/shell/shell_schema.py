@@ -29,19 +29,19 @@ class ExecuteShellCommandInput(BaseModel):
     )
     run_in_background: bool = Field(
         default=False,
-        description="是否在后台运行命令。由 Agent 根据命令特征智能判断：长期运行的服务(如npm run dev)自动设true"
+        description="是否在后台运行命令。长期运行的服务(如npm run dev)Agent自动设为true。默认为False"
     )
     cwd: Optional[str] = Field(
         default=None, description="工作目录。由 Agent 根据上下文智能设置当前项目目录"
     )
     encoding: Optional[str] = Field(
-        default=None, description="命令输出编码。默认utf-8，可选值：utf-8（默认）、gbk、gb2312、latin-1。若不指定则默认utf-8，自动尝试回退到gbk"
+        default=None, description="命令输出编码。可选值：utf-8、gbk、gb2312、latin-1。自动尝试回退到gbk。默认为utf-8"
     )
     env_vars: Optional[dict] = Field(
         default=None, description="环境变量对象。由 Agent 根据命令类型自动注入必要环境变量（如 PYTHONIOENCODING=utf-8）"
     )
     run_as_admin: bool = Field(
-        default=False, description="是否请求管理员权限（标记）。当前版本标记此意图，实际执行受限于当前进程权限。Agent 智能判断安装软件、修改注册表等高权限操作"
+        default=False, description="是否请求管理员权限。当前版本标记意图，实际执行受限于当前进程权限。Agent对安装软件等高权限操作自动设为True。默认为False"
     )
 
 
@@ -90,7 +90,7 @@ class GetShellOutputInput(BaseModel):
         default=None, description="输出编码。Agent 自动检测，默认 utf-8。若乱码自动尝试 gbk、gb2312"
     )
     max_lines: int = Field(
-        default=1000, ge=1, le=10000, description="最大返回行数。默认 1000 行。若输出超长，Agent 自动截取最后 N 行并提示截断"
+        default=1000, ge=1, le=10000, description="最大返回行数。输出超长时Agent自动截取最后N行。默认为1000"
     )
     tail: bool = Field(
         default=False, description="是否只返回最后 N 行输出。由 Agent 根据用户意图智能判断"
@@ -103,10 +103,10 @@ class TerminateShellInput(BaseModel):
         ..., description="要终止的 shell ID。通过 execute_shell_command 的 run_in_background=true 执行命令后获得"
     )
     force: bool = Field(
-        default=False, description="是否强制终止。Agent 智能判断：优雅终止，若进程无响应则自动重试并设 true 强制杀死"
+        default=False, description="是否强制终止。优雅终止失败时Agent自动设为true强制杀死。默认为False"
     )
     cleanup: bool = Field(
-        default=True, description="终止后是否清理临时文件和子进程。Agent 智能判断"
+        default=True, description="终止后是否清理临时文件和子进程。默认为True"
     )
 
 

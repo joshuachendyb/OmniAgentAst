@@ -26,11 +26,11 @@ class ReadCsvDataframeInput(BaseModel):
     )
     encoding: Optional[str] = Field(
         default="utf-8",
-        description="文件编码（可选）。Agent根据文件来源自动判断，中文文件→gbk/GB2312，英文→utf-8，支持utf-8-sig（带BOM）"
+        description="文件编码。Agent根据文件来源自动判断，中文文件→gbk。支持utf-8-sig（带BOM）。默认为utf-8"
     )
     delimiter: Optional[str] = Field(
         default=",",
-        description="分隔符（可选）。Agent根据文件内容自动检测，CSV→逗号，TSV→制表符，中文CSV常用分号"
+        description="分隔符。Agent根据文件内容自动检测（CSV→逗号，TSV→制表符）。默认为,"
     )
     has_header: Optional[bool] = Field(
         default=True,
@@ -38,7 +38,7 @@ class ReadCsvDataframeInput(BaseModel):
     )
     max_rows: Optional[int] = Field(
         default=1000,
-        description="最大读取行数（可选）。Agent根据文件大小自动调整，大文件→500，小文件→2000"
+        description="最大读取行数。Agent根据文件大小自动调整（大文件500，小文件2000）。默认为1000"
     )
     usecols: Optional[List[str]] = Field(
         default=None,
@@ -60,7 +60,7 @@ class GenerateChartInput(BaseModel):
     )
     chart_type: Optional[str] = Field(
         default="bar",
-        description="图表类型（可选）。Agent根据数据特征自动判断，趋势数据→line，比例数据→pie，可选 bar/line/pie/scatter"
+        description="图表类型。Agent根据数据特征自动判断（趋势→line，比例→pie）。可选值：bar/line/pie/scatter。默认为bar"
     )
     title: Optional[str] = Field(
         default=None,
@@ -80,7 +80,7 @@ class GenerateChartInput(BaseModel):
     )
     figure_size: Optional[Tuple[float, float]] = Field(
         default=None,
-        description="图表尺寸（可选）。如 (10, 6)，默认 (10, 6)，必须为2个正数的元组"
+        description="图表尺寸，必须为2个正数的元组。默认为(10, 6)"
     )
     rotation: Optional[int] = Field(
         default=0,
@@ -125,7 +125,7 @@ class AnalyzeDataInput(BaseModel):
     )
     sort_ascending: Optional[bool] = Field(
         default=True,
-        description="升序/降序（可选）。默认 True 升序"
+        description="升序/降序。默认为True（升序）"
     )
     top_n: Optional[int] = Field(
         default=None,
@@ -133,7 +133,7 @@ class AnalyzeDataInput(BaseModel):
     )
     encoding: Optional[str] = Field(
         default="utf-8",
-        description="文件编码（可选）。当data为文件路径时使用，中文文件→gbk，英文→utf-8。默认 utf-8 - 小沈 2026-05-05"
+        description="文件编码。当data为文件路径时使用，中文文件→gbk。默认为utf-8"
     )
     max_rows: Optional[int] = Field(
         default=None,
@@ -149,11 +149,11 @@ class ReadExcelDataframeInput(BaseModel):
     )
     sheet_name: Optional[str] = Field(
         default=None,
-        description="工作表名称（可选）。默认第一个工作表"
+        description="工作表名称。默认为第一个工作表"
     )
     max_rows: Optional[int] = Field(
         default=1000,
-        description="最大读取行数（可选）。默认1000"
+        description="最大读取行数。默认为1000"
     )
     usecols: Optional[List[str]] = Field(
         default=None,
@@ -161,7 +161,7 @@ class ReadExcelDataframeInput(BaseModel):
     )
     skip_rows: Optional[int] = Field(
         default=0,
-        description="跳过行数（可选）。默认0"
+        description="跳过行数。默认为0"
     )
 
 
@@ -185,7 +185,7 @@ class FilterDataInput(BaseModel):
     )
     sort_ascending: Optional[bool] = Field(
         default=True,
-        description="升序/降序（可选）。默认True升序"
+        description="升序/降序。默认为True（升序）"
     )
     top_n: Optional[int] = Field(
         default=None,

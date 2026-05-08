@@ -80,13 +80,13 @@ class FetchWebpageInput(BaseModel):
         ..., description="完全有效的URL（如 https://example.com/page）。必须是可访问的网页地址"
     )
     prompt: Optional[str] = Field(
-        default=None, description="提取指令（可选）。默认提取页面核心内容、关键数据和摘要。LLM仅在需精准提取时传参"
+        default=None, description="提取指令。LLM仅在需精准提取时传参，未指定时返回完整页面内容。可选参数"
     )
     extract_format: Literal["markdown", "html", "text"] = Field(
         default="markdown", description="提取格式。可选值：markdown（LLM处理效率高）、html（保留完整DOM结构）、text（纯文本）。默认为markdown"
     )
     js_render: bool = Field(
-        default=False, description="是否启用JS渲染（使用Playwright）。默认false（静态抓取）。true时使用Chromium渲染动态页面（SPA必备）"
+        default=False, description="是否启用JS渲染（使用Playwright）。true时使用Chromium渲染动态页面（SPA必备）。默认为False"
     )
     timeout: int = Field(
         default=30000, ge=1000, le=120000, description="超时毫秒数，默认30000（30秒），最大120000（2分钟）。Agent根据域名响应历史动态调整 - 小沈 2026-05-03"
@@ -117,13 +117,13 @@ class SearchWebInput(BaseModel):
         default=10, ge=1, le=50, description="返回结果数量。默认10。概览类意图设5，深度调研类意图设20"
     )
     time_range: Literal["any", "d", "w", "m", "y"] = Field(
-        default="any", description="时间范围。可选值：any（不限）、d（一天内）、w（一周内）、m（一月内）、y（一年内）"
+        default="any", description="时间范围。可选值：any（不限）、d（一天内）、w（一周内）、m（一月内）、y（一年内）。默认为any"
     )
     language: Optional[str] = Field(
         default=None, description="搜索语言。默认匹配当前会话语言。Agent根据query语种自动切换"
     )
     safe_search: Literal["strict", "moderate", "off"] = Field(
-        default="moderate", description="安全搜索级别。可选值：strict（严格）、moderate（中等）、off（关闭）"
+        default="moderate", description="安全搜索级别。可选值：strict（严格）、moderate（中等）、off（关闭）。默认为moderate"
     )
     proxy: Optional[str] = Field(
         default=None, description="代理服务器地址。Agent执行三步走策略：1.优先直连尝试；2.失败则读取环境变量代理重试；3.均失败则报错"

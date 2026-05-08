@@ -59,11 +59,11 @@ class ReadXlsxInput(BaseModel):
     )
     max_rows: Optional[int] = Field(
         default=1000,
-        description="最大读取行数（可选）。Agent根据文件大小自动调整，大文件→500，小文件→2000"
+        description="最大读取行数。Agent根据文件大小自动调整（大文件500，小文件2000）。默认为1000"
     )
     header: Optional[bool] = Field(
         default=True,
-        description="第一行是否为表头（可选）。默认 True"
+        description="第一行是否为表头。默认为True"
     )
 
 
@@ -103,7 +103,7 @@ class WriteXlsxInput(BaseModel):
     )
     sheet_name: Optional[str] = Field(
         default="Sheet1",
-        description="工作表名称"
+        description="工作表名称。默认为Sheet1"
     )
 
 
@@ -151,11 +151,11 @@ class ConvertDocumentInput(BaseModel):
     )
     output_format: str = Field(
         default="pdf",
-        description="目标格式。可选: pdf, 默认pdf - 小健 2026-05-06 改为可选"
+        description="目标格式。可选值：pdf。默认为pdf"
     )
     output_path: Optional[str] = Field(
         default=None,
-        description="输出文件路径（可选）。默认与输入同目录，扩展名替换"
+        description="输出文件路径。默认为与输入同目录（扩展名替换）"
     )
 
 

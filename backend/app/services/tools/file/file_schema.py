@@ -31,11 +31,11 @@ class WriteTextFileInput(BaseModel):
     )
     encoding: Optional[str] = Field(
         default=None,
-        description="文件编码。None(默认)=自动检测（追加时检测已有文件编码，新建默认utf-8）；也可指定utf-8/gbk/gb2312等"
+        description="文件编码。追加时检测已有文件编码，新建时默认为utf-8。也可指定gbk/gb2312等。可选参数"
     )
     append: bool = Field(
         default=False,
-        description="是否追加写入。True=在文件末尾追加内容，False=覆盖写入（默认）。对.log文件Agent可自动设为True"
+        description="是否追加写入。True=追加，False=覆盖。对.log文件Agent可自动设为True。默认为False"
     )
     create_parents: bool = Field(
         default=True,
@@ -60,7 +60,7 @@ class ListDirectoryInput(BaseModel):
         default=10,
         ge=1,
         le=50,
-        description="最大递归深度，仅当 recursive=True 时有效，默认10层保护系统性能"
+        description="最大递归深度，仅当recursive=True时有效。默认为10"
     )
     page_token: Optional[str] = Field(
         default=None,
@@ -68,7 +68,7 @@ class ListDirectoryInput(BaseModel):
     )
     sortBy: str = Field(
         default="name",
-        description="排序方式。可选值：name（按名称字母排序，默认值）、size（按文件大小排序，从大到小）"
+        description="排序方式。可选值：name（按名称字母排序）、size（按文件大小排序）。默认为name"
     )
     include_hidden: bool = Field(
         default=False,
@@ -87,7 +87,7 @@ class DeleteFileInput(BaseModel):
     )
     force: bool = Field(
         default=False,
-        description="是否强制永久删除（不放入回收站）。默认False放入回收站更安全；设为True则永久删除不可恢复"
+        description="是否强制永久删除（不放入回收站），设为True则永久删除不可恢复。默认为False"
     )
 
 
@@ -133,11 +133,11 @@ class SearchFilesInput(BaseModel):
     )
     type: Optional[str] = Field(
         default=None,
-        description="搜索类型过滤：'file'只返回文件，'directory'只返回目录，None(默认)两者都返回"
+        description="搜索类型过滤：file=只返回文件，directory=只返回目录，不设则全部返回。可选参数"
     )
     sortBy: Optional[str] = Field(
         default="name",
-        description="排序方式。可选值：name（按名称字母排序，默认值）、size（按文件大小排序，从大到小）、mtime（按修改时间排序，最新的在前）"
+        description="排序方式。可选值：name（按名称字母）、size（按大小）、mtime（按修改时间）。默认为name"
     )
     page_token: Optional[str] = Field(
         default=None,
@@ -149,7 +149,7 @@ class GenerateReportInput(BaseModel):
     """generate_report 工具的输入参数"""
     output_dir: Optional[str] = Field(
         default=None,
-        description="报告输出目录，默认为None（使用默认目录）"
+        description="报告输出目录。可选参数，使用默认目录"
     )
 
 
@@ -211,14 +211,14 @@ class CompareFilesInput(BaseModel):
     )
     algorithm: str = Field(
         default="content",
-        description="比较算法：content（内容）、size（大小）、mtime（修改时间）",
+        description="比较算法：content=内容比较、size=大小比较、mtime=修改时间比较。默认为content",
         pattern="^(content|size|mtime)$"
     )
     chunk_size: int = Field(
         default=8192,
         ge=1024,
         le=1048576,
-        description="分块大小（字节），用于大文件比较，默认8192字节"
+        description="分块大小（字节），用于大文件比较。默认为8192"
     )
 
 
@@ -259,7 +259,7 @@ class CompressFilesInput(BaseModel):
     )
     format: Literal["zip", "tar.gz"] = Field(
         default="zip",
-        description="压缩格式。必填为LLM给出，当LLM未明确指定时Agent智能补全为zip。可选值含义：\n- zip：ZIP格式压缩（默认）\n- tar.gz：tar.gz格式压缩\n若output_path后缀匹配，Agent自动推断。"
+        description="压缩格式。可选值：zip（ZIP格式）、tar.gz（tar.gz格式）。Agent从output_path后缀自动推断。默认为zip"
     )
     exclude_patterns: Optional[List[str]] = Field(
         default=None,
@@ -269,15 +269,15 @@ class CompressFilesInput(BaseModel):
         default=6,
         ge=0,
         le=9,
-        description="压缩级别（0-9）。必填为LLM给出，当LLM未明确指定时Agent智能补全为6。含义：\n- 0：不压缩，仅存储\n- 1-5：快速压缩，压缩比较低\n- 6：平衡压缩（默认）\n- 7-9：最高压缩，压缩比高但速度慢\n若源目录>1GB，Agent强制限制不超过6防CPU阻塞，除非用户明确指令\"不惜时间\"。"
+        description="压缩级别（0-9）。0=不压缩，1-5=快速，6=平衡，7-9=最高压缩。源目录>1GB时Agent限制不超过6。默认为6"
     )
     overwrite: bool = Field(
         default=False,
-        description="是否覆盖已存在的目标文件。必填为LLM给出，当LLM未明确指定时Agent智能补全为false。含义：\n- false：不覆盖，若目标已存在则报错（默认）\n- true：覆盖已存在的目标文件\n若目标已存在且Agent自动比对哈希，相同则跳过，不同才覆盖。"
+        description="是否覆盖已存在的目标文件。false=不覆盖（目标存在时报错），true=覆盖。Agent自动比对哈希。默认为False"
     )
     password: Optional[str] = Field(
         default=None,
-        description="压缩密码（可选），用于加密压缩文件。必填为LLM给出，当LLM未明确指定时Agent智能补全为null。注意：仅ZIP格式支持密码保护。"
+        description="压缩密码，仅ZIP格式支持密码保护。可选参数"
     )
     split_size: Optional[int] = Field(
         default=None,
@@ -298,7 +298,7 @@ class ExtractArchiveInput(BaseModel):
     )
     overwrite: bool = Field(
         default=False,
-        description="是否覆盖已存在的文件（可选）。默认 false。若冲突，Agent 自动跳过并返回冲突清单"
+        description="是否覆盖已存在的文件。若冲突Agent自动跳过并返回冲突清单。默认为False"
     )
     password: Optional[str] = Field(
         default=None,
@@ -306,7 +306,7 @@ class ExtractArchiveInput(BaseModel):
     )
     preserve_permissions: bool = Field(
         default=True,
-        description="是否保留文件权限（可选）。默认 true。跨平台自动适配权限保留策略"
+        description="是否保留文件权限，跨平台自动适配。默认为True"
     )
 
 
@@ -318,7 +318,7 @@ class GetFileHashInput(BaseModel):
     )
     algorithm: Literal["md5", "sha1", "sha256", "sha512"] = Field(
         default="sha256",
-        description="哈希算法（可选）。可选值：md5、sha1、sha256（默认）、sha512"
+        description="哈希算法。可选值：md5、sha1、sha256、sha512。默认为sha256"
     )
     verify_against: Optional[str] = Field(
         default=None,
@@ -328,7 +328,7 @@ class GetFileHashInput(BaseModel):
         default=30000,
         ge=1000,
         le=600000,
-        description="超时毫秒数（可选），默认30000（30秒）"
+        description="超时毫秒数。默认为30000（30秒）"
     )
 
 
@@ -339,7 +339,7 @@ class FileMonitorInput(BaseModel):
     )
     event_types: List[str] = Field(
         default=["created", "modified", "deleted", "renamed"],
-        description="监控事件类型列表，默认为所有事件类型"
+        description="监控事件类型列表。可选值：created、modified、deleted、renamed。默认为全部四种"
     )
     recursive: bool = Field(
         default=True,
@@ -411,7 +411,7 @@ class ReadTextFileInput(BaseModel):
     )
     encoding: Optional[str] = Field(
         default=None,
-        description="文件编码。若读取失败，Agent 自动尝试 gbk、gb2312；若检测到 BOM 头，自动设为 utf-8-sig。常见值：utf-8（默认）、gbk、gb2312、utf-8-sig"
+        description="文件编码。读取失败时Agent自动尝试gbk/gb2312。常见值：utf-8、gbk、gb2312、utf-8-sig。可选参数"
     )
 
 
@@ -489,7 +489,7 @@ class GrepFileContentInput(BaseModel):
     )
     search_dir: Optional[str] = Field(
         default=None,
-        description="搜索路径，默认当前目录。必须是绝对路径，支持中文目录名"
+        description="搜索路径。必须是绝对路径，支持中文目录名。默认为当前目录"
     )
     output_mode: Optional[str] = Field(
         default=None,
@@ -523,15 +523,15 @@ class GrepFileContentInput(BaseModel):
     )
     ignore_case: bool = Field(
         default=False,
-        description="搜索时是否忽略大小写。设置为 true 时，\"test\" 会匹配 \"Test\" 和 \"TEST\"。默认 false"
+        description="搜索时是否忽略大小写。true=忽略大小写。默认为False"
     )
     show_line_no: bool = Field(
         default=False,
-        description="是否在输出中显示行号，便于定位。默认 false"
+        description="是否在输出中显示行号。默认为False"
     )
     multiline: bool = Field(
         default=False,
-        description="启用多行匹配模式，允许正则表达式中的 . 匹配换行符。默认 false"
+        description="启用多行匹配模式，允许正则中的.匹配换行符。默认为False"
     )
     head_limit: Optional[int] = Field(
         default=None,
@@ -576,7 +576,7 @@ class FileChecksumInput(BaseModel):
     )
     algorithm: Literal["md5", "sha1", "sha256", "sha512"] = Field(
         default="sha256",
-        description="哈希算法。必填为LLM给出，当LLM未明确指定时Agent智能补全为sha256。可选值含义：\n- md5：128位，快速但有碰撞风险（默认不推荐）\n- sha1：160位，安全性中等\n- sha256：256位，安全可靠（默认推荐）\n- sha512：512位，最安全但速度最慢\n除非用户明确指令\"快速校验\"或文件>5GB，否则绝不降级为md5。"
+        description="哈希算法。可选值：md5、sha1、sha256、sha512。默认为sha256。除非用户明确指令，当LLM未明确指定时Agent智能补全为sha256。可选值含义：\n- md5：128位，快速但有碰撞风险（默认不推荐）\n- sha1：160位，安全性中等\n- sha256：256位，安全可靠（默认推荐）\n- sha512：512位，最安全但速度最慢\n除非用户明确指令\"快速校验\"或文件>5GB，否则绝不降级为md5。"
     )
     verify_hash: Optional[str] = Field(
         default=None,
@@ -591,7 +591,7 @@ class FileChecksumInput(BaseModel):
     timeout: int = Field(
         default=30000,
         ge=5000,
-        description="超时毫秒数。必填为LLM给出，当LLM未明确指定时Agent智能补全为30000。Agent根据文件大小动态调整（1GB→60000, 5GB→120000）。超时返回进度或报错，防主流程卡死。"
+        description="超时毫秒数。Agent根据文件大小动态调整（1GB→60000, 5GB→120000）。默认为30000"
     )
 
 
