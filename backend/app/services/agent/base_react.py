@@ -42,7 +42,6 @@ from app.services.agent.reasoning_steps import (
 )
 from app.services.tools.registry import ToolCategory, get_tools_from_registry_by_category
 from app.services.agent.types import AgentStatus
-from app.services.agent.types.react_schema import get_tools_schema_for_categories  # 【步骤9】动态加载Schema
 from app.services.preprocessing.intent_classifier import IntentClassifier  # 【步骤9】意图分类器
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_timestamp
@@ -232,34 +231,7 @@ class BaseAgent(ABC):
         self._tools_dict.update(new_tools)
         self._loaded_categories.add(intent_type)
         
-        # 3. 重新生成tools_schema（给LLM看）
-        self._refresh_tools_schema()
-        
         logger.info(f"[动态加载] 完成，新增{len(new_tools)}个工具，总计{len(self._tools_dict)}个")
-    
-    def _refresh_tools_schema(self):
-        """重新生成tools_schema"""
-        # 根据当前已加载的分类，生成Schema
-        categories = list(self._loaded_categories)
-        self._tools_schema = get_tools_schema_for_categories(categories)
-        
-        # 同时更新system prompt，告知LLM新增了工具
-        self._update_system_prompt_with_tools()
-    
-    def _update_system_prompt_with_tools(self):
-        """更新system prompt，告知LLM新增了工具"""
-        # 获取当前工具的简要清单
-        tool_names = list(self._tools_dict.keys())
-        if not tool_names:
-            return
-        
-        tool_hint = f"\n【工具更新】当前可用工具: {', '.join(tool_names[:10])}"
-        if len(tool_names) > 10:
-            tool_hint += f" 等{len(tool_names)}个工具"
-        
-        # 注意：实际实现中，这个方法可能被子类覆盖
-        # 基类只提供默认实现
-        pass
     
     async def _check_and_load_missing_tools(self, observation: str, llm_client=None):
         """
