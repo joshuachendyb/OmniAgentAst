@@ -2089,6 +2089,159 @@ def generate_param_reminder(self, categories: Optional[List[ToolCategory]] = Non
 }
 ```
 
+#### 14.1.1 ToolsStrategy vs ResponseFormatStrategy 的 LLM 请求对比
+
+**ToolsStrategy 发给 LLM 的完整请求**：
+
+```json
+{
+    "model": "deepseek-v3.1",
+    "messages": [
+        {
+            "role": "system",
+            "content": "【当前系统】Windows...\n\n"
+                       "2. time_format - Format timestamp or date string\n"
+                       "   When to use: \"格式化时间\"\n"
+                       "   Example: time_format(timestamp=1777103094, pattern=\"%Y年%m月%d日\")\n\n"
+                       "【Response Format】: ...\n"
+                       "Parameter Reminder:\n"
+                       "- time_format: timestamp(optional, int/float/str), pattern(optional, str)\n"
+                       ...
+        },
+        {"role": "user", "content": "Task: 查询今天是星期几\nCurrent time: 2026-05-09 12:00:00\n..."}
+    ],
+    "tools": [                                              ← 结构化的工具定义数组
+        {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "获取当前系统时间...",
+                "parameters": {                             ← 来自 Pydantic input_schema
+                    "type": "object",
+                    "properties": {
+                        "timezone": {"type": "string", "description": "..."},
+                        "format": {"type": "string", "description": "..."}
+                    }
+                }
+            }
+        },
+        ...其他工具
+    ],
+    "tool_choice": "auto"
+}
+```
+
+LLM 从 `tools[].function.parameters.properties` 中直接看到每个工具的参数名、类型、描述。
+LLM 从 `tools[].function.parameters.required` 中知道哪些参数必填。
+
+---
+
+**ResponseFormatStrategy 发给 LLM 的完整请求**（改造前）：
+
+```json
+{
+    "model": "deepseek-v3.1",
+    "messages": [
+        {
+            "role": "system",
+            "content": "【当前系统】Windows...\n\n"
+                       "2. time_format - Format timestamp or date string\n"
+                       "   When to use: \"格式化时间\"\n"
+                       "   Example: time_format(timestamp=1777103094, pattern=\"%Y年%m月%d日\")\n\n"
+                       "【Response Format】: ...\n"
+                       "Parameter Reminder:\n"
+                       "- time_format: timestamp(optional, int/float/str), pattern(optional, str)\n"
+                       ...
+        },
+        {"role": "user", "content": "Task: 查询今天是星期几\n..."}
+    ],
+    "response_format": {                                    ← 只有输出格式约束
+        "type": "json_schema",
+        "json_schema": {
+            "name": "execute_tool",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "thought": {"type": "string"},
+                    "tool_name": {"type": "string"},        ← 没有 enum！LLM不知道有哪些工具
+                    "tool_params": {"type": "object"}       ← 泛型！LLM不知道参数名
+                }
+            }
+        }
+    }
+}
+```
+
+LLM 从 `response_format` 中只能知道输出必须是 `{thought, tool_name, tool_params}` 这个结构。
+**LLM 从哪里知道有哪些工具？** → 从 messages 中的系统提示（段落②工具描述）知道。
+**LLM 从哪里知道参数名？** → **仅靠** 系统提示中的 Parameter Reminder（段落⑥）。
+
+**关键差异**：
+
+| 对比项 | ToolsStrategy | ResponseFormatStrategy |
+|--------|--------------|----------------------|
+| **告诉LLM有哪些工具** | `tools[].function.name` ✅ 明确 | **仅靠** 系统提示段②的文字描述 ❌ 模糊 |
+| **告诉LLM参数名** | `tools[].function.parameters.properties` ✅ | **仅靠** 系统提示段⑥的 Parameter Reminder |
+| **告诉LLM参数类型** | `properties[param].type` ✅ | 系统提示段⑥的文字 |
+| **告诉LLM必填/可选** | `required` 数组 ✅ | 系统提示段⑥的 `(required)/(optional)` |
+| **保证输出是JSON** | `tool_choice="auto"` ❌ 不保证 | `response_format` ✅ 保证 |
+| **保证参数名正确** | `properties` 约束 ✅ 模型级 | ❌ 仅靠prompt文本提醒，LLM可能传错 |
+
+**改造目标（14.2）**：在 response_format 中加入工具名枚举，让 LLM 至少知道有哪些工具可选：
+```json
+"tool_name": {
+    "type": "string",
+    "enum": ["get_current_time", "time_format", "timer_set", ...]
+}
+```
+
+但 `tool_params` 的约束没法通过 response_format 实现——因为 OpenAI 的 response_format 不支持"tool_name=A时params={...}，tool_name=B时params={...}"这种条件式 schema。`tool_params` 仍将是 `type: object` 泛型，参数名的约束仍然依赖 prompt 文本。
+
+---
+
+**TextStrategy 发给 LLM 的完整请求**：
+
+```json
+{
+    "model": "deepseek-v3.1",
+    "messages": [
+        {
+            "role": "system",
+            "content": "【当前系统】Windows...\n\n"
+                       "2. time_format - Format timestamp or date string\n"
+                       "   When to use: \"格式化时间\"\n"
+                       "   Example: time_format(timestamp=1777103094, pattern=\"%Y年%m月%d日\")\n\n"
+                       "【Response Format】: ...\n"
+                       "Parameter Reminder:\n"
+                       "- time_format: timestamp(optional, int/float/str), pattern(optional, str)\n"
+                       ...
+        },
+        {"role": "user", "content": "Task: 查询今天是星期几\n..."}
+    ]
+    // 没有 tools，没有 response_format
+}
+```
+
+LLM 完全自由输出，后端靠 `parse_react_response()` 从文本中解析 JSON。
+参数名信息**唯一来源**是系统提示中的 Parameter Reminder（通道1⑥）。
+
+---
+
+**三种策略下 LLM 看到的参数信息来源总结**：
+
+```
+TextStrategy:        messages.system = [段落②工具描述] + [段落⑥Parameter Reminder]
+                     ↑ 参数名的唯一来源
+
+ResponseFormat:      messages.system = [段落②工具描述] + [段落⑥Parameter Reminder]
+                     response_format.tool_name.enum = [工具名列表]（改造后）
+                     ↑ 参数名的唯一来源仍是段落⑥ Reminder
+
+ToolsStrategy:       messages.system = [段落②工具描述] + [段落⑥Parameter Reminder]
+                     tools[].function.parameters.properties = [完整参数定义]
+                     ↑ 参数名的第一来源，段落⑥ Reminder可简化
+```
+
 ### 14.2 ResponseFormatStrategy改造：带工具参数的response_format
 
 需要将 `response_format` 从泛型改为带具体工具参数的schema。
