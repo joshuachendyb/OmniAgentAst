@@ -1,3 +1,67 @@
+v0.12.21
+
+更新时间: 2026-05-10 03:07:46
+
+更新内容：
+
+## v0.12.20→v0.12.21 变更汇总 - 小沈-2026-05-10
+
+### feat 新增
+| commit | 说明 |
+|--------|------|
+| d6121c0d | feat: 三策略适配 + 剩余register文件清理 |
+| d2f11397 | feat: 统调所有schema+register+prompt的Field description格式 + 文档更新 |
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| 670cda9a | fix: 统调所有schema文件Field description格式 |
+| 62415019 | fix: 逐文件审核所有schema的Field description格式 |
+| d093e16e | fix: 动态加载工具后自动刷新FC通道的tools定义 |
+| 94fec3df | fix: 补充data_analysis和document工具的encoding和max_rows参数说明 |
+| e9486ca0 | fix: 补充第12章缺失的12.4~12.6及附录 |
+| 68477a80 | fix: 恢复丢失的第12章完整内容 |
+
+### test 测试
+| commit | 说明 |
+|--------|------|
+| 37387a18 | test: 新增5月6日后代码测试用例(92tests) |
+| 02c9444d | test: 完善G1~G7 + FC通道测试覆盖 |
+| 0510daf0 | test: 新增13个测试 + 修复to_openai_tools() bug |
+
+### cleanup 清理
+| commit | 说明 |
+|--------|------|
+| afbb42cb | cleanup: 移除 base_react.py 死代码 |
+
+### chore 杂项
+| commit | 说明 |
+|--------|------|
+| a68ba3a9 | chore: 移除network目录pyc文件错误跟踪 |
+
+### docs 文档
+| commit | 说明 |
+|--------|------|
+| 0b1ddfc8 | docs: 第16章实施计划修正4个问题 |
+| b759706b | docs: 14.3 TextStrategy四方案改进 |
+| 692f7e04 | docs: 用户重新编辑完善文档内容 |
+| 4f482a65 | docs: 补充14.1.1三策略LLM请求对比 |
+| c44f198e | docs: 小健审查修正3个缺陷(通道3路径+G4依赖+异常处理) |
+| d387b083 | docs: 用户补充完善Function Calling章节 |
+| 405d406e | docs: 用户补充完善文档 |
+| 3db32510 | docs: 新增第十二章-Function Calling通道启用方案 |
+| f72277f4 | docs: 完善prompt架构文档补充说明 |
+
+### 修改内容
+- schema统调：逐文件审核所有schema+register+prompt的Field description格式
+- 三策略适配：FC/React/Text策略统一适配+清理遗留register文件
+- FC通道动态刷新：动态加载工具后自动刷新tools定义
+- 测试增强：新增108个测试(92+13+3)+G1~G7+FC通道覆盖
+- 文档完善：第12章恢复+第16章修正+14.3方案改进+用户补充
+- 清理：移除base_react.py死代码+network目录pyc跟踪
+
+---
+
 v0.12.20
 
 更新时间: 2026-05-08 14:35:00
