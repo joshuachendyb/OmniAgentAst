@@ -539,18 +539,18 @@ class ToolRegistry:
     def to_openai_tools(self, category: Optional['ToolCategory'] = None) -> List[Dict]:
         """
         生成OpenAI API格式的tools定义 - 小沈 2026-05-09
-        
+
         Args:
             category: 工具分类，None=全部
-        
+
         Returns:
             [{"type": "function", "function": {...}}, ...]
         """
         tools = []
-        tool_list = self.list_tools(category=category, include_metadata=True)
-        
-        for meta in tool_list:
+        for name, meta in sorted(self._tools.items(), key=lambda x: x[0]):
             if not meta.expose_to_llm:
+                continue
+            if category and meta.category != category:
                 continue
             tools.append({
                 "type": "function",
@@ -560,7 +560,7 @@ class ToolRegistry:
                     "parameters": meta.input_schema
                 }
             })
-        
+
         return tools
 
     @staticmethod
