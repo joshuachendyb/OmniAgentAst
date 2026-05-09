@@ -113,32 +113,62 @@ DESCRIPTIONS = {
     "write_yaml": """写入数据到YAML文件。
 
 使用场景：
-- 保存配置到 YAML 文件时使用""",
+- 保存配置到 YAML 文件时使用
+
+返回数据说明：
+- code: 状态码(SUCCESS/ERR_NO_PYYAML/ERR_WRITE_YAML)
+- data.file_path: 写入的文件路径(str)
+- message: 结果消息""",
 
     "parse_toml": """读取TOML文件内容。
 
 使用场景：
-- 读取 TOML 配置文件时使用（如 pyproject.toml）""",
+- 读取 TOML 配置文件时使用（如 pyproject.toml）
+
+返回数据说明：
+- code: 状态码(SUCCESS/ERR_NO_TOMLI/ERR_PARSE_TOML)
+- data: 解析后的TOML数据(dict)
+- message: 结果消息""",
 
     "write_toml": """写入数据到TOML文件。
 
 使用场景：
-- 保存配置到 TOML 文件时使用""",
+- 保存配置到 TOML 文件时使用
+
+返回数据说明：
+- code: 状态码(SUCCESS/ERR_NO_TOMLI_W/ERR_WRITE_TOML)
+- data.file_path: 写入的文件路径(str)
+- message: 结果消息""",
 
     "parse_ini": """读取INI配置文件内容。
 
 使用场景：
-- 读取 INI 配置文件时使用""",
+- 读取 INI 配置文件时使用
+
+返回数据说明：
+- code: 状态码(SUCCESS/ERR_PARSE_INI)
+- data: 各section及对应键值对(dict[str, dict])
+- message: 结果消息""",
 
     "parse_xml": """读取XML文件内容。
 
 使用场景：
-- 读取 XML 配置文件时使用""",
+- 读取 XML 配置文件时使用
+
+返回数据说明：
+- code: 状态码(SUCCESS/ERR_PARSE_XML)
+- data: XML转dict后的数据(dict)
+- message: 结果消息""",
 
     "parse_properties": """读取Java Properties文件内容。
 
 使用场景：
-- 读取 Java properties 配置文件时使用""",
+- 读取 Java properties 配置文件时使用
+
+返回数据说明：
+- code: 状态码(SUCCESS/ERR_PARSE_PROPERTIES)
+- data: 键值对(dict[str, str])
+- message: 结果消息""",
 }
 
 # 工具使用示例 - 小沈 2026-05-03修正，按文档7.4节

@@ -49,7 +49,12 @@ GUI_HELPERS_DESCRIPTIONS = {
 【重要】返回鼠标的 X 和 Y 坐标
 
 使用示例：
-- 获取位置：{}""",
+- 获取位置：{}
+
+返回数据说明：
+- code: 状态码，成功为"SUCCESS"，失败为"ERR_GET_MOUSE_POSITION"
+- data: 成功时为{"x": int, "y": int}，失败时为None
+- message: 结果描述信息""",
     "check_screen_size": """检查屏幕分辨率。
 
 使用场景：
@@ -64,7 +69,12 @@ GUI_HELPERS_DESCRIPTIONS = {
 【重要】返回屏幕的宽度和高度（像素）
 
 使用示例：
-- 获取分辨率：{}""",
+- 获取分辨率：{}
+
+返回数据说明：
+- code: 状态码，成功为"SUCCESS"，失败为"ERR_CHECK_SCREEN_SIZE"
+- data: 成功时为{"width": int, "height": int}，失败时为None
+- message: 结果描述信息""",
     "check_window_exists": """检查窗口是否存在。
 
 使用场景：
@@ -78,7 +88,12 @@ GUI_HELPERS_DESCRIPTIONS = {
 【重要】返回窗口是否存在（true/false）
 
 使用示例：
-- 检查窗口：{"title": "Chrome"}""",
+- 检查窗口：{"title": "Chrome"}
+
+返回数据说明：
+- code: 状态码，成功为"SUCCESS"，失败为"ERR_CHECK_WINDOW"
+- data: 成功时为{"exists": bool}，失败时为None
+- message: 结果描述信息""",
     "get_window_position": """获取窗口位置和大小。
 
 使用场景：
@@ -95,7 +110,12 @@ GUI_HELPERS_DESCRIPTIONS = {
 【重要】返回窗口的 X、Y 坐标和宽度、高度
 
 使用示例：
-- 获取窗口信息：{"title": "Chrome"}""",
+- 获取窗口信息：{"title": "Chrome"}
+
+返回数据说明：
+- code: 状态码，成功为"SUCCESS"，失败为"ERR_GET_WINDOW_POSITION"
+- data: 成功时为{"x": int, "y": int, "width": int, "height": int}，窗口未找到时为None
+- message: 结果描述信息""",
     "check_screen_capture_permission": """检查屏幕捕获权限。
 
 使用场景：
@@ -109,7 +129,12 @@ GUI_HELPERS_DESCRIPTIONS = {
 【重要】返回是否有屏幕捕获权限（true/false）
 
 使用示例：
-- 检查权限：{}""",
+- 检查权限：{}
+
+返回数据说明：
+- code: 状态码，成功为"SUCCESS"，失败为"ERR_CHECK_PERMISSION"
+- data: 成功时为{"has_permission": True}，失败时为{"has_permission": False}或None
+- message: 结果描述信息""",
     "check_tesseract_available": """检查 Tesseract OCR 引擎是否可用。
 
 使用场景：
@@ -123,7 +148,12 @@ GUI_HELPERS_DESCRIPTIONS = {
 【重要】返回 Tesseract OCR 引擎是否可用（true/false）
 
 使用示例：
-- 检查引���：{}""",
+- 检查引擎：{}
+
+返回数据说明：
+- code: 状态码，成功为"SUCCESS"，失败为"ERR_CHECK_TESSERACT"
+- data: 成功时为{"is_available": bool}，失败时为None
+- message: 结果描述信息""",
     "check_notification_permission": """检查系统通知权限。
 
 使用场景：
@@ -137,7 +167,12 @@ GUI_HELPERS_DESCRIPTIONS = {
 【重要】返回是否有系统通知权限（true/false）
 
 使用示例：
-- 检查权限：{}""",
+- 检查权限：{}
+
+返回数据说明：
+- code: 状态码，成功为"SUCCESS"，失败为"ERR_CHECK_PERMISSION"
+- data: 成功时为{"has_permission": True}，失败时为{"has_permission": False}或None
+- message: 结果描述信息""",
 }
 
 GUI_HELPERS_EXAMPLES = {

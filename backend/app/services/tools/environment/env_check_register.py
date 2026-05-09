@@ -47,7 +47,12 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户需要确认Python环境是否安装时使用
 - 当用户在执行Python代码前需要验证环境时使用
 
-【重要】返回Python环境是否可用（true/false）及版本信息""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.available: Python环境是否可用(bool)
+- data.version: Python版本号(str)
+- data.executable: Python可执行路径(str)
+- message: 结果消息""",
     "validate_code_safety": """验证代码安全性，防止危险操作。
 
 使用场景：
@@ -55,14 +60,23 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户想要在执行代码前进行安全验证时使用
 
 
-【重要】返回代码是否安全（true/false）及安全评估信息""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.safe: 代码是否安全(bool)
+- data.warnings: 安全风险列表(list[str])
+- data.warning_count: 风险数量(int)
+- message: 结果消息""",
     "check_node_available": """检查Node.js环境是否可用。
 
 使用场景：
 - 当用户需要确认Node.js环境是否安装时使用
 - 当用户在执行JavaScript代码前需要验证环境时使用
 
-【重要】返回Node.js环境是否可用（true/false）及版本信息""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.available: Node.js环境是否可用(bool)
+- data.version: Node.js版本号(str)
+- message: 结果消息""",
     "check_module_available": """检查Python模块是否已安装。
 
 使用场景：
@@ -70,7 +84,11 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户在导入模块前需要验证是否可用时使用
 
 
-【重要】返回模块是否已安装（true/false）""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.available: 模块是否已安装(bool)
+- data.version: 模块版本号(str)
+- message: 结果消息""",
     "validate_csv_format": """验证CSV文件格式是否正确。
 
 使用场景：
@@ -78,7 +96,11 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户在读取CSV前需要验证文件完整性时使用
 
 
-【重要】返回CSV文件格式是否正确（true/false）及错误信息""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.valid: CSV格式是否正确(bool)
+- data.errors: 错误信息列表(list[str])
+- message: 结果消息""",
     "validate_chart_data": """验证图表数据格式是否正确。
 
 使用场景：
@@ -86,7 +108,11 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户在生成图表前需要验证数据时使用
 
 
-【重要】返回数据格式是否正确（true/false）及错误信息""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.valid: 数据格式是否正确(bool)
+- data.errors: 错误信息列表(list[str])
+- message: 结果消息""",
     "check_pdf_readable": """检查PDF文件是否可读。
 
 使用场景：
@@ -94,7 +120,12 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户在读取PDF前需要验证文件是否损坏时使用
 
 
-【重要】返回PDF文件是否可读（true/false）""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.readable: PDF是否可读(bool)
+- data.page_count: 页数(int，可读时)
+- data.error: 错误信息(str，不可读时)
+- message: 结果消息""",
     "check_docx_readable": """检查Word文件是否可读。
 
 使用场景：
@@ -102,7 +133,12 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户在读取Word前需要验证文件是否损坏时使用
 
 
-【重要】返回Word文件是否可读（true/false）""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.readable: Word是否可读(bool)
+- data.paragraph_count: 段落数(int，可读时)
+- data.error: 错误信息(str，不可读时)
+- message: 结果消息""",
     "check_xlsx_readable": """检查Excel文件是否可读。
 
 使用场景：
@@ -110,7 +146,12 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户在读取Excel前需要验证文件是否损坏时使用
 
 
-【重要】返回Excel文件是否可读（true/false）""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.readable: Excel是否可读(bool)
+- data.sheet_names: 工作表名列表(list[str]，可读时)
+- data.error: 错误信息(str，不可读时)
+- message: 结果消息""",
 }
 
 ENV_CHECK_TOOL_EXAMPLES = {

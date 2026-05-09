@@ -2058,3 +2058,119 @@ def generate_param_reminder(self, categories: Optional[List[ToolCategory]] = Non
 ```
 - time_format: timestamp(optional, string/any), pattern(optional, string)
 ```
+
+---
+
+## 十四、三策略适配方案
+
+**问题发现**: 当前第12章和第13章的设计都以ToolsStrategy（Function Calling）为目标，
+但未处理模型仅支持ResponseFormatStrategy或仅支持TextStrategy的场景。
+
+### 14.1 三种策略的LLM消息构建差异
+
+| 策略 | API参数 | LLM收到什么参数信息 | 当前实现状态 |
+|------|---------|-------------------|------------|
+| **ToolsStrategy** | `request_json["tools"] = [...]` | 完整的Pydantic Schema（参数名+类型+必填+description） | ✅ `to_openai_tools()` 已实现 |
+| **ResponseFormatStrategy** | `request_json["response_format"] = {...}` | **仅有 `tool_params: object` 泛型约束**，无具体参数名 | ❌ **当前只传泛型schema，LLM不知道参数名** |
+| **TextStrategy** | 无附加参数 | **仅靠prompt文本**（通道1⑥ Parameter Reminder + 通道②工具描述） | ⚠ 依赖手写reminder，G6改为自动生成后依赖Pydantic |
+
+核心问题：**ResponseFormatStrategy当前传的response_format是泛型的，不包含任何工具参数的定义**。
+
+```python
+# 当前 ResponseFormatStrategy.response_format（llm_strategies.py:631-645）
+{
+    "type": "json_object",
+    "properties": {
+        "thought": {"type": "string"},
+        "tool_name": {"type": "string"},
+        "tool_params": {"type": "object", "description": "工具参数"}
+        # ↑ 泛型 object，没有具体的参数名和类型！
+    }
+}
+```
+
+### 14.2 ResponseFormatStrategy改造：带工具参数的response_format
+
+需要将 `response_format` 从泛型改为带具体工具参数的schema。
+
+**改造方法**：在 `_init_llm_strategies()` 初始化 `ResponseFormatStrategy` 时，传入动态生成的response_format schema：
+
+```python
+def _build_response_format_schema(tools: List[Dict]) -> Dict:
+    """根据openai_tools生成response_format schema"""
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "execute_tool",
+            "strict": True,
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "thought": {"type": "string"},
+                    "reasoning": {"type": "string"},
+                    "tool_name": {
+                        "type": "string",
+                        "enum": [t["function"]["name"] for t in tools]  # 枚举所有工具名
+                    },
+                    "tool_params": {
+                        "type": "object",
+                        "description": "工具参数"
+                        # 注意：response_format中的tool_params不能像tools那样分工具定义。
+                        # 工具参数的约束仍依赖通道1⑥的Parameter Reminder。
+                    }
+                },
+                "required": ["thought", "tool_name", "tool_params"]
+            }
+        }
+    }
+```
+
+**限制说明**：OpenAI的response_format不支持"条件式"的tool_params（即不同tool_name对应不同params）。这意味着：
+- 即使用response_format，LLM仍需从通道1⑥的Parameter Reminder获取参数名
+- response_format只能保证输出是合法JSON，不能保证参数名正确
+- **G6（自动生成Parameter Reminder）在ResponseFormatStrategy下仍然是必要的**
+
+**结论**：ResponseFormatStrategy仅保证JSON格式合法，不能替代ToolsStrategy的参数约束能力。
+
+### 14.3 TextStrategy下的参数信息来源
+
+TextStrategy下，LLM没有任何API层面的参数约束，完全依赖prompt文本。
+
+改造后各通道在TextStrategy下的作用：
+
+| 通道 | 内容 | TextStrategy下 | 是否必要 |
+|------|------|---------------|---------|
+| 通道1② get_system_prompt() | 工具用途+场景+示例 | G5去掉-Parameters:块后，保留When to use+Example | ✅ 必要 |
+| 通道1⑥ Parameter Reminder | 参数名+类型+required/optional | **唯一参数信息来源** | ✅ **关键** |
+| 通道2 工具概要 | 工具名: 简短描述（无参数） | 告诉LLM有哪些工具可用 | ✅ 辅助 |
+| 通道3 tools JSON Schema | 结构化参数定义 | **不使用**（走TextStrategy时不发送） | ❌ |
+
+**关键结论**：TextStrategy下，**G6（自动生成Parameter Reminder）不是可选项，而是必须项**。因为它是LLM获取参数名的唯一渠道。
+
+### 14.4 三种策略下参数信息完整性对比
+
+| 维度 | TextStrategy | ResponseFormatStrategy | ToolsStrategy |
+|------|-------------|----------------------|--------------|
+| 知道有哪些工具 | ✅ 通道2概要 | ✅ 通道2概要 | ✅ tools[name] |
+| 知道参数名 | ✅ **仅靠通道1⑥ Reminder** | ✅ 通道1⑥ Reminder（response_format只有object泛型） | ✅ tools[].parameters.properties |
+| 参数必填/可选 | ✅ 通道1⑥ Reminder | ✅ 通道1⑥ Reminder | ✅ required数组 |
+| 参数类型 | ✅ 通道1⑥ Reminder | ✅ 通道1⑥ Reminder | ✅ type字段 |
+| 默认值 | ✅ 通道1⑥ Reminder | ✅ 通道1⑥ Reminder | ✅ default字段 |
+| JSON格式保证 | ❌ 需parse_react_response容错 | ✅ response_format保证 | ✅ tool_calls原生 |
+
+**核心发现**：**无论哪种策略，通道1⑥ Parameter Reminder都是必需的**。ToolsStrategy下可以通过删除reminder来省token，但TextStrategy和ResponseFormatStrategy下reminder是参数信息的唯一或主要来源。
+
+### 14.5 策略选择对实施的指导
+
+| 当前能力 | 推荐策略 | 需要做什么 |
+|----------|---------|-----------|
+| 支持tools（function calling） | **ToolsStrategy** | 按第12章FC方案激活，走最优通道 |
+| 仅支持response_format | **ResponseFormatStrategy** | 按14.2补充工具名枚举；**必须保留G6的Parameter Reminder** |
+| 仅支持text（无结构化输出） | **TextStrategy** | **G6（Parameter Reminder）是必要项**；依赖parse_react_response容错解析 |
+| 能力未知 | 先用`ensure_capability()`探测，自动选择 | 已实现 |
+
+### 14.6 实施清单
+
+1. **ResponseFormatStrategy增强**：在 react_agent_mixin.py 的 `_init_llm_strategies()` 中，初始化 ResponseFormatStrategy 时传入工具枚举的 response_format schema（代码见 14.2）。
+2. **G6不可删除**：在第12章的实施顺序中注明，FC启用后G6的Parameter Reminder不能简单删除，只能在 `adapter.method == "tools"` 且确认LLM始终使用tools模式时才可以考虑简化。
+3. **TextStrategy回退保护**：当前 `_call_llm_with_summary()` 的默认路径（`text_strategy.call()`）已经正确兜底，无需额外改动。

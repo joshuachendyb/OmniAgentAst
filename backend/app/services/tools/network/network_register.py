@@ -64,7 +64,12 @@ NETWORK_TOOL_DESCRIPTIONS = {
 使用示例：
 - GET请求：{"url": "https://api.example.com/users", "method": "GET"}
 - POST请求：{"url": "https://api.example.com/users", "method": "POST", "headers": {"Content-Type": "application/json"}, "json_body": {"name": "张三"}}
-- 带重试：{"url": "https://api.example.com/users", "retry": 5}""",
+- 带重试：{"url": "https://api.example.com/users", "retry": 5}
+
+返回数据说明：
+- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_PARAM/ERR_NETWORK_INVALID_URL/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_TIMEOUT/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
+- data: 成功时为对象，失败时为None；成功时包含 status_code(HTTP状态码)、headers(响应头字典)、body(响应体，JSON自动解析为对象，否则为文本字符串)；HTTP错误时包含 status_code和body
+- message: 结果描述信息""",
     "download_file": """从 URL 下载文件到本地，支持大文件流式下载、断点续传、进度显示。
 
 使用场景：
@@ -79,7 +84,12 @@ NETWORK_TOOL_DESCRIPTIONS = {
 使用示例：
 - 简单下载：{"url": "https://example.com/file.zip", "destination_path": "D:/Downloads/file.zip"}
 - 带认证下载：{"url": "https://private.com/file.zip", "destination_path": "D:/Downloads/file.zip", "headers": {"Authorization": "Bearer token"}}
-- 禁止续传：{"url": "https://example.com/file.zip", "destination_path": "D:/Downloads/file.zip", "resume": false}""",
+- 禁止续传：{"url": "https://example.com/file.zip", "destination_path": "D:/Downloads/file.zip", "resume": false}
+
+返回数据说明：
+- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_URL/ERR_NETWORK_INVALID_PATH/ERR_NETWORK_CREATE_DIR/ERR_NETWORK_WRITE_FILE/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
+- data: 成功时为对象，失败时为None；成功时包含 file_path(文件绝对路径)、file_size(本次下载字节数)、total_size(文件总字节数)、progress_percent(进度百分比0-100)、content_type(内容类型)
+- message: 结果描述信息""",
     "fetch_webpage": """获取和处理网页内容，支持多种格式提取和智能内容提取。
 
 使用场景：
@@ -92,7 +102,12 @@ NETWORK_TOOL_DESCRIPTIONS = {
 
 使用示例：
 - 获取网页：{"url": "https://example.com", "prompt": "提取页面标题和主要内容"}
-- JS渲染：{"url": "https://example.com", "js_render": true}""",
+- JS渲染：{"url": "https://example.com", "js_render": true}
+
+返回数据说明：
+- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_URL/ERR_NETWORK_JS_RENDER/ERR_NETWORK_TIMEOUT/ERR_NETWORK_HTTP_ERROR/ERR_NETWORK_REQUEST_ERROR/ERR_NETWORK_UNKNOWN
+- data: 成功时为对象，失败时为None；成功时包含 url(请求地址)、content(提取的网页内容文本)、format(提取格式markdown/html/text)、content_type(响应内容类型)、status_code(HTTP状态码)、truncated(是否因max_tokens截断)；有prompt时额外包含 prompt(AI提取指令)和note(提示需LLM后处理)
+- message: 结果描述信息""",
     "search_web": """搜索网络获取最新信息（使用DuckDuckGo API）。
 
 使用场景：
@@ -106,7 +121,12 @@ NETWORK_TOOL_DESCRIPTIONS = {
 使用示例：
 - 简单搜索：{"query": "OpenAI function calling"}
 - 限定域名：{"query": "React 19 新特性", "allowed_domains": ["github.com", "react.dev"]}
-- 时间范围：{"query": "AI news", "time_range": "d"}""",
+- 时间范围：{"query": "AI news", "time_range": "d"}
+
+返回数据说明：
+- code: 状态码，SUCCESS或ERR_SEARCH_QUERY_TOO_SHORT/ERR_NETWORK_UNKNOWN
+- data: 成功时为对象，失败时为None；成功时包含 query(搜索关键词)、results(搜索结果列表，每项含title标题/url链接/snippet摘要/source来源引擎)、total(结果总数)、engine(使用的搜索引擎DuckDuckGo或Bing)、time_range(时间范围)、language(语言)
+- message: 结果描述信息""",
     "ping": """执行ping测试检查主机可达性，返回延迟、丢包率、TTL等网络诊断信息。
 
 使用场景：
@@ -119,7 +139,12 @@ NETWORK_TOOL_DESCRIPTIONS = {
 
 使用示例：
 - 测试连接：{"host": "google.com"}
-- 指定包数：{"host": "google.com", "count": 6}""",
+- 指定包数：{"host": "google.com", "count": 6}
+
+返回数据说明：
+- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_HOST/ERR_NETWORK_TIMEOUT/ERR_NETWORK_COMMAND_NOT_FOUND/ERR_NETWORK_UNKNOWN
+- data: 成功时为对象，失败时为None；成功时包含 host(目标主机)、packets_sent(发送包数)、packets_received(接收包数)、packets_lost(丢失包数)、loss_rate(丢包率百分比)、min_latency(最小延迟ms)、avg_latency(平均延迟ms)、max_latency(最大延迟ms)、is_reachable(是否可达布尔值)、raw_output(ping命令原始输出)
+- message: 结果描述信息""",
     "port_check": """检查目标主机的指定端口是否开放，支持socket连接测试。
 
 使用场景：
@@ -132,7 +157,12 @@ NETWORK_TOOL_DESCRIPTIONS = {
 
 使用示例：
 - 检查80端口：{"host": "google.com", "port": 80}
-- 检查多个端口需要多次调用""",
+- 检查多个端口需要多次调用
+
+返回数据说明：
+- code: 状态码，SUCCESS或ERR_NETWORK_INVALID_HOST/ERR_NETWORK_INVALID_PORT/ERR_NETWORK_DNS_ERROR/ERR_NETWORK_CONNECTION_ERROR/ERR_NETWORK_UNKNOWN
+- data: 成功时为对象，失败时为None；成功时包含 host(目标主机)、port(端口号)、is_open(是否开放布尔值)、service(服务名称，已知端口返回如SSH/HTTP/HTTPS等，未知返回Unknown)；DNS错误或连接错误时is_open为False、service为None
+- message: 结果描述信息""",
 }
 
 # 工具名到实现函数的映射

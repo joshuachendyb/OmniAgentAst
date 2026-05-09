@@ -78,17 +78,30 @@ DESCRIPTIONS = {
 - 当用户需要在数据库操作前开始事务时使用
 - 当用户需要保证数据操作的原子性时使用
 
-【重要】返回事务ID，用于后续commit/rollback""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.transaction_id: 事务ID(str)
+- message: 结果消息""",
 
     "commit_transaction": """提交数据库事务。
 
 使用场景：
-- 当用户需要提交事务使操作生效时使用""",
+- 当用户需要提交事务使操作生效时使用
+
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.transaction_id: 事务ID(str)
+- message: 结果消息""",
 
     "rollback_transaction": """回滚数据库事务。
 
 使用场景：
-- 当用户需要撤销事务中的操作时使用""",
+- 当用户需要撤销事务中的操作时使用
+
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.transaction_id: 事务ID(str)
+- message: 结果消息""",
 
 
     "check_network_connectivity": """检查网络连通性。
@@ -97,7 +110,12 @@ DESCRIPTIONS = {
 - 当用户需要确认网络是否可用时使用
 - 当用户在执行网络操作前需要验证连通性时使用
 
-【重要】返回网络是否可用及延迟信息""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.connected: 网络是否连通(bool)
+- data.host: 连通的测试主机(str，连通时)
+- data.latency_ms: 延迟毫秒数(float，连通时)
+- message: 结果消息""",
 
     "validate_url": """验证URL格式是否正确。
 
@@ -105,7 +123,14 @@ DESCRIPTIONS = {
 - 当用户需要确认URL格式是否有效时使用
 - 当用户在发送网络请求前需要验证URL时使用
 
-【重要】返回URL是否有效及解析信息""",
+返回数据说明：
+- code: 状态码(SUCCESS)
+- data.valid: URL是否有效(bool)
+- data.scheme: 协议类型(str)
+- data.netloc: 网络位置(str)
+- data.path: 路径(str)
+- data.error: 错误信息(str，异常时)
+- message: 结果消息""",
 }
 
 EXAMPLES = {

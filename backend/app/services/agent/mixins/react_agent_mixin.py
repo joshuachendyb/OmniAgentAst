@@ -60,7 +60,33 @@ class ReactAgentMixin(ToolLoaderMixin):
                 
                 openai_tools = tool_registry.to_openai_tools(self.tool_category)
                 self.tools_strategy = ToolsStrategy(tools=openai_tools)
-                self.response_format_strategy = ResponseFormatStrategy()
+                # 【三策略适配 2026-05-09】传入工具枚举的response_format schema
+                # 见文档第14章: 让response_format下LLM也知道有哪些工具可选
+                tool_names = [t["function"]["name"] for t in openai_tools]
+                self.response_format_strategy = ResponseFormatStrategy(response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "execute_tool",
+                        "strict": True,
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "thought": {"type": "string"},
+                                "reasoning": {"type": "string"},
+                                "tool_name": {
+                                    "type": "string",
+                                    "enum": tool_names,
+                                    "description": "工具名称，可选值：" + ", ".join(tool_names)
+                                },
+                                "tool_params": {
+                                    "type": "object",
+                                    "description": "工具参数。各工具的参数名和类型见system prompt中的Parameter Reminder"
+                                }
+                            },
+                            "required": ["thought", "reasoning", "tool_name", "tool_params"]
+                        }
+                    }
+                })
                 self.use_function_calling = True
                 self.openai_tools = openai_tools
             else:

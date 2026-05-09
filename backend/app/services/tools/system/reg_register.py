@@ -33,9 +33,9 @@ from app.services.tools.system.reg_tools import (
 
 # 按文档7.2节定义的description
 REGISTRY_TOOL_DESCRIPTIONS = {
-    "reg_read": "读取 Windows 注册表指定键的值。\n\n使用场景：\n- 当用户需要读取 Windows 注册表中的配置信息时使用\n- 当用户想要获取系统或应用程序的注册表设置时使用\n\n【重要】仅限 Windows 平台。Agent 自动处理路径标准化与类型格式化",
-    "reg_write": "写入或创建 Windows 注册表键值。\n\n使用场景：\n- 当用户需要修改 Windows 注册表设置时使用\n- 当用户想要创建新的注册表项时使用\n\n【重要】仅限 Windows 平台。Agent 自动推断类型、强制备份、高危拦截",
-    "reg_delete": "删除 Windows 注册表键值或整个子键。\n\n使用场景：\n- 当用户需要删除注册表中的配置时使用\n- 当用户想要清理无用注册表项时使用\n\n【重要】仅限 Windows 平台。操作不可逆需谨慎使用，建议先备份",
+    "reg_read": "读取 Windows 注册表指定键的值。\n\n使用场景：\n- 当用户需要读取 Windows 注册表中的配置信息时使用\n- 当用户想要获取系统或应用程序的注册表设置时使用\n\n【重要】仅限 Windows 平台。Agent 自动处理路径标准化与类型格式化\n\n返回数据说明：\n统一返回 {code, data, message} 格式。\n- 成功时 code=\"SUCCESS\"，data 包含：key_path（完整键路径）、value_name（值名称，默认值显示为\"(默认)\"）、value（读取到的值，hex格式时为十六进制字符串）、value_type（注册表类型名，如 REG_SZ/REG_DWORD/REG_BINARY 等）\n- 失败时 data=null，code 为错误码：ERR_REG_INVALID_ROOT_KEY（无效根键）、ERR_REG_KEY_NOT_FOUND（键或值不存在）、ERR_REG_PERMISSION_DENIED（权限不足）、ERR_REG_READ_FAILED（读取异常）",
+    "reg_write": "写入或创建 Windows 注册表键值。\n\n使用场景：\n- 当用户需要修改 Windows 注册表设置时使用\n- 当用户想要创建新的注册表项时使用\n\n【重要】仅限 Windows 平台。Agent 自动推断类型、强制备份、高危拦截\n\n返回数据说明：\n统一返回 {code, data, message} 格式。\n- 成功时 code=\"SUCCESS\"，data 包含：key_path（完整键路径）、value_name（值名称）、value（写入的值）、value_type（实际使用的类型名，如 REG_SZ/REG_DWORD 等）、backup（是否已备份，bool）；dry_run模式时 data 仅含 key_path 和 dry_run=true\n- 失败时 data=null，code 为错误码：ERR_REG_INVALID_ROOT_KEY（无效根键）、ERR_REG_KEY_NOT_FOUND（dry_run时键路径不存在）、ERR_REG_UNSUPPORTED_TYPE（不支持的值类型）、ERR_REG_VALIDATE_FAILED（dry_run校验失败）、ERR_REG_PERMISSION_DENIED（权限不足）、ERR_REG_WRITE_FAILED（写入异常）",
+    "reg_delete": "删除 Windows 注册表键值或整个子键。\n\n使用场景：\n- 当用户需要删除注册表中的配置时使用\n- 当用户想要清理无用注册表项时使用\n\n【重要】仅限 Windows 平台。操作不可逆需谨慎使用，建议先备份\n\n返回数据说明：\n统一返回 {code, data, message} 格式。\n- 成功时 code=\"SUCCESS\"，data 包含：key_path（完整键路径）、action（操作类型，\"deleted_value\"表示删除值、\"deleted_key\"表示删除键）；删除键时额外含 recursive（是否递归删除，bool）；删除值时额外含 value_name（被删除的值名称）\n- 失败时 data=null，code 为错误码：ERR_REG_INVALID_ROOT_KEY（无效根键）、ERR_REG_KEY_NOT_FOUND（键或值不存在）、ERR_REG_KEY_NOT_EMPTY（非递归模式下键不为空）、ERR_REG_CANNOT_DELETE_ROOT（不能删除根键下子键）、ERR_REG_PERMISSION_DENIED（权限不足）、ERR_REG_DELETE_FAILED（删除失败）",
 }
 
 REGISTRY_TOOL_INPUT_MODELS = {
