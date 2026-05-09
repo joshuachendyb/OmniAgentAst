@@ -64,10 +64,6 @@ TIME_TOOL_DESCRIPTIONS = {
 - 当用户想要以特定格式显示时间时使用
 - 当用户需要进行时间相关的计算时使用
 
-参数说明：
-- timezone：时区（可选），默认跟随系统时区
-- format：输出格式（可选），默认 %Y-%m-%d %H:%M:%S
-- locale：本地化语言（可选），默认匹配当前会话语言
 
 【重要】返回格式化后的当前时间字符串
 
@@ -87,9 +83,6 @@ TIME_TOOL_DESCRIPTIONS = {
 - 当用户需要将时间戳转换为可读格式时使用
 - 当用户指定特定日期格式时使用
 
-参数说明：
-- timestamp: 时间戳（Unix秒）、日期字符串（如"2026-04-25"）、或datetime对象。如果为None，则使用当前时间。支持格式：int/float=Unix时间戳，str=日期字符串自动识别，datetime=直接使用。默认为None（当前时间）
-- pattern: 格式字符串（如"%Y-%m-%d %H:%M:%S"）。如果为None，则使用默认格式"%Y-%m-%d %H:%M:%S"。常用格式：%Y年%m月%d日、%Y-%m-%d %H:%M:%S、%Y/%m/%d。默认为None（%Y-%m-%d %H:%M:%S）
 
 返回数据说明：
 - formatted: 格式化后的字符串
@@ -104,9 +97,6 @@ TIME_TOOL_DESCRIPTIONS = {
 - 当用户问"距离 deadline 还有多长时间？"时使用此工具
 - 当用户想要知道两个时间点之间相差多久时使用
 
-参数说明：
-- start: 开始时间（时间戳、字符串、datetime）。可选参数，默认为None（当前时间）
-- end: 结束时间（时间戳、字符串、datetime）。如果为None则使用当前时间。支持格式同start。可选参数，默认为None（当前时间）
 
 返回数据说明：
 - humanized: 人性化描述（如"3小时前"、"2天后"）
@@ -131,10 +121,6 @@ TIME_TOOL_DESCRIPTIONS = {
 - 当用户需要定时执行某个动作时使用
 - 当用户设置提醒或定时任务时使用
 
-参数说明：
-- delay: 延迟时间（秒）。必须大于0，不能超过86400秒（24小时）。必填参数
-- callback: 回调函数标识或描述（字符串）。描述要执行的操作。必填参数
-- callback_data: 传递给回调的数据（可选）。可选参数，默认为None
 
 返回数据说明：
 - timer_id: 定时器ID（如timer_1_1234567890）
@@ -151,8 +137,6 @@ TIME_TOOL_DESCRIPTIONS = {
 - 当用户想要取消之前设置的提醒时使用
 - 当用户取消定时任务时使用
 
-参数说明：
-- timer_id: 定时器ID（由timer_set返回）。必填参数
 
 返回数据说明：
 - timer_id: 被清除的定时器ID
@@ -168,9 +152,6 @@ TIME_TOOL_DESCRIPTIONS = {
 - 当用户处理跨国时间问题时使用
 - 当用户指定目标时区时使用
 
-参数说明：
-- utc_time: UTC时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。必填参数
-- target_tz: 目标时区（如"+08:00"、"Asia/Shanghai"）。如果为None则使用本地时区。可选参数，默认为None（本地时区）
 
 返回数据说明：
 - utc_time: 原始UTC时间
@@ -190,9 +171,6 @@ TIME_TOOL_DESCRIPTIONS = {
 - 当用户需要提交UTC时间给系统时使用
 - 当用户指定源时区时使用
 
-参数说明：
-- local_time: 本地时间（时间戳、字符串、datetime）。支持格式：int/float=Unix时间戳，str=日期字符串，datetime=直接使用。必填参数
-- source_tz: 源时区（如"+08:00"、"Asia/Shanghai"）。如果为None则使用本地时区。可选参数，默认为None（本地时区）
 
 返回数据说明：
 - utc_time: 转换后的UTC时间
@@ -207,8 +185,6 @@ TIME_TOOL_DESCRIPTIONS = {
 - 当用户需要判断是否可以安排周末活动时使用
 - 当用户想要知道某天是否需要上班时使用
 
-参数说明：
-- date: 日期（时间戳、字符串、datetime）。如果为None则使用当前日期。可选参数，默认为None（当前日期）
 
 返回数据说明：
 - is_weekend: 是否为周末（True=是周末，False=不是周末）
@@ -227,8 +203,6 @@ TIME_TOOL_DESCRIPTIONS = {
     - 当用户需要安排假期活动时使用
     - 当用户想要知道某天是否放假时使用
     
-参数说明：
-    - date: 日期（时间戳、字符串、datetime）。如果为None则使用当前日期。可选参数，默认为None（当前日期）
     
 返回数据说明：
     - is_holiday: 是否为假日（True=是假日，False=不是假日）
@@ -253,10 +227,6 @@ TIME_TOOL_DESCRIPTIONS = {
     - 当用户需要计算未来或过去时间时使用
     - 当用户问"100天后是几号"时使用此工具
     
-参数说明：
-    - start: 基准时间（时间戳、字符串、datetime）。可选参数，默认为None（当前时间）
-    - delta: 偏移量（数字）。正数表示增加，负数表示减少。必填参数
-    - unit: 单位（days/hours/minutes/seconds/months）。默认为days。Agent 语义解析：'3天'→unit='days'，'2小时'→unit='hours'。可选参数，默认为days
     
 返回数据说明：
     - result_time: 计算后的时间字符串（默认格式）
@@ -276,8 +246,6 @@ TIME_TOOL_DESCRIPTIONS = {
     - 当用户需要查看已设置的提醒时使用
     - 当用户管理定时任务时使用
     
-参数说明：
-    - 无参数
     
 返回数据说明：
     - timers: 定时器列表，每个包含 timer_id, delay, callback, set_at
@@ -292,9 +260,6 @@ TIME_TOOL_DESCRIPTIONS = {
     - 当用户需要判断时间先后时使用
     - 当用户问"是否已经过了某个时间"时使用
     
-参数说明：
-    - time1: 第一个时间（时间戳、字符串、datetime）。必填参数
-    - time2: 第二个时间（时间戳、字符串、datetime）。必填参数
     
 返回数据说明：
     - result: 比较结果（-1=time1更早，0=相等，1=time1更晚）
@@ -311,8 +276,6 @@ TIME_TOOL_DESCRIPTIONS = {
     - 当用户问"这个时间的时间戳是多少"时使用
     - 当用户需要存储时间戳格式时使用
     
-参数说明：
-    - time_str: 日期时间字符串（如"2026-05-05 14:30:00"）。必填参数
     
 返回数据说明：
     - timestamp: Unix时间戳（秒）
@@ -328,9 +291,6 @@ TIME_TOOL_DESCRIPTIONS = {
     - 当用户看到时间戳问"这是什么时候"时使用
     - 当用户需要人性化显示时间戳时使用
     
-参数说明：
-    - timestamp: Unix时间戳（秒）。必填参数
-    - format: 输出格式（可选）。默认为"%Y-%m-%d %H:%M:%S"
     
 返回数据说明：
     - time_str: 格式化后的时间字符串
@@ -346,8 +306,6 @@ TIME_TOOL_DESCRIPTIONS = {
     - 当用户需要判断是否可以安排工作活动时使用
     - 当用户问"这天要不要上班"时使用
     
-参数说明：
-    - date: 日期（时间戳、字符串、datetime）。可选参数，默认为None（当前日期）
     
 返回数据说明：
     - is_workday: 是否为工作日（True=工作日，False=非工作日）
@@ -364,9 +322,6 @@ TIME_TOOL_DESCRIPTIONS = {
     - 当用户需要计算N个工作日后的日期时使用
     - 当用户安排工作计划时使用
     
-参数说明：
-    - date: 起始日期（时间戳、字符串、datetime）。可选参数，默认为None（当前日期）
-    - n: 工作日数量（正整数）。必填参数
     
 返回数据说明：
     - result_date: 计算结果日期字符串

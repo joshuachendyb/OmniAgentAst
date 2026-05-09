@@ -47,11 +47,6 @@ ENV_TOOL_DESCRIPTIONS = {
 - 当用户想要读取系统配置时使用
 - 当用户需要获取 PATH 等系统环境变量时使用
 
-参数说明：
-- name：环境变量名称
-- default：默认值（可选）
-- scope：作用域（可选），默认 process
-- expand_vars：是否展开嵌套变量（可选），默认 true
 
 【重要】返回环境变量的值，自动展开嵌套变量
 
@@ -65,11 +60,6 @@ ENV_TOOL_DESCRIPTIONS = {
 - 当用户想要配置系统环境时使用
 - 当用户需要临时设置运行参数时使用
 
-参数说明：
-- name：环境变量名称
-- value：环境变量值
-- scope：作用域（可选），默认 process
-- append_mode：追加模式（可选），默认 false
 
 【重要】设置环境变量。默认仅对当前进程有效。若 scope 为 user/system，Agent 尝试持久化，遇权限不足自动降级为 process 并提示用户
 
@@ -83,9 +73,6 @@ ENV_TOOL_DESCRIPTIONS = {
 - 当用户想要查找特定前缀变量时使用
 - 当用户问"有哪些JAVA相关变量"时使用
  
-参数说明：
-- prefix：环境变量名前缀过滤（可选），例如 PY、JAVA
-- include_system：是否包含系统级环境变量（可选），默认 false
  
 【重要】返回环境变量列表，支持前缀过滤""",
     "delete_env": """删除指定的环境变量。
@@ -95,9 +82,6 @@ ENV_TOOL_DESCRIPTIONS = {
 - 当用户想要清理系统配置时使用
 - 当用户需要移除临时变量时使用
  
-参数说明：
-- name：环境变量名称
-- scope：作用域（可选），默认 process
  
 【重要】删除环境变量。默认仅对当前进程有效。若 scope 为 user/system，Agent 尝试持久化，遇权限不足自动降级为 process 并提示用户
  
@@ -111,9 +95,6 @@ ENV_TOOL_DESCRIPTIONS = {
 - 当用户想要验证系统配置时使用
 - 当用户需要判断变量是否设置时使用
  
-参数说明：
-- name：环境变量名称
-- scope：作用域（可选），默认 process
  
 使用示例：
 - 检查变量：{"name": "JAVA_HOME"}

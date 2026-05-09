@@ -98,15 +98,8 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
         
         logger.info(f"FileReactAgent initialized (task_id: {task_id}, tool_category: {effective_category}, candidates: {self._candidates})")
         
-        # 【新增】LLM调用策略
-        self.text_strategy = TextStrategy()
-        
-        # 简化：暂时为空，需要时由调用方传入
-        self.use_function_calling = False
-        self.openai_tools = []
-        self.tools_strategy = None
-        self.response_format_strategy = None
-        self.adapter = None
+        # FC通道由mixin._init_llm_strategies()统一初始化 - 小沈 2026-05-09
+        self._init_llm_strategies()
         
     # ========== 跨分类工具支持方法（2026-04-30 小沈）==========
     

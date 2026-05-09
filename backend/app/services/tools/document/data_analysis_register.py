@@ -53,14 +53,6 @@ DESCRIPTIONS = {
 - 当用户想要对表格数据进行统计、筛选、排序时使用
 - 当用户需要进行数据清洗和预处理时使用
 
-参数说明：
-- file_path：CSV 文件路径（字符串）。必填参数。如 D:/data/users.csv
-- encoding：文件编码（可选）。Agent根据文件来源自动判断，中文文件→gbk/GB2312，英文→utf-8，支持utf-8-sig（带BOM）。默认 utf-8
-- delimiter：分隔符（可选）。Agent根据文件内容自动检测，CSV→逗号，TSV→制表符，中文CSV常用分号。默认 ,
-- has_header：是否有表头（可选）。Agent分析第一行是否为表头，自动判断。默认 True
-- max_rows：最大读取行数（可选）。Agent根据文件大小自动调整，大文件→500，小文件→2000。默认 1000
-- usecols：选择列（可选）。指定要读取的列名列表，如 ["name", "age", "score"]
-- skip_rows：跳过行数（可选）。跳过文件开头的N行。默认 0
 
 【重要】需要安装 pandas 库（pip install pandas）
 
@@ -76,16 +68,6 @@ DESCRIPTIONS = {
 - 当用户想要生成柱状图、折线图、饼图等图表时使用
 - 当用户需要生成报告中的图表时使用
 
-参数说明：
-- data：图表数据（JSON 格式，必填）。如 {"labels": ["A", "B"], "values": [10, 20]}
-- chart_type：图表类型（可选）。Agent根据数据特征自动判断，趋势数据→line，比例数据→pie，可选 bar/line/pie/scatter。默认 bar
-- title：图表标题（可选）。Agent根据数据内容生成描述性标题
-- x_label：X轴标签（可选）。Agent从数据列名推断
-- y_label：Y轴标签（可选）。Agent从数据列名推断
-- output_path：输出图片路径（可选）。Agent根据上下文自动生成，含时间戳
-- figure_size：图表尺寸（可选）。如 (10, 6)，默认 (10, 6)
-- rotation：X轴标签旋转角度（可选）。如 45，设置标签旋转避免重叠。默认 0
-- color：图表颜色（可选）。如 #FF5733 或 blue
 
 【重要】需要安装 matplotlib 库（pip install matplotlib）
 
@@ -101,15 +83,6 @@ DESCRIPTIONS = {
 - 当用户想要获取数据的均值、总和、最大值、最小值等统计信息时使用
 - 当用户需要进行数据分组分析时使用
 
-参数说明：
-- data：要分析的数据（必填）。可以是数组（如 [{"name": "A", "value": 10}]）或 CSV 文件路径（如 "D:/data/users.csv"）
-- operations：分析操作（可选）。Agent根据query语义推断所需操作，默认执行全部（mean/sum/count/min/max/std）
-- group_by：分组字段（可选）。Agent根据query推断分组字段
-- sort_by：排序字段（可选）。按指定列排序
-- sort_ascending：升序/降序（可选）。默认 True 升序
-- top_n：返回前N条（可选）。如 top_n=10 返回前10条
-- encoding：文件编码（可选）。当data为文件路径时使用，中文文件→gbk。默认 utf-8
-- max_rows：最大读取行数（可选）。当data为文件路径时使用，None=全部读取
 
 【重要】需要安装 pandas 库
 
@@ -125,12 +98,6 @@ DESCRIPTIONS = {
 - 当用户说"帮我分析这个Excel"时使用
 - 当用户想要对Excel表格数据进行统计、筛选时使用
 
-参数说明：
-- file_path：Excel 文件路径（必填）。如 D:/data/sales.xlsx
-- sheet_name：工作表名称（可选）。默认第一个工作表
-- max_rows：最大读取行数（可选）。默认 1000
-- usecols：选择列（可选）。如 ["name", "age", "score"]
-- skip_rows：跳过行数（可选）。默认 0
 
 【重要】需要安装 pandas + openpyxl 库
 
@@ -147,14 +114,6 @@ DESCRIPTIONS = {
 - 当用户说"只看北京的数据"时使用
 - 当用户需要按条件过滤数据时使用
 
-参数说明：
-- data：要筛选的数据（必填）。可以是数组或CSV/Excel文件路径
-- conditions：筛选条件列表（必填）。每个条件: {"column": "列名", "operator": "操作符", "value": 值}
-  - 操作符: eq(等于), ne(不等于), gt(大于), gte(大于等于), lt(小于), lte(小于等于), in(在列表中), contains(包含文本), not_contains(不包含文本)
-- select_columns：选择返回的列（可选）。如 ["name", "age"]
-- sort_by：排序字段（可选）
-- sort_ascending：升序/降序（可选）。默认True升序
-- top_n：返回前N条（可选）
 
 返回数据说明：
 - code: 状态码（SUCCESS/ERR_FILTER_DATA）

@@ -261,28 +261,20 @@ Warning: Rollback operations cannot be undone. Be certain before proceeding."""
 6. Search operations are read-only and safe to use anytime"""
     
     def get_parameter_reminder(self) -> str:
-        """获取参数命名提醒Prompt"""
-        return """【Parameter Naming Reminder】
-
-Correct parameter names to use:
-- list_directory: dir_path
-- read_text_file: file_path
-- write_text_file: file_path, text
-- delete_file: file_path
-- move_file: source_path, destination_path
-- search_files: pattern, search_dir
-- grep_file_content: pattern, search_dir
-- precise_replace_in_file: file_path, old_string, new_string
-
-Common mistakes to avoid:
-- ❌ directory_path (use: dir_path)
-- ❌ filepath (use: file_path)
-- ❌ content for write (use: text)
-- ❌ file_pattern for search (use: pattern)
-- ❌ path for search_dir (use: search_dir)
-- ❌ src/dst (use: source_path/destination_path)
-- ❌ read_file (use: read_text_file)
-- ❌ write_file (use: write_text_file)"""
+        from app.services.tools.registry import tool_registry, ToolCategory
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.FILE)
+        forbidden = (
+            "\n\nCommon mistakes to avoid:\n"
+            "- ❌ directory_path (use: dir_path)\n"
+            "- ❌ filepath (use: file_path)\n"
+            "- ❌ content for write (use: text)\n"
+            "- ❌ file_pattern for search (use: pattern)\n"
+            "- ❌ path for search_dir (use: search_dir)\n"
+            "- ❌ src/dst (use: source_path/destination_path)\n"
+            "- ❌ read_file (use: read_text_file)\n"
+            "- ❌ write_file (use: write_text_file)"
+        )
+        return auto_reminder + forbidden
 
 class TaskTemplates:
     """预定义任务模板"""

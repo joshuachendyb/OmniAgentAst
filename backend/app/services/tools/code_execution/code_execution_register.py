@@ -36,10 +36,6 @@ DESCRIPTIONS = {
 - 当用户需要快速验证Python代码逻辑时使用
 - 当用户需要执行数据处理、计算等Python脚本时使用
 
-参数说明：
-- code: 要执行的Python代码（字符串）。必填参数
-- timeout: 超时时间（秒），默认为30秒，最大300秒。可选参数
-- working_dir: 工作目录（可选）。如果为None则使用当前工作目录
 
 返回数据说明（位于返回的data字段中）：
 - stdout: 标准输出内容
@@ -52,10 +48,6 @@ DESCRIPTIONS = {
 - 当用户需要快速验证JavaScript代码逻辑时使用
 - 当用户需要执行Node.js脚本时使用
 
-参数说明：
-- code: 要执行的JavaScript代码（字符串）。必填参数
-- timeout: 超时时间（秒），默认为30秒，最大300秒。可选参数
-- working_dir: 工作目录（可选）。如果为None则使用当前工作目录
 
 返回数据说明（位于返回的data字段中）：
 - stdout: 标准输出内容

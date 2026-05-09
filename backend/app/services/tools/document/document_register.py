@@ -62,11 +62,6 @@ DESCRIPTIONS = {
 - 当用户需要分析 PDF 文档内容时使用
 - 当用户需要提取 PDF 中的表格数据时使用
 
-【参数说明】
-- file_path：PDF 文件路径（必填）
-- pages：要读取的页面（可选），如 "1-5" 或 "1,3,5"
-- extract_images：是否提取图片（可选），默认 false
-- extract_tables：是否提取表格（可选），默认 false
 
 【返回数据】
 - code: SUCCESS / ERR_READ_PDF / ERR_NO_PDFPLUMBER
@@ -83,9 +78,6 @@ DESCRIPTIONS = {
 - 当用户需要分析 Word 文档内容时使用
 - 当用户需要提取 Word 文档中的表格时使用
 
-【参数说明】
-- file_path：Word 文件路径（必填）
-- extract_tables：是否提取表格（可选），默认 false
 
 【返回数据】
 - code: SUCCESS / ERR_READ_DOCX / ERR_NO_DOCX
@@ -102,11 +94,6 @@ DESCRIPTIONS = {
 - 当用户需要查看 Excel 文件内容时使用
 - 当用户需要读取指定工作表时使用
 
-【参数说明】
-- file_path：Excel 文件路径（必填）
-- sheet_name：工作表名称（可选），默认第一个
-- max_rows：最大读取行数（可选），默认 1000
-- header：第一行是否为表头（可选），默认 true
 
 【返回数据】
 - code: SUCCESS / ERR_READ_XLSX / ERR_NO_OPENPYXL
@@ -122,12 +109,6 @@ DESCRIPTIONS = {
 - 当用户需要导出文档时使用
 - 当用户需要创建带表格的文档时使用
 
-【参数说明】
-- file_path：输出文件路径（必填）
-- content：正文内容（可选）
-- paragraphs：段落列表（可选），如 ["第一段", "第二段"]
-- title：文档标题（可选）
-- table_data：表格数据二维数组（可选），如 [["列1", "列2"], ["值1", "值2"]]
 
 【返回数据】
 - code: SUCCESS / ERR_WRITE_DOCX / ERR_NO_DOCX
@@ -143,10 +124,6 @@ DESCRIPTIONS = {
 - 当用户需要导出数据为 Excel 时使用
 - 当用户需要创建带表头的数据表时使用
 
-【参数说明】
-- file_path：输出文件路径（必填）
-- data：数据字典（必填），格式 {"headers": [...], "rows": [[...], [...]]}
-- sheet_name：工作表名称（可选），默认 "Sheet1"
 
 【返回数据】
 - code: SUCCESS / ERR_WRITE_XLSX / ERR_NO_OPENPYXL
@@ -162,9 +139,6 @@ DESCRIPTIONS = {
 - 当用户需要提取 PPT 文字时使用
 - 当用户需要提取演讲备注时使用
 
-【参数说明】
-- file_path：PPT 文件路径（必填）
-- extract_notes：是否提取演讲备注（可选），默认 false
 
 【返回数据】
 - code: SUCCESS / ERR_READ_PPTX / ERR_NO_PPTX
@@ -180,12 +154,6 @@ DESCRIPTIONS = {
 - 当用户需要导出为PDF格式时使用
 - 当用户需要创建包含表格的PDF文档时使用
 
-【参数说明】
-- file_path：输出PDF文件路径（必填）
-- title：文档标题（可选）
-- content：正文内容（可选）
-- paragraphs：段落列表（可选），如 ["第一段", "第二段"]
-- table_data：表格数据二维数组（可选），如 [["列1", "列2"], ["值1", "值2"]]
 
 【返回数据】
 - code: SUCCESS / ERR_WRITE_PDF / ERR_NO_REPORTLAB
@@ -201,10 +169,6 @@ DESCRIPTIONS = {
 - 当用户说"把这个docx转成pdf"时使用
 - 当用户需要分享不可编辑的文档时使用
  
-【参数说明】
-- input_path：输入文件路径（必填）。支持 .docx/.doc/.xlsx/.xls/.pptx/.ppt/.odt/.ods
-- output_format：目标格式（可选），默认 pdf。当前仅支持 "pdf"
-- output_path：输出文件路径（可选）。默认与输入同目录
  
 【返回数据】
 - code: SUCCESS / ERR_CONVERT_DOCUMENT / ERR_NO_LIBREOFFICE
@@ -219,10 +183,6 @@ DESCRIPTIONS = {
 - 当用户需要创建幻灯片时使用
 - 当用户需要导出PPT文件时使用
  
-【参数说明】
-- file_path：输出文件路径（必填）
-- title：演示文稿标题（可选）
-- slides：幻灯片内容列表（可选），每个元素是一个字典，包含 title 和 content
  
 【返回数据】
 - code: SUCCESS / ERR_WRITE_PPTX / ERR_NO_PPTX

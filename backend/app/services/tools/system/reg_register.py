@@ -33,9 +33,9 @@ from app.services.tools.system.reg_tools import (
 
 # 按文档7.2节定义的description
 REGISTRY_TOOL_DESCRIPTIONS = {
-    "reg_read": "读取 Windows 注册表指定键的值。\n\n使用场景：\n- 当用户需要读取 Windows 注册表中的配置信息时使用\n- 当用户想要获取系统或应用程序的注册表设置时使用\n\n参数说明：\n- key_path：注册表键路径\n- value_name：值名称（可选）\n- hive：根键（可选），默认 HKCU\n- output_format：输出格式（可选），默认 auto\n\n【重要】仅限 Windows 平台。Agent 自动处理路径标准化与类型格式化",
-    "reg_write": "写入或创建 Windows 注册表键值。\n\n使用场景：\n- 当用户需要修改 Windows 注册表设置时使用\n- 当用户想要创建新的注册表项时使用\n\n参数说明：\n- key_path：注册表键路径\n- value_name：值名称\n- value：值数据\n- value_type：值类型（可选），默认 auto_detect\n- backup_before_write：写入前备份（可选），默认 true\n- dry_run：预演模式（可选），默认 false\n\n【重要】仅限 Windows 平台。Agent 自动推断类型、强制备份、高危拦截",
-    "reg_delete": "删除 Windows 注册表键值或整个子键。\n\n使用场景：\n- 当用户需要删除注册表中的配置时使用\n- 当用户想要清理无用注册表项时使用\n\n参数说明：\n- key_path：注册表键路径\n- value_name：值名称（可选）\n- backup_before_delete：删除前备份（可选），默认 true\n- recursive：递归删除（可选），默认 false\n\n【重要】仅限 Windows 平台。操作不可逆需谨慎使用，建议先备份",
+    "reg_read": "读取 Windows 注册表指定键的值。\n\n使用场景：\n- 当用户需要读取 Windows 注册表中的配置信息时使用\n- 当用户想要获取系统或应用程序的注册表设置时使用\n\n【重要】仅限 Windows 平台。Agent 自动处理路径标准化与类型格式化",
+    "reg_write": "写入或创建 Windows 注册表键值。\n\n使用场景：\n- 当用户需要修改 Windows 注册表设置时使用\n- 当用户想要创建新的注册表项时使用\n\n【重要】仅限 Windows 平台。Agent 自动推断类型、强制备份、高危拦截",
+    "reg_delete": "删除 Windows 注册表键值或整个子键。\n\n使用场景：\n- 当用户需要删除注册表中的配置时使用\n- 当用户想要清理无用注册表项时使用\n\n【重要】仅限 Windows 平台。操作不可逆需谨慎使用，建议先备份",
 }
 
 REGISTRY_TOOL_INPUT_MODELS = {

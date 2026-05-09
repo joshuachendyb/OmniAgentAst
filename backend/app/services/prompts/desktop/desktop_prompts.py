@@ -76,6 +76,10 @@ Example 4: Task completed
 """
     
 
+    def get_parameter_reminder(self) -> str:
+        from app.services.tools.registry import tool_registry, ToolCategory
+        return tool_registry.generate_param_reminder(category=ToolCategory.DESKTOP)
+
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}
 

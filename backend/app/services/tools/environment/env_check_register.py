@@ -54,8 +54,6 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户需要检查代码是否安全时使用
 - 当用户想要在执行代码前进行安全验证时使用
 
-参数说明：
-- code：要验证的代码
 
 【重要】返回代码是否安全（true/false）及安全评估信息""",
     "check_node_available": """检查Node.js环境是否可用。
@@ -71,8 +69,6 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户需要确认某个Python模块是否已安装时使用
 - 当用户在导入模块前需要验证是否可用时使用
 
-参数说明：
-- module_name：模块名称
 
 【重要】返回模块是否已安装（true/false）""",
     "validate_csv_format": """验证CSV文件格式是否正确。
@@ -81,8 +77,6 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户需要确认CSV文件格式是否正确时使用
 - 当用户在读取CSV前需要验证文件完整性时使用
 
-参数说明：
-- file_path：CSV文件路径
 
 【重要】返回CSV文件格式是否正确（true/false）及错误信息""",
     "validate_chart_data": """验证图表数据格式是否正确。
@@ -91,8 +85,6 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户需要确认图表数据格式是否正确时使用
 - 当用户在生成图表前需要验证数据时使用
 
-参数说明：
-- data：图表数据（JSON格式）
 
 【重要】返回数据格式是否正确（true/false）及错误信息""",
     "check_pdf_readable": """检查PDF文件是否可读。
@@ -101,8 +93,6 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户需要确认PDF文件是否可读取时使用
 - 当用户在读取PDF前需要验证文件是否损坏时使用
 
-参数说明：
-- file_path：PDF文件路径
 
 【重要】返回PDF文件是否可读（true/false）""",
     "check_docx_readable": """检查Word文件是否可读。
@@ -111,8 +101,6 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户需要确认Word文件是否可读取时使用
 - 当用户在读取Word前需要验证文件是否损坏时使用
 
-参数说明：
-- file_path：Word文件路径
 
 【重要】返回Word文件是否可读（true/false）""",
     "check_xlsx_readable": """检查Excel文件是否可读。
@@ -121,8 +109,6 @@ ENV_CHECK_TOOL_DESCRIPTIONS = {
 - 当用户需要确认Excel文件是否可读取时使用
 - 当用户在读取Excel前需要验证文件是否损坏时使用
 
-参数说明：
-- file_path：Excel文件路径
 
 【重要】返回Excel文件是否可读（true/false）""",
 }

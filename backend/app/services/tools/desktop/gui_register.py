@@ -66,11 +66,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要进行桌面自动化操作时使用
 - 当用户需要点击特定位置时使用
 
-参数说明：
-- x：点击的 X 坐标
-- y：点击的 Y 坐标
-- button：鼠标按钮（可选），可填 left/right/middle
-- click_type：点击类型（可选），可填 single/double
 
 【重要】需要安装 pyautogui 库
 
@@ -84,10 +79,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要进行桌面自动化操作时使用
 - 当用户需要将鼠标悬停在特定元素上时使用
 
-参数说明：
-- x：目标 X 坐标
-- y：目标 Y 坐标
-- duration：移动持续时间（秒）（可选）
 
 【重要】需要安装 pyautogui 库
 
@@ -101,9 +92,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要向下滚动查看更多内容时使用
 - 当用户需要向上滚动回到顶部时使用
 
-参数说明：
-- direction：滚动方向，可选 up/down
-- amount：滚动单位数量（可选）
 
 【重要】需要安装 pyautogui 库
 
@@ -117,9 +105,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要进行表单填写自动化时使用
 - 当用户需要模拟键盘打字时使用
 
-参数说明：
-- text：要输入的文本
-- interval：每个字符间隔（秒）（可选）
 
 【重要】需要安装 pyautogui 或 keyboard 库
 
@@ -133,8 +118,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要进行复制粘贴、保存等快捷操作时使用
 - 当用户需要切换窗口或程序时使用
 
-参数说明：
-- keys：快捷键组合（如 "ctrl+c", "alt+tab"）
 
 【重要】需要安装 pyautogui 或 keyboard 库
 
@@ -148,9 +131,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要自定义按键组合时使用
 - 当用户需要精确控制按键按下和释放顺序时使用
 
-参数说明：
-- keys：要按住的键数组
-- action：操作，可选 press/hold/release
 
 【重要】需要安装 pyautogui 或 keyboard 库
 
@@ -164,9 +144,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要保存屏幕截图作为记录时使用
 - 当用户需要截取特定区域画面时使用
 
-参数说明：
-- output_path：输出文件路径（可选）
-- region：截取区域 {x, y, width, height}
 
 【重要】需要安装 mss 或 PIL 库
 
@@ -180,8 +157,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要记录桌面当前所有窗口和元素时使用
 - 当用户需要进行桌面状态分析时使用
 
-参数说明：
-- display：显示器编号（可选）
 
 【重要】需要安装 mss 或 PIL 库
 
@@ -195,10 +170,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要制作操作教程或演示视频时使用
 - 当用户需要记录屏幕变化过程时使用
 
-参数说明：
-- duration：录制时长（秒）
-- output_path：输出文件路径（可选）
-- fps：帧率（可选）
 
 【重要】需要安装屏幕录制库（mss + PIL）
 
@@ -212,8 +183,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要查找特定窗口时使用
 - 当用户需要了解当前桌面窗口状态时使用
 
-参数说明：
-- filter：窗口标题过滤
 
 【重要】需要安装 pywin32 库
 
@@ -227,8 +196,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要激活某个窗口进行操作时使用
 - 当用户需要切换到特定程序窗口时使用
 
-参数说明：
-- title：窗口标题
 
 【重要】需要安装 pywin32 库
 
@@ -241,10 +208,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要将窗口设置为特定尺寸时使用
 - 当用户需要进行窗口布局自动化时使用
 
-参数说明：
-- title：窗口标题
-- width：宽度
-- height：高度
 
 【重要】需要安装 pywin32 库
 
@@ -257,9 +220,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要进行图片文字识别（OCR）时使用
 - 当用户需要识别截图中的文字时使用
 
-参数说明：
-- image_path：图片文件路径
-- language：识别语言，可选 eng/chi_sim/eng+chi_sim
 
 【重要】需要安装 pytesseract 库和 Tesseract OCR 引擎
 
@@ -273,8 +233,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要读取复制的内容时使用
 - 当用户需要获取剪贴板数据进行后续处理时使用
 
-参数说明：
-- 无参数
 
 【重要】使用 pyperclip 库或零依赖的 ctypes
 
@@ -287,8 +245,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要准备数据供用户粘贴时使用
 - 当用户需要进行剪贴板自动化操作时使用
 
-参数说明：
-- content：要写入的内容
 
 【重要】使用 pyperclip 库或零依赖的 ctypes
 
@@ -301,10 +257,6 @@ GUI_TOOL_DESCRIPTIONS = {
 - 当用户需要通知用户某个操作完成时使用
 - 当用户需要显示重要信息时使用
 
-参数说明：
-- title：通知标题
-- message：通知内容
-- duration：显示时长（秒），默认 5
 
 【重要】需要安装 win10toast 库
 

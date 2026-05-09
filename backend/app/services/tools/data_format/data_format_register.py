@@ -64,10 +64,6 @@ DESCRIPTIONS = {
 - 解析 JSON 格式的数据文件时使用
 - 当需要处理嵌套 JSON 结构时使用
 
-【参数说明】
-- file_path：JSON 文件路径（必填）
-- encoding：文件编码（可选），默认 auto_detect
-- max_depth：最大解析深度（可选），默认 10
 
 【返回数据】
 - code: SUCCESS / ERROR
@@ -81,14 +77,6 @@ DESCRIPTIONS = {
 - 导出数据为 JSON 格式时使用
 - 当需要 Pretty Print 输出时使用
 
-【参数说明】
-- file_path：JSON 文件路径（必填）
-- data：要写入的数据（必填）
-- encoding：文件编码（可选），默认 utf-8
-- indent：缩进空格数（可选），默认 2
-- ensure_ascii：是否转义非 ASCII（可选），默认 false
-- backup_before_write：写入前备份（可选），默认 true
-- create_parents：自动创建父目录（可选），默认 true
 
 【返回数据】
 - code: SUCCESS / ERROR
@@ -104,13 +92,6 @@ DESCRIPTIONS = {
 - 分析表格数据时使用
 - 处理带分隔符的文本文件时使用
 
-【参数说明】
-- file_path：CSV 文件路径（必填）
-- encoding：文件编码（可选），默认 auto_detect
-- delimiter：分隔符（可选），默认 auto_detect
-- has_header：是否有表头（可选），默认 true
-- max_rows：最大读取行数（可选），默认 500
-- skip_blank_lines：跳过空行（可选），默认 true
 
 【返回数据】
 - code: SUCCESS / ERROR
@@ -123,9 +104,6 @@ DESCRIPTIONS = {
 - 读取 YAML 配置文件时使用
 - 解析配置结构时使用
 
-【参数说明】
-- file_path：YAML 文件路径（必填）
-- encoding：文件编码（可选），默认 utf-8
 
 【返回数据】
 - code: SUCCESS / ERROR
@@ -135,59 +113,32 @@ DESCRIPTIONS = {
     "write_yaml": """写入数据到YAML文件。
 
 使用场景：
-- 保存配置到 YAML 文件时使用
-
-参数说明：
-- file_path：YAML 文件路径（必填）
-- data：要写入的数据（必填）
-- encoding：文件编码（可选），默认 utf-8
-- indent：缩进空格数（可选），默认 2""",
+- 保存配置到 YAML 文件时使用""",
 
     "parse_toml": """读取TOML文件内容。
 
 使用场景：
-- 读取 TOML 配置文件时使用（如 pyproject.toml）
-
-参数说明：
-- file_path：TOML 文件路径（必填）
-- encoding：文件编码（可选），默认 utf-8""",
+- 读取 TOML 配置文件时使用（如 pyproject.toml）""",
 
     "write_toml": """写入数据到TOML文件。
 
 使用场景：
-- 保存配置到 TOML 文件时使用
-
-参数说明：
-- file_path：TOML 文件路径（必填）
-- data：要写入的数据（必填）
-- encoding：文件编码（可选），默认 utf-8""",
+- 保存配置到 TOML 文件时使用""",
 
     "parse_ini": """读取INI配置文件内容。
 
 使用场景：
-- 读取 INI 配置文件时使用
-
-参数说明：
-- file_path：INI 文件路径（必填）
-- encoding：文件编码（可选），默认 utf-8""",
+- 读取 INI 配置文件时使用""",
 
     "parse_xml": """读取XML文件内容。
 
 使用场景：
-- 读取 XML 配置文件时使用
-
-参数说明：
-- file_path：XML 文件路径（必填）
-- encoding：文件编码（可选），默认 utf-8""",
+- 读取 XML 配置文件时使用""",
 
     "parse_properties": """读取Java Properties文件内容。
 
 使用场景：
-- 读取 Java properties 配置文件时使用
-
-参数说明：
-- file_path：Properties 文件路径（必填）
-- encoding：文件编码（可选），默认 utf-8""",
+- 读取 Java properties 配置文件时使用""",
 }
 
 # 工具使用示例 - 小沈 2026-05-03修正，按文档7.4节

@@ -72,15 +72,8 @@ class TimeReactAgent(ReactAgentMixin, BaseAgent):
         
         self.executor = ToolExecutor(self._tools_dict)
         
-        self.text_strategy = TextStrategy()
-        
-        # 【修复 2026-04-30 小沈】添加 LLMAdapter 自适应策略（与 FileReactAgent 对齐）
-        # adapter 默认 None，需外部注入才生效，不改变现有行为
-        self.adapter = None
-        self.use_function_calling = False
-        self.openai_tools = []
-        self.tools_strategy = None
-        self.response_format_strategy = None
+        # FC通道由mixin._init_llm_strategies()统一初始化 - 小沈 2026-05-09
+        self._init_llm_strategies()
         
         # 【新增 2026-04-30 小沈】存储候选意图列表
         self._candidates = candidates if candidates else []

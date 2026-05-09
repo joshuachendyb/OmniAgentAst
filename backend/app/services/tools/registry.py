@@ -85,12 +85,20 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+_TYPE_ORDER = ["string", "integer", "number", "boolean", "object", "array", "null"]
+
+
 def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
-    """修复Pydantic生成的JSON Schema中缺失的type字段 - 小健 2026-05-06
+    """修复Pydantic生成的JSON Schema中缺失的type字段 - 小健 2026-05-06, 小沈 2026-05-08
     
     Pydantic V2对Union/Optional/Dict等复杂类型生成anyOf/oneOf，
     导致OpenAI Schema兼容的properties中缺少type字段。
     此函数遍历properties，为缺少type的字段推断并补上。
+    
+    【G1修复】2026-05-08 小沈
+    Union类型不再简化为单一类型，而是用逗号拼接保留所有类型信息。
+    例: anyOf:[integer,number,string,null] → type:"integer,number,string"
+    这是G6(自动生成Parameter Reminder)的前置条件。
     """
     if not schema or 'properties' not in schema:
         return schema
@@ -101,32 +109,41 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
             continue
         
         if 'anyOf' in prop_info:
-            types = []
+            non_null_types = []
             for item in prop_info['anyOf']:
-                if 'type' in item:
-                    types.append(item['type'])
-                elif item.get('type') == 'null' or item == {'type': 'null'}:
-                    pass
+                if isinstance(item, dict) and 'type' in item:
+                    t = item['type']
+                    if t != 'null':
+                        non_null_types.append(t)
             
-            if types:
-                non_null = [t for t in types if t != 'null']
-                if len(non_null) == 1:
-                    prop_info['type'] = non_null[0]
-                elif 'string' in non_null and 'number' in non_null:
-                    prop_info['type'] = 'string'
-                elif 'integer' in non_null and 'number' in non_null:
-                    prop_info['type'] = 'number'
-                elif non_null:
-                    prop_info['type'] = non_null[0]
+            if non_null_types:
+                unique_types = list(dict.fromkeys(non_null_types))
+                if len(unique_types) == 1:
+                    prop_info['type'] = unique_types[0]
+                else:
+                    sorted_types = sorted(unique_types, key=lambda x: _TYPE_ORDER.index(x) if x in _TYPE_ORDER else 99)
+                    prop_info['type'] = ",".join(sorted_types)
+        
+        if 'oneOf' in prop_info and 'type' not in prop_info:
+            non_null_types = []
+            for item in prop_info['oneOf']:
+                if isinstance(item, dict) and 'type' in item:
+                    t = item['type']
+                    if t != 'null':
+                        non_null_types.append(t)
+            
+            if non_null_types:
+                unique_types = list(dict.fromkeys(non_null_types))
+                if len(unique_types) == 1:
+                    prop_info['type'] = unique_types[0]
+                else:
+                    sorted_types = sorted(unique_types, key=lambda x: _TYPE_ORDER.index(x) if x in _TYPE_ORDER else 99)
+                    prop_info['type'] = ",".join(sorted_types)
         
         if 'type' not in prop_info:
             if '$ref' in prop_info:
                 prop_info['type'] = 'object'
             elif 'allOf' in prop_info:
-                prop_info['type'] = 'object'
-            elif 'oneOf' in prop_info:
-                prop_info['type'] = 'object'
-            elif 'anyOf' in prop_info:
                 prop_info['type'] = 'object'
             else:
                 prop_info['type'] = 'string'
@@ -514,14 +531,88 @@ class ToolRegistry:
             display_name = category_names.get(cat, cat.value)
             lines.append(f"【{display_name}】")
             for name, meta in sorted(items, key=lambda x: x[0]):
-                params = self._extract_required_params(meta.input_schema)
-                param_str = ", ".join(params) if params else ""
-                if param_str:
-                    lines.append(f"  {name}({param_str}): {meta.description}")
-                else:
-                    lines.append(f"  {name}: {meta.description}")
+                lines.append(f"  {name}: {meta.description}")
             lines.append("")
 
+        return "\n".join(lines)
+
+    def to_openai_tools(self, category: Optional['ToolCategory'] = None) -> List[Dict]:
+        """
+        生成OpenAI API格式的tools定义 - 小沈 2026-05-09
+        
+        Args:
+            category: 工具分类，None=全部
+        
+        Returns:
+            [{"type": "function", "function": {...}}, ...]
+        """
+        tools = []
+        tool_list = self.list_tools(category=category, include_metadata=True)
+        
+        for meta in tool_list:
+            if not meta.expose_to_llm:
+                continue
+            tools.append({
+                "type": "function",
+                "function": {
+                    "name": meta.name,
+                    "description": meta.description,
+                    "parameters": meta.input_schema
+                }
+            })
+        
+        return tools
+
+    @staticmethod
+    def _format_default(val) -> str:
+        """将 Pydantic 默认值格式化为字符串，跳过 None - 小沈 2026-05-09"""
+        if val is None:
+            return ""
+        if isinstance(val, str):
+            return "default=" + val
+        if isinstance(val, bool):
+            return "default=" + ("true" if val else "false")
+        if isinstance(val, (int, float)):
+            return "default=" + str(val)
+        return ""
+
+    def generate_param_reminder(self, category: Optional['ToolCategory'] = None) -> str:
+        """
+        从 input_schema 自动生成 Parameter Reminder 文本 - 小沈 2026-05-09
+        
+        参数信息完全来自 Pydantic 模型：
+        - 参数名：properties 的 key
+        - 参数类型：properties[field].type
+        - 必填/可选：是否在 required 数组中
+        - 默认值：properties[field].default（跳过 None）
+        
+        Args:
+            category: 工具分类，None=全部
+        """
+        lines = ["Parameter Reminder (auto-generated from Pydantic):", ""]
+        for name, meta in sorted(self._tools.items(), key=lambda x: x[0]):
+            if not meta.expose_to_llm:
+                continue
+            if category and meta.category != category:
+                continue
+            schema = meta.input_schema
+            if not schema or "properties" not in schema:
+                continue
+            
+            required_set = set(schema.get("required", []))
+            param_parts = []
+            for pname, pinfo in schema.get("properties", {}).items():
+                ptype = pinfo.get("type", "any")
+                req_str = "required" if pname in required_set else "optional"
+                default_str = self._format_default(pinfo.get("default"))
+                if default_str:
+                    param_parts.append("{}({}, {}, {})".format(pname, req_str, ptype, default_str))
+                else:
+                    param_parts.append("{}({}, {})".format(pname, req_str, ptype))
+            
+            if param_parts:
+                lines.append("- " + name + ": " + ", ".join(param_parts))
+        
         return "\n".join(lines)
 
     def __len__(self) -> int:

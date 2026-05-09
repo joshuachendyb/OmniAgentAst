@@ -57,28 +57,15 @@ Example 2 - 任务完成:
         return "⚠️ Document Safety: write_docx overwrites existing files. Read before write to confirm."
 
     def get_parameter_reminder(self) -> str:
-        return (
-        "Parameter Reminder:\n"
-        "- read_pdf: file_path(required, str)\n"
-        "- read_docx: file_path(required, str)\n"
-        "- read_xlsx: file_path(required, str)\n"
-        "- read_pptx: file_path(required, str)\n"
-        "- write_docx: file_path(required, str), content(required, str)\n"
-        "- write_xlsx: file_path(required, str), data(required, list/dict)\n"
-        "- write_pdf: file_path(required, str), content(required, str)\n"
-        "- write_pptx: file_path(required, str), content(required, str)\n"
-        "- convert_document: input_path(required, str), output_format(required, str, e.g.\"pdf\")\n"
-        "- read_csv_dataframe: file_path(required, str)\n"
-        "- read_excel_dataframe: file_path(required, str)\n"
-        "- analyze_data: data(required, dict/list)\n"
-        "- generate_chart: data(required, dict/list), chart_type(required, str)\n"
-        "- filter_data: data(required, dict/list), conditions(required, dict)\n"
-        "\n"
-        "FORBIDDEN parameter names - DO NOT use:\n"
-        "- ❌ file (correct: file_path)\n"
-        "- ❌ name (correct: file_name)\n"
-        "- ❌ data for write (correct: content)"
+        from app.services.tools.registry import tool_registry, ToolCategory
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.DOCUMENT)
+        forbidden = (
+            "\n\nFORBIDDEN parameter names - DO NOT use:\n"
+            "- ❌ file (correct: file_path)\n"
+            "- ❌ name (correct: file_name)\n"
+            "- ❌ data for write (correct: content)"
         )
+        return auto_reminder + forbidden
 
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}

@@ -53,76 +53,46 @@ You have access to the following tool categories:
 === P0 - Core Tools (Most Frequently Used) ===
 
 1. get_current_time - Get current system time
-   - Parameters:
-     - timezone: Timezone (optional), default follows system timezone. Example: "Asia/Shanghai"
-     - format: Output format string (optional), default "%Y-%m-%d %H:%M:%S"
-     - locale: Localization language (optional), default matches session language
    - Returns: ISO format, timestamp, formatted time, timezone, weekday
    - When to use: "现在几点了", "今天星期几", "当前时间戳"
    - Example: get_current_time() or get_current_time(timezone="Asia/Shanghai")
 
 2. time_format - Format timestamp or date string
-   - Parameters:
-     - timestamp: Unix timestamp (int/float), date string, or datetime. None = current time
-     - pattern: Format string like "%Y年%m月%d日". None = "%Y-%m-%d %H:%M:%S"
    - When to use: "格式化时间", "把这个时间转成中文格式", "YYYY年MM月DD日"
    - Example: time_format(timestamp=1777103094, pattern="%Y年%m月%d日")
 
 3. time_add - Add/subtract time from a base time
-   - Parameters:
-     - start: Base time (timestamp/string/datetime). Optional, default=None (current time)
-     - delta: Offset amount (number). Positive=add, Negative=subtract. REQUIRED
-     - unit: Unit (days/hours/minutes/seconds/months). Default="days"
    - When to use: "明天是几号", "3天后", "100天前是几号", "2小时后"
    - Example: time_add(delta=1, unit="days") → tomorrow. time_add(delta=3, unit="hours") → 3 hours later
 
 4. time_diff - Calculate time difference
-   - Parameters:
-     - start: Start time (timestamp/string/datetime). Optional, default=None (current time)
-     - end: End time. None = current time
    - Returns humanized description like "3小时前", "2天后"
    - When to use: "多久前", "还有多长时间", "相差多久"
    - Example: time_diff(start="2026-04-25")
 
 5. timer_set - Set a timer
-   - Parameters:
-     - delay: Delay in seconds. Must be > 0 and <= 86400 (24 hours). REQUIRED
-     - callback: Description of what to do when timer triggers. REQUIRED
-     - callback_data: Optional data to pass to callback
    - When to use: "3分钟后提醒我", "设置定时器"
    - Example: timer_set(delay=180, callback="提醒用户喝水")
 
 6. timer_clear - Cancel a timer
-   - Parameters:
-     - timer_id: Timer ID returned by timer_set. REQUIRED
    - When to use: "取消定时器", "取消提醒"
    - Example: timer_clear(timer_id="timer_1_1234567890")
 
 === P1 - Auxiliary Tools ===
 
 7. time_utc_to_local - Convert UTC time to local time
-   - Parameters:
-     - utc_time: UTC time (timestamp/string/datetime). REQUIRED
-     - target_tz: Target timezone like "+08:00" or "Asia/Shanghai". None = local timezone
    - When to use: "把这个UTC时间转成北京时间", "时区转换"
    - Example: time_utc_to_local(utc_time="2026-04-25T12:00:00Z", target_tz="+08:00")
 
 8. time_local_to_utc - Convert local time to UTC
-   - Parameters:
-     - local_time: Local time (timestamp/string/datetime). REQUIRED
-     - source_tz: Source timezone like "+08:00". None = local timezone
    - When to use: "把本地时间转成UTC", "统一到UTC时间"
    - Example: time_local_to_utc(local_time="2026-04-25 20:00:00", source_tz="+08:00")
 
 9. time_is_weekend - Check if a date is weekend
-   - Parameters:
-     - date: Date to check. None = today
    - When to use: "明天是周末吗", "这个日期是周末吗"
    - Example: time_is_weekend(date="2026-04-26")
 
 10. time_is_holiday - Check if a date is a holiday (supports 24 solar+lunar holidays)
-   - Parameters:
-     - date: Date to check. None = today
    - When to use: "明天放假吗", "这个日期是节假日吗", "春节是哪天"
    - Supports: Solar holidays (元旦/劳动节/国庆节 etc.) + Lunar holidays (春节/端午/中秋/除夕 etc.)
    - Example: time_is_holiday(date="2026-10-01")
@@ -140,24 +110,15 @@ Example 3 - 任务完成:
 
 
     def get_parameter_reminder(self) -> str:
-        return (
-            "Parameter Reminder:\n"
-            "- get_current_time: timezone(optional, str, e.g.\"Asia/Shanghai\"), format(optional, str), locale(optional, str)\n"
-            "- time_add: start(optional, str/int, default=now), delta(required, int/float), unit(optional, str, default=\"days\", options: days/hours/minutes/seconds/months)\n"
-            "- time_format: timestamp(optional, int/float/str), pattern(optional, str)\n"
-            "- time_diff: start(optional, str/int), end(optional, str/int, default=now)\n"
-            "- timer_set: delay(required, int, 1~86400), callback(required, str), callback_data(optional)\n"
-            "- timer_clear: timer_id(required, str)\n"
-            "- time_utc_to_local: utc_time(required, str/int), target_tz(optional, str)\n"
-            "- time_local_to_utc: local_time(required, str/int), source_tz(optional, str)\n"
-            "- time_is_weekend: date(optional, str, default=today)\n"
-            "- time_is_holiday: date(optional, str, default=today)\n"
-            "\n"
-            "FORBIDDEN parameter names - DO NOT use:\n"
+        from app.services.tools.registry import tool_registry, ToolCategory
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.TIME)
+        forbidden = (
+            "\n\nFORBIDDEN parameter names - DO NOT use:\n"
             "- ❌ amount / value (correct: delta)\n"
             "- ❌ unit_type (correct: unit)\n"
             "- ❌ tid / id (correct: timer_id)"
         )
+        return auto_reminder + forbidden
 
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}

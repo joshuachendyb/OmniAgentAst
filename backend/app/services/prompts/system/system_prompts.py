@@ -60,30 +60,15 @@ Example 2 - 任务完成:
     
 
     def get_parameter_reminder(self) -> str:
-        return (
-        "Parameter Reminder:\n"
-        "- get_system_info: no required params\n"
-        "- net_connections: protocol(optional), state(optional)\n"
-        "- event_log: level(optional), source(optional), count(optional)\n"
-        "- list_processes: name(optional), pid(optional)\n"
-        "- kill_process: pid(required)\n"
-        "- service_list: name(optional), status(optional)\n"
-        "- service_start: name(required)\n"
-        "- service_stop: name(required)\n"
-        "- task_list: no required params\n"
-        "- task_create: name(required), command(required), schedule(required)\n"
-        "- task_delete: name(required)\n"
-        "- log_message: level(required), message(required)\n"
-        "- get_logs: file_path(optional)\n"
-        "- reg_read: key(required), value_name(required)\n"
-        "- reg_write: key(required), value_name(required), value(required), value_type(required)\n"
-        "- reg_delete: key(required), value_name(required)\n"
-        "\n"
-        "FORBIDDEN parameter names - DO NOT use:\n"
-        "- ❌ cmd (correct: command)\n"
-        "- ❌ dir (correct: working_directory)\n"
-        "- ❌ cwd (correct: working_directory)"
+        from app.services.tools.registry import tool_registry, ToolCategory
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.SYSTEM)
+        forbidden = (
+            "\n\nFORBIDDEN parameter names - DO NOT use:\n"
+            "- ❌ cmd (correct: command)\n"
+            "- ❌ dir (correct: working_directory)\n"
+            "- ❌ cwd (correct: working_directory)"
         )
+        return auto_reminder + forbidden
 
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}

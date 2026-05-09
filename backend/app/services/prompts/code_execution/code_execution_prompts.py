@@ -43,14 +43,13 @@ Example 2 - 任务完成:
     
 
     def get_parameter_reminder(self) -> str:
-        return (
-        "Parameter Reminder:\n"
-        "- execute_python: code(required, str), working_dir(optional, str), timeout(optional, int, default=30, max=120)\n"
-        "- execute_javascript: code(required, str), working_dir(optional, str), timeout(optional, int, default=30, max=120)\n"
-        "\n"
-        "FORBIDDEN parameter names - DO NOT use:\n"
-        "- ❌ script / source / python_code / js_code (correct: code)"
+        from app.services.tools.registry import tool_registry, ToolCategory
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.CODE_EXECUTION)
+        forbidden = (
+            "\n\nFORBIDDEN parameter names - DO NOT use:\n"
+            "- ❌ script / source / python_code / js_code (correct: code)"
         )
+        return auto_reminder + forbidden
 
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}

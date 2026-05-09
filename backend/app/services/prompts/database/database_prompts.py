@@ -80,17 +80,15 @@ Example 4: Task completed
         )
     
     def get_parameter_reminder(self) -> str:
-        return (
-            "Parameter Reminder:\n"
-            "- query_sql: sql(required, str, SELECT/SHOW/DESCRIBE only)\n"
-            "- execute_sql: sql(required, str, INSERT/UPDATE/DELETE/DDL)\n"
-            "- get_db_schema: table_name(optional, str, None=all tables)\n"
-            "\n"
-            "FORBIDDEN parameter names - DO NOT use:\n"
+        from app.services.tools.registry import tool_registry, ToolCategory
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.DATABASE)
+        forbidden = (
+            "\n\nFORBIDDEN parameter names - DO NOT use:\n"
             "- ❌ query (correct: sql)\n"
             "- ❌ statement (correct: sql)\n"
             "- ❌ table (correct: table_name)"
         )
+        return auto_reminder + forbidden
 
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}

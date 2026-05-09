@@ -22,46 +22,22 @@ You are a professional network operations assistant. You help users make HTTP re
 【Available NETWORK Tools】:
 
 1. http_request - Send HTTP request
-   - Parameters:
-     - url: Target URL (REQUIRED). Must include scheme (http:// or https://).
-     - method: HTTP method. Default "GET". Options: GET/POST/PUT/DELETE/PATCH.
-     - headers: Dict of request headers (optional).
-     - body: Request body for POST/PUT/PATCH (optional, JSON string or dict).
-     - timeout: Request timeout in seconds (optional). Default: 30.
    - Example: http_request(url="https://api.example.com/data", method="GET")
    - ⚠️ Use body (NOT data/params) for POST request body.
 
 2. download_file - Download file from URL
-   - Parameters:
-     - url: Download URL (REQUIRED)
-     - save_path: Local save path (REQUIRED). Must be absolute path.
-     - timeout: Timeout in seconds (optional). Default: 300.
    - Example: download_file(url="https://example.com/file.zip", save_path="D:\\downloads\\file.zip")
 
 3. fetch_webpage - Fetch and extract webpage content
-   - Parameters:
-     - url: Webpage URL (REQUIRED)
-     - format: Output format. Options: "text"(default), "markdown", "html".
    - Example: fetch_webpage(url="https://example.com", format="markdown")
 
 4. search_web - Search the web using DuckDuckGo
-   - Parameters:
-     - query: Search query string (REQUIRED)
-     - max_results: Max results (optional). Default: 10.
    - Example: search_web(query="Python async tutorial", max_results=5)
 
 5. ping - Test host reachability
-   - Parameters:
-     - host: Hostname or IP (REQUIRED)
-     - count: Number of pings (optional). Default: 4.
-     - timeout: Timeout per ping in seconds (optional). Default: 5.
    - Example: ping(host="baidu.com", count=4)
 
 6. port_check - Check if port is open
-   - Parameters:
-     - host: Hostname or IP (REQUIRED)
-     - port: Port number (REQUIRED, 1-65535)
-     - timeout: Timeout in seconds (optional). Default: 3.
    - Example: port_check(host="localhost", port=8080)
 
 【Tool Call Examples】:
@@ -101,21 +77,16 @@ Example 4: Task completed
     
 
     def get_parameter_reminder(self) -> str:
-        return (
-            "Parameter Reminder:\n"
-            "- http_request: url(required, str), method(optional, str, default=GET, options: GET/POST/PUT/DELETE/PATCH), headers(optional, dict), body(optional, str/dict), timeout(optional, int, default=30)\n"
-            "- download_file: url(required, str), save_path(required, str, absolute path), timeout(optional, int, default=300)\n"
-            "- fetch_webpage: url(required, str), format(optional, str, default=text, options: text/markdown/html)\n"
-            "- search_web: query(required, str), max_results(optional, int, default=10)\n"
-            "- ping: host(required, str), count(optional, int, default=4), timeout(optional, int, default=5)\n"
-            "- port_check: host(required, str), port(required, int, 1~65535), timeout(optional, int, default=3)\n"
-            "\n"
-            "FORBIDDEN parameter names - DO NOT use:\n"
+        from app.services.tools.registry import tool_registry, ToolCategory
+        auto_reminder = tool_registry.generate_param_reminder(category=ToolCategory.NETWORK)
+        forbidden = (
+            "\n\nFORBIDDEN parameter names - DO NOT use:\n"
             "- ❌ data / params (correct: body)\n"
             "- ❌ address / host_url (correct: url)\n"
             "- ❌ path / file_path (correct: save_path)\n"
             "- ❌ q / keyword (correct: query)"
         )
+        return auto_reminder + forbidden
 
     def get_task_prompt(self, task: str) -> str:
         return f"""Task: {task}

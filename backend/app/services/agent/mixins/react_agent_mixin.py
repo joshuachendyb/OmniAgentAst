@@ -39,13 +39,43 @@ class ReactAgentMixin(ToolLoaderMixin):
         logger.info(f"[{self.__class__.__name__}] 加载工具: {len(self._tools_dict)}个")
     
     def _init_llm_strategies(self):
-        """初始化LLM调用策略"""
+        """初始化LLM调用策略 - 小沈 2026-05-09
+        
+        FC通道启用：adapter初始化+异常降级。
+        如果llm_client有api_base属性，尝试初始化LLMAdapter和ToolsStrategy；
+        初始化失败则降级到纯文本模式。
+        """
         self.text_strategy = TextStrategy()
-        self.adapter = None
-        self.use_function_calling = False
-        self.openai_tools = []
-        self.tools_strategy = None
-        self.response_format_strategy = None
+        
+        try:
+            from app.services.tools.registry import tool_registry
+            
+            if self.llm_client and hasattr(self.llm_client, 'api_base'):
+                self.adapter = LLMAdapter(
+                    api_base=self.llm_client.api_base,
+                    api_key=self.llm_client.api_key,
+                    model=self.llm_client.model,
+                    auto_detect=False
+                )
+                
+                openai_tools = tool_registry.to_openai_tools(self.tool_category)
+                self.tools_strategy = ToolsStrategy(tools=openai_tools)
+                self.response_format_strategy = ResponseFormatStrategy()
+                self.use_function_calling = True
+                self.openai_tools = openai_tools
+            else:
+                self.adapter = None
+                self.tools_strategy = None
+                self.response_format_strategy = None
+                self.use_function_calling = False
+                self.openai_tools = []
+        except Exception as e:
+            logger.warning(f"[{self.__class__.__name__}] LLM策略初始化失败，降级到文本模式: {e}")
+            self.adapter = None
+            self.tools_strategy = None
+            self.response_format_strategy = None
+            self.use_function_calling = False
+            self.openai_tools = []
     
     def _init_task_tracking(self, enable: bool = True):
         """

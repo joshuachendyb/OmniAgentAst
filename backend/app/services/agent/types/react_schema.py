@@ -107,8 +107,9 @@ def _process_description(description: str) -> str:
     """
     处理工具描述，提取关键信息
     
-    移除 FORBIDDEN 规则（LLM 无法看到 Function Calling 的描述），
-    但保留参数约束说明
+    【G3修复】2026-05-09 小沈
+    只移除 FORBIDDEN 规则和示例行，保留【重要】【注意】【警告】等关键提示。
+    原逻辑无差别跳过所有带【重要】【注意】【警告】的行，导致重要约束丢失。
     """
     if not description:
         return ""
@@ -116,17 +117,10 @@ def _process_description(description: str) -> str:
     lines = description.split("\n")
     processed_lines = []
     
-    skip_patterns = [
-        "【重要】必须使用",
-        "错误示例:",
-        "正确示例:",
-        "FORBIDDEN",
-        "【注意】",
-        "【警告】"
-    ]
-    
     for line in lines:
-        if any(pattern in line for pattern in skip_patterns):
+        if "FORBIDDEN" in line:
+            continue
+        if line.strip().startswith("错误示例:") or line.strip().startswith("正确示例:"):
             continue
         processed_lines.append(line)
     
@@ -157,14 +151,8 @@ def _clean_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
         
         if "description" in param_schema:
             desc = param_schema["description"]
-            if "【重要】" in desc:
-                important_parts = [p for p in desc.split("\n") if "【重要】" in p]
-                if important_parts:
-                    clean_param["description"] = important_parts[0].replace("【重要】", "").strip()
-                else:
-                    clean_param["description"] = desc.split("\n")[0]
-            else:
-                clean_param["description"] = desc.split("\n")[0].strip()
+            if desc:
+                clean_param["description"] = desc.replace("\n", " ").replace("\r", "").strip()
         
         if "enum" in param_schema:
             clean_param["enum"] = param_schema["enum"]
@@ -182,6 +170,9 @@ def _clean_properties(properties: Dict[str, Any]) -> Dict[str, Any]:
     return cleaned
 
 
+_TYPE_ORDER = ["string", "integer", "number", "boolean", "object", "array", "null"]
+
+
 def _extract_type(param_schema: Dict[str, Any]) -> Optional[str]:
     """
     从 JSON Schema 中提取类型信息
@@ -190,6 +181,11 @@ def _extract_type(param_schema: Dict[str, Any]) -> Optional[str]:
     1. 直接的 type 字段: {"type": "string"}
     2. anyOf 格式: {"anyOf": [{"type": "string"}, {"type": "null"}]}
     3. oneOf 格式: {"oneOf": [{"type": "string"}, {"type": "null"}]}
+    
+    【G1修复】2026-05-09 小沈
+    Union类型不再简化为单一类型，用逗号拼接保留所有类型信息。
+    例: anyOf:[integer,number,string,null] → "integer,number,string"
+    与registry.py的_fix_schema_types()保持一致。
     """
     if "type" in param_schema:
         return param_schema["type"]
@@ -198,35 +194,25 @@ def _extract_type(param_schema: Dict[str, Any]) -> Optional[str]:
         types = set()
         for item in param_schema["anyOf"]:
             if isinstance(item, dict) and "type" in item:
-                types.add(item["type"])
-        
-        if "string" in types:
-            return "string"
-        if "boolean" in types:
-            return "boolean"
-        if "integer" in types:
-            return "integer"
-        if "number" in types:
-            return "number"
-        if "object" in types:
-            return "object"
-        if "array" in types:
-            return "array"
+                t = item["type"]
+                if t != "null":
+                    types.add(t)
+        if types:
+            sorted_types = sorted(types, key=lambda x: _TYPE_ORDER.index(x) if x in _TYPE_ORDER else 99)
+            return ",".join(sorted_types)
+        return "string"
     
     if "oneOf" in param_schema:
         types = set()
         for item in param_schema["oneOf"]:
             if isinstance(item, dict) and "type" in item:
-                types.add(item["type"])
-        
-        if "string" in types:
-            return "string"
-        if "boolean" in types:
-            return "boolean"
-        if "integer" in types:
-            return "integer"
-        if "number" in types:
-            return "number"
+                t = item["type"]
+                if t != "null":
+                    types.add(t)
+        if types:
+            sorted_types = sorted(types, key=lambda x: _TYPE_ORDER.index(x) if x in _TYPE_ORDER else 99)
+            return ",".join(sorted_types)
+        return "string"
     
     return None
 
