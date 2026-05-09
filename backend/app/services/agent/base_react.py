@@ -230,7 +230,17 @@ class BaseAgent(ABC):
         # 2. 添加到_tools_dict
         self._tools_dict.update(new_tools)
         self._loaded_categories.add(intent_type)
-        
+
+        # 3. 刷新FC通道的tools定义（如果已启用）
+        if hasattr(self, 'tools_strategy') and self.tools_strategy is not None:
+            from app.services.tools.registry import tool_registry
+            # 用 tool_category 保留原始分类，但 to_openai_tools(category=None) 返回全部
+            # 用 re-load intent 的 category 生成补充的 tools
+            new_openai_tools = tool_registry.to_openai_tools(category=category)
+            self.openai_tools.extend([t for t in new_openai_tools if t not in self.openai_tools])
+            self.tools_strategy.tools = self.openai_tools
+            logger.info(f"[FC刷新] tools定义已更新，当前{len(self.openai_tools)}个")
+
         logger.info(f"[动态加载] 完成，新增{len(new_tools)}个工具，总计{len(self._tools_dict)}个")
     
     async def _check_and_load_missing_tools(self, observation: str, llm_client=None):
