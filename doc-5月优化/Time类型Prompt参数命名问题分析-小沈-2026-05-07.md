@@ -2266,36 +2266,142 @@ def _build_response_format_schema(tools: List[Dict]) -> Dict:
 
 **结论**：ResponseFormatStrategy仅保证JSON格式合法，不能替代ToolsStrategy的参数约束能力。
 
+造后 ResponseFormatStrategy 只能做到：
+
+response_format.tool_name.enum = ["get_current_time", "time_format", ...]
+让 LLM 知道有哪些工具名可选。但做不到的：
+
+能力	ToolsStrategy	ResponseFormatStrategy
+properties 详细参数名+类型	✅ tools[].function.parameters.properties	❌ 做不到
+required 必填标记	✅ tools[].function.parameters.required	❌ 做不到
+参数级约束	✅ 模型级	❌ 只能靠prompt文本（通道1⑥ Reminder）
+
+文档 2262-2267 行已经明确写了这个限制，14.1 的总结表也对比了。这个局限是 OpenAI API 本身的限制——response_format 不支持条件式 schema（tool_name=A 时 params 要含 timestamp，tool_name=B 时 params 要含 delay），所以不可能通过 response_format 达到 ToolsStrategy 的约束力。
 
 
-### 14.3 TextStrategy的问题及改造方法说明参数信息来源
+### 14.3 TextStrategy 的参数准确性改进
 
+TextStrategy 下 LLM 没有任何 API 级约束，参数名错误的唯一防线是通道1⑥的 Parameter Reminder。
+G6 已将该提醒改为从 Pydantic 自动生成，但格式仍然是 "human-readable list" 风格。
+以下方案可进一步提升参数准确性，按效果/成本排序。
 
-**TextStrategy 发给 LLM 的完整请求**：
+#### 方案A：代码风格函数签名（推荐）
 
-```json
-{
-    "model": "deepseek-v3.1",
-    "messages": [
-        {
-            "role": "system",
-            "content": "【当前系统】Windows...\n\n"
-                       "2. time_format - Format timestamp or date string\n"
-                       "   When to use: \"格式化时间\"\n"
-                       "   Example: time_format(timestamp=1777103094, pattern=\"%Y年%m月%d日\")\n\n"
-                       "【Response Format】: ...\n"
-                       "Parameter Reminder:\n"
-                       "- time_format: timestamp(optional, int/float/str), pattern(optional, str)\n"
-                       ...
-        },
-        {"role": "user", "content": "Task: 查询今天是星期几\n..."}
-    ]
-    // 没有 tools，没有 response_format
-}
+将 Parameter Reminder 格式从自然语言改为 LLM 更熟悉的**代码函数签名**风格。
+
+```python
+# 当前（G6自动生成，人类可读风格）：
+"- time_format: timestamp(optional, int/float/str), pattern(optional, str)"
+
+# 方案A（代码函数签名风格）：
+"def time_format(timestamp?: int|float|string, pattern?: string)"
 ```
 
-LLM 完全自由输出，后端靠 `parse_react_response()` 从文本中解析 JSON。
-参数名信息**唯一来源**是系统提示中的 Parameter Reminder（通道1⑥）。
+**理由**：LLM 的训练数据中包含大量函数定义代码，代码风格的参数描述比自然语言更"像回事"，LLM 更容易严格按照定义传参。
+
+**实现**：修改 `generate_param_reminder()` 中的格式，提供两种风格选项：
+
+```python
+def generate_param_reminder(self, category=None, style="code") -> str:
+    """
+    style="code":  def time_format(timestamp?: int|float|string, pattern?: string)
+    style="text":  - time_format: timestamp(optional, int/float/str), pattern(optional, str)
+    """
+    ...
+    if style == "code":
+        # 代码风格
+        required_set = set(schema.get("required", []))
+        params = []
+        for pname, pinfo in schema["properties"].items():
+            ptype = pinfo.get("type", "any")
+            default_str = self._format_default(pinfo.get("default"))
+            optional_mark = "" if pname in required_set else "?"
+            if default_str:
+                params.append(f"{pname}{optional_mark}: {ptype}={default_str.split('=')[1]}")
+            else:
+                params.append(f"{pname}{optional_mark}: {ptype}")
+        if params:
+            lines.append(f"def {name}({', '.join(params)})")
+    else:
+        # 文本风格（当前），省略...
+```
+
+**输出对比**：
+```
+当前文本风格:
+- time_format: timestamp(optional, int/float/str), pattern(optional, str)
+
+方案A代码风格:
+def time_format(timestamp?: int|float|string, pattern?: string)
+def timer_set(delay: number, callback: string, callback_data?: object)
+def time_is_weekend(date?: int|float|string)
+```
+
+#### 方案B：`response_format: json_object` 兜底
+
+TextStrategy 的 `llm_client.chat()` 默认不传任何参数。但如果模型支持 `response_format: {"type": "json_object"}`，即使不支持 tools，也可以加上这个约束——至少保证 LLM 输出是合法 JSON，`parse_react_response()` 不需要容错。
+
+```python
+# 当前 TextStrategy.call()
+response = await llm_client.chat(message, history_dicts)
+
+# 改造后 TextStrategy.call()
+response = await llm_client.chat_with_response_format(
+    message, history_dicts,
+    response_format={"type": "json_object"}
+)
+```
+
+**成本**：极低，只需判断模型是否支持 `response_format`。
+**效果**：保证 JSON 格式正确，但参数名约束仍需 Parameter Reminder。
+**依赖**：需在 `CapabilityDetector` 中判断模型能力，TextStrategy 按能力级别调整。
+
+#### 方案C：动态注入Schema JSON示例
+
+在每轮 system prompt 末尾注入当前工具的完整 JSON Schema 作为参考。虽然 ToolsStrategy 下这个信息通过 `tools` 参数传递，但 TextStrategy 下也可以把 Schema 以文本形式放在 prompt 中。
+
+```
+参考 Schema（仅作参考，实际调用仍以 JSON 格式返回）:
+get_current_time: {"timezone": {"type": "string", "required": false}, "format": {"type": "string", "required": false}}
+time_format: {"timestamp": {"type": "string|integer", "required": false}, "pattern": {"type": "string", "required": false}}
+```
+
+**成本**：低，直接从 `input_schema` 生成。
+**效果**：让 LLM 看到完整的参数类型定义，减少直觉性传参错误。
+
+#### 方案D：参数名纠正循环
+
+当 `_normalize_params` 检测到非法参数名时，不直接返回错误，而是调用 LLM 重试（带纠正提示）。
+
+```python
+# 当检测到非法参数名时（当前行为）
+return {"success": False, "error": f"unexpected keyword argument 'path'"}
+
+# 纠正循环（方案D）
+attempts = 0
+while attempts < max_retries:
+    result = await self._execute_tool(action, params)
+    if "unexpected keyword argument" in str(result.get("error", "")):
+        # 提取错误的参数名，映射到正确参数名
+        wrong_param = extract_wrong_param(result["error"])
+        correct_param = alias_map.get(wrong_param, wrong_param)
+        # 在 observation 中告诉 LLM 正确参数名
+        observation += f"\n⚠️ 参数名 '{wrong_param}' 错误，应使用 '{correct_param}'。请重新调用。"
+        attempts += 1
+        continue
+    break
+```
+
+**成本**：中（额外 LLM 调用），但大幅降低参数错误率。
+
+#### 方案对比总结
+
+| 方案 | 效果 | 成本 | 复杂度 | 推荐 |
+|------|------|------|--------|------|
+| **A: 代码风格签名** | 中（减少参数直觉性错误） | 极低 | 低 | ✅ **推荐** |
+| **B: json_object 兜底** | 中（保证 JSON 格式） | 极低 | 低 | ✅ **推荐** |
+| **C: 注入 Schema** | 中（让 LLM 看到完整类型） | 低 | 低 | ⚠ 可选 |
+| **D: 纠正循环** | 高（兜底最强） | 高（额外 LLM 调用） | 中 | ⏸ 暂缓 |
 
 
 TextStrategy下，LLM没有任何API层面的参数约束，完全依赖prompt文本。
