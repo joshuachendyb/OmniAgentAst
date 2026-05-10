@@ -147,6 +147,11 @@ async def compress_files_impl(
         )
         
         # 计算原始大小
+        # 【修复 2026-05-10 小健】超时自检：_get_total_size和_compress_sync内rglob加deadline
+        import time as _time
+        from app.services.tools.tool_meta import get_timeout as _get_timeout
+        _cf_deadline = _time.monotonic() + _get_timeout("compress_files") - 2
+
         def _get_total_size(path: Path) -> int:
             """计算文件或目录的总大小"""
             if path.is_file():
@@ -154,6 +159,9 @@ async def compress_files_impl(
             else:
                 total_size = 0
                 for file_path in path.rglob("*"):
+                    if _time.monotonic() > _cf_deadline:
+                        import logging; logging.getLogger(__name__).warning(f"[compress_files._get_total_size] 超时自检触发，提前返回")
+                        break
                     if file_path.is_file():
                         total_size += file_path.stat().st_size
                 return total_size
@@ -194,6 +202,9 @@ async def compress_files_impl(
                         else:
                             # 压缩目录
                             for file_path in source.rglob("*"):
+                                if _time.monotonic() > _cf_deadline:
+                                    import logging; logging.getLogger(__name__).warning(f"[compress_files] 超时自检触发，已压缩{len(compressed_files)}个文件，提前返回")
+                                    break
                                 if file_path.is_file():
                                     arcname = file_path.relative_to(source.parent)
                                     zf.write(file_path, arcname)
@@ -208,6 +219,9 @@ async def compress_files_impl(
                         else:
                             # 压缩目录时排除根目录本身
                             for file_path in source.rglob("*"):
+                                if _time.monotonic() > _cf_deadline:
+                                    import logging; logging.getLogger(__name__).warning(f"[compress_files] 超时自检触发(tar.gz)，已压缩{len(compressed_files)}个文件，提前返回")
+                                    break
                                 if file_path.is_file():
                                     arcname = file_path.relative_to(source.parent)
                                     tf.add(file_path, arcname)

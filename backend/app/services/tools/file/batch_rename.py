@@ -100,17 +100,30 @@ async def batch_rename_impl(
             use_regex = False
         
         # 收集文件
-        files_to_process = []
-        if recursive:
-            # 递归收集所有文件
-            for file_path in dir_path.rglob("*"):
-                if file_path.is_file():
-                    files_to_process.append(file_path)
-        else:
-            # 只处理当前目录的文件
-            for file_path in dir_path.iterdir():
-                if file_path.is_file():
-                    files_to_process.append(file_path)
+        # 【修复 2026-05-10 小健】将rglob/iterdir移入_collect_sync，加超时自检，避免阻塞事件循环
+        import time as _time
+        from app.services.tools.tool_meta import get_timeout as _get_timeout
+        _br_deadline = _time.monotonic() + _get_timeout("batch_rename") - 2
+        _br_timed_out = False
+
+        def _collect_sync():
+            nonlocal _br_timed_out
+            result = []
+            if recursive:
+                for file_path in dir_path.rglob("*"):
+                    if _time.monotonic() > _br_deadline:
+                        _br_timed_out = True
+                        import logging; logging.getLogger(__name__).warning(f"[batch_rename] 超时自检触发，已收集{len(result)}个文件，提前返回")
+                        break
+                    if file_path.is_file():
+                        result.append(file_path)
+            else:
+                for file_path in dir_path.iterdir():
+                    if file_path.is_file():
+                        result.append(file_path)
+            return result
+
+        files_to_process = await asyncio.to_thread(_collect_sync)
         
         # 处理每个文件
         operations = []

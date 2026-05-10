@@ -14,6 +14,7 @@ Author: 小健 - 2026-04-19
 import asyncio
 import hashlib
 import os
+import time
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -97,6 +98,11 @@ async def compare_files_impl(
         )
         
         # 定义比较操作
+        # 【修复 2026-05-10 小健】超时自检：大文件逐块比较加deadline
+        import time as _time
+        from app.services.tools.tool_meta import get_timeout as _get_timeout
+        _cmp_deadline = _time.monotonic() + _get_timeout("compare_files") - 2
+
         def _compare_sync():
             # 获取文件信息
             stat1 = path1.stat()
@@ -131,7 +137,7 @@ async def compare_files_impl(
                     
                     # 对于大文件，使用分块比较
                     if size1 > chunk_size * 10:  # 如果文件较大，使用分块比较
-                        identical = _compare_files_by_chunks(path1, path2, chunk_size)
+                        identical = _compare_files_by_chunks(path1, path2, chunk_size, _cmp_deadline)
                         content_match = identical
                     else:
                         # 小文件直接读取比较
@@ -189,7 +195,7 @@ async def compare_files_impl(
         }, "compare_files")
 
 
-def _compare_files_by_chunks(path1: Path, path2: Path, chunk_size: int) -> bool:
+def _compare_files_by_chunks(path1: Path, path2: Path, chunk_size: int, _deadline: float = 0) -> bool:
     """
     分块比较两个大文件的内容
     
@@ -197,6 +203,7 @@ def _compare_files_by_chunks(path1: Path, path2: Path, chunk_size: int) -> bool:
         path1: 第一个文件路径
         path2: 第二个文件路径
         chunk_size: 分块大小
+        _deadline: 超时deadline（0=不检查）- 小健 2026-05-10
     
     Returns:
         文件内容是否相同
@@ -212,6 +219,9 @@ def _compare_files_by_chunks(path1: Path, path2: Path, chunk_size: int) -> bool:
     try:
         with open(path1, 'rb') as f1, open(path2, 'rb') as f2:
             while True:
+                if _deadline and time.monotonic() > _deadline:
+                    import logging; logging.getLogger(__name__).warning(f"[compare_files] 超时自检触发，提前返回False")
+                    return False
                 chunk1 = f1.read(chunk_size)
                 chunk2 = f2.read(chunk_size)
                 
@@ -236,10 +246,10 @@ def _compare_files_by_chunks(path1: Path, path2: Path, chunk_size: int) -> bool:
         
     except Exception:
         # 如果哈希比较失败，回退到逐字节比较
-        return _compare_files_byte_by_byte(path1, path2, chunk_size)
+        return _compare_files_byte_by_byte(path1, path2, chunk_size, _deadline)
 
 
-def _compare_files_byte_by_byte(path1: Path, path2: Path, chunk_size: int) -> bool:
+def _compare_files_byte_by_byte(path1: Path, path2: Path, chunk_size: int, _deadline: float = 0) -> bool:
     """
     逐字节比较两个文件的内容（回退方案）
     
@@ -247,6 +257,7 @@ def _compare_files_byte_by_byte(path1: Path, path2: Path, chunk_size: int) -> bo
         path1: 第一个文件路径
         path2: 第二个文件路径
         chunk_size: 分块大小
+        _deadline: 超时deadline（0=不检查）- 小健 2026-05-10
     
     Returns:
         文件内容是否相同
@@ -254,6 +265,9 @@ def _compare_files_byte_by_byte(path1: Path, path2: Path, chunk_size: int) -> bo
     try:
         with open(path1, 'rb') as f1, open(path2, 'rb') as f2:
             while True:
+                if _deadline and time.monotonic() > _deadline:
+                    import logging; logging.getLogger(__name__).warning(f"[compare_files] 超时自检触发(byte_by_byte)，提前返回False")
+                    return False
                 chunk1 = f1.read(chunk_size)
                 chunk2 = f2.read(chunk_size)
                 
