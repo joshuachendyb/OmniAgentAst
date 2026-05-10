@@ -60,6 +60,11 @@ class LLMClientWrapper:
     
     def __init__(self, ai_service):
         self.ai_service = ai_service
+        # 【修复 2026-05-10 小健】透传ai_service属性，供strategy日志诊断使用
+        self.model = getattr(ai_service, 'model', None)
+        self.api_base = getattr(ai_service, 'api_base', None)
+        self.api_key = getattr(ai_service, 'api_key', None)
+        self.provider = getattr(ai_service, 'provider', None)
     
     async def chat(self, message, history=None):
         """基础聊天方法"""
