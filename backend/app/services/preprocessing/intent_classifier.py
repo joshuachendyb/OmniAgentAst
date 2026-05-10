@@ -81,8 +81,8 @@ def _build_intent_prompt(text: str, labels: List[str]) -> str:
 
     definitions_str = "\n".join(definitions_lines)
 
-    return f"""你是一个文本处理助手。需要完成两个任务：
-1. 文本矫正：修正错别字、标点、格式
+    return f"""你是一个意图分类助手。需要完成两个任务：
+1. 文本矫正：仅修正明显的错别字和标点错误。严禁纠正：专有名词、人名、地名、文件名、路径、技术术语、缩写、非中文词汇。如无法判断是否为错别字，保持原样。
 2. 意图分类：分析用户意图，返回所有候选意图的置信度分布
 
 意图定义：
