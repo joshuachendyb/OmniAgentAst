@@ -87,7 +87,7 @@ class LLMAdapter:
                     f"capability={self._strategy.capability}, "
                     f"feature=tools:{result.feature.supports_tools}, "
                     f"response_format:{result.feature.supports_response_format}, "
-                    f"parallel_tool_calls:{result.feature.supports_parallel_tool_calls}, "
+                    f"streaming:{result.feature.supports_streaming}, "
                     f"description={self._strategy.description}"
                 )
             else:

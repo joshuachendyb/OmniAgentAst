@@ -243,7 +243,7 @@ class CapabilityDetector:
                 return {"works": False, "reason": "No tool_calls returned"}
                 
         except Exception as e:
-            logger.error(f"[CapabilityDetector] _probe_tools: exception = {e}")
+            logger.error(f"[CapabilityDetector] _probe_tools: exception = {e}", exc_info=True)
             return {"works": False, "reason": str(e)}
     
     async def _probe_reasoning(self) -> dict:
