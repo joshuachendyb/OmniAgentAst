@@ -32,8 +32,11 @@ import re
 import shutil
 import threading
 import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, Dict, List, Optional, get_type_hints
+
+_current_task_id: ContextVar[Optional[str]] = ContextVar("file_tools_task_id", default=None)
 
 # 【修改】移除分页限制，2026-04-03 小沈
 # 原因：后端必须返回全部真实数据，前端自己控制显示方式（分页/滚动）
@@ -242,20 +245,16 @@ class FileTools:
     }
     
     def __init__(self, task_id: Optional[str] = None):
-        # 【重要】延迟导入 agent 服务，避免循环导入
         from app.services.agent import get_file_safety_service, get_session_service
         from app.services.agent.mixins.task_tracker import get_task_tracker
         from app.utils.visualization.file_visualization import get_visualizer
         
-        # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
-        # session_id 专用于会话场景，操作追踪必须用 task_id
         self.safety = get_file_safety_service()
         self.task_tracker = get_task_tracker()
         self.visualizer = get_visualizer()
-        self.task_id = task_id
+        self.task_id = task_id or _current_task_id.get(None)
         self._sequence = 0
         self._sequence_lock = threading.Lock()
-        # 【改进】允许自定义白名单
         self.allowed_paths = ALLOWED_PATHS.copy()
     
     def _get_next_sequence(self) -> int:
@@ -641,6 +640,8 @@ class FileTools:
             }, "write_text_file")
         
         if not self.task_id:
+            self.task_id = _current_task_id.get(None)
+        if not self.task_id:
             return _to_unified_format({
                 "success": False,
                 "error": "No active task",
@@ -962,6 +963,8 @@ class FileTools:
             }, "delete_file")
         
         if not self.task_id:
+            self.task_id = _current_task_id.get(None)
+        if not self.task_id:
             return _to_unified_format({
                 "success": False,
                 "error": "No active task",
@@ -1083,6 +1086,8 @@ class FileTools:
                 "operation_id": None
             }, "move_file")
         
+        if not self.task_id:
+            self.task_id = _current_task_id.get(None)
         if not self.task_id:
             return _to_unified_format({
                 "success": False,
@@ -1357,6 +1362,8 @@ class FileTools:
                 }, "generate_report")
         
         if not self.task_id:
+            self.task_id = _current_task_id.get(None)
+        if not self.task_id:
             return _to_unified_format({
                 "success": False,
                 "error": "No active task",
@@ -1419,8 +1426,10 @@ class FileTools:
         parents: bool = True,
         exist_ok: bool = True,
     ) -> Dict[str, Any]:
-        """创建目录"""
         from app.services.tools.file.create_directory import create_directory_impl
+        
+        if not self.task_id:
+            self.task_id = _current_task_id.get(None)
         
         return await create_directory_impl(
             dir_path=dir_path,
@@ -1791,6 +1800,8 @@ class FileTools:
         
         # 【修复 2026-04-30 小沈】添加task_id检查（与write_file对齐）
         if not self.task_id:
+            self.task_id = _current_task_id.get(None)
+        if not self.task_id:
             return _to_unified_format({
                 "success": False, "error": "No active task", "replaced_count": 0
             }, "precise_replace_in_file")
@@ -1930,6 +1941,8 @@ class FileTools:
                 }, "edit_file")
 
             # 【修复 2026-05-01 小沈】添加task_id检查（与write_file对齐）
+            if not self.task_id:
+                self.task_id = _current_task_id.get(None)
             if not self.task_id:
                 return _to_unified_format({
                     "success": False, "error": "No active task", "applied_edits": 0, "preview": None
@@ -2378,7 +2391,7 @@ def _generate_summary(tool_name: str, result: Any) -> str:
             return f"读取失败：{result.get('error', '未知错误')}"
         return f"成功读取文件，内容长度：{len(content) if content else 0} 字符，共 {total_lines} 行"
     
-    elif tool_name == "write_file":
+    elif tool_name == "write_file" or tool_name == "write_text_file":
         if result.get("success") is False:
             return f"写入失败：{result.get('error', '未知错误')}"
         bytes_written = result.get("bytes_written", 0)
