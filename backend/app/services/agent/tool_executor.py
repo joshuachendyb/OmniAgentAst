@@ -259,7 +259,8 @@ class ToolExecutor:
                 # 【修复 2026-04-30 小沈】兼容同步工具函数（如execute_command/change_directory）
                 # 【修复 2026-05-07 小沈】lambda包装的async工具：iscoroutinefunction(lambda)=False，
                 # 需要先调用lambda拿到实际方法再判断是否coroutine
-                timeout = config.get_timeout(action)
+                # 【修复 2026-05-10 小健】使用tool_meta.get_timeout（精细配置）替代config.get_timeout（YAML default=5秒太小）
+                timeout = get_timeout(action)
                 if inspect.iscoroutinefunction(tool):
                     result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
                 else:

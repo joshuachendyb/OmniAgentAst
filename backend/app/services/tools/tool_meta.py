@@ -20,7 +20,7 @@ TOOL_TIMEOUTS = {
     "create_directory": 10,
     "get_file_info": 10,
     "get_directory_tree": 30,
-    "search_files": 30,
+    "search_files": 60,
     "grep_file_content": 60,
     "read_text_file": 30,
     "read_media_file": 30,
@@ -76,7 +76,7 @@ TOOL_TIMEOUTS = {
     "fetch_webpage": 30,
     "ping": 15,
     "port_check": 10,
-    "default": 30,
+    "default": 60,
 }
 
 
