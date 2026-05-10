@@ -1938,7 +1938,7 @@ class FileTools:
             if not is_valid:
                 return _to_unified_format({
                     "success": False, "error": error_msg, "applied_edits": 0, "preview": None
-                }, "edit_file")
+                }, "edit_text_file")
 
             # 【修复 2026-05-01 小沈】添加task_id检查（与write_file对齐）
             if not self.task_id:
@@ -1946,26 +1946,26 @@ class FileTools:
             if not self.task_id:
                 return _to_unified_format({
                     "success": False, "error": "No active task", "applied_edits": 0, "preview": None
-                }, "edit_file")
+                }, "edit_text_file")
 
             # 【小健 2026-05-02】【修复 2026-05-02 小沈】二进制文件保护：仅支持文本文件编辑
             is_binary, binary_reason = _is_binary_file(file_path)
             if is_binary:
                 return _to_unified_format({
                     "success": False, "error": f"{binary_reason}。请使用对应的专业工具操作二进制文件。", "applied_edits": 0, "preview": None
-                }, "edit_file")
+                }, "edit_text_file")
 
             path = Path(file_path)
             if not path.exists():
                 return _to_unified_format({
                     "success": False, "error": f"文件不存在: {file_path}", "applied_edits": 0, "preview": None
-                }, "edit_file")
+                }, "edit_text_file")
 
             # 【修复 2026-05-01 小沈】OOM防护：预检文件大小
             if path.stat().st_size > MAX_READ_SIZE:
                 return _to_unified_format({
                     "success": False, "error": f"文件过大({path.stat().st_size}字节)，超过编辑上限{MAX_READ_SIZE//1024//1024}MB", "applied_edits": 0, "preview": None
-                }, "edit_file")
+                }, "edit_text_file")
 
             # 【修复 2026-05-01 小沈】添加safety记录（与precise_replace_in_file对齐）
             operation_id = self.safety.record_operation(
@@ -2052,17 +2052,17 @@ class FileTools:
                     "results": edit_result['results'], "preview": edit_result['preview'],
                     "dry_run": edit_result['dry_run'], "encoding": edit_result['used_enc'],
                     "operation_id": operation_id,
-                }, "edit_file")
+                }, "edit_text_file")
             else:
                 return _to_unified_format({
                     "success": False, "error": "Failed to edit file",
                     "applied_edits": 0, "operation_id": operation_id
-                }, "edit_file")
+                }, "edit_text_file")
         except Exception as e:
             logger.error(f"edit_file failed: {file_path}: {e}")
             return _to_unified_format({
                 "success": False, "error": str(e), "applied_edits": 0, "preview": None
-            }, "edit_file")
+            }, "edit_text_file")
 
     async def rename_file(
         self,
@@ -2380,18 +2380,11 @@ def get_file_tools(task_id: Optional[str] = None) -> FileTools:
 # ============================================================
 
 def _generate_summary(tool_name: str, result: Any) -> str:
-    """生成人类可读的结果摘要"""
+    """生成人类可读的结果摘要 - 小健 2026-05-11 清理遗留死代码分支(read_file/glob_files)"""
     if not isinstance(result, dict):
         return "操作完成"
     
-    if tool_name == "read_file":
-        content = result.get("content", "")
-        total_lines = result.get("total_lines", 0)
-        if result.get("success") is False:
-            return f"读取失败：{result.get('error', '未知错误')}"
-        return f"成功读取文件，内容长度：{len(content) if content else 0} 字符，共 {total_lines} 行"
-    
-    elif tool_name == "write_file" or tool_name == "write_text_file":
+    if tool_name == "write_text_file":
         if result.get("success") is False:
             return f"写入失败：{result.get('error', '未知错误')}"
         bytes_written = result.get("bytes_written", 0)
@@ -2550,7 +2543,7 @@ def _generate_summary(tool_name: str, result: Any) -> str:
         count = result.get("replaced_count", 0)
         return f"成功替换 {count} 处文本"
     
-    elif tool_name == "edit_file":
+    elif tool_name == "edit_text_file":
         if result.get("success") is False:
             return f"编辑失败：{result.get('error', '未知错误')}"
         applied = result.get("applied_edits", 0)
@@ -2566,12 +2559,6 @@ def _generate_summary(tool_name: str, result: Any) -> str:
         old = result.get("old_name", "")
         new = result.get("new_name", "")
         return f"成功重命名：{old} -> {new}"
-    
-    elif tool_name == "glob_files":
-        if result.get("success") is False:
-            return f"匹配失败：{result.get('error', '未知错误')}"
-        total = result.get("total", 0)
-        return f"Glob匹配完成，共 {total} 个文件"
     
     elif tool_name == "grep_file_content":
         if result.get("success") is False:
@@ -2590,6 +2577,20 @@ def _generate_summary(tool_name: str, result: Any) -> str:
             return f"获取允许目录失败：{result.get('error', '未知错误')}"
         total = result.get("total", 0)
         return f"列出 {total} 个允许访问的目录"
+    
+    elif tool_name == "extract_archive":
+        if result.get("success") is False:
+            return f"解压失败：{result.get('error', '未知错误')}"
+        output_dir = result.get("output_dir", "")
+        extracted = result.get("extracted_files", 0)
+        return f"成功解压到 {output_dir}，共 {extracted} 个文件"
+    
+    elif tool_name == "get_file_hash":
+        if result.get("success") is False:
+            return f"哈希计算失败：{result.get('error', '未知错误')}"
+        algorithm = result.get("algorithm", "sha256")
+        file_size = result.get("file_size", 0)
+        return f"成功计算 {algorithm.upper()} 哈希，文件大小 {file_size:,} 字节"
     
     return "操作完成"
 
