@@ -94,8 +94,8 @@ class ReactAgentMixin(ToolLoaderMixin):
                         "schema": {
                             "type": "object",
                             "properties": {
-                                "thought": {"type": "string"},
-                                "reasoning": {"type": "string"},
+                                "thought": {"type": "string", "description": "分析当前状态和下一步决策"},
+                                "reasoning": {"type": "string", "description": "为什么选这个工具、参数如何确定"},
                                 "tool_name": {
                                     "type": "string",
                                     "enum": tool_names,
