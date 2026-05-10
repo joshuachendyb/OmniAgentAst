@@ -753,7 +753,7 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
     tool_name = matches[-1].group(1).strip()
     if not tool_name:
         return None
-    # 【修复 2026-05-10 小健】finish是合法的退出标志，应直接返回而非跳过
+    # 【修复 2026-05-10 小健】finish是合法的退出标志，返回answer类型（不执行工具，直接结束）
     if tool_name == "finish":
         tp: Dict[str, Any] = {}
         tp_mark = re.search(r'"tool_params"\s*:\s*\{', output)
@@ -766,14 +766,15 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
                     tp = json.loads(obj_str)
                 except (json.JSONDecodeError, TypeError):
                     pass
+        result_text = tp.get("result", "") if tp else ""
         return {
-            "type": "action",
+            "type": "answer",
             "thought": output[:200],
-            "content": output,
+            "content": result_text,
             "reasoning": "",
-            "tool_name": "finish",
-            "tool_params": tp,
-            "response": output,
+            "tool_name": None,
+            "tool_params": None,
+            "response": result_text,
             "error": None
         }
     try:
