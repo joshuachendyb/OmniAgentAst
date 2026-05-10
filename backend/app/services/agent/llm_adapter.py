@@ -62,18 +62,37 @@ class LLMAdapter:
             SelectedStrategy: 选中的策略
         """
         if self._strategy is None:
-            logger.info(f"[LLMAdapter] 开始探测模型能力: model={self.model}")
+            logger.info(f"[LLMAdapter] 开始探测模型能力: model={self.model}, api_base={self.api_base}")
             
             # 探测能力
-            result = await self._detector.detect()
+            try:
+                result = await self._detector.detect()
+            except Exception as e:
+                # 【诊断 2026-05-10 小健】探测过程异常捕获（之前被静默吞掉）
+                logger.error(f"[LLMAdapter] 探测过程抛异常: model={self.model}, error={e}", exc_info=True)
+                self._strategy = SelectedStrategy(
+                    method="prompt",
+                    capability=LLMCapability.NONE,
+                    description=f"探测异常: {e}"
+                )
+                return self._strategy
             
             if result.success:
                 self._feature = result.feature
                 self._strategy = StrategySelector.select(self._feature)
-                logger.info(f"[LLMAdapter] 探测成功: method={self._strategy.method}, description={self._strategy.description}")
+                # 【诊断 2026-05-10 小健】探测成功详情
+                logger.info(
+                    f"[LLMAdapter] 探测成功: model={self.model}, "
+                    f"method={self._strategy.method}, "
+                    f"capability={self._strategy.capability}, "
+                    f"feature=tools:{result.feature.supports_tools}, "
+                    f"response_format:{result.feature.supports_response_format}, "
+                    f"parallel_tool_calls:{result.feature.supports_parallel_tool_calls}, "
+                    f"description={self._strategy.description}"
+                )
             else:
                 # 探测失败，默认降级
-                logger.warning(f"[LLMAdapter] 探测失败: {result.error}")
+                logger.warning(f"[LLMAdapter] 探测失败: model={self.model}, error={result.error}")
                 self._strategy = SelectedStrategy(
                     method="prompt",
                     capability=LLMCapability.NONE,

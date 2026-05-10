@@ -53,14 +53,30 @@ class ReactAgentMixin(ToolLoaderMixin):
         """
         self.text_strategy = TextStrategy()
         
+        # 【诊断+修复 2026-05-10 小健】api_base/api_key/model 在 self 上（kwargs setattr），
+        # 不在 self.llm_client 上，之前检查 self.llm_client.api_base 永远 False
+        _cls = self.__class__.__name__
+        _has_client = self.llm_client is not None
+        _self_api_base = getattr(self, 'api_base', None)
+        _self_api_key = getattr(self, 'api_key', None)
+        _self_model = getattr(self, 'model', None)
+        _client_api_base = getattr(self.llm_client, 'api_base', None) if _has_client else None
+        logger.info(
+            f"[{_cls}] _init_llm_strategies 诊断: llm_client={_has_client}, "
+            f"self.api_base={_self_api_base}, self.model={_self_model}, "
+            f"llm_client.api_base={_client_api_base}"
+        )
+        
         try:
             from app.services.tools.registry import tool_registry
             
-            if self.llm_client and hasattr(self.llm_client, 'api_base'):
+            # 【修复 2026-05-10 小健】从 self 上取 api_base/api_key/model，
+            # 这些由 base_react.__init__ 通过 kwargs setattr 到 self 上
+            if self.llm_client and _self_api_base:
                 self.adapter = LLMAdapter(
-                    api_base=self.llm_client.api_base,
-                    api_key=self.llm_client.api_key,
-                    model=self.llm_client.model,
+                    api_base=_self_api_base,
+                    api_key=_self_api_key,
+                    model=_self_model,
                     auto_detect=False
                 )
                 
@@ -96,14 +112,26 @@ class ReactAgentMixin(ToolLoaderMixin):
                 })
                 self.use_function_calling = True
                 self.openai_tools = openai_tools
+                # 【诊断 2026-05-10 小健】adapter初始化成功日志
+                logger.info(
+                    f"[{_cls}] _init_llm_strategies 成功: adapter=LLMAdapter, "
+                    f"tools_strategy=ToolsStrategy({len(openai_tools)}tools), "
+                    f"response_format_strategy=ResponseFormatStrategy(strict=True), "
+                    f"use_function_calling=True"
+                )
             else:
                 self.adapter = None
                 self.tools_strategy = None
                 self.response_format_strategy = None
                 self.use_function_calling = False
                 self.openai_tools = []
+                # 【诊断 2026-05-10 小健】llm_client无api_base，无法初始化adapter
+                logger.warning(
+                    f"[{_cls}] _init_llm_strategies 跳过adapter: "
+                    f"llm_client={_has_client}, self.api_base={_self_api_base} → 降级纯文本模式"
+                )
         except Exception as e:
-            logger.warning(f"[{self.__class__.__name__}] LLM策略初始化失败，降级到文本模式: {e}")
+            logger.warning(f"[{_cls}] LLM策略初始化失败，降级到文本模式: {e}")
             self.adapter = None
             self.tools_strategy = None
             self.response_format_strategy = None
@@ -248,11 +276,20 @@ class ReactAgentMixin(ToolLoaderMixin):
             logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
         
         # adapter策略选择
+        # 【诊断 2026-05-10 小健】打印adapter状态和策略选择结果
+        _cls = self.__class__.__name__
         if self.adapter:
             strategy = await self.adapter.ensure_capability()
+            # 【诊断 2026-05-10 小健】打印探测后strategy.method
+            logger.info(
+                f"[{_cls}] _call_llm_with_summary 策略选择: "
+                f"method={strategy.method}, description={strategy.description}, "
+                f"capability={strategy.capability}"
+            )
             
             # 【方案C】只在text和response策略下注入tools Schema文本
             if strategy.method == "text":
+                logger.info(f"[{_cls}] _call_llm_with_summary → 走 TextStrategy 分支 (method=text)")
                 schema_text = self._tools_to_schema_text()
                 if schema_text:
                     schema_msg = {"role": "system", "content": schema_text}
@@ -262,6 +299,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                     llm_client=self.llm_client, message=last_message,
                     history_dicts=history_dicts, conversation_history=self.conversation_history)
             elif strategy.method == "response_format" and self.response_format_strategy:
+                logger.info(f"[{_cls}] _call_llm_with_summary → 走 ResponseFormatStrategy 分支 (method=response_format)")
                 schema_text = self._tools_to_schema_text()
                 if schema_text:
                     schema_msg = {"role": "system", "content": schema_text}
@@ -271,10 +309,21 @@ class ReactAgentMixin(ToolLoaderMixin):
                     llm_client=self.llm_client, message=last_message,
                     history_dicts=history_dicts, conversation_history=self.conversation_history)
             elif strategy.method == "tools" and self.tools_strategy:
+                logger.info(f"[{_cls}] _call_llm_with_summary → 走 ToolsStrategy 分支 (method=tools)")
                 # tools策略不注入Schema文本（已有完整Schema通过API传递）
                 return await self.tools_strategy.call(
                     llm_client=self.llm_client, message=last_message,
                     history_dicts=history_dicts, conversation_history=self.conversation_history)
+            else:
+                # 【诊断 2026-05-10 小健】strategy.method不匹配任何分支（如prompt/None等）
+                logger.warning(
+                    f"[{_cls}] _call_llm_with_summary 策略无匹配分支: method={strategy.method}, "
+                    f"has_tools_strategy={self.tools_strategy is not None}, "
+                    f"has_response_format_strategy={self.response_format_strategy is not None} → 走text兜底"
+                )
+        else:
+            # 【诊断 2026-05-10 小健】adapter为None
+            logger.info(f"[{_cls}] _call_llm_with_summary adapter=None → 走text兜底")
         
         # text兜底（无adapter或adapter无匹配策略时）
         schema_text = self._tools_to_schema_text()

@@ -95,6 +95,8 @@ class TextStrategy(LLMStrategy):
         Returns:
             响应文本（JSON 格式）
         """
+        # 【诊断 2026-05-10 小健】TextStrategy实际被调用
+        logger.info(f"[TextStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}")
         history_messages = dict_list_to_messages(history_dicts)
         
         response = await llm_client(
@@ -441,6 +443,8 @@ class ToolsStrategy(LLMStrategy):
         Returns:
             格式化的响应文本
         """
+        # 【诊断 2026-05-10 小健】ToolsStrategy实际被调用
+        logger.info(f"[ToolsStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}, tools_count={len(self.tools)}")
         import asyncio
         
         history_messages = dict_list_to_messages(history_dicts)
@@ -675,6 +679,9 @@ class ResponseFormatStrategy(LLMStrategy):
         Returns:
             格式化的 JSON 字符串
         """
+        # 【诊断 2026-05-10 小健】ResponseFormatStrategy实际被调用
+        _schema_name = self.response_format.get("json_schema", {}).get("name", "?") if isinstance(self.response_format, dict) else "?"
+        logger.info(f"[ResponseFormatStrategy] call() 被调用, model={getattr(llm_client, 'model', '?')}, schema_name={_schema_name}")
         try:
             history_messages = dict_list_to_messages(history_dicts)
             
