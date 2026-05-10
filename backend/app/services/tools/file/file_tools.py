@@ -31,6 +31,7 @@ import os
 import re
 import shutil
 import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, get_type_hints
 
@@ -70,6 +71,7 @@ from app.services.tools.file.file_schema import (
 from app.services.safety.file.file_safety import OperationType
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
+from app.services.tools.tool_meta import get_timeout
 
 # 【重要】延迟导入，避免循环导入问题
 # file_tools.py 在 tools 模块加载时被导入，此时 agent 还未初始化完成
@@ -1177,6 +1179,9 @@ class FileTools:
                 }, "search_files")
             
             # 搜索文件名 - 支持循环搜索获取全部结果
+            # 【修复 2026-05-10 小健】加入超时自检：os.walk循环中检查耗时，超时提前返回已有结果
+            _deadline = time.monotonic() + get_timeout("search_files") - 2  # 预留2秒给外围asyncio
+            
             def _search_sync():
                 import os
                 
@@ -1190,6 +1195,10 @@ class FileTools:
                 
                 # 逐步遍历目录
                 for root, dirs, files in os.walk(search_path):
+                    # 【修复 2026-05-10 小健】超时自检：接近deadline时提前返回
+                    if time.monotonic() > _deadline:
+                        logger.warning(f"[search_files] 超时自检触发，已遍历{seen_count}条，提前返回{len(all_matches)}个匹配")
+                        break
                     if not recursive:
                         dirs.clear()
                     else:
@@ -2117,6 +2126,9 @@ class FileTools:
             }
             file_glob = glob or (type_ext_map.get(type) if type else None)
 
+            # 【修复 2026-05-10 小健】超时自检：os.walk循环中检查耗时，超时提前返回已有结果
+            _grep_deadline = time.monotonic() + get_timeout("grep_file_content") - 2
+
             def _grep_sync() -> List[Dict[str, Any]]:
                 import fnmatch
                 import re as re_mod
@@ -2133,6 +2145,10 @@ class FileTools:
                 match_count = 0
 
                 for root, dirs, files in os.walk(search_path):
+                    # 【修复 2026-05-10 小健】超时自检：接近deadline时提前返回
+                    if time.monotonic() > _grep_deadline:
+                        logger.warning(f"[grep_file_content] 超时自检触发，已匹配{match_count}条，提前返回{len(results)}个文件结果")
+                        break
                     filtered_files = []
                     for f in files:
                         if file_glob and not fnmatch.fnmatch(f, file_glob):
