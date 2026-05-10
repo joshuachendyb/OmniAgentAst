@@ -9,15 +9,22 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.models.file_operations import OperationRecord, OperationType, OperationStatus
-from app.services.agent import (
-    get_file_safety_service,
-    get_session_service,
-    FileTools
-)
 from app.utils.visualization import get_visualizer
 from app.utils.logger import logger
 
 router = APIRouter()
+
+
+def _get_safety():
+    """延迟import避免启动时触发工具注册 - 小沈 2026-05-10"""
+    from app.services.agent import get_file_safety_service
+    return get_file_safety_service()
+
+
+def _get_session():
+    """延迟import避免启动时触发工具注册 - 小沈 2026-05-10"""
+    from app.services.agent import get_session_service
+    return get_session_service()
 
 
 # ============ 响应模型 ============
@@ -121,7 +128,7 @@ async def list_operations(
     - **limit**: 最多返回多少条记录
     """
     try:
-        safety = get_file_safety_service()
+        safety = _get_safety()
         operations = safety.get_session_operations(session_id)
         
         # 限制数量
@@ -152,7 +159,7 @@ async def get_tree_data(
     返回嵌套的树形JSON结构
     """
     try:
-        safety = get_file_safety_service()
+        safety = _get_safety()
         visualizer = get_visualizer()
         
         operations = safety.get_session_operations(session_id)
@@ -188,7 +195,7 @@ async def get_flow_data(
     返回节点和连接的列表，适合桑基图可视化
     """
     try:
-        safety = get_file_safety_service()
+        safety = _get_safety()
         operations = safety.get_session_operations(session_id)
         
         if not operations:
@@ -268,7 +275,7 @@ async def get_stats_data(
     返回操作统计、按类型分组、空间影响等
     """
     try:
-        safety = get_file_safety_service()
+        safety = _get_safety()
         operations = safety.get_session_operations(session_id)
         
         if not operations:
@@ -361,7 +368,7 @@ async def get_animation_data(
     返回按时间排序的动画帧序列
     """
     try:
-        safety = get_file_safety_service()
+        safety = _get_safety()
         operations = safety.get_session_operations(session_id)
         
         if not operations:
@@ -548,7 +555,7 @@ async def rollback_operations(request: RollbackRequest):
     回滚指定的操作或整个会话的所有操作
     """
     try:
-        safety = get_file_safety_service()
+        safety = _get_safety()
         
         # 这里假设session_id从上下文获取
         # 实际实现可能需要从JWT token或请求头中获取
@@ -598,7 +605,7 @@ async def rollback_session(session_id: str):
     按逆序回滚会话中的所有操作
     """
     try:
-        safety = get_file_safety_service()
+        safety = _get_safety()
         result = safety.rollback_session(session_id)
         
         return RollbackResponse(

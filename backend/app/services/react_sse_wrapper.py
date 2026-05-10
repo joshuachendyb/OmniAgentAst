@@ -461,7 +461,7 @@ async def generate_sse_stream(
                 step_name="系统Prompt生成",
                 prompt_content=full_prompt,
                 source=source_name,
-                details={"intent_type": intent_type, "confidence": confidence, "note": "含OUTPUT_FORMAT+TOOL_CALL_RULES+SAFETY+PARAM+FINISH_RULE+ROLLBACK"}
+                details={"intent_type": intent_type, "confidence": confidence, "note": "含OUTPUT_FORMAT(含退出规则)+TOOL_CALL_RULES+SAFETY+ROLLBACK"}
             )
         # 记录任务 prompt
         prompt_logger.log_task_prompt(

@@ -30,7 +30,13 @@ class ReactAgentMixin(ToolLoaderMixin):
     """
     
     def _init_tools_and_executor(self, tool_category: Optional[ToolCategory] = None):
-        """初始化工具加载和执行器"""
+        """初始化工具加载和执行器 - 小沈 2026-05-10
+        
+        首次调用时触发工具注册（ensure_tools_registered），后续调用跳过。
+        """
+        from app.services.tools import ensure_tools_registered
+        ensure_tools_registered()
+        
         if tool_category:
             self._tools_dict = self.load_tools_by_category(tool_category)
         else:
@@ -61,8 +67,9 @@ class ReactAgentMixin(ToolLoaderMixin):
                 openai_tools = tool_registry.to_openai_tools(self.tool_category)
                 self.tools_strategy = ToolsStrategy(tools=openai_tools)
                 # 【三策略适配 2026-05-09】传入工具枚举的response_format schema
+                # 【2026-05-10 小沈】enum追加"finish"，确保LLM知道finish也是合法tool_name
                 # 见文档第14章: 让response_format下LLM也知道有哪些工具可选
-                tool_names = [t["function"]["name"] for t in openai_tools]
+                tool_names = [t["function"]["name"] for t in openai_tools] + ["finish"]
                 self.response_format_strategy = ResponseFormatStrategy(response_format={
                     "type": "json_schema",
                     "json_schema": {
@@ -80,7 +87,7 @@ class ReactAgentMixin(ToolLoaderMixin):
                                 },
                                 "tool_params": {
                                     "type": "object",
-                                    "description": "工具参数。各工具的参数名和类型见system prompt中的Parameter Reminder"
+                                    "description": "工具参数。各工具的参数名和类型见Tools Schema参考"
                                 }
                             },
                             "required": ["thought", "reasoning", "tool_name", "tool_params"]
@@ -179,8 +186,53 @@ class ReactAgentMixin(ToolLoaderMixin):
     
     # ===== LLM调用 =====
     
+    def _tools_to_schema_text(self) -> str:
+        """将openai_tools转换为文本格式（方案C）- 小沈 2026-05-10
+        
+        直接复用tools结构，转换为LLM可读的文本格式。
+        替代G6（get_parameter_reminder），只在text和response策略下使用。
+        
+        Returns:
+            Schema文本（如："timer_set: delay(number, required), callback(string, required)"）
+        """
+        if not hasattr(self, 'openai_tools') or not self.openai_tools:
+            return ""
+        
+        lines = ["【Tools Schema参考（仅作参考，实际调用仍以JSON格式返回）】:"]
+        
+        for tool in self.openai_tools:
+            func = tool.get("function", {})
+            name = func.get("name", "")
+            params = func.get("parameters", {})
+            properties = params.get("properties", {})
+            required = params.get("required", [])
+            
+            if not properties:
+                lines.append(f"{name}: 无参数")
+                continue
+            
+            params_list = []
+            for pname, pinfo in properties.items():
+                ptype = pinfo.get("type", "any")
+                pdefault = pinfo.get("default")
+                is_required = pname in required
+                
+                if pdefault is not None:
+                    params_list.append(f"{pname}({ptype}, default={pdefault})")
+                elif is_required:
+                    params_list.append(f"{pname}({ptype}, required)")
+                else:
+                    params_list.append(f"{pname}({ptype}, optional)")
+            
+            lines.append(f"{name}: {', '.join(params_list)}")
+        
+        return "\n".join(lines)
+    
     async def _call_llm_with_summary(self) -> str:
-        """LLM调用统一入口（含工具概要注入+adapter策略选择）"""
+        """LLM调用统一入口（含工具概要注入+方案C Schema注入+adapter策略选择）
+        
+        【2026-05-10 小沈】方案C：text和response策略下注入Schema文本替代G6
+        """
         self.llm_call_count += 1
         logger.info(f"[LLM Counter] >>> LLM called, count: {self.llm_call_count}")
         
@@ -198,16 +250,38 @@ class ReactAgentMixin(ToolLoaderMixin):
         # adapter策略选择
         if self.adapter:
             strategy = await self.adapter.ensure_capability()
-            if strategy.method == "response_format" and self.response_format_strategy:
+            
+            # 【方案C】只在text和response策略下注入tools Schema文本
+            if strategy.method == "text":
+                schema_text = self._tools_to_schema_text()
+                if schema_text:
+                    schema_msg = {"role": "system", "content": schema_text}
+                    history_dicts = list(history_dicts) + [schema_msg]
+                    logger.info(f"[Schema Injection] Injected tools schema for {strategy.method} strategy")
+                return await self.text_strategy.call(
+                    llm_client=self.llm_client, message=last_message,
+                    history_dicts=history_dicts, conversation_history=self.conversation_history)
+            elif strategy.method == "response_format" and self.response_format_strategy:
+                schema_text = self._tools_to_schema_text()
+                if schema_text:
+                    schema_msg = {"role": "system", "content": schema_text}
+                    history_dicts = list(history_dicts) + [schema_msg]
+                    logger.info(f"[Schema Injection] Injected tools schema for {strategy.method} strategy")
                 return await self.response_format_strategy.call(
                     llm_client=self.llm_client, message=last_message,
                     history_dicts=history_dicts, conversation_history=self.conversation_history)
             elif strategy.method == "tools" and self.tools_strategy:
+                # tools策略不注入Schema文本（已有完整Schema通过API传递）
                 return await self.tools_strategy.call(
                     llm_client=self.llm_client, message=last_message,
                     history_dicts=history_dicts, conversation_history=self.conversation_history)
         
-        # 默认文本模式
+        # text兜底（无adapter或adapter无匹配策略时）
+        schema_text = self._tools_to_schema_text()
+        if schema_text:
+            schema_msg = {"role": "system", "content": schema_text}
+            history_dicts = list(history_dicts) + [schema_msg]
+            logger.info("[Schema Injection] Injected tools schema for text fallback")
         return await self.text_strategy.call(
             llm_client=self.llm_client, message=last_message,
             history_dicts=history_dicts, conversation_history=self.conversation_history)

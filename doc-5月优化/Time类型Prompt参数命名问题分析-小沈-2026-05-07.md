@@ -2406,43 +2406,49 @@ while attempts < max_retries:
 
 TextStrategy下，LLM没有任何API层面的参数约束，完全依赖prompt文本。
 
+**【重要】方案C与G6互斥——选择方案C，去掉G6**：
+- G6（自动生成Parameter Reminder）和方案C（动态注入Schema文本）功能重叠，**两者不可并存**
+- **选择方案C，去掉G6**：方案C直接复用`self.openai_tools`生成完整参数定义，比G6的手写Parameter Reminder更准确、更自动
+- 实施时：删除`build_full_system_prompt()`中对`get_parameter_reminder()`的调用，参数信息由`_tools_to_schema_text()`提供（见第16章16.2.5步骤5和16.3）
+
 改造后各通道在TextStrategy下的作用：
 
 | 通道 | 内容 | TextStrategy下 | 是否必要 |
 |------|------|---------------|---------|
 | 通道1② get_system_prompt() | 工具用途+场景+示例 | G5去掉-Parameters:块后，保留When to use+Example | ✅ 必要 |
-| 通道1⑥ Parameter Reminder | 参数名+类型+required/optional | **唯一参数信息来源** | ✅ **关键** |
+| 通道1⑥ Parameter Reminder | ~~已去掉G6~~，由方案C替代 | **已删除**，参数信息由方案C提供 | ❌ 已去掉 |
+| 方案C Schema文本注入 | 完整参数名+类型+required/optional | **唯一参数信息来源**（从Pydantic自动生成） | ✅ **关键** |
 | 通道2 工具概要 | 工具名: 简短描述（无参数） | 告诉LLM有哪些工具可用 | ✅ 辅助 |
 | 通道3 tools JSON Schema | 结构化参数定义 | **不使用**（走TextStrategy时不发送） | ❌ |
 
-**关键结论**：TextStrategy下，**G6（自动生成Parameter Reminder）不是可选项，而是必须项**。因为它是LLM获取参数名的唯一渠道。
+**关键结论**：TextStrategy下，**方案C（动态注入Schema文本）是必须项**，替代G6成为LLM获取参数名的唯一渠道。
 
 ### 14.4 三种策略下参数信息完整性对比
 
 | 维度 | TextStrategy | ResponseFormatStrategy | ToolsStrategy |
 |------|-------------|----------------------|--------------|
 | 知道有哪些工具 | ✅ 通道2概要 | ✅ 通道2概要 | ✅ tools[name] |
-| 知道参数名 | ✅ **仅靠通道1⑥ Reminder** | ✅ 通道1⑥ Reminder（response_format只有object泛型） | ✅ tools[].parameters.properties |
-| 参数必填/可选 | ✅ 通道1⑥ Reminder | ✅ 通道1⑥ Reminder | ✅ required数组 |
-| 参数类型 | ✅ 通道1⑥ Reminder | ✅ 通道1⑥ Reminder | ✅ type字段 |
-| 默认值 | ✅ 通道1⑥ Reminder | ✅ 通道1⑥ Reminder | ✅ default字段 |
+| 知道参数名 | ✅ **仅靠方案C Schema注入** | ✅ 方案C Schema注入（response_format只有object泛型） | ✅ tools[].parameters.properties |
+| 参数必填/可选 | ✅ 方案C Schema注入 | ✅ 方案C Schema注入 | ✅ required数组 |
+| 参数类型 | ✅ 方案C Schema注入 | ✅ 方案C Schema注入 | ✅ type字段 |
+| 默认值 | ✅ 方案C Schema注入 | ✅ 方案C Schema注入 | ✅ default字段 |
 | JSON格式保证 | ❌ 需parse_react_response容错 | ✅ response_format保证 | ✅ tool_calls原生 |
 
-**核心发现**：**无论哪种策略，通道1⑥ Parameter Reminder都是必需的**。ToolsStrategy下可以通过删除reminder来省token，但TextStrategy和ResponseFormatStrategy下reminder是参数信息的唯一或主要来源。
+**核心发现**：**方案C替代G6后，无论哪种策略，参数信息都有来源**。ToolsStrategy下tools参数提供强约束，TextStrategy和ResponseFormatStrategy下方案C提供文本级约束。
 
 ### 14.5 策略选择对实施的指导
 
 | 当前能力 | 推荐策略 | 需要做什么 |
 |----------|---------|-----------|
 | 支持tools（function calling） | **ToolsStrategy** | 按第12章FC方案激活，走最优通道 |
-| 仅支持response_format | **ResponseFormatStrategy** | 按14.2补充工具名枚举；**必须保留G6的Parameter Reminder** |
-| 仅支持text（无结构化输出） | **TextStrategy** | **G6（Parameter Reminder）是必要项**；依赖parse_react_response容错解析 |
+| 仅支持response_format | **ResponseFormatStrategy** | 按14.2补充工具名枚举；**方案C Schema注入替代G6** |
+| 仅支持text（无结构化输出） | **TextStrategy** | **方案C Schema注入替代G6，是必要项**；依赖parse_react_response容错解析 |
 | 能力未知 | 先用`ensure_capability()`探测，自动选择 | 已实现 |
 
 ### 14.6 实施清单
 
 1. **ResponseFormatStrategy增强**：在 react_agent_mixin.py 的 `_init_llm_strategies()` 中，初始化 ResponseFormatStrategy 时传入工具枚举的 response_format schema（代码见 14.2）。
-2. **G6不可删除**：在第12章的实施顺序中注明，FC启用后G6的Parameter Reminder不能简单删除，只能在 `adapter.method == "tools"` 且确认LLM始终使用tools模式时才可以考虑简化。
+2. **G6已去掉，由方案C替代**：`build_full_system_prompt()`中删除`get_parameter_reminder()`调用，参数信息改由`_tools_to_schema_text()`提供（见第16章16.2.5步骤5和16.3）。
 3. **TextStrategy回退保护**：当前 `_call_llm_with_summary()` 的默认路径（`text_strategy.call()`）已经正确兜底，无需额外改动。
 
 ---
@@ -3346,7 +3352,7 @@ grep -r "unexpected keyword argument" backend/
 |------|--------|---------|---------|
 | 1 | OUTPUT_FORMAT导入 | `python -c "from app.services.prompts.BasePromptTemplate import BasePrompts; print(len(BasePrompts.OUTPUT_FORMAT))"` | 输出字符数 > 500 |
 | 2 | FINISH_RULE已删除 | `grep "FINISH_RULE" backend/app/services/prompts/BasePromptTemplate.py` | 无输出或已注释 |
-| 3 | Schema参考生成 | `python -c "from app.services.prompts.time.time_prompts import TimePrompts; print('get_current_time' in TimePrompts().get_schema_reference())"` | 输出True |
+| 3 | Schema参考生成 | `python -c "from app.services.agent.time_react import TimeReactAgent; print('timer_set' in agent._tools_to_schema_text())"` | 输出True |
 | 4 | 空tool_calls转换 | 查看日志`[Function Calling] Empty tool_calls, convert to finish` | 日志存在 |
 | 5 | response_format枚举 | 检查response_format.tool_name.enum | 有工具名列表 |
 
@@ -3379,7 +3385,7 @@ git checkout backend/app/services/prompts/time/time_prompts.py
 
 - [ ] BasePromptTemplate.OUTPUT_FORMAT包含完整的"两种情况"说明
 - [ ] BasePromptTemplate中FINISH_RULE已删除或置空
-- [ ] time_prompts.py中有get_schema_reference()方法
+- [ ] react_agent_mixin.py中有_tools_to_schema_text()方法
 - [ ] llm_strategies.py中ToolsStrategy处理空tool_calls数组
 - [ ] 所有测试通过：`pytest backend/tests/ -v`
 - [ ] 系统启动成功，无报错

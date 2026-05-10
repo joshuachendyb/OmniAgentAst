@@ -501,13 +501,24 @@ class ToolsStrategy(LLMStrategy):
                     try:
                         tool_calls = json.loads(response.content)
                         
-                        if isinstance(tool_calls, list) and len(tool_calls) > 0:
-                            content = self._format_tool_calls(tool_calls)
-                            logger.info(f"[Function Calling] Received tool_calls: {len(tool_calls)} calls")
-                            return content
+                        if isinstance(tool_calls, list):
+                            if len(tool_calls) > 0:
+                                # 有工具调用
+                                content = self._format_tool_calls(tool_calls)
+                                logger.info(f"[Function Calling] Received tool_calls: {len(tool_calls)} calls")
+                                return content
+                            else:
+                                # 空数组 → 转换为finish退出 - 2026-05-10 小沈
+                                logger.info("[Function Calling] Empty tool_calls, convert to finish")
+                                return json.dumps({
+                                    "thought": "任务完成",
+                                    "tool_name": "finish",
+                                    "tool_params": {}
+                                }, ensure_ascii=False)
                         else:
+                            # 非数组格式
                             content = response.content
-                            logger.info(f"[Function Calling] LLM returned text (no tool call): {content}")
+                            logger.info(f"[Function Calling] Non-list response: {content[:200]}")
                             return content
                             
                     except (json.JSONDecodeError, TypeError) as e:
