@@ -251,6 +251,7 @@ async def _run_agent_sse_stream(
     session_id: str,
     current_execution_steps: list,
     current_content: str,
+    agent_llm_holder: Optional[Dict[str, Any]] = None,
 ) -> AsyncGenerator[str, None]:
     """
     通用Agent SSE执行器：创建Agent → 运行run_stream → 格式化SSE → yield
@@ -329,6 +330,10 @@ async def _run_agent_sse_stream(
         current_execution_steps.append(error_step_dict)
         await save_execution_steps_to_db(session_id, current_execution_steps, _ERROR_LABEL)
         yield error_response
+    finally:
+        # 【修复 2026-05-10 小沈】将 Agent 内真实 LLM 调用次数回传给外层日志（generate_sse_stream 中 llm_call_count 从未递增）
+        if agent_llm_holder is not None and agent is not None:
+            agent_llm_holder["n"] = getattr(agent, "llm_call_count", 0)
 
 
 # ============================================================
@@ -460,8 +465,9 @@ async def generate_sse_stream(
             context={"intent_type": intent_type, "confidence": confidence}
         )
     
-    # 每次对话开始，重置LLM调用计数器
+    # 每次对话开始，重置LLM调用计数器（file/time 等路径由 Agent.llm_call_count 回填 — 小沈-2026-05-10）
     llm_call_count = 0
+    agent_llm_holder: Dict[str, Any] = {"n": 0}
     
     # 【重要】严格规则：ai_service 必须由 chat_router 传入，禁止在此处创建
     if ai_service is None:
@@ -607,6 +613,7 @@ async def generate_sse_stream(
                 session_id=session_id,
                 current_execution_steps=current_execution_steps,
                 current_content=current_content,
+                agent_llm_holder=agent_llm_holder,
             ):
                 yield sse_chunk
         
@@ -670,7 +677,10 @@ async def generate_sse_stream(
         yield error_response
     
     finally:
-        logger.info(f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {llm_call_count} ======")
+        reported_llm = agent_llm_holder.get("n", 0) if agent_llm_holder.get("n", 0) > 0 else llm_call_count
+        logger.info(
+            f"[LLM Total Counter] ====== Conversation finished, total LLM calls: {reported_llm} ======"
+        )
         
         # 清理任务：如果任务状态不是cancelled，则删除
         # cancelled状态的任务由cancel_task保留记录

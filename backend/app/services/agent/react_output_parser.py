@@ -366,6 +366,12 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                     "error": None
                 }
     
+    # 【新增 2026-05-10 小沈】关键词兜底前：正则恢复末尾 tool 调用（恶意/破损 JSON 之后的最后一道 structured 解析）
+    regex_recovered = _try_regex_tool_call_fallback(output)
+    if regex_recovered:
+        logger.info("[parse_react_response] 正则兜底提取到 tool 调用，跳过关键词匹配")
+        return _add_reasoning_warning(regex_recovered)
+
     # 步骤1.2：四种情况判断逻辑
     logger.info(f"[parse_react_response] 走关键词匹配流程")
     return _determine_parse_type(output)
@@ -710,13 +716,79 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
                         reasoning_fixed = reasoning_match.group(1).encode('utf-8', errors='replace').decode('utf-8', errors='replace')
                         result["reasoning"] = reasoning_fixed
         
-        if result.get("tool_name") and result.get("tool_params"):
-            logger.info(f"[_extract_json_block] Fallback成功提取: tool_name={result.get('tool_name')}, tool_params_keys={list(result.get('tool_params', {}).keys())}")
+        # 【修复 2026-05-10 小沈】仅有 tool_name、tool_params 解析失败时仍返回，交由 executor/补充参数兜底
+        if result.get("tool_name"):
+            if not result.get("tool_params"):
+                result["tool_params"] = {}
+            logger.info(
+                f"[_extract_json_block] Fallback成功提取: tool_name={result.get('tool_name')}, "
+                f"tool_params_keys={list(result.get('tool_params', {}).keys())}"
+            )
             return result
     except Exception as e:
         logger.error(f"[_extract_json_block] Fallback提取失败: {e}")
     
     return None
+
+
+def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
+    """
+    整块 JSON 因字符串内未转义引号等无法解析时，从文本中提取最后一次 tool_name / tool_params。
+    
+    典型场景：混合长文本 + 末尾合法字段名，但 thought 字段内含 ASCII 双引号导致 json.loads 失败，
+    原先会落入关键词匹配→implicit→提前 finish，用户任务未完成。
+    
+    Author: 小沈 - 2026-05-10
+    """
+    if not output or not isinstance(output, str):
+        return None
+    matches = list(re.finditer(r'"tool_name"\s*:\s*"([^"]+)"', output))
+    if not matches:
+        return None
+    tool_name = matches[-1].group(1).strip()
+    if not tool_name or tool_name == "finish":
+        return None
+    try:
+        from app.services.tools import ensure_tools_registered
+        from app.services.tools.registry import tool_registry
+        ensure_tools_registered()
+        if tool_registry.get_implementation(tool_name) is None:
+            return None
+    except Exception:
+        return None
+
+    tp: Dict[str, Any] = {}
+    tp_mark = re.search(r'"tool_params"\s*:\s*\{', output)
+    if tp_mark:
+        brace_idx = tp_mark.end() - 1
+        substr = output[brace_idx:]
+        obj_str, _ = _extract_json_with_balanced_braces(substr)
+        if obj_str:
+            try:
+                tp = json.loads(obj_str)
+            except json.JSONDecodeError:
+                tp = {}
+
+    last_brace = output.rfind("{")
+    prefix_text = output[:last_brace].strip() if last_brace != -1 else output.strip()
+
+    if isinstance(tp, dict):
+        tp = _normalize_tool_params_content(tp)
+        tp = _filter_tool_params(tp)
+        if tp:
+            tp = _supplement_missing_params(tool_name, tp, output)
+
+    return {
+        "type": "action",
+        "thought": prefix_text,
+        "content": prefix_text,
+        "reasoning": "",
+        "tool_name": tool_name,
+        "tool_params": tp if isinstance(tp, dict) else {},
+        "response": None,
+        "error": None,
+        "parse_warning": "regex_tool_fallback",
+    }
 
 
 def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:

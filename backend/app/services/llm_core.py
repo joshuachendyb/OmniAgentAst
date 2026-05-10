@@ -173,6 +173,9 @@ class BaseAIService:
                 # 【修复 2026-05-05 小沈】收集reasoning_content用于日志
                 if chunk.reasoning:
                     full_reasoning += chunk.reasoning
+                elif getattr(chunk, "is_reasoning", False) and chunk.content:
+                    # 【修复 2026-05-10 小沈】thinking 模型将推理写在 delta.content 且 is_reasoning=True，chunk.reasoning 为空
+                    full_reasoning += chunk.content
                 if chunk.stream_error:
                     stream_error = chunk.stream_error
                 if chunk.is_done:

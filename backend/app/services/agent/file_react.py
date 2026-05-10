@@ -289,8 +289,9 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
         logger.info(f"[file_react._execute_tool] action={action}, 原params={params}, 标准化后={normalized_params}")
         
         # 通过 executor 从全局 registry 查找工具（内部会优先查本地字典，再 fallback 到 tool_registry.get_implementation()）
+        # 【修复 2026-05-10 小沈】传入标准化后的参数，与日志一致；executor 内会再次 _normalize_params（幂等）
         logger.info(f"[file_react._execute_tool] 使用ToolExecutor: {original_action}")
-        return await self.executor.execute(original_action, params)
+        return await self.executor.execute(original_action, normalized_params)
     
     # ===== 实现父类抽象方法 =====
     
