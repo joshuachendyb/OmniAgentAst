@@ -11,7 +11,7 @@ from pathlib import Path
 # from app.api.v1 import health, chat_non_stream, chat2, init_model_select, file_operations, config, sessions, security, execution, metrics
 # 【阶段6废弃端点但保留代码】chat2.py 已移至 backup/chat2.py
 # cleanup_expired_tasks 已迁移到 react_sse_wrapper.py
-from app.api.v1 import health, init_model_select, file_operations, routes, sessions, security, execution, metrics
+from app.api.v1 import health, init_model_select, operation_history, routes, sessions, security, execution, metrics
 # 兼容导入
 config = routes
 # chat_stream 暂时禁用，使用 chat_router 替代
@@ -124,7 +124,7 @@ from app.services.chat_router import router as chat_router_router, task_router
 app.include_router(chat_router_router, prefix="/api/v1", tags=["chat"])
 app.include_router(task_router, prefix="/api/v1", tags=["chat"])
 app.include_router(init_model_select.router, prefix="/api/v1", tags=["chat"])
-app.include_router(file_operations.router, prefix="/api/v1", tags=["file-operations"])
+app.include_router(operation_history.router, prefix="/api/v1", tags=["operation-history"])
 app.include_router(config.router, prefix="/api/v1", tags=["config"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 app.include_router(security.router, prefix="/api/v1", tags=["security"])
