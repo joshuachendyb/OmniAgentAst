@@ -1,3 +1,23 @@
+v0.12.23
+
+更新时间: 2026-05-10 12:38:49
+
+更新内容：
+
+## v0.12.22→v0.12.23 变更汇总 - 小沈-2026-05-10
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| 98a09701 | fix: BaseAgent._load_tools/ToolExecutor/load_tools_by_intent补充ensure_tools_registered防御调用 - 小健-2026-05-10 |
+| c1a4c451 | fix: 修复FileReactAgent/TimeReactAgent未调用ensure_tools_registered导致工具注册时序bug - 小健-2026-05-10 |
+| 4233471d | fix: TimeCompareView未使用变量加_前缀 - 小健-2026-05-10 |
+
+### refactor 重构
+| commit | 说明 |
+|--------|------|
+| 549920e3 | refactor: 前端View去渐变+去emoji+砍useMemo+新建7个TimeView+9个File工具映射+修复FileOperationView空文件 - 小健-2026-05-10 |
+
 v0.12.22
 
 更新时间: 2026-05-10 08:32:40
