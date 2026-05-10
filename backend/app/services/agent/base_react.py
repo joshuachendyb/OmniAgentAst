@@ -117,7 +117,7 @@ class BaseAgent(ABC):
         self.empty_response_retry_count = 0  # 空响应重试计数器
         self.max_empty_response_retries = 2  # 空响应最大重试次数（截断历史后重试）
         
-        # 【Phase1修复】从registry加载工具
+        # 【Phase1修复】从registry加载工具 - 【修复 2026-05-10 小健】确保先注册再加载
         self._tools_dict = self._load_tools()
         self._loaded_categories = set()  # 【步骤9】已加载的分类，用于动态加载
         
@@ -134,6 +134,10 @@ class BaseAgent(ABC):
         """
         if not self.tool_category:
             return {}
+        
+        # 【修复 2026-05-10 小健】确保工具已注册再查询registry
+        from app.services.tools import ensure_tools_registered
+        ensure_tools_registered()
         
         return get_tools_from_registry_by_category(self.tool_category)
     
@@ -219,8 +223,10 @@ class BaseAgent(ABC):
         
         logger.info(f"[动态加载] 原因: {reason}，加载意图: {intent_type}")
         
-        # 1. 获取该意图的工具
+        # 1. 获取该意图的工具 - 【修复 2026-05-10 小健】确保先注册
         try:
+            from app.services.tools import ensure_tools_registered
+            ensure_tools_registered()
             category = ToolCategory(intent_type)
             new_tools = get_tools_from_registry_by_category(category)
         except ValueError as e:

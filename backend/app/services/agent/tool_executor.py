@@ -138,7 +138,9 @@ class ToolExecutor:
         if tools is not None:
             self.available_tools = tools
         else:
-            # 【M5修正】从tool_registry获取实现函数
+            # 【M5修正】从tool_registry获取实现函数 - 【修复 2026-05-10 小健】确保先注册
+            from app.services.tools import ensure_tools_registered
+            ensure_tools_registered()
             from app.services.tools.registry import get_implementations_from_registry
             self.available_tools = get_implementations_from_registry()
     
