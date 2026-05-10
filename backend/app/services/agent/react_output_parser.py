@@ -751,8 +751,31 @@ def _try_regex_tool_call_fallback(output: str) -> Optional[Dict[str, Any]]:
     if not matches:
         return None
     tool_name = matches[-1].group(1).strip()
-    if not tool_name or tool_name == "finish":
+    if not tool_name:
         return None
+    # 【修复 2026-05-10 小健】finish是合法的退出标志，应直接返回而非跳过
+    if tool_name == "finish":
+        tp: Dict[str, Any] = {}
+        tp_mark = re.search(r'"tool_params"\s*:\s*\{', output)
+        if tp_mark:
+            brace_idx = tp_mark.end() - 1
+            substr = output[brace_idx:]
+            obj_str, _ = _extract_json_with_balanced_braces(substr)
+            if obj_str:
+                try:
+                    tp = json.loads(obj_str)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+        return {
+            "type": "action",
+            "thought": output[:200],
+            "content": output,
+            "reasoning": "",
+            "tool_name": "finish",
+            "tool_params": tp,
+            "response": output,
+            "error": None
+        }
     try:
         from app.services.tools import ensure_tools_registered
         from app.services.tools.registry import tool_registry
