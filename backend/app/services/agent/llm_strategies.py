@@ -526,8 +526,11 @@ class ToolsStrategy(LLMStrategy):
                             return content
                             
                     except (json.JSONDecodeError, TypeError) as e:
+                        # 【修复 2026-05-10 小健】content可能符合OUTPUT_FORMAT格式
+                        # LLM在tools模式下可能不走tool_calls机制，而是把JSON写在content里
+                        # 此时应直接交给下游parse_react_response解析，而非当Non-JSON丢弃
                         content = response.content
-                        logger.info(f"[Function Calling] Non-JSON response: {content}")
+                        logger.info(f"[Function Calling] JSON解析失败，content交给下游解析器: {content[:200]}")
                         return content
                 else:
                     # 空响应，重试

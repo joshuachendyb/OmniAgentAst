@@ -252,6 +252,11 @@ def parse_react_response(output: str) -> Dict[str, Any]:
     #   修复后: type=implicit, tool_name=None, thought=原始文本 (正确)
     if not json_data:
         if re.match(r'^\s*\{\s*"thought":\s*"', output):
+            # 【修复 2026-05-10 小健】不完整JSON先走正则兜底，可能能提取出tool调用
+            regex_recovered = _try_regex_tool_call_fallback(output)
+            if regex_recovered:
+                logger.info("[parse_react_response] 不完整JSON但正则兜底提取到tool调用，跳过implicit")
+                return _add_reasoning_warning(regex_recovered)
             thought_text = output.strip()
             logger.info("[parse_react_response] 检测到不完整JSON格式，返回implicit")
             return {
