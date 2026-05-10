@@ -8,7 +8,7 @@
  * @since 2026-04-25
  */
 
-import React, { useMemo } from "react";
+import React from "react";
 import { FileOutlined, FolderOutlined, ClockCircleOutlined, LockOutlined } from "@ant-design/icons";
 
 interface GetFileInfoViewProps {
@@ -25,9 +25,6 @@ interface GetFileInfoViewProps {
   };
 }
 
-/**
- * 格式化文件大小
- */
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + " B";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
@@ -35,9 +32,10 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB";
 }
 
-/**
- * GetFileInfoView 主组件
- */
+const INFO_GRID_STYLE: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "8px 16px", fontSize: 13 };
+const INFO_ITEM_STYLE: React.CSSProperties = { display: "flex", alignItems: "center" };
+const LABEL_STYLE: React.CSSProperties = { minWidth: 70, color: "#8c8c8c", marginRight: 8, display: "flex", alignItems: "center" };
+
 const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
   const { 
     name = "",
@@ -51,63 +49,28 @@ const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
     error_message 
   } = data;
 
-  // 错误状态
   const hasError = error_message !== undefined && error_message !== "";
 
-  // 容器样式 - 使用useMemo缓存
-  const containerStyle = useMemo(() => ({
-    background: hasError 
-      ? "linear-gradient(135deg, #fff2f0 0%, #f5f5f5 100%)"
-      : "linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)",
-    border: hasError 
-      ? "1px solid #ffa39e"
-      : "1px solid #d9d9d9",
+  const containerStyle: React.CSSProperties = {
+    background: hasError ? "#fff2f0" : "#fafafa",
+    border: hasError ? "1px solid #ffa39e" : "1px solid #d9d9d9",
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 6,
-  }), [hasError]);
+  };
 
-  // 标题样式
-  const titleStyle = useMemo(() => ({
+  const titleStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
     color: hasError ? "#ff4d4f" : "#262626",
-  }), [hasError]);
+  };
 
-  // 信息网格样式
-  const infoGridStyle = useMemo(() => ({
-    display: "grid",
-    gridTemplateColumns: "repeat(2, 1fr)",
-    gap: "8px 16px",
-    fontSize: 13,
-  }), []);
-
-  // 每一项样式
-  const infoItemStyle = useMemo(() => ({
-    display: "flex",
-    alignItems: "center",
-  }), []);
-
-  // 标签样式
-  const labelStyle = useMemo(() => ({
-    minWidth: 70,
-    color: "#8c8c8c",
-    marginRight: 8,
-    display: "flex",
-    alignItems: "center",
-  }), []);
-
-  // 处理文件大小
-  const processedSize = useMemo(() => {
-    return size !== undefined ? formatFileSize(size) : null;
-  }, [size]);
-
-  // 根据文件类型选择图标
+  const processedSize = size !== undefined ? formatFileSize(size) : null;
   const FileIcon = is_directory ? FolderOutlined : FileOutlined;
-  const iconColor = useMemo(() => is_directory ? "#fa8c16" : "#1890ff", [is_directory]);
+  const iconColor = is_directory ? "#fa8c16" : "#1890ff";
 
   return (
     <div style={containerStyle}>
@@ -118,16 +81,16 @@ const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
       </div>
 
       {/* 信息网格 */}
-      <div style={infoGridStyle}>
+      <div style={INFO_GRID_STYLE}>
         {/* 名称 */}
-        <div style={infoItemStyle}>
-          <span style={labelStyle}>名称：</span>
+        <div style={INFO_ITEM_STYLE}>
+          <span style={LABEL_STYLE}>名称：</span>
           <span style={{ fontWeight: 500, color: "#262626" }}>{name}</span>
         </div>
 
         {/* 类型 */}
-        <div style={infoItemStyle}>
-          <span style={labelStyle}>类型：</span>
+        <div style={INFO_ITEM_STYLE}>
+          <span style={LABEL_STYLE}>类型：</span>
           <span style={{ color: "#595959" }}>
             {type || (is_directory ? "目录" : "文件")}
             {type && !is_directory && <span style={{ color: "#8c8c8c" }}> (.{type})</span>}
@@ -135,8 +98,8 @@ const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
         </div>
 
         {/* 路径 */}
-        <div style={{ ...infoItemStyle, gridColumn: "1 / -1" }}>
-          <span style={{ ...labelStyle, minWidth: 70 }}>路径：</span>
+        <div style={{ ...INFO_ITEM_STYLE, gridColumn: "1 / -1" }}>
+          <span style={{ ...LABEL_STYLE, minWidth: 70 }}>路径：</span>
           <span style={{ 
             flex: 1, 
             fontFamily: "Consolas, Monaco, 'Courier New', monospace", 
@@ -149,30 +112,30 @@ const GetFileInfoView: React.FC<GetFileInfoViewProps> = ({ data }) => {
 
         {/* 大小 */}
         {processedSize && (
-<div style={infoItemStyle}>
-          <span style={labelStyle}>大小：</span>
+<div style={INFO_ITEM_STYLE}>
+          <span style={LABEL_STYLE}>大小：</span>
             <span style={{ fontWeight: 500 }}>{processedSize}</span>
           </div>
         )}
 
         {/* 权限 */}
-        <div style={infoItemStyle}>
-          <span style={labelStyle}><LockOutlined /> 权限：</span>
+        <div style={INFO_ITEM_STYLE}>
+          <span style={LABEL_STYLE}><LockOutlined /> 权限：</span>
           <span style={{ fontFamily: "Consolas, Monaco, 'Courier New', monospace" }}>{permissions}</span>
         </div>
 
         {/* 创建时间 */}
         {created_at && (
-          <div style={infoItemStyle}>
-            <span style={labelStyle}><ClockCircleOutlined /> 创建：</span>
+          <div style={INFO_ITEM_STYLE}>
+            <span style={LABEL_STYLE}><ClockCircleOutlined /> 创建：</span>
             <span>{created_at}</span>
           </div>
         )}
 
         {/* 修改时间 */}
         {modified_at && (
-          <div style={infoItemStyle}>
-            <span style={labelStyle}><ClockCircleOutlined /> 修改：</span>
+          <div style={INFO_ITEM_STYLE}>
+            <span style={LABEL_STYLE}><ClockCircleOutlined /> 修改：</span>
             <span>{modified_at}</span>
           </div>
         )}

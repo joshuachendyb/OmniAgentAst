@@ -8,7 +8,7 @@
  * @since 2026-04-25
  */
 
-import React, { useMemo } from "react";
+import React from "react";
 import { CheckCircleOutlined, MinusCircleOutlined, FileOutlined, SwapOutlined } from "@ant-design/icons";
 
 interface CompareFilesViewProps {
@@ -25,9 +25,6 @@ interface CompareFilesViewProps {
   };
 }
 
-/**
- * 格式化文件大小
- */
 function formatFileSize(bytes: number): string {
   if (bytes < 0) bytes = Math.abs(bytes);
   if (bytes < 1024) return bytes + " B";
@@ -36,9 +33,11 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB";
 }
 
-/**
- * CompareFilesView 主组件
- */
+const COMPARE_PANEL_STYLE: React.CSSProperties = { display: "grid", gridTemplateColumns: "1fr auto 1fr", gap: 16, alignItems: "center", marginBottom: 12 };
+const FILE_CARD_STYLE: React.CSSProperties = { background: "#fafafa", border: "1px solid #d9d9d9", borderRadius: 6, padding: "10px 12px", fontSize: 12 };
+const INFO_ITEM_STYLE: React.CSSProperties = { display: "flex", alignItems: "center", marginBottom: 8, fontSize: 13, color: "#595959" };
+const LABEL_STYLE: React.CSSProperties = { minWidth: 100, color: "#8c8c8c", marginRight: 8 };
+
 const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
   const { 
     file_a = "",
@@ -52,65 +51,24 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
     error_message 
   } = data;
 
-  // 错误状态
   const hasError = !success || (error_message !== undefined && error_message !== "");
 
-  // 容器样式 - 使用useMemo缓存
-  const containerStyle = useMemo(() => ({
-    background: hasError 
-      ? "linear-gradient(135deg, #fff2f0 0%, #f5f5f5 100%)"
-      : "linear-gradient(135deg, #e6f7ff 0%, #f5f5f5 100%)",
-    border: hasError 
-      ? "1px solid #ffa39e"
-      : "1px solid #91d5ff",
+  const containerStyle: React.CSSProperties = {
+    background: hasError ? "#fff2f0" : "#e6f7ff",
+    border: hasError ? "1px solid #ffa39e" : "1px solid #91d5ff",
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 6,
-  }), [hasError]);
+  };
 
-  // 标题样式
-  const titleStyle = useMemo(() => ({
+  const titleStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
     color: hasError ? "#ff4d4f" : "#1890ff",
-  }), [hasError]);
-
-  // 对比面板样式
-  const comparePanelStyle = useMemo(() => ({
-    display: "grid",
-    gridTemplateColumns: "1fr auto 1fr",
-    gap: 16,
-    alignItems: "center",
-    marginBottom: 12,
-  }), []);
-
-  // 文件卡片样式
-  const fileCardStyle = useMemo(() => ({
-    background: "#fafafa",
-    border: "1px solid #d9d9d9",
-    borderRadius: 6,
-    padding: "10px 12px",
-    fontSize: 12,
-  }), []);
-
-  // 信息项样式
-  const infoItemStyle = useMemo(() => ({
-    display: "flex",
-    alignItems: "center",
-    marginBottom: 8,
-    fontSize: 13,
-    color: "#595959",
-  }), []);
-
-  // 标签样式
-  const labelStyle = useMemo(() => ({
-    minWidth: 100,
-    color: "#8c8c8c",
-    marginRight: 8,
-  }), []);
+  };
 
   // 处理文件大小
   const sizeA = file_a_size !== undefined ? formatFileSize(file_a_size) : null;
@@ -136,9 +94,9 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
 
       {/* 对比面板 */}
       {!hasError && file_a && file_b && (
-        <div style={comparePanelStyle}>
+        <div style={COMPARE_PANEL_STYLE}>
           {/* 文件A */}
-          <div style={fileCardStyle}>
+          <div style={FILE_CARD_STYLE}>
             <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
               <FileOutlined style={{ marginRight: 6, color: "#1890ff" }} />
               <span style={{ fontWeight: 500 }}>文件A</span>
@@ -157,7 +115,7 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
           <SwapOutlined style={{ fontSize: 20, color: "#8c8c8c" }} />
 
           {/* 文件B */}
-          <div style={fileCardStyle}>
+          <div style={FILE_CARD_STYLE}>
             <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
               <FileOutlined style={{ marginRight: 6, color: "#52c41a" }} />
               <span style={{ fontWeight: 500 }}>文件B</span>
@@ -179,8 +137,8 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
         <>
           {/* 大小差异 */}
           {sizeDiff && size_diff !== undefined && (
-            <div style={infoItemStyle}>
-              <span style={labelStyle}>大小差异：</span>
+            <div style={INFO_ITEM_STYLE}>
+              <span style={LABEL_STYLE}>大小差异：</span>
               <span style={{ 
                 color: size_diff > 0 ? "#52c41a" : (size_diff < 0 ? "#ff4d4f" : "#595959"),
                 fontWeight: 500 
@@ -192,16 +150,16 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
 
           {/* 修改时间差异 */}
           {modified_time_diff && (
-            <div style={infoItemStyle}>
-              <span style={labelStyle}>修改时间差异：</span>
+            <div style={INFO_ITEM_STYLE}>
+              <span style={LABEL_STYLE}>修改时间差异：</span>
               <span>{modified_time_diff}</span>
             </div>
           )}
 
           {/* 内容差异数量 */}
           {content_diff_count !== undefined && (
-            <div style={infoItemStyle}>
-              <span style={labelStyle}>内容差异：</span>
+            <div style={INFO_ITEM_STYLE}>
+              <span style={LABEL_STYLE}>内容差异：</span>
               <span style={{ fontWeight: 500 }}>
                 {content_diff_count}处不同
               </span>
@@ -211,7 +169,7 @@ const CompareFilesView: React.FC<CompareFilesViewProps> = ({ data }) => {
           {/* 无差异提示 */}
           {content_diff_count === 0 && (
             <div style={{ 
-              ...infoItemStyle, 
+              ...INFO_ITEM_STYLE, 
               color: "#52c41a",
               fontWeight: 500 
             }}>

@@ -35,7 +35,7 @@ const DeleteFileView: React.FC<DeleteFileViewProps> = ({ data }) => {
 
   // 删除成功样式
   const deleteStyle = {
-    background: "linear-gradient(135deg, #fff1f0 0%, #f5f5f5 100%)",
+    background: "#fff1f0",
     border: "1px solid #ffa39e",
     borderRadius: 8,
     padding: "12px 16px",

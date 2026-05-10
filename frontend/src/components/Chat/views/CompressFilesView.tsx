@@ -8,7 +8,7 @@
  * @since 2026-04-25
  */
 
-import React, { useMemo } from "react";
+import React from "react";
 import { CloseCircleOutlined, InboxOutlined, DownloadOutlined, RightOutlined } from "@ant-design/icons";
 import { Collapse, Button } from "antd";
 
@@ -26,9 +26,6 @@ interface CompressFilesViewProps {
   };
 }
 
-/**
- * 格式化文件大小
- */
 function formatFileSize(bytes: number): string {
   if (bytes < 0) bytes = Math.abs(bytes);
   if (bytes < 1024) return bytes + " B";
@@ -37,9 +34,9 @@ function formatFileSize(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + " GB";
 }
 
-/**
- * CompressFilesView 主组件
- */
+const STATS_CARD_STYLE: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 12, padding: 12, background: "#fafafa", borderRadius: 6, border: "1px solid #f0f0f0" };
+const STAT_ITEM_STYLE: React.CSSProperties = { textAlign: "center" as const };
+
 const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
   const { 
     archive_path = "",
@@ -56,55 +53,30 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
   const hasError = !success || (error_message !== undefined && error_message !== "");
   const hasFileList = file_list && file_list.length > 0;
 
-  // 容器样式 - 使用useMemo缓存
-  const containerStyle = useMemo(() => ({
-    background: hasError 
-      ? "linear-gradient(135deg, #fff2f0 0%, #f5f5f5 100%)"
-      : "linear-gradient(135deg, #e6f7ff 0%, #f5f5f5 100%)",
-    border: hasError 
-      ? "1px solid #ffa39e"
-      : "1px solid #91d5ff",
+  const containerStyle: React.CSSProperties = {
+    background: hasError ? "#fff2f0" : "#e6f7ff",
+    border: hasError ? "1px solid #ffa39e" : "1px solid #91d5ff",
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 6,
-  }), [hasError]);
+  };
 
-  // 标题样式
-  const titleStyle = useMemo(() => ({
+  const titleStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
     color: hasError ? "#ff4d4f" : "#1890ff",
-  }), [hasError]);
+  };
 
-  // 统计卡片样式
-  const statsCardStyle = useMemo(() => ({
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: 12,
-    marginBottom: 12,
-    padding: "12px",
-    background: "#fafafa",
-    borderRadius: 6,
-    border: "1px solid #f0f0f0",
-  }), []);
-
-  // 统计项样式
-  const statItemStyle: React.CSSProperties = useMemo(() => ({
-    textAlign: "center",
-  }), []);
-
-  // 压缩比样式
-  const ratioColor = useMemo(() => compression_ratio !== undefined 
+  const ratioColor = compression_ratio !== undefined 
     ? (compression_ratio >= 70 ? "#52c41a" : (compression_ratio >= 30 ? "#faad14" : "#1890ff"))
-    : "#595959", [compression_ratio]);
+    : "#595959";
 
-  // 处理原始大小
-  const originalFormatted = useMemo(() => original_size !== undefined ? formatFileSize(original_size) : null, [original_size]);
-  const compressedFormatted = useMemo(() => compressed_size !== undefined ? formatFileSize(compressed_size) : null, [compressed_size]);
-  const compressionRatio = useMemo(() => compression_ratio !== undefined ? compression_ratio.toFixed(1) + "%" : null, [compression_ratio]);
+  const originalFormatted = original_size !== undefined ? formatFileSize(original_size) : null;
+  const compressedFormatted = compressed_size !== undefined ? formatFileSize(compressed_size) : null;
+  const compressionRatioStr = compression_ratio !== undefined ? compression_ratio.toFixed(1) + "%" : null;
 
   return (
     <div style={containerStyle}>
@@ -126,9 +98,9 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
       {/* 统计卡片 */}
       {!hasError && (
         <>
-          <div style={statsCardStyle}>
+          <div style={STATS_CARD_STYLE}>
             {/* 原始大小 */}
-            <div style={statItemStyle}>
+            <div style={STAT_ITEM_STYLE}>
               <div style={{ fontSize: 11, color: "#8c8c8c", marginBottom: 4 }}>
                 原始大小
               </div>
@@ -138,7 +110,7 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
             </div>
 
             {/* 压缩后大小 */}
-            <div style={statItemStyle}>
+            <div style={STAT_ITEM_STYLE}>
               <div style={{ fontSize: 11, color: "#8c8c8c", marginBottom: 4 }}>
                 压缩后
               </div>
@@ -148,12 +120,12 @@ const CompressFilesView: React.FC<CompressFilesViewProps> = ({ data }) => {
             </div>
 
             {/* 压缩率 */}
-            <div style={statItemStyle}>
+            <div style={STAT_ITEM_STYLE}>
               <div style={{ fontSize: 11, color: "#8c8c8c", marginBottom: 4 }}>
                 压缩率
               </div>
               <div style={{ fontSize: 16, fontWeight: 600, color: ratioColor }}>
-                {compressionRatio || "-"}
+                {compressionRatioStr || "-"}
               </div>
             </div>
           </div>

@@ -16,6 +16,7 @@ import {
   FolderOutlined,
   FileOutlined,
   SearchOutlined,
+  InboxOutlined,
 } from "@ant-design/icons";
 import type { AntdTreeNodeAttribute } from "antd/lib/tree";
 
@@ -496,7 +497,8 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
   if (entries.length === 0) {
     return (
       <div style={{ color: "#888", fontStyle: "italic" }}>
-        📂 目录为空
+        <InboxOutlined style={{ marginRight: 6 }} />
+        目录为空
       </div>
     );
   }
@@ -519,8 +521,8 @@ const ListDirectoryView: React.FC<ListDirectoryViewProps> = ({ data, toolParams,
       onClick={onToggle}
     >
       <div>
-        <span style={{ marginRight: 8 }}>📂 {directory}</span>
-        {isRecursive ? "🌲 目录树" : "📁 文件列表"}
+        <span style={{ marginRight: 8 }}><FolderOutlined style={{ marginRight: 4 }} /> {directory}</span>
+        {isRecursive ? "目录树" : "文件列表"}
         ({total}个)
         {/* 【小强新增 2026-03-25】显示搜索匹配数量 */}
         {searchText && filteredEntries.length !== total && (

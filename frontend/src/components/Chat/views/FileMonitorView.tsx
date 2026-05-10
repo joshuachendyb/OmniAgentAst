@@ -8,8 +8,8 @@
  * @since 2026-04-26
  */
 
-import React, { useMemo } from "react";
-import { EyeOutlined, FileAddOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import React from "react";
+import { EyeOutlined, FileAddOutlined, EditOutlined, DeleteOutlined, WarningOutlined, FolderOutlined } from "@ant-design/icons";
 import { List, Tag } from "antd";
 
 interface FileEvent {
@@ -27,9 +27,6 @@ interface FileMonitorViewProps {
   };
 }
 
-/**
- * FileMonitorView 主组件
- */
 const FileMonitorView: React.FC<FileMonitorViewProps> = ({ data }) => {
   const {
     directory = "",
@@ -37,31 +34,25 @@ const FileMonitorView: React.FC<FileMonitorViewProps> = ({ data }) => {
     event_count = 0,
   } = data || {};
 
-  // 空数据检查
-  const isEmpty = useMemo(() => {
-    return !data || (!directory && events.length === 0);
-  }, [data, directory, events.length]);
+  const isEmpty = !data || (!directory && events.length === 0);
 
-  // 容器样式
-  const containerStyle = useMemo(() => ({
-    background: "linear-gradient(135deg, #e6f7ff 0%, #f5f5f5 100%)",
+  const containerStyle: React.CSSProperties = {
+    background: "#e6f7ff",
     border: "1px solid #91d5ff",
     borderRadius: 8,
     padding: "12px 16px",
     marginTop: 6,
-  }), []);
+  };
 
-  // 标题样式
-  const titleStyle = useMemo(() => ({
+  const titleStyle: React.CSSProperties = {
     display: "flex",
     alignItems: "center",
     marginBottom: 12,
     fontSize: 14,
     fontWeight: 500,
     color: "#1890ff",
-  }), []);
+  };
 
-  // 事件类型标签颜色
   const getEventColor = (eventType: string): string => {
     switch (eventType) {
       case "created": return "#52c41a";
@@ -72,7 +63,6 @@ const FileMonitorView: React.FC<FileMonitorViewProps> = ({ data }) => {
     }
   };
 
-  // 事件类型图标
   const getEventIcon = (eventType: string) => {
     switch (eventType) {
       case "created": return <FileAddOutlined />;
@@ -83,26 +73,25 @@ const FileMonitorView: React.FC<FileMonitorViewProps> = ({ data }) => {
     }
   };
 
-  // 空数据返回
   if (isEmpty) {
     return (
       <div style={{ color: "#888", fontStyle: "italic", padding: "12px 16px" }}>
-        ⚠️ 监控数据为空
+        <WarningOutlined style={{ marginRight: 6 }} />
+        监控数据为空
       </div>
     );
   }
 
   return (
     <div style={containerStyle}>
-      {/* 标题 */}
       <div style={titleStyle}>
         <EyeOutlined style={{ marginRight: 8 }} />
-        👁️ 文件监控
+        文件监控
       </div>
 
-      {/* 监控目录 */}
       <div style={{ marginBottom: 12, fontSize: 12, color: "#8c8c8c" }}>
-        📁 {directory}
+        <FolderOutlined style={{ marginRight: 4 }} />
+        {directory}
       </div>
 
       {/* 事件统计 */}
