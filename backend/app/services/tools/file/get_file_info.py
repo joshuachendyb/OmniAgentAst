@@ -69,10 +69,21 @@ async def get_file_info_impl(
                 info["parent_directory"] = str(path.parent)
             elif path.is_dir():
                 try:
-                    file_count = sum(1 for _ in path.rglob("*") if _.is_file())
-                    dir_count = sum(1 for _ in path.rglob("*") if _.is_dir())
-                    info["file_count"] = file_count
-                    info["dir_count"] = dir_count
+                    # 【修复 2026-05-10 小健】超时自检：两次rglob改为一次遍历+限时
+                    import time as _time
+                    from app.services.tools.tool_meta import get_timeout as _get_timeout
+                    _gi_deadline = _time.monotonic() + _get_timeout("get_file_info") - 2
+                    _fc = 0; _dc = 0
+                    for _p in path.rglob("*"):
+                        if _time.monotonic() > _gi_deadline:
+                            import logging; logging.getLogger(__name__).warning(f"[get_file_info] 超时自检触发，提前返回 file_count={_fc}, dir_count={_dc}")
+                            break
+                        if _p.is_file():
+                            _fc += 1
+                        elif _p.is_dir():
+                            _dc += 1
+                    info["file_count"] = _fc
+                    info["dir_count"] = _dc
                 except (OSError, PermissionError):
                     info["file_count"] = None
                     info["dir_count"] = None

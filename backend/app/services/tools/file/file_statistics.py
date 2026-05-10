@@ -15,6 +15,9 @@ import asyncio
 import json
 import csv
 import io
+import time
+import logging
+logger = logging.getLogger(__name__)
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timedelta
@@ -140,12 +143,26 @@ async def file_statistics_impl(
             }
             
             # 遍历目录
+            # 【修复 2026-05-10 小健】超时自检
+            from app.services.tools.tool_meta import get_timeout as _get_timeout
+            _stat_deadline = time.monotonic() + _get_timeout("file_statistics") - 2
+            _stat_timed_out = False
+
             def _scan_directory(current_path: Path, current_depth: int):
+                nonlocal _stat_timed_out
                 if current_depth > max_depth:
+                    return
+                if _stat_timed_out:
+                    return
+                if time.monotonic() > _stat_deadline:
+                    _stat_timed_out = True
+                    logger.warning(f"[file_statistics] 超时自检触发，已统计{stats['total_files']}个文件，提前返回")
                     return
                 
                 try:
                     for item in current_path.iterdir():
+                        if _stat_timed_out:
+                            return
                         try:
                             # 检查过滤条件
                             if not _apply_filters(item, filters):
@@ -218,6 +235,8 @@ async def file_statistics_impl(
                                 # 递归扫描子目录
                                 if recursive:
                                     _scan_directory(item, current_depth + 1)
+                                    if _stat_timed_out:
+                                        return
                                     
                         except (PermissionError, OSError):
                             # 跳过无法访问的文件/目录

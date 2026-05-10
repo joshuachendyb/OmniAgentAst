@@ -217,6 +217,10 @@ def _get_files_in_directory(directory: Path, recursive: bool) -> Dict[str, Dict[
         文件信息字典 {文件路径: {大小, 修改时间, 是否为目录}}
     """
     files = {}
+    # 【修复 2026-05-10 小健】超时自检：rglob大目录可能极慢
+    from app.services.tools.tool_meta import get_timeout as _get_timeout
+    import time as _time
+    _fm_deadline = _time.monotonic() + _get_timeout("file_monitor") - 2
     
     if recursive:
         paths = directory.rglob("*")
@@ -224,6 +228,9 @@ def _get_files_in_directory(directory: Path, recursive: bool) -> Dict[str, Dict[
         paths = directory.iterdir()
     
     for path in paths:
+        if _time.monotonic() > _fm_deadline:
+            import logging; logging.getLogger(__name__).warning(f"[file_monitor._get_files_in_directory] 超时自检触发，已收集{len(files)}个文件，提前返回")
+            break
         if path.is_file() or path.is_dir():
             try:
                 stat = path.stat()

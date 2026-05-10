@@ -814,16 +814,28 @@ class FileTools:
                 }, "list_directory")
 
             # 异步执行目录遍历
+            # 【修复 2026-05-10 小健】超时自检：递归遍历大目录时主动退出
+            _list_deadline = time.monotonic() + get_timeout("list_directory") - 2
+            _list_timed_out = False
+
             def _list_sync():
+                nonlocal _list_timed_out
                 entries = []
                 stats = {"total_size": 0, "dir_count": 0, "file_count": 0}
 
                 if recursive:
                     def _scan_recursive(current_path: Path, current_depth: int):
+                        nonlocal _list_timed_out
                         if current_depth > max_depth:
+                            return
+                        if time.monotonic() > _list_deadline:
+                            _list_timed_out = True
+                            logger.warning(f"[list_directory] 超时自检触发，已收集{len(entries)}条，提前返回")
                             return
                         try:
                             for item in current_path.iterdir():
+                                if _list_timed_out:
+                                    return
                                 try:
                                     if not include_hidden and item.name.startswith('.'):
                                         continue
@@ -839,6 +851,8 @@ class FileTools:
                                     if is_dir:
                                         stats["dir_count"] += 1
                                         _scan_recursive(item, current_depth + 1)
+                                        if _list_timed_out:
+                                            return
                                     else:
                                         stats["total_size"] += st.st_size
                                         stats["file_count"] += 1
@@ -2264,8 +2278,14 @@ class FileTools:
             excludes = excludePatterns or []
             import fnmatch
             entry_count = [0]
+            # 【修复 2026-05-10 小健】超时自检
+            _tree_deadline = time.monotonic() + get_timeout("get_directory_tree") - 2
+            _tree_timed_out = False
 
             def _build_tree(current_path: Path, depth: int = 0) -> Optional[Dict[str, Any]]:
+                nonlocal _tree_timed_out
+                if _tree_timed_out:
+                    return None
                 if depth > effective_max_depth:
                     return None
                 # 【修复 2026-05-01 小沈】条目数上限防护
@@ -2273,6 +2293,10 @@ class FileTools:
                     return None
                 # 【修复 2026-05-01 小沈】符号链接循环防护：跳过符号链接目录
                 if current_path.is_dir() and current_path.is_symlink():
+                    return None
+                if time.monotonic() > _tree_deadline:
+                    _tree_timed_out = True
+                    logger.warning(f"[get_directory_tree] 超时自检触发，已收集{entry_count[0]}条，提前返回")
                     return None
                 name = current_path.name
                 for pattern in excludes:
