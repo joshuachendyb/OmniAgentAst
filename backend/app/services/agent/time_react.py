@@ -66,11 +66,8 @@ class TimeReactAgent(ReactAgentMixin, BaseAgent):
         
         self.prompts = TimePrompts()
         
-        # 【修复 2026-04-30 小沈】使用 load_tools_by_category（原 _load_tools 改名），条件统一为 if self.tool_category
-        if self.tool_category:
-            self._tools_dict = self.load_tools_by_category(self.tool_category)
-        
-        self.executor = ToolExecutor(self._tools_dict)
+        # 【修复 2026-05-10 小健】使用_init_tools_and_executor确保ensure_tools_registered先执行
+        self._init_tools_and_executor(self.tool_category)
         
         # FC通道由mixin._init_llm_strategies()统一初始化 - 小沈 2026-05-09
         self._init_llm_strategies()

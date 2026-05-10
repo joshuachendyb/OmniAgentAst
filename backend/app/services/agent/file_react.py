@@ -85,11 +85,8 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
         # 【步骤6】使用ReactAgentMixin的任务追踪管理
         self._init_task_tracking(enable=True)
         
-        # 【修复 2026-04-30 小沈】使用Mixin的 load_tools_by_category（原 _load_tools 改名，消除MRO遮蔽）
-        if self.tool_category:
-            self._tools_dict = self.load_tools_by_category(self.tool_category)
-        
-        self.executor = ToolExecutor(self._tools_dict)
+        # 【修复 2026-05-10 小健】使用_init_tools_and_executor确保ensure_tools_registered先执行
+        self._init_tools_and_executor(self.tool_category)
         
         self.prompts = FileOperationPrompts()
         
