@@ -151,6 +151,30 @@ def parse_react_response(output: str) -> Dict[str, Any]:
             data = json.loads(output)
         
         if isinstance(data, dict):
+            # 【修复 2026-05-11 小健】先检查parse_error/answer等显式type，避免误判为action
+            explicit_type = data.get("type")
+            if explicit_type == "parse_error":
+                return {
+                    "type": "parse_error",
+                    "error": data.get("error", "LLM返回解析错误"),
+                    "thought": data.get("content", data.get("thought", "")),
+                    "content": data.get("content", ""),
+                    "reasoning": data.get("reasoning", ""),
+                    "tool_name": None,
+                    "tool_params": None,
+                    "response": data.get("content", "")
+                }
+            if explicit_type == "answer":
+                return {
+                    "type": "answer",
+                    "thought": data.get("thought", ""),
+                    "content": data.get("content", ""),
+                    "reasoning": data.get("reasoning", ""),
+                    "tool_name": None,
+                    "tool_params": None,
+                    "response": data.get("response", data.get("content", ""))
+                }
+            
             # 新字段格式
             if "tool_name" in data:
                 tool_name = data["tool_name"]
@@ -585,6 +609,18 @@ def _extract_json_block(content: str) -> Optional[Dict[str, Any]]:
             json_fixed = json_str.encode('utf-8', errors='replace').decode('utf-8')
             return json.loads(json_fixed)
         except:
+            pass
+    
+    # 【修复 2026-05-11 小健】失败原因1.5: value中含未转义双引号/中文引号
+    # LLM常在thought/reasoning里写"穆里奇"这种文本，如果用ASCII双引号则破坏JSON
+    # 尝试：1) 中文引号\u201c\u201d替换为普通字符再parse  2) 去掉中文引号再parse
+    for fix_fn in [
+        lambda s: s.replace('\u201c', '\u300c').replace('\u201d', '\u300d'),  # 中文双引号→中文方括号引号
+        lambda s: s.replace('\u201c', '').replace('\u201d', ''),              # 直接去掉中文引号
+    ]:
+        try:
+            return json.loads(fix_fn(json_str))
+        except json.JSONDecodeError:
             pass
     
     # 失败原因2: 未转义换行符 - 用空格替换

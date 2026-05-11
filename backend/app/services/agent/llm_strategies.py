@@ -526,9 +526,18 @@ class ToolsStrategy(LLMStrategy):
                             return content
                             
                     except (json.JSONDecodeError, TypeError) as e:
-                        # 【修复 2026-05-10 小健】content可能符合OUTPUT_FORMAT格式
-                        # LLM在tools模式下可能不走tool_calls机制，而是把JSON写在content里
-                        # 此时应直接交给下游parse_react_response解析，而非当Non-JSON丢弃
+                        # 【修复 2026-05-11 小健】json.loads失败后先尝试_extract_json_block提取JSON片段
+                        # 混合文本(如"前言文字\n\n{JSON}")的json.loads必然失败
+                        # 但_extract_json_block能从中提取出JSON对象
+                        from app.services.agent.react_output_parser import _extract_json_block
+                        extracted = _extract_json_block(response.content)
+                        if extracted and isinstance(extracted, dict):
+                            if "tool_name" in extracted:
+                                content = json.dumps(extracted, ensure_ascii=False)
+                                logger.info(f"[Function Calling] JSON解析失败但_extract_json_block提取成功: tool_name={extracted.get('tool_name')}")
+                                return content
+                        
+                        # _extract_json_block也失败，交给下游parse_react_response
                         content = response.content
                         logger.info(f"[Function Calling] JSON解析失败，content交给下游解析器: {content[:200]}")
                         return content
