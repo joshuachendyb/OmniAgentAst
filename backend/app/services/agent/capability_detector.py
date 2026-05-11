@@ -59,23 +59,27 @@ class CapabilityDetector:
         result = LLMProbeResult(success=False, feature=LLMFeature())
         
         try:
-            logger.info(f"[CapabilityDetector] 开始探测模型: {self.model}")
+            # 【优化 2026-05-11 小健】紧凑格式：开始探测
+            logger.info(f"[探测] 模型: {self.model}")
             
             # 【修复P1-004】Step 1: 探测 tools（优先级最高）
             tools_result = await self._probe_tools()
             result.tools_tested = True
             result.tools_works = tools_result["works"]
-            logger.info(f"[CapabilityDetector] tools探测结果: works={tools_result['works']}, reason={tools_result.get('reason', 'N/A')}")
+            tools_icon = "✅" if tools_result["works"] else "❌"
+            tools_detail = tools_result.get('reason', 'OK') if tools_result["works"] else tools_result.get('reason', 'N/A')
             
             # 【修复P1-004】Step 2: 探测 response_format（记录能力，策略选择由StrategySelector决定）
             rf_result = await self._probe_response_format()
             result.response_format_tested = True
             result.response_format_works = rf_result["works"]
-            logger.info(f"[CapabilityDetector] response_format探测结果: works={rf_result['works']}, reason={rf_result.get('reason', 'N/A')}")
+            rf_icon = "✅" if rf_result["works"] else "❌"
+            rf_detail = rf_result.get('reason', 'OK') if rf_result["works"] else rf_result.get('reason', '不支持')
             
             # Step 3: 探测 reasoning 特征
             reasoning_result = await self._probe_reasoning()
-            logger.info(f"[CapabilityDetector] reasoning探测结果: has_reasoning={reasoning_result['has_reasoning']}")
+            reasoning_icon = "✅" if reasoning_result["has_reasoning"] else "❌"
+            reasoning_detail = "有reasoning_content" if reasoning_result["has_reasoning"] else "无"
             
             # Step 4: 构建能力特征
             capability = LLMCapability.NONE
@@ -102,7 +106,13 @@ class CapabilityDetector:
             # 缓存结果
             self._capability_cache = feature
             
-            logger.info(f"[CapabilityDetector] 探测完成: supports_tools={feature.supports_tools}, supports_response_format={feature.supports_response_format}")
+            # 【优化 2026-05-11 小健】紧凑格式：探测结果汇总
+            logger.info(
+                f"[探测] 结果:\n"
+                f"  ├─ tools: {tools_icon} {'支持' if tools_result['works'] else '不支持'} ({tools_detail})\n"
+                f"  ├─ response_format: {rf_icon} {'支持' if rf_result['works'] else '不支持'} ({rf_detail})\n"
+                f"  └─ reasoning: {reasoning_icon} {'支持' if reasoning_result['has_reasoning'] else '不支持'} ({reasoning_detail})"
+            )
             
             return result
             

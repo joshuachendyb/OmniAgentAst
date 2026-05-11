@@ -37,19 +37,15 @@ from app.services.tools.desktop.gui_helpers import (
 GUI_HELPERS_DESCRIPTIONS = {
     "get_mouse_position": """获取当前鼠标位置。
 
+【重要】此工具不需要任何参数，不要传递任何参数！直接调用即可。
+
 使用场景：
 - 当用户需要获取当前鼠标坐标时使用
 - 当用户需要记录鼠标位置进行后续操作时使用
 
-
-返回：
-- x: 鼠标 X 坐标
-- y: 鼠标 Y 坐标
-
-【重要】返回鼠标的 X 和 Y 坐标
-
 使用示例：
-- 获取位置：{}
+- 正确：{}  # 无参数，直接调用
+- 错误：{"x": 100, "y": 200}  # 不要传任何参数！
 
 返回数据说明：
 - code: 状态码，成功为"SUCCESS"，失败为"ERR_GET_MOUSE_POSITION"
@@ -57,19 +53,15 @@ GUI_HELPERS_DESCRIPTIONS = {
 - message: 结果描述信息""",
     "check_screen_size": """检查屏幕分辨率。
 
+【重要】此工具不需要任何参数，不要传递任何参数！直接调用即可。
+
 使用场景：
 - 当用户需要获取屏幕分辨率时使用
 - 当用户在进行屏幕操作前需要了解屏幕尺寸时使用
 
-
-返回：
-- width: 屏幕宽度（像素）
-- height: 屏幕高度（像素）
-
-【重要】返回屏幕的宽度和高度（像素）
-
 使用示例：
-- 获取分辨率：{}
+- 正确：{}  # 无参数，直接调用
+- 错误：{"width": 1920}  # 不要传任何参数！
 
 返回数据说明：
 - code: 状态码，成功为"SUCCESS"，失败为"ERR_CHECK_SCREEN_SIZE"
@@ -118,18 +110,15 @@ GUI_HELPERS_DESCRIPTIONS = {
 - message: 结果描述信息""",
     "check_screen_capture_permission": """检查屏幕捕获权限。
 
+【重要】此工具不需要任何参数，不要传递任何参数！直接调用即可。
+
 使用场景：
 - 当用户需要确认是否有屏幕截图权限时使用
 - 当用户在进行截屏或录屏前需要验证权限时使用
 
-
-返回：
-- has_permission: 是否有屏幕捕获权限
-
-【重要】返回是否有屏幕捕获权限（true/false）
-
 使用示例：
-- 检查权限：{}
+- 正确：{}  # 无参数，直接调用
+- 错误：{"permission": true}  # 不要传任何参数！
 
 返回数据说明：
 - code: 状态码，成功为"SUCCESS"，失败为"ERR_CHECK_PERMISSION"
@@ -137,18 +126,15 @@ GUI_HELPERS_DESCRIPTIONS = {
 - message: 结果描述信息""",
     "check_tesseract_available": """检查 Tesseract OCR 引擎是否可用。
 
+【重要】此工具不需要任何参数，不要传递任何参数！直接调用即可。
+
 使用场景：
 - 当用户需要确认 Tesseract OCR 引擎是否安装时使用
 - 当用户在进行 OCR 识别前需要验证引擎是否可用时使用
 
-
-返回：
-- is_available: Tesseract 是否可用
-
-【重要】返回 Tesseract OCR 引擎是否可用（true/false）
-
 使用示例：
-- 检查引擎：{}
+- 正确：{}  # 无参数，直接调用
+- 错误：{"available": true}  # 不要传任何参数！
 
 返回数据说明：
 - code: 状态码，成功为"SUCCESS"，失败为"ERR_CHECK_TESSERACT"
@@ -156,18 +142,15 @@ GUI_HELPERS_DESCRIPTIONS = {
 - message: 结果描述信息""",
     "check_notification_permission": """检查系统通知权限。
 
+【重要】此工具不需要任何参数，不要传递任何参数！直接调用即可。
+
 使用场景：
 - 当用户需要确认是否有发送系统通知权限时使用
 - 当用户在发送通知前需要验证权限时使用
 
-
-返回：
-- has_permission: 是否有通知权限
-
-【重要】返回是否有系统通知权限（true/false）
-
 使用示例：
-- 检查权限：{}
+- 正确：{}  # 无参数，直接调用
+- 错误：{"permission": true}  # 不要传任何参数！
 
 返回数据说明：
 - code: 状态码，成功为"SUCCESS"，失败为"ERR_CHECK_PERMISSION"

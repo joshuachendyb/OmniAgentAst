@@ -62,7 +62,23 @@ SHELL_TOOL_DESCRIPTIONS = {
 - code: 状态码，SUCCESS/ERR_SHELL_EXEC/ERR_SHELL_TIMEOUT
 - data: 前台模式含stdout(标准输出)、stderr(标准错误)、returncode(退出码)；后台模式含shell_id(会话ID)、is_running(是否运行中)、started_at(启动时间)；失败或超时时data可能为null
 - message: 状态描述信息""",
-    "get_working_directory": "获取当前工作目录的完整路径。\n\n使用场景：\n- 当用户需要确认当前工作目录时使用\n- 当用户需要获取当前所在路径时使用\n- 当用户需要获取绝对路径时使用\n\n【重要】返回当前shell会话的工作目录绝对路径\n\n使用示例：\n- 获取当前目录：{}\n\n返回数据说明：\n- code: 状态码，SUCCESS/ERR_SHELL_GET_CWD\n- data: 成功时含path(当前工作目录绝对路径)；失败时为null\n- message: 状态描述信息",
+    "get_working_directory": """获取当前工作目录的完整路径。
+
+【重要】此工具不需要任何参数，不要传递任何参数！直接调用即可。
+
+使用场景：
+- 当用户需要确认当前工作目录时使用
+- 当用户需要获取当前所在路径时使用
+- 当用户需要获取绝对路径时使用
+
+使用示例：
+- 正确：{}  # 无参数，直接调用
+- 错误：{"path": "xxx"}  # 不要传path参数！
+
+返回数据说明：
+- code: 状态码，SUCCESS/ERR_SHELL_GET_CWD
+- data: 成功时含path(当前工作目录绝对路径)；失败时为null
+- message: 状态描述信息""",
     "change_directory": "切换当前工作目录到指定路径。\n\n使用场景：\n- 当用户需要切换工作目录时使用\n- 当用户需要在特定目录下执行命令时使用\n- 当用户需要改变当前路径时使用\n\n【重要】切换shell会话的工作目录，后续命令在此目录下执行\n\n使用示例：\n- 切换到D盘：{\"path\": \"D:/\"}\n- 切换到项目目录：{\"path\": \"D:/OmniAgentAs-desk\"}\n\n返回数据说明：\n- code: 状态码，SUCCESS/ERR_SHELL_PATH_NOT_FOUND/ERR_SHELL_PERMISSION/ERR_SHELL_CHANGE_DIR\n- data: 成功时含success(是否成功，true)、path(切换后的工作目录绝对路径)；失败时为null\n- message: 状态描述信息",
     "check_path_exists": "检查指定的文件或目录是否存在，并返回类型信息。\n\n使用场景：\n- 当用户需要检查文件是否存在时使用\n- 当用户需要确认路径是文件还是目录时使用\n- 当用户需要验证路径有效性时使用\n\n【重要】返回路径是否存在以及类型（file/directory/nonexistent）\n\n使用示例：\n- 检查文件：{\"path\": \"D:/OmniAgentAs-desk/main.py\"}\n- 检查目录：{\"path\": \"D:/OmniAgentAs-desk/src\"}\n\n返回数据说明：\n- code: 状态码，SUCCESS/ERR_SHELL_CHECK_PATH\n- data: 含exists(路径是否存在，bool)、is_file(是否为文件，bool)、is_directory(是否为目录，bool)、path(检查的原始路径)；失败时为null\n- message: 状态描述信息",
     "check_command_available": "检查系统命令是否可用，类似于 Linux 的 which 命令。\n\n使用场景：\n- 当用户需要确认某个命令（如 python、git、npm）是否已安装时使用\n- 当用户需要查找命令的安装路径时使用\n- 当用户需要验证工具链是否正确配置时使用\n\n【重要】返回命令是否存在以及完整路径\n\n使用示例：\n- 检查Python：{\"command\": \"python\"}\n- 检查Git：{\"command\": \"git\"}\n- 检查npm：{\"command\": \"npm\"}\n\n返回数据说明：\n- code: 状态码，SUCCESS/ERR_SHELL_CHECK_COMMAND\n- data: 含available(命令是否可用，bool)、command(命令名称)、path(命令完整路径，不可用时为null)；失败时为null\n- message: 状态描述信息",

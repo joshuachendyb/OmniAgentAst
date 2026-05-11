@@ -167,7 +167,27 @@ FILE_TOOL_DESCRIPTIONS = {
     "rename_file": '重命名文件或目录，不改变所在目录。\n\n使用场景：\n- 当用户需要重命名文件时使用\n- 当用户想要重命名目录时使用\n- 当用户需要修改文件名但保持文件位置不变时使用\n\n【重要】只改变名称，不改变所在目录。如果新名称与同目录已有文件重名，操作会失败\n\n使用示例：\n- 重命名文件：{"file_path": "D:/documents/report_old.txt", "new_name": "report_final.txt"}\n- 重命名目录：{"file_path": "D:/projects/old_folder", "new_name": "new_folder"}\n\n返回数据说明：\n- status: 执行状态（"success"/"error"）\n- summary: 操作摘要描述\n- data: 结果数据对象\n  - success: 是否成功（bool）\n  - new_path: 新路径（成功时有值）\n  - old_path: 原路径（成功时有值）\n  - old_name: 原名称（成功时有值）\n  - new_name: 新名称（成功时有值）\n  - operation_id: 操作ID（成功时有值）\n  - error: 错误信息（失败时有值）',
     "grep_file_content": '基于 ripgrep 的强大内容搜索，支持正则表达式和多选项，支持 Unicode 中文字符搜索。\n\n使用场景：\n- 当用户需要在文件中搜索特定内容时使用\n- 当用户想要查找包含特定关键词的代码行时使用\n- 当用户需要对多个文件进行内容搜索时使用\n\n【重要】支持强大的正则表达式搜索，可以精确定位代码中的内容\n\n使用示例：\n- 简单搜索：{"pattern": "def read_file", "search_dir": "D:/OmniAgentAs-desk/backend"}\n- 搜索TS文件中的class：{"pattern": "class.*Component", "search_dir": "D:/OmniAgentAs-desk/frontend", "glob": "*.tsx", "ignore_case": true}\n- 带上下文搜索：{"pattern": "async def.*tool", "search_dir": "D:/OmniAgentAs-desk/backend", "context_lines": 3, "show_line_no": true}\n\n返回数据说明：\n- status: 执行状态（"success"/"error"）\n- summary: 操作摘要描述\n- data: 结果数据对象\n  - success: 是否成功（bool）\n  - matches: 匹配结果列表，每项含file/matches/match_count（content模式）或file/count（count模式）或file（files_with_matches模式）\n  - total_files: 匹配文件总数\n  - total_matches: 匹配总行数\n  - pattern: 搜索模式\n  - search_dir: 搜索目录\n  - output_mode: 输出模式\n  - has_more: 是否有更多结果\n  - next_page_token: 下一页令牌（分页时有值）\n  - error: 错误信息（失败时有值）',
     "get_directory_tree": '获取目录的递归 JSON 树结构，每个条目包含 name、type（file/directory）、children。\n\n使用场景：\n- 当用户需要查看完整目录树结构时使用\n- 当用户想要了解项目的整体文件结构时使用\n- 当用户需要生成目录树视图时使用\n\n【重要】返回 JSON 格式的目录树结构，包含每个文件/目录的名称、类型、子目录（仅目录有 children 字段）\n\n使用示例：\n- 获取完整树：{"dir_path": "D:/OmniAgentAs-desk"}\n- 排除 node_modules：{"dir_path": "D:/OmniAgentAs-desk", "excludePatterns": ["node_modules", "__pycache__"]}\n\n返回数据说明：\n- status: 执行状态（"success"/"error"）\n- summary: 操作摘要描述\n- data: 结果数据对象\n  - success: 是否成功（bool）\n  - tree: 目录树对象，递归结构，每项含name/type；目录有children字段\n  - root: 根目录路径（成功时有值）\n  - error: 错误信息（失败时有值）',
-    "list_allowed_directories": "列出服务器允许访问的所有目录。\n\n使用场景：\n- 当用户需要确认可以访问哪些目录时使用\n- 当用户想要了解系统允许的文件操作范围时使用\n- 当用户需要检查是否有权限访问特定目录时使用\n\n【重要】返回服务器配置中允许访问的目录列表，用于确定文件操作的边界\n\n使用示例：\n- 查询允许访问的目录：{}\n\n返回数据说明：\n- status: 执行状态（\"success\"/\"error\"）\n- summary: 操作摘要描述\n- data: 结果数据对象\n  - success: 是否成功（bool）\n  - directories: 目录列表，每项含path/exists/type\n  - total: 目录总数\n  - error: 错误信息（失败时有值）",
+    "list_allowed_directories": """列出服务器允许访问的所有目录。
+
+【重要】此工具不需要任何参数，不要传递任何参数！直接调用即可。
+
+使用场景：
+- 当用户需要确认可以访问哪些目录时使用
+- 当用户想要了解系统允许的文件操作范围时使用
+- 当用户需要检查是否有权限访问特定目录时使用
+
+使用示例：
+- 正确：{}  # 无参数，直接调用
+- 错误：{"path": "D:/xxx"}  # 不要传任何参数！
+
+返回数据说明：
+- status: 执行状态（"success"/"error"）
+- summary: 操作摘要描述
+- data: 结果数据对象
+  - success: 是否成功（bool）
+  - directories: 目录列表，每项含path/exists/type
+  - total: 目录总数
+  - error: 错误信息（失败时有值）""",
 }
 
 

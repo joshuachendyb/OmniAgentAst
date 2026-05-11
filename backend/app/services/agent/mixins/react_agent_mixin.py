@@ -280,36 +280,29 @@ class ReactAgentMixin(ToolLoaderMixin):
         _cls = self.__class__.__name__
         if self.adapter:
             strategy = await self.adapter.ensure_capability()
-            # 【诊断 2026-05-10 小健】打印探测后strategy.method
-            logger.info(
-                f"[{_cls}] _call_llm_with_summary 策略选择: "
-                f"method={strategy.method}, description={strategy.description}, "
-                f"capability={strategy.capability}"
-            )
+            # 【优化 2026-05-11 小健】紧凑格式：策略执行
+            logger.info(f"[{_cls}] 执行策略: {strategy.method}")
             
             # 【方案C】只在text和response策略下注入tools Schema文本
             if strategy.method == "text":
-                logger.info(f"[{_cls}] _call_llm_with_summary → 走 TextStrategy 分支 (method=text)")
                 schema_text = self._tools_to_schema_text()
                 if schema_text:
                     schema_msg = {"role": "system", "content": schema_text}
                     history_dicts = list(history_dicts) + [schema_msg]
-                    logger.info(f"[Schema Injection] Injected tools schema for {strategy.method} strategy")
+                    logger.info(f"[{_cls}] 注入工具Schema (text模式)")
                 return await self.text_strategy.call(
                     llm_client=self.llm_client, message=last_message,
                     history_dicts=history_dicts, conversation_history=self.conversation_history)
             elif strategy.method == "response_format" and self.response_format_strategy:
-                logger.info(f"[{_cls}] _call_llm_with_summary → 走 ResponseFormatStrategy 分支 (method=response_format)")
                 schema_text = self._tools_to_schema_text()
                 if schema_text:
                     schema_msg = {"role": "system", "content": schema_text}
                     history_dicts = list(history_dicts) + [schema_msg]
-                    logger.info(f"[Schema Injection] Injected tools schema for {strategy.method} strategy")
+                    logger.info(f"[{_cls}] 注入工具Schema (response_format模式)")
                 return await self.response_format_strategy.call(
                     llm_client=self.llm_client, message=last_message,
                     history_dicts=history_dicts, conversation_history=self.conversation_history)
             elif strategy.method == "tools" and self.tools_strategy:
-                logger.info(f"[{_cls}] _call_llm_with_summary → 走 ToolsStrategy 分支 (method=tools)")
                 # tools策略不注入Schema文本（已有完整Schema通过API传递）
                 return await self.tools_strategy.call(
                     llm_client=self.llm_client, message=last_message,

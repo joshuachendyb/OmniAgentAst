@@ -43,6 +43,7 @@ import FileOperationRenderer from './types/FileOperationRenderer';
 import FileMonitorRenderer from './types/FileMonitorRenderer';
 import FileStatisticsRenderer from './types/FileStatisticsRenderer';
 import FileChecksumRenderer from './types/FileChecksumRenderer';
+import GetDirectoryTreeRenderer from './types/GetDirectoryTreeRenderer';
 import DefaultRenderer from './types/DefaultRenderer';
 import { BaseRendererProps } from './types/BaseRendererProps';
 
@@ -137,7 +138,6 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
       return <FileChecksumRenderer step={step} />;
     case "edit_text_file":
     case "rename_file":
-    case "get_directory_tree":
     case "list_allowed_directories":
     case "read_media_file":
     case "read_batch_file":
@@ -145,6 +145,8 @@ const ToolResultRenderer: React.FC<ToolResultRendererProps> = ({
     case "get_file_hash":
     case "extract_archive":
       return <FileOperationRenderer step={step} />;
+    case "get_directory_tree":
+      return <GetDirectoryTreeRenderer step={step} />;
     default:
       return <DefaultRenderer step={step} />;
   }
