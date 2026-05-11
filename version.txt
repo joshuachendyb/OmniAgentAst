@@ -1,3 +1,43 @@
+v0.12.24
+
+更新时间: 2026-05-11 09:55:32
+
+更新内容：
+
+## v0.12.23→v0.12.24 变更汇总 - 小健-2026-05-11
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| ca5975dc | fix: 3 LLM response parse bugs - parse_error误判为action、未转义中文引号、ToolsStrategy _extract_json_block提取 - 小健-2026-05-11 |
+| 08acab46 | fix: unify tool_name with register name(edit_file→edit_text_file) + cleanup dead code branches(read_file/glob_files) - 小健-2026-05-11 |
+| 44e6dc00 | fix: file_tools task_id用ContextVar传递 + _generate_summary补extract_archive/get_file_hash - 小健-2026-05-11 |
+| a93db7e3 | fix: prompts子包__init__.py补Prompts类导出+intent_classifier禁止纠正专有名词 - 小健-2026-05-10 |
+| 85919582 | fix: 正则兜底提取tool_name=finish时返回type=answer（不执行工具，直接结束）- 小健-2026-05-10 |
+| 45387722 | fix: _try_regex_tool_call_fallback中tool_name=finish被跳过，应直接返回finish结果 - 小健-2026-05-10 |
+| ee7194c9 | fix: LLMClientWrapper透传model/api_base/api_key/provider属性，解决strategy日志model=? - 小健-2026-05-10 |
+| d0b3e763 | fix: response_format schema的thought/reasoning补description，与文档定义一致 - 小健-2026-05-10 |
+| 90d0c147 | fix: OUTPUT_FORMAT格式与策略模式解耦：ToolsStrategy容许content返回OUTPUT_FORMAT+不完整JSON先走正则兜底 |
+| 8e059ec7 | fix: LLMAdapter诊断日志引用LLMFeature不存在的supports_parallel_tool_calls+capability_detector加exc_info |
+| 5fa5a1c4 | fix: batch_rename/compress_files/compare_files加超时自检，补全所有file/工具同类缺陷 |
+| 5134833a | fix: list_directory/get_directory_tree/file_statistics/file_monitor/get_file_info加超时自检 |
+| 0cc3e117 | fix: search_files/grep_file_content加超时自检，os.walk循环中主动退出避免线程残留 |
+| 1e369458 | fix: tool_executor超时使用tool_meta.get_timeout替代YAML config(YAML default=5秒致search_files等全超时) |
+| f7f3e3c8 | fix: 修复_init_llm_strategies从self.llm_client取api_base永远False+策略选择全链路诊断日志 |
+| 18605818 | fix: ReAct解析正则兜底+ToolExecutor空表防御+file_react标准化参数+SSE回传LLM次数+full_reasoning日志 - 小沈-2026-05-10 |
+
+### docs 文档
+| commit | 说明 |
+|--------|------|
+| 222a72a8 | docs: 补充15.0.3.1支持tool_calls模式的OUTPUT_FORMAT分析+15.0.6三种模式返回行为对比 - 小健-2026-05-10 |
+
+### test 测试
+| 文件 | 说明 |
+|------|------|
+| test_react_output_parser_fixes.py | 新增14个用例：parse_error/answer显式type优先判断、中文引号修复、ToolsStrategy提取 - 小健-2026-05-11 |
+| test_file_tools_fixes.py | 新增14个用例：ContextVar行为、_generate_summary tool_name统一、死代码分支清理 - 小健-2026-05-11 |
+| test_base_react_and_strategies_fixes.py | 新增6个用例：_current_task_id导入/同一性、_extract_json_block调用 - 小健-2026-05-11 |
+
 v0.12.23
 
 更新时间: 2026-05-10 12:38:49
