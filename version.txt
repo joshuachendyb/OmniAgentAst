@@ -1,3 +1,23 @@
+v0.12.26
+
+更新时间: 2026-05-11 16:12:29
+
+更新内容：
+
+## v0.12.25→v0.12.26 变更汇总 - 小健-2026-05-11
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| 12dbabc2 | fix: 无参数工具描述统一+日志压缩+前端渲染优化 |
+
+### 修改内容
+- 无参数工具：6个工具描述统一加【重要】标注（list_allowed_directories/get_working_directory/begin_transaction/check_network_connectivity/read_clipboard等）
+- 日志压缩：capability_detector/llm_adapter/strategy_selector日志格式优化
+- 前端优化：新增GetDirectoryTreeRenderer专用渲染器，FileOperationRenderer修复data字段读取
+
+---
+
 v0.12.25
 
 更新时间: 2026-05-11 13:10:46
