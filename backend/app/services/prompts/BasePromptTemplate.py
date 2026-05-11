@@ -75,6 +75,9 @@ class BasePrompts(ABC):
 - ❌ 禁止同时返回多个tool_name
 - ❌ 禁止tool_name存在但tool_params缺失
 - ❌ 禁止使用 [TOOL_CALL] 格式（如：[TOOL_CALL]{{...}}[/TOOL_CALL]）
+- ❌ 禁止使用XML标签格式（如：&lt;longcat_tool_call&gt; &lt;arg_key&gt;等任何XML/HTML标签）
+- ❌ 禁止在content中嵌入工具调用（工具调用必须通过tool_name+tool_params字段）
+- ❌ 禁止使用任意自定义标签或特殊标记包裹工具名和参数
 
 【示例】：
 {"thought": "用户询问时间", "reasoning": "调用get_current_time", "tool_name": "get_current_time", "tool_params": {"format": "%Y-%m-%d"}}

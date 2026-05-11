@@ -432,6 +432,7 @@ export const useSSE = (
   const [reconnectStatus, setReconnectStatus] = useState<"idle" | "connecting" | "reconnecting" | "failed">("idle");
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);  // 【修复 2026-05-11 小健】fetch AbortController ref，disconnect时可abort
   const responseBufferRef = useRef("");
   const isProcessingRef = useRef(false);
   const [serverTaskId, setServerTaskId] = useState<string | null>(null);
@@ -513,6 +514,15 @@ export const useSSE = (
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
+
+    // 【修复 2026-05-11 小健】abort正在进行的fetch请求，防止旧流与新流并行
+    if (abortControllerRef.current) {
+      try {
+        abortControllerRef.current.abort();
+      } catch (_e) { /* ignore */ }
+      abortControllerRef.current = null;
+    }
+
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
@@ -593,6 +603,7 @@ export const useSSE = (
         ? `${config.baseURL}/chat/stream/v2`
         : `${config.baseURL}/chat/stream`;
       const controller = new AbortController();
+      abortControllerRef.current = controller;  // 【修复 2026-05-11 小健】保存到ref，disconnect时可abort
       const timeoutId = setTimeout(() => controller.abort(), 60000);
 
       const response = await fetch(url, {
@@ -703,8 +714,10 @@ export const useSSE = (
       // 成功，重置重连状态
       setReconnectStatus("idle");
       reconnectAttemptsRef.current = 0;
+      abortControllerRef.current = null;  // 【修复 2026-05-11 小健】请求完成清理ref
     } catch (error: unknown) {
       console.error("[SSE] 请求错误:", error);
+      abortControllerRef.current = null;  // 【修复 2026-05-11 小健】请求失败清理ref
       
       // 使用统一的错误处理中心
       handleSSEError({
@@ -788,10 +801,12 @@ export const useSSE = (
       pendingMessageRef.current = { content, sessionId };
       reconnectAttemptsRef.current = 0;
       
-      await sendMessageInternal(content, sessionId);
-
-      // 请求结束后重置
-      isProcessingRef.current = false;
+      try {
+        await sendMessageInternal(content, sessionId);
+      } finally {
+        // 【修复 2026-05-11 小健】用finally保证重置，防止异常时isProcessingRef永远true
+        isProcessingRef.current = false;
+      }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [config, disconnect, clearSteps, onStep, onChunk, onComplete, onError, onRetry]
