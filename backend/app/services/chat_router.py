@@ -51,7 +51,7 @@ from app.services.intents.crss_scorer import (
     detect_intent_v2,
     _compute_intent_scores,
     CRSS_CONFIDENCE_THRESHOLD,
-    INTENT_KEYWORDS,
+    TYPE_KEYWORDS,
 )
 
 
