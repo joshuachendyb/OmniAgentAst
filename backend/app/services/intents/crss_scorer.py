@@ -47,7 +47,7 @@ TYPE_KEYWORDS: Dict[str, Dict] = {
     "TIME": {
         "keywords": [r'\bdate\b', r'\btime\b', r'\bnow\b', r'\bclock\b',
                      r'\bcalendar\b', r'\bschedule\b'],
-        "chinese_keywords": ['时间', '日期', '今天星期', '几月几号']
+        "chinese_keywords": ['时间', '日期', '今天星期', '几月几号', '现在几点']
     },
     "NETWORK": {
         "keywords": [r'\bping\b', r'\bcurl\b', r'\bwget\b', r'\bssh\b',
@@ -57,7 +57,7 @@ TYPE_KEYWORDS: Dict[str, Dict] = {
     "DESKTOP": {
         "keywords": [r'\bscreenshot\b', r'\bcapture\b',
                      r'\bclick\b', r'\btype\b', r'\bpress\b', r'\bkey\b'],
-        "chinese_keywords": ['截图', '录屏', '点击', '按键', '键盘', '鼠标', '窗口', '桌面']
+        "chinese_keywords": ['截图', '录屏', '点击', '按键', '键盘', '鼠标', '窗口', '桌面', '浏览器']
     },
     "ENV": {
         "keywords": [r'\bPATH\b', r'\bHOME\b', r'\bTEMP\b'],
@@ -92,7 +92,7 @@ TYPE_KEYWORDS: Dict[str, Dict] = {
 
 ACTION_DEFINITIONS = {
     "read": {
-        "keywords": ['cat', 'ls', 'type', 'dir', '读取', '查看', '浏览', '列出', '打开'],
+        "keywords": ['cat', 'ls', 'type', 'dir', '读取', '查看', '列出', '打开'],
         "compatibility": {
             ToolCategory.FILE: 1.5,
             ToolCategory.DOCUMENT: 1.5,
@@ -145,7 +145,7 @@ ACTION_DEFINITIONS = {
     "configure": {
         "keywords": ['set', 'config', 'change', '修改', '设置', '配置', '调整'],
         "compatibility": {
-            ToolCategory.ENV: 1.5,
+            ToolCategory.ENVIRONMENT: 1.5,
             ToolCategory.SYSTEM: 1.2,
             ToolCategory.DESKTOP: 1.0,
             ToolCategory.NETWORK: 1.0,
