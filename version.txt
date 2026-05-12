@@ -1,3 +1,40 @@
+v0.12.27
+
+更新时间: 2026-05-13 03:36:04
+
+更新内容：
+
+## v0.12.26→v0.12.27 变更汇总 - 小沈-2026-05-13
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| 57d85e99 | fix: useChatSession.ts 补充onMessageListLoadingEnd调用 |
+
+### refactor 重构
+| commit | 说明 |
+|--------|------|
+| 3dff3454 | refactor: merge file_react into Mixin and doc v2.4 |
+
+### docs 文档
+| commit | 说明 |
+|--------|------|
+| 39aacbec | docs: 补充意图分类缺陷分析及改造方案 |
+| a5a6fccc | docs: 文档v2.3 取消ChatReactAgent+架构统一+精简为6步 |
+| acaed787 | docs: 重命名20260425→20260512+删除缺陷分析 |
+| 61d2882d | docs: 文档v2.2+1 修正小健审查发现问题 |
+| df69d4d1 | docs: 文档v2.2 修正3个设计缺陷 |
+| a88a973e | docs: 文档v2.1 |
+| 7e8b04ae | chore: 取消跟踪.claude本地配置文件 |
+
+### 修改内容
+- 重构：file_react独立_get_llm_response合并入ReactAgentMixin统一_call_llm_with_summary()
+- 文档：系统意图检查与ReAct架构重构分析文档从v2.0→v2.4，取消ChatReactAgent，temp_history移入BaseAgent
+- 前端：useChatSession.ts补充onMessageListLoadingEnd调用
+- 意图分类：完成实际代码分析，定位6个真实缺陷，提出改造方案
+
+---
+
 v0.12.26
 
 更新时间: 2026-05-11 16:12:29
