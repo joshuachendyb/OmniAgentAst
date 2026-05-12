@@ -28,7 +28,6 @@ from app.services.prompts.file.file_prompts import FileOperationPrompts
 from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin  # 【步骤5改用ReactAgentMixin】
 from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
-from app.utils.prompt_logger import get_prompt_logger
 from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse
 from app.chat_stream.chat_helpers import create_final_response, create_timestamp
 from app.chat_stream.error_handler import create_error_response
@@ -116,121 +115,14 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
     
     # ========== 抽象方法实现 ==========
     
-    # ========== 重写 _get_llm_response ==========
+    # ========== _get_llm_response：委托Mixin统一实现 ==========
+    # 【2026-05-12 小沈】删除独立_get_llm_response，改为委托ReactAgentMixin._call_llm_with_summary()
+    # 原独立实现的prompt_logger/debug日志/use_function_calling分支已合入Mixin
+    # file_react现在获得：方案C Schema注入 + temp_history集成 + 统一维护
     
     async def _get_llm_response(self) -> str:
-        """获取 LLM 响应的统一入口（重写，添加 adapter 策略选择）"""
-        self.llm_call_count += 1
-        logger.info(f"[LLM Counter] >>> LLM called, count: {self.llm_call_count}")
-        
-        # ========== LLM 调用日志记录 ==========
-        from datetime import datetime
-        prompt_logger = get_prompt_logger()
-        prompt_logger.log_llm_call(
-            round_number=self.llm_call_count,
-            messages=self.conversation_history.copy(),
-            model=getattr(self, 'model', 'unknown'),
-            provider=getattr(self, 'provider', 'unknown'),
-            call_type="text",
-            extra_params={
-                "max_steps": self.max_steps,
-                "use_function_calling": self.use_function_calling
-            }
-        )
-        # 保存日志到文件，确保JSON文件生成
-        try:
-            prompt_logger.save()
-        except Exception as e:
-            logger.warning(f"Failed to save prompt log: {e}")
-        
-        try:
-            last_message = self.conversation_history[-1]["content"]
-            history_dicts = self.conversation_history[:-1]
-            
-            # 【修复 2026-04-30 小沈】工具概要改为独立system消息插入history
-            # 避免追加到 Observation 末尾导致语义混乱（Observation是工具执行结果，不应混杂工具列表）
-            try:
-                tools_summary = self._get_tools_summary()
-                summary_msg = {"role": "system", "content": f"【当前可用工具列表】\n{tools_summary}"}
-                history_dicts = list(history_dicts) + [summary_msg]
-            except Exception as e:
-                logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
-            
-            # 【调试】记录发送给LLM的messages - 小沈2026-05-06改为debug
-            logger.debug(f"[Debug] _get_llm_response - conversation_history长度: {len(self.conversation_history)}")
-            logger.debug(f"[Debug] _get_llm_response - history_dicts长度: {len(history_dicts)}")
-            for i, h in enumerate(history_dicts):
-                logger.debug(f"[Debug] history[{i}] role={h.get('role')}, content长度={len(h.get('content', ''))}")
-            logger.debug(f"[Debug] _get_llm_response - last_message长度: {len(last_message)}")
-            logger.debug(f"[Debug] _get_llm_response - last_message内容: {last_message[:200]}")
-            
-            # 【修改】使用 LLMAdapter 自适应策略
-            if self.adapter:
-                strategy = await self.adapter.ensure_capability()
-                logger.info(f"[Agent] Using method: {strategy.method}")
-                
-                if strategy.method == "response_format":
-                    response = await self.response_format_strategy.call(
-                        llm_client=self.llm_client,
-                        message=last_message,
-                        history_dicts=history_dicts,
-                        conversation_history=self.conversation_history
-                    )
-                elif strategy.method == "tools":
-                    self.tools_strategy.tools = self.openai_tools or []
-                    response = await self.tools_strategy.call(
-                        llm_client=self.llm_client,
-                        message=last_message,
-                        history_dicts=history_dicts,
-                        conversation_history=self.conversation_history
-                    )
-                else:
-                    response = await self.text_strategy.call(
-                        llm_client=self.llm_client,
-                        message=last_message,
-                        history_dicts=history_dicts,
-                        conversation_history=self.conversation_history
-                    )
-            elif self.use_function_calling and self.openai_tools:
-                # 使用 Function Calling 模式
-                self.tools_strategy.tools = self.openai_tools
-                response = await self.tools_strategy.call(
-                    llm_client=self.llm_client,
-                    message=last_message,
-                    history_dicts=history_dicts,
-                    conversation_history=self.conversation_history
-                )
-            else:
-                # 使用普通文本模式
-                response = await self.text_strategy.call(
-                    llm_client=self.llm_client,
-                    message=last_message,
-                    history_dicts=history_dicts,
-                    conversation_history=self.conversation_history
-                )
-            
-            # 记录 LLM 返回结果到 prompt_logger
-            response_type = "text"
-            if response:
-                if "action_tool" in response:
-                    response_type = "action_tool"
-                elif "thought" in response:
-                    response_type = "thought"
-                elif "observation" in response:
-                    response_type = "observation"
-            
-            prompt_logger.log_llm_response(
-                round_number=self.llm_call_count,
-                response_content=response,
-                response_type=response_type,
-                finish_reason="stop"
-            )
-            
-            return response
-            
-        except Exception as e:
-            logger.error(f"LLM client error: {e}")
-            raise
+        """获取 LLM 响应（委托Mixin统一入口）- 小沈2026-05-12"""
+        return await self._call_llm_with_summary()
     
     async def _get_llm_response_text(
         self,

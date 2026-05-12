@@ -6,6 +6,7 @@ ReactAgentMixin - ReAct Agent 公用逻辑混入类
 供新增的ShellReactAgent/NetworkReactAgent等复用。
 
 Author: 小健 - 2026-05-06
+Updated: 小沈 - 2026-05-12 (合并file_react独有逻辑: prompt_logger+temp_history+use_function_calling)
 """
 from typing import Dict, Any, List, Optional, Tuple
 from app.services.agent.tool_executor import ToolExecutor
@@ -14,6 +15,7 @@ from app.services.agent.llm_adapter import LLMAdapter
 from app.services.tools.mixin import ToolLoaderMixin
 from app.services.tools.registry import ToolCategory
 from app.utils.logger import logger
+from app.utils.prompt_logger import get_prompt_logger
 
 
 class ReactAgentMixin(ToolLoaderMixin):
@@ -257,76 +259,138 @@ class ReactAgentMixin(ToolLoaderMixin):
         return "\n".join(lines)
     
     async def _call_llm_with_summary(self) -> str:
-        """LLM调用统一入口（含工具概要注入+方案C Schema注入+adapter策略选择）
+        """LLM调用统一入口（含工具概要注入+方案C Schema注入+adapter策略选择+prompt_logger+temp_history）
         
         【2026-05-10 小沈】方案C：text和response策略下注入Schema文本替代G6
+        【2026-05-12 小沈】合并file_react独有逻辑：prompt_logger + temp_history + use_function_calling分支
         """
         self.llm_call_count += 1
+        _cls = self.__class__.__name__
         logger.info(f"[LLM Counter] >>> LLM called, count: {self.llm_call_count}")
         
-        last_message = self.conversation_history[-1]["content"]
-        history_dicts = self.conversation_history[:-1]
-        
-        # 注入工具概要
         try:
-            tools_summary = self._get_tools_summary()
-            summary_msg = {"role": "system", "content": f"【当前可用工具列表】\n{tools_summary}"}
-            history_dicts = list(history_dicts) + [summary_msg]
-        except Exception as e:
-            logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
-        
-        # adapter策略选择
-        # 【诊断 2026-05-10 小健】打印adapter状态和策略选择结果
-        _cls = self.__class__.__name__
-        if self.adapter:
-            strategy = await self.adapter.ensure_capability()
-            # 【优化 2026-05-11 小健】紧凑格式：策略执行
-            logger.info(f"[{_cls}] 执行策略: {strategy.method}")
+            last_message = self.conversation_history[-1]["content"]
+            history_dicts = self.conversation_history[:-1]
             
-            # 【方案C】只在text和response策略下注入tools Schema文本
-            if strategy.method == "text":
-                schema_text = self._tools_to_schema_text()
-                if schema_text:
-                    schema_msg = {"role": "system", "content": schema_text}
-                    history_dicts = list(history_dicts) + [schema_msg]
-                    logger.info(f"[{_cls}] 注入工具Schema (text模式)")
-                return await self.text_strategy.call(
-                    llm_client=self.llm_client, message=last_message,
-                    history_dicts=history_dicts, conversation_history=self.conversation_history)
-            elif strategy.method == "response_format" and self.response_format_strategy:
-                schema_text = self._tools_to_schema_text()
-                if schema_text:
-                    schema_msg = {"role": "system", "content": schema_text}
-                    history_dicts = list(history_dicts) + [schema_msg]
-                    logger.info(f"[{_cls}] 注入工具Schema (response_format模式)")
-                return await self.response_format_strategy.call(
-                    llm_client=self.llm_client, message=last_message,
-                    history_dicts=history_dicts, conversation_history=self.conversation_history)
-            elif strategy.method == "tools" and self.tools_strategy:
-                # tools策略不注入Schema文本（已有完整Schema通过API传递）
-                return await self.tools_strategy.call(
-                    llm_client=self.llm_client, message=last_message,
-                    history_dicts=history_dicts, conversation_history=self.conversation_history)
+            # ========== temp_history集成（v2.4新增，小沈2026-05-12）==========
+            # 将chunk过程中的临时历史合并到history_dicts，让LLM下一轮能看到chunk输出
+            if hasattr(self, 'temp_history') and self.temp_history:
+                history_dicts = list(history_dicts) + list(self.temp_history)
+            
+            # 注入工具概要
+            try:
+                tools_summary = self._get_tools_summary()
+                summary_msg = {"role": "system", "content": f"【当前可用工具列表】\n{tools_summary}"}
+                history_dicts = list(history_dicts) + [summary_msg]
+            except Exception as e:
+                logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
+            
+            # ========== debug日志（原file_react独有，小沈2026-05-12合入）==========
+            logger.debug(f"[Debug] _call_llm_with_summary - conversation_history长度: {len(self.conversation_history)}")
+            logger.debug(f"[Debug] _call_llm_with_summary - history_dicts长度: {len(history_dicts)}")
+            for i, h in enumerate(history_dicts):
+                logger.debug(f"[Debug] history[{i}] role={h.get('role')}, content长度={len(h.get('content', ''))}")
+            logger.debug(f"[Debug] _call_llm_with_summary - last_message长度: {len(last_message)}")
+            logger.debug(f"[Debug] _call_llm_with_summary - last_message内容: {last_message[:200]}")
+            
+            # ========== 确定策略 + Schema注入（小沈2026-05-12重构）==========
+            # 提前确定策略，统一处理Schema注入，确保prompt_logger记录完整组装后的消息
+            strategy_method = None
+            if self.adapter:
+                strategy = await self.adapter.ensure_capability()
+                strategy_method = strategy.method
+                logger.info(f"[{_cls}] 执行策略: {strategy.method}")
+            elif getattr(self, 'use_function_calling', False) and getattr(self, 'openai_tools', None):
+                strategy_method = "tools"
+                logger.info(f"[{_cls}] 无adapter，使用Function Calling模式")
             else:
-                # 【诊断 2026-05-10 小健】strategy.method不匹配任何分支（如prompt/None等）
-                logger.warning(
-                    f"[{_cls}] _call_llm_with_summary 策略无匹配分支: method={strategy.method}, "
-                    f"has_tools_strategy={self.tools_strategy is not None}, "
-                    f"has_response_format_strategy={self.response_format_strategy is not None} → 走text兜底"
-                )
-        else:
-            # 【诊断 2026-05-10 小健】adapter为None
-            logger.info(f"[{_cls}] _call_llm_with_summary adapter=None → 走text兜底")
-        
-        # text兜底（无adapter或adapter无匹配策略时）
-        schema_text = self._tools_to_schema_text()
-        if schema_text:
-            schema_msg = {"role": "system", "content": schema_text}
-            history_dicts = list(history_dicts) + [schema_msg]
-            logger.info("[Schema Injection] Injected tools schema for text fallback")
-        return await self.text_strategy.call(
-            llm_client=self.llm_client, message=last_message,
-            history_dicts=history_dicts, conversation_history=self.conversation_history)
+                logger.info(f"[{_cls}] _call_llm_with_summary adapter=None → 走text兜底")
+            
+            # 方案C：text和response_format策略下注入tools Schema文本（tools策略不注入）
+            if strategy_method in ("text", "response_format"):
+                schema_text = self._tools_to_schema_text()
+                if schema_text:
+                    schema_msg = {"role": "system", "content": schema_text}
+                    history_dicts = list(history_dicts) + [schema_msg]
+                    logger.info(f"[{_cls}] 注入工具Schema ({strategy_method}模式)")
+            elif strategy_method is None:
+                # 兜底也注入Schema
+                schema_text = self._tools_to_schema_text()
+                if schema_text:
+                    schema_msg = {"role": "system", "content": schema_text}
+                    history_dicts = list(history_dicts) + [schema_msg]
+                    logger.info("[Schema Injection] Injected tools schema for text fallback")
+            
+            # ========== prompt_logger: 调用前记录（小沈2026-05-12修正）==========
+            # 必须在prompt完整组装后记录，包含：temp_history + 工具概要 + Schema注入
+            prompt_logger = get_prompt_logger()
+            assembled_messages = list(history_dicts) + [{"role": "user", "content": last_message}]
+            prompt_logger.log_llm_call(
+                round_number=self.llm_call_count,
+                messages=assembled_messages,
+                model=getattr(self, 'model', 'unknown'),
+                provider=getattr(self, 'provider', 'unknown'),
+                call_type=strategy_method or "text",
+                extra_params={
+                    "max_steps": self.max_steps,
+                    "use_function_calling": getattr(self, 'use_function_calling', False)
+                }
+            )
+            try:
+                prompt_logger.save()
+            except Exception as e:
+                logger.warning(f"Failed to save prompt log: {e}")
+            
+            # ========== 执行策略调用LLM ==========
+            response = None
+            if strategy_method == "text":
+                response = await self.text_strategy.call(
+                    llm_client=self.llm_client, message=last_message,
+                    history_dicts=history_dicts, conversation_history=self.conversation_history)
+            elif strategy_method == "response_format" and self.response_format_strategy:
+                response = await self.response_format_strategy.call(
+                    llm_client=self.llm_client, message=last_message,
+                    history_dicts=history_dicts, conversation_history=self.conversation_history)
+            elif strategy_method == "tools" and self.tools_strategy:
+                if getattr(self, 'openai_tools', None):
+                    self.tools_strategy.tools = self.openai_tools
+                response = await self.tools_strategy.call(
+                    llm_client=self.llm_client, message=last_message,
+                    history_dicts=history_dicts, conversation_history=self.conversation_history)
+            
+            # text兜底（策略无匹配时）
+            if response is None:
+                if strategy_method is not None:
+                    logger.warning(
+                        f"[{_cls}] _call_llm_with_summary 策略无匹配分支: method={strategy_method}, "
+                        f"has_tools_strategy={self.tools_strategy is not None}, "
+                        f"has_response_format_strategy={self.response_format_strategy is not None} → 走text兜底"
+                    )
+                response = await self.text_strategy.call(
+                    llm_client=self.llm_client, message=last_message,
+                    history_dicts=history_dicts, conversation_history=self.conversation_history)
+            
+            # ========== prompt_logger: 调用后记录（原file_react独有，小沈2026-05-12合入）==========
+            response_type = "text"
+            if response:
+                if "action_tool" in response:
+                    response_type = "action_tool"
+                elif "thought" in response:
+                    response_type = "thought"
+                elif "observation" in response:
+                    response_type = "observation"
+            prompt_logger.log_llm_response(
+                round_number=self.llm_call_count,
+                response_content=response,
+                response_type=response_type,
+                finish_reason="stop"
+            )
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"[{_cls}] LLM client error: {e}")
+            raise
     
     # ===== 任务追踪管理 =====
     
