@@ -42,7 +42,17 @@ def _ascii_word_boundary_match(keyword: str, text: str) -> bool:
 
 
 # 操作关键词定义（按ToolCategory分类）
+# 【2026-05-13 小沈】新增FILE/DOCUMENT/CODE_EXECUTION分类；删除NEUTRAL跨类平摊
 INTENT_KEYWORDS: Dict[str, Dict] = {
+    "FILE": {
+        "keywords": [
+            r'\bls\b', r'\bdir\b', r'\bcd\b', r'\bpwd\b', r'\bpwd\b',
+            r'\bcat\b', r'\bgrep\b', r'\bfind\b', r'\btree\b', r'\bstat\b',
+            r'\bcp\b', r'\bmv\b', r'\brm\b', r'\bmkdir\b', r'\btouch\b',
+        ],
+        "chinese_keywords": ['文件', '目录', '文件夹', '读取', '打开', '查看', '列出',
+                            '创建', '删除', '复制', '移动', '重命名', '保存']
+    },
     "SHELL": {
         "keywords": [
             # 危险命令已经在 DANGEROUS_COMMANDS 中，这里只添加执行类关键词
@@ -96,14 +106,18 @@ INTENT_KEYWORDS: Dict[str, Dict] = {
         ],
         "chinese_keywords": ['查询', 'SQL', '数据库', '表', '数据']
     },
-    # 跨类型中性词 - 不偏向任何分类，用于增加候选列表完整性
-    "NEUTRAL": {
+    "DOCUMENT": {
         "keywords": [
-            r'\bread\b', r'\bopen\b', r'\bview\b', r'\baccess\b', r'\bprocess\b',
-            r'\bcheck\b', r'\bfind\b', r'\bsearch\b', r'\blist\b',
-            '读取', '打开', '查看', '访问', '处理', '检查', '查找', '搜索', '列出', '遍历'
+            r'\bdocx\b', r'\bpdf\b', r'\btxt\b', r'\bmd\b', r'\bcsv\b', r'\bjson\b',
+            r'\bword\b', r'\bexcel\b', r'\bppt\b',
         ],
-        "chinese_keywords": ['读取', '打开', '查看', '访问', '处理', '检查', '查找', '搜索', '列出', '遍历']
+        "chinese_keywords": ['文档', '报告', '笔记', '文本', '文章']
+    },
+    "CODE_EXECUTION": {
+        "keywords": [
+            r'\bcompile\b', r'\bgcc\b', r'\bg\+\+\b',
+        ],
+        "chinese_keywords": ['运行代码', '编译', '执行程序']
     },
 }
 
@@ -115,10 +129,10 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
     评分规则：
     - 中文关键词命中：+2.0/个（明确意图）
     - 英文正则命中：  +1.0/个（中度信号）
-    - FILE操作关键词：+0.5/个（宽泛匹配）
-    - 危险命令：      +3.0 基础分
+    - 危险命令：      +3.0 基础分（仅SHELL）
     - 归一化： raw_score 经 1 - 2^(-score) 映射到 [0,1)
-    - 中性词：       每个分类 +0.3
+    - 【2026-05-13 小沈】删除NEUTRAL跨类平摊+OPERATION_WEIGHTS引用，
+      FILE/DOCUMENT/CODE_EXECUTION直接从INTENT_KEYWORDS匹配
 
     Returns:
         Dict[ToolCategory, float] 置信度从高到低排序
@@ -141,7 +155,9 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
         pass
 
     # ===== 1. INTENT_KEYWORDS 分类匹配 =====
+    # 【2026-05-13 小沈】FILE/DOCUMENT/CODE_EXECUTION直接从INTENT_KEYWORDS匹配
     category_map = {
+        "FILE": ToolCategory.FILE,
         "SHELL": ToolCategory.SHELL,
         "TIME": ToolCategory.TIME,
         "NETWORK": ToolCategory.NETWORK,
@@ -149,13 +165,11 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
         "ENV": ToolCategory.ENVIRONMENT,
         "SYSTEM": ToolCategory.SYSTEM,
         "DATABASE": ToolCategory.DATABASE,
+        "DOCUMENT": ToolCategory.DOCUMENT,
+        "CODE_EXECUTION": ToolCategory.CODE_EXECUTION,
     }
 
     for cat_name, cat_info in INTENT_KEYWORDS.items():
-        # 跳过NEUTRAL分类，特殊处理
-        if cat_name == "NEUTRAL":
-            continue
-            
         cat_enum = category_map[cat_name]
 
         # 中文关键词：+2.0 每个
@@ -171,34 +185,7 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
                 logger.info(f"[CRSS Score] {cat_name} 英文关键词 +1.0: '{keyword}'")
                 raw_scores[cat_enum] = raw_scores.get(cat_enum, 0) + 1.0
 
-    # ===== 1.5 跨类型中性词处理 - 不偏向任何分类，增加所有匹配分类 =====
-    neutral_info = INTENT_KEYWORDS.get("NEUTRAL", {})
-    neutral_score_count = 0
-    for kw in neutral_info.get("chinese_keywords", []):
-        if kw in command_lower:
-            neutral_score_count += 1
-    if neutral_score_count > 0:
-        # 中性词给所有分类都加少量分数 (+0.3/个)
-        for cat_enum in category_map.values():
-            raw_scores[cat_enum] = raw_scores.get(cat_enum, 0) + neutral_score_count * 0.3
-        logger.info(f"[CRSS Score] NEUTRAL 中性词 +{neutral_score_count * 0.3}: {neutral_score_count}个")
-
-    # ===== 2. FILE 操作关键词 =====
-    try:
-        from app.services.command_security import OPERATION_WEIGHTS
-        file_count = 0
-        for op_type, config in OPERATION_WEIGHTS.items():
-            for keyword in config.get('keywords', []):
-                if keyword.lower() in command_lower:
-                    file_count += 1
-
-        if file_count > 0:
-            raw_scores[ToolCategory.FILE] = raw_scores.get(ToolCategory.FILE, 0) + file_count * 0.5
-            logger.info(f"[CRSS Score] FILE 关键词 +{file_count * 0.5}: {file_count}个匹配")
-    except ImportError:
-        pass
-
-    # ===== 3. 归一化 =====
+    # ===== 2. 归一化 =====
     scores = {}
     for cat, raw in raw_scores.items():
         # 1 - 2^(-raw) 将 raw 映射到 [0, 1)

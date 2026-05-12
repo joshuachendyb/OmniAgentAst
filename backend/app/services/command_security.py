@@ -371,7 +371,7 @@ def _ensure_system_dirs_loaded():
 
 # 操作类型权重表（维度1）
 OPERATION_WEIGHTS = {
-    'READ': {'min': 0, 'max': 2, 'default': 1, 'keywords': ['cat', 'ls', 'grep', '查看', '读取', 'type', 'dir', '运行']},
+    'READ': {'min': 0, 'max': 2, 'default': 1, 'keywords': ['cat', 'ls', 'grep', '查看', '读取', 'type', 'dir']},
     'CREATE': {'min': 2, 'max': 4, 'default': 3, 'keywords': ['mkdir', 'touch', '创建', '新建', 'md']},
     'UPDATE': {'min': 4, 'max': 7, 'default': 5, 'keywords': ['edit', 'sed', '修改', '编辑', '更新', 'echo', 'write']},
     'DELETE': {'min': 6, 'max': 10, 'default': 8, 'keywords': ['rm', 'del', 'delete', '删除', 'remove', '清除', 'rmdir', 'rd']},
