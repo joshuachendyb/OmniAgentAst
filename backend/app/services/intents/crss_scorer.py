@@ -130,9 +130,9 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
     - 中文关键词命中：+2.0/个（明确意图）
     - 英文正则命中：  +1.0/个（中度信号）
     - 危险命令：      +3.0 基础分（仅SHELL）
+    - 中性词：        +0.3/个（仅限FILE/DOCUMENT/DESKTOP，不污染SHELL/TIME等）
+    - FILE操作词：    +0.5/个（来自OPERATION_WEIGHTS，补充通用文件词）
     - 归一化： raw_score 经 1 - 2^(-score) 映射到 [0,1)
-    - 【2026-05-13 小沈】删除NEUTRAL跨类平摊+OPERATION_WEIGHTS引用，
-      FILE/DOCUMENT/CODE_EXECUTION直接从INTENT_KEYWORDS匹配
 
     Returns:
         Dict[ToolCategory, float] 置信度从高到低排序
@@ -155,7 +155,6 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
         pass
 
     # ===== 1. INTENT_KEYWORDS 分类匹配 =====
-    # 【2026-05-13 小沈】FILE/DOCUMENT/CODE_EXECUTION直接从INTENT_KEYWORDS匹配
     category_map = {
         "FILE": ToolCategory.FILE,
         "SHELL": ToolCategory.SHELL,
@@ -184,6 +183,31 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
             if _ascii_word_boundary_match(keyword, command_lower):
                 logger.info(f"[CRSS Score] {cat_name} 英文关键词 +1.0: '{keyword}'")
                 raw_scores[cat_enum] = raw_scores.get(cat_enum, 0) + 1.0
+
+    # ===== 1.5 跨类中性词——只加给FILE/DOCUMENT/DESKTOP，不污染SHELL/TIME等 =====
+    neutral_cats = [ToolCategory.FILE, ToolCategory.DOCUMENT, ToolCategory.DESKTOP]
+    neutral_keywords_english = [r'\bread\b', r'\bopen\b', r'\bview\b', r'\baccess\b',
+                                r'\bprocess\b', r'\bcheck\b', r'\bfind\b', r'\bsearch\b', r'\blist\b']
+    for pattern in neutral_keywords_english:
+        keyword = pattern.replace(r'\b', '')
+        if _ascii_word_boundary_match(keyword, command_lower):
+            for cat in neutral_cats:
+                raw_scores[cat] = raw_scores.get(cat, 0) + 0.3
+            logger.info(f"[CRSS Score] NEUTRAL 英文 +0.3: '{keyword}' → FILE/DOC/DESKTOP")
+
+    # ===== 1.6 OPERATION_WEIGHTS补充——给FILE额外加分 =====
+    try:
+        from app.services.command_security import OPERATION_WEIGHTS
+        file_count = 0
+        for op_type, config in OPERATION_WEIGHTS.items():
+            for keyword in config.get('keywords', []):
+                if keyword.lower() in command_lower:
+                    file_count += 1
+        if file_count > 0:
+            raw_scores[ToolCategory.FILE] = raw_scores.get(ToolCategory.FILE, 0) + file_count * 0.3
+            logger.info(f"[CRSS Score] FILE OPERATION_WEIGHTS +{file_count * 0.3}: {file_count}个匹配")
+    except ImportError:
+        pass
 
     # ===== 2. 归一化 =====
     scores = {}
