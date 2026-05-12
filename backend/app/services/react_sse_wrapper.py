@@ -342,12 +342,114 @@ async def _run_agent_sse_stream(
 
 
 # ============================================================
+# 通用SSE流式处理（intent_type未注册AgentFactory时的兜底）
+# 使用TextStrategy纯文本对话，不涉及工具调用
+# 小沈 - 2026-05-13
+# ============================================================
+
+async def _run_generic_sse_stream(
+    llm_client,
+    task_id: str,
+    ai_service,
+    last_message: str,
+    next_step,
+    running_tasks: dict,
+    running_tasks_lock,
+    session_id: str,
+    current_execution_steps: list,
+) -> AsyncGenerator[str, None]:
+    """
+    通用SSE流式处理：用于未注册AgentFactory的intent_type
+    - 使用TextStrategy纯文本对话
+    - 复用base_react.run_stream()（通过简单BaseAgent子类）
+    - 不涉及工具调用
+    """
+    from app.services.agent.base_react import BaseAgent
+    from app.services.agent.llm_strategies import TextStrategy
+    from app.services.agent.reasoning_steps import StepFactory
+    from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
+    
+    _LOG_TAG = "[GenericOp]"
+    _ERROR_LABEL = "操作执行失败"
+    
+    # 创建一个简单的Agent：复用BaseAgent.run_stream()，ToolCategory=None
+    class _GenericAgent(BaseAgent, ReactAgentMixin):
+        def __init__(self, llm_client, task_id, text_strategy, **kwargs):
+            BaseAgent.__init__(self, llm_client=llm_client, task_id=task_id, tool_category=None, **kwargs)
+            ReactAgentMixin.__init__(self)
+            self._text_strategy = text_strategy
+        
+        async def _get_llm_response(self) -> str:
+            self.llm_call_count += 1
+            return await self._call_llm_with_summary()
+        
+        async def _execute_tool(self, action, params):
+            return {}
+        
+        def _get_system_prompt(self):
+            return "你是一个有用的AI助手，直接回答用户的问题。"
+        
+        def _get_task_prompt(self, task, context=None):
+            return task
+    
+    text_strategy = TextStrategy(ai_service) if ai_service else None
+    agent = _GenericAgent(
+        llm_client=llm_client,
+        task_id=task_id,
+        text_strategy=text_strategy,
+    )
+    
+    try:
+        async for event in agent.run_stream(
+            task=last_message, context=None,
+            max_steps=5, task_id=task_id,
+            running_tasks=running_tasks
+        ):
+            # 中断检查
+            async with running_tasks_lock:
+                is_cancelled = running_tasks.get(task_id, {}).get("cancelled", False)
+                if is_cancelled:
+                    from app.chat_stream.error_handler import create_incident_data
+                    logger.info(f"[InterruptCheck] 任务 {task_id} 取消状态: {is_cancelled}")
+                    interrupted_data = create_incident_data('interrupted', '任务已被中断', step=next_step())
+                    yield f"data: {json.dumps(interrupted_data)}\n\n"
+                    current_execution_steps.append(interrupted_data)
+                    await save_execution_steps_to_db(session_id, current_execution_steps, "")
+                    break
+            
+            sse_data = _format_sse_event(event, next_step(), ai_service.model, ai_service.provider)
+            if sse_data:
+                if sse_data.startswith("data: "):
+                    step_data = json.loads(sse_data[6:])
+                    current_execution_steps.append(step_data)
+                    await save_execution_steps_to_db(session_id, current_execution_steps, step_data.get('response', ''))
+                yield sse_data
+                await asyncio.sleep(0.05)
+    
+    except Exception as e:
+        logger.error(f"{_LOG_TAG} 执行出错：task_id={task_id}, error={e}", exc_info=True)
+        error_step_obj = StepFactory.create_error_step(
+            step=next_step(),
+            error_type='generic_operation_error',
+            error_message=_ERROR_LABEL,
+            recoverable=False,
+            model=ai_service.model,
+            provider=ai_service.provider
+        )
+        error_step_dict = error_step_obj.to_dict()
+        error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
+        current_execution_steps.append(error_step_dict)
+        await save_execution_steps_to_db(session_id, current_execution_steps, _ERROR_LABEL)
+        yield error_response
+
+
+# ============================================================
 # SSE 流式生成器函数（供 chat_router.py 调用）
 # ============================================================
 
 async def generate_sse_stream(
     messages: List[Dict[str, str]],
-    intent_type: str = "chat",
+    intent_type: str = "generic",
     confidence: float = 0.0,
     candidates: Optional[List[str]] = None,  # 【新增 2026-04-30 小沈】候选意图列表
     provider: Optional[str] = None,
@@ -424,7 +526,7 @@ async def generate_sse_stream(
     # 启动 prompt logger（只记录非 chat 意图）
     from app.utils.prompt_logger import get_prompt_logger
     prompt_logger = get_prompt_logger()
-    if intent_type != "chat" and ai_message_id:
+    if intent_type not in ("", "generic") and ai_message_id:
         prompt_logger.start_request(
             user_message=user_message,
             user_message_id=str(ai_message_id),
@@ -432,9 +534,9 @@ async def generate_sse_stream(
         )
         # 记录系统 prompt（根据 intent_type 动态选择对应的 prompt 类）
         # 【修复 2026-05-07 小沈】完善intent_type→Prompt类映射，处理chat意图
-        if intent_type == "chat":
+        if intent_type in ("", "generic", "chat"):
             prompts_instance = None
-            source_name = "chat意图：无系统Prompt"
+            source_name = "通用意图：无系统Prompt"
         elif intent_type == "time":
             from app.services.prompts.time import TimePrompts
             prompts_instance = TimePrompts()
@@ -456,7 +558,7 @@ async def generate_sse_stream(
             prompts_instance = FileOperationPrompts()
             source_name = "file_prompts.py"
         
-        if prompts_instance and intent_type != "chat":
+        if prompts_instance and intent_type not in ("", "generic"):
             full_prompt = prompts_instance.build_full_system_prompt()
             prompt_logger.log_system_prompt(
                 step_name="系统Prompt生成",
@@ -603,8 +705,9 @@ async def generate_sse_stream(
         llm_client = LLMClientWrapper(ai_service)
         
         # 分发逻辑
-        # 【提取 2026-04-30 小沈】file/time/network/desktop统一走 _run_agent_sse_stream
-        if intent_type in ("file", "time", "network", "desktop") and confidence >= CRSS_CONFIDENCE_THRESHOLD:
+        # 【2026-05-13 小沈】改为try AgentFactory + 兜底通用Agent（不再限4个意图，不报"not_implemented"）
+        try:
+            from app.services.agent.agent_factory import AgentFactory
             async for sse_chunk in _run_agent_sse_stream(
                 intent_type=intent_type,
                 llm_client=llm_client,
@@ -621,23 +724,21 @@ async def generate_sse_stream(
                 agent_llm_holder=agent_llm_holder,
             ):
                 yield sse_chunk
-        
-        else:
-            # chat 或 confidence < 0.3：简单对话
-            logger.warning(f"[ChatOp] chat_stream_query 待集成，暂时返回提示")
-            error_step_obj = StepFactory.create_error_step(
-                step=next_step(),
-                error_type="not_implemented",
-                error_message="简单对话功能正在开发中",
-                recoverable=False,
-                model=ai_service.model,
-                provider=ai_service.provider
-            )
-            error_step_dict = error_step_obj.to_dict()
-            error_response = format_sse_event('error', error_step_obj.step, error_step_dict)
-            current_execution_steps.append(error_step_dict)
-            await save_execution_steps_to_db(session_id, current_execution_steps, "简单对话功能正在开发中")
-            yield error_response
+        except ValueError:
+            # intent_type未注册AgentFactory → 用通用TextStrategy Agent兜底
+            logger.info(f"[ChatOp] intent_type='{intent_type}' 无专用Agent，使用通用TextStrategy兜底")
+            async for sse_chunk in _run_generic_sse_stream(
+                llm_client=llm_client,
+                task_id=task_id,
+                ai_service=ai_service,
+                last_message=last_message,
+                next_step=next_step,
+                running_tasks=running_tasks,
+                running_tasks_lock=running_tasks_lock,
+                session_id=session_id,
+                current_execution_steps=current_execution_steps,
+            ):
+                yield sse_chunk
     
     except asyncio.CancelledError:
         # 【问题3修复】客户端断开连接，任务被中断

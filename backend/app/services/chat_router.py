@@ -55,8 +55,8 @@ from app.services.intents.crss_scorer import (
 )
 
 
-# 意图标签列表（用于 PreprocessingPipeline）
-INTENT_LABELS = [c.value for c in ToolCategory] + ["chat"]
+# 意图标签列表（用于 PreprocessingPipeline，不再包含chat——所有请求走ReAct循环）
+INTENT_LABELS = [c.value for c in ToolCategory]
 
 # 【修复 2026-04-30 小沈】CRSS置信度阈值：归一化评分 >= 此值认为意图可信
 # CRSS评分经 1 - 2^(-raw) 归一化到 [0, 1)，0.3 对应原始分约 0.5
@@ -121,12 +121,12 @@ async def route_with_fallback(user_input: str) -> Dict:
     try:
         from app.services.preprocessing.intent_classifier import classify_intent
 
-        # 准备提示标签（所有ToolCategory + chat）
-        intent_labels = [c.value for c in ToolCategory] + ["chat"]
+        # 准备提示标签（所有ToolCategory，不再含chat——所有请求走ReAct循环）
+        intent_labels = [c.value for c in ToolCategory]
 
         llm_result = await classify_intent(user_input, intent_labels)
 
-        intent_str = llm_result.get("intent", "chat")
+        intent_str = llm_result.get("intent", "")
         llm_confidence = float(llm_result.get("confidence", 0.5))
 
         # 将LLM返回的字符串转为ToolCategory
@@ -299,8 +299,8 @@ class ChatRouter:
         candidates_values = intent_info.get("candidates", [])
         candidates_list = [c.value for c in candidates_values if c]  # 【修复 2026-04-30 小沈】简化：if c 已过滤None，else "" 不可达
         
-        # 将ToolCategory转为字符串（与下游generate_sse_stream接口兼容）
-        intent_type = intent_type_value.value if intent_type_value else "chat"
+        # 【2026-05-13 小沈】不再有chat分类，未匹配的intent直接传None→让generator_sse_stream兜底
+        intent_type = intent_type_value.value if intent_type_value else "generic"
         
         logger.info(
             f"[ChatRouter] 两阶段意图检测 → intent_type={intent_type}({intent_type_value}), "
@@ -372,120 +372,31 @@ class ChatRouter:
             )
             return
         
-        # ===== 步骤6: 根据意图类型分发 =====
-        # 简单对话（chat 且 confidence >= 0.3）：在 router 里调用 chat_stream_query
-        # 动作意图（file/network/desktop 或 confidence < 0.3）：调用 react_sse_wrapper
+        # ===== 步骤6: 统一走ReAct循环 =====
+        # 【2026-05-13 小沈】删除chat/chat_stream_query分流，所有意图统一走react_sse_wrapper
+        # chat意图也走ReAct循环（ChatReactAgent, tools=[]）
         
-        # display_name 用于 chat_stream_query
-        display_name = f"{ai_service.provider} ({ai_service.model})"
+        logger.info(f"[ChatRouter] 意图分发 (type={intent_type}, conf={confidence:.2f}, candidates={candidates_list})，统一走react_sse_wrapper")
+        from app.services.react_sse_wrapper import generate_sse_stream
         
-        if intent_type == "chat" and confidence >= 0.3:
-            # 简单对话：直接调用 chat_stream_query
-            logger.info(f"[ChatRouter] 简单对话意图，分发到 chat_stream_query")
-            async for event in self._handle_chat_operation(
-                request=request,
-                user_input=user_input,
-                ai_service=ai_service,
-                task_id=task_id,
-                session_id=session_id,
-                current_execution_steps=current_execution_steps,
-                running_tasks=running_tasks,
-                running_tasks_lock=running_tasks_lock,
-                next_step=next_step,
-                display_name=display_name
-            ):
-                yield event
-        else:
-            # 动作意图：调用 react_sse_wrapper 处理
-            logger.info(f"[ChatRouter] 动作意图 (type={intent_type}, conf={confidence:.2f}, candidates={candidates_list})，分发到 react_sse_wrapper")
-            from app.services.react_sse_wrapper import generate_sse_stream
-            
-            # 准备 messages 列表
-            messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
-            
-            async for event in generate_sse_stream(
-                messages=messages,
-                intent_type=intent_type,
-                confidence=confidence,
-                candidates=candidates_list,  # 【新增 2026-04-30 小沈】传递候选意图列表
-                provider=provider,
-                model=model,
-                task_id=task_id,
-                session_id=session_id,
-                ai_service=ai_service,
-                next_step=next_step,
-                running_tasks=running_tasks,
-                running_tasks_lock=running_tasks_lock,
-                current_execution_steps=current_execution_steps
-            ):
-                yield event
-
-    async def _handle_chat_operation(
-        self,
-        request: Optional[ChatRequest],
-        user_input: str,
-        ai_service: Any,
-        task_id: str,
-        session_id: str,
-        current_execution_steps: List[Dict],
-        running_tasks: Dict[str, Any],
-        running_tasks_lock: asyncio.Lock,
-        next_step: Callable,
-        display_name: str
-    ) -> AsyncGenerator[str, None]:
-        """处理简单对话意图"""
-        try:
-            from app.chat_stream.chat_stream_query import chat_stream_query
-            
-            # 修复：如果 request 为 None，创建一个只包含当前消息的请求对象
-            if request is None:
-                request = ChatRequest(
-                    messages=[ChatMessage(role="user", content=user_input)],
-                    session_id=session_id
-                )
-            
-            # 准备 chat_stream_query 需要的参数
-            llm_call_count = 0
-            current_content = ""
-            last_is_reasoning = None
-            last_message = user_input
-            
-            # 包装 save_execution_steps_to_db 函数
-            from app.chat_stream.message_saver import save_execution_steps_to_db
-            async def wrapped_save_steps(execution_steps, content=None):
-                await save_execution_steps_to_db(session_id, execution_steps, content)
-            
-            # 包装 add_step_and_save 函数
-            from app.chat_stream.message_saver import add_step_and_save
-            async def wrapped_add_step(step, content=None):
-                await add_step_and_save(current_execution_steps, step, session_id, content)
-            
-            async for event in chat_stream_query(
-                request=request,
-                ai_service=ai_service,
-                task_id=task_id,
-                llm_call_count=llm_call_count,
-                current_execution_steps=current_execution_steps,
-                current_content=current_content,
-                last_is_reasoning=last_is_reasoning,
-                last_message=last_message,
-                running_tasks=running_tasks,
-                running_tasks_lock=running_tasks_lock,
-                next_step=next_step,
-                display_name=display_name,
-                session_id=session_id,
-                save_execution_steps_to_db=wrapped_save_steps,
-                add_step_and_save=wrapped_add_step
-            ):
-                yield event
-                
-        except Exception as e:
-            logger.error(f"[ChatRouter] Chat operation failed: {e}", exc_info=True)
-            yield self._create_error_sse(
-                error_type="router_error",
-                error_message=f"对话执行失败: {str(e)}",
-                step=next_step()
-            )
+        messages = [{"role": msg.role, "content": msg.content} for msg in request.messages]
+        
+        async for event in generate_sse_stream(
+            messages=messages,
+            intent_type=intent_type,
+            confidence=confidence,
+            candidates=candidates_list,
+            provider=provider,
+            model=model,
+            task_id=task_id,
+            session_id=session_id,
+            ai_service=ai_service,
+            next_step=next_step,
+            running_tasks=running_tasks,
+            running_tasks_lock=running_tasks_lock,
+            current_execution_steps=current_execution_steps
+        ):
+            yield event
 
     def _create_error_sse(self, error_type: str, error_message: str, step: int) -> str:
         """创建错误 SSE 响应"""

@@ -68,7 +68,8 @@ _INTENT_DEFINITIONS = {
     "env": "环境变量，包括查看/设置PATH、HOME、TEMP等系统环境变量、系统变量配置等",
     "system": "系统信息，包括查询CPU/内存/磁盘/进程/服务等系统资源、系统配置查看等",
     "database": "数据库操作，包括SQL查询、select/insert/update/delete等数据库命令、表结构操作等",
-    "chat": "普通对话，不涉及上述任何特定操作的日常聊天、问答、解释等",
+    "document": "文档读写，包括读取/创建/编辑docx、pdf、txt、md等文档文件、报告、笔记等",
+    "code_execution": "代码执行，包括运行python脚本、编译代码、执行程序、代码测试等",
 }
 
 
@@ -146,8 +147,8 @@ async def classify_intent(
             if response.status_code != 200:
                 return {
                     "corrected": text,
-                    "intent": "chat",
-                    "confidence": 0.5,
+                    "intent": "",
+                    "confidence": 0.0,
                     "all_intents": {},
                     "error": f"API error: {response.status_code}"
                 }
@@ -161,11 +162,11 @@ async def classify_intent(
                     result = json.loads(json_str)
                     all_intents = result.get("all_intents", {})
                     if not isinstance(all_intents, dict) or len(all_intents) == 0:
-                        all_intents = {result.get("intent", "chat"): float(result.get("confidence", 0.5))}
+                        all_intents = {result.get("intent", ""): float(result.get("confidence", 0.0))}
                     return {
                         "corrected": result.get("corrected", text),
-                        "intent": result.get("intent", "chat"),
-                        "confidence": float(result.get("confidence", 0.5)),
+                        "intent": result.get("intent", ""),
+                        "confidence": float(result.get("confidence", 0.0)),
                         "all_intents": all_intents,
                     }
             except (json.JSONDecodeError, ValueError):
@@ -173,8 +174,8 @@ async def classify_intent(
 
             return {
                 "corrected": text,
-                "intent": "chat",
-                "confidence": 0.5,
+                "intent": "",
+                "confidence": 0.0,
                 "all_intents": {},
                 "error": "Failed to parse LLM response"
             }
@@ -182,8 +183,8 @@ async def classify_intent(
     except Exception as e:
         return {
             "corrected": text,
-            "intent": "chat",
-            "confidence": 0.5,
+            "intent": "",
+            "confidence": 0.0,
             "all_intents": {},
             "error": str(e)
         }
