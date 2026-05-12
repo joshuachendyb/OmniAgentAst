@@ -373,15 +373,24 @@ async def _run_generic_sse_stream(
     _ERROR_LABEL = "操作执行失败"
     
     # 创建一个简单的Agent：复用BaseAgent.run_stream()，ToolCategory=None
-    class _GenericAgent(BaseAgent, ReactAgentMixin):
-        def __init__(self, llm_client, task_id, text_strategy, **kwargs):
-            BaseAgent.__init__(self, llm_client=llm_client, task_id=task_id, tool_category=None, **kwargs)
-            ReactAgentMixin.__init__(self)
-            self._text_strategy = text_strategy
+    # 注意：不用ReactAgentMixin（不涉及工具，直接调TextStrategy）
+    class _GenericAgent(BaseAgent):
+        def __init__(self, llm_client, task_id, strategy, **kwargs):
+            super().__init__(llm_client=llm_client, task_id=task_id, tool_category=None, **kwargs)
+            self._strategy = strategy
         
         async def _get_llm_response(self) -> str:
             self.llm_call_count += 1
-            return await self._call_llm_with_summary()
+            if self._strategy:
+                last_msg = self.conversation_history[-1]["content"] if self.conversation_history else ""
+                history = self.conversation_history[:-1] if len(self.conversation_history) > 1 else []
+                return await self._strategy.call(
+                    llm_client=self.llm_client,
+                    message=last_msg,
+                    history_dicts=history,
+                    conversation_history=self.conversation_history
+                )
+            return ""
         
         async def _execute_tool(self, action, params):
             return {}
@@ -392,11 +401,11 @@ async def _run_generic_sse_stream(
         def _get_task_prompt(self, task, context=None):
             return task
     
-    text_strategy = TextStrategy(ai_service) if ai_service else None
+    strategy = TextStrategy(ai_service) if ai_service else None
     agent = _GenericAgent(
         llm_client=llm_client,
         task_id=task_id,
-        text_strategy=text_strategy,
+        strategy=strategy,
     )
     
     try:

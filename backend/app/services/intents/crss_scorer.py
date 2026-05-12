@@ -50,8 +50,7 @@ INTENT_KEYWORDS: Dict[str, Dict] = {
             r'\bcat\b', r'\bgrep\b', r'\bfind\b', r'\btree\b', r'\bstat\b',
             r'\bcp\b', r'\bmv\b', r'\brm\b', r'\bmkdir\b', r'\btouch\b',
         ],
-        "chinese_keywords": ['文件', '目录', '文件夹', '读取', '打开', '查看', '列出',
-                            '创建', '删除', '复制', '移动', '重命名', '保存']
+        "chinese_keywords": ['文件', '目录', '文件夹', '创建', '删除', '复制', '移动', '保存']
     },
     "SHELL": {
         "keywords": [
@@ -185,15 +184,20 @@ def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:
                 raw_scores[cat_enum] = raw_scores.get(cat_enum, 0) + 1.0
 
     # ===== 1.5 跨类中性词——只加给FILE/DOCUMENT/DESKTOP，不污染SHELL/TIME等 =====
+    # 中文通用词如"查看""打开"也在此，权重+0.3（不抢+2.0的具体关键词）
     neutral_cats = [ToolCategory.FILE, ToolCategory.DOCUMENT, ToolCategory.DESKTOP]
     neutral_keywords_english = [r'\bread\b', r'\bopen\b', r'\bview\b', r'\baccess\b',
                                 r'\bprocess\b', r'\bcheck\b', r'\bfind\b', r'\bsearch\b', r'\blist\b']
+    neutral_keywords_chinese = ['读取', '打开', '查看', '访问', '处理', '检查', '查找', '搜索', '列出', '遍历']
     for pattern in neutral_keywords_english:
         keyword = pattern.replace(r'\b', '')
         if _ascii_word_boundary_match(keyword, command_lower):
             for cat in neutral_cats:
                 raw_scores[cat] = raw_scores.get(cat, 0) + 0.3
-            logger.info(f"[CRSS Score] NEUTRAL 英文 +0.3: '{keyword}' → FILE/DOC/DESKTOP")
+    for kw in neutral_keywords_chinese:
+        if kw in command_lower:
+            for cat in neutral_cats:
+                raw_scores[cat] = raw_scores.get(cat, 0) + 0.3
 
     # ===== 1.6 OPERATION_WEIGHTS补充——给FILE额外加分 =====
     try:
