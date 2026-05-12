@@ -350,6 +350,7 @@ export const useChatSession = (
         setLastSavedTitle("新会话");
         onLoadingEnd();
         onRenderEnd();
+        onMessageListLoadingEnd();
       }
 
       onLoadingEnd();
