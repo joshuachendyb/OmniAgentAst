@@ -308,7 +308,7 @@ async def _run_agent_sse_stream(
                     break
             
             # SSE 格式化 - 使用event自带step编号，与Agent内部计数一致
-            sse_data = _format_sse_event(event, event.get('step', next_step()), ai_service.model, ai_service.provider)
+            sse_data = _format_sse_event(event, next_step(), ai_service.model, ai_service.provider)
             if sse_data:
                 if sse_data.startswith("data: "):
                     step_data = json.loads(sse_data[6:])
@@ -431,7 +431,7 @@ async def _run_generic_sse_stream(
                     await save_execution_steps_to_db(session_id, current_execution_steps, "")
                     break
             
-            sse_data = _format_sse_event(event, event.get('step', next_step()), ai_service.model, ai_service.provider)
+            sse_data = _format_sse_event(event, next_step(), ai_service.model, ai_service.provider)
             if sse_data:
                 if sse_data.startswith("data: "):
                     step_data = json.loads(sse_data[6:])
