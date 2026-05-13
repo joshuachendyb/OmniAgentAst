@@ -14,118 +14,52 @@
 
 import pytest
 import json
-import asyncio
-import re
-from typing import AsyncGenerator, Dict, Any, Optional, List
-from unittest.mock import patch, AsyncMock, MagicMock, PropertyMock
-from httpx import AsyncClient, ASGITransport, Response
+from unittest.mock import patch
+from httpx import AsyncClient, ASGITransport
+from app.main import app
 
 
 # ============================================================
-# Mock LLM HTTP 响应（模拟外部API返回）
-# ============================================================
-
-def make_mock_llm_stream_response(content: str, reasoning: str = ""):
-    """
-    构造模拟的LLM API流式响应chunks
-    格式与OpenAI/LongCat的SSE格式一致
-    """
-    chunks = []
-
-    # reasoning_content（如果有）
-    if reasoning:
-        chunks.append(f'data: {json.dumps({"choices": [{"delta": {"reasoning_content": reasoning}}]})}\n\n')
-
-    # content
-    if content:
-        chunks.append(f'data: {json.dumps({"choices": [{"delta": {"content": content}}]})}\n\n')
-
-    # finish
-    chunks.append('data: [DONE]\n\n')
-    return chunks
-
-
-class MockAsyncClient:
-    """模拟httpx.AsyncClient - 拦截所有HTTP请求"""
-    def __init__(self, **kwargs):
-        self._kwargs = kwargs
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        pass
-
-    async def post(self, url, **kwargs):
-        # 返回模拟的LLM流式响应
-        content_chunks = make_mock_llm_stream_response(
-            content='{"type":"chunk","content":"你好！我是AI助手。"}',
-            reasoning="用户打招呼，简单回应"
-        )
-        return MockResponse(content_chunks)
-
-    async def aclose(self):
-        pass
-
-
-class MockResponse:
-    """模拟httpx.Response"""
-    def __init__(self, chunks: List[str]):
-        self._chunks = chunks
-        self.status_code = 200
-        self._headers = {"content-type": "application/json"}
-
-    @property
-    def headers(self):
-        return self._headers
-
-    @property
-    def text(self):
-        return ""
-
-    async def __aiter__(self):
-        for chunk in self._chunks:
-            yield chunk.encode()
-
-    async def aclose(self):
-        pass
-
-    def json(self):
-        return {
-            "choices": [{
-                "message": {
-                    "content": self._get_content(),
-                    "role": "assistant"
-                }
-            }]
-        }
-
-    def _get_content(self):
-        """合并所有chunks获取完整content"""
-        text = ""
-        for c in self._chunks:
-            if c.startswith("data: ") and "[DONE]" not in c:
-                try:
-                    data = json.loads(c[6:])
-                    delta = data.get("choices", [{}])[0].get("delta", {})
-                    text += delta.get("content", "")
-                except:
-                    pass
-        return text
-
-    async def aread(self):
-        return b""
-
-
-# ============================================================
-# Mock httpx 模块
+# Mock LLM - 替换AI服务的chat_stream返回mock数据
 # ============================================================
 
 @pytest.fixture(autouse=True)
-def mock_httpx():
-    """全局mock httpx.AsyncClient，所有LLM调用走模拟响应"""
-    with patch('app.services.llm_core.httpx.AsyncClient', MockAsyncClient):
-        yield
+def mock_llm():
+    """
+    替换BaseAIService.chat_stream为mock版本
+    后端完整链路（路由→意图检测→Agent创建→SSE输出）全部走真实代码
+    只替换最底层的LLM流式响应返回mock数据
+    """
+    from app.services.llm_core import BaseAIService, StreamChunk, ChatResponse
+
+    original_chat_stream = BaseAIService.chat_stream
+
+    async def mock_chat_stream(self, message, history=None):
+        yield StreamChunk(
+            content='你好！我是AI助手。',
+            model=self.model,
+            is_reasoning=False
+        )
+        yield StreamChunk(content='', model=self.model, is_done=True)
+
+    async def mock_chat(self, message, history=None):
+        return ChatResponse(
+            content='你好！我是AI助手。',
+            model=self.model,
+            provider=self.provider
+        )
+
+    async def mock_chat_with_tools(self, message, history=None, tools=None, tool_choice="auto"):
+        return ChatResponse(
+            content='{"tool_name":"finish","tool_params":{"result":"done"}}',
+            model=self.model,
+            provider=self.provider
+        )
+
+    with patch.object(BaseAIService, 'chat_stream', mock_chat_stream):
+        with patch.object(BaseAIService, 'chat', mock_chat):
+            with patch.object(BaseAIService, 'chat_with_tools', mock_chat_with_tools):
+                yield
 
 
 # ============================================================
@@ -136,9 +70,8 @@ class TestEndToEndChatAPI:
     """端到端测试 - 模拟前端发消息"""
 
     @pytest.mark.asyncio
-    async def test_chat_basic_greeting(self, mock_httpx):
+    async def test_chat_basic_greeting(self, mock_llm):
         """测试普通问候"""
-        from app.main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -158,9 +91,8 @@ class TestEndToEndChatAPI:
             print(f"  响应前100字: {text[:100]}")
 
     @pytest.mark.asyncio
-    async def test_chat_stream_has_sse_format(self, mock_httpx):
+    async def test_chat_stream_has_sse_format(self, mock_llm):
         """验证SSE每行都是有效的 data: 格式"""
-        from app.main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -197,9 +129,8 @@ class TestEndToEndChatAPI:
             print(f"  事件类型: {[e['type'] for e in sse_events]}")
 
     @pytest.mark.asyncio
-    async def test_chat_step_numbering(self, mock_httpx):
+    async def test_chat_step_numbering(self, mock_llm):
         """验证step递增"""
-        from app.main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -227,9 +158,8 @@ class TestEndToEndChatAPI:
             print(f"  step序列: {step_nums}")
 
     @pytest.mark.asyncio
-    async def test_chat_with_long_message(self, mock_httpx):
+    async def test_chat_with_long_message(self, mock_llm):
         """测试长文本输入"""
-        from app.main import app
 
         long_msg = "请详细介绍一下人工智能的发展历史" * 10
 
@@ -250,9 +180,8 @@ class TestEndToEndChatAPI:
             print(f"  长文本: 输入{len(long_msg)}字, SSE事件{sse_count}个")
 
     @pytest.mark.asyncio
-    async def test_chat_empty_message(self, mock_httpx):
+    async def test_chat_empty_message(self, mock_llm):
         """测试空消息"""
-        from app.main import app
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -268,9 +197,8 @@ class TestEndToEndChatAPI:
             print(f"  空消息响应码: {response.status_code}")
 
     @pytest.mark.asyncio
-    async def test_chat_multi_turn(self, mock_httpx):
+    async def test_chat_multi_turn(self, mock_llm):
         """模拟多轮对话"""
-        from app.main import app
         transport = ASGITransport(app=app)
 
         async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -307,9 +235,8 @@ class TestEndToEndChatAPI:
             print(f"  多轮对话SSE类型: {types2}")
 
     @pytest.mark.asyncio
-    async def test_chat_special_characters(self, mock_httpx):
+    async def test_chat_special_characters(self, mock_llm):
         """测试特殊字符输入"""
-        from app.main import app
 
         special_msgs = [
             "Hello World! @#$%^&*()",
@@ -334,9 +261,8 @@ class TestEndToEndChatAPI:
                 print(f"  特殊字符[{msg[:30]}]: HTTP {response.status_code}")
 
     @pytest.mark.asyncio
-    async def test_health_endpoint(self, mock_httpx):
+    async def test_health_endpoint(self, mock_llm):
         """验证服务健康检查"""
-        from app.main import app
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/api/v1/health")
@@ -346,9 +272,8 @@ class TestEndToEndChatAPI:
             print(f"  Health: {data}")
 
     @pytest.mark.asyncio
-    async def test_chat_sse_contains_start_step(self, mock_httpx):
+    async def test_chat_sse_contains_start_step(self, mock_llm):
         """验证SSE流第一个事件是start类型"""
-        from app.main import app
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
