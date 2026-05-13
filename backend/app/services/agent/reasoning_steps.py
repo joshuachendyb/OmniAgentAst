@@ -580,6 +580,10 @@ class FinalStep(ReasoningStep):
         self._thought = thought
         self._model = model
         self._provider = provider
+        # 【修复 2026-05-13 小健】初始化属性，避免访问时AttributeError
+        self._is_finished = True       # type="final"本身就是已完成标识
+        self._is_streaming = False     # 最终回答不是流式
+        self._is_reasoning = False     # 最终回答不可能在推理中
     
     def get_type(self) -> str:
         return "final"

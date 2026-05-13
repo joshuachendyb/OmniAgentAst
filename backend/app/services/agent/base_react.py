@@ -534,10 +534,9 @@ class BaseAgent(ABC):
                     if len(self.temp_history) > 10:
                         self.temp_history = self.temp_history[-10:]
                     
-                    # yield chunk步骤给前端
+                    # yield chunk步骤给前端（ChunkStep只接受step/content/is_reasoning）
                     chunk_step = StepFactory.create_chunk_step(
-                        step=step_count, content=chunk_content,
-                        thought=thought, reasoning=reasoning
+                        step=step_count, content=chunk_content
                     )
                     self.steps.append(chunk_step)
                     yield chunk_step.to_dict()
@@ -551,8 +550,7 @@ class BaseAgent(ABC):
                         final_step = StepFactory.create_final_step(
                             step=step_count,
                             response=chunk_buffer,
-                            thought="",
-                            is_finished=True
+                            thought=""
                         )
                         self.steps.append(final_step)
                         yield final_step.to_dict()
