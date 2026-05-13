@@ -681,6 +681,20 @@ class BaseAgent(ABC):
                     # 否则继续下一次循环
                     continue
                 
+                # ===== 【2026-05-14 小沈修复】tool_name为空防御 =====
+                if not tool_name:
+                    logger.warning(f"[ReAct] tool_name为空，跳过工具执行，降级为answer")
+                    answer_response = thought_content or reasoning or ""
+                    final_step = StepFactory.create_final_step(
+                        step=step_count, response=answer_response, thought=reasoning,
+                        model=getattr(self, 'model', None),
+                        provider=getattr(self, 'provider', None)
+                    )
+                    self.steps.append(final_step)
+                    yield final_step.to_dict()
+                    self._on_after_loop()
+                    return
+
                 # ===== 【步骤2.9】情况1：工具调用（Action）=====
                 logger.info(f"[parse_react_response] 情况1: type=action, tool={tool_name}")
                 # 获取thought和reasoning字段

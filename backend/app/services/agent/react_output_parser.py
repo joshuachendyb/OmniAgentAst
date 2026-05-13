@@ -949,6 +949,23 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
             "error": None
         }
     
+    # 【2026-05-14 小沈修复】tool_name为None时不应返回action类型
+    if not tool_name:
+        logger.warning(f"[_create_action_result_from_dict] tool_name为空，降级为implicit")
+        result = {
+            "type": "implicit",
+            "thought": thought,
+            "content": content,
+            "reasoning": reasoning,
+            "tool_name": None,
+            "tool_params": None,
+            "response": content or thought,
+            "error": None
+        }
+        if "_pending_calls" in data:
+            result["_pending_calls"] = data["_pending_calls"]
+        return _add_reasoning_warning(result)
+
     # action 类型
     # 【2026-04-28 小沈修复】thought字段独立获取，不被content字段覆盖
     # 【2026-04-28 小沈新增】检测并补充缺失的必需参数
