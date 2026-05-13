@@ -81,12 +81,14 @@ class Message:
 
 class ChatResponse:
     """聊天响应类 - 非流式响应"""
-    def __init__(self, content: str, model: str, provider: str = "", error: Optional[str] = None):
+    def __init__(self, content: str, model: str, provider: str = "", error: Optional[str] = None,
+                 reasoning: Optional[str] = None):
         self.content = content
         self.model = model
         self.provider = provider
         self.error = error
         self.success = error is None
+        self.reasoning = reasoning or ""
 
 
 class StreamChunk:
@@ -242,7 +244,8 @@ class BaseAIService:
             )
             if stream_error:
                 return ChatResponse(content="", model=self.model, provider=self.provider, error=stream_error)
-            return ChatResponse(content=full_content, model=self.model, provider=self.provider)
+            return ChatResponse(content=full_content, model=self.model, provider=self.provider,
+                                reasoning=full_reasoning)
         except Exception as e:
             logger.error(f"[chat] 异常: {e}")
             return ChatResponse(content="", model=self.model, provider=self.provider, error=str(e))
