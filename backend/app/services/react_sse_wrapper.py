@@ -623,14 +623,15 @@ async def generate_sse_stream(
         raise ValueError("[AIServiceFactory] react_sse_wrapper 禁止创建 ai_service，必须由 chat_router 传入")
     logger.info(f"[AIServiceFactory] 使用 router 传入的 ai_service（复用）")
     
-    # 注册任务（包含ai_service引用，用于强制中断）
+    # 注册任务（包含ai_service引用+asyncio.Task引用，用于强制中断）
     async with running_tasks_lock:
         running_tasks[task_id] = {
             "status": "running", 
             "cancelled": False,
             "paused": False,
             "created_at": datetime.now(),
-            "ai_service": ai_service
+            "ai_service": ai_service,
+            "_task": asyncio.current_task()  # 存储asyncio.Task引用，用于task.cancel()真正中断
         }
     
     logger.info(f"[LLM Total Counter] ====== New conversation started, counter reset to 0 ======")
@@ -892,7 +893,13 @@ async def cancel_task(task_id: str, session_id: Optional[str] = None) -> Dict[st
             logger.info(f"[TaskControl] ai_service存在: {'ai_service' in task_info}")
             logger.info(f"[TaskControl] 任务步骤: {task_info.get('current_step', 'unknown')}")
             
-            # 【方案4】强制关闭HTTP连接
+            # 【2026-05-13 小沈】优先用asyncio.Task.cancel()真正中断运行中的生成器
+            running_task = task_info.pop("_task", None)
+            if running_task is not None and not running_task.done():
+                running_task.cancel()
+                logger.info(f"[Task Cancelled] 任务 {task_id} asyncio.Task.cancel() 已调用")
+            
+            # 【方案4】强制关闭HTTP连接（兜底）
             if "ai_service" in task_info and task_info["ai_service"]:
                 ai_service = task_info["ai_service"]
                 try:
