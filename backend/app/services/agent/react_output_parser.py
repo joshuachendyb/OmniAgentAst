@@ -1635,6 +1635,18 @@ def _extract_by_known_tools(content: str) -> Optional[Dict[str, Any]]:
                     params["path"] = matches[0]
                 break
         
+        # 【2026-05-14 小沈修复】参数为空时检查是否为自然语言提及
+        # 如果没有提取到任何参数，检查工具名是否被括号包裹
+        # 如"测试一下网络延迟（ping）"中的ping是自然语言引用，不是工具调用
+        if not params:
+            start = tool_match.start()
+            end = tool_match.end()
+            if start > 0 and end < len(content):
+                before_char = content[start - 1]
+                after_char = content[end]
+                if before_char in ('(', '（') and after_char in (')', '）'):
+                    continue  # 括号内提及 → 跳过，继续搜索下一个工具名
+        
         # 【2026-04-28 小沈修复】即使没有找到路径参数，只要找到了工具名就返回
         # 这确保 "I will list_directory the files" 这种情况也能正确匹配
         return {
