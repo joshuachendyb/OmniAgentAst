@@ -345,34 +345,6 @@ async def _run_agent_sse_stream(
 
 
 # ============================================================
-# SSE流式超时保护 - 整体超时机制
-# 小沈 - 2026-05-13
-# ============================================================
-
-async def _wrap_stream_timeout(agen, timeout_seconds, tag=""):
-    """
-    给异步生成器增加整体超时保护
-    
-    原理：记录开始时间，每次yield前检查消耗时间，
-    超过timeout_seconds后抛出asyncio.TimeoutError，
-    由外层generate_sse_stream()的except Exception捕获处理。
-    
-    Args:
-        agen: 原始异步生成器
-        timeout_seconds: 整体超时秒数
-        tag: 日志标签
-    """
-    deadline = asyncio.get_event_loop().time() + timeout_seconds
-    try:
-        async for item in agen:
-            if asyncio.get_event_loop().time() > deadline:
-                raise asyncio.TimeoutError(f"[{tag}] SSE流式响应整体超时 (>{timeout_seconds}s)")
-            yield item
-    except asyncio.TimeoutError:
-        raise  # 让generate_sse_stream的except Exception处理
-
-
-# ============================================================
 # 通用SSE流式处理（intent_type未注册AgentFactory时的兜底）
 # 使用TextStrategy纯文本对话，不涉及工具调用
 # 小沈 - 2026-05-13
@@ -747,50 +719,39 @@ async def generate_sse_stream(
         
         llm_client = LLMClientWrapper(ai_service)
         
-        # 【M17修复 2026-05-13 小沈】从config读取SSE流式超时时间，默认600秒
-        sse_timeout = get_config().get('sse.timeout', 600)
-        
         # 分发逻辑
         # 【2026-05-13 小沈】改为try AgentFactory + 兜底通用Agent（不再限4个意图，不报"not_implemented"）
         try:
             from app.services.agent.agent_factory import AgentFactory
-            async for sse_chunk in _wrap_stream_timeout(
-                _run_agent_sse_stream(
-                    intent_type=intent_type,
-                    llm_client=llm_client,
-                    task_id=task_id,
-                    ai_service=ai_service,
-                    candidates=candidates,
-                    last_message=last_message,
-                    next_step=next_step,
-                    running_tasks=running_tasks,
-                    running_tasks_lock=running_tasks_lock,
-                    session_id=session_id,
-                    current_execution_steps=current_execution_steps,
-                    current_content=current_content,
-                    agent_llm_holder=agent_llm_holder,
-                ),
-                timeout_seconds=sse_timeout,
-                tag=intent_type.upper()
+            async for sse_chunk in _run_agent_sse_stream(
+                intent_type=intent_type,
+                llm_client=llm_client,
+                task_id=task_id,
+                ai_service=ai_service,
+                candidates=candidates,
+                last_message=last_message,
+                next_step=next_step,
+                running_tasks=running_tasks,
+                running_tasks_lock=running_tasks_lock,
+                session_id=session_id,
+                current_execution_steps=current_execution_steps,
+                current_content=current_content,
+                agent_llm_holder=agent_llm_holder,
             ):
                 yield sse_chunk
         except ValueError:
             # intent_type未注册AgentFactory → 用通用TextStrategy Agent兜底
             logger.info(f"[ChatOp] intent_type='{intent_type}' 无专用Agent，使用通用TextStrategy兜底")
-            async for sse_chunk in _wrap_stream_timeout(
-                _run_generic_sse_stream(
-                    llm_client=llm_client,
-                    task_id=task_id,
-                    ai_service=ai_service,
-                    last_message=last_message,
-                    next_step=next_step,
-                    running_tasks=running_tasks,
-                    running_tasks_lock=running_tasks_lock,
-                    session_id=session_id,
-                    current_execution_steps=current_execution_steps,
-                ),
-                timeout_seconds=sse_timeout,
-                tag="GENERIC"
+            async for sse_chunk in _run_generic_sse_stream(
+                llm_client=llm_client,
+                task_id=task_id,
+                ai_service=ai_service,
+                last_message=last_message,
+                next_step=next_step,
+                running_tasks=running_tasks,
+                running_tasks_lock=running_tasks_lock,
+                session_id=session_id,
+                current_execution_steps=current_execution_steps,
             ):
                 yield sse_chunk
     
