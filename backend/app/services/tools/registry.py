@@ -120,9 +120,7 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
                 unique_types = list(dict.fromkeys(non_null_types))
                 if len(unique_types) == 1:
                     prop_info['type'] = unique_types[0]
-                else:
-                    sorted_types = sorted(unique_types, key=lambda x: _TYPE_ORDER.index(x) if x in _TYPE_ORDER else 99)
-                    prop_info['type'] = ",".join(sorted_types)
+                # 多个类型：保留anyOf结构，不合并为逗号字符串（opencode/deepseek等API不兼容逗号格式）
         
         if 'oneOf' in prop_info and 'type' not in prop_info:
             non_null_types = []
@@ -136,11 +134,8 @@ def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
                 unique_types = list(dict.fromkeys(non_null_types))
                 if len(unique_types) == 1:
                     prop_info['type'] = unique_types[0]
-                else:
-                    sorted_types = sorted(unique_types, key=lambda x: _TYPE_ORDER.index(x) if x in _TYPE_ORDER else 99)
-                    prop_info['type'] = ",".join(sorted_types)
         
-        if 'type' not in prop_info:
+        if 'type' not in prop_info and 'anyOf' not in prop_info and 'oneOf' not in prop_info:
             if '$ref' in prop_info:
                 prop_info['type'] = 'object'
             elif 'allOf' in prop_info:
