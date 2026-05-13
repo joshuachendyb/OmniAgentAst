@@ -242,6 +242,43 @@ def parse_react_response(output: str) -> Dict[str, Any]:
     # 标准JSON解析失败后，尝试解析单引号JSON
     non_std_data = _try_parse_non_standard_json(output)
     if non_std_data and isinstance(non_std_data, dict):
+        # 【修复 2026-05-13 小沈】非标准JSON路径补全显式type判断，与标准JSON路径一致
+        _explicit_type = non_std_data.get("type")
+        if _explicit_type == "chunk":
+            logger.info("[parse_react_response] 非标准JSON type=chunk")
+            return {
+                "type": "chunk",
+                "thought": non_std_data.get("thought", ""),
+                "content": non_std_data.get("content", ""),
+                "reasoning": non_std_data.get("reasoning", ""),
+                "tool_name": None,
+                "tool_params": None,
+                "response": non_std_data.get("response", non_std_data.get("content", "")),
+                "error": None
+            }
+        if _explicit_type == "answer":
+            logger.info("[parse_react_response] 非标准JSON type=answer")
+            return {
+                "type": "answer",
+                "thought": non_std_data.get("thought", ""),
+                "content": non_std_data.get("content", ""),
+                "reasoning": non_std_data.get("reasoning", ""),
+                "tool_name": None,
+                "tool_params": None,
+                "response": non_std_data.get("response", non_std_data.get("content", ""))
+            }
+        if _explicit_type == "parse_error":
+            logger.info("[parse_react_response] 非标准JSON type=parse_error")
+            return {
+                "type": "parse_error",
+                "error": non_std_data.get("error", "非标准JSON解析错误"),
+                "thought": non_std_data.get("content", non_std_data.get("thought", "")),
+                "content": non_std_data.get("content", ""),
+                "reasoning": non_std_data.get("reasoning", ""),
+                "tool_name": None,
+                "tool_params": None,
+                "response": non_std_data.get("content", "")
+            }
         if "tool_name" in non_std_data:
             tool_name = non_std_data["tool_name"]
             is_finish = tool_name == "finish"

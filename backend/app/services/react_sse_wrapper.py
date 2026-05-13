@@ -275,6 +275,7 @@ async def _run_agent_sse_stream(
     _LOG_TAG = f"[{intent_type.upper()}Op]"
     _ERROR_LABEL = f"{intent_type}操作执行失败"
     
+    agent = None  # 【修复 2026-05-13 小沈】M8: 预初始化，防止AgentFactory.create()抛异常时finally块中agent未绑定
     agent = AgentFactory.create(
         intent_type=intent_type,
         llm_client=llm_client,
@@ -288,7 +289,6 @@ async def _run_agent_sse_stream(
     config = get_config()
     max_steps = config.get('app', {}).get('max_steps', DEFAULT_MAX_STEPS)
     
-    agent = None  # 【修复 2026-05-13 小沈】M8: 预初始化，防止AgentFactory.create()抛异常时finally块中agent未绑定
     try:
         async for event in agent.run_stream(
             task=last_message, context=None,
@@ -307,14 +307,16 @@ async def _run_agent_sse_stream(
                     await save_execution_steps_to_db(session_id, current_execution_steps, current_content or "")
                     break
             
-            # SSE 格式化
-            sse_data = _format_sse_event(event, next_step(), ai_service.model, ai_service.provider)
+            # SSE 格式化 - 使用event自带step编号，与Agent内部计数一致
+            sse_data = _format_sse_event(event, event.get('step', next_step()), ai_service.model, ai_service.provider)
             if sse_data:
                 if sse_data.startswith("data: "):
                     step_data = json.loads(sse_data[6:])
                     current_execution_steps.append(step_data)
                     if step_data.get('type') == 'final':
                         current_content = step_data.get('response', '')
+                    elif step_data.get('type') == 'chunk':
+                        current_content = step_data.get('content', current_content)
                     await save_execution_steps_to_db(session_id, current_execution_steps, current_content)
                 
                 logger.info(f"{_LOG_TAG} SSE发送数据")
@@ -426,12 +428,12 @@ async def _run_generic_sse_stream(
                     await save_execution_steps_to_db(session_id, current_execution_steps, "")
                     break
             
-            sse_data = _format_sse_event(event, next_step(), ai_service.model, ai_service.provider)
+            sse_data = _format_sse_event(event, event.get('step', next_step()), ai_service.model, ai_service.provider)
             if sse_data:
                 if sse_data.startswith("data: "):
                     step_data = json.loads(sse_data[6:])
                     current_execution_steps.append(step_data)
-                    await save_execution_steps_to_db(session_id, current_execution_steps, step_data.get('response', ''))
+                    await save_execution_steps_to_db(session_id, current_execution_steps, step_data.get('response', step_data.get('content', '')))
                 yield sse_data
                 await asyncio.sleep(0.05)
     

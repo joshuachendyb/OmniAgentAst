@@ -374,7 +374,7 @@ class ChatRouter:
         
         # ===== 步骤6: 统一走ReAct循环 =====
         # 【2026-05-13 小沈】删除chat/chat_stream_query分流，所有意图统一走react_sse_wrapper
-        # chat意图也走ReAct循环（ChatReactAgent, tools=[]）
+        # chat/generic意图走_run_generic_sse_stream兜底（_GenericAgent, TextStrategy）
         
         logger.info(f"[ChatRouter] 意图分发 (type={intent_type}, conf={confidence:.2f}, candidates={candidates_list})，统一走react_sse_wrapper")
         from app.services.react_sse_wrapper import generate_sse_stream
