@@ -198,7 +198,7 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                 if not is_finish and processed_tool_params:
                     processed_tool_params = _supplement_missing_params(tool_name, processed_tool_params, output if isinstance(output, str) else None)
                 
-                return {
+                result = {
                     "type": "answer" if is_finish else "action",
                     "thought": data.get("content", data.get("thought", "")),
                     "content": data.get("content", data.get("thought", "")),
@@ -207,6 +207,10 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                     "tool_params": processed_tool_params,
                     "response": response
                 }
+                # 【2026-05-14 小沈】透传并行工具调用信息
+                if "_pending_calls" in data:
+                    result["_pending_calls"] = data["_pending_calls"]
+                return result
             # 旧字段格式（action/action_input → tool_name/tool_params）
             if "action" in data:
                 action_name = data["action"]
@@ -221,7 +225,7 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                 logger.info(f"[parse_react_response] JSON预解析命中(旧格式), type=action/answer")
                 # 【2026-04-28 小沈修复】支持args字段，并过滤非参数字段
                 tool_params = data.get("action_input", data.get("args", {}))
-                return {
+                result = {
                     "type": "answer" if is_finish else "action",
                     "thought": data.get("thought", ""),
                     "content": data.get("thought", ""),
@@ -230,6 +234,9 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                     "tool_params": None if is_finish else _filter_tool_params(_normalize_tool_params_content(tool_params)),
                     "response": response
                 }
+                if "_pending_calls" in data:
+                    result["_pending_calls"] = data["_pending_calls"]
+                return result
     except (json.JSONDecodeError, TypeError):
         pass  # 不是JSON格式，继续走关键词匹配流程
     
@@ -290,7 +297,7 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                     tool_params = _supplement_missing_params(tool_name, tool_params, output if isinstance(output, str) else None)
             
             logger.info(f"[parse_react_response] 非标准JSON解析成功")
-            return {
+            result = {
                 "type": "answer" if is_finish else "action",
                 "thought": non_std_data.get("content", non_std_data.get("thought", "")),
                 "content": non_std_data.get("content", non_std_data.get("thought", "")),
@@ -299,6 +306,9 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                 "tool_params": None if is_finish else tool_params,
                 "response": ""
             }
+            if "_pending_calls" in non_std_data:
+                result["_pending_calls"] = non_std_data["_pending_calls"]
+            return result
     
     # 【新增 2026-04-24 小沈】JSON预解析失败后，尝试从混合文本中提取JSON块
     # 解决混合文本+JSON（情况③/⑤）的解析问题：LLM返回"思考文本+JSON"格式时正确提取
@@ -956,6 +966,9 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
         "response": None,
         "error": None
     }
+    # 【2026-05-14 小沈】透传并行工具调用信息
+    if "_pending_calls" in data:
+        result["_pending_calls"] = data["_pending_calls"]
     return _add_reasoning_warning(result)
 
 
