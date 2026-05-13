@@ -57,6 +57,9 @@ from app.services.tools.file.file_tools import _current_task_id
 # 原则：config.yaml > 代码常量 > 硬编码默认值
 # react_sse_wrapper.py 从 config.yaml 读取后传入
 DEFAULT_MAX_STEPS = 100
+# 连续chunk最大次数-达到此阈值且为工具Agent时提升为implicit退出循环
+# chat Agent（无工具）首个chunk即退出，不受此限制
+MAX_CONSECUTIVE_CHUNKS = 3
 
 
 class BaseAgent(ABC):
@@ -126,7 +129,7 @@ class BaseAgent(ABC):
         self._intent_classifier = None   # 意图分类器（用于更可靠检测）
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
-        self.max_consecutive_chunks = 3  # 连续chunk达此阈值时提升为implicit
+        self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
         self.temp_history: List[Dict[str, str]] = []  # 临时历史，用于chunk过程中LLM参考
         
         # 创建工具执行器
