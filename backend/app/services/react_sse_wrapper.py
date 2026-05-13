@@ -367,7 +367,6 @@ async def _run_generic_sse_stream(
     from app.services.agent.base_react import BaseAgent
     from app.services.agent.llm_strategies import TextStrategy
     from app.services.agent.reasoning_steps import StepFactory
-    from app.services.agent.mixins.react_agent_mixin import ReactAgentMixin
     
     _LOG_TAG = "[GenericOp]"
     _ERROR_LABEL = "操作执行失败"
