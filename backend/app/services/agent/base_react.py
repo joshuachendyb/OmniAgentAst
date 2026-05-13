@@ -448,6 +448,22 @@ class BaseAgent(ABC):
                 response = await self._get_llm_response()
                 logger.info(f"[Debug] LLM响应 (第{self.llm_call_count + 1}轮): {response[:200]}...")
                 
+                # =====【LLM返回后中断检查】2026-05-13 小沈 =====
+                # ai_service.cancel()取消了HTTP请求，LLM可能返回错误/空。
+                # 在进入重试逻辑之前检查cancelled标志，避免把取消当成可重试的错误
+                if task_id and running_tasks:
+                    task_data = running_tasks.get(task_id, {})
+                    if task_data.get("cancelled", False):
+                        logger.info(f"[Interrupt] 任务 {task_id} LLM返回后被取消，立即中断")
+                        interrupted_data = create_incident_data(
+                            incident_value="interrupted",
+                            message="用户取消了任务",
+                            step=step_count
+                        )
+                        yield interrupted_data
+                        self._on_after_loop()
+                        return
+                
                 # ===== 场景2：LLM返回空响应 =====
                 if not response:
                     self.empty_response_retry_count += 1
