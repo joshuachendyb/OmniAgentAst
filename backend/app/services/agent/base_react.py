@@ -568,6 +568,11 @@ class BaseAgent(ABC):
                         yield final_step.to_dict()
                         self._on_after_loop()
                         return
+                    
+                    # 【修复 2026-05-14 小沈】chunk不是完成信号，必须continue防止fall through到action
+                    # 如果没有continue，代码会落到场景5(非answer/implicit)→action处理
+                    # → tool_name=None→_execute_tool(None,None)→None.copy()崩溃
+                    continue
                 
                 # ===== 场景5：正常完成（基于type字段判断）=====
                 # 【重构 2026-04-16 小沈】使用type字段判断，替代旧的tool_name=="finish"

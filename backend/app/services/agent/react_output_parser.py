@@ -423,8 +423,10 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                             content_value = parsed_content.get("content", content_value)
                     except (json.JSONDecodeError, TypeError):
                         pass
+                # 【修复 2026-05-14 小沈】无tool_name的完整JSON应返回implicit，不是chunk
+                # 此路径已过完整JSON解析，不是流式片段，LLM已经说完了
                 return {
-                    "type": "chunk",
+                    "type": "implicit",
                     "thought": prefix_text or content_value,
                     "content": content_value,
                     "reasoning": reasoning_value,
