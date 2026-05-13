@@ -540,20 +540,34 @@ class BaseAgent(ABC):
                     self.steps.append(chunk_step)
                     yield chunk_step.to_dict()
                     
-                    # 【2026-05-14 小沈】所有Agent（有/无工具）第一个chunk即作为最终回答
-                    # chunk意味着LLM选择了直接回答而不是调工具，不应再循环调LLM
-                    # 之前用max_consecutive_chunks阈值(100/5)是拍脑袋的，没有意义
-                    logger.info(f"[ReAct] 收到chunk，视为最终回答，退出循环")
-                    self.temp_history.clear()
-                    if chunk_buffer:
-                        self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
-                    final_step = StepFactory.create_final_step(
-                        step=step_count, response=chunk_buffer, thought=""
-                    )
-                    self.steps.append(final_step)
-                    yield final_step.to_dict()
-                    self._on_after_loop()
-                    return
+                    # 无工具Agent（chat）：第一个chunk直接作为最终回答，不循环
+                    if self.tool_category is None:
+                        logger.info(f"[ReAct] 无工具Agent，第一个chunk即为最终回答，退出循环")
+                        self.temp_history.clear()
+                        if chunk_buffer:
+                            self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
+                        final_step = StepFactory.create_final_step(
+                            step=step_count, response=chunk_buffer, thought=""
+                        )
+                        self.steps.append(final_step)
+                        yield final_step.to_dict()
+                        self._on_after_loop()
+                        return
+                    
+                    # 工具Agent：连续chunk达阈值→提升为implicit退出循环
+                    # 阈值意义：连续N次chunk（无tool_call），说明LLM在重复生成，应结束
+                    if consecutive_chunk_count >= self.max_consecutive_chunks:
+                        logger.info(f"[ReAct] 连续chunk达到{self.max_consecutive_chunks}次，提升为implicit")
+                        self.temp_history.clear()
+                        if chunk_buffer:
+                            self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
+                        final_step = StepFactory.create_final_step(
+                            step=step_count, response=chunk_buffer, thought=""
+                        )
+                        self.steps.append(final_step)
+                        yield final_step.to_dict()
+                        self._on_after_loop()
+                        return
                 
                 # ===== 场景5：正常完成（基于type字段判断）=====
                 # 【重构 2026-04-16 小沈】使用type字段判断，替代旧的tool_name=="finish"
