@@ -692,13 +692,13 @@ async def _search_duckduckgo(
         return None
     
     except (httpx.TimeoutException, httpx.ConnectTimeout, httpx.ConnectError) as e:
-        logger.info(f"[_search_duckduckgo] 连接失败: {type(e).__name__}，降级到Bing")
+        logger.info(f"[_search_duckduckgo] 连接失败: {type(e).__name__}")
         return None
     except httpx.HTTPStatusError as e:
-        logger.info(f"[_search_duckduckgo] HTTP错误 {e.response.status_code}，降级到Bing")
+        logger.info(f"[_search_duckduckgo] HTTP错误 {e.response.status_code}")
         return None
     except Exception as e:
-        logger.info(f"[_search_duckduckgo] 异常: {type(e).__name__}，降级到Bing")
+        logger.info(f"[_search_duckduckgo] 异常: {type(e).__name__}")
         return None
 
 
@@ -709,15 +709,13 @@ async def _search_bing(
     safe_search: str,
     proxy_config: Optional[dict],
 ) -> List[dict]:
-    """Bing搜索（HTML解析）- 小沈 2026-05-07
+    """Bing搜索（HTML解析）- 小沈 2026-05-07, 更新 2026-05-13
     国内可访问，无需API Key，解析搜索结果页HTML
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     }
-    
     params = {"q": query, "count": num_results}
     if language == "zh-CN" or language == "zh":
         params["setlang"] = "zh-CN"
@@ -740,13 +738,19 @@ async def _search_bing(
     for block in algo_blocks[1:]:
         if len(results) >= num_results:
             break
-        # 提取URL：第一个外部链接
+        # 提取URL：优先找非bing.com的外部链接，其次是bing.com/ck/a跳转链接
         a_match = re.search(r'<a[^>]+href="(https?://[^"]+)"[^>]*>', block[:3000])
         if not a_match:
             continue
         url = a_match.group(1)
-        if "bing.com" in url or "microsoft.com" in url:
+        # 【2026-05-13 小沈】Bing现在所有结果都用ck/a跳转链接，没有直接外部URL
+        # HTTP跟随跳转会返回原URL（无法解码），所以直接保留ck/a链接作为结果
+        if "bing.com/ck/a" in url:
+            # 保留跳转链接，用户点击后会被重定向到真实网站
+            pass
+        elif "bing.com" in url or "microsoft.com" in url:
             continue
+        
         # 提取标题：优先从<h2>取（Bing的真实标题在h2中）
         h2_match = re.search(r'<h2[^>]*>(.*?)</h2>', block[:3000], re.DOTALL)
         if h2_match:
@@ -773,7 +777,11 @@ async def _search_bing(
         for match in href_pattern.finditer(html):
             url = match.group(1)
             title = re.sub(r'<[^>]+>', '', match.group(2)).strip()
-            if title and "bing.com" not in url and "microsoft.com" not in url and len(title) > 5:
+            if "bing.com/ck/a" in url:
+                pass  # 保留跳转链接
+            elif "bing.com" in url or "microsoft.com" in url:
+                continue
+            if title and len(title) > 5:
                 results.append({"title": title, "url": url, "snippet": "", "source": "Bing"})
             if len(results) >= num_results:
                 break
