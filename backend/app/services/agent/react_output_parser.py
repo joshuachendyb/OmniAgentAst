@@ -543,9 +543,9 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
     # 【恢复 2026-04-24 小沈】纯文本无关键词时，长文本返回implicit，短文本返回parse_error
     stripped = output.strip()
     if len(stripped) >= 5:
-        # 纯文本情况，返回chunk类型（流式中间文本片段，由ReAct循环判断是否提升为implicit）
+        # 【修复 2026-05-14 小沈】非流式路径的完整文本回答应返回implicit，不是chunk
         return {
-            "type": "chunk",
+            "type": "implicit",
             "thought": stripped,
             "content": stripped,             # 兼容性字段
             "reasoning": stripped,           # 兼容性字段
