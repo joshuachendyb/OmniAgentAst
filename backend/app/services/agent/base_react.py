@@ -789,35 +789,11 @@ class BaseAgent(ABC):
                 # yield Step字典
                 yield action_step.to_dict()
                 
-                # 【2026-05-14 小沈】处理并行工具调用（LLM一次返回多个tool_calls）
-                pending_calls = parsed.get("_pending_calls", [])
-                for pending in pending_calls:
-                    p_name = pending.get("name", "finish")
-                    p_params = pending.get("args", {})
-                    logger.info(f"[ReAct] 执行并行工具: {p_name}, params={p_params}")
-                    start_time2 = time.perf_counter()
-                    p_result = await self._execute_tool(p_name, p_params)
-                    p_time = int((time.perf_counter() - start_time2) * 1000)
-                    
-                    # 构建并yield action_tool step（不追加observation到history）
-                    p_action_step = StepFactory.create_action_tool_step(
-                        step=step_count, tool_name=p_name, tool_params=p_params,
-                        execution_result={
-                            "status": p_result.get("status", "success"),
-                            "summary": p_result.get("summary", ""),
-                            "data": p_result.get("data"),
-                            "error": p_result.get("error", ""),
-                        },
-                        execution_time_ms=p_time
-                    )
-                    self.steps.append(p_action_step)
-                    yield p_action_step.to_dict()
-                
                 # 【修正 2026-04-17 小沈】按照设计文档15.2.0.4执行顺序
                 # 步骤5：response 应该在 action_tool 之后再加入 conversation_history
                 self.conversation_history.append({"role": "assistant", "content": response})
                 
-                # ========== Observation 阶段 ==========
+                # ========== Observation 阶段（主工具的结果）==========
                 # 区分不同 execution_status 生成 observation_text（给 LLM 历史）
                 exec_status = execution_result.get('status', 'unknown')
                 
@@ -935,6 +911,44 @@ class BaseAgent(ABC):
                     return
 
                 self._trim_history()
+                
+                # 【2026-05-14 小沈】在主干工具完成后再执行并行工具调用（成对显示）
+                pending_calls = parsed.get("_pending_calls", [])
+                if pending_calls:
+                    logger.info(f"[ReAct] 主工具完成，继续执行 {len(pending_calls)} 个并行工具")
+                for pending in pending_calls:
+                    p_name = pending.get("name", "finish")
+                    p_params = pending.get("args", {})
+                    logger.info(f"[ReAct] 执行并行工具: {p_name}")
+                    start_p = time.perf_counter()
+                    p_result = await self._execute_tool(p_name, p_params)
+                    p_time = int((time.perf_counter() - start_p) * 1000)
+                    
+                    p_result_dict = {
+                        "status": p_result.get("status", "success"),
+                        "summary": p_result.get("summary", ""),
+                        "data": p_result.get("data"),
+                        "error": p_result.get("error", ""),
+                    }
+                    
+                    # action_tool + observation 成对yield
+                    p_action_step = StepFactory.create_action_tool_step(
+                        step=step_count, tool_name=p_name, tool_params=p_params,
+                        execution_result=p_result_dict,
+                        execution_time_ms=p_time
+                    )
+                    self.steps.append(p_action_step)
+                    yield p_action_step.to_dict()
+                    
+                    p_obs_text = f"Observation: {p_result.get('status', 'success')} - {p_result.get('summary', '')}"
+                    p_obs_step = StepFactory.create_observation_step(
+                        step=step_count, tool_name=p_name, tool_params=p_params,
+                        observation=p_obs_text,
+                        return_direct=False
+                    )
+                    self.steps.append(p_obs_step)
+                    yield p_obs_step.to_dict()
+                    self._add_observation_to_history(p_obs_text)
         
         except Exception as e:
             # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
