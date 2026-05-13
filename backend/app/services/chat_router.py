@@ -293,8 +293,9 @@ class ChatRouter:
         candidates_values = intent_info.get("candidates", [])
         candidates_list = [c.value for c in candidates_values if c]  # 【修复 2026-04-30 小沈】简化：if c 已过滤None，else "" 不可达
         
-        # 【2026-05-13 小沈】不再有chat分类，未匹配的intent直接传None→让generator_sse_stream兜底
-        intent_type = intent_type_value.value if intent_type_value else "generic"
+        # 【2026-05-13 小沈】不再有chat分类，未匹配的intent走network→有search_web工具可用
+        # 这样像"今天天气怎么样"等无匹配的实时信息查询可以走网络搜索
+        intent_type = intent_type_value.value if intent_type_value else "network"
         
         logger.info(
             f"[ChatRouter] 两阶段意图检测 → intent_type={intent_type}({intent_type_value}), "
@@ -368,7 +369,7 @@ class ChatRouter:
         
         # ===== 步骤6: 统一走ReAct循环 =====
         # 【2026-05-13 小沈】删除chat/chat_stream_query分流，所有意图统一走react_sse_wrapper
-        # chat/generic意图走_run_generic_sse_stream兜底（_GenericAgent, TextStrategy）
+        # 未匹配的intent走network，有search_web等工具可用
         
         logger.info(f"[ChatRouter] 意图分发 (type={intent_type}, conf={confidence:.2f}, candidates={candidates_list})，统一走react_sse_wrapper")
         from app.services.react_sse_wrapper import generate_sse_stream
