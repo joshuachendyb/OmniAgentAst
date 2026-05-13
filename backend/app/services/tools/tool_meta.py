@@ -37,6 +37,7 @@ TOOL_TIMEOUTS = {
     "list_allowed_directories": 5,
     "execute_command": 120,
     "run_command": 120,
+    "execute_shell_command": 35,  # 【修复 2026-05-14 小沈】外层35s略大于shell内部30s，让内部超时先触发(更干净)
     "get_current_time": 5,
     "get_system_info": 10,
     # system/工具超时配置 小沈-2026-05-05

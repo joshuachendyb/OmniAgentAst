@@ -832,6 +832,10 @@ class BaseAgent(ABC):
                 else:
                     # 失败状态（error/timeout/permission_denied）：只显示错误摘要，不显示数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
+                    # 【修复 2026-05-14 小沈】失败时动态生成替代建议（从当前Agent已注册工具中找）
+                    alt_hint = self._build_alternative_tools_hint(tool_name)
+                    if alt_hint:
+                        observation_text += f"\n{alt_hint}"
                 
                 # 【改进2 2026-05-01 小沈 小健】agent层独立内容质量检测
                 # 给LLM通道：在observation_text中附加质量警告和content摘要
@@ -978,6 +982,46 @@ class BaseAgent(ABC):
     # ===== 对话历史管理 =====
 
     MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话（每轮 = thought + observation）
+
+    def _build_alternative_tools_hint(self, failed_tool: str) -> str:
+        """工具执行失败时，从当前Agent已注册工具中动态生成替代建议 - 小沈 2026-05-14
+        
+        通用方法：不写死任何具体工具名，从self._tools_dict动态查找。
+        让LLM知道除了失败的工具，还有哪些可用工具，避免反复重试同一失败工具。
+        
+        Args:
+            failed_tool: 失败的工具名称
+            
+        Returns:
+            替代建议文本，如"其他可用工具: ping(测试连通性), http_request(发送HTTP请求)"
+            如果没有替代工具或_tools_dict不存在，返回空字符串
+        """
+        if not hasattr(self, '_tools_dict') or not self._tools_dict:
+            return ""
+        
+        alternatives = []
+        for name in self._tools_dict:
+            if name == failed_tool or name in ("finish",):
+                continue
+            # 从tool_registry获取工具描述（取前40字作为简要说明）
+            try:
+                from app.services.tools.registry import tool_registry
+                meta = tool_registry._tools.get(name)
+                desc = meta.description[:40] if meta and meta.description else name
+            except Exception:
+                desc = name
+            alternatives.append(f"{name}({desc})")
+        
+        if not alternatives:
+            return ""
+        
+        # 最多列3个，避免observation过长
+        listed = ", ".join(alternatives[:3])
+        remaining = len(alternatives) - 3
+        hint = f"其他可用工具: {listed}"
+        if remaining > 0:
+            hint += f" 等{len(alternatives)}个"
+        return hint
 
     def _trim_history(self) -> None:
         """

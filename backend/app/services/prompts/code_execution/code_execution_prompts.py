@@ -14,7 +14,7 @@ class CodeExecutionPrompts(BasePrompts):
     """代码执行 Prompt模板类"""
     
     def get_system_prompt(self) -> str:
-        system_info = get_system_info()
+        system_info = get_system_info(include_commands=False)
         return system_info + """
 You are a professional code execution assistant. You help users run Python and JavaScript code snippets safely.
 

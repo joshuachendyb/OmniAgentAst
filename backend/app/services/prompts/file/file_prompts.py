@@ -37,7 +37,7 @@ class FileOperationPrompts(BasePrompts):
     def get_system_prompt(self) -> str:
         """获取增强版系统Prompt"""
         # 获取系统信息（来自中间层）
-        system_info = get_system_info()
+        system_info = get_system_info(include_commands=False)  # 【修复 2026-05-14 小沈】FileAgent不注入命令格式
         logger.info(f"[FileOperationPrompts] get_system_prompt() 被调用，中间层已注入系统信息，长度: {len(system_info)}")
         
         # ========== Prompt 日志记录 ==========

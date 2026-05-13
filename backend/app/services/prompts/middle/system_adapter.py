@@ -125,28 +125,38 @@ class SystemAdapter:
         """获取当前系统的命令格式"""
         return self.COMMANDS.get(self.system, self.COMMANDS["Linux"])
     
-    def generate_system_prompt(self) -> str:
+    def generate_system_prompt(self, include_commands: bool = True) -> str:
         """
         生成系统信息Prompt - 嵌入到工具Prompt的开头
+        
+        【修复 2026-05-14 小沈】加include_commands参数
+        - ShellAgent: include_commands=True（它的工具就是shell，需要命令格式提示）
+        - 其他Agent: include_commands=False（避免LLM看到ipconfig/curl暗示后幻觉调execute_shell_command）
+        
+        Args:
+            include_commands: 是否注入【命令格式】段，默认True(保持向后兼容)
         
         Returns:
             格式化的系统信息字符串
         """
         system_name = self.get_system_name()
         path_format = self.get_path_format()
-        commands = self.get_commands()
-        
-        cmd_lines = "\n".join(f"- {k}: {v}" for k, v in commands.items())
         
         prompt = f"""【当前系统】
 {system_name}
 
 【路径格式】
 - 当前系统: {path_format}
-
+"""
+        if include_commands:
+            commands = self.get_commands()
+            cmd_lines = "\n".join(f"- {k}: {v}" for k, v in commands.items())
+            prompt += f"""
 【命令格式】
 {cmd_lines}
-
+"""
+        
+        prompt += """
 【路径规则】
 - 必须使用绝对路径（禁止相对路径如 ./file.txt）
 - 禁止用 ~ 表示家目录
@@ -169,11 +179,16 @@ def get_system_adapter() -> SystemAdapter:
     return SystemAdapter()
 
 
-def get_system_prompt() -> str:
-    """快捷函数：获取系统Prompt字符串"""
+def get_system_prompt(include_commands: bool = True) -> str:
+    """快捷函数：获取系统Prompt字符串
+    
+    【修复 2026-05-14 小沈】加include_commands参数
+    - ShellAgent调用时传include_commands=True
+    - 其他Agent调用时传include_commands=False（避免LLM幻觉调execute_shell_command）
+    """
     adapter = get_system_adapter()
-    logger.info(f"[Prompt中间层] get_system_prompt() 被调用, 服务器OS: {adapter.get_system_name()}")
-    return adapter.generate_system_prompt()
+    logger.info(f"[Prompt中间层] get_system_prompt() 被调用, 服务器OS: {adapter.get_system_name()}, include_commands={include_commands}")
+    return adapter.generate_system_prompt(include_commands=include_commands)
 
 
 if __name__ == "__main__":

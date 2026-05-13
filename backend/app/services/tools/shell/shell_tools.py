@@ -56,7 +56,7 @@ def _check_shell_injection(command: str) -> Optional[str]:
 def execute_shell_command(
     command: str,
     shell_type: Optional[str] = "powershell",
-    timeout: int = 300000,
+    timeout: int = 30000,  # 【修复 2026-05-14 小沈】300s→30s，curl等网络命令5分钟超时导致服务卡死
     run_in_background: bool = False,
     cwd: Optional[str] = None,
     encoding: Optional[str] = None,

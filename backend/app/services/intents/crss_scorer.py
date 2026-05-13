@@ -52,7 +52,8 @@ TYPE_KEYWORDS: Dict[str, Dict] = {
     "NETWORK": {
         "keywords": [r'\bping\b', r'\bcurl\b', r'\bwget\b', r'\bssh\b',
                      r'\bhttp\b', r'\bhttps\b', r'\bftp\b', r'\bsocket\b'],
-        "chinese_keywords": ['网络', '端口', '下载', '请求', 'API']
+        "chinese_keywords": ['网络', '端口', '下载', '请求', 'API',
+                             'IP', 'IP地址', 'DNS', '公网IP', '网关', 'WIFI', 'WiFi']  # 【修复 2026-05-14 小沈】补充IP/DNS/WIFI等高频词
     },
     "DESKTOP": {
         "keywords": [r'\bscreenshot\b', r'\bcapture\b',
