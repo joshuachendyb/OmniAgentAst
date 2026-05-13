@@ -370,7 +370,10 @@ async def fetch_webpage(
         if user_agent:
             headers["User-Agent"] = user_agent
         else:
-            headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            headers["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        headers["Accept-Language"] = "en-US,en;q=0.9,zh-CN;q=0.8"
+        headers["Accept-Encoding"] = "gzip, deflate"
         
         proxy_config = None
         if proxy:
