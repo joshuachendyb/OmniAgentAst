@@ -59,7 +59,7 @@ from app.services.tools.file.file_tools import _current_task_id
 DEFAULT_MAX_STEPS = 100
 # 连续chunk最大次数-达到此阈值且为工具Agent时提升为implicit退出循环
 # chat Agent（无工具）首个chunk即退出，不受此限制
-MAX_CONSECUTIVE_CHUNKS = 100
+MAX_CONSECUTIVE_CHUNKS = 5
 
 
 class BaseAgent(ABC):
