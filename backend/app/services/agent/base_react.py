@@ -522,8 +522,9 @@ class BaseAgent(ABC):
                     self.parse_retry_count = 0
                     
                     chunk_content = parsed.get("content", "")
-                    thought = parsed.get("thought", "")
-                    reasoning = parsed.get("reasoning", "")
+                    # 检测是否推理内容（基于<longcat_think>标记）
+                    import re as _re
+                    has_longcat_think = bool(_re.search(r'</?longcat_think>', chunk_content))
                     
                     # 拼接chunk_buffer
                     chunk_buffer += chunk_content
@@ -534,23 +535,36 @@ class BaseAgent(ABC):
                     if len(self.temp_history) > 10:
                         self.temp_history = self.temp_history[-10:]
                     
-                    # yield chunk步骤给前端（ChunkStep只接受step/content/is_reasoning）
+                    # yield chunk步骤给前端（is_reasoning供前端控制样式）
                     chunk_step = StepFactory.create_chunk_step(
-                        step=step_count, content=chunk_content
+                        step=step_count, content=chunk_content,
+                        is_reasoning=has_longcat_think
                     )
                     self.steps.append(chunk_step)
                     yield chunk_step.to_dict()
                     
-                    # 连续chunk达阈值→提升为implicit（最终回答）
+                    # 无工具Agent（chat）：第一个chunk直接作为最终回答，不循环
+                    if self.tool_category is None:
+                        logger.info(f"[ReAct] 无工具Agent，第一个chunk即为最终回答，退出循环")
+                        self.temp_history.clear()
+                        if chunk_buffer:
+                            self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
+                        final_step = StepFactory.create_final_step(
+                            step=step_count, response=chunk_buffer, thought=""
+                        )
+                        self.steps.append(final_step)
+                        yield final_step.to_dict()
+                        self._on_after_loop()
+                        return
+                    
+                    # 工具Agent：连续chunk达阈值→提升为implicit
                     if consecutive_chunk_count >= self.max_consecutive_chunks:
                         logger.info(f"[ReAct] 连续chunk达到{self.max_consecutive_chunks}次，提升为implicit")
                         self.temp_history.clear()
                         if chunk_buffer:
                             self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
                         final_step = StepFactory.create_final_step(
-                            step=step_count,
-                            response=chunk_buffer,
-                            thought=""
+                            step=step_count, response=chunk_buffer, thought=""
                         )
                         self.steps.append(final_step)
                         yield final_step.to_dict()
