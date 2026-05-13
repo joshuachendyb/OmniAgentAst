@@ -89,16 +89,17 @@ _TYPE_ORDER = ["string", "integer", "number", "boolean", "object", "array", "nul
 
 
 def _fix_schema_types(schema: Dict[str, Any]) -> Dict[str, Any]:
-    """修复Pydantic生成的JSON Schema中缺失的type字段 - 小健 2026-05-06, 小沈 2026-05-08
+    """修复Pydantic生成的JSON Schema中缺失的type字段 - 小健 2026-05-06, 小沈 2026-05-08, 2026-05-13
     
     Pydantic V2对Union/Optional/Dict等复杂类型生成anyOf/oneOf，
     导致OpenAI Schema兼容的properties中缺少type字段。
     此函数遍历properties，为缺少type的字段推断并补上。
     
-    【G1修复】2026-05-08 小沈
-    Union类型不再简化为单一类型，而是用逗号拼接保留所有类型信息。
-    例: anyOf:[integer,number,string,null] → type:"integer,number,string"
-    这是G6(自动生成Parameter Reminder)的前置条件。
+    【2026-05-13 小沈】不再将Union类型拼成逗号字符串（如"string,array"）。
+    原因是opencode/DeepSeek等API严格校验schema，不认逗号格式。
+    改为保留anyOf结构，这是标准JSON Schema，所有OpenAI兼容API都支持。
+    影响：Parameter Reminder文本中Union类型显示为"any"而非"string,array"，
+    不影响实际API调用（传的是input_schema原样，不是reminder文本）。
     """
     if not schema or 'properties' not in schema:
         return schema
