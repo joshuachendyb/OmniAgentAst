@@ -1,3 +1,31 @@
+v0.12.29
+
+更新时间: 2026-05-14 03:12:11
+
+更新内容：
+
+chore: 删除嵌套的OmniAgentAs-desk冗余目录-小沈-2026-05-13
+fix: cancel_task增加asyncio.Task.cancel()真正中断生成器-小沈-2026-05-13
+revert: 移除_wrap_stream_timeout包装器(干扰中断)-小沈-2026-05-13
+fix: LLM返回后先检查cancelled再重试-避免取消变重试循环-小沈-2026-05-13
+feat: 通用XML工具调用转JSON(llm_core.py)-小沈-2026-05-13
+fix: SSE step编号恢复next_step()递增-小沈-2026-05-13
+fix: chat()区分reasoning_content和content不合并-小沈-2026-05-13
+feat: ChatResponse增加reasoning字段保留推理内容-小沈-2026-05-13
+fix: TextStrategy传递response.reasoning到SSE chunk _thinking字段-小沈-2026-05-13
+test: 新增后端全面测试(25项)+集成测试(10项)-小沈-2026-05-13
+test: 新增端到端API测试(9项)-真实HTTP请求模拟前端-小沈-2026-05-13
+test: 端到端API测试(完成)通过HTTP发消息走完整后端链路-小沈-2026-05-13
+chore: 删除调试脚本-小沈-2026-05-13
+refactor: 未匹配意图默认走network(有search_web)非generic(无工具)-小沈-2026-05-13
+fix: _fix_schema_types不拼逗号type(不兼容opencode)-小沈-2026-05-13
+docs: 补充_fix_schema_types注释说明anyOf兼容性-小沈-2026-05-13
+fix: Bing搜索保留ck/a跳转链接+简化headers避免中文版结构不同-小沈-2026-05-13
+fix: Bing用简短User-Agent避免被返回简化版HTML(无b_algo)-小沈-2026-05-14
+fix: fetch_webpage增加browser类headers(Accept/Language/Encoding)减少403-小沈-2026-05-14
+
+---
+
 v0.12.28
 
 更新时间: 2026-05-13 13:30:00
