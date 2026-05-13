@@ -25,3 +25,4 @@ lunarcalendar>=0.0.9
 
 # PDF生成库（write_pdf工具）
 reportlab>=4.0.0
+psutil>=7.0.0
