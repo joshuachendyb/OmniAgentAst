@@ -208,7 +208,8 @@ def format_chunk_sse(event: Dict[str, Any], step: int, model: str, provider: str
         "thought": event.get("thought", ""),
         "reasoning": event.get("reasoning", ""),
         "timestamp": event.get("timestamp", ""),
-        "is_reasoning": event.get("is_reasoning", False)
+        "is_reasoning": event.get("is_reasoning", False),
+        "_thinking": event.get("_thinking", "")
     }
     return f"data: {json.dumps(chunk_data, ensure_ascii=False)}\n\n"
 

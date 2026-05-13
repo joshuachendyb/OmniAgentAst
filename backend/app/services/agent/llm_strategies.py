@@ -115,6 +115,8 @@ class TextStrategy(LLMStrategy):
             content = response.get("content", str(response))
         else:
             content = str(response)
+        # 【2026-05-13 小沈】提取模型的推理内容(reasoning_content/thinking)
+        response_reasoning = getattr(response, 'reasoning', '') or ''
         
         logger.info(f"[LLM Response Raw (text)] content长度: {len(content) if isinstance(content, str) else '非字符串'}")
         logger.info(f"[LLM Response Raw (text)] content类型: {type(content)}")
@@ -180,7 +182,7 @@ class TextStrategy(LLMStrategy):
             # chunk: 返回chunk类型数据，由ReAct循环判断是否提升为implicit
             if parsed_type == "chunk":
                 logger.info(f"[TextStrategy] type=chunk, 返回chunk数据等待ReAct循环判断")
-                return json.dumps({
+                chunk_data = {
                     "type": "chunk",
                     "content": parsed.get("content", ""),
                     "thought": parsed.get("thought", ""),
@@ -189,7 +191,12 @@ class TextStrategy(LLMStrategy):
                     "tool_params": None,
                     "response": parsed.get("content", ""),
                     "error": None
-                }, ensure_ascii=False)
+                }
+                # 【2026-05-13 小沈】注入模型的推理内容，用于SSE事件传给前端
+                if response_reasoning:
+                    chunk_data["_thinking"] = response_reasoning
+                    chunk_data["is_reasoning"] = True
+                return json.dumps(chunk_data, ensure_ascii=False)
             
             # implicit（兼容保留）：直接返回 finish，退出循环
             if parsed_type == "implicit":
