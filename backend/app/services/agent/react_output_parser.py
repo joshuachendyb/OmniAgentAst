@@ -541,9 +541,25 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
     
     # 所有解析方法都失败，根据输出长度判断返回implicit或parse_error
     # 【恢复 2026-04-24 小沈】纯文本无关键词时，长文本返回implicit，短文本返回parse_error
+    # =========================================================================
+    # 【chunk vs implicit 语义说明 - 小沈 2026-05-14】
+    #
+    # chunk:   流式文本片段，表示"还没完，后面还有"。Agent追加到buffer后继续循环。
+    # implicit:隐式完成，表示"LLM已经说完了，这就是最终回答"。Agent直接结束循环。
+    #
+    # 此函数（_determine_parse_type）只被非流式路径（parse_react_response）调用，
+    # 处理的已经是LLM完整返回文本。所以fallback应返回implicit，不是chunk。
+    #
+    # chunk应出现的路径：
+    #   1. LLM显式返回 {"type": "chunk", ...} → JSON路径（line 175）
+    #   2. 非标准JSON中声明 type=chunk → 非标准JSON路径（line 252）
+    #   3. 不完整JSON（被截断的流式输出）→ 不完整JSON检测（line 341）
+    #   4. JSON有content/reasoning但无tool_name → JSON块解析（line 427）
+    #   5. TextStrategy.chunk路径 → llm_strategies.py（line 186，通过strategy返回给textStrategy处理）
+    # =========================================================================
     stripped = output.strip()
     if len(stripped) >= 5:
-        # 【修复 2026-05-14 小沈】非流式路径的完整文本回答应返回implicit，不是chunk
+        # 【2026-05-14 小沈】非流式路径的完整文本回答应返回implicit，不是chunk
         return {
             "type": "implicit",
             "thought": stripped,
@@ -950,6 +966,9 @@ def _create_action_result_from_dict(data: Dict) -> Dict[str, Any]:
         }
     
     # 【2026-05-14 小沈修复】tool_name为None时不应返回action类型
+    # _create_action_result_from_dict是在JSON解析成功后调用的，此时如果LLM返回的
+    # JSON中有content/reasoning但tool_name为null，说明LLM"空口说话"（没调用工具）。
+    # 应返回implicit（隐式完成），不是action（会导致_execute_tool(None,None)→None.copy()崩溃）
     if not tool_name:
         logger.warning(f"[_create_action_result_from_dict] tool_name为空，降级为implicit")
         result = {
