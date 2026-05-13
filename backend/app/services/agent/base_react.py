@@ -939,15 +939,14 @@ class BaseAgent(ABC):
                     self.steps.append(p_action_step)
                     yield p_action_step.to_dict()
                     
-                    p_obs_text = f"Observation: {p_result.get('status', 'success')} - {p_result.get('summary', '')}"
                     p_obs_step = StepFactory.create_observation_step(
                         step=step_count, tool_name=p_name, tool_params=p_params,
-                        observation=p_obs_text,
+                        execution_result=p_result_dict,
                         return_direct=False
                     )
                     self.steps.append(p_obs_step)
                     yield p_obs_step.to_dict()
-                    self._add_observation_to_history(p_obs_text)
+                    self._add_observation_to_history(f"Observation: {p_result.get('status', 'success')} - {p_result.get('summary', '')}")
         
         except Exception as e:
             # ===== 【步骤2.9+2.11】场景1：未捕获异常 =====
