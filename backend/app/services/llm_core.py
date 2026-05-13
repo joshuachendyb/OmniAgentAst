@@ -211,20 +211,28 @@ class BaseAIService:
         try:
             full_content = ""
             full_reasoning = ""
+            has_non_reasoning_content = False
             stream_error = None
             async for chunk in self.chat_stream(message, history):
                 if chunk.content:
-                    full_content += chunk.content
-                # 【修复 2026-05-05 小沈】收集reasoning_content用于日志
+                    if getattr(chunk, "is_reasoning", False):
+                        # reasoning_content: 收集到reasoning字段，不合并到content
+                        full_reasoning += chunk.content
+                    else:
+                        # 普通content: 正常收集
+                        full_content += chunk.content
+                        has_non_reasoning_content = True
+                # 【修复 2026-05-05 小沈】记录explicit reasoning字段
                 if chunk.reasoning:
                     full_reasoning += chunk.reasoning
-                elif getattr(chunk, "is_reasoning", False) and chunk.content:
-                    # 【修复 2026-05-10 小沈】thinking 模型将推理写在 delta.content 且 is_reasoning=True，chunk.reasoning 为空
-                    full_reasoning += chunk.content
                 if chunk.stream_error:
                     stream_error = chunk.stream_error
                 if chunk.is_done:
                     break
+            # 【2026-05-13 小沈】fallback：如果没有非推理内容，用推理内容代替（thinking模型）
+            if not has_non_reasoning_content and full_reasoning:
+                full_content = full_reasoning
+                logger.info(f"[chat] 无普通content，使用reasoning_content作为fallback")
             # 【修复 2026-05-05 小沈】日志：记录聚合结果，便于诊断空响应
             logger.info(
                 f"[chat] 聚合结果, model={self.model}, "
