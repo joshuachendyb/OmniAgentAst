@@ -34,6 +34,7 @@ class ErrorType(Enum):
     FILE_NOT_FOUND = "file_not_found"
     INVALID_PARAMS = "invalid_params"
     TOOL_NOT_FOUND = "tool_not_found"
+    CIRCUIT_OPEN = "circuit_open"
     UNKNOWN = "unknown"
     
     @property

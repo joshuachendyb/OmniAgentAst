@@ -182,13 +182,23 @@ def _match_keywords(keywords: list, chinese_keywords: list, text: str) -> float:
     """计算关键词匹配总分（中文+2.0/个，英文+1.0/个）"""
     score = 0
     for kw in chinese_keywords:
-        if kw in text:
+        if kw in text and not _is_negated(kw, text):
             score += 2.0
     for pattern in keywords:
         keyword = pattern.replace(r'\b', '')
         if _ascii_word_boundary_match(keyword, text):
             score += 1.0
     return score
+
+
+def _is_negated(keyword: str, text: str) -> bool:
+    """检查中文关键词前是否有否定前缀 - 小健 2026-05-13"""
+    idx = text.find(keyword)
+    if idx < 0:
+        return False
+    prefix = text[max(0, idx - 2):idx].strip()
+    negation_words = ["不", "没", "别", "勿", "无", "未", "非", "没有", "不要", "不用"]
+    return any(negation in prefix for negation in negation_words)
 
 
 def _compute_intent_scores(command: str) -> Dict[ToolCategory, float]:

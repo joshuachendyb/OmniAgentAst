@@ -37,6 +37,21 @@ from datetime import datetime
 # 后台Shell会话管理器 - 小沈 2026-05-02
 _background_shells: Dict[str, Dict[str, Any]] = {}
 
+# 高风险shell注入模式 - 小健 2026-05-13 补充安全验证
+SHELL_INJECTION_PATTERNS = [
+    (r'\$\(', '子shell执行 $()'),
+    (r'`[^`]*`', '命令替换反引号'),
+]
+
+def _check_shell_injection(command: str) -> Optional[str]:
+    """检查shell命令注入风险，返回错误描述或None - 小健 2026-05-13"""
+    if not command or not command.strip():
+        return None
+    for pattern, desc in SHELL_INJECTION_PATTERNS:
+        if re.search(pattern, command):
+            return f"检测到高风险shell注入模式: {desc}"
+    return None
+
 
 def execute_shell_command(
     command: str,
@@ -72,6 +87,15 @@ def execute_shell_command(
     use_encoding = encoding if encoding else "utf-8"
     
     try:
+        injection_error = _check_shell_injection(command)
+        if injection_error:
+            logger.warning(f"[Shell安全] 拦截高风险命令: {command[:200]}")
+            return {
+                "code": "ERR_SHELL_INJECTION",
+                "data": None,
+                "message": injection_error
+            }
+        
         if run_in_background:
             shell_id = f"shell_{uuid.uuid4().hex[:8]}"
             process = subprocess.Popen(
@@ -552,3 +576,25 @@ def terminate_shell(
             "data": None,
             "message": f"终止shell失败: {str(e)}"
         }
+
+
+def cleanup_background_shells() -> int:
+    """终止所有后台shell进程（服务器关闭时调用）- 小健 2026-05-13"""
+    count = 0
+    shell_ids = list(_background_shells.keys())
+    for shell_id in shell_ids:
+        try:
+            shell_info = _background_shells.get(shell_id)
+            if shell_info:
+                process = shell_info.get("process")
+                if process and process.poll() is None:
+                    process.kill()
+                    try:
+                        process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        pass
+                del _background_shells[shell_id]
+                count += 1
+        except Exception:
+            pass
+    return count

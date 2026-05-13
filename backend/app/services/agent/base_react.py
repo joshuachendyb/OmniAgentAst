@@ -1087,7 +1087,7 @@ class BaseAgent(ABC):
                 f"[observation] 轮数={self.llm_call_count}, "
                 f"长度={len(observation)}, 预算={budget}, 无需截断"
             )
-        self.conversation_history.append({"role": "user", "content": observation})
+        self.conversation_history.append({"role": "system", "content": observation})  # 【修复 2026-05-13 小沈】M1: 工具执行结果用system角色，避免LLM误认为是用户新输入
         self._trim_history()
 
     # ========== 【改进2 2026-05-01 小沈 小健】agent层独立内容质量检测 ==========

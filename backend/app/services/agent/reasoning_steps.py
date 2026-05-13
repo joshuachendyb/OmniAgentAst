@@ -441,7 +441,8 @@ class ActionToolStep(ToolMixin, ReasoningStep):
         base_dict.update({
             "execution_status": self._execution_status,
             "summary": self._summary,
-            "execution_result": self._execution_result,  # 原raw_data
+            "execution_result": self._execution_result,  # 新字段名
+            "raw_data": self._execution_result,  # 【修复 2026-05-13 小沈】M6: raw_data作为execution_result的向后兼容别名
             "error_message": self._error_message,
             "action_retry_count": self._action_retry_count,  # 原retry_count
             "execution_time_ms": self._execution_time_ms,
@@ -631,10 +632,10 @@ class FinalStep(ReasoningStep):
     
     def to_dict(self) -> Dict[str, Any]:
         base_dict = ReasoningStep.to_dict(self)
-        # 删除重复的content字段，FinalStep用response
-        base_dict.pop("content", None)
+        # 【修复 2026-05-13 小沈】M5: 保留content作为response别名，向后兼容旧消费者
         base_dict.update({
             "response": self._response,
+            "content": self._response,  # content作为response的别名
             "thought": self._thought,
             "model": self._model,
             "provider": self._provider,

@@ -58,10 +58,10 @@ app = FastAPI(
 
 print("OmniAgentAst Backend v" + app_version + " started")
 
-# CORS配置
+# CORS配置 - 显式指定前端源，避免通配符与credentials冲突
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -135,6 +135,7 @@ app.include_router(metrics.router, prefix="/api/v1", tags=["metrics"])
 # 【阶段6更新】cleanup_expired_tasks 改为从 react_sse_wrapper 导入
 import asyncio
 from app.services.react_sse_wrapper import cleanup_expired_tasks
+from app.services.tools.shell.shell_tools import cleanup_background_shells
 
 @app.on_event("startup")
 async def startup_event():
@@ -151,6 +152,13 @@ async def startup_event():
     # 启动后台任务
     asyncio.create_task(cleanup_task())
     logger.info("后台清理任务已启动")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理后台shell进程"""
+    count = cleanup_background_shells()
+    logger.info(f"已清理 {count} 个后台shell进程")
 
 
 @app.get("/")

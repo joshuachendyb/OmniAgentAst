@@ -14,62 +14,9 @@ import time
 from enum import Enum
 from typing import Dict, Any, Callable, List, Optional
 
+from app.services.agent.tool_executor import ErrorType, ErrorClassifier
+
 logger = logging.getLogger(__name__)
-
-
-class ErrorType(Enum):
-    """错误类型枚举"""
-    TIMEOUT = "timeout"
-    PERMISSION_DENIED = "permission_denied"
-    FILE_NOT_FOUND = "file_not_found"
-    INVALID_PARAMS = "invalid_params"
-    TOOL_NOT_FOUND = "tool_not_found"
-    CIRCUIT_OPEN = "circuit_open"
-    UNKNOWN = "unknown"
-
-
-class ErrorClassifier:
-    """错误分类器"""
-    
-    @staticmethod
-    def classify(error: Exception) -> ErrorType:
-        """
-        分类错误类型
-        
-        Args:
-            error: 异常对象
-        
-        Returns:
-            ErrorType枚举
-        """
-        error_msg = str(error).lower()
-        
-        if isinstance(error, asyncio.TimeoutError):
-            return ErrorType.TIMEOUT
-        elif isinstance(error, PermissionError):
-            return ErrorType.PERMISSION_DENIED
-        elif isinstance(error, FileNotFoundError):
-            return ErrorType.FILE_NOT_FOUND
-        elif isinstance(error, ValueError):
-            return ErrorType.INVALID_PARAMS
-        elif "not found" in error_msg or "does not exist" in error_msg:
-            return ErrorType.TOOL_NOT_FOUND
-        else:
-            return ErrorType.UNKNOWN
-    
-    @staticmethod
-    def is_retryable(error_type: ErrorType, retryable_errors: List[str]) -> bool:
-        """
-        判断错误是否可重试
-        
-        Args:
-            error_type: 错误类型
-            retryable_errors: 可重试错误列表
-        
-        Returns:
-            是否可重试
-        """
-        return error_type.value in retryable_errors
 
 
 class CircuitState(Enum):

@@ -44,7 +44,7 @@ from app.chat_stream.chat_helpers import create_final_response, create_timestamp
 from app.chat_stream.message_saver import save_execution_steps_to_db, add_step_and_save, create_add_step_and_save, parse_and_save_sse
 from app.chat_stream.sse_formatter import format_thought_sse, format_action_tool_sse, format_observation_sse, format_sse_event
 from app.services.agent.base_react import DEFAULT_MAX_STEPS
-from app.services.chat_router import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-04-30 小沈】统一置信度阈值常量
+from app.services.intents.crss_scorer import CRSS_CONFIDENCE_THRESHOLD  # 【修复 2026-05-13 小沈】H2: 改为从crss_scorer导入，切断与chat_router的循环依赖
 
 
 # ============================================================
@@ -288,6 +288,7 @@ async def _run_agent_sse_stream(
     config = get_config()
     max_steps = config.get('app', {}).get('max_steps', DEFAULT_MAX_STEPS)
     
+    agent = None  # 【修复 2026-05-13 小沈】M8: 预初始化，防止AgentFactory.create()抛异常时finally块中agent未绑定
     try:
         async for event in agent.run_stream(
             task=last_message, context=None,

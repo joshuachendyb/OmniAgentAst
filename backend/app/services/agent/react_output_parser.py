@@ -174,6 +174,18 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                     "tool_params": None,
                     "response": data.get("response", data.get("content", ""))
                 }
+            # 【修复 2026-05-13 小沈】H1: 添加chunk类型显式处理，避免被误判为action
+            if explicit_type == "chunk":
+                return {
+                    "type": "chunk",
+                    "thought": data.get("thought", ""),
+                    "content": data.get("content", ""),
+                    "reasoning": data.get("reasoning", ""),
+                    "tool_name": None,
+                    "tool_params": None,
+                    "response": data.get("response", data.get("content", "")),
+                    "error": None
+                }
             
             # 新字段格式
             if "tool_name" in data:
@@ -347,21 +359,6 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                 "response": None,
                 "error": None
             }
-        # 如果是finish类型的JSON
-        if json_data.get("tool_name") == "finish":
-            result_text = tool_params.get("result", "") if tool_params else "" if isinstance(tool_params, dict) else ""
-            logger.info("[parse_react_response] 混合文本中提取到finish JSON")
-            return {
-                "type": "answer",
-                "thought": json_data.get("thought", ""),
-                "content": result_text or prefix_text,
-                "reasoning": json_data.get("reasoning", ""),
-                "tool_name": None,
-                "tool_params": None,
-                "response": result_text or prefix_text,
-                "error": None
-            }
-        
         # 2026-05-02 小强新增：处理无tool_name但有content/reasoning的JSON
         # LLM可能返回 {"content": "xxx", "reasoning": "yyy"} 格式（缺少tool_name）
         # 此时应该正确提取content和reasoning字段，而不是把整个JSON当作字符串

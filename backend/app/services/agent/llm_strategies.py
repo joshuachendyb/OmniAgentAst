@@ -375,7 +375,8 @@ class TextStrategy(LLMStrategy):
                             param_name = props[0] if props else "path"
                         else:
                             param_name = "path"
-                    except Exception:
+                    except Exception as e:
+                        logger.warning(f"[TextStrategy] 获取工具{tool}的输入模型失败: {e}")
                         param_name = "path"
                     params[param_name] = extracted_path
                 

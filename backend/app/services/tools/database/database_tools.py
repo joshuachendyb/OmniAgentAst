@@ -21,6 +21,7 @@ DATABASE Tools - 数据库工具实现
 创建时间: 2026-04-29
 """
 
+import re
 import sqlite3
 from typing import Any, Dict, List, Optional, Union
 from app.utils.logger import logger
@@ -187,18 +188,17 @@ def execute_sql(
     try:
         sql_upper = sql.strip().upper()
         
-        dangerous_keywords = ["DROP", "TRUNCATE"]
-        has_dangerous = any(kw in sql_upper for kw in dangerous_keywords)
+        DANGEROUS_PATTERN = re.compile(r'\b(DROP|TRUNCATE|ALTER|CREATE|GRANT|REVOKE)\b', re.IGNORECASE)
+        dangerous_matches = DANGEROUS_PATTERN.findall(sql)
         
-        if has_dangerous and not dry_run:
-            dangerous_detected = [kw for kw in dangerous_keywords if kw in sql_upper]
+        if dangerous_matches and not dry_run:
             return {
                 "code": "WARNING",
                 "data": {
-                    "detected": dangerous_detected,
+                    "detected": dangerous_matches,
                     "suggestion": "检测到危险操作，建议使用 dry_run=true 先验证"
                 },
-                "message": f"警告：检测到危险操作 {dangerous_detected}，已拦截执行"
+                "message": f"警告：检测到危险操作 {dangerous_matches}，已拦截执行"
             }
         
         if dry_run:
