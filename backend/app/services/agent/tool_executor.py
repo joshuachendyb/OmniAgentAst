@@ -261,15 +261,39 @@ class ToolExecutor:
                 # 【修复 2026-05-07 小沈】lambda包装的async工具：iscoroutinefunction(lambda)=False，
                 # 需要先调用lambda拿到实际方法再判断是否coroutine
                 # 【修复 2026-05-10 小健】使用tool_meta.get_timeout（精细配置）替代config.get_timeout（YAML default=5秒太小）
+                # 【修复 2026-05-14 小沈】同步工具统一走to_thread线程池，不阻塞主线程事件循环
+                # =========================================================================
+                # 背景：execute_shell_command/ping/port_check等工具内部用subprocess.run()或
+                # socket.socket()等同步阻塞调用。如果直接在事件循环线程执行，会导致整个asyncio
+                # 事件循环卡死——SSE无法发送事件、新请求无法处理、服务器僵死。
+                # 
+                # 修复方案：所有非async def的工具都通过asyncio.to_thread()委托到线程池执行，
+                # 释放事件循环继续处理其他协程。
+                #
+                # 三种工具类型的处理路径：
+                #   1. 纯async def工具（iscoroutinefunction=True）：
+                #      → 直接await，asyncio.wait_for做超时保护（保持不变）
+                #   2. lambda包装的async工具（iscoroutinefunction=False，但调用后返回coroutine）：
+                #      → to_thread执行lambda，lambda在子线程中创建coroutine对象
+                #      → coroutine返回主线程，await执行真正的async逻辑
+                #   3. 纯同步工具（iscoroutinefunction=False，返回值不是coroutine）：
+                #      → to_thread在线程池执行，subprocess.run不阻塞事件循环
+                #      → asyncio.wait_for做超时保护
+                # =========================================================================
                 timeout = get_timeout(action)
                 if inspect.iscoroutinefunction(tool):
                     result = await asyncio.wait_for(tool(**normalized_input), timeout=timeout)
                 else:
-                    # 先调用一次看返回值是否为coroutine（lambda包装的async方法）
-                    call_result = tool(**normalized_input)
+                    # 【2026-05-14 小沈】统一走to_thread，不在主线程直接执行
+                    call_result = await asyncio.wait_for(
+                        asyncio.to_thread(lambda: tool(**normalized_input)),
+                        timeout=timeout
+                    )
                     if inspect.iscoroutine(call_result):
+                        # lambda包装的async工具：返回值是coroutine，await执行
                         result = await asyncio.wait_for(call_result, timeout=timeout)
                     else:
+                        # 纯同步工具：线程池已执行完，直接返回结果
                         result = call_result
                 
                 return self._format_result(result, action)
