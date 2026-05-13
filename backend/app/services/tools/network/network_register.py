@@ -109,7 +109,7 @@ NETWORK_TOOL_DESCRIPTIONS = {
 - data: 成功时为对象，失败时为None；成功时包含 url(请求地址)、content(提取的网页内容文本)、format(提取格式markdown/html/text)、content_type(响应内容类型)、status_code(HTTP状态码)、truncated(是否因max_tokens截断)；有prompt时额外包含 prompt(AI提取指令)和note(提示需LLM后处理)
 - message: 结果描述信息""",
     "search_web": """搜索网络获取最新信息（使用DuckDuckGo API）。
-
+    
 使用场景：
 - 当用户需要搜索网络获取最新信息时使用
 - 当用户想要查询实时数据或新闻时使用
@@ -117,11 +117,13 @@ NETWORK_TOOL_DESCRIPTIONS = {
 
 
 【重要】返回搜索结果列表，包含标题、URL 和摘要
+【注意】num_results参数建议：概览类查询用5~8，深度调研类用15~20，默认10
 
 使用示例：
 - 简单搜索：{"query": "OpenAI function calling"}
 - 限定域名：{"query": "React 19 新特性", "allowed_domains": ["github.com", "react.dev"]}
 - 时间范围：{"query": "AI news", "time_range": "d"}
+- 限结果数：{"query": "AI paper 2025", "num_results": 15}
 
 返回数据说明：
 - code: 状态码，SUCCESS或ERR_SEARCH_QUERY_TOO_SHORT/ERR_NETWORK_UNKNOWN

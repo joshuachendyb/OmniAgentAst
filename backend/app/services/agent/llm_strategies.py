@@ -636,7 +636,7 @@ class ToolsStrategy(LLMStrategy):
                 "tool_params": args
             }
         else:
-            # 多个工具调用（合并为一个）
+            # 多个工具调用（执行第一个，其余放入_pending_calls依次执行）
             calls_info = []
             for call in tool_calls:
                 func = call.get("function", {})
@@ -650,12 +650,13 @@ class ToolsStrategy(LLMStrategy):
                 
                 calls_info.append({"name": func_name, "args": args})
             
-            # 取第一个工具调用作为主要操作
             first_call = calls_info[0]
+            remaining = calls_info[1:]
             formatted = {
                 "thought": f"Calling {len(tool_calls)} tools: {[c['name'] for c in calls_info]}",
                 "tool_name": first_call["name"],
-                "tool_params": first_call["args"]
+                "tool_params": first_call["args"],
+                "_pending_calls": remaining
             }
         
         return json.dumps(formatted, ensure_ascii=False)
