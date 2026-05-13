@@ -59,7 +59,7 @@ from app.services.tools.file.file_tools import _current_task_id
 DEFAULT_MAX_STEPS = 100
 # 连续chunk最大次数-达到此阈值且为工具Agent时提升为implicit退出循环
 # chat Agent（无工具）首个chunk即退出，不受此限制
-MAX_CONSECUTIVE_CHUNKS = 3
+MAX_CONSECUTIVE_CHUNKS = 100
 
 
 class BaseAgent(ABC):
@@ -402,26 +402,10 @@ class BaseAgent(ABC):
         chunk_buffer = ""
         consecutive_chunk_count = 0
         # 超时机制
-        start_time = time.time()
-        max_total_time = 300  # 5分钟总超时
-
         # ===== 场景1：未捕获异常 (try...except包裹整个循环) =====
         try:
             while True:
                 # ===== 场景3：每次循环开始检查最大步数 =====
-                # ===== 超时检查 =====
-                if time.time() - start_time > max_total_time:
-                    error_step = StepFactory.create_error_step(
-                        step=step_count,
-                        error_type="timeout",
-                        error_message=f"执行超时（{max_total_time}秒）",
-                        recoverable=False
-                    )
-                    self.steps.append(error_step)
-                    yield error_step.to_dict()
-                    self._on_after_loop()
-                    return
-
                 if step_count >= max_steps:
                     # 【步骤3.2】直接ErrorStep→return
                     error_step = StepFactory.create_error_step(
