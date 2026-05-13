@@ -40,11 +40,12 @@ def _load_qiniu_config() -> dict:
         with open(config_path, "r", encoding="utf-8") as f:
             config = yaml.safe_load(f)
         qiniu_config = config.get("ai", {}).get("qiniu", {})
+        qiniu_models = qiniu_config.get("models", ["deepseek-v3.1"])
         return {
             "api_base": qiniu_config.get("api_base", "https://api.qnaigc.com/v1"),
             "api_key": qiniu_config.get("api_key", ""),
-            # 【修复】使用固定的deepseek-v3.1，不受切换AI影响
-            "model": "deepseek-v3.1",
+            # 【L18修复 2026-05-13 小沈】从config读取model列表，取第一个作为fallback模型
+            "model": qiniu_models[0] if qiniu_models else "deepseek-v3.1",
             "timeout": qiniu_config.get("timeout", 90)
         }
     except Exception:
@@ -235,12 +236,4 @@ class IntentClassifier:
         if not text or not labels:
             return {"corrected": text, "intent": "unknown", "confidence": 0.0, "all_intents": {}}
 
-        return await classify_intent(text, labels)
-
-    async def classify_with_llm_async(
-        self,
-        text: str,
-        labels: List[str]
-    ) -> Dict[str, Any]:
-        """使用 LLM 进行意图分类（异步方法，同时文本矫正）"""
         return await classify_intent(text, labels)

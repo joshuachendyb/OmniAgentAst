@@ -376,7 +376,6 @@ class BaseAgent(ABC):
         self.conversation_history = []
         self.status = AgentStatus.THINKING
         self.llm_call_count = 0
-        self.last_answer_response = ""
         
         # 【重要】task_id 用于操作追踪和回退，【禁止】使用 session_id
         # session_id 专用于会话场景，操作追踪必须用 task_id
@@ -422,7 +421,6 @@ class BaseAgent(ABC):
                 step_count += 1
                 
                 # =====【中断检查】每次循环开始检查任务是否被取消 - 小欧-2026-04-21 =====
-                import time
                 if task_id and running_tasks:
                     # 直接检查 cancelled 标志（非线程安全但可接受，因为只是检查布尔值）
                     task_data = running_tasks.get(task_id, {})
@@ -446,9 +444,9 @@ class BaseAgent(ABC):
                 
                 # ===== 调用LLM =====
                 self.status = AgentStatus.THINKING
-                logger.info(f"[Debug] 调用LLM (第{self.llm_call_count}轮), history长度={len(self.conversation_history)}")
+                logger.info(f"[Debug] 调用LLM (第{self.llm_call_count + 1}轮), history长度={len(self.conversation_history)}")
                 response = await self._get_llm_response()
-                logger.info(f"[Debug] LLM响应 (第{self.llm_call_count}轮): {response[:200]}...")
+                logger.info(f"[Debug] LLM响应 (第{self.llm_call_count + 1}轮): {response[:200]}...")
                 
                 # ===== 场景2：LLM返回空响应 =====
                 if not response:

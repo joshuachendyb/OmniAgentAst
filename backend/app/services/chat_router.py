@@ -38,7 +38,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.services.preprocessing.pipeline import PreprocessingPipeline
-from app.services.agent.file_react import FileReactAgent
 from app.services import AIServiceFactory
 from app.utils.logger import logger
 from app.chat_stream.chat_helpers import create_step_counter
@@ -49,14 +48,9 @@ from app.services.tools.registry import ToolCategory
 # 【2026-05-01 小沈】从独立模块导入CRSS评分功能
 from app.services.intents.crss_scorer import (
     detect_intent_v2,
-    _compute_intent_scores,
     CRSS_CONFIDENCE_THRESHOLD,
-    TYPE_KEYWORDS,
 )
 
-
-# 意图标签列表（用于 PreprocessingPipeline，不再包含chat——所有请求走ReAct循环）
-INTENT_LABELS = [c.value for c in ToolCategory]
 
 # 【修复 2026-04-30 小沈】CRSS置信度阈值：归一化评分 >= 此值认为意图可信
 # CRSS评分经 1 - 2^(-raw) 归一化到 [0, 1)，0.3 对应原始分约 0.5

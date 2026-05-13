@@ -145,7 +145,11 @@ class FileOperationSafety:
     
     def _get_connection(self) -> sqlite3.Connection:
         """获取数据库连接（线程安全）"""
-        return sqlite3.connect(str(self.config.DB_PATH))
+        conn = sqlite3.connect(str(self.config.DB_PATH))
+        # 【M18修复 2026-05-13 小沈】启用WAL模式+忙等待超时，解决并发写入"database is locked"错误
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
     
     def _compute_file_hash(self, file_path: Path) -> str:
         """计算文件哈希（SHA-256）"""

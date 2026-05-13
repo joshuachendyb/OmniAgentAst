@@ -154,7 +154,7 @@ class ToolMixin:
     设计依据：13.2.2.2节ToolMixin设计
     """
     
-    def __init__(self, tool_name: str, tool_params: Dict[str, Any]):
+    def __init__(self, tool_name: str, tool_params: Optional[Dict[str, Any]] = None):
         """
         初始化ToolMixin
         
@@ -526,6 +526,7 @@ class ObservationStep(ToolMixin, ReasoningStep):
             "tool_name": self._tool_name,  # 来自ToolMixin
             "tool_params": self._tool_params,  # 来自ToolMixin
         })
+        # 注意：content和observation值相同是故意的 - content来自基类get_content()，observation是类型专用字段
         return base_dict
 
 

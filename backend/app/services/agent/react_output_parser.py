@@ -98,8 +98,6 @@ def parse_react_response(output: str) -> Dict[str, Any]:
         
     设计依据: LlamaIndex ReActOutputParser.parse() 统一入口设计思想
     """
-    from app.utils.logger import logger
-    
     # 【2026-04-28 小沈修复】在函数开头处理 dict 输入
     # 如果传入的是 dict（而非 JSON 字符串），直接解析并返回
     if isinstance(output, dict):
@@ -144,11 +142,8 @@ def parse_react_response(output: str) -> Dict[str, Any]:
     # 包含tool_name/tool_params或action/action_input字段，直接返回解析结果
     # 用途：兼容旧测试用例和直接传入JSON dict的场景
     try:
-        # 【2026-04-28 小沈修复】支持 dict 和 string 两种输入
-        if isinstance(output, dict):
-            data = output
-        else:
-            data = json.loads(output)
+        # 此时output已保证不是dict（上层已处理dict），直接JSON解析
+        data = json.loads(output)
         
         if isinstance(data, dict):
             # 【修复 2026-05-11 小健】先检查parse_error/answer等显式type，避免误判为action
@@ -1135,40 +1130,18 @@ def _check_missing_required_params(tool_name: str, tool_params: Dict, original_o
     """
     【2026-04-28 小沈新增】检测并补充缺失的必需参数
     
-    根据TOOL_REQUIRED_PARAMS定义的工具必需参数列表，检查LLM返回的参数字典是否完整。
-    如果存在缺失，尝试从LLM原始输出中提取缺失的参数值。
-    
-    检测逻辑：
-    1. 查找tool_name在TOOL_REQUIRED_PARAMS中定义的必需参数列表
-    2. 遍历必需参数，检查是否都存在于tool_params中
-    3. 如果有缺失，尝试用正则从original_output中提取：
-       - 匹配 "param_name": "value" 或 param_name: value 格式
-       - 兼容file_path和path参数的互相提取
-    4. 如果仍无法补充，返回(None, True)让调用方返回parse_error
+    注意：必需参数校验已删除（小健 2026-05-02）。
+    Pydantic模型在执行时自动校验required参数，此处不再重复检查。
+    保留此函数作为兼容性占位，统一返回(原参数字典, False)。
     
     Args:
-        tool_name: 工具名称（如write_file, read_file, list_directory等）
-        tool_params: 已解析的参数字典（可能缺少必需参数）
-        original_output: LLM原始输出文本（用于从中提取缺失的参数值）
+        tool_name: 工具名称
+        tool_params: 已解析的参数字典
+        original_output: LLM原始输出文本
         
     Returns:
-        tuple: (补充后的参数字典, 是否有缺失)
-            - 如果成功补充或无需补充: (完整参数字典, False)
-            - 如果无法补充必需参数: (None, True)
-            
-    示例:
-        # write_file需要file_path和content两个必需参数
-        >>> _check_missing_required_params("write_file", {"file_path": "a.txt"}, '{"tool_name":"write_file","tool_params":{"file_path":"a.txt","content":"内容"}}')
-        ({"file_path": "a.txt", "content": "内容"}, False)
-        
-        # 缺失必需参数且无法补充
-        >>> _check_missing_required_params("write_file", {"file_path": "a.txt"}, None)
-        (None, True)
+        tuple: (原参数字典, False) 固定返回
     """
-    from app.utils.logger import logger
-    
-    # 必需参数校验已删除 - 小健 2026-05-02
-    # Pydantic模型在执行时自动校验required参数，此处不再重复检查
     return tool_params, False
 
 

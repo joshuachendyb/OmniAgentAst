@@ -20,10 +20,18 @@ DB_PATH = Path.home() / ".omniagent" / "chat_history.db"
 
 def _get_db_connection():
     """获取数据库连接"""
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    return conn
+    from app.utils.logger import logger
+    try:
+        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        # 【M18修复 2026-05-13 小沈】启用WAL模式+忙等待超时
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
+    except Exception as e:
+        logger.error(f"获取数据库连接失败: {e}")
+        raise
 
 
 class ExecutionStep:
