@@ -16,12 +16,57 @@ LLM 核心模块 - 提供通用的 LLM API 调用能力
 """
 
 import json
+import re
 import asyncio
 import httpx
 import httpcore
 from typing import List, Dict, Optional, AsyncGenerator, Any
 
 from app.utils.logger import logger
+
+
+def _convert_xml_tool_call_to_json(content: str) -> Optional[str]:
+    """
+    通用XML工具调用转JSON
+    
+    某些模型（如LongCat）返回XML格式工具调用而不是标准OpenAI tool_calls。
+    格式: <XXX_tool_call>TOOL_NAME\\n<XXX_arg_key>k</XXX_arg_key>\\n<XXX_arg_value>v</XXX_arg_value>\\n</XXX_tool_call>
+    
+    此函数通用检测任意前缀的XML工具调用标签并转为标准JSON格式。
+    
+    Returns:
+        转换后的JSON字符串，如果无匹配返回None
+    """
+    if not content or '<' not in content or '_tool_call>' not in content:
+        return None
+    
+    # 匹配 <任意前缀_tool_call>TOOL_NAME
+    m = re.search(r'<(\w+)_tool_call>\s*(\w+)', content)
+    if not m:
+        return None
+    
+    prefix = m.group(1)   # 如: longcat
+    tool_name = m.group(2)  # 如: search_web
+    
+    # 匹配 <prefix_arg_key>KEY</prefix_arg_key> 和 <prefix_arg_value>VALUE</prefix_arg_value> 对
+    arg_keys = re.findall(rf'<{prefix}_arg_key>([^<]+)</{prefix}_arg_key>', content)
+    arg_values = re.findall(rf'<{prefix}_arg_value>([^<]*)</{prefix}_arg_value>', content)
+    
+    if not arg_keys:
+        return None
+    
+    # 构建标准JSON格式
+    tool_params = {}
+    for i, key in enumerate(arg_keys):
+        val = arg_values[i] if i < len(arg_values) else ''
+        tool_params[key.strip()] = val.strip()
+    
+    result = json.dumps({
+        "tool_name": tool_name,
+        "tool_params": tool_params
+    }, ensure_ascii=False)
+    
+    return result
 
 
 class Message:
@@ -539,6 +584,17 @@ class BaseAIService:
                             provider=self.provider,
                             error="Failed to parse tool_calls"
                         )
+                
+                # 【通用XML工具调用检测 2026-05-13 小沈】某些模型（如LongCat）返回XML格式工具调用
+                # 格式: <XXX_tool_call>TOOL_NAME\n<XXX_arg_key>k</XXX_arg_key>\n<XXX_arg_value>v</XXX_arg_value>\n</XXX_tool_call>
+                xml_converted = _convert_xml_tool_call_to_json(content)
+                if xml_converted:
+                    logger.info(f"[chat_with_tools] 检测到XML工具调用格式，已转为JSON: {xml_converted}")
+                    return ChatResponse(
+                        content=xml_converted,
+                        model=self.model,
+                        provider=self.provider
+                    )
                 
                 return ChatResponse(
                     content=content,
