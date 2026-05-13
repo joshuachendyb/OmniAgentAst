@@ -400,7 +400,7 @@ async def _run_generic_sse_stream(
         def _get_task_prompt(self, task, context=None):
             return task
     
-    strategy = TextStrategy(ai_service) if ai_service else None
+    strategy = TextStrategy() if ai_service else None
     agent = _GenericAgent(
         llm_client=llm_client,
         task_id=task_id,
