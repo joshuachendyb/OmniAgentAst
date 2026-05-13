@@ -272,11 +272,6 @@ class ReactAgentMixin(ToolLoaderMixin):
             last_message = self.conversation_history[-1]["content"]
             history_dicts = self.conversation_history[:-1]
             
-            # ========== temp_history集成（v2.4新增，小沈2026-05-12）==========
-            # 将chunk过程中的临时历史合并到history_dicts，让LLM下一轮能看到chunk输出
-            if hasattr(self, 'temp_history') and self.temp_history:
-                history_dicts = list(history_dicts) + list(self.temp_history)
-            
             # 注入工具概要
             try:
                 tools_summary = self._get_tools_summary()
