@@ -522,9 +522,6 @@ class BaseAgent(ABC):
                     self.parse_retry_count = 0
                     
                     chunk_content = parsed.get("content", "")
-                    # 检测是否推理内容（基于<longcat_think>标记）
-                    import re as _re
-                    has_longcat_think = bool(_re.search(r'</?longcat_think>', chunk_content))
                     
                     # 拼接chunk_buffer
                     chunk_buffer += chunk_content
@@ -535,10 +532,9 @@ class BaseAgent(ABC):
                     if len(self.temp_history) > 10:
                         self.temp_history = self.temp_history[-10:]
                     
-                    # yield chunk步骤给前端（is_reasoning供前端控制样式）
+                    # yield chunk步骤给前端（is_reasoning默认False，非流式场景无法从chunk元数据获取）
                     chunk_step = StepFactory.create_chunk_step(
-                        step=step_count, content=chunk_content,
-                        is_reasoning=has_longcat_think
+                        step=step_count, content=chunk_content
                     )
                     self.steps.append(chunk_step)
                     yield chunk_step.to_dict()
