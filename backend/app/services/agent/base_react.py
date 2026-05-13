@@ -125,6 +125,10 @@ class BaseAgent(ABC):
         # 【步骤9】意图分类器初始化（用于更可靠检测）
         self._intent_classifier = None   # 意图分类器（用于更可靠检测）
         
+        # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
+        self.max_consecutive_chunks = 3  # 连续chunk达此阈值时提升为implicit
+        self.temp_history: List[Dict[str, str]] = []  # 临时历史，用于chunk过程中LLM参考
+        
         # 创建工具执行器
         self.executor = None  # 子类应初始化
     
@@ -391,11 +395,30 @@ class BaseAgent(ABC):
         self.conversation_history.append({"role": "user", "content": task_prompt})
         
         step_count = 0
+        # chunk处理相关变量
+        chunk_buffer = ""
+        consecutive_chunk_count = 0
+        # 超时机制
+        start_time = time.time()
+        max_total_time = 300  # 5分钟总超时
 
         # ===== 场景1：未捕获异常 (try...except包裹整个循环) =====
         try:
             while True:
                 # ===== 场景3：每次循环开始检查最大步数 =====
+                # ===== 超时检查 =====
+                if time.time() - start_time > max_total_time:
+                    error_step = StepFactory.create_error_step(
+                        step=step_count,
+                        error_type="timeout",
+                        error_message=f"执行超时（{max_total_time}秒）",
+                        recoverable=False
+                    )
+                    self.steps.append(error_step)
+                    yield error_step.to_dict()
+                    self._on_after_loop()
+                    return
+
                 if step_count >= max_steps:
                     # 【步骤3.2】直接ErrorStep→return
                     error_step = StepFactory.create_error_step(
@@ -492,6 +515,52 @@ class BaseAgent(ABC):
                 tool_name = parsed.get("tool_name", parsed.get("action_tool", "finish"))
                 tool_params = parsed.get("tool_params", parsed.get("params", {}))
                 
+                # ===== chunk类型处理（流式中间文本片段，非完成信号）=====
+                # 解析器已将纯文本从implicit改为chunk，此处处理并continue
+                if parsed["type"] == "chunk":
+                    logger.info(f"[parse_react_response] type=chunk, 流式中间文本片段，继续循环")
+                    self.parse_retry_count = 0
+                    
+                    chunk_content = parsed.get("content", "")
+                    thought = parsed.get("thought", "")
+                    reasoning = parsed.get("reasoning", "")
+                    
+                    # 拼接chunk_buffer
+                    chunk_buffer += chunk_content
+                    consecutive_chunk_count += 1
+                    
+                    # 追加到临时历史（供下一轮LLM参考）
+                    self.temp_history.append({"role": "assistant", "content": chunk_content})
+                    if len(self.temp_history) > 10:
+                        self.temp_history = self.temp_history[-10:]
+                    
+                    # yield chunk步骤给前端
+                    chunk_step = StepFactory.create_chunk_step(
+                        step=step_count, content=chunk_content,
+                        thought=thought, reasoning=reasoning
+                    )
+                    self.steps.append(chunk_step)
+                    yield chunk_step.to_dict()
+                    
+                    # 连续chunk达阈值→提升为implicit（最终回答）
+                    if consecutive_chunk_count >= self.max_consecutive_chunks:
+                        logger.info(f"[ReAct] 连续chunk达到{self.max_consecutive_chunks}次，提升为implicit")
+                        self.temp_history.clear()
+                        if chunk_buffer:
+                            self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
+                        final_step = StepFactory.create_final_step(
+                            step=step_count,
+                            response=chunk_buffer,
+                            thought="",
+                            is_finished=True
+                        )
+                        self.steps.append(final_step)
+                        yield final_step.to_dict()
+                        self._on_after_loop()
+                        return
+                    
+                    continue  # 不是完成信号，继续下一轮
+                
                 # ===== 场景5：正常完成（基于type字段判断）=====
                 # 【重构 2026-04-16 小沈】使用type字段判断，替代旧的tool_name=="finish"
                 if parsed["type"] in ["answer", "implicit"]:
@@ -499,6 +568,13 @@ class BaseAgent(ABC):
                     
                     # 【修复D3】成功解析，重置重试计数器
                     self.parse_retry_count = 0
+                    
+                    # flush chunk_buffer到正式会话历史
+                    if chunk_buffer:
+                        self.temp_history.clear()
+                        self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
+                        chunk_buffer = ""
+                        consecutive_chunk_count = 0
                     
                     # 提取 thought_content 和 answer_response
                     thought_content = parsed.get("content", "")
@@ -605,6 +681,13 @@ class BaseAgent(ABC):
                 
                 # 【修复D3】成功解析，重置重试计数器
                 self.parse_retry_count = 0
+                
+                # flush chunk_buffer到正式会话历史（工具执行前保存LLM已输出的文本）
+                if chunk_buffer:
+                    self.temp_history.clear()
+                    self.conversation_history.append({"role": "assistant", "content": chunk_buffer})
+                    chunk_buffer = ""
+                    consecutive_chunk_count = 0
 
                 # 【步骤2.9】使用StepFactory创建ThoughtStep
                 # 【修复 2026-05-05 小沈】thought去重拼接：thought和thought_content相同则不拼

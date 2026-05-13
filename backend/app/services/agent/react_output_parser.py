@@ -282,9 +282,9 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                 logger.info("[parse_react_response] 不完整JSON但正则兜底提取到tool调用，跳过implicit")
                 return _add_reasoning_warning(regex_recovered)
             thought_text = output.strip()
-            logger.info("[parse_react_response] 检测到不完整JSON格式，返回implicit")
+            logger.info("[parse_react_response] 检测到不完整JSON格式，返回chunk")
             return {
-                "type": "implicit",
+                "type": "chunk",
                 "thought": thought_text,
                 "content": thought_text,
                 "reasoning": thought_text,
@@ -385,7 +385,7 @@ def parse_react_response(output: str) -> Dict[str, Any]:
                     except (json.JSONDecodeError, TypeError):
                         pass
                 return {
-                    "type": "implicit",
+                    "type": "chunk",
                     "thought": prefix_text or content_value,
                     "content": content_value,
                     "reasoning": reasoning_value,
@@ -504,9 +504,9 @@ def _determine_parse_type(output: str) -> Dict[str, Any]:
     # 【恢复 2026-04-24 小沈】纯文本无关键词时，长文本返回implicit，短文本返回parse_error
     stripped = output.strip()
     if len(stripped) >= 5:
-        # 纯文本情况，返回implicit类型
+        # 纯文本情况，返回chunk类型（流式中间文本片段，由ReAct循环判断是否提升为implicit）
         return {
-            "type": "implicit",
+            "type": "chunk",
             "thought": stripped,
             "content": stripped,             # 兼容性字段
             "reasoning": stripped,           # 兼容性字段

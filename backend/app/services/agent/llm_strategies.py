@@ -177,8 +177,21 @@ class TextStrategy(LLMStrategy):
                     response=_response
                 )
             
-            # implicit: 直接返回 finish，退出循环
-            # 【说明】base_react.py 的 type 判断逻辑会识别 implicit 并直接退出
+            # chunk: 返回chunk类型数据，由ReAct循环判断是否提升为implicit
+            if parsed_type == "chunk":
+                logger.info(f"[TextStrategy] type=chunk, 返回chunk数据等待ReAct循环判断")
+                return json.dumps({
+                    "type": "chunk",
+                    "content": parsed.get("content", ""),
+                    "thought": parsed.get("thought", ""),
+                    "reasoning": parsed.get("reasoning", ""),
+                    "tool_name": None,
+                    "tool_params": None,
+                    "response": parsed.get("content", ""),
+                    "error": None
+                }, ensure_ascii=False)
+            
+            # implicit（兼容保留）：直接返回 finish，退出循环
             if parsed_type == "implicit":
                 logger.info(f"[TextStrategy] type=implicit, 直接返回finish")
                 _response = parsed.get("response", "")
