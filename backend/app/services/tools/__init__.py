@@ -90,6 +90,29 @@ def ensure_tools_registered(categories: list = None) -> None:
             _tools_registered = True
 
 
+def reset_registered_state() -> None:
+    """重置注册状态（仅用于测试） - 小健 2026-05-14
+    
+    在测试套件中，如果需要测试"按分类注册"的正确性，
+    应在每个测试用例开始时调用此函数重置状态。
+    
+    注意：此函数只重置_registered_categories和_tools_registered标志，
+    不会清空tool_registry._tools中已注册的工具。
+    
+    示例：
+        from app.services.tools import reset_registered_state, ensure_tools_registered, _registered_categories
+        
+        def test_category_registration():
+            reset_registered_state()
+            ensure_tools_registered(categories=["network"])
+            assert "network" in _registered_categories
+            assert "file" not in _registered_categories
+    """
+    global _tools_registered, _registered_categories
+    _tools_registered = False
+    _registered_categories = set()
+
+
 def is_tools_registered() -> bool:
     """检查工具是否已注册"""
     return _tools_registered
@@ -110,4 +133,6 @@ __all__ = [
     "get_tool_config",
     "ensure_tools_registered",
     "is_tools_registered",
+    "reset_registered_state",
+    "_registered_categories",
 ]
