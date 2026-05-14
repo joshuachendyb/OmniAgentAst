@@ -1,3 +1,45 @@
+v0.12.31
+
+更新时间: 2026-05-14 15:28:00
+
+更新内容：
+
+## v0.12.30→v0.12.31 变更汇总 - 小健/小沈-2026-05-14
+
+### feat 新增
+| commit | 说明 |
+|--------|------|
+| 80969ea2 | Phase1: 工具列表注入优化 - 10步实施完成，summary精简95%，验证通过 |
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| cbf52f15 | Loop阶段意图检测修复 - _intent_classifier初始化+关键词快速+LLM补充 |
+| d7de7f08 | reset_registered_state用clear代替赋值保持引用 |
+| 5d3f681f | get_all_tools_detail补exclude_categories参数 |
+
+### refactor 重构
+| commit | 说明 |
+|--------|------|
+| 14664f5e | 删除死参数exclude_categories+增加reset_registered_state测试辅助函数 |
+
+### docs 文档
+| commit | 说明 |
+|--------|------|
+| 17c33cad | LLM消息组织与Agent重复步骤根因深度分析 |
+| 2f3ce125 | Phase 1工具列表注入优化设计(改名+新增Summary+分级注入) |
+| e335e069 | 修正Phase1设计-去掉FILE兜底+修正描述 |
+| 267fbd86 | 修正章节顺序(九移到八后)+补充实施细节 |
+| bb6d52e6 | 修正第9章两个问题(mixin调用+验证方法) |
+
+### 修改内容
+- Phase 1 工具列表注入优化：工具列表53,072→25,723字符(↓51.5%)
+- registry.py新增CATEGORY_ORDER/NAMES常量、get_all_tools_summary精简版、get_all_tools_detail完整版
+- react_agent_mixin.py分级注入：已加载分类Detail+其他分类Summary
+- tools/__init__.py分阶段注册+_registered_categories+按需import
+- base_react.py动态加载提示注入+trigger_keywords扩充+_build_alternative_tools_hint
+- Loop阶段意图检测：IntentClassifier初始化+先关键词后LLM
+
 v0.12.30
 
 更新时间: 2026-05-14 09:32:28
