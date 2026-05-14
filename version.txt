@@ -1,3 +1,21 @@
+v0.12.30
+
+更新时间: 2026-05-14 09:32:28
+
+更新内容：
+
+fix: 同步工具统一走to_thread线程池避免阻塞事件循环-小沈-2026-05-14
+fix: chunk处理缺少continue导致fall-through崩溃+chunk改implicit-小沈-2026-05-14
+fix: 移除_extract_by_known_tools兜底-非JSON文本不搜工具名-小沈-2026-05-14
+fix: _extract_by_known_tools忽略括号内工具名(如ping)-小沈-2026-05-14
+feat: 工具失败替代建议+prompt去命令格式+timeout优化+crss关键词-小沈-2026-05-14
+fix: create_observation_step参数名错误(observation→execution_result)-小沈-2026-05-14
+test: LLM原始返回解析测试(19项覆盖6类场景)+并行工具测试(9项)-小沈-2026-05-14
+refactor: _build_alternative_tools_hint改用get_tool公开API-小沈-2026-05-14
+chore: 补全requirements.txt(PyYAML/send2trash/playwright等)-小沈-2026-05-14
+
+---
+
 v0.12.29
 
 更新时间: 2026-05-14 03:12:11
