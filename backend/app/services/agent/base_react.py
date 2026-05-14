@@ -865,7 +865,8 @@ class BaseAgent(ABC):
                     # 失败状态（error/timeout/permission_denied）：只显示错误摘要，不显示数据
                     observation_text = f"Observation: {exec_status} - {execution_result.get('summary', '')}"
                     # 【修复 2026-05-14 小沈】失败时动态生成替代建议（从当前Agent已注册工具中找）
-                    alt_hint = self._build_alternative_tools_hint(tool_name)
+                    # 【更新 2026-05-15 小健】传入tool_params用于http_request的国内URL提示
+                    alt_hint = self._build_alternative_tools_hint(tool_name, tool_params)
                     if alt_hint:
                         observation_text += f"\n{alt_hint}"
                 
@@ -1015,27 +1016,41 @@ class BaseAgent(ABC):
 
     MAX_HISTORY_TURNS = 5  # 保留最近 N 轮对话（每轮 = thought + observation）
 
-    def _build_alternative_tools_hint(self, failed_tool: str) -> str:
+    def _build_alternative_tools_hint(self, failed_tool: str, tool_params: dict = None) -> str:
         """工具执行失败时，从当前Agent已注册工具中动态生成替代建议 - 小沈 2026-05-14
-        
-        通用方法：不写死任何具体工具名，从self._tools_dict动态查找。
-        让LLM知道除了失败的工具，还有哪些可用工具，避免反复重试同一失败工具。
+        【更新 2026-05-15 小健】http_request失败时提示国内替代URL；tools策略下精简提示
         
         Args:
             failed_tool: 失败的工具名称
+            tool_params: 失败时的工具参数（用于提取URL等上下文）
             
         Returns:
-            替代建议文本，如"其他可用工具: ping(测试连通性), http_request(发送HTTP请求)"
-            如果没有替代工具或_tools_dict不存在，返回空字符串
+            替代建议文本
         """
+        # 【2026-05-15 小健】http_request失败时，提示国内替代URL
+        if failed_tool == "http_request" and tool_params:
+            failed_url = tool_params.get("url", "")
+            hint = "⚠️ 网络请求失败。如果是访问国外服务超时，请换用国内可达的替代地址：\n"
+            hint += "  - 查公网IP → 用 https://httpbin.org/ip 或 https://myip.ipip.net\n"
+            hint += "  - 查IP详情 → 用 https://ipapi.co/json/ 或 https://ip.sb/api/\n"
+            hint += "  - DNS查询 → 用 https://dns.alidns.com/resolve?name=域名&type=A\n"
+            hint += "  - 网络连通 → 用 ping 测试国内域名(如 baidu.com)\n"
+            hint += f"  失败URL: {failed_url}\n"
+            hint += "请勿重复请求同一失败URL！"
+            return hint
+        
         if not hasattr(self, '_tools_dict') or not self._tools_dict:
             return ""
+        
+        # 【2026-05-15 小健】tools策略下LLM已有tools定义，只做精简提示
+        strategy_method = getattr(self, '_last_strategy_method', None)
+        if strategy_method == "tools":
+            return "⚠️ 工具执行失败，请尝试其他可用工具，不要重复调用同一失败操作。"
         
         alternatives = []
         for name in self._tools_dict:
             if name == failed_tool or name in ("finish",):
                 continue
-            # 从tool_registry获取工具描述（取前40字作为简要说明）
             try:
                 from app.services.tools.registry import tool_registry
                 meta = tool_registry.get_tool(name)
@@ -1047,7 +1062,6 @@ class BaseAgent(ABC):
         if not alternatives:
             return ""
         
-        # 最多列3个，避免observation过长
         listed = ", ".join(alternatives[:3])
         remaining = len(alternatives) - 3
         hint = f"其他可用工具: {listed}"

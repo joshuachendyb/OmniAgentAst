@@ -350,6 +350,8 @@ class ReactAgentMixin(ToolLoaderMixin):
                 strategy = await self.adapter.ensure_capability()
                 strategy_method = strategy.method
             logger.info(f"[{_cls}] 执行策略: {strategy_method}")
+            # 【2026-05-15 小健】保存策略方法供observation的替代提示使用
+            self._last_strategy_method = strategy_method
             
             # 方案C：text和response_format策略下注入tools Schema文本（tools策略不注入）
             if strategy_method in ("text", "response_format"):
