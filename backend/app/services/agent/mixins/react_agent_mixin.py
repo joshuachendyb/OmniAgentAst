@@ -341,12 +341,15 @@ class ReactAgentMixin(ToolLoaderMixin):
             # ========== 确定策略 + Schema注入（小沈2026-05-12重构）==========
             # 【重构 2026-05-14 小健】策略只在探测时确定一次，后续直接使用
             # adapter必须存在，策略由adapter.ensure_capability()唯一确定
+            # 【修复 2026-05-15 小健】adapter=None时降级到text策略，不崩溃
+            # （初始化时llm_client无api_base会设adapter=None+降级纯文本模式）
             if not self.adapter:
-                raise RuntimeError(f"[{_cls}] adapter未初始化，无法确定策略")
-            
-            strategy = await self.adapter.ensure_capability()
-            strategy_method = strategy.method
-            logger.info(f"[{_cls}] 执行策略: {strategy.method}")
+                logger.warning(f"[{_cls}] adapter未初始化，降级到text策略")
+                strategy_method = "text"
+            else:
+                strategy = await self.adapter.ensure_capability()
+                strategy_method = strategy.method
+            logger.info(f"[{_cls}] 执行策略: {strategy_method}")
             
             # 方案C：text和response_format策略下注入tools Schema文本（tools策略不注入）
             if strategy_method in ("text", "response_format"):
