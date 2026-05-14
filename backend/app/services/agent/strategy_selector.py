@@ -26,10 +26,10 @@ class StrategySelector:
         """
         根据能力选择最佳策略
         
-        策略优先级：tools > response_format > prompt
+        策略优先级：tools > response_format > text
         - tools: Function Calling，LLM通过API调用工具（约50个模型支持）
         - response_format: 结构化输出，LLM返回JSON格式（约45个模型支持）
-        - prompt: 纯文本模式，工具Schema注入Prompt（所有模型支持）
+        - text: 纯文本模式，工具Schema注入Prompt（所有模型支持）
         
         【注意】reasoning是附加能力，不影响策略选择
         - reasoning=True表示模型有思考链（如DeepSeek的reasoning_content）
@@ -56,7 +56,7 @@ class StrategySelector:
             )
         
         return SelectedStrategy(
-            method="prompt",
+            method="text",
             capability=LLMCapability.NONE,
             description="纯文本模式（所有模型支持）"
         )
@@ -67,7 +67,7 @@ class SelectedStrategy:
     """
     选中的策略
     """
-    method: str  # "response_format", "tools", "prompt"
+    method: str  # "response_format", "tools", "text"
     capability: LLMCapability
     description: str
 
