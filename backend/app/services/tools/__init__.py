@@ -108,9 +108,9 @@ def reset_registered_state() -> None:
             assert "network" in _registered_categories
             assert "file" not in _registered_categories
     """
-    global _tools_registered, _registered_categories
+    global _tools_registered
     _tools_registered = False
-    _registered_categories = set()
+    _registered_categories.clear()  # 用clear而不是赋值新set，保持引用
 
 
 def is_tools_registered() -> bool:
