@@ -149,18 +149,13 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
         
         【2026-04-27 小沈修复】：调用 _normalize_params 做参数别名映射
         【2026-04-28 小沈修复】：添加工具名映射，支持 create_dir → create_directory
+        【2026-05-14 小健重构】：使用统一的resolve_tool_alias
         """
-        # 【2026-04-28 小沈新增】工具名映射表（LLM返回名 → 实际方法名）
-        TOOL_NAME_MAP = {
-            "create_dir": "create_directory",
-            "list_dir": "list_directory",
-            "delete_dir": "delete_directory",
-            "rename_dir": "rename_directory",
-        }
+        from app.services.tools.tool_aliases import resolve_tool_alias
         
-        # 映射工具名
+        # 解析工具别名
         original_action = action
-        action = TOOL_NAME_MAP.get(action, action)
+        action = resolve_tool_alias(action, "file")
         if original_action != action:
             logger.info(f"[file_react._execute_tool] 工具名映射: {original_action} → {action}")
         

@@ -288,7 +288,7 @@ async def _run_agent_sse_stream(
     )
     
     config = get_config()
-    max_steps = config.get('app', {}).get('max_steps', DEFAULT_MAX_STEPS)
+    max_steps = config.get_max_steps(DEFAULT_MAX_STEPS)  # 使用统一方法
     
     try:
         async for event in agent.run_stream(

@@ -140,6 +140,71 @@ class Config:
         ai_config = self.get_ai_config(provider)
         return ai_config.get('api_key', '')
     
+    def get_max_steps(self, default: int = 100) -> int:
+        """
+        获取max_steps配置 - 统一入口
+        
+        Args:
+            default: 默认值
+            
+        Returns:
+            max_steps值
+        """
+        return self.get('app.max_steps', default)
+    
+    def get_ai_provider_model(self) -> tuple[str, str]:
+        """
+        获取AI provider和model（含fallback逻辑）- 统一入口
+        
+        Fallback逻辑（2026-05-14 小健从routes.py移入）：
+        1. 找第一个有models的provider作为fallback
+        2. 检查ai.provider和ai.model是否有效
+        3. 使用有效配置或fallback
+        
+        Returns:
+            (provider, model) 元组
+        """
+        ai_config = self.get('ai', {})
+        
+        # 1. 找fallback provider（第一个有models的）
+        fallback_provider = ''
+        fallback_model = ''
+        for provider_name in ai_config.keys():
+            if provider_name in ('provider', 'model'):
+                continue
+            provider_data = ai_config.get(provider_name, {})
+            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
+                fallback_provider = provider_name
+                fallback_model = provider_data['models'][0]
+                break
+        
+        # 2. 检查当前配置是否有效
+        selected_provider = ai_config.get('provider', '')
+        selected_model = ai_config.get('model', '')
+        
+        is_valid = (
+            selected_provider and 
+            selected_provider in ai_config and 
+            'models' in ai_config[selected_provider] and 
+            selected_model and 
+            selected_model in ai_config[selected_provider]['models']
+        )
+        
+        # 3. 返回有效配置或fallback
+        if is_valid:
+            return (selected_provider, selected_model)
+        else:
+            return (fallback_provider, fallback_model)
+    
+    def get_log_config(self) -> Dict[str, Any]:
+        """
+        获取日志配置 - 统一入口
+        
+        Returns:
+            日志配置字典
+        """
+        return self.get('logging', {})
+    
     def reload(self):
         """重新加载配置 - 强制清空缓存"""
         # 清空缓存，强制重新加载
@@ -181,3 +246,15 @@ def get_ai_config(provider: Optional[str] = None) -> Dict[str, Any]:
 def get_api_key(provider: Optional[str] = None) -> str:
     """获取API密钥"""
     return get_config().get_api_key(provider)
+
+def get_max_steps(default: int = 100) -> int:
+    """获取max_steps配置"""
+    return get_config().get_max_steps(default)
+
+def get_ai_provider_model() -> tuple[str, str]:
+    """获取AI provider和model（含fallback逻辑）"""
+    return get_config().get_ai_provider_model()
+
+def get_log_config() -> Dict[str, Any]:
+    """获取日志配置"""
+    return get_config().get_log_config()

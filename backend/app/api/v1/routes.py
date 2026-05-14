@@ -249,50 +249,12 @@ async def get_system_config():
     """
     try:
         config = get_config_instance()
-        ai_config = config.get('ai', {})
         
-        # ====================================================================
-        # 【统一Fallback逻辑 - 必须遵守！】
-        # 1. 找第一个有models的provider作为fallback（动态遍历，不是硬编码！）
-        fallback_provider = ''
-        fallback_model = ''
-        for provider_name in ai_config.keys():
-            if provider_name == 'provider' or provider_name == 'model':
-                continue
-            provider_data = ai_config.get(provider_name, {})
-            if isinstance(provider_data, dict) and 'models' in provider_data and provider_data['models']:
-                fallback_provider = provider_name
-                fallback_model = provider_data['models'][0]
-                break
-        
-        # 如果没有找到任何provider，用空值
-        # 注意：配置文件应该至少有一个provider配置
-        if not fallback_provider:
-            fallback_provider = ''
-            fallback_model = ''
-        
-        # 2. 检查 ai.provider 和 ai.model 是否有效
-        selected_provider = ai_config.get('provider', '')
-        selected_model = ai_config.get('model', '')
-        
-        is_valid = (
-            selected_provider and 
-            selected_provider in ai_config and 
-            'models' in ai_config[selected_provider] and 
-            selected_model and 
-            selected_model in ai_config[selected_provider]['models']
-        )
-        
-        # 3. 使用有效配置或fallback
-        if is_valid:
-            final_provider = selected_provider
-            final_model = selected_model
-        else:
-            final_provider = fallback_provider
-            final_model = fallback_model
-        # ====================================================================
+        # 【重构 2026-05-14 小健】使用Config统一方法，不再自己实现fallback
+        final_provider, final_model = config.get_ai_provider_model()
         
         # 获取当前provider的配置，读取其api_key
+        ai_config = config.get('ai', {})
         provider_config = ai_config.get(final_provider, {})
         api_key = provider_config.get('api_key', '')
         api_key_configured = bool(api_key and api_key.strip() != '')
@@ -326,7 +288,7 @@ async def get_system_config():
             theme=theme,
             language=language,
             security=security_config,
-            max_steps=config.get('app', {}).get('max_steps', DEFAULT_MAX_STEPS)
+            max_steps=config.get_max_steps(DEFAULT_MAX_STEPS)  # 使用统一方法
         )
         
     except Exception as e:
@@ -653,43 +615,13 @@ async def validate_config(request: ConfigValidateRequest):
             if current_model_models and len(current_model_models) > 0:
                 model_name = current_model_models[0]
         
-        provider_config = ai_config.get(current_model_provider, {})
-        api_base = provider_config.get('api_base', 'https://api.openai.com/v1')
-        
-        # 【小沈-2026-03-27修复】直接在接口中验证，添加30秒超时
-        import httpx
-        is_valid = False
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    f"{api_base}/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {request.api_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": model_name,
-                        "messages": [{"role": "user", "content": "test"}]
-                    }
-                )
-                is_valid = response.status_code == 200
-        except Exception as e:
-            logger.warning(f"配置验证请求失败: {e}")
-            
-            if is_valid:
-                logger.info(f"配置验证成功: provider={request.provider}, model={model_name}")
-                return ConfigValidateResponse(
-                    valid=True,
-                    message=f"API Key验证成功，当前使用 {request.provider} ({model_name})",
-                    model=model_name
-                )
-            else:
-                logger.warning(f"配置验证失败: provider={request.provider}, model={model_name}")
-                return ConfigValidateResponse(
-                    valid=False,
-                    message=f"API Key无效，请检查是否正确",
-                    model=None
-                )
+        # 配置已保存，实际验证在首次会话时由 capability_detector 执行
+        logger.info(f"配置已保存: provider={request.provider}, model={model_name}")
+        return ConfigValidateResponse(
+            valid=True,
+            message=f"配置已保存，将在首次使用时验证 {request.provider} ({model_name})",
+            model=model_name
+        )
             
     except Exception as e:
         logger.error(f"配置验证异常: {e}")
