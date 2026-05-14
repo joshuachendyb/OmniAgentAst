@@ -12,17 +12,7 @@ Author: 小健 - 2026-05-14
 from typing import Dict
 
 
-# ===== 全局工具别名（所有Agent通用）=====
-GLOBAL_TOOL_ALIASES: Dict[str, str] = {
-    # 文件操作别名
-    "create_dir": "create_directory",
-    "list_dir": "list_directory",
-    "delete_dir": "delete_directory",
-    "rename_dir": "rename_directory",
-}
-
-
-# ===== 分类工具别名 =====
+# ===== 分类工具别名（在此统一定义）=====
 CATEGORY_TOOL_ALIASES: Dict[str, Dict[str, str]] = {
     "file": {
         "create_dir": "create_directory",
@@ -34,6 +24,11 @@ CATEGORY_TOOL_ALIASES: Dict[str, Dict[str, str]] = {
     # "shell": {...},
     # "network": {...},
 }
+
+# ===== 全局工具别名 = 所有分类别的并集 =====
+GLOBAL_TOOL_ALIASES: Dict[str, str] = {}
+for _cat_aliases in CATEGORY_TOOL_ALIASES.values():
+    GLOBAL_TOOL_ALIASES.update(_cat_aliases)
 
 
 def resolve_tool_alias(tool_name: str, category: str = None) -> str:

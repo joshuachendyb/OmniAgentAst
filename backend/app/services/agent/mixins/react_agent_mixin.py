@@ -382,28 +382,22 @@ class ReactAgentMixin(ToolLoaderMixin):
                 response = await self.text_strategy.call(
                     llm_client=self.llm_client, message=last_message,
                     history_dicts=history_dicts, conversation_history=self.conversation_history)
-            elif strategy_method == "response_format" and self.response_format_strategy:
+            elif strategy_method == "response_format":
+                if not self.response_format_strategy:
+                    raise RuntimeError(f"[{_cls}] strategy=response_format 但 response_format_strategy未初始化")
                 response = await self.response_format_strategy.call(
                     llm_client=self.llm_client, message=last_message,
                     history_dicts=history_dicts, conversation_history=self.conversation_history)
-            elif strategy_method == "tools" and self.tools_strategy:
+            elif strategy_method == "tools":
+                if not self.tools_strategy:
+                    raise RuntimeError(f"[{_cls}] strategy=tools 但 tools_strategy未初始化")
                 if getattr(self, 'openai_tools', None):
                     self.tools_strategy.tools = self.openai_tools
                 response = await self.tools_strategy.call(
                     llm_client=self.llm_client, message=last_message,
                     history_dicts=history_dicts, conversation_history=self.conversation_history)
-            
-            # text兜底（策略无匹配时）
-            if response is None:
-                if strategy_method is not None:
-                    logger.warning(
-                        f"[{_cls}] _call_llm_with_summary 策略无匹配分支: method={strategy_method}, "
-                        f"has_tools_strategy={self.tools_strategy is not None}, "
-                        f"has_response_format_strategy={self.response_format_strategy is not None} → 走text兜底"
-                    )
-                response = await self.text_strategy.call(
-                    llm_client=self.llm_client, message=last_message,
-                    history_dicts=history_dicts, conversation_history=self.conversation_history)
+            else:
+                raise RuntimeError(f"[{_cls}] 未知的strategy_method={strategy_method}")
             
             # ========== prompt_logger: 调用后记录（原file_react独有，小沈2026-05-12合入）==========
             response_type = "text"

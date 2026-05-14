@@ -483,10 +483,10 @@ class ToolRegistry:
     def get_all_tools_summary(self, priority_category: Optional['ToolCategory'] = None,
                               expose_to_llm_only: bool = True,
                               exclude_categories: Optional[set] = None) -> str:
-        """获取工具概要描述（工具名+参数列表+一句话用途） - 小健 2026-05-14
+        """获取工具概要描述（分类标题+工具名列表） - 小健 2026-05-14
 
-        【Phase 1优化】从input_schema提取参数列表，输出精简版（约3-4K）。
-        原版输出完整description（53K），改为输出工具名+参数+一句话用途。
+        【Phase 1优化】精简版，只输出分类名+工具名列表，约1-2K字符。
+        原版输出完整description（53K），精简后仅输出工具名。
 
         Args:
             priority_category: 优先展示的分类
