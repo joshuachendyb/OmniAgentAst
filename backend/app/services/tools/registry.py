@@ -507,7 +507,7 @@ class ToolRegistry:
                 continue
             if exclude_categories and metadata.category.value in exclude_categories:
                 continue
-            by_category[metadata.category].append((name, metadata))
+            by_category[metadata.category].append(name)
 
         category_order = list(self.CATEGORY_ORDER)
         if priority_category and priority_category in category_order:
@@ -517,27 +517,10 @@ class ToolRegistry:
         for cat in category_order:
             if cat not in by_category:
                 continue
-            items = by_category[cat]
+            names = by_category[cat]
             display_name = self.CATEGORY_NAMES.get(cat, cat.value)
             lines.append(f"【{display_name}】")
-            for name, meta in sorted(items, key=lambda x: x[0]):
-                schema = meta.input_schema or {}
-                params = schema.get("properties", {})
-                required_set = set(schema.get("required", []))
-                param_strs = []
-                for pname, pinfo in params.items():
-                    ptype = pinfo.get("type", "any")
-                    required = "required" if pname in required_set else "optional"
-                    param_strs.append(f"{pname}({ptype}, {required})")
-
-                usage = meta.description[:60] if meta.description else name
-                if len(meta.description) > 60:
-                    usage += "..."
-
-                if param_strs:
-                    lines.append(f"  {name}: {', '.join(param_strs)} — {usage}")
-                else:
-                    lines.append(f"  {name}: 无参数 — {usage}")
+            lines.append(f"  {', '.join(sorted(names))}")
             lines.append("")
 
         return "\n".join(lines)
