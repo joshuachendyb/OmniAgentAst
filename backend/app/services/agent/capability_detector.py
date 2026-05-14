@@ -61,7 +61,6 @@ class CapabilityDetector:
         try:
             # 【2026-05-14 小沈】共用client，避免3次独立创建
             async with httpx.AsyncClient(timeout=30) as client:
-            
                 logger.info(f"[探测] 模型: {self.model}")
                 
                 # Step 1: 探测 tools（优先级最高）
@@ -80,43 +79,43 @@ class CapabilityDetector:
                 
                 # Step 3: 探测 reasoning 特征
                 reasoning_result = await self._probe_reasoning(client)
-            reasoning_icon = "✅" if reasoning_result["has_reasoning"] else "❌"
-            reasoning_detail = "有reasoning_content" if reasoning_result["has_reasoning"] else "无"
-            
-            # Step 4: 构建能力特征
-            capability = LLMCapability.NONE
-            if result.response_format_works:
-                capability |= LLMCapability.RESPONSE_FORMAT
-            if result.tools_works:
-                capability |= LLMCapability.TOOLS
-            if reasoning_result["has_reasoning"]:
-                capability |= LLMCapability.REASONING
-            
-            feature = LLMFeature(
-                capability=capability,
-                supports_response_format=result.response_format_works,
-                supports_tools=result.tools_works,
-                supports_reasoning=reasoning_result["has_reasoning"],
-                uses_reasoning_content=reasoning_result["uses_reasoning_content"],
-                uses_outer_content=reasoning_result["uses_outer_content"],
-                detection_method="auto"
-            )
-            
-            result.success = True
-            result.feature = feature
-            
-            # 缓存结果
-            self._capability_cache = feature
-            
-            # 【优化 2026-05-11 小健】紧凑格式：探测结果汇总
-            logger.info(
-                f"[探测] 结果:\n"
-                f"  ├─ tools: {tools_icon} {'支持' if tools_result['works'] else '不支持'} ({tools_detail})\n"
-                f"  ├─ response_format: {rf_icon} {'支持' if rf_result['works'] else '不支持'} ({rf_detail})\n"
-                f"  └─ reasoning: {reasoning_icon} {'支持' if reasoning_result['has_reasoning'] else '不支持'} ({reasoning_detail})"
-            )
-            
-            return result
+                reasoning_icon = "✅" if reasoning_result["has_reasoning"] else "❌"
+                reasoning_detail = "有reasoning_content" if reasoning_result["has_reasoning"] else "无"
+                
+                # Step 4: 构建能力特征
+                capability = LLMCapability.NONE
+                if result.response_format_works:
+                    capability |= LLMCapability.RESPONSE_FORMAT
+                if result.tools_works:
+                    capability |= LLMCapability.TOOLS
+                if reasoning_result["has_reasoning"]:
+                    capability |= LLMCapability.REASONING
+                
+                feature = LLMFeature(
+                    capability=capability,
+                    supports_response_format=result.response_format_works,
+                    supports_tools=result.tools_works,
+                    supports_reasoning=reasoning_result["has_reasoning"],
+                    uses_reasoning_content=reasoning_result["uses_reasoning_content"],
+                    uses_outer_content=reasoning_result["uses_outer_content"],
+                    detection_method="auto"
+                )
+                
+                result.success = True
+                result.feature = feature
+                
+                # 缓存结果
+                self._capability_cache = feature
+                
+                # 【优化 2026-05-11 小健】紧凑格式：探测结果汇总
+                logger.info(
+                    f"[探测] 结果:\n"
+                    f"  ├─ tools: {tools_icon} {'支持' if tools_result['works'] else '不支持'} ({tools_detail})\n"
+                    f"  ├─ response_format: {rf_icon} {'支持' if rf_result['works'] else '不支持'} ({rf_detail})\n"
+                    f"  └─ reasoning: {reasoning_icon} {'支持' if reasoning_result['has_reasoning'] else '不支持'} ({reasoning_detail})"
+                )
+                
+                return result
             
         except Exception as e:
             logger.error(f"[CapabilityDetector] 探测异常: {e}")
@@ -124,6 +123,16 @@ class CapabilityDetector:
             return result
     
     async def _probe_response_format(self, client: httpx.AsyncClient) -> dict:
+        """
+        探测 response_format 支持
+        
+        检测逻辑：
+        - HTTP非200 → 不支持
+        - 空响应 → 不支持（LongCat特征）
+        - 空content → 不支持
+        - 非JSON → 不支持
+        - 有效JSON → 支持
+        """
         schema = {
             "type": "json_object",
             "json_schema": {
@@ -164,6 +173,11 @@ class CapabilityDetector:
             return {"works": False, "reason": str(e)}
     
     async def _probe_tools(self, client: httpx.AsyncClient) -> dict:
+        """
+        探测 tools（Function Calling）支持
+        
+        发送带tools的请求，检查是否返回tool_calls
+        """
         tools = [
             {
                 "type": "function",
@@ -219,6 +233,11 @@ class CapabilityDetector:
             return {"works": False, "reason": str(e)}
     
     async def _probe_reasoning(self, client: httpx.AsyncClient) -> dict:
+        """
+        探测 reasoning 特征
+        
+        检查响应中是否使用reasoning_content字段
+        """
         try:
             response = await client.post(
                 f"{self.api_base}/chat/completions",
