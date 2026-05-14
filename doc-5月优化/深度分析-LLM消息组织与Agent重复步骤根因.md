@@ -439,7 +439,7 @@ history_dicts = list(history_dicts) + [tools_msg]
 
 | 文件 | 改动 | 性质 | 行数 |
 |------|------|------|------|
-| `registry.py:460-533` | `get_all_tools_summary`→`get_all_tools_detail` | 改名，逻辑不变 | ~70行，函数名改 |
+| `registry.py:460-533` | `get_all_tools_summary`→`get_all_tools_detail` | 改名，加`category_filter`参数 | ~70行，函数体+参数新增 |
 | `registry.py` (新增) | 新增 `get_all_tools_summary()` | 新增函数 | ~30行 |
 | `react_agent_mixin.py:177-182` | `_get_tools_summary`→`_get_tools_detail` | 改名，加`category_filter` | ~8行 |
 | `react_agent_mixin.py` (新增) | 新增 `_get_tools_summary()` | 新增函数 | ~6行 |
