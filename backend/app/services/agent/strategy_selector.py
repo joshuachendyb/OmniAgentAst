@@ -3,10 +3,16 @@ LLM 策略选择器实现
 
 【创建时间】2026-03-20 11:23:15 小强
 【参考】Structured-Outputs-自适应兼容方案-小沈-2026-03-20.md 3.3节
+【重构】2026-05-14 小健 - 统一策略选择，所有降级走fallback()
 
 功能：
 1. StrategySelector 类 - 根据 LLM 能力自动选择最佳策略
 2. SelectedStrategy 数据类 - 选中的策略
+
+设计原则：
+- 策略选择集中在StrategySelector，其他模块只调用不创建
+- 所有降级场景统一走fallback()方法
+- method值只有三种：tools / response_format / text
 """
 
 from dataclasses import dataclass
@@ -16,7 +22,7 @@ from app.services.agent.capability import LLMCapability, LLMFeature
 
 class StrategySelector:
     """
-    策略选择器
+    策略选择器 - 单一职责：所有策略选择集中在这里
     
     根据 LLM 能力自动选择最佳策略
     """
@@ -55,10 +61,23 @@ class StrategySelector:
                 description="结构化输出（约45个模型支持）"
             )
         
+        return StrategySelector.fallback("无高级能力，使用纯文本模式")
+    
+    @staticmethod
+    def fallback(reason: str) -> "SelectedStrategy":
+        """
+        统一降级策略 - 所有降级场景必须调用此方法
+        
+        Args:
+            reason: 降级原因（如：探测异常、探测失败、无高级能力）
+        
+        Returns:
+            SelectedStrategy: text策略
+        """
         return SelectedStrategy(
             method="text",
             capability=LLMCapability.NONE,
-            description="纯文本模式（所有模型支持）"
+            description=f"降级为text模式: {reason}"
         )
 
 

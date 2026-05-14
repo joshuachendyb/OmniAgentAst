@@ -69,14 +69,9 @@ class LLMAdapter:
             try:
                 result = await self._detector.detect()
             except Exception as e:
-                # 【诊断 2026-05-10 小健】探测过程异常捕获（之前被静默吞掉）
-                # 【修复 2026-05-14 小健】异常后method改为text（调用方只识别text/tools/response_format）
+                # 【重构 2026-05-14 小健】统一走StrategySelector.fallback()
                 logger.error(f"[适配器] 探测异常: {e}", exc_info=True)
-                self._strategy = SelectedStrategy(
-                    method="text",
-                    capability=LLMCapability.NONE,
-                    description=f"探测异常: {e}"
-                )
+                self._strategy = StrategySelector.fallback(f"探测异常: {e}")
                 return self._strategy
             
             if result.success:
@@ -88,14 +83,9 @@ class LLMAdapter:
                     f"  └─ 最终策略: {self._strategy.method} ({self._strategy.description})"
                 )
             else:
-                # 探测失败，默认降级
-                # 【修复 2026-05-14 小健】method改为text（调用方只识别text/tools/response_format）
-                logger.warning(f"[适配器] 探测失败: error={result.error}, 降级为text模式")
-                self._strategy = SelectedStrategy(
-                    method="text",
-                    capability=LLMCapability.NONE,
-                    description=f"探测失败: {result.error}"
-                )
+                # 【重构 2026-05-14 小健】统一走StrategySelector.fallback()
+                logger.warning(f"[适配器] 探测失败: error={result.error}")
+                self._strategy = StrategySelector.fallback(f"探测失败: {result.error}")
         
         return self._strategy
     
