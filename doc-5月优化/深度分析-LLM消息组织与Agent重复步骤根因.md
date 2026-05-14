@@ -295,4 +295,183 @@ LLM不知道为什么失败，怀疑是临时故障
 
 ---
 
-**更新时间**: 2026-05-14 09:57:22
+## 六、Phase 1：工具列表注入优化（名实统一 + 分级注入）
+
+**用户**: 北京老陈  
+**分析人**: 小沈  
+**分析时间**: 2026-05-14 10:30:00  
+**目的**: 给LLM合适的tool信息，减少不必要的tool详细信息，但不能缺失必须的tool信息
+
+---
+
+### 6.1 问题精确定义
+
+#### 6.1.1 现象
+
+`_get_tools_summary()` → `get_all_tools_summary()` 输出的工具列表，对**所有12个分类共60+工具**都输出完整版 `description`（使用场景+示例+返回格式，每条300-800字符），总大小**53K**，每轮LLM调用都重新注入。
+
+#### 6.1.2 原始设计意图 vs 当前实现
+
+| 工具范围 | 原始设计意图 | `description`内容量级 | 当前实际行为 |
+|---------|-------------|---------------------|------------|
+| **当前分类工具** | **详细描述**：使用场景+示例+返回格式 | 每条300-800字符 | ✅ 同设计 |
+| **其他分类工具** | **概要描述**：工具名+参数列表（必选/可选） | 每条50-100字符 | **❌ 也是完整版** |
+| **跨分类提示** | `_build_cross_tool_hint()`告知LLM"可以跨分类" | 一行文字 | ✅ 已实现 |
+
+#### 6.1.3 函数名不准确
+
+`get_all_tools_summary` 的名字暗示它是"概要"，但实际输出的是**完整版**。名字与行为不一致。
+
+#### 6.1.4 冗余的override
+
+`file_react.py:102-114` 有一个 `_get_tools_summary()` override，代码与 `react_agent_mixin.py:177-182` **完全一样**，是当年提取mixin时遗留的重复代码，从未被实际调用。
+
+#### 6.1.5 `ToolMetadata` 没有short_description字段
+
+`ToolMetadata`（registry.py:175-198）只有 `description` 字段存完整版，没有 `short_description` 或 `summary` 字段。"概要描述"这个能力在代码中从未实现过。
+
+---
+
+### 6.2 解决方案（Phase 1总览）
+
+**三步走**：
+
+1. **名实统一**：现有函数改名，`Summary` → `Detail`
+2. **新增真Summary**：从 `input_schema` 提取参数列表作为概要
+3. **分级注入**：当前分类用Detail，其他分类用Summary
+
+---
+
+### 6.3 代码变更明细
+
+#### 6.3.1 函数改名 + 新增（registry.py）
+
+```python
+# 改名：原来输出完整描述的，改名为 get_all_tools_detail
+# 原来：def get_all_tools_summary(...) → 输出53K完整描述
+# 改为：def get_all_tools_detail(...) → 输出53K完整描述（名实一致）
+
+# 新增：真正的概要函数
+def get_all_tools_summary(self, category_filter: Optional[ToolCategory] = None) -> str:
+    """
+    生成工具概要列表（工具名 + 参数列表），用于"其他分类"的轻量展示。
+    内容格式：一行一个工具，如：
+    http_request: url(string, required), method(string, optional)
+    
+    Args:
+        category_filter: 只输出指定分类（None=全部）
+    Returns:
+        概要文本
+    """
+    lines = []
+    for name, metadata in self._tools.items():
+        if not metadata.expose_to_llm:
+            continue
+        if category_filter and metadata.category != category_filter:
+            continue
+        # 从 input_schema 提取参数
+        schema = metadata.input_schema or {}
+        params = schema.get("properties", {})
+        required_set = set(schema.get("required", []))
+        param_strs = []
+        for pname, pinfo in params.items():
+            ptype = pinfo.get("type", "any")
+            required = "required" if pname in required_set else "optional"
+            param_strs.append(f"{pname}({ptype}, {required})")
+        if param_strs:
+            lines.append(f"  {name}: {', '.join(param_strs)}")
+        else:
+            lines.append(f"  {name}: 无参数")
+    return "可用工具:\n" + "\n".join(lines)
+```
+
+**预期输出示例**（以NETWORK分类为例，从 `input_schema` 提取）：
+```
+可用工具:
+  http_request: url(string, required), method(string, optional), headers(object, optional), body(string, optional), timeout(integer, optional)
+  download_file: url(string, required), destination_path(string, required), headers(object, optional), resume(boolean, optional)
+  fetch_webpage: url(string, required), extract_format(string, optional), prompt(string, optional), js_render(boolean, optional), timeout(integer, optional)
+  search_web: query(string, required), max_results(integer, optional)
+  ping: host(string, required), count(integer, optional), timeout(integer, optional)
+  port_check: host(string, required), port(integer, required), timeout(integer, optional)
+```
+
+每条50-100字符，6个工具约400字符，全部12分类约3-4K字符。
+
+#### 6.3.2 Agent层封装改名 + 新增（react_agent_mixin.py）
+
+```python
+# 改名：原来叫 _get_tools_summary 实际输出完整版
+# 改为 _get_tools_detail（调用 registry.get_all_tools_detail）
+def _get_tools_detail(self) -> str:
+    """获取当前分类工具的完整描述 - 小沈2026-05-14"""
+    from app.services.tools.registry import tool_registry
+    return tool_registry.get_all_tools_detail(
+        priority_category=self.tool_category,
+        category_filter=self.tool_category
+    )
+
+# 新增：真正的概要函数
+def _get_tools_summary(self) -> str:
+    """获取其他分类工具的概要（工具名+参数列表）- 小沈2026-05-14"""
+    from app.services.tools.registry import tool_registry
+    return tool_registry.get_all_tools_summary()
+```
+
+#### 6.3.3 注入逻辑变更（react_agent_mixin.py:280）
+
+```python
+# 原来：只注入一条53K的完整消息
+# summary_msg = {"role": "system", "content": f"【当前可用工具列表】\n{_get_tools_summary()}"}
+
+# 改为：注入两条消息 —— Detail(当前分类) + Summary(其他分类)
+detail_text = self._get_tools_detail()      # 当前分类，完整描述，~3K
+summary_text = self._get_tools_summary()    # 其他分类，参数列表，~3-4K
+tools_msg = {"role": "system", "content": f"【当前可用工具】\n{detail_text}\n\n【其他可用工具】\n{summary_text}"}
+history_dicts = list(history_dicts) + [tools_msg]
+```
+
+#### 6.3.4 删除冗余override（file_react.py）
+
+删除 `file_react.py:102-114` 的 `_get_tools_summary()` 方法。因为 `FileReactAgent` 继承 `ReactAgentMixin`，mixin的方法已经够用。
+
+### 6.4 改动的文件与行数总览
+
+| 文件 | 改动 | 性质 | 行数 |
+|------|------|------|------|
+| `registry.py:460-533` | `get_all_tools_summary`→`get_all_tools_detail` | 改名，逻辑不变 | ~70行，函数名改 |
+| `registry.py` (新增) | 新增 `get_all_tools_summary()` | 新增函数 | ~30行 |
+| `react_agent_mixin.py:177-182` | `_get_tools_summary`→`_get_tools_detail` | 改名，加`category_filter` | ~8行 |
+| `react_agent_mixin.py` (新增) | 新增 `_get_tools_summary()` | 新增函数 | ~6行 |
+| `react_agent_mixin.py:280-284` | 注入逻辑：一条变两条 | 逻辑变更 | ~6行 |
+| `file_react.py:102-114` | 删除重复的 `_get_tools_summary` override | 删除死代码 | ~13行 |
+
+### 6.5 实施后的预期效果
+
+| 度量 | 修改前 | 修改后 | 改善 |
+|------|--------|--------|------|
+| 工具列表大小 | 53K | 当前分类Detail(~3K) + 其他分类Summary(~4K) = **~7K** | **↓87%** |
+| 每轮LLM消息大小 | 57K | ~11K | **↓81%** |
+| 工具列表占上下文比例 | 88-93% | ~64% | 显著下降 |
+| 当前分类工具信息 | 完整(使用场景+示例+返回格式) | 完整(不变) | ✅ 没有丢失 |
+| 其他分类工具信息 | 完整(用不上) | 概要(工具名+参数列表) | ⚠️ 精简但可用 |
+| `get_all_tools_summary`名实一致 | ❌ 名字叫summary实际是detail | ✅ 名实统一 | 调试更清晰 |
+
+### 6.6 为什么不合并到system prompt
+
+`_check_and_load_missing_tools()` 会在运行时动态加载新工具。如果工具列表合入 `conversation_history[0]` 的system prompt后不再刷新，动态加载的工具无法通知LLM。所以保留每轮重新生成、重新注入的机制，但注入量从53K降到了~7K。
+
+### 6.7 未在本Phase解决的问题
+
+| 问题 | 对应的后续方案 |
+|------|--------------|
+| observation去重（ipconfig重复8次） | Phase 2 |
+| error消息缺URL+原因 | Phase 2 |
+| 失败计数器/抑制（同一操作重试6次） | Phase 2 |
+| pending_calls历史断裂 | Phase 2+ |
+| _trim_history阈值过早(15条) | Phase 2+ |
+| strategy_method"prompt"vs"text"不匹配 | Phase 3 |
+
+---
+
+**更新时间**: 2026-05-14 10:30:00
