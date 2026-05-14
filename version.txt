@@ -1,3 +1,53 @@
+v0.12.32
+
+更新时间: 2026-05-14 20:07:56
+
+更新内容：
+
+## v0.12.31→v0.12.32 变更汇总 - 小健/小沈-2026-05-14
+
+### feat 新增
+| commit | 说明 |
+|--------|------|
+| cf4a6902 | Phase1关键位置加log验证 - 分阶段注册/_loaded_categories初始化/_intent_classifier初始化/分级注入 |
+
+### fix 修复
+| commit | 说明 |
+|--------|------|
+| c135fd50 | httpx connect超时10s→30s解决TLS偶发超时 |
+| abe8d5a4 | 按需注册根本修复 - 删除18个register模块级注册代码/ensure_tools_registered显式调用注册函数/main.py+base_react.py删除模块级import改函数内import |
+| 70505109 | _load_tools按分类注册而非全量注册 |
+| a72203a0 | summary精简只输出工具名 |
+
+### 修改文件统计
+| commit | 修改文件数 | 主要文件 |
+|--------|----------|---------|
+| abe8d5a4 | 20个 | main.py/__init__.py/base_react.py + 18个register模块全部从模块级注册改为ensure_tools_registered显式调用 |
+| 70505109 | 1个 | base_react.py _load_tools传参按分类注册 |
+| cf4a6902 | 2个 | base_react.py + react_agent_mixin.py 增加日志验证 |
+| c135fd50 | 1个 | llm_core.py connect 10→30 |
+| a72203a0 | 2个 | registry.py summary精简 + pytest.ini |
+
+### 关键变更说明
+
+#### 1. 按需注册根本修复 (abe8d5a4)
+- **问题**: 18个register.py在模块级执行`register_xxx_tools()`，导致import即注册全量工具
+- **修复**: 删除所有register模块的模块级注册调用，改为`ensure_tools_registered()`显式按分类触发
+- **效果**: 启动时0工具 → 注册network + support_tool后只有13个工具（非之前全量100+）
+- **涉及文件**: main.py(删除agent_factory模块级import) / base_react.py(改用函数内import) / 18个register.py(删除模块级调用)
+
+#### 2. httpx connect 10→30 (c135fd50)
+- **根因**: httpx 0.26.0→0.28.1升级后+httpcore 1.0.9+anyio 4.13.0，底层连接池重写
+- **现象**: TCP连通后TLS握手偶发超时(ConnectTimeout)，首次出现于2026-05-14
+- **修复**: connect=10.0→30.0，给TLS更多余量
+
+#### 3. summary精简只输出工具名 (a72203a0)
+- registry.py: get_all_tools_summary去掉description/参数等详细内容，只保留工具名和一句话用途
+
+#### 4. Phase1关键log验证 (cf4a6902)
+- base_react.py: _loaded_categories初始化 + log
+- react_agent_mixin.py: 分阶段注册注入 + 分级注入log
+
 v0.12.31
 
 更新时间: 2026-05-14 15:28:00
