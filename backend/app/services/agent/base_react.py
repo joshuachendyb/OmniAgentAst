@@ -152,9 +152,12 @@ class BaseAgent(ABC):
         if not self.tool_category:
             return {}
         
-        # 【修复 2026-05-10 小健】确保工具已注册再查询registry
+        # 【Phase 1修复 小健 2026-05-14】按当前分类注册，而非全量注册
         from app.services.tools import ensure_tools_registered
-        ensure_tools_registered()
+        if self.tool_category:
+            ensure_tools_registered(categories=[self.tool_category.value, "support_tool"])
+        else:
+            ensure_tools_registered()
         
         return get_tools_from_registry_by_category(self.tool_category)
     
