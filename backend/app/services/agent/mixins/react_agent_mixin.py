@@ -339,17 +339,14 @@ class ReactAgentMixin(ToolLoaderMixin):
             logger.debug(f"[Debug] _call_llm_with_summary - last_message内容: {last_message[:200]}")
             
             # ========== 确定策略 + Schema注入（小沈2026-05-12重构）==========
-            # 提前确定策略，统一处理Schema注入，确保prompt_logger记录完整组装后的消息
-            strategy_method = None
-            if self.adapter:
-                strategy = await self.adapter.ensure_capability()
-                strategy_method = strategy.method
-                logger.info(f"[{_cls}] 执行策略: {strategy.method}")
-            elif getattr(self, 'use_function_calling', False) and getattr(self, 'openai_tools', None):
-                strategy_method = "tools"
-                logger.info(f"[{_cls}] 无adapter，使用Function Calling模式")
-            else:
-                logger.info(f"[{_cls}] _call_llm_with_summary adapter=None → 走text兜底")
+            # 【重构 2026-05-14 小健】策略只在探测时确定一次，后续直接使用
+            # adapter必须存在，策略由adapter.ensure_capability()唯一确定
+            if not self.adapter:
+                raise RuntimeError(f"[{_cls}] adapter未初始化，无法确定策略")
+            
+            strategy = await self.adapter.ensure_capability()
+            strategy_method = strategy.method
+            logger.info(f"[{_cls}] 执行策略: {strategy.method}")
             
             # 方案C：text和response_format策略下注入tools Schema文本（tools策略不注入）
             if strategy_method in ("text", "response_format"):
@@ -358,13 +355,6 @@ class ReactAgentMixin(ToolLoaderMixin):
                     schema_msg = {"role": "system", "content": schema_text}
                     history_dicts = list(history_dicts) + [schema_msg]
                     logger.info(f"[{_cls}] 注入工具Schema ({strategy_method}模式)")
-            elif strategy_method is None:
-                # 兜底也注入Schema
-                schema_text = self._tools_to_schema_text()
-                if schema_text:
-                    schema_msg = {"role": "system", "content": schema_text}
-                    history_dicts = list(history_dicts) + [schema_msg]
-                    logger.info("[Schema Injection] Injected tools schema for text fallback")
             
             # ========== prompt_logger: 调用前记录（小沈2026-05-12修正）==========
             # 必须在prompt完整组装后记录，包含：temp_history + 工具概要 + Schema注入
