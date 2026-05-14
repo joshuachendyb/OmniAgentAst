@@ -139,7 +139,7 @@ class BaseAIService:
         
         self.client = httpx.AsyncClient(
             timeout=httpx.Timeout(
-                connect=10.0,
+                connect=30.0,  # 【2026-05-14 小健/小沈】httpx 0.26.0→0.28.1后TLS偶发超时，10→30
                 read=None,
                 write=10.0,
                 pool=10.0,
