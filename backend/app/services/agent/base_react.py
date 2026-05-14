@@ -129,8 +129,10 @@ class BaseAgent(ABC):
             self._loaded_categories.add(self.tool_category.value)
         self._loaded_categories.add("support_tool")  # support_tool在步骤7中始终注册
         
-        # 【步骤9】意图分类器初始化（用于更可靠检测）
-        self._intent_classifier = None   # 意图分类器（用于更可靠检测）
+        # 【Phase 1修复 小健 2026-05-14】初始化IntentClassifier用于Loop阶段动态加载检测
+        # 原设计为None导致LLM分类器永不生效，改为实际实例
+        from app.services.preprocessing.intent_classifier import IntentClassifier
+        self._intent_classifier = IntentClassifier()
         
         # 【v2.3新增】chunk处理相关属性—所有Agent子类共享
         self.max_consecutive_chunks = MAX_CONSECUTIVE_CHUNKS  # 连续chunk达此阈值时提升为implicit
@@ -270,41 +272,17 @@ class BaseAgent(ABC):
     
     async def _check_and_load_missing_tools(self, observation: str, llm_client=None):
         """
-        在Observation阶段，检测是否需要新工具（改进版）
+        在Observation阶段，检测是否需要新工具（改进版） - 小健 2026-05-14
         
-        参考：文档4.14节步骤9代码示例
-        改进方案：结合LLM判断 + 关键词检测
+        【Phase 1修复】优化检测策略：
+        1. 先用关键词检测（快速、低成本）
+        2. 关键词检测不确定时，再用LLM分类器（语义理解，补充）
         
         Args:
-            observation: LLM返回的observation内容
-            llm_client: LLM客户端（用于LLM判断）
+            observation: LLM返回的observation内容（工具执行结果）
+            llm_client: LLM客户端（用于LLM分类器）
         """
-        # 方案1：LLM判断（更可靠，推荐）
-        if llm_client and self._intent_classifier:
-            try:
-                # 使用意图分类器重新检测
-                # labels应该是所有可能的意图类型
-                from app.services.tools.registry import ToolCategory
-                labels = [cat.value for cat in ToolCategory]
-                
-                result = await self._intent_classifier.classify(observation, labels)
-                new_intent = result.get("intent")
-                confidence = result.get("confidence", 0)
-                
-                if (new_intent and new_intent not in self._loaded_categories 
-                        and confidence >= 0.3):
-                    # 否定词检测：避免"不要执行shell"误触发
-                    if self._should_trigger_dynamic_load(observation, new_intent):
-                        self.load_tools_by_intent(
-                            new_intent, 
-                            reason=f"LLM检测新意图: {new_intent}(置信度{confidence:.2f})"
-                        )
-                    return
-            except Exception as e:
-                logger.warning(f"[动态加载] LLM判断失败，降级到关键词: {e}")
-        
-        # 方案2：关键词检测（降级方案）
-        # 【Phase 1 小健 2026-05-14】扩充关键词，覆盖全部12分类的跨分类场景
+        # 【Phase 1 小健 2026-05-14】关键词检测（主方案，快速）
         trigger_keywords = {
             "network": ["ping ", "http", "下载", "网络", "url", "curl", "wget", "公网IP", "DNS", "ipify"],
             "desktop": ["截图", "截屏", "窗口", "鼠标点击", "键盘输入", "UI", "GUI"],
@@ -318,18 +296,46 @@ class BaseAgent(ABC):
             "code_execution": ["执行代码", "Python脚本", "运行代码", "代码执行"],
             "document": ["PDF", "Word", "文档读取", "文档生成", "Markdown"],
         }
-        # 注意：support_tool（含finish）在步骤7中已始终注册，无需触发关键词
+        # 注意：support_tool（含finish）在初始化时已始终注册，无需触发关键词
         
+        detected_intent = None
         for intent, keywords in trigger_keywords.items():
             if any(kw in observation for kw in keywords):
                 # 否定词检测：避免"不要执行shell"误触发
                 if self._should_trigger_dynamic_load(observation, intent):
-                    if intent not in self._loaded_categories:
+                    detected_intent = intent
+                    break  # 只取第一个匹配的
+        
+        # 如果关键词检测到，直接加载
+        if detected_intent and detected_intent not in self._loaded_categories:
+            self.load_tools_by_intent(
+                detected_intent, 
+                reason=f"关键词检测: {trigger_keywords[detected_intent]}"
+            )
+            return
+        
+        # 【Phase 1修复 小健 2026-05-14】关键词检测不确定时，用LLM分类器（补充）
+        # LLM分类器能理解语义，比关键词更准确，但有延迟和成本
+        if llm_client and self._intent_classifier and not detected_intent:
+            try:
+                from app.services.tools.registry import ToolCategory
+                labels = [cat.value for cat in ToolCategory]
+                
+                result = await self._intent_classifier.classify(observation, labels)
+                new_intent = result.get("intent")
+                confidence = result.get("confidence", 0)
+                
+                # 置信度阈值：0.3，比初始阶段的0.5低，因为Observation可能模糊
+                if (new_intent and new_intent not in self._loaded_categories 
+                        and confidence >= 0.3):
+                    # 否定词检测
+                    if self._should_trigger_dynamic_load(observation, new_intent):
                         self.load_tools_by_intent(
-                            intent, 
-                            reason=f"Observation关键词检测: {keywords}"
+                            new_intent, 
+                            reason=f"LLM分类器检测: {new_intent}(置信度{confidence:.2f})"
                         )
-                        return  # 一次只加载一个，避免混乱
+            except Exception as e:
+                logger.warning(f"[动态加载] LLM分类器失败: {e}")
     
     def _should_trigger_dynamic_load(self, observation: str, intent: str) -> bool:
         """
