@@ -213,6 +213,29 @@ class ToolRegistry:
         registry.register(name="xxx", description="...", category=ToolCategory.FILE, implementation=func)
     """
     
+    # 【Phase 1 小健 2026-05-14】类级常量：分类顺序和中文名，一处定义全局引用
+    CATEGORY_ORDER = [
+        ToolCategory.FILE, ToolCategory.SHELL, ToolCategory.TIME,
+        ToolCategory.ENVIRONMENT, ToolCategory.SYSTEM, ToolCategory.NETWORK,
+        ToolCategory.DATABASE, ToolCategory.DESKTOP, ToolCategory.DATA_FORMAT,
+        ToolCategory.CODE_EXECUTION, ToolCategory.DOCUMENT, ToolCategory.SUPPORT_TOOL,
+    ]
+
+    CATEGORY_NAMES = {
+        ToolCategory.FILE: "文件操作工具",
+        ToolCategory.SHELL: "Shell命令工具",
+        ToolCategory.TIME: "时间日期工具",
+        ToolCategory.ENVIRONMENT: "环境变量工具",
+        ToolCategory.SYSTEM: "系统信息工具",
+        ToolCategory.NETWORK: "网络通信工具",
+        ToolCategory.DATABASE: "数据库工具",
+        ToolCategory.DESKTOP: "桌面工具",
+        ToolCategory.DATA_FORMAT: "数据格式工具",
+        ToolCategory.CODE_EXECUTION: "代码执行工具",
+        ToolCategory.DOCUMENT: "文档读写工具",
+        ToolCategory.SUPPORT_TOOL: "支撑工具(公共函数)",
+    }
+
     def __init__(self):
         self._tools: Dict[str, ToolMetadata] = {}
         self._categories: Dict[ToolCategory, List[str]] = {}
@@ -457,24 +480,24 @@ class ToolRegistry:
         required = set(input_schema.get("required", []))
         return sorted(required)
 
-    def get_all_tools_summary(self, priority_category: Optional['ToolCategory'] = None, expose_to_llm_only: bool = True) -> str:
-        """
-        获取所有工具的概要描述（按分类组织）
+    def get_all_tools_summary(self, priority_category: Optional['ToolCategory'] = None,
+                              expose_to_llm_only: bool = True,
+                              exclude_categories: Optional[set] = None) -> str:
+        """获取工具概要描述（工具名+参数列表+一句话用途） - 小健 2026-05-14
 
-        自动遍历所有已注册工具，按ToolCategory分组。
-        priority_category 对应的分类排在最前面，其余按固定顺序。
-
-        每个工具显示：名称(必填参数): 描述
+        【Phase 1优化】从input_schema提取参数列表，输出精简版（约3-4K）。
+        原版输出完整description（53K），改为输出工具名+参数+一句话用途。
 
         Args:
             priority_category: 优先展示的分类
-            expose_to_llm_only: 是否只展示暴露给LLM的工具（默认True） - 小沈2026-05-02
+            expose_to_llm_only: 是否只展示暴露给LLM的工具
+            exclude_categories: 排除的分类集合（避免与detail重复）
 
         Returns:
             格式化的工具概要字符串
         """
         lines = []
-        lines.append("=== 可用工具列表 ===")
+        lines.append("=== 其他可用工具（概要）===")
         lines.append("")
 
         from collections import defaultdict
@@ -482,49 +505,85 @@ class ToolRegistry:
         for name, metadata in self._tools.items():
             if expose_to_llm_only and not metadata.expose_to_llm:
                 continue
+            if exclude_categories and metadata.category.value in exclude_categories:
+                continue
             by_category[metadata.category].append((name, metadata))
 
-        # 分类展示顺序
-        category_order = [
-            ToolCategory.FILE,
-            ToolCategory.SHELL,
-            ToolCategory.TIME,
-            ToolCategory.ENVIRONMENT,
-            ToolCategory.SYSTEM,
-            ToolCategory.NETWORK,
-            ToolCategory.DATABASE,
-            ToolCategory.DESKTOP,
-            ToolCategory.DATA_FORMAT,
-            ToolCategory.CODE_EXECUTION,
-            ToolCategory.DOCUMENT,
-            ToolCategory.SUPPORT_TOOL,
-        ]
-
-        # 如果指定了priority_category，移到最前面
+        category_order = list(self.CATEGORY_ORDER)
         if priority_category and priority_category in category_order:
             category_order.remove(priority_category)
             category_order.insert(0, priority_category)
-
-        category_names = {
-            ToolCategory.FILE: "文件操作工具",
-            ToolCategory.SHELL: "Shell命令工具",
-            ToolCategory.TIME: "时间日期工具",
-            ToolCategory.ENVIRONMENT: "环境变量工具",
-            ToolCategory.SYSTEM: "系统信息工具",
-            ToolCategory.NETWORK: "网络通信工具",
-            ToolCategory.DATABASE: "数据库工具",
-            ToolCategory.DESKTOP: "桌面工具",
-            ToolCategory.DATA_FORMAT: "数据格式工具",
-            ToolCategory.CODE_EXECUTION: "代码执行工具",
-            ToolCategory.DOCUMENT: "文档读写工具",
-            ToolCategory.SUPPORT_TOOL: "支撑工具(公共函数)",
-        }
 
         for cat in category_order:
             if cat not in by_category:
                 continue
             items = by_category[cat]
-            display_name = category_names.get(cat, cat.value)
+            display_name = self.CATEGORY_NAMES.get(cat, cat.value)
+            lines.append(f"【{display_name}】")
+            for name, meta in sorted(items, key=lambda x: x[0]):
+                schema = meta.input_schema or {}
+                params = schema.get("properties", {})
+                required_set = set(schema.get("required", []))
+                param_strs = []
+                for pname, pinfo in params.items():
+                    ptype = pinfo.get("type", "any")
+                    required = "required" if pname in required_set else "optional"
+                    param_strs.append(f"{pname}({ptype}, {required})")
+
+                usage = meta.description[:60] if meta.description else name
+                if len(meta.description) > 60:
+                    usage += "..."
+
+                if param_strs:
+                    lines.append(f"  {name}: {', '.join(param_strs)} — {usage}")
+                else:
+                    lines.append(f"  {name}: 无参数 — {usage}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def get_all_tools_detail(self, priority_category: Optional['ToolCategory'] = None,
+                             category_filter: Optional['ToolCategory'] = None,
+                             exclude_categories: Optional[set] = None,
+                             expose_to_llm_only: bool = True) -> str:
+        """获取工具完整描述（使用场景+示例+返回格式） - 小健 2026-05-14
+
+        与 get_all_tools_summary（概要版）互补，此方法输出每个工具的完整description。
+
+        Args:
+            priority_category: 优先展示的分类（排在最前）
+            category_filter: 只输出指定分类的工具（None=全部）
+            exclude_categories: 排除的分类集合（避免与概要重复）
+            expose_to_llm_only: 是否只展示暴露给LLM的工具
+
+        Returns:
+            格式化的工具完整描述字符串
+        """
+        lines = []
+        lines.append("=== 可用工具列表（完整）===")
+        lines.append("")
+
+        from collections import defaultdict
+        by_category: Dict[ToolCategory, List[str]] = defaultdict(list)
+        for name, metadata in self._tools.items():
+            if expose_to_llm_only and not metadata.expose_to_llm:
+                continue
+            if category_filter and metadata.category != category_filter:
+                continue
+            if exclude_categories and metadata.category.value in exclude_categories:
+                continue
+            by_category[metadata.category].append((name, metadata))
+
+        category_order = list(self.CATEGORY_ORDER)
+        if priority_category and priority_category in category_order:
+            category_order.remove(priority_category)
+            category_order.insert(0, priority_category)
+
+        for cat in category_order:
+            if cat not in by_category:
+                continue
+            items = by_category[cat]
+            display_name = self.CATEGORY_NAMES.get(cat, cat.value)
             lines.append(f"【{display_name}】")
             for name, meta in sorted(items, key=lambda x: x[0]):
                 lines.append(f"  {name}: {meta.description}")

@@ -36,8 +36,12 @@ class ReactAgentMixin(ToolLoaderMixin):
         
         首次调用时触发工具注册（ensure_tools_registered），后续调用跳过。
         """
+        # 【Phase 1 小健 2026-05-14】按当前分类+support_tool注册（support_tool含finish，所有Agent必需）
         from app.services.tools import ensure_tools_registered
-        ensure_tools_registered()
+        if tool_category:
+            ensure_tools_registered(categories=[tool_category.value, "support_tool"])
+        else:
+            ensure_tools_registered()
         
         if tool_category:
             self._tools_dict = self.load_tools_by_category(tool_category)
@@ -174,12 +178,45 @@ class ReactAgentMixin(ToolLoaderMixin):
     
     # ===== 跨分类工具支持 =====
     
-    def _get_tools_summary(self) -> str:
-        """获取跨分类工具概要（每轮实时生成）"""
+    def _get_tools_summary(self, exclude_categories: Optional[set] = None) -> str:
+        """获取跨分类工具概要（每轮实时生成） - 小健 2026-05-14
+
+        Args:
+            exclude_categories: 排除的分类集合（避免与detail重复）
+        """
         from app.services.tools.registry import tool_registry
         return tool_registry.get_all_tools_summary(
-            priority_category=self.tool_category or ToolCategory.FILE
+            priority_category=self.tool_category or ToolCategory.FILE,
+            exclude_categories=exclude_categories
         )
+    
+    def _get_tools_detail(self) -> str:
+        """获取已加载分类工具的完整描述（使用场景+示例+返回格式） - 小健 2026-05-14
+
+        【关键设计】按_loaded_categories输出detail，而非只输出初始分类。
+        动态加载新分类后，_loaded_categories会扩展，下一轮LLM调用会自动
+        包含新分类的完整工具描述。
+
+        例如：NetworkAgent初始化时_loaded_categories={"network"}
+        → 只输出network分类的detail
+        动态加载shell后_loaded_categories={"network","shell"}
+        → 输出network+shell两个分类的detail
+        """
+        from app.services.tools.registry import tool_registry, ToolCategory
+        parts = []
+        loaded_cats = getattr(self, '_loaded_categories', set())
+        for cat_name in sorted(loaded_cats):
+            try:
+                category = ToolCategory(cat_name)
+                detail = tool_registry.get_all_tools_detail(
+                    priority_category=category,
+                    category_filter=category
+                )
+                if detail.strip():
+                    parts.append(detail)
+            except (ValueError, Exception):
+                continue
+        return "\n\n".join(parts) if parts else ""
     
     def _build_candidates_hint(self) -> str:
         """构建候选意图提示"""
@@ -277,11 +314,16 @@ class ReactAgentMixin(ToolLoaderMixin):
             if hasattr(self, 'temp_history') and self.temp_history:
                 history_dicts = list(history_dicts) + list(self.temp_history)
             
-            # 注入工具概要
+            # 【Phase 1优化 小健 2026-05-14】分级注入：已加载分类Detail + 其他分类Summary(exclude)
             try:
-                tools_summary = self._get_tools_summary()
-                summary_msg = {"role": "system", "content": f"【当前可用工具列表】\n{tools_summary}"}
-                history_dicts = list(history_dicts) + [summary_msg]
+                loaded = getattr(self, '_loaded_categories', set())
+                detail_text = self._get_tools_detail()
+                summary_text = self._get_tools_summary(exclude_categories=loaded)
+                tools_msg = {
+                    "role": "system",
+                    "content": f"【已加载工具（完整）】\n{detail_text}\n\n【其他可用工具（概要）】\n{summary_text}"
+                }
+                history_dicts = list(history_dicts) + [tools_msg]
             except Exception as e:
                 logger.warning(f"[ToolSummary] 注入工具概要失败: {e}")
             

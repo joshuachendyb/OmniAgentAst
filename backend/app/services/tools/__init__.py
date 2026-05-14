@@ -32,37 +32,62 @@ from app.services.tools.tool_config import (
 )
 
 
+# 【Phase 1 小健 2026-05-14】分阶段注册：支持按分类注册，而非一次性全注册
 _tools_registered = False
+_registered_categories: set = set()
+
+_CATEGORY_MODULES = {
+    "file": lambda: __import__("app.services.tools.file", fromlist=["file"]),
+    "time": lambda: __import__("app.services.tools.time", fromlist=["time"]),
+    "shell": lambda: __import__("app.services.tools.shell", fromlist=["shell"]),
+    "network": lambda: __import__("app.services.tools.network", fromlist=["network"]),
+    "environment": lambda: __import__("app.services.tools.environment", fromlist=["environment"]),
+    "system": lambda: __import__("app.services.tools.system", fromlist=["system"]),
+    "database": lambda: __import__("app.services.tools.database", fromlist=["database"]),
+    "desktop": lambda: __import__("app.services.tools.desktop", fromlist=["desktop"]),
+    "data_format": lambda: __import__("app.services.tools.data_format", fromlist=["data_format"]),
+    "code_execution": lambda: __import__("app.services.tools.code_execution", fromlist=["code_execution"]),
+    "document": lambda: __import__("app.services.tools.document", fromlist=["document"]),
+    "support_tool": lambda: __import__("app.services.tools.support_tool", fromlist=["support_tool"]),
+}
 
 
-def ensure_tools_registered() -> None:
-    """确保所有工具已注册（按需，仅首次调用时执行）- 小沈 2026-05-10
-    
-    改造前：tools/__init__.py 模块级import 15个子模块，启动时全量注册
-    改造后：首次请求时调用此函数触发注册，后续调用直接跳过
-    
-    调用位置：ReactAgentMixin._init_tools_and_executor()
+def ensure_tools_registered(categories: list = None) -> None:
+    """确保工具已注册 - 小健 2026-05-14
+
+    【Phase 1改造】支持按分类注册：
+    - categories=None: 注册全部（兼容旧行为）
+    - categories=["network"]: 只注册network分类
+
+    调用位置：
+    - ReactAgentMixin._init_tools_and_executor() — 按当前分类注册
+    - base_react.load_tools_by_intent() — 动态加载新分类
     """
-    global _tools_registered
-    if _tools_registered:
-        return
+    global _tools_registered, _registered_categories
 
-    from app.services.tools import file
-    from app.services.tools import time
-    from app.services.tools import shell
-    from app.services.tools import network
-    from app.services.tools import environment
-    from app.services.tools import system
-    from app.services.tools import database
-    from app.services.tools import desktop
-    from app.services.tools import data_format
-    from app.services.tools import code_execution
-    from app.services.tools import document
-    from app.services.tools import support_tool
-
-    _tools_registered = True
-    from app.utils.logger import logger
-    logger.info("[Tools] 所有工具已注册完成（按需触发）")
+    if categories is None:
+        # 全量注册（兼容旧行为）
+        if _tools_registered:
+            return
+        for cat_name, import_fn in _CATEGORY_MODULES.items():
+            if cat_name not in _registered_categories:
+                import_fn()
+                _registered_categories.add(cat_name)
+        _tools_registered = True
+        from app.utils.logger import logger
+        logger.info(f"[Tools] 全部工具已注册完成，共{len(_registered_categories)}个分类")
+    else:
+        # 按分类注册
+        from app.utils.logger import logger
+        for cat_name in categories:
+            if cat_name in _registered_categories:
+                continue
+            if cat_name in _CATEGORY_MODULES:
+                _CATEGORY_MODULES[cat_name]()
+                _registered_categories.add(cat_name)
+                logger.info(f"[Tools] 按需注册分类: {cat_name}")
+        if len(_registered_categories) >= len(_CATEGORY_MODULES):
+            _tools_registered = True
 
 
 def is_tools_registered() -> bool:

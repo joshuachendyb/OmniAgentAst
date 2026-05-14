@@ -98,20 +98,8 @@ class FileReactAgent(ReactAgentMixin, BaseAgent):
         self._init_llm_strategies()
         
     # ========== 跨分类工具支持方法（2026-04-30 小沈）==========
-    
-    def _get_tools_summary(self) -> str:
-        """
-        获取跨分类工具概要（每轮实时生成，确保动态注册的工具被包含）
-
-        设计文档 v1.5 4.2节
-
-        Returns:
-            格式化的工具概要字符串
-        """
-        from app.services.tools.registry import tool_registry
-        return tool_registry.get_all_tools_summary(
-            priority_category=self.tool_category or ToolCategory.FILE
-        )
+    # 【Phase 1 小健 2026-05-14】删除 _get_tools_summary override（与mixin完全相同），
+    # 删除后由 ReactAgentMixin._get_tools_summary 提供统一实现（Python MRO）
     
     # ========== 抽象方法实现 ==========
     

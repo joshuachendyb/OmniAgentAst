@@ -123,7 +123,11 @@ class BaseAgent(ABC):
         
         # 【Phase1修复】从registry加载工具 - 【修复 2026-05-10 小健】确保先注册再加载
         self._tools_dict = self._load_tools()
-        self._loaded_categories = set()  # 【步骤9】已加载的分类，用于动态加载
+        # 【Phase 1修复 小健 2026-05-14】_loaded_categories初始化应包含当前分类+support_tool
+        self._loaded_categories = set()
+        if self.tool_category:
+            self._loaded_categories.add(self.tool_category.value)
+        self._loaded_categories.add("support_tool")  # support_tool在步骤7中始终注册
         
         # 【步骤9】意图分类器初始化（用于更可靠检测）
         self._intent_classifier = None   # 意图分类器（用于更可靠检测）
@@ -233,8 +237,9 @@ class BaseAgent(ABC):
         
         # 1. 获取该意图的工具 - 【修复 2026-05-10 小健】确保先注册
         try:
+            # 【Phase 1 小健 2026-05-14】按意图分类注册，而非全量注册
             from app.services.tools import ensure_tools_registered
-            ensure_tools_registered()
+            ensure_tools_registered(categories=[intent_type])
             category = ToolCategory(intent_type)
             new_tools = get_tools_from_registry_by_category(category)
         except ValueError as e:
@@ -245,11 +250,17 @@ class BaseAgent(ABC):
         self._tools_dict.update(new_tools)
         self._loaded_categories.add(intent_type)
 
+        # 【Phase 1 小健 2026-05-14】动态加载后注入提示到conversation_history
+        # 让LLM知道新工具已可用，下一轮的_call_llm_with_summary分级注入会自动
+        # 包含新分类的detail（因为_get_tools_detail按_loaded_categories输出）
+        new_tool_names = sorted(new_tools.keys())
+        load_hint = f"【动态加载】已加载{intent_type}分类的{len(new_tool_names)}个工具: {', '.join(new_tool_names)}"
+        self.conversation_history.append({"role": "system", "content": load_hint})
+        logger.info(f"[动态加载] 已注入LLM提示: {load_hint[:100]}")
+
         # 3. 刷新FC通道的tools定义（如果已启用）
         if hasattr(self, 'tools_strategy') and self.tools_strategy is not None:
             from app.services.tools.registry import tool_registry
-            # 用 tool_category 保留原始分类，但 to_openai_tools(category=None) 返回全部
-            # 用 re-load intent 的 category 生成补充的 tools
             new_openai_tools = tool_registry.to_openai_tools(category=category)
             self.openai_tools.extend([t for t in new_openai_tools if t not in self.openai_tools])
             self.tools_strategy.tools = self.openai_tools
@@ -293,14 +304,21 @@ class BaseAgent(ABC):
                 logger.warning(f"[动态加载] LLM判断失败，降级到关键词: {e}")
         
         # 方案2：关键词检测（降级方案）
+        # 【Phase 1 小健 2026-05-14】扩充关键词，覆盖全部12分类的跨分类场景
         trigger_keywords = {
-            "network": ["ping ", "http", "下载", "网络", "url", "curl", "wget"],
-            "desktop": ["截图", "截屏", "窗口", "鼠标点击", "键盘输入"],
-            "shell": ["执行命令", "npm ", "pip ", "git ", "docker "],
-            "database": ["数据库", "SQL", "查询", "SELECT", "INSERT"],
-            "env": ["环境变量", "PATH", "JAVA_HOME"],
-            "system": ["系统信息", "CPU", "内存", "磁盘"],
+            "network": ["ping ", "http", "下载", "网络", "url", "curl", "wget", "公网IP", "DNS", "ipify"],
+            "desktop": ["截图", "截屏", "窗口", "鼠标点击", "键盘输入", "UI", "GUI"],
+            "shell": ["执行命令", "npm ", "pip ", "git ", "docker ", "nslookup", "shell", "命令行", "bash"],
+            "database": ["数据库", "SQL", "查询", "SELECT", "INSERT", "sqlite", "mysql"],
+            "environment": ["环境变量", "PATH", "JAVA_HOME", "PYTHONPATH", "Node"],
+            "system": ["系统信息", "CPU", "内存", "磁盘", "进程", "systeminfo"],
+            "file": ["文件", "目录", "读写", "copy", "move", "重命名"],
+            "time": ["时间", "日期", "时区", "timezone"],
+            "data_format": ["JSON", "CSV", "Excel", "格式转换", "解析", "序列化"],
+            "code_execution": ["执行代码", "Python脚本", "运行代码", "代码执行"],
+            "document": ["PDF", "Word", "文档读取", "文档生成", "Markdown"],
         }
+        # 注意：support_tool（含finish）在步骤7中已始终注册，无需触发关键词
         
         for intent, keywords in trigger_keywords.items():
             if any(kw in observation for kw in keywords):
